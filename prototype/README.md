@@ -45,6 +45,12 @@ node tools/combattest.js 300 5 weapons
 Runs thousands of tactical battles with the AI playing both sides and reports win rates per matchup. The last six matchups put a hive's special dead among 12 of the dead (4 runners, 2 brutes, 3 spitters, a screamer, 3 crawlers, one of each elite: `zombietypes.js`). With `weapons`, the weapon balance instead: teams of three (Shooting 5–11) each armed with one weapon (knife, baton, bat, crowbar, machete, nail bat, fire axe, sledgehammer, scrap crossbow, 9mm, .357 revolver, compound bow, hunting crossbow, shotgun, hunting rifle, lever-action rifle, police carbine, assault rifle) against 4 raiders (power 5) and 12 of the dead (power 2), and pistols with two Molotovs / pipe bombs / flares / smoke grenades each against 16 of the dead.
 
 ```bash
+node tools/raidhumveetest.js 7
+```
+
+A raid's Humvee in the fight (`src/sim/combat.js` `raidCarTurn`, `RAID_CAR`; or `node tools/raidhumveetest.js [seed=7]`, about 5 s): the M2 gunner rides it, a driver and up to 2 riders inside (only while 3+ come on foot); it drives forward with the attack each enemy turn by the same rules as your vehicle (`carSteps` / `driveTo`, open ground only, at most 8 cells, never nearer your people than 6 nor more than 2 ahead of their front), stops where the gunner has someone in range and sight, and drops its riders near the line; a downed gunner's place is taken by a rider; worn by blasts past 10 (the same wear as yours) or with its gun unmanned or the raid broken it pulls back and drives off the map with everyone inside (the group keeps it, worn); worn to 20 it stalls; the driver down, it stays; a save mid-battle; off the walls it is parked outside.
+
+```bash
 node tools/sizetest.js 10 3
 ```
 

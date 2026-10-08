@@ -385,7 +385,8 @@ export const groupTurretPower = (f) => { const g = groupTurret(f); return g ? TU
 // A raid party (parties.js spawnAiParty) takes the group's working turreted vehicle along when it is not out with
 // another raid (p.humvee: its id); its turret adds TURRET_ODDS to the raid by the numbers (raidTurretPower) and it stands
 // on the defence map when you fight the raid in person (combat.js placeRaidHumvee). A raid that fails loses it
-// (loseRaidHumvee): beaten off by you, it is left at your base, damaged, turret, plate and glass as they were, and it
+// (loseRaidHumvee): beaten off by you, it is left at your base unless it drove off in the fight (combat.js raidCarTurn:
+// then they keep it, worn: wearRaidHumvee), damaged, turret, plate and glass as they were, and it
 // joins the base's vehicles; beaten off by another group, that group takes it into its own f.vehicles. A military group
 // gets a new one HUMVEE.REPLACE days after its last loss (60–90, its own dice) while it is still HUMVEE.MIN_POP strong
 // (factionVehiclesDaily); until then its raids and its home have no turret.
@@ -431,6 +432,14 @@ export function loseRaidHumvee(state, p, to) {
     return nv;
   }
   return null;
+}
+// The raid's Humvee came back from the fight (combat.js raidCarTurn: it drove off, or the raid won): what it took on
+// the map (blasts, ramming: the same wear your vehicle takes, combat.js settleVehicle) comes off its condition.
+export function wearRaidHumvee(state, p, wear) {
+  const v = raidHumvee(state, p);
+  if (!v || !(wear > 0)) return null;
+  v.condition = Math.max(1, Math.round((v.condition - wear) * 10) / 10);
+  return v;
 }
 // The line for the raid report: "Their Humvee was left behind…".
 export const humveeLeftText = (f, v, base) => `${f && f.known ? f.name : "The raiders"} left their ${v.name} behind at ${base.name}: ${upgradeText(v).replace(/^./, (c) => c.toLowerCase())}, condition ${Math.round(v.condition)}%. It is in the base's motor pool now.`;
