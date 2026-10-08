@@ -32,9 +32,10 @@ import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect,
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
-import { partyVehicle, isBike } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle)
+import { partyVehicle, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
-import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds, carryMods } from "./inventory.js";
+import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods } from "./inventory.js";
+import { areaSource, kitSource, spend } from "./itemcond.js";
 import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
@@ -54,6 +55,7 @@ import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./in
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { fightByNumbers } from "./breakoff.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
+import { safeTurn } from "./locks.js"; // gun safes: a charge set on one goes off at the start of the next turn
 import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList, siteList } from "./zombietypes.js"; // a hive's special dead
 import { ZTYPES, MIDDEAD } from "./hiveconst.js";
 import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
@@ -72,6 +74,7 @@ import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
 import { GUN_WEAPONS, KIT_PATCH } from "./data-guns.js"; // the weapons overhaul's guns, melee and launchers (merged below)
+import { ammoPen } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult)
 import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
 import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
@@ -351,8 +354,10 @@ export function byNumbersOdds(state, setup, people = combatants(state, setup), a
   let mine = people.reduce((a, s) => a + combatPower(s), 0) * armed * teamSpirit(state, people); // friends and rivals (relations.js)
   mine *= 1 + lureEdge(setup.enemy, carriedKeys(state, setup, people)); // decoys.js: decoys and Molotovs against the dead (not a Shepherd's pack)
   let theirs = setup.enemy.count * setup.enemy.power * (setup.enemy.fortified || 1) * typeStrength(setup.enemy); // fortified: behind their walls (conquest.js); types: a hive's special dead (zombietypes.js)
+  const vo = vehicleOdds(state, setup); // vehicles.js: bulletproof glass blunts an ambush on the road; their turret (a military group's Humvee)
   if (setup.ambush === "player") mine *= 1.4;
-  if (setup.ambush === "enemy") theirs *= 1.4;
+  if (setup.ambush === "enemy") theirs *= 1.4 * vo.theirsAmbush;
+  theirs += vo.theirsAdd;
   if (setup.allyPower) mine += setup.allyPower; // thirdside.js: soldiers or survivors fighting the same enemy (wanderers.js)
   const ratio = mine / Math.max(0.1, theirs);
   return { mine, theirs, ratio, win: winOdds(ratio, { ...setup.enemy, people: people.length, ambush: setup.ambush, hive: setup.layout === "hive" }) };
@@ -531,6 +536,7 @@ export const CELL = {
   locker:  { walk: false, cover: 2, los: true,  name: "Lockers" },
   cabinet: { walk: false, cover: 1, los: false, name: "Cabinet" },
   counter: { walk: false, cover: 1, los: false, name: "Counter" },
+  gunsafe: { walk: false, cover: 2, los: false, name: "Gun safe" }, // locks.js / gunsafes.js: a steel safe, waist to head high
   vehicle: { walk: false, cover: 2, los: true,  name: "Your vehicle" },
   // Base defences against hordes and the inside of a hive (defences.js, hives.js). trap: what happens to one of
   // the dead that steps in (spikes hurt, a trench stops it for the turn).
@@ -661,7 +667,7 @@ export const KITS = {
               finds: ["smokes", "instcoffee", "cards", "cuffs", "flare", "watch"] },
   militia:  { label: "Militia", aim: 0, hp: 0,  weapons: ["huntrifle", "shotgun", "pistol", "machete", "pipespear", "leverrifle", "bat"], strong: ["huntrifle", "shotgun"], armor: [null], loot: ["huntrifle", "machete", "knife", "pipespear", "padding", "leverrifle", "bat"],
               finds: ["smokes", "tobacco", "photos", "harmonica", "chocolate", "honey", "toothpaste"] },
-  // Merchant caravans' escorts from outside the state (escorts.js ESCORT_TIERS): the armed tier's riflemen, and the
+  // Merchant caravans' escorts from outside the state (escorts.js, by their company's gear): the riflemen, and the
   // armoured tier's hired guns in vests and plates with automatic rifles.
   escorts:  { label: "Escort",  aim: 2, hp: 3,  weapons: ["huntrifle", "huntrifle", "leverrifle", "shotgun", "carbine", "pistol"], strong: ["carbine", "huntrifle", "ar"], armor: [null, "vest", "vest"], loot: ["huntrifle", "leverrifle", "shotgun", "pistol", "vest", "bikehelmet", "binoculars", "flashlight", "handradio"], pack: ["backpack", 0.3],
               finds: ["smokes", "instcoffee", "cards", "watch", "lighters", "chocolate", "batteries"] },
@@ -987,7 +993,7 @@ export function driveTo(b, u, x, y) {
     if (!onMap(o) || o === u || o.aboard || !swept.has(idx(o.x, o.y))) continue;
     const z = o.kind === "zombie";
     const eff = Math.round(damage(b, o, rng.int(...(z ? RAMMING.ZOMBIE_HIT : RAMMING.HIT)), u));
-    wear += z ? RAMMING.WEAR.zombie : RAMMING.WEAR.unit;
+    wear += z ? RAMMING.WEAR.zombie * (v.up && v.up.mesh ? UPGRADE_FX.meshRam : 1) : RAMMING.WEAR.unit; // mesh grilles on the front (vehicles.js)
     hits.push(`${o.name} (${eff})`);
     fx(b, { type: "melee", from: [o.x, o.y], to: [o.x, o.y], hit: true, crit: false, dmg: eff, side: u.side, text: "RAMMED" });
     if (o.dead) continue;
@@ -1000,7 +1006,8 @@ export function driveTo(b, u, x, y) {
     if (best) { o.x = best[0]; o.y = best[1]; o.hunker = false; o.ow = false; }
     else { const e2 = Math.round(damage(b, o, rng.int(...RAMMING.HIT), u)); hits.push(`${o.name} again (${e2}, crushed)`); }
   }
-  v.wear = (v.wear || 0) + wear;
+  wear = Math.round(wear * mapWearMult(v) * 10) / 10; // armour plate: ×0.6 a level (vehicles.js wearMult)
+  v.wear = Math.round(((v.wear || 0) + wear) * 10) / 10;
   const car = b.cells[idx(v.x, v.y)].car;
   for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[idx(cx, cy)]; c.k = "open"; delete c.car; }
   const from = [u.x, u.y], steps = seen.get(key(tx, ty));
@@ -1036,8 +1043,55 @@ export function settleVehicle(state, b, outcome = null) {
   const pv = party ? partyVehicle(state, party) : null;
   if (!pv) return;
   pv.condition = Math.max(1, Math.round((pv.condition - v.wear) * 10) / 10);
-  log(state, `The ${pv.name} took a beating ramming through ${b.place}: condition ${Math.round(pv.condition)}%.`, "danger");
+  log(state, `The ${pv.name} took a beating at ${b.place}: condition ${Math.round(pv.condition)}%.`, "danger");
   v.wear = 0;
+}
+// ---------- the team's vehicle's upgrades on the map (vehicles.js: glass, mesh grilles, plating, a turret) ----------
+// b.vehicle.up: its upgrades; its cells' c.car.up { p: plating, s: scrap plating, g: glass, m: mesh, t: turret gun } for
+// the views and for cover (sideCover: a plated vehicle is full cover; platedCell: what stops a round through light cover).
+const carUpTag = (u) => (u.plating || u.scrapPlate || u.glass || u.mesh || u.turret ? { p: u.plating || 0, s: u.scrapPlate || 0, g: u.glass || 0, m: u.mesh || 0, t: u.turret ? u.turret.gun : null } : null);
+export function fitMapVehicle(b, pv) {
+  const v = b.vehicle;
+  if (!v || !pv || isBike(pv)) return;
+  const u = upgradesOf(pv);
+  v.up = { glass: u.glass, mesh: u.mesh, plating: u.plating, scrapPlate: u.scrapPlate, turret: u.turret ? { gun: u.turret.gun } : null };
+  const tag = carUpTag(u);
+  if (!tag) return;
+  for (let cy = v.y; cy < v.y + v.h; cy++) for (let cx = v.x; cx < v.x + v.w; cx++) { const c = b.cells[cy * b.w + cx]; if (c && c.car) c.car.up = tag; }
+}
+const mapWearMult = (v) => UPGRADE_FX.wear ** armourOf({ upgrades: v.up });
+// The real armour plate on a cell (0: none): a plated vehicle stops what goes through light cover (over-penetration).
+export const platedCell = (b, x, y) => { const c = b.cells[y * b.w + x]; return c && c.car && c.car.up ? c.car.up.p || 0 : 0; };
+// × the damage a rider in the team's vehicle takes from a hit (bulletproof glass): hit { pen } or { cal, ammo } (typed
+// rounds) or { weapon } (its calibre's FMJ), else RIDER_PEN; hit.how "blast" for fragments.
+export const RIDER_PEN = 25;
+export function riderHitMult(b, hit = {}) {
+  const v = b && b.vehicle;
+  if (!v || !v.up) return 1;
+  const W = hit.weapon ? WEAPONS[hit.weapon] : null;
+  const pen = hit.pen != null ? hit.pen : hit.cal ? ammoPen(hit.cal, hit.ammo) : W && W.cal ? ammoPen(W.cal) : hit.how === "blast" ? UPGRADE_FX.blastPen : RIDER_PEN;
+  return riderMult({ upgrades: v.up }, pen, hit.how || "shot");
+}
+// A blast next to the team's vehicle (throwables.js landEffect): it wears the vehicle (BLAST_WEAR × 0.6 a plating level)
+// and its fragments come in at the windows: the riders aboard take UPGRADE_FX.riderBlast of it (× the glass or the
+// grilles: riderHitMult), never more than leaves them on their feet (they get down below the doors). Returns log text.
+export const BLAST_WEAR = { frag: 4, blast: 8 };
+export function vehicleBlast(b, x, y, r, [lo, hi], kind = "blast") {
+  const v = b.vehicle;
+  if (!v || v.kind === "bike") return "";
+  let near = false;
+  for (let cy = v.y; cy < v.y + v.h && !near; cy++) for (let cx = v.x; cx < v.x + v.w && !near; cx++) if (Math.hypot(cx - x, cy - y) <= r + 0.5 + 1e-6) near = true;
+  if (!near) return "";
+  const wear = Math.round((BLAST_WEAR[kind] || BLAST_WEAR.blast) * mapWearMult(v) * 10) / 10;
+  v.wear = Math.round(((v.wear || 0) + wear) * 10) / 10;
+  const m = UPGRADE_FX.riderBlast * riderHitMult(b, { how: "blast" });
+  const hurt = [];
+  for (const u of b.units) {
+    if (!u.aboard || u.dead) continue;
+    const eff = Math.max(0, Math.min(u.hp - 1, Math.round(b.rng.int(lo, hi) * m)));
+    if (eff > 0) { u.hp -= eff; hurt.push(`${u.name} ${eff}`); }
+  }
+  return ` The ${v.mil ? "Army truck" : v.kind} takes the blast (condition −${wear}${v.up && (v.up.plating || v.up.scrapPlate) ? ", the plating took most of it" : ""})${hurt.length ? `; fragments through the windows catch ${hurt.join(", ")}${v.up && v.up.glass ? " (the bulletproof glass stopped most)" : ""}` : ""}.`;
 }
 
 
@@ -1060,7 +1114,8 @@ export function placeMilTrucks(rng, cells, W, H, trucks, road, ok) {
   const mark = (rect, x) => {
     for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) {
       const c = cells[yy * W + xx];
-      c.car.mil = { i: x.i, kind: x.kind, cond: x.cond, key: x.key }; // key, i: the truck's record (miltrucks.js markTaken)
+      c.car.mil = { i: x.i, kind: x.kind, cond: x.cond, key: x.key, ...(x.runs ? { runs: true } : {}), ...(x.turret ? { turret: x.turret } : {}) }; // key, i: the truck's record (miltrucks.js markTaken); runs / turret: a motor pool's ready vehicles
+      if (x.turret) c.car.up = { p: 0, s: 0, g: 0, m: 0, t: x.turret }; // drawn with the gun on its roof
     }
     out.push({ truck: x, rect });
   };
@@ -1360,6 +1415,7 @@ export const canSee = (b, a, t) => !(t.low && a.side === "player" && !zRevealed(
 function sideCover(b, x, y, nx, ny) {
   const c = b.cells[idx(nx, ny)], C = CELL[c.k];
   if (C.walk && hAt(b, nx, ny) > hAt(b, x, y)) return 2;
+  if (c.car && c.car.up && (c.car.up.p || c.car.up.s)) return 2; // a plated vehicle (vehicles.js upgrades): full cover
   return C.cover;
 }
 
@@ -1870,7 +1926,7 @@ export function createBattle(state, setup) {
         const vr = placeVehicle(b.cells, W, H, { x0: 1, y0: y, side: "north" }, kind, (x, yy) => inside(x, yy) && b.cells[idx(x, yy)].k === "open" && b.reach[idx(x, yy)]);
         if (vr) { b.vehicle = vr; break; }
       }
-      if (b.vehicle) { b.vehicle.seats = SEATS[kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; b.reach = flood(b.cells, 0, Math.floor(H / 2)); }
+      if (b.vehicle) { b.vehicle.seats = SEATS[kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; b.reach = flood(b.cells, 0, Math.floor(H / 2)); fitMapVehicle(b, pv); }
     }
   }
   const occupied = (x, y) => !!unitAt(b, x, y);
@@ -1959,11 +2015,12 @@ export function createBattle(state, setup) {
       for (const [x, y] of spots.slice(0, 300)) {
         const r = placeCar(b.cells, W, H, x, y, rng.chance(0.5) ? "x" : "y", L, big ? "truck" : "car", (xx, yy) => inside(xx, yy) && b.cells[idx(xx, yy)].k === "open" && !!b.reach[idx(xx, yy)] && !unitAt(b, xx, yy), rng.int(0, 1e6), { ring: false, ...(mil ? { body: mil } : {}) });
         if (!r) continue;
-        if (setup.enemy.escort) for (let yy = r.y0; yy < r.y0 + r.h; yy++) for (let xx = r.x0; xx < r.x0 + r.w; xx++) { const c = b.cells[idx(xx, yy)]; if (c.car) { c.car.escort = true; if (mil) c.car.mil = { kind: mil, cond: "intact" }; } }
+        if (setup.enemy.escort) for (let yy = r.y0; yy < r.y0 + r.h; yy++) for (let xx = r.x0; xx < r.x0 + r.w; xx++) { const c = b.cells[idx(xx, yy)]; if (c.car) { c.car.escort = true; if (mil) { c.car.mil = { kind: mil, cond: "intact" }; c.car.up = { p: 1, s: 0, g: 1, m: 0, t: setup.enemy.turret || null }; } } } // plated, glassed, the turret drawn
         const reach = flood(b.cells, 0, Math.floor(H / 2));
         if (!b.units.every((u) => reach[idx(u.x, u.y)] || u.side !== "player")) { removeCar(b.cells, W, r); continue; }
         b.reach = reach;
         b.enemyVehicle = { type: setup.enemy.vehicle, partyId: setup.enemy.vehiclePartyId ?? null, x: r.x0, y: r.y0, w: r.w, h: r.h };
+        if (technicalPlated(state, setup.enemy)) for (let yy = r.y0; yy < r.y0 + r.h; yy++) for (let xx = r.x0; xx < r.x0 + r.w; xx++) b.cells[idx(xx, yy)].car.up = { p: 0, s: 1, g: 0, m: 0, t: null }; // a raider technical (vehicles.js): scrap plating, full cover
         say(b, `They came in ${setup.enemy.vehicleName ? `${/^[aeiou]/i.test(setup.enemy.vehicleName) ? "an" : "a"} ${setup.enemy.vehicleName}` : `a ${setup.enemy.vehicle === "sedan" ? "car" : setup.enemy.vehicle}`}: it stands behind them. Win and it is yours to take.`, "info");
         break;
       }
@@ -2583,6 +2640,7 @@ function startPlayerTurn(state, b) {
   if (b.floors && b.viewFloor != null && b.viewFloor !== (b.floor || 0)) setFloor(b, b.viewFloor); // the floor the player was looking at
   burnRound(b); // throwables.js: the flames burn whoever stands in them; fires, smoke and flares burn down
   acidRound(b, ["player"], true); // acid.js: your people standing in a spitter's acid; the pools dry up a round
+  if (b.raid) safeTurn(state, b); // locks.js: a charge set on a gun safe last turn goes off
   for (const u of b.units) {
     if (u.side !== "player") continue;
     u.ow = false; u.hunker = false;
@@ -3698,7 +3756,7 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
         });
       }
       const xs = placed.flatMap(({ rect }) => [rect.x0, rect.x0 + rect.w - 1]), ys = placed.flatMap(({ rect }) => [rect.y0, rect.y0 + rect.h - 1]);
-      Object.assign(area, { x0: Math.min(...xs) - 1, y0: Math.min(...ys) - 1, w: Math.max(...xs) - Math.min(...xs) + 3, h: Math.max(...ys) - Math.min(...ys) + 3, outdoor: true, trucks: placed.map(({ truck: x, rect }) => ({ i: x.i, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, crew: x.opened ? 0 : x.crew })) });
+      Object.assign(area, { x0: Math.min(...xs) - 1, y0: Math.min(...ys) - 1, w: Math.max(...xs) - Math.min(...xs) + 3, h: Math.max(...ys) - Math.min(...ys) + 3, outdoor: true, trucks: placed.map(({ truck: x, rect }) => ({ i: x.i, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, crew: x.opened ? 0 : x.crew, ...(x.guard ? { guard: true } : {}) })) }); // guard: a motor pool's ready vehicles
       areas.push(area);
       continue;
     }
@@ -3899,7 +3957,7 @@ export function createRaid(state, setup) {
     b.raid.storeys = map.floors.length;
     b.raid.stairs = map.stairs.map((s) => s.slice());
   } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; }
-  if (b.vehicle) b.vehicle.seats = SEATS[b.vehicle.kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; // who can ride in it (boardVehicle)
+  if (b.vehicle) { b.vehicle.seats = SEATS[b.vehicle.kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; fitMapVehicle(b, pv); } // who can ride in it (boardVehicle); its upgrades
   b.reinfMax = 0;
   b.zmix = armoredOf(((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix); // the dead drawn in by the Heat
   const occupied = (x, y) => !!unitAt(b, x, y);
@@ -4107,8 +4165,8 @@ function truckCrews(state, b) {
   const power = 2 + b.infection * 3;
   for (const a of R.areas) {
     for (const t of a.trucks || []) {
-      if (!t.crew && !rng.chance(0.5)) continue; // an opened truck: now and then one still about it
-      const n = rng.int(MILTRUCK.AROUND[0], MILTRUCK.AROUND[1]);
+      if (!t.crew && !t.guard && !rng.chance(0.5)) continue; // an opened truck: now and then one still about it
+      const n = rng.int(MILTRUCK.AROUND[0], MILTRUCK.AROUND[1]) + (t.guard ? MILTRUCK.GUARD : 0); // a motor pool's ready vehicles are guarded
       const cells = [];
       for (let y = t.y - 3; y <= t.y + t.h + 2; y++) for (let x = t.x - 3; x <= t.x + t.w + 2; x++) if (inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !unitAt(b, x, y) && zoneAt(b, x, y) < 0) cells.push([x, y]);
       rng.shuffle(cells);
@@ -4174,11 +4232,11 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       const kit = KITS[box.kit] || KITS.raiders;
       if (rng.chance(0.3)) {
         const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : rng.pick(kit.loot);
-        const it = newItem(key, rng.pick([0.7, 0.85, 1]), rng);
+        const it = lootItem(key, kitSource(box.kit), spend(rng)); // itemcond.js: a soldier's rifle looked after, a raider's not
         if (key === box.weapon && box.uid != null) carryMods(unitById(b, box.uid), it); // gunmods.js: their gun's attachments come with it
         gear.push(it);
       }
-      if (kit.finds && rng.chance(BODY_FINDS)) gear.push(newItem(rng.pick(kit.finds), 1, rng)); // what was in their pockets
+      if (kit.finds && rng.chance(BODY_FINDS)) gear.push(lootItem(rng.pick(kit.finds), kitSource(box.kit), rng)); // what was in their pockets
     } else if (box.truck) {
       // An Army truck's cargo bed (miltrucks.js truckLoot: its own dice, the same truck holds the same things); the
       // tile remembers it was opened. The crew strapped in the cab rise at the noise.
@@ -4190,12 +4248,14 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       truckCrewRises(state, b, u, box);
     } else {
       const def = AREAS[R.areas[box.area].type];
+      const site = state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null;
+      const src = areaSource(R.areas[box.area].type, site); // itemcond.js: a house's things used, a shop's new, a wreck's scorched
       for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
         if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
-      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(newItem(key, 1, rng));
-      const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav); // loot.js: valuables, comforts, throwables
+      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(lootItem(key, src, rng));
+      const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav, site); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
       const book = rollBook(state, b.tileId, 0.5 * (u.scavBonus ? 2 : 1), `box${box.id}`);

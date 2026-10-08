@@ -52,7 +52,7 @@ import { startCombat, registerCombatHandler } from "./combat.js";
 import { fightOdds, halt, resume, afterFight, COOLDOWN_HOURS, rob } from "./conflicts.js";
 import { turnHostile, guardPower } from "./caravans.js";
 import { visitorsOf, visitorById, vStrength, leaveMap, goodsText, blameYou, openVisitorTrade, attackMerchants, visitorInfo } from "./visitors.js";
-import { createVehicle, VEHICLE_TYPES } from "./vehicles.js";
+import { createVehicle, VEHICLE_TYPES, fitMilitary } from "./vehicles.js";
 import { markAbandonedVehicle, markDeathSite } from "./markers.js";
 import { joinTeam } from "./foundcars.js";
 import { hash01 } from "./skills.js";
@@ -62,6 +62,7 @@ import { inCoverage } from "./radio.js";
 import { chronicleNote } from "./chronicle.js";
 import { WARES_MAX } from "./trade.js";
 import { escortWords, escortShort, guardGear, ESCORT_VEHICLES, cargoValue } from "./escorts.js";
+import { teamName } from "./parties.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const pct = (c) => `${Math.round(c * 100)}%`;
@@ -93,12 +94,21 @@ function goodsOf(c) {
   return q.goods;
 }
 function aiEnemy(state, q, f) {
-  const power = f ? Math.round(guardPower(f) * 10) / 10 : 3;
-  const count = clamp(Math.round((q.strength || 2) / power), 1, 10);
+  // escorts.js: the guards the group sent with it (an older caravan: by its strength), their power, its vehicle.
+  const e = q.escort;
+  const power = e ? e.power : f ? Math.round(guardPower(f) * 10) / 10 : 3;
+  const count = e ? clamp(e.guards, 1, 14) : clamp(Math.round((q.strength || 2) / power), 1, 10);
+  const V = e && e.vehicle ? ESCORT_VEHICLES[e.vehicle] : q.vehicle ? ESCORT_VEHICLES.truck : null;
   return {
     kind: (f && KIT_OF[f.type]) || "guards", count, power, factionId: f ? f.id : undefined, name: `${f ? f.name : "Their"} caravan guards`,
-    ...(q.vehicle ? { vehicle: "truck", vehicleName: "truck", escort: true } : {}),
+    ...(V ? { vehicle: "truck", vehicleBody: V.body, vehicleName: V.name, escort: true, ...(V.turret ? { turret: V.turret } : {}) } : {}),
   };
+}
+// A group's vehicle that went with a caravan and was lost with it (taken by you, or by the raiders) leaves its pool.
+function loseGroupVehicle(state, q) {
+  const id = q && q.escort && q.escort.vehicleId;
+  const f = id != null ? factionById(state, q.owner) : null;
+  if (f && Array.isArray(f.vehicles)) f.vehicles = f.vehicles.filter((v) => v.id !== id);
 }
 // The fight a merchant caravan puts up (visitors.js enemyOf): its escort's kit, every guard, the scout and the turret
 // gunner, and its vehicle on the map.
@@ -107,7 +117,7 @@ export function escortEnemy(v) {
   const V = e && e.vehicle && !v.vehicleLost ? ESCORT_VEHICLES[e.vehicle] : null;
   return {
     kind: (e && e.kit) || "guards", count: clamp(v.guards || 1, 1, 14), power: v.power, name: `${cap1(v.name)}'s guards`,
-    ...(V ? { vehicle: "truck", vehicleBody: V.body, vehicleName: V.name, escort: true } : {}), // combat.js: drawn by its body
+    ...(V ? { vehicle: "truck", vehicleBody: V.body, vehicleName: V.name, escort: true, ...(V.turret ? { turret: V.turret } : {}) } : {}), // combat.js: drawn by its body; vehicles.js: its turret by the numbers
   };
 }
 
@@ -131,7 +141,7 @@ export function roadCaravans(state, { player = false } = {}) {
     }
     if (q.kind !== "caravan" && q.kind !== "convoy") continue;
     const f = factionById(state, q.owner);
-    const c = { key: pKey(state, q), type: q.kind, ref: q, tile: partyTile(q), owner: q.owner, name: `the ${f ? f.name.replace(/^The /, "") : "group's"} ${q.kind}`, strength: q.strength || 2, escort: null, vehicle: q.vehicle ? "truck" : null };
+    const c = { key: pKey(state, q), type: q.kind, ref: q, tile: partyTile(q), owner: q.owner, name: `the ${f ? f.name.replace(/^The /, "") : "group's"} ${q.kind}`, strength: q.strength || 2, escort: q.escort || null, vehicle: q.escort && q.escort.vehicle ? q.escort.vehicle : q.vehicle ? "truck" : null };
     const g = goodsOf(c);
     c.value = cargoValue(g.supplies, g.gear);
     out.push(c);
@@ -143,6 +153,7 @@ export const caravanByKey = (state, key) => roadCaravans(state, { player: true }
 // In words, for cards and tooltips: who guards it, and what it carries.
 export function guardText(state, c) {
   if (c.type === "merchants") return `${c.ref.guards} guards and ${2} traders: ${escortWords(c.escort)}`;
+  if (c.escort) return `${escortWords(c.escort)}${c.vehicle ? "" : c.type === "caravan" ? ", with a wagon" : ", with hand carts"}`;
   const f = factionById(state, c.owner);
   const e = aiEnemy(state, c.ref, f);
   return `${e.count} guard${e.count === 1 ? "" : "s"}${c.vehicle ? " and a truck" : c.type === "caravan" ? " with a wagon" : " with hand carts"}`;
@@ -188,7 +199,7 @@ function onRoadCaravan(state, result, setup) {
   const f = factionById(state, c.factionId);
   const lines = [];
   if (f && result.enemiesKilled) f.pop = Math.max(0, f.pop - Math.ceil(result.enemiesKilled * 0.7));
-  const tgt = { type: c.type, owner: c.factionId, ref: q, tile: c.tile, key: c.key };
+  const tgt = { type: c.type, owner: c.factionId, ref: q, tile: c.tile, key: c.key, name: c.name, by: p && state.parties.includes(p) ? teamName(state, p) : "your people" };
   const seen = witnessesOf(state, tgt, result, p);
   const st = (state.stats.caravanRaids = state.stats.caravanRaids || { byYou: 0, won: 0, seen: 0, unseen: 0, byGroups: 0, groupsWon: 0, convoysLost: 0 });
   st.byYou++;
@@ -205,7 +216,7 @@ function onRoadCaravan(state, result, setup) {
     lines.push(`You took ${c.name}: ${result.enemiesKilled || "all"} of the guards are down.`);
     const goods = q ? goodsOf({ type: c.type, owner: c.factionId, ref: q }) : { supplies: {}, gear: [] };
     lines.push(...lootCaravan(state, p, goods, { tile: partyTile(p), name: c.name, kit: setup.enemy.kind, guards: result.enemiesKilled || setup.enemy.count, tactical: !!result.tactical, vehicle: c.vehicle, key: c.key, result }));
-    if (q) removeParty(state, q);
+    if (q) { loseGroupVehicle(state, q); removeParty(state, q); }
   } else {
     if (q) { q.strength = Math.max(1, (q.strength || 2) * Math.max(0.3, (result.enemiesLeft || 1) / Math.max(1, setup.enemy.count))); q.met = { ...(q.met || {}), [pKey(state, p)]: state.hour }; }
     if (result.outcome === "retreat") lines.push(result.summary ? `${result.summary} You pulled back.` : "You pulled back; the caravan went on.");
@@ -255,6 +266,7 @@ export function lootCaravan(state, p, goods, opts) {
       });
       const mil = V.model === "humvee" || V.model === "mrap";
       v.found = { model: V.model, at: tileLabel(state, tile), hour: state.hour, repair: fix ? { parts: 2, scrap: 2, hours: 6, mech: mil ? 5 : 4, what: ["the engine"] } : null };
+      if (mil) fitMilitary(v, V.turret); // vehicles.js: its plating, glass and the M2 on the roof come with it
       if (!fix && p && state.parties.includes(p) && !p.vehicle) {
         joinTeam(state, p, v);
         out.push(`Their ${V.name} runs: it is the team's now (fuel ${Math.round(v.fuel)}, condition ${Math.round(v.condition)}%).`);
@@ -330,11 +342,39 @@ export function witnessesOf(state, c, result, p) {
   return why;
 }
 // Applies what word of the attack costs you (nothing when nobody saw). Adds a line to `lines`.
+export const RUMOUR = { CHANCE: 0.15, DAYS: [1, 4] };
+// The robberies nobody saw that are traced after all: the consequences when word gets around.
+function rumoursHour(state) {
+  const list = state.caravanRumours;
+  if (!list || !list.length) return;
+  for (const r of [...list]) {
+    if (state.hour < r.at) continue;
+    list.splice(list.indexOf(r), 1);
+    const st = state.stats.caravanRaids || (state.stats.caravanRaids = { byYou: 0, won: 0, seen: 0, unseen: 0, byGroups: 0, groupsWon: 0, convoysLost: 0 });
+    st.traced = (st.traced || 0) + 1;
+    if (r.type === "merchants") {
+      blameYou(state, { goodwill: 0, name: r.name }); // visitors.js: their reputation and the traders' goodwill (the caravan itself is gone)
+      log(state, `Word got around that ${r.by} robbed ${r.name}: merchants will shun you, and the traders you know think less of you.`, "danger");
+    } else {
+      const f = factionById(state, r.owner);
+      if (!f || !f.alive) continue;
+      turnHostile(state, f, "word got around that you robbed their caravan");
+      log(state, `Word got around that ${r.by} robbed ${r.name}: ${f.name} are your enemies now.`, "danger");
+    }
+  }
+}
 export function consequences(state, c, why, lines) {
   const st = (state.stats.caravanRaids = state.stats.caravanRaids || { byYou: 0, won: 0, seen: 0, unseen: 0, byGroups: 0, groupsWon: 0, convoysLost: 0 });
   if (!why.length) {
     st.unseen++;
     lines.push("Nobody got away to tell who did it: as far as anyone knows, the caravan never arrived.");
+    // Word gets out anyway now and then (a rumour, a body found, a trader who hid): RUMOUR.CHANCE, its own dice, a few
+    // days later; you hear of it only then (rumoursHour).
+    const k = c.key || c.name || "";
+    if (hash01(state.seed, "cvrumour", k, state.hour) < RUMOUR.CHANCE) {
+      const days = RUMOUR.DAYS[0] + Math.floor(hash01(state.seed, "cvrumourday", k, state.hour) * (RUMOUR.DAYS[1] - RUMOUR.DAYS[0] + 1));
+      (state.caravanRumours = state.caravanRumours || []).push({ at: state.hour + days * 24, type: c.type, owner: c.owner, name: c.name || "a caravan", by: c.by || "your people", merchant: c.type === "merchants" && c.ref ? { name: c.ref.name } : null });
+    }
     return false;
   }
   st.seen++;
@@ -425,6 +465,7 @@ export function intercept(state, p, key) {
 // ---------- every hour ----------
 export function caravanRaidsHour(state) {
   if (state.gameOver) return;
+  rumoursHour(state);
   interceptsHour(state);
   meetingsHour(state);
   aiRaidsHour(state);
@@ -581,6 +622,7 @@ export function gangAmbush(state, r, q) {
   }
   st.groupsWon++;
   takeInto(r, goodsOf(c));
+  loseGroupVehicle(state, q);
   return true;
 }
 
@@ -601,7 +643,7 @@ export { escortShort };
 
 // ---------- Help (ui/help.js: "Caravans on the road") ----------
 export const CARAVAN_HELP = `Caravans travel the roads: <b>merchants from outside the state</b> with their wagons, the <b>groups' caravans</b> (to your bases, to each other) and their <b>trade convoys</b>, and your own convoys. Any of them can be attacked, and whoever wins takes <b>everything</b> it carried.<br><br>
-<b>Merchants' escorts.</b> What the wagons carry sets how well they are guarded (guns, armour and military kit count half again): under 550 worth, a few guards on foot with pistols and shotguns; up to 1000, armed guards with rifles and a pickup truck; above that an armoured escort: guards in vests and plates with automatic rifles, a scout riding ahead and a Humvee with a gunner in the turret (an MRAP from 1500). Every caravan has a speciality: general goods, guns and ammunition, armour and military kit, fuel, parts and tools, medicine, or food and water. The map shows the escort (a guard ahead of the wagon, a pickup behind it, a Humvee or MRAP leading it) and the tooltip says it in words.<br><br>
+<b>Escorts.</b> Nobody guards a caravan with a fixed list: what the cargo is worth sets how much of what they have the sender wants to put on it (guns, armour and military kit count half again), and what they have caps it. Cheap cargo gets a token guard; rich cargo as much as they can spare. A merchant company from outside has its own means: 2 to 8 hired guns, their gear (pistols and shotguns, riflemen in vests, or hired guns in plate with automatic rifles) and maybe a pickup, a Humvee or an MRAP (the companies grow richer over the years); the armoured ones go only with rich cargo, with an M2 in the turret, and a scout rides ahead when they send nearly everyone. A group sends the fighters it can spare from home (more stay home at war or with the dead at its gates), at its own strength and with its best guns from the shelf, and a military group its Humvee. So a rich cargo of a poor sender still goes lightly guarded. Every merchant caravan has a speciality (arms dealers, medics, mechanics or general traders). The map shows the escort (a guard ahead of the wagon, a pickup behind it, a Humvee or MRAP leading it) and the tooltip says it in words.<br><br>
 <b>Attacking one.</b> A team within a tile of a caravan can attack it: from the card when they meet on a road, or from the team's orders card (<i>Attack …</i> for one in sight within a tile: you pick the moment and have the drop on them; <i>Intercept …</i> for one in sight up to ${INTERCEPT.RANGE} tiles away: the team follows it and asks again when it is close, for ${INTERCEPT.HOURS} hours at most). The battle is on the road: its guards, and its vehicle parked behind them. Win and you take all its goods, the guards' gear, and its vehicle if it still runs (it joins a team that has none; otherwise it waits on the tile, marked; one with a shot-up engine needs repairs there; a wreck is stripped for parts and scrap). What the team cannot carry stays in that vehicle or on the tile as <i>cargo left behind</i>: send a team to recover it.<br><br>
-<b>Witnesses.</b> Word gets out only if someone saw it: a guard or trader who got away (you lost, pulled back, one fled, or with merchants a trader slipped off in the fighting), another group's base within ${WITNESS.BASE_RANGE} tiles, or anyone else on the road within a tile. Then merchants shun you (reputation −45, the trading groups you know think less of you), or the caravan's group turns hostile and the peaceful groups you know lose goodwill. Leave no one to tell and the caravan simply never arrived. Attacking a caravan at your own gates is always seen.<br><br>
+<b>Witnesses.</b> Word gets out only if someone saw it: a guard or trader who got away (you lost, pulled back, one fled, or with merchants a trader slipped off in the fighting), another group's base within ${WITNESS.BASE_RANGE} tiles, or anyone else on the road within a tile. Then merchants shun you (reputation −45, the trading groups you know think less of you), or the caravan's group turns hostile and the peaceful groups you know lose goodwill. Leave no one to tell and the caravan simply never arrived; even then word gets around ${Math.round(RUMOUR.CHANCE * 100)}% of the time (a rumour, a body found, a trader who hid), a few days later, and you hear of it only then. Attacking a caravan at your own gates is always seen.<br><br>
 <b>The groups rob them too.</b> Raider gangs fall on caravans that pass within ${AI_RAID.RANGE} tiles of their bases (expansionists and zealots only those of groups they are at war with), and on your convoys when they would attack your teams. It is decided by the numbers; the winners put the goods into their stores and the items on their shelves. A trade caravan of yours that loses a fight on the road loses its whole load.`;

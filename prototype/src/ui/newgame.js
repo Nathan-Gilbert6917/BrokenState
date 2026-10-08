@@ -1,12 +1,13 @@
 // New-run setup screen, survivor appearance editor and zombie look settings.
 // HTML builders plus their action handlers; main.js registers the handlers with its dispatcher.
 import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
-import { survivorById, skill, rollTraits } from "../sim/world.js";
+import { survivorById, skill, rollTraits, HUB_START } from "../sim/world.js";
 import { latestSave, listSaves } from "./saves.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX } from "../sim/worldsize.js";
 import { MODES, isHardcore, START_PEOPLE, clampStartPeople } from "../sim/hardcore.js";
 import { HC_START, backgroundInfo, countWord } from "../sim/hardcore-start.js"; // who they were (a hardcore start)
-import { customLibrary } from "./backgrounds.js"; // custom backgrounds (sim/custombg.js), kept in this browser
+import { customLibrary } from "./backgrounds.js";
+import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/custombg.js), kept in this browser
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, fitSkills, skillTotal, SKILL_MAX,
@@ -80,7 +81,10 @@ function backgroundPicker(state, s) {
   const drawn = !s.bgPicked && backgroundInfo(state, s.background);
   const presets = Object.entries(HC_START.ARCHETYPES).map(([k, a]) => `<option value="${k}" ${cur === k ? "selected" : ""}>${esc(a.name)}</option>`).join("");
   const mine = Object.values(customLibrary()).map((b) => `<option value="${b.id}" ${cur === b.id ? "selected" : ""}>${esc(b.name)}</option>`).join("");
-  return `<label class="small"${tip("Who they were before Calder fell: it adds to their skills, may give a trait, and decides what they grabbed and the car if it is theirs. A custom background (Backgrounds…) gives exactly what it says. Changing it builds the world again on the same seed; this colonist's skills and traits start over from it.")}>Background <select data-action="nr-bg" data-id="${s.id}"><option value="" ${cur ? "" : "selected"}>Dice${drawn ? ` (${esc(drawn.name)})` : ""}</option><optgroup label="Presets">${presets}</optgroup>${mine ? `<optgroup label="Custom">${mine}</optgroup>` : ""}</select></label>`;
+  const what = isHardcore(state)
+    ? "it adds to their skills, may give a trait, and decides what they grabbed and the car if it is theirs"
+    : "it shapes their skills (the same total: more where the background is, less elsewhere) and may give a trait; six years on, the hub's kit is theirs";
+  return `<label class="small"${tip(`Who they were before Calder fell: ${what}. A custom background (Backgrounds…) gives exactly what it says${isHardcore(state) ? "" : ", its kit and supplies too (its car parks at the hub)"}. Changing it builds the world again on the same seed; this colonist's skills and traits start over from it.`)}>Background <select data-action="nr-bg" data-id="${s.id}"><option value="" ${cur ? "" : "selected"}>Dice${drawn ? ` (${esc(drawn.name)})` : ""}</option><optgroup label="Presets">${presets}</optgroup>${mine ? `<optgroup label="Custom">${mine}</optgroup>` : ""}</select></label>`;
 }
 
 function crewCard(state, ui, s) {
@@ -105,7 +109,7 @@ function crewCard(state, ui, s) {
           <button class="mini ${s.leader ? "active" : ""}" data-action="pickleader" data-id="${s.id}"${tip("The leader's Leadership lifts morale at their base. If they die, you pick a new one.")}>${s.leader ? "★ Leader" : "Make leader"}</button>
           <span class="small muted">${s.gear.weapon ? esc(s.gear.weapon.name) : ""}${s.gear.armor ? `, ${esc(s.gear.armor.name)}` : ""}${s.gear.backpack ? `${s.gear.weapon || s.gear.armor ? ", " : ""}${esc(s.gear.backpack.name)}` : ""}</span></div>
         <div class="small" style="margin-top:0.2rem">${bgChip(state, s)}${free ? "" : s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
-        ${free && isHardcore(state) ? `<div style="margin-top:0.25rem">${backgroundPicker(state, s)}</div>` : ""}
+        ${free ? `<div style="margin-top:0.25rem">${backgroundPicker(state, s)}</div>` : ""}
         ${free ? traitPicker(s) : ""}
       </div>
     </div>
@@ -128,7 +132,8 @@ function crewCard(state, ui, s) {
 function bgChip(state, s) {
   const b = backgroundInfo(state, s.background);
   if (!b) return "";
-  return `<span class="chip"${tip(`Who they were before Calder fell (Hardcore)${b.blurb ? `: ${b.blurb}` : ""}. ${b.custom ? "A custom background: it gave exactly what it says." : "It shaped their skills, what they grabbed and the car."}${s.bgPicked ? " Picked on the new-run screen." : ""}`)}>${esc(b.name)}${b.custom ? " ✎" : ""}</span>`;
+  const shaped = isHardcore(state) ? "It shaped their skills, what they grabbed and the car." : "It shaped their skills (the same total) and maybe a trait.";
+  return `<span class="chip"${tip(`Who they were before Calder fell${b.blurb ? `: ${b.blurb}` : ""}. ${b.custom ? "A custom background: it gave exactly what it says." : shaped}${s.bgPicked ? " Picked on the new-run screen." : ""}`)}>${esc(b.name)}${b.custom ? " ✎" : ""}</span>`;
 }
 
 // World size (sim/worldsize.js) and the group counts that size allows.
@@ -201,7 +206,7 @@ export function newRunScreen(state, ui) {
   const hard = isHardcore(state);
   const intro = hard
     ? `Hardcore. The day the State of Calder falls. ${people.length === 1 ? "You get out alone" : `${countWord(people.length).replace(/^./, (c) => c.toUpperCase())} of you get out`} with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${state.factions.length} other groups are out there, starting out just like you.`
-    : `Six years after the outbreak. Your survivors hold a town in the State of Calder. ${state.factions.length} other groups are out there, along with the hordes.`;
+    : `Six years after the outbreak. Your survivors hold a town in the State of Calder: the town hall (four beds, a well, a cellar, a fence) and nothing built yet. What to put up first, with ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${state.factions.length} other groups are out there, starting bare as well, along with the hordes.`;
   return `<div class="box wide">
     <h1>Broken State — New run</h1>
     <div class="text small">${intro} Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then press Space.</div>
@@ -209,8 +214,8 @@ export function newRunScreen(state, ui) {
       ${modeSelect(state)}
       ${startPeopleSelect(state, ui)}
       <label${tip("Ironman: the game saves itself (at dawn, when a battle starts and ends, when you leave it) to one slot of its own. No saving or loading by hand, no restarting a battle, no export: you live with every choice. The crew starts as rolled: no Customize, no custom backgrounds, no moving skill points (names, looks and the leader are yours). Works with Normal and Hardcore.")}><input type="checkbox" data-action="ironman"${ui.ironman ? " checked" : ""}> Ironman</label>
-      <label${tip(ui.ironman ? "Not with Ironman: an Ironman crew starts as rolled. Untick Ironman to customize." : "Customize: set any skill level (0–20, no point limit), pick traits, and in Hardcore pick who each one was, a preset or one of your own (Backgrounds…). Not with Ironman.")}${ui.ironman ? ` class="muted"` : ""}><input type="checkbox" data-action="nr-free"${freeEdit(ui) ? " checked" : ""}${ui.ironman ? " disabled" : ""}> Customize</label>
-      <button data-action="bg-open"${ui.ironman ? " disabled" : ""}${tip(ui.ironman ? "Not with Ironman" : `Make your own backgrounds for Hardcore: skills, traits, gear, supplies and the car (${Object.keys(customLibrary()).length} made)`)}>Backgrounds…</button>
+      <label${tip(ui.ironman ? "Not with Ironman: an Ironman crew starts as rolled. Untick Ironman to customize." : "Customize: set any skill level (0–20, no point limit), pick traits, and pick who each one was, a preset or one of your own (Backgrounds…). Not with Ironman.")}${ui.ironman ? ` class="muted"` : ""}><input type="checkbox" data-action="nr-free"${freeEdit(ui) ? " checked" : ""}${ui.ironman ? " disabled" : ""}> Customize</label>
+      <button data-action="bg-open"${ui.ironman ? " disabled" : ""}${tip(ui.ironman ? "Not with Ironman" : `Make your own backgrounds: skills, traits, gear, supplies and the car (${Object.keys(customLibrary()).length} made)`)}>Backgrounds…</button>
       <label${tip("First-week guide: a checklist under the alerts for the first days (check the stores, work priorities, a building, a team out and home, the first night), each step with a Show me that points at the button to press. It ticks off as you play and steps aside after day 7; the menu hides it or brings it back. On for your first campaign here.")}><input type="checkbox" data-action="nr-guide"${ui.guide ? " checked" : ""}> First-week guide</label>
       ${FAMILY.enabled ? `<label${tip("Children: couples at a base may have children, who grow up in a year into survivors (Help: Children and families). Untick for a run without couples forming on their own, pregnancies or children.")}><input type="checkbox" data-action="children"${ui.childrenOff ? "" : " checked"}> Children</label>` : ""}
       <label${tip("The same seed always builds the same map. Your edited colonists are kept when you change it.")}>Seed <input type="number" min="1" step="1" style="width:7rem" data-action="seed" value="${state.seed}"></label>
@@ -242,7 +247,8 @@ function loadButtons() {
 // Overrides to carry the edited crew into a rebuilt world (seed or group count changed).
 // A normal start's weapon and armor go along (a Hardcore start's gear is what they grabbed, rolled with the world).
 export function crewSnapshot(state) {
-  const kit = (s) => (isHardcore(state) ? null : { weapon: s.gear.weapon ? { ...s.gear.weapon } : null, armor: s.gear.armor ? { ...s.gear.armor } : null });
+  // A custom background's kit comes with it again (sim/hardcore-start.js normalStartKit), not from here.
+  const kit = (s) => (isHardcore(state) || (s.bgPicked && isCustomBg(s.background)) ? null : { weapon: s.gear.weapon ? { ...s.gear.weapon } : null, armor: s.gear.armor ? { ...s.gear.armor } : null });
   return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, gear: kit(s), leader: !!s.leader, background: s.bgPicked ? s.background : null, custom: !!s.startCustom }));
 }
 // An Ironman crew (main.js, the Ironman box): only what is yours in Ironman (names, looks, the leader); skills, traits,
@@ -261,7 +267,7 @@ export function crewWithBackgrounds(state, changes) {
   state.survivors.forEach((s, i) => {
     if (Object.prototype.hasOwnProperty.call(changes, s.id)) {
       const key = changes[s.id] || null;
-      const { skills, traits, budget, ...rest } = crew[i];
+      const { skills, traits, budget, gear, ...rest } = crew[i]; // gear: a normal start's kit is handed out again
       crew[i] = { ...rest, background: key, custom: !!key };
       any = true;
     } else if (!crew[i].background && s.background) crew[i] = { ...crew[i], background: s.background, rolled: true };

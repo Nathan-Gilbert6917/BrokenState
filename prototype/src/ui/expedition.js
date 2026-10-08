@@ -5,7 +5,7 @@
 import { SUPPLIES, SUPPLY_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
 import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom } from "../sim/parties.js";
-import { partyVehicle, tank, isBike, vehicleLabel } from "../sim/vehicles.js";
+import { partyVehicle, tank, isBike, vehicleLabel, upgradeText, upgradeEffects } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
 import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, describeOrder, CAMP_HOURS, REPAIR_HOURS, SURVEY_HOURS, besideWater, FETCH_WATER_HOURS } from "../sim/orders.js";
@@ -384,6 +384,7 @@ function vehicleBlock(state, p, v) {
     <b>${esc(v.name)}</b>
     <div class="row"><span class="muted" style="width:5rem">Condition</span><div style="flex:1">${bar(v.condition, v.condition < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2.5rem;text-align:right">${Math.round(v.condition)}%</span></div>
     <div class="row"><span class="muted" style="width:5rem">Tank</span><div style="flex:1">${bar((v.fuel / tank(v)) * 100, "var(--accent)")}</div><span style="width:2.5rem;text-align:right">${n0(v.fuel)}/${tank(v)}</span></div>
+    ${upgradeText(v) ? `<div${tip(upgradeEffects(v))}>🛡 ${esc(upgradeText(v))}</div>` : ""}
     <div class="muted">Fuel cans ${n0(p.supplies.fuel)} · parts ${n0((p.supplies.parts || 0) + (p.cargo.supplies.parts || 0))} · worn vehicles break down more</div>
   </div>`;
 }

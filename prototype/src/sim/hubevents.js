@@ -13,6 +13,7 @@ import { SUPPLIES } from "./data.js";
 import { log, addCard, day, hub, baseById, atBase, residents, skill, hurt, killSurvivor, checkGameOver } from "./world.js";
 import { weatherOnDay, season } from "./weather.js";
 import { crowdInfo, talker } from "./morale.js";
+import { talkXp } from "./skills.js";
 import { quarrelBoost, quarrelPair, coupleBoost, couplePair, makePartners, relEvent, memorialWeight, memorialCard } from "./relations.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
 import { foodOutlook } from "./economy.js";
@@ -143,6 +144,7 @@ export const HUB_EVENTS = {
             resolve: (s2) => {
               if (!both()) return gone;
               const ok = s2.rng.chance(mediator.chance);
+              talkXp(s2, mediator.who, ok); // skills.js: Speech for the mediator
               moodAll([a, b], ok ? 6 : -6);
               relEvent(s2, a, b, ok ? 14 : -8);
               return ok ? `${firstName(mediator.who)} gets them to shake on it.` : `${firstName(mediator.who)} only makes it worse.`;

@@ -25,7 +25,8 @@ import { estimatePlan } from "./plans.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
 import { crawlAutoStep } from "./citycrawl.js";
 import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand } from "./trade.js";
-import { autoCaravanTrade } from "./caravans.js";
+import { autoCaravanTrade, launchCaravan, caravanEstimate } from "./caravans.js";
+import { radioDeals, pendingDeal, dealCaravanForm, matchGear, goodsWeight, cancelRadioDeal } from "./radiotrade.js"; // radio deals your caravan fetches
 import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, relayReach, RELAY_RANGE, GROUP_REACH } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
@@ -86,6 +87,7 @@ import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageD
 import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, woodTime, WOOD } from "./woodcutting.js";
 import { siteKnown } from "./discovery.js";
 import { packTripKit } from "./kit.js";
+import { openCasesIn } from "./gunsafes.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
 import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
@@ -319,6 +321,96 @@ export function stewardSupplies(state, base, style = "balanced", keep = new Set(
   g.busy = true;
   try { return withStyle(style, () => emergencyAt(state, base, keep)); } finally { g.busy = false; }
 }
+// The rest of a base leader's day (steward.js): each wraps the governor's own judgement for this one base, in the
+// leader's style, with its log lines held back; each returns the line saying what it did, or "". keep: who never
+// goes out (the leader, a deputy, pinned people).
+function leaderTurn(state, style, fn) {
+  if (state.autopilot || state.gameOver) return "";
+  const g = gov(state);
+  if (g.busy) return "";
+  g.busy = true;
+  try { return withStyle(style, fn) || ""; } finally { g.busy = false; }
+}
+// Trading (steward.js): a caravan at this base's gates is traded with for what the base is short of, paid from its
+// surplus (a caravan bringing a deal made by radio is paid as agreed); never attacked, whatever the style. Each
+// morning, with a working radio network and nothing bought by radio for LEADER_RADIO.every days, one small deal for
+// water, food or meds when the base is short of one (need 1.8+), only with a group whose caravan comes to this base,
+// paid with what it has plenty of.
+export const LEADER_RADIO = { every: 6, keys: ["water", "food", "meds"], cap: { water: 25, food: 25, meds: 6 } };
+export function stewardTrade(state, base, style = "balanced", lead = null) {
+  return leaderTurn(state, style, () => {
+    const ctx = tradeContext(state);
+    if (ctx && ctx.kind === "caravan" && ctx.base && ctx.base.id === base.id) {
+      const text = autoCaravanTrade(state, needs(state, base), style === "aggressive" ? "balanced" : style, tradeSpare(state, base));
+      return `the ${ctx.f.name} caravan at the gates: ${text.replace(/\.$/, "")}`;
+    }
+    if (hourOfDay(state) !== PLAN_HOUR) return "";
+    if (lead && lead.radioDay != null && day(state) - lead.radioDay < LEADER_RADIO.every) return "";
+    const deal = radioTradeIfShort(state, needs(state, base), { base, keys: LEADER_RADIO.keys, cap: LEADER_RADIO.cap });
+    if (deal && lead) lead.radioDay = day(state);
+    return deal;
+  });
+}
+// Supply runs to outposts (steward.js): from a led hub, once a morning, water to an outpost running dry and the scrap
+// or parts its next building waits on (supplyRunTo without moving anyone there).
+export function stewardOutposts(state, base, style = "balanced", keep = new Set()) {
+  if (base.type !== "hub" || hourOfDay(state) !== PLAN_HOUR) return "";
+  return leaderTurn(state, style, () => {
+    const lines = [];
+    for (const o of state.bases.filter((b) => b.type === "outpost")) {
+      const why = supplyRunTo(state, base, o, { keep });
+      if (why) lines.push(`supply run to ${o.name}: ${why}`);
+    }
+    return lines.join("; ");
+  });
+}
+// Hunting, fishing and firewood (steward.js): once a morning, one team at most out on them from this base at a time,
+// the governor's hunting or fishing trip when food runs short (foodTripCands: need 1.4+, the winter stores short, or
+// stocking up in autumn) or its wood trip when the land around gives too little firewood (woodTripCands). Not in
+// severe weather nor with raiders or a horde on the way; the style's share of the base stays home.
+export function stewardLand(state, base, style = "balanced", keep = new Set()) {
+  if (hourOfDay(state) !== PLAN_HOUR) return "";
+  if (state.parties.some((p) => p.owner === "player" && p.leaderTrip && p.homeBaseId === base.id)) return "";
+  return leaderTurn(state, style, () => {
+    const P = persona(state);
+    if (wxNow(state).severe || threatAt(state, base).urgent) return "";
+    const home = atBase(state, base.id);
+    const pool = home.filter((s) => s.health >= P.minHealth && !s.woundInfected && !s.inBed && !s.pinned && !keep.has(s.id) && !s.leader);
+    const spare = Math.min(pool.length, home.length - Math.max(2, Math.ceil(home.length * P.homeFrac)));
+    if (spare < 1) return "";
+    const cands = [...foodTripCands(state, base, pool, needs(state, base), P), ...woodTripCands(state, base, pool, P)].sort((a, b) => b.score - a.score);
+    for (const c of cands.slice(0, 4)) {
+      const party = launchTrip(state, { ...c, from: base }, pool, spare);
+      if (!party) continue;
+      party.leaderTrip = true;
+      const what = c.food === "huntTrips" ? "hunting" : c.food === "fishTrips" ? "fishing" : "cutting firewood";
+      return `${names(partyMembers(state, party))} went ${what} at ${tileLabel(state, c.tile)}: ${c.why}`;
+    }
+    return "";
+  });
+}
+// Raid and horde warnings (steward.js, Defence): a "Raiders heading for" or "Horde heading for" card about this base is
+// answered the governor's way (raidWarningChoice: prepare, or pay a tribute that costs less than the fight; the horde:
+// man the defences, or a decoy fire when the walls would not hold), never by leaving the base or a battle you would
+// have to play (Defend in person). Returns the line, or "".
+const WARN_RE = (base) => new RegExp(`^(Raiders|Horde) heading for ${base.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+export function stewardWarnings(state, base, style = "balanced") {
+  const re = WARN_RE(base);
+  const card = state.cards.find((c) => re.test(c.title) && !c.isOrders && c.choices);
+  if (!card) return "";
+  return leaderTurn(state, style, () => {
+    const opts = card.choices.filter((c) => !c.uiAction && !c.retreat && !/^Defend in person/.test(c.label) && !isDisabled(state, c));
+    if (!opts.length) return "";
+    const choice = pickChoice(state, card, opts, null) || opts.find((c) => /^(Prepare|Man the defences)/.test(c.label)) || null;
+    if (!choice) return "";
+    const i = state.cards.indexOf(card);
+    if (i < 0) return "";
+    state.cards.splice(i, 1);
+    const text = choice.resolve(state);
+    pruneCards(state);
+    return `${card.title} → ${choice.label}.${text ? ` ${clip(text)}` : ""}`;
+  });
+}
 
 // Daily planning (07:00): role summary, supply runs and the day's trip.
 export function autopilotDaily(state) {
@@ -345,12 +437,91 @@ export function autopilotDaily(state) {
   // prisoners.js: question them, then trade back (Cautious), ransom (Balanced) or slowly recruit (Aggressive).
   const held = autopilotPrisoners(state);
   if (held) say(state, `Prisoners: ${held}`);
+  // Radio deals waiting for a caravan of yours (radiotrade.js): sent when the base can spare the goods and the people.
+  for (const d of [...radioDeals(state)]) {
+    if (state.parties.some((p) => p.owner === "player" && p.dealId === d.id)) continue;
+    if (d.autoTries >= 1) { say(state, `Radio deal: ${cancelRadioDeal(state, d)} (the caravan came back without it)`); continue; } // one try
+    const sent = autoDealCaravan(state, d);
+    if (sent) say(state, `Radio deal: ${sent}`);
+  }
   // Cautious: scan the airwaves and make a radio deal for whatever is below its reserve (reserveRadio).
   if (persona(state).reserves && reserveRadio(state)) return;
   // Short of something and a group in radio reach has it: a radio deal (radio.js), their caravan brings it. Water and
   // food come first when the hub is short of them (needs: 2.5+), the campaign's ammo next (campaignAmmoWant).
   const deal = radioTradeIfShort(state, needs(state));
   if (deal) { noteTrade(state, deal); say(state, `Radio: ${deal}.`); }
+}
+
+// ---------- radio deals your caravan fetches (radiotrade.js) ----------
+// The governor agrees to bring its side to a group that asks (radio.js bringCard, at their fee), and sends the
+// caravan for any deal waiting, when the deal's base
+// - can spare the goods: not short of them (needs 0.8 or less), food and ammo within what it trades away (tradeSpare),
+//   the items in its armory;
+// - can feed the trip (caravanEstimate's food and water, packed from the base) and still keep 3 days of food and water
+//   a head for those at home;
+// - has people to send: 2 (3 for a trip of more than a day and a half there and back, up to 4 when their side is heavy),
+//   the healthy and willing beyond the style's share kept home (homeFrac, at least 2), never the base's leader or a
+//   medic, who can carry their side home (with half the road supplies left; a car when one has the fuel);
+// - is not under threat, the weather is not severe and the round trip is within twice the style's reach plus a day.
+// Otherwise the deal waits (checked daily). A caravan that comes back without doing it (one try) calls the deal off.
+// Returns { form } (the planner's form, crew and supplies filled in) or { why }.
+function dealCaravanPlan(state, deal) {
+  const base = state.bases.find((b) => b.id === deal.baseId);
+  const f = factionById(state, deal.factionId);
+  if (!base || !f || !f.alive || f.bases[0] == null) return { why: "the base or the group is gone" };
+  const P = persona(state);
+  if (threatAt(state, base).urgent) return { why: `${base.name} is under threat` };
+  if (wxNow(state).severe) return { why: "severe weather" };
+  const need = needs(state, base), spare = tradeSpare(state, base);
+  for (const [k, q] of Object.entries(deal.give.supplies || {})) {
+    if (q <= 0) continue;
+    if ((need[k] ?? 0) > 0.8) return { why: `${base.name} is short of ${k}` };
+    if ((k === "food" || k === "ammo") && q > spare[k]) return { why: `${base.name} cannot spare ${q} ${k}` };
+    if ((base.stock[k] || 0) < q) return { why: `${base.name} has only ${Math.floor(base.stock[k] || 0)} ${k}` };
+  }
+  if (!matchGear(base.armory, deal.give.gear || [])) return { why: "the items are not in the armory" };
+  const home = atBase(state, base.id);
+  const keep = Math.max(2, Math.ceil(home.length * P.homeFrac));
+  const pool = home.filter((s) => s.health >= P.minHealth && !s.woundInfected && !s.inBed && !s.pinned && s.mood >= 20 && !s.leader && s.role !== "medic" && !(base.steward && base.steward.leaderId === s.id));
+  const hands = Math.min(pool.length, home.length - keep);
+  const form = dealCaravanForm(state, deal);
+  const fit = (s) => combatPower(s) + skill(s, "speech") * 0.5;
+  const ranked = [...pool].sort((a, b) => fit(b) - fit(a) || a.id - b.id);
+  if (hands < 2) return { why: `too few people to send from ${base.name}` };
+  // The smallest crew (2, 3 for a long trip, up to 4) that can carry their side home with half its road supplies
+  // left, by car when one has the fuel for the whole route, else on foot.
+  const theirs = goodsWeight(deal.get || { supplies: {}, gear: [] });
+  let est = null, why = `no road to ${f.name}`;
+  for (let n = 2; n <= Math.min(4, hands) && !est; n++) {
+    const crew = ranked.slice(0, n);
+    for (const v of [...carsAtBase(state, base.id).filter((x) => x.condition >= 30), null]) {
+      const e = caravanEstimate(state, { ...form, crew: crew.map((s) => s.id), vehicleId: v ? v.id : null });
+      if (!e.ok || (v && e.fuel > v.fuel)) continue;
+      if (e.hours > P.maxHoursOut * 2 + 24) { why = `${f.name} is too far for a caravan`; continue; }
+      if (e.hours > 36 && n < 3 && hands >= 3) continue; // a long trip goes three strong
+      if (theirs + supplyLoad({ food: e.food * 0.5, water: e.water * 0.5 }) > carryCapacity(state, crew, v)) { why = `their side is too heavy to carry home`; continue; }
+      est = e; form.crew = crew.map((s) => s.id); form.vehicleId = v ? v.id : null;
+      break;
+    }
+  }
+  if (!est) return { why };
+  const left = Math.max(1, home.length - form.crew.length);
+  const food = (base.stock.food || 0) - (deal.give.supplies.food || 0) - est.food;
+  const water = (base.stock.water || 0) - (deal.give.supplies.water || 0) - est.water;
+  if (food < left * 3 || water < left * 3) return { why: `${base.name} cannot spare the food and water for the trip` };
+  form.travel = { food: est.food, water: est.water, fuel: 0 };
+  return { form };
+}
+// Sends the caravan for a waiting deal when the plan holds. Returns a log text ("" when it waits).
+function autoDealCaravan(state, deal) {
+  const plan = dealCaravanPlan(state, deal);
+  if (!plan.form) return "";
+  const res = launchCaravan(state, plan.form);
+  if (res.error) return "";
+  deal.autoTries = (deal.autoTries || 0) + 1;
+  gov(state).lastLaunch = day(state);
+  const f = factionById(state, deal.factionId);
+  return `a caravan of ${plan.form.crew.length} sets out for ${f ? f.name : "them"}${plan.form.vehicleId ? " by car" : " on foot"}.`;
 }
 
 // ---------- the defence plan (defenceplan.js) ----------
@@ -521,8 +692,18 @@ function pickChoice(state, card, opts, p) {
   }
   if (opts.some((c) => typeof c.ai === "function")) return [...opts].sort((a, b) => (b.ai ? b.ai(state) : -99) - (a.ai ? a.ai(state) : -99))[0];
   // Radio offers (radio.js): agree when the hub has the goods. A trade caravan's stop (caravans.js): move on.
+  // A group asking you to bring your side (radio.js bringCard): yes, at their fee, when the base can spare the goods
+  // and the people (dealCaravanPlan); the caravan sets out at once.
+  if (card.radioFrom != null && card.bring) {
+    const yes = card.choices.find((c) => /^Agree and send/.test(c.label));
+    const f = factionById(state, card.bring.factionId);
+    if (yes && f && !pendingDeal(state, f) && dealCaravanPlan(state, { ...card.bring, id: -1 }).form) {
+      return { label: yes.label, resolve: (st) => { const t = yes.resolve(st); const d = pendingDeal(st, f); const sent = d ? autoDealCaravan(st, d) : ""; return sent ? `${t} Then ${sent}` : t; } };
+    }
+    return find(/^No, thank/);
+  }
   if (card.radioFrom != null) { const yes = find(/^Agree/); return yes && yes.affordable && yes.affordable(state) ? yes : find(/^No, thank/); }
-  if (card.isCaravan) return find(/^Go on to/) || find(/^Return home/);
+  if (card.isCaravan) return find(/^Complete the radio deal/) || find(/^Go on to/) || find(/^Return home/);
   if (/^After the fight/.test(t)) {
     const fit = p && partyMembers(state, p).every((s) => s.health >= 55) && carriedDays(state, p) >= 2;
     return (fit ? find(/^Continue/) : null) || find(/^Return home/) || find(/^Continue/);
@@ -1100,6 +1281,7 @@ function handleTrade(state) {
     say(state, `Outsiders (${ctx.f.name}) at ${ctx.base ? ctx.base.name : "the roadside"}: ${autoVisitorTrade(state, needs(state), gov(state).personality, tradeSpare(state))}.`);
     return;
   }
+  if (ctx.kind === "radio") { state.trade = null; return; } // a radio trade left open by hand (radiotrade.js): closed
   if (ctx.kind === "caravan") {
     // Their caravan at one of your bases (caravans.js): only the Aggressive style ever attacks one.
     say(state, `Caravan from ${ctx.f.name} at ${ctx.base.name}: ${autoCaravanTrade(state, needs(state), gov(state).personality, tradeSpare(state)).replace(/\.$/, "")}.`);
@@ -1255,8 +1437,7 @@ function heatFuelCands(state, h, need, P) {
 // What the hub can pay a trader with and still not want it back: food above 1.5 × foodTarget days a head, ammo above
 // 15 a head (or the hive campaign's stockpile). Seed 5068: 80 food for a manual and 73 for ammo left 15 food in autumn
 // for four people who needed 308 to reach spring; they starved by day 83.
-function tradeSpare(state) {
-  const h = hub(state);
+function tradeSpare(state, h = hub(state)) {
   const heads = Math.max(1, mouthsAt(state, h).heads), n = Math.max(1, atBase(state, h.id).length);
   // A winter outlook that comes up short pays no food at all: foodTarget nets off crops that may only ripen in spring,
   // after the stores run out (seed 5062: short by the outlook, yet 66 food went to a caravan on day 72).
@@ -1271,7 +1452,7 @@ function needs(state, h = hub(state)) { // h: a base leader's own base (stewardS
   const foodDays = edibleFood(h) / Math.max(1, mouthsAt(state, h).heads); // fresh + preserved (storage.js), a day for everyone fed there (upkeep.js)
   const pick = (v, steps) => { for (const [lim, w] of steps) if (v < lim) return w; return steps[steps.length - 1][1]; };
   const out = {
-    food: (() => { const t = foodTarget(state); return pick(foodDays, [[Math.min(4, t * 0.3), 3], [t * 0.5, 2], [t, 1.4], [t * 2, 0.6], [Infinity, 0.2]]); })(),
+    food: (() => { const t = foodTarget(state, h); return pick(foodDays, [[Math.min(4, t * 0.3), 3], [t * 0.5, 2], [t, 1.4], [t * 2, 0.6], [Infinity, 0.2]]); })(),
     // Water by days left at the current rate (economy.waterOutlook), or by stock per person.
     // Late spring and summer: wanted too while the stock is under the summer plan's reserve (waterPlan).
     // Purified water (water.js) wanted too while the base cannot purify what it drinks (no boiler lit, too few filters)
@@ -2148,6 +2329,7 @@ export function itemScore(s, item) { // also the roster's Equip best available (
 
 function equipFromArmory(state, base) {
   if (!base.armory.length) return;
+  openCasesIn(base.armory, base.stock); // gunsafes.js: gun cases brought home are opened (free), their guns join the armory
   const people = atBase(state, base.id).filter((s) => !s.pinned).sort((a, b) => combatPower(b) - combatPower(a)); // pinned people keep their kit too
   if (!people.length) return;
   const handed = [];
@@ -3491,7 +3673,7 @@ function launchTrip(state, c, pool, spareHands) {
   }
   if (supplyLoad(sup) > cap) return off();
   for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return off();
-  const kit = packTripKit(state, h, crew, c.mission); // kit.js: camp kit against Heat, a comfort, throwables
+  const kit = packTripKit(state, h, crew, c.mission, c.tile); // kit.js: camp kit against Heat, a comfort, throwables (a drill for gun safes)
   // A tube of purification tablets (worm.js packTablets) for a water haul or a trip of more than TABS_TRIP_DAYS: river
   // water fetched or un-purified water packed is drunk safe on the way without stopping to boil it.
   const tabs = armoryTabs(h).length > 0 && ((c.steps || []).some((x) => x.kind === "water") || days > TABS_TRIP_DAYS);
@@ -4090,17 +4272,26 @@ function wormRun(state, form, why) {
 function planSupplyRuns(state) {
   planWaterRun(state);
   const h = hub(state);
-  const g = gov(state);
   for (const o of state.bases.filter((b) => b.type === "outpost")) {
-    if (supplyRuns(state).some((j) => j.apMade && j.destId === o.id && (jobParty(state, j) || j.status === "waiting"))) continue;
+    const why = supplyRunTo(state, h, o, { moves: true });
+    if (why) say(state, `Supply run to ${o.name}: ${why}.`);
+  }
+}
+// One supply run from base h to outpost o, if one is wanted (returns why it went, or ""). moves: people may be sent to
+// live there (the autopilot; a base leader never moves people). keep: who never goes (a base leader, their deputy,
+// pinned people).
+function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
+  const g = gov(state);
+  {
+    if (supplyRuns(state).some((j) => j.apMade && j.destId === o.id && (jobParty(state, j) || j.status === "waiting"))) return "";
     const home = atBase(state, h.id);
     // Like trips, supply runs leave the style's share of the hub at home.
     const spare = home.length - Math.max(2, Math.ceil(home.length * persona(state).homeFrac));
-    if (spare < 1) continue;
-    const crewPool = home.filter((s) => s.health >= 70 && !s.leader && !s.inBed && !s.woundInfected).sort((a, b) => combatPower(b) - combatPower(a));
+    if (spare < 1) return "";
+    const crewPool = home.filter((s) => s.health >= 70 && !s.leader && !s.inBed && !s.woundInfected && !keep.has(s.id)).sort((a, b) => combatPower(b) - combatPower(a));
     const staff = atBase(state, o.id).length;
     let form = null, why = "";
-    if (staff < 2 && !o.captured && home.length >= 7 && crewPool.length) { // a base taken from a group (conquest.js) is held by whoever took it
+    if (moves && staff < 2 && !o.captured && home.length >= 7 && crewPool.length) { // a base taken from a group (conquest.js) is held by whoever took it
       const s = [...crewPool].sort((a, b) => skill(b, "farming") - skill(a, "farming"))[0];
       form = { crew: [s.id], deliver: [{ key: "food", qty: 6 }, { key: "scrap", qty: Math.min(8, Math.max(0, Math.floor((h.stock.scrap || 0) - 30))) }], atDest: "disband" };
       why = `${first(s)} joins the outpost (only ${staff} there)`;
@@ -4114,7 +4305,7 @@ function planSupplyRuns(state) {
       const pure = Math.min(load, Math.floor(Math.max(0, h.stock.water || 0)));
       if (load >= 8) form = { crew: crew.map((s) => s.id), deliver: [...(pure > 0 ? [{ key: "water", qty: pure }] : []), ...(load - pure > 0 ? [{ key: RAW, qty: load - pure }] : [])], atDest: "return" };
       why = `${load} water (it is running dry)`;
-    } else if (!o.captured && movers(state, h, o, Math.min(spare, crewPool.length)) > 0) {
+    } else if (moves && !o.captured && movers(state, h, o, Math.min(spare, crewPool.length)) > 0) {
       // Not to a base taken from a group (conquest.js): held by whoever took it, often out in the wild (census seed 5005,
       // huge, aggressive: people moved one by one to nine taken bases died of hordes and the worm: 179 deaths against 85).
       // The hub has outgrown its plots (hubCramped): people move to an outpost with beds free, food for the walk and a
@@ -4146,15 +4337,17 @@ function planSupplyRuns(state) {
         why = `${scrapShort ? (partsShort ? "scrap and parts" : "scrap") : "parts"} for ${wish.upgrade != null ? "expanding a bunkhouse into a barracks" : `a ${BUILDINGS[wish.type].name.toLowerCase()}`} (${wish.why})`;
       }
     }
-    if (!form) continue;
+    if (!form) return "";
     const res = saveSupplyRun(state, { jobId: null, originId: h.id, destId: o.id, vehicleId: null, pickup: [], schedule: "once", every: 5, stance: "normal", allowPartial: true, ...form });
-    if (res.error) continue;
+    if (res.error) return "";
     res.job.apMade = true;
     dispatchSupplyRun(state, res.job, false); // logs why when it cannot leave
     if (res.job.partyId) {
       g.stats.supplyRuns++;
-      say(state, `Supply run to ${o.name}: ${why}.`);
-    } else deleteSupplyRun(state, res.job);
+      return why;
+    }
+    deleteSupplyRun(state, res.job);
+    return "";
   }
 }
 

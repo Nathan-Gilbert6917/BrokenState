@@ -9,6 +9,9 @@ import { packLights } from "./lights.js";
 export const KIT_KG = 1.5;
 // In order of preference: Heat first on a search trip, then morale, then the throwables.
 const SEARCH_KIT = ["scentmask", "ragboots", "woodghillie", "ghillie", "tripwire", "stove", "camonet"]; // woodghillie: crafted once the Bushcraft Field Guide is read (blueprints.js)
+// A power drill for the gun safes (locks.js) on a search or a raid to a place that has them: homes in the country and
+// the suburbs, a gun store, a police station, a prison, a base. First in the kit there (it weighs 2.2 kg of the budget).
+export const SAFE_KIT = { key: "powerdrill", sites: ["town", "farm", "ranch", "cabin", "lodge", "ranger", "motel", "gunstore", "police", "prison", "military", "crash_mil"] };
 const MORALE_KIT = ["harmonica", "cards"];
 const FIGHT_KIT = ["molotov", "pipebomb", "smokegren", "flare", "firecracker", "bottle"];
 // Optics (optics.js): a survey or recon takes the best the base has; other trips a pair of binoculars if there is one.
@@ -17,11 +20,13 @@ const TRIP_OPTICS = ["binoculars", "monocular"];
 const OPTICS_KG = 2.5; // extra kg a survey or recon may take for its optics
 
 // Moves kit from base.armory onto the crew for a mission. Returns the names of what went along.
-export function packTripKit(state, base, crew, mission) {
+export function packTripKit(state, base, crew, mission, target = null) {
   if (!base || !crew.length) return [];
   const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle", "hive", "rescue"].includes(mission);
   const scouting = mission === "sweep" || mission === "recon";
   const want = [...(scouting ? SCOUT_KIT : []), ...(looting ? SEARCH_KIT : ["tripwire", "stove"]), ...MORALE_KIT, ...(mission === "trade" ? [] : FIGHT_KIT), ...(scouting || mission === "trade" ? [] : TRIP_OPTICS)];
+  const tl = target != null && state && state.tiles ? state.tiles[target] : null; // target: the trip's tile (autopilot.js launchTrip)
+  if (["scavenge", "recover"].includes(mission) && tl && tl.loc && SAFE_KIT.sites.includes(tl.loc.type)) want.unshift(SAFE_KIT.key);
   const budget = crew.length * KIT_KG + (scouting ? OPTICS_KG : 0);
   let kg = 0;
   const out = [];

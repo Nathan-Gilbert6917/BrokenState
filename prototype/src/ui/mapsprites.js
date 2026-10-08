@@ -142,6 +142,47 @@ function paintConvoySite() {
 // A truck spotted on the road (markers.js "miltruck"): a small Army truck with a white star.
 function paintMilTruckMarker() { return paintMilTruck(OLIVE, "wrecked"); }
 
+// A vehicle's upgrades (sim/vehicles.js) painted over its sprite: steel plates riveted along the body (a second row up
+// the cab at level 2; patchy rust and grey for scrap plating), a dark grille or a thick green tint over the windows, and
+// a machine gun on a ring on the roof. u: the code from upsCode ("" for none).
+const PLATE = "#6f757c", PLATE_DK = "#4d5258", SCRAP_A = "#7b5a44", SCRAP_B = "#5f6158", BGLASS = "#7fb3a6", MESH = "#3e4044";
+const ARMOUR_AT = { // band: [x0, x1, y0, y1] the body, band2: up the cab, roof: where the gun's ring sits
+  truck: { band: [1, 20, 7, 8], band2: [12, 13, 3, 6], roof: [13, 1] },
+  sedan: { band: [1, 20, 6, 7], band2: [5, 5, 3, 5], roof: [9, 1] },
+  miltruck: { band: [1, 22, 8, 9], band2: [16, 17, 4, 7], roof: [17, 2] },
+};
+// "p<plating>s<scrap>g<glass>m<mesh>t<gun>" from v.upgrades, "" when it has none.
+export function upsCode(u) {
+  if (!u || !(u.plating || u.scrapPlate || u.glass || u.mesh || u.turret)) return "";
+  return `p${u.plating || 0}s${u.scrapPlate || 0}g${u.glass || 0}m${u.mesh || 0}t${u.turret ? u.turret.gun : ""}`;
+}
+function armourOverlay(p, kind, code) {
+  const A = ARMOUR_AT[kind];
+  if (!A || !code) return p;
+  const n = (k) => Number(code[code.indexOf(k) + 1]) || 0; // the code is fixed: p#s#g#m#t<gun>
+  const gun = code.slice(code.indexOf("t") + 1);
+  const keep = (c) => !c || c === TIRE || c === HUB || c === GLASS || c === "#e4f1f8" || c === "#ffe28a" || c === "#d24a3a";
+  const plate = ([x0, x1, y0, y1], scrap) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      if (keep(p.get(x, y))) continue;
+      p.set(x, y, scrap ? (((x >> 1) + y) % 2 ? SCRAP_A : SCRAP_B) : x % 4 === 0 && y === y0 ? PLATE_DK : PLATE);
+    }
+  };
+  if (n("s")) plate(A.band, true);
+  if (n("p")) { plate(A.band, false); if (n("p") > 1) plate(A.band2, false); }
+  if (n("m") || n("g")) for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {
+    const c = p.get(x, y);
+    if (c !== GLASS && c !== "#e4f1f8") continue;
+    p.set(x, y, n("m") ? ((x + y) % 2 ? MESH : c) : BGLASS);
+  }
+  if (gun) {
+    const [x, y] = A.roof;
+    p.rect(x, y, x + 1, y, PLATE_DK); p.set(x, y - 1, PLATE_DK);         // the ring and the gunner's shield
+    p.rect(x + 1, y - 1, x + (gun === "m2hb" ? 7 : 5), y - 1, "#26272a"); // the barrel, forward
+  }
+  return p;
+}
+
 // Old sedan: low body, cabin with two windows.
 function paintSedan(color) {
   const p = painter(22, 12);
@@ -2063,9 +2104,9 @@ function paintBikes(color, damaged) {
   return p;
 }
 
-function paintParked(type, color, needsFuel, damaged) {
+function paintParked(type, color, needsFuel, damaged, ups = "") {
   if (type === "bike") return paintBikes(color, damaged);
-  const base = type === "sedan" ? paintSedan(desatHex(color, 0.45)) : type === "miltruck" ? paintMilTruck(desatHex(color, 0.45), damaged ? "wrecked" : "intact") : paintTruck(desatHex(color, 0.45));
+  const base = armourOverlay(type === "sedan" ? paintSedan(desatHex(color, 0.45)) : type === "miltruck" ? paintMilTruck(desatHex(color, 0.45), damaged ? "wrecked" : "intact") : paintTruck(desatHex(color, 0.45)), type, ups); // its upgrades
   const p = painter(base.w + 2, base.h + 6);
   blit(p, base, 0, 6);
   for (const [x, y] of [[3, 13], [7, 14], [12, 13], [16, 14], [9, 12], [18, 12]]) if (p.get(x, y)) p.set(x, y, "#9a8a6a");
@@ -2160,12 +2201,13 @@ function cached(key, paint) {
 // "convoy" | "supply" for trade-route and supply-run convoys by vehicle, "cart" | "supplycart" for the same on foot.
 // count: people shown for walkers, raids, scouts and relief squads.
 const PEOPLE_KINDS = new Set(["walkers", "raid", "scouts", "relief"]);
-export function partySpriteCanvas(kind, color, count = 3) {
+// ups: the vehicle's upgrades (upsCode: plates, glass or grilles, a gun on the roof) for "truck" | "sedan" | "miltruck".
+export function partySpriteCanvas(kind, color, count = 3, ups = "") {
   const n = Math.max(1, Math.min(3, count));
-  return cached(`${kind}:${color}:${PEOPLE_KINDS.has(kind) ? n : ""}`, () => {
-    if (kind === "truck") return paintTruck(color);
-    if (kind === "sedan") return paintSedan(color);
-    if (kind === "miltruck") return paintMilTruck(color); // an Army truck got running (sim/foundcars.js)
+  return cached(`${kind}:${color}:${PEOPLE_KINDS.has(kind) ? n : ""}${ups ? `:${ups}` : ""}`, () => {
+    if (kind === "truck") return armourOverlay(paintTruck(color), kind, ups);
+    if (kind === "sedan") return armourOverlay(paintSedan(color), kind, ups);
+    if (kind === "miltruck") return armourOverlay(paintMilTruck(color), kind, ups); // an Army truck got running (sim/foundcars.js)
     if (kind === "boat" || kind === "raft") return paintBoat(color, kind === "raft");
     if (kind === "convoy" || kind === "supply") return paintConvoyTruck(color, kind === "supply");
     if (kind === "cart" || kind === "supplycart") return paintHandcart(color, kind === "supplycart");
@@ -2331,7 +2373,7 @@ export const ruinSpriteCanvas = (yours = false) => cached(`ruin:${+!!yours}`, ()
 // wreck, emptied cache, picked-through camp), { empty } for a death site with nothing left, { vehicle: "truck" |
 // "sedan", needsFuel, damaged } for an abandoned vehicle (in `color`).
 export function markerSpriteCanvas(type, color = "#4f8fd6", opt = {}) {
-  const v = type === "vehicle" ? `${opt.vehicle || "truck"}${+!!opt.needsFuel}${+!!opt.damaged}` : `${+!!opt.emptied}${+!!opt.empty}`;
+  const v = type === "vehicle" ? `${opt.vehicle || "truck"}${+!!opt.needsFuel}${+!!opt.damaged}${opt.ups || ""}` : `${+!!opt.emptied}${+!!opt.empty}`;
   return cached(`mark:${type}:${color}:${v}`, () => {
     if (type === "death") return paintGraveMarker(!opt.empty);
     if (type === "cache") return paintCacheMarker(!!opt.emptied);
@@ -2339,7 +2381,7 @@ export function markerSpriteCanvas(type, color = "#4f8fd6", opt = {}) {
     if (type === "miltruck") return paintMilTruckMarker(); // an Army truck seen on the road (sim/miltrucks.js)
     if (type === "camp") return paintCampMarker(!!opt.emptied);
     if (type === "hive") return paintHive(0);
-    return paintParked(opt.vehicle || "truck", color, !!opt.needsFuel, !!opt.damaged);
+    return paintParked(opt.vehicle || "truck", color, !!opt.needsFuel, !!opt.damaged, opt.ups || ""); // ups: its upgrades (upsCode)
   });
 }
 

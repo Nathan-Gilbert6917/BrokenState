@@ -25,7 +25,7 @@
 import { log, survivorById, skill, newId, hub, baseById } from "./world.js";
 import { hash01, gainXp, USE } from "./skills.js";
 import { openOdds, picksOf, PICK, FORCE, SMASH } from "./locks.js";
-import { createVehicle, vehicleById, isCar, tank, VEHICLE_TYPES, partyVehicle } from "./vehicles.js";
+import { createVehicle, vehicleById, isCar, tank, VEHICLE_TYPES, partyVehicle, fitMilitary } from "./vehicles.js";
 import { markTaken } from "./miltrucks.js"; // (names below are literal: the modules load in a circle)
 import { markAbandonedVehicle } from "./markers.js";
 import { partyMembers, partyTile, carried, takeSupply, cargoRoom, unitsThatFit, weighTeam, awaitOrders, startReturn, tileLabel, bestSkill, teamName } from "./parties.js";
@@ -88,13 +88,14 @@ export function carRecord(state, b, id) {
   const C = M.mil ? COND[car.mil.cond] || COND.wrecked : model === "boxtruck" ? COND.burnt : COND.civil;
   const cooled = !M.mil && (state.carClaims || {})[b.tileId] != null && state.hour - state.carClaims[b.tileId] < CARS.COOLDOWN * 24;
   const e = r("engine");
-  const engine = cooled ? "dead" : e < C.engine[0] ? "ok" : e < C.engine[0] + C.engine[1] ? "fixable" : "dead";
-  const fuel = r("fuel") < C.fuel[0] ? Math.round(C.fuel[1] + r("fq") * (C.fuel[2] - C.fuel[1])) : 0;
+  const ready = !!(car.mil && car.mil.runs); // a National Guard motor pool's ready vehicle (miltrucks.js MOTOR_POOL): it runs, with fuel in it
+  const engine = ready ? "ok" : cooled ? "dead" : e < C.engine[0] ? "ok" : e < C.engine[0] + C.engine[1] ? "fixable" : "dead";
+  const fuel = ready ? Math.round(30 + r("fq") * 30) : r("fuel") < C.fuel[0] ? Math.round(C.fuel[1] + r("fq") * (C.fuel[2] - C.fuel[1])) : 0;
   const rec = {
     id, x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs) + 1, h: Math.max(...ys) - Math.min(...ys) + 1,
     model, name: M.mil ? `${car.mil.cond === "intact" ? "" : car.mil.cond === "burnt" ? "Burned-out " : "Wrecked "}${M.name}` : M.name,
     mil: M.mil ? { ...car.mil } : null, locked: r("lock") < (CARS.LOCKED[model] ?? 0.4), open: false, keys: M.mil ? true : null, hot: false, tries: 0,
-    inspected: false, cond: { engine, tyres: r("tyres") < C.tyres ? "flat" : "ok", battery: r("battery") < C.battery ? "flat" : "ok", fuel }, condition: Math.round(C.condition[0] + r("cq") * (C.condition[1] - C.condition[0])),
+    inspected: false, cond: { engine, tyres: !ready && r("tyres") < C.tyres ? "flat" : "ok", battery: !ready && r("battery") < C.battery ? "flat" : "ok", fuel }, condition: Math.round(C.condition[0] + r("cq") * (C.condition[1] - C.condition[0])),
     claimed: null,
   };
   b.cars[id] = rec;
@@ -290,12 +291,13 @@ export function claimCar(state, b, rec) {
     name: type === "miltruck" && rec.model === "mrap" ? "MRAP" : M.name,
   });
   v.found = { model: rec.model, at: b.place, hour: state.hour, repair: fix };
+  if (rec.mil) fitMilitary(v, rec.mil.turret || null); // vehicles.js: an Army vehicle is plated and glassed (a motor pool's Humvee has its M2)
   rec.claimed = v.id;
   (b.claims = b.claims || []).push(v.id);
   if (rec.mil) markTaken(state, rec.mil); // miltrucks.js: gone from the tile's maps from now on
   else (state.carClaims = state.carClaims || {})[tile] = state.hour;
   markAbandonedVehicle(state, v, fix ? "needs repair" : "found");
-  log(state, `Your people claimed a ${v.name.toLowerCase()} at ${tileLabel(state, tile)}${fix ? ` (it needs ${fix.what.join(", ")} before it runs)` : ""}.`, "good");
+  log(state, `Your people claimed a ${v.name.toLowerCase()} at ${tileLabel(state, tile)}${fix ? ` (it needs ${fix.what.join(", ")} before it runs)` : ""}${rec.mil ? `: armour plate and bulletproof glass${rec.mil.turret ? ", an M2 on the roof (not yet usable)" : ""}` : ""}.`, "good");
   return v;
 }
 // When a battle ends (combat.js finishCombat): a claimed car that runs joins the team that claimed it (if it has no

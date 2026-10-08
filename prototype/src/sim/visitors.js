@@ -37,8 +37,8 @@
 //
 // Merchants (kind "merchants")
 // - Traders from another state: an escort and 2 traders, walking with wagons along the roads. What the wagons are
-//   worth buys the escort (escorts.js ESCORT_TIERS: 2–3 guards on foot; 4–5 riflemen and a pickup; 6–8 hired guns in
-//   plate, a scout and a Humvee or an MRAP); their goods are by speciality (escorts.js SPECIALITIES). They visit up to 3 bases of the map's groups (never raider gangs or
+//   worth sets how much of the company's means it wants on guard (escorts.js: a token guard for cheap cargo, all it
+//   can spare for rich cargo; the company's hired guns, gear and vehicles, its own dice, cap it); their goods are by speciality (MERCHANT_SPECS). They visit up to 3 bases of the map's groups (never raider gangs or
 //   zealots), trading with them (goods the group is short of for what the merchants lack), and one of your bases when
 //   invited over the radio, or unannounced 55% of the time when nobody hears them. They carry what the map is short
 //   of (general traders: fuel 15–40, meds 8–22, preserved food 20–50, parts 3–9, ammo 60–160 and 2–4 pieces of good
@@ -97,7 +97,8 @@ import { startCombat, registerCombatHandler } from "./combat.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { inCoverage, hasNetwork, heardBy } from "./radio.js";
 import { borderTiles } from "./hives.js";
-import { newItem } from "./inventory.js";
+import { newItem, lootItem } from "./inventory.js";
+import { spend } from "./itemcond.js"; // the condition of what they carry
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
 import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
 import { travelFactor, thirstAt, thirstAhead } from "./weather.js";
@@ -113,7 +114,7 @@ import { hcNoRaiders } from "./hardcore-groups.js";
 import { UPKEEP, coldFactor } from "./upkeep.js";
 import { eatFromStore } from "./storage.js";
 import { gunmodWares } from "./loot.js"; // a sight or a suppressor among a merchant's goods
-import { merchantCargo, escortFor, escortFighters, escortValue, escortWords, escortShort, ESCORT_VEHICLES, SPECIALITIES } from "./escorts.js";
+import { merchantEscort, escortFighters, escortValue, escortWords, escortShort, ESCORT_VEHICLES } from "./escorts.js";
 import { escortEnemy, lootCaravan, witnessesOf, consequences } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
 
 // ---------- numbers ----------
@@ -163,13 +164,34 @@ const RUMORS = [
   "The towns of {home} trade with each other now: a market every full moon at the old fairground.",
   "The roads out of {home} are mined in places. Watch for cars parked across a bridge.",
 ];
-// Good gear merchants bring (data.js GEAR keys), and the books (skills.js WARE_BOOKS: traders).
+// The good gear merchants used to bring from any of these (data.js GEAR keys): still shuffled in merchantGoods for its
+// draws, so the visitors' dice stay where they were; what they sell now follows their speciality (MERCHANT_SPECS).
 export const RARE_GEAR = ["ar", "plate", "nvg", "milradio", "surgkit", "assaultpack", "riothelmet", "vest", "huntrifle", "waterfilter", "suppressor", "flashlight", "shotgun",
-  "carbine", "xbow", "compbow", "rucksack", "hikingpack", "camonet", "stove", "smokegren", "guitar", "binoculars", "spotscope", "thermal", "telescope",
-  ...Object.values(SPECIALITIES).flatMap((s) => s.gear)].filter((k, i, a) => a.indexOf(k) === i); // and every speciality's wares (escorts.js)
+  "carbine", "xbow", "compbow", "rucksack", "hikingpack", "camonet", "stove", "smokegren", "guitar", "binoculars", "spotscope", "thermal", "telescope"];
 // What a band of explorers or refugees may carry to trade (and the valuables merchants bring to sell on).
 export const TRAVEL_GEAR = ["comic", "novel", "survivalbook", "waterfilter", "bandagekit", "crowbar", "flashlight", "slingbag", "harmonica", "cards", "stove", "ragboots", "scentmask", "chocolate", "instcoffee", "flare", "photos", "monocular", "binoculars"];
 export const MERCHANT_VALUABLES = ["watch", "goldchain", "cigars", "scotch", "coffee", "cigarettes", "coins", "camera", "diamond", "tea"];
+// What a merchant caravan deals in: each comes with one speciality (by its own dice, MERCHANT_SPEC_W), and its gear,
+// (extra: [lo, hi] more of its trade goods on top of the 2–4 everyone brings; escorts.js: the escort follows the cargo),
+// books and the supplies it brings more of follow it. gear / books: what it sells; stock: × those supplies.
+export const MERCHANT_SPECS = {
+  arms:     { name: "Arms dealers", gear: ["ar", "carbine", "huntrifle", "leverrifle", "shotgun", "pistol", "revolver", "xbow", "compbow", "vest", "plate", "milhelmet", "riothelmet", "suppressor", "spotscope", "binoculars", "nvg", "thermal", "smokegren", "frag"],
+    books: ["gunbook", "armymanual", "leadbook"], stock: { ammo: 1.6 }, extra: [3, 6] },
+  medic:    { name: "Medics", gear: ["surgkit", "traumakit", "bandagekit", "puritabs", "dewormer", "waterfilter", "soap", "wetwipes", "razors", "toothpaste", "headlamp", "flashlight"],
+    books: ["medbook", "surgerybook"], stock: { meds: 1.6, water: 1.3 } },
+  mechanic: { name: "Mechanics", gear: ["crowbar", "prybar", "sledge", "fireaxe", "flashlight", "headlamp", "lantern", "spotlight", "stove", "kneeguards", "milradio", "handradio", "ladder", "batteries", "waterfilter"],
+    books: ["enginebook", "diybook", "forgebook", "lockbook"], stock: { parts: 1.6, fuel: 1.4 }, extra: [0, 2] },
+  general:  { name: "General traders", gear: ["hikingpack", "rucksack", "assaultpack", "slingbag", "backpack", "camonet", "ghillie", "stove", "waterfilter", "flashlight", "lantern", "binoculars", "telescope", "guitar", "fishrod", "fishnet", "snarewire"],
+    books: ["gardenbook", "survivalbook", "talkbook", "scavbook", "bushcraftbook"], stock: { food: 1.3, preserved: 1.3 } },
+};
+export const MERCHANT_SPEC_W = { general: 0.35, arms: 0.25, medic: 0.2, mechanic: 0.2 };
+// A caravan's speciality: its own dice by its serial (never the id: ids are process-wide).
+export function merchantSpec(state, v) {
+  if (v.spec && MERCHANT_SPECS[v.spec]) return v.spec;
+  let x = hash01(state.seed, "mspec", v.serial);
+  for (const [k, w] of Object.entries(MERCHANT_SPEC_W)) if ((x -= w) < 0) return k;
+  return "general";
+}
 const RARE_BOOKS = ["medbook", "surgerybook", "enginebook", "gardenbook", "gunbook", "armymanual", "survivalbook", "talkbook", "lockbook", "leadbook", "scavbook"];
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -262,19 +284,22 @@ function makeVisitor(state, kind, tile, opts = {}) {
     const M = O.merchants;
     const fam = rng.pick(MERCHANT_NAMES.filter((n) => !taken.has(`the ${n} caravan`)).concat(MERCHANT_NAMES));
     v.name = `the ${fam} caravan`;
-    merchantGoods(state, v, rng, opts.speciality);
-    // escorts.js: the cargo's worth buys the escort (light, armed with a pickup, armoured with a Humvee or an MRAP).
-    const esc = escortFor(opts.cargoValue ?? escortValue(v.stock, v.wares), d, rng);
+    rng.int(M.guards[0], M.guards[1]); // the old guard count's draw, still taken (the visitors' dice stay where they were)
+    v.goodwill = clamp(M.goodwill + visitorInfo(state).rep, -100, 40);
+    v.until = state.hour + 24 * M.stay;
+    v.wantsYou = rng.chance(M.hubChance) && visitorInfo(state).rep > M.skipYou;
+    if (opts.spec && MERCHANT_SPECS[opts.spec]) v.spec = opts.spec; // tools: a speciality of their choosing (merchantSpec keeps it)
+    merchantGoods(state, v, rng);
+    // escorts.js: the cargo's worth sets how much of the company's means it wants on guard; the company's means
+    // (hired guns, their gear, its vehicles: its own dice) cap it.
+    const esc = merchantEscort(state, v.serial, opts.cargoValue ?? escortValue(v.stock, v.wares), d, opts.company || null);
     v.escort = esc;
-    const guards = escortFighters(esc);
+    const guards = Math.max(1, escortFighters(esc));
     v.guards = guards;
     v.size = guards + M.traders;
     v.power = esc.power;
     v.pop = v.size;
-    v.goodwill = clamp(M.goodwill + visitorInfo(state).rep, -100, 40);
     v.capacity = M.capacity + guards * M.capPerGuard + (esc.vehicle ? ESCORT_VEHICLES[esc.vehicle].power * 60 : 0);
-    v.until = state.hour + 24 * M.stay;
-    v.wantsYou = rng.chance(M.hubChance) && visitorInfo(state).rep > M.skipYou;
   } else {
     const E = O.explorers;
     const r = rng.next();
@@ -293,24 +318,42 @@ function makeVisitor(state, kind, tile, opts = {}) {
     v.stock.water = rng.int(2, 5) * v.size;
     v.stock.ammo = v.sub === "scouts" ? rng.int(20, 40) : rng.int(0, 12);
     v.stock.meds = v.sub === "scouts" ? rng.int(1, 3) : 0;
-    if (rng.chance(0.4)) v.wares.push(newItem(rng.pick(TRAVEL_GEAR), Math.round(rng.range(0.5, 0.9) * 100) / 100));
+    if (rng.chance(0.4)) v.wares.push(lootItem(rng.pick(TRAVEL_GEAR), "traveller", spend(rng)));
   }
   v.size0 = v.size;
   return v;
 }
 
-function merchantGoods(state, v, rng, speciality = null) {
-  // escorts.js: the bulk of the wagons by the caravan's speciality (general, arms, armour, mechanic, medic, provisions).
-  merchantCargo(v, rng, speciality);
+// A merchant caravan's goods. The kinds follow its speciality (MERCHANT_SPECS), picked with dice of its own (local);
+// the visitors' dice (rng) are drawn exactly as before the specialities, so where they go and who comes next stay put.
+// The condition: itemcond.js "merchant" (fair to good: they price it by its wear, valuation.js itemValue).
+function merchantGoods(state, v, rng) {
+  Object.assign(v.stock, {
+    fuel: rng.int(15, 40), meds: rng.int(8, 22), preserved: rng.int(20, 50), parts: rng.int(3, 9), ammo: rng.int(60, 160),
+    food: rng.int(5, 15), water: rng.int(10, 20), scrap: 0, jars: 0,
+  });
+  v.spec = merchantSpec(state, v);
+  const S = MERCHANT_SPECS[v.spec];
+  for (const [k, m] of Object.entries(S.stock)) if (v.stock[k] != null) v.stock[k] = Math.round(v.stock[k] * m);
+  const local = new Rng(Math.floor(hash01(state.seed, "mgoods", v.serial) * 4294967296) >>> 0);
+  const roll = (i) => [state.seed, "mware", v.serial, i];
   const unknown = BP_KEYS.filter((id) => !isKnown(state, id));
   const bps = rng.shuffle([...(unknown.length ? unknown : BP_KEYS)]);
   const nBp = rng.chance(0.75) ? (rng.chance(0.25) ? 2 : 1) : 0;
   for (const id of bps.slice(0, nBp)) if (GEAR[bpItemKey(id)]) v.wares.push(newItem(bpItemKey(id), 1));
-  const books = rng.shuffle(RARE_BOOKS.filter((k) => GEAR[k]));
-  for (const k of books.slice(0, rng.int(1, 3))) v.wares.push(newItem(k, 1));
-  v.wares.push(...gunmodWares(state, "merchants", `${v.name}:${v.serial}`, state.hour)); // loot.js: a sight or a suppressor (its own dice; v.serial, never the process-wide id)
+  rng.shuffle(RARE_BOOKS.filter((k) => GEAR[k])); // the old draws (any rare book), still taken
+  const nBooks = rng.int(1, 3);
+  for (const k of local.shuffle(S.books.filter((x) => GEAR[x])).slice(0, nBooks)) v.wares.push(newItem(k, 1));
+  const old = rng.shuffle(RARE_GEAR.filter((k) => GEAR[k])).slice(0, rng.int(2, 4)); // the old draws (any rare gear), still taken
+  for (const k of old) spend(rng, GEAR[k].dur ? 2 : 1);
+  // escorts.js reads what they carry for the escort: an arms dealer's wagons hold more of their trade (S.extra, its own dice).
+  const extra = S.extra ? local.int(S.extra[0], S.extra[1]) : 0;
+  local.shuffle(S.gear.filter((k) => GEAR[k])).slice(0, old.length + extra).forEach((k, i) => v.wares.push(lootItem(k, "merchant", roll(i))));
+  // loot.js: a sight or a suppressor (its own dice; by the serial, never the id: ids are process-wide). Only the arms
+  // dealers and the general traders carry them.
+  if (v.spec === "arms" || v.spec === "general") v.wares.push(...gunmodWares(state, "merchants", `${v.name}:${v.serial}`, state.hour));
   // A few valuables to sell on (they also buy them: TRADE_PREFS merchants).
-  for (const k of rng.shuffle([...MERCHANT_VALUABLES]).slice(0, rng.int(1, 2))) v.wares.push(newItem(k, 1));
+  rng.shuffle([...MERCHANT_VALUABLES]).slice(0, rng.int(1, 2)).forEach((k, i) => v.wares.push(lootItem(k, "merchant", roll(`v${i}`))));
 }
 
 // A new party at the border (kind: "raiders" | "merchants" | "explorers"). opts: { tile, size, power, sub, hostile,
@@ -1204,6 +1247,8 @@ function merchantCall(state, v) {
     ],
   });
 }
+// What a merchant caravan deals in, for the UI ("arms dealers"), or "".
+export const specName = (v) => (v && v.kind === "merchants" && MERCHANT_SPECS[v.spec] ? MERCHANT_SPECS[v.spec].name.toLowerCase() : "");
 export function goodsText(v) {
   const sup = SUPPLY_KEYS.filter((k) => (v.stock[k] || 0) >= supplyFew(k, 5)).sort((a, b) => (v.stock[b] || 0) * SUPPLIES[b].value - (v.stock[a] || 0) * SUPPLIES[a].value).slice(0, 4).map((k) => SUPPLIES[k].name.toLowerCase());
   const items = v.wares.slice(0, 4).map((g) => g.name);
@@ -1832,7 +1877,7 @@ function onOutsiderFight(state, result, setup) {
       }
     }
   }
-  if (c.blameLater && v) consequences(state, { type: "merchants", owner: "outsider", ref: v, tile: c.tile ?? (p ? partyTile(p) : v.tile), key: c.key }, witnessesOf(state, { type: "merchants", owner: "outsider", ref: v, tile: c.tile ?? v.tile, key: c.key }, result, p), lines);
+  if (c.blameLater && v) consequences(state, { type: "merchants", owner: "outsider", ref: v, tile: c.tile ?? (p ? partyTile(p) : v.tile), key: c.key, name: v.name, by: p && state.parties.includes(p) ? Parties.teamName(state, p) : "your people" }, witnessesOf(state, { type: "merchants", owner: "outsider", ref: v, tile: c.tile ?? v.tile, key: c.key }, result, p), lines);
   const dead = (result.survivorsDead || []).length;
   if (dead) lines.push(`${dead} of yours died.`);
   if (p && state.parties.includes(p)) {

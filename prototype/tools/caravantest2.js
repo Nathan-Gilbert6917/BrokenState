@@ -60,49 +60,75 @@ function haul(st, p, tile) {
 }
 
 // ======================================================================================
-section("Escort tiers by cargo worth");
+section("Escorts: the cargo's wish, capped by the sender's means");
 {
-  const rng = new Rng(seed);
-  const light = E.escortFor(300, 10, rng), armed = E.escortFor(800, 10, rng), arm = E.escortFor(1200, 10, rng), rich = E.escortFor(2500, 10, rng);
-  console.log(`  300 → ${E.escortShort(light)} (${light.guards}), 800 → ${E.escortShort(armed)} (${armed.guards}), 1200 → ${E.escortShort(arm)} (${arm.guards}), 2500 → ${E.escortShort(rich)} (${rich.guards})`);
-  check(light.tier === "light" && light.guards >= 2 && light.guards <= 3 && !light.vehicle && light.kit === "guards", "cheap goods: 2–3 guards on foot, pistols and shotguns");
-  check(armed.tier === "armed" && armed.guards >= 4 && armed.guards <= 5 && armed.vehicle === "truck" && armed.kit === "escorts", "mid: 4–5 riflemen and a pickup");
-  check(arm.tier === "armoured" && arm.guards >= 6 && arm.vehicle === "hummer" && arm.scout === 1 && arm.gunner === 1 && arm.kit === "contractors", "rich: an armoured escort, a Humvee with a gunner, a scout");
-  check(rich.vehicle === "mrap" && rich.vehPower > arm.vehPower, "the richest: an MRAP");
-  check(light.power < armed.power && armed.power < arm.power, `stronger guards with richer cargo (${light.power} < ${armed.power} < ${arm.power})`);
-  const late = E.escortFor(800, 300, rng);
-  check(late.guards >= armed.guards - 1 + 2 - 1 && late.power > armed.power, `more and stronger guards as the years go by (day 300: ${late.guards} at ${late.power})`);
-  check(["guards", "escorts", "contractors"].every((k) => KITS[k] && KITS[k].weapons.every((w) => GEAR[w])), "their battle kits exist (combat.js KITS)");
-  check(KITS.contractors.armor.includes("plate") && KITS.contractors.weapons.includes("ar") && KITS.guards.weapons.every((w) => ["pistol", "shotgun", "huntrifle", "revolver"].includes(w) || !GEAR[w] || true), "armoured: plates and automatic rifles");
+  // The wish: a share of what they could send.
+  check(E.escortWant(0) === 0.15 && Math.abs(E.escortWant(750) - 0.65) < 1e-9 && E.escortWant(2000) === 1, `the wish rises with the cargo (0 → ${E.escortWant(0)}, 750 → ${E.escortWant(750)}, 2000 → ${E.escortWant(2000)})`);
+  const rich = { guards: 8, power: 4.6, kit: "contractors", vehicles: ["truck", "hummer"] }, poor = { guards: 2, power: 3.0, kit: "guards", vehicles: [] };
+  const cheapRich = E.escortFrom(150, rich), dearRich = E.escortFrom(1500, rich), dearPoor = E.escortFrom(1500, poor), midRich = E.escortFrom(500, rich);
+  const show = (e) => `${e.guards} of ${e.could.guards}${e.vehicle ? ` + ${e.vehicle}` : ""} (${e.tier})`;
+  console.log(`  a rich company: cheap cargo ${show(cheapRich)}, mid ${show(midRich)}, rich ${show(dearRich)}; a poor one, rich cargo: ${show(dearPoor)}`);
+  check(cheapRich.guards <= 2 && !cheapRich.vehicle, "cheap cargo: a token guard, even from a rich sender");
+  check(dearRich.guards === 8 && dearRich.vehicle === "hummer" && dearRich.tier === "armoured" && dearRich.scout === 1 && dearRich.gunner === 1, "rich cargo: all it can spare, its Humvee, a scout");
+  check(midRich.vehicle === "truck" && midRich.guards > cheapRich.guards && midRich.guards < 8, "in between: some of them and the pickup");
+  check(dearPoor.guards === 2 && !dearPoor.vehicle && dearPoor.tier === "light", "a poor sender with rich cargo: everything it has, still weak");
+  check(E.escortFrom(1500, { ...rich, vehicles: ["truck", "hummer", "mrap"] }).vehicle === "mrap", "its best armoured vehicle (an MRAP)");
+  check(E.escortFrom(1500, { ...rich, vehicles: ["truck"] }).vehicle === "truck", "no armoured vehicle: the pickup");
+  // A merchant company's means: its own dice, richer over the years.
+  const stc = world();
+  const c0 = Array.from({ length: 300 }, (_, i) => E.companyFor(stc, i + 1, 10)), c3 = Array.from({ length: 300 }, (_, i) => E.companyFor(stc, i + 1, 1100));
+  const avg = (l, f) => l.reduce((a, x) => a + f(x), 0) / l.length;
+  const own = (l, k) => l.filter((c) => c.vehicles.includes(k)).length / l.length;
+  console.log(`  companies, day 10: ${avg(c0, (c) => c.guards).toFixed(1)} guards, power ${avg(c0, (c) => c.power).toFixed(2)}, pickup ${Math.round(own(c0, "truck") * 100)}%, Humvee ${Math.round(own(c0, "hummer") * 100)}%, MRAP ${Math.round(own(c0, "mrap") * 100)}%; year 3: ${avg(c3, (c) => c.guards).toFixed(1)}, ${avg(c3, (c) => c.power).toFixed(2)}, ${Math.round(own(c3, "truck") * 100)}%, ${Math.round(own(c3, "hummer") * 100)}%, ${Math.round(own(c3, "mrap") * 100)}%`);
+  check(c0.every((c) => c.guards >= 2 && c.guards <= 8) && new Set(c0.map((c) => c.guards)).size >= 6, "hired guns 2–8 at first");
+  check(avg(c3, (c) => c.guards) > avg(c0, (c) => c.guards) && avg(c3, (c) => c.power) > avg(c0, (c) => c.power) && own(c3, "hummer") > own(c0, "hummer"), "the companies grow richer over the years");
+  check(JSON.stringify(E.companyFor(stc, 7, 50)) === JSON.stringify(E.companyFor(stc, 7, 50)), "a company's means are its own dice (the same serial, the same company)");
+  check(["guards", "escorts", "contractors"].every((k) => KITS[k] && KITS[k].weapons.every((w) => GEAR[w])) && KITS.contractors.armor.includes("plate") && KITS.contractors.weapons.includes("ar"), "their battle kits exist (combat.js KITS), plate and automatic rifles for the best");
   // Guns and armour count 1.5×.
   const plain = { stock: { food: 100 }, wares: [] }, guns = { stock: { food: 100 }, wares: [{ key: "ar", name: "AR", quality: 1 }] }, tools = { stock: { food: 100 }, wares: [{ key: "lantern", name: "Lantern", quality: 1 }] };
   check(E.escortValue(guns.stock, guns.wares) - E.escortValue(plain.stock, plain.wares) === Math.round(GEAR.ar.value * 1.5) && E.escortValue(tools.stock, tools.wares) - 200 === GEAR.lantern.value, "guns count 1.5×, tools at their worth");
-  // Merchants spawned: every speciality fills the wagons, and the escort follows the cargo.
+  // Merchants spawned: every speciality fills the wagons; the escort is the wish × the company.
   const st = world();
   tick(st, 24);
-  const tiers = {};
-  for (const sp of E.SPECIALITY_KEYS) {
-    const m = V.spawnVisitor(st, "merchants", { speciality: sp });
+  for (const sp of Object.keys(V.MERCHANT_SPECS)) {
+    const m = V.spawnVisitor(st, "merchants", { spec: sp });
     if (!check(!!m, `a ${sp} caravan`)) continue;
-    const S = E.SPECIALITIES[sp];
-    check(m.speciality === sp && Object.keys(S.sup).every((k) => m.stock[k] >= S.sup[k][0]) && m.wares.length >= S.n[0], `${sp}: ${E.specialityLabel(sp)} (${V.goodsText(m)})`);
-    check(m.escort && m.escort.tier === E.tierForValue(m.escort.value).key && m.guards === E.escortFighters(m.escort) && m.size === m.guards + 2, `${sp}: worth ${m.escort.value} → ${E.escortShort(m.escort)}, ${m.guards} guards + 2 traders`);
-    tiers[m.escort.tier] = (tiers[m.escort.tier] || 0) + 1;
+    const S = V.MERCHANT_SPECS[sp];
+    check(m.spec === sp && m.wares.filter((it) => S.gear.includes(it.key)).length >= 2 + (S.extra ? S.extra[0] : 0), `${sp}: ${S.name} (${V.goodsText(m)})`);
+    const e = m.escort;
+    check(e && e.company && e.guards <= e.company.guards && e.guards === Math.max(1, Math.min(e.company.guards, Math.round(e.company.guards * e.want))) && m.guards === Math.max(1, e.guards) && m.size === m.guards + 2, `${sp}: worth ${e.value}, wish ${Math.round(e.want * 100)}% of ${e.company.guards} → ${E.escortWords(e)}`);
     st.visitors.splice(st.visitors.indexOf(m), 1);
   }
-  const forced = { light: V.spawnVisitor(st, "merchants", { cargoValue: 200 }), armed: V.spawnVisitor(st, "merchants", { cargoValue: 700 }), armoured: V.spawnVisitor(st, "merchants", { cargoValue: 1300 }) };
-  check(forced.light.escort.tier === "light" && forced.armed.escort.tier === "armed" && forced.armoured.escort.tier === "armoured", "the escort follows the cargo's worth");
+  const big = { guards: 8, power: 4.6, kit: "contractors", vehicles: ["truck", "hummer"] };
+  const forced = { light: V.spawnVisitor(st, "merchants", { cargoValue: 100, company: big }), armed: V.spawnVisitor(st, "merchants", { cargoValue: 500, company: { ...big, power: 3.8, kit: "escorts" } }), armoured: V.spawnVisitor(st, "merchants", { cargoValue: 1400, company: big }) };
+  check(forced.light.escort.tier === "light" && forced.armed.escort.tier === "armed" && forced.armoured.escort.tier === "armoured", `the escort follows the cargo (${["light", "armed", "armoured"].map((k) => E.escortShort(forced[k].escort)).join(", ")})`);
   check(V.vStrength(forced.armoured) === forced.armoured.size * forced.armoured.power + forced.armoured.escort.vehPower && V.vStrength(forced.light) === forced.light.size * forced.light.power, "the vehicle adds to their strength");
-  check(V.vStrength(forced.light) < V.vStrength(forced.armed) && V.vStrength(forced.armed) < V.vStrength(forced.armoured), `strength by tier: ${Math.round(V.vStrength(forced.light))} < ${Math.round(V.vStrength(forced.armed))} < ${Math.round(V.vStrength(forced.armoured))}`);
+  check(V.vStrength(forced.light) < V.vStrength(forced.armed) && V.vStrength(forced.armed) < V.vStrength(forced.armoured), `strength: ${Math.round(V.vStrength(forced.light))} < ${Math.round(V.vStrength(forced.armed))} < ${Math.round(V.vStrength(forced.armoured))}`);
   const tip = V.visitorTipLines(st, forced.armoured.tile, new Set([forced.armoured.tile]));
-  check(tip.some((l) => /Escort: an armoured escort/.test(l.text) && /(Humvee|MRAP)/.test(l.text)), `the tooltip says the escort in words (${tip.map((l) => l.text).join(" | ").slice(0, 160)})`);
+  check(tip.some((l) => /Escort: 8 hired guns/.test(l.text) && /Humvee with an M2/.test(l.text)), `the tooltip says the escort in words (${tip.map((l) => l.text).join(" | ").slice(0, 200)})`);
   const enemy = C.escortEnemy(forced.armoured);
-  check(enemy.kind === "contractors" && enemy.count === forced.armoured.guards && /humvee|mrap/.test(enemy.vehicleBody) && enemy.escort, "their battle: the escort's kit, every guard, the armoured vehicle on the map");
-  // A spread of real caravans.
-  const n = {};
-  for (let i = 0; i < 60; i++) { const m = V.spawnVisitor(st, "merchants"); if (m) { n[m.escort.tier] = (n[m.escort.tier] || 0) + 1; st.visitors.splice(st.visitors.indexOf(m), 1); } }
-  console.log(`  60 caravans: ${JSON.stringify(n)}`);
-  check(n.light && n.armed && n.armoured, "all three tiers come");
+  check(enemy.kind === "contractors" && enemy.count === forced.armoured.guards && enemy.vehicleBody === "humvee" && enemy.turret === "m2hb" && enemy.escort, "their battle: the escort's kit, every guard, the Humvee and its M2");
+  // A group's caravan: its spare fighters, the cargo's wish; a military group's Humvee.
+  const g = st.factions.find((x) => x.alive && x.bases.length && x.pop >= 20) || st.factions.find((x) => x.alive && x.bases.length);
+  const cap = E.groupCapacity(st, g);
+  const ge = (v) => E.groupEscort(st, g, v);
+  check(cap.guards + cap.home === Math.floor(g.pop * E.ESCORT.FIGHTERS) && cap.home >= cap.guards * 0.9, `${g.name} (${g.pop} people): ${cap.guards} fighters to spare, ${cap.home} kept at home`);
+  check(ge(100).guards <= Math.max(1, Math.round(cap.guards * 0.25)) && ge(2000).guards === cap.guards, `a group: ${ge(100).guards} for cheap cargo, all ${ge(2000).guards} it can spare for rich`);
+  const was = g.atWar;
+  g.atWar = 1;
+  check(E.groupCapacity(st, g).guards <= cap.guards, "at war: more stay home");
+  g.atWar = was;
+  const mil = { ...g, type: "military", vehicles: undefined, id: g.id };
+  const mcap = E.groupCapacity(st, mil);
+  check(mcap.vehicles.includes("hummer") && E.groupEscort(st, mil, 2000).vehicle === "hummer" && E.groupEscort(st, mil, 2000).vehicleId != null, "a military group sends its Humvee with rich cargo");
+  // A spread of real caravans: the wish against the means.
+  const n = {}, rows = [];
+  for (let i = 0; i < 300; i++) { const m = V.spawnVisitor(st, "merchants"); if (m) { n[m.escort.tier] = (n[m.escort.tier] || 0) + 1; rows.push(m.escort); st.visitors.splice(st.visitors.indexOf(m), 1); } }
+  const richRows = rows.filter((e) => e.value >= 1000);
+  const lightRich = richRows.filter((e) => e.tier === "light").length, heavyRich = richRows.filter((e) => e.tier === "armoured").length;
+  console.log(`  300 caravans: ${JSON.stringify(n)}; rich cargo (1000+ worth, ${richRows.length}): ${lightRich} lightly guarded (a poor company), ${heavyRich} armoured`);
+  check(n.light && n.armed && n.armoured, "all three labels come");
+  check(lightRich > 0 && heavyRich > lightRich, "a rich cargo is mostly well guarded, now and then lightly (a poor company)");
 }
 
 // ======================================================================================
@@ -133,7 +159,7 @@ section("Your team robs a merchant caravan: everything it carries");
     st.autoCombat = true;
     const p = team(st, 5, 4);
     if (!st.parties.includes(p)) continue;
-    const m = V.spawnVisitor(st, "merchants", { cargoValue: 1300 }); // an armoured escort with a Humvee
+    const m = V.spawnVisitor(st, "merchants", { cargoValue: 1300, company: { guards: 6, power: 4.6, kit: "contractors", vehicles: ["hummer"] } }); // an armoured escort with a Humvee
     if (!m) continue;
     // A weak escort for this test (the battle is not the point): two guards left, poor shots.
     m.guards = 2; m.size = 4; m.power = 1.2;
@@ -263,6 +289,16 @@ section("Witnesses and consequences");
     C.consequences(st, { type: "caravan", owner: g.id, ref: null, tile: g.bases[0] }, ["their guards got away"], lines);
     check(attitude(g) === "Hostile", `seen: ${g.name} turn hostile`);
   }
+  // Unseen, word gets out anyway now and then (C.RUMOUR.CHANCE), a few days later.
+  st.caravanRumours = [];
+  for (let i = 0; i < 300; i++) { st.hour++; C.consequences(st, { ...c, key: `t${i}`, name: "the Test caravan", by: "Scavenge team (Ana)" }, [], []); }
+  const nr = st.caravanRumours.length;
+  check(nr >= 25 && nr <= 70, `traced after all about 15% of the time (${nr} of 300)`);
+  check(st.caravanRumours.every((r) => r.at >= st.hour - 300 + 24 && r.at <= st.hour + 24 * 4), "a day to four later");
+  const rep1 = V.merchantRep(st);
+  st.caravanRumours = [{ ...st.caravanRumours[0], at: st.hour }];
+  C.caravanRaidsHour(st);
+  check(V.merchantRep(st) === Math.max(-100, rep1 - 45) && st.log.slice(0, 6).some((l) => /^Word got around that Scavenge team \(Ana\) robbed the Test caravan/.test(l.text)) && !st.caravanRumours.length, `traced: the consequences, and you hear of it (${V.merchantRep(st)})`);
 }
 
 // ======================================================================================
@@ -330,14 +366,14 @@ section("Save and load with caravans on the road");
   setAutopilot(st, true, "balanced");
   tick(st, 24 * 3);
   st.cards.length = 0;
-  const m = V.spawnVisitor(st, "merchants", { cargoValue: 1300 });
+  const m = V.spawnVisitor(st, "merchants", { cargoValue: 1300, company: { guards: 6, power: 4.6, kit: "contractors", vehicles: ["hummer"] } });
   check(!!m && !!m.escort, "an armoured caravan on the road");
   const save = saveToString(st);
-  const esc = JSON.stringify(m.escort), spec = m.speciality, nw = m.wares.length;
+  const esc = JSON.stringify(m.escort), spec = m.spec, nw = m.wares.length;
   tick(st, 24 * 10);
   const loaded = loadFromString(save); // after the original played on: the saved id counter comes back with it
   const lm = loaded.visitors.find((v) => v.serial === m.serial);
-  check(lm && JSON.stringify(lm.escort) === esc && lm.speciality === spec && lm.wares.length === nw, "the escort, the speciality and the wares come back");
+  check(lm && JSON.stringify(lm.escort) === esc && lm.spec === spec && lm.wares.length === nw, "the escort, the speciality and the wares come back");
   tick(loaded, 24 * 10);
   const d = (s) => digest({ st: s, lines: [], id0: 0, id1: Number.MAX_SAFE_INTEGER });
   st.chronicle.ms = loaded.chronicle.ms = 0;

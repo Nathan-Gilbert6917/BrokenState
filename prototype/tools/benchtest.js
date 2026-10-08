@@ -2,7 +2,7 @@
 // one utility plot): they stand on a utility plot at a shelter, an outpost and the hub, each tier upgrades the one
 // below in place, hand crafting needs one for all but the simple field recipes, they make hand crafting faster and
 // better (craftRate, the item's condition; field crafting gets nothing), a workbench counts as a workshop and is what
-// an ammo bench needs, the new hub starts with a crafting bench and no ammo bench, an old save without a bench keeps
+// an ammo bench needs, the new hub starts with no bench at all (barestart: tools/barestarttest.js), an old save without a bench keeps
 // working, and the governor (autopilot.js) builds a bench, upgrades it and puts up the ammo bench.
 // Usage: node tools/benchtest.js [seed]
 import { unlockAll } from "../src/sim/blueprints.js";
@@ -37,7 +37,8 @@ const benches = Object.keys(BENCH);
   check(benches.length === 3 && benches.every((k, i) => BUILDINGS[k] && BUILDINGS[k].family === "bench" && BUILDINGS[k].tier === i + 1), "three bench tiers in BENCH, one family");
   check(benches.every((k) => BUILDINGS[k].plot === "utility" && BUILDINGS[k].max === 1 && BUILDINGS[k].craft === BENCH[k]), "each on a utility plot, one a base, its numbers from BENCH");
   check(BUILDINGS.workbench.upgrades === "craftbench" && BUILDINGS.toolbench.upgrades === "workbench", "each tier upgrades the one below");
-  check(!BUILDINGS.craftbench.req && (BUILDINGS.craftbench.cost.scrap || 0) <= 10 && !BUILDINGS.craftbench.cost.parts, "the crafting bench is cheap and needs no skill");
+  // barestart: no base starts with one, so the first bench is an early but real choice (buildings.js BENCH).
+  check(!BUILDINGS.craftbench.req && BUILDINGS.craftbench.cost.scrap === 12 && BUILDINGS.craftbench.cost.parts === 1 && BUILDINGS.craftbench.hours === 12, "the crafting bench: 12 scrap and a part, 12 work-hours, no skill");
   check(BENCH.craftbench.rate > 1 && BENCH.workbench.rate > BENCH.craftbench.rate && BENCH.toolbench.rate > BENCH.workbench.rate, "each tier crafts faster");
   check(BENCH.craftbench.quality > 0 && BENCH.workbench.quality > BENCH.craftbench.quality && BENCH.toolbench.quality > BENCH.workbench.quality, "each tier crafts better");
   check(!BENCH.craftbench.workshop && BENCH.workbench.workshop && BENCH.toolbench.workshop, "the workbench and up are workshops, the crafting bench is not");
@@ -46,13 +47,13 @@ const benches = Object.keys(BENCH);
   check(SHELTER.build.craftbench === 1, "a shelter may build a crafting bench");
 }
 
-// 1. The new hub: a crafting bench, no ammo bench.
+// 1. The new hub: no bench at all (barestart: it starts bare), and it can build one.
 {
   console.log("The start");
   const st = W();
   const h = hub(st);
-  check(count(h, "craftbench") === 1 && !countAll(h, "ammo_bench"), `the hub starts with a crafting bench and no ammo bench (${h.buildings.map((b) => b.type).join(", ")})`);
-  check(benchTier(h) === 1 && benchOf(h) === BENCH.craftbench, "its bench is tier 1");
+  check(!benchTier(h, true) && !countAll(h, "ammo_bench"), `the hub starts with no bench and no ammo bench (${h.buildings.map((b) => b.type).join(", ")})`);
+  check(!benchOf(h) && canBuild(st, h, "craftbench").ok, `no bench bonus; a crafting bench can go up (${canBuild(st, h, "craftbench").reason || "ok"})`);
   check(!hasWorkshop(h), "no workshop at the start");
 }
 
@@ -144,6 +145,7 @@ const benches = Object.keys(BENCH);
   const st = W();
   const h = hub(st);
   rich(h); person(st, h, "build", 10);
+  addBuilding(h, "craftbench"); // the hub starts bare (barestart): its first bench
   check(!canBuild(st, h, "ammo_bench").ok && /workbench/.test(canBuild(st, h, "ammo_bench").reason || ""), `no ammo bench with only a crafting bench (${canBuild(st, h, "ammo_bench").reason})`);
   check(!hasWorkshop(h) && !canCraft(st, h, "crossbow").ok, "no workshop recipes either");
   queueBuild(st, h, "workbench"); finishAll(st, h);
@@ -194,6 +196,7 @@ const benches = Object.keys(BENCH);
   check(made && made.key === "spikedbat" && Math.abs(meanBench - Math.min(1, meanBare + BENCH.craftbench.quality)) < 0.011 && Math.abs(made.quality - meanBench) <= 0.25, `the crafted bat comes out around the bench's condition (${made && made.quality}, expected ${meanBench}, ${meanBare} without)`);
   // Field crafting by a team gets no bench, wherever it set out from.
   const h = hub(st);
+  addBuilding(h, "craftbench"); // a bench at home (the hub starts bare: barestart)
   check(count(h, "craftbench") === 1, "the hub has a bench");
   const team = atBase(st, h.id).slice(0, 2);
   team.forEach((s) => { s.skills.mechanics = 4; s.traits = []; s.perks = []; s.gear.weapon = null; });
@@ -226,9 +229,12 @@ const benches = Object.keys(BENCH);
   const o2 = mkOutpost(st, h.tile);
   rich(o2); person(st, o2, "farm", 3);
   check(!housingAI.wishes(st, o2).some((w) => w.type === "craftbench"), "nobody crafting and nothing queued: no bench wished for");
-  // The hub: a crafting bench at the start, then the workbench, then the ammo bench.
+  // The hub: it starts bare (barestart), so a crafting bench first, then the workbench, then the ammo bench.
   rich(h); h.stock.ammo = 20;
   atBase(st, h.id).forEach((s) => (s.skills.mechanics = Math.max(2, s.skills.mechanics)));
+  const hw0 = housingAI.wishes(st, h);
+  check(hw0.some((w) => w.type === "craftbench" && w.save) && !hw0.some((w) => w.type === "workbench"), `the bare hub wishes for a crafting bench first, saved for with the ammo low (${hw0.map((w) => w.type).join(", ")})`);
+  queueBuild(st, h, "craftbench"); finishAll(st, h);
   const hw = housingAI.wishes(st, h);
   check(hw.some((w) => w.type === "workbench" && w.save), `the hub wishes for a workbench first, saved for with the ammo low (${hw.map((w) => w.type).join(", ")})`);
   queueBuild(st, h, "workbench"); finishAll(st, h);

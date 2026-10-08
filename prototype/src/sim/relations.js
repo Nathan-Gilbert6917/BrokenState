@@ -33,7 +33,7 @@ import { crowdInfo, talker } from "./morale.js";
 import { partyMembers, tileLabel } from "./parties.js";
 import { farmOf } from "./farming.js";
 import { Rng } from "./rng.js";
-import { hasPerk } from "./skills.js";
+import { hasPerk, talkXp } from "./skills.js";
 import { comfortLines, buzzLine, buzzDaily, groomDaily } from "./comforts.js";
 import { starveMood, NEEDS } from "./needs.js"; // starving and parched days (needs.js starvingDaily)
 import { festivalGlow } from "./festival.js";
@@ -317,7 +317,7 @@ export function moodFactors(state, s) {
     const ci = crowdInfo(state, base);
     if (ci.penalty > 0) add(`Crowded: ${ci.people} people in ${ci.beds} beds`, -ci.penalty, false);
     else add("A bed for everyone", 1, false);
-    if (ci.lift > 0) add(`Leader ${first(ci.leader)} (Leadership ${skill(ci.leader, "leadership")})`, ci.lift, false);
+    if (ci.lift > 0) add(`${ci.leader.leader ? "Leader" : "Base leader"} ${first(ci.leader)} (Leadership ${skill(ci.leader, "leadership")})`, ci.lift, false);
     if (!(base.hungerDays > 0)) add("Fed", 1, false); // out of food or water: the starving and parched lines below
     if (base.rationing) add("Short rations", -3, false);
     if (!pl.route && s.role === "rest") add("Resting (Rest role)", 6, false);
@@ -478,6 +478,7 @@ function breakCard(state, base, s, what) {
         resolve: (st) => {
           if (!live()) return gone();
           const ok = st.rng.chance(t.chance);
+          talkXp(st, t.who, ok); // skills.js: Speech for the talker
           addMood(st, s, ok ? 15 : 3, `Talked it through with ${first(t.who)}`);
           if (ok) bumpPair(st, s, t.who, 8);
           return ok ? `${first(t.who)} gets ${first(s)} talking. It helps (mood ${Math.round(s.mood)}).` : `${first(s)} will not open up (mood ${Math.round(s.mood)}).`;
@@ -882,6 +883,7 @@ export function makePeace(state, a, b, how) {
   if (!info.who) return "Nobody else here can talk them round.";
   r.peaceDay = day(state);
   const ok = state.rng.chance(info.chance);
+  talkXp(state, info.who, ok); // skills.js: Speech for the peacemaker
   bumpPair(state, a, b, ok ? PEACE.talkOk : PEACE.talkFail);
   return ok ? `${first(info.who)} sits them down. ${first(a)} and ${first(b)} shake hands (opinion ${Math.round(r.o)}).` : `${first(info.who)} tries, but it ends in shouting (opinion ${Math.round(r.o)}).`;
 }
