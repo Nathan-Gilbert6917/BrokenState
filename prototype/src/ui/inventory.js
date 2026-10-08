@@ -26,6 +26,7 @@ import { raidMove, raidItemAt, parseRaidLoc, raidTakeAll, stashAll, personalLoad
 import { combatAct } from "../sim/combat.js";
 import { SEARCH } from "../sim/search.js";
 import { ask } from "./confirm.js"; // breaking down anything above junk asks first (one confirmation style)
+import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -171,6 +172,7 @@ function selBar(state, ui, place) {
     ${st && from.o !== "armory" && from.o !== "cargo" ? `<button class="mini" data-action="inv-store"${tip(`Put it in ${st.name}`)}>${from.o === "body" ? "Take" : st.o === "armory" ? "Unequip to armory" : "Put in cargo"}</button>` : ""}
     ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
     ${burnButtons(state, ui, item, from)}
+    ${isGunCase(item) && from.o !== "body" ? `<button class="mini" data-action="inv-opencase"${tip(`Inside: ${caseText(item)}${item.locked ? " (locked: prised open with a blade or a crowbar)" : ""}. Opening it here is free: the gun goes into ${st ? st.name : "storage"}, the rounds into the stores.`)}>${item.locked ? "Prise open" : "Open"} case</button>` : ""}
     <button class="mini" data-action="inv-cancel">Cancel</button>
     ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" ? modBar(state, ui, item) : ""}</div>`;
 }
@@ -558,6 +560,7 @@ export const INV_ACTIONS = {
     ui.invMsg = breakDownAt(state, ui.invSel);
     ui.invSel = null;
   },
+  "inv-opencase": (state, ui) => { if (ui.invSel) ui.invMsg = openCaseAt(state, ui.invSel); ui.invSel = null; }, // sim/gunsafes.js
   "inv-firemark": (state, ui, d) => { if (ui.invSel) ui.invMsg = setFireMark(state, ui.invSel, d.mark || null); },
   "inv-burnjunk": (state, ui, d) => { const b = baseById(state, Number(d.base)); if (b) ui.invMsg = breakDownJunk(state, b); ui.invSel = null; },
   "loot-open": (state, ui) => { ui.inv = { sid: null, loot: true, body: null }; ui.invSel = null; ui.invMsg = ""; },

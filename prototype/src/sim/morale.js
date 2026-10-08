@@ -18,6 +18,7 @@ import { onLeave, noteMood } from "./relations.js";
 import { buzzWork } from "./comforts.js";
 import { needsWork } from "./needs.js";
 import { nearSnap } from "./mentalbreaks.js";
+import { talkXp } from "./skills.js";
 
 export const CROWD = { base: 2, perOver: 8, cap: 16, leaderShare: 0.5, roomy: 1 };
 export const LEADER_LIFT = 0.15; // mood a day per point of the leader's Leadership
@@ -49,7 +50,9 @@ export function crowdInfo(state, base, people = residents(state, base.id).length
   const beds = baseBeds(base);
   const over = Math.max(0, people - beds) / Math.max(1, beds);
   const penalty = over > 0 ? Math.min(CROWD.cap, CROWD.base + CROWD.perOver * over) : 0;
-  const leader = atBase(state, base.id).find((s) => s.leader && s.alive) || null;
+  // The group's leader where they live; elsewhere the base's own leader while at the base (steward.js leaderId).
+  const here = atBase(state, base.id);
+  const leader = here.find((s) => s.leader && s.alive) || (base.steward && base.steward.leaderId != null ? here.find((s) => s.id === base.steward.leaderId && s.alive) : null) || null;
   const rawLift = leader ? skill(leader, "leadership") * LEADER_LIFT : 0;
   const lift = penalty > 0 ? Math.min(rawLift, penalty * CROWD.leaderShare) : rawLift;
   const net = (penalty > 0 ? -penalty : CROWD.roomy) + lift;
@@ -219,6 +222,7 @@ function warningCard(state, base, s) {
           const tt = t.who && t.who.alive && t.who.location.kind === "base" && t.who.location.baseId === base.id ? t : talker(st, base, s);
           if (!tt.who) return `Nobody is left at ${base.name} to talk to ${name}.`;
           const ok = st.rng.chance(tt.chance);
+          talkXp(st, tt.who, ok); // skills.js: Speech for the talker
           s.mood = clamp(s.mood + (ok ? TALK_OK : TALK_FAIL), 0, 100);
           noteMood(st, s, ok ? TALK_OK : TALK_FAIL, `Talked to by ${firstName(tt.who)}`);
           reset();

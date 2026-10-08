@@ -71,6 +71,7 @@ import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { groupWorksDaily, fieldsFactor, growthFactor, workshopFactor, storeFactor, groupBaseDefence } from "./groupworks.js"; // barestart: what the groups build
+import { factionVehicles, groupTurretPower } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -162,6 +163,7 @@ export function createFactions(state, count) {
       stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2 }, // preserved / jars: storage.js; wood: woodcutting.js
       lootedGear: [], raidCooldown: rng.int(4, 10),
     });
+    factionVehicles(state.factions[state.factions.length - 1]); // vehicles.js: a military group starts with an Army truck and a Humvee (M2 turret)
   });
 }
 
@@ -656,7 +658,7 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
   const allies = beaten ? { power: 0, names: [] } : allianceRaidHelp(state, base, f); // alliance.js: coalition members send fighters
   const caught = !!party.surprise; // watch.js surpriseAt: they came on an unwatched night (parties.js, at the walls)
   const def = baseDefense(state, base, caught) + allies.power;
-  const att = party.strength;
+  const att = party.strength + groupTurretPower(f); // vehicles.js: a military group's Humvee and its M2 come with the raid
   if (allies.names.length) log(state, `Fighters from ${allies.names.join(" and ")} came to help defend ${base.name}.`, "good");
   const shot = beaten ? { ammo: 0, arrows: 0 } : spendShots(base.stock, people, 3); // 3 a head: the bows' in arrows, the rest's in ammo
   // The walls, the yard and the buildings (defences.js raidTier): held at the wall, a break-in pushed back from the
@@ -765,8 +767,8 @@ export function resolveRaidOnFaction(state, party, helpers) {
     return held;
   }
   raidSoured(state, attacker, target);
-  const def = groupBaseDefence(state, target, party.target.tile) + strength(target) * 0.8 + helpPower; // 8 for a walled base (groupworks.js: half that bare)
-  const att = party.strength;
+  const def = groupBaseDefence(state, target, party.target.tile) + strength(target) * 0.8 + helpPower + (party.target.tile === target.bases[0] ? groupTurretPower(target) : 0); // 8 for a walled base (groupworks.js: half that bare); vehicles.js: a military group's Humvee at home
+  const att = party.strength + groupTurretPower(attacker); // and on their raids
   // Only report fights you could know about: raids on groups you know, anything you can see. Groups you have not
   // met are not named.
   const who = attacker ? knownName(attacker) : party.raidName || "a horde"; // raidName: raiders from outside (visitors.js)

@@ -12,7 +12,8 @@ import {
   productKey, inputKeys, untilMargin, craftOrders, addCraftOrder, setCraftOrder, removeCraftOrder, craftOrderStatus, bestQuality,
 } from "../sim/production.js";
 import { POWER, POWER_USERS, STILL, powerStatus, refreshPower, generators } from "../sim/power.js";
-import { STEWARD_AREAS, stewardOf, setSteward, setStewardArea, setStewardStyle, setPinned, stewardSummary, STEWARD_LOG_HOUR, leaderChoices, leaderOf, leaderStatus, leaderScore, ledBy, setLeader } from "../sim/steward.js";
+import { STEWARD_AREAS, stewardOf, setSteward, setStewardArea, setStewardStyle, setPinned, stewardSummary, STEWARD_LOG_HOUR, leaderChoices, leaderOf, leaderStatus, leaderScore, ledBy, setLeader, actingLeader, actsShare } from "../sim/steward.js";
+import { LEADER_LIFT } from "../sim/morale.js";
 import { PERSONALITIES } from "../sim/autopilot.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -113,17 +114,27 @@ export function stewardCard(state, b) {
     const other = ledBy(state, x);
     return `${x.name} (Leadership ${skill(x, "leadership")}, Speech ${skill(x, "speech")})${other && other !== b ? ` · leads ${other.name}` : ""}`;
   };
-  const pick = `<select data-action="stw-leader" data-base="${b.id}"${tip("Who leads this base: one of the people living here. The best by Leadership (Speech counts half) is picked for you if you hand it over without choosing. The leader keeps their own work and is never sent out by the base; while they are away the base waits, and if they die or move the next best takes over. A person leads one base.")}>
+  const pick = `<select data-action="stw-leader" data-base="${b.id}"${tip("Who leads this base: one of the people living here. The best by Leadership (Speech counts half) is picked for you if you hand it over without choosing. The leader keeps their own work and is never sent out by the base; while they are away the next best here stands in, and if they die or move the next best takes over. A person leads one base. Their Leadership lifts everyone's mood here (0.15 a day a point), and under Leadership 5 they are slow to act: some hours nothing gets done.")}>
       ${s.on ? "" : `<option value="" ${L ? "" : "selected"}>No leader</option>`}
       ${choices.map((x) => `<option value="${x.id}" ${L === x ? "selected" : ""}>${esc(label(x))}</option>`).join("")}
     </select>`;
   const best = choices.slice().sort((x, y) => leaderScore(y) - leaderScore(x))[0];
-  const runs = s.on ? (where === "away" ? `${esc(L.name)} is away: ${esc(b.name)} waits for them` : `${esc(L ? L.name : "The leader")} runs this base`) : "You run this base";
+  const A = actingLeader(state, b);
+  const runs = s.on ? (where === "away" ? (A ? `${esc(L.name)} is away: ${esc(A.name)} stands in` : `${esc(L.name)} is away: ${esc(b.name)} waits for them`) : `${esc(L ? L.name : "The leader")} runs this base`) : "You run this base";
+  // What the leader's Leadership does (morale.js crowdInfo; steward.js actsShare).
+  const lead = L ? skill(L, "leadership") : 0;
+  const groupLeaderHere = atBase(state, b.id).some((x) => x.leader && x.alive);
+  const effects = [];
+  if (L && where === "here" && !groupLeaderHere && lead > 0) effects.push(`everyone here +${(lead * LEADER_LIFT).toFixed(1)} mood a day while ${esc(first(L))} is here`);
+  if (L && groupLeaderHere && !L.leader) effects.push("the group's leader lives here, so their mood lift counts instead");
+  const share = A ? actsShare(A) : L ? actsShare(L) : 1;
+  if (share < 1) effects.push(`<span class="warn">slow to act: gets things done about ${Math.round(share * 100)}% of the hours (Leadership under 5)</span>`);
   const name = L ? first(L) : best ? first(best) : "a leader";
   return `<h3>Base leader</h3>
     <div class="card small prodctl">
       <div class="row">Leader ${pick}</div>
-      <div class="spread" style="margin-top:0.3rem"><b>${runs}</b><button class="${s.on ? "" : "primary"}" data-action="stw-toggle" data-base="${b.id}"${tip(s.on ? "Take over: the leader stops running it and everything stays as it is" : `Let ${name} run this base: keep people safe and supplied with the governor's logic for the areas ticked below, every hour. Nothing drastic: no trips but emergency hauls for water or food, no trades, wars or moves. You keep teams, cards and the other bases; pinned people are left alone.`)}>${s.on ? "Take over" : `Let ${esc(name)} run it`}</button></div>
+      ${effects.length ? `<div class="muted">${effects.join(" · ")}</div>` : ""}
+      <div class="spread" style="margin-top:0.3rem"><b>${runs}</b><button class="${s.on ? "" : "primary"}" data-action="stw-toggle" data-base="${b.id}"${tip(s.on ? "Take over: the leader stops running it and everything stays as it is" : `Let ${name} run this base: keep people safe and supplied with the governor's logic for the areas ticked below, every hour: roles, building, crafting, the sick, defence and warnings, emergency hauls, trading, supply runs to outposts, hunting, fishing and firewood. Nothing drastic: no scavenging trips, wars, new outposts, people moved or bases left. You keep teams, cards and the other bases; pinned people are left alone.`)}>${s.on ? "Take over" : `Let ${esc(name)} run it`}</button></div>
       ${state.autopilot ? `<div class="muted">The dev autopilot runs the whole holdout now; base leaders wait until it is off.</div>` : ""}
       <div class="row" style="margin-top:0.3rem">Style <select data-action="stw-style" data-base="${b.id}"${tip("How careful the leader is (the governor's styles)")}>${Object.entries(PERSONALITIES).map(([k, p]) => `<option value="${k}" ${k === s.style ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></div>
       <div class="stwareas">${Object.keys(STEWARD_AREAS).map((k) => `<label${tip(STEWARD_AREAS[k].desc)}><input type="checkbox" data-action="stw-area" data-base="${b.id}" data-area="${k}" ${s.areas[k] ? "checked" : ""}> ${esc(STEWARD_AREAS[k].name)}</label>`).join("")}</div>

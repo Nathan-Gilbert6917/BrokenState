@@ -6,7 +6,7 @@ import { skill, survivorById, baseById, atBase } from "../sim/world.js";
 import { assignStations } from "../sim/buildings.js";
 import { toManual } from "../sim/work.js";
 import {
-  skillProgress, pendingPerks, PERK_TREE, MILESTONES, hasPerk, perkReason, choosePerk, CAP_USE, CAP_STUDY, xpNeed,
+  skillProgress, pendingPerks, PERK_TREE, MILESTONES, hasPerk, perkReason, choosePerk, CAP_USE, CAP_STUDY, CAP_FIGHT, xpNeed,
   lessonOf, bestLesson, learnersFor, learnReason, teachRate, TEACH_GAP, MAX_LEARNERS, bookDef, bookHours, readReason, READ_HOURS, BOOK_XP,
 } from "../sim/skills.js";
 
@@ -16,7 +16,7 @@ const first = (s) => esc(String(s.name).split(" ")[0]);
 const n1 = (v) => (Math.round((v || 0) * 10) / 10).toString();
 const bar = (pct, color, cls = "bar") => `<div class="${cls}"><i style="width:${Math.max(0, Math.min(100, pct))}%;background:${color}"></i></div>`;
 
-const CURVE_TIP = `XP to the next level: 40 + 0.32 × level³ (49 at 3, 80 at 5, 360 at 10, 1,120 at 15). A full day of one job gives about 10 XP; XP from use is capped at ${CAP_USE} a day per skill, from teaching and books at ${CAP_STUDY}. Skills above 10 that go unused for 14 days slip by 2 XP a day (never below 10 nor below the level they joined with). Perk points at 5, 10 and 15.`;
+const CURVE_TIP = `XP to the next level: 40 + 0.32 × level³ (49 at 3, 80 at 5, 360 at 10, 1,120 at 15). A full day of one job gives about 10 XP; XP from use is capped at ${CAP_USE} a day per skill, from fighting at ${CAP_FIGHT}, from teaching and books at ${CAP_STUDY}. Skills above 10 that go unused for 14 days slip by 2 XP a day (never below 10 nor below the level they joined with). Perk points at 5, 10 and 15.`;
 
 // The Skills column: level, XP bar, today's XP and the perks taken in each skill.
 export function skillsBlock(state, s) {

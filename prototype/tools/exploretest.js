@@ -95,6 +95,7 @@ console.log("Locks: odds, Heat and noise");
     for (const stealth of [0, 5, 10, 20]) {
       s.skills.stealth = stealth;
       const o = L.openOdds(st, b, u, lock);
+      if (def.nopick) { check(!o.pick.ok && o.pick.why, `${kind}: a dial or keypad, nothing to pick (gunsafetest.js has its odds)`); continue; } // locks.js gun safes
       const want = Math.max(0.05, Math.min(0.95, L.PICK.base + L.PICK.perStealth * skill(s, "stealth") - L.PICK.perDiff * (def.diff - 1) + (u.quiet ? L.PICK.quiet : 0)));
       check(near(o.pick.chance, want) && o.pick.ok, `${kind} (difficulty ${def.diff}), Stealth ${stealth}: pick ${pct(o.pick.chance)} (want ${pct(want)})`);
     }
