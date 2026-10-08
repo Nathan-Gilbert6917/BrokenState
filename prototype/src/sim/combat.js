@@ -1588,9 +1588,20 @@ export function los(b, x0, y0, x1, y1) {
     if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
     const cell = b.cells[idx(cx, cy)], C = CELL[cell.k];
     const top = cell.t || (C.los ? C.tall || 1 : C.walk ? cell.h ?? C.h ?? 0 : 0);
-    if (!top || e0 + ((e1 - e0) * i) / n > top) continue;
+    const eye = e0 + ((e1 - e0) * i) / n;
+    if (!top || eye > top) continue;
     const fx = px - cx, fy = py - cy;
-    if (fx > 0.12 && fx < 0.88 && fy > 0.12 && fy < 0.88) clear = false;
+    if (fx > 0.12 && fx < 0.88 && fy > 0.12 && fy < 0.88) { clear = false; continue; }
+    // Grazing this cell's edge: a corner glimpsed past, unless the cell across that edge blocks too (a sight line
+    // squeezed along the seam between two cells of the same wall sees nothing).
+    const nx = fx <= 0.12 ? cx - 1 : fx >= 0.88 ? cx + 1 : cx, ny = fy <= 0.12 ? cy - 1 : fy >= 0.88 ? cy + 1 : cy;
+    const across = (x, y) => {
+      if ((x === cx && y === cy) || !inside(x, y) || (x === x0 && y === y0) || (x === x1 && y === y1)) return false;
+      const c2 = b.cells[idx(x, y)], C2 = CELL[c2.k];
+      const t2 = c2.t || (C2.los ? C2.tall || 1 : C2.walk ? c2.h ?? C2.h ?? 0 : 0);
+      return !!t2 && eye <= t2;
+    };
+    if ((nx !== cx && ny === cy && across(nx, cy)) || (ny !== cy && nx === cx && across(cx, ny))) clear = false;
   }
   losSet(b.losCache, a * W * H + c, clear ? 1 : 2);
   losSet(b.losCache, c * W * H + a, clear ? 1 : 2);
