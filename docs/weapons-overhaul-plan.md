@@ -1264,3 +1264,41 @@ Add dedicated sniper rifles, found already fitted with a scope and a bipod (item
 - Hunting: the sniper's `hunt` override `{ big: 1.25, small: 0.4 }` (a scope helps on big game).
 - Gun builder art: the bolt platform drawing with a long barrel variant (`look: "sniper"`).
 - Test: rostertest checks the sniper always comes with tacscope + bipod fitted from every source, and the brace penalty.
+
+---
+
+## 23. Military starting vehicles (user request 2026-10-07; agent G)
+
+"Military bases start with 1 mil truck and 1 humvee with machine gun on top":
+- (a) AI groups of the military type start owning a miltruck and a Humvee (plating 1, glass 1, `turret: { gun: "m2hb" }`) at their home base, usable by their raids/convoys/defence; by-the-numbers bonus as section 11.
+- (b) Every National Guard base site's motor pool has one working miltruck and one M2-turret Humvee among its trucks, guarded, claimable via foundcars.js.
+- The turret fires once the turret wave lands (needs B's m2hb, A2's fire modes); until then it is drawn and shown as not yet usable.
+
+---
+
+## 24. Explosions vs gear (user request 2026-10-07; agent F in wave 2, with G for vehicles)
+
+- Launchers' blast: high damage at the impact cell, less in the splash (AoE). 40 mm HE: impact 34–46, splash (r 1.5) 16–24. Rocket: impact 70–95 (and struct/vehicle damage), splash (r 2) 30–45. Frags and pipe bombs keep today's numbers (no impact cell).
+- Blowing up a vehicle (its condition reaches 0 from blasts, or a rocket hit that wrecks it): 50–80% of the items in its cargo/trunk are destroyed at random, and every remaining item with durability (quality/qmax, ad/admax, dur/maxDur per section 21) loses 20–60% of its current value; riders take blast damage.
+- Blowing up an enemy (killed or hit by a blast): every item on them with durability takes 15–50% damage (scaled by the blast damage they took), so looted gear from a body killed by explosives is worn; ammo boxes on them lose 0–40% of their rounds (cook-off); a throwable on them may go off (10%: a frag/molotov in their pocket explodes at their cell).
+
+---
+
+## 25. Amendment after dev 75793c5 (another session's "durability on all gear" + crafting benches, 2026-10-07)
+
+dev now has: GEAR_DUR (real weapons, armour, kits wear; dur = uses), item.durMax, crafting.js itemDur / itemDurMax / wear / wearSlot / wearHeld / craftedDur / durUnit, found gear part-worn 30-100% (inventory.js newItem FOUND_DUR, hash-rolled), starting/recruit gear 55-100%, a Crafting skill, crafting bench -> workbench -> master workbench (buildings.js family "bench"; the hub starts with a crafting bench), a "spear" (Steel spear) GEAR + WEAPONS key.
+
+This REPLACES the section 17/21 field contract: **one condition field for all gear: item.dur / item.durMax** (via crafting.js itemDur/itemDurMax/wear).
+- Armour (section 17): an armour piece's durability points ARE dur/durMax. Rescale its GEAR dur to the section 17 dmax (vest 40, plate 50, milhelmet 30 ... as the table; GEAR_DUR already close). Per-hit wear (armour.js) replaces the per-fight wearSlot for pieces with `ac`; no separate ad/admax fields.
+- Guns: dur/durMax are uses (wear per fight / shots, as dev does); quality (0.4-1) stays the gun's precision/make (crafting quality roll). Jams (section 14) read both: fq from quality AND condition dur/durMax (a worn gun jams more).
+- Repair (section 21): restores dur up to durMax and lowers durMax by the Tarkov formula; the workbench family already exists (crafting bench tier 1 = field-grade repairs only?, workbench = full repairs, master workbench = smaller max loss, e.g. ×0.7). Use the Crafting skill for soft goods (vests, padding, packs) and Mechanics for guns/hard armour/plates/tools.
+- Section 4 melee: "spear" already exists (Steel spear): agent B gives it reach 2 + throw 5 rather than adding a new key; pipespear is the makeshift spear.
+
+---
+
+### 19.10 As built (branch `gunsafes`)
+- **Files.** New `src/sim/gunsafes.js` (GUN_STASH, rollGunStash, registerStashExtra, blastContents, gun cases, GUN_FINDS, SEARCH_TOOLS, openCaseAt) and `tools/gunsafetest.js`. Gun-safe code in `locks.js` sits in one block at the end of the file (LOCKS rows via `Object.assign`, SAFE numbers, placeGunSafes, safeOdds, openSafe, safeTurn, autoSafe, gunSearchHour); the existing functions only gained one-line hooks.
+- **Placement.** An existing container of the area is turned into the safe (kind and cell `gunsafe`), so map layouts and world dice stay put. Street maps use SAFE_RULES by area and site; building maps use `room.gunSafe` (gun shop office 0.5, Chief's office 0.3, armories at the site's rate) plus one roll a home building.
+- **Noise.** Drill noise is 1 an action and grinder noise 1.5 (2 and 3 a turn of two actions), so the Heat sums in 19.3 hold (mid drilled 9.6, high 19.2). The table's "noise 2 an action" would double them; the bot's projection `R.heat + turns × (1.2 + noise)` uses the per-turn noise.
+- **Not built.** The base gun locker (19.7). Cases do not take a gun put back in by hand (the case is a loot container; "Open case" empties it). Ammo in a case sits on `item.sup` and is not counted in itemLoad / itemValue.
+- **TODO for later stages.** GUN_STASH comments name dmr, m79, highcut, eardef, riflecan, scope4x / pistolcan fits (register extras or rows); miltrucks cargo calls `rollGunCase` at 0.15.
