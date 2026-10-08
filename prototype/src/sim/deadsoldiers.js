@@ -61,12 +61,12 @@ export const MILDEAD = {
     soldier: {
       armor: [["plate", 0.15, [0.3, 0.55]], ["vest", 0.3, [0.35, 0.6]]], // one or the other
       items: [["milhelmet", 0.35, [0.4, 0.7]], ["ar", 0.04, [0.4, 0.6]], ["carbine", 0.03, [0.4, 0.6]], ["milradio", 0.05, [0.5, 0.8]], ["smokegren", 0.06, [1, 1]], ["flare", 0.05, [1, 1]], ["bandagekit", 0.08, [0.6, 1]], ["assaultpack", 0.05, [0.4, 0.6]], ["instcoffee", 0.06, [1, 1]], ["chocolate", 0.06, [1, 1]]],
-      sup: [["ammo", 0.6, 3, 10], ["ammo", 0.15, 10, 20], ["meds", 0.08, 1, 1]], // the second: a rifle magazine
+      sup: [["a_556_fmj", 0.6, 3, 10], ["a_556_ap", 0.15, 10, 20], ["meds", 0.08, 1, 1]], // 5.56 rounds (ammo.js); the second: a rifle magazine of armour-piercing
     },
     riot: {
       armor: [["vest", 0.15, [0.35, 0.6]]],
       items: [["riothelmet", 0.35, [0.4, 0.7]], ["riotarms", 0.15, [0.4, 0.7]], ["riotlegs", 0.12, [0.4, 0.7]], ["baton", 0.12, [0.6, 0.9]], ["cuffs", 0.15, [1, 1]], ["pistol", 0.04, [0.4, 0.6]], ["flashlight", 0.06, [0.6, 0.9]]],
-      sup: [["ammo", 0.3, 3, 8]],
+      sup: [["a_9mm_fmj", 0.3, 3, 8]], // their sidearm's rounds
     },
   },
 };

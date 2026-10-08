@@ -2,6 +2,7 @@
 // armor sums, carry limits, looting bodies after a battle (by hand and headless), death sites, captives,
 // combat with the new model, and a render smoke test of the inventory and loot screens.
 // Usage: node tools/invtest.js [battles per matchup] [seed]
+import { totalRounds, isRoundKey } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, makeSurvivor, combatPower, hub, hurt, killSurvivor, newId, survivorById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { makeItem, wearAfterFight, itemDurMax } from "../src/sim/crafting.js";
@@ -226,7 +227,7 @@ function strongTeam(n) {
   const enemyB = bodies.filter((x) => x.sid == null && x.kind === "human");
   const ally = bodies.find((x) => x.sid === team[3].id);
   check(enemyB.length >= 1 && enemyB.every((x) => x.gear.weapon), `each dead raider has their weapon (${enemyB.length} bodies)`);
-  check(enemyB.every((x) => (x.supplies.ammo || 0) >= 3), "each dead raider carries ammo");
+  check(enemyB.every((x) => totalRounds(x.supplies) >= 3 && !x.supplies.ammo), "each dead raider carries rounds (by calibre: ammo.js)");
   check(!!ally && !team[3].alive, "the fallen teammate is a body to loot");
   check(b.result.loot.gear.length === 0 && !Object.keys(b.result.loot.supplies).length, "nothing is taken before the loot screen (browser)");
   const site = state.deathSites.find((d) => d.tile === b.tileId);
@@ -241,9 +242,10 @@ function strongTeam(n) {
   else check(taker.gear.weapon === gun && p.cargo.gear.length === cargoBefore + 1, "quick-taking a long gun equips it; the old one goes to the cargo");
   check(b.result.loot.gear.includes(gun), "taken items count as battle loot");
   check(/only for taking/.test(moveItem(state, `s:${taker.id}:pocket:0`, `body:${bi}:pocket:0`)) || !taker.pockets[0], "nothing goes back onto a body");
-  const ammo0 = p.cargo.supplies.ammo || 0;
-  takeSupply(state, bi, "ammo");
-  check((p.cargo.supplies.ammo || 0) > ammo0 && !enemyB[0].supplies.ammo, "taking the ammo stack puts it in the cargo");
+  const ak = Object.keys(enemyB[0].supplies).find((k) => isRoundKey(k) && enemyB[0].supplies[k] > 0); // their rounds (ammo.js)
+  const ammo0 = p.cargo.supplies[ak] || 0;
+  takeSupply(state, bi, ak);
+  check((p.cargo.supplies[ak] || 0) > ammo0 && !enemyB[0].supplies[ak], `taking the stack of rounds puts it in the cargo (${ak})`);
   // The fallen teammate's kit: take it into a pocket; it leaves the death site.
   const ai = bodies.indexOf(ally);
   const kit = team[3].pockets[0];

@@ -14,6 +14,7 @@
 //   - hospitals: a pharmacy on the ground floor and a dispensary on floor 1 (0-based); police: the armory and the evidence
 //     room on the ground floor.
 // Usage: node tools/floorfolktest.js
+import { totalRounds } from "../src/sim/ammo.js"; // the stash's rounds by calibre
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { combatAct, setFloor, activeAny, active, CELL, endPlayerTurn, runEnemyPhase, autoPlayerTurn, finishCombat, alertNear, canSee, unitAt } from "../src/sim/combat.js";
@@ -149,7 +150,7 @@ let W1 = null;
   check(K.up && rd.length >= 2 && up.length && up.every((u) => (u.f || 0) === K.f && K.f >= 1 && inRoom(rroom, u)), `${up.length} raiders hold the ${rroom.name} on floor ${K.f + 1}`);
   check(!!watcher && K.watcher === true && (watcher.f || 0) === K.f - 1 && R.stairs.some(([sx, sy]) => Math.max(Math.abs(watcher.x - sx), Math.abs(watcher.y - sy)) === 1), `a watcher stands by the stairwell on floor ${K.f} (${watcher ? `${watcher.x},${watcher.y}` : "none"})`);
   const stash = R.containers.find((x) => x.id === K.stash);
-  check(!!stash && stash.stash && stash.f === K.f && stash.area === K.room && b.floors[K.f].cells[stash.y * b.w + stash.x].k === "crate" && stash.contents && stash.contents.sup.ammo > 0 && stash.contents.gear.length >= 1, `their stash in the room: a crate with ${stash ? `${stash.contents.sup.ammo} ammo, ${stash.contents.sup.food} food and ${stash.contents.gear.map((g) => g.name).join(", ")}` : "nothing"}`);
+  check(!!stash && stash.stash && stash.f === K.f && stash.area === K.room && b.floors[K.f].cells[stash.y * b.w + stash.x].k === "crate" && stash.contents && totalRounds(stash.contents.sup) > 0 && stash.contents.gear.length >= 1, `their stash in the room: a crate with ${stash ? `${stash.contents.sup.ammo} ammo, ${stash.contents.sup.food} food and ${stash.contents.gear.map((g) => g.name).join(", ")}` : "nothing"}`);
   check(K.f !== F.nest.f && K.room !== S.room, "not in the survivors' room, not on the nest's floor");
   // Nest.
   const N = F.nest;
@@ -382,7 +383,7 @@ console.log("A building left and gone back into keeps its folk; save and load mi
   check(b2 && b2.raid.folk && JSON.stringify(b2.raid.folk) === JSON.stringify(F), "going back in restores it");
   check(b2.raid.folk.survivors.doors.map(([x, y]) => `${x},${y}`).join(";") === doorKey && S.doors.every(([x, y]) => b2.floors[S.f].cells[y * b2.w + x].k === "door" && b2.floors[S.f].cells[y * b2.w + x].barred), "the barricade is where it was");
   check(survivors(b2).length === S.count && survivors(b2).every((u) => u.side === "third") && nesters(b2).length === N.count && nesters(b2).every((u) => !u.aware) && b2.floors[N.f].cells[N.y * b2.w + N.x].k === "hivewall", "the survivors, the nest's dead and the knot are back as they were");
-  check(b2.raid.containers.some((x) => x.id === F.raiders.stash && x.stash && x.contents && x.contents.sup.ammo > 0), "the stash and its contents");
+  check(b2.raid.containers.some((x) => x.id === F.raiders.stash && x.stash && x.contents && totalRounds(x.contents.sup) > 0), "the stash and its contents");
   // Save and load with a unit on the survivors' floor, a card not yet raised.
   const u = b2.units.find((x) => x.side === "player");
   const [sx, sy] = b2.raid.stairs[0];

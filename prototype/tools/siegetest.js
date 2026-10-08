@@ -15,6 +15,7 @@
 // first); the State Map (decoys from the armory against a coming horde, an assault taking the hub's siege kit along);
 // determinism; saving and loading mid-battle with fire, ladders and a ram on the map.
 // Usage: node tools/siegetest.js [seed]
+import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, hub, atBase, makeSurvivor, day } from "../src/sim/world.js";
 import {
   createBattle, combatAct, autoPlayerTurn, runEnemyPhase, endPlayerTurn, registerCombatHandler, active, unitAt, CELL,
@@ -59,7 +60,7 @@ function fortHub(st, list = ["walls", "walls", "barricades", "watchtower", "gate
   for (const t of list) addBuilding(h, t);
   for (let i = 0; i < extra; i++) { const s = makeSurvivor(st); s.location = { kind: "base", baseId: h.id }; st.survivors.push(s); }
   for (const s of atBase(st, h.id)) { s.health = 100; if (!s.gear.weapon) s.gear.weapon = newItem("pistol"); }
-  h.stock.ammo = 300; h.stock.meds = 10;
+  setRounds(h.stock, 300); h.stock.meds = 10; // ammo.js: rounds by calibre
   return h;
 }
 // A battle at the hub's walls, the attack from the east (no tile to come from), defenders at their default posts.
@@ -640,7 +641,7 @@ section("Bows on the walls: the base's arrows (never its ammo), a bow with none 
     const { st, h } = bowWall(seed + 73, 100);
     const n = atBase(st, h.id).length;
     const r = autoResolveCombat(st, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 4, power: 2 }, layout: "baseDefence", handler: "st", context: {} });
-    check(r.ammoUsed === 0 && r.arrowsUsed === Math.min(100, n * 6) && h.stock.arrows === 100 - r.arrowsUsed + r.arrowsBack && h.stock.ammo === 300, `a base's bows by the numbers: ${r.arrowsUsed} arrows from its stock, no ammo, ${r.arrowsBack} picked up (${r.outcome})`);
+    check(r.ammoUsed === 0 && r.arrowsUsed === Math.min(100, n * 6) && h.stock.arrows === 100 - r.arrowsUsed + r.arrowsBack && totalRounds(h.stock) === 300, `a base's bows by the numbers: ${r.arrowsUsed} arrows from its stock, no ammo, ${r.arrowsBack} picked up (${r.outcome})`);
     check(r.outcome === "victory" ? r.arrowsBack === Math.round(r.arrowsUsed / 2) : r.arrowsBack === 0, "held: about half the arrows back; overrun: none");
   }
 }

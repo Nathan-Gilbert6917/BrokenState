@@ -1,10 +1,12 @@
 // @ts-check
 // One gun's stats as the battle uses them (docs/weapons-overhaul-plan.md section 0): playerUnit / shotOdds, the gun
 // builder and the tooltips all read this, so the screen always matches the fight.
-// PHASE 0 STUB: plain WEAPONS stats plus the fitted attachments (gunmods.js). The ballistics agent (A) adds the
-// loaded ammo type, penetration and jams; the UI agent (D) only reads it.
+// WEAPONS stats, the fitted attachments (gunmods.js) and the loaded ammo type (ammo.js: aim, range, damage, noise,
+// penetration, the soft-target bonus, jam ×). Jams and fire modes are the combat agent's (A2); the UI agent (D) reads it.
 import { WEAPONS } from "./combat.js";
 import { gunMods } from "./gunmods.js";
+import { ammoPen } from "./data-ammo.js";
+import { calOf, typeFor, typeFx } from "./ammo.js"; // the loaded type (ammo.js): aim, range, damage, noise, penetration
 
 /**
  * @param {any} itemOrKey a weapon item ({ key, mods, load, quality }) or a WEAPONS key
@@ -16,11 +18,14 @@ export function gunStats(itemOrKey, opts = {}) {
   if (!w) return null;
   const m = gunMods(opts.mods ? { ...item, mods: opts.mods } : item);
   const cap = w.cap ? Math.max(1, Math.round(w.cap * (m.capMult ?? 1)) + (m.cap || 0)) : 0;
+  const cal = calOf(item.key);
+  const load = cal ? typeFor(cal, opts.load ?? item.load ?? null) : null; // ammo.js: a type its calibre has, else its common round
+  const t = typeFx(load);
   return {
-    cal: w.cal || null, aim: (w.aim || 0) + (m.aim || 0), close: (w.close || 0) + (m.close || 0),
-    opt: (w.opt || 0) + (m.opt || 0), fall: Math.max(0, (w.fall || 0) + (m.fall || 0)),
-    dmg: [Math.round(w.dmg[0] * (m.dmg ?? 1)), Math.round(w.dmg[1] * (m.dmg ?? 1))],
-    ammoPerShot: w.ammo || 0, cap, noise: (w.noise || 0) * (m.noise ?? 1), weight: m.weight || 0, value: m.value || 0,
-    pen: 0, jam: w.rel ?? 0, reloadAp: 1, load: opts.load ?? item.load ?? null,
+    cal: w.cal || null, aim: (w.aim || 0) + (m.aim || 0) + (t.aim || 0), close: (w.close || 0) + (m.close || 0) + (t.close || 0),
+    opt: (w.opt || 0) + (m.opt || 0) + (t.opt || 0), fall: Math.max(0, ((w.fall || 0) + (m.fall || 0)) * (t.fallMult ?? 1)),
+    dmg: [Math.round(w.dmg[0] * (m.dmg ?? 1) * (t.dmg ?? 1)), Math.round(w.dmg[1] * (m.dmg ?? 1) * (t.dmg ?? 1))],
+    ammoPerShot: w.ammo || 0, cap, noise: (w.noise || 0) * (m.noise ?? 1) * (t.noise || 1), weight: m.weight || 0, value: m.value || 0,
+    pen: cal ? ammoPen(cal, load) : 0, soft: t.soft || 1, jam: (w.rel ?? 0) * (t.jam || 1), reloadAp: 1, load,
   };
 }

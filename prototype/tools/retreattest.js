@@ -6,6 +6,7 @@
 // resolves each battle by the numbers too, to compare the two modes.
 // Usage: node tools/retreattest.js [battles per matchup] [seed] [style|all]   (default 40, 7, all; RT_VERBOSE=1 lists
 // every check)
+import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, makeSurvivor, hub, survivorById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import {
@@ -52,7 +53,7 @@ function fighter(state, { weapon = "huntrifle", shooting = 9, scouting = 4 } = {
 // A battle on an open map with units placed by hand. Every cell made open, nobody near the strip unless placed.
 function openBattle(state, crew, enemy, { canRetreat = true } = {}) {
   const h = hub(state);
-  h.stock.ammo = 200; h.stock.meds = 4;
+  setRounds(h.stock, 200, crew.map((s) => s.gear.weapon && s.gear.weapon.key).filter(Boolean)); h.stock.meds = 4; // ammo.js: rounds for the crew's guns
   const b = (state.combat = createBattle(state, { tile: h.tile, baseId: h.id, fighterIds: crew.map((s) => s.id), enemy, ambush: null, canRetreat, handler: "rt", context: {} }));
   for (const c of b.cells) c.k = "open";
   b.losCache.fill(0);
@@ -133,10 +134,10 @@ const park = (b, u) => { u.dead = true; u.x = -20; u.y = -20; }; // takes an ene
   check(hurtOdds.chance === fresh + Math.round(-RETREAT.WOUNDS * 0.75),`wounds lower the odds (100 health ${fresh}% → 25 health ${hurtOdds.chance}%)`);
   check(hurtOdds.lostIfCaught > shot.lostIfCaught, `and a wounded unit that is caught may go down (${Math.round(shot.lostIfCaught * 100)}% → ${Math.round(hurtOdds.lostIfCaught * 100)}%)`);
   u.hp = 100;
-  u.load = 4;
+  u.armLoad = 4; // the armour worn (u.load is the loaded round now: ammo.js)
   const heavy = escapeOdds(b, u);
   check(heavy.chance === fresh - 4 * RETREAT.ARMOR, `a plate carrier slows them (${heavy.chance}%)`);
-  u.load = 0;
+  u.armLoad = 0;
   const sc0 = u.scouting;
   u.scouting = sc0 + 8;
   const scout = escapeOdds(b, u);
@@ -265,7 +266,7 @@ const park = (b, u) => { u.dead = true; u.x = -20; u.y = -20; }; // takes an ene
     const st = createWorld({ seed: seed + 3, factionCount: 4 });
     const crew = [fighter(st, { weapon: "pistol", shooting: 5 }), fighter(st, { weapon: "pistol", shooting: 5 }), fighter(st, { weapon: "pistol", shooting: 5 })];
     const h = hub(st);
-    h.stock.ammo = 200; h.stock.meds = 3;
+    setRounds(h.stock, 200, ["pistol"]); h.stock.meds = 3; // ammo.js: 9mm for the pistols
     const b = (st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: crew.map((s) => s.id), enemy: { kind: "soldiers", count: 5, power: 7 }, ambush: null, canRetreat: true, handler: "rt", context: {} }));
     for (let g = 0; g < 60 && !b.over; g++) { autoPlayerTurn(st); runEnemyPhase(st); }
     const out = JSON.stringify([b.result && b.result.outcome, b.turn, b.log.map((l) => l.text), b.units.map((u) => [u.x, u.y, Math.round(u.hp), !!u.left, !!u.down, !!u.dead])]);
@@ -338,13 +339,13 @@ const numbersSetup = (p, enemy, extra = {}) => ({ tile: partyTile(p), partyId: p
     const b = openBattle(st, crew, { kind: k % 3 ? "raiders" : "zombies", count: 4, power: 4 });
     const u = mine(b, 0);
     place(b, u, st.rng.int(4, 9), st.rng.int(0, 12));
-    u.hp = st.rng.int(20, 100); u.load = st.rng.int(0, 4); u.scouting = st.rng.int(0, 10);
+    u.hp = st.rng.int(20, 100); u.armLoad = st.rng.int(0, 4); u.scouting = st.rng.int(0, 10);
     b.dark = st.rng.chance(0.3);
     for (let i = 0; i < 4; i++) { const e = foe(b, i); if (st.rng.chance(0.25)) park(b, e); else { e.weapon = st.rng.pick(["machete", "huntrifle", "pistol"]); place(b, e, Math.min(17, u.x + st.rng.int(1, 6)), Math.max(0, Math.min(12, u.y + st.rng.int(-2, 2)))); if (unitAt(b, e.x, e.y) !== e) park(b, e); } }
     const t = escapeOdds(b, u);
     if (t.onStrip) { st.combat = null; continue; }
     tried++;
-    const nb = escapeChanceByNumbers({ hp: u.hp, maxHp: u.maxHp, load: u.load, scouting: u.scouting, mult: u.armor }, { tiles: t.tiles, pinned: t.pinned, shooters: t.shooters, chasers: t.chasers, night: !!(b.night || b.dark) });
+    const nb = escapeChanceByNumbers({ hp: u.hp, maxHp: u.maxHp, load: u.armLoad, scouting: u.scouting, mult: u.armor }, { tiles: t.tiles, pinned: t.pinned, shooters: t.shooters, chasers: t.chasers, night: !!(b.night || b.dark) });
     if (nb.chance === t.chance && nb.safe === t.safe && Math.abs(nb.lostIfCaught - t.lostIfCaught) < 1e-9) same++;
     else diff = `tactical ${t.chance}% (${JSON.stringify(t.parts)}) vs numbers ${nb.chance}% (${JSON.stringify(nb.parts)})`;
     st.combat = null;
@@ -432,9 +433,9 @@ const numbersSetup = (p, enemy, extra = {}) => ({ tile: partyTile(p), partyId: p
     for (const s of partyMembers(st, p)) s.health = st.rng.int(35, 100);
     const enemy = zombies ? { kind: "zombies", count: 10, power: 3, name: "the dead" } : { kind: "raiders", count: 5, power: 5, factionId: f.id, name: "raiders" };
     const before = partyMembers(st, p).map((s) => s.id);
-    const ammo0 = (p.supplies.ammo || 0) + (p.cargo.supplies.ammo || 0);
+    const ammo0 = totalRounds(p.supplies) + totalRounds(p.cargo.supplies); // ammo.js: every round, any calibre
     const r = autoResolveCombat(st, numbersSetup(p, enemy, { retreatPolicy: i % 2 ? "most" : "losing" }));
-    const ammo1 = (p.supplies.ammo || 0) + (p.cargo.supplies.ammo || 0);
+    const ammo1 = totalRounds(p.supplies) + totalRounds(p.cargo.supplies);
     if (r.outcome === "retreat") {
       seen.retreat++;
       const ro = r.retreatOrder;
@@ -664,7 +665,7 @@ function measure(style) {
       const play = (crew, retreat) => {
         state.survivors.push(...crew);
         state.tiles[tile.id] = fake;
-        base.stock.ammo = 200; base.stock.meds = 3;
+        setRounds(base.stock, 200, crew.map((s) => s.gear.weapon.key)); base.stock.meds = 3; // ammo.js: 200 rounds that fit the crew's guns, every run alike
         base.armory = [...armoryAt];
         // The risen of earlier test battles (carriers.js walkingLoot: people who died and turned, still walking) stay
         // out: the first of the pair would meet one near the tile and put it down, and the second would not.
@@ -689,7 +690,7 @@ function measure(style) {
       // The same fight by the numbers (the Auto-resolve button, the autopilot): fought out, or by the style's policy.
       const playNum = (crew, pol) => {
         state.survivors.push(...crew);
-        base.stock.ammo = 200;
+        setRounds(base.stock, 200, crew.map((s) => s.gear.weapon.key)); // ammo.js: as above
         state.walkingLoot = [];
         rng.state = rngAt;
         const res = autoResolveCombat(state, { tile: tile.id, baseId: base.id, fighterIds: crew.map((s) => s.id), enemy: { ...m.enemy, power }, ambush: m.ambush || null, canRetreat: true, handler: "rt", context: {}, breakOff: true, retreatPolicy: pol });

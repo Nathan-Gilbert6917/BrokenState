@@ -43,6 +43,7 @@ import { FOLK, rollFolk, placeFolk, folkHint, noteFolk, folkAfterPlace } from ".
 import { noteSearch } from "./relations.js";
 import { factionById } from "./world.js";
 import { changeGoodwill } from "./factions.js";
+import { sortFind } from "./ammo.js"; // rounds by calibre
 
 // ---------- tuning ----------
 export const CRAWL = {
@@ -1152,7 +1153,7 @@ export function resolveEvent(state, p, eventId, choice, opts = {}) {
       if (choice === "sneak") return done("You slip past below his line of sight.", "good");
       for (const pl of blk.places) pl.raiders = false;
       const gear = [newItem(rng.pick(["huntrifle", "pistol", "shotgun"]), rng.pick([0.7, 0.85, 1]), rng)];
-      return done(`You take him down without a sound: ${give(state, p, c, { ammo: rng.int(8, 20) }, gear)}. The raiders on this block are blind now: nobody holed up in its places.`, "good");
+      return done(`You take him down without a sound: ${give(state, p, c, sortFind({ ammo: rng.int(8, 20) }, "raider", "crawlguard", c.tile, state.hour), gear)}. The raiders on this block are blind now: nobody holed up in its places.`, "good");
     }
     case "truck": {
       if (choice === "siphon") {
@@ -1176,7 +1177,7 @@ export function resolveEvent(state, p, eventId, choice, opts = {}) {
       const pack = newItem(rng.pick(["slingbag", "backpack", "backpack", "hikingpack"]), rng.pick([0.7, 0.85, 1]), rng);
       const r = rollArea(rng, "house", rich, scav);
       addSup(r.sup, { food: rng.int(1, 4), water: rng.int(0, 3), ammo: rng.chance(0.5) ? rng.int(4, 14) : 0 });
-      const text = give(state, p, c, r.sup, [pack, ...r.gear]);
+      const text = give(state, p, c, sortFind(r.sup, "home", "crawlbody", c.tile, state.hour), [pack, ...r.gear]); // ammo.js: rounds by calibre
       if (!partyMembers(state, p).length) { crawlWiped(state, p, ""); return "The body was not dead."; }
       return done(`${text}.`, "good");
     }
@@ -1218,6 +1219,7 @@ function eventGrab(state, p, c, ev, mil, done, fightNow) {
   const sup = {}, gear = [];
   for (let i = 0; i < 2; i++) { const r = rollArea(rng, mil ? (i ? "barracks" : "armory") : "medwreck", rich, scav); addSup(sup, r.sup); gear.push(...r.gear); }
   if (mil) addSup(sup, { ammo: rng.int(8, 25) });
+  sortFind(sup, mil ? "military" : "home", "crawlwreck", c.tile, state.hour); // ammo.js: rounds by calibre
   return done(`You grab ${give(state, p, c, sup, gear)}.`, "good");
 }
 

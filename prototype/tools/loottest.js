@@ -20,6 +20,7 @@ import { THROWABLES } from "../src/sim/stealth.js";
 import { worthTier } from "../src/sim/valuation.js";
 import { newItem, ZBODY } from "../src/sim/inventory.js";
 import { MILDEAD } from "../src/sim/deadsoldiers.js";
+import { WARE_AMMO } from "../src/sim/ammo.js";
 import { Rng } from "../src/sim/rng.js";
 import { TREAT_ORDER } from "../src/sim/needs.js";
 
@@ -57,6 +58,7 @@ addAll(ZBODY.FINDS, "body:zombie"); // one of the dead searched in a raid (inven
 for (const [k, B] of Object.entries(MILDEAD.BODY)) addAll([...B.armor, ...B.items].map(([key]) => key), `body:dead ${k}`);
 for (const [t, list] of Object.entries(WARES)) addAll(list, `sold:${t}`);
 addAll(RARE_GEAR, "merchants"); addAll(MERCHANT_VALUABLES, "merchants"); addAll(TRAVEL_GEAR, "travellers");
+for (const [t, w] of Object.entries(WARE_AMMO)) addAll(w.keys, `sold:${t}`); // boxes of rounds on a group's shelf (ammo.js)
 addAll(Object.keys(RECRUIT_WEAPONS), "recruits"); addAll(RECRUIT_ARMOR, "recruits"); addAll(RECRUIT_KIT, "recruits"); addAll(RECRUIT_PERSONAL, "recruits");
 for (const [k, r] of Object.entries(CRAFTS)) if (r.gear) addAll([r.gear], `craft:${k}`);
 addAll(HUMVEE_GEAR, "event:humvee"); addAll(HIKER_STUFF, "event:hiker"); addAll(["hikingpack", "rucksack"], "event:hiker");

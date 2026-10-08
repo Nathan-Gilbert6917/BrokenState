@@ -11,6 +11,7 @@ import { buildLock } from "./blueprints.js";
 import { cabinProblem } from "./hunting.js";
 import { stockHas, useStock } from "./water.js"; // recipes: water counts both kinds, un-purified used first
 import { prisonBuildRate } from "./prisoners.js"; // prisoners-tab: prisoner labour on the build queue
+import { benchRounds } from "./ammo.js"; // the ammo bench makes rounds by calibre
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 ammo per day (+4% per Mechanics point)" },
@@ -418,7 +419,7 @@ export function runStations(state, base) {
     for (const [k, v] of Object.entries(inp)) useStock(base.stock, k, v);
     if (status.mash) base.mash = Math.max(0, (base.mash || 0) - status.mash); // the still's spoiled food (storage.js)
     if (r.minSkill && skill(status.op, r.skill) < r.minSkill && state.rng.chance(0.5)) continue;
-    for (const [k, v] of Object.entries(status.out)) base.stock[k] = (base.stock[k] || 0) + v;
+    for (const [k, v] of Object.entries(status.out)) { if (k === "ammo") benchRounds(state, base, v); else base.stock[k] = (base.stock[k] || 0) + v; } // ammo.js: the calibres the guns here shoot
     if (inp.jars) base.jarsInUse = (base.jarsInUse || 0) + inp.jars; // filled jars (storage.js)
   }
 }

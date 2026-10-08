@@ -98,7 +98,7 @@ import { newItem } from "./inventory.js";
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
 import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
 import { travelFactor, thirstAt, thirstAhead } from "./weather.js";
-import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear } from "./trade.js";
+import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear, roundNeeds } from "./trade.js";
 import { count } from "./buildings.js";
 import { partyVehicle } from "./vehicles.js";
 import { chronicleNote } from "./chronicle.js";
@@ -110,6 +110,8 @@ import { hcNoRaiders } from "./hardcore-groups.js";
 import { UPKEEP, coldFactor } from "./upkeep.js";
 import { eatFromStore } from "./storage.js";
 import { gunmodWares } from "./loot.js"; // a sight or a suppressor among a merchant's goods
+import { supplyAmt, spendAmmo } from "./rounds.js"; // "ammo": every round there, any calibre
+import { expandAmmo } from "./ammo.js"; // rounds by calibre
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -720,7 +722,7 @@ export function stockPlan(stock, value) {
   let left = value;
   for (const k of PAY_ORDER) {
     if (left <= 0) break;
-    const have = Math.floor(stock[k] || 0);
+    const have = Math.floor(supplyAmt(stock, k));
     if (have <= 0) continue;
     const q = Math.min(have, Math.ceil(left / SUPPLIES[k].value));
     plan[k] = q;
@@ -731,7 +733,8 @@ export function stockPlan(stock, value) {
 const planText = (plan) => Object.entries(plan).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ");
 function payFromStock(stock, plan, to) {
   for (const [k, q] of Object.entries(plan)) {
-    stock[k] = Math.max(0, (stock[k] || 0) - q);
+    if (k === "ammo") spendAmmo(stock, q); // rounds.js: any calibre, the cheapest first
+    else stock[k] = Math.max(0, (stock[k] || 0) - q);
     if (to) to[k] = (to[k] || 0) + q;
   }
 }
@@ -1251,7 +1254,9 @@ export function visitorTradeContext(state, t) {
   const v = visitorById(state, t.visitorId);
   if (!v || !v.alive) return null;
   const have = {}, theirHave = {};
+  expandAmmo(v.stock, v.kind === "raiders" ? "raider" : v.kind === "merchants" ? "guns" : "home"); // ammo.js: their ammo as rounds by calibre (by key in the deal)
   for (const k of SUPPLY_KEYS) theirHave[k] = available(v, k);
+  theirHave.ammo = 0;
   if (t.partyId == null) {
     const base = baseById(state, t.baseId);
     if (!base || v.phase !== "stop" || v.tile !== base.tile) return null;
@@ -1276,6 +1281,7 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
   const t = ctx.t;
   t.offer = {}; t.ask = {}; t.offerGear = []; t.askGear = []; t.deal = null;
   const out = [];
+  needs = roundNeeds(state, ctx, needs); // trade.js: ammo asked for and sold as rounds by calibre
   // Pay with what they want most (trade.js demand) among what the hub has plenty of.
   const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.6 && (ctx.have[k] || 0) > 0).sort((a, b) => demand(state, ctx.f, b) - demand(state, ctx.f, a) || needs[a] - needs[b]);
   const short = Object.keys(needs).filter((k) => needs[k] >= 1.2 && (ctx.theirHave[k] || 0) > 0).sort((a, b) => needs[b] - needs[a]);
@@ -1300,7 +1306,7 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
   // A manual for a building or craft you cannot make yet (blueprints.js), one at a time.
   const bp = ctx.theirGear.findIndex((g) => GEAR[g.key] && GEAR[g.key].blueprint && !isKnown(state, GEAR[g.key].blueprint));
   if (bp >= 0 && plenty.length && styleKey !== "aggressive") { t.askGear = [ctx.theirGear[bp]]; tryDeal(); }
-  for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" ? 80 : 20));
+  for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" || SUPPLIES[k].round ? 80 : 20));
   if (short.length) tryDeal();
   // At a base: valuables and spare weapons they pay well for (trade.js autoSellGear).
   if (ctx.base && tradeContext(state)) { const r = autoSellGear(state, needs); if (/^Traded/.test(r)) out.push(r.replace(/^Traded with [^:]+: /, "").replace(/\.$/, "")); }
@@ -1502,7 +1508,7 @@ function endShelter(state, v) {
   v.phase = "travel";
   if (base && v.hostile) {
     const took = {};
-    for (const k of ["food", "meds", "ammo"]) { const q = Math.floor((base.stock[k] || 0) * 0.12); if (q > 0) { base.stock[k] -= q; took[k] = q; } }
+    for (const k of ["food", "meds", "ammo"]) { const q = Math.floor(supplyAmt(base.stock, k) * 0.12); if (q > 0) { if (k === "ammo") spendAmmo(base.stock, q); else base.stock[k] -= q; took[k] = q; } } // ammo: any calibre (rounds.js)
     addToStock(v, took);
     v.hostile = false;
     log(state, `The guests at ${base.name} were thieves: ${cap1(v.name)} slipped away in the night with ${planText(took) || "what they could carry"}.`, "danger");

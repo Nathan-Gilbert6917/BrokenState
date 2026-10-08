@@ -2,7 +2,7 @@
 // The panel shows a team's people, gear, supplies, vehicle and order queue, with actions on the spot
 // (camp, scavenge, look around, repair, treat, move, go home). Timed actions go through the order queue
 // (sim/orders.js); buttons use data-action handlers in main.js.
-import { SUPPLIES, SUPPLY_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
+import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
 import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom } from "../sim/parties.js";
 import { partyVehicle, tank, isBike, vehicleLabel } from "../sim/vehicles.js";
@@ -30,6 +30,8 @@ import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
 import { canClaim, claimOwner, wellProblem, wellYield, CLAIM } from "../sim/claims.js"; // land claims and wells on them
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
 import { watchlistPin } from "./watchlist.js"; // 📌 pin the team to the Watching panel
+import { totalRounds, sumRecs } from "../sim/rounds.js"; // rounds by calibre
+import { roundsLine } from "../sim/ammo.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -198,7 +200,7 @@ function landBlock(state, p, at, queueing) {
   if (!t || t.terrain === "water") return "";
   const members = partyMembers(state, p);
   const mix = partyHuntMix(state, p); // the home base's hunting mix (sim/hunting.js)
-  const info = huntInfo(state, at, { members, ammo: carried(p, "ammo"), arrows: carried(p, "arrows"), mix, hours: HUNT.defHours, room: cargoRoom(state, p) });
+  const info = huntInfo(state, at, { members, ammo: sumRecs(p.supplies, p.cargo.supplies), arrows: carried(p, "arrows"), mix, hours: HUNT.defHours, room: cargoRoom(state, p) });
   const mixNote = ` The hours follow the home base's hunting mix (${HUNT_METHODS.filter((k) => mix[k]).map((k) => `${METHOD_NAMES[k].toLowerCase()} ${mix[k]}%`).join(", ")}; the base's Farming tab): guns hours use the best weapon, bow hours bows and crossbows with arrows (${Math.floor(carried(p, "arrows"))} carried; about half the arrows shot are lost), trap hours snares and deadfalls for small game (silent, less food).${info.est ? ` Expect ~${Math.round(info.est.shots)} shots${info.est.arrows >= 0.5 ? `, ~${Math.round(info.est.arrows)} arrows lost` : ""}.` : ""}`;
   const hp = queueing ? "" : huntProblem(state, p, at);
   const fs = fishSpot(state, at);
@@ -353,7 +355,7 @@ function memberCard(state, p, m, live, queueing) {
 function suppliesBlock(state, p) {
   const cap = partyCapacity(state, p);
   const load = poolLoad(p);
-  const packed = SUPPLY_KEYS.filter((k) => (p.supplies[k] || 0) >= 0.5 || (p.cargo.supplies[k] || 0) >= 0.5);
+  const packed = STOCK_KEYS.filter((k) => (k === "ammo" ? totalRounds(p.supplies) + totalRounds(p.cargo.supplies) : (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0)) >= 0.5); // rounds together as "ammo" (sim/rounds.js)
   // Days at the rate it eats on the move (more under a load, sim/load.js; food at today's cold, sim/weather.js).
   const n = Math.max(1, partyPace(state, p).eatMove);
   const daysOf = (k) => n0((k === "water" ? teamWaterIn(p) : (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) + (k === "food" ? (p.supplies.preserved || 0) + (p.cargo.supplies.preserved || 0) : 0)) / (n * (k === "food" ? foodNeedFactor(state) : 1))); // water: both kinds
@@ -362,7 +364,7 @@ function suppliesBlock(state, p) {
   const pace = b ? (p.vehicle ? b.ride : b.foot) : 1;
   return `<h3>Supplies and cargo</h3><div class="card small">
     <table class="t"><tr><th></th><th${tip("Packed at the start (used first on the road)")}>Packed</th><th${tip("Found on the way (carried home; food and water here are eaten when packed runs out)")}>Found</th></tr>
-      ${packed.map((k) => `<tr><td>${SUPPLIES[k].name}</td><td>${n0(p.supplies[k])}</td><td>${n0(p.cargo.supplies[k])}</td></tr>`).join("") || `<tr><td colspan="3" class="muted">Nothing carried</td></tr>`}
+      ${packed.map((k) => k === "ammo" ? `<tr><td${tip(`Every calibre (a gun fires only its own): ${roundsLine(sumRecs(p.supplies, p.cargo.supplies))}`)}>${SUPPLIES[k].name}</td><td>${n0(totalRounds(p.supplies))}</td><td>${n0(totalRounds(p.cargo.supplies))}</td></tr>` : `<tr><td>${SUPPLIES[k].name}</td><td>${n0(p.supplies[k])}</td><td>${n0(p.cargo.supplies[k])}</td></tr>`).join("") || `<tr><td colspan="3" class="muted">Nothing carried</td></tr>`}
     </table>
     <div class="muted" style="margin-top:0.3rem">Food for ~${daysOf("food")} days, water for ~${daysOf("water")} days on the move · meds ${n0(partyMeds(p))}</div>
     ${teamWaterNote(state, p)}

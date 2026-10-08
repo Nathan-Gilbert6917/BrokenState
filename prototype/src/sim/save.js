@@ -21,6 +21,7 @@
 //   { $: "M", e: [[k, v]…] } Map · { $: "S", e: […] } Set · { $: "WM", e } WeakMap · { $: "WS", e } WeakSet
 //   { $: "T", t: "Uint16Array", b: base64 } typed array · { $: "Rng", s } · { $: "Grid", w, h } · { $: "O", v }
 //   { $: "u" } undefined · { $: "N", v: "NaN" | "Infinity" | "-Infinity" | "-0" }
+import { migrateAmmo } from "./ammo.js"; // old saves: generic ammo into rounds by calibre
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
 import { peekNextId, setNextId, day, hub, alive, fillCrafting } from "./world.js";
@@ -175,6 +176,9 @@ export function deserializeState(save) {
     if (state.staging && state.staging.stores && !Number.isFinite(state.staging.stores.rawwater)) state.staging.stores.rawwater = 0;
     state.rawWater = 1;
   }
+  // Rounds by calibre (ammo.js, the weapons overhaul): a save from before (no state.ammoCal) has every generic ammo
+  // stock of yours split across the calibres of the guns that holder owns (9mm and 12 gauge with none), the same total.
+  if (!state.ammoCal) { migrateAmmo(state); state.ammoCal = 1; }
   // A stock amount that is NaN is 0: before 7212b81 a team packing a supply its base had no key for (firewood on a
   // hardcore hub) made the base's stock NaN, and saves of that time carry it (tools/savecorpustest.js found it).
   const unNaN = (o) => { if (o) for (const k of Object.keys(o)) if (Number.isNaN(o[k])) o[k] = 0; };

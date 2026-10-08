@@ -70,6 +70,8 @@ import { reduceHorde } from "./hordes.js";
 import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
+import { payAmmo } from "./ammo.js";
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -626,7 +628,7 @@ export function baseDefense(state, base, surprise = false) {
   const mult = (s) => (s.role === "guard" ? 1.5 : base.alert ? 1.3 : surprise ? SURPRISE.ASLEEP : 0.8);
   for (const s of people) d += combatPower(s) * mult(s);
   // Short of ammo (under 3 a head) the guns count 70%, short of arrows the bows (world.js armedFactor).
-  return d * armedFactor(people, base.stock.ammo || 0, base.stock.arrows || 0, { short: 0.7, weight: mult });
+  return d * armedFactor(people, base.stock, base.stock.arrows || 0, { short: 0.7, weight: mult });
 }
 
 // Called when a raid party reaches its target and the siege timer runs out.
@@ -918,12 +920,12 @@ export function deliverHelpCall(state, party) {
       {
         label: "Send 40 ammo",
         hint: "Strengthens their defense, small goodwill gain",
-        disabled: () => (h.stock.ammo || 0) < 40,
+        disabled: () => totalRounds(h.stock) < 40,
         resolve: (st) => {
           // Checked against what the hub holds now, not when the message came in.
-          if ((h.stock.ammo || 0) < 40) return `${h.name} no longer has 40 ammo to spare.`;
+          if (totalRounds(h.stock) < 40) return `${h.name} no longer has 40 ammo to spare.`;
           if (!st.parties.includes(party)) return `Too late: the fight at ${target.name} is already over.`;
-          h.stock.ammo -= 40;
+          payAmmo(st, h, 40); // ammo.js: the rounds its guns need least
           party.strength *= 0.8;
           changeGoodwill(st, target, 6, "you sent ammo");
           target.lastDiplomacy = day(st);
@@ -965,13 +967,13 @@ export function raidWarning(state, party) {
       {
         label: "Pay tribute (30% of the food, 30 ammo)",
         hint: `About ${tributeNow().food} food right now. They turn back and goodwill rises by ${RAIDS.TRIBUTE_GW}${isAggressiveType(f) ? `, but it fades again (${RAIDS.TRIBUTE_FADE} a day): they will be back` : ""}`,
-        disabled: (st) => (base.stock.ammo || 0) < 30 || !st.parties.includes(party),
+        disabled: (st) => totalRounds(base.stock) < 30 || !st.parties.includes(party),
         resolve: (st) => {
           if (!st.parties.includes(party)) return "The raiders are already gone.";
-          if ((base.stock.ammo || 0) < 30) return `${base.name} no longer has 30 ammo to offer. The raiders keep coming.`;
+          if (totalRounds(base.stock) < 30) return `${base.name} no longer has 30 ammo to offer. The raiders keep coming.`;
           const t = tributeNow();
           base.stock.food = Math.max(0, (base.stock.food || 0) - t.food);
-          base.stock.ammo -= t.ammo;
+          payAmmo(st, base, t.ammo); // ammo.js: the rounds its guns need least
           changeGoodwill(st, f, RAIDS.TRIBUTE_GW, "tribute");
           if (isAggressiveType(f)) f.boughtGw = (f.boughtGw || 0) + RAIDS.TRIBUTE_GW; // fades again (factionsDaily)
           party.returning = true;

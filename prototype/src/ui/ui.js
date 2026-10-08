@@ -1,6 +1,6 @@
 // DOM panels and modals. Every user action goes through the action dispatcher in main.js.
 // Any element with data-tip="..." shows a hover description.
-import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger, SUPPLIES, SUPPLY_KEYS, GEAR, SKILLS, SKILL_NAMES, TRAITS, FACTION_TYPES } from "../sim/data.js";
+import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger, SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, SKILLS, SKILL_NAMES, TRAITS, FACTION_TYPES } from "../sim/data.js";
 import {
   day, hourOfDay, isNight, hub, alive, atBase, skill, combatPower, factionById, survivorById, baseById, gearEffect, RADIO_RANGE, residents,
 } from "../sim/world.js";
@@ -109,6 +109,8 @@ import { ledgerModal, runSummaryHTML, stockChipTrend } from "./ledger.js"; // th
 import { watchlistPin } from "./watchlist.js"; // 📌 pin to the Watching panel
 import { cardUp, trayCardFrame, MAX_SPEED } from "./pacing.js"; // pause rules and the card tray
 import { devButton } from "./display.js"; // the top bar's Dev button (Menu → Options → Display → Show dev tools)
+import { totalRounds, sumRecs } from "../sim/rounds.js"; // rounds by calibre
+import { roundsLine, baseAmmo } from "../sim/ammo.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -148,7 +150,7 @@ export function topbarParts(state, ui) {
       (ui.speed > MAX_SPEED ? `<button data-action="speed" data-speed="1" class="active"${tip("Dev fast forward is running. Click to go back to 1×.")}>${ui.speed}× dev</button>` : ""),
     // Food and water also show days left (economy.js outlook; the tooltip has the details).
     // Jars go in the preserved food's tooltip (storage.js), not a slot of their own.
-    stock: !h && roadStock(state) ? roadStock(state) : !h ? `<span class="danger"${tip("You have no base left: your people are a team on the road. Establish base (a staging camp built up into your hub) or take a base back (Assault their base).")}>No base: on the road</span>` : SUPPLY_KEYS.filter((k) => k !== "jars" && k !== RAW).map((k) => { const ln = k === "food" ? foodLine(state, h) : k === "water" ? waterLine(state, h) : k === "wood" ? woodLine(state, h) : null; const extra = k === "preserved" ? ` Jarred, dried and canned food and dry grain: barely spoils, needs no cellar room, eaten once the fresh food is gone. Empty jars: ${n0(h.stock.jars)}.` : ""; const raw = k === "water" ? Math.floor(Math.max(0, h.stock[RAW] || 0)) : 0; const wTip = k === "water" ? `Water at ${h.name}: ${n0(h.stock.water)} purified (safe to drink) and ${raw} un-purified (from the wells, rivers and rain: safe only once the boiler, the filters or a shelter's fire purify it). People drink purified water first. Weight 1 each.` : ""; const tr = stockChipTrend(state, h, k); return `<span${tip(`${wTip || `${SUPPLIES[k].name} at ${h.name}. Weight ${SUPPLIES[k].weight} each; what it fetches depends on who you trade with.`}${extra}${ln ? ` ${ln.tip}` : ""}${tr.tip}`)}${tr.attr}><b>${k === "preserved" ? "Preserved" : k === "water" ? "Water" : SUPPLIES[k].name}</b>${n0(h.stock[k])}${tr.arrow}${raw > 0 ? `<span class="small muted"> +${raw} raw</span>` : ""}${ln && ln.short ? ` <span class="small ${ln.cls}">${k === "food" ? esc(ln.short.split(" · ")[0]) : esc(ln.short.split(" · ")[0])}</span>` : ""}</span>`; }).join(""),
+    stock: !h && roadStock(state) ? roadStock(state) : !h ? `<span class="danger"${tip("You have no base left: your people are a team on the road. Establish base (a staging camp built up into your hub) or take a base back (Assault their base).")}>No base: on the road</span>` : STOCK_KEYS.filter((k) => k !== "jars" && k !== RAW).map((k) => { const ln = k === "food" ? foodLine(state, h) : k === "water" ? waterLine(state, h) : k === "wood" ? woodLine(state, h) : null; const extra = k === "preserved" ? ` Jarred, dried and canned food and dry grain: barely spoils, needs no cellar room, eaten once the fresh food is gone. Empty jars: ${n0(h.stock.jars)}.` : ""; const raw = k === "water" ? Math.floor(Math.max(0, h.stock[RAW] || 0)) : 0; const aTip = k === "ammo" ? `Rounds at ${h.name}, every calibre (a gun fires only its own): ${roundsLine(h.stock)}. ${n0(baseAmmo(state, h))} fit the guns here.` : ""; const wTip = k === "water" ? `Water at ${h.name}: ${n0(h.stock.water)} purified (safe to drink) and ${raw} un-purified (from the wells, rivers and rain: safe only once the boiler, the filters or a shelter's fire purify it). People drink purified water first. Weight 1 each.` : ""; const tr = stockChipTrend(state, h, k); return `<span${tip(`${aTip || wTip || `${SUPPLIES[k].name} at ${h.name}. Weight ${SUPPLIES[k].weight} each; what it fetches depends on who you trade with.`}${extra}${ln ? ` ${ln.tip}` : ""}${tr.tip}`)}${tr.attr}><b>${k === "preserved" ? "Preserved" : k === "water" ? "Water" : SUPPLIES[k].name}</b>${n0(k === "ammo" ? totalRounds(h.stock) : h.stock[k])}${tr.arrow}${raw > 0 ? `<span class="small muted"> +${raw} raw</span>` : ""}${ln && ln.short ? ` <span class="small ${ln.cls}">${k === "food" ? esc(ln.short.split(" · ")[0]) : esc(ln.short.split(" · ")[0])}</span>` : ""}</span>`; }).join(""),
     people: `<span${tip("Survivors alive across all bases and teams")}>👥 ${alive(state).length}</span>`,
     // UI size and the zombie look are in Menu → Options → Display; the Dev button only with Show dev tools on (ui/display.js).
     tools: `${devButton(ui)}
@@ -505,8 +507,8 @@ function landRows(state, id, teamsHere) {
   const h = hub(state);
   const p = teamsHere[0] || null;
   const arrows = p ? Parties.carried(p, "arrows") : h ? h.stock.arrows || 0 : 0;
-  const people = p ? Parties.partyMembers(state, p) : h ? atBase(state, h.id).filter((s) => bestHuntWeapon(s, h.stock.ammo || 0, arrows)).sort((a, b) => hunterMult(b) - hunterMult(a) || a.id - b.id).slice(0, 2) : [];
-  const ammo = p ? Parties.carried(p, "ammo") : h ? h.stock.ammo || 0 : 0;
+  const people = p ? Parties.partyMembers(state, p) : h ? atBase(state, h.id).filter((s) => bestHuntWeapon(s, h.stock, arrows)).sort((a, b) => hunterMult(b) - hunterMult(a) || a.id - b.id).slice(0, 2) : [];
+  const ammo = p ? sumRecs(p.supplies, p.cargo && p.cargo.supplies) : h ? h.stock : 0; // rounds by key: each gun hunts with its own calibre (sim/ammo.js)
   // What they could carry home: the team's room now, or the pair less what they would pack (about 12 kg each).
   const room = p ? Parties.cargoRoom(state, p) : Math.max(0, Parties.carryCapacity(state, people, null) - 12 * people.length);
   // The hunting mix of the team's home (the hub's for its pair): traps, bows and guns (sim/hunting.js).
@@ -1039,7 +1041,7 @@ function engagementModal(state) {
     <div class="grid2">
       <div><h3>Log</h3><div class="elog" id="elog">${e.log.map((l) => `<div>${esc(l)}</div>`).join("")}</div></div>
       <div><h3>Team</h3>${members.map((m) => `<div class="row small"><span style="width:7rem">${first(m)}</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div></div>`).join("")}
-        <div class="small muted" style="margin-top:0.3rem">Ammo ${n0(p ? p.supplies.ammo : 0)} · Food ${n0(p ? p.supplies.food : 0)}</div>
+        <div class="small muted" style="margin-top:0.3rem">Ammo ${n0(p ? totalRounds(p.supplies) : 0)} · Food ${n0(p ? p.supplies.food : 0)}</div>
         <h3>Found (${Math.ceil(load)} / ${Math.max(0, Math.floor(cap))} kg the team can still carry)</h3>
         <div class="small">${found.length ? found.map((f) => `<span class="chip">${esc(f)}</span>`).join("") : "<span class='muted'>Nothing yet</span>"}</div>
         ${load > cap ? `<div class="small danger">More than you can carry. The cheapest goods will be left behind.</div>` : ""}
@@ -1056,7 +1058,7 @@ function tradeModal(state, ui) {
   const { f, speech, have } = ctx;
   const tot = tradeTotals(state);
   const a = attitude(f);
-  const rows = SUPPLY_KEYS.map((k) => `<tr>
+  const rows = SUPPLY_KEYS.filter((k) => k !== "ammo" && (!SUPPLIES[k].round || (have[k] || 0) >= 1)).map((k) => `<tr>
     <td><b>${SUPPLIES[k].name}</b></td>
     <td>${n0(have[k])}</td><td class="muted">${sellPrice(state, f, k, speech).toFixed(1)}</td>
     <td><button data-action="offer" data-k="${k}" data-d="-5">−</button> ${state.trade.offer[k] || 0} <button data-action="offer" data-k="${k}" data-d="5" ${(state.trade.offer[k] || 0) + 5 > have[k] ? "disabled" : ""}>+</button></td>
@@ -1107,7 +1109,7 @@ function routeModal(state, ui) {
   const h = hub(state);
   const pool = atBase(state, h.id);
   const needPeople = ESCORTS[r.escort].people;
-  const keys = SUPPLY_KEYS.filter((k) => k !== "water" && k !== RAW);
+  const keys = STOCK_KEYS.filter((k) => k !== "water" && k !== RAW); // rounds as "ammo" (sim/ammo.js sorts them by calibre)
   const chk = routeCheck(state, r);
   const crewOk = r.escortIds.size === needPeople;
   return `<div class="box wide"><h1>Trade route to ${esc(f.name)}</h1>
@@ -1336,7 +1338,7 @@ function baseOverview(state, b) {
   return `<div class="grid2">
     <div>
       <h3>Stock</h3>
-      <table class="t">${SUPPLY_KEYS.map((k) => `<tr><td>${SUPPLIES[k].name}</td><td>${n0(b.stock[k])}</td></tr>`).join("")}</table>
+      <table class="t">${STOCK_KEYS.map((k) => `<tr><td${k === "ammo" ? tip(`Every calibre: ${roundsLine(b.stock)}`) : ""}>${SUPPLIES[k].name}</td><td>${n0(k === "ammo" ? totalRounds(b.stock) : b.stock[k])}</td></tr>`).join("")}</table>
       ${b.type === "outpost" ? `<div class="small muted" style="margin-top:0.4rem">Outposts keep a small reserve and ship the rest to the hub each day.</div>` : ""}
       <h3>Status</h3>
       <div class="kv small">

@@ -19,148 +19,18 @@ import { WEAPONS } from "./combat.js";
 import { hash01 } from "./skills.js";
 import { SITE_TAGS, AREA_TAGS } from "./loot.js";
 
-// ---------- keys ----------
-/** every round supply key (a_<cal>_<type>) */
-export const ROUND_KEYS = Object.keys(ROUND_SUPPLIES);
-/** @param {string} k */
-export const isRoundKey = (k) => !!ROUND_SUPPLIES[k];
-/** @param {string} k @returns {{ cal: string, type: string } | null} */
-export const roundOf = (k) => (ROUND_SUPPLIES[k] ? ROUND_SUPPLIES[k].round : null);
+// ---------- keys and stock records (rounds.js) ----------
+export * from "./rounds.js";
+import { foldRounds, sumRecs, ROUND_KEYS, addAmmo, addRounds, baseKey, baseType, calName, hasGeneric, isRoundKey, keyFor, roundName, roundOf, roundsIn, settleRec, spendAmmo, splitByMix, takeRounds, totalIn, totalRounds, typeFor, typeFx, typeName, typesOf } from "./rounds.js";
+const num = (v) => (Number.isFinite(v) ? v : 0);
+
 // The calibre a weapon shoots (null: melee, bows, acid, anything that takes no rounds).
 /** @param {string | null | undefined} wkey */
 export function calOf(wkey) {
   const w = wkey ? WEAPONS[wkey] : null;
   return w && w.ammo > 0 && w.cal && CALIBERS[w.cal] ? w.cal : null;
 }
-/** @param {string} cal */
-export const baseType = (cal) => (CALIBERS[cal] ? CALIBERS[cal].base : "fmj");
-/** @param {string} cal */
-export const baseKey = (cal) => ammoKey(cal, baseType(cal));
-// A type this calibre has (else its common round).
-/** @param {string} cal @param {string | null | undefined} type */
-export const typeFor = (cal, type) => (type && CALIBERS[cal] && CALIBERS[cal].types.includes(type) ? type : baseType(cal));
-/** @param {string} cal @param {string | null | undefined} [type] */
-export const keyFor = (cal, type) => ammoKey(cal, typeFor(cal, type));
-/** @param {string} cal "12 gauge" */
-export const calName = (cal) => (CALIBERS[cal] ? CALIBERS[cal].name : cal);
-/** @param {string} cal @param {string | null | undefined} [type] "9mm hollow point" */
-export const roundName = (cal, type) => `${CALIBERS[cal] ? CALIBERS[cal].name : cal} ${(AMMO_TYPES[typeFor(cal, type)] || {}).name || ""}`.trim();
-/** @param {string | null | undefined} type "hollow point" */
-export const typeName = (type) => (type && AMMO_TYPES[type] ? AMMO_TYPES[type].name : "");
-// The types a calibre has, its common round first.
-/** @param {string} cal */
-export const typesOf = (cal) => (CALIBERS[cal] ? [CALIBERS[cal].base, ...CALIBERS[cal].types.filter((t) => t !== CALIBERS[cal].base)] : []);
-// A type's effects (data-ammo.js AMMO_TYPES), {} for a common round or none.
-/** @param {string | null | undefined} type */
-export const typeFx = (type) => (type && AMMO_TYPES[type]) || {};
 
-// ---------- stock records ----------
-const num = (v) => (Number.isFinite(v) ? v : 0);
-// Rounds of a calibre (any type; or of one type) in a stock record; with no calibre, every round. Generic ammo is not
-// counted here (totalRounds counts it).
-/** @param {Record<string, number> | null | undefined} rec @param {string | null} [cal] @param {string | null} [type] */
-export function roundsIn(rec, cal = null, type = null) {
-  if (!rec) return 0;
-  if (cal && type) return Math.max(0, Math.floor(num(rec[keyFor(cal, type)])));
-  let n = 0;
-  for (const k of ROUND_KEYS) {
-    const q = rec[k];
-    if (!(q > 0)) continue;
-    if (cal && ROUND_SUPPLIES[k].round.cal !== cal) continue;
-    n += Math.floor(q);
-  }
-  return n;
-}
-// Every round in a record, generic ammo included (a figure the old "stock.ammo" reads become).
-/** @param {Record<string, number> | null | undefined} rec */
-export const totalRounds = (rec) => (rec ? Math.max(0, roundsIn(rec) + Math.floor(num(rec.ammo))) : 0);
-// Several records together (a team's supplies and cargo).
-/** @param {...(Record<string, number> | null | undefined)} recs */
-export const totalIn = (...recs) => recs.reduce((a, r) => a + totalRounds(r), 0);
-/** @param {Record<string, number>} rec @param {string} key @param {number} n */
-export function addRounds(rec, key, n) {
-  if (!rec || !(n > 0) || !ROUND_SUPPLIES[key]) return 0;
-  rec[key] = num(rec[key]) + n;
-  return n;
-}
-// Takes up to n rounds of a calibre from a record: of one type when given (strict), else its common round first, then
-// the other types by value (cheapest first). Returns what was taken.
-/** @param {Record<string, number>} rec @param {string} cal @param {string | null} type @param {number} n @param {boolean} [strict] */
-export function takeRounds(rec, cal, type, n, strict = true) {
-  if (!rec || !(n > 0)) return 0;
-  const keys = type && strict ? [keyFor(cal, type)] : orderFor(cal, type);
-  let got = 0;
-  for (const k of keys) {
-    const q = Math.min(n - got, Math.max(0, Math.floor(num(rec[k]))));
-    if (q > 0) { rec[k] -= q; got += q; }
-    if (got >= n) break;
-  }
-  return got;
-}
-// A calibre's keys in the order a gun draws them with no type asked for: that type first, its common round, the rest
-// cheapest first.
-/** @param {string} cal @param {string | null} [type] */
-function orderFor(cal, type = null) {
-  const keys = typesOf(cal).map((t) => ammoKey(cal, t)).sort((a, b) => (a === baseKey(cal) ? -1 : b === baseKey(cal) ? 1 : SUPPLIES[a].value - SUPPLIES[b].value));
-  if (type) { const k = keyFor(cal, type); return [k, ...keys.filter((x) => x !== k)]; }
-  return keys;
-}
-// Generic rounds out of a record (a cost, a gift, a deal paid in "ammo", by-the-numbers shooting with no gun to say
-// which): generic ammo first, then the calibres in `keep` last (the guns there need them), cheapest first. Returns
-// what was taken: { n, keys: { key: q } }.
-/** @param {Record<string, number>} rec @param {number} n @param {Record<string, number> | null} [keep] calibres to keep (weights) */
-export function spendAmmo(rec, n, keep = null) {
-  const out = { n: 0, keys: /** @type {Record<string, number>} */ ({}) };
-  if (!rec || !(n > 0)) return out;
-  const g = Math.min(n, Math.max(0, Math.floor(num(rec.ammo))));
-  if (g > 0) { rec.ammo -= g; out.n += g; out.keys.ammo = g; }
-  const order = ROUND_KEYS.filter((k) => rec[k] >= 1).sort((a, b) => {
-    const ka = keep && keep[ROUND_SUPPLIES[a].round.cal] ? 1 : 0, kb = keep && keep[ROUND_SUPPLIES[b].round.cal] ? 1 : 0;
-    return ka - kb || SUPPLIES[a].value - SUPPLIES[b].value || num(rec[b]) - num(rec[a]) || (a < b ? -1 : 1);
-  });
-  for (const k of order) {
-    if (out.n >= n) break;
-    const q = Math.min(n - out.n, Math.floor(num(rec[k])));
-    if (q > 0) { rec[k] -= q; out.n += q; out.keys[k] = (out.keys[k] || 0) + q; }
-  }
-  return out;
-}
-// Splits n generic rounds into round keys by weights ({ key: w }; largest remainder, so it is exact and the same every
-// time). Returns { key: q }.
-/** @param {number} n @param {Record<string, number>} mix */
-export function splitByMix(n, mix) {
-  /** @type {Record<string, number>} */
-  const out = {};
-  const keys = Object.keys(mix).filter((k) => ROUND_SUPPLIES[k] && mix[k] > 0).sort();
-  n = Math.floor(n);
-  if (!(n > 0) || !keys.length) return out;
-  const tot = keys.reduce((a, k) => a + mix[k], 0);
-  let left = n;
-  const rem = keys.map((k) => { const x = (n * mix[k]) / tot; const q = Math.floor(x); out[k] = q; left -= q; return [k, x - q]; });
-  rem.sort((a, b) => /** @type {number} */ (b[1]) - /** @type {number} */ (a[1]) || (a[0] < b[0] ? -1 : 1));
-  for (let i = 0; left > 0; i = (i + 1) % rem.length, left--) out[rem[i][0]] += 1;
-  for (const k of Object.keys(out)) if (!out[k]) delete out[k];
-  return out;
-}
-/** @param {Record<string, number>} rec @param {number} n @param {Record<string, number>} mix */
-export function addAmmo(rec, n, mix) {
-  const parts = splitByMix(n, mix);
-  for (const [k, q] of Object.entries(parts)) addRounds(rec, k, q);
-  return parts;
-}
-// Generic ammo in a record of yours turned into rounds: added by `mix` (the guns there), or (negative: taken
-// generically) out of the rounds those guns need least. A record with none is left as it is (no "ammo" key is added).
-/** @param {Record<string, number>} rec @param {Record<string, number>} mix round key weights @param {Record<string, number> | null} [keep] calibre weights */
-export function settleRec(rec, mix, keep = null) {
-  if (!hasGeneric(rec)) return;
-  const g = Math.trunc(num(rec.ammo));
-  rec.ammo = num(rec.ammo) - g; // 0 (a fraction stays); the key is kept so `stock.ammo += n` elsewhere stays a number
-  if (g > 0) addAmmo(rec, g, mix);
-  else spendAmmo(rec, -g, keep);
-}
-// Has this record whole generic rounds to settle (or owe)?
-/** @param {any} rec */
-export const hasGeneric = (rec) => !!rec && typeof rec === "object" && Math.abs(num(rec.ammo)) >= 1;
 
 // ---------- guns and their calibres ----------
 // The calibres the guns among these people and items shoot, weighted by rounds a shot ({ "9mm": 2, "556": 2 }).
@@ -192,6 +62,70 @@ export const partyCals = (state, p) => gunCals(membersOf(state, p), (p.cargo && 
 /** @param {Record<string, number>} rec @param {Record<string, number>} cals */
 export const usableIn = (rec, cals) => Object.keys(cals || {}).reduce((a, c) => a + roundsIn(rec, c), 0);
 
+// The rounds a base or a team can shoot: those that fit the guns there (every round when there are no guns: what
+// it could shoot once armed). The autopilot's and the reserves' "ammo" (the old stock.ammo reads).
+/** @param {any} state @param {any} base */
+export function baseAmmo(state, base) {
+  if (!base || !base.stock) return 0;
+  const cals = baseCals(state, base);
+  return Object.keys(cals).length ? usableIn(base.stock, cals) + Math.max(0, Math.floor(num(base.stock.ammo))) : totalRounds(base.stock);
+}
+/** @param {any} state @param {any} p @param {boolean} [cargo] the found cargo too */
+export function teamAmmo(state, p, cargo = true) {
+  if (!p) return 0;
+  const cals = partyCals(state, p);
+  const recs = [p.supplies, cargo && p.cargo ? p.cargo.supplies : null];
+  if (!Object.keys(cals).length) return recs.reduce((a, r) => a + totalRounds(r), 0);
+  return recs.reduce((a, r) => a + (r ? usableIn(r, cals) + Math.max(0, Math.floor(num(r.ammo))) : 0), 0);
+}
+// The rounds a record can spare above `keep` rounds, the ones these guns need least first: { key: q } (a gift, a sale).
+/** @param {Record<string, number>} rec @param {number} keep @param {Record<string, number> | null} [cals] */
+export function spareRounds(rec, keep, cals = null) {
+  const n = totalRounds(rec) - Math.max(0, keep || 0);
+  if (!(n >= 1)) return {};
+  const copy = { ...rec };
+  const g = spendAmmo(copy, n, cals);
+  return g.keys;
+}
+// n rounds out of a record, chosen without taking them: the calibres in `cals` first (most guns first, common round
+// first), then the rest cheapest first. { key: q } (a deal's "N ammo" turned into the rounds that change hands).
+/** @param {Record<string, number>} rec @param {number} n @param {Record<string, number> | null} [cals] */
+export function chooseRounds(rec, n, cals = null) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  let left = Math.floor(n);
+  if (!rec || !(left > 0)) return out;
+  const order = [];
+  for (const [c] of Object.entries(cals || {}).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))) for (const t of typesOf(c)) order.push(ammoKey(c, t));
+  for (const k of ROUND_KEYS.filter((x) => !order.includes(x)).sort((a, b) => SUPPLIES[a].value - SUPPLIES[b].value || (a < b ? -1 : 1))) order.push(k);
+  for (const k of order) {
+    if (left <= 0) break;
+    const q = Math.min(left, Math.max(0, Math.floor(num(rec[k]))));
+    if (q > 0) { out[k] = q; left -= q; }
+  }
+  return out;
+}
+// A deal's generic ammo turned into rounds by key (a radio deal honoured at the gates, trade.js openCaravanTrade):
+// what they give, chosen from their goods for your guns; what you give, the rounds your guns need least.
+/** @param {Record<string, number>} side a deal's offer or ask @param {Record<string, number>} from the record it comes out of @param {Record<string, number>} cals @param {boolean} theirs */
+export function dealRounds(side, from, cals, theirs) {
+  const n = Math.floor(num(side && side.ammo));
+  if (!(n > 0)) return side;
+  const out = { ...side };
+  delete out.ammo;
+  const got = theirs ? chooseRounds(from, n, cals) : spendAmmo({ ...from, ammo: 0 }, n, cals).keys;
+  for (const [k, q] of Object.entries(got)) if (k !== "ammo") out[k] = (out[k] || 0) + q;
+  return out;
+}
+// The round key this holder's guns want most of a list on offer (a deal's "ammo" asked for as rounds that fit):
+// the calibre with most guns whose any type is on offer, its common round first. null: nothing fits.
+/** @param {Record<string, number>} cals @param {Record<string, number>} offer key → how many there */
+export function wantedKey(cals, offer) {
+  const order = Object.entries(cals || {}).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  for (const [c] of order) for (const t of typesOf(c)) { const k = ammoKey(c, t); if ((offer[k] || 0) >= 1) return k; }
+  return null;
+}
+
 // Box items opened into a record (an armory's, a cargo's boxes: they are stock there). Returns rounds moved.
 /** @param {any[]} list @param {Record<string, number>} rec */
 export function unbox(list, rec) {
@@ -207,6 +141,9 @@ export function unbox(list, rec) {
   }
   return n;
 }
+// n rounds paid out of a base's stock (a gift, a tribute, a council's request): the ones its guns need least first.
+/** @param {any} state @param {any} base @param {number} n */
+export const payAmmo = (state, base, n) => spendAmmo(base.stock, n, baseCals(state, base)).n;
 // A base's generic ammo and armory boxes into rounds (the guns there say which).
 /** @param {any} state @param {any} base */
 export function settleBase(state, base) {
@@ -218,12 +155,14 @@ export function settleBase(state, base) {
 /** @param {any} state @param {any} p */
 export function settleParty(state, p) {
   if (!p || !p.supplies) return;
-  if (p.cargo) unbox(p.cargo.gear, p.cargo.supplies || (p.cargo.supplies = {}));
-  if (!hasGeneric(p.supplies) && !(p.cargo && hasGeneric(p.cargo.supplies))) return;
+  const goods = p.kind === "convoy" || p.kind === "caravan"; // a trade convoy's cargo is its load: kept as it is
+  if (p.cargo && !goods) unbox(p.cargo.gear, p.cargo.supplies || (p.cargo.supplies = {}));
   const cals = partyCals(state, p);
+  p.ammoCals = cals; // the calibres its guns shoot (parties.js takeSupply spends the others first)
+  if (!hasGeneric(p.supplies) && !(p.cargo && !goods && hasGeneric(p.cargo.supplies))) return;
   const mix = mixForCals(cals);
   settleRec(p.supplies, mix, cals);
-  if (p.cargo) settleRec(p.cargo.supplies, mix, cals);
+  if (p.cargo && !goods) settleRec(p.cargo.supplies, mix, cals);
 }
 // Every holder of yours: the bases, your teams (the AI groups' teams keep generic ammo), the staging camp, route
 // convoys. Called every hour (world.js tickHour), when a world is made and when an old save loads (migrateAmmo).
@@ -232,12 +171,19 @@ export function settleAll(state) {
   for (const b of state.bases || []) settleBase(state, b);
   for (const p of state.parties || []) if (p.owner === "player" || p.owner == null) settleParty(state, p);
   if (state.staging && hasGeneric(state.staging.stores)) settleRec(state.staging.stores, mixForCals({}), null);
+  for (const f of state.factions || []) if (f.stock) foldRounds(f.stock); // an AI group keeps one ammo count
+  for (const p of state.parties || []) if (p.owner !== "player" && p.owner != null && p.supplies) { foldRounds(p.supplies); if (p.cargo && p.cargo.supplies && !(p.kind === "caravan" && p.phase === "trading")) foldRounds(p.cargo.supplies); } // their teams too (a caravan at your gates keeps its rounds for the deal)
 }
 // An old save: every generic ammo stock of yours becomes rounds split across the calibres of the guns that holder
 // owns (fallback 9mm / 12 gauge), the same total (tools/ammomigrationtest.js).
 /** @param {any} state */
 export function migrateAmmo(state) {
   settleAll(state);
+  const b = state.combat; // a fight saved half-way: its pools (a raid's finds carried loose too)
+  if (b && Array.isArray(b.pools)) {
+    const cals = gunCals((b.units || []).filter((u) => u.side === "player").map((u) => (state.survivors || []).find((x) => x.id === u.sid)).filter(Boolean));
+    for (const p of b.pools) settleRec(p, mixForCals(cals), cals);
+  }
   for (const s of state.survivors || []) {
     const w = s.gear && s.gear.weapon;
     if (w && w.load != null && !(calOf(w.key) && CALIBERS[calOf(w.key)].types.includes(w.load)) && w.load !== "auto") w.load = null;
@@ -246,7 +192,7 @@ export function migrateAmmo(state) {
 
 // ---------- finds ----------
 // The ammo theme of a site type or a raid area (data-ammo.js AMMO_MIX): its first theme tag that has one.
-const THEMES = ["military", "police", "prison", "guns", "hunt", "farm", "crime"];
+const THEMES = ["military", "police", "prison", "guns", "farm", "hunt", "crime"];
 /** @param {string | null | undefined} siteOrArea @param {boolean} [area] */
 export function themeOf(siteOrArea, area = false) {
   const tags = siteOrArea ? (area ? AREA_TAGS[siteOrArea] : SITE_TAGS[siteOrArea]) || [] : [];
@@ -300,6 +246,52 @@ export function addFind(rec, siteOrArea, n, area, ...salt) {
   for (const [k, q] of Object.entries(parts)) addRounds(rec, k, q);
   return parts;
 }
+// A find already rolled as generic ammo ({ ammo: 12, food: 3 }) turned into rounds of a theme, in place (the old dice
+// say how many; own dice say which).
+/** @param {Record<string, number>} sup @param {string} theme @param {...any} salt */
+export function sortFind(sup, theme, ...salt) {
+  if (!sup || !(num(sup.ammo) >= 1)) return sup;
+  const n = Math.floor(sup.ammo);
+  delete sup.ammo;
+  for (const [k, q] of Object.entries(findRounds(theme, n, ...salt))) addRounds(sup, k, q);
+  return sup;
+}
+// A raid container's theme: the site's when it is a gun place (a police station's armory holds police rounds), else
+// the area's.
+/** @param {string | null | undefined} siteType @param {string} areaType */
+export function raidTheme(siteType, areaType) {
+  const st = themeOf(siteType);
+  return ["military", "police", "prison", "guns"].includes(st) ? st : themeOf(areaType, true);
+}
+// A find handed out through a function that adds one key at a time (a team's cargo, where room may cut it short):
+// add(key, q) returns what fitted. Returns the total that fitted.
+/** @param {(key: string, q: number) => number} add @param {string} theme @param {number} n @param {...any} salt */
+export function addFindVia(add, theme, n, ...salt) {
+  let got = 0;
+  for (const [k, q] of Object.entries(findRounds(theme, n, ...salt))) got += add(k, q) || 0;
+  return got;
+}
+// A gun safe's or a gun case's rounds (gunsafes.js registerStashExtra): the generic ammo its table rolled, as the
+// rounds for the guns in it (now and then a box of a typed load: hollow points, soft points, slugs), else what the
+// site holds. ctx: { roll, tier, siteType }, out: { gear, sup } (changed in place).
+/** @param {any} ctx @param {any} out */
+export function stashRounds(ctx, out) {
+  const n = Math.floor(num(out && out.sup && out.sup.ammo));
+  if (!(n > 0)) return;
+  delete out.sup.ammo;
+  const cals = gunCals([], out.gear || []);
+  if (!Object.keys(cals).length) { for (const [k, q] of Object.entries(findRounds(themeOf(ctx && ctx.siteType), n, "stash", ctx && ctx.tier))) addRounds(out.sup, k, q); return; }
+  const r = ctx && typeof ctx.roll === "function" ? ctx.roll("ammotype") : 0.5;
+  const parts = splitByMix(n, mixForCals(cals));
+  for (const [k, q] of Object.entries(parts)) {
+    const cal = roundOf(k).cal;
+    const typed = r < 0.3 ? ["hp", "sp", "slug"].find((t) => CALIBERS[cal].types.includes(t) && t !== baseType(cal)) : null;
+    addRounds(out.sup, typed ? ammoKey(cal, typed) : k, q);
+  }
+}
+// An AI group's kind as an ammo theme (data-ammo.js KIND_MIX).
+/** @param {string | null | undefined} kind */
+export const kindTheme = (kind) => KIND_MIX[kind] || "guns";
 // The mix an AI group's abstract stores come in (data-ammo.js KIND_MIX by its kind).
 /** @param {string | null | undefined} kind */
 export const kindMix = (kind) => themeMix(KIND_MIX[kind] || "guns");
@@ -319,7 +311,42 @@ export function kindShare(avail, kind, key) {
   return mix[key] ? Math.floor((avail * mix[key]) / tot) : 0;
 }
 
+// The rounds on one of the dead (combat.js enemyUnit's people: their gun's calibre and load; anyone else, the rounds a
+// place of their kind holds, own dice). Returns { key: n }.
+const KIT_THEME = { soldiers: "military", guards: "police", raiders: "raider", zealots: "home", fighters: "raider", militia: "hunt", survivors: "home" };
+/** @param {any} u a battle unit @param {number} n */
+export function bodyRounds(u, n) {
+  n = Math.floor(n);
+  if (!(n > 0)) return {};
+  const cal = u ? calOf(u.weapon) : null;
+  if (cal) return { [keyFor(cal, u.load)]: n };
+  return findRounds(u && u.kit ? KIT_THEME[u.kit] || "home" : "home", n, "body", u ? u.id : 0, u ? u.name : "");
+}
+
 // ---------- boxes ----------
+// Boxes of rounds on a group's shelf (trade.js ensureWares: their own dice, so the rest of the stock is unchanged): a
+// chance a week and the boxes each kind deals in (the traders anything; the military its own calibres). Bought, a box
+// goes into your armory or the team's cargo and is opened into the stock.
+const allBoxes = () => Object.keys(ROUND_SUPPLIES);
+export const WARE_AMMO = {
+  traders: { p: 0.5, keys: allBoxes() },
+  military: { p: 0.4, keys: Object.keys(themeMix("military")).concat(["a_556_ap", "a_308_ap", "a_308_match", "a_556_match", "a_556_tracer", "a_762x39_tracer", "a_762x39_ap", "a_50bmg_ball", "a_50bmg_api"]) },
+  fortress: { p: 0.3, keys: Object.keys(themeMix("police")) },
+  expansionist: { p: 0.3, keys: Object.keys(themeMix("police")) },
+  raider: { p: 0.3, keys: Object.keys(themeMix("raider")).concat(["a_9mm_plusp", "a_357_plusp", "a_762x39_sp"]) },
+  commune: { p: 0.25, keys: Object.keys(themeMix("farm")).concat(["a_22lr_hp", "a_22lr_subsonic", "a_3030_fmj"]) },
+  zealot: { p: 0.15, keys: Object.keys(themeMix("home")) },
+};
+for (const w of Object.values(WARE_AMMO)) w.keys = [...new Set(w.keys)].filter((k) => ROUND_SUPPLIES[k]);
+/** @param {any} state @param {string} type a group's kind @param {string} name @param {any} [salt] */
+export function ammoWares(state, type, name, salt = "") {
+  const w = WARE_AMMO[type];
+  if (!w || !w.keys.length || hash01(state.seed, "ammoware", name, salt) >= w.p) return [];
+  const key = w.keys[Math.floor(hash01(state.seed, "ammowarepick", name, salt) * w.keys.length) % w.keys.length];
+  const full = CALIBERS[ROUND_SUPPLIES[key].round.cal].box;
+  const box = newBox(key, Math.max(1, Math.round(full * (0.5 + 0.5 * hash01(state.seed, "ammowareq", name, salt)))));
+  return box ? [box] : [];
+}
 // A box item of a round key holding n rounds (a count stack: item.dur).
 /** @param {string} key @param {number} n */
 export function newBox(key, n) {
@@ -443,6 +470,12 @@ export function typeScore(type, armoured) {
 // Is this unit armoured (people in body armour, the armoured dead, a Boneback, a Brute)?
 /** @param {any} t */
 export const armoured = (t) => !!t && ((t.kind === "human" && ((t.armorKey && GEAR[t.armorKey] && GEAR[t.armorKey].power >= 2) || (t.wornArmor != null && t.wornArmor <= 0.85))) || ["soldier", "riot", "boneback", "brute"].includes(t.ztype));
+// × a shot's noise for the type loaded (stealth.js shotNoise): subsonic 0.75 (0.6 through a suppressor), +P 1.1.
+/** @param {any} u @param {boolean} [suppressed] */
+export function loadNoise(u, suppressed = false) {
+  const t = typeFx(loadOf(u));
+  return (suppressed && t.noiseSuppressed) || t.noise || 1;
+}
 // A hit with no armour in the way (until per-hit locations land: the target wears none): people with no body armour,
 // the ordinary dead.
 /** @param {any} t */
@@ -487,8 +520,10 @@ export function drawShots(rec, people, perHead) {
     const cal = w ? calOf(w.key) : null;
     if (!cal) { loose += perHead; continue; }
     const before = snapshot(rec, cal);
-    const got = takeRounds(rec, cal, w.load && w.load !== "auto" ? w.load : null, perHead, false);
+    let got = takeRounds(rec, cal, w.load && w.load !== "auto" ? w.load : null, perHead, false);
     diffInto(before, rec, out.used);
+    const g = Math.min(perHead - got, Math.max(0, Math.floor(num(rec.ammo)))); // generic ammo (another group's abstract stores) fits any gun
+    if (g > 0) { rec.ammo -= g; got += g; out.used.ammo = (out.used.ammo || 0) + g; }
     out.n += got;
     out.byCal[cal] = (out.byCal[cal] || 0) + got;
   }
@@ -497,6 +532,26 @@ export function drawShots(rec, people, perHead) {
     out.n += g.n;
     for (const [k, q] of Object.entries(g.keys)) out.used[k] = (out.used[k] || 0) + q;
   }
+  return out;
+}
+// The same over several records (a team's packed supplies and its cargo, a battle's pools), `total` rounds shared out
+// whole between the people (the first ones get the odd rounds): each takes from the records in order. Returns
+// { n, used: { key: q } } (used: the rounds by key, for the armed factor and ammoEdge).
+/** @param {Record<string, number>[]} recs @param {any[]} people @param {number} total */
+export function drawTeamShots(recs, people, total) {
+  const out = { n: 0, used: /** @type {Record<string, number>} */ ({}) };
+  total = Math.floor(total);
+  if (!(total > 0) || !people || !people.length) return out;
+  const per = Math.floor(total / people.length), odd = total - per * people.length;
+  people.forEach((s, i) => {
+    let want = per + (i < odd ? 1 : 0);
+    for (const rec of recs) {
+      if (!rec || want <= 0) continue;
+      const d = drawShots(rec, [s], want);
+      want -= d.n; out.n += d.n;
+      for (const [k, q] of Object.entries(d.used)) out.used[k] = (out.used[k] || 0) + q;
+    }
+  });
   return out;
 }
 const snapshot = (rec, cal) => typesOf(cal).map((t) => [ammoKey(cal, t), num(rec[ammoKey(cal, t)])]);
@@ -543,6 +598,56 @@ export function ammoEdge(used, enemy) {
     n += q; s += q * typeScore(r.type, arm) / typeScore(baseType(r.cal), arm);
   }
   return n ? Math.max(0.95, Math.min(1.06, s / n)) : 1;
+}
+
+// ---------- the ammo bench ----------
+// n rounds made at a base (buildings.js runStations: the ammo bench): the common rounds of the calibres its guns shoot
+// (the people there and its armory), most to the calibres furthest under 40 rounds a gun. No guns: 9mm and 12 gauge.
+/** @param {any} state @param {any} base @param {number} n */
+export function benchRounds(state, base, n) {
+  const cals = baseCals(state, base);
+  /** @type {Record<string, number>} */
+  const mix = {};
+  for (const [c, w] of Object.entries(cals)) mix[baseKey(c)] = w * Math.max(1, 40 * w - roundsIn(base.stock, c));
+  return addAmmo(base.stock, n, Object.keys(mix).length ? mix : mixForCals({}));
+}
+
+// ---------- hunting (R9: the gun's loaded type) ----------
+// What a load does for a hunter: soft points and hollow points drop big game cleaner, birdshot is for small game (and
+// poor on a deer), a slug for big game.
+export const HUNT_LOAD = { sp: { big: 1.1 }, hp: { big: 1.05 }, bird: { small: 1.3, big: 0.6 }, slug: { big: 1.1, small: 0.9 }, ap: { big: 0.95 }, match: { big: 1.05 }, subsonic: { big: 0.92 } };
+// The rounds a hunter's gun has to hand: ammo a number (any rounds, the old rule) or a record (its calibre's rounds and
+// any generic ammo).
+/** @param {number | Record<string, number> | null | undefined} ammo @param {any} item */
+export function huntRounds(ammo, item) {
+  if (ammo == null) return Infinity;
+  if (typeof ammo !== "object") return ammo;
+  const cal = item ? calOf(item.key) : null;
+  return cal ? roundsIn(ammo, cal) + Math.max(0, Math.floor(num(ammo.ammo))) : 0;
+}
+// The load a hunter's gun fires (item.load while there are rounds of it, else its common round) and its effect.
+/** @param {any} item @param {number | Record<string, number> | null | undefined} ammo */
+export function huntLoad(item, ammo) {
+  const cal = item ? calOf(item.key) : null;
+  if (!cal) return { type: null, big: 1, small: 1 };
+  const t = typeFor(cal, item.load);
+  const ok = t !== baseType(cal) && (typeof ammo !== "object" || ammo == null || roundsIn(ammo, cal, t) > 0);
+  const fx = ok ? HUNT_LOAD[t] || {} : {};
+  return { type: ok ? t : baseType(cal), big: fx.big || 1, small: fx.small || 1 };
+}
+// A hunter's shots out of records in order (a team's cargo then its packed supplies; a base's stock): the gun's load
+// first, then its common round and the rest of its calibre; generic ammo last. Returns the rounds taken.
+/** @param {(Record<string, number> | null | undefined)[]} recs @param {any} item @param {number} n */
+export function takeHuntShots(recs, item, n) {
+  const cal = item ? calOf(item.key) : null;
+  let got = 0;
+  for (const rec of recs) {
+    if (!rec || got >= n) continue;
+    if (cal) got += takeRounds(rec, cal, item.load && item.load !== "auto" ? item.load : null, n - got, false);
+    const g = Math.min(n - got, Math.max(0, Math.floor(num(rec.ammo))));
+    if (g > 0) { rec.ammo -= g; got += g; }
+  }
+  return got;
 }
 
 // ---------- packing and starting ----------
@@ -631,7 +736,7 @@ export function giveRounds(rec, n, weapons = []) {
 /** @param {Record<string, number>} rec @param {number} n @param {string[]} [weapons] */
 export function setRounds(rec, n, weapons = []) {
   for (const k of ROUND_KEYS) if (k in rec) delete rec[k];
-  delete rec.ammo;
+  rec.ammo = 0;
   return giveRounds(rec, n, weapons);
 }
 // Per-calibre breakdown of a record for a tooltip: "9mm 120 (HP 20), 12 gauge 30".
@@ -641,7 +746,7 @@ export function roundsLine(rec) {
   for (const cal of Object.keys(CALIBERS)) {
     const n = roundsIn(rec, cal);
     if (!n) continue;
-    const typed = typesOf(cal).slice(1).map((t) => [t, roundsIn(rec, cal, t)]).filter(([, q]) => q > 0).map(([t, q]) => `${AMMO_TYPES[t].name} ${q}`);
+    const typed = typesOf(cal).slice(1).filter((t) => roundsIn(rec, cal, t) > 0).map((t) => `${AMMO_TYPES[t].name} ${roundsIn(rec, cal, t)}`);
     parts.push(`${CALIBERS[cal].name} ${n}${typed.length ? ` (${typed.join(", ")})` : ""}`);
   }
   const g = Math.floor(num(rec && rec.ammo));

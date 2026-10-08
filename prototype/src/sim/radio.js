@@ -56,6 +56,7 @@ import { listenDaily } from "./radiolisten.js"; // listening in on a network's t
 import { thirstFactor } from "./weather.js";
 import { rumourFromNews, RUMOUR } from "./survey.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
+import { supplyAmt } from "./rounds.js"; // "ammo": every round there, any calibre
 
 export const RELAY_RANGE = 6;
 export const RELAY_UPKEEP_DAYS = 10;
@@ -370,7 +371,7 @@ export function dealQuote(state, f, d) {
   if (have < wantQty) return { ...out, reason: `They can spare only ${have} ${d.wantKey}.` };
   if (pay + 1e-9 < cost) return { ...out, reason: `Not enough for them: they would want at least ${out.minPay ?? "more"} ${d.payKey}, or give at most ${out.maxWant} ${d.wantKey}.` };
   const h = hub(state);
-  const short = (h.stock[d.payKey] || 0) < payQty ? ` The hub has only ${Math.floor(h.stock[d.payKey] || 0)} ${d.payKey} right now: have it ready when they arrive.` : "";
+  const short = supplyAmt(h.stock, d.payKey) < payQty ? ` The hub has only ${Math.floor(supplyAmt(h.stock, d.payKey))} ${d.payKey} right now: have it ready when they arrive.` : "";
   return { ...out, ok: true, reason: `Fair for them.${short}` };
 }
 
@@ -471,7 +472,7 @@ function hubSpare(state, key) {
   const h = hub(state);
   const n = Math.max(1, atBase(state, h.id).length);
   const keep = { food: n * 6, water: n * 5, meds: 3, ammo: n * 10, fuel: 8, parts: 2, scrap: 20 }[key] || 0;
-  return Math.max(0, Math.floor((h.stock[key] || 0) - keep));
+  return Math.max(0, Math.floor(supplyAmt(h.stock, key) - keep));
 }
 
 // An offer or a request from a group, as a card. null when they have nothing sensible to say.
@@ -479,7 +480,7 @@ export function offerCard(state, f) {
   const base = tradeBase(state, f);
   if (!base) return null;
   const speech = radioSpeech(state);
-  const keys = SUPPLY_KEYS;
+  const keys = SUPPLY_KEYS.filter((k) => !SUPPLIES[k].round); // rounds: as "ammo" (sorted by calibre at the gates, ammo.js)
   // What they are short of and you can spare; what they have plenty of: this week's wants and surplus lists
   // (trade.js marketOf), most wanted / most plentiful first.
   const m = marketOf(state, f);

@@ -8,6 +8,7 @@
 //   - the new-run screen: Customize shows the background select and the trait picker, sets skills past the budget;
 //     Ironman locks all of it (the box, Backgrounds…, the skill buttons) and the crew counts as customized after.
 // Usage: node tools/custombgtest.js
+import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld } from "../src/sim/world.js";
 import { GEAR, SKILLS, TRAITS } from "../src/sim/data.js";
 import { CUSTOM_BG, sanitizeBackground, sanitizeLibrary, isCustomBg, blankBackground } from "../src/sim/custombg.js";
@@ -92,7 +93,7 @@ const lib = { c_1: MEDIC, c_2: { ...blankBackground("c_2"), name: "Walker", car:
   check(mine >= 6, `odds ${MEDIC.car.odds}: the car is theirs most of the time (${mine} of 10)`);
   check(mine > 0 && exact, "and then the kind and the back they set (a Hummer, 12 fuel, 3 meds, 5 scrap, sandbags and a rod)");
   check(p.supplies.food >= MEDIC.supplies.food + HC_START.TEAM_MIN * 2 && p.supplies.food <= MEDIC.supplies.food + HC_START.TEAM_MAX * 2 + 2 + 15, `food: theirs on top of the others' clamped days (${p.supplies.food})`);
-  check(p.supplies.ammo >= MEDIC.supplies.ammo && p.supplies.meds >= MEDIC.supplies.meds, `ammo and meds on top (${p.supplies.ammo}, ${p.supplies.meds})`);
+  check(totalRounds(p.supplies) >= MEDIC.supplies.ammo && p.supplies.meds >= MEDIC.supplies.meds, `ammo and meds on top (${totalRounds(p.supplies)}, ${p.supplies.meds})`); // ammo.js: their rounds by calibre
   check(a.hardcore.start.grabbed.some((l) => /field medic, patched up a platoon/.test(l)) && a.cards[0].text.includes("field medic"), "the orders card names the background");
   check(partyTile(p) === partyTile(pb), "same seed, same spawn");
   // Odds 0: never theirs.

@@ -4,6 +4,9 @@
 // background, a small team's skills and loaded seats, armed strangers sized to the team), saves before, during and
 // after the camp, and the autopilot founding one.
 // Usage: node tools/hcstarttest.js [autopilot games] [days] (default 8 games, 40 days)
+import { totalRounds, foldRounds } from "../src/sim/ammo.js"; // rounds by calibre
+// A record with its rounds counted together as "ammo" (the archetypes give ammo as one figure); no "ammo" key with none.
+const asGeneric = (rec) => { const r = { ...rec }; foldRounds(r); if (!r.ammo) delete r.ammo; return r; };
 import { createWorld, tickHour, hub, day, alive, atBase, hurt, makeSurvivor, newId, baseVision } from "../src/sim/world.js";
 import { isShelter, tierName, SHELTER, baseWalls, baseBeds, farmSlots, canBuild, queueBuild, addBuilding } from "../src/sim/buildings.js";
 import { waterProduction, waterNeed } from "../src/sim/economy.js";
@@ -136,7 +139,7 @@ section("The prepper: when one of the three is a prepper, they fled with a duffl
     check(extras >= P.EXTRA_N[0] && extras <= P.EXTRA_N[1] && inBag.every((it) => !packSize(it) && !GEAR[it.key].bulky), `seed ${st.seed}: ${extras} extras from the prepper's list, everything fits a pack`);
     const w = pr.gear.weapon;
     check(!!w && (w.key === "knife" || P.GUNS[w.key]), `seed ${st.seed}: a knife or a gun (${w && w.key})`);
-    if (w && P.GUNS[w.key]) { guns++; if (p.supplies.ammo >= P.AMMO) ammoOk++; } else knives++;
+    if (w && P.GUNS[w.key]) { guns++; if (totalRounds(p.supplies) >= P.AMMO) ammoOk++; } else knives++;
     const traited = pr.traits.includes("prepper");
     if (traited) withTrait++;
     check(traited ? pr.traits.length <= P.MAX_TRAITS : pr.traits.length >= P.MAX_TRAITS, `seed ${st.seed}: the trait when a slot allows (${pr.traits.join(", ")})`);
@@ -191,7 +194,7 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
     const T = VEHICLE_TYPES[v.type];
     check(v.fuel >= T.tank * HC_START.CAR.FUEL[0] - 1e-9 && v.fuel <= T.tank && v.condition >= HC_START.CAR.CONDITION[0] && v.condition <= HC_START.CAR.CONDITION[1], `seed ${st.seed}: the tank at least half full (${v.fuel} of ${T.tank}), condition ${v.condition}`);
     const TR = A[owner.background].trunk;
-    const cs = p.cargo.supplies;
+    const cs = asGeneric(p.cargo.supplies); // ammo.js: the rounds in the back, counted as the old "ammo"
     check(Object.entries(cs).every(([k, q]) => TR[k] && q >= TR[k][0] && q <= TR[k][1]) && Object.keys(TR).filter((k) => SUPPLIES[k] && TR[k][0] > 0).every((k) => cs[k] >= TR[k][0]), `seed ${st.seed}: the supplies in the back are the owner's (${JSON.stringify(cs)})`);
     check(p.cargo.gear.every((g) => TR.gear && TR.gear[g.key]) && p.cargo.gear.length >= TR.n[0] && p.cargo.gear.length <= TR.n[1], `seed ${st.seed}: the things in the back are the owner's (${p.cargo.gear.map((g) => g.key).join(", ")})`);
     const line = hc0.grabbed[hc0.grabbed.length - 1];
@@ -788,7 +791,7 @@ section("Food by background; one or two get a skill bump and the empty seats loa
     const st = hc(seed, { startPeople: n });
     const p = roadTeam(st), seats = emptySeats(n);
     const owner = st.survivors.find((x) => x.id === st.hardcore.start.carOwner), TR = A[owner.background].trunk;
-    const cs = p.cargo.supplies, line = st.hardcore.start.grabbed[st.hardcore.start.grabbed.length - 1];
+    const cs = asGeneric(p.cargo.supplies), line = st.hardcore.start.grabbed[st.hardcore.start.grabbed.length - 1];
     const tag = `${n} people, seed ${seed}`;
     if (!seats) {
       check(Object.entries(cs).every(([k, q]) => TR[k] && q >= TR[k][0] && q <= TR[k][1]) && !/empty seat/.test(line) && !st.log.some((l) => /got out (alone|on their own):/.test(l.text)), `${tag}: only the owner's trunk in the back, no seats loaded`);

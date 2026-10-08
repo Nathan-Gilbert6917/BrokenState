@@ -2,6 +2,7 @@
 // bases (repeat, one-off, with and without a vehicle, hold, disband, recreate, blocked cases) and runs a
 // long campaign. Checks stock moves, schedules, blocked messages and that nothing crashes or gets stuck.
 // Usage: node tools/supplytest.js [days] [seeds...]
+import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, tickHour, day, hub, atBase, newId, survivorById, baseById } from "../src/sim/world.js";
 import { planPath, partyMembers } from "../src/sim/parties.js";
 import { recomputeOwnership } from "../src/sim/factions.js";
@@ -94,11 +95,11 @@ for (const seed of seeds) {
   check(!est.error && est.hoursOut > 0, `estimate failed: ${est.error}`);
   const j1 = saveSupplyRun(state, form({ originId: h.id, destId: A.id, crew: [hubCrew[0].id, hubCrew[1].id], vehicleId: truck.id,
     deliver: [{ key: "food", qty: 20 }, { key: "ammo", qty: 40 }, { key: "water", qty: 10 }], pickup: [{ key: "scrap", qty: 4 }, { key: "fuel", qty: 5 }], every: 4 })).job;
-  const before = { ammo: h.stock.ammo, food: h.stock.food };
+  const before = { ammo: totalRounds(h.stock), food: h.stock.food }; // ammo.js: every round, any calibre
   dispatchSupplyRun(state, j1, true);
   const p1 = jobParty(state, j1);
   check(p1 && p1.vehicle && p1.routeKind === "supply", "run 1 did not leave by truck");
-  check(before.ammo - h.stock.ammo === 40 + p1.supplies.ammo, `hub ammo moved ${before.ammo - h.stock.ammo}, expected ${40 + p1.supplies.ammo}`);
+  check(before.ammo - totalRounds(h.stock) === 40 + totalRounds(p1.supplies), `hub ammo moved ${before.ammo - totalRounds(h.stock)}, expected ${40 + totalRounds(p1.supplies)}`);
   check(before.food - h.stock.food === 20 + p1.supplies.food, "hub food did not move by delivery + road food");
   let delivered = null, pickedUp = null, hours = 0;
   while (jobParty(state, j1) && hours < 24 * 6) {
@@ -108,7 +109,7 @@ for (const seed of seeds) {
     tickHour(state); resolveCards(state); hours++;
     const q = jobParty(state, j1);
     if (phase === "out" && q && q.phase === "back" && state.hour % 24 !== 0) {
-      delivered = { food: A.stock.food - snapA.food + (snapA.food >= 0 ? 0 : 0), ammo: A.stock.ammo - snapA.ammo, cargoAmmo: cargo.ammo };
+      delivered = { food: A.stock.food - snapA.food + (snapA.food >= 0 ? 0 : 0), ammo: totalRounds(A.stock) - totalRounds(snapA), cargoAmmo: totalRounds(cargo) };
       pickedUp = { scrap: q.cargo.supplies.scrap || 0, fuel: q.cargo.supplies.fuel || 0 };
     }
   }

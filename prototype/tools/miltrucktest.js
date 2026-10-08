@@ -15,6 +15,7 @@
 //     hours, fails (wasting parts) or works; drive it home; save / load of the vehicle and the car records
 //   - the autopilot plays 40 days with a convoy and a found vehicle on its map without crashing
 // Usage: node tools/miltrucktest.js [seed = 7]
+import { totalRounds, isRoundKey } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, hub, atBase, tickHour, day } from "../src/sim/world.js";
 import { GEAR, SUPPLIES, LOCATIONS } from "../src/sim/data.js";
 import { Rng } from "../src/sim/rng.js";
@@ -50,7 +51,7 @@ const roadTruckTile = (st) => bareRoads(st).find((t) => trucksAt(st, t.id).lengt
 function team(st, tile, n = 3, opts = {}) {
   const h = hub(st);
   const crew = atBase(st, h.id).slice(0, n).map((s) => s.id);
-  const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "move", stance: "normal", vehicleId: opts.vehicleId ?? null, supplies: { food: 6, water: 6, ammo: Math.min(40, Math.floor(h.stock.ammo || 0)), meds: Math.min(2, Math.floor(h.stock.meds || 0)), fuel: Math.min(opts.fuel || 0, Math.floor(h.stock.fuel || 0)), parts: Math.min(opts.parts || 0, Math.floor(h.stock.parts || 0)), scrap: Math.min(opts.scrap || 0, Math.floor(h.stock.scrap || 0)) } });
+  const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "move", stance: "normal", vehicleId: opts.vehicleId ?? null, supplies: { food: 6, water: 6, ammo: Math.min(40, totalRounds(h.stock)), meds: Math.min(2, Math.floor(h.stock.meds || 0)), fuel: Math.min(opts.fuel || 0, Math.floor(h.stock.fuel || 0)), parts: Math.min(opts.parts || 0, Math.floor(h.stock.parts || 0)), scrap: Math.min(opts.scrap || 0, Math.floor(h.stock.scrap || 0)) } });
   if (res.error) throw new Error(res.error);
   const p = res.party;
   p.path = [tile]; p.idx = 0; p.phase = "waiting"; p.dest = tile;
@@ -105,9 +106,9 @@ let truckValue = 0;
     let v = 0, items = 0, ammo = 0;
     for (let i = 0; i < N; i++) {
       const got = truckLoot(rng, kind, cond);
-      v += valueOf(got); items += got.gear.length; ammo += got.sup.ammo || 0;
+      v += valueOf(got); items += got.gear.length; ammo += totalRounds(got.sup);
       for (const it of got.gear) keys.add(it.key);
-      for (const k of Object.keys(got.sup)) keys.add(k);
+      for (const k of Object.keys(got.sup)) keys.add(isRoundKey(k) ? "ammo" : k); // rounds by calibre (ammo.js): the table's "ammo"
     }
     avg[`${kind}/${cond}`] = { v: v / N, items: items / N, ammo: ammo / N };
   }
@@ -162,7 +163,7 @@ section("The raid map (combat.js placeMilTrucks, AREAS.miltrucks; the crews)");
     if (err) { console.log("    search:", err); continue; }
     opened++;
     const allowed = new Set(Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]));
-    if (box.contents && [...Object.keys(box.contents.sup).filter((k) => !["arrows", "wood"].includes(k)), ...box.contents.gear.filter((it) => !it.blueprint && !it.book && GEAR[it.key] && !["key"].includes(it.key)).map((it) => it.key)].every((k) => allowed.has(k) || k === "frag" || k === "smokegren")) lootOk++;
+    if (box.contents && [...Object.keys(box.contents.sup).filter((k) => !["arrows", "wood"].includes(k)), ...box.contents.gear.filter((it) => !it.blueprint && !it.book && GEAR[it.key] && !["key"].includes(it.key)).map((it) => it.key)].every((k) => allowed.has(k) || (isRoundKey(k) && allowed.has("ammo")) || k === "frag" || k === "smokegren")) lootOk++;
     value += box.contents ? valueOf(box.contents) : 0;
     const after = b.units.filter((x) => x.ztype === "soldier" && x.aware).length;
     if (crew > 0 && after > before) rose++;
@@ -225,7 +226,7 @@ section("The field battle map, the dead, the hour-by-hour search");
   const e = { tile: t.id, hours: 0, heat: 5, found: { supplies: {}, gear: [] } };
   let got = "", hours = 0;
   for (let i = 0; i < 40 && unopenedTrucks(st, t.id).length; i++) { st.hour += 1; e.hours++; hours++; got += truckSearchHour(st, e, p, partyMembers(st, p)); }
-  check(/Forced the back/.test(got) && (e.found.supplies.ammo || e.found.gear.length), `the hour-by-hour search reaches the trucks (all opened in ${hours} hours; Heat ${e.heat})`);
+  check(/Forced the back/.test(got) && (totalRounds(e.found.supplies) || e.found.gear.length), `the hour-by-hour search reaches the trucks (all opened in ${hours} hours; Heat ${e.heat})`);
   check(!siteDeadMix(st, t.id) || (siteDeadMix(st, t.id).soldier || 0) < MILTRUCK.DEAD.road, "once they are all opened the soldiers are no longer drawn to the tile");
 }
 

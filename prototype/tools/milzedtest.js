@@ -14,6 +14,7 @@
 //     few more): damage per hit, hits to kill, a one-on-one fight on the map and a team of three against six; raids at
 //     a National Guard base with and without them.
 // Usage: node tools/milzedtest.js [fights per matchup = 60] [seed = 7] [quick]
+import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { GEAR, LOCATIONS } from "../src/sim/data.js";
 import { ZTYPES, GROWTHS } from "../src/sim/hiveconst.js";
@@ -210,10 +211,10 @@ section("Their bodies (deadsoldiers.js bodyLoot; inventory.js enemyBody, deadBod
     for (const [k, v] of Object.entries(body.supplies)) sup[k] = (sup[k] || 0) + v;
   }
   const pct = (k) => Math.round(((tally[k] || 0) / n) * 100);
-  check(pct("vest") + pct("plate") >= 30 && pct("milhelmet") >= 25 && sup.ammo / n >= 3, `a dead soldier's body (${n}): a vest ${pct("vest")}%, a plate carrier ${pct("plate")}%, a combat helmet ${pct("milhelmet")}%, an assault rifle ${pct("ar")}%, a carbine ${pct("carbine")}%, a radio ${pct("milradio")}%, a smoke grenade ${pct("smokegren")}%; ${r2(sup.ammo / n)} rounds a body`);
+  check(pct("vest") + pct("plate") >= 30 && pct("milhelmet") >= 25 && totalRounds(sup) / n >= 3, `a dead soldier's body (${n}): a vest ${pct("vest")}%, a plate carrier ${pct("plate")}%, a combat helmet ${pct("milhelmet")}%, an assault rifle ${pct("ar")}%, a carbine ${pct("carbine")}%, a radio ${pct("milradio")}%, a smoke grenade ${pct("smokegren")}%; ${r2(totalRounds(sup) / n)} rounds a body`);
   check(armorQ / armorN < 0.7, `the armour on them is worn: ${Math.round((armorQ / armorN) * 100)}% condition on average`);
   const zf = { items: 0, ammo: 0, pistol: 0 };
-  for (let i = 0; i < n; i++) { const f = deadBodyFinds(rng, null); zf.items += f.gear.length; zf.ammo += f.sup.ammo || 0; zf.pistol += f.gear.some((g) => g.key === "pistol") ? 1 : 0; }
+  for (let i = 0; i < n; i++) { const f = deadBodyFinds(rng, null); zf.items += f.gear.length; zf.ammo += totalRounds(f.sup); zf.pistol += f.gear.some((g) => g.key === "pistol") ? 1 : 0; }
   check(zf.items / n < 0.45 && zf.ammo / n < 1.5 && zf.pistol / n < 0.04, `one of the ordinary dead (raid body): ${r2(zf.items / n)} items, ${r2(zf.ammo / n)} rounds a body, a pistol ${Math.round((zf.pistol / n) * 1000) / 10}% (a bonus, not the loot)`);
   check(GEAR.milhelmet && GEAR.milhelmet.slot === "head", "the combat helmet is an item (head slot)");
   const rl = { riothelmet: 0 };

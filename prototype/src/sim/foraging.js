@@ -43,6 +43,7 @@ import { foodUse } from "./upkeep.js"; // landFoodGap: everyone fed here
 import { edibleFood } from "./storage.js";
 import { huntInfo, huntProblem, fishProblem, fishKit, expectFish, fishSpot, partyHuntMix } from "./hunting.js";
 import { addWormCrop, addWormForage } from "./worm.js"; // the worm: forage from infected ground carries its eggs
+import { sumRecs } from "./rounds.js"; // rounds by calibre
 
 // ---------- numbers ----------
 export const FORAGE = {
@@ -365,7 +366,7 @@ export function landFoodOptions(state, p, { range = 1, hours = FORAGE.defHours, 
   const out = [];
   const power = foragePower(members);
   const kit = fishKit(members, (p.cargo && p.cargo.gear) || []);
-  const ammo = carried(p, "ammo");
+  const ammo = sumRecs(p.supplies, p.cargo && p.cargo.supplies); // rounds by key: each gun hunts with its own calibre (ammo.js)
   const huntOk = kinds.includes("hunt") && !/hunting weapon/.test(huntProblem(state, p, from));
   for (const id of state.grid.within(from, range)) {
     const t = state.tiles[id];

@@ -73,7 +73,7 @@ import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace,
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
 import { GUN_WEAPONS, KIT_PATCH } from "./data-guns.js"; // the weapons overhaul's guns, melee and launchers (merged below)
 import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
-import { calOf, calName, roundsOf, takeBattleRounds, sideRounds, chooseLoad, enemyLoad, pickLoad, boxesOf, sweepBoxes, typeFx, typeFor, roundName, settleBase, settleParty, drawShots, ammoEdge, refundShots, softMult } from "./ammo.js"; // rounds by calibre and type
+import { calOf, calName, roundsOf, takeBattleRounds, sideRounds, chooseLoad, enemyLoad, pickLoad, boxesOf, sweepBoxes, typeFx, typeFor, roundName, settleBase, settleParty, drawTeamShots, ammoEdge, refundShots, softMult, bodyRounds, sortFind, raidTheme } from "./ammo.js"; // rounds by calibre and type
 import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
@@ -350,6 +350,7 @@ export function battlePending(state, partyId) {
 export function byNumbersOdds(state, setup, people = combatants(state, setup), ammoOk = true) {
   const armed = typeof ammoOk === "object" && ammoOk ? armedFactor(people, ammoOk.ammo, ammoOk.arrows) : ammoOk ? 1 : 0.6;
   let mine = people.reduce((a, s) => a + combatPower(s), 0) * armed * teamSpirit(state, people); // friends and rivals (relations.js)
+  if (typeof ammoOk === "object" && ammoOk && ammoOk.ammo && typeof ammoOk.ammo === "object") mine *= ammoEdge(ammoOk.ammo, setup.enemy); // R8: the types of round drawn (ammo.js: AP against armour, hollow points against the rest)
   mine *= 1 + lureEdge(setup.enemy, carriedKeys(state, setup, people)); // decoys.js: decoys and Molotovs against the dead (not a Shepherd's pack)
   let theirs = setup.enemy.count * setup.enemy.power * (setup.enemy.fortified || 1) * typeStrength(setup.enemy); // fortified: behind their walls (conquest.js); types: a hive's special dead (zombietypes.js)
   if (setup.ambush === "player") mine *= 1.4;
@@ -399,7 +400,9 @@ export function autoResolveCombat(state, setup) {
     return { outcome: "defeat", enemiesKilled: 0, enemiesLeft: setup.enemy.count, survivorsHurt: [], survivorsDead: [], ammoUsed: 0, loot: { supplies: {}, gear: [] } };
   }
   // A team shoots from what it packed and from ammo it found on the way (the same two pools as a tactical battle): up
-  // to 6 rounds a head, a bow's in arrows (world.js usesArrows), everyone else's in ammo.
+  // to 6 rounds a head, a bow's in arrows (world.js usesArrows), everyone else's in rounds of their gun's calibre
+  // (ammo.js drawTeamShots: a team can only shoot the rounds that fit its guns; no gun, any rounds).
+  if (party) settleParty(state, party); else if (base) settleBase(state, base);
   const pools = party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [{}];
   const archers = people.filter(usesArrows).length;
   const draw = (k, want) => {
@@ -413,9 +416,10 @@ export function autoResolveCombat(state, setup) {
     }
     return used;
   };
-  const ammoUsed = draw("ammo", (people.length - archers) * 6);
+  const drawn = drawTeamShots(pools, people.filter((s) => !usesArrows(s)), (people.length - archers) * 6);
+  const ammoUsed = drawn.n;
   const arrowsUsed = archers ? draw("arrows", archers * 6) : 0;
-  const shots = { ammo: ammoUsed, arrows: arrowsUsed };
+  const shots = { ammo: drawn.used, arrows: arrowsUsed }; // by key: each calibre's guns judged by their own rounds (world.js armedFactor)
   const odds = byNumbersOdds(state, setup, people, shots);
   // causes.js: the odds, for a death's "Why?" (short of ammo: false, as always; with bows, which of them was short).
   const gunsShort = ammoUsed < (people.length - archers) * 3, bowsShort = arrowsUsed < archers * 3;
@@ -429,7 +433,7 @@ export function autoResolveCombat(state, setup) {
   const tiers = setup.layout === "baseDefence" && base ? baseTiers(state, base, setup, ratio) : null;
   if (!tiers) {
     // breakoff.js: the fight plays out in rounds, and a team in the field breaks it off by its retreat policy.
-    const refund = (n, k = "ammo") => { if (pools[0]) pools[0][k] = (pools[0][k] || 0) + n; };
+    const refund = (n, k = "ammo") => { if (!pools[0]) return; if (k === "ammo") refundShots(pools[0], drawn.used, n); else pools[0][k] = (pools[0][k] || 0) + n; }; // ammo.js: the rounds drawn go back by key
     const r = fightByNumbers(state, setup, people, { win: odds.win, ammoUsed, arrowsUsed, refund, tile });
     // Won: about half the arrows loosed are picked up again (world.js ARROWS.BACK); lost or broken off, none.
     r.arrowsBack = r.outcome === "victory" ? arrowsBack(r.arrowsUsed || 0) : 0;
@@ -1659,8 +1663,8 @@ export function reloadRefusal(b, u, type = null) {
   if (u.side === "player") {
     const pool = roundsOf(b, u, sw ? type : undefined);
     const what = cal ? roundName(cal, sw ? type : u.load) : "ammo";
-    if (pool < 1) return `No ${what} left to load.`;
-    if (!sw && pool <= m) return `No spare ${what}: every round left is already loaded.`;
+    if (pool < 1) return `No ammo left to load (no ${what}).`;
+    if (!sw && pool <= m) return `No spare ammo (${what}): every round left is already loaded.`;
   }
   return "";
 }
@@ -1704,7 +1708,7 @@ export function fireRefusal(b, u) {
     const cal = calOf(u.weapon);
     if (WEAPONS[u.weapon].arrows) return "Out of arrows.";
     if (!cal) return "Out of ammo.";
-    return roundsOf(b, u, "*") > 0 ? `Out of ${roundName(cal, u.load)}: reload with another type (1 action).` : `Out of ${calName(cal)} ammo.`;
+    return roundsOf(b, u, "*") > 0 ? `Out of ${roundName(cal, u.load)}: reload with another type (1 action).` : `Out of ammo (no ${calName(cal)} rounds).`;
   }
   if (magEmpty(b, u)) return `The ${gunWord(u)} is empty: reload first (1 action).`;
   return "Cannot shoot right now.";
@@ -1860,6 +1864,7 @@ export function createBattle(state, setup) {
   const tile = state.tiles[tileId];
   const party = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
   const base = setup.baseId ? state.bases.find((x) => x.id === setup.baseId) : null;
+  if (party) settleParty(state, party); else if (base) settleBase(state, base); // ammo.js: rounds by calibre in the pools (generic ammo sorted, boxes in the cargo or armory opened)
   // A base's wall map (deploy.js: the wall at column 12 of an 18-wide map): on a bridge the river starts 3 columns before
   // it, so the wall, its walkway and ladders and the tank traps in front all stand on the deck.
   const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence", bridgeC0: setup.layout === "baseDefence" ? 9 : undefined, trucks: setup.layout ? [] : trucksAt(state, tileId) }); // Army trucks (miltrucks.js), not on a base's wall map
@@ -3555,6 +3560,7 @@ function wearFielded(state, b, fought) {
     if (u.side !== "player") continue;
     const s = survivorById(state, u.sid);
     if (!s || !s.alive) continue;
+    sweepBoxes(s); // ammo.js: empty boxes of rounds thrown away
     if (fought) for (const [slot, item] of u.fielded || []) if (s.gear[slot] === item) wearSlot(state, s, slot);
     if (u.kitUses && u.medKit && s.gear.tool === u.medKit) wearSlot(state, s, "tool", u.kitUses);
   }
@@ -3909,6 +3915,7 @@ export function createRaid(state, setup) {
   const tileId = tileIdOf(setup);
   const tile = state.tiles[tileId];
   const party = state.parties.find((x) => x.id === setup.partyId);
+  if (party) settleParty(state, party); // ammo.js: rounds by calibre in the pools
   const pv = party && party.vehicle ? partyVehicle(state, party) : null;
   const withVehicle = party && party.vehicle ? vehicleBody(party, pv) : false; // what stands in the entry zone (placeVehicle)
   // A building's own map (buildingmaps.js): a single-building site, or the building picked at a site with several;
@@ -4229,7 +4236,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
         say(b, `${u.name} gets acid on their hands from the burst sac (${eff}).`, "danger");
       }
     } else if (box.kind === "body") {
-      sup.ammo = rng.int(3, 10);
+      Object.assign(sup, bodyRounds(unitById(b, box.uid) || { weapon: box.weapon, kit: box.kit, id: box.uid }, rng.int(3, 10))); // ammo.js: their gun's calibre and load
       if (rng.chance(0.25)) sup.food = rng.int(1, 3);
       if (rng.chance(MEDS.BODY_HUMAN)) sup.meds = 1; // medfinds.js
       const kit = KITS[box.kit] || KITS.raiders;
@@ -4277,6 +4284,8 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       }
     }
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
+    const site = state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null;
+    sortFind(sup, box.kind === "body" ? "home" : box.truck ? "military" : raidTheme(site, box.area != null && R.areas[box.area] ? R.areas[box.area].type : "house"), "box", b.tileId, box.id); // ammo.js: what turns up there, by calibre
     box.contents = { sup, gear };
   }
   // search.js: a rummage hides part of it (and is heard); a full search brings out what a rummage missed.
@@ -4503,7 +4512,7 @@ function autoRaidTurn(state) {
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
       // An empty gun: reloaded (1 action) when something is close or there is time (not on the way out), then on.
-      if (magEmpty(b, u) && (foes.length || !leave) && !reloadRefusal(b, u) && !combatAct(state, { type: "reload", unit: u.id })) continue;
+      if ((magEmpty(b, u) || (calOf(u.weapon) && !hasShot(b, WEAPONS[u.weapon], u))) && (foes.length || !leave)) { const rt = reloadType(b, u, foes); if (rt != null && !combatAct(state, { type: "reload", unit: u.id, ammo: rt === typeFor(calOf(u.weapon), u.load) ? null : rt })) continue; } // ammo.js: another type when its own has run out
       const adj = foes.find((f) => adjacent(u, f));
       const shot = foes.length ? bestShot(b, u, foes) : null;
       const fair = shot && shot.o.chance >= 45;

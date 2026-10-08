@@ -38,6 +38,7 @@ import { expectForage } from "./foraging.js";
 import { expectWood, chopCrew, chopPower, fireLandOk, WOOD } from "./woodcutting.js";
 import { partyVehicle } from "./vehicles.js";
 import { supplyLoad, poolLoad } from "./parties.js";
+import { sumRecs } from "./rounds.js"; // rounds by calibre
 
 export const SEARCH_HOURS = 6;      // time on site the estimates assume for a search (as estimateTrip does)
 export const SURVEY_STEP_HOURS = 2; // Look around
@@ -176,7 +177,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   // outweighs what was eaten since it set off (eating does not lighten a team on the move).
   const home0 = baseById(state, homeBaseId || hub(state).id);
   const kitItems = p ? (p.cargo && p.cargo.gear) || [] : (home0 && home0.armory) || [];
-  const ammo = p ? Math.max(0, (p.supplies.ammo || 0) + ((p.cargo && p.cargo.supplies.ammo) || 0)) : supplies.ammo || 0;
+  const ammo = p ? sumRecs(p.supplies, p.cargo && p.cargo.supplies) : supplies || {}; // rounds by key (a plan's generic "ammo" fits any gun): ammo.js
   // Arrows for the bows (hunting.js): what the team carries, or what it packs and takes from home for a hunt (applyPlan).
   const arrows0 = p ? Math.max(0, (p.supplies.arrows || 0) + ((p.cargo && p.cargo.supplies.arrows) || 0)) : supplies.arrows || 0;
   const arrows = p ? arrows0 : arrows0 + ((steps || []).some((s) => s.kind === "hunt") ? huntArrowsFor(state, home0, members, arrows0) : 0);
