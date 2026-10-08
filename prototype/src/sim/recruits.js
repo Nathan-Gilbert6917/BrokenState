@@ -15,7 +15,7 @@ import { baseBeds } from "./buildings.js";
 import { foodOutlook, waterOutlook, drinkRate } from "./economy.js";
 import { stockHas, takeStock } from "./water.js"; // water counts both kinds, purified given first
 import { partyMembers, partyTile, carried, takeSupply, carriedAny, takeAny, planPath, partySpeed, hoursLeft, tileLabel } from "./parties.js";
-import { newItem, stow, allItems } from "./inventory.js";
+import { newItem, stow, allItems, START_DUR } from "./inventory.js";
 import { attitude, changeGoodwill } from "./factions.js";
 import { foodNeedFactor, thirstAhead } from "./weather.js";
 
@@ -43,12 +43,12 @@ export function makeCandidate(state, { quality = 0.85, minHealth = 60, gearChanc
   s.mood = rng.int(45, 65);
   if (rng.chance(gearChance)) {
     const w = rng.weighted(Object.keys(RECRUIT_WEAPONS), (k) => RECRUIT_WEAPONS[k]);
-    s.gear.weapon = newItem(w, Math.round(rng.range(0.5, 0.9) * 100) / 100);
+    s.gear.weapon = newItem(w, Math.round(rng.range(0.5, 0.9) * 100) / 100, rng, START_DUR);
   }
-  if (rng.chance(gearChance * 0.35)) stow(s, newItem(rng.pick(RECRUIT_ARMOR), Math.round(rng.range(0.5, 0.9) * 100) / 100));
-  if (rng.chance(gearChance * 0.3)) stow(s, newItem(rng.pick(RECRUIT_KIT), Math.round(rng.range(0.5, 0.9) * 100) / 100));
+  if (rng.chance(gearChance * 0.35)) stow(s, newItem(rng.pick(RECRUIT_ARMOR), Math.round(rng.range(0.5, 0.9) * 100) / 100, rng, START_DUR));
+  if (rng.chance(gearChance * 0.3)) stow(s, newItem(rng.pick(RECRUIT_KIT), Math.round(rng.range(0.5, 0.9) * 100) / 100, rng, START_DUR));
   // Something of their own from before: a keepsake, a comfort, a last pack of smokes.
-  if (rng.chance(gearChance * 0.6)) stow(s, newItem(rng.pick(RECRUIT_PERSONAL), 1));
+  if (rng.chance(gearChance * 0.6)) stow(s, newItem(rng.pick(RECRUIT_PERSONAL), 1, rng, START_DUR));
   return s;
 }
 // What a newcomer may bring (weights for the weapon).

@@ -48,7 +48,7 @@ const URGENCY_RANK = { routine: 0, warning: 1, crisis: 2 };
 // The sound of a weapon's shot, by its key in WEAPONS (and the unit: a suppressor muffles it).
 const SHOT_CLASS = {
   pistol: "pistol", revolver: "revolver", huntrifle: "rifle", leverrifle: "rifle", carbine: "rifle", ar: "auto",
-  shotgun: "shotgun", pipegun: "shotgun", crossbow: "bow", compbow: "bow", xbow: "bow", acid: "acid",
+  shotgun: "shotgun", pipegun: "shotgun", crossbow: "bow", compbow: "bow", xbow: "bow", pulleybow: "bow", acid: "acid",
 };
 export function weaponSound(key, unit) {
   const w = WEAPONS[key];
