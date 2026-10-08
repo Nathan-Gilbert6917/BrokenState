@@ -498,11 +498,12 @@ section("Siege kit by the numbers: the walls count less, an assault's walls, dec
   worksAt(f, tile).walls = 7; // a group's base starts bare (barestart: groupworks.js); these are the walls it builds up to
   const crew = atBase(st, h.id).slice(0, 5);
   for (const k2 of ["ram", "ladder", "ladder", "frag", "frag"]) h.armory.push(newItem(k2));
-  const before = h.armory.length;
+  const kitLeft = () => h.armory.filter((x) => !x.key.startsWith("mag_")).length; // (spare magazines go along too: carrykit.js packMags)
+  const before = kitLeft();
   const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: tile, mission: "assault", stance: "normal", supplies: { food: 10, water: 10, ammo: 40 } });
   const p = res.party;
   const tk = p ? teamKit(st, crew, p.cargo.gear) : null;
-  check(p && tk.ram === 1 && tk.ladders === 1 && tk.grenades === 2 && h.armory.length === before - 4, `an assault takes the hub's siege kit along: ${p ? p.cargo.gear.map((x) => x.name).join(", ") : res.error} (a ladder for 5 people, 1 per 3)`);
+  check(p && tk.ram === 1 && tk.ladders === 1 && tk.grenades === 2 && kitLeft() === before - 4, `an assault takes the hub's siege kit along: ${p ? p.cargo.gear.map((x) => x.name).join(", ") : res.error} (a ladder for 5 people, 1 per 3)`);
   check(p && poolLoad(p) >= GEAR.ram.weight + GEAR.ladder.weight, `its weight counts (${p && Math.round(poolLoad(p))} kg in the team's pool, load.js)`);
   const plain = assaultForce(st, f, tile), withKit = assaultForce(st, f, tile, p);
   check(withKit.fortified < plain.fortified && Math.abs(withKit.fortified - Math.round((1 + 0.05 * plain.walls * (1 - assaultCut(tk))) * 100) / 100) < 1e-9, `their walls count less: defence ×${plain.fortified} → ×${withKit.fortified} (−${Math.round(assaultCut(tk) * 100)}% of the walls)`);

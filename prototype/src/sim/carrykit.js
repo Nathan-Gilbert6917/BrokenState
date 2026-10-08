@@ -204,7 +204,8 @@ export function packMags(list, crew) {
   }
   return out;
 }
-// A starting colonist's gun: CARRY.START spare standard magazines (pockets, the rig, the pack; else the hub's armory).
+// A starting colonist's gun: CARRY.START spare standard magazines (a rig pouch, the pack, a pocket while two stay free
+// for other things; else the hub's armory, where packing for a trip finds them).
 export function starterMags(s, armory = null) {
   const gun = s && s.gear && s.gear.weapon;
   const key = gun ? standardMag(gun.key) : null;
@@ -213,7 +214,14 @@ export function starterMags(s, armory = null) {
   for (let i = 0; i < CARRY.START; i++) {
     const it = newItem(key); // starting gear (not loot): a magazine has no wear
     if (gun.load) it.load = gun.load;
-    if (stow(s, it)) n++;
+    ensureInv(s);
+    const rp = rigPouches(s), kinds = rp ? pouchesOf(rigOf(s)) : [];
+    const ri = rp ? kinds.findIndex((k, j) => !rp[j] && !pouchReason(it, k) && k !== "admin") : -1;
+    const pk = packOf(s), pi = pk ? pk.indexOf(null) : -1;
+    const free = s.pockets.filter((x) => !x).length;
+    if (ri >= 0) { rp[ri] = it; n++; }
+    else if (pi >= 0) { pk[pi] = it; n++; }
+    else if (free > 2) { s.pockets[s.pockets.indexOf(null)] = it; n++; }
     else if (armory) { armory.push(it); n++; }
   }
   return n;

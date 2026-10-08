@@ -28,7 +28,8 @@ import { TRUCK_GEAR } from "../src/sim/data-guns.js"; // the roster's military g
 import { ensureWares, WARES, WARE_EXTRAS, gearSellPrice, gearBuyPrice } from "../src/sim/trade.js";
 import { WARE_BOOKS } from "../src/sim/skills.js";
 import { MILDEAD } from "../src/sim/deadsoldiers.js";
-import { KIT_LOOT } from "../src/sim/data-kit.js"; // the carry kit's loot (rigs, magazines on bodies and with found guns): off for the old baselines
+import { KIT_LOOT } from "../src/sim/data-kit.js";
+import { WARE_KIT } from "../src/sim/carrykit.js"; // the carry kit's loot (rigs, magazines on bodies and with found guns): off for the old baselines
 import * as V from "../src/sim/visitors.js";
 import {
   COND_SOURCES, rollCondition, condRolled, isPaper, rollsQuality, rollsWear, qualityWord, siteSource, areaSource, kitSource, traderSource,
@@ -181,7 +182,7 @@ check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])
     const its = [];
     for (let w = 0; w < 25; w++) { st.hour = w * 168; its.push(...ensureWares(st, f, true)); }
     f.type = was;
-    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...paper(type)]));
+    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type)]));
   }
   st.hour = 0;
   const com = [];
@@ -305,6 +306,7 @@ KIT_LOOT.on = true;
   });
   check(onlyAdds && added > 0, `the flashbang extras (the armoured dead, Army trucks) only add (${added} flashbangs and smoke grenades): the rest and the dice are as without them`);
 }
+KIT_LOOT.on = false; // the carry kit's finds and wares (carrykit.js SITE_KIT / AREA_KIT / WARE_KIT: their own dice, after a roll that found nothing) are new
 {
   const w = createWorld({ seed: 4242, factionCount: 8 });
   w.started = true;
@@ -337,6 +339,7 @@ KIT_LOOT.on = true;
   check(h16(mk.join("|")) === BASE.visitors.merchants, "merchants: the same caravans, at the same places");
   check(info.rng.state === BASE.visitors.rng, "visitors: their dice end where they did (the specialities use dice of their own)");
 }
+KIT_LOOT.on = true;
 
 // ---------- 5. merchants' specialities ----------
 for (const [o, k, v] of nlStash) o[k] = v; // the non-lethal kit back
@@ -348,7 +351,7 @@ section("5. Merchants' specialities");
   for (let i = 0; i < 300; i++) { const v = V.spawnVisitor(w, "merchants"); if (!v) continue; (by[v.spec] = by[v.spec] || []).push(v); w.visitors.length = 0; }
   check(Object.keys(V.MERCHANT_SPECS).every((k) => (by[k] || []).length >= 20), `every speciality turns up (${Object.keys(V.MERCHANT_SPECS).map((k) => `${k} ${(by[k] || []).length}`).join(", ")})`);
   const blue = new Set(Object.keys(GEAR).filter((k) => GEAR[k].blueprint));
-  const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items)]);
+  const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items), ...Object.keys(WARE_KIT.merchants.items)]);
   for (const [k, S] of Object.entries(V.MERCHANT_SPECS)) {
     const vs = by[k] || [];
     const allowed = new Set([...S.gear, ...S.books, ...V.MERCHANT_VALUABLES, ...blue, ...(k === "arms" || k === "general" ? mods : [])]);

@@ -4,6 +4,7 @@
 // WEAPONS stats, the fitted attachments (gunmods.js) and the loaded ammo type (ammo.js: aim, range, damage, noise,
 // penetration, the soft-target bonus, jam ×). Jams and fire modes are the combat agent's (A2); the UI agent (D) reads it.
 import { WEAPONS } from "./combat.js";
+import { GEAR } from "./data.js";
 import { gunMods } from "./gunmods.js";
 import { jamChance } from "./gunfire.js"; // jam: the battle's own per-round jam chance (call time only)
 import { ammoPen } from "./data-ammo.js";
@@ -18,7 +19,9 @@ export function gunStats(itemOrKey, opts = {}) {
   const w = item && WEAPONS[item.key];
   if (!w) return null;
   const m = gunMods(opts.mods ? { ...item, mods: opts.mods } : item);
-  const cap = w.cap ? Math.max(1, Math.round(w.cap * (m.capMult ?? 1)) + (m.cap || 0)) : 0;
+  const mods = opts.mods || item.mods;
+  const fit = mods && mods.mag && GEAR[mods.mag.key] && GEAR[mods.mag.key].mag ? GEAR[mods.mag.key].mag.cap : null; // a magazine item fitted (data-kit.js): its rounds
+  const cap = w.cap ? Math.max(1, Math.round((fit || w.cap) * (m.capMult ?? 1)) + (m.cap || 0)) : 0;
   const cal = calOf(item.key);
   const load = cal ? typeFor(cal, opts.load ?? item.load ?? null) : null; // ammo.js: a type its calibre has, else its common round
   const t = typeFx(load);

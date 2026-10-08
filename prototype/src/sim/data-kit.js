@@ -56,6 +56,8 @@ export const POUCH_NAMES = { rifle: "Rifle mag", pistol: "Pistol mag", grenade: 
 export const POUCH_ICON = { rifle: "▮", pistol: "▯", grenade: "●", radio: "📻", admin: "✚" };
 export const ADMIN_KG = 0.5; // an admin pouch takes small things up to this (meds, a flashlight, tablets, a small box of rounds)
 
+// The gun builder's art for a magazine (ui/gunart.js PART_ART): by its size.
+const magLook = (k, cap) => (k === "extmag" ? "extmag" : cap >= 50 ? "drum" : cap > 30 ? "stick40" : cap > 20 ? "stick30" : cap > 10 ? "stick20" : "stick10");
 const P = (spec) => spec.flatMap(([kind, n]) => Array.from({ length: n }, () => kind));
 // Inserts (section 17): AC / dmax / material are armour.js ARMOUR's; weight, worth and where they turn up here.
 /** @type {Record<string, any>} */
@@ -86,7 +88,7 @@ export const KIT_GEAR = {
     desc: "Five .308 rounds on a clip: a Reload fills the hunting rifle's magazine at once (instead of 3 rounds), once a fight. In a rifle pouch or a pocket." },
 };
 for (const [k, m] of Object.entries(MAGAZINES)) {
-  KIT_GEAR[k] = { name: m.name, slot: "pack", skill: null, power: 0, req: 0, value: m.value, noise: 0, small: true, weight: m.kg, cat: "gunmod", mag: { plat: m.plat, cal: m.cal, cap: m.cap }, pouch: m.pouch,
+  KIT_GEAR[k] = { name: m.name, slot: "pack", skill: null, power: 0, req: 0, value: m.value, noise: 0, small: true, weight: m.kg, cat: "gunmod", mag: { plat: m.plat, cal: m.cal, cap: m.cap }, pouch: m.pouch, look: magLook(k, m.cap),
     desc: m.desc || `A ${m.cap}-round magazine${m.aim ? ` (heavy and clumsy: ${m.aim} aim${m.jam ? `, jams ×${m.jam}` : ""})` : ""}. It holds one kind of round. A spare in a rig pouch or a pocket reloads in 1 action, from the pack in 2.` };
 }
 for (const [k, c] of Object.entries(CLIPS)) KIT_GEAR[k].pouch = c.pouch;
@@ -107,4 +109,4 @@ for (const [k, m] of Object.entries(MAGAZINES)) {
 // Magazines as gun parts (gunmods.js ATTACH: the gun builder's magazine slot lists them by platform).
 /** @type {Record<string, any>} */
 export const KIT_ATTACH = {};
-for (const [k, m] of Object.entries(MAGAZINES)) KIT_ATTACH[k] = { slot: "mag", short: `${m.cap}-round mag`, look: k === "extmag" ? "extmag" : k === "drum" ? "drum" : k, fits: { plat: m.plat }, magCap: m.cap, ...(m.aim ? { aim: m.aim } : {}), ...(m.jam ? { jam: m.jam } : {}) };
+for (const [k, m] of Object.entries(MAGAZINES)) KIT_ATTACH[k] = { slot: "mag", short: `${m.cap}-round mag`, look: magLook(k, m.cap), fits: { plat: m.plat }, magCap: m.cap, ...(m.aim ? { aim: m.aim } : {}), ...(m.jam ? { jam: m.jam } : {}) };
