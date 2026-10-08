@@ -52,7 +52,7 @@ import { totalIn, sumRecs, ROUND_KEYS, isRoundKey } from "./rounds.js"; // round
 import { addFindVia, kindTheme } from "./ammo.js";
 import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsiders on the same tile (contactAttack)
 import { unitPower, addToArsenal, arsenalWorthy, captureVehicle, arsenalText } from "./arsenal.js"; // group arsenals: their people's power by their kit; what they take goes into it
-import { captiveEscape, captiveDecline, captiveTurnMult } from "./groupjails.js"; // jailhouse: their jail's tier, the work they are put to
+import { captiveEscape, captiveDecline, captiveTurnMult, groupJailGuards } from "./groupjails.js"; // jailhouse: their jail's tier, the work they are put to
 import { startRescueRaid, tacticalPossible, jailTier, JAIL } from "./rescueraid.js"; // the rescue played out on their base's map
 import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: each type's numbers on the road (meetOdds, stop, talkDc, bribes, pacts, ransoms, captives)
 
@@ -1343,6 +1343,12 @@ function victoryRewards(state, p, c, result) {
 
 // ---------- rescue missions ----------
 const jailWord = (f, tile, state = null) => (JAIL[jailTier(f, tile, state)] || JAIL.makeshift).name; // jailhouse: the group's own jail (groupjails.js)
+// The jail's own guards (groupjails.js groupJailGuards), for the rescue card: "2 of them guard the holding cells".
+function jailGuardsLine(state, f) {
+  const n = groupJailGuards(state, f);
+  const jail = jailWord(f, f.bases[0], state).toLowerCase();
+  return n ? `${n} of them ${n === 1 ? "guards" : "guard"} the ${jail} (on the map, posted at its door)` : `nobody guards the ${jail}`;
+}
 export function guardsFor(state, p, f) {
   const def = FACTION_TYPES[f.type];
   return {
@@ -1384,7 +1390,7 @@ function rescueCard(state, p, f, held) {
   return {
     kind: "conflict", conflict: c, partyId: p.id, where: tileLabel(state, partyTile(p)),
     title: `Rescue at ${tileLabel(state, p.dest)}`,
-    text: `${f.name} hold ${names(held)} here. About ${guards.count} guards are on the walls${night ? ", fewer awake at this hour" : ""}.`,
+    text: `${f.name} hold ${names(held)} here. About ${guards.count} guards are on the walls${night ? ", fewer awake at this hour" : ""}; ${jailGuardsLine(state, f)}.`,
     choices: [
       ...(tacticalPossible(state) ? [
         {

@@ -12,8 +12,10 @@ import { combatAct, autoPlayerTurn, runEnemyPhase, closeCombat, endPlayerTurn, u
 import * as RR from "../src/sim/rescueraid.js";
 import * as RS from "../src/sim/ransom.js";
 import { prisonersOf, takePrisonersAt } from "../src/sim/prisoners.js";
+import { groupJailGuards } from "../src/sim/groupjails.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { setAutopilot, autopilotDaily, autopilotResolve } from "../src/sim/autopilot.js";
+import { defaultChoice } from "../src/sim/cardrules.js";
 import { newItem } from "../src/sim/inventory.js";
 
 const seed = Number(process.argv[2] || 11);
@@ -98,6 +100,14 @@ section("The rescue raid's map: the cell, its lock, the jailer, the armory, your
   check(R.doors.filter((d) => d.area === "cell").every((d) => b.cells[d.y * b.w + d.x].k === "door"), "the cell's doors are locked");
   const j = unitById(b, R.jailer);
   check(!!j && j.cellKey && j.post === "door", "a jailer with the keys stands by the cell");
+  {
+    // The jail's guards (groupjails.js groupJailGuards): the jailer and the rest posted round the cell, awake.
+    const want = groupJailGuards(st, f);
+    const posted = b.units.filter((u) => u.side === "enemy" && (u.jailGuard || u.cellKey));
+    const [dx, dy] = R.cell.doors[0];
+    check(want >= 1 && R.jailGuards === Math.min(want, b.units.filter((u) => u.side === "enemy").length) && posted.length === R.jailGuards && posted.every((u) => u.post === "door" && Math.max(Math.abs(u.x - dx), Math.abs(u.y - dy)) <= 4),
+      `the jail's ${want} guard${want === 1 ? "" : "s"} (pop ${f.pop}) at the cell: ${posted.map((u) => u.name).join(", ")}`);
+  }
   check(!!R.armory && R.armory.items.length > 0, `their armory holds ${R.armory ? R.armory.items.length : 0} things`);
   check(b.units.filter((u) => u.side === "enemy").every((u) => !u.aware), "sneaking: nobody has seen you");
   check(combatAct(st, { type: "move", unit: caps[0].id, x: caps[0].x, y: caps[0].y }) !== "", "a tied captive cannot move");
@@ -398,6 +408,7 @@ section("Auto-resolved: the rescue card's by-the-numbers paths still work (and h
   rescueArrive(st, p);
   const card = st.cards.find((c) => c.partyId === p.id);
   check(!!pick(card, /^Sneak in on the map/) && !!pick(card, /^Storm the base on the map/) && !!pick(card, /by the numbers/), "in the browser: Sneak in / Storm on the map, and by the numbers");
+  check(/guards? the|nobody guards the/.test(card.text), `the card names the jail's guards: "${card.text}"`);
   pick(card, /^Storm by the numbers/).resolve(st);
   check(!st.combat, "by the numbers opens no battle screen");
   browser(false);
@@ -615,12 +626,69 @@ section("The autopilot: a ransom first when it can afford it, a rescue raid when
   const st = world(seed + 140);
   const f = raiders(st);
   f.jails = { [f.bases[0]]: 3 }; // jailhouse: a cell for them (with none they would be sold on, freed by a military buyer, or killed), and a tight one (the ransom under test, not an escape)
-  const a = captive(st, f, { skill: 5 });
+  f.goodwill = 0; // neutral: their price is the captive's worth to them, not a hostile one's ×1.5
+  const a = captive(st, f, { skill: 8, health: 100 });
   setAutopilot(st, true, "balanced");
   hub(st).radio = true;
   Object.assign(hub(st).stock, { ammo: 3000, meds: 80, food: 600, fuel: 120, water: 400 });
   const plan = RS.autoRescuePlan(st, a);
-  check(plan && plan.kind === "ransom", `rich: ransom first (${plan && plan.kind}: ${plan && plan.why})`);
+  check(plan && plan.kind === "ransom", `rich, a valuable captive: ransom first (${plan && plan.kind}: ${plan && plan.why})`);
+  // The value rule: a captive worth less than their price is not paid for, however rich the hub.
+  {
+    const sv = world(seed + 143);
+    const fv = raiders(sv);
+    fv.jails = { [fv.bases[0]]: 3 };
+    const low = captive(sv, fv, { skill: 1, health: 50 });
+    setAutopilot(sv, true, "balanced");
+    Object.assign(hub(sv).stock, { ammo: 3000, meds: 80, food: 600, fuel: 120, water: 400 });
+    const v = RS.ransomVerdict(sv, fv, [low]);
+    const pv = RS.autoRescuePlan(sv, low);
+    check(v.kind !== "pay" && v.worth < v.price && pv.kind !== "ransom", `rich, a low-value captive: not paid for (worth ${v.worth}, price ${v.price}: ${pv.kind}, ${pv.why})`);
+    // Never out of the hub's last days of food and water: a hungry hub does not pay with food.
+    const sk = world(seed + 144);
+    const fk = raiders(sk);
+    fk.type = "zealot"; fk.goodwill = 0; // zealots want food, meds and water
+    const vip = captive(sk, fk, { skill: 9, health: 100 });
+    setAutopilot(sk, true, "balanced");
+    for (const k of Object.keys(hub(sk).stock)) hub(sk).stock[k] = 0;
+    hub(sk).stock.food = 20; hub(sk).stock.water = 20;
+    const vk = RS.ransomVerdict(sk, fk, [vip]);
+    check(vk.kind !== "pay", `a valuable captive, but only a few days of food and water at the hub: not paid (${vk.kind}: ${vk.why})`);
+  }
+  // The card left in the tray: declined unless ransom decisions are handed over (the governor, the hub's leader with Trading).
+  {
+    const sc = world(seed + 145);
+    const fc = raiders(sc);
+    fc.goodwill = 0; fc.jails = { [fc.bases[0]]: 3 };
+    const vip = captive(sc, fc, { skill: 8, health: 100 });
+    Object.assign(hub(sc).stock, { ammo: 3000, meds: 80, food: 600, fuel: 120, water: 400 });
+    const card = RS.negotiationCard(sc, fc, [vip.id], { channel: "radio" });
+    check(defaultChoice(sc, card).label === "Decline", `left in the tray, played by hand: ${defaultChoice(sc, card).label}`);
+    hub(sc).steward = { on: true, style: "balanced", areas: { trade: true }, leaderId: null };
+    check(/^Agree/.test(defaultChoice(sc, card).label), `handed to the hub's leader (Trading), worth the price: ${defaultChoice(sc, card).label}`);
+    const low = captive(sc, fc, { skill: 1, health: 50 });
+    const card2 = RS.negotiationCard(sc, fc, [low.id], { channel: "radio" });
+    check(defaultChoice(sc, card2).label === "Decline", `handed over, not worth the price: ${defaultChoice(sc, card2).label}`);
+    const n0 = hub(sc).stock.ammo;
+    defaultChoice(sc, card2).resolve(sc);
+    check(isCaptive(low) && hub(sc).stock.ammo === n0, "declined: nothing paid, they stay held");
+  }
+  // A team at their gates (the rescue and trade-visit cards; the governor's pick): pays from its cargo only by the value
+  // rule, and never out of its food and water for the road home.
+  {
+    const sp = world(seed + 146);
+    const fp = raiders(sp);
+    fp.goodwill = 0;
+    const vip = captive(sp, fp, { skill: 8, health: 100 }), low = captive(sp, fp, { skill: 1, health: 50 });
+    const p = teamAt(sp, fp, 3);
+    p.cargo.supplies.ammo = 400;
+    const price = 120;
+    check(RS.teamPayOk(sp, p, fp, [vip], price) && !RS.teamPayOk(sp, p, fp, [low], price), `the team pays ${price} for someone worth ${RS.captiveValue(sp, vip)}, not for someone worth ${RS.captiveValue(sp, low)}`);
+    p.cargo.supplies.ammo = 0; p.supplies.ammo = 0; p.supplies.meds = 0; p.supplies.food = 40; p.supplies.water = 2;
+    check(!RS.teamPayOk(sp, p, fp, [vip], price), "not out of the team's water for the road home");
+  }
+  // The groups' own people (groupjails.js ransom back): the same rule, by their power and how many they are.
+  check(RS.groupMemberWorth({ pop: 12 }, 3) >= 27 && RS.groupMemberWorth({ pop: 30 }, 2) < 23 && RS.groupMemberWorth({ pop: 6 }, 2) > RS.groupMemberWorth({ pop: 12 }, 2), `a group's own people: power 3 at 12 strong worth ${RS.groupMemberWorth({ pop: 12 }, 3)}, power 2 at 30 strong ${RS.groupMemberWorth({ pop: 30 }, 2)} (price 23: not bought back)`);
   const st2 = world(seed + 141);
   const f2 = raiders(st2);
   f2.pop = 6;

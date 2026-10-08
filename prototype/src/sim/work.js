@@ -56,7 +56,7 @@ import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } fro
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt, WEAR } from "./breakdowns.js";
 import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity } from "./economy.js";
-import { prisonersAt, prisonGuardsWanted } from "./prisoners.js";
+import { prisonersAt, prisonGuardsWanted, onJailRoster, jailName } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned, towerHordes } from "./defences.js";
 import { huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap, hunterMult, bestHuntWeapon, fisherMult } from "./hunting.js";
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
@@ -132,7 +132,7 @@ export const WORK_TYPES = {
   },
   guard: {
     name: "Guard", ing: "On guard", short: "Grd", role: "guard", skill: "shooting",
-    desc: "A lookout on the walls (one at a base of 4+, two at 12+, one more while a horde is in sight, one more for prisoners in the cells and one per 4 of them out at work). While a watchtower sees a horde near, Guard is priority 1 for everyone who has it set as a backup job, and the walls take as many more as it takes to hold that horde (at least one), before any other work. Raid and horde warnings send everyone with Guard set to the walls (an emergency).",
+    desc: "A lookout on the walls (one at a base of 4+, two at 12+, one more while a horde is in sight, one more for prisoners in the cells and one per 4 of them out at work: the jail's own guards, named on the Prisoners tab, fill those first and guard it in their Work hours). While a watchtower sees a horde near, Guard is priority 1 for everyone who has it set as a backup job, and the walls take as many more as it takes to hold that horde (at least one), before any other work. Raid and horde warnings send everyone with Guard set to the walls (an emergency).",
     open(ctx) {
       const n = ctx.people.length;
       const watch = ctx.threat.watch ? Math.max(1, ctx.watchNeed || 0) : 0; // the watchtower's alarm: the hands to hold the horde it sees
@@ -771,6 +771,7 @@ export function planBase(state, base) {
   const out = new Map();
   const put = (s, a) => out.set(s.id, a);
   const fit = managed.filter((s) => s.restUntil == null && !healthRest(s));
+  const held = prisonersAt(state, base.id).length; // the jail's guards stand it while anyone is held
   let walls = new Set();
   if (ctx.threat.urgent) {
     const cands = fit.filter((s) => prio(state, s, "guard") > 0);
@@ -793,6 +794,8 @@ export function planBase(state, base) {
     const block = schedAt(role, h);
     if (block === "g") { put(s, { role: "guard", t: "guard", kind: "sched", why: `Guard watch (${role.name}'s schedule)` }); continue; }
     if (block === "s" || block === "f") { put(s, { role: "rest", t: block === "s" ? "sleep" : "free", kind: "sched", why: `${SCHED[block].name} (${role.name}'s schedule)` }); continue; }
+    // prisoners.js JAIL_GUARD: on the jail's roster, their Work hours go to guarding it while anyone is held here.
+    if (held && onJailRoster(base, s)) { put(s, { role: "guard", t: "guard", kind: "sched", why: `Guarding the ${jailName(base).toLowerCase()} (${held} held; the jail's roster)` }); continue; }
     const glum = s.mood < MOOD_LOW || (s.task && s.task.kind === "mood" && s.mood < MOOD_BACK);
     if (glum) { put(s, { role: "rest", t: "free", kind: "mood", why: `Free time: mood ${Math.floor(s.mood)} (back to work at ${MOOD_BACK})` }); continue; }
     ctx.free.add(s);

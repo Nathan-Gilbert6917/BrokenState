@@ -3,7 +3,7 @@
 // what to do with each: rations, labour, question (or roughly), ask to join, win over, ransom, trade back, release,
 // execute. A summary on top: food a day at their rations, labour by task, guards and the day's escape risk.
 import { SKILL_NAMES, TRAITS, FACTION_TYPES } from "../sim/data.js";
-import { day } from "../sim/world.js";
+import { day, atBase, baseById, survivorById, skill } from "../sim/world.js";
 import { CONQUEST } from "../sim/conquest.js";
 import { teamName } from "../sim/parties.js";
 import { WEAR } from "../sim/breakdowns.js";
@@ -11,6 +11,7 @@ import {
   PRISON, TASKS, JAIL, SHED, prisonersAt, cellCap, prisonerView, prisonSummary, tasksAt, guardsAt, questionPrisoner, askRansom,
   tradeBack, releasePrisoner, setMode, executePrisoner, askToJoin, setRation, setAllRations, setTask, setAllTasks,
   jailOf, jailTier, freeCells, incomingTo, basesWithRoom, movePrisoner,
+  JAIL_GUARD, jailGuardIds, jailGuardsOn, guardStrength, guardWeight, cellEscape, stackGuards, toggleJailGuard, fillJailGuards, jailGuardsWanted,
 } from "../sim/prisoners.js";
 import { BUILDINGS } from "../sim/buildings.js";
 import { wormOthersAt, WORM } from "../sim/worm.js"; // the worm in a prisoner: spotted, treated like a resident
@@ -35,7 +36,7 @@ const RATIONS_TIP = `Rations. ${Object.keys(R).map(rationTip).join(" ")} While a
 const L = PRISON.LABOUR;
 const TASKS_TIP = `Labour: out of the cell 07–19 at ${pctTxt(L.min)}–${pctTxt(L.max)} of a survivor (${pctTxt(L.perSkill)} a point of the task's skill) × rations × health (too weak under ${L.minHealth}) × mood (${L.moodBase} + ${L.moodPer} × mood/100, ${pctTxt(L.moodMin)}–${pctTxt(L.moodMax)}). ${Object.entries(TASKS).filter(([k]) => k !== "idle").map(([, t]) => `${t.name}${t.skill ? ` (${SKILL_NAMES[t.skill]})` : ""}: ${t.out}.`).join(" ")} A guard watches up to ${L.guardWatch} at work (${JAIL.lockup.watch} from makeshift cells, all of them from a jailhouse's guard post): watched they escape ${pctTxt(L.escapeGuarded)} a day, unwatched ${pctTxt(L.escapeUnguarded)}, × the jail (makeshift ×${JAIL.lockup.labour}, a jailhouse ×${JAIL.jailhouse.labour}); under mood ${L.lowMood} ×${L.lowMoodMult}, and now and then (${pctTxt(L.sabotage.chance)} a day) they spoil a little of what they worked on. Work tires them (mood, and health on Short or less). Days of good work make them easier to win over.`;
 // The jail tiers, for the tooltips.
-const JAIL_TIP = `Jails (Construction): ${Object.values(JAIL).map((j) => `${j.name}: ${j.cap} prisoners, escapes ${pct1(j.guarded)} a day guarded / ${pct1(j.unguarded)} unguarded, a smuggled pick or a loner's tricks ×${j.bonus} each${j.mood ? `, mood ${j.mood} a day, won over ×${j.opinion}` : ""}, a rescue meets the defence ×${j.defence}`).join(". ")}. Each upgrades the one below in place. No jail, no prisoners: more than there is room for get a card (release, execute, ask to join, or walk them to a base with room).`;
+const JAIL_TIP = `Jails (Construction): ${Object.values(JAIL).map((j) => `${j.name}: ${j.cap} prisoners, escapes ${pct1(j.unguarded)} a day with no guard, ${pct1(j.guarded)} with one, ${pct1(cellEscape(j, stackGuards([1, 1])))} with two, ${pct1(cellEscape(j, stackGuards([1, 1, 1])))} with three, a smuggled pick or a loner's tricks ×${j.bonus} each${j.mood ? `, mood ${j.mood} a day, won over ×${j.opinion}` : ""}, a rescue meets the defence ×${j.defence}`).join(". ")}. Each upgrades the one below in place. No jail, no prisoners: more than there is room for get a card (release, execute, ask to join, or walk them to a base with room).`;
 
 function rationOptions(cur, all = false) {
   return (all ? `<option value="">Set all…</option>` : "") + Object.entries(R).map(([k, r]) => `<option value="${k}"${!all && k === cur ? " selected" : ""}>${esc(r.name)} (${n1(r.share * PRISON.FOOD)})</option>`).join("");
@@ -48,10 +49,30 @@ function taskOptions(state, base, cur, all = false) {
 // The next tier up from this jail (null at the top).
 const nextJail = (base) => ["lockup", "cells", "jailhouse"][jailTier(base)] || null;
 const costTxt = (c) => Object.entries(c).map(([k, v]) => `${v} ${k === "parts" ? (v === 1 ? "part" : "parts") : k}`).join(", ");
+// The jail's guards (sim/prisoners.js JAIL_GUARD): who is on its roster, who stands it now, and what each does to the
+// escapes; add one, take one off, or fill it with the sharpest here.
+const GUARD_TIP = `Jail guards: the people named here guard the jail with their work hours while anyone is held (Manual people take the Guard role for it and get their job back when the cells are empty; people on work priorities guard in their Work hours; a base leader with Defence picks them). Each counts by Scouting (${JAIL_GUARD.base} + ${JAIL_GUARD.perSkill} a point, ${JAIL_GUARD.min}–${JAIL_GUARD.max}; Tired ×${JAIL_GUARD.tired}, Exhausted less), each next one ×${JAIL_GUARD.dim} of the one before; a lookout on the walls (the Guard role, not named here) counts ${JAIL_GUARD.lookout} and watches nobody at work. Every guard makes the cells harder to get out of; the work detail is watched only by the jail's guards.`;
+function guardRow(state, base, J) {
+  const ids = jailGuardIds(base);
+  const on = jailGuardsOn(state, base);
+  const gs = guardStrength(state, base);
+  const roster = ids.map((id) => survivorById(state, id)).filter(Boolean);
+  const held = prisonersAt(state, base.id).length;
+  const chips = roster.map((s) => {
+    const duty = on.includes(s);
+    const why = !s.alive ? "dead" : s.location.kind !== "base" || s.location.baseId !== base.id ? "away" : s.inBed ? "in a hospital bed" : !held ? "nobody held" : !duty ? (s.pinned ? "pinned to another job" : "not fit to stand it") : "";
+    return `<button class="chip ${duty ? "on" : "off"}" data-action="pr-guard-toggle" data-base="${base.id}" data-id="${s.id}"${tip(`${s.name}: Scouting ${skill(s, "scouting")}, counts ${n1(guardWeight(s))}${why ? ` (not standing it: ${why})` : ""}. Click to take them off the jail.`)}>${esc(s.name.split(" ")[0])} ✕</button>`;
+  }).join(" ");
+  const others = atBase(state, base.id).filter((s) => !ids.includes(s.id)).sort((a, b) => guardWeight(b) - guardWeight(a));
+  const add = others.length ? `<select data-action="pr-guard-add" data-base="${base.id}"><option value="">Add a guard…</option>${others.map((s) => `<option value="${s.id}">${esc(s.name)} (Scouting ${skill(s, "scouting")}, ${esc(s.role)})</option>`).join("")}</select>` : "";
+  const want = jailGuardsWanted(state, base);
+  const now = cellEscape(J, gs.G), more = cellEscape(J, stackGuards([...on.map(guardWeight), 1, ...Array(gs.lookouts).fill(JAIL_GUARD.lookout)]));
+  return `<div class="small"${tip(GUARD_TIP)}>Jail guards: ${chips || `<span class="warn">nobody named</span>`} ${add} <button class="mini" data-action="pr-guard-fill" data-base="${base.id}"${tip(`Name the ${want || 1} sharpest here (Scouting): one per ${JAIL_GUARD.want.per} held and enough to watch the work detail, at most a quarter of the people.`)}>Fill${want ? ` (${want})` : ""}</button>
+    · ${on.length} standing it${gs.lookouts ? ` + ${gs.lookouts} lookout${gs.lookouts === 1 ? "" : "s"} on the walls` : ""}: escapes from the cell <b class="${now >= J.unguarded * 0.5 ? "warn" : ""}">${pct1(now)}</b> a day (nobody: ${pct1(J.unguarded)}; one more guard: ${pct1(more)}).</div>`;
+}
 export function prisonTab(state, base, ui) {
   const list = prisonersAt(state, base.id);
   const cap = cellCap(base);
-  const guards = guardsAt(state, base);
   const J = jailOf(base);
   const waiting = list.filter((p) => p.awaiting).length;
   const kept = list.length - waiting;
@@ -62,7 +83,8 @@ export function prisonTab(state, base, ui) {
   const G = J || SHED;
   let html = `<h3>Prisoners at ${esc(base.name)}</h3>
     <div class="small"${tip(JAIL_TIP)}><b>${esc(J ? `${J.name} (tier ${J.tier} of 3)` : "No jail")}</b>: ${cap ? `${Math.min(cap, kept)} of ${cap} used, ${freeCells(state, base)} free${incomingTo(state, base) ? ` (${incomingTo(state, base)} on the way)` : ""}` : `<span class="warn">no room for prisoners</span>`}${J ? ` · escapes ${pct1(J.guarded)} a day guarded, ${pct1(J.unguarded)} unguarded` : ""}${up ? ` · next: ${esc(BUILDINGS[up].name)} (${costTxt(BUILDINGS[up].cost)}, ${JAIL[up].cap} prisoners; Construction)` : ""}.</div>
-    <div class="small muted">${shed ? `<span class="warn">${shed} in a shed from before the jails (${pctTxt(PRISON.ESCAPE.shed)} a day to escape) until a cell frees up or they are moved</span>. ` : ""}${waiting ? `<span class="warn">${waiting} waiting on your decision (a card)</span>. ` : ""}On guard: ${guards.length ? esc(guards.map((s) => s.name).join(", ")) : `<span class="warn">nobody</span> (escapes ${pct1(G.unguarded)} a day instead of ${pct1(G.guarded)}; set someone's role to Guard)`}.</div>
+    <div class="small muted">${shed ? `<span class="warn">${shed} in a shed from before the jails (${pctTxt(PRISON.ESCAPE.shed)} a day to escape) until a cell frees up or they are moved</span>. ` : ""}${waiting ? `<span class="warn">${waiting} waiting on your decision (a card)</span>. ` : ""}</div>
+    ${guardRow(state, base, G)}
     <div class="small muted">Room at your bases: ${esc(state.bases.map((b) => `${b.name} ${cellCap(b) ? `${freeCells(state, b)}/${cellCap(b)} (${jailOf(b).name.toLowerCase()})` : "none"}`).join(" · "))}.</div>`;
   if (out.length) html += `<div class="small" style="margin-top:0.3rem">On the way here: ${esc(out.map((p) => `${p.name} (with ${teamName(state, state.parties.find((x) => x.id === p.at.partyId))})`).join(", "))}.</div>`;
   if (walking.length) html += `<div class="small" style="margin-top:0.3rem">Walked here by an escort: ${esc(walking.map((p) => `${p.name} (in about ${Math.max(1, Math.round(p.at.arrive - state.hour))} h)`).join(", "))}.</div>`;
@@ -168,6 +190,8 @@ function executeQ(state, p) {
   return { kind: "execute", title: `Execute ${p.name}?`, text: `There is no undoing it. Everyone here takes it hard (mood ${E.mood}; Brave or Tough ${E.hardened}, a Former Medic ${E.soft}). Goodwill ${E.goodwill} with ${E.group || "their group"} and ${E.others} with ${E.known} other group${E.known === 1 ? "" : "s"} you know; infamy +${E.infamy}. The others held here are cowed for ${E.fearDays} days.`, yes: "Execute" };
 }
 export const PRISON_ACTIONS = {
+  "pr-guard-toggle": (state, ui, d) => done(ui, toggleJailGuard(state, baseById(state, Number(d.base)), d.id)),
+  "pr-guard-fill": (state, ui, d) => { const b = baseById(state, Number(d.base)); if (b) done(ui, fillJailGuards(state, b)); },
   "pr-question": (state, ui, d) => done(ui, questionPrisoner(state, d.id, d.method === "rough" ? "rough" : "talk")),
   "pr-ask": (state, ui, d) => done(ui, askToJoin(state, d.id)),
   "pr-ransom": (state, ui, d) => done(ui, askRansom(state, d.id)),
@@ -183,6 +207,7 @@ export const PRISON_ACTIONS = {
 };
 // The selects: rations and work, one prisoner or everyone at the base.
 export const PRISON_CHANGE = {
+  "pr-guard-add": (state, ui, el) => { if (el.value) done(ui, toggleJailGuard(state, baseById(state, Number(el.dataset.base)), el.value)); },
   "pr-ration": (state, ui, el) => done(ui, setRation(state, el.dataset.id, el.value)),
   "pr-ration-all": (state, ui, el) => { if (el.value) done(ui, setAllRations(state, el.dataset.base, el.value)); },
   "pr-task": (state, ui, el) => done(ui, setTask(state, el.dataset.id, el.value)),
