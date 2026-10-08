@@ -41,6 +41,7 @@
 // weapons take nothing. Fall never drops below FALL_MIN a tile. A shot's noise × noise: a suppressed rifle shot (noise 3)
 // is 1.2, heard 15 × 0.4 = 6 tiles off in a raid (9 + 2 × noise, × the share) instead of 15; a brake makes it 3.9.
 import { GEAR } from "./data.js";
+import { MOD_FITS } from "./data-guns.js";
 
 export const NO_MODS = Object.freeze({ aim: 0, close: 0, opt: 0, fall: 0, dmg: 1, cap: 0, capMult: 1, noise: 1, weight: 0, value: 0 });
 export const MOUNTS = ["optic", "muzzle", "mag", "under"];
@@ -67,6 +68,7 @@ export const ATTACH = {
   drum:      { mount: "mag",    short: "drum mag",     fits: ["carbine", "ar"], capMult: 2, aim: -2 },
   tubeext:   { mount: "mag",    short: "tube extension", fits: ["shotgun"], cap: 2 },
 };
+for (const [g, keys] of Object.entries(MOD_FITS)) for (const k of keys) if (ATTACH[k] && !ATTACH[k].fits.includes(g)) ATTACH[k].fits.push(g); // the weapons overhaul's new guns (data-guns.js)
 export const isGunmod = (key) => !!ATTACH[key];
 export const modDef = (key) => ATTACH[key] || null;
 // Does this gun (a WEAPONS / GEAR key) take any attachment at all?

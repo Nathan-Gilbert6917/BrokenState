@@ -56,7 +56,7 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
 // 1. The capacities.
 {
   console.log("Capacities");
-  const want = { pistol: 15, shotgun: 6, huntrifle: 5, ar: 30, pipegun: 1, revolver: 6, leverrifle: 8, carbine: 30 };
+  const want = { pistol: 15, shotgun: 6, huntrifle: 5, ar: 30, pipegun: 1, revolver: 6, leverrifle: 6, carbine: 30 }; // the lever-action: a tube of six (weapons overhaul section 3)
   for (const [k, n] of Object.entries(want)) check(WEAPONS[k].cap === n, `${WEAPONS[k].name} holds ${n} (has ${WEAPONS[k].cap})`);
   const guns = Object.entries(WEAPONS).filter(([, w]) => !w.melee && w.ammo > 0).map(([k]) => k);
   check(guns.every((k) => WEAPONS[k].cap > 0), `every gun that uses ammo has a magazine (${guns.join(", ")})`);

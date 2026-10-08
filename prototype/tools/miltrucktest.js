@@ -15,6 +15,7 @@
 //     hours, fails (wasting parts) or works; drive it home; save / load of the vehicle and the car records
 //   - the autopilot plays 40 days with a convoy and a found vehicle on its map without crashing
 // Usage: node tools/miltrucktest.js [seed = 7]
+import { TRUCK_GEAR } from "../src/sim/data-guns.js";
 import { createWorld, hub, atBase, tickHour, day } from "../src/sim/world.js";
 import { GEAR, SUPPLIES, LOCATIONS } from "../src/sim/data.js";
 import { Rng } from "../src/sim/rng.js";
@@ -112,7 +113,7 @@ let truckValue = 0;
     avg[`${kind}/${cond}`] = { v: v / N, items: items / N, ammo: ammo / N };
   }
   for (const [k, a] of Object.entries(avg)) console.log(`    ${k.padEnd(16)} value ${Math.round(a.v)}, ${r2(a.items)} items, ${Math.round(a.ammo)} ammo`);
-  const allowed = new Set(Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]));
+  const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k))]); // TRUCK_GEAR: the weapons overhaul's hook (TRUCK_LOOT_HOOKS)
   check([...keys].every((k) => allowed.has(k)), "everything in a truck comes from its loot table");
   check(["ar", "carbine", "ammo", "plate", "vest", "milhelmet", "nvg", "milradio", "frag", "smokegren", "food", "meds", "assaultpack", "rucksack"].every((k) => keys.has(k)), "military guns, bulk ammo, armour, helmets, night vision, radios, grenades, rations, meds and packs all turn up");
   check(avg["cargo/intact"].v > avg["cargo/wrecked"].v && avg["cargo/wrecked"].v > avg["cargo/burnt"].v * 1.5, "a wrecked truck holds less, a burned-out one much less");
@@ -161,7 +162,7 @@ section("The raid map (combat.js placeMilTrucks, AREAS.miltrucks; the crews)");
     const err = combatAct(st, { type: "search", unit: u.id, box: box.id, open: true });
     if (err) { console.log("    search:", err); continue; }
     opened++;
-    const allowed = new Set(Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]));
+    const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k))]); // TRUCK_GEAR: the weapons overhaul's hook (TRUCK_LOOT_HOOKS)
     if (box.contents && [...Object.keys(box.contents.sup).filter((k) => !["arrows", "wood"].includes(k)), ...box.contents.gear.filter((it) => !it.blueprint && !it.book && GEAR[it.key] && !["key"].includes(it.key)).map((it) => it.key)].every((k) => allowed.has(k) || k === "frag" || k === "smokegren")) lootOk++;
     value += box.contents ? valueOf(box.contents) : 0;
     const after = b.units.filter((x) => x.ztype === "soldier" && x.aware).length;

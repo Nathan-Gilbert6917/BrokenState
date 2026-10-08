@@ -239,7 +239,7 @@ export function subdueOdds(b, a, t) {
   }
   const behind = isBehind(a, t);
   const cover = coverSides(b, a.x, a.y).some((c) => c > 0);
-  let c = TAKEDOWN.base + (a.stealth || 0) * TAKEDOWN.stealth + (WEAPONS[a.weapon] && WEAPONS[a.weapon].melee ? CLUB[a.weapon] ?? 5 : 5);
+  let c = TAKEDOWN.base + (a.stealth || 0) * TAKEDOWN.stealth + (WEAPONS[a.weapon] && WEAPONS[a.weapon].melee ? CLUB[a.weapon] ?? WEAPONS[a.weapon].takedown ?? 5 : 5);
   if (behind) c += TAKEDOWN.behind;
   if (cover) c += TAKEDOWN.cover;
   c += a.str || 0;

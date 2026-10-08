@@ -22,6 +22,7 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
 import { newItem } from "./inventory.js";
+import { rosterTruckGear } from "./factoryfit.js";
 import { log, addCard, hub, atBase, factionById, snapshot } from "./world.js";
 import { tileLabel, planPath, spawnAiParty, partyMembers, partyTile, teamName, launchExpedition, carryCapacity, supplyLoad } from "./parties.js";
 import { triggerConflict } from "./conflicts.js";
@@ -80,7 +81,7 @@ export const TRUCK_LOOT = {
 const BURNT_KEEP = new Set(["ammo", "parts", "ar", "carbine", "plate", "milhelmet", "frag", "smokegren"]);
 // Later branches (gun attachments, typed ammo) add to a truck's contents here: hook(rng, ctx, out) with ctx { kind,
 // cond, src, rich } and out { sup, gear } (change it in place).
-export const TRUCK_LOOT_HOOKS = [];
+export const TRUCK_LOOT_HOOKS = [rosterTruckGear]; // factoryfit.js: the weapons overhaul's military guns in the load
 
 // What is in one truck: { sup: { ammo: 60, … }, gear: [items] }. rng: an Rng (or anything with next / chance / int);
 // kind: TRUCK_KINDS key; cond: TRUCK_COND key; opts.rich: × supplies and item chances (a base's motor pool, a convoy
