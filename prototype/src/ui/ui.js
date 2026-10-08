@@ -1355,8 +1355,9 @@ function trainingCard(state, b) {
       <div class="card small">
         ${doc}
         ${ward}
-        <div style="margin-top:0.3rem"><b>Trainees</b> <span class="muted">${t.trainees.length} of ${t.slots} place${t.slots === 1 ? "" : "s"} · each counts as half a medic</span></div>
+        <div style="margin-top:0.3rem"><b>Trainees</b> <span class="muted">${t.slots - t.left} of ${t.slots} place${t.slots === 1 ? "" : "s"} used · a trainee counts as half a medic</span></div>
         ${rows || `<span class="muted">Nobody on the Trainee role.</span>`}
+        ${t.juniors.length ? `<div style="margin-top:0.3rem"${tip("A trainee place nobody on the Trainee role uses goes to a medic on duty below the doctor's cap: they take the lesson on top of their own work.")}><b>Junior medics learning</b></div>${t.juniors.map((x) => `<div class="spread"><span>${esc(x.s.name)} ${med(x.s)} <span class="good">+${n1(x.xp)}/day</span></span><span class="muted">On a free place</span></div>`).join("")}` : ""}
         ${pick}
       </div>`;
 }

@@ -15,7 +15,7 @@
 // on the ward instead of their old job. The doctor is whoever at the base gives the best lesson (doctorAt): the
 // medic on duty with the most Medicine, or, when nobody on duty has Medicine TRAINING.docMin, the best Medicine
 // at the base off duty (evening lessons, × TRAINING.offDuty). Each trainee with a place (med.train: 1 / 1 / 2 / 3
-// by tier; the lowest ids first) gains
+// by tier; to those who can learn, lowest ids first; a place left over goes to a junior medic on duty) gains
 //     (TRAINING.base + TRAINING.perSkill × the doctor's Medicine) × med.teach × (quiet ward: × TRAINING.quiet)
 //     × the doctor's work factor (× TRAINING.mentor with the Mentor perk)
 // study XP a day (skills.js CAP_STUDY: 25 with any other lessons and books), while their Medicine (as shown) is below
@@ -105,9 +105,8 @@ export function doctorAt(state, base) {
   return best;
 }
 
-// Why a trainee learns nothing from the doctor today ("" when they do).
-export function lessonWhy(state, base, t, doc, place) {
-  if (!place) return `no trainee place left (the ${hospitalDef(base).name.toLowerCase()} takes ${hospitalDef(base).train})`;
+// Why someone learns nothing from the doctor today ("" when they could, place aside).
+export function lessonWhy(state, base, t, doc) {
   if (!doc) return `no doctor here (someone with Medicine ${TRAINING.docMin}+ to teach)`;
   if (doc.s === t) return "they are the best medic here";
   if (!fit(t)) return t.inBed ? "in a hospital bed" : "too ill to work";
@@ -115,9 +114,12 @@ export function lessonWhy(state, base, t, doc, place) {
   if (skill(t, "medicine") >= cap) return `Medicine ${skill(t, "medicine")}: lessons go up to ${cap} (${first(doc.s)}'s ${skill(doc.s, "medicine")} − ${TRAINING.gap})`;
   return "";
 }
+const noPlace = (def) => `no trainee place left (the ${def.name.toLowerCase()} takes ${def.train})`;
 
 // Everything the Medical tab shows (and the daily tick uses): the doctor, the trainees with their places, today's
-// lesson for each, and the ward rounds.
+// lesson for each, the junior medics learning on a place left over, and the ward rounds.
+// Places (med.train) go first to the trainees who can learn (lowest ids first), then to junior medics on duty below
+// the doctor's cap (they keep the Medic role's 8 a day and their treatments, and take the lesson on top).
 export function trainingInfo(state, base) {
   const def = hospitalDef(base);
   const hosp = activeHospital(state, base);
@@ -126,12 +128,22 @@ export function trainingInfo(state, base) {
   const doc = doctorAt(state, base);
   const quiet = pts <= 0;
   const rate = doc ? lessonRate(state, base, doc.s, doc.onDuty, def, quiet) : 0;
-  const trainees = traineesHere(state, base).map((s, i) => {
-    const place = i < (def.train || 0);
-    const why = def.tier ? lessonWhy(state, base, s, doc, place) : "no infirmary or hospital here";
-    return { s, place, why, xp: why ? 0 : rate * workFactor(s), practice: def.tier && fit(s) ? TRAINING.practice * workFactor(s) : 0, cap: doc ? skill(doc.s, "medicine") - TRAINING.gap : null };
+  const cap = doc ? skill(doc.s, "medicine") - TRAINING.gap : null;
+  let left = def.train || 0;
+  const trainees = traineesHere(state, base).map((s) => {
+    let why = def.tier ? lessonWhy(state, base, s, doc) : "no infirmary or hospital here";
+    let place = false;
+    if (!why) { if (left > 0) { left--; place = true; } else why = noPlace(def); }
+    return { s, place, why, xp: why ? 0 : rate * workFactor(s), practice: def.tier && fit(s) ? TRAINING.practice * workFactor(s) : 0, cap };
   });
-  return { def, hosp, doc, rate, quiet, slots: def.train || 0, trainees, medics, wardPts: pts, wardEach: wardXpEach(state, base, hosp, medics) };
+  const juniors = [];
+  if (def.tier && doc) for (const m of medics) {
+    if (left <= 0) break;
+    if (lessonWhy(state, base, m, doc)) continue;
+    left--;
+    juniors.push({ s: m, place: true, why: "", xp: rate * workFactor(m), practice: 0, cap, medic: true });
+  }
+  return { def, hosp, doc, rate, quiet, slots: def.train || 0, left, trainees, juniors, medics, wardPts: pts, wardEach: wardXpEach(state, base, hosp, medics) };
 }
 
 // Once a day for every base (world.js): ward rounds, then lessons.
@@ -150,6 +162,7 @@ function trainBase(state, base) {
     if (t.xp > 0) { gainXp(state, t.s, "medicine", t.xp, "study"); taught++; t.s.trainIdle = false; }
     else if (!t.s.trainIdle && t.why) { log(state, `${first(t.s)} is a Medic trainee at ${base.name} but learns nothing from a doctor: ${t.why}.`, "info"); t.s.trainIdle = true; }
   }
+  for (const j of info.juniors) if (j.xp > 0) { gainXp(state, j.s, "medicine", j.xp, "study"); taught++; }
   if (taught && info.doc) gainXp(state, info.doc.s, "leadership", TRAINING.docLead);
 }
 
@@ -182,4 +195,4 @@ export function planTrainees(state, base, free, give, { foodDays = 0, urgent = f
 // The Help topic (ui/help.js) and the codex.
 export const TRAINING_HELP = `<p><b>Training medics.</b> Every hospital (from the makeshift infirmary up) trains medics two ways.</p>
 <p><i>Ward rounds:</i> medics on duty learn from the patients. On top of the Medic role's 8 Medicine XP a day and the XP for each treatment, each patient adds to the ward (${WARD.bed} in a bed, ${WARD.walking} on their feet, +${WARD.severe} for a severe wound, +${WARD.infected} for an infected one, +${WARD.ill} an illness), shared among the medics on duty and capped a day by the tier: infirmary 4, field hospital 6, clinic 8, trauma hospital 10. A better hospital teaches more from each case (× 1, 1.2, 1.45, 1.75). An empty ward teaches nothing extra.</p>
-<p><i>Medic trainees:</i> put someone on the <b>Trainee</b> role (or set Trainee in the Work tab). The doctor, the best medic at the base with Medicine ${TRAINING.docMin}+, teaches them Medicine every day: ${TRAINING.base} + ${TRAINING.perSkill} × the doctor's Medicine XP, × the tier's factor, × ${TRAINING.quiet} on a quiet ward, half when the doctor is not on Medic duty (evening lessons), × ${TRAINING.mentor} with the Mentor perk. Lessons stop ${TRAINING.gap} below the doctor's Medicine. Every trainee also gets ${TRAINING.practice} XP a day for the ward work. Places: 1 in an infirmary or field hospital, 2 in a clinic, 3 in a trauma hospital. A trainee counts as half a medic toward the staff a hospital needs (beside at least one full medic), gives no treatments and catches illness on the ward like a medic. The Medical tab shows the doctor, the trainees and their progress. The governor and base leaders put one trainee on the ward while a base has fewer medics with Medicine ${TRAINING.skilled}+ than its hospital needs plus one.</p>`;
+<p><i>Medic trainees:</i> put someone on the <b>Trainee</b> role (or set Trainee in the Work tab). The doctor, the best medic at the base with Medicine ${TRAINING.docMin}+, teaches them Medicine every day: ${TRAINING.base} + ${TRAINING.perSkill} × the doctor's Medicine XP, × the tier's factor, × ${TRAINING.quiet} on a quiet ward, half when the doctor is not on Medic duty (evening lessons), × ${TRAINING.mentor} with the Mentor perk. Lessons stop ${TRAINING.gap} below the doctor's Medicine. Every trainee also gets ${TRAINING.practice} XP a day for the ward work. Places: 1 in an infirmary or field hospital, 2 in a clinic, 3 in a trauma hospital; a place no trainee uses goes to a junior medic on duty below that cap, who takes the lesson on top of their own work. A trainee counts as half a medic toward the staff a hospital needs (beside at least one full medic), gives no treatments and catches illness on the ward like a medic. The Medical tab shows the doctor, the trainees and their progress. The governor and base leaders put one trainee on the ward while a base has fewer medics with Medicine ${TRAINING.skilled}+ than its hospital needs plus one.</p>`;

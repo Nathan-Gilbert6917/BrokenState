@@ -148,6 +148,24 @@ console.log("Doctor and lessons");
   check(!T.doctorAt(st, h) || T.doctorAt(st, h).s !== doc, "someone on the Trainee role does not teach");
 }
 
+// ---------- 2b. junior medics on a free place ----------
+console.log("Junior medics");
+{
+  const { st, h } = world(SEED, "clinic");
+  const doc = person(st, 10, "medic");
+  const jr = person(st, 3, "medic");
+  const i1 = T.trainingInfo(st, h);
+  check(i1.juniors.length === 1 && i1.juniors[0].s === jr && near(i1.juniors[0].xp, i1.rate), `a junior medic on duty takes a free place: +${r1(i1.juniors[0].xp)} a day`);
+  nextDay(st);
+  T.trainingDaily(st);
+  check(near(xpToday(jr, "study"), i1.rate) && xpToday(doc, "study") === 0, "the junior learns, the doctor does not");
+  person(st, 1, "trainee"); person(st, 2, "trainee");
+  const i2 = T.trainingInfo(st, h);
+  check(i2.juniors.length === 0 && i2.trainees.every((x) => x.place), "trainees take the places first");
+  const capped = person(st, 9, "trainee");
+  check(!T.trainingInfo(st, h).trainees.find((x) => x.s === capped).place, "a trainee at the cap takes no place");
+}
+
 // ---------- 3. staffing: a trainee is half a medic ----------
 console.log("Staffing");
 {
@@ -280,7 +298,7 @@ console.log("Save, load, short run");
   check(!crash, `Medical and Overview tabs drawn ${crash}`);
   const med = html.split("@@SPLIT@@")[0];
   check(/<h3[^>]*>Training<\/h3>/.test(med) && med.includes("Doctor: <b>") && med.includes(ppl[1].name) && med.includes('data-action="traineeop"'), "the Medical tab shows the doctor, the trainee and the trainee picker");
-  check(/places? · each counts as half a medic/.test(med) && /Ward rounds:/.test(med), "…the places and the ward rounds");
+  check(/places? used · a trainee counts as half a medic/.test(med) && /Ward rounds:/.test(med), "…the places and the ward rounds");
   check(/<b>Trainee<\/b> 1/.test(html.split("@@SPLIT@@")[1] || ""), "the Overview counts the trainee");
   check(helpTopics().some((t) => /Training medics/.test(t.title) && /Medic trainees/.test(t.html || t.body || "")), "Help has a Training medics topic");
 }
@@ -290,29 +308,36 @@ if (args.includes("--measure")) {
   const days = Number(opt("--days", 180));
   const seeds = String(opt("--seeds", "1,2,3")).split(",").map(Number);
   console.log(`Measure: Medicine 3 → after ${days} days at a clinic with a Medicine 10 doctor on duty (autopilot)`);
-  const run = (seed, role) => {
-    const st = createWorld({ seed, factionCount: 4 });
-    st.started = true;
-    setAutopilot(st, true, "balanced");
-    const h = hub(st);
-    addBuilding(h, "clinic");
-    const doc = person(st, 10, "medic"); doc.pinned = true;
-    const sub = person(st, 3, role); sub.pinned = true;
-    const lv = {};
-    let srcs = { use: 0, ward: 0, study: 0 };
-    for (let i = 0; i < days * 24 && !st.gameOver; i++) {
-      tickHour(st);
-      st.cards.length = 0;
-      if (st.hour % 24 === 23 && sub.xpDay) for (const k of Object.keys(srcs)) srcs[k] += (sub.xpDay[k] && sub.xpDay[k].medicine) || 0;
-      if ((i + 1) % (24 * 30) === 0) lv[(i + 1) / 24] = skill(sub, "medicine");
-    }
-    return { end: skill(sub, "medicine"), lv, srcs, doc: skill(doc, "medicine") };
+  // lessons: false runs with no trainee places (the arm without teaching: the tables put back after).
+  const run = (seed, role, lessons = true) => {
+    const keep = Object.fromEntries(Object.keys(BUILDINGS).filter((k) => BUILDINGS[k].family === "hospital").map((k) => [k, BUILDINGS[k].med.train]));
+    if (!lessons) for (const k of Object.keys(keep)) BUILDINGS[k].med.train = 0;
+    try {
+      const st = createWorld({ seed, factionCount: 4 });
+      st.started = true;
+      setAutopilot(st, true, "balanced");
+      const h = hub(st);
+      addBuilding(h, "clinic");
+      const doc = person(st, 10, "medic"); doc.pinned = true;
+      const sub = person(st, 3, role); sub.pinned = true;
+      const lv = {};
+      const srcs = { use: 0, ward: 0, study: 0 };
+      let lastD = -1;
+      for (let i = 0; i < days * 24 && !st.gameOver; i++) {
+        tickHour(st);
+        st.cards.length = 0;
+        const t = sub.xpDay;
+        if (t && t.d !== lastD && st.hour % 24 === 23) { lastD = t.d; for (const k of Object.keys(srcs)) srcs[k] += (t[k] && t[k].medicine) || 0; }
+        if ((i + 1) % (24 * 30) === 0) lv[(i + 1) / 24] = skill(sub, "medicine");
+      }
+      return { end: skill(sub, "medicine"), lv, srcs, doc: skill(doc, "medicine") };
+    } finally { for (const [k, v] of Object.entries(keep)) BUILDINGS[k].med.train = v; }
   };
   for (const seed of seeds) {
-    const a = run(seed, "medic"), b = run(seed, "trainee");
     const fmt = (x) => `${x.end} (by month ${Object.values(x.lv).join(" ")}; XP use ${Math.round(x.srcs.use)}, ward ${Math.round(x.srcs.ward)}, lessons ${Math.round(x.srcs.study)}; doctor ${x.doc})`;
-    console.log(`  seed ${seed}: Medic role ${fmt(a)}`);
-    console.log(`          Trainee   ${fmt(b)}`);
+    console.log(`  seed ${seed}: Medic, no lessons    ${fmt(run(seed, "medic", false))}`);
+    console.log(`          Medic, lessons       ${fmt(run(seed, "medic"))}`);
+    console.log(`          Trainee              ${fmt(run(seed, "trainee"))}`);
   }
 }
 
