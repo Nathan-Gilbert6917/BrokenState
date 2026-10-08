@@ -219,8 +219,8 @@ function onRoadCaravan(state, result, setup) {
     st.won++;
     lines.push(`You took ${c.name}: ${result.enemiesKilled || "all"} of the guards are down.`);
     const goods = q ? goodsOf({ type: c.type, owner: c.factionId, ref: q }) : { supplies: {}, gear: [] };
-    lines.push(...lootCaravan(state, p, goods, { tile: partyTile(p), name: c.name, kit: setup.enemy.kind, guards: result.enemiesKilled || setup.enemy.count, tactical: !!result.tactical, vehicle: c.vehicle, key: c.key, result }));
-    if (q) { loseGroupVehicle(state, q); removeParty(state, q); }
+    lines.push(...lootCaravan(state, p, goods, { tile: partyTile(p), name: c.name, kit: setup.enemy.kind, guards: result.enemiesKilled || setup.enemy.count, tactical: !!result.tactical, vehicle: result.humveeOut ? null : c.vehicle, key: c.key, result })); // humveeOut: their armoured escort drove off (combat.js carTurn)
+    if (q) { if (!result.humveeOut) loseGroupVehicle(state, q); removeParty(state, q); }
   } else {
     if (q) { q.strength = Math.max(1, (q.strength || 2) * Math.max(0.3, (result.enemiesLeft || 1) / Math.max(1, setup.enemy.count))); q.met = { ...(q.met || {}), [pKey(state, p)]: state.hour }; }
     if (result.outcome === "retreat") lines.push(result.summary ? `${result.summary} You pulled back.` : "You pulled back; the caravan went on.");
