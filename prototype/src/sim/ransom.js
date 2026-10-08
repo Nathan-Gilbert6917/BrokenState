@@ -26,11 +26,11 @@
 // rescue raid (the Rescue mission) when its best fighters would beat the guards (55%+) and the captive is worth it;
 // else it waits.
 import { SUPPLIES, FACTION_TYPES, GEAR } from "./data.js";
-import { log, addCard, day, hub, factionById, survivorById, skill, combatPower, atBase, newId, alive } from "./world.js";
+import { log, addCard, day, hub, factionById, survivorById, skill, combatPower, atBase, newId } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
-import { captivesOf, allCaptives, freeCaptive, isCaptive, talkSkill } from "./conflicts.js";
+import { captivesOf, allCaptives, freeCaptive, isCaptive } from "./conflicts.js";
 import { canRadioGroup } from "./radio.js";
-import { launchExpedition, partyMembers, partyTile, tileLabel, awaitOrders, planPath, wipeIfEmpty, removeParty } from "./parties.js";
+import { launchExpedition, partyMembers, partyTile, tileLabel, awaitOrders, planPath, wipeIfEmpty } from "./parties.js";
 import { prisonersOf, teamPace, handOver } from "./prisoners.js";
 import { registerCombatHandler, startCombat, winOdds, WEAPONS } from "./combat.js";
 import { afterRescueBattle, tacticalPossible, groupArmory, kindOf } from "./rescueraid.js";

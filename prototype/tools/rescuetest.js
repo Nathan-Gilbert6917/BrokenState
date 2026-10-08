@@ -664,5 +664,45 @@ section("Save round-trip: a deal, a return, a rescue raid mid-battle");
   browser(false);
 }
 
+section("On screen: the captive's line on the People tab, the rescue buttons in battle, the Help topic");
+{
+  const UI = await import("../src/ui/ui.js");
+  const UC = await import("../src/ui/combat.js");
+  const { helpTopics } = await import("../src/ui/help.js");
+  const bad = /undefined|NaN|\[object/;
+  const text = (h) => h.replace(/<[^>]*>/g, " ");
+  const st = world(seed + 180);
+  const f = raiders(st);
+  const a = captive(st, f);
+  const html = UI.renderLeft(st, { tab: "people" });
+  check(/Held by/.test(html) && /since day \d+/.test(html) && /data-action="plan"[^>]*data-mission="rescue"/.test(html) && /data-action="rescue-talk"/.test(html) && !bad.test(text(html)), "the People tab: held by X at Y since day N, Plan a rescue and Negotiate");
+  hub(st).radio = true;
+  Object.assign(hub(st).stock, { ammo: 3000, meds: 80, food: 500, fuel: 100 });
+  pick(RS.negotiationCard(st, f, [a.id], { channel: "radio" }), /^Agree/).resolve(st);
+  st.cards.length = 0;
+  const html2 = UI.renderLeft(st, { tab: "people" });
+  check(/Ransom agreed/.test(html2) && /data-action="rescue-send"/.test(html2), "a deal agreed: its line and Send the handover team");
+  const p = teamAt(st, f, 2);
+  browser(true);
+  RR.startRescueRaid(st, p, f, "sneak");
+  const b = st.combat;
+  b.phase = "player";
+  const cu = capUnits(b)[0];
+  for (const u of b.units) if (u.side === "player") u.ap = u === cu ? 2 : 0;
+  UC.combatAction(st, "cb-sel", { id: cu.id });
+  let ph = UC.renderCombatPanel(st);
+  check(/Work the ropes/.test(ph) && /data-v="rescue:ropes"/.test(ph) && /Tied up \(captive\)/.test(ph) && !bad.test(text(ph)), "a tied captive's panel: Work the ropes");
+  UC.combatAction(st, "cb-act", { v: "rescue:ropes" });
+  check(cu.ap === 1 || !cu.bound, "the button works the ropes (1 action)");
+  cu.bound = false; cu.ap = 2;
+  UC.combatAction(st, "cb-sel", { id: cu.id });
+  ph = UC.renderCombatPanel(st);
+  check(/Search the cell/.test(ph) && /Cut free/.test(ph) && !bad.test(text(ph)), `free in the cell: Search the cell, Cut free${bad.test(text(ph)) ? ` (bad text: ${text(ph).match(bad)})` : ""}`);
+  st.combat = null;
+  browser(false);
+  const t = helpTopics().find((x) => x.id === "getting-captives-back");
+  check(!!t && /Negotiate/.test(t.html) && /meeting point/.test(t.html), "Help: Getting captives back");
+}
+
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);
