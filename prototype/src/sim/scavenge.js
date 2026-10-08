@@ -203,7 +203,7 @@ export function searchHour(state) {
   const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
   if (gearList.length && rng.chance(0.07 * t.loot * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1))) {
     const g = rng.pick(gearList);
-    e.found.gear.push(newItem(g, 1));
+    e.found.gear.push(newItem(g, 1, rng));
     finds.push(GEAR[g].name);
   }
   // A book on the shelves (skills.js; its own dice, so the rest of the search is unchanged). Treasure Hunter: twice as often.

@@ -13,7 +13,7 @@ import { scavChance, eatPerDay } from "../src/sim/economy.js";
 import { careToday, farmOf, farmingDaily, plantPlot } from "../src/sim/farming.js";
 import { foodStore } from "../src/sim/storage.js";
 import { addBuilding, buildRate } from "../src/sim/buildings.js";
-import { craftRate, queueCraft, craftingHour, craftQueue, makeItem } from "../src/sim/crafting.js";
+import { craftRate, queueCraft, craftingHour, craftQueue, makeItem, craftedDur } from "../src/sim/crafting.js";
 import { canRepair } from "../src/sim/vehicles.js";
 import { perceptionChance } from "../src/sim/markers.js";
 import { heatGain } from "../src/sim/fieldheat.js";
@@ -334,7 +334,7 @@ console.log("Perks: milestones and choices");
   st.governor.personality = "aggressive";
   S.autoPerks(st);
   check(S.hasPerk(ag, "fieldsurgeon"), "an aggressive one takes Field Surgeon");
-  check(Object.keys(S.PERKS).length === 54 && Object.values(S.PERK_TREE).every((t) => S.MILESTONES.every((m) => t[m] && t[m].length === 2)), "9 skills × 3 milestones × 2 perks = 54 perks");
+  check(Object.keys(S.PERKS).length === 60 && Object.values(S.PERK_TREE).every((t) => S.MILESTONES.every((m) => t[m] && t[m].length === 2)), "10 skills × 3 milestones × 2 perks = 60 perks");
   check(Object.values(S.PERKS).every((p) => p.desc.length > 20 && p.hook), "every perk has an effect text and a hook");
 }
 
@@ -554,7 +554,7 @@ console.log("Perk effects");
   queueCraft(w4, h4, "spikedbat");
   for (let i = 0; i < 40 && craftQueue(h4).length; i++) craftingHour(w4);
   const bat = h4.armory.find((i) => i.key === "spikedbat");
-  check(!!bat && bat.dur === Math.round(GEAR.spikedbat.dur * 1.5), `Tinkerer: a spiked bat made with them on the Craft role has ${bat && bat.dur} uses (normally ${GEAR.spikedbat.dur})`);
+  check(!!bat && bat.dur === Math.round(craftedDur(GEAR.spikedbat.dur, bat.quality) * 1.5) && bat.durMax === bat.dur, `Tinkerer: a spiked bat made with them on the Craft role has ${bat && bat.dur} uses (normally ${bat && craftedDur(GEAR.spikedbat.dur, bat.quality)} at its quality)`);
   without(cr, "tinkerer");
   const worn = makeItem("pipespear", 1);
   worn.dur = 2;

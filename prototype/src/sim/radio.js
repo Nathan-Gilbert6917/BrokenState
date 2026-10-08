@@ -478,8 +478,7 @@ function grudgeRaid(state, f) {
 }
 
 // What the hub can spare of a good (keeps a few days of food and water, some meds and ammo).
-function hubSpare(state, key) {
-  const h = hub(state);
+function hubSpare(state, key, h = hub(state)) {
   const n = Math.max(1, atBase(state, h.id).length);
   const keep = { food: n * 6, water: n * 5, meds: 3, ammo: n * 10, fuel: 8, parts: 2, scrap: 20 }[key] || 0;
   return Math.max(0, Math.floor((h.stock[key] || 0) - keep));
@@ -590,24 +589,30 @@ const REF_QTY = { food: 25, water: 25, fuel: 12, meds: 8, ammo: 60, parts: 3, sc
 // ---------- autopilot: radio trade when the hub runs short ----------
 // needs: the governor's needs table (0 plenty … 3 urgent). Picks the most urgent good, a group in reach that has
 // it, and pays with the hub's most plentiful good. At most one radio deal every 6 days. Returns a log text or "".
-export function radioTradeIfShort(state, needs) {
+// base: a base leader's deal (steward.js, Trading) for that base: only with groups whose caravan comes to it (tradeBase),
+// paid from its own surplus, at its people's Speech, for the `keys` it may buy (default any), at most `cap` of each
+// (default REF_QTY); the caller keeps its own cooldown (state.radioAutoDay is the governor's).
+export function radioTradeIfShort(state, needs, { base = null, keys = null, cap = null } = {}) {
   if (!hasNetwork(state)) return "";
-  if (state.radioAutoDay != null && day(state) - state.radioAutoDay < 6) return "";
-  const short = Object.keys(needs).filter((k) => needs[k] >= 1.8).sort((a, b) => needs[b] - needs[a]);
-  const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.4 && hubSpare(state, k) >= supplyFew(k, 5)).sort((a, b) => needs[a] - needs[b]);
+  if (!base && state.radioAutoDay != null && day(state) - state.radioAutoDay < 6) return "";
+  const at = base || hub(state);
+  if (!at) return "";
+  const short = Object.keys(needs).filter((k) => needs[k] >= 1.8 && (!keys || keys.includes(k))).sort((a, b) => needs[b] - needs[a]);
+  const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.4 && hubSpare(state, k, at) >= supplyFew(k, 5)).sort((a, b) => needs[a] - needs[b]);
   if (!short.length || !plenty.length) return "";
-  const speech = radioSpeech(state);
+  const speech = base ? tradeSpeech(atBase(state, base.id)) : radioSpeech(state);
   for (const want of short) {
     // Every group and every way to pay, cheapest first (what the payment is worth to the hub per unit got): the
     // group that sells it cheap and wants what you pay with most (their kind and state, trade.js) wins.
     const deals = [];
     for (const f of state.factions) {
       if (!f.known || refusal(state, f, true) || caravanEnRoute(state, f) || available(f, want) < 3) continue;
+      if (base && tradeBase(state, f) !== base) continue; // their caravan would go to another base
       for (const pay of plenty) {
         if (pay === want) continue;
-        const budgetUnits = hubSpare(state, pay);
+        const budgetUnits = hubSpare(state, pay, at);
         const value = budgetUnits * sellPrice(state, f, pay, speech, budgetUnits);
-        const qty = Math.min(REF_QTY[want] || 10, maxBuyable(state, f, want, speech, value));
+        const qty = Math.min((cap && cap[want]) || REF_QTY[want] || 10, maxBuyable(state, f, want, speech, value));
         if (qty < 2) continue;
         const cost = qty * buyPrice(state, f, want, speech, qty);
         const payQty = minSellable(state, f, pay, speech, cost, budgetUnits);
@@ -619,7 +624,7 @@ export function radioTradeIfShort(state, needs) {
     for (const d of deals) {
       const res = radioDeal(state, d.f, { wantKey: want, wantQty: d.qty, payKey: d.pay, payQty: d.payQty });
       if (res.ok) {
-        state.radioAutoDay = day(state);
+        if (!base) state.radioAutoDay = day(state);
         return `radio deal with ${d.f.name}: ${d.qty} ${want} for ${d.payQty} ${d.pay}`;
       }
     }

@@ -46,6 +46,15 @@ export function appearanceFor(seed, id) {
   return randomAppearance(new Rng(hashSeed(seed, id)));
 }
 
+// Crafting (data.js SKILLS; crafting.js): a new survivor's starting level, drawn with dice of its own (seed + how many
+// people this world has made, like their looks) so adding the skill moved none of the world's random numbers. People
+// handy with Mechanics usually make things too: half their Mechanics plus 0-6 (× the same quality as their other skills).
+export const CRAFT_START = { fromMech: 0.5, roll: 6, oldSave: 0.7 }; // oldSave: × Mechanics for people in saves from before (save.js)
+export function craftingStart(seed, n, mechanics = 0, quality = 1) {
+  const u = new Rng(hashSeed((seed | 0) ^ 0x5bd1e995, n)).next();
+  return Math.max(0, Math.min(SKILL_MAX, Math.round(CRAFT_START.fromMech * (mechanics || 0) + u * CRAFT_START.roll * quality)));
+}
+
 // Fills in a missing or partial appearance in place and returns it.
 export function ensureAppearance(s, seed = 0) {
   const def = appearanceFor(seed, s.id || 0);

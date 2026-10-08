@@ -103,11 +103,11 @@ export function studyBlock(state, s) {
     body = `<div class="card small"><b>Reading</b> <span class="muted">${READ_HOURS} hours a day · skill books ${BOOK_XP} XP an hour</span>
       <div class="row" style="margin-top:0.3rem">${keys.length ? `<select data-action="read-book" data-id="${s.id}"${tip(`Books in ${base.name}'s armory (one reader per copy)`)}><option value="">Their own pick…</option>${keys.map((k) => {
         const b = bookDef(k);
-        const why = readReason(s, k);
+        const why = readReason(s, k, state);
         const busy = others.filter((o) => o.reading === k).length >= copies[k];
         return `<option value="${k}" ${cur === k ? "selected" : ""}>${esc(GEAR[k].name)} — ${b.skill ? `${SKILL_NAMES[b.skill]} to ${b.max}` : "mood"}, ${n1(bookHours(s, k))}/${b.hours}h${why ? ` (${esc(why)})` : busy ? " (being read)" : ""}</option>`;
       }).join("")}</select>` : `<span class="muted">No books in ${esc(base.name)}'s armory. Teams find them in schools, universities, police stations, military bases and homes; traders sell some.</span>`}</div>
-      ${s.reading && bookDef(s.reading) ? `<div class="muted" style="margin-top:0.2rem">Now: ${esc(GEAR[s.reading].name)} ${n1(bookHours(s, s.reading))}/${bookDef(s.reading).hours}h${readReason(s, s.reading) ? ` · ${esc(readReason(s, s.reading))}` : ""}</div>` : ""}</div>`;
+      ${s.reading && bookDef(s.reading) ? `<div class="muted" style="margin-top:0.2rem">Now: ${esc(GEAR[s.reading].name)} ${n1(bookHours(s, s.reading))}/${bookDef(s.reading).hours}h${readReason(s, s.reading, state) ? ` · ${esc(readReason(s, s.reading, state))}` : ""}</div>` : ""}</div>`;
   }
   if (base && !body) {
     const lesson = bestLessonText(state, s);

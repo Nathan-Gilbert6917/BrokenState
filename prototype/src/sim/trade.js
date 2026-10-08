@@ -5,7 +5,7 @@
 // - Every good has a hidden base value (data.js) that the player never sees: the trade window shows what this
 //   group pays or charges and why ("At war: rifles wanted"), other screens at most a worth tier.
 // - Gear: itemValue(item) = base value (data.js GEAR) × quality factor (0.2 + 0.8 × condition) × durability factor
-//   (makeshift gear: 0.3 + 0.7 × uses left / full uses; real gear does not wear and counts 1). A pack adds its contents.
+//   (gear that wears, data.js GEAR dur / GEAR_DUR: 0.3 + 0.7 × uses left / full uses; gear that does not wear counts 1). A pack adds its contents.
 //   Then × the group's kind and state for its category (valuation.js priceInfo) × how much like it they hold
 //   (gearNeed: their shelf; each piece in a deal priced at the holding halfway through it).
 // - Supplies: base value (data.js SUPPLIES) × the group's need for it (their stock per head against a reference:
