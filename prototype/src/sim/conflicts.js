@@ -444,7 +444,13 @@ export function contactOn(state, p, tile) {
   // A team sent to cull this horde, or to storm the hive or growth it guards, meets it on its own terms (parties.js
   // arrive: the cull card, the hive's battle), not as an ambush.
   const culling = (h) => ["cull", "hive", "growth"].includes(p.mission) && p.dest != null && state.grid.distance(h.tile, p.dest) <= 1;
-  const horde = state.hordes.find((h) => h.tile === tile && h.size >= CONTACT.HORDE_MIN && fresh(`h${h.id}`) && !culling(h));
+  // The same after the hive's card (hives.js hiveArrive sets p.hiveVisit): a team still standing on the mound's tile
+  // once it has set its fires, backed off or been given new orders (and has not walked off yet, say at night) is not
+  // ambushed by that hive's own guard every CONTACT.AGAIN hours: the card was its meeting with the guard. The red ring's
+  // own trouble (fieldheat.js) still finds it. Off the tile the mark is dropped.
+  if (p.hiveVisit != null && p.hiveVisit !== tile) delete p.hiveVisit;
+  const visited = (h) => p.hiveVisit === tile && h.tile === tile && h.role === "guard";
+  const horde = state.hordes.find((h) => h.tile === tile && h.size >= CONTACT.HORDE_MIN && fresh(`h${h.id}`) && !culling(h) && !visited(h));
   if (horde) return { horde, key: `h${horde.id}` };
   const v = hostileOutsiderOn(state, p, tile, fresh); // visitors.js: raiders from beyond the border, robbers on the road
   if (v) return { visitor: v, key: `v${v.id}` };
