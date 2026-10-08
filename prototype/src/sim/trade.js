@@ -30,6 +30,7 @@ import { partyMembers, partyTile, bestSkill, awaitOrders, partyCapacity, cargoLo
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { ransomOnTradeCard } from "./conflicts.js";
 import { itemLoad, newItem } from "./inventory.js";
+import { gunmodWares } from "./loot.js"; // a gun attachment on the table now and then
 import { itemValue, itemCat, catOf, catName, priceInfo, starveBoost, gearNeed, heldLike, margin, refuses } from "./valuation.js";
 import { canRadioGroup, radioGreet } from "./radio.js";
 import { caravanCard } from "./caravans.js";
@@ -283,6 +284,7 @@ export function ensureWares(state, f, refresh = false) {
     if (it.dur) it.dur = Math.max(1, Math.round(it.dur * rng.range(0.4, 1)));
     keep.push(it);
   }
+  keep.push(...gunmodWares(state, f.type, f.name, day(state))); // loot.js: a gun attachment now and then (its own dice)
   keep.push(...bookWares(state, f)); // skills.js: now and then a book (its own dice: the rest of the stock is unchanged)
   f.wares = keep.slice(-WARES_MAX);
   f.waresDay = day(state);

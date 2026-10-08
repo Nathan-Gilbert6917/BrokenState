@@ -39,6 +39,7 @@ import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES } from "./data.js";
 import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
 import { newItem, packOf, POCKETS } from "./inventory.js";
+import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
 import { Rng } from "./rng.js";
 import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
@@ -352,6 +353,7 @@ export function rollGrab(state, s, A = null) {
     if (!bag && !GEAR[w].small && !(A && A.weapons) && rng.chance(0.5)) w = "knife"; // running with only pockets: more often a knife than a rifle
     s.gear.weapon = newItem(w, Math.round(rng.range(0.6, 1) * 100) / 100);
     got.weapon = s.gear.weapon;
+    randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
     const rr = C.ROUNDS[w];
     if (rr) got.ammo += Math.round(rng.int(rr[0], rr[1]) * ((A && A.rounds) || 1));
     if (GEAR[w].cat === "bow") got.arrows = (got.arrows || 0) + 12; // a quiver with the bow (hunting.js: bows hunt with arrows)
@@ -405,6 +407,7 @@ export function rollPrepper(state, s) {
   const w = gun ? pickW(rng, P.GUNS) : "knife";
   s.gear.weapon = newItem(w, Math.round(rng.range(0.8, 1) * 100) / 100);
   got.weapon = s.gear.weapon;
+  randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
   if (gun) got.ammo += P.AMMO;
   const place = (key) => {
     const item = newItem(key, 1);

@@ -126,7 +126,7 @@ const ITEM_HOW = {
   automatic: "Hands slot: Shoot (F) fires two rounds a shot from its magazine (Reload, I: 1 action): the best gun there is, hungry for ammo.",
   bow: "Hands slot: silent shots that use arrows (1 a shot), never ammo, and no reloading. With no arrows it is only a club. After a won fight about half the arrows shot are picked up again.",
   explosive: "From a pocket or the pack: Throw (G) in battle. Thrown, it is gone. Kept in a base's armory, some of them work as decoys when a horde comes.",
-  gunmod: "Carried by whoever has a gun it fits: works from the pack or a pocket.",
+  gunmod: "Fitted to a gun it suits in the inventory (select the gun, then Fit): one on each mount (sight, muzzle, magazine, under the barrel). It weighs and is worth what it is with the gun, and is sold and looted with it. See Help: Gun attachments.",
   armor: `Worn (Body, Head, Arms, Legs): the power of every worn piece adds up, to at most ${ARMOR_CAP}. Heavy armor counts in the wearer's load.`,
   defence: "Kept in a base's armory: used on the approach when a horde attacks the base.",
   medical: "Kept on a medic or in the armory: used when treating people (at a base, in the field or in battle).",

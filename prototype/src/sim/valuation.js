@@ -51,7 +51,8 @@ const isFine = (cat) => !!(CATEGORIES[cat] && CATEGORIES[cat].fine);
 const WEAPON_CATS = ["melee", "pistol", "shotgun", "rifle", "automatic", "bow", "explosive", "gunmod"];
 
 // ---------- hidden worth ----------
-// Base value × condition (0.2 + 0.8 × quality) × uses left (makeshift gear: 0.3 + 0.7 × uses left / full uses).
+// Base value × condition (0.2 + 0.8 × quality) × uses left (makeshift gear: 0.3 + 0.7 × uses left / full uses); a pack
+// adds its contents, a gun its fitted attachments.
 export function itemValue(item) {
   const d = item && GEAR[item.key];
   if (!d) return 0;
@@ -60,6 +61,7 @@ export function itemValue(item) {
   const durF = dur == null ? 1 : 0.3 + 0.7 * clamp(dur / d.dur, 0, 1);
   let v = d.value * (0.2 + 0.8 * q) * durF;
   if (Array.isArray(item.contents)) for (const c of item.contents) if (c) v += itemValue(c);
+  if (item.mods) for (const m of Object.values(item.mods)) if (m) v += itemValue(m); // a gun's fitted attachments (gunmods.js) sell with it
   return v;
 }
 // What the player sees outside a trade: a rough tier, never a number.

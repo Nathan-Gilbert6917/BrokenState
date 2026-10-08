@@ -21,6 +21,7 @@ import {
 import { captivesOf } from "../sim/conflicts.js";
 import { itemDur } from "../sim/crafting.js";
 import { itemLoad } from "../sim/inventory.js";
+import { modLabel } from "../sim/gunmods.js";
 import { vehiclesAtBase, carsAtBase, vehicleById, tank } from "../sim/vehicles.js";
 import { radioDiploBlock } from "./diplomacy.js";
 import { visitorTradeHead, visitorTradeButtons } from "./visitors.js";
@@ -39,7 +40,7 @@ const first = (s) => esc(s.name.split(" ")[0]);
 function gearLabel(item) {
   const d = GEAR[item.key];
   const dur = itemDur(item);
-  return `${esc(item.name)} <span class="muted">${Math.round((item.quality ?? 1) * 100)}%${dur != null ? ` · ${dur}/${d.dur} uses` : ""}</span>`;
+  return `${esc(modLabel(item))} <span class="muted">${Math.round((item.quality ?? 1) * 100)}%${dur != null ? ` · ${dur}/${d.dur} uses` : ""}</span>`; // a gun with its attachments (sim/gunmods.js): they sell with it
 }
 // No base value anywhere: what this group pays or charges, and why (sim/valuation.js).
 const gearTip = (item, price, mine, why) => {
