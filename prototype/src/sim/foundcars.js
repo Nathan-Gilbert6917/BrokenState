@@ -25,7 +25,7 @@
 import { log, survivorById, skill, newId, hub, baseById } from "./world.js";
 import { hash01, gainXp, USE } from "./skills.js";
 import { openOdds, picksOf, PICK, FORCE, SMASH } from "./locks.js";
-import { createVehicle, vehicleById, isCar, tank, VEHICLE_TYPES, partyVehicle, fitMilitary } from "./vehicles.js";
+import { createVehicle, vehicleById, isCar, tank, VEHICLE_TYPES, partyVehicle, fitMilitary, carPartsCost, carPartsText } from "./vehicles.js";
 import { markTaken } from "./miltrucks.js"; // (names below are literal: the modules load in a circle)
 import { markAbandonedVehicle } from "./markers.js";
 import { partyMembers, partyTile, carried, takeSupply, cargoRoom, unitsThatFit, weighTeam, awaitOrders, startReturn, tileLabel, bestSkill, teamName } from "./parties.js";
@@ -133,7 +133,7 @@ export function verdictText(rec) {
   const parts = `Engine ${c.engine === "ok" ? "turns over" : c.engine === "fixable" ? "needs work" : "seized or burned out"}, tyres ${c.tyres === "ok" ? "hold air" : "flat"}, battery ${c.battery === "ok" ? "has charge" : "dead"}, ${c.fuel ? `${c.fuel} fuel in the tank` : "the tank is dry"}.`;
   if (!r) return `${parts} Scrap: nothing to save but its fuel.`;
   if (!r.what.length) return `${parts} It runs.`;
-  return `${parts} Fixable: ${r.what.join(", ")}: ${r.parts} part${r.parts === 1 ? "" : "s"}${r.scrap ? `, ${r.scrap} scrap` : ""}, Mechanics ${r.mech}+, about ${r.hours}h of work.`;
+  return `${parts} Fixable: ${r.what.join(", ")}: ${r.parts} car part${r.parts === 1 ? "" : "s"}${r.scrap ? `, ${r.scrap} scrap` : ""}, Mechanics ${r.mech}+, about ${r.hours}h of work.`;
 }
 // The ops open to a unit at a car now: { op: { ok, why, chance?, ap } }.
 export function carOptions(state, b, u, rec) {
@@ -246,7 +246,7 @@ export function carAct(state, b, u, act, H) {
     }
     case "claim": {
       const v = claimCar(state, b, rec);
-      H.say(b, `${u.name} claims the ${name}${o.fix ? `: it needs ${o.fix.what.join(", ")} (${o.fix.parts} parts${o.fix.scrap ? `, ${o.fix.scrap} scrap` : ""}, Mechanics ${o.fix.mech}+, ${o.fix.hours}h) before it goes anywhere. Repair it from the team's orders once the fight is over` : `: it runs. ${b.setup.partyId != null ? "It joins the team when the fight is over if the team has no vehicle; otherwise it stays here, marked on the map" : "It goes in the base's motor pool"}`}.`, "good");
+      H.say(b, `${u.name} claims the ${name}${o.fix ? `: it needs ${o.fix.what.join(", ")} (${o.fix.parts} car parts${o.fix.scrap ? `, ${o.fix.scrap} scrap` : ""}, Mechanics ${o.fix.mech}+, ${o.fix.hours}h) before it goes anywhere. Repair it from the team's orders once the fight is over` : `: it runs. ${b.setup.partyId != null ? "It joins the team when the fight is over if the team has no vehicle; otherwise it stays here, marked on the map" : "It goes in the base's motor pool"}`}.`, "good");
       H.fx(b, { type: "loot", to: at, text: v ? "claimed" : "" });
       break;
     }
@@ -345,7 +345,7 @@ export function fixProblem(state, p, v) {
   if (!r) return "It does not need repairs.";
   const mech = bestSkill(state, p, "mechanics");
   if (mech < r.mech) return `Needs Mechanics ${r.mech}+ on the team (best: ${mech}).`;
-  if (carried(p, "parts") < r.parts) return `Needs ${r.parts} part${r.parts === 1 ? "" : "s"} carried (have ${Math.floor(carried(p, "parts"))}).`;
+  if (!carPartsCost((k) => carried(p, k), r.parts).ok) return `Needs ${carPartsText(r.parts)} carried (have ${Math.floor(carried(p, "carparts"))} car and ${Math.floor(carried(p, "parts"))} machine parts).`;
   if (r.scrap && carried(p, "scrap") < r.scrap) return `Needs ${r.scrap} scrap carried (have ${Math.floor(carried(p, "scrap"))}).`;
   return "";
 }
@@ -355,7 +355,7 @@ export function fixOption(state, p, v) {
   const mech = bestSkill(state, p, "mechanics");
   return {
     mission: "getvehicle", label: `Repair the ${v.name}`,
-    desc: `Get the found ${v.name.toLowerCase()} running: ${r.what.join(", ")}. ${r.parts} part${r.parts === 1 ? "" : "s"}${r.scrap ? ` and ${r.scrap} scrap` : ""}, Mechanics ${r.mech}+, ${r.hours}h of work on the spot (the noise draws attention). ${why ? "" : `Then a Mechanics check: ${Math.round(fixChance(mech, r.mech) * 100)}% (a failure wastes half the parts; try again).`}`,
+    desc: `Get the found ${v.name.toLowerCase()} running: ${r.what.join(", ")}. ${carPartsText(r.parts)}${r.scrap ? ` and ${r.scrap} scrap` : ""}, Mechanics ${r.mech}+, ${r.hours}h of work on the spot (the noise draws attention). ${why ? "" : `Then a Mechanics check: ${Math.round(fixChance(mech, r.mech) * 100)}% (a failure wastes half the parts; try again).`}`,
     disabled: why || null,
   };
 }
@@ -380,11 +380,15 @@ export function finishFixCar(state, p, t) {
   const t0 = (v.found.tries = (v.found.tries || 0) + 1);
   if (hash01(state.seed, "fixcar", v.loc.tile, v.found.hour ?? 0, v.found.model, state.hour, t0) >= chance) {
     const lost = Math.max(1, Math.ceil(r.parts * FIX.waste));
-    takeSupply(p, "parts", lost);
+    const waste = carPartsCost((k) => carried(p, k), lost);
+    if (waste.car) takeSupply(p, "carparts", waste.car);
+    if (waste.parts) takeSupply(p, "parts", Math.min(waste.parts, carried(p, "parts")));
     if (best) gainXp(state, best, "mechanics", USE.repair || 3);
-    return `The ${v.name} still will not start (${Math.round(chance * 100)}%): ${lost} part${lost === 1 ? "" : "s"} wasted. Try again with ${r.parts} parts.`;
+    return `The ${v.name} still will not start (${Math.round(chance * 100)}%): ${lost} car part${lost === 1 ? "" : "s"} (or their worth in machine parts) wasted. Try again with ${r.parts} car parts.`;
   }
-  takeSupply(p, "parts", r.parts);
+  const pay = carPartsCost((k) => carried(p, k), r.parts); // car parts, else 2 machine parts each
+  if (pay.car) takeSupply(p, "carparts", pay.car);
+  if (pay.parts) takeSupply(p, "parts", pay.parts);
   if (r.scrap) takeSupply(p, "scrap", r.scrap);
   if (best) gainXp(state, best, "mechanics", (USE.repair || 3) * 2);
   v.found.repair = null;

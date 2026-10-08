@@ -39,7 +39,12 @@ export const SUPPLIES = {
   // win and none after a loss or a retreat (world.js ARROWS, combat.js). Made by hand from firewood and a little scrap
   // (crafting.js), found at hunting lodges, gun stores, sports shops and campgrounds.
   arrows: { name: "Arrows", value: 0.4, weight: 0.03, cat: "bow" },
-  parts: { name: "Parts", value: 8,   weight: 2, cat: "parts" },
+  // Spare parts by kind (docs/weapons-overhaul-plan.md section 10): "parts" are machine parts (buildings, generators,
+  // wells, stations, breakdowns, the machine shop); car parts mend vehicles (vehicles.js: 2 machine parts stand in for
+  // one), gun parts guns and their attachments (repair.js), electronics lights, lasers, night vision and radios. Found
+  // by kind where they are kept (loot.js sortParts: an auto shop's are mostly car parts), salvaged from guns, gadgets
+  // and stripped vehicles; other groups keep one count of parts and offer the kinds out of it (trade.js KIND_MIX).
+  parts: { name: "Machine parts", value: 8,   weight: 2, cat: "parts" },
   scrap: { name: "Scrap", value: 1,   weight: 2, cat: "scrap" },
   // Food storage (storage.js): preserved food is jarred, dried or smoked food (and dry grain and beans) that barely
   // spoils and needs no cellar space; eaten like food (fresh first), and lighter to carry on a trip. Jars (and lids)
@@ -54,6 +59,9 @@ export const SUPPLIES = {
   // can cut it. (It was 3 kg a unit: every firewood figure is WOOD_UNITS times what it was; save.js scales old saves.)
   // bulk: what counts as one where a rule asks for "a few" of a supply (supplyFew: 5 to spare is 150 firewood).
   wood:  { name: "Firewood", value: 0.02, weight: 0.1, cat: "firewood", bulk: 30 },
+  carparts:    { name: "Car parts",   value: 7,  weight: 3,   cat: "vehicle" },
+  gunparts:    { name: "Gun parts",   value: 10, weight: 0.5, cat: "gunmod" },
+  electronics: { name: "Electronics", value: 12, weight: 0.3, cat: "electronics" },
 };
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
 // Firewood units to one before firewood was 0.1 kg a unit (a 3 kg bundle): save.js scales an older save's firewood by it.

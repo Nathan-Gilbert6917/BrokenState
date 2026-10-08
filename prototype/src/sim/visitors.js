@@ -169,11 +169,11 @@ export const MERCHANT_VALUABLES = ["watch", "goldchain", "cigars", "scotch", "co
 // books and the supplies it brings more of follow it. gear / books: what it sells; stock: × those supplies.
 export const MERCHANT_SPECS = {
   arms:     { name: "Arms dealers", gear: ["ar", "carbine", "huntrifle", "leverrifle", "shotgun", "pistol", "revolver", "xbow", "compbow", "vest", "plate", "milhelmet", "riothelmet", "suppressor", "spotscope", "binoculars", "nvg", "thermal", "smokegren", "frag"],
-    books: ["gunbook", "armymanual", "leadbook"], stock: { ammo: 1.6 } },
+    books: ["gunbook", "armymanual", "leadbook"], stock: { ammo: 1.6, gunparts: 1.6 } },
   medic:    { name: "Medics", gear: ["surgkit", "traumakit", "bandagekit", "puritabs", "dewormer", "waterfilter", "soap", "wetwipes", "razors", "toothpaste", "headlamp", "flashlight"],
     books: ["medbook", "surgerybook"], stock: { meds: 1.6, water: 1.3 } },
   mechanic: { name: "Mechanics", gear: ["crowbar", "prybar", "sledge", "fireaxe", "flashlight", "headlamp", "lantern", "spotlight", "stove", "kneeguards", "milradio", "handradio", "ladder", "batteries", "waterfilter"],
-    books: ["enginebook", "diybook", "forgebook", "lockbook"], stock: { parts: 1.6, fuel: 1.4 } },
+    books: ["enginebook", "diybook", "forgebook", "lockbook"], stock: { parts: 1.6, fuel: 1.4, carparts: 1.6, electronics: 1.4 } },
   general:  { name: "General traders", gear: ["hikingpack", "rucksack", "assaultpack", "slingbag", "backpack", "camonet", "ghillie", "stove", "waterfilter", "flashlight", "lantern", "binoculars", "telescope", "guitar", "fishrod", "fishnet", "snarewire"],
     books: ["gardenbook", "survivalbook", "talkbook", "scavbook", "bushcraftbook"], stock: { food: 1.3, preserved: 1.3 } },
 };
@@ -318,6 +318,9 @@ function merchantGoods(state, v, rng) {
     fuel: rng.int(15, 40), meds: rng.int(8, 22), preserved: rng.int(20, 50), parts: rng.int(3, 9), ammo: rng.int(60, 160),
     food: rng.int(5, 15), water: rng.int(10, 20), scrap: 0, jars: 0,
   });
+  // Parts by kind (data.js SUPPLIES; section 10), on dice of their own (the caravan's other goods come out as before);
+  // then the speciality's stock (a mechanic carries more car parts, an arms dealer more gun parts).
+  for (const [k, lo, hi] of [["carparts", 1, 4], ["gunparts", 0, 3], ["electronics", 1, 4]]) v.stock[k] = lo + Math.floor(hash01(state.seed, "mkinds", v.serial, k) * (hi - lo + 1));
   v.spec = merchantSpec(state, v);
   const S = MERCHANT_SPECS[v.spec];
   for (const [k, m] of Object.entries(S.stock)) if (v.stock[k] != null) v.stock[k] = Math.round(v.stock[k] * m);

@@ -30,6 +30,7 @@ import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
 import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
+import { repairHour } from "./repair.js"; // gear repairs at the bench
 import { armorPower, armorMult, allItems, stripAll, newItem, START_DUR } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
 import { startChronicle, recordChronicle } from "./chronicle.js";
@@ -123,6 +124,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     woodcutting: 2, // a world with firewood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
     groupWorks: 1, // barestart: the AI groups' bases start bare and they build (groupworks.js); an older save has them built up
+    gunSlots: 1, // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,
     hour: 6, // campaign starts at 06:00 on day 1
@@ -779,6 +781,7 @@ export function tickHour(state) {
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   constructionHour(state);
+  repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
   craftingHour(state);
   garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating)
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders

@@ -187,21 +187,6 @@ export const FACTORY_FIT = {
   amr:    [[1, ["tacscope"]]],
 };
 
-// Which of the attachments already there (gunmods.js ATTACH) fit the new guns, until the gun platforms (data-gunmods.js,
-// the economy agent) take over: gunmods.js adds each gun to those parts' fits.
-/** @type {Record<string, string[]>} */
-export const MOD_FITS = {
-  pistol22: ["reddot", "laser", "pistolcan"], compact9: ["laser", "pistolcan", "comp"],
-  pistol45: ["reddot", "laser", "pistolcan", "comp"],
-  smg: ["reddot", "holo", "laser", "foregrip", "pistolcan"],
-  ak: ["reddot", "holo", "scope4x", "laser", "foregrip", "riflecan", "brake"],
-  lmg: ["reddot", "holo", "scope4x", "bipod"],
-  dbshotgun: ["choke"], semishotgun: ["reddot", "holo", "laser", "foregrip", "choke", "tubeext"],
-  rifle22: ["reddot", "scope4x", "riflecan", "bipod"],
-  dmr: ["reddot", "holo", "scope4x", "foregrip", "bipod", "riflecan", "brake"],
-  sniper: ["scope4x", "bipod", "riflecan", "brake"], amr: ["scope4x", "brake"],
-};
-
 // Army trucks (miltrucks.js truckLoot, through TRUCK_LOOT_HOOKS): the new military weapons in a truck's load, [key,
 // chance] each on dice of their own (the truck's other rolls are unchanged). Wrecked trucks hold 60% as many, burnt none.
 /** @type {Record<string, [string, number][]>} */

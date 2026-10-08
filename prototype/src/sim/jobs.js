@@ -115,7 +115,7 @@ function escortJob(state, f) {
   return { type: "escort", target: f.bases[0], size: 2, data: { to: pick.o.id, toTile: pick.o.bases[0], stage: "waiting", caravanId: null, near: 0, road: 0 },
     desc: `Their caravan to ${pick.o.known ? pick.o.name : tileLabel(state, pick.o.bases[0])} (${pick.d} tiles) needs guards. Meet it at their base; it sets out when your team is there. Stay within 2 tiles of it for at least half the way.` };
 }
-const DELIVER_CAP = { meds: [6, 20], food: [30, 60], ammo: [60, 150], fuel: [10, 20], parts: [2, 4], scrap: [20, 40], water: [25, 40] };
+const DELIVER_CAP = { meds: [6, 20], food: [30, 60], ammo: [60, 150], fuel: [10, 20], parts: [2, 4], scrap: [20, 40], water: [25, 40], carparts: [2, 4], gunparts: [2, 4], electronics: [2, 4] };
 function deliverJob(state, f) {
   const m = marketOf(state, f);
   const rng = diploRng(state);

@@ -13,7 +13,7 @@
 // Jams (u.jam = { kind, ap }): per round, jam = rel% × quality × condition × ammo × mods × weather × fouling, capped at 12%:
 //   quality 1 + 2 × (1 − q) (q: the gun's quality; enemies u.q 0.4–0.85), condition 1 + (1 − dur / durMax) (enemies u.cond),
 //   ammo: factory 1, handloads 2.5 − 1.5 × hq, old 3 (u.loadCond / u.loadHq: the loaded box's cond), × the type's jam,
-//   mods: × each attachment's jam (gunMods jam, else MOD_JAM), weather: rain or mud 1.3, a storm 1.5 (outdoors only),
+//   mods: × each attachment's jam (gunmods.js gunMods jam), weather: rain or mud 1.3, a storm 1.5 (outdoors only),
 //   fouling: 1 + min(0.5, item.fouled / 400) (rounds fired since it was cleaned).
 // A trigger pull of n rounds jams with 1 − (1 − p)^n at a random round: the rounds before it fire, that one is lost.
 // Kinds: stovepipe 70% (Unjam 1 action), double feed 25% (Unjam 2, or a Reload clears it: the magazine dropped), hard
@@ -22,7 +22,7 @@
 import { itemDur, itemDurMax } from "./crafting.js";
 import { AMMO_TYPES } from "./data-ammo.js";
 import { WEAPON_PLATFORM } from "./data-gunmods.js";
-import { unitMods, fittedMods, ATTACH, modRange, NO_MODS } from "./gunmods.js";
+import { unitMods, gunMods, modRange, NO_MODS } from "./gunmods.js";
 import { weather } from "./weather.js";
 import { battleDice } from "./armour.js";
 import { hash01 } from "./skills.js";
@@ -112,8 +112,6 @@ export const JAM = {
   WX: { rain: 1.3, snow: 1.3, storm: 1.5, blizzard: 1.5 }, MUD: 0.5, // mud at least this deep counts as rain
   FOUL: 400, FOUL_MAX: 0.5,
   ENEMY_Q: [0.4, 0.85], DEFAULT_Q: 0.7,
-  // × jam by attachment when gunmods.js gives no jam figure of its own (section 5: suppressors 1.2–1.4, drum 1.5, oil filter 1.5).
-  MOD_JAM: { suppressor: 1.5, pistolcan: 1.2, riflecan: 1.3, drum: 1.5, can9: 1.2, can556: 1.3, can308: 1.3, solventcan: 1.4, mag40: 1.15 },
 };
 // Guns that misfire rather than jam: revolvers, double-barrels, bolt, lever and pump actions (and the single-shot pipe gun).
 export const MISFIRE_KEYS = new Set(["revolver", "shotgun", "huntrifle", "leverrifle", "pipegun", "dbshotgun", "sawnoff", "sniper"]);
@@ -156,11 +154,9 @@ export function ammoJam(u) {
 }
 export function modJam(u) {
   const gm = unitMods(u);
-  if (gm !== NO_MODS && gm.jam != null) return gm.jam;
-  const list = u.item ? fittedMods(u.item) : u.modItems ? Object.values(u.modItems).filter(Boolean) : [];
-  let f = 1;
-  for (const m of list) f *= (ATTACH[m.key] && ATTACH[m.key].jam) || JAM.MOD_JAM[m.key] || 1;
-  return f;
+  if (gm !== NO_MODS) return gm.jam ?? 1;
+  const mods = u.item ? u.item.mods : u.modItems;
+  return mods ? gunMods({ key: u.weapon, mods }).jam ?? 1 : 1; // gunmods.js: × each part's jam (section 5: suppressors 1.2–1.4, drum 1.5, oil filter 1.5)
 }
 export const foulOf = (u) => (u.item ? u.item.fouled : u.fouled) || 0;
 export const foulJam = (u) => 1 + Math.min(JAM.FOUL_MAX, foulOf(u) / JAM.FOUL);
@@ -352,7 +348,9 @@ export function braceAim(b, a) {
   const moved = a.movedT != null && a.movedT === b.turn;
   let v = 0;
   if (typeof w.brace === "number" && moved) v += w.brace;
-  if (w.heavy && typeof w.heavy.brace === "number" && !moved) v += w.heavy.brace;
+  // A heavy gun braced (the machine gun's bipod): at least heavy.brace, not on top of a bipod's (gunmods.js
+  // situationalAim adds the fitted or built-in bipod's brace, data-gunmods.js m249 builtin).
+  if (w.heavy && typeof w.heavy.brace === "number" && !moved) v += Math.max(0, w.heavy.brace - (unitMods(a).brace || 0));
   return v;
 }
 // The sniper's sense of a cell: far (10–15 tiles) from the nearest foe is good, close is bad.

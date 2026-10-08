@@ -30,7 +30,8 @@ console.log("Weapons");
 const keys = Object.keys(WEAPONS);
 const noGear = keys.filter((k) => k !== "fists" && !NATURAL.includes(k) && !later(k) && !GEAR[k]);
 check(!noGear.length, `every weapon has an item (missing: ${list(noGear)})`);
-check(Object.keys(LATER_GEAR).filter((k) => WEAPONS[k]).every((k) => WEAPONS[k].launcher || WEAPONS[k].mount) && !Object.keys(LATER_GEAR).some((k) => GEAR[k]), "launchers and the M2: data only, not items yet (wave 2)");
+// (the M203 is also the economy agent's under-barrel part, data-gunmods.js: an item, cat gunmod, that fires nothing yet)
+check(Object.keys(LATER_GEAR).filter((k) => WEAPONS[k]).every((k) => WEAPONS[k].launcher || WEAPONS[k].mount) && !Object.keys(LATER_GEAR).some((k) => GEAR[k] && !(ATTACH[k] && GEAR[k].cat === "gunmod")), "launchers and the M2: data only, not items yet (wave 2; the M203 only as a gun part)");
 const guns = keys.filter((k) => !WEAPONS[k].melee && !WEAPONS[k].arrows && !WEAPONS[k].acid);
 const noCal = guns.filter((k) => !WEAPONS[k].cal || (!CALIBERS[WEAPONS[k].cal] && !WEAPONS[k].launcher));
 check(!noCal.length, `every gun has a known calibre (missing: ${list(noCal)})`);
@@ -101,18 +102,9 @@ check(["lmg", "amr", "sniper", "dmr", "smg"].every((k) => !Object.values(LOCATIO
 
 // ---------- the sniper rifle fitted ----------
 console.log("Fitted when found");
-// With the economy agent's parts not merged yet, stand-ins with the plan's mounts are registered so the fitting itself is
-// tested; once tacscope / acog exist (and fit) the real ones are used.
-const stub = [];
-const need = { tacscope: "optic", acog: "optic", bipod: "under" };
-for (const [k, mount] of Object.entries(need)) {
-  if (!ATTACH[k]) { ATTACH[k] = { mount, short: k, fits: [] }; stub.push(k); }
-  if (!GEAR[k]) { GEAR[k] = { name: k, slot: "pack", power: 0, req: 0, value: 1, weight: 0.5, cat: "gunmod", desc: "stand-in" }; stub.push(`${k} (item)`); }
-  for (const g of ["sniper", "dmr", "amr"]) if (stub.includes(k) && !ATTACH[k].fits.includes(g)) ATTACH[k].fits.push(g);
-}
-if (stub.length) console.log(`  (stand-ins for parts not merged yet: ${stub.join(", ")}; bipod fits extended: ${!ATTACH.bipod.fits.includes("sniper") ? "no" : "yes"})`);
-if (!stub.includes("bipod") && !ATTACH.bipod.fits.includes("sniper")) { console.log("  (the bipod does not fit the sniper rifle yet: the economy agent adds it; a stand-in fit is used here)"); ATTACH.bipod.fits.push("sniper", "dmr"); stub.push("bipod fits"); }
-const fitted = (it) => !!(it && it.mods && it.mods.optic && ["tacscope"].includes(it.mods.optic.key) && it.mods.under && it.mods.under.key === "bipod");
+// The parts are the economy agent's (data-gunmods.js: tacscope, acog; gunmods.js: the bipod, its own slot), fitted by
+// its platform rules (gunmods.js modFits).
+const fitted = (it) => !!(it && it.mods && it.mods.optic && ["tacscope"].includes(it.mods.optic.key) && it.mods.bipod && it.mods.bipod.key === "bipod");
 // 1. Made from nothing, with dice, from a raid box roll's rng.
 check(fitted(newItem("sniper")) && fitted(newItem("sniper", 0.7, new Rng(5))) && fitted(newItem("sniper", 1, 0.3)), "newItem: a sniper rifle always has a tactical scope and a bipod (with or without dice)");
 check(newItem("amr").mods && newItem("amr").mods.optic.key === "tacscope", "the .50 always has its scope");
@@ -129,7 +121,7 @@ for (let i = 0; i < 400 && units < 30; i++) {
   const u = enemyUnit(b, r, "soldiers", 9, i);
   if (u.weapon !== "sniper") continue;
   units++;
-  if (!u.modItems || !u.modItems.optic || u.modItems.optic.key !== "tacscope" || !u.modItems.under || u.modItems.under.key !== "bipod") bad++;
+  if (!u.modItems || !u.modItems.optic || u.modItems.optic.key !== "tacscope" || !u.modItems.bipod || u.modItems.bipod.key !== "bipod") bad++;
   const body = enemyBody(new Rng(2000 + i), u, KITS.soldiers);
   if (body.gear && body.gear.weapon && body.gear.weapon.key === "sniper") { bodies++; if (!fitted(body.gear.weapon)) bad++; }
 }
@@ -141,7 +133,7 @@ check(tr > 0 && !trBad, `Army trucks carry sniper rifles, fitted (${tr} found, $
 // 4. The marksman rifle: about 60% a scope, 40% a bipod, where there are dice.
 let opt = 0, bip = 0;
 const N = 2000;
-for (let i = 0; i < N; i++) { const it = factoryFit({ key: "dmr" }, i * 7919); if (it.mods && it.mods.optic) opt++; if (it.mods && it.mods.under) bip++; }
+for (let i = 0; i < N; i++) { const it = factoryFit({ key: "dmr" }, i * 7919); if (it.mods && it.mods.optic) opt++; if (it.mods && it.mods.bipod) bip++; }
 check(Math.abs(opt / N - 0.6) < 0.04 && Math.abs(bip / N - 0.4) < 0.04, `the marksman rifle: a scope ${Math.round((opt / N) * 100)}%, a bipod ${Math.round((bip / N) * 100)}%`);
 check(!factoryFit({ key: "dmr" }, null).mods, "no dice (a trader's stock): no chance parts");
 const scopes = new Set();
@@ -150,7 +142,7 @@ check(scopes.has("acog") && scopes.has("tacscope"), "its scope is an ACOG or a t
 // 5. A part already on a mount stays; a missing part is skipped.
 const held = { key: "sniper", mods: { optic: { key: "reddot", name: "Red dot", quality: 1 } } };
 factoryFit(held);
-check(held.mods.optic.key === "reddot" && held.mods.under.key === "bipod", "a mount already taken keeps its part");
+check(held.mods.optic.key === "reddot" && held.mods.bipod.key === "bipod", "a mount already taken keeps its part");
 const save = ATTACH.tacscope; delete ATTACH.tacscope;
 check(!factoryFit({ key: "sniper" }).mods.optic, "a part that does not exist yet is skipped");
 ATTACH.tacscope = save;

@@ -4,6 +4,7 @@
 // death-site looting.
 /** @import { State, Base, Survivor } from "./types" */
 import { TERRAIN, LOCATIONS, SUPPLIES, supplyFew } from "./data.js";
+import { sortParts } from "./loot.js"; // parts found by kind
 import {
   log, addCard, day, hub, atBase, alive, skill, hurt, survivorById, factionById, makeSurvivor, residents, checkGameOver,
 } from "./world.js";
@@ -117,9 +118,11 @@ function baseScavenging(state, base, people) {
     if (!rng.chance(scavChance(state, base, s))) continue;
     const k = rng.weighted(keys, (x) => table[x]);
     const q = rng.int(SCAV_FIND[k][0], SCAV_FIND[k][1]);
-    base.stock[k] = (base.stock[k] || 0) + q;
+    const t = state.tiles[base.tile];
+    const got = k === "parts" && t && t.loc ? sortParts(state, t.loc.type, q, `scav${s.id}`) : { [k]: q }; // loot.js: parts by kind (their own dice)
+    for (const [key, n] of Object.entries(got)) base.stock[key] = (base.stock[key] || 0) + n;
     econStats(state).scavFinds++;
-    log(state, `${s.name.split(" ")[0]} turned up ${q} ${k} around ${base.name}.`, "good");
+    log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(got).map(([key, n]) => `${n} ${key}`).join(", ")} around ${base.name}.`, "good");
   }
   if (scav.length) base.scavLeft = Math.max(SCAV_FLOOR, scavLeft(base) - SCAV_DEPLETE * scav.length); // no recovery when nobody scavenges
 }

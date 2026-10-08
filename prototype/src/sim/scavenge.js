@@ -16,7 +16,7 @@ import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
 import { itemLoad, lootItem, armouredItem } from "./inventory.js";
 import { siteSource } from "./itemcond.js";
-import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, rollGunmodFind } from "./loot.js";
+import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, rollAnyModFind, sortParts } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { truckSearchHour } from "./miltrucks.js";
@@ -198,8 +198,9 @@ export function searchHour(state) {
     let qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
     if (key === "meds" && qty > 0) qty = searchMeds(t, qty); // medfinds.js: a box of them only at a pharmacy, clinic, hospital or medevac wreck
     if (qty > 0) {
-      e.found.supplies[key] = (e.found.supplies[key] || 0) + qty;
-      finds.push(`${qty} ${key}`);
+      // Parts by kind (loot.js sortParts: an auto shop's are mostly car parts; their own dice).
+      const got = key === "parts" && t.loc ? sortParts(state, t.loc.type, qty, `h${e.hours}:${i}`) : { [key]: qty };
+      for (const [k, q] of Object.entries(got)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; finds.push(`${q} ${k}`); }
     }
   }
   const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
@@ -218,7 +219,7 @@ export function searchHour(state) {
   if (gearFind) { e.found.gear.push(gearFind); finds.push(gearFind.name); }
   const lamp = rollLightFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a headlamp, a lantern, a spotlight (loot.js LIGHT_FINDS; its own dice)
   if (lamp) { e.found.gear.push(lamp); finds.push(lamp.name); }
-  const part = rollGunmodFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a sight, a suppressor (loot.js GUNMOD_FINDS; its own dice)
+  const part = rollAnyModFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a sight, a suppressor (loot.js GUNMOD_FINDS, then SITE_MODS; their own dice)
   if (part) { e.found.gear.push(part); finds.push(part.name); }
   const wood = rollSiteWood(state, e.tile, ap.loot, `h${e.hours}`); // a woodpile, a log basket (loot.js SITE_WOOD; its own dice)
   if (wood > 0) { e.found.supplies.wood = (e.found.supplies.wood || 0) + wood; finds.push(`${wood} wood`); }

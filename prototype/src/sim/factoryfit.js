@@ -8,13 +8,13 @@
 // Dice: chance-1 rows need none. Rows below 1 roll on a seed (the source's rng position, read and never moved, so no
 // other roll changes); with no seed at all (a gun made from nothing, e.g. a trader's stock) they are left off.
 import { GEAR } from "./data.js";
-import { ATTACH, makeMod } from "./gunmods.js";
+import { ATTACH, makeMod, modFits } from "./gunmods.js";
 import { FACTORY_FIT, TRUCK_GEAR } from "./data-guns.js";
 import { lootItem } from "./inventory.js"; // call time only (inventory.js imports this module)
 import { hash01 } from "./skills.js";
 
-// The parts of a row that can go on this gun now.
-const usable = (gunKey, keys) => keys.filter((k) => GEAR[k] && ATTACH[k] && ATTACH[k].fits.includes(gunKey));
+// The parts of a row that can go on this gun now (gunmods.js modFits: by platform and calibre, data-gunmods.js).
+const usable = (gunKey, keys) => keys.filter((k) => GEAR[k] && ATTACH[k] && modFits(gunKey, k));
 
 /** Fits the factory parts to a gun item (in place) and returns it. seed: a number (or anything) to roll the chance rows on.
  * @param {any} item @param {any} [seed] */

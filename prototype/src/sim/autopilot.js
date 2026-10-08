@@ -12,7 +12,8 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
-import { fitFromPool } from "./gunmods.js"; // the autopilot fits loose gun attachments
+import { fitFromPool } from "./gunmods.js";
+import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
 import {
@@ -238,6 +239,7 @@ export function autopilotHour(state) {
     else if (hourOfDay(state) === EMERGENCY.hour) emergencyTrips(state); // a second look in the afternoon: thirst does not wait for the morning
     for (const b of state.bases) govWatch(state, b); // the night watch's roster (before the roles: planRoles 1a)
     for (const b of state.bases) governRoles(state, b);
+    if (hourOfDay(state) === PLAN_HOUR) autoFieldRepairs(state); // repair.js: a team's urgent gear mended with a field kit
     resolvePending(state);
     autoFires(state);
   } catch (e) {
@@ -269,7 +271,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.medical) planTreatment(state, base);
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building) planBuilds(state, base, areas);
-  if (areas.production) { govOrders(state, base); planCrafts(state, base); }
+  if (areas.production) { govOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench
 }
 // Roles at one base (after the day's trip is planned). Returns the number of role changes.
 export function governRoles(state, base, areas = ALL_AREAS) {
@@ -941,7 +943,8 @@ function waterRunWanted(state, base) {
 }
 // Scrap (or parts) held back for water at a base: other builds, repairs and crafts leave it alone.
 const WATER_BUILDS = ["well", "rain_catcher", "cistern", "boiler", "water_barrel"]; // the boiler: safe water (worm.js)
-const waterHold =(state, base, k = "scrap") => (base.owner == null || base.owner === "player" ? waterPlan(state, base).hold[k] || 0 : 0);
+// Also what an urgent gear repair waits for (repair.js repairHold): the stores keep it for the repair.
+const waterHold =(state, base, k = "scrap") => (base.owner == null || base.owner === "player" ? (waterPlan(state, base).hold[k] || 0) + repairHold(state, base, k) : 0);
 
 // ---------- food and the winter (the food planner) ----------
 // Days of food (fresh + preserved) a base should hold now. Crops take weeks, nothing grows outdoors in winter and
@@ -1831,8 +1834,11 @@ function planRoles(state, base, areas = ALL_AREAS) {
     }
   }
 
-  // 8. One crafter while the craft queue has a job someone here can do.
-  const job = areas.production && craftQueue(base).find((j) => people.some((s) => canAttempt(s, CRAFTS[j.recipe])));
+  // 8. One crafter while the craft queue has a job someone here can do; a repair waiting for one (repair.js) first.
+  const rep = areas.production && repairCrafterWanted(state, base);
+  const repper = rep && ranked("craft", (x) => skill(x, rep.skill), (x) => !x.inBed && skill(x, rep.skill) >= rep.min)[0];
+  if (repper) give(repper, "craft");
+  const job = !repper && areas.production && craftQueue(base).find((j) => people.some((s) => canAttempt(s, CRAFTS[j.recipe])));
   if (job) {
     const r = CRAFTS[job.recipe];
     const c = ranked("craft", (x) => craftSkill(x), (x) => !x.inBed && canAttempt(x, r))[0]; // the best at Crafting (crafting.js) who may attempt it
@@ -2091,6 +2097,10 @@ function buildWishes(state, base) {
   // Crafting benches (buildings.js BENCH): all but the simple field recipes need one, and crafters work faster and
   // better at one. A crafting bench where someone is on the Craft role or a job is queued, after the essentials above.
   const benchQueued = base.construction.some((c) => BUILDINGS[c.type] && BUILDINGS[c.type].family === "bench");
+  // Fighters' gear worn past an urgent repair (repair.js benchWanted): the bench it needs, saved for.
+  const bw = !benchQueued ? benchWanted(state, base) : 0;
+  if (bw && !benchTier(base, true)) add("craftbench", "a bench to mend the fighters' worn gear", true);
+  else if (bw >= 2 && benchTier(base, true) === 1 && best("mechanics") >= BUILDINGS.workbench.req.mechanics) add("workbench", "a workbench to mend the fighters' guns and armour", true);
   if (!benchTier(base, true) && !benchQueued && (here.some((s) => s.role === "craft") || craftQueue(base).length > 0)) add("craftbench", "a bench for the crafters (faster, better gear; most recipes need one)");
   if (!isHub) return out;
   const hostileNear = state.factions.some((f) => f.alive && f.known && attitude(f) === "Hostile" && f.bases.some((b) => state.grid.distance(b, base.tile) <= 20));

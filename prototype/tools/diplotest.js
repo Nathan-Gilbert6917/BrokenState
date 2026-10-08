@@ -21,6 +21,7 @@ import { canRadioGroup, offerCard as radioOfferCard } from "../src/sim/radio.js"
 import {
   need, demand, wantQty, available, sellPrice, buyPrice, gearSellPrice, gearBuyPrice, marketLists, refreshMarket, marketOf, marketBoard, priceTrend, WANT_NEED, SURPLUS_NEED,
 } from "../src/sim/trade.js";
+import { PART_KINDS } from "../src/sim/trade.js"; // parts by kind: offered only in the trade window, never on the lists
 import { caravanSurplus } from "../src/sim/caravans.js";
 import * as D from "../src/sim/diplomacy.js";
 import * as J from "../src/sim/jobs.js";
@@ -686,7 +687,8 @@ section("Wants and surplus, the market board");
     f.stock.meds = 0; f.stock.food = f.pop * 20;
     const m = refreshMarket(st, f);
     nlists += m.wants.length + m.surplus.length;
-    for (const k of SUPPLY_KEYS) {
+    if (m.wants.some((x) => PART_KINDS.includes(x.key)) || m.surplus.some((x) => PART_KINDS.includes(x.key))) bad++; // they want and offer "parts"
+    for (const k of SUPPLY_KEYS.filter((x) => !PART_KINDS.includes(x))) {
       const n = demand(st, f, k); // stock, their kind and their state (trade.js)
       const w = m.wants.find((x) => x.key === k), s = m.surplus.find((x) => x.key === k);
       if ((n >= WANT_NEED) !== !!w) bad++;

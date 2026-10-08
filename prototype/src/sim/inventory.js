@@ -18,7 +18,7 @@
 // Items only move between people, storage and bodies at the same place (one base, or one team).
 import { factoryFit, seedOf } from "./factoryfit.js";
 import { FACTORY_FIT } from "./data-guns.js"; // guns found already fitted (section 22)
-import { fitMod, removeMod, modFitReason, isGunmod, takesMods } from "./gunmods.js";
+import { fitMod, stripMod, modFitReason, fitsSlot, isGunmod, takesMods, fittedKg, ATTACH } from "./gunmods.js";
 import { GEAR, SUPPLIES } from "./data.js";
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
@@ -91,7 +91,7 @@ export const itemKg = (item) => {
 };
 // A gun also weighs its fitted attachments (gunmods.js: item.mods).
 export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item);
-const modsKg = (item) => (item && item.mods ? Object.values(item.mods).reduce((a, m) => a + (m ? itemKg(m) : 0), 0) : 0);
+const modsKg = (item) => (item && item.mods ? Object.values(item.mods).reduce((a, m) => a + (m ? fittedKg(m) : 0), 0) : 0); // a lighter handguard or stock replaces the factory one (gunmods.js fittedKg)
 
 export function ensurePack(item) {
   const n = packSize(item);
@@ -328,8 +328,8 @@ export function modChoices(state, gunStr, sid = null) {
   if (r.st) r.st.list.forEach((it, i) => { if (fits(it)) out.push({ loc: `${r.st.o}:${r.st.id}:list:${i}`, item: it }); });
   return out;
 }
-// Fits the loose attachment at modStr to the gun at gunStr. What was on that mount goes where the new one came from.
-// Returns a message.
+// Fits the loose attachment at modStr to the gun at gunStr. What was on that slot (and whatever it carried that the new
+// part does not) goes where the new one came from. Returns a message.
 export function fitModAt(state, gunStr, modStr) {
   const gun = itemAt(state, gunStr), mod = itemAt(state, modStr);
   if (!gun || !mod) return "Nothing to fit.";
@@ -342,24 +342,55 @@ export function fitModAt(state, gunStr, modStr) {
   if (!r) return "Nothing to fit.";
   r.remove(mod);
   const res = fitMod(gun, mod);
-  if (res.old) { if (r.put) r.put(res.old); else r.set(res.old); }
-  return `${mod.name} fitted to the ${gun.name}${res.old ? ` (the ${res.old.name} came off)` : ""}.`;
+  const off = res.off || (res.old ? [res.old] : []);
+  const st = storageFor(state, placeOf(state, parseLoc(gunStr)));
+  off.forEach((x, i) => { if (i === 0 && r.put) r.put(x); else if (i === 0 && r.set) r.set(x); else if (st) st.list.push(x); else if (r.put) r.put(x); });
+  return `${mod.name} fitted to the ${gun.name}${off.length ? ` (the ${off.map((x) => x.name).join(" and the ")} came off)` : ""}.`;
 }
-// Takes the attachment off a gun's mount: into the armory or the team's cargo where there is one, else onto the
-// holder (pocket or pack). Returns a message.
+// Takes the attachment off a gun's slot (with whatever it carries: a mount's sight, a rail's grip and light): into the
+// armory or the team's cargo where there is one, else onto the holder (pocket or pack). Returns a message.
 export function unfitModAt(state, gunStr, mount, sid = null) {
   const gun = itemAt(state, gunStr);
   if (!gun || !gun.mods || !gun.mods[mount]) return "Nothing fitted there.";
   const r = modReach(state, gunStr, sid);
   if (!r) return "Take the gun off the body first.";
   const mod = gun.mods[mount];
-  if (r.st) { removeMod(gun, mount); r.st.list.push(mod); return `${mod.name} taken off the ${gun.name}: into ${r.st.name}.`; }
+  const what = (list) => list.map((x) => x.name).join(" and the ");
+  if (r.st) { const list = stripMod(gun, mount); r.st.list.push(...list); return `${what(list)} taken off the ${gun.name}: into ${r.st.name}.`; }
   if (r.holder) {
-    removeMod(gun, mount);
-    if (stow(r.holder, mod)) return `${mod.name} taken off the ${gun.name}: ${r.holder.name.split(" ")[0]} carries it.`;
-    fitMod(gun, mod);
+    const before = { ...(gun.mods || {}) };
+    const list = stripMod(gun, mount);
+    const put = [];
+    for (const x of list) { if (stow(r.holder, x)) put.push(x); else break; }
+    if (put.length === list.length) return `${what(list)} taken off the ${gun.name}: ${r.holder.name.split(" ")[0]} carries ${list.length > 1 ? "them" : "it"}.`;
+    for (const x of put) unstow(r.holder, x);
+    gun.mods = before;
   }
   return `No room for the ${mod.name}: free a pocket or a pack slot first.`;
+}
+// Takes an item back out of a holder's pockets or pack (an undone stow).
+function unstow(h, item) {
+  const i = h.pockets.indexOf(item);
+  if (i >= 0) { h.pockets[i] = null; return; }
+  const pk = packOf(h);
+  const j = pk ? pk.indexOf(item) : -1;
+  if (j >= 0) pk[j] = null;
+}
+// The gun builder's sim calls (gunmods.js re-exports them; docs/weapons-overhaul-plan.md section 9): fit the part at
+// partLoc into `slot` of the gun at gunLoc (checks gunmods.js fitsSlot; what was there goes where the part came from),
+// and strip a slot (children first; into the place's storage, else a pocket or the pack, else refused). No time cost.
+// Both return a message.
+export function fitAt(state, gunLoc, slot, partLoc, sid = null) { // sid: the person whose inventory is open (unused: the part's own place decides)
+  const gun = itemAt(state, gunLoc), part = itemAt(state, partLoc);
+  if (!gun || !part) return "Nothing to fit.";
+  if (state.combat && !state.combat.over) return "Not in the middle of a fight.";
+  const why = fitsSlot(gun, part, slot || (ATTACH[part.key] && ATTACH[part.key].slot) || null);
+  if (why) return why;
+  return fitModAt(state, gunLoc, partLoc);
+}
+export function stripAt(state, gunLoc, slot, sid = null) {
+  if (state.combat && !state.combat.over) return "Not in the middle of a fight.";
+  return unfitModAt(state, gunLoc, slot, sid);
 }
 
 // ---------- breaking things down for firewood (data.js GEAR burnShare; woodcutting.js burnOf: by its weight) ----------
@@ -402,6 +433,53 @@ export function breakDownAt(state, str) {
   removeAt(state, str);
   unlistFromSites(state, info.item);
   return `Broke down the ${info.item.name} for firewood: +${info.wood} to ${where}.`;
+}
+// ---------- salvage: taking things apart for parts (docs/weapons-overhaul-plan.md section 10) ----------
+// A gun: floor(value / 30) + 1 gun parts and a scrap (its attachments come off into storage first); an attachment
+// worth 25 or more: a gun part; gadgets: electronics (a phone, a camera, a console 1, a laptop 2, night vision 3, a
+// thermal 4...). Where breaking down for firewood works (storage, a pocket, the pack; not worn or held, not a body's).
+// The parts go to the base's stores or the team's cargo. No time: a screwdriver and a hammer.
+export const SALVAGE_ELECTRONICS = { phone: 1, camera: 1, console: 1, laptop: 2, nvg: 3, thermal: 4, milradio: 3, handradio: 1, pocketradio: 1, thermalscope: 3, peq: 1, weaponlight: 1 };
+const GUN_CATS = ["pistol", "shotgun", "rifle", "automatic"];
+// What taking it apart gives: { supplies } or null (nothing worth taking).
+export function salvageYield(item) {
+  const d = item && GEAR[item.key];
+  if (!d) return null;
+  if (SALVAGE_ELECTRONICS[item.key]) return { electronics: SALVAGE_ELECTRONICS[item.key] };
+  if (d.slot === "weapon" && GUN_CATS.includes(d.cat)) return { gunparts: Math.floor((d.value || 0) / 30) + 1, scrap: 1 };
+  if (isGunmod(item.key) && (d.value || 0) >= 25) return { gunparts: 1 };
+  return null;
+}
+export function salvageInfo(state, str) {
+  const loc = parseLoc(str);
+  const item = itemAt(state, str);
+  const place = placeOf(state, loc);
+  const got = salvageYield(item);
+  let reason = "";
+  if (!item) reason = "Nothing there.";
+  else if (!got) reason = `Nothing worth taking from the ${item.name}.`;
+  else if (loc.o === "body") reason = "Take it first.";
+  else if (loc.o === "s" && EQUIP_SLOTS.includes(loc.slot)) reason = "Take it off first.";
+  else if (!place) reason = "Out of reach.";
+  return { ok: !reason, reason, item, got: got || {}, place };
+}
+export const salvageText = (got) => Object.entries(got).map(([k, v]) => `${v} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k}`).join(", ");
+// Takes it apart: the item is gone (its attachments go to storage), its parts into the stores or the cargo. Returns the message.
+export function salvageAt(state, str) {
+  const info = salvageInfo(state, str);
+  if (!info.ok) return info.reason;
+  const st = storageFor(state, info.place);
+  const [kind, idStr] = info.place.split(":");
+  const id = Number(idStr);
+  let stock;
+  if (kind === "base") { const b = baseById(state, id); if (!b) return "Out of reach."; stock = b.stock; }
+  else { const p = state.parties.find((x) => x.id === id); if (!p) return "Out of reach."; p.cargo = p.cargo || { supplies: {}, gear: [] }; stock = p.cargo.supplies; }
+  const mods = info.item.mods ? Object.values(info.item.mods).filter(Boolean) : [];
+  removeAt(state, str);
+  unlistFromSites(state, info.item);
+  if (st && mods.length) { st.list.push(...mods); delete info.item.mods; }
+  for (const [k, v] of Object.entries(info.got)) stock[k] = Math.max(0, stock[k] || 0) + v;
+  return `Took the ${info.item.name} apart: ${salvageText(info.got)}${mods.length && st ? `; its ${mods.map((m) => m.name).join(" and ")} went to ${st.name}` : ""}.`;
 }
 // Marks an armory item for the water boiler (worm.js): "burn" (it may burn it even if it is not junk), "keep" (never),
 // or null (junk burns while the base allows it). Returns the message.

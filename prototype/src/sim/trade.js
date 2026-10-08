@@ -51,16 +51,42 @@ export { itemValue };
 // Preserved food (storage.js) keeps, so every group wants some; jars matter only to those who preserve. Firewood
 // (woodcutting.js): groups cut their own; the seasons move its price (valuation.js: dear in winter, cheap in summer).
 // Arrows (hunting.js): groups fletch their own and keep them (comfortable, none to spare) until they hold more.
-const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, arrows: 2, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 120 }; // wood: 12 kg a head
+const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, arrows: 2, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 120, carparts: 0.5, gunparts: 0.5, electronics: 0.5 }; // wood: 12 kg a head; the part kinds are priced by the group's one count of parts
 // Per head a group never sells: it keeps this much for itself.
-const RESERVE = { food: 2, water: 1.5, fuel: 0.5, meds: 0.3, ammo: 3, arrows: 2, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 60 };
+const RESERVE = { food: 2, water: 1.5, fuel: 0.5, meds: 0.3, ammo: 3, arrows: 2, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 60, carparts: 0, gunparts: 0, electronics: 0 };
 // Groups always have some water (wells, rain barrels), firewood (they cut their own: woodcutting.js) and arrows (they
 // make their own): with no figure yet they count as comfortable.
 // Water (water.js): other groups keep a single pool (f.stock.water; they purify their own). Un-purified water is
 // priced by that pool at its own base value (half of purified water's), goes into the pool when they take it, and is
 // never for sale from them: they sell purified water.
 export const poolKey = (key) => (key === RAW ? "water" : key);
-const stockOf = (f, key) => { const k = poolKey(key); return Math.max(0, f.stock[k] ?? (k === "water" || k === "wood" || k === "arrows" ? (f.pop || 0) * REF[k] : 0)); };
+// Parts by kind (data.js SUPPLIES: machine parts, car parts, gun parts, electronics; section 10): other groups keep one
+// count of parts (f.stock.parts) and price every kind by it; what they offer of each kind is their share of it by the
+// kind of group (KIND_MIX: the military's parts are a third electronics and a third gun parts), and whatever kind you
+// buy from them or sell them comes out of or goes into that one count (groupStockKey). Outsiders (visitors.js) and
+// caravans' loads keep each kind as it is.
+export const PART_KINDS = ["carparts", "gunparts", "electronics"];
+export const KIND_MIX = {
+  "*":          { parts: 0.7,  carparts: 0.15, gunparts: 0.08, electronics: 0.07 },
+  military:     { parts: 0.2,  carparts: 0.2,  gunparts: 0.3,  electronics: 0.3 },
+  raider:       { parts: 0.4,  carparts: 0.3,  gunparts: 0.2,  electronics: 0.1 },
+  expansionist: { parts: 0.45, carparts: 0.35, gunparts: 0.1,  electronics: 0.1 },
+  traders:      { parts: 0.5,  carparts: 0.2,  gunparts: 0.15, electronics: 0.15 },
+  fortress:     { parts: 0.75, carparts: 0.1,  gunparts: 0.1,  electronics: 0.05 },
+  commune:      { parts: 0.8,  carparts: 0.1,  gunparts: 0.03, electronics: 0.07 },
+  zealot:       { parts: 0.85, carparts: 0.1,  gunparts: 0.05, electronics: 0 },
+};
+const pooled = (f) => !!(f && !f.outsider && f.stock);
+export const kindShare = (f, key) => ((KIND_MIX[f && f.type] || KIND_MIX["*"])[key] ?? 0);
+// Where a supply goes in a group's stores: one water pool, one count of parts.
+export const groupStockKey = (key, f = null) => (PART_KINDS.includes(key) && (!f || pooled(f)) ? "parts" : poolKey(key));
+const stockOf = (f, key) => { const k = pooled(f) ? groupStockKey(key) : poolKey(key); return Math.max(0, f.stock[k] ?? (k === "water" || k === "wood" || k === "arrows" ? (f.pop || 0) * REF[k] : 0)); };
+// Part kinds left in a group's stores by the code that adds supplies by key (a delivery, a gift, a caravan's load) go
+// into its one count of parts (refreshMarkets, each day, and after a trade).
+export function foldPartKinds(f) {
+  if (!pooled(f)) return;
+  for (const k of PART_KINDS) if (k in f.stock) { f.stock.parts = Math.max(0, (Number.isFinite(f.stock.parts) ? f.stock.parts : 0) + (Number.isFinite(f.stock[k]) ? f.stock[k] : 0)); delete f.stock[k]; }
+}
 
 // How much this group values one unit at a given stock level (default: what they hold now).
 export function need(f, key, stock = stockOf(f, key)) {
@@ -110,7 +136,15 @@ export function gearBuyPrice(state, f, item, speech, { pool = null, nth = 0 } = 
 }
 // What a group can spare of a supply (they keep a reserve per head; twice that of some goods at war). Nothing of
 // what they refuse to deal in.
-export const available = (f, key) => (refuses(f, key) || key === RAW ? 0 : Math.max(0, Math.floor(stockOf(f, key) - (RESERVE[key] || 0) * f.pop * (f.atWar ? WAR_RESERVE[key] || 1 : 1))));
+// kinds: the trade window's offer, where a group's parts are split by kind (KIND_MIX); everywhere else (the AI's own
+// deals, tribute, caravans) they offer only "parts", the whole count, as before the kinds.
+export function available(f, key, { kinds = false } = {}) {
+  if (refuses(f, key) || key === RAW) return 0;
+  const split = pooled(f) && (PART_KINDS.includes(key) || key === "parts");
+  if (split && !kinds && key !== "parts") return 0;
+  const stock = split && kinds ? stockOf(f, key) * kindShare(f, key) : stockOf(f, key);
+  return Math.max(0, Math.floor(stock - (RESERVE[key] || 0) * f.pop * (f.atWar ? WAR_RESERVE[key] || 1 : 1)));
+}
 // Why this group prices a supply key or an item the way it does, in words (the trade window's "why" lines; never a
 // number): [{ text, dir: "up" | "down" | "no" }], the strongest first, at most `max`. pool: their shelf for an item.
 export function priceWhy(state, f, what, { pool = null, max = 2 } = {}) {
@@ -187,7 +221,7 @@ export function goodsWorth(state, f, supplies = {}, gear = [], speech = 0) {
 // Nothing they refuse. prices: both prices for every good; prev: last week's.
 // Their radio offers and requests (radio.js) and the caravans you ask for (caravans.js) use these lists.
 export const WANT_NEED = 1.25, SURPLUS_NEED = 0.9, MARKET_DAYS = 7;
-export const LOT = { food: 20, water: 20, rawwater: 20, fuel: 10, meds: 6, ammo: 50, arrows: 20, parts: 3, scrap: 20, preserved: 10, jars: 10, wood: 600 }; // wood: 60 kg
+export const LOT = { food: 20, water: 20, rawwater: 20, fuel: 10, meds: 6, ammo: 50, arrows: 20, parts: 3, scrap: 20, preserved: 10, jars: 10, wood: 600, carparts: 3, gunparts: 4, electronics: 4 }; // wood: 60 kg
 export const wantQty = (f, k) => Math.max(1, Math.ceil((LOT[k] || 10) / 2), Math.ceil(REF[poolKey(k)] * f.pop - stockOf(f, k)));
 export function marketLists(state, f, speech = 0) {
   const wants = [], surplus = [], prices = {};
@@ -195,6 +229,7 @@ export function marketLists(state, f, speech = 0) {
     const lot = LOT[k] || 10;
     prices[k] = { pay: sellPrice(state, f, k, speech, lot), ask: buyPrice(state, f, k, speech, lot) };
     if (refuses(f, k) || k === RAW) continue; // un-purified water: priced, but the lists ask for and offer purified water
+    if (PART_KINDS.includes(k) && pooled(f)) continue; // they want and offer "parts"; the kinds are in the trade window
     const n = demand(state, f, k);
     if (n >= WANT_NEED) wants.push({ key: k, need: n, qty: wantQty(f, k), price: prices[k].pay });
     else if (n <= SURPLUS_NEED && available(f, k) >= supplyFew(k, 5)) surplus.push({ key: k, need: n, qty: available(f, k), price: prices[k].ask });
@@ -209,6 +244,7 @@ export function refreshMarket(state, f) {
   return f.market;
 }
 export function refreshMarkets(state) {
+  for (const f of state.factions) foldPartKinds(f);
   for (const f of state.factions) if (f.alive && (!f.market || day(state) - f.market.day >= MARKET_DAYS)) refreshMarket(state, f);
 }
 // This week's lists (made now if they have none yet).
@@ -237,8 +273,8 @@ export function marketBoard(state, key, side = "sell") {
 }
 
 // Largest whole amount of `key` whose total buying price stays within `budget` (binary search, prices move with qty).
-export function maxBuyable(state, f, key, speech, budget, cap = Infinity) {
-  let lo = 0, hi = Math.max(0, Math.floor(Math.min(cap, available(f, key))));
+export function maxBuyable(state, f, key, speech, budget, cap = Infinity, kinds = false) {
+  let lo = 0, hi = Math.max(0, Math.floor(Math.min(cap, available(f, key, { kinds }))));
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
     if (mid * buyPrice(state, f, key, speech, mid) <= budget + 1e-9) lo = mid;
@@ -460,7 +496,7 @@ export function tradeContext(state) {
   // You trade from what the team carries: supplies plus anything found.
   for (const k of SUPPLY_KEYS) {
     have[k] = Math.max(0, Math.floor((p.supplies[k] || 0) + (p.cargo.supplies[k] || 0)));
-    theirHave[k] = available(f, k);
+    theirHave[k] = available(f, k, { kinds: true }); // their parts split by kind (KIND_MIX)
   }
   return { kind: "visit", t, f, p, caravan: null, base: null, speech, have, theirHave, myGear: p.cargo.gear, theirGear: f.wares || [], center: partyTile(p) };
 }
@@ -612,7 +648,7 @@ export function balanceWith(state, key) {
   if (t.offer[key]) return `You are offering ${key}: take it off your side first.`;
   const cur = t.ask[key] || 0;
   const curV = cur ? cur * buyPrice(state, f, key, speech, cur) : 0;
-  const q = maxBuyable(state, f, key, speech, curV + (tot.offer - tot.ask), ctx.theirHave[key] || 0);
+  const q = maxBuyable(state, f, key, speech, curV + (tot.offer - tot.ask), ctx.theirHave[key] || 0, true);
   if (q <= cur) return `Your surplus is not enough for one more ${key}.`;
   setQty(state, "theirs", key, q);
   return `Asked for ${q - cur} more ${key}.`;
@@ -650,13 +686,14 @@ export function executeTrade(state) {
     if (!(q > 0)) continue;
     if (ctx.kind === "visit") takeFromParty(ctx.p, k, q);
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) - q;
-    const tk = ctx.kind === "caravan" ? k : poolKey(k); // a group's own stores: one water pool
+    const tk = ctx.kind === "caravan" ? k : groupStockKey(k, f); // a group's own stores: one water pool, one count of parts
     theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" ? 0 : stockOf(f, k))) + q; // a group with no figure yet (water, firewood) starts from its comfortable stock
     gave.push(`${q} ${keyWord(k)}`);
   }
   for (const [k, q] of Object.entries(t.ask)) {
     if (!(q > 0)) continue;
-    theirSup[k] = (theirSup[k] ?? (ctx.kind === "caravan" ? 0 : stockOf(f, k))) - q;
+    const tk = ctx.kind === "caravan" ? k : groupStockKey(k, f); // a part kind comes out of their one count of parts
+    theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" ? 0 : stockOf(f, k))) - q;
     if (ctx.kind === "visit") ctx.p.cargo.supplies[k] = (ctx.p.cargo.supplies[k] || 0) + q;
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) + q;
     got.push(`${q} ${keyWord(k)}`);
@@ -705,7 +742,7 @@ export function giftAll(state) {
     if (!(q > 0)) continue;
     if (ctx.kind === "visit") takeFromParty(ctx.p, k, q);
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) - q;
-    const tk = ctx.kind === "caravan" ? k : poolKey(k);
+    const tk = ctx.kind === "caravan" ? k : groupStockKey(k, f);
     theirSup[tk] = (theirSup[tk] || 0) + q;
   }
   for (const g of liveGear(t.offerGear, ctx.myGear)) moveItem(ctx.myGear, theirGear, g);

@@ -46,7 +46,7 @@ export const STEALTH = {
 };
 export const TAKEDOWN = { base: 30, stealth: 2.5, behind: 15, cover: 10, assassin: 20, staggering: -15, kit: { soldiers: -15, zealots: -5 } };
 const CLUB = { spikedbat: 20, pipespear: 5, spear: 5, knife: 10, machete: 10, sawmachete: 10, springmachete: 10, fists: 5, bat: 20, nailbat: 15, baton: 20, prybar: 15, fireaxe: 10, sledge: 10 }; // guns: a butt stroke, +5
-export const SUPPRESSIBLE = ["pistol", "huntrifle", "ar", "leverrifle", "carbine"];
+export const SUPPRESSIBLE = ["pistol", "huntrifle", "ar", "leverrifle", "carbine", "smg", "lmg", "dmr", "sniper"]; // the oil filter's calibres (gunmods.js: 9mm, 5.56, .308, .30-30), the roster's guns too
 // Keyed like GEAR (the item's throw field). radius / turns: the lure (unaware guards and the dead within radius go to
 // look); fx: what else happens where it lands (throwables.js); self: used where the unit stands; keep: not used up.
 // sense: what the dead hear or feel of it (decoys.js: each kind of dead follows its own senses); decoy: it keeps
@@ -149,7 +149,7 @@ export function stealthSetup(state, b) {
       const s = survivorById(state, u.sid);
       const tool = s && s.gear.tool;
       setLight(u, s);
-      u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")); // a thermal monocular sees in the dark like night vision (optics.js)
+      u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal; // a thermal monocular sees in the dark like night vision (optics.js); so does a thermal sight on the gun (gunmods.js)
       const t = s ? s.traits || [] : [];
       u.str = (t.includes("tough") ? 5 : 0) + (t.includes("brave") ? 5 : 0) - (t.includes("coward") ? 5 : 0);
       setSuppressor(u, s);
@@ -602,7 +602,7 @@ export function refitSenses(b, u, s) {
   if (!s) return;
   const tool = s.gear.tool;
   setLight(u, s);
-  u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal"));
+  u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal;
   if (u.daySight != null) u.sight = b.night && !u.nvg ? Math.min(u.daySight, nightSight(u)) : u.daySight;
   u.optic = battleOptic(s, b.night);
   setSuppressor(u, s);

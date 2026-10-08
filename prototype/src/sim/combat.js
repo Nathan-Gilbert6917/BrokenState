@@ -36,7 +36,7 @@ import { partyVehicle, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPG
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods } from "./inventory.js";
 import { areaSource, kitSource, spend } from "./itemcond.js";
-import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod } from "./loot.js";
+import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, splitParts } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
 import { tiredAim } from "./sleep.js"; // Tired or Exhausted from the watch
@@ -47,7 +47,7 @@ import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { refitSenses } from "./stealth.js";
-import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
+import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS, situationalAim } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
 import { drillAct } from "./defenceplan.js"; // a defence drill on the base's battle map
@@ -1803,6 +1803,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   let aim = a.aim + (w.aim || 0) + gm.aim;
   if (d > rg.opt && !a.noFall) aim -= (d - rg.opt) * rg.fall; // noFall: the Sniper perk (skills.js)
   if (d <= 2.5 && (w.close || gm.close)) aim += (w.close || 0) + gm.close;
+  if (gm !== NO_MODS) aim += situationalAim(b, a, d, gm); // gunmods.js: a bipod braced, a sling on the move, night sights and lights
   const flat = t.surprised || (!t.aware && t.side === "enemy");
   const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : t.gunner ? gunnerCover(b, t) : coverAgainst(b, t.x, t.y, ax, ay); // a turret's gunner: half cover (full behind plate x2)
   aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0) - (opts.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js); opts.pierce: an over-penetrating round through light cover (gunfire.js)
@@ -2545,7 +2546,7 @@ export function moveAlong(b, u, path) {
   bindDims(b);
   if (!path.length) return;
   if (u.brace) delete u.brace; // stepping away lets go of a braced door (buildingmaps.js)
-  u.movedT = b.turn; // moved this turn: a braced heavy weapon or a sniper rifle on the move (gunfire.js braceAim)
+  u.movedT = b.turn; // moved this turn: a braced heavy weapon or a sniper rifle on the move (gunfire.js braceAim); a bipod braces only a shooter who stood still (gunmods.js situationalAim)
   const from = [u.x, u.y];
   const walked = [];
   let burned = false;
@@ -4848,6 +4849,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
         if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
+      splitParts(state, sup, R.areas[box.area].type, `box${box.id}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
       for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(lootItem(key, src, rng));
       const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav, site); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);

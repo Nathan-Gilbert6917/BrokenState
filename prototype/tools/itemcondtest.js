@@ -22,7 +22,7 @@ import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { KITS, AREAS } from "../src/sim/combat.js";
 import { enemyBody, deadBodyFinds, allItems, lootItem, newItem, ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZBODY } from "../src/sim/inventory.js";
-import { rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS } from "../src/sim/loot.js";
+import { rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS, WARE_MODS, SITE_MODS, AREA_MODS, rollSiteMod } from "../src/sim/loot.js"; // WARE_MODS / SITE_MODS / AREA_MODS: the economy agent's parts
 import { truckLoot, TRUCK_LOOT } from "../src/sim/miltrucks.js";
 import { TRUCK_GEAR } from "../src/sim/data-guns.js"; // the roster's military guns in Army trucks (factoryfit.js rosterTruckGear, plan section 22)
 import { ensureWares, WARES, WARE_EXTRAS, gearSellPrice, gearBuyPrice } from "../src/sim/trade.js";
@@ -179,7 +179,7 @@ check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])
     const its = [];
     for (let w = 0; w < 25; w++) { st.hour = w * 168; its.push(...ensureWares(st, f, true)); }
     f.type = was;
-    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...paper(type)]));
+    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...paper(type)]));
   }
   st.hour = 0;
   const com = [];
@@ -199,9 +199,17 @@ section("4. No world-dice drift (against dev 75793c5; bodies' and trucks' keys a
 //   plan section 22) on hashes of the truck's rng position, never a draw, so only the keys changed.
 // Checked when re-taken: with KIT_PATCH taken back off KITS and the rosterTruckGear hook removed, both hashes come
 // out as dev 75793c5's (bodies 5cc93cfd8dbebeeb, trucks 537afeab97d1a43f), so the drift is the roster's items alone.
+// It moved again with the economy agent's parts (wave 1, C: loot.js AREA_MODS / WARE_MODS, visitors.js part kinds), for
+// three hashes, keys only (every new roll is on hash dice of its own, the world's dice end where they did):
+// - site finds: a raid container's gun-part roll that found nothing now rolls AREA_MODS (rollAreaGunmod -> rollAreaMod);
+// - group wares: a group's table gets WARE_MODS parts (gunmodWares -> modWares);
+// - merchants: a caravan's stock carries car parts, gun parts and electronics (three more stock keys).
+// Checked when re-taken: with every AREA_MODS and WARE_MODS chance at 0 and the three part kinds left out of the
+// merchants' stock count, the hashes come out as before (site finds dab86d9ad75a6877, group wares 0a732c1de196a889,
+// merchants 70e09d390ad58668).
 const BASE = {
   bodies: { keys: "917048c944387995", rng: 94849467201019 }, areaFinds: { keys: "4f69608bbca97f26", rng: 19566617580356 }, trucks: "ddd64fb55272735e",
-  siteFinds: "dab86d9ad75a6877", groupWares: { keys: "0a732c1de196a889", rng: 2670422955354 }, visitors: { keys: "3bdc366902700698", merchants: "70e09d390ad58668", rng: 12580090440502 },
+  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "8b17671c3192515c", rng: 2670422955354 }, visitors: { keys: "3bdc366902700698", merchants: "706e068b336b9d26", rng: 12580090440502 },
 };
 {
   const rng = new Rng(9001);
@@ -272,7 +280,7 @@ section("5. Merchants' specialities");
   for (let i = 0; i < 300; i++) { const v = V.spawnVisitor(w, "merchants"); if (!v) continue; (by[v.spec] = by[v.spec] || []).push(v); w.visitors.length = 0; }
   check(Object.keys(V.MERCHANT_SPECS).every((k) => (by[k] || []).length >= 20), `every speciality turns up (${Object.keys(V.MERCHANT_SPECS).map((k) => `${k} ${(by[k] || []).length}`).join(", ")})`);
   const blue = new Set(Object.keys(GEAR).filter((k) => GEAR[k].blueprint));
-  const mods = new Set(Object.keys(WARE_GUNMODS.merchants.items));
+  const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items)]);
   for (const [k, S] of Object.entries(V.MERCHANT_SPECS)) {
     const vs = by[k] || [];
     const allowed = new Set([...S.gear, ...S.books, ...V.MERCHANT_VALUABLES, ...blue, ...(k === "arms" || k === "general" ? mods : [])]);

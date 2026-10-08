@@ -22,6 +22,7 @@ import { survivorById, atBase, baseById } from "../sim/world.js";
 import { partyMembers } from "../sim/parties.js";
 import { worthTier } from "../sim/valuation.js";
 import { itemDur, itemDurMax } from "../sim/crafting.js"; // condition: item.dur of item.durMax (plan section 25)
+import { repairInfoAt, repairAt } from "../sim/repair.js"; // the Repair button: the base's bench queue, or a field kit on the road
 import { gunURL, anchorOf, platformOf, isGunKey, ART_W, ART_H } from "./gunart.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -150,8 +151,8 @@ export function statsOf(gun) {
   };
 }
 const avg = (d) => (d[0] + d[1]) / 2;
-// Condition as a bar: what is left (green to red), the uses lost off its maximum by repairs or a poor make as a darker
-// band at the end. "" for a gun that does not wear.
+// Condition as a bar: what is left (green to red), the uses lost off its maximum by repairs as a darker band at the end
+// (repair.js: item.durBase, the maximum before its first repair; else a new one's). "" for a gun that does not wear.
 export function conditionHtml(gun) {
   const d = GEAR[gun.key];
   const cur = itemDur(gun), max = itemDurMax(gun);
@@ -159,8 +160,8 @@ export function conditionHtml(gun) {
   const full = Math.max(d.dur, max);
   const f = cur / max;
   const col = f > 0.6 ? "var(--good)" : f > 0.3 ? "var(--accent)" : "var(--danger)";
-  const lost = Math.max(0, d.dur - max);
-  return `<tr${tip(`Condition: ${cur} of ${max} uses left${lost ? `; its maximum is down ${lost} from the ${d.dur} of a new one (repairs and a poor make wear the maximum down; it never comes back)` : ""}. A worn gun jams more often.`)}><td>Condition</td><td class="n" data-stat="cond" data-v="${cur}/${max}"><span class="gbcond"><b style="width:${r2((cur / full) * 100)}%;background:${col}"></b>${lost ? `<i style="left:${r2((max / full) * 100)}%;width:${r2((lost / full) * 100)}%"></i>` : ""}</span> ${cur}/${max}</td></tr>`;
+  const lost = Math.max(0, (gun.durBase ?? d.dur) - max);
+  return `<tr${tip(`Condition: ${cur} of ${max} uses left${lost ? `; its maximum is down ${lost} from the ${gun.durBase ?? d.dur} it had (repairs wear the maximum down; it never comes back)` : ""}. A worn gun jams more often.`)}><td>Condition</td><td class="n" data-stat="cond" data-v="${cur}/${max}"><span class="gbcond"><b style="width:${r2((cur / full) * 100)}%;background:${col}"></b>${lost ? `<i style="left:${r2((max / full) * 100)}%;width:${r2((lost / full) * 100)}%"></i>` : ""}</span> ${cur}/${max}</td></tr>`;
 }
 // [key, label, value text, number, better: 1 up / −1 down / 0, help]
 function rows(s) {
@@ -341,6 +342,7 @@ export function gunBuilderModal(state, ui) {
   const platName = DGM.PLATFORMS && DGM.PLATFORMS[plat] && DGM.PLATFORMS[plat].name;
   return `<div class="box wide gbbox">
     <div class="spread"><h1>Gun builder: ${esc(gun.name)}</h1><span class="muted">${esc(whereText(state, g.loc))}${platName ? ` · ${esc(platName)}` : ""}</span></div>
+    ${repairRow(state, g)}
     ${g.msg ? `<div class="result small">${esc(g.msg)}</div>` : ""}
     <div class="gbwrap">${img}<svg viewBox="0 0 ${V.W} ${V.H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${lines}</svg>${boxes}</div>
     <div class="gbcols"><div>${listHtml}</div>${statsHtml}</div>
@@ -372,6 +374,16 @@ function relocate(state, ui, gun) {
   g.loc = i >= 0 ? `${L.o}:${L.id}:list:${i}` : g.loc;
   if (ui.invSel === was) ui.invSel = g.loc;
 }
+// The Repair button (sim/repair.js): at a base the gun goes on the bench queue and is mended where it is; on the road a
+// field repair kit does it now. "" for a gun that cannot be repaired here at all.
+function repairRow(state, g) {
+  let r;
+  try { r = repairInfoAt(state, g.loc); } catch { return ""; }
+  if (!r || (!r.kind && !r.ok)) return "";
+  const queueable = r.base && (r.ok || (!r.who && /Craft role/.test(r.reason || "")));
+  const ok = queueable || (!r.base && r.ok);
+  return `<div class="row small" style="margin-top:0.4rem;gap:0.4rem"><button class="mini" data-action="gb-repair" ${ok ? "" : "disabled"}${tip(`${r.base ? "Repair at the bench" : "Field repair with a repair kit"}: ${r.preview || r.reason || ""}`)}>Repair${r.kind ? ` (max ${Math.round(r.oldMax)} → ${Math.round(r.newMax)})` : ""}</button>${ok ? "" : `<span class="muted">${esc(r.reason || "")}</span>`}</div>`;
+}
 export const GB_ACTIONS = {
   // d.loc: the gun; d.slot: open with that slot's list; d.sid: whose inventory.
   "gb-open": (state, ui, d) => {
@@ -391,6 +403,14 @@ export const GB_ACTIONS = {
     g.msg = fitPart(state, g.loc, d.slot || g.slot, d.part, g.sid);
     relocate(state, ui, gun);
     g.hover = null;
+  },
+  "gb-repair": (state, ui) => {
+    const g = ui.gunb;
+    if (!g || state.combat) return;
+    const gun = itemAt(state, g.loc);
+    if (!gun) return;
+    g.msg = repairAt(state, g.loc);
+    relocate(state, ui, gun);
   },
   "gb-strip": (state, ui, d) => {
     const g = ui.gunb;

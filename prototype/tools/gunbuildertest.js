@@ -115,20 +115,16 @@ const countOf = (html, re) => (html.match(re) || []).length;
   const overlap = lay.some((a) => lay.some((b) => a !== b && a.y === b.y && a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5));
   check(inside && !overlap && lay.filter((b) => b.top).length === 4, "eleven slots: top lane sight, mount, light, rail; the rest below; inside the window, none overlapping");
   check(lay.every((b) => b.top ? b.y + b.h <= V.IY : b.y >= V.IY + V.IMG_H), "boxes clear the drawing");
-  // Nesting: a part that opens slots (as the economy agent's mounts and rails do), registered here for the test.
-  GEAR.zzz_mount = { name: "Test scope mount", slot: "pack", small: true, weight: 0.1, value: 8, cat: "gunmod" };
-  GEAR.zzz_rail = { name: "Test rail", slot: "pack", small: true, weight: 0.2, value: 20, cat: "gunmod" };
-  GM.ATTACH.zzz_mount = { mount: "mount", short: "mount", fits: ["huntrifle"], adds: ["optic"] };
-  GM.ATTACH.zzz_rail = { mount: "rail", short: "rail", fits: ["ar"], adds: ["grip", "tactical"] };
-  try {
-    const rifle = makeItem("huntrifle");
+  // Nesting: a part that opens slots (the economy agent's scope mount on a lever-action, a quad rail on a Kalashnikov).
+  {
+    const rifle = makeItem("leverrifle");
     s.gear.weapon = rifle;
     const ui = {};
     GB.GB_ACTIONS["gb-open"](st, ui, { loc: `s:${s.id}:weapon` });
     const before = GB.slotsOf(rifle);
     const html0 = GB.gunBuilderModal(st, ui);
-    check(!before.includes("optic") && !/data-slot="optic"/.test(html0), `a hunting rifle without a mount has no sight slot (${before.join(", ")})`);
-    rifle.mods = { mount: GM.makeMod("zzz_mount") };
+    check(!before.includes("optic") && !/data-slot="optic"/.test(html0), `a lever-action without a mount has no sight slot (${before.join(", ")})`);
+    rifle.mods = { mount: GM.makeMod("scopemount") };
     const html1 = GB.gunBuilderModal(st, ui);
     const after = GB.slotsOf(rifle);
     check(after.includes("mount") && after.includes("optic") && after.indexOf("optic") > after.indexOf("mount"), `fitted, the mount opens a sight slot (${after.join(", ")})`);
@@ -137,15 +133,13 @@ const countOf = (html, re) => (html.match(re) || []).length;
     delete rifle.mods;
     const html2 = GB.gunBuilderModal(st, ui);
     check(!/data-slot="optic"/.test(html2) && countOf(html2, /<line /g) === GB.slotsOf(rifle).length, "the mount off: the sight slot goes with it");
-    const ar = makeItem("ar");
-    ar.mods = { rail: GM.makeMod("zzz_rail") };
+    const ar = makeItem("ak");
+    ar.mods = { rail: GM.makeMod("quadrail") };
     s.gear.weapon = ar;
     const html3 = GB.gunBuilderModal(st, ui);
     check(["grip", "tactical"].every((sl) => new RegExp(`<line class="nest" data-slot="${sl}"`).test(html3)) && countOf(html3, /<line /g) === GB.slotsOf(ar).length, "a rail opens a grip and a light slot, each with a dotted line");
     const w = GB.withPart(ar, "rail", null);
     check(!w.mods.rail && !w.mods.grip, "the stats without the rail drop what only it carried");
-  } finally {
-    delete GM.ATTACH.zzz_mount; delete GM.ATTACH.zzz_rail; delete GEAR.zzz_mount; delete GEAR.zzz_rail;
   }
 }
 
@@ -252,6 +246,25 @@ console.log("Entry points");
   check(uiSrc.indexOf('if (ui.gunb) return ["gunb"') > uiSrc.indexOf("if (state.combat) return state.gameOver"), "after the battle's line: never over a battle");
   check(/Object\.entries\(GB_ACTIONS\)/.test(mainSrc) && /Object\.entries\(GB_CHANGE\)/.test(mainSrc) && /data-gbhover/.test(mainSrc) && /if \(ui\.gunb\) \{/.test(mainSrc) && /!!ui\.gunb/.test(mainSrc), "main.js: its actions, the Ammo list, the hover, Esc and the paused clock");
   check(/gb-open/.test(uiSrc) && /<b>Gun builder:<\/b>/.test(GB.GUNBUILDER_HELP), "the base's Armory tab has the ⚙; the Help topic");
+}
+
+// The Repair button (sim/repair.js repairInfoAt / repairAt): a worn gun in the armory, the bench queue.
+console.log("Repair");
+{
+  const { st, h, s } = world();
+  const gun = makeItem("ar");
+  gun.dur = Math.max(1, Math.round(gun.dur * 0.4));
+  h.armory.push(gun);
+  const loc = `armory:${h.id}:list:${h.armory.indexOf(gun)}`;
+  const ui = {};
+  GB.GB_ACTIONS["gb-open"](st, ui, { loc, sid: s.id });
+  const html = GB.gunBuilderModal(st, ui);
+  const { repairInfoAt } = await import("../src/sim/repair.js");
+  const r = repairInfoAt(st, loc);
+  check(/data-action="gb-repair"/.test(html) && (r.ok || r.reason), `a worn gun: the Repair button (${r.ok ? "ok" : r.reason})`);
+  const q0 = (h.gearRepairs || []).length;
+  GB.GB_ACTIONS["gb-repair"](st, ui, {});
+  check(typeof ui.gunb.msg === "string" && ui.gunb.msg.length > 0 && (!r.ok || (h.gearRepairs || []).length === q0 + 1), `pressed: the sim's answer ("${ui.gunb.msg}")`);
 }
 
 function itemAtLoc(st, loc) { const L = loc.split(":"); return L[0] === "armory" ? st.bases.find((b) => b.id === Number(L[1])).armory[Number(L[3])] : null; }

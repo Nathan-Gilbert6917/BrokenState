@@ -16,6 +16,7 @@ export const ASK_KINDS = {
   breakdown: "breaking gear down for firewood", rob: "robbing a caravan or merchants", war: "joining or leaving a war",
   expel: "expelling a coalition member", giveup: "giving up a job", endroute: "ending a trade route",
   delrun: "deleting a supply run", delrole: "deleting a work role", clearcrop: "digging a growing crop under",
+  stripv: "stripping a vehicle for parts", salvage: "taking gear apart for parts",
 };
 
 let OPT = null, SAVE = null; // the options and their save (main.js initConfirm); without them (headless tools) every kind asks
