@@ -363,13 +363,21 @@ export function breakdownsDaily(state) {
     // Builders kept on upkeep (s.upkeep) mend whether or not a building is queued; the rest only with nothing to build.
     const menders = atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed && (onUpkeep(state, base, s) || !base.construction.length));
     if (menders.length || cleaners > 0) {
-      let pts = menders.reduce((a, s) => a + WEAR.upkeep * workFactor(s), 0) + cleaners;
-      for (const fx of [...list].filter((f) => !f.broken).sort((a, b) => (b.wear || 0) - (a.wear || 0))) {
-        if (pts <= 0) break;
-        const cut = Math.min(pts, fx.wear || 0);
-        fx.wear -= cut;
-        pts -= cut;
-      }
+      const share = (s) => WEAR.upkeep * workFactor(s);
+      // The hands kept on upkeep see to the wells and the pump first (thirst kills fastest), the rest goes to the most worn.
+      const keep = menders.filter((s) => onUpkeep(state, base, s)).reduce((a, s) => a + share(s), 0);
+      let pts = menders.filter((s) => !onUpkeep(state, base, s)).reduce((a, s) => a + share(s), 0) + cleaners;
+      const mend = (fxs, budget) => {
+        for (const fx of fxs.filter((f) => !f.broken).sort((a, b) => (b.wear || 0) - (a.wear || 0))) {
+          if (budget <= 0) break;
+          const cut = Math.min(budget, fx.wear || 0);
+          fx.wear -= cut;
+          budget -= cut;
+        }
+        return budget;
+      };
+      pts += mend(list.filter(isWaterFixture), keep);
+      mend(list, pts);
     }
     // Parked vehicles in the frost.
     if (wx && wx.lo <= -3) for (const v of vehiclesAtBase(state, base.id)) v.condition = Math.max(1, v.condition - (wx.key === "blizzard" ? WEAR.vehicleBlizzard : WEAR.vehicleFrost));

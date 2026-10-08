@@ -1737,8 +1737,8 @@ function threatAt(state, base) {
 // are plain Roles. Roles the governor does not plan (teaching, reading: skills.js) are always left as they are.
 // teach / read (skills.js planStudy) belong to "roles": without them every reader counted as pinned and kept reading for good.
 // The farm crew (planRoles): extra = the ideal crew's multiple put on the plots while food is short (it was every
-// day food was not plentiful).
-const FARM_AP = { extra: 1.6 };
+// day food was not plentiful); share = the most of the people here on the plots while the food is comfortable.
+export const FARM_AP = { extra: 1.6, share: 0.35 };
 const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
@@ -1811,8 +1811,16 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // 2. Farming (farming.js): crops take days to ripen, and more and better farmers per plot give a bigger
   // harvest. Enough farmers for the plots in use (the "ideal" crew when food is short).
   let farmers = people.filter((s) => byPriority(s) && s.role === "farm").length; // farmers by priorities count too (farmShort)
-  const farmTo = (target) => {
+  // While the food is comfortable (at its target, the winter stores covered) the crew is capped at FARM_AP.share of the
+  // people here, however many plots there are: the plots' own "need" crew (0.6 a plot) took every hand once the farm
+  // plots had grown past the people (2026-10-08: 30 plots for 10-14 people, 85% of the colonist-days on Farm with 130+
+  // days of food in store). A plot nobody tends still gives 55% (farming.js tendMult), so the plots are all sown
+  // anyway; short of food the cap is off and the crew grows as before.
+  const comfy = foodDays >= Math.max(15, foodTarget(state, base)) && winterShort(state, base) <= 0;
+  const farmCap = comfy ? Math.max(1, Math.ceil(people.length * FARM_AP.share)) : Infinity;
+  const farmTo = (want) => {
     if (!areas.food) return;
+    const target = Math.min(want, farmCap);
     for (const s of ranked("farm", (x) => skill(x, "farming"), (x) => !x.inBed)) {
       if (farmers >= target) break;
       farmers++;
@@ -2194,6 +2202,12 @@ function buildWishes(state, base) {
   if (people + (isHub ? 1 : 0) > beds) out.push(...housingWishes(state, base, `${people} people for ${beds} beds`, true));
   // An outpost of a hub that has outgrown its plots gets its beds ahead of the people sent to it (planSupplyRuns).
   else if (!isHub && cramped && !isShelter(base) && people + HOUSING.ahead > beds) out.push(...housingWishes(state, base, "room for people from the crowded hub", true));
+  // A hub with no river near (GROWTH_WATER): its wells are what it can grow to, so both go up right after the first
+  // beds, from a bare start on (saved for once there is the part), and the rain catchers once the wells are in.
+  if (isHub && !isShelter(base) && !GROWTH_WATER.river(state, base)) {
+    if (countAll(base, "well") + queued("well") < BUILDINGS.well.max) add("well", "no river near: the hub grows only as far as its wells carry it", (st.parts || 0) >= (BUILDINGS.well.cost.parts || 0));
+    else if (count(base, "rain_catcher") + queued("rain_catcher") < BUILDINGS.rain_catcher.max && (st.scrap || 0) >= BUILDINGS.rain_catcher.cost.scrap + 10) add("rain_catcher", "no river near: rain for the summer");
+  }
   // Water first when it runs short (economy.js): cheap rain catchers, then wells; cisterns once it overflows.
   const wo = waterOutlook(state, base);
   const wDays = wo.net >= 0 ? Infinity : wo.daysLeft;

@@ -5,15 +5,16 @@
 //      they sell, the tribute they pay);
 //   2. a broken well or pump waiting for scrap: a spare gun is taken apart for its scrap the hour before the repairs
 //      start, and scrap is wanted hard (needs) while it still waits;
-//   3. upkeep hands at a big hub (UPKEEP_CREW): one or two builders kept on upkeep mend the wells whether or not a
-//      building is queued, add nothing to the construction, the mark is ignored once the base is not governed, and it
+//   3. upkeep hands at a big hub (UPKEEP_CREW): one or two builders kept on upkeep mend the wells (water first) whether
+//      or not a building is queued, add nothing to the construction, the mark is ignored once the base is not governed, and it
 //      survives a save;
 //   4. the newcomer rule (roomAt): no newcomers past what a hub without a river can drink from its wells and rain
 //      (GROWTH_WATER), fewer while the winter outlook is short;
-//   5. the farm crew (FARM_AP): with the food at its target only the plots' "need" crew farms; short of it, more.
+//   5. the farm crew (FARM_AP): with the food at its target the plots' "need" crew farms, at most FARM_AP.share of the
+//      people however many plots there are; short of it, more.
 // Usage: node tools/autosafetytest.js [seed]
 import { createWorld, hub, atBase, residents, makeSurvivor, hourOfDay } from "../src/sim/world.js";
-import { setAutopilot, safetyAI, UPKEEP_CREW, GROWTH_WATER } from "../src/sim/autopilot.js";
+import { setAutopilot, safetyAI, UPKEEP_CREW, GROWTH_WATER, FARM_AP } from "../src/sim/autopilot.js";
 import { PAYOUT, payoutFloor, payoutSpare, payoutBreaks, groupPayoutSpare, foodUse, mouthsAt } from "../src/sim/upkeep.js";
 import { available } from "../src/sim/trade.js";
 import { raidAnswer } from "../src/sim/groupcare.js";
@@ -119,7 +120,8 @@ const grow = (st, base, n) => { while (residents(st, base.id).length < n) addPer
     grow(st, h, UPKEEP_CREW.from + 2);
     Object.assign(h.stock, { food: 2000, water: 400, scrap: 200, parts: 20 });
     addBuilding(h, "well");
-    for (const fx of fixtures(h)) fx.wear = 50;
+    addBuilding(h, "storehouse"); // a fixture nobody operates (a still would be staffed in one world only)
+    for (const fx of fixtures(h)) { fx.wear = fx.type === "storehouse" ? 70 : 50; fx.built = 1; } // built: not the holdout's starting wear (breakdowns.js)
     queueBuild(st, h, "bunkhouse");
     return { st, h };
   };
@@ -138,10 +140,10 @@ const grow = (st, base, n) => { while (residents(st, base.id).length < n) addPer
   const other = make();
   for (const s of atBase(other.st, other.h.id)) { s.role = "rest"; delete s.upkeep; }
   breakdownsDaily(st); breakdownsDaily(other.st);
-  const worst = (b) => Math.max(...fixtures(b).map((fx) => fx.wear || 0));
   const sum = (b) => fixtures(b).reduce((a, fx) => a + (fx.wear || 0), 0);
   check(sum(h) < sum(other.h) - 1, `upkeep with a build queued takes wear off (${sum(h).toFixed(1)} against ${sum(other.h).toFixed(1)})`);
-  check(worst(h) <= worst(other.h), "the most worn first");
+  const of = (b, t) => fixtures(b).find((fx) => fx.type === t).wear;
+  check(of(h, "storehouse") === of(other.h, "storehouse") && of(h, "pump") + of(h, "well") < of(other.h, "pump") + of(other.h, "well") - 1, `the upkeep hand mends the well and the pump first, before a more worn storehouse roof (roof ${of(h, "storehouse").toFixed(1)}, well ${of(h, "well").toFixed(1)} against ${of(other.h, "well").toFixed(1)})`);
   // Saved and loaded: the mark stays.
   const back = loadFromString(saveToString(st, { dropCards: true }));
   check(back.survivors.find((s) => s.id === m.id).upkeep === true, "the mark survives a save");
@@ -186,7 +188,10 @@ const grow = (st, base, n) => { while (residents(st, base.id).length < n) addPer
   h.stock.food = 20 * 400; h.stock.preserved = 0;
   safetyAI.planRoles(st, h);
   const fw = farmersWanted(st, h);
-  check(fw.need > 0 && farmersAt() <= fw.need, `food far above its target: the plots' need crew only (${farmersAt()} of ${fw.need} need / ${fw.ideal} ideal)`);
+  check(fw.need > 0 && farmersAt() <= Math.min(fw.need, Math.ceil(20 * FARM_AP.share)), `food far above its target: the plots' need crew, at most ${Math.round(FARM_AP.share * 100)}% of the people (${farmersAt()} of ${fw.need} need / ${fw.ideal} ideal)`);
+  for (let i = 0; i < 8; i++) addBuilding(h, "farm_plot"); // more plots than people
+  safetyAI.planRoles(st, h);
+  check(farmersAt() <= Math.ceil(20 * FARM_AP.share) && farmersWanted(st, h).need > Math.ceil(20 * FARM_AP.share), `more plots than hands: still at most ${Math.ceil(20 * FARM_AP.share)} farmers while food is comfortable (${farmersAt()}, the plots' need ${farmersWanted(st, h).need})`);
   h.stock.food = 20 * 6;
   safetyAI.planRoles(st, h);
   check(farmersAt() >= Math.min(fw.ideal, 20 - 4), `food short: the ideal crew and more (${farmersAt()})`);
