@@ -307,7 +307,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   stow(s, newItem("reddot"));
   h.armory.push(newItem("pistolcan"), newItem("riflecan"), newItem("choke"));
   const gunLoc = `s:${s.id}:weapon`;
-  const choices = modChoices(st, gunLoc, s.id).map((c) => c.item.key).sort();
+  const choices = modChoices(st, gunLoc, s.id).map((c) => c.item.key).filter((k) => !GEAR[k].mag).sort(); // (the hub's spare magazines fit too: carrykit.js starterMags)
   check(choices.join() === "pistolcan,reddot", `only fitting parts within reach are offered (${choices.join(", ")})`);
   const dotLoc = modChoices(st, gunLoc, s.id).find((c) => c.item.key === "reddot").loc;
   const msg = fitModAt(st, gunLoc, dotLoc);
