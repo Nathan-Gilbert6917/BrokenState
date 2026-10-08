@@ -23,6 +23,7 @@ import { launchExpedition, partyTile, planPath, removeParty } from "../src/sim/p
 import { recomputeOwnership, factionsDaily } from "../src/sim/factions.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { crashes } from "../src/sim/crashes.js";
+import { convoys } from "../src/sim/miltrucks.js";
 import {
   AISCAV, FACTION_MAKE, aiScav, aiScavDaily, sendParty, scavArrived, scavSearchHour, bestSite, groupNeeds, lootBand, LOOT_BANDS,
   siteFull, siteLootTotal, landSites, driveOff, haulFor,
@@ -257,7 +258,9 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   // hardcore-groups.js: the military base overrun in hardcore leaves its armory behind (once, when it falls).
   // hardcore-loot.js: a hardcore world starts with twice the loot (set once when the world is made) and the surplus only
   // fades. citycrawl.js: a crawl's searches lower the city tile's loot (Math.max(floor, loot - ...)), like a raid.
-  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js", "hardcore-groups.js", "hardcore-loot.js", "citycrawl.js"];
+  // miltrucks.js: the abandoned Army convoy is an event site like a crash: it appears with its loot, a group that
+  // reaches it strips it (× CONVOY.stripKeep) and when it burns out the tile is back to its old loot (c.prevLoot).
+  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js", "hardcore-groups.js", "hardcore-loot.js", "citycrawl.js", "miltrucks.js"];
   check([...setters].every((n) => allowed.includes(n)), `only ${allowed.join(", ")} set tile.loot outright (found: ${[...setters].join(", ")})`);
   check(takers.has("aiscav.js"), `the groups' scavenging only takes from it (-= in ${[...takers].join(", ")})`);
   check(adds === 0, "nothing adds to it or scales it (+=, *=, /=)");
@@ -268,9 +271,9 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   let rises = 0, crashRises = 0, falls = 0, worst = null;
   let prev = st.tiles.map((t) => t.loot);
   while (day(st) <= runDays && !st.gameOver) {
-    const crashTiles = new Set(crashes(st).map((c) => c.tile));
+    const crashTiles = new Set([...crashes(st), ...convoys(st)].map((c) => c.tile)); // event sites: crashes and Army convoys
     tickHour(st);
-    for (const c of crashes(st)) crashTiles.add(c.tile);
+    for (const c of [...crashes(st), ...convoys(st)]) crashTiles.add(c.tile);
     for (let i = 0; i < st.tiles.length; i++) {
       const v = st.tiles[i].loot;
       if (v > prev[i] + 1e-12) {
@@ -280,11 +283,13 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
     }
     prev = st.tiles.map((t) => t.loot);
   }
-  check(rises === 0, `no tile's loot rose in ${runDays} days except on crash sites (${crashRises} rises there: a wreck appearing; ${falls} falls)${worst ? `; first: ${worst}` : ""}`);
+  check(rises === 0, `no tile's loot rose in ${runDays} days except on crash and convoy sites (${crashRises} rises there: a wreck or a convoy appearing; ${falls} falls)${worst ? `; first: ${worst}` : ""}`);
   check(crashes(st).length > 0, `crash sites came and went (${crashes(st).length})`);
   // A burned-out wreck leaves the tile as it was before it came down, never more.
   const gone = crashes(st).filter((c) => c.gone);
   check(gone.length > 0 && gone.every((c) => st.tiles[c.tile].loot <= (c.prevLoot ?? 0) + 1e-12 || st.tiles[c.tile].loc?.crash), `a wreck gone: its tile back to (at most) its old loot (${gone.length})`);
+  const cvGone = convoys(st).filter((c) => c.gone);
+  check(cvGone.every((c) => st.tiles[c.tile].loot <= (c.prevLoot ?? 0) + 1e-12 || st.tiles[c.tile].loc), `a convoy burned out: its tile back to (at most) its old loot (${cvGone.length} of ${convoys(st).length})`);
 
   // The base's surroundings: down with scavengers, never back up.
   const s2 = world(11);
