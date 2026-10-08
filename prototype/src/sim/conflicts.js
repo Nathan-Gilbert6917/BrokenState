@@ -1195,8 +1195,10 @@ function onConflictCombat(state, result, setup) {
   } else {
     lines.push(`You lost the fight and scattered.`);
     if (f && c.enemy.kind !== "zombies") {
+      // A trade caravan of yours (caravans.js) loses its whole load (caravanraids.js), and a share of the rest.
+      const load = p.caravan ? rob(state, p, 1, f, true, true) : "";
       const lost = rob(state, p, 0.4, f);
-      lines.push(`They took ${lost}.`);
+      lines.push(`They took ${load && load !== "nothing much" ? `the whole load (${load}) and ` : ""}${lost}.`);
       const members = partyMembers(state, p);
       if (members.length && rng.chance(0.35)) {
         const s = rng.pick(members);

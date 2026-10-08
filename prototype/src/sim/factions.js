@@ -72,6 +72,7 @@ import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { groupWorksDaily, fieldsFactor, growthFactor, workshopFactor, storeFactor, groupBaseDefence } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids
+import { escortParty } from "./caravans.js"; // a convoy's guards (escorts.js)
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -387,7 +388,9 @@ export function factionsDaily(state) {
       const partners = state.factions.filter((o) => o.alive && o !== f && !isAggressiveType(o));
       if (partners.length) {
         const to = rng.pick(partners);
-        spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
+        const q = spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
+        // caravans.js escortParty: what it carries (the 10 food and 10 scrap it delivers) is worth a token guard to them.
+        if (q) { q.goods = { supplies: { food: 10, scrap: 10 }, gear: [] }; escortParty(state, f, q, q.goods); }
       }
     }
 

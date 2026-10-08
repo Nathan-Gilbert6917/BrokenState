@@ -93,7 +93,7 @@ section("The rescue raid's map: the cell, its lock, the jailer, the armory, your
   const R = b.rescue;
   check(R.tier === "makeshift" && R.doors.some((d) => d.area === "cell" && d.diff === 1), `raiders keep them in a chain-link cage (difficulty 1): ${R.tier}`);
   const caps = capUnits(b);
-  check(caps.length === 2 && caps.every((u) => u.bound && !active(u) && u.weapon === "fists"), "both captives are on the map, tied up and unarmed");
+  check(caps.length === 2 && caps.every((u) => u.tied && !active(u) && u.weapon === "fists"), "both captives are on the map, tied up and unarmed");
   check(caps.every((u) => R.cell.cells.some(([x, y]) => x === u.x && y === u.y)), "inside the cell");
   check(R.doors.filter((d) => d.area === "cell").every((d) => b.cells[d.y * b.w + d.x].k === "door"), "the cell's doors are locked");
   const j = unitById(b, R.jailer);
@@ -118,8 +118,8 @@ section("Captives escape on their own: the ropes, a pin, the lock");
   // Nobody sees the cell (the guards look away): the ropes, until free.
   for (const g of b.units.filter((x) => x.side === "enemy")) g.x = g.x; // as placed
   let tries = 0;
-  while (u.bound && tries < 30) { u.ap = 2; combatAct(st, { type: "rescue", unit: u.id, op: "ropes" }); tries++; }
-  check(!u.bound && active(u), `a captive works free of the ropes (${tries} tries at ${Math.round(RR.ropeOdds(st, b, u) * 100)}%)`);
+  while (u.tied && tries < 30) { u.ap = 2; combatAct(st, { type: "rescue", unit: u.id, op: "ropes" }); tries++; }
+  check(!u.tied && active(u), `a captive works free of the ropes (${tries} tries at ${Math.round(RR.ropeOdds(st, b, u) * 100)}%)`);
   // Pick the lock: odds with and without a tool.
   const d = b.rescue.doors.find((x) => x.area === "cell");
   const bare = RR.pickOdds(st, b, u, d).chance;
@@ -163,7 +163,7 @@ section("The jailer's keys: a captive downs him bare-handed, takes the keys, fre
   b.phase = "player";
   const R = b.rescue;
   const [u, v, w] = capUnits(b);
-  u.bound = false;
+  u.tied = false;
   const j = unitById(b, R.jailer);
   // Out of the cell next to the jailer (as if the door had been picked), and he goes down.
   const d = R.doors.find((x) => x.area === "cell");
@@ -183,7 +183,7 @@ section("The jailer's keys: a captive downs him bare-handed, takes the keys, fre
   move(st, b, u, v.x + (b.cells[v.y * b.w + v.x + 1] && !b.units.some((o) => o.x === v.x + 1 && o.y === v.y) ? 1 : -1), v.y);
   u.ap = 2;
   const e1 = combatAct(st, { type: "rescue", unit: u.id, op: "cut", target: v.id });
-  check(e1 === "" && !v.bound && active(v), `a freed captive cuts another loose${e1 ? `: ${e1}` : ""}`);
+  check(e1 === "" && !v.tied && active(v), `a freed captive cuts another loose${e1 ? `: ${e1}` : ""}`);
   st.combat = null; browser(false);
 }
 
@@ -199,7 +199,7 @@ section("Weapons: off a downed guard's body, and out of their armory (gone from 
   b.phase = "player";
   const R = b.rescue;
   const u = capUnits(b)[0];
-  u.bound = false;
+  u.tied = false;
   const g = b.units.find((x) => x.side === "enemy" && !x.cellKey && x.weapon !== "fists" && GEAR[x.weapon]);
   g.dead = true; g.hp = 0;
   move(st, b, u, g.x + 1, g.y);
@@ -235,7 +235,7 @@ section("Weapons: off a downed guard's body, and out of their armory (gone from 
   check(b2.rescue.armory && b2.rescue.armory.items.length === 3 && b2.rescue.armory.items.includes(f2.arsenal.items[0]), "an arsenal's own items are on the rack");
   for (const d of b2.rescue.doors.filter((x) => x.area === "armory")) { d.open = true; b2.cells[d.y * b2.w + d.x].k = "odoor"; }
   const u2 = capUnits(b2)[0];
-  u2.bound = false;
+  u2.tied = false;
   const A2 = b2.rescue.armory;
   const r2 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].map(([dx, dy]) => [A2.x + dx, A2.y + dy]).find(([x, y]) => !["wall", "window", "door", "locker", "bars", "fence"].includes(b2.cells[y * b2.w + x].k));
   move(st2, b2, u2, r2[0], r2[1]);
@@ -246,7 +246,7 @@ section("Weapons: off a downed guard's body, and out of their armory (gone from 
   st.combat = b;
   const s0 = survivorById(st, u.sid);
   const gear = s0.gear.weapon;
-  for (const x of b.units.filter((o) => o.side === "player")) { x.left = true; x.bound = false; }
+  for (const x of b.units.filter((o) => o.side === "player")) { x.left = true; x.tied = false; }
   b.units.filter((o) => o.side === "enemy").forEach((o) => { o.dead = true; });
   autoPlayerTurn(st);
   if (st.combat === b && b.over) closeCombat(st);
@@ -269,7 +269,7 @@ section("Guards: the alarm, retaking the armory, recapturing a downed or cornere
   // Someone of yours at the armory, the alarm up: the guards go to retake it.
   for (const d of R.doors.filter((x) => x.area === "armory")) { d.open = true; b.cells[d.y * b.w + d.x].k = "odoor"; }
   const u = capUnits(b)[0];
-  u.bound = false;
+  u.tied = false;
   const s = survivorById(st, u.sid);
   const ring = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].map(([dx, dy]) => [A.x + dx, A.y + dy]).find(([x, y]) => !["wall", "window", "door", "locker", "bars", "fence"].includes(b.cells[y * b.w + x].k) && !b.units.some((o) => o.x === x && o.y === y));
   move(st, b, u, ring[0], ring[1]);
@@ -287,7 +287,7 @@ section("Guards: the alarm, retaking the armory, recapturing a downed or cornere
   g.x = spot[0]; g.y = spot[1];
   combatAct(st, { type: "end" });
   runEnemyPhase(st);
-  check(u.bound && !u.down && !s.gear.weapon && R.cell.cells.some(([x, y]) => x === u.x && y === u.y), "a downed armed captive is taken back: stripped and tied up in the cell again");
+  check(u.tied && !u.down && !s.gear.weapon && R.cell.cells.some(([x, y]) => x === u.x && y === u.y), "a downed armed captive is taken back: stripped and tied up in the cell again");
   check(RR.groupArmory(st, f).includes(took) && R.armory.items.includes(took), "the stripped weapon goes back to their armory");
   check(RR.groupArmory(st, f).length === count0 && before < count0, `their stock is whole again (${count0} → ${before} → ${RR.groupArmory(st, f).length})`);
   // The armory retaken: a guard walks there, re-arms if he can and posts himself.
@@ -304,14 +304,14 @@ section("Guards: the alarm, retaking the armory, recapturing a downed or cornere
   const b2 = st2.combat;
   b2.phase = "player";
   const v = capUnits(b2)[0];
-  v.bound = false; v.hp = 20;
+  v.tied = false; v.hp = 20;
   const mates2 = b2.units.filter((x) => x.side === "player" && !x.captive);
   for (const m of mates2) { m.x = 0; m.y = 0; }
   const near = [];
   for (let y = 0; y < b2.h && near.length < 3; y++) for (let x = 0; x < b2.w && near.length < 3; x++) if (Math.max(Math.abs(x - v.x), Math.abs(y - v.y)) <= 2 && (x !== v.x || y !== v.y) && !b2.units.some((o) => o.x === x && o.y === y)) near.push([x, y]);
   b2.units.filter((x) => x.side === "enemy").slice(0, 3).forEach((g2, i) => { g2.x = near[i][0]; g2.y = near[i][1]; g2.aware = true; });
   let gave = false;
-  for (let i = 0; i < 20 && !gave; i++) { RR.rescueRound(st2, b2); gave = v.bound; }
+  for (let i = 0; i < 20 && !gave; i++) { RR.rescueRound(st2, b2); gave = v.tied; }
   check(gave, "hurt, alone and surrounded by three guards, a captive gives up and is tied up again");
   st.combat = null; st2.combat = null; browser(false);
 }
@@ -572,7 +572,7 @@ section("The betrayal ambush at the handover: about 15% with an even team, less 
   browser(true);
   pick(bc, /^Fight/).resolve(s3);
   const b = s3.combat;
-  check(!!b && b.rescue && b.rescue.kind === "road" && capUnits(b).length === 1 && capUnits(b)[0].bound && b.setup.ambush === "enemy", "a battle on the road: they have the drop on you, the captive tied up behind their line");
+  check(!!b && b.rescue && b.rescue.kind === "road" && capUnits(b).length === 1 && capUnits(b)[0].tied && b.setup.ambush === "enemy", "a battle on the road: they have the drop on you, the captive tied up behind their line");
   const cargo0 = Object.values(q3.cargo.supplies).reduce((x, y) => x + y, 0);
   const fought = playOut(s3, 60);
   browser(false);
@@ -657,10 +657,92 @@ section("Save round-trip: a deal, a return, a rescue raid mid-battle");
   const st2 = deserializeState(serializeState(st));
   const b2 = st2.combat;
   check(RS.dealsOf(st2).length === RS.dealsOf(st).length && RS.dealsOf(st2)[0].tile === RS.dealsOf(st)[0].tile, "the deal survives a save");
-  check(b2 && b2.rescue && b2.rescue.doors.length === b.rescue.doors.length && capUnits(b2).length === capUnits(b).length && capUnits(b2).every((u) => u.bound), "the rescue raid survives a save, captives tied up");
+  check(b2 && b2.rescue && b2.rescue.doors.length === b.rescue.doors.length && capUnits(b2).length === capUnits(b).length && capUnits(b2).every((u) => u.tied), "the rescue raid survives a save, captives tied up");
   check(b2.rescue.armory && b2.rescue.armory.items.length === b.rescue.armory.items.length, "and its armory");
   const end = playOut(st2, 40);
   check(end.over, "the loaded raid plays to its end");
+  browser(false);
+}
+
+section("No blows across a wall's corner (combat.js cornerBlocked: the player's Melee, the battle AI, the rescue reach)");
+{
+  const st = world(seed + 170);
+  const f = raiders(st);
+  captive(st, f);
+  const p = teamAt(st, f, 1);
+  browser(true);
+  RR.startRescueRaid(st, p, f, "assault");
+  const b = st.combat;
+  b.phase = "player";
+  const me = b.units.find((u) => u.side === "player" && !u.captive);
+  const foes = b.units.filter((u) => u.side === "enemy");
+  const g = foes[0];
+  for (const o of foes.slice(1)) { o.dead = true; o.hp = 0; } // one guard left, the field otherwise quiet
+  for (const o of capUnits(b)) { o.x = 0; o.y = 0; }
+  // A clear 3 × 3 patch of open ground, then a wall corner between the two.
+  let at = null;
+  for (let y = 2; y < b.h - 3 && !at; y++) for (let x = 2; x < b.w - 3 && !at; x++) {
+    let ok = true;
+    for (let dy = -1; dy <= 2 && ok; dy++) for (let dx = -1; dx <= 2 && ok; dx++) { const c = b.cells[(y + dy) * b.w + x + dx]; ok = c.k === "open" && !(c.h > 0); }
+    if (ok) at = [x, y];
+  }
+  const [x, y] = at;
+  me.x = x; me.y = y; g.x = x + 1; g.y = y + 1;
+  g.weapon = "machete"; g.weaponName = "Machete"; g.aware = true; g.hp = g.maxHp;
+  const W2 = (k1, k2) => { b.cells[y * b.w + x + 1].k = k1; b.cells[(y + 1) * b.w + x].k = k2; if (b.losCache) b.losCache.fill(0); };
+  W2("wall", "wall");
+  me.ap = 2;
+  const e = combatAct(st, { type: "melee", unit: me.id, target: g.id });
+  check(/corner/.test(e) && me.ap === 2 && !(await import("../src/sim/combat.js")).meleeReach(b, me, g), `diagonally past two walls: no blow (${e})`);
+  W2("idoor", "wall");
+  check(/corner/.test(combatAct(st, { type: "melee", unit: me.id, target: g.id })), "a wall and a closed door: still no blow");
+  W2("crate", "sandbag");
+  check((await import("../src/sim/combat.js")).meleeReach(b, me, g), "low cover (crates, sandbags) does not block a blow");
+  W2("open", "wall");
+  me.ap = 2;
+  const e2 = combatAct(st, { type: "melee", unit: me.id, target: g.id });
+  check(e2 === "" && me.ap === 0, `one side open: the blow lands or misses (${e2 || "struck"})`);
+  // The AI: a guard with a machete across the corner does not strike through it.
+  W2("wall", "wall");
+  me.hp = me.maxHp; me.ap = 0; me.ow = false;
+  const hp0 = me.hp;
+  const log0 = b.log.length;
+  combatAct(st, { type: "end" });
+  // Only the guard's own step (the rescue's guard logic and the usual AI).
+  for (let i = 0; i < 50 && b.phase === "enemy" && !b.over; i++) { const CB = await import("../src/sim/combat.js"); CB.enemyStep(st); }
+  const struck = b.log.slice(log0).some((l) => l.text.includes(`strikes ${me.name}`) || l.text.includes(`lunges at ${me.name}`));
+  const stayed = g.x === x + 1 && g.y === y + 1;
+  check(!(struck && stayed), `the guard does not strike across the corner (${struck ? "struck after moving" : "no blow"}, hp ${hp0} → ${me.hp})`);
+  st.combat = null;
+  browser(false);
+}
+
+section("One notion of tied: a captive, an enemy knocked out and tied, a teammate the guards tied");
+{
+  const CB = await import("../src/sim/combat.js");
+  check(!CB.active({ tied: true }) && CB.isTied({ tied: true }) && CB.active({}), "anyone tied is not active, whatever side");
+  const st = world(seed + 175);
+  const f = raiders(st);
+  captive(st, f);
+  const p = teamAt(st, f, 2);
+  browser(true);
+  RR.startRescueRaid(st, p, f, "assault");
+  const b = st.combat;
+  b.phase = "player";
+  const [m1, m2] = b.units.filter((u) => u.side === "player" && !u.captive);
+  // A teammate knocked out and tied by the guards: no ropes to work (out cold), cut loose by the other; still out cold.
+  m2.x = m1.x + 1; m2.y = m1.y;
+  if (b.units.some((o) => o !== m2 && o.x === m2.x && o.y === m2.y)) m2.y = m1.y + 1;
+  m2.down = true; m2.ko = true; m2.tied = true; m2.stab = true;
+  check(!RR.rescueOptions(st, b, m2).length, "knocked out and tied: no ropes to work");
+  m1.ap = 2;
+  const e = combatAct(st, { type: "rescue", unit: m1.id, op: "cut", target: m2.id });
+  check(e === "" && !m2.tied && m2.ko && m2.down, `cut loose, still out cold${e ? ` (${e})` : ""}`);
+  // An enemy tied up by your side is a prisoner, as before (stealth.js).
+  const g = b.units.find((u) => u.side === "enemy");
+  g.down = true; g.ko = true; g.tied = true;
+  check(!CB.active(g) && !RR.rescueOptions(st, b, m1).some((o) => o.op === "cut" && o.ok && /Raider|Guard/.test(o.tip)), "a tied enemy is nobody's to cut loose");
+  st.combat = null;
   browser(false);
 }
 
@@ -693,8 +775,8 @@ section("On screen: the captive's line on the People tab, the rescue buttons in 
   let ph = UC.renderCombatPanel(st);
   check(/Work the ropes/.test(ph) && /data-v="rescue:ropes"/.test(ph) && /Tied up \(captive\)/.test(ph) && !bad.test(text(ph)), "a tied captive's panel: Work the ropes");
   UC.combatAction(st, "cb-act", { v: "rescue:ropes" });
-  check(cu.ap === 1 || !cu.bound, "the button works the ropes (1 action)");
-  cu.bound = false; cu.ap = 2;
+  check(cu.ap === 1 || !cu.tied, "the button works the ropes (1 action)");
+  cu.tied = false; cu.ap = 2;
   UC.combatAction(st, "cb-sel", { id: cu.id });
   ph = UC.renderCombatPanel(st);
   check(/Search the cell/.test(ph) && /Cut free/.test(ph) && !bad.test(text(ph)), `free in the cell: Search the cell, Cut free${bad.test(text(ph)) ? ` (bad text: ${text(ph).match(bad)})` : ""}`);

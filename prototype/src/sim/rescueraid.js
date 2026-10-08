@@ -16,7 +16,7 @@
 // see less (combat.js b.dark). The first guard who notices anyone raises the alarm at his next move: everyone is
 // aware and the sleepers come out (ALARM).
 //
-// Your captives are your units from the start (combat.js u.captive), hurt and stripped, tied up (u.bound: not anyone's
+// Your captives are your units from the start (combat.js u.captive), hurt and stripped, tied up (u.tied: not anyone's
 // target and not one of your fighters until free). What anyone can do (combatAct "rescue", act.op; 1 action each):
 //   ropes   a captive works at the ropes: ROPES.base + ROPES.stealth a Stealth point + the tier's, 10–85%. A miss a
 //           guard can see raises the alarm and earns a beating (5–10).
@@ -48,7 +48,7 @@
 // search for a pin and pick the lock, go for the jailer's keys when he is alone, grab weapons, never stay cornered
 // alone (they make for a teammate), then make for the way out; the team goes for the cell, opens it (keys, picks,
 // force), cuts the ropes, then everyone evacuates.
-import { CELL, WEAPONS, KITS, active, unitAt, moveAlong, say, fx, playerUnit, refitUnit, reachable, pathTo, distField, canSee, adjacent, unitById, evacAt, combatAct, registerBattleLayout, registerBattleSize, registerCombatHandler, startCombat, enemyUnit, isRanged, loadMag } from "./combat.js";
+import { CELL, WEAPONS, KITS, active, isTied, cornerBlocked, meleeReach, unitAt, moveAlong, say, fx, playerUnit, refitUnit, reachable, pathTo, distField, canSee, adjacent, unitById, evacAt, combatAct, registerBattleLayout, registerBattleSize, registerCombatHandler, startCombat, enemyUnit, isRanged, loadMag } from "./combat.js";
 import { survivorById, skill, factionById, log, isNight, hub, addCard } from "./world.js";
 import { FACTION_TYPES, GEAR } from "./data.js";
 import { captivesOf, freeCaptive, settleRescue, isCaptive } from "./conflicts.js";
@@ -262,7 +262,7 @@ function addCaptives(state, b, ids, cells) {
     const s = survivorById(state, id);
     if (!s || !isCaptive(s)) continue;
     const u = playerUnit(b, s);
-    u.captive = true; u.bound = true;
+    u.captive = true; u.tied = true;
     u.fit = { aim: u.aim, dmgMult: u.dmgMult, armor: u.armor, medicine: u.medicine }; // refitUnit: weapons picked up count at once
     const spot = free.shift() || fallbackSpot(b, u);
     if (!spot) continue;
@@ -280,10 +280,11 @@ function fallbackSpot(b, u) {
 const Rof = (b) => b.rescue;
 export const rescueRefusal = (b, u) => `${first(u.name)} is tied up: work the ropes (Rescue), or have someone cut ${u.name.split(" ")[0]} free.`;
 const doorNear = (b, u, pred = () => true) => (Rof(b) ? Rof(b).doors.filter((d) => !d.open && cheb(u, d.x, d.y) <= 1 && pred(d)) : []);
-const bodyNear = (b, u) => b.units.filter((t) => t.side === "enemy" && t.kind === "human" && (t.dead || t.down || t.ko) && cheb(u, t.x, t.y) <= 1 && !t.off);
-const boundNear = (b, u) => b.units.filter((t) => t.captive && t.bound && !t.dead && t !== u && cheb(u, t.x, t.y) <= 1 && !doorBetween(b, u, t));
-// A locked door between two cells next to each other diagonally through the wall: no reaching through.
-const doorBetween = (b, a, t) => { const q = b.cells[t.y * b.w + a.x], r = b.cells[a.y * b.w + t.x]; return a.x !== t.x && a.y !== t.y && !(CELL[q.k].walk || CELL[r.k].walk); };
+const bodyNear = (b, u) => b.units.filter((t) => t.side === "enemy" && t.kind === "human" && (t.dead || t.down || t.ko) && cheb(u, t.x, t.y) <= 1 && !t.off && !cornerBlocked(b, u.x, u.y, t.x, t.y));
+// Anyone of yours tied up next to you: a captive, or a teammate the guards tied (knocked out or given up: nonlethal).
+const boundNear = (b, u) => b.units.filter((t) => t.side === "player" && isTied(t) && !t.dead && !t.left && t !== u && cheb(u, t.x, t.y) <= 1 && !doorBetween(b, u, t));
+// No reaching diagonally past a wall's corner (combat.js cornerBlocked, as for a blow).
+const doorBetween = (b, a, t) => cornerBlocked(b, a.x, a.y, t.x, t.y);
 const inCell = (b, u) => !!(Rof(b) && Rof(b).cell && Rof(b).cell.cells.some(([x, y]) => x === u.x && y === u.y));
 const armoryOpen = (b) => { const R = Rof(b); return !!(R && R.armory && !R.doors.some((d) => d.area === "armory" && !d.open)); };
 const hasKeys = (b, u) => Rof(b) && Rof(b).keyUnit === u.id;
@@ -312,7 +313,8 @@ export function rescueOptions(state, b, u) {
   if (!R || !u || u.side !== "player" || u.dead || u.left) return [];
   const out = [];
   const ap = u.ap || 0;
-  if (u.bound) {
+  if (isTied(u)) {
+    if (u.down) return out; // knocked out or given up as well: someone has to cut them loose
     out.push({ op: "ropes", label: "Work the ropes", tip: `1 action: ${Math.round(ropeOdds(state, b, u) * 100)}% to get free of the ropes. A miss a guard can see raises the alarm and earns a beating.`, ok: ap > 0 });
     return out;
   }
@@ -344,14 +346,15 @@ export function rescueAct(state, b, u, act) {
   const op = act.op;
   const s = survivorById(state, u.sid);
   const rng = b.rng;
-  if (u.bound && op !== "ropes") return rescueRefusal(b, u);
+  if (u.tied && op !== "ropes") return rescueRefusal(b, u);
   switch (op) {
     case "ropes": {
-      if (!u.bound) return "Not tied up.";
+      if (!isTied(u)) return "Not tied up.";
+      if (u.down) return "Knocked out: someone has to cut them loose.";
       const ch = ropeOdds(state, b, u);
       u.ap -= 1;
       if (rng.chance(ch)) {
-        u.bound = false;
+        u.tied = false;
         R.escapes++;
         if (s) gainXp(state, s, "stealth", 2);
         say(b, `${u.name} works free of the ropes (${Math.round(ch * 100)}%).`, "good");
@@ -370,8 +373,8 @@ export function rescueAct(state, b, u, act) {
     case "cut": {
       const t = act.target != null ? boundNear(b, u).find((x) => x.id === Number(act.target)) : boundNear(b, u)[0];
       if (!t) return "Stand next to someone tied up.";
-      t.bound = false;
-      t.ap = Math.max(t.ap || 0, b.phase === "player" ? 1 : 0);
+      t.tied = false; // a knocked out one still has to come to (stealth.js / nonlethal wake), one who gave up stays down
+      if (!t.down) t.ap = Math.max(t.ap || 0, b.phase === "player" ? 1 : 0);
       u.ap -= 1;
       say(b, `${u.name} cuts ${t.name} free.`, "good");
       fx(b, { type: "loot", to: [t.x, t.y], text: "cut free" });
@@ -547,7 +550,7 @@ export function guardTurn(state, b, u) {
   if (!u.aware || !active(u)) return false;
   // A downed captive within reach: taken back.
   if (spareCaptives(b)) {
-    const down = b.units.find((t) => t.captive && t.down && !t.dead && !t.left && cheb(u, t.x, t.y) <= 1);
+    const down = b.units.find((t) => t.captive && t.down && !t.dead && !t.left && meleeReach(b, u, t));
     if (down) { recapture(state, b, down, `${u.name} drags ${first(down.name)} back`); u.ap = 0; return true; }
   }
   // Retake the armory: once the alarm is up and your people are near it (or it stands open).
@@ -648,7 +651,7 @@ export function recapture(state, b, u, why) {
   u.pin = false;
   u.picked = [];
   if (s) { refitUnit(b, u, s); u.weapon = "fists"; u.weaponName = "Fists"; }
-  u.bound = true; u.down = false; u.stab = false; u.bleed = 0; u.ow = u.hunker = false; u.ap = 0;
+  u.tied = true; u.down = false; u.ko = false; u.surr = false; u.stab = false; u.bleed = 0; u.ow = u.hunker = false; u.ap = 0;
   u.hp = Math.max(5, u.hp || 0);
   u.carrying = null;
   const spot = R.cell ? R.cell.cells.find(([x, y]) => !unitAt(b, x, y)) : null;
@@ -663,10 +666,11 @@ export function rescueRound(state, b) {
   const R = Rof(b);
   if (!R || b.over) return;
   const spare = spareCaptives(b);
-  for (const u of b.units.filter((t) => t.captive && !t.dead && !t.left && !t.bound)) {
+  for (const u of b.units.filter((t) => t.captive && !t.dead && !t.left && !t.tied)) {
     const guards = b.units.filter((g) => g.side === "enemy" && active(g) && g.aware);
-    const mates = b.units.filter((p) => p.side === "player" && p !== u && active(p) && !p.bound);
-    if (u.down) {
+    const mates = b.units.filter((p) => p.side === "player" && p !== u && active(p) && !p.tied);
+    // Down, or given up (nonlethal: u.surr) with a guard next to them and none of yours: taken back.
+    if (u.down || u.surr) {
       if (spare && guards.some((g) => cheb(g, u.x, u.y) <= 1) && !mates.some((p) => cheb(p, u.x, u.y) <= 1)) recapture(state, b, u, "The guards take back the downed");
       continue;
     }
@@ -685,7 +689,7 @@ export const captiveHitMult = (b, t, by) => (t && t.captive && by && by.side ===
 export function captiveStays(state, b, u, s, outcome) {
   if (u.dead) return false;
   if (outcome === "victory") return false;
-  if (u.left && !u.bound) return false;
+  if (u.left && !u.tied) return false;
   s.health = clamp(Math.min(s.health, u.down ? 10 : u.hp), 5, 100);
   return true;
 }
@@ -725,7 +729,7 @@ export function afterRescueBattle(state, result, setup, battle) {
     const s = survivorById(state, u.sid);
     if (!s) continue;
     if (!s.alive) { lost.push(s); continue; }
-    const out = result.outcome === "victory" || (u.left && !u.bound);
+    const out = result.outcome === "victory" || (u.left && !u.tied);
     if (out && isCaptive(s)) {
       if (p && state.parties.includes(p)) freeCaptive(state, s, p);
       else { s.location = { kind: "base", baseId: (hub(state) || state.bases[0] || { id: null }).id }; s.role = "rest"; }
@@ -762,12 +766,12 @@ export function rescueBot(state, b) {
   const guards = () => b.units.filter((g) => g.side === "enemy" && active(g));
   const cellOpen = () => R.doors.some((d) => d.area === "cell" && d.open);
   const lockedCell = () => (cellOpen() ? [] : R.doors.filter((d) => d.area === "cell" && !d.open));
-  const pending = () => b.units.filter((t) => t.captive && t.bound && !t.dead && !t.left);
+  const pending = () => b.units.filter((t) => t.captive && t.tied && !t.dead && !t.left);
   const inCellCell = (x, y) => !!(R.cell && R.cell.cells.some(([cx, cy]) => cx === x && cy === y));
   // Captives.
   for (const u of b.units.filter((t) => t.captive && !t.dead && !t.left && !t.down)) {
     for (let step = 0; step < 4 && !b.over && u.ap > 0 && !u.left; step++) {
-      if (u.bound) {
+      if (u.tied) {
         const watched = guards().some((g) => g.aware && canSee(b, g, u));
         if (watched && !R.alarm) { u.ap = 0; break; } // wait for a better moment
         if (!act(state, u, "ropes")) break;
@@ -798,7 +802,7 @@ export function rescueBot(state, b) {
       if (j && j.cellKey && R.keyUnit == null && bodies.includes(j) && pending().length && act(state, u, "key")) continue;
       // The jailer alone and close: go for his keys bare-handed.
       if (j && active(j) && j.cellKey && pending().length && lockedCell().length && Math.hypot(j.x - u.x, j.y - u.y) <= 6 && !guards().some((g) => g !== j && Math.hypot(g.x - j.x, g.y - j.y) <= 5)) {
-        if (adjacent(u, j)) { if (!combatAct(state, { type: "melee", unit: u.id, target: j.id })) continue; }
+        if (meleeReach(b, u, j)) { if (!combatAct(state, { type: "melee", unit: u.id, target: j.id })) continue; }
         else if (walkToward(state, b, u, ring(b, j.x, j.y))) continue;
       }
       // The armory, open and close by: a weapon.
@@ -820,8 +824,8 @@ export function rescueBot(state, b) {
   }
   if (b.over) return;
   // The team: to the cell while anyone is tied up or locked in; then with the freed until they are out; then out.
-  const stuck = () => b.units.filter((t) => t.captive && !t.dead && !t.left && (t.bound || (inCell(b, t) && lockedCell().length)));
-  const loose = b.units.filter((t) => t.captive && !t.dead && !t.left && !t.bound && !stuck().includes(t));
+  const stuck = () => b.units.filter((t) => t.captive && !t.dead && !t.left && (t.tied || (inCell(b, t) && lockedCell().length)));
+  const loose = b.units.filter((t) => t.captive && !t.dead && !t.left && !t.tied && !stuck().includes(t));
   if (!stuck().length) {
     if (loose.length) {
       for (const u of b.units.filter((t) => t.side === "player" && !t.captive && active(t) && t.ap > 0)) {

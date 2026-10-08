@@ -19,7 +19,7 @@ import { createWorld, hub, atBase, tickHour, day } from "../src/sim/world.js";
 import { GEAR, SUPPLIES, LOCATIONS } from "../src/sim/data.js";
 import { Rng } from "../src/sim/rng.js";
 import {
-  MILTRUCK, TRUCK_KINDS, TRUCK_LOOT, TRUCK_LOOT_HOOKS, truckLoot, trucksAt, unopenedTrucks, roadTruckChance, milDistance, truckSearchHour,
+  MILTRUCK, TRUCK_KINDS, TRUCK_LOOT, TRUCK_LOOT_HOOKS, TRUCK_FLASH, truckLoot, trucksAt, unopenedTrucks, roadTruckChance, milDistance, truckSearchHour,
   spawnConvoy, convoysHour, convoyById, activeConvoys, CONVOY, truckEngineNoise, ENGINE,
 } from "../src/sim/miltrucks.js";
 import {
@@ -112,8 +112,8 @@ let truckValue = 0;
     avg[`${kind}/${cond}`] = { v: v / N, items: items / N, ammo: ammo / N };
   }
   for (const [k, a] of Object.entries(avg)) console.log(`    ${k.padEnd(16)} value ${Math.round(a.v)}, ${r2(a.items)} items, ${Math.round(a.ammo)} ammo`);
-  const allowed = new Set(Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]));
-  check([...keys].every((k) => allowed.has(k)), "everything in a truck comes from its loot table");
+  const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...(Object.keys(TRUCK_FLASH).length ? ["flashbang"] : [])]); // TRUCK_FLASH: the flashbang hook
+  check([...keys].every((k) => allowed.has(k)), "everything in a truck comes from its loot table (and the flashbang hook)");
   check(["ar", "carbine", "ammo", "plate", "vest", "milhelmet", "nvg", "milradio", "frag", "smokegren", "food", "meds", "assaultpack", "rucksack"].every((k) => keys.has(k)), "military guns, bulk ammo, armour, helmets, night vision, radios, grenades, rations, meds and packs all turn up");
   check(avg["cargo/intact"].v > avg["cargo/wrecked"].v && avg["cargo/wrecked"].v > avg["cargo/burnt"].v * 1.5, "a wrecked truck holds less, a burned-out one much less");
   check(avg["cargo/intact"].ammo >= 50, `an intact cargo truck: ammunition by the crate (${Math.round(avg["cargo/intact"].ammo)} rounds on average)`);
