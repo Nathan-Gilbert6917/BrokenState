@@ -123,6 +123,22 @@ for (const seed of seeds) {
   check(truck.loc.kind === "base" && truck.loc.baseId === h.id, "truck not parked at hub");
   console.log(`  run 1: delivered ${JSON.stringify(delivered)}, picked up ${JSON.stringify(pickedUp)}, ${hours}h round trip`);
 
+  // 1b. Winter stores: no fresh food at the hub, only preserved: the run still leaves, its road food packed from the
+  // preserved stores (census seed 3, aggressive: a hub with 0 fresh and 934 preserved kept every run home "for want of
+  // food" while an outpost died of thirst).
+  {
+    const keep = { food: h.stock.food, preserved: h.stock.preserved };
+    h.stock.food = 0; h.stock.preserved = 60;
+    const jw = saveSupplyRun(state, form({ originId: h.id, destId: A.id, crew: [hubCrew[2].id], deliver: [{ key: "scrap", qty: 2 }], schedule: "once" })).job;
+    dispatchSupplyRun(state, jw, true);
+    const pw = jobParty(state, jw);
+    check(!!pw, `a run on preserved food alone did not leave (${jw.blocked})`);
+    if (pw) check((pw.supplies.preserved || 0) > 0 && !pw.supplies.food && h.stock.preserved === 60 - pw.supplies.preserved, `road food not packed from the preserved stores (${JSON.stringify(pw.supplies)}, hub preserved ${h.stock.preserved})`);
+    for (let k = 0; jobParty(state, jw) && k < 24 * 6; k++) { tickHour(state); resolveCards(state); }
+    check(!jobParty(state, jw), "the run on preserved food did not come home within 6 days");
+    h.stock.food = keep.food; h.stock.preserved = keep.preserved;
+  }
+
   // 2. Outpost -> outpost on foot, every 6 days.
   const j2 = saveSupplyRun(state, form({ originId: A.id, destId: B.id, crew: [people[6].id], deliver: [{ key: "scrap", qty: 5 }, { key: "food", qty: 8 }], pickup: [{ key: "fuel", qty: 1 }], every: 6 })).job;
   // 3. Hold at B, once; released later.
