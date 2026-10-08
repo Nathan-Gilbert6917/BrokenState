@@ -35,7 +35,7 @@ for (const kind of KINDS) {
       if (!b.over) endBattleNow(st, "defeat");
       if (b.result && b.result.outcome === "victory") t.won++;
       for (const l of b.log) {
-        const s = l.text, mine = l.k === "good" || (l.k === "info" && /cannot bring/.test(s));
+        const s = l.text, mine = l.k === "info"; // a failed revive: "info" for yours, "good" for theirs
         if (/is down and bleeding/.test(s)) t.down++;
         if (/goes down, bleeding/.test(s)) t.foeDown++;
         if (/back on their feet/.test(s)) { if (l.k === "good") { t.revTry++; t.revived++; } else { t.foeRevTry++; t.foeRevived++; } }
