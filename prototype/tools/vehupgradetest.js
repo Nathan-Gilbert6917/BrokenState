@@ -459,6 +459,15 @@ section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
   g.ap = 2;
   const e3 = combatAct(st, { type: "reload", unit: g.id });
   check(!e3 && g.ap === 0 && magIn(g) === Math.min(100, ammoLeft(b)) && b.vehicle.belt === magIn(g), `reloaded (${magIn(g)}, as far as the team's ammo goes)`);
+  // Jams (gunfire.js: the turret's rel): a jammed turret will not fire; the gunner clears it on the turret (Unjam).
+  g.ap = 2; g.jam = { kind: "stovepipe", ap: 1 };
+  const ej = combatAct(st, { type: "turret", unit: g.id, target: t.id });
+  check(/Jammed/.test(ej), `a jammed turret will not fire ("${ej}")`);
+  const eu = combatAct(st, { type: "unjam", unit: g.id });
+  check(!eu && !g.jam && g.gunner && g.ap === 1, `the gunner clears it on the turret (1 action)${eu ? ` [${eu}]` : ""}`);
+  g.ap = 1; g.jam = { kind: "double", ap: 2 }; const belt1 = magIn(g);
+  check(/both actions/.test(combatAct(st, { type: "reload", unit: g.id })) && g.jam && magIn(g) === belt1, "a double feed: a new belt still needs both actions (the jam and the belt left as they were)");
+  g.jam = null; g.ap = 2;
   // Save mid-battle.
   st.cards = [];
   const st2 = deserializeState(serializeState(st));

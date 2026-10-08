@@ -58,7 +58,9 @@ import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lo
 import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList, siteList } from "./zombietypes.js"; // a hive's special dead
 import { ZTYPES, MIDDEAD } from "./hiveconst.js";
 import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
-import { armorVs, stabsGap, ARMORED, armoredOf } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
+import { armorVs, stabsGap, ARMORED, armoredOf, wearPlate } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
+import { armourHit, armourExpect, locatedHit, enemyPieces, fitArmour, wearByNumbers, absorbOffscreen, battleArmor, battleDice, roundOf, armourSpec, dropBroken } from "./armour.js"; // per-hit armour: pieces, locations, penetration, wear
+import { syncModes, modeOf, modeRounds, modeRolls, modeAim, modeRefusal, FIRE_MODES, rollTrigger, jamGun, jamRefusal, jamLabel, foul, unjam, unjamRefusal, jamReload, aiUnjam, aiMode, noteJamWeather, enemyGunQ, enemyGunCond, SUPPRESS, suppressRounds, suppressRefusal, coneTargets, bestCone, nextInLine, overpenChance, piercesCover, OVERPEN, braceAim, sniperCell, isSniper, gunModes } from "./gunfire.js"; // fire modes, jams, suppressing fire, over-penetration
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } from "./middead.js"; // the mid game's special dead
 import { placeBodies, spotCheck, wakeNear, sleeperDies, burnBodies } from "./sleepers.js"; // bodies on the ground, the Sleepers among them
@@ -323,7 +325,7 @@ export function finishCombat(state, setup, result) {
   // Makeshift gear loses durability with every fight (a raid only if someone was killed). A battle played on the
   // map has already worn what its units took the field with (wearFielded, when the battle ended); one resolved by
   // the numbers wears everyone who was counted in it.
-  if (!(result && result.worn) && (setup.mode !== "raid" || (result && result.enemiesKilled))) wearAfterFight(state, combatants(state, setup));
+  if (!(result && result.worn) && (setup.mode !== "raid" || (result && result.enemiesKilled))) wearByNumbers(state, combatants(state, setup)); // armour.js: armour pieces wear by their hits (absorbOffscreen), the rest a use a fight
   battleRecord(state, setup, result, battle, combatants(state, setup)); // relations.js: kills, downed, rescues, shared hardship
   capturePrisoners(state, setup, result, battle); // prisoners.js: the knocked out go with the team or into the cells
   if (battle) settleClaims(state, battle, result); // foundcars.js: the cars claimed on the map join the team or stay parked there
@@ -451,7 +453,9 @@ export function autoResolveCombat(state, setup) {
   for (let i = 0; i < hits && people.length; i++) {
     const s = rng.pick(people);
     if (!s.alive) continue;
-    hurt(state, s, rng.int(lo, hi), tile, `in a fight with ${setup.enemy.name || setup.enemy.kind}`);
+    const amt = rng.int(lo, hi);
+    hurt(state, s, amt, tile, `in a fight with ${setup.enemy.name || setup.enemy.kind}`);
+    if (s.alive) absorbOffscreen(s, amt, setup.enemy.kind, state); // armour.js: the armour they wore took its share
     (s.alive ? hurtIds : deadIds).push(s.id);
   }
   const killed = win ? setup.enemy.count : Math.floor(setup.enemy.count * rng.range(0.1, 0.5));
@@ -620,7 +624,7 @@ export const WEAPONS = {
   pistol:    { name: "9mm pistol",     dmg: [15, 22], opt: 6,  fall: 4, aim: 4,  ammo: 1, noise: 2, cap: 15, cal: "9mm", rel: 0.35 }, // a double-stack 9mm magazine
   shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10, cap: 6, cal: "12ga", rel: 0.3 }, // a pump: five in the tube and one in the chamber
   huntrifle: { name: "Hunting rifle",  dmg: [24, 34], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10, cap: 5, cal: "308", rel: 0.15 }, // a bolt-action's internal magazine
-  ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3, cap: 30, cal: "556", rel: 0.5 }, // a 30-round magazine: 15 bursts of 2
+  ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3, cap: 30, cal: "556", rel: 0.5, modes: { single: 1, burst: 2, auto: 10 } }, // a 30-round magazine: 15 bursts of 2 (its burst mode; gunfire.js fire modes)
   // Makeshift weapons (crafting.js). The crossbow is silent and shoots bolts (arrows: 1 a shot, data.js SUPPLIES.arrows).
   spikedbat:  { name: "Spiked bat",        melee: true, dmg: [16, 25] },
   pipespear:  { name: "Pipe spear",        melee: true, dmg: [15, 23] },
@@ -643,7 +647,7 @@ export const WEAPONS = {
   xbow:       { name: "Hunting crossbow",  dmg: [20, 29], opt: 6, fall: 5, aim: 0, ammo: 0, arrows: 1, noise: 0, close: -5 },
   revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3, cap: 6, cal: "357", rel: 0.05 }, // a six-shot cylinder
   leverrifle: { name: "Lever-action rifle", dmg: [20, 30], opt: 10, fall: 2.5, aim: 4, ammo: 1, noise: 3, cap: 8, cal: "3030", rel: 0.3 }, // a tube under the barrel
-  carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3, cap: 30, cal: "556", rel: 0.5 }, // a patrol carbine's 30-round magazine
+  carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3, cap: 30, cal: "556", rel: 0.5, modes: { single: 1 } }, // a patrol carbine's 30-round magazine (semi-automatic: single only)
   // A spitter's acid (zombietypes.js): silent, every `cooldown` turns, cover counts `pierce` steps less against it.
   acid:       { name: "Acid spit",         dmg: [16, 22], opt: 4, fall: 8, aim: 0, ammo: 0, noise: 0, acid: true, cooldown: ZTYPES.spitter.cooldown, pierce: ZTYPES.spitter.pierce },
 };
@@ -846,7 +850,7 @@ export const RAMMING = {
 const rammable = (c) => RAMMING.WEAR[c.k] != null;
 const vehicleCells = (v) => { const out = []; for (let cy = v.y; cy < v.y + v.h; cy++) for (let cx = v.x; cx < v.x + v.w; cx++) out.push([cx, cy]); return out; };
 const inVehicle = (v, x, y) => x >= v.x && y >= v.y && x < v.x + v.w && y < v.y + v.h;
-const GUNNER_ACTS = new Set(["shoot", "turret", "reload", "overwatch", "gunner", "drive", "turn", "disembark", "extract"]);
+const GUNNER_ACTS = new Set(["shoot", "turret", "reload", "unjam", "overwatch", "gunner", "drive", "turn", "disembark", "extract"]);
 export const aboardCount = (b) => b.units.filter((u) => u.aboard && !u.dead).length;
 // Board from next to it (1 action): the unit rides, off the map (not a target, not drawn), until it gets out.
 export function boardVehicle(b, u) {
@@ -1086,7 +1090,8 @@ export function vehicleBlast(b, x, y, r, [lo, hi], kind = "blast") {
   const hurt = [];
   for (const u of b.units) {
     if (!u.aboard || u.dead || u.gunner) continue; // the gunner is out in the open (caught by the blast itself)
-    const eff = Math.max(0, Math.min(u.hp - 1, Math.round(b.rng.int(lo, hi) * m)));
+    // The glass (or grilles) first, then what the rider wears (hitMult: a blast is not a located hit, armour.js: the flat multiplier).
+    const eff = Math.max(0, Math.min(u.hp - 1, Math.round(b.rng.int(lo, hi) * m * hitMult(u, null, { how: "blast" }))));
     if (eff > 0) { u.hp -= eff; hurt.push(`${u.name} ${eff}`); }
   }
   return ` The ${v.mil ? "Army truck" : v.kind} takes the blast (condition −${wear}${v.up && (v.up.plating || v.up.scrapPlate) ? ", the plating took most of it" : ""})${hurt.length ? `; fragments through the windows catch ${hurt.join(", ")}${v.up && v.up.glass ? " (the bulletproof glass stopped most)" : ""}` : ""}.`;
@@ -1216,10 +1221,12 @@ export function leaveTurret(b, u, quiet = false) {
   if (!quiet) { u.ap = Math.max(0, u.ap - 1); say(b, `${u.name} gets down off the turret.`, "info"); bump(b); }
   return "";
 }
-// A burst from a turret: the belt synced, Heat, the pin round where it landed.
-function afterTurretBurst(b, a, t) {
+// A burst from a turret: the belt synced, Heat, the pin round where it landed (fired: false when it jammed before a
+// round left it, gunfire.js: the belt is synced, nothing else).
+function afterTurretBurst(b, a, t, fired = true) {
   if (a.side === "player" && b.vehicle) b.vehicle.belt = magIn(a);
   a.turretMag = magIn(a);
+  if (!fired) return;
   if (b.raid) b.raid.heat = Math.min(100, b.raid.heat + TURRET.HEAT);
   const when = a.side === "player" ? b.turn : b.turn + 1; // their next turn (the enemy phase is the rest of this one)
   for (const o of b.units) if (o.side === t.side && active(o) && Math.max(Math.abs(o.x - t.x), Math.abs(o.y - t.y)) <= TURRET.PIN_R) o.pinT = when;
@@ -1245,6 +1252,7 @@ export function manEnemyTurret(b, gun = "m2hb") {
 // The gunner's turn (either side, the AI): never moves; reloads an empty belt (both actions); fires at the best target,
 // the ones in the open first; otherwise watches.
 function gunnerAI(b, u) {
+  if (u.jam) { unjam(b, u); if (u.jam || u.ap < 1) { u.ap = 0; return; } } // gunfire.js: the turret jammed (its rel), cleared first (never by a new belt)
   if (magEmpty(b, u) && !reloadRefusal(b, u)) { reload(b, u); afterTurretReload(b, u); u.ap = 0; return; }
   const foes = foesOf(b, u).filter((f) => canSee(b, u, f));
   const open = foes.filter((f) => shotOdds(b, u, f).cover === 0);
@@ -1792,12 +1800,17 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (d <= 2.5 && (w.close || gm.close)) aim += (w.close || 0) + gm.close;
   const flat = t.surprised || (!t.aware && t.side === "enemy");
   const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : t.gunner ? gunnerCover(b, t) : coverAgainst(b, t.x, t.y, ax, ay); // a turret's gunner: half cover (full behind plate x2)
-  aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js)
+  aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0) - (opts.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js); opts.pierce: an over-penetrating round through light cover (gunfire.js)
   if (t.hunker && cov.level) aim -= HUNKER_DEF;
   if (flat) aim += 15;
   if (opts.reaction && !a.owSure) aim -= 15; // owSure: the Suppressor perk (skills.js)
   if (opts.volley) aim += 15; // caught before they could take cover
   if (a.pinT === b.turn) aim -= TURRET.PIN; // pinned by a machine-gun burst (the turret)
+  // gunfire.js: the fire mode (round k of a burst or a stream: opts.modeAim; else the first round of the unit's mode),
+  // pinned by suppressing fire, a heavy weapon braced or fired on the move.
+  if (!w.melee) aim += opts.modeAim ?? modeAim(modeOf(a), 0);
+  if (a.suppressed) aim -= SUPPRESS.AIM;
+  aim += braceAim(b, a);
   // A break-in map (deploy.js): the floodlit area, and shooting from a watchtower.
   if (b.lit && b.floodAim && inside(t.x, t.y) && b.lit[idx(t.x, t.y)]) aim += b.floodAim;
   // Smoke and flares (throwables.js): a shot into or out of a cloud, your people at a target in a flare's light at night.
@@ -1889,13 +1902,14 @@ function spendRounds(b, u, w) {
 }
 // Can this unit fire its gun right now (ranged weapon, loaded and, for the player, the ammo there; a bow or crossbow,
 // arrows)? One that cannot fights in melee (a gun or a bow swung as a club: BASH).
-export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && (u.side !== "player" || (WEAPONS[u.weapon].mounted ? turretRounds(b) >= WEAPONS[u.weapon].ammo : hasShot(b, WEAPONS[u.weapon]))) && !magEmpty(b, u); // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js)
+export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && (u.side !== "player" || (WEAPONS[u.weapon].mounted ? turretRounds(b) >= WEAPONS[u.weapon].ammo : hasShot(b, WEAPONS[u.weapon]))) && !magEmpty(b, u) && !u.jam; // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js); a jammed gun (gunfire.js)
 // A gun that can shoot now or after a reload (the AI's sense of a side's firepower, the threat preview).
 export const hasShots = (b, u) => canFire(b, u) || (isRanged(u) && magEmpty(b, u) && !reloadRefusal(b, u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)));
 // Why this unit cannot shoot ("" when it can): empty, out of ammo, no gun.
 export function fireRefusal(b, u) {
   if (!isRanged(u)) return "No gun.";
   if (canFire(b, u)) return "";
+  if (u.jam) return jamRefusal(u); // gunfire.js: "Jammed (stovepipe): Unjam (J), 1 action."
   if (u.carrying != null) return "Hands full: put the body down first.";
   if (u.side === "player" && !hasShot(b, WEAPONS[u.weapon])) return WEAPONS[u.weapon].arrows ? "Out of arrows." : "Out of ammo.";
   if (magEmpty(b, u)) return `The ${gunWord(u)} is empty: reload first (1 action).`;
@@ -1984,6 +1998,8 @@ function playerUnit(b, s) {
     ap: 2, aware: true, x: 0, y: 0, f: 0,
   };
   loadMag(u); // the gun starts the battle loaded
+  fitArmour(u, s); // armour.js: the worn pieces (per-hit armour) and the Tough trait
+  syncModes(u); // gunfire.js: the gun's fire modes
   return u;
 }
 
@@ -2005,6 +2021,9 @@ export function refitUnit(b, u, s) {
   // The magazine: the same kind of gun keeps what was loaded (up to its capacity now, a magazine attachment may have
   // changed); another gun is taken up empty (Reload, 1 action), so swapping guns never hands out a free full one.
   loadMag(u, u.weapon === held ? rounds : 0);
+  if (u.weapon !== held) u.jam = null; // another gun: the jammed one is put away
+  fitArmour(u, s); // armour.js: the pieces worn now
+  syncModes(u);
   refitSenses(b, u, s); // stealth.js: a flashlight, night vision, scope or suppressor counts at once
 }
 setRefit(refitUnit);
@@ -2034,6 +2053,10 @@ export function enemyUnit(b, rng, kind, power, n) {
     hp, maxHp: hp, mob: MOVE, sight: SIGHT, ap: 2, aware: true, x: 0, y: 0, f: b.floor || 0, fearless: !!kit.fearless, kit: kind,
   };
   loadMag(u); // loaded; their reserve ammo is endless (only the magazine stops them)
+  u.q = enemyGunQ(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // gunfire.js: their gun's condition (jams; the looted gun keeps it), own dice
+  u.cond = enemyGunCond(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // its durability share (a worn gun jams more)
+  syncModes(u);
+  enemyPieces(b, u); // armour.js: their body armour as a piece that wears (the loot keeps what is left)
   return u;
 }
 
@@ -2227,15 +2250,30 @@ function foesOf(b, u) {
 // carries the worm (carriers.js; deadsoldiers.js armorVs: most bullets go through the swarm).
 // A Boneback's plates take most of a hit from the front (middead.js bonebackMult); a Flinger winding up drops its
 // mass when hit hard (afterHit); a spotted Sleeper splits where it lies (sleepers.js).
+// People (armour.js): a shot, a blow or a bite lands on a location and its piece (pieces: your people's worn items,
+// everyone else's made on first use); hitMult is the expected × over the locations (the AI's sense of a shot), damage
+// rolls it. Fire, blasts, acid and traps keep the flat t.armor.
+const personHit = (t, hit) => t.kind === "human" && !t.ztype && locatedHit(hit);
 export function hitMult(t, by, hit) {
   if (hit && hit.how === "acid") return acidArmor(t);
   if (t.ztype === "boneback") return bonebackMult(t, by, hit) * t.armor;
   if (t.ztype && (ARMORED.includes(t.ztype) || t.ztype === "swarm")) return armorVs(t, by, hit);
+  if (personHit(t, hit) && t.pieces) return armourExpect(t, by, hit);
   return t.armor;
 }
 export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
-  const eff = raw * hitMult(t, by, hit);
+  let eff;
+  if (personHit(t, hit) && (t.pieces || (t.side !== "player" && t.pieces === undefined))) {
+    if (t.pieces === undefined) enemyPieces(b, t);
+    const A = armourHit(b, t, raw, by, hit); // armour.js: location, penetration, wear, shatter, spall
+    eff = raw * A.mult + A.extra;
+    hit.loc = A.loc; hit.through = A.through;
+    for (const [text, k] of A.msgs) say(b, text, k);
+  } else {
+    eff = raw * hitMult(t, by, hit);
+    if (t.ztype && ARMORED.includes(t.ztype)) wearPlate(t, by, hit, raw); // deadsoldiers.js: their plates wear (plateDur)
+  }
   t.hp = Math.max(0, t.hp - eff);
   if (t.hp > 0) {
     if (t.ztype === "boneback" || t.ztype === "flinger") afterHit(b, t, by, hit, eff); // middead.js
@@ -2260,7 +2298,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     // One of the dead: a body to search too (what the person had on them; a dead soldier's kit). The raid bot walks
     // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway). A worm
     // swarm leaves nothing.
-    else if (b.raid && t.kind === "zombie" && !t.boss && t.ztype !== "swarm" && t.ztype !== "sleeper") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, f: t.f || 0, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)) });
+    else if (b.raid && t.kind === "zombie" && !t.boss && t.ztype !== "swarm" && t.ztype !== "sleeper") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, f: t.f || 0, kind: "body", zombie: true, ztype: t.ztype || null, area: null, searched: false, label: `${t.name}'s body`, uid: t.id, botSkip: !(t.ztype && ARMORED.includes(t.ztype)), plateDur: t.plateDur ?? null }); // plateDur: their plates' wear (deadsoldiers.js)
     if (b.raid && t.walking) walkingBox(b, t, b.raid.containers.find((k) => k.kind === "body" && k.uid === t.id)); // carriers.js: one of the walking dead put down: its things are in the body
     say(b, t.ztype === "swarm" ? `${t.name} is crushed and scattered.` : `${t.name} is dead.`, t.side === "third" ? "danger" : "good"); // thirdside.js: one of the third side fell
     if (t.ztype === "spitter") spitterBurst(b, t); // acid.js: its sac bursts over the tiles around it
@@ -2311,9 +2349,11 @@ export function moveAlong(b, u, path) {
   bindDims(b);
   if (!path.length) return;
   if (u.brace) delete u.brace; // stepping away lets go of a braced door (buildingmaps.js)
+  u.movedT = b.turn; // moved this turn: a braced heavy weapon or a sniper rifle on the move (gunfire.js braceAim)
   const from = [u.x, u.y];
   const walked = [];
   let burned = false;
+  let reacted = null; // overwatchers that have fired at this mover already (once each per move)
   for (const [x, y] of path) {
     const there = unitAt(b, x, y);
     if (there && (active(there) || (x === path[path.length - 1][0] && y === path[path.length - 1][1]))) break;
@@ -2336,13 +2376,18 @@ export function moveAlong(b, u, path) {
     }
     if (!burned && fireStep(b, u, x, y)) { burned = true; if (!active(u)) break; } // into a Molotov's flames (throwables.js): once a move
     if (acidStep(b, u, x, y) && !active(u)) break; // into a spitter's acid (acid.js): once a round
-    // Overwatch: the first enemy that moves in sight draws a reaction shot.
+    // Overwatch (sustained, section 20): every enemy that moves within range and in sight draws a reaction (once per
+    // move), at the reaction penalty and in the watcher's fire mode, until the watcher's own next turn or until its
+    // magazine runs dry or it jams. Pinned by suppressing fire: no overwatch.
     for (const o of b.units) {
       if (!o.ow || o.side === u.side || !active(o) || !active(u) || !hostilePair(b, o, u)) continue; // thirdside.js: not at the third side unless at odds
-      if (!canSee(b, o, u) || !canFire(b, o)) continue;
-      o.ow = false;
+      if (o.suppressed) { o.ow = false; continue; }
+      if (reacted && reacted.has(o.id)) continue;
+      if (!canSee(b, o, u) || !canFire(b, o) || dist(o.x, o.y, u.x, u.y) > owRange(o)) continue;
+      (reacted || (reacted = new Set())).add(o.id);
       say(b, `${o.name} reacts on overwatch.`, "info");
       fire(b, o, u, { reaction: true });
+      if (!canFire(b, o)) o.ow = false; // empty or jammed: the watch is over
     }
     if (u.side === "player" && active(u)) detect(b, u);
     if (b.corpses && b.corpses.length && u.kind !== "zombie" && active(u)) { wakeNear(b, u); spotCheck(b, u); } // sleepers.js: a Sleeper next to them splits open
@@ -2352,46 +2397,136 @@ export function moveAlong(b, u, path) {
   if (walked.length && u.ram != null) afterMove(b, u); // siege.js: the ram's crew keeps up with its lead
 }
 
+// How far an overwatcher reacts: its gun's best range and 8 tiles more (the reaction's own odds do the rest).
+const owRange = (o) => { const w = WEAPONS[o.weapon]; return modRange(w, unitMods(o)).opt + 8; };
+// One trigger pull (gunfire.js): the fire mode's rounds (a gun without modes: its rounds, one roll), the jam or misfire
+// roll, each round's own hit at the mode's aim (the first round on the battle's rng as a single shot always was, the
+// rest on the battle's own dice), a round that gets through carrying on to the next unit in line (over-penetration).
 export function fire(b, a, t, opts = {}) {
   const w = WEAPONS[a.weapon];
   const rng = b.rng;
   if (w.cooldown) a.cd = w.cooldown; // a spitter spits every other turn (zombietypes.js zTick)
-  spendRounds(b, a, w); // the magazine; your side's pools (the magazines section above)
+  if (a.side !== "player") aiMode(b, a, t, opts); // gunfire.js: enemies pick a mode (yours keep the one you set)
+  const mode = modeOf(a), moded = !!gunModes(w);
+  let rounds = modeRounds(a, mode);
+  if (moded) {
+    if (hasMag(a)) rounds = Math.min(rounds, magIn(a));
+    if (a.side === "player") rounds = Math.min(rounds, ammoLeft(b));
+    rounds = Math.max(1, rounds);
+  }
+  const trig = w.rel ? rollTrigger(b, a, rounds) : { fired: rounds, spent: rounds, jam: null, misfire: false };
+  spendRounds(b, a, trig.spent === w.ammo ? w : { ...w, ammo: trig.spent }); // the magazine; your side's pools (the magazines section above)
+  if (w.cal) foul(a, trig.spent); // gunfire.js: rounds through it since it was cleaned
   if (a.side === "player") {
     if (a.gearRisk && a.item && rng.chance(a.gearRisk)) {
       a.item.quality = Math.max(0.4, Math.round(((a.item.quality || 1) - 0.15) * 100) / 100);
       say(b, `${a.name}'s ${a.item.name} was damaged (it is above their skill).`, "danger");
     }
   }
+  a.face = [Math.sign(t.x - a.x), Math.sign(t.y - a.y)];
+  if (trig.misfire) { // a dud: no shot, no bang, the action lost
+    say(b, `${a.name}'s ${gunWord(a)} misfires: click.`, a.side === "player" ? "danger" : "info");
+    fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: false, side: a.side, misfire: true });
+    return;
+  }
   const noise = shotNoise(b, a, w); // stealth.js: a suppressor halves it (and wears a shot)
   b.noise += noise;
   if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise; // camp danger (fieldheat.js noteGunfire): a muffled shot counts half
-  a.face = [Math.sign(t.x - a.x), Math.sign(t.y - a.y)];
   if (a.xpT) a.xpT.shots++;
-  const o = shotOdds(b, a, t, a.x, a.y, opts);
-  const hit = rng.chance(o.chance / 100);
+  const rolls = moded ? trig.fired : trig.jam ? 0 : 1; // a gun without modes (or a bow: no rounds at all) makes one roll unless it jammed
   const line = sayFirst(b);
-  let text;
-  if (hit) {
-    const crit = rng.chance(o.crit / 100);
-    const raw = rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1);
-    const eff = Math.round(damage(b, t, raw, a, false, { how: "shot", crit, weapon: a.weapon })); // weapon: a shotgun's spread catches a worm swarm (carriers.js swarmArmor)
+  let hits = 0, crits = 0, total = 0, first = null;
+  for (let k = 0; k < rolls; k++) {
+    if (k > 0 && !active(t)) break; // the rest of the burst goes past where they stood
+    const o = shotOdds(b, a, t, a.x, a.y, moded ? { ...opts, modeAim: modeAim(mode, k) } : opts);
+    if (!first) first = o;
+    const hit = k === 0 ? rng.chance(o.chance / 100) : battleDice(b, "burst") < o.chance / 100;
+    if (!hit) continue;
+    const crit = k === 0 ? rng.chance(o.crit / 100) : battleDice(b, "burstcrit") < o.crit / 100;
+    const raw = (k === 0 ? rng.int(o.dmg[0], o.dmg[1]) : o.dmg[0] + Math.floor(battleDice(b, "burstdmg") * (o.dmg[1] - o.dmg[0] + 1))) * (crit ? CRIT_MULT : 1);
+    const info = { how: "shot", crit, weapon: a.weapon, cal: w.cal || null, ammo: a.load || null }; // weapon: a shotgun's spread catches a worm swarm (carriers.js swarmArmor); cal / ammo: the round (armour.js)
+    total += damage(b, t, raw, a, false, info);
+    hits++;
+    if (crit) crits++;
     if (a.xpT) { a.xpT.hits++; if (t.dead) a.xpT.kills++; } // skills.js: Shooting XP when the battle ends
-    text = w.acid ? `${a.name} spits acid at ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).` : `${a.name} shoots ${t.name}: ${crit ? "critical hit" : "hit"} for ${eff} (${o.chance}%).`;
-    fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side, acid: !!w.acid });
-  } else {
-    text = w.acid ? `${a.name} spits acid at ${t.name} and misses (${o.chance}%).` : `${a.name} shoots at ${t.name} and misses (${o.chance}%).`;
-    fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: false, side: a.side, acid: !!w.acid });
+    if (w.cal) overpenetrate(b, a, t, raw, info, moded ? modeAim(mode, k) : 0, opts);
   }
+  const eff = Math.round(total);
+  const pct = first ? first.chance : 0;
+  let text;
+  if (!rolls) text = `${a.name}'s ${gunWord(a)} jams before it fires.`;
+  else if (moded && mode !== "single") {
+    const how = mode === "auto" ? "a stream" : "a burst";
+    text = hits ? `${a.name} fires ${how} at ${t.name}: ${hits} of ${rolls} hit${crits ? ` (${crits} critical)` : ""} for ${eff} (${pct}%).` : `${a.name} fires ${how} at ${t.name} and misses (${pct}%).`;
+  } else if (hits) text = w.acid ? `${a.name} spits acid at ${t.name}: ${crits ? "critical hit" : "hit"} for ${eff} (${pct}%).` : `${a.name} shoots ${t.name}: ${crits ? "critical hit" : "hit"} for ${eff} (${pct}%).`;
+  else text = w.acid ? `${a.name} spits acid at ${t.name} and misses (${pct}%).` : `${a.name} shoots at ${t.name} and misses (${pct}%).`;
+  if (rolls) fx(b, hits ? { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit: crits > 0, dmg: eff, side: a.side, acid: !!w.acid, rounds: rolls, hits } : { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: false, side: a.side, acid: !!w.acid, rounds: rolls });
   line.text = text;
-  line.k = a.side === "player" ? (hit ? "good" : "info") : hit ? "danger" : "info";
-  if (noise && b.raid) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), noise < w.noise ? "The muffled shots still carry." : "The gunshots alert everything nearby.");
-  else if (noise && noise < w.noise) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), "The muffled shots still carry.");
-  else if (noise) alertAll(b, "The gunshots alert everyone nearby.");
+  line.k = a.side === "player" ? (hits ? "good" : "info") : hits ? "danger" : "info";
+  if (trig.jam) { jamGun(b, a, trig.jam); say(b, `${a.name}'s ${gunWord(a)} jams: ${jamLabel(a).toLowerCase()}!`, a.side === "player" ? "danger" : "good"); }
+  gunfireAlert(b, a, w, noise, "The muffled shots still carry.", "The gunshots alert everything nearby.", "The gunshots alert everyone nearby.");
   // Any hit that leaves a sleeper alive wakes its group, however quiet the weapon (a crossbow bolt, a shot from
   // beyond earshot in a raid).
-  if (hit && t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
-  if (w.mounted) afterTurretBurst(b, a, t); // the turret: its belt, Heat, the pin
+  if (hits && t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
+  if (w.mounted) afterTurretBurst(b, a, t, rolls > 0); // the turret: its belt, Heat, the pin (none when it jammed before firing)
+}
+// Who hears a shot (fire, suppressing fire): in a raid those near it, a muffled one near it, else everyone.
+function gunfireAlert(b, a, w, noise, muffled, raid, all) {
+  if (noise && b.raid) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), noise < w.noise ? muffled : raid);
+  else if (noise && noise < w.noise) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), muffled);
+  else if (noise) alertAll(b, all);
+}
+// Over-penetration (section 20, R6): a hit that got through the armour (or killed) carries on, by the round's chance
+// (data-ammo.js AMMO_TYPES overpen: .50 always), along the line to the next unit of either side, at × 0.6 with its own
+// roll; .50 and AP rounds go through light cover on the way.
+function overpenetrate(b, a, t, raw, info, aimK, opts) {
+  const r = roundOf(a, info);
+  const p = overpenChance(r.cal, r.type);
+  if (!(p > 0) || (info.through === false && !t.dead)) return;
+  if (p < 1 && battleDice(b, "overpen") >= p) return;
+  const nx = nextInLine(b, a, t, piercesCover(r.cal, r.type));
+  if (!nx) return;
+  const n2 = nx.unit;
+  const o = shotOdds(b, a, n2, a.x, a.y, { ...opts, modeAim: aimK, pierce: nx.pierced ? 1 : 0 });
+  if (battleDice(b, "overpenhit") >= o.chance / 100) return;
+  const eff = Math.round(damage(b, n2, raw * OVERPEN.MULT, a, false, { ...info, crit: false, overpen: true }));
+  say(b, `The round goes through ${t.name}${nx.pierced ? " and the cover behind" : ""} and hits ${n2.name} for ${eff}.`, n2.side === a.side ? "danger" : a.side === "player" ? "good" : "danger");
+  fx(b, { type: "shot", from: [t.x, t.y], to: [n2.x, n2.y], hit: true, crit: false, dmg: eff, side: a.side, overpen: true });
+  if (a.xpT && n2.dead && n2.side !== a.side) a.xpT.kills++;
+}
+
+// Suppressing fire (act "suppress", section 20): a stream (full auto, else two bursts) into a cone toward a person or a
+// spot. No hit roll worth the name (a third of the shot's chance each, for whoever is in the cone); everyone living in
+// the cone is pinned until their own turn ends: −20 aim, no overwatch, the AI keeps to cover. Nothing to the dead.
+export function suppress(b, a, x, y) {
+  const w = WEAPONS[a.weapon];
+  const rounds = Math.max(1, Math.min(suppressRounds(a), hasMag(a) ? magIn(a) : Infinity, a.side === "player" ? ammoLeft(b) : Infinity));
+  const trig = w.rel ? rollTrigger(b, a, rounds) : { fired: rounds, spent: rounds, jam: null, misfire: false };
+  spendRounds(b, a, { ...w, ammo: trig.spent });
+  foul(a, trig.spent);
+  a.face = [Math.sign(x - a.x), Math.sign(y - a.y)];
+  a.hunker = false;
+  const noise = shotNoise(b, a, w);
+  b.noise += noise;
+  if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise;
+  if (a.xpT) a.xpT.shots++;
+  const pinned = trig.fired > 0 ? coneTargets(b, a, x, y, foesOf(b, a)) : [];
+  for (const t of pinned) {
+    t.suppressed = SUPPRESS.TURNS;
+    t.ow = false;
+    const o = shotOdds(b, a, t, a.x, a.y, { modeAim: modeAim("auto", 0) });
+    if (battleDice(b, "suppresshit") < (o.chance / 100) * SUPPRESS.HIT) {
+      const raw = o.dmg[0] + Math.floor(battleDice(b, "suppressdmg") * (o.dmg[1] - o.dmg[0] + 1));
+      const eff = Math.round(damage(b, t, raw, a, false, { how: "shot", crit: false, weapon: a.weapon, cal: w.cal || null, ammo: a.load || null }));
+      say(b, `${t.name} is hit by the suppressing fire for ${eff}.`, a.side === "player" ? "good" : "danger");
+      if (a.xpT) { a.xpT.hits++; if (t.dead) a.xpT.kills++; }
+    }
+  }
+  const names = pinned.filter((t) => !t.dead && !t.down).map((t) => t.name);
+  say(b, trig.fired ? `${a.name} lays down suppressing fire (${trig.fired} rounds)${names.length ? `: ${names.join(", ")} ${names.length === 1 ? "is" : "are"} pinned (−${SUPPRESS.AIM} aim, no overwatch).` : ", pinning no one."}` : `${a.name}'s ${gunWord(a)} jams before it fires.`, a.side === "player" ? "info" : "danger");
+  fx(b, { type: "shot", from: [a.x, a.y], to: [x, y], hit: false, side: a.side, suppress: true, rounds: trig.fired });
+  if (trig.jam) { jamGun(b, a, trig.jam); say(b, `${a.name}'s ${gunWord(a)} jams: ${jamLabel(a).toLowerCase()}!`, a.side === "player" ? "danger" : "good"); }
+  if (trig.fired) gunfireAlert(b, a, w, noise, "The muffled shots still carry.", "The gunfire alerts everything nearby.", "The gunfire alerts everyone nearby.");
 }
 
 function strike(b, a, t) {
@@ -2454,6 +2589,7 @@ export function combatAct(state, act) {
   const b = state.combat;
   bindDims(b);
   if (!b || b.over) return "";
+  noteJamWeather(state, b); // gunfire.js: rain, mud or a storm make guns jam more (once a battle)
   if (act.type === "end") {
     if (b.raid && b.raid.choose) b.raid.choose = null; // the street it is (buildingmaps.js)
     if (b.phase === "player") endPlayerTurn(state);
@@ -2537,18 +2673,48 @@ export function combatAct(state, act) {
       break;
     }
     case "reload": { // the magazines section: 1 action, the magazine full (as far as the team's ammo goes)
+      if (u.gunner && u.ap < TURRET.RELOAD_AP) return "A new belt takes both actions."; // (before a double feed is cleared by it)
+      jamReload(b, u); // gunfire.js: a double feed is cleared by dropping the magazine (then this reload fills a fresh one)
       const why = reloadRefusal(b, u);
       if (why) return why;
-      if (u.gunner && u.ap < TURRET.RELOAD_AP) return "A new belt takes both actions.";
       reload(b, u);
       if (u.gunner) { u.ap = 0; afterTurretReload(b, u); }
       break;
     }
     case "overwatch":
+      if (u.jam) return jamRefusal(u);
+      if (u.suppressed) return "Pinned down by suppressing fire: no overwatch this turn.";
       if (!canFire(b, u)) return isRanged(u) && magEmpty(b, u) && !reloadRefusal(b, u) ? "Overwatch needs a loaded gun: reload first." : WEAPONS[u.weapon].arrows ? "Needs arrows for the bow." : "Needs a gun with ammo.";
       u.ow = true; u.ap = 0;
       say(b, `${u.name} is on overwatch.`, "info");
       break;
+    // gunfire.js: clear a jam (its actions, as many as the unit has); set the fire mode (free); suppressing fire.
+    case "unjam": {
+      const why = unjamRefusal(u);
+      if (why) return why;
+      unjam(b, u);
+      break;
+    }
+    case "firemode": {
+      syncModes(u);
+      const mode = act.mode || u.modes[(u.modes.indexOf(u.mode) + 1) % Math.max(1, u.modes.length)]; // no mode given: the next one
+      const why = modeRefusal(u, mode);
+      if (why) return why;
+      if (u.mode !== mode) { u.mode = mode; say(b, `${u.name}: ${FIRE_MODES[mode].name.toLowerCase()} (${modeRounds(u, mode)} round${modeRounds(u, mode) === 1 ? "" : "s"} a shot).`, "info"); }
+      bump(b);
+      return "";
+    }
+    case "suppress": {
+      const why = suppressRefusal(b, u, canFire(b, u) ? "" : fireRefusal(b, u));
+      if (why) return why;
+      const x = t ? t.x : Number(act.x), y = t ? t.y : Number(act.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !inside(x, y) || (x === u.x && y === u.y)) return "Pick an enemy or a spot to suppress.";
+      if (t && (t.side === "player" || !active(t))) return "No target.";
+      if (t && !canSee(b, u, t)) return "No line of sight.";
+      suppress(b, u, x, y);
+      u.ap = 0;
+      break;
+    }
     case "hunker":
       u.hunker = true; u.ap = 0;
       say(b, `${u.name} hunkers down.`, "info");
@@ -2748,7 +2914,7 @@ export function endPlayerTurn(state) {
   const b = state.combat;
   bindDims(b);
   if (!b || b.over || b.phase !== "player") return;
-  for (const u of b.units) if (u.side === "player") u.ap = 0;
+  for (const u of b.units) if (u.side === "player") { u.ap = 0; u.suppressed = 0; } // pinned (suppressing fire) until their own turn ends
   b.phase = "enemy";
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
   // Storeys (buildingmaps.js): the floor the player looks at is kept and restored; the dead drifting between floors
@@ -2778,6 +2944,7 @@ export function enemyStep(state) {
   const b = state.combat;
   bindDims(b);
   if (!b || b.over || b.phase !== "enemy") return null;
+  noteJamWeather(state, b);
   let u = null;
   while (b.queue.length && !u) {
     const c = unitById(b, b.queue.shift());
@@ -2806,6 +2973,7 @@ function startPlayerTurn(state, b) {
   if (b.floors && b.viewFloor != null && b.viewFloor !== (b.floor || 0)) setFloor(b, b.viewFloor); // the floor the player was looking at
   burnRound(b); // throwables.js: the flames burn whoever stands in them; fires, smoke and flares burn down
   acidRound(b, ["player"], true); // acid.js: your people standing in a spitter's acid; the pools dry up a round
+  for (const u of b.units) if (u.side !== "player" && u.suppressed) u.suppressed = 0; // their turn is over: no longer pinned
   for (const u of b.units) {
     if (u.side !== "player") continue;
     u.ow = false; u.hunker = false;
@@ -2929,6 +3097,7 @@ function scoreCell(b, u, x, y, foes, cost, field) {
     }
   }
   s += best * 0.3;
+  if (isSniper(u)) s += sniperCell(nearest); // gunfire.js: a sniper keeps its distance (10–15 tiles)
   if (!best) s -= 8 + (field ? Math.min(40, field[idx(x, y)]) : nearest);
   if (u.kind !== "zombie" && b.acid && b.acid.length && acidAt(b, x, y)) s -= ACID.stand; // a spitter's acid (acid.js)
   // The last stand (interior.js): once the yard is lost your people keep to the buildings.
@@ -2988,8 +3157,11 @@ function aiUnit(b, u) {
   if (u.side === "enemy" && u.kind === "human" && !u.fearless && shouldFlee(b)) return flee(b, u);
   if (u.side === "enemy" && u.kind === "human" && siegeAI(b, u)) return; // siege.js: the ram, a ladder, storming, a grenade
   if (u.side === "player" && aiMeds(b, u)) { if (u.ap < 1) return; }
+  // A jammed gun is cleared first (gunfire.js: a double feed by a reload when it can).
+  if (u.jam && aiUnjam(b, u) && u.ap < 1) return;
   // An empty gun is reloaded first (1 action), then the turn goes on with the other (a shot, often).
   if (magEmpty(b, u) && !reloadRefusal(b, u)) { reload(b, u); if (u.ap < 1) return; }
+  if (u.suppressed && u.kind === "human" && !u.post) return aiPinned(b, u); // pinned by suppressing fire: to cover
   if (u.post && holdPost(b, u)) return; // deploy.js: a defender posted at the gate or on a tower stays there
   if (u.ztype && zombieTurn(b, u)) return; // zombietypes.js: a screamer shrieks or hangs back, a brute smashes through
   if (!canFire(b, u)) return aiMelee(b, u);
@@ -2999,6 +3171,9 @@ function aiUnit(b, u) {
     const shot = bestShot(b, u, foes);
     // Nothing to shoot and the magazine low: top it up while nobody is in reach.
     if (!shot && magLow(u) && !foes.some((f) => adjacent(u, f)) && !reloadRefusal(b, u)) { reload(b, u); continue; }
+    // Suppressing fire (gunfire.js): an automatic gun on people pins them down when a fair shot is not there.
+    const pin = step === 0 && u.side !== "player" ? aiSuppressAt(b, u, foes, shot) : null;
+    if (pin) { suppress(b, u, pin.x, pin.y); u.ap = 0; return; }
     const field = distField(b, foes.map((f) => [f.x, f.y]), u);
     const here = scoreCell(b, u, u.x, u.y, foes, 0, field);
     if (shot && (u.ap === 1 || (shot.o.chance >= 55 && here > -6))) { fire(b, u, shot.t); u.ap = 0; return; }
@@ -3025,10 +3200,41 @@ function aiUnit(b, u) {
     // Nothing to shoot and nowhere better to stand: an attacker at a wall, a door or the gate batters it.
     const wall = siegeTarget(b, u);
     if (wall) { bash(b, u, wall[0], wall[1]); u.ap = 0; return; }
-    if (u.side === "player" || rng.chance(0.6)) u.ow = true;
+    if (u.side === "player" || isSniper(u) || rng.chance(0.6)) u.ow = true; // a sniper always watches
     else if (coverSides(b, u.x, u.y).some((c) => c)) u.hunker = true;
     u.ap = 0;
   }
+}
+
+// Pinned by suppressing fire (gunfire.js): out of the open if it can (bestMove weighs cover), a shot only when it is a
+// good one, else head down.
+function aiPinned(b, u) {
+  const foes = foesOf(b, u);
+  if (!foes.length) { u.ap = 0; return; }
+  const exposed = foes.some((f) => isRanged(f) && canSee(b, f, u) && coverAgainst(b, u.x, u.y, f.x, f.y).level === 0);
+  if (exposed && u.ap > 0) {
+    const field = distField(b, foes.map((f) => [f.x, f.y]), u);
+    const mv = bestMove(b, u, foes, field);
+    if (mv && mv.sc > scoreCell(b, u, u.x, u.y, foes, 0, field)) { u.ap -= 1; moveAlong(b, u, mv.path); }
+  }
+  if (!active(u)) return;
+  const shot = u.ap > 0 ? bestShot(b, u, foesOf(b, u)) : null;
+  if (shot && shot.o.chance >= 50) { fire(b, u, shot.t); u.ap = 0; return; }
+  if (coverSides(b, u.x, u.y).some((c) => c)) u.hunker = true;
+  u.ap = 0;
+}
+// Where an enemy with an automatic gun lays down suppressing fire, or null: two or more people in the cone with no
+// fair shot (under 50%), or a machine gun (a 60-round magazine or more) on anyone with no good shot (under 40%).
+function aiSuppressAt(b, u, foes, shot) {
+  if (u.kind !== "human" || (shot && shot.o.chance >= 50) || !suppressRounds(u) || !canFire(b, u) || suppressRefusal(b, u, "")) return null;
+  const people = foes.filter((f) => f.kind === "human" && !f.ztype);
+  if (!people.length) return null;
+  const c = bestCone(b, u, people);
+  if (!c) return null;
+  const mg = magCap(u) >= 60;
+  if (c.n >= 2 && (!shot || shot.o.chance < 50)) return c;
+  if (mg && (!shot || shot.o.chance < 40)) return c;
+  return null;
 }
 
 // A defender posted at the gate (or a breach) or on a watchtower by the deploy step (deploy.js) holds it: shoots
@@ -3541,6 +3747,7 @@ export function retreatAdvice(b, style = "balanced") {
 export function autoPlayerTurn(state, opts = {}) {
   const b = state.combat;
   bindDims(b);
+  if (b) noteJamWeather(state, b);
   if (b && !b.over && b.phase === "deploy") { endDeploy(b); return void afterDeploy(state, b); } // deploy.js: default positions, then fight
   if (!b || b.over || b.phase !== "player") return;
   // A site with several buildings (buildingmaps.js): the AI picks one by its own dice (or the street), then plays it.
@@ -3642,7 +3849,7 @@ function endBattle(state, b, outcome) {
       continue;
     }
     const hp = u.down ? rng.int(5, 15) : u.hp;
-    if (hp < s.health - 0.01) hurt(state, s, (s.health - hp) / u.armor, b.tileId, cause);
+    if (hp < s.health - 0.01) hurt(state, s, (s.health - hp) / battleArmor(s), b.tileId, cause); // hurt() takes Tough and the armour worn now off again (armour.js: per-hit armour did the work in battle)
     else s.health = Math.min(100, Math.max(s.health, hp));
     if (!s.alive) { deadIds.push(s.id); continue; }
     if (s.health < u.startHp - 0.5) hurtIds.push(s.id);
@@ -3718,7 +3925,8 @@ function wearFielded(state, b, fought) {
     if (u.side !== "player") continue;
     const s = survivorById(state, u.sid);
     if (!s || !s.alive) continue;
-    if (fought) for (const [slot, item] of u.fielded || []) if (s.gear[slot] === item) wearSlot(state, s, slot);
+    if (fought) for (const [slot, item] of u.fielded || []) if (s.gear[slot] === item && !(slot !== "weapon" && armourSpec(item.key))) wearSlot(state, s, slot); // armour pieces wore by their hits (armour.js)
+    dropBroken(state, s); // armour.js: a piece broken or shattered in the fight is gone
     if (u.kitUses && u.medKit && s.gear.tool === u.medKit) wearSlot(state, s, "tool", u.kitUses);
   }
 }
@@ -4384,7 +4592,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
     const sup = {}, gear = [];
     if (box.kind === "body" && box.zombie) {
       // One of the dead (inventory.js deadBodyFinds): pockets, now and then a pistol; a dead soldier's kit.
-      const f = deadBodyFinds(rng, box.ztype);
+      const f = deadBodyFinds(rng, box.ztype, box.plateDur ?? null); // a dead soldier's plates as worn as they were shot (deadsoldiers.js)
       Object.assign(sup, f.sup);
       gear.push(...f.gear);
       if (box.ztype === "spitter") { // the burst acid sac is still dripping
@@ -4598,6 +4806,14 @@ function botExitDetour(b, u, targets, avoid) {
 }
 
 // Headless auto-player for raids: loot what is near, extract when Heat or wounds get bad (BOT_LEAVE).
+// Would a reload clear this double feed (a fresh magazine to put in)?
+function botReloadClears(b, u) {
+  const keep = magIn(u);
+  loadMag(u, 0);
+  const ok = !reloadRefusal(b, u);
+  loadMag(u, keep);
+  return ok;
+}
 function autoRaidTurn(state) {
   const b = state.combat;
   const R = b.raid;
@@ -4667,6 +4883,8 @@ function autoRaidTurn(state) {
       if (skull && !combatAct(state, skull)) continue;
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
+      // A jammed gun: cleared (gunfire.js: a double feed by a reload when it can, else Unjam), then on.
+      if (u.jam && !combatAct(state, { type: u.jam.kind === "double" && botReloadClears(b, u) ? "reload" : "unjam", unit: u.id })) continue;
       // An empty gun: reloaded (1 action) when something is close or there is time (not on the way out), then on.
       if (magEmpty(b, u) && (foes.length || !leave) && !reloadRefusal(b, u) && !combatAct(state, { type: "reload", unit: u.id })) continue;
       const adj = foes.find((f) => adjacent(u, f));

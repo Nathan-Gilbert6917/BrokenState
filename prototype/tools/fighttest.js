@@ -186,7 +186,8 @@ const groupOf = (state, type) => {
   const spearMax = itemDurMax(makeItem("pipespear", 1)), vestMax = itemDurMax(makeItem("tirevest", 1)); // crafted at 100%: their own full uses
   const tookField = everyone.filter((s) => fielded.includes(s.id) && s.alive);
   const stayed = everyone.filter((s) => !fielded.includes(s.id));
-  check(tookField.every((s) => s.gear.weapon.dur === spearMax - 1 && s.gear.armor.dur === vestMax - 1), "weapon and armor of those who fought lose one use when the battle ends");
+  // Armour wears by its hits instead (armour.js per-hit durability): never more than it had, and only those hit.
+  check(tookField.every((s) => s.gear.weapon.dur === spearMax - 1 && (!s.gear.armor || s.gear.armor.dur <= vestMax)), "the weapons of those who fought lose one use when the battle ends; their armour only what its hits took");
   check(stayed.length === 3 && stayed.every((s) => (s.gear.weapon.dur ?? spearMax) === spearMax && (s.gear.armor.dur ?? vestMax) === vestMax), "people who stayed off the map wear nothing");
   check(medic.gear.tool && medic.gear.tool.dur === itemDurMax(medic.gear.tool) - mu.kitUses && mu.kitUses >= 2, `the bandage kit lost one use per treatment (${mu.kitUses} uses, ${medic.gear.tool ? medic.gear.tool.dur : "gone"} left)`);
   // Swapped on the result screen: the weapon that fought is already worn, the fresh one is not.

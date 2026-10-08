@@ -22,6 +22,8 @@ import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
 import { bodyLoot } from "./deadsoldiers.js";
 import { condition, kitSource, spend } from "./itemcond.js"; // the condition loot comes in (one roller for every source)
+import { armourCond, lootArmour } from "./armour.js"; // per-hit armour: condition, an enemy body's worn piece
+import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it fought in
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
 
@@ -127,9 +129,15 @@ export function ensureInv(s) {
   return s;
 }
 
-// Armor one piece gives: its listed power scaled by condition (item.quality). A piece at 100% gives it all,
-// at 60% it gives 80%, at 40% 70%: worn-out armor still protects, just less.
-export const itemArmor = (item) => (item && GEAR[item.key] ? GEAR[item.key].power * (0.5 + 0.5 * Math.max(0, Math.min(1, item.quality ?? 1))) : 0);
+// Armor one piece gives: its listed power scaled by condition. A piece at 100% gives it all, at 60% it gives 80%, at
+// 40% 70%: worn-out armor still protects, just less; a broken one (shattered ceramic, durability 0) nothing. The
+// condition of an armour piece is its durability (armour.js armourCond: dur / the piece's GEAR dur; an item from before
+// durability: its quality); anything else's is item.quality.
+export const itemArmor = (item) => {
+  if (!item || !GEAR[item.key]) return 0;
+  const c = armourCond(item);
+  return GEAR[item.key].power * (c == null ? 0.5 + 0.5 * Math.max(0, Math.min(1, item.quality ?? 1)) : c <= 0 ? 0 : 0.5 + 0.5 * c);
+};
 
 // Armor from everything worn (body, head, arms, legs), capped. Damage taken is multiplied by armorMult.
 export function armorPower(s) {
@@ -525,7 +533,7 @@ export function enemyBody(rng, u, kit) {
   const add = (k, n) => { if (n > 0) body.supplies[k] = (body.supplies[k] || 0) + n; };
   if (u.kind === "zombie") {
     // A dead soldier or riot cop (deadsoldiers.js): worn armour, a helmet, rounds, now and then more.
-    const mil = u.ztype ? bodyLoot(rng, u.ztype, armouredItem) : null;
+    const mil = u.ztype ? bodyLoot(rng, u.ztype, armouredItem, u.plateDur) : null; // plateDur: what their plates have left (deadsoldiers.js)
     if (mil) {
       for (const [k, n] of Object.entries(mil.sup)) add(k, n);
       for (const it of mil.gear) stow(body, it, ""); // (a second rifle with nowhere to go stays on the ground)
@@ -551,6 +559,8 @@ export function enemyBody(rng, u, kit) {
   if (GEAR[u.weapon]) body.gear.weapon = lootItem(u.weapon, src, spend(rng));
   if (body.gear.weapon) carryMods(u, body.gear.weapon); // gunmods.js: the attachments on their gun come with it
   if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = lootItem(u.armorKey, src, spend(rng));
+  if (body.gear.armor && !lootArmour(u, body.gear.armor)) body.gear.armor = null; // armour.js: the durability its piece had left after the fight (broken: none)
+  if (body.gear.weapon) lootGun(u, body.gear.weapon); // gunfire.js: the quality and condition their gun fought (and jammed) in
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = lootItem(kit.pack[0], src, spend(rng));
   if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, lootItem(rng.pick(kit.finds), src, rng), ""); // pockets: smokes, a ring (combat.js KITS finds)
@@ -571,8 +581,8 @@ export const ZBODY = {
   find: 0.3, FINDS: ["phone", "phone", "lighters", "smokes", "candy", "chocolate", "goldring", "watch", "photos", "batteries", "bandagekit", "knife", "cigarettes", "cards", "deodorant", "lipbalm"],
   pistol: 0.02, bag: 0.03,
 };
-export function deadBodyFinds(rng, ztype) {
-  const mil = ztype ? bodyLoot(rng, ztype, armouredItem) : null;
+export function deadBodyFinds(rng, ztype, plateDur = null) {
+  const mil = ztype ? bodyLoot(rng, ztype, armouredItem, plateDur) : null;
   if (mil) return mil;
   const sup = {}, gear = [];
   for (const k of ["ammo", "food", "meds", "scrap"]) { const [p, lo, hi] = ZBODY[k]; if (rng.chance(p)) sup[k] = rng.int(lo, hi); }

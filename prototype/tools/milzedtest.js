@@ -80,9 +80,12 @@ section("Armour by weapon (deadsoldiers.js armorVs; combat.js damage)");
   z.hp = z.maxHp = 200;
   const hp0 = z.hp;
   me.weapon = "pistol";
+  z.plateDur = 1; // fresh plates for each row (deadsoldiers.js wearPlate wears them per hit)
   const e1 = damage(b, z, 20, me, false, { how: "shot", crit: false });
   me.weapon = "huntrifle";
+  z.plateDur = 1;
   const e2 = damage(b, z, 20, me, false, { how: "shot", crit: false });
+  z.plateDur = 1;
   const e3 = damage(b, z, 20, me, false, { how: "shot", crit: true });
   check(r2(e1) === 20 * MILDEAD.ARMOR.soldier.w.pistol && r2(e2) === r2(20 * MILDEAD.ARMOR.soldier.w.huntrifle) && r2(e3) === 20 && r2(hp0 - z.hp) === r2(e1 + e2 + e3), `20 raw: a pistol round does ${r2(e1)}, a hunting rifle ${r2(e2)}, a critical ${r2(e3)}`);
   const z2 = sol[1];
@@ -121,19 +124,19 @@ section("Their bite, their armour, critical hits (combat.js meleeOdds, damage, C
     && JSON.stringify(os) === JSON.stringify(ow) && JSON.stringify(orr) === JSON.stringify(ow),
     `a dead soldier and a riot cop bite like a walker: ${ow.chance}% to hit, ${ow.dmg[0]}–${ow.dmg[1]} damage, ${ow.crit}% crit (all three)`);
   // The armour: less from bullets and blades (and gun butts), never from a walker's own hide.
-  const hit = (z, w, how, crit = false) => { z.hp = z.maxHp = 500; me.weapon = w; return r2(damage(b, z, 20, me, false, { how, crit })); };
+  const hit = (z, w, how, crit = false) => { z.hp = z.maxHp = 500; z.plateDur = 1; me.weapon = w; return r2(damage(b, z, 20, me, false, { how, crit })); };
   const rows = [["pistol", "shot"], ["shotgun", "shot"], ["huntrifle", "shot"], ["ar", "shot"], ["knife", "melee"], ["machete", "melee"], ["bat", "melee"], ["pistol", "bash"]];
   const cut = rows.map(([w, how]) => ({ w, how, walker: hit(walker, w, how), sol: hit(sol, w, how), riot: hit(riot, w, how) }));
   check(cut.every((r) => r.walker === 20 && r.sol < 20 && r.riot < 20 || (r.walker === 20 && r.sol < 20 && r.riot === 20 && ["huntrifle", "ar"].includes(r.w))),
     `20 raw, walker / soldier / riot cop: ${cut.map((r) => `${r.w}${r.how === "bash" ? " butt" : ""} ${r.walker}/${r.sol}/${r.riot}`).join(", ")} (a riot vest does not stop rifle rounds)`);
   // Critical hits: × CRIT_MULT, through the armour. The battle's dice forced (hit, crit or not, the lowest damage).
   const forced = (critOn, fn) => { const real = b.rng; b.rng = Object.assign(Object.create(real), { chance: (p) => (p >= 1 || critOn.length ? critOn.shift() ?? true : true), int: (lo) => lo }); try { return fn(); } finally { b.rng = real; } };
-  const strikeAt = (z, w, crit) => { z.hp = z.maxHp = 500; z.x = me.x + 1; z.y = me.y; z.aware = true; z.face = [-1, 0]; me.weapon = w; me.ap = 2; b.phase = "player"; b.queue = []; const hp0 = z.hp; forced([true, crit], () => combatAct(st, { type: "melee", unit: me.id, target: z.id })); return r2(hp0 - z.hp); };
+  const strikeAt = (z, w, crit) => { z.hp = z.maxHp = 500; z.plateDur = 1; z.x = me.x + 1; z.y = me.y; z.aware = true; z.face = [-1, 0]; me.weapon = w; me.ap = 2; b.phase = "player"; b.queue = []; const hp0 = z.hp; forced([true, crit], () => combatAct(st, { type: "melee", unit: me.id, target: z.id })); return r2(hp0 - z.hp); };
   const lo = WEAPONS.knife.dmg[0];
   const wN = strikeAt(walker, "knife", false), wC = strikeAt(walker, "knife", true), sN = strikeAt(sol, "knife", false), sC = strikeAt(sol, "knife", true);
   check(CRIT_MULT === 2 && wN === lo && wC === lo * CRIT_MULT && sC === lo * CRIT_MULT && sN === r2(lo * MILDEAD.ARMOR.soldier.w.knife),
     `a critical hit doubles the damage (CRIT_MULT ${CRIT_MULT}): a knife's lowest ${lo} on a walker ${wN} → ${wC} critical; on a dead soldier's front ${sN} → ${sC} critical (through the armour)`);
-  const shootAt = (z, crit) => { z.hp = z.maxHp = 500; z.x = me.x + 1; z.y = me.y; me.weapon = "pistol"; me.gearRisk = 0; me.ap = 2; b.phase = "player"; b.queue = []; const hp0 = z.hp; forced([true, crit], () => combatAct(st, { type: "shoot", unit: me.id, target: z.id })); return r2(hp0 - z.hp); };
+  const shootAt = (z, crit) => { z.hp = z.maxHp = 500; z.plateDur = 1; z.x = me.x + 1; z.y = me.y; me.weapon = "pistol"; me.gearRisk = 0; me.ap = 2; b.phase = "player"; b.queue = []; const hp0 = z.hp; forced([true, crit], () => combatAct(st, { type: "shoot", unit: me.id, target: z.id })); return r2(hp0 - z.hp); };
   const plo = Math.round(WEAPONS.pistol.dmg[0] * me.dmgMult);
   const pN = shootAt(walker, false), pC = shootAt(walker, true), psN = shootAt(sol, false), psC = shootAt(sol, true);
   check(pN === plo && pC === plo * CRIT_MULT && psN === r2(plo * MILDEAD.ARMOR.soldier.w.pistol) && psC === plo * CRIT_MULT, `and a shot: a pistol's lowest ${plo} on a walker ${pN} → ${pC} critical; on a dead soldier ${psN} → ${psC} critical`);
