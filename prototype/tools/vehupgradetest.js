@@ -468,6 +468,14 @@ section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
   check(/Jammed/.test(ej), `a jammed turret will not fire ("${ej}")`);
   const eu = combatAct(st, { type: "unjam", unit: g.id });
   check(!eu && !g.jam && g.gunner && g.ap === 1, `the gunner clears it on the turret (1 action)${eu ? ` [${eu}]` : ""}`);
+  // The belt's last rounds: 100 and 200 do not divide into 3-round bursts, so the last burst fires what is left.
+  const t2 = foes.find((o) => !o.dead && canSee(b, g, o));
+  if (t2) {
+    g.ap = 2; g.mag = 1; g.magW = g.weapon;
+    const r0 = turretRounds(b);
+    const e4 = combatAct(st, { type: "turret", unit: g.id, target: t2.id });
+    check(!e4 && magIn(g) === 0 && turretRounds(b) === r0 - 1, `the belt's last round fires as a short burst (${r0} → ${turretRounds(b)}, belt ${magIn(g)})${e4 ? ` [${e4}]` : ""}`);
+  }
   g.ap = 1; g.jam = { kind: "double", ap: 2 }; const belt1 = magIn(g);
   check(/both actions/.test(combatAct(st, { type: "reload", unit: g.id })) && g.jam && magIn(g) === belt1, "a double feed: a new belt still needs both actions (the jam and the belt left as they were)");
   g.jam = null; g.ap = 2;

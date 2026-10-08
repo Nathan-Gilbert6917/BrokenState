@@ -784,7 +784,7 @@ export const ammoLeft = (b) => sideRounds(b);
 export const arrowsLeft = (b) => pool(b, "arrows");
 // Has the player's side what this weapon shoots (rounds of its calibre and loaded type for a gun, with u the shooter;
 // arrows for a bow or crossbow)? Without u, any rounds.
-export const hasShot = (b, w, u = null) => (!w.ammo || (u ? roundsOf(b, u) : ammoLeft(b)) >= w.ammo) && (!w.arrows || arrowsLeft(b) >= w.arrows);
+export const hasShot = (b, w, u = null) => (!w.ammo || (u ? roundsOf(b, u) : ammoLeft(b)) >= (w.mounted ? 1 : w.ammo)) && (!w.arrows || arrowsLeft(b) >= w.arrows); // a turret: a short last burst (magEmpty)
 // A shot by one of your people: its rounds (its calibre and loaded type: its own boxes, the team's, the pools) or its
 // arrow from the pools (b.arrowsUsed: picked up again after a win).
 function spendShot(b, w, u) {
@@ -2135,8 +2135,10 @@ export function loadMag(u, n = null) {
 }
 // The rounds loaded as the player sees them: never more than the team's rounds of that calibre and type.
 export const magShown = (b, u) => (u.side === "player" ? Math.min(magIn(u), roundsOf(b, u)) : magIn(u));
-// A gun whose magazine has too few rounds for a shot (whatever the team's ammo).
-export const magEmpty = (b, u) => hasMag(u) && magIn(u) < WEAPONS[u.weapon].ammo;
+// A gun whose magazine has too few rounds for a shot (whatever the team's ammo). A turret's belt (100 or 200, 3 a
+// burst) fires its last burst with whatever is left: empty only at none (fire: the burst is the rounds there are).
+const shotRounds = (w) => (w.mounted ? 1 : w.ammo);
+export const magEmpty = (b, u) => hasMag(u) && magIn(u) < shotRounds(WEAPONS[u.weapon]);
 // "9mm pistol 7/15" (nothing for a weapon with no magazine).
 export const magLabel = (b, u) => (hasMag(u) ? `${magShown(b, u)}/${magMaxOf(u)}` : "");
 const gunWord = (u) => { const n = u.weaponName || WEAPONS[u.weapon].name; return /^[A-Z][a-z]/.test(n) ? n[0].toLowerCase() + n.slice(1) : n; };
@@ -2350,8 +2352,8 @@ export function enemyUnit(b, rng, kind, power, n) {
   };
   MED.enemyMedic(b, rng, u, kind); // medics.js: about one group in five of soldiers, guards, militia, fighters has a medic
   loadMag(u); // loaded; their reserve ammo is endless (only the magazine stops them)
-  u.q = enemyGunQ(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // gunfire.js: their gun's condition (jams; the looted gun keeps it), own dice
-  u.cond = enemyGunCond(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // its durability share (a worn gun jams more)
+  u.q = enemyGunQ(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id, kind); // gunfire.js: their gun's condition by their kit (itemcond.js kitSource; jams; the looted gun keeps it), own dice
+  u.cond = enemyGunCond(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id, kind); // its durability share (a worn gun jams more)
   syncModes(u);
   enemyPieces(b, u); // armour.js: their body armour as a piece that wears (the loot keeps what is left)
   kitFlashbangs(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // throwables.js FLASH_KIT: a soldier's or a guard's flashbang (its own dice)
@@ -2733,7 +2735,7 @@ export function fire(b, a, t, opts = {}) {
   if (a.side !== "player") aiMode(b, a, t, opts); // gunfire.js: enemies pick a mode (yours keep the one you set)
   const mode = modeOf(a), moded = !!gunModes(w);
   let rounds = modeRounds(a, mode);
-  if (moded) {
+  if (moded || w.mounted) { // a turret's last burst: the rounds left on the belt (magEmpty)
     if (hasMag(a)) rounds = Math.min(rounds, magIn(a));
     if (a.side === "player") rounds = Math.min(rounds, roundsOf(b, a)); // ammo.js: its calibre and loaded type
     rounds = Math.max(1, rounds);

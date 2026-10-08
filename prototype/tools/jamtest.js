@@ -8,7 +8,8 @@
 // Usage: node tools/jamtest.js [seed]
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import { WEAPONS, createBattle, combatAct, registerCombatHandler, runEnemyPhase, autoPlayerTurn, canFire, fireRefusal, fire, magIn, loadMag } from "../src/sim/combat.js";
-import { jamChance, rollTrigger, JAM, misfires, jamGun, unjam, gunQ, gunCond, enemyGunQ, MISFIRE_KEYS } from "../src/sim/gunfire.js";
+import { jamChance, rollTrigger, JAM, misfires, jamGun, unjam, gunQ, gunCond, enemyGunQ, enemyGunCond, MISFIRE_KEYS } from "../src/sim/gunfire.js";
+import { COND_SOURCES, kitSource } from "../src/sim/itemcond.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -105,6 +106,10 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   // Enemy guns: quality 0.4–0.85 on their own dice.
   const qs = Array.from({ length: 500 }, (_, i) => enemyGunQ(seed, i));
   check(qs.every((q) => q >= 0.4 && q <= 0.85) && Math.max(...qs) - Math.min(...qs) > 0.3, `an enemy's gun quality is rolled 0.4–0.85 (${Math.min(...qs)}–${Math.max(...qs)})`);
+  // With their kit: the ranges of the bodies that kit leaves (itemcond.js kitSource), a soldier's rifle better kept.
+  const byKit = (kit) => { const q = Array.from({ length: 500 }, (_, i) => enemyGunQ(seed, i, kit)), c = Array.from({ length: 500 }, (_, i) => enemyGunCond(seed, i, kit)); return { q, c, mq: q.reduce((a, v) => a + v, 0) / q.length }; };
+  const sol = byKit("soldiers"), rai = byKit("raiders"), S = COND_SOURCES[kitSource("soldiers")], R = COND_SOURCES[kitSource("raiders")];
+  check(sol.q.every((q) => q >= S.q[0] && q <= S.q[1]) && sol.c.every((c) => c >= S.d[0] && c <= S.d[1]) && rai.q.every((q) => q >= R.q[0] && q <= R.q[1]) && sol.mq > rai.mq + 0.05, `by kit, as itemcond's bodies: soldiers ${S.q.join("–")} (mean ${sol.mq.toFixed(2)}), raiders ${R.q.join("–")} (mean ${rai.mq.toFixed(2)})`);
   check(gunQ({ item: newItem("pistol", 0.6) }) === 0.6 && gunCond({ item: Object.assign(newItem("pistol"), { dur: GEAR.pistol.dur / 2 }) }) === 0.5, "a gun's quality and its durability both count");
 }
 
