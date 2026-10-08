@@ -96,7 +96,7 @@ export const KEYMAP = [
   { id: "battle.quick", label: "Quick search (raid)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyQ"], v: "quick" },
   { id: "battle.drag", label: "Drag a body", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyD"], v: "drag" },
   // The unit orders (combatAction "cb-act" with v).
-  ...[["shoot", "Shoot", "KeyF"], ["melee", "Melee", "KeyE"], ["meds", "Meds", "KeyM"], ["overwatch", "Overwatch", "KeyO"], ["hunker", "Hunker down", "KeyH"],
+  ...[["shoot", "Shoot", "KeyF"], ["melee", "Melee", "KeyE"], ["meds", "Meds", "KeyM"], ["overwatch", "Overwatch", "KeyO"], ["hunker", "Hunker down", "KeyH"], ["reload", "Reload the gun", "KeyI"],
     ["retreat", "Retreat (from the evac strip)", "KeyR"], ["vehicle", "Open the vehicle", "KeyN"], ["extract", "Extract (raid)", "KeyX"], ["subdue", "Subdue", "KeyC"],
     ["tie", "Tie up", "KeyT"], ["throw", "Throw", "KeyG"], ["climb", "Climb", "KeyL"], ["peek", "Peek", "KeyK"], ["close", "Close a door", "KeyQ"], ["brace", "Brace a door", "KeyY"],
     ["crush", "Crush the skull of a body", "KeyU"], ["doubletap", "Double tap a body", "KeyJ"], ["pickup", "Pick up / put down a body", "KeyP"], ["stowbody", "Stow a body in the vehicle", "KeyZ"]]

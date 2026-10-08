@@ -56,7 +56,7 @@
 //     (carrierTurn); the rest of the time it claws like the others. Your people shoot it first (ZTYPES priority).
 // Battles without Carriers, swarms or walking loot nearby play exactly as before (no dice are drawn here otherwise).
 import { CARRIER } from "./hiveconst.js";
-import { CELL, KITS, WEAPONS, say, fx, active, adjacent, enemyUnit, reachable, pathTo, moveAlong, unitAt, canSeeAt, isRanged, canFire, inEvac } from "./combat.js";
+import { CELL, KITS, say, fx, active, adjacent, enemyUnit, reachable, pathTo, moveAlong, unitAt, canSeeAt, isRanged, canFire, fireRefusal, inEvac } from "./combat.js";
 import { applyZType } from "./zombietypes.js";
 import { fireAt } from "./throwables.js";
 import { survivorById, log, day, hurt, atBase, newId, baseById } from "./world.js";
@@ -289,7 +289,7 @@ export function tappable(b, u) {
 export function tapRefusal(b, u, c) {
   if (!c || !wormable(c)) return "Pick a body that could still get up.";
   if (!isRanged(u)) return "No gun: crush the skull from next to it instead.";
-  if (!canFire(b, u)) return WEAPONS[u.weapon] && WEAPONS[u.weapon].arrows ? "Out of arrows." : "Out of ammo."; // a bow's arrow through the head will do
+  if (!canFire(b, u)) return fireRefusal(b, u) || "Out of ammo."; // an empty magazine: reload first (combat.js)
   if (!canSeeAt(b, u, c.x, c.y)) return "No line of sight to the body.";
   return "";
 }

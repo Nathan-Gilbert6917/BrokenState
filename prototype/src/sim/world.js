@@ -7,6 +7,7 @@ import { Rng } from "./rng.js";
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
 import { FIRST_NAMES, LAST_NAMES, SKILLS, TRAITS, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { sanitizeLibrary } from "./custombg.js";
 import { appearanceFor } from "./appearance.js";
 export { radioBasesInRange };
 
@@ -104,7 +105,7 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
  *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null }} opts
  * @returns {State}
  */
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null }) {
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
@@ -126,6 +127,10 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     stats: { peopleSaved: 0, raidsRepelled: 0 },
   };
 
+  // Custom backgrounds (custombg.js) the new-run screen passes in: the world keeps its own copy (saved with it), so a
+  // hardcore crew's picks resolve whatever the browser's list holds later. Not in a world without any.
+  const bgs = customBackgrounds ? sanitizeLibrary(customBackgrounds) : {};
+  if (Object.keys(bgs).length) state.customBackgrounds = bgs;
   if (state.mode === "hardcore") {
     hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
@@ -279,6 +284,9 @@ export function applyCrew(state, crew) {
     // A normal start's weapon and armor (Randomize all hands the kit out again). Hardcore's come from what they grabbed.
     if (c.gear && state.mode !== "hardcore") for (const k of ["weapon", "armor"]) if (k in c.gear) s.gear[k] = c.gear[k] && GEAR[c.gear[k].key] ? { ...c.gear[k] } : null;
     if (c.leader) s.leader = true;
+    // Customized past the dice on the new-run screen (free skills, traits, a picked background: ui/newgame.js), which an
+    // Ironman run may not start with.
+    if (c.custom) s.startCustom = true;
   });
 }
 
