@@ -43,7 +43,7 @@
 //   all the supplies go into the group's stock and the items onto its shelf (its wares), the caravan is gone (your
 //   convoy: someone hurt, the cargo gone, it goes on empty). Lost: the band loses people, the caravan a guard or two.
 import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES } from "./data.js";
-import { log, addCard, day, factionById, hurt, localId, newId, combatPower } from "./world.js";
+import { log, addCard, day, factionById, hurt, newId, combatPower } from "./world.js";
 import {
   partyTile, partyMembers, tileLabel, removeParty, planPath, cargoRoom, unitsThatFit, addGearToCargo, wipeParty, awaitOrders, orderMove,
 } from "./parties.js";
@@ -80,7 +80,9 @@ export const AI_CONVOY_GOODS = { food: 10, scrap: 10 };
 const KIT_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 // ---------- the caravans on the map ----------
-const pKey = (state, q) => `p${localId(state, q.id)}`;
+// A party's key for the dice: a serial of this world's own, handed out the first time it is looked at (ids are
+// process-wide, and even localId differs between two worlds made before either plays: tradetest's determinism).
+const pKey = (state, q) => `p${q.cvSerial ?? (q.cvSerial = (state.cvSerial = (state.cvSerial || 0) + 1))}`;
 const vKey = (v) => `v${v.serial}`;
 // What one carries: { supplies, gear } (live: changes to these change the caravan).
 function goodsOf(c) {
@@ -205,7 +207,7 @@ function onRoadCaravan(state, result, setup) {
     lines.push(...lootCaravan(state, p, goods, { tile: partyTile(p), name: c.name, kit: setup.enemy.kind, guards: result.enemiesKilled || setup.enemy.count, tactical: !!result.tactical, vehicle: c.vehicle, key: c.key, result }));
     if (q) removeParty(state, q);
   } else {
-    if (q) { q.strength = Math.max(1, (q.strength || 2) * Math.max(0.3, (result.enemiesLeft || 1) / Math.max(1, setup.enemy.count))); q.met = { ...(q.met || {}), [localId(state, p.id)]: state.hour }; }
+    if (q) { q.strength = Math.max(1, (q.strength || 2) * Math.max(0.3, (result.enemiesLeft || 1) / Math.max(1, setup.enemy.count))); q.met = { ...(q.met || {}), [pKey(state, p)]: state.hour }; }
     if (result.outcome === "retreat") lines.push(result.summary ? `${result.summary} You pulled back.` : "You pulled back; the caravan went on.");
     else { const lost = rob(state, p, 0.25, f, false); lines.push(`You lost the fight. The guards took ${lost} off you.`); }
   }
@@ -467,7 +469,7 @@ function meetingsHour(state) {
     for (const c of cars) {
       if (!near(state, tile, c.tile) || !state.live.has(c.tile) || !(state.tiles[tile].road || state.tiles[c.tile].road)) continue;
       const met = c.ref.met || (c.ref.met = {});
-      const id = localId(state, p.id);
+      const id = pKey(state, p);
       if (met[id] != null && state.hour - met[id] < MEET.COOLDOWN) continue;
       met[id] = state.hour;
       p.lastConflict = state.hour;

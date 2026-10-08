@@ -193,7 +193,6 @@ section("Your team robs a group's caravan on the road; the meeting card; Interce
       q.path = [partyTile(p)]; q.idx = 0; q.phase = "out";
       q.strength = 2;
       st.live.add(partyTile(p));
-      const key = `p${q.id - (st.idBase || 0)}`;
       // The meeting card (on a road, in sight).
       st.tiles[partyTile(p)].road = st.tiles[partyTile(p)].road || true;
       p.lastConflict = null;
