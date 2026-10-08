@@ -27,6 +27,7 @@ import { addBuilding, constructionHour, assignStations } from "./buildings.js";
 import { createVehicle, vehiclesDaily, garageHour } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
 import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
+import { aiCaptivesDaily } from "./nonlethal.js"; // people the groups took from each other in raids
 import { supplyDaily } from "./supply.js";
 import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
@@ -54,7 +55,9 @@ import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
 import { claimsDaily } from "./claims.js"; // land claims: lost under a base founded or taken, a hive, a hostile camp
 import { conquestDaily } from "./conquest.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
+import { ransomHour } from "./ransom.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
+import { caravanRaidsHour } from "./caravanraids.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
 import { hiveBirthHour } from "./hivebirth.js"; // hive birth you can see: rumours, the massing card, a hive risen
 import { festivalHour } from "./festival.js"; // the yearly harvest festival at the hub
@@ -778,6 +781,7 @@ export function tickHour(state) {
   releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);
   visitorsHour(state); // visitors.js: raiders, merchants and explorers from outside the state
+  caravanRaidsHour(state); // caravanraids.js: caravans met on the road, chased, robbed (by you or by the groups)
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   constructionHour(state);
@@ -787,6 +791,7 @@ export function tickHour(state) {
   medicalHour(state);
   diplomacyHour(state); // diplomacy.js: jobs for other groups checked every hour (jobs.js)
   prisonersHour(state); // prisoners.js: rescue raids arriving, prisoners whose team or base is gone
+  ransomHour(state); // ransom.js: captives brought home, envoys back with their price, handovers nobody came to
   if (state.hour % 24 === 0) {
     workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
     watchDayRoles(state); // watch.js: Manual people on watch likewise
@@ -803,6 +808,7 @@ export function tickHour(state) {
     deathSitesDaily(state);
     walkingDaily(state); // carriers.js: the walking dead drift a tile; a body with the worm left unburied at a base gets up
     captivesDaily(state);
+    aiCaptivesDaily(state); // nonlethal.js: people the groups took from each other: recruited, ransomed, escaped
     prisonersDaily(state); // prisoners.js: food, escapes, ransoms, recruiting, rescue raids
     conquestDaily(state); // conquest.js: infamy fades, bases taken from you are patched up by their holders
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you

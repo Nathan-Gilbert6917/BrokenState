@@ -55,6 +55,7 @@ import { renderDevPanel, devSample, DEV_SPEEDS } from "./ui/devtools.js";
 import { TL_ACTIONS, tlFrame, tlKey, closeTimelapse } from "./ui/timelapse.js";
 import { REL_ACTIONS } from "./ui/relations.js";
 import { PRISON_ACTIONS, PRISON_CHANGE } from "./ui/prisoners.js";
+import { openNegotiation, sendHandover, dealsOf } from "./sim/ransom.js"; // ransoms for your captives (the People tab)
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
 import { playerTile } from "./sim/hardcore-start.js";
 import { START_PEOPLE, clampStartPeople } from "./sim/hardcore.js";
@@ -738,6 +739,9 @@ const actions = {
   burybody: (d) => { ui.baseMsg = buryBody(state, baseOf(d), Number(d.id)); }, // sim/carriers.js: a body brought home
   burnbody: (d) => { ui.baseMsg = burnBodyHome(state, baseOf(d), Number(d.id)); },
   survivor: (d) => { ui.survivor = Number(d.id); },
+  // A captive's line (People tab, sim/ransom.js): ask their captors' price; send the team to an agreed handover.
+  "rescue-talk": (d) => { const msg = openNegotiation(state, Number(d.id)); if (msg) log(state, msg, "info"); },
+  "rescue-send": (d) => { const deal = dealsOf(state).find((x) => x.id === Number(d.id)); const r = deal ? sendHandover(state, deal) : "That deal is off."; if (typeof r === "string") log(state, r, "info"); },
   closesurv: () => { ui.survivor = null; ui.lookEdit = null; ui.relMsg = ""; ui.skillTree = null; ui.skillMsg = ""; },
   unequip: (d) => {
     const s = survivorById(state, Number(d.id));

@@ -13,7 +13,7 @@ const SEARCH_KIT = ["scentmask", "ragboots", "woodghillie", "ghillie", "tripwire
 // the suburbs, a gun store, a police station, a prison, a base. First in the kit there (it weighs 2.2 kg of the budget).
 export const SAFE_KIT = { key: "powerdrill", sites: ["town", "farm", "ranch", "cabin", "lodge", "ranger", "motel", "gunstore", "police", "prison", "military", "crash_mil"] };
 const MORALE_KIT = ["harmonica", "cards"];
-const FIGHT_KIT = ["molotov", "pipebomb", "smokegren", "flare", "firecracker", "bottle"];
+const FIGHT_KIT = ["molotov", "pipebomb", "flashbang", "smokegren", "flare", "firecracker", "bottle"]; // flashbang: the raid bot clears a room with it (stealth.js botFlash)
 // Optics (optics.js): a survey or recon takes the best the base has; other trips a pair of binoculars if there is one.
 const SCOUT_KIT = ["thermal", "binoculars", "spotscope", "monocular"];
 const TRIP_OPTICS = ["binoculars", "monocular"];

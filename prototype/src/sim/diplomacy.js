@@ -58,6 +58,7 @@ import { allianceDaily, isMember } from "./alliance.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
 import { hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { warCaptureMult } from "./nonlethal.js"; // groups that take people alive take more prisoners in a war
 
 export const DIPLO = {
   DRIFT: 0.02, PACT_REL: 28, PACT_BREAK: 10, PACT_CHANCE: 0.05, WAR_REL: -42, WAR_BASE: 0.01, WAR_RANGE: 18,
@@ -381,7 +382,7 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
     if (w && attacker) {
       w.score[attacker.id] = (w.score[attacker.id] || 0) + 2 + (took ? 2 : 0);
       w.exh[target.id] = (w.exh[target.id] || 0) + 5 + (took ? 8 : 0);
-      if (rng.chance(0.25)) {
+      if (rng.chance(0.25 * warCaptureMult(attacker))) {
         const n = Math.min(1, Math.max(0, target.pop - DIPLO.MIN_POP));
         if (n > 0) { target.pop -= n; w.captives[target.id] = (w.captives[target.id] || 0) + n; }
       }

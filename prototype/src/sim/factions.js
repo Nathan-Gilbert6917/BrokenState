@@ -72,9 +72,11 @@ import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { groupWorksDaily, fieldsFactor, growthFactor, workshopFactor, storeFactor, groupBaseDefence } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids
-import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal } from "./arsenal.js";
-import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople } from "./groupcare.js";
-import { groupWorldDaily, groupWorldWorld, intelDef, knownBase, fearsGroup, KNOW, abandonedAt, abandonedPull, occupyAbandoned, leaveGroupBase } from "./groupworld.js"; // AI parity: what they know, their vehicles, abandoned bases // AI parity: healing, repairs, hunger, desertion; the type profiles // group arsenals: everyone fights with what their group holds
+import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
+import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
+import { groupWorldDaily, groupWorldWorld, intelDef, knownBase, fearsGroup, KNOW, abandonedAt, abandonedPull, occupyAbandoned, leaveGroupBase } from "./groupworld.js"; // AI parity: what they know, their vehicles, abandoned bases
+import { raidPrisoners } from "./nonlethal.js"; // groups that take people alive: some of the beaten are taken, not killed
+import { escortParty } from "./caravans.js"; // a convoy's guards (escorts.js)
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -407,7 +409,9 @@ export function factionsDaily(state) {
       const partners = state.factions.filter((o) => o.alive && o !== f && !isAggressiveType(o));
       if (partners.length) {
         const to = rng.pick(partners);
-        spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
+        const q = spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
+        // caravans.js escortParty: what it carries (the 10 food and 10 scrap it delivers) is worth a token guard to them.
+        if (q) { q.goods = { supplies: { food: 10, scrap: 10 }, gear: [] }; escortParty(state, f, q, q.goods); }
       }
     }
 
@@ -835,6 +839,7 @@ export function resolveRaidOnFaction(state, party, helpers) {
     const loss = Math.ceil(target.pop * rng.range(0.2, 0.35));
     target.pop -= loss;
     clashKit(state, attacker, attN, 0, target, loss, "a", 0.4); // arsenal.js: the field is theirs: half the dead's kit and of the spare kit they lose
+    const taken = raidPrisoners(state, attacker, target, loss); // nonlethal.js: held by the raiders (its own dice)
     for (const k of Object.keys(target.stock)) {
       const lost = target.stock[k] * 0.4;
       target.stock[k] -= lost;
@@ -849,7 +854,7 @@ export function resolveRaidOnFaction(state, party, helpers) {
       else if (fate === "raze") razeGroupBase(state, target, lost, attacker);
       recomputeOwnership(state); // a base changed hands: the land around it follows at once
     }
-    if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${whom} hard (${loss} dead).`, "danger");
+    if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${whom} hard (${loss - taken} dead${taken ? `, ${taken} taken prisoner` : ""}).`, "danger");
     if (attacker && isAggressiveType(attacker) && rng.chance(0.5)) attacker.pop += 1; // a win draws fighters to them
     if (groupBroken(target)) collapseFaction(state, target, attacker);
     return false;

@@ -19,7 +19,7 @@ import {
 } from "./world.js";
 import {
   resolveRaidOnPlayer, resolveRaidOnFaction, raidWarning, maybeCallForHelp, deliverHelpCall, changeGoodwill,
-  attitude, recomputeOwnership, siegePace,
+  attitude, recomputeOwnership, siegePace, isAggressiveType,
 } from "./factions.js";
 import { rollTravelEvent, convoyLegEvent } from "./events.js";
 import { startScavenge } from "./scavenge.js";
@@ -33,6 +33,7 @@ import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome
 import { teamLoad, burdenRecord, rationRate, wornLoad } from "./load.js";
 import { perceive, spot, mergeSpots, MARKER_TYPES, markAbandonedVehicle, markDeathSite, deathLabel } from "./markers.js";
 import { rescueArrive, captivesOf, contactAttack } from "./conflicts.js";
+import { handoverArrive } from "./ransom.js";
 import { assaultArrive } from "./conquest.js";
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
@@ -50,6 +51,7 @@ import { carryBonus, itemLoad } from "./inventory.js";
 import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { caravanGuarded } from "./jobs.js";
+import { caravanOrderChoices, gangAmbush, wouldRaid } from "./caravanraids.js"; // any caravan on the road can be robbed
 import { crashesHour, crashSurvey } from "./crashes.js";
 import { breakdownsHour } from "./breakdowns.js";
 import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldAt, riverFrozen, ICE } from "./weather.js";
@@ -92,7 +94,8 @@ export const MISSIONS = {
   investigate: { name: "Investigate find", desc: "Check a cache, wrecked car or abandoned camp your teams spotted." },
   getvehicle:  { name: "Recover vehicle",  desc: "Bring fuel (and a part if it is badly damaged) to get an abandoned vehicle running. A vehicle found on a map that needs work is repaired on the spot (foundcars.js)." },
   drivehome:   { name: "Drive it home",    desc: "One of the team drives a found vehicle home on their own (foundcars.js).", hidden: true },
-  rescue:      { name: "Rescue captives",  desc: "Go to the group base where your people are held: sneak them out, storm the base, negotiate or pay a ransom." },
+  rescue:      { name: "Rescue captives",  desc: "Go to the group base where your people are held: sneak in or storm the base (on its map, or by the numbers), negotiate or pay a ransom." },
+  handover:    { name: "Ransom handover",  desc: "Take the ransom to the meeting point a group named and bring your people back (ransom.js).", hidden: true },
   sweep:       { name: "Survey",           desc: "Sweep the land around the target for hidden places (farms, cabins, lodges, camps off the roads) and finds: the team moves from spot to spot within the radius for the hours set, then ends back at the centre. Scouting, open ground, daylight and binoculars help; a car covers ground but sees little." },
   assault:     { name: "Assault their base", desc: "Attack a group's base (or one of yours they took): a tactical battle against its defenders behind their walls. Win and it is your outpost, with its land and part of its stores; a group that loses its last base is finished. Bring five or six fighters. Attacking a group that is not hostile costs dearly with it, its friends and every peaceful group." },
   survey:      { name: "Look around",      desc: "Spend 2 hours surveying nearby tiles. Better odds of spotting hidden finds.", hidden: true },
@@ -1124,6 +1127,8 @@ export function ordersCard(state, p, text, doneLabel, title) {
     partyId: p.id,
     choices: [
       ...(queued ? [{ label: `Resume queued orders (${queued})`, hint: `Carry on with: ${queueText(state, p)}`, order: true, resolve: (st) => resumeQueue(st, p) }] : []),
+      // caravanraids.js: a caravan in sight, attack it (within a tile) or go after it.
+      ...caravanOrderChoices(state, p),
       ...opts.map((o) => ({
         label: o.mission === "sweep" ? `Survey ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep",
         resolve: (st) => {
@@ -1391,6 +1396,8 @@ function arrive(state, p) {
     case "rescue":
       p.phase = "engaged";
       return rescueArrive(state, p);
+    case "handover":
+      return handoverArrive(state, p); // ransom.js: the exchange at the meeting point (and its betrayal)
     case "assault":
       return assaultArrive(state, p); // conquest.js: the assault card and its battle
     case "help": {
@@ -1896,13 +1903,18 @@ function aiPartyHour(state, p) {
     }
     if ((p.kind === "convoy" || p.kind === "caravan") && !caravanGuarded(state, p)) { // jobs.js: raiders leave a caravan you escort alone
       for (const r of state.factions) {
-        if (!r.alive || r.type !== "raider" || r.id === p.owner) continue;
+        // Raider gangs (not a group they have a pact with), and aggressive groups at war with its group (caravanraids.js wouldRaid).
+        if (!r.alive || r.id === p.owner || !isAggressiveType(r)) continue;
+        if (!wouldRaid(state, r, { owner: p.owner, type: p.kind })) continue;
         if (r.bases.some((b) => state.grid.distance(b, tileId) <= 2) && state.rng.chance(0.12)) {
-          r.stock.food += 15;
-          r.stock.ammo += 20;
-          // Seen from your land; a group you have not met is not named.
           const from = factionById(state, p.owner);
-          if (state.live.has(tileId)) log(state, `${r.known ? r.name : "Raiders"} ambushed a ${from && from.known ? `${from.name} ` : ""}convoy near ${tileLabel(state, tileId)}.`, "danger");
+          // caravanraids.js gangAmbush: by the numbers; won, everything it carried goes into their stock and onto their shelf.
+          if (!gangAmbush(state, r, p)) {
+            if (state.live.has(tileId)) log(state, `A ${from && from.known ? `${from.name} ` : ""}${p.kind} beat off ${r.known ? r.name : "raiders"} near ${tileLabel(state, tileId)}.`, "info");
+            continue;
+          }
+          // Seen from your land; a group you have not met is not named.
+          if (state.live.has(tileId)) log(state, `${r.known ? r.name : "Raiders"} ambushed a ${from && from.known ? `${from.name} ` : ""}${p.kind} near ${tileLabel(state, tileId)} and took everything it carried.`, "danger");
           removeParty(state, p);
           return;
         }

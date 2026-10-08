@@ -44,7 +44,7 @@ import { attitude, changeGoodwill, isAggressiveType, recomputeOwnership } from "
 import { partyMembers, partyTile, tileLabel, carried, takeSupply, planPath, spawnAiParty, awaitOrders, outpostName } from "./parties.js";
 import { canRadioGroup, tradeBase } from "./radio.js";
 import { available, marketOf } from "./trade.js";
-import { sendCaravan, guardPower } from "./caravans.js";
+import { sendCaravan, guardPower, escortParty } from "./caravans.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { lootItem } from "./inventory.js";
 import { traderSource, spend } from "./itemcond.js";
@@ -573,6 +573,7 @@ function escortHour(state, j, f, teams) {
     p.goods = { supplies: {}, gear: [] };
     for (const [k, q] of Object.entries(goods)) if (q > 0) { f.stock[k] -= q; p.goods.supplies[k] = q; }
     Object.assign(p, { escortJob: j.id, home: f.bases[0], leaving: false, capacity: 120, toFaction: to.id });
+    escortParty(state, f, p, p.goods); // caravans.js: their own guards too (escorts.js), besides your team
     d.stage = "moving";
     d.caravanId = p.id;
     log(state, `The ${f.name} caravan sets out for ${to.known ? to.name : tileLabel(state, to.bases[0])} with your team alongside.`, "info");
