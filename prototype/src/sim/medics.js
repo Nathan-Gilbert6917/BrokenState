@@ -25,7 +25,8 @@
 // gets them off the map or the battle is lost with them still in hand.
 // The AI (both sides, the raid bot, "the AI plays my side") weighs a rescue against the fight: one rescuer for each
 // downed ally, only when the way there is not open ground under fire (unless it is close), dragging to the cell with
-// the most cover and the fewest eyes on it, reviving or stabilizing there, pulling one out of a vehicle first; a medic
+// the most cover and the fewest eyes on it (with a medic of theirs about: to a quiet cell, the medic named to revive
+// them there, PLAN), reviving or stabilizing there, pulling one out of a vehicle first; a medic
 // heals the badly hurt, and plain meds go on the standing, only above the side's reserve kept for a revive (RESERVE).
 import { GEAR } from "./data.js";
 import { gearEffect, survivorById, factionById, hurt } from "./world.js";
@@ -46,9 +47,10 @@ import {
 export const MEDIC = {
   HEAL: { BASE: 25, MED: 2, KIT: 4 },
   // Revive odds: BASE + MED a point of Medicine skill + KIT a point of the kit's bonus (+ STAB stabilized), at most MAX.
-  // BASE 40 and MAX 85 (were 50 and 95: a Medicine 6-7 medic with a trauma kit hit the 95% cap on anyone stabilized,
-  // and lowering only one of the two still let them): an ordinary medic is at about 70-80%, 85% on the stabilized.
-  REVIVE: { AP: 2, BASE: 40, MED: 4, KIT: 5, STAB: 15, MAX: 85, HP: [0.25, 0.4], SHAKEN: 10 },
+  // BASE 40, MED 3 and MAX 85 (were 50, 4 and 95: a Medicine 6-7 medic with a trauma kit hit the 95% cap on anyone
+  // stabilized, and lowering only BASE or MAX still let them): an ordinary medic (Medicine 6-8, a bandage or trauma
+  // kit) is at about 68-79%, 83-85% on the stabilized; the cap fresh takes Medicine 10 with a trauma kit.
+  REVIVE: { AP: 2, BASE: 40, MED: 3, KIT: 5, STAB: 15, MAX: 85, HP: [0.25, 0.4], SHAKEN: 10 },
   // The meds the AI keeps back for a revive (your side's pool; an enemy medic's own kit uses), on any side with a medic
   // standing: 1 for every PER of its people in the fight (standing or down), at least MIN. Healing the standing (a
   // medic's Heal, plain meds on oneself) only spends above it; stabilizing and reviving the downed spend it.
@@ -56,6 +58,12 @@ export const MEDIC = {
   // Pull out: a downed person in a vehicle (a rider, the turret's gunner who dropped inside, the gunner on the enemy's
   // Humvee) is pulled out by someone standing next to it onto a free cell next to both, for AP actions.
   PULL: { AP: 2 },
+  // Drag first, then revive (the AI, both sides): a downed ally out in the open is dragged to a quiet cell (as quiet
+  // as a revive needs: RISK.REVIVE) and put down there with a medic of theirs named to revive them (t.plan): the
+  // dragger if they are one, else the nearest standing medic within reach of it next turn (two moves). For TURNS
+  // turns after, that medic sees to them before anyone else, and the others leave them to the medic (unless they
+  // are bleeding out that turn).
+  PLAN: { TURNS: 2 },
   HANDS: { BASE: 50, MED: 4, MAX: 90 },
   DRAG: 0.5,              // move × while dragging someone
   BLEED: 3,               // an enemy's turns to bleed out (as your people's, combat.js BLEED_TURNS)
@@ -341,12 +349,21 @@ export function dropAlly(b, u, into = null, quiet = false) {
   if (!t) return;
   t.draggedBy = null;
   if (into === "vehicle" && b.vehicle) {
+    // Still bleeding: stopped on the way in when the one laying them there has an action left (layInStab), as Use
+    // meds would: sure with meds, by hand without (a roll). Laid in bleeding they bleed out inside as anywhere.
+    if (layInStab(b, u, t)) stabilize(b, u, t);
     t.aboard = true; t.off = true; t.carried = true; // in the vehicle counts as carried out (combat.js endBattle)
     t.x = b.vehicle.x; t.y = b.vehicle.y;
     say(b, `${u.name} lays ${t.name} in the ${b.vehicle.kind}.`, "good");
     return;
   }
   if (!quiet) say(b, `${u.name} puts ${t.name} down${H.evacAt(b, t.x, t.y) ? " on the evac strip" : ""}.`, "info");
+}
+// Laying a bleeding ally in the vehicle stabilizes them first (1 action: meds from the pool, sure; none, by hand at
+// handsOdds) when the one laying them in has an action left. "meds", "hands" or "" (none: they go in bleeding).
+export function layInStab(b, u, t) {
+  if (!revivable(t) || t.stab || !u || u.ap < 1) return "";
+  return u.side === "player" ? (medsLeft(b) >= 1 ? "meds" : "hands") : isMedic(u) ? "meds" : "hands";
 }
 // The one who was dragging this downed unit lets go (it stood up, died, or was taken).
 function releaseDragged(b, t) {
@@ -642,8 +659,23 @@ function captorStep(b, u) {
 // Who among the downed of the unit's side this unit should see to.
 function downedOf(b, u) {
   return b.units.filter((t) => t.side === u.side && revivable(t) && t.draggedBy == null && !t.taken && (t.f || 0) === (u.f || 0) && !vehicleOf(b, t) // in a vehicle: pulled out first (stuckOf)
-    && !(t.rescuer != null && t.rescuer !== u.id && t.rescueTurn === b.turn && active(unitById(b, t.rescuer) || {})));
+    && !(t.rescuer != null && t.rescuer !== u.id && t.rescueTurn === b.turn && active(unitById(b, t.rescuer) || {}))
+    && !(planOf(b, t) && t.plan.medic !== u.id && (t.stab || (t.bleed || 0) > 1))); // left to the medic named to revive them
 }
+// The plan to revive this downed one (MEDIC.PLAN): { medic, turn } while it holds (the medic still standing and able
+// to revive), else null.
+const planOf = (b, t) => (t.plan && b.turn - t.plan.turn <= MEDIC.PLAN.TURNS && revivable(t) && canRevive(b, unitById(b, t.plan.medic)) ? t.plan : null);
+// A medic who could revive now (standing, a kit with uses, meds for your side).
+const canRevive = (b, m) => !!m && active(m) && isMedic(m) && (m.side !== "player" || medsLeft(b) >= 1);
+// The medic to name for reviving t once dragged to a quiet cell by u: u, else the nearest of their side who is
+// standing, free (not dragging) and within two moves of them. null: no one (the dragger only stabilizes then).
+function planMedic(b, u, t) {
+  if (canRevive(b, u)) return u;
+  return b.units.filter((m) => m.side === u.side && m !== u && m.kind === "human" && canRevive(b, m) && m.dragging == null && (m.f || 0) === (t.f || 0) && dist(m.x, m.y, t.x, t.y) <= m.mob * 2 + 1.5)
+    .sort((a, c) => dist(a.x, a.y, t.x, t.y) - dist(c.x, c.y, t.x, t.y) || a.id - c.id)[0] || null;
+}
+// Out of every line of fire but behind full cover, or nearly: where a medic revives (RISK.REVIVE).
+const quiet = (e) => e.safe || e.threat < MEDIC.RISK.REVIVE;
 const claim = (b, u, t) => { t.rescuer = u.id; t.rescueTurn = b.turn; b.rescuing = b.rescuing || {}; b.rescuing[u.side] = b.turn; };
 // Theirs down in a vehicle (vehicleOf), bleeding or stabilized, not already seen to by another rescuer this turn; not one
 // laid in your vehicle and stabilized (carried out already).
@@ -682,26 +714,51 @@ export function rescueStep(b, u) {
     if (u.captor) return captorStep(b, u);
     const t = dragging(b, u);
     if (!t) { dropAlly(b, u, null, true); return false; }
+    // With a medic to revive them (planMedic), down as soon as it is quiet enough for the revive; else once safe.
+    const m = planMedic(b, u, t);
     const here = exposure(b, t.x, t.y, foes);
-    if (here.safe) { dropAlly(b, u); t.noDrag = b.turn; return true; }
+    const putDown = () => {
+      const plan = m && quiet(exposure(b, t.x, t.y, foes));
+      dropAlly(b, u, null, plan && m !== u); t.noDrag = b.turn;
+      if (plan) {
+        t.plan = { medic: m.id, turn: b.turn };
+        if (m !== u) say(b, `${u.name} gets ${t.name} into cover for ${m.name} to see to.`, "info");
+      }
+      return true;
+    };
+    if (here.safe || (m && quiet(here))) return putDown();
     const mv = dragCell(b, u, foes);
     if (mv && mv.threat < here.threat - 0.25 && mv.path.length) { u.ap -= mv.cost <= u.mob ? 1 : 2; u.hunker = false; moveAlong(b, u, mv.path); return true; }
-    dropAlly(b, u); t.noDrag = b.turn;
-    return true;
+    return putDown();
   }
   if (foes.some((f) => adjacent(u, f))) return false; // something is on them: fight first
   const pool = u.side !== "player" || medsLeft(b) >= 1;
   let reach = null; // where the unit can get to this turn (worked out once, only if someone needs going to)
-  for (const t of downedOf(b, u).sort((a, c) => dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, c.x, c.y))) {
+  const mine = (t) => (planOf(b, t) && t.plan.medic === u.id ? 1 : 0); // the one this medic was named to revive: first
+  for (const t of downedOf(b, u).sort((a, c) => mine(c) - mine(a) || dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, c.x, c.y))) {
     const ex = exposure(b, t.x, t.y, foes);
     const canRev = isMedic(u) && pool;
     if (meleeReach(b, u, t)) {
-      // Bleeding out this turn: stop it first. Safe enough: a medic revives. Exposed: out of the line of fire. Else
-      // stabilize.
+      // Bleeding out this turn: stop it first. Quiet enough: a medic revives. Exposed: out of the line of fire (with a
+      // medic to revive them: to a quiet cell, then the plan; else to a safe one). Else stabilize.
       if (!t.stab && (t.bleed || 0) <= 1) { claim(b, u, t); stabilize(b, u, t); return true; }
-      const quiet = (e) => e.safe || e.threat < MEDIC.RISK.REVIVE; // out of every line of fire but behind full cover, or nearly
-      if (canRev && u.ap >= MEDIC.REVIVE.AP && quiet(ex) && quiet(exposure(b, u.x, u.y, foes))) { claim(b, u, t); revive(b, u, t); return true; }
-      if (!ex.safe && t.noDrag !== b.turn && !liftRefusal(b, u, t)) { claim(b, u, t); lift(b, u, t); return true; }
+      const quietMe = quiet(exposure(b, u.x, u.y, foes));
+      if (canRev && u.ap >= MEDIC.REVIVE.AP && quiet(ex) && quietMe) { claim(b, u, t); revive(b, u, t); return true; }
+      // A medic by a quiet one but in the open themselves: round to a quiet cell beside them (the revive next turn).
+      if (canRev && quiet(ex) && !quietMe) {
+        const r = reach || (reach = reachable(b, u, u.mob * u.ap));
+        const spots = [];
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+          const x = t.x + dx, y = t.y + dy;
+          if ((dx || dy) && (x !== u.x || y !== u.y) && x >= 0 && y >= 0 && x < b.w && y < b.h && quiet(exposure(b, x, y, foes))) spots.push([x, y]);
+        }
+        if (spots.length && goOver(b, u, spots, foes, r, () => claim(b, u, t))) return true;
+      }
+      const drag = planMedic(b, u, t) ? !quiet(ex) : !ex.safe;
+      if (drag && t.noDrag !== b.turn && !liftRefusal(b, u, t)) { claim(b, u, t); lift(b, u, t); return true; }
+      // The medic named to revive them, short of the actions for it, with time left (still bleeding next turn): waits
+      // for the revive rather than spend meds on stabilizing first.
+      if (mine(t) && canRev && !t.stab && (t.bleed || 0) > 2 && quiet(ex)) { claim(b, u, t); continue; }
       if (!t.stab) { claim(b, u, t); stabilize(b, u, t); return true; }
       continue;
     }
@@ -843,7 +900,8 @@ export const MEDICS_HELP = `<b>Medics.</b> Anyone who takes a med kit into a fig
   health always needs meds.<br>
   <b>Drag</b> (Shift+D) a downed teammate: anyone can take hold of one next to them (bleeding, stabilized or knocked out), for
   free, and drag them: half the move distance (both actions can go on moving), no shooting. Shift+D again puts them down; next to the vehicle they can be laid
-  in it (counts as carried out). <b>Pull out</b> (Shift+U): ${MEDIC.PULL.AP} actions from next to a vehicle: someone down inside it (a
+  in it (counts as carried out; one still bleeding is stabilized on the way in, 1 action: sure with meds, by hand
+  without, and the button warns ⚠ when that may fail). <b>Pull out</b> (Shift+U): ${MEDIC.PULL.AP} actions from next to a vehicle: someone down inside it (a
   rider, the gunner who dropped in, the gunner on the enemy's Humvee) is laid on a free cell next to you, to be treated,
   dragged, tied or finished as anyone on the ground. Drag them out of the line of fire: raiders and zealots finish the
   downed they can see when none of yours stands within ${F.GUARD} tiles of them, one chance in ${Math.round(1 / F.WILL)} a turn (as often as their group takes people alive, a quarter of the time for raiders, never for zealots, they take one next to
@@ -864,7 +922,9 @@ export const MEDICS_HELP = `<b>Medics.</b> Anyone who takes a med kit into a fig
   <b>Who draws fire.</b> A medic seen treating or dragging someone is shot first (×${MEDIC.TREATING}).<br>
   <b>The AI</b> (AI plays my side, the raid bot, the enemy): one rescuer for each of the downed, only when the way there is
   not open ground under fire (unless it is close); it drags them to the cell with the most cover and the fewest eyes on it,
-  revives or stabilizes there while the others cover; a medic heals the badly hurt, and nobody spends meds on the
+  revives or stabilizes there while the others cover. With a medic about, a downed one in the open is dragged to a cell
+  quiet enough for a revive and that medic is named to see to them: they come over and revive them there, usually the
+  next turn, and the others leave them to it; a medic heals the badly hurt, and nobody spends meds on the
   standing below a reserve kept for a revive (with a medic on the side: 1 for every ${MEDIC.RESERVE.PER} people, at least ${MEDIC.RESERVE.MIN}; an
   enemy medic counts their kit's uses).<br>
   <b>By the numbers</b> (auto-resolve, teams on the road): a medic with a kit still standing after a won fight saves some

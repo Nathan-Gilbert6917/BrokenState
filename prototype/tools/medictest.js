@@ -2,11 +2,13 @@
 // ui/combat.js buttons). Checks:
 //   - a med kit (off hand, pocket, pack) makes a medic: the badge on the roster, Medicine with the kit
 //   - Heal: more than plain meds (25 + 2 a point of Medicine + 4 a point of the kit), 1 action, 1 meds, a kit use
-//   - Revive: the odds (40 + 4 Medicine + 5 kit, +15 stabilized, at most 85), up at 25-40%, no actions until the
+//   - Revive: the odds (40 + 3 Medicine + 5 kit, +15 stabilized, at most 85), up at 25-40%, no actions until the
 //     next turn, shaken (−10 aim); a failed one stabilizes; no revive without a kit and meds (the button disabled,
 //     with the reason)
 //   - stabilizing needs no items: sure with meds, by hand without (50 + 4 Medicine, at most 90), tried again
-//   - Drag ally: half speed, no shooting, the ally follows behind; put down, or laid in the vehicle
+//   - Drag ally: half speed, no shooting, the ally follows behind; put down, or laid in the vehicle (stabilized on
+//     the way in with an action left, else a warning on the button)
+//   - drag first, then revive: the AI drags to a quiet cell and names a medic, who revives there (both sides)
 //   - the AI (your side): a medic revives a downed teammate where it is safe enough, drags them to cover where not
 //   - the enemy: their people go down; a rescuer drags a downed ally to more cover and farther from your people; their
 //     medic revives there; one without a kit only stabilizes; no rescuer runs into open ground under fire from afar
@@ -133,6 +135,8 @@ section("Revive: the odds, up at 25-40%, acting next turn, shaken");
   check(p === Math.min(RV.MAX, Math.round(RV.BASE + RV.MED * skill + RV.KIT * a.kitBonus)), `${p}% = ${RV.BASE} + ${RV.MED}×${skill} + ${RV.KIT}×${a.kitBonus} (at most ${RV.MAX})`);
   n.stab = true;
   check(MED.reviveOdds(a, n) === Math.min(RV.MAX, p + RV.STAB), `stabilized: +${RV.STAB} (${MED.reviveOdds(a, n)}%)`);
+  { const m = { medicine: 6 + 3, kitBonus: 3 }; const fresh = MED.reviveOdds(m, null), stab = MED.reviveOdds(m, { stab: true });
+    check(RV.MED === 3 && fresh === 73 && fresh < RV.MAX && stab === RV.MAX, `Medicine 6 with a trauma kit: ${fresh}% (under the ${RV.MAX}% cap), ${stab}% stabilized`); }
   n.stab = false;
   const aim0 = n.aim, meds0 = medsLeft(b);
   const err = forced(b, true, () => combatAct(st, { type: "revive", unit: a.id, target: n.id }));
@@ -572,6 +576,103 @@ const ringOk = (b, v, u) => !(u.x >= v.x && u.y >= v.y && u.x < v.x + v.w && u.y
   const k = KEYS.KEY_BY_ID.get("battle.pullOut");
   check(k && k.keys.includes("Shift+KeyU") && k.v === "pullOut" && KEYS.keyAction({ code: "KeyU", shiftKey: true, ctrlKey: false, altKey: false, metaKey: false }, "battle") === "battle.pullOut", "Pull out is Shift+U in a battle");
   check(!KEYS.conflicts().length, `no two actions share a key (${KEYS.conflicts().map((c) => c.chord).join(", ") || "none"})`);
+}
+
+section("Drag first, then revive: the AI drags a downed ally to a quiet cell and names a medic to revive them (MEDIC.PLAN)");
+// Three raiders to the west (x 4) see the open ground; a wall at x 13 (y 10-14) gives cover east of it.
+const shelter = (kind = "raiders", kits = ["tool", null, null]) => {
+  const A = arena({ kind, kits });
+  wall(A.b, [[13, 10], [13, 11], [13, 12], [13, 13], [13, 14]]);
+  const es = [10, 12, 14].map((y) => foe(A.b, kind, 4, y));
+  return { ...A, es };
+};
+// Whole rounds of rescue moves (each unit's rescueTurn, then the downed bleed as at a turn's start) until fn() or n rounds.
+const rounds = (b, units, n, fn) => {
+  for (let k = 0; k < n && !fn(); k++) {
+    b.turn++;
+    for (const u of units) if (active(u)) { u.ap = 2; forced(b, true, () => MED.rescueTurn(b, u)); }
+  }
+  return fn();
+};
+{
+  // Your side: a teammate without a kit drags, the medic (two moves off) is named, comes over, revives.
+  const { b, ps, es } = shelter();
+  const [a, c, n] = ps;
+  n.x = 12; n.y = 12; downPlayer(b, n);
+  c.x = 12; c.y = 11; a.x = 18; a.y = 13;
+  const t0 = MED.exposure(b, n.x, n.y, es).threat;
+  rounds(b, [c], 3, () => n.plan);
+  check(!!n.plan && n.plan.medic === a.id && MED.exposure(b, n.x, n.y, es).threat < MED.MEDIC.RISK.REVIVE, `${c.name} drags ${n.name} from the open (threat ${t0}) to a quiet cell (${n.x},${n.y}, threat ${MED.exposure(b, n.x, n.y, es).threat}) and names ${a.name} to revive them`);
+  check(b.log.some((l) => /into cover for .* to see to/.test(l.text)), `the log: “${(b.log.find((l) => /into cover for/.test(l.text)) || {}).text}”`);
+  // The others leave the named one to the medic (not bleeding out yet).
+  c.ap = 2; n.bleed = 3;
+  const before = [n.x, n.y, c.ap];
+  MED.rescueStep(b, c);
+  check(n.x === before[0] && n.y === before[1] && n.draggedBy == null && !n.stab, `${c.name} leaves ${n.name} to ${a.name}`);
+  rounds(b, [c, a], 3, () => !n.down);
+  check(!n.down && b.log.some((l) => /back on their feet/.test(l.text)), `${a.name} comes over and revives ${n.name} there (${n.down ? "still down" : "up"})`);
+}
+{
+  // A medic who drags: down at the quiet cell, revived by them the next turn.
+  const { b, ps, es } = shelter();
+  const [a, c, n] = ps;
+  c.x = 2; c.y = 22;
+  n.x = 12; n.y = 12; downPlayer(b, n);
+  a.x = 12; a.y = 11;
+  rounds(b, [a], 3, () => n.plan);
+  check(!!n.plan && n.plan.medic === a.id && MED.exposure(b, n.x, n.y, es).threat < MED.MEDIC.RISK.REVIVE, `${a.name} (the medic) drags ${n.name} to a quiet cell (${n.x},${n.y}): planned for themselves`);
+  const turn = b.turn;
+  rounds(b, [a], 2, () => !n.down);
+  check(!n.down && b.turn - turn <= 1, `revived there ${b.turn === turn ? "the same turn (actions left)" : "the next turn"}`);
+  void es;
+}
+{
+  // The enemy too: one of theirs drags a downed comrade to cover; their medic revives them.
+  const { b, ps } = arena({ kind: "soldiers" });
+  ps.forEach((u, i) => { u.x = 4; u.y = 10 + i * 2; });
+  wall(b, [[13, 10], [13, 11], [13, 12], [13, 13], [13, 14]].map(([x, y]) => [x + 4, y]));
+  const A = foe(b, "soldiers", 16, 12), B = foe(b, "soldiers", 16, 11);
+  const M = MED.makeEnemyMedic(foe(b, "soldiers", 22, 13), "traumakit", 5);
+  downFoe(b, A, ps[0]);
+  rounds(b, [B], 3, () => A.plan);
+  check(!!A.plan && A.plan.medic === M.id, `${B.name} drags ${A.name} to (${A.x},${A.y}) for their medic ${M.name}`);
+  rounds(b, [B, M], 3, () => !A.down);
+  check(!A.down && A.shaken, `${M.name} revives ${A.name} there`);
+}
+{
+  // The plan is kept in a save.
+  const { st, b, ps } = arena();
+  const n = ps[2];
+  downPlayer(b, n); n.plan = { medic: ps[0].id, turn: b.turn };
+  const L = loadFromString(saveToString(st));
+  const m = L.combat.units.find((x) => x.id === n.id);
+  check(m.plan && m.plan.medic === ps[0].id && m.plan.turn === b.turn, "the plan survives a save");
+}
+
+section("Laying a bleeding ally in the vehicle stabilizes them first (1 action), or warns");
+{
+  const { st, b, ps, h } = arena();
+  const [a, c, n] = ps;
+  b.vehicle = { x: 7, y: 3, w: 2, h: 3, kind: "car", seats: 4 };
+  const lay = (ap, meds, roll) => {
+    downPlayer(b, n); n.aboard = false; n.off = false; n.stab = false; n.carried = false;
+    n.x = 6; n.y = 6; c.x = 6; c.y = 5; c.ap = 2; h.stock.meds = meds;
+    combatAct(st, { type: "dragAlly", unit: c.id, target: n.id });
+    c.ap = ap;
+    UI.renderCombatPanel(st); UI.cui.sel = c.id;
+    const html = UI.renderCombatPanel(st);
+    const btn = (html.match(/<button[^>]*data-v="dropVehicle"[^>]*>[^<]*/) || [""])[0];
+    const err = forced(b, roll, () => combatAct(st, { type: "dropAlly", unit: c.id, into: "vehicle" }));
+    return { btn, err };
+  };
+  const r1 = lay(2, 3, true);
+  check(!r1.err && n.aboard && n.stab && medsLeft(b) === 2 && c.ap === 1 && /stabilized on the way in/.test(r1.btn), `with meds: stabilized on the way in, 1 action and 1 meds (the button says so) (${r1.err || "no error"})`);
+  const r2 = lay(2, 0, false);
+  check(n.aboard && !n.stab && c.ap === 1 && /by hand/.test(r2.btn) && /⚠/.test(r2.btn) && /bleed on inside/.test(r2.btn), `no meds: the button warns (⚠); tried by hand on the way in (${MED.handsOdds(c)}%), failed: in, still bleeding`);
+  lay(2, 0, true);
+  check(n.aboard && n.stab, "no meds, the roll comes up: stabilized");
+  check(MED.layInStab(b, { side: "player", ap: 0 }, { down: true }) === "", "with no action left nothing is tried (the button would warn; orders need an action anyway)");
+  b.vehicle = null; void a;
 }
 
 section("A medic draws fire while treating");

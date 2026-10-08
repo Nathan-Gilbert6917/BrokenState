@@ -40,7 +40,7 @@ import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent
 import { statusIcons } from "./status.js"; // the survivor behind a unit: low mood, starving, thirsty, infected, sick (its own hit points are the bar)
 import { iso, drawIso, project, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor } from "./isoview.js";
 import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
-import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC, vehicleOf, pullTargets, pullRefusal } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy, pulling one out of a vehicle
+import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC, vehicleOf, pullTargets, pullRefusal, layInStab } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy, pulling one out of a vehicle
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
@@ -1314,7 +1314,12 @@ function medicButtons(state, b, u, btn) {
   const held = dragging(b, u);
   if (held) {
     html += btn("dragAlly", "Put down", `Free: lay ${held.name} down where they are, behind ${u.name.split(" ")[0]}. In cover, out of the line of fire, or on the evac strip (carried out with the last one to leave).`, true, keyLabel("battle.drag", 1) || "Shift+D");
-    if (b.vehicle) html += btn("dropVehicle", "Into vehicle", `Free, from next to the vehicle: lay ${held.name} in it (a seat). In the vehicle counts as carried out.`, !dropRefusal(b, u, "vehicle"));
+    if (b.vehicle) {
+      // sim/medics.js layInStab: a bleeding ally is stabilized on the way in (1 action) when there is an action left.
+      const stab = layInStab(b, u, held), bleeding = !held.stab && !held.ko && !held.surr;
+      const note = !bleeding ? "" : stab === "meds" ? ` ${held.name} is bleeding: stabilized on the way in (1 action, 1 meds).` : stab === "hands" ? ` ${held.name} is bleeding and there are no meds: ${u.name.split(" ")[0]} tries to stop it by hand on the way in (1 action, ${handsOdds(u)}%); if that fails they bleed on inside.` : ` Warning: ${held.name} is bleeding and ${u.name.split(" ")[0]} has no action left to stabilize them: inside they bleed out (${held.bleed || 0} turn${held.bleed === 1 ? "" : "s"} left) unless someone pulls them out (${keyLabel("battle.pullOut", 1) || "Shift+U"}) and treats them.`;
+      html += btn("dropVehicle", bleeding && stab !== "meds" ? "Into vehicle ⚠" : "Into vehicle", `${bleeding && stab ? "From" : "Free, from"} next to the vehicle: lay ${held.name} in it (a seat). In the vehicle counts as carried out.${note}`, !dropRefusal(b, u, "vehicle"));
+    }
   } else if (downNear.length) {
     const t = downNear.find((o) => o.draggedBy == null) || downNear[0];
     const why = liftRefusal(b, u, t);
