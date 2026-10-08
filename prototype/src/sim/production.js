@@ -30,6 +30,7 @@ import { POWER_USERS, POWER_BOOST, STILL, isPowered, refreshPower } from "./powe
 import { isManaged } from "./work.js";
 import { stockHas } from "./water.js"; // a Keep-at-least order on water counts both kinds
 import { supplyAmt } from "./rounds.js"; // "ammo": every round there, any calibre
+import { reloadWork } from "./reloading.js"; // a reloading bench works its reloading orders whatever its station order holds
 
 export const ORDER_MODES = {
   forever: { name: "Forever", desc: "Runs whenever the operator and the inputs are there." },
@@ -192,6 +193,7 @@ function fallbackHour(state, base) {
     if (!hold) continue;
     const op = people.find((s) => s.role === "operate" && s.station === st.id);
     if (!op || op.pinned || isManaged(state, op)) continue; // work priorities (work.js) move them by themselves
+    if (st.type === "reload_bench" && reloadWork(state, base, op)) continue; // reloading.js: a reloading order to work
     let as, where;
     if (o.fallback.startsWith("st:")) {
       const other = list.find((x) => x.id === Number(o.fallback.slice(3)));
@@ -214,7 +216,7 @@ function fallbackHour(state, base) {
     const st = list.find((x) => x.id === p.from);
     const still = p.base === base.id && (p.as.startsWith("st:") ? s.role === "operate" && s.station === Number(p.as.slice(3)) : s.role === p.as);
     if (!st || !still) { s.parked = null; continue; } // the station is gone, or the player moved them
-    if (orderHold(state, base, st)) continue;
+    if (orderHold(state, base, st) && !(st.type === "reload_bench" && reloadWork(state, base, s))) continue; // reloading.js: back for a reloading order too
     if (people.some((x) => x !== s && x.role === "operate" && x.station === st.id)) { s.parked = null; continue; } // someone else took it
     s.role = "operate";
     s.station = st.id;

@@ -82,7 +82,7 @@ section("Weights");
 {
   const missing = Object.entries(GEAR).filter(([, d]) => !(d.weight > 0));
   check(!missing.length, `every item has a weight (missing: ${missing.map(([k]) => k).join(", ")})`);
-  check(GEAR.pistol.weight === 1 && GEAR.ar.weight === 4 && GEAR.plate.weight === 8 && GEAR.vest.weight === 4, "pistol 1, assault rifle 4, plate carrier 8, vest 4 kg");
+  check(GEAR.pistol.weight === 1 && GEAR.ar.weight === 4 && GEAR.plate.weight === 1.5 && Math.abs(itemLoad(newItem("plate")) - 6.5) < 1e-9 && GEAR.vest.weight === 4, "pistol 1, assault rifle 4, plate carrier 1.5 (6.5 with its two ceramic plates), vest 4 kg");
   check(SUPPLIES.food.weight === 0.5 && SUPPLIES.water.weight === 1 && SUPPLIES.fuel.weight === 1 && SUPPLIES.meds.weight === 0.1 && SUPPLIES.ammo.weight === 0.02, "food 0.5, water 1, fuel 1, meds 0.1, ammo 0.02 kg a unit");
   check(SUPPLIES.preserved.weight < SUPPLIES.food.weight, "preserved food is lighter than fresh");
   const pack = newItem("assaultpack");

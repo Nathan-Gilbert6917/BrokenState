@@ -21,7 +21,7 @@ import { THROWABLES, throwAt, throwablesOf, DECOY_KEYS, stealthAct, botFlash } f
 import { FLASH, FLASH_KIT, flashReach, flashCells, stunUnit, landEffect, flashSpot, doorToss, throwBlind, kitFlashbangs } from "../src/sim/throwables.js";
 import { enemyThrow } from "../src/sim/siege.js";
 import { stimuli, pullOf } from "../src/sim/decoys.js";
-import { newItem, stow, enemyBody, allItems, carriedThrowables } from "../src/sim/inventory.js";
+import { newItem, stow, enemyBody, allItems, allCarried, carriedThrowables } from "../src/sim/inventory.js";
 import { condRolled } from "../src/sim/itemcond.js";
 import { SITE_GRENADES, AREA_GRENADES, ITEM_TAGS, rollSiteGrenades, rollAreaGrenades } from "../src/sim/loot.js";
 import { rollGunStash } from "../src/sim/gunsafes.js";
@@ -53,7 +53,7 @@ function openBattle(st, enemy = { kind: "raiders", count: 4, power: 3 }, n = 3) 
   b.phase = "player";
   b.fires = []; b.smoke = []; b.lures = [];
   let i = 0;
-  for (const u of b.units) { u.x = u.side === "player" ? 1 : 30 - (i % 4); u.y = u.side === "player" ? 1 + 2 * (u.id % 6) : 2 + 2 * (i++ >> 2); u.aware = true; u.face = [0, 0]; delete u.stun; u.ow = false; }
+  for (const u of b.units) { u.x = u.side === "player" ? 1 : 30 - (i % 4); u.y = u.side === "player" ? 1 + 2 * (u.id % 6) : 2 + 2 * (i++ >> 2); u.aware = true; u.face = [0, 0]; delete u.stun; u.ow = false; u.earCut = 0; u.ears = null; u.visor = false; } // no kit ear protection (helmets.js HEAD_KIT): sections below give it on purpose
   return b;
 }
 const P = (b) => b.units.filter((u) => u.side === "player");
@@ -371,7 +371,7 @@ section("5. Loot: every source exists and goes through itemcond.js");
   const g0 = E(b)[0];
   g0.throwables = { flashbang: 1, smokegren: 1 };
   const body = enemyBody(new Rng(3), g0, null);
-  const carried = allItems(body).filter((it) => it && (it.key === "flashbang" || it.key === "smokegren"));
+  const carried = allCarried(body).filter((it) => it && (it.key === "flashbang" || it.key === "smokegren")); // inventory.js: a rig's grenade pouch too
   rolled.push(...carried, ...carriedThrowables(g0, "guard"));
   check(carried.length === 2, "a guard's unthrown flashbang and smoke grenade are on the body");
   check(rolled.length > 100 && rolled.every((it) => condRolled(it) && GEAR[it.key]), `every one of them (${rolled.length}) through itemcond.js`);

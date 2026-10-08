@@ -6,6 +6,7 @@
 // Usage: node tools/farmtest.js [seed] [days for the long runs]
 import { ROUND_KEYS } from "../src/sim/ammo.js";
 import { PART_KINDS } from "../src/sim/trade.js";
+import { RELOAD_SUPPLIES } from "../src/sim/data-ammo.js"; // the reloading bench's brass, powder, primers: like rounds, kept only where there are some
 import { createWorld, hub, atBase, alive, residents, makeSurvivor, newId, day } from "../src/sim/world.js";
 import { tickHour } from "../src/sim/world.js";
 import {
@@ -657,7 +658,7 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
       if (st.hour % 24) continue;
       personDays += alive(st).length;
       for (const b of st.bases) {
-        for (const k of SUPPLY_KEYS) if ((b.stock[k] !== undefined || !(ROUND_KEYS.includes(k) || PART_KINDS.includes(k))) && (!(b.stock[k] >= 0) || !Number.isFinite(b.stock[k]))) bad = `${b.name} ${k} = ${b.stock[k]}`; // rounds by calibre (ammo.js) and the part kinds (car, gun parts, electronics: weapons wave) are kept only where there are some
+        for (const k of SUPPLY_KEYS) if ((b.stock[k] !== undefined || !(ROUND_KEYS.includes(k) || PART_KINDS.includes(k) || RELOAD_SUPPLIES[k])) && (!(b.stock[k] >= 0) || !Number.isFinite(b.stock[k]))) bad = `${b.name} ${k} = ${b.stock[k]}`; // rounds by calibre (ammo.js) and the part kinds (car, gun parts, electronics: weapons wave) are kept only where there are some
         for (const p of farmOf(st, b).plots) if (!["empty", "growing", "ripe", "dead"].includes(p.stage) || !Number.isFinite(p.grown) || !Number.isFinite(p.care) || !Number.isFinite(p.yieldLeft)) bad = `bad plot ${JSON.stringify(p)}`;
       }
       for (const s of st.survivors) {

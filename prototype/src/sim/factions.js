@@ -168,7 +168,7 @@ export function createFactions(state, count) {
       id: newId(), name, type, color: FACTION_COLORS[i % FACTION_COLORS.length],
       bases: [site.id], pop, alive: true, known: false,
       goodwill: def.goodwill + rng.int(-8, 8), lastDiplomacy: 0, pact: null,
-      stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2 }, // preserved / jars: storage.js; wood: woodcutting.js
+      stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0 }, // preserved / jars: storage.js; wood: woodcutting.js; brass..primers: reloading.js
       lootedGear: [], raidCooldown: rng.int(4, 10),
     });
     factionVehicles(state.factions[state.factions.length - 1]); // vehicles.js: a military group starts with an Army truck and a Humvee (M2 turret)
@@ -532,7 +532,7 @@ export function makeGang(state, tile, opts = {}) {
     id: newId(), name, type, color: FACTION_COLORS[state.factions.length % FACTION_COLORS.length],
     bases: [tile], pop, alive: true, known: !!opts.known,
     goodwill: Math.min(-45, def.goodwill - rng.int(0, 10)), lastDiplomacy: 0, pact: null,
-    stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2 },
+    stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0 }, // brass..primers: reloading.js
     lootedGear: [], raidCooldown: rng.int(6, 12), arrived: day(state), gear: isAggressiveType({ type }) ? gangArms(state) : 1,
   };
   for (const [k, q] of Object.entries(opts.stock || {})) if (Number.isFinite(q) && q > 0) f.stock[k] = (f.stock[k] || 0) + q;

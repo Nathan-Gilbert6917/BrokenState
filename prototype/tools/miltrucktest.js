@@ -174,7 +174,7 @@ section("The raid map (combat.js placeMilTrucks, AREAS.miltrucks; the crews)");
     if (err) { console.log("    search:", err); continue; }
     opened++;
     const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k))]); // TRUCK_GEAR: the weapons overhaul's hook (TRUCK_LOOT_HOOKS)
-    if (box.contents && [...Object.keys(box.contents.sup).filter((k) => !["arrows", "wood"].includes(k)), ...box.contents.gear.filter((it) => !it.blueprint && !it.book && GEAR[it.key] && !["key"].includes(it.key)).map((it) => it.key)].every((k) => allowed.has(k) || (isRoundKey(k) && allowed.has("ammo")) || k === "frag" || k === "smokegren")) lootOk++;
+    if (box.contents && [...Object.keys(box.contents.sup).filter((k) => !["arrows", "wood"].includes(k)), ...box.contents.gear.filter((it) => !it.blueprint && !it.book && GEAR[it.key] && !["key"].includes(it.key)).map((it) => it.key)].every((k) => allowed.has(k) || (isRoundKey(k) && allowed.has("ammo")) || k === "frag" || k === "smokegren" || !!(GEAR[k] && GEAR[k].mag))) lootOk++; // GEAR mag: the spare magazines a found gun comes with (carrykit.js gunMags, w2-kit)
     value += box.contents ? valueOf(box.contents) : 0;
     const after = b.units.filter((x) => x.ztype === "soldier" && x.aware).length;
     if (crew > 0 && after > before) rose++;

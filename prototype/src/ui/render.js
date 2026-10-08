@@ -1346,7 +1346,8 @@ export function render(state) {
     const tucked = mapLoc(state, m.tile) || ownBase.has(m.tile);
     const x = tucked ? px + (-14 + n * 14) * s : px + (n - (perTile.get(m.tile) - 1) / 2) * 17 * s;
     const y = tucked ? py - 13 * s : py + 1 * s;
-    const cv = markerSpriteCanvas(m.type, PLAYER_COLOR, markerLook(state, m));
+    const look = markerLook(state, m);
+    const cv = markerSpriteCanvas(look.wreck ? "car" : m.type, PLAYER_COLOR, look); // a vehicle blown up: a wreck on the map
     const h = spriteH(cv, w);
     ctx.globalAlpha = alpha;
     ctx.beginPath();
@@ -1665,7 +1666,7 @@ function markerLook(state, m) {
   if (m.type === "vehicle") {
     const v = i.vehicleId != null ? vehicleById(state, i.vehicleId) : null;
     const bike = v && v.type === "bike";
-    return { vehicle: bike ? "bike" : v && v.type === "sedan" ? "sedan" : v && v.type === "miltruck" ? "miltruck" : "truck", needsFuel: !bike && i.fuel != null && i.fuel < 3, damaged: i.condition != null && i.condition < 25, ups: v ? upsCode(v.upgrades) : "" }; // ups: plates, glass, a gun on the roof (mapsprites.js)
+    return { vehicle: bike ? "bike" : v && v.type === "sedan" ? "sedan" : v && v.type === "miltruck" ? "miltruck" : "truck", needsFuel: !bike && i.fuel != null && i.fuel < 3, damaged: i.condition != null && i.condition < 25, ups: v ? upsCode(v.upgrades) : "", wreck: !!(v && v.destroyed) }; // ups: plates, glass, a gun on the roof (mapsprites.js); wreck: blown up (drawn as a wreck)
   }
   if (m.type === "death") return { empty: i.items === 0 };
   return { emptied: !!i.emptied };

@@ -15,8 +15,9 @@ import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
 import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
 import { itemLoad, lootItem, armouredItem } from "./inventory.js";
+import { gunMags } from "./carrykit.js"; // a found gun's spare magazines
 import { siteSource } from "./itemcond.js";
-import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades } from "./loot.js";
+import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { truckSearchHour, convoyHeat0, convoyThreat } from "./miltrucks.js"; // an Army convoy's guard: Heat from the start, a harder fight
@@ -210,7 +211,8 @@ export function searchHour(state) {
   const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
   if (gearList.length && rng.chance(0.07 * t.loot * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1))) {
     const g = rng.pick(gearList);
-    e.found.gear.push(lootItem(g, siteSource(t.loc.type), rng)); // itemcond.js: a gun shop's stock used, a crash site's scorched
+    const found = lootItem(g, siteSource(t.loc.type), rng); // itemcond.js: a gun shop's stock used, a crash site's scorched
+    e.found.gear.push(found, ...gunMags(found, siteSource(t.loc.type), e.tile, e.hours)); // carrykit.js: a gun's spare magazines (own dice)
     finds.push(GEAR[g].name);
   }
   // A book on the shelves (skills.js; its own dice, so the rest of the search is unchanged). Treasure Hunter: twice as often.
@@ -225,8 +227,12 @@ export function searchHour(state) {
   if (lamp) { e.found.gear.push(lamp); finds.push(lamp.name); }
   const part = rollAnyModFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a sight, a suppressor (loot.js GUNMOD_FINDS, then SITE_MODS; their own dice)
   if (part) { e.found.gear.push(part); finds.push(part.name); }
+  const rel = rollSiteReload(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a bag of brass, a can of powder, a box of primers (loot.js SITE_RELOAD; its own dice)
+  if (rel) { e.found.gear.push(rel); finds.push(rel.name); }
   const gren = rollSiteGrenades(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // flashbangs, smoke grenades (loot.js SITE_GRENADES; its own dice)
   if (gren.length) { e.found.gear.push(...gren); finds.push(gren.length > 1 ? `${gren.length} ${gren[0].key === "flashbang" ? "flashbangs" : "smoke grenades"}` : gren[0].name); }
+  const gl = rollSiteLaunchers(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // grenade launchers, rocket tubes, 40 mm (loot.js SITE_LAUNCHERS; its own dice)
+  if (gl.length) { e.found.gear.push(...gl); finds.push(gl.length > 1 ? `${gl.length} × ${gl[0].name}` : gl[0].name); }
   const wood = rollSiteWood(state, e.tile, ap.loot, `h${e.hours}`); // a woodpile, a log basket (loot.js SITE_WOOD; its own dice)
   if (wood > 0) { e.found.supplies.wood = (e.found.supplies.wood || 0) + wood; finds.push(`${wood} wood`); }
   const arrows = rollSiteArrows(state, e.tile, ap.loot, `h${e.hours}`); // a quiver, a box of bolts (loot.js SITE_ARROWS; its own dice)

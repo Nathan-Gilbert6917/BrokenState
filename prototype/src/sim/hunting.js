@@ -91,7 +91,7 @@ import { gunMods, wearMuzzle, hasScope } from "./gunmods.js"; // a suppressed gu
 import { GEAR, SUPPLIES } from "./data.js";
 import { log, skill, gearEffect, atBase, newId, baseById, hub } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
-import { allItems, packOf } from "./inventory.js";
+import { packOf, allCarried } from "./inventory.js";
 import { wearHeld } from "./crafting.js"; // fishing tools wear by the day's fishing
 import { hasPerk, gainXp } from "./skills.js";
 import { zombieToughness } from "./hives.js";
@@ -208,10 +208,7 @@ export const frozenAt = (state, hour = state.hour) => !!Weather.weather(state, h
 
 // ---------- people and gear ----------
 // Everything a person has on them: worn and held, pockets, and what is in the pack.
-export function carriedItems(s) {
-  const pk = packOf(s);
-  return [...allItems(s), ...(pk || []).filter(Boolean)]; // packOf is the pack's slots (it read pk.contents: nothing in a pack counted)
-}
+export const carriedItems = (s) => allCarried(s); // inventory.js: worn and held, pockets, rig pouches, the pack
 export function huntWeaponInfo(item) {
   const d = item && GEAR[item.key];
   if (!d || d.slot !== "weapon") return null;

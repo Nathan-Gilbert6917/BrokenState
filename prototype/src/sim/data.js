@@ -2,10 +2,11 @@
 // Static definitions: terrain, locations, supplies, gear, traits, faction types, names.
 // Kept as plain data so it can later move to JSON files for modding.
 // The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
-import { GUN_GEAR, GEAR_PATCH } from "./data-guns.js";
-import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES } from "./data-ammo.js";
+import { GUN_GEAR, GEAR_PATCH, LATER_GEAR } from "./data-guns.js";
+import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES, RELOAD_SUPPLIES } from "./data-ammo.js";
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
+import { HELMET_GEAR } from "./data-helmets.js"; // helmets, visors, helmet mounts, ear protection (helmets.js, hearing.js)
 import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spray, the stun baton (nonlethal.js)
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
@@ -67,9 +68,10 @@ export const SUPPLIES = {
 // Rounds by calibre and type (data-ammo.js ROUND_SUPPLIES: a_9mm_fmj, a_12ga_buck…; ammo.js): what your stocks hold.
 // "ammo" above stays as the abstract count (other groups' stores, what a plan or a deal asks for).
 Object.assign(SUPPLIES, ROUND_SUPPLIES);
+Object.assign(SUPPLIES, RELOAD_SUPPLIES); // the reloading bench's brass, powder and primers (data-ammo.js; reloading.js)
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
 // The supplies a screen lists one by one: every key but the rounds (shown together as "Ammo", ammo.js totalRounds).
-export const STOCK_KEYS = SUPPLY_KEYS.filter((k) => !ROUND_SUPPLIES[k]);
+export const STOCK_KEYS = SUPPLY_KEYS.filter((k) => !ROUND_SUPPLIES[k] && !RELOAD_SUPPLIES[k]); // the bench's inputs: on the reloading card (ui/production.js)
 // Firewood units to one before firewood was 0.1 kg a unit (a 3 kg bundle): save.js scales an older save's firewood by it.
 export const WOOD_UNITS = 30;
 // "A few" of a supply in a rule (n to spare, n to lose): n units, × its bulk (firewood: 30 a unit of the old 3 kg bundle).
@@ -570,9 +572,10 @@ Object.assign(GEAR, {
 
 // The weapons overhaul (docs/weapons-overhaul-plan.md): guns and melee, ammo boxes and reloading supplies, attachments,
 // carry kit. One line, so the agents filling those modules never edit the end of this file.
-Object.assign(GEAR, GUN_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR);
+Object.assign(GEAR, GUN_GEAR, LATER_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR); // LATER_GEAR: the launchers and the M2 (wave 2, launchers.js)
 for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // data-guns.js: changed descriptions
 Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
+Object.assign(GEAR, HELMET_GEAR); // helmets, visors, helmet mounts, ear protection (data-helmets.js)
 
 // ---------- durability (crafting.js itemDur / wear) ----------
 // Real gear wears too, only slower than makeshift gear: dur = uses before it breaks (weapons and armor: fights;

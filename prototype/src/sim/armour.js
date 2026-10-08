@@ -25,22 +25,23 @@ import { GEAR } from "./data.js";
 import { CALIBERS, AMMO_TYPES, ammoPen } from "./data-ammo.js";
 import { hash01 } from "./skills.js";
 import { WEAPONS } from "./combat.js";
-import { armorMult, ARMOR_SLOTS } from "./inventory.js";
+import { armorMult, ARMOR_SLOTS, isCarrier, insertsOf, migrateCarrier, stow, storageFor, personPlace } from "./inventory.js";
 import { wearSlot, itemDurMax } from "./crafting.js";
 import { log } from "./world.js";
+import { faceOf, FACE } from "./helmets.js"; // the face zone of a head hit: the visor, the face cover
 export { armorMult };
 
-// The pieces (section 17 table: AC, material; dmax is the GEAR dur, checked by tools/armortest.js). Wave 1: the vest
-// and the plate carrier are single pieces (AC 2 and 5); the carrier keeps a soft backer (AC 2 at half strength) once
-// its ceramic plate has shattered.
-/** @type {Record<string, { ac: number, dmax: number, mat: string, backer?: number }>} */
+// The pieces (section 17 table: AC, material; dmax is the GEAR dur, checked by tools/armortest.js). The plate carrier
+// (wave 2, section 16) is a soft backer (AC 2) with two plate pockets: a hit on the torso meets the front plate (the
+// back plate when it comes from behind the way the wearer faces), else the backer (carrierGuard).
+/** @type {Record<string, { ac: number, dmax: number, mat: string, backer?: number, carrier?: boolean }>} */
 export const ARMOUR = {
   vest:           { ac: 2, dmax: 40, mat: "soft" },
   tacvest:        { ac: 2, dmax: 45, mat: "soft" },
   softinsert:     { ac: 2, dmax: 35, mat: "soft" },
   steelplate:     { ac: 4, dmax: 80, mat: "steel" },
   ceramicplate:   { ac: 5, dmax: 45, mat: "ceramic" },
-  plate:          { ac: 5, dmax: 45, mat: "ceramic", backer: 2 },
+  plate:          { ac: 2, dmax: 40, mat: "soft", carrier: true },
   scrapvest:      { ac: 3, dmax: 60, mat: "steel" },
   tirevest:       { ac: 1, dmax: 25, mat: "padding" },
   sportspads:     { ac: 1, dmax: 20, mat: "padding" },
@@ -165,14 +166,28 @@ export function rollLoc(roll, hit) {
   return "torso";
 }
 
-// What protects a location: { spec, cond, piece, backer } or null.
-function guardAt(t, loc) {
+// What protects a location: { spec, cond, piece, backer, label } or null. by: who struck (a carrier: the back plate
+// when the blow comes from behind the way the wearer faces, t.face). shot: a hard hat (GEAR blunt) stops no bullet.
+function guardAt(t, loc, by = null, shot = false) {
   const piece = t.pieces && t.pieces[loc];
   if (!piece) return null;
   const spec = armourSpec(piece.key);
   if (!spec) return null;
+  if (shot && GEAR[piece.key] && GEAR[piece.key].blunt) return null;
+  if (isCarrier(piece)) return carrierGuard(t, piece, spec, by);
   if (!armourBroken(piece)) return { spec, cond: armourCond(piece), piece, backer: false };
   if (spec.backer) return { spec: { ac: spec.backer, dmax: spec.dmax, mat: "soft" }, cond: AR.BACKER_COND, piece, backer: true };
+  return null;
+}
+// From behind: the attacker is on the far side of the way the target faces.
+export const fromBehind = (t, by) => !!(t && by && Array.isArray(t.face) && (t.face[0] || t.face[1]) && Number.isFinite(by.x) && ((by.x - t.x) * t.face[0] + (by.y - t.y) * t.face[1]) < 0);
+// A plate carrier: the plate on that side while it holds, else the soft backer (the carrier's own durability).
+function carrierGuard(t, piece, spec, by) {
+  const side = fromBehind(t, by) ? "back" : "front";
+  const ins = insertsOf(piece)[side];
+  const is = ins && armourSpec(ins.key);
+  if (is && !armourBroken(ins)) return { spec: is, cond: armourCond(ins), piece: ins, backer: false, label: `${side} plate` };
+  if (!armourBroken(piece)) return { spec, cond: armourCond(piece), piece, backer: false, label: "plate carrier" };
   return null;
 }
 export const wears = (t) => !!(t && t.pieces && LOCS.some((l) => t.pieces[l]));
@@ -186,7 +201,9 @@ export function armourHit(b, t, raw, by, hit) {
   const msgs = [];
   if (!wears(t) && r.soft === 1) return { mult: tough, extra: 0, loc: null, through: true, msgs }; // nothing to roll for
   const loc = rollLoc(hit.crit ? 0 : battleDice(b, "loc"), hit);
-  const g = guardAt(t, loc);
+  // The face (helmets.js; section 18.5): of the head hits on someone wearing a helmet, FACE.SHARE land on the face.
+  if (loc === "head" && t.pieces && t.pieces.head && battleDice(b, "face") < FACE.SHARE) return faceHit(b, t, raw, r, hit, msgs, tough);
+  const g = guardAt(t, loc, by, hit.how === "shot");
   if (!g) return { mult: tough * r.soft, extra: 0, loc, through: true, msgs };
   const through = battleDice(b, "pen") < penChance(r.pen, g.spec.ac, g.cond);
   const mult = through ? throughMult(g.spec.ac) : bluntMult(g.spec.ac);
@@ -196,8 +213,34 @@ export function armourHit(b, t, raw, by, hit) {
     msgs.push([`Steel spall off ${t.name}'s ${pieceName(g.piece)} (+${extra}).`, "info"]);
   }
   if (!through && loc === "head") msgs.push([`${t.name}'s ${pieceName(g.piece)} stops it.`, "info"]);
-  if (!g.backer) wearPiece(g.piece, raw, r, through, t, msgs);
+  if (!g.backer) wearPiece(g.piece, raw, r, through, t, msgs, g.label);
   return { mult: mult * tough, extra: extra * tough, loc, through, piece: g.piece, msgs };
+}
+
+// A hit on the face (armourHit): what covers it (helmets.js faceOf: nothing with the visor up). Bites and blows: × the
+// cover's FACE.SOFT, a bite wears it FACE.BITE_WEAR (a built-in visor: the helmet). Shots: a ballistic visor rolls its
+// AC 3 like any piece (and cracks like ceramic: cracked, it covers nothing), a riot visor AC 1, a motorcycle visor or a
+// football cage nothing. Uncovered: the whole hit (a soft point's bonus too).
+function faceHit(b, t, raw, r, hit, msgs, tough) {
+  const f = faceOf(t);
+  const bare = { mult: tough * r.soft, extra: 0, loc: "head", face: true, through: true, msgs };
+  if (!f || f.cracked) return bare;
+  const cover = f.item || t.pieces.head;
+  if (hit.how !== "shot") {
+    if (r.ad === "bite") takeDur(cover, FACE.BITE_WEAR);
+    else wearPiece(cover, raw, r, false, t, msgs);
+    return { mult: tough * (FACE.SOFT[f.kind] ?? 0.4), extra: 0, loc: "head", face: true, through: false, piece: cover, msgs };
+  }
+  const ac = f.kind === "ballistic" && f.item ? armourSpec(f.item.key).ac : f.kind === "riot" ? FACE.RIOT_AC : 0;
+  if (!ac) return bare;
+  const cond = f.item ? armourCond(f.item) ?? 1 : 1;
+  const through = battleDice(b, "facepen") < penChance(r.pen, ac, cond);
+  if (f.item) {
+    wearPiece(f.item, raw, r, through, t, msgs);
+    if (f.kind === "ballistic" && armourBroken(f.item)) msgs.push([`Visor cracked! ${t.name} can barely see through it.`, "danger"]);
+  }
+  if (!through) msgs.push([`${t.name}'s visor stops it.`, "info"]);
+  return { mult: tough * (through ? throughMult(ac) : bluntMult(ac)), extra: 0, loc: "head", face: true, through, piece: f.item || null, msgs };
 }
 
 // Points off a piece (fractions kept in item.chip; whole points come off dur).
@@ -210,7 +253,7 @@ function takeDur(piece, loss) {
   if (piece.dur <= 0) piece.chip = 0;
 }
 // Durability lost by one hit (wear), ceramic shattering, broken pieces. Returns the points lost.
-export function wearPiece(piece, raw, r, through, t = null, msgs = null) {
+export function wearPiece(piece, raw, r, through, t = null, msgs = null, label = null) {
   const s = armourSpec(piece.key);
   if (!s || armourBroken(piece)) return 0;
   const loss = (raw * roundAd(r, s.mat) * (AR.WEAR[s.mat] ?? 1)) / 10 * (through ? 0.5 : 1);
@@ -220,11 +263,11 @@ export function wearPiece(piece, raw, r, through, t = null, msgs = null) {
     piece.hits30 = (piece.hits30 || 0) + 1;
     if (curDur(piece) < AR.SHATTER.share * s.dmax || piece.hits30 >= AR.SHATTER.hits) {
       piece.shattered = true; piece.dur = 0; piece.chip = 0;
-      if (msgs) msgs.push([`${who}${/plate/.test(piece.key) ? "front plate" : pieceName(piece)} shatters!`, "danger"]);
+      if (msgs) msgs.push([`${who}${label || (/plate/.test(piece.key) ? "front plate" : pieceName(piece))} shatters!`, "danger"]);
       return loss;
     }
   }
-  if (piece.dur <= 0 && msgs) msgs.push([`${who}${pieceName(piece)} is broken!`, "danger"]);
+  if (piece.dur <= 0 && msgs) msgs.push([`${who}${label || pieceName(piece)} is broken!`, "danger"]);
   return loss;
 }
 
@@ -233,7 +276,7 @@ export function armourExpect(t, by, hit) {
   const tough = t.tough ?? 1;
   const r = roundOf(by, hit);
   if (!wears(t) && r.soft === 1) return tough;
-  const one = (loc) => { const g = guardAt(t, loc); return g ? pieceMult(r.pen, g.spec.ac, g.cond) : r.soft; };
+  const one = (loc) => { const g = guardAt(t, loc, by, !!hit && hit.how === "shot"); return g ? pieceMult(r.pen, g.spec.ac, g.cond) : r.soft; };
   if (hit && hit.crit) return tough * one("head");
   const W = weights(hit);
   let tot = 0, sum = 0;
@@ -247,7 +290,8 @@ export function wornPieces(s) {
   const g = (s && s.gear) || {};
   /** @type {Record<string, any>} */
   const out = { torso: null, head: null, arms: null, legs: null };
-  for (const [slot, loc] of Object.entries(SLOT_LOC)) if (g[slot] && armourSpec(g[slot].key)) out[loc] = ensureDur(g[slot]);
+  for (const [slot, loc] of Object.entries(SLOT_LOC)) if (g[slot] && armourSpec(g[slot].key)) out[loc] = ensureDur(migrateCarrier(g[slot]));
+  for (const p of Object.values(insertsOf(g.armor))) if (p) ensureDur(p);
   return out;
 }
 export const toughOf = (s) => (s && s.traits && s.traits.includes("tough") ? AR.TOUGH : 1);
@@ -275,6 +319,14 @@ export function enemyPieces(b, u) {
   const seed = b && b.dseed != null ? b.dseed : b && b.rng ? b.rng.state : 0;
   const q = AR.ENEMY_DUR[0] + (AR.ENEMY_DUR[1] - AR.ENEMY_DUR[0]) * hash01("enemyarmour", seed, u.id, u.name);
   u.pieces = { torso: s ? { key, name: GEAR[key].name, dur: Math.max(1, Math.round(s.dmax * q)) } : null, head: null, arms: null, legs: null };
+  // Their helmet by kit (helmets.js kitHeadgear: u.helmKey), its own durability roll (the body drops it as it is left).
+  const hs = u.helmKey && GEAR[u.helmKey] ? armourSpec(u.helmKey) : null;
+  if (hs) u.pieces.head = { key: u.helmKey, name: GEAR[u.helmKey].name, dur: Math.max(1, Math.round(hs.dmax * (AR.ENEMY_DUR[0] + (AR.ENEMY_DUR[1] - AR.ENEMY_DUR[0]) * hash01("enemyhelmet", seed, u.id, u.name)))) };
+  if (u.pieces.torso && isCarrier(u.pieces.torso)) { // a carrier's plates (soldiers ceramic; anyone else now and then steel), as worn as it is
+    const ik = u.kit === "soldiers" || hash01("enemyinsert", seed, u.id) < 0.7 ? "ceramicplate" : "steelplate";
+    const plate = () => ({ key: ik, name: GEAR[ik].name, dur: Math.max(1, Math.round(GEAR[ik].dur * q)) });
+    u.pieces.torso.inserts = { front: plate(), back: plate() };
+  }
   if (u.tough == null) u.tough = 1;
   return u.pieces;
 }
@@ -286,13 +338,34 @@ export function lootArmour(u, item) {
   item.dur = Math.min(itemDurMax(item) ?? p.dur, p.dur);
   if (p.chip) item.chip = p.chip;
   if (p.hits30) item.hits30 = p.hits30;
+  if (isCarrier(item) && p.inserts) { // its plates as they were left: a shattered one is gone
+    const ins = insertsOf(item);
+    for (const side of ["front", "back"]) {
+      const q = p.inserts[side], it = ins[side];
+      if (!q || armourBroken(q)) { ins[side] = null; continue; }
+      if (!it || it.key !== q.key) continue;
+      it.dur = Math.min(itemDurMax(it) ?? q.dur, q.dur);
+      if (q.hits30) it.hits30 = q.hits30;
+    }
+  }
   return true;
 }
 // After a battle (combat.js wearFielded): a worn piece that broke in the fight is gone, like any broken gear.
 export function dropBroken(state, s) {
   for (const slot of ARMOR_SLOTS) {
     const it = s.gear[slot];
-    if (!it || !armourSpec(it.key) || !armourBroken(it)) continue;
+    if (!it || !armourSpec(it.key)) continue;
+    if (isCarrier(it)) { // a broken plate is gone; a broken carrier is too, its whole plates kept (on them, else in storage)
+      const ins = insertsOf(it);
+      for (const side of ["front", "back"]) if (ins[side] && armourBroken(ins[side])) { log(state, `${s.name.split(" ")[0]}'s ${side} plate (${ins[side].name.toLowerCase()}) ${ins[side].shattered ? "shattered" : "broke"}: it needs replacing.`, "danger"); ins[side] = null; }
+      if (!armourBroken(it)) continue;
+      s.gear[slot] = null;
+      const st = storageFor(state, personPlace(s));
+      for (const side of ["front", "back"]) { const p = ins[side]; if (p && !stow(s, p) && st) st.list.push(p); ins[side] = null; }
+      log(state, `${s.name.split(" ")[0]}'s ${it.name} broke.`, "danger");
+      continue;
+    }
+    if (!armourBroken(it)) continue;
     s.gear[slot] = null;
     log(state, `${s.name.split(" ")[0]}'s ${it.name} ${it.shattered ? "shattered" : "broke"}.`, "danger");
   }
@@ -310,7 +383,8 @@ export function absorbOffscreen(s, dmg, enemyKind, state = null) {
   for (const l of LOCS) tot += W[l];
   let lost = 0;
   for (const [slot, loc] of Object.entries(SLOT_LOC)) {
-    const it = s.gear[slot];
+    let it = s.gear[slot];
+    if (isCarrier(it)) { const f = insertsOf(it).front; if (f && armourSpec(f.key) && !armourBroken(f)) it = f; } // the front plate takes it first
     const spec = it && armourSpec(it.key);
     if (!spec || armourBroken(it)) continue;
     const ad = bite ? AR.BITE_AD[spec.mat] ?? 0.5 : AR.KIND_AD[enemyKind] ?? 0.5;

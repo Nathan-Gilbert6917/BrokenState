@@ -13,6 +13,7 @@ import { COND_SOURCES, kitSource } from "../src/sim/itemcond.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { newItem } from "../src/sim/inventory.js";
+import { starterMags } from "../src/sim/carrykit.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { GEAR } from "../src/sim/data.js";
 
@@ -30,6 +31,7 @@ function fighter(state, weapon = "pistol", shooting = 9) {
   s.health = 100;
   s.gear.weapon = weapon ? newItem(weapon) : null;
   for (const slot of ["head", "armor", "arms", "legs", "tool"]) s.gear[slot] = null;
+  if (s.gear.weapon) starterMags(s); // carrykit.js: two spare magazines, as a colonist starts with (a double feed: a fresh one in)
   s.location = { kind: "base", baseId: hub(state).id };
   state.survivors.push(s);
   return s;

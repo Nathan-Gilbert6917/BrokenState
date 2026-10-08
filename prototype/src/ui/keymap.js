@@ -110,7 +110,9 @@ export const KEYMAP = [
     .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
   // The weapons overhaul's gun orders (ui/combat.js gunButtons): every letter is taken, so they sit on Shift.
   ...[["firemode", "Fire mode: single, burst, auto (free)", "Shift+KeyF"], ["unjam", "Clear a jam (Unjam)", "Shift+KeyJ"], ["suppress", "Suppressing fire (pick where)", "Shift+KeyO"],
-    ["throwspear", "Throw the spear", "Shift+KeyG"], ["pickspear", "Pick up your thrown spear", "Shift+KeyP"], ["ammocycle", "Reload: pick the next kind of round", "Shift+KeyI"]]
+    ["throwspear", "Throw the spear", "Shift+KeyG"], ["pickspear", "Pick up your thrown spear", "Shift+KeyP"], ["ammocycle", "Reload: pick the next kind of round", "Shift+KeyI"],
+    ["visor", "Raise or lower the visor (free)", "Shift+KeyY"],
+    ["launch", "Launch a grenade or a rocket (pick where; an empty launcher: reload it)", "Shift+KeyL"]]
     .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
 
   // ---------- the timelapse (ui/timelapse.js tlKey) ----------

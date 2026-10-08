@@ -12,6 +12,8 @@
 // with nesting: a mount adds a sight, a rail a grip, a light and a bipod) when they are there, else today's gunmods.js
 // (ATTACH mounts: sight, muzzle, magazine, under the barrel) through sim/inventory.js fitModAt / unfitModAt.
 import { GEAR } from "../sim/data.js";
+import { rigPouches } from "../sim/inventory.js"; // magazines in rig pouches (section 16)
+import { typeName } from "../sim/rounds.js"; // a magazine's load
 import { WEAPONS } from "../sim/combat.js";
 import * as GM from "../sim/gunmods.js";
 import * as DGM from "../sim/data-gunmods.js";
@@ -129,6 +131,7 @@ export function partsInReach(state, gunLoc, slot, sid = null) {
     ensureInv(s);
     s.pockets.forEach((it, i) => { if (partFits(gun, slot, it)) out.push({ loc: `s:${s.id}:pocket:${i}`, item: it, where: `${firstName(s)}'s pocket` }); });
     (packOf(s) || []).forEach((it, i) => { if (partFits(gun, slot, it)) out.push({ loc: `s:${s.id}:pack:${i}`, item: it, where: `${firstName(s)}'s pack` }); });
+    (rigPouches(s) || []).forEach((it, i) => { if (partFits(gun, slot, it)) out.push({ loc: `s:${s.id}:rig:${i}`, item: it, where: `${firstName(s)}'s rig` }); }); // a spare magazine in a pouch (sim/inventory.js)
   }
   if (r.st) r.st.list.forEach((it, i) => { if (partFits(gun, slot, it)) out.push({ loc: `${r.st.o}:${r.st.id}:list:${i}`, item: it, where: r.st.o === "armory" ? "the armory" : "the team's cargo" }); });
   return out;
@@ -330,7 +333,7 @@ export function gunBuilderModal(state, ui) {
     const cands = partsInReach(state, g.loc, g.slot, g.sid);
     const rowsHtml = cands.map((c) => {
       const d = deltaText(now, statsOf(withPart(gun, g.slot, c.item)));
-      return `<div class="gbrow${g.hover === c.loc ? " hov" : ""}" data-gbhover="${esc(c.loc)}"><span><b>${esc(c.item.name)}</b> <span class="gbd">${esc(c.where)}</span><br><span class="gbd">${esc(d || "no change")}</span></span><button class="mini" data-action="gb-fit" data-slot="${g.slot}" data-part="${esc(c.loc)}"${tip(`Fit the ${c.item.name}${cur ? ` (the ${cur.name} comes off and goes where it came from)` : ""}.`)}>Fit</button></div>`;
+      return `<div class="gbrow${g.hover === c.loc ? " hov" : ""}" data-gbhover="${esc(c.loc)}"><span><b>${esc(c.item.name)}</b>${c.item.load ? ` <span class="gbd">${esc(typeName(c.item.load))}</span>` : ""} <span class="gbd">${esc(c.where)}</span><br><span class="gbd">${esc(d || "no change")}</span></span><button class="mini" data-action="gb-fit" data-slot="${g.slot}" data-part="${esc(c.loc)}"${tip(`Fit the ${c.item.name}${cur ? ` (the ${cur.name} comes off and goes where it came from)` : ""}.`)}>Fit</button></div>`;
     }).join("");
     const kids = cur && modDefOf(cur.key) && modDefOf(cur.key).adds ? modDefOf(cur.key).adds.filter((s) => gun.mods && gun.mods[s]) : [];
     const removeRow = cur ? `<div class="gbrow${g.hover === "remove" ? " hov" : ""}" data-gbhover="remove"><span><b>Remove the ${esc(cur.name)}</b><br><span class="gbd">${esc(deltaText(now, statsOf(withPart(gun, g.slot, null))) || "no change")}${kids.length ? ` · ${kids.map((s) => gun.mods[s].name).join(", ")} come${kids.length === 1 ? "s" : ""} off first` : ""}</span></span><button class="mini" data-action="gb-strip" data-slot="${g.slot}"${tip("Take it off: into the armory or the team's cargo where there is one, else a pocket or the pack.")}>Remove</button></div>` : "";

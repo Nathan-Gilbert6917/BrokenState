@@ -549,6 +549,7 @@ export function repairInfo(state, p) {
   const gain = Math.round(8 + mech * 1.5);
   let reason = "";
   if (!v) reason = "No vehicle with the team.";
+  else if (v.destroyed) reason = `The ${v.name} is a burnt-out wreck: nothing repairs it.`; // blown up (launchers.js)
   else if (v.condition >= 100) reason = `The ${v.name} is in top shape.`;
   else if (carried(p, "parts") < 1) reason = "Needs 1 part carried.";
   return { ok: !reason, reason, v, gain, mech, hours: REPAIR_HOURS, parts: carried(p, "parts") };

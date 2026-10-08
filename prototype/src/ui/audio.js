@@ -496,6 +496,7 @@ export const VOICES = {
     crackle(c, out, t + 0.3, 12, 1.2, 0.18 * o.gain);
   } },
   glass: { dur: 0.25, play(c, out, t, o) { shards(c, out, t, 3, 0.15 * o.gain); } },
+  ring: { dur: 1.4, play(c, out, t, o) { tone(c, "sine", 3800 * o.pitch, 3700, t, 1.3, env(c, out, t, 0.05 * o.gain, 1.2, 0.02)); } }, // tinnitus: the ears ringing after a bang (soundcues.js, sim/hearing.js)
   hiss: { dur: 1.1, play(c, out, t, o) { noise(c, "white", t, 1, filt(c, "highpass", 3000, 0.7, env(c, out, t, 0.22 * o.gain, 0.8, 0.05, 0.2))); } },
   flare: { dur: 1.6, play(c, out, t, o) {
     tone(c, "sine", 400, 150, t, 0.06, env(c, out, t, 0.3 * o.gain, 0.05, 0.002));

@@ -11,7 +11,7 @@ import { createWorld, makeSurvivor, hub, survivorById } from "../src/sim/world.j
 import { GEAR } from "../src/sim/data.js";
 import {
   active, createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler, combatAct, endPlayerTurn,
-  soundRetreat, retreatPlan, retreatRefusal, escapeOdds, retreatAdvice, fightOutlook, evacAt, inEvac, RETREAT, RETREAT_AI, unitAt,
+  soundRetreat, retreatPlan, retreatRefusal, escapeOdds, retreatAdvice, fightOutlook, evacAt, inEvac, RETREAT, RETREAT_AI, unitAt, loadPenalty,
 } from "../src/sim/combat.js";
 import { newItem } from "../src/sim/inventory.js";
 import "../src/sim/hives.js"; // the "hive" battle layout
@@ -134,9 +134,9 @@ const park = (b, u) => { u.dead = true; u.x = -20; u.y = -20; }; // takes an ene
   check(hurtOdds.chance === fresh + Math.round(-RETREAT.WOUNDS * 0.75),`wounds lower the odds (100 health ${fresh}% → 25 health ${hurtOdds.chance}%)`);
   check(hurtOdds.lostIfCaught > shot.lostIfCaught, `and a wounded unit that is caught may go down (${Math.round(shot.lostIfCaught * 100)}% → ${Math.round(hurtOdds.lostIfCaught * 100)}%)`);
   u.hp = 100;
-  u.armLoad = 4; // the armour worn (u.load is the loaded round now: ammo.js)
+  u.armLoad = 26; // kg carried (carrykit.js: a carrier with plates, a rifle, a rig of magazines, a pack)
   const heavy = escapeOdds(b, u);
-  check(heavy.chance === fresh - 4 * RETREAT.ARMOR, `a plate carrier slows them (${heavy.chance}%)`);
+  check(heavy.chance === fresh - Math.round(loadPenalty(26)) && loadPenalty(26) === 9, `full kit slows them (26 kg: −${loadPenalty(26)}, ${heavy.chance}%)`);
   u.armLoad = 0;
   const sc0 = u.scouting;
   u.scouting = sc0 + 8;

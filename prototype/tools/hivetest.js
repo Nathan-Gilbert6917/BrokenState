@@ -502,8 +502,12 @@ const answer = (st, re) => { const c = st.cards.pop(); const ch = c && c.choices
 }
 {
   console.log("The hive tech tree: determinism and save/load");
-  const a = world(37); runDays(a, 200); // one after the other, as above
-  const b = world(37); runDays(b, 200);
+  // The second world is built after the first has run: ids come from one process-wide counter (world.js newId), and
+  // a world's dice may read them (a party's, a group's), so two worlds built at once would not draw alike.
+  const a = world(37);
+  runDays(a, 200);
+  const b = world(37);
+  runDays(b, 200);
   const sg = (st) => JSON.stringify([st.hiveGrowths, st.hordes.map((h) => [h.tile, h.size, h.mix, h.elite]), st.hives.map((h) => [h.res, h.growSave, h.threatDay])]);
   check(sg(a) === sg(b) && (a.hiveGrowths || []).length > 0, `the same seed grows the same growths in 200 days (${(a.hiveGrowths || []).length})`);
   a.cards.length = 0; // nobody answers cards in this run; a save cannot hold them, so both worlds go on without them

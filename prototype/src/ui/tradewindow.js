@@ -65,7 +65,7 @@ function supplyRows(state, ctx, side) {
   const { t, f, speech } = ctx;
   const mine = side === "mine";
   // Rounds go by calibre and type (sim/ammo.js): a row for each kind either side has; never the generic "ammo".
-  return SUPPLY_KEYS.filter((k) => k !== "ammo" && (!SUPPLIES[k].round || (ctx.have[k] || 0) >= 1 || (ctx.theirHave[k] || 0) >= 1 || (t.offer[k] || 0) > 0 || (t.ask[k] || 0) > 0)).map((k) => {
+  return SUPPLY_KEYS.filter((k) => k !== "ammo" && (!(SUPPLIES[k].round || SUPPLIES[k].reload) || (ctx.have[k] || 0) >= 1 || (ctx.theirHave[k] || 0) >= 1 || (t.offer[k] || 0) > 0 || (t.ask[k] || 0) > 0)).map((k) => {
     const have = mine ? ctx.have[k] || 0 : ctx.theirHave[k] || 0;
     const q = (mine ? t.offer[k] : t.ask[k]) || 0;
     const unit = mine ? sellPrice(state, f, k, speech, Math.max(1, q)) : buyPrice(state, f, k, speech, Math.max(1, q));

@@ -52,7 +52,7 @@ import { groupStockKey } from "./trade.js"; // a group's one count of parts (par
 import { day, log, addCard, atBase, supplyValue } from "./world.js";
 import { sameBloc, betray } from "./blocs.js"; // AI blocs: theft between members is betrayal
 import { hash01 } from "./skills.js";
-import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, VEHICLE_TYPES, TURRET_KG } from "./vehicles.js";
+import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT } from "./vehicles.js";
 import { workshopFactor, worksAt } from "./groupworks.js";
 import { weightOf, tickOf, fitPeople } from "./groupcare.js";
 import { removeFromArsenal, issueKit } from "./arsenal.js";
@@ -377,15 +377,25 @@ export function scavVehicle(state, f, site) {
   return record(f, { id: state.hour, type, name: VEHICLE_TYPES[type].name, fuel: 2, condition: 25 + Math.round(35 * h(state, f.name, state.hour, "vcond")) }, { salt: "s" });
 }
 // Fit one upgrade by type (GROUP_PRIORITIES fits: raiders scrap plating; the military plate, then glass; a fortress
-// plate; traders and communes mesh; × fitting, communes seldom bother), paid from the stock; a machine gun in the
-// arsenal goes on a turret.
+// plate; traders and communes mesh; × fitting, communes seldom bother), paid from the stock; an LMG from the arsenal
+// on a turret (vehicles.js TURRET_FIT: the same rule and cost as yours; the M2 only ever comes mounted on a military
+// vehicle).
 export function fitUpgrade(state, f) {
   const cars = live(f).filter((v) => v.type !== "bike");
   if (!cars.length || h(state, f.name, tickOf(f), "fit") >= VEH.FIT * 10 * weightOf(f, "vehicles") * weightOf(f, "fitting", 1)) return null;
-  // A machine gun from the arsenal on a turret.
-  const mg = f.arsenal && f.arsenal.items.find((it) => TURRET_KG[it.key]);
+  // An LMG from the arsenal on a turret (it leaves the fighters' pool; lost with the vehicle), paid like yours.
+  const mg = f.arsenal && f.arsenal.items.find((it) => it.key === TURRET_FIT.item && TURRET_KG[it.key]);
   const bare = cars.find((v) => !upgradesOf(v).turret);
-  if (mg && bare) { removeFromArsenal(f, mg, "turret"); bare.upgrades = { ...upgradesOf(bare), turret: { gun: mg.key, item: mg } }; return { v: bare, key: "turret" }; }
+  if (mg && bare) {
+    const cost = {};
+    for (const [k, q] of Object.entries(upgradeCost("turret"))) { const sk = groupStockKey(k, f); cost[sk] = (cost[sk] || 0) + q; }
+    if (!Object.entries(cost).some(([k, q]) => (f.stock[k] || 0) < q + (k === "scrap" ? 5 : 0))) {
+      for (const [k, q] of Object.entries(cost)) f.stock[k] -= q;
+      removeFromArsenal(f, mg, "turret");
+      bare.upgrades = { ...upgradesOf(bare), turret: { gun: TURRET_FIT.gun, item: mg } };
+      return { v: bare, key: "turret" };
+    }
+  }
   for (const key of weightOf(f, "fits", null) || []) {
     const v = cars.find((x) => { const u = upgradesOf(x); return key === "plating" ? u.plating < 1 && !u.scrapPlate : key === "scrapPlate" ? !u.plating && !u.scrapPlate : !u[key] && !(key === "mesh" && u.glass) && !(key === "glass" && u.mesh); });
     if (!v) continue;

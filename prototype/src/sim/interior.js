@@ -73,7 +73,7 @@ export const STRUCTURES = [
   { key: "barracks", name: "Barracks", w: 6, h: 4, storeys: 2, per: "barracks", max: 2 },
   { key: "bunkhouse", name: "Bunkhouse", w: 5, h: 4, storeys: 2, per: "bunkhouse", max: 2 },
   { key: "hospital", name: "Infirmary", w: 5, h: 4, storeys: 1, any: Object.keys(HOSPITAL_NAME) },
-  { key: "workshop", name: "Workshop", w: 6, h: 4, storeys: 1, any: ["ammo_bench", "med_station", "machine_shop", "kitchen", "still", "generator", "craftbench", "workbench", "toolbench"] }, // the benches: the new hub keeps its workshop (it started with an ammo bench before)
+  { key: "workshop", name: "Workshop", w: 6, h: 4, storeys: 1, any: ["ammo_bench", "reload_bench", "med_station", "machine_shop", "kitchen", "still", "generator", "craftbench", "workbench", "toolbench"] }, // the benches: the new hub keeps its workshop (it started with an ammo bench before)
   { key: "storehouse", name: "Storehouse", w: 4, h: 3, roof: true, any: ["storehouse"] },
   { key: "common", name: "Common room", w: 5, h: 4, storeys: 1, any: ["common_room", "chapel"] },
   { key: "cells", name: "Holding cells", w: 4, h: 4, storeys: 1, any: ["cells", "jailhouse"] }, // makeshift cells are a cage in the yard (a utility plot), no building

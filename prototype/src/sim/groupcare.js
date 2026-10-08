@@ -352,7 +352,7 @@ export function wearGroupVehicles(state, f, lost = false, tag = "") {
 function repairVehicles(state, f) {
   if (workshopFactor(state, f) < 1) return;
   const V = CARE.VEHICLE;
-  const v = factionVehicles(f).filter((x) => x.condition < V.below).sort((a, b) => a.condition - b.condition)[0];
+  const v = factionVehicles(f).filter((x) => x.condition < V.below && !x.destroyed).sort((a, b) => a.condition - b.condition)[0]; // a wreck (launchers.js) is past repair
   if (!v || (f.stock.parts || 0) < V.parts || (f.stock.scrap || 0) < V.scrap) return;
   f.stock.parts -= V.parts;
   f.stock.scrap -= V.scrap;

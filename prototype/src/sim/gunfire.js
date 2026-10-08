@@ -20,7 +20,8 @@
 // jam 5% (2 actions, −0.05 quality). Revolvers, double-barrels, bolt, lever and pump guns misfire instead: the round
 // is a dud and the action is lost, no jam.
 import { itemDur, itemDurMax } from "./crafting.js";
-import { AMMO_TYPES } from "./data-ammo.js";
+import { AMMO_TYPES, RELOAD_FX } from "./data-ammo.js";
+import { noteHandLoad, noteHandQ } from "./reloading.js"; // the bench's handloads: the round fired next and its make
 import { WEAPON_PLATFORM } from "./data-gunmods.js";
 import { unitMods, gunMods, modRange, NO_MODS } from "./gunmods.js";
 import { weather } from "./weather.js";
@@ -152,7 +153,8 @@ export const enemyGunQ = (seed, id, kit = null) => { const [lo, hi] = kitRange(k
 export const enemyGunCond = (seed, id, kit = null) => { const [lo, hi] = kitRange(kit, "d", JAM.ENEMY_COND); return Math.round((lo + (hi - lo) * hash01("enemyguncond", seed, id)) * 100) / 100; };
 export function ammoJam(u) {
   const c = u.loadCond || "factory";
-  const f = c === "hand" ? JAM.HAND[0] - JAM.HAND[1] * Math.max(0, Math.min(1, u.loadHq ?? 0.5)) : JAM.AMMO[c] ?? 1;
+  let f = c === "hand" ? JAM.HAND[0] - JAM.HAND[1] * Math.max(0, Math.min(1, u.loadHq ?? 0.5)) : JAM.AMMO[c] ?? 1;
+  if (c === "hand") f *= (1 + (RELOAD_FX.BLACK_JAM - 1) * (u.loadBp || 0)) * (1 + (RELOAD_FX.MATCH_JAM - 1) * (u.loadMp || 0)); // reloading.js: black powder, match-head primers (their share)
   const t = u.load && AMMO_TYPES[u.load];
   return f * ((t && t.jam) || 1);
 }
@@ -177,7 +179,11 @@ export function jamWeather(state, b) {
   if (!w) return 1;
   return JAM.WX[w.key] || (w.mud >= JAM.MUD ? JAM.WX.rain : 1);
 }
-export function noteJamWeather(state, b) { if (b && b.jamWx == null) b.jamWx = jamWeather(state, b); }
+export function noteJamWeather(state, b) {
+  if (b && b.jamWx == null) b.jamWx = jamWeather(state, b);
+  if (b && b.handQ == null) noteHandQ(state, b); // reloading.js: the colony's handload makes, once a battle
+  if (b && b.units) for (const u of b.units) if (u.side === "player" && !u.dead) noteHandLoad(b, u); // the marks for the next round (aim, noise)
+}
 // Per-round jam (or misfire) chance of this unit's gun now.
 export function jamChance(b, u) {
   const w = WEAPONS[u.weapon];
@@ -187,6 +193,7 @@ export function jamChance(b, u) {
 }
 // One trigger pull of n rounds: { fired, spent, jam: kind | null, misfire }.
 export function rollTrigger(b, u, n) {
+  if (u.side === "player") noteHandLoad(b, u); // reloading.js: a handload next? its make sets u.loadCond / loadHq
   const p = jamChance(b, u);
   if (!(p > 0) || n <= 0) return { fired: n, spent: n, jam: null, misfire: false };
   const pn = 1 - Math.pow(1 - p, n);

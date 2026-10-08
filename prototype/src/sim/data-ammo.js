@@ -8,7 +8,10 @@
 
 // kg: a round's weight. box: rounds in a box. pen: the calibre's base penetration (its FMJ / ball / 00 buck round).
 // ad: how hard its FMJ round chews armour durability (section 17). value: one FMJ round.
-/** @type {Record<string, { name: string, kg: number, box: number, pen: number, ad: number, value: number, base: string, types: string[] }>} */
+// common: false = launcher rounds (40 mm grenades, rockets: section 13): their own supply keys and boxes, but never
+// "ammo" in the abstract (rounds.js GENERIC_KEYS: no generic ammo settles into them, no plan or deal pays in them,
+// no ammo bench makes them, an AI group's count never folds them in).
+/** @type {Record<string, { name: string, kg: number, box: number, pen: number, ad: number, value: number, base: string, types: string[], common?: boolean }>} */
 export const CALIBERS = {
   "22lr":   { name: ".22 LR",           kg: 0.0035, box: 100, pen: 5,  ad: 0.3, value: 0.2,  base: "fmj",  types: ["fmj", "hp", "subsonic"] },
   "9mm":    { name: "9mm",              kg: 0.012,  box: 50,  pen: 15, ad: 0.4, value: 0.5,  base: "fmj",  types: ["fmj", "hp", "ap", "plusp", "subsonic", "rubber"] },
@@ -20,6 +23,9 @@ export const CALIBERS = {
   "308":    { name: ".308 / 7.62 NATO", kg: 0.025,  box: 20,  pen: 38, ad: 0.9, value: 1.0,  base: "fmj",  types: ["fmj", "sp", "ap", "match", "subsonic", "rubber"] },
   "3030":   { name: ".30-30",           kg: 0.020,  box: 20,  pen: 25, ad: 0.6, value: 0.8,  base: "sp",   types: ["sp", "fmj"] },
   "50bmg":  { name: ".50 BMG",          kg: 0.115,  box: 10,  pen: 70, ad: 3,   value: 6,    base: "ball", types: ["ball", "api"] },
+  // Launcher rounds (section 13; launchers.js fires them): a box of six 40 mm grenades, one rocket a "box".
+  "40mm":   { name: "40 mm",            kg: 0.23,   box: 6,   pen: 20, ad: 2,   value: 15,   base: "he",   types: ["he", "buck", "smoke", "illum"], common: false },
+  "rocket": { name: "Rocket",           kg: 2.6,    box: 1,   pen: 90, ad: 5,   value: 60,   base: "heat", types: ["heat"], common: false },
 };
 
 // Effects of a type on its calibre's FMJ. dmg: × damage; soft: × damage on a hit location with no armour (hollow and
@@ -48,6 +54,12 @@ export const AMMO_TYPES = {
   beanbag:  { name: "beanbag",        dmg: 0.5,  soft: 0.5,  pen: { "12ga": 2 }, opt: -1, close: 4, ad: 0.1, value: 1.3, nonlethal: true },
   rubber:   { name: "rubber",         dmg: 0.45, soft: 0.45, pen: { "9mm": 1, "556": 2, "308": 3 }, ad: 0.1, value: 1.2, nonlethal: true },
   api:      { name: "API",            dmg: 1.05, soft: 1.05, pen: { "50bmg": 75 }, ad: 3.2, value: 1.7, ignite: 0.25, overpen: { "50bmg": 1 } },
+  // Launcher rounds (launchers.js LAUNCH_ROUNDS says what each does where it lands). buck: the 40 mm canister is the
+  // 12 gauge's buckshot type (a shotgun shot at a unit); its value is set below (LAUNCH_VALUE).
+  he:       { name: "HE",             dmg: 1,    soft: 1,    penAdd: 0,  value: 1,   launch: true },
+  smoke:    { name: "smoke",          dmg: 1,    soft: 1,    penAdd: 0,  value: 0.67, launch: true },
+  illum:    { name: "illumination",   dmg: 1,    soft: 1,    penAdd: 0,  value: 0.4, launch: true },
+  heat:     { name: "HEAT",           dmg: 1,    soft: 1,    penAdd: 0,  value: 1,   launch: true },
 };
 
 // Penetration of a calibre + type.
@@ -77,24 +89,43 @@ export function ammoBoxes() {
       dur: c.box, weight: Math.round((c.kg * c.box + 0.05) * 100) / 100, value: Math.max(1, Math.round(c.value * t.value * c.box)),
       cat: "ammo", rounds: { cal, type },
       desc: `A box of ${c.box} ${c.name} ${t.name} rounds.`,
+      ...(c.common === false ? { common: false } : {}),
       };
     }
   }
   return out;
 }
 Object.assign(AMMO_GEAR, ammoBoxes());
+// The launcher rounds' own looks and prices (section 13 table: per round 40 mm HE 15, buckshot 8, smoke 10,
+// illumination 6, a rocket 60): a box of 40 mm is six grenades, a rocket is one round and bulky.
+/** @type {Record<string, number>} */
+export const LAUNCH_VALUE = { a_40mm_he: 15, a_40mm_buck: 8, a_40mm_smoke: 10, a_40mm_illum: 6, a_rocket_heat: 60 };
+const LAUNCH_DESC = {
+  a_40mm_he: "Six high-explosive 40 mm grenades for a grenade launcher (an M79, an M32, an M203 under an assault rifle).",
+  a_40mm_buck: "Six 40 mm canister rounds: a giant shotgun shell fired at someone close.",
+  a_40mm_smoke: "Six 40 mm smoke grenades: a cloud where they land, lobbed over walls.",
+  a_40mm_illum: "Six 40 mm parachute flares: light a wide patch of ground for a few turns.",
+  a_rocket_heat: "A HEAT rocket for the reloadable rocket launcher (RPG). Heavy and bulky.",
+};
+for (const [k, v] of Object.entries(LAUNCH_VALUE)) {
+  const box = AMMO_GEAR[k];
+  if (!box) continue;
+  box.value = Math.max(1, Math.round(v * box.dur));
+  box.desc = LAUNCH_DESC[k] || box.desc;
+  if (k === "a_rocket_heat") { box.small = false; box.bulky = true; }
+}
 
 // Rounds as a supply (section 20, R1: full per-calibre). Every calibre and type is its own supply key, the same key as
 // its box: a base's stock, a team's supplies and cargo, a battle's pools and a body's or a container's finds hold
 // rounds by key ({ a_9mm_fmj: 120, a_12ga_buck: 30 }). value and weight are per round. The old generic "ammo" key
 // stays only as an abstract count: the AI groups' stores (f.stock.ammo), what a plan or a deal asks for ("40 ammo":
 // packed or paid as the rounds that fit, ammo.js) and the by-the-numbers figures. data.js merges these into SUPPLIES.
-/** @type {Record<string, { name: string, value: number, weight: number, cat: string, round: { cal: string, type: string } }>} */
+/** @type {Record<string, { name: string, value: number, weight: number, cat: string, round: { cal: string, type: string }, common?: boolean }>} */
 export const ROUND_SUPPLIES = {};
 for (const [cal, c] of Object.entries(CALIBERS)) {
   for (const type of c.types) {
     const t = AMMO_TYPES[type];
-    ROUND_SUPPLIES[ammoKey(cal, type)] = { name: `${c.name} ${t.name}`, value: Math.round(c.value * t.value * 1000) / 1000, weight: c.kg, cat: "ammo", round: { cal, type } };
+    ROUND_SUPPLIES[ammoKey(cal, type)] = { name: `${c.name} ${t.name}`, value: LAUNCH_VALUE[ammoKey(cal, type)] ?? Math.round(c.value * t.value * 1000) / 1000, weight: c.kg, cat: "ammo", round: { cal, type }, ...(c.common === false ? { common: false } : {}) };
   }
 }
 
@@ -128,8 +159,76 @@ export const STARTER_AMMO = {
   "22lr":  [[0.3, "hp", 50]],
 };
 
+// ---------- the reloading bench (section 12; wave 2, agent C2: reloading.js) ----------
+// What a reloading bench can load, by calibre class: [Mechanics needed, rounds per operator-day] (+4% a day per
+// Mechanics point). .22 LR is rimfire (no primer to replace) and .50 BMG is not craftable; neither are tracers,
+// +P or the less-lethal rounds. AP needs a machine shop at the base and a machine part per 20 (steel cores).
+export const LOAD_CLASS = { "9mm": "pistol", "45acp": "pistol", "357": "pistol", "12ga": "shotgun", "556": "rifle", "762x39": "rifle", "308": "rifle", "3030": "rifle" };
+/** @type {Record<string, Record<string, [number, number]>>} */
+export const LOADS = {
+  pistol:  { fmj: [2, 40], hp: [5, 30], subsonic: [6, 25], ap: [10, 10] },
+  rifle:   { fmj: [3, 25], sp: [3, 25], subsonic: [6, 25], match: [9, 15], ap: [10, 10] },
+  shotgun: { buck: [1, 25], bird: [1, 25], slug: [1, 15] },
+};
+// Powder charges (the powder supply's unit: one pistol load; a 1 lb can holds 100) per 10 rounds by class: a can
+// loads 100 pistol, 40 rifle or 60 shotgun rounds.
+export const POWDER_PER10 = { pistol: 10, rifle: 25, shotgun: 100 / 6 };
+// A handload's effects in a fight (gunfire.js ammoJam, combat.js shotOdds, stealth.js shotNoise): aim −AIM when loaded
+// below Mechanics AIM_BELOW; black powder: jam × BLACK_JAM and BLACK_NOISE more noise a shot; match-head primers:
+// misfires and jams × MATCH_JAM.
+export const RELOAD_FX = { AIM_BELOW: 8, AIM: 1, BLACK_JAM: 1.5, BLACK_NOISE: 1, MATCH_JAM: 3 };
+// Can this calibre and type be loaded at the bench? [min, rate] or null.
+/** @param {string} cal @param {string} type */
+export const loadRecipe = (cal, type) => (LOAD_CLASS[cal] && CALIBERS[cal] && CALIBERS[cal].types.includes(type) && LOADS[LOAD_CLASS[cal]][type]) || null;
+// Handloads: a round loaded at the bench is a supply of its own key (a_9mm_hp_hand), so its make travels with it
+// through every stock, pack, cargo, trade and pool exactly like a factory round. The base type of a calibre (FMJ,
+// 00 buck) loaded with smokeless powder and factory primers goes into the factory key (quality-less, so the economy
+// sees it); anything else made at the bench (a typed round, or any round with black powder or match-head primers)
+// is a handload. Their make (quality, black powder, match primers) is a colony-wide average per key (reloading.js).
+/** @param {string} cal @param {string} type */
+export const handKey = (cal, type) => `a_${cal}_${type}_hand`;
+export const HAND_VALUE = 0.75; // × the factory round's worth
+/** @type {Record<string, { name: string, value: number, weight: number, cat: string, round: { cal: string, type: string, hand: true } }>} */
+export const HAND_SUPPLIES = {};
+/** @type {Record<string, any>} */
+export const HAND_GEAR = {};
+for (const [cal, c] of Object.entries(CALIBERS)) {
+  for (const type of c.types) {
+    if (!loadRecipe(cal, type)) continue;
+    const t = AMMO_TYPES[type], k = handKey(cal, type);
+    HAND_SUPPLIES[k] = { name: `${c.name} ${t.name} (handload)`, value: Math.round(c.value * t.value * HAND_VALUE * 1000) / 1000, weight: c.kg, cat: "ammo", round: { cal, type, hand: true } };
+    HAND_GEAR[k] = {
+      name: `${c.name} ${t.name} handloads`, slot: "pack", skill: null, power: 0, req: 0, noise: 0, small: true, count: true,
+      dur: c.box, weight: Math.round((c.kg * c.box + 0.05) * 100) / 100, value: Math.max(1, Math.round(c.value * t.value * HAND_VALUE * c.box)),
+      cat: "ammo", rounds: { cal, type, hand: true },
+      desc: `A box of ${c.box} ${c.name} ${t.name} rounds loaded at a reloading bench: they jam more than factory rounds, less the better the loader.`,
+    };
+  }
+}
+Object.assign(ROUND_SUPPLIES, HAND_SUPPLIES);
+Object.assign(AMMO_GEAR, HAND_GEAR);
+
+// The bench's inputs are supplies (stock keys, like rounds; a battle's pools take brass back as they take arrows),
+// counted in single cases, powder charges and primers. Their item forms (RELOAD_GEAR, count stacks: a bag, a can, a
+// box) are what is found and sold loose; one that reaches a base's armory or a team's cargo is opened into the stock
+// (ammo.js unbox), as a box of rounds is. Black powder and match-head primers are made at the bench (crafting.js).
+/** @type {Record<string, { name: string, value: number, weight: number, cat: string, reload: true }>} */
+export const RELOAD_SUPPLIES = {
+  brass:        { name: "Brass and hulls",    value: 0.08,  weight: 0.008,  cat: "ammo", reload: true },
+  powder:       { name: "Powder",             value: 0.2,   weight: 0.0045, cat: "ammo", reload: true },
+  blackpowder:  { name: "Black powder",       value: 0.08,  weight: 0.006,  cat: "ammo", reload: true },
+  primers:      { name: "Primers",            value: 0.15,  weight: 0.001,  cat: "ammo", reload: true },
+  matchprimers: { name: "Match-head primers", value: 0.05,  weight: 0.001,  cat: "ammo", reload: true },
+};
 /** @type {Record<string, any>} brass, powder, primers (section 12; economy agent C, wave 2) */
-export const RELOAD_GEAR = {};
+export const RELOAD_GEAR = {
+  brass:   { name: "Bag of brass",   slot: "pack", skill: null, power: 0, req: 0, noise: 0, small: true, count: true, dur: 100, weight: 0.8, value: 8, cat: "ammo", reload: true,
+             desc: "A bag of 100 fired cases and shotgun hulls, picked up and sorted: a reloading bench primes, charges and seats them again. Opened into the stock at a base." },
+  powder:  { name: "Can of powder",  slot: "pack", skill: null, power: 0, req: 0, noise: 0, small: true, count: true, dur: 100, weight: 0.5, value: 20, cat: "ammo", reload: true,
+             desc: "A 1 lb can of smokeless powder: 100 pistol charges, enough for 40 rifle or 60 shotgun loads at a reloading bench. Opened into the stock at a base." },
+  primers: { name: "Box of primers", slot: "pack", skill: null, power: 0, req: 0, noise: 0, small: true, count: true, dur: 100, weight: 0.1, value: 15, cat: "ammo", reload: true,
+             desc: "A box of 100 primers: a reloading bench needs one for every round it loads. Rare now. Opened into the stock at a base." },
+};
 
 // Enemy loads by kit and calibre class (section 6): weights per type. A type the calibre does not have falls back to
 // the calibre's base. Never shown to the player (section 20, R10).

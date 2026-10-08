@@ -29,7 +29,7 @@ const pct = (c) => `${Math.round(c * 100)}%`;
 const moodAll = (list, v) => { for (const s of list) s.mood = clamp(s.mood + v, 0, 100); };
 const here = (s, base) => s.alive && s.location.kind === "base" && s.location.baseId === base.id;
 
-export const FIRE = { water: 15, burnable: ["bunkhouse", "barracks", "ammo_bench", "med_station", "machine_shop", "garage", "watchtower", "rain_catcher", "craftbench", "workbench", "toolbench"] };
+export const FIRE = { water: 15, burnable: ["bunkhouse", "barracks", "ammo_bench", "reload_bench", "med_station", "machine_shop", "garage", "watchtower", "rain_catcher", "craftbench", "workbench", "toolbench"] };
 export const DOG = { food: 0.5, mood: 0.5 };
 export const WELL_DOWN = { days: 5, water: 6 };
 // An errand takes about a day's food and water a day away from the base (needs.js packErrand: food, water = the least it

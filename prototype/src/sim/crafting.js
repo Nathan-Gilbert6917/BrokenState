@@ -84,12 +84,22 @@ export const CRAFTS = {
   // Gun attachments (gunmods.js; docs/weapons-overhaul-plan.md section 5): a bottle over the muzzle in the field, a
   // solvent trap drilled out at a machine shop, a cheap magnifier for a scope, a rubber butt pad, a sling.
   bottlecan:   { gear: "bottlecan",   gearIn: { bottle: 1 }, in: { scrap: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },
+  makeshiftrig: { gear: "makeshiftrig", gearIn: { backpack: 1 }, in: { scrap: 1 }, hours: 3, skill: "mechanics", min: 0, field: true }, // carry kit (data-kit.js): a school bag cut into chest pouches
+  steelplate:  { gear: "steelplate",  in: { scrap: 8 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" }, // a plate carrier's steel insert (section 16)
   solventcan:  { gear: "solventcan",  in: { scrap: 3, gunparts: 1 }, hours: 10, skill: "mechanics", min: 6, needs: "machine_shop" },
   scrapscope:  { gear: "scrapscope",  gearIn: { monocular: 1 }, in: { scrap: 2 }, hours: 4, skill: "mechanics", min: 2 },
   recoilpad:   { gear: "recoilpad",   in: { scrap: 1, wood: 10 }, hours: 2, skill: "mechanics", min: 0, field: true },
   sling:       { gear: "sling",       in: { scrap: 1 },           hours: 1,  skill: "mechanics", min: 0, field: true },
   // A field repair kit (repair.js): tools, pins and springs for 5 repairs on the road.
   repairkit:   { gear: "repairkit",   in: { scrap: 3, gunparts: 1, parts: 1 }, hours: 8, skill: "mechanics", min: 3, needs: "workshop" },
+  // The reloading bench's own inputs (reloading.js; section 12): black powder from charcoal, sulphur and saltpetre
+  // (firewood, scrap, food for the latrine's saltpetre), and match-head primers. Both are used only when the factory
+  // powder or primers run out; loads with them are handloads that jam more (black powder: ×1.5 and louder; match-head
+  // primers: misfires ×3).
+  blackpowder: { name: "Black powder (a can)", supplies: { blackpowder: 100 }, in: { wood: 90, scrap: 1, food: 2 }, hours: 8, skill: "mechanics", min: 4, needs: "reload_bench",
+                 desc: "Charcoal from firewood, sulphur scraped from old matches and batteries, saltpetre leached from the latrine: a can's worth of black powder (100 pistol charges) for the reloading bench, used when the smokeless powder runs out. Its loads foul the gun (jams ×1.5) and are louder." },
+  matchprimers: { name: "Match-head primers (50)", supplies: { matchprimers: 50 }, in: { scrap: 1 }, hours: 6, skill: "mechanics", min: 8, needs: "reload_bench",
+                 desc: "Spent primers knocked out, re-anviled and packed with scraped match heads: 50 primers for the reloading bench, used when the factory primers run out. They fail three times as often (misfires and jams ×3)." },
   // ---------- special gear (craft-books): locked until a craft book is read or a blueprint studied (blueprints.js) ----------
   // cmin: Crafting needed besides the recipe's own skill.
   springmachete: { gear: "springmachete", in: { scrap: 8, parts: 1 }, hours: 14, skill: "mechanics", min: 3, cmin: 5, needs: "workshop" },
@@ -100,7 +110,7 @@ export const CRAFTS = {
   // ---------- end of special gear ----------
 };
 
-export const WORKSHOP_TYPES = ["ammo_bench", "machine_shop"]; // stations with metal tools
+export const WORKSHOP_TYPES = ["ammo_bench", "reload_bench", "machine_shop"]; // stations with metal tools (a reloading bench is an ammo bench upgraded: reloading.js)
 export const MAX_CRAFT_QUEUE = 8;
 const FIELD_QUALITY = -0.05;  // made on the road with less to work with
 const WORKSHOP_QUALITY = 0.1; // workshop recipes come out a little better
@@ -148,6 +158,8 @@ export function craftOutputText(key) {
   if (d.slot === "weapon") bits.push(`weapon, power ${d.power}${d.fish === "spear" ? `, spears fish (${d.fishPower} food an hour in daylight)` : ""}`);
   else if (d.fish) bits.push(`fishing ${d.fish}, about ${d.fishPower ?? 0.6} food an hour on a river or lake shore, more at dawn and dusk`);
   else if (ARMOR_SLOTS.includes(d.slot)) bits.push(`${SLOT_NAMES[d.slot].toLowerCase()} armor ${d.power}`);
+  else if (d.slot === "rig") bits.push(`chest rig, ${(d.pouches || []).length} pouches (${[...new Set(d.pouches || [])].join(", ")}), +${d.carry || 0} kg more to carry (max load); not worn over a vest with pouches`); // carry kit (data-kit.js)
+  else if (d.slot === "insert") bits.push(`plate for a plate carrier's front or back pocket, armor ${d.power} (${/steel/.test(r.gear) ? "steel: it can spall, and can be patched" : "ceramic: it can shatter, and cannot be patched"})`); // section 16
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
   else if (r.gear === "repairkit") bits.push("a field repair kit: mends a gun, an attachment, armour or a makeshift tool anywhere, one use a repair (half a workbench's restore, twice the lost maximum; repair.js)");

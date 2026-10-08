@@ -6,7 +6,7 @@
 import { GEAR, SUPPLIES, SKILL_NAMES } from "../sim/data.js";
 import { survivorById, atBase, baseById, gearEffect, combatPower } from "../sim/world.js";
 import { partyMembers, partyCapacity, cargoLoad, poolLoad, partyLoad } from "../sim/parties.js";
-import { wornLoad, maxLoad, personLoad, bandName } from "../sim/load.js";
+import { wornLoad, maxLoad, personLoad, bandName, feelFactor } from "../sim/load.js";
 import { bandChip, BANDS_HELP } from "./loadview.js";
 import { itemDur, itemDurMax, durUnit } from "../sim/crafting.js";
 import { worthTier } from "../sim/valuation.js";
@@ -29,6 +29,11 @@ import { SEARCH } from "../sim/search.js";
 import { ask } from "./confirm.js"; // breaking down anything above junk asks first (one confirmation style)
 import { isGunKey } from "./gunart.js"; // a gun (not a bow or a blade): the gun builder opens on it
 import { gunTipText, slotOfPart, SLOT_NAMES as PART_SLOT_NAMES } from "./gunbuilder.js"; // the gun builder (ui/gunbuilder.js)
+import { isHelmet, isHelmetPart, helmetSlots, helmetChoices, helmetFitReason, fitHelmetAt, stripHelmetAt, helmetLabel, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts: visors, night vision, a light, ear protection
+import { rigOf, pouchesOf, isCarrier, insertsOf } from "../sim/inventory.js"; // rigs and plate carriers (section 16)
+import { POUCH_NAMES, POUCH_ICON, MAGAZINES } from "../sim/data-kit.js";
+import { battleKg, bandFor } from "../sim/carrykit.js"; // the battle load band (R17)
+import { typeName } from "../sim/rounds.js";
 import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -42,7 +47,7 @@ const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "�
   camonet: "⛺", ghillie: "🌿", stove: "⛺", scentmask: "🫙", ragboots: "🥾" };
 // By trade category (data.js CATEGORIES): valuables and treats at a glance.
 const CAT_ICON = { jewelry: "💍", smokes: "🚬", liquor: "🍾", treats: "🍫", gadgets: "📱", collectibles: "🪙", household: "🧻", defence: "🚧", bow: "🏹" };
-const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", arms: "🧤", legs: "🦵", backpack: "🎒" };
+const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", arms: "🧤", legs: "🦵", backpack: "🎒", rig: "🦺", insert: "▭" };
 const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌" };
 function icon(key) {
   const d = GEAR[key];
@@ -57,8 +62,13 @@ export function itemTip(item, s = null) {
   const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
   if (d.slot === "weapon") bits.push(`power ${d.power}${d.req ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}`);
   if (d.slot === "weapon" && item.mods) bits.push(modsText(item)); // sim/gunmods.js: what is fitted and the net effect
+  if (isHelmet(item.key)) bits.push(`${item.mods ? `fitted: ${helmetLabel(item).replace(/^[^(]*\(|\)$/g, "")}; ` : ""}mounts: ${helmetSlots(item).map((m) => HELM_MOUNTS[m].toLowerCase()).join(", ") || "none (a full shell)"}`); // sim/helmets.js
+  if (isHelmetPart(item.key) && !GEAR[item.key].ears) bits.push(`helmet part (${HELM_MOUNTS[HELMET_ATTACH[item.key].mount].toLowerCase()}): select a helmet and fit it`);
   if (d.slot === "weapon" && isGunKey(item.key)) { const g = gunTipText(item); if (g) bits.push(g); } // ui/gunbuilder.js: its slots, its load, how reliable
-  if (ATTACH[item.key]) bits.push(`gun attachment (${MOUNT_NAMES[ATTACH[item.key].mount].toLowerCase()}): ${attachText(item.key)}; fits ${fitsText(item.key)}; fit it in the gun builder (⚙ Modify on the gun)`);
+  if (MAGAZINES[item.key]) bits.push(`magazine: ${MAGAZINES[item.key].cap} rounds${item.load ? `, loaded with ${typeName(item.load)}` : " of the gun's own load"}; fits ${fitsText(item.key)}. A spare in a rig pouch or a pocket reloads in 1 action, from the pack in 2; fit one in the gun builder (⚙ Modify on the gun)`);
+  else if (ATTACH[item.key]) bits.push(`gun attachment (${MOUNT_NAMES[ATTACH[item.key].mount].toLowerCase()}): ${attachText(item.key)}; fits ${fitsText(item.key)}; fit it in the gun builder (⚙ Modify on the gun)`);
+  else if (d.slot === "rig" || (d.pouches && d.slot === "armor")) bits.push(`${d.slot === "rig" ? "chest rig" : `armor ${d.power} with pouches`}: ${pouchText(d.pouches)}; +${d.carry || 0} kg max load${isCarrier(item) ? `; plates: ${Object.entries(insertsOf(item)).map(([k, p]) => `${k} ${p ? p.name.toLowerCase() : "empty"}`).join(", ")}` : ""}`);
+  else if (d.slot === "insert") bits.push("a plate for a plate carrier's front or back pocket");
   else if (slotOfPart(item.key)) bits.push(`gun part (${(PART_SLOT_NAMES[slotOfPart(item.key)] || slotOfPart(item.key)).toLowerCase()}): fit it in the gun builder (⚙ Modify on the gun)`);
   else if (["armor", "head", "arms", "legs"].includes(d.slot)) bits.push(`armor ${d.power} (adds up across body, head, arms and legs)`);
   else if (d.slot === "backpack") bits.push(`${packSize(item)} pack slots, +${d.carry || 0} kg max load${d.ease ? `, spreads the weight: the wearer's load counts ${Math.round(d.ease * 100)}% lighter for their load band` : ""}`);
@@ -83,6 +93,7 @@ export function itemTip(item, s = null) {
   return `${bits.join(". ")}.${d.desc ? ` ${d.desc}` : ""}`;
 }
 
+const pouchText = (P) => { const n = {}; for (const k of P || []) n[k] = (n[k] || 0) + 1; return Object.entries(n).map(([k, c]) => `${c} ${String(POUCH_NAMES[k] || k).toLowerCase()}${c > 1 ? "s" : ""}`).join(", ") || "no pouches"; };
 function tile(item, loc, s, drag = true) {
   const d = GEAR[item.key];
   const dur = itemDur(item);
@@ -126,16 +137,38 @@ function doll(state, ui, holder, prefix, portrait, { readonly = false, user = nu
     weight = `<div class="small"${tip(`${team ? `Wears ${Math.round(worn * 10) / 10} kg and carries ${Math.round((pl.load - worn) * 10) / 10} kg of the team's supplies and cargo (shared so everyone is equally burdened)` : `Wears and carries ${Math.round(worn * 10) / 10} kg`}, of a ${max} kg max load (40, 28 with a Bad Back, + the pack and Packrat). On foot: pace ${Math.round(pl.speed * 100)}%, food and water ${Math.round(pl.eat * 100)}% on the move. ${BANDS_HELP}`)}>${Math.round(pl.load)}/${max} kg ${bandChip(pl.band)}</div>`;
   }
   return `<div class="doll">
-      <div class="dollside">${box("weapon")}${box("tool")}${box("backpack")}</div>
-      <div class="dollport">${portrait}<div class="small muted"${tip("Armor from every worn piece (body, head, arms, legs) adds up, to a cap of 5.5. Each point cuts damage taken by 6%.")}>Armor ${Math.round(arm * 10) / 10}</div>${weight}</div>
-      <div class="dollside">${box("head")}${box("armor")}${box("arms")}${box("legs")}</div>
+      <div class="dollside">${box("weapon")}${box("tool")}${box("rig")}${box("backpack")}</div>
+      <div class="dollport">${portrait}<div class="small muted"${tip("Armor from every worn piece (body, head, arms, legs) adds up, to a cap of 5.5. Each point cuts damage taken by 6%.")}>Armor ${Math.round(arm * 10) / 10}</div>${weight}${battleLine(holder)}</div>
+      <div class="dollside">${box("head")}${box("armor")}${insertBoxes(state, ui, holder, prefix, user, readonly)}${box("arms")}${box("legs")}</div>
     </div>
     <div class="invlabel"${tip("Pockets hold small things: knives, pistols, kits, radios, goggles. Nothing in a pocket is in use until it is moved to a hand.")}>Pockets</div>
     <div class="invgrid">${Array.from({ length: POCKETS }, (_, i) => slotBox(state, ui, `${prefix}:pocket:${i}`, "", user, readonly)).join("")}</div>
+    ${rigBoxes(state, ui, holder, prefix, user, readonly)}
     <div class="invlabel"${tip("A pack holds anything but another pack or something bulky. Wear a backpack to get pack slots and a higher max load. Everything in it still weighs what it weighs.")}>Pack${pk ? ` (${pk.filter(Boolean).length}/${pk.length})` : ""}</div>
     ${pk ? `<div class="invgrid">${pk.map((_, i) => slotBox(state, ui, `${prefix}:pack:${i}`, "", user, readonly)).join("")}</div>` : `<div class="small muted">No backpack, no pack slots.</div>`}`;
 }
 
+// The rig's pouches (a chest rig, a tactical vest's, a plate carrier's): one box a pouch, labelled by kind.
+function rigBoxes(state, ui, holder, prefix, user, readonly) {
+  const rig = rigOf(holder);
+  if (!rig) return "";
+  const P = pouchesOf(rig);
+  return `<div class="invlabel"${tip(`The ${rig.name}'s pouches: ${pouchText(P)}. Rifle and pistol pouches take magazines (and speedloaders, stripper clips), a grenade pouch anything thrown, a radio pouch a radio, an admin pouch small things up to 0.5 kg (meds, a flashlight, tablets). A magazine from a pouch reloads in 1 action (2 from the pack); a grenade or meds from a pouch take 1 as from a pocket.`)}>Rig (${esc(rig.name)})</div>
+    <div class="invgrid">${P.map((k, i) => slotBox(state, ui, `${prefix}:rig:${i}`, `${POUCH_ICON[k] || ""} ${POUCH_NAMES[k] || k}`, user, readonly)).join("")}</div>`;
+}
+// A plate carrier's plate pockets (front, back) under the body slot, with their durability bars.
+function insertBoxes(state, ui, holder, prefix, user, readonly) {
+  const c = holder && holder.gear && holder.gear.armor;
+  if (!isCarrier(c)) return "";
+  return ["front", "back"].map((side) => slotBox(state, ui, `${prefix}:insert:${side}`, side === "front" ? "Front plate" : "Back plate", user, readonly)).join("");
+}
+// The battle load band (sim/carrykit.js, R17): how the kit carried moves them in a fight.
+function battleLine(holder) {
+  if (!holder || !holder.traits) return "";
+  const kg = battleKg(holder), B = bandFor(kg * feelFactor(holder)); // felt: an assault pack's frame, a bad back
+  const what = B.mob === 5 && !B.dash ? "full speed" : `${B.mob} tiles an action${B.dash ? `, a dash ${B.mob * 2 + B.dash}` : ""}`;
+  return `<div class="small muted"${tip(`In a fight they carry ${Math.round(kg * 10) / 10} kg (worn, held, pockets, rig, pack and the rounds in their magazines): Light up to 18 kg moves 5 tiles an action, Medium up to 28 still 5 but a dash (both actions) 9, Heavy up to 38 4, more 3. Enemies are slowed by their kit the same way.`)}>Fight: ${esc(B.name)} (${esc(what)})</div>`;
+}
 // Storage at a place: the base armory or the team's cargo, as a drop box with item tiles.
 function storageBox(state, ui, place, user) {
   const st = storageFor(state, place);
@@ -184,7 +217,7 @@ function selBar(state, ui, place) {
     ${isGunCase(item) && from.o !== "body" ? `<button class="mini" data-action="inv-opencase"${tip(`Inside: ${caseText(item)}${item.locked ? " (locked: prised open with a blade or a crowbar)" : ""}. Opening it here is free: the gun goes into ${st ? st.name : "storage"}, the rounds into the stores.`)}>${item.locked ? "Prise open" : "Open"} case</button>` : ""}
     ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" ? repairButtons(state, ui, item, from, place) : ""}
     <button class="mini" data-action="inv-cancel">Cancel</button>
-    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" && !state.combat ? modBar(state, ui, item) : ""}</div>`;
+    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" && !state.combat ? modBar(state, ui, item) + helmetBar(state, ui, item) : ""}</div>`;
 }
 // Gun parts (the gun builder, ui/gunbuilder.js): on a gun, Modify opens it; on a loose part, Modify for each gun on the
 // person whose inventory is open that takes it (the builder opens on that gun at the part's slot).
@@ -200,6 +233,30 @@ function modBar(state, ui, item) {
     const guns = locs.map((l) => [l, itemAt(state, l)]).filter(([, g]) => g && g !== item && isGunKey(g.key) && !modFitReason(g, item));
     const btns = guns.map(([l, g]) => `<button class="mini" data-action="gb-open" data-loc="${l}" data-slot="${slot}"${tip(`Open the gun builder on ${s.name.split(" ")[0]}'s ${g.name} at its ${(PART_SLOT_NAMES[slot] || slot).toLowerCase()}: fit the ${item.name} there${g.mods && g.mods[slot] ? ` (the ${g.mods[slot].name} comes off)` : ""}.`)}>⚙ ${esc(g.name)}</button>`);
     return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Gun part (${esc((PART_SLOT_NAMES[slot] || slot).toLowerCase())}); fits ${esc(fitsText(item.key))}.</span> ${btns.join(" ") || `<span class="muted">${esc(first(s))} has no gun it fits.</span>`}</div>`;
+  }
+  return "";
+}
+// A helmet's mounts (sim/helmets.js): a box per mount with what is on it (× takes it off) or the parts within reach
+// that fit it; a loose helmet part: fit it to the helmet the person wears. No time; not in a fight.
+function helmetBar(state, ui, item) {
+  const box = (label, body) => `<span class="chip" style="display:inline-flex;gap:0.2rem;align-items:center"><span class="muted">${esc(label)}:</span> ${body}</span>`;
+  if (isHelmet(item.key)) {
+    const choices = helmetChoices(state, ui.invSel, ui.inv && ui.inv.sid);
+    const slots = helmetSlots(item);
+    const boxes = slots.map((m) => {
+      const on = item.mods && item.mods[m];
+      if (on) return box(HELM_MOUNTS[m], `${esc(on.name)} <button class="mini" data-action="inv-helmstrip" data-mount="${m}"${tip(`Take the ${on.name} off the ${item.name} (into storage, or carried)`)}>×</button>`);
+      const fit = choices.filter((c) => HELMET_ATTACH[c.item.key].mount === m);
+      return box(HELM_MOUNTS[m], fit.length ? fit.map((c) => `<button class="mini" data-action="inv-helmfit" data-part="${c.loc}"${tip(`Fit the ${c.item.name} to the ${item.name}`)}>${esc(c.item.name)}</button>`).join(" ") : `<span class="muted">empty</span>`);
+    });
+    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Helmet mounts:</span> ${boxes.join(" ") || `<span class="muted">none: a full shell (only earplugs in a pocket protect the ears)</span>`}</div>`;
+  }
+  if (isHelmetPart(item.key) && ui.inv) {
+    const s = survivorById(state, ui.inv.sid);
+    const h = s && s.gear && s.gear.head;
+    if (!h || !isHelmet(h.key) || h === item) return "";
+    const why = helmetFitReason(h, item);
+    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><button class="mini" data-action="inv-helmon" ${why ? "disabled" : ""}${tip(why || `Fit the ${item.name} to ${first(s)}'s ${h.name}`)}>Fit to ${esc(h.name)}</button></div>`;
   }
   return "";
 }
@@ -583,6 +640,10 @@ export const INV_ACTIONS = {
   "inv-fitmod": (state, ui, d) => { if (!ui.invSel) return; const gun = itemAt(state, ui.invSel); ui.invMsg = fitModAt(state, ui.invSel, d.mod); reselect(state, ui, gun); },
   "inv-unmod": (state, ui, d) => { if (ui.invSel && ui.inv) ui.invMsg = unfitModAt(state, ui.invSel, d.mount, ui.inv.sid); },
   "inv-fitto": (state, ui, d) => { if (ui.invSel) ui.invMsg = fitModAt(state, d.gun, ui.invSel); ui.invSel = d.gun; },
+  // Helmet mounts (sim/helmets.js fitHelmetAt / stripHelmetAt).
+  "inv-helmfit": (state, ui, d) => { if (!ui.invSel) return; const h = itemAt(state, ui.invSel); ui.invMsg = fitHelmetAt(state, ui.invSel, d.part, ui.inv && ui.inv.sid); reselect(state, ui, h); },
+  "inv-helmstrip": (state, ui, d) => { if (ui.invSel) ui.invMsg = stripHelmetAt(state, ui.invSel, d.mount, ui.inv && ui.inv.sid); },
+  "inv-helmon": (state, ui) => { if (!ui.invSel || !ui.inv) return; ui.invMsg = fitHelmetAt(state, `s:${ui.inv.sid}:head`, ui.invSel, ui.inv.sid); ui.invSel = null; },
   "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
   // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks first (ui/confirm.js).
   // Repairs and salvage (sim/repair.js, sim/inventory.js salvageAt).

@@ -24,6 +24,7 @@ import { lootItem, itemAt, placeOfLoc, storageFor } from "./inventory.js";
 import { siteSource, GUNSTORE_LOCKED } from "./itemcond.js"; // every item here gets its condition from itemcond.js (rollCondition by source)
 import { baseById } from "./world.js";
 import { stashRounds } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
+import { withMags } from "./carrykit.js"; // a gun's spare magazines (call-time only)
 
 // ---------- what is inside ----------
 // guns: weights (existing GEAR keys); n: [lo, hi] guns, more: the chance of one more; q: a quality range of the
@@ -72,6 +73,8 @@ export function registerStashExtra(fn) {
 }
 // ammo.js: the rounds in a safe or a case, by the calibres of the guns in it (now and then a typed load).
 registerStashExtra((ctx, out) => stashRounds(ctx, out));
+// carrykit.js: a gun in a safe or a case keeps 0-2 spare magazines beside it (its own dice).
+registerStashExtra(({ roll, tier, siteType }, out) => { withMags(out.gear, stashSource(tier, siteType), "stash", tier, roll("mags")); });
 
 // A weighted pick from { key: weight } with a roll in [0, 1).
 export function pickWeighted(r, weights) {

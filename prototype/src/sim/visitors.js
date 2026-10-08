@@ -118,6 +118,7 @@ import { eatFromStore } from "./storage.js";
 import { gunmodWares } from "./loot.js"; // a sight or a suppressor among a merchant's goods
 import { supplyAmt, spendAmmo } from "./rounds.js"; // "ammo": every round there, any calibre
 import { expandAmmo } from "./ammo.js"; // rounds by calibre
+import { merchantReload } from "./reloading.js"; // an arms dealer's powder and primers
 import { merchantEscort, escortFighters, escortValue, escortWords, escortShort, ESCORT_VEHICLES } from "./escorts.js";
 import { escortEnemy, lootCaravan, witnessesOf, consequences } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
 
@@ -342,6 +343,7 @@ function merchantGoods(state, v, rng) {
   v.spec = merchantSpec(state, v);
   const S = MERCHANT_SPECS[v.spec];
   for (const [k, m] of Object.entries(S.stock)) if (v.stock[k] != null) v.stock[k] = Math.round(v.stock[k] * m);
+  merchantReload(state, v); // reloading.js: an arms dealer's powder, primers and brass (dice of their own)
   const local = new Rng(Math.floor(hash01(state.seed, "mgoods", v.serial) * 4294967296) >>> 0);
   const roll = (i) => [state.seed, "mware", v.serial, i];
   const unknown = BP_KEYS.filter((id) => !isKnown(state, id));
@@ -1368,7 +1370,7 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
   // A Kevlar kit, a field repair kit while the base is short of one (repair.js kitWants), one of each.
   const home = ctx.base || hub(state);
   if (home && plenty.length) for (const k of kitWants(state, home)) { const it = ctx.theirGear.find((g) => g && g.key === k); if (it) { t.askGear = [it]; tryDeal(); } }
-  for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" || (SUPPLIES[k] && SUPPLIES[k].round) ? 80 : PART_KEYS.includes(k) && home ? Math.max(1, partDeficit(state, home, k)) : 20));
+  for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" || (SUPPLIES[k] && SUPPLIES[k].round) ? 80 : SUPPLIES[k] && SUPPLIES[k].reload ? 200 : PART_KEYS.includes(k) && home ? Math.max(1, partDeficit(state, home, k)) : 20));
   if (short.length) tryDeal();
   // At a base: valuables and spare weapons they pay well for (trade.js autoSellGear).
   if (ctx.base && tradeContext(state)) { const r = autoSellGear(state, needs); if (/^Traded/.test(r)) out.push(r.replace(/^Traded with [^:]+: /, "").replace(/\.$/, "")); }
