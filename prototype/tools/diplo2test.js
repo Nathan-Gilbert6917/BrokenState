@@ -423,6 +423,124 @@ section("Save round-trip");
   check(!!W.pwarOf(back, r2), "and runs on after it");
 }
 
+section("A bloc votes on your invitation: together, alone, or not at all");
+{
+  const AL = await import("../src/sim/alliance.js");
+  const { ensureJobs } = await import("../src/sim/jobs.js");
+  // Three friends in a bloc against a gang hostile to you; a qualifies (goodwill, a pact, a job done).
+  const mk = () => {
+    const { st, fs } = setup(["traders", "commune", "fortress", "raider"]);
+    const [a, b, c, r] = fs;
+    B.formBloc(st, [a, b], { kind: "group", id: r.id, why: "foe" });
+    B.joinBloc(st, B.blocOf(st, a), c);
+    for (const [x, y] of [[a, b], [a, c], [b, c]]) setRel(st, x, y, 45);
+    for (const f of [a, b, c]) setRel(st, f, r, -60);
+    r.goodwill = -60;
+    a.goodwill = 65; a.pact = "trade";
+    ensureJobs(st).list.push({ id: 9e9, fid: a.id, status: "done", type: "deliver", data: {} });
+    return { st, a, b, c, r, bloc: B.blocOf(st, a) };
+  };
+  {
+    const { st, a, b, c, bloc } = mk();
+    b.goodwill = 45; c.goodwill = 40;
+    check(AL.inviteProblem(st, a) === "", `a qualifies (${AL.inviteProblem(st, a)})`);
+    const v = B.previewVote(st, bloc, a);
+    check(v.votes.length === 3 && v.votes.every((x) => ["agree", "decline", "break"].includes(x.vote)), `each member votes (${B.voteText(st, v)})`);
+    check(JSON.stringify(B.previewVote(st, bloc, a).votes.map((x) => x.score)) === JSON.stringify(v.votes.map((x) => x.score)), "the vote is a fixed score: the same on the same day");
+    const msg = AL.inviteToAlliance(st, a);
+    check(v.carries && [a, b, c].every((f) => AL.isMember(st, f)), `friendly members agree and the bloc joins together: ${msg}`);
+    check(!B.blocOf(st, a) && st.diplo.blocEnded.some((e) => /joined/.test(e.why)) && [b, c].every((f) => f.pact), "the bloc is folded into the coalition; members without a pact sign one");
+    check(/agreed/.test(msg) && st.log.some((l) => /voted on your invitation/.test(l.text || l.msg || String(l))), "the vote is in the log, each member's vote named");
+    nextDay(st); AL.allianceDaily(st); B.blocsDaily(st);
+    check([a, b, c].every((f) => AL.isMember(st, f)), "and they stay in the next day");
+  }
+  {
+    // One member cool to you breaks off; two of three agree: they go in together, the third leaves the bloc.
+    const { st, a, b, c, bloc } = mk();
+    b.goodwill = 50; c.goodwill = 22;
+    const v = B.previewVote(st, bloc, a);
+    check(v.votes.find((x) => x.f === c).vote === "break", `a member with too little goodwill breaks off (${B.voteText(st, v)})`);
+    AL.inviteToAlliance(st, a);
+    check(AL.isMember(st, a) && AL.isMember(st, b) && !AL.isMember(st, c) && !B.blocOf(st, c), "the majority goes in; the one that broke off stays out of both");
+  }
+  {
+    // A majority against: the invited group that agreed goes in alone and the bloc breaks; one that did not stays out.
+    const { st, a, b, c, bloc } = mk();
+    b.goodwill = 26; c.goodwill = 26; b.type = "fortress"; c.type = "fortress";
+    const v = B.previewVote(st, bloc, a);
+    check(!v.carries && v.votes.find((x) => x.f === a).vote === "agree", `most do not agree (${B.voteText(st, v)})`);
+    const msg = AL.inviteToAlliance(st, a);
+    check(AL.isMember(st, a) && !AL.isMember(st, b) && !B.blocOf(st, a) && B.sameBloc(st, b, c) && /alone/.test(msg), `the invited group joins alone and leaves the bloc: ${msg}`);
+  }
+  {
+    // The bloc's foe sits in your coalition: even the invited group declines, and nobody moves.
+    const { st, a, b, c, r, bloc } = mk();
+    b.goodwill = 45; c.goodwill = 45;
+    AL.ensureAlliance(st).members.push(r.id);
+    const v = B.previewVote(st, bloc, a);
+    check(v.votes.find((x) => x.f === a).vote !== "agree" && !v.carries, `with their foe in your coalition they will not come (${B.voteText(st, v)})`);
+    const msg = AL.inviteToAlliance(st, a);
+    check(!AL.isMember(st, a) && B.sameBloc(st, a, b) && B.sameBloc(st, a, c) && /stays out/.test(msg), `an invited group that did not agree stays out with its bloc: ${msg}`);
+  }
+  {
+    // "Invite the whole bloc": through a member that qualifies; none qualifies: why.
+    const { st, a, b, c, bloc } = mk();
+    b.goodwill = 45; c.goodwill = 45;
+    check(B.blocCarrier(st, bloc, AL.inviteProblem) === a, "the invitation goes through the member that meets your terms");
+    a.pact = null;
+    check(/No member of/.test(AL.inviteBloc(st, bloc.id)) && !AL.isMember(st, a), "nobody qualifies: the bloc is told why, nobody joins");
+    a.pact = "trade";
+    AL.inviteBloc(st, bloc.id);
+    check([a, b, c].every((f) => AL.isMember(st, f)), "the whole bloc invited joins together");
+    const ui = await import("../src/ui/diplomacy.js");
+    const html = ui.diplomacyModal(st, { diplo: { tab: "coalition" } });
+    check(/Calder Coalition/.test(html), "the coalition tab renders after it");
+  }
+  {
+    const { st, a, bloc } = mk();
+    const ui = await import("../src/ui/diplomacy.js");
+    const card = ui.groupCardExtras(st, a);
+    check(/al-invite-bloc/.test(card) && /If you asked today/.test(card), "a member's card offers Invite the whole bloc with today's vote");
+    check(/al-invite-bloc/.test(ui.diplomacyModal(st, { diplo: { tab: "coalition" } })), "so does the coalition tab");
+    check(bloc.members.length === 3, "previews change nothing");
+  }
+}
+
+section("AI blocs merge by the same vote");
+{
+  const { st, fs } = setup(["traders", "commune", "fortress", "raider"]);
+  const [a, b, c, r] = fs;
+  const foe = { kind: "group", id: r.id, why: "foe" };
+  const big = B.formBloc(st, [a, b], foe);
+  // A second bloc of one more member: c with a group brought back to life as a commune.
+  const d = st.factions.find((x) => !fs.includes(x));
+  d.alive = true; d.type = "commune"; d.pop = 20; d.known = true;
+  d.bases = [st.grid.within(c.bases[0], 4).find((t) => free(st, t))];
+  recomputeOwnership(st);
+  const small = B.formBloc(st, [c, d], foe);
+  for (const x of [a, b]) for (const y of [c, d]) setRel(st, x, y, 50);
+  setRel(st, a, b, 50); setRel(st, c, d, 50);
+  for (const f of [a, b, c, d]) { setRel(st, f, r, -60); learnBase(st, f, r.bases[0]); }
+  const v = B.previewVote(st, small, null, { kind: "bloc", bloc: big });
+  check(v.votes.length === 2 && v.carries, `the smaller bloc votes on going over (${B.voteText(st, v)})`);
+  const out = B.mergeVote(st, big, small);
+  check(out.moved.length === 2 && big.members.length === 4 && !st.diplo.blocs.includes(small), "carried: its members go over, the bloc folds into the larger one");
+  // Cold members break off.
+  const s2 = setup(["traders", "commune", "fortress", "raider"]);
+  const [a2, b2, c2, r2] = s2.fs;
+  const f2 = { kind: "group", id: r2.id, why: "foe" };
+  const big2 = B.formBloc(s2.st, [a2, b2], f2);
+  const e = s2.st.factions.find((x) => !s2.fs.includes(x));
+  e.alive = true; e.type = "commune"; e.pop = 20; e.bases = [s2.st.grid.within(c2.bases[0], 4).find((t) => free(s2.st, t))];
+  recomputeOwnership(s2.st);
+  const small2 = B.formBloc(s2.st, [c2, e], f2);
+  for (const y of [c2, e]) { setRel(s2.st, a2, y, -10); setRel(s2.st, b2, y, -10); }
+  const v2 = B.previewVote(s2.st, small2, null, { kind: "bloc", bloc: big2 });
+  check(!v2.carries, `members cold to the larger bloc vote it down (${B.voteText(s2.st, v2)})`);
+  B.mergeVote(s2.st, big2, small2);
+  check(big2.members.length === 2 && s2.st.diplo.blocs.includes(small2), "nothing changes");
+}
+
 section("Groups tab and Affairs render");
 {
   const { st, fs } = setup(["traders", "commune", "raider"]);

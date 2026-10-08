@@ -9,6 +9,8 @@
 //   council votes it in (with members, each member votes yes when its relations with the group are 10+; a majority
 //   carries it).
 // - A group that qualifies may also ask to join (3% a day): a card (Welcome them / Not now).
+// - A group in an AI bloc brings the invitation to its bloc: the members vote, and the bloc may join together
+//   (blocs.js blocJoinsCoalition; "Invite the whole bloc", inviteBloc, sends it through a member that qualifies).
 // - A member leaves when its goodwill falls below 20, its pact with you is gone, or it goes to war with another
 //   member (then the one that started it is expelled).
 //
@@ -54,6 +56,7 @@ import { jobsDoneFor, activeJobs, makeJob, offerCard as jobOfferCard, autoJobsDa
 import { eraProgress, ERAS, isLate } from "./eras.js";
 import { playerClaims, claimedLand } from "./claims.js";
 import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
+import { blocOf, blocById, blocMembers, blocTitle, blocJoinsCoalition, blocCarrier } from "./blocs.js"; // AI blocs vote on joining together
 
 export const ALLIANCE = {
   NAME: "The Calder Coalition", GOODWILL: 50, LEAVE_GOODWILL: 20, VOTE_REL: 10, ASK_CHANCE: 0.03,
@@ -118,20 +121,40 @@ export function inviteProblem(state, f) {
   }
   return "";
 }
+// An invitation to a member of an AI bloc goes to the whole bloc (blocs.js blocJoinsCoalition: it votes, and joins
+// together, or the invited group joins alone, or nobody does).
 export function inviteToAlliance(state, f) {
   const why = inviteProblem(state, f);
   if (why) return why;
+  const bloc = state.noBlocs ? null : blocOf(state, f);
+  if (bloc && blocMembers(state, bloc).length > 1) return blocJoinsCoalition(state, bloc, f);
+  admitToAlliance(state, f);
+  return `${f.name} joined ${ensureAlliance(state).name}.`;
+}
+// "Invite the whole bloc" (the Groups and coalition tabs): the invitation goes through a member that meets your terms.
+export function inviteBloc(state, blocId) {
+  const b = blocById(state, blocId);
+  if (!b) return "That bloc is gone.";
+  const f = blocCarrier(state, b, inviteProblem);
+  if (!f) {
+    const first = blocMembers(state, b).find((m) => !isMember(state, m));
+    return `No member of ${blocTitle(b)} can take your invitation yet${first ? `: ${inviteProblem(state, first)}` : "."}`;
+  }
+  return inviteToAlliance(state, f);
+}
+// Into the coalition (an invitation it accepted, its bloc's vote). quiet: the bloc's vote has its own log line.
+export function admitToAlliance(state, f, why = "they joined your coalition", quiet = false) {
   const A = ensureAlliance(state);
+  if (A.members.includes(f.id)) return;
   A.members.push(f.id);
   A.joined[f.id] = day(state);
   if (A.founded == null) A.founded = day(state);
   A.stats.joined++;
   A.history.unshift({ day: day(state), text: `${f.name} joined.` });
   f.lastDiplomacy = day(state);
-  changeGoodwill(state, f, 5, "they joined your coalition");
+  changeGoodwill(state, f, 5, why);
   for (const m of allianceMembers(state)) if (m !== f) changeRelation(state, m, f, 10);
-  log(state, `${f.name} joined ${A.name}. ${A.members.length} member${A.members.length === 1 ? "" : "s"} now.`, "good");
-  return `${f.name} joined ${A.name}.`;
+  if (!quiet) log(state, `${f.name} joined ${A.name}. ${A.members.length} member${A.members.length === 1 ? "" : "s"} now.`, "good");
 }
 function leave(state, f, why) {
   const A = ensureAlliance(state);
@@ -255,11 +278,13 @@ function askToJoin(state) {
     if (A.lastAsk[f.id] != null && day(state) - A.lastAsk[f.id] < 20) continue;
     if (!rng.chance(ALLIANCE.ASK_CHANCE)) continue;
     A.lastAsk[f.id] = day(state);
+    const bloc = state.noBlocs ? null : blocOf(state, f);
+    const mates = bloc ? blocMembers(state, bloc).filter((m) => m !== f) : [];
     addCard(state, {
       title: `${f.name} asks to join the coalition`, allianceAsk: f.id,
-      text: `${f.name} (${attitude(f).toLowerCase()}, goodwill ${Math.round(f.goodwill)}) want to join ${A.name}. Members share what they see, send fighters against raids and hordes coming for your bases, join your hive assaults, and sit in the seasonal council.`,
+      text: `${f.name} (${attitude(f).toLowerCase()}, goodwill ${Math.round(f.goodwill)}) want to join ${A.name}. Members share what they see, send fighters against raids and hordes coming for your bases, join your hive assaults, and sit in the seasonal council.${mates.length ? ` They stand in ${blocTitle(bloc)} with ${mates.map((m) => m.name).join(" and ")}: the bloc votes on it, and may come in together.` : ""}`,
       choices: [
-        { label: "Welcome them", hint: "They join the coalition", ai: () => 5, resolve: (st) => inviteToAlliance(st, f) },
+        { label: "Welcome them", hint: mates.length ? `Their bloc votes: most agrees and the bloc joins together, else ${f.name} may join alone` : "They join the coalition", ai: () => 5, resolve: (st) => inviteToAlliance(st, f) },
         { label: "Not now", hint: "They may ask again in a few weeks", ai: () => 0, resolve: () => `You keep ${f.name} waiting.` },
       ],
     });
