@@ -871,6 +871,7 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
     if (attacker) clashKit(state, attacker, 0, 0, target, 0, "a", 0.2, false); // arsenal.js: the spare kit left behind there, half carried off
     const kept = attacker && rng.chance(keepChance(state, attacker, lost));
     if (kept) attacker.bases.push(lost);
+    else leaveGroupBase(state, target, lost, 0.5 / Math.max(1, target.bases.length + 1)); // groupworld.js: "it stands empty" was only words: its works stand there for whoever comes (an Occupy order, another group)
     recomputeOwnership(state);
     state.stats.abandonedBases = (state.stats.abandonedBases || 0) + 1;
     if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} gave up ${tileLabel(state, lost)} to ${who} without a fight${kept ? "" : " (it stands empty)"}.`, "info");

@@ -35,6 +35,8 @@ import { perceive, spot, mergeSpots, MARKER_TYPES, markAbandonedVehicle, markDea
 import { rescueArrive, captivesOf, contactAttack } from "./conflicts.js";
 import { handoverArrive } from "./ransom.js";
 import { assaultArrive } from "./conquest.js";
+import { occupyArrive, occupyProblem } from "./occupy.js"; // Occupy: move into an abandoned base
+import { abandonedAt } from "./groupworld.js"; // a base standing empty on a tile (Occupy instead of Build outpost there)
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
 import { growthAt, growthArrive } from "./hivetech.js";
@@ -89,6 +91,7 @@ export const MISSIONS = {
   scavenge:    { name: "Scavenge / raid",  desc: "Raid the site on its own map: search containers while Heat rises and more of the dead arrive, then leave by an extraction zone." },
   trade:       { name: "Trade visit",      desc: "Visit a group's base to barter, give gifts and sign pacts." },
   outpost:     { name: "Build outpost",    desc: "Found a satellite base here. Needs 15 scrap carried. The team stays as its first staff." },
+  occupy:      { name: "Occupy abandoned base", desc: "Move into a base that stands empty (a group's that died out, gave it up or lost it, or an outpost of yours that was lost): clear out the dead or squatters inside (a fight; the planner shows who is there), and it is your outpost with the buildings still standing, their wear and damage, and the stores left there. No scrap needed. The team stays as its first staff. The group whose base it was, and any group whose claims round it you take, will not like it." },
   recover:     { name: "Recover bodies",   desc: "Collect what is left at a death site before scavengers strip it." },
   cull:        { name: "Cull horde",       desc: "Thin out or lure away a horde on or next to this tile." },
   hive:        { name: "Destroy hive",     desc: "Storm an infestation hive: a hard tactical battle against its brood and the Broodmother inside. Win and the hive is destroyed. Bring five or six well-armed fighters." },
@@ -562,7 +565,9 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
 
 // ---------- launching player expeditions ----------
 // Missions after which the team waits at the destination (or stays for good): no way back is planned.
-export const STAY_MISSIONS = ["move", "recon", "outpost"];
+export const STAY_MISSIONS = ["move", "recon", "outpost", "occupy"];
+// Missions after which the team lives at the base it founded or moved into: no plan after them (the planner, trips.js).
+export const SETTLE_MISSIONS = ["outpost", "occupy"];
 // Scrap an outpost needs carried: 15, or 5 on the ruins of a burned base (the rest is salvage there).
 /** @param {State} state @param {number} tile */
 export const outpostScrap = (state, tile) => (state.tiles[tile] && state.tiles[tile].ruin ? 5 : 15);
@@ -582,6 +587,7 @@ export function missionProblem(state, tile, mission) {
   }
   if (mission === "scavenge" && t.terrain === "water" && !t.bridge) return "There is nothing to search on the water.";
   if (mission === "assault" && !state.factions.some((f) => f.alive && f.bases.includes(tile))) return "No group holds that place.";
+  if (mission === "occupy") return occupyProblem(state, tile) || null; // occupy.js
   return null;
 }
 
@@ -683,6 +689,7 @@ export function launchExpedition(state, opts) {
   const planHome = opts.plan && p.orders.some((o) => o.type === "home");
   const waits = opts.plan ? !planHome : stays;
   const after = mission === "outpost" ? ` The team stays there as its first staff${v ? `, and the ${v.name} stays at the outpost` : ""}.` :
+    mission === "occupy" ? ` It clears out whoever is inside and moves in as its first staff${v ? `, the ${v.name} with it` : ""}.` :
     opts.plan ? ` Plan: ${p.plan.name}${p.orders.length ? ` (${queueText(state, p)})` : ""}.${waits ? " Then it waits for orders." : ""}` : stays ? " The team waits there for orders." : "";
   if (lights.length) log(state, `${teamName(state, p)} takes lights from the armory: ${lights.join(", ")}.`, "info");
   if (siegeKit.length) log(state, `The assault team takes siege kit from the armory: ${siegeKit.join(", ")}.`, "info");
@@ -1088,13 +1095,16 @@ export function orderOptions(state, p) {
   if (fb && captivesOf(state, fb.id).length) add("rescue");
   if (fb) add("assault");
   const ownedByOther = state.factions.some((f) => f.bases.includes(tile)) || (typeof t.owner === "number");
+  // A base standing empty here (groupworld.js): Occupy it (occupy.js), with or without a base of your own.
+  const left = abandonedAt(state, tile);
+  if (left) add("occupy", occupyProblem(state, tile) || null);
   if (!state.bases.length) {
     // No base at all (hardcore's first hub, the exiles): Establish base, a staging camp built up into the hub (staging.js).
     const est = establishOption(state, p, tile);
     if (est) out.push(est);
     const strike = strikeOption(state, p, tile);
     if (strike) out.push(strike);
-  } else if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && (t.terrain !== "water" || t.bridge)) { // a bridge: the outpost barricades it (bridgeClosedTo)
+  } else if (!left && !state.bases.some((b) => b.tile === tile) && !ownedByOther && (t.terrain !== "water" || t.bridge)) { // a bridge: the outpost barricades it (bridgeClosedTo)
     const scrap = (p.supplies.scrap || 0) + (p.cargo.supplies.scrap || 0);
     const need = outpostScrap(state, tile);
     add("outpost", scrap < need ? `Needs ${need} scrap carried${need < 15 ? " (on the ruins)" : ""} (have ${Math.floor(scrap)})` : null);
@@ -1323,6 +1333,9 @@ function arrive(state, p) {
     case "outpost": {
       // No base left (an order queued before every base was lost): the staging camp instead (staging.js).
       if (!state.bases.length) { p.mission = "establish"; return establishArrive(state, p); }
+      // A base standing empty here (it was left since the team set out, or the planner was not told): move in instead
+      // of building over it (occupy.js).
+      if (abandonedAt(state, p.dest)) { p.mission = "occupy"; return occupyArrive(state, p); }
       const mine = state.bases.some((b) => b.tile === p.dest);
       const blocked = mine || state.factions.some((f) => f.bases.includes(p.dest)) || (t.owner != null && t.owner !== "player");
       const scrap = carried(p, "scrap");
@@ -1410,6 +1423,8 @@ function arrive(state, p) {
       return handoverArrive(state, p); // ransom.js: the exchange at the meeting point (and its betrayal)
     case "assault":
       return assaultArrive(state, p); // conquest.js: the assault card and its battle
+    case "occupy":
+      return occupyArrive(state, p); // occupy.js: clear an abandoned base and move in
     case "help": {
       const siege = state.parties.find((q) => q.id === p.helpFor && q.phase === "siege");
       const f = factionById(state, p.helpFaction);

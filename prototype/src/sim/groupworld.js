@@ -24,10 +24,18 @@
 // You can sell them a vehicle or buy one of theirs (sellVehicleTo / buyVehicleFrom: vehicles.js vehicleValue × their
 // want; no trade-window section yet).
 // Abandoned bases (state.abandoned): a group that dies out leaves its bases standing (works and half a share of its
-// stores), and an outpost of yours that is lost or left (world.js removeBase) stays with its buildings as works; the
-// works decay (one level every ABANDON.DECAY days). A group expanding counts an abandoned base nearby ABANDON.PULL ×
-// a site (more for its kind: raiders like walls, communes fields, expansionists anything), moves in, takes the works
-// and the stores; yours: a card. First come, first served.
+// stores), and an outpost of yours that is lost or left (world.js removeBase) stays with its buildings (rec.buildings:
+// the real ones, wear and damage as they stood; rec.works counts them for the groups) and ABANDON.STOCK_YOURS of what
+// was left in its stores. The works decay (one level every ABANDON.DECAY days); your buildings rot the same way (one
+// a period: ABANDON.ROT wear more, broken at 100, and a broken one hit again falls in). A group expanding counts an
+// abandoned base nearby ABANDON.PULL × a site (more for its kind: raiders like walls, communes fields, expansionists
+// anything), moves in, takes the works and the stores; yours: a card. First come, first served.
+// What is inside (abandonedThreat): nobody holds an empty base, so the dead drift in (ABANDON.DEAD_BASE, + DEAD_WEEK a
+// week it stands empty, + DEAD_INF × the ground's infection, at most DEAD_MAX) and, now and then, squatters (a band of
+// SQUAT_N people, rolled every SQUAT_EVERY days from SQUAT_FROM days on: SQUAT a period, more for the stores left
+// there; they thin the dead to SQUAT_DEAD). The same threat for everyone (AI parity): your Occupy order (occupy.js)
+// fights it; a group moving in pays ABANDON.AI_LOSS of its count in people (rounded by the dice), coarse, and the group
+// whose base it was (still standing elsewhere) takes it ill: relations ABANDON.FORMER_REL.
 import { SUPPLIES, GEAR } from "./data.js";
 import { groupStockKey } from "./trade.js"; // a group's one count of parts (part kinds come out of it)
 import { day, log, addCard, atBase, supplyValue } from "./world.js";
@@ -37,7 +45,7 @@ import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, VEHICLE_TYPES, 
 import { workshopFactor, worksAt } from "./groupworks.js";
 import { weightOf, tickOf } from "./groupcare.js";
 import { removeFromArsenal, issueKit } from "./arsenal.js";
-import { relation, changeRelation } from "./diplomacy.js";
+import { relation, changeRelation } from "./diplomacy.js"; // changeRelation: also a group moving into another's old base
 import { captivesOf } from "./conflicts.js";
 import { preparedDefense, strength } from "./factions.js";
 import { lookoutsSpot } from "./watch.js";
@@ -48,7 +56,15 @@ export const KNOW = {
   SPOT: 0.4, SPOT_WATCH: 0.8, SCOUTED: 1.6, SCOUTED_DAYS: 12, FRESH: 3,
 };
 export const VEH = { TAKE_RANGE: 2, TAKE: 0.08, FIND: 0.05, STEAL: 0.01, STEAL_RANGE: 8, STEAL_GROUP: 0.004, SELL: 0.02, FIT: 0.1, FIT_EVERY: 10, PER: 15 };
-export const ABANDON = { DECAY: 30, PULL: 3, STOCK: 0.5 };
+export const ABANDON = {
+  DECAY: 30, PULL: 3, STOCK: 0.5,
+  STOCK_YOURS: 0.5, // of what was left in a lost outpost's stores (water drains away)
+  ROT: 40,          // wear a building of yours left standing takes each DECAY period (broken at 100)
+  DEAD_BASE: 2, DEAD_WEEK: 1, DEAD_INF: 6, DEAD_MAX: 12, DEAD_POWER: 2, DEAD_POWER_INF: 3, // the dead inside (power as scavenge.js: 2 + infection × 3)
+  SQUAT: 0.2, SQUAT_STOCK: 0.1, SQUAT_STOCK_PER: 100, SQUAT_MAX: 0.5, SQUAT_FROM: 5, SQUAT_EVERY: 10, SQUAT_N: [2, 5], SQUAT_POWER: 3.5, SQUAT_DEAD: 0.5,
+  THIN_DAYS: 7,     // those your team killed in a failed attempt stay dead this long (the next ones drift in)
+  AI_LOSS: 0.15, FORMER_REL: -10,
+};
 const h = (state, ...k) => hash01(state.seed, "groupworld", ...k);
 const dist = (state, a, b) => state.grid.distance(a, b);
 const nearOwn = (state, f, tile) => (f.bases.length ? Math.min(...f.bases.map((b) => dist(state, b, tile))) : Infinity);
@@ -305,7 +321,15 @@ export function fitUpgrade(state, f) {
 // ---------- abandoned bases ----------
 export const abandonedList = (state) => state.abandoned || (state.abandoned = []);
 export const abandonedAt = (state, tile) => (state.abandoned || []).find((a) => a.tile === tile) || null;
-const PLAYER_WORKS = { walls: "walls", palisade: "walls", farm: "farms", field: "farms", greenhouse: "farms", well: "water", watertower: "water", raincatcher: "water", bunkhouse: "beds", barracks: "beds", tents: "beds", workshop: "bench", bench: "bench", workbench: "bench", machine_shop: "bench", storehouse: "store" };
+// Your buildings as a group's works (the keys are buildings.js BUILDINGS: this table used some names no building has,
+// "farm", "raincatcher", "bench", so a lost outpost's fields, catchers and benches were never counted).
+const PLAYER_WORKS = { walls: "walls", farm_plot: "farms", greenhouse: "farms", well: "water", rain_catcher: "water", cistern: "water", bunkhouse: "beds", barracks: "beds", craftbench: "bench", workbench: "bench", toolbench: "bench", machine_shop: "bench", ammo_bench: "bench", storehouse: "store", cellar: "store" };
+// A lost outpost's buildings as works (standing ones only).
+function worksOfBuildings(list) {
+  const works = {};
+  for (const b of list || []) { const k = PLAYER_WORKS[b.type]; if (k && !b.broken) works[k] = (works[k] || 0) + 1; }
+  return works;
+}
 // A group's base its people left (it died out): the works stay, and some of the stores.
 export function leaveGroupBase(state, f, tile, share) {
   if (abandonedAt(state, tile) || state.bases.some((b) => b.tile === tile) || state.factions.some((o) => o.alive && o.bases.includes(tile))) return null;
@@ -316,13 +340,45 @@ export function leaveGroupBase(state, f, tile, share) {
   return rec;
 }
 // An outpost of yours that was lost or left (world.js removeBase): its buildings as works.
+// rec.buildings: the buildings themselves (wear, damage, a barrel's tier), for your Occupy order (occupy.js); rec.stock:
+// ABANDON.STOCK_YOURS of what its stores still held (no water: the tanks drain).
 export function leavePlayerBase(state, base) {
   if (!base || base.type === "hub" || abandonedAt(state, base.tile)) return null;
-  const works = {};
-  for (const b of base.buildings || []) { const k = PLAYER_WORKS[b.type]; if (k && !b.broken) works[k] = (works[k] || 0) + 1; }
-  const rec = { tile: base.tile, from: "player", fromName: base.name, works, stock: {}, day: day(state) };
+  const buildings = JSON.parse(JSON.stringify(base.buildings || []));
+  const stock = {};
+  for (const [k, q] of Object.entries(base.stock || {})) if (SUPPLIES[k] && k !== "water" && k !== "rawwater" && q >= 1) { const left = Math.floor(q * ABANDON.STOCK_YOURS); if (left > 0) stock[k] = left; }
+  const rec = { tile: base.tile, from: "player", fromName: base.name, works: worksOfBuildings(buildings), buildings, stock, day: day(state) };
   abandonedList(state).push(rec);
   return rec;
+}
+// What is inside an abandoned base now (see the header): { dead, deadPower, squat, squatPower, kind, count, power,
+// name } (count 0: nobody, nothing). The same on the same day whatever asks (hashed dice), so the planner's preview is
+// what the team meets.
+export function abandonedThreat(state, tile, d = day(state)) {
+  const rec = abandonedAt(state, tile);
+  if (!rec) return null;
+  const t = state.tiles[tile];
+  const inf = Math.max(0, Math.min(1, t.infection || 0));
+  const age = Math.max(0, d - rec.day);
+  let dead = Math.min(ABANDON.DEAD_MAX, ABANDON.DEAD_BASE + Math.floor((age / 7) * ABANDON.DEAD_WEEK) + Math.round(inf * ABANDON.DEAD_INF));
+  const value = supplyValue(rec.stock || {});
+  const odds = Math.min(ABANDON.SQUAT_MAX, ABANDON.SQUAT + ABANDON.SQUAT_STOCK * (value / ABANDON.SQUAT_STOCK_PER));
+  const win = Math.floor(age / ABANDON.SQUAT_EVERY);
+  const [lo, hi] = ABANDON.SQUAT_N;
+  let squat = age >= ABANDON.SQUAT_FROM && h(state, "squat", tile, rec.day, win) < odds ? lo + Math.floor(h(state, "squatN", tile, rec.day, win) * (hi - lo + 1)) : 0;
+  if (squat) dead = Math.round(dead * ABANDON.SQUAT_DEAD); // they keep the dead down
+  // Killed in a failed attempt lately: the dead first, then the squatters.
+  if (rec.thinned && d - rec.thinned.day < ABANDON.THIN_DAYS) {
+    let n = rec.thinned.n;
+    const dz = Math.min(dead, n); dead -= dz; n -= dz;
+    squat = Math.max(0, squat - n);
+  }
+  const deadPower = ABANDON.DEAD_POWER + inf * ABANDON.DEAD_POWER_INF;
+  const count = dead + squat;
+  const power = count ? (dead * deadPower + squat * ABANDON.SQUAT_POWER) / count : 0;
+  const kind = squat && dead ? "mixed" : squat ? "raiders" : "zombies";
+  const name = squat && dead ? "squatters and the dead" : squat ? "squatters" : "the dead";
+  return { dead, deadPower: Math.round(deadPower * 10) / 10, squat, squatPower: ABANDON.SQUAT_POWER, kind, count, power: Math.round(power * 10) / 10, name };
 }
 // How much more a group wants this abandoned base than an empty site.
 export function abandonedPull(f, rec) {
@@ -333,24 +389,50 @@ export function abandonedPull(f, rec) {
   if (f.type === "fortress" && (w.walls || 0) >= 2) fit = 1.5;
   return ABANDON.PULL * weightOf(f, "expand") * fit;
 }
+// A group moves in (factions.js expansion): it clears what is inside first (abandonedThreat: ABANDON.AI_LOSS of its count
+// in people, by the dice), then has the works and the stores. The group whose base it was, if it still stands, takes it
+// ill (relations ABANDON.FORMER_REL), as it does when you move in (occupy.js).
 export function occupyAbandoned(state, f, tile) {
   const rec = abandonedAt(state, tile);
   if (!rec) return null;
+  const threat = abandonedThreat(state, tile);
   state.abandoned.splice(state.abandoned.indexOf(rec), 1);
+  if (threat && threat.count) {
+    const want = threat.count * ABANDON.AI_LOSS;
+    const lost = Math.min(Math.max(0, f.pop - 3), Math.floor(want) + (h(state, f.name, tile, day(state), "clearloss") < want % 1 ? 1 : 0));
+    f.pop -= lost;
+    f.clearedLoss = (f.clearedLoss || 0) + lost;
+  }
   const w = worksAt(f, tile);
   for (const [k, q] of Object.entries(rec.works || {})) w[k] = Math.max(w[k] || 0, q);
   for (const [k, q] of Object.entries(rec.stock || {})) f.stock[k] = (f.stock[k] || 0) + q;
   f.basesOccupied = (f.basesOccupied || 0) + 1;
+  const former = typeof rec.from === "number" ? state.factions.find((o) => o.id === rec.from && o.alive && o !== f) : null;
+  if (former) changeRelation(state, f, former, ABANDON.FORMER_REL);
   if (rec.from === "player") addCard(state, { title: `Someone moved into ${rec.fromName}`, text: `${f.known ? f.name : "Another group"} has moved into ${rec.fromName}, the outpost you lost: they use what you built there. It is theirs now; you can take it back like any of their bases.`, choices: [{ label: "OK", resolve: () => "" }] });
   return rec;
+}
+// One period's rot on a lost outpost's own buildings: one of them (by the dice) takes ABANDON.ROT wear, breaks at 100,
+// and one already broken falls in. The works follow.
+function rotBuildings(state, rec, d) {
+  const list = rec.buildings;
+  if (!list.length) return;
+  const b = list[Math.floor(h(state, rec.tile, d, "rot") * list.length) % list.length];
+  if (b.broken) list.splice(list.indexOf(b), 1);
+  else {
+    b.wear = Math.min(100, (b.wear || 0) + ABANDON.ROT);
+    if (b.wear >= 100) b.broken = { day: d, cause: "left to rot" };
+  }
+  rec.works = worksOfBuildings(list);
 }
 function decayAbandoned(state, d) {
   for (const rec of [...(state.abandoned || [])]) {
     if ((d - rec.day) % ABANDON.DECAY || d === rec.day) continue;
     const keys = Object.keys(rec.works).filter((k) => rec.works[k] > 0);
-    if (keys.length) { const k = keys[Math.floor(h(state, rec.tile, d, "decay") * keys.length)]; rec.works[k] -= 1; }
+    if (rec.buildings) rotBuildings(state, rec, d);
+    else if (keys.length) { const k = keys[Math.floor(h(state, rec.tile, d, "decay") * keys.length)]; rec.works[k] -= 1; }
     // Taken by someone else or empty with nothing left: off the list.
-    if (state.bases.some((b) => b.tile === rec.tile) || state.factions.some((o) => o.alive && o.bases.includes(rec.tile)) || (!Object.values(rec.works).some((q) => q > 0) && !Object.values(rec.stock).some((q) => q > 0))) state.abandoned.splice(state.abandoned.indexOf(rec), 1);
+    if (state.bases.some((b) => b.tile === rec.tile) || state.factions.some((o) => o.alive && o.bases.includes(rec.tile)) || (!Object.values(rec.works).some((q) => q > 0) && !Object.values(rec.stock).some((q) => q > 0) && !(rec.buildings && rec.buildings.length))) state.abandoned.splice(state.abandoned.indexOf(rec), 1);
   }
 }
 

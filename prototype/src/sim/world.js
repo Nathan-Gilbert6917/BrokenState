@@ -75,7 +75,7 @@ import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
 import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and moving people between your bases)
 import { familyDaily } from "./family.js"; // children and generations
-import { leavePlayerBase } from "./groupworld.js"; // a lost outpost stands empty for a group to move into
+import { leavePlayerBase, abandonedAt } from "./groupworld.js"; // a lost outpost stands empty for a group to move into (or for your Occupy order)
 
 export const HUB_VISION = 3;
 // A normal start's hub is bare (barestart): no buildings, every construction plot free. Its stores carry the first
@@ -683,6 +683,7 @@ export function removeBase(state, base, cause = "was lost") {
   for (const p of state.parties) if (p.owner === "player" && p.homeBaseId === base.id) p.homeBaseId = h.id;
   state.bases.splice(i, 1);
   leavePlayerBase(state, base); // groupworld.js: it stands empty, its buildings there for a group to move into
+  state.knowledge[base.tile] = snapshot(state, base.tile); // the people who fled know it stands empty (the map's Occupy, occupy.js)
   assignStations(state, h);
   const stock = SUPPLY_KEYS.filter((k) => (base.stock[k] || 0) >= 1).map((k) => `${Math.floor(base.stock[k])} ${keyWord(k)}`); // water.js keyWord: "un-purified water", not the key
   const bits = [];
@@ -690,6 +691,7 @@ export function removeBase(state, base, cause = "was lost") {
   if (stock.length) bits.push(`its stock (${stock.join(", ")})`);
   if (base.armory.length) bits.push(`${base.armory.length} item${base.armory.length === 1 ? "" : "s"} in the armory`);
   const parts = [`${base.name} ${cause}.`, bits.length ? `Lost with it: ${bits.join(", ")}.` : "Nothing of value was left there."];
+  if (abandonedAt(state, base.tile)) parts.push("Its buildings still stand there with some of its stores: send a team to Occupy it before someone else moves in.");
   if (left.length) parts.push(`${left.length === 1 ? `The ${left[0]} was` : `${left.join(" and ")} were`} left behind there (marked on the map).`);
   if (fled.length) parts.push(`${fled.map((s) => firstOf(s.name)).join(", ")} fled to ${h.name}.`);
   if (paused) parts.push(`${paused} supply run${paused === 1 ? "" : "s"} to or from it ${paused === 1 ? "is" : "are"} paused.`);
@@ -732,7 +734,16 @@ export function snapshot(state, tileId) {
     hive: !!t.hive,
     site: site ? { biomass: site.biomass, started: site.started != null } : null,
     deathSite: state.deathSites.find((d) => d.tile === tileId) ? state.deathSites.find((d) => d.tile === tileId).items.length : 0,
+    abandoned: abandonedSnap(state, tileId), // groupworld.js: a base standing empty here (occupy.js: the Occupy order)
   };
+}
+// What a look at an abandoned base tells you: whose it was, since when, and how much stands there.
+/** @param {State} state @param {number} tileId */
+function abandonedSnap(state, tileId) {
+  const rec = abandonedAt(state, tileId);
+  if (!rec) return null;
+  const standing = rec.buildings ? rec.buildings.filter((b) => !b.broken).length : Object.values(rec.works || {}).reduce((a, q) => a + Math.max(0, q), 0);
+  return { from: rec.from, fromName: rec.fromName, day: rec.day, standing };
 }
 
 /** @type {(state: State) => Base[]} */

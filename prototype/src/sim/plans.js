@@ -258,7 +258,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   if (!travel(dest, `To ${tileLabel(state, dest)}`)) return null;
   const outPath = legs[0] ? legs[0].path : [tile], hoursOut = legs[0] ? legs[0].hours : 0;
   // On site: a search 6h, a recovery or other mission 1h; a recon's 2 hours are paid by the next move.
-  const onSite = mission === "scavenge" ? SEARCH_HOURS : mission === "recon" || mission === "move" || mission === "outpost" || mission === "sweep" ? 0 : 1;
+  const onSite = mission === "scavenge" ? SEARCH_HOURS : mission === "recon" || mission === "move" || mission === "outpost" || mission === "sweep" ? 0 : mission === "occupy" ? 2 : 1;
   if (onSite) stay(`${MISSIONS[mission]?.name || mission} at ${tileLabel(state, dest)}`, onSite, mission === "scavenge" ? "scavenge" : null);
   if (mission === "sweep") surveyLeg(sweep || (p && p.sweepPlan) || {});
   if (mission === "recon") { owed = Math.min(0, (legs[0] ? legs[0].left : 0) - 2 * (veh ? pace.rideSpeed ?? pace.speed : sp)); legs.push({ label: `Recon at ${tileLabel(state, dest)} (2h, on the next move)`, hours: 0, from: tile, to: tile, start: at }); }

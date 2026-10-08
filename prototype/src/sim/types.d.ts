@@ -62,6 +62,7 @@ export interface TileSnapshot {
   hive: boolean;
   site: { biomass: number; started: boolean } | null;
   deathSite: number;
+  abandoned?: { from: string | number; fromName: string; day: number; standing: number } | null; // a base standing empty (groupworld.js, occupy.js)
   lootHour?: number; // radio news of a stripped site (aiscav.js)
   lootSrc?: any;
 }
