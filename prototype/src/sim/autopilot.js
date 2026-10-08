@@ -1148,7 +1148,8 @@ function teamAct(state, p) {
     }
   }
   // Fit, fed and with room to carry: try one more site nearby.
-  if ((p.apChain || 0) < P.chain && p.mission !== "outpost" && chainNext(state, p)) return;
+  // A hive or growth squad (fires set, or backed off) goes home: no searching on the hive's land on the way.
+  if ((p.apChain || 0) < P.chain && !["outpost", "hive", "growth"].includes(p.mission) && chainNext(state, p)) return;
   // Not food enough for the way home (held up on the road, food lost): food from the land first (landFoodAct).
   if (back && (p.apLandFood || 0) < LAND.tries && foodDaysOf(state, p) < (hoursHome / 24) * 1.1 + 0.25 && landFoodAct(state, p, { urgent: true })) { p.apLandFood = (p.apLandFood || 0) + 1; return; }
   startReturn(state, p);
