@@ -10,8 +10,8 @@
 //   military holds its people in a jailhouse block.
 // - What they hold: your people (conflicts.js captives, s.location.kind "captive") and other groups' people
 //   (f.prisoners: { id, from: a group id, power, since }). Both count against the room (groupRoom). Groups take
-//   prisoners from each other in raids they win (factions.js resolveRaidOnFaction: groupCapture; war raids keep their
-//   own head count, diplomacy.js w.captives).
+//   prisoners from each other in raids they win (factions.js resolveRaidOnFaction, up to RAID_TAKE; a war raid's
+//   captive too, diplomacy.js resolveWarRaid, which in an older save keeps the war's own head count, w.captives).
 // - No room (FULL, by type): raiders, expansionists and traders sell the extra one to a group with room (UNSOLD:
 //   raiders and expansionists kill them, traders let them go; your people: a ransom asked of you at once if nobody
 //   buys, raiders kill on a refusal, the others let them go), the military, the fortress and communes let them go,
