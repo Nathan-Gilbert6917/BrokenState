@@ -9,7 +9,7 @@
 //      area, a group's wares from its type's list, a merchant's from its speciality.
 //   4. No world-dice drift: a fixed-seed sample of bodies, raid finds, trucks, site finds, group wares and visitors
 //      makes the same keys and leaves the random numbers where the code before this change left them (the hashes
-//      below were taken from dev 75793c5).
+//      below were taken from dev 75793c5; bodies' and trucks' keys re-taken with the weapons roster, see section 4).
 //   5. Merchants' specialities: each turns up, its gear and books from its list, its supplies (ammo, meds, parts) larger.
 //   6. Prices fall with condition (valuation.js itemValue): a worse copy sells and buys for less; the trade window
 //      shows the condition in a word and the uses left.
@@ -24,6 +24,7 @@ import { KITS, AREAS } from "../src/sim/combat.js";
 import { enemyBody, deadBodyFinds, allItems, lootItem, newItem, ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZBODY } from "../src/sim/inventory.js";
 import { rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS } from "../src/sim/loot.js";
 import { truckLoot, TRUCK_LOOT } from "../src/sim/miltrucks.js";
+import { TRUCK_GEAR } from "../src/sim/data-guns.js"; // the roster's military guns in Army trucks (factoryfit.js rosterTruckGear, plan section 22)
 import { ensureWares, WARES, WARE_EXTRAS, gearSellPrice, gearBuyPrice } from "../src/sim/trade.js";
 import { WARE_BOOKS } from "../src/sim/skills.js";
 import { MILDEAD } from "../src/sim/deadsoldiers.js";
@@ -83,7 +84,7 @@ check(meanQ("shop") > meanQ("home") && meanQ("home") > meanQ("wreck"), "a shop's
 section("2. Every creation point rolls its condition");
 // Static: loot code never calls newItem itself.
 const ALLOWED = {
-  "inventory.js": /export function newItem|condition\(newItem\(key, 1\)|g\.head = newItem\("footballhelmet"/, // the roller itself; an old save's helmet split
+  "inventory.js": /export function newItem|condition\((factoryFit\()?newItem\(key, 1\)|g\.head = newItem\("footballhelmet"/, // the roller itself (lootItem: a gun's factory parts fitted first, factoryfit.js); an old save's helmet split
   "deadsoldiers.js": /newItem\(k, q\(range\), rng\)/, // the maker handed in (inventory.js armouredItem)
   "hardcore-start.js": /./, "recruits.js": /./, "world.js": /startdur/, // starting and recruit gear (START_DUR), not loot
   "blueprints.js": /bpItemKey/, "skills.js": /newItem\(key, 1\)|newItem\(list\[/, // paper
@@ -167,7 +168,7 @@ for (const kit of Object.keys(KITS)) {
     within(`an armoured ${z}'s body`, its, new Set([...B.armor, ...B.items].map((x) => x[0])));
   }
 }
-for (const kind of Object.keys(TRUCK_LOOT)) { const rng = new Rng(3); const its = []; for (let i = 0; i < 300; i++) its.push(...truckLoot(rng, kind, "intact").gear); within(`a ${kind} truck`, its, new Set(TRUCK_LOOT[kind].gear.map((x) => x[0]))); }
+for (const kind of Object.keys(TRUCK_LOOT)) { const rng = new Rng(3); const its = []; for (let i = 0; i < 300; i++) its.push(...truckLoot(rng, kind, "intact").gear); within(`a ${kind} truck`, its, new Set([...TRUCK_LOOT[kind].gear, ...(TRUCK_GEAR[kind] || TRUCK_GEAR.cargo)].map((x) => x[0]))); }
 for (const a of Object.keys(AREA_FINDS)) { const rng = new Rng(a.length); const its = []; for (let i = 0; i < 400; i++) { const it = rollAreaFind(rng, a, 1, 20); if (it) its.push(it); } if (its.length) within(`small finds in a ${a}`, its, new Set(Object.keys(AREA_FINDS[a].items))); }
 check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])), "every raid area's gear list is real gear");
 {
@@ -189,9 +190,17 @@ check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])
 }
 
 // ---------- 4. no world-dice drift ----------
-section("4. No world-dice drift (against dev 75793c5)");
+section("4. No world-dice drift (against dev 75793c5; bodies' and trucks' keys against the weapons roster)");
+// The baseline moved with the weapons roster (wave 1, B: data-guns.js) on purpose, for two hashes only:
+// - bodies' keys: KIT_PATCH appends new guns and loot to each kit's lists (combat.js KITS), so a body's weapon, its
+//   kit loot and its pockets pick other keys (rng.pick of a longer list: one draw all the same, so the dice still end
+//   where they did: BASE.bodies.rng is unchanged);
+// - trucks: TRUCK_GEAR adds the roster's military guns to Army trucks (miltrucks.js TRUCK_LOOT_HOOKS rosterTruckGear,
+//   plan section 22) on hashes of the truck's rng position, never a draw, so only the keys changed.
+// Checked when re-taken: with KIT_PATCH taken back off KITS and the rosterTruckGear hook removed, both hashes come
+// out as dev 75793c5's (bodies 5cc93cfd8dbebeeb, trucks 537afeab97d1a43f), so the drift is the roster's items alone.
 const BASE = {
-  bodies: { keys: "5cc93cfd8dbebeeb", rng: 94849467201019 }, areaFinds: { keys: "4f69608bbca97f26", rng: 19566617580356 }, trucks: "537afeab97d1a43f",
+  bodies: { keys: "917048c944387995", rng: 94849467201019 }, areaFinds: { keys: "4f69608bbca97f26", rng: 19566617580356 }, trucks: "ddd64fb55272735e",
   siteFinds: "dab86d9ad75a6877", groupWares: { keys: "0a732c1de196a889", rng: 2670422955354 }, visitors: { keys: "3bdc366902700698", merchants: "70e09d390ad58668", rng: 12580090440502 },
 };
 {

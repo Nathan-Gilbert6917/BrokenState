@@ -14,6 +14,7 @@ import { GEAR } from "./data.js";
 import { hash01 } from "./skills.js";
 import { lootItem } from "./inventory.js";
 import { siteSource, areaSource, traderSource } from "./itemcond.js"; // the condition finds come in, by source
+import { ROSTER_TAGS } from "./data-guns.js";
 
 // ---------- theme tags ----------
 export const SITE_TAGS = {
@@ -127,6 +128,7 @@ export const ITEM_TAGS = {
   lipbalm: ["home", "shop", "medical", "outdoor", "sport", "school", "travel", "camp"],
   makeup: ["home", "mall", "shop", "travel", "school", "office"], perfume: ["mall", "home", "shop", "travel", "crash"],
 };
+Object.assign(ITEM_TAGS, ROSTER_TAGS); // the weapons overhaul's guns and melee weapons (data-guns.js)
 
 // ---------- small finds per site type (the hour-by-hour search) ----------
 // p = chance per search hour at full loot (× the approach's pace, Treasure Hunter ×2); items = weights.

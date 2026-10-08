@@ -16,6 +16,8 @@
 //   "armory:<baseId>:list[:<i>]"  "cargo:<partyId>:list[:<i>]"       storage (a base armory, a team's cargo)
 //   "body:<bodyIndex>:<slot>[:<i>]"  "body:<bodyIndex>:sup:<key>"     bodies of the battle that just ended
 // Items only move between people, storage and bodies at the same place (one base, or one team).
+import { factoryFit, seedOf } from "./factoryfit.js";
+import { FACTORY_FIT } from "./data-guns.js"; // guns found already fitted (section 22)
 import { fitMod, removeMod, modFitReason, isGunmod, takesMods } from "./gunmods.js";
 import { GEAR, SUPPLIES } from "./data.js";
 import { survivorById, baseById, day, newId } from "./world.js";
@@ -57,12 +59,14 @@ export function newItem(key, quality = 1, worn = null, range = FOUND_DUR) {
     item.dur = Math.max(1, Math.round(d.dur * (range.lo + (range.hi - range.lo) * u)));
   }
   if (d.slots) ensurePack(item);
+  factoryFit(item, seedOf(worn)); // factoryfit.js: a sniper rifle comes with its scope and bipod (dice: worn's rng position)
   return item;
 }
 // A piece of loot or trade stock: the kind from its source's list (the caller's), the condition from the source
 // (itemcond.js COND_SOURCES: "military", "shop", "raider", "merchant"...). roll: an Rng (its position is hashed, no
 // draw), a number 0–1 or a list of parts. opts.quality: a quality fixed by the caller (only the wear is rolled).
-export const lootItem = (key, source, roll, opts) => condition(newItem(key, 1), source, roll, opts);
+// A gun's factory parts' chance rows roll on the same dice (factoryfit.js: newItem fitted the sure ones already).
+export const lootItem = (key, source, roll, opts) => condition(factoryFit(newItem(key, 1), seedOf(roll)), source, roll, opts);
 // The armoured dead's kit (deadsoldiers.js bodyLoot's maker): their table's quality, the wear by itemcond.js "armoured".
 export const armouredItem = (key, quality, rng) => lootItem(key, "armoured", rng, { quality });
 // 0–1 from an rng's position and the item (FNV-1a and a final mix): no draw from the rng itself.
@@ -569,6 +573,8 @@ export function enemyBody(rng, u, kit) {
 // The attachments a battle unit's gun carried (combat.js enemyUnit: u.modItems, for the gun it was given) onto the gun
 // item looted from it. Only while the unit still holds that gun (u.gmWeapon), and each part only where it fits.
 export function carryMods(u, gun) {
+  if (u && u.gmWeapon === gun.key && !u.modsLooted && FACTORY_FIT[gun.key]) delete gun.mods; // exactly the parts it carried (its factory ones among them: combat.js enemyUnit), not newItem's own roll
+  if (u && u.gmWeapon === gun.key) u.modsLooted = true;
   if (!u || !u.modItems || u.gmWeapon !== gun.key) return;
   for (const m of Object.values(u.modItems)) if (m) fitMod(gun, m);
   u.modItems = null; // looted once

@@ -121,7 +121,7 @@ function hiveEntries() {
 
 // How to use an item, by its trade category (data.js CATEGORIES); the item's own description says the rest.
 const ITEM_HOW = {
-  melee: "Hold it in the Hands slot and use Melee (E) next to an enemy: silent and needs no ammo.",
+  melee: "Hold it in the Hands slot and use Melee (E) next to an enemy: silent and needs no ammo. Quick weapons strike for 1 action (strike, then step away); spears reach 2 tiles and can be thrown. See Help: Guns and melee weapons.",
   pistol: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action) and makes noise (it draws the dead, and Heat in a raid). Fits a pocket.",
   shotgun: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action), hits hard up close, poorly at range, and is loud. Buckshot catches a worm swarm.",
   rifle: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action); the long-range gun, and loud. Rifle rounds get through the armoured dead.",

@@ -3,10 +3,11 @@
 // cone, over-penetration's line, the sniper's AI sense. combat.js fire() / combatAct / aiUnit / moveAlong call these;
 // the numbers are all here.
 //
-// Fire modes (act "firemode", u.mode / u.modes): WEAPONS[k].modes = { single: 1, burst: 2, auto: 10 } (rounds a trigger
-// pull; a list of names also works, rounds then from w.burst / w.auto or FIRE_MODES). A gun without modes fires
-// w.ammo rounds with one roll, as it always did. Each round of a burst or a stream rolls its own hit at the mode's aim,
-// worse by the recoil every round after the first. A unit starts in the mode that fires what its gun fired before
+// Fire modes (act "firemode", u.mode / u.modes): WEAPONS[k].modes = { single, burst, auto }: { rounds, aim } (rounds a
+// trigger pull, the mode's aim for that gun: data-guns.js, the roster's shape). Also read: { single: 1, burst: 2 }
+// (rounds only, the aim from FIRE_MODES) and a list of names (rounds then from w.burst / w.auto or FIRE_MODES). A gun
+// without modes (semi-automatic, single only) fires w.ammo rounds with one roll, as it always did. Each round of a
+// burst or a stream rolls its own hit at the mode's aim, worse by the recoil (FIRE_MODES) every round after the first. A unit starts in the mode that fires what its gun fired before
 // modes (the assault rifle's 2-round shot is its burst), else burst, else single.
 //
 // Jams (u.jam = { kind, ap }): per round, jam = rel% × quality × condition × ammo × mods × weather × fouling, capped at 12%:
@@ -41,7 +42,11 @@ export function gunModes(w) {
   const out = {};
   if (Array.isArray(w.modes)) {
     for (const m of w.modes) if (FIRE_MODES[m]) out[m] = m === "single" ? 1 : w[m] || FIRE_MODES[m].rounds;
-  } else for (const m of MODE_ORDER) if (w.modes[m]) out[m] = Math.max(1, Math.round(w.modes[m]));
+  } else for (const m of MODE_ORDER) {
+    const v = w.modes[m];
+    const n = v && typeof v === "object" ? v.rounds : v; // { rounds, aim } (the roster's shape) or a number of rounds
+    if (n) out[m] = Math.max(1, Math.round(n));
+  }
   if (!Object.keys(out).length) return null;
   return out;
 }
@@ -79,8 +84,14 @@ export function modeRounds(u, mode = modeOf(u)) {
 }
 // Hit rolls a trigger pull makes (a gun without modes: one, whatever its rounds).
 export const modeRolls = (u, mode = modeOf(u)) => (gunModes(WEAPONS[u.weapon]) ? modeRounds(u, mode) : 1);
-// Aim of round k (0 = the first) in a mode.
-export const modeAim = (mode, k = 0) => { const M = FIRE_MODES[mode] || FIRE_MODES.single; return mode === "single" ? 0 : M.aim + k * M.recoil; };
+// The aim a mode starts at for a weapon (w.modes[mode].aim; else FIRE_MODES'; single: 0).
+export function gunModeAim(w, mode) {
+  const v = w && w.modes && !Array.isArray(w.modes) ? w.modes[mode] : null;
+  if (v && typeof v === "object" && Number.isFinite(v.aim)) return v.aim;
+  return mode === "single" ? 0 : (FIRE_MODES[mode] || FIRE_MODES.single).aim;
+}
+// Aim of round k (0 = the first) in a mode (w: the weapon, for its own mode aim; else FIRE_MODES').
+export const modeAim = (mode, k = 0, w = null) => { const M = FIRE_MODES[mode] || FIRE_MODES.single; return mode === "single" ? gunModeAim(w, "single") : gunModeAim(w, mode) + k * M.recoil; };
 // Why the unit cannot take that mode ("" when it can).
 export function modeRefusal(u, mode) {
   if (!FIRE_MODES[mode]) return "Unknown fire mode.";

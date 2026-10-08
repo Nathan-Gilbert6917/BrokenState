@@ -238,7 +238,9 @@ function drawArmor(p, key, L, R) {
   else p.rect(L + 2, 12, R - 2, 12, shade(base, -0.2));
 }
 
-// Weapon in the right hand (sprites face right; flipped at draw time).
+// Weapon in the right hand (sprites face right; flipped at draw time). Every WEAPONS key has a look but bare hands, a
+// zombie's teeth and a spitter's acid (WEAPON_UNDRAWN; tools/rostertest.js checks it).
+export const WEAPON_UNDRAWN = ["fists", "claws", "acid"];
 function drawWeapon(p, key, R) {
   const metal = "#9aa3ab", gun = "#2b2e33", wood = "#7a5230";
   const hx = R + 2, hy = 15;
@@ -260,9 +262,51 @@ function drawWeapon(p, key, R) {
     // Special crafted weapons (craft books and blueprints).
     case "springmachete": drawWeapon(p, "machete", R); p.set(hx + 1, hy - 8, "#c2c9cf"); p.rect(hx + 1, hy, hx + 1, hy + 2, "#5b3a22"); break;
     case "pulleybow": p.rect(hx + 1, hy - 6, hx + 1, hy + 4, wood); p.set(hx + 1, hy - 7, metal); p.set(hx + 1, hy + 5, metal); p.rect(hx, hy - 5, hx, hy + 3, "#d6dde2"); break;
+    // The weapons overhaul (sim/data-guns.js): guns, melee weapons and launchers; and looks for the found weapons that had none.
+    case "revolver": p.rect(hx, hy - 1, hx + 3, hy - 1, "#4a4e54"); p.set(hx + 1, hy, "#4a4e54"); p.rect(hx, hy, hx, hy + 1, wood); break;
+    case "compact9": p.rect(hx, hy - 1, hx + 2, hy - 1, gun); p.rect(hx, hy, hx, hy + 1, gun); break;
+    case "pistol22": p.rect(hx, hy - 1, hx + 4, hy - 1, "#55595e"); p.rect(hx, hy, hx, hy + 1, wood); break;
+    case "pistol45": p.rect(hx, hy - 1, hx + 3, hy - 1, "#6e757c"); p.rect(hx, hy, hx, hy + 1, wood); break;
+    case "smg": p.rect(R - 1, 13, R + 5, 13, gun); p.rect(R - 2, 14, R - 1, 14, gun); p.rect(R + 2, 14, R + 2, 16, "#1a1c20"); p.set(R + 4, 14, gun); break;
+    case "carbine": p.rect(R - 3, 13, R + 6, 13, gun); p.rect(R - 4, 14, R - 2, 14, "#3a3d40"); p.rect(R + 1, 14, R + 1, 15, "#1a1c20"); break;
+    case "ak": p.rect(R - 3, 13, R + 7, 13, gun); p.rect(R - 5, 14, R - 2, 14, wood); p.rect(R + 3, 12, R + 5, 12, wood); p.set(R + 1, 14, "#1a1c20"); p.set(R + 2, 15, "#1a1c20"); break;
+    case "lmg": p.rect(R - 4, 13, R + 8, 13, gun); p.rect(R - 5, 14, R - 2, 14, gun); p.rect(R, 14, R + 2, 15, "#3d4a2e"); p.set(R + 6, 14, gun); p.set(R + 7, 15, gun); break;
+    case "dbshotgun": p.rect(R - 3, 12, R + 7, 13, gun); p.rect(R - 5, 14, R - 1, 14, wood); break;
+    case "sawnoff": p.rect(R, 12, R + 4, 13, gun); p.rect(R - 1, 14, R + 1, 15, wood); break;
+    case "semishotgun": p.rect(R - 3, 13, R + 7, 13, "#1d2024"); p.rect(R - 5, 14, R - 2, 14, "#1d2024"); p.rect(R + 3, 14, R + 6, 14, "#3a3d40"); break;
+    case "rifle22": p.rect(R - 4, 13, R + 6, 13, wood); p.rect(R + 3, 13, R + 7, 13, "#55595e"); p.rect(R - 5, 14, R - 3, 14, wood); break;
+    case "leverrifle": p.rect(R - 3, 13, R + 7, 13, wood); p.rect(R + 2, 13, R + 8, 13, "#55595e"); p.rect(R - 5, 14, R - 2, 14, wood); p.set(R - 1, 15, "#55595e"); break;
+    case "dmr": p.rect(R - 3, 13, R + 8, 13, gun); p.rect(R - 5, 14, R - 2, 14, gun); p.rect(R, 12, R + 3, 11, "#1a1c20"); p.set(R + 1, 14, "#1a1c20"); break;
+    case "sniper": p.rect(R - 4, 13, R + 9, 13, "#4b5340"); p.rect(R - 5, 14, R - 2, 14, "#4b5340"); p.rect(R - 1, 11, R + 3, 12, "#1a1c20"); p.set(R + 6, 14, gun); p.set(R + 7, 15, gun); break;
+    case "amr": p.rect(R - 5, 12, R + 9, 13, gun); p.rect(R - 6, 14, R - 3, 14, gun); p.rect(R - 1, 10, R + 3, 11, "#1a1c20"); p.rect(R + 9, 11, R + 9, 14, "#1a1c20"); p.set(R + 6, 14, gun); p.set(R + 7, 15, gun); break;
+    case "m2hb": p.rect(R - 4, 12, R + 9, 13, gun); p.rect(R - 5, 11, R - 3, 14, "#1a1c20"); p.rect(R + 4, 11, R + 6, 11, "#5b5f63"); break;
+    case "turret_m2": drawWeapon(p, "m2hb", R); break; // a vehicle turret's gunner (combat.js TURRET_WEAPON): the gun they are behind
+    case "turret_lmg": drawWeapon(p, "lmg", R); break;
+    case "m79": p.rect(R - 1, 12, R + 5, 13, "#4b5340"); p.rect(R - 4, 14, R - 1, 14, wood); break;
+    case "m203": drawWeapon(p, "ar", R); p.rect(R + 3, 14, R + 6, 14, "#4b5340"); break;
+    case "m32": p.rect(R - 1, 12, R + 5, 13, gun); p.rect(R, 14, R + 2, 15, "#4b5340"); p.rect(R - 4, 14, R - 2, 14, gun); break;
+    case "at4": case "rpg": p.rect(R - 6, 11, R + 6, 12, key === "rpg" ? "#4b5340" : "#5f6b4a"); if (key === "rpg") { p.rect(R + 7, 10, R + 8, 13, "#3d4a2e"); } p.set(R + 1, 13, gun); break;
+    case "compbow": case "xbow": drawWeapon(p, key === "xbow" ? "crossbow" : "pulleybow", R); if (key === "compbow") { p.set(hx + 1, hy - 4, "#1a1c20"); p.set(hx + 1, hy + 2, "#1a1c20"); } break;
+    case "combatknife": p.rect(hx, hy - 4, hx, hy - 1, "#5a6066"); p.set(hx, hy - 5, "#c2c9cf"); p.rect(hx - 1, hy, hx + 1, hy, "#1a1c20"); p.rect(hx, hy + 1, hx, hy + 2, "#1a1c20"); break;
+    case "hatchet": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, wood); p.rect(hx + 2, hy - 6, hx + 3, hy - 4, metal); break;
+    case "tomahawk": p.rect(hx + 1, hy - 6, hx + 1, hy + 2, "#2b2e33"); p.rect(hx + 2, hy - 7, hx + 3, hy - 5, metal); p.set(hx, hy - 6, metal); break;
+    case "kukri": p.rect(hx + 1, hy - 5, hx + 1, hy - 1, metal); p.rect(hx + 2, hy - 7, hx + 2, hy - 4, "#c2c9cf"); p.rect(hx + 1, hy, hx + 1, hy + 2, "#3a2a1c"); break;
+    case "katana": p.rect(hx + 1, hy - 10, hx + 1, hy - 1, "#d6dde2"); p.rect(hx, hy, hx + 2, hy, "#b89a4a"); p.rect(hx + 1, hy + 1, hx + 1, hy + 3, "#1a1c20"); break;
+    case "pickaxe": p.rect(hx + 1, hy - 7, hx + 1, hy + 2, wood); p.rect(hx - 1, hy - 8, hx + 4, hy - 8, "#6d7378"); p.set(hx - 2, hy - 7, "#6d7378"); p.set(hx + 5, hy - 7, "#6d7378"); break;
+    case "hammer": p.rect(hx + 1, hy - 4, hx + 1, hy + 2, wood); p.rect(hx, hy - 5, hx + 3, hy - 5, "#55595e"); break;
+    case "etool": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#4b5340"); p.rect(hx, hy - 8, hx + 2, hy - 6, "#5f6b4a"); break;
+    case "golfclub": p.rect(hx + 1, hy - 8, hx + 1, hy + 2, "#c2c9cf"); p.rect(hx + 1, hy - 9, hx + 3, hy - 9, "#55595e"); break;
+    case "nailbat": drawWeapon(p, "bat", R); p.set(hx, hy - 6, metal); p.set(hx + 3, hy - 6, metal); p.set(hx, hy - 4, metal); p.set(hx + 3, hy - 4, metal); p.set(hx, hy - 2, metal); break;
+    case "prybar": p.rect(hx + 1, hy - 7, hx + 1, hy + 2, "#7d858c"); p.set(hx + 2, hy - 8, "#7d858c"); p.set(hx, hy + 2, "#7d858c"); break;
+    case "fireaxe": p.rect(hx + 1, hy - 7, hx + 1, hy + 2, "#b08a5a"); p.rect(hx + 2, hy - 8, hx + 3, hy - 5, "#c8362e"); p.set(hx + 4, hy - 7, metal); p.set(hx + 4, hy - 6, metal); break;
+    case "sledge": p.rect(hx + 1, hy - 6, hx + 1, hy + 2, wood); p.rect(hx - 1, hy - 9, hx + 3, hy - 7, "#55595e"); break;
+    case "baton": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#1a1c20"); p.set(hx + 1, hy - 6, "#3a3d40"); break;
     default: break;
   }
 }
+
+// The pixels a weapon adds, painted alone (tools/rostertest.js: every weapon has a look). R: the body's right edge.
+export function weaponPixels(key, R = 14) { const p = painter(); drawWeapon(p, key, R); return p.px.filter(Boolean).length; }
 
 // ---------- survivors ----------
 export function paintSurvivor(app, weaponKey = null, armorKey = null) {

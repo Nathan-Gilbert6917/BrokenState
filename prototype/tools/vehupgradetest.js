@@ -446,7 +446,8 @@ section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
   check(!e2 && ammoLeft(b) === ammo0 - 3 && magIn(g) === 97 && b.vehicle.belt === 97 && g.turretMag === 97, `a burst: 3 rounds from the team's ammo (${ammo0} → ${ammoLeft(b)}), the belt 97/100${e2 ? ` [${e2}]` : ""}`);
   check((b.noise || 0) - noise0 >= 6 && foes.every((o) => o.dead || o.aware), `very loud: noise +${(b.noise || 0) - noise0}, everyone awake`);
   check(t.dead || t.pinT === b.turn, "whoever it lands near is pinned (−10 aim their next turn)");
-  if (!t.dead) { const a0 = shotOdds(b, t, g).chance; t.pinT = null; check(shotOdds(b, t, g).chance - a0 === TURRET.PIN || shotOdds(b, t, g).chance === 95, "the pin costs 10 aim"); }
+  // (measured with a hunting rifle in their hands: a raider's own gun may be a sawn-off, at 5% from here pinned or not)
+  if (!t.dead) { const w0 = t.weapon; t.weapon = "huntrifle"; const a0 = shotOdds(b, t, g).chance; t.pinT = null; check(shotOdds(b, t, g).chance - a0 === TURRET.PIN || shotOdds(b, t, g).chance === 95, `the pin costs 10 aim (${a0}% pinned, ${shotOdds(b, t, g).chance}% not)`); t.weapon = w0; }
   // Cover: half, full behind plate x2.
   const shooter = foes.find((o) => !o.dead) || t;
   check(shotOdds(b, shooter, g).cover === 1, "the gunner has half cover");

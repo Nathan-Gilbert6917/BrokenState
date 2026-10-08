@@ -52,7 +52,13 @@ const noJams = () => { const keep = {}; for (const k of Object.keys(WEAPONS)) { 
 {
   console.log("Fire modes");
   check(JSON.stringify(gunModes(WEAPONS.ar)) === JSON.stringify({ single: 1, burst: 2, auto: 10 }), "the assault rifle: single 1, burst 2, full auto 10 rounds");
-  check(JSON.stringify(gunModes(WEAPONS.carbine)) === JSON.stringify({ single: 1 }), "the police carbine is semi-automatic: single only");
+  // The roster's rule (data-guns.js): a semi-automatic gun has no modes; it fires single only all the same (modesOf).
+  check(gunModes(WEAPONS.carbine) === null && JSON.stringify(modesOf({ weapon: "carbine" })) === JSON.stringify(["single"]), "the police carbine is semi-automatic: single only");
+  // The roster's shape, { mode: { rounds, aim } }: the rounds, and each mode's aim for that gun (recoil from FIRE_MODES).
+  const ak = WEAPONS.ak;
+  check(ak && JSON.stringify(gunModes(ak)) === JSON.stringify({ single: ak.modes.single.rounds, burst: ak.modes.burst.rounds, auto: ak.modes.auto.rounds }), "modes as { rounds, aim } (the roster's AK): the rounds");
+  check(ak && modeAim("burst", 0, ak) === ak.modes.burst.aim && modeAim("auto", 2, ak) === ak.modes.auto.aim + 2 * FIRE_MODES.auto.recoil && modeAim("single", 0, ak) === 0, "…and the gun's own aim for each mode, recoil growing every round");
+  check(modeAim("burst", 1, WEAPONS.ar) === modeAim("burst", 1) && modeAim("auto", 3, WEAPONS.ar) === modeAim("auto", 3), "the assault rifle's mode aims are the FIRE_MODES defaults");
   check(gunModes({ modes: ["single", "burst", "auto"], burst: 3, auto: 15 }).burst === 3 && gunModes({ modes: ["single", "auto"] }).auto === FIRE_MODES.auto.rounds, "modes as a list of names also work (rounds from w.burst / w.auto or the defaults)");
   const st = createWorld({ seed, factionCount: 4 });
   const a = fighter(st, "ar"), c = fighter(st, "pistol");

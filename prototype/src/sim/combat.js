@@ -74,7 +74,9 @@ import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; 
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
-import { GUN_WEAPONS, KIT_PATCH } from "./data-guns.js"; // the weapons overhaul's guns, melee and launchers (merged below)
+import { GUN_WEAPONS, KIT_PATCH, WEAPON_PATCH } from "./data-guns.js"; // the weapons overhaul's guns, melee and launchers (merged below)
+import { withFactory } from "./factoryfit.js"; // a sniper rifle carried with its scope and bipod (section 22)
+import { throwLanding } from "./throwables.js"; // a thrown spear lands like any throw
 import { ammoPen } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult)
 import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
 import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews
@@ -624,7 +626,7 @@ export const WEAPONS = {
   pistol:    { name: "9mm pistol",     dmg: [15, 22], opt: 6,  fall: 4, aim: 4,  ammo: 1, noise: 2, cap: 15, cal: "9mm", rel: 0.35 }, // a double-stack 9mm magazine
   shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10, cap: 6, cal: "12ga", rel: 0.3 }, // a pump: five in the tube and one in the chamber
   huntrifle: { name: "Hunting rifle",  dmg: [24, 34], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10, cap: 5, cal: "308", rel: 0.15 }, // a bolt-action's internal magazine
-  ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3, cap: 30, cal: "556", rel: 0.5, modes: { single: 1, burst: 2, auto: 10 } }, // a 30-round magazine: 15 bursts of 2 (its burst mode; gunfire.js fire modes)
+  ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3, cap: 30, cal: "556", rel: 0.5, modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 2, aim: -10 }, auto: { rounds: 10, aim: -20 } } }, // a 30-round magazine: 15 bursts of 2 (its burst mode; gunfire.js fire modes)
   // Makeshift weapons (crafting.js). The crossbow is silent and shoots bolts (arrows: 1 a shot, data.js SUPPLIES.arrows).
   spikedbat:  { name: "Spiked bat",        melee: true, dmg: [16, 25] },
   pipespear:  { name: "Pipe spear",        melee: true, dmg: [15, 23] },
@@ -647,7 +649,7 @@ export const WEAPONS = {
   xbow:       { name: "Hunting crossbow",  dmg: [20, 29], opt: 6, fall: 5, aim: 0, ammo: 0, arrows: 1, noise: 0, close: -5 },
   revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3, cap: 6, cal: "357", rel: 0.05 }, // a six-shot cylinder
   leverrifle: { name: "Lever-action rifle", dmg: [20, 30], opt: 10, fall: 2.5, aim: 4, ammo: 1, noise: 3, cap: 8, cal: "3030", rel: 0.3 }, // a tube under the barrel
-  carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3, cap: 30, cal: "556", rel: 0.5, modes: { single: 1 } }, // a patrol carbine's 30-round magazine (semi-automatic: single only)
+  carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3, cap: 30, cal: "556", rel: 0.5 }, // a patrol carbine's 30-round magazine (semi-automatic: single only, no modes: data-guns.js)
   // A spitter's acid (zombietypes.js): silent, every `cooldown` turns, cover counts `pierce` steps less against it.
   acid:       { name: "Acid spit",         dmg: [16, 22], opt: 4, fall: 8, aim: 0, ammo: 0, noise: 0, acid: true, cooldown: ZTYPES.spitter.cooldown, pierce: ZTYPES.spitter.pierce },
 };
@@ -681,6 +683,7 @@ for (const [kind, patch] of Object.entries(KIT_PATCH)) {
   if (!kit) continue;
   for (const [k, list] of Object.entries(patch)) kit[k] = Array.isArray(kit[k]) ? [...kit[k], ...list] : list;
 }
+for (const [k, p] of Object.entries(WEAPON_PATCH)) if (WEAPONS[k]) Object.assign(WEAPONS[k], p); // melee traits, the lever-action's six
 
 const idx = (x, y) => y * W + x;
 const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -1808,7 +1811,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (a.pinT === b.turn) aim -= TURRET.PIN; // pinned by a machine-gun burst (the turret)
   // gunfire.js: the fire mode (round k of a burst or a stream: opts.modeAim; else the first round of the unit's mode),
   // pinned by suppressing fire, a heavy weapon braced or fired on the move.
-  if (!w.melee) aim += opts.modeAim ?? modeAim(modeOf(a), 0);
+  if (!w.melee) aim += opts.modeAim ?? modeAim(modeOf(a), 0, w);
   if (a.suppressed) aim -= SUPPRESS.AIM;
   aim += braceAim(b, a);
   // A break-in map (deploy.js): the floodlit area, and shooting from a watchtower.
@@ -1839,6 +1842,196 @@ export function meleeOdds(b, a, t) {
 
 export const isRanged = (u) => !WEAPONS[u.weapon].melee;
 export const adjacent = (a, t) => Math.max(Math.abs(a.x - t.x), Math.abs(a.y - t.y)) === 1;
+// ---------- melee: reach, quick strikes, stagger, bleeding, thrown spears (weapons overhaul section 4) ----------
+// WEAPONS fields (data-guns.js): reach 2 = strikes 2 tiles off in a straight line (orthogonal or diagonal) with a clear
+// line and nobody standing between; quick = a strike costs 1 action, one strike a turn (strike and step away);
+// stagger = chance a hit (twice on a critical) costs the target an action on its next turn (not brutes, wall-breakers,
+// brood mothers or bosses); bleed = chance a hit on a living person bleeds them MELEE.BLEED at the start of each of their
+// next MELEE.BLEED_TURNS turns (armour does not help); throw = tiles a spear is thrown ("throwspear": throwables.js aim
+// and scatter, the spear's melee damage on whoever is where it lands; it lies there (b.spears) and the thrower fights
+// with a pistol from a pocket or the off hand, or bare hands, until they walk onto it or pick it up next to it, 1
+// action; after a won fight it is picked up, after a loss it is gone). Stagger and bleed roll on dice of their own
+// (hash01 of the battle's rng position), so no other roll in the battle changes. Zealots throw spears too (KITS
+// spearThrow).
+export const MELEE = { BLEED: 5, BLEED_TURNS: 2, SPEAR_SCATTER: -10, SPEAR_AI: 0.6, SPEAR_AI_MIN: 3 };
+const STAGGER_IMMUNE = new Set(["brute", "wallbreaker", "broodmother"]);
+// Can u strike t from where it stands (next to it, or 2 tiles off with a reach weapon)?
+export function inMelee(b, u, t) {
+  const dx = t.x - u.x, dy = t.y - u.y, d = Math.max(Math.abs(dx), Math.abs(dy));
+  if (d === 1) return true;
+  const w = WEAPONS[u.weapon];
+  if (d !== 2 || !w || !(w.reach >= 2) || dx % 2 || dy % 2) return false;
+  const mid = unitAt(b, u.x + dx / 2, u.y + dy / 2);
+  if (mid && active(mid)) return false;
+  return los(b, u.x, u.y, t.x, t.y);
+}
+const strikeMark = (b) => (b.turn || 0) * 2 + (b.phase === "player" ? 0 : 1);
+export const struckThisTurn = (b, u) => u.struck === strikeMark(b);
+// Why u cannot strike t ("" when it can).
+export function meleeRefusal(b, u, t) {
+  const w = WEAPONS[u.weapon];
+  if (!t || t.side === "player" || !active(t) || !inMelee(b, u, t)) return w && w.reach >= 2 ? "Must be next to the target, or 2 tiles off in a straight line with nobody between." : "Must be next to the target.";
+  if (w && w.quick && struckThisTurn(b, u)) return "One strike a turn with a quick weapon: step away, or end the turn.";
+  return "";
+}
+// What a melee hit does besides damage: a stagger, a bleeding wound. Returns words for the log line.
+function meleeAfter(b, a, t, w, crit) {
+  if (!w || !w.melee || !active(t)) return "";
+  let out = "";
+  const seed = b.rng.state;
+  const immune = t.boss || STAGGER_IMMUNE.has(t.ztype) || STAGGER_IMMUNE.has(t.variant) || STAGGER_IMMUNE.has(t.zkind);
+  if (w.stagger && !immune && hash01(seed, "stagger", a.id, t.id) < Math.min(1, w.stagger * (crit ? 2 : 1))) { t.staggered = 1; out += " Staggered."; }
+  if (w.bleed && t.kind === "human" && hash01(seed, "bleed", a.id, t.id) < w.bleed) { t.bleeding = MELEE.BLEED_TURNS; out += " Bleeding."; }
+  return out;
+}
+// The start of a side's turn: the staggered lose an action, the bleeding bleed. sides: the sides whose turn it is.
+function meleeRound(b, sides) {
+  for (const u of b.units) {
+    if (!sides.includes(u.side)) continue;
+    if (u.staggered) {
+      if (active(u) && u.ap > 0) { u.ap -= 1; say(b, `${u.name} is still reeling from the blow (one action this turn).`, u.side === "player" ? "danger" : "good"); }
+      u.staggered = 0;
+    }
+    if (u.bleeding > 0) {
+      u.bleeding--;
+      if (!active(u)) { u.bleeding = 0; continue; }
+      const eff = Math.round(damage(b, u, MELEE.BLEED / (hitMult(u, null, { how: "bleed" }) || 1), null, false, { how: "bleed" }));
+      say(b, `${u.name} bleeds (${eff})${u.dead ? " and dies" : u.down ? " and goes down" : ""}.`, u.side === "player" ? "danger" : "good");
+    }
+  }
+  spearBodies(b);
+}
+
+// A survivor's weapon-dependent numbers for an item in the hands (playerUnit's): null or unusable = fists.
+function heldTerms(s, item) {
+  const eff = gearEffect(s, item);
+  const key = item && eff.usable && WEAPONS[item.key] ? item.key : "fists";
+  const mult = key === "fists" ? 1 : eff.mult;
+  const q = item && key !== "fists" ? item.quality || 1 : 1;
+  return { key, item: key === "fists" ? null : item, aim: -(1 - mult) * 30, dmg: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q), risk: key === "fists" ? 0 : eff.damageChance };
+}
+// A gun to draw when the spear is gone: one in the off hand or a pocket that the survivor can use.
+const sidearmOf = (s) => (s ? [s.gear && s.gear.tool, ...(s.pockets || [])].find((it) => it && WEAPONS[it.key] && !WEAPONS[it.key].melee && !WEAPONS[it.key].launcher && !WEAPONS[it.key].mount && gearEffect(s, it).usable) || null : null);
+// The spear has left u's hands: a sidearm (yours) or bare hands. s: the survivor (your people), else null.
+function unarm(b, u, s) {
+  const was = { key: u.weapon, name: u.weaponName, gm: u.gm, gmWeapon: u.gmWeapon, item: u.item, gearRisk: u.gearRisk, aimD: 0, dmgF: 1 };
+  const side = s ? sidearmOf(s) : null;
+  if (s) {
+    const from = heldTerms(s, u.item), to = heldTerms(s, side);
+    was.aimD = to.aim - from.aim; was.dmgF = to.dmg / (from.dmg || 1);
+    u.aim += was.aimD; u.dmgMult *= was.dmgF;
+    u.weapon = to.key; u.item = to.item; u.gearRisk = to.risk;
+  } else { u.weapon = "fists"; if (u.item !== undefined) u.item = null; }
+  u.weaponName = u.weapon === "fists" ? "Fists" : modLabel(side);
+  u.gm = u.weapon === "fists" ? NO_MODS : gunMods(side); u.gmWeapon = u.weapon;
+  if (u.weapon !== "fists") loadMag(u); // a pistol carried loaded
+  u.spearOut = was;
+  if (u.side === "player") say(b, u.weapon === "fists" ? `${u.name} fights bare-handed until the spear is back.` : `${u.name} draws the ${u.weaponName}.`, "info");
+}
+// u has its spear back (sp: the one on the ground, or null).
+function rearm(b, u, sp, quiet = false) {
+  const o = u.spearOut;
+  if (!o) return;
+  u.aim -= o.aimD || 0; u.dmgMult /= o.dmgF || 1;
+  u.weapon = o.key; u.weaponName = o.name; u.gm = o.gm; u.gmWeapon = o.gmWeapon; u.item = o.item; u.gearRisk = o.gearRisk;
+  delete u.spearOut;
+  if (sp && b.spears) b.spears = b.spears.filter((x) => x !== sp);
+  if (!quiet) say(b, `${u.name} picks up the ${(sp ? sp.name : WEAPONS[o.key].name).toLowerCase()}.`, "info");
+}
+const ownSpear = (b, u) => (b.spears || []).find((x) => x.owner === u.id) || null;
+// Walking onto the cell where your spear lies picks it up (moveAlong).
+function stepOnSpear(b, u) {
+  const sp = ownSpear(b, u);
+  if (sp && sp.x === u.x && sp.y === u.y && (sp.f || 0) === (u.f || 0)) rearm(b, u, sp);
+}
+// Why u cannot pick up its spear for an action now ("" when it can).
+export function pickSpearRefusal(b, u) {
+  const sp = u.spearOut ? ownSpear(b, u) : null;
+  if (!sp) return "No spear of theirs lies on the ground.";
+  if ((sp.f || 0) !== (u.f || 0) || Math.max(Math.abs(sp.x - u.x), Math.abs(sp.y - u.y)) > 1) return "Walk onto the spear (or next to it) to pick it up.";
+  return "";
+}
+// Why u cannot throw its spear at (x, y) ("" when it can).
+export function spearThrowRefusal(b, u, x, y) {
+  const w = WEAPONS[u.weapon];
+  if (!w || !w.throw) return "Only a spear can be thrown.";
+  if (!inside(x, y)) return "Throw it where?";
+  if (Math.max(Math.abs(x - u.x), Math.abs(y - u.y)) < 2) return "Too close to throw: strike instead.";
+  if (dist(u.x, u.y, x, y) > w.throw + 0.01) return `Too far: a ${w.name.toLowerCase()} carries ${w.throw} tiles.`;
+  if (!cellAt(b, x, y).walk) return "Throw it at open ground or at someone.";
+  if (!canSeeAt(b, u, x, y)) return "No line of sight.";
+  return "";
+}
+// The throw (allowed: spearThrowRefusal; the action is the caller's). s: the survivor (your people), else null.
+export function throwSpear(b, u, x, y, s = null) {
+  const key = u.weapon, w = WEAPONS[key], rng = b.rng;
+  u.face = [Math.sign(x - u.x), Math.sign(y - u.y)];
+  u.hunker = false;
+  let [lx, ly, off] = throwLanding(b, u, { scatter: MELEE.SPEAR_SCATTER }, x, y, false);
+  let glance = false;
+  if (off && !(inside(lx, ly) && cellAt(b, lx, ly).walk && los(b, u.x, u.y, lx, ly))) { lx = x; ly = y; glance = true; } // off into a wall: it clatters down short
+  const t = glance ? null : unitAt(b, lx, ly);
+  fx(b, { type: "throw", from: [u.x, u.y], to: [lx, ly], item: key });
+  const line = sayFirst(b);
+  if (t && t !== u && active(t)) {
+    const o = meleeOdds(b, u, t);
+    const crit = rng.chance(o.crit / 100);
+    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1) * (u.meleeMult || 1), u, false, { how: "melee", crit, thrown: true, mclass: w.mclass || "pierce" }));
+    if (u.xpT) { u.xpT.melee++; if (t.dead) u.xpT.kills++; }
+    line.text = `${u.name} throws the ${w.name.toLowerCase()}${off ? " (it flies wide)" : ""}: ${crit ? "critical hit on" : "it hits"} ${t.name} for ${eff}.${meleeAfter(b, u, t, w, crit)}`;
+    line.k = u.side === "player" ? (t.side === "player" ? "danger" : "good") : "danger";
+    fx(b, { type: "melee", from: [u.x, u.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: u.side });
+    if (t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
+  } else line.text = `${u.name} throws the ${w.name.toLowerCase()}${off || glance ? " and it flies wide" : ""}: a miss.`;
+  (b.spears || (b.spears = [])).push({ id: b.nextId++, x: lx, y: ly, f: u.f || 0, key, owner: u.id, side: u.side, name: w.name });
+  unarm(b, u, s);
+}
+// The enemy AI: a zealot with a spear and a foe 3–5 tiles off in sight (nobody in reach) throws it now and then.
+function aiThrowSpear(b, u, foes) {
+  const w = WEAPONS[u.weapon];
+  if (!w || !w.throw || u.side !== "enemy" || !(KITS[u.kit] && KITS[u.kit].spearThrow) || u.ap < 1) return false;
+  if (foes.some((f) => inMelee(b, u, f))) return false;
+  const cands = foes.filter((f) => dist(u.x, u.y, f.x, f.y) >= MELEE.SPEAR_AI_MIN && !spearThrowRefusal(b, u, f.x, f.y) && canSee(b, u, f)).sort((a, c) => a.hp - c.hp);
+  if (!cands.length || hash01(b.rng.state, "spearthrow", u.id, b.turn) >= MELEE.SPEAR_AI) return false;
+  throwSpear(b, u, cands[0].x, cands[0].y, null);
+  u.ap -= 1;
+  return true;
+}
+// The AI without its spear: back to it when it lies within a move and nobody is in reach. true: it acted.
+function aiFetchSpear(b, u, foes) {
+  const sp = u.spearOut ? ownSpear(b, u) : null;
+  if (!sp || u.ap < 1 || (sp.f || 0) !== (u.f || 0) || foes.some((f) => inMelee(b, u, f))) return false;
+  if (!pickSpearRefusal(b, u)) { u.ap -= 1; rearm(b, u, sp); return true; }
+  const r = reachable(b, u, u.mob);
+  const c = r.dist[idx(sp.x, sp.y)];
+  if (!isFinite(c) || c === 0) return false;
+  u.ap -= 1;
+  moveAlong(b, u, pathTo(r, sp.x, sp.y));
+  return true;
+}
+// The end of a fight: your spears come back after a win and are lost otherwise (taken off the survivor); an enemy's
+// goes back on them, so it is on their body. won: the field is yours.
+function settleSpears(state, b, won, lines) {
+  if (!b.spears || !b.spears.length) return;
+  for (const sp of b.spears.slice()) {
+    const u = unitById(b, sp.owner);
+    if (!u) continue;
+    if (u.side !== "player" || won) { rearm(b, u, sp, true); continue; }
+    const s = survivorById(state, u.sid);
+    if (s && s.alive && s.gear && s.gear.weapon && s.gear.weapon.key === sp.key) { s.gear.weapon = null; lines.push(`${u.name}'s ${sp.name.toLowerCase()} was left where it fell.`); }
+  }
+  b.spears = [];
+}
+// A raid: an enemy killed with its spear on the ground: the spear counts among the things on its body.
+function spearBodies(b) {
+  if (!b.raid || !b.spears || !b.spears.length) return;
+  for (const sp of b.spears.slice()) {
+    const o = sp.side !== "player" ? unitById(b, sp.owner) : null;
+    if (!o || !o.dead) continue;
+    const box = b.raid.containers.find((c) => c.kind === "body" && c.uid === o.id);
+    if (box && !box.searched && (!box.weapon || box.weapon === "fists")) { box.weapon = sp.key; rearm(b, o, sp, true); }
+  }
+}
 // ---------- magazines ----------
 // A gun holds WEAPONS[k].cap rounds (gunmods.js: a fitted magazine changes that); each shot takes w.ammo of them and
 // a gun fires only with that many loaded. Reload (1 action) fills it; the bows, crossbows, melee weapons and a
@@ -2021,6 +2214,7 @@ export function refitUnit(b, u, s) {
   // The magazine: the same kind of gun keeps what was loaded (up to its capacity now, a magazine attachment may have
   // changed); another gun is taken up empty (Reload, 1 action), so swapping guns never hands out a free full one.
   loadMag(u, u.weapon === held ? rounds : 0);
+  if (u.spearOut && u.weapon === u.spearOut.key) { delete u.spearOut; unarm(b, u, s); } // its spear still lies where it was thrown
   if (u.weapon !== held) u.jam = null; // another gun: the jammed one is put away
   fitArmour(u, s); // armour.js: the pieces worn now
   syncModes(u);
@@ -2043,7 +2237,7 @@ export function enemyUnit(b, rng, kind, power, n) {
   const hp = Math.round(55 + p * 5 + kit.hp);
   // gunmods.js ENEMY_MODS: the attachments on their gun by their kit (dice of their own: the battle's are not used up).
   const id = b.nextId++;
-  const mods = enemyMods(kind, weapon, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id);
+  const mods = withFactory(weapon, enemyMods(kind, weapon, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id), rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // factoryfit.js
   const gun = { key: weapon, name: WEAPONS[weapon].name, mods };
   const u = {
     id, side: "enemy", kind: "human", name: `${kit.label} ${n}`, short: kit.label[0] + n, weapon, weaponName: modLabel(gun),
@@ -2395,6 +2589,8 @@ export function moveAlong(b, u, path) {
   }
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
   if (walked.length && u.ram != null) afterMove(b, u); // siege.js: the ram's crew keeps up with its lead
+  if (walked.length) u.movedT = b.turn; // moved this turn: a heavy or big gun's brace (data-guns.js heavy / brace)
+  if (walked.length && u.spearOut && active(u)) stepOnSpear(b, u); // walked onto the spear it threw: picked up
 }
 
 // How far an overwatcher reacts: its gun's best range and 8 tiles more (the reaction's own odds do the rest).
@@ -2438,7 +2634,7 @@ export function fire(b, a, t, opts = {}) {
   let hits = 0, crits = 0, total = 0, first = null;
   for (let k = 0; k < rolls; k++) {
     if (k > 0 && !active(t)) break; // the rest of the burst goes past where they stood
-    const o = shotOdds(b, a, t, a.x, a.y, moded ? { ...opts, modeAim: modeAim(mode, k) } : opts);
+    const o = shotOdds(b, a, t, a.x, a.y, moded ? { ...opts, modeAim: modeAim(mode, k, w) } : opts);
     if (!first) first = o;
     const hit = k === 0 ? rng.chance(o.chance / 100) : battleDice(b, "burst") < o.chance / 100;
     if (!hit) continue;
@@ -2449,7 +2645,7 @@ export function fire(b, a, t, opts = {}) {
     hits++;
     if (crit) crits++;
     if (a.xpT) { a.xpT.hits++; if (t.dead) a.xpT.kills++; } // skills.js: Shooting XP when the battle ends
-    if (w.cal) overpenetrate(b, a, t, raw, info, moded ? modeAim(mode, k) : 0, opts);
+    if (w.cal) overpenetrate(b, a, t, raw, info, moded ? modeAim(mode, k, w) : 0, opts);
   }
   const eff = Math.round(total);
   const pct = first ? first.chance : 0;
@@ -2514,7 +2710,7 @@ export function suppress(b, a, x, y) {
   for (const t of pinned) {
     t.suppressed = SUPPRESS.TURNS;
     t.ow = false;
-    const o = shotOdds(b, a, t, a.x, a.y, { modeAim: modeAim("auto", 0) });
+    const o = shotOdds(b, a, t, a.x, a.y, { modeAim: modeAim("auto", 0, w) });
     if (battleDice(b, "suppresshit") < (o.chance / 100) * SUPPRESS.HIT) {
       const raw = o.dmg[0] + Math.floor(battleDice(b, "suppressdmg") * (o.dmg[1] - o.dmg[0] + 1));
       const eff = Math.round(damage(b, t, raw, a, false, { how: "shot", crit: false, weapon: a.weapon, cal: w.cal || null, ammo: a.load || null }));
@@ -2535,7 +2731,8 @@ function strike(b, a, t) {
   const sure = !!a.assassin && t.side === "enemy" && !t.aware; // Assassin (skills.js): sure, critical hit on the unaware
   a.face = [Math.sign(t.x - a.x), Math.sign(t.y - a.y)];
   const amb = a.low ? strikeBonus(b, a) : 1; // a crawler out of hiding (zombietypes.js)
-  const gap = t.ztype ? stabsGap(a, t) : false; // a blade from behind or on the unaware finds a dead soldier's gap (deadsoldiers.js)
+  const w = WEAPONS[a.weapon];
+  const gap = t.ztype ? stabsGap(a, t) || (!!w.stab && stabsGap({ x: a.x, y: a.y, weapon: "knife" }, t)) : false; // a blade from behind or on the unaware finds a dead soldier's gap (deadsoldiers.js; w.stab: a combat knife)
   const hit = rng.chance(o.chance / 100) || sure;
   const line = sayFirst(b);
   if (hit) {
@@ -2543,7 +2740,7 @@ function strike(b, a, t) {
     const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1) * (a.meleeMult || 1) * amb, a, false, { how: WEAPONS[a.weapon].melee ? "melee" : "bash", crit, sneak: gap })); // meleeMult: Brawler
     if (gap && t.dead) say(b, `${a.name} drives the blade in under ${t.name}'s helmet.`, "good");
     if (a.xpT) { a.xpT.melee++; if (t.dead) a.xpT.kills++; }
-    line.text = `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.`;
+    line.text = `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.${meleeAfter(b, a, t, w, crit)}`; // stagger, bleeding (the melee section above)
     line.k = a.side === "player" ? "good" : "danger";
     fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side });
   } else {
@@ -2649,9 +2846,25 @@ export function combatAct(state, act) {
         u.ap = 0;
         break;
       }
-      if (!t || t.side === "player" || !active(t) || !adjacent(u, t)) return "Must be next to the target.";
+      const why = meleeRefusal(b, u, t); // next to it, or 2 tiles off with a spear; one strike a turn with a quick weapon
+      if (why) return why;
       strike(b, u, t);
-      u.ap = 0;
+      if (WEAPONS[u.weapon].quick) { u.struck = strikeMark(b); u.ap -= 1; } else u.ap = 0; // quick: strike, then step away
+      break;
+    }
+    case "throwspear": { // a spear thrown at a cell (act.x, act.y) or at someone (act.target): 1 action
+      const x = t ? t.x : Number(act.x), y = t ? t.y : Number(act.y);
+      const why = spearThrowRefusal(b, u, x, y);
+      if (why) return why;
+      throwSpear(b, u, x, y, survivorById(state, u.sid));
+      u.ap -= 1;
+      break;
+    }
+    case "pickspear": { // your thrown spear, from the cell next to it (walking onto it picks it up for free)
+      const why = pickSpearRefusal(b, u);
+      if (why) return why;
+      u.ap -= 1;
+      rearm(b, u, ownSpear(b, u));
       break;
     }
     case "drive": { // the team's vehicle (DRIVE, driveTo): from inside or next to it, both actions, loud; through people and light obstacles (RAMMING)
@@ -2917,6 +3130,7 @@ export function endPlayerTurn(state) {
   for (const u of b.units) if (u.side === "player") { u.ap = 0; u.suppressed = 0; } // pinned (suppressing fire) until their own turn ends
   b.phase = "enemy";
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
+  meleeRound(b, ["enemy", "third"]); // the staggered lose an action, the bleeding bleed (melee section)
   // Storeys (buildingmaps.js): the floor the player looks at is kept and restored; the dead drifting between floors
   // arrive, then the next ones are sent; the Heat's waves come in on the ground floor.
   if (b.floors) { b.viewFloor = b.floor || 0; floorArrivals(b); floorDrift(b); }
@@ -2988,6 +3202,7 @@ function startPlayerTurn(state, b) {
       else say(b, `${u.name} is bleeding out (${u.bleed} turn${u.bleed > 1 ? "s" : ""} left).`, "danger");
     }
   }
+  meleeRound(b, ["player"]); // the staggered lose an action, the bleeding bleed (melee section)
   stirBodies(state, b); // carriers.js: bodies in the flames burn; a carrier who went down puts the body down
   burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
   terrorRuns(b); // middead.js: whoever a Nightmare's scream panicked spends the turn running
@@ -3284,8 +3499,9 @@ function aiMelee(b, u) {
     const foes = foesOf(b, u);
     if (!foes.length) return;
     // Someone holding a barred gate (or door) is behind it: an attacker has to batter it down first.
-    const adj = foes.filter((f) => adjacent(u, f) && !(u.side !== (b.holders || "player") && barredCell(b.cells[idx(f.x, f.y)]))).sort((a, c) => a.hp - c.hp);
+    const adj = foes.filter((f) => inMelee(b, u, f) && !(u.side !== (b.holders || "player") && barredCell(b.cells[idx(f.x, f.y)]))).sort((a, c) => a.hp - c.hp); // inMelee: a spear reaches 2
     if (adj.length) { strike(b, u, adj[0]); u.ap = 0; return; }
+    if (aiFetchSpear(b, u, foes) || aiThrowSpear(b, u, foes)) continue; // a thrown spear: back for it; a zealot's throw
     const r = reachable(b, u, u.mob * u.ap);
     const field = distField(b, foes.map((f) => [f.x, f.y]), u);
     let best = null;
@@ -3861,6 +4077,7 @@ function endBattle(state, b, outcome) {
   // team keeps its car unless it was beaten); the burnt leave nothing; the swarm's bites leave the worm in the living.
   endBodies(state, b, outcome, outcome !== "defeat");
 
+  settleSpears(state, b, outcome === "victory", lines); // thrown spears: picked up after a win (an enemy's is on its body), lost otherwise
   const enemies = b.units.filter((u) => u.side === "enemy");
   const original = enemies.filter((u) => !u.reinforcement);
   const killed = original.filter((u) => u.dead).length;
@@ -3959,39 +4176,39 @@ export const FLOOR_RICH = { perFloor: 1.1, cap: 1.5 };
 // Loot per area type: supplies [chance, min, max] and gear [key, chance] (equipment; every entry its own roll per
 // container). The small finds per container (valuables, comforts, throwables) are in loot.js AREA_FINDS.
 export const AREAS = {
-  house:     { name: "House",          boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.6, 2, 6], water: [0.35, 2, 4], meds: [0.07, 1, 1], scrap: [0.4, 1, 4], ammo: [0.15, 4, 12] }, gear: [["knife", 0.06], ["pistol", 0.04], ["sportspads", 0.03], ["backpack", 0.03], ["bottle", 0.08], ["flashlight", 0.03], ["bat", 0.03], ["revolver", 0.015], ["slingbag", 0.03], ["binoculars", 0.012], ["telescope", 0.003]] },
-  farmhouse: { name: "Farmhouse",      boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.75, 3, 8], water: [0.4, 2, 5], rawwater: [0.2, 2, 6], ammo: [0.25, 4, 12], meds: [0.05, 1, 1] }, gear: [["huntrifle", 0.06], ["machete", 0.05], ["leverrifle", 0.04], ["shotgun", 0.03], ["revolver", 0.02], ["binoculars", 0.03]] },
-  store:     { name: "Store",          boxes: ["shelf", "shelf", "counter"],   loot: { food: [0.85, 4, 10], water: [0.6, 3, 8], meds: [0.06, 1, 1] }, gear: [["firecracker", 0.05], ["flashlight", 0.03], ["slingbag", 0.02], ["hikingpack", 0.01]] },
+  house:     { name: "House",          boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.6, 2, 6], water: [0.35, 2, 4], meds: [0.07, 1, 1], scrap: [0.4, 1, 4], ammo: [0.15, 4, 12] }, gear: [["knife", 0.06], ["pistol", 0.04], ["sportspads", 0.03], ["backpack", 0.03], ["bottle", 0.08], ["flashlight", 0.03], ["bat", 0.03], ["revolver", 0.015], ["slingbag", 0.03], ["binoculars", 0.012], ["telescope", 0.003], ["compact9", 0.02], ["pistol22", 0.01], ["hammer", 0.04], ["golfclub", 0.02], ["kukri", 0.002], ["katana", 0.005]] },
+  farmhouse: { name: "Farmhouse",      boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.75, 3, 8], water: [0.4, 2, 5], rawwater: [0.2, 2, 6], ammo: [0.25, 4, 12], meds: [0.05, 1, 1] }, gear: [["huntrifle", 0.06], ["machete", 0.05], ["leverrifle", 0.04], ["shotgun", 0.03], ["revolver", 0.02], ["binoculars", 0.03], ["dbshotgun", 0.04], ["rifle22", 0.05], ["pistol22", 0.01]] },
+  store:     { name: "Store",          boxes: ["shelf", "shelf", "counter"],   loot: { food: [0.85, 4, 10], water: [0.6, 3, 8], meds: [0.06, 1, 1] }, gear: [["firecracker", 0.05], ["flashlight", 0.03], ["slingbag", 0.02], ["hikingpack", 0.01], ["golfclub", 0.01], ["katana", 0.003]] },
   kitchen:   { name: "Kitchen",        boxes: ["shelf", "counter", "cabinet"], loot: { food: [0.85, 4, 12], water: [0.6, 3, 6] }, gear: [["knife", 0.08], ["bottle", 0.12]] },
   pharmacy:  { name: "Pharmacy",       boxes: ["shelf", "cabinet", "counter"], loot: { meds: [0.9, 2, 6], food: [0.2, 1, 3] }, gear: [["surgkit", 0.05], ["bandagekit", 0.05]] },
   clinic:    { name: "Clinic",         boxes: ["cabinet", "locker", "shelf"],  loot: { meds: [0.85, 2, 5], water: [0.3, 1, 3] }, gear: [["surgkit", 0.08], ["bandagekit", 0.06]] },
-  garage:    { name: "Garage",         boxes: ["locker", "crate", "shelf"],    loot: { fuel: [0.35, 1, 4], parts: [0.45, 1, 2], scrap: [0.7, 3, 8] }, gear: [["machete", 0.05], ["crowbar", 0.06], ["spikedbat", 0.03], ["flashlight", 0.05], ["prybar", 0.05], ["sledge", 0.03]] },
-  workshop:  { name: "Workshop",       boxes: ["crate", "locker", "shelf"],    loot: { scrap: [0.8, 4, 10], parts: [0.5, 1, 3], fuel: [0.1, 1, 2] }, gear: [["prybar", 0.05], ["sledge", 0.04], ["crowbar", 0.03], ["kneeguards", 0.02]] },
-  warehouse: { name: "Warehouse",      boxes: ["crate", "crate", "shelf"],     loot: { scrap: [0.7, 4, 10], food: [0.35, 3, 8], parts: [0.3, 1, 2], fuel: [0.1, 1, 3] }, gear: [["prybar", 0.03], ["sandbags", 0.03], ["barbedwire", 0.02]] },
+  garage:    { name: "Garage",         boxes: ["locker", "crate", "shelf"],    loot: { fuel: [0.35, 1, 4], parts: [0.45, 1, 2], scrap: [0.7, 3, 8] }, gear: [["machete", 0.05], ["crowbar", 0.06], ["spikedbat", 0.03], ["flashlight", 0.05], ["prybar", 0.05], ["sledge", 0.03], ["hammer", 0.05], ["hatchet", 0.02], ["golfclub", 0.02]] },
+  workshop:  { name: "Workshop",       boxes: ["crate", "locker", "shelf"],    loot: { scrap: [0.8, 4, 10], parts: [0.5, 1, 3], fuel: [0.1, 1, 2] }, gear: [["prybar", 0.05], ["sledge", 0.04], ["crowbar", 0.03], ["kneeguards", 0.02], ["hammer", 0.05], ["pickaxe", 0.02], ["hatchet", 0.02]] },
+  warehouse: { name: "Warehouse",      boxes: ["crate", "crate", "shelf"],     loot: { scrap: [0.7, 4, 10], food: [0.35, 3, 8], parts: [0.3, 1, 2], fuel: [0.1, 1, 3] }, gear: [["prybar", 0.03], ["sandbags", 0.03], ["barbedwire", 0.02], ["pickaxe", 0.01], ["hammer", 0.02]] },
   office:    { name: "Offices",        boxes: ["cabinet", "cabinet", "counter"], loot: { scrap: [0.5, 1, 4], parts: [0.15, 1, 1], meds: [0.05, 1, 1], water: [0.3, 1, 3] }, gear: [["fireaxe", 0.03], ["slingbag", 0.03]] },
-  armory:    { name: "Armory",         boxes: ["locker", "locker", "crate"],   loot: { ammo: [0.85, 15, 40] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["vest", 0.1], ["ar", 0.04], ["carbine", 0.05], ["baton", 0.06], ["riotarms", 0.04], ["riotlegs", 0.04], ["revolver", 0.03], ["binoculars", 0.04]] },
-  barracks:  { name: "Barracks",       boxes: ["locker", "locker", "cabinet"], loot: { ammo: [0.6, 10, 25], food: [0.4, 3, 6], meds: [0.15, 1, 2] }, gear: [["vest", 0.08], ["plate", 0.04], ["nvg", 0.03], ["milradio", 0.03], ["flashlight", 0.06], ["rucksack", 0.04], ["camonet", 0.03], ["stove", 0.03], ["binoculars", 0.05], ["spotscope", 0.02], ["thermal", 0.02]] },
-  motorpool: { name: "Motor pool",     boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.75, 4, 10], parts: [0.55, 1, 3] }, gear: [["prybar", 0.04], ["sandbags", 0.04], ["barbedwire", 0.03]] },
-  barn:      { name: "Barn",           boxes: ["crate", "shelf"],              loot: { food: [0.7, 4, 10], fuel: [0.15, 1, 3], scrap: [0.3, 2, 4] }, gear: [["huntrifle", 0.05], ["sledge", 0.03], ["barbedwire", 0.03], ["beartrap", 0.03], ["prybar", 0.02]] },
+  armory:    { name: "Armory",         boxes: ["locker", "locker", "crate"],   loot: { ammo: [0.85, 15, 40] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["vest", 0.1], ["ar", 0.04], ["carbine", 0.05], ["baton", 0.06], ["riotarms", 0.04], ["riotlegs", 0.04], ["revolver", 0.03], ["binoculars", 0.04], ["smg", 0.03], ["semishotgun", 0.04], ["pistol45", 0.04], ["combatknife", 0.02], ["sniper", 0.005]] },
+  barracks:  { name: "Barracks",       boxes: ["locker", "locker", "cabinet"], loot: { ammo: [0.6, 10, 25], food: [0.4, 3, 6], meds: [0.15, 1, 2] }, gear: [["vest", 0.08], ["plate", 0.04], ["nvg", 0.03], ["milradio", 0.03], ["flashlight", 0.06], ["rucksack", 0.04], ["camonet", 0.03], ["stove", 0.03], ["binoculars", 0.05], ["spotscope", 0.02], ["thermal", 0.02], ["combatknife", 0.04], ["etool", 0.04], ["tomahawk", 0.01], ["smg", 0.03], ["dmr", 0.02], ["sniper", 0.01], ["lmg", 0.008], ["amr", 0.006]] },
+  motorpool: { name: "Motor pool",     boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.75, 4, 10], parts: [0.55, 1, 3] }, gear: [["prybar", 0.04], ["sandbags", 0.04], ["barbedwire", 0.03], ["etool", 0.03]] },
+  barn:      { name: "Barn",           boxes: ["crate", "shelf"],              loot: { food: [0.7, 4, 10], fuel: [0.15, 1, 3], scrap: [0.3, 2, 4] }, gear: [["huntrifle", 0.05], ["sledge", 0.03], ["barbedwire", 0.03], ["beartrap", 0.03], ["prybar", 0.02], ["pickaxe", 0.03], ["dbshotgun", 0.02], ["hatchet", 0.02]] },
   lab:       { name: "Lab",            boxes: ["cabinet", "counter", "shelf"], loot: { meds: [0.3, 1, 2], parts: [0.4, 1, 2], scrap: [0.3, 1, 3] }, gear: [["surgkit", 0.05], ["bandagekit", 0.03], ["telescope", 0.03]] },
-  cabin:     { name: "Hunting cabin",  boxes: ["locker", "shelf"],             loot: { food: [0.5, 2, 6], ammo: [0.5, 6, 18], meds: [0.07, 1, 1] }, gear: [["huntrifle", 0.08], ["machete", 0.06], ["leverrifle", 0.04], ["compbow", 0.02], ["beartrap", 0.03], ["stove", 0.03], ["ghillie", 0.02], ["fireaxe", 0.02], ["binoculars", 0.05], ["monocular", 0.03], ["spotscope", 0.02]] },
+  cabin:     { name: "Hunting cabin",  boxes: ["locker", "shelf"],             loot: { food: [0.5, 2, 6], ammo: [0.5, 6, 18], meds: [0.07, 1, 1] }, gear: [["huntrifle", 0.08], ["machete", 0.06], ["leverrifle", 0.04], ["compbow", 0.02], ["beartrap", 0.03], ["stove", 0.03], ["ghillie", 0.02], ["fireaxe", 0.02], ["binoculars", 0.05], ["monocular", 0.03], ["spotscope", 0.02], ["rifle22", 0.05], ["hatchet", 0.05], ["dbshotgun", 0.02], ["spear", 0.01]] },
   hangar:    { name: "Hangar",         boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.6, 4, 10], parts: [0.5, 1, 3], scrap: [0.5, 3, 6] }, gear: [["prybar", 0.03], ["hikingpack", 0.02]] },
   cellblock: { name: "Cell block",     boxes: ["locker", "cabinet"],           loot: { food: [0.3, 1, 4], scrap: [0.3, 1, 3], ammo: [0.15, 4, 10] }, gear: [["knife", 0.08], ["baton", 0.03]] },
   control:   { name: "Control room",   boxes: ["cabinet", "counter"],          loot: { parts: [0.6, 1, 3], scrap: [0.4, 2, 5] }, gear: [["flashlight", 0.04]] },
-  campsite:  { name: "Campsite",       outdoor: true, boxes: ["crate", "crate"], loot: { food: [0.5, 2, 5], water: [0.5, 2, 4], rawwater: [0.25, 2, 5], ammo: [0.25, 4, 10] }, gear: [["knife", 0.05], ["pipespear", 0.05], ["waterfilter", 0.04], ["padding", 0.04], ["hikingpack", 0.03], ["stove", 0.03], ["backpack", 0.02]] },
-  wreck:     { name: "Wrecked cars",   outdoor: true, boxes: ["car", "car", "car"], loot: { fuel: [0.25, 1, 3], scrap: [0.5, 1, 4], parts: [0.2, 1, 1], food: [0.15, 1, 3] }, gear: [["pistol", 0.03], ["prybar", 0.02], ["slingbag", 0.02]], alarm: 0.15 },
+  campsite:  { name: "Campsite",       outdoor: true, boxes: ["crate", "crate"], loot: { food: [0.5, 2, 5], water: [0.5, 2, 4], rawwater: [0.25, 2, 5], ammo: [0.25, 4, 10] }, gear: [["knife", 0.05], ["pipespear", 0.05], ["waterfilter", 0.04], ["padding", 0.04], ["hikingpack", 0.03], ["stove", 0.03], ["backpack", 0.02], ["hatchet", 0.04], ["etool", 0.02]] },
+  wreck:     { name: "Wrecked cars",   outdoor: true, boxes: ["car", "car", "car"], loot: { fuel: [0.25, 1, 3], scrap: [0.5, 1, 4], parts: [0.2, 1, 1], food: [0.15, 1, 3] }, gear: [["pistol", 0.03], ["prybar", 0.02], ["slingbag", 0.02], ["compact9", 0.02]], alarm: 0.15 },
   // The cars left along a road or on a bridge (layRoad): placed on the road itself, not in a cluster. What people
   // fled with: fuel in the tanks, a bag of food and bottles, the odd gun in the glovebox. Some are locked (locks.js
   // "car": pick it, pry it with a crowbar, or shatter the glass, which wakes everything nearby).
-  roadcars:  { name: "Cars on the road", outdoor: true, road: true, boxes: ["car", "car", "car"], loot: { fuel: [0.35, 1, 3], food: [0.3, 1, 3], water: [0.3, 1, 2], scrap: [0.35, 1, 3], ammo: [0.12, 4, 10], meds: [0.06, 1, 1] }, gear: [["pistol", 0.03], ["flashlight", 0.04], ["bottle", 0.06], ["slingbag", 0.03], ["backpack", 0.02], ["prybar", 0.02], ["binoculars", 0.01]], alarm: 0.15 },
+  roadcars:  { name: "Cars on the road", outdoor: true, road: true, boxes: ["car", "car", "car"], loot: { fuel: [0.35, 1, 3], food: [0.3, 1, 3], water: [0.3, 1, 2], scrap: [0.35, 1, 3], ammo: [0.12, 4, 10], meds: [0.06, 1, 1] }, gear: [["pistol", 0.03], ["flashlight", 0.04], ["bottle", 0.06], ["slingbag", 0.03], ["backpack", 0.02], ["prybar", 0.02], ["binoculars", 0.01], ["compact9", 0.02]], alarm: 0.15 },
   pumps:     { name: "Fuel pumps",     outdoor: true, boxes: ["pump", "pump"], loot: { fuel: [0.7, 3, 8] }, gear: [] },
-  gunshop:   { name: "Gun counter",    boxes: ["locker", "counter", "shelf"],  loot: { ammo: [0.85, 12, 35], scrap: [0.2, 1, 2] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["huntrifle", 0.1], ["vest", 0.05], ["kneeguards", 0.05], ["revolver", 0.08], ["leverrifle", 0.06], ["compbow", 0.04], ["xbow", 0.04], ["ghillie", 0.03], ["camonet", 0.03], ["binoculars", 0.06], ["spotscope", 0.03], ["monocular", 0.04]] },
-  lockers:   { name: "Locker room",    boxes: ["locker", "locker", "shelf"],   loot: { water: [0.4, 1, 3], meds: [0.06, 1, 1], scrap: [0.3, 1, 3] }, gear: [["sportspads", 0.1], ["footballhelmet", 0.08], ["backpack", 0.06], ["kneeguards", 0.04], ["bat", 0.1]] },
+  gunshop:   { name: "Gun counter",    boxes: ["locker", "counter", "shelf"],  loot: { ammo: [0.85, 12, 35], scrap: [0.2, 1, 2] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["huntrifle", 0.1], ["vest", 0.05], ["kneeguards", 0.05], ["revolver", 0.08], ["leverrifle", 0.06], ["compbow", 0.04], ["xbow", 0.04], ["ghillie", 0.03], ["camonet", 0.03], ["binoculars", 0.06], ["spotscope", 0.03], ["monocular", 0.04], ["pistol22", 0.06], ["pistol45", 0.06], ["compact9", 0.06], ["rifle22", 0.06], ["dbshotgun", 0.05], ["semishotgun", 0.02], ["combatknife", 0.04], ["tomahawk", 0.03], ["kukri", 0.03], ["ak", 0.01]] },
+  lockers:   { name: "Locker room",    boxes: ["locker", "locker", "shelf"],   loot: { water: [0.4, 1, 3], meds: [0.06, 1, 1], scrap: [0.3, 1, 3] }, gear: [["sportspads", 0.1], ["footballhelmet", 0.08], ["backpack", 0.06], ["kneeguards", 0.04], ["bat", 0.1], ["golfclub", 0.04]] },
   chapel:    { name: "Chapel",         boxes: ["cabinet", "shelf", "counter"], loot: { food: [0.5, 2, 6], water: [0.5, 2, 5], meds: [0.07, 1, 1] }, gear: [["bandagekit", 0.05]] },
   // First aid on hand: a school nurse, a fire station's first-aid room, a barracks' medical store (medfinds.js).
   nurse:     { name: "First-aid room",  boxes: ["cabinet", "shelf"],             loot: { meds: [0.3, 1, 2], water: [0.3, 1, 2] }, gear: [["bandagekit", 0.06]] },
   // Crash sites (crashes.js): wreckage and cargo cases in the open (locks.js names them and locks some cases).
-  milwreck:  { name: "Helicopter wreck", outdoor: true, boxes: ["crate", "crate", "car"], loot: { ammo: [0.7, 10, 30], meds: [0.3, 1, 2], parts: [0.5, 1, 3], scrap: [0.6, 2, 6] }, gear: [["ar", 0.06], ["vest", 0.08], ["plate", 0.04], ["riothelmet", 0.06], ["milradio", 0.04], ["nvg", 0.03], ["assaultpack", 0.05], ["carbine", 0.03], ["rucksack", 0.04], ["camonet", 0.04], ["thermal", 0.03], ["binoculars", 0.04]] },
+  milwreck:  { name: "Helicopter wreck", outdoor: true, boxes: ["crate", "crate", "car"], loot: { ammo: [0.7, 10, 30], meds: [0.3, 1, 2], parts: [0.5, 1, 3], scrap: [0.6, 2, 6] }, gear: [["ar", 0.06], ["vest", 0.08], ["plate", 0.04], ["riothelmet", 0.06], ["milradio", 0.04], ["nvg", 0.03], ["assaultpack", 0.05], ["carbine", 0.03], ["rucksack", 0.04], ["camonet", 0.04], ["thermal", 0.03], ["binoculars", 0.04], ["combatknife", 0.03], ["dmr", 0.02], ["amr", 0.01]] },
   medwreck:  { name: "Medevac wreck",    outdoor: true, boxes: ["crate", "crate", "car"], loot: { meds: [0.9, 2, 6], water: [0.4, 1, 4], scrap: [0.4, 1, 4] }, gear: [["surgkit", 0.08], ["bandagekit", 0.12]] },
   newswreck: { name: "News chopper wreck", outdoor: true, boxes: ["crate", "car"], loot: { parts: [0.6, 1, 3], scrap: [0.7, 2, 6], water: [0.3, 1, 3] }, gear: [["hikingpack", 0.04], ["slingbag", 0.06]] },
   fuselage:  { name: "Broken fuselage",  boxes: ["crate", "locker", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.15, 1, 2], ammo: [0.3, 6, 15], parts: [0.3, 1, 2] }, gear: [["assaultpack", 0.05], ["vest", 0.05], ["hikingpack", 0.04], ["slingbag", 0.04]] },
@@ -4738,6 +4955,7 @@ function endRaid(state, b) {
   // The arrows loosed in the raid: about half picked up on the way out when someone got out and nothing that knows
   // they are there is still standing (a cleared site); none when they had to run for it (world.js ARROWS.BACK).
   const cleared = !enemies.some((u) => activeAny(u) && u.aware);
+  settleSpears(state, b, outcome === "extracted" && cleared, lines); // thrown spears: picked up on the way out of a cleared site, else lost
   const arrowsBackN = pickUpArrows(b, outcome === "extracted" && cleared);
   if (b.arrowsUsed) lines.push(arrowsBackN ? `Picked up ${arrowsBackN} of the ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot.` : `The ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot ${b.arrowsUsed === 1 ? "is" : "are"} lost.`);
   b.result = {
@@ -4887,7 +5105,7 @@ function autoRaidTurn(state) {
       if (u.jam && !combatAct(state, { type: u.jam.kind === "double" && botReloadClears(b, u) ? "reload" : "unjam", unit: u.id })) continue;
       // An empty gun: reloaded (1 action) when something is close or there is time (not on the way out), then on.
       if (magEmpty(b, u) && (foes.length || !leave) && !reloadRefusal(b, u) && !combatAct(state, { type: "reload", unit: u.id })) continue;
-      const adj = foes.find((f) => adjacent(u, f));
+      const adj = foes.find((f) => inMelee(b, u, f)); // a spear reaches 2
       const shot = foes.length ? bestShot(b, u, foes) : null;
       const fair = shot && shot.o.chance >= 45;
       // Something next to them and no fair shot (no gun, nothing left to fire, a poor shooter): strike it, as the
