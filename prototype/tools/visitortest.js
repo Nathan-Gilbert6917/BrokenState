@@ -166,6 +166,10 @@ section("Raiders at your base");
   // Pay off and talk down.
   clearCards(st);
   Object.assign(h.stock, { food: 300, ammo: 400, meds: 20 });
+  // Someone on watch: the break-in above can kill the hub's only guard (which of them dies is the dice's: with the
+  // normal start's backgrounds, seed 42 loses its guard there), and on an unwatched night nobody at the base sees a
+  // band coming (watch.js lookoutsSpot) until it is at the walls. The warning card is wanted 2 tiles out.
+  if (!atBase(st, h.id).some((s) => s.role === "guard")) atBase(st, h.id)[0].role = "guard";
   const p1 = V.spawnVisitor(st, "raiders", { size: 6, power: 3 });
   place(st, p1, ringLand(st, h.tile, 2)[0]);
   p1.goal = { kind: "base", baseId: h.id, tile: h.tile };
