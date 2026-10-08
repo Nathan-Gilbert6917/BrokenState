@@ -277,6 +277,14 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 .zprevs { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; margin: 0.4rem 0 0.8rem; }
 .zprev { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; }
 .zrow { margin: 0.25rem 0; gap: 0.3rem; }
+/* custom backgrounds window (ui/backgrounds.js): the list on the left, the selected one's form on the right */
+.bgedit { display: flex; gap: 0.9rem; align-items: flex-start; flex-wrap: wrap; }
+.bglist { width: 15rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.bglist button.bgitem { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 0.05rem; }
+.bglist button.bgitem span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.bgform { flex: 1; min-width: 18rem; }
+.bgform h3 { margin: 0.6rem 0 0.25rem; font-size: 0.92rem; }
+.bgform .nrskill input { width: 3.4rem; }
 
 /* running orders (map overlay) and the team panel */
 #orders { position: absolute; left: 0.6rem; top: 0.6rem; width: 15rem; max-height: 45%; overflow-y: auto; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.55rem; font-size: 0.82rem; z-index: 4; }

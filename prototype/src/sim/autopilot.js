@@ -12,6 +12,7 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
+import { fitFromPool } from "./gunmods.js"; // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
 import {
@@ -2145,6 +2146,8 @@ function equipFromArmory(state, base) {
       handed.push(`${first(s)} ${best.name}`);
     }
   }
+  // Loose gun attachments to the guns in hand, the best fighters first (gunmods.js: one a mount, only what helps).
+  for (const x of fitFromPool(base.armory, people.map((s) => s.gear.weapon))) handed.push(`${x.mod.name} on ${x.gun.name}`);
   // Tools for the off hand: a crowbar to a scavenger, a med kit to a medic (else the best Medicine), anything
   // else to whoever has the skill for it. Water filters work from the armory and stay there.
   for (const item of [...base.armory]) {

@@ -34,8 +34,8 @@ import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
 import { partyVehicle, isBike } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
-import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds } from "./inventory.js";
-import { rollAreaFind, rollAreaWood, rollAreaArrows } from "./loot.js";
+import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, newItem, deadBodyFinds, carryMods } from "./inventory.js";
+import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
 import { tiredAim } from "./sleep.js"; // Tired or Exhausted from the watch
@@ -46,6 +46,7 @@ import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { refitSenses } from "./stealth.js";
+import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
 import { drillAct } from "./defenceplan.js"; // a defence drill on the base's battle map
@@ -174,8 +175,31 @@ export function stairOptions(b, u) {
   if (!b || !b.floors || !u) return none;
   const f = u.f || 0, F = b.floors[f];
   if (!F || F.cells[u.y * b.w + u.x].k !== "stairs") return none;
-  const free = (g) => !!b.floors[g] && b.floors[g].cells[u.y * b.w + u.x].k === "stairs" && !b.units.some((o) => o !== u && (o.f || 0) === g && !o.dead && !o.left && !o.fled && !o.off && o.x === u.x && o.y === u.y);
+  // A teammate lying wounded on the landing is no wall: whoever comes through moves them aside (landingClear).
+  const free = (g) => !!b.floors[g] && b.floors[g].cells[u.y * b.w + u.x].k === "stairs" && !b.units.some((o) => o !== u && (o.f || 0) === g && !o.dead && !o.left && !o.fled && !o.off && o.x === u.x && o.y === u.y && !(o.down && o.side === u.side && asideCell(b, o, g)));
   return { up: f + 1 < b.floors.length && free(f + 1), down: f > 0 && free(f - 1) };
+}
+// A free walkable cell next to a unit on floor g (null: none), for a wounded teammate moved off a landing.
+function asideCell(b, o, g) {
+  const F = b.floors && b.floors[g];
+  if (!F) return null;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const x = o.x + dx, y = o.y + dy;
+    if (x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
+    const c = F.cells[y * b.w + x];
+    if (!CELL[c.k] || !CELL[c.k].walk || c.k === "stairs" || barredCell(c)) continue;
+    if (b.units.some((q) => (q.f || 0) === g && !q.dead && !q.left && !q.fled && !q.off && q.x === x && q.y === y)) continue;
+    return [x, y];
+  }
+  return null;
+}
+// Before taking the stairs to floor g: a wounded teammate lying on that landing is moved to the cell beside it.
+function landingClear(b, u, g) {
+  for (const o of b.units) {
+    if (o === u || !o.down || o.dead || o.side !== u.side || (o.f || 0) !== g || o.x !== u.x || o.y !== u.y) continue;
+    const c = asideCell(b, o, g);
+    if (c) { o.x = c[0]; o.y = c[1]; }
+  }
 }
 // Players standing on floor f (anywhere in the building when f is null).
 const playersOn = (b, f) => b.units.filter((u) => u.side === "player" && activeAny(u) && (f == null || (u.f || 0) === f));
@@ -570,7 +594,9 @@ export const UNIT_SIEGE = {
 };
 export const siegeRule = (u) => ({ bash: 1, climb: HEIGHT.CLIMB, ...(u && UNIT_SIEGE[u.kind]), ...(u && UNIT_SIEGE[u.variant || u.zkind]), ...(u && UNIT_SIEGE[u.boss]) });
 
-// Weapon stats in battle, keyed like GEAR. opt = best range; fall = aim lost per tile beyond it.
+// Weapon stats in battle, keyed like GEAR. opt = best range; fall = aim lost per tile beyond it. ammo = rounds a shot
+// uses; cap = the rounds its magazine (tube, cylinder) holds (magCap; Reload fills it). No cap: no magazine (melee, the
+// bows and crossbows draw their arrow or bolt as part of the shot, a spitter's acid).
 export const WEAPONS = {
   fists:     { name: "Fists",          melee: true, dmg: [6, 10] },
   knife:     { name: "Kitchen knife",  melee: true, dmg: [14, 22] },
@@ -582,16 +608,16 @@ export const WEAPONS = {
   // carry pistols too (KITS), so every gun's odds against them move with it: at 14–21 +0 three pistols beat 4 raiders
   // 24% to the revolver's 40%; at 15–22 +4 about 30% to its 35% (3000–4000 battles a matchup, crits 25 / 10 / 5 / 8);
   // 16–24 +4 overtook the revolver (33% to 32%).
-  pistol:    { name: "9mm pistol",     dmg: [15, 22], opt: 6,  fall: 4, aim: 4,  ammo: 1, noise: 2 },
-  shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10 },
-  huntrifle: { name: "Hunting rifle",  dmg: [24, 34], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10 },
-  ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3 },
+  pistol:    { name: "9mm pistol",     dmg: [15, 22], opt: 6,  fall: 4, aim: 4,  ammo: 1, noise: 2, cap: 15 }, // a double-stack 9mm magazine
+  shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10, cap: 6 }, // a pump: five in the tube and one in the chamber
+  huntrifle: { name: "Hunting rifle",  dmg: [24, 34], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10, cap: 5 }, // a bolt-action's internal magazine
+  ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3, cap: 30 }, // a 30-round magazine: 15 bursts of 2
   // Makeshift weapons (crafting.js). The crossbow is silent and shoots bolts (arrows: 1 a shot, data.js SUPPLIES.arrows).
   spikedbat:  { name: "Spiked bat",        melee: true, dmg: [16, 25] },
   pipespear:  { name: "Pipe spear",        melee: true, dmg: [15, 23] },
   sawmachete: { name: "Saw-blade machete", melee: true, dmg: [17, 27] },
   crossbow:   { name: "Scrap crossbow",    dmg: [18, 26], opt: 7, fall: 4, aim: -4, ammo: 0, arrows: 1, noise: 0 },
-  pipegun:    { name: "Pipe shotgun",      dmg: [20, 32], opt: 3, fall: 8, aim: -6, ammo: 1, noise: 3, close: 8 },
+  pipegun:    { name: "Pipe shotgun",      dmg: [20, 32], opt: 3, fall: 8, aim: -6, ammo: 1, noise: 3, close: 8, cap: 1 }, // a single-shot zip gun: reloaded after every shot
   // Found weapons with a role each: clubs for takedowns (stealth.js CLUB), the heavy hitters, quiet bows that shoot
   // arrows (1 a shot, never ammo), a loud hard-hitting revolver, a handy ranch rifle, the police carbine. meleeAim: to hit in melee (sledge).
   bat:        { name: "Baseball bat",      melee: true, dmg: [15, 24] },
@@ -602,28 +628,28 @@ export const WEAPONS = {
   baton:      { name: "Police baton",      melee: true, dmg: [12, 19] },
   compbow:    { name: "Compound bow",      dmg: [17, 26], opt: 7, fall: 5, aim: -2, ammo: 0, arrows: 1, noise: 0, close: -5 },
   xbow:       { name: "Hunting crossbow",  dmg: [20, 29], opt: 6, fall: 5, aim: 0, ammo: 0, arrows: 1, noise: 0, close: -5 },
-  revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3 },
-  leverrifle: { name: "Lever-action rifle", dmg: [20, 30], opt: 10, fall: 2.5, aim: 4, ammo: 1, noise: 3 },
-  carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3 },
+  revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3, cap: 6 }, // a six-shot cylinder
+  leverrifle: { name: "Lever-action rifle", dmg: [20, 30], opt: 10, fall: 2.5, aim: 4, ammo: 1, noise: 3, cap: 8 }, // a tube under the barrel
+  carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3, cap: 30 }, // a patrol carbine's 30-round magazine
   // A spitter's acid (zombietypes.js): silent, every `cooldown` turns, cover counts `pierce` steps less against it.
   acid:       { name: "Acid spit",         dmg: [16, 22], opt: 4, fall: 8, aim: 0, ammo: 0, noise: 0, acid: true, cooldown: ZTYPES.spitter.cooldown, pierce: ZTYPES.spitter.pierce },
 };
 const BASH = [8, 12]; // hitting someone with a gun
 export const BODY_FINDS = 0.2; // a person's body: the chance of one small thing in their pockets (KITS finds)
 
-// loot = spare gear a body may carry; pack = [pack key, chance] a body wears one; finds = the small things in their
+// loot = spare gear a body may carry (a loose gun attachment among it: gunmods.js; the parts on their gun: ENEMY_MODS); pack = [pack key, chance] a body wears one; finds = the small things in their
 // pockets (valuables, smokes, a throwable; 20% a body) (inventory.js enemyBody).
 export const KITS = {
-  raiders:  { label: "Raider",  aim: 3, hp: 5,  weapons: ["pistol", "pistol", "shotgun", "huntrifle", "machete", "revolver"], strong: ["shotgun", "ar", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "machete", "huntrifle", "vest", "spikedbat", "tirevest", "bikehelmet", "kneeguards", "revolver", "nailbat", "slingbag", "molotov", "pipebomb"], pack: ["backpack", 0.15],
+  raiders:  { label: "Raider",  aim: 3, hp: 5,  weapons: ["pistol", "pistol", "shotgun", "huntrifle", "machete", "revolver"], strong: ["shotgun", "ar", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "machete", "huntrifle", "vest", "spikedbat", "tirevest", "bikehelmet", "kneeguards", "revolver", "nailbat", "slingbag", "molotov", "pipebomb", "comp"], pack: ["backpack", 0.15],
               finds: ["cigarettes", "cigarettes", "smokes", "smokes", "vodka", "whiskey", "goldchain", "goldring", "watch", "lighters", "molotov", "tobacco"] },
-  soldiers: { label: "Soldier", aim: -6, hp: -10, weapons: ["ar", "ar", "huntrifle", "shotgun", "carbine"], strong: ["ar"], armor: ["vest", "plate"], loot: ["ar", "plate", "vest", "nvg", "milradio", "riothelmet", "smokegren", "frag", "rucksack", "camonet", "binoculars", "thermal"], pack: ["assaultpack", 0.3],
+  soldiers: { label: "Soldier", aim: -6, hp: -10, weapons: ["ar", "ar", "huntrifle", "shotgun", "carbine"], strong: ["ar"], armor: ["vest", "plate"], loot: ["ar", "plate", "vest", "nvg", "milradio", "riothelmet", "smokegren", "frag", "rucksack", "camonet", "binoculars", "thermal", "reddot", "holo"], pack: ["assaultpack", 0.3],
               finds: ["cigarettes", "chocolate", "chocolate", "instcoffee", "smokegren", "flare", "frag", "heatpack", "batteries", "cards", "photos", "toothpaste", "wetwipes"] },
   zealots:  { label: "Zealot",  aim: 0, hp: 5,  weapons: ["shotgun", "pistol", "machete", "fireaxe", "huntrifle"], strong: ["shotgun", "huntrifle"], armor: [null], loot: ["machete", "shotgun", "pistol", "knife", "fireaxe", "molotov", "compbow"], fearless: true,
               finds: ["candles", "candles", "molotov", "photos", "tea", "honey"] },
   // People of the other group types (conflicts.js KIND_OF). All human: "mixed" is only for humans plus the dead.
   fighters: { label: "Fighter", aim: 3, hp: 5,  weapons: ["pistol", "shotgun", "huntrifle", "huntrifle", "machete", "leverrifle"], strong: ["ar", "shotgun", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "huntrifle", "machete", "vest", "kneeguards", "leverrifle", "prybar", "hikingpack"], pack: ["backpack", 0.15],
               finds: ["smokes", "chocolate", "batteries", "lighters", "photos", "cards", "flare", "deodorant"] },
-  guards:   { label: "Guard",   aim: 2, hp: 0,  weapons: ["pistol", "pistol", "shotgun", "huntrifle", "revolver"], strong: ["shotgun", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "knife", "vest", "bikehelmet", "baton", "cuffs", "riotarms"], pack: ["backpack", 0.3],
+  guards:   { label: "Guard",   aim: 2, hp: 0,  weapons: ["pistol", "pistol", "shotgun", "huntrifle", "revolver"], strong: ["shotgun", "huntrifle"], armor: [null, null, "vest"], loot: ["pistol", "shotgun", "knife", "vest", "bikehelmet", "baton", "cuffs", "riotarms", "laser"], pack: ["backpack", 0.3],
               finds: ["smokes", "instcoffee", "cards", "cuffs", "flare", "watch"] },
   militia:  { label: "Militia", aim: 0, hp: 0,  weapons: ["huntrifle", "shotgun", "pistol", "machete", "pipespear", "leverrifle", "bat"], strong: ["huntrifle", "shotgun"], armor: [null], loot: ["huntrifle", "machete", "knife", "pipespear", "padding", "leverrifle", "bat"],
               finds: ["smokes", "tobacco", "photos", "harmonica", "chocolate", "honey", "toothpaste"] },
@@ -1476,9 +1502,11 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   bindDims(b);
   const w = WEAPONS[a.weapon];
   const d = dist(ax, ay, t.x, t.y);
-  let aim = a.aim + (w.aim || 0);
-  if (d > w.opt && !a.noFall) aim -= (d - w.opt) * w.fall; // noFall: the Sniper perk (skills.js)
-  if (d <= 2.5 && w.close) aim += w.close;
+  const gm = unitMods(a); // gunmods.js: the gun's sight, muzzle, magazine and grip (neutral without any)
+  const rg = gm === NO_MODS ? w : modRange(w, gm);
+  let aim = a.aim + (w.aim || 0) + gm.aim;
+  if (d > rg.opt && !a.noFall) aim -= (d - rg.opt) * rg.fall; // noFall: the Sniper perk (skills.js)
+  if (d <= 2.5 && (w.close || gm.close)) aim += (w.close || 0) + gm.close;
   const flat = t.surprised || (!t.aware && t.side === "enemy");
   const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : coverAgainst(b, t.x, t.y, ax, ay);
   aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js)
@@ -1499,7 +1527,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   else if (t.ram != null && b.rams && isCrew(b, t)) aim += CREW_AIM;
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
   const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? CRIT.DEAD : CRIT.EXPOSED) : CRIT.COVER) + (a.critBonus || 0); // critBonus: Deadeye
-  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult), Math.round(w.dmg[1] * a.dmgMult)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up };
+  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg), Math.round(w.dmg[1] * a.dmgMult * gm.dmg)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up };
 }
 
 export function meleeOdds(b, a, t) {
@@ -1514,9 +1542,81 @@ export function meleeOdds(b, a, t) {
 
 export const isRanged = (u) => !WEAPONS[u.weapon].melee;
 export const adjacent = (a, t) => Math.max(Math.abs(a.x - t.x), Math.abs(a.y - t.y)) === 1;
-// Can this unit fire its gun right now (ranged weapon and, for the player, ammo; a bow or crossbow, arrows)? One that
-// cannot fights in melee (a gun or a bow swung as a club: BASH).
-export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon])); // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js)
+// ---------- magazines ----------
+// A gun holds WEAPONS[k].cap rounds (gunmods.js: a fitted magazine changes that); each shot takes w.ammo of them and
+// a gun fires only with that many loaded. Reload (1 action) fills it; the bows, crossbows, melee weapons and a
+// spitter's acid have no magazine. Guns start a battle loaded.
+// Ammo accounting, your side: the team's pools stay the one count of rounds. A shot still takes its rounds from the
+// pools when it is fired (b.ammoUsed, finishCombat, the raid's pools, autoResolveCombat and saves see exactly what they
+// did before magazines), and u.mag is only a counter of what is loaded: nothing moves pool → magazine at a reload,
+// so nothing has to go back when the battle ends. A loaded round counts (is shown, can be fired) only while the pool
+// still has it (magShown = min(mag, pool)), and a reload fills the magazine only as far as the pool goes. Every other
+// side's guns have endless reserve ammo, as before: only the magazine limits them.
+// u.magW: the weapon the magazine belongs to. A unit whose u.weapon was set some other way (an old save, a weapon handed
+// out after enemyUnit) counts as fully loaded until its magazine is next touched (loadMag).
+const magItem = (u) => (u.item ? gunMods(u.item) : u.gm && u.gmWeapon === u.weapon ? u.gm : NO_MODS); // an enemy's fitted parts (enemyUnit u.gm): a drum on their gun too
+export const hasMag = (u) => !!(WEAPONS[u.weapon] && WEAPONS[u.weapon].cap > 0);
+export function magCap(u) {
+  if (!hasMag(u)) return 0;
+  const m = magItem(u);
+  return Math.max(1, Math.round(WEAPONS[u.weapon].cap * (m.capMult ?? 1)) + (m.cap || 0));
+}
+export const magMaxOf = (u) => (u.magW === u.weapon && u.magMax != null ? u.magMax : magCap(u));
+export const magIn = (u) => (u.magW === u.weapon && u.mag != null ? u.mag : magCap(u));
+// Set the magazine (n rounds, clamped; full when n is null) for the weapon the unit holds now.
+export function loadMag(u, n = null) {
+  u.magW = u.weapon;
+  u.magMax = magCap(u);
+  u.mag = n == null ? u.magMax : Math.max(0, Math.min(u.magMax, n));
+}
+// The rounds loaded as the player sees them: never more than the team's ammo.
+export const magShown = (b, u) => (u.side === "player" ? Math.min(magIn(u), ammoLeft(b)) : magIn(u));
+// A gun whose magazine has too few rounds for a shot (whatever the team's ammo).
+export const magEmpty = (b, u) => hasMag(u) && magIn(u) < WEAPONS[u.weapon].ammo;
+// "9mm pistol 7/15" (nothing for a weapon with no magazine).
+export const magLabel = (b, u) => (hasMag(u) ? `${magShown(b, u)}/${magMaxOf(u)}` : "");
+const gunWord = (u) => { const n = u.weaponName || WEAPONS[u.weapon].name; return /^[A-Z][a-z]/.test(n) ? n[0].toLowerCase() + n.slice(1) : n; };
+// Why this unit cannot reload now ("" when it can).
+export function reloadRefusal(b, u) {
+  if (!isRanged(u)) return "No gun to reload.";
+  if (!hasMag(u)) return `The ${gunWord(u)} needs no reloading.`;
+  if (u.carrying != null) return "Hands full: put the body down first.";
+  const m = magIn(u), max = magMaxOf(u);
+  if (m >= max) return `The ${gunWord(u)} is full (${max}/${max}).`;
+  if (u.side === "player") {
+    const pool = ammoLeft(b);
+    if (pool < 1) return "No ammo left to load.";
+    if (pool <= m) return "No spare ammo: every round left is already loaded.";
+  }
+  return "";
+}
+// Reload: 1 action, the magazine full (your side: as far as the team's ammo goes). Check reloadRefusal first.
+export function reload(b, u) {
+  const max = magMaxOf(u);
+  loadMag(u, u.side === "player" ? Math.min(max, ammoLeft(b)) : max);
+  u.ap -= 1;
+  u.hunker = false;
+  say(b, `${u.name} reloads the ${gunWord(u)} (${magShown(b, u)}/${u.magMax}).`, "info");
+}
+// Rounds out of the gun for a shot (fire, a double tap): the magazine, and your side's pools.
+function spendRounds(b, u, w) {
+  if (hasMag(u)) loadMag(u, magIn(u) - w.ammo);
+  if (u.side === "player") spendShot(b, w); // ammo, or a bow's arrow
+}
+// Can this unit fire its gun right now (ranged weapon, loaded and, for the player, the ammo there; a bow or crossbow,
+// arrows)? One that cannot fights in melee (a gun or a bow swung as a club: BASH).
+export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon])) && !magEmpty(b, u); // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js)
+// A gun that can shoot now or after a reload (the AI's sense of a side's firepower, the threat preview).
+export const hasShots = (b, u) => canFire(b, u) || (isRanged(u) && magEmpty(b, u) && !reloadRefusal(b, u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)));
+// Why this unit cannot shoot ("" when it can): empty, out of ammo, no gun.
+export function fireRefusal(b, u) {
+  if (!isRanged(u)) return "No gun.";
+  if (canFire(b, u)) return "";
+  if (u.carrying != null) return "Hands full: put the body down first.";
+  if (u.side === "player" && !hasShot(b, WEAPONS[u.weapon])) return WEAPONS[u.weapon].arrows ? "Out of arrows." : "Out of ammo.";
+  if (magEmpty(b, u)) return `The ${gunWord(u)} is empty: reload first (1 action).`;
+  return "Cannot shoot right now.";
+}
 // Enemies the player side can currently see.
 export function playerSees(b, t) {
   bindDims(b);
@@ -1584,10 +1684,11 @@ function playerUnit(b, s) {
   // A bandage kit in the off hand loses a use with every treatment in battle; when it runs out its bonus is gone.
   const tool = s.gear.tool;
   const medKit = tool && GEAR[tool.key] && GEAR[tool.key].medKit ? tool : null;
-  return {
+  const u = {
     fielded, medKit, kitBonus: medKit ? medKitBonus(s) : 0, kitLeft: medKit ? itemDur(medKit) ?? Infinity : 0, kitUses: 0,
     id: b.nextId++, side: "player", kind: "human", sid: s.id, name: s.name, short: initials(s.name),
-    weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : item.name,
+    weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : modLabel(item), // "9mm pistol (red dot, suppressor)"
+    gm: key === "fists" ? NO_MODS : gunMods(item), gmWeapon: key, // gunmods.js: what its attachments add (shotOdds, shotNoise)
     aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s) + needsAim(s) + illnessAim(s) + tiredAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js); hunger, thirst (needs.js); illness (health.js); tiredness (sleep.js)
     nerve: (s.traits.includes("brave") ? MIDDEAD.NIGHTMARE.BRAVE : 0) + (s.traits.includes("coward") ? MIDDEAD.NIGHTMARE.COWARD : 0), // middead.js: a Nightmare's scream
     meleeAim: 75 + bravery, dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q),
@@ -1598,11 +1699,13 @@ function playerUnit(b, s) {
     wormed: hasWorm(s), wornArmor: armorMult(s), // carriers.js: the worm in them gets them up if they die; the risen wear what they wore
     ap: 2, aware: true, x: 0, y: 0, f: 0,
   };
+  loadMag(u); // the gun starts the battle loaded
+  return u;
 }
 
 // A weapon or armor put on or taken off in the middle of a raid (the search window, raidloot.js) counts at once.
 // u.fit is what playerUnit gave when the raid started; perks and the rest added since stay on top.
-function refitUnit(b, u, s) {
+export function refitUnit(b, u, s) {
   if (!u.fit) return;
   const id = b.nextId;
   const f = playerUnit(b, s);
@@ -1613,7 +1716,11 @@ function refitUnit(b, u, s) {
   u.medicine += f.medicine - (u.fit.medicine ?? f.medicine); // a med kit in the off hand (crafting.js medKitBonus)
   if (f.medKit !== u.medKit) { u.medKit = f.medKit; u.kitBonus = f.kitBonus; u.kitLeft = f.kitLeft; }
   u.fit = { aim: f.aim, dmgMult: f.dmgMult, armor: f.armor, medicine: f.medicine };
-  for (const k of ["weapon", "weaponName", "item", "gearRisk", "fielded", "load"]) u[k] = f[k];
+  const held = u.weapon, rounds = magIn(u);
+  for (const k of ["weapon", "weaponName", "item", "gearRisk", "fielded", "load", "gm", "gmWeapon"]) u[k] = f[k];
+  // The magazine: the same kind of gun keeps what was loaded (up to its capacity now, a magazine attachment may have
+  // changed); another gun is taken up empty (Reload, 1 action), so swapping guns never hands out a free full one.
+  loadMag(u, u.weapon === held ? rounds : 0);
   refitSenses(b, u, s); // stealth.js: a flashlight, night vision, scope or suppressor counts at once
 }
 setRefit(refitUnit);
@@ -1631,11 +1738,19 @@ export function enemyUnit(b, rng, kind, power, n) {
   const weapon = p >= 7 && rng.chance(0.5) ? rng.pick(kit.strong) : rng.pick(kit.weapons);
   const armorKey = rng.pick(kit.armor);
   const hp = Math.round(55 + p * 5 + kit.hp);
-  return {
-    id: b.nextId++, side: "enemy", kind: "human", name: `${kit.label} ${n}`, short: kit.label[0] + n, weapon, weaponName: WEAPONS[weapon].name,
+  // gunmods.js ENEMY_MODS: the attachments on their gun by their kit (dice of their own: the battle's are not used up).
+  const id = b.nextId++;
+  const mods = enemyMods(kind, weapon, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id);
+  const gun = { key: weapon, name: WEAPONS[weapon].name, mods };
+  const u = {
+    id, side: "enemy", kind: "human", name: `${kit.label} ${n}`, short: kit.label[0] + n, weapon, weaponName: modLabel(gun),
+    modItems: mods, gm: gunMods(gun), gmWeapon: weapon, suppressor: fittedSuppressor(gun), supFitted: true, // looted with the gun (inventory.js carryMods)
+    ammoType: null, // the round they have loaded: a place kept for the ammo overhaul (not used yet)
     aim: 39 + p * 4 + kit.aim, meleeAim: 65 + p * 2, dmgMult: 0.7 + p * 0.05, armor: armorKey ? 1 - GEAR[armorKey].power * 0.06 : 1, armorKey,
     hp, maxHp: hp, mob: MOVE, sight: SIGHT, ap: 2, aware: true, x: 0, y: 0, f: b.floor || 0, fearless: !!kit.fearless, kit: kind,
   };
+  loadMag(u); // loaded; their reserve ammo is endless (only the magazine stops them)
+  return u;
 }
 
 const initials = (name) => name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -1954,8 +2069,8 @@ export function fire(b, a, t, opts = {}) {
   const w = WEAPONS[a.weapon];
   const rng = b.rng;
   if (w.cooldown) a.cd = w.cooldown; // a spitter spits every other turn (zombietypes.js zTick)
+  spendRounds(b, a, w); // the magazine; your side's pools (the magazines section above)
   if (a.side === "player") {
-    spendShot(b, w); // ammo, or a bow's arrow
     if (a.gearRisk && a.item && rng.chance(a.gearRisk)) {
       a.item.quality = Math.max(0.4, Math.round(((a.item.quality || 1) - 0.15) * 100) / 100);
       say(b, `${a.name}'s ${a.item.name} was damaged (it is above their skill).`, "danger");
@@ -2094,7 +2209,7 @@ export function combatAct(state, act) {
     case "shoot": {
       if (!t || t.side === "player" || !active(t)) return "No target.";
       if (!isRanged(u)) return "No gun.";
-      if (!canFire(b, u)) return WEAPONS[u.weapon].arrows ? "Out of arrows." : "Out of ammo.";
+      if (!canFire(b, u)) return fireRefusal(b, u);
       if (!canSee(b, u, t)) return "No line of sight.";
       fire(b, u, t);
       u.ap = 0;
@@ -2129,8 +2244,14 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    case "reload": { // the magazines section: 1 action, the magazine full (as far as the team's ammo goes)
+      const why = reloadRefusal(b, u);
+      if (why) return why;
+      reload(b, u);
+      break;
+    }
     case "overwatch":
-      if (!canFire(b, u)) return WEAPONS[u.weapon].arrows ? "Needs arrows for the bow." : "Needs a gun with ammo.";
+      if (!canFire(b, u)) return isRanged(u) && magEmpty(b, u) && !reloadRefusal(b, u) ? "Overwatch needs a loaded gun: reload first." : WEAPONS[u.weapon].arrows ? "Needs arrows for the bow." : "Needs a gun with ammo.";
       u.ow = true; u.ap = 0;
       say(b, `${u.name} is on overwatch.`, "info");
       break;
@@ -2191,6 +2312,7 @@ export function combatAct(state, act) {
       u.ap -= 1;
       u.hunker = false; u.ow = false;
       const from = u.f || 0;
+      landingClear(b, u, from + (up ? 1 : -1)); // a wounded teammate on the landing is moved aside
       fx(b, { type: "move", unit: u.id, from: [u.x, u.y], path: [[u.x, u.y]] });
       moveToFloor(b, u, from + (up ? 1 : -1));
       say(b, `${u.name} goes ${up ? "up" : "down"} the stairs to ${/^floor/i.test(b.floors[u.f].name) ? "" : "the "}${b.floors[u.f].name.toLowerCase()}.`, "info");
@@ -2278,7 +2400,7 @@ export function combatAct(state, act) {
       const why = tapRefusal(b, u, t);
       if (why) return why;
       const w = WEAPONS[u.weapon];
-      spendShot(b, w); // a round, or an arrow from a bow
+      spendRounds(b, u, w);
       const noise = shotNoise(b, u, w); // stealth.js: a suppressor halves it
       b.noise += noise;
       if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise;
@@ -2565,6 +2687,8 @@ function aiUnit(b, u) {
   if (u.side === "enemy" && u.kind === "human" && !u.fearless && shouldFlee(b)) return flee(b, u);
   if (u.side === "enemy" && u.kind === "human" && siegeAI(b, u)) return; // siege.js: the ram, a ladder, storming, a grenade
   if (u.side === "player" && aiMeds(b, u)) { if (u.ap < 1) return; }
+  // An empty gun is reloaded first (1 action), then the turn goes on with the other (a shot, often).
+  if (magEmpty(b, u) && !reloadRefusal(b, u)) { reload(b, u); if (u.ap < 1) return; }
   if (u.post && holdPost(b, u)) return; // deploy.js: a defender posted at the gate or on a tower stays there
   if (u.ztype && zombieTurn(b, u)) return; // zombietypes.js: a screamer shrieks or hangs back, a brute smashes through
   if (!canFire(b, u)) return aiMelee(b, u);
@@ -2572,6 +2696,8 @@ function aiUnit(b, u) {
     const foes = foesOf(b, u);
     if (!foes.length) return;
     const shot = bestShot(b, u, foes);
+    // Nothing to shoot and the magazine low: top it up while nobody is in reach.
+    if (!shot && magLow(u) && !foes.some((f) => adjacent(u, f)) && !reloadRefusal(b, u)) { reload(b, u); continue; }
     const field = distField(b, foes.map((f) => [f.x, f.y]), u);
     const here = scoreCell(b, u, u.x, u.y, foes, 0, field);
     if (shot && (u.ap === 1 || (shot.o.chance >= 55 && here > -6))) { fire(b, u, shot.t); u.ap = 0; return; }
@@ -2612,6 +2738,8 @@ function aiUnit(b, u) {
 const STICKY = new Set(["tower", "perch", "inside", "door"]);
 // On the wall map (deploy.js) the walkway and the towers ("wall", "tower") are kept while the dead are still outside,
 // even with nobody in sight (night); inside a building ("inside", interior.js) the same as a post.
+// A magazine under half full (the AI tops it up when nothing is in reach).
+const magLow = (u) => hasMag(u) && magIn(u) * 2 < magMaxOf(u);
 function holdPost(b, u) {
   const foes = foesOf(b, u);
   if (!foes.some((f) => canSee(b, u, f) || dist(u.x, u.y, f.x, f.y) <= 6)) {
@@ -2619,6 +2747,7 @@ function holdPost(b, u) {
     const walls = onWalls && (u.post === "wall" || u.post === "tower") && !foes.some((f) => b.tier.interior && b.tier.interior[idx(f.x, f.y)]);
     const inside = b.tier && (b.tier.map === "interior" || b.tier.map === "fort") && STICKY.has(u.post);
     if (!walls && !inside) { u.post = null; return false; }
+    if (magLow(u) && !reloadRefusal(b, u)) reload(b, u); // a quiet moment: the magazine topped up
     if (canFire(b, u)) u.ow = true;
     u.ap = 0;
     return true;
@@ -2918,8 +3047,8 @@ export function escapeOdds(b, u, carrying = null, field = null) {
   let shooters = 0, chasers = 0;
   for (const e of foes) {
     if (adjacent(u, e)) continue;
-    if (e.kind === "human" && canFire(b, e) && canSee(b, e, u)) shooters++;
-    else if ((e.kind === "zombie" || !canFire(b, e)) && dist(e.x, e.y, u.x, u.y) <= e.mob * 2) chasers++;
+    if (e.kind === "human" && hasShots(b, e) && canSee(b, e, u)) shooters++;
+    else if ((e.kind === "zombie" || !hasShots(b, e)) && dist(e.x, e.y, u.x, u.y) <= e.mob * 2) chasers++;
   }
   const onStrip = evacAt(b, u.x, u.y);
   const raw = onStrip ? 0 : field[idx(u.x, u.y)];
@@ -3053,7 +3182,7 @@ export function soundRetreat(state, opts = {}) {
 // close in first, through overwatch). Returns the ratio yours ÷ theirs and the share of your team that is down.
 function firepower(b, u, vsPeople) {
   const w = WEAPONS[u.weapon];
-  if (canFire(b, u)) {
+  if (hasShots(b, u)) { // an empty magazine is one action away from firing again
     const ch = Math.max(10, Math.min(95, u.aim + (w.aim || 0) - (vsPeople ? COVER_DEF[1] : 0)));
     return (ch / 100) * ((w.dmg[0] + w.dmg[1]) / 2) * u.dmgMult;
   }
@@ -3893,7 +4022,9 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       const kit = KITS[box.kit] || KITS.raiders;
       if (rng.chance(0.3)) {
         const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : rng.pick(kit.loot);
-        gear.push(newItem(key, rng.pick([0.7, 0.85, 1])));
+        const it = newItem(key, rng.pick([0.7, 0.85, 1]));
+        if (key === box.weapon && box.uid != null) carryMods(unitById(b, box.uid), it); // gunmods.js: their gun's attachments come with it
+        gear.push(it);
       }
       if (kit.finds && rng.chance(BODY_FINDS)) gear.push(newItem(rng.pick(kit.finds), 1)); // what was in their pockets
     } else {
@@ -3908,6 +4039,9 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
       const book = rollBook(state, b.tileId, 0.5 * (u.scavBonus ? 2 : 1), `box${box.id}`);
       if (book) gear.push(book);
+      // A gun attachment in an armoury, a gun shop, barracks (loot.js AREA_GUNMODS; its own dice too).
+      const part = rollAreaGunmod(state, b.tileId, R.areas[box.area].type, `box${box.id}`);
+      if (part) gear.push(part);
       // Firewood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
       const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;
@@ -4146,6 +4280,8 @@ function autoRaidTurn(state) {
       if (skull && !combatAct(state, skull)) continue;
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
+      // An empty gun: reloaded (1 action) when something is close or there is time (not on the way out), then on.
+      if (magEmpty(b, u) && (foes.length || !leave) && !reloadRefusal(b, u) && !combatAct(state, { type: "reload", unit: u.id })) continue;
       const adj = foes.find((f) => adjacent(u, f));
       const shot = foes.length ? bestShot(b, u, foes) : null;
       const fair = shot && shot.o.chance >= 45;
