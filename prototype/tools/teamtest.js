@@ -598,7 +598,7 @@ section("Old cards cannot take stock below zero or make it NaN (B-4, B-11, B-22,
   const h = hub(state);
   const crew = crewOf(state, 2);
   const truck = truckOf(state);
-  const p = send(state, crew.map((s) => s.id), tileNear(state, h.tile, 6, 8, { vehicle: true }), "move", { vehicleId: truck.id, grant: { parts: 1 } });
+  const p = send(state, crew.map((s) => s.id), tileNear(state, h.tile, 6, 8, { vehicle: true }), "move", { vehicleId: truck.id, grant: { carparts: 1 } }); // a spare part is a car part now (events.js: or 2 machine parts)
   tick(state, 2, p);
   truck.condition = 5;
   const cards = [];
@@ -613,13 +613,13 @@ section("Old cards cannot take stock below zero or make it NaN (B-4, B-11, B-22,
     spare(cards[0]).resolve(state);
     check(spare(cards[1]).disabled === true, "the second card still offers the part that was just used");
     spare(cards[1]).resolve(state);
-    check(carried(p, "parts") === 0 && Number.isFinite(p.supplies.parts) && p.supplies.parts >= 0, `parts on the team: ${p.supplies.parts}`);
-    const partsHome = h.stock.parts;
+    check(carried(p, "carparts") === 0 && Number.isFinite(p.supplies.carparts) && p.supplies.carparts >= 0, `car parts on the team: ${p.supplies.carparts}`);
+    const partsHome = h.stock.carparts;
     delete p.supplies.ammo; // as an old save or a tool might leave it
     p.supplies.meds = NaN;
     startReturn(state, p);
     arriveAt(state, p);
-    check(h.stock.parts === partsHome && Number.isFinite(h.stock.meds) && Number.isFinite(h.stock.ammo), `hub stock after the team came home: parts ${h.stock.parts}, meds ${h.stock.meds}, ammo ${h.stock.ammo}`);
+    check(h.stock.carparts === partsHome && Number.isFinite(h.stock.meds) && Number.isFinite(h.stock.ammo), `hub stock after the team came home: car parts ${h.stock.carparts}, meds ${h.stock.meds}, ammo ${h.stock.ammo}`);
     // Abandoning through a second, older card does nothing once the vehicle is gone.
   }
 }

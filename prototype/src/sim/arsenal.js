@@ -42,6 +42,10 @@ import { lootItem } from "./inventory.js";
 import { kitSource, siteSource } from "./itemcond.js";
 import { enemyMods, fitMod, gunMods, modLabel, fittedSuppressor, takesMods, fittedMods } from "./gunmods.js";
 import { hash01 } from "./skills.js";
+import { totalRounds, spendAmmo } from "./rounds.js"; // a group's rounds: one abstract count (f.stock.ammo) and any rounds by key it holds
+import { enemyLoad } from "./ammo.js"; // the round a unit armed from it loads (data-ammo.js KIT_AMMO by the group's kit)
+import { syncModes } from "./gunfire.js"; // the fire modes of the gun it is given
+import { enemyPieces } from "./armour.js"; // its armour pieces: the arsenal's items themselves (their wear)
 import { itemDur, itemDurMax, wear } from "./crafting.js";
 import { day, factionById } from "./world.js";
 import { factionVehicles, groupTurret } from "./vehicles.js";
@@ -187,12 +191,12 @@ function wearOwned(f, it, n = 1) {
   return false;
 }
 
-// ---------- rounds (generic ammo for now: the ammo overhaul switches these) ----------
-export const arsenalRounds = (f) => Math.max(0, Math.floor((f && f.stock && f.stock.ammo) || 0));
+// ---------- rounds (ammo.js: a group keeps one abstract count, f.stock.ammo, and whatever rounds by key a deal or a
+// delivery left in its stores; its fighters load by their kit, enemyLoad) ----------
+export const arsenalRounds = (f) => (f && f.stock ? totalRounds(f.stock) : 0);
 export function takeArsenalRounds(f, n) {
-  const t = Math.min(arsenalRounds(f), Math.max(0, Math.round(n)));
-  if (t > 0) f.stock.ammo -= t;
-  return t;
+  if (!f || !f.stock) return 0;
+  return spendAmmo(f.stock, Math.min(arsenalRounds(f), Math.max(0, Math.round(n)))).n; // generic first, then the cheapest rounds
 }
 export function addArsenalRounds(f, n) { if (n > 0) f.stock.ammo = (f.stock.ammo || 0) + n; }
 
@@ -337,6 +341,12 @@ export function armFromArsenal(state, b, u, n) {
   u.arsArmour = lo ? Object.values(lo.armour) : [];
   u.mag = null; u.magW = null;
   loadMag(u);
+  // The gun as it is (gunfire.js: its modes, its quality and wear for the jams; ammo.js: the round its kit loads) and
+  // the armour as it is (armour.js enemyPieces: the issued pieces themselves wear in the fight).
+  u.load = enemyLoad(kitOf(f), u.weapon, state.seed, f.id, u.id);
+  u.jam = null; u.modesW = null; syncModes(u);
+  if (it && WEAPONS[it.key]) { u.q = it.quality ?? u.q; const m = itemDurMax(it); if (m) u.cond = Math.max(0, Math.min(1, (itemDur(it) ?? m) / m)); }
+  u.pieces = undefined; enemyPieces(b, u);
   armExtras(state, b, f, u);
   // rescueraid.js: what a guard carries is not on the armory's rack too.
   const rack = b.rescue && b.rescue.armory && b.rescue.armory.items;

@@ -16,7 +16,7 @@ import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
 import { itemLoad, lootItem, armouredItem } from "./inventory.js";
 import { siteSource } from "./itemcond.js";
-import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, rollGunmodFind, rollSiteGrenades } from "./loot.js";
+import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { truckSearchHour } from "./miltrucks.js";
@@ -28,6 +28,7 @@ import { searchMeds } from "./medfinds.js";
 import { ZTYPES } from "./hiveconst.js";
 import { siteWanderers, siteEncounter, wanderersAfterRaid } from "./wanderers.js";
 import { crawlTile, startCrawl } from "./citycrawl.js";
+import { addFind } from "./ammo.js"; // rounds by calibre
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -197,9 +198,13 @@ export function searchHour(state) {
     const key = rng.weighted(Object.keys(table), (k) => table[k]);
     let qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
     if (key === "meds" && qty > 0) qty = searchMeds(t, qty); // medfinds.js: a box of them only at a pharmacy, clinic, hospital or medevac wreck
-    if (qty > 0) {
-      e.found.supplies[key] = (e.found.supplies[key] || 0) + qty;
-      finds.push(`${qty} ${key}`);
+    if (qty > 0 && key === "ammo") {
+      addFind(e.found.supplies, t.loc ? t.loc.type : "", qty, false, e.tile, e.hours, i); // ammo.js: the rounds a place like this holds, by calibre
+      finds.push(`${qty} ammo`);
+    } else if (qty > 0) {
+      // Parts by kind (loot.js sortParts: an auto shop's are mostly car parts; their own dice).
+      const got = key === "parts" && t.loc ? sortParts(state, t.loc.type, qty, `h${e.hours}:${i}`) : { [key]: qty };
+      for (const [k, q] of Object.entries(got)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; finds.push(`${q} ${k}`); }
     }
   }
   const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
@@ -218,7 +223,7 @@ export function searchHour(state) {
   if (gearFind) { e.found.gear.push(gearFind); finds.push(gearFind.name); }
   const lamp = rollLightFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a headlamp, a lantern, a spotlight (loot.js LIGHT_FINDS; its own dice)
   if (lamp) { e.found.gear.push(lamp); finds.push(lamp.name); }
-  const part = rollGunmodFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a sight, a suppressor (loot.js GUNMOD_FINDS; its own dice)
+  const part = rollAnyModFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a sight, a suppressor (loot.js GUNMOD_FINDS, then SITE_MODS; their own dice)
   if (part) { e.found.gear.push(part); finds.push(part.name); }
   const gren = rollSiteGrenades(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // flashbangs, smoke grenades (loot.js SITE_GRENADES; its own dice)
   if (gren.length) { e.found.gear.push(...gren); finds.push(gren.length > 1 ? `${gren.length} ${gren[0].key === "flashbang" ? "flashbangs" : "smoke grenades"}` : gren[0].name); }
@@ -247,7 +252,7 @@ export function searchHour(state) {
     const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0) + specialThreat(state, e.tile);
     // The shots: a bow's in arrows, everyone else's in ammo (world.js spendShots); short of either, those count 60%.
     const shot = spendShots(p.supplies, members, e.approach === "loud" ? 6 : 2);
-    const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, p.supplies.ammo || 0, p.supplies.arrows || 0, { need: () => 1 });
+    const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, p.supplies, p.supplies.arrows || 0, { need: () => 1 });
     if (power * rng.range(0.6, 1.4) > threat) {
       line += e.guarded ? " A guard patrol was taken down." : " The dead found you, and you put them down.";
       const back = arrowsBack(shot.arrows); // won: about half the arrows are picked up again

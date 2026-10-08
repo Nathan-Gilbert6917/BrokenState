@@ -35,12 +35,15 @@ import { startOrder } from "./orders.js";
 import { partyVehicle, partyFuel, vehicleById, isCar } from "./vehicles.js";
 import { itemLoad } from "./inventory.js";
 import {
-  available, need, demand, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares, WARES_MAX,
+  available, need, demand, roundNeeds, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares, WARES_MAX,
   autoSellGear,
 } from "./trade.js";
-import { marketOf } from "./trade.js";
+import { marketOf, groupStockKey } from "./trade.js";
+import { partDeficit, kitWants } from "./repair.js"; // the parts and kits the governor keeps (it buys below them)
 import { escortArrived, pickupArrived } from "./jobs.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { spendAmmo } from "./rounds.js"; // rounds by calibre
+import { baseCals } from "./ammo.js";
 import { groupEscort, escortStrength, cargoValue } from "./escorts.js"; // a caravan's guards: the cargo's wish, what they can spare
 import { pendingDeal, dealCarried, completeRadioDeal, goodsText } from "./radiotrade.js"; // deals agreed over the radio
 
@@ -67,7 +70,7 @@ export function caravanSurplus(state, f) {
   let value = 0;
   const listed = marketOf(state, f).surplus.map((x) => x.key);
   for (const k of [...listed, ...[...SUPPLY_KEYS].filter((x) => !listed.includes(x)).sort((a, b) => need(f, a) - need(f, b))]) {
-    if (need(f, k) > 1.1 || value >= 160) continue;
+    if (need(f, k) > 1.1 || value >= 160 || SUPPLIES[k].round) continue; // rounds: their one ammo count goes as "ammo" (sorted by calibre in the deal, trade.js)
     const q = Math.min(Math.floor(available(f, k) * 0.5), Math.ceil((160 - value) / SUPPLIES[k].value));
     if (q < 1) continue;
     goods.supplies[k] = q;
@@ -89,9 +92,10 @@ export function sendCaravan(state, f, base, { goods = null, deal = null, gift = 
   if (!p) return null;
   const g = { supplies: {}, gear: [] };
   for (const [k, q] of Object.entries((goods && goods.supplies) || {})) {
-    const take = Math.max(0, Math.min(Math.floor(q), Math.floor(f.stock[k] || 0)));
+    const sk = SUPPLIES[k] && SUPPLIES[k].round ? "ammo" : groupStockKey(k, f); // rounds by key come out of their one ammo count, a part kind out of their one count of parts
+    const take = Math.max(0, Math.min(Math.floor(q), Math.floor(f.stock[sk] || 0)));
     if (!take) continue;
-    f.stock[k] -= take;
+    f.stock[sk] -= take;
     g.supplies[k] = take;
   }
   for (const item of (goods && goods.gear) || []) {
@@ -262,19 +266,22 @@ export function autoCaravanTrade(state, needs, style, spare = {}) {
     return `attacked the ${f.name.replace(/^The /, "")} caravan`;
   }
   let text = "nothing worth swapping";
+  needs = roundNeeds(state, ctx, needs); // trade.js: ammo asked for and sold as rounds by calibre
   if (ctx.t.deal && tradeVerdict(state).ok) text = executeTrade(state);
   else {
     ctx.t.offer = {}; ctx.t.ask = {}; ctx.t.deal = null;
     const short = Object.keys(needs).filter((k) => needs[k] >= 1.2 && (ctx.theirHave[k] || 0) > 0).sort((a, b) => needs[b] - needs[a]);
     // Pay with what they want most (trade.js demand: their stock, kind and state) among what the hub has plenty of.
     const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.5 && (ctx.have[k] || 0) > 0).sort((a, b) => demand(state, f, b) - demand(state, f, a) || needs[a] - needs[b]);
-    for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" ? 80 : 20));
+    for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" || (SUPPLIES[k] && SUPPLIES[k].round) ? 80 : ["parts", "carparts", "gunparts", "electronics"].includes(k) ? Math.max(1, partDeficit(state, base, k)) : 20));
+    const kit = kitWants(state, base).map((k) => ctx.theirGear.find((g) => g && g.key === k)).find(Boolean); // a Kevlar or field repair kit (repair.js)
+    if (kit && plenty.length) ctx.t.askGear = [kit];
     for (const k of plenty) {
       if (tradeVerdict(state).ok) break;
       if (!ctx.t.ask[k]) balanceWith(state, k);
       if (spare[k] != null && (ctx.t.offer[k] || 0) > spare[k]) setQty(state, "mine", k, spare[k]); // never below what the hub needs (autopilot.js tradeSpare)
     }
-    if (short.length && tradeVerdict(state).ok) text = executeTrade(state);
+    if ((short.length || kit) && tradeVerdict(state).ok) text = executeTrade(state);
   }
   // Spare weapons to a group that prizes them (at war, hordes at its walls...), valuables to anyone who pays.
   if (tradeContext(state)) {
@@ -346,6 +353,11 @@ export function launchCaravan(state, form) {
   if (!stops.length) return { error: "Add at least one destination." };
   const goods = {}, supplies = {};
   for (const [k, q] of Object.entries(form.goods || {})) if (SUPPLIES[k] && q > 0) goods[k] = Math.floor(q);
+  if (goods.ammo > 0) { // ammo.js: "N ammo" to trade goes as the rounds the hub's guns need least
+    const n = goods.ammo;
+    delete goods.ammo;
+    for (const [k, q] of Object.entries(spendAmmo({ ...h.stock }, n, baseCals(state, h)).keys)) goods[k] = (goods[k] || 0) + q;
+  }
   for (const k of SUPPLY_KEYS) supplies[k] = (goods[k] || 0) + Math.max(0, Math.floor((form.travel || {})[k] || 0));
   const idx = [...new Set((form.gear || []).map(Number))].filter((i) => h.armory[i]).sort((a, b) => b - a);
   const items = idx.map((i) => h.armory[i]);

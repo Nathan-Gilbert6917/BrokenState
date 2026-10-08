@@ -18,6 +18,7 @@ import { itemValue } from "../src/sim/valuation.js";
 import { planCrafts } from "../src/sim/autopilot.js";
 import { HUNT_FINDS, ITEM_TAGS } from "../src/sim/loot.js";
 import * as Weather from "../src/sim/weather.js";
+import { AR } from "../src/sim/armour.js"; // per-hit armour wear by material
 
 const SEED = Number(process.argv[2] || 42);
 let fails = 0, passed = 0;
@@ -177,7 +178,8 @@ section("Durability on real gear");
   for (const k of ["pistol", "huntrifle", "machete", "vest", "milhelmet", "riotarms", "kneeguards", "fishrod", "fishnet", "ghillie", "surgkit"])
     check(GEAR[k].dur > 0, `${GEAR[k].name} wears (${GEAR[k].dur} ${k === "surgkit" ? "treatments" : ""})`);
   check(!GEAR.binoculars.dur && !GEAR.novel.dur, "things that do not wear stay that way (optics, books)");
-  check(GEAR.pistol.dur > GEAR.pipegun.dur * 4 && GEAR.vest.dur > GEAR.tirevest.dur * 3, "makeshift gear wears much faster than the real thing");
+  // Armour's dur is its durability points (armour.js, section 17): a tire vest loses its share of them over twice as fast a hit as a kevlar vest.
+  check(GEAR.pistol.dur > GEAR.pipegun.dur * 4 && AR.WEAR.padding / GEAR.tirevest.dur > 2 * AR.WEAR.soft / GEAR.vest.dur, "makeshift gear wears much faster than the real thing");
   const s = makeSurvivor(state);
   s.gear.weapon = newItem("pistol"); s.gear.armor = newItem("vest"); s.gear.head = newItem("riothelmet");
   wearAfterFight(state, [s]);

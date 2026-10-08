@@ -21,6 +21,7 @@ import { allItems } from "./inventory.js";
 import { breakCard, fixtures, breakdownsDaily } from "./breakdowns.js";
 import { packErrand, unpackErrand } from "./needs.js";
 import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
+import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const firstName = (s) => s.name.split(" ")[0];
@@ -178,21 +179,21 @@ export const HUB_EVENTS = {
         { give: { ammo: 15 }, get: { food: 12 } }, { give: { meds: 2 }, get: { ammo: 20 } }, { give: { scrap: 8 }, get: { food: 8 } },
         { give: { food: 10 }, get: { scrap: 8 } },
       ];
-      const can = (dl) => Object.entries(dl.give).every(([k, q]) => (c.base.stock[k] || 0) >= q);
+      const can = (dl) => Object.entries(dl.give).every(([k, q]) => supplyAmt(c.base.stock, k) >= q);
       const pool = DEALS.filter(can).length >= 2 ? DEALS.filter(can) : DEALS;
       const one = st.rng.pick(pool);
       const two = st.rng.pick(pool.filter((x) => x !== one));
       const txt = (o) => Object.entries(o).map(([k, q]) => `${q} ${k}`).join(", ");
       // How much the hub wants a supply: short of its target (by head count) = worth more.
       const target = { food: 15 * Math.max(1, c.n), ammo: 60, meds: 8, parts: 4, fuel: 15, scrap: 40, water: 30 };
-      const want = (k) => clamp((target[k] || 20) / ((c.base.stock[k] || 0) + 1), 0.2, 3) * ((SUPPLIES[k] && SUPPLIES[k].value) || 1);
+      const want = (k) => clamp((target[k] || 20) / (supplyAmt(c.base.stock, k) + 1), 0.2, 3) * ((SUPPLIES[k] && SUPPLIES[k].value) || 1);
       const deal = (dl) => ({
         label: `Trade ${txt(dl.give)} for ${txt(dl.get)}`, hint: "A fair swap, done at the gate",
         disabled: () => !can(dl),
         ai: () => Object.entries(dl.get).reduce((a, [k, q]) => a + q * want(k), 0) - Object.entries(dl.give).reduce((a, [k, q]) => a + q * want(k), 0),
         resolve: () => {
           if (!can(dl)) return "You no longer have that to trade.";
-          for (const [k, q] of Object.entries(dl.give)) c.base.stock[k] -= q;
+          for (const [k, q] of Object.entries(dl.give)) useSupply(c.base.stock, k, q); // rounds.js: "ammo" as any rounds
           for (const [k, q] of Object.entries(dl.get)) c.base.stock[k] = (c.base.stock[k] || 0) + q;
           return `Traded ${txt(dl.give)} for ${txt(dl.get)}. The peddler moves on.`;
         },

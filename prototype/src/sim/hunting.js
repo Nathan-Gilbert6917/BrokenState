@@ -99,6 +99,8 @@ import { count } from "./buildings.js";
 import { workFactor } from "./health.js";
 import { foragingDaily, landFoodHands } from "./foraging.js";
 import { wormKill, wormMeatIn, wormMeatAt, smokeWormMeat, shrinkWormMeat, huntYieldMult, WORM } from "./worm.js";
+import { totalRounds, sumRecs } from "./rounds.js"; // rounds by calibre
+import { huntRounds, huntLoad, takeHuntShots, baseAmmo } from "./ammo.js"; // a gun hunts with its own calibre and load (R9)
 
 // ---------- numbers ----------
 export const HUNT = {
@@ -219,14 +221,17 @@ export const hunterSkill = (s) => 0.5 * skill(s, "shooting") + 0.35 * skill(s, "
 export const hunterMult = (s) => (0.55 + 0.09 * hunterSkill(s)) * (hasPerk(s, "hunter") ? 1.25 : 1);
 // A person's best hunting weapon (null: none they can use; firearms only with ammo to hand, bows with arrows).
 // only: "bow" (bows and crossbows), "gun" (firearms) or null (any).
+// ammo: a number (any rounds) or a stock record (ammo.js: a gun needs rounds of its own calibre; its loaded type, R9,
+// sets how it does on big and small game while there are rounds of it).
 export function bestHuntWeapon(s, ammo = Infinity, arrows = Infinity, only = null) {
   let best = null;
   for (const it of carriedItems(s)) {
-    const w = huntWeaponInfo(it);
-    if (!w || (w.ammo && ammo < 1) || (w.arrows && arrows < 1)) continue;
+    let w = huntWeaponInfo(it);
+    if (!w || (w.ammo && huntRounds(ammo, it) < 1) || (w.arrows && arrows < 1)) continue;
     if ((only === "bow" && !w.arrows) || (only === "gun" && !w.ammo)) continue;
     const eff = gearEffect(s, it);
     if (!eff.usable) continue;
+    if (w.ammo) { const ld = huntLoad(it, ammo); if (ld.big !== 1 || ld.small !== 1) w = { ...w, big: w.big * ld.big, small: w.small * ld.small, load: ld.type }; }
     const v = (w.big + 0.3 * w.small) * eff.mult;
     if (!best || v > best.v) best = { item: it, w, eff: eff.mult, v };
   }
@@ -443,7 +448,7 @@ export function huntInfo(state, tile, { members = null, ammo = Infinity, arrows 
   return out;
 }
 // A team's huntTeam: what it carries and its home base's mix.
-export const partyHuntTeam = (state, p, members = partyMembers(state, p)) => huntTeam(state, members, carried(p, "ammo"), { arrows: carried(p, "arrows"), mix: partyHuntMix(state, p) });
+export const partyHuntTeam = (state, p, members = partyMembers(state, p)) => huntTeam(state, members, sumRecs(p.supplies, p.cargo && p.cargo.supplies), { arrows: carried(p, "arrows"), mix: partyHuntMix(state, p) });
 
 // Why a team cannot hunt here ("" = it can).
 export function huntProblem(state, p, tile = partyTile(p)) {
@@ -552,7 +557,7 @@ export function huntHour(state, p) {
     const who = state.rng.weighted(hs.slice(0, 3), (x) => (a.big ? x.big : x.small) + 1e-6);
     if (who.w.ammo) {
       const shots = 1 + (state.rng.chance(a.big ? HUNT.missChance : HUNT.missSmall) ? 1 : 0);
-      const used = takeSupply(p, "ammo", shots);
+      const used = takeHuntShots([p.cargo && p.cargo.supplies, p.supplies], who.item, shots); // ammo.js: the gun's own calibre, its load first
       got.shots += Math.max(1, used);
       p.heat = Math.min(100, (p.heat || 0) + HUNT.shotHeat * (who.w.noise / 3) * Math.max(1, used));
       got.drawn += drawHordes(state, tile, who.w.quiet ?? 1);
@@ -939,7 +944,8 @@ export function huntingDaily(state, base) {
   const gunfire = new Map(); // hunting grounds with shots today: the dead nearby may come to look
   if (hunters.length && !huntWorkWhy(state, base)) {
     // The walls come first: the hunters leave the base's last ammo (3 a head + 10) for them.
-    const spare = () => Math.max(0, (base.stock.ammo || 0) - ammoKeep(state, base));
+    const spare = () => Math.max(0, totalRounds(base.stock) - ammoKeep(state, base));
+    const spareFor = () => (spare() > 0 ? base.stock : 0); // ammo.js: a gun needs rounds of its own calibre (and the walls' keep left)
     const quiver = () => Math.max(0, base.stock.arrows || 0);
     const plan = cabinPlan(state, base, hunters, spare(), quiver());
     got.hrs = { traps: 0, bows: 0, guns: 0 };
@@ -953,7 +959,7 @@ export function huntingDaily(state, base) {
       let trapHours = x.traps, shot = false;
       const shoot = [...new Array(x.guns).fill("guns"), ...new Array(x.bows).fill("bows")];
       shoot.forEach((m, i) => {
-        const b = bestHuntWeapon(s, spare(), quiver(), m === "bows" ? "bow" : null);
+        const b = bestHuntWeapon(s, spareFor(), quiver(), m === "bows" ? "bow" : null);
         if (!b) { trapHours++; return; }
         shot = true;
         got.hrs[b.w.arrows ? "bows" : "guns"]++;
@@ -966,8 +972,7 @@ export function huntingDaily(state, base) {
         for (const k of kills) {
           if (b.w.ammo) {
             const shots = 1 + (state.rng.chance(ANIMALS[k].big ? HUNT.missChance : HUNT.missSmall) ? 1 : 0);
-            const used = Math.min(shots, Math.floor(spare()));
-            base.stock.ammo = (base.stock.ammo || 0) - used;
+            const used = takeHuntShots([base.stock], b.item, Math.min(shots, Math.floor(spare()))); // ammo.js: its calibre, its load first
             got.shots += used;
             noise += b.w.noise / 3;
             gunfire.set(tile, Math.max(gunfire.get(tile) || 0, b.w.quiet ?? 1)); // the loudest gun on that ground counts
@@ -1142,7 +1147,7 @@ export function autoHuntMix(state, base) {
   const near = baseHasHunting(base) && food >= AUTO_MIX.hungry && state.hordes.some((h) => (["roam", "border", undefined, null].includes(h.role) && state.grid.distance(h.tile, base.tile) <= HUNT.drawRange) ||
     (h.role === "attack" && h.goal && h.goal.baseId === base.id));
   if (near) return bows ? { ...MIX_PRESETS.quiet.mix } : { ...AUTO_MIX.quietNoBows };
-  const spare = (base.stock.ammo || 0) - ammoKeep(state, base);
+  const spare = baseAmmo(state, base) - ammoKeep(state, base); // ammo.js: the rounds that fit the guns here
   if (bows && spare < AUTO_MIX.ammo) return { traps: 0, bows: 100, guns: 0 };
   return bows ? { ...MIX_PRESETS.mixed.mix } : { ...DEFAULT_MIX };
 }

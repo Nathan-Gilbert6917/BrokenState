@@ -13,8 +13,9 @@ import { worthTier } from "../sim/valuation.js";
 import {
   EQUIP_SLOTS, SLOT_NAMES, POCKETS, ensureInv, packOf, packSize, armorPower, itemAt, parseLoc, moveItem, quickMove, toStorage,
   personPlace, battlePlace, storageFor, battleBodies, bodyHolder, bodyEmpty, takeSupply, takeAllBody, takeAllBodies, itemLoad, allItems,
-  breakDownInfo, breakDownAt, setFireMark, modChoices, fitModAt, unfitModAt,
+  breakDownInfo, breakDownAt, setFireMark, modChoices, fitModAt, unfitModAt, salvageInfo, salvageAt, salvageYield, salvageText, placeOfLoc,
 } from "../sim/inventory.js";
+import { repairKind, repairInfo, fieldRepairInfo, repairPreview, queueRepair, fieldRepair, cancelRepair, repairJobStatus } from "../sim/repair.js"; // gear repairs at the bench
 import { ATTACH, MOUNTS, MOUNT_NAMES, takesMods, modsText, attachText, fitsText, modFitReason, modLabel } from "../sim/gunmods.js"; // gun attachments
 import { isJunk, armoryJunk, burnablesWood, breakDownJunk, boilerJunkOn, BURN } from "../sim/woodcutting.js"; // break down for firewood; what the boiler may burn
 import { survivorURL, spriteImg, canvasURL, unitCanvas } from "./sprites.js";
@@ -26,6 +27,8 @@ import { raidMove, raidItemAt, parseRaidLoc, raidTakeAll, stashAll, personalLoad
 import { combatAct } from "../sim/combat.js";
 import { SEARCH } from "../sim/search.js";
 import { ask } from "./confirm.js"; // breaking down anything above junk asks first (one confirmation style)
+import { isGunKey } from "./gunart.js"; // a gun (not a bow or a blade): the gun builder opens on it
+import { gunTipText, slotOfPart, SLOT_NAMES as PART_SLOT_NAMES } from "./gunbuilder.js"; // the gun builder (ui/gunbuilder.js)
 import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -33,17 +36,17 @@ const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const first = (s) => esc(shortName(s)); // first name, with a last initial when two people share it
 
 // ---------- item tiles ----------
-const GUNS = new Set(["pistol", "shotgun", "huntrifle", "ar", "pipegun", "revolver", "leverrifle", "carbine"]);
+// Guns: any ranged weapon that is not a bow (combat.js WEAPONS; the overhaul's new guns too).
 const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "🥽", crowbar: "🔧", waterfilter: "💧", bicycle: "🚲",
   guitar: "🎸", harmonica: "🎵", cards: "🃏", photos: "🖼", pipebomb: "💣", molotov: "🔥", flare: "🎆", smokegren: "💨", flashbang: "💥", cuffs: "⛓", gamecall: "📯",
   camonet: "⛺", ghillie: "🌿", stove: "⛺", scentmask: "🫙", ragboots: "🥾" };
 // By trade category (data.js CATEGORIES): valuables and treats at a glance.
 const CAT_ICON = { jewelry: "💍", smokes: "🚬", liquor: "🍾", treats: "🍫", gadgets: "📱", collectibles: "🪙", household: "🧻", defence: "🚧", bow: "🏹" };
 const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", arms: "🧤", legs: "🦵", backpack: "🎒" };
-const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩" };
+const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌" };
 function icon(key) {
   const d = GEAR[key];
-  if (GUNS.has(key)) return "🔫";
+  if (isGunKey(key)) return "🔫";
   return TOOL_ICON[key] || CAT_ICON[d.cat] || SLOT_ICON[d.slot] || (d.book ? "📖" : "▪");
 }
 
@@ -54,8 +57,9 @@ export function itemTip(item, s = null) {
   const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
   if (d.slot === "weapon") bits.push(`power ${d.power}${d.req ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}`);
   if (d.slot === "weapon" && item.mods) bits.push(modsText(item)); // sim/gunmods.js: what is fitted and the net effect
-  else if (d.slot === "weapon" && takesMods(item.key)) bits.push("takes attachments (select it to fit one)");
-  if (ATTACH[item.key]) bits.push(`gun attachment (${MOUNT_NAMES[ATTACH[item.key].mount].toLowerCase()}): ${attachText(item.key)}; fits ${fitsText(item.key)}`);
+  if (d.slot === "weapon" && isGunKey(item.key)) { const g = gunTipText(item); if (g) bits.push(g); } // ui/gunbuilder.js: its slots, its load, how reliable
+  if (ATTACH[item.key]) bits.push(`gun attachment (${MOUNT_NAMES[ATTACH[item.key].mount].toLowerCase()}): ${attachText(item.key)}; fits ${fitsText(item.key)}; fit it in the gun builder (⚙ Modify on the gun)`);
+  else if (slotOfPart(item.key)) bits.push(`gun part (${(PART_SLOT_NAMES[slotOfPart(item.key)] || slotOfPart(item.key)).toLowerCase()}): fit it in the gun builder (⚙ Modify on the gun)`);
   else if (["armor", "head", "arms", "legs"].includes(d.slot)) bits.push(`armor ${d.power} (adds up across body, head, arms and legs)`);
   else if (d.slot === "backpack") bits.push(`${packSize(item)} pack slots, +${d.carry || 0} kg max load${d.ease ? `, spreads the weight: the wearer's load counts ${Math.round(d.ease * 100)}% lighter for their load band` : ""}`);
   else if (d.book) bits.push(d.book.skill ? `${d.craftBook ? "craft book" : "book"}: teaches ${SKILL_NAMES[d.book.skill]} up to ${d.book.max}, ${d.book.hours} hours to read (Read role at a base, from the armory)` : `book: +${d.book.mood} mood an hour read, ${d.book.hours} hours`); // skills.js; a craft book's unlocks are in its description (blueprints.js)
@@ -96,7 +100,12 @@ function slotBox(state, ui, loc, label, s, readonly) {
   const item = itemAt(state, loc);
   const sel = ui.invSel === loc ? " sel" : "";
   const act = readonly ? "" : ` data-action="inv-click" data-loc="${loc}" data-drop="${loc}"`;
-  return `<div class="islot${sel}${item ? "" : " empty"}"${act}${item ? "" : tip(`${label}: empty`)}><span class="islab">${label}</span>${item ? tile(item, loc, s, !readonly) : ""}</div>`;
+  return `<div class="islot${sel}${item ? "" : " empty"}"${act}${item ? "" : tip(`${label}: empty`)}><span class="islab">${label}</span>${item ? tile(item, loc, s, !readonly) : ""}${!readonly && /:weapon$/.test(loc) ? gearCog(state, ui, item, loc) : ""}</div>`;
+}
+// ⚙ on a gun: the gun builder (ui/gunbuilder.js). Not on a body, not in the loot or search windows, not in a battle.
+function gearCog(state, ui, item, loc) {
+  if (!item || !isGunKey(item.key) || state.combat || !ui.inv || ui.inv.loot || ui.inv.raid || /^body:/.test(loc)) return "";
+  return `<button class="mini gbcog" data-action="gb-open" data-loc="${loc}" style="position:absolute;right:2px;top:2px;padding:0 0.25rem;line-height:1.2"${tip(`Modify the ${item.name}: the gun builder (sights, muzzle, magazine, stock, grip and the rest; the ammo it is loaded with)`)}>⚙</button>`;
 }
 
 // The paper doll: portrait in the middle, hands / off hand / pack on the left, head / body / arms / legs on the
@@ -143,11 +152,11 @@ function storageBox(state, ui, place, user) {
     const b = baseById(state, st.id);
     const junk = b ? armoryJunk(b) : [];
     const bulk = junk.length ? ` <button class="mini" data-action="inv-burnjunk" data-base="${st.id}"${tip(`Break down every piece of junk with firewood in it (wooden, paper or cloth things worth ${BURN.junkValue} or less, not marked Keep): ${junk.length} item${junk.length === 1 ? "" : "s"}, +${burnablesWood(junk)} firewood into ${b.name}'s stores.`)}>Break down junk for firewood (+${burnablesWood(junk)})</button>` : "";
-    head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items${bulk}</span></div>`;
+    head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items${bulk}</span></div>${b ? repairsBox(state, b) : ""}`;
   }
   const tiles = st.list.map((it, i) => {
     const l = `${loc}:${i}`;
-    return `<div class="islot store${ui.invSel === l ? " sel" : ""}" data-action="inv-click" data-loc="${l}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(it) * 10) / 10} kg`)}>${tile(it, l, user)}</div>`;
+    return `<div class="islot store${ui.invSel === l ? " sel" : ""}" data-action="inv-click" data-loc="${l}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(it) * 10) / 10} kg`)}>${tile(it, l, user)}${gearCog(state, ui, it, l)}</div>`;
   }).join("");
   // The supplies kept here, as stacks with their weight (firewood too: 0.1 kg each): the team's found cargo, the base's stores.
   const pool = st.o === "cargo" ? st.party.cargo.supplies : ((baseById(state, st.id) || {}).stock || {});
@@ -173,29 +182,24 @@ function selBar(state, ui, place) {
     ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
     ${burnButtons(state, ui, item, from)}
     ${isGunCase(item) && from.o !== "body" ? `<button class="mini" data-action="inv-opencase"${tip(`Inside: ${caseText(item)}${item.locked ? " (locked: prised open with a blade or a crowbar)" : ""}. Opening it here is free: the gun goes into ${st ? st.name : "storage"}, the rounds into the stores.`)}>${item.locked ? "Prise open" : "Open"} case</button>` : ""}
+    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" ? repairButtons(state, ui, item, from, place) : ""}
     <button class="mini" data-action="inv-cancel">Cancel</button>
-    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" ? modBar(state, ui, item) : ""}</div>`;
+    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" && !state.combat ? modBar(state, ui, item) : ""}</div>`;
 }
-// Gun attachments (sim/gunmods.js) for the selected item: on a gun, what is fitted (Remove) and every loose attachment
-// within reach that fits it (Fit); on an attachment, the guns on the person whose inventory is open that take it.
+// Gun parts (the gun builder, ui/gunbuilder.js): on a gun, Modify opens it; on a loose part, Modify for each gun on the
+// person whose inventory is open that takes it (the builder opens on that gun at the part's slot).
 function modBar(state, ui, item) {
-  const d = GEAR[item.key];
-  if (d && d.slot === "weapon" && takesMods(item.key)) {
-    const on = MOUNTS.filter((m) => item.mods && item.mods[m]).map((m) => `<button class="mini" data-action="inv-unmod" data-mount="${m}"${tip(`Take the ${item.mods[m].name} off (${MOUNT_NAMES[m].toLowerCase()}): it goes to the armory or the team's cargo, or into a pocket or the pack.`)}>Remove ${esc(ATTACH[item.mods[m].key] ? ATTACH[item.mods[m].key].short : item.mods[m].name)}</button>`);
-    const can = modChoices(state, ui.invSel, ui.inv.sid).map((c) => {
-      const a = ATTACH[c.item.key];
-      const old = item.mods && item.mods[a.mount];
-      return `<button class="mini" data-action="inv-fitmod" data-mod="${c.loc}"${tip(`${c.item.name}: ${attachText(c.item.key)}.${old ? ` Swaps out the ${old.name}.` : ""}`)}>Fit ${esc(c.item.name)}</button>`;
-    });
-    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Attachments${item.mods ? ` (${esc(modLabel(item))})` : ""}:</span> ${[...on, ...can].join(" ") || `<span class="muted">none fitted, none within reach that fit it.</span>`}</div>`;
+  if (isGunKey(item.key)) {
+    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><button class="mini" data-action="gb-open" data-loc="${ui.invSel}"${tip(`The gun builder: the ${item.name} drawn large, a line to each slot (sight, muzzle, magazine and the rest), the parts within reach that fit each one with what they change, the ammo it is loaded with and how reliable it is.`)}>⚙ Modify</button>${item.mods ? `<span class="muted">${esc(modLabel(item))}</span>` : ""}</div>`;
   }
-  if (ATTACH[item.key]) {
+  const slot = slotOfPart(item.key);
+  if (slot) {
     const s = survivorById(state, ui.inv.sid);
     if (!s) return "";
     const locs = [`s:${s.id}:weapon`, ...s.pockets.map((_, i) => `s:${s.id}:pocket:${i}`), ...(packOf(s) || []).map((_, i) => `s:${s.id}:pack:${i}`)];
-    const guns = locs.map((l) => [l, itemAt(state, l)]).filter(([, g]) => g && g !== item && GEAR[g.key] && GEAR[g.key].slot === "weapon" && !modFitReason(g, item));
-    const btns = guns.map(([l, g]) => `<button class="mini" data-action="inv-fitto" data-gun="${l}"${tip(`Fit the ${item.name} to ${s.name.split(" ")[0]}'s ${g.name}${g.mods && g.mods[ATTACH[item.key].mount] ? ` (the ${g.mods[ATTACH[item.key].mount].name} comes off)` : ""}.`)}>Fit to ${esc(g.name)}</button>`);
-    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Fits ${esc(fitsText(item.key))}.</span> ${btns.join(" ") || `<span class="muted">${esc(first(s))} has no gun it fits.</span>`}</div>`;
+    const guns = locs.map((l) => [l, itemAt(state, l)]).filter(([, g]) => g && g !== item && isGunKey(g.key) && !modFitReason(g, item));
+    const btns = guns.map(([l, g]) => `<button class="mini" data-action="gb-open" data-loc="${l}" data-slot="${slot}"${tip(`Open the gun builder on ${s.name.split(" ")[0]}'s ${g.name} at its ${(PART_SLOT_NAMES[slot] || slot).toLowerCase()}: fit the ${item.name} there${g.mods && g.mods[slot] ? ` (the ${g.mods[slot].name} comes off)` : ""}.`)}>⚙ ${esc(g.name)}</button>`);
+    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Gun part (${esc((PART_SLOT_NAMES[slot] || slot).toLowerCase())}); fits ${esc(fitsText(item.key))}.</span> ${btns.join(" ") || `<span class="muted">${esc(first(s))} has no gun it fits.</span>`}</div>`;
   }
   return "";
 }
@@ -210,6 +214,34 @@ function reselect(state, ui, item) {
 
 // The selected item's firewood (sim/inventory.js breakDownAt): "Break down for firewood (+N)" (asks first for anything
 // that is not junk: ui/confirm.js), and in an armory the water boiler's mark (may burn / keep).
+// Repair (sim/repair.js) and Salvage (sim/inventory.js salvageAt) for the selected item: at a base the repair goes in
+// its queue (the bench, the crafters), in the field it takes a field repair kit; the tooltip is the preview (the new
+// maximum, what it takes, how long, who).
+function repairButtons(state, ui, item, from, place) {
+  const out = [];
+  const base = place && place.startsWith("base:") ? baseById(state, Number(place.split(":")[1])) : null;
+  if (repairKind(item)) {
+    const info = base ? repairInfo(state, base, item) : fieldRepairInfo(state, ui.invSel);
+    const queueable = base && (info.ok || (!info.who && /Craft role/.test(info.reason)));
+    out.push(`<button class="mini" data-action="inv-repair" ${queueable || (!base && info.ok) ? "" : "disabled"}${tip(`${base ? "Repair at the bench" : "Field repair with a repair kit"}: ${repairPreview(info)}`)}>Repair${info.kind ? ` (max ${Math.round(info.oldMax)} → ${Math.round(info.newMax)})` : ""}</button>`);
+    if (base) {
+      const fk = fieldRepairInfo(state, ui.invSel);
+      if (fk.ok) out.push(`<button class="mini" data-action="inv-fieldrepair"${tip(`Now, with a field repair kit: ${repairPreview(fk)}`)}>Repair with a kit</button>`);
+    }
+  }
+  const sv = salvageInfo(state, ui.invSel);
+  if (salvageYield(item)) out.push(`<button class="mini" data-action="inv-salvage" ${sv.ok ? "" : "disabled"}${tip(sv.ok ? `Take the ${item.name} apart for parts: ${salvageText(sv.got)}${item.mods ? " (its attachments come off into storage)" : ""}. It is gone. Asks first.` : sv.reason)}>Salvage (${esc(salvageText(sv.got))})</button>`);
+  return out.join(" ");
+}
+// The base's repair queue (sim/repair.js): what is at the bench, how far along, why it waits; Cancel puts it back in the armory.
+function repairsBox(state, base) {
+  const q = base.gearRepairs || [];
+  if (!q.length) return "";
+  return `<div class="small" style="margin-top:0.3rem"><b${tip("Gear queued for repair: it stays in use, and people on the Craft role with the skill mend it while it is at the base (urgent ones first, before the craft queue).")}>Repairs</b> ${q.map((j) => {
+    const why = repairJobStatus(state, base, j);
+    return `<span class="chip"${tip(why || `${Math.floor(j.progress)} of ${j.hours} work-hours done`)}>${esc(j.item.name)} ${why ? `<span class="muted">(${esc(why)})</span>` : `${Math.round((j.progress / j.hours) * 100)}%`} <button class="mini" data-action="inv-cancelrepair" data-base="${base.id}" data-id="${j.id}"${tip("Cancel the repair (what was paid comes back, half once started)")}>×</button></span>`;
+  }).join(" ")}</div>`;
+}
 function burnButtons(state, ui, item, from) {
   const bd = breakDownInfo(state, ui.invSel);
   if (!(bd.wood > 0) || from.o === "body") return "";
@@ -553,6 +585,25 @@ export const INV_ACTIONS = {
   "inv-fitto": (state, ui, d) => { if (ui.invSel) ui.invMsg = fitModAt(state, d.gun, ui.invSel); ui.invSel = d.gun; },
   "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
   // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks first (ui/confirm.js).
+  // Repairs and salvage (sim/repair.js, sim/inventory.js salvageAt).
+  "inv-repair": (state, ui) => {
+    if (!ui.invSel) return;
+    const loc = parseLoc(ui.invSel);
+    const place = placeOfLoc(state, loc);
+    const base = place && place.startsWith("base:") ? baseById(state, Number(place.split(":")[1])) : null;
+    ui.invMsg = base ? queueRepair(state, base, ui.invSel) : fieldRepair(state, ui.invSel);
+    if (base) ui.invSel = null;
+  },
+  "inv-fieldrepair": (state, ui) => { if (ui.invSel) ui.invMsg = fieldRepair(state, ui.invSel); },
+  "inv-cancelrepair": (state, ui, d) => { const b = baseById(state, Number(d.base)); if (b) ui.invMsg = cancelRepair(state, b, Number(d.id)); },
+  "inv-salvage": (state, ui, d = {}) => {
+    if (!ui.invSel) return;
+    const it = itemAt(state, ui.invSel);
+    const info = salvageInfo(state, ui.invSel);
+    if (it && info.ok && ask(ui, d, "inv-salvage", { kind: "salvage", title: `Take the ${it.name} apart for parts?`, text: `It is gone for good: ${salvageText(info.got)}.`, yes: "Take it apart" })) return;
+    ui.invMsg = salvageAt(state, ui.invSel);
+    ui.invSel = null;
+  },
   "inv-breakdown": (state, ui, d = {}) => {
     if (!ui.invSel) return;
     const it = itemAt(state, ui.invSel);

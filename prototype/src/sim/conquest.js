@@ -54,6 +54,8 @@
 // - Razing (factions.js baseFate / razeChance, aggressive gangs): razePlayerBase burns a base of yours to the ground
 //   instead: everything goes, its people walk to your nearest base, the tile is a ruin (tile.ruin: a little loot, an
 //   outpost there needs 5 scrap). The hub razed is the hub lost.
+import { sumRecs } from "./rounds.js"; // rounds by calibre
+import { packRounds } from "./ammo.js";
 import { teamKit, assaultCut, kitText, spendGrenades } from "./siege.js";
 import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { log, addCard, day, hub, atBase, factionById, newId, combatPower, baseById, checkGameOver, alive, supplyValue, snapshot, armedFactor } from "./world.js";
@@ -62,7 +64,7 @@ import {
   partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, removeParty, startReturn, orderMove, carryCapacity, planPath,
 } from "./parties.js";
 import { startCombat, registerCombatHandler, registerBattleLayout, registerBattleSize, winOdds } from "./combat.js";
-import { groupTurret, TURRET_ODDS } from "./vehicles.js"; // a military group's Humvee (M2 turret) defends its home base
+import { groupTurret, TURRET_ODDS, seizeGroupVehicles, upgradeText } from "./vehicles.js"; // a military group's Humvee (M2 turret) defends its home base
 import { unitPower, arsenalShareTo, addToArsenal, arsenalWorthy } from "./arsenal.js"; // group arsenals: the defenders' kit; their stores of it
 import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled base on one fort map
 import { assaultDims, CONTACT } from "./battlesize.js";
@@ -160,7 +162,7 @@ export function assaultOdds(power, force, ammoOk = true, people = 0) {
   return winOdds(mine / Math.max(0.1, theirs), { kind: force.kind, count: force.count, people }); // combat.js: calibrated on the battle map
 }
 const carriedOf = (p, k) => Math.max(0, Math.floor(p.supplies[k] || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies[k]) || 0));
-const carriedAmmo = (p) => carriedOf(p, "ammo");
+const carriedAmmo = (p) => sumRecs(p.supplies, p.cargo && p.cargo.supplies); // rounds by key: each gun judged by its own calibre (world.js armedFactor)
 // "2 ladders, a battering ram and 3 grenades" (the assault card).
 function kitWords(k) {
   const parts = [];
@@ -360,6 +362,7 @@ export function captureBase(state, f, tile, p, info = {}) {
   const people = info.people ?? peopleAt(state, f, tile);
   const occ = occupiedAt(state, tile);
   const wasMain = f.bases[0] === tile && !occ && f.bases.length > 1; // their main base (not their last)
+  const home = f.bases[0] === tile && !occ; // their home: their motor pool is there (vehicles.js f.vehicles)
   const w = f.bases.length - 1 + CONQUEST.HOME_WEIGHT;
   const share = (f.bases[0] === tile ? CONQUEST.HOME_WEIGHT : 1) / Math.max(1, w);
   const noHub = !hub(state);
@@ -394,6 +397,7 @@ export function captureBase(state, f, tile, p, info = {}) {
   if (kit.length) got.push(kit.length === 1 ? kit[0].name : `${kit.length} pieces of their kit`);
   f.bases = f.bases.filter((t) => t !== tile);
   state.bases.push(base);
+  const seized = home && f.vehicles && f.vehicles.length ? seizeGroupVehicles(state, f, base) : []; // vehicles.js: their Army truck and Humvee are yours
   // Who holds it: one or two of the team (the weakest fighters), everyone when you have no other base.
   const team = p && state.parties.includes(p) ? partyMembers(state, p) : [];
   const stay = noHub ? team : [...team].sort((a, b) => combatPower(a) - combatPower(b) || a.id - b.id).slice(0, state.autopilot ? 0 : team.length >= 3 ? 1 : 0); // the autopilot keeps its squad together: a captured base is land, held by whoever joins there
@@ -443,6 +447,7 @@ export function captureBase(state, f, tile, p, info = {}) {
   const where = occ ? `${base.name} is yours again` : `${f.name}'s base at ${tileLabel(state, tile)} is yours`;
   const bits = [`${where}${base.type === "hub" ? " (your new hub)" : ""}.`];
   if (got.length) bits.push(`Their stores there: ${got.slice(0, 5).join(", ")}.`);
+  if (seized.length) bits.push(`Their motor pool is yours: ${seized.map((v) => `the ${v.name}${upgradeText(v) ? ` (${upgradeText(v).replace(/^./, (c) => c.toLowerCase())})` : ""}`).join(" and ")}.`);
   if (stay.length && p) bits.push(`${names(stay)} ${stay.length === 1 ? "stays" : "stay"} to hold it.`);
   if (freed.length) bits.push(`${names(freed)} ${freed.length === 1 ? "is" : "are"} free.`);
   if (jailed) bits.push(`${jailed} of them ${jailed === 1 ? "is" : "are"} held prisoner there.`);
@@ -488,6 +493,11 @@ function packFor(state, members, base, v) {
   let room = carryCapacity(state, members, v);
   const out = {};
   const take = (k, q) => {
+    if (k === "ammo") { // ammo.js: the rounds that fit their guns, as far as the room goes
+      const got = packRounds(base.stock, members, Math.min(Math.floor(q), Math.floor(room / 0.03)));
+      for (const [kk, qq] of Object.entries(got)) { out[kk] = (out[kk] || 0) + qq; room -= qq * (SUPPLIES[kk] ? SUPPLIES[kk].weight : 0.02); }
+      return;
+    }
     const w = SUPPLIES[k].weight;
     const have = Math.floor(base.stock[k] || 0);
     const qty = Math.max(0, Math.min(have, Math.floor(q), Math.floor(room / w)));

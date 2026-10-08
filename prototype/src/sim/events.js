@@ -5,7 +5,7 @@ import {
   partyMembers, bestSkill, partyTile, STANCES, tileLabel, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, partySpeed,
   carried, takeSupply, takeShots, addGearToCargo, leaveVehicle, startReturn, wipeIfEmpty, cardStale,
 } from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, breakdownChance, isBike } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, breakdownChance, isBike, carPartsCost } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { rollConflict } from "./conflicts.js";
 import { rollWanderer } from "./wanderers.js";
@@ -20,6 +20,7 @@ import { argumentWeight, argumentPair, relEvent, hasFriendsOnTeam, campfireCard 
 import { lootItem } from "./inventory.js";
 import { spend } from "./itemcond.js"; // the condition of what is found
 import { teamPolicy, wantsOut, breakOff, RETREAT_POLICIES } from "./breakoff.js";
+import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre
 
 // Things a road card can turn up (tools/loottest.js counts them as sources).
 export const HUMVEE_GEAR = ["ar", "plate", "nvg", "milradio", "rucksack", "carbine", "smokegren", "frag"];
@@ -145,7 +146,7 @@ const EVENTS = [
               // the bows or the guns with under one a head of the dead between them (world.js armedFactor).
               const members = partyMembers(s, p);
               const shot = takeShots(p, members, n * 2);
-              const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, shot.ammo, shot.arrows, { need: (k) => (n * k) / Math.max(1, members.length), short: 0.5 });
+              const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, shot.used, shot.arrows, { need: (k) => (n * k) / Math.max(1, members.length), short: 0.5 });
               if (power <= n * 0.6) return `A messy fight. ${injureRandom(s, p, 15, 40, "fighting the dead")}`;
               const back = arrowsBack(shot.arrows); // cleared: about half the arrows are picked up again
               if (back) p.supplies.arrows = (p.supplies.arrows || 0) + back;
@@ -414,12 +415,14 @@ function breakdownCard(state, p, v) {
     choices: [
       { label: "Repair it on the spot", hint: `${hint(state, p, "mechanics", 9)}. Success: 2 hours. Failure: 8 hours and more wear`, resolve: (s) => !here(s) ? gone : check(s, p, "mechanics", 9).ok ? (delay(p, 2), "Fixed in two hours.") : (delay(p, 8), (v.condition = Math.max(1, v.condition - 10)), "It takes most of the day to get it running, and it is worse for wear.") },
       {
-        label: "Use a spare part", hint: "1 part: quick fix, +10 condition",
-        get disabled() { return carried(p, "parts") < 1; }, // what the team carries now, not when the card was made
+        label: "Use a spare part", hint: "1 car part (or 2 machine parts): quick fix, +10 condition",
+        get disabled() { return !carPartsCost((k) => carried(p, k), 1).ok; }, // what the team carries now, not when the card was made
         resolve: (s) => {
           if (!here(s)) return gone;
-          if (carried(p, "parts") < 1) return "No spare part left. Nothing was done.";
-          takeSupply(p, "parts", 1);
+          const pay = carPartsCost((k) => carried(p, k), 1); // vehicles.js: a car part, else 2 machine parts
+          if (!pay.ok) return "No spare part left. Nothing was done.";
+          if (pay.car) takeSupply(p, "carparts", pay.car);
+          if (pay.parts) takeSupply(p, "parts", pay.parts);
           v.condition = Math.min(100, v.condition + 10);
           delay(p, 1);
           return "Back on the road quickly.";
@@ -523,7 +526,7 @@ export function convoyLegEvent(state, p, tileId) {
   const rng = state.rng;
   const members = partyMembers(state, p);
   const bows = archerCount(members); // the escort's bows shoot arrows: the +2 for being well supplied counts them too
-  const power = members.reduce((a, s) => a + combatPower(s), 0) + (p.supplies.ammo > 10 || (bows && p.supplies.arrows > 10) ? 2 : 0);
+  const power = members.reduce((a, s) => a + combatPower(s), 0) + (totalRounds(p.supplies) > 10 || (bows && p.supplies.arrows > 10) ? 2 : 0);
   const where = tileLabel(state, tileId);
   if (rng.chance((0.02 + t.infection * 0.05) * m.zombie * sm)) {
     if (power > 6 + t.infection * 8) log(state, `Convoy fought off the dead near ${where}.`, "info");
@@ -533,7 +536,7 @@ export function convoyLegEvent(state, p, tileId) {
     // Six shots from the escort's packed supplies (never the cargo): the bows' share in arrows, lost (the convoy does
     // not stop to look for them).
     const bowShots = bows ? Math.round((6 * bows) / Math.max(1, members.length)) : 0;
-    p.supplies.ammo = Math.max(0, (p.supplies.ammo || 0) - (6 - bowShots));
+    spendAmmo(p.supplies, 6 - bowShots); // rounds.js: any calibre, the cheapest first
     if (bowShots) p.supplies.arrows = Math.max(0, (p.supplies.arrows || 0) - bowShots);
     return;
   }

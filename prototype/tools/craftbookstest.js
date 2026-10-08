@@ -6,6 +6,7 @@
 // old saves get it from Mechanics, quality is a deterministic roll that rises and narrows with Crafting, speed rises
 // with it, and every finished craft gives Crafting XP that grows with quality and with dearer materials.
 // Usage: node tools/craftbookstest.js [seed]
+import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, tickHour, hub, atBase, makeSurvivor, skill, day } from "../src/sim/world.js";
 import { GEAR, SKILLS, ROLLED_SKILLS } from "../src/sim/data.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -244,8 +245,8 @@ console.log("Fights");
       st.survivors.push(s);
       team.push(s);
     }
-    h.stock.ammo = 100;
-    const ammo0 = h.stock.ammo;
+    setRounds(h.stock, 100);
+    const ammo0 = totalRounds(h.stock); // ammo.js: every round, any calibre
     st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: team.map((s) => s.id), enemy: { kind: n % 2 ? "zombies" : "raiders", count: 3, power: 2 }, canRetreat: false, handler: "craftbooks", context: {} });
     const units = st.combat.units.filter((u) => u.side === "player");
     check(units.every((u) => u.weapon === "springmachete" || u.weapon === "pulleybow"), "the special weapons are used in battle");
@@ -255,7 +256,7 @@ console.log("Fights");
     closeCombat(st);
     done++;
     if (last && last.outcome === "victory") wins++;
-    check(h.stock.ammo >= ammo0, "neither uses ammo (a won fight may loot some)");
+    check(totalRounds(h.stock) >= ammo0, "neither uses ammo (a won fight may loot some)");
     for (const s of team) if (s.alive && s.gear.weapon) check(s.gear.weapon.dur === itemDurMax(s.gear.weapon) - 1, `${s.gear.weapon.key} wears by a fight`); // its own full uses (crafted by quality)
     for (const s of team) s.alive = false;
   }

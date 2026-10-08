@@ -31,10 +31,11 @@ import { attitude } from "./factions.js";
 import { controlledLand, allianceMembers } from "./alliance.js";
 import { birthsTotal } from "./family.js"; // births happen in state.children, not state.survivors
 import { causeKind, CAUSE_KINDS } from "./causes.js"; // the kind of each death, as the "Why?" chain recorded it
+import { ROUND_KEYS, totalRounds } from "./rounds.js"; // rounds by calibre
 
 export const STOCK_KEYS = ["food", "preserved", "water", "rawwater", "fuel", "wood", "meds", "ammo", "parts", "scrap"];
 // Flow groups: the stock keys each one sums.
-export const FLOWS = { food: ["food", "preserved"], water: ["water", "rawwater"], fuel: ["fuel"], wood: ["wood"], meds: ["meds"], ammo: ["ammo"], parts: ["parts"], scrap: ["scrap"] };
+export const FLOWS = { food: ["food", "preserved"], water: ["water", "rawwater"], fuel: ["fuel"], wood: ["wood"], meds: ["meds"], ammo: ["ammo", ...ROUND_KEYS], parts: ["parts"], scrap: ["scrap"] }; // ammo: every round, any calibre (rounds.js)
 export const FLOW_KEYS = Object.keys(FLOWS);
 const BASE_COLS = ["day", "span", ...STOCK_KEYS.map((k) => `s_${k}`), ...FLOW_KEYS.map((k) => `i_${k}`), ...FLOW_KEYS.map((k) => `o_${k}`), ...FLOW_KEYS.map((k) => `m_${k}`), "people", "mood", "heat"];
 const COLONY_COLS = [...BASE_COLS, "pop", "deaths", "arrivals", "births", "hivesKnown", "hivesDestroyed", "groups", "allied", "hostile", "land"];
@@ -132,7 +133,7 @@ export function currentRows(state) {
     const mood = here.length ? here.reduce((a, s) => a + (Number(s.mood) || 0), 0) / here.length : 0;
     const h = safeHeat(state, b);
     const acc = H.acc[String(b.id)] || freshAcc();
-    const stock = STOCK_KEYS.map((k) => Math.max(0, Number(b.stock && b.stock[k]) || 0));
+    const stock = STOCK_KEYS.map((k) => Math.max(0, k === "ammo" ? totalRounds(b.stock) : Number(b.stock && b.stock[k]) || 0)); // ammo: every round (rounds.js)
     stock.forEach((v, i) => (sumStock[i] += v));
     people += here.length;
     moodSum += mood * here.length;

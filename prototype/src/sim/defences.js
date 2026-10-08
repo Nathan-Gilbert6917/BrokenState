@@ -151,7 +151,7 @@ export function tierMults(state, base, night = false) {
 export function defendersPower(state, base) {
   const people = atBase(state, base.id).filter((s) => !s.inBed).sort((a, c) => combatPower(c) - combatPower(a)).slice(0, 8);
   const p = people.reduce((a, s) => a + combatPower(s), 0);
-  return p * armedFactor(people, base.stock.ammo || 0, base.stock.arrows || 0);
+  return p * armedFactor(people, base.stock, base.stock.arrows || 0);
 }
 // The dead that broke in, as a strength on the same scale (breakInForce's count × power, a Wallbreaker 12).
 const BOSS_STRENGTH = 12;

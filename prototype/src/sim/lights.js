@@ -42,6 +42,8 @@ export function lightOf(s) {
   const tool = s.gear.tool;
   let best = tool && LIGHTS[tool.key] ? tool.key : null;
   for (const it of carriedItems(s)) if (LIGHTS[it.key] && LIGHTS[it.key].free) best = brighter(best, it.key);
+  const gun = s.gear.weapon; // a weapon light on the gun (gunmods.js): a flashlight that leaves the off hand free
+  if (gun && gun.mods && gun.mods.tactical && gun.mods.tactical.key === "weaponlight" && LIGHTS.flashlight) best = brighter(best, "flashlight");
   return best;
 }
 export const hasLight = (s) => !!lightOf(s);

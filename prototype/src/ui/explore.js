@@ -7,7 +7,7 @@ import { tileLabel } from "../sim/parties.js";
 import { blueprintRows, lockNote, craftBookRows } from "../sim/blueprints.js";
 import { keyRing } from "../sim/locks.js";
 import { repairRows, repairPlan, startRepair, cancelRepair, reassignRepair, fixtureById, costText, FIXTURES, WEAR, RAID_DAMAGE, repairBill, startAllRepairs, brokenAt, jobFor } from "../sim/breakdowns.js";
-import { vehiclesAtBase, canRepair } from "../sim/vehicles.js";
+import { vehiclesAtBase, canRepair, carPartsCost, carPartsText } from "../sim/vehicles.js";
 import { activeCrashes, CRASH_KINDS, daysLeft } from "../sim/crashes.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -98,7 +98,7 @@ export function repairsTab(state, base) {
   }).join("");
   const rep = canRepair(state, base);
   const cars = vehiclesAtBase(state, base.id).filter((v) => v.condition < 100);
-  const carsHtml = cars.length ? cars.map((v) => `<div class="spread small"><span>${esc(v.name)} · ${Math.round(v.condition)}%${v.condition < 35 ? ` <span class="danger">(breaks down often)</span>` : ""}</span><button class="mini" data-action="repairv" data-base="${base.id}" data-id="${v.id}" ${rep.ok && (base.stock.parts || 0) >= 1 ? "" : "disabled"}${tip(rep.ok ? `1 part → +${rep.per} condition` : "Needs a garage or a Mechanics 4+ survivor here")}>Repair (1 part)</button></div>`).join("") : `<div class="muted small">No parked vehicle needs work.</div>`;
+  const carsHtml = cars.length ? cars.map((v) => `<div class="spread small"><span>${esc(v.name)} · ${Math.round(v.condition)}%${v.condition < 35 ? ` <span class="danger">(breaks down often)</span>` : ""}</span><button class="mini" data-action="repairv" data-base="${base.id}" data-id="${v.id}" ${rep.ok && carPartsCost((k) => base.stock[k] || 0, 1).ok ? "" : "disabled"}${tip(rep.ok ? `${carPartsText(1)} → +${rep.per} condition` : "Needs a garage or a Mechanics 4+ survivor here")}>Repair (1 car part)</button></div>`).join("") : `<div class="muted small">No parked vehicle needs work.</div>`;
   return `<div class="grid2">
     <div>
       <h3${tip("A broken building does nothing until someone fixes it. Repair properly (the job's hours, scrap and parts, Mechanics) or jury-rig it (cheap and quick, but it breaks again sooner). The repairer keeps their role and works the job 08:00–20:00, but not while the base is on alert or under siege. A steward with Building on, and the autopilot, start repairs themselves.")}>Repairs (${broken.length})</h3>

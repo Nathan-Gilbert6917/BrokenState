@@ -27,6 +27,7 @@
 import { RETREAT, downChance } from "./combat.js";
 import { hurt, isNight, skill, log, factionById, survivorById, localId } from "./world.js";
 import { armorMult, armorPower } from "./inventory.js";
+import { absorbOffscreen } from "./armour.js"; // per-hit armour: what a wound by the numbers wears off the armour worn
 import { Rng } from "./rng.js";
 import { woundTrauma } from "./health.js";
 import { fightXp, hash01 } from "./skills.js";
@@ -369,6 +370,7 @@ export function fightByNumbers(state, setup, people, { win, ammoUsed, arrowsUsed
     const s = byId.get(h.id);
     if (!s || !s.alive || ((broke || saved.has(h.id)) && downNow.has(h.id))) continue;
     hurt(state, s, h.raw, tile, cause);
+    if (s.alive) absorbOffscreen(s, h.raw, setup.enemy.kind, state);
     (s.alive ? hurtIds.add(s.id) : deadIds.push(s.id));
   }
   for (const id of saved) { // medics.js: barely alive, as the carried
@@ -383,6 +385,7 @@ export function fightByNumbers(state, setup, people, { win, ammoUsed, arrowsUsed
       const s = byId.get(b.id);
       if (!s || !s.alive || downNow.has(b.id)) continue;
       hurt(state, s, b.raw, tile, fight.worn.includes(b) ? cause : `${cause}, running for it`);
+      if (s.alive) absorbOffscreen(s, b.raw, setup.enemy.kind, state);
       (s.alive ? hurtIds.add(s.id) : deadIds.push(s.id));
     }
     const barely = (s) => { s.health = Math.min(s.health, rng.int(5, 15)); woundTrauma(state, s, 30); hurtIds.add(s.id); };
@@ -514,7 +517,7 @@ export function breakOff(state, people, opts = {}) {
   const cause = opts.cause || "running for it";
   for (const b of run.blows) {
     const s = byId.get(b.id);
-    if (s && s.alive && !ms.find((m) => m.id === b.id).down) hurt(state, s, b.raw, opts.tile, cause);
+    if (s && s.alive && !ms.find((m) => m.id === b.id).down) { hurt(state, s, b.raw, opts.tile, cause); if (s.alive) absorbOffscreen(s, b.raw, model.enemy.kind, state); }
     if (s && !s.alive) dead.push(s.id);
   }
   const barely = (s) => { s.health = Math.min(s.health, rng.int(5, 15)); woundTrauma(state, s, 30); };

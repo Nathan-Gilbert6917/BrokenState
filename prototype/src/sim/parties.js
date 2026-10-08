@@ -15,7 +15,7 @@ import { roadblockOnEnter } from "./roadblocks.js";
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
-  factionById, snapshot, mergeKnowledge, gearEffect, radioBasesInRange, isNight, archerCount, armedFactor, arrowsBack, ARROWS,
+  factionById, snapshot, mergeKnowledge, gearEffect, radioBasesInRange, isNight, archerCount, usesArrows, armedFactor, arrowsBack, ARROWS,
 } from "./world.js";
 import {
   resolveRaidOnPlayer, resolveRaidOnFaction, raidWarning, maybeCallForHelp, deliverHelpCall, changeGoodwill,
@@ -26,7 +26,7 @@ import { startScavenge } from "./scavenge.js";
 import { offerCrawl } from "./citycrawl.js"; // a team moved onto a city asks whether to go in
 import {
   vehicleById, partyVehicle, partyFuel, useFuel, wear, abandonVehicle, tank, createVehicle, travelMode, tileFuel, isBike, isCar,
-  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud,
+  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee,
 } from "./vehicles.js";
 import { convoysHour, truckEngineNoise } from "./miltrucks.js";
 import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome } from "./foundcars.js"; // vehicles found on a map: repair, drive home // Army trucks: the convoy event, a running Army truck's engine
@@ -58,6 +58,8 @@ import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldA
 import { thinIceStep } from "./rivers.js"; // frozen rivers: thin ice early and late in the freeze
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
+import { totalRounds, spendAmmo, ROUND_KEYS } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
+import { packRounds, addRecord, drawTeamShots, sortFind } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
@@ -73,7 +75,7 @@ import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hea
 import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
 import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
 import { enterTarget, enterCard } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
-import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
+import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, takeStock, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -247,7 +249,8 @@ export const partyLoad = (state, p) => teamLoad(partyMembers(state, p), poolLoad
 export const unitsThatFit = (room, key) => Math.max(0, Math.floor(room / SUPPLIES[key].weight));
 // What a team carries of one supply: packed plus found (never negative).
 /** @param {Party} p @param {string} key */
-export const carried = (p, key) => Math.max(0, p.supplies[key] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[key]) || 0);
+// "ammo": every round the team carries, any calibre (rounds.js totalRounds).
+export const carried = (p, key) => (key === "ammo" ? totalRounds(p.supplies) + totalRounds(p.cargo && p.cargo.supplies) : Math.max(0, p.supplies[key] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[key]) || 0));
 // A supply a team carries for a check or a cost, water counting both kinds (water.js), and taking it (water: purified
 // first).
 /** @param {Party} p @param {string} key */
@@ -259,6 +262,7 @@ export const takeAny = (p, key, qty) => (key === "water" ? takeTeamWater(p, qty)
 /** @param {Party} p @param {string} key @param {number} qty */
 export function takeSupply(p, key, qty) {
   const want = Math.max(0, Number(qty) || 0);
+  if (key === "ammo") { const c = p.cargo && p.cargo.supplies ? spendAmmo(p.cargo.supplies, Math.floor(want), p.ammoCals).n : 0; return c + spendAmmo(p.supplies, Math.floor(want) - c, p.ammoCals).n; } // rounds.js: any calibre, the ones its guns need last (p.ammoCals, ammo.js settleParty), the cheapest first
   const fromCargo = Math.min(want, Math.max(0, (p.cargo && p.cargo.supplies[key]) || 0));
   if (fromCargo) p.cargo.supplies[key] -= fromCargo;
   const packed = Math.max(0, p.supplies[key] || 0);
@@ -268,11 +272,13 @@ export function takeSupply(p, key, qty) {
 }
 // A team's shots in a fight by the numbers (events.js, the killzone): `total` rounds split by head between the bows
 // and crossbows (arrows) and everyone else (ammo; world.js usesArrows), each taken as takeSupply does. With no bow
-// it is takeSupply(p, "ammo", total). Returns what was taken: { ammo, arrows }.
+// it is all rounds. The rounds: each gun its own calibre (ammo.js drawTeamShots: cargo first, then what was packed; no
+// gun, any rounds). Returns what was taken: { ammo, used: { key: q }, arrows } (used: for armedFactor by calibre).
 export function takeShots(p, members, total) {
   const nb = archerCount(members);
   const bows = nb ? Math.round((total * nb) / Math.max(1, members.length)) : 0;
-  return { ammo: takeSupply(p, "ammo", total - bows), arrows: bows ? takeSupply(p, "arrows", bows) : 0 };
+  const d = drawTeamShots([p.cargo && p.cargo.supplies, p.supplies], members.filter((s) => !usesArrows(s)), total - bows);
+  return { ammo: d.n, used: d.used, arrows: bows ? takeSupply(p, "arrows", bows) : 0 };
 }
 
 /** @param {State} state @param {Party} p */
@@ -626,7 +632,8 @@ export function launchExpedition(state, opts) {
   const est = estimateTrip(state, { memberIds, dest, vehicle: travelMode(v), stance, homeBaseId: home.id, fuel: v ? v.fuel + (supplies.fuel || 0) : 0, supplies, v: plannedV });
   if (!est) return fail(v ? (bikes ? "No route by bike (water in the way)." : "No route for a vehicle (mountains or water). Try on foot.") : "No route to that tile.");
   // Water: purified and un-purified together (water.js), purified packed first.
-  const stockFor = (k) => (k === "water" ? waterIn(home.stock) - Math.max(0, supplies[RAW] || 0) : home.stock[k] || 0);
+  // "ammo": rounds of any calibre (packed below as the rounds that fit the crew's guns: ammo.js packRounds).
+  const stockFor = (k) => (k === "water" ? waterIn(home.stock) - Math.max(0, supplies[RAW] || 0) : k === "ammo" ? totalRounds(home.stock) - ROUND_KEYS.reduce((a, x) => a + (supplies[x] || 0), 0) : home.stock[k] || 0);
   for (const [k, val] of Object.entries(supplies)) if (stockFor(k) < val) return fail(`Not enough ${k === "water" ? "water" : SUPPLIES[k].name.toLowerCase()} at ${at}.`);
   // Packed supplies have to be carried: what the people can carry on top of what they wear (load.js), plus the bikes'
   // racks or the car.
@@ -638,11 +645,13 @@ export function launchExpedition(state, opts) {
   if (bikes) v = takeBikes(state, home, members.length);
   const packed = { ...supplies };
   for (const [k, val] of Object.entries(supplies)) {
+    if (k === "ammo") continue; // last: what is asked for by key first
     if (k !== "water") { home.stock[k] = (home.stock[k] || 0) - val; continue; }
     const d = drawWater(home.stock, val); // purified first, then un-purified (water.js)
     packed.water = d.pure;
     if (d.raw > 0) packed[RAW] = (packed[RAW] || 0) + d.raw;
   }
+  if (supplies.ammo > 0) { packed.ammo = 0; addRecord(packed, packRounds(home.stock, members, supplies.ammo)); } // ammo.js: the rounds that fit each one's gun
   Object.assign(supplies, packed);
   const stays = STAY_MISSIONS.includes(mission);
   /** @type {Party} */
@@ -714,6 +723,7 @@ export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
     phase: "out", warned: false,
   };
   state.parties.push(p);
+  if (kind === "raid" && f.vehicles) assignRaidHumvee(state, f, p); // vehicles.js: a group's turreted Humvee comes along (lost if the raid fails)
   return p;
 }
 
@@ -1436,6 +1446,7 @@ function investigate(state, p) {
   if (h.type === "cache" || h.type === "camp") {
     const got = [];
     const loot = h.type === "cache" ? { food: rng.int(6, 14), meds: rng.int(1, 3), ammo: rng.int(15, 40) } : { food: rng.int(3, 8), scrap: rng.int(4, 10), ammo: rng.int(10, 25) };
+    sortFind(loot, h.type === "cache" ? "guns" : "raider", key); // ammo.js: the rounds by calibre
     for (const [k, q] of Object.entries(loot)) {
       const took = addCargo(state, p, k, q);
       if (took) got.push(`${took} ${k}`);
@@ -1611,7 +1622,7 @@ function cullCard(state, p, horde) {
           const shot = takeShots(p, members, members.length * 15);
           // Tougher dead (a hive's land, red-skull ground) fall slower; a bigger horde (its score) presses closer.
           const tough = (1 + zombieToughness(st, horde.tile) * 0.35) * mixWeight(horde.mix, "weight", horde.elite); // special dead (zombietypes.js)
-          const kill = Math.min(horde.size, Math.round((power * 3 * armedFactor(members, shot.ammo, shot.arrows, { need: (k) => k * 8 + 1, short: 0.5 }) * st.rng.range(0.7, 1.3)) / tough));
+          const kill = Math.min(horde.size, Math.round((power * 3 * armedFactor(members, shot.used, shot.arrows, { need: (k) => k * 8 + 1, short: 0.5 }) * st.rng.range(0.7, 1.3)) / tough));
           horde.size -= kill;
           const risk = Math.min(0.9, 0.25 + hordeScore(horde.size + kill) / 40 + (horde.bosses ? 0.2 : 0) + (tough - 1) * 0.3);
           if (members.length && st.rng.chance(risk)) hurt(st, st.rng.pick(members), st.rng.int(15, 45) * tough, horde.tile, "fighting a horde");
@@ -1821,7 +1832,7 @@ export function dispatchConvoy(state, route) {
     route.paused = "no escort";
     return log(state, `The route to ${f.name} has no escort left and is paused. Set it up again with new escorts.`, "danger");
   }
-  if ((h.stock[route.sendKey] || 0) < route.sendQty) return log(state, `Not enough ${route.sendKey} to send the convoy to ${f.name}.`, "danger");
+  if ((route.sendKey === "ammo" ? stockHas(h.stock, "ammo") : h.stock[route.sendKey] || 0) < route.sendQty) return log(state, `Not enough ${route.sendKey} to send the convoy to ${f.name}.`, "danger");
   // A vehicle if one is parked, sound, and can be fuelled for the round trip; otherwise hand carts.
   const v = state.vehicles.find((x) => isCar(x) && x.loc.kind === "base" && x.loc.baseId === h.id && x.condition > 20);
   const truckPath = v ? planPath(state, h.tile, f.bases[0], true) : null;
@@ -1832,7 +1843,8 @@ export function dispatchConvoy(state, route) {
   const hours = res.cost * 2 + 4;
   const food = Math.ceil((escorts.length * hours) / 24);
   if (h.stock.food < food) return log(state, `Not enough food to supply the convoy to ${f.name}.`, "danger");
-  h.stock[route.sendKey] -= route.sendQty;
+  if (route.sendKey === "ammo") takeStock(h.stock, "ammo", route.sendQty); // any rounds, the cheapest first (rounds.js)
+  else h.stock[route.sendKey] -= route.sendQty;
   h.stock.food -= food;
   const wantWater = Math.ceil(food * thirstAhead(state, hours / 24)); // more in summer and a heat wave (weather.js)
   const w = drawWater(h.stock, wantWater); // purified first (water.js)

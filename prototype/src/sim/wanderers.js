@@ -34,6 +34,7 @@ import { lootItem } from "./inventory.js";
 import { kitSource, spend } from "./itemcond.js";
 import { halt, resume, afterFight, rob, talkSkill, talker, runBonus, addCargo, triggerConflict, spotFirstChance } from "./conflicts.js";
 import { bandsOf } from "./hardcore-groups.js";
+import { sumRecs } from "./rounds.js"; // rounds by key: each gun judged by its own calibre
 import { wandererJoinChance, wandererJoins } from "./groupcare.js"; // AI parity: groups recruit wanderers by type, food and beds
 
 export const WANDER = {
@@ -436,7 +437,7 @@ export function neutralCard(state, p, g, opts = {}) {
 function odds(state, p, enemy, ambush, allyPower = 0) {
   const people = partyMembers(state, p);
   if (!people.length) return 0;
-  let mine = people.reduce((a, s) => a + combatPower(s), 0) * armedFactor(people, carried(p, "ammo"), carried(p, "arrows")); // the guns' ammo, the bows' arrows
+  let mine = people.reduce((a, s) => a + combatPower(s), 0) * armedFactor(people, sumRecs(p.supplies, p.cargo && p.cargo.supplies), carried(p, "arrows")); // the guns' ammo, the bows' arrows
   let theirs = enemy.count * enemy.power;
   if (ambush === "player") mine *= 1.4;
   if (ambush === "enemy") theirs *= 1.4;
