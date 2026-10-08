@@ -117,6 +117,7 @@ const FLOORED = new Set(["open", "counter", "cabinet", "shelf", "locker", "crate
 // Furniture that stands on a building's upper floor (sim/buildingmaps.js: a cell with a height that is not walked on)
 // is drawn on a slab of the upper floor, raised with it.
 const FURNITURE = new Set(["counter", "cabinet", "shelf", "locker", "crate", "rack", "table", "bed", "hay", "bars"]);
+FLOORED.add("gunsafe"); FURNITURE.add("gunsafe"); // sim/locks.js gun safes: a steel box standing on the floor
 // Buildings: 4-connected cells with floorboards (houses, shops, the base's buildings; flat-roofed blocks are solid).
 const GROUNDY = new Set(["water", "trench", "spikes", "hivewall"]);
 function sceneFor(b) {
@@ -611,6 +612,18 @@ function prims(k, o) {
       out.push(run(ax, 0.44, 0.56, top - 2, top, flatM(PAL.metalDk)));
       return out;
     }
+    case "gunsafe": { // sim/locks.js: a tall dark steel box, a brass dial and a handle on its faces, a frame round the door
+      const face = (f, s, t, X, Y, sw) => {
+        if (f === "top") return mul(PAL.metalDk, 0.7);
+        const w = sw || 9, cx = w * 0.42, d = Math.hypot(s - cx, (t - 14) * 1.1);
+        if (d < 1.6) return hex("#d9b23a");
+        if (d < 2.2) return mul(PAL.metal, 1.1);
+        if (s > w * 0.7 && s < w * 0.82 && t > 9 && t < 15) return mul(PAL.metal, 1.2);
+        if (t < 1 || t > 21 || s < 0.8 || s > w - 0.8) return mul(PAL.metalDk, 0.55);
+        return mul(PAL.metalDk, 0.8 + n2(X, Y, 21) * 0.08);
+      };
+      return [{ u0: 0.22, u1: 0.78, v0: 0.22, v1: 0.78, z0: 0, z1: 22, m: face }];
+    }
     case "shelf": case "locker": case "cabinet": case "counter": {
       const ax = along(o);
       if (k === "locker") return [run(ax, 0.3, 0.72, 0, 26, (f, s, t) => (f !== "top" && (Math.floor(s) % 5 < 1 || (t > 18 && t < 20 && Math.floor(s) % 2)) ? PAL.metalDk : PAL.metal), 0.12, 0.88)];
@@ -973,7 +986,7 @@ function blockTop0(k, o) {
     case "truck": return o.car ? (MIL_TOPS[o.car.body] ? 19 : 17) : 23;
     case "car": return o.car ? (o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16; // a multi-cell car: its cabin cells stand taller than the hood and the trunk
     case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" || MIL_TOPS[o.car.body] ? 19 : o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16;
-    case "locker": return 26; case "shelf": return 24; case "pump": return 22;
+    case "locker": return 26; case "shelf": return 24; case "pump": return 22; case "gunsafe": return 22;
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;

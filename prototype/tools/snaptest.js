@@ -34,7 +34,9 @@ const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
 const check = (ok, msg) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${msg}`); };
 const section = (s) => console.log(`\n${s}`);
-const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 4 }); st.cards.length = 0; st.hour = 24 * 10; return st; };
+// The hub starts bare (barestart); a plain lived-in base has what the old start had standing (a fire needs something
+// to burn), so it gets that.
+const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 4 }); st.cards.length = 0; st.hour = 24 * 10; for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(hub(st), t); return st; };
 const nextDay = (st) => { st.hour += 24; };
 const addPerson = (st, base, mood = 60) => { const s = makeSurvivor(st, 1); s.traits = []; s.location = { kind: "base", baseId: base.id }; s.role = "farm"; s.mood = mood; st.survivors.push(s); return s; };
 const lastLog = (st) => st.log[0].text;

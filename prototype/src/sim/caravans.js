@@ -354,6 +354,7 @@ export function launchCaravan(state, form) {
   for (const i of idx) p.cargo.gear.push(...h.armory.splice(i, 1));
   p.teamMission = "caravan";
   p.caravan = { stops, idx: -1 };
+  if (form.dealId != null) p.dealId = form.dealId; // sent for a radio deal (radiotrade.js)
   p.orders = [{ type: "mission", mission: "caravan", at: stops[0] }];
   log(state, `A trade caravan sets out: ${stops.map((t) => destName(state, t)).join(" → ")}, then home.`, "info");
   return { party: p };

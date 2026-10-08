@@ -20,6 +20,7 @@ import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, ro
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { truckSearchHour } from "./miltrucks.js";
+import { gunSearchHour } from "./locks.js"; // gun safes, drills and grinders (their own dice)
 import { siteDeadMix, bodyLoot, MILDEAD, maxMix } from "./deadsoldiers.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
 import { mixWeight } from "./zombietypes.js";
@@ -224,7 +225,7 @@ export function searchHour(state) {
   const arrows = rollSiteArrows(state, e.tile, ap.loot, `h${e.hours}`); // a quiver, a box of bolts (loot.js SITE_ARROWS; its own dice)
   if (arrows > 0) { e.found.supplies.arrows = (e.found.supplies.arrows || 0) + arrows; finds.push(`${arrows} arrows`); }
   // Locked things, keys and blueprints (locks.js; its own dice): adds finds and Heat.
-  const locked = lockedSearchHour(state, e, p, members) + truckSearchHour(state, e, p, members); // miltrucks.js: an Army truck's cargo (its own dice)
+  const locked = lockedSearchHour(state, e, p, members) + truckSearchHour(state, e, p, members) + gunSearchHour(state, e, p, members); // miltrucks.js: an Army truck's cargo (its own dice)
   t.loot = Math.max(0.03, t.loot - 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)); // Salvager: picked over 40% slower
 
   // Heat.
@@ -278,7 +279,7 @@ export function searchHour(state) {
   }
   e.log.push(`Hour ${e.hours} [${stage.name}]: ${line}`);
   gainXpAll(state, partyMembers(state, p), "scavenging", USE.searchHour); // skills.js
-  if (e.approach === "sneak") gainXpAll(state, partyMembers(state, p), "stealth", USE.sneakSearch);
+  gainXpAll(state, partyMembers(state, p), "stealth", e.approach === "sneak" ? USE.sneakSearch : USE.searchStealth); // moving quietly through the ruins; more sneaking
   searchHazards(state, partyMembers(state, p), tileLabel(state, e.tile)); // cuts and fevers while searching (health.js)
   wormSearch(state, p, e.tile, 1); // worm.js: the eggs on what they handled, rolled tonight or at home
   if (!partyMembers(state, p).length) {

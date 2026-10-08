@@ -355,6 +355,9 @@ section("The tiers by the numbers");
 {
   const st = world();
   const h = hub(st);
+  // The hub starts bare (barestart); these numbers were set on the old start's buildings (a wall section, a bunkhouse:
+  // with neither, one more barricade lands on a flat stretch of the horde's strength and the yard limit stays put).
+  for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(h, t);
   const m0 = tierMults(st, h, false);
   for (const t of ["walls", "watchtower", "gate", "barricades", "barricades", "bunkhouse"]) addBuilding(h, t);
   h.armory.push(newItem("sandbags"));

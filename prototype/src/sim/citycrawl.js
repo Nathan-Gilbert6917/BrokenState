@@ -677,6 +677,7 @@ export function quickSearch(state, p, place) {
   memOf(state.tiles[c.tile]).looted[place.id] = place.looted;
   addAlert(c, Q.alert);
   gainXpAll(state, members, "scavenging", USE.searchHour * Q.hours);
+  gainXpAll(state, members, "stealth", USE.searchStealth * Q.hours); // skills.js: moving quietly through the ruins
   lines.push(`Searched by the numbers: ${text}.`);
   say2(c, `${place.name}: ${lines.join(" ")}`, "good", state.hour);
   for (let i = 0; i < Q.hours; i++) searchHazards(state, partyMembers(state, p), c.city);

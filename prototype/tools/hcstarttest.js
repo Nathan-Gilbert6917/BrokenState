@@ -222,7 +222,7 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
   const sig = (st) => JSON.stringify(st.survivors.map((s) => [s.name, s.gear, s.pockets])) + JSON.stringify(roadTeam(st).supplies) + partyTile(roadTeam(st));
   check(sig(a) === sig(b), "same seed, same start (spawn, gear and supplies)");
   const n = createWorld({ seed: 4242, factionCount: 7 });
-  check(n.mode === "normal" && n.bases.length === 1 && n.survivors.length === 6 && hub(n) && n.bases[0].buildings.length > 0, "a normal world still starts with its hub, six survivors and buildings");
+  check(n.mode === "normal" && n.bases.length === 1 && n.survivors.length === 6 && hub(n) && n.bases[0].buildings.length === 0 && n.bases[0].stock.scrap > 0, "a normal world still starts with its hub and six survivors, bare (barestart: no buildings, scrap for the first ones)");
   // New-game crew edits: the first three colonists' names and the leader carry into a hardcore start.
   const crew = [{ name: "Ada Vance", skills: { scavenging: 12 } }, { name: "Bo Reyes", leader: true }, { name: "Cy Moss" }, { name: "Dee Six", leader: false }];
   const c = hc(4242, { crew });

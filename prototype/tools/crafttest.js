@@ -20,7 +20,9 @@ const seed = Number(process.argv[3] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 // Tech locks (blueprints.js) are tested in exploretest.js: here every manual is already studied.
-const world = () => { const st = createWorld({ seed, factionCount: 5 }); unlockAll(st); return st; };
+// The hub starts bare (barestart: tools/barestarttest.js); these checks are about crafting at a base with a bench, so
+// the hub gets the crafting bench it used to start with.
+const world = () => { const st = createWorld({ seed, factionCount: 5 }); unlockAll(st); addBuilding(hub(st), "craftbench"); return st; };
 const runHours = (st, base, max = 400) => { let h = 0; while (craftQueue(base).length && h < max) { craftingHour(st); h++; } return h; };
 const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.traits = s.traits.filter((t) => t !== "lucky" && t !== "medic")));
 
@@ -48,7 +50,7 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   check(/Mechanics 3/.test(canCraft(st, h, "sawmachete").reason || ""), "saw-blade machete needs Mechanics 3");
   ppl[0].skills.mechanics = 8;
   check(canCraft(st, h, "sawmachete").ok, "Mechanics 8 survivor unlocks the machete");
-  addBuilding(h, "ammo_bench"); // the new hub starts with a crafting bench only (benchtest.js)
+  addBuilding(h, "ammo_bench"); // the hub has a crafting bench only (world() above; benchtest.js)
   check(hasWorkshop(h) && canCraft(st, h, "crossbow").ok, "an ammo bench counts as a workshop");
   h.buildings = h.buildings.filter((b) => b.type !== "ammo_bench");
   check(!hasWorkshop(h) && /workshop/.test(canCraft(st, h, "crossbow").reason || ""), "crossbow needs a workshop");

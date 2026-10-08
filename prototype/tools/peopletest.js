@@ -20,7 +20,9 @@ const longDays = Number(process.argv[3] || 200);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(t);
-const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.cards.length = 0; return st; };
+// The hub starts bare (barestart: tools/barestarttest.js); these checks are about a lived-in hub, so it gets what the
+// old start had standing (two farm plots, a crafting bench, a bunkhouse, a wall section).
+const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.cards.length = 0; for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(hub(st), t); delete hub(st).crowdNote; return st; };
 const addPerson = (st, base, mood = 60) => { const s = makeSurvivor(st, 1); s.traits = []; s.location = { kind: "base", baseId: base.id }; s.role = "farm"; s.mood = mood; st.survivors.push(s); return s; };
 const nextDay = (st) => { st.hour += 24; };
 const enabled = (st, c) => !(typeof c.disabled === "function" ? c.disabled(st) : c.disabled);
