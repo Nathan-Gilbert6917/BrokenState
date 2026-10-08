@@ -16,7 +16,7 @@ import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
 import { itemLoad, lootItem, armouredItem } from "./inventory.js";
 import { siteSource } from "./itemcond.js";
-import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers } from "./loot.js";
+import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { truckSearchHour } from "./miltrucks.js";
@@ -225,6 +225,8 @@ export function searchHour(state) {
   if (lamp) { e.found.gear.push(lamp); finds.push(lamp.name); }
   const part = rollAnyModFind(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a sight, a suppressor (loot.js GUNMOD_FINDS, then SITE_MODS; their own dice)
   if (part) { e.found.gear.push(part); finds.push(part.name); }
+  const rel = rollSiteReload(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // a bag of brass, a can of powder, a box of primers (loot.js SITE_RELOAD; its own dice)
+  if (rel) { e.found.gear.push(rel); finds.push(rel.name); }
   const gren = rollSiteGrenades(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // flashbangs, smoke grenades (loot.js SITE_GRENADES; its own dice)
   if (gren.length) { e.found.gear.push(...gren); finds.push(gren.length > 1 ? `${gren.length} ${gren[0].key === "flashbang" ? "flashbangs" : "smoke grenades"}` : gren[0].name); }
   const gl = rollSiteLaunchers(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // grenade launchers, rocket tubes, 40 mm (loot.js SITE_LAUNCHERS; its own dice)

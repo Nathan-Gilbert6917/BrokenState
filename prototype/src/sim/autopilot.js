@@ -67,6 +67,7 @@ import { ensureDiplo, joinProblem, joinWar } from "./diplomacy.js";
 import * as CL from "./claims.js";
 import { baseAmmo, teamAmmo, partyCals, wantedKey, spareRounds } from "./ammo.js"; // rounds by calibre: what fits the guns there
 import { supplyAmt } from "./rounds.js"; // "ammo": every round there, any calibre
+import { autoReloadOrders, autoReloadBench, reloadNeeds, reloadCaps, reloadWanted } from "./reloading.js"; // the reloading bench: its orders, the upgrade, powder and primers to buy
 const CLAIM_ORDER = "claim", WELL_ORDER = "well";
 const claimsReady = () => typeof CL.canClaim === "function" && typeof CL.playerClaims === "function";
 import { jobTripCands, jobById, activeJobs } from "./jobs.js";
@@ -275,7 +276,8 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.medical) planTreatment(state, base);
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building) planBuilds(state, base, areas);
-  if (areas.production) { govOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench
+  if (areas.production) { govOrders(state, base); autoReloadOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench; reloading.js: HP, slugs, AP to keep
+  if (areas.building) { const up = autoReloadBench(state, base); if (up) say(state, up); } // reloading.js: an ammo bench upgraded once there are inputs to load with
 }
 // Roles at one base (after the day's trip is planned). Returns the number of role changes.
 export function governRoles(state, base, areas = ALL_AREAS) {
@@ -1321,6 +1323,7 @@ function handleTrade(state) {
   const ask = {};
   const caps = { meds: 10, parts: 6, food: 40, fuel: 20, ammo: 120, scrap: 40, water: 20, wood: 600 }; // wood: 60 kg of firewood
   for (const k of ["gunparts", "carparts", "electronics"]) caps[k] = Math.max(1, Math.min(6, partDeficit(state, home, k))); // repair.js: up to the reorder level
+  for (const [k, v] of Object.entries(reloadCaps(state, home))) caps[k] = Math.max(1, v); // reloading.js: powder and primers up to the bench's stock
   let askValue = 0;
   // Only what they can spare and the team can carry home (trade.js refuses the whole deal otherwise).
   let room = cargoRoom(state, p);
@@ -1513,6 +1516,7 @@ function needs(state, h = hub(state)) { // h: a base leader's own base (stewardS
   const pn = partNeeds(state, h);
   for (const k of ["gunparts", "carparts", "electronics"]) out[k] = pn[k];
   out.parts = Math.max(out.parts, pn.parts > 1.5 ? pn.parts : 0);
+  if (h) Object.assign(out, reloadNeeds(state, h)); // reloading.js: powder and primers bought for a reloading bench, kept for one
   return persona(state).reserves ? reserveNeeds(state, h, out) : out;
 }
 // Cautious: a supply below its reserve target is wanted (1.6, up to 3 when it is gone); one well above it
@@ -1920,6 +1924,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
 // station: the building, when known. Its standing order (production.js; the governor's own from govOrders, or the
 // player's) comes first: a station it holds is never staffed, and an until / keep order replaces the stock check.
 function stationWorth(state, base, recipe, station = null) {
+  if (station && station.type === "reload_bench" && reloadWanted(state, base)) return true; // reloading.js: a reloading order short and makeable (its station order holds only the common rounds)
   if (station && orderHold(state, base, station)) return false;
   const byOrder = !!station && stationOrder(base, station).mode !== "forever";
   const st = base.stock;
@@ -2165,7 +2170,7 @@ function buildWishes(state, base) {
   // Ammo from scrap: an ammo bench needs a workbench here (it opens the workshop recipes too), so the crafting bench
   // goes up and is upgraded first. Saved for while the ammo is below what would set the ammo bench to work
   // (stationWorth: 15 a head + 60, or the hive campaign's stockpile); the hub used to start with an ammo bench.
-  if (!countAll(base, "ammo_bench") && !queued("ammo_bench")) {
+  if (!countAll(base, "ammo_bench") && !countAll(base, "reload_bench") && !queued("ammo_bench")) { // a reloading bench is an ammo bench upgraded (reloading.js)
     const ammoLow = baseAmmo(state, base) < Math.max(here.length * 15 + 60, campaignAmmoTarget(state, base));
     const bt = benchTier(base, true);
     if (!bt && !benchQueued) add("craftbench", "a crafting bench, the first step to an ammo bench", ammoLow);

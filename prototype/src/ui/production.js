@@ -4,7 +4,7 @@
 // main.js's dispatcher (PROD_ACTIONS on click, PROD_CHANGE on change).
 import { baseById, survivorById, atBase, skill } from "../sim/world.js";
 import { BUILDINGS, stations, count } from "../sim/buildings.js";
-import { SKILL_NAMES } from "../sim/data.js";
+import { SKILL_NAMES, SUPPLIES } from "../sim/data.js";
 import { CRAFTS, craftName, MAX_CRAFT_QUEUE } from "../sim/crafting.js";
 import { ROLES } from "../sim/economy.js";
 import {
@@ -15,6 +15,8 @@ import { POWER, POWER_USERS, STILL, powerStatus, refreshPower, generators } from
 import { STEWARD_AREAS, stewardOf, setSteward, setStewardArea, setStewardStyle, setPinned, stewardSummary, STEWARD_LOG_HOUR, leaderChoices, leaderOf, leaderStatus, leaderScore, ledBy, setLeader, actingLeader, actsShare } from "../sim/steward.js";
 import { LEADER_LIFT } from "../sim/morale.js";
 import { PERSONALITIES } from "../sim/autopilot.js";
+import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js";
+import { RELOAD, recipeList, inputsPer10, dayRate, handHq, reloadOrders, reloadRows, reloadBenches, setReloadOrder, removeReloadOrder, toggleReloadOrder, handMake, pullRows, pullOrders, pullYield, setPullOrder, removePullOrder } from "../sim/reloading.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -78,6 +80,69 @@ export function powerCard(state, b) {
       ${users.length ? `<table class="t"><tr><th>Building</th><th${tip("Power it draws")}>Need</th><th>With power</th><th>Status</th><th></th></tr>${ps.users.map(row).join("")}</table>` : `<div class="muted">Nothing here draws power yet. ${esc(usesText)}.</div>`}
       <div class="muted" style="margin-top:0.3rem">A generator runs only while something draws power and burns its ${POWER.genFuel} fuel for the day when it starts. Each generator and each powered station needs its operator (Operate role). The still turns 8 food (up to ${STILL.mash} of it yesterday's spoiled food) and 2 water into 3 fuel a day.</div>
     </div>`;
+}
+
+// ---------- the reloading bench (sim/reloading.js) ----------
+// Default "keep at least" when an order is added, by type.
+const RELOAD_N = { hp: 100, slug: 25, ap: 60, match: 40, subsonic: 50, sp: 60, bird: 50, buck: 100, fmj: 200 };
+const n0r = (v) => Math.floor((v || 0) + 1e-9);
+// The reloading card on the Workshops tab: the inputs in stock, the standing "keep at least N" orders and what the
+// bench does with them today, and every recipe by calibre (inputs per 10, rounds a day, the Mechanics it needs).
+export function reloadCard(state, b) {
+  const benches = reloadBenches(b);
+  if (!benches.length) return count(b, "ammo_bench") ? `<h3>Reloading</h3><div class="small muted">Upgrade an ammo bench into a reloading bench (Construction, on its utility plot: 1 machine part, 3 gun parts, 20 scrap, ${RELOAD.UP.hours} work-hours, a Mechanics 3+ survivor here) to load hollow points, slugs, match and AP rounds from brass, powder and primers.</div>` : "";
+  const st = b.stock;
+  const ops = benches.map((x) => atBase(state, b.id).find((s) => s.role === "operate" && s.station === x.id && !s.inBed)).filter(Boolean);
+  const op = ops.sort((a, c) => skill(c, "mechanics") - skill(a, "mechanics"))[0] || null;
+  const m = op ? skill(op, "mechanics") : 0;
+  const R = b.reload || { wear: 0 };
+  const stockLine = [
+    `<b>${n0r(st.brass)}</b> brass`,
+    `<b>${n0r(st.powder)}</b> powder charges${st.blackpowder >= 1 ? ` (+${n0r(st.blackpowder)} black)` : ""}`,
+    `<b>${n0r(st.primers)}</b> primers${st.matchprimers >= 1 ? ` (+${n0r(st.matchprimers)} match-head)` : ""}`,
+    `<b>${n0r(st.scrap)}</b> scrap`, `<b>${n0r(st.gunparts)}</b> gun parts`,
+  ].join(" · ");
+  const rows = reloadRows(state, b, op);
+  const orderRows = rows.map((r) => {
+    const o = r.order, key = o.key, data = `data-base="${b.id}" data-id="${o.id}"`;
+    const hk = key + "_hand", hm = SUPPLIES[hk] ? handMake(state, hk) : null;
+    const hand = SUPPLIES[hk] && st[hk] >= 1 ? ` <span class="muted"${tip(`Handloads here: quality ${pct(hm.hq)}${hm.bp ? `, ${pct(hm.bp)} black powder` : ""}${hm.mp ? `, ${pct(hm.mp)} match-head primers` : ""}${hm.lo ? `, ${pct(hm.lo)} loaded below Mechanics 8 (aim −1)` : ""}`)}>(${n0r(st[hk])} handloads)</span>` : "";
+    return `<div class="spread small prodctl"><span>Keep <input type="number" min="0" max="${RELOAD.ORDER_MAX}" step="10" class="po-n" data-action="rl-n" ${data} data-key="${key}" value="${o.n}"${tip("Rounds of this calibre and type to keep at this base (its handloads count)")}> <b>${esc(SUPPLIES[key].name)}</b> · have ${r.have ?? 0}${hand}${o.by === "ai" ? ` <span class="chip"${tip("Set by this base's steward (or the autopilot). Change it and it becomes yours.")}>steward</span>` : ""}</span>
+      <span class="row"><span class="${r.n ? "good" : "muted"}">${r.n ? `+${r.n} today` : esc(r.reason)}</span><button class="mini" data-action="rl-toggle" ${data}>${o.on ? "Pause" : "Resume"}</button><button class="mini" data-action="rl-del" ${data}>Remove</button></span></div>`;
+  }).join("");
+  const have = new Set(reloadOrders(b).map((o) => o.key));
+  const recipes = recipeList();
+  const opts = recipes.map((g) => `<optgroup label="${esc(CALIBERS[g.cal].name)}">${g.types.filter((t) => !have.has(t.key)).map((t) => `<option value="${t.key}">${esc(SUPPLIES[t.key].name)}</option>`).join("")}</optgroup>`).join("");
+  const table = recipes.map((g) => `<tr><td colspan="4"><b>${esc(CALIBERS[g.cal].name)}</b></td></tr>${g.types.map((t) => {
+    const inp = inputsPer10(g.cal, t.type);
+    const lock = m < t.min;
+    const ins = `${inp.brass} brass, ${inp.primers} primers, ${Math.round(inp.powder * 10) / 10} powder, ${inp.scrap} scrap${inp.parts ? `, ${inp.parts} machine parts` : ""}`;
+    return `<tr class="${lock ? "muted" : ""}"><td>${esc(AMMO_TYPES[t.type].name)}${t.ap ? `<span class="small muted"${tip("AP needs a machine shop here (steel cores: a machine part per 20)")}> (machine shop)</span>` : ""}</td><td class="small">${ins}</td><td>${dayRate(t.rate, m)}/day</td><td class="small">${lock ? `<span class="warn">Mechanics ${t.min}</span>` : `Mechanics ${t.min} · hand q ${pct(handHq(m))}`}</td></tr>`;
+  }).join("")}`).join("");
+  return `<h3>Reloading</h3>
+    <div class="card small prodctl">
+      <div class="spread"><b>${benches.length} reloading bench${benches.length === 1 ? "" : "es"}</b><span class="muted">${op ? `${esc(op.name)} (Mechanics ${m})` : "no operator (Operate role)"} · dies worn ${n0r(R.wear)}/${RELOAD.WEAR} rounds</span></div>
+      <div>${stockLine}</div>
+      <div class="muted" style="margin:0.2rem 0">Each day the bench works the order furthest short that it can make; with none it makes common rounds from scrap like an ammo bench. Per round: a case, a primer, its powder; a scrap per ${RELOAD.LEAD} bullets; a gun part per ${RELOAD.WEAR} rounds (the dies). Typed rounds come out as handloads: they jam ×(2.5 − 1.5 × quality), quality 0.6 + 0.03 × Mechanics; loaded below Mechanics 8 they aim 1 worse. Black powder (jams ×1.5, louder) and match-head primers (×3) are used only when the factory ones run out. Brass comes back after a won fight.</div>
+      ${orderRows || `<div class="muted">No reloading orders: the bench makes common rounds.</div>`}
+      ${opts ? `<div class="row" style="margin-top:0.3rem"><select data-action="rl-add" data-base="${b.id}"${tip("Add a standing order: keep at least this many rounds of a calibre and type here")}><option value="">Add a reloading order…</option>${opts}</select></div>` : ""}
+      ${pullBlock(state, b, op)}
+      <details style="margin-top:0.3rem"><summary>Recipes (inputs per 10 rounds, rounds a day for ${op ? esc(op.name.split(" ")[0]) : "Mechanics 0"})</summary><table class="t">${table}</table></details>
+    </div>`;
+}
+
+// Pulling rounds: orders to take rounds apart down to a number kept (their case, powder, a primer, lead), worked when
+// there is nothing to load.
+function pullBlock(state, b, op) {
+  const rows = pullRows(state, b, op).map((r) => {
+    const o = r.order, data = `data-base="${b.id}" data-id="${o.id}"`, y = pullYield(o.key);
+    return `<div class="spread small prodctl"><span>Pull <b>${esc(SUPPLIES[o.key].name)}</b> down to <input type="number" min="0" max="${RELOAD.ORDER_MAX}" step="10" class="po-n" data-action="pl-keep" ${data} data-key="${o.key}" value="${o.keep}"${tip(`Rounds of it to keep (for trade). Each round pulled gives ${y.brass ? "its case, " : ""}${Math.round(y.powder * 100) / 100} powder charge${y.powder === 1 ? "" : "s"}${y.primers ? `, ${Math.round(y.primers * 100)}% of a primer` : ""} and a scrap per ${RELOAD.LEAD} bullets.`)}> · have ${r.have}${o.by === "ai" ? ` <span class="chip">steward</span>` : ""}</span>
+      <span class="row"><span class="${r.n ? "good" : "muted"}">${r.n ? `−${r.n} today (if nothing to load)` : esc(r.reason)}</span><button class="mini" data-action="pl-del" ${data}>Remove</button></span></div>`;
+  }).join("");
+  const have = new Set(pullOrders(b).map((o) => o.key));
+  const keys = Object.keys(b.stock).filter((k) => SUPPLIES[k] && SUPPLIES[k].round && SUPPLIES[k].common !== false && b.stock[k] >= 1 && !have.has(k)); // not a launcher's grenades or rockets
+  const add = keys.length ? `<div class="row" style="margin-top:0.2rem"><select data-action="pl-add" data-base="${b.id}"${tip("Take rounds of a calibre nobody here shoots apart for the bench: case, powder, primer, lead")}><option value="">Pull rounds apart…</option>${keys.map((k) => `<option value="${k}">${esc(SUPPLIES[k].name)} (${n0r(b.stock[k])})</option>`).join("")}</select></div>` : "";
+  return rows || add ? `<div style="margin-top:0.3rem"><b>Pulling</b> <span class="muted">(when there is nothing to load: ${RELOAD.PULL.RATE} a day +4% a Mechanics point)</span>${rows}${add}</div>` : "";
 }
 
 // ---------- Crafting tab ----------
@@ -168,6 +233,9 @@ export const PROD_ACTIONS = {
   "co-del": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, removeCraftOrder(state, b, d.id)); },
   "stw-toggle": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, setSteward(state, b, !stewardOf(b).on)); },
   "stw-area": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, setStewardArea(state, b, d.area, !stewardOf(b).areas[d.area])); },
+  "rl-del": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, removeReloadOrder(state, b, d.id)); },
+  "pl-del": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, removePullOrder(state, b, d.id)); },
+  "rl-toggle": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, toggleReloadOrder(state, b, d.id)); },
   pin: (state, ui, d) => { const s = survivorById(state, Number(d.id)); if (s) say(ui, setPinned(state, s, !s.pinned)); },
 };
 
@@ -192,6 +260,10 @@ export const PROD_CHANGE = {
   "co-add": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b && el.value) say(ui, addCraftOrder(state, b, el.value, 2, 0)); },
   "co-n": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setCraftOrder(state, b, el.dataset.id, { n: el.value })); },
   "co-q": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setCraftOrder(state, b, el.dataset.id, { minQ: el.value })); },
+  "rl-add": (state, ui, el) => { const b = baseOf(state, el.dataset); const r = el.value && SUPPLIES[el.value] && SUPPLIES[el.value].round; if (b && r) say(ui, setReloadOrder(state, b, el.value, RELOAD_N[r.type] ?? 50)); },
+  "pl-add": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b && el.value) say(ui, setPullOrder(state, b, el.value, RELOAD.PULL.KEEP)); },
+  "pl-keep": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b && el.dataset.key) say(ui, setPullOrder(state, b, el.dataset.key, el.value)); },
+  "rl-n": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b && el.dataset.key) say(ui, setReloadOrder(state, b, el.dataset.key, el.value)); },
   "stw-style": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setStewardStyle(state, b, el.value)); },
   "stw-leader": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setLeader(state, b, el.value)); },
 };

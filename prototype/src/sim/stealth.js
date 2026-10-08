@@ -41,6 +41,7 @@ import { BMAP, throwLanding as interiorLanding, noiseDamp } from "./buildingmaps
 import { battleOptic } from "./optics.js";
 import { LIGHTS, lightOf } from "./lights.js"; // headlamps, flashlights, torches, lanterns, spotlights
 import { loadNoise } from "./ammo.js"; // a round's noise (subsonic, +P)
+import { RELOAD_FX } from "./data-ammo.js"; // black-powder handloads are louder (reloading.js)
 
 export const STEALTH = {
   NIGHT_SIGHT: 7, NIGHT_ZOMBIE_SIGHT: 5, LIGHT_SIGHT: 9, NIGHT_DETECT: 0.6, LIGHT_DETECT: 3, // LIGHT_*: a flashlight's (each light's own: lights.js LIGHTS)
@@ -221,7 +222,7 @@ export function shotNoise(b, a, w) {
       say(b, `${a.name}'s suppressor is shot out.`, "danger");
     }
   }
-  return w.noise * mult * loadNoise(a, !!sup); // ammo.js: the loaded type (subsonic quieter, +P louder)
+  return w.noise * mult * loadNoise(a, !!sup) + (a.loadCond === "hand" && a.loadBp ? a.loadBp * RELOAD_FX.BLACK_NOISE : 0); // ammo.js: the loaded type (subsonic quieter, +P louder); reloading.js: black-powder handloads
 }
 
 // ---------- takedowns ----------

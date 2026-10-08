@@ -90,6 +90,14 @@ export const CRAFTS = {
   sling:       { gear: "sling",       in: { scrap: 1 },           hours: 1,  skill: "mechanics", min: 0, field: true },
   // A field repair kit (repair.js): tools, pins and springs for 5 repairs on the road.
   repairkit:   { gear: "repairkit",   in: { scrap: 3, gunparts: 1, parts: 1 }, hours: 8, skill: "mechanics", min: 3, needs: "workshop" },
+  // The reloading bench's own inputs (reloading.js; section 12): black powder from charcoal, sulphur and saltpetre
+  // (firewood, scrap, food for the latrine's saltpetre), and match-head primers. Both are used only when the factory
+  // powder or primers run out; loads with them are handloads that jam more (black powder: ×1.5 and louder; match-head
+  // primers: misfires ×3).
+  blackpowder: { name: "Black powder (a can)", supplies: { blackpowder: 100 }, in: { wood: 90, scrap: 1, food: 2 }, hours: 8, skill: "mechanics", min: 4, needs: "reload_bench",
+                 desc: "Charcoal from firewood, sulphur scraped from old matches and batteries, saltpetre leached from the latrine: a can's worth of black powder (100 pistol charges) for the reloading bench, used when the smokeless powder runs out. Its loads foul the gun (jams ×1.5) and are louder." },
+  matchprimers: { name: "Match-head primers (50)", supplies: { matchprimers: 50 }, in: { scrap: 1 }, hours: 6, skill: "mechanics", min: 8, needs: "reload_bench",
+                 desc: "Spent primers knocked out, re-anviled and packed with scraped match heads: 50 primers for the reloading bench, used when the factory primers run out. They fail three times as often (misfires and jams ×3)." },
   // ---------- special gear (craft-books): locked until a craft book is read or a blueprint studied (blueprints.js) ----------
   // cmin: Crafting needed besides the recipe's own skill.
   springmachete: { gear: "springmachete", in: { scrap: 8, parts: 1 }, hours: 14, skill: "mechanics", min: 3, cmin: 5, needs: "workshop" },
@@ -100,7 +108,7 @@ export const CRAFTS = {
   // ---------- end of special gear ----------
 };
 
-export const WORKSHOP_TYPES = ["ammo_bench", "machine_shop"]; // stations with metal tools
+export const WORKSHOP_TYPES = ["ammo_bench", "reload_bench", "machine_shop"]; // stations with metal tools (a reloading bench is an ammo bench upgraded: reloading.js)
 export const MAX_CRAFT_QUEUE = 8;
 const FIELD_QUALITY = -0.05;  // made on the road with less to work with
 const WORKSHOP_QUALITY = 0.1; // workshop recipes come out a little better

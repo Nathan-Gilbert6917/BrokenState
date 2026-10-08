@@ -521,7 +521,7 @@ export function partPlan(state, base) {
   const cnt = (t) => base.buildings.filter((b) => b.type === t).length;
   const targets = {
     gunparts: 2 + Math.floor(guns / 3),
-    parts: 3 + cnt("generator") + cnt("well") + cnt("ammo_bench") + cnt("machine_shop"),
+    parts: 3 + cnt("generator") + cnt("well") + cnt("ammo_bench") + cnt("reload_bench") + cnt("machine_shop"),
     carparts: 2 + 2 * cars,
     electronics: 1 + (base.radio ? 1 : 0) + Math.floor(n((it) => ELEC.has(it.key)) / 2),
     kevlarkit: Math.ceil(vests / 3),

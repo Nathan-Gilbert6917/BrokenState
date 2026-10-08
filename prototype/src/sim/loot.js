@@ -625,3 +625,46 @@ Object.assign(ITEM_TAGS, {
 });
 for (const [where, items] of [[SITE_FINDS.police, { taser: 1.5, tasercart: 2, pepper: 2, stunbaton: 1 }], [SITE_FINDS.prison, { taser: 1, tasercart: 1.5, pepper: 1.5, stunbaton: 1 }], [SITE_FINDS.gunstore, { taser: 1.5, tasercart: 2, pepper: 2 }],
   [AREA_FINDS.armory, { taser: 1, tasercart: 1.5, pepper: 1, stunbaton: 0.7 }], [AREA_FINDS.cellblock, { pepper: 0.7, stunbaton: 0.5, tasercart: 0.5 }], [AREA_FINDS.gunshop, { taser: 1, tasercart: 1.5, pepper: 1.5 }]]) Object.assign(where.items, items);
+
+// The reloading bench's inputs (data-ammo.js RELOAD_GEAR; reloading.js): bags of fired brass, cans of powder and
+// boxes of primers where shooters kept them. Their own tables and dice, rolled on their own in each search hour
+// (scavenge.js searchHour) and raid container (combat.js), so every find from before comes out as it did. A bag, can
+// or box is found part-used (RELOAD_LEFT of it). Primers are rare: a gun store about 0.08 a search hour. Traders sell
+// powder and primers as supplies (reloading.js: arms dealers, the traders' and soldiers' groups).
+export const SITE_RELOAD = {
+  gunstore: { p: 0.2, items: { brass: 3, powder: 3, primers: 4 } },
+  lodge: { p: 0.08, items: { brass: 2, powder: 2, primers: 0.5 } },
+  ranch: { p: 0.05, items: { brass: 1, powder: 2 } },
+  military: { p: 0.05, items: { brass: 2, primers: 1 } },
+  police: { p: 0.03, items: { brass: 2, primers: 0.5 } },
+  cabin: { p: 0.02, items: { brass: 1, powder: 1 } },
+  farm: { p: 0.015, items: { powder: 1, brass: 0.5 } },
+};
+export const AREA_RELOAD = {
+  gunshop: { p: 0.1, items: { brass: 2, powder: 2, primers: 1.5 } },
+  armory: { p: 0.06, items: { brass: 2, primers: 1 } },
+  barracks: { p: 0.04, items: { brass: 2, primers: 0.5 } },
+  cabin: { p: 0.03, items: { brass: 1, powder: 1 } },
+  farmhouse: { p: 0.02, items: { powder: 1, brass: 0.5 } },
+};
+export const RELOAD_LEFT = [0.3, 1];
+Object.assign(ITEM_TAGS, {
+  brass: ["guns", "hunt", "police", "military", "farm", "outdoor", "home", "camp"], powder: ["guns", "hunt", "farm", "home", "outdoor", "military"], primers: ["guns", "hunt", "military", "police"],
+});
+const partUsed = (it, u) => { if (it && it.dur > 1) it.dur = Math.max(1, Math.round(it.dur * (RELOAD_LEFT[0] + (RELOAD_LEFT[1] - RELOAD_LEFT[0]) * u))); return it; };
+export function rollSiteReload(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const site = t && t.loc ? SITE_RELOAD[t.loc.type] : null;
+  if (!site) return null;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "reloadfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
+  const key = pickWeighted(site.items, hash01(state.seed, "reloadpick", tileId, state.hour, salt));
+  return key ? partUsed(lootItem(key, siteSource(t.loc.type), hash01(state.seed, "reloaddur", tileId, state.hour, salt)), hash01(state.seed, "reloadleft", tileId, state.hour, salt)) : null;
+}
+export function rollAreaReload(state, tileId, areaType, salt = "") {
+  const a = AREA_RELOAD[areaType];
+  if (!a || hash01(state.seed, "areareload", tileId, salt) >= a.p) return null;
+  const key = pickWeighted(a.items, hash01(state.seed, "areareloadpick", tileId, salt));
+  const t = state.tiles[tileId];
+  return key ? partUsed(lootItem(key, areaSource(areaType, t && t.loc ? t.loc.type : null), hash01(state.seed, "areareloaddur", tileId, salt)), hash01(state.seed, "areareloadleft", tileId, salt)) : null;
+}

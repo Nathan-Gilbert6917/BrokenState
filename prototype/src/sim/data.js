@@ -3,7 +3,7 @@
 // Kept as plain data so it can later move to JSON files for modding.
 // The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
 import { GUN_GEAR, GEAR_PATCH, LATER_GEAR } from "./data-guns.js";
-import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES } from "./data-ammo.js";
+import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES, RELOAD_SUPPLIES } from "./data-ammo.js";
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
 import { HELMET_GEAR } from "./data-helmets.js"; // helmets, visors, helmet mounts, ear protection (helmets.js, hearing.js)
@@ -68,9 +68,10 @@ export const SUPPLIES = {
 // Rounds by calibre and type (data-ammo.js ROUND_SUPPLIES: a_9mm_fmj, a_12ga_buck…; ammo.js): what your stocks hold.
 // "ammo" above stays as the abstract count (other groups' stores, what a plan or a deal asks for).
 Object.assign(SUPPLIES, ROUND_SUPPLIES);
+Object.assign(SUPPLIES, RELOAD_SUPPLIES); // the reloading bench's brass, powder and primers (data-ammo.js; reloading.js)
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
 // The supplies a screen lists one by one: every key but the rounds (shown together as "Ammo", ammo.js totalRounds).
-export const STOCK_KEYS = SUPPLY_KEYS.filter((k) => !ROUND_SUPPLIES[k]);
+export const STOCK_KEYS = SUPPLY_KEYS.filter((k) => !ROUND_SUPPLIES[k] && !RELOAD_SUPPLIES[k]); // the bench's inputs: on the reloading card (ui/production.js)
 // Firewood units to one before firewood was 0.1 kg a unit (a 3 kg bundle): save.js scales an older save's firewood by it.
 export const WOOD_UNITS = 30;
 // "A few" of a supply in a rule (n to spare, n to lose): n units, × its bulk (firewood: 30 a unit of the old 3 kg bundle).

@@ -13,7 +13,7 @@
 // settled into the rounds that fit the guns there (settleRec, every hour and when a fight starts); generic ammo taken
 // from one (negative) comes out of the rounds the guns there need least. totalRounds counts both, so a figure read in
 // between is right.
-import { CALIBERS, AMMO_TYPES, ammoKey, AMMO_MIX, KIND_MIX, KIT_AMMO, STARTER_AMMO, ROUND_SUPPLIES } from "./data-ammo.js";
+import { CALIBERS, AMMO_TYPES, ammoKey, AMMO_MIX, KIND_MIX, KIT_AMMO, STARTER_AMMO, ROUND_SUPPLIES, RELOAD_SUPPLIES } from "./data-ammo.js";
 import { SUPPLIES, GEAR } from "./data.js";
 import { WEAPONS } from "./combat.js";
 import { hash01 } from "./skills.js";
@@ -21,7 +21,7 @@ import { SITE_TAGS, AREA_TAGS } from "./loot.js";
 
 // ---------- keys and stock records (rounds.js) ----------
 export * from "./rounds.js";
-import { foldRounds, sumRecs, ROUND_KEYS, GENERIC_KEYS, addAmmo, addRounds, baseKey, baseType, calName, hasGeneric, isRoundKey, keyFor, roundName, roundOf, roundsIn, settleRec, spendAmmo, splitByMix, takeRounds, totalIn, totalRounds, typeFor, typeFx, typeName, typesOf } from "./rounds.js";
+import { foldRounds, sumRecs, ROUND_KEYS, GENERIC_KEYS, addAmmo, addRounds, baseKey, baseType, calName, hasGeneric, isRoundKey, keyFor, roundName, roundOf, roundsIn, settleRec, spendAmmo, splitByMix, takeRounds, totalIn, totalRounds, typeFor, typeFx, typeName, typesOf, withHand } from "./rounds.js";
 const num = (v) => (Number.isFinite(v) ? v : 0);
 
 // The calibre a weapon shoots (null: melee, bows, acid, anything that takes no rounds; a launcher too: its rounds are
@@ -97,7 +97,7 @@ export function chooseRounds(rec, n, cals = null) {
   let left = Math.floor(n);
   if (!rec || !(left > 0)) return out;
   const order = [];
-  for (const [c] of Object.entries(cals || {}).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))) for (const t of typesOf(c)) order.push(ammoKey(c, t));
+  for (const [c] of Object.entries(cals || {}).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))) for (const t of typesOf(c)) order.push(...withHand(ammoKey(c, t))); // handloads after their factory round
   for (const k of GENERIC_KEYS.filter((x) => !order.includes(x)).sort((a, b) => SUPPLIES[a].value - SUPPLIES[b].value || (a < b ? -1 : 1))) order.push(k);
   for (const k of order) {
     if (left <= 0) break;
@@ -134,10 +134,9 @@ export function unbox(list, rec) {
   let n = 0;
   for (let i = list.length - 1; i >= 0; i--) {
     const it = list[i];
-    if (!it || !ROUND_SUPPLIES[it.key]) continue;
+    if (!it || !(ROUND_SUPPLIES[it.key] || RELOAD_SUPPLIES[it.key])) continue; // boxes of rounds; bags of brass, cans of powder, boxes of primers (reloading.js)
     const q = Math.max(0, Math.floor(num(it.dur ?? (GEAR[it.key] ? GEAR[it.key].dur : 0))));
-    addRounds(rec, it.key, q);
-    n += q;
+    if (RELOAD_SUPPLIES[it.key]) rec[it.key] = num(rec[it.key]) + q; else { addRounds(rec, it.key, q); n += q; }
     list.splice(i, 1);
   }
   return n;
@@ -360,9 +359,27 @@ export const loadOf = (u) => { const c = calOf(u && u.weapon); return c ? typeFo
 /** @param {any} b @param {any} u @param {string} key */
 function battleKeyRounds(b, u, key) {
   let n = 0;
-  for (const o of b.units || []) if (o.side === u.side && o.boxes) for (const it of o.boxes) if (it && it.key === key) n += Math.max(0, Math.floor(num(it.dur)));
-  for (const p of b.pools || []) n += Math.max(0, Math.floor(num(p[key])));
+  for (const k of withHand(key)) { // the bench's handloads of it too (reloading.js)
+    for (const o of b.units || []) if (o.side === u.side && o.boxes) for (const it of o.boxes) if (it && it.key === k) n += Math.max(0, Math.floor(num(it.dur)));
+    for (const p of b.pools || []) n += Math.max(0, Math.floor(num(p[k])));
+  }
   return n;
+}
+// The handload key the unit's next round comes from (takeBattleRounds' order: its own boxes, its teammates', the
+// pools; in each the factory round first), or null for a factory round (or none). gunfire.js reads its make.
+/** @param {any} b @param {any} u */
+export function nextHand(b, u) {
+  const cal = calOf(u && u.weapon);
+  if (!cal) return null;
+  const keys = withHand(keyFor(cal, u.load));
+  if (keys.length < 2) return null;
+  const [fk, hk] = keys;
+  const box = (list) => { let f = 0, h = 0; for (const it of list || []) if (it && num(it.dur) >= 1) { if (it.key === fk) f++; else if (it.key === hk) h++; } return f ? "f" : h ? "h" : ""; };
+  const own = box(u.boxes);
+  if (own) return own === "h" ? hk : null;
+  for (const o of b.units || []) if (o !== u && o.side === u.side && o.boxes) { const m = box(o.boxes); if (m) return m === "h" ? hk : null; }
+  for (const p of b.pools || []) { if (num(p[fk]) >= 1) return null; if (num(p[hk]) >= 1) return hk; }
+  return null;
 }
 // Rounds for this unit's gun (of its loaded type, or the type given; type "*": any type of the calibre). Enemies and
 // the third side: their reserve is endless (only their magazine stops them).
@@ -389,12 +406,13 @@ export function loadsFor(b, u) {
 export function takeBattleRounds(b, u, n) {
   const cal = calOf(u.weapon);
   if (!cal || !(n > 0)) return 0;
-  const key = keyFor(cal, u.load);
+  const keys = withHand(keyFor(cal, u.load)); // in each holder its factory rounds first, then the bench's handloads
   let got = 0;
-  const fromBox = (it) => { if (got >= n || !it || it.key !== key) return; const q = Math.min(n - got, Math.max(0, Math.floor(num(it.dur)))); it.dur -= q; got += q; };
-  for (const it of u.boxes || []) fromBox(it);
-  for (const o of b.units || []) if (o !== u && o.side === u.side && o.boxes) for (const it of o.boxes) fromBox(it);
-  for (const p of b.pools || []) {
+  const fromBox = (it, key) => { if (got >= n || !it || it.key !== key) return; const q = Math.min(n - got, Math.max(0, Math.floor(num(it.dur)))); it.dur -= q; got += q; };
+  const fromBoxes = (list) => { for (const key of keys) for (const it of list || []) fromBox(it, key); };
+  fromBoxes(u.boxes);
+  for (const o of b.units || []) if (o !== u && o.side === u.side && o.boxes) fromBoxes(o.boxes);
+  for (const p of b.pools || []) for (const key of keys) {
     if (got >= n) break;
     const q = Math.min(n - got, Math.max(0, Math.floor(num(p[key]))));
     if (q > 0) { p[key] -= q; got += q; }
@@ -532,7 +550,7 @@ export function drawTeamShots(recs, people, total) {
   });
   return out;
 }
-const snapshot = (rec, cal) => typesOf(cal).map((t) => [ammoKey(cal, t), num(rec[ammoKey(cal, t)])]);
+const snapshot = (rec, cal) => typesOf(cal).flatMap((t) => withHand(ammoKey(cal, t))).map((k) => [k, num(rec[k])]); // handloads too
 function diffInto(before, rec, used) {
   for (const [k, q] of before) { const d = q - num(rec[k]); if (d > 0) used[k] = (used[k] || 0) + d; }
 }

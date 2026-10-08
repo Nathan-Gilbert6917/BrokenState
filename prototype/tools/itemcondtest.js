@@ -30,6 +30,7 @@ import { ensureWares, WARES, WARE_EXTRAS, gearSellPrice, gearBuyPrice } from "..
 import { WARE_BOOKS } from "../src/sim/skills.js";
 import { MILDEAD } from "../src/sim/deadsoldiers.js";
 import * as V from "../src/sim/visitors.js";
+import { RELOAD } from "../src/sim/reloading.js"; // merchants' powder and primers (their own dice)
 import {
   COND_SOURCES, rollCondition, condRolled, isPaper, rollsQuality, rollsWear, qualityWord, siteSource, areaSource, kitSource, traderSource,
 } from "../src/sim/itemcond.js";
@@ -141,8 +142,12 @@ st.started = true;
   const w = createWorld({ seed: 77, factionCount: 8 });
   w.started = true;
   setAutopilot(w, true, "balanced");
-  while (day(w) <= 40 && !w.gameOver) tickHour(w);
-  const items = [...w.factions.flatMap((f) => f.wares || []), ...(w.visitors || []).flatMap((v) => v.wares || [])];
+  // Sampled every day (the stock on the map at one hour depends on which caravans happen to be there then).
+  const seen = new Set();
+  const items = [];
+  const take = () => { for (const it of [...w.factions.flatMap((f) => f.wares || []), ...(w.visitors || []).flatMap((v) => v.wares || [])]) if (it && !seen.has(it)) { seen.add(it); items.push(it); } };
+  while (day(w) <= 40 && !w.gameOver) { tickHour(w); if (w.hour % 24 === 12) take(); }
+  take();
   sampleCheck("a 40-day autopilot world's trade stock", items);
 }
 
@@ -305,6 +310,7 @@ TRUCK_LOOT_HOOKS.push(...truckHooks);
   check(h16(gk.join("|")) === BASE.groupWares.keys, "group wares: the same kinds (less the commune's new extras)");
   check(w.rng.state - r0 === BASE.groupWares.rng, "group wares: the world's dice end where they did");
   const info = V.visitorInfo(w);
+  RELOAD.MERCHANT.on = false; // the reloading bench's powder and primers are new (their own dice): without them the caravans are what they were
   const vk = [], mk = [];
   for (let i = 0; i < 60; i++) for (const kind of ["merchants", "explorers"]) {
     const v = V.spawnVisitor(w, kind);
@@ -313,6 +319,7 @@ TRUCK_LOOT_HOOKS.push(...truckHooks);
     w.visitors.length = 0;
   }
   check(h16(vk.join("|")) === BASE.visitors.keys, "travellers: the same wares");
+  RELOAD.MERCHANT.on = true;
   check(h16(mk.join("|")) === BASE.visitors.merchants, "merchants: the same caravans, at the same places");
   check(info.rng.state === BASE.visitors.rng, "visitors: their dice end where they did (the specialities use dice of their own)");
 }

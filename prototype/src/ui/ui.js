@@ -65,7 +65,8 @@ import { season as wxSeason, weather as wxNow, weatherReport, SEASON_DAYS, front
 import { activeHospital, patients, healRatePerHour, hospitalTypes, nextHospitalType, isHurt, treatAtBaseInfo, fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, itemDurMax, durUnit, MAX_CRAFT_QUEUE, craftInText, benchQuality, benchNeeded, hasBench, craftMean } from "../sim/crafting.js";
 import { craftEdge } from "../sim/blueprints.js"; // the crafting edge from known manuals and read craft books
-import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButton } from "./production.js";
+import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButton, reloadCard } from "./production.js";
+import { canUpgradeAmmoBench, RELOAD } from "../sim/reloading.js"; // the reloading bench: an ammo bench upgraded where it stands
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../sim/inventory.js";
 import { inventoryModal, takeLootReq } from "./inventory.js";
 import { gunBuilderModal, GUNBUILDER_HELP } from "./gunbuilder.js"; // the gun builder (over the inventory or the base screen)
@@ -1079,7 +1080,7 @@ function tradeModal(state, ui) {
   const { f, speech, have } = ctx;
   const tot = tradeTotals(state);
   const a = attitude(f);
-  const rows = SUPPLY_KEYS.filter((k) => k !== "ammo" && (!SUPPLIES[k].round || (have[k] || 0) >= 1)).map((k) => `<tr>
+  const rows = SUPPLY_KEYS.filter((k) => k !== "ammo" && (!(SUPPLIES[k].round || SUPPLIES[k].reload) || (have[k] || 0) >= 1)).map((k) => `<tr>
     <td><b>${SUPPLIES[k].name}</b></td>
     <td>${n0(have[k])}</td><td class="muted">${sellPrice(state, f, k, speech).toFixed(1)}</td>
     <td><button data-action="offer" data-k="${k}" data-d="-5">−</button> ${state.trade.offer[k] || 0} <button data-action="offer" data-k="${k}" data-d="5" ${(state.trade.offer[k] || 0) + 5 > have[k] ? "disabled" : ""}>+</button></td>
@@ -1406,11 +1407,11 @@ function baseWorkshops(state, b) {
         <td${tip(`${BUILDINGS[st.type].desc} ${r.desc}`)}><b>${BUILDINGS[st.type].name}</b></td>
         <td><select data-action="stationop" data-base="${b.id}" data-station="${st.id}"${tip("Assigning someone sets their role to Operate")}><option value="">— none —</option>${people.map((p) => `<option value="${p.id}" ${(s.op ? s.op.id === p.id : p.station === st.id) ? "selected" : ""}>${esc(p.name)} (${SKILL_NAMES[r.skill]} ${skill(p, r.skill)}${p.inBed ? ", in bed" : ""})</option>`).join("")}</select></td>
         <td><span class="chip ${s.running ? "on" : "off"}">${esc(s.reason)}</span></td>
-        <td class="small">${s.op ? `${Object.entries(s.in || r.in).map(([k, v]) => `−${v} ${k}`).join(", ")} → ${Object.entries(s.out).map(([k, v]) => `+${v} ${k}`).join(", ") || "power"}` : "—"}</td>
+        <td class="small">${s.op ? `${Object.entries(s.in || r.in).map(([k, v]) => `−${v} ${k}`).join(", ")} → ${Object.entries(s.out).map(([k, v]) => `+${v} ${SUPPLIES[k] && SUPPLIES[k].round ? SUPPLIES[k].name : k}`).join(", ") || "power"}` : "—"}</td>
         <td>${orderCell(state, b, st)}</td>
       </tr>`;
     }).join("")}</table>` : `<div class="muted small">No workshop stations. Build an ammo bench (needs a workbench here), med station or machine shop in Construction.</div>`}
-    ${racksCard(state, b)}${powerCard(state, b)}`;
+    ${reloadCard(state, b)}${racksCard(state, b)}${powerCard(state, b)}`;
 }
 
 // The water boiler's day (sim/worm.js boilerUse): what it burns and whether it is lit.
@@ -1453,10 +1454,16 @@ function baseConstruction(state, b, ui) {
     const chk = canExpandBunkhouse(state, b, x.id);
     return `<button class="mini" data-action="bunk-expand" data-base="${b.id}" data-id="${x.id}" ${chk.ok ? "" : "disabled"}${tip(`Expand it into a barracks where it stands: 12 beds instead of 6, no new plot. ${costText(BARRACKS_UP.cost)}, ${BARRACKS_UP.hours} work-hours; its 6 beds stay in use meanwhile.${chk.ok ? "" : ` ${chk.reason}.`}`)}>Expand</button>`;
   };
+  // An ammo bench can be upgraded into a reloading bench where it stands (sim/reloading.js).
+  const reloadBtn = (x) => {
+    if (b.construction.some((c) => c.target === x.id)) return `<span class="chip">Upgrading</span>`;
+    const chk = canUpgradeAmmoBench(state, b, x.id);
+    return `<button class="mini" data-action="reload-up" data-base="${b.id}" data-id="${x.id}" ${chk.ok ? "" : "disabled"}${tip(`Upgrade it into a reloading bench where it stands: rounds by calibre and type (hollow points, slugs, match, AP) from brass, powder and primers by standing orders; common rounds from scrap as before when there is no order to work; a quarter of the Heat. ${costText(RELOAD.UP.cost)}, ${RELOAD.UP.hours} work-hours, a Mechanics 3+ survivor here.${chk.ok ? "" : ` ${chk.reason}.`}`)}>Upgrade</button>`;
+  };
   // What stands on the plots, the barrels apart (their own card).
   const plotList = (kind) => {
     const list = b.buildings.filter((x) => BUILDINGS[x.type] && BUILDINGS[x.type].plot === kind && x.type !== "water_barrel");
-    return list.length ? list.map((x) => `<div class="spread small"><span${tip(BUILDINGS[x.type].desc)}>${esc(BUILDINGS[x.type].name)}${x.broken ? ` <span class="chip off">Broken</span>` : ""}</span><span class="row">${x.type === "bunkhouse" ? expandBtn(x) : ""}${demolishBtn(x)}</span></div>`).join("") : `<div class="muted small">Nothing yet.</div>`;
+    return list.length ? list.map((x) => `<div class="spread small"><span${tip(BUILDINGS[x.type].desc)}>${esc(BUILDINGS[x.type].name)}${x.broken ? ` <span class="chip off">Broken</span>` : ""}</span><span class="row">${x.type === "bunkhouse" ? expandBtn(x) : ""}${x.type === "ammo_bench" ? reloadBtn(x) : ""}${demolishBtn(x)}</span></div>`).join("") : `<div class="muted small">Nothing yet.</div>`;
   };
   const holdsSel = (x) => `<select data-action="barrel-holds" data-base="${b.id}" data-id="${x.id}"${tip("Un-purified: room for the well, rain and river water. Purified: room only safe water may use (the water filters' surplus, bottled water brought home), never crowded out by the well's water. Switching moves nothing: water of the other kind goes to the tanks, or stands outside if they are full.")}><option value="rawwater" ${barrelHolds(x) === "rawwater" ? "selected" : ""}>Un-purified</option><option value="water" ${barrelHolds(x) === "water" ? "selected" : ""}>Purified</option></select>`;
   const barrelCard = () => {
