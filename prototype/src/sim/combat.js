@@ -47,7 +47,7 @@ import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
 import { refitSenses } from "./stealth.js";
-import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS, situationalAim } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
+import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS, situationalAim, roundReach } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke, botFlash } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
 import { drillAct } from "./defenceplan.js"; // a defence drill on the base's battle map
@@ -949,7 +949,8 @@ export function turnVehicle(b, u) {
   if (tx < 0 || ty < 0) return "No room to turn here.";
   for (let cy = ty; cy < ty + nh; cy++) for (let cx = tx; cx < tx + nw; cx++) {
     const c = b.cells[idx(cx, cy)];
-    if (!(c.k === "open" || (c.k === "vehicle" && inVehicle(v, cx, cy))) || unitAt(b, cx, cy)) return "No room to turn here: open ground with nobody on it on all its cells.";
+    const o = unitAt(b, cx, cy); // the turret's gunner up on the roof turns with it (aboard: it refused every turn while manned)
+    if (!(c.k === "open" || (c.k === "vehicle" && inVehicle(v, cx, cy))) || (o && !o.aboard)) return "No room to turn here: open ground with nobody on it on all its cells.";
   }
   const car = b.cells[idx(v.x, v.y)].car;
   for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[idx(cx, cy)]; c.k = "open"; delete c.car; }
@@ -958,6 +959,7 @@ export function turnVehicle(b, u) {
   for (const o of b.units) if (o.aboard) { o.x = v.x; o.y = v.y; }
   syncGunner(b); // the gunner stays up on the roof
   u.ap = Math.max(0, u.ap - 1);
+  v.movedK = u.droveK = strikeMark(b); // moved this turn: shots from it (rideAim)
   b.losCache.fill(0);
   const at = u.aboard ? (v.x > 0 ? [v.x - 1, v.y] : [v.x + v.w, v.y]) : [u.x, u.y];
   b.reach = flood(b.cells, at[0], at[1]);
@@ -1062,6 +1064,7 @@ export function driveTo(b, u, x, y) {
     fx(b, { type: "move", unit: u.id, from, path: [[u.x, u.y]] });
   }
   u.ap = Math.max(0, u.ap - DRIVE.AP); u.hunker = false; u.ow = false;
+  v.movedK = u.droveK = strikeMark(b); // moved this turn: shots from it (rideAim)
   b.losCache.fill(0);
   const at = u.aboard ? (ringOf(null)[0] || [v.x, v.y]) : [u.x, u.y];
   b.reach = flood(b.cells, at[0], at[1]);
@@ -1846,6 +1849,43 @@ class MinHeap {
 }
 
 // ---------- odds ----------
+// A bipod's rest (user request 2026-10-08): the cell next to the shooter at (x0, y0) that the shot's line to (x1, y1)
+// crosses and that is half cover (CELL cover 1: sandbags, crates, a car, a fence, a window, a counter...) standing at
+// least as high as the shooter (not a crate down below a walkway), or a full-cover wall people shoot over (cover 2 that
+// does not block sight: the palisade from its walkway, a barricade; user pick G1) whose top, REST.WALL_RISE levels over
+// its foot, reaches the shooter: the gun rests on it. [x, y] or null.
+export const REST = { WALL_RISE: 1 };
+export function restCell(b, x0, y0, x1, y1) {
+  bindDims(b);
+  if (!inside(x0, y0) || (x0 === x1 && y0 === y1)) return null;
+  const dx = x1 - x0, dy = y1 - y0, n = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 4), h0 = hAt(b, x0, y0);
+  for (let i = 1; i < n; i++) {
+    const cx = Math.floor(x0 + 0.5 + (dx * i) / n), cy = Math.floor(y0 + 0.5 + (dy * i) / n);
+    if (Math.max(Math.abs(cx - x0), Math.abs(cy - y0)) > 1 || !inside(cx, cy)) break;
+    if (cx === x0 && cy === y0) continue;
+    const c = b.cells[idx(cx, cy)], C = CELL[c.k];
+    if (C && C.cover === 1 && hAt(b, cx, cy) >= h0) return [cx, cy];
+    if (C && C.cover === 2 && !C.los && !C.walk && hAt(b, cx, cy) + REST.WALL_RISE >= h0) return [cx, cy];
+  }
+  return null;
+}
+// Firing from a vehicle that moved this side's turn (driveTo and turnVehicle mark it: v.movedK; user request
+// 2026-10-08): the one who drove or turned it this turn (a gunner who turned it from the turret, say) RIDE.DRIVER, the
+// turret's gunner RIDE.TURRET (the ring mount steadies the gun), anyone else aboard RIDE.RIDER. Either side: the
+// enemy's gunner on their Humvee (b.raidHumvee) the same, should it ever move. Overwatch shots in the other side's
+// turn right after are the turret's too (user pick G2: the gunner's overwatch still sways, RIDE.TURRET); the turn
+// after that, nothing. Today only the gunner can fire after a drive (driving takes both actions, riders sit inside);
+// the rider and driver numbers are there for whatever lets them shoot.
+export const RIDE = { DRIVER: 25, RIDER: 15, TURRET: 10 };
+export function rideAim(b, a) {
+  if (!b || !a || !(a.aboard || a.gunner)) return 0;
+  const v = a.side === "player" ? b.vehicle : b.raidHumvee;
+  const k = strikeMark(b);
+  if (!v || v.movedK == null) return 0;
+  if (v.movedK === k - 1) return a.gunner ? -RIDE.TURRET : 0; // the other side's turn right after: the turret's overwatch
+  if (v.movedK !== k) return 0;
+  return -(a.droveK === k ? RIDE.DRIVER : a.gunner ? RIDE.TURRET : RIDE.RIDER);
+}
 export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   bindDims(b);
   const w = WEAPONS[a.weapon];
@@ -1854,10 +1894,19 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const rg = gm === NO_MODS ? w : modRange(w, gm);
   const af = calOf(a.weapon) ? typeFx(typeFor(calOf(a.weapon), a.load)) : {}; // ammo.js: the loaded type (match, slugs, birdshot…; a common round: nothing)
   const opt = rg.opt + (af.opt || 0), fall = rg.fall * (af.fallMult ?? 1);
+  const notes = []; // what the moment adds or takes (the UI's odds line): a bipod rested, a moving vehicle, a light round's drop
   let aim = a.aim + (w.aim || 0) + gm.aim + (af.aim || 0) - nlAimPen(a); // nonlethal.js: a taser's daze, pepper spray
   if (d > opt && !a.noFall) aim -= (d - opt) * fall; // noFall: the Sniper perk (skills.js)
+  // An intermediate or rimfire round past its reach (gunmods.js ROUND_REACH): it drops, scope or not.
+  const rr = roundReach(w), reach = rr ? rr.reach + (af.opt || 0) : Infinity;
+  const slow = d > reach ? rr.dmg ?? 1 : 1; // and a hit there does less (it has slowed)
+  if (d > reach) { const drop = (d - reach) * rr.drop; aim -= drop; notes.push(`round drops past ${reach} tiles −${Math.round(drop)}${slow !== 1 ? `, damage ×${slow}` : ""}`); }
   if (d <= 2.5 && (w.close || gm.close || af.close)) aim += (w.close || 0) + gm.close + (af.close || 0);
-  if (gm !== NO_MODS) aim += situationalAim(b, a, d, gm); // gunmods.js: a bipod braced, a sling on the move, night sights and lights
+  // A bipod (fitted, or built into the machine gun and the .50) counts only rested on half cover next to the shooter in
+  // the shot's line (restCell); the AI's posts (scoreCell) score it the same way, so a bipod gunner seeks sandbags.
+  const rest = (gm.brace || (w.heavy && w.heavy.brace)) && restCell(b, ax, ay, t.x, t.y) ? 1 : 0;
+  if (rest) notes.push(`bipod rested +${Math.max(gm.brace || 0, (w.heavy && w.heavy.brace) || 0)}`);
+  if (gm !== NO_MODS) aim += situationalAim(b, a, d, gm, !!rest); // gunmods.js: a bipod rested, a sling on the move, night sights and lights
   const flat = t.surprised || (!t.aware && t.side === "enemy");
   const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : t.gunner ? gunnerCover(b, t) : coverAgainst(b, t.x, t.y, ax, ay); // a turret's gunner: half cover (full behind plate x2)
   aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0) - (opts.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js); opts.pierce: an over-penetrating round through light cover (gunfire.js)
@@ -1870,7 +1919,10 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   // pinned by suppressing fire, a heavy weapon braced or fired on the move.
   if (!w.melee) aim += opts.modeAim ?? modeAim(modeOf(a), 0, w);
   if (a.suppressed) aim -= SUPPRESS.AIM;
-  aim += braceAim(b, a);
+  aim += braceAim(b, a, !!rest);
+  // Firing from a vehicle that moved this turn (rideAim): the driver, the turret's gunner, a rider.
+  const ride = rideAim(b, a);
+  if (ride) { aim += ride; notes.push(`vehicle moving ${ride}`); }
   // A break-in map (deploy.js): the floodlit area, and shooting from a watchtower.
   if (b.lit && b.floodAim && inside(t.x, t.y) && b.lit[idx(t.x, t.y)]) aim += b.floodAim;
   // Smoke and flares (throwables.js): a shot into or out of a cloud, your people at a target in a flare's light at night.
@@ -1885,8 +1937,8 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   else if (t.ram != null && b.rams && isCrew(b, t)) aim += CREW_AIM;
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
   const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? CRIT.DEAD : CRIT.EXPOSED) : CRIT.COVER) + (a.critBonus || 0); // critBonus: Deadeye
-  const ad = af.dmg ?? 1; // the loaded type's damage (hollow points' soft-target bonus: damage, ammo.js softMult)
-  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up };
+  const ad = (af.dmg ?? 1) * slow; // the loaded type's damage, a light round's past its reach (ROUND_REACH dmg) (hollow points' soft-target bonus: damage, ammo.js softMult)
+  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up, notes };
 }
 
 export function meleeOdds(b, a, t) {
@@ -2667,7 +2719,7 @@ export function moveAlong(b, u, path) {
   bindDims(b);
   if (!path.length) return;
   if (u.brace) delete u.brace; // stepping away lets go of a braced door (buildingmaps.js)
-  u.movedT = b.turn; // moved this turn: a braced heavy weapon or a sniper rifle on the move (gunfire.js braceAim); a bipod braces only a shooter who stood still (gunmods.js situationalAim)
+  u.movedT = b.turn; // moved this turn: a sniper rifle or the .50 on the move (gunfire.js braceAim), a sling's aim (gunmods.js situationalAim)
   const from = [u.x, u.y];
   const walked = [];
   let burned = false;

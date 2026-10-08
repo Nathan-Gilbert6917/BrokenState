@@ -99,7 +99,7 @@ export const PERK_TREE = {
     10: [P("deadeye", "Deadeye", "+15% critical-hit chance on every gun shot except overwatch reactions (a critical hit does 2× damage).", [1, 2, 3], "combat.js shotOdds"),
          P("suppressor", "Suppressor", "Overwatch reaction shots at full aim (no −15% penalty).", [3, 2, 1], "combat.js shotOdds")],
     15: [P("gunslinger", "Gunslinger", "+1.5 fighting strength: counts in fights resolved by the numbers, search encounters and base defence.", [2, 2, 2], "world.js combatPower"),
-         P("sniper", "Sniper", "No aim loss for shooting beyond the weapon's best range.", [2, 2, 2], "combat.js shotOdds")],
+         P("sniper", "Sniper", "No aim loss for shooting beyond the weapon's best range (a 5.56, 7.62×39 or .22 round still drops past its reach).", [2, 2, 2], "combat.js shotOdds")],
   },
   stealth: {
     5: [P("lightstep", "Light Step", "In battle, unaware enemies notice them 2 tiles later (detection range −2, never below 1).", [2, 2, 2], "combat.js detect"),

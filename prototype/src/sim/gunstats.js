@@ -4,7 +4,7 @@
 // WEAPONS stats, the fitted attachments (gunmods.js) and the loaded ammo type (ammo.js: aim, range, damage, noise,
 // penetration, the soft-target bonus, jam ×). Jams and fire modes are the combat agent's (A2); the UI agent (D) reads it.
 import { WEAPONS } from "./combat.js";
-import { gunMods } from "./gunmods.js";
+import { gunMods, modRange, roundReach } from "./gunmods.js";
 import { jamChance } from "./gunfire.js"; // jam: the battle's own per-round jam chance (call time only)
 import { ammoPen } from "./data-ammo.js";
 import { calOf, typeFor, typeFx } from "./ammo.js"; // the loaded type (ammo.js): aim, range, damage, noise, penetration
@@ -28,9 +28,11 @@ export function gunStats(itemOrKey, opts = {}) {
   const jam = w.rel ? Math.round(jamChance(null, { weapon: item.key, item: gun, load, gm: m, gmWeapon: item.key }) * 1e6) / 1e4 : 0;
   return {
     cal: w.cal || null, aim: (w.aim || 0) + (m.aim || 0) + (t.aim || 0), close: (w.close || 0) + (m.close || 0) + (t.close || 0),
-    opt: (w.opt || 0) + (m.opt || 0) + (t.opt || 0), fall: Math.max(0, ((w.fall || 0) + (m.fall || 0)) * (t.fallMult ?? 1)),
+    opt: modRange(w, m).opt + (t.opt || 0), fall: Math.max(0, ((w.fall || 0) + (m.fall || 0)) * (t.fallMult ?? 1)),
     dmg: [Math.round(w.dmg[0] * (m.dmg ?? 1) * (t.dmg ?? 1)), Math.round(w.dmg[1] * (m.dmg ?? 1) * (t.dmg ?? 1))],
     ammoPerShot: w.ammo || 0, cap, noise: (w.noise || 0) * (m.noise ?? 1) * (t.noise || 1), weight: m.weight || 0, value: m.value || 0,
     pen: cal ? ammoPen(cal, load) : 0, soft: t.soft || 1, jam, reloadAp: 1, load,
+    // An intermediate or rimfire round's reach (gunmods.js ROUND_REACH): past it, drop aim a tile more, scope or not.
+    reach: roundReach(w) ? roundReach(w).reach + (t.opt || 0) : null, drop: roundReach(w) ? roundReach(w).drop : 0,
   };
 }
