@@ -35,7 +35,7 @@
 import { GEAR } from "./data.js";
 import { AMMO_TYPES } from "./data-ammo.js";
 import {
-  WEAPONS, COVER_DEF, active, activeAny, adjacent, say, fx, damage, meleeOdds, coverAgainst, canSee, alertPod,
+  WEAPONS, COVER_DEF, active, activeAny, adjacent, meleeReach, cornerBlocked, say, fx, damage, meleeOdds, coverAgainst, canSee, alertPod,
   reachable, pathTo, moveAlong, fightOutlook, hasShots, isRanged, evacAt, canSeeAt,
 } from "./combat.js";
 import { knockOut, findCarried } from "./stealth.js";
@@ -521,7 +521,7 @@ export function nlAct(state, b, u, t, act) {
     }
     case "execute": {
       if (!t || t.side !== "enemy" || t.dead || !(t.surr || t.ko || (t.wounded && t.down && t.tied))) return "Execute someone who has surrendered, is knocked out or lies tied up (a downed one who is not: Finish).";
-      if (!adjacent(u, t)) return "Move next to them first.";
+      if (!meleeReach(b, u, t)) return "Move next to them first (not across a wall's corner).";
       execute(state, b, u, t);
       u.ap -= 1;
       return "";
@@ -606,12 +606,12 @@ export function nlAI(b, u) {
   if (u.kind !== "human" || !active(u) || u.ap < 1) return false;
   if (u.side !== "enemy" && !(u.side === "player" && b.takeAlive)) return false;
   const foes = foesFor(b, u);
-  const adj = foes.filter((f) => adjacent(u, f));
+  const adj = foes.filter((f) => meleeReach(b, u, f)); // combat.js: not across a wall's corner
   const want = wantsAlive(b, u, adj[0] || foes.find(isPrize) || null);
   u.pull = want;
   if (!want) return false;
   // Whoever is knocked out or has given up next to them: tied up.
-  const bound = b.units.find((o) => o.side === otherSide(u) && (o.ko || o.surr) && !o.dead && !o.tied && !o.fled && !o.left && adjacent(u, o));
+  const bound = b.units.find((o) => o.side === otherSide(u) && (o.ko || o.surr) && !o.dead && !o.tied && !o.fled && !o.left && meleeReach(b, u, o));
   if (bound) {
     bound.tied = true;
     u.ap -= 1;
@@ -648,7 +648,7 @@ export function nlAI(b, u) {
   }
   // Someone weak in reach: close in and club them down (the pulled blow), rather than shoot them dead.
   const weak = foes.filter((f) => f.hp <= f.maxHp * NL.WEAK).sort((a, c) => a.hp - c.hp);
-  const near = weak.find((f) => adjacent(u, f));
+  const near = weak.find((f) => meleeReach(b, u, f));
   if (near) { nlBlow(b, u, near); u.ap = 0; return true; }
   if (weak.length && u.ap >= 2) {
     const r = reachable(b, u, u.mob);
@@ -656,14 +656,14 @@ export function nlAI(b, u) {
     for (const f of weak) {
       for (let dy = -1; dy <= 1 && !cell; dy++) for (let dx = -1; dx <= 1 && !cell; dx++) {
         const x = f.x + dx, y = f.y + dy;
-        if ((dx || dy) && x >= 0 && y >= 0 && x < b.w && y < b.h && isFinite(r.dist[y * b.w + x]) && r.dist[y * b.w + x] > 0) cell = [x, y, f];
+        if ((dx || dy) && x >= 0 && y >= 0 && x < b.w && y < b.h && isFinite(r.dist[y * b.w + x]) && r.dist[y * b.w + x] > 0 && !cornerBlocked(b, x, y, f.x, f.y)) cell = [x, y, f];
       }
       if (cell) break;
     }
     if (cell) {
       u.ap -= 1;
       moveAlong(b, u, pathTo(r, cell[0], cell[1]));
-      if (active(u) && active(cell[2]) && adjacent(u, cell[2])) { nlBlow(b, u, cell[2]); u.ap = 0; return true; }
+      if (active(u) && active(cell[2]) && meleeReach(b, u, cell[2])) { nlBlow(b, u, cell[2]); u.ap = 0; return true; }
       return u.ap < 1;
     }
   }
@@ -679,6 +679,7 @@ export function nlBattleEnd(state, b, outcome) {
   const lines = [];
   for (const u of b.units) {
     if (u.side !== "player" || u.dead || u.left || !(u.ko || u.surr)) continue;
+    if (u.captive) continue; // a captive of yours on a rescue raid's map is already theirs (rescueraid.js captiveStays)
     if (outcome === "victory") continue;
     if (outcome === "retreat" && (u.carried || evacAt(b, u.x, u.y))) { u.stab = true; continue; }
     lines.push(...takenByEnemy(state, b, u));

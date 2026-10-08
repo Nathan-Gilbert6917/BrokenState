@@ -2,7 +2,7 @@
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
-  canSee, canSeeAt, coverSides, isRanged, adjacent, canFire, ammoLeft, arrowsLeft, medsLeft, combatAct, enemyStep, playerSees,
+  canSee, canSeeAt, coverSides, isRanged, adjacent, meleeReach, canFire, ammoLeft, arrowsLeft, medsLeft, combatAct, enemyStep, playerSees,
   hasMag, magLabel, magEmpty, magShown, reloadRefusal, fireRefusal, hasShots,
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
@@ -13,6 +13,7 @@ import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions } from "../s
 import { INTERIOR } from "../sim/interior.js";
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
+import { rescueOptions } from "../sim/rescueraid.js"; // a rescue raid on a group's base: captives, the cell, the armory
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, heldDown, searchCost, STEALTH } from "../sim/stealth.js";
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
 import { LIGHTS } from "../sim/lights.js";
@@ -143,6 +144,11 @@ function view(b) {
 }
 
 const selUnit = (b) => (cui.sel != null ? unitById(b, cui.sel) : null);
+// A rescue raid's actions for the selected unit (sim/rescueraid.js rescueOptions): the ropes, cut free, the cell's
+// lock, the jailer's keys, weapons off bodies and out of their armory.
+function rescueButtons(state, b, u, btn) {
+  return rescueOptions(state, b, u).map((o) => btn(`rescue:${o.op}`, esc(o.label), o.tip, o.ok)).join("");
+}
 
 // A unit's weapon with its magazine (sim/combat.js magazines): "9mm pistol 7/15", flagged when it needs a reload.
 function gunText(b, u) {
@@ -422,10 +428,10 @@ function attack(state, u, t) {
     return;
   }
   if (cui.mode === "subdue") {
-    if (!canSubdue(u, t)) { cui.msg = "Subdue needs them right next to you."; return; }
+    if (!canSubdue(u, t, b)) { cui.msg = "Subdue needs them right next to you."; return; }
     return void act(state, { type: "subdue", unit: u.id, target: t.id });
   }
-  const wantMelee = cui.mode === "melee" || (!canFire(b, u) && adjacent(u, t));
+  const wantMelee = cui.mode === "melee" || (!canFire(b, u) && meleeReach(b, u, t));
   if (wantMelee) {
     if (!adjacent(u, t)) { cui.msg = "Melee needs the target right next to you."; return; }
     return void act(state, { type: "melee", unit: u.id, target: t.id });
@@ -685,6 +691,7 @@ export function combatAction(state, key, d) {
   if (key === "cb-act" && d.v === "building") return void act(state, { type: "building", id: d.k });
   if (key !== "cb-act" || !u) return;
   const v = d.v;
+  if (typeof v === "string" && v.startsWith("rescue:")) return void act(state, { type: "rescue", unit: u.id, op: v.slice(7) }); // sim/rescueraid.js
   if (v === "search" && b.raid) return void openSearch(state, b, u, null, { full: true });
   if (v === "quick" && b.raid) return void openSearch(state, b, u, null, { quick: true }); // sim/search.js: the rummage
   if (v === "evac" || v === "evacStop") return void act(state, { type: v }); // sim/combat.js evacTurn: everyone to the way out
@@ -709,7 +716,7 @@ export function combatAction(state, key, d) {
   if (nlCbAct(state, b, u, v, cui, act)) return; // tasers, pepper spray, pulled blows, Execute, Surrender, Take them alive (ui/nonlethal.js)
   // The stealth kit (sim/stealth.js).
   if (v === "subdue") {
-    const near = b.units.filter((t) => canSubdue(u, t));
+    const near = b.units.filter((t) => canSubdue(u, t, b));
     if (near.length === 1) return void act(state, { type: "subdue", unit: u.id, target: near[0].id });
     cui.mode = cui.mode === "subdue" ? "move" : "subdue";
     cui.msg = near.length ? "Click the person next to you to subdue." : "Subdue needs a person right next to you.";
@@ -889,7 +896,7 @@ export function renderCombatPanel(state) {
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
     const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`)) + (p.draggedBy != null ? `, dragged by ${(unitById(b, p.draggedBy) || {}).name || "someone"}` : "") :
-      [nlStatus(b, p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
+      [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !alive(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = alive(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     // A building with storeys: everyone's floor (dimmer when it is not the one shown).
@@ -911,10 +918,13 @@ export function renderCombatPanel(state) {
     html += `<div class="small muted cbmsg">Showing ${floorLabel(b, floorNo(b)).toLowerCase()}; ${esc(u.name.split(" ")[0])} is on ${floorLabel(b, u.f).toLowerCase()}. <button class="mini" data-action="cb-view" data-v="fgo" data-tip="Back to the selected unit's floor (V also centers on them).">Go to ${esc(u.name.split(" ")[0])}</button></div>`;
   }
 
-  if (u && (active(u) || u.aboard) && b.phase === "player") { // aboard the vehicle: Drive, Turn, Get out, Extract
+  if (u && u.tied && !u.dead && b.phase === "player") { // a captive still tied up on a rescue raid (sim/rescueraid.js)
+    const btn = (v, label, tip, ok, key) => `<button class="${cui.mode === v ? "active" : ""}" data-action="cb-act" data-v="${v}" ${ok ? "" : "disabled"} data-tip="${esc(tip)}">${label}${key ? ` <span class="key">${key}</span>` : ""}</button>`;
+    html += `<h3>${esc(u.name)} · tied up · ${u.ap} action${u.ap === 1 ? "" : "s"}</h3><div class="cbactions">${rescueButtons(state, b, u, btn)}</div>`;
+  } else if (u && (active(u) || u.aboard) && b.phase === "player") { // aboard the vehicle: Drive, Turn, Get out, Extract
     const ap = u.ap;
     const gun = isRanged(u), ammo = canFire(b, u);
-    const foesAdj = b.units.some((t) => t.side === "enemy" && active(t) && adjacent(u, t));
+    const foesAdj = b.units.some((t) => t.side === "enemy" && active(t) && meleeReach(b, u, t)); // not across a wall's corner
     const btn = (v, label, tip, ok, key) => `<button class="${cui.mode === v ? "active" : ""}" data-action="cb-act" data-v="${v}" ${ok ? "" : "disabled"} data-tip="${esc(tip)}">${label}${key ? ` <span class="key">${key}</span>` : ""}</button>`;
     html += `<h3>${esc(u.name)} · ${ap} action${ap === 1 ? "" : "s"}</h3><div class="cbactions">
       ${btn("move", "Move", "Click a blue tile to move (1 action) or a yellow tile to dash (2 actions).", ap > 0)}
@@ -937,6 +947,7 @@ export function renderCombatPanel(state) {
       ${siegeButtons(b, u, btn)}
       ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
       ${b.raid ? raidButtons(state, b, u, btn) + lockPanel(state, b, u) : ""}
+      ${b.rescue ? rescueButtons(state, b, u, btn) : ""}
       ${carPanel(state, b, u)}
     </div>`;
     html += nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
@@ -1132,7 +1143,7 @@ function medicButtons(state, b, u, btn) {
   if (foes.length) {
     const ok = foes.filter((t) => !finishRefusal(b, u, t));
     const t = ok[0] || foes[0];
-    html += btn("finish", "Finish", `1 action: kill a downed enemy for good (no revive, no prisoner): a blow from next to them, sure and silent, or one round (${MEDIC.FINISH.BASE}% out to ${MEDIC.FINISH.FROM} tiles, −${MEDIC.FINISH.PER} a tile past it; the noise of a shot). A plain click never does it. ${ok.length ? `${t.name}: ${finishOdds(u, t)}%.` : finishRefusal(b, u, t)}`, ap > 0 && ok.length > 0, keyLabel("battle.finish", 1) || "Shift+K");
+    html += btn("finish", "Finish", `1 action: kill a downed enemy for good (no revive, no prisoner): a blow from next to them, sure and silent, or one round (${MEDIC.FINISH.BASE}% out to ${MEDIC.FINISH.FROM} tiles, −${MEDIC.FINISH.PER} a tile past it; the noise of a shot). A plain click never does it. ${ok.length ? `${t.name}: ${finishOdds(u, t, b)}%.` : finishRefusal(b, u, t)}`, ap > 0 && ok.length > 0, keyLabel("battle.finish", 1) || "Shift+K");
   }
   return html;
 }
@@ -1163,7 +1174,7 @@ function bodyButtons(state, b, u, btn) {
 // ---------- the stealth kit (sim/stealth.js) ----------
 function stealthButtons(state, b, u, btn) {
   const ap = u.ap;
-  const near = b.units.filter((t) => canSubdue(u, t));
+  const near = b.units.filter((t) => canSubdue(u, t, b));
   const so = near.length ? subdueOdds(b, u, near[0]) : null;
   const subTip = so ? `${so.label} (${near[0].name}). Ends the turn. Takedowns work on the unaware and on anyone at 30% health or less; a knocked-out enemy wakes in 4–6 turns unless tied up, and after a won fight comes home as a prisoner.`
     : "Takedown or a non-lethal blow on a person right next to you: knocks them out instead of killing. Best from behind, from cover, with a club and with Stealth.";
@@ -1448,15 +1459,15 @@ function odds(b, u, t) {
   if (nlo) return nlo;
   if (t.side === "enemy" && t.down && !t.dead) { // sim/medics.js: Finish (downed)
     const why = finishRefusal(b, u, t);
-    const p = finishOdds(u, t);
-    return { ok: !why, chance: p, finish: true, label: why ? `Finish (downed): ${why}` : `Finish (downed): ${p}%, ${adjacent(u, t) ? "a blow from next to them" : "one round"}: dead for good, no revive, no prisoner. Use Finish (${keyLabel("battle.finish", 1) || "Shift+K"}); a plain click does not` };
+    const p = finishOdds(u, t, b);
+    return { ok: !why, chance: p, finish: true, label: why ? `Finish (downed): ${why}` : `Finish (downed): ${p}%, ${SIM.meleeReach(b, u, t) ? "a blow from next to them" : "one round"}: dead for good, no revive, no prisoner. Use Finish (${keyLabel("battle.finish", 1) || "Shift+K"}); a plain click does not` };
   }
   if (cui.mode === "subdue") {
-    if (!canSubdue(u, t)) return { ok: false, label: t.kind === "zombie" ? "The dead cannot be subdued" : "Subdue needs them right next to you" };
+    if (!canSubdue(u, t, b)) return { ok: false, label: t.kind === "zombie" ? "The dead cannot be subdued" : "Subdue needs them right next to you" };
     const o = subdueOdds(b, u, t);
     return { ...o, ok: true, label: o.label };
   }
-  if ((cui.mode === "melee" || !canFire(b, u)) && adjacent(u, t)) {
+  if ((cui.mode === "melee" || !canFire(b, u)) && meleeReach(b, u, t)) {
     const o = meleeOdds(b, u, t);
     return { ...o, ok: true, label: `Melee ${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT})` };
   }

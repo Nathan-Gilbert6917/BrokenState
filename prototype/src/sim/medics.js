@@ -37,7 +37,7 @@ import { shotNoise } from "./stealth.js";
 import { NL_TAKE, TYPE_KIT } from "./nonlethal.js"; // how much each group's type takes people alive
 import {
   say, fx, active, adjacent, unitById, unitAt, medsLeft, reachable, pathTo, moveAlong, coverAgainst, los, sightRange, canSeeAt,
-  canFire, hasShots, isRanged, damage, distField, loadMag, magIn, hasMag, WEAPONS, shotOdds, CELL, aboardCount, alertNear,
+  canFire, hasShots, isRanged, damage, meleeReach, distField, loadMag, magIn, hasMag, WEAPONS, shotOdds, CELL, aboardCount, alertNear,
 } from "./combat.js";
 
 export const MEDIC = {
@@ -164,7 +164,7 @@ export function makeEnemyMedic(u, key = "bandagekit", med = 4) {
 export function healRefusal(b, u, t) {
   if (!isMedic(u)) return "Heal needs a med kit with uses left (a bandage, trauma or surgical kit, in the off hand or the pack).";
   if (!t || t.side !== u.side || t.dead || t.left || t.off) return "No one to treat.";
-  if (t !== u && !adjacent(u, t)) return "Must be next to them.";
+  if (t !== u && !meleeReach(b, u, t)) return "Must be next to them (not across a wall's corner).";
   if (t.down) return "They are down: Revive them (2 actions), or stabilize them with Use meds.";
   if (t.hp >= t.maxHp) return "Not hurt.";
   if (u.side === "player" && medsLeft(b) < 1) return "No meds left.";
@@ -190,9 +190,10 @@ export const reviveOdds = (u, t) => Math.min(MEDIC.REVIVE.MAX, Math.round(MEDIC.
 // Someone down who could be revived (not one knocked out: they come to by themselves, stealth.js).
 // The states of the downed (stealth.js heldDown has the whole list): bleeding (down) or stabilized (down + stab) can be
 // revived and stabilized; knocked out (ko) comes to by itself; surrendered (surr) is not down in need.
-const revivable = (t) => !!t && t.down && !t.dead && !t.left && !t.off && !t.ko && !t.surr;
+// Tied (combat.js isTied: a prisoner of either side, a captive in a rescue raid) is cut free first, never revived or dragged.
+const revivable = (t) => !!t && t.down && !t.dead && !t.left && !t.off && !t.ko && !t.surr && !t.tied;
 // Who a teammate can drag: the bleeding, the stabilized and the knocked out.
-const draggable = (t) => !!t && t.down && !t.dead && !t.left && !t.off && !t.surr;
+const draggable = (t) => !!t && t.down && !t.dead && !t.left && !t.off && !t.surr && !t.tied;
 // The share of the time an enemy of this kit takes one of yours alive rather than finish them (nonlethal.js NL_TAKE by
 // the group type the kit stands for: raiders 25%, zealots 0).
 export const takeShare = (kit) => { const type = Object.keys(TYPE_KIT).find((k) => TYPE_KIT[k] === kit); return (type && NL_TAKE[type]) || 0; };
@@ -200,7 +201,7 @@ export function reviveRefusal(b, u, t) {
   if (!u.medKit || !(u.kitBonus > 0) || (u.kitUses || 0) >= u.kitLeft) return "Revive needs a med kit with uses left (a bandage, trauma or surgical kit) and meds: anyone can only stabilize (Use meds).";
   if (u.side === "player" && medsLeft(b) < 1) return "Revive needs meds as well as the kit: none left.";
   if (!revivable(t) || t.side !== u.side) return "Revive someone of yours who is down.";
-  if (!adjacent(u, t)) return "Move next to them first.";
+  if (!meleeReach(b, u, t)) return "Move next to them first (not across a wall's corner).";
   if (u.ap < MEDIC.REVIVE.AP) return "Revive takes both actions.";
   return "";
 }
@@ -238,7 +239,7 @@ export const handsOdds = (u) => Math.min(MEDIC.HANDS.MAX, Math.round(MEDIC.HANDS
 export function stabilizeRefusal(b, u, t) {
   if (!revivable(t) || t.side !== u.side) return "Stabilize someone of yours who is down.";
   if (t.stab) return "Already stabilized.";
-  if (t !== u && !adjacent(u, t)) return "Must be next to them.";
+  if (t !== u && !meleeReach(b, u, t)) return "Must be next to them (not across a wall's corner).";
   if (u.ap < 1) return "No actions left.";
   return "";
 }
@@ -280,7 +281,7 @@ export function liftRefusal(b, u, t) {
   if (u.carrying != null) return "Hands full: put the body down first.";
   if (!draggable(t) || t.side !== u.side) return "Drag a downed ally next to you.";
   if (t.draggedBy != null) return "Someone is already dragging them.";
-  if (!adjacent(u, t)) return "Move next to them first.";
+  if (!meleeReach(b, u, t)) return "Move next to them first (not across a wall's corner).";
   if ((t.f || 0) !== (u.f || 0)) return "They are on another floor.";
   return "";
 }
@@ -420,12 +421,12 @@ export function settleFoes(b, outcome) {
 // Finish: the bleeding or stabilized (u.wounded) who are not tied. Someone who gave up, is out cold or tied is a
 // prisoner: killing them is Execute (nonlethal.js), which your people take hard.
 const finishable = (t) => !!t && t.side === "enemy" && t.kind === "human" && t.down && t.wounded && !t.ko && !t.surr && !t.tied && !t.dead && !t.off && !t.left;
-export const finishOdds = (u, t) => (adjacent(u, t) ? 100 : Math.max(MEDIC.FINISH.MIN, Math.min(95, Math.round(MEDIC.FINISH.BASE - MEDIC.FINISH.PER * Math.max(0, dist(u.x, u.y, t.x, t.y) - MEDIC.FINISH.FROM)))));
+export const finishOdds = (u, t, b = null) => ((b ? meleeReach(b, u, t) : adjacent(u, t)) ? 100 : Math.max(MEDIC.FINISH.MIN, Math.min(95, Math.round(MEDIC.FINISH.BASE - MEDIC.FINISH.PER * Math.max(0, dist(u.x, u.y, t.x, t.y) - MEDIC.FINISH.FROM)))));
 export function finishRefusal(b, u, t) {
   if (t && t.side === "enemy" && !t.dead && (t.ko || t.surr || t.tied)) return `${t.name} ${t.surr ? "has given up" : t.ko ? "is out cold" : "is tied up"}: a prisoner. Execute (next to them) kills them, and your people take it hard.`;
   if (!finishable(t)) return "Finish needs an enemy who is down.";
-  if (adjacent(u, t)) return "";
-  if (!isRanged(u)) return "Move next to them to finish them with a blow.";
+  if (meleeReach(b, u, t)) return "";
+  if (!isRanged(u)) return adjacent(u, t) ? "Not across a wall's corner: move to their side to finish them with a blow." : "Move next to them to finish them with a blow.";
   if (!canFire(b, u)) return H.fireRefusal(b, u) || "Cannot shoot right now.";
   if (!canSeeAt(b, u, t.x, t.y)) return "No line of sight.";
   return "";
@@ -437,13 +438,13 @@ export function finishOff(b, u, t) {
   u.ap -= 1;
   u.hunker = false;
   u.face = [Math.sign(t.x - u.x), Math.sign(t.y - u.y)];
-  if (adjacent(u, t)) {
+  if (meleeReach(b, u, t)) {
     fx(b, { type: "melee", from: [u.x, u.y], to: [t.x, t.y], hit: true, crit: false, dmg: 0, side: u.side, text: "KILLED" });
     killFoe(b, t, `${u.name} finishes ${t.name} off with a blow.`);
     return "";
   }
   const w = WEAPONS[u.weapon];
-  const p = finishOdds(u, t);
+  const p = finishOdds(u, t, b);
   H.spendRounds(b, u, w);
   const noise = shotNoise(b, u, w);
   b.noise += noise;
@@ -562,7 +563,7 @@ export function rescueStep(b, u) {
   for (const t of downedOf(b, u).sort((a, c) => dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, c.x, c.y))) {
     const ex = exposure(b, t.x, t.y, foes);
     const canRev = isMedic(u) && pool;
-    if (adjacent(u, t)) {
+    if (meleeReach(b, u, t)) {
       // Bleeding out this turn: stop it first. Safe enough: a medic revives. Exposed: out of the line of fire. Else
       // stabilize.
       if (!t.stab && (t.bleed || 0) <= 1) { claim(b, u, t); stabilize(b, u, t); return true; }
@@ -599,7 +600,7 @@ export function rescueStep(b, u) {
   }
   // A medic heals the badly hurt (themselves or next to them), keeping a meds and a kit use back for a revive.
   if (isMedic(u) && (u.side !== "player" || medsLeft(b) >= 2) && u.kitLeft - (u.kitUses || 0) >= 2) {
-    const hurtOnes = b.units.filter((o) => o.side === u.side && active(o) && (o === u || adjacent(u, o)) && o.hp < o.maxHp * 0.5).sort((a, c) => a.hp / a.maxHp - c.hp / c.maxHp);
+    const hurtOnes = b.units.filter((o) => o.side === u.side && active(o) && (o === u || meleeReach(b, u, o)) && o.hp < o.maxHp * 0.5).sort((a, c) => a.hp / a.maxHp - c.hp / c.maxHp);
     if (hurtOnes.length) { medicHeal(b, u, hurtOnes[0]); return true; }
   }
   return false;
@@ -615,7 +616,7 @@ export function finishTurn(b, u) {
   const foes = threats(b, u);
   if (foes.some((f) => adjacent(u, f))) return false;
   if (canFire(b, u) && foes.some((f) => canSeeAt(b, u, f.x, f.y) && shotOdds(b, u, f).chance >= MEDIC.FINISH.URGENT)) return false;
-  const adj = prey.find((t) => adjacent(u, t));
+  const adj = prey.find((t) => meleeReach(b, u, t)); // combat.js: not across a wall's corner
   const inSight = adj || (canFire(b, u) && prey.some((t) => canSeeAt(b, u, t.x, t.y) && coverAgainst(b, t.x, t.y, u.x, u.y).level < 2));
   if (!inSight || !b.rng.chance(MEDIC.FINISH.WILL)) return false; // not every time: they may have other things on their mind
   if (adj) {
@@ -641,7 +642,7 @@ export function finishTurn(b, u) {
   const w = WEAPONS[u.weapon];
   if (hasMag(u)) loadMag(u, magIn(u) - w.ammo);
   b.gunshots = (b.gunshots || 0) + 1;
-  const p = finishOdds(u, t);
+  const p = finishOdds(u, t, b);
   u.ap = 0;
   u.face = [Math.sign(t.x - u.x), Math.sign(t.y - u.y)];
   const hit = b.rng.chance(p / 100);

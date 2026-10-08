@@ -2006,6 +2006,7 @@ function drawLabels(ctx, b, s, H) {
   const hh = hAt(b, t.x, t.y);
   const tags = [];
   if (t.down && !t.surr) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? COL.good : COL.bad]); // surr: its own tag (ui/nonlethal.js)
+  else if (t.tied && !t.down) tags.push(["TIED", "#c9a74a"]); // a captive of yours tied up on a rescue raid (sim/rescueraid.js)
   if (t.ztype && !t.down) tags.push([`${t.short}${t.elite ? "★" : ""}`, ringOf(t)]);
   if (!t.down && isMedic(t)) tags.push(["✚", "#ff6b6b"]); // a medic (sim/medics.js)
   if (t.dragging != null) tags.push(["DRAG", "#e0a84f"]);

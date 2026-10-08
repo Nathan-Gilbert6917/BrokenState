@@ -551,6 +551,36 @@ section("One model of the downed with the non-lethal kit (nonlethal.js): states,
   check(c.dragging == null && n.draggedBy == null, "Shift+D again puts them down");
 }
 
+section("Rescue (rescueraid.js): no reaching across a wall's corner; tied is one flag, and a tied one of yours is no prisoner");
+{
+  const { st, b, ps } = arena();
+  const [a, c, n] = ps;
+  // a at (10,10), the target diagonally at (11,11), walls on both orthogonal cells (11,10) and (10,11).
+  a.x = 10; a.y = 10; c.x = 2; c.y = 22; n.x = 11; n.y = 11;
+  wall(b, [[11, 10], [10, 11]]);
+  downPlayer(b, n);
+  a.ap = 2;
+  const { prisonerOf, heldDown } = await import("../src/sim/stealth.js");
+  check(/corner/.test(MED.reviveRefusal(b, a, n)) && /corner/.test(MED.liftRefusal(b, a, n)) && /corner/.test(MED.stabilizeRefusal(b, a, n)), `Revive, Drag and Stabilize refuse across a wall's corner (“${MED.reviveRefusal(b, a, n)}”)`);
+  n.x = 2; n.y = 20;
+  const E = foe(b, "raiders", 11, 11);
+  downFoe(b, E, a);
+  E.x = 11; E.y = 11;
+  const wasMelee = (a.weapon = "machete", a.weaponName = "machete");
+  void wasMelee;
+  check(/corner/.test(MED.finishRefusal(b, a, E)), `Finish with a blow refuses across the corner (“${MED.finishRefusal(b, a, E)}”)`);
+  const eTie = combatAct(st, { type: "tie", unit: a.id, target: E.id });
+  check(/corner/.test(eTie) && !E.tied, `Tie refuses across the corner (“${eTie}”)`);
+  E.tied = true;
+  const eEx = combatAct(st, { type: "execute", unit: a.id, target: E.id });
+  check(/corner/.test(eEx) && !E.dead, `Execute refuses across the corner (“${eEx}”)`);
+  // One of yours tied up (a captive in a rescue raid): not held down, not a prisoner, not dragged or revived.
+  const cap = c; cap.tied = true; cap.captive = true; cap.down = true; cap.x = 3; cap.y = 22;
+  const d = ps[2]; d.down = false; d.hp = 50; d.x = 4; d.y = 22; d.ap = 2; arm(d);
+  check(!heldDown(cap) && !prisonerOf(cap) && /Drag a downed ally/.test(MED.liftRefusal(b, d, cap)) && /Revive someone/.test(MED.reviveRefusal(b, a, cap)), "a tied one of yours (a rescue captive) is no prisoner of yours, and is cut free before anyone drags or revives them");
+  check(!active(cap), "tied is out of the fight (combat.js active / isTied)");
+}
+
 section("Whole battles played by the AI on both sides (AI plays my side), and the raid bot");
 {
   const tally = { down: 0, revived: 0, failed: 0, stab: 0, hands: 0, dragged: 0, finished: 0, grabbed: 0, healed: 0, foeDown: 0, foeDied: 0, battles: 0, errors: 0, prisoners: 0 };
