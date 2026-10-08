@@ -27,6 +27,7 @@ import { addBuilding, constructionHour, assignStations } from "./buildings.js";
 import { createVehicle, vehiclesDaily, garageHour } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
 import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
+import { aiCaptivesDaily } from "./nonlethal.js"; // people the groups took from each other in raids
 import { supplyDaily } from "./supply.js";
 import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
@@ -801,6 +802,7 @@ export function tickHour(state) {
     deathSitesDaily(state);
     walkingDaily(state); // carriers.js: the walking dead drift a tile; a body with the worm left unburied at a base gets up
     captivesDaily(state);
+    aiCaptivesDaily(state); // nonlethal.js: people the groups took from each other: recruited, ransomed, escaped
     prisonersDaily(state); // prisoners.js: food, escapes, ransoms, recruiting, rescue raids
     conquestDaily(state); // conquest.js: infamy fades, bases taken from you are patched up by their holders
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you

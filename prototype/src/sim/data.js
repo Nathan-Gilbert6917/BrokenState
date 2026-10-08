@@ -6,6 +6,7 @@ import { GUN_GEAR } from "./data-guns.js";
 import { AMMO_GEAR, RELOAD_GEAR } from "./data-ammo.js";
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
+import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spray, the stun baton (nonlethal.js)
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
 // off-road and a quarter of an hour on a road or a bridge (ROAD_COST); mountains are closed to cars.
@@ -556,6 +557,7 @@ Object.assign(GEAR, {
 // The weapons overhaul (docs/weapons-overhaul-plan.md): guns and melee, ammo boxes and reloading supplies, attachments,
 // carry kit. One line, so the agents filling those modules never edit the end of this file.
 Object.assign(GEAR, GUN_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR);
+Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 
 // ---------- durability (crafting.js itemDur / wear) ----------
 // Real gear wears too, only slower than makeshift gear: dur = uses before it breaks (weapons and armor: fights;

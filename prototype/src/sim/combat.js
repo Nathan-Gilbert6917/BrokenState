@@ -74,6 +74,8 @@ import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
 import { GUN_WEAPONS, KIT_PATCH } from "./data-guns.js"; // the weapons overhaul's guns, melee and launchers (merged below)
+import { NL_WEAPONS, NL_KIT_PATCH } from "./data-nonlethal.js"; // the stun baton; tasers and spray on guards (merged below)
+import { nlHit, nlDown, nlAfterHit, nlAimPen, nlNoOw, nlStrike, nlAct, nlSetup, nlEnemyPhase, nlTurnStart, nlAI, nlBreak, nlBattleEnd, nlRaidEnd, nlDropPiles, nlSpared, blinded } from "./nonlethal.js"; // non-lethal weapons, taking people alive, surrender
 import { ammoPen } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult)
 import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
 import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews
@@ -678,6 +680,9 @@ for (const [kind, patch] of Object.entries(KIT_PATCH)) {
   if (!kit) continue;
   for (const [k, list] of Object.entries(patch)) kit[k] = Array.isArray(kit[k]) ? [...kit[k], ...list] : list;
 }
+// Non-lethal weapons (data-nonlethal.js): the stun baton, and the lists of the kits that carry it and tasers and spray.
+Object.assign(WEAPONS, NL_WEAPONS);
+for (const [kind, patch] of Object.entries(NL_KIT_PATCH)) for (const [k, list] of Object.entries(patch)) if (KITS[kind]) KITS[kind][k] = [...(KITS[kind][k] || []), ...list];
 
 const idx = (x, y) => y * W + x;
 const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -1621,7 +1626,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const d = dist(ax, ay, t.x, t.y);
   const gm = unitMods(a); // gunmods.js: the gun's sight, muzzle, magazine and grip (neutral without any)
   const rg = gm === NO_MODS ? w : modRange(w, gm);
-  let aim = a.aim + (w.aim || 0) + gm.aim;
+  let aim = a.aim + (w.aim || 0) + gm.aim - nlAimPen(a); // nonlethal.js: a taser's daze, pepper spray
   if (d > rg.opt && !a.noFall) aim -= (d - rg.opt) * rg.fall; // noFall: the Sniper perk (skills.js)
   if (d <= 2.5 && (w.close || gm.close)) aim += (w.close || 0) + gm.close;
   const flat = t.surprised || (!t.aware && t.side === "enemy");
@@ -1651,7 +1656,7 @@ export function meleeOdds(b, a, t) {
   bindDims(b);
   const w = WEAPONS[a.weapon];
   const up = hAt(b, t.x, t.y) > hAt(b, a.x, a.y) ? HEIGHT.MELEE_UP : 0; // striking up at someone on higher ground
-  const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) - (t.hunker ? 10 : 0) - up)));
+  const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) - (t.hunker ? 10 : 0) - up - nlAimPen(a) / 2))); // nonlethal.js: half the daze or blindness up close
   const base = w.melee ? w.dmg : BASH;
   const mult = w.melee ? a.dmgMult : 1;
   return { chance, crit: CRIT.MELEE, dmg: [Math.round(base[0] * mult), Math.round(base[1] * mult)], cover: 0, flanked: false, dist: 1 };
@@ -2018,6 +2023,7 @@ export function createBattle(state, setup) {
   if (!setup.layout) placeBodies(b, state.seed); // sleepers.js: bodies lie about a fight in the open, Sleepers among them
   placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
   stealthSetup(state, b); // stealth.js: lights, suppressors, which way the enemy faces
+  nlSetup(state, b); // nonlethal.js: tasers and spray on both sides
   siegeSetup(state, b); // siege.js: the raiders' ladders, ram and grenades; a team's ladders and ram
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
 
@@ -2067,14 +2073,16 @@ export function hitMult(t, by, hit) {
 }
 export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
+  if (!nonLethal) nonLethal = nlHit(t, by, hit); // nonlethal.js: a stun baton, beanbag and rubber rounds
   const eff = raw * hitMult(t, by, hit);
   t.hp = Math.max(0, t.hp - eff);
   if (t.hp > 0) {
     if (t.ztype === "boneback" || t.ztype === "flinger") afterHit(b, t, by, hit, eff); // middead.js
     swarmBite(b, t, by); // carriers.js: a worm swarm's bite can leave the worm in the living
+    nlAfterHit(b, t, by, hit); // nonlethal.js: a stun baton's shock
     return eff;
   }
-  if (nonLethal && t.side === "enemy" && t.kind === "human") { knockOut(b, t, by); return eff; }
+  if (nonLethal && nlDown(b, t, by)) return eff; // knocked out, either side (nonlethal.js; the dead die as usual)
   swarmHit(t, by); // carriers.js: brought down by the worms, they are in them
   if (t.side === "player") {
     t.down = true;
@@ -2169,7 +2177,7 @@ export function moveAlong(b, u, path) {
     if (acidStep(b, u, x, y) && !active(u)) break; // into a spitter's acid (acid.js): once a round
     // Overwatch: the first enemy that moves in sight draws a reaction shot.
     for (const o of b.units) {
-      if (!o.ow || o.side === u.side || !active(o) || !active(u) || !hostilePair(b, o, u)) continue; // thirdside.js: not at the third side unless at odds
+      if (!o.ow || nlNoOw(o) || o.side === u.side || !active(o) || !active(u) || !hostilePair(b, o, u)) continue; // nlNoOw: blinded or stunned (nonlethal.js) // thirdside.js: not at the third side unless at odds
       if (!canSee(b, o, u) || !canFire(b, o)) continue;
       o.ow = false;
       say(b, `${o.name} reacts on overwatch.`, "info");
@@ -2225,6 +2233,7 @@ export function fire(b, a, t, opts = {}) {
 }
 
 function strike(b, a, t) {
+  if (nlStrike(b, a, t)) return; // nonlethal.js: pulling the blows on a living person
   const o = meleeOdds(b, a, t);
   const rng = b.rng;
   const sure = !!a.assassin && t.side === "enemy" && !t.aware; // Assassin (skills.js): sure, critical hit on the unaware
@@ -2302,6 +2311,7 @@ export function combatAct(state, act) {
     return err;
   }
   if (b.phase !== "player") return "Wait for the enemy turn to finish.";
+  if (act.type === "takeAlive") { b.takeAlive = act.on != null ? !!act.on : !b.takeAlive; say(b, b.takeAlive ? "Take them alive: your people go for tasers, spray and pulled blows, and tie up whoever drops." : "Take them alive is off.", "info"); bump(b); return ""; } // nonlethal.js: the AI's side prefers non-lethal
   if (act.type === "evac") { const why = evacRefusal(b); if (why) return why; b.evacOrder = true; say(b, "Evac! Everyone heads for the way out.", "danger"); evacTurn(state, b); return ""; } // evacTurn: everyone to the exits or the vehicle
   if (act.type === "evacStop") { b.evacOrder = false; say(b, "The evac is called off.", "info"); bump(b); return ""; }
   const u = unitById(b, act.unit);
@@ -2369,6 +2379,7 @@ export function combatAct(state, act) {
       break;
     }
     case "overwatch":
+      if (blinded(u)) return "Blinded by pepper spray: no overwatch until it wears off.";
       if (!canFire(b, u)) return isRanged(u) && magEmpty(b, u) && !reloadRefusal(b, u) ? "Overwatch needs a loaded gun: reload first." : WEAPONS[u.weapon].arrows ? "Needs arrows for the bow." : "Needs a gun with ammo.";
       u.ow = true; u.ap = 0;
       say(b, `${u.name} is on overwatch.`, "info");
@@ -2506,6 +2517,12 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    // nonlethal.js: the taser (and its reload), pepper spray, pulled blows, executing someone who gave up, surrendering.
+    case "taser": case "reloadTaser": case "pepper": case "pull": case "execute": case "surrender": {
+      const err = nlAct(state, b, u, t, act);
+      if (err) return err;
+      break;
+    }
     // siege.js: set a ladder up, push one off, swing the ram, set it down or take it up, drop rocks from the walls.
     case "ladder": case "push": case "ram": case "dropRam": case "takeRam": case "loadRam": case "unloadRam": case "drop": { // loadRam / unloadRam: the ram into or out of the team's vehicle
       const err = siegeAct(state, b, u, t, act);
@@ -2574,6 +2591,7 @@ export function endPlayerTurn(state) {
   for (const u of b.units) if (u.side === "player") u.ap = 0;
   b.phase = "enemy";
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
+  nlEnemyPhase(b); // nonlethal.js: the stunned lose actions, the blinded stay blind, the beaten may surrender
   // Storeys (buildingmaps.js): the floor the player looks at is kept and restored; the dead drifting between floors
   // arrive, then the next ones are sent; the Heat's waves come in on the ground floor.
   if (b.floors) { b.viewFloor = b.floor || 0; floorArrivals(b); floorDrift(b); }
@@ -2634,7 +2652,7 @@ function startPlayerTurn(state, b) {
     if (u.side !== "player") continue;
     u.ow = false; u.hunker = false;
     u.ap = activeAny(u) ? 2 : 0;
-    if (u.down && !u.stab && !u.dead && !u.left) {
+    if (u.down && !u.stab && !u.dead && !u.left && !nlSpared(u)) { // nonlethal.js: knocked out or surrendered, not bleeding
       u.bleed--;
       if (u.bleed <= 0) {
         u.dead = true;
@@ -2644,6 +2662,7 @@ function startPlayerTurn(state, b) {
       else say(b, `${u.name} is bleeding out (${u.bleed} turn${u.bleed > 1 ? "s" : ""} left).`, "danger");
     }
   }
+  nlTurnStart(b, ["player"]); // nonlethal.js: stuns and blindness on your people, the knocked out coming to
   stirBodies(state, b); // carriers.js: bodies in the flames burn; a carrier who went down puts the body down
   burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
   terrorRuns(b); // middead.js: whoever a Nightmare's scream panicked spends the turn running
@@ -2809,6 +2828,7 @@ function aiUnit(b, u) {
     return;
   }
   if (u.side === "enemy" && u.kind === "human" && !u.fearless && shouldFlee(b)) return flee(b, u);
+  if (u.kind === "human" && (u.side === "enemy" || (u.side === "player" && b.takeAlive)) && nlAI(b, u)) return; // nonlethal.js: tie up, spray, tase, club down the weak
   if (u.side === "enemy" && u.kind === "human" && siegeAI(b, u)) return; // siege.js: the ram, a ladder, storming, a grenade
   if (u.side === "player" && aiMeds(b, u)) { if (u.ap < 1) return; }
   // An empty gun is reloaded first (1 action), then the turn goes on with the other (a shot, often).
@@ -3033,6 +3053,7 @@ export function breakCell(b, x, y, by = null) {
 }
 
 function shouldFlee(b) {
+  if (nlBreak(b)) return true; // nonlethal.js: several of them gave up at once
   const humans = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && active(u)).length;
   const mine = b.units.filter((u) => u.side === "player" && active(u)).length;
   return humans * 3 <= b.enemyStart && mine >= humans * 2;
@@ -3440,8 +3461,9 @@ function endBattle(state, b, outcome) {
   // the others, and pull through like the downed after a win (the medic among those who got out).
   const outMedic = Math.max(0, ...b.units.filter((u) => u.side === "player" && u.left && !u.down && !u.dead).map((u) => u.medicine));
   const carriedIds = [];
+  lines.push(...nlBattleEnd(state, b, outcome)); // nonlethal.js: the enemy holding the field takes your knocked out and surrendered
   for (const u of b.units) {
-    if (u.side !== "player") continue;
+    if (u.side !== "player" || u.nlTaken) continue; // nlTaken: a captive now (conflicts.js)
     const s = survivorById(state, u.sid);
     if (!s || !s.alive) continue;
     let dies = u.dead;
@@ -3449,7 +3471,7 @@ function endBattle(state, b, outcome) {
     if (carried) {
       dies = !rng.chance(u.stab || u.stabSure ? 1 : 0.5 + outMedic * 0.02);
       if (!dies) carriedIds.push(s.id);
-    } else if (!dies && u.down) {
+    } else if (!dies && u.down && !nlSpared(u)) { // nonlethal.js: the knocked out and surrendered do not bleed out
       let live;
       if (outcome === "victory") live = u.stab ? 1 : 0.5 + medic * 0.02;
       else if (outcome === "retreat") live = 0;
@@ -3464,7 +3486,7 @@ function endBattle(state, b, outcome) {
       if (!u.lostBehind) lines.push(u.roseAs != null ? turnedLine(b, u) : carried ? `${u.name} was carried out but did not pull through.` : `${u.name} died.`); // carriers.js: got up as one of the dead
       continue;
     }
-    const hp = u.down ? rng.int(5, 15) : u.hp;
+    const hp = u.down && !u.surr ? rng.int(5, 15) : u.hp;
     if (hp < s.health - 0.01) hurt(state, s, (s.health - hp) / u.armor, b.tileId, cause);
     else s.health = Math.min(100, Math.max(s.health, hp));
     if (!s.alive) { deadIds.push(s.id); continue; }
@@ -3499,6 +3521,7 @@ function endBattle(state, b, outcome) {
       b.bodies.push(e.turned ? turnedBody(rng, e) : enemyBody(rng, e, KITS[e.kit] || (e.kind === "zombie" ? null : KITS.raiders)));
     }
     for (const e of captives) { const body = enemyBody(rng, e, KITS[e.kit] || KITS.raiders); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
+    b.bodies.push(...nlDropPiles(state, b)); // nonlethal.js: the weapons the surrendered threw down
     for (const u of b.units) {
       const s = u.side === "player" && deadIds.includes(u.sid) ? survivorById(state, u.sid) : null;
       // carriers.js: still walking as one of the dead, there is no body here (their things stay at the death site
@@ -4012,6 +4035,7 @@ export function createRaid(state, setup) {
   placeBodies(b, state.seed); // sleepers.js: bodies lie about, Sleepers among them
   placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
   stealthSetup(state, b); // stealth.js: night, flashlights, suppressors, which way the guards face
+  nlSetup(state, b); // nonlethal.js: tasers and spray on both sides
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
   lockRaid(state, b); // locks.js: locked containers and a locked room
   if (pick) {
@@ -4311,8 +4335,9 @@ function endRaid(state, b) {
   // same chance as the downed in a lost battle. With nobody out, everyone still on the map is lost.
   const anyOut = b.units.some((u) => u.side === "player" && u.left && !u.dead);
   const zombies = b.setup.enemy.kind === "zombies";
+  nlRaidEnd(state, b, anyOut); // nonlethal.js: the knocked out are carried out, or taken when nobody got out
   for (const u of b.units) {
-    if (u.side !== "player") continue;
+    if (u.side !== "player" || u.nlTaken) continue;
     const s = survivorById(state, u.sid);
     if (!s || !s.alive) continue;
     const carried = !u.dead && !u.left && u.down && anyOut && (u.stab || rng.chance(zombies ? 0.1 : 0.35));
