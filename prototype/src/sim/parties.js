@@ -76,7 +76,7 @@ import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
 import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
 import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
-import { enterTarget, enterCard } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
+import { enterTarget, enterCard, enterOption, joinBase } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
 import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, takeStock, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
 
 export const STANCES = {
@@ -110,6 +110,7 @@ export const MISSIONS = {
   flee:        { name: "Refugee",          desc: "Hardcore mode: the survivors who fled when Calder fell, on the road until they found their first hub (hardcore-start.js).", hidden: true },
   // With no base at all (hardcore's first hub, the exiles): a staging camp built up into the hub (staging.js).
   establish:   { name: "Establish base",   desc: "Pitch a staging camp here and build it up into a shelter (then, later, a base): bring in the materials it lists, then work on it for a few days (staging.js).", hidden: true },
+  enter:       { name: "Enter base",       desc: "Move into the base of yours the team stands on: its people live there from now on, what it carries goes into the stores and armory, its vehicle parks there, and the team is disbanded (moveout.js enterOption).", hidden: true },
   strikecamp:  { name: "Strike the camp",  desc: "Give up on the staging camp: take what you can carry of its stores, leave the rest as a cache (staging.js).", hidden: true },
   hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
   fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
@@ -1083,6 +1084,8 @@ export function orderOptions(state, p) {
   const t = state.tiles[tile];
   const out = [];
   const add = (m, why) => out.push({ mission: m, label: MISSIONS[m].name, desc: MISSIONS[m].desc, disabled: why || null });
+  const enter = enterOption(state, p, tile); // on one of your bases: move in, the team disbanded (moveout.js)
+  if (enter) out.push(enter);
   add("survey");
   if (t.terrain !== "water") add("sweep");
   if (t.loot > 0.05) add("scavenge");
@@ -1324,6 +1327,11 @@ function arrive(state, p) {
       return establishArrive(state, p);
     case "strikecamp":
       return strikeArrive(state, p);
+    case "enter": { // move into the base of yours the team stands on (moveout.js joinBase)
+      const b = state.bases.find((x) => x.tile === partyTile(p));
+      if (!b) { awaitOrders(state, p, "There is no base of yours here to enter.", { failed: true }); return ""; }
+      return joinBase(state, p, b);
+    }
     case "outpost": {
       // No base left (an order queued before every base was lost): the staging camp instead (staging.js).
       if (!state.bases.length) { p.mission = "establish"; return establishArrive(state, p); }
@@ -1727,11 +1735,11 @@ function addStock(base, supplies) {
   }
 }
 
-// A team that founds a base moves in for good: what it carries goes into the stores and the armory, its vehicle is
-// parked there, its people live there (Build outpost; the staging camp becoming the hub, staging.js).
-/** @param {State} state @param {Party} p @param {Base} base */
-export function settleInto(state, p, base) {
-  const members = partyMembers(state, p);
+// What a team brings into a base when it ends there (returnHome, settleInto): its supplies and cargo into the stores,
+// its finds into the armory, game and forage, the bodies it carries, its vehicle parked (bikes stacked), prisoners to
+// the cells. Its people are moved by the caller.
+/** @param {State} state @param {Party} p @param {Base} base @param {Survivor[]} members */
+function unloadAt(state, p, base, members) {
   wormHome(state, p, members, base); // worm.js: the hands that searched today, washed if the water here is safe
   addStock(base, p.supplies);
   unloadGame(base, p.cargo);
@@ -1741,6 +1749,17 @@ export function settleInto(state, p, base) {
   bodiesHome(state, p, base); // carriers.js
   const v = partyVehicle(state, p);
   if (v) v.loc = { kind: "base", baseId: base.id };
+  if (isBike(v) || base.armory.some((it) => it && it.key === "bicycle")) parkBikes(state, base); // one stack of bikes per base
+  if (p.owner === "player") prisonersHome(state, p, base); // prisoners.js: prisoners taken on the trip go to the cells
+}
+
+// A team that founds a base moves in for good: what it carries goes into the stores and the armory, its vehicle is
+// parked there, its people live there and the team is disbanded (Build outpost; the staging camp becoming the
+// shelter, staging.js; a base taken by assault, conquest.js).
+/** @param {State} state @param {Party} p @param {Base} base */
+export function settleInto(state, p, base) {
+  const members = partyMembers(state, p);
+  unloadAt(state, p, base, members);
   for (const m of members) {
     m.location = { kind: "base", baseId: base.id };
     m.role = "scavenge";
@@ -1754,21 +1773,11 @@ function returnHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { awaitOrders(state, p, "There is no base to go home to.", { failed: true, hold: true }); return; }
   const members = partyMembers(state, p);
-  wormHome(state, p, members, home); // worm.js: the hands that searched today, washed if the water here is safe
-  addStock(home, p.supplies);
-  unloadGame(home, p.cargo);
-  unloadWormForage(home, p.cargo); // worm.js: forage gathered on infected ground
-  addStock(home, p.cargo.supplies);
-  home.armory.push(...p.cargo.gear);
-  bodiesHome(state, p, home); // carriers.js
-  const v = partyVehicle(state, p);
-  if (v) v.loc = { kind: "base", baseId: home.id };
-  if (isBike(v) || home.armory.some((it) => it && it.key === "bicycle")) parkBikes(state, home); // one stack of bikes per base
+  unloadAt(state, p, home, members); // the stores, armory, vehicle, bikes, bodies and prisoners
   const routeActive = p.kind === "convoy" && state.routes.some((r) => r.id === p.routeId && r.active);
   for (const m of members) m.location = routeActive ? { kind: "route", routeId: p.routeId } : { kind: "base", baseId: home.id };
   if (p.owner === "player") tripDone(state, p, members, home); // relations.js: the service record, rough trips
   if (p.tripSpec) noteTripHome(state, p); // trips.js: a trip sent from the planner goes to the recent trips (Repeat trip)
-  if (p.owner === "player") prisonersHome(state, p, home); // prisoners.js: prisoners taken on the trip go to the cells
   const before = state.knowledge.filter(Boolean).length;
   const markersBefore = state.markers.length;
   mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
