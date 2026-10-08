@@ -202,7 +202,8 @@ const truckHooks = TRUCK_LOOT_HOOKS.splice(0);
 {
   const rng = new Rng(9001);
   const ks = [];
-  for (let i = 0; i < 400; i++) for (const kit of Object.keys(KITS)) {
+  const NEW_KITS = ["escorts", "contractors"]; // added after the baseline (escorts.js: merchant caravans' guards)
+  for (let i = 0; i < 400; i++) for (const kit of Object.keys(KITS).filter((k) => !NEW_KITS.includes(k))) {
     const K = KITS[kit];
     ks.push(keysOf(allItems(enemyBody(rng, { kind: "human", name: "x", id: i, kit, weapon: K.weapons[i % K.weapons.length], armorKey: K.armor[i % K.armor.length] }, K))));
   }

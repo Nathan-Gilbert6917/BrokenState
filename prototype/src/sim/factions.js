@@ -70,7 +70,9 @@ import { reduceHorde } from "./hordes.js";
 import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { groupWorksDaily, fieldsFactor, growthFactor, workshopFactor, storeFactor, groupBaseDefence } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids
+import { escortParty } from "./caravans.js"; // a convoy's guards (escorts.js)
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -290,19 +292,23 @@ export function factionsDaily(state) {
     // Their fields and workshops: food a little short of what they eat for the less farming types (the rest from
     // the sites they strip, aiscav.js), and FACTION_MAKE of the old ammo, scrap, fuel and meds made from nothing.
     const off = !!state.aiScavOff; // test switch (tools/depletetest.js): the old economy, no scavenging groups
-    f.stock.food += f.pop * ((off ? 0.88 : 0.86) + 0.25 * def.food) - f.pop;
-    if (f.stock.food > f.pop * 4 && f.pop < 50 && !f.hcNoGrow && rng.chance(0.25)) f.pop += 1; // hcNoGrow: hardcore's besieged military
+    // groupworks.js: a group short of wells and fields gets a little less from the land, and one sleeping rough grows
+    // slower (CROWDED_GROWTH; both 1 once it has built them; old saves are built up).
+    f.stock.food += f.pop * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) - f.pop;
+    if (f.stock.food > f.pop * 4 && f.pop < 50 && !f.hcNoGrow && rng.chance(0.25 * growthFactor(state, f))) f.pop += 1; // hcNoGrow: hardcore's besieged military
     // Drifters, deserters and the desperate join the strong: an aggressive group with food on hand recruits.
     else if (isAggressiveType(f) && f.pop < RAIDS.RECRUIT_UNTIL + recruitBonus(state) && f.stock.food >= f.pop * 2 && rng.chance(RAIDS.RECRUIT + RAIDS.RECRUIT_BASE * f.bases.length)) f.pop += 1;
     if (f.stock.food < 0) {
       f.stock.food = 0;
       if (rng.chance(0.35)) f.pop -= 1;
     }
-    const mk = off ? 1 : FACTION_MAKE;
-    f.stock.ammo = Math.min(f.pop * 30, f.stock.ammo + f.pop * 0.3 * def.arms * mk);
-    f.stock.scrap = Math.min(f.pop * 10, f.stock.scrap + f.pop * 0.2 * mk);
-    f.stock.fuel = Math.min(f.pop * 3, f.stock.fuel + f.pop * 0.04 * mk); // fuel is scarce (economy rework)
-    f.stock.meds = Math.min(f.pop * 3, f.stock.meds + f.pop * 0.04 * mk);
+    // groupworks.js: without a workshop they make less, without a storehouse they keep less (1 once built).
+    const mk = (off ? 1 : FACTION_MAKE) * workshopFactor(state, f), cap = storeFactor(state, f);
+    f.stock.ammo = Math.min(f.pop * 30 * cap, f.stock.ammo + f.pop * 0.3 * def.arms * mk);
+    f.stock.scrap = Math.min(f.pop * 10 * cap, f.stock.scrap + f.pop * 0.2 * mk);
+    f.stock.fuel = Math.min(f.pop * 3 * cap, f.stock.fuel + f.pop * 0.04 * mk); // fuel is scarce (economy rework)
+    f.stock.meds = Math.min(f.pop * 3 * cap, f.stock.meds + f.pop * 0.04 * mk);
+    groupWorksDaily(state, f); // groupworks.js: the base starts bare; water, fields, quarters, walls, by need
     // Firewood (woodcutting.js): they cut a little every day and burn it on freezing days, so their woodpile (and its
     // price, trade.js) runs low by the end of a winter and fills again by the autumn.
     f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + f.pop * (GROUP_WOOD.cut - GROUP_WOOD.burn * freezeShare(today - 1))));
@@ -382,7 +388,9 @@ export function factionsDaily(state) {
       const partners = state.factions.filter((o) => o.alive && o !== f && !isAggressiveType(o));
       if (partners.length) {
         const to = rng.pick(partners);
-        spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
+        const q = spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
+        // caravans.js escortParty: what it carries (the 10 food and 10 scrap it delivers) is worth a token guard to them.
+        if (q) { q.goods = { supplies: { food: 10, scrap: 10 }, gear: [] }; escortParty(state, f, q, q.goods); }
       }
     }
 
@@ -762,7 +770,7 @@ export function resolveRaidOnFaction(state, party, helpers) {
     return held;
   }
   raidSoured(state, attacker, target);
-  const def = 8 + strength(target) * 0.8 + helpPower + (party.target.tile === target.bases[0] ? groupTurretPower(target) : 0); // vehicles.js: a military group's Humvee at home
+  const def = groupBaseDefence(state, target, party.target.tile) + strength(target) * 0.8 + helpPower + (party.target.tile === target.bases[0] ? groupTurretPower(target) : 0); // 8 for a walled base (groupworks.js: half that bare); vehicles.js: a military group's Humvee at home
   const att = party.strength + groupTurretPower(attacker); // and on their raids
   // Only report fights you could know about: raids on groups you know, anything you can see. Groups you have not
   // met are not named.

@@ -18,6 +18,7 @@ import { onLeave, noteMood } from "./relations.js";
 import { buzzWork } from "./comforts.js";
 import { needsWork } from "./needs.js";
 import { nearSnap } from "./mentalbreaks.js";
+import { talkXp } from "./skills.js";
 
 export const CROWD = { base: 2, perOver: 8, cap: 16, leaderShare: 0.5, roomy: 1 };
 export const LEADER_LIFT = 0.15; // mood a day per point of the leader's Leadership
@@ -221,6 +222,7 @@ function warningCard(state, base, s) {
           const tt = t.who && t.who.alive && t.who.location.kind === "base" && t.who.location.baseId === base.id ? t : talker(st, base, s);
           if (!tt.who) return `Nobody is left at ${base.name} to talk to ${name}.`;
           const ok = st.rng.chance(tt.chance);
+          talkXp(st, tt.who, ok); // skills.js: Speech for the talker
           s.mood = clamp(s.mood + (ok ? TALK_OK : TALK_FAIL), 0, 100);
           noteMood(st, s, ok ? TALK_OK : TALK_FAIL, `Talked to by ${firstName(tt.who)}`);
           reset();

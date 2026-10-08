@@ -3,14 +3,35 @@
 // Growth: a survivor gains XP in the skill they use (s.xp[key] = progress inside the current level). Going from level
 // L to L+1 takes xpNeed(L) = 40 + 0.32 × L³ XP: 40 at 0-1, 49 at 3, 80 at 5, 150 at 7, 360 at 10, 1,120 at 15,
 // 2,235 at 19. A full day of one job is worth 11 XP (USE below), so a 3 becomes a 7 in a season of daily use
-// (298 XP, 28 days) and 15 → 16 takes about a year (1,120 XP, 102 days; a year is 112). Use XP is capped at 15 a day per
-// skill (CAP_USE) and study XP (teaching and books) at 25 a day per skill (CAP_STUDY), so no amount of busywork
-// snowballs. Skills above 10 that have not been used for 14 days slip by 2 XP a day, never below 10 nor below the
-// level the survivor had when they joined (s.skillFloor).
+// (298 XP, 28 days), a 10 in about 84 days, and 15 → 16 takes about a year (1,120 XP, 102 days; a year is 112). Use
+// XP is capped at 20 a day per skill (CAP_USE), fighting XP at 30 (CAP_FIGHT: a battle's shots, hits and kills, or a
+// fight by the numbers, on top of the day's use) and study XP (teaching and books) at 25 (CAP_STUDY), so no amount of
+// busywork snowballs. Skills above 10 that have not been used for 14 days slip by 2 XP a day, never below 10 nor
+// below the level the survivor had when they joined (s.skillFloor).
+// Where XP comes from (USE; measured by tools/skillcurve.js, balance pass 2026-10-07):
+//   skill       regular way to grow (a day)                              events
+//   Farming     Farm role 11; Forage 7 (+ Scouting 3), Cut wood 6         foraging or cutting on a trip, by the hour
+//               (+ Mechanics 2)
+//   Mechanics   Build 11 (2 with nothing queued), Operate 11, Craft 11   repairs 6 (×2 at a base), cars 1-4
+//   Crafting    Craft role: each finished craft by kind, inputs and quality (crafting.js craftXp, about 0.5-3 a
+//               craft; CRAFT_XP.base 2 → 0.55 in this pass: a crafter kept in materials made 40+ a day)
+//   Medicine    Medic role 8                                             wound 5, surgery 10, illness 4, field 6, battle heal 4
+//   Shooting    Guard role 6 + 0.25 an hour on guard (the night watch)  battle: shot 1, hit 2, kill 2, melee 1;
+//                                                                         fight by the numbers 8 (+4 won); game shot 2/6
+//   Scavenging  Scavenge role 9; 4 an hour searching                     a container in a raid 3
+//   Stealth     Scavenge role 4; 1 an hour searching (3 sneaking);       hiding 5, lockpicks, sneaking in battle 2
+//               0.15 an hour on the move on foot (0.6 stealthy)
+//   Scouting    0.5 an hour on the move, 4 a look around (2 an hour)     hunting and fishing 3-4
+//   Speech      the camp's talker 5 (best Speech at a base of 3+)       talking someone round 5 (+5 if it works),
+//                Teach role 4                                             trade 10, radio 6, road talk 5 (+5)
+//   Leadership  the leader 8, an outpost's head 4 (its best, 3+ there),  -
+//                a team's lead on a trip 6, Teach role 6
+// Before the pass the posts were worth a third of a day (Medic 4, Guard 3, the leader 3), battles shared the use cap,
+// Speech and Leadership had no daily way to grow, and over two autopilot years only Farming and Scouting moved.
 // Teaching: a survivor on the Teach role spends the day teaching one skill to up to 2 learners at the same base
 // whose skill (as shown) is at least 4 below theirs. Each learner gains 4 + 0.4 × the teacher's skill + 0.15 ×
 // (the teacher's Leadership + Speech) study XP a day (× 1.5 with Mentor, × the teacher's work factor when ill);
-// the teacher gains Leadership 4 and Speech 2. Learners keep their own jobs (lessons in the evening).
+// the teacher gains Leadership 6 and Speech 4. Learners keep their own jobs (lessons in the evening).
 // Books (data.js GEAR entries with a `book` field): a survivor on the Read role reads 6 hours a day (less when ill)
 // from a copy in their base's armory, one reader per copy at a time. Skill books give 4 XP an hour read, only while
 // the skill (as shown) is below the book's max; a book is finished after its hours and is not read again by the
@@ -29,8 +50,9 @@ import { studyBlueprint, blueprintWares, bookUnlocksPending, learnBook } from ".
 
 export const MILESTONES = [5, 10, 15];
 export const SKILL_MAX = 20;
-export const CAP_USE = 15;        // use XP per skill per day
+export const CAP_USE = 20;        // use XP per skill per day
 export const CAP_STUDY = 25;      // teaching + reading XP per skill per day
+export const CAP_FIGHT = 30;      // fighting XP (battles on the map, fights by the numbers) per skill per day
 export const DECAY_AFTER = 14;    // days without use before a skill above DECAY_FLOOR slips
 export const DECAY_PER_DAY = 2;   // XP lost a day after that
 export const DECAY_FLOOR = 10;    // never slips below this (nor below the starting level)
@@ -44,10 +66,11 @@ export const xpNeed = (L) => Math.round(40 + 0.32 * Math.max(0, L) ** 3);
 
 // Use XP per event (11 for a full day of one job; less for side jobs, more where treatments, fights or searches add up).
 export const USE = {
-  farm: 11, medicRole: 4, operate: 11, craft: 11, build: 11, idle: 2, guard: 3, scavRole: 6, leader: 3, teamLead: 4,
-  travelHour: 0.5, stealthyHour: 0.3, survey: 4, shot: 1, hit: 2, melee: 1, kill: 2, heal: 3, sneak: 1, box: 2,
-  autoFight: 6, autoWin: 3, searchHour: 3, sneakSearch: 2, wound: 3, surgery: 6, illness: 2, field: 4,
-  talk: 5, talkWon: 5, hide: 5, bribe: 2, trade: 6, radio: 4, repair: 5, teachLead: 4, teachSpeech: 2,
+  farm: 11, medicRole: 8, operate: 11, craft: 11, build: 11, idle: 2, guard: 6, watchHour: 0.25, scavRole: 9, scavStealth: 4,
+  leader: 8, teamLead: 6, baseLead: 4, campTalk: 5, forage: 7, forageScout: 3, wood: 6, woodMech: 2,
+  travelHour: 0.5, stealthyHour: 0.6, footHour: 0.15, survey: 4, shot: 1, hit: 2, melee: 1, kill: 2, heal: 4, sneak: 2, box: 3,
+  autoFight: 8, autoWin: 4, searchHour: 4, sneakSearch: 3, searchStealth: 1, wound: 5, surgery: 10, illness: 4, field: 6,
+  talk: 5, talkWon: 5, hide: 5, bribe: 2, trade: 10, radio: 6, repair: 6, teachLead: 6, teachSpeech: 4,
 };
 
 const first = (s) => String(s.name).split(" ")[0];
@@ -214,7 +237,7 @@ export function skillProgress(s, key) {
   const need = xpNeed(raw);
   const xp = Math.max(0, (s && s.xp && s.xp[key]) || 0);
   const t = s && s.xpDay ? s.xpDay : null;
-  const today = t ? (t.use[key] || 0) + (t.study[key] || 0) : 0;
+  const today = t ? (t.use[key] || 0) + (t.study[key] || 0) + ((t.fight && t.fight[key]) || 0) : 0;
   const maxed = raw >= SKILL_MAX;
   const nextMs = MILESTONES.find((m) => m > level) || null;
   return {
@@ -236,20 +259,30 @@ export function pendingPerks(s) {
 // ======================================================================================
 // XP
 // ======================================================================================
-// Adds XP to one skill (src "use" or "study"; each has its own daily cap). Returns the XP actually added.
+// Measurement hook for tools (tools/skillcurve.js): null in the game. onGain(state, s, key, asked, added, src) after
+// every gainXp; onDecay(state, s, key, lost) when an unused skill slips.
+export const xpHooks = { onGain: null, onDecay: null };
+
+// Adds XP to one skill (src "use", "study" or "fight"; each has its own daily cap). Returns the XP actually added.
 export function gainXp(state, s, key, amount, src = "use") {
+  const added = gainXpRaw(state, s, key, amount, src);
+  if (xpHooks.onGain && s && amount > 0) xpHooks.onGain(state, s, key, amount, added, src);
+  return added;
+}
+function gainXpRaw(state, s, key, amount, src) {
   if (!state || !s || !s.alive || !isSkill(key) || !(amount > 0)) return 0;
   ensureSkills(state, s);
   const d = day(state);
   if (s.xpDay.d !== d) s.xpDay = { d, use: {}, study: {} };
+  if (src === "fight" && !s.xpDay.fight) s.xpDay.fight = {}; // saves from before the fight bucket
   let amt = amount;
   // Mentor: teammates on a trip with them learn more from what they do.
-  if (src === "use" && s.location && s.location.kind === "party") {
+  if (src !== "study" && s.location && s.location.kind === "party") {
     const p = state.parties.find((x) => x.id === s.location.partyId);
     if (p && teamOf(state, p).some((o) => o !== s && hasPerk(o, "mentor"))) amt *= 1.25;
   }
-  const bucket = src === "study" ? s.xpDay.study : s.xpDay.use;
-  const cap = src === "study" ? CAP_STUDY : CAP_USE;
+  const bucket = src === "study" ? s.xpDay.study : src === "fight" ? s.xpDay.fight : s.xpDay.use;
+  const cap = src === "study" ? CAP_STUDY : src === "fight" ? CAP_FIGHT : CAP_USE;
   amt = Math.min(amt, cap - (bucket[key] || 0));
   if (amt <= 1e-9) return 0;
   bucket[key] = (bucket[key] || 0) + amt;
@@ -278,6 +311,8 @@ export function addXp(state, s, key, amt) {
 
 // Several people at once (a team, everyone in a fight).
 export const gainXpAll = (state, people, key, amount, src = "use") => { for (const s of people || []) gainXp(state, s, key, amount, src); };
+// Talking someone round (a person about to leave, one who broke down, two rivals): Speech for the talker.
+export const talkXp = (state, who, ok) => (who ? gainXp(state, who, "speech", USE.talk + (ok ? USE.talkWon : 0)) : 0);
 
 // A milestone reached: a perk point and a card to spend it (the autopilot answers by its style).
 function checkMilestones(state, s, key) {
@@ -610,8 +645,8 @@ function roleXp(state, base, s) {
   switch (s.role) {
     case "farm": gainXp(state, s, "farming", USE.farm * wf); break;
     case "medic": gainXp(state, s, "medicine", USE.medicRole * wf); break;
-    case "guard": gainXp(state, s, "shooting", USE.guard * wf); break;
-    case "scavenge": gainXp(state, s, "scavenging", USE.scavRole * wf); gainXp(state, s, "stealth", 1 * wf); break;
+    case "guard": gainXp(state, s, "shooting", USE.guard * wf); break; // + the hours on guard (skillsHour)
+    case "scavenge": gainXp(state, s, "scavenging", USE.scavRole * wf); gainXp(state, s, "stealth", USE.scavStealth * wf); break;
     case "build": gainXp(state, s, "mechanics", (base.construction && base.construction.length ? USE.build : USE.idle) * wf); break;
     case "craft": {
       const job = craftQueue(base)[0];
@@ -640,6 +675,7 @@ function decay(state, s) {
     if (raw <= floor) continue;
     if (d - (s.xpLast[k] ?? d) <= DECAY_AFTER) continue;
     s.xp[k] = (s.xp[k] || 0) - DECAY_PER_DAY;
+    if (xpHooks.onDecay) xpHooks.onDecay(state, s, k, DECAY_PER_DAY);
     if (s.xp[k] < 0) {
       s.skills[k] = raw - 1;
       s.xp[k] = Math.max(0, xpNeed(raw - 1) + s.xp[k]);
@@ -655,6 +691,15 @@ export function skillsDaily(state) {
   for (const base of state.bases) {
     const people = atBase(state, base.id);
     for (const s of people) roleXp(state, base, s);
+    // The camp's talker (the best Speech awake here) keeps people talking; an outpost's head (its best Leadership,
+    // not the leader) runs its day. Only at bases of 3 or more.
+    const up = people.filter((s) => !s.inBed && workFactor(s) > 0);
+    if (up.length >= 3) {
+      const best = (k, pool) => [...pool].sort((a, b) => skill(b, k) - skill(a, k) || a.id - b.id)[0];
+      gainXp(state, best("speech", up), "speech", USE.campTalk);
+      const heads = up.filter((s) => !s.leader);
+      if (base.type !== "hub" && heads.length && !up.some((s) => s.leader)) gainXp(state, best("leadership", heads), "leadership", USE.baseLead);
+    }
     teachingDaily(state, base);
     readingDaily(state, base);
     // Inspiring: a daily mood factor of its own (relations.js moodFactors), so it shows in the breakdown.
@@ -690,8 +735,12 @@ function fieldRepair(people) {
   }
 }
 
-// Every hour (world.js tickHour, before teams move): travel XP and Pathfinder's pace.
+// Every hour (world.js tickHour, before teams move): travel XP, the hours on guard, and Pathfinder's pace.
 export function skillsHour(state) {
+  // On guard at a base (a Guard post or a turn on the watch): Shooting by the hour.
+  for (const s of alive(state)) {
+    if (s.role === "guard" && !s.inBed && s.location && s.location.kind === "base") gainXp(state, s, "shooting", USE.watchHour);
+  }
   for (const p of state.parties) {
     if (p.owner !== "player" || !Array.isArray(p.members)) continue;
     const team = teamOf(state, p);
@@ -704,6 +753,7 @@ export function skillsHour(state) {
     for (const s of team) {
       gainXp(state, s, "scouting", USE.travelHour);
       if (p.stance === "stealthy") gainXp(state, s, "stealth", USE.stealthyHour);
+      else if (!p.vehicle) gainXp(state, s, "stealth", USE.footHour); // on foot, keeping out of sight
     }
   }
 }
@@ -747,17 +797,17 @@ export function battleXp(state, b) {
     const s = survivorById(state, u.sid);
     if (!s || !s.alive) continue;
     const t = u.xpT;
-    gainXp(state, s, "shooting", t.shots * USE.shot + t.hits * USE.hit + t.melee * USE.melee + t.kills * USE.kill);
-    if (t.heals) gainXp(state, s, "medicine", t.heals * USE.heal);
-    if (t.sneak) gainXp(state, s, "stealth", t.sneak * USE.sneak);
-    if (t.boxes) gainXp(state, s, "scavenging", t.boxes * USE.box);
+    gainXp(state, s, "shooting", t.shots * USE.shot + t.hits * USE.hit + t.melee * USE.melee + t.kills * USE.kill, "fight");
+    if (t.heals) gainXp(state, s, "medicine", t.heals * USE.heal, "fight");
+    if (t.sneak) gainXp(state, s, "stealth", t.sneak * USE.sneak, "fight");
+    if (t.boxes) gainXp(state, s, "scavenging", t.boxes * USE.box, "fight");
     u.xpT = null; // counted once
   }
 }
 
 // A fight resolved by the numbers (combat.js autoResolveCombat).
 export function fightXp(state, people, win) {
-  gainXpAll(state, (people || []).filter((s) => s.alive), "shooting", USE.autoFight + (win ? USE.autoWin : 0));
+  gainXpAll(state, (people || []).filter((s) => s.alive), "shooting", USE.autoFight + (win ? USE.autoWin : 0), "fight");
 }
 
 // ======================================================================================
