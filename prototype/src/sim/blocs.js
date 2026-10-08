@@ -627,7 +627,7 @@ export function jointAfter(state, party, won) {
     const m = factionById(state, id);
     if (!m || !m.alive) continue;
     if (won) { if (lead) changeRelation(state, m, lead, 2); }
-    else if (m.pop > 4 && h(state, m.name, party.id % 997, "jloss") < 0.5) m.pop -= 1;
+    else if (m.pop > 4 && h(state, m.name, lead ? lead.name : String(party.owner), state.hour, "jloss") < 0.5) m.pop -= 1; // never the party's run-time id: a second world or a load hands out others
   }
 }
 // diplomacy.js startWar: a war on a member brings the bloc in.

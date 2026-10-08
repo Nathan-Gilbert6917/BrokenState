@@ -21,7 +21,7 @@
 // (locks.js openCaseAct), free and silent at a base or a camp (openCase here).
 import { GEAR, SUPPLIES } from "./data.js";
 import { lootItem, itemAt, placeOfLoc, storageFor } from "./inventory.js";
-import { siteSource } from "./itemcond.js"; // every item here gets its condition from itemcond.js (rollCondition by source)
+import { siteSource, GUNSTORE_LOCKED } from "./itemcond.js"; // every item here gets its condition from itemcond.js (rollCondition by source)
 import { baseById } from "./world.js";
 import { stashRounds } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
 
@@ -82,10 +82,11 @@ export function pickWeighted(r, weights) {
   return list.length ? list[list.length - 1][0] : null;
 }
 const q2 = (v) => Math.round(v * 100) / 100;
-// The itemcond.js source of what is in a safe ("gunsafe") or a case (the site's: a police or a military one, else a home).
+// The itemcond.js source of what is in a safe ("gunsafe"; at a gun store the military's range, GUNSTORE_LOCKED: a
+// store's back room does not beat the Army) or a case (the site's: a police or a military one, else a home).
 const CASE_KINDS = ["pistolcase", "riflecase"];
 export const caseSource = (siteType) => { const s = siteSource(siteType); return s === "police" || s === "military" ? s : "home"; };
-export const stashSource = (tier, siteType) => (CASE_KINDS.includes(tier) ? caseSource(siteType) : "gunsafe");
+export const stashSource = (tier, siteType) => (CASE_KINDS.includes(tier) ? caseSource(siteType) : siteType === "gunstore" ? GUNSTORE_LOCKED : "gunsafe");
 
 // What a safe or a case of this tier holds at a site of this type. roll: a hash01 closure. opts: passed to the extras.
 export function rollGunStash(roll, tier, siteType, opts = {}) {
@@ -219,7 +220,7 @@ export const SEARCH_TOOLS = {
   hardware: { powerdrill: 0.04, anglegrinder: 0.015 }, autoshop: { powerdrill: 0.03, anglegrinder: 0.02 },
   factory: { anglegrinder: 0.03, powerdrill: 0.02 }, quarry: { anglegrinder: 0.02 }, dam: { powerdrill: 0.01 },
 };
-// A drill or a grinder's condition: new old stock in a shop (a hardware store), else a worksite's.
+// A drill or a grinder's condition: a shop's picked-over stock (a hardware store), else a worksite's.
 export const toolSource = (siteType) => (siteSource(siteType) === "shop" ? "shop" : "site");
 // Items from GUN_FINDS for one container: cases come with their contents.
 export function rollAreaGunFinds(roll, areaType, siteType) {

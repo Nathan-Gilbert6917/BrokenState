@@ -8,6 +8,10 @@
 //     gives truckLoot and wakes the crew strapped in (more aware soldiers, Heat); an opened truck stays opened; the
 //     field battle map has them as cover; siteDeadMix has soldiers on a truck tile; the hour-by-hour search reaches them
 //   - the convoy event: the card, the site, its trucks, the race (a salvage party strips it), it expires; save / load
+//   - the convoy's guard (CONVOY_GUARD): more dead soldiers round each truck on the raid map, Heat from the start and
+//     more when one is forced open, the hour-by-hour search's Heat and threat, a fight by the numbers there counts
+//     them, an AI salvage party loses people to them before it strips it and takes the trucks' cargo home (stock, arsenal); a
+//     stripped convoy has no guard
 //   - the Army truck as a vehicle: slower (×0.67, off-road ×0.75 more), ×2 fuel, 2500 kg, 12 seats, loud (hordes turn,
 //     camp Heat, Heat when driven on a battle map)
 //   - found cars: get in (locked: pick / force / break the glass, the noise), keys, hotwire, inspect, siphon, claim;
@@ -23,14 +27,20 @@ import { Rng } from "../src/sim/rng.js";
 import {
   MILTRUCK, TRUCK_KINDS, TRUCK_LOOT, TRUCK_LOOT_HOOKS, TRUCK_FLASH, truckLoot, trucksAt, unopenedTrucks, roadTruckChance, milDistance, truckSearchHour,
   spawnConvoy, convoysHour, convoyById, activeConvoys, CONVOY, truckEngineNoise, ENGINE,
+  CONVOY_GUARD, guardedTrucks, convoyGuards, convoyHeat0, convoyThreat, convoySoldiers, convoyAiLosses, convoyHaul,
 } from "../src/sim/miltrucks.js";
+import { startScavenge } from "../src/sim/scavenge.js";
+import { triggerConflict } from "../src/sim/conflicts.js";
+import { unitPower, arsenalWorthy } from "../src/sim/arsenal.js";
+import { condRolled } from "../src/sim/itemcond.js";
+import { isNight } from "../src/sim/world.js";
 import {
   carsNear, carRecord, carOptions, carAct, settleClaims, repairOf, runs, fixProblem, startFixCar, finishFixCar, fixChance, driveHome, fixableAt, runnerAt, MODELS,
 } from "../src/sim/foundcars.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, combatAct, finishCombat, CELL } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { siteDeadMix } from "../src/sim/deadsoldiers.js";
-import { launchExpedition, partyTile, partyMembers, travelHours, planPath, orderOptions, giveOrder } from "../src/sim/parties.js";
+import { launchExpedition, partyTile, partyMembers, travelHours, planPath, orderOptions, giveOrder, spawnAiParty } from "../src/sim/parties.js";
 import { VEHICLE_TYPES, createVehicle, fuelMultFor } from "../src/sim/vehicles.js";
 import { teamLoad } from "../src/sim/load.js";
 import { campRows, CAMP_HEAT } from "../src/sim/fieldheat.js";
@@ -269,6 +279,122 @@ section("The abandoned convoy (an event)");
   st2.started = true;
   for (let i = 0; i < 24 * 40 && !(st2.convoys || []).length; i++) { st2.hour++; convoysHour(st2); st2.cards = []; }
   check((st2.convoys || []).length >= 1 && st2.convoys[0].seenHour / 24 >= CONVOY.firstMin - 1, `the first convoy comes by itself (day ${st2.convoys && st2.convoys[0] ? Math.floor(st2.convoys[0].seenHour / 24) + 1 : "-"})`);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+section("The convoy's guard (miltrucks.js CONVOY_GUARD: more dead soldiers and more Heat by the truck)");
+{
+  const G = CONVOY_GUARD;
+  // The raid map: the same convoy with and without the guard (PER_TRUCK 0 and no Heat: the old numbers).
+  const convoyAt = (seed) => {
+    const st = createWorld({ seed, factionCount: 7 });
+    st.started = true;
+    st.cards = [];
+    const c = spawnConvoy(st, { noCard: true });
+    return c ? { st, c } : null;
+  };
+  const raidOn = (seed, guard) => {
+    const w = convoyAt(seed);
+    if (!w) return null;
+    const saved = { ...G };
+    if (!guard) Object.assign(G, { PER_TRUCK: [0, 0], HEAT_PRESENT: 0, HEAT_OPEN: 0 });
+    try {
+      const p = team(w.st, w.c.tile);
+      const b = inBrowser(() => createBattle(w.st, raidSetup(w.st, w.c.tile, p)));
+      w.st.combat = b;
+      const soldiers = b.units.filter((u) => u.ztype === "soldier").length;
+      const heat0 = b.raid.heat;
+      // Force a convoy truck open: the crew rises (RISE_HEAT) and, with the guard, the line hears it (HEAT_OPEN).
+      const box = b.raid.containers.find((x) => x.kind === "miltruck" && x.truck.src === "convoy");
+      let rise = null;
+      if (box) {
+        if (box.lock) box.lock.open = true;
+        const u = b.units.find((x) => x.side === "player");
+        const ring = [[box.x - 1, box.y], [box.x + box.w, box.y], [box.x, box.y - 1], [box.x, box.y + box.h]].find(([x, y]) => x >= 0 && y >= 0 && x < b.w && y < b.h && CELL[b.cells[y * b.w + x].k].walk && !b.units.some((o) => o !== u && o.x === x && o.y === y));
+        if (ring) {
+          [u.x, u.y] = ring; u.ap = 2;
+          const h0 = b.raid.heat, crew = box.crew;
+          if (!combatAct(w.st, { type: "search", unit: u.id, box: box.id, open: true })) rise = { gain: b.raid.heat - h0, crew };
+        }
+      }
+      w.st.combat = null;
+      return { soldiers, heat0, trucks: trucksAt(w.st, w.c.tile).length, rise };
+    } finally { Object.assign(G, saved); }
+  };
+  let withG = 0, without = 0, n = 0, heatOk = 0, openOk = 0, opened = 0, trucks = 0;
+  for (let i = 0; i < 6; i++) {
+    const a = raidOn(SEED * 50 + i, true), z = raidOn(SEED * 50 + i, false);
+    if (!a || !z) continue;
+    n++; withG += a.soldiers; without += z.soldiers; trucks += a.trucks;
+    if (a.heat0 - z.heat0 === a.trucks * G.HEAT_PRESENT) heatOk++;
+    if (a.rise && z.rise) { opened++; if (a.rise.gain - z.rise.gain === G.HEAT_OPEN) openOk++; }
+  }
+  console.log(`    ${n} convoys, ${trucks} trucks: ${withG} dead soldiers on their raid maps with the guard, ${without} without`);
+  check(n >= 3 && withG - without >= trucks * G.PER_TRUCK[0] * 0.8, `each truck has its guard: ${withG - without} more dead soldiers on ${trucks} trucks (${G.PER_TRUCK.join("–")} a truck)`);
+  check(n >= 3 && heatOk === n, `the raid starts hotter: +${G.HEAT_PRESENT} Heat a truck (${heatOk}/${n})`);
+  check(opened >= 2 && openOk === opened, `forcing a convoy truck open: +${G.HEAT_OPEN} Heat more than an ordinary truck (${openOk}/${opened})`);
+  // By the numbers: the guard, the search's Heat and threat, a fight with the dead there, an AI party's losses.
+  const w = convoyAt(SEED * 50 + 1);
+  const { st, c } = w;
+  const k = guardedTrucks(st, c.tile).length;
+  check(k === c.trucks && convoyGuards(st, c.tile) === Math.round(k * (G.PER_TRUCK[0] + G.PER_TRUCK[1]) / 2) && convoyHeat0(st, c.tile) === k * G.HEAT_PRESENT && convoyThreat(st, c.tile) > 0, `${k} guarded trucks: ${convoyGuards(st, c.tile)} guards, Heat +${convoyHeat0(st, c.tile)} at the start, threat +${convoyThreat(st, c.tile).toFixed(1)} in the search`);
+  const p = team(st, c.tile, 4);
+  p.dest = c.tile;
+  p.phase = "engaged";
+  st.engagement = null;
+  check(startScavenge(st, p) && st.engagement.heat === (isNight(st) ? 0 : 5) + k * G.HEAT_PRESENT, `the hour-by-hour search starts at Heat ${st.engagement && st.engagement.heat}`);
+  {
+    const e = { tile: c.tile, hours: 0, heat: 0, found: { supplies: {}, gear: [] } };
+    const x = unopenedTrucks(st, c.tile)[0];
+    let line = "";
+    for (let i = 0; i < 60 && !line; i++) { st.hour++; e.hours++; line = truckSearchHour(st, e, p, partyMembers(st, p)); }
+    check(!!line && e.heat === MILTRUCK.SEARCH_HEAT + 2 * x.crew + G.HEAT_OPEN, `reaching a convoy truck in the search: Heat +${e.heat} (${MILTRUCK.SEARCH_HEAT} + 2 a crewman + ${G.HEAT_OPEN})`);
+    check(guardedTrucks(st, c.tile).length === k - 1, "an opened truck is no longer guarded");
+  }
+  st.engagement = null;
+  // A fight with the dead there (conflicts.js enemyGroup): the guard comes too.
+  {
+    st.cards = [];
+    const g0 = convoyGuards(st, c.tile);
+    const card = triggerConflict(st, p, "surge", null);
+    const cc = card && (card.conflict || card.c || (st.cards.find((x) => x.partyId === p.id) || {}).conflict);
+    const enemy = cc && cc.enemy;
+    check(!!enemy && enemy.count >= 4 + g0 && ((enemy.types && enemy.types.soldier) || 0) >= g0, `a fight with the dead there by the numbers counts the guard (${enemy ? `${enemy.count} dead, ${(enemy.types && enemy.types.soldier) || 0} soldiers` : "no card"}; guard ${g0})`);
+    st.cards = [];
+  }
+  // An AI group's salvage party: it loses people to the soldiers about the trucks (its type's arms and kit), then strips it.
+  {
+    const f = st.factions.find((x) => x.alive && x.bases.length && !x.bases.includes(c.tile));
+    const soldiers = convoySoldiers(st, c.tile);
+    const losses = [];
+    for (let i = 0; i < 40; i++) losses.push(convoyAiLosses(st, { ...c, id: c.id + 1000 * i }, f, 6));
+    const mean = losses.reduce((a, x) => a + x, 0) / losses.length;
+    const want = soldiers * G.AI_LOSS * G.AI_REF / Math.max(1, unitPower(f, 2.2));
+    check(soldiers > 0 && Math.abs(mean - want) < 0.35, `an AI salvage party loses ${mean.toFixed(2)} people on average to ${soldiers.toFixed(1)} soldiers (expected ${want.toFixed(2)})`);
+    check(convoyAiLosses(st, c, f, 1) <= 1 && convoyAiLosses(st, c, f, 0) === 0, "never more than the party has");
+    { // its dice never use run-time ids: a second world of the same seed (other ids) loses the same
+      const w1 = convoyAt(SEED * 50 + 2), w2 = convoyAt(SEED * 50 + 2);
+      const f1 = w1.st.factions.find((x) => x.alive && x.bases.length), f2 = w2.st.factions.find((x) => x.name === f1.name);
+      const ls = (w, g) => [0, 1, 2, 3, 4, 5].map((i) => convoyAiLosses(w.st, { ...w.c, id: w.c.id + 1000 * i }, g, 6)).join(",");
+      check(!!f2 && f2.id !== f1.id && ls(w1, f1) === ls(w2, f2), `the same losses in a second world of the same seed, whose groups have other ids (${ls(w1, f1)})`);
+    }
+    const pop0 = f.pop;
+    const q = spawnAiParty(st, f, "salvage", f.bases[0], c.tile, { strength: 6 });
+    q.convoy = c.id; q.path = [c.tile]; q.idx = 0;
+    const lost = convoyAiLosses(st, c, f, 6);
+    // AI parity: the trucks' cargo goes home with it (convoyHaul: truckLoot, its condition by itemcond.js; into the
+    // group's stock and arsenal through caravanraids.js takeInto / arsenal.js addToArsenal).
+    const plan = convoyHaul(st, c), ars0 = f.arsenal ? f.arsenal.items.length : 0, ammo0 = f.stock.ammo || 0;
+    const worthy = plan.gear.filter((it) => arsenalWorthy(it)).length, rich0 = unopenedTrucks(st, c.tile).map((x) => x.rich);
+    convoysHour(st);
+    check(f.pop === pop0 - lost && (c.aiLost || 0) === lost && c.stripped === 1, `it reaches the convoy: ${lost} of its people fall (group ${pop0} → ${f.pop}), then it strips it`);
+    check(plan.value > 0 && c.aiHaul === plan.value && plan.gear.every((it) => condRolled(it)), `it takes the trucks' cargo home (worth ${plan.value}: ${plan.gear.map((it) => it.name).join(", ") || "no gear"}; every piece rolled by itemcond.js)`);
+    check((f.arsenal ? f.arsenal.items.length : 0) - ars0 === worthy && (f.stock.ammo || 0) - ammo0 === (plan.supplies.ammo || 0), `${worthy} guns, armour and grenades into its arsenal, ${plan.supplies.ammo || 0} rounds into its stock`);
+    check(unopenedTrucks(st, c.tile).every((x, i) => Math.abs(x.rich - rich0[i] * CONVOY.stripKeep) < 1e-9), `the trucks keep ${CONVOY.stripKeep * 100}% of their cargo for whoever comes next`);
+    check(!guardedTrucks(st, c.tile).length && convoyGuards(st, c.tile) === 0 && convoyHeat0(st, c.tile) === 0, "a stripped convoy has no guard left (the first group there put them down)");
+    const back = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
+    check(convoyById(back, c.id).aiLost === c.aiLost && convoyById(back, c.id).stripped === 1, "its losses and the strip survive a save and a load");
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------

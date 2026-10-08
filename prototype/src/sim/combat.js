@@ -83,7 +83,7 @@ import { nlHit, nlDown, nlAfterHit, nlAimPen, nlNoOw, nlStrike, nlAct, nlSetup, 
 import { ammoPen } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult)
 import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
 import { calOf, calName, roundsOf, takeBattleRounds, sideRounds, chooseLoad, enemyLoad, pickLoad, boxesOf, sweepBoxes, typeFx, typeFor, roundName, settleBase, settleParty, drawTeamShots, ammoEdge, refundShots, softMult, bodyRounds, sortFind, raidTheme } from "./ammo.js"; // rounds by calibre and type
-import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews
+import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK, CONVOY_GUARD, guardedTrucks } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews (a convoy's guard)
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
 import { armFromArsenal, settleArsenal } from "./arsenal.js"; // group arsenals: their units armed from what the group holds
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
@@ -4586,7 +4586,7 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
         });
       }
       const xs = placed.flatMap(({ rect }) => [rect.x0, rect.x0 + rect.w - 1]), ys = placed.flatMap(({ rect }) => [rect.y0, rect.y0 + rect.h - 1]);
-      Object.assign(area, { x0: Math.min(...xs) - 1, y0: Math.min(...ys) - 1, w: Math.max(...xs) - Math.min(...xs) + 3, h: Math.max(...ys) - Math.min(...ys) + 3, outdoor: true, trucks: placed.map(({ truck: x, rect }) => ({ i: x.i, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, crew: x.opened ? 0 : x.crew, ...(x.guard ? { guard: true } : {}) })) }); // guard: a motor pool's ready vehicles
+      Object.assign(area, { x0: Math.min(...xs) - 1, y0: Math.min(...ys) - 1, w: Math.max(...xs) - Math.min(...xs) + 3, h: Math.max(...ys) - Math.min(...ys) + 3, outdoor: true, trucks: placed.map(({ truck: x, rect }) => ({ i: x.i, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, crew: x.opened ? 0 : x.crew, ...(x.guard ? { guard: true } : {}), ...(x.src === "convoy" && !x.opened ? { convoy: true } : {}) })) }); // guard: a motor pool's ready vehicles; convoy: an unopened convoy truck (its guard: truckCrews)
       areas.push(area);
       continue;
     }
@@ -4990,16 +4990,20 @@ function spawnWave(b, n) {
 }
 
 // ---------- Army trucks' crews (miltrucks.js) ----------
-// The turned crew round each truck on a raid map: MILTRUCK.AROUND dead soldiers standing near it, unaware.
+// The turned crew round each truck on a raid map: MILTRUCK.AROUND dead soldiers standing near it, unaware. An
+// unopened truck of a convoy nobody has stripped has its guard too (CONVOY_GUARD.PER_TRUCK more), and the line of
+// trucks starts the raid hotter (HEAT_PRESENT a truck: miltrucks.js guardedTrucks).
 function truckCrews(state, b) {
   const R = b.raid;
   if (!R) return;
   const rng = b.rng;
   const power = 2 + b.infection * 3;
+  const guarded = guardedTrucks(state, b.tileId).length;
+  if (guarded) R.heat = Math.min(100, R.heat + guarded * CONVOY_GUARD.HEAT_PRESENT);
   for (const a of R.areas) {
     for (const t of a.trucks || []) {
-      if (!t.crew && !t.guard && !rng.chance(0.5)) continue; // an opened truck: now and then one still about it
-      const n = rng.int(MILTRUCK.AROUND[0], MILTRUCK.AROUND[1]) + (t.guard ? MILTRUCK.GUARD : 0); // a motor pool's ready vehicles are guarded
+      if (!t.crew && !t.guard && !t.convoy && !rng.chance(0.5)) continue; // an opened truck: now and then one still about it
+      const n = rng.int(MILTRUCK.AROUND[0], MILTRUCK.AROUND[1]) + (t.guard ? MILTRUCK.GUARD : 0) + (t.convoy && guarded ? rng.int(CONVOY_GUARD.PER_TRUCK[0], CONVOY_GUARD.PER_TRUCK[1]) : 0); // a motor pool's ready vehicles are guarded, and a convoy's trucks
       const cells = [];
       for (let y = t.y - 3; y <= t.y + t.h + 2; y++) for (let x = t.x - 3; x <= t.x + t.w + 2; x++) if (inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !unitAt(b, x, y) && zoneAt(b, x, y) < 0) cells.push([x, y]);
       rng.shuffle(cells);
@@ -5078,12 +5082,17 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       const got = truckLoot(truckRng(state, x), x.kind, x.cond, { rich: x.rich, src: x.src });
       Object.assign(sup, got.sup);
       gear.push(...got.gear);
+      const guarded = x.src === "convoy" && guardedTrucks(state, b.tileId).some((y) => y.i === x.i); // before it is marked opened
       markOpened(state, x);
       truckCrewRises(state, b, u, box);
+      if (guarded && b.raid) { // a convoy truck forced open: the whole line of the dead hears it (miltrucks.js CONVOY_GUARD)
+        b.raid.heat = Math.min(100, b.raid.heat + CONVOY_GUARD.HEAT_OPEN);
+        say(b, `The tailgate bangs down the line of trucks (Heat +${CONVOY_GUARD.HEAT_OPEN}).`, "danger");
+      }
     } else {
       const def = AREAS[R.areas[box.area].type];
       const site = state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null;
-      const src = areaSource(R.areas[box.area].type, site); // itemcond.js: a house's things used, a shop's new, a wreck's scorched
+      const src = areaSource(R.areas[box.area].type, site); // itemcond.js: a house's things used, a shop's picked over, a wreck's scorched
       for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
         if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
