@@ -168,8 +168,8 @@ export function warGoalFor(state, f) {
     revenge: g.raid + 1.5 * g.execution + g.prisoners + 0.5 * g.theft,
     loot: (richV >= PW.RICH ? 20 : richV >= PW.RICH / 2 ? 10 : 0) + (hungry ? 12 : 0) + 0.5 * g.theft + 8 * weightOf(f, "raid"),
     territory: near ? 15 + g.growth + 8 * weightOf(f, "expand") : 0,
-    conversion: f.type === "zealot" ? 30 : 0,
-    rival: f.type === "expansionist" || f.type === "military" ? 40 * land + (playerStrength(state) > strength(f) ? 10 : 0) : 0,
+    conversion: weightOf(f, "cbConversion", 0), // groupcare.js GROUP_PRIORITIES: zealots
+    rival: weightOf(f, "cbRival", 0) ? weightOf(f, "cbRival", 0) * land + (playerStrength(state) > strength(f) ? 10 : 0) : 0, // expansionists, the military
   };
   const goal = Object.keys(scores).reduce((a, b) => (scores[b] > scores[a] ? b : a));
   const top = GRIEVANCES.filter((k) => g[k] >= 8).sort((a, b) => g[b] - g[a])[0];

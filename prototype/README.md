@@ -447,6 +447,12 @@ node tools/dettest.js 60
 Determinism across worlds in one process (`world.js` `newId` is one counter for the whole process): for seeds 42, 7 and 1234 (or `node tools/dettest.js [days] [seeds...]`) world A runs 60 days on the Balanced autopilot, then world B on the same seed in the same process; a digest (stocks, buildings, wear and repairs, survivors' health / skills / XP / perks / mood / place, parties (with scavenging parties' hauls), hordes, hives, factions (and when they next scavenge), every site's loot and the loot you know there, the base's picked-over surroundings, diplomacy, jobs, the coalition, prisoners, crashes, tech, relationships, stats and every log line) must be identical, ids compared by their offset from the world's first id (each world here starts its ids at the next million, so anything hashed on an id shows up). Then each seed again with a world on another seed and style run in between, a pair after another world, and the same run in a fresh Node process. Last, a tactical battle played alone and with another world's battle (on a map turned to 13 × 18) set up while it is under way must play out the same (`combat.js` points its grid helpers at each battle's own size).
 
 ```bash
+node tools/groupdigest.js 240 42 7 1234
+```
+
+The groups' outcomes as one hash, to prove a refactor of the groups' tuning (`groupcare.js` `GROUP_PRIORITIES`) changes nothing: for each seed a normal and a hardcore world play N days on the Balanced autopilot; the dettest digest plus every group's whole record (people, wounded, stock, bases, works, arsenal, vehicles, knowledge), diplomacy, blocs, hordes, wanderers and the wars with you are hashed (ids by their offset from the world's first id). Run it before and after on the same seeds (a `git archive` export of the old commit for the before): the hashes must match.
+
+```bash
 node tools/savetest.js 120
 ```
 

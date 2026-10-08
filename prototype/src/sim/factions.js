@@ -88,23 +88,24 @@ export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
   PLAYER_W: 2.5, GREED: 1500, LAND: 0.2, GRUDGE: 0.5, GRUDGE_MAX: 4, GRUDGE_FADE: 0.01, SIZE_REF: 35, DIST: 12,
   HOLD: 1.2, BREAK: 0.8, SIEGE_HOURS: 8, PACE: 1.2, PACE_MAX: 4, TRIBUTE_GW: 6, TRIBUTE_FADE: 0.5,
-  PROVOKED: { military: 0.03, fortress: 0.02, traders: 0.01, commune: 0.01 },
+  // A peaceful type you made hostile raids at its type's groupcare.js GROUP_PRIORITIES provoked a day. A target's
+  // weight when an aggressive group picks whom to raid: GROUP_PRIORITIES raidBait (BAIT for an unknown type).
+  BAIT: 0.6,
   EXPAND_AGG: 0.02, EXPAND_RANGE: 7, KEEP_CLEAR: 3, BASES_AGG: 6, BASES: 4, HEIR_RANGE: 15, HEIR_CHANCE: 0.5,
   BRIDGE_PICK: 0.35, BRIDGE_PICK_AGG: 0.6, // a bridge's weight against a site when a group expands (a barricade over the river)
   TAKE_BASE_AGG: 0.8, MIN_AGG: 2, NEW_GANG_FROM: 60, NEW_GANG: 0.02, RECRUIT: 0.12, RECRUIT_BASE: 0.02, RECRUIT_UNTIL: 45, COOL_OFF: 0.1,
-  // Keeping a base won in a raid (keepChance): by type, × nearness to their own bases (1 within KEEP_NEAR tiles,
-  // falling to 0.4 at KEEP_FAR), × richness (0.8 + stock value / 2000, at most 1.4); none beyond maxBases. A base
+  // Keeping a base won in a raid (keepChance): by type (GROUP_PRIORITIES keep; KEEP for an unknown type), × nearness
+  // to their own bases (1 within KEEP_NEAR tiles, falling to 0.4 at KEEP_FAR), × richness (0.8 + stock value / 2000, at most 1.4); none beyond maxBases. A base
   // of yours: the hub × KEEP_HUB. A clearly outmatched group (raid ≥ ABANDON × its defence) may give up a base
   // that is not its main one (ABANDON_CHANCE) and fall back to the others.
-  KEEP: { raider: 0.8, expansionist: 0.9, zealot: 0.7, military: 0.55, fortress: 0.5, traders: 0.3, commune: 0.3 },
-  KEEP_NEAR: 7, KEEP_FAR: 25, KEEP_HUB: 0.35, ABANDON: 1.6, ABANDON_CHANCE: 0.5,
-  // Razing a base won in a raid (razeChance): only aggressive types, by type, × (1 + 0.25 a grudge point, at most 4),
-  // × 1–2 by distance (a base they could not hold is burned, KEEP_NEAR to KEEP_FAR tiles from their own bases).
-  RAZE: { raider: 0.22, zealot: 0.12, expansionist: 0.05 }, RAZE_GRUDGE: 0.25, RAZE_RUIN_LOOT: 0.25,
+  KEEP: 0.5, KEEP_NEAR: 7, KEEP_FAR: 25, KEEP_HUB: 0.35, ABANDON: 1.6, ABANDON_CHANCE: 0.5,
+  // Razing a base won in a raid (razeChance): only aggressive types, by type (GROUP_PRIORITIES raze), × (1 + 0.25 a
+  // grudge point, at most 4), × 1–2 by distance (a base they could not hold is burned, KEEP_NEAR to KEEP_FAR tiles from their own bases).
+  RAZE_GRUDGE: 0.25, RAZE_RUIN_LOOT: 0.25,
   RAZE_HUB: 0.4, RAZE_EMPTY: 0.5, // your hub, and a base with nobody in it (nothing to make an example of), burn less often
 };
 // The AI groups against the hives (groupHiveWar, every day per group): a group with a hive within RANGE tiles of one
-// of its bases looks at it every EVERY days and sends a war party ODDS of the time by type (zealots always, the
+// of its bases looks at it every EVERY days and sends a war party by type (GROUP_PRIORITIES hiveWar: zealots always, the
 // military and a fortress often, expansionists sometimes, traders and communes rarely, raiders never), with at least
 // MIN_POP people. The party is SHARE of the group (at least MIN fighters) at the group's arms (strength); it kills
 // FIGHT of the hive's guard per point of its strength (× 0.7–1.3, ÷ the brood's growth over the years, eras.js),
@@ -115,7 +116,6 @@ export const RAIDS = {
 // in sight; a hive destroyed counts like any other (hives.js destroyHive: the hive victory, the records).
 export const GROUP_HIVE = {
   RANGE: 12, EVERY: [20, 40], MIN_POP: 10,
-  ODDS: { zealot: 1, military: 0.75, fortress: 0.7, expansionist: 0.4, traders: 0.15, commune: 0.15, raider: 0 },
   SHARE: 0.35, MIN: 3, FIGHT: 2.5, STORES: 0.3, SMALL: 20, LOSS: 0.1, LOSS_MAX: 0.3, GOODWILL: 3, PLAYER_DAYS: 30,
 };
 // With these a fortress of 30 (11 fighters at arms 1.2: strength 13) kills about 33 of a guard a party: a hive with a
@@ -128,15 +128,8 @@ export const GROUP_BREAK = 3;
 export const groupBroken = (f) => !!f && f.pop <= GROUP_BREAK;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-export const PREFERRED_SITES = {
-  raider: ["quarry", "factory", "prison", "gas", "truckstop", "motel", "autoshop", "town"],
-  expansionist: ["town", "airport", "factory", "police"],
-  zealot: ["church", "school", "univ", "hospital", "town"],
-  military: ["military", "airport", "police", "ranger"],
-  fortress: ["prison", "dam", "ranch", "town"],
-  traders: ["town", "gas", "truckstop", "grocery", "mall"],
-  commune: ["farm", "ranch", "feedstore", "town"],
-};
+// Where each type settles: groupcare.js GROUP_PRIORITIES sites (PREFERRED_SITES[type] reads it, as before).
+export const PREFERRED_SITES = new Proxy({}, { get: (_, t) => (typeof t === "string" ? weightOf({ type: t }, "sites", undefined) : undefined), has: (_, t) => weightOf({ type: t }, "sites", null) != null });
 
 export function createFactions(state, count) {
   const rng = state.rng;
@@ -263,16 +256,17 @@ export function keepChance(state, f, tile, value = 0) {
   const d = f.bases.length ? Math.min(...f.bases.map((b) => g.distance(b, tile))) : 0;
   const near = d <= RAIDS.KEEP_NEAR ? 1 : clamp(1 - (0.6 * (d - RAIDS.KEEP_NEAR)) / (RAIDS.KEEP_FAR - RAIDS.KEEP_NEAR), 0.4, 1);
   const rich = clamp(0.8 + value / 2000, 0.8, 1.4);
-  return clamp((RAIDS.KEEP[f.type] ?? 0.5) * near * rich, 0, 0.95);
+  return clamp(weightOf(f, "keep", RAIDS.KEEP) * near * rich, 0, 0.95);
 }
 
-// How likely a winning raid burns the base to the ground (aggressive types only): see RAIDS.RAZE.
+// How likely a winning raid burns the base to the ground (aggressive types only): GROUP_PRIORITIES raze, see RAIDS.
 export function razeChance(state, f, tile) {
-  if (!f || !f.alive || !RAIDS.RAZE[f.type]) return 0;
+  const raze = weightOf(f, "raze", 0);
+  if (!f || !f.alive || !raze) return 0;
   const g = state.grid;
   const d = f.bases.length ? Math.min(...f.bases.filter((b) => b !== tile).map((b) => g.distance(b, tile)).concat([99])) : 99;
   const far = d <= RAIDS.KEEP_NEAR ? 1 : clamp(1 + (d - RAIDS.KEEP_NEAR) / (RAIDS.KEEP_FAR - RAIDS.KEEP_NEAR), 1, 2);
-  return clamp(RAIDS.RAZE[f.type] * (1 + RAIDS.RAZE_GRUDGE * Math.min(4, f.grudge || 0)) * far, 0, 0.8);
+  return clamp(raze * (1 + RAIDS.RAZE_GRUDGE * Math.min(4, f.grudge || 0)) * far, 0, 0.8);
 }
 // What a group does with a base it won: "raze" (burn it down), "keep" (hold it) or "leave" (loot it and go home).
 // keepMult scales the wish to keep it (the hub, a break-in).
@@ -398,7 +392,7 @@ export function factionsDaily(state) {
 
     // Raids by aggressive groups (and by peaceful ones you provoked into hostility: only on you, and rarely).
     f.raidCooldown -= 1;
-    const raidRate = def.raid > 0 ? def.raid : attitude(f) === "Hostile" ? RAIDS.PROVOKED[f.type] || 0 : 0;
+    const raidRate = def.raid > 0 ? def.raid : attitude(f) === "Hostile" ? weightOf(f, "provoked", 0) : 0;
     // Hardcore (hardcore-groups.js): quiet while the bands are still founding their hubs.
     // groupcare.js prio: hunger pushes a raid, the wounded hold it back (the type's own rate is FACTION_TYPES raid).
     // groupworld.js: a group that has scouted you lately comes more often.
@@ -411,8 +405,9 @@ export function factionsDaily(state) {
     // The hives near them are a threat to everyone: a war party against one now and then (GROUP_HIVE).
     groupHiveWar(state, f, today);
 
-    // Trade convoys between friendly groups make the world feel alive.
-    if ((f.type === "traders" || f.type === "commune" || f.type === "fortress") && rng.chance(0.15)) {
+    // Trade convoys between friendly groups make the world feel alive (GROUP_PRIORITIES convoy: a day's chance).
+    const convoy = weightOf(f, "convoy", 0);
+    if (convoy > 0 && rng.chance(convoy)) {
       const partners = state.factions.filter((o) => o.alive && o !== f && !isAggressiveType(o));
       if (partners.length) {
         const mates = partners.filter((o) => sameBloc(state, f, o)); // blocs.js: trade first within the bloc
@@ -457,7 +452,7 @@ export function groupHiveWar(state, f, today = day(state)) {
   const hive = groupHiveTarget(state, f);
   if (!hive) { f.hiveDay = today + GROUP_HIVE.EVERY[0]; return null; } // nothing in reach: look again in a while
   f.hiveDay = today + rng.int(GROUP_HIVE.EVERY[0], GROUP_HIVE.EVERY[1]);
-  const odds = GROUP_HIVE.ODDS[f.type] ?? 0;
+  const odds = weightOf(f, "hiveWar", 0); // groupcare.js GROUP_PRIORITIES
   if (f.pop < GROUP_HIVE.MIN_POP || !odds || !rng.chance(odds)) return null;
   const { fighters, power } = groupHiveParty(f);
   const guard = hiveGuard(state, hive);
@@ -586,7 +581,7 @@ function launchRaid(state, f) {
     if (fearsGroup(state, f, o)) continue; // groupworld.js: a group they think too strong for them
     for (const b of o.bases) {
       if (g.distance(origin, b) > RAIDS.FACTION_REACH || !knownBase(state, f, b)) continue; // only bases they know
-      targets.push({ kind: "faction", factionId: o.id, tile: b, w: (o.type === "commune" || o.type === "traders" ? 1.2 : 0.6) * rw });
+      targets.push({ kind: "faction", factionId: o.id, tile: b, w: weightOf(o, "raidBait", RAIDS.BAIT) * rw });
     }
   }
   if (!targets.length) return;
@@ -610,7 +605,7 @@ export function launchRaidOnBase(state, f, base, opts = {}) {
   if (p) {
     p.esc = f.raidEsc || 1; f.raidedYou = day(state); noteRaid(state); // the autopilot's grudge (autopilot.js conquest); the pace (eras.js)
     // Siege kit by how prepared they are (siege.js): ladders, a ram, grenades against a walled base.
-    p.siege = capSiegeKit(state, f, raidSiegeKit(state, base, { count: raidForce(f, p.strength).count, key: p.id, prepared: !!opts.prepared || p.esc > 1.01 || f.type === "military" || f.type === "expansionist", kind: f.type === "military" ? "frag" : "pipebomb" })); // arsenal.js: only the explosives they hold
+    p.siege = capSiegeKit(state, f, raidSiegeKit(state, base, { count: raidForce(f, p.strength).count, key: p.id, prepared: !!opts.prepared || p.esc > 1.01 || weightOf(f, "siegePrep", 0) > 0, kind: weightOf(f, "bombs", "pipebomb") })); // arsenal.js: only the explosives they hold
   }
   return p;
 }

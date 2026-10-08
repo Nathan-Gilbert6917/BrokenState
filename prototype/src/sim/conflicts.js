@@ -53,6 +53,7 @@ import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsid
 import { unitPower, addToArsenal, arsenalWorthy, captureVehicle, arsenalText } from "./arsenal.js"; // group arsenals: their people's power by their kit; what they take goes into it
 import { captiveEscape, captiveDecline, captiveTurnMult } from "./groupjails.js"; // jailhouse: their jail's tier, the work they are put to
 import { startRescueRaid, tacticalPossible, jailTier, JAIL } from "./rescueraid.js"; // the rescue played out on their base's map
+import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: each type's numbers on the road (meetOdds, stop, talkDc, bribes, pacts, ransoms, captives)
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -66,6 +67,8 @@ export const COOLDOWN_HOURS = 20; // a team sees at most one conflict per this m
 // Battle kit per group type (combat.js KITS). Every group fields humans only; "mixed" (humans plus the dead) is
 // for places where both are found, like scavenge sites.
 const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
+// How often a not-hostile group of an unknown type crosses your team's path (each type's: GROUP_PRIORITIES meetOdds).
+const MEET_ODDS = 0.12;
 const NOUN_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "guards", traders: "guards", commune: "militia" };
 
 export const CONFLICT_TYPES = {
@@ -342,7 +345,7 @@ export function conflictChance(state, p, tileId) {
     const reach = pwarTeamRange(state, f); // playerwars.js: a group at war with you hunts your teams further out
     if (d > reach) continue;
     const att = attitude(f);
-    let w = att === "Hostile" ? 1 : isAggressiveType(f) ? 0.5 : (f.type === "military" || f.type === "fortress") ? 0.3 : 0.12;
+    let w = att === "Hostile" ? 1 : weightOf(f, "meetOdds", MEET_ODDS); // groupcare.js GROUP_PRIORITIES meetOdds
     if (f.pact) w *= 0.5;
     w *= (1 - d / (reach + 1.5)) * pwarTeamMult(state, f);
     if (t.owner === f.id) w *= 1.4;
@@ -548,15 +551,17 @@ export function resume(state, p) {
   p.phase = was || "out";
 }
 
+// What stopping your team looks like (groupcare.js GROUP_PRIORITIES stop; none: by their attitude).
 function forcedTypeFor(state, p, f) {
   const att = attitude(f);
   const t = state.tiles[partyTile(p)];
-  if (f.type === "military" || f.type === "fortress") return att === "Allied" ? null : "checkpoint";
-  if (f.type === "zealot") return "zealotpatrol";
-  if (f.type === "raider" || f.type === "expansionist") {
+  const stop = weightOf(f, "stop", null);
+  if (stop === "checkpoint") return att === "Allied" ? null : "checkpoint";
+  if (stop === "roadblock") {
     if (att !== "Hostile") return "roadblock";
     return t.road && state.rng.chance(0.5) ? "roadblock" : "ambush";
   }
+  if (stop) return stop;
   if (att === "Hostile") return "ambush";
   if (att === "Neutral") return "challenge";
   return null;
@@ -734,7 +739,7 @@ function hideChoice(state, p, c) {
 
 function talkDc(f, c) {
   const att = attitude(f);
-  return ({ Hostile: 14, Neutral: 10, Friendly: 7, Allied: 4 }[att]) + (f.type === "zealot" ? 2 : 0) + (c.type === "ambush" ? 1 : 0);
+  return ({ Hostile: 14, Neutral: 10, Friendly: 7, Allied: 4 }[att]) + weightOf(f, "talkDc", 0) + (c.type === "ambush" ? 1 : 0); // GROUP_PRIORITIES talkDc
 }
 // Perks (skills.js): Peacemaker's Leadership counts in full; Smooth Talker +2.
 export function talkSkill(state, p) {
@@ -749,7 +754,7 @@ function talkChoice(state, p, c, f) {
   const team = partyMembers(state, p);
   const chance = Math.min(0.95, skillChance(talkSkill(state, p), talkDc(f, c)) + (anyPerk(team, "silvertongue") ? 0.15 : 0)); // Silver Tongue (skills.js)
   const again = anyPerk(team, "diplomat") && !c.retalk; // Diplomat: one more try after a failed talk
-  const deal = (f.type === "traders" || f.type === "military" || f.type === "fortress" || f.type === "commune");
+  const deal = weightOf(f, "sharesNews", 0) > 0; // GROUP_PRIORITIES sharesNews
   return {
     label: c.type === "checkpoint" ? "Talk your way through" : "Talk them down",
     hint: `Speech check, ${pct(chance)} (they are ${attitude(f).toLowerCase()}). Success: you pass and goodwill rises a little${deal ? "; they may share news of the area" : ""}. Failure: ${anyPerk(team, "peacemaker") ? "" : "goodwill drops and "}they get angrier (${again ? "Diplomat: you may talk once more" : "no second chance to talk"})`,
@@ -778,10 +783,10 @@ function talkChoice(state, p, c, f) {
 }
 
 function bribeValue(c, f) {
-  return Math.round((15 + c.enemy.count * 6) * (f.type === "zealot" ? 1.5 : 1) * (c.bribeMult || 1));
+  return Math.round((15 + c.enemy.count * 6) * weightOf(f, "bribeCost", 1) * (c.bribeMult || 1)); // GROUP_PRIORITIES bribeCost
 }
 function bribeChance(f) {
-  return { zealot: 0.55, raider: 0.85, expansionist: 0.85 }[f.type] ?? 0.95;
+  return weightOf(f, "bribeOdds", 0.95); // GROUP_PRIORITIES bribeOdds (an unknown type keeps its word 95% of the time)
 }
 
 function bribeChoice(state, p, c, f) {
@@ -814,7 +819,7 @@ function bribeChoice(state, p, c, f) {
 }
 
 function pactChoice(state, p, c, f) {
-  const chance = f.type === "zealot" ? 0.8 : 0.97;
+  const chance = weightOf(f, "pactOdds", 0.97); // GROUP_PRIORITIES pactOdds
   return {
     label: `Invoke your ${f.pact === "trade" ? "trade" : "non-aggression"} pact`,
     hint: `${pct(chance)}: they honour the pact and let you pass. Breaking faith would cost them`,
@@ -1338,7 +1343,7 @@ export function guardsFor(state, p, f) {
 
 export function ransomValue(f, n) {
   const att = attitude(f);
-  return Math.round(n * (40 + (f.type === "zealot" ? 30 : 0)) * ({ Hostile: 1.5, Neutral: 1, Friendly: 0.7, Allied: 0.5 }[att]));
+  return Math.round(n * (40 + weightOf(f, "ransomHead", 0)) * ({ Hostile: 1.5, Neutral: 1, Friendly: 0.7, Allied: 0.5 }[att]));
 }
 
 export function rescueArrive(state, p) {
@@ -1359,7 +1364,7 @@ function rescueCard(state, p, f, held) {
   const stealthDc = 11 + Math.round(guards.count / 3) - (night ? 2 : 0);
   const sneak = skillChance(bestSkill(state, p, "stealth"), stealthDc);
   const assault = fightOdds(state, p, guards, null);
-  const talkDcV = ({ Hostile: 16, Neutral: 11, Friendly: 7, Allied: 4 }[attitude(f)]) + (f.type === "zealot" ? 3 : 0);
+  const talkDcV = ({ Hostile: 16, Neutral: 11, Friendly: 7, Allied: 4 }[attitude(f)]) + weightOf(f, "rescueDc", 0); // GROUP_PRIORITIES rescueDc
   const talk = skillChance(talkSkill(state, p), talkDcV);
   const value = ransomValue(f, held.length);
   const plan = payPlan(p, value);
@@ -1508,7 +1513,7 @@ export function ransomOnTradeCard(state, p, f) {
   if (!held.length) return null;
   const value = Math.round(ransomValue(f, held.length) * 0.9);
   const plan = payPlan(p, value);
-  const talk = skillChance(talkSkill(state, p), ({ Hostile: 16, Neutral: 11, Friendly: 7, Allied: 4 }[attitude(f)]) + (f.type === "zealot" ? 3 : 0));
+  const talk = skillChance(talkSkill(state, p), ({ Hostile: 16, Neutral: 11, Friendly: 7, Allied: 4 }[attitude(f)]) + weightOf(f, "rescueDc", 0));
   return {
     kind: "conflict", partyId: p.id,
     conflict: { type: "ransom", mode: "rescue", partyId: p.id, factionId: f.id, enemy: guardsFor(state, p, f), exact: false, identified: true, held: held.map((s) => s.id) },
@@ -1579,10 +1584,10 @@ export function captivesDaily(state) {
     if ((att === "Friendly" || att === "Allied") && rng.chance(0.35)) {
       releaseHome(state, s);
       captiveEvent(state, "released", `${f.name} release ${first(s)}`, `Relations with ${f.name} are good enough that they let ${s.name} go. ${first(s)} is back at ${hub(state).name}.`, "good");
-    } else if (f.type === "zealot" && days > 2 && rng.chance(0.05)) {
+    } else if (weightOf(f, "killCaptive", 0) > 0 && days > 2 && rng.chance(weightOf(f, "killCaptive", 0))) { // GROUP_PRIORITIES killCaptive
       hurt(state, s, 999, null, `at the hands of ${f.name}`);
       captiveEvent(state, "killed", `${s.name} is dead`, `Word comes that ${f.name} "purified" ${s.name}.`, "death");
-    } else if (days > 10 && !s.leader && rng.chance((f.type === "zealot" ? 0.01 : 0.015) * captiveTurnMult(s))) { // broken by it: more likely
+    } else if (days > 10 && !s.leader && rng.chance(weightOf(f, "turnCaptive", 0.015) * captiveTurnMult(s))) { // GROUP_PRIORITIES turnCaptive; broken by it: more likely
       s.alive = false;
       s.left = true;
       s.recruitedBy = f.id;

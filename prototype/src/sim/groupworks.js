@@ -111,7 +111,7 @@ export function threatened(state, f, tile) {
   if ((state.hordes || []).some((h) => g.distance(h.tile, tile) <= T.HORDE)) return true;
   if ((state.hives || []).some((h) => g.distance(h.tile, tile) <= T.HIVE)) return true; // a destroyed hive leaves the list (hives.js)
   if (f.hitDay != null && today - f.hitDay <= T.RAIDED) return true;
-  return state.factions.some((o) => o !== f && o.alive && ["raider", "zealot", "expansionist"].includes(o.type) && o.bases.some((b) => g.distance(b, tile) <= T.GROUP));
+  return state.factions.some((o) => o !== f && o.alive && weightOf(o, "threat", 0) > 0 && o.bases.some((b) => g.distance(b, tile) <= T.GROUP)); // GROUP_PRIORITIES threat
 }
 // Their stores are filling up (a storehouse): any capped stock near its cap (factionsDaily's caps), or a big larder.
 function storesFull(state, f) {
