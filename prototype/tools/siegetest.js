@@ -609,5 +609,41 @@ section("The State Map: decoys from the armory against a coming horde");
   check(CRAFTS.ladder && CRAFTS.ram && GEAR.ladder.bulky && GEAR.ram.bulky && GEAR.ram.weight > GEAR.ladder.weight, "ladders and rams are crafted (the ram at a workshop) and are bulky cargo");
 }
 
+// ---------- bows on the walls ----------
+section("Bows on the walls: the base's arrows (never its ammo), a bow with none fights in melee, half picked up after a win");
+{
+  const bowWall = (s, arrows) => {
+    const st = world(s);
+    const h = fortHub(st);
+    for (const x of atBase(st, h.id)) { x.gear.weapon = newItem("compbow"); x.skills.shooting = 9; }
+    h.stock.arrows = arrows;
+    return { st, h };
+  };
+  {
+    const { st, h } = bowWall(seed + 71, 40);
+    const b = wallBattle(st, { kind: "zombies", count: 8, power: 2 });
+    play(st);
+    const r = b.result || {};
+    check(b.over && b.ammoUsed === 0 && b.arrowsUsed > 0, `a wall of bows shoots the base's arrows, never its ammo (${b.arrowsUsed} arrows, ${b.ammoUsed} ammo, ${r.outcome})`);
+    check(h.stock.arrows === 40 - b.arrowsUsed + (r.arrowsBack || 0), `the arrows come from the base's stock and go back to it (40 - ${b.arrowsUsed} + ${r.arrowsBack || 0} = ${h.stock.arrows})`);
+    check(r.outcome === "victory" ? r.arrowsBack === Math.round(b.arrowsUsed / 2) : !r.arrowsBack, `about half picked up after a win, none otherwise (${r.arrowsBack} of ${b.arrowsUsed})`);
+  }
+  {
+    const { st } = bowWall(seed + 72, 0);
+    const b = wallBattle(st, { kind: "zombies", count: 6, power: 2 });
+    play(st);
+    const names = b.units.filter((u) => u.side === "player").map((u) => u.name);
+    check(b.arrowsUsed === 0 && !b.log.some((l) => names.some((n) => l.text.startsWith(`${n} shoots`))), `bows with no arrows never shoot: they fight hand to hand (${b.result ? b.result.outcome : "open"})`);
+  }
+  {
+    // By the numbers at the base: up to 6 arrows a bow from the stock, no ammo; about half back if it holds.
+    const { st, h } = bowWall(seed + 73, 100);
+    const n = atBase(st, h.id).length;
+    const r = autoResolveCombat(st, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 4, power: 2 }, layout: "baseDefence", handler: "st", context: {} });
+    check(r.ammoUsed === 0 && r.arrowsUsed === Math.min(100, n * 6) && h.stock.arrows === 100 - r.arrowsUsed + r.arrowsBack && h.stock.ammo === 300, `a base's bows by the numbers: ${r.arrowsUsed} arrows from its stock, no ammo, ${r.arrowsBack} picked up (${r.outcome})`);
+    check(r.outcome === "victory" ? r.arrowsBack === Math.round(r.arrowsUsed / 2) : r.arrowsBack === 0, "held: about half the arrows back; overrun: none");
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
 process.exit(fail ? 1 : 0);

@@ -19,7 +19,7 @@
 // Adding a field job (hunting, fishing …) is one FIELD_TYPES entry: name, desc, and cands(ctx) → candidate trips
 // { tile, mission, score, why, supplies? } (or launch(ctx, cand) for one that is not a team trip, as supply runs).
 import { SUPPLIES } from "./data.js";
-import { log, day, hub, hourOfDay, atBase, skill, combatPower, survivorById } from "./world.js";
+import { log, day, hub, hourOfDay, atBase, skill, combatPower, survivorById, archerCount, ARROWS } from "./world.js";
 import {
   launchExpedition, estimateTrip, partyMembers, partyTile, tileLabel, startReturn, carried, partyCapacity, cargoLoad,
   carryCapacity, supplyLoad, unitsThatFit, addGearToCargo, pruneCards, STANCES, planPath,
@@ -291,6 +291,8 @@ function launchTeam(ctx, c) {
     meds: stock("meds") >= 4 ? Math.min(crew.meds ?? 2, stock("meds") - 2) : 0,
     fuel: 0,
   };
+  const archers = archerCount(team); // the bows and crossbows shoot arrows: a dozen each (world.js ARROWS.PACK)
+  if (archers) sup.arrows = archers * ARROWS.PACK;
   for (const [k, q] of Object.entries(c.supplies || {})) if (q > 0 && SUPPLIES[k]) sup[k] = (sup[k] || 0) + q;
   if (sup.food > stock("food") - homeLeft * 2 || sup.water > stock("water") - homeLeft * 2) return { error: "the hub cannot spare the rations" };
   if (v) {

@@ -35,7 +35,7 @@ export const CRAFTS = {
   // Arrows and bolts for hunting with a bow or crossbow (hunting.js): straight shoots split from the firewood, fletched,
   // with scrap points.
   arrows:      { name: "Arrows (12)", supplies: { arrows: 12 }, in: { wood: 30, scrap: 1 }, hours: 4, skill: "mechanics", min: 1, field: true,
-                 desc: "Straight shafts split from firewood, fletched, with points filed from scrap: 12 arrows (or crossbow bolts) for hunting with a bow. A bow's hunt loses about half the arrows it shoots." },
+                 desc: "Straight shafts split from firewood, fletched, with points filed from scrap: 12 arrows (or crossbow bolts), what a bow or crossbow shoots in fights and on hunts. A hunt loses about half the arrows it shoots; a won fight gets about half back." },
   crowbar:     { gear: "crowbar",     in: { scrap: 4 },           hours: 5,  skill: "mechanics", min: 1 },
   waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2, field: true },
   // tune-jobcaps: a filter that clogs at a base leaves its bucket and frame (base.spentFilters); fresh sand and

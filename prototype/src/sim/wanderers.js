@@ -19,7 +19,7 @@
 // Every roll here uses hash01 or a generator seeded from it, never the world's random numbers, so a normal game where
 // nobody is met plays exactly as before; the cards' own choices use the world's dice like any card.
 import { LOCATIONS, FACTION_TYPES, GEAR } from "./data.js";
-import { log, addCard, day, hub, skill, isNight, factionById, combatPower, snapshot } from "./world.js";
+import { log, addCard, day, hub, skill, isNight, factionById, combatPower, snapshot, armedFactor } from "./world.js";
 import {
   partyMembers, partyTile, bestSkill, tileLabel, carried, takeSupply, wipeParty, partySpeed, addGearToCargo,
 } from "./parties.js";
@@ -434,8 +434,7 @@ export function neutralCard(state, p, g, opts = {}) {
 function odds(state, p, enemy, ambush, allyPower = 0) {
   const people = partyMembers(state, p);
   if (!people.length) return 0;
-  const ammo = carried(p, "ammo") >= people.length * 3;
-  let mine = people.reduce((a, s) => a + combatPower(s), 0) * (ammo ? 1 : 0.6);
+  let mine = people.reduce((a, s) => a + combatPower(s), 0) * armedFactor(people, carried(p, "ammo"), carried(p, "arrows")); // the guns' ammo, the bows' arrows
   let theirs = enemy.count * enemy.power;
   if (ambush === "player") mine *= 1.4;
   if (ambush === "enemy") theirs *= 1.4;

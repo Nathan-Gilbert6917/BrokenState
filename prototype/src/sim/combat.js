@@ -24,11 +24,11 @@
 //   outcome: "victory" | "defeat" | "retreat",
 //   enemiesKilled, enemiesLeft,
 //   survivorsHurt: [ids], survivorsDead: [ids],
-//   ammoUsed,
+//   ammoUsed, arrowsUsed?, arrowsBack?, // rounds fired; arrows loosed and picked up again after a win (world.js ARROWS)
 //   loot: { supplies: {}, gear: [] },  // dropped by dead enemies, already added to the party cargo / base stock
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
-import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect, isNight } from "./world.js";
+import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
@@ -317,8 +317,11 @@ export function battlePending(state, partyId) {
 // The odds of a fight by the numbers: { mine, theirs, ratio, win }. mine: the people's combat power (× 0.6 short of
 // ammo, × their team spirit, × 1.4 when they struck first), theirs: the enemy's count × power (× walls, × special dead,
 // × 1.4 when they struck first). win: winOdds(ratio, enemy) (the chance to win it fought out).
+// ammoOk: true / false for the whole team, or the shots it has { ammo, arrows } (world.js armedFactor: the bows short
+// of arrows and the guns short of ammo each count 0.6 under 3 a head).
 export function byNumbersOdds(state, setup, people = combatants(state, setup), ammoOk = true) {
-  let mine = people.reduce((a, s) => a + combatPower(s), 0) * (ammoOk ? 1 : 0.6) * teamSpirit(state, people); // friends and rivals (relations.js)
+  const armed = typeof ammoOk === "object" && ammoOk ? armedFactor(people, ammoOk.ammo, ammoOk.arrows) : ammoOk ? 1 : 0.6;
+  let mine = people.reduce((a, s) => a + combatPower(s), 0) * armed * teamSpirit(state, people); // friends and rivals (relations.js)
   mine *= 1 + lureEdge(setup.enemy, carriedKeys(state, setup, people)); // decoys.js: decoys and Molotovs against the dead (not a Shepherd's pack)
   let theirs = setup.enemy.count * setup.enemy.power * (setup.enemy.fortified || 1) * typeStrength(setup.enemy); // fortified: behind their walls (conquest.js); types: a hive's special dead (zombietypes.js)
   if (setup.ambush === "player") mine *= 1.4;
@@ -367,18 +370,29 @@ export function autoResolveCombat(state, setup) {
     // Nobody to fight: no dice, no losses on either side.
     return { outcome: "defeat", enemiesKilled: 0, enemiesLeft: setup.enemy.count, survivorsHurt: [], survivorsDead: [], ammoUsed: 0, loot: { supplies: {}, gear: [] } };
   }
-  // A team shoots from what it packed and from ammo it found on the way (the same two pools as a tactical battle).
+  // A team shoots from what it packed and from ammo it found on the way (the same two pools as a tactical battle): up
+  // to 6 rounds a head, a bow's in arrows (world.js usesArrows), everyone else's in ammo.
   const pools = party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [{}];
-  const have = pools.reduce((a, o) => a + Math.max(0, Math.floor(o.ammo || 0)), 0);
-  const ammoUsed = Math.min(have, people.length * 6);
-  let owed = ammoUsed;
-  for (const o of pools) {
-    const t = Math.min(owed, Math.max(0, Math.floor(o.ammo || 0)));
-    if (t > 0) o.ammo -= t;
-    owed -= t;
-  }
-  const odds = byNumbersOdds(state, setup, people, ammoUsed >= people.length * 3);
-  noteFight(state, setup, odds, people.length, ammoUsed >= people.length * 3); // causes.js: the odds, for a death's "Why?"
+  const archers = people.filter(usesArrows).length;
+  const draw = (k, want) => {
+    const have = pools.reduce((a, o) => a + Math.max(0, Math.floor(o[k] || 0)), 0);
+    const used = Math.min(have, want);
+    let owed = used;
+    for (const o of pools) {
+      const t = Math.min(owed, Math.max(0, Math.floor(o[k] || 0)));
+      if (t > 0) o[k] -= t;
+      owed -= t;
+    }
+    return used;
+  };
+  const ammoUsed = draw("ammo", (people.length - archers) * 6);
+  const arrowsUsed = archers ? draw("arrows", archers * 6) : 0;
+  const shots = { ammo: ammoUsed, arrows: arrowsUsed };
+  const odds = byNumbersOdds(state, setup, people, shots);
+  // causes.js: the odds, for a death's "Why?" (short of ammo: false, as always; with bows, which of them was short).
+  const gunsShort = ammoUsed < (people.length - archers) * 3, bowsShort = arrowsUsed < archers * 3;
+  noteFight(state, setup, odds, people.length, !gunsShort && !bowsShort ? true : !archers ? false
+    : gunsShort && bowsShort ? "Ammo and arrows were short: everyone fought at 60%." : gunsShort ? "Ammo was short: the guns fought at 60%." : "Arrows were short: the bows fought at 60%.");
   const ratio = odds.ratio;
   const tile = party ? partyTile(party) : tileIdOf(setup);
   // Defending a base (interior.js baseTiers): the walls, the yard and the buildings each multiply what the defenders
@@ -387,8 +401,12 @@ export function autoResolveCombat(state, setup) {
   const tiers = setup.layout === "baseDefence" && base ? baseTiers(state, base, setup, ratio) : null;
   if (!tiers) {
     // breakoff.js: the fight plays out in rounds, and a team in the field breaks it off by its retreat policy.
-    const refund = (n) => { if (pools[0]) pools[0].ammo = (pools[0].ammo || 0) + n; };
-    return fightByNumbers(state, setup, people, { win: odds.win, ammoUsed, refund, tile });
+    const refund = (n, k = "ammo") => { if (pools[0]) pools[0][k] = (pools[0][k] || 0) + n; };
+    const r = fightByNumbers(state, setup, people, { win: odds.win, ammoUsed, arrowsUsed, refund, tile });
+    // Won: about half the arrows loosed are picked up again (world.js ARROWS.BACK); lost or broken off, none.
+    r.arrowsBack = r.outcome === "victory" ? arrowsBack(r.arrowsUsed || 0) : 0;
+    if (r.arrowsBack) refund(r.arrowsBack, "arrows");
+    return r;
   }
   const rng = state.rng;
   const win = rng.chance(winOdds(tiers ? tiers.last : ratio, { ...setup.enemy, people: people.length }));
@@ -406,10 +424,13 @@ export function autoResolveCombat(state, setup) {
   }
   const killed = win ? setup.enemy.count : Math.floor(setup.enemy.count * rng.range(0.1, 0.5));
   fightXp(state, people, win); // skills.js: Shooting XP for everyone who fought
+  // Held: the arrows shot from the walls are picked up again, about half (world.js ARROWS.BACK); overrun, none.
+  const back = win ? arrowsBack(arrowsUsed) : 0;
+  if (back && pools[0]) pools[0].arrows = (pools[0].arrows || 0) + back;
   return {
     outcome: win ? "victory" : "defeat",
     enemiesKilled: killed, enemiesLeft: setup.enemy.count - killed,
-    survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed,
+    survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed, arrowsUsed, arrowsBack: back,
     loot: { supplies: {}, gear: [] },
     ...(tiers ? { tier, tiers: { wall: tiers.wall, yard: tiers.yard, last: tiers.last } } : {}),
   };
@@ -568,22 +589,22 @@ export const WEAPONS = {
   shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10, cap: 6 }, // a pump: five in the tube and one in the chamber
   huntrifle: { name: "Hunting rifle",  dmg: [24, 34], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10, cap: 5 }, // a bolt-action's internal magazine
   ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3, cap: 30 }, // a 30-round magazine: 15 bursts of 2
-  // Makeshift weapons (crafting.js). The crossbow reuses its bolts (no ammo) and is silent.
+  // Makeshift weapons (crafting.js). The crossbow is silent and shoots bolts (arrows: 1 a shot, data.js SUPPLIES.arrows).
   spikedbat:  { name: "Spiked bat",        melee: true, dmg: [16, 25] },
   pipespear:  { name: "Pipe spear",        melee: true, dmg: [15, 23] },
   sawmachete: { name: "Saw-blade machete", melee: true, dmg: [17, 27] },
-  crossbow:   { name: "Scrap crossbow",    dmg: [18, 26], opt: 7, fall: 4, aim: -4, ammo: 0, noise: 0 },
+  crossbow:   { name: "Scrap crossbow",    dmg: [18, 26], opt: 7, fall: 4, aim: -4, ammo: 0, arrows: 1, noise: 0 },
   pipegun:    { name: "Pipe shotgun",      dmg: [20, 32], opt: 3, fall: 8, aim: -6, ammo: 1, noise: 3, close: 8, cap: 1 }, // a single-shot zip gun: reloaded after every shot
-  // Found weapons with a role each: clubs for takedowns (stealth.js CLUB), the heavy hitters, quiet bows that need no
-  // ammo, a loud hard-hitting revolver, a handy ranch rifle, the police carbine. meleeAim: to hit in melee (sledge).
+  // Found weapons with a role each: clubs for takedowns (stealth.js CLUB), the heavy hitters, quiet bows that shoot
+  // arrows (1 a shot, never ammo), a loud hard-hitting revolver, a handy ranch rifle, the police carbine. meleeAim: to hit in melee (sledge).
   bat:        { name: "Baseball bat",      melee: true, dmg: [15, 24] },
   nailbat:    { name: "Nail bat",          melee: true, dmg: [20, 31] },
   prybar:     { name: "Crowbar",           melee: true, dmg: [16, 25] },
   fireaxe:    { name: "Fire axe",          melee: true, dmg: [21, 32] },
   sledge:     { name: "Sledgehammer",      melee: true, dmg: [25, 38], meleeAim: -10 },
   baton:      { name: "Police baton",      melee: true, dmg: [12, 19] },
-  compbow:    { name: "Compound bow",      dmg: [17, 26], opt: 7, fall: 5, aim: -2, ammo: 0, noise: 0, close: -5 },
-  xbow:       { name: "Hunting crossbow",  dmg: [20, 29], opt: 6, fall: 5, aim: 0, ammo: 0, noise: 0, close: -5 },
+  compbow:    { name: "Compound bow",      dmg: [17, 26], opt: 7, fall: 5, aim: -2, ammo: 0, arrows: 1, noise: 0, close: -5 },
+  xbow:       { name: "Hunting crossbow",  dmg: [20, 29], opt: 6, fall: 5, aim: 0, ammo: 0, arrows: 1, noise: 0, close: -5 },
   revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3, cap: 6 }, // a six-shot cylinder
   leverrifle: { name: "Lever-action rifle", dmg: [20, 30], opt: 10, fall: 2.5, aim: 4, ammo: 1, noise: 3, cap: 8 }, // a tube under the barrel
   carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3, cap: 30 }, // a patrol carbine's 30-round magazine
@@ -679,6 +700,22 @@ function take(b, k, n) {
   }
 }
 export const ammoLeft = (b) => pool(b, "ammo");
+// Arrows (and crossbow bolts) to hand: the team's packed and found ones, or the base's stock, like the ammo.
+export const arrowsLeft = (b) => pool(b, "arrows");
+// Has the player's side what this weapon shoots (ammo for a gun, arrows for a bow or crossbow)?
+export const hasShot = (b, w) => ammoLeft(b) >= (w.ammo || 0) && (!w.arrows || arrowsLeft(b) >= w.arrows);
+// A shot by one of your people: its rounds or its arrow from the pools (b.arrowsUsed: picked up again after a win).
+function spendShot(b, w) {
+  if (w.ammo) { take(b, "ammo", w.ammo); b.ammoUsed += w.ammo; }
+  if (w.arrows) { take(b, "arrows", w.arrows); b.arrowsUsed = (b.arrowsUsed || 0) + w.arrows; }
+}
+// After the fight: about half the arrows loosed are picked up again when the field is yours (world.js ARROWS.BACK),
+// into the team's packed supplies (or the base's stock). None after a loss or a retreat. Returns how many.
+function pickUpArrows(b, won) {
+  const n = won ? arrowsBack(b.arrowsUsed || 0) : 0;
+  if (n > 0 && b.pools[0]) b.pools[0].arrows = (b.pools[0].arrows || 0) + n;
+  return n;
+}
 export const medsLeft = (b) => pool(b, "meds");
 
 /// ---------- battle map ----------
@@ -1539,10 +1576,11 @@ export function reload(b, u) {
 // Rounds out of the gun for a shot (fire, a double tap): the magazine, and your side's pools.
 function spendRounds(b, u, w) {
   if (hasMag(u)) loadMag(u, magIn(u) - w.ammo);
-  if (u.side === "player") { take(b, "ammo", w.ammo); b.ammoUsed += w.ammo; }
+  if (u.side === "player") spendShot(b, w); // ammo, or a bow's arrow
 }
-// Can this unit fire its gun right now (ranged weapon, loaded and, for the player, the ammo there)?
-export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && (u.side !== "player" || ammoLeft(b) >= WEAPONS[u.weapon].ammo) && !magEmpty(b, u); // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js)
+// Can this unit fire its gun right now (ranged weapon, loaded and, for the player, the ammo there; a bow or crossbow,
+// arrows)? One that cannot fights in melee (a gun or a bow swung as a club: BASH).
+export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon])) && !magEmpty(b, u); // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js)
 // A gun that can shoot now or after a reload (the AI's sense of a side's firepower, the threat preview).
 export const hasShots = (b, u) => canFire(b, u) || (isRanged(u) && magEmpty(b, u) && !reloadRefusal(b, u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)));
 // Why this unit cannot shoot ("" when it can): empty, out of ammo, no gun.
@@ -1550,7 +1588,7 @@ export function fireRefusal(b, u) {
   if (!isRanged(u)) return "No gun.";
   if (canFire(b, u)) return "";
   if (u.carrying != null) return "Hands full: put the body down first.";
-  if (u.side === "player" && ammoLeft(b) < WEAPONS[u.weapon].ammo) return "Out of ammo.";
+  if (u.side === "player" && !hasShot(b, WEAPONS[u.weapon])) return WEAPONS[u.weapon].arrows ? "Out of arrows." : "Out of ammo.";
   if (magEmpty(b, u)) return `The ${gunWord(u)} is empty: reload first (1 action).`;
   return "Cannot shoot right now.";
 }
@@ -1703,7 +1741,7 @@ export function createBattle(state, setup) {
     place: placeName(tile),
     units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: 1,
     pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [{}],
-    ammoUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
+    ammoUsed: 0, arrowsUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
     evacCols: setup.canRetreat ? 2 : 0, over: false, result: null, acted: false, queue: [],
     losCache: makeLosCache(W, H), rng, dark: isNight(state), // dark: escapes are easier (escapeOdds)
   };
@@ -2181,7 +2219,7 @@ export function combatAct(state, act) {
       break;
     }
     case "overwatch":
-      if (!canFire(b, u)) return isRanged(u) && magEmpty(b, u) && !reloadRefusal(b, u) ? "Overwatch needs a loaded gun: reload first." : "Needs a gun with ammo.";
+      if (!canFire(b, u)) return isRanged(u) && magEmpty(b, u) && !reloadRefusal(b, u) ? "Overwatch needs a loaded gun: reload first." : WEAPONS[u.weapon].arrows ? "Needs arrows for the bow." : "Needs a gun with ammo.";
       u.ow = true; u.ap = 0;
       say(b, `${u.name} is on overwatch.`, "info");
       break;
@@ -3312,9 +3350,12 @@ function endBattle(state, b, outcome) {
     }
     b.bodies = b.bodies.filter((body) => !bodyEmpty(state, body));
   }
+  // The arrows loosed: about half picked up again when the field is yours (world.js ARROWS.BACK), none otherwise.
+  const arrowsBackN = pickUpArrows(b, outcome === "victory");
+  if (b.arrowsUsed) lines.push(arrowsBackN ? `Picked up ${arrowsBackN} of the ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot.` : `The ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot ${b.arrowsUsed === 1 ? "is" : "are"} lost.`);
   b.result = {
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed - captives.length,
-    survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, loot,
+    survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, arrowsUsed: b.arrowsUsed || 0, arrowsBack: arrowsBackN, loot,
     enemyVehicle: outcome === "victory" && b.enemyVehicle ? { ...b.enemyVehicle } : null, // their vehicle left on the field (conflicts.js)
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     // Played on the map: gear wear is done, and the dead were there to search (so handlers add no "loot from the bodies").
@@ -3695,7 +3736,7 @@ export function createRaid(state, setup) {
     place: placeName(tile),
     units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: 1000, vehicle: map.vehicle || null, // the team's car or truck (placeVehicle, driveTo)
     pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : [{}],
-    ammoUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
+    ammoUsed: 0, arrowsUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
     evacCols: 0, over: false, result: null, acted: true, queue: [],
     losCache: makeLosCache(W, H), rng,
     raid: {
@@ -4061,10 +4102,15 @@ function endRaid(state, b) {
   const captives = battleCaptives(b, outcome); // stealth.js: tied prisoners dragged into a zone someone left from
   if (captives.length) lines.push(`${captives.map((u) => u.name).join(", ")} ${captives.length === 1 ? "was" : "were"} taken out tied up.`);
   wearFielded(state, b, killed > 0); // makeshift gear wears in a raid only if someone was killed; a med kit by its use
+  // The arrows loosed in the raid: about half picked up on the way out when someone got out and nothing that knows
+  // they are there is still standing (a cleared site); none when they had to run for it (world.js ARROWS.BACK).
+  const cleared = !enemies.some((u) => activeAny(u) && u.aware);
+  const arrowsBackN = pickUpArrows(b, outcome === "extracted" && cleared);
+  if (b.arrowsUsed) lines.push(arrowsBackN ? `Picked up ${arrowsBackN} of the ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot.` : `The ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot ${b.arrowsUsed === 1 ? "is" : "are"} lost.`);
   b.result = {
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed - captives.length,
-    survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed,
+    survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, arrowsUsed: b.arrowsUsed || 0, arrowsBack: arrowsBackN,
     loot: { supplies: { ...R.found }, gear: R.foundGear.slice() },
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     tactical: true, worn: true,

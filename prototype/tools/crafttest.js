@@ -161,7 +161,7 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
       st.survivors.push(s);
       team.push(s);
     }
-    h.stock.ammo = 100; h.stock.meds = 2;
+    h.stock.ammo = 100; h.stock.meds = 2; h.stock.arrows = 60; // the crossbow shoots bolts (arrows)
     const ammo0 = h.stock.ammo;
     const setup = { tile: h.tile, baseId: h.id, fighterIds: team.map((s) => s.id), enemy: { kind: n % 2 ? "zombies" : "raiders", count: 3, power: 2 }, canRetreat: false, handler: "crafttest", context: {} };
     st.combat = createBattle(st, setup);
@@ -175,7 +175,7 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
     if (last && last.outcome === "victory") wins++;
     const survivors = team.filter((s) => s.alive && s.gear.weapon);
     check(survivors.every((s) => s.gear.weapon.dur === GEAR[s.gear.weapon.key].dur - 1), "battle wore each weapon by 1");
-    if (team.every((s) => s.gear.weapon && s.gear.weapon.key === "crossbow")) check(h.stock.ammo === ammo0, "crossbows use no ammo");
+    if (team.every((s) => s.gear.weapon && s.gear.weapon.key === "crossbow")) check(h.stock.ammo === ammo0 && (last.arrowsUsed || 0) > 0 && h.stock.arrows === 60 - last.arrowsUsed + (last.arrowsBack || 0), `crossbows use bolts (arrows), no ammo (${last.arrowsUsed} shot, ${last.arrowsBack || 0} picked up)`);
     for (const s of team) s.alive = false; // clear the board for the next battle
   }
   check(done >= 20, `battles finished (${done}/25)`);

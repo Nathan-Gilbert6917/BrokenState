@@ -18,6 +18,7 @@ import { zombieToughness } from "./hives.js";
 import { stripAll, itemLoad, newItem } from "./inventory.js";
 import {
   log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
+  armedFactor, usesArrows,
 } from "./world.js";
 import {
   partyMembers, bestSkill, partyTile, tileLabel, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, awaitOrders,
@@ -102,8 +103,10 @@ export function addCargo(state, p, key, qty) {
   return take;
 }
 
-// Ammo the team can shoot with: packed plus found (both pools are used in a fight, combat.js).
-const carriedAmmo = (p) => Math.max(0, Math.floor(p.supplies.ammo || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies.ammo) || 0));
+// Ammo the team can shoot with: packed plus found (both pools are used in a fight, combat.js); the same for the arrows
+// its bows and crossbows shoot.
+const carriedOf = (p, k) => Math.max(0, Math.floor(p.supplies[k] || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies[k]) || 0));
+const carriedAmmo = (p) => carriedOf(p, "ammo");
 
 // Bonus gear goes into the cargo only if there is room for it (parties.js addGearToCargo when it exists).
 function stowGear(state, p, item) {
@@ -124,7 +127,7 @@ function teamPower(state, p) {
 export function fightOdds(state, p, enemy, ambush) {
   const people = partyMembers(state, p);
   if (!people.length) return 0;
-  let mine = teamPower(state, p) * (carriedAmmo(p) >= people.length * 3 ? 1 : 0.6);
+  let mine = teamPower(state, p) * armedFactor(people, carriedAmmo(p), carriedOf(p, "arrows")); // under 3 a head: the guns (ammo) or the bows (arrows) at 60%
   let theirs = enemy.count * enemy.power;
   if (ambush === "player") mine *= 1.4;
   if (ambush === "enemy") theirs *= 1.4;
@@ -1671,6 +1674,7 @@ export function conflictView(state, c) {
     countText: lo === hi ? `${lo}` : `${lo}–${hi}`,
     theirStrength: Math.round(e.count * e.power), myStrength: Math.round(mine),
     ammo: p ? carriedAmmo(p) : 0,
+    arrows: p ? carriedOf(p, "arrows") : 0, archers: members.filter(usesArrows).length, // the bows shoot arrows (world.js usesArrows)
     vehicle: v ? `${v.name}, fuel ${Math.floor(partyFuel(state, p))}` : "On foot",
     skills: p ? { stealth: bestSkill(state, p, "stealth"), speech: bestSkill(state, p, "speech"), scouting: bestSkill(state, p, "scouting") } : {},
     held: (c.held || []).map((id) => survivorById(state, id)).filter((s) => s && isCaptive(s)),

@@ -36,7 +36,7 @@ function fighter(state, weapon = "pistol", shooting = 9) {
 // A field battle on an open map; the enemy parked off the map until placed.
 function openBattle(state, crew, enemy = { kind: "raiders", count: 2, power: 3 }, ammo = 200) {
   const h = hub(state);
-  h.stock.ammo = ammo; h.stock.meds = 0;
+  h.stock.ammo = ammo; h.stock.meds = 0; h.stock.arrows = 50;
   const b = (state.combat = createBattle(state, { tile: h.tile, baseId: h.id, fighterIds: crew.map((s) => s.id), enemy, ambush: null, canRetreat: true, handler: "magtest", context: {} }));
   for (const c of b.cells) c.k = "open";
   b.losCache.fill(0);
