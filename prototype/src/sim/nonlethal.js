@@ -545,6 +545,13 @@ export function nlAct(state, b, u, t, act) {
       return "Unknown action.";
   }
 }
+// The battle's "Take them alive" (combat.js act takeAlive; on: true / false, or null to flip). Off again, the AI's pulled
+// blows on your side are let go.
+export function setTakeAlive(b, on = null) {
+  b.takeAlive = on != null ? !!on : !b.takeAlive;
+  if (!b.takeAlive) for (const u of b.units) if (u.side === "player") u.pull = false;
+  say(b, b.takeAlive ? "Take them alive: when the AI plays your side it goes for tasers, spray and pulled blows, and ties up whoever drops." : "Take them alive is off.", "info");
+}
 // Why one of your people cannot surrender ("" when they can).
 export function surrenderRefusal(b, u) {
   if (!u || u.side !== "player" || !active(u)) return "They cannot surrender now.";
