@@ -162,7 +162,8 @@ export function hordeMilitaryPickup(state, h) {
 }
 
 // ---------- their bodies ----------
-// What one of them carries: { sup: { ammo: 6 }, gear: [items] } (newItem: a function(key, quality, worn): inventory.js, worn part-way). null: not armoured.
+// What one of them carries: { sup: { ammo: 6 }, gear: [items] } (newItem: a function(key, quality, rng): inventory.js
+// armouredItem, the quality from this table and the wear from itemcond.js "armoured"). null: not armoured.
 export function bodyLoot(rng, kind, newItem) {
   const B = MILDEAD.BODY[kind];
   if (!B) return null;
