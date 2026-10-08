@@ -26,7 +26,9 @@ const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const near = (a, b, e = 1e-6) => Math.abs(a - b) < e;
-const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 5 }); st.started = true; st.cards.length = 0; st.crashNext = 1e9; return st; };
+// The hub starts bare (barestart: tools/barestarttest.js); these checks are about crafting at a base with a bench, so
+// the hub gets the crafting bench it used to start with (as in crafttest.js).
+const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 5 }); st.started = true; st.cards.length = 0; st.crashNext = 1e9; addBuilding(hub(st), "craftbench"); return st; };
 const addPerson = (st, base, role, skills = {}) => {
   const s = makeSurvivor(st, 1);
   s.traits = [];
