@@ -22,6 +22,7 @@ import {
   saveSupplyRun, dispatchSupplyRun, supplyRunById, jobForm, releaseHeld, pauseSupplyRun, deleteSupplyRun,
 } from "./sim/supply.js";
 import { treatAtBase } from "./sim/medical.js";
+import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated trainee
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
@@ -711,6 +712,7 @@ const actions = {
     if (!j || ask(ui, d, "sr-delete", { kind: "delrun", title: "Delete this supply run?", text: "Its schedule, crew, cargo lists and stops are gone for good (a convoy already on the road finishes its trip).", yes: "Delete it" })) return;
     baseSay(deleteSupplyRun(state, j));
   },
+  makemedic: (d) => { const s = survivorById(state, Number(d.id)); ui.baseMsg = makeMedic(state, s); if (s && s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId)); }, // a graduated trainee (sim/training.js)
   queuebuild: (d) => { ui.baseMsg = queueBuild(state, baseOf(d), d.type); },
   // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (asks first: ui/confirm.js) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },

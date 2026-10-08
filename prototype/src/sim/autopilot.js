@@ -44,7 +44,7 @@ import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTre
 import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
-import { planTrainees } from "./training.js"; // a Medic trainee for a base short of skilled medics
+import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill } from "./crafting.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair, wreckSupplies } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
@@ -1843,7 +1843,13 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // for TRAINING.foodDays days: ahead of the comfortable farm crew (at the step of the teachers and readers, the farm
   // had every hand of a small base and nobody ever trained), as an investment: a trainee learns from the doctor every
   // day and counts as half a medic.
-  if (areas.medical) planTrainees(state, base, free, give, { foodDays, urgent: !!threat.urgent });
+  // A graduate (Medicine 6) goes to Medic while the hospital is short of medics, and while anyone trains the doctor
+  // stays on Medic duty, quiet ward or not (training.js planDoctor: off duty the lessons are halved).
+  if (areas.medical) {
+    const onMedic = () => people.filter((s) => (want.get(s.id) || {}).role === "medic");
+    planTrainees(state, base, free, give, { foodDays, urgent: !!threat.urgent, medics: onMedic().length });
+    planDoctor(state, base, free, give, { trainees: people.filter((s) => (want.get(s.id) || {}).role === "trainee").length, medics: onMedic() });
+  }
 
   // 6. Farming to the comfortable level. More plots are wanted when every plot is in use and food runs low.
   farmTo(foodDays < Math.max(15, foodTarget(state)) ? fw.ideal : fw.need);

@@ -50,11 +50,11 @@ import { factionVehicles, groupTurret, upgradesOf } from "./vehicles.js";
 import { relation, warsOf } from "./diplomacy.js";
 import { sameBloc } from "./blocs.js"; // AI blocs: food bought from a member first
 import { atWarWithYou } from "./playerwars.js"; // a war with you presses on desertion
-import { groupsBuild } from "./groupworks.js"; // bare-start groups build their quarters and workshops (a sick bay's tier)
+import { groupsBuild, sickbayTier } from "./groupworks.js"; // bare-start groups build their sick bays (groupworks.js sickbayWork)
 import { BUILDINGS } from "./buildings.js";
 import { hospitalTypes } from "./medical.js";
 import { USE, CAP_USE, CAP_STUDY, CAP_WARD, xpNeed, SKILL_MAX } from "./skills.js";
-import { TRAINING, WARD } from "./training.js"; // the player's ward rounds and lessons, the same numbers
+import { TRAINING, WARD, lessonGap } from "./training.js"; // the player's ward rounds and lessons, the same numbers
 
 // What each type of group leans to (1 = an ordinary group). Read through prio(); the situation multiplies it.
 // Wired now: scavenge (aiscav.js trip gap), trade (buying food when short), raid (factions.js raid chance), expand,
@@ -103,6 +103,9 @@ export function prio(f, act) {
 export const CARE = {
   WOUND_PER_DEAD: 1.5, HEAL: 0.06, HEAL_MEDS: 0.08, HEAL_MEDIC: 0.08, MEDS: 0.1, DIE_NO_MEDS: 0.015, DIE_MEDS: 0.002,
   MEDIC_SHARE: 0.06, MEDIC_CARE: 3,
+  // A sick bay (groupworks.js sickbayWork; tier 0-4: none, infirmary, field hospital, clinic, trauma hospital) heals
+  // the wounded faster (BAY added to the day's share healed) and loses fewer of them (× BAY_DIE), as your beds do.
+  BAY: [0, 0.02, 0.03, 0.045, 0.06], BAY_DIE: [1, 0.9, 0.8, 0.6, 0.5],
   DESERT: { base: 0.015, max: 0.15, decay: 0.95, toPlayer: 0.25, toGroup: 0.35, range: 15, playerRange: 12, playerJoin: 0.02 },
   WANDER_JOIN: 0.04, // a day, a wanderer group within 3 tiles of a base (wanderers.js SIM.JOIN_GROUP, now by profile)
   REPAIR: { every: 2, below: 0.6, perPop: 10, skill: { military: 6, fortress: 5, expansionist: 4, traders: 4, raider: 3, zealot: 2, commune: 3 },
@@ -132,12 +135,14 @@ export const woundsFor = (dead) => Math.round(Math.max(0, dead) * CARE.WOUND_PER
 // A group's medics: its people with Medicine, by size and type.
 export const medicsOf = (f) => Math.round(fitPeople(f) * CARE.MEDIC_SHARE * weightOf(f, "heal"));
 // Today's healing: { rate (share healed), die (share dying), meds (spent from their stock) }.
-export function healRate(f) {
+// tier: the group's sick bay (groupHospitalTier; 0 when not given).
+export function healRate(f, tier = 0) {
   const w = woundedOf(f);
   const need = Math.ceil(w * CARE.MEDS);
   const meds = w > 0 && (f.stock.meds || 0) >= need;
   const care = w ? Math.min(1, (medicsOf(f) * CARE.MEDIC_CARE) / w) : 0;
-  return { rate: CARE.HEAL + (meds ? CARE.HEAL_MEDS : 0) + CARE.HEAL_MEDIC * care * medicSkillMult(f), die: meds ? CARE.DIE_MEDS : CARE.DIE_NO_MEDS, meds: meds ? need : 0 };
+  const t = Math.max(0, Math.min(CARE.BAY.length - 1, tier || 0));
+  return { rate: CARE.HEAL + (meds ? CARE.HEAL_MEDS : 0) + CARE.HEAL_MEDIC * care * medicSkillMult(f) + CARE.BAY[t], die: (meds ? CARE.DIE_MEDS : CARE.DIE_NO_MEDS) * CARE.BAY_DIE[t], meds: meds ? need : 0 };
 }
 
 // ---------- the medics' skill (AI parity for training.js; coarse: two numbers a group, once a day) ----------
@@ -146,20 +151,20 @@ export function healRate(f) {
 // by type (GROUP_MED.start) and grows each day the way yours does:
 //   - duty: USE.medicRole (8) a day while the group has wounded (half with none), + USE.wound (5) for each wounded
 //     a medic has (up to GROUP_MED.treats), under the use cap (20);
-//   - ward rounds, with a sick bay (groupHospitalTier): the wounded × WARD.bed × the tier's teach factor shared among
+//   - ward rounds, with a sick bay (groupHospitalTier, the one they built: groupworks.js sickbayWork): the wounded × WARD.bed × the tier's teach factor shared among
 //     the medics, capped by the tier's ward cap (4-10), as training.js;
 //   - lessons (the medics only, the doctor teaches): with a sick bay and a doctor of Medicine TRAINING.docMin+, while
-//     the medics are below the doctor − TRAINING.gap: (3 + 0.4 × the doctor) × the teach factor (× quiet with no
+//     the medics are below the doctor − the tier's gap (1, 0 in a trauma hospital): (3 + 0.4 × the doctor) × the teach factor (× quiet with no
 //     wounded) a day, under the study cap. A group's medics are its trainees: what stays abstract is who they are,
 //     the places, the half-medic staffing and the doctor's evenings off duty.
 // What it does: the medics' Medicine sets how much their care speeds the healing (healRate: HEAL_MEDIC ×
 // medicSkillMult, 1 at GROUP_MED.ref, ± perLevel a level).
-// The sick bay (groupHospitalTier): groups have no hospital buildings; the tier stands in from what they have built
-// (groupworks.js): quarters 1 (none without), + a workshop 1, + 1 for a big group (bigPop+) that leans to healing (heal 1.1+). Old
-// saves and the hardcore military, which do not build, count as GROUP_MED.builtTier.
+// The sick bay (groupHospitalTier): the tier the group built (groupworks.js sickbayWork, f.works[tile].sickbay). Old
+// saves and the hardcore military, which do not build, count as GROUP_MED.builtTier. What stays abstract: a group's
+// doctor never becomes a Professor, and its medics are one number (nobody graduates by name).
 export const GROUP_MED = {
   start: { military: [8, 4], fortress: [7, 4], commune: [7, 3], traders: [6, 3], expansionist: [5, 3], raider: [4, 2], zealot: [4, 2] },
-  dflt: [5, 3], ref: 3, perLevel: 0.05, minMult: 0.7, maxMult: 1.5, treats: 3, bigPop: 15, healLean: 1.1,
+  dflt: [5, 3], ref: 3, perLevel: 0.05, minMult: 0.7, maxMult: 1.5, treats: 3,
   builtTier: { military: 3, fortress: 3, dflt: 2 },
 };
 export function medOf(f) {
@@ -172,9 +177,7 @@ export function medOf(f) {
 export const medicSkillMult = (f) => (f ? Math.max(GROUP_MED.minMult, Math.min(GROUP_MED.maxMult, 1 + GROUP_MED.perLevel * (medOf(f).staff - GROUP_MED.ref))) : 1);
 export function groupHospitalTier(state, f) {
   if (!groupsBuild(state, f)) return GROUP_MED.builtTier[f.type] || GROUP_MED.builtTier.dflt;
-  const any = (k) => (f.bases || []).some((t) => ((f.works && f.works[t] && f.works[t][k]) || 0) > 0);
-  if (!any("beds")) return 0;
-  return 1 + (any("bench") ? 1 : 0) + ((f.pop || 0) >= GROUP_MED.bigPop && weightOf(f, "heal") >= GROUP_MED.healLean ? 1 : 0);
+  return Math.min(hospitalTypes().length, sickbayTier(f));
 }
 // XP into one of the two tracks (level and progress), as skills.js addXp.
 function medXp(m, lvKey, xpKey, amt) {
@@ -192,7 +195,7 @@ export function medicTraining(state, f) {
   const def = tier > 0 ? BUILDINGS[hospitalTypes()[Math.min(tier, hospitalTypes().length) - 1]].med : null;
   const duty = Math.min(CAP_USE, USE.medicRole * (w ? 1 : 0.5) + USE.wound * Math.min(GROUP_MED.treats, w / medics));
   const ward = def ? Math.min(def.ward, CAP_WARD, (w * WARD.bed * def.teach) / medics) : 0;
-  const lesson = def && m.doc >= TRAINING.docMin && m.staff < m.doc - TRAINING.gap
+  const lesson = def && m.doc >= TRAINING.docMin && m.staff < m.doc - lessonGap(def)
     ? Math.min(CAP_STUDY, (TRAINING.base + TRAINING.perSkill * m.doc) * def.teach * (w ? 1 : TRAINING.quiet)) : 0;
   medXp(m, "staff", "staffXp", duty + ward + lesson);
   medXp(m, "doc", "docXp", duty + ward);
@@ -204,7 +207,7 @@ function heal(state, f, d) {
   f.wounded = w;
   if (f.lossRecent) f.lossRecent = f.lossRecent * CARE.DESERT.decay < 0.05 ? 0 : f.lossRecent * CARE.DESERT.decay;
   if (!w) return;
-  const r = healRate(f);
+  const r = healRate(f, groupHospitalTier(state, f));
   if (r.meds) { f.stock.meds -= r.meds; f.medsUsed = (f.medsUsed || 0) + r.meds; }
   const healed = Math.min(w, Math.floor(w * r.rate + h(state, f.name, tickOf(f), "heal")));
   f.wounded = w - healed;

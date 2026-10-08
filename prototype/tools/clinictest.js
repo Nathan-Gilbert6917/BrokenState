@@ -12,11 +12,12 @@ import { SKILLS } from "../src/sim/data.js";
 import { BUILDINGS, addBuilding } from "../src/sim/buildings.js";
 import { activeHospital, TRAINEE_STAFF, medicalHour } from "../src/sim/medical.js";
 import * as T from "../src/sim/training.js";
-import { ensureSkills, CAP_WARD, CAP_STUDY, USE } from "../src/sim/skills.js";
+import { ensureSkills, CAP_WARD, CAP_STUDY, USE, EARNED_PERKS, PERKS, hasPerk, xpNeed } from "../src/sim/skills.js";
 import { addCondition } from "../src/sim/health.js";
 import { governRoles, setAutopilot } from "../src/sim/autopilot.js";
 import { WORK_TYPES, workState, planBase } from "../src/sim/work.js";
 import { medicTraining, medOf, medicSkillMult, groupHospitalTier, healRate, GROUP_MED } from "../src/sim/groupcare.js";
+import { nextWork, groupWorksDaily, sickbayTier, worksText, groupsBuild, GROUP_WORKS } from "../src/sim/groupworks.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { ROLES } from "../src/sim/economy.js";
 
@@ -133,10 +134,17 @@ console.log("Doctor and lessons");
   check(i3.trainees.every((x) => x.place && x.xp > 0), "the clinic takes both");
   check(near(i3.trainees[0].xp, (T.TRAINING.base + T.TRAINING.perSkill * 10) * 1.45), `clinic lesson × 1.45: ${r1(i3.trainees[0].xp)}`);
   // The cap: doctor − gap.
+  tr.skills.medicine = 9;
+  check(T.trainingInfo(st, h).trainees[0].xp === 0 && /up to 9/.test(T.trainingInfo(st, h).trainees[0].why), "clinic: lessons stop at the doctor's Medicine − 1");
   tr.skills.medicine = 8;
-  check(T.trainingInfo(st, h).trainees[0].xp === 0 && /up to 8/.test(T.trainingInfo(st, h).trainees[0].why), "lessons stop at the doctor's Medicine − 2");
-  tr.skills.medicine = 7;
   check(T.trainingInfo(st, h).trainees[0].xp > 0, "one below the cap still learns");
+  addBuilding(h, "hospital");
+  tr.skills.medicine = 9;
+  check(T.trainingInfo(st, h).trainees[0].xp > 0, "trauma hospital: a trainee at the doctor's − 1 still learns (up to the doctor's own level)");
+  tr.skills.medicine = 10;
+  check(T.trainingInfo(st, h).trainees[0].xp === 0 && /own Medicine/.test(T.trainingInfo(st, h).trainees[0].why), "…and stops at the doctor's own Medicine");
+  addBuilding(h, "clinic");
+  tr.skills.medicine = 8;
   // Off duty: the doctor on another job teaches in the evenings at half speed.
   doc.role = "farm";
   low.role = "farm";
@@ -240,9 +248,9 @@ console.log("AI groups");
   check(m.doc === start[0] && m.staff === start[1], `starts by type: doctor ${m.doc}, medics ${m.staff}`);
   const t0 = groupHospitalTier(st, f);
   f.works = f.works || {};
-  f.works[f.bases[0]] = { ...(f.works[f.bases[0]] || {}), beds: 1, bench: 1 }; // quarters and a workshop built
+  f.works[f.bases[0]] = { ...(f.works[f.bases[0]] || {}), beds: 1, bench: 1, sickbay: 3 }; // a clinic built
   const tier = groupHospitalTier(st, f);
-  check(tier === (st.groupWorks ? 3 : GROUP_MED.builtTier[f.type]), `sick bay tier ${t0} → ${tier} with quarters and a workshop (a big group leaning to healing: +1)`);
+  check(tier === (st.groupWorks ? 3 : GROUP_MED.builtTier[f.type]), `sick bay tier ${t0} → ${tier} with a clinic built`);
   f.wounded = 6;
   const before = healRate(f).rate;
   let xp = 0;
@@ -261,6 +269,96 @@ console.log("AI groups");
   for (let d = 0; d < 180; d++) { wounds(g, d); xpG += medicTraining(st, g); }
   check(xpG < xp * 0.8, `no sick bay: the medics' XP ${Math.round(xpG)} against ${Math.round(xp)} with one (Medicine ${medOf(g).staff} and ${m.staff}; both stop at their doctor's)`);
   st.groupWorks = saveWorks;
+}
+
+// ---------- 6b. AI groups build their sick bays (groupworks.js) ----------
+console.log("AI sick bays");
+{
+  const st = createWorld({ seed: SEED, factionCount: 6 });
+  const f = st.factions.find((x) => x.alive && x.bases && x.bases.length) || st.factions[0];
+  check(!!st.groupWorks && groupsBuild(st, f), "a new world's groups build");
+  const main = f.bases[0];
+  f.works = { [main]: { water: 9, farms: 9, beds: 9, walls: 9, bench: 1, store: 1 } };
+  f.pop = 30; f.wounded = 3; f.stock.food = 9999;
+  const nw = nextWork(st, f);
+  check(nw && nw.type === "sickbay" && nw.tile === main, `with wounded and quarters up, the next job is the sick bay (${nw && nw.type}: ${nw && nw.why})`);
+  const before = healRate(f, 0).rate, bay = healRate(f, 1).rate;
+  f.stock.scrap = 500; f.stock.parts = 50; f.stock.meds = 50;
+  for (let d = 0; d < 400 && sickbayTier(f) < 2; d++) groupWorksDaily(st, f);
+  check(sickbayTier(f) >= 2, `they build it and upgrade it once the workshop is up (tier ${sickbayTier(f)})`);
+  check(/infirmary|field hospital|clinic/.test(worksText(st, f)), `the Groups card shows it: "${worksText(st, f)}"`);
+  check(bay > before && groupHospitalTier(st, f) === sickbayTier(f), "the sick bay speeds their healing and sets their medics' training");
+  medOf(f).doc = 5;
+  for (let d = 0; d < 200; d++) groupWorksDaily(st, f);
+  check(sickbayTier(f) === 2, `no clinic without a Medicine ${GROUP_WORKS.SICKBAY[2].doc} doctor (tier ${sickbayTier(f)})`);
+  medOf(f).doc = 12;
+  for (let d = 0; d < 400 && sickbayTier(f) < 4; d++) groupWorksDaily(st, f);
+  check(sickbayTier(f) === 4, `with a Medicine 12 doctor they reach the trauma hospital (tier ${sickbayTier(f)})`);
+}
+
+// ---------- 6c. the doctor stays on duty, the doctor's career, graduation ----------
+console.log("Doctor on duty, career, graduation");
+{
+  const { st, h } = world(SEED, "infirmary");
+  h.stock.food = 400;
+  const doc = person(st, 10, "farm");
+  const tr = person(st, 2, "trainee"); tr.pinned = true;
+  [1, 2, 3].forEach((m) => person(st, m, "farm"));
+  governRoles(st, h);
+  check(doc.role === "medic" && T.wardPoints(st, h) === 0, `a quiet ward with a trainee: the governor keeps the doctor on Medic duty (${doc.role})`);
+  tr.role = "farm"; tr.pinned = false;
+  for (const s of atBase(st, h.id)) if (s.role === "trainee") s.role = "farm";
+  const st2 = world(SEED, "infirmary"); st2.h.stock.food = 5;
+  const d2 = person(st2.st, 10, "farm"); [1, 2, 3, 4].forEach((m) => person(st2.st, m, "farm"));
+  governRoles(st2.st, st2.h);
+  check(d2.role !== "medic", "no trainees and nobody hurt: the doctor is not kept on duty");
+  // Work priorities: the Doctor type opens for trainees on a quiet ward.
+  const w3 = world(SEED, "infirmary"); w3.h.stock.food = 400;
+  workState(w3.st);
+  const medicRole = w3.st.work.roles.find((r) => r.name === "Medic");
+  const dd = person(w3.st, 10, "farm"); dd.work = { role: medicRole.id, over: {} };
+  const tt = person(w3.st, 2, "trainee"); tt.pinned = true;
+  w3.st.hour = Math.floor(w3.st.hour / 24) * 24 + 10;
+  planBase(w3.st, w3.h);
+  check(dd.role === "medic", `priorities: the doctor stays on duty for the trainee (${dd.role}: ${dd.task && dd.task.why})`);
+  // Career: Leadership and Speech a day of teaching, Professor after PROFESSOR.days.
+  const c = world(SEED, "clinic");
+  const D = person(c.st, 12, "medic"), L = person(c.st, 2, "trainee");
+  const r0 = T.trainingInfo(c.st, c.h).rate;
+  nextDay(c.st); T.trainingDaily(c.st);
+  check((D.xpDay.use.leadership || 0) === T.TRAINING.docLead && (D.xpDay.use.speech || 0) === T.TRAINING.docSpeech && D.teachDays === 1, `a day of teaching: Leadership ${D.xpDay.use.leadership}, Speech ${D.xpDay.use.speech}, 1 day toward Professor`);
+  D.teachDays = T.PROFESSOR.days - 1;
+  nextDay(c.st); T.trainingDaily(c.st);
+  check(D.perks.includes("professor") && c.st.log.some((l) => /Professor of Medicine/.test(l.text)), "after 60 days of teaching with Medicine 10+: Professor of Medicine (logged)");
+  check(near(T.trainingInfo(c.st, c.h).rate, r0 * T.PROFESSOR.mult), `a Professor's lessons × ${T.PROFESSOR.mult}`);
+  check(!!EARNED_PERKS.professor && !PERKS.professor, "Professor is an earned perk, not a milestone choice");
+  const low = world(SEED, "clinic"); const D2 = person(low.st, 8, "medic"); person(low.st, 2, "trainee");
+  D2.teachDays = 200; nextDay(low.st); T.trainingDaily(low.st);
+  check(!hasPerk(D2, "professor"), "a doctor below Medicine 10 does not become a Professor");
+  // Graduation.
+  const g = world(SEED, "clinic");
+  const GD = person(g.st, 12, "medic"), G = person(g.st, 5, "trainee");
+  void GD;
+  nextDay(g.st); T.trainingDaily(g.st); // seen as a trainee at 5
+  G.xp.medicine = xpNeed(5) - 1;
+  nextDay(g.st); T.trainingDaily(g.st);
+  const card = g.st.cards.find((x) => /graduated/.test(x.title));
+  check(skill(G, "medicine") === 6 && !!G.graduated && !!card && g.st.log.some((l) => /graduated as a medic/.test(l.text)), "reaching Medicine 6 as a trainee: graduation logged, a card");
+  nextDay(g.st); T.trainingDaily(g.st);
+  check(g.st.cards.filter((x) => /graduated/.test(x.title)).length === 1, "only once");
+  const mk = card.choices.find((ch) => ch.label === "Make medic");
+  mk.resolve(g.st);
+  check(G.role === "medic", "Make medic: they take the Medic role");
+  const already = person(g.st, 7, "trainee");
+  nextDay(g.st); T.trainingDaily(g.st);
+  check(!already.graduated, "someone who was already past 6 when put on the ward does not graduate");
+  // The governor moves a graduate to Medic while the hospital is short of medics.
+  const gv = world(SEED, "clinic"); gv.h.stock.food = 400;
+  const gd = person(gv.st, 12, "medic"); gd.pinned = true;
+  const grad = person(gv.st, 7, "trainee");
+  [1, 2, 3].forEach((m) => person(gv.st, m, "farm"));
+  governRoles(gv.st, gv.h);
+  check(grad.role === "medic", `the clinic needs 2 medics: the governor moves the graduate to Medic (${grad.role})`);
 }
 
 // ---------- 7. save and load, and a short run ----------
@@ -300,6 +398,8 @@ console.log("Save, load, short run");
   check(/<h3[^>]*>Training<\/h3>/.test(med) && med.includes("Doctor: <b>") && med.includes(ppl[1].name) && med.includes('data-action="traineeop"'), "the Medical tab shows the doctor, the trainee and the trainee picker");
   check(/places? used · a trainee counts as half a medic/.test(med) && /Ward rounds:/.test(med), "…the places and the ward rounds");
   check(/<b>Trainee<\/b> 1/.test(html.split("@@SPLIT@@")[1] || ""), "the Overview counts the trainee");
+  check(skill(ppl[1], "medicine") < T.TRAINING.graduate || med.includes('data-action="makemedic"'), `a trainee at Medicine ${skill(ppl[1], "medicine")} has the Make medic button`);
+  check(/to Professor|Professor<\/span>/.test(med), "the doctor's road to Professor is shown");
   check(helpTopics().some((t) => /Training medics/.test(t.title) && /Medic trainees/.test(t.html || t.body || "")), "Help has a Training medics topic");
 }
 

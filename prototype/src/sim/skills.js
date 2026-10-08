@@ -171,6 +171,12 @@ export const PERK_TREE = {
 export const PERKS = {};
 for (const [k, tiers] of Object.entries(PERK_TREE)) for (const [ms, list] of Object.entries(tiers)) for (const p of list) PERKS[p.id] = { ...p, skill: k, ms: Number(ms) };
 const STYLE_IDX = { cautious: 0, balanced: 1, aggressive: 2 };
+// Earned perks: not milestone choices (no perk point, not in PERK_TREE or PERKS), given by a career (training.js:
+// Professor of Medicine, for a doctor who has taught long enough). Kept in s.perks like the others (hasPerk).
+export const EARNED_PERKS = {
+  professor: { id: "professor", name: "Professor of Medicine", skill: "medicine", earned: true,
+    desc: "Earned by teaching: a doctor (Medicine 10+) who has taught trainees on 60 days. Their lessons teach 25% faster (on top of Mentor).", hook: "training.js lessonRate, doctorCareer" },
+};
 
 export const hasPerk = (s, id) => !!(s && s.perks && s.perks.includes(id));
 export const anyPerk = (list, id) => !!(list && list.some((s) => s && s.alive !== false && hasPerk(s, id)));

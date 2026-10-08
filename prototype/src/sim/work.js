@@ -53,7 +53,7 @@ import { hospitalDef, isHurt, isSevere } from "./medical.js";
 import { tooIllToWork, isSick, isContagious } from "./health.js";
 import { CRAFTS, craftQueue, craftQuality, meetsNeeds, craftHeld, isFilterJob, benchQuality, canAttempt, craftSkill } from "./crafting.js";
 import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } from "./skills.js";
-import { doctorAt, TRAINING } from "./training.js"; // Medic trainees
+import { doctorAt, TRAINING, lessonGap } from "./training.js"; // Medic trainees
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt, WEAR } from "./breakdowns.js";
 import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity } from "./economy.js";
@@ -117,14 +117,15 @@ function foodGoal(state) {
 export const WORK_TYPES = {
   doctor: {
     name: "Doctor", ing: "On medic duty", short: "Doc", role: "medic", skill: "medicine",
-    desc: "Medic on duty: with an infirmary or hospital while anyone here is hurt or sick (it needs 1–3 by tier); without one only for the badly hurt, infected or ill. Treats wounds and illness; leaves when everyone is healed.",
+    desc: "Medic on duty: with an infirmary or hospital while anyone here is hurt or sick (it needs 1–3 by tier); without one only for the badly hurt, infected or ill. Treats wounds and illness; leaves when everyone is healed, unless trainees are learning here (then one stays: the doctor teaches them on duty).",
     open(ctx) {
       const { base, people } = ctx;
       const hosp = hospitalDef(base);
       const onDuty = people.some((s) => s.role === "medic");
       const line = hosp.tier > 0 ? (onDuty ? 100 : 95) : 50;
       const pts = people.filter((s) => s.woundInfected || isSick(s) || (isHurt(s) && s.health < line));
-      if (!pts.length) return { cap: 0, why: "nobody here needs care" };
+      // Trainees learning here keep the doctor on duty on a quiet ward (training.js: off duty the lessons are halved).
+      if (!pts.length) return hosp.tier > 0 && people.some((s) => s.role === "trainee") && docOf(ctx) ? { cap: 1, urg: 2 } : { cap: 0, why: "nobody here needs care" };
       const danger = pts.some((s) => isSevere(s) || s.woundInfected);
       return { cap: Math.max(1, hosp.tier > 0 ? hosp.staff : 1), urg: 4 + (danger ? 3 : 0) + Math.min(3, pts.length / 2), danger };
     },
@@ -134,7 +135,7 @@ export const WORK_TYPES = {
   // Medic trainees (training.js): learn Medicine from the doctor on the ward; the hospital tier's places are the cap.
   trainee: {
     name: "Trainee", ing: "Training on the ward", short: "Trn", role: "trainee", skill: "medicine",
-    desc: "Medic trainee: works on the ward of the infirmary or hospital and learns Medicine from the doctor (the best medic here, Medicine 6+) every day, up to 2 below the doctor's. Counts as half a medic toward the hospital's staff. Places: 1 (infirmary, field hospital), 2 (clinic), 3 (trauma hospital).",
+    desc: "Medic trainee: works on the ward of the infirmary or hospital and learns Medicine from the doctor (the best medic here, Medicine 6+) every day, up to 1 below the doctor's (a trauma hospital: up to the doctor's own). Counts as half a medic toward the hospital's staff. Places: 1 (infirmary, field hospital), 2 (clinic), 3 (trauma hospital).",
     open(ctx) {
       const def = hospitalDef(ctx.base);
       if (!def.tier || !def.train) return { cap: 0, why: "no infirmary or hospital" };
@@ -144,7 +145,7 @@ export const WORK_TYPES = {
     can(ctx, s) {
       const doc = docOf(ctx);
       if (!doc || doc.s === s) return "they are the best medic here";
-      const cap = skill(doc.s, "medicine") - TRAINING.gap;
+      const cap = skill(doc.s, "medicine") - lessonGap(hospitalDef(ctx.base));
       return skill(s, "medicine") < cap ? "" : `Medicine ${skill(s, "medicine")}: lessons go up to ${cap}`;
     },
   },
