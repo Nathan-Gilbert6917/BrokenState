@@ -53,7 +53,7 @@ import { groupCapture, jailsOn } from "./groupjails.js"; // jailhouse: war capti
 import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS, supplyFew } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
-import { clashKit, raidCount } from "./arsenal.js"; // group arsenals: a war raid's dead lose their kit, the side holding the field picks some up
+import { clashKit, raidCount, smokeCover } from "./arsenal.js"; // group arsenals: a war raid's dead lose their kit, the side holding the field picks some up
 import { spawnAiParty, tileLabel } from "./parties.js";
 import { hasNetwork, canListen, canRadioGroup, radioSpeech } from "./radio.js";
 import { available, need, buyPrice, refreshMarkets, refreshMarket } from "./trade.js";
@@ -392,7 +392,8 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
   const report = state.live.has(party.target.tile) || (attacker && attacker.known && target.known);
   if (won) {
     d.stats.raidWins++;
-    const loss = Math.min(Math.max(1, Math.round(target.pop * rng.range(0.05, 0.1))), Math.max(0, target.pop - DIPLO.MIN_POP));
+    const hit = Math.min(Math.max(1, Math.round(target.pop * rng.range(0.05, 0.1))), Math.max(0, target.pop - DIPLO.MIN_POP));
+    const loss = hit - smokeCover(state, target, hit); // arsenal.js: smoke over their retreat spares a few
     target.pop -= loss;
     clashKit(state, attacker, attacker ? raidCount(attacker, att) : 0, 0, target, loss, "a", 0.1, true, "war"); // arsenal.js
     for (const k of ["food", "ammo", "meds", "scrap"]) {
@@ -425,7 +426,7 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
   }
   const tp = target.pop, ap = attacker ? attacker.pop : 0;
   target.pop = Math.max(Math.min(target.pop, DIPLO.MIN_POP), target.pop - rng.int(0, 1));
-  if (attacker) attacker.pop = Math.max(Math.min(attacker.pop, DIPLO.MIN_POP), attacker.pop - rng.int(1, 2));
+  if (attacker) { const hit = rng.int(1, 2); attacker.pop = Math.max(Math.min(attacker.pop, DIPLO.MIN_POP), attacker.pop - hit + smokeCover(state, attacker, hit)); } // arsenal.js: their smoke spares a few
   clashKit(state, attacker, attacker ? raidCount(attacker, att) : 0, attacker ? ap - attacker.pop : 0, target, tp - target.pop, "b", 0, true, "war"); // arsenal.js: the defenders hold the field
   if (w && attacker) {
     w.score[target.id] = (w.score[target.id] || 0) + 1;

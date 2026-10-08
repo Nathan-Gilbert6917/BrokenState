@@ -7,18 +7,26 @@
 //   3. smoke in their kit: soldiers usually, militia sometimes, raiders rarely, and in the groups' arsenals;
 //   4. smoke over a retreat: the turn the enemy breaks, one of them throws it between them and your people (a log
 //      line), once; not while they fight on; a third-side group running from the dead does the same; your side under
-//      the AI pops smoke before it sounds the retreat; a battle saved after the throw does not throw again.
+//      the AI pops smoke before it sounds the retreat; a battle saved after the throw does not throw again;
+//   5. three-way fights (thirdside.js): a beaten third-side group gives up to the enemy's people, an enemy gives up to
+//      the soldiers fighting it, and who keeps them at the end (thirdResult, wanderers.js thirdPrisoners);
+//   6. smoke helps them get away (battlesize.js fledFarEnough, throwables.js smokeScreens);
+//   7. smoke between groups: a daily restock while short (arsenal.js SMOKE_RESTOCK), and a beaten side by the numbers
+//      spares a few under its smoke (smokeCover: factions.js AI raids, diplomacy.js war raids).
 // Usage: node tools/enemyaitest.js [battles per setup=20] [seed=7]
 import { createWorld, makeSurvivor, hub, atBase, combatPower } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import {
   createBattle, autoPlayerTurn, runEnemyPhase, endPlayerTurn, closeCombat, registerCombatHandler, enemyUnit, active,
 } from "../src/sim/combat.js";
-import { SURRENDER, surrenderCheck, numbersSurrenders, raidPrisoners } from "../src/sim/nonlethal.js";
+import { SURRENDER, surrenderCheck, thirdSurrenderCheck, numbersSurrenders, raidPrisoners } from "../src/sim/nonlethal.js";
 import { COVER_SMOKE } from "../src/sim/siege.js";
 import { FLASH_KIT, SMOKE } from "../src/sim/throwables.js";
-import { ARSENAL, starterKit, ensureArsenal, kitOf } from "../src/sim/arsenal.js";
-import { thirdSideUnit } from "../src/sim/thirdside.js";
+import { ARSENAL, starterKit, ensureArsenal, kitOf, arsenalDaily, smokeCover } from "../src/sim/arsenal.js";
+import { thirdSideUnit, thirdResult } from "../src/sim/thirdside.js";
+import { fledFarEnough } from "../src/sim/battlesize.js";
+import { thirdPrisoners } from "../src/sim/wanderers.js";
+import { groupPrisoners } from "../src/sim/groupjails.js";
 import { newItem, stow } from "../src/sim/inventory.js";
 import { setRounds } from "../src/sim/ammo.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -248,6 +256,113 @@ const clouds = (b) => (b.smoke || []).filter((c) => !c.thick);
   autoPlayerTurn(st);
   check(b.over && b.result && b.result.outcome === "retreat" && b.log.some((l) => /throws a smoke grenade/.test(l.text)), "your AI, hopelessly outgunned, pops smoke and sounds the retreat");
   closeCombat(st);
+}
+
+// ---------- 5. three-way fights ----------
+// A battle with you far off, the enemy's raiders and a third-side group (survivors or soldiers) at each other.
+function threeWay(st, kind, team, { enemies = 4, thirdN = 4, armed = "pistol" } = {}) {
+  const b = openBattle(st, [fighter(st)], { kind, count: enemies, power: 3, name: "the Red Hand" });
+  mine(b)[0].x = 1; mine(b)[0].y = 1;
+  const g = { side: team, name: team === "military" ? "the soldiers" : "the travellers", factionId: null, people: Array.from({ length: thirdN }, (_, k) => ({ name: `Third ${k + 1}`, weapon: armed })) };
+  const units = Array.from({ length: thirdN }, (_, k) => { const u = enemyUnit(b, st.rng, team === "military" ? "soldiers" : "survivors", 3, k + 1); b.units.push(u); thirdSideUnit(b, u, g, k); u.aware = true; u.x = 14; u.y = 4 + k * 2; return u; });
+  theirs(b).forEach((e, i) => { e.x = 17; e.y = 4 + i * 2; e.aware = true; });
+  return { b, units };
+}
+{
+  console.log("5. Three-way fights: who gives up to whom, who keeps them");
+  // The travellers beaten: 2 of 4 dead, the 2 left hurt, 4 raiders after them.
+  const st = world(seed + 20);
+  const { b, units } = threeWay(st, "raiders", "neutral");
+  units.slice(2).forEach(kill);
+  units.slice(0, 2).forEach((u) => { u.hp = 8; });
+  let gave = 0;
+  for (let t = 0; t < 40 && !gave; t++) { b.turn = 300 + t; gave += thirdSurrenderCheck(b); }
+  const sur = units.find((u) => u.surr);
+  const line = b.log.find((l) => /gives up to/.test(l.text));
+  check(gave > 0 && !!sur && sur.surrTo === "enemy" && sur.weapon === "fists" && !!sur.nlWeapon && !!line && /the Red Hand/.test(line.text), `beaten and outnumbered two to one, the travellers give up to the raiders (${line ? line.text : "none"})`);
+  let r = thirdResult(b)[0];
+  check(r.gaveUp === gave && r.taken === gave && r.freed === 0, `with the raiders still standing they lead them off (gave up ${r.gaveUp}, taken ${r.taken})`);
+  theirs(b).forEach(kill);
+  r = thirdResult(b)[0];
+  check(r.taken === 0 && r.freed === gave, `with the raiders beaten, your win frees them (freed ${r.freed})`);
+  if (sur) {
+    b.phase = "player"; endPlayerTurn(st);
+    check(!sur.surr && sur.weapon !== "fists", "once their captors are gone they lower their hands and take up their weapon");
+  }
+  closeCombat(st);
+  // 3 raiders against 4 travellers who all stand: nobody gives up (not beaten); 2 dead against 3: not two to one.
+  const st2 = world(seed + 21);
+  const t2 = threeWay(st2, "raiders", "neutral", { enemies: 3 });
+  let none = 0;
+  for (let t = 0; t < 40; t++) { t2.b.turn = 400 + t; none += thirdSurrenderCheck(t2.b); }
+  t2.units.slice(2).forEach(kill); t2.units.slice(0, 2).forEach((u) => { u.hp = 8; });
+  for (let t = 0; t < 40; t++) { t2.b.turn = 500 + t; none += thirdSurrenderCheck(t2.b); }
+  check(none === 0, "not while they stand, nor 2 against 3 raiders (not two to one)");
+  closeCombat(st2);
+  // An enemy gives up to the soldiers fighting it: 4 raiders, 2 dead, 2 hurt; a squad of 3 next to them, you far off.
+  const st3 = world(seed + 22);
+  const t3 = threeWay(st3, "raiders", "military", { thirdN: 3, armed: "ar" });
+  const foes = theirs(t3.b);
+  foes.slice(2).forEach(kill);
+  foes.slice(0, 2).forEach((e, i) => { e.hp = 10; e.x = 15; e.y = 4 + i * 2; });
+  let gave3 = 0;
+  for (let t = 0; t < 40 && !gave3; t++) { t3.b.turn = 600 + t; gave3 += surrenderCheck(t3.b); }
+  const es = foes.find((e) => e.surr);
+  const line3 = t3.b.log.find((l) => /gives up to the soldiers/.test(l.text));
+  check(gave3 > 0 && !!es && es.surrTo === 0 && !!line3, `an enemy beaten by you and the soldiers together gives up to the soldiers, the nearest (${line3 ? line3.text : "none"})`);
+  const r3 = thirdResult(t3.b)[0];
+  check(r3.held === gave3, `the soldiers keep the ones they hold (held ${r3.held})`);
+  if (es) { es.tied = true; check(thirdResult(t3.b)[0].held === gave3 - 1, "tied up by your people first, they are yours instead"); }
+  closeCombat(st3);
+  // Settled after the fight (wanderers.js thirdPrisoners): the soldiers' group and the enemy's group.
+  const st4 = world(seed + 23);
+  const [sf, ef] = st4.factions.filter((f) => f.alive && f.bases.length);
+  sf.jails = { [sf.bases[0]]: 1 }; ef.jails = { [ef.bases[0]]: 1 }; sf.prisoners = []; ef.prisoners = [];
+  const pop0 = sf.pop, epop0 = ef.pop, gw0 = sf.goodwill;
+  const lines = thirdPrisoners(st4, { name: "the soldiers", taken: 2, freed: 0, held: 0 }, sf, null, { name: "the Red Hand", factionId: ef.id });
+  check(sf.pop === pop0 - 2 && groupPrisoners(ef).filter((p) => p.from === sf.id).length === 2 && /led off by the Red Hand/.test(lines[0]), `taken: 2 soldiers into the enemy group's jail (${lines[0]})`);
+  thirdPrisoners(st4, { name: "the soldiers", taken: 0, freed: 2, held: 1, hostile: false }, sf, null, { name: "the Red Hand", factionId: ef.id });
+  check(sf.goodwill > gw0 && ef.pop === epop0 - 1 && groupPrisoners(sf).filter((p) => p.from === ef.id).length === 1, `freed: goodwill with their group (${gw0} → ${sf.goodwill}); held: 1 of the enemy into the soldiers' jail`);
+  const wg = { people: [{ name: "A" }, { name: "B" }, { name: "C" }] };
+  thirdPrisoners(st4, { name: "the travellers", taken: 2, freed: 0, held: 0 }, null, wg, { name: "raiders" });
+  check(wg.people.length === 1, "travellers taken are gone from their group");
+}
+
+// ---------- 6. smoke helps them get away ----------
+{
+  console.log("6. Behind the smoke they get away");
+  const st = world(seed + 30);
+  const b = openBattle(st, [fighter(st)], { kind: "raiders", count: 1, power: 3 });
+  const [p] = mine(b), [e] = theirs(b);
+  p.x = 5; p.y = 6; e.x = 11; e.y = 6; e.fleeing = true;
+  check(!fledFarEnough(b, e), "6 tiles off in plain sight: not gone");
+  b.smoke = [{ x: 8, y: 6, r: SMOKE.r, turns: 3 }];
+  check(fledFarEnough(b, e), `6 tiles off behind a cloud: gone (${SMOKE.gone} tiles is enough behind smoke)`);
+  p.x = 8; p.y = 6;
+  check(!fledFarEnough(b, e), "chase into the cloud, 3 tiles off: still there to shoot at (−30 from inside it)");
+  closeCombat(st);
+}
+
+// ---------- 7. smoke between groups ----------
+{
+  console.log("7. Smoke between groups: restocked while short, thrown over a retreat by the numbers");
+  const st = world(seed + 40);
+  const days = (f, n) => { for (let d = 0; d < n; d++) { f.careTick = (f.careTick || 0) + 1; st.hour += 24; arsenalDaily(st, f); } return ensureArsenal(st, f).items.filter((it) => it.key === "smokegren").length; };
+  const mil = st.factions.find((f) => f.alive && kitOf(f) === "soldiers" && f.pop >= 3);
+  if (check(!!mil, "a group with the military kit")) {
+    const want = Math.round(mil.pop * ARSENAL.NONLETHAL.soldiers.smokegren);
+    const A = ensureArsenal(st, mil);
+    A.items = A.items.filter((it) => it.key !== "smokegren"); A.rev++;
+    const n30 = days(mil, 60), n300 = days(mil, 270);
+    check(n30 > 0 && n300 <= Math.round(mil.pop * ARSENAL.NONLETHAL.soldiers.smokegren) + 1, `${mil.type} (${mil.pop} people) restocks smoke while short: ${n30} after 60 days, ${n300} after 330 (keeps about ${want})`);
+  }
+  const f = st.factions.find((x) => x.alive && !x.outsider);
+  const A = ensureArsenal(st, f);
+  A.items = A.items.filter((it) => it.key !== "smokegren");
+  check(smokeCover(st, f, 5) === 0, "no smoke: nothing spared");
+  for (let i = 0; i < 3; i++) A.items.push(newItem("smokegren"));
+  const c5 = smokeCover(st, f, 5), left = A.items.filter((it) => it.key === "smokegren").length, c1 = smokeCover(st, f, 1);
+  check(c5 === ARSENAL.SMOKE_COVER.MAX && left === 3 - ARSENAL.SMOKE_COVER.MAX && c1 === 0, `5 to lose and 3 grenades: ${c5} spared, ${left} grenade left; 1 to lose: none spared`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

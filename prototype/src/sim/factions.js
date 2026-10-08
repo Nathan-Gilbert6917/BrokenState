@@ -75,7 +75,7 @@ import { payAmmo } from "./ammo.js";
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
 import { groupWorksDaily, fieldsFactor, growthFactor, workshopFactor, storeFactor, groupBaseDefence } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
-import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
+import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
 import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
 import { groupWorldDaily, groupWorldWorld, intelDef, knownBase, fearsGroup, KNOW, abandonedAt, abandonedPull, occupyAbandoned, leaveGroupBase } from "./groupworld.js"; // AI parity: what they know, their vehicles, abandoned bases
 import { raidPrisoners } from "./nonlethal.js"; // groups that take people alive: some of the beaten are taken, not killed
@@ -877,7 +877,9 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
     return false;
   }
   if (att > def * 1.1) {
-    const loss = Math.ceil(target.pop * rng.range(0.2, 0.35));
+    const hit = Math.ceil(target.pop * rng.range(0.2, 0.35));
+    const covered = smokeCover(state, target, hit); // arsenal.js: smoke over their retreat spares a few
+    const loss = hit - covered;
     target.pop -= loss;
     clashKit(state, attacker, attN, 0, target, loss, "a", 0.4); // arsenal.js: the field is theirs: half the dead's kit and of the spare kit they lose
     // nonlethal.js raidPrisoners: the winners take a share of the beaten alive by type, into their jail (groupjails.js:
@@ -898,7 +900,7 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
       else if (leaveGroupBase(state, target, lost, 0.5 / Math.max(1, target.bases.length + 1))) state.stats.leftBases = (state.stats.leftBases || 0) + 1; // groupworld.js: looted and left standing, its works there for whoever comes
       recomputeOwnership(state); // a base changed hands: the land around it follows at once
     }
-    if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${whom} hard (${loss - taken} dead${taken ? `, ${taken} taken prisoner` : ""}).`, "danger");
+    if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${whom} hard (${loss - taken} dead${taken ? `, ${taken} taken prisoner` : ""}${covered ? `; ${covered} got away under smoke` : ""}).`, "danger");
     if (attacker && isAggressiveType(attacker) && rng.chance(0.5)) attacker.pop += 1; // a win draws fighters to them
     if (groupBroken(target)) collapseFaction(state, target, attacker);
     return false;
@@ -906,7 +908,7 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
   const tp = target.pop;
   target.pop = Math.max(1, target.pop - rng.int(0, 2));
   const ap = attacker ? attacker.pop : 0;
-  if (attacker) attacker.pop = Math.max(0, attacker.pop - rng.int(1, 3));
+  if (attacker) { const hit = rng.int(1, 3); attacker.pop = Math.max(0, attacker.pop - hit + smokeCover(state, attacker, hit)); } // arsenal.js: the beaten raiders' smoke spares a few
   clashKit(state, attacker, attN, attacker ? ap - attacker.pop : 0, target, tp - target.pop, "b"); // arsenal.js: the defenders hold the field
   const hv = loseRaidHumvee(state, party, { faction: target }); // vehicles.js: the raid's Humvee falls to the defenders
   if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} held off ${who}${hv ? ` and took their ${hv.name}` : ""}.`, "info");

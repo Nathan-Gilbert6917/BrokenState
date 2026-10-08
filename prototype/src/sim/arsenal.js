@@ -34,8 +34,9 @@
 // weapons, explosives from scrap and fuel: CRAFT), trade (fighting gear you sell or give them goes in; surplus over
 // WANT a head goes on their shelf, trade.js), stealing (raids on your bases and other groups, robbing your teams,
 // captives stripped), the fields they hold after a fight, a broken group's arsenal (half to the group that takes it
-// over), your vehicles when a team is taken whole. Outflows: the dead's kit, wear (a use a fight; broken is gone),
-// rounds spent, explosives thrown at walls, what they sell, what others steal.
+// over), your vehicles when a team is taken whole, a smoke grenade now and then while short (SMOKE_RESTOCK). Outflows:
+// the dead's kit, wear (a use a fight; broken is gone), rounds spent, explosives thrown at walls, smoke thrown over a
+// retreat by the numbers (smokeCover), what they sell, what others steal.
 import { GEAR, FACTION_TYPES, LOCATIONS } from "./data.js";
 import { KITS, WEAPONS, loadMag, placeCar, floodReach } from "./combat.js";
 import { lootItem } from "./inventory.js";
@@ -71,6 +72,13 @@ export const ARSENAL = {
     gunEvery: 5, gunScrap: 8, gunParts: 1, guns: 1.1 },
   WANT: 1.3, // weapons a head they keep; more goes on the trade shelf
   SHELF: 2, // surplus pieces put on the shelf a refresh
+  // Smoke grenades (siege.js coverSmoke: over a retreat) come back coarsely, a day at a time: while a group holds fewer
+  // than its kit's share a head (NONLETHAL smokegren), it gets one a day at this chance from its scavenging and trade
+  // (military kit from Army sites and its own stores, traders' guards buy them, militia and raiders come across one).
+  SMOKE_RESTOCK: { soldiers: 0.15, guards: 0.1, militia: 0.05, fighters: 0.05, raiders: 0.03 },
+  // A beaten side by the numbers (factions.js AI raids) with smoke covers its retreat: each grenade it throws (at most
+  // MAX, out of its arsenal) spares PER of its people; at least one of the losses still falls.
+  SMOKE_COVER: { PER: 1, MAX: 2 },
   BYNUM_PICK: 0.3, // conflicts.js victoryRewards: by the numbers, one piece of their dead's kit for you this often
   WALL_LAUNCHER: 6, // power a launcher adds against walls
   SEEN_DAYS: 30, // a fight or a look at their camp shows you their kit for this long
@@ -675,6 +683,7 @@ export function arsenalDaily(state, f) {
     }
   }
   A.pop0 = f.pop;
+  restockSmoke(state, f, A, salt);
   const C = ARSENAL.CRAFT, phase = Math.floor(h(state.seed, f.name, "craft") * 12);
   if (hash01(...salt, "crafty") >= weightOf(f, "craft")) { A.pop0 = f.pop; return; } // groupcare.js GROUP_PRIORITIES: some types craft less
   const o = sortedKit(A);
@@ -697,6 +706,23 @@ export function arsenalDaily(state, f) {
     f.stock.fuel -= C.bombFuel;
     addToArsenal(state, f, lootItem(bomb, "militia", [...salt, "b"]), "crafted");
   }
+}
+// The day's smoke grenade (SMOKE_RESTOCK): one, while they hold fewer than their kit's share a head. Own dice.
+function restockSmoke(state, f, A, salt) {
+  const kind = kitOf(f), p = ARSENAL.SMOKE_RESTOCK[kind] || 0;
+  const want = Math.round(Math.max(0, f.pop || 0) * ((ARSENAL.NONLETHAL[kind] || {}).smokegren || 0));
+  if (!p || A.items.filter((it) => it && it.key === "smokegren").length >= want || hash01(...salt, "smoke") >= p) return;
+  addToArsenal(state, f, lootItem("smokegren", kitSource(kind), [...salt, "sm"]), "scavenged");
+}
+// A side beaten by the numbers covers its retreat with smoke (SMOKE_COVER): the grenades thrown leave the arsenal.
+// loss: its people lost; returns how many of them the smoke spared (never all of them).
+export function smokeCover(state, f, loss) {
+  if (!f || f.outsider || loss <= 1 || !ensureArsenal(state, f)) return 0;
+  const S = ARSENAL.SMOKE_COVER;
+  const smoke = f.arsenal.items.filter((it) => it && it.key === "smokegren");
+  const n = Math.min(smoke.length, S.MAX, Math.ceil((loss - 1) / S.PER));
+  for (const it of smoke.slice(0, n)) removeFromArsenal(f, it, "thrown");
+  return Math.min(loss - 1, n * S.PER);
 }
 // A vehicle that falls to a group (your team taken whole: conflicts.js endIfEmpty; a broken group's motor pool).
 export function captureVehicle(f, v) {

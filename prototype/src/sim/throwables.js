@@ -20,7 +20,8 @@
 //     (smokeBlocks). The dead that follow light or heat walk into it (decoys.js); people's AI walks around it
 //     (combat.js reachable).
 //   smoke (smoke grenade): a cloud 2 tiles around for 3 rounds; a shot into or out of it is −30 to hit, and sounding
-//     the retreat is +20 for anyone in it or within 2 tiles of it (combat.js escapeOdds).
+//     the retreat is +20 for anyone in it or within 2 tiles of it (combat.js escapeOdds). Someone running from the
+//     fight whom it screens from a pursuer is gone at SMOKE.gone tiles from them (battlesize.js fledFarEnough).
 //   flare (road flare): burns 4 rounds; your people see anything within 5 tiles of it whatever the dark, and aim
 //     +10 at it in a night battle. Its glare and heat are a lure too (stealth.js, decoys.js).
 //   flash (flashbang): a bang and a blinding flash where it lands (FLASH). Living people of either side within 2 tiles
@@ -49,7 +50,10 @@ export const FIRE = {
   fuel: { hay: 0.45, crate: 0.25, fence: 0.25, barricade: 0.25, shelf: 0.2, cabinet: 0.2, counter: 0.2, bdoor: 0.15, doorway: 0.1 },
   ground: { field: 0.2, grass: 0.12, floor: 0.08 },
 };
-export const SMOKE = { r: 2, turns: 3, aim: 30, retreat: 20, near: 2 };
+// gone: someone running from the fight (combat.js flee, battlesize.js fledFarEnough) whom a cloud screens from a
+// pursuer (smokeScreens: the cloud on the line between them, or either of them in it) is gone at this many tiles from
+// that pursuer instead of 9 out of sight: chasing into the cloud keeps them, at −30 to shots into or out of it.
+export const SMOKE = { r: 2, turns: 3, aim: 30, retreat: 20, near: 2, gone: 5 };
 export const FLARE = { r: 5, turns: 4, aim: 10 };
 // r / near: tiles (the larger of the two offsets: within 2 is the 5 x 5 square); ap / apNear: actions lost next turn;
 // aim / daze: the aim penalty stunned / dazed; dmg within near; wake: people woken (tiles); noise: gunfire's; visor:
@@ -79,6 +83,12 @@ const cellOf = (b, x, y) => b.cells[y * b.w + x];
 
 // Smoke grenades' clouds (not a fire's thick smoke, which blocks sight instead: smokeBlocks).
 export const smokeAt = (b, x, y, extra = 0) => !!b.smoke && b.smoke.some((c) => !c.thick && dist(c.x, c.y, x, y) <= c.r + extra + 1e-6);
+// A smoke grenade's cloud between two cells (or over either of them).
+export function smokeScreens(b, x0, y0, x1, y1) {
+  if (!b.smoke || !b.smoke.some((c) => !c.thick)) return false;
+  if (smokeAt(b, x0, y0) || smokeAt(b, x1, y1)) return true;
+  return lineCells(x0, y0, x1, y1).some(([x, y]) => smokeAt(b, x, y));
+}
 export const flareLit = (b, x, y) => inAny(b.flares, x, y);
 export const fireAt = (b, x, y) => !!b.fires && b.fires.some((c) => c.x === x && c.y === y);
 // A sight line through a fire's thick smoke (a cell between the two ends) is blocked (combat.js canSeeAt).
