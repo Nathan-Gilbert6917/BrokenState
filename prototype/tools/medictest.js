@@ -604,11 +604,12 @@ const rounds = (b, units, n, fn) => {
   rounds(b, [c], 3, () => n.plan);
   check(!!n.plan && n.plan.medic === a.id && MED.exposure(b, n.x, n.y, es).threat < MED.MEDIC.RISK.REVIVE, `${c.name} drags ${n.name} from the open (threat ${t0}) to a quiet cell (${n.x},${n.y}, threat ${MED.exposure(b, n.x, n.y, es).threat}) and names ${a.name} to revive them`);
   check(b.log.some((l) => /into cover for .* to see to/.test(l.text)), `the log: “${(b.log.find((l) => /into cover for/.test(l.text)) || {}).text}”`);
-  // The others leave the named one to the medic (not bleeding out yet).
-  c.ap = 2; n.bleed = 3;
-  const before = [n.x, n.y, c.ap];
-  MED.rescueStep(b, c);
-  check(n.x === before[0] && n.y === before[1] && n.draggedBy == null && !n.stab, `${c.name} leaves ${n.name} to ${a.name}`);
+  // The others stabilize the named one while the medic is on the way, but leave them where they lie, for the medic.
+  check(n.stab, `${c.name} stabilized ${n.name} right after putting them down (actions left)`);
+  b.turn++; c.ap = 2; n.bleed = 3; n.stab = false;
+  const before = [n.x, n.y];
+  check(MED.rescueStep(b, c) && n.stab && n.x === before[0] && n.y === before[1] && n.draggedBy == null && n.plan.medic === a.id && n.rescueTurn !== b.turn, `${c.name}, next to them, stabilizes ${n.name} (no drag, no claim): still ${a.name}'s to revive`);
+  check(!MED.rescueStep(b, c) && n.draggedBy == null, `then leaves them to ${a.name}`);
   rounds(b, [c, a], 3, () => !n.down);
   check(!n.down && b.log.some((l) => /back on their feet/.test(l.text)), `${a.name} comes over and revives ${n.name} there (${n.down ? "still down" : "up"})`);
 }
@@ -636,6 +637,9 @@ const rounds = (b, units, n, fn) => {
   downFoe(b, A, ps[0]);
   rounds(b, [B], 3, () => A.plan);
   check(!!A.plan && A.plan.medic === M.id, `${B.name} drags ${A.name} to (${A.x},${A.y}) for their medic ${M.name}`);
+  B.ap = 2; b.turn++; A.stab = false;
+  const stabB = forced(b, true, () => MED.rescueStep(b, B)) && A.stab && !!A.plan;
+  check(stabB, `${B.name} (no kit) stabilizes ${A.name} by hand while ${M.name} comes`);
   rounds(b, [B, M], 3, () => !A.down);
   check(!A.down && A.shaken, `${M.name} revives ${A.name} there`);
 }

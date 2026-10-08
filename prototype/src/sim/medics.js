@@ -61,8 +61,8 @@ export const MEDIC = {
   // Drag first, then revive (the AI, both sides): a downed ally out in the open is dragged to a quiet cell (as quiet
   // as a revive needs: RISK.REVIVE) and put down there with a medic of theirs named to revive them (t.plan): the
   // dragger if they are one, else the nearest standing medic within reach of it next turn (two moves). For TURNS
-  // turns after, that medic sees to them before anyone else, and the others leave them to the medic (unless they
-  // are bleeding out that turn).
+  // turns after, that medic sees to them before anyone else; the others only stabilize them while the medic is on
+  // the way (from next to them, with meds, a kit or by hand), and do not drag them off.
   PLAN: { TURNS: 2 },
   HANDS: { BASE: 50, MED: 4, MAX: 90 },
   DRAG: 0.5,              // move × while dragging someone
@@ -659,8 +659,7 @@ function captorStep(b, u) {
 // Who among the downed of the unit's side this unit should see to.
 function downedOf(b, u) {
   return b.units.filter((t) => t.side === u.side && revivable(t) && t.draggedBy == null && !t.taken && (t.f || 0) === (u.f || 0) && !vehicleOf(b, t) // in a vehicle: pulled out first (stuckOf)
-    && !(t.rescuer != null && t.rescuer !== u.id && t.rescueTurn === b.turn && active(unitById(b, t.rescuer) || {}))
-    && !(planOf(b, t) && t.plan.medic !== u.id && (t.stab || (t.bleed || 0) > 1))); // left to the medic named to revive them
+    && !(t.rescuer != null && t.rescuer !== u.id && t.rescueTurn === b.turn && active(unitById(b, t.rescuer) || {})));
 }
 // The plan to revive this downed one (MEDIC.PLAN): { medic, turn } while it holds (the medic still standing and able
 // to revive), else null.
@@ -738,6 +737,12 @@ export function rescueStep(b, u) {
   for (const t of downedOf(b, u).sort((a, c) => mine(c) - mine(a) || dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, c.x, c.y))) {
     const ex = exposure(b, t.x, t.y, foes);
     const canRev = isMedic(u) && pool;
+    // Named for another medic to revive (PLAN): the others only stabilize them, from next to them (meds, a kit or by
+    // hand; no claim, so the medic still comes), and otherwise leave them where they were put for the medic.
+    if (planOf(b, t) && t.plan.medic !== u.id) {
+      if (!t.stab && meleeReach(b, u, t)) { stabilize(b, u, t); return true; }
+      continue;
+    }
     if (meleeReach(b, u, t)) {
       // Bleeding out this turn: stop it first. Quiet enough: a medic revives. Exposed: out of the line of fire (with a
       // medic to revive them: to a quiet cell, then the plan; else to a safe one). Else stabilize.
