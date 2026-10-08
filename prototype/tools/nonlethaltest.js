@@ -479,11 +479,21 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
   let lived = 0;
   for (let i = 0; i < 20; i++) { st4.hour += 1; lived += raidPrisoners(st4, tr, vic, 8); }
   check(tr.prisoners.length === 2 && lived >= 2, `${tr.name} (${tr.type}) takes ${lived} alive in 20 raids; its makeshift cells hold ${tr.prisoners.length}, the rest sold on, let go or killed`);
-  // A decisive win of yours by the numbers: a couple taken.
-  const n = numbersSurrenders(st2, { enemy: { kind: "guards", count: 6, factionId: B.id } }, { outcome: "victory", survivorsDead: [] });
-  const nz = numbersSurrenders(st2, { enemy: { kind: "zealots", count: 6 } }, { outcome: "victory", survivorsDead: [] });
-  const nl = numbersSurrenders(st2, { enemy: { kind: "guards", count: 6 } }, { outcome: "defeat", survivorsDead: [] });
-  check(n >= 1 && n <= SURRENDER.NUMBERS_MAX && nz === 0 && nl === 0, `a decisive win over 6 guards: ${n} give up; zealots ${nz}; a loss ${nl}`);
+  // A decisive win of yours by the numbers: now and then one or two taken. Its dice hash the group and the hour, so one
+  // win can give 0 or 1 by chance (another branch creating a different number of things moves the ids): the mean
+  // over many hours, against the expected share (count × SURRENDER.numbers × the kit's will), is what is checked.
+  const h0 = st2.hour, M = 400;
+  let sum = 0, most = 0, nz = 0, nl = 0;
+  for (let i = 0; i < M; i++) {
+    st2.hour = h0 + i;
+    const n = numbersSurrenders(st2, { enemy: { kind: "guards", count: 6, factionId: B.id } }, { outcome: "victory", survivorsDead: [] });
+    sum += n; most = Math.max(most, n);
+    nz += numbersSurrenders(st2, { enemy: { kind: "zealots", count: 6 } }, { outcome: "victory", survivorsDead: [] });
+    nl += numbersSurrenders(st2, { enemy: { kind: "guards", count: 6 } }, { outcome: "defeat", survivorsDead: [] });
+  }
+  st2.hour = h0;
+  const want = 6 * SURRENDER.numbers * SURRENDER.kit.guards;
+  check(Math.abs(sum / M - want) < 0.08 && most <= SURRENDER.NUMBERS_MAX && nz === 0 && nl === 0, `a decisive win over 6 guards: ${(sum / M).toFixed(2)} give up a win over ${M} hours (expected ${want.toFixed(2)}, at most ${most}); zealots ${nz}; a loss ${nl}`);
   const st3 = world(seed + 14);
   const h = hub(st3);
   const f3 = st3.factions.find((x) => x.alive);
