@@ -1086,6 +1086,37 @@ export function vehicleBlast(b, x, y, r, [lo, hi], kind = "blast") {
 }
 
 
+// The Humvee a raid on your base brought (vehicles.js raidHumvee; conflicts.js defendInPerson sets setup.enemy.turret):
+// parked behind the attackers on the defence map, olive with the gun on its roof, full cover (plated), theirs until the
+// fight is won (foundcars.js: no claiming it now; beaten off, it is left at the base: vehicles.js loseRaidHumvee).
+// No dice: the nearest open spot behind them. Returns the rect or null.
+export function placeRaidHumvee(b, gun = "m2hb") {
+  bindDims(b);
+  const foes = b.units.filter((u) => u.side === "enemy" && !u.dead);
+  if (!foes.length) return null;
+  const cx = Math.round(foes.reduce((a, u) => a + u.x, 0) / foes.length), cy = Math.round(foes.reduce((a, u) => a + u.y, 0) / foes.length);
+  const mine = b.units.filter((u) => u.side === "player" && !u.dead);
+  const px = mine.length ? mine.reduce((a, u) => a + u.x, 0) / mine.length : W / 2, py = mine.length ? mine.reduce((a, u) => a + u.y, 0) / mine.length : H / 2;
+  const spots = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) spots.push([x, y, Math.hypot(x - cx, y - cy) - 0.5 * Math.hypot(x - px, y - py)]);
+  spots.sort((a, c) => a[2] - c[2] || a[1] - c[1] || a[0] - c[0]);
+  for (const [x, y] of spots.slice(0, 400)) for (const ax of ["x", "y"]) {
+    const r = placeCar(b.cells, W, H, x, y, ax, TRUCK_KINDS.humvee.L, "truck", (xx, yy) => inside(xx, yy) && b.cells[idx(xx, yy)].k === "open" && !unitAt(b, xx, yy), 0, { body: TRUCK_KINDS.humvee.body });
+    if (!r) continue;
+    for (let yy = r.y0; yy < r.y0 + r.h; yy++) for (let xx = r.x0; xx < r.x0 + r.w; xx++) {
+      const c = b.cells[idx(xx, yy)];
+      c.car.mil = { kind: "humvee", cond: "intact", enemy: true };
+      c.car.up = { p: 1, s: 0, g: 1, m: 0, t: gun };
+    }
+    if (b.losCache) b.losCache.fill(0);
+    b.raidHumvee = { x: r.x0, y: r.y0, w: r.w, h: r.h };
+    say(b, `They brought their Humvee, a heavy machine gun on its roof: it stands behind them. Beat them off and it is yours.`, "danger");
+    return r;
+  }
+  return null;
+}
+
+
 // Cars parked or left off the road: n of them, each at a free spot in `ok` cells, turned as their dice say.
 export function scatterCars(rng, cells, W, H, n, ok, kind = "car", lo = 1, hi = W - 2) {
   let placed = 0;
@@ -1989,6 +2020,7 @@ export function createBattle(state, setup) {
   });
   if (setup.third && setup.third.length) placeThird(b, setup.third, rng, pickCells, W); // thirdside.js: soldiers or survivors in the middle
   if (layout) layout(b, layoutCtx("units"));
+  if (setup.enemy && setup.enemy.turret && setup.layout === "baseDefence") placeRaidHumvee(b, setup.enemy.turret); // the Humvee a raid brought (vehicles.js raidTurret)
   // Their vehicle (conflicts.js: a scavenging party that drove here, aiscav.js): parked behind their people, cover for them
   // and theirs to lose (endBattle: won, it is left for you: result.enemyVehicle).
   if (setup.enemy && setup.enemy.vehicle && !setup.layout) {

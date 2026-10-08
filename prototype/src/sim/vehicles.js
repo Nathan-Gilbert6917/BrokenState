@@ -199,12 +199,13 @@ export function repair(state, base, v) {
 //               ambush by the dead ×0.85, ramming the dead wears the front half as much, blast fragments ×0.8.
 //   plating     Armour plate, 1 or 2 levels (a garage or a workbench): the vehicle's cells are full cover and stop rounds that go
 //               through light cover (combat.js platedCell); ramming, blast (and later rocket) wear ×0.6 a level
-//               (wearMult); breakdowns ×0.8 a level; +250 kg a level, fuel ×1.15, speed ×0.95 a level.
+//               (wearMult); breakdowns ×0.8 a level; +180 kg a level, fuel ×1.15, speed ×0.95 a level.
 //   scrapPlate  Scrap plating (welded mesh and scrap-steel plates, cheap, any bench, Mechanics 3): one level that
-//               counts half (armourOf 0.5) and weighs more (+320 kg, fuel ×1.18, speed ×0.94). Full cover too, but it
+//               counts half (armourOf 0.5) and weighs more (+230 kg, fuel ×1.18, speed ×0.94). Full cover too, but it
 //               does not stop what goes through light cover.
 //   turret      A mounted machine gun (data only until a later wave makes it fire; military Humvees come with an M2).
-// Every upgrade's weight comes off the payload (payloadOf: vehicleCapacity, load.js weighTeam).
+// Every upgrade's weight comes off the payload (payloadOf: vehicleCapacity, load.js weighTeam): the full kit on a pickup
+// (glass 90 + plate 2 × 180) is 450 kg of its 650.
 // Built as garage jobs at a base (base.garage, garageHour): materials paid when queued, the work done by people on the
 // Craft role with the Mechanics level; stripping one refunds half its car parts, and glass comes out whole (a spare set
 // kept at the base, base.spareGlass, fitted again with no materials).
@@ -212,10 +213,10 @@ export function repair(state, base, v) {
 // Part kinds (plan section 10): car parts are their own supply once it exists, plain parts until then.
 export const costOf = (kind) => (SUPPLIES[kind] ? kind : "parts");
 export const VEH_UPGRADES = {
-  glass:      { name: "Bulletproof glass", slot: "windows", max: 1, cost: { carparts: 4, scrap: 12 }, hours: 16, mech: 5, kg: 120, shop: "garage" },
-  mesh:       { name: "Mesh grilles", slot: "windows", max: 1, cost: { scrap: 8 }, hours: 6, mech: 2, kg: 40 },
-  plating:    { name: "Armour plate", slot: "plating", max: 2, cost: { carparts: 6, parts: 2, scrap: 40 }, hours: 24, mech: 6, kg: 250, fuel: 1.15, speed: 0.95, armour: 1, shop: "garage" },
-  scrapPlate: { name: "Scrap plating", slot: "plating", max: 1, cost: { carparts: 2, scrap: 30 }, hours: 12, mech: 3, kg: 320, fuel: 1.18, speed: 0.94, armour: 0.5, shop: "bench" },
+  glass:      { name: "Bulletproof glass", slot: "windows", max: 1, cost: { carparts: 4, scrap: 12 }, hours: 16, mech: 5, kg: 90, shop: "garage" },
+  mesh:       { name: "Mesh grilles", slot: "windows", max: 1, cost: { scrap: 8 }, hours: 6, mech: 2, kg: 30 },
+  plating:    { name: "Armour plate", slot: "plating", max: 2, cost: { carparts: 6, parts: 2, scrap: 40 }, hours: 24, mech: 6, kg: 180, fuel: 1.15, speed: 0.95, armour: 1, shop: "garage" },
+  scrapPlate: { name: "Scrap plating", slot: "plating", max: 1, cost: { carparts: 2, scrap: 30 }, hours: 12, mech: 3, kg: 230, fuel: 1.18, speed: 0.94, armour: 0.5, shop: "bench" },
 };
 export const TURRET_KG = { lmg: 60, m2hb: 90 };
 export const TURRET_NAME = { lmg: "LMG turret", m2hb: "M2 turret" };
@@ -329,9 +330,9 @@ export function fitTechnical(state, v, factionId, salt) {
 // ---------- a military group's motor pool (factions.js) ----------
 // A "Military remnant" group starts with an Army cargo truck and a Humvee with an M2 on the roof at its home base, both
 // plated and glassed: f.vehicles (their own records, never in state.vehicles, so nothing takes them for yours). Old
-// saves get theirs the first time it is read. The Humvee's turret adds TURRET_ODDS.m2hb to their raids and the defence
-// of their home base by the numbers (combat.js byNumbersOdds, factions.js resolveRaidOnPlayer / resolveRaidOnFaction,
-// conquest.js defenders).
+// saves get theirs the first time it is read. The Humvee's turret adds TURRET_ODDS.m2hb to the defence of their home
+// base (factions.js resolveRaidOnFaction, conquest.js defenders) and to a raid that brings it (assignRaidHumvee below);
+// a raid that fails loses it, and taking their home base takes the lot (seizeGroupVehicles).
 export function factionVehicles(f) {
   if (!f) return [];
   if (!f.vehicles) f.vehicles = f.type === "military" ? militaryPool(f) : [];
@@ -348,6 +349,88 @@ export function groupTurret(f) {
   return v ? upgradesOf(v).turret.gun : null;
 }
 export const groupTurretPower = (f) => { const g = groupTurret(f); return g ? TURRET_ODDS[g] || 0 : 0; };
+
+// ---------- the Humvee on their raids: lost when the raid fails ----------
+// A raid party (parties.js spawnAiParty) takes the group's working turreted vehicle along when it is not out with
+// another raid (p.humvee: its id); its turret adds TURRET_ODDS to the raid by the numbers (raidTurretPower) and it stands
+// on the defence map when you fight the raid in person (combat.js placeRaidHumvee). A raid that fails loses it
+// (loseRaidHumvee): beaten off by you, it is left at your base, damaged, turret, plate and glass as they were, and it
+// joins the base's vehicles; beaten off by another group, that group takes it into its own f.vehicles. A military group
+// gets a new one HUMVEE.REPLACE days after its last loss (60–90, its own dice) while it is still HUMVEE.MIN_POP strong
+// (factionVehiclesDaily); until then its raids and its home have no turret.
+export const HUMVEE = { REPLACE: [60, 90], MIN_POP: 12, LEFT_COND: [25, 45], LEFT_FUEL: [3, 10] };
+export function assignRaidHumvee(state, f, p) {
+  if (!f || !p || !f.vehicles) return null;
+  const busy = new Set((state.parties || []).filter((q) => q !== p && q.humvee != null).map((q) => q.humvee));
+  const v = f.vehicles.find((x) => x.condition > 0 && upgradesOf(x).turret && !busy.has(x.id));
+  if (v) p.humvee = v.id;
+  return v || null;
+}
+// The vehicle a raid party brought (still the group's), or null.
+export function raidHumvee(state, p) {
+  if (!p || p.humvee == null || typeof p.owner !== "number") return null;
+  const f = (state.factions || []).find((x) => x.id === p.owner);
+  return (f && f.vehicles && f.vehicles.find((x) => x.id === p.humvee && x.condition > 0)) || null;
+}
+export const raidTurret = (state, p) => { const v = raidHumvee(state, p); return v && upgradesOf(v).turret ? upgradesOf(v).turret.gun : null; };
+export const raidTurretPower = (state, p) => { const g = raidTurret(state, p); return g ? TURRET_ODDS[g] || 0 : 0; };
+// The raid failed: the group loses the vehicle it brought. to: { base } (yours: it joins the base's vehicles) or
+// { faction } (theirs). Returns the vehicle record it became, or null.
+export function loseRaidHumvee(state, p, to) {
+  const v = raidHumvee(state, p);
+  if (!v) return null;
+  const f = state.factions.find((x) => x.id === p.owner);
+  f.vehicles = f.vehicles.filter((x) => x !== v);
+  f.vehLost = state.hour;
+  p.humvee = null;
+  const roll = (k) => hash01(state.seed, "humvee", f.id, v.id, state.hour, k);
+  const ups = JSON.parse(JSON.stringify(upgradesOf(v)));
+  if (to && to.base) {
+    const [c0, c1] = HUMVEE.LEFT_COND, [f0, f1] = HUMVEE.LEFT_FUEL;
+    const nv = createVehicle(state, v.type, { kind: "base", baseId: to.base.id }, { name: v.name, condition: Math.round(c0 + roll("c") * (c1 - c0)), fuel: Math.round(f0 + roll("f") * (f1 - f0)) });
+    nv.upgrades = ups;
+    nv.taken = { from: f.id, hour: state.hour };
+    return nv;
+  }
+  if (to && to.faction) {
+    const g = to.faction;
+    g.vehicles = factionVehicles(g);
+    const nv = { ...v, id: `f${g.id}-${v.type}-${state.hour}`, owner: g.id, condition: Math.max(20, Math.round(v.condition * 0.7)), upgrades: ups };
+    g.vehicles.push(nv);
+    return nv;
+  }
+  return null;
+}
+// The line for the raid report: "Their Humvee was left behind…".
+export const humveeLeftText = (f, v, base) => `${f && f.known ? f.name : "The raiders"} left their ${v.name} behind at ${base.name}: ${upgradeText(v).replace(/^./, (c) => c.toLowerCase())}, condition ${Math.round(v.condition)}%. It is in the base's motor pool now.`;
+// Daily: a military group that lost its Humvee gets another one, slowly, while it is strong enough.
+export function factionVehiclesDaily(state) {
+  for (const f of state.factions || []) {
+    if (!f.alive || f.type !== "military" || f.vehLost == null || !f.vehicles) continue;
+    if (f.vehicles.some((x) => x.condition > 0 && upgradesOf(x).turret)) continue;
+    const n = f.vehLostN || 0;
+    const wait = HUMVEE.REPLACE[0] + Math.floor(hash01(state.seed, "humveeback", f.id, n) * (HUMVEE.REPLACE[1] - HUMVEE.REPLACE[0] + 1));
+    if (state.hour - f.vehLost < wait * 24 || f.pop < HUMVEE.MIN_POP) continue;
+    f.vehicles.push(fitMilitary({ id: `f${f.id}-hummer-${n + 1}`, type: "hummer", name: "Humvee", fuel: Math.round(VEHICLE_TYPES.hummer.tank * 0.6), condition: 80, owner: f.id }, "m2hb"));
+    f.vehLostN = n + 1;
+    f.vehLost = null;
+    if (f.known && state.live && f.bases.some((b) => state.live.has(b))) log(state, `${f.name} have another Humvee with a heavy machine gun on the roof.`, "danger");
+  }
+}
+// Their vehicles when you take their base (conquest.js): the ones still running join that base's.
+export function seizeGroupVehicles(state, f, base) {
+  const out = [];
+  for (const v of factionVehicles(f)) {
+    if (v.condition <= 0) continue;
+    const nv = createVehicle(state, v.type, { kind: "base", baseId: base.id }, { name: v.name, condition: Math.round(v.condition), fuel: Math.round(v.fuel || 0) });
+    nv.upgrades = JSON.parse(JSON.stringify(upgradesOf(v)));
+    nv.taken = { from: f.id, hour: state.hour };
+    out.push(nv);
+  }
+  f.vehicles = [];
+  if (out.length) f.vehLost = state.hour;
+  return out;
+}
 
 // ---------- by the numbers (combat.js byNumbersOdds) ----------
 // { theirsAmbush: × the enemy's 1.4 when they strike first, theirsAdd: their turret } for a fight's setup.

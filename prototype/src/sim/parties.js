@@ -26,7 +26,7 @@ import { startScavenge } from "./scavenge.js";
 import { offerCrawl } from "./citycrawl.js"; // a team moved onto a city asks whether to go in
 import {
   vehicleById, partyVehicle, partyFuel, useFuel, wear, abandonVehicle, tank, createVehicle, travelMode, tileFuel, isBike, isCar,
-  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud,
+  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee,
 } from "./vehicles.js";
 import { convoysHour, truckEngineNoise } from "./miltrucks.js";
 import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome } from "./foundcars.js"; // vehicles found on a map: repair, drive home // Army trucks: the convoy event, a running Army truck's engine
@@ -711,6 +711,7 @@ export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
     phase: "out", warned: false,
   };
   state.parties.push(p);
+  if (kind === "raid" && f.vehicles) assignRaidHumvee(state, f, p); // vehicles.js: a group's turreted Humvee comes along (lost if the raid fails)
   return p;
 }
 

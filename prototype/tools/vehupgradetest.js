@@ -21,7 +21,14 @@ import {
   VEH_UPGRADES, costOf, upgradeCost, upgradesOf, upgradeKg, payloadOf, vehicleCapacity, typeFuel, typeSpeed, breakdownChance, wearMult, riderMult,
   ambushMult, queueUpgrade, cancelGarageJob, garageHour, garageQueue, upgradeProblem, upgradeOptions, finishUpgrade, stripRefund, createVehicle,
   vehicleValue, factionVehicles, groupTurret, groupTurretPower, isTechnical, fitTechnical, fitMilitary, TURRET_ODDS, upgradeText, armourOf,
+  raidHumvee, raidTurretPower, factionVehiclesDaily, HUMVEE,
 } from "../src/sim/vehicles.js";
+import { spawnAiParty } from "../src/sim/parties.js";
+import { resolveRaidOnPlayer, resolveRaidOnFaction } from "../src/sim/factions.js";
+import { defendInPerson } from "../src/sim/conflicts.js";
+import { finishCombat } from "../src/sim/combat.js";
+import { carOptions } from "../src/sim/foundcars.js";
+import { captureBase } from "../src/sim/conquest.js";
 import { teamLoad } from "../src/sim/load.js";
 import { createBattle, registerCombatHandler, byNumbersOdds, riderHitMult, vehicleBlast, coverAgainst, platedCell, driveTo, CELL, BLAST_WEAR } from "../src/sim/combat.js";
 import { FRAG } from "../src/sim/throwables.js";
@@ -62,7 +69,7 @@ section("Costs, skill gates, the shop, the garage job");
   const g2 = upgradeCost("glass"), pl2 = upgradeCost("plating");
   check(g2.carparts === 4 && !g2.parts && pl2.carparts === 6 && pl2.parts === 2, `after the split: glass ${JSON.stringify(g2)}, plating ${JSON.stringify(pl2)}`);
   delete SUPPLIES.carparts;
-  check(VEH_UPGRADES.glass.hours === 16 && VEH_UPGRADES.glass.mech === 5 && VEH_UPGRADES.glass.kg === 120 && VEH_UPGRADES.plating.hours === 24 && VEH_UPGRADES.plating.mech === 6 && VEH_UPGRADES.plating.kg === 250, "section 11's hours, Mechanics and weights");
+  check(VEH_UPGRADES.glass.hours === 16 && VEH_UPGRADES.glass.mech === 5 && VEH_UPGRADES.glass.kg === 90 && VEH_UPGRADES.plating.hours === 24 && VEH_UPGRADES.plating.mech === 6 && VEH_UPGRADES.plating.kg === 180 && VEH_UPGRADES.mesh.kg === 30 && VEH_UPGRADES.scrapPlate.kg === 230, "section 11's hours and Mechanics; weights glass 90, plate 180 a level, grilles 30, scrap plating 230");
   check(VEH_UPGRADES.scrapPlate.mech === 3 && VEH_UPGRADES.scrapPlate.max === 1 && VEH_UPGRADES.scrapPlate.kg / VEH_UPGRADES.scrapPlate.armour > VEH_UPGRADES.plating.kg / VEH_UPGRADES.plating.armour, "scrap plating: one level, Mechanics 3, heavier per protection");
 
   const st = createWorld({ seed: SEED, factionCount: 3 });
@@ -123,20 +130,22 @@ section("Weight, fuel, speed, breakdowns, wear");
   const people = atBase(st, h.id).slice(0, 3);
   const t0 = teamLoad(people, 100, v);
   v.upgrades = { glass: 1, plating: 1 };
-  check(upgradeKg(v) === 370 && payloadOf(v) === 650 - 370 && vehicleCapacity(v) === 280, `glass + plate: +${upgradeKg(v)} kg, payload ${payloadOf(v)} (vehicleCapacity ${vehicleCapacity(v)})`);
+  check(upgradeKg(v) === 270 && payloadOf(v) === 650 - 270 && vehicleCapacity(v) === 380, `glass + plate: +${upgradeKg(v)} kg, payload ${payloadOf(v)} (vehicleCapacity ${vehicleCapacity(v)})`);
   const t1 = teamLoad(people, 100, v);
-  check(t1.payload === 280 && t1.fill > t0.fill && t1.capacity < t0.capacity, `load.js teamLoad: payload ${t0.payload} → ${t1.payload}, fill ${t0.fill} → ${t1.fill}, capacity ${Math.round(t0.capacity)} → ${Math.round(t1.capacity)}`);
+  check(t1.payload === 380 && t1.fill > t0.fill && t1.capacity < t0.capacity, `load.js teamLoad: payload ${t0.payload} → ${t1.payload}, fill ${t0.fill} → ${t1.fill}, capacity ${Math.round(t0.capacity)} → ${Math.round(t1.capacity)}`);
   check(near(typeFuel(v), base.fuel * 1.15) && near(typeSpeed(v), base.speed * 0.95), `plating 1: fuel ×${typeFuel(v).toFixed(3)}, speed ×${typeSpeed(v).toFixed(3)}`);
   check(t1.fuelMult >= Math.round(t0.fuelMult * 1.15 * 100) / 100 - 0.01, `the trip's fuel multiplier carries it (${t0.fuelMult} → ${t1.fuelMult})`);
   check(near(breakdownChance(v, 0.5), base.brk * 0.8) && near(wearMult(v), 0.6), "breakdowns ×0.8, wear ×0.6 at level 1");
+  v.upgrades = { glass: 1, plating: 2 };
+  check(upgradeKg(v) === 450 && payloadOf(v) === 200, `the full kit on a pickup (glass + plate ×2) weighs ${upgradeKg(v)} kg (payload ${payloadOf(v)})`);
   v.upgrades = { plating: 2 };
   check(near(typeFuel(v), 1.15 ** 2) && near(typeSpeed(v), 0.95 ** 2) && near(breakdownChance(v, 0.5), base.brk * 0.64) && near(wearMult(v), 0.36), "level 2: fuel ×1.32, speed ×0.90, breakdowns ×0.64, wear ×0.36");
   v.upgrades = { scrapPlate: 1 };
-  check(near(armourOf(v), 0.5) && payloadOf(v) === 330 && near(typeFuel(v), 1.18) && breakdownChance(v, 0.5) < base.brk, "scrap plating: half a level of armour, +320 kg, fuel ×1.18");
+  check(near(armourOf(v), 0.5) && payloadOf(v) === 420 && near(typeFuel(v), 1.18) && breakdownChance(v, 0.5) < base.brk, "scrap plating: half a level of armour, +230 kg, fuel ×1.18");
   const mt = createVehicle(st, "miltruck", { kind: "base", baseId: h.id }, {});
   const f0 = typeFuel(mt), s0 = typeSpeed(mt);
   fitMilitary(mt);
-  check(near(typeFuel(mt), f0 * 1.15) && near(typeSpeed(mt), s0 * 0.95) && payloadOf(mt) === 2500 - 370, "the Army truck's own ×2 fuel and ×0.67 speed stack with its plate");
+  check(near(typeFuel(mt), f0 * 1.15) && near(typeSpeed(mt), s0 * 0.95) && payloadOf(mt) === 2500 - 270, "the Army truck's own ×2 fuel and ×0.67 speed stack with its plate");
   const old = createVehicle(st, "sedan", { kind: "base", baseId: h.id }, {});
   check(old.upgrades === undefined && upgradeKg(old) === 0 && payloadOf(old) === 400 && armourOf(old) === 0 && typeFuel(old) === 1 && wearMult(old) === 1, "a vehicle with no upgrades record (old saves) is unchanged");
 }
@@ -318,6 +327,83 @@ section("A military group's motor pool (factions.js f.vehicles)");
     check(groupTurret(f2) === "m2hb" && f2.vehicles.length === 2, "an old save's military group gets its motor pool");
     hv.condition = 0; f.vehicles = [mt, hv];
     check(groupTurret(f) === null, "a wrecked Humvee adds nothing");
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+section("The Humvee on raids: lost when a raid fails, replaced slowly, seized with their base");
+{
+  const milWorld = (salt) => { for (let i = 0; i < 40; i++) { const st = createWorld({ seed: SEED + salt + i * 17, factionCount: 3 }); const f = st.factions.find((x) => x.type === "military"); if (f) return { st, f }; } return {}; };
+  const raidOn = (st, f, strength = 1) => { const h = hub(st); return spawnAiParty(st, f, "raid", f.bases[0], h.tile, { strength, target: { kind: "player", baseId: h.id, tile: h.tile } }); };
+  // By the numbers: beaten off at the walls.
+  {
+    const { st, f } = milWorld(1);
+    const h = hub(st);
+    const p = raidOn(st, f);
+    check(p && raidHumvee(st, p) && raidTurretPower(st, p) === 6, "a military group's raid brings its Humvee (+6 by the numbers)");
+    const p2 = raidOn(st, f);
+    check(p2 && !raidHumvee(st, p2), "one Humvee, one raid at a time");
+    const n0 = st.vehicles.length;
+    const res = resolveRaidOnPlayer(st, p);
+    const hv = st.vehicles.find((v) => v.type === "hummer" && v.loc.kind === "base" && v.loc.baseId === h.id);
+    check(res.outcome === "held" && hv && st.vehicles.length === n0 + 1, `held at the walls: their Humvee is left at ${h.name} ("${(res.text.match(/left their[^.]*\./) || [""])[0]}")`);
+    check(hv && upgradesOf(hv).turret && upgradesOf(hv).turret.gun === "m2hb" && upgradesOf(hv).plating === 1 && upgradesOf(hv).glass === 1 && hv.condition >= HUMVEE.LEFT_COND[0] && hv.condition <= HUMVEE.LEFT_COND[1], `it keeps its M2, plate and glass, damaged (condition ${hv && hv.condition}%)`);
+    check(!f.vehicles.some((v) => v.type === "hummer") && groupTurret(f) === null && groupTurretPower(f) === 0 && f.vehicles.some((v) => v.type === "miltruck"), "the group lost it (no turret bonus now); it keeps its cargo truck");
+    check(!raidHumvee(st, raidOn(st, f)), "their next raid comes without one");
+    // Replacement: 60–90 days, while they are still strong.
+    f.pop = HUMVEE.MIN_POP + 5;
+    st.hour += 59 * 24; factionVehiclesDaily(st);
+    check(groupTurret(f) === null, "no new Humvee within 59 days");
+    f.pop = HUMVEE.MIN_POP - 1;
+    st.hour += 40 * 24; factionVehiclesDaily(st);
+    check(groupTurret(f) === null, "nor when the group is weak");
+    f.pop = HUMVEE.MIN_POP + 5;
+    factionVehiclesDaily(st);
+    check(groupTurret(f) === "m2hb", "after 60–90 days a strong group has a new one");
+    st.cards = [];
+    const st2 = deserializeState(serializeState(st));
+    check(st2.vehicles.some((v) => v.type === "hummer" && upgradesOf(v).turret) && groupTurret(st2.factions.find((x) => x.id === f.id)) === "m2hb", "save / load: the taken Humvee and their new one");
+  }
+  // Against another group.
+  {
+    const { st, f } = milWorld(2);
+    const g = st.factions.find((x) => x.alive && x !== f && x.bases.length);
+    const p = spawnAiParty(st, f, "raid", f.bases[0], g.bases[0], { strength: 1, target: { kind: "faction", factionId: g.id, tile: g.bases[0] } });
+    check(p && raidHumvee(st, p), "a raid on another group brings it too");
+    resolveRaidOnFaction(st, p, []);
+    check(!f.vehicles.some((v) => v.type === "hummer") && (g.vehicles || []).some((v) => v.type === "hummer" && upgradesOf(v).turret) && groupTurret(g) === "m2hb", `held off by ${g.type}: they take it (their turret now)`);
+    const q = spawnAiParty(st, g, "raid", g.bases[0], f.bases[0], { strength: 1, target: { kind: "faction", factionId: f.id, tile: f.bases[0] } });
+    check(q && raidHumvee(st, q), "and bring it on their own raids");
+  }
+  // In person: the defence map shows it; won, it is yours.
+  {
+    const { st, f } = milWorld(3);
+    const h = hub(st);
+    const p = raidOn(st, f, 20);
+    inBrowser(() => defendInPerson(st, p));
+    const b = st.combat;
+    const cells = b ? b.cells.filter((c) => c.car && c.car.mil && c.car.mil.enemy) : [];
+    check(b && b.setup.enemy.turret === "m2hb" && b.raidHumvee && cells.length === 6 && cells.every((c) => c.car.body === "humvee" && c.car.up && c.car.up.t === "m2hb"), "fought in person: their Humvee stands on the defence map, the M2 on its roof");
+    if (b && cells.length) {
+      const id = cells[0].car.id;
+      const rec = carRecord(st, b, id);
+      rec.open = true; rec.inspected = true;
+      const u = b.units.find((x) => x.side === "player");
+      check(!carOptions(st, b, u, rec).claim.ok, "it cannot be claimed during the fight");
+    }
+    const cards0 = st.cards.length;
+    finishCombat(st, b.setup, { outcome: "victory", enemiesKilled: 4, enemiesLeft: 0, survivorsHurt: [], survivorsDead: [], turns: 6, loot: { supplies: {}, gear: [] } });
+    const hv = st.vehicles.find((v) => v.type === "hummer" && v.loc.kind === "base" && v.loc.baseId === h.id);
+    const card = st.cards.slice(cards0).find((c) => /Raid defense/.test(c.title));
+    check(hv && upgradesOf(hv).turret && !f.vehicles.some((v) => v.type === "hummer") && card && /left their Humvee/.test(card.text), `beaten off in person: the Humvee is the base's, with a card ("${card ? (card.text.match(/left their[^.]*\./) || [""])[0] : ""}")`);
+  }
+  // Their base taken: the motor pool is yours.
+  {
+    const { st, f } = milWorld(4);
+    const n0 = st.vehicles.length;
+    const text = captureBase(st, f, f.bases[0], null, { people: 4 });
+    const got = st.vehicles.slice(n0);
+    check(got.length === 2 && got.some((v) => v.type === "hummer" && upgradesOf(v).turret) && got.some((v) => v.type === "miltruck" && upgradesOf(v).plating === 1) && got.every((v) => v.loc.kind === "base") && !(f.vehicles || []).length && /motor pool is yours/.test(text), "taking their home base: the Army truck and the Humvee are yours");
   }
 }
 

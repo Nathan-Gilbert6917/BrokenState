@@ -156,9 +156,10 @@ export function carOptions(state, b, u, rec) {
   o.siphon = { ok: inside && rec.inspected && rec.cond.fuel > 0, ap: 1, why: needIn || (!rec.inspected ? "Inspect it first (is there any fuel?)." : rec.cond.fuel > 0 ? "" : "The tank is dry.") };
   const r = repairOf(rec);
   const owner = b.setup.partyId != null || b.setup.baseId != null;
+  const theirs = !!(rec.mil && rec.mil.enemy); // a raid's Humvee on your defence map (combat.js placeRaidHumvee): yours only once they are beaten off
   o.claim = {
-    ok: inside && rec.inspected && !!r && canStart(rec) && !rec.claimed && owner && !!MODELS[rec.model].vehicle, ap: 1,
-    why: needIn || (!rec.inspected ? "Inspect it first." : rec.claimed ? "Already yours." : !r ? "It is scrap." : !canStart(rec) ? "No way to start it: find the keys or hotwire it." : !owner ? "Nobody to take it." : ""),
+    ok: inside && rec.inspected && !!r && canStart(rec) && !rec.claimed && owner && !!MODELS[rec.model].vehicle && !theirs, ap: 1,
+    why: needIn || (theirs ? "Theirs until the raid is beaten off (then it is left at the base)." : "") || (!rec.inspected ? "Inspect it first." : rec.claimed ? "Already yours." : !r ? "It is scrap." : !canStart(rec) ? "No way to start it: find the keys or hotwire it." : !owner ? "Nobody to take it." : ""),
     fix: r && r.what.length ? r : null,
   };
   return o;

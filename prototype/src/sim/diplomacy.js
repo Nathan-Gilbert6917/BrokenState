@@ -57,6 +57,7 @@ import { allianceDaily, isMember } from "./alliance.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
 import { hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { raidTurretPower } from "./vehicles.js"; // the Humvee a raid brought (its M2)
 
 export const DIPLO = {
   DRIFT: 0.02, PACT_REL: 28, PACT_BREAK: 10, PACT_CHANCE: 0.05, WAR_REL: -42, WAR_BASE: 0.01, WAR_RANGE: 18,
@@ -353,7 +354,7 @@ export function warRaid(state, w, f, o) {
 export function resolveWarRaid(state, party, attacker, target, helpPower) {
   const d = ensureDiplo(state), rng = diploRng(state);
   const w = warById(state, party.warId);
-  const att = party.strength;
+  const att = party.strength + raidTurretPower(state, party); // vehicles.js: the Humvee they brought
   const def = 4 + strength(target) * 0.5 + helpPower;
   const won = rng.chance(att / (att + def));
   const report = state.live.has(party.target.tile) || (attacker && attacker.known && target.known);
