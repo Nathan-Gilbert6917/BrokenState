@@ -78,6 +78,7 @@ import { ammoPen } from "./data-ammo.js"; // a round's penetration: what bulletp
 import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
 import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
+import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -288,7 +289,7 @@ export function startCombat(state, setup) {
     dropSetup(state, setup);
     return state.combat || null;
   }
-  if (state.autoCombat || typeof window === "undefined") {
+  if (state.autoCombat || typeof window === "undefined" || setup.quick) { // setup.quick: a fight chosen "by the numbers" (conflicts.js rescue card)
     const result = autoResolveCombat(state, setup);
     finishCombat(state, setup, result);
     return null;
@@ -687,7 +688,9 @@ const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 // away: on another storey than the active one (a multi-storey building, b.floors: setFloor keeps the flag): off this
 // floor's map, so it is neither seen, shot, bumped into nor moved by this floor's turn. Every unit has u.f (its floor,
 // 0 by default); u.away is exactly (u.f !== b.floor), kept by setFloor and the floor changes (goup / godown).
-export const active = (u) => !u.dead && !u.down && !u.left && !u.fled && !u.off && !u.away;
+// bound: a captive still tied up or locked in on a rescue raid's map (rescueraid.js): on the map, but nobody's target and
+// not one of your fighters until someone frees them (they can still work at the ropes or the lock: combatAct "rescue").
+export const active = (u) => !u.dead && !u.down && !u.left && !u.fled && !u.off && !u.away && !u.bound;
 const onMap = (u) => !u.dead && !u.left && !u.fled && !u.off && !u.away;
 // Standing somewhere in the building, whatever its floor (the turn flow, the end of a raid; the renderer's unit strip).
 export const activeAny = (u) => !u.dead && !u.down && !u.left && !u.fled && !u.off;
@@ -1786,7 +1789,7 @@ export function enemyGhosts(b) {
 // medic is not skilled enough to use it).
 const battleKitBonus = (s) => medKitBonus(s);
 
-function playerUnit(b, s) {
+export function playerUnit(b, s) {
   const item = s.gear.weapon;
   const eff = gearEffect(s, item);
   const key = item && eff.usable && WEAPONS[item.key] ? item.key : "fists";
@@ -2067,7 +2070,7 @@ export function hitMult(t, by, hit) {
 }
 export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
-  const eff = raw * hitMult(t, by, hit);
+  const eff = raw * hitMult(t, by, hit) * (b.rescue ? captiveHitMult(b, t, by) : 1); // rescueraid.js: guards shoot to wound captives
   t.hp = Math.max(0, t.hp - eff);
   if (t.hp > 0) {
     if (t.ztype === "boneback" || t.ztype === "flinger") afterHit(b, t, by, hit, eff); // middead.js
@@ -2081,6 +2084,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     (b.downedIds || (b.downedIds = [])).push(t.sid); // service record (relations.js)
     t.bleed = BLEED_TURNS;
     t.ow = t.hunker = false;
+    if (b.rescue && t.captive && by && by.side === "enemy" && captiveHitMult(b, t, by) < 1) { t.stab = true; say(b, `${t.name} is beaten down: they want ${t.name.split(" ")[0]} alive.`, "death"); return eff; } // rescueraid.js: to be taken back
     say(b, `${t.name} is down and bleeding. Use meds on them within ${BLEED_TURNS} turns${b.raid ? "; once stabilized they are carried out when a teammate extracts" : ""}.`, "death");
   } else {
     t.dead = true;
@@ -2309,7 +2313,10 @@ export function combatAct(state, act) {
   if (u && u.side === "player" && b.floors && (u.f || 0) !== (b.floor || 0) && activeAny(u)) setFloor(b, u.f || 0);
   // Aboard the team's vehicle (boardVehicle): off the map, but they can drive it, turn it, get out, or extract with it.
   const aboardAct = u && u.aboard && !u.dead && ["drive", "turn", "disembark", "extract"].includes(act.type);
-  if (!u || u.side !== "player" || !(active(u) || aboardAct) || u.ap < 1) return "That unit cannot act.";
+  // A captive still tied up or locked in (rescueraid.js): only the rescue actions (work the ropes, pick the lock...).
+  const boundAct = u && u.bound && !u.dead && !u.down && act.type === "rescue";
+  if (u && u.bound && !boundAct && u.side === "player") return rescueRefusal(b, u);
+  if (!u || u.side !== "player" || !(active(u) || aboardAct || boundAct) || u.ap < 1) return "That unit cannot act.";
   const t = act.target != null ? unitById(b, act.target) : null;
   switch (act.type) {
     case "move": {
@@ -2512,6 +2519,11 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    case "rescue": { // rescueraid.js: free a captive, the ropes, the cell door, the keys, a weapon off a body, the armory
+      const err = rescueAct(state, b, u, act);
+      if (err) return err;
+      break;
+    }
     case "crush": { // carriers.js: crush the skull of a body next to the unit, so the worm cannot raise it (1 action, silent)
       const err = crush(b, u, t);
       if (err) return err;
@@ -2610,7 +2622,7 @@ export function enemyStep(state) {
     // Storeys (buildingmaps.js): the AI runs on the unit's own floor, and the player's view floor comes back after.
     const view = b.floors ? b.floor || 0 : null;
     if (b.floors && (u.f || 0) !== view) setFloor(b, u.f || 0);
-    aiUnit(b, u);
+    if (!(b.rescue && u.side === "enemy" && guardTurn(state, b, u))) aiUnit(b, u); // rescueraid.js: the alarm, the armory, recapturing captives
     if (b.floors && (b.floor || 0) !== view) setFloor(b, view);
   }
   checkEnd(state, b);
@@ -2626,6 +2638,7 @@ export function runEnemyPhase(state) {
 function startPlayerTurn(state, b) {
   b.turn++;
   b.phase = "player";
+  if (b.rescue) rescueRound(state, b); // rescueraid.js: the downed and the cornered captives taken back, the alarm
   if (b.floors && b.viewFloor != null && b.viewFloor !== (b.floor || 0)) setFloor(b, b.viewFloor); // the floor the player was looking at
   burnRound(b); // throwables.js: the flames burn whoever stands in them; fires, smoke and flares burn down
   acidRound(b, ["player"], true); // acid.js: your people standing in a spitter's acid; the pools dry up a round
@@ -3219,7 +3232,7 @@ const carryable = (b, t) => t.side === "player" && t.down && !t.dead && !t.left 
 export function retreatPlan(b, leave = []) {
   bindDims(b);
   const field = distField(b, evacCells(b));
-  const standing = b.units.filter((u) => u.side === "player" && active(u));
+  const standing = b.units.filter((u) => u.side === "player" && active(u) && !u.captive); // a captive on a rescue raid gets out on foot (rescueraid.js)
   const carrier = new Map(); // downed unit id → carrier
   const busy = new Set();
   for (const t of b.units.filter((x) => carryable(b, x) && !leave.includes(x.id))) {
@@ -3375,15 +3388,17 @@ export function autoPlayerTurn(state, opts = {}) {
     b.raid.choose = null;
   }
   if (b.raid) return autoRaidTurn(state);
-  if (clearEnough(b)) return void callClear(state, b); // battlesize.js: a couple of far-off stragglers left
+  if (b.rescue && !rescueDone(b) && clearEnough(b)) { /* the captives first (rescueraid.js) */ } else if (clearEnough(b)) return void callClear(state, b); // battlesize.js: a couple of far-off stragglers left
   // A fight that is clearly lost: everyone runs for it (soundRetreat), carrying the downed next to them. On a base's
   // wall map: everyone falls back to the yard and the buildings instead (interior.js).
-  const giveUp = opts.retreat === false || state.autoRetreat === false ? null : retreatAdvice(b, aiStyle(state, b, opts)); // state.autoRetreat: a test switch
+  const teamLeft = !b.rescue || b.units.some((u) => u.side === "player" && active(u) && !u.captive); // rescueraid.js: freed captives on their own make for the strip themselves
+  const giveUp = opts.retreat === false || state.autoRetreat === false || !teamLeft ? null : retreatAdvice(b, aiStyle(state, b, opts)); // state.autoRetreat: a test switch
   if (giveUp && giveUp.fallBack) return void fallBack(state, { by: "ai", why: giveUp.why });
   if (giveUp) {
     botRetreatSmoke(state, b, inEvac); // stealth.js: a smoke grenade over the team first, if anyone has one
     return void soundRetreat(state, { by: "ai", why: giveUp.why });
   }
+  if (b.rescue) rescueBot(state, b); // rescueraid.js: to the cell, the door, the ropes, the keys; captives escape; then the way out
   for (const u of b.units.filter((x) => x.side === "player")) {
     if (b.over) return;
     if (active(u) && u.ap > 0) botSiege(state, b, u); // siege.js: push a ladder, rocks on the ram, lead the ram, set a ladder
@@ -3444,6 +3459,7 @@ function endBattle(state, b, outcome) {
     if (u.side !== "player") continue;
     const s = survivorById(state, u.sid);
     if (!s || !s.alive) continue;
+    if (u.captive && captiveStays(state, b, u, s, outcome)) continue; // rescueraid.js: still held: hurt, not lost
     let dies = u.dead;
     const carried = outcome === "retreat" && !u.dead && u.down && (u.carried || evacAt(b, u.x, u.y));
     if (carried) {
