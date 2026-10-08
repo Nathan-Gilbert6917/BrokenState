@@ -30,7 +30,7 @@ import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, relayReach, RELAY_RANGE, GROUP_REACH } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
-import { defaultRolePlan } from "./defenceplan.js"; // the governor's defence plan (governorPlans)
+import { defaultRolePlan, plansOf } from "./defenceplan.js"; // the governor's defence plan (governorPlans, stewardSafety)
 import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
 import { mouthsAt, foodUse, HEAT } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { waterIn, teamWaterIn, RAW, keyWord } from "./water.js"; // purified and un-purified water: the governor counts both
@@ -288,6 +288,36 @@ export function stewardRun(state, base, areas, style = "balanced") {
     stewardCtx = null;
     g.busy = false;
   }
+}
+// A base leader's safety (steward.js, Defence): the governor's night watch roster for this base (a roster of your own is
+// left as it is), and each morning its defence plan by role, laid again when the buildings change (only where the
+// base has no plan of yours: a plan you saved is the one that stands). Returns the plan's line, or "".
+export function stewardSafety(state, base, style = "balanced") {
+  if (state.autopilot || state.gameOver) return "";
+  return withStyle(style, () => {
+    govWatch(state, base);
+    if (hourOfDay(state) !== PLAN_HOUR || state.combat || atBase(state, base.id).length < 2) return "";
+    if (plansOf(base).some((p) => p.by !== "governor")) return "";
+    const g = gov(state);
+    g.planSig = g.planSig || {};
+    const sig = base.buildings.map((x) => x.type).sort().join(",");
+    if (g.planSig[base.id] === sig) return "";
+    g.planSig[base.id] = sig;
+    return defaultRolePlan(state, base);
+  });
+}
+// A base leader's supplies (steward.js, Supplies): at the morning plan and the afternoon look (the autopilot's hours),
+// an emergency haul from this base when its water would run out within a day or its food within two (emergencyAt:
+// the governor's haul, the team leaves from and comes home to this base). Nothing else goes out: no scavenging trips,
+// trades, outposts or fights. keep: who stays home whatever happens (the leader). Returns the line, or "".
+export function stewardSupplies(state, base, style = "balanced", keep = new Set()) {
+  if (state.autopilot || state.gameOver) return "";
+  const h = hourOfDay(state);
+  if (h !== PLAN_HOUR && h !== EMERGENCY.hour) return "";
+  const g = gov(state);
+  if (g.busy) return "";
+  g.busy = true;
+  try { return withStyle(style, () => emergencyAt(state, base, keep)); } finally { g.busy = false; }
 }
 
 // Daily planning (07:00): role summary, supply runs and the day's trip.
@@ -1234,8 +1264,7 @@ function tradeSpare(state) {
   return { food: short ? 0 : Math.max(0, Math.floor(edibleFood(h) - foodTarget(state, h) * 1.5 * heads)), ammo: Math.max(0, Math.floor((h.stock.ammo || 0) - Math.max(campaignAmmoTarget(state), n * 15))) };
 }
 // Hub needs per supply, 0 (plenty) .. 3 (urgent). Drives trips, trades and some buildings.
-function needs(state) {
-  const h = hub(state);
+function needs(state, h = hub(state)) { // h: a base leader's own base (stewardSupplies); the hub otherwise
   const st = h.stock;
   const n = Math.max(1, atBase(state, h.id).length);
   const vehicle = state.vehicles.some((v) => isCar(v) && (v.loc.kind === "base" || v.loc.kind === "party"));
@@ -3295,7 +3324,7 @@ function outpostSite(state) {
 // Pick the crew, a vehicle if it pays, pack supplies and send the team. Returns the party or null.
 function launchTrip(state, c, pool, spareHands) {
   const P = persona(state);
-  const h = hub(state);
+  const h = c.from || hub(state); // c.from: a base leader's own base (stewardSupplies); the team leaves from and comes home to it
   const g = gov(state);
   const size = Math.min(c.crew, spareHands);
   if (size < (c.mission === "rescue" || c.mission === "growth" ? 3 : c.mission === "outpost" ? 2 : c.mission === "hive" ? HIVE_SQUAD : c.mission === "assault" ? c.squadMin || ASSAULT_MIN : c.squadMin || 1)) return null;
@@ -3321,7 +3350,7 @@ function launchTrip(state, c, pool, spareHands) {
   const n = ids.length;
   if (cand && (dist >= 3 || (c.wood && dist >= 1)) && c.mission !== "outpost" && c.mission !== "rescue" && c.mission !== "sweep") { // a survey goes on foot or bikes (a car sees little off the road)
     if (cand.condition < 50 && (h.stock.parts || 0) >= 2 && canRepair(state, h).ok) repair(state, h, cand);
-    const vEst = cand.condition >= 30 && estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: true, v: cand, stance: P.stance, supplies: roughSupplies(n, 2) });
+    const vEst = cand.condition >= 30 && estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: true, v: cand, stance: P.stance, homeBaseId: h.id, supplies: roughSupplies(n, 2) });
     if (vEst && vEst.fuel <= cand.fuel + Math.max(0, (h.stock.fuel || 0) - 4 - tripFuelHold(state, h, c))) v = cand; // needs-gauges: not the heating fuel, nor the campaign's fires
   }
   if (v) refuelKeeping(state, h, v, tripFuelHold(state, h, c)); // needs-gauges: the winter's heating fuel stays home (and the campaign's fires')
@@ -3334,7 +3363,7 @@ function launchTrip(state, c, pool, spareHands) {
   let onSite = c.onSite != null ? c.onSite : c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "recon" ? P.searchHours + 8 : 4;
   let steps = c.steps;
   // The estimate with what the team would pack (its load sets its pace and rations, load.js).
-  const tripOpts = (supplies) => ({ memberIds: ids, dest: c.tile, vehicle: travelMode(v), v: plannedV, stance: P.stance, fuel: isCar(v) ? v.fuel + (h.stock.fuel || 0) : 0, supplies });
+  const tripOpts = (supplies) => ({ memberIds: ids, dest: c.tile, vehicle: travelMode(v), v: plannedV, stance: P.stance, homeBaseId: h.id, fuel: isCar(v) ? v.fuel + (h.stock.fuel || 0) : 0, supplies });
   let est = estimateTrip(state, tripOpts(roughSupplies(n, 2)));
   // No trip to a place with no way home over land (parties.js estimateTrip noWayBack): the team would wait there for
   // a boat order the governor never gives, and starve; the dead's gear there would draw the next team into the same trap.
@@ -3440,7 +3469,7 @@ function launchTrip(state, c, pool, spareHands) {
   // A tube of purification tablets (worm.js packTablets) for a water haul or a trip of more than TABS_TRIP_DAYS: river
   // water fetched or un-purified water packed is drunk safe on the way without stopping to boil it.
   const tabs = armoryTabs(h).length > 0 && ((c.steps || []).some((x) => x.kind === "water") || days > TABS_TRIP_DAYS);
-  const res = launchExpedition(state, { memberIds: ids, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup, sweep: c.sweep, tabs,
+  const res = launchExpedition(state, { memberIds: ids, fromBaseId: h.id, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup, sweep: c.sweep, tabs,
     plan: steps ? { preset: c.preset || "custom", steps: steps.map((x) => ({ ...x })), conditions: {} } : undefined }); // hunting and fishing trips: their steps (plans.js)
   if (res.error) return off();
   if (kit.length) say(state, `Kit for the trip: ${kit.join(", ")}.`);
@@ -3578,25 +3607,31 @@ const EMERGENCY = { waterDays: 1, foodDays: 2, teams: 2, hour: PLAN_HOUR + 8, mi
 function emergencyTrips(state) {
   const h = hub(state);
   if (!h || !state.autopilot) return;
+  const line = emergencyAt(state, h);
+  if (line) say(state, line, "danger");
+}
+// One base's emergency haul: the hub's for the autopilot, a led base's for its leader (stewardSupplies; keep: people
+// who stay home whatever happens, the leader). Returns the line saying what went out, or "".
+function emergencyAt(state, h, keep = new Set()) {
   const P = persona(state);
-  if (wxNow(state).severe) return;
+  if (wxNow(state).severe) return "";
   // A horde at the door the walls hold (one beaten off lingers a tile or two out for days) does not keep a thirsty or
   // starving hub's haul at home (seed 5054, large: 31 died of thirst with the shore 1 tile away); a raid on the way or
   // a horde that would break in still does.
-  if (threatAt(state, h).urgent && !urgentHolds(state, h)) return;
+  if (threatAt(state, h).urgent && !urgentHolds(state, h)) return "";
   const home = atBase(state, h.id);
   const want = waterNeed(state, h).total;
   const wDays = want > 0 ? waterIn(h.stock) / want : Infinity;
   const waterShort = wDays < EMERGENCY.waterDays && waterProduction(state, h).total < want;
   const fDays = edibleFood(h) / Math.max(1, foodUse(state, h).total);
   const foodShort = fDays < EMERGENCY.foodDays;
-  if (!waterShort && !foodShort) return;
-  if (state.parties.filter((p) => p.owner === "player" && p.apEmergency).length >= EMERGENCY.teams) return;
+  if (!waterShort && !foodShort) return "";
+  if (state.parties.filter((p) => p.owner === "player" && p.apEmergency && (p.homeBaseId ?? h.id) === h.id).length >= EMERGENCY.teams) return "";
   const g = gov(state);
-  const pool = home.filter((s) => s.health >= EMERGENCY.minHealth && !s.woundInfected && !s.inBed && (!s.leader || home.length >= 6));
+  const pool = home.filter((s) => s.health >= EMERGENCY.minHealth && !s.woundInfected && !s.inBed && !s.pinned && !keep.has(s.id) && (!s.leader || home.length >= 6));
   const spare = Math.min(pool.length, home.length - HIVE_KEEP);
-  if (spare < 2) return;
-  const need = needs(state);
+  if (spare < 2) return "";
+  const need = needs(state, h);
   const cands = [];
   if (waterShort) cands.push(...waterTripCands(state, h, pool, need, P, { maxTeams: EMERGENCY.teams + 2 }).map((c) => ({ ...c, score: c.score + 10 })));
   if (foodShort) {
@@ -3605,13 +3640,13 @@ function emergencyTrips(state) {
   }
   cands.sort((a, b) => b.score - a.score);
   for (const c of cands.slice(0, 6)) {
-    const res = launchTrip(state, { ...c, emergency: true, reach: Math.max(c.reach || 1, 1.5) }, pool, spare);
+    const res = launchTrip(state, { ...c, from: h, emergency: true, reach: Math.max(c.reach || 1, 1.5) }, pool, spare);
     if (!res) continue;
     g.stats.emergencyTrips = (g.stats.emergencyTrips || 0) + 1;
     const teams = state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy").length;
-    say(state, `Emergency: ${h.name} has ${waterShort ? `${wDays.toFixed(1)} day${wDays === 1 ? "" : "s"} of water` : `${fDays.toFixed(1)} days of food`}: the trip went out whatever the style's team limit (${teams} team${teams === 1 ? "" : "s"} out now).`, "danger");
-    return;
+    return `Emergency: ${h.name} has ${waterShort ? `${wDays.toFixed(1)} day${wDays === 1 ? "" : "s"} of water` : `${fDays.toFixed(1)} days of food`}: ${names(partyMembers(state, res))} went out for ${waterShort ? "water" : "food"} whatever the style's team limit (${teams} team${teams === 1 ? "" : "s"} out now).`;
   }
+  return "";
 }
 // Known sites whose loot is mostly food (farms, groceries, lodges …), for an emergency food trip.
 function foodSiteCands(state, h, need, P) {
