@@ -626,8 +626,12 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   console.log("Fuel");
   const share = (t) => (LOCATIONS[t].loot.fuel || 0) / Object.values(LOCATIONS[t].loot).reduce((a, v) => a + v, 0);
   const sources = ["gas", "truckstop", "airport", "military"];
-  const others = Object.keys(LOCATIONS).filter((t) => !sources.includes(t) && LOCATIONS[t].loot.fuel);
+  // The abandoned Army convoy (miltrucks.js, a temporary road site) is military trucks with their tanks: a fuel source
+  // in between, more than anywhere ordinary, less than a military base's motor pool.
+  const military = ["convoy"];
+  const others = Object.keys(LOCATIONS).filter((t) => !sources.includes(t) && !military.includes(t) && LOCATIONS[t].loot.fuel);
   check(sources.every((t) => share(t) >= 0.2), `fuel stays common at ${sources.join(", ")}`);
+  check(military.every((t) => share(t) > Math.max(...others.map(share)) && share(t) <= share("military")), `an Army convoy is between (${military.map((t) => share(t).toFixed(2)).join(", ")})`);
   check(others.every((t) => share(t) <= 0.15), `fuel is a small share elsewhere (auto shops the most) (max ${Math.max(...others.map(share)).toFixed(2)})`);
   const st = W();
   check(hub(st).stock.fuel <= 12, `the hub starts with little fuel (${hub(st).stock.fuel})`);
