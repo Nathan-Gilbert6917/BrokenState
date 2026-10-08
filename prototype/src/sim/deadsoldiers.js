@@ -69,6 +69,12 @@ export const MILDEAD = {
       sup: [["ammo", 0.3, 3, 8]],
     },
   },
+  // More on them now and then, by dice of their own (a hash of the body's dice position: no draw, so the rest of the
+  // body is as it was): a soldier's flashbang, a riot cop's smoke grenade or flashbang (throwables.js FLASH).
+  BODY_EXTRA: {
+    soldier: [["flashbang", 0.05, [1, 1]]],
+    riot: [["smokegren", 0.05, [1, 1]], ["flashbang", 0.03, [1, 1]]],
+  },
 };
 export const ARMORED = Object.keys(MILDEAD.ARMOR);
 const round = (v) => Math.round(v * 1000) / 1000;
@@ -172,6 +178,16 @@ export function bodyLoot(rng, kind, newItem) {
   for (const [k, p, range] of B.armor) if (rng.chance(p)) { gear.push(newItem(k, q(range), rng)); break; }
   for (const [k, p, range] of B.items) if (rng.chance(p)) gear.push(newItem(k, q(range), rng));
   for (const [k, p, lo, hi] of B.sup) if (rng.chance(p)) sup[k] = (sup[k] || 0) + rng.int(lo, hi);
+  bodyExtras(rng && Number.isFinite(rng.state) ? rng.state : 0, kind, newItem, gear);
   return { sup, gear };
+}
+// MILDEAD.BODY_EXTRA: at, the body's dice position (read, never moved).
+function bodyExtras(at, kind, newItem, gear) {
+  (MILDEAD.BODY_EXTRA[kind] || []).forEach(([k, p, range], i) => {
+    if (hash01(at, "bodyextra", kind, k, i) >= p) return;
+    const q = ([lo, hi]) => Math.round((lo + hash01(at, "bodyextraq", kind, i) * (hi - lo)) * 100) / 100;
+    const rng = [at, kind, k, i]; // the condition's dice (itemcond.js): a hash, not the world's
+    gear.push(newItem(k, q(range), rng));
+  });
 }
 export const siteName = (t) => (t && t.loc ? LOCATIONS[t.loc.type].name : "");

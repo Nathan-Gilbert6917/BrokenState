@@ -32,7 +32,7 @@ import {
   CELL, WEAPONS, active, adjacent, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
   say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash,
 } from "./combat.js";
-import { landEffect, blastSpot, throwBlind, throwLanding, BLAST, FRAG, FIRE } from "./throwables.js";
+import { landEffect, blastSpot, throwBlind, throwLanding, flashSpot, doorToss, BLAST, FRAG, FIRE } from "./throwables.js";
 import { sensesAny } from "./decoys.js";
 // Inside a building (buildingmaps.js): where a throw stops at a wall or a closed door, and how walls muffle a noise.
 import { BMAP, throwLanding as interiorLanding, noiseDamp } from "./buildingmaps.js";
@@ -45,7 +45,7 @@ export const STEALTH = {
   INVESTIGATE_TURNS: 3, STAGGER: 0.3, BLUNT: 0.6, WAKE: [4, 6], BEHIND_DETECT: 0.5,
 };
 export const TAKEDOWN = { base: 30, stealth: 2.5, behind: 15, cover: 10, assassin: 20, staggering: -15, kit: { soldiers: -15, zealots: -5 } };
-const CLUB = { spikedbat: 20, pipespear: 5, spear: 5, knife: 10, machete: 10, sawmachete: 10, springmachete: 10, fists: 5, bat: 20, nailbat: 15, baton: 20, prybar: 15, fireaxe: 10, sledge: 10 }; // guns: a butt stroke, +5
+const CLUB = { spikedbat: 20, pipespear: 5, spear: 5, knife: 10, machete: 10, sawmachete: 10, springmachete: 10, fists: 5, bat: 20, nailbat: 15, baton: 20, prybar: 15, fireaxe: 10, sledge: 10, stunbaton: 20 }; // guns: a butt stroke, +5
 export const SUPPRESSIBLE = ["pistol", "huntrifle", "ar", "leverrifle", "carbine"];
 // Keyed like GEAR (the item's throw field). radius / turns: the lure (unaware guards and the dead within radius go to
 // look); fx: what else happens where it lands (throwables.js); self: used where the unit stands; keep: not used up.
@@ -66,6 +66,9 @@ export const THROWABLES = {
   pipebomb:    { radius: 0, turns: 0, heat: 10, range: 6, label: "a pipe bomb", fx: "blast", scatter: 10 },
   molotov:     { radius: 0, turns: 0, heat: 4, range: 6, label: "a Molotov cocktail", fx: "fire" },
   smokegren:   { radius: 0, turns: 0, heat: 0, range: 7, label: "a smoke grenade", fx: "smoke" },
+  // A flashbang (throwables.js FLASH): the stun is its fx; the bang is a lure the dead turn to, the aware ones too for
+  // the enemy turn after it (decoy, turns 2: stealthTurn counts one off before the enemy moves).
+  flashbang:   { radius: 12, turns: 2, heat: 8, range: 7, label: "a flashbang", fx: "flash", sense: ["noise"], decoy: true, people: "spot" },
   gamecall:    { radius: 7, turns: 1, heat: 0, range: 0, label: "the deer call", self: true, keep: true, sense: ["noise"], people: "spot" },
 };
 // The decoys (decoys.js, the AI and the State Map's horde warning): what pulls the dead off a fight.
@@ -301,7 +304,7 @@ export function stealthAct(state, b, u, t, act) {
       return "";
     }
     case "tie": {
-      if (!t || t.side !== "enemy" || !t.ko || t.dead || !adjacent(u, t)) return "Tie up someone knocked out, right next to you.";
+      if (!t || t.side !== "enemy" || !(t.ko || t.surr) || t.dead || t.fled || !adjacent(u, t)) return "Tie up someone knocked out or who has surrendered, right next to you."; // surr: nonlethal.js
       if (t.tied) return "Already tied up.";
       t.tied = true;
       // Handcuffs (data.js cuffs) on the unit: no action, and they stay on the prisoner.
@@ -331,7 +334,8 @@ export function stealthAct(state, b, u, t, act) {
       if (!T.self && d > T.range + 0.01) return `Too far: ${T.label} carries ${T.range} tiles.`;
       if (!T.self && d < 2 && !short) return "Throw it further away.";
       // Over a wall: something with fx needs no line of sight, only a cell someone on your side sees (throwables.js).
-      const blind = T.fx && !T.self ? throwBlind(b, u, x, y) : false;
+      let blind = T.fx && !T.self ? throwBlind(b, u, x, y) : false;
+      if (blind === null && T.fx === "flash" && doorToss(b, u, x, y)) blind = true; // tossed through a doorway into a room (throwables.js)
       if (blind === null) return "Nobody can see there: a throw over a wall lands only where you or a teammate has eyes (or where an enemy was last seen).";
       if (!T.keep && !takeThrowable(state, b, u, key)) return "Nothing to throw.";
       u.ap -= 1;
@@ -378,13 +382,13 @@ export function throwAt(b, u, key, x, y, blind = false) {
   if (!T.self) fx(b, { type: "throw", from: [u.x, u.y], to: [lx, ly], item: key });
   if (T.heat && b.raid) b.raid.heat = Math.min(100, b.raid.heat + T.heat);
   const extra = T.fx ? landEffect(b, u, T, lx, ly) : "";
-  const heard = T.radius ? (n ? ` ${n} of them turn toward it.` : " Nothing seems to notice.") : "";
+  const heard = T.radius ? (n ? ` ${n} of them turn toward it.` : T.fx ? "" : " Nothing seems to notice.") : ""; // fx: the bang or the flare says it
   const where = off ? " It lands a tile off." : blind ? " Thrown blind over cover." : "";
   say(b, `${u.name} ${T.self ? "blows" : "throws"} ${T.label}.${where}${heard}${extra ? ` ${extra}` : ""}${T.heat && b.raid ? " Heat rises." : ""}`, u.side === "enemy" ? "danger" : n || extra ? "good" : "info");
   return [lx, ly];
 }
 
-export const dragable = (t) => (t.side === "enemy" && t.kind === "human" && !t.off && (t.dead || t.ko)) || (t.side === "player" && t.down && !t.dead && !t.left);
+export const dragable = (t) => (t.side === "enemy" && t.kind === "human" && !t.off && !t.fled && (t.dead || t.ko || t.surr)) || (t.side === "player" && t.down && !t.dead && !t.left);
 function moveBody(b, t, x, y) {
   const box = b.raid ? b.raid.containers.find((c) => c.kind === "body" && c.uid === t.id) : null;
   t.x = x; t.y = y;
@@ -508,7 +512,8 @@ export function spotBodies(b, e) {
 // Prisoners from a finished battle: the knocked out after a win; in a raid only the tied ones lying in an
 // extraction zone that someone left from.
 export function battleCaptives(b, outcome) {
-  const enemies = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && u.ko && !u.dead && !u.reinforcement);
+  // Surrendered (nonlethal.js): only the ones tied up; the untied walk away.
+  const enemies = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && (u.ko || (u.surr && u.tied)) && !u.dead && !u.fled && !u.reinforcement);
   if (b.raid) {
     const zones = new Set(b.units.filter((u) => u.side === "player" && u.left && !u.dead && u.exitZone != null).map((u) => u.exitZone));
     return enemies.filter((u) => u.tied && zones.has(zoneAt(b, u.x, u.y)));
@@ -576,7 +581,18 @@ export function botAttackThrow(state, b, u) {
     b.botAttackTurn = b.turn;
     return !stealthAct(state, b, u, null, { type: "throw", item: key, x: spot.x, y: spot.y });
   }
-  return false;
+  return botFlash(state, b, u);
+}
+// A flashbang on two or more people bunched up (throwables.js flashSpot: none of yours in its reach), once a turn for
+// the side, then the rest of the turn as usual (the stunned cannot watch the way in). aware: only people who know of
+// the fight count (the raid bot does not throw one into a room of sleepers). Returns true if the unit threw.
+export function botFlash(state, b, u, aware = false) {
+  if (b.botAttackTurn === b.turn || !active(u) || u.ap < 1) return false;
+  if (!throwablesOf(state, b, u).flashbang) return false;
+  const spot = flashSpot(b, u, THROWABLES.flashbang.range, { need: 2, aware });
+  if (!spot) return false;
+  b.botAttackTurn = b.turn;
+  return !stealthAct(state, b, u, null, { type: "throw", item: "flashbang", x: spot.x, y: spot.y });
 }
 
 // Before the AI sounds the retreat: a smoke grenade over the middle of the team still off the strip (it covers

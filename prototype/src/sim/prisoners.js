@@ -91,8 +91,9 @@ import { eatFromStore, foodStore } from "./storage.js";
 import { underAttack, isShelter } from "./buildings.js";
 import { ensureConquest, CONQUEST } from "./conquest.js";
 import { baseWoodTiles, seasonWood, takeWood, WOOD } from "./woodcutting.js"; // prisoners on Cut wood (by hand)
-import { wormHealMult, WORM } from "./worm.js";
-import { jailText } from "./groupjails.js"; // what a prisoner tells of their group's jail // the worm: half the healing while it is in them; treated prisoners (WORM.OTHERS)
+import { wormHealMult, WORM } from "./worm.js"; // the worm: half the healing while it is in them; treated prisoners (WORM.OTHERS)
+import { jailText } from "./groupjails.js"; // what a prisoner tells of their group's jail
+import { numbersSurrenders } from "./nonlethal.js"; // a decisive win by the numbers: a few of them give up
 
 // The jail tiers (buildings.js family "jail"; the AI groups' jails too, groupjails.js), lower ones easier to get out
 // of. cap: prisoners held; guarded / unguarded: escapes a day in the cell; bonus: × the escape for each thing a
@@ -583,6 +584,12 @@ export function movePrisoner(state, id, baseId) {
 }
 
 function numbersCapture(state, setup, result) {
+  // Played by hand (no autopilot): a decisive win takes a couple of the beaten side prisoner (nonlethal.js).
+  if (!state.autopilot) {
+    const f = setup.enemy && setup.enemy.factionId != null ? factionById(state, setup.enemy.factionId) : null;
+    const n = numbersSurrenders(state, setup, result);
+    return Array.from({ length: n }, (_, i) => makeRecord(state, { factionId: f ? f.id : null, group: f ? f.name : setup.enemy.name || "strangers", kit: setup.enemy.kind === "mixed" ? "raiders" : setup.enemy.kind, power: setup.enemy.power || 3, unitName: `${setup.enemy.name || "Enemy"} ${i + 1}`, tile: setup.tile }));
+  }
   if (!state.autopilot || result.outcome !== "victory" || !setup.enemy || setup.enemy.kind === "zombies") return [];
   if (!state.governor || state.governor.personality !== "aggressive") return [];
   if (!wantsIntel(state, setup.enemy.factionId) || !freeCells(state, destination(state, setup))) return [];

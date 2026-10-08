@@ -10,8 +10,10 @@
 //   military holds its people in a jailhouse block.
 // - What they hold: your people (conflicts.js captives, s.location.kind "captive") and other groups' people
 //   (f.prisoners: { id, from: a group id, power, since }). Both count against the room (groupRoom). Groups take
-//   prisoners from each other in raids they win (factions.js resolveRaidOnFaction, up to RAID_TAKE; a war raid's
-//   captive too, diplomacy.js resolveWarRaid, which in an older save keeps the war's own head count, w.captives).
+//   prisoners from each other in raids they win (nonlethal.js raidPrisoners: a share of the beaten by the winner's
+//   type, NL_TAKE, through groupCapture; a war raid's captive too, diplomacy.js resolveWarRaid, which in an older save
+//   keeps the war's own head count, w.captives). Nonlethal's head counts (f.held) in a save are turned into records
+//   (migrateHeld). This is the one model of prisoners between groups.
 // - No room (FULL, by type): raiders, expansionists and traders sell the extra one to a group with room (UNSOLD:
 //   raiders and expansionists kill them, traders let them go; your people: a ransom asked of you at once if nobody
 //   buys, raiders kill on a refusal, the others let them go), the military, the fortress and communes let them go,
@@ -65,7 +67,6 @@ export const GROUP_JAIL = {
   TRADE: { ransom: 0.04, exchange: 0.06, sale: 0.03, sellYours: 0.012, recruitDays: 30, recruit: 0.012, value: 15, perPower: 4, ransomRel: 3, exchangeRel: 2, enemySaleRel: -6, freeRel: 6, enemyRel: -15 },
   // Your person when nobody will buy them: the ransom asked of you (value + perSkill × their best three skills).
   YOURS: { value: 20, perSkill: 2 },
-  RAID_TAKE: 2, // the most prisoners a group takes from a raid it wins (factions.js)
 };
 const G = GROUP_JAIL;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -166,25 +167,41 @@ export const captiveTurnMult = (s) => (s.mood < G.CAPTIVE.broken ? G.CAPTIVE.bro
 // ---------- taking prisoners ----------
 const bump = (state, k, n = 1) => { const st = state.stats.groupJail || (state.stats.groupJail = {}); st[k] = (st[k] || 0) + n; };
 // A group took n of victim's people (their head count already lowered by the caller): held while there is room,
-// the rest by type (FULL): sold, killed or let go.
-export function groupCapture(state, captor, victim, n) {
+// the rest by type (FULL): sold, killed or let go. Returns how many it holds; out.killed: how many it killed.
+export function groupCapture(state, captor, victim, n, out = null) {
   if (!captor || !victim || n <= 0) return 0;
   let held = 0;
   for (let i = 0; i < n; i++) {
     const rec = { id: newId(), from: victim.id, power: state.rng.int(2, 4), since: day(state) };
     if (groupRoom(state, captor) > 0) { groupPrisoners(captor).push(rec); held++; bump(state, "taken"); continue; }
-    fullFate(state, captor, rec);
+    if (fullFate(state, captor, rec) && out) out.killed = (out.killed || 0) + 1;
   }
   return held;
 }
-// No room for one more of another group's people.
+// No room for one more of another group's people: true when they kill them.
 function fullFate(state, f, rec) {
   const how = G.FULL[f.type] || "release";
   const from = factionById(state, rec.from);
-  if (how === "sell" && sellTo(state, f, rec)) return;
-  if (how === "kill" || (how === "sell" && G.UNSOLD[f.type] === "kill")) { bump(state, "killedFull"); return; }
+  if (how === "sell" && sellTo(state, f, rec)) return false;
+  if (how === "kill" || (how === "sell" && G.UNSOLD[f.type] === "kill")) { bump(state, "killedFull"); return true; }
   if (from && from.alive) { from.pop += 1; changeRelation(state, f, from, 1); }
   bump(state, "releasedFull");
+  return false;
+}
+// A save from nonlethal's head counts (f.held = { group id: n }): records in the holder's jail list (over its room
+// they are kept: the old count had no limit; nobody new comes in until there is room). A holder gone: they go home.
+export function migrateHeld(state) {
+  for (const f of state.factions || []) {
+    if (!f.held) continue;
+    for (const [tid, n] of Object.entries(f.held)) {
+      const from = factionById(state, Number(tid));
+      for (let i = 0; i < n; i++) {
+        if (!f.alive) { if (from && from.alive) from.pop += 1; continue; }
+        groupPrisoners(f).push({ id: newId(), from: Number(tid), power: 3, since: day(state) });
+      }
+    }
+    delete f.held;
+  }
 }
 // A buyer for a prisoner of f's: a group with room that buys people (BUYERS), not the prisoner's own group, not at war
 // with f, with something to pay.
@@ -344,6 +361,7 @@ function sellYours(state, s, f, buyer, value) {
 // back, swapped, sold or turned; your people can be sold on.
 export function groupJailsDaily(state) {
   const T = G.TRADE, rng = state.rng;
+  migrateHeld(state); // nonlethal.js head counts from an older save
   for (const f of state.factions) {
     if (!f.alive) continue;
     const list = groupPrisoners(f);

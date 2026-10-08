@@ -23,6 +23,9 @@ import {
 import { nextWork, groupWorksDaily } from "../src/sim/groupworks.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { relation } from "../src/sim/diplomacy.js";
+import { createBattle, combatAct, closeCombat, runEnemyPhase, endPlayerTurn, registerCombatHandler } from "../src/sim/combat.js";
+import { surrender } from "../src/sim/nonlethal.js";
+registerCombatHandler("jt", () => {});
 
 const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -135,6 +138,28 @@ const noDice = (fn) => {
   const g = groupOf(st);
   const sur = surrenderPrisoners(st, g, h, 3);
   check(sur.length === 3 && st.cards.length - n2 === 3, "surrendered with no jail at the base: a card each (the outpost's 2 free can be picked)");
+}
+
+// ---------- 3b. a battle: surrendered and tied, knocked out, with no room ----------
+{
+  console.log("After a battle");
+  const st = world(seed + 20);
+  const h = hub(st);
+  jail(h, "lockup");
+  const f = groupOf(st);
+  const ids = atBase(st, h.id).slice(0, 3).map((s) => s.id);
+  st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: ids, enemy: { kind: "raiders", count: 4, power: 3, factionId: f.id, name: f.name }, ambush: "player", canRetreat: false, handler: "jt", context: {} });
+  const b = st.combat;
+  const foes = b.units.filter((x) => x.side === "enemy");
+  for (const e of foes.slice(0, 2)) { surrender(b, e); e.tied = true; } // nonlethal.js: gave up, then tied
+  for (const e of foes.slice(2)) { e.hp = 0; e.ko = true; e.down = true; }
+  combatAct(st, { type: "end" });
+  if (!b.over) { endPlayerTurn(st); runEnemyPhase(st); }
+  const n0 = st.cards.length;
+  const taken = (b.result && b.result.prisoners) || [];
+  closeCombat(st);
+  const cards = st.cards.slice(n0).filter((c) => c.kind === "prisonerSettle");
+  check(taken.length >= 3 && prisonersAt(st, h.id).filter((p) => !p.awaiting).length === 2 && cards.length === taken.length - 2, `${taken.length} taken (surrendered and tied, knocked out): 2 into the makeshift cells, a card for each of the other ${cards.length}`);
 }
 
 // ---------- 4. the autopilot's pick ----------

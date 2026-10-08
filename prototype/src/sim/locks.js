@@ -337,13 +337,13 @@ const LOCK_LOOT = {
   cash:     { sup: [["ammo", 0.6, 6, 15], ["meds", 0.15, 1, 1]], gear: [["pistol", 0.1], ["knife", 0.1]], key: 0.2 },
   gear:     { sup: [["ammo", 0.4, 5, 12]], gear: [["vest", 0.1], ["bikehelmet", 0.1], ["kneeguards", 0.1], ["backpack", 0.1]], key: 0.1 },
   meds:     { sup: [["meds", 0.95, 3, 6]], gear: [["surgkit", 0.1], ["bandagekit", 0.2]], key: 0.08 },
-  evidence: { sup: [["ammo", 0.8, 10, 25]], gear: [["pistol", 0.3], ["shotgun", 0.15], ["lockbook", 0.1], ["riothelmet", 0.1]], key: 0.3 },
+  evidence: { sup: [["ammo", 0.8, 10, 25]], gear: [["pistol", 0.3], ["shotgun", 0.15], ["lockbook", 0.1], ["riothelmet", 0.1], ["flashbang", 0.2], ["smokegren", 0.15]], key: 0.3 }, // flashbangs, smoke: the SWAT kit (throwables.js FLASH)
   cargo:    { sup: [["food", 0.5, 4, 10], ["parts", 0.5, 1, 3], ["fuel", 0.25, 1, 3]], gear: [["assaultpack", 0.05]], key: 0.05 },
   guns:     { sup: [["ammo", 0.95, 20, 40]], gear: [["pistol", 0.4], ["shotgun", 0.3], ["huntrifle", 0.25], ["ar", 0.1]], key: 0.1 },
   safe:     { sup: [["meds", 0.25, 1, 2], ["ammo", 0.5, 10, 20]], gear: [["nvg", 0.05], ["milradio", 0.05]], key: 0.3 },
-  crash:    { sup: [["meds", 0.45, 1, 3], ["ammo", 0.5, 10, 30]], gear: [["ar", 0.1], ["plate", 0.08], ["nvg", 0.06], ["milradio", 0.06], ["assaultpack", 0.08]], key: 0 },
+  crash:    { sup: [["meds", 0.45, 1, 3], ["ammo", 0.5, 10, 30]], gear: [["ar", 0.1], ["plate", 0.08], ["nvg", 0.06], ["milradio", 0.06], ["assaultpack", 0.08], ["flashbang", 0.08]], key: 0 },
   // A locked car: what its people packed to flee with, still in the back seat and the glovebox.
-  miltruck: { sup: [["ammo", 0.5, 10, 25]], gear: [["frag", 0.1], ["smokegren", 0.1]], key: 0 }, // a padlocked Army truck: the good crates went in the back
+  miltruck: { sup: [["ammo", 0.5, 10, 25]], gear: [["frag", 0.1], ["smokegren", 0.1], ["flashbang", 0.08]], key: 0 }, // a padlocked Army truck: the good crates went in the back
   car:      { sup: [["fuel", 0.5, 1, 3], ["food", 0.4, 2, 4], ["water", 0.35, 1, 3], ["ammo", 0.2, 4, 10], ["meds", 0.1, 1, 1]], gear: [["pistol", 0.08], ["flashlight", 0.1], ["bottle", 0.1], ["slingbag", 0.05], ["backpack", 0.04], ["binoculars", 0.03], ["revolver", 0.03]], key: 0.05 },
 };
 const BP_MULT = { lock: 4, room: 2, plain: 0.5 };
