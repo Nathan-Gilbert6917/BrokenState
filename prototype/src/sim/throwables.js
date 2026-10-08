@@ -23,12 +23,24 @@
 //     the retreat is +20 for anyone in it or within 2 tiles of it (combat.js escapeOdds).
 //   flare (road flare): burns 4 rounds; your people see anything within 5 tiles of it whatever the dark, and aim
 //     +10 at it in a night battle. Its glare and heat are a lure too (stealth.js, decoys.js).
+//   flash (flashbang): a bang and a blinding flash where it lands (FLASH). Living people of either side within 2 tiles
+//     who see the burst cell (line of sight from it; 1 tile when the sight line crosses a doorway, a broken door or a
+//     window) are stunned (u.stun): their next turn they lose an action (2 within a tile), aim -30 until that turn
+//     ends, and they cannot overwatch (it drops theirs now). Facing away from it (stealth.js facing, u.face), or the
+//     one who threw it: only dazed, aim -15 and no action lost. Ear protection (u.earCut, a share 0-1, when a unit has
+//     it) and a riot helmet's visor (GEAR visor: FLASH.visor) take off part of it: aim x (1 - the cut), an action
+//     less at a cut of 0.25, two at 0.5. The dead are not blinded: the bang is a noise lure (stealth.js THROWABLES
+//     flashbang: radius 12, a decoy for one enemy turn, so even the aware dead turn to it). 0-3 damage within a tile;
+//     no cover broken. Wakes the people within 12 tiles (gunfire noise, Heat +8 in a raid). stunTurnStart takes the
+//     actions off at the start of the unit's next turn, stunTurnEnd lifts it when that turn ends (combat.js).
 // The AI (combat.js autoPlayerTurn): a frag grenade, a pipe bomb or a Molotov on three or more enemies bunched up
 // (two at a breach, the gate or a doorway for a Molotov) and none of yours near, a smoke grenade when the retreat is
-// about to be sounded.
-import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell, structureName, vehicleBlast } from "./combat.js";
+// about to be sounded, a flashbang on two or more people bunched within its reach (flashSpot; the enemy's soldiers and
+// guards carry them: kitFlashbangs, siege.js enemyThrow).
+import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell, structureName, vehicleBlast, los, coverAgainst } from "./combat.js";
 import { ZTYPES } from "./hiveconst.js";
 import { armorVs } from "./deadsoldiers.js";
+import { GEAR } from "./data.js";
 
 export const BLAST = { r: 1.5, dmg: [22, 34], wake: 14, noise: 4, struct: [40, 60] };
 export const FRAG = { r: 1.5, dmg: [20, 30], wake: 12, noise: 4, struct: [30, 45] };
@@ -39,6 +51,16 @@ export const FIRE = {
 };
 export const SMOKE = { r: 2, turns: 3, aim: 30, retreat: 20, near: 2 };
 export const FLARE = { r: 5, turns: 4, aim: 10 };
+// r / near: tiles (the larger of the two offsets: within 2 is the 5 x 5 square); ap / apNear: actions lost next turn;
+// aim / daze: the aim penalty stunned / dazed; dmg within near; wake: people woken (tiles); noise: gunfire's; visor:
+// a riot helmet's visor's cut (cutMax: the most any protection takes off).
+export const FLASH = { r: 2, near: 1, ap: 1, apNear: 2, aim: 30, daze: 15, dmg: [0, 3], wake: 12, noise: 4, visor: 0.3, cutMax: 0.75 };
+// The soldiers and guards who carry a flashbang (or a guard a smoke grenade) into a fight (combat.js enemyUnit):
+// { key: [chance, how many] }. Their own dice (a hash of the battle's dice position and the unit), so nothing else in
+// the battle changes. What they never threw is on their body (inventory.js carriedThrowables).
+export const FLASH_KIT = { guards: { flashbang: [0.2, 1], smokegren: [0.1, 1] }, soldiers: { flashbang: [0.3, 1] } };
+// Where the flash is cut to FLASH.near: a sight line through a doorway, a broken or open door, a gate, a window.
+const DOORISH = new Set(["doorway", "odoor", "smashed", "breach", "gate", "window"]);
 export const SCATTER = { base: 0.45, perAim: 0.008, min: 0.08, max: 0.45, blind: 0.15, far: 5 };
 // Light cover a blast tears apart (what is left: rubble).
 const LIGHT = new Set(["crate", "fence", "hay", "sandbag", "barricade", "shelf", "cabinet", "counter", "barrel"]);
@@ -157,7 +179,132 @@ export function landEffect(b, u, T, x, y) {
     (b.flares || (b.flares = [])).push({ x, y, r: FLARE.r, turns: FLARE.turns });
     return "It lights up everything around it.";
   }
+  if (T.fx === "flash") return flashBurst(b, u, x, y);
   return "";
+}
+
+// ---------- the flashbang ----------
+const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
+// The cells a straight line between two cells crosses (not the two ends).
+function lineCells(x0, y0, x1, y1) {
+  const out = [];
+  const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 4);
+  for (let i = 1; i < n; i++) {
+    const cx = Math.floor(x0 + 0.5 + ((x1 - x0) * i) / n), cy = Math.floor(y0 + 0.5 + ((y1 - y0) * i) / n);
+    if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
+    if (!out.some(([px, py]) => px === cx && py === cy)) out.push([cx, cy]);
+  }
+  return out;
+}
+const doorOn = (b, x0, y0, x1, y1) => lineCells(x0, y0, x1, y1).some(([cx, cy]) => inside(b, cx, cy) && DOORISH.has(cellOf(b, cx, cy).k));
+// How a burst at (x, y) reaches the cell (tx, ty): "sight" (in plain sight within FLASH.r), "door" (the sight line
+// crosses a doorway or a window: within FLASH.near only), or null (out of reach, or a wall in the way).
+export function flashReach(b, x, y, tx, ty) {
+  const d = cheb(x, y, tx, ty);
+  if (d > FLASH.r) return null;
+  if (d === 0) return "sight";
+  if (!los(b, x, y, tx, ty)) return null;
+  if (doorOn(b, x, y, tx, ty)) return d <= FLASH.near ? "door" : null;
+  return "sight";
+}
+// The cells a burst at (x, y) would reach (the throw preview, ui/combat.js): [[x, y, near]].
+export function flashCells(b, x, y) {
+  const out = [];
+  for (let cy = y - FLASH.r; cy <= y + FLASH.r; cy++) for (let cx = x - FLASH.r; cx <= x + FLASH.r; cx++) {
+    if (!inside(b, cx, cy) || !flashReach(b, x, y, cx, cy)) continue;
+    out.push([cx, cy, cheb(x, y, cx, cy) <= FLASH.near]);
+  }
+  return out;
+}
+// The share of a flashbang a unit shrugs off: ear protection (u.earCut, when it has it) and a visor (GEAR visor).
+export function flashCut(u) {
+  const visor = !!u.visor || (u.fielded || []).some(([, it]) => it && GEAR[it.key] && GEAR[it.key].visor);
+  return Math.min(FLASH.cutMax, Math.max(0, Number(u.earCut) || 0) + (visor ? FLASH.visor : 0));
+}
+const facingAway = (u, x, y) => { const f = u.face || [0, 0]; return !!(f[0] || f[1]) && (x - u.x) * f[0] + (y - u.y) * f[1] < 0; };
+// The turn number of a unit's next turn: your people's is the next round; the enemy's (and the third side's) is this
+// round's enemy phase while you are still moving, else the next.
+export const nextTurnOf = (b, u) => (u.side === "player" ? b.turn + 1 : b.phase === "enemy" ? b.turn + 1 : b.turn);
+// What the flash does to one living person (the burst at x, y; by: the thrower). Returns the stun, or null when they
+// shrug it off entirely.
+export function stunUnit(b, t, x, y, by = null) {
+  if (t.kind !== "human" || !active(t)) return null;
+  const near = cheb(x, y, t.x, t.y) <= FLASH.near;
+  const away = t === by || facingAway(t, x, y);
+  let aim = away ? FLASH.daze : FLASH.aim, ap = away ? 0 : near ? FLASH.apNear : FLASH.ap;
+  const cut = flashCut(t);
+  if (cut > 0) { aim = Math.round(aim * (1 - cut)); ap = Math.max(0, ap - (cut >= 0.5 ? 2 : cut >= 0.25 ? 1 : 0)); }
+  if (aim <= 0 && ap <= 0) return null;
+  const next = nextTurnOf(b, t), was = t.stun;
+  const pending = !!was && was.next >= next && !was.applied; // a stun not yet served: the worse of the two
+  const live = !!was && was.next >= b.turn; // a stun still on: its aim penalty stays until the new one ends
+  t.stun = { aim: Math.max(aim, live ? was.aim : 0), ap: Math.max(ap, pending ? was.ap : 0), next: Math.max(next, pending ? was.next : 0), dazed: false };
+  t.stun.dazed = t.stun.ap <= 0;
+  t.ow = false; // nobody watches a doorway through a white-out
+  if (t.side === "enemy" && !t.aware) { t.aware = true; if (b.phase === "player") t.surprised = true; }
+  fx(b, { type: "melee", from: [t.x, t.y], to: [t.x, t.y], hit: true, crit: false, dmg: 0, side: by ? by.side : "enemy", text: t.stun.dazed ? "DAZED" : "STUN" });
+  return t.stun;
+}
+// A stun in words: "stunned (-2 actions, aim -30)" / "dazed (aim -15)".
+export const stunLabel = (s) => (!s ? "" : s.dazed ? `dazed (aim −${s.aim})` : `stunned (−${s.ap} action${s.ap === 1 ? "" : "s"}, aim −${s.aim})`);
+// The burst (landEffect): the stun on the living who see it, a scratch for anyone right next to it, the wake.
+function flashBurst(b, by, x, y) {
+  const hit = [], hurt = [];
+  for (const t of b.units) {
+    if (!active(t)) continue;
+    if (!flashReach(b, x, y, t.x, t.y)) continue;
+    if (cheb(x, y, t.x, t.y) <= FLASH.near) {
+      const raw = b.rng.int(FLASH.dmg[0], FLASH.dmg[1]);
+      if (raw > 0) {
+        const eff = Math.round(damage(b, t, raw, by, false, { how: "blast" }));
+        if (eff > 0) hurt.push(`${t.name} ${eff}${t.dead ? " (dead)" : t.down ? " (down)" : ""}`);
+      }
+    }
+    const s = stunUnit(b, t, x, y, by);
+    if (s) hit.push(`${t.name} ${stunLabel(s)}`);
+  }
+  b.noise = (b.noise || 0) + FLASH.noise;
+  // The people within earshot wake (the dead turn to the noise instead: the lure, stealth.js throwAt).
+  const pods = new Set();
+  for (const e of b.units) if (e.side === "enemy" && e.kind === "human" && !e.aware && active(e) && dist(e.x, e.y, x, y) <= FLASH.wake) pods.add(e.pod);
+  for (const pod of pods) alertPod(b, pod, "The bang wakes everyone nearby.");
+  return `BANG! ${hit.length ? `${hit.join(", ")}.` : "Nobody is caught in the flash."}${hurt.length ? ` Singed: ${hurt.join(", ")}.` : ""}`;
+}
+// The start of a side's turn (combat.js): the stunned of these sides whose turn it is lose their actions.
+export function stunTurnStart(b, sides) {
+  for (const u of b.units) {
+    const s = u.stun;
+    if (!s || !sides.includes(u.side) || s.applied || s.next !== b.turn) continue;
+    s.applied = true;
+    u.ow = false;
+    if (!active(u) || s.ap <= 0) continue;
+    const lost = Math.min(u.ap, s.ap);
+    u.ap -= lost;
+    if (lost) say(b, `${u.name} is still reeling from the flash (−${lost} action${lost === 1 ? "" : "s"}).`, u.side === "player" ? "danger" : "good");
+  }
+}
+// The end of a side's turn: the stuns served in it wear off.
+export function stunTurnEnd(b, sides) {
+  for (const u of b.units) if (u.stun && sides.includes(u.side) && u.stun.next <= b.turn) delete u.stun;
+}
+// Their kit (combat.js enemyUnit): a soldier or a guard with a flashbang now and then (FLASH_KIT; seed: the battle's
+// dice position, read and never moved).
+export function kitFlashbangs(u, kind, seed) {
+  for (const [key, [p, n]] of Object.entries(FLASH_KIT[kind] || {})) {
+    if (mix01(seed, u.id, kind, key) >= p) continue;
+    (u.throwables || (u.throwables = {}))[key] = (u.throwables[key] || 0) + n;
+  }
+}
+function mix01(...parts) {
+  let h = 2166136261 >>> 0;
+  for (const c of parts.join("|")) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d) >>> 0; h ^= h >>> 12; h = Math.imul(h, 0x297a2d39) >>> 0; h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+// A flashbang tossed through a doorway into a room nobody sees into (stealth.js throw): the throw's line crosses a
+// doorway the thrower sees, within 3 tiles of where it lands, with a clear line from the doorway to the spot.
+export function doorToss(b, u, x, y) {
+  return lineCells(u.x, u.y, x, y).some(([cx, cy]) => inside(b, cx, cy) && DOORISH.has(cellOf(b, cx, cy).k) && dist(cx, cy, x, y) <= 3 && canSeeAt(b, u, cx, cy) && los(b, cx, cy, x, y));
 }
 
 // ---------- fire ----------
@@ -272,6 +419,39 @@ export function blastSpot(b, u, range, r, opts = {}) {
       if (throwBlind(b, u, x, y) === null) continue;
       best = { x, y, n, sc };
     }
+  }
+  return best;
+}
+
+// The best spot for a flashbang: at least opts.need (2) of the thrower's foes, living people not already stunned, in
+// its reach (flashReach); none of its own side within FLASH.r + 1 tiles of it (a throw can land a tile off), the
+// thrower itself more than FLASH.r away and opts.min (3) to range tiles off; a cell its side knows (throwBlind, or a
+// doorway it sees: doorToss). opts.cover: at least one of them in cover from the thrower (the enemy's rush);
+// opts.aware: only foes that know of the fight count (the raid bot). Returns { x, y, n, blind } or null.
+export function flashSpot(b, u, range, opts = {}) {
+  const need = opts.need || 2, min = opts.min ?? 3;
+  const foes = b.units.filter((t) => t.side !== u.side && t.side !== "third" && t.kind === "human" && active(t) && !t.off && !(t.stun && t.stun.next >= nextTurnOf(b, t)) && (!opts.aware || t.aware !== false));
+  if (foes.length < need) return null;
+  const mine = b.units.filter((t) => t !== u && t.side === u.side && t.kind === "human" && active(t));
+  let best = null;
+  const tried = new Set();
+  for (const f of foes) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const x = f.x + dx, y = f.y + dy;
+    if (!inside(b, x, y) || tried.has(y * b.w + x)) continue;
+    tried.add(y * b.w + x);
+    if (CELL[cellOf(b, x, y).k].los) continue; // not into a wall
+    const d = dist(u.x, u.y, x, y);
+    if (d > range + 0.01 || d < min || cheb(u.x, u.y, x, y) <= FLASH.r) continue;
+    if (mine.some((m) => cheb(m.x, m.y, x, y) <= FLASH.r + 1)) continue;
+    const caughtF = foes.filter((t) => flashReach(b, x, y, t.x, t.y));
+    if (caughtF.length < need) continue;
+    if (opts.cover && !caughtF.some((t) => coverAgainst(b, t.x, t.y, u.x, u.y).level > 0)) continue;
+    const sc = caughtF.length + caughtF.filter((t) => cheb(t.x, t.y, x, y) <= FLASH.near).length * 0.3 - d * 0.01;
+    if (best && sc <= best.sc) continue;
+    let blind = throwBlind(b, u, x, y);
+    if (blind === null) blind = doorToss(b, u, x, y) ? true : null;
+    if (blind === null) continue;
+    best = { x, y, n: caughtF.length, sc, blind };
   }
   return best;
 }

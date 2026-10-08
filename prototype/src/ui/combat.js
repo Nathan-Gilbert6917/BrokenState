@@ -14,6 +14,7 @@ import { INTERIOR } from "../sim/interior.js";
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
+import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
 import { LIGHTS } from "../sim/lights.js";
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
@@ -712,7 +713,7 @@ export function combatAction(state, key, d) {
     if (THROWABLES[k].self) return void act(state, { type: "throw", unit: u.id, item: k, x: u.x, y: u.y }); // the deer call: blown where they stand
     cui.mode = "throw";
     cui.throwKey = k;
-    cui.msg = `Click a tile up to ${THROWABLES[k].range} away to throw ${THROWABLES[k].label}.`;
+    cui.msg = `Click a tile up to ${THROWABLES[k].range} away to throw ${THROWABLES[k].label}.${k === "flashbang" ? " The lit cells are the ones its flash reaches (bright: within a tile, two actions lost)." : ""}`;
     return;
   }
   if (v === "drag") {
@@ -832,7 +833,7 @@ export function renderCombatPanel(state) {
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
     const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`) :
-      [p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
+      [p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !alive(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = alive(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     // A building with storeys: everyone's floor (dimmer when it is not the one shown).
@@ -893,7 +894,7 @@ export function renderCombatPanel(state) {
       const o = odds(b, u, t);
       const tip = o ? `${t.name}: ${o.label}. Click to attack with ${u.name}.` : `${t.name}: ${u.name} cannot hit them from here.`;
       html += `<button class="cbtarget" data-action="cb-target" data-id="${t.id}" ${o && o.ok && b.phase === "player" && u.ap > 0 ? "" : "disabled"} data-tip="${esc(tip)}">
-        <span>${spriteImg(canvasURL(unitCanvas(state, b, t, cui.salt)), 1.5)}${esc(t.name)}${t.aware ? "" : ' <span class="warn">(unaware)</span>'}</span><span class="small">${Math.round(t.hp)} hp${o && o.ok ? ` · <b>${o.chance}%</b>` : ""}</span></button>`;
+        <span>${spriteImg(canvasURL(unitCanvas(state, b, t, cui.salt)), 1.5)}${esc(t.name)}${t.aware ? "" : ' <span class="warn">(unaware)</span>'}${t.stun ? ` <span class="good">(${esc(t.stun.dazed ? "dazed" : "stunned")})</span>` : ""}</span><span class="small">${Math.round(t.hp)} hp${o && o.ok ? ` · <b>${o.chance}%</b>` : ""}</span></button>`;
     }
     html += `</div>`;
   }
@@ -1386,10 +1387,10 @@ function previewHtml(b, state = null) {
   const t = unitAt(b, h.x, h.y);
   if (t && t.side === "enemy" && v.seen.has(t.id)) {
     const o = u && active(u) ? odds(b, u, t) : null;
-    const stealthy = t.investigate ? ' · <span class="warn">going to look at a noise</span>' : "";
+    const stealthy = (t.investigate ? ' · <span class="warn">going to look at a noise</span>' : "") + (t.stun ? ` · <span class="good">${esc(stunLabel(t.stun))}: no overwatch</span>` : ""); // a flashbang (sim/throwables.js)
     // What it follows (sim/decoys.js), a Shepherd's pack, the siege kit it carries (sim/siege.js).
     const sense = t.kind === "zombie" ? (herded(b, t) ? ' · <span class="danger">herded by a Shepherd: decoys and fire do not work on it</span>' : ` · <span class="muted">follows ${sensesOf(b, t).join(" and ") || "nothing"}</span>`) : "";
-    const kit = t.ram != null && ramOf(b, t) ? ' · <span class="warn">carrying the ram (no cover)</span>' : t.ladder ? ' · <span class="warn">carrying a ladder</span>' : t.throwables && Object.values(t.throwables).some((n) => n > 0) ? ' · <span class="warn">has grenades</span>' : b.cells[t.y * W + t.x].k === "siegeladder" ? ' · <span class="warn">on a ladder (exposed)</span>' : "";
+    const kit = t.ram != null && ramOf(b, t) ? ' · <span class="warn">carrying the ram (no cover)</span>' : t.ladder ? ' · <span class="warn">carrying a ladder</span>' : t.throwables && Object.values(t.throwables).some((n) => n > 0) ? ` · <span class="warn">has ${esc(Object.entries(t.throwables).filter(([, n]) => n > 0).map(([k, n]) => `${n > 1 ? `${n} ` : ""}${GEAR[k] ? GEAR[k].name.toLowerCase() : k}${n > 1 ? "s" : ""}`).join(", "))}</span>` : b.cells[t.y * W + t.x].k === "siegeladder" ? ' · <span class="warn">on a ladder (exposed)</span>' : "";
     // A hive's special dead (sim/zombietypes.js): what it does and what beats it.
     // The armoured dead (sim/deadsoldiers.js): how much of the selected unit's weapon gets through.
     const ar = t.ztype && MILDEAD.ARMOR[t.ztype] && u && active(u) ? (() => {
@@ -1625,6 +1626,16 @@ export function drawCombat(state, now) {
     }
   }
 
+  // Throw mode: the range, and where the hovered spot's blast, cloud or flash reaches (sim/throwables.js).
+  const tp = throwPreview(b, u);
+  if (tp) {
+    for (const [x, y, k] of tp.cells) {
+      ctx.fillStyle = k === 2 ? "rgba(255,255,235,0.42)" : k === 1 ? "rgba(255,245,200,0.24)" : "rgba(255,209,102,0.07)";
+      ctx.fillRect(ox + x * cs, oy + y * cs, cs, cs);
+    }
+    for (const t of tp.caught) { ctx.strokeStyle = t.side === "player" ? PAL.bad : "#ffffff"; ctx.lineWidth = 2; ctx.strokeRect(ox + t.x * cs + 2, oy + t.y * cs + 2, cs - 4, cs - 4); }
+  }
+
   // Hovered tile: path, cover shields.
   const h = cui.hover;
   if (h) {
@@ -1717,6 +1728,32 @@ export function drawCombat(state, now) {
   drawBanner(b, cw, cs);
 }
 
+// Throw mode (sim/stealth.js): the cells in range (k 0), and for the hovered spot in range where it would reach: a
+// flashbang's flash (k 1; 2 within a tile: sim/throwables.js flashCells), a grenade's blast or a smoke cloud (k 1).
+// caught: the living it would catch there (a flashbang: those it would stun). null when not throwing.
+function throwPreview(b, u) {
+  if (cui.mode !== "throw" || !u || !active(u) || !cui.throwKey || !THROWABLES[cui.throwKey]) return null;
+  const T = THROWABLES[cui.throwKey];
+  if (T.self) return null;
+  const inRange = (x, y) => Math.hypot(x - u.x, y - u.y) <= T.range + 0.01;
+  const cells = [];
+  for (let y = Math.max(0, u.y - T.range); y <= Math.min(H - 1, u.y + T.range); y++) for (let x = Math.max(0, u.x - T.range); x <= Math.min(W - 1, u.x + T.range); x++) if (inRange(x, y)) cells.push([x, y, 0]);
+  const h = cui.hover;
+  const caught = [];
+  if (h && h.x >= 0 && h.y >= 0 && h.x < W && h.y < H && inRange(h.x, h.y)) {
+    const v = view(b);
+    if (T.fx === "flash") {
+      for (const [x, y, near] of flashCells(b, h.x, h.y)) cells.push([x, y, near ? 2 : 1]);
+      for (const t of b.units) if (t.kind === "human" && active(t) && (t.side === "player" || v.seen.has(t.id)) && flashReach(b, h.x, h.y, t.x, t.y)) caught.push(t);
+    } else if (T.fx) {
+      const r = T.fx === "frag" ? FRAG.r : T.fx === "blast" ? BLAST.r : T.fx === "smoke" ? SMOKE.r : T.fx === "fire" ? 1.5 : 0;
+      for (let y = h.y - Math.ceil(r); y <= h.y + Math.ceil(r); y++) for (let x = h.x - Math.ceil(r); x <= h.x + Math.ceil(r); x++) if (x >= 0 && y >= 0 && x < W && y < H && Math.hypot(x - h.x, y - h.y) <= r + 1e-6) cells.push([x, y, 1]);
+    }
+  }
+  return { cells, caught };
+}
+const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+
 // The isometric view (ui/isoview.js) with what it needs from here.
 function drawIsoView(state, b, now, cw, ch) {
   const v = view(b);
@@ -1728,6 +1765,7 @@ function drawIsoView(state, b, now, cw, ch) {
     unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble,
     hits: hitLabels(b, v), retreatOpen: !!plan, plan,
     threat: (x, y) => threatAt(b, v, x, y), // the threat preview: lines from whoever could hit the hovered tile
+    throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)
   });
 }
 // The selected unit's hit chance against every enemy in sight (the isometric view shows it over their heads).
@@ -2105,6 +2143,10 @@ function drawThrowable(key, cx, cy, cs) {
   } else if (key === "molotov") {
     ctx.fillStyle = "#7a5a2a"; roundRect(cx - s * 0.45, cy - s * 0.3, s * 0.9, s * 1.3, s * 0.25); ctx.fill();
     ctx.fillStyle = "#ff9a3a"; ctx.beginPath(); ctx.arc(cx, cy - s * 0.85, s * 0.3, 0, Math.PI * 2); ctx.fill();
+  } else if (key === "flashbang") {
+    ctx.fillStyle = "#2f3438"; roundRect(cx - s * 0.4, cy - s * 0.75, s * 0.8, s * 1.5, s * 0.2); ctx.fill();
+    ctx.fillStyle = "#e0c040"; ctx.fillRect(cx - s * 0.4, cy - s * 0.1, s * 0.8, s * 0.2);
+    ctx.fillStyle = "#9aa0a8"; ctx.fillRect(cx - s * 0.15, cy - s * 1.0, s * 0.3, s * 0.3);
   } else if (key === "smokegren") {
     ctx.fillStyle = "#5a6a54"; roundRect(cx - s * 0.45, cy - s * 0.7, s * 0.9, s * 1.4, s * 0.3); ctx.fill();
     ctx.fillStyle = "#c9c9c0"; ctx.fillRect(cx - s * 0.15, cy - s * 0.95, s * 0.3, s * 0.3);
@@ -2598,6 +2640,7 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
   const tags = [];
   if (t.ow) tags.push(["OW", "#e0a84f"]);
   if (t.hunker) tags.push(["HD", "#4aa3ff"]);
+  if (t.stun && active(t)) tags.push(t.stun.dazed ? ["DZ", "#cfd6e0"] : ["STN", "#ffffff"]); // a flashbang (sim/throwables.js)
   if (t.side === "enemy" && !t.aware && !t.ko) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]); // ??: going to look at a noise
   if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : t.post === "wall" ? "W" : "T", "#e0a84f"]);
   if (t.surprised) tags.push(["!", "#ffd166"]);
@@ -2657,6 +2700,11 @@ function drawFx(b, now, cs) {
         ctx.strokeStyle = "rgba(255,209,102,0.35)"; ctx.lineWidth = 1.5; ctx.setLineDash([3, 4]);
         ctx.beginPath(); ctx.moveTo(fx0, fy0); ctx.quadraticCurveTo((fx0 + tx) / 2, (fy0 + ty) / 2 - cs * 2.4, tx, ty); ctx.stroke(); ctx.setLineDash([]);
         drawThrowable(f.item, px, py, cs);
+      } else if (f.item === "flashbang" && el < 1000) { // the flash (sim/throwables.js FLASH): a white burst over its reach
+        const a = 1 - (el - 500) / 500;
+        const g = ctx.createRadialGradient(tx, ty, 0, tx, ty, cs * 2.6);
+        g.addColorStop(0, `rgba(255,255,255,${0.95 * a})`); g.addColorStop(0.5, `rgba(255,250,220,${0.5 * a})`); g.addColorStop(1, "rgba(255,250,220,0)");
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(tx, ty, cs * 2.6, 0, Math.PI * 2); ctx.fill();
       }
       continue;
     }

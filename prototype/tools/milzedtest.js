@@ -305,7 +305,10 @@ if (!QUICK) {
   const meanSe = (xs) => { const m = xs.reduce((s, v) => s + v, 0) / xs.length; const sd = Math.sqrt(xs.reduce((s, v) => s + (v - m) ** 2, 0) / Math.max(1, xs.length - 1)); return { m, se: sd / Math.sqrt(xs.length) }; };
   const dd = meanSe(pairs.map((p) => p.d)), dt = meanSe(pairs.map((p) => p.t));
   check(pairs.length >= N * 0.8 && dd.m >= -2 * dd.se, `not safer than the ordinary dead beyond chance: deaths/raid ${r2(a.deaths / a.raids)} vs ${r2(z.deaths / z.raids)}, paired over ${pairs.length} raids ${dd.m >= 0 ? "+" : ""}${r2(dd.m)} ± ${r2(dd.se)} (turns ${dt.m >= 0 ? "+" : ""}${r2(dt.m)} ± ${r2(dt.se)}: they leave sooner with the armour)`);
-  check(a.armor / a.raids > z.armor / z.raids, `and richer: armour off the bodies ${r2(a.armor / a.raids)} vs ${r2(z.armor / z.raids)} a raid`);
+  // Not poorer (>=): since the flashbang branch an armoury's crate of flashbangs (loot.js AREA_GRENADES) fills the same
+  // hands in both arms, and at 60 raids the gap (dev e6b583b: 0.25 vs 0.24 at seed 7) is within one vest; at 120 raids
+  // seeds 8 and 9 still show it clearly (0.14 vs 0.10, 0.26 vs 0.22).
+  check(a.armor / a.raids >= z.armor / z.raids, `and not poorer: armour off the bodies ${r2(a.armor / a.raids)} vs ${r2(z.armor / z.raids)} a raid`);
 }
 
 // ---------- balance: one weapon at a time ----------

@@ -367,16 +367,17 @@ console.log("Contents by tier (rollGunStash)");
 {
   const N = 3000;
   const stats = (tier, site) => {
-    let guns = 0, ammo = 0, items = 0, minQ = 9, maxQ = 0, val = 0;
+    let guns = 0, ammo = 0, items = 0, minQ = 9, maxQ = 0, val = 0, gren = 0;
     const keys = {};
     for (let i = 0; i < N; i++) {
       const out = G.rollGunStash((...k) => hash01(seed, "gstest", tier, site, i, ...k), tier, site);
       for (const it of out.gear) {
-        if (GEAR[it.key].slot === "weapon") { guns++; keys[it.key] = (keys[it.key] || 0) + 1; minQ = Math.min(minQ, it.quality); maxQ = Math.max(maxQ, it.quality); } else { items++; val += GEAR[it.key].value; }
+        if (GEAR[it.key].slot === "weapon") { guns++; keys[it.key] = (keys[it.key] || 0) + 1; minQ = Math.min(minQ, it.quality); maxQ = Math.max(maxQ, it.quality); } else if (it.key === "flashbang" || it.key === "smokegren") gren++; // the flashbang branch's extra (gunsafes.js STASH_GRENADES)
+        else { items++; val += GEAR[it.key].value; }
       }
       ammo += out.sup.ammo || 0;
     }
-    return { guns: guns / N, ammo: ammo / N, items: items / N, minQ, maxQ, keys };
+    return { guns: guns / N, ammo: ammo / N, items: items / N, minQ, maxQ, keys, gren: gren / N };
   };
   const ch = stats("cheap", "farm"), md = stats("mid", "gunstore"), hp = stats("high", "police"), hm = stats("high", "military"), pc = stats("pistolcase", "town"), rc = stats("riflecase", "town"), rcm = stats("riflecase", "military");
   console.log(`  cheap ${ch.guns.toFixed(2)} guns ${ch.ammo.toFixed(0)} ammo · mid ${md.guns.toFixed(2)} / ${md.ammo.toFixed(0)} · high (police) ${hp.guns.toFixed(2)} / ${hp.ammo.toFixed(0)} · high (military) ${hm.guns.toFixed(2)} / ${hm.ammo.toFixed(0)}`);
@@ -384,6 +385,7 @@ console.log("Contents by tier (rollGunStash)");
   check(near(md.guns, 3.08, 0.1) && md.minQ >= 0.75 && md.maxQ <= 1 && near(md.ammo, 55, 3) && near(md.items, 0.5, 0.05), `mid: 2–4 guns + the rare 8% (${md.guns.toFixed(2)}), condition 0.75–1, ammo 30–80 (${md.ammo.toFixed(0)}), valuables 50% (${md.items.toFixed(2)})`);
   check(near(hp.guns, 3.5, 0.1) && near(hp.ammo, 140, 6) && Object.keys(hp.keys).every((k) => ["pistol", "carbine", "shotgun"].includes(k)) && near(hp.items, 0.2, 0.04), `high (police, prison): 2–5 service guns (${hp.guns.toFixed(2)}), ammo 80–200, a riot helmet 20% (${hp.items.toFixed(2)})`);
   check(near(hm.guns, 3, 0.1) && near(hm.ammo, 175, 7) && Object.keys(hm.keys).every((k) => ["ar", "carbine"].includes(k)) && near(hm.items, 0.2, 0.04), `high (military): 2–4 rifles (${hm.guns.toFixed(2)}), ammo 100–250, a frag 20% (${hm.items.toFixed(2)})`);
+  check(near(hp.gren, 1, 0.08) && near(hm.gren, 1, 0.08) && !ch.gren && !md.gren && !pc.gren, `an armoury safe (high) keeps 0–2 flashbangs or smoke grenades (police ${hp.gren.toFixed(2)}, military ${hm.gren.toFixed(2)}); nothing in the others`);
   check(pc.guns === 1 && Object.keys(pc.keys).every((k) => ["pistol", "revolver"].includes(k)) && near(pc.ammo, 10.5, 0.6), "a pistol case: one handgun, 6–15 rounds");
   check(rc.guns === 1 && !rc.keys.carbine && rcm.keys.carbine > 0 && near(rc.ammo, 12.5, 0.8), "a rifle case: one long gun, 5–20 rounds; a police carbine only at police or military sites");
   // A registered extra (a later stage: magazines, attachments) is applied.

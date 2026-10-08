@@ -112,6 +112,18 @@ export function rollGunStash(roll, tier, siteType, opts = {}) {
   return out;
 }
 
+// ---------- flashbangs and smoke grenades (throwables.js FLASH) ----------
+// An armoury safe (the high tier, police or military) keeps a few: 0-2, each a flashbang (60%) or a smoke grenade.
+export const STASH_GRENADES = { max: 2, flashbang: 0.6 };
+registerStashExtra(({ roll, tier, siteType }, out) => {
+  if (tier !== "high") return;
+  const n = Math.floor(roll("gren", "n") * (STASH_GRENADES.max + 1));
+  for (let i = 0; i < n; i++) {
+    const k = roll("gren", "k", i) < STASH_GRENADES.flashbang ? "flashbang" : "smokegren";
+    out.gear.push(lootItem(k, stashSource(tier, siteType), roll("gren", "q", i)));
+  }
+});
+
 // ---------- blown open (locks.js "blow") ----------
 // What a blast does to the contents: each gun −0.3 quality (at least 0.2), 30% of every supply gone, the glass
 // valuables (bottles of liquor) smashed. Changes gear and sup in place; returns how many things were lost.

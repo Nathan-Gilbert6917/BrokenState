@@ -31,7 +31,7 @@
 import { atVehicle } from "./raidloot.js"; // the team's vehicle on the map (loadRam / unloadRam)
 import { CELL, active, unitAt, unitById, say, fx, reachable, pathTo, distField, moveAlong, damage, heightAt, barredCell, breakCell, structureName, alertNear } from "./combat.js";
 import { throwAt, THROWABLES, throwablesOf } from "./stealth.js";
-import { blastSpot, throwBlind as throwBlindOf, FRAG, BLAST, FIRE } from "./throwables.js";
+import { blastSpot, flashSpot, throwBlind as throwBlindOf, FRAG, BLAST, FIRE } from "./throwables.js";
 import { shepherdsOf } from "./decoys.js";
 import { ACID } from "./acid.js";
 import { count } from "./buildings.js";
@@ -597,6 +597,18 @@ export function enemyThrow(b, u) {
     u.ap = 0;
     throwAt(b, u, key, spot.x, spot.y, blind);
     return true;
+  }
+  // A flashbang (a soldier's or a guard's, throwables.js FLASH_KIT) at 3-7 tiles on two or more of yours bunched up,
+  // at least one of them in cover, none of theirs in its reach: then the rest of the turn as usual (the rush).
+  if (u.throwables.flashbang > 0) {
+    const spot = flashSpot(b, u, THROWABLES.flashbang.range, { need: 2, cover: true });
+    if (spot) {
+      u.throwables.flashbang -= 1;
+      b.enemyThrowTurn = b.turn;
+      u.ap -= 1;
+      throwAt(b, u, "flashbang", spot.x, spot.y, spot.blind);
+      return u.ap < 1;
+    }
   }
   return false;
 }
