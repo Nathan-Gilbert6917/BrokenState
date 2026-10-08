@@ -23,6 +23,7 @@
 // The sides start CONTACT.HUMANS / CONTACT.DEAD tiles apart whatever the map's size, so the first shots come in a
 // turn or two and the dead reach your people in two or three: a bigger map is room to flank, not a walk.
 import { CELL, active, los, combatants } from "./combat.js";
+import { smokeScreens, SMOKE } from "./throwables.js"; // a smoke grenade's cloud screens someone running away
 
 export const SIZE_CLASSES = {
   S: { w: 24, h: 18, name: "Small" },
@@ -255,10 +256,14 @@ export function clearEnough(b) {
   if (!mine.length) return false;
   return left.every((f) => (!f.aware || f.fleeing) && mine.every((p) => Math.hypot(p.x - f.x, p.y - f.y) >= CLEAR.FAR && !los(b, p.x, p.y, f.x, f.y)));
 }
-// A person running from the fight who is out of everyone's sight and far enough off is gone (combat.js flee).
+// A person running from the fight who is out of everyone's sight and far enough off is gone (combat.js flee). Behind
+// a smoke grenade's cloud (throwables.js smokeScreens) a pursuer loses them at SMOKE.gone tiles, sight or not.
 export function fledFarEnough(b, u) {
   const mine = b.units.filter((p) => p.side === "player" && active(p));
-  return mine.every((p) => Math.hypot(p.x - u.x, p.y - u.y) >= CLEAR.GONE && !los(b, p.x, p.y, u.x, u.y));
+  return mine.every((p) => {
+    const d = Math.hypot(p.x - u.x, p.y - u.y);
+    return smokeScreens(b, p.x, p.y, u.x, u.y) ? d >= SMOKE.gone : d >= CLEAR.GONE && !los(b, p.x, p.y, u.x, u.y);
+  });
 }
 
 // ---------- building maps (buildingmaps.js) ----------

@@ -20,7 +20,8 @@
 //     (smokeBlocks). The dead that follow light or heat walk into it (decoys.js); people's AI walks around it
 //     (combat.js reachable).
 //   smoke (smoke grenade): a cloud 2 tiles around for 3 rounds; a shot into or out of it is −30 to hit, and sounding
-//     the retreat is +20 for anyone in it or within 2 tiles of it (combat.js escapeOdds).
+//     the retreat is +20 for anyone in it or within 2 tiles of it (combat.js escapeOdds). Someone running from the
+//     fight whom it screens from a pursuer is gone at SMOKE.gone tiles from them (battlesize.js fledFarEnough).
 //   flare (road flare): burns 4 rounds; your people see anything within 5 tiles of it whatever the dark, and aim
 //     +10 at it in a night battle. Its glare and heat are a lure too (stealth.js, decoys.js).
 //   flash (flashbang): a bang and a blinding flash where it lands (FLASH). Living people of either side within 2 tiles
@@ -35,7 +36,7 @@
 //     actions off at the start of the unit's next turn, stunTurnEnd lifts it when that turn ends (combat.js).
 // The AI (combat.js autoPlayerTurn): a frag grenade, a pipe bomb or a Molotov on three or more enemies bunched up
 // (two at a breach, the gate or a doorway for a Molotov) and none of yours near, a smoke grenade when the retreat is
-// about to be sounded, a flashbang on two or more people bunched within its reach (flashSpot; the enemy's soldiers and
+// about to be sounded (the enemy's and the third side's the turn they start to fall back: siege.js coverSmoke), a flashbang on two or more people bunched within its reach (flashSpot; the enemy's soldiers and
 // guards carry them: kitFlashbangs, siege.js enemyThrow).
 import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell, structureName, vehicleBlast, los, coverAgainst } from "./combat.js";
 import { ZTYPES } from "./hiveconst.js";
@@ -49,16 +50,24 @@ export const FIRE = {
   fuel: { hay: 0.45, crate: 0.25, fence: 0.25, barricade: 0.25, shelf: 0.2, cabinet: 0.2, counter: 0.2, bdoor: 0.15, doorway: 0.1 },
   ground: { field: 0.2, grass: 0.12, floor: 0.08 },
 };
-export const SMOKE = { r: 2, turns: 3, aim: 30, retreat: 20, near: 2 };
+// gone: someone running from the fight (combat.js flee, battlesize.js fledFarEnough) whom a cloud screens from a
+// pursuer (smokeScreens: the cloud on the line between them, or either of them in it) is gone at this many tiles from
+// that pursuer instead of 9 out of sight: chasing into the cloud keeps them, at −30 to shots into or out of it.
+export const SMOKE = { r: 2, turns: 3, aim: 30, retreat: 20, near: 2, gone: 5 };
 export const FLARE = { r: 5, turns: 4, aim: 10 };
 // r / near: tiles (the larger of the two offsets: within 2 is the 5 x 5 square); ap / apNear: actions lost next turn;
 // aim / daze: the aim penalty stunned / dazed; dmg within near; wake: people woken (tiles); noise: gunfire's; visor:
 // a riot helmet's visor's cut (cutMax: the most any protection takes off).
 export const FLASH = { r: 2, near: 1, ap: 1, apNear: 2, aim: 30, daze: 15, dmg: [0, 3], wake: 12, noise: 4, visor: 0.3, cutMax: 0.75 };
-// The soldiers and guards who carry a flashbang (or a guard a smoke grenade) into a fight (combat.js enemyUnit):
+// The soldiers and guards who carry a flashbang, and who carries a smoke grenade, into a fight (combat.js enemyUnit):
 // { key: [chance, how many] }. Their own dice (a hash of the battle's dice position and the unit), so nothing else in
-// the battle changes. What they never threw is on their body (inventory.js carriedThrowables).
-export const FLASH_KIT = { guards: { flashbang: [0.2, 1], smokegren: [0.1, 1] }, soldiers: { flashbang: [0.3, 1] } };
+// the battle changes. What they never threw is on their body (inventory.js carriedThrowables). Smoke covers a retreat
+// (siege.js coverSmoke): a squad of soldiers or contractors usually has one, militia sometimes, raiders rarely. A group
+// with an arsenal hands out only what it holds (arsenal.js ARSENAL.NONLETHAL stocks the same shares).
+export const FLASH_KIT = {
+  guards: { flashbang: [0.2, 1], smokegren: [0.1, 1] }, soldiers: { flashbang: [0.3, 1], smokegren: [0.35, 1] },
+  contractors: { smokegren: [0.3, 1] }, militia: { smokegren: [0.12, 1] }, fighters: { smokegren: [0.08, 1] }, raiders: { smokegren: [0.04, 1] },
+};
 // Where the flash is cut to FLASH.near: a sight line through a doorway, a broken or open door, a gate, a window.
 const DOORISH = new Set(["doorway", "odoor", "smashed", "breach", "gate", "window"]);
 export const SCATTER = { base: 0.45, perAim: 0.008, min: 0.08, max: 0.45, blind: 0.15, far: 5 };
@@ -74,6 +83,12 @@ const cellOf = (b, x, y) => b.cells[y * b.w + x];
 
 // Smoke grenades' clouds (not a fire's thick smoke, which blocks sight instead: smokeBlocks).
 export const smokeAt = (b, x, y, extra = 0) => !!b.smoke && b.smoke.some((c) => !c.thick && dist(c.x, c.y, x, y) <= c.r + extra + 1e-6);
+// A smoke grenade's cloud between two cells (or over either of them).
+export function smokeScreens(b, x0, y0, x1, y1) {
+  if (!b.smoke || !b.smoke.some((c) => !c.thick)) return false;
+  if (smokeAt(b, x0, y0) || smokeAt(b, x1, y1)) return true;
+  return lineCells(x0, y0, x1, y1).some(([x, y]) => smokeAt(b, x, y));
+}
 export const flareLit = (b, x, y) => inAny(b.flares, x, y);
 export const fireAt = (b, x, y) => !!b.fires && b.fires.some((c) => c.x === x && c.y === y);
 // A sight line through a fire's thick smoke (a cell between the two ends) is blocked (combat.js canSeeAt).

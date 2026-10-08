@@ -231,7 +231,7 @@ section("Weapons: off a downed guard's body, and out of their armory (gone from 
   const f2 = raiders(st2);
   // arsenal.js: the guards on the map carry their own kit; the rack holds the rest (three extra pieces here).
   const extra = [newItem("knife"), newItem("bat"), newItem("baton")]; // the worst pieces: no guard takes them up
-  f2.arsenal = { items: [...Array.from({ length: 30 }, () => newItem("pistol")), ...extra], rev: 0 };
+  f2.arsenal = { items: [...Array.from({ length: 30 }, () => newItem("pistol")), ...extra], rev: 0, smoke: true }; // smoke: a current arsenal (an older one gets its smoke grenades topped up once, arsenal.js topUpSmoke)
   const n2 = f2.arsenal.items.length;
   captive(st2, f2);
   const p2 = teamAt(st2, f2, 2);

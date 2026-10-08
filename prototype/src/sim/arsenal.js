@@ -35,8 +35,9 @@
 // weapons, explosives from scrap and fuel: CRAFT), trade (fighting gear you sell or give them goes in; surplus over
 // WANT a head goes on their shelf, trade.js), stealing (raids on your bases and other groups, robbing your teams,
 // captives stripped), the fields they hold after a fight, a broken group's arsenal (half to the group that takes it
-// over), your vehicles when a team is taken whole. Outflows: the dead's kit, wear (a use a fight; broken is gone),
-// rounds spent, explosives thrown at walls, what they sell, what others steal.
+// over), your vehicles when a team is taken whole, a smoke grenade now and then while short (SMOKE_RESTOCK). Outflows:
+// the dead's kit, wear (a use a fight; broken is gone), rounds spent, explosives thrown at walls, smoke thrown over a
+// retreat by the numbers (smokeCover), what they sell, what others steal.
 import { GEAR, FACTION_TYPES, LOCATIONS } from "./data.js";
 import { KITS, WEAPONS, loadMag, placeCar, floodReach } from "./combat.js";
 import { lootItem } from "./inventory.js";
@@ -83,14 +84,21 @@ export const ARSENAL = {
     gunEvery: 5, gunScrap: 8, gunParts: 1, guns: 1.1 },
   WANT: 1.3, // weapons a head they keep; more goes on the trade shelf
   SHELF: 2, // surplus pieces put on the shelf a refresh
+  // Smoke grenades (siege.js coverSmoke: over a retreat) come back coarsely, a day at a time: while a group holds fewer
+  // than its kit's share a head (NONLETHAL smokegren), it gets one a day at this chance from its scavenging and trade
+  // (military kit from Army sites and its own stores, traders' guards buy them, militia and raiders come across one).
+  SMOKE_RESTOCK: { soldiers: 0.15, guards: 0.1, militia: 0.05, fighters: 0.05, raiders: 0.03 },
+  // A beaten side by the numbers (factions.js AI raids) with smoke covers its retreat: each grenade it throws (at most
+  // MAX, out of its arsenal) spares PER of its people; at least one of the losses still falls.
+  SMOKE_COVER: { PER: 1, MAX: 2 },
   BYNUM_PICK: 0.3, // conflicts.js victoryRewards: by the numbers, one piece of their dead's kit for you this often
   WALL_LAUNCHER: 6, // power a launcher adds against walls
   SEEN_DAYS: 30, // a fight or a look at their camp shows you their kit for this long
   // The rest of a kit's people's gear, a share a head: tasers and spray (nonlethal.js NL_KIT), flashbangs and smoke
   // (throwables.js FLASH_KIT), medics' kits (medics.js MEDIC.ENEMY KITS: about one medic in sixteen people).
   NONLETHAL: {
-    guards: { taser: 0.4, pepper: 0.45, flashbang: 0.2, smokegren: 0.1, bandagekit: 0.06 }, soldiers: { taser: 0.12, pepper: 0.2, flashbang: 0.3, traumakit: 0.06 },
-    militia: { pepper: 0.25, bandagekit: 0.06 }, fighters: { pepper: 0.08, bandagekit: 0.06 }, raiders: { taser: 0.04 },
+    guards: { taser: 0.4, pepper: 0.45, flashbang: 0.2, smokegren: 0.1, bandagekit: 0.06 }, soldiers: { taser: 0.12, pepper: 0.2, flashbang: 0.3, smokegren: 0.35, traumakit: 0.06 },
+    militia: { pepper: 0.25, smokegren: 0.12, bandagekit: 0.06 }, fighters: { pepper: 0.08, smokegren: 0.08, bandagekit: 0.06 }, raiders: { taser: 0.04, smokegren: 0.04 },
   },
 };
 // The kit of each group type (the same as conflicts.js KIND_OF).
@@ -173,12 +181,24 @@ export function seedArsenal(state, f) {
   for (const it of starterKit(state.seed, f.name, f.type, f.pop, f.gear || 1)) put(A, f, it, null);
   A.seeded = A.items.length;
   A.gear = f.gear || 1; // the eras' arms this kit was dealt with (eraArms: a later gang's strong guns already carry them)
+  A.smoke = true; // dealt with smoke grenades (topUpSmoke)
   return A;
+}
+// Smoke grenades came into most kits later (2026-10, siege.js coverSmoke: smoke over a retreat): an arsenal dealt
+// before then gets its share once, the same items a new world's would hold (A.smoke marks it done). One that already
+// holds smoke (guards had it before) is left as it is.
+function topUpSmoke(state, f, A) {
+  A.smoke = true;
+  const kind = kitOf(f), share = (ARSENAL.NONLETHAL[kind] || {}).smokegren || 0;
+  if (!share || A.items.some((it) => it && it.key === "smokegren")) return;
+  const src = kitSource(kind);
+  for (let i = 0; i < Math.round(Math.max(0, f.pop || 0) * share); i++) put(A, f, lootItem("smokegren", src, [state.seed, "ars", f.name, "nsmokegren", i]), null);
 }
 // The group's arsenal, made the first time it is read (an old save's groups: the same rule as a new world's).
 export function ensureArsenal(state, f) {
   if (!f || f.outsider || ARSENAL_SWITCH.off) return null;
-  return f.arsenal || seedArsenal(state, f);
+  if (f.arsenal) { if (!f.arsenal.smoke) topUpSmoke(state, f, f.arsenal); return f.arsenal; }
+  return seedArsenal(state, f);
 }
 export function addToArsenal(state, f, it, why = "found") {
   if (!arsenalWorthy(it)) return false;
@@ -689,6 +709,7 @@ export function arsenalDaily(state, f) {
   const salt = [state.seed, "arsday", f.name, tickOf(f)]; // groupcare.js tickOf: the group's own day count
   if (f.pop > A.pop0) for (let i = A.pop0; i < f.pop; i++) for (const it of newcomerKit(state, f, [...salt, "n", i])) addToArsenal(state, f, it, "recruit");
   A.pop0 = f.pop;
+  restockSmoke(state, f, A, salt);
   const C = ARSENAL.CRAFT, phase = Math.floor(h(state.seed, f.name, "craft") * 12);
   if (hash01(...salt, "crafty") >= weightOf(f, "craft")) { A.pop0 = f.pop; return; } // groupcare.js GROUP_PRIORITIES: some types craft less
   const o = sortedKit(A);
@@ -711,6 +732,23 @@ export function arsenalDaily(state, f) {
     f.stock.fuel -= C.bombFuel;
     addToArsenal(state, f, lootItem(bomb, "militia", [...salt, "b"]), "crafted");
   }
+}
+// The day's smoke grenade (SMOKE_RESTOCK): one, while they hold fewer than their kit's share a head. Own dice.
+function restockSmoke(state, f, A, salt) {
+  const kind = kitOf(f), p = ARSENAL.SMOKE_RESTOCK[kind] || 0;
+  const want = Math.round(Math.max(0, f.pop || 0) * ((ARSENAL.NONLETHAL[kind] || {}).smokegren || 0));
+  if (!p || A.items.filter((it) => it && it.key === "smokegren").length >= want || hash01(...salt, "smoke") >= p) return;
+  addToArsenal(state, f, lootItem("smokegren", kitSource(kind), [...salt, "sm"]), "scavenged");
+}
+// A side beaten by the numbers covers its retreat with smoke (SMOKE_COVER): the grenades thrown leave the arsenal.
+// loss: its people lost; returns how many of them the smoke spared (never all of them).
+export function smokeCover(state, f, loss) {
+  if (!f || f.outsider || loss <= 1 || !ensureArsenal(state, f)) return 0;
+  const S = ARSENAL.SMOKE_COVER;
+  const smoke = f.arsenal.items.filter((it) => it && it.key === "smokegren");
+  const n = Math.min(smoke.length, S.MAX, Math.ceil((loss - 1) / S.PER));
+  for (const it of smoke.slice(0, n)) removeFromArsenal(f, it, "thrown");
+  return Math.min(loss - 1, n * S.PER);
 }
 // A vehicle that falls to a group (your team taken whole: conflicts.js endIfEmpty; a broken group's motor pool).
 export function captureVehicle(f, v) {
