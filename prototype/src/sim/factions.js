@@ -83,6 +83,8 @@ import { hash01 } from "./skills.js";
 import { escortParty } from "./caravans.js"; // a convoy's guards (escorts.js)
 import { noteGrievance, ceasefireWith, pwarRaidDone, pwarById, goalText } from "./playerwars.js"; // wars with you: what they hold against you, ceasefires, the score
 import { sameBloc, blocOf, blocHelpFor, blocHelpAfter, jointRaid, jointAfter, blocPlayerHelp } from "./blocs.js"; // AI blocs: help, joint raids
+import { flightDaily } from "./groupflight.js"; // groups leaving a base they cannot hold against the dead
+import { splinterDaily } from "./splinters.js"; // splinter bands
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -422,6 +424,8 @@ export function factionsDaily(state) {
   }
   groupCareWorld(state); // groupcare.js: your deserters may join a group near the base they left
   groupWorldWorld(state); // groupworld.js: abandoned bases decay
+  flightDaily(state); // groupflight.js: a group leaves a base it cannot hold against a horde coming at it
+  splinterDaily(state); // splinters.js: strife; a group torn up inside splits, a new band walks out
   newGangs(state);
   aiScavDaily(state); // aiscav.js: scavenging parties out, sites in their own land stripped
   clearStaleAlerts(state);
@@ -909,16 +913,17 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
 }
 
 // by: the group whose raid finished them (it takes over what is left); otherwise the strongest aggressive group
-// within 15 tiles may move in on the ruins (50%).
-export function collapseFaction(state, f, by = null) {
+// within 15 tiles may move in on the ruins (50%). opts.into: they went over to that group (groupflight.js: taken in
+// by an ally), so nobody takes over the ruins, no refugees come to you and nothing is said of a collapse.
+export function collapseFaction(state, f, by = null, opts = {}) {
   if (!f.alive) return;
   const ruins = [...f.bases];
   f.alive = false;
   f.bases = [];
   f.pact = null;
   freeOnCollapse(state, f); // groupjails.js: the people they held walk home
-  if (f.known) log(state, `${f.name} has collapsed.`, "danger");
-  takeOver(state, f, ruins, by);
+  if (f.known && !opts.into) log(state, `${f.name} has collapsed.`, "danger");
+  if (!opts.into) takeOver(state, f, ruins, by);
   // groupworld.js: the bases nobody took stand empty, their works and some stores left for whoever comes.
   for (const t of ruins) leaveGroupBase(state, f, t, 1 / Math.max(1, ruins.length));
   // Their people on the road are gone with them: raids, sieges and convoys end here.
@@ -935,7 +940,7 @@ export function collapseFaction(state, f, by = null) {
   clearStaleAlerts(state);
   // Some survivors look for a new home.
   // A recruit card (recruits.js): 1–3 of them, with the hub's beds, food and water.
-  if (state.rng.chance(0.6) && hub(state)) {
+  if (!opts.into && state.rng.chance(0.6) && hub(state)) {
     const n = state.rng.int(1, 3);
     const list = Array.from({ length: n }, () => makeCandidate(state, { quality: 0.9, minHealth: 45 }));
     offerRecruits(state, list, {

@@ -48,6 +48,7 @@ import { factionVehicles, groupTurret, upgradesOf } from "./vehicles.js";
 import { relation, warsOf } from "./diplomacy.js";
 import { sameBloc } from "./blocs.js"; // AI blocs: food bought from a member first
 import { atWarWithYou } from "./playerwars.js"; // a war with you presses on desertion
+import { noteStrife, SPLINTER } from "./splinters.js"; // deserters, and the dead of a fight, stir up strife (splinter bands)
 
 // What each type of group leans to (1 = an ordinary group). Read through prio(); the situation multiplies it.
 // Wired now: scavenge (aiscav.js trip gap), trade (buying food when short), raid (factions.js raid chance), expand,
@@ -85,6 +86,10 @@ import { atWarWithYou } from "./playerwars.js"; // a war with you presses on des
 //     sharesNews (a talk that goes well marks their bases on your map).
 //   playerwars.js: cbConversion and cbRival (the score of a "conversion" or a "rival" goal for a war on you; rival ×
 //     the share of the land the coalition holds).
+// New with them: splinter (× the chance a group torn by strife splits, 0 never) and splinterAs (the type of the band
+// that walks out: raiders, expansionists and the military's deserters go raiding, zealots found a new sect):
+// splinters.js; flee (× the chance it leaves a base it cannot hold against the dead: zealots stand, traders and
+// communes run): groupflight.js.
 export const GROUP_PRIORITIES = {
   // takeAlive: the share of a beaten group's losses the winners take alive (nonlethal.js NL_TAKE reads it); walled:
   // builds the full wall goal at every base (groupworks.js WALLED_TYPES reads it); escort: × the share of its fighters
@@ -94,25 +99,25 @@ export const GROUP_PRIORITIES = {
   // how fast a war wears it down (playerwars.js termsChance, weariness).
   raider:      { takeAlive: 0.25, walled: 0, escort: 0.8, scavenge: 1.0, trade: 0.3, raid: 1.5, build: 0.6, expand: 1.1, fortify: 0.6, prisoners: 1.2, nonlethal: 0.3, repair: 0.7, heal: 0.6, recruit: 1.2, caravan: 0.2, farm: 0.6, craft: 1.1, yield: 0.3, harsh: 1.4, ransom: 1.0, patrol: 0.8, vehicles: 1.3, steal: 1.5, ally: 0.7, warlike: 1.5, peaceful: 0.6,
     mechanic: 3, pressGang: 1.5, relKin: -20, relOut: -44, relRank: 4, blocRel: -26, sites: ["quarry", "factory", "prison", "gas", "truckstop", "motel", "autoshop", "town"], provoked: 0, keep: 0.8, raze: 0.22, hiveWar: 0, convoy: 0, raidBait: 0.6, siegePrep: 0, bombs: "pipebomb", threat: 1, sellsCars: 1, fits: ["scrapPlate"], fitting: 1, likes: { walls: 1 },
-    meetOdds: 0.5, stop: "roadblock", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.85, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 0, cbConversion: 0, cbRival: 0 },
+    meetOdds: 0.5, stop: "roadblock", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.85, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 0, cbConversion: 0, cbRival: 0, splinter: 1, splinterAs: "raider", flee: 1 },
   expansionist: { takeAlive: 0.2, walled: 0, escort: 1.1, scavenge: 1.1, trade: 0.9, raid: 1.0, build: 1.1, expand: 1.5, fortify: 0.9, prisoners: 1.0, nonlethal: 0.7, repair: 1.0, heal: 0.9, recruit: 1.4, caravan: 1.3, farm: 1.0, craft: 1.0, yield: 0.5, harsh: 1.0, ransom: 1.0, patrol: 1.0, vehicles: 1.2, steal: 0.8, ally: 0.6, warlike: 1.4, peaceful: 0.8,
     mechanic: 4, pressGang: 0, relKin: -28, relOut: -24, relRank: 2, blocRel: 28, sites: ["town", "airport", "factory", "police"], provoked: 0, keep: 0.9, raze: 0.05, hiveWar: 0.4, convoy: 0, raidBait: 0.6, siegePrep: 1, bombs: "pipebomb", threat: 1, sellsCars: 1, fits: ["scrapPlate", "mesh"], fitting: 1, likes: null,
-    meetOdds: 0.5, stop: "roadblock", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.85, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 0, cbConversion: 0, cbRival: 40 },
+    meetOdds: 0.5, stop: "roadblock", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.85, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 0, cbConversion: 0, cbRival: 40, splinter: 0.6, splinterAs: "raider", flee: 0.8 },
   zealot:       { takeAlive: 0, walled: 0, escort: 0.8, scavenge: 0.8, trade: 0.4, raid: 1.2, build: 0.9, expand: 0.9, fortify: 1.0, prisoners: 1.3, nonlethal: 0.2, repair: 0.6, heal: 0.7, recruit: 1.0, caravan: 0.3, farm: 1.0, craft: 0.8, yield: 0.0, harsh: 1.3, ransom: 0.0, patrol: 1.0, vehicles: 0.6, steal: 0.7, ally: 0.4, warlike: 1.2, peaceful: 0.2,
     mechanic: 2, pressGang: 0, relKin: 20, relOut: -34, relRank: 3, blocRel: 12, sites: ["church", "school", "univ", "hospital", "town"], provoked: 0, keep: 0.7, raze: 0.12, hiveWar: 1, convoy: 0, raidBait: 0.6, siegePrep: 0, bombs: "pipebomb", threat: 1, sellsCars: 1, fits: ["mesh"], fitting: 1, likes: null,
-    meetOdds: 0.5, stop: "zealotpatrol", talkDc: 2, rescueDc: 3, bribeCost: 1.5, bribeOdds: 0.55, pactOdds: 0.8, ransomHead: 30, killCaptive: 0.05, turnCaptive: 0.01, sharesNews: 0, cbConversion: 30, cbRival: 0 },
+    meetOdds: 0.5, stop: "zealotpatrol", talkDc: 2, rescueDc: 3, bribeCost: 1.5, bribeOdds: 0.55, pactOdds: 0.8, ransomHead: 30, killCaptive: 0.05, turnCaptive: 0.01, sharesNews: 0, cbConversion: 30, cbRival: 0, splinter: 0.5, splinterAs: "zealot", flee: 0.4 },
   military:     { takeAlive: 0.35, walled: 1, escort: 1, scavenge: 0.9, trade: 0.8, raid: 0.4, build: 1.0, expand: 0.8, fortify: 1.3, prisoners: 1.2, nonlethal: 1.1, repair: 1.4, heal: 1.3, recruit: 0.8, caravan: 0.8, farm: 0.8, craft: 1.2, yield: 0.6, harsh: 1.1, ransom: 0.8, patrol: 1.4, vehicles: 1.5, steal: 0.3, ally: 0.9, warlike: 0.5, peaceful: 1.0,
     mechanic: 6, pressGang: 0, relKin: 18, relOut: 18, relRank: 0, blocRel: 25, sites: ["military", "airport", "police", "ranger"], provoked: 0.03, keep: 0.55, raze: 0, hiveWar: 0.75, convoy: 0, raidBait: 0.6, siegePrep: 1, bombs: "frag", threat: 0, sellsCars: 0, fits: ["plating", "glass"], fitting: 1, likes: null,
-    meetOdds: 0.3, stop: "checkpoint", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 40 },
+    meetOdds: 0.3, stop: "checkpoint", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 40, splinter: 0.3, splinterAs: "raider", flee: 0.6 },
   fortress:     { takeAlive: 0.35, walled: 1, escort: 0.9, scavenge: 0.9, trade: 1.0, raid: 0.3, build: 1.3, expand: 0.5, fortify: 1.5, prisoners: 0.9, nonlethal: 0.9, repair: 1.4, heal: 1.1, recruit: 0.9, caravan: 0.9, farm: 1.1, craft: 1.2, yield: 0.7, harsh: 0.9, ransom: 1.0, patrol: 0.9, vehicles: 1.0, steal: 0.3, ally: 1.3, warlike: 0.3, peaceful: 1.1,
     mechanic: 5, pressGang: 0, relKin: 18, relOut: 18, relRank: 0, blocRel: 22, sites: ["prison", "dam", "ranch", "town"], provoked: 0.02, keep: 0.5, raze: 0, hiveWar: 0.7, convoy: 0.15, raidBait: 0.6, siegePrep: 0, bombs: "pipebomb", threat: 0, sellsCars: 1, fits: ["plating", "mesh"], fitting: 1, likes: { walls: 2 },
-    meetOdds: 0.3, stop: "checkpoint", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0 },
+    meetOdds: 0.3, stop: "checkpoint", talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0, splinter: 0, splinterAs: null, flee: 0.5 },
   traders:      { takeAlive: 0.45, walled: 0, escort: 1.2, scavenge: 1.0, trade: 1.5, raid: 0.1, build: 1.0, expand: 0.9, fortify: 0.8, prisoners: 0.6, nonlethal: 1.2, repair: 1.0, heal: 1.1, recruit: 1.0, caravan: 1.5, farm: 0.9, craft: 0.9, yield: 1.2, harsh: 0.8, ransom: 1.2, patrol: 0.8, vehicles: 1.1, steal: 0.2, ally: 1.4, warlike: 0.1, peaceful: 1.5,
     mechanic: 4, pressGang: 0, relKin: 30, relOut: 30, relRank: 1, blocRel: 18, sites: ["town", "gas", "truckstop", "grocery", "mall"], provoked: 0.01, keep: 0.3, raze: 0, hiveWar: 0.15, convoy: 0.15, raidBait: 1.2, siegePrep: 0, bombs: "pipebomb", threat: 0, sellsCars: 1, fits: ["mesh"], fitting: 1, likes: null,
-    meetOdds: 0.12, stop: null, talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0 },
+    meetOdds: 0.12, stop: null, talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0, splinter: 0, splinterAs: null, flee: 1.2 },
   commune:      { takeAlive: 0.4, walled: 0, escort: 1, scavenge: 0.9, trade: 1.3, raid: 0.0, build: 1.1, expand: 0.9, fortify: 0.7, prisoners: 0.4, nonlethal: 1.5, repair: 0.9, heal: 1.4, recruit: 1.4, caravan: 1.0, farm: 1.5, craft: 0.8, yield: 1.3, harsh: 0.6, ransom: 1.0, patrol: 0.6, vehicles: 0.5, steal: 0.1, ally: 1.5, warlike: 0.1, peaceful: 1.6,
     mechanic: 3, pressGang: 0, relKin: 30, relOut: 30, relRank: 1, blocRel: 18, sites: ["farm", "ranch", "feedstore", "town"], provoked: 0.01, keep: 0.3, raze: 0, hiveWar: 0.15, convoy: 0.15, raidBait: 1.2, siegePrep: 0, bombs: "pipebomb", threat: 0, sellsCars: 1, fits: ["mesh"], fitting: 0.3, likes: { farms: 1 },
-    meetOdds: 0.12, stop: null, talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0 },
+    meetOdds: 0.12, stop: null, talkDc: 0, rescueDc: 0, bribeCost: 1, bribeOdds: 0.95, pactOdds: 0.97, ransomHead: 0, killCaptive: 0, turnCaptive: 0.015, sharesNews: 1, cbConversion: 0, cbRival: 0, splinter: 0, splinterAs: null, flee: 1.2 },
 };
 // A type's weight for an action (1 for an unknown type or action).
 export const weightOf = (f, act, dflt = 1) => ((GROUP_PRIORITIES[f && f.type] || {})[act] ?? dflt);
@@ -188,6 +193,7 @@ export function noteFight(f, dead, wounded = null) {
   if (!f || f.outsider) return;
   woundGroup(f, wounded == null ? woundsFor(dead) : wounded);
   if (dead > 0) f.lossRecent = (f.lossRecent || 0) + dead;
+  if (dead > 0) f.blows = (f.blows || 0) + dead / Math.max(1, (f.pop || 0) + dead); // splinters.js: the share of them killed (strife, a fallen leader)
 }
 
 // ---------- repairs (the same contract as repair.js: repairMath / repairInputs) ----------
@@ -336,6 +342,7 @@ export function desertOne(state, f, d = day(state), where = null) {
   }
   f.pop -= 1;
   f.deserted = (f.deserted || 0) + 1;
+  noteStrife(f, SPLINTER.DESERTER); // splinters.js: every one who goes makes the rest think of going together
   if (f.wounded > f.pop) f.wounded = f.pop;
   const r = where === "player" ? 0 : where === "group" ? D.toPlayer : where === "wanderer" ? 1 : h(state, f.name, tickOf(f), "dwhere");
   const g = state.grid, home = f.bases[0];

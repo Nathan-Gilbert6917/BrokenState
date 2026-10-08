@@ -53,6 +53,7 @@ import { day, log, hub, factionById, addCard, alive, atBase, supplyValue, player
 import { SUPPLIES } from "./data.js";
 import { hash01 } from "./skills.js";
 import { attitude, changeGoodwill, strength, isAggressiveType, launchRaidOnBase, playerRaidWeight, nearestOwnBase, RAIDS } from "./factions.js";
+import { noteStrife, SPLINTER } from "./splinters.js"; // a war on you they lost stirs strife (splinter bands)
 import { ensureDiplo, knownAs, relation, DIPLO } from "./diplomacy.js";
 import { weightOf, fitPeople } from "./groupcare.js";
 import { knowsOf } from "./groupworld.js";
@@ -617,6 +618,9 @@ export function endPwar(state, w, how, text, terms = []) {
   if (d.pwarEnded.length > 20) d.pwarEnded.length = 20;
   d.pwarStats.peace++;
   if (how in d.pwarStats) d.pwarStats[how]++;
+  // splinters.js: a war on you they lost (worn out, or paying for the peace) stirs strife.
+  const main = factionById(state, w.fid);
+  if (main && (how === "weary" || (how === "terms" && terms.some((t) => t.payer === "them")))) noteStrife(main, SPLINTER.WAR_LOST, "war");
   for (const c of [...state.cards]) if (c.pwarId === w.id) state.cards.splice(state.cards.indexOf(c), 1);
   record(state, text, how === "gone" ? "info" : "good");
 }

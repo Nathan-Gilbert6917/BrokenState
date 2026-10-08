@@ -69,6 +69,7 @@ import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every r
 import { payAmmo } from "./ammo.js"; // rounds by calibre: the ones its guns need least go
 import { warCaptureMult } from "./nonlethal.js"; // groups that take people alive take more prisoners in a war
 import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES warlike: a group's temper for war
+import { noteStrife, SPLINTER } from "./splinters.js"; // a lost war stirs strife (splinter bands)
 import { sameBloc, blocSpare, blocWarJoin, blocsDaily, jointRaid } from "./blocs.js"; // AI blocs (alliances of groups)
 import { pwarsDaily } from "./playerwars.js"; // wars declared on you (and by you)
 
@@ -486,6 +487,7 @@ export function makePeace(state, w, how = "terms") {
     text = `${cap(knownAs(state, a))} and ${knownAs(state, b)} made peace. Neither side gained anything.`;
   }
   endWar(state, w, terms, text);
+  if (terms === "land" || terms === "tribute") noteStrife(lose, SPLINTER.WAR_LOST, "war"); // splinters.js: a lost war stirs strife
   if (w.playerSide != null) {
     const ally = factionById(state, w.playerSide);
     const foe = ally === a ? b : a;

@@ -20,6 +20,7 @@ import { ZTYPES } from "./hiveconst.js";
 import { sowTile } from "./middead.js"; // Sowers
 import { hordeMilitaryPickup } from "./deadsoldiers.js";
 import { shelterHeat } from "./fieldheat.js";
+import { hordeOverrun, baseHold } from "./groupflight.js"; // a group whose base the dead overran may leave it
 // A horde may carry special dead from its hive's growths (hivetech.js): h.mix is the share of each kind
 // ({ runner: 0.15, brute: 0.08 }), kept through merges (weighted) and splits; h.elite from a mutation vat. Many
 // runners move it a quarter faster; screamers in it pull wandering hordes within 3 tiles along with it.
@@ -39,6 +40,9 @@ const WANDER = new Set(["roam", "border", undefined, null]);
 // A horde's score from its size: about 3 for a small horde, 8 for a medium one, 16 for a large one (20 at 200,
 // 33 at 400). It sets the horde's toughness in a fight and what it adds to a new hive (hives.js).
 export const hordeScore = (size) => Math.round((Math.max(0, size || 0) ** 0.8 / 3.4) * 10) / 10;
+// A horde's weight on a group's walls (onHordeEnter; groupflight.js judges a base it cannot hold by it): a
+// Wallbreaker at its head makes it half again as dangerous, special dead weigh more (zombietypes.js mixWeight).
+export const hordeWallPower = (h) => h.size * 0.12 * (h.bosses ? 1.6 : 1) * mixWeight(h.mix, "wall");
 export const hordeClass = (size) => (size < 40 ? "small" : size < 95 ? "medium" : size <= 220 ? "large" : "huge");
 
 // Eras (eras.js): from year 3 a new roaming, attacking or border horde comes bigger every year (+4% a year, at most
@@ -195,12 +199,12 @@ function onHordeEnter(state, h) {
   if (base) return hordeAttackBase(state, h, base);
   const f = state.factions.find((x) => x.alive && x.bases.includes(h.tile));
   if (f) {
-    // A Wallbreaker at its head makes a horde half again as dangerous to a group's walls.
-    // Special dead (hivetech.js) weigh more against their walls too (zombietypes.js mixWeight).
-    const held = resolveRaidOnFaction(state, { strength: h.size * 0.12 * (h.bosses ? 1.6 : 1) * mixWeight(h.mix, "wall"), owner: null, target: { factionId: f.id, tile: h.tile } }, []);
+    const att = hordeWallPower(h), def = baseHold(state, f, h.tile);
+    const held = resolveRaidOnFaction(state, { strength: att, owner: null, target: { factionId: f.id, tile: h.tile } }, []);
     if (h.role === "attack") { h.role = "roam"; h.goal = null; }
     h.target = null;
     reduceHorde(state, h, h.size - h.size * (held ? 0.45 : 0.7));
+    hordeOverrun(state, f, h.tile, att, def, !!held); // groupflight.js: overrun and no hope of holding it, they leave
     return;
   }
   if (h.role === "build") {
