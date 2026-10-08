@@ -55,12 +55,12 @@ export const ARSENAL = {
   HOME: 0.35, // the home guard's share of the people (and every third piece of kit from the second best)
   MOD: 0.2, ARMOUR: 0.5, // a gun part's worth; armour counts half its power (world.js combatPower)
   KIT_MIN: 0.15, KIT_MAX: 2.5,
-  KIT_WEIGHT: 0.6, // the kit's share of a group's fighting worth (the rest: its people, their numbers and training)
+  KIT_WEIGHT: 0.5, // the kit's share of a group's fighting worth (the rest: its people, their numbers and training)
   AMMO_NEED: 3, AMMO_SHORT: 0.7, // rounds a gun to count fully (your bases' 3 a head, world.js armedFactor); with none, the guns count 70%
   ROUNDS: 3, // rounds a fighter spends in a fight
   PICKUP_WEAR: [0.2, 0.5], // a piece picked up off a battlefield has lost this share of its uses
   RECRUIT_ARMED: 0.75, // a newcomer brings a weapon
-  SCAV_ITEMS: 5, // items a scavenging party finds per loot it takes (a full trip about 0.25 loot: 1.2 items)
+  SCAV_ITEMS: 6, // items a scavenging party finds per loot it takes (a full trip about 0.25 loot: 1.5 items)
   CRAFT: { every: 4, scrap: 3, weapons: ["pipespear", "spikedbat", "pipespear", "nailbat"], bombEvery: 6, bombScrap: 2, bombFuel: 1,
     // A group with a workshop (groupworks.js) rebuilds a gun of its kit from scrap and a part while it has fewer
     // than GUNS a head.
