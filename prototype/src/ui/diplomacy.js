@@ -24,6 +24,10 @@ import {
 } from "../sim/alliance.js";
 import { bandsOf, knownBands, bandInfo, militaryStatus } from "../sim/hardcore-groups.js";
 import { ask } from "./confirm.js"; // joining or leaving a war, expelling a member, giving up a job ask first
+import { ensureBlocs, blocOf, blocMembers, blocTitle, foeText, leaveBlocSide, BLOC } from "../sim/blocs.js"; // AI blocs
+import {
+  ensurePwars, pwarOf, goalText, cbText, termOptions, offerTerms, talkWait, talkVia, declareByPlayer, playerDeclareProblem, ceasefireUntil, ceasefireWith, PW,
+} from "../sim/playerwars.js"; // wars with you
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -34,7 +38,9 @@ const bar = (v, color) => `<div class="bar"><i style="width:${Math.max(0, Math.m
 const ARROW = { up: `<span class="good"${tip("Up since last week")}>▲</span>`, down: `<span class="danger"${tip("Down since last week")}>▼</span>`, same: `<span class="muted"${tip("About the same as last week")}>–</span>` };
 const nameOf = (state, id) => { const f = factionById(state, id); return f ? (f.known ? f.name : knownAs(state, f)) : "?"; };
 const TERMS = { land: "land ceded", tribute: "tribute", white: "white peace", none: "—" };
-const REASON = { land: "land", resources: "food and ammo", hive: "hive ground", pact: "a pact" };
+const REASON = { land: "land", resources: "food and ammo", hive: "hive ground", pact: "a pact", bloc: "its bloc" };
+const HOW = { terms: "peace on terms", weary: "worn out: a ceasefire", white: "a ceasefire, nothing gained", gone: "they are gone" };
+const swatch = (c) => `<span class="swatch" style="background:${c}"></span>`;
 
 // ---------- Groups tab ----------
 // Goals (both victories), then the buttons to the Diplomacy window and the Jobs list.
@@ -51,8 +57,20 @@ export function groupsDiploHeader(state) {
       <button data-action="dp-open" data-tab="affairs"${tip("Wars, pacts and how the groups feel about each other; broker a ceasefire or join a war")}>World affairs${wars ? ` (${wars} war${wars === 1 ? "" : "s"})` : ""}</button>
       <button data-action="dp-open" data-tab="coalition"${tip(`${ALLIANCE.NAME}: members, invitations, the council`)}>Coalition</button>
     </div>
+    ${blocsAndWarsBlock(state)}
     ${jobsBlock(state, true)}`;
 }
+
+// The blocs between groups you know of and the wars with you, in the Groups tab (sim/blocs.js, sim/playerwars.js).
+function blocsAndWarsBlock(state) {
+  const D = ensurePwars(state);
+  ensureBlocs(state);
+  const wars = D.pwars.map((w) => { const f = factionById(state, w.fid); return f ? `<div class="danger"${tip(`Score ${w.score.you}–${w.score.them} to you · weariness theirs ${Math.round(w.exh.them)}, yours ${Math.round(w.exh.you)} (they sue for peace from ${PW.TIRED}, pull out at ${PW.BROKEN})`)}>⚔ <b>${esc(f.name)}</b> ${w.by === "you" ? "(you declared it)" : "declared war on you"} on day ${w.start}: ${esc(goalText(state, w))}${w.allies.length ? `, with ${w.allies.map((id) => esc(nameOf(state, id))).join(" and ")}` : ""}</div>` : ""; }).join("");
+  const blocs = state.diplo.blocs.filter((b) => blocMembers(state, b).some((m) => m.known)).map((b) => `<div${tip(`Founded day ${b.founded}. Members defend each other, raid together, share what they know and trade with each other first.${b.player ? " You stand with them: their fighters help defend your bases near them." : ""}`)}>${swatch(b.color)}<b>${esc(cap(blocTitle(b)))}</b>: ${blocMembers(state, b).map((m) => esc(nameOf(state, m.id))).join(", ")} <span class="muted">against ${esc(foeText(state, b.foe))}</span>${b.player ? ` <span class="good">(you stand with them)</span>` : ""}</div>`).join("");
+  if (!wars && !blocs) return "";
+  return `<div class="card small"><div class="spread"><b${tip("Wars declared on you (or by you) and the alliances between groups. Help: Blocs and wars.")}>⚔ Blocs and wars</b><a class="link" data-action="dp-open" data-tab="affairs">details</a></div>${wars}${blocs}</div>`;
+}
+const cap = (t) => (t ? t[0].toUpperCase() + t.slice(1) : t);
 
 function goalsCard(state, g, compact) {
   const a = g.alliance, h = g.hives;
@@ -167,6 +185,8 @@ export function groupCardExtras(state, f) {
     ${wars.length ? `<div class="danger">⚔ At war with ${wars.map((w) => esc(nameOf(state, enemyIn(w, f)))).join(", ")}${wars.some((w) => w.playerSide === f.id) ? " (you fight beside them)" : wars.some((w) => w.playerSide != null) ? " (you fight against them)" : ""}</div>` : ""}
     ${pactsOf(state, f).length ? `<div class="muted">Pacts with ${pactsOf(state, f).map((o) => esc(nameOf(state, o.id))).join(", ")}</div>` : ""}
     ${member ? `<div class="good">🤝 Member of ${esc(ALLIANCE.NAME)}</div>` : ""}
+    ${blocLine(state, f)}
+    ${playerWarBlock(state, f)}
     ${f.wormLost ? `<div class="muted"${tip("The worm (Help: The dead and the worm): a group on infected ground loses people to it as a base of yours would catch it; after its first loss a base boils its water and loses far fewer. Heard on the radio and kept in the chronicle.")}>Lost ${f.wormLost} to the worm${f.wormBoilers && Object.keys(f.wormBoilers).length ? "; they boil their water now" : ""}</div>` : ""}
     ${worksText(state, f) ? `<div class="muted"${tip("What they have built at their bases (their bases start bare, as yours does): wells and fields for their food, quarters for their people, walls when they feel threatened (what an assault on them faces), then a workshop and a storehouse.")}>🏗 ${esc(worksText(state, f))}</div>` : ""}
     ${arsenalLine(state, f)}
@@ -174,8 +194,42 @@ export function groupCardExtras(state, f) {
     ${marketLine(m)}
     ${jobs.length ? `<div>${jobs.map((j) => `${JOB_TYPES[j.type].icon} ${esc(JOB_TYPES[j.type].name)} (${j.status === "offered" ? "offered" : "under way"})`).join(" · ")}</div>` : ""}
   </div>
-  <div class="row" style="margin-top:0.25rem">${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inv || `Invite them into ${ALLIANCE.NAME}`)}>Invite to the coalition</button>`}</div>`;
+  <div class="row" style="margin-top:0.25rem">${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inv || `Invite them into ${ALLIANCE.NAME}`)}>Invite to the coalition</button>`}${declareRow(state, f)}</div>`;
 }
+// Their bloc (sim/blocs.js): its colour, the members, its foe; leave it if you stand with it.
+function blocLine(state, f) {
+  const b = blocOf(state, f);
+  if (!b) return "";
+  const others = blocMembers(state, b).filter((m) => m !== f);
+  return `<div${tip(`A bloc: its members defend each other (each sends what it can spare to a raid on another), raid together, share what they scout and trade with each other first. It breaks when they fall out, when one betrays another, or when the danger that brought them together is gone. Founded day ${b.founded}.`)}>${swatch(b.color)}🛡 ${esc(cap(blocTitle(b)))}${others.length ? ` with ${others.map((m) => esc(nameOf(state, m.id))).join(", ")}` : ""} <span class="muted">against ${esc(foeText(state, b.foe))}</span>${b.player ? ` <span class="good">· you stand with them</span> <button class="mini" data-action="bloc-leave" data-id="${b.id}"${tip(`Leave their side: ${BLOC.LEAVE_GW} goodwill with each member`)}>Leave their side</button>` : ""}</div>`;
+}
+// A war with you (sim/playerwars.js): the goal, the reason, the score, weariness, and the terms you can offer.
+function playerWarBlock(state, f) {
+  const w = pwarOf(state, f);
+  if (!w) {
+    const until = ceasefireUntil(state, f);
+    return ceasefireWith(state, f) ? `<div class="muted"${tip("No raids from them on your bases until the ceasefire ends.")}>🕊 Ceasefire with you until day ${until}</div>` : "";
+  }
+  const main = factionById(state, w.fid);
+  if (main !== f) return `<div class="danger">⚔ At war with you beside ${esc(main ? main.name : "their ally")} (${esc(goalText(state, w))})</div>`;
+  const wait = talkWait(state, w);
+  const via = talkVia(state, f) === "radio" ? "by radio" : "by an envoy under a white flag";
+  const opts = termOptions(state, w);
+  return `<div class="danger"${tip(`Score: +2 for each of their raids you hold (their weariness +${PW.EXH_HELD}), +4 for each base of theirs you take; +2 to them for a break-in, +3 an overrun, +5 a base taken. Weariness rises with their losses, hunger and deserters (theirs) or your dead and lost bases (yours). Worn out (${PW.TIRED}+) they sue for peace; past ${PW.BROKEN} they pull back.`)}>⚔ <b>At war with you</b> since day ${w.start}${w.by === "you" ? " (you declared it)" : ""}: ${w.by === "you" ? "your goal" : "their goal"} ${esc(goalText(state, w))}${w.by === "them" ? `, over ${esc(cbText(state, w))}` : ""}${w.allies.length ? `; ${w.allies.map((id) => esc(nameOf(state, id))).join(" and ")} fight beside them` : ""}.
+      Score ${w.score.you}–${w.score.them} to you · weariness theirs ${Math.round(w.exh.them)}, yours ${Math.round(w.exh.you)} · ${w.raids} war raid${w.raids === 1 ? "" : "s"}${w.sieges ? ` (${w.sieges} siege${w.sieges === 1 ? "" : "s"})` : ""}</div>
+    <div class="row small" style="flex-wrap:wrap;gap:0.2rem;margin-top:0.2rem"><span class="muted"${tip(`Sent ${via}. They answer by their type, how worn out they are, the score and what the terms give their goal: the % is the chance they agree. One offer every ${PW.TALK_GAP} days.`)}>Offer terms${wait ? ` (in ${wait} day${wait === 1 ? "" : "s"})` : ""}:</span>
+      ${opts.map((o) => `<button class="mini" data-action="pw-terms" data-id="${w.id}" data-key="${o.key}" ${o.why || wait ? "disabled" : ""}${tip(o.why || `${cap(o.text)}. ${Math.round(o.chance * 100)}% they agree.`)}>${esc(o.label)} (${Math.round(o.chance * 100)}%)</button>`).join("")}</div>`;
+}
+// Declare war on them (with a goal), or why you cannot.
+function declareRow(state, f) {
+  if (pwarOf(state, f)) return "";
+  const why = playerDeclareProblem(state, f);
+  if (!f.known || !f.alive) return "";
+  return `<select class="mini" data-action="pw-goal" data-id="${f.id}"${tip("Your war goal: tribute (they pay when worn out), land (they hand over a base), or to break them (no terms short of their surrender)")}>${[["tribute", "for tribute"], ["land", "for land"], ["break", "to break them"]].map(([k, l]) => `<option value="${k}" ${(declareGoal[f.id] || "tribute") === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+    <button class="mini" data-action="pw-declare" data-id="${f.id}" ${why ? "disabled" : ""}${tip(why || `${f.name} turn hostile (goodwill ${PW.YOU_DECLARE_GW}), the pact and any trade route end, their bloc comes in on their side, groups friendly with them think less of you${isAggressive(f) && attitude(f) === "Hostile" ? "" : ` and infamy +${PW.INFAMY}`}. Their raids come oftener; peace by terms or weariness.`)}>Declare war</button>`;
+}
+const declareGoal = {}; // the goal picked in each group's card (the UI only)
+const isAggressive = (f) => f.type === "raider" || f.type === "expansionist" || f.type === "zealot";
 // Their arsenal (sim/arsenal.js): a rough read, the exact list when they are friendly, have a pact with you, or you
 // fought them or watched their camp in the last month.
 function arsenalLine(state, f) {
@@ -296,7 +350,28 @@ function affairsTab(state) {
     const war = warsOf(state, a).some((w) => enemyIn(w, a) === b.id);
     return `<td style="color:${color}"${tip(`${a.name} and ${b.name}: ${Math.round(r)} (${relWord(r)})${war ? ", at war" : ""}`)}>${war ? "⚔" : Math.round(r)}</td>`;
   };
-  return `<h3${tip("Groups at war raid each other and lay sieges; most wars end in terms (land or tribute) or a white peace. A group at war pays more for ammo, meds and weapons and has less to trade.")}>Wars</h3>
+  const P = ensurePwars(state);
+  const B = ensureBlocs(state);
+  const pwRow = (w) => {
+    const f = factionById(state, w.fid);
+    return `<div class="card small"><div class="spread"><b class="danger">⚔ ${esc(f ? f.name : "?")} vs you</b><span class="muted">since day ${w.start}${w.by === "you" ? " · you declared it" : ""}</span></div>
+      <div>${w.by === "you" ? "Your goal" : "Their goal"}: ${esc(goalText(state, w))}${w.by === "them" ? ` · over ${esc(cbText(state, w))}` : ""}${w.allies.length ? ` · with ${w.allies.map((id) => esc(nameOf(state, id))).join(", ")}` : ""}</div>
+      <div>Score ${w.score.you}–${w.score.them} to you · weariness theirs ${Math.round(w.exh.them)}, yours ${Math.round(w.exh.you)} · ${w.raids} war raid${w.raids === 1 ? "" : "s"} (${w.held} held, ${w.broken} broken in)${w.sieges ? ` · ${w.sieges} siege${w.sieges === 1 ? "" : "s"}` : ""}</div>
+      <div class="muted">Offer terms from their card in the Groups tab.</div></div>`;
+  };
+  const visibleBlocs = B.blocs.filter((b) => blocMembers(state, b).some((m) => m.known));
+  const blocRow = (b) => `<div class="card small"><div class="spread"><b>${swatch(b.color)}${esc(cap(blocTitle(b)))}</b><span class="muted">since day ${b.founded}</span></div>
+    <div>${blocMembers(state, b).map((m) => `${swatch(m.color)}${esc(nameOf(state, m.id))}`).join(" · ")}</div>
+    <div class="muted">Against ${esc(foeText(state, b.foe))} · helped a member ${b.helps || 0} time${b.helps === 1 ? "" : "s"} · raided together ${b.joint || 0} time${b.joint === 1 ? "" : "s"}${b.player ? ` · <span class="good">you stand with them</span>` : ""}</div></div>`;
+  const pwEnded = P.pwarEnded.slice(0, 6).map((e) => `<div>Days ${e.start}–${e.end}: ${esc(nameOf(state, e.fid))} vs you (${esc(goalText(state, e))}): ${HOW[e.how] || e.how}${e.terms.length > 1 ? ` (${e.terms.filter((k) => k !== "ceasefire").join(", ")})` : ""}</div>`).join("");
+  const blocNews = B.blocLog.filter((x) => x.heard).slice(0, 8).map((x) => `<div><span class="muted">Day ${x.day}</span> ${esc(x.text)}</div>`).join("");
+  return `<h3${tip("A war on you has a goal (loot, a base of yours, revenge, conversion, to break a rival) and a reason from what you did to them. Their raids come oftener, with sieges at the base they want; your caravans and teams near their land are hunted. It ends on terms, theirs or yours, or when a side is worn out.")}>Wars with you</h3>
+    ${P.pwars.length ? P.pwars.map(pwRow).join("") : `<div class="muted small">Nobody is at war with you.</div>`}
+    ${pwEnded ? `<div class="small muted">${pwEnded}</div>` : ""}
+    <h3${tip("Groups that share a threat (a common enemy, you, a hive, prey) and like each other ally by their type: traders, communes and fortresses readily, the military with order-keeping types, raiders only in loose gangs with raiders, zealots only with their own. Members defend each other, raid together, share what they know and trade first with each other. A bloc breaks when its members fall out, one betrays another, or the danger has passed.")}>Blocs</h3>
+    ${visibleBlocs.length ? visibleBlocs.map(blocRow).join("") : `<div class="muted small">No blocs you know of.</div>`}
+    ${blocNews ? `<div class="small">${blocNews}</div>` : ""}
+    <h3${tip("Groups at war raid each other and lay sieges; most wars end in terms (land or tribute) or a white peace. A group at war pays more for ammo, meds and weapons and has less to trade.")}>Wars between groups</h3>
     ${wars.length ? wars.map(warRow).join("") : `<div class="muted small">No wars you know of.</div>`}
     ${D.ended.length ? `<div class="small muted">${D.ended.slice(0, 6).filter((e) => { const a = factionById(state, e.a), b = factionById(state, e.b); return (a && a.known) || (b && b.known); }).map((e) => `<div>Days ${e.start}–${e.end}: ${esc(nameOf(state, e.a))} vs ${esc(nameOf(state, e.b))}: ${TERMS[e.terms] || e.terms}</div>`).join("")}</div>` : ""}
     <h3${tip("How the groups you know feel about each other (−100 to 100). Below −42 they may go to war; 28+ they may sign a pact. Neighbours rub each other the wrong way.")}>Relations between groups</h3>
@@ -354,6 +429,18 @@ export const DIPLO_ACTIONS = {
     if (ask(ui, d, "war-leave", { kind: "war", title: "Leave the war?", text: "Your side thinks less of you (goodwill −8); the enemy stays as it is.", yes: "Leave the war" })) return;
     ui.diploMsg = leaveWar(state, Number(d.id));
   },
+  "pw-declare": (state, ui, d) => {
+    const f = factionById(state, Number(d.id));
+    if (!f) return;
+    const goal = declareGoal[f.id] || "tribute";
+    if (ask(ui, d, "pw-declare", { kind: "war", title: `Declare war on ${f.name}?`, text: `${f.name} turn hostile and raid you oftener until a peace; their bloc comes in on their side; their friends think less of you. Your goal: ${goal === "land" ? "a base of theirs" : goal === "break" ? "to break them" : "tribute"}.`, yes: "Declare war" })) return;
+    ui.diploMsg = declareByPlayer(state, f, goal); // the log has it too
+  },
+  "pw-terms": (state, ui, d) => { ui.diploMsg = offerTerms(state, Number(d.id), d.key); }, // the log has it too
+  "bloc-leave": (state, ui, d) => {
+    if (ask(ui, d, "bloc-leave", { kind: "war", title: "Leave their side?", text: `Their fighters stop coming to your bases, and each member thinks less of you (${BLOC.LEAVE_GW}).`, yes: "Leave" })) return;
+    ui.diploMsg = leaveBlocSide(state, Number(d.id));
+  },
   "al-invite": (state, ui, d) => { const f = factionById(state, Number(d.id)); const msg = f ? inviteToAlliance(state, f) : ""; if (ui.radioWith != null) ui.radioMsg = msg; else ui.diploMsg = msg; },
   "al-expel": (state, ui, d) => {
     const f = factionById(state, Number(d.id));
@@ -363,6 +450,7 @@ export const DIPLO_ACTIONS = {
 };
 export const DIPLO_CHANGE = {
   "mk-good": (state, ui, el) => { if (SUPPLIES[el.value]) ui.marketKey = el.value; },
+  "pw-goal": (state, ui, el) => { const id = Number(el.dataset && el.dataset.id); if (Number.isFinite(id) && ["tribute", "land", "break"].includes(el.value)) declareGoal[id] = el.value; },
 };
 // The offer's card goes once the job is answered from the list.
 function dropOfferCard(state, id) {

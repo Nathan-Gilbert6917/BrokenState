@@ -27,6 +27,7 @@ import { MEDICS_HELP } from "../sim/medics.js"; // medics, the downed, dragging,
 import { NL_HELP } from "../sim/nonlethal.js"; // tasers, pepper spray, pulled blows, surrender
 import { CARAVAN_HELP } from "../sim/caravanraids.js"; // caravans on the road: escorts, robbing them, witnesses
 import { RESCUE_HELP } from "../sim/rescueraid.js"; // getting captives back: the rescue raid, ransoms
+import { BLOCS_WARS_HELP } from "../sim/playerwars.js"; // blocs between groups, wars with you
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -83,6 +84,7 @@ const LEGEND = [
   [swatch("known"), "Known area", "Teal hatching (Known area layer): ground your people searched, brighter for the last 30 days, with a thin teal line round it. Unhatched ground has not been looked over for hidden places."],
   [swatch("coalition"), "Coalition land", "A wash in each owner's color with a border where another owner's land begins (Coalition land layer), and a thin gold line round all of the coalition's land; the layer's line shows the share held against the 50% goal."],
   [`<i class="sw" style="background:#7a3a3a"></i>`, "Hive growths", "Small structures of flesh and bone beside a hive: a bubbling pit, amber egg sacs, a field of bones, a warren with red eyes, a grey brute in a pit, green acid bladders, a shrieking tower, a burrow with grasping hands, an arch of ribs (the Wallbreaker den), a glowing magenta vat. Faint while growing, grey once their hive is gone. Burn the growth to take it away from the hive."],
+  [`<i class="sw" style="background:transparent;box-shadow:inset 0 0 0 2px #ffd166"></i>`, "Blocs", "A dashed ring in a bloc's colour round a group's base: it belongs to that bloc (Groups tab: Blocs and wars; Help: Blocs and wars)."],
   [`<i class="sw" style="background:#c8ccd2">✝</i>`, "Markers", "On a ring: a grave = death site, your vehicle (red can = needs fuel, smoke = damaged), a wreck, a cache, a camp. Dots when zoomed out."],
   [`<i class="sw" style="background:#c8ccd2">▲</i>`, "Siege", "Tents and a banner by a base."],
   [`<i class="sw ring"></i>`, "Radio coverage", "Dashed circles: a station reaches 12 tiles (24 with a Military encrypted radio in the base's armory), a linked relay 6 (a relay goes up at any base without a station, and chains coverage outward; groups whose base lies within coverage + 6 can be called and invited into the coalition). Red = a relay not linked or off the air. Dotted circles in a group's colour: that group's radio network, drawn while one of your teams or bases is tuned to it (Listen in on radio traffic)."],
@@ -151,7 +153,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "inventory") add("Gun attachments", GUNMODS_HELP); // sim/gunmods.js
     if (out[out.length - 1].id === "gun-attachments") add("Guns and melee weapons", ROSTER_HELP); // sim/data-guns.js
     if (out[out.length - 1].id === "battles") add("Medics and the downed", MEDICS_HELP); // sim/medics.js
-    if (out[out.length - 1].id === "groups") { add("Caravans on the road", CARAVAN_HELP); add("Getting captives back", RESCUE_HELP); } // sim/caravanraids.js; sim/rescueraid.js, ransom.js
+    if (out[out.length - 1].id === "groups") { add("Caravans on the road", CARAVAN_HELP); add("Getting captives back", RESCUE_HELP); add("Blocs and wars", BLOCS_WARS_HELP); } // sim/caravanraids.js; sim/rescueraid.js, ransom.js; sim/blocs.js, playerwars.js
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
@@ -171,6 +173,7 @@ export function helpTopics() {
   if (!seen.has("medics-and-the-downed")) add("Medics and the downed", MEDICS_HELP);
   add("Non-lethal weapons and surrender", NL_HELP); // sim/nonlethal.js
   if (!seen.has("caravans-on-the-road")) add("Caravans on the road", CARAVAN_HELP);
+  if (!seen.has("blocs-and-wars")) add("Blocs and wars", BLOCS_WARS_HELP);
   if (!seen.has("getting-captives-back")) add("Getting captives back", RESCUE_HELP);
   add("Keys", keysSheet()); // ui/controls.js
   add("Codex and search", codexHelp());

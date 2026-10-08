@@ -38,6 +38,7 @@ import {
 } from "./mapsprites.js";
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
 import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
+import { blocOf, blocColorOf } from "../sim/blocs.js"; // AI blocs: a ring in the bloc's colour round its members' bases
 
 export const HEX = 26;
 const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
@@ -584,7 +585,7 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
     if (!ownBase.has(id) && !G.ruin[id] && (live.has(id) || siteKnown(state, id))) {
       const isLive = live.has(id), snap = isLive ? null : k[id];
       fb = isLive ? fbAt.get(id) : snap && snap.factionBase ? factionById(state, snap.factionBase) : null;
-      if (fb) code = 1 | ((factionIdx.get(fb) + 1) << 4) | (isLive && besiegedFb.has(id) ? 8 : 0);
+      if (fb) code = 1 | ((factionIdx.get(fb) + 1) << 4) | (isLive && besiegedFb.has(id) ? 8 : 0) | (blocNo(state, fb) << 16); // sim/blocs.js: its bloc's ring
       else if (F.poisOn) {
         // Loot as you know it: the real value only for a tile in view, the last report otherwise; never-seen sites look
         // untouched. The sprite fades by the loot band (aiscav.js: rich, some, little, picked clean; bits 16 and 32).
@@ -626,7 +627,7 @@ function siteDesc(state, id, code, fb) {
   const tier = t.loc.type === "city" ? 0 : fb || t.loc.type === "town" || t.loc.zone === "special" ? 1 : 2;
   if (kind === 1) {
     const s = zoomBoost(), w = PLACE_W.faction * s, cy = py - 5 * s, cv = factionBaseCanvas(fb.type, fb.color), h = spriteH(cv, w);
-    return { kind, tier, zone, fb, s, w, h, cy, cv, dyn: !!(code & 8), labelY: cy + h / 2 + 6, side: null };
+    return { kind, tier, zone, fb, s, w, h, cy, cv, dyn: !!(code & 8), labelY: cy + h / 2 + 6, side: null, bloc: code >> 16 ? blocColorOf(state, fb) : null };
   }
   if (tier === 2 && F.zoom < 0.7) return { kind: 2, tier, zone, dyn: false }; // zoomed out: a dot in the zone's color
   return { kind, tier, zone, dyn: false, alpha: code & 4 ? 0.55 : 1, ...siteLook(t, px, py, tier, (code >> 4) & 3) };
@@ -634,6 +635,7 @@ function siteDesc(state, id, code, fb) {
 
 function paintSite(d, px, py) {
   if (d.kind === 1) {
+    if (d.bloc) blocRing(px, py, d.bloc, d.s);
     ownerPlate(px, py, d.fb.color, d.s, 18, d.dyn);
     sprite(d.cv, px, d.cy, d.w);
   } else if (d.kind === 2) {
@@ -1667,6 +1669,19 @@ function baseLook(b) {
 const spriteH = (cv, w) => (cv ? w * (cv.height / cv.width) : w * 0.75);
 
 // Oval under a base in its owner's color; a pulsing red ring while it is under siege.
+// A bloc's members (sim/blocs.js): a dashed ring in the bloc's colour round the plate.
+function blocRing(x, y, color, s) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(x, y + 9 * s, 23 * s, 9.5 * s, 0, 0, Math.PI * 2);
+  ctx.setLineDash([5 * s, 3 * s]);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  ctx.restore();
+}
+// The bloc a group's base belongs to, as a small number for the site code (0: none).
+const blocNo = (state, f) => { const b = blocOf(state, f); return b ? (b.id % 255) + 1 : 0; };
 function ownerPlate(x, y, color, s, rx, besieged) {
   ctx.beginPath();
   ctx.ellipse(x, y + 9 * s, rx * s, 6 * s, 0, 0, Math.PI * 2);
