@@ -50,7 +50,9 @@ export function crowdInfo(state, base, people = residents(state, base.id).length
   const beds = baseBeds(base);
   const over = Math.max(0, people - beds) / Math.max(1, beds);
   const penalty = over > 0 ? Math.min(CROWD.cap, CROWD.base + CROWD.perOver * over) : 0;
-  const leader = atBase(state, base.id).find((s) => s.leader && s.alive) || null;
+  // The group's leader where they live; elsewhere the base's own leader while at the base (steward.js leaderId).
+  const here = atBase(state, base.id);
+  const leader = here.find((s) => s.leader && s.alive) || (base.steward && base.steward.leaderId != null ? here.find((s) => s.id === base.steward.leaderId && s.alive) : null) || null;
   const rawLift = leader ? skill(leader, "leadership") * LEADER_LIFT : 0;
   const lift = penalty > 0 ? Math.min(rawLift, penalty * CROWD.leaderShare) : rawLift;
   const net = (penalty > 0 ? -penalty : CROWD.roomy) + lift;

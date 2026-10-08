@@ -317,7 +317,7 @@ export function moodFactors(state, s) {
     const ci = crowdInfo(state, base);
     if (ci.penalty > 0) add(`Crowded: ${ci.people} people in ${ci.beds} beds`, -ci.penalty, false);
     else add("A bed for everyone", 1, false);
-    if (ci.lift > 0) add(`Leader ${first(ci.leader)} (Leadership ${skill(ci.leader, "leadership")})`, ci.lift, false);
+    if (ci.lift > 0) add(`${ci.leader.leader ? "Leader" : "Base leader"} ${first(ci.leader)} (Leadership ${skill(ci.leader, "leadership")})`, ci.lift, false);
     if (!(base.hungerDays > 0)) add("Fed", 1, false); // out of food or water: the starving and parched lines below
     if (base.rationing) add("Short rations", -3, false);
     if (!pl.route && s.role === "rest") add("Resting (Rest role)", 6, false);

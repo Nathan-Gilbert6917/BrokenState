@@ -14,11 +14,13 @@ import { searchHazards } from "./health.js";
 import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
 import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
 import { noteSearch } from "./relations.js";
-import { itemLoad, newItem } from "./inventory.js";
+import { itemLoad, lootItem, armouredItem } from "./inventory.js";
+import { siteSource } from "./itemcond.js";
 import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, rollGunmodFind } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { truckSearchHour } from "./miltrucks.js";
+import { gunSearchHour } from "./locks.js"; // gun safes, drills and grinders (their own dice)
 import { siteDeadMix, bodyLoot, MILDEAD, maxMix } from "./deadsoldiers.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
 import { mixWeight } from "./zombietypes.js";
@@ -203,7 +205,7 @@ export function searchHour(state) {
   const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
   if (gearList.length && rng.chance(0.07 * t.loot * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1))) {
     const g = rng.pick(gearList);
-    e.found.gear.push(newItem(g, 1, rng));
+    e.found.gear.push(lootItem(g, siteSource(t.loc.type), rng)); // itemcond.js: a gun shop's stock new, a crash site's scorched
     finds.push(GEAR[g].name);
   }
   // A book on the shelves (skills.js; its own dice, so the rest of the search is unchanged). Treasure Hunter: twice as often.
@@ -223,7 +225,7 @@ export function searchHour(state) {
   const arrows = rollSiteArrows(state, e.tile, ap.loot, `h${e.hours}`); // a quiver, a box of bolts (loot.js SITE_ARROWS; its own dice)
   if (arrows > 0) { e.found.supplies.arrows = (e.found.supplies.arrows || 0) + arrows; finds.push(`${arrows} arrows`); }
   // Locked things, keys and blueprints (locks.js; its own dice): adds finds and Heat.
-  const locked = lockedSearchHour(state, e, p, members) + truckSearchHour(state, e, p, members); // miltrucks.js: an Army truck's cargo (its own dice)
+  const locked = lockedSearchHour(state, e, p, members) + truckSearchHour(state, e, p, members) + gunSearchHour(state, e, p, members); // miltrucks.js: an Army truck's cargo (its own dice)
   t.loot = Math.max(0.03, t.loot - 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)); // Salvager: picked over 40% slower
 
   // Heat.
@@ -250,7 +252,7 @@ export function searchHour(state) {
       if (back) p.supplies.arrows = (p.supplies.arrows || 0) + back;
       const kind = !e.guarded && mil ? ["soldier", "riot"].find((k) => mil[k] > 0) : null;
       if (kind && rng.chance(Math.min(0.8, mil[kind] * MILDEAD.SEARCH_BODY))) { // one of them was a soldier: his kit
-        const loot = bodyLoot(rng, kind, newItem);
+        const loot = bodyLoot(rng, kind, armouredItem);
         const got = [];
         for (const [k, v] of Object.entries(loot.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + v; got.push(`${v} ${k}`); }
         for (const g of loot.gear) { e.found.gear.push(g); got.push(g.name); }

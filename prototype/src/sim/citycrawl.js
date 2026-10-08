@@ -33,7 +33,8 @@ import { applyZType, battleTypes, eraKinds } from "./zombietypes.js";
 import { eraTier } from "./hivetech.js";
 import { ZTYPES } from "./hiveconst.js";
 import { MILDEAD, siteDeadMix, maxMix } from "./deadsoldiers.js";
-import { newItem, itemLoad } from "./inventory.js";
+import { lootItem, itemLoad } from "./inventory.js";
+import { areaSource, spend } from "./itemcond.js"; // the condition of what is found
 import { rollAreaFind } from "./loot.js";
 import { findCarried } from "./stealth.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
@@ -434,8 +435,8 @@ function rollArea(rng, type, rich, scav) {
     if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
     sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25)));
   }
-  for (const [key, p] of def.gear) if (GEAR[key] && rng.chance(p * (0.5 + rich) * (1 + scav / 30))) gear.push(newItem(key, 1, rng));
-  const small = rollAreaFind(rng, type, rich, scav);
+  for (const [key, p] of def.gear) if (GEAR[key] && rng.chance(p * (0.5 + rich) * (1 + scav / 30))) gear.push(lootItem(key, areaSource(type, "city"), rng)); // itemcond.js
+  const small = rollAreaFind(rng, type, rich, scav, "city");
   if (small) gear.push(small);
   return { sup, gear };
 }
@@ -1152,7 +1153,7 @@ export function resolveEvent(state, p, eventId, choice, opts = {}) {
       gainXpAll(state, members, "stealth", USE.sneakSearch);
       if (choice === "sneak") return done("You slip past below his line of sight.", "good");
       for (const pl of blk.places) pl.raiders = false;
-      const gear = [newItem(rng.pick(["huntrifle", "pistol", "shotgun"]), rng.pick([0.7, 0.85, 1]), rng)];
+      const gear = [lootItem(rng.pick(["huntrifle", "pistol", "shotgun"]), "raider", spend(rng))];
       return done(`You take him down without a sound: ${give(state, p, c, { ammo: rng.int(8, 20) }, gear)}. The raiders on this block are blind now: nobody holed up in its places.`, "good");
     }
     case "truck": {
@@ -1174,7 +1175,7 @@ export function resolveEvent(state, p, eventId, choice, opts = {}) {
         if (!v.alive) c.lost.push(v.name);
         else say2(c, `It was not dead: it bites ${v.name.split(" ")[0]} before you put it down.`, "danger", state.hour);
       }
-      const pack = newItem(rng.pick(["slingbag", "backpack", "backpack", "hikingpack"]), rng.pick([0.7, 0.85, 1]), rng);
+      const pack = lootItem(rng.pick(["slingbag", "backpack", "backpack", "hikingpack"]), "survivor", spend(rng));
       const r = rollArea(rng, "house", rich, scav);
       addSup(r.sup, { food: rng.int(1, 4), water: rng.int(0, 3), ammo: rng.chance(0.5) ? rng.int(4, 14) : 0 });
       const text = give(state, p, c, r.sup, [pack, ...r.gear]);
