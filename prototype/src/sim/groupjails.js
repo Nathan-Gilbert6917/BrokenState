@@ -15,9 +15,9 @@
 //   keeps the war's own head count, w.captives). Nonlethal's head counts (f.held) in a save are turned into records
 //   (migrateHeld). This is the one model of prisoners between groups.
 // - No room (FULL, by type): raiders, expansionists and traders sell the extra one to a group with room (UNSOLD:
-//   raiders and expansionists kill them, traders let them go; your people: a ransom asked of you at once if nobody
-//   buys, raiders kill on a refusal, the others let them go), the military, the fortress and communes let them go,
-//   zealots kill them. Your captive's fate comes on a card.
+//   raiders and expansionists kill them, traders let them go; your people: kept over the room for YOURS.days for you
+//   to ransom them (ransom.js talks; a sale is tried each day), then killed by raiders and expansionists, let go by
+//   traders), the military, the fortress and communes let them go, zealots kill them. Your captive's fate comes on a card.
 // - Labour (WORK): every prisoner works for them, a share of a worker by type (raiders lean hardest) × a stand-in for
 //   their mood (raiders treat theirs worst: low output, but they feed them little): food and scrap a day, and their
 //   building goes faster (f.prisonWork, groupworks.js). Your people held are worked too: health and mood fall a day by
@@ -35,10 +35,11 @@
 import { day, log, addCard, factionById, hub, skill, hurt, newId, checkGameOver } from "./world.js";
 import { SUPPLIES } from "./data.js";
 import { JAIL_TIERS, PRISON } from "./prisoners.js";
-import { allCaptives } from "./conflicts.js";
+import { allCaptives, CAPTIVE_TOOL } from "./conflicts.js";
 import { changeRelation, relation, warBetween, atWar, news, knownAs } from "./diplomacy.js";
 import { available } from "./trade.js";
 import { tileLabel } from "./parties.js";
+import { openNegotiation, dealFor, talksOf } from "./ransom.js"; // rescue: buying your people back
 
 export const GROUP_JAIL = {
   // The step up to each tier (groupworks.js job "jail"): what it costs and crew-days of work.
@@ -65,8 +66,9 @@ export const GROUP_JAIL = {
   },
   // Trades a day: chances, the price of one (value + perPower × power, in what the buyer can spare), relations.
   TRADE: { ransom: 0.04, exchange: 0.06, sale: 0.03, sellYours: 0.012, recruitDays: 30, recruit: 0.012, value: 15, perPower: 4, ransomRel: 3, exchangeRel: 2, enemySaleRel: -6, freeRel: 6, enemyRel: -15 },
-  // Your person when nobody will buy them: the ransom asked of you (value + perSkill × their best three skills).
-  YOURS: { value: 20, perSkill: 2 },
+  // Your person when nobody will buy them: their price to a buyer (value + perSkill × their best three skills), and the
+  // days their captors keep them over their room for you to ransom them (ransom.js) before they kill or free them.
+  YOURS: { value: 20, perSkill: 2, days: 6 },
 };
 const G = GROUP_JAIL;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -134,18 +136,21 @@ export function groupLabour(state, f) {
 // ---------- escapes ----------
 // A group's prisoner (not yours): worked every day, in their jail (none: the shed's rate).
 export function prisonerEscape(state, f, tile) {
-  const J = groupJail(f, tile, state) || { guarded: PRISON.ESCAPE.shed, labour: 1.5, bonus: 1.5 };
+  const J = groupJail(f, tile, state) || JAIL_TIERS[1]; // no jail of theirs there (held over their room): as a makeshift cage, the rescue map's too
   const work = Math.max(J.guarded, PRISON.LABOUR.escapeGuarded * J.labour);
   return work * (G.WORK.mood[f.type] < PRISON.LABOUR.lowMood ? PRISON.LABOUR.lowMoodMult : 1);
 }
-// Your captive's chance a day (conflicts.js captivesDaily): idle days at the cell rate, worked days (the type's share)
-// at the work detail's (× the tier's labour, × CAPTIVE escapeWork: raiders' prisoners try hardest), and their Stealth
-// × the tier's bonus. Old saves (holding cells): about 1% a day, the old flat rate was 0.5% + Stealth.
+// Your captive's chance a day (conflicts.js captivesDaily), one formula: the tier's base (idle days at the cell rate,
+// worked days, the type's share, at the work detail's × the tier's labour × CAPTIVE escapeWork: raiders' prisoners try
+// hardest) + their Stealth × the tier's bonus + a pin, lockpicks or the keys kept hidden (rescue: conflicts.js
+// CAPTIVE_TOOL +0.5% / +1% / +1.5%, as in holding cells; × the tier's bonus over the cells': ×1.2 in makeshift cells,
+// ×0.88 in a jailhouse). Old saves (holding cells): about 1% a day; the old flat rate was 0.5% + Stealth + the tool.
 export function captiveEscape(state, s, f) {
-  const J = groupJail(f, s.location.tile, state) || { guarded: PRISON.ESCAPE.shed, labour: 1.5, bonus: 1.5 };
+  const J = groupJail(f, s.location.tile, state) || JAIL_TIERS[1]; // no jail there: as a makeshift cage (rescueraid.js jailTier too)
   const share = G.WORK.share[f.type] ?? 0.4;
   const work = Math.max(J.guarded, PRISON.LABOUR.escapeGuarded * J.labour) * (G.CAPTIVE.escapeWork[f.type] || G.CAPTIVE.escapeWork.other);
-  return share * work + (1 - share) * J.guarded + skill(s, "stealth") * G.CAPTIVE.stealth * J.bonus;
+  const tool = (CAPTIVE_TOOL && CAPTIVE_TOOL[s.location.tool]) || 0;
+  return share * work + (1 - share) * J.guarded + skill(s, "stealth") * G.CAPTIVE.stealth * J.bonus + tool * (J.bonus / (JAIL_TIERS[2] ? JAIL_TIERS[2].bonus : 1.25));
 }
 // A day of being worked (conflicts.js captivesDaily): health and mood down by captor; true when it killed them.
 export function captiveDecline(state, s, f) {
@@ -255,7 +260,7 @@ const cap = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1);
 export function groupJailsHour(state) {
   if (state.resolving || !hub(state)) return;
   for (const s of allCaptives(state)) {
-    if (!s.location.fresh || s.location.ransomAsked) continue;
+    if (!s.location.fresh) continue;
     const f = factionById(state, s.location.factionId);
     if (!f || !f.alive) { delete s.location.fresh; continue; }
     if (!jailsOn(state) || groupRoom(state, f) > 0) { delete s.location.fresh; continue; }
@@ -284,66 +289,50 @@ function noRoomForYours(state, s, f) {
     checkGameOver(state);
     return;
   }
-  // Sell: to a group with room, else a ransom asked of you at once.
-  const value = G.YOURS.value + G.YOURS.perSkill * Object.values(s.skills || {}).sort((a, b) => b - a).slice(0, 3).reduce((a, v) => a + v, 0);
+  // Sell: to a group with room; else they keep them over their room for a few days (YOURS.days) for you to buy back
+  // (ransom.js: Negotiate on the People tab, or the governor's ransom), tried again for a sale each day, and when the
+  // days run out with no talks or deal under way raiders and expansionists kill them, traders let them go.
+  const value = yoursValue(s);
   const buyer = buyerFor(state, f, null, value);
   if (buyer) { sellYours(state, s, f, buyer, value); return; }
-  s.location.ransomAsked = true;
-  addCard(state, ransomCard(state, s, f, value));
-}
-// The ransom asked at once for your captive (no room, nobody buys): what the hub can best pay with.
-export function yoursRansom(state, value) {
-  const h = hub(state);
-  if (!h) return null;
-  let best = null;
-  for (const key of ["ammo", "food", "scrap", "meds", "fuel", "parts"]) {
-    const qty = Math.ceil(value / SUPPLIES[key].value);
-    const cover = (h.stock[key] || 0) / qty;
-    if (!best || cover > best.cover) best = { key, qty, cover };
-  }
-  return best;
-}
-function ransomCard(state, s, f, value) {
-  const t = yoursRansom(state, value);
-  const refuse = f.type === "raider" ? `they kill ${first(s)}` : `they let ${first(s)} go anyway`;
-  const live = (st) => st.survivors.includes(s) && s.alive && s.location.kind === "captive" && s.location.factionId === f.id;
-  return {
-    title: `${f.name} want a ransom for ${first(s)}`, kind: "groupRansom",
-    text: `${f.name} have no room to keep ${s.name} and nobody will buy them. They ask ${t.qty} ${t.key} from ${hub(state).name}, now. Refuse and ${refuse}.`,
+  delete s.location.fresh;
+  s.location.overflow = day(state) + G.YOURS.days;
+  const fate = G.UNSOLD[f.type] === "kill" ? `they will kill ${first(s)}` : `they will let ${first(s)} go`;
+  const text = `${f.name} have no cell for ${s.name} and nobody will buy them. Buy ${first(s)} back within ${G.YOURS.days} days (ransom talks: Negotiate) or ${fate}.`;
+  log(state, text, "danger");
+  addCard(state, {
+    title: `${f.name} have no cell for ${first(s)}`, kind: "groupOverflow", factionId: f.id, text,
     choices: [
-      { label: `Pay ${t.qty} ${t.key}`, hint: `From ${hub(state).name}'s stores (${Math.floor(hub(state).stock[t.key] || 0)} there).`,
-        ai: (st) => ((hub(st).stock[t.key] || 0) >= t.qty ? 3 : -1),
-        resolve: (st) => {
-          if (!live(st)) return "Too late.";
-          const h = hub(st);
-          if ((h.stock[t.key] || 0) < t.qty) return `${h.name} has only ${Math.floor(h.stock[t.key] || 0)} ${t.key}.`;
-          h.stock[t.key] -= t.qty;
-          f.stock[t.key] = (f.stock[t.key] || 0) + t.qty;
-          bump(st, "yoursRansomed");
-          homeFree(st, s, f, `${first(s)} is home`, `You paid ${t.qty} ${t.key} to ${f.name}, and ${s.name} walked home to ${h.name}.`);
-          return "";
-        } },
-      { label: "Refuse", hint: `Pay nothing: ${refuse}.`, ai: () => 0,
-        resolve: (st) => {
-          if (!live(st)) return "Too late.";
-          if (f.type === "raider") {
-            hurt(st, s, 999, null, `at the hands of ${f.name}: the ransom was refused`);
-            log(st, `${f.name} killed ${s.name} when no ransom came.`, "death");
-            checkGameOver(st);
-            return `${s.name} is dead.`;
-          }
-          homeFree(st, s, f, `${f.name} let ${first(s)} go`, `${f.name} let ${s.name} go when no ransom came. ${first(s)} is back at ${hub(st).name}.`);
-          return "";
-        } },
+      { label: "Negotiate", hint: "Ask their price (by radio, or an envoy rides out): ransom.js", ai: () => 0, resolve: (st) => openNegotiation(st, s.id) },
+      { label: "OK", hint: "Decide later (the People tab's Negotiate)", ai: () => 1, resolve: () => "" },
     ],
-  };
+  });
+}
+const yoursValue = (s) => G.YOURS.value + G.YOURS.perSkill * Object.values(s.skills || {}).sort((a, b) => b - a).slice(0, 3).reduce((a, v) => a + v, 0);
+// Held over their room past the days given (noRoomForYours): no talks or deal with you under way: killed or let go.
+function overflowDue(state, s, f) {
+  if (s.location.overflow == null || day(state) < s.location.overflow) return false;
+  if (groupRoom(state, f) > 0 || dealFor(state, f) || talksOf(state).some((t) => t.factionId === f.id)) { if (groupRoom(state, f) > 0) delete s.location.overflow; return false; }
+  if (G.UNSOLD[f.type] === "kill") {
+    hurt(state, s, 999, null, `at the hands of ${f.name}: no ransom came`);
+    const text = `No ransom came, and ${f.name} had no cell for ${s.name}. Word comes that they killed ${first(s)}.`;
+    log(state, text, "death");
+    addCard(state, { title: `${s.name} is dead`, text, choices: [{ label: "OK", resolve: () => "" }] });
+    bump(state, "yoursKilled");
+    checkGameOver(state);
+  } else {
+    homeFree(state, s, f, `${f.name} let ${first(s)} go`, `${f.name} had no cell for ${s.name} and let them go. ${first(s)} is back at ${hub(state).name}.`);
+    bump(state, "yoursReleased");
+  }
+  return true;
 }
 // Your captive sold on to another group: their factionId and tile change (rescue missions follow), and a card.
 function sellYours(state, s, f, buyer, value) {
   const terms = payWith(buyer, value);
   if (terms) pay(buyer, f, terms);
   const tile = buyer.bases[0];
-  s.location = { kind: "captive", factionId: buyer.id, tile, since: s.location.since, soldDay: day(state) };
+  s.location = { ...s.location, kind: "captive", factionId: buyer.id, tile, soldDay: day(state) }; // a hidden tool (rescue) goes with them
+  delete s.location.fresh; delete s.location.overflow;
   if (G.BUYERS[buyer.type] === "free") {
     bump(state, "yoursFreed");
     homeFree(state, s, buyer, `${buyer.name} free ${first(s)}`, `${buyer.name} bought ${s.name} from ${f.name} and set them free. ${first(s)} is back at ${hub(state).name}.`);
@@ -410,14 +399,14 @@ export function groupJailsDaily(state) {
       // Turned: held long, one joins them.
       if (day(state) - rec.since >= T.recruitDays && rng.chance(T.recruit)) { list.splice(list.indexOf(rec), 1); f.pop += 1; bump(state, "turned"); }
     }
-    // Your people sold on (raiders and the like), where someone has room.
-    if (G.FULL[f.type] === "sell") {
-      for (const s of yours) {
-        if (s.location.soldDay === day(state) || !rng.chance(T.sellYours)) continue; // not one bought today
-        const value = G.YOURS.value + G.YOURS.perSkill * Object.values(s.skills || {}).sort((a, b) => b - a).slice(0, 3).reduce((a, v) => a + v, 0);
-        const buyer = buyerFor(state, f, null, value);
-        if (buyer) sellYours(state, s, f, buyer, value);
-      }
+    // Your people sold on (raiders and the like), where someone has room: held over their room (overflow), a buyer is
+    // looked for every day, and the days for a ransom run out (overflowDue).
+    for (const s of yours) {
+      if (s.location.overflow != null && overflowDue(state, s, f)) continue;
+      if (G.FULL[f.type] !== "sell" || s.location.soldDay === day(state) || !(s.location.overflow != null || rng.chance(T.sellYours))) continue; // not one bought today
+      const value = yoursValue(s);
+      const buyer = buyerFor(state, f, null, value);
+      if (buyer) sellYours(state, s, f, buyer, value);
     }
   }
 }

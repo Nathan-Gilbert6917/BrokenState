@@ -75,6 +75,7 @@ import { GROWTHS, TECH } from "./hiveconst.js";
 import { typeStrength } from "./zombietypes.js";
 import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squadValue, nearestOtherBase } from "./conquest.js";
 import { autopilotPrisoners, jailTier, cellCap, prisonersAt } from "./prisoners.js";
+import { autopilotRescue, autoRescuePlan } from "./ransom.js"; // your people held by other groups: ransom first, a raid when strong
 import { isManaged, healthRest } from "./work.js";
 import { onWatchNow, inShift } from "./watch.js"; // the night watch (govWatch)
 import { tiredLevel } from "./sleep.js";
@@ -437,6 +438,10 @@ export function autopilotDaily(state) {
   // prisoners.js: question them, then trade back (Cautious), ransom (Balanced) or slowly recruit (Aggressive).
   const held = autopilotPrisoners(state);
   if (held) say(state, `Prisoners: ${held}`);
+  // ransom.js: your people held by another group: a ransom (or a prisoner exchange) first when the hub can pay it; the
+  // handover team goes at once. A rescue raid is the mission planner's (below), when autoRescuePlan says so.
+  const ransom = autopilotRescue(state);
+  if (ransom) say(state, `Ransom: ${ransom}`);
   // Radio deals waiting for a caravan of yours (radiotrade.js): sent when the base can spare the goods and the people.
   for (const d of [...radioDeals(state)]) {
     if (state.parties.some((p) => p.owner === "player" && p.dealId === d.id)) continue;
@@ -2536,7 +2541,10 @@ function planTrip(state) {
   }
   // Your people held by another group.
   const held = allCaptives(state);
-  if (P.rescue && held.length && today - g.lastRescue >= 8 && spareHands >= 3) {
+  // ransom.js autoRescuePlan: only when paying is out (too dear) and the squad would beat the guards for someone worth it.
+  const raidFor = held.find((s) => { const pl = autoRescuePlan(state, s); return pl && pl.kind === "raid"; });
+  if (P.rescue && raidFor && today - g.lastRescue >= 8 && spareHands >= 3) {
+    held.unshift(...held.splice(held.indexOf(raidFor), 1));
     const f = factionById(state, held[0].location.factionId);
     if (f && f.alive && f.bases.length) {
       const ammo = Math.min(Math.max(0, (h.stock.ammo || 0) - 60), ransomValue(f, captivesAt(state, f.id)) * 2);

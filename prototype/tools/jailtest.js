@@ -15,7 +15,7 @@ import {
 import { prisonTab } from "../src/ui/prisoners.js";
 import { launchExpedition, startReturn } from "../src/sim/parties.js";
 import { housingAI, setAutopilot } from "../src/sim/autopilot.js";
-import { takeCaptive, captivesOf, allCaptives } from "../src/sim/conflicts.js";
+import { takeCaptive, captivesOf, allCaptives, CAPTIVE_TOOL } from "../src/sim/conflicts.js";
 import {
   GROUP_JAIL, groupJailTier, groupJailCap, groupRoom, groupHeld, groupCapture, groupJailsHour, groupJailsDaily, captiveEscape,
   groupLabour, jailWork, jailText, groupPrisoners,
@@ -23,6 +23,8 @@ import {
 import { nextWork, groupWorksDaily } from "../src/sim/groupworks.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { relation } from "../src/sim/diplomacy.js";
+import { talksOf, openNegotiation } from "../src/sim/ransom.js";
+import { jailTier as rescueTier, JAIL as RESCUE_JAIL } from "../src/sim/rescueraid.js";
 import { createBattle, combatAct, closeCombat, runEnemyPhase, endPlayerTurn, registerCombatHandler } from "../src/sim/combat.js";
 import { surrender } from "../src/sim/nonlethal.js";
 registerCombatHandler("jt", () => {});
@@ -427,6 +429,22 @@ const noDice = (fn) => {
   });
   check(tiers[0] > tiers[1] && tiers[1] > tiers[2], `your captive's escape follows their jail: ${tiers.map(pct).join(" > ")}`);
   check(JAIL_TIERS.slice(1).map((j) => j.block).join(" / ") === "a chain-link cage / barred cells / a jailhouse block", "groupJailTier picks the rescue map's cell block");
+  // The rescue raid's map reads their tier (rescueraid.js jailTier) and shows your jails' names.
+  {
+    const st = world(seed + 11);
+    const f = groupOf(st, (x) => x.type === "raider") || st.factions[0];
+    const keys = [0, 1, 2, 3].map((t) => { f.jails = { [f.bases[0]]: t }; return rescueTier(f, f.bases[0], st); });
+    check(keys.join() === "makeshift,makeshift,holding,jailhouse", `rescue map tiers by their jail: none/1/2/3 → ${keys.join(", ")}`);
+    check(RESCUE_JAIL.makeshift.name === "makeshift cells" && RESCUE_JAIL.holding.block === "barred cells" && RESCUE_JAIL.jailhouse.name === "jailhouse" && RESCUE_JAIL.jailhouse.diff > RESCUE_JAIL.holding.diff, `and your jails' names: ${["makeshift", "holding", "jailhouse"].map((k) => `${RESCUE_JAIL[k].name} (${RESCUE_JAIL[k].block})`).join(", ")}`);
+    // One escape formula: the tier's base plus the hidden tool (rescue), the tool worth more in a cage.
+    const s = atBase(st, hub(st).id)[1];
+    takeCaptive(st, s, f, null);
+    delete s.location.fresh;
+    s.skills.stealth = 0;
+    const row = [1, 2, 3].map((t) => { f.jails = { [f.bases[0]]: t }; delete s.location.tool; const a = captiveEscape(st, s, f); s.location.tool = "key"; return { a, b: captiveEscape(st, s, f) }; });
+    check(row.every((r) => r.b > r.a) && near(row[1].b - row[1].a, CAPTIVE_TOOL.key, 1e-9) && row[0].b - row[0].a > row[2].b - row[2].a && row[0].b > row[1].b && row[1].b > row[2].b,
+      `hidden keys: ${row.map((r) => `${pct(r.a)} → ${pct(r.b)}`).join(", ")} (makeshift, cells, jailhouse)`);
+  }
   // No room: by type.
   const noRoom = (type) => {
     let st = null, f = null;
@@ -446,11 +464,21 @@ const noDice = (fn) => {
   if (zea) check(!zea.s.alive && zea.cards.length === 1, `zealots with no room: killed, a card ("${zea.cards[0] && zea.cards[0].title}")`);
   const rai = noRoom("raider");
   if (rai) {
-    check(rai.s.location.kind === "captive" && rai.cards.length === 1 && rai.cards[0].kind === "groupRansom", `raiders with no room and no buyer: a ransom asked at once ("${rai.cards[0] && rai.cards[0].title}")`);
-    const h = hub(rai.st);
-    for (const k of ["ammo", "food", "scrap", "meds", "fuel", "parts"]) h.stock[k] = 999;
-    rai.cards[0].choices[0].resolve(rai.st);
-    check(rai.s.location.kind === "base", "paid: they walk home");
+    check(rai.s.location.kind === "captive" && rai.s.location.overflow != null && rai.cards.length === 1 && rai.cards[0].kind === "groupOverflow", `raiders with no room and no buyer: kept ${GROUP_JAIL.YOURS.days} days for a ransom ("${rai.cards[0] && rai.cards[0].title}")`);
+    rai.st.hour += 24 * (GROUP_JAIL.YOURS.days + 1);
+    const keepE = { ...GROUP_JAIL.TRADE }; GROUP_JAIL.TRADE.sellYours = 0;
+    const d0 = GROUP_JAIL.CAPTIVE.death; GROUP_JAIL.CAPTIVE.death = 0;
+    groupJailsDaily(rai.st);
+    Object.assign(GROUP_JAIL.TRADE, keepE); GROUP_JAIL.CAPTIVE.death = d0;
+    check(!rai.s.alive, "no talks by then: the raiders kill them");
+    // With talks under way (ransom.js), they wait.
+    const again = noRoom("raider");
+    talksOf(again.st).push({ factionId: again.f.id, captiveIds: [again.s.id], due: again.st.hour + 999 });
+    again.st.hour += 24 * (GROUP_JAIL.YOURS.days + 1);
+    GROUP_JAIL.CAPTIVE.death = 0;
+    groupJailsDaily(again.st);
+    GROUP_JAIL.CAPTIVE.death = d0;
+    check(again.s.alive && again.s.location.kind === "captive", "an envoy on the way: they wait for the price");
   }
   // Room: jailed, and worked (raiders grimmest).
   const st = world(seed + 13);

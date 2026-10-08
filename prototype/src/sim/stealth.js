@@ -29,7 +29,7 @@ import { gunMods, unitMods, fittedSuppressor, removeMod, modLabel } from "./gunm
 import { isNight, survivorById, baseById } from "./world.js";
 import { EQUIP_SLOTS, packOf } from "./inventory.js";
 import {
-  CELL, WEAPONS, active, adjacent, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
+  CELL, WEAPONS, active, adjacent, cornerBlocked, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
   say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash,
 } from "./combat.js";
 import { landEffect, blastSpot, throwBlind, throwLanding, flashSpot, doorToss, BLAST, FRAG, FIRE } from "./throwables.js";
@@ -229,7 +229,8 @@ export function isBehind(a, t) {
 }
 const flatFooted = (t) => !t.aware || !!t.surprised;
 export const staggering = (t) => t.hp <= t.maxHp * STEALTH.STAGGER;
-export const canSubdue = (a, t) => !!a && !!t && t.side === "enemy" && t.kind === "human" && active(t) && adjacent(a, t);
+// b: the battle, for the wall-corner check (combat.js cornerBlocked); the UI's quick checks may leave it out.
+export const canSubdue = (a, t, b = null) => !!a && !!t && t.side === "enemy" && t.kind === "human" && active(t) && adjacent(a, t) && !(b && cornerBlocked(b, a.x, a.y, t.x, t.y));
 
 // Odds of Subdue against an adjacent human: a takedown (knock-out roll) on the unaware or staggering, else a
 // non-lethal blow. { takedown, chance, dmg, behind, cover, label }.
@@ -298,7 +299,7 @@ function takedown(b, a, t) {
 export function stealthAct(state, b, u, t, act) {
   switch (act.type) {
     case "subdue": {
-      if (!canSubdue(u, t)) return "Subdue needs a person right next to you.";
+      if (!canSubdue(u, t, b)) return "Subdue needs a person right next to you.";
       takedown(b, u, t);
       u.ap = 0;
       return "";
@@ -528,7 +529,7 @@ export function botStealth(state, b, u, combatAct) {
   const foes = b.units.filter((e) => e.side === "enemy" && active(e));
   const ko = b.units.find((e) => e.side === "enemy" && e.ko && !e.tied && !e.dead && adjacent(u, e));
   if (ko && u.ap > 0) return !combatAct(state, { type: "tie", unit: u.id, target: ko.id });
-  const prey = foes.filter((e) => canSubdue(u, e) && (flatFooted(e) || staggering(e)) && subdueOdds(b, u, e).chance >= 50);
+  const prey = foes.filter((e) => canSubdue(u, e, b) && (flatFooted(e) || staggering(e)) && subdueOdds(b, u, e).chance >= 50);
   if (prey.length) return !combatAct(state, { type: "subdue", unit: u.id, target: prey[0].id });
   // Stalk a lone unaware guard within 8 tiles (no comrade within 4 tiles of it): one action's move toward the cell
   // behind it, the takedown once next to it.
