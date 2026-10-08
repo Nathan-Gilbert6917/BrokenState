@@ -31,6 +31,8 @@ import { DOG } from "./hubevents.js";
 import { eatMult } from "./skills.js";
 import * as Weather from "./weather.js";
 import { childRations, childrenAt } from "./family.js"; // children (family.js): fed here, eaten in familyDaily
+import { edibleFood } from "./storage.js";
+import { waterIn } from "./water.js";
 
 export const UPKEEP = { food: 1, water: 1, guest: 1, crew: 1 };
 
@@ -75,6 +77,43 @@ export function foodUse(state, base, dayIdx) {
   const total = groups.reduce((a, g) => a + g.total, 0);
   return { rate: r2(rate), cold, groups, residents: m.residents * rate, total, heads: m.heads, mouths: m };
 }
+
+// ---------- the pay-out reserve ----------
+// Food and water are never paid out of a base below PAYOUT.days of its own need: the governor's and the base
+// leaders' trades (caravans, merchants, radio deals and the caravans that fetch them), raid tribute, ransoms,
+// envoys' gifts and the hub's supply runs all pay only from what is above it. (2026-10-08 thirst diagnosis: a hub
+// whose wells kept up rated its water "plenty" and sold it to every merchant at the gates, 466 water in a year on one
+// seed, so a broken well or a heat wave found it with two days' drinking in store.) Need: everyone fed at the base
+// (mouthsAt heads: residents, prisoners, guests, a holding convoy's crew) eating today's ration (foodUse) or drinking
+// today's thirst (weather.js thirstFactor). Both water kinds count (water.js waterIn); food is fresh + preserved.
+// AI groups (coarse: f.stock per head, a day each) keep the same days (trade.js RESERVE, groupcare.js raidAnswer,
+// diplomacy.js peace tribute): groupPayoutSpare.
+export const PAYOUT = { days: 4 };
+const PAYOUT_KINDS = ["food", "water"];
+// What a base keeps back of food or water before it pays any out: PAYOUT.days of its need. 0 for other kinds.
+export function payoutFloor(state, base, kind) {
+  if (!base || !PAYOUT_KINDS.includes(kind)) return 0;
+  if (kind === "food") return foodUse(state, base).total * PAYOUT.days;
+  const heads = mouthsAt(state, base).heads;
+  return heads * UPKEEP.water * (Weather.thirstFactor ? Weather.thirstFactor(state) : 1) * PAYOUT.days;
+}
+// What a base holds of a kind for the reserve (food: fresh + preserved; water: purified + un-purified).
+const payoutHave = (base, kind) => (kind === "food" ? edibleFood(base) : kind === "water" || kind === "rawwater" ? waterIn(base.stock) : Math.max(0, base.stock[kind] || 0));
+// What a base can pay out of a kind without going below its floor (Infinity for kinds the reserve does not cover).
+// "preserved" counts as food and "rawwater" as water.
+export function payoutSpare(state, base, kind) {
+  const k = kind === "preserved" ? "food" : kind === "rawwater" ? "water" : kind;
+  if (!base || !PAYOUT_KINDS.includes(k)) return Infinity;
+  return Math.max(0, Math.floor(payoutHave(base, k) - payoutFloor(state, base, k)));
+}
+// The goods { key: qty } would take a base's food or water below its floor.
+export const payoutBreaks = (state, base, goods) => {
+  const by = { food: 0, water: 0 };
+  for (const [k, q] of Object.entries(goods || {})) { const kk = k === "preserved" ? "food" : k === "rawwater" ? "water" : k; if (kk in by) by[kk] += Math.max(0, q || 0); }
+  return PAYOUT_KINDS.some((k) => by[k] > 0 && by[k] > payoutSpare(state, base, k));
+};
+// An AI group (its coarse stock: a ration of food and water a head a day): what it can pay out of a kind.
+export const groupPayoutSpare = (f, kind) => (PAYOUT_KINDS.includes(kind) ? Math.max(0, Math.floor((f.stock[kind] || 0) - (f.pop || 0) * PAYOUT.days)) : Math.max(0, Math.floor(f.stock[kind] || 0)));
 
 // ---------- heating ----------
 // The need is counted in fuel (HEAT.fuel a head a day below 0°C); a base burns firewood first (woodcutting.js: a

@@ -67,6 +67,7 @@ import { thirstFactor } from "./weather.js";
 import { rumourFromNews, RUMOUR } from "./survey.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
 import { supplyAmt } from "./rounds.js"; // "ammo": every round there, any calibre
+import { payoutSpare, payoutBreaks } from "./upkeep.js"; // food and water: never paid out of the base's reserve
 import { deliveryFee, deliveryRefusal, bookDeal, radioDealsDaily, pendingDeal, counterOk } from "./radiotrade.js"; // trades over the radio
 
 export const RELAY_RANGE = 6;
@@ -488,7 +489,7 @@ function grudgeRaid(state, f) {
 function hubSpare(state, key, h = hub(state)) {
   const n = Math.max(1, atBase(state, h.id).length);
   const keep = { food: n * 6, water: n * 5, meds: 3, ammo: n * 10, fuel: 8, parts: 2, scrap: 20 }[key] || 0;
-  return Math.max(0, Math.floor(supplyAmt(h.stock, key) - keep));
+  return Math.min(payoutSpare(state, h, key), Math.max(0, Math.floor(supplyAmt(h.stock, key) - keep))); // upkeep.js PAYOUT: everyone fed there
 }
 
 // An offer or a request from a group, as a card. null when they have nothing sensible to say.
@@ -549,7 +550,7 @@ export function offerCard(state, f) {
     choices: [
       {
         label: `Agree: ${giveQty} ${giveKey} for ${getQty} ${getKey}`,
-        affordable: (st) => (hub(st).stock[giveKey] || 0) >= giveQty, // the autopilot agrees only then
+        affordable: (st) => (hub(st).stock[giveKey] || 0) >= giveQty && !payoutBreaks(st, hub(st), { [giveKey]: giveQty }), // the autopilot agrees only then (and never out of the food and water reserve)
         hint: `Have ${giveQty} ${giveKey} ready at ${base.name} when they arrive (the hub has ${Math.floor(hub(state).stock[giveKey] || 0)} now)`,
         resolve: (st) => {
           const why = refusal(st, f, true);

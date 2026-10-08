@@ -26,6 +26,7 @@
 //   flat +1 per trade could be farmed with tiny deals). Gifts give up to 15 a day.
 import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew } from "./data.js";
 import { log, day, newId, survivorById, factionById, baseById, atBase, skill, snapshot, mergeKnowledge } from "./world.js";
+import { PAYOUT } from "./upkeep.js"; // the pay-out reserve: days of food and water a head kept back
 import { partyMembers, partyTile, bestSkill, awaitOrders, partyCapacity, cargoLoad, cargoRoom } from "./parties.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { ransomOnTradeCard } from "./conflicts.js";
@@ -55,8 +56,9 @@ export { itemValue };
 // (woodcutting.js): groups cut their own; the seasons move its price (valuation.js: dear in winter, cheap in summer).
 // Arrows (hunting.js): groups fletch their own and keep them (comfortable, none to spare) until they hold more.
 const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, arrows: 2, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 120, carparts: 0.5, gunparts: 0.5, electronics: 0.5 }; // wood: 12 kg a head; the part kinds are priced by the group's one count of parts
-// Per head a group never sells: it keeps this much for itself.
-const RESERVE = { food: 2, water: 1.5, fuel: 0.5, meds: 0.3, ammo: 3, arrows: 2, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 60, carparts: 0, gunparts: 0, electronics: 0 };
+// Per head a group never sells: it keeps this much for itself. Food and water: the pay-out reserve your governor keeps
+// (upkeep.js PAYOUT.days a head, read when used: the modules load in a cycle; it was 2 and 1.5).
+const RESERVE = { get food() { return PAYOUT.days; }, get water() { return PAYOUT.days; }, fuel: 0.5, meds: 0.3, ammo: 3, arrows: 2, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 60, carparts: 0, gunparts: 0, electronics: 0 };
 // Groups always have some water (wells, rain barrels), firewood (they cut their own: woodcutting.js) and arrows (they
 // make their own): with no figure yet they count as comfortable.
 // Water (water.js): other groups keep a single pool (f.stock.water; they purify their own). Un-purified water is

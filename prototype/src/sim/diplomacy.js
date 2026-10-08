@@ -52,6 +52,7 @@ import { Rng } from "./rng.js";
 import { groupCapture, jailsOn } from "./groupjails.js"; // jailhouse: war captives into the raider's jail
 import { SUPPLIES, SUPPLY_KEYS, supplyFew } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
+import { groupPayoutSpare } from "./upkeep.js"; // the pay-out reserve (food)
 import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
 import { clashKit, raidCount, smokeCover } from "./arsenal.js"; // group arsenals: a war raid's dead lose their kit, the side holding the field picks some up
 import { spawnAiParty, tileLabel } from "./parties.js";
@@ -475,7 +476,8 @@ export function makePeace(state, w, how = "terms") {
     terms = "tribute";
     const paid = {};
     for (const k of ["food", "ammo", "meds", "scrap"]) {
-      const q = Math.floor((lose.stock[k] || 0) * DIPLO.TRIBUTE);
+      // Food never out of the loser's pay-out reserve (upkeep.js PAYOUT, as your governor's).
+      const q = Math.min(Math.floor((lose.stock[k] || 0) * DIPLO.TRIBUTE), groupPayoutSpare(lose, k));
       lose.stock[k] -= q;
       const mine = youWon ? Math.floor(q / 2) : 0;
       win.stock[k] = (win.stock[k] || 0) + q - mine;

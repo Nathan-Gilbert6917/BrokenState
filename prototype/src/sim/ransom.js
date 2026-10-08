@@ -43,6 +43,7 @@ import { assaultForce } from "./conquest.js";
 import { itemValue } from "./valuation.js";
 import { thirstAhead } from "./weather.js";
 import { groupJailGuards } from "./groupjails.js"; // the guards on the jail a raid would meet
+import { payoutFloor, payoutBreaks } from "./upkeep.js"; // the pay-out reserve: food and water are never paid below it
 
 export const RANSOM = {
   BASE: 40, PER_SKILL: 3, LEADER: 1.5, ZEALOT: 1.3,
@@ -373,6 +374,9 @@ export function sendHandover(state, deal, opts = {}) {
   if (!h || !f || !f.alive) return "Nobody to hand them over to.";
   if (state.parties.some((p) => p.dealId === deal.id)) return "The handover team is already on its way.";
   for (const [k, q] of Object.entries(deal.supplies)) if ((h.stock[k] || 0) < q) return `Not enough ${SUPPLIES[k].name.toLowerCase()} at the hub for the deal.`;
+  // The governor (opts.reserve) never pays food or water out of the hub's pay-out reserve (upkeep.js PAYOUT): the
+  // handover waits (until the deal runs out) while the stores are that low.
+  if (opts.reserve && payoutBreaks(state, h, deal.supplies)) return "The hub cannot spare the food or water the deal costs now.";
   if (deal.gear.some((it) => !(h.armory || []).includes(it))) return "A gun the deal names is no longer in the hub's armory.";
   const n = opts.crew ?? RANSOM.CREW;
   const crew = atBase(state, h.id).filter((s) => !s.inBed && s.health >= 40).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id).slice(0, n);
@@ -539,7 +543,8 @@ function autoKeep(state) {
   const h = hub(state);
   const n = h ? atBase(state, h.id).length : 0;
   const A = RANSOM.AUTO;
-  return { food: A.keepFood * n, water: A.keepWater * n, ammo: A.keepAmmo, meds: A.keepMeds, fuel: A.keepFuel, scrap: 20, parts: 2 };
+  // At least the pay-out reserve (upkeep.js PAYOUT: everyone fed there, prisoners and guests too).
+  return { food: Math.max(A.keepFood * n, Math.ceil(payoutFloor(state, h, "food"))), water: Math.max(A.keepWater * n, Math.ceil(payoutFloor(state, h, "water"))), ammo: A.keepAmmo, meds: A.keepMeds, fuel: A.keepFuel, scrap: 20, parts: 2 };
 }
 function spareValue(state) {
   const h = hub(state);
@@ -575,7 +580,7 @@ export function autopilotRescue(state) {
   const out = [];
   for (const d of [...dealsOf(state)]) {
     if (state.parties.some((p) => p.dealId === d.id)) continue;
-    const r = sendHandover(state, d);
+    const r = sendHandover(state, d, { reserve: true });
     out.push(typeof r === "string" ? `handover for ${factionById(state, d.factionId)?.name}: ${r}` : `the handover team set out for ${tileLabel(state, d.tile)}`);
   }
   const seen = new Set();
@@ -596,7 +601,7 @@ export function autopilotRescue(state) {
       // The deal card it just raised is the governor's to answer: send the team now.
       const i = state.cards.findIndex((c) => c.dealId === d.id);
       if (i >= 0) state.cards.splice(i, 1);
-      const r = sendHandover(state, d);
+      const r = sendHandover(state, d, { reserve: true });
       if (typeof r === "string") out.push(r);
     }
   }
