@@ -17,7 +17,7 @@ import {
 import { SURRENDER, surrenderCheck, numbersSurrenders, raidPrisoners } from "../src/sim/nonlethal.js";
 import { COVER_SMOKE } from "../src/sim/siege.js";
 import { FLASH_KIT, SMOKE } from "../src/sim/throwables.js";
-import { ARSENAL, starterKit } from "../src/sim/arsenal.js";
+import { ARSENAL, starterKit, ensureArsenal, kitOf } from "../src/sim/arsenal.js";
 import { thirdSideUnit } from "../src/sim/thirdside.js";
 import { newItem, stow } from "../src/sim/inventory.js";
 import { setRounds } from "../src/sim/ammo.js";
@@ -158,6 +158,17 @@ const clouds = (b) => (b.smoke || []).filter((c) => !c.thick);
   const count = (type) => starterKit(seed, "eai", type, 20).filter((it) => it.key === "smokegren").length;
   check(count("military") === Math.round(20 * ARSENAL.NONLETHAL.soldiers.smokegren) && count("commune") === Math.round(20 * ARSENAL.NONLETHAL.militia.smokegren) && count("raider") === Math.round(20 * ARSENAL.NONLETHAL.raiders.smokegren),
     `a group's starting arsenal for 20 people: military ${count("military")}, commune ${count("commune")}, raiders ${count("raider")} smoke grenades`);
+  // An arsenal from an older save (dealt before smoke was in the kits): topped up once when next read.
+  const f = st.factions.find((x) => x.alive && !x.outsider && ARSENAL.NONLETHAL[kitOf(x)] && ARSENAL.NONLETHAL[kitOf(x)].smokegren * x.pop >= 1);
+  if (check(!!f, "a group whose kit carries smoke")) {
+    const A = ensureArsenal(st, f);
+    A.items = A.items.filter((it) => it.key !== "smokegren");
+    delete A.smoke;
+    const want = Math.round(f.pop * ARSENAL.NONLETHAL[kitOf(f)].smokegren);
+    const n1 = ensureArsenal(st, f).items.filter((it) => it.key === "smokegren").length;
+    const n2 = ensureArsenal(st, f).items.filter((it) => it.key === "smokegren").length;
+    check(n1 === want && n2 === want && A.smoke, `an older save's ${f.type} arsenal gets its ${want} smoke grenades once (${n1}, then ${n2})`);
+  }
   closeCombat(st);
 }
 

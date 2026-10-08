@@ -161,12 +161,24 @@ export function seedArsenal(state, f) {
   for (const it of starterKit(state.seed, f.name, f.type, f.pop, f.gear || 1)) put(A, f, it, null);
   A.seeded = A.items.length;
   A.gear = f.gear || 1; // the eras' arms this kit was dealt with (eraArms: a later gang's strong guns already carry them)
+  A.smoke = true; // dealt with smoke grenades (topUpSmoke)
   return A;
+}
+// Smoke grenades came into most kits later (2026-10, siege.js coverSmoke: smoke over a retreat): an arsenal dealt
+// before then gets its share once, the same items a new world's would hold (A.smoke marks it done). One that already
+// holds smoke (guards had it before) is left as it is.
+function topUpSmoke(state, f, A) {
+  A.smoke = true;
+  const kind = kitOf(f), share = (ARSENAL.NONLETHAL[kind] || {}).smokegren || 0;
+  if (!share || A.items.some((it) => it && it.key === "smokegren")) return;
+  const src = kitSource(kind);
+  for (let i = 0; i < Math.round(Math.max(0, f.pop || 0) * share); i++) put(A, f, lootItem("smokegren", src, [state.seed, "ars", f.name, "nsmokegren", i]), null);
 }
 // The group's arsenal, made the first time it is read (an old save's groups: the same rule as a new world's).
 export function ensureArsenal(state, f) {
   if (!f || f.outsider || ARSENAL_SWITCH.off) return null;
-  return f.arsenal || seedArsenal(state, f);
+  if (f.arsenal) { if (!f.arsenal.smoke) topUpSmoke(state, f, f.arsenal); return f.arsenal; }
+  return seedArsenal(state, f);
 }
 export function addToArsenal(state, f, it, why = "found") {
   if (!arsenalWorthy(it)) return false;
