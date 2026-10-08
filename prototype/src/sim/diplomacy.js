@@ -30,6 +30,11 @@
 //   1 a raid held): a lead of 5+ and a loser with 2+ bases cedes the base nearest the winner (land); a lead of 2+
 //   pays 25% of its food, ammo, meds and scrap (tribute); otherwise a white peace. Captives go home.
 //
+// Blocs (blocs.js): alliances of groups by type and a shared threat. A bloc's members never raid each other or go to
+// war with each other; a war on a member brings the others in (blocWarJoin, from startWar, beside the pact partners);
+// their war raids draw members along (jointRaid); declareWars weighs what each side's bloc could spare. The temper for
+// war is groupcare.js GROUP_PRIORITIES warlike (the old TEMPER numbers). Wars with you: playerwars.js (pwarsDaily).
+//
 // You and their wars
 // - Selling: a group at war pays 35% more for ammo and meds and 30% more for weapons and armor, and keeps twice
 //   its usual reserve of food, ammo, meds and fuel (less to trade) (trade.js). Arming one side costs a little

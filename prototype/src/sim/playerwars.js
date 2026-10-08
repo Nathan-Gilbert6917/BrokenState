@@ -68,7 +68,7 @@ import { tileLabel } from "./parties.js";
 import { keyWord } from "./water.js";
 
 export const PW = {
-  FROM: 40, GAP: 80, MAX: 1, COOLDOWN: 120, RANGE: 30, GW: -40, PEACEFUL_GRIEV: 25, BASE: 0.008, MIN_FIT: 10,
+  FROM: 40, GAP: 80, MAX: 1, COOLDOWN: 120, RANGE: 30, GW: -40, PEACEFUL_GRIEV: 25, BASE: 0.015, MIN_FIT: 10,
   RICH: 1500, LAND_NEAR: 9, GRIEV_FADE: 0.99, GRIEV_MAX: 200, PRISONER: 8, NEAR_BASE: 10, SETTLE: 0.4,
   RAID_GAP: [9, 15], FIRST_RAID: [2, 6], SIEGE_HOURS: 12, ALLY_RAID: 0.35, TEAM: 1.6, TEAM_RANGE: 7, CARAVAN: 2, CARAVAN_RANGE: 2,
   OFFER_FROM: 10, OFFER_GAP: 10, TALK_GAP: 5, TIRED: 45, BROKEN: 85, LEAD: 5, LONG: 100, LONG_PEACE: 0.04,
@@ -630,7 +630,7 @@ function giveInScore(state, w, terms, offered = false) {
   const worth = Math.max(200, hb ? supplyValue(hb.stock) : 200);
   const cost = termsCost(state, terms) / worth;
   const hurting = w.exh.you >= PW.TIRED || w.score.them - w.score.you >= PW.LEAD;
-  const limit = (style === "cautious" ? 0.25 : style === "aggressive" ? 0 : 0.05) + (hurting ? 0.15 : 0) + (offered ? 0.08 : 0);
+  const limit = (style === "cautious" ? 0.25 : 0) + (hurting ? 0.15 : 0) + (offered ? 0.08 : 0);
   return cost <= limit ? 2 : -1;
 }
 export function declarationCard(state, w) {

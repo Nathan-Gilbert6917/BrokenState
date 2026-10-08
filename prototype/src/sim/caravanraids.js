@@ -37,7 +37,8 @@
 // - Raider gangs rob any caravan within AI_RAID.RANGE tiles of one of their bases (not a group they have a pact
 //   with); expansionists and zealots only the caravans of groups they are at war with; and your convoys, when the
 //   group would attack your teams (hostile, or aggressive with no pact or alliance). The groups' own caravans near a
-//   raider gang's base are ambushed in parties.js aiPartyHour (the same goods taken, the same odds).
+//   raider gang's base are ambushed in parties.js aiPartyHour (the same goods taken, the same odds). A group at war with
+//   you (playerwars.js, peaceful types too) robs your convoys PW.CARAVAN × as often, PW.CARAVAN_RANGE tiles further out.
 // - Only when their war band (AI_RAID.BAND × the group's strength) is at least AI_RAID.EDGE × the caravan's; an hourly
 //   chance of AI_RAID.CHANCE, more for a rich cargo (up to ×3). Won by the numbers (0.5 + 0.6 × (ratio − 1), 5–95%):
 //   all the supplies go into the group's stock and the items onto its shelf (its wares), the caravan is gone (your
