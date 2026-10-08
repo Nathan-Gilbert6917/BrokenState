@@ -26,7 +26,7 @@ import {
 import { spawnAiParty } from "../src/sim/parties.js";
 import { resolveRaidOnPlayer, resolveRaidOnFaction } from "../src/sim/factions.js";
 import { defendInPerson } from "../src/sim/conflicts.js";
-import { finishCombat } from "../src/sim/combat.js";
+import { finishCombat, combatAct, damage, shotOdds, ammoLeft, active, gunnerOf, TURRET, WEAPONS, autoPlayerTurn, runEnemyPhase, magIn, canSee } from "../src/sim/combat.js";
 import { carOptions } from "../src/sim/foundcars.js";
 import { captureBase } from "../src/sim/conquest.js";
 import { teamLoad } from "../src/sim/load.js";
@@ -408,6 +408,150 @@ section("The Humvee on raids: lost when a raid fails, replaced slowly, seized wi
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
+{
+  check(WEAPONS.turret_m2 && WEAPONS.turret_m2.dmg[0] === 40 && WEAPONS.turret_m2.dmg[1] === 58 && WEAPONS.turret_m2.opt === 14 && WEAPONS.turret_m2.fall === 1.5 && WEAPONS.turret_m2.aim === 6 && WEAPONS.turret_m2.noise === 6 && WEAPONS.turret_m2.cap === 100 && WEAPONS.turret_m2.ammo === 3 && WEAPONS.turret_m2.pierce === 1 && WEAPONS.turret_lmg, "turret_m2: 40–58, opt 14, fall 1.5, aim +6, noise 6, a 100-round belt, 3-round bursts, pierce 1 (and turret_lmg)");
+  const st = createWorld({ seed: SEED, factionCount: 3 });
+  const h = hub(st);
+  const v = createVehicle(st, "hummer", { kind: "base", baseId: h.id }, { fuel: 30, condition: 80 });
+  fitMilitary(v, "m2hb");
+  const tile = st.tiles.find((t) => t.terrain === "plains" && !t.loc && !st.bases.some((b) => b.tile === t.id));
+  const p = team(st, tile.id, 3, v.id);
+  p.supplies.ammo = 60;
+  const b = inBrowser(() => createBattle(st, fieldSetup(tile.id, p, { enemy: { kind: "raiders", count: 3, power: 3 } })));
+  st.combat = b;
+  b.phase = "player";
+  const [g, r2] = b.units.filter((u) => u.side === "player");
+  for (const u of [g, r2]) { u.aboard = true; u.off = true; u.x = b.vehicle.x; u.y = b.vehicle.y; u.ow = false; u.ap = 2; }
+  const gun0 = g.weapon;
+  const err = combatAct(st, { type: "gunner", unit: g.id });
+  const cell = b.cells[b.vehicle.gunAt];
+  check(!err && g.gunner && !g.off && g.weapon === "turret_m2" && g.ap === 1 && cell && cell.h === 1 && gunnerOf(b) === g, `Man the turret (1 action): ${g.name} is up on the roof (a level up), the M2 in hand${err ? ` [${err}]` : ""}`);
+  check(active(g) && !active(r2), "the gunner is on the map; the other riders are not (only the gunner can be shot)");
+  check(/On the turret/.test(combatAct(st, { type: "move", unit: g.id, x: 0, y: 0 })), "the gunner cannot walk off");
+  // A raider in sight of the turret.
+  const foes = b.units.filter((u) => u.side === "enemy" && active(u));
+  const t = foes[0];
+  let spot = null;
+  for (let y = 0; y < b.h && !spot; y++) for (let x = 0; x < b.w && !spot; x++) {
+    const d = Math.hypot(x - g.x, y - g.y);
+    if (d < 3 || d > 7 || b.cells[y * b.w + x].k !== "open" || b.units.some((o) => !o.dead && !o.off && o.x === x && o.y === y)) continue;
+    const ox = t.x, oy = t.y; t.x = x; t.y = y;
+    if (canSee(b, g, t)) spot = [x, y]; else { t.x = ox; t.y = oy; }
+  }
+  for (const o of foes) if (o !== t) { o.aware = true; }
+  check(!!spot, "a raider in the gunner's sight");
+  const ammo0 = ammoLeft(b), noise0 = b.noise || 0;
+  const e2 = combatAct(st, { type: "turret", unit: g.id, target: t.id });
+  check(!e2 && ammoLeft(b) === ammo0 - 3 && magIn(g) === 97 && b.vehicle.belt === 97 && g.turretMag === 97, `a burst: 3 rounds from the team's ammo (${ammo0} → ${ammoLeft(b)}), the belt 97/100${e2 ? ` [${e2}]` : ""}`);
+  check((b.noise || 0) - noise0 >= 6 && foes.every((o) => o.dead || o.aware), `very loud: noise +${(b.noise || 0) - noise0}, everyone awake`);
+  check(t.dead || t.pinT === b.turn, "whoever it lands near is pinned (−10 aim their next turn)");
+  if (!t.dead) { const a0 = shotOdds(b, t, g).chance; t.pinT = null; check(shotOdds(b, t, g).chance - a0 === TURRET.PIN || shotOdds(b, t, g).chance === 95, "the pin costs 10 aim"); }
+  // Cover: half, full behind plate x2.
+  const shooter = foes.find((o) => !o.dead) || t;
+  check(shotOdds(b, shooter, g).cover === 1, "the gunner has half cover");
+  b.vehicle.up.plating = 2;
+  check(shotOdds(b, shooter, g).cover === 2, "full cover behind plate ×2");
+  b.vehicle.up.plating = 1;
+  // Reload: both actions.
+  g.ap = 1; g.mag = 40;
+  check(/both actions/.test(combatAct(st, { type: "reload", unit: g.id })), "a new belt needs both actions");
+  g.ap = 2;
+  const e3 = combatAct(st, { type: "reload", unit: g.id });
+  check(!e3 && g.ap === 0 && magIn(g) === Math.min(100, ammoLeft(b)) && b.vehicle.belt === magIn(g), `reloaded (${magIn(g)}, as far as the team's ammo goes)`);
+  // Save mid-battle.
+  st.cards = [];
+  const st2 = deserializeState(serializeState(st));
+  const g2 = st2.combat.units.find((u) => u.id === g.id);
+  check(g2 && g2.gunner && g2.weapon === "turret_m2" && g2.mag === g.mag && st2.combat.vehicle.belt === b.vehicle.belt && g2.gunSave && g2.gunSave.weapon === gun0, "a save mid-battle keeps the gunner, the belt and their own gun");
+  // Switching, getting down, getting out.
+  r2.ap = 2;
+  combatAct(st, { type: "gunner", unit: r2.id });
+  check(r2.gunner && !g.gunner && g.off && g.weapon === gun0 && gunnerOf(b) === r2 && magIn(r2) === b.vehicle.belt, "another rider takes over: one gunner at a time, the belt carries over, the first is back inside with their own gun");
+  r2.ap = 2;
+  combatAct(st, { type: "disembark", unit: r2.id });
+  check(!r2.gunner && !r2.aboard && !gunnerOf(b) && !b.cells.some((c) => c.h === 1 && c.k === "vehicle"), "getting out ends it");
+  // Downed: back inside.
+  g.ap = 2;
+  combatAct(st, { type: "gunner", unit: g.id });
+  damage(b, g, 999, shooter);
+  check(g.down && g.off && g.aboard && !g.gunner && g.weapon === gun0 && !gunnerOf(b), "a downed gunner drops back inside");
+  // A raid: Heat.
+  st.combat = null;
+}
+{
+  const st = createWorld({ seed: SEED + 3, factionCount: 3 });
+  const h = hub(st);
+  const v = createVehicle(st, "hummer", { kind: "base", baseId: h.id }, { fuel: 30 });
+  fitMilitary(v, "m2hb");
+  const tile = st.tiles.find((t) => t.road && !t.loc && !st.bases.some((b) => b.tile === t.id));
+  const p = team(st, tile.id, 2, v.id);
+  p.supplies.ammo = 60;
+  const b = inBrowser(() => createBattle(st, raidSetup(st, tile.id, p)));
+  st.combat = b; b.phase = "player";
+  const g = b.units.find((u) => u.side === "player");
+  g.aboard = true; g.off = true; g.ap = 2;
+  combatAct(st, { type: "gunner", unit: g.id });
+  const t = b.units.find((u) => u.side === "enemy" && active(u));
+  if (t) {
+    const heat0 = b.raid.heat;
+    combatAct(st, { type: "turret", unit: g.id, target: t.id }); // in sight or not: a refusal leaves the Heat as it was
+    const fired = b.raid.heat > heat0;
+    if (!fired) { t.x = g.x + 3; t.y = g.y; if (b.cells[t.y * b.w + t.x] && b.cells[t.y * b.w + t.x].k === "open" && canSee(b, g, t)) { g.ap = 2; combatAct(st, { type: "turret", unit: g.id, target: t.id }); } }
+    check(b.raid.heat - heat0 >= TURRET.HEAT || !canSee(b, g, t), `a raid: Heat +${Math.round(b.raid.heat - heat0)} for a burst (the shot's own and TURRET.HEAT)`);
+  }
+  st.combat = null;
+}
+{
+  // The enemy's gunner on a raid's Humvee at your base.
+  let st = null, f = null;
+  for (let i = 0; i < 40 && !f; i++) { st = createWorld({ seed: SEED + 5 + i * 17, factionCount: 3 }); f = st.factions.find((x) => x.type === "military"); }
+  const h = hub(st);
+  const raid = spawnAiParty(st, f, "raid", f.bases[0], h.tile, { strength: 20, target: { kind: "player", baseId: h.id, tile: h.tile } });
+  inBrowser(() => defendInPerson(st, raid));
+  const b = st.combat;
+  const eg = b && b.units.find((u) => u.side === "enemy" && u.gunner);
+  check(eg && eg.weapon === "turret_m2" && b.cells[eg.y * b.w + eg.x].k === "truck" && b.cells[eg.y * b.w + eg.x].h === 1, "their Humvee is manned: one of them on the M2, up on the roof");
+  if (eg) {
+    autoPlayerTurn(st); // the deploy step: your people to their posts
+    // One of your people out in the open in the gunner's sight (the Humvee stands behind their front).
+    const me = b.units.find((u) => u.side === "player" && active(u));
+    let put = false;
+    for (let y = 0; y < b.h && !put; y++) for (let x = 0; x < b.w && !put; x++) {
+      const d = Math.hypot(x - eg.x, y - eg.y);
+      if (d < 4 || d > 9 || b.cells[y * b.w + x].k !== "open" || b.units.some((o) => !o.dead && !o.off && o.x === x && o.y === y)) continue;
+      const ox = me.x, oy = me.y; me.x = x; me.y = y;
+      if (canSee(b, eg, me)) put = true; else { me.x = ox; me.y = oy; }
+    }
+    let shots = 0, turns = 0, moved = false;
+    const at = [eg.x, eg.y];
+    for (; turns < 6 && st.combat === b && !b.over; turns++) {
+      for (const u of b.units) if (u.side === "player") u.ap = 0;
+      combatAct(st, { type: "end" });
+      const m0 = magIn(eg);
+      runEnemyPhase(st);
+      if (magIn(eg) < m0 || (eg.mag === eg.magMax && m0 < 3)) shots++;
+      if (eg.x !== at[0] || eg.y !== at[1]) moved = true;
+      if (eg.dead) break;
+    }
+    check(shots > 0 && !moved, `their gunner fires the M2 at you and stays on it (${shots} bursts in ${turns} turns)`);
+  }
+  st.combat = null;
+}
+{
+  // By the numbers: the team's own turret.
+  const st = createWorld({ seed: SEED, factionCount: 3 });
+  const v = createVehicle(st, "hummer", { kind: "base", baseId: hub(st).id }, { fuel: 30 });
+  const tile = st.tiles.find((t) => t.road && !t.loc && !st.bases.some((b) => b.tile === t.id));
+  const p = team(st, tile.id, 3, v.id);
+  const people = partyMembers(st, p);
+  const s0 = { tile: tile.id, partyId: p.id, enemy: { kind: "raiders", count: 4, power: 3 }, ambush: null, handler: "vut", context: {} };
+  const m0 = byNumbersOdds(st, s0, people).mine;
+  fitMilitary(v, "m2hb");
+  check(near(byNumbersOdds(st, s0, people).mine - m0, TURRET_ODDS.m2hb), "by the numbers: a team riding its own turreted Humvee gets +6");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 section("Strip, refunds, value, save");
 {
   const st = createWorld({ seed: SEED, factionCount: 3 });
@@ -472,9 +616,12 @@ section("Drawing (stub canvases: ui/mapsprites.js, ui/isoview.js, ui/combat.js, 
   st.combat = inBrowser(() => createBattle(st, raidSetup(st, tile, p)));
   const b = st.combat;
   check(b.cells.some((c) => c.k === "vehicle" && c.car && c.car.up && c.car.up.t === "m2hb" && c.car.up.p === 1) && b.cells.some((c) => c.k === "truck" && c.car && c.car.up && c.car.up.t === "m2hb"), "the team's Humvee and the motor pool's carry their turret and plate on their cells");
+  { const g = b.units.find((u) => u.side === "player"); b.phase = "player"; g.aboard = true; g.off = true; g.ap = 2; combatAct(st, { type: "gunner", unit: g.id }); UI.cui.sel = g.id; }
+  const panel = UI.renderCombatPanel(st);
+  check(/Get down/.test(panel) && /on the turret/.test(panel) && /M2 turret/.test(panel), "the panel: Get down (⇧T), the gunner on the turret with the belt");
   let err = "";
   for (const view of ["iso", "top"]) { UI.setBattleView(view); try { UI.drawCombat(st, 1e9); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); } }
-  check(!err && !nan, `both battle views draw them${err ? `: ${err}` : ""}${nan ? ` (${nan} NaN)` : ""}`);
+  check(!err && !nan, `both battle views draw them, the turret manned${err ? `: ${err}` : ""}${nan ? ` (${nan} NaN)` : ""}`);
   st.combat = null;
 }
 

@@ -433,12 +433,14 @@ export function seizeGroupVehicles(state, f, base) {
 }
 
 // ---------- by the numbers (combat.js byNumbersOdds) ----------
-// { theirsAmbush: × the enemy's 1.4 when they strike first, theirsAdd: their turret } for a fight's setup.
+// { theirsAmbush: × the enemy's 1.4 when they strike first, theirsAdd: their turret, mineAdd: the turret on the team's
+// own vehicle (someone mans it: the team rides it) } for a fight's setup.
 export function vehicleOdds(state, setup) {
   const p = setup && setup.partyId != null ? (state.parties || []).find((x) => x.id === setup.partyId) : null;
   const v = p && p.vehicle === true ? partyVehicle(state, p) : null;
   const enemy = (setup && setup.enemy) || {};
-  return { theirsAmbush: setup && setup.ambush === "enemy" ? ambushMult(v, enemy.kind) : 1, theirsAdd: enemy.turret ? TURRET_ODDS[enemy.turret] || 0 : 0 };
+  const mine = v && upgradesOf(v).turret ? TURRET_ODDS[upgradesOf(v).turret.gun] || 0 : 0;
+  return { theirsAmbush: setup && setup.ambush === "enemy" ? ambushMult(v, enemy.kind) : 1, theirsAdd: enemy.turret ? TURRET_ODDS[enemy.turret] || 0 : 0, mineAdd: mine };
 }
 
 // ---------- garage jobs ----------

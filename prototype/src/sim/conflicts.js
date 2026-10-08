@@ -132,6 +132,8 @@ export function fightOdds(state, p, enemy, ambush) {
   if (ambush === "player") mine *= 1.4;
   if (ambush === "enemy") theirs *= 1.4 * ambushMult(p.vehicle === true ? partyVehicle(state, p) : null, enemy.kind); // vehicles.js: bulletproof glass (combat.js byNumbersOdds)
   if (enemy.turret) theirs += TURRET_ODDS[enemy.turret] || 0; // their turret (a military group's Humvee)
+  const pv = p.vehicle === true ? partyVehicle(state, p) : null;
+  if (pv && pv.upgrades && pv.upgrades.turret) mine += TURRET_ODDS[pv.upgrades.turret.gun] || 0; // the team's own turret
   return winOdds(mine / Math.max(0.1, theirs), { ...enemy, people: people.length, ambush }); // combat.js: calibrated on the battle map
 }
 
