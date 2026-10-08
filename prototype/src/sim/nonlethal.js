@@ -84,8 +84,9 @@ export const NL_TAKE = new Proxy({}, { get: (_, t) => (typeof t === "string" ? w
 // people standing at least `outnumbered` times theirs). Then each one hurt, out of shots, flanked or alone rolls each
 // enemy turn: base + the reasons that hold, × the kit's will (kit) × leader for a leader, at most max. Tuned
 // 2026-10-08 (tools/enemyaitest.js measures it): it was lost 0.5, merely outnumbered, base 0.05, hurt 0.25, empty /
-// flanked / alone 0.15, max 0.8 and militia 1, and about half of all fights with militia, guards or loose survivors
-// ended with one of them giving up; now about a sixth (militia a little less: they hold out for their own people).
+// flanked / alone 0.15, max 0.8 and militia 1: about half of all fights with militia (0.6 surrenders a fight), guards
+// or loose survivors ended with one of them giving up; now about a fifth (0.24), every kit cut to about 40% of before
+// (militia 0.8: they hold out for their own people).
 export const SURRENDER = {
   lost: 0.5, outnumbered: 2, base: 0.03, hurt: 0.15, empty: 0.1, flanked: 0.08, alone: 0.1, max: 0.5, leader: 0.4, walk: 3, recover: 1.5,
   kit: { guards: 1, militia: 0.8, survivors: 1, fighters: 0.8, raiders: 0.6, soldiers: 0.3, zealots: 0 },
