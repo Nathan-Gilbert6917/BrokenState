@@ -45,6 +45,7 @@ import { siteList } from "./zombietypes.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsiders on the same tile (contactAttack)
+import { unitPower, addToArsenal, arsenalWorthy, captureVehicle, arsenalText } from "./arsenal.js"; // group arsenals: their people's power by their kit; what they take goes into it
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -160,7 +161,7 @@ function enemyGroup(state, p, f, scale = 1, horde = null) {
   const def = FACTION_TYPES[f.type];
   let count = Math.round((n * rng.range(0.8, 1.5) + 1) * scale);
   count = clamp(count, 2, Math.max(2, Math.min(10, Math.floor(f.pop / 3))));
-  return { kind: KIND_OF[f.type], count, power: Math.round((2.2 + def.arms * 1.6) * 10) / 10, factionId: f.id, name: `${f.name} ${NOUN_OF[f.type]}` };
+  return { kind: KIND_OF[f.type], count, power: Math.round(unitPower(f, 2.2) * 10) / 10, factionId: f.id, name: `${f.name} ${NOUN_OF[f.type]}` }; // arsenal.js: 2.2 + arms × 1.6 × their kit
 }
 
 function minBaseDist(state, f, tileId) {
@@ -209,7 +210,7 @@ export function rob(state, p, frac, f, takeGear = true, cargoOnly = false) {
     }
   }
   const gear = takeGear ? p.cargo.gear.splice(0) : [];
-  if (f) for (const g of gear) f.lootedGear.push(g.name);
+  if (f) for (const g of gear) { f.lootedGear.push(g.name); addToArsenal(state, f, g, "stolen"); } // arsenal.js: guns, armour and explosives they will use
   const parts = Object.entries(taken).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`);
   if (gear.length) parts.push(...gear.map((g) => g.name));
   return parts.length ? parts.join(", ") : "nothing much";
@@ -243,7 +244,7 @@ export const allCaptives = (state) => state.survivors.filter(isCaptive);
 export function takeCaptive(state, s, f, p) {
   if (p) p.members = p.members.filter((id) => id !== s.id);
   // Everything on them is taken: worn, held, pockets and pack (inventory.js).
-  for (const g of stripAll(s)) f.lootedGear.push(`${first(s)}'s ${g.name}`);
+  for (const g of stripAll(s)) { f.lootedGear.push(`${first(s)}'s ${g.name}`); addToArsenal(state, f, g, "stolen"); } // arsenal.js
   s.station = null;
   s.location = { kind: "captive", factionId: f.id, tile: f.bases[0], since: state.hour };
   stats(state).captured += 1;
@@ -269,6 +270,7 @@ function endIfEmpty(state, p, f) {
   const v = partyVehicle(state, p);
   if (v) {
     state.vehicles.splice(state.vehicles.indexOf(v), 1);
+    if (f) captureVehicle(f, v); // arsenal.js: it is theirs now (f.vehicles)
     log(state, `${f ? f.name : "They"} took the ${v.name}.`, "danger");
   }
   if (f) {
@@ -913,6 +915,7 @@ function observeChoice(state, p, c, f) {
       const c2 = { ...c, observed: true, exact: true, identified: true };
       if (f) {
         f.known = true;
+        f.arsenalSeen = day(st); // arsenal.js: a good look at their kit
         for (const b of f.bases) p.seen.set(b, snapshot(st, b));
       }
       if (st.rng.chance(risk) && f) {
@@ -923,6 +926,7 @@ function observeChoice(state, p, c, f) {
       const held = captivesOf(st, f ? f.id : -1);
       const bits = [`${c.enemy.count} of them, about ${Math.round(c.enemy.power)} fighting strength each.`];
       if (f) bits.push(`They are ${f.name} (${FACTION_TYPES[f.type].label.toLowerCase()}, about ${Math.round(f.pop / 5) * 5 || f.pop} people at home). Their base location goes on the map when the team reports.`);
+      if (f) { const kit = arsenalText(st, f); if (kit) bits.push(`Their kit: ${kit}`); } // arsenal.js
       if (held.length) bits.push(`They hold ${names(held)} at their base.`);
       addCard(st, observedCard(st, p, { ...c2, note: bits.join(" ") }));
       return "";
@@ -1247,7 +1251,8 @@ function victoryRewards(state, p, c, result) {
       out.push(`Taken from the bodies: ${addCargo(state, p, "ammo", rng.int(15, 45))} ammo, ${addCargo(state, p, "food", rng.int(2, 8))} food.`);
       if (rng.chance(0.3)) {
         const key = rng.pick(["pistol", "shotgun", "huntrifle", "vest"]);
-        const item = lootItem(key, kitSource(c.enemy && c.enemy.kind || (f && KIND_OF[f.type])), spend(rng)); // itemcond.js: by who they were
+        const dropped = (result && result.arsDropped) || []; // arsenal.js settleArsenal: what their dead carried (a group's people)
+        const item = dropped.length ? (spend(rng), dropped[0]) : lootItem(key, kitSource(c.enemy && c.enemy.kind || (f && KIND_OF[f.type])), spend(rng)); // itemcond.js: by who they were
         out.push(stowGear(state, p, item) ? `Also a ${item.name}.` : `No room to carry the ${item.name} they had; it was left behind.`);
       }
     }
@@ -1310,8 +1315,8 @@ function victoryRewards(state, p, c, result) {
 export function guardsFor(state, p, f) {
   const def = FACTION_TYPES[f.type];
   return {
-    kind: KIND_OF[f.type], count: clamp(Math.round(f.pop * 0.3), 3, 12), power: Math.round((2.6 + def.arms * 1.6) * 10) / 10,
-    factionId: f.id, name: `${f.name} guards`,
+    kind: KIND_OF[f.type], count: clamp(Math.round(f.pop * 0.3), 3, 12), power: Math.round(unitPower(f, 2.6) * 10) / 10, // arsenal.js: by their kit
+    factionId: f.id, name: `${f.name} guards`, arsTask: "home",
   };
 }
 
@@ -1558,10 +1563,11 @@ function captiveEvent(state, key, title, text, kind) {
 }
 
 // ---------- base defense in person (from the raid warning) ----------
+const baseHasWalls = (base) => base.buildings.some((x) => x.type === "walls" && !x.broken);
 // A raid of a given strength as people on the battle map: the head count the lookouts report (at least 1), and
 // each attacker's power set so that count × power is the raid's stated strength.
 export function raidForce(f, strength) {
-  const usual = 2.2 + FACTION_TYPES[f.type].arms * 1.6;
+  const usual = unitPower(f, 2.2); // arsenal.js: 2.2 + arms × 1.6 × their kit (raidCount counts the same)
   const count = clamp(Math.round(strength / usual), 1, 14);
   return { count, power: Math.round((strength / count) * 10) / 10 };
 }
@@ -1573,9 +1579,9 @@ export function defendInPerson(state, raid) {
   const force = raidForce(f, raid.strength);
   startCombat(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders`, siege: raid.siege || null, ...(groupTurret(f) ? { turret: groupTurret(f) } : {}) }, // siege.js: their ladders, ram and grenades; turret: a military group's Humvee (vehicles.js)
+    enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders`, siege: raid.siege || null, arsTask: baseHasWalls(base) ? "walls" : "raid", ...(groupTurret(f) ? { turret: groupTurret(f) } : {}) }, // siege.js: their ladders, ram and grenades; turret: a military group's Humvee (vehicles.js); arsTask: arsenal.js issueKit
     // raid.surprise (watch.js surpriseAt: an unwatched night): they are over the wall and have the first move.
-    ambush: raid.surprise ? "enemy" : base.alert ? "player" : null, canRetreat: true, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id, surprise: !!raid.surprise }, // the way out: away from the attack (deploy.js)
+    ambush: raid.surprise ? "enemy" : base.alert ? "player" : null, canRetreat: true, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id, surprise: !!raid.surprise, armory0: base.armory.length }, // the way out: away from the attack (deploy.js); armory0: your dead's gear is what lands in the armory after it (arsenal.js)
     layout: "baseDefence", deploy: true, // deploy.js: the base's walls on the map, defenders placed first
   });
   return "";
@@ -1617,7 +1623,7 @@ function onRaidDefenseCombat(state, result, setup) {
     const left = (result.enemiesLeft || 0) / Math.max(1, setup.enemy.count);
     const how = left > 0.5 ? "overrun" : "broken";
     const name = base ? base.name : "the base";
-    const res = raid && base && state.bases.includes(base) ? resolveRaidOnPlayer(state, raid, { beaten: how }) : null;
+    const res = raid && base && state.bases.includes(base) ? resolveRaidOnPlayer(state, raid, { beaten: how, armory0: c.armory0 }) : null;
     if (raid) removeParty(state, raid);
     text = !raid ? `The defenders were beaten, but the raiders had already turned back.`
       : how === "overrun" ? `The defenders were beaten. ${f ? f.name : "The raiders"} overran ${name} and took what they wanted.`

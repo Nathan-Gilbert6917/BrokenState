@@ -63,6 +63,7 @@ import {
 } from "./parties.js";
 import { startCombat, registerCombatHandler, registerBattleLayout, registerBattleSize, winOdds } from "./combat.js";
 import { groupTurret, TURRET_ODDS } from "./vehicles.js"; // a military group's Humvee (M2 turret) defends its home base
+import { unitPower, arsenalShareTo, addToArsenal, arsenalWorthy } from "./arsenal.js"; // group arsenals: the defenders' kit; their stores of it
 import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled base on one fort map
 import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
@@ -139,7 +140,7 @@ export function assaultForce(state, f, tile, p = null) {
   const held = Math.min(allies.fighters, Math.floor(count * ALLY_SHARE), Math.max(0, count - CONQUEST.MIN_DEF));
   count -= held;
   return {
-    kind: KIND_OF[f.type], count, power: Math.round((2.6 + def.arms * 1.6) * 10) / 10, factionId: f.id, name: `${f.name} defenders`,
+    kind: KIND_OF[f.type], count, power: Math.round(unitPower(f, 2.6) * 10) / 10, factionId: f.id, name: `${f.name} defenders`, arsTask: "home", // arsenal.js: by their kit, all of it at home
     fortified: Math.round((1 + CONQUEST.WALL_FACTOR * walls * (1 - (walls >= 1 ? assaultCut(kit) : 0))) * 100) / 100, walls, people, occupied: !!(occ && occ.factionId === f.id),
     siegeKit: kit && (kit.ladders || kit.ram || kit.grenades) ? kit : null,
     allies: held ? { held, names: allies.names } : null,
@@ -382,6 +383,9 @@ export function captureBase(state, f, tile, p, info = {}) {
     const q = Math.floor(here * CONQUEST.STOCK_SHARE);
     if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${keyWord(k)}`); }
   }
+  // Their spare weapons and armour kept there (arsenal.js): the same share as the stores.
+  const kit = arsenalShareTo(state, f, share * CONQUEST.STOCK_SHARE, base.armory);
+  if (kit.length) got.push(kit.length === 1 ? kit[0].name : `${kit.length} pieces of their kit`);
   f.bases = f.bases.filter((t) => t !== tile);
   state.bases.push(base);
   // Who holds it: one or two of the team (the weakest fighters), everyone when you have no other base.
@@ -571,8 +575,11 @@ export function occupyPlayerBase(state, base, f, opts = {}) {
   }
   for (const job of state.supplyRuns || []) if ((job.originId === base.id || job.destId === base.id) && job.status !== "done" && job.status !== "disbanded") { job.paused = true; job.lastResult = `Day ${day(state)}: ${base.name} was taken by ${f.name}`; }
   state.bases.splice(i, 1);
-  // What they carry off: half of what is left.
+  // What they carry off: half of what is left, and the fighting gear in the armory (arsenal.js: they will use it).
   const took = [];
+  const arms = (base.armory || []).filter(arsenalWorthy);
+  for (const it of arms) if (addToArsenal(state, f, it, "stolen")) base.armory.splice(base.armory.indexOf(it), 1);
+  if (arms.length) took.push(arms.length === 1 ? arms[0].name : `${arms.length} pieces of gear from the armory`);
   for (const k of Object.keys(base.stock)) {
     const q = Math.floor((base.stock[k] || 0) / 2);
     if (q <= 0) continue;

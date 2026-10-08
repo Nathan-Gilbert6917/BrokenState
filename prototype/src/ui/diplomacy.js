@@ -7,6 +7,7 @@ import { SUPPLIES, SUPPLY_KEYS } from "../sim/data.js";
 import { day, factionById, hub } from "../sim/world.js";
 import { attitude } from "../sim/factions.js";
 import { worksText } from "../sim/groupworks.js"; // barestart: what the group has built
+import { arsenalText, arsenalKnown } from "../sim/arsenal.js"; // what they fight with
 import { tileLabel } from "../sim/parties.js";
 import { canRadioGroup, hasNetwork } from "../sim/radio.js";
 import { firstHubGoal } from "./hardcore.js";
@@ -167,10 +168,19 @@ export function groupCardExtras(state, f) {
     ${member ? `<div class="good">🤝 Member of ${esc(ALLIANCE.NAME)}</div>` : ""}
     ${f.wormLost ? `<div class="muted"${tip("The worm (Help: The dead and the worm): a group on infected ground loses people to it as a base of yours would catch it; after its first loss a base boils its water and loses far fewer. Heard on the radio and kept in the chronicle.")}>Lost ${f.wormLost} to the worm${f.wormBoilers && Object.keys(f.wormBoilers).length ? "; they boil their water now" : ""}</div>` : ""}
     ${worksText(state, f) ? `<div class="muted"${tip("What they have built at their bases (their bases start bare, as yours does): wells and fields for their food, quarters for their people, walls when they feel threatened (what an assault on them faces), then a workshop and a storehouse.")}>🏗 ${esc(worksText(state, f))}</div>` : ""}
+    ${arsenalLine(state, f)}
     ${marketLine(m)}
     ${jobs.length ? `<div>${jobs.map((j) => `${JOB_TYPES[j.type].icon} ${esc(JOB_TYPES[j.type].name)} (${j.status === "offered" ? "offered" : "under way"})`).join(" · ")}</div>` : ""}
   </div>
   <div class="row" style="margin-top:0.25rem">${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inv || `Invite them into ${ALLIANCE.NAME}`)}>Invite to the coalition</button>`}</div>`;
+}
+// Their arsenal (sim/arsenal.js): a rough read, the exact list when they are friendly, have a pact with you, or you
+// fought them or watched their camp in the last month.
+function arsenalLine(state, f) {
+  const t = arsenalText(state, f);
+  if (!t) return "";
+  const exact = arsenalKnown(state, f);
+  return `<div class="muted"${tip(exact ? "What they fight with, piece by piece: friends tell you, and a fight or a look at their camp shows you (for a month). Everything they scavenge, buy, steal or pick up off a battlefield is theirs to use; what they lose is gone." : "A rough read of their arms. Friendly groups and pact partners tell you exactly; so does a fight with them or watching their camp (for a month).")}>🔫 ${esc(t)}</div>`;
 }
 // Hardcore mode (sim/hardcore-groups.js): bands on the road you have met or seen, and how many you have not.
 export function bandsSection(state) {
@@ -214,6 +224,7 @@ export function radioDiploBlock(state, f) {
   <div class="small" style="margin-top:0.4rem">
     ${f.atWar ? `<div class="danger"${tip("At war: they pay 35% more for ammo and meds, 30% more for weapons and armor, and keep twice their reserve (less to trade). Selling arms to one side costs a little goodwill with the other.")}>⚔ At war with ${wars.map((w) => esc(nameOf(state, enemyIn(w, f)))).join(", ")}: ammo and meds fetch 35% more here.</div>` : ""}
     ${member ? `<div class="good">🤝 Member of ${esc(ALLIANCE.NAME)}</div>` : ""}
+    ${arsenalLine(state, f)}
   </div>
   <div class="row" style="margin-top:0.3rem">
     <button class="mini" data-action="dp-open" data-tab="market"${tip("Every group in reach, best price first")}>Market board</button>

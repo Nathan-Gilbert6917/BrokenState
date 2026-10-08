@@ -47,6 +47,7 @@ import { Rng } from "./rng.js";
 import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS, supplyFew } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
+import { clashKit, raidCount } from "./arsenal.js"; // group arsenals: a war raid's dead lose their kit, the side holding the field picks some up
 import { spawnAiParty, tileLabel } from "./parties.js";
 import { hasNetwork, canListen, canRadioGroup, radioSpeech } from "./radio.js";
 import { available, need, buyPrice, refreshMarkets, refreshMarket } from "./trade.js";
@@ -361,6 +362,7 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
     d.stats.raidWins++;
     const loss = Math.min(Math.max(1, Math.round(target.pop * rng.range(0.05, 0.1))), Math.max(0, target.pop - DIPLO.MIN_POP));
     target.pop -= loss;
+    clashKit(state, attacker, attacker ? raidCount(attacker, att) : 0, 0, target, loss, "a", 0.1, true, "war"); // arsenal.js
     for (const k of ["food", "ammo", "meds", "scrap"]) {
       const take = Math.floor((target.stock[k] || 0) * 0.1);
       target.stock[k] -= take;
@@ -387,8 +389,10 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
     if (report) log(state, `${cap(knownAs(state, attacker))} raided ${knownAs(state, target)} at ${tileLabel(state, tile)} (${loss} dead${took ? ", the base taken" : ""}).`, "danger");
     return false;
   }
+  const tp = target.pop, ap = attacker ? attacker.pop : 0;
   target.pop = Math.max(Math.min(target.pop, DIPLO.MIN_POP), target.pop - rng.int(0, 1));
   if (attacker) attacker.pop = Math.max(Math.min(attacker.pop, DIPLO.MIN_POP), attacker.pop - rng.int(1, 2));
+  clashKit(state, attacker, attacker ? raidCount(attacker, att) : 0, attacker ? ap - attacker.pop : 0, target, tp - target.pop, "b", 0, true, "war"); // arsenal.js: the defenders hold the field
   if (w && attacker) {
     w.score[target.id] = (w.score[target.id] || 0) + 1;
     w.exh[attacker.id] = (w.exh[attacker.id] || 0) + 4;

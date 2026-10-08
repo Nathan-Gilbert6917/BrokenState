@@ -548,9 +548,14 @@ export function enemyBody(rng, u, kit) {
   if (rng.chance(0.3)) add("scrap", rng.int(1, 2));
   // What they fought with, worse for wear: how worse goes by who they were (itemcond.js KIT_SOURCE).
   const src = u.kit ? kitSource(u.kit) : kit ? "raider" : "survivor"; // no kit named: the callers arm them as raiders
-  if (GEAR[u.weapon]) body.gear.weapon = lootItem(u.weapon, src, spend(rng));
+  // A group's people (arsenal.js armFromArsenal) carry their group's own items: the very gun, parts and wear.
+  if (u.arsItem && u.arsItem.key === u.weapon) { spend(rng); body.gear.weapon = u.arsItem; }
+  else if (GEAR[u.weapon]) body.gear.weapon = lootItem(u.weapon, src, spend(rng));
   if (body.gear.weapon) carryMods(u, body.gear.weapon); // gunmods.js: the attachments on their gun come with it
-  if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = lootItem(u.armorKey, src, spend(rng));
+  const worn = (u.arsArmour || []).find((it) => it.key === u.armorKey);
+  if (worn) { spend(rng); body.gear.armor = worn; }
+  else if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = lootItem(u.armorKey, src, spend(rng));
+  for (const it of u.arsArmour || []) if (it !== worn && GEAR[it.key] && !body.gear[GEAR[it.key].slot]) body.gear[GEAR[it.key].slot] = it; // a helmet, arm or leg guards
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = lootItem(kit.pack[0], src, spend(rng));
   if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, lootItem(rng.pick(kit.finds), src, rng), ""); // pockets: smokes, a ring (combat.js KITS finds)

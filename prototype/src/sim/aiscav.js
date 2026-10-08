@@ -44,6 +44,7 @@ import { attitude } from "./factions.js";
 import { triggerConflict } from "./conflicts.js";
 import { ZONE_RICHNESS } from "./mapgen.js";
 import { haulMult } from "./medfinds.js";
+import { scavFinds, partyLost } from "./arsenal.js"; // group arsenals: weapons and armour found at the site; a party lost is people and kit lost
 
 export const AISCAV = {
   minPop: 6, gapMin: 6, gapMax: 10, retry: 3, minNeed: 0.25, baseWant: 0.15, range: 10, share: 0.12,
@@ -205,6 +206,7 @@ export function scavArrived(state, p) {
     if (f && f.alive) {
       for (const [k, q] of Object.entries(p.scav.got)) f.stock[k] = (f.stock[k] || 0) + Math.floor(q);
       S.stats.goods += Object.values(p.scav.got).reduce((a, q) => a + Math.floor(q), 0);
+      S.stats.gear = (S.stats.gear || 0) + scavFinds(state, f, p).length; // arsenal.js: guns, armour, explosives by the site's gear list
     }
     S.stats.home++;
     removeParty(state, p);
@@ -264,6 +266,10 @@ function goHome(state, p) {
 // A horde or the road got the party: it is gone, and its haul with it.
 export function lose(state, p) {
   aiScav(state).stats.lost++;
+  // Its people are dead (they used to come home from nowhere), and their kit lies where they fell (arsenal.js).
+  const f = factionById(state, p.owner);
+  const people = Math.max(1, Math.round((p.scav && p.scav.str0) || 2));
+  if (f && f.alive) { partyLost(state, f, people); f.pop = Math.max(0, f.pop - people); }
   removeParty(state, p);
 }
 
