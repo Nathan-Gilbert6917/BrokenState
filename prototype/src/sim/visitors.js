@@ -94,7 +94,8 @@ import { startCombat, registerCombatHandler } from "./combat.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { inCoverage, hasNetwork, heardBy } from "./radio.js";
 import { borderTiles } from "./hives.js";
-import { newItem } from "./inventory.js";
+import { newItem, lootItem } from "./inventory.js";
+import { spend } from "./itemcond.js"; // the condition of what they carry
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
 import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
 import { travelFactor, thirstAt, thirstAhead } from "./weather.js";
@@ -109,6 +110,7 @@ import { coalitionMask, controlledLand, ALLIANCE } from "./alliance.js";
 import { hcNoRaiders } from "./hardcore-groups.js";
 import { UPKEEP, coldFactor } from "./upkeep.js";
 import { eatFromStore } from "./storage.js";
+import { gunmodWares } from "./loot.js"; // a sight or a suppressor among a merchant's goods
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -156,12 +158,33 @@ const RUMORS = [
   "The towns of {home} trade with each other now: a market every full moon at the old fairground.",
   "The roads out of {home} are mined in places. Watch for cars parked across a bridge.",
 ];
-// Good gear merchants bring (data.js GEAR keys), and the books (skills.js WARE_BOOKS: traders).
+// The good gear merchants used to bring from any of these (data.js GEAR keys): still shuffled in merchantGoods for its
+// draws, so the visitors' dice stay where they were; what they sell now follows their speciality (MERCHANT_SPECS).
 export const RARE_GEAR = ["ar", "plate", "nvg", "milradio", "surgkit", "assaultpack", "riothelmet", "vest", "huntrifle", "waterfilter", "suppressor", "flashlight", "shotgun",
   "carbine", "xbow", "compbow", "rucksack", "hikingpack", "camonet", "stove", "smokegren", "guitar", "binoculars", "spotscope", "thermal", "telescope"];
 // What a band of explorers or refugees may carry to trade (and the valuables merchants bring to sell on).
 export const TRAVEL_GEAR = ["comic", "novel", "survivalbook", "waterfilter", "bandagekit", "crowbar", "flashlight", "slingbag", "harmonica", "cards", "stove", "ragboots", "scentmask", "chocolate", "instcoffee", "flare", "photos", "monocular", "binoculars"];
 export const MERCHANT_VALUABLES = ["watch", "goldchain", "cigars", "scotch", "coffee", "cigarettes", "coins", "camera", "diamond", "tea"];
+// What a merchant caravan deals in: each comes with one speciality (by its own dice, MERCHANT_SPEC_W), and its gear,
+// books and the supplies it brings more of follow it. gear / books: what it sells; stock: × those supplies.
+export const MERCHANT_SPECS = {
+  arms:     { name: "Arms dealers", gear: ["ar", "carbine", "huntrifle", "leverrifle", "shotgun", "pistol", "revolver", "xbow", "compbow", "vest", "plate", "milhelmet", "riothelmet", "suppressor", "spotscope", "binoculars", "nvg", "thermal", "smokegren", "frag"],
+    books: ["gunbook", "armymanual", "leadbook"], stock: { ammo: 1.6 } },
+  medic:    { name: "Medics", gear: ["surgkit", "traumakit", "bandagekit", "puritabs", "dewormer", "waterfilter", "soap", "wetwipes", "razors", "toothpaste", "headlamp", "flashlight"],
+    books: ["medbook", "surgerybook"], stock: { meds: 1.6, water: 1.3 } },
+  mechanic: { name: "Mechanics", gear: ["crowbar", "prybar", "sledge", "fireaxe", "flashlight", "headlamp", "lantern", "spotlight", "stove", "kneeguards", "milradio", "handradio", "ladder", "batteries", "waterfilter"],
+    books: ["enginebook", "diybook", "forgebook", "lockbook"], stock: { parts: 1.6, fuel: 1.4 } },
+  general:  { name: "General traders", gear: ["hikingpack", "rucksack", "assaultpack", "slingbag", "backpack", "camonet", "ghillie", "stove", "waterfilter", "flashlight", "lantern", "binoculars", "telescope", "guitar", "fishrod", "fishnet", "snarewire"],
+    books: ["gardenbook", "survivalbook", "talkbook", "scavbook", "bushcraftbook"], stock: { food: 1.3, preserved: 1.3 } },
+};
+export const MERCHANT_SPEC_W = { general: 0.35, arms: 0.25, medic: 0.2, mechanic: 0.2 };
+// A caravan's speciality: its own dice by its serial (never the id: ids are process-wide).
+export function merchantSpec(state, v) {
+  if (v.spec && MERCHANT_SPECS[v.spec]) return v.spec;
+  let x = hash01(state.seed, "mspec", v.serial);
+  for (const [k, w] of Object.entries(MERCHANT_SPEC_W)) if ((x -= w) < 0) return k;
+  return "general";
+}
 const RARE_BOOKS = ["medbook", "surgerybook", "enginebook", "gardenbook", "gunbook", "armymanual", "survivalbook", "talkbook", "lockbook", "leadbook", "scavbook"];
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -281,31 +304,40 @@ function makeVisitor(state, kind, tile, opts = {}) {
     v.stock.water = rng.int(2, 5) * v.size;
     v.stock.ammo = v.sub === "scouts" ? rng.int(20, 40) : rng.int(0, 12);
     v.stock.meds = v.sub === "scouts" ? rng.int(1, 3) : 0;
-    if (rng.chance(0.4)) v.wares.push(newItem(rng.pick(TRAVEL_GEAR), Math.round(rng.range(0.5, 0.9) * 100) / 100));
+    if (rng.chance(0.4)) v.wares.push(lootItem(rng.pick(TRAVEL_GEAR), "traveller", spend(rng)));
   }
   v.size0 = v.size;
   return v;
 }
 
+// A merchant caravan's goods. The kinds follow its speciality (MERCHANT_SPECS), picked with dice of its own (local);
+// the visitors' dice (rng) are drawn exactly as before the specialities, so where they go and who comes next stay put.
+// The condition: itemcond.js "merchant" (fair to good: they price it by its wear, valuation.js itemValue).
 function merchantGoods(state, v, rng) {
   Object.assign(v.stock, {
     fuel: rng.int(15, 40), meds: rng.int(8, 22), preserved: rng.int(20, 50), parts: rng.int(3, 9), ammo: rng.int(60, 160),
     food: rng.int(5, 15), water: rng.int(10, 20), scrap: 0, jars: 0,
   });
+  v.spec = merchantSpec(state, v);
+  const S = MERCHANT_SPECS[v.spec];
+  for (const [k, m] of Object.entries(S.stock)) if (v.stock[k] != null) v.stock[k] = Math.round(v.stock[k] * m);
+  const local = new Rng(Math.floor(hash01(state.seed, "mgoods", v.serial) * 4294967296) >>> 0);
+  const roll = (i) => [state.seed, "mware", v.serial, i];
   const unknown = BP_KEYS.filter((id) => !isKnown(state, id));
   const bps = rng.shuffle([...(unknown.length ? unknown : BP_KEYS)]);
   const nBp = rng.chance(0.75) ? (rng.chance(0.25) ? 2 : 1) : 0;
   for (const id of bps.slice(0, nBp)) if (GEAR[bpItemKey(id)]) v.wares.push(newItem(bpItemKey(id), 1));
-  const books = rng.shuffle(RARE_BOOKS.filter((k) => GEAR[k]));
-  for (const k of books.slice(0, rng.int(1, 3))) v.wares.push(newItem(k, 1));
-  const gear = rng.shuffle(RARE_GEAR.filter((k) => GEAR[k]));
-  for (const k of gear.slice(0, rng.int(2, 4))) {
-    const it = newItem(k, Math.round(rng.range(0.7, 1) * 100) / 100);
-    if (it.dur) it.dur = Math.max(1, Math.round(it.dur * rng.range(0.6, 1)));
-    v.wares.push(it);
-  }
+  rng.shuffle(RARE_BOOKS.filter((k) => GEAR[k])); // the old draws (any rare book), still taken
+  const nBooks = rng.int(1, 3);
+  for (const k of local.shuffle(S.books.filter((x) => GEAR[x])).slice(0, nBooks)) v.wares.push(newItem(k, 1));
+  const old = rng.shuffle(RARE_GEAR.filter((k) => GEAR[k])).slice(0, rng.int(2, 4)); // the old draws (any rare gear), still taken
+  for (const k of old) spend(rng, GEAR[k].dur ? 2 : 1);
+  local.shuffle(S.gear.filter((k) => GEAR[k])).slice(0, old.length).forEach((k, i) => v.wares.push(lootItem(k, "merchant", roll(i))));
+  // loot.js: a sight or a suppressor (its own dice; by the serial, never the id: ids are process-wide). Only the arms
+  // dealers and the general traders carry them.
+  if (v.spec === "arms" || v.spec === "general") v.wares.push(...gunmodWares(state, "merchants", `${v.name}:${v.serial}`, state.hour));
   // A few valuables to sell on (they also buy them: TRADE_PREFS merchants).
-  for (const k of rng.shuffle([...MERCHANT_VALUABLES]).slice(0, rng.int(1, 2))) v.wares.push(newItem(k, 1));
+  rng.shuffle([...MERCHANT_VALUABLES]).slice(0, rng.int(1, 2)).forEach((k, i) => v.wares.push(lootItem(k, "merchant", roll(`v${i}`))));
 }
 
 // A new party at the border (kind: "raiders" | "merchants" | "explorers"). opts: { tile, size, power, sub, hostile,
@@ -1195,6 +1227,8 @@ function merchantCall(state, v) {
     ],
   });
 }
+// What a merchant caravan deals in, for the UI ("arms dealers"), or "".
+export const specName = (v) => (v && v.kind === "merchants" && MERCHANT_SPECS[v.spec] ? MERCHANT_SPECS[v.spec].name.toLowerCase() : "");
 export function goodsText(v) {
   const sup = SUPPLY_KEYS.filter((k) => (v.stock[k] || 0) >= supplyFew(k, 5)).sort((a, b) => (v.stock[b] || 0) * SUPPLIES[b].value - (v.stock[a] || 0) * SUPPLIES[a].value).slice(0, 4).map((k) => SUPPLIES[k].name.toLowerCase());
   const items = v.wares.slice(0, 4).map((g) => g.name);

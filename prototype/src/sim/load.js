@@ -28,7 +28,7 @@ import { GEAR } from "./data.js";
 import { skill } from "./world.js";
 import { hasPerk } from "./skills.js";
 import { allItems, itemLoad, carryBonus } from "./inventory.js";
-import { VEHICLE_TYPES, RIDER_KG, OVERLOAD_MAX, OVERLOAD_SPEED, fuelMultFor, isBike, isCar } from "./vehicles.js";
+import { VEHICLE_TYPES, RIDER_KG, OVERLOAD_MAX, OVERLOAD_SPEED, fuelMultFor, isBike, isCar, typeSpeed, typeFuel, typeOffroad, payloadOf } from "./vehicles.js";
 
 export const LOAD_BANDS = [
   { key: "light",  name: "Light",      upTo: 18,       slow: 0,    eat: 0 },
@@ -125,13 +125,13 @@ export function teamLoad(members, pool, v = null) {
     out.people = out.ride.people;
     out.mode = "bike";
   } else if (v) {
-    const payload = VEHICLE_TYPES[v.type]?.payload || VEHICLE_TYPES.truck.payload;
+    const payload = payloadOf(v); // vehicles.js: the type's payload less the weight of its upgrades (glass, plating)
     const load = pool + worn + members.length * RIDER_KG;
     out.fill = r4(load / payload);
-    out.fuelMult = fuelMultFor(out.fill);
+    out.fuelMult = Math.round(fuelMultFor(out.fill) * typeFuel(v) * 100) / 100; // a thirsty type (vehicles.js: the Army truck ×2)
     const eat = {};
     for (const s of members) eat[s.id] = 1;
-    out.ride = { speed: out.fill > 1 + 1e-9 ? OVERLOAD_SPEED : 1, eat, people: [] };
+    out.ride = { speed: (out.fill > 1 + 1e-9 ? OVERLOAD_SPEED : 1) * typeSpeed(v), eat, people: [] }; // a slow type (the Army truck ×0.67)
     out.payload = payload;
     out.vehicleLoad = r4(load);
     out.capacity = Math.max(footCap, OVERLOAD_MAX * payload - members.length * RIDER_KG - worn);
@@ -157,7 +157,7 @@ export function burdenRecord(t, members, v) {
     total: t.total, ids: members.map((s) => s.id).sort((a, b) => a - b).join(","), vid: v ? v.id : null,
     foot: t.foot.speed, eatFoot: t.foot.eat,
     ride: t.ride ? t.ride.speed : null, eatRide: t.ride ? t.ride.eat : null,
-    fuelMult: t.fuelMult, fill: t.fill,
+    fuelMult: t.fuelMult, fill: t.fill, offroad: t.mode === true ? typeOffroad(v) : 1, // a slow type off-road (vehicles.js)
     band: Math.max(-1, ...(t.mode === true ? [] : t.people.map((x) => x.band))),
   };
 }

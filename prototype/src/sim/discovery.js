@@ -40,7 +40,7 @@ export function isPublicSite(state, id) {
   if (!t || !t.loc) return false;
   const def = LOCATIONS[t.loc.type];
   const k = def ? def.known || "public" : "public";
-  if (t.loc.crash != null) return false; // a wreck is never on a pre-war map
+  if (t.loc.crash != null || t.loc.convoy != null) return false; // a wreck or a convoy (miltrucks.js) is never on a pre-war map
   return k === "public" || (k === "road" && nearRoad(state, id));
 }
 
@@ -50,7 +50,7 @@ export function hiddenSites(state) {
   let list = hiddenMemo.get(state.tiles);
   if (!list) {
     list = [];
-    for (const t of state.tiles) if (t.loc && t.loc.crash == null && !isPublicSite(state, t.id)) list.push(t.id);
+    for (const t of state.tiles) if (t.loc && t.loc.crash == null && t.loc.convoy == null && !isPublicSite(state, t.id)) list.push(t.id);
     hiddenMemo.set(state.tiles, list);
   }
   return list;

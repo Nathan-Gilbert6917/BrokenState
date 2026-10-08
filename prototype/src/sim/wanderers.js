@@ -30,7 +30,8 @@ import { hash01, anyPerk, gainXp, USE } from "./skills.js";
 import { Rng } from "./rng.js";
 import { isHardcore } from "./hardcore.js";
 import { zombieToughness } from "./hives.js";
-import { newItem } from "./inventory.js";
+import { lootItem } from "./inventory.js";
+import { kitSource, spend } from "./itemcond.js";
 import { halt, resume, afterFight, rob, talkSkill, talker, runBonus, addCargo, triggerConflict, spotFirstChance } from "./conflicts.js";
 import { bandsOf } from "./hardcore-groups.js";
 
@@ -673,7 +674,7 @@ function onWandererCombat(state, result, setup) {
       lines.push(`Taken from them: ${addCargo(state, p, "ammo", rng.int(c.type === "attackSquad" ? 20 : 3, c.type === "attackSquad" ? 50 : 12))} ammo, ${addCargo(state, p, "food", rng.int(1, 4))} food.`);
       if (rng.chance(c.type === "attackSquad" ? 0.35 : 0.2)) {
         const key = rng.pick(c.type === "attackSquad" ? ["ar", "vest", "carbine"] : ["pistol", "knife", "bat", "revolver"]);
-        const item = newItem(key, rng.pick([0.6, 0.75, 0.9]));
+        const item = lootItem(key, kitSource(c.enemy.kind), spend(rng)); // itemcond.js: by who they were
         lines.push(addGearToCargo(state, p, item) !== false && p.cargo.gear.includes(item) ? `Also a ${item.name}.` : `No room for the ${item.name} they had.`);
       }
     }

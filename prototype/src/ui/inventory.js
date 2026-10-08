@@ -8,13 +8,14 @@ import { survivorById, atBase, baseById, gearEffect, combatPower } from "../sim/
 import { partyMembers, partyCapacity, cargoLoad, poolLoad, partyLoad } from "../sim/parties.js";
 import { wornLoad, maxLoad, personLoad, bandName } from "../sim/load.js";
 import { bandChip, BANDS_HELP } from "./loadview.js";
-import { itemDur, durUnit } from "../sim/crafting.js";
+import { itemDur, itemDurMax, durUnit } from "../sim/crafting.js";
 import { worthTier } from "../sim/valuation.js";
 import {
   EQUIP_SLOTS, SLOT_NAMES, POCKETS, ensureInv, packOf, packSize, armorPower, itemAt, parseLoc, moveItem, quickMove, toStorage,
   personPlace, battlePlace, storageFor, battleBodies, bodyHolder, bodyEmpty, takeSupply, takeAllBody, takeAllBodies, itemLoad, allItems,
-  breakDownInfo, breakDownAt, setFireMark,
+  breakDownInfo, breakDownAt, setFireMark, modChoices, fitModAt, unfitModAt,
 } from "../sim/inventory.js";
+import { ATTACH, MOUNTS, MOUNT_NAMES, takesMods, modsText, attachText, fitsText, modFitReason, modLabel } from "../sim/gunmods.js"; // gun attachments
 import { isJunk, armoryJunk, burnablesWood, breakDownJunk, boilerJunkOn, BURN } from "../sim/woodcutting.js"; // break down for firewood; what the boiler may burn
 import { survivorURL, spriteImg, canvasURL, unitCanvas } from "./sprites.js";
 import { cui } from "./combat.js";
@@ -52,9 +53,12 @@ export function itemTip(item, s = null) {
   const kgTxt = `${Math.round(itemLoad(item) * 10) / 10} kg${item.contents && item.contents.some(Boolean) ? " with what is inside" : ""}`;
   const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
   if (d.slot === "weapon") bits.push(`power ${d.power}${d.req ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}`);
+  if (d.slot === "weapon" && item.mods) bits.push(modsText(item)); // sim/gunmods.js: what is fitted and the net effect
+  else if (d.slot === "weapon" && takesMods(item.key)) bits.push("takes attachments (select it to fit one)");
+  if (ATTACH[item.key]) bits.push(`gun attachment (${MOUNT_NAMES[ATTACH[item.key].mount].toLowerCase()}): ${attachText(item.key)}; fits ${fitsText(item.key)}`);
   else if (["armor", "head", "arms", "legs"].includes(d.slot)) bits.push(`armor ${d.power} (adds up across body, head, arms and legs)`);
   else if (d.slot === "backpack") bits.push(`${packSize(item)} pack slots, +${d.carry || 0} kg max load${d.ease ? `, spreads the weight: the wearer's load counts ${Math.round(d.ease * 100)}% lighter for their load band` : ""}`);
-  else if (d.book) bits.push(d.book.skill ? `book: teaches ${SKILL_NAMES[d.book.skill]} up to ${d.book.max}, ${d.book.hours} hours to read (Read role at a base, from the armory)` : `book: +${d.book.mood} mood an hour read, ${d.book.hours} hours`); // skills.js
+  else if (d.book) bits.push(d.book.skill ? `${d.craftBook ? "craft book" : "book"}: teaches ${SKILL_NAMES[d.book.skill]} up to ${d.book.max}, ${d.book.hours} hours to read (Read role at a base, from the armory)` : `book: +${d.book.mood} mood an hour read, ${d.book.hours} hours`); // skills.js; a craft book's unlocks are in its description (blueprints.js)
   else if (d.valuable) bits.push("a valuable: good for nothing but trade");
   else if (d.use) bits.push(`used up: ${useText(item.key)} (select it, then Use)`); // sim/comforts.js
   else if (d.groom) bits.push(`toiletry: +${d.groom} mood a day to whoever carries it, or to everyone with none of their own where it is kept (a base's armory, a team's cargo); a day of use a day each`); // sim/comforts.js
@@ -70,7 +74,7 @@ export function itemTip(item, s = null) {
   bits.push(`worth: ${worthTier(item)}`); // a rough tier: the price depends on who you trade with (sim/valuation.js)
   if ((item.quality || 1) < 1) bits.push(`condition ${Math.round(item.quality * 100)}%`);
   const dur = itemDur(item);
-  if (dur != null) bits.push(d.tabs ? `${dur} of ${d.dur} tablets left` : d.groom ? `${dur} of ${d.dur} days of use left` : `makeshift: ${dur} of ${d.dur} ${durUnit(item.key)} left`);
+  if (dur != null) bits.push(d.tabs ? `${dur} of ${d.dur} tablets left` : d.count ? `${dur} of ${d.dur} left` : d.groom ? `${dur} of ${d.dur} days of use left` : `${d.makeshift ? "makeshift: " : ""}${dur} of ${itemDurMax(item)} ${durUnit(item.key)} left before it breaks`);
   if (item.contents) bits.push(`holds ${item.contents.filter(Boolean).length} of ${item.contents.length} items`);
   return `${bits.join(". ")}.${d.desc ? ` ${d.desc}` : ""}`;
 }
@@ -78,7 +82,7 @@ export function itemTip(item, s = null) {
 function tile(item, loc, s, drag = true) {
   const d = GEAR[item.key];
   const dur = itemDur(item);
-  const frac = dur != null ? dur / d.dur : item.quality || 1;
+  const frac = dur != null ? dur / itemDurMax(item) : item.quality || 1;
   const col = frac > 0.6 ? "var(--good)" : frac > 0.3 ? "var(--accent)" : "var(--danger)";
   const unusable = s && d.skill && d.req && !gearEffect(s, item).usable;
   return `<div class="itile${unusable ? " bad" : ""}"${drag ? ` draggable="true" data-drag="${loc}"` : ""}${tip(itemTip(item, s))}>
@@ -169,8 +173,41 @@ function selBar(state, ui, place) {
     ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
     ${burnButtons(state, ui, item, from)}
     ${isGunCase(item) && from.o !== "body" ? `<button class="mini" data-action="inv-opencase"${tip(`Inside: ${caseText(item)}${item.locked ? " (locked: prised open with a blade or a crowbar)" : ""}. Opening it here is free: the gun goes into ${st ? st.name : "storage"}, the rounds into the stores.`)}>${item.locked ? "Prise open" : "Open"} case</button>` : ""}
-    <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
+    <button class="mini" data-action="inv-cancel">Cancel</button>
+    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" ? modBar(state, ui, item) : ""}</div>`;
 }
+// Gun attachments (sim/gunmods.js) for the selected item: on a gun, what is fitted (Remove) and every loose attachment
+// within reach that fits it (Fit); on an attachment, the guns on the person whose inventory is open that take it.
+function modBar(state, ui, item) {
+  const d = GEAR[item.key];
+  if (d && d.slot === "weapon" && takesMods(item.key)) {
+    const on = MOUNTS.filter((m) => item.mods && item.mods[m]).map((m) => `<button class="mini" data-action="inv-unmod" data-mount="${m}"${tip(`Take the ${item.mods[m].name} off (${MOUNT_NAMES[m].toLowerCase()}): it goes to the armory or the team's cargo, or into a pocket or the pack.`)}>Remove ${esc(ATTACH[item.mods[m].key] ? ATTACH[item.mods[m].key].short : item.mods[m].name)}</button>`);
+    const can = modChoices(state, ui.invSel, ui.inv.sid).map((c) => {
+      const a = ATTACH[c.item.key];
+      const old = item.mods && item.mods[a.mount];
+      return `<button class="mini" data-action="inv-fitmod" data-mod="${c.loc}"${tip(`${c.item.name}: ${attachText(c.item.key)}.${old ? ` Swaps out the ${old.name}.` : ""}`)}>Fit ${esc(c.item.name)}</button>`;
+    });
+    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Attachments${item.mods ? ` (${esc(modLabel(item))})` : ""}:</span> ${[...on, ...can].join(" ") || `<span class="muted">none fitted, none within reach that fit it.</span>`}</div>`;
+  }
+  if (ATTACH[item.key]) {
+    const s = survivorById(state, ui.inv.sid);
+    if (!s) return "";
+    const locs = [`s:${s.id}:weapon`, ...s.pockets.map((_, i) => `s:${s.id}:pocket:${i}`), ...(packOf(s) || []).map((_, i) => `s:${s.id}:pack:${i}`)];
+    const guns = locs.map((l) => [l, itemAt(state, l)]).filter(([, g]) => g && g !== item && GEAR[g.key] && GEAR[g.key].slot === "weapon" && !modFitReason(g, item));
+    const btns = guns.map(([l, g]) => `<button class="mini" data-action="inv-fitto" data-gun="${l}"${tip(`Fit the ${item.name} to ${s.name.split(" ")[0]}'s ${g.name}${g.mods && g.mods[ATTACH[item.key].mount] ? ` (the ${g.mods[ATTACH[item.key].mount].name} comes off)` : ""}.`)}>Fit to ${esc(g.name)}</button>`);
+    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Fits ${esc(fitsText(item.key))}.</span> ${btns.join(" ") || `<span class="muted">${esc(first(s))} has no gun it fits.</span>`}</div>`;
+  }
+  return "";
+}
+// A gun in a storage list moves up when something before it is taken out: find it again.
+function reselect(state, ui, item) {
+  if (itemAt(state, ui.invSel) === item) return;
+  const l = parseLoc(ui.invSel);
+  const st = l.o === "armory" || l.o === "cargo" ? storageFor(state, `${l.o === "armory" ? "base" : "party"}:${l.id}`) : null;
+  const i = st ? st.list.indexOf(item) : -1;
+  ui.invSel = i >= 0 ? `${l.o}:${l.id}:list:${i}` : null;
+}
+
 // The selected item's firewood (sim/inventory.js breakDownAt): "Break down for firewood (+N)" (asks first for anything
 // that is not junk: ui/confirm.js), and in an armory the water boiler's mark (may burn / keep).
 function burnButtons(state, ui, item, from) {
@@ -510,6 +547,10 @@ export const INV_ACTIONS = {
   "inv-click": (state, ui, d, ev) => clickLoc(state, ui, d.loc, ev),
   "inv-cancel": (state, ui) => { ui.invSel = null; },
   "inv-store": (state, ui) => { if (ui.invSel) ui.invMsg = toStorage(state, ui.invSel); ui.invSel = null; },
+  // Gun attachments (sim/inventory.js fitModAt / unfitModAt; sim/gunmods.js).
+  "inv-fitmod": (state, ui, d) => { if (!ui.invSel) return; const gun = itemAt(state, ui.invSel); ui.invMsg = fitModAt(state, ui.invSel, d.mod); reselect(state, ui, gun); },
+  "inv-unmod": (state, ui, d) => { if (ui.invSel && ui.inv) ui.invMsg = unfitModAt(state, ui.invSel, d.mount, ui.inv.sid); },
+  "inv-fitto": (state, ui, d) => { if (ui.invSel) ui.invMsg = fitModAt(state, d.gun, ui.invSel); ui.invSel = d.gun; },
   "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
   // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks first (ui/confirm.js).
   "inv-breakdown": (state, ui, d = {}) => {

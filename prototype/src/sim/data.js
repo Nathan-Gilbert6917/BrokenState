@@ -1,6 +1,11 @@
 // @ts-check
 // Static definitions: terrain, locations, supplies, gear, traits, faction types, names.
 // Kept as plain data so it can later move to JSON files for modding.
+// The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
+import { GUN_GEAR } from "./data-guns.js";
+import { AMMO_GEAR, RELOAD_GEAR } from "./data-ammo.js";
+import { MOD_GEAR } from "./data-gunmods.js";
+import { KIT_GEAR } from "./data-kit.js";
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
 // off-road and a quarter of an hour on a road or a bridge (ROAD_COST); mountains are closed to cars.
@@ -75,10 +80,10 @@ export const supplyFew = (k, n) => n * ((SUPPLIES[k] && SUPPLIES[k].bulk) || 1);
 export const GEAR = {
   knife:      { name: "Kitchen knife",            slot: "weapon", skill: "shooting", power: 1, req: 0,  value: 5,  noise: 0, small: true, desc: "A chef's knife from a kitchen block. Quiet, light, and better than bare hands.", weight: 0.3, cat: "melee" },
   machete:    { name: "Machete",                  slot: "weapon", skill: "shooting", power: 2, req: 0,  value: 12, noise: 0, desc: "A brush-clearing blade. Silent, and it cleaves the dead.", weight: 1, cat: "melee" },
-  pistol:     { name: "9mm pistol",               slot: "weapon", skill: "shooting", power: 3, req: 2,  value: 30, noise: 2, small: true, desc: "A police-issue 9mm. Light, fits a pocket, takes a suppressor. Needs Shooting 2.", weight: 1, cat: "pistol" },
-  shotgun:    { name: "Pump shotgun",             slot: "weapon", skill: "shooting", power: 5, req: 6,  value: 50, noise: 3, desc: "A pump-action 12 gauge: devastating up close, poor at range. Needs Shooting 6.", weight: 3.5, cat: "shotgun" },
-  huntrifle:  { name: "Hunting rifle",            slot: "weapon", skill: "shooting", power: 5, req: 5,  value: 55, noise: 3, desc: "A bolt-action deer rifle with a scope: the long-range gun. Needs Shooting 5.", weight: 4, cat: "rifle" },
-  ar:         { name: "Assault rifle",            slot: "weapon", skill: "shooting", power: 8, req: 10, value: 120, noise: 3, desc: "A military rifle, two rounds a shot: the best gun there is. Needs Shooting 10.", weight: 4, cat: "automatic" },
+  pistol:     { name: "9mm pistol",               slot: "weapon", skill: "shooting", power: 3, req: 2,  value: 30, noise: 2, small: true, desc: "A police-issue 9mm with a 15-round magazine. Light, fits a pocket, takes a suppressor. Needs Shooting 2.", weight: 1, cat: "pistol" },
+  shotgun:    { name: "Pump shotgun",             slot: "weapon", skill: "shooting", power: 5, req: 6,  value: 50, noise: 3, desc: "A pump-action 12 gauge holding six shells: devastating up close, poor at range. Needs Shooting 6.", weight: 3.5, cat: "shotgun" },
+  huntrifle:  { name: "Hunting rifle",            slot: "weapon", skill: "shooting", power: 5, req: 5,  value: 55, noise: 3, desc: "A bolt-action deer rifle with a scope and five in the magazine: the long-range gun. Needs Shooting 5.", weight: 4, cat: "rifle" },
+  ar:         { name: "Assault rifle",            slot: "weapon", skill: "shooting", power: 8, req: 10, value: 120, noise: 3, desc: "A military rifle, two rounds a shot from a 30-round magazine: the best gun there is. Needs Shooting 10.", weight: 4, cat: "automatic" },
   vest:       { name: "Kevlar vest",              slot: "armor",  skill: null,       power: 2, req: 0,  value: 45, noise: 0, desc: "Soft body armor from a squad car or an armory.", weight: 4, cat: "armor" },
   plate:      { name: "Plate carrier",            slot: "armor",  skill: null,       power: 4, req: 0,  value: 110, noise: 0, desc: "Ceramic plates in a military carrier: the best body armor, and heavy.", weight: 8, cat: "armor" },
   nvg:        { name: "Night vision goggles",     slot: "tool",   skill: "stealth",  power: 3, req: 8,  value: 140, noise: 0, small: true, desc: "Military night vision: see in the dark on a night raid, spot others first at night. In the off hand on the map at night the team sees a tile around it instead of only its own tile. Needs Stealth 8.", weight: 0.5, cat: "electronics" },
@@ -95,10 +100,10 @@ export const GEAR = {
   // medKit = Medicine bonus when treating (crafting.medKitBonus; the surgical kit has it too), bonus = skill bonus for base work, water = water per day at a base,
   // carry = kg added to the wearer's max load (load.js), slots = pack slots (inventory.js).
   spikedbat:  { burnShare: 0.8, name: "Spiked bat",               slot: "weapon", skill: "shooting", power: 1.5, req: 0, value: 4,  noise: 0, makeshift: true, dur: 10, desc: "A bat studded with nails. Hits hard, splinters eventually.", weight: 1.2, cat: "melee" },
-  pipespear:  { name: "Pipe spear",               slot: "weapon", skill: "shooting", power: 1.2, req: 0, value: 3,  noise: 0, makeshift: true, dur: 8,  desc: "A kitchen knife taped to a steel pipe.", weight: 1.5, cat: "melee" },
+  pipespear:  { name: "Pipe spear",               slot: "weapon", skill: "shooting", power: 1.2, req: 0, value: 3,  noise: 0, makeshift: true, dur: 8,  fish: "spear", fishPower: 0.35, desc: "A kitchen knife taped to a steel pipe. A makeshift spear: it also spears fish in the shallows (fishing in daylight, not through ice).", weight: 1.5, cat: "melee" },
   sawmachete: { name: "Saw-blade machete",        slot: "weapon", skill: "shooting", power: 1.7, req: 0, value: 7,  noise: 0, makeshift: true, dur: 12, desc: "A circular-saw blade ground into a cleaver.", weight: 1.2, cat: "melee" },
   crossbow:   { name: "Scrap crossbow",           slot: "weapon", skill: "shooting", power: 2.5, req: 3, value: 18, noise: 0, makeshift: true, dur: 12, desc: "Leaf-spring limbs: silent, shoots bolts (arrows, 1 a shot; never ammo). With none it is a club. After a won fight about half the bolts shot are picked up again; hunting loses some.", weight: 3, cat: "bow" },
-  pipegun:    { name: "Pipe shotgun",             slot: "weapon", skill: "shooting", power: 3.5, req: 3, value: 20, noise: 3, makeshift: true, dur: 8,  desc: "A zip gun: two pipes and a nail. Short range, fires shotgun shells (ammo).", weight: 2.5, cat: "shotgun" },
+  pipegun:    { name: "Pipe shotgun",             slot: "weapon", skill: "shooting", power: 3.5, req: 3, value: 20, noise: 3, makeshift: true, dur: 8,  desc: "A zip gun: two pipes and a nail, one shell at a time (reload after every shot). Short range, fires shotgun shells (ammo).", weight: 2.5, cat: "shotgun" },
   padding:    { burnShare: 0.9, name: "Magazine arm guards",      slot: "arms",   skill: null,       power: 0.6, req: 0, value: 3,  noise: 0, makeshift: true, dur: 6,  desc: "Magazines and duct tape around the forearms. Stops a bite, barely.", weight: 0.8, cat: "armor" },
   shinguards: { name: "Duct-tape shin guards",    slot: "legs",   skill: null,       power: 0.4, req: 0, value: 2,  noise: 0, makeshift: true, dur: 6,  desc: "Cut-up plastic bottles and tape around the shins.", weight: 0.6, cat: "armor" },
   tirevest:   { name: "Tire-rubber vest",         slot: "armor",  skill: null,       power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 10, desc: "Strips of tire rubber laced into a vest.", weight: 5, cat: "armor" },
@@ -118,7 +123,8 @@ export const GEAR = {
   // supply drops; pressed at a med station (crafting.js).
   puritabs:   { name: "Purification tablets",     slot: "pack",   skill: null,       power: 0,   req: 0, value: 10, noise: 0, small: true, dur: 10, tabs: true, weight: 0.1, cat: "medical", desc: "A tube of 10 iodine tablets for the road: one makes 10 un-purified water safe to drink without stopping to boil it (the worm's eggs die). A team carrying them drops one in per 10 un-purified water drunk (any of it can carry the worm) when it has no water filter and no lit camp fire with something to burn: on the move, or at a camp out of firewood. A base uses them only in an emergency (its boiler cold with nothing to burn, and no water filter); otherwise a team leaving packs a tube from the armory." },
   backpack:   { burnShare: 0.5, name: "School backpack",          slot: "backpack", skill: null,     power: 1,   req: 0, value: 5,  noise: 0, makeshift: true, carry: 6, slots: 6, desc: "A school bag reinforced with straps: 6 pack slots and +6 kg max load.", weight: 1, cat: "packs" },
-  // The stealth kit (stealth.js). Throwables and the suppressor work from a pocket or the pack; thrown, a throwable is
+  // The stealth kit (stealth.js). Throwables work from a pocket or the pack, the oil-filter suppressor fitted to a gun
+  // (gunmods.js; carried loose it still works in battle); thrown, a throwable is
   // gone (throw = the key in stealth.js THROWABLES). The suppressor wears a shot at a time (dur = shots).
   // Lights (lights.js): a ladder, each heavier and brighter. At night they set how far your people see in battle and how
   // much further off they are noticed, light a rummage, and keep a survey's night odds up; teams pack them on the way out.
@@ -132,7 +138,24 @@ export const GEAR = {
   // rumours, callers in reach) but cannot call anyone: no group calls, no two-way contact for a team, no coverage
   // for others. The pocket radio is a thrown decoy; this one is the set you listen to, and it needs no batteries.
   handradio:  { name: "Hand-crank radio",         slot: "tool",   skill: null,       power: 0,   req: 0, value: 12, noise: 0, small: true, listen: true, weight: 0.5, cat: "electronics", desc: "A wind-up emergency receiver: a minute of cranking and it needs no batteries. It only listens. A base holding one in its armory or a team carrying one hears a radio network only while it is inside that network's coverage (tune in with Listen in: the team order, or the base's radio section) but cannot call in: no orders to a team out of coverage, no calls to groups, no coverage for anyone else." },
-  suppressor: { name: "Oil-filter suppressor",    slot: "pack",   skill: null,       power: 0,   req: 0, value: 12, noise: 0, small: true, makeshift: true, dur: 12, suppressor: true, desc: "An oil filter threaded onto the muzzle. Carried by someone with a 9mm pistol or a rifle (hunting, lever-action, police carbine, assault; not a revolver or a shotgun), their shots make half the noise (half the Heat and earshot). Wears fast: 12 shots.", weight: 0.4, cat: "gunmod" },
+  suppressor: { name: "Oil-filter suppressor",    slot: "pack",   skill: null,       power: 0,   req: 0, value: 12, noise: 0, small: true, makeshift: true, dur: 12, suppressor: true, desc: "An oil filter threaded onto the muzzle: a makeshift suppressor. Fitted to a 9mm pistol or a rifle (hunting, lever-action, police carbine, assault; not a revolver or a shotgun: select the gun in the inventory, then Fit), its shots make half the noise (half the Heat and earshot, and a hunt draws less). Still works carried loose by someone with such a gun, in battle only. Wears fast: 12 shots.", weight: 0.4, cat: "gunmod" },
+  // Gun attachments (gunmods.js ATTACH has what each does and which guns it fits; it explains the numbers): fitted to a
+  // gun in the inventory (item.mods), they ride on it, weigh and are worth what they are with it, and are sold and
+  // looted with it. Loose, they are carried like any small thing.
+  reddot:     { name: "Red dot sight",            slot: "pack",   skill: null,       power: 0,   req: 0, value: 22, noise: 0, small: true, weight: 0.2, cat: "gunmod", desc: "A battery reflex sight: put the dot on them and squeeze. +4 aim. Fits the 9mm, the .357, the pump shotgun, the lever-action, the police carbine and the assault rifle." },
+  holo:       { name: "Holographic sight",        slot: "pack",   skill: null,       power: 0,   req: 0, value: 35, noise: 0, small: true, weight: 0.35, cat: "gunmod", desc: "A military holo sight with a wide window, quick on a moving target: +5 aim, +3 more up close. Fits the pump shotgun, the police carbine and the assault rifle." },
+  scope4x:    { name: "4× rifle scope",           slot: "pack",   skill: null,       power: 0,   req: 0, value: 40, noise: 0, small: true, weight: 0.6, cat: "gunmod", desc: "A fixed 4× scope on rings: +3 tiles of best range and less aim lost beyond it, but −8 up close. Fits the lever-action, the police carbine and the assault rifle (the hunting rifle has its own)." },
+  laser:      { name: "Laser sight",              slot: "pack",   skill: null,       power: 0,   req: 0, value: 20, noise: 0, small: true, weight: 0.1, cat: "gunmod", desc: "A rail laser under the barrel: +6 aim within 2.5 tiles, +1 beyond. Fits the 9mm, the .357, the pump shotgun, the police carbine and the assault rifle." },
+  foregrip:   { name: "Vertical foregrip",        slot: "pack",   skill: null,       power: 0,   req: 0, value: 12, noise: 0, small: true, weight: 0.15, cat: "gunmod", desc: "A grip under the handguard to hold the muzzle down: +2 aim, +2 more up close. Fits the pump shotgun, the police carbine and the assault rifle." },
+  bipod:      { name: "Bipod",                    slot: "pack",   skill: null,       power: 0,   req: 0, value: 18, noise: 0, small: true, weight: 0.4, cat: "gunmod", desc: "Folding legs under a rifle for shooting prone or off a wall: +2 tiles of best range and less aim lost beyond it, −5 up close. Fits the hunting rifle, the lever-action and the assault rifle." },
+  pistolcan:  { name: "9mm suppressor",           slot: "pack",   skill: null,       power: 0,   req: 0, value: 45, noise: 0, small: true, weight: 0.25, cat: "gunmod", desc: "A real can for a threaded 9mm barrel: shots a third as loud (far fewer hear them, a third of the Heat), at a little damage (×0.95) and a tile of range. Lasts. Fits the 9mm pistol only." },
+  riflecan:   { name: "Rifle suppressor",         slot: "pack",   skill: null,       power: 0,   req: 0, value: 60, noise: 0, small: true, weight: 0.55, cat: "gunmod", desc: "A rifle-calibre suppressor: shots 40% as loud (far fewer hear them, less Heat, a hunt draws less), at a little damage (×0.95) and a tile of range. Lasts. Fits the hunting rifle, the lever-action, the police carbine and the assault rifle." },
+  brake:      { name: "Muzzle brake",             slot: "pack",   skill: null,       power: 0,   req: 0, value: 18, noise: 0, small: true, weight: 0.15, cat: "gunmod", desc: "Vents the gas sideways and the rifle stays on target: +3 aim, but every shot is 30% louder. Fits the hunting rifle, the lever-action, the police carbine and the assault rifle." },
+  comp:       { name: "Pistol compensator",       slot: "pack",   skill: null,       power: 0,   req: 0, value: 14, noise: 0, small: true, weight: 0.1, cat: "gunmod", desc: "A ported muzzle weight against the kick: +2 aim, shots 15% louder. Fits the 9mm and the .357." },
+  choke:      { name: "Shotgun choke",            slot: "pack",   skill: null,       power: 0,   req: 0, value: 12, noise: 0, small: true, weight: 0.05, cat: "gunmod", desc: "A full choke tube: a tighter pattern that reaches further (+2 tiles best range, less aim lost beyond it) but spreads less up close (−4). Fits the pump shotgun." },
+  extmag:     { name: "Extended pistol magazine", slot: "pack",   skill: null,       power: 0,   req: 0, value: 14, noise: 0, small: true, weight: 0.15, cat: "gunmod", desc: "A long 9mm magazine: 24 rounds instead of 15. Fits the 9mm pistol." },
+  drum:       { name: "Drum magazine",            slot: "pack",   skill: null,       power: 0,   req: 0, value: 38, noise: 0, small: true, weight: 1.1, cat: "gunmod", desc: "A 60-round drum: twice the rounds before a reload, but heavy and clumsy (−2 aim). Fits the police carbine and the assault rifle." },
+  tubeext:    { name: "Shotgun tube extension",   slot: "pack",   skill: null,       power: 0,   req: 0, value: 14, noise: 0, small: true, weight: 0.25, cat: "gunmod", desc: "A longer magazine tube: two more shells in the pump shotgun." },
   bottle:     { name: "Empty bottle",             slot: "pack",   skill: null,       power: 0,   req: 0, value: 1,  noise: 0, small: true, throw: "bottle", desc: "Thrown (up to 7 tiles), it smashes and pulls unaware guards and the dead within 6 tiles to look. One use.", weight: 0.4, cat: "explosive" },
   noisemaker: { name: "Noise maker",              slot: "pack",   skill: null,       power: 0,   req: 0, value: 3,  noise: 0, small: true, makeshift: true, throw: "noisemaker", desc: "A wind-up kitchen timer taped to a bell. Thrown (up to 7 tiles), it rings for 3 turns: everything unaware within 8 tiles goes to look, and the dead that follow noise turn toward it even when they have seen you. One use.", weight: 0.3, cat: "explosive" },
   firecracker:{ name: "String of firecrackers",   slot: "pack",   skill: null,       power: 0,   req: 0, value: 4,  noise: 0, small: true, throw: "firecracker", desc: "Thrown (up to 8 tiles), the bangs go on for 2 turns: everything unaware within 13 tiles goes to look and the dead that follow noise are pulled off whoever they were after, but a raid's Heat jumps 6. One use.", weight: 0.2, cat: "explosive" },
@@ -201,8 +224,8 @@ export const GEAR = {
   compbow:     { name: "Compound bow",             slot: "weapon", skill: "shooting", power: 3.2, req: 4, value: 40, noise: 0, weight: 2, cat: "bow", desc: "Pulleys and a 60 lb draw. Silent; shoots arrows (1 a shot, never ammo; with none it is a club). After a won fight about half the arrows shot are picked up again; hunting loses some. Needs Shooting 4 for full use." },
   xbow:        { name: "Hunting crossbow",         slot: "weapon", skill: "shooting", power: 3.8, req: 3, value: 50, noise: 0, weight: 3.5, cat: "bow", desc: "A scoped hunting crossbow: hits hard and silent; shoots bolts (arrows, 1 a shot, never ammo; with none it is a club). After a won fight about half the bolts shot are picked up again; hunting loses some. Heavy. Needs Shooting 3." },
   revolver:    { name: ".357 revolver",            slot: "weapon", skill: "shooting", power: 3.5, req: 3, value: 34, noise: 3, small: true, weight: 1.2, cat: "pistol", desc: "Six rounds, a kick and a bang: hits harder than a 9mm but louder, and no suppressor fits it. Needs Shooting 3." },
-  leverrifle:  { name: "Lever-action rifle",       slot: "weapon", skill: "shooting", power: 4.5, req: 4, value: 45, noise: 3, weight: 3.4, cat: "rifle", desc: "A ranch rifle: accurate at range, lighter and handier than a bolt-action hunting rifle. Needs Shooting 4." },
-  carbine:     { name: "Police carbine",           slot: "weapon", skill: "shooting", power: 6.5, req: 8, value: 95, noise: 3, weight: 3, cat: "rifle", desc: "A semi-automatic patrol rifle from a squad-car rack: quick, accurate follow-up shots, one round a shot. Needs Shooting 8." },
+  leverrifle:  { name: "Lever-action rifle",       slot: "weapon", skill: "shooting", power: 4.5, req: 4, value: 45, noise: 3, weight: 3.4, cat: "rifle", desc: "A ranch rifle with eight in the tube: accurate at range, lighter and handier than a bolt-action hunting rifle. Needs Shooting 4." },
+  carbine:     { name: "Police carbine",           slot: "weapon", skill: "shooting", power: 6.5, req: 8, value: 95, noise: 3, weight: 3, cat: "rifle", desc: "A semi-automatic patrol rifle from a squad-car rack: quick, accurate follow-up shots, one round a shot, 30 in the magazine. Needs Shooting 8." },
   // Police gear.
   riotarms:    { name: "Riot arm guards",          slot: "arms",   skill: null, power: 0.9, req: 0, value: 14, noise: 0, desc: "Hard-shell police forearm guards. Bites skid off.", weight: 1.2, cat: "armor" },
   riotlegs:    { name: "Riot leg guards",          slot: "legs",   skill: null, power: 0.8, req: 0, value: 12, noise: 0, desc: "Police shin and thigh guards.", weight: 1.4, cat: "armor" },
@@ -282,6 +305,21 @@ export const GEAR = {
   perfume:     { name: "Bottle of perfume",        slot: "pack", skill: null, power: 0, req: 0, value: 20, noise: 0, small: true, groom: 0.5, dur: 60, desc: "A designer bottle from a department store counter. A spritz and the world is less rotten for a while: +0.5 mood a day for whoever uses it. Traders like it too.", weight: 0.2, cat: "toiletries" },
   magazines:   { burnShare: 1, name: "Stack of magazines",       slot: "pack", skill: null, power: 0, req: 0, value: 2,  noise: 0, book: { mood: 2, hours: 3 }, desc: "Celebrity gossip from another world. +2 mood an hour read (a third of that read again). Teaches nothing.", weight: 0.4, cat: "luxury" },
   puzzlebook:  { burnShare: 1, name: "Crossword book",           slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, book: { mood: 2, hours: 12 }, desc: "Half the puzzles still blank. +2 mood an hour read, and it lasts. Teaches nothing.", weight: 0.3, cat: "luxury" },
+  // ---------- craft books and special crafted gear (blueprints.js CRAFT_BOOKS / BLUEPRINTS, crafting.js CRAFTS) ----------
+  // Craft books teach Crafting like any skill book; once anyone has finished one, its recipes are unlocked for good and
+  // the recipes it covers come out a little better and faster (blueprints.js craftEdge). Their unlock lines are added
+  // to the desc by blueprints.js.
+  diybook:      { burnShare: 1, name: "The Complete DIY Manual",  slot: "pack", skill: null, power: 0, req: 0, value: 18, noise: 0, book: { skill: "crafting", max: 7, hours: 24 }, desc: "Fixing, fitting and making do around the house. Teaches Crafting up to 7.", weight: 1, cat: "books" },
+  forgebook:    { burnShare: 1, name: "Backyard Blacksmithing",   slot: "pack", skill: null, power: 0, req: 0, value: 40, noise: 0, book: { skill: "crafting", max: 11, hours: 40 }, desc: "Coal forges, quenching and riveting, from a hobbyist press. Teaches Crafting up to 11.", weight: 1.2, cat: "books" },
+  bushcraftbook:{ burnShare: 1, name: "Bushcraft Field Guide",    slot: "pack", skill: null, power: 0, req: 0, value: 25, noise: 0, book: { skill: "crafting", max: 9, hours: 30 }, desc: "Cordage, camouflage and camp craft from what the woods give. Teaches Crafting up to 9.", weight: 0.6, cat: "books" },
+  // Special crafted gear: locked until a craft book is read or a blueprint studied; better than ordinary makeshift
+  // gear (still wears out). combat.js WEAPONS has the weapons' battle numbers.
+  springmachete:{ name: "Leaf-spring machete",      slot: "weapon", skill: "shooting", power: 2.2, req: 0, value: 18, noise: 0, makeshift: true, dur: 22, desc: "A truck leaf spring forged, quenched and ground into a heavy blade: hits harder than a store-bought machete and keeps its edge a long time.", weight: 1.1, cat: "melee" },
+  pulleybow:    { name: "Pulley-limb bow",          slot: "weapon", skill: "shooting", power: 2.9, req: 3, value: 30, noise: 0, makeshift: true, dur: 18, desc: "Laminated limbs with salvaged pulleys: nearly a compound bow. Silent, and in a fight the arrows are picked up again (no ammo); hunting loses some (arrows). Needs Shooting 3.", weight: 1.8, cat: "bow" },
+  rivethelmet:  { name: "Riveted scrap helmet",     slot: "head",   skill: null,       power: 1.0, req: 0, value: 16, noise: 0, makeshift: true, dur: 16, desc: "Hammered steel plates riveted over a padded cap, with a nape guard. Better than a motorcycle helmet.", weight: 2, cat: "armor" },
+  woodghillie:  { burnShare: 1, name: "Woodland ghillie suit", slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, makeshift: true, heat: { stay: 0.75, search: 0.85 }, desc: "A full suit of netting, jute and local plants, built up layer by layer: a team with one gains Heat 25% slower while it stays put and 15% slower while it searches (with a ghillie wrap too, both count).", weight: 2, cat: "camp" },
+  traumakit:    { name: "Field trauma kit",         slot: "tool",   skill: "medicine", power: 2,   req: 4, value: 24, noise: 0, makeshift: true, dur: 8,  medKit: 3, small: true, desc: "Pressure dressings, a windlass tourniquet, chest seals and splints, packed the army way: +3 Medicine when treating (at a base, in the field or in battle). Needs Medicine 4 for the full bonus. Each treatment uses it up a little.", weight: 0.7, cat: "medical" },
+  // ---------- end of craft books and special crafted gear ----------
 };
 
 
@@ -408,7 +446,7 @@ export const LOCATIONS = {
   barn:        { name: "Barn",               glyph: "Br", cat: "rural", danger: 0, loot: { food: 3, fuel: 0.6, scrap: 2, jars: 0.5 }, gear: ["machete", "sledge", "prybar", "barbedwire", "beartrap"], richness: 0.35, known: "road" },
   ranch:       { name: "Ranch",              glyph: "R",  cat: "rural", danger: 0, loot: { food: 5, water: 2, ammo: 1, fuel: 0.3, jars: 0.75, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "leverrifle", "revolver", "barbedwire", "beartrap", "binoculars", "dewormer"], richness: 0.55, known: "road" },
   cabin:       { name: "Cabin",              glyph: "Cb", cat: "rural", danger: 0, loot: { food: 2, ammo: 2, water: 1, meds: 0.4, preserved: 0.5, jars: 0.25 }, gear: ["huntrifle", "machete", "waterfilter", "leverrifle", "fireaxe", "beartrap", "stove", "ghillie", "monocular", "binoculars"], richness: 0.35, known: "road" },
-  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 0.4, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "compbow", "xbow", "leverrifle", "ghillie", "camonet", "beartrap", "stove", "binoculars", "spotscope", "monocular"], richness: 0.55, known: "road" },
+  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 0.4, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "compbow", "xbow", "leverrifle", "ghillie", "camonet", "beartrap", "stove", "binoculars", "spotscope", "monocular", "spear"], richness: 0.55, known: "road" },
   campground:  { name: "Campground",         glyph: "Cg", cat: "rural", danger: 1, loot: { food: 2, water: 3, fuel: 0.3, scrap: 1, rawwater: 0.5 }, gear: ["knife", "pipespear", "waterfilter", "backpack", "bicycle", "hikingpack", "stove"], richness: 0.4, known: "road" },
   ranger:      { name: "Ranger station",     glyph: "Rs", cat: "rural", danger: 0, loot: { meds: 1, ammo: 2, food: 2, fuel: 0.3 }, gear: ["huntrifle", "bandagekit", "bicycle", "fireaxe", "hikingpack", "stove", "binoculars", "spotscope", "monocular"], richness: 0.5, known: "road" },
   radiotower:  { name: "Radio tower",        glyph: "Rt", cat: "rural", danger: 0, loot: { parts: 3, scrap: 2, fuel: 0.3 }, gear: ["flashlight", "prybar", "binoculars"], richness: 0.4, known: "road" },
@@ -421,6 +459,9 @@ export const LOCATIONS = {
   crash_med:   { name: "Medevac wreck",       glyph: "✈", cat: "special", danger: 2, temp: true, loot: { meds: 7, water: 2, scrap: 1, parts: 1 }, gear: ["surgkit", "bandagekit", "vest"], richness: 1.1, known: "secret" },
   crash_news:  { name: "News helicopter wreck", glyph: "✈", cat: "special", danger: 2, temp: true, loot: { parts: 3, scrap: 3, water: 1, food: 1, fuel: 0.4 }, gear: ["hikingpack", "slingbag"], richness: 0.9, known: "secret" },
   airdrop:     { name: "Supply drop",         glyph: "⇣", cat: "special", danger: 1, temp: true, loot: { food: 6, water: 4, meds: 2, ammo: 3, preserved: 2 }, gear: ["assaultpack", "vest", "bandagekit", "rucksack", "stove"], richness: 1.2, known: "secret" },
+  // The abandoned military convoy (miltrucks.js): Army trucks stopped on a road tile, their turned crews about them;
+  // stripped by other groups and burned out after 6–9 days. Its trucks hold most of what it is worth (truckLoot).
+  convoy:      { name: "Abandoned Army convoy", glyph: "🪖", cat: "special", danger: 2, temp: true, loot: { ammo: 5, fuel: 2, food: 2, meds: 1, parts: 1.5 }, gear: ["ar", "carbine", "vest", "plate", "milhelmet", "milradio", "assaultpack", "rucksack", "smokegren", "flare"], richness: 0.9, known: "secret" },
 };
 // Where a placed site stands (tile.loc.zone): map icon color and the inspect panel.
 export const SITE_ZONES = {
@@ -439,10 +480,14 @@ export const siteDanger = (loc) => {
   return loc.zone === "town" || loc.zone === "rural" ? Math.min(1, d) : d;
 };
 
-export const SKILLS = ["shooting", "stealth", "scavenging", "scouting", "medicine", "mechanics", "farming", "speech", "leadership"];
+export const SKILLS = ["shooting", "stealth", "scavenging", "scouting", "medicine", "mechanics", "farming", "speech", "leadership", "crafting"];
+// The skills a new survivor draws with the world's dice (world.js makeSurvivor): every skill but Crafting, which came
+// later and is rolled with its own dice (appearance.js craftingStart), so the same seed still makes the same people.
+export const ROLLED_SKILLS = SKILLS.filter((k) => k !== "crafting");
 export const SKILL_NAMES = {
   shooting: "Shooting", stealth: "Stealth", scavenging: "Scavenging", scouting: "Scouting",
   medicine: "Medicine", mechanics: "Mechanics", farming: "Farming", speech: "Speech", leadership: "Leadership",
+  crafting: "Crafting", // crafting.js: the quality, speed and XP of everything made by hand (each recipe's own skill is only its minimum)
 };
 
 export const TRAITS = {
@@ -487,8 +532,12 @@ export const TOWN_NAMES = ["Harlow", "Pine Ridge", "Millbrook", "Cedar Falls", "
 // Kept in a block of their own: the gear for food from the land. Fishing gear goes in a pack
 // slot or the cargo (not worn); a team fishes with what it carries, a base's fishers with what is in its armory.
 Object.assign(GEAR, {
-  fishrod:   { name: "Fishing rod",  slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, fish: "rod", weight: 0.8, cat: "tools", desc: "A telescopic rod and a tackle box. Fish on a river or a lake shore (team order, or the Fish job at a base by the water): about 0.6 food an hour, more at dawn and dusk." },
+  fishrod:   { name: "Fishing rod",  slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, fish: "rod", fishPower: 0.6, weight: 0.8, cat: "tools", desc: "A telescopic rod and a tackle box. Fish on a river or a lake shore (team order, or the Fish job at a base by the water): about 0.6 food an hour, more at dawn and dusk." },
   fishnet:   { name: "Fishing net",  slot: "pack", skill: null, power: 0, req: 0, value: 18, noise: 0, fish: "net", weight: 2.5, cat: "tools", desc: "A gill net with floats: worked by two, it catches about twice what a rod does (1.2 food an hour)." },
+  // A rod made by hand (crafting.js makeshiftrod): a sapling, fishing line from a spool or unpicked cord, a bent hook.
+  makeshiftrod: { name: "Makeshift fishing rod", slot: "pack", skill: null, power: 0, req: 0, value: 4, noise: 0, fish: "rod", fishPower: 0.42, makeshift: true, dur: 12, weight: 0.5, cat: "tools", desc: "A cut sapling, a length of line and a hook bent from a paperclip. Fishes like a rod, but catches about a third less (0.42 food an hour) and the line snaps in the end." },
+  // A real spear (looted): a weapon, and a gig for fish in the shallows (fish: "spear": daylight, not through ice).
+  spear:     { name: "Steel spear",  slot: "weapon", skill: "shooting", power: 1.8, req: 0, value: 14, noise: 0, fish: "spear", fishPower: 0.5, weight: 1.8, cat: "melee", desc: "A boar spear off a hunting lodge wall: a long steel head on an ash shaft. Keeps the dead at arm's length, and spears fish in the shallows (0.5 food an hour, best in daylight; no use through ice)." },
   snarewire: { name: "Snare wire",   slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, weight: 0.4, cat: "tools", desc: "A coil of brass wire: a line of 8 snares (team order, 2 hours). Quiet; about a rabbit a day in good country. The wire stays with the line and comes back when it is lifted." },
 });
 // Where they turn up: loot.js SITE_FINDS (their own dice, so adding them changes no other loot roll).
@@ -503,3 +552,20 @@ Object.assign(GEAR, {
   riflecase:    { name: "Hard rifle case",      slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, bulky: true, gunCase: { long: 1, hand: 0, small: 2 }, weight: 3.5, cat: "containers", desc: "A foam-lined hard case for one long gun and a couple of small things, some with a cheap lock. A gun inside is not to hand: it does not wear and cannot be fired. Opening a locked one takes a blade or a crowbar (1 action and Heat +1 in a raid; free at a base or a camp)." },
   pistolcase:   { name: "Pistol case",          slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, gunCase: { long: 0, hand: 1, small: 2 }, weight: 1, cat: "containers", desc: "A small lockable case for a handgun and a box of rounds. A gun inside is not to hand: it does not wear and cannot be fired. Opening a locked one takes a blade or a crowbar (1 action and Heat +1 in a raid; free at a base or a camp)." },
 });
+
+// The weapons overhaul (docs/weapons-overhaul-plan.md): guns and melee, ammo boxes and reloading supplies, attachments,
+// carry kit. One line, so the agents filling those modules never edit the end of this file.
+Object.assign(GEAR, GUN_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR);
+
+// ---------- durability (crafting.js itemDur / wear) ----------
+// Real gear wears too, only slower than makeshift gear: dur = uses before it breaks (weapons and armor: fights;
+// the surgical kit: treatments; fishing gear: days of fishing; camp kit: days out in the field). Entries that set
+// their own dur (the makeshift gear, tablets, toiletries) keep it. Found and starting gear comes part-worn
+// (inventory.js newItem with an rng: FOUND_DUR); crafted gear lasts by its quality (crafting.js craftedDur).
+export const GEAR_DUR = {
+  knife: 40, machete: 45, bat: 30, prybar: 70, fireaxe: 50, sledge: 60, baton: 50, spear: 45,
+  pistol: 60, revolver: 80, shotgun: 60, huntrifle: 70, leverrifle: 70, carbine: 70, ar: 60, compbow: 50, xbow: 50,
+  vest: 40, plate: 50, bikehelmet: 40, riothelmet: 50, milhelmet: 60, kneeguards: 35, riotlegs: 45, riotarms: 45,
+  surgkit: 40, fishrod: 60, fishnet: 40, camonet: 60, stove: 80, ghillie: 20, ragboots: 14,
+};
+for (const [k, v] of Object.entries(GEAR_DUR)) if (GEAR[k] && !GEAR[k].dur) GEAR[k].dur = v;

@@ -8,7 +8,7 @@ import { packLights } from "./lights.js";
 
 export const KIT_KG = 1.5;
 // In order of preference: Heat first on a search trip, then morale, then the throwables.
-const SEARCH_KIT = ["scentmask", "ragboots", "ghillie", "tripwire", "stove", "camonet"];
+const SEARCH_KIT = ["scentmask", "ragboots", "woodghillie", "ghillie", "tripwire", "stove", "camonet"]; // woodghillie: crafted once the Bushcraft Field Guide is read (blueprints.js)
 // A power drill for the gun safes (locks.js) on a search or a raid to a place that has them: homes in the country and
 // the suburbs, a gun store, a police station, a prison, a base. First in the kit there (it weighs 2.2 kg of the budget).
 export const SAFE_KIT = { key: "powerdrill", sites: ["town", "farm", "ranch", "cabin", "lodge", "ranger", "motel", "gunstore", "police", "prison", "military", "crash_mil"] };

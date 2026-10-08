@@ -27,7 +27,8 @@
 //     hunting weapon: no hunt (set snares instead).
 //   Gunshots: each kill with a firearm is 1 shot, a second one (a miss first) 40% of the time for big game and 20% for
 //     small: 1 ammo and +6 Heat each (× the gun's noise / 3) on top of the hour's Heat, and each wandering horde
-//     within 3 tiles turns toward the shots 25% of the time. Bows add nothing. (A rifle hunt in good country fires
+//     within 3 tiles turns toward the shots 25% of the time (both × the gun attachments' noise, gunmods.js: a suppressor
+//     cuts them to 35–50%, a muzzle brake adds 30%). Bows add nothing. (A rifle hunt in good country fires
 //     5–8 shots in 8 hours: Heat ~40–50 from the shots alone.)
 //
 // The hunting mix (a setting per base, base.huntMix: traps / bows / guns in steps of 10%, DEFAULT_MIX all guns): the
@@ -56,12 +57,16 @@
 //   game keeps 3 days (2 in the heat, 6 in the cold), and from the third day without a check each day has an 8%
 //   chance (more by towns, in hive land, with a horde near) that it is robbed or sprung: the catch is gone, and
 //   30% of the time the line with it. Quiet: Heat × 0.8 while setting or checking.
-// Fish (team order, N hours on a river bank or a lake shore, with a fishing rod or a net carried): 0.6 rations an
-//   hour a rod, 1.2 a net worked by two (0.7 by one) × water (a deep river bend or a lake 1, a river 0.85, a pond 0.6)
+// Fish (team order, N hours on a river bank or a lake shore, with a fishing rod, a net or a spear carried): 0.6
+//   rations an hour a rod (a makeshift rod 0.42), 1.2 a net worked by two (0.7 by one), a spear 0.5 (a pipe spear
+//   0.35; GEAR fishPower), each × its condition (0.6 + 0.4 × quality: a well-made rod catches more) × water (a deep river bend or a lake 1, a river 0.85, a pond 0.6)
 //   × season
 //   (spring 1.15, summer 1, autumn 0.9, winter 0.75) × time of day (dawn/dusk 1.4, night 0.5) × skill
 //   (0.6 + 0.08 × (0.6 Scouting + 0.4 Stealth)) × the water's level. Frozen water: ice fishing needs a tool to cut
-//   the ice (crowbar, machete, hatchet or axe) and catches half. Quiet: Heat × 0.7.
+//   the ice (crowbar, machete, hatchet or axe) and catches half. Spears (fish: "spear") strike in the shallows by
+//   sight: daytime × 1.2, dawn and dusk × 1, night × 0.15, and no use through ice. One tool a fisher (a net two), the
+//   best first. Tools wear (GEAR dur, days of fishing): a team's every FISH.wearHours fished, a base's each day of
+//   the Fish job; a spear only half the time (FISH.spearWear: it is mostly a weapon). Quiet: Heat × 0.7.
 //
 // Fresh game (cargo.meat, base.meat: the share of the food that is fresh game):
 //   Carried it weighs MEAT_KG (1 kg) a ration instead of 0.5 (load.js bands: a deer on foot is a heavy walk; a car
@@ -81,10 +86,12 @@
 //   day turns toward it 25% of the time. Fish work / role: a base on a river or a lake shore, one rod or net a fisher
 //   (carried or in the armory), 3 hours a day. Expect a good hunter at a cabin in forest to bring in about 4–6 food a
 //   day once the land settles (a farmer about 2), less in spring and on farmland.
+import { gunMods, wearMuzzle } from "./gunmods.js"; // a suppressed gun is quieter on a hunt
 import { GEAR, SUPPLIES } from "./data.js";
 import { log, skill, gearEffect, atBase, newId, baseById, hub } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
 import { allItems, packOf } from "./inventory.js";
+import { wearHeld } from "./crafting.js"; // fishing tools wear by the day's fishing
 import { hasPerk, gainXp } from "./skills.js";
 import { zombieToughness } from "./hives.js";
 import * as Weather from "./weather.js";
@@ -106,7 +113,7 @@ export const ANIMALS = {
   fish:  { name: "fish", plural: "fish", rations: 1, big: false },
 };
 export const SNARE = { count: 8, perDay: 1, setHours: 2, checkHours: 1, scrap: 2, theft: 0.08, wireLoss: 0.3, deplete: 60, safeDays: 2 };
-export const FISH = { rod: 0.6, net: 1.2, netAlone: 0.7, deplete: 50, halfLife: 10, ice: 0.5 };
+export const FISH = { rod: 0.6, net: 1.2, netAlone: 0.7, deplete: 50, halfLife: 10, ice: 0.5, wearHours: 6, spearWear: 0.5 };
 // The cabin's Hunt job has no head-count cap (tune-jobcaps: it was 2): hunters are sized to the food the land must
 // bring in (foraging.js landFoodHands), each takes the best tile left and a kill thins it hard (a deer −0.3), so a
 // crowd soon hunts poor ground. Fishers likewise (one rod or net each: the tools are the cap); the base's one spot
@@ -136,7 +143,7 @@ export const MIX_PRESETS = {
   quiet: { name: "Quiet", mix: { traps: 40, bows: 60, guns: 0 }, desc: "Bows and traps only: no shots, no Heat, no noise; less food." },
   traps: { name: "Traps only", mix: { traps: 100, bows: 0, guns: 0 }, desc: "Snares and deadfalls: small game only, no ammo or arrows, silent; the least food." },
 };
-const ICE_TOOL = /^(crowbar|machete|sawmachete|hatchet|axe|fireaxe|iceauger|woodaxe)$/;
+const ICE_TOOL = /^(crowbar|machete|sawmachete|springmachete|hatchet|axe|fireaxe|iceauger|woodaxe)$/;
 const r1 = (x) => Math.round(x * 10) / 10;
 const first = (s) => s.name.split(" ")[0];
 
@@ -179,6 +186,7 @@ export function seasonGame(state, hour = state.hour) {
 export const seasonFish = (state, hour = state.hour) => ({ spring: 1.15, summer: 1, autumn: 0.9, winter: 0.75 }[Weather.season(state, hour).key] ?? 1);
 export function timeOfDay(hour, kind = "hunt") {
   const h = ((hour % 24) + 24) % 24;
+  if (kind === "spear") return (h >= 5 && h <= 7) || (h >= 17 && h <= 19) ? 1 : h >= 20 || h <= 4 ? 0.15 : 1.2; // by sight
   if ((h >= 5 && h <= 7) || (h >= 17 && h <= 19)) return kind === "fish" ? 1.4 : 1.3;
   if (h >= 20 || h <= 4) return kind === "fish" ? 0.5 : 0.35;
   return 1;
@@ -202,7 +210,10 @@ export function huntWeaponInfo(item) {
   const noise = d.noise || 0;
   // Bows and crossbows hunt with arrows (bolts): a shot at game is often lost (ARROW).
   const bow = d.cat === "bow" || d.cat === "crossbow";
-  return { key: item.key, name: d.name, big: h.big, small: h.small, loud: noise >= 1, noise, ammo: noise >= 1, arrows: bow && noise < 1 };
+  // quiet: × the shot's noise from the gun's attachments (gunmods.js: a suppressor 0.35–0.5, a brake 1.3): the hunt's
+  // Heat, the base's hunting noise and the chance the wandering dead turn toward the shots all scale with it.
+  const quiet = noise >= 1 ? gunMods(item).noise : 1;
+  return { key: item.key, name: d.name, big: h.big, small: h.small, loud: noise >= 1, noise: noise * quiet, quiet, ammo: noise >= 1, arrows: bow && noise < 1 };
 }
 export const hunterSkill = (s) => 0.5 * skill(s, "shooting") + 0.35 * skill(s, "scouting") + 0.15 * skill(s, "stealth");
 export const hunterMult = (s) => (0.55 + 0.09 * hunterSkill(s)) * (hasPerk(s, "hunter") ? 1.25 : 1);
@@ -492,12 +503,13 @@ export function unloadGame(base, cargo) {
 
 // ---------- one hour of hunting (orders.js taskHour) ----------
 // Wandering hordes within reach turn toward gunshots.
-function drawHordes(state, tile) {
+// quiet: × the chance (a suppressed gun draws fewer; gunmods.js). The same dice either way.
+export function drawHordes(state, tile, quiet = 1) { // exported for tools/gunmodtest.js
   let n = 0;
   for (const h of state.hordes) {
     if (!["roam", "border", undefined, null].includes(h.role)) continue;
     if (state.grid.distance(h.tile, tile) > HUNT.drawRange || h.tile === tile) continue;
-    if (state.rng.chance(HUNT.drawChance)) { h.target = tile; h.path = null; n++; }
+    if (state.rng.chance(HUNT.drawChance * quiet)) { h.target = tile; h.path = null; n++; }
   }
   return n;
 }
@@ -543,7 +555,8 @@ export function huntHour(state, p) {
       const used = takeSupply(p, "ammo", shots);
       got.shots += Math.max(1, used);
       p.heat = Math.min(100, (p.heat || 0) + HUNT.shotHeat * (who.w.noise / 3) * Math.max(1, used));
-      got.drawn += drawHordes(state, tile);
+      got.drawn += drawHordes(state, tile, who.w.quiet ?? 1);
+      if (who.item && wearMuzzle(who.item, Math.max(1, used))) got.wornMod = who.item.name; // an oil filter shot out (gunmods.js)
     } else if (who.w.arrows) {
       // A bow: silent, but a shot at game is often an arrow lost in the brush or broken in the animal.
       const shots = 1 + (state.rng.chance(a.big ? HUNT.missChance : HUNT.missSmall) ? 1 : 0);
@@ -608,24 +621,41 @@ export function fishSpot(state, tile) {
 }
 const isRod = (it) => it && (it.key === "fishrod" || (GEAR[it.key] && GEAR[it.key].fish === "rod"));
 const isNet = (it) => it && (it.key === "fishnet" || (GEAR[it.key] && GEAR[it.key].fish === "net"));
+const isSpear = (it) => !!(it && GEAR[it.key] && GEAR[it.key].fish === "spear");
+const isFishTool = (it) => isRod(it) || isNet(it) || isSpear(it);
+// A tool's catch by its condition: a well-made (or well-kept) rod catches more (crafting.js: quality from the crafter).
+const qualityYield = (it) => 0.6 + 0.4 * Math.max(0, Math.min(1, it.quality ?? 1));
+export const fishToolPower = (it) => (GEAR[it.key].fishPower ?? FISH.rod) * qualityYield(it);
 const isIceTool = (it) => it && (ICE_TOOL.test(it.key) || !!(GEAR[it.key] && GEAR[it.key].iceTool));
 export const fisherMult = (s) => (0.6 + 0.08 * (0.6 * skill(s, "scouting") + 0.4 * skill(s, "stealth"))) * (hasPerk(s, "forager") ? 1.1 : 1);
-// What a team (members and cargo items) has for fishing: rods, nets, an ice tool, and its rigs' power.
-export function fishKit(members, extraItems = []) {
+// What a team (members and cargo items) has for fishing: rods, nets, spears, an ice tool, and its rigs' power.
+// power = all of it (spear = the spears' part: by sight, not through ice); tools = the items in use (they wear).
+// frozen: the water is iced over, so spears are left out and the rods and nets go first.
+export function fishKit(members, extraItems = [], { frozen = false } = {}) {
   const items = [...members.flatMap((s) => carriedItems(s)), ...extraItems];
-  const rods = items.filter(isRod).length, nets = items.filter(isNet).length, ice = items.some(isIceTool);
+  const nets = items.filter(isNet).sort((a, b) => (b.quality ?? 1) - (a.quality ?? 1));
+  const singles = items.filter((it) => isRod(it) || (!frozen && isSpear(it))).sort((a, b) => fishToolPower(b) - fishToolPower(a));
+  const ice = items.some(isIceTool);
   const best = [...members].sort((a, b) => fisherMult(b) - fisherMult(a) || a.id - b.id);
-  let people = members.length, power = 0, used = 0;
-  for (let i = 0; i < nets && people > 0; i++) { const two = people >= 2; power += two ? FISH.net : FISH.netAlone; people -= two ? 2 : 1; used += two ? 2 : 1; }
-  for (let i = 0; i < rods && people > 0; i++) { power += FISH.rod; people--; used++; }
+  let people = members.length, power = 0, spear = 0, used = 0;
+  const tools = [];
+  for (const it of nets) { if (people <= 0) break; const two = people >= 2; power += (two ? FISH.net : FISH.netAlone) * qualityYield(it); people -= two ? 2 : 1; used += two ? 2 : 1; tools.push(it); }
+  for (const it of singles) { if (people <= 0) break; if (isSpear(it)) spear += fishToolPower(it); else power += fishToolPower(it); people--; used++; tools.push(it); }
   const sk = used ? best.slice(0, used).reduce((a, s) => a + fisherMult(s), 0) / used : 0;
-  return { rods, nets, ice, power: power * sk, used };
+  return { rods: items.filter(isRod).length, nets: nets.length, spears: items.filter(isSpear).length, ice, power: (power + spear) * sk, spear: spear * sk, used, tools };
+}
+// Wears the fishing tools in use (fishKit tools) by a day of fishing; a spear only FISH.spearWear of the time.
+function wearFishTools(state, kit, people, lists) {
+  for (const it of kit.tools || []) if (!isSpear(it) || state.rng.chance(FISH.spearWear)) wearHeld(state, it, people, lists);
 }
 export function fishRate(state, kit, tile, hour, level = fishLevel(state, tile, hour)) {
   const spot = fishSpot(state, tile);
   if (!spot || !kit.power) return 0;
-  const ice = frozenAt(state, hour) ? (kit.ice ? FISH.ice : 0) : 1;
-  return kit.power * spot.mult * seasonFish(state, hour) * timeOfDay(hour, "fish") * weatherMult(state, hour, tile) * ice * level;
+  const frozen = frozenAt(state, hour);
+  const ice = frozen ? (kit.ice ? FISH.ice : 0) : 1;
+  const spear = kit.spear || 0, line = kit.power - spear; // rods and nets; spears by sight, never through ice
+  const rate = line * timeOfDay(hour, "fish") * ice + (frozen ? 0 : spear * timeOfDay(hour, "spear"));
+  return rate * spot.mult * seasonFish(state, hour) * weatherMult(state, hour, tile) * level;
 }
 export function expectFish(state, kit, tile, hours, startHour = state.hour, room = Infinity) {
   let level = fishLevel(state, tile, startHour), rations = 0;
@@ -641,7 +671,8 @@ export function fishProblem(state, p, tile = partyTile(p)) {
   const spot = fishSpot(state, tile);
   if (!spot) return "only on a river or a lake shore.";
   const kit = fishKit(partyMembers(state, p), (p.cargo && p.cargo.gear) || []);
-  if (!kit.rods && !kit.nets) return "needs a fishing rod or a net (found at cabins, campgrounds, lodges and hardware stores).";
+  if (!kit.rods && !kit.nets && !kit.spears) return "needs a fishing rod, a net or a spear (rods and nets are found at cabins, campgrounds, lodges and hardware stores; a makeshift rod or a pipe spear can be made from scrap).";
+  if (frozenAt(state) && !kit.rods && !kit.nets) return "the water is frozen: a spear is no use through the ice (ice fishing needs a rod or a net, and a tool to cut the hole).";
   if (frozenAt(state) && !kit.ice) return "the water is frozen: cutting a hole for ice fishing needs a crowbar, machete, hatchet or axe.";
   return "";
 }
@@ -650,9 +681,12 @@ export function fishHour(state, p) {
   const tile = partyTile(p);
   const got = t.got || (t.got = { rations: 0, left: 0, fish: 0 });
   const members = partyMembers(state, p);
-  const kit = fishKit(members, (p.cargo && p.cargo.gear) || []);
+  const cargo = (p.cargo && p.cargo.gear) || [];
+  const kit = fishKit(members, cargo, { frozen: frozenAt(state) });
   const rate = Math.min(3, fishRate(state, kit, tile, state.hour));
   if (!(rate > 0)) { if (!kit.power) got.stopped = "no fishing gear left."; return false; }
+  got.hours = (got.hours || 0) + 1;
+  if (got.hours % FISH.wearHours === 0) wearFishTools(state, kit, members, [cargo]); // a day's fishing on the tools
   let n = 0;
   for (let i = 0; i < 3; i++) if (state.rng.chance(rate / 3)) n++;
   if (n) {
@@ -815,17 +849,17 @@ export function huntWorkWhy(state, base) {
   if (!baseHasHunting(base)) return "no hunting cabin";
   return cabinProblem(state, base) ? "no game land around" : "";
 }
-export function fishTools(state, base, people = atBase(state, base.id)) {
-  return fishKit(people, base.armory || []);
+export function fishTools(state, base, people = atBase(state, base.id), opts = {}) {
+  return fishKit(people, base.armory || [], opts);
 }
 export function fishWorkWhy(state, base) {
   if (!fishSpot(state, base.tile)) return "not by a river or lake";
   const k = fishTools(state, base);
-  if (!k.rods && !k.nets) return "no fishing rod or net here";
+  if (!k.rods && !k.nets && !k.spears) return "no fishing rod, net or spear here";
   return "";
 }
-// The Fish job's tools: one rod or net each (a net worked by two). No other cap (tune-jobcaps: it was at most 2).
-export const fishWorkCap = (state, base) => { const k = fishTools(state, base); return k.rods + 2 * k.nets; };
+// The Fish job's tools: one rod or spear each, a net worked by two. No other cap (tune-jobcaps: it was at most 2).
+export const fishWorkCap = (state, base) => { const k = fishTools(state, base); return k.rods + 2 * k.nets + k.spears; };
 // The share each of n fishers at the base's one spot counts (the k-th max(fishCrowdFloor, 1 − fishCrowd × k)).
 export const fishCrowdShare = (n) => {
   if (n <= 1) return 1;
@@ -902,7 +936,7 @@ export function huntingDaily(state, base) {
   const dayStart = state.hour - 24;
   const got = { rations: 0, shots: 0 };
   let noise = 0;
-  const gunfire = new Set(); // hunting grounds with shots today: the dead nearby may come to look
+  const gunfire = new Map(); // hunting grounds with shots today: the dead nearby may come to look
   if (hunters.length && !huntWorkWhy(state, base)) {
     // The walls come first: the hunters leave the base's last ammo (3 a head + 10) for them.
     const spare = () => Math.max(0, (base.stock.ammo || 0) - ammoKeep(state, base));
@@ -936,7 +970,8 @@ export function huntingDaily(state, base) {
             base.stock.ammo = (base.stock.ammo || 0) - used;
             got.shots += used;
             noise += b.w.noise / 3;
-            gunfire.add(tile);
+            gunfire.set(tile, Math.max(gunfire.get(tile) || 0, b.w.quiet ?? 1)); // the loudest gun on that ground counts
+            wearMuzzle(b.item, Math.max(1, used)); // an oil filter wears a shot at a time (gunmods.js)
           } else if (b.w.arrows) {
             // Silent, but a shot at game is often an arrow lost (ARROW.lost a shot; a miss first now and then).
             const shots = 1 + (state.rng.chance(ANIMALS[k].big ? HUNT.missChance : HUNT.missSmall) ? 1 : 0);
@@ -972,11 +1007,12 @@ export function huntingDaily(state, base) {
   }
   base.huntNoise = Math.round(noise * 10) / 10; // hordes.js baseHeat: gunshots around the base
   // Gunfire carries: each wandering horde within 3 tiles of a hunting ground with shots today may turn toward it.
-  for (const tile of gunfire) got.drawn = (got.drawn || 0) + drawHordes(state, tile);
+  for (const [tile, quiet] of gunfire) got.drawn = (got.drawn || 0) + drawHordes(state, tile, quiet);
   if (got.hrs) base.huntLast = { day: Math.floor(state.hour / 24), mix: huntMixOf(base), hrs: got.hrs, rations: Math.round(got.rations * 10) / 10, shots: got.shots, arrows: got.arrows || 0, trapped: got.trapped || 0, drawn: got.drawn || 0, noise: base.huntNoise };
   if (fishers.length && !fishWorkWhy(state, base)) {
-    const k0 = fishTools(state, base, fishers);
-    const kit = { ...k0, power: k0.power * fishCrowdShare(k0.used) }; // one spot: each fisher past the first a little less
+    const k0 = fishTools(state, base, fishers, { frozen: frozenAt(state) });
+    const share = fishCrowdShare(k0.used);
+    const kit = { ...k0, power: k0.power * share, spear: k0.spear * share }; // one spot: each fisher past the first a little less
     const hours = CABIN.hours;
     for (const hh of DAWN_DUSK.slice(0, hours)) {
       const rate = fishRate(state, kit, base.tile, dayStart + hh);
@@ -986,6 +1022,7 @@ export function huntingDaily(state, base) {
       if (n) { got.fish = (got.fish || 0) + n; cabinKill(state, got, base.tile, n, true); lower(state, "fish", base.tile, n / FISH.deplete); }
     }
     for (const s of fishers) gainXp(state, s, "scouting", 3);
+    wearFishTools(state, k0, fishers, [base.armory]); // a day of fishing on the rods, nets and spears
   }
   if (got.rations > 0) {
     if (got.worm > 0) base.wormMeat = wormMeatAt(base) + got.worm; // worm.js: before the meat (it is capped by it)
@@ -1054,7 +1091,7 @@ export function huntTargets(state, from, range, members, { ammo = Infinity, arro
   return out.sort((a, b) => b.est.rations / (1 + b.dist / 5) - a.est.rations / (1 + a.dist / 5) || a.tile - b.tile).slice(0, limit);
 }
 export function fishTargets(state, from, range, members, extraItems = [], { hours = HUNT.defHours, startHour = state.hour, limit = 4 } = {}) {
-  const kit = fishKit(members, extraItems);
+  const kit = fishKit(members, extraItems, { frozen: frozenAt(state, startHour) });
   if (!kit.power) return [];
   const out = [];
   for (const id of state.grid.within(from, range)) {
@@ -1067,16 +1104,17 @@ export function fishTargets(state, from, range, members, extraItems = [], { hour
   }
   return out.sort((a, b) => b.est.rations / (1 + b.dist / 5) - a.est.rations / (1 + a.dist / 5) || a.tile - b.tile).slice(0, limit);
 }
-// A fishing rod or net in a base's armory, moved into a team's cargo (autopilot, crews). Returns the item or null.
+// A fishing rod or net in a base's armory (else a spear), moved into a team's cargo (autopilot, crews). Returns the item or null.
 export function packFishingGear(state, base, p) {
-  const i = (base.armory || []).findIndex((it) => isNet(it) || isRod(it));
+  let i = (base.armory || []).findIndex((it) => isNet(it) || isRod(it));
+  if (i < 0) i = (base.armory || []).findIndex(isSpear);
   if (i < 0) return null;
   const [it] = base.armory.splice(i, 1);
   p.cargo = p.cargo || { supplies: {}, gear: [] };
   p.cargo.gear.push(it);
   return it;
 }
-export const hasFishingGear = (items) => (items || []).some((it) => isNet(it) || isRod(it));
+export const hasFishingGear = (items) => (items || []).some(isFishTool);
 // Arrows a hunting team takes from home: up to ARROW.pack while someone on it has a bow or crossbow and carries fewer.
 export function huntArrowsFor(state, home, members, carriedNow = 0) {
   if (!home || !hasBow(members)) return 0;

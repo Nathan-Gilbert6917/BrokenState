@@ -17,7 +17,8 @@ import { hordeScore, reduceHorde } from "./hordes.js";
 import { travelEffects, weatherAt } from "./weather.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
 import { argumentWeight, argumentPair, relEvent, hasFriendsOnTeam, campfireCard } from "./relations.js";
-import { newItem } from "./inventory.js";
+import { lootItem } from "./inventory.js";
+import { spend } from "./itemcond.js"; // the condition of what is found
 import { teamPolicy, wantsOut, breakOff, RETREAT_POLICIES } from "./breakoff.js";
 
 // Things a road card can turn up (tools/loottest.js counts them as sources).
@@ -260,7 +261,7 @@ const EVENTS = [
             const ok = check(s, p, "stealth", 11).ok;
             const g = s.rng.pick(HUMVEE_GEAR);
             // The find needs carry space like anything else; with none it stays in the wreck.
-            const fits = addGearToCargo(s, p, newItem(g, 1));
+            const fits = addGearToCargo(s, p, lootItem(g, "wreck", s.rng)); // itemcond.js: a wreck's kit, knocked about
             const found = fits ? GEAR[g].name : `${GEAR[g].name} (no room to carry it: left there)`;
             return ok ? `Found: ${found}, ${addCargo(s, p, "ammo", 30)}.` : `Found ${found}, but ${injureRandom(s, p, 20, 50, "at a crashed Humvee")}`;
           },
@@ -279,9 +280,9 @@ const EVENTS = [
         {
           label: "Take the pack", hint: "It may have been a while. Heavy, but a big pack is worth it",
           resolve: (s) => {
-            const pack = newItem(s.rng.chance(0.25) ? "rucksack" : "hikingpack", Math.round(s.rng.range(0.6, 0.95) * 100) / 100);
+            const pack = lootItem(s.rng.chance(0.25) ? "rucksack" : "hikingpack", "survivor", spend(s.rng));
             const n = s.rng.int(1, 3);
-            for (let i = 0; i < n; i++) pack.contents[i] = newItem(s.rng.pick(HIKER_STUFF), 1);
+            for (let i = 0; i < n; i++) pack.contents[i] = lootItem(s.rng.pick(HIKER_STUFF), "survivor", s.rng);
             const inside = pack.contents.filter(Boolean).map((it) => it.name.toLowerCase()).join(", ");
             return addGearToCargo(s, p, pack) ? `A ${pack.name.toLowerCase()} with ${inside} inside. It goes in the cargo; anyone can wear it.` : `A ${pack.name.toLowerCase()}, but nobody has room to carry it: it stays on the hiker.`;
           },

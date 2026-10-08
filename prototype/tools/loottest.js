@@ -7,7 +7,7 @@
 // Usage: node tools/loottest.js [--quiet]   (--quiet: checks only, no table)
 import { GEAR, LOCATIONS, CATEGORIES } from "../src/sim/data.js";
 import "../src/sim/blueprints.js"; // registers the blueprint items
-import { SITE_TAGS, AREA_TAGS, ITEM_TAGS, SITE_FINDS, AREA_FINDS, HUNT_FINDS, LIGHT_FINDS, fitsTags, rollFind, rollAreaFind } from "../src/sim/loot.js";
+import { SITE_TAGS, AREA_TAGS, ITEM_TAGS, SITE_FINDS, AREA_FINDS, HUNT_FINDS, LIGHT_FINDS, GUNMOD_FINDS, AREA_GUNMODS, WARE_GUNMODS, fitsTags, rollFind, rollAreaFind } from "../src/sim/loot.js";
 import { AREAS, AREA_SETS, KITS, WEAPONS } from "../src/sim/combat.js";
 import { ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZOMBIE_PACK, enemyBody } from "../src/sim/inventory.js";
 import { WARES } from "../src/sim/trade.js";
@@ -41,6 +41,9 @@ for (const [t, def] of Object.entries(LOCATIONS)) addAll(def.gear, `search:${t}`
 for (const [t, f] of Object.entries(SITE_FINDS)) addAll(Object.keys(f.items), `find:${t}`);
 for (const [t, f] of Object.entries(HUNT_FINDS)) addAll(Object.keys(f.items), `huntfind:${t}`);
 for (const [t, f] of Object.entries(LIGHT_FINDS)) addAll(Object.keys(f.items), `lightfind:${t}`);
+for (const [t, f] of Object.entries(GUNMOD_FINDS)) addAll(Object.keys(f.items), `modfind:${t}`); // gun attachments (gunmods.js)
+for (const [a, f] of Object.entries(AREA_GUNMODS)) addAll(Object.keys(f.items), `raid:${a}`);
+for (const [t, f] of Object.entries(WARE_GUNMODS)) addAll(Object.keys(f.items), `sold:${t}`);
 for (const [a, def] of Object.entries(AREAS)) addAll(def.gear.map(([k]) => k), `raid:${a}`);
 for (const [a, f] of Object.entries(AREA_FINDS)) addAll(Object.keys(f.items), `raid:${a}`);
 for (const [t, b] of Object.entries(BOOK_SITES)) addAll(b.books, `books:${t}`);
@@ -76,8 +79,8 @@ check(Object.keys(LOCATIONS).every((t) => SITE_TAGS[t]), `every site type has th
 check(Object.keys(AREAS).every((a) => AREA_TAGS[a]), `every raid area has theme tags (missing: ${Object.keys(AREAS).filter((a) => !AREA_TAGS[a]).join(", ") || "none"})`);
 check(Object.keys(SITE_FINDS).every((t) => LOCATIONS[t]) && Object.keys(AREA_FINDS).every((a) => AREAS[a]), "finds tables only name real site types and raid areas");
 const misfits = [];
-for (const [t, def] of Object.entries(LOCATIONS)) for (const k of [...def.gear, ...Object.keys((SITE_FINDS[t] || {}).items || {}), ...Object.keys((HUNT_FINDS[t] || {}).items || {}), ...Object.keys((LIGHT_FINDS[t] || {}).items || {})]) if (!fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t}`);
-for (const [a, def] of Object.entries(AREAS)) for (const k of [...def.gear.map(([x]) => x), ...Object.keys((AREA_FINDS[a] || {}).items || {})]) if (!fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a}`);
+for (const [t, def] of Object.entries(LOCATIONS)) for (const k of [...def.gear, ...Object.keys((SITE_FINDS[t] || {}).items || {}), ...Object.keys((HUNT_FINDS[t] || {}).items || {}), ...Object.keys((LIGHT_FINDS[t] || {}).items || {}), ...Object.keys((GUNMOD_FINDS[t] || {}).items || {})]) if (!fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t}`);
+for (const [a, def] of Object.entries(AREAS)) for (const k of [...def.gear.map(([x]) => x), ...Object.keys((AREA_FINDS[a] || {}).items || {}), ...Object.keys((AREA_GUNMODS[a] || {}).items || {})]) if (!fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a}`);
 for (const [a, f] of Object.entries(GUN_FINDS)) for (const k of Object.keys(f)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (gun finds)`);
 for (const [t, f] of Object.entries(SEARCH_TOOLS)) for (const k of Object.keys(f)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (tools)`);
 check(!misfits.length, `everything a site or raid area holds fits its theme${misfits.length ? ` (misfits: ${misfits.join("; ")})` : ""}`);

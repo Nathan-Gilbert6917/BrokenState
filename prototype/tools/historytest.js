@@ -14,7 +14,7 @@
 //   arrows and sparkline values, the E key; no undefined / NaN / null, balanced tags, every data-action handled;
 //   the Help topic and the README
 import { readFileSync } from "node:fs";
-import { createWorld, tickHour, day, hub, alive, newId, killSurvivor } from "../src/sim/world.js";
+import { createWorld, tickHour, day, hub, alive, newId, killSurvivor, peekNextId, setNextId } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { recomputeOwnership } from "../src/sim/factions.js";
@@ -217,8 +217,10 @@ section("Saves");
   A.cards.length = 0;
   const text = saveToString(A);
   const B = loadFromString(text);
+  const idAtLoad = peekNextId(); // the id counter is the module's: B plays on from the same ids, as a loaded game in its own tab would
   const end = day(A) + 6;
   while (day(A) <= end && !A.gameOver) tickHour(A);
+  setNextId(idAtLoad);
   while (day(B) <= end && !B.gameOver) tickHour(B);
   check(JSON.stringify(historyOf(A)) === JSON.stringify(historyOf(B)), "saved and loaded mid-day, the history plays on exactly as the original's");
   // A save from before the Ledger: no history in it.

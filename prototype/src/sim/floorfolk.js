@@ -29,7 +29,8 @@ import { say, setFloor, enemyUnit, KITS, WEAPONS, active, activeAny, canSee, fir
 import { BMAP, placeOccupantGroups } from "./buildingmaps.js";
 import { newNeutralGroup, talkChance, groupById } from "./wanderers.js";
 import { applyZType } from "./zombietypes.js";
-import { newItem } from "./inventory.js";
+import { lootItem } from "./inventory.js";
+import { spend } from "./itemcond.js";
 import { gainXp, USE } from "./skills.js";
 import { haulOf } from "./raidloot.js";
 import { thirdSideHit } from "./thirdside.js";
@@ -312,8 +313,8 @@ function makeStash(state, b, room, n) {
   const sup = { ammo: rng.int(K.ammo[0], K.ammo[1]), food: rng.int(K.food[0], K.food[1]), water: rng.int(K.water[0], K.water[1]) };
   const gear = [];
   const g = rng.int(K.gear[0], K.gear[1]) + Math.floor(n / K.perBlocks);
-  for (let i = 0; i < g; i++) gear.push(newItem(rng.pick(kit.loot), rng.pick([0.7, 0.85, 1])));
-  if (rng.chance(K.finds)) gear.push(newItem(rng.pick(kit.finds), 1));
+  for (let i = 0; i < g; i++) gear.push(lootItem(rng.pick(kit.loot), "raider", spend(rng))); // itemcond.js: raiders' kit
+  if (rng.chance(K.finds)) gear.push(lootItem(rng.pick(kit.finds), "raider", rng));
   const id = Math.max(0, ...R.containers.map((x) => x.id || 0)) + 1;
   const box = { id, x: spot[0], y: spot[1], f, area: room.id, kind: "crate", searched: false, label: `${room.name}: raiders' stash`, stash: true, contents: { sup, gear } };
   R.containers.push(box);

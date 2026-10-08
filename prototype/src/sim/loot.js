@@ -12,7 +12,8 @@
 // the table of sources per item.
 import { GEAR } from "./data.js";
 import { hash01 } from "./skills.js";
-import { newItem } from "./inventory.js";
+import { lootItem } from "./inventory.js";
+import { siteSource, areaSource, traderSource } from "./itemcond.js"; // the condition finds come in, by source
 
 // ---------- theme tags ----------
 export const SITE_TAGS = {
@@ -31,6 +32,7 @@ export const SITE_TAGS = {
   truckstop: ["travel", "shop", "garage"], crashsite: ["travel", "crash", "garage"],
   crash_mil: ["military", "crash"], crash_cargo: ["crash", "camp", "medical"], crash_med: ["medical", "crash"],
   crash_news: ["tech", "crash"], airdrop: ["military", "camp", "medical"],
+  convoy: ["military", "travel", "camp"], // miltrucks.js: an abandoned Army convoy
 };
 export const AREA_TAGS = {
   house: ["home", "kitchen"], farmhouse: ["home", "farm", "hunt"], store: ["shop"], kitchen: ["kitchen"], pharmacy: ["medical", "shop"],
@@ -42,6 +44,7 @@ export const AREA_TAGS = {
   milwreck: ["military", "crash"], medwreck: ["medical", "crash"], newswreck: ["tech", "crash"], fuselage: ["crash", "travel"],
   cargodrop: ["crash", "camp", "military"],
   roadcars: ["travel", "home", "garage"], // the cars people fled in (combat.js AREAS.roadcars)
+  miltrucks: ["military", "travel"], // Army trucks (miltrucks.js: their cargo is truckLoot)
 };
 // Where each thing is normally kept. Books are placed by skills.js BOOK_SITES and blueprints by blueprints.js.
 export const ITEM_TAGS = {
@@ -53,6 +56,7 @@ export const ITEM_TAGS = {
   fireaxe: ["fire", "office", "school", "tools", "outdoor", "medical"], sledge: ["tools", "farm", "industry", "garage"], baton: ["police", "prison"],
   compbow: ["hunt", "sport", "mall", "outdoor"], xbow: ["hunt", "guns"], revolver: ["home", "guns", "farm", "travel", "crime", "police"],
   leverrifle: ["hunt", "farm", "guns", "outdoor"], carbine: ["police", "prison", "military"],
+  spear: ["hunt", "outdoor", "camp"],
   spikedbat: ["garage", "crime"], pipespear: ["camp", "crime"], sawmachete: ["crime", "tools"], crossbow: ["crime", "camp"], pipegun: ["crime"],
   // armor
   vest: ["police", "military", "guns", "prison", "crash", "crime"], plate: ["military", "crash"], bikehelmet: ["home", "garage", "fire", "sport", "crime"],
@@ -76,7 +80,13 @@ export const ITEM_TAGS = {
   handradio: ["home", "camp", "outdoor", "travel", "shop", "tech", "fire"], puritabs: ["medical", "camp", "outdoor", "travel", "military", "crash"],
   cuffs: ["police", "prison"], bicycle: ["home", "school", "garage", "police", "camp", "outdoor", "fire", "tools", "travel"],
   // the stealth kit and throwables
-  suppressor: ["crime", "guns"], bottle: ["kitchen", "home", "crime", "travel"], noisemaker: ["crime"], firecracker: ["shop", "travel"],
+  suppressor: ["crime", "guns"],
+  // gun attachments (gunmods.js): gun counters, police and army armouries, hunting places; sports shelves for the cheap ones
+  reddot: ["guns", "police", "military", "sport", "hunt", "crime"], holo: ["military", "police", "guns"], scope4x: ["guns", "hunt", "military"],
+  laser: ["guns", "police", "crime", "sport"], foregrip: ["guns", "military", "police"], bipod: ["guns", "hunt", "military"],
+  pistolcan: ["guns", "military", "crime"], riflecan: ["military", "guns"], brake: ["guns", "hunt", "military"], comp: ["guns", "police", "sport"],
+  choke: ["guns", "hunt", "farm", "sport"], extmag: ["guns", "police", "crime"], drum: ["military", "guns"], tubeext: ["guns", "police", "hunt"],
+  bottle: ["kitchen", "home", "crime", "travel"], noisemaker: ["crime"], firecracker: ["shop", "travel"],
   pipebomb: ["crime", "industry"], molotov: ["crime"], flare: ["travel", "garage", "fire", "police", "military", "crash", "outdoor", "camp"],
   smokegren: ["police", "military", "crash", "prison"], gamecall: ["hunt", "outdoor", "sport"],
   // siege kit and decoys (siege.js, decoys.js)
@@ -161,6 +171,7 @@ export const SITE_FINDS = {
   truckstop: { p: 0.187, items: { pocketradio: 1, handradio: 1, puritabs: 1, handwarmer: 1, alarmclock: 0.5, cigarettes: 2, smokes: 3, lighters: 2, candy: 2, chocolate: 2, instcoffee: 2, flare: 2, vodka: 1, batteries: 1, tobacco: 1, cards: 1, watch: 0.5, deodorant: 1, wetwipes: 1, toothpaste: 1, lipbalm: 1 } },
   crashsite: { p: 0.1, items: { flare: 2, phone: 2, smokes: 1, photos: 2, lighters: 1, goldring: 0.5, watch: 0.5 } },
   crash_mil: { p: 0.14, items: { frag: 1.5, smokegren: 3, flare: 2, chocolate: 2, cigarettes: 1, instcoffee: 1 } },
+  convoy: { p: 0.12, items: { frag: 1, smokegren: 2, flare: 2, chocolate: 2, cigarettes: 1, instcoffee: 1 } },
   crash_cargo: { p: 0.171, items: { chocolate: 2, instcoffee: 2, coffee: 1, batteries: 2, toiletpaper: 1, puritabs: 1, wetwipes: 1, toothpaste: 1 } },
   crash_med: { p: 0.125, items: { chocolate: 1, candy: 1, soap: 1, razors: 1, wetwipes: 1 } },
   crash_news: { p: 0.14, items: { camera: 3, phone: 2, laptop: 2, batteries: 1 } },
@@ -172,9 +183,64 @@ export const SITE_FINDS = {
 export const HUNT_FINDS = {
   farm: { p: 0.03, items: { snarewire: 1 } }, barn: { p: 0.03, items: { snarewire: 1 } }, ranch: { p: 0.04, items: { snarewire: 1 } },
   hardware: { p: 0.05, items: { fishrod: 1, snarewire: 1 } }, feedstore: { p: 0.04, items: { snarewire: 2, fishnet: 1 } },
-  cabin: { p: 0.06, items: { fishrod: 1, snarewire: 1 } }, lodge: { p: 0.08, items: { fishrod: 1.5, snarewire: 1.5, fishnet: 1 } },
-  campground: { p: 0.06, items: { fishrod: 2, fishnet: 1 } }, ranger: { p: 0.05, items: { snarewire: 1, fishrod: 1 } },
+  cabin: { p: 0.06, items: { fishrod: 1, snarewire: 1, spear: 0.4 } }, lodge: { p: 0.08, items: { fishrod: 1.5, snarewire: 1.5, fishnet: 1, spear: 0.8 } },
+  campground: { p: 0.06, items: { fishrod: 2, fishnet: 1, spear: 0.3 } }, ranger: { p: 0.05, items: { snarewire: 1, fishrod: 1, spear: 0.4 } },
 };
+
+// Gun attachments (gunmods.js) where guns are kept: a roll of its own each search hour (GUNMOD_FINDS; its own dice, so
+// adding them changed no other find), and one per raid container in an armoury, a gun shop, barracks or an army wreck
+// (AREA_GUNMODS). Weights: the cheap parts most often, the proper suppressors and drums rarely.
+export const GUNMOD_FINDS = {
+  gunstore: { p: 0.12, items: { reddot: 3, scope4x: 2, laser: 2, comp: 2, extmag: 2, choke: 2, tubeext: 1.5, bipod: 1.5, brake: 1.5, foregrip: 1, holo: 1, pistolcan: 0.4, riflecan: 0.3 } },
+  police: { p: 0.06, items: { reddot: 2, laser: 2, extmag: 2, tubeext: 1, foregrip: 1, holo: 0.5, comp: 1 } },
+  military: { p: 0.08, items: { reddot: 2, holo: 2, foregrip: 2, scope4x: 1, bipod: 1, brake: 1, drum: 0.6, riflecan: 0.6, pistolcan: 0.3 } },
+  crash_mil: { p: 0.06, items: { holo: 2, reddot: 1, foregrip: 1, drum: 0.5, riflecan: 0.4 } },
+  prison: { p: 0.03, items: { laser: 1, extmag: 1, tubeext: 1, reddot: 0.5 } },
+  lodge: { p: 0.05, items: { scope4x: 2, bipod: 2, choke: 2, brake: 1, reddot: 1 } },
+  cabin: { p: 0.025, items: { scope4x: 1, bipod: 1, choke: 1 } },
+  ranch: { p: 0.025, items: { choke: 1, scope4x: 1, bipod: 0.5 } },
+  mall: { p: 0.02, items: { reddot: 1, laser: 1, comp: 1, choke: 1 } },
+  town: { p: 0.01, items: { reddot: 1, laser: 1, choke: 1 } },
+};
+export function rollGunmodFind(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const site = t && t.loc ? GUNMOD_FINDS[t.loc.type] : null;
+  if (!site) return null;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "modfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
+  const key = pickWeighted(site.items, hash01(state.seed, "modpick", tileId, state.hour, salt));
+  return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "moddur", tileId, state.hour, salt)) : null;
+}
+export const AREA_GUNMODS = {
+  armory: { p: 0.12, items: { reddot: 2, laser: 2, extmag: 2, holo: 1, foregrip: 1, tubeext: 1, scope4x: 0.5, riflecan: 0.3 } },
+  gunshop: { p: 0.12, items: { reddot: 2, scope4x: 2, laser: 1.5, comp: 1.5, choke: 1.5, extmag: 1.5, bipod: 1, brake: 1, holo: 0.7, pistolcan: 0.3 } },
+  barracks: { p: 0.05, items: { reddot: 1, holo: 1, foregrip: 1, drum: 0.3 } },
+  milwreck: { p: 0.06, items: { holo: 1, reddot: 1, drum: 0.4, riflecan: 0.3 } },
+  cabin: { p: 0.03, items: { scope4x: 1, bipod: 1, choke: 1 } },
+};
+export function rollAreaGunmod(state, tileId, areaType, salt = "") {
+  const a = AREA_GUNMODS[areaType];
+  if (!a || hash01(state.seed, "areamod", tileId, salt) >= a.p) return null;
+  const key = pickWeighted(a.items, hash01(state.seed, "areamodpick", tileId, salt));
+  const t = state.tiles[tileId];
+  return key ? lootItem(key, areaSource(areaType, t && t.loc ? t.loc.type : null), hash01(state.seed, "areamoddur", tileId, salt)) : null;
+}
+// A loose attachment on a trader's or a merchant's table now and then (trade.js ensureWares, visitors.js merchantGoods;
+// its own dice). Military groups and merchants carry the good ones.
+export const WARE_GUNMODS = {
+  traders: { p: 0.35, items: { reddot: 2, laser: 1.5, comp: 1.5, extmag: 1.5, choke: 1.5, scope4x: 1, bipod: 1, brake: 1, tubeext: 1, foregrip: 1 } },
+  military: { p: 0.4, items: { reddot: 2, holo: 2, foregrip: 1.5, scope4x: 1, drum: 0.6, riflecan: 0.5, pistolcan: 0.4 } },
+  raider: { p: 0.2, items: { reddot: 1, comp: 1, extmag: 1, suppressor: 1, brake: 0.5 } },
+  expansionist: { p: 0.2, items: { reddot: 1, scope4x: 1, extmag: 1, laser: 1 } },
+  fortress: { p: 0.15, items: { scope4x: 1, bipod: 1, choke: 1 } },
+  merchants: { p: 0.5, items: { reddot: 1.5, holo: 1.5, scope4x: 1.5, laser: 1, riflecan: 0.7, pistolcan: 0.7, drum: 0.5, bipod: 1 } },
+};
+export function gunmodWares(state, type, name, salt = "") {
+  const w = WARE_GUNMODS[type];
+  if (!w || hash01(state.seed, "modware", name, salt) >= w.p) return [];
+  const key = pickWeighted(w.items, hash01(state.seed, "modwarepick", name, salt));
+  return key ? [lootItem(key, traderSource(type), hash01(state.seed, "modwareq", name, salt))] : [];
+}
 
 // ---------- small finds per raid container (combat.js searchBox) ----------
 // p = chance per container (× 0.5 + the site's richness, × Scavenging); items = weights.
@@ -230,7 +296,7 @@ export function rollFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "find", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "findpick", tileId, state.hour, salt));
-  return key ? newItem(key, 1) : null;
+  return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "finddur", tileId, state.hour, salt)) : null;
 }
 // Lights (lights.js) where people kept them: a roll of its own each search hour, like HUNT_FINDS (so adding them
 // changed no other find). Torches are made, not found (crafting.js).
@@ -250,7 +316,7 @@ export function rollLightFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "lightfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "lightpick", tileId, state.hour, salt));
-  return key ? newItem(key, 1) : null;
+  return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "lightdur", tileId, state.hour, salt)) : null;
 }
 // Hunting and fishing gear at a site this search hour (HUNT_FINDS; its own dice too), or null.
 export function rollHuntFind(state, tileId, mult = 1, salt = "") {
@@ -260,15 +326,16 @@ export function rollHuntFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "huntfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "huntpick", tileId, state.hour, salt));
-  return key ? newItem(key, 1) : null;
+  return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "huntdur", tileId, state.hour, salt)) : null;
 }
 
-// A small find in a raid container (the battle's random numbers, after the container's own loot), or null.
-export function rollAreaFind(rng, areaType, rich = 1, scav = 0) {
+// A small find in a raid container (the battle's random numbers, after the container's own loot), or null. site: the
+// raid's site type (an armoury's condition goes by it: itemcond.js areaSource).
+export function rollAreaFind(rng, areaType, rich = 1, scav = 0, site = null) {
   const a = AREA_FINDS[areaType];
   if (!a || !rng.chance(a.p * (0.5 + rich) * (1 + scav / 30))) return null;
   const key = pickWeighted(a.items, rng.next());
-  return key ? newItem(key, 1) : null;
+  return key ? lootItem(key, areaSource(areaType, site), rng) : null;
 }
 
 // ---------- firewood (data.js SUPPLIES.wood) ----------

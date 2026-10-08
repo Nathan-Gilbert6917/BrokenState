@@ -16,7 +16,7 @@ import { addBuilding } from "../src/sim/buildings.js";
 import { launchExpedition, planPath, partyTile, giveOrder } from "../src/sim/parties.js";
 import { attitude } from "../src/sim/factions.js";
 import { newItem } from "../src/sim/inventory.js";
-import { makeItem } from "../src/sim/crafting.js";
+import { makeItem, itemDurMax } from "../src/sim/crafting.js";
 import {
   itemValue, sellPrice, buyPrice, spread, need, tradeContext, tradeVerdict, tradeTotals, executeTrade, endTrade, setQty, balanceWith,
   setIntel, toggleGear, openTrade, INTEL, gearSellPrice, gearBuyPrice, gearInfo, supplyInfo, priceWhy, marketLists, autoGearOffer,
@@ -98,7 +98,7 @@ function drive(state, pred, maxHours, keep = null) {
   check(itemValue(newItem("pistol", 0.3)) < itemValue(worn) && itemValue(worn) < itemValue(pistol), "lower condition, lower value");
   const bat = makeItem("spikedbat", 1);
   const used = makeItem("spikedbat", 1);
-  used.dur = GEAR.spikedbat.dur / 2;
+  used.dur = itemDurMax(used) / 2; // a crafted item's own full uses (crafting.js craftedDur)
   check(near(itemValue(bat), GEAR.spikedbat.value) && near(itemValue(used), GEAR.spikedbat.value * 0.65), `a makeshift bat with half its uses left is worth 65% (${itemValue(used).toFixed(2)} of ${itemValue(bat)})`);
   const bag = makeItem("backpack", 1);
   bag.contents[0] = newItem("pistol", 1);

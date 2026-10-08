@@ -111,7 +111,7 @@ const addTo = (into, goods, k = 1) => { for (const [g, q] of Object.entries(good
 
 // Can a group's party work this site?
 function workable(state, f, t) {
-  if (!t.loc || t.loc.crash || t.hive || t.terrain === "water") return false;
+  if (!t.loc || t.loc.crash || t.loc.convoy || t.hive || t.terrain === "water") return false; // convoy: miltrucks.js races for it itself
   if ((t.loot || 0) < AISCAV.minLoot) return false;
   if (t.owner != null && t.owner !== f.id) return false; // your land or another group's
   if (state.bases.some((b) => b.tile === t.id)) return false;
@@ -179,7 +179,7 @@ export function landSites(state, f) {
     if (seen.has(id)) continue;
     seen.add(id);
     const t = state.tiles[id];
-    if (t.owner === f.id && t.loc && !t.loc.crash) out.push(id);
+    if (t.owner === f.id && t.loc && !t.loc.crash && !t.loc.convoy) out.push(id);
   }
   return out;
 }
@@ -343,6 +343,6 @@ function news(state, p) {
 // ---------- totals (tests, devtools) ----------
 export function siteLootTotal(state) {
   let s = 0;
-  for (const t of state.tiles) if (t.loc && !t.loc.crash) s += t.loot || 0;
+  for (const t of state.tiles) if (t.loc && !t.loc.crash && !t.loc.convoy) s += t.loot || 0;
   return s;
 }

@@ -12,10 +12,11 @@
 // mountains pushed at walking pace. Each bike's rack takes up to 15 kg of the team's load and riding takes 55% of
 // the load's slow-down and extra rations away (load.js). Found as cargo (data.js GEAR.bicycle) or built in a
 // workshop (crafting.js); a bicycle item in a base's armory joins the base's bikes (parkBikes).
-import { TERRAIN } from "./data.js";
+import { TERRAIN, SUPPLIES, GEAR } from "./data.js";
 import { newId, log, day, atBase, skill } from "./world.js";
-import { count } from "./buildings.js";
-import { hasPerk, gainXp, USE } from "./skills.js";
+import { count, benchTier } from "./buildings.js";
+import { hasPerk, gainXp, USE, hash01 } from "./skills.js";
+import { newItem } from "./inventory.js";
 
 // The hardcore start's cars (hardcore-start.js ARCHETYPES) added the SUV, the Hummer and the work van; anything that
 // draws or prices a car by type takes them as a truck unless it says otherwise (mapsprites.js, crossing.js, fieldheat.js).
@@ -25,6 +26,11 @@ export const VEHICLE_TYPES = {
   suv:    { name: "SUV",          tank: 24, payload: 520, motor: true },
   hummer: { name: "Hummer",       tank: 40, payload: 700, motor: true },
   van:    { name: "Work van",     tank: 26, payload: 800, motor: true },
+  // An Army cargo truck or an MRAP got running again (miltrucks.js, foundcars.js): carries a great deal and seats a
+  // squad, but it is slow (speed: × the pace, load.js; about 1.5× a car's time a tile, and off-road worse: OFFROAD),
+  // drinks fuel (fuel: × every tile's fuel) and is loud (loud: draws hordes as it passes, parties.js onEnterTile; more
+  // camp Heat, fieldheat.js; more Heat driven on a battle map, combat.js DRIVE).
+  miltruck: { name: "Army cargo truck", tank: 150, payload: 2500, motor: true, speed: 0.67, fuel: 2, offroad: 0.75, loud: true, seats: 12 },
   bike:   { name: "Bicycles",     tank: 0,  rack: 15, motor: false },
 };
 export const RIDER_KG = 80;        // a person in a car, before what they wear
@@ -33,6 +39,12 @@ export const FUEL_FULL = { from: 0.6, atFull: 1.3, atMax: 1.6 }; // fuel multipl
 export const OVERLOAD_SPEED = 0.85;   // an overloaded car (past 100%) is this much slower
 export const OVERLOAD_WEAR = 1.5;     // and wears / breaks down this much more
 export const ROAD_FUEL = 0.6, OFFROAD_FUEL = 1.5; // fuel per tile entered, by road or off-road
+// By type (VEHICLE_TYPES speed / fuel / offroad, 1 when not given): × the pace, × the fuel a tile, × the pace off-road.
+// Both × what the vehicle's armour does to it (upgradeSpeed / upgradeFuel: plating is heavy).
+export const typeSpeed = (v) => (v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].speed ?? 1 : 1) * upgradeSpeed(v);
+export const typeFuel = (v) => (v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].fuel ?? 1 : 1) * upgradeFuel(v);
+export const typeOffroad = (v) => (v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].offroad ?? 1 : 1);
+export const isLoud = (v) => !!(v && VEHICLE_TYPES[v.type] && VEHICLE_TYPES[v.type].loud);
 
 export const isBike = (v) => !!v && v.type === "bike";
 export const isCar = (v) => !!v && !!VEHICLE_TYPES[v.type]?.motor;
@@ -57,7 +69,7 @@ export const bikesAtBase = (state, baseId) => vehiclesAtBase(state, baseId).filt
 export const partyVehicle = (state, p) => (p.vehicleId ? vehicleById(state, p.vehicleId) : null);
 export const tank = (v) => VEHICLE_TYPES[v.type].tank;
 // Cargo a vehicle adds to a team: a car's payload, a stack of bikes' racks.
-export const vehicleCapacity = (v) => (!v ? 0 : isBike(v) ? (v.count || 1) * VEHICLE_TYPES.bike.rack : VEHICLE_TYPES[v.type].payload);
+export const vehicleCapacity = (v) => (!v ? 0 : isBike(v) ? (v.count || 1) * VEHICLE_TYPES.bike.rack : payloadOf(v));
 export const vehicleLabel = (v) => (isBike(v) ? `${v.count || 1} bicycle${(v.count || 1) === 1 ? "" : "s"}` : v.name);
 
 // Fuel multiplier for a car this full (load / payload): 1 up to 60%, 1.3 at 100%, 1.6 at 125% (the most).
@@ -123,7 +135,7 @@ export function useFuel(state, p, amount) {
 // (past 100% of its payload) breaks down 1.5× as often.
 export function breakdownChance(v, fill = 0) {
   if (isBike(v)) return 0.003 + ((100 - v.condition) / 100) * 0.02;
-  return (0.01 + ((100 - v.condition) / 100) * 0.08) * (fill > 1 ? OVERLOAD_WEAR : 1);
+  return (0.01 + ((100 - v.condition) / 100) * 0.08) * (fill > 1 ? OVERLOAD_WEAR : 1) * UPGRADE_FX.breakdown ** armourOf(v); // plating shields the engine and the tyres
 }
 
 export function wear(v, onRoad, fill = 0) {
@@ -176,6 +188,318 @@ export function repair(state, base, v) {
   const mech = atBase(state, base.id).sort((a, b) => skill(b, "mechanics") - skill(a, "mechanics"))[0];
   if (mech) gainXp(state, mech, "mechanics", USE.repair); // skills.js
   return `Repaired the ${v.name} to ${Math.round(v.condition)}%.`;
+}
+
+// =====================================================================================================================
+// Vehicle upgrades (weapons overhaul plan section 11): v.upgrades = { glass: 0|1, mesh: 0|1, plating: 0|1|2,
+// scrapPlate: 0|1, turret: null | { gun: "lmg" | "m2hb", item? } }. A missing v.upgrades (old saves) is {}.
+//   glass       Bulletproof glass (a garage or a workbench): riders hit through the windows take ×0.35 from pen ≤ 30, ×0.8 from pen ≤ 45
+//               (riderMult); the enemy's first strike in an ambush on the road ×0.85 (ambushMult).
+//   mesh        Mesh grilles (cheap, made at any base): no use against bullets, but the dead cannot reach in: an
+//               ambush by the dead ×0.85, ramming the dead wears the front half as much, blast fragments ×0.8.
+//   plating     Armour plate, 1 or 2 levels (a garage or a workbench): the vehicle's cells are full cover and stop rounds that go
+//               through light cover (combat.js platedCell); ramming, blast (and later rocket) wear ×0.6 a level
+//               (wearMult); breakdowns ×0.8 a level; +250 kg a level, fuel ×1.15, speed ×0.95 a level.
+//   scrapPlate  Scrap plating (welded mesh and scrap-steel plates, cheap, any bench, Mechanics 3): one level that
+//               counts half (armourOf 0.5) and weighs more (+320 kg, fuel ×1.18, speed ×0.94). Full cover too, but it
+//               does not stop what goes through light cover.
+//   turret      A mounted machine gun (data only until a later wave makes it fire; military Humvees come with an M2).
+// Every upgrade's weight comes off the payload (payloadOf: vehicleCapacity, load.js weighTeam).
+// Built as garage jobs at a base (base.garage, garageHour): materials paid when queued, the work done by people on the
+// Craft role with the Mechanics level; stripping one refunds half its car parts, and glass comes out whole (a spare set
+// kept at the base, base.spareGlass, fitted again with no materials).
+// =====================================================================================================================
+// Part kinds (plan section 10): car parts are their own supply once it exists, plain parts until then.
+export const costOf = (kind) => (SUPPLIES[kind] ? kind : "parts");
+export const VEH_UPGRADES = {
+  glass:      { name: "Bulletproof glass", slot: "windows", max: 1, cost: { carparts: 4, scrap: 12 }, hours: 16, mech: 5, kg: 120, shop: "garage" },
+  mesh:       { name: "Mesh grilles", slot: "windows", max: 1, cost: { scrap: 8 }, hours: 6, mech: 2, kg: 40 },
+  plating:    { name: "Armour plate", slot: "plating", max: 2, cost: { carparts: 6, parts: 2, scrap: 40 }, hours: 24, mech: 6, kg: 250, fuel: 1.15, speed: 0.95, armour: 1, shop: "garage" },
+  scrapPlate: { name: "Scrap plating", slot: "plating", max: 1, cost: { carparts: 2, scrap: 30 }, hours: 12, mech: 3, kg: 320, fuel: 1.18, speed: 0.94, armour: 0.5, shop: "bench" },
+};
+export const TURRET_KG = { lmg: 60, m2hb: 90 };
+export const TURRET_NAME = { lmg: "LMG turret", m2hb: "M2 turret" };
+export const UPGRADE_FX = {
+  wear: 0.6, breakdown: 0.8,                      // × a plating level (armourOf)
+  glass: [[30, 0.35], [45, 0.8]],                 // riders behind bulletproof glass: × damage up to this pen
+  ambush: 0.85,                                   // the enemy's first-strike bonus with glass (mesh: against the dead)
+  meshBlast: 0.8, meshRam: 0.5,                   // mesh grilles: blast fragments on riders, ramming the dead
+  riderBlast: 0.6, blastPen: 20,                  // a blast next to the vehicle: the body shields the riders; fragments' pen
+};
+export const TURRET_ODDS = { lmg: 4, m2hb: 6 };   // by the numbers: + power on the side whose turret fights (byNumbersOdds)
+export const MAX_GARAGE = 4;                      // jobs queued at a base
+// Where the work can be done (buildings.js): "garage" a garage or a workbench / master workbench (bench tier 2+),
+// "bench" a garage or any crafting bench; none: anywhere at a base.
+export const shopOk = (base, need) => !need || count(base, "garage") > 0 || benchTier(base) >= (need === "garage" ? 2 : 1);
+export const SHOP_TEXT = { garage: "a garage or a workbench", bench: "a garage or a crafting bench" };
+const VEH_VALUE = { sedan: 120, truck: 200, suv: 180, hummer: 260, van: 200, miltruck: 450 };
+
+export const upgradesOf = (v) => ({ glass: 0, mesh: 0, plating: 0, scrapPlate: 0, turret: null, ...((v && v.upgrades) || {}) });
+export const hasUpgrades = (v) => { const u = upgradesOf(v); return !!(u.glass || u.mesh || u.plating || u.scrapPlate || u.turret); };
+// The armour level: real plate 1 a level, scrap plating half a level.
+export const armourOf = (v) => { const u = upgradesOf(v); return u.plating + 0.5 * u.scrapPlate; };
+export function upgradeKg(v) {
+  const u = upgradesOf(v);
+  return u.glass * VEH_UPGRADES.glass.kg + u.mesh * VEH_UPGRADES.mesh.kg + u.plating * VEH_UPGRADES.plating.kg + u.scrapPlate * VEH_UPGRADES.scrapPlate.kg + (u.turret ? TURRET_KG[u.turret.gun] || 60 : 0);
+}
+// What a car takes after the weight of its upgrades.
+export const payloadOf = (v) => Math.max(50, (VEHICLE_TYPES[v.type] || VEHICLE_TYPES.truck).payload - upgradeKg(v));
+export const upgradeFuel = (v) => { const u = upgradesOf(v); return VEH_UPGRADES.plating.fuel ** u.plating * VEH_UPGRADES.scrapPlate.fuel ** u.scrapPlate; };
+export const upgradeSpeed = (v) => { const u = upgradesOf(v); return VEH_UPGRADES.plating.speed ** u.plating * VEH_UPGRADES.scrapPlate.speed ** u.scrapPlate; };
+// × what ramming, a blast or (later) a rocket costs its condition.
+export const wearMult = (v) => UPGRADE_FX.wear ** armourOf(v);
+// × the damage a rider takes from a hit of this pen ("blast": fragments, through the windows).
+export function riderMult(v, pen, how = "shot") {
+  const u = upgradesOf(v);
+  if (how === "blast" && u.mesh && !u.glass) return UPGRADE_FX.meshBlast;
+  if (!u.glass) return 1;
+  for (const [upTo, m] of UPGRADE_FX.glass) if (pen <= upTo) return m;
+  return 1;
+}
+// × the enemy's first-strike bonus in an ambush on a team riding this vehicle (glass; mesh grilles only against the dead).
+export function ambushMult(v, enemyKind) {
+  if (!v || isBike(v)) return 1;
+  const u = upgradesOf(v);
+  return u.glass || (u.mesh && enemyKind === "zombies") ? UPGRADE_FX.ambush : 1;
+}
+// One line: "Bulletproof glass, armour plate ×2, M2 turret (not yet usable)".
+export function upgradeText(v) {
+  const u = upgradesOf(v), bits = [];
+  if (u.glass) bits.push("bulletproof glass");
+  if (u.mesh) bits.push("mesh grilles");
+  if (u.plating) bits.push(`armour plate${u.plating > 1 ? ` ×${u.plating}` : ""}`);
+  if (u.scrapPlate) bits.push("scrap plating");
+  if (u.turret) bits.push(`${TURRET_NAME[u.turret.gun] || "MG turret"} (not yet usable)`);
+  const s = bits.join(", ");
+  return s ? s[0].toUpperCase() + s.slice(1) : "";
+}
+// The effects for a tooltip.
+export function upgradeEffects(v) {
+  const u = upgradesOf(v), out = [];
+  const kg = upgradeKg(v);
+  if (kg) out.push(`+${kg} kg (payload ${payloadOf(v)} kg)`);
+  if (u.plating || u.scrapPlate) out.push(`fuel ×${upgradeFuel(v).toFixed(2)}, speed ×${upgradeSpeed(v).toFixed(2)}, breakdowns ×${(UPGRADE_FX.breakdown ** armourOf(v)).toFixed(2)}, ramming and blast wear ×${wearMult(v).toFixed(2)}, full cover on the battle map`);
+  if (u.glass) out.push("riders take ×0.35 from pistol rounds and 5.56, ×0.8 up to .308 AP; an ambush on the road hits ×0.85 as hard");
+  if (u.mesh) out.push("the dead cannot reach in: their ambushes hit ×0.85 as hard, ramming them wears the front half as much");
+  return out.join("; ");
+}
+// Worth: the car by type and condition, plus what its upgrades are made of.
+export function vehicleValue(v) {
+  if (!v || isBike(v)) return v ? 30 * (v.count || 1) : 0;
+  const base = (VEH_VALUE[v.type] || 180) * (0.4 + 0.6 * Math.max(0, Math.min(100, v.condition)) / 100);
+  const u = upgradesOf(v);
+  let up = 0;
+  for (const k of Object.keys(VEH_UPGRADES)) up += (u[k] || 0) * costValue(upgradeCost(k));
+  if (u.turret) up += u.turret.item && GEAR[u.turret.item.key] ? (GEAR[u.turret.item.key].value || 200) : u.turret.gun === "m2hb" ? 400 : 250;
+  return Math.round(base + up);
+}
+const costValue = (c) => Object.entries(c).reduce((a, [k, q]) => a + q * ((SUPPLIES[k] && SUPPLIES[k].value) || 1), 0);
+// An upgrade's cost in today's supply keys (car parts fall back to parts; the two part kinds merge then).
+export function upgradeCost(key) {
+  const out = {};
+  for (const [k, q] of Object.entries(VEH_UPGRADES[key].cost)) { const s = costOf(k); out[s] = (out[s] || 0) + q; }
+  return out;
+}
+export const costText = (c) => Object.entries(c).map(([k, q]) => `${q} ${(SUPPLIES[k] ? SUPPLIES[k].name : k).toLowerCase()}`).join(", ");
+
+// ---------- pre-fitted ----------
+// Military vehicles (miltrucks.js: the cargo truck, the Humvee, the MRAP) claimed or found running: armour plate and
+// bulletproof glass; turret: the gun on the roof when it has one.
+export function fitMilitary(v, turret = null) {
+  if (!v || isBike(v)) return v;
+  v.upgrades = { ...upgradesOf(v), glass: 1, mesh: 0, plating: Math.max(1, upgradesOf(v).plating), scrapPlate: 0, ...(turret ? { turret: { gun: turret } } : {}) };
+  return v;
+}
+// A raider technical (a pickup left by a raider group): scrap plating half the time, on its own dice.
+export const TECHNICAL = { scrapPlate: 0.5 };
+// Is the pickup an AI party drove (aiscav.js vehicleType) a plated technical? Raiders' pickups, half of them, by the party.
+export function isTechnical(state, factionId, type, salt) {
+  const f = factionId != null ? (state.factions || []).find((x) => x.id === factionId) : null;
+  return !!f && f.type === "raider" && type === "truck" && hash01(state.seed, "technical", salt) < TECHNICAL.scrapPlate;
+}
+// The enemy's vehicle on a battle map (combat.js setup.enemy.vehicle).
+export const technicalPlated = (state, enemy) => !!enemy && !!enemy.vehicle && isTechnical(state, enemy.factionId, enemy.vehicle, enemy.vehiclePartyId ?? "");
+// Their technical left on the field (conflicts.js takeTheirVehicle) keeps its plating.
+export function fitTechnical(state, v, factionId, salt) {
+  if (!v || !isTechnical(state, factionId, v.type, salt ?? "")) return false;
+  v.upgrades = { ...upgradesOf(v), scrapPlate: 1 };
+  return true;
+}
+
+// ---------- a military group's motor pool (factions.js) ----------
+// A "Military remnant" group starts with an Army cargo truck and a Humvee with an M2 on the roof at its home base, both
+// plated and glassed: f.vehicles (their own records, never in state.vehicles, so nothing takes them for yours). Old
+// saves get theirs the first time it is read. The Humvee's turret adds TURRET_ODDS.m2hb to their raids and the defence
+// of their home base by the numbers (combat.js byNumbersOdds, factions.js resolveRaidOnPlayer / resolveRaidOnFaction,
+// conquest.js defenders).
+export function factionVehicles(f) {
+  if (!f) return [];
+  if (!f.vehicles) f.vehicles = f.type === "military" ? militaryPool(f) : [];
+  return f.vehicles;
+}
+function militaryPool(f) {
+  const mk = (type, name, turret) => fitMilitary({ id: `f${f.id}-${type}`, type, name, fuel: Math.round(VEHICLE_TYPES[type].tank * 0.6), condition: 80, owner: f.id }, turret);
+  return [mk("miltruck", "Army cargo truck", null), mk("hummer", "Humvee", "m2hb")];
+}
+// The gun of the group's working turreted vehicle ("m2hb" | "lmg"), or null.
+export function groupTurret(f) {
+  if (!f || !f.alive) return null;
+  const v = factionVehicles(f).find((x) => x.condition > 0 && upgradesOf(x).turret);
+  return v ? upgradesOf(v).turret.gun : null;
+}
+export const groupTurretPower = (f) => { const g = groupTurret(f); return g ? TURRET_ODDS[g] || 0 : 0; };
+
+// ---------- by the numbers (combat.js byNumbersOdds) ----------
+// { theirsAmbush: × the enemy's 1.4 when they strike first, theirsAdd: their turret } for a fight's setup.
+export function vehicleOdds(state, setup) {
+  const p = setup && setup.partyId != null ? (state.parties || []).find((x) => x.id === setup.partyId) : null;
+  const v = p && p.vehicle === true ? partyVehicle(state, p) : null;
+  const enemy = (setup && setup.enemy) || {};
+  return { theirsAmbush: setup && setup.ambush === "enemy" ? ambushMult(v, enemy.kind) : 1, theirsAdd: enemy.turret ? TURRET_ODDS[enemy.turret] || 0 : 0 };
+}
+
+// ---------- garage jobs ----------
+export const garageQueue = (base) => base.garage || (base.garage = []);
+const fitters = (state, base, mech) => atBase(state, base.id).filter((s) => s.role === "craft" && !s.inBed && skill(s, "mechanics") >= mech);
+const stripHours = (U) => Math.max(2, Math.ceil(U.hours / 2));
+const stripMech = (U) => Math.max(1, U.mech - 2);
+// Why this upgrade cannot be fitted (or stripped: op "strip") on v at this base now ("" when it can).
+export function upgradeProblem(state, base, v, key, op = "fit") {
+  if (!v || !isCar(v)) return "Only cars and trucks take upgrades.";
+  if (!(v.loc.kind === "base" && v.loc.baseId === base.id)) return "Park it at this base first.";
+  const u = upgradesOf(v);
+  if (garageQueue(base).some((j) => j.vehicleId === v.id)) return "Already in the garage for another job.";
+  if (garageQueue(base).length >= MAX_GARAGE) return `The garage queue is full (${MAX_GARAGE}).`;
+  if (key === "turret") {
+    if (op !== "strip") return "Turrets come later (the mounted gun is not usable yet).";
+    if (!u.turret) return "No turret to take off.";
+    if (!u.turret.item && !GEAR[u.turret.gun]) return "The mounted gun cannot come off yet (it is not a usable weapon until a later update).";
+    if (!atBase(state, base.id).some((s) => skill(s, "mechanics") >= 4)) return "Needs a Mechanics 4+ survivor here.";
+    return "";
+  }
+  const U = VEH_UPGRADES[key];
+  if (!U) return "Unknown upgrade.";
+  if (op === "strip") {
+    if (!u[key]) return `No ${U.name.toLowerCase()} to take off.`;
+    if (!atBase(state, base.id).some((s) => skill(s, "mechanics") >= stripMech(U))) return `Needs a Mechanics ${stripMech(U)}+ survivor here.`;
+    return "";
+  }
+  if ((u[key] || 0) >= U.max) return U.max > 1 ? `Already at the most (${U.max} levels).` : "Already fitted.";
+  const other = Object.keys(VEH_UPGRADES).find((k) => k !== key && VEH_UPGRADES[k].slot === U.slot && u[k]);
+  if (other) return `Take the ${VEH_UPGRADES[other].name.toLowerCase()} off first.`;
+  if (!atBase(state, base.id).some((s) => skill(s, "mechanics") >= U.mech)) return `Needs a Mechanics ${U.mech}+ survivor here.`;
+  if (!shopOk(base, U.shop)) return `Needs ${SHOP_TEXT[U.shop]} at this base.`;
+  if (key === "glass" && (base.spareGlass || 0) > 0) return "";
+  for (const [k, q] of Object.entries(upgradeCost(key))) if ((base.stock[k] || 0) < q) return `Needs ${costText(upgradeCost(key))} (short of ${(SUPPLIES[k] ? SUPPLIES[k].name : k).toLowerCase()}).`;
+  return "";
+}
+// The garage menu for one vehicle: [{ key, op, name, ok, why, cost, hours, mech, kg }].
+export function upgradeOptions(state, base, v) {
+  const out = [];
+  if (!v || !isCar(v)) return out;
+  const u = upgradesOf(v);
+  for (const [key, U] of Object.entries(VEH_UPGRADES)) {
+    const spare = key === "glass" && (base.spareGlass || 0) > 0;
+    if ((u[key] || 0) < U.max) {
+      const why = upgradeProblem(state, base, v, key, "fit");
+      out.push({ key, op: "fit", name: U.max > 1 && u[key] ? `${U.name} (level ${u[key] + 1})` : U.name, ok: !why, why, cost: spare ? {} : upgradeCost(key), spare, hours: U.hours, mech: U.mech, kg: U.kg, shop: U.shop || null });
+    }
+    if (u[key]) {
+      const why = upgradeProblem(state, base, v, key, "strip");
+      out.push({ key, op: "strip", name: `Strip ${U.name.toLowerCase()}`, ok: !why, why, cost: {}, refund: stripRefund(key), hours: stripHours(U), mech: stripMech(U), kg: -U.kg });
+    }
+  }
+  if (u.turret) { const why = upgradeProblem(state, base, v, "turret", "strip"); out.push({ key: "turret", op: "strip", name: `Strip the ${(TURRET_NAME[u.turret.gun] || "turret").toLowerCase()}`, ok: !why, why, cost: {}, refund: {}, hours: 8, mech: 4, kg: -(TURRET_KG[u.turret.gun] || 60) }); }
+  return out;
+}
+// What stripping one level gives back: half its car parts (rounded down), and glass whole (a spare set).
+export function stripRefund(key) {
+  const c = VEH_UPGRADES[key].cost.carparts || 0;
+  const out = {};
+  if (c >= 2) out[costOf("carparts")] = Math.floor(c / 2);
+  if (key === "glass") out.spareGlass = 1;
+  return out;
+}
+// Queue it: materials paid now (a spare glass set first). Returns a message.
+export function queueUpgrade(state, base, v, key, op = "fit") {
+  const why = upgradeProblem(state, base, v, key, op);
+  if (why) return why;
+  const U = key === "turret" ? { name: TURRET_NAME[upgradesOf(v).turret.gun] || "turret", hours: 16, mech: 6 } : VEH_UPGRADES[key];
+  const job = { id: newId(), vehicleId: v.id, key, op, progress: 0, hours: op === "strip" ? (key === "turret" ? 8 : stripHours(U)) : U.hours, mech: op === "strip" ? (key === "turret" ? 4 : stripMech(U)) : U.mech };
+  if (op === "fit") {
+    if (key === "glass" && (base.spareGlass || 0) > 0) { base.spareGlass -= 1; job.paid = { spareGlass: 1 }; }
+    else { job.paid = upgradeCost(key); for (const [k, q] of Object.entries(job.paid)) base.stock[k] = (base.stock[k] || 0) - q; }
+  }
+  garageQueue(base).push(job);
+  const note = fitters(state, base, job.mech).length ? "" : ` Nobody on the Craft role here has Mechanics ${job.mech}+ yet.`;
+  return `${op === "strip" ? `Stripping the ${U.name.toLowerCase()} from` : `${U.name} for`} the ${v.name} queued at ${base.name} (${job.hours}h).${note}`;
+}
+// Cancel: untouched, everything back; started, half (rounded up).
+export function cancelGarageJob(state, base, id) {
+  const q = garageQueue(base), job = q.find((j) => j.id === id);
+  if (!job) return "That job is gone.";
+  const full = job.progress <= 0;
+  for (const [k, n] of Object.entries(job.paid || {})) {
+    const back = full ? n : Math.ceil(n / 2);
+    if (k === "spareGlass") base.spareGlass = (base.spareGlass || 0) + n;
+    else base.stock[k] = (base.stock[k] || 0) + back;
+  }
+  q.splice(q.indexOf(job), 1);
+  return `Cancelled. ${full ? "All" : "Half"} the materials were returned.`;
+}
+// Why a job is not moving ("" when it is).
+export function garageJobStatus(state, base, job) {
+  const v = vehicleById(state, job.vehicleId);
+  if (!v) return "The vehicle is gone.";
+  if (!(v.loc.kind === "base" && v.loc.baseId === base.id)) return "Waits: the vehicle is away from the base.";
+  const U = VEH_UPGRADES[job.key];
+  if (job.op === "fit" && U && !shopOk(base, U.shop)) return `Needs ${SHOP_TEXT[U.shop]} at this base.`;
+  if (!fitters(state, base, job.mech).length) return `Needs someone on the Craft role with Mechanics ${job.mech}+.`;
+  return "";
+}
+// Hourly: the first job that can move gets the qualified crafters' work (1 + 3% a Mechanics point each).
+export function garageHour(state) {
+  for (const base of state.bases) {
+    const q = base.garage;
+    if (!q || !q.length) continue;
+    for (let i = q.length - 1; i >= 0; i--) if (!vehicleById(state, q[i].vehicleId)) q.splice(i, 1); // the vehicle was lost: the materials with it
+    const job = q.find((j) => !garageJobStatus(state, base, j));
+    if (!job) continue;
+    const who = fitters(state, base, job.mech);
+    job.progress += who.reduce((a, s) => a + 1 + skill(s, "mechanics") * 0.03, 0);
+    if (job.progress < job.hours) continue;
+    q.splice(q.indexOf(job), 1);
+    const v = vehicleById(state, job.vehicleId);
+    log(state, finishUpgrade(state, base, v, job.key, job.op), "good");
+    const best = who.slice().sort((a, b) => skill(b, "mechanics") - skill(a, "mechanics"))[0];
+    if (best) gainXp(state, best, "mechanics", (USE.repair || 3) * 2);
+  }
+}
+// The work done: the upgrade on (or off, with the refund). Returns the log line.
+export function finishUpgrade(state, base, v, key, op = "fit") {
+  const u = upgradesOf(v);
+  if (key === "turret") {
+    const t = u.turret;
+    u.turret = null;
+    v.upgrades = u;
+    const item = t && t.item ? t.item : t && GEAR[t.gun] ? newItem(t.gun, 0.8) : null;
+    if (item) base.armory.push(item);
+    return `The ${TURRET_NAME[t.gun] || "turret"} came off the ${v.name} at ${base.name}${item ? `: the ${item.name} is in the armory` : ""}.`;
+  }
+  const U = VEH_UPGRADES[key];
+  if (op === "strip") {
+    u[key] = Math.max(0, (u[key] || 0) - 1);
+    v.upgrades = u;
+    const back = stripRefund(key), bits = [];
+    for (const [k, n] of Object.entries(back)) {
+      if (k === "spareGlass") { base.spareGlass = (base.spareGlass || 0) + n; bits.push("the glass, whole (a spare set to fit again)"); }
+      else { base.stock[k] = (base.stock[k] || 0) + n; bits.push(`${n} ${(SUPPLIES[k] ? SUPPLIES[k].name : k).toLowerCase()}`); }
+    }
+    return `The ${U.name.toLowerCase()} came off the ${v.name} at ${base.name}${bits.length ? `: back ${bits.join(" and ")}` : ""}.`;
+  }
+  u[key] = Math.min(U.max, (u[key] || 0) + 1);
+  v.upgrades = u;
+  return `${U.name}${U.max > 1 ? ` (level ${u[key]})` : ""} fitted to the ${v.name} at ${base.name}: ${upgradeEffects(v)}.`;
 }
 
 // Abandoned vehicles get siphoned and stripped by passers-by, like death sites.

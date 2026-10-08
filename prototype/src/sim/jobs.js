@@ -46,7 +46,8 @@ import { canRadioGroup, tradeBase } from "./radio.js";
 import { available, marketOf } from "./trade.js";
 import { sendCaravan, guardPower } from "./caravans.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
-import { newItem } from "./inventory.js";
+import { lootItem } from "./inventory.js";
+import { traderSource, spend } from "./itemcond.js";
 import { CRAFTS } from "./crafting.js";
 import { hordeScore } from "./hordes.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
@@ -366,7 +367,7 @@ export function completeJob(state, job, how = "") {
       got.push(`${n} ${k}`);
     }
     const rng = diploRng(state);
-    for (const k of r.gear) { const it = newItem(k, Math.round(rng.range(0.7, 1) * 100) / 100); h.armory.push(it); got.push(it.name); }
+    for (const k of r.gear) { const it = lootItem(k, traderSource(f.type), spend(rng)); h.armory.push(it); got.push(it.name); } // itemcond.js: as the group keeps its kit
     if (r.blueprint) {
       // blueprints.js: one you neither know nor hold, fitting the group; none left: ammo instead.
       const bp = blueprintReward(state, f, `job${job.id}`);

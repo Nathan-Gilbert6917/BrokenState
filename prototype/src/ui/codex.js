@@ -20,7 +20,9 @@ import { bossUnit, DEFENCE } from "../sim/defences.js";
 import { ZOMBIE_MOVE, playerSees } from "../sim/combat.js";
 import { zRevealed } from "../sim/zombietypes.js";
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
+import { durUnit } from "../sim/crafting.js"; // what an item's uses count (fights, days of fishing...)
 import { day } from "../sim/world.js";
+import { BLUEPRINTS, CRAFT_BOOKS, LOCKED, techName, unlockName } from "../sim/blueprints.js"; // what a manual or craft book unlocks
 import { BIRTH } from "../sim/hivebirth.js"; // a hive being born: breaking up the gathering
 import { FRONT_KINDS, FRONT, ICE, WEATHER, visibleFronts, iceRow } from "../sim/weather.js"; // weather fronts and river ice
 import { zombieCanvas, armoredCanvas, enemyCanvas } from "./sprites.js";
@@ -120,13 +122,13 @@ function hiveEntries() {
 // How to use an item, by its trade category (data.js CATEGORIES); the item's own description says the rest.
 const ITEM_HOW = {
   melee: "Hold it in the Hands slot and use Melee (E) next to an enemy: silent and needs no ammo.",
-  pistol: "Hands slot: Shoot (F) costs ammo and makes noise (it draws the dead, and Heat in a raid). Fits a pocket.",
-  shotgun: "Hands slot: Shoot (F) costs ammo, hits hard up close, poorly at range, and is loud. Buckshot catches a worm swarm.",
-  rifle: "Hands slot: Shoot (F) costs ammo; the long-range gun, and loud. Rifle rounds get through the armoured dead.",
-  automatic: "Hands slot: Shoot (F) fires two rounds a shot: the best gun there is, hungry for ammo.",
-  bow: "Hands slot: silent shots that use arrows (1 a shot), never ammo. With no arrows it is only a club. After a won fight about half the arrows shot are picked up again.",
+  pistol: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action) and makes noise (it draws the dead, and Heat in a raid). Fits a pocket.",
+  shotgun: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action), hits hard up close, poorly at range, and is loud. Buckshot catches a worm swarm.",
+  rifle: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action); the long-range gun, and loud. Rifle rounds get through the armoured dead.",
+  automatic: "Hands slot: Shoot (F) fires two rounds a shot from its magazine (Reload, I: 1 action): the best gun there is, hungry for ammo.",
+  bow: "Hands slot: silent shots that use arrows (1 a shot), never ammo, and no reloading. With no arrows it is only a club. After a won fight about half the arrows shot are picked up again.",
   explosive: "From a pocket or the pack: Throw (G) in battle. Thrown, it is gone. Kept in a base's armory, some of them work as decoys when a horde comes.",
-  gunmod: "Carried by whoever has a gun it fits: works from the pack or a pocket.",
+  gunmod: "Fitted to a gun it suits in the inventory (select the gun, then Fit): one on each mount (sight, muzzle, magazine, under the barrel). It weighs and is worth what it is with the gun, and is sold and looted with it. See Help: Gun attachments.",
   armor: `Worn (Body, Head, Arms, Legs): the power of every worn piece adds up, to at most ${ARMOR_CAP}. Heavy armor counts in the wearer's load.`,
   defence: "Kept in a base's armory: used on the approach when a horde attacks the base.",
   medical: "Kept on a medic or in the armory: used when treating people (at a base, in the field or in battle).",
@@ -151,8 +153,21 @@ function itemEntries() {
     if (g.noise) stats.push(["Noise", g.noise]);
     if (g.medKit) stats.push(["Medicine", `+${g.medKit} when treating`]);
     if (g.slots) stats.push(["Pack", `${g.slots} slots, +${g.carry || 0} kg load`]);
-    if (g.makeshift && g.dur) stats.push([g.tabs ? "Tablets" : "Lasts", g.tabs ? g.dur : `${g.dur} uses (makeshift)`]);
-    else if (g.tabs) stats.push(["Tablets", g.dur]);
+    if (g.tabs) stats.push(["Tablets", g.dur]);
+    else if (g.count) stats.push(["Holds", g.dur]);
+    else if (g.groom) stats.push(["Lasts", `${g.dur} days of use`]);
+    else if (g.dur) stats.push(["Lasts", `${g.dur} ${durUnit(k)}${g.makeshift ? " (makeshift)" : ""}; found ones are part-worn, crafted ones last by their quality`]);
+    if (g.fish) stats.push(["Fishing", `${g.fish === "net" ? "net, worked by two, 1.2" : `${g.fish}, ${g.fishPower ?? 0.6}`} food an hour${g.fish === "spear" ? " in daylight, not through ice" : ""}`]);
+    if (g.book && g.book.skill) stats.push(["Teaches", `${SKILL_NAMES[g.book.skill]} up to ${g.book.max}, ${g.book.hours} h to read`]);
+    // Manuals and craft books (blueprints.js): what they open, and the recipes they make better and faster.
+    const tech = g.blueprint ? BLUEPRINTS[g.blueprint] : CRAFT_BOOKS[k];
+    if (tech) {
+      const opens = [...(tech.unlocks.buildings || []), ...(tech.unlocks.crafts || [])].map(unlockName);
+      if (opens.length) stats.push(["Unlocks", opens.join(", ")]);
+      const edge = [...new Set([...(tech.unlocks.crafts || []), ...(tech.covers || [])])].map(unlockName);
+      if (edge.length) stats.push(["Crafting edge", edge.join(", ")]);
+    }
+    if (LOCKED.crafts[k]) stats.push(["Recipe", `locked until ${techName(LOCKED.crafts[k])} is ${CRAFT_BOOKS[LOCKED.crafts[k]] ? "read" : "studied"}`]);
     stats.push(["Weight", `${g.weight} kg${g.small ? ", fits a pocket" : g.bulky ? ", bulky" : ""}`]);
     out.push({ key: `i:${k}`, cat: "items", name: g.name, sub: cat ? cap(cat.name) : "Item", stats, text: g.desc, how: ITEM_HOW[g.cat] || TRADE_HOW, sprite: null });
   }
@@ -164,7 +179,7 @@ const SUPPLY_HOW = {
   rawwater: "Purify it (the water boiler, water filters, a camp fire, tablets) before drinking: drunk as it is, it can carry the worm's eggs.",
   fuel: "Vehicles burn it, generators and floodlights use it; it heats a base in winter after the firewood.",
   meds: "Treat wounds and illnesses (a dose each). Rare: keep a reserve, and a med station makes more.",
-  ammo: "Every gunshot costs it (an assault rifle two). An ammo bench makes more from scrap.",
+  ammo: "Every gunshot costs it (an assault rifle two); Reload in battle fills a gun's magazine from it. An ammo bench makes more from scrap (it needs a workbench at the base to build).",
   arrows: "What bows and crossbows shoot, in fights and on hunts (1 a shot). After a won fight about half are picked up again, after a loss or a retreat none; a hunt loses about half. Teams with a bow pack a dozen each. Made by hand from firewood and a little scrap; found at hunting lodges, gun stores, sports shops and campgrounds.",
   parts: "Buildings, vehicle repairs and gear need them. A machine shop makes them from scrap.",
   scrap: "What almost everything is built and crafted from. Scavenging brings it in.",
@@ -189,7 +204,7 @@ function buildingEntries() {
     if (b.outpostOnly) stats.push(["Only at", "outposts"]);
     if (b.shelterOnly) stats.push(["Only at", "a shelter"]);
     return {
-      key: `b:${k}`, cat: "buildings", name: b.name, sub: b.defence ? "Defence" : b.station ? "Workshop station" : b.family ? "Hospital" : "Building", stats, text: b.desc,
+      key: `b:${k}`, cat: "buildings", name: b.name, sub: b.defence ? "Defence" : b.station ? "Workshop station" : b.family === "bench" ? "Crafting bench" : b.family ? "Hospital" : "Building", stats, text: b.desc,
       how: `Build it from a base's Construction tab: the people on the Build role do the work.${b.station ? " It needs an operator (Workshops tab)." : ""}${b.defence ? " It counts when a horde attacks the base." : ""}`,
       sprite: null,
     };

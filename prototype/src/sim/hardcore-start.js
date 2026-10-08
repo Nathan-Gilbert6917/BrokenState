@@ -38,10 +38,14 @@
 import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES } from "./data.js";
 import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
-import { newItem, packOf, POCKETS } from "./inventory.js";
+import { newItem, packOf, POCKETS, START_DUR } from "./inventory.js";
+import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
+// What someone has with them at the start, looked after but worn (inventory.js START_DUR).
+const startItem = (rng, key, q) => newItem(key, q, rng, START_DUR);
 import { Rng } from "./rng.js";
 import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
+import { isCustomBg } from "./custombg.js";
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
 import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./staging.js";
 
@@ -174,6 +178,16 @@ export const HC_START = {
 };
 // For the UI (the People tab's background chip) and the tools: { key: { name, blurb } }.
 export const BACKGROUNDS = Object.fromEntries(Object.entries(HC_START.ARCHETYPES).map(([k, a]) => [k, { name: a.name, blurb: a.blurb }]));
+// A background by key: a preset (ARCHETYPES), or one the player made for this world (custombg.js, state.customBackgrounds).
+export function archetypeOf(state, key) {
+  if (isCustomBg(key)) return (state && state.customBackgrounds && state.customBackgrounds[key]) || null;
+  return HC_START.ARCHETYPES[key] || null;
+}
+// { name, blurb, custom } for the chips, else null.
+export function backgroundInfo(state, key) {
+  const a = key ? archetypeOf(state, key) : null;
+  return a ? { name: a.name, blurb: a.blurb || "", custom: !!a.custom } : null;
+}
 
 const r1 = (v) => Math.round(v * 10) / 10;
 // Seats short of the default three (HC_START.SMALL): 2 alone, 1 for a pair, 0 for three or four.
@@ -271,11 +285,35 @@ export function drawArchetypes(state, n = HC_START.CREW) {
   }
   return out;
 }
-// What a background makes of someone: the skill bumps, a fitting trait when a slot allows, the key on them.
+// Backgrounds picked on the new-run screen (crew[i].background: a preset or a custom key; null: the dice). The draw
+// runs as ever (so the dice are the same dice), then a pick takes its seat, and a drawn one that repeats a pick is
+// drawn again from the presets nobody has (no two alike among the drawn; two picks may match). No picks: the draw.
+export function pickArchetypes(state, n, picks) {
+  const kinds = drawArchetypes(state, n);
+  if (!picks || !picks.some(Boolean)) return kinds;
+  picks.forEach((k, i) => { if (k && i < n) kinds[i] = k; });
+  for (let i = 0; i < n; i++) {
+    if (picks[i]) continue;
+    if (!kinds.some((k, j) => j !== i && k === kinds[i])) continue;
+    const pool = Object.keys(HC_START.ARCHETYPES).filter((k) => !kinds.includes(k));
+    if (pool.length) kinds[i] = state.rng.weighted(pool, (x) => HC_START.ARCHETYPES[x].w);
+  }
+  return kinds;
+}
+// What a background makes of someone: the skill bumps, a fitting trait when a slot allows, the key on them. A custom
+// one (custombg.js) adds exactly its bumps and gives all its traits (they go first, a rolled trait that clashes,
+// Brave with Coward, goes; three in all), and draws no dice.
 export function applyArchetype(state, s, key) {
-  const rng = state.rng, A = HC_START.ARCHETYPES[key];
+  const rng = state.rng, A = archetypeOf(state, key);
   if (!A) return;
   s.background = key;
+  if (A.custom) {
+    for (const [k, v] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + v);
+    const mine = [...A.traits];
+    const clash = (t) => (t === "brave" && mine.includes("coward")) || (t === "coward" && mine.includes("brave"));
+    s.traits = [...mine, ...s.traits.filter((t) => !mine.includes(t) && !clash(t))].slice(0, Math.max(3, mine.length));
+    return;
+  }
   for (const [k, [lo, hi]] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + rng.int(lo, hi));
   const want = Object.keys(A.traits || {}).filter((t) => TRAITS[t] && !s.traits.includes(t) && !(t === "brave" && s.traits.includes("coward")) && !(t === "coward" && s.traits.includes("brave")));
   if (want.length && s.traits.length < 2 && rng.chance(HC_START.TRAIT_ODDS)) s.traits.push(rng.weighted(want, (t) => A.traits[t]));
@@ -284,6 +322,8 @@ export function applyArchetype(state, s, key) {
 // The most food the team's own grabs come to (a prepper's bag on top): TEAM_MAX a head, a background's food.max in
 // its place (a farmer 5, a hunter or a trucker 4).
 export const teamFoodCap = (people) => people.reduce((a, s) => a + (((HC_START.ARCHETYPES[s.background] || {}).food || {}).max ?? HC_START.TEAM_MAX), 0);
+// A custom background (custombg.js) is not rolled and not clamped: its food and water come on top, like a prepper's bag.
+const isCustomPerson = (s) => isCustomBg(s.background);
 
 // A team of one or two (HC_START.SMALL): each of them + SKILL per empty seat in each of SKILLS. Draws no dice for
 // three or four. Returns the skills bumped (for the log), or null.
@@ -305,7 +345,7 @@ export function rollGrab(state, s, A = null) {
   const bag = rng.chance(A && A.pack != null ? A.pack : C.PACK);
   const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, meds: 0 };
   if (bag) {
-    const pk = newItem(pickW(rng, (A && A.packs) || C.PACKS), Math.round(rng.range(0.7, 1) * 100) / 100);
+    const pk = startItem(rng, pickW(rng, (A && A.packs) || C.PACKS), Math.round(rng.range(0.7, 1) * 100) / 100);
     s.gear.backpack = pk;
     got.bag = pk;
   }
@@ -313,14 +353,15 @@ export function rollGrab(state, s, A = null) {
   if (rng.chance(wOdds)) {
     let w = pickW(rng, (A && A.weapons) || C.WEAPONS);
     if (!bag && !GEAR[w].small && !(A && A.weapons) && rng.chance(0.5)) w = "knife"; // running with only pockets: more often a knife than a rifle
-    s.gear.weapon = newItem(w, Math.round(rng.range(0.6, 1) * 100) / 100);
+    s.gear.weapon = startItem(rng, w, Math.round(rng.range(0.6, 1) * 100) / 100);
     got.weapon = s.gear.weapon;
+    randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
     const rr = C.ROUNDS[w];
     if (rr) got.ammo += Math.round(rng.int(rr[0], rr[1]) * ((A && A.rounds) || 1));
     if (GEAR[w].cat === "bow") got.arrows = (got.arrows || 0) + 12; // a quiver with the bow (hunting.js: bows hunt with arrows)
   }
   // Worn from the start (a cop's vest, a veteran's).
-  if (A && A.armor) for (const [k, odds] of Object.entries(A.armor)) if (GEAR[k] && !s.gear.armor && rng.chance(odds)) { s.gear.armor = newItem(k, Math.round(rng.range(0.5, 0.9) * 100) / 100); got.armor = s.gear.armor; }
+  if (A && A.armor) for (const [k, odds] of Object.entries(A.armor)) if (GEAR[k] && !s.gear.armor && rng.chance(odds)) { s.gear.armor = startItem(rng, k, Math.round(rng.range(0.5, 0.9) * 100) / 100); got.armor = s.gear.armor; }
   if (A && A.meds) got.meds += rng.int(A.meds[0], A.meds[1]);
   const stuff = A && A.stuff ? { ...C.PACK_STUFF, ...A.stuff } : C.PACK_STUFF;
   const pocketStuff = A && A.stuff ? { ...C.POCKET_STUFF, ...Object.fromEntries(Object.entries(A.stuff).filter(([k]) => GEAR[k] && GEAR[k].small)) } : C.POCKET_STUFF;
@@ -328,7 +369,7 @@ export function rollGrab(state, s, A = null) {
   const nPockets = Math.min(POCKETS, rng.int(C.POCKET_ITEMS[0], C.POCKET_ITEMS[1]));
   for (let i = 0; i < nPockets; i++) {
     const key = pickW(rng, pocketStuff);
-    const item = newItem(key, 1);
+    const item = startItem(rng, key, 1);
     const at = s.pockets.indexOf(null);
     if (at < 0) break;
     s.pockets[at] = item;
@@ -338,7 +379,7 @@ export function rollGrab(state, s, A = null) {
     const n = rng.int(C.PACK_ITEMS[0], C.PACK_ITEMS[1]);
     for (let i = 0; i < n; i++) {
       const key = pickW(rng, stuff);
-      const item = newItem(key, 1);
+      const item = startItem(rng, key, 1);
       // A tool goes in the off hand if it is free (a flashlight, a bandage kit), else in the bag.
       if (GEAR[key].slot === "tool" && !s.gear.tool) s.gear.tool = item;
       else {
@@ -362,15 +403,16 @@ export function rollGrab(state, s, A = null) {
 export function rollPrepper(state, s) {
   const rng = state.rng, P = HC_START.PREPPER;
   const got = { bag: null, weapon: null, items: [], food: P.FOOD, water: P.WATER, ammo: 0, meds: P.MEDS, prepper: true, trait: false };
-  s.gear.backpack = newItem(P.BAG, Math.round(rng.range(0.85, 1) * 100) / 100);
+  s.gear.backpack = startItem(rng, P.BAG, Math.round(rng.range(0.85, 1) * 100) / 100);
   got.bag = s.gear.backpack;
   const gun = rng.chance(P.GUN);
   const w = gun ? pickW(rng, P.GUNS) : "knife";
-  s.gear.weapon = newItem(w, Math.round(rng.range(0.8, 1) * 100) / 100);
+  s.gear.weapon = startItem(rng, w, Math.round(rng.range(0.8, 1) * 100) / 100);
   got.weapon = s.gear.weapon;
+  randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
   if (gun) got.ammo += P.AMMO;
   const place = (key) => {
-    const item = newItem(key, 1);
+    const item = startItem(rng, key, 1);
     if (GEAR[key].slot === "tool" && !s.gear.tool) s.gear.tool = item; // the water filter, in hand
     else {
       const at = packOf(s).indexOf(null);
@@ -391,21 +433,54 @@ export function rollPrepper(state, s) {
   return got;
 }
 
+// A custom background's flight (custombg.js): exactly what the player set, no dice. What they wear and hold, then the
+// things: a tool to the off hand if it is free, a small thing to a pocket, the rest to the bag (what does not fit is
+// left behind, got.left: the editor warns). Supplies on them as set.
+export function rollCustom(state, s, A) {
+  const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, meds: 0, arrows: 0, custom: true, left: [] };
+  for (const [slot, key] of Object.entries(A.gear || {})) {
+    if (!GEAR[key]) continue;
+    s.gear[slot] = newItem(key, 1);
+    if (slot === "backpack") got.bag = s.gear[slot];
+    else if (slot === "weapon") got.weapon = s.gear[slot];
+    else if (slot === "armor") got.armor = s.gear[slot];
+    else got.items.push(s.gear[slot]);
+  }
+  for (const key of A.items || []) {
+    if (!GEAR[key]) continue;
+    const item = newItem(key, 1);
+    const pk = packOf(s);
+    if (GEAR[key].slot === "tool" && !s.gear.tool) s.gear.tool = item;
+    else if (GEAR[key].small && s.pockets.indexOf(null) >= 0) s.pockets[s.pockets.indexOf(null)] = item;
+    else if (pk && pk.indexOf(null) >= 0) pk[pk.indexOf(null)] = item;
+    else { got.left.push(key); continue; }
+    got.items.push(item);
+  }
+  for (const k of ["food", "water", "ammo", "meds", "arrows"]) got[k] = (A.supplies && A.supplies[k]) || 0;
+  return got;
+}
+
 // ---------- the car ----------
 // Whose car it was (the three's carOdds), what it is (their CARS), its tank and condition (CAR), and what was in the
 // back (TRUNK: supplies and things). Makes the vehicle on the team and loads the cargo. Returns { owner, car, trunk }.
 export function rollCar(state, p, people) {
   const rng = state.rng, C = HC_START;
-  const owner = rng.weighted(people, (s) => (C.ARCHETYPES[s.background] || {}).carOdds || 1);
-  const A = C.ARCHETYPES[owner.background] || {};
-  const type = pickW(rng, A.cars || { sedan: 2, truck: 1 });
+  // A custom background's odds may be 0 (never theirs); all 0: anyone's.
+  const odds = (s) => { const a = archetypeOf(state, s.background) || {}; return a.custom ? a.car.odds : a.carOdds || 1; };
+  const owner = people.some((s) => odds(s) > 0) ? rng.weighted(people, odds) : rng.pick(people);
+  const A = archetypeOf(state, owner.background) || {};
+  const type = A.custom && A.car.type ? A.car.type : pickW(rng, A.custom ? { sedan: 2, truck: 1 } : A.cars || { sedan: 2, truck: 1 });
   const T = VEHICLE_TYPES[type];
   const fuel = Math.round(T.tank * rng.range(C.CAR.FUEL[0], C.CAR.FUEL[1]) * 10) / 10;
   const car = createVehicle(state, type, { kind: "party", partyId: p.id }, { fuel, condition: rng.int(C.CAR.CONDITION[0], C.CAR.CONDITION[1]) });
   p.vehicle = true;
   p.vehicleId = car.id;
   const trunk = { supplies: {}, gear: [] };
-  const TR = A.trunk || {};
+  if (A.custom) { // exactly what the player put in the back
+    for (const [k, q] of Object.entries(A.car.trunk)) if (SUPPLY_KEYS.includes(k) && q > 0) { trunk.supplies[k] = q; p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; }
+    for (const key of A.car.items) if (GEAR[key]) { const item = newItem(key, 1); p.cargo.gear.push(item); trunk.gear.push(item); }
+  }
+  const TR = A.custom ? {} : A.trunk || {};
   for (const k of SUPPLY_KEYS) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) { trunk.supplies[k] = q; p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; } }
   if (TR.gear) {
     const table = { ...TR.gear };
@@ -413,7 +488,7 @@ export function rollCar(state, p, people) {
       const key = pickW(rng, table);
       delete table[key];
       if (!GEAR[key]) continue;
-      const item = newItem(key, Math.round(rng.range(0.6, 1) * 100) / 100);
+      const item = startItem(rng, key, Math.round(rng.range(0.6, 1) * 100) / 100);
       p.cargo.gear.push(item);
       trunk.gear.push(item);
     }
@@ -448,9 +523,9 @@ function listOf(items) {
   const words = wordsOf(items);
   return words.length ? [andList(words)] : [];
 }
-function grabLine(s, got) {
+function grabLine(state, s, got) {
   const things = listOf(got.items);
-  const A = HC_START.ARCHETYPES[s.background];
+  const A = archetypeOf(state, s.background);
   const who = A ? `${firstName(s)} (${A.name.toLowerCase()}${A.blurb ? `, ${A.blurb}` : ""})` : firstName(s);
   const weapon = got.weapon ? `${/^[aeiou]/i.test(got.weapon.name) ? "an" : "a"} ${got.weapon.name.toLowerCase()}${got.ammo ? ` (${got.ammo} rounds)` : ""}` : "";
   if (got.prepper) return `${who} had a ${got.bag.name.toLowerCase()} packed by the door: ${got.food} food, ${got.water} water${got.meds ? `, ${got.meds} meds` : ""}${things.length ? `, ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
@@ -477,8 +552,11 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   people[0].leader = true;
   // Who they were (no two alike): the background's skill bumps and trait come before the new-run screen's edits, so an
   // edited colonist keeps the skills typed in.
-  const kinds = drawArchetypes(state, people.length);
-  people.forEach((s, i) => applyArchetype(state, s, kinds[i]));
+  // A background picked on the new-run screen (crew[i].background, not in Ironman) takes its seat (pickArchetypes).
+  // crew[i].rolled: who they were kept through a rebuild (another colonist's pick) but still the dice's, not a pick.
+  const picks = people.map((s, i) => { const k = crew && crew[i] && crew[i].background; return k && archetypeOf(state, k) ? k : null; });
+  const kinds = pickArchetypes(state, people.length, picks);
+  people.forEach((s, i) => { applyArchetype(state, s, kinds[i]); if (picks[i] && !crew[i].rolled) s.bgPicked = true; });
   const smallSkills = smallTeamSkills(state, people); // one or two: the ones who could look after themselves (HC_START.SMALL)
   if (crew) applyCrew(state, crew);
   if (!people.some((s) => s.leader)) people[0].leader = true; // the crew's leader was one of the six of a normal start (or past the head count)
@@ -488,28 +566,34 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   for (const k of SUPPLY_KEYS) sup[k] = 0;
   const lines = [];
   let prepper = null, prepGot = null;
+  const extra = []; // custom backgrounds' own food, water... (on top, unclamped)
   for (let i = 0; i < people.length; i++) {
     const s = people[i];
-    const got = s.background === "prepper" ? rollPrepper(state, s) : rollGrab(state, s, HC_START.ARCHETYPES[s.background]);
+    const A = archetypeOf(state, s.background);
+    const got = s.background === "prepper" ? rollPrepper(state, s) : A && A.custom ? rollCustom(state, s, A) : rollGrab(state, s, A);
     if (got.prepper) { prepper = s; prepGot = got; continue; }
+    if (got.custom) { extra.push(got); lines.push(grabLine(state, s, got)); continue; }
     sup.food += got.food;
     sup.water += got.water;
     sup.ammo += got.ammo;
     sup.arrows += got.arrows || 0;
     sup.meds += got.meds;
-    lines.push(grabLine(s, got));
+    lines.push(grabLine(state, s, got));
   }
   // Clamped per head, the whole team counted (as for three before the head count could change: 3–9); a farmer, a
   // hunter or a trucker lifts the food cap by their own max (ARCHETYPES food.max).
-  const heads = people.length;
-  sup.food = Math.max(HC_START.TEAM_MIN * heads, Math.min(teamFoodCap(people), sup.food));
+  // A custom background's own (rollCustom) is left out of the clamp and added after it.
+  const rolled = people.filter((s) => !isCustomPerson(s));
+  const heads = rolled.length;
+  sup.food = Math.max(HC_START.TEAM_MIN * heads, Math.min(teamFoodCap(rolled), sup.food));
   sup.water = Math.max(HC_START.TEAM_MIN * heads, Math.min(HC_START.TEAM_MAX * heads, sup.water));
+  for (const got of extra) for (const k of ["food", "water", "ammo", "meds", "arrows"]) sup[k] += got[k] || 0;
   if (prepGot) {
     sup.food += prepGot.food;
     sup.water += prepGot.water;
     sup.ammo += prepGot.ammo;
     sup.meds += prepGot.meds;
-    lines.unshift(grabLine(prepper, prepGot));
+    lines.unshift(grabLine(state, prepper, prepGot));
   }
   const p = {
     id: newId(), owner: "player", kind: "expedition", mission: "move", teamMission: "flee", dest: tile.id, homeBaseId: null,

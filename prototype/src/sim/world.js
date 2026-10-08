@@ -6,8 +6,9 @@ import { keyWord } from "./water.js"; // supply names in log lines (call-time on
 import { Rng } from "./rng.js";
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
-import { FIRST_NAMES, LAST_NAMES, SKILLS, TRAITS, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
-import { appearanceFor } from "./appearance.js";
+import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { sanitizeLibrary } from "./custombg.js";
+import { appearanceFor, craftingStart, CRAFT_START } from "./appearance.js";
 export { radioBasesInRange };
 
 // Bases with a radio station, or a linked relay, whose range covers a tile (the network is in radio.js).
@@ -23,13 +24,14 @@ import { growthAt, growthInfo } from "./hivetech.js";
 import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
-import { createVehicle, vehiclesDaily } from "./vehicles.js";
+import { createVehicle, vehiclesDaily, garageHour } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
 import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
 import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
-import { armorPower, armorMult, allItems, stripAll } from "./inventory.js";
+import { armorPower, armorMult, allItems, stripAll, newItem, START_DUR } from "./inventory.js";
+import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
 import { autopilotHour } from "./autopilot.js";
@@ -46,7 +48,7 @@ import { coverNodes, radioDaily } from "./radio.js";
 import { diaryRecord } from "./diary.js";
 import { onDeath } from "./relations.js";
 import { noteDeath, noteBaseLoss, lossHow, causesDaily } from "./causes.js"; // "Why?": the chain of causes of a death or a lost base
-import { skillsHour, skillsDaily, hasPerk } from "./skills.js";
+import { skillsHour, skillsDaily, hasPerk, hash01 } from "./skills.js";
 import { diplomacyHour } from "./diplomacy.js";
 import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
 import { claimsDaily } from "./claims.js"; // land claims: lost under a base founded or taken, a hive, a hostile camp
@@ -100,10 +102,10 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // kept as state.startPeople. A normal start is a full hub of six and ignores it.
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
- *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null }} opts
+ *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any }} opts
  * @returns {State}
  */
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null }) {
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
@@ -125,6 +127,10 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     stats: { peopleSaved: 0, raidsRepelled: 0 },
   };
 
+  // Custom backgrounds (custombg.js) the new-run screen passes in: the world keeps its own copy (saved with it), so a
+  // hardcore crew's picks resolve whatever the browser's list holds later. Not in a world without any.
+  const bgs = customBackgrounds ? sanitizeLibrary(customBackgrounds) : {};
+  if (Object.keys(bgs).length) state.customBackgrounds = bgs;
   if (state.mode === "hardcore") {
     hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
@@ -159,7 +165,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
-  for (const t of ["farm_plot", "farm_plot", "ammo_bench", "bunkhouse", "walls"]) addBuilding(hubBase, t);
+  for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(hubBase, t); // a crafting bench, no ammo bench: that needs a workbench first (buildings.js BENCH)
   createVehicle(state, "truck", { kind: "base", baseId: hubBase.id }, { fuel: 20, condition: 75 });
 
   createFactions(state, factionCount);
@@ -168,8 +174,9 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   for (let i = 0; i < 6; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
   // Starting gear: a few basics spread among the colonists.
   const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol"];
-  state.survivors.forEach((s, i) => (s.gear.weapon = { key: starts[i], name: GEAR[starts[i]].name, quality: 1 }));
-  state.survivors[0].gear.armor = { key: "vest", name: GEAR.vest.name, quality: 1 };
+  state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
+  state.survivors.forEach((s, i) => randomStarterMods(state.rng, s.gear.weapon, i)); // gunmods.js: a cheap part or two on some guns
+  state.survivors[0].gear.armor = newItem("vest", 1, hash01(state.seed, "startdur", "vest"), START_DUR);
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));
   state.survivors[0].leader = true;
   if (crew) applyCrew(state, crew);
@@ -188,10 +195,11 @@ export function makeSurvivor(state, quality = 1) {
   const rng = state.rng;
   /** @type {Survivor["skills"]} */
   const skills = {};
-  for (const k of SKILLS) skills[k] = Math.max(0, Math.min(20, Math.round(rng.range(0, 9) * quality)));
+  for (const k of ROLLED_SKILLS) skills[k] = Math.max(0, Math.min(20, Math.round(rng.range(0, 9) * quality)));
   // Each survivor gets one or two specialties.
-  for (let i = 0; i < 2; i++) skills[rng.pick(SKILLS)] += rng.int(3, 7);
-  for (const k of SKILLS) skills[k] = Math.min(20, skills[k]);
+  for (let i = 0; i < 2; i++) skills[rng.pick(ROLLED_SKILLS)] += rng.int(3, 7);
+  for (const k of ROLLED_SKILLS) skills[k] = Math.min(20, skills[k]);
+  skills.crafting = craftingStart(state.seed, (state.peopleMade || 0) + 1, skills.mechanics, quality); // its own dice (appearance.js)
   const traits = rollTraits(rng);
   /** @type {Survivor} */
   const s = {
@@ -277,6 +285,9 @@ export function applyCrew(state, crew) {
     // A normal start's weapon and armor (Randomize all hands the kit out again). Hardcore's come from what they grabbed.
     if (c.gear && state.mode !== "hardcore") for (const k of ["weapon", "armor"]) if (k in c.gear) s.gear[k] = c.gear[k] && GEAR[c.gear[k].key] ? { ...c.gear[k] } : null;
     if (c.leader) s.leader = true;
+    // Customized past the dice on the new-run screen (free skills, traits, a picked background: ui/newgame.js), which an
+    // Ironman run may not start with.
+    if (c.custom) s.startCustom = true;
   });
 }
 
@@ -345,9 +356,17 @@ export function residents(state, baseId) {
 /** @param {Survivor} s */
 const isFree = (s) => s.alive && !(s.location && s.location.kind === "captive");
 
+// Crafting for someone from before the skill (save.js, skills.js ensureSkills): 0.7 × Mechanics, the floor too.
+/** @param {Survivor} s */
+export function fillCrafting(s) {
+  if (!s || !s.skills || Number.isFinite(s.skills.crafting)) return;
+  s.skills.crafting = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0));
+  if (s.skillFloor && !Number.isFinite(s.skillFloor.crafting)) s.skillFloor.crafting = s.skills.crafting;
+}
 /** @param {Survivor} s @param {string} key @returns {number} */
 export function skill(s, key) {
   let v = s.skills[key] || 0;
+  if (key === "crafting" && s.skills.crafting == null) v = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0)); // people from before the skill (save.js fills it in)
   if (key === "medicine" && s.traits.includes("medic")) v += 4;
   if (key === "stealth" && s.traits.includes("loud")) v -= 3;
   if (s.traits.includes("lucky")) v += 1;
@@ -744,6 +763,7 @@ export function tickHour(state) {
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   constructionHour(state);
   craftingHour(state);
+  garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating)
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);
   diplomacyHour(state); // diplomacy.js: jobs for other groups checked every hour (jobs.js)

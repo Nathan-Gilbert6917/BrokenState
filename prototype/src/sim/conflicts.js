@@ -15,7 +15,8 @@
 // goodwill is high. Over time they may escape, be recruited by their captors, or die.
 import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { zombieToughness } from "./hives.js";
-import { stripAll, itemLoad, newItem } from "./inventory.js";
+import { stripAll, itemLoad, lootItem, armouredItem } from "./inventory.js";
+import { kitSource, spend } from "./itemcond.js";
 import {
   log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
   armedFactor, usesArrows,
@@ -25,7 +26,7 @@ import {
   removeParty, startReturn, STANCES,
 } from "./parties.js";
 import * as Parties from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, createVehicle, VEHICLE_TYPES } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, createVehicle, VEHICLE_TYPES, fitTechnical, ambushMult, groupTurret, TURRET_ODDS } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer, raidRepelled, groupBroken } from "./factions.js";
 import { raidDamage } from "./breakdowns.js";
 import { perceptionChance, markAbandonedVehicle } from "./markers.js";
@@ -130,7 +131,8 @@ export function fightOdds(state, p, enemy, ambush) {
   let mine = teamPower(state, p) * armedFactor(people, carriedAmmo(p), carriedOf(p, "arrows")); // under 3 a head: the guns (ammo) or the bows (arrows) at 60%
   let theirs = enemy.count * enemy.power;
   if (ambush === "player") mine *= 1.4;
-  if (ambush === "enemy") theirs *= 1.4;
+  if (ambush === "enemy") theirs *= 1.4 * ambushMult(p.vehicle === true ? partyVehicle(state, p) : null, enemy.kind); // vehicles.js: bulletproof glass (combat.js byNumbersOdds)
+  if (enemy.turret) theirs += TURRET_ODDS[enemy.turret] || 0; // their turret (a military group's Humvee)
   return winOdds(mine / Math.max(0.1, theirs), { ...enemy, people: people.length, ambush }); // combat.js: calibrated on the battle map
 }
 
@@ -1151,10 +1153,11 @@ function takeTheirVehicle(state, p, f, ev) {
   const type = VEHICLE_TYPES[ev.type] ? ev.type : "truck";
   const tile = partyTile(p);
   const v = createVehicle(state, type, { kind: "abandoned", tile, since: state.hour }, { fuel: rng.int(2, 8), condition: rng.int(40, 75) });
+  const tech = fitTechnical(state, v, f ? f.id : null, ev.partyId ?? ""); // vehicles.js: a raider technical keeps its scrap plating
   markAbandonedVehicle(state, v, `left by ${f ? f.name : "them"} after the fight`);
   const q = state.parties.find((x) => x.id === ev.partyId);
   if (q) { q.vehicle = false; q.vehicleType = null; }
-  return `Their ${v.name} stands where they left it (${Math.round(v.condition)}%, ${v.fuel} fuel): marked on the map, any team can recover it (Recover vehicle).`;
+  return `Their ${v.name}${tech ? " (a technical: scrap plating welded on)" : ""} stands where they left it (${Math.round(v.condition)}%, ${v.fuel} fuel): marked on the map, any team can recover it (Recover vehicle).`;
 }
 function onConflictCombat(state, result, setup) {
   const c = setup.context;
@@ -1244,7 +1247,7 @@ function victoryRewards(state, p, c, result) {
       out.push(`Taken from the bodies: ${addCargo(state, p, "ammo", rng.int(15, 45))} ammo, ${addCargo(state, p, "food", rng.int(2, 8))} food.`);
       if (rng.chance(0.3)) {
         const key = rng.pick(["pistol", "shotgun", "huntrifle", "vest"]);
-        const item = { key, name: GEAR[key].name, quality: rng.pick([0.7, 0.85, 1]) };
+        const item = lootItem(key, kitSource(c.enemy && c.enemy.kind || (f && KIND_OF[f.type])), spend(rng)); // itemcond.js: by who they were
         out.push(stowGear(state, p, item) ? `Also a ${item.name}.` : `No room to carry the ${item.name} they had; it was left behind.`);
       }
     }
@@ -1281,7 +1284,7 @@ function victoryRewards(state, p, c, result) {
     for (const kind of Object.keys(mil)) {
       const n = Math.min(2, Math.round(c.enemy.count * mil[kind] * 0.5));
       for (let i = 0; i < n; i++) {
-        const loot = bodyLoot(rng, kind, newItem);
+        const loot = bodyLoot(rng, kind, armouredItem);
         for (const [k, q] of Object.entries(loot.sup)) got.push(`${addCargo(state, p, k, q)} ${k}`);
         for (const g of loot.gear) if (stowGear(state, p, g)) got.push(g.name);
       }
@@ -1570,7 +1573,7 @@ export function defendInPerson(state, raid) {
   const force = raidForce(f, raid.strength);
   startCombat(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders`, siege: raid.siege || null }, // siege.js: their ladders, ram and grenades
+    enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders`, siege: raid.siege || null, ...(groupTurret(f) ? { turret: groupTurret(f) } : {}) }, // siege.js: their ladders, ram and grenades; turret: a military group's Humvee (vehicles.js)
     // raid.surprise (watch.js surpriseAt: an unwatched night): they are over the wall and have the first move.
     ambush: raid.surprise ? "enemy" : base.alert ? "player" : null, canRetreat: true, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id, surprise: !!raid.surprise }, // the way out: away from the attack (deploy.js)
     layout: "baseDefence", deploy: true, // deploy.js: the base's walls on the map, defenders placed first

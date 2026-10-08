@@ -16,7 +16,7 @@ import { releaseEscorts, ESCORTS } from "./sim/economy.js";
 import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish, queueBunkhouseExpand, BUILDINGS, demolishRefund } from "./sim/buildings.js";
 // What pulling a building down gives back, for the question (sim/buildings.js demolishRefund).
 const demolishText = (bld) => { try { const r = demolishRefund(bld) || {}; return Object.entries(r).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ") || "nothing"; } catch { return "some of it"; } };
-import { refuel, repair } from "./sim/vehicles.js";
+import { refuel, repair, queueUpgrade, cancelGarageJob } from "./sim/vehicles.js";
 import { buryBody, burnBodyHome } from "./sim/carriers.js"; // bodies brought home in a team's car
 import {
   saveSupplyRun, dispatchSupplyRun, supplyRunById, jobForm, releaseHeld, pauseSupplyRun, deleteSupplyRun,
@@ -39,7 +39,8 @@ import { forageAbundance } from "./sim/foraging.js";
 import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
-import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew } from "./ui/newgame.js";
+import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds } from "./ui/newgame.js";
+import { BG_ACTIONS, BG_CHANGE, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
@@ -47,6 +48,7 @@ import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
 import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
 import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
+import { radioDeals } from "./sim/radiotrade.js"; // radio deals your caravan fetches
 import { VISITOR_ACTIONS } from "./ui/visitors.js";
 import { DIPLO_ACTIONS, DIPLO_CHANGE } from "./ui/diplomacy.js";
 import { renderDevPanel, devSample, DEV_SPEEDS } from "./ui/devtools.js";
@@ -67,6 +69,7 @@ import { LEDGER_ACTIONS, ledgerKey, drawCharts, sparkNode } from "./ui/ledger.js
 import { WATCHLIST_ACTIONS, renderWatchlist, syncWatchlist, ctxWatchlist } from "./ui/watchlist.js"; // the Watching panel (📌) and map notes
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
+import { CAR_ACTIONS } from "./ui/carpanel.js"; // cars found on a battle map (sim/foundcars.js)
 import { CRAWL_ACTIONS } from "./ui/citycrawl.js";
 import { NEEDS_ACTIONS } from "./ui/needs.js";
 import { LISTEN_ACTIONS } from "./ui/radiolisten.js"; // Listen in on radio traffic: a team order, a base's set (sim/radiolisten.js)
@@ -117,15 +120,15 @@ const freshUi = () => ({
   baseView: null, baseMsg: "", moveParty: null, moveMsg: "", supplyForm: null, supplyError: "",
   expedition: null, xpMsg: "", xpQueue: false, moveQueue: false, qSel: null, // team panel and order queue (qSel: the selected queued order)
   inv: null, invSel: null, invMsg: "", // inventory / loot screen (ui/inventory.js)
-  lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null,
+  lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null, bgEditor: null, // bgEditor: the custom backgrounds window (ui/backgrounds.js)
   dev: false, showFps: false, armed: newArmed(),
-  radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
+  radioWith: null, radioMsg: "", radioDeal: null, radioBase: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
   codex: null, paletteRecent: [], palFocus: null, // ui/codex.js window; ui/cmdpalette.js recent picks and a build button to light up
   ledger: null, // ui/ledger.js: the Ledger window is open
   ask: null, // ui/confirm.js: the question up before an order that cannot be undone
 });
-const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: START_PEOPLE.DEF, ironman: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: Hardcore's starting team, 1–4
+const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: START_PEOPLE.DEF, ironman: false, freeEdit: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: Hardcore's starting team, 1–4
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
 // keep their old ui flags, which read and write the layout.
 const layout = loadLayout();
@@ -199,7 +202,7 @@ function blocked() {
   // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
   const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex;
 }
 
 // An exception in a frame (a sim tick, the autopilot, drawing) stops the clock and opens the error screen (ui/crash.js),
@@ -730,6 +733,8 @@ const actions = {
   cancelcraft: (d) => { ui.baseMsg = cancelCraft(state, baseOf(d), Number(d.id)); },
   refuel: (d) => { ui.baseMsg = refuel(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id))); },
   repairv: (d) => { ui.baseMsg = repair(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id))); },
+  vupgrade: (d) => { ui.baseMsg = queueUpgrade(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id)), d.key, d.op || "fit"); }, // sim/vehicles.js: a garage job (glass, plating)
+  vgaragecancel: (d) => { ui.baseMsg = cancelGarageJob(state, baseOf(d), Number(d.id)); },
   burybody: (d) => { ui.baseMsg = buryBody(state, baseOf(d), Number(d.id)); }, // sim/carriers.js: a body brought home
   burnbody: (d) => { ui.baseMsg = burnBodyHome(state, baseOf(d), Number(d.id)); },
   survivor: (d) => { ui.survivor = Number(d.id); },
@@ -934,6 +939,12 @@ const actions = {
       return;
     }
     if (c.uiAction && c.uiAction.type === "moveout") { openMoveOut(c.uiAction.baseId); return; } // the Overcrowded card (sim/moveout.js)
+    if (c.uiAction && c.uiAction.type === "radioCaravan") { // a group asked you to bring your side (sim/radiotrade.js): the planner for that deal
+      const deal = radioDeals(state).find((x) => x.factionId === c.uiAction.factionId);
+      if (deal) TRADE_ACTIONS["rd-dealcaravan"](state, ui, { id: deal.id });
+      else if (text) ui.cardResult = { title: card.title, text };
+      return;
+    }
     // Orders that take time, and choices that open a battle: the result goes to the log instead of a screen.
     if (c.order || state.combat) {
       if (text) log(state, text, "info");
@@ -958,9 +969,12 @@ const actions = {
   reroll: () => newWorld(randomSeed()),
   // Randomize all (ui/newgame.js): in Hardcore the world is built again on the same seed with the new crew roll.
   "nr-allcrew": () => { state = randomizeAllCrew(state, ui, (crew, crewRoll) => { newWorld(state.seed, true, { crew, crewRoll }); return state; }); },
+  "bg-close": () => closeBackgrounds(), // Done in the custom backgrounds window: the world is built again if a colonist's background changed
   pickleader: (d) => { state.survivors.forEach((s) => (s.leader = s.id === Number(d.id))); ui.crewEdited = true; },
   // A new game starts paused: look around and give the first orders, then press Space.
   begin: () => {
+    // Ironman starts with the crew as rolled (ui/newgame.js): the Ironman box puts it back, this is the last word.
+    if (ui.ironman && crewCustomized(state)) { ui.nrMsg = "Ironman starts with the crew as rolled: untick Ironman to keep your customized colonists, or tick it again to put them back."; return; }
     ui.started = true;
     ui.speed = 0;
     ui.lastSpeed = 1;
@@ -974,6 +988,7 @@ const actions = {
       log(state, "Ironman: this game saves itself (at dawn, when a battle starts and ends, when you leave it). There is no going back.", "info");
     }
     if (ui.childrenOff) state.childrenOff = true; // the new-run screen's Children box (sim/family.js)
+    if (crewCustomized(state)) state.customStart = true; // customized on the new-run screen (Customize, custom backgrounds)
     assignStartingRoles(state); // jobs by skill, after any edits made on this screen (world.js)
     centerOn(state, playerTile(state));
     const lead = state.survivors.find((s) => s.leader) || state.survivors[0];
@@ -995,6 +1010,8 @@ for (const [k, fn] of Object.entries(PRISON_ACTIONS)) actions[k] = (d) => fn(sta
 for (const [k, fn] of Object.entries(PLAN_ACTIONS)) actions[k] = (d) => { if (!ui.planner) return; fn(state, ui, d); autofill(ui.planner); ui.plannerError = ""; };
 // Look editor, new-run randomizers and zombie look settings (ui/newgame.js).
 for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+// Custom backgrounds window (ui/backgrounds.js); its Done is bg-close in the table above.
+for (const [k, fn] of Object.entries(BG_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Inventory and loot screens (ui/inventory.js).
 for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ev: Shift+click on a supply stack (raid search window)
 // Farming tab and illness (ui/farming.js, ui/health.js).
@@ -1022,7 +1039,7 @@ for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state,
 for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...GUIDE_ACTIONS, ...WHY_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions); // GUIDE: the first-week guide (ui/guide.js); WHY: Why? on deaths and lost bases (ui/causes.js)
 for (const [k, fn] of Object.entries(LEDGER_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Ledger and the run summary (ui/ledger.js)
 // Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
-for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
+for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS, ...CAR_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
 // The city crawl window: places, street events, encounters, the next block, leaving (ui/citycrawl.js).
 for (const [k, fn] of Object.entries(CRAWL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Needs (ui/needs.js): a team's rations and who eats first, a treat used by hand.
@@ -1188,7 +1205,27 @@ const changeActions = {
   customh: (el) => { ui.customH = clampCustomH(el.value); newWorld(state.seed, true); },
   hivecount: (el) => { ui.hiveCount = clampHives(el.value); newWorld(state.seed, true); },
   // Normal or Hardcore (sim/hardcore.js): the same seed and the edited crew (the first three in Hardcore, or the Starting people).
-  ironman: (el) => { ui.ironman = !!el.checked; }, // the new-run screen's Ironman box (ui/newgame.js)
+  // The new-run screen's Ironman box (ui/newgame.js): an Ironman crew starts as rolled, so ticking it turns Customize
+  // off and, if the crew was customized (skills, traits, a picked background), builds the world again on the same seed
+  // with only the names, looks and leader kept.
+  ironman: (el) => {
+    ui.ironman = !!el.checked;
+    if (!ui.ironman) return;
+    ui.freeEdit = false;
+    if (crewCustomized(state)) {
+      // The crew's dice as they were before the first pick (pickRoll: main.js gave them dice of their own for it).
+      newWorld(state.seed, true, { crew: ironmanCrew(state), crewRoll: ui.pickRoll ? null : ui.crewRoll });
+      ui.nrMsg = "Ironman: the crew is back as rolled (skills, traits and who they were). Names, looks and the leader are kept.";
+    }
+  },
+  "nr-free": (el) => { ui.freeEdit = !!el.checked && !ui.ironman; }, // Customize (not with Ironman)
+  // Customize, Hardcore: who a colonist was (a preset, a custom background, or "" for the dice). The world is built
+  // again on the same seed (a crew roll of its own from now on, so the map and the groups stay put).
+  "nr-bg": (el) => {
+    if (ui.ironman || ui.started || state.mode !== "hardcore") return;
+    const crew = crewWithBackground(state, Number(el.dataset.id), el.value);
+    if (crew) newWorld(state.seed, true, pickRebuild(crew));
+  },
   "nr-guide": (el) => { ui.guide = !!el.checked; }, // and its First-week guide box (ui/guide.js)
   children: (el) => { ui.childrenOff = !el.checked; }, // the new-run screen's Children box (sim/family.js)
   gamemode: (el) => { ui.mode = el.value === "hardcore" ? "hardcore" : "normal"; newWorld(state.seed, true); },
@@ -1214,6 +1251,7 @@ const changeActions = {
   },
 };
 for (const [k, fn] of Object.entries({ ...FARM_CHANGE, ...HEALTH_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(BG_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the custom backgrounds window (ui/backgrounds.js)
 for (const [k, fn] of Object.entries(SKILL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PROD_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { if (!ui.planner) return; fn(state, ui, el); autofill(ui.planner); ui.plannerError = ""; };
@@ -1234,12 +1272,12 @@ for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(
 // fresh: { crew, crewRoll } from Randomize all, in place of the edited colonists.
 function newWorld(seed, keepCrew = false, fresh = null) {
   const crew = fresh ? fresh.crew : keepCrew && ui.crewEdited ? crewSnapshot(state) : null;
-  if (fresh) ui.crewRoll = fresh.crewRoll;
-  else if (!crew) ui.crewRoll = null;
+  if (fresh) { ui.crewRoll = fresh.crewRoll; ui.pickRoll = !!fresh.pickRoll; } // pickRoll: the crew roll came from a background pick
+  else if (!crew) { ui.crewRoll = null; ui.pickRoll = false; }
   if (ui.timelapse) closeTimelapse(state, ui);
   Object.assign(ui, freshUi());
   ui.crewEdited = !!crew;
-  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople });
+  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, customBackgrounds: ui.ironman ? null : customLibrary() });
   resetView();
   hideCtx();
   hideTip();
@@ -1247,6 +1285,23 @@ function newWorld(seed, keepCrew = false, fresh = null) {
   acc = 0;
   fpsLog.length = 0;
   centerOn(state, playerTile(state));
+}
+
+// A crew roll of its own for a seed (the first background picked on the new-run screen): from then on the crew's dice
+// are not the world's, so picking again does not move the groups.
+const fixedCrewRoll = (seed) => 1 + ((seed * 48271) % 2147483646);
+// A rebuild for a background picked: the crew roll kept, else one of the seed's own (pickRoll: Ironman goes back to none).
+const pickRebuild = (crew) => (ui.crewRoll != null ? { crew, crewRoll: ui.crewRoll, pickRoll: ui.pickRoll } : { crew, crewRoll: fixedCrewRoll(state.seed), pickRoll: true });
+// Closing the custom backgrounds window (ui/backgrounds.js): a colonist whose background was changed or deleted in it
+// is built again from it (the dice if it is gone), the world on the same seed.
+function closeBackgrounds() {
+  const changed = (ui.bgEditor && ui.bgEditor.changed) || [];
+  ui.bgEditor = null;
+  if (ui.started) return;
+  const hit = state.survivors.filter((s) => s.bgPicked && changed.includes(s.background));
+  if (!hit.length) { if (changed.length) newWorld(state.seed, true); return; } // the new list goes into the world
+  const crew = crewWithBackgrounds(state, Object.fromEntries(hit.map((s) => [s.id, customLibrary()[s.background] ? s.background : null])));
+  newWorld(state.seed, true, pickRebuild(crew));
 }
 
 // A loaded world (ui/settings.js): like a new world, but already started, paused, and remembering its save slot.
@@ -1667,6 +1722,7 @@ cbCanvas.addEventListener("contextmenu", (e) => {
 function closeTopLayer() {
   if (!$("ctxmenu").classList.contains("hidden")) { hideCtx(); return true; }
   if (ui.zombieLook) { ui.zombieLook = false; return true; }
+  if (ui.bgEditor) { closeBackgrounds(); return true; }
   if (ui.settings) { // a question first, then the menu itself (not while a save or load is running)
     if (ui.settings.confirm) ui.settings.confirm = null;
     else if (!ui.settings.busy) ui.settings = null;
@@ -1732,7 +1788,7 @@ window.addEventListener("keydown", (e) => {
   // Esc with nothing of ours to close opens the menu (in a battle Esc cancels the current action; ⚙ Menu is in the panel).
   if (ui.title) { if (!ui.settings && !ui.zombieLook && titleKey(ui, e)) e.preventDefault(); return; } // the title screen (ui/title.js): only the menu's keys
   if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
-  if (ui.zombieLook || ui.inv || ui.settings) return; // these screens take the keyboard
+  if (ui.zombieLook || ui.bgEditor || ui.inv || ui.settings) return; // these screens take the keyboard
   if (state.combat) {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;

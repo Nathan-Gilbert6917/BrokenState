@@ -3,6 +3,7 @@ import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe
 import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, canSeeAt, coverSides, isRanged, adjacent, canFire, ammoLeft, arrowsLeft, medsLeft, combatAct, enemyStep, playerSees,
+  hasMag, magLabel, magEmpty, magShown, reloadRefusal, fireRefusal, hasShots,
   los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
@@ -24,6 +25,7 @@ export const QUICK_MARK = "#7fb8e6"; // a container rummaged through but not sea
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
+import { carPanel, carPreview } from "./carpanel.js"; // cars on the map: get in, keys, hotwire, inspect, claim (sim/foundcars.js)
 import { ZTYPES, CARRIER } from "../sim/hiveconst.js";
 import { ACID, acidAt } from "../sim/acid.js";
 import { thirdRing } from "../sim/thirdside.js";
@@ -139,6 +141,15 @@ function view(b) {
 
 const selUnit = (b) => (cui.sel != null ? unitById(b, cui.sel) : null);
 
+// A unit's weapon with its magazine (sim/combat.js magazines): "9mm pistol 7/15", flagged when it needs a reload.
+function gunText(b, u) {
+  const m = magLabel(b, u);
+  if (!m) return esc(u.weaponName);
+  const flag = u.side === "player" && isRanged(u) && !u.dead && magShown(b, u) < (WEAPONS[u.weapon].ammo || 1)
+    ? (reloadRefusal(b, u) ? ' <span class="danger">Out of ammo</span>' : ' <span class="danger">Empty — reload (I)</span>') : "";
+  return `${esc(u.weaponName)} <b>${m}</b>${flag}`;
+}
+
 // ---------- threat preview ----------
 // The enemies you see, per battle revision: whether each can shoot (a gun and rounds) and where one action's walk
 // takes it (then a blow). Unseen ones are not counted: the preview never tells you what your people do not know.
@@ -147,7 +158,7 @@ function threats(b, v) {
   const list = [];
   for (const e of b.units) {
     if (e.side !== "enemy" || !active(e) || e.ko || !v.seen.has(e.id) || !onFloor(b, e)) continue;
-    list.push({ e, ranged: isRanged(e) && canFire(b, e), reach: reachable(b, e, e.mob) });
+    list.push({ e, ranged: isRanged(e) && hasShots(b, e), reach: reachable(b, e, e.mob) }); // an empty gun reloads and shoots
   }
   v.threatKey = v.key;
   v.threatList = list;
@@ -404,7 +415,7 @@ function attack(state, u, t) {
     return void act(state, { type: "melee", unit: u.id, target: t.id });
   }
   if (!isRanged(u)) { cui.msg = `${u.name} has no gun. Move next to the target and use Melee.`; return; }
-  if (!canFire(b, u)) { cui.msg = `${outOf(u)}. Melee only.`; return; }
+  if (!canFire(b, u)) { cui.msg = magEmpty(b, u) && !reloadRefusal(b, u) ? `${fireRefusal(b, u)} Press I or Reload.` : `${outOf(u)}. Melee only.`; return; }
   if (!canSee(b, u, t)) { cui.msg = "No line of sight from here."; return; }
   act(state, { type: "shoot", unit: u.id, target: t.id });
 }
@@ -726,7 +737,7 @@ export function combatAction(state, key, d) {
   }
   if (v === "doubletap") {
     const seen = tappable(b, u);
-    if (!seen.length) { cui.msg = !isRanged(u) ? "Double tap needs a gun: crush the skull from next to the body instead (U)." : !canFire(b, u) ? `Double tap needs a gun with ammo (a bow with arrows) and free hands.` : "No body in sight that could still get up."; return; }
+    if (!seen.length) { cui.msg = !isRanged(u) ? "Double tap needs a gun: crush the skull from next to the body instead (U)." : !canFire(b, u) ? (magEmpty(b, u) && !reloadRefusal(b, u) ? "Double tap needs a loaded gun: reload first (I)." : "Double tap needs a gun with ammo (a bow with arrows) and free hands.") : "No body in sight that could still get up."; return; }
     const c = seen.find((o) => imminent(b, o)) || seen.find((o) => endangered(b, o));
     if (c || seen.length === 1) return void act(state, { type: "doubletap", unit: u.id, target: (c || seen[0]).id });
     cui.mode = cui.mode === "doubletap" ? "move" : "doubletap";
@@ -811,7 +822,7 @@ export function renderCombatPanel(state) {
     <div class="small muted">Nobody to fight: place your people where they should stand when this base is attacked, then Save as plan. The clock stands still.</div></div>` : b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
     <div class="small muted">Against ${esc(e.name || e.kind)} · Turn ${b.turn} · ${phase}</div>
-    <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). With no ammo your people can only fight in melee. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+    <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). Each gun also holds a magazine that Reload (1 action) fills from this; a magazine never counts more rounds than are left here. With no ammo your people can only fight in melee. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
       ${arrowsChip(b)}
       <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       ${b.infection >= 0.1 ? `<span class="warn" data-tip="This area is infected. Gunfire draws more of the dead from the map edge.">Infected ${Math.round(b.infection * 100)}%</span>` : ""}</div>
@@ -826,10 +837,10 @@ export function renderCombatPanel(state) {
     const pips = alive(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     // A building with storeys: everyone's floor (dimmer when it is not the one shown).
     const fl = floorsOf(b) && p.f != null ? ` <span class="cbfl${p.f === floorNo(b) ? "" : " off"}" data-tip="${esc(`${p.name.split(" ")[0]} is on ${floorLabel(b, p.f).toLowerCase()}${p.f === floorNo(b) ? " (shown)" : ": selecting them shows that floor"}.`)}">F${p.f + 1}</span>` : "";
-    html += `<div class="${cls}" data-action="cb-sel" data-id="${p.id}" data-tip="${esc(`${p.name}. Weapon: ${p.weaponName}. Aim ${Math.round(p.aim)}. Press ${i + 1} or Tab to select.`)}">
+    html += `<div class="${cls}" data-action="cb-sel" data-id="${p.id}" data-tip="${esc(`${p.name}. Weapon: ${p.weaponName}${hasMag(p) ? ` (${magLabel(b, p)} loaded)` : ""}. Aim ${Math.round(p.aim)}. Press ${i + 1} or Tab to select.`)}">
       <div class="spread"><span>${spriteImg(canvasURL(unitCanvas(state, b, p, cui.salt)), 1.5)}<span class="muted">${i + 1}</span> <b>${esc(p.name)}</b>${p.sid != null && alive(p) ? statusIcons(state, state.survivors.find((s) => s.id === p.sid), { skip: ["health"] }) : ""}${fl}</span>${pips}</div>
       <div class="bar"><i style="width:${pct(p) * 100}%;background:${hpColor(pct(p))}"></i></div>
-      <div class="small muted">${esc(p.weaponName)} · ${Math.round(p.hp)} hp${status ? ` · <span class="${p.down || p.dead ? "danger" : ""}">${status}</span>` : ""}${p.aboard ? ' · <span class="good">in the vehicle</span>' : ""}</div>
+      <div class="small muted">${gunText(b, p)} · ${Math.round(p.hp)} hp${status ? ` · <span class="${p.down || p.dead ? "danger" : ""}">${status}</span>` : ""}${p.aboard ? ' · <span class="good">in the vehicle</span>' : ""}</div>
     </div>`;
   });
   html += `</div>`;
@@ -851,9 +862,10 @@ export function renderCombatPanel(state) {
     html += `<h3>${esc(u.name)} · ${ap} action${ap === 1 ? "" : "s"}</h3><div class="cbactions">
       ${btn("move", "Move", "Click a blue tile to move (1 action) or a yellow tile to dash (2 actions).", ap > 0)}
       ${b.evacOrder ? btn("evacStop", "Stop evac", "Call off the Evac: your people stay where they are and take orders again.", true) : btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).`, !evacRefusal(b))}
-      ${btn("shoot", "Shoot", gun ? (ammo ? "Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance." : `${outOf(u)}.`) : "No usable gun.", ap > 0 && ammo, "F")}
+      ${btn("shoot", "Shoot", gun ? (ammo ? `Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance.${hasMag(u) ? ` ${esc(u.weaponName)}: ${magLabel(b, u)} loaded.` : ""}` : fireRefusal(b, u)) : "No usable gun.", ap > 0 && ammo, "F")}
+      ${gun && hasMag(u) ? btn("reload", magEmpty(b, u) && !reloadRefusal(b, u) ? '<span class="danger">Reload</span>' : "Reload", `1 action: fill the ${esc(u.weaponName)}'s magazine (${magLabel(b, u)} now) from the team's ammo. Reload with one action, shoot with the other.${reloadRefusal(b, u) ? ` ${reloadRefusal(b, u)}` : ""}`, ap > 0 && !reloadRefusal(b, u), "I") : ""}
       ${btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E")}
-      ${btn("overwatch", "Overwatch", "Ends the turn. Takes a reaction shot (-15 aim) at the first enemy that moves in sight.", ap > 0 && ammo, "O")}
+      ${btn("overwatch", "Overwatch", "Ends the turn. Takes a reaction shot (-15 aim) at the first enemy that moves in sight. Needs a loaded gun.", ap > 0 && ammo, "O")}
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
       ${b.vehicle ? btn("drive", "Drive", `Both actions, from inside or next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it, up to ${DRIVE.RANGE} cells. It drives through people (anyone in the way is hit for ${RAMMING.HIT[0]}–${RAMMING.HIT[1]}, the dead ${RAMMING.ZOMBIE_HIT[0]}–${RAMMING.ZOMBIE_HIT[1]}, and shoved aside) and light obstacles (fences, crates, sandbags, barricades, tank traps: broken, at a cost to the vehicle's condition); walls, trees, other cars, water, railings and trenches stop it. Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. Whoever is aboard rides along, the loot and the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && (u.aboard || atVehicle(b, u)), "V") : ""}
       ${b.vehicle && !u.aboard ? btn("board", "Get in", `1 action, from next to it: ride in the ${b.vehicle.kind} (${b.vehicle.seats || 4} seats, ${aboardCount(b)} aboard). Inside you are off the map (not a target, not drawn, no shooting) and can drive, turn, get out, or extract with it from a zone it stands at.`, ap > 0 && atVehicle(b, u) && aboardCount(b) < (b.vehicle.seats || 4)) : ""}
@@ -866,6 +878,7 @@ export function renderCombatPanel(state) {
       ${siegeButtons(b, u, btn)}
       ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
       ${b.raid ? raidButtons(state, b, u, btn) + lockPanel(state, b, u) : ""}
+      ${carPanel(state, b, u)}
     </div>`;
   } else if (b.phase === "enemy") html += `<h3>Enemy turn</h3><div class="small muted">Watch the map. Your turn comes next.</div>`;
 
@@ -965,7 +978,7 @@ function raidHead(state, b, phase) {
     <div class="small cbsupply">
       ${me ? `<span data-tip="${esc(`What ${sel.name.split(" ")[0]} carries: worn and held ${Math.round(me.worn)} kg${me.share ? `, their share of the team's supplies ${Math.round(me.share)} kg` : ""}, finds carried loose ${Math.round(me.haul)} kg. Each survivor carries their own finds; anything that does not fit stays in the container.${trunk ? " Unload at the vehicle (N) to free them up." : ""}`)}">${esc(sel.name.split(" ")[0])} <b class="${me.room < 2 ? "warn" : ""}">${Math.round(me.load)}/${Math.round(me.max)} kg</b></span>` : ""}
       ${trunk ? `<span data-tip="${esc(`${trunk.name}: what is in it (the team's supplies and cargo) and how much more it takes${trunk.bike ? "" : ", counting everything your people carry, because the car takes all of it home"}.`)}">${trunk.bike ? "Racks" : "Vehicle"} <b>${Math.max(0, Math.round(trunk.space))} kg free</b></span>` : ""}
-      <span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+      <span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). Reload (1 action) fills a gun's magazine from this. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
       ${arrowsChip(b)}
       <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       <span data-tip="Containers not yet searched">Left to search <b>${left}</b></span>
@@ -1334,11 +1347,35 @@ function odds(b, u, t) {
     const o = meleeOdds(b, u, t);
     return { ...o, ok: true, label: `Melee ${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT})` };
   }
-  if (!canFire(b, u)) return { ok: false, label: isRanged(u) ? outOf(u) : "No gun: move next to them and use Melee" };
+  if (!canFire(b, u)) return { ok: false, label: isRanged(u) ? (magEmpty(b, u) && !reloadRefusal(b, u) ? "Empty: reload first (I)" : outOf(u)) : "No gun: move next to them and use Melee" };
   if (!canSee(b, u, t)) return { ok: false, label: "No line of sight" };
   const o = shotOdds(b, u, t);
   const cover = o.cover === 2 ? "in full cover" : o.cover === 1 ? "in half cover" : o.flanked ? "FLANKED" : t.kind === "zombie" || !t.aware || t.surprised ? "caught in the open" : "exposed";
   return { ...o, ok: true, label: `${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT}), ${cover}${t.hunker ? ", hunkered" : ""}` };
+}
+
+// The Army trucks' bodies (sim/miltrucks.js TRUCK_KINDS body), drawn from the top in car-local units (a along 0..L,
+// c across 0..2): the cargo truck a cab and a canvas-covered bed, the Humvee low and wide with a turret ring, the MRAP
+// a tall armoured box with small dark windows. color: the paint (olive; wrecked faded; burned out near black).
+const MIL_BODY = {
+  m35: { wheels: (L) => [0.7, L - 1.5, L - 0.6], parts: (L, col) => [[0.1, 1.4, 0.15, 1.85, col], [0.2, 0.9, 0.35, 1.65, "#22281a"], [1.5, L - 0.1, 0.05, 1.95, "#6b6a48"], [1.5, L - 0.1, 0.9, 1.1, "#58573a"]] },
+  humvee: { wheels: (L) => [0.6, L - 0.6], parts: (L, col) => [[0.05, L - 0.05, 0.05, 1.95, col], [0.9, 1.9, 0.3, 1.7, "#22281a"], [1.25, 1.65, 0.75, 1.25, "#3a4228"]] },
+  mrap: { wheels: (L) => [0.7, L - 0.7], parts: (L, col) => [[0.05, L - 0.05, 0.05, 1.95, col], [0.15, 0.7, 0.4, 1.6, "#1c2016"], [1.2, L - 0.3, 0.3, 1.7, "#55603a"]] },
+};
+const milParts = (m, L, col) => m.parts(L, col);
+// A vehicle's upgrades seen from the top (sim/combat.js fitMapVehicle: up { p, s, g, m, t }): steel plates down both
+// sides (patchy rust and grey for scrap plating), a dark grille or a green tint over the windscreen, a ring and a barrel.
+function carUpParts2d(u, L, bodyKind) {
+  const out = [];
+  if (u.p || u.s) for (const [c0, c1] of [[0.02, 0.16], [1.84, 1.98]]) {
+    if (u.s) for (let a = 0.1; a < L - 0.2; a += 0.7) out.push([a, Math.min(L - 0.1, a + 0.55), c0, c1, ((a * 10) | 0) % 2 ? "#7e4c34" : "#454b51"]);
+    else out.push([0.08, L - 0.08, c0, c1, u.p > 1 ? "#8a9096" : "#6c737a"]);
+  }
+  const ra = bodyKind === "humvee" ? 1.45 : bodyKind === "m35" || bodyKind === "truck" ? 0.8 : L / 2;
+  if (u.m) out.push([ra - 0.65, ra - 0.5, 0.3, 1.7, "#3a3a3c"]);
+  if (u.g) out.push([ra - 0.65, ra - 0.55, 0.32, 1.68, "#5e8f86"]);
+  if (u.t) out.push([ra - 0.22, ra + 0.22, 0.78, 1.22, "#454b51"], [Math.max(0, ra - (u.t === "m2hb" ? 1.3 : 1.0)), ra - 0.1, 0.94, 1.06, "#1e1e20"]);
+  return out;
 }
 
 function previewHtml(b, state = null) {
@@ -1365,7 +1402,7 @@ function previewHtml(b, state = null) {
     const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.ztype === "spitter" && t.cd > 0 ? " Spits again next turn." : ""}${t.windup != null ? ` Winding up to throw at ${esc((b.units.find((o) => o.id === t.windup) || {}).name || "someone")}.` : t.ztype === "flinger" && t.cd > 0 ? " Throws again soon." : ""}${t.ztype === "nightmare" && t.screamCd > 0 ? ` Screams again in ${t.screamCd} turn${t.screamCd > 1 ? "s" : ""}.` : ""}${ar}${bp} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
     // One of the risen (sim/carriers.js): who it was, and the armour it still wears.
     const turned = t.turned ? `<br><span class="small danger">${esc(t.turned.name)}, got up as one of the dead${t.armor < 0.99 ? `, still in their armour (a hit does ${Math.round(t.armor * 100)}%)` : ""}. Put down, what they had on is on the body.</span>` : "";
-    return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}${turned}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
+    return `<b>${esc(t.name)}</b> <span class="muted">${gunText(b, t)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}${turned}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
   }
   // The third side (sim/thirdside.js): survivors keeping to themselves, soldiers fighting the dead.
   if (t && t.side === "third" && v.seen.has(t.id)) return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br><span class="small">${t.team === "military" ? "A soldier: fights the dead and anyone who attacks them, not you unless you fire on them." : "A survivor keeping to themselves: they defend themselves or run. Talk to them after the fight."} Click twice to attack.</span>`;
@@ -1375,7 +1412,7 @@ function previewHtml(b, state = null) {
     if (b.phase === "deploy") return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.post === "gate" ? " · holds the gate" : t.post === "tower" ? " · on a tower" : ""}</span>`;
     const hh = heightAt(b, t.x, t.y);
     const thr = active(t) ? threatHtml(b, v, t.x, t.y, ` to ${esc(t.name.split(" ")[0])}`) : "";
-    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.light ? ` · ${LIGHTS[t.light]?.name || "light"}` : ""}${t.nvg ? " · night vision" : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · suppressor (${t.suppressor.dur ?? GEAR.suppressor.dur} shots)` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}${thr}`;
+    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${gunText(b, t)}${t.light ? ` · ${LIGHTS[t.light]?.name || "light"}` : ""}${t.nvg ? " · night vision" : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · ${t.supFitted ? "" : "carried "}suppressor${GEAR[t.suppressor.key] && GEAR[t.suppressor.key].dur ? ` (${t.suppressor.dur ?? GEAR[t.suppressor.key].dur} shots)` : ""}` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}${thr}`;
   }
   // A human body (sim/carriers.js): its state, and what can be done with it.
   const body = v.vis[h.y * W + h.x] ? humanBodyAt(b, h.x, h.y) : null;
@@ -1396,6 +1433,7 @@ function previewHtml(b, state = null) {
   }
   const lure = (b.lures || []).find((l) => l.x === h.x && l.y === h.y);
   if (lure) return `<b>${esc(GEAR[lure.key].name)}</b>: ${lure.key === "noisemaker" ? `still ringing (${lure.turns} turn${lure.turns === 1 ? "" : "s"})` : "where it landed"}. Guards and the dead nearby come to look.`;
+  if (state && !(b.raid && boxAt(b, h.x, h.y))) { const carText = carPreview(state, b, h.x, h.y); if (carText) return carText; } // ui/carpanel.js: a car or Army truck (not a raid container: that has its own line)
   if (b.raid) {
     const lockText = lockPreview(b, u, h.x, h.y); // ui/locks.js: a locked container or door
     if (lockText) return lockText;
@@ -2202,9 +2240,12 @@ function drawObject(k, px, py, cs, n, cell = null) {
         const { i, j, L, ax, kind, v, body: bodyKind } = cell.car, big = kind === "truck" || bodyKind === "truck";
         const body = kind === "vehicle" ? "#2f5d8a" : big ? "#5a4030" : colors[v % colors.length];
         const bikeParts = [[0.15, 0.65, 0.3, 0.7, "#1e1e20"], [1.35, 1.85, 0.3, 0.7, "#1e1e20"], [0.45, 1.55, 0.42, 0.58, kind === "vehicle" ? "#2f5d8a" : "#8a8f96"], [0.75, 1.15, 0.36, 0.64, "#5a5244"]]; // a bike: 2 x 1
-        const parts = bodyKind === "bike" ? bikeParts : big ? [[0.1, 1.35, 0.15, 1.85, body], [0.25, 1.3, 0.3, 1.7, "#2a221c"], [1.5, L - 0.1, 0.1, 1.9, "#3a3a3c"]]
+        const mil = MIL_BODY[bodyKind]; // an Army truck (sim/miltrucks.js; the team's own Army truck too): olive, burned out near black
+        const parts = mil ? milParts(mil, L, kind === "vehicle" ? "#2f5d8a" : cell.car.mil && cell.car.mil.cond === "burnt" ? "#2b2723" : cell.car.mil && cell.car.mil.cond === "wrecked" ? "#4a4a34" : "#4d5a32")
+          : bodyKind === "bike" ? bikeParts : big ? [[0.1, 1.35, 0.15, 1.85, body], [0.25, 1.3, 0.3, 1.7, "#2a221c"], [1.5, L - 0.1, 0.1, 1.9, "#3a3a3c"]]
           : [[0.1, L - 0.1, 0.15, 1.85, body], ...(L === 3 ? [[0.9, 2.1, 0.3, 1.7, "#9fc0d8"]] : v % 2 ? [[0.8, 3.7, 0.3, 1.7, "#9fc0d8"]] : [[0.8, 2.0, 0.3, 1.7, "#9fc0d8"], [2.2, 3.8, 0.3, 1.7, "#3a3a3c"]])];
-        if (bodyKind !== "bike") for (const a of big ? [0.7, L - 1.4, L - 0.6] : [0.6, L - 0.6]) for (const c of [0.2, 1.8]) parts.unshift([a - 0.3, a + 0.3, c - 0.22, c + 0.22, "#1e1e20"]);
+        if (bodyKind !== "bike") for (const a of mil ? mil.wheels(L) : big ? [0.7, L - 1.4, L - 0.6] : [0.6, L - 0.6]) for (const c of [0.2, 1.8]) parts.unshift([a - 0.3, a + 0.3, c - 0.22, c + 0.22, "#1e1e20"]);
+        if (cell.car.up) parts.push(...carUpParts2d(cell.car.up, L, bodyKind)); // its upgrades (sim/vehicles.js): plates, grille, the gun on the roof
         for (const [a0, a1, c0, c1, col] of parts) {
           const A0 = Math.max(a0, i) - i, A1 = Math.min(a1, i + 1) - i, C0 = Math.max(c0, j) - j, C1 = Math.min(c1, j + 1) - j;
           if (A1 - A0 <= 0.02 || C1 - C0 <= 0.02) continue;
