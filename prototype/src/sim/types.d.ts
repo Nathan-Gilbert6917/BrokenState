@@ -170,6 +170,8 @@ export interface Vehicle {
   loc: Place;
   count?: number; // bikes: how many in the stack
   cargo?: Cargo;
+  // Found on a battle map (foundcars.js): the model, where and when, and what getting it running needs (null: it runs).
+  found?: { model: string; at?: string; hour?: number; tries?: number; repair: { parts: number; scrap: number; hours: number; mech: number; what: string[] } | null };
 }
 
 // ---------- teams ----------

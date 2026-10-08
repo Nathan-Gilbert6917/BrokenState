@@ -1,6 +1,11 @@
 // @ts-check
 // Static definitions: terrain, locations, supplies, gear, traits, faction types, names.
 // Kept as plain data so it can later move to JSON files for modding.
+// The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
+import { GUN_GEAR } from "./data-guns.js";
+import { AMMO_GEAR, RELOAD_GEAR } from "./data-ammo.js";
+import { MOD_GEAR } from "./data-gunmods.js";
+import { KIT_GEAR } from "./data-kit.js";
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
 // off-road and a quarter of an hour on a road or a bridge (ROAD_COST); mountains are closed to cars.
@@ -439,6 +444,9 @@ export const LOCATIONS = {
   crash_med:   { name: "Medevac wreck",       glyph: "✈", cat: "special", danger: 2, temp: true, loot: { meds: 7, water: 2, scrap: 1, parts: 1 }, gear: ["surgkit", "bandagekit", "vest"], richness: 1.1, known: "secret" },
   crash_news:  { name: "News helicopter wreck", glyph: "✈", cat: "special", danger: 2, temp: true, loot: { parts: 3, scrap: 3, water: 1, food: 1, fuel: 0.4 }, gear: ["hikingpack", "slingbag"], richness: 0.9, known: "secret" },
   airdrop:     { name: "Supply drop",         glyph: "⇣", cat: "special", danger: 1, temp: true, loot: { food: 6, water: 4, meds: 2, ammo: 3, preserved: 2 }, gear: ["assaultpack", "vest", "bandagekit", "rucksack", "stove"], richness: 1.2, known: "secret" },
+  // The abandoned military convoy (miltrucks.js): Army trucks stopped on a road tile, their turned crews about them;
+  // stripped by other groups and burned out after 6–9 days. Its trucks hold most of what it is worth (truckLoot).
+  convoy:      { name: "Abandoned Army convoy", glyph: "🪖", cat: "special", danger: 2, temp: true, loot: { ammo: 5, fuel: 2, food: 2, meds: 1, parts: 1.5 }, gear: ["ar", "carbine", "vest", "plate", "milhelmet", "milradio", "assaultpack", "rucksack", "smokegren", "flare"], richness: 0.9, known: "secret" },
 };
 // Where a placed site stands (tile.loc.zone): map icon color and the inspect panel.
 export const SITE_ZONES = {
@@ -510,3 +518,7 @@ Object.assign(GEAR, {
   snarewire: { name: "Snare wire",   slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, weight: 0.4, cat: "tools", desc: "A coil of brass wire: a line of 8 snares (team order, 2 hours). Quiet; about a rabbit a day in good country. The wire stays with the line and comes back when it is lifted." },
 });
 // Where they turn up: loot.js SITE_FINDS (their own dice, so adding them changes no other loot roll).
+
+// The weapons overhaul (docs/weapons-overhaul-plan.md): guns and melee, ammo boxes and reloading supplies, attachments,
+// carry kit. One line, so the agents filling those modules never edit the end of this file.
+Object.assign(GEAR, GUN_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR);

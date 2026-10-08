@@ -52,8 +52,8 @@ export const HEAT_DECAY = 8;          // per hour on the move
 export const HEAT_TROUBLE = 0.12;     // hourly chance at Heat 100 and danger 1
 export const HEAT_COOLDOWN = 6;       // hours after trouble before the next roll
 // stage and camp: only where campSite does not apply (it always does for them: the camp danger model, CAMP_HEAT).
-const ACTIVITY = { sweep: 0.5, fish: 0.7, snare: 0.8, hunt: 1.2, wood: 1.3, waiting: 1, holding: 1, survey: 1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, stage: 1.6, cross: 1.8, camp: 2 };
-const ACT_NAME = { sweep: "surveying (on the move about the area)", fish: "fishing", snare: "snares", hunt: "hunting (gunshots add more)", wood: "cutting wood (the axes carry)", waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", stage: "building the staging camp", cross: "building a boat", camp: "camp fire and cooking" };
+const ACTIVITY = { sweep: 0.5, fish: 0.7, snare: 0.8, hunt: 1.2, wood: 1.3, waiting: 1, holding: 1, survey: 1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, fixcar: 1.6, stage: 1.6, cross: 1.8, camp: 2 };
+const ACT_NAME = { sweep: "surveying (on the move about the area)", fish: "fishing", snare: "snares", hunt: "hunting (gunshots add more)", wood: "cutting wood (the axes carry)", waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", fixcar: "getting a found vehicle running (engine noise, tools)", stage: "building the staging camp", cross: "building a boat", camp: "camp fire and cooking" };
 
 // What the team is doing on the spot (null: moving, in a fight or search, on the water, or not a field team).
 export function stationaryActivity(p) {
@@ -129,12 +129,12 @@ function teamMult(state, p, parts) {
 // The Heat settles 3% an hour on the spot (it levels off near 33 × the hourly gain): three people working with the fire
 // lit day and night level off near 60; the fire out at night, near 35; one quiet team camping a night stays under 20.
 export const CAMP_HEAT = {
-  presence: 0.3, person: 0.12, fireDay: 0.5, fireNight: 1.4, stove: 0.6, car: 0.5, truck: 0.7, carDanger: 0.12, carDangerMax: 0.36,
+  presence: 0.3, person: 0.12, fireDay: 0.5, fireNight: 1.4, stove: 0.6, car: 0.5, truck: 0.7, miltruck: 1.1, carDanger: 0.12, carDangerMax: 0.36,
   shot: 0.1, shotCap: 3, shotHalf: 18, shotKeep: 120, shotAdj: 0.5, work: 0.3, settle: 0.03,
 };
 // A shelter's Heat (base Heat, hordes.js baseHeat) in place of the hub's flat 3: the fire 1 by day / 3 at night, a car
 // parked there 1.5 (the pickup 2), 0.25 a weighted gunshot nearby (at most 6). Its people count as at any base.
-export const SHELTER_HEAT = { fireDay: 1, fireNight: 3, car: 1.5, truck: 2, shot: 0.25, shotCap: 6 };
+export const SHELTER_HEAT = { fireDay: 1, fireNight: 3, car: 1.5, truck: 2, miltruck: 3, shot: 0.25, shotCap: 6 };
 // The fire's comforts, at a camp or a shelter: warmth (cold exposure × warm while it burns), cooked food and boiled
 // water (without it: a raw chance a person a day of a stomach bug, at a camp; a shelter's dirty-water risk doubles) and
 // spirits (mood an hour in camp, lit / out; a shelter's people +moodLit a day with it, coldMood a day without it in the
@@ -159,7 +159,7 @@ export function campSite(state, p, activity = stationaryActivity(p), hour = stat
   return { kind: "team", tile, teams: [p], people: partyMembers(state, p).length, vehicles: [partyVehicle(state, p)].filter(isCar), fire: fireLit(p), working: false, where: p };
 }
 const r1 = (v) => Math.round(v * 10) / 10;
-const vehicleHeat = (v, C) => (v.type === "truck" ? C.truck : C.car);
+const vehicleHeat = (v, C) => (v.type === "miltruck" ? C.miltruck : v.type === "truck" ? C.truck : C.car); // the Army truck (miltrucks.js): bigger, louder, smells of diesel
 // The rows of a camp's hourly gain before the multipliers: [{ key, label, v }].
 export function campRows(state, site, hour = state.hour, kitP = null) {
   const C = CAMP_HEAT, rows = [];
@@ -178,7 +178,7 @@ export function campRows(state, site, hour = state.hour, kitP = null) {
   if (site.working) rows.push({ key: "work", label: "building work", v: C.work });
   return rows;
 }
-const VEHICLE_WORD = { truck: "truck", sedan: "car", suv: "SUV", hummer: "Hummer", van: "van" };
+const VEHICLE_WORD = { truck: "truck", sedan: "car", suv: "SUV", hummer: "Hummer", van: "van", miltruck: "Army truck" };
 export const rowsText = (rows) => rows.map((r) => `${r.label[0].toUpperCase()}${r.label.slice(1)}: +${r.v >= 1 ? r1(r.v) : Math.round(r.v * 100) / 100}`).join(", ");
 // A camp's Heat this hour for team p there: { gain, parts, rows, mult }.
 export function campGain(state, p, site, hour = state.hour) {
