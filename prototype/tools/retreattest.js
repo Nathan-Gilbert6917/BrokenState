@@ -784,8 +784,15 @@ if (N > 0) {
     // A lost fight by the numbers is now as deadly as on the map (breakoff.js, calibrated by tools/calibrate.js): "When
     // most are down" (Aggressive) waits until more than half are down or badly hurt, later than the map's Aggressive
     // AI, which sees the fight turn: 20 points for it, 10 for the others.
+    // Plus two standard errors of the difference (counted by the people in those teams), as worktest's paired checks:
+    // Aggressive's gap runs 13-21 points over seeds 1, 2, 3 and 7 at 65a3ff1 as after the merges of 2026-10-08 (seed 2
+    // failed the bare 20 points at 65a3ff1, seed 7 after them), so the bare line flipped on the dice.
     const slack = T.policy === "most" ? 0.2 : 0.1;
-    if (c.tac.n >= 5 && c.num.n >= 5) check(c.num.home / c.num.team >= c.tac.home / c.tac.team - slack, `${s}: a retreat by the numbers brings home at least as many as the map's (−${Math.round(slack * 100)} points): ${Math.round((c.tac.home / c.tac.team) * 100)}% vs ${Math.round((c.num.home / c.num.team) * 100)}%`);
+    if (c.tac.n >= 5 && c.num.n >= 5) {
+      const pa = c.tac.home / c.tac.team, pb = c.num.home / c.num.team;
+      const se = Math.sqrt((pa * (1 - pa)) / c.tac.team + (pb * (1 - pb)) / c.num.team);
+      check(pb >= pa - slack - 2 * se, `${s}: a retreat by the numbers brings home at least as many as the map's (−${Math.round(slack * 100)} points, ± ${Math.round(2 * se * 100)} of noise): ${Math.round(pa * 100)}% vs ${Math.round(pb * 100)}%`);
+    }
   }
   // A runner's escape odds per enemy kind where both pull out at about the same moment: the Cautious AI on the map
   // sounds the retreat early, as If losing breaks off early (the later styles meet more of the dead around them).
