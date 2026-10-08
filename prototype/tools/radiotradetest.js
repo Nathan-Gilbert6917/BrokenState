@@ -23,6 +23,7 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { tradeWindow, radioModal, caravanPlanModal, groupsRadioHeader, TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "../src/ui/tradewindow.js";
 import { DIPLO_ACTIONS, DIPLO_CHANGE } from "../src/ui/diplomacy.js";
 import { LISTEN_ACTIONS } from "../src/ui/radiolisten.js";
+import { INTEL_ACTIONS, INTEL_CHANGE } from "../src/ui/intel.js"; // radio security in the Groups header
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -329,7 +330,7 @@ function drive(state, pred, maxHours, keep = () => false) {
 {
   console.log("HTML");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  const known = new Set([...Object.keys(TRADE_ACTIONS), ...Object.keys(TRADE_CHANGE_ACTIONS), ...Object.keys(DIPLO_ACTIONS), ...Object.keys(DIPLO_CHANGE), ...Object.keys(LISTEN_ACTIONS)]);
+  const known = new Set([...Object.keys(TRADE_ACTIONS), ...Object.keys(TRADE_CHANGE_ACTIONS), ...Object.keys(DIPLO_ACTIONS), ...Object.keys(DIPLO_CHANGE), ...Object.keys(LISTEN_ACTIONS), ...Object.keys(INTEL_ACTIONS), ...Object.keys(INTEL_CHANGE)]);
   const handled = (a) => known.has(a) || new RegExp(`(^|[\\s{,])"?${a.replace(/[-]/g, "\\-")}"?\\s*:`, "m").test(main);
   const scan = (html, where) => {
     const acts = [...html.matchAll(/data-action="([^"]+)"/g)].map((m) => m[1]);

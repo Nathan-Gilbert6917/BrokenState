@@ -9,6 +9,8 @@
 //              Watch, slip away, ambush, talk, or take a side.
 // Fights go through combat.js (startCombat + a registered handler), so they work the same whether
 // the battle resolves instantly or on the tactical battle screen.
+// A group that overheard a caravan of yours on the radio (intel.js g.lying) lies in wait for it: it is met
+// INTEL.AMBUSH.MULT × as often, INTEL.AMBUSH.RANGE tiles further from their bases, and sees the team first more often.
 //
 // Captured survivors get location { kind: "captive", factionId, tile, since }. They can be
 // rescued (Rescue mission: sneaked or stormed out on their base's map, rescueraid.js, or by the numbers here),
@@ -53,6 +55,7 @@ import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsid
 import { unitPower, addToArsenal, arsenalWorthy, captureVehicle, arsenalText } from "./arsenal.js"; // group arsenals: their people's power by their kit; what they take goes into it
 import { captiveEscape, captiveDecline, captiveTurnMult } from "./groupjails.js"; // jailhouse: their jail's tier, the work they are put to
 import { startRescueRaid, tacticalPossible, jailTier, JAIL } from "./rescueraid.js"; // the rescue played out on their base's map
+import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your caravan's route lies in wait
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -339,12 +342,13 @@ export function conflictChance(state, p, tileId) {
   for (const f of state.factions) {
     if (!f.alive || !f.bases.length) continue;
     const d = minBaseDist(state, f, tileId);
-    const reach = pwarTeamRange(state, f); // playerwars.js: a group at war with you hunts your teams further out
+    const lying = lyingFor(state, f, p); // intel.js: they heard this caravan's route on your radio and wait for it
+    const reach = pwarTeamRange(state, f) + (lying ? INTEL.AMBUSH.RANGE : 0); // playerwars.js: a group at war with you hunts your teams further out
     if (d > reach) continue;
     const att = attitude(f);
     let w = att === "Hostile" ? 1 : isAggressiveType(f) ? 0.5 : (f.type === "military" || f.type === "fortress") ? 0.3 : 0.12;
     if (f.pact) w *= 0.5;
-    w *= (1 - d / (reach + 1.5)) * pwarTeamMult(state, f);
+    w *= (1 - d / (reach + 1.5)) * pwarTeamMult(state, f) * (lying ? INTEL.AMBUSH.MULT : 1);
     if (t.owner === f.id) w *= 1.4;
     humans += w;
     sources.push({ f, w });
@@ -389,9 +393,11 @@ export function rollConflict(state, p, tileId) {
   const { chance, sources } = conflictChance(state, p, tileId);
   if (!sources.length || !state.rng.chance(chance)) return null;
   const src = state.rng.weighted(sources, (s) => s.w);
-  const spotted = state.rng.chance(spotFirstChance(state, p));
+  const lying = !src.zombies && !src.aiParty && lyingFor(state, src.f, p); // intel.js: waiting for this caravan, they see it first more often
+  const spotted = state.rng.chance(spotFirstChance(state, p) * (lying ? INTEL.AMBUSH.SPOT : 1));
   const card = src.zombies ? zombieEncounter(state, p, spotted) : factionEncounter(state, p, src.f, spotted, src.aiParty);
   if (!card) return null;
+  if (lying) ambushSprung(state, src.f, p); // "They knew we were coming"
   p.lastConflict = state.hour;
   p.conflictCount = (p.conflictCount || 0) + 1;
   return card;

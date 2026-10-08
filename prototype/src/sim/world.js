@@ -718,7 +718,8 @@ export function snapshot(state, tileId) {
   const here = state.hordes.filter((h) => h.tile === tileId);
   const hordeSize = here.reduce((s, h) => s + h.size, 0);
   const site = state.hiveSites ? state.hiveSites.find((x) => x.tile === tileId) : null;
-  const factionBase = state.factions.find((f) => f.alive && f.bases.includes(tileId));
+  // hiding.js: a group's hidden outpost you have not found is bare ground on your map (state.intel.unseen).
+  const factionBase = state.intel && state.intel.unseen && state.intel.unseen[tileId] != null ? null : state.factions.find((f) => f.alive && f.bases.includes(tileId));
   return {
     hour: state.hour,
     owner: t.owner,

@@ -1,12 +1,13 @@
 // @ts-check
 // Buildings, workshop stations and the construction queue for every base (hub and outposts).
-import { log, atBase, skill, newId } from "./world.js";
+import { log, atBase, skill, newId, day } from "./world.js";
+import { SILENT } from "./hiding.js"; // a base running silent: its stations work in quiet spells
 import { SKILL_NAMES } from "./data.js";
 import { workFactor } from "./health.js";
 import { storeCapacity, storeSpaces } from "./storage.js";
 import { stationIO, orderHold } from "./production.js";
 import { refreshPower, generatorStatus, powerLine } from "./power.js";
-import { buildMult } from "./skills.js";
+import { buildMult, hash01 } from "./skills.js";
 import { buildLock } from "./blueprints.js";
 import { cabinProblem } from "./hunting.js";
 import { stockHas, useStock } from "./water.js"; // recipes: water counts both kinds, un-purified used first
@@ -70,6 +71,8 @@ export const BUILDINGS = {
   trench:       { name: "Trench and stakes", cost: { scrap: 12 },           hours: 30, max: 1, defence: true, desc: "A ditch around the base: the base holds back 25% more of a horde, and on the battle map the dead that reach the trench lose the rest of their turn." },
   gate:         { name: "Reinforced gate",  cost: { scrap: 14, parts: 1 },  hours: 20, max: 1, defence: true, desc: "Steel plate and a bar on the gate: the base holds back 20% more of a horde, the gate has 180 hit points instead of 100 on the battle map, plus two more barricades there. Needs walls to matter; a Wallbreaker smashes it when no barricade is left." },
   floodlights:  { name: "Floodlights",      cost: { scrap: 8, parts: 2 },   hours: 12, max: 1, defence: true, desc: "Work lights on the walls. Burns 2 fuel when a horde attacks: the base holds back 10% more, and defenders aim better on the battle map (+10 at night, +4 by day). No fuel, no lights." },
+  // Hiding a base (hiding.js): netting and brush over the roofs and the yard, the paths kept off. Concealment + HIDE.CAMO.
+  camo:         { name: "Camouflage netting", cost: { scrap: 10, parts: 1 }, hours: 16, max: 1, desc: "Netting, brush and dull paint over the roofs and the yard, and the paths kept off the open ground: the base is harder to find (concealment +25%: the groups' scouts and passing parties miss it more often, and a base they have not seen for a month may slip out of what they know). See the base's Defence tab." },
   watchtower:   { name: "Watchtower",     plot: "utility", cost: { scrap: 15 },            hours: 18, max: 1, desc: "+2 tiles of live vision around this base. Lookouts warn of raids sooner. On the battle maps it is two towers (height 2): full cover from anything not right next to them, +10 aim at anything lower and +4 sight, the widest view." },
   // Jails (family "jail", tiers 1–3, each upgrading the one below in place; prisoners.js JAIL has what each tier does):
   // a base keeps prisoners only in a jail (no jail, no room: the extras are released, executed, asked to join or walked
@@ -440,6 +443,7 @@ export function runStations(state, base) {
   for (const st of stations(base)) {
     const status = stationStatus(state, base, st);
     if (!status.running || status.recipe === "power") continue;
+    if (base.silent && hash01(state.seed, "silentwork", base.id, day(state), st.id) < SILENT.WORK_SKIP) continue; // hiding.js: running silent, the workshops work in quiet spells
     const r = RECIPES[status.recipe];
     const inp = status.in || r.in;
     for (const [k, v] of Object.entries(inp)) useStock(base.stock, k, v);

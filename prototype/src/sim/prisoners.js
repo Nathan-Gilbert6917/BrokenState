@@ -43,9 +43,11 @@
 //       Leadership, zealots −25%, soldiers −15%, hunger by rations or unfed +10–15%, one who likes you +15%; 10–95%).
 //       Rough questioning: +20%, but it costs them 10 health and 15 mood, sours them −15 instead of −6, costs
 //       everyone at the base 2 mood (a Former Medic 4, the Brave and Tough nothing) and 3 goodwill with their group.
-//       The first answer gives their group's bases (and puts the group on your map), its people and stock, every
-//       party it has out (raids included) and the hives near it, as knowledge snapshots; later answers the parties
-//       and hives again. Each questioning sours them (−6).
+//       The first answer gives their group's bases (and puts the group on your map, hidden outposts too: hiding.js),
+//       its people and stock, every party it has out (raids included) and the hives near it, as knowledge snapshots;
+//       later answers the parties and hives again. Every answer tells what their group knows of your bases, how it
+//       learned them (scouted, or heard on your radio), a decoy it believes in and an ambush it has out (intel.js
+//       knowsLine). Each questioning sours them (−6).
 //     ask to join (every 7 days; ASK): (opinion − 30) / 140 × who they were (zealots 0.5, soldiers 0.8, a loner 1.2)
 //       + 0.5% a point of the leader's Leadership and of the best talker's Speech + rations + labour + (their mood −
 //       30) / 200, 2–95% (the bonuses only once their opinion is above 30): at opinion 80 on Short with a good leader
@@ -94,6 +96,8 @@ import { baseWoodTiles, seasonWood, takeWood, WOOD } from "./woodcutting.js"; //
 import { wormHealMult, WORM } from "./worm.js"; // the worm: half the healing while it is in them; treated prisoners (WORM.OTHERS)
 import { jailText } from "./groupjails.js"; // what a prisoner tells of their group's jail
 import { numbersSurrenders } from "./nonlethal.js"; // a decisive win by the numbers: a few of them give up
+import { knowsLine } from "./intel.js"; // what their group knows of you
+import { foundAllOf } from "./hiding.js"; // their hidden outposts, told
 
 // The jail tiers (buildings.js family "jail"; the AI groups' jails too, groupjails.js), lower ones easier to get out
 // of. cap: prisoners held; guarded / unguarded: escapes a day in the cell; bonus: × the escape for each thing a
@@ -719,7 +723,10 @@ export function gatherIntel(state, p, full = true) {
       lines.push(`${f.name} hold ${f.bases.map((t) => tileLabel(state, t)).join(", ")}: about ${f.pop} people, ${f.intel.food} food, ${f.intel.ammo} ammo, ${f.intel.meds} meds, ${f.intel.fuel} fuel.`);
       const jt = jailText(state, f); // groupjails.js: their jail and who is in it (now known)
       if (jt) lines.push(`Their jail: ${jt}.`);
+      foundAllOf(state, f); // hiding.js: their hidden outposts too
     }
+    const kl = knowsLine(state, f); // intel.js: what their group knows of your bases (and how)
+    if (kl) lines.push(kl);
     const out = state.parties.filter((q) => q.owner === f.id && q.path);
     for (const q of out) tiles.add(q.path[Math.min(q.idx || 0, q.path.length - 1)]);
     lines.push(out.length ? `They have ${out.length} part${out.length === 1 ? "y" : "ies"} out (${out.map((q) => `${q.kind === "raid" ? "a raid" : q.kind === "caravan" ? "a caravan" : q.kind === "scav" ? "a scavenging party" : `a ${q.kind}`} near ${tileLabel(state, q.path[Math.min(q.idx || 0, q.path.length - 1)])}`).join("; ")}).` : "No patrols out right now.");

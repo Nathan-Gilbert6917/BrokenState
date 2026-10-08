@@ -9,6 +9,7 @@
 // and only the tiles that changed are written. The dots are gathered at most twice a second; the minimap canvas is
 // drawn again (the image scaled, the dots, the frame) only when one of those or the camera changed, at most 30 times
 // a second. Hidden, it costs one check a frame.
+import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts
 import { TERRAIN } from "../sim/data.js";
 import { partyTile, plannedTile } from "../sim/parties.js";
 import { contactable } from "../sim/orders.js";
@@ -191,7 +192,7 @@ function gatherDots(state) {
     if (!f.alive) continue;
     for (const t of f.bases) {
       const s = k[t];
-      if (live.has(t) || (s && s.factionBase === f.id)) out.groups.push({ p: at(t), color: f.color });
+      if ((live.has(t) && !unseenOutpost(state, t)) || (s && s.factionBase === f.id)) out.groups.push({ p: at(t), color: f.color }); // sim/hiding.js: not a hidden outpost you have not found
     }
   }
   return out;
