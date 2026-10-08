@@ -10,8 +10,10 @@ import { addBuilding } from "../src/sim/buildings.js";
 import { createVehicle, vehicleById } from "../src/sim/vehicles.js";
 import {
   saveSupplyRun, dispatchSupplyRun, supplyRunById, jobParty, jobForm, releaseHeld, pauseSupplyRun, supplyStatus,
-  deleteSupplyRun, supplyEstimate,
+  deleteSupplyRun, supplyEstimate, supplyRuns,
 } from "../src/sim/supply.js";
+import { setAutopilot, autopilotDaily } from "../src/sim/autopilot.js";
+import { breakFixture } from "../src/sim/breakdowns.js";
 
 const days = Number(process.argv[2] || 70);
 const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [42, 7, 1234];
@@ -240,6 +242,36 @@ for (const seed of seeds) {
   console.log(`  statuses: ${[j1, j2, j3, j4, j6, j7, j8].filter(Boolean).map((j) => `${j.id}:${supplyStatus(state, j).key}`).join(" ")}; A scrap ${Math.floor(ships)}, hub food ${Math.floor(h.stock.food)}`);
   for (const j of [j1, j2, j3, j4, j7].filter(Boolean)) console.log(`  job ${j.id}: ${supplyStatus(state, j).text} | ${j.lastResult}`);
   summary.push({ seed, j1: j1.runs, j2: j2.runs, lost });
+}
+// The governor ships scrap and parts to an outpost whose well broke and waits for them (autopilot.js
+// waterRepairLoad): an outpost makes no scrap, and without them it lived on the hub's water runs for good (census
+// seed 3, aggressive: the old holdout's two wells stood broken from day 303, 0 scrap there and 101 at the hub).
+{
+  console.log("--- the governor mends an outpost's well ---");
+  const state = createWorld({ seed: 42, factionCount: 6 });
+  state.started = true;
+  const h = hub(state);
+  const tO = freeTile(state, h.tile, 3, 6);
+  if (check(tO, "could not place the outpost")) {
+    const people = atBase(state, h.id).filter((s) => !s.leader);
+    const O = makeOutpost(state, tO.id, "Test Outpost W", people.slice(0, 2));
+    for (const s of people) s.health = 100;
+    addBuilding(O, "well");
+    O.stock.scrap = 0; O.stock.parts = 0;
+    h.stock.scrap = 60; h.stock.parts = 6; h.stock.food = Math.max(h.stock.food || 0, 80);
+    setAutopilot(state, true, "balanced");
+    const well = O.buildings.find((b) => b.type === "well");
+    breakFixture(state, O, well, "test");
+    check(!!well.broken && !(O.repairs || []).length, "test setup: the well should be broken with no repair started (no scrap there)");
+    autopilotDaily(state);
+    const run = supplyRuns(state).find((j) => j.destId === O.id && j.apMade && jobParty(state, j));
+    const scrapOut = run ? (run.deliver.find((l) => l.key === "scrap") || {}).qty || 0 : 0;
+    const partsOut = run ? (run.deliver.find((l) => l.key === "parts") || {}).qty || 0 : 0;
+    check(!!run && scrapOut >= 3 && partsOut >= 1, `no supply run with a repair's scrap and part for the broken well (${run ? JSON.stringify(run.deliver) : "no run"})`);
+    for (let k = 0; k < 24 * 4 && well.broken; k++) { tickHour(state); resolveCards(state); }
+    check(!well.broken, "the outpost's well was not mended within 4 days of the delivery");
+    console.log(`  delivered ${scrapOut} scrap, ${partsOut} parts; the well is ${well.broken ? "still broken" : `mended${well.rigged ? " (jury-rigged)" : ""}`}`);
+  }
 }
 console.log(fails ? `${fails} check(s) failed.` : `All checks passed on ${summary.length} seed(s).`);
 process.exit(fails ? 1 : 0);

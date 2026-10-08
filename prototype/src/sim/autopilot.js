@@ -47,7 +47,7 @@ import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fi
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill } from "./crafting.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
-import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun } from "./supply.js";
+import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun, linesText } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
 import { allCaptives, ransomValue } from "./conflicts.js";
 import { ensureInv, armorMult, itemLoad } from "./inventory.js";
@@ -4358,6 +4358,7 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
     const crewPool = home.filter((s) => s.health >= 70 && !s.leader && !s.inBed && !s.woundInfected && !keep.has(s.id)).sort((a, b) => combatPower(b) - combatPower(a));
     const staff = atBase(state, o.id).length;
     let form = null, why = "";
+    const fix = staff ? waterRepairLoad(state, h, o) : null; // scrap and parts for its broken well or pump
     if (moves && staff < 2 && !o.captured && home.length >= 7 && crewPool.length) { // a base taken from a group (conquest.js) is held by whoever took it
       const s = [...crewPool].sort((a, b) => skill(b, "farming") - skill(a, "farming"))[0];
       form = { crew: [s.id], deliver: [{ key: "food", qty: 6 }, { key: "scrap", qty: Math.min(8, Math.max(0, Math.floor((h.stock.scrap || 0) - 30))) }], atDest: "disband" };
@@ -4366,12 +4367,19 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
       // An outpost's spring gives 3 a day (less in a dry spell): water from the hub before anyone goes thirsty.
       const qty = Math.min(30, Math.floor(waterIn(h.stock) - home.length * 5));
       const crew = [];
-      for (const s of crewPool) if (carryCapacity(state, crew, null) < qty * SUPPLIES.water.weight && crew.length < Math.min(spare, 2)) crew.push(s);
-      const load = Math.min(qty, Math.floor(carryCapacity(state, crew, null) / SUPPLIES.water.weight));
+      const fixKg = fix ? fix.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0) : 0; // the repair's scrap and parts ride along
+      for (const s of crewPool) if (carryCapacity(state, crew, null) < qty * SUPPLIES.water.weight + fixKg && crew.length < Math.min(spare, 2)) crew.push(s);
+      const load = Math.min(qty, Math.floor((carryCapacity(state, crew, null) - fixKg) / SUPPLIES.water.weight));
       // Purified water first, the rest un-purified (water.js: the outpost purifies it like its own).
       const pure = Math.min(load, Math.floor(Math.max(0, h.stock.water || 0)));
-      if (load >= 8) form = { crew: crew.map((s) => s.id), deliver: [...(pure > 0 ? [{ key: "water", qty: pure }] : []), ...(load - pure > 0 ? [{ key: RAW, qty: load - pure }] : [])], atDest: "return" };
-      why = `${load} water (it is running dry)`;
+      if (load >= 8) form = { crew: crew.map((s) => s.id), deliver: [...(pure > 0 ? [{ key: "water", qty: pure }] : []), ...(load - pure > 0 ? [{ key: RAW, qty: load - pure }] : []), ...(fix || [])], atDest: "return" };
+      why = `${load} water (it is running dry)${fix ? `, and ${linesText(fix)} to mend its water` : ""}`;
+    } else if (fix && crewPool.length) {
+      // Its well or pump is broken and waits for scrap or parts the outpost does not have (an outpost makes none):
+      // without them it lives on the hub's water runs for good (census seed 3, aggressive: the old holdout's two wells
+      // stood broken from day 303 with 0 scrap there and 101 at the hub, and 8 people went thirsty).
+      form = { crew: [crewPool[0].id], deliver: fix, atDest: "return" };
+      why = `${linesText(fix)} to mend its water (a broken well or pump waits for them)`;
     } else if (moves && !o.captured && movers(state, h, o, Math.min(spare, crewPool.length)) > 0) {
       // Not to a base taken from a group (conquest.js): held by whoever took it, often out in the wild (census seed 5005,
       // huge, aggressive: people moved one by one to nine taken bases died of hordes and the worm: 179 deaths against 85).
@@ -4416,6 +4424,18 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
     deleteSupplyRun(state, res.job);
     return "";
   }
+}
+
+// Scrap and parts an outpost's broken well or pump waits for (breakdowns.js: a repair is 3 scrap and a part, a
+// jury-rig 1 scrap), as supply-run lines, for what it lacks of a repair each and the hub can spare past its own water
+// hold (waterPlan: the hub's own broken wells and filters first); null when nothing waits or the hub cannot spare it.
+function waterRepairLoad(state, h, o) {
+  const k = waterPlan(state, o).brokenWater;
+  if (!k) return null;
+  const scrap = Math.min(Math.max(0, 3 * k - Math.floor(o.stock.scrap || 0)), Math.floor((h.stock.scrap || 0) - waterHold(state, h, "scrap")));
+  const parts = Math.min(Math.max(0, k - Math.floor(o.stock.parts || 0)), Math.floor((h.stock.parts || 0) - waterHold(state, h, "parts") - 1));
+  const out = [...(scrap > 0 ? [{ key: "scrap", qty: scrap }] : []), ...(parts > 0 ? [{ key: "parts", qty: parts }] : [])];
+  return out.length ? out : null;
 }
 
 // ---------- crew roles (crews.js, work.js) ----------
