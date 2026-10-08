@@ -24,6 +24,7 @@ import { CONDITIONS, conditionsOf } from "./health.js";
 import { weatherOnDay } from "./weather.js";
 import { attitude } from "./factions.js";
 import { foodOutlook } from "./economy.js";
+import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 
 export const MAX_FACTORS = 4;
 export const MAX_LOSSES = 30;
@@ -108,6 +109,7 @@ const stockOf = (base, k) => {
   if (k === "water") return (st.water || 0) + (st.rawwater || 0);
   if (k === "food") return (st.food || 0) + (st.preserved || 0);
   if (k === "heat") return (st.wood || 0) + (st.fuel || 0);
+  if (k === "ammo") return totalRounds(st); // every round, any calibre (rounds.js)
   return st[k] || 0;
 };
 const lowSince = (base, k) => (base && base.lows && base.lows[k] != null ? base.lows[k] : null);
@@ -158,7 +160,7 @@ function defendersFactors(state, base, dying = null) {
   if (!here.length) return [F(`Nobody was at ${base.name}${away.length ? `: its ${plural(away.length, "person was", "people were")} away on a trip` : ""}.`)];
   out.push(F(away.length ? `${away.length} of the ${n} people living at ${base.name} ${away.length === 1 ? "was" : "were"} away on a trip; ${onGuard}.`
     : `${onGuard[0].toUpperCase()}${onGuard.slice(1)} (${plural(here.length, "person", "people")} there).`));
-  const ammo = Math.floor(base.stock.ammo || 0);
+  const ammo = totalRounds(base.stock);
   if (ammo < here.length * 3) out.push(F(`Ammo was short: ${ammo} left for ${plural(here.length, "defender")}.`));
   return out;
 }

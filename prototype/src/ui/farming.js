@@ -21,6 +21,8 @@ import {
   HUNT_METHODS, METHOD_NAMES, MIX_PRESETS, huntMixOf, setHuntMix, setHuntShare, huntWorkWhy, ammoKeep, hasBow, ARROW, TRAP, HUNT, baseHuntDay,
 } from "../sim/hunting.js";
 import { ask } from "./confirm.js"; // digging a living crop under asks first (one confirmation style)
+import { totalRounds } from "../sim/rounds.js"; // rounds by calibre
+import { roundsLine } from "../sim/ammo.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -267,7 +269,7 @@ function huntingCard(state, b) {
   const people = atBase(state, b.id);
   const hunters = people.filter((s) => s.role === "hunt");
   const why = huntWorkWhy(state, b);
-  const spare = Math.max(0, (b.stock.ammo || 0) - ammoKeep(state, b));
+  const spare = Math.max(0, totalRounds(b.stock) - ammoKeep(state, b)); // every round (sim/rounds.js); a gun hunts with its own calibre
   const bows = people.filter((s) => hasBow([s]));
   const opts = (k) => Array.from({ length: 11 }, (_, i) => i * 10).map((v) => `<option value="${v}" ${mix[k] === v ? "selected" : ""}>${v}%</option>`).join("");
   const sel = HUNT_METHODS.map((k) => `<label class="wcf"${tip(MIX_TIPS[k])}>${METHOD_NAMES[k]} <select data-action="hunt-share" data-base="${b.id}" data-k="${k}">${opts(k)}</select></label>`).join(" ");
@@ -281,7 +283,7 @@ function huntingCard(state, b) {
         <div class="row" style="margin-top:0.35rem">${sel}</div>
         <div class="row" style="margin-top:0.3rem">${presets}</div>
         <div class="kv" style="margin-top:0.3rem">
-          <div${tip(`Ammo the hunters may use: the stock less the walls' keep (3 a person here + 10).`)}>Ammo</div><div>${n0(b.stock.ammo)} <span class="muted">(${n0(spare)} above the walls' keep)</span></div>
+          <div${tip(`Ammo the hunters may use: the stock less the walls' keep (3 a person here + 10).`)}>Ammo</div><div${tip(roundsLine(b.stock))}>${n0(totalRounds(b.stock))} <span class="muted">(${n0(spare)} above the walls' keep)</span></div>
           <div${tip("Arrows and crossbow bolts for hunting (Crafting: 12 from 30 firewood and 1 scrap; found at hunting lodges, gun stores, sports shops and campgrounds). A hunting team with a bow takes up to 12 along.")}>Arrows</div><div>${n0(b.stock.arrows)}${bows.length ? ` <span class="muted">(${bows.length} with a bow or crossbow)</span>` : ` <span class="muted">(nobody here carries a bow)</span>`}</div>
           ${last ? `<div>Yesterday</div><div>${lastText}</div>` : ""}
         </div>

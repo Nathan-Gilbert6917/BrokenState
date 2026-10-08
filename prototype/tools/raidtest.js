@@ -3,6 +3,7 @@
 //   all: every site type in data.js LOCATIONS; kit: everyone carries 2 bottles and a noise maker, a flashlight in
 //   the off hand, and the first gun that takes one a suppressor (the bot throws them, stealth.js botStealth);
 //   night: the raids start at 22:00 (short sight, searching in the dark).
+import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition, partyTile } from "../src/sim/parties.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, finishCombat } from "../src/sim/combat.js";
@@ -112,7 +113,7 @@ for (let i = 0; i < Math.max(4, Math.ceil(per / 2)); i++) {
   arrowRaids++;
   const r = b.result;
   arrowsShot += r.arrowsUsed; arrowsBack += r.arrowsBack;
-  arrowCheck(r.ammoUsed === 0 && p.supplies.ammo === 20, `bows shoot no ammo in a raid (${r.ammoUsed})`);
+  arrowCheck(r.ammoUsed === 0 && totalRounds(p.supplies) === 20, `bows shoot no ammo in a raid (${r.ammoUsed})`);
   arrowCheck(p.supplies.arrows === 30 - r.arrowsUsed + r.arrowsBack, `the arrows come from the packed supplies (30 - ${r.arrowsUsed} + ${r.arrowsBack} = ${p.supplies.arrows})`);
   arrowCheck(r.arrowsBack === 0 || (r.outcome === "extracted" && r.arrowsBack === Math.round(r.arrowsUsed / 2)), `arrows are picked up only on the way out of a cleared site (${r.outcome}, ${r.arrowsBack} of ${r.arrowsUsed})`);
   arrowCheck(r.outcome === "extracted" || r.arrowsBack === 0, "none after a wipe");

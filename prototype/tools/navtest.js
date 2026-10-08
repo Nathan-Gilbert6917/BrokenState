@@ -136,10 +136,11 @@ section("Rebinding: Menu → Controls");
   K.setBinding("tab.groups", 0, "KeyI"); // I is the infection overlay on the map ...
   check(K.conflicts().some((c) => c.chord === "KeyI"), "I on Groups clashes with the infection overlay");
   K.setBinding("tab.groups", 0, "KeyG");
-  check(!(K.setBinding("battle.shoot", 0, "KeyI") || []).length, "... but I in a battle is no clash (another context)");
-  check(K.keyAction(ev("KeyI"), "battle") === "battle.shoot" && K.keyAction(ev("KeyF"), "battle") === null, "Shoot on I in battle; F no longer shoots");
+  // (every letter is a battle order now, I is Reload: Shift+N, the map's previous team, is the map key free in battle)
+  check(!(K.setBinding("battle.shoot", 0, "Shift+KeyN") || []).length, "... but the map's Shift+N in a battle is no clash (another context)");
+  check(K.keyAction(parse("Shift+KeyN"), "battle") === "battle.shoot" && K.keyAction(ev("KeyF"), "battle") === null, "Shoot on Shift+N in battle; F no longer shoots");
   K.setBinding("battle.shoot", 1, "KeyF"); // added as a second key
-  check(K.keysOf("battle.shoot").join() === "KeyI,KeyF", "+ adds a second key");
+  check(K.keysOf("battle.shoot").join() === "Shift+KeyN,KeyF", "+ adds a second key");
   K.removeBinding("battle.shoot", 0);
   check(K.keysOf("battle.shoot").join() === "KeyF", "✕ takes one off");
   // A battle key, through combatKey.

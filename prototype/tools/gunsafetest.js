@@ -4,6 +4,8 @@
 // registered extra, gun cases (carried locked, opened at a base for free; a cased gun is not fielded), the raid bot's
 // rules (no drilling past the Heat cap, never a blast), the hour-by-hour search, a save round-trip, the loot tags.
 // Usage: node tools/gunsafetest.js [seed]
+import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
+import { SUPPLIES } from "../src/sim/data.js";
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
@@ -299,7 +301,8 @@ console.log("Blowing it: the charge, the blast, the contents");
   const guns = (g) => g.filter((it) => GEAR[it.key].slot === "weapon" && GEAR[it.key].cat !== "melee");
   const gc = guns(clean.gear), gb = guns(blown.gear);
   check(gc.length === gb.length && gc.length > 0 && gc.every((it, i) => near(gb[i].quality, Math.max(0.2, Math.round((it.quality - 0.3) * 100) / 100), 0.011)), `each gun −0.3 condition (${gc.map((x) => x.quality).join(", ")} → ${gb.map((x) => x.quality).join(", ")})`);
-  check((blown.sup.ammo || 0) < (clean.sup.ammo || 0) && near(blown.sup.ammo, clean.sup.ammo - Math.round(clean.sup.ammo * 0.3)), `30% of the ammo gone (${clean.sup.ammo} → ${blown.sup.ammo})`);
+  const R = (sup) => totalRounds(sup), keysOf = (sup) => Object.keys(sup).filter((k) => sup[k] > 0 && SUPPLIES[k] && SUPPLIES[k].round); // ammo.js: the rounds by calibre
+  check(R(blown.sup) < R(clean.sup) && keysOf(clean.sup).every((k) => near(blown.sup[k] || 0, clean.sup[k] - Math.round(clean.sup[k] * 0.3))), `30% of the ammo gone (${R(clean.sup)} → ${R(blown.sup)})`);
   const g2 = [newItem("scotch"), newItem("wine"), newItem("watch"), newItem("pistol", 0.4)];
   const s2 = { ammo: 10, food: 3 };
   G.blastContents(g2, s2);
@@ -375,7 +378,7 @@ console.log("Contents by tier (rollGunStash)");
         if (GEAR[it.key].slot === "weapon") { guns++; keys[it.key] = (keys[it.key] || 0) + 1; minQ = Math.min(minQ, it.quality); maxQ = Math.max(maxQ, it.quality); } else if (it.key === "flashbang" || it.key === "smokegren") gren++; // the flashbang branch's extra (gunsafes.js STASH_GRENADES)
         else { items++; val += GEAR[it.key].value; }
       }
-      ammo += out.sup.ammo || 0;
+      ammo += totalRounds(out.sup); // ammo.js: the rounds by calibre
     }
     return { guns: guns / N, ammo: ammo / N, items: items / N, minQ, maxQ, keys, gren: gren / N };
   };
@@ -406,7 +409,7 @@ console.log("Gun cases: carried locked, opened at a base for free; a cased gun i
   let cs = null;
   for (let i = 0; i < 200 && !cs; i++) { const it = G.rollGunCase((...k) => hash01(seed, "case", i, ...k), "riflecase", "farm"); if (it.locked) cs = it; }
   const gun = cs.contents[0];
-  check(cs.locked && gun && GEAR[gun.key].slot === "weapon" && cs.sup.ammo >= 5, `a locked rifle case with a ${gun.name} and ${cs.sup.ammo} rounds`);
+  check(cs.locked && gun && GEAR[gun.key].slot === "weapon" && totalRounds(cs.sup) >= 5, `a locked rifle case with a ${gun.name} and ${totalRounds(cs.sup)} rounds`);
   check(near(itemLoad(cs), GEAR.riflecase.weight + GEAR[gun.key].weight) && itemValue(cs) > GEAR.riflecase.value, `its weight and worth count the gun inside (${itemLoad(cs)} kg)`);
   let n = 0, l = 0;
   for (let i = 0; i < 2000; i++) { const it = G.rollGunCase((...k) => hash01(seed, "case2", i, ...k), "pistolcase", "town"); n++; if (it.locked) l++; }
@@ -430,9 +433,9 @@ console.log("Gun cases: carried locked, opened at a base for free; a cased gun i
   const cs3 = G.rollGunCase((...k) => hash01(seed, "case4", ...k), "riflecase", "farm");
   cs3.locked = true;
   h.armory.push(cs3);
-  const ammo0 = h.stock.ammo || 0, n0 = h.armory.length;
+  const ammo0 = totalRounds(h.stock), n0 = h.armory.length;
   const msg = G.openCaseAt(st, `armory:${h.id}:list:${h.armory.length - 1}`);
-  check(!cs3.locked && !cs3.contents.length && h.armory.length === n0 + 1 && (h.stock.ammo || 0) > ammo0, `at a base it opens for free: the gun into the armory, the rounds into the stores ("${msg}")`);
+  check(!cs3.locked && !cs3.contents.length && h.armory.length === n0 + 1 && totalRounds(h.stock) > ammo0, `at a base it opens for free: the gun into the armory, the rounds into the stores ("${msg}")`);
   // The autopilot opens what comes home.
   const cs4 = G.rollGunCase((...k) => hash01(seed, "case5", ...k), "pistolcase", "town");
   h.armory.push(cs4);
@@ -595,7 +598,7 @@ console.log("Save round-trip");
   const u2 = b2.units.find((q) => q.id === u.id);
   const cs2 = u2.haul.gear.find((it) => it && it.key === "riflecase");
   check(c2 && c2.lock.prog === c.lock.prog && c2.lock.prog > 0 && c2.lock.mech === "keypad" && c2.kind === "gunsafe", `a lock's drilling progress survives a save (${c2 && c2.lock.prog})`);
-  check(cs2 && cs2.locked && cs2.contents[0].key === cs.contents[0].key && cs2.sup.ammo === cs.sup.ammo, "a locked case and what is in it survive a save");
+  check(cs2 && cs2.locked && cs2.contents[0].key === cs.contents[0].key && totalRounds(cs2.sup) === totalRounds(cs.sup), "a locked case and what is in it survive a save");
   const cells = b2.cells;
   check(cells[c.y * b2.w + c.x].k === "gunsafe", "the safe's cell too");
 }

@@ -28,6 +28,7 @@
 // a site (more for its kind: raiders like walls, communes fields, expansionists anything), moves in, takes the works
 // and the stores; yours: a card. First come, first served.
 import { SUPPLIES, GEAR } from "./data.js";
+import { groupStockKey } from "./trade.js"; // a group's one count of parts (part kinds come out of it)
 import { day, log, addCard, atBase } from "./world.js";
 import { hash01 } from "./skills.js";
 import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, VEHICLE_TYPES, TURRET_KG } from "./vehicles.js";
@@ -284,7 +285,9 @@ export function fitUpgrade(state, f) {
   for (const key of FITS[f.type] || []) {
     const v = cars.find((x) => { const u = upgradesOf(x); return key === "plating" ? u.plating < 1 && !u.scrapPlate : key === "scrapPlate" ? !u.plating && !u.scrapPlate : !u[key] && !(key === "mesh" && u.glass) && !(key === "glass" && u.mesh); });
     if (!v) continue;
-    const cost = upgradeCost(key);
+    // (trade.js groupStockKey: a group keeps one count of parts, so car parts come out of it)
+    const cost = {};
+    for (const [k, q] of Object.entries(upgradeCost(key))) { const sk = groupStockKey(k, f); cost[sk] = (cost[sk] || 0) + q; }
     if (Object.entries(cost).some(([k, q]) => (f.stock[k] || 0) < q + (k === "scrap" ? 5 : 0))) continue;
     for (const [k, q] of Object.entries(cost)) f.stock[k] -= q;
     const u = upgradesOf(v);

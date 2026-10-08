@@ -39,6 +39,7 @@ import { crewSurveyCands, surveySent } from "./survey.js";
 import { woodNeed, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, bestChop, woodcutterMult, WOOD } from "./woodcutting.js";
 import { packTripKit } from "./kit.js";
 import { stockHas, waterIn, RAW } from "./water.js"; // water counts both kinds
+import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 
 export const CREW_HOUR = 7;        // crews plan their trip at 07:00 (like the governor)
 export const CREW_LOG = 8;         // trips kept in a crew's log
@@ -141,7 +142,7 @@ FIELD_TYPES.hunt = {
     const { state, base, crew, need, role } = ctx;
     if (!wantsFood(need)) return [];
     const team = [...crewReady(state, role)].sort((a, b) => huntFit(b) - huntFit(a) || a.id - b.id).slice(0, Math.max(1, crew.size || 1));
-    return huntTargets(state, base.tile, crew.range, team, { ammo: Math.max(0, (base.stock.ammo || 0) - 20), arrows: huntArrowsFor(state, base, team), mix: huntMixOf(base), hours: HUNT.defHours, limit: 4 })
+    return huntTargets(state, base.tile, crew.range, team, { ammo: Math.max(0, totalRounds(base.stock) - 20), arrows: huntArrowsFor(state, base, team), mix: huntMixOf(base), hours: HUNT.defHours, limit: 4 })
       .filter((x) => !targeted(state, x.tile) && x.est.rations >= 6)
       .map((x) => ({ tile: x.tile, mission: "move", fit: huntFit, onSite: HUNT.defHours + 2, why: `hunt for food (~${Math.round(x.est.rations)} expected)`,
         steps: [...(x.snares || (base.stock.scrap || 0) >= 10 ? [{ kind: "snare" }] : []), { kind: "hunt", hours: HUNT.defHours }, { kind: "home" }],

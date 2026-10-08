@@ -21,6 +21,8 @@
 //   { $: "M", e: [[k, v]…] } Map · { $: "S", e: […] } Set · { $: "WM", e } WeakMap · { $: "WS", e } WeakSet
 //   { $: "T", t: "Uint16Array", b: base64 } typed array · { $: "Rng", s } · { $: "Grid", w, h } · { $: "O", v }
 //   { $: "u" } undefined · { $: "N", v: "NaN" | "Infinity" | "-Infinity" | "-0" }
+import { migrateAllMods } from "./gunmods.js"; // old saves: gun parts onto the attachment slots
+import { migrateAmmo } from "./ammo.js"; // old saves: generic ammo into rounds by calibre
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
 import { peekNextId, setNextId, day, hub, alive, fillCrafting } from "./world.js";
@@ -175,11 +177,17 @@ export function deserializeState(save) {
     if (state.staging && state.staging.stores && !Number.isFinite(state.staging.stores.rawwater)) state.staging.stores.rawwater = 0;
     state.rawWater = 1;
   }
+  // Rounds by calibre (ammo.js, the weapons overhaul): a save from before (no state.ammoCal) has every generic ammo
+  // stock of yours split across the calibres of the guns that holder owns (9mm and 12 gauge with none), the same total.
+  if (!state.ammoCal) { migrateAmmo(state); state.ammoCal = 1; }
   // A stock amount that is NaN is 0: before 7212b81 a team packing a supply its base had no key for (firewood on a
   // hardcore hub) made the base's stock NaN, and saves of that time carry it (tools/savecorpustest.js found it).
   const unNaN = (o) => { if (o) for (const k of Object.keys(o)) if (Number.isNaN(o[k])) o[k] = 0; };
   for (const b of state.bases || []) unNaN(b.stock);
   for (const p of state.parties || []) { unNaN(p.supplies); unNaN(p.cargo && p.cargo.supplies); }
+  // gunmods.js: guns from before the attachment slots (four mounts) have their parts moved to their slots (the laser to
+  // tactical, the foregrip to grip) and a sight that now needs a mount gets one. Once: state.gunSlots.
+  if (!(state.gunSlots >= 1)) { migrateAllMods(state); state.gunSlots = 1; }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   // A raid in a building with storeys (combat.js setFloor): b.cells / b.reach / b.losCache alias the active floor's
   // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points

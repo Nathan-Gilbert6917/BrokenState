@@ -135,10 +135,11 @@ const check = (ok, msg) => { if (!ok) { fails++; console.log(`  FAIL: ${msg}`); 
   {
     const { b, people, archer, gunner, foe } = arrowBattle(3);
     check(archer && gunner && foe && canFire(b, archer) && canFire(b, gunner), "the archer and the gunner can shoot");
+    const ammo0 = ammoLeft(b); // the base's 10 and the rounds the people carry (ammo.js: their starter boxes)
     fire(b, archer, foe);
-    check(arrowsLeft(b) === 2 && ammoLeft(b) === 10 && b.arrowsUsed === 1 && b.ammoUsed === 0, `a bow shot spends an arrow and no ammo (arrows ${arrowsLeft(b)}, ammo ${ammoLeft(b)})`);
+    check(arrowsLeft(b) === 2 && ammoLeft(b) === ammo0 && b.arrowsUsed === 1 && b.ammoUsed === 0, `a bow shot spends an arrow and no ammo (arrows ${arrowsLeft(b)}, ammo ${ammoLeft(b)} of ${ammo0})`);
     fire(b, gunner, foe);
-    check(ammoLeft(b) === 9 && arrowsLeft(b) === 2 && b.ammoUsed === 1, `a gunshot spends a round and no arrow (ammo ${ammoLeft(b)}, arrows ${arrowsLeft(b)})`);
+    check(ammoLeft(b) === ammo0 - 1 && arrowsLeft(b) === 2 && b.ammoUsed === 1, `a gunshot spends a round and no arrow (ammo ${ammoLeft(b)} of ${ammo0}, arrows ${arrowsLeft(b)})`);
     fire(b, archer, foe); fire(b, archer, foe);
     check(arrowsLeft(b) === 0 && !canFire(b, archer) && canFire(b, gunner), "out of arrows the bow cannot shoot; the gun still can");
     archer.ap = 2; b.phase = "player";

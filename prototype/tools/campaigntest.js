@@ -8,6 +8,7 @@
 //    running: the emergency path sends a water haul anyway, and at least HIVE_KEEP people stay home.
 // 3. Claims: with the coalition's land under 50% a two-person claim trip goes out and a claim is made (claims.js).
 // Usage: node tools/campaigntest.js [seed]
+import { baseAmmo } from "../src/sim/ammo.js"; // the rounds that fit the guns at the hub (the campaign counts those)
 import { createWorld, tickHour, day, alive, hub, atBase, makeSurvivor, snapshot } from "../src/sim/world.js";
 import { launchExpedition, planPath } from "../src/sim/parties.js";
 import { setAutopilot, autopilotStats, campaignLine, PERSONALITIES } from "../src/sim/autopilot.js";
@@ -93,7 +94,7 @@ function campaignScenario(seed) {
     if (state.hour % 24 !== 8) return;
     const c = state.governor.campaign;
     if (c && c.line) { lines++; if (!firstLine) firstLine = c.line; if (day(state) % 60 === 0) console.log(`  d${day(state)}: ${c.line}${hiveAt(state, hive.tile) ? "" : " [hive gone]"} (fuel ${Math.floor(h.stock.fuel || 0)})`); }
-    if (c) { maxAmmo = Math.max(maxAmmo, h.stock.ammo || 0); fires = Math.max(fires, c.fires); if (ammoDay == null && (h.stock.ammo || 0) >= 92) ammoDay = day(state); }
+    if (c) { maxAmmo = Math.max(maxAmmo, baseAmmo(state, h)); fires = Math.max(fires, c.fires); if (ammoDay == null && baseAmmo(state, h) >= 92) ammoDay = day(state); }
     if (stormDay == null && (autopilotStats(state).stormTrips || 0) > 0) stormDay = day(state);
     if (inviteDay == null && isMember(state, f)) inviteDay = day(state);
     if (stormDay != null && inviteDay != null && fires > 0 && !hiveAt(state, hive.tile)) state.gameOver = true; // all seen: stop early

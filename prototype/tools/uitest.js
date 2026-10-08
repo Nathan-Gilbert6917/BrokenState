@@ -1727,5 +1727,28 @@ section("Radio relays on screen: the radio header, a group's radio panel, the Co
   }
 }
 
+// ---------------------------------------------------------------------------------------------------------
+section("The weapons overhaul's battle keys and the gun builder's help (ui/keymap.js, ui/combat.js, ui/gunbuilder.js)");
+{
+  const kev = (code, mods = {}) => ({ code, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods });
+  const { helpTopics } = await import("../src/ui/help.js");
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  KEYS.initKeymap({});
+  const NEW = [["battle.firemode", "Shift+KeyF", "firemode"], ["battle.unjam", "Shift+KeyJ", "unjam"], ["battle.suppress", "Shift+KeyO", "suppress"], ["battle.throwspear", "Shift+KeyG", "throwspear"], ["battle.ammocycle", "Shift+KeyI", "ammocycle"]];
+  check(NEW.every(([id, chord, v]) => { const k = KEYS.KEY_BY_ID.get(id); return k && k.ctx === "battle" && k.v === v && k.keys.includes(chord); }), "fire mode Shift+F, unjam Shift+J, suppress Shift+O, throw spear Shift+G, the next round Shift+I: battle orders in the key table");
+  check(NEW.every(([id, chord]) => KEYS.keyAction(kev(chord.split("+").pop(), { shiftKey: true }), "battle") === id), "each chord gives its action in a battle");
+  check(KEYS.keyAction(kev("KeyJ"), "battle") === "battle.doubletap" && KEYS.keyAction(kev("KeyF"), "battle") === "battle.shoot" && KEYS.keyAction(kev("KeyI"), "battle") === "battle.reload" && KEYS.keyAction(kev("KeyG"), "battle") === "battle.throw" && KEYS.keyAction(kev("KeyO"), "battle") === "battle.overwatch", "J is still double tap, F shoot, I reload, G throw, O overwatch");
+  const clash = KEYS.conflicts().filter((c) => c.ctx === "battle" || (c.ids || []).some((id) => /^battle\./.test(id)));
+  check(!KEYS.conflicts().length && !clash.length, `no two actions share a key in one context (${KEYS.conflicts().map((c) => c.chord).join(", ") || "none"})`);
+  const battleChords = KEYS.KEYMAP.filter((k) => k.ctx === "battle" && !k.fixed).flatMap((k) => k.keys);
+  check(new Set(battleChords).size === battleChords.length, "every battle chord is used once");
+  const topics = helpTopics();
+  const gb = topics.find((t) => t.id === "gun-builder"), bg = topics.find((t) => t.id === "fire-modes-jams-and-suppressing-fire");
+  check(!!gb && /Modify/.test(gb.html) && /before → after/.test(gb.html), "Help: a Gun builder topic");
+  check(!!bg && /Shift\+F/.test(bg.html) && /Shift\+J/.test(bg.html) && /never what it is loaded with/.test(bg.html), "Help: fire modes, jams and suppressing fire, with the keys as bound");
+  if (gb) htmlOk(gb.html, "Help → Gun builder");
+  if (bg) htmlOk(bg.html, "Help → Fire modes");
+  check(/\*\*Gun builder\*\*/.test(readme) && /\*\*Fire modes, jams, suppressing fire/.test(readme), "the README describes the gun builder and the battle's gun orders");
+}
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

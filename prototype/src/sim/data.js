@@ -2,8 +2,8 @@
 // Static definitions: terrain, locations, supplies, gear, traits, faction types, names.
 // Kept as plain data so it can later move to JSON files for modding.
 // The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
-import { GUN_GEAR } from "./data-guns.js";
-import { AMMO_GEAR, RELOAD_GEAR } from "./data-ammo.js";
+import { GUN_GEAR, GEAR_PATCH } from "./data-guns.js";
+import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES } from "./data-ammo.js";
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
 import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spray, the stun baton (nonlethal.js)
@@ -34,13 +34,18 @@ export const SUPPLIES = {
   rawwater: { name: "Un-purified water", value: 0.5, weight: 1, cat: "water" },
   fuel:  { name: "Fuel",  value: 3,   weight: 1, cat: "fuel" },
   meds:  { name: "Meds",  value: 8,   weight: 0.1, cat: "medical" }, // semi-rare outside pharmacies and clinics (medfinds.js): dear
-  ammo:  { name: "Ammo",  value: 0.5, weight: 0.02, cat: "ammo" },
+  ammo:  { name: "Ammo",  value: 0.5, weight: 0.02, cat: "ammo" }, // abstract rounds (other groups' stores, a plan's or a deal's "N ammo"); yours are by calibre (ROUND_SUPPLIES)
   // Arrows and crossbow bolts: what a bow or crossbow shoots (1 a shot; it never uses ammo). Hunting (hunting.js) often
   // loses one (in the brush, broken in the animal); in a fight about half the arrows shot are picked up again after a
   // win and none after a loss or a retreat (world.js ARROWS, combat.js). Made by hand from firewood and a little scrap
   // (crafting.js), found at hunting lodges, gun stores, sports shops and campgrounds.
   arrows: { name: "Arrows", value: 0.4, weight: 0.03, cat: "bow" },
-  parts: { name: "Parts", value: 8,   weight: 2, cat: "parts" },
+  // Spare parts by kind (docs/weapons-overhaul-plan.md section 10): "parts" are machine parts (buildings, generators,
+  // wells, stations, breakdowns, the machine shop); car parts mend vehicles (vehicles.js: 2 machine parts stand in for
+  // one), gun parts guns and their attachments (repair.js), electronics lights, lasers, night vision and radios. Found
+  // by kind where they are kept (loot.js sortParts: an auto shop's are mostly car parts), salvaged from guns, gadgets
+  // and stripped vehicles; other groups keep one count of parts and offer the kinds out of it (trade.js KIND_MIX).
+  parts: { name: "Machine parts", value: 8,   weight: 2, cat: "parts" },
   scrap: { name: "Scrap", value: 1,   weight: 2, cat: "scrap" },
   // Food storage (storage.js): preserved food is jarred, dried or smoked food (and dry grain and beans) that barely
   // spoils and needs no cellar space; eaten like food (fresh first), and lighter to carry on a trip. Jars (and lids)
@@ -55,8 +60,16 @@ export const SUPPLIES = {
   // can cut it. (It was 3 kg a unit: every firewood figure is WOOD_UNITS times what it was; save.js scales old saves.)
   // bulk: what counts as one where a rule asks for "a few" of a supply (supplyFew: 5 to spare is 150 firewood).
   wood:  { name: "Firewood", value: 0.02, weight: 0.1, cat: "firewood", bulk: 30 },
+  carparts:    { name: "Car parts",   value: 7,  weight: 3,   cat: "vehicle" },
+  gunparts:    { name: "Gun parts",   value: 10, weight: 0.5, cat: "gunmod" },
+  electronics: { name: "Electronics", value: 12, weight: 0.3, cat: "electronics" },
 };
+// Rounds by calibre and type (data-ammo.js ROUND_SUPPLIES: a_9mm_fmj, a_12ga_buck…; ammo.js): what your stocks hold.
+// "ammo" above stays as the abstract count (other groups' stores, what a plan or a deal asks for).
+Object.assign(SUPPLIES, ROUND_SUPPLIES);
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
+// The supplies a screen lists one by one: every key but the rounds (shown together as "Ammo", ammo.js totalRounds).
+export const STOCK_KEYS = SUPPLY_KEYS.filter((k) => !ROUND_SUPPLIES[k]);
 // Firewood units to one before firewood was 0.1 kg a unit (a 3 kg bundle): save.js scales an older save's firewood by it.
 export const WOOD_UNITS = 30;
 // "A few" of a supply in a rule (n to spare, n to lose): n units, × its bulk (firewood: 30 a unit of the old 3 kg bundle).
@@ -105,12 +118,12 @@ export const GEAR = {
   sawmachete: { name: "Saw-blade machete",        slot: "weapon", skill: "shooting", power: 1.7, req: 0, value: 7,  noise: 0, makeshift: true, dur: 12, desc: "A circular-saw blade ground into a cleaver.", weight: 1.2, cat: "melee" },
   crossbow:   { name: "Scrap crossbow",           slot: "weapon", skill: "shooting", power: 2.5, req: 3, value: 18, noise: 0, makeshift: true, dur: 12, desc: "Leaf-spring limbs: silent, shoots bolts (arrows, 1 a shot; never ammo). With none it is a club. After a won fight about half the bolts shot are picked up again; hunting loses some.", weight: 3, cat: "bow" },
   pipegun:    { name: "Pipe shotgun",             slot: "weapon", skill: "shooting", power: 3.5, req: 3, value: 20, noise: 3, makeshift: true, dur: 8,  desc: "A zip gun: two pipes and a nail, one shell at a time (reload after every shot). Short range, fires shotgun shells (ammo).", weight: 2.5, cat: "shotgun" },
-  padding:    { burnShare: 0.9, name: "Magazine arm guards",      slot: "arms",   skill: null,       power: 0.6, req: 0, value: 3,  noise: 0, makeshift: true, dur: 6,  desc: "Magazines and duct tape around the forearms. Stops a bite, barely.", weight: 0.8, cat: "armor" },
-  shinguards: { name: "Duct-tape shin guards",    slot: "legs",   skill: null,       power: 0.4, req: 0, value: 2,  noise: 0, makeshift: true, dur: 6,  desc: "Cut-up plastic bottles and tape around the shins.", weight: 0.6, cat: "armor" },
-  tirevest:   { name: "Tire-rubber vest",         slot: "armor",  skill: null,       power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 10, desc: "Strips of tire rubber laced into a vest.", weight: 5, cat: "armor" },
-  sportspads: { name: "Football pads",            slot: "armor",  skill: null,       power: 0.8, req: 0, value: 8,  noise: 0, makeshift: true, dur: 12, desc: "Found, not made: shoulder pads from a school locker (the helmet is a separate piece).", weight: 3, cat: "armor" },
-  footballhelmet: { name: "Football helmet",      slot: "head",   skill: null,       power: 0.4, req: 0, value: 4,  noise: 0, makeshift: true, dur: 10, desc: "Found, not made: a school football helmet. Cracks eventually.", weight: 1.5, cat: "armor" },
-  scrapvest:  { name: "Scrap plate vest",         slot: "armor",  skill: null,       power: 1.8, req: 0, value: 25, noise: 0, makeshift: true, dur: 14, desc: "Steel plates riveted onto a work jacket. Heavy but solid.", weight: 7, cat: "armor" },
+  padding:    { burnShare: 0.9, name: "Magazine arm guards",      slot: "arms",   skill: null,       power: 0.6, req: 0, value: 3,  noise: 0, makeshift: true, dur: 12, desc: "Magazines and duct tape around the forearms. Stops a bite, barely.", weight: 0.8, cat: "armor" },
+  shinguards: { name: "Duct-tape shin guards",    slot: "legs",   skill: null,       power: 0.4, req: 0, value: 2,  noise: 0, makeshift: true, dur: 12, desc: "Cut-up plastic bottles and tape around the shins.", weight: 0.6, cat: "armor" },
+  tirevest:   { name: "Tire-rubber vest",         slot: "armor",  skill: null,       power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 25, desc: "Strips of tire rubber laced into a vest.", weight: 5, cat: "armor" },
+  sportspads: { name: "Football pads",            slot: "armor",  skill: null,       power: 0.8, req: 0, value: 8,  noise: 0, makeshift: true, dur: 20, desc: "Found, not made: shoulder pads from a school locker (the helmet is a separate piece).", weight: 3, cat: "armor" },
+  footballhelmet: { name: "Football helmet",      slot: "head",   skill: null,       power: 0.4, req: 0, value: 4,  noise: 0, makeshift: true, dur: 15, desc: "Found, not made: a school football helmet. Cracks eventually.", weight: 1.5, cat: "armor" },
+  scrapvest:  { name: "Scrap plate vest",         slot: "armor",  skill: null,       power: 1.8, req: 0, value: 25, noise: 0, makeshift: true, dur: 60, desc: "Steel plates riveted onto a work jacket. Heavy but solid.", weight: 7, cat: "armor" },
   bandagekit: { name: "Bandage and splint kit",   slot: "tool",   skill: "medicine", power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 5,  medKit: 2, small: true, desc: "Boiled rags, tape and splints: +2 Medicine when treating (at a base, in the field or in battle). Each treatment uses it up a little.", weight: 0.5, cat: "medical" },
   crowbar:    { name: "Crowbar and lockpicks",    slot: "tool",   skill: "scavenging", power: 1, req: 0, value: 6,  noise: 0, makeshift: true, dur: 30, bonus: { scavenging: 2 }, desc: "Opens locked doors and cabinets: +2 Scavenging for base scavenging.", weight: 2, cat: "tools" },
   waterfilter:{ name: "Charcoal water filter",    slot: "tool",   skill: null,       power: 1,   req: 0, value: 10, noise: 0, makeshift: true, dur: 20, water: 3, desc: "Sand, charcoal and a bucket: +3 purified water a day at the base it is kept at (equipped or in the armory), and it purifies 10 un-purified water a day there (the worm's eggs strained out). At a base it clogs only on the days it is in use (one always is; more while the tanks have room or the worm's eggs need straining): spares stand dry and keep. A team carrying one drinks its un-purified water through it, safe.", weight: 3, cat: "tools" },
@@ -412,58 +425,58 @@ for (const [k, w] of Object.entries({ goldring: 0.05, cigarettes: 0.2, whiskey: 
 // road, otherwise hidden until your people see it or hear of it (farms, cabins, lodges, campgrounds, quarries off
 // the road network); "secret" always hidden until found (crash sites, wrecks, supply drops).
 export const LOCATIONS = {
-  town:     { name: "Town",           glyph: "T",  cat: "town",    danger: 1, loot: { food: 3, scrap: 3, meds: 0.4, ammo: 1, fuel: 0.3, jars: 0.5 }, gear: ["knife", "pistol", "shotgun", "sportspads", "bikehelmet", "bicycle", "bat", "revolver", "slingbag", "binoculars"], richness: 0.6, known: "public" },
-  city:     { name: "City center",    glyph: "C",  cat: "urban",   danger: 2, loot: { scrap: 4, meds: 0.6, ammo: 2, parts: 1, food: 1 }, gear: ["pistol", "vest", "shotgun", "bat", "prybar", "revolver", "slingbag"], richness: 1.0, known: "public" },
-  farm:     { name: "Farmstead",      glyph: "F",  cat: "rural",   danger: 0, loot: { food: 5, fuel: 0.4, scrap: 1, jars: 1, rawwater: 0.5 }, gear: ["huntrifle", "machete", "leverrifle", "shotgun", "sledge", "prybar", "barbedwire", "beartrap", "binoculars", "dewormer"], richness: 0.5, known: "road" },
-  gas:      { name: "Gas station",    glyph: "G",  cat: "town",    danger: 1, loot: { fuel: 4, food: 2, scrap: 1 }, gear: ["pistol", "revolver", "prybar", "flashlight"], richness: 0.4, known: "public" },
-  mall:     { name: "Mall",           glyph: "M",  cat: "urban",   danger: 2, loot: { food: 3, scrap: 3, meds: 0.4, parts: 1, jars: 0.25 }, gear: ["knife", "machete", "backpack", "bat", "compbow", "slingbag", "hikingpack", "duffle", "stove", "binoculars"], richness: 0.9, known: "public" },
+  town:     { name: "Town",           glyph: "T",  cat: "town",    danger: 1, loot: { food: 3, scrap: 3, meds: 0.4, ammo: 1, fuel: 0.3, jars: 0.5 }, gear: ["knife", "pistol", "shotgun", "sportspads", "bikehelmet", "bicycle", "bat", "revolver", "slingbag", "binoculars", "compact9", "golfclub", "hammer"], richness: 0.6, known: "public" },
+  city:     { name: "City center",    glyph: "C",  cat: "urban",   danger: 2, loot: { scrap: 4, meds: 0.6, ammo: 2, parts: 1, food: 1 }, gear: ["pistol", "vest", "shotgun", "bat", "prybar", "revolver", "slingbag", "compact9"], richness: 1.0, known: "public" },
+  farm:     { name: "Farmstead",      glyph: "F",  cat: "rural",   danger: 0, loot: { food: 5, fuel: 0.4, scrap: 1, jars: 1, rawwater: 0.5 }, gear: ["huntrifle", "machete", "leverrifle", "shotgun", "sledge", "prybar", "barbedwire", "beartrap", "binoculars", "dewormer", "dbshotgun", "rifle22", "pickaxe"], richness: 0.5, known: "road" },
+  gas:      { name: "Gas station",    glyph: "G",  cat: "town",    danger: 1, loot: { fuel: 4, food: 2, scrap: 1 }, gear: ["pistol", "revolver", "prybar", "flashlight", "compact9"], richness: 0.4, known: "public" },
+  mall:     { name: "Mall",           glyph: "M",  cat: "urban",   danger: 2, loot: { food: 3, scrap: 3, meds: 0.4, parts: 1, jars: 0.25 }, gear: ["knife", "machete", "backpack", "bat", "compbow", "slingbag", "hikingpack", "duffle", "stove", "binoculars", "golfclub", "katana", "kukri"], richness: 0.9, known: "public" },
   hospital: { name: "Hospital",       glyph: "+",  cat: "urban",   danger: 3, loot: { meds: 6, scrap: 1, parts: 1 }, gear: ["surgkit", "bandagekit", "fireaxe", "dewormer"], richness: 0.8, known: "public" },
-  police:   { name: "Police station", glyph: "P",  cat: "urban",   danger: 2, loot: { ammo: 4, meds: 0.5, scrap: 1 }, gear: ["pistol", "shotgun", "vest", "riothelmet", "bicycle", "baton", "carbine", "riotarms", "riotlegs", "revolver", "binoculars"], richness: 0.7, known: "public" },
-  military: { name: "National Guard base", glyph: "★", cat: "special", danger: 3, loot: { ammo: 5, parts: 2, fuel: 2, meds: 0.6 }, gear: ["ar", "plate", "vest", "riothelmet", "nvg", "milradio", "assaultpack", "rucksack", "carbine", "camonet", "sandbags", "barbedwire", "stove", "binoculars", "spotscope", "thermal"], richness: 1.1, known: "public" },
-  prison:   { name: "State prison",   glyph: "#",  cat: "special", danger: 3, loot: { food: 2, scrap: 2, ammo: 1 }, gear: ["shotgun", "vest", "riothelmet", "baton", "riotarms", "riotlegs", "carbine"], richness: 0.7, known: "public" },
+  police:   { name: "Police station", glyph: "P",  cat: "urban",   danger: 2, loot: { ammo: 4, meds: 0.5, scrap: 1 }, gear: ["pistol", "shotgun", "vest", "riothelmet", "bicycle", "baton", "carbine", "riotarms", "riotlegs", "revolver", "binoculars", "pistol45", "semishotgun"], richness: 0.7, known: "public" },
+  military: { name: "National Guard base", glyph: "★", cat: "special", danger: 3, loot: { ammo: 5, parts: 2, fuel: 2, meds: 0.6 }, gear: ["ar", "plate", "vest", "riothelmet", "nvg", "milradio", "assaultpack", "rucksack", "carbine", "camonet", "sandbags", "barbedwire", "stove", "binoculars", "spotscope", "thermal", "combatknife", "etool", "tomahawk"], richness: 1.1, known: "public" },
+  prison:   { name: "State prison",   glyph: "#",  cat: "special", danger: 3, loot: { food: 2, scrap: 2, ammo: 1 }, gear: ["shotgun", "vest", "riothelmet", "baton", "riotarms", "riotlegs", "carbine", "semishotgun"], richness: 0.7, known: "public" },
   univ:     { name: "University",     glyph: "U",  cat: "urban",   danger: 2, loot: { parts: 3, meds: 1, scrap: 2 }, gear: ["surgkit", "bandagekit", "bat", "fireaxe", "slingbag", "telescope"], richness: 0.8, known: "public" },
   dam:      { name: "Dam and power plant", glyph: "D", cat: "special", danger: 1, loot: { parts: 4, scrap: 3, fuel: 0.3 }, gear: ["sandbags", "prybar", "sledge", "flashlight"], richness: 0.7, known: "public" },
   airport:  { name: "Regional airport", glyph: "A", cat: "special", danger: 2, loot: { fuel: 4, parts: 2, scrap: 2 }, gear: ["pistol", "slingbag", "hikingpack", "backpack", "duffle"], richness: 0.8, known: "public" },
-  factory:  { name: "Factory",        glyph: "I",  cat: "special", danger: 1, loot: { scrap: 5, parts: 2, fuel: 0.4 }, gear: ["crowbar", "prybar", "sledge", "barbedwire"], richness: 0.8, known: "public" },
-  quarry:   { name: "Quarry",         glyph: "Q",  cat: "rural",   danger: 0, loot: { scrap: 3, fuel: 0.4 }, gear: ["sledge", "prybar", "crowbar"], richness: 0.4, known: "road" },
+  factory:  { name: "Factory",        glyph: "I",  cat: "special", danger: 1, loot: { scrap: 5, parts: 2, fuel: 0.4 }, gear: ["crowbar", "prybar", "sledge", "barbedwire", "pickaxe", "hammer"], richness: 0.8, known: "public" },
+  quarry:   { name: "Quarry",         glyph: "Q",  cat: "rural",   danger: 0, loot: { scrap: 3, fuel: 0.4 }, gear: ["sledge", "prybar", "crowbar", "pickaxe"], richness: 0.4, known: "road" },
   // City blocks: lootier, and more of the dead.
-  autoshop:    { name: "Auto shop",          glyph: "Au", cat: "urban", danger: 2, loot: { parts: 4, fuel: 1, scrap: 3 }, gear: ["crowbar", "spikedbat", "kneeguards", "bicycle", "prybar", "sledge", "flashlight"], richness: 0.7, known: "public" },
+  autoshop:    { name: "Auto shop",          glyph: "Au", cat: "urban", danger: 2, loot: { parts: 4, fuel: 1, scrap: 3 }, gear: ["crowbar", "spikedbat", "kneeguards", "bicycle", "prybar", "sledge", "flashlight", "hammer"], richness: 0.7, known: "public" },
   pharmacy:    { name: "Pharmacy",           glyph: "Rx", cat: "urban", danger: 2, loot: { meds: 6, water: 1, food: 1 }, gear: ["bandagekit", "dewormer"], richness: 0.8, known: "public" },
   supermarket: { name: "Supermarket",        glyph: "S",  cat: "urban", danger: 2, loot: { food: 6, water: 4, meds: 0.4, scrap: 1, preserved: 1.5, jars: 0.5 }, gear: ["knife", "slingbag"], richness: 0.95, known: "public" },
-  gunstore:    { name: "Gun store",          glyph: "Gu", cat: "urban", danger: 2, loot: { ammo: 6, scrap: 1 }, gear: ["pistol", "shotgun", "huntrifle", "vest", "kneeguards", "revolver", "leverrifle", "compbow", "xbow", "ghillie", "camonet", "binoculars", "spotscope", "monocular"], richness: 0.85, known: "public" },
-  hardware:    { name: "Hardware store",     glyph: "H",  cat: "urban", danger: 2, loot: { scrap: 5, parts: 2, fuel: 0.3 }, gear: ["machete", "crowbar", "kneeguards", "flashlight", "bicycle", "prybar", "sledge", "fireaxe", "barbedwire", "beartrap", "sandbags", "binoculars"], richness: 0.8, known: "public" },
-  apartments:  { name: "Apartment block",    glyph: "Ap", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 0.5, scrap: 2, ammo: 1, jars: 0.5 }, gear: ["knife", "pistol", "bikehelmet", "backpack", "bicycle", "bat", "revolver", "slingbag"], richness: 0.8, known: "public" },
+  gunstore:    { name: "Gun store",          glyph: "Gu", cat: "urban", danger: 2, loot: { ammo: 6, scrap: 1 }, gear: ["pistol", "shotgun", "huntrifle", "vest", "kneeguards", "revolver", "leverrifle", "compbow", "xbow", "ghillie", "camonet", "binoculars", "spotscope", "monocular", "pistol22", "compact9", "pistol45", "rifle22", "dbshotgun", "combatknife", "tomahawk", "kukri"], richness: 0.85, known: "public" },
+  hardware:    { name: "Hardware store",     glyph: "H",  cat: "urban", danger: 2, loot: { scrap: 5, parts: 2, fuel: 0.3 }, gear: ["machete", "crowbar", "kneeguards", "flashlight", "bicycle", "prybar", "sledge", "fireaxe", "barbedwire", "beartrap", "sandbags", "binoculars", "hatchet", "hammer", "pickaxe"], richness: 0.8, known: "public" },
+  apartments:  { name: "Apartment block",    glyph: "Ap", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 0.5, scrap: 2, ammo: 1, jars: 0.5 }, gear: ["knife", "pistol", "bikehelmet", "backpack", "bicycle", "bat", "revolver", "slingbag", "compact9", "hammer", "golfclub"], richness: 0.8, known: "public" },
   office:      { name: "Office tower",       glyph: "O",  cat: "urban", danger: 2, loot: { scrap: 3, water: 2, parts: 1, meds: 0.4 }, gear: ["slingbag", "fireaxe"], richness: 0.6, known: "public" },
   school:      { name: "School",             glyph: "Sc", cat: "urban", danger: 2, loot: { food: 3, water: 2, meds: 0.5, scrap: 2, jars: 0.25 }, gear: ["sportspads", "footballhelmet", "backpack", "bicycle", "bat", "slingbag", "fireaxe"], richness: 0.6, known: "public" },
   firestation: { name: "Fire station",       glyph: "Fs", cat: "urban", danger: 2, loot: { meds: 1.5, fuel: 0.7, parts: 2, scrap: 1 }, gear: ["bikehelmet", "crowbar", "bandagekit", "bicycle", "fireaxe", "prybar", "sandbags"], richness: 0.7, known: "public" },
-  warehouse:   { name: "Warehouse district", glyph: "W",  cat: "urban", danger: 2, loot: { scrap: 4, food: 3, parts: 2, fuel: 0.4, jars: 0.5 }, gear: ["crowbar", "prybar", "sledge", "sandbags", "slingbag"], richness: 0.9, known: "public" },
+  warehouse:   { name: "Warehouse district", glyph: "W",  cat: "urban", danger: 2, loot: { scrap: 4, food: 3, parts: 2, fuel: 0.4, jars: 0.5 }, gear: ["crowbar", "prybar", "sledge", "sandbags", "slingbag", "hammer"], richness: 0.9, known: "public" },
   // Small-town shops and services (police stations, auto shops, gas stations and pharmacies stand in towns too).
   grocery:     { name: "Grocery store",      glyph: "Gr", cat: "town",  danger: 1, loot: { food: 5, water: 2, meds: 0.4, scrap: 1, preserved: 1, jars: 0.75 }, gear: ["knife"], richness: 0.6, known: "public" },
   diner:       { name: "Diner",              glyph: "Di", cat: "town",  danger: 1, loot: { food: 5, water: 3, scrap: 1, jars: 0.75 }, gear: ["knife"], richness: 0.5, known: "public" },
-  motel:       { name: "Motel",              glyph: "Mo", cat: "town",  danger: 1, loot: { food: 2, water: 2, meds: 0.5, scrap: 2, ammo: 1, jars: 0.25 }, gear: ["pistol", "knife", "backpack", "bicycle", "revolver", "slingbag"], richness: 0.5, known: "public" },
+  motel:       { name: "Motel",              glyph: "Mo", cat: "town",  danger: 1, loot: { food: 2, water: 2, meds: 0.5, scrap: 2, ammo: 1, jars: 0.25 }, gear: ["pistol", "knife", "backpack", "bicycle", "revolver", "slingbag", "compact9"], richness: 0.5, known: "public" },
   church:      { name: "Church",             glyph: "†",  cat: "town",  danger: 1, loot: { food: 3, water: 3, meds: 0.4, scrap: 1, jars: 0.75 }, gear: ["bandagekit"], richness: 0.45, known: "public" },
   clinic:      { name: "Clinic",             glyph: "Cl", cat: "town",  danger: 1, loot: { meds: 5, water: 1, scrap: 1 }, gear: ["surgkit", "bandagekit", "dewormer"], richness: 0.55, known: "public" },
-  feedstore:   { name: "Feed store",         glyph: "Fd", cat: "town",  danger: 0, loot: { food: 4, fuel: 0.8, scrap: 2, parts: 1, jars: 1 }, gear: ["machete", "huntrifle", "leverrifle", "barbedwire", "beartrap", "sledge"], richness: 0.5, known: "public" },
+  feedstore:   { name: "Feed store",         glyph: "Fd", cat: "town",  danger: 0, loot: { food: 4, fuel: 0.8, scrap: 2, parts: 1, jars: 1 }, gear: ["machete", "huntrifle", "leverrifle", "barbedwire", "beartrap", "sledge", "rifle22", "dbshotgun", "hatchet"], richness: 0.5, known: "public" },
   // Countryside: sparse, quiet and poorer, often off the road.
-  barn:        { name: "Barn",               glyph: "Br", cat: "rural", danger: 0, loot: { food: 3, fuel: 0.6, scrap: 2, jars: 0.5 }, gear: ["machete", "sledge", "prybar", "barbedwire", "beartrap"], richness: 0.35, known: "road" },
-  ranch:       { name: "Ranch",              glyph: "R",  cat: "rural", danger: 0, loot: { food: 5, water: 2, ammo: 1, fuel: 0.3, jars: 0.75, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "leverrifle", "revolver", "barbedwire", "beartrap", "binoculars", "dewormer"], richness: 0.55, known: "road" },
-  cabin:       { name: "Cabin",              glyph: "Cb", cat: "rural", danger: 0, loot: { food: 2, ammo: 2, water: 1, meds: 0.4, preserved: 0.5, jars: 0.25 }, gear: ["huntrifle", "machete", "waterfilter", "leverrifle", "fireaxe", "beartrap", "stove", "ghillie", "monocular", "binoculars"], richness: 0.35, known: "road" },
-  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 0.4, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "compbow", "xbow", "leverrifle", "ghillie", "camonet", "beartrap", "stove", "binoculars", "spotscope", "monocular", "spear"], richness: 0.55, known: "road" },
-  campground:  { name: "Campground",         glyph: "Cg", cat: "rural", danger: 1, loot: { food: 2, water: 3, fuel: 0.3, scrap: 1, rawwater: 0.5 }, gear: ["knife", "pipespear", "waterfilter", "backpack", "bicycle", "hikingpack", "stove"], richness: 0.4, known: "road" },
-  ranger:      { name: "Ranger station",     glyph: "Rs", cat: "rural", danger: 0, loot: { meds: 1, ammo: 2, food: 2, fuel: 0.3 }, gear: ["huntrifle", "bandagekit", "bicycle", "fireaxe", "hikingpack", "stove", "binoculars", "spotscope", "monocular"], richness: 0.5, known: "road" },
+  barn:        { name: "Barn",               glyph: "Br", cat: "rural", danger: 0, loot: { food: 3, fuel: 0.6, scrap: 2, jars: 0.5 }, gear: ["machete", "sledge", "prybar", "barbedwire", "beartrap", "pickaxe", "dbshotgun"], richness: 0.35, known: "road" },
+  ranch:       { name: "Ranch",              glyph: "R",  cat: "rural", danger: 0, loot: { food: 5, water: 2, ammo: 1, fuel: 0.3, jars: 0.75, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "leverrifle", "revolver", "barbedwire", "beartrap", "binoculars", "dewormer", "dbshotgun", "rifle22", "pistol45"], richness: 0.55, known: "road" },
+  cabin:       { name: "Cabin",              glyph: "Cb", cat: "rural", danger: 0, loot: { food: 2, ammo: 2, water: 1, meds: 0.4, preserved: 0.5, jars: 0.25 }, gear: ["huntrifle", "machete", "waterfilter", "leverrifle", "fireaxe", "beartrap", "stove", "ghillie", "monocular", "binoculars", "rifle22", "hatchet"], richness: 0.35, known: "road" },
+  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 0.4, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "compbow", "xbow", "leverrifle", "ghillie", "camonet", "beartrap", "stove", "binoculars", "spotscope", "monocular", "spear", "rifle22", "hatchet"], richness: 0.55, known: "road" },
+  campground:  { name: "Campground",         glyph: "Cg", cat: "rural", danger: 1, loot: { food: 2, water: 3, fuel: 0.3, scrap: 1, rawwater: 0.5 }, gear: ["knife", "pipespear", "waterfilter", "backpack", "bicycle", "hikingpack", "stove", "hatchet", "etool"], richness: 0.4, known: "road" },
+  ranger:      { name: "Ranger station",     glyph: "Rs", cat: "rural", danger: 0, loot: { meds: 1, ammo: 2, food: 2, fuel: 0.3 }, gear: ["huntrifle", "bandagekit", "bicycle", "fireaxe", "hikingpack", "stove", "binoculars", "spotscope", "monocular", "rifle22", "hatchet"], richness: 0.5, known: "road" },
   radiotower:  { name: "Radio tower",        glyph: "Rt", cat: "rural", danger: 0, loot: { parts: 3, scrap: 2, fuel: 0.3 }, gear: ["flashlight", "prybar", "binoculars"], richness: 0.4, known: "road" },
-  truckstop:   { name: "Truck stop",         glyph: "Ts", cat: "rural", danger: 1, loot: { fuel: 5, food: 3, parts: 1, scrap: 2, preserved: 0.5 }, gear: ["pistol", "shotgun", "revolver", "prybar", "slingbag", "hikingpack"], richness: 0.7, known: "public" },
+  truckstop:   { name: "Truck stop",         glyph: "Ts", cat: "rural", danger: 1, loot: { fuel: 5, food: 3, parts: 1, scrap: 2, preserved: 0.5 }, gear: ["pistol", "shotgun", "revolver", "prybar", "slingbag", "hikingpack", "compact9"], richness: 0.7, known: "public" },
   crashsite:   { name: "Crash site",         glyph: "X",  cat: "rural", danger: 1, loot: { scrap: 4, parts: 2, fuel: 0.8, meds: 0.4 }, gear: ["pistol", "slingbag", "backpack", "prybar"], richness: 0.6, known: "secret" },
   // Temporary sites from crash events (crashes.js): never placed by the map, they appear where something came down
   // and burn out after 7–10 days. temp: not a permanent site.
-  crash_mil:   { name: "Army helicopter wreck", glyph: "✈", cat: "special", danger: 2, temp: true, loot: { ammo: 5, meds: 1.5, parts: 2, scrap: 2, fuel: 0.5 }, gear: ["ar", "vest", "plate", "riothelmet", "milradio", "nvg", "assaultpack", "rucksack", "carbine", "camonet", "thermal", "binoculars"], richness: 1.2, known: "secret" },
+  crash_mil:   { name: "Army helicopter wreck", glyph: "✈", cat: "special", danger: 2, temp: true, loot: { ammo: 5, meds: 1.5, parts: 2, scrap: 2, fuel: 0.5 }, gear: ["ar", "vest", "plate", "riothelmet", "milradio", "nvg", "assaultpack", "rucksack", "carbine", "camonet", "thermal", "binoculars", "combatknife"], richness: 1.2, known: "secret" },
   crash_cargo: { name: "Supply plane wreck",  glyph: "✈", cat: "special", danger: 2, temp: true, loot: { food: 5, water: 3, meds: 1.5, preserved: 2, parts: 1, scrap: 2, fuel: 0.6 }, gear: ["assaultpack", "vest", "bandagekit", "surgkit", "rucksack", "stove"], richness: 1.2, known: "secret" },
   crash_med:   { name: "Medevac wreck",       glyph: "✈", cat: "special", danger: 2, temp: true, loot: { meds: 7, water: 2, scrap: 1, parts: 1 }, gear: ["surgkit", "bandagekit", "vest"], richness: 1.1, known: "secret" },
   crash_news:  { name: "News helicopter wreck", glyph: "✈", cat: "special", danger: 2, temp: true, loot: { parts: 3, scrap: 3, water: 1, food: 1, fuel: 0.4 }, gear: ["hikingpack", "slingbag"], richness: 0.9, known: "secret" },
   airdrop:     { name: "Supply drop",         glyph: "⇣", cat: "special", danger: 1, temp: true, loot: { food: 6, water: 4, meds: 2, ammo: 3, preserved: 2 }, gear: ["assaultpack", "vest", "bandagekit", "rucksack", "stove"], richness: 1.2, known: "secret" },
   // The abandoned military convoy (miltrucks.js): Army trucks stopped on a road tile, their turned crews about them;
   // stripped by other groups and burned out after 6–9 days. Its trucks hold most of what it is worth (truckLoot).
-  convoy:      { name: "Abandoned Army convoy", glyph: "🪖", cat: "special", danger: 2, temp: true, loot: { ammo: 5, fuel: 2, food: 2, meds: 1, parts: 1.5 }, gear: ["ar", "carbine", "vest", "plate", "milhelmet", "milradio", "assaultpack", "rucksack", "smokegren", "flare"], richness: 0.9, known: "secret" },
+  convoy:      { name: "Abandoned Army convoy", glyph: "🪖", cat: "special", danger: 2, temp: true, loot: { ammo: 5, fuel: 2, food: 2, meds: 1, parts: 1.5 }, gear: ["ar", "carbine", "vest", "plate", "milhelmet", "milradio", "assaultpack", "rucksack", "smokegren", "flare", "combatknife", "etool"], richness: 0.9, known: "secret" },
 };
 // Where a placed site stands (tile.loc.zone): map icon color and the inspect panel.
 export const SITE_ZONES = {
@@ -558,6 +571,7 @@ Object.assign(GEAR, {
 // The weapons overhaul (docs/weapons-overhaul-plan.md): guns and melee, ammo boxes and reloading supplies, attachments,
 // carry kit. One line, so the agents filling those modules never edit the end of this file.
 Object.assign(GEAR, GUN_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR);
+for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // data-guns.js: changed descriptions
 Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 
 // ---------- durability (crafting.js itemDur / wear) ----------
@@ -568,7 +582,8 @@ Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 export const GEAR_DUR = {
   knife: 40, machete: 45, bat: 30, prybar: 70, fireaxe: 50, sledge: 60, baton: 50, spear: 45,
   pistol: 60, revolver: 80, shotgun: 60, huntrifle: 70, leverrifle: 70, carbine: 70, ar: 60, compbow: 50, xbow: 50,
-  vest: 40, plate: 50, bikehelmet: 40, riothelmet: 50, milhelmet: 60, kneeguards: 35, riotlegs: 45, riotarms: 45,
+  // Armour pieces: their durability points (per-hit wear, armour.js; docs/weapons-overhaul-plan.md section 17 dmax).
+  vest: 40, plate: 45, bikehelmet: 20, riothelmet: 25, milhelmet: 30, kneeguards: 15, riotlegs: 20, riotarms: 20,
   surgkit: 40, fishrod: 60, fishnet: 40, camonet: 60, stove: 80, ghillie: 20, ragboots: 14,
 };
 for (const [k, v] of Object.entries(GEAR_DUR)) if (GEAR[k] && !GEAR[k].dur) GEAR[k].dur = v;

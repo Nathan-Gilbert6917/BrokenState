@@ -140,7 +140,7 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
   r.hp = r.maxHp;
   combatAct(st2, { type: "melee", unit: a.id, target: r.id });
   check(r.hp < r.maxHp && r.stun && r.stun.ap === NL.BATON.stun && !r.stun.aim, `a stun baton hit stuns (−${NL.BATON.stun} action) and hurts`);
-  r.hp = 2; a.ap = 2;
+  r.hp = 2; a.ap = 2; a.struck = null; // (a quick weapon strikes once a turn: combat.js melee section)
   combatAct(st2, { type: "melee", unit: a.id, target: r.id });
   check(r.ko && !r.dead, "a stun baton never kills the living: at 0 they are knocked out");
   // Pepper spray: the cone, the blinded, the dead in it.

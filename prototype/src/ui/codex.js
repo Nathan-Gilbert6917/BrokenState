@@ -122,14 +122,14 @@ function hiveEntries() {
 
 // How to use an item, by its trade category (data.js CATEGORIES); the item's own description says the rest.
 const ITEM_HOW = {
-  melee: "Hold it in the Hands slot and use Melee (E) next to an enemy: silent and needs no ammo.",
-  pistol: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action) and makes noise (it draws the dead, and Heat in a raid). Fits a pocket.",
-  shotgun: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action), hits hard up close, poorly at range, and is loud. Buckshot catches a worm swarm.",
-  rifle: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action); the long-range gun, and loud. Rifle rounds get through the armoured dead.",
-  automatic: "Hands slot: Shoot (F) fires two rounds a shot from its magazine (Reload, I: 1 action): the best gun there is, hungry for ammo.",
+  melee: "Hold it in the Hands slot and use Melee (E) next to an enemy: silent and needs no ammo. Quick weapons strike for 1 action (strike, then step away); spears reach 2 tiles and can be thrown. See Help: Guns and melee weapons.",
+  pistol: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action) and makes noise (it draws the dead, and Heat in a raid). Fits a pocket. Modify (⚙) opens the gun builder: its parts, its ammo, how reliable it is.",
+  shotgun: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action), hits hard up close, poorly at range, and is loud. Buckshot catches a worm swarm. Modify (⚙) opens the gun builder: its parts, its ammo, how reliable it is.",
+  rifle: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action); the long-range gun, and loud. Rifle rounds get through the armoured dead. Modify (⚙) opens the gun builder: its parts, its ammo, how reliable it is.",
+  automatic: "Hands slot: Shoot (F) fires by its fire mode (single, burst or full auto: Shift+F) from its magazine (Reload, I: 1 action): the best gun there is, hungry for ammo. Suppress (Shift+O) pins whoever is in the cone. Modify (⚙) opens the gun builder: its parts, its ammo, how reliable it is.",
   bow: "Hands slot: silent shots that use arrows (1 a shot), never ammo, and no reloading. With no arrows it is only a club. After a won fight about half the arrows shot are picked up again.",
   explosive: "From a pocket or the pack: Throw (G) in battle. Thrown, it is gone. Kept in a base's armory, some of them work as decoys when a horde comes.",
-  gunmod: "Fitted to a gun it suits in the inventory (select the gun, then Fit): one on each mount (sight, muzzle, magazine, under the barrel). It weighs and is worth what it is with the gun, and is sold and looted with it. See Help: Gun attachments.",
+  gunmod: "Fitted in the gun builder (select a gun in the inventory and press Modify, or the ⚙ on it): one part in each slot the gun has (sight, mount, muzzle, magazine, under the barrel, stock, grip, rail, light or laser, bipod, sling), some opening more (a mount a sight, a rail a grip, a light and a bipod). It weighs and is worth what it is with the gun, and is sold and looted with it. See Help: Gun builder.",
   armor: `Worn (Body, Head, Arms, Legs): the power of every worn piece adds up, to at most ${ARMOR_CAP}. Heavy armor counts in the wearer's load.`,
   defence: "Kept in a base's armory: used on the approach when a horde attacks the base.",
   medical: "Kept on a medic or in the armory: used when treating people (at a base, in the field or in battle).",
@@ -193,12 +193,15 @@ const SUPPLY_HOW = {
   preserved: "Eaten after the fresh food; barely spoils, needs no cellar, lighter on a trip and sells well.",
   jars: "The preserving kitchen fills them; most come back when the food in them is eaten.",
   wood: "Heats a base in winter before fuel, boils the water, fires camp fires. Anyone with an axe can cut it.",
+  carparts: "Vehicle repairs, garage upgrades and car-part recipes take them. Garages, gas stations and wrecks hold them; stripping a car gives several.",
+  gunparts: "Springs, pins and barrels: repairs to guns and their attachments take them. Gun stores, armouries and barracks hold them; a spare gun salvaged gives some.",
+  electronics: "Repairs to lights, lasers, night vision and radios take them. Radio towers, offices and news wrecks hold them; salvaged gadgets give some.",
 };
 function supplyEntries() {
   return Object.entries(SUPPLIES).map(([k, v]) => ({
     key: `s:${k}`, cat: "supplies", name: v.name, sub: "Supply",
     stats: [["Kind", cap((CATEGORIES[v.cat] || { name: v.cat }).name)], ["Weight", `${v.weight} kg a unit`]],
-    text: "", how: SUPPLY_HOW[k] || "", sprite: null,
+    text: "", how: SUPPLY_HOW[k] || (v.round ? "Rounds of one calibre and type (ammo.js): the guns of that calibre fire them, the type loaded decides (Reload picks another when there is some). Counted together as Ammo on the screens; carried in boxes." : ""), sprite: null,
   }));
 }
 function buildingEntries() {

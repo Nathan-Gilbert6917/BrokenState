@@ -20,6 +20,7 @@
 //   - in a raid the body's container goes with the risen; one of the walking dead leaves a body with the things in it
 //   - whole battles with Carriers play out (the battle AI, the raid bot), and fights by the numbers weigh them
 // Usage: node tools/carriertest.js
+import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { SUPPLIES } from "../src/sim/data.js";
 import { createWorld, hub, atBase, survivorById, hurt, day } from "../src/sim/world.js";
 import {
@@ -198,7 +199,7 @@ section("Crush skull and Double tap work on any body, any time; the loot stays; 
   const err2 = combatAct(st, { type: "doubletap", unit: A.id, target: r2.id });
   check(err2 === "" && r2.crushed && r2.tapped && A.ap === 0, `Double tap: 1 action (${err2 || "done"}), a round through the head`);
   check(ammoLeft(b) === ammo0 - 1 && b.noise > noise0, `it costs a round (${ammo0} → ${ammoLeft(b)}) and makes the noise of a shot (${noise0} → ${b.noise})`);
-  h.stock.ammo = 0;
+  setRounds(h.stock, 0); for (const u of b.units) for (const it of u.boxes || []) it.dur = 0; // ammo.js: no rounds of any calibre (nor a box in a pocket)
   A.ap = 2;
   const r3 = enemyUnit(b, b.rng, "raiders", 3, 11); r3.x = 13; r3.y = 12; b.units.push(r3); kill(b, r3);
   check(/ammo/i.test(combatAct(st, { type: "doubletap", unit: A.id, target: r3.id })), "out of ammo there is no double tap");

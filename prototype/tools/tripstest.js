@@ -11,6 +11,7 @@
 //   those screens and never in a battle; at most UNDO_MAX steps
 // - the screens: clean HTML and a handler for every data-action
 // Usage: node tools/tripstest.js [seed]
+import { setRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, tickHour, hub, atBase, survivorById } from "../src/sim/world.js";
 import { launchExpedition, planPath, partyTile, startReturn, missionProblem, STANCES } from "../src/sim/parties.js";
 import { vehiclesAtBase } from "../src/sim/vehicles.js";
@@ -146,7 +147,7 @@ section("Applying a setup: stand-ins, vehicle, steps, supplies, mission");
     car.loc = { kind: "base", baseId: h.id };
   }
   // Supplies capped at the hub's stock, the shortfall flagged; tablets and lights from the setup.
-  h.stock.ammo = 7;
+  setRounds(h.stock, 7); // ammo.js: 7 rounds at the hub, any calibre
   autofillStub(p2);
   const short = applyPacking(state, p2, { ...spec, tabs: true, lights: false });
   check(p2.supplies.ammo === 7 && p2.supplies.food === 10 && short.length && /ammo 7 of 30/.test(short[0]), "supplies: as saved, capped at the stock, short flagged");

@@ -4,10 +4,11 @@ import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, canSeeAt, coverSides, isRanged, adjacent, meleeReach, canFire, ammoLeft, arrowsLeft, medsLeft, combatAct, enemyStep, playerSees,
   hasMag, magLabel, magEmpty, magShown, reloadRefusal, fireRefusal, hasShots,
-  los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
+  vehicleTurret, TURRET, turretRounds, los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
-import * as SIM from "../sim/combat.js"; // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
+import * as SIM from "../sim/combat.js";
+import { loadsFor } from "../sim/ammo.js"; // the reload chooser: the types of the gun's calibre to hand // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions } from "../sim/buildingmaps.js";
 import { INTERIOR } from "../sim/interior.js";
@@ -21,7 +22,8 @@ import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
 import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
 import { roomText, totalRoom } from "../sim/prisoners.js"; // jailhouse: prisoner room at your bases
-import { bodyEmpty } from "../sim/inventory.js";
+import { bodyEmpty, allItems } from "../sim/inventory.js";
+import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js"; // the rounds a reload can take (the ammo chooser)
 import { atVehicle, personalLoad, trunkInfo } from "../sim/raidloot.js";
 import { SEARCH, quickable, quickRefusal, quickRadius, quickHurtPct } from "../sim/search.js";
 export const QUICK_MARK = "#7fb8e6"; // a container rummaged through but not searched in full (both views)
@@ -36,7 +38,7 @@ import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, ba
 import { herded, sensesOf } from "../sim/decoys.js";
 import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent, bodyAt as humanBodyAt, bodyName, unitBodyLoad, carRoom } from "../sim/carriers.js"; // the Carrier: bodies in danger, the risen, bodies carried, shot or burnt
 import { statusIcons } from "./status.js"; // the survivor behind a unit: low mood, starving, thirsty, infected, sick (its own hit points are the bar)
-import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor } from "./isoview.js";
+import { iso, drawIso, project, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor } from "./isoview.js";
 import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
 import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
@@ -154,10 +156,23 @@ function rescueButtons(state, b, u, btn) {
 // A unit's weapon with its magazine (sim/combat.js magazines): "9mm pistol 7/15", flagged when it needs a reload.
 function gunText(b, u) {
   const m = magLabel(b, u);
-  if (!m) return esc(u.weaponName);
+  const jam = u.jam && !u.dead ? ' <b class="danger" data-tip="Jammed: Unjam clears it (or a Reload, for a double feed).">JAMMED</b>' : "";
+  if (!m) return esc(u.weaponName) + jam;
+  if (jam || u.side === "player") return `${esc(u.weaponName)} <b>${m}</b>${u.side === "player" ? ownGunTag(u) : ""}${jam}${gunFlag(b, u)}`; // an enemy's line: the gun and its parts, never its ammo (section 20, R10)
   const flag = u.side === "player" && isRanged(u) && !u.dead && magShown(b, u) < (WEAPONS[u.weapon].ammo || 1)
     ? (reloadRefusal(b, u) ? ' <span class="danger">Out of ammo</span>' : ' <span class="danger">Empty — reload (I)</span>') : "";
-  return `${esc(u.weaponName)} <b>${m}</b>${flag}`;
+  return `${esc(u.weaponName)} <b>${m}</b>${flag}`; // (a jammed gun: the line above, with its JAMMED badge)
+}
+function gunFlag(b, u) {
+  return u.side === "player" && isRanged(u) && !u.dead && magShown(b, u) < (WEAPONS[u.weapon].ammo || 1)
+    ? (reloadRefusal(b, u) ? ' <span class="danger">Out of ammo</span>' : ' <span class="danger">Empty — reload (I)</span>') : "";
+}
+// Your own gun: the round it is loaded with (a kind other than the standard) and its fire mode.
+function ownGunTag(u) {
+  const c = CALIBERS[WEAPONS[u.weapon] && WEAPONS[u.weapon].cal];
+  const load = u.load && c && u.load !== c.base && AMMO_TYPES[u.load] ? ` <span class="muted">${esc(AMMO_TYPES[u.load].name)}</span>` : "";
+  const modes = unitModes(u);
+  return `${load}${modes.length > 1 ? ` <span class="muted">[${esc(MODE_NAME[curMode(u)] || curMode(u))}]</span>` : ""}`;
 }
 
 // ---------- threat preview ----------
@@ -273,7 +288,8 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "suppress", "throwspear", "unjam"].includes(a.type)) cui.mode = "move";
+    cui.ammoAsk = null;
   }
   autoSelect(b);
   return !err;
@@ -306,6 +322,9 @@ export function combatClick(state, px, py) {
   if (u && active(u) && u.ap > 0 && cui.mode === "move" && !who && b.cells[c.y * W + c.x].k === "tanktrap" && Math.max(Math.abs(u.x - c.x), Math.abs(u.y - c.y)) <= 1) return void act(state, { type: "melee", unit: u.id, x: c.x, y: c.y });
   // The stealth kit (sim/stealth.js): throw at a tile, drag a body (pick it, then where to), tie up the knocked out.
   if (u && active(u) && u.ap > 0 && cui.mode === "throw") return void act(state, { type: "throw", unit: u.id, item: cui.throwKey, x: c.x, y: c.y });
+  // Suppressing fire at an enemy or a spot, a spear thrown at a tile (the weapons overhaul: the sim says why not).
+  if (u && active(u) && u.ap > 0 && cui.mode === "suppress") return void act(state, { type: "suppress", unit: u.id, x: c.x, y: c.y, ...(who && who.side === "enemy" && v.seen.has(who.id) ? { target: who.id } : {}) });
+  if (u && active(u) && u.ap > 0 && cui.mode === "throwspear") return void act(state, { type: "throwspear", unit: u.id, x: c.x, y: c.y, ...(who && who.side === "enemy" && v.seen.has(who.id) ? { target: who.id } : {}) });
   if (u && active(u) && u.ap > 0 && nlMapClick(state, b, u, c, cui, act)) return; // pepper spray toward a tile (ui/nonlethal.js)
   if (u && active(u) && u.ap > 0 && cui.mode === "drag") {
     if (cui.dragId == null) {
@@ -441,6 +460,164 @@ function attack(state, u, t) {
   if (!canFire(b, u)) { cui.msg = magEmpty(b, u) && !reloadRefusal(b, u) ? `${fireRefusal(b, u)} Press I or Reload.` : `${outOf(u)}. Melee only.`; return; }
   if (!canSee(b, u, t)) { cui.msg = "No line of sight from here."; return; }
   act(state, { type: "shoot", unit: u.id, target: t.id });
+}
+
+// ---------- the weapons overhaul's gun orders (docs/weapons-overhaul-plan.md section 20) ----------
+// Fire mode (free), Unjam, Suppress (a targeting mode with a cone), Throw spear (a targeting mode with its reach) and the
+// ammo chooser a Reload opens when more than one kind of the gun's round is to hand. The sim acts are combatAct
+// "firemode" (act.mode), "unjam", "suppress" (act.target or act.x / act.y), "throwspear" (act.x / act.y) and "reload"
+// (act.ammo); each button shows only when the unit can have that order (a gun with fire modes, a jam, a spear), and a
+// refusal from the sim shows in the panel like any other.
+const MODE_ORDER = ["single", "burst", "auto"];
+export const MODE_NAME = { single: "Single", burst: "Burst", auto: "Auto" };
+// The fire modes of a unit's gun (u.modes, else its WEAPONS entry's), single first.
+export function unitModes(u) {
+  const w = (u && WEAPONS[u.weapon]) || {};
+  const m = (u && u.modes) || w.modes;
+  const list = Array.isArray(m) ? m : m && typeof m === "object" ? Object.keys(m) : [];
+  return [...MODE_ORDER.filter((x) => list.includes(x)), ...list.filter((x) => !MODE_ORDER.includes(x))];
+}
+export const curMode = (u) => { const l = unitModes(u); return u.mode && l.includes(u.mode) ? u.mode : l[0] || "single"; };
+// A gun that can lay down suppressing fire: one with a burst or automatic mode (or marked for it).
+const canSuppressUI = (u) => isRanged(u) && !WEAPONS[u.weapon].arrows && (unitModes(u).some((m) => m !== "single") || !!WEAPONS[u.weapon].suppress);
+// A spear in hand (data-guns.js throw: the tiles it flies; reach 2 or throwRange as before): it can be thrown.
+const spearOf = (u) => { const w = WEAPONS[u.weapon]; return !!(w && w.melee && (w.throw || w.throwRange || (w.reach || 0) >= 2)); };
+const spearRange = (u) => { const w = WEAPONS[u.weapon]; return (w && (w.throw || w.throwRange)) || SIM.SPEAR_RANGE || 5; };
+// Your spear on the ground (sim/combat.js b.spears, the thrower's u.spearOut): picked up from next to it for 1 action.
+const spearDown = (b, u) => (u.spearOut && b.spears ? b.spears.find((x) => x.owner === u.id) || null : null);
+export const OVERWATCH_TIP = "Ends the turn. Reacts to every enemy that moves in range until your next turn or the magazine runs dry (each a reaction shot at −15 aim, in the gun's fire mode: a big magazine makes the best overwatch gun). Needs a loaded gun.";
+
+// The kinds of round for the unit's gun to hand: [{ type, n, name }] (sim/ammo.js loadsFor: its side's boxes and pools,
+// the loaded type first; only the types there are rounds of).
+export function ammoToHand(state, b, u) {
+  const c = CALIBERS[WEAPONS[u.weapon] && WEAPONS[u.weapon].cal];
+  if (!c || u.side !== "player" || !isRanged(u)) return [];
+  return loadsFor(b, u).filter((x) => x.n > 0).map((x) => ({ type: x.type, n: Math.floor(x.n), name: `${c.name} ${x.name}` }));
+}
+const loadOf = (u) => { const c = CALIBERS[WEAPONS[u.weapon] && WEAPONS[u.weapon].cal]; return u.load || (c ? c.base : null); };
+cui.ammoAsk = null; // the unit whose Reload chooser is open
+cui.ammoPick = {};  // uid -> the kind of round picked for its next reload
+
+function gunButtons(state, b, u, btn) {
+  if (!active(u)) return "";
+  let html = "";
+  const key = (id, def) => keyLabel(id, 1) || def;
+  const modes = unitModes(u);
+  if (isRanged(u) && modes.length > 1) {
+    const m = curMode(u), next = modes[(modes.indexOf(m) + 1) % modes.length];
+    html += btn("firemode", `Fire: ${MODE_NAME[m] || m}`, `Free: switch the fire mode (${modes.map((x) => MODE_NAME[x] || x).join(" → ")}). Now ${m}; next ${next}. Single: 1 round, the best aim. Burst: 2–3 rounds, each its own roll at a little less aim. Auto: 10–15 rounds, worse aim, the best for suppressing and overwatch. Overwatch reactions fire in this mode.`, true, key("battle.firemode", "Shift+F"));
+  }
+  if (u.jam) {
+    const ap = u.jam.ap || 1;
+    html += btn("unjam", '<span class="danger">Unjam</span>', `${ap} action${ap === 1 ? "" : "s"}: clear the jam${u.jam.kind ? ` (${u.jam.kind === "double" ? "a double feed: a Reload clears it too" : u.jam.kind === "hard" ? "a hard jam: it wears the gun" : "a stovepipe"})` : ""}. The gun cannot fire until it is cleared.`, u.ap >= ap, key("battle.unjam", "Shift+J"));
+  }
+  if (canSuppressUI(u)) html += btn("suppress", "Suppress", "1 action: a stream of fire at an enemy or a spot (click it; the cone shows on the map). Everyone living in the cone keeps their head down until their next turn ends: −20 aim, no overwatch, they hunker. No effect on the dead. Hungry for rounds: automatic guns and machine guns do it best.", u.ap > 0 && canFire(b, u), key("battle.suppress", "Shift+O"));
+  const sp = spearDown(b, u);
+  if (sp) { const why = SIM.pickSpearRefusal ? SIM.pickSpearRefusal(b, u) : ""; html += btn("pickspear", "Pick up spear", `1 action: pick up the ${esc(sp.name.toLowerCase())} ${u.name.split(" ")[0]} threw, from next to it (walking onto it picks it up for free).${why ? ` ${why}` : ""}`, u.ap > 0 && !why, key("battle.pickspear", "Shift+P")); }
+  if (spearOf(u)) html += btn("throwspear", "Throw spear", `1 action: throw the ${u.weaponName} at a tile up to ${spearRange(u)} away (click it): its melee damage on a hit. ${u.name.split(" ")[0]} fights with what is left (fists or a sidearm) until it is picked up again; it is picked up after a won fight.`, u.ap > 0, key("battle.throwspear", "Shift+G"));
+  return html;
+}
+// The Reload chooser: one button per kind of round to hand (the picked one marked); I reloads the picked one.
+function ammoChooser(state, b, u) {
+  if (!u || cui.ammoAsk !== u.id || !active(u)) return "";
+  const list = ammoToHand(state, b, u);
+  if (list.length < 2) return "";
+  const pick = cui.ammoPick[u.id] || loadOf(u);
+  return `<div class="small cbmsg cbammo" data-tip="${esc(`Reload with which round? ${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next, I (or Reload) loads the picked one.`)}">Reload with: ${list.map((x) => `<button class="mini${x.type === pick ? " active" : ""}" data-action="cb-act" data-v="reload" data-k="${x.type}" data-tip="${esc(`${x.name}: ${x.n} to hand${x.type === loadOf(u) ? " (loaded now)" : ""}. 1 action.`)}">${esc(AMMO_TYPES[x.type] ? AMMO_TYPES[x.type].name : x.type)} <span class="muted">${x.n}</span></button>`).join(" ")} <button class="mini" data-action="cb-act" data-v="ammoclose" data-tip="Close">✕</button></div>`;
+}
+// The panel orders of this section (combatAction "cb-act"); true when handled.
+function gunOrder(state, b, u, v, d) {
+  if (v === "firemode") {
+    const l = unitModes(u);
+    if (l.length < 2) { cui.msg = isRanged(u) ? "This gun fires one way only." : "No gun."; return true; }
+    act(state, { type: "firemode", unit: u.id, mode: d.mode && l.includes(d.mode) ? d.mode : l[(l.indexOf(curMode(u)) + 1) % l.length] });
+    return true;
+  }
+  if (v === "unjam") { if (!u.jam) { cui.msg = "The gun is not jammed."; return true; } act(state, { type: "unjam", unit: u.id }); return true; }
+  if (v === "suppress") {
+    if (!canSuppressUI(u)) { cui.msg = "Suppressing fire needs a gun with a burst or automatic mode."; return true; }
+    cui.mode = cui.mode === "suppress" ? "move" : "suppress";
+    cui.msg = cui.mode === "suppress" ? "Click an enemy or a spot to suppress: the cone shows who keeps their head down." : "";
+    return true;
+  }
+  if (v === "throwspear") {
+    if (!spearOf(u)) { cui.msg = "Only a spear can be thrown."; return true; }
+    cui.mode = cui.mode === "throwspear" ? "move" : "throwspear";
+    cui.msg = cui.mode === "throwspear" ? `Click a tile up to ${spearRange(u)} away to throw the ${u.weaponName}.` : "";
+    return true;
+  }
+  if (v === "pickspear") { act(state, { type: "pickspear", unit: u.id }); return true; }
+  if (v === "ammoclose") { cui.ammoAsk = null; return true; }
+  if (v === "reload") {
+    if (d.k) { act(state, { type: "reload", unit: u.id, ammo: d.k }); return true; }
+    const list = ammoToHand(state, b, u);
+    if (list.length < 2) return false; // one kind (or none): a plain reload
+    if (cui.ammoAsk === u.id) { act(state, { type: "reload", unit: u.id, ammo: cui.ammoPick[u.id] || loadOf(u) }); return true; }
+    cui.ammoAsk = u.id;
+    if (!list.some((x) => x.type === cui.ammoPick[u.id])) cui.ammoPick[u.id] = list.some((x) => x.type === loadOf(u)) ? loadOf(u) : list[0].type;
+    cui.msg = "Reload with which round? Pick one below, or press I again for the one marked.";
+    return true;
+  }
+  if (v === "ammocycle") {
+    const list = ammoToHand(state, b, u);
+    if (list.length < 2) { cui.msg = list.length ? `Only ${list[0].name} to hand for the ${u.weaponName}.` : "No other rounds for this gun to hand."; return true; }
+    const cur = cui.ammoAsk === u.id ? cui.ammoPick[u.id] || loadOf(u) : loadOf(u);
+    const i = list.findIndex((x) => x.type === cur);
+    const nx = list[(i + 1) % list.length];
+    cui.ammoAsk = u.id;
+    cui.ammoPick[u.id] = nx.type;
+    cui.msg = `Next reload: ${nx.name} (${nx.n} to hand). Press I to load it.`;
+    return true;
+  }
+  return false;
+}
+
+// The cells a targeting mode covers: 1 in reach / in the cone, 2 the target cell. Suppress: a cone of ±25° from the
+// unit toward the hovered cell, out to 2 tiles past it (14 at most), on cells your people can see (the sim's
+// suppressCone when it has one); throw spear: every seen cell within its range.
+export function aimArea(b, u, vis, h, mode) {
+  const w = b.w, hgt = b.h;
+  const band = new Uint8Array(w * hgt);
+  if (!u) return band;
+  if (mode === "throwspear") {
+    const r = spearRange(u);
+    for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
+      if ((x === u.x && y === u.y) || !vis[y * w + x]) continue;
+      if (Math.hypot(x - u.x, y - u.y) <= r + 0.25) band[y * w + x] = 1;
+    }
+    if (h && band[h.y * w + h.x]) band[h.y * w + h.x] = 2;
+    return band;
+  }
+  if (mode !== "suppress" || !h || (h.x === u.x && h.y === u.y)) return band;
+  if (typeof SIM.suppressCone === "function") {
+    for (const c of SIM.suppressCone(b, u, h.x, h.y) || []) { const [x, y] = Array.isArray(c) ? c : [c.x, c.y]; if (x >= 0 && y >= 0 && x < w && y < hgt) band[y * w + x] = 1; }
+  } else {
+    const ang = Math.atan2(h.y - u.y, h.x - u.x), reach = Math.min(14, Math.hypot(h.x - u.x, h.y - u.y) + 2);
+    for (let y = 0; y < hgt; y++) for (let x = 0; x < w; x++) {
+      if ((x === u.x && y === u.y) || !vis[y * w + x]) continue;
+      const d = Math.hypot(x - u.x, y - u.y);
+      if (d > reach) continue;
+      let da = Math.abs(Math.atan2(y - u.y, x - u.x) - ang);
+      if (da > Math.PI) da = 2 * Math.PI - da;
+      if (da <= (25 * Math.PI) / 180 || d < 1.5) band[y * w + x] = 1;
+    }
+  }
+  band[h.y * w + h.x] = 2;
+  return band;
+}
+function aimPreview(b, u, h) {
+  const v = view(b);
+  const band = aimArea(b, u, v.vis, h, cui.mode);
+  if (cui.mode === "throwspear") return band[h.y * b.w + h.x] ? `<b>Throw the ${esc(u.weaponName)}</b> here (1 action). <span class="muted">Range ${spearRange(u)}; it lands on this tile.</span>` : `<span class="warn">Out of reach: a spear flies ${spearRange(u)} tiles at most.</span>`;
+  const living = b.units.filter((t) => t.side === "enemy" && active(t) && v.seen.has(t.id) && band[t.y * b.w + t.x]);
+  const people = living.filter((t) => t.kind !== "zombie");
+  return `<b>Suppress</b>: ${people.length ? `${people.length} in the cone keep${people.length === 1 ? "s" : ""} their head down (−20 aim, no overwatch until their turn ends)` : "nobody living in the cone"}${living.length > people.length ? ` · <span class="muted">the dead do not care</span>` : ""}. <span class="muted">Click to fire (1 action, a stream of rounds).</span>`;
+}
+
+// The Help paragraph (ui/ui.js helpText), with the keys as they are bound now.
+export function BATTLE_GUNS_HELP() {
+  const k = (id, def) => `<b>${esc(keyLabel(id, 1) || def)}</b>`;
+  return `<b>Fire modes, jams and suppressing fire:</b> automatic guns have fire modes, switched with <i>Fire</i> (${k("battle.firemode", "Shift+F")}, free): single (1 round, the best aim), burst (2–3 rounds, each its own roll) and auto (10–15 rounds, worse aim). A gun can jam: its line says JAMMED and <i>Unjam</i> (${k("battle.unjam", "Shift+J")}) clears it (1 or 2 actions; a Reload clears a double feed); revolvers and bolt, lever, pump and double guns misfire instead (the round is lost). <i>Suppress</i> (${k("battle.suppress", "Shift+O")}) fires a stream at an enemy or a spot: everyone living in the cone shown on the map keeps their head down until their turn ends (−20 aim, no overwatch); the dead do not care. A spear can be thrown (${k("battle.throwspear", "Shift+G")}, 4–5 tiles); walk onto it or <i>Pick up spear</i> from next to it (${k("battle.pickspear", "Shift+P")}, 1 action), and after a won fight it comes back anyway. <i>Overwatch</i> reacts to every enemy that moves in range until your next turn or the magazine runs dry. When more than one kind of round for a gun is to hand, Reload asks which (${k("battle.ammocycle", "Shift+I")} picks the next). You see an enemy's gun and its parts, never what it is loaded with: you learn that from what it does.`;
 }
 
 // ---------- ending the turn (review U-18) ----------
@@ -696,7 +873,7 @@ export function combatAction(state, key, d) {
   if (v === "search" && b.raid) return void openSearch(state, b, u, null, { full: true });
   if (v === "quick" && b.raid) return void openSearch(state, b, u, null, { quick: true }); // sim/search.js: the rummage
   if (v === "evac" || v === "evacStop") return void act(state, { type: v }); // sim/combat.js evacTurn: everyone to the way out
-  if (v === "board" || v === "disembark" || v === "turn") return void act(state, { type: v, unit: u.id }); // sim/combat.js boardVehicle / disembark / turnVehicle
+  if (v === "board" || v === "disembark" || v === "turn" || v === "gunner") return void act(state, { type: v, unit: u.id }); // sim/combat.js boardVehicle / disembark / turnVehicle / manTurret
   if (v === "drive") { // sim/combat.js driveTo: pick where it goes
     if (!b.vehicle) { cui.msg = "You came on foot: there is no vehicle here."; return; }
     if (!u.aboard && !atVehicle(b, u)) { cui.msg = "Stand next to the vehicle (or get in) to drive it."; return; }
@@ -835,6 +1012,7 @@ export function combatAction(state, key, d) {
     cui.msg = "Click yourself or an adjacent teammate to treat.";
     return;
   }
+  if (gunOrder(state, b, u, v, d)) return; // fire mode, unjam, suppress, throw spear, the ammo a reload takes
   act(state, { type: v, unit: u.id });
 }
 
@@ -887,7 +1065,7 @@ export function renderCombatPanel(state) {
     <div class="small muted">Nobody to fight: place your people where they should stand when this base is attacked, then Save as plan. The clock stands still.</div></div>` : b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
     <div class="small muted">Against ${esc(e.name || e.kind)} · Turn ${b.turn} · ${phase}</div>
-    <div class="small cbsupply"><span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). Each gun also holds a magazine that Reload (1 action) fills from this; a magazine never counts more rounds than are left here. With no ammo your people can only fight in melee. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+    <div class="small cbsupply"><span data-tip="Rounds carried, every calibre: each gun fires only rounds of its own calibre and loaded type (Reload with another type switches it). Each shot uses 1 (assault rifle bursts use 2). Each gun also holds a magazine that Reload (1 action) fills from this; a magazine never counts more rounds than are left here. With no ammo your people can only fight in melee. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
       ${arrowsChip(b)}
       <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       ${b.infection >= 0.1 ? `<span class="warn" data-tip="This area is infected. Gunfire draws more of the dead from the map edge.">Infected ${Math.round(b.infection * 100)}%</span>` : ""}</div>
@@ -897,7 +1075,7 @@ export function renderCombatPanel(state) {
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
     const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`)) + (p.draggedBy != null ? `, dragged by ${(unitById(b, p.draggedBy) || {}).name || "someone"}` : "") :
-      [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
+      [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.jam ? "JAMMED" : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.suppressed > 0 ? "Suppressed" : "", p.spearOut ? "Spear thrown" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !alive(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = alive(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     // A building with storeys: everyone's floor (dimmer when it is not the one shown).
@@ -905,7 +1083,7 @@ export function renderCombatPanel(state) {
     html += `<div class="${cls}" data-action="cb-sel" data-id="${p.id}" data-tip="${esc(`${p.name}. Weapon: ${p.weaponName}${hasMag(p) ? ` (${magLabel(b, p)} loaded)` : ""}. Aim ${Math.round(p.aim)}. Press ${i + 1} or Tab to select.`)}">
       <div class="spread"><span>${spriteImg(canvasURL(unitCanvas(state, b, p, cui.salt)), 1.5)}<span class="muted">${i + 1}</span> <b>${esc(p.name)}</b>${medicBadge(p)}${p.sid != null && alive(p) ? statusIcons(state, state.survivors.find((s) => s.id === p.sid), { skip: ["health"] }) : ""}${fl}</span>${pips}</div>
       <div class="bar"><i style="width:${pct(p) * 100}%;background:${hpColor(pct(p))}"></i></div>
-      <div class="small muted">${gunText(b, p)} · ${Math.round(p.hp)} hp${status ? ` · <span class="${p.down || p.dead ? "danger" : ""}">${status}</span>` : ""}${p.aboard ? ' · <span class="good">in the vehicle</span>' : ""}</div>
+      <div class="small muted">${gunText(b, p)} · ${Math.round(p.hp)} hp${status ? ` · <span class="${p.down || p.dead ? "danger" : ""}">${status}</span>` : ""}${p.gunner ? ' · <span class="warn">on the turret</span>' : p.aboard ? ' · <span class="good">in the vehicle</span>' : ""}</div>
     </div>`;
   });
   html += `</div>`;
@@ -931,13 +1109,15 @@ export function renderCombatPanel(state) {
       ${btn("move", "Move", "Click a blue tile to move (1 action) or a yellow tile to dash (2 actions).", ap > 0)}
       ${b.evacOrder ? btn("evacStop", "Stop evac", "Call off the Evac: your people stay where they are and take orders again.", true) : btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).`, !evacRefusal(b))}
       ${btn("shoot", "Shoot", gun ? (ammo ? `Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance.${hasMag(u) ? ` ${esc(u.weaponName)}: ${magLabel(b, u)} loaded.` : ""}` : fireRefusal(b, u)) : "No usable gun.", ap > 0 && ammo, "F")}
-      ${gun && hasMag(u) ? btn("reload", magEmpty(b, u) && !reloadRefusal(b, u) ? '<span class="danger">Reload</span>' : "Reload", `1 action: fill the ${esc(u.weaponName)}'s magazine (${magLabel(b, u)} now) from the team's ammo. Reload with one action, shoot with the other.${reloadRefusal(b, u) ? ` ${reloadRefusal(b, u)}` : ""}`, ap > 0 && !reloadRefusal(b, u), "I") : ""}
+      ${gun && hasMag(u) ? btn("reload", magEmpty(b, u) && !reloadRefusal(b, u) ? '<span class="danger">Reload</span>' : "Reload", `1 action: fill the ${esc(u.weaponName)}'s magazine (${magLabel(b, u)} now) from the team's ammo. Reload with one action, shoot with the other.${reloadRefusal(b, u) ? ` ${reloadRefusal(b, u)}` : ""}${u.gunner ? " The turret's belt: both actions." : ""}${ammoToHand(state, b, u).length > 1 ? ` More than one kind of round for it is to hand: Reload asks which (${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next).` : ""}`, ap >= (u.gunner ? TURRET.RELOAD_AP : 1) && (!reloadRefusal(b, u) || ammoToHand(state, b, u).length > 1), "I") : ""}
+      ${gunButtons(state, b, u, btn)}
       ${btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E")}
-      ${btn("overwatch", "Overwatch", "Ends the turn. Takes a reaction shot (-15 aim) at the first enemy that moves in sight. Needs a loaded gun.", ap > 0 && ammo, "O")}
+      ${btn("overwatch", "Overwatch", OVERWATCH_TIP, ap > 0 && ammo, "O")}
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
       ${b.vehicle ? btn("drive", "Drive", `Both actions, from inside or next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it, up to ${DRIVE.RANGE} cells. It drives through people (anyone in the way is hit for ${RAMMING.HIT[0]}–${RAMMING.HIT[1]}, the dead ${RAMMING.ZOMBIE_HIT[0]}–${RAMMING.ZOMBIE_HIT[1]}, and shoved aside) and light obstacles (fences, crates, sandbags, barricades, tank traps: broken, at a cost to the vehicle's condition); walls, trees, other cars, water, railings and trenches stop it. Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. Whoever is aboard rides along, the loot and the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && (u.aboard || atVehicle(b, u)), "V") : ""}
       ${b.vehicle && !u.aboard ? btn("board", "Get in", `1 action, from next to it: ride in the ${b.vehicle.kind} (${b.vehicle.seats || 4} seats, ${aboardCount(b)} aboard). Inside you are off the map (not a target, not drawn, no shooting) and can drive, turn, get out, or extract with it from a zone it stands at.`, ap > 0 && atVehicle(b, u) && aboardCount(b) < (b.vehicle.seats || 4)) : ""}
       ${u.aboard ? btn("disembark", "Get out", "1 action: out onto a free cell round the vehicle.", ap > 0) : ""}
+      ${u.aboard && vehicleTurret(b) ? btn("gunner", u.gunner ? "Get down" : "Man the turret", u.gunner ? "1 action: off the turret and back down inside (not a target any more)." : `1 action: up behind the ${vehicleTurret(b) === "m2hb" ? "M2" : "machine gun"} on the roof. Then Shoot (F) fires it: a 3-round burst from its belt (${b.vehicle.belt ?? "full"}, a new belt is both actions) out of the team's ammo (${Math.floor(turretRounds(b))}), a level up, aim +6, through cover, very loud (it wakes the whole map${b.raid ? `, Heat +${TURRET.HEAT} a burst` : ""}), and whoever it lands near shoots −${TURRET.PIN} next turn. Overwatch works from it. The gunner is the one rider they can shoot: half cover${b.vehicle.up && b.vehicle.up.plating >= 2 ? " (full: plate ×2)" : " (full behind plate ×2)"}. Downed, they drop back inside.`, ap > 0, "⇧T") : ""}
       ${b.vehicle ? btn("turn", "Turn", "1 action, from inside or next to it: a quarter turn at the same corner (it needs open ground with nobody on it on the cells it turns onto).", ap > 0 && (u.aboard || atVehicle(b, u))) : ""}
       ${btn("meds", "Use meds", `1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive. With no meds left, someone down can still be stabilized by hand (${handsOdds(u)}%: pressure and a belt; it can be tried again).`, ap > 0 && (medsLeft(b) > 0 || players(b).some((o) => o.down && !o.dead && !o.left && !o.stab && adjacent(u, o))), "M")}
       ${medicButtons(state, b, u, btn)}
@@ -950,7 +1130,7 @@ export function renderCombatPanel(state) {
       ${b.raid ? raidButtons(state, b, u, btn) + lockPanel(state, b, u) : ""}
       ${b.rescue ? rescueButtons(state, b, u, btn) : ""}
       ${carPanel(state, b, u)}
-    </div>`;
+    </div>${ammoChooser(state, b, u)}`;
     html += nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
   } else if (b.phase === "enemy") html += `<h3>Enemy turn</h3><div class="small muted">Watch the map. Your turn comes next.</div>`;
 
@@ -965,7 +1145,7 @@ export function renderCombatPanel(state) {
       const o = odds(b, u, t);
       const tip = o ? `${t.name}: ${o.label}. Click to attack with ${u.name}.` : `${t.name}: ${u.name} cannot hit them from here.`;
       html += `<button class="cbtarget" data-action="cb-target" data-id="${t.id}" ${o && o.ok && b.phase === "player" && u.ap > 0 ? "" : "disabled"} data-tip="${esc(tip)}">
-        <span>${spriteImg(canvasURL(unitCanvas(state, b, t, cui.salt)), 1.5)}${esc(t.name)}${t.down ? ` <span class="muted">(${t.surr ? "gave up" : "down"}${t.ko ? ", out cold" : t.surr ? "" : t.stab ? ", stabilized" : `, bleeding ${t.bleed || 0}`}${t.tied ? ", tied" : ""})</span>` : t.aware ? "" : ' <span class="warn">(unaware)</span>'}${t.stun ? ` <span class="good">(${esc(t.stun.dazed ? "dazed" : "stunned")})</span>` : ""}${isMedic(t) && !t.down ? ' <span class="danger" data-tip="A medic: revives and drags their downed, heals the hurt.">✚</span>' : ""}</span><span class="small">${Math.round(t.hp)} hp${o && o.ok ? ` · <b>${o.chance}%</b>` : ""}</span></button>`;
+        <span>${spriteImg(canvasURL(unitCanvas(state, b, t, cui.salt)), 1.5)}${esc(t.name)}${t.down ? ` <span class="muted">(${t.surr ? "gave up" : "down"}${t.ko ? ", out cold" : t.surr ? "" : t.stab ? ", stabilized" : `, bleeding ${t.bleed || 0}`}${t.tied ? ", tied" : ""})</span>` : t.aware ? "" : ' <span class="warn">(unaware)</span>'}${t.kind === "human" && t.weaponName ? ` <span class="small muted">${esc(t.weaponName)}</span>` : ""}${t.stun ? ` <span class="good">(${esc(t.stun.dazed ? "dazed" : "stunned")})</span>` : ""}${t.jam ? ' <b class="danger">JAMMED</b>' : ""}${t.suppressed > 0 ? ' <span class="warn">suppressed</span>' : ""}${isMedic(t) && !t.down ? ' <span class="danger" data-tip="A medic: revives and drags their downed, heals the hurt.">✚</span>' : ""}</span><span class="small">${Math.round(t.hp)} hp${o && o.ok ? ` · <b>${o.chance}%</b>` : ""}</span></button>`;
     }
     html += `</div>`;
   }
@@ -1050,7 +1230,7 @@ function raidHead(state, b, phase) {
     <div class="small cbsupply">
       ${me ? `<span data-tip="${esc(`What ${sel.name.split(" ")[0]} carries: worn and held ${Math.round(me.worn)} kg${me.share ? `, their share of the team's supplies ${Math.round(me.share)} kg` : ""}, finds carried loose ${Math.round(me.haul)} kg. Each survivor carries their own finds; anything that does not fit stays in the container.${trunk ? " Unload at the vehicle (N) to free them up." : ""}`)}">${esc(sel.name.split(" ")[0])} <b class="${me.room < 2 ? "warn" : ""}">${Math.round(me.load)}/${Math.round(me.max)} kg</b></span>` : ""}
       ${trunk ? `<span data-tip="${esc(`${trunk.name}: what is in it (the team's supplies and cargo) and how much more it takes${trunk.bike ? "" : ", counting everything your people carry, because the car takes all of it home"}.`)}">${trunk.bike ? "Racks" : "Vehicle"} <b>${Math.max(0, Math.round(trunk.space))} kg free</b></span>` : ""}
-      <span data-tip="Ammo carried. Each shot uses 1 (assault rifle bursts use 2). Reload (1 action) fills a gun's magazine from this. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+      <span data-tip="Rounds carried, every calibre: each gun fires only rounds of its own calibre and loaded type (Reload with another type switches it). Each shot uses 1 (assault rifle bursts use 2). Reload (1 action) fills a gun's magazine from this. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
       ${arrowsChip(b)}
       <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
       <span data-tip="Containers not yet searched">Left to search <b>${left}</b></span>
@@ -1502,6 +1682,7 @@ function carUpParts2d(u, L, bodyKind) {
   const ra = bodyKind === "humvee" ? 1.45 : bodyKind === "m35" || bodyKind === "truck" ? 0.8 : L / 2;
   if (u.m) out.push([ra - 0.65, ra - 0.5, 0.3, 1.7, "#3a3a3c"]);
   if (u.g) out.push([ra - 0.65, ra - 0.55, 0.32, 1.68, "#5e8f86"]);
+  if (u.t && u.manned) out.push([ra - 0.32, ra + 0.32, 0.68, 1.32, "#e8c04a"]); // manned: the gunner's ring
   if (u.t) out.push([ra - 0.22, ra + 0.22, 0.78, 1.22, "#454b51"], [Math.max(0, ra - (u.t === "m2hb" ? 1.3 : 1.0)), ra - 0.1, 0.94, 1.06, "#1e1e20"]);
   return out;
 }
@@ -1510,6 +1691,7 @@ function previewHtml(b, state = null) {
   const h = cui.hover;
   const u = selUnit(b);
   if (!h) return `<span class="muted">Hover a tile or enemy for details.</span>`;
+  if (u && (cui.mode === "suppress" || cui.mode === "throwspear")) return aimPreview(b, u, h); // the weapons overhaul's targeting
   const v = view(b);
   const t = unitAt(b, h.x, h.y);
   const nlp = nlPreview(b, t && (t.side === "player" || v.vis[h.y * W + h.x]) ? t : null, h, u, cui); // the pepper cone, hands up, your knocked out (ui/nonlethal.js)
@@ -1747,6 +1929,13 @@ export function drawCombat(state, now) {
     outline(bands, (k) => k === 1, "rgba(110,175,255,0.95)");
   }
 
+  // Suppressing fire's cone, a thrown spear's reach.
+  if (u && (cui.mode === "suppress" || cui.mode === "throwspear")) {
+    const band = aimArea(b, u, v.vis, cui.hover, cui.mode);
+    ctx.fillStyle = cui.mode === "suppress" ? "rgba(255,140,60,0.22)" : "rgba(140,200,255,0.16)";
+    for (let i = 0; i < W * H; i++) if (band[i]) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs);
+    outline(band, (k) => k >= 1, cui.mode === "suppress" ? "rgba(255,150,70,0.9)" : "rgba(150,205,255,0.9)");
+  }
   // The pepper spray's cone toward the hovered tile (ui/nonlethal.js).
   const cone = nlConeMask(b, u, cui);
   if (cone) { ctx.fillStyle = "rgba(255,140,40,0.30)"; for (const i of cone) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs); }
@@ -1798,6 +1987,13 @@ export function drawCombat(state, now) {
 
   // Bodies on the ground (sim/sleepers.js): drawn like the fallen, dimmer where nobody sees now.
   for (const c of b.corpses || []) if (onFloor(b, c)) drawDowned(ctx, corpseCanvas(c), ox + (c.x + 0.5) * cs, oy + (c.y + 0.5) * cs + cs * 0.06, [cs, 0], [0, cs], { facing: c.seed % 2 ? 1 : -1, scale: 1.05, alpha: v.vis[c.y * W + c.x] ? 0.92 : 0.5 });
+  // Thrown spears where they lie (sim/combat.js b.spears): a shaft across the cell, the head bright; yours always, theirs where seen.
+  for (const sp of b.spears || []) {
+    if (!onFloor(b, sp) || (sp.side !== "player" && !v.vis[sp.y * W + sp.x])) continue;
+    const x0 = ox + (sp.x + 0.2) * cs, y0 = oy + (sp.y + 0.8) * cs, x1 = ox + (sp.x + 0.8) * cs, y1 = oy + (sp.y + 0.2) * cs;
+    ctx.strokeStyle = "#7a5a3a"; ctx.lineWidth = Math.max(1.5, cs * 0.08); ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.fillStyle = "#d6dde2"; ctx.beginPath(); ctx.arc(x1, y1, Math.max(1.5, cs * 0.07), 0, Math.PI * 2); ctx.fill();
+  }
   // Units (dead and down first); on another floor of a building with storeys only a marker (below).
   const order = b.units.filter((x) => !x.left && !x.fled && !x.off && onFloor(b, x)).sort((a, c) => (active(a) ? 1 : 0) - (active(c) ? 1 : 0));
   for (const t of order) {
@@ -1900,6 +2096,21 @@ function drawIsoView(state, b, now, cw, ch) {
     cone: nlConeMask(b, v.u, cui), // the pepper spray's cone toward the hovered tile (ui/nonlethal.js)
     throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)
   });
+  // Suppressing fire's cone, a thrown spear's reach: ground diamonds over the scene (isoview.js project).
+  if (v.u && (cui.mode === "suppress" || cui.mode === "throwspear")) {
+    const band = aimArea(b, v.u, v.vis, cui.hover, cui.mode);
+    ctx.fillStyle = cui.mode === "suppress" ? "rgba(255,140,60,0.22)" : "rgba(140,200,255,0.18)";
+    ctx.beginPath();
+    for (let i = 0; i < band.length; i++) {
+      if (!band[i]) continue;
+      const x = i % b.w, y = (i / b.w) | 0;
+      const pts = [project(x, y), project(x + 1, y), project(x + 1, y + 1), project(x, y + 1)];
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let k = 1; k < 4; k++) ctx.lineTo(pts[k][0], pts[k][1]);
+      ctx.closePath();
+    }
+    ctx.fill();
+  }
 }
 // The selected unit's hit chance against every enemy in sight (the isometric view shows it over their heads).
 function hitLabels(b, v) {

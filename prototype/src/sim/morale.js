@@ -18,6 +18,7 @@ import { onLeave, noteMood } from "./relations.js";
 import { buzzWork } from "./comforts.js";
 import { needsWork } from "./needs.js";
 import { nearSnap } from "./mentalbreaks.js";
+import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre
 import { talkXp } from "./skills.js";
 
 export const CROWD = { base: 2, perOver: 8, cap: 16, leaderShare: 0.5, roomy: 1 };
@@ -163,8 +164,9 @@ export function desertionHaul(state, base, s) {
   if (rng.chance(greedy ? 0.8 : 0.4)) want.ammo = rng.int(5, 12) * (greedy ? 2 : 1);
   const took = {};
   for (const [k, q] of Object.entries(want)) {
-    const n = Math.min(q, Math.floor(Math.max(0, base.stock[k] || 0) * 0.25));
-    if (n > 0) { base.stock[k] -= n; took[k] = n; }
+    const n = Math.min(q, Math.floor(Math.max(0, k === "ammo" ? totalRounds(base.stock) : base.stock[k] || 0) * 0.25));
+    if (n > 0 && k === "ammo") { spendAmmo(base.stock, n); took[k] = n; } // rounds.js: any calibre, the cheapest first
+    else if (n > 0) { base.stock[k] -= n; took[k] = n; }
   }
   return took;
 }

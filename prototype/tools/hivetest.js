@@ -275,13 +275,17 @@ const t0 = Date.now();
   runDays(st, 45);
   const inf1 = near(st, lone.tile);
   check(inf1 < inf0 - 0.2, `infection around a destroyed hive falls over 45 days (${inf0.toFixed(2)} → ${inf1.toFixed(2)})`);
-  check(!st.victory, "with hives left the game goes on");
-  for (const h of [...st.hives]) destroyHive(st, h, "in the test");
-  for (const s of [...st.hiveSites]) s.started = null;
-  st.erasOff = true; // the eras' clocks (year 6, the outbreak beyond the border, a season clear) are tools/eratest.js's; this checks the rule itself
-  runDays(st, 1);
-  check(st.victory && st.gameOver, "destroying every hive wins the game");
-  check(st.log.some((l) => /^Every hive is destroyed/.test(l.text)), "the victory is in the log");
+  // The win rule itself, on a holdout still standing (65 days in, the one above may have fallen to a horde: the rule is
+  // not about that, and the holdout's fate turns on every other system's dice): a fresh world of the same seed, a week on.
+  const sv = world(10);
+  runDays(sv, 7);
+  check(!sv.victory && !sv.gameOver && alive(sv).length > 0, "with hives left the game goes on");
+  for (const h of [...sv.hives]) destroyHive(sv, h, "in the test");
+  for (const s of [...sv.hiveSites]) s.started = null;
+  sv.erasOff = true; // the eras' clocks (year 6, the outbreak beyond the border, a season clear) are tools/eratest.js's; this checks the rule itself
+  runDays(sv, 1);
+  check(sv.victory && sv.gameOver, "destroying every hive wins the game");
+  check(sv.log.some((l) => /^Every hive is destroyed/.test(l.text)), "the victory is in the log");
 }
 
 // 8. Determinism and long runs.

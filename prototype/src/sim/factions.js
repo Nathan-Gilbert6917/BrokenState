@@ -70,9 +70,11 @@ import { reduceHorde } from "./hordes.js";
 import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
+import { payAmmo } from "./ammo.js";
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
 import { groupWorksDaily, fieldsFactor, growthFactor, workshopFactor, storeFactor, groupBaseDefence } from "./groupworks.js"; // barestart: what the groups build
-import { factionVehicles, groupTurretPower } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids
+import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
 import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
 import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
 import { groupWorldDaily, groupWorldWorld, intelDef, knownBase, fearsGroup, KNOW, abandonedAt, abandonedPull, occupyAbandoned, leaveGroupBase } from "./groupworld.js"; // AI parity: what they know, their vehicles, abandoned bases
@@ -665,7 +667,7 @@ export function baseDefense(state, base, surprise = false) {
   const mult = (s) => (s.role === "guard" ? 1.5 : base.alert ? 1.3 : surprise ? SURPRISE.ASLEEP : 0.8);
   for (const s of people) d += combatPower(s) * mult(s);
   // Short of ammo (under 3 a head) the guns count 70%, short of arrows the bows (world.js armedFactor).
-  return d * armedFactor(people, base.stock.ammo || 0, base.stock.arrows || 0, { short: 0.7, weight: mult });
+  return d * armedFactor(people, base.stock, base.stock.arrows || 0, { short: 0.7, weight: mult });
 }
 
 // Called when a raid party reaches its target and the siege timer runs out.
@@ -691,7 +693,7 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
   const allies = beaten ? { power: 0, names: [] } : allianceRaidHelp(state, base, f); // alliance.js: coalition members send fighters
   const caught = !!party.surprise; // watch.js surpriseAt: they came on an unwatched night (parties.js, at the walls)
   const def = baseDefense(state, base, caught) + allies.power;
-  const att = party.strength + groupTurretPower(f) + (baseWalls(base) ? wallPower(state, f, raidCount(f, party.strength)) : 0); // vehicles.js: a military group's Humvee and its M2 come with the raid; arsenal.js: launchers against walls
+  const att = party.strength + raidTurretPower(state, party) + (baseWalls(base) ? wallPower(state, f, raidCount(f, party.strength)) : 0); // vehicles.js: the Humvee and its M2 if the raid brought it; arsenal.js: launchers against walls
   if (allies.names.length) log(state, `Fighters from ${allies.names.join(" and ")} came to help defend ${base.name}.`, "good");
   const shot = beaten ? { ammo: 0, arrows: 0 } : spendShots(base.stock, people, 3); // 3 a head: the bows' in arrows, the rest's in ammo
   // The walls, the yard and the buildings (defences.js raidTier): held at the wall, a break-in pushed back from the
@@ -717,6 +719,8 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
     f.pop = Math.max(0, f.pop - theirDead);
     raidRepelled(state, f);
     if (shot.arrows) base.stock.arrows = (base.stock.arrows || 0) + arrowsBack(shot.arrows); // the field is yours: about half the arrows picked up
+    const hv = loseRaidHumvee(state, party, { base }); // vehicles.js: the Humvee they brought is left behind, yours
+    if (hv) head += ` ${humveeLeftText(f, hv, base)}`;
   } else if (ratio >= RAIDS.BREAK) {
     outcome = "broken";
     head = rt && rt.tier === "buildings" ? `${f.name} broke into ${base.name} and took the yard, but your people held the buildings and drove them out.` : `${f.name} broke into ${base.name} before being pushed out.`;
@@ -806,12 +810,13 @@ export function resolveRaidOnFaction(state, party, helpers) {
   const helpPower = helpers.reduce((s, h) => s + h, 0);
   if (party.warId != null) { // diplomacy.js: raids in a war between groups, with their own odds and terms
     const held = resolveWarRaid(state, party, attacker, target, helpPower);
+    if (held) loseRaidHumvee(state, party, { faction: target }); // vehicles.js: the raid's Humvee falls to the defenders
     if (groupBroken(target)) collapseFaction(state, target, attacker);
     return held;
   }
   raidSoured(state, attacker, target);
   const def = groupBaseDefence(state, target, party.target.tile) + strength(target) * 0.8 + helpPower + (party.target.tile === target.bases[0] ? groupTurretPower(target) : 0); // 8 for a walled base (groupworks.js: half that bare); vehicles.js: a military group's Humvee at home
-  const att = party.strength + groupTurretPower(attacker); // and on their raids
+  const att = party.strength + raidTurretPower(state, party); // and the one a raid brought
   const attN = attacker ? raidCount(attacker, party.strength) : 0; // arsenal.js: the raiders' kit
   // Only report fights you could know about: raids on groups you know, anything you can see. Groups you have not
   // met are not named.
@@ -868,7 +873,8 @@ export function resolveRaidOnFaction(state, party, helpers) {
   const ap = attacker ? attacker.pop : 0;
   if (attacker) attacker.pop = Math.max(0, attacker.pop - rng.int(1, 3));
   clashKit(state, attacker, attN, attacker ? ap - attacker.pop : 0, target, tp - target.pop, "b"); // arsenal.js: the defenders hold the field
-  if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} held off ${who}.`, "info");
+  const hv = loseRaidHumvee(state, party, { faction: target }); // vehicles.js: the raid's Humvee falls to the defenders
+  if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} held off ${who}${hv ? ` and took their ${hv.name}` : ""}.`, "info");
   return true;
 }
 
@@ -987,12 +993,12 @@ export function deliverHelpCall(state, party) {
       {
         label: "Send 40 ammo",
         hint: "Strengthens their defense, small goodwill gain",
-        disabled: () => (h.stock.ammo || 0) < 40,
+        disabled: () => totalRounds(h.stock) < 40,
         resolve: (st) => {
           // Checked against what the hub holds now, not when the message came in.
-          if ((h.stock.ammo || 0) < 40) return `${h.name} no longer has 40 ammo to spare.`;
+          if (totalRounds(h.stock) < 40) return `${h.name} no longer has 40 ammo to spare.`;
           if (!st.parties.includes(party)) return `Too late: the fight at ${target.name} is already over.`;
-          h.stock.ammo -= 40;
+          payAmmo(st, h, 40); // ammo.js: the rounds its guns need least
           party.strength *= 0.8;
           changeGoodwill(st, target, 6, "you sent ammo");
           target.lastDiplomacy = day(st);
@@ -1034,13 +1040,13 @@ export function raidWarning(state, party) {
       {
         label: "Pay tribute (30% of the food, 30 ammo)",
         hint: `About ${tributeNow().food} food right now. They turn back and goodwill rises by ${RAIDS.TRIBUTE_GW}${isAggressiveType(f) ? `, but it fades again (${RAIDS.TRIBUTE_FADE} a day): they will be back` : ""}`,
-        disabled: (st) => (base.stock.ammo || 0) < 30 || !st.parties.includes(party),
+        disabled: (st) => totalRounds(base.stock) < 30 || !st.parties.includes(party),
         resolve: (st) => {
           if (!st.parties.includes(party)) return "The raiders are already gone.";
-          if ((base.stock.ammo || 0) < 30) return `${base.name} no longer has 30 ammo to offer. The raiders keep coming.`;
+          if (totalRounds(base.stock) < 30) return `${base.name} no longer has 30 ammo to offer. The raiders keep coming.`;
           const t = tributeNow();
           base.stock.food = Math.max(0, (base.stock.food || 0) - t.food);
-          base.stock.ammo -= t.ammo;
+          payAmmo(st, base, t.ammo); // ammo.js: the rounds its guns need least
           changeGoodwill(st, f, RAIDS.TRIBUTE_GW, "tribute");
           if (isAggressiveType(f)) f.boughtGw = (f.boughtGw || 0) + RAIDS.TRIBUTE_GW; // fades again (factionsDaily)
           party.returning = true;

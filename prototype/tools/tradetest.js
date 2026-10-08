@@ -6,6 +6,10 @@
 // the fog only where paid, determinism, a render check of the trade window and its handlers, and 200-day runs
 // (simple auto-play and the autopilot) without NaN.
 // Usage: node tools/tradetest.js [seed] [days]
+import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
+// Your side trades rounds by calibre (ammo.js): a box of 9mm stands in for the old generic "ammo" as a currency.
+const AMMO = "a_9mm_fmj";
+const biggestKey = (rec) => Object.keys(rec).filter((k) => /^a_/.test(k)).sort((a, b) => (rec[b] || 0) - (rec[a] || 0))[0];
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, atBase, makeSurvivor, radioBasesInRange, day, newId, RADIO_RANGE } from "../src/sim/world.js";
 import { GEAR, SUPPLY_KEYS, CATEGORIES, TRADE_PREFS, FACTION_TYPES } from "../src/sim/data.js";
@@ -176,12 +180,12 @@ function visit(st, f, n = 2, cargo = {}) {
   // Sell 40 food for ammo, then buy food back with all that ammo: less food than before.
   st.trade.ask = {}; st.trade.offer = {};
   setQty(st, "mine", "food", 40);
-  balanceWith(st, "ammo");
+  balanceWith(st, AMMO);
   const t1 = tradeTotals(st);
-  check(tradeVerdict(st).ok && t1.ask <= t1.offer, `balance with ammo: ${st.trade.ask.ammo} ammo for 40 food`);
+  check(tradeVerdict(st).ok && t1.ask <= t1.offer && st.trade.ask[AMMO] > 0, `balance with ammo: ${st.trade.ask[AMMO]} ${AMMO} for 40 food`);
   executeTrade(st);
-  const ammo = p.cargo.supplies.ammo;
-  setQty(st, "mine", "ammo", ammo);
+  const ammo = p.cargo.supplies[AMMO];
+  setQty(st, "mine", AMMO, ammo);
   balanceWith(st, "food");
   const back = st.trade.ask.food || 0;
   executeTrade(st);
@@ -190,9 +194,9 @@ function visit(st, f, n = 2, cargo = {}) {
   const item = (f.wares || [])[0];
   if (check(!!item, "the group has gear for sale")) {
     st.trade.offer = {}; st.trade.ask = {};
-    p.cargo.supplies = { ammo: 300 };
+    p.cargo.supplies = { [AMMO]: 300 };
     toggleGear(st, "theirs", 0);
-    balanceWith(st, "ammo");
+    balanceWith(st, AMMO);
     const vg = tradeVerdict(st);
     const ok = vg.ok;
     executeTrade(st);
@@ -201,8 +205,8 @@ function visit(st, f, n = 2, cargo = {}) {
   // Carry: a team of one on foot cannot take 60 food.
   st.trade.offer = {}; st.trade.ask = {}; st.trade.askGear = []; st.trade.offerGear = [];
   p.members = p.members.slice(0, 1);
-  p.cargo.supplies = { ammo: 400 };
-  setQty(st, "mine", "ammo", 400);
+  p.cargo.supplies = { [AMMO]: 400 };
+  setQty(st, "mine", AMMO, 400);
   setQty(st, "theirs", "food", 60);
   const vc = tradeVerdict(st);
   check(!vc.ok && /cannot carry/.test(vc.reason), `the team's carry space limits what it takes ("${vc.reason}")`);
@@ -211,7 +215,7 @@ function visit(st, f, n = 2, cargo = {}) {
   st.hour += 24; // a new day
   const gw0 = f.goodwill;
   let gwr = "";
-  for (let i = 0; i < 20; i++) { setQty(st, "mine", "ammo", 15); gwr = executeTrade(st); }
+  for (let i = 0; i < 20; i++) { setQty(st, "mine", AMMO, 15); gwr = executeTrade(st); }
   check(f.goodwill - gw0 <= 4 + 1e-9 && f.goodwill > gw0, `goodwill from trading is capped at 4 a day (+${(f.goodwill - gw0).toFixed(2)} from 20 trades; ${gwr})`);
   endTrade(st);
   check(!st.trade && p.phase === "waiting", "leaving the window: the team waits for orders");
@@ -354,7 +358,7 @@ function visit(st, f, n = 2, cargo = {}) {
   const st = world(seed + 12);
   const f = friend(st);
   f.type = "zealot";
-  const p = visit(st, f, 2, { food: 30, ammo: 100 });
+  const p = visit(st, f, 2, { food: 30, [AMMO]: 100 });
   const bottle = newItem("whiskey", 1);
   p.cargo.gear.push(newItem("ar", 0.9), bottle, newItem("goldring", 1));
   toggleGear(st, "mine", p.cargo.gear.indexOf(bottle));
@@ -466,10 +470,10 @@ function dealWorld(s) {
     const arrived = drive(st, () => c.phase === "trading", 24 * 40, (x) => x === "trade");
     check(arrived && st.trade && st.trade.caravanId === c.id, `it arrives at ${hub(st).name} and the trade window opens (day ${day(st)})`);
     const v = tradeVerdict(st);
-    const meds = h.stock.meds, ammo = h.stock.ammo;
+    const meds = h.stock.meds, ammo = totalRounds(h.stock);
     check(v.ok && v.honoured, "the agreed deal is filled in and honoured");
     executeTrade(st);
-    check(h.stock.meds === meds + 6 && h.stock.ammo === ammo - q.minPay && c.dealDone, `done: +6 meds, −${q.minPay} ammo`);
+    check(h.stock.meds === meds + 6 && totalRounds(h.stock) === ammo - q.minPay && c.dealDone, `done: +6 meds, −${q.minPay} ammo`);
     endTrade(st);
     check(!st.trade && caravansAt(st, h.id).includes(c), "closing the window: the caravan stays");
     const stock0 = f.stock.ammo;
@@ -537,7 +541,7 @@ function dealWorld(s) {
     check(card && /\(about \d+h\)/.test(choice(card, /^Go on to/).label) && /\(about \d+h\)/.test(choice(card, /^Return home/).label), "with the ETA of each leg");
     take(card, /^Trade with/);
     check(st.trade && st.trade.partyId === p.id, "trade there: the trade window opens");
-    setQty(st, "mine", "ammo", 60);
+    setQty(st, "mine", biggestKey(p.cargo.supplies), 60); // ammo.js: the caravan's ammo goes by calibre
     balanceWith(st, "meds");
     const r = executeTrade(st);
     check(/^Traded/.test(r), `a trade at the first stop (${r})`);
@@ -550,9 +554,9 @@ function dealWorld(s) {
     take(cardAt(g1.bases[0]), /^Go on to/);
     check(drive(st, () => cardAt(oTile), 24 * 30, keep), "go on: stop 2, the outpost");
     card = cardAt(oTile);
-    const ammo0 = o.stock.ammo;
+    const ammo0 = totalRounds(o.stock);
     take(card, /^Unload/);
-    check(o.stock.ammo > ammo0 && !Object.values(p.cargo.supplies).some((q) => q >= 1), `unload: the goods go into ${o.name}`);
+    check(totalRounds(o.stock) > ammo0 && !Object.values(p.cargo.supplies).some((q) => q >= 1), `unload: the goods go into ${o.name}`);
     take(cardAt(oTile), /^Go on to/);
     check(drive(st, () => cardAt(g2.bases[0]), 24 * 30, keep), `go on: stop 3, ${g2.name}`);
     card = cardAt(g2.bases[0]);
@@ -574,7 +578,7 @@ function dealWorld(s) {
     if (check(st.trade && st.trade.caravanId === c.id, "a caravan to buy intel from")) {
       st.trade.offer = {}; st.trade.ask = {}; st.trade.deal = null;
       setIntel(st, "area", "near");
-      balanceWith(st, "ammo");
+      balanceWith(st, biggestKey(h.stock));
       const ctx = tradeContext(st);
       const center = ctx.center;
       st.knowledge = st.knowledge.map(() => null);
@@ -607,7 +611,7 @@ function dealWorld(s) {
   };
   const { st, h, f } = dealWorld(seed + 4);
   const ui = { tradeMsg: "", attackConfirm: null, radioWith: f.id, radioDeal: { wantKey: "meds", wantQty: 5, payKey: "ammo", payQty: 30 }, caravanPlan: newCaravanForm() };
-  const p = visit(st, f, 2, { food: 30, ammo: 100 });
+  const p = visit(st, f, 2, { food: 30, [AMMO]: 100 });
   p.cargo.gear.push(newItem("pistol", 0.7), makeItem("spikedbat", 1));
   setIntel(st, "area", "near");
   toggleGear(st, "mine", 1);

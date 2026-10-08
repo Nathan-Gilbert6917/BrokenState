@@ -5,6 +5,7 @@
 // magazine never shows more than the team has, enemies reload, your side's AI and the raid bot reload, a save in the
 // middle of a battle keeps the magazines, a weapon swapped mid-raid (refitUnit), the UI's Reload button and I key.
 // Usage: node tools/magtest.js [seed]
+import { setRounds, giveRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import {
   WEAPONS, createBattle, combatAct, registerCombatHandler, runEnemyPhase, enemyStep, endPlayerTurn, autoPlayerTurn, canFire,
@@ -36,7 +37,8 @@ function fighter(state, weapon = "pistol", shooting = 9) {
 // A field battle on an open map; the enemy parked off the map until placed.
 function openBattle(state, crew, enemy = { kind: "raiders", count: 2, power: 3 }, ammo = 200) {
   const h = hub(state);
-  h.stock.ammo = ammo; h.stock.meds = 0; h.stock.arrows = 50;
+  setRounds(h.stock, 0); for (const s of crew) giveRounds(h.stock, ammo, [s.gear.weapon && s.gear.weapon.key].filter(Boolean)); // ammo.js: `ammo` rounds of each gun's calibre
+  h.stock.meds = 0; h.stock.arrows = 50;
   const b = (state.combat = createBattle(state, { tile: h.tile, baseId: h.id, fighterIds: crew.map((s) => s.id), enemy, ambush: null, canRetreat: true, handler: "magtest", context: {} }));
   for (const c of b.cells) c.k = "open";
   b.losCache.fill(0);
@@ -56,7 +58,7 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
 // 1. The capacities.
 {
   console.log("Capacities");
-  const want = { pistol: 15, shotgun: 6, huntrifle: 5, ar: 30, pipegun: 1, revolver: 6, leverrifle: 8, carbine: 30 };
+  const want = { pistol: 15, shotgun: 6, huntrifle: 5, ar: 30, pipegun: 1, revolver: 6, leverrifle: 6, carbine: 30 }; // the lever-action: a tube of six (weapons overhaul section 3)
   for (const [k, n] of Object.entries(want)) check(WEAPONS[k].cap === n, `${WEAPONS[k].name} holds ${n} (has ${WEAPONS[k].cap})`);
   const guns = Object.entries(WEAPONS).filter(([, w]) => !w.melee && w.ammo > 0).map(([k]) => k);
   check(guns.every((k) => WEAPONS[k].cap > 0), `every gun that uses ammo has a magazine (${guns.join(", ")})`);
@@ -119,7 +121,7 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   check(combatAct(st, { type: "shoot", unit: p.id, target: e.id }) === "" && p.ap === 0 && p.mag === 14, "reload, then shoot with the other action: one turn");
   // Limited by the team's ammo.
   const pools = b.pools;
-  const setAmmo = (n) => { for (const o of pools) o.ammo = 0; pools[0].ammo = n; };
+  const setAmmo = (n) => { for (const o of pools) setRounds(o, 0); pools[0].a_9mm_fmj = n; pools[0].a_308_fmj = n; }; // n rounds for each gun (ammo.js: by calibre)
   setAmmo(3);
   check(magShown(b, p) === 3 && magLabel(b, p) === "3/15", "14 loaded but 3 left in the team: it shows 3/15 (never more than the team has)");
   check(/spare/i.test(reloadRefusal(b, p)), "nothing to reload with: refused (every round left is loaded)");
@@ -210,7 +212,7 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   const st3 = createWorld({ seed: seed + 8, factionCount: 4 });
   const crew = [fighter(st3, "pipegun"), fighter(st3, "huntrifle"), fighter(st3, "revolver")];
   const h = hub(st3);
-  h.stock.ammo = 120;
+  setRounds(h.stock, 120, crew.map((s) => s.gear.weapon.key)); // ammo.js: rounds that fit their guns
   const b3 = (st3.combat = createBattle(st3, { tile: h.tile, baseId: h.id, fighterIds: crew.map((s) => s.id), enemy: { kind: "raiders", count: 4, power: 4 }, ambush: null, canRetreat: true, handler: "magtest", context: {} }));
   for (let t = 0; t < 80 && !b3.over; t++) { autoPlayerTurn(st3, { retreat: false }); runEnemyPhase(st3); }
   check(b3.over, `an AI-played fight with a pipe shotgun, a hunting rifle and a revolver ends (turn ${b3.turn})`);
@@ -272,7 +274,9 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   refitUnit(b, p, a);
   check(p.weapon === "shotgun" && p.mag === 0 && p.magMax === 6 && magEmpty(b, p), "a shotgun picked up: it comes empty (0/6), Reload to load it");
   p.ap = 2;
-  check(combatAct(st, { type: "reload", unit: p.id }) === "" && p.mag === 6, "and reloads to 6/6");
+  check(/no ammo/i.test(reloadRefusal(b, p)), "with no shells to hand it cannot be loaded (ammo.js: a gun takes its own calibre)");
+  b.pools[0].a_12ga_buck = 20;
+  check(combatAct(st, { type: "reload", unit: p.id }) === "" && p.mag === 6, "with shells, it reloads to 6/6");
   a.gear.weapon = null;
   refitUnit(b, p, a);
   check(p.weapon === "fists" && !hasMag(p) && magLabel(b, p) === "", "put down: fists, no magazine");
