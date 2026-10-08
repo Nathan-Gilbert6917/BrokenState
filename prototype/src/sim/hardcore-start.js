@@ -38,8 +38,10 @@
 import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES } from "./data.js";
 import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
-import { newItem, packOf, POCKETS } from "./inventory.js";
+import { newItem, packOf, POCKETS, START_DUR } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
+// What someone has with them at the start, looked after but worn (inventory.js START_DUR).
+const startItem = (rng, key, q) => newItem(key, q, rng, START_DUR);
 import { Rng } from "./rng.js";
 import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
@@ -343,7 +345,7 @@ export function rollGrab(state, s, A = null) {
   const bag = rng.chance(A && A.pack != null ? A.pack : C.PACK);
   const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, meds: 0 };
   if (bag) {
-    const pk = newItem(pickW(rng, (A && A.packs) || C.PACKS), Math.round(rng.range(0.7, 1) * 100) / 100);
+    const pk = startItem(rng, pickW(rng, (A && A.packs) || C.PACKS), Math.round(rng.range(0.7, 1) * 100) / 100);
     s.gear.backpack = pk;
     got.bag = pk;
   }
@@ -351,7 +353,7 @@ export function rollGrab(state, s, A = null) {
   if (rng.chance(wOdds)) {
     let w = pickW(rng, (A && A.weapons) || C.WEAPONS);
     if (!bag && !GEAR[w].small && !(A && A.weapons) && rng.chance(0.5)) w = "knife"; // running with only pockets: more often a knife than a rifle
-    s.gear.weapon = newItem(w, Math.round(rng.range(0.6, 1) * 100) / 100);
+    s.gear.weapon = startItem(rng, w, Math.round(rng.range(0.6, 1) * 100) / 100);
     got.weapon = s.gear.weapon;
     randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
     const rr = C.ROUNDS[w];
@@ -359,7 +361,7 @@ export function rollGrab(state, s, A = null) {
     if (GEAR[w].cat === "bow") got.arrows = (got.arrows || 0) + 12; // a quiver with the bow (hunting.js: bows hunt with arrows)
   }
   // Worn from the start (a cop's vest, a veteran's).
-  if (A && A.armor) for (const [k, odds] of Object.entries(A.armor)) if (GEAR[k] && !s.gear.armor && rng.chance(odds)) { s.gear.armor = newItem(k, Math.round(rng.range(0.5, 0.9) * 100) / 100); got.armor = s.gear.armor; }
+  if (A && A.armor) for (const [k, odds] of Object.entries(A.armor)) if (GEAR[k] && !s.gear.armor && rng.chance(odds)) { s.gear.armor = startItem(rng, k, Math.round(rng.range(0.5, 0.9) * 100) / 100); got.armor = s.gear.armor; }
   if (A && A.meds) got.meds += rng.int(A.meds[0], A.meds[1]);
   const stuff = A && A.stuff ? { ...C.PACK_STUFF, ...A.stuff } : C.PACK_STUFF;
   const pocketStuff = A && A.stuff ? { ...C.POCKET_STUFF, ...Object.fromEntries(Object.entries(A.stuff).filter(([k]) => GEAR[k] && GEAR[k].small)) } : C.POCKET_STUFF;
@@ -367,7 +369,7 @@ export function rollGrab(state, s, A = null) {
   const nPockets = Math.min(POCKETS, rng.int(C.POCKET_ITEMS[0], C.POCKET_ITEMS[1]));
   for (let i = 0; i < nPockets; i++) {
     const key = pickW(rng, pocketStuff);
-    const item = newItem(key, 1);
+    const item = startItem(rng, key, 1);
     const at = s.pockets.indexOf(null);
     if (at < 0) break;
     s.pockets[at] = item;
@@ -377,7 +379,7 @@ export function rollGrab(state, s, A = null) {
     const n = rng.int(C.PACK_ITEMS[0], C.PACK_ITEMS[1]);
     for (let i = 0; i < n; i++) {
       const key = pickW(rng, stuff);
-      const item = newItem(key, 1);
+      const item = startItem(rng, key, 1);
       // A tool goes in the off hand if it is free (a flashlight, a bandage kit), else in the bag.
       if (GEAR[key].slot === "tool" && !s.gear.tool) s.gear.tool = item;
       else {
@@ -401,16 +403,16 @@ export function rollGrab(state, s, A = null) {
 export function rollPrepper(state, s) {
   const rng = state.rng, P = HC_START.PREPPER;
   const got = { bag: null, weapon: null, items: [], food: P.FOOD, water: P.WATER, ammo: 0, meds: P.MEDS, prepper: true, trait: false };
-  s.gear.backpack = newItem(P.BAG, Math.round(rng.range(0.85, 1) * 100) / 100);
+  s.gear.backpack = startItem(rng, P.BAG, Math.round(rng.range(0.85, 1) * 100) / 100);
   got.bag = s.gear.backpack;
   const gun = rng.chance(P.GUN);
   const w = gun ? pickW(rng, P.GUNS) : "knife";
-  s.gear.weapon = newItem(w, Math.round(rng.range(0.8, 1) * 100) / 100);
+  s.gear.weapon = startItem(rng, w, Math.round(rng.range(0.8, 1) * 100) / 100);
   got.weapon = s.gear.weapon;
   randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
   if (gun) got.ammo += P.AMMO;
   const place = (key) => {
-    const item = newItem(key, 1);
+    const item = startItem(rng, key, 1);
     if (GEAR[key].slot === "tool" && !s.gear.tool) s.gear.tool = item; // the water filter, in hand
     else {
       const at = packOf(s).indexOf(null);
@@ -486,7 +488,7 @@ export function rollCar(state, p, people) {
       const key = pickW(rng, table);
       delete table[key];
       if (!GEAR[key]) continue;
-      const item = newItem(key, Math.round(rng.range(0.6, 1) * 100) / 100);
+      const item = startItem(rng, key, Math.round(rng.range(0.6, 1) * 100) / 100);
       p.cargo.gear.push(item);
       trunk.gear.push(item);
     }

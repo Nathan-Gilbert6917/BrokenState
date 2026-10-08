@@ -203,7 +203,7 @@ function landBlock(state, p, at, queueing) {
   const hp = queueing ? "" : huntProblem(state, p, at);
   const fs = fishSpot(state, at);
   const fp = fs && !queueing ? fishProblem(state, p, at) : "";
-  const kit = fishKit(members, p.cargo.gear);
+  const kit = fishKit(members, p.cargo.gear, { frozen: frozenAt(state) });
   const fe = fs && kit.power ? expectFish(state, kit, at, HUNT.defHours, state.hour, cargoRoom(state, p)).rations : 0;
   const line = snareLine(state, at);
   const sp = queueing ? "" : snareProblem(state, p, at, line ? "check" : "set");
@@ -225,7 +225,7 @@ function landBlock(state, p, at, queueing) {
   const wp = queueing ? "" : woodProblem(state, p, at);
   const woodWood = carried(p, "wood");
   const woodBtns = [4, 8].map((h) => ord("wood", ` data-hours="${h}"`, `Cut wood ${h}h`, wp ? `Cut wood: ${wp}` : `Cut firewood here for ${h} hours (daylight only): wood ${wi.word}${wi.est && h === WOOD.defHours ? `; about ${Math.round(wi.est.wood)} firewood expected in ${h}h, as much as the team can carry (0.1 kg each: ${Math.round(wi.est.wood * SUPPLIES.wood.weight)} kg)${wi.est.all > wi.est.wood + 15 ? `: about ${Math.round(wi.est.all)} cut, the rest left` : ""}` : ""}. ${wi.tools ? `${wi.tools} with an axe or blade` : "No axe: deadfall by hand, far slower"}. The winter's heating: a base burns firewood before fuel. Loud (Heat), and axes slip now and then.`, !!wp)).join("");
-  return `<div style="margin-top:0.5rem"><b${tip("Food and firewood from the land: forage (anyone), hunt (a rifle or a bow), fish (a rod or a net, on a river or lake shore), set snares, or cut wood (an axe helps). The land runs out of game when hunted hard and grows back over weeks; picked land grows back over a season, cut woods over seasons.")}>Land</b> <span class="muted">wild food ${fi.word} · game ${info.word} · wood ${wi.word}${fs ? ` · fish in ${fs.name}` : ""}${line ? " · your snares" : ""}${meat >= 1 ? ` · carrying ${Math.floor(meat)} fresh game` : ""}${woodWood >= 1 ? ` · carrying ${Math.floor(woodWood)} firewood` : ""}</span></div>
+  return `<div style="margin-top:0.5rem"><b${tip("Food and firewood from the land: forage (anyone), hunt (a rifle or a bow), fish (a rod, a net or a spear, on a river or lake shore), set snares, or cut wood (an axe helps). The land runs out of game when hunted hard and grows back over weeks; picked land grows back over a season, cut woods over seasons.")}>Land</b> <span class="muted">wild food ${fi.word} · game ${info.word} · wood ${wi.word}${fs ? ` · fish in ${fs.name}` : ""}${line ? " · your snares" : ""}${meat >= 1 ? ` · carrying ${Math.floor(meat)} fresh game` : ""}${woodWood >= 1 ? ` · carrying ${Math.floor(woodWood)} firewood` : ""}</span></div>
     ${teamWormText(state, p) ? `<div class="small danger"${tip("The worm (Help: The dead and the worm): its eggs die in the heat. Camp with the fire lit to boil the water and cook the game; a water filter carried cleans the water as it is drunk. Eaten raw or drunk unboiled, each day is a chance of catching it.")}>The worm: ${esc(teamWormText(state, p))}.</div>` : ""}
     ${lowFoodBlock(state, p, at, queueing)}
     <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${forageBtns}${hunts}${fishBtns}${snareBtns}${woodBtns}</div>`;

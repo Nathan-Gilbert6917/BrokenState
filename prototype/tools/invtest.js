@@ -4,7 +4,7 @@
 // Usage: node tools/invtest.js [battles per matchup] [seed]
 import { createWorld, makeSurvivor, combatPower, hub, hurt, killSurvivor, newId, survivorById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
-import { makeItem, wearAfterFight } from "../src/sim/crafting.js";
+import { makeItem, wearAfterFight, itemDurMax } from "../src/sim/crafting.js";
 import { partyCapacity, cargoLoad, carryCapacity, poolLoad } from "../src/sim/parties.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler, unitById } from "../src/sim/combat.js";
 import { takeCaptive } from "../src/sim/conflicts.js";
@@ -131,7 +131,7 @@ section("Armor");
   const m = person();
   m.gear.head = item("footballhelmet"); m.gear.arms = item("padding"); m.gear.legs = item("shinguards"); m.gear.armor = item("tirevest");
   wearAfterFight(state, [m]);
-  check(m.gear.head.dur === GEAR.footballhelmet.dur - 1 && m.gear.arms.dur === GEAR.padding.dur - 1 && m.gear.legs.dur === GEAR.shinguards.dur - 1 && m.gear.armor.dur === GEAR.tirevest.dur - 1, "a fight wears head, body, arms and legs");
+  check(["head", "arms", "legs", "armor"].every((k) => m.gear[k].dur === itemDurMax(m.gear[k]) - 1), "a fight wears head, body, arms and legs");
 }
 
 // ---------- carry limits ----------

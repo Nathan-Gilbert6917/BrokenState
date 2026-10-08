@@ -163,19 +163,20 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   console.log("Craft orders and quality");
   const st = W();
   const h = quietHub(st);
+  h.buildings = h.buildings.filter((b) => b.type !== "craftbench"); // no bench bonus (benchtest.js): the qualities below are the crafters' own
   const [c, d] = people(st, h);
-  for (const s of people(st, h)) s.skills.mechanics = 0;
+  for (const s of people(st, h)) { s.skills.mechanics = 0; s.skills.crafting = 0; }
   c.role = "craft";
   h.armory.length = 0;
   addCraftOrder(st, h, "spikedbat", 2, 0.8);
   const o = craftOrders(h)[0];
-  // Expected quality 75% at Mechanics 0: below 80%, nothing is queued.
+  // Expected quality 75% at Crafting 0 (crafting.js: quality comes from Crafting): below 80%, nothing is queued.
   productionHour(st);
   check(!craftQueue(h).length && /80%/.test(craftOrderStatus(st, h, o).reason), `min 80%: nothing queued while the best makes ${Math.round(craftQuality(0, CRAFTS.spikedbat) * 100)}% (${craftOrderStatus(st, h, o).reason})`);
   // A worn 70% bat in the armory does not count toward the order.
   h.armory.push(makeItem("spikedbat", 0.7));
   check(craftOrderHave(h, o) === 0, "an item below the minimum does not count");
-  c.skills.mechanics = 8; // 85%
+  c.skills.crafting = 16; // 95% expected: the roll (crafting.js rollQuality, ±4% at Crafting 16) stays above 80%
   productionHour(st);
   check(craftQueue(h).length === 1 && craftQueue(h)[0].orderId === o.id && craftQueue(h)[0].minQ === 0.8, "a crafter good enough: one job queued");
   productionHour(st);

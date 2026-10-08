@@ -24,9 +24,28 @@ export const RECIPES = {
   power: { name: "Power", in: { fuel: 2 }, out: {}, skill: "mechanics", main: "fuel", desc: "2 fuel a day → 6 power while something draws it (stands by otherwise). Loud: +4 Heat while running." },
 };
 
+// Crafting benches (family "bench", tiers 1–3 on one utility plot, each upgrading the one below in place): hand
+// crafting at a base (crafting.js) needs one for every recipe but the simple ones a team makes on the road (field)
+// and those made at their own station (needs). rate: crafters' work-hours ×, quality: + the item's condition (at
+// most 100%), workshop: opens the workshop recipes (needs: "workshop") and lets an ammo bench be built here. Field
+// crafting by teams gets nothing from a bench. The new hub starts with a crafting bench (world.js).
+export const BENCH = {
+  craftbench: { rate: 1.25, quality: 0.05, workshop: false },
+  workbench:  { rate: 1.4,  quality: 0.08, workshop: true },
+  toolbench:  { rate: 1.6,  quality: 0.12, workshop: true },
+};
+const benchText = (k) => `crafters here work ${Math.round((BENCH[k].rate - 1) * 100)}% faster and what they make comes out +${Math.round(BENCH[k].quality * 100)}% condition (at most 100%; condition sets a weapon's damage and armour's protection)`;
+const BENCH_GATE = "Hand crafting at a base needs a bench for everything but the simple recipes a team can make on the road (marked Field) and those made at their own station";
+
 export const BUILDINGS = {
   farm_plot:    { name: "Farm plot",      cost: { scrap: 8 },             hours: 12, max: 10, desc: "+2 crop plots (Farming tab). Every base starts with some plots: the hub 6, an outpost 2." },
-  ammo_bench:   { name: "Ammo bench",     plot: "utility", cost: { scrap: 15, parts: 1 },  hours: 24, max: 3, station: "ammo", desc: "Workshop station. One operator turns scrap into ammo." },
+  craftbench:   { name: "Crafting bench", plot: "utility", family: "bench", tier: 1, cost: { scrap: 8 }, hours: 10, max: 1, craft: BENCH.craftbench,
+                  desc: `A heavy table with a vise and hand tools in the yard. ${BENCH_GATE}: with this one ${benchText("craftbench")}. Upgrade it into a workbench for the workshop recipes and an ammo bench.` },
+  workbench:    { name: "Workbench",      plot: "utility", family: "bench", tier: 2, upgrades: "craftbench", cost: { scrap: 16, parts: 1 }, hours: 18, max: 1, req: { mechanics: 2 }, craft: BENCH.workbench,
+                  desc: `Bench grinder, drill press and clamps under a roof of tin: ${benchText("workbench")}. It counts as a workshop: the workshop recipes can be made here, and an ammo bench can be built at this base. Upgrades the crafting bench on its plot. Needs a Mechanics 2+ survivor here to build.` },
+  toolbench:    { name: "Master workbench", plot: "utility", family: "bench", tier: 3, upgrades: "workbench", cost: { scrap: 28, parts: 3 }, hours: 30, max: 1, req: { mechanics: 5 }, craft: BENCH.toolbench,
+                  desc: `A lathe, a welder and every jig worth keeping: ${benchText("toolbench")}. A workshop like the workbench. Upgrades the workbench on its plot. Needs a Mechanics 5+ survivor here to build.` },
+  ammo_bench:   { name: "Ammo bench",     plot: "utility", cost: { scrap: 15, parts: 1 },  hours: 24, max: 3, station: "ammo", bench: 2, desc: "Workshop station. One operator turns scrap into ammo. Needs a workbench (or better) at this base to build." },
   med_station:  { name: "Med station",    plot: "utility", cost: { scrap: 12, meds: 1 },   hours: 24, max: 2, station: "meds", desc: "Workshop station. One operator makes basic meds." },
   machine_shop: { name: "Machine shop",   plot: "building", cost: { scrap: 25, parts: 3 },  hours: 48, max: 2, station: "parts", req: { mechanics: 4 }, desc: "Workshop station. One operator machines spare parts. Needs a Mechanics 4+ survivor here to build." },
   bunkhouse:    { name: "Bunkhouse",      plot: "building", cost: { scrap: 20 },            hours: 30, max: 6, desc: "+6 beds. Overcrowding lowers mood every day." },
@@ -259,7 +278,7 @@ export const SHELTER = {
   river: 10,          // water a day hauled from a river or lake beside it (no well yet; the people carry it)
   // What a shelter may build (the most of each): yard things on its 2 utility plots (PLOTS.shelter), a barricade, a
   // garden patch and the step up.
-  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 1, farm_plot: 1, hub_up: 1 },
+  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 1, farm_plot: 1, hub_up: 1, craftbench: 1 },
 };
 export const isShelter = (base) => !!base && base.tier === 0;
 export const baseTier = (base) => (isShelter(base) ? 0 : 1);
@@ -295,6 +314,11 @@ export const queuedBeds = (base) => base.construction.reduce((a, c) => a + (!BED
 // Crop plots (farming.js plotLimit): hub 6, outpost and shelter 2, +2 per Farm plot building.
 export const farmSlots = (base) => (isShelter(base) ? SHELTER.plots : base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2;
 export const stations = (base) => base.buildings.filter((b) => BUILDINGS[b.type].station);
+// The crafting bench here (BENCH): the highest tier standing, 0 for none. Broken ones count only with any (a build
+// gate: it is repaired); benchOf is what the crafters get from the working one (null: none, so no bonus; old saves).
+export const benchTier = (base, any = false) => Math.max(0, ...base.buildings.map((b) => (BUILDINGS[b.type] && BUILDINGS[b.type].family === "bench" && (any || !b.broken) ? BUILDINGS[b.type].tier : 0)));
+export const benchType = (base) => Object.keys(BENCH).find((k) => BUILDINGS[k].tier === benchTier(base)) || null;
+export const benchOf = (base) => (benchType(base) ? BENCH[benchType(base)] : null);
 
 export function addBuilding(base, type) {
   const b = { id: newId(), type };
@@ -421,6 +445,8 @@ export function canBuild(state, base, type) {
     if (!cap) return { ok: false, reason: "Not at a shelter: build it up into a base first" };
     if (countAll(base, type) + queued >= cap) return { ok: false, reason: `A shelter has room for ${cap}` };
   }
+  // A station that needs a bench of some tier here (BENCH): the ammo bench a workbench.
+  if (def.bench && benchTier(base, true) < def.bench) return { ok: false, reason: `Needs a ${BUILDINGS[Object.keys(BENCH)[def.bench - 1]].name.toLowerCase()} here first (upgrade the crafting bench)` };
   // Plots (PLOTS): a new building needs a free plot of its kind; a hospital upgrade stands on the old one's.
   const kind = def.plot;
   const onOld = def.family && (base.buildings.some((x) => BUILDINGS[x.type].family === def.family));
@@ -496,6 +522,7 @@ export function buildingSummary(state, base) {
     ["Beds", `${baseBeds(base)} for ${people} people${people > baseBeds(base) ? " (overcrowded)" : ""}`],
     ["Crop plots", `${farmSlots(base)}${count(base, "greenhouse") ? ` + ${count(base, "greenhouse") * 2} under glass` : ""}`],
     ["Workshop stations", `${stations(base).length}`],
+    ["Crafting", benchOf(base) ? `${BUILDINGS[benchType(base)].name}: crafters ${Math.round((benchOf(base).rate - 1) * 100)}% faster, +${Math.round(benchOf(base).quality * 100)}% condition${benchOf(base).workshop ? ", workshop recipes" : ""}` : "No crafting bench: only the simple (Field) recipes"],
     ...(isShelter(base) ? [["Tier", "Shelter (tier 0): tarps, a shack and a barricade. Build it up into a base (Construction) for walls, a well and every building"]] : []),
     ["Vision", `${(isShelter(base) ? SHELTER.vision : base.type === "hub" ? 3 : 2) + (base.watchtower ? 2 : 0)} tiles`],
     ["Radio", base.radio ? "Station" : count(base, "relay") ? (base.relayOffline ? "Relay (offline: needs 1 part)" : "Relay") : "No"],
