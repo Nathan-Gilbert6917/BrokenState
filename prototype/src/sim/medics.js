@@ -929,7 +929,7 @@ export const MEDICS_HELP = `<b>Medics.</b> Anyone who takes a med kit into a fig
   not open ground under fire (unless it is close); it drags them to the cell with the most cover and the fewest eyes on it,
   revives or stabilizes there while the others cover. With a medic about, a downed one in the open is dragged to a cell
   quiet enough for a revive and that medic is named to see to them: they come over and revive them there, usually the
-  next turn, and the others leave them to it; a medic heals the badly hurt, and nobody spends meds on the
+  next turn; the others next to them stabilize them meanwhile but leave them where they lie; a medic heals the badly hurt, and nobody spends meds on the
   standing below a reserve kept for a revive (with a medic on the side: 1 for every ${MEDIC.RESERVE.PER} people, at least ${MEDIC.RESERVE.MIN}; an
   enemy medic counts their kit's uses).<br>
   <b>By the numbers</b> (auto-resolve, teams on the road): a medic with a kit still standing after a won fight saves some
