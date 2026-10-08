@@ -204,7 +204,9 @@ section("A group's channel over 5 days: caravans, raids, hive war parties, by th
 {
   const ids = peekNextId();
   const { st, h, p, f1, cv, raid, kinds: seen } = trafficRun(seed, ids);
-  const heard = (p.heard || []).map((x) => x.text);
+  // Everything heard over the 5 days (the log): the team's own list keeps only the LISTEN.HEARD_MAX newest, so a line
+  // heard on day 1 can be pushed off it by later talk (how much talk there is turns on the world-local ids).
+  const heard = st.log.filter((l) => /^📻 Heard on /.test(l.text)).map((l) => l.text);
   check(!!cv && !!raid, "the convoy and the raid are on the road");
   const kinds = [...seen];
   check(kinds.includes("caravan") && kinds.includes("raidYou") && kinds.includes("hive"), `their channel carries: ${[...new Set(kinds)].join(", ")}`);
