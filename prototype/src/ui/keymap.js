@@ -95,6 +95,11 @@ export const KEYMAP = [
   { id: "battle.search", label: "Search the container next to the unit", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyS"], v: "search" },
   { id: "battle.quick", label: "Quick search (raid)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyQ"], v: "quick" },
   { id: "battle.drag", label: "Drag a body", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyD"], v: "drag" },
+  // Medics (sim/medics.js): a med kit makes one; anyone drags the downed; Finish kills a downed enemy for good.
+  { id: "battle.heal", label: "Heal (a medic: a med kit)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyH"], v: "heal" },
+  { id: "battle.revive", label: "Revive a downed teammate (a medic)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyV"], v: "revive" },
+  { id: "battle.dragAlly", label: "Drag a downed teammate / put them down", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyG"], v: "dragAlly" },
+  { id: "battle.finish", label: "Finish a downed enemy", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyF"], v: "finish" },
   // The unit orders (combatAction "cb-act" with v).
   ...[["shoot", "Shoot", "KeyF"], ["melee", "Melee", "KeyE"], ["meds", "Meds", "KeyM"], ["overwatch", "Overwatch", "KeyO"], ["hunker", "Hunker down", "KeyH"], ["reload", "Reload the gun", "KeyI"],
     ["retreat", "Retreat (from the evac strip)", "KeyR"], ["vehicle", "Open the vehicle", "KeyN"], ["extract", "Extract (raid)", "KeyX"], ["subdue", "Subdue", "KeyC"],

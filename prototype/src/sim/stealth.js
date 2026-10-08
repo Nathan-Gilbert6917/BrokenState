@@ -301,7 +301,7 @@ export function stealthAct(state, b, u, t, act) {
       return "";
     }
     case "tie": {
-      if (!t || t.side !== "enemy" || !t.ko || t.dead || !adjacent(u, t)) return "Tie up someone knocked out, right next to you.";
+      if (!t || t.side !== "enemy" || !(t.ko || (t.wounded && t.down)) || t.dead || !adjacent(u, t)) return "Tie up someone knocked out or down, right next to you."; // wounded: an enemy who went down (medics.js)
       if (t.tied) return "Already tied up.";
       t.tied = true;
       // Handcuffs (data.js cuffs) on the unit: no action, and they stay on the prisoner.

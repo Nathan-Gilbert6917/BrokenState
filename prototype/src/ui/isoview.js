@@ -29,6 +29,7 @@ import { unitCanvas, unitFacing } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
+import { isMedic } from "../sim/medics.js"; // a med kit makes a medic: the cross tag
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -1995,6 +1996,9 @@ function drawLabels(ctx, b, s, H) {
   const tags = [];
   if (t.down) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? COL.good : COL.bad]);
   if (t.ztype && !t.down) tags.push([`${t.short}${t.elite ? "★" : ""}`, ringOf(t)]);
+  if (!t.down && isMedic(t)) tags.push(["✚", "#ff6b6b"]); // a medic (sim/medics.js)
+  if (t.dragging != null) tags.push(["DRAG", "#e0a84f"]);
+  if (t.shaken && !t.down) tags.push(["SHK", "#ffd166"]); // revived: shaken, −10 aim
   if (t.boss && !t.down) tags.push([t.boss === "broodmother" ? "BROOD" : "WALL", COL.bad]);
   if (t.ow) tags.push(["OW", "#e0a84f"]);
   if (t.hunker) tags.push(["HD", "#4aa3ff"]);

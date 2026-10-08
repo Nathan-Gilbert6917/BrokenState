@@ -31,6 +31,7 @@ import { Rng } from "./rng.js";
 import { woundTrauma } from "./health.js";
 import { fightXp } from "./skills.js";
 import { takeCaptive } from "./conflicts.js";
+import { memberMedic, MEDIC } from "./medics.js"; // a medic's kit: the carried and the fallen pull through more often
 
 export const RETREAT_POLICIES = {
   never:  { name: "Never",              short: "never",                desc: "Fight it out to the end, win or lose." },
@@ -159,10 +160,11 @@ export function escapeChanceByNumbers(m, e) {
 // ---------- the fight's model (plain data, no state: the real fight and the card's forecast both use it) ----------
 // A member: { id, name, hp, mult (damage taken ×: tough, armor), load (armor), scouting, medicine }.
 function memberOf(s) {
+  const med = memberMedic(s); // medics.js: a med kit anywhere on them adds to their Medicine; kit: they are a medic
   return {
     id: s.id, name: s.name, hp: s.health, maxHp: 100,
     mult: (s.traits.includes("tough") ? 0.75 : 1) * armorMult(s),
-    load: armorPower(s), scouting: skill(s, "scouting"), medicine: skill(s, "medicine"),
+    load: armorPower(s), scouting: skill(s, "scouting"), medicine: skill(s, "medicine") + med.bonus, kit: med.kit,
   };
 }
 // The fight as the model sees it. win: the chance to win fought to the end (the odds the card shows).
@@ -240,7 +242,7 @@ function runFor(rng, model, ms, enemyLeft, close = 1, seen = 1) {
     if (t) out.lines.push(`${first(t)} has to be dropped.`);
   }
   // The carried pull through like the tactical ones: 50% + 2% a point of Medicine of the best medic who got out.
-  const medic = Math.max(0, ...ms.filter((m) => !m.down && out.escaped.includes(m.id)).map((m) => m.medicine || 0));
+  const medic = Math.max(0, ...ms.filter((m) => !m.down && out.escaped.includes(m.id)).map((m) => (m.medicine || 0) + (m.kit ? MEDIC.END_KIT : 0))); // medics.js: more for a medic with a kit
   const carriedIds = new Set(carriedOut.map((c) => c.t.id));
   for (const c of carriedOut) out.carried.push({ id: c.t.id, by: c.by.id, lives: rng.chance(0.5 + medic * 0.02) });
   for (const m of ms) if (m.down && !carriedIds.has(m.id)) out.left.push({ id: m.id, captured: model.capture > 0 && rng.chance(model.capture) });
@@ -302,6 +304,7 @@ export function rollFight(rng, model, policy = "never") {
   }
   if (round == null) {
     const killShare = win ? 1 : rng.range(BREAKOFF.KILLS_LOST[0], BREAKOFF.KILLS_LOST[1]);
+    if (win) medicSaves(rng, ms); // medics.js: a medic still standing saves some of the fallen
     return { win, outcome: win ? "victory" : "defeat", round: null, hits, members: ms, run: null, killShare };
   }
   // Worn down: the fight's blows land whole, so without this whoever still stands when the team breaks off is as
@@ -329,6 +332,17 @@ export function rollFight(rng, model, policy = "never") {
   return { win, outcome: run.escaped.length ? "retreat" : "defeat", round, hits, worn, members: ms, run, killShare };
 }
 
+// A won fight fought to the end (medics.js MEDIC.NUMBERS): each member who fell is saved, barely alive, by the best
+// medic with a kit still standing (SAVE + PER_MED a point of their Medicine, at most MAX). Draws only when there is
+// such a medic and someone fell (the dice of a fight without one are as before). Sets m.saved.
+function medicSaves(rng, ms) {
+  const medics = ms.filter((m) => !m.down && m.kit);
+  if (!medics.length || !ms.some((m) => m.down)) return;
+  const med = Math.max(...medics.map((m) => m.medicine || 0));
+  const p = Math.min(MEDIC.NUMBERS.MAX, MEDIC.NUMBERS.SAVE + MEDIC.NUMBERS.PER_MED * med);
+  for (const m of ms) if (m.down && rng.chance(p)) m.saved = true;
+}
+
 // ---------- the real fight ----------
 // combat.js autoResolveCombat: people (alive), win (the odds), ammoUsed and arrowsUsed (already taken from pools),
 // refund(n, key) gives back the rounds (key "ammo") or arrows ("arrows") not fired. Applies wounds, deaths, the
@@ -346,13 +360,21 @@ export function fightByNumbers(state, setup, people, { win, ammoUsed, arrowsUsed
   const hurtIds = new Set(), deadIds = [], captured = [], carriedIds = [];
   const broke = fight.round != null;
   const downNow = new Set(fight.members.filter((m) => m.down).map((m) => m.id));
+  const saved = new Set(fight.members.filter((m) => m.saved).map((m) => m.id)); // medics.js: fell, but a medic kept them alive
   // Wounds of the rounds fought. Fought to the end, a fall is death (as it always was by the numbers); broken off,
   // the downed are carried or left (below) instead.
   for (const h of fight.hits) {
     const s = byId.get(h.id);
-    if (!s || !s.alive || (broke && downNow.has(h.id))) continue;
+    if (!s || !s.alive || ((broke || saved.has(h.id)) && downNow.has(h.id))) continue;
     hurt(state, s, h.raw, tile, cause);
     (s.alive ? hurtIds.add(s.id) : deadIds.push(s.id));
+  }
+  for (const id of saved) { // medics.js: barely alive, as the carried
+    const s = byId.get(id);
+    if (!s || !s.alive) continue;
+    s.health = Math.min(s.health, rng.int(5, 15));
+    woundTrauma(state, s, 30);
+    hurtIds.add(s.id);
   }
   if (broke) {
     for (const b of [...fight.worn, ...fight.run.blows]) {
@@ -429,7 +451,7 @@ export function fightForecast(state, p, people, { odds, enemy, ambush = null }, 
       const r = rollFight(rng, model, pl);
       const n = r.members.length;
       let dead = 0;
-      if (r.round == null) dead = r.members.filter((m) => m.down).length;
+      if (r.round == null) dead = r.members.filter((m) => m.down && !m.saved).length; // medics.js: saved by a medic
       else {
         dead = r.run.left.length + r.run.carried.filter((c) => !c.lives).length;
         t.home += (n - dead) / n;
