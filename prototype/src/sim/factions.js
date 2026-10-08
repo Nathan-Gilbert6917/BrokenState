@@ -70,6 +70,7 @@ import { reduceHorde } from "./hordes.js";
 import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
 import { groupWorksDaily, fieldsFactor, growthFactor, workshopFactor, storeFactor, groupBaseDefence } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids
 import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
@@ -839,7 +840,9 @@ export function resolveRaidOnFaction(state, party, helpers) {
     const loss = Math.ceil(target.pop * rng.range(0.2, 0.35));
     target.pop -= loss;
     clashKit(state, attacker, attN, 0, target, loss, "a", 0.4); // arsenal.js: the field is theirs: half the dead's kit and of the spare kit they lose
-    const taken = raidPrisoners(state, attacker, target, loss); // nonlethal.js: held by the raiders (its own dice)
+    // nonlethal.js raidPrisoners: the winners take a share of the beaten alive by type, into their jail (groupjails.js:
+    // as many as it holds; the rest sold on, let go or killed by type). Returns those taken alive (fewer dead).
+    const taken = raidPrisoners(state, attacker, target, loss);
     for (const k of Object.keys(target.stock)) {
       const lost = target.stock[k] * 0.4;
       target.stock[k] -= lost;
@@ -876,6 +879,7 @@ export function collapseFaction(state, f, by = null) {
   f.alive = false;
   f.bases = [];
   f.pact = null;
+  freeOnCollapse(state, f); // groupjails.js: the people they held walk home
   if (f.known) log(state, `${f.name} has collapsed.`, "danger");
   takeOver(state, f, ruins, by);
   // groupworld.js: the bases nobody took stand empty, their works and some stores left for whoever comes.

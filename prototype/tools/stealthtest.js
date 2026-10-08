@@ -104,7 +104,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
     combatAct(st, { type: "subdue", unit: a.id, target: e1.id });
     combatAct(st, { type: "melee", unit: c.id, target: e2.id });
     if (e1.ko && !e1.dead) ko++;
-    if (e2.dead) killed++;
+    if (e2.dead || (e2.down && e2.wounded && !e2.ko)) killed++; // medics.js: a lethal blow puts people down (bleeding), not out cold
     // Waking: run turns past the wake turn; tie up in another trial.
     if (i % 2 && e1.ko) { e1.tied = true; }
     for (let k = 0; k < 8 && b.phase !== "over"; k++) { b.phase = "enemy"; b.turn++; stealthTurn(b); b.phase = "player"; }
@@ -112,7 +112,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
     if (e1.tied && e1.ko) tiedWoke++;
   }
   check(ko >= 30, `Subdue knocks out instead of killing (${ko} of 40 knocked out with a sure hit)`);
-  check(killed >= 30, `Melee still kills (${killed} of 40)`);
+  check(killed >= 30, `Melee is still lethal: dead or down and bleeding, not knocked out (${killed} of 40)`);
   check(woke >= 10 && tiedWoke >= 10, `the knocked out wake within ${STEALTH.WAKE[1]} turns unless tied (${woke} woke untied, ${tiedWoke} tied stayed down)`);
 }
 
@@ -253,7 +253,10 @@ function prisonWorld(s, n = 2, cells = 1) {
     n++;
     const key = p.ransom.key;
     st.hour = p.ransom.due * 24;
+    const esc0 = { ...PRISON.ESCAPE };
+    PRISON.ESCAPE.guarded = 0; PRISON.ESCAPE.unguarded = 0; // the answer under test, not an escape that day (jailhouse: the dice moved)
     prisonersDaily(st);
+    Object.assign(PRISON.ESCAPE, esc0);
     if (!st.prisoners.includes(p)) { if ((h.stock[key] || 0) > (stock0[key] || 0) && f.goodwill <= g0) paid++; }
     else if (f.goodwill < g0 && f.angryUntil) refused++;
     if (i === 0) console.log(`    ${msg}`);

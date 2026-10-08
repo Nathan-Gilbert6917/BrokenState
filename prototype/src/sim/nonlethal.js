@@ -30,7 +30,8 @@
 //     with no group behind them they come to after the enemy has gone. Tied surrendered enemies go home as
 //     prisoners (stealth.js battleCaptives, prisoners.js); untied ones walk away, their dropped weapons stay to loot.
 //   By the numbers: a group that takes people alive takes a share of a beaten group's losses as prisoners in AI raids
-//     (raidPrisoners: fewer dead), held and later recruited, ransomed back or escaping (aiCaptivesDaily); a decisive
+//     (raidPrisoners: fewer dead), into its jail (groupjails.js: as many as it holds, the rest sold on, let go or killed
+//     by type; there they work, are ransomed back, swapped, sold, turned or escape: groupJailsDaily); a decisive
 //     win of yours by the numbers takes a couple of the beaten side prisoner (numbersSurrenders).
 import { GEAR } from "./data.js";
 import { AMMO_TYPES } from "./data-ammo.js";
@@ -50,6 +51,7 @@ import { addMood } from "./relations.js";
 import { changeGoodwill } from "./factions.js";
 import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: takeAlive (NL_TAKE)
 import { removeFromArsenal } from "./arsenal.js";
+import { groupCapture, migrateHeld } from "./groupjails.js"; // jailhouse: one model of the groups' prisoners
 
 export const NL = {
   TASER: { range: 4, shots: 2, stun: 2, daze: 20, ko: 0.4, aim: 10, fall: 8 },
@@ -77,8 +79,6 @@ export const TYPE_KIT = { raider: "raiders", expansionist: "fighters", zealot: "
 // AI raids between groups: the share of a beaten group's losses the winners take alive, by the winners' type.
 // One table for every type's leanings: groupcare.js GROUP_PRIORITIES takeAlive (read when used).
 export const NL_TAKE = new Proxy({}, { get: (_, t) => (typeof t === "string" ? weightOf({ type: t }, "takeAlive", null) : undefined), has: (_, t) => weightOf({ type: t }, "takeAlive", null) != null });
-// Prisoners held between groups, a day each: joined their captors, ransomed back, slipped away.
-export const AI_HELD = { recruit: 0.03, ransom: 0.03, escape: 0.01, ransomFood: 4 };
 export const SURRENDER = {
   lost: 0.5, base: 0.05, hurt: 0.25, empty: 0.15, flanked: 0.15, alone: 0.15, max: 0.8, leader: 0.4, walk: 3, recover: 1.5,
   kit: { guards: 1, militia: 1, survivors: 1, fighters: 0.8, raiders: 0.6, soldiers: 0.3, zealots: 0 },
@@ -524,7 +524,7 @@ export function nlAct(state, b, u, t, act) {
       return ""; // free
     }
     case "execute": {
-      if (!t || t.side !== "enemy" || t.dead || !(t.surr || t.ko)) return "Execute someone who has surrendered or is knocked out.";
+      if (!t || t.side !== "enemy" || t.dead || !(t.surr || t.ko || (t.wounded && t.down && t.tied))) return "Execute someone who has surrendered, is knocked out or lies tied up (a downed one who is not: Finish).";
       if (!meleeReach(b, u, t)) return "Move next to them first (not across a wall's corner).";
       execute(state, b, u, t);
       u.ap -= 1;
@@ -561,7 +561,7 @@ export function surrenderRefusal(b, u) {
   return "";
 }
 function execute(state, b, u, t) {
-  t.down = false; t.ko = false; t.surr = false; t.tied = false;
+  t.down = false; t.ko = false; t.surr = false; t.tied = false; t.wounded = false; // wounded: medics.js, so the blow kills (no going down)
   t.hp = Math.max(1, t.hp);
   damage(b, t, 9999, u);
   say(b, `${u.name} executes ${t.name}.`, "death");
@@ -731,40 +731,26 @@ export function nlDropPiles(state, b) {
 export const nlSpared = (u) => !!(u.ko || u.surr);
 
 // ---------- by the numbers ----------
-// AI raids between groups (factions.js): of a beaten group's losses, how many the winners take alive (held by them,
-// attacker.held[target id]). Its own dice. Returns the number taken.
+// AI raids between groups (factions.js): of a beaten group's losses, how many the winners take alive (NL_TAKE by
+// type, its own dice). They go into the winners' jail (groupjails.js groupCapture: as many as it holds; the rest sold
+// on, let go home or killed by type). Returns how many lived (fewer dead): those taken less those killed for want of
+// room. A record without bases (a tool's stand-in) is only counted.
 export function raidPrisoners(state, attacker, target, loss) {
   if (!attacker || !target || loss <= 0) return 0;
   const share = NL_TAKE[attacker.type] ?? 0.2;
   const n = Math.min(loss, Math.floor(loss * share + hash01(state.seed, "nlraid", attacker.id, target.id, state.hour)));
   if (n <= 0) return 0;
-  const held = attacker.held || (attacker.held = {});
-  held[target.id] = (held[target.id] || 0) + n;
-  state.stats.aiPrisoners = (state.stats.aiPrisoners || 0) + n;
-  return n;
+  const out = { killed: 0 };
+  if (Array.isArray(attacker.bases)) groupCapture(state, attacker, target, n, out);
+  state.stats.aiPrisoners = (state.stats.aiPrisoners || 0) + n - out.killed;
+  return n - out.killed;
 }
 // A war raid's capture chance (diplomacy.js: 25% base) by the raiders' wish to take people.
 export const warCaptureMult = (attacker) => (attacker ? 0.5 + 2 * (NL_TAKE[attacker.type] ?? 0.2) : 1);
-// Held prisoners between groups, a day: some join their captors, some are ransomed back (food to the captors), some
-// slip away home; a group gone frees its prisoners or loses its people.
-export function aiCaptivesDaily(state) {
-  for (const f of state.factions) {
-    if (!f.held) continue;
-    for (const [tid, n0] of Object.entries(f.held)) {
-      let n = n0;
-      const t = factionById(state, Number(tid));
-      for (let i = 0; i < n0; i++) {
-        const r = hash01(state.seed, "nlheld", f.id, tid, state.hour, i);
-        if (!f.alive) { n--; if (t && t.alive) t.pop += 1; continue; }
-        if (r < AI_HELD.recruit * weightOf(f, "recruit")) { n--; f.pop += 1; state.stats.aiRecruited = (state.stats.aiRecruited || 0) + 1; }
-        else if (r >= AI_HELD.recruit * weightOf(f, "recruit") && r < AI_HELD.recruit + AI_HELD.ransom && t && t.alive && (t.stock.food || 0) >= AI_HELD.ransomFood) { n--; t.pop += 1; t.stock.food -= AI_HELD.ransomFood; f.stock.food = (f.stock.food || 0) + AI_HELD.ransomFood; state.stats.aiRansomed = (state.stats.aiRansomed || 0) + 1; }
-        else if (r < AI_HELD.recruit + AI_HELD.ransom + AI_HELD.escape || !t || !t.alive) { n--; if (t && t.alive) t.pop += 1; }
-      }
-      if (n > 0) f.held[tid] = n; else delete f.held[tid];
-    }
-    if (!Object.keys(f.held).length) delete f.held;
-  }
-}
+// Held prisoners between groups: groupjails.js groupJailsDaily (labour, escapes, ransoms, swaps, sales, turning; its
+// own rolls replaced the ones that were here). A save made with the old head counts (f.held) has them turned into
+// groupjails.js records (migrateHeld; groupJailsDaily calls it too).
+export const aiCaptivesDaily = (state) => migrateHeld(state);
 // A decisive win of yours by the numbers (no one of yours dead, at least 3 of them): a couple of the beaten side give
 // up and are taken (prisoners.js makes the records). Zealots never. Its own dice. Returns how many.
 export function numbersSurrenders(state, setup, result) {
@@ -804,7 +790,7 @@ export const NL_HELP = `<b>Knocked out, not killed.</b> A living person brought 
   blows, club down the weak and tie up whoever drops. The other groups do this by their nature: police and guards arrest,
   the military remnant and communes take people when they are winning, raiders now and then (more for a strong or skilled
   one: slaves), zealots never, and any side that is losing fights to kill. Groups that take people alive also take more
-  prisoners and kill fewer when they raid each other; those prisoners are recruited, ransomed back or escape.
+  prisoners and kill fewer when they raid each other, as many as their jails hold; those prisoners are worked, ransomed back, swapped, sold, recruited or escape (Help: Prisoners and jails).
   <br><b>Surrender.</b> Enemies who have lost half their people and are outnumbered may give up when they are hurt, out of
   shots, flanked or alone near your people (zealots and the fearless never; raiders less, soldiers rarely; leaders hold out
   longer). They drop their weapon (loot it) and raise their hands: no longer a target. Tie (take prisoner) one next to you;

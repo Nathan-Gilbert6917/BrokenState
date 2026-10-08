@@ -52,10 +52,11 @@ import { relation, warsOf } from "./diplomacy.js";
 // repair, heal (medics), recruit (growth, wanderers, press-gangs), craft (arsenal.js), yield (tribute instead of a
 // fight), harsh (desertion), vehicles (taking, fitting: groupvehicles.js).
 // Folded in: nonlethal.js NL_TAKE (takeAlive), groupworks.js WALLED_TYPES (walled), escorts.js's home guard (escort),
-// nonlethal.js AI_HELD recruit (× recruit). Still separate (TODO, lead): nonlethal.js NL_STYLE / NL_KIT (by battle kit,
-// not group type), groupworks.js build order (one order for every type), the jailhouse branch's jail build order and
-// labour (not on dev yet), FACTION_TYPES food / expand / raid (the types' base rates; the profile scales them),
-// wanderers.js military squads (patrol).
+// groupjails.js prisoners recruited after a long hold (× recruit). Still separate (TODO, lead): nonlethal.js NL_STYLE /
+// NL_KIT (by battle kit, not group type), groupworks.js build order (one order for every type), groupjails.js GROUP_JAIL
+// EARLY / LATE / FULL / BUYERS / WORK (jails, what to do with no room, labour: could read prisoners / harsh / trade),
+// FACTION_TYPES food / expand / raid (the types' base rates; the profile scales them), wanderers.js military squads
+// (patrol), throwables.js FLASH_KIT and medics.js MEDIC.ENEMY (by kit; arsenal.js ARSENAL.NONLETHAL seeds the items).
 export const GROUP_PRIORITIES = {
   // takeAlive: the share of a beaten group's losses the winners take alive (nonlethal.js NL_TAKE reads it); walled:
   // builds the full wall goal at every base (groupworks.js WALLED_TYPES reads it); escort: × the share of its fighters

@@ -75,7 +75,7 @@ import { gatheringCands } from "./hivebirth.js"; // hive birth you can see: cull
 import { GROWTHS, TECH } from "./hiveconst.js";
 import { typeStrength } from "./zombietypes.js";
 import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squadValue, nearestOtherBase } from "./conquest.js";
-import { autopilotPrisoners } from "./prisoners.js";
+import { autopilotPrisoners, jailTier, cellCap, prisonersAt } from "./prisoners.js";
 import { autopilotRescue, autoRescuePlan } from "./ransom.js"; // your people held by other groups: ransom first, a raid when strong
 import { isManaged, healthRest } from "./work.js";
 import { onWatchNow, inShift } from "./watch.js"; // the night watch (govWatch)
@@ -2027,6 +2027,26 @@ function nextBuildScrap(state, base, areas = ALL_AREAS) {
   return 0;
 }
 
+// Jails (prisoners.js JAIL, buildings.js family "jail"): makeshift cells at the hub once anyone has been taken
+// prisoner (or at any base holding some), saved up for when prisoners had to be let go for want of room in the last
+// 30 days; holding cells when the cage is full or overflowed; a jailhouse (Mechanics 2) when the cells are full and
+// it keeps taking more (overflow lately, or 6+ taken all told).
+function jailWishes(state, base, best) {
+  if (isShelter(base) && jailTier(base) >= 1) return [];
+  if (base.construction.some((c) => BUILDINGS[c.type] && BUILDINGS[c.type].family === "jail")) return [];
+  const held = prisonersAt(state, base.id).length;
+  const taken = (state.stats && state.stats.prisonersTaken) || 0;
+  const recent = state.prisonOverflowDay != null && day(state) - state.prisonOverflowDay <= 30;
+  const home = base.type === "hub" || held > 0;
+  const full = held >= cellCap(base);
+  const jt = jailTier(base);
+  const wish = (type, why, save) => [{ type, why, save }];
+  if (jt === 0 && home && (taken > 0 || recent)) return wish("lockup", recent ? "no room for the prisoners taken" : "somewhere to keep prisoners", recent);
+  if (jt === 1 && home && ((full && held > 0) || recent) && !isShelter(base)) return wish("cells", "the makeshift cells are full", recent);
+  if (jt === 2 && home && full && held > 0 && (recent || taken >= 6) && best("mechanics") >= BUILDINGS.jailhouse.req.mechanics) return wish("jailhouse", "the cells are full and more prisoners keep coming", false);
+  return [];
+}
+
 function buildWishes(state, base) {
   const g = gov(state);
   const out = [];
@@ -2101,6 +2121,7 @@ function buildWishes(state, base) {
   // better at one. A crafting bench where someone is on the Craft role or a job is queued, after the essentials above.
   const benchQueued = base.construction.some((c) => BUILDINGS[c.type] && BUILDINGS[c.type].family === "bench");
   if (!benchTier(base, true) && !benchQueued && (here.some((s) => s.role === "craft") || craftQueue(base).length > 0)) add("craftbench", "a bench for the crafters (faster, better gear; most recipes need one)");
+  for (const w of jailWishes(state, base, best)) out.push(w);
   if (!isHub) return out;
   const hostileNear = state.factions.some((f) => f.alive && f.known && attitude(f) === "Hostile" && f.bases.some((b) => state.grid.distance(b, base.tile) <= 20));
   if (!base.watchtower && (hostileNear || state.hordes.some((h) => state.live.has(h.tile)))) add("watchtower", "earlier warning of raids and hordes");

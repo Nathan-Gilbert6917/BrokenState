@@ -17,6 +17,7 @@
 //   "body:<bodyIndex>:<slot>[:<i>]"  "body:<bodyIndex>:sup:<key>"     bodies of the battle that just ended
 // Items only move between people, storage and bodies at the same place (one base, or one team).
 import { fitMod, removeMod, modFitReason, isGunmod, takesMods } from "./gunmods.js";
+import { itemDur } from "./crafting.js"; // a group's med kit with its uses (arsenal.js)
 import { GEAR, SUPPLIES } from "./data.js";
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
@@ -560,6 +561,13 @@ export function enemyBody(rng, u, kit) {
   if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, lootItem(rng.pick(kit.finds), src, rng), ""); // pockets: smokes, a ring (combat.js KITS finds)
   for (const it of carriedThrowables(u, src)) stow(body, it, ""); // a flashbang or a smoke grenade they never threw
+  // Their medic's kit (medics.js makeEnemyMedic), as worn as the uses they had left; a group's own kit (arsenal.js).
+  if (u.arsMedKit && u.medKit === u.arsMedKit) { if (itemDur(u.arsMedKit) !== 0) stow(body, u.arsMedKit, ""); }
+  else if (u.isMedicKit && u.medKit && GEAR[u.medKit.key] && (u.kitUses || 0) < (u.kitLeft || 0)) {
+    const it = lootItem(u.medKit.key, src, spend(rng));
+    if (it.dur != null) it.dur = Math.max(1, Math.min(it.dur, u.kitLeft - (u.kitUses || 0)));
+    stow(body, it, "");
+  }
   return body;
 }
 // What a soldier or a guard carried into the fight and never threw (combat.js enemyUnit u.throwables: throwables.js
@@ -568,6 +576,11 @@ export const BODY_THROWABLES = ["flashbang", "smokegren"];
 export function carriedThrowables(u, src) {
   const out = [];
   if (!u || !u.throwables) return out;
+  if (u.arsThrows) { // a group's own (arsenal.js): the very items, those not thrown
+    const left = { ...u.throwables };
+    for (const it of u.arsThrows) if ((left[it.key] || 0) > 0) { left[it.key]--; out.push(it); }
+    return out;
+  }
   for (const k of BODY_THROWABLES) for (let i = 0; i < (u.throwables[k] || 0); i++) out.push(lootItem(k, src, [u.id, k, i]));
   return out;
 }

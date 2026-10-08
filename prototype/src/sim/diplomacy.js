@@ -44,6 +44,7 @@
 //   your side wins you get half the tribute, and land taken in the terms is left free for your outpost (reserved
 //   from the groups' expansion for 60 days). After the peace the enemy settles at goodwill −35 (wary, not hostile).
 import { Rng } from "./rng.js";
+import { groupCapture, jailsOn } from "./groupjails.js"; // jailhouse: war captives into the raider's jail
 import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS, supplyFew } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
@@ -384,7 +385,9 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
       w.exh[target.id] = (w.exh[target.id] || 0) + 5 + (took ? 8 : 0);
       if (rng.chance(0.25 * warCaptureMult(attacker))) {
         const n = Math.min(1, Math.max(0, target.pop - DIPLO.MIN_POP));
-        if (n > 0) { target.pop -= n; w.captives[target.id] = (w.captives[target.id] || 0) + n; }
+        // groupjails.js: in a world with the groups' jails the captive goes into the raider's jail (room, or by type:
+        // sold, let go, killed), where it can be swapped or turned; older saves keep the war's own count (back at peace).
+        if (n > 0) { target.pop -= n; if (jailsOn(state)) groupCapture(state, attacker, target, n); else w.captives[target.id] = (w.captives[target.id] || 0) + n; }
       }
     }
     if (report) log(state, `${cap(knownAs(state, attacker))} raided ${knownAs(state, target)} at ${tileLabel(state, tile)} (${loss} dead${took ? ", the base taken" : ""}).`, "danger");

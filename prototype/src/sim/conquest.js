@@ -68,7 +68,7 @@ import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled 
 import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
-import { takePrisonersAt, prisonersOf } from "./prisoners.js";
+import { surrenderPrisoners, prisonersOf } from "./prisoners.js";
 import { addBuilding, baseWalls, assignStations } from "./buildings.js";
 import { pactsOf, relation } from "./diplomacy.js";
 import { isMember, allianceMembers, ensureAlliance, assaultAllies } from "./alliance.js";
@@ -413,7 +413,7 @@ export function captureBase(state, f, tile, p, info = {}) {
   const join = Math.min(CONQUEST.JOIN_MAX, Math.round(gaveUp * CONQUEST.JOIN));
   const jailed = Math.min(CONQUEST.PRISON_MAX, Math.round(gaveUp * CONQUEST.PRISON));
   f.pop = Math.max(0, f.pop - Math.max(0, people - fled - (info.taken || 0)));
-  if (jailed) takePrisonersAt(state, f, base, jailed);
+  if (jailed) surrenderPrisoners(state, f, base, jailed); // prisoners.js: what the jails here and at your other bases hold; a card for the rest
   // Your people they held here (all of them, if this was their last base).
   const freed = captivesOf(state, f.id).filter((s) => s.location.tile === tile || !f.bases.length);
   for (const s of freed) { s.location = { kind: "base", baseId: base.id }; s.role = "rest"; s.mood = Math.min(100, s.mood + 15); }

@@ -376,6 +376,7 @@ export interface State {
   woodcutting: number; // save marks (save.js migrations)
   rawWater: number;
   groupWorks?: number; // barestart: the AI groups build their bases up (groupworks.js); absent in older saves
+  groupJails?: number; // jailhouse: the AI groups keep prisoners in jails, work and trade them (groupjails.js); absent in older saves
   grid: HexGrid;
   tiles: Tile[];
   cityId: number;

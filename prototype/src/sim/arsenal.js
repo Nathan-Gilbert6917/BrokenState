@@ -70,7 +70,12 @@ export const ARSENAL = {
   BYNUM_PICK: 0.3, // conflicts.js victoryRewards: by the numbers, one piece of their dead's kit for you this often
   WALL_LAUNCHER: 6, // power a launcher adds against walls
   SEEN_DAYS: 30, // a fight or a look at their camp shows you their kit for this long
-  NONLETHAL: { guards: { taser: 0.4, pepper: 0.45 }, soldiers: { taser: 0.12, pepper: 0.2 }, militia: { pepper: 0.25 }, fighters: { pepper: 0.08 }, raiders: { taser: 0.04 } }, // as nonlethal.js NL_KIT
+  // The rest of a kit's people's gear, a share a head: tasers and spray (nonlethal.js NL_KIT), flashbangs and smoke
+  // (throwables.js FLASH_KIT), medics' kits (medics.js MEDIC.ENEMY KITS: about one medic in sixteen people).
+  NONLETHAL: {
+    guards: { taser: 0.4, pepper: 0.45, flashbang: 0.2, smokegren: 0.1, bandagekit: 0.06 }, soldiers: { taser: 0.12, pepper: 0.2, flashbang: 0.3, traumakit: 0.06 },
+    militia: { pepper: 0.25, bandagekit: 0.06 }, fighters: { pepper: 0.08, bandagekit: 0.06 }, raiders: { taser: 0.04 },
+  },
 };
 // The kit of each group type (the same as conflicts.js KIND_OF).
 export const KIT_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
@@ -91,7 +96,10 @@ export const isArmourKey = (k) => !!(GEAR[k] && ARMOUR_SLOTS.includes(GEAR[k].sl
 export const isThrowKey = (k) => !!(GEAR[k] && GEAR[k].throw && (EXPLOSIVE.has(k) || GEAR[k].explosive));
 // nonlethal.js: a taser or pepper spray carried beside the gun (its nlSetup hands out only what the arsenal holds).
 export const isNonlethalKey = (k) => !!(GEAR[k] && (GEAR[k].nonlethal === "taser" || GEAR[k].nonlethal === "pepper"));
-export const arsenalWorthy = (it) => !!(it && GEAR[it.key] && (isWeaponKey(it.key) || isArmourKey(it.key) || isThrowKey(it.key) || isNonlethalKey(it.key)));
+// The fighters' other kit: a medic's kit (medics.js enemy medics), a flashbang or a smoke grenade (throwables.js FLASH_KIT).
+export const isMedKitKey = (k) => !!(GEAR[k] && GEAR[k].medKit);
+export const isKitThrowKey = (k) => k === "flashbang" || k === "smokegren";
+export const arsenalWorthy = (it) => !!(it && GEAR[it.key] && (isWeaponKey(it.key) || isArmourKey(it.key) || isThrowKey(it.key) || isNonlethalKey(it.key) || isMedKitKey(it.key) || isKitThrowKey(it.key)));
 export const weaponValue = (it) => (it && isWeaponKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) + ARSENAL.MOD * fittedMods(it).length : 0);
 export const armourValue = (it) => (it && isArmourKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) * ARSENAL.ARMOUR : 0);
 const usesRounds = (k) => !!(WEAPONS[k] && WEAPONS[k].ammo > 0);
@@ -329,11 +337,47 @@ export function armFromArsenal(state, b, u, n) {
   u.arsArmour = lo ? Object.values(lo.armour) : [];
   u.mag = null; u.magW = null;
   loadMag(u);
+  armExtras(state, b, f, u);
   // rescueraid.js: what a guard carries is not on the armory's rack too.
   const rack = b.rescue && b.rescue.armory && b.rescue.armory.items;
   if (rack) for (const x of [u.arsItem, ...u.arsArmour]) { const i = x ? rack.indexOf(x) : -1; if (i >= 0) rack.splice(i, 1); }
 }
 
+// A unit's medic kit and throwables (medics.js enemyMedic, throwables.js kitFlashbangs: given in combat.js enemyUnit)
+// come out of the arsenal too: only what the group holds and nobody else on this map carries; none, and the unit
+// goes without.
+function armExtras(state, b, f, u) {
+  const used = (b.arsUsed = b.arsUsed || new Set());
+  const free = (pred) => f.arsenal.items.find((it) => pred(it.key) && !used.has(it) && itemDur(it) !== 0);
+  if (u.isMedicKit && u.medKit) {
+    const kit = free((k) => k === u.medKit.key) || free(isMedKitKey);
+    if (kit) {
+      used.add(kit);
+      u.medKit = kit;
+      u.arsMedKit = kit;
+      u.kitLeft = Math.max(1, itemDur(kit) ?? u.kitLeft);
+    } else {
+      u.medicine = Math.max(0, (u.medicine || 0) - (u.kitBonus || 0));
+      u.medKit = null; u.kitBonus = 0; u.isMedicKit = false; u.kitLeft = 0;
+    }
+  }
+  if (u.throwables) {
+    u.arsThrows = [];
+    for (const k of Object.keys(u.throwables)) {
+      let n = 0;
+      for (let i = 0; i < u.throwables[k]; i++) { const it = free((x) => x === k); if (!it) break; used.add(it); u.arsThrows.push(it); n++; }
+      if (n) u.throwables[k] = n; else delete u.throwables[k];
+    }
+  }
+  for (const it of [u.arsItem, ...(u.arsArmour || [])]) if (it) used.add(it);
+}
+// What a unit carried besides its gun and armour (settleArsenal): its medic kit and the throwables it did not throw.
+function extrasOf(u) {
+  const out = u.arsMedKit ? [u.arsMedKit] : [];
+  const left = { ...(u.throwables || {}) };
+  for (const it of u.arsThrows || []) if ((left[it.key] || 0) > 0) { left[it.key]--; out.push(it); }
+  return out;
+}
 // A group's motor pool on the battle map of its own base (an assault, a rescue raid): its running vehicles (up to
 // POOL), parked on its side of the map, each a car you can get into, hotwire and drive off (foundcars.js: stealing it
 // costs goodwill, foundcars.js STEAL_GOODWILL). Placed once, as the first of its people is armed.
@@ -368,7 +412,11 @@ export function settleArsenal(state, setup, result, battle = null) {
     const units = battle.units.filter((u) => u.side === "enemy" && u.arsFid === f.id);
     const raidMap = !!battle.raid;
     for (const u of units) {
-      const kit = [u.arsItem, ...(u.arsArmour || [])].filter(Boolean);
+      // Thrown in the fight: off the books (what is left is carried, extrasOf).
+      const kept = new Set(extrasOf(u));
+      for (const it of u.arsThrows || []) if (!kept.has(it)) removeFromArsenal(f, it, "thrown");
+      if (u.arsMedKit && u.kitUses) { if (wear(u.arsMedKit, u.kitUses)) removeFromArsenal(f, u.arsMedKit, "used up"); }
+      const kit = [u.arsItem, ...(u.arsArmour || []), ...[...kept].filter((it) => f.arsenal.items.includes(it))].filter(Boolean);
       const lost = raidMap ? !!u.dead : won ? !u.fled && !u.left : false;
       if (lost) { for (const it of kit) if (removeFromArsenal(f, it, "died:battle")) out.dropped.push(it); }
       else for (const it of kit) wearOwned(f, it);
