@@ -91,7 +91,7 @@ import { toManual } from "./sim/work.js";
 import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
-import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
 import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
 import { CONTROLS_ACTIONS, controlsKey } from "./ui/controls.js";
 import { initPalette, openPalette, paletteIndex } from "./ui/cmdpalette.js"; // the search box (Ctrl+K or /)
@@ -391,7 +391,7 @@ function autoShow() {
 // The alerts stack, or its folded button (ui/layout.js alertsPill).
 function alertsHTML(html) {
   if (layout.alerts) return alertsPill(ui.alertList, (/<div class="al-flash">[\s\S]*?<\/div>/.exec(html) || [""])[0]);
-  return html.includes('class="al ') ? alertsFoldButton() + html : html;
+  return html.includes('class="al ') ? alertsFoldButton((ui.alertList || []).length, (ui.alertList || []).some((a) => a && a.tone === "danger")) + html : html;
 }
 
 function refresh(user = true) {
@@ -419,6 +419,7 @@ function refresh(user = true) {
   }
   if (!layout.log) setHTML("log", renderLogPanel(state, ui), user); // filters and links (ui/diary.js)
   else setLogLine(state.log && state.log[0] ? String(state.log[0].text || "") : "");
+  if (layout.left) setRailBadges({ teams: ui.started ? state.parties.filter((p) => p.owner === "player" && p.phase === "waiting").length : 0, tab: ui.tab }); // the folded left panel's rail
   refreshModal(user);
   setHTML("legend", renderLegend(view, ui, ui.started ? state : null), user);
   if (ui.started) devSample(state);
@@ -650,6 +651,8 @@ const actions = {
   // they first were).
   "panel-toggle": (d) => foldPanel(d.p, d.v === undefined ? undefined : d.v === "1"),
   "panel-close": (d) => shutPanel(d.p, d.v === undefined ? undefined : d.v === "1"),
+  // The folded left panel's rail (ui/windows.js): a tab's button opens the panel on that tab.
+  "panel-tab": (d) => { ui.tab = d.tab; foldPanel("left", false); },
   "panel-all": () => { relayout(() => { toggleAll(layout); applyLayout(layout); }); saveLayout(layout); },
   "win-reset": () => {
     resetWindows();

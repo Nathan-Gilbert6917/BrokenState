@@ -147,15 +147,47 @@ export function newDangerAlerts(seen, list) {
   return { seen: new Set(keys), fresh: keys.filter((k) => !seen.has(k)) };
 }
 
-// The alerts folded: one button with the count (a red dot when one of them is a danger), plus the flash line.
+// ---------- the boxes over the map: one look ----------
+// The Running orders, the Watching panel, the Layers box and the alerts share a header (icon, title, a count, the
+// fold chevron) and, folded, a slim tab with the same icon, title and count (styles.css .fp-head / .fp-tab). The
+// renderers (ui/expedition.js, ui/watchlist.js, ui/ui.js, main.js) only say what goes in them.
+//   icon, title   what the box is
+//   count         a number or short text in a badge (null: none); tone "warn" / "danger" colours it
+//   badges        more badges after it: [{ text, tone, tip }]
+//   action, data  the fold toggle's data-action and other data-* attributes (an object)
+//   tip           the toggle's hover text
+//   extra         buttons of the box's own, on the header's right (open header only)
+const attrEsc = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+function fpBadges(o) {
+  const out = [];
+  if (o.count != null && o.count !== "") out.push(`<span class="fp-badge${o.tone ? ` ${o.tone}` : ""}">${o.count}</span>`);
+  for (const b of o.badges || []) if (b && b.text != null && b.text !== "") out.push(`<span class="fp-badge${b.tone ? ` ${b.tone}` : ""}"${b.tip ? ` data-tip="${attrEsc(b.tip)}"` : ""}>${b.text}</span>`);
+  return out.join("");
+}
+function fpToggle(o, open, cls) {
+  const data = Object.entries(o.data || {}).map(([k, v]) => ` data-${k}="${attrEsc(v)}"`).join("");
+  return `<button class="${cls}" data-action="${o.action}"${data} aria-expanded="${open}"${o.tip ? ` data-tip="${attrEsc(o.tip)}"` : ""}>` +
+    `<span class="fp-ico" aria-hidden="true">${o.icon || ""}</span><span class="fp-title">${o.title}</span>${fpBadges(o)}<span class="fp-chev" aria-hidden="true">${open ? "▾" : "▸"}</span></button>`;
+}
+// The header of an open box: the whole title is the fold button.
+export function panelHead(o) {
+  return `<div class="fp-head">${fpToggle(o, true, "fp-toggle")}${o.extra ? `<span class="fp-extra">${o.extra}</span>` : ""}</div>`;
+}
+// A folded box: one slim tab.
+export const panelTab = (o) => fpToggle(o, false, `fp-tab${o.cls ? ` ${o.cls}` : ""}`);
+
+// The alerts folded: one tab with the count (red when one of them is a danger), plus the flash line.
 export function alertsPill(list, flashHtml = "") {
   const n = (list || []).length;
   const danger = (list || []).some((a) => a && a.tone === "danger");
   if (!n) return flashHtml;
-  return `${flashHtml}<button class="al-pill${danger ? " danger" : ""}" data-action="panel-toggle" data-p="alerts" data-tip="Show the alerts (Shift+])">🔔 ${n} alert${n === 1 ? "" : "s"} ▾</button>`;
+  return `${flashHtml}<button class="al-pill${danger ? " danger" : ""}" data-action="panel-toggle" data-p="alerts" aria-expanded="false" data-tip="Show the alerts (Shift+])"><span class="fp-ico" aria-hidden="true">🔔</span><span class="fp-title">${n} alert${n === 1 ? "" : "s"}</span><span class="fp-chev" aria-hidden="true">▸</span></button>`;
 }
-// The fold button over the alerts when they are open.
-export const alertsFoldButton = () => `<button class="al-fold" data-action="panel-toggle" data-p="alerts" data-tip="Fold the alerts away (Shift+])">▴</button>`;
+// The fold button over the alerts when they are open (n: how many, danger: one is urgent).
+export const alertsFoldButton = (n = null, danger = false) => `<button class="al-fold"data-action="panel-toggle" data-p="alerts" aria-expanded="true" data-tip="Fold the alerts away (Shift+])"><span class="fp-ico" aria-hidden="true">🔔</span><span class="fp-title">Alerts</span>${n ? `<span class="fp-badge${danger ? " danger" : ""}">${n}</span>` : ""}<span class="fp-chev" aria-hidden="true">▴</span></button>`;
+
+// The folded left panel's rail: a button per tab (opens the panel on it). The glyphs match the watch list's.
+export const RAIL_TABS = [["bases", "🏠", "Bases", "B"], ["people", "👥", "People", "P"], ["groups", "🏴", "Groups", "G"], ["teams", "🚶", "Teams", "T"]];
 
 // ---------- windows ----------
 // The kind of window to remember a size for (the survivor screen is one kind whoever it shows), or "" when this

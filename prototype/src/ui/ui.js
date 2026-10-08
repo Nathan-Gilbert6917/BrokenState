@@ -117,6 +117,7 @@ import { cardUp, trayCardFrame, MAX_SPEED } from "./pacing.js"; // pause rules a
 import { devButton } from "./display.js"; // the top bar's Dev button (Menu → Options → Display → Show dev tools)
 import { totalRounds, sumRecs } from "../sim/rounds.js"; // rounds by calibre
 import { roundsLine, baseAmmo } from "../sim/ammo.js";
+import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -575,11 +576,13 @@ const LAYER_TIPS = { hordes: "Hordes, last sightings and hives", infection: "Red
 // state: the Coalition land line shows the share held against the goal while that layer is on (ui/render.js
 // coalitionLand, the same land the alliance victory counts).
 export function renderLegend(view, ui, state = null) {
-  if (ui.legendCollapsed) return `<button data-action="legendtoggle"${tip("Show the map layers")}>Layers ▸</button>`;
+  const on = Object.keys(LAYERS).filter((k) => view.layers.has(k)).length;
+  const box = { icon: "🗺", title: "Layers", count: on, action: "legendtoggle" };
+  if (ui.legendCollapsed) return panelTab({ ...box, tip: `Show the map layers (${on} on)` });
   const land = state && state.tiles && view.layers.has("coalition") ? coalitionLand(state) : null;
   const extra = (k) => (k === "coalition" && land ? ` <span class="muted"${tip(`${land.held} of ${land.land} land tiles; victory needs over ${Math.round(land.goal * 100)}%`)}>${Math.round(land.pct * 100)}%/${Math.round(land.goal * 100)}%</span>` : "");
-  return `<div class="spread"><b>Layers</b><span class="lgbtns"><button data-action="help-open" data-sec="map-layers" class="mini"${tip("What the layers and map symbols mean (Help)")}>?</button><button data-action="legendtoggle" class="mini"${tip("Fold this box away")}>▾</button></span></div>
-    ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(LAYER_TIPS[k] || l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}>${swatch(k)}${esc(l.name)}${extra(k)}</label>`).join("")}`;
+  return `${panelHead({ ...box, tip: "Fold this box away", extra: `<button data-action="help-open" data-sec="map-layers" class="mini"${tip("What the layers and map symbols mean (Help)")}>?</button>` })}
+    <div class="fp-body">${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(LAYER_TIPS[k] || l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}>${swatch(k)}${esc(l.name)}${extra(k)}</label>`).join("")}</div>`;
 }
 
 // ---------- log ----------
