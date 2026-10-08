@@ -24,7 +24,7 @@ import { growthAt, growthInfo } from "./hivetech.js";
 import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
-import { createVehicle, vehiclesDaily } from "./vehicles.js";
+import { createVehicle, vehiclesDaily, garageHour } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
 import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
@@ -65,7 +65,7 @@ import { riseOnMap, walkingDaily } from "./carriers.js"; // the worm: someone wh
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
 import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
-import { countWord } from "./hardcore-start.js";
+import { countWord, normalStartBackgrounds, normalStartKit } from "./hardcore-start.js";
 import { stagingHour } from "./staging.js";
 import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
@@ -73,6 +73,12 @@ import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and movi
 import { familyDaily } from "./family.js"; // children and generations
 
 export const HUB_VISION = 3;
+// A normal start's hub is bare (barestart): no buildings, every construction plot free. Its stores carry the first
+// builds instead, the player's choice (or the governor's, autopilot.js buildWishes): 50 scrap is a bunkhouse (20), a
+// crafting bench (12 and a part: buildings.js BUILDINGS.craftbench), a farm plot (8) and a rain catcher (5) with a
+// little over; 3 parts are the bench's, a well's and one spare. It used to be 25 scrap and 2 parts with two farm plots,
+// a crafting bench, a bunkhouse and a wall section already standing (69 scrap of buildings). tools/barestarttest.js.
+export const HUB_START = { scrap: 50, parts: 3 };
 export const OUTPOST_VISION = 2;
 export const RADIO_RANGE = 12; // a radio station's reach; a base with a Military encrypted radio in its armory reaches radio.js MIL_RADIO_RANGE (24)
 
@@ -117,6 +123,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     idBase: nextId - 1, // localId: this world's ids counted from its own start
     woodcutting: 2, // a world with firewood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
+    groupWorks: 1, // barestart: the AI groups' bases start bare and they build (groupworks.js); an older save has them built up
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,
     hour: 6, // campaign starts at 06:00 on day 1
@@ -162,11 +169,16 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
     // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
     // (woodcutting.js: the winter's heating is cut later).
-    stock: { food: 80, water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: 2, scrap: 25, preserved: 10, jars: 12, wood: 300 },
+    // Bare start (HUB_START): no buildings and every plot free; what the town hall gives (4 beds, 6 crop plots, the well,
+    // the cellar, 3 wall strength: buildings.js) is all there is. The scrap and parts are for the first builds, the
+    // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
+    stock: { food: 80, water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, preserved: 10, jars: 12, wood: 300 },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
-  for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(hubBase, t); // a crafting bench, no ammo bench: that needs a workbench first (buildings.js BENCH)
+  // Six people in the town hall's four beds from the first hour: the new-run screen and the first-week guide say so,
+  // so the Overcrowded card (moveout.js) waits its usual days before it asks (and is not shown at all once beds are up).
+  hubBase.crowdNote = { hour: state.hour, over: 2 };
   createVehicle(state, "truck", { kind: "base", baseId: hubBase.id }, { fuel: 20, condition: 75 });
 
   createFactions(state, factionCount);
@@ -181,7 +193,11 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.survivors[0].gear.armor = newItem("vest", 1, hash01(state.seed, "startdur", "vest"), START_DUR);
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));
   state.survivors[0].leader = true;
+  // Who they were (hardcore-start.js normalStartBackgrounds, 2026-10-07): a background each, with dice of their own,
+  // before the new-run screen's edits; a custom background's kit after them.
+  normalStartBackgrounds(state, crew);
   if (crew) applyCrew(state, crew);
+  normalStartKit(state, hubBase);
   assignStartingRoles(state);
   settleAll(state); // ammo.js: the hub's 80 rounds by the calibres of the guns it starts with
   state.ammoCal = 1; // rounds by calibre from the start (save.js migrates older saves)
@@ -296,10 +312,11 @@ export function applyCrew(state, crew) {
 }
 
 // Starting jobs by skill instead of list order: the two best farmers farm, then the best scavenger scavenges,
-// the best shot guards and the best mechanic builds; whoever is left farms too. Nobody starts on the ammo
+// the best shot guards and the best two mechanics build; anyone left (a bigger crew) farms too. Nobody starts on the ammo
 // bench (the hub opens with plenty of ammo and little food). Also called when the run begins, so skills
 // edited on the new-run screen count.
-const START_ROLES = [["farm", "farming"], ["farm", "farming"], ["scavenge", "scavenging"], ["guard", "shooting"], ["build", "mechanics"]];
+// Two builders (the best two at Mechanics): the hub starts bare, and the first beds, bench and fields are theirs to put up.
+const START_ROLES = [["farm", "farming"], ["farm", "farming"], ["scavenge", "scavenging"], ["guard", "shooting"], ["build", "mechanics"], ["build", "mechanics"]];
 /** @param {State} state */
 export function assignStartingRoles(state) {
   const h = hub(state);
@@ -360,13 +377,14 @@ export function residents(state, baseId) {
 /** @param {Survivor} s */
 const isFree = (s) => s.alive && !(s.location && s.location.kind === "captive");
 
-/** @param {Survivor} s @param {string} key @returns {number} */
 // Crafting for someone from before the skill (save.js, skills.js ensureSkills): 0.7 × Mechanics, the floor too.
+/** @param {Survivor} s */
 export function fillCrafting(s) {
   if (!s || !s.skills || Number.isFinite(s.skills.crafting)) return;
   s.skills.crafting = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0));
   if (s.skillFloor && !Number.isFinite(s.skillFloor.crafting)) s.skillFloor.crafting = s.skills.crafting;
 }
+/** @param {Survivor} s @param {string} key @returns {number} */
 export function skill(s, key) {
   let v = s.skills[key] || 0;
   if (key === "crafting" && s.skills.crafting == null) v = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0)); // people from before the skill (save.js fills it in)
@@ -771,6 +789,7 @@ export function tickHour(state) {
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   constructionHour(state);
   craftingHour(state);
+  garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating)
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);
   diplomacyHour(state); // diplomacy.js: jobs for other groups checked every hour (jobs.js)

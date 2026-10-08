@@ -117,6 +117,7 @@ const FLOORED = new Set(["open", "counter", "cabinet", "shelf", "locker", "crate
 // Furniture that stands on a building's upper floor (sim/buildingmaps.js: a cell with a height that is not walked on)
 // is drawn on a slab of the upper floor, raised with it.
 const FURNITURE = new Set(["counter", "cabinet", "shelf", "locker", "crate", "rack", "table", "bed", "hay", "bars"]);
+FLOORED.add("gunsafe"); FURNITURE.add("gunsafe"); // sim/locks.js gun safes: a steel box standing on the floor
 // Buildings: 4-connected cells with floorboards (houses, shops, the base's buildings; flat-roofed blocks are solid).
 const GROUNDY = new Set(["water", "trench", "spikes", "hivewall"]);
 function sceneFor(b) {
@@ -323,6 +324,31 @@ const MIL_TOPS = {
 };
 const MIL_WHEELS = { m35: (L) => [0.7, L - 1.5, L - 0.6], humvee: (L) => [0.6, L - 0.6], mrap: (L) => [0.7, L - 0.7] };
 // behind), wheels at the corners; a truck is a tall cab and a box. The cell's local x/y then turn with the view (r).
+// A vehicle's upgrades (sim/combat.js fitMapVehicle: car.up { p plating, s scrap plating, g glass, m mesh, t turret }):
+// steel plates along both sides (two rows at level 2; patchy scrap plates), a grille over the cab's glass, a thick green
+// tint for bulletproof glass, and a machine gun on a ring on the roof.
+const upKey = (u) => (u ? `${u.p || 0}${u.s || 0}${u.g || 0}${u.m || 0}${u.t || ""}` : "");
+const UP_ROOF = { humvee: [1.45, 19], m35: [0.8, 14], mrap: [1.2, 21], truck: [0.8, 16], car: [null, 15], vehicle: [null, 15] };
+function carUpParts(car, L, parts) {
+  const u = car.up;
+  const steel = flatM(PAL.metal), steelDk = flatM(PAL.metalDk), rust = flatM(PAL.rust);
+  if (u.p || u.s) {
+    const top = u.p > 1 ? 13 : 9;
+    for (const [c0, c1] of [[0.02, 0.12], [1.88, 1.98]]) {
+      if (u.s) for (let a = 0.1; a < L - 0.2; a += 0.7) parts.push([a, Math.min(L - 0.1, a + 0.55), c0, c1, 2, 8, ((a * 10) | 0) % 2 ? rust : steelDk]);
+      else parts.push([0.1, L - 0.1, c0, c1, 2, top, steel]);
+    }
+    if (u.p) parts.push([0.02, 0.1, 0.2, 1.8, 2, top, steel]); // the nose
+  }
+  const [ra, rz] = UP_ROOF[car.body] || UP_ROOF[car.kind] || UP_ROOF.car;
+  if (u.m) parts.push([ra ?? L / 2 - 0.6, (ra ?? L / 2 - 0.6) + 0.12, 0.3, 1.7, rz - 6, rz - 1, steelDk]); // a grille over the windscreen
+  if (u.g) parts.push([ra ?? L / 2 - 0.6, (ra ?? L / 2 - 0.6) + 0.06, 0.32, 1.68, rz - 6, rz - 2, flatM(hex("#5e8f86"))]); // thick green-tinted glass
+  if (u.t) {
+    const a = ra ?? L / 2;
+    parts.push([a - 0.2, a + 0.2, 0.8, 1.2, rz, rz + 3, steelDk]);                         // the ring and the gunner's shield
+    parts.push([Math.max(0, a - (u.t === "m2hb" ? 1.3 : 1.0)), a - 0.1, 0.95, 1.05, rz + 2, rz + 3, flatM(PAL.tar)]); // the barrel, over the cab (the front is a = 0)
+  }
+}
 function carPieces(car, r) {
   const { i, j, L, ax, kind, v } = car, big = kind === "truck" || car.body === "truck"; // "vehicle": the team's own (blue), a truck or a car by car.body
   const body = kind === "vehicle" ? PAL.blue : big ? mul(PAL.rust, 0.8) : CAR_COLORS[v % CAR_COLORS.length];
@@ -351,6 +377,7 @@ function carPieces(car, r) {
     else parts.push([0.8, 2.0, 0.3, 1.7, 9, 15, glass], [2.2, 3.8, 0.25, 1.75, 9, 11, paint]); // a pickup: cab and bed
     for (const a of [0.6, L - 0.6]) { wheel(a, 0.2); wheel(a, 1.8); }
   }
+  if (car.up) carUpParts(car, L, parts); // its upgrades (sim/vehicles.js): plating, grilles, the gun on its roof
   // Clip to this cell, to local 0..1 along the world axes, then into the view's frame.
   const loc = (fx, fy) => (r & 3) === 0 ? [fx, fy] : (r & 3) === 1 ? [1 - fy, fx] : (r & 3) === 2 ? [1 - fx, 1 - fy] : [fy, 1 - fx];
   const out = [];
@@ -584,6 +611,18 @@ function prims(k, o) {
       out.push(run(ax, 0.44, 0.56, top - 2, top, flatM(PAL.metalDk)));
       return out;
     }
+    case "gunsafe": { // sim/locks.js: a tall dark steel box, a brass dial and a handle on its faces, a frame round the door
+      const face = (f, s, t, X, Y, sw) => {
+        if (f === "top") return mul(PAL.metalDk, 0.7);
+        const w = sw || 9, cx = w * 0.42, d = Math.hypot(s - cx, (t - 14) * 1.1);
+        if (d < 1.6) return hex("#d9b23a");
+        if (d < 2.2) return mul(PAL.metal, 1.1);
+        if (s > w * 0.7 && s < w * 0.82 && t > 9 && t < 15) return mul(PAL.metal, 1.2);
+        if (t < 1 || t > 21 || s < 0.8 || s > w - 0.8) return mul(PAL.metalDk, 0.55);
+        return mul(PAL.metalDk, 0.8 + n2(X, Y, 21) * 0.08);
+      };
+      return [{ u0: 0.22, u1: 0.78, v0: 0.22, v1: 0.78, z0: 0, z1: 22, m: face }];
+    }
     case "shelf": case "locker": case "cabinet": case "counter": {
       const ax = along(o);
       if (k === "locker") return [run(ax, 0.3, 0.72, 0, 26, (f, s, t) => (f !== "top" && (Math.floor(s) % 5 < 1 || (t > 18 && t < 20 && Math.floor(s) % 2)) ? PAL.metalDk : PAL.metal), 0.12, 0.88)];
@@ -619,7 +658,7 @@ const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", 
 
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${iso.rot & 3}` : ""}`;
+  const key = `${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
   let s = spriteCache.get(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -946,7 +985,7 @@ function blockTop0(k, o) {
     case "truck": return o.car ? (MIL_TOPS[o.car.body] ? 19 : 17) : 23;
     case "car": return o.car ? (o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16; // a multi-cell car: its cabin cells stand taller than the hood and the trunk
     case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" || MIL_TOPS[o.car.body] ? 19 : o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16;
-    case "locker": return 26; case "shelf": return 24; case "pump": return 22;
+    case "locker": return 26; case "shelf": return 24; case "pump": return 22; case "gunsafe": return 22;
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;

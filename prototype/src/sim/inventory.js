@@ -22,6 +22,7 @@ import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
 import { bodyLoot } from "./deadsoldiers.js";
 import { bodyRounds, findRounds } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
+import { condition, kitSource, spend } from "./itemcond.js"; // the condition loot comes in (one roller for every source)
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
 
@@ -43,7 +44,8 @@ export const ZOMBIE_PACK_STUFF = ["chocolate", "candy", "phone", "photos", "nove
 // rng in hand (its position is hashed with the item, so the roll moves none of the world's random numbers) or a
 // number 0–1 from a hash of its own. Counts (tablets, toiletries, count stacks such as boxes of rounds) and items
 // that do not wear stay full.
-export const FOUND_DUR = { lo: 0.3, hi: 1 };   // loot: from nearly done to as good as new
+// Loot and trade stock no longer use FOUND_DUR: they go through lootItem (itemcond.js rollCondition, by source).
+export const FOUND_DUR = { lo: 0.3, hi: 1 };   // a bare newItem with a roll: from nearly done to as good as new
 export const START_DUR = { lo: 0.55, hi: 1 };  // what people start the game (or join) with: looked after
 export function newItem(key, quality = 1, worn = null, range = FOUND_DUR) {
   const d = GEAR[key];
@@ -56,6 +58,12 @@ export function newItem(key, quality = 1, worn = null, range = FOUND_DUR) {
   if (d.slots) ensurePack(item);
   return item;
 }
+// A piece of loot or trade stock: the kind from its source's list (the caller's), the condition from the source
+// (itemcond.js COND_SOURCES: "military", "shop", "raider", "merchant"...). roll: an Rng (its position is hashed, no
+// draw), a number 0–1 or a list of parts. opts.quality: a quality fixed by the caller (only the wear is rolled).
+export const lootItem = (key, source, roll, opts) => condition(newItem(key, 1), source, roll, opts);
+// The armoured dead's kit (deadsoldiers.js bodyLoot's maker): their table's quality, the wear by itemcond.js "armoured".
+export const armouredItem = (key, quality, rng) => lootItem(key, "armoured", rng, { quality });
 // 0–1 from an rng's position and the item (FNV-1a and a final mix): no draw from the rng itself.
 function mix01(...parts) {
   let h = 2166136261 >>> 0;
@@ -518,7 +526,7 @@ export function enemyBody(rng, u, kit) {
   const add = (k, n) => { if (n > 0) body.supplies[k] = (body.supplies[k] || 0) + n; };
   if (u.kind === "zombie") {
     // A dead soldier or riot cop (deadsoldiers.js): worn armour, a helmet, rounds, now and then more.
-    const mil = u.ztype ? bodyLoot(rng, u.ztype, newItem) : null;
+    const mil = u.ztype ? bodyLoot(rng, u.ztype, armouredItem) : null;
     if (mil) {
       for (const [k, n] of Object.entries(mil.sup)) add(k, n);
       for (const it of mil.gear) stow(body, it, ""); // (a second rifle with nowhere to go stays on the ground)
@@ -526,11 +534,11 @@ export function enemyBody(rng, u, kit) {
     }
     if (rng.chance(0.12)) for (const [k, n] of Object.entries(bodyRounds(u, rng.int(2, 6)))) add(k, n); // ammo.js: a box of something
     if (rng.chance(0.05)) add("meds", 1);
-    if (rng.chance(0.06)) stow(body, newItem(rng.pick(ZOMBIE_FINDS), rng.pick([0.5, 0.7, 0.85]), rng), "");
+    if (rng.chance(0.06)) stow(body, lootItem(rng.pick(ZOMBIE_FINDS), "survivor", spend(rng)), "");
     if (rng.chance(ZOMBIE_PACK)) {
-      const pack = newItem(rng.pick(ZOMBIE_PACKS), rng.pick([0.4, 0.55, 0.7]), rng);
+      const pack = lootItem(rng.pick(ZOMBIE_PACKS), "survivor", spend(rng));
       const n = rng.int(1, Math.min(3, pack.contents.length));
-      for (let i = 0; i < n; i++) pack.contents[i] = newItem(rng.pick(ZOMBIE_PACK_STUFF), rng.pick([0.6, 0.8, 1]), rng);
+      for (let i = 0; i < n; i++) pack.contents[i] = lootItem(rng.pick(ZOMBIE_PACK_STUFF), "survivor", spend(rng));
       body.gear.backpack = pack;
     }
     return body;
@@ -539,13 +547,14 @@ export function enemyBody(rng, u, kit) {
   if (rng.chance(0.25)) add("food", rng.int(1, 3));
   if (rng.chance(MEDS.BODY_HUMAN)) add("meds", 1); // medfinds.js
   if (rng.chance(0.3)) add("scrap", rng.int(1, 2));
-  // What they fought with, worse for wear.
-  if (GEAR[u.weapon]) body.gear.weapon = newItem(u.weapon, rng.pick([0.4, 0.55, 0.7, 0.85]), rng);
+  // What they fought with, worse for wear: how worse goes by who they were (itemcond.js KIT_SOURCE).
+  const src = u.kit ? kitSource(u.kit) : kit ? "raider" : "survivor"; // no kit named: the callers arm them as raiders
+  if (GEAR[u.weapon]) body.gear.weapon = lootItem(u.weapon, src, spend(rng));
   if (body.gear.weapon) carryMods(u, body.gear.weapon); // gunmods.js: the attachments on their gun come with it
-  if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = newItem(u.armorKey, rng.pick([0.4, 0.55, 0.7]), rng);
-  if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = newItem(kit.pack[0], rng.pick([0.7, 0.85]), rng);
-  if (kit && rng.chance(0.12)) stow(body, newItem(rng.pick(kit.loot), rng.pick([0.7, 0.85, 1]), rng), "");
-  if (kit && kit.finds && rng.chance(0.2)) stow(body, newItem(rng.pick(kit.finds), 1), ""); // pockets: smokes, a ring (combat.js KITS finds)
+  if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = lootItem(u.armorKey, src, spend(rng));
+  if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = lootItem(kit.pack[0], src, spend(rng));
+  if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
+  if (kit && kit.finds && rng.chance(0.2)) stow(body, lootItem(rng.pick(kit.finds), src, rng), ""); // pockets: smokes, a ring (combat.js KITS finds)
   return body;
 }
 // The attachments a battle unit's gun carried (combat.js enemyUnit: u.modItems, for the gun it was given) onto the gun
@@ -564,14 +573,14 @@ export const ZBODY = {
   pistol: 0.02, bag: 0.03,
 };
 export function deadBodyFinds(rng, ztype) {
-  const mil = ztype ? bodyLoot(rng, ztype, newItem) : null;
+  const mil = ztype ? bodyLoot(rng, ztype, armouredItem) : null;
   if (mil) return mil;
   const sup = {}, gear = [];
   for (const k of ["ammo", "food", "meds", "scrap"]) { const [p, lo, hi] = ZBODY[k]; if (rng.chance(p)) sup[k] = rng.int(lo, hi); }
-  if (rng.chance(ZBODY.find)) { const k = rng.pick(ZBODY.FINDS); if (GEAR[k]) gear.push(newItem(k, GEAR[k].makeshift ? 1 : rng.pick([0.5, 0.7, 0.85]), rng)); }
-  if (rng.chance(ZBODY.pistol)) { gear.push(newItem("pistol", rng.pick([0.4, 0.55, 0.7]), rng)); sup.ammo = (sup.ammo || 0) + rng.int(3, 8); }
+  if (rng.chance(ZBODY.find)) { const k = rng.pick(ZBODY.FINDS); if (GEAR[k]) gear.push(lootItem(k, "survivor", GEAR[k].makeshift ? rng : spend(rng))); }
+  if (rng.chance(ZBODY.pistol)) { gear.push(lootItem("pistol", "survivor", spend(rng))); sup.ammo = (sup.ammo || 0) + rng.int(3, 8); }
   if (sup.ammo) { const n = sup.ammo; delete sup.ammo; Object.assign(sup, findRounds(gear.some((g) => g.key === "pistol") ? "police" : "home", n, "deadbody", rng && Number.isFinite(rng.state) ? rng.state : 0)); } // ammo.js: rounds by calibre
-  if (rng.chance(ZBODY.bag)) gear.push(newItem(rng.pick(ZOMBIE_PACKS), rng.pick([0.4, 0.55, 0.7]), rng));
+  if (rng.chance(ZBODY.bag)) gear.push(lootItem(rng.pick(ZOMBIE_PACKS), "survivor", spend(rng)));
   return { sup, gear };
 }
 export const allyBody = (s, u) => ({ name: s.name, kind: "ally", uid: u ? u.id : null, sid: s.id, supplies: {} });

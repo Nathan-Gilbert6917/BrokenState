@@ -110,7 +110,7 @@ export function backgroundEditor(state, ui) {
   const presets = Object.entries(HC_START.ARCHETYPES).map(([k, a]) => `<option value="${k}">${esc(a.name)}</option>`).join("");
   const full = ids.length >= CUSTOM_BG.MAX;
   return `<div class="box wide"><h1>Custom backgrounds</h1>
-    <div class="where">Who your Hardcore survivors were, made your way: skill bumps, traits, what they wear, hold and carry, the supplies on them and the car. No dice: they start with exactly this. Pick one for a colonist on the new-run screen with Customize ticked. Kept in this browser. Not for Ironman runs.</div>
+    <div class="where">Who your survivors were, made your way: skill bumps, traits, what they wear, hold and carry, the supplies on them and the car. No dice: they start with exactly this. In Hardcore it is what they fled with; in a normal start their kit replaces what the hub handed them (that goes to the armory), the supplies and the car's back go to the hub's stores, and the car parks at the hub. Pick one for a colonist on the new-run screen with Customize ticked. Kept in this browser. Not for Ironman runs.</div>
     <div class="bgedit">
       <div class="bglist">
         ${list}

@@ -16,7 +16,7 @@ import { releaseEscorts, ESCORTS } from "./sim/economy.js";
 import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish, queueBunkhouseExpand, BUILDINGS, demolishRefund } from "./sim/buildings.js";
 // What pulling a building down gives back, for the question (sim/buildings.js demolishRefund).
 const demolishText = (bld) => { try { const r = demolishRefund(bld) || {}; return Object.entries(r).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ") || "nothing"; } catch { return "some of it"; } };
-import { refuel, repair } from "./sim/vehicles.js";
+import { refuel, repair, queueUpgrade, cancelGarageJob } from "./sim/vehicles.js";
 import { buryBody, burnBodyHome } from "./sim/carriers.js"; // bodies brought home in a team's car
 import {
   saveSupplyRun, dispatchSupplyRun, supplyRunById, jobForm, releaseHeld, pauseSupplyRun, deleteSupplyRun,
@@ -48,6 +48,7 @@ import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
 import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
 import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
+import { radioDeals } from "./sim/radiotrade.js"; // radio deals your caravan fetches
 import { VISITOR_ACTIONS } from "./ui/visitors.js";
 import { DIPLO_ACTIONS, DIPLO_CHANGE } from "./ui/diplomacy.js";
 import { renderDevPanel, devSample, DEV_SPEEDS } from "./ui/devtools.js";
@@ -121,7 +122,7 @@ const freshUi = () => ({
   inv: null, invSel: null, invMsg: "", // inventory / loot screen (ui/inventory.js)
   lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null, bgEditor: null, // bgEditor: the custom backgrounds window (ui/backgrounds.js)
   dev: false, showFps: false, armed: newArmed(),
-  radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
+  radioWith: null, radioMsg: "", radioDeal: null, radioBase: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
   codex: null, paletteRecent: [], palFocus: null, // ui/codex.js window; ui/cmdpalette.js recent picks and a build button to light up
   ledger: null, // ui/ledger.js: the Ledger window is open
@@ -732,6 +733,8 @@ const actions = {
   cancelcraft: (d) => { ui.baseMsg = cancelCraft(state, baseOf(d), Number(d.id)); },
   refuel: (d) => { ui.baseMsg = refuel(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id))); },
   repairv: (d) => { ui.baseMsg = repair(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id))); },
+  vupgrade: (d) => { ui.baseMsg = queueUpgrade(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id)), d.key, d.op || "fit"); }, // sim/vehicles.js: a garage job (glass, plating)
+  vgaragecancel: (d) => { ui.baseMsg = cancelGarageJob(state, baseOf(d), Number(d.id)); },
   burybody: (d) => { ui.baseMsg = buryBody(state, baseOf(d), Number(d.id)); }, // sim/carriers.js: a body brought home
   burnbody: (d) => { ui.baseMsg = burnBodyHome(state, baseOf(d), Number(d.id)); },
   survivor: (d) => { ui.survivor = Number(d.id); },
@@ -936,6 +939,12 @@ const actions = {
       return;
     }
     if (c.uiAction && c.uiAction.type === "moveout") { openMoveOut(c.uiAction.baseId); return; } // the Overcrowded card (sim/moveout.js)
+    if (c.uiAction && c.uiAction.type === "radioCaravan") { // a group asked you to bring your side (sim/radiotrade.js): the planner for that deal
+      const deal = radioDeals(state).find((x) => x.factionId === c.uiAction.factionId);
+      if (deal) TRADE_ACTIONS["rd-dealcaravan"](state, ui, { id: deal.id });
+      else if (text) ui.cardResult = { title: card.title, text };
+      return;
+    }
     // Orders that take time, and choices that open a battle: the result goes to the log instead of a screen.
     if (c.order || state.combat) {
       if (text) log(state, text, "info");
@@ -1210,10 +1219,10 @@ const changeActions = {
     }
   },
   "nr-free": (el) => { ui.freeEdit = !!el.checked && !ui.ironman; }, // Customize (not with Ironman)
-  // Customize, Hardcore: who a colonist was (a preset, a custom background, or "" for the dice). The world is built
+  // Customize (Normal and Hardcore): who a colonist was (a preset, a custom background, or "" for the dice). The world is built
   // again on the same seed (a crew roll of its own from now on, so the map and the groups stay put).
   "nr-bg": (el) => {
-    if (ui.ironman || ui.started || state.mode !== "hardcore") return;
+    if (ui.ironman || ui.started) return;
     const crew = crewWithBackground(state, Number(el.dataset.id), el.value);
     if (crew) newWorld(state.seed, true, pickRebuild(crew));
   },

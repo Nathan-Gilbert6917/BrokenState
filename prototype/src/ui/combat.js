@@ -1363,6 +1363,20 @@ const MIL_BODY = {
   mrap: { wheels: (L) => [0.7, L - 0.7], parts: (L, col) => [[0.05, L - 0.05, 0.05, 1.95, col], [0.15, 0.7, 0.4, 1.6, "#1c2016"], [1.2, L - 0.3, 0.3, 1.7, "#55603a"]] },
 };
 const milParts = (m, L, col) => m.parts(L, col);
+// A vehicle's upgrades seen from the top (sim/combat.js fitMapVehicle: up { p, s, g, m, t }): steel plates down both
+// sides (patchy rust and grey for scrap plating), a dark grille or a green tint over the windscreen, a ring and a barrel.
+function carUpParts2d(u, L, bodyKind) {
+  const out = [];
+  if (u.p || u.s) for (const [c0, c1] of [[0.02, 0.16], [1.84, 1.98]]) {
+    if (u.s) for (let a = 0.1; a < L - 0.2; a += 0.7) out.push([a, Math.min(L - 0.1, a + 0.55), c0, c1, ((a * 10) | 0) % 2 ? "#7e4c34" : "#454b51"]);
+    else out.push([0.08, L - 0.08, c0, c1, u.p > 1 ? "#8a9096" : "#6c737a"]);
+  }
+  const ra = bodyKind === "humvee" ? 1.45 : bodyKind === "m35" || bodyKind === "truck" ? 0.8 : L / 2;
+  if (u.m) out.push([ra - 0.65, ra - 0.5, 0.3, 1.7, "#3a3a3c"]);
+  if (u.g) out.push([ra - 0.65, ra - 0.55, 0.32, 1.68, "#5e8f86"]);
+  if (u.t) out.push([ra - 0.22, ra + 0.22, 0.78, 1.22, "#454b51"], [Math.max(0, ra - (u.t === "m2hb" ? 1.3 : 1.0)), ra - 0.1, 0.94, 1.06, "#1e1e20"]);
+  return out;
+}
 
 function previewHtml(b, state = null) {
   const h = cui.hover;
@@ -2231,6 +2245,7 @@ function drawObject(k, px, py, cs, n, cell = null) {
           : bodyKind === "bike" ? bikeParts : big ? [[0.1, 1.35, 0.15, 1.85, body], [0.25, 1.3, 0.3, 1.7, "#2a221c"], [1.5, L - 0.1, 0.1, 1.9, "#3a3a3c"]]
           : [[0.1, L - 0.1, 0.15, 1.85, body], ...(L === 3 ? [[0.9, 2.1, 0.3, 1.7, "#9fc0d8"]] : v % 2 ? [[0.8, 3.7, 0.3, 1.7, "#9fc0d8"]] : [[0.8, 2.0, 0.3, 1.7, "#9fc0d8"], [2.2, 3.8, 0.3, 1.7, "#3a3a3c"]])];
         if (bodyKind !== "bike") for (const a of mil ? mil.wheels(L) : big ? [0.7, L - 1.4, L - 0.6] : [0.6, L - 0.6]) for (const c of [0.2, 1.8]) parts.unshift([a - 0.3, a + 0.3, c - 0.22, c + 0.22, "#1e1e20"]);
+        if (cell.car.up) parts.push(...carUpParts2d(cell.car.up, L, bodyKind)); // its upgrades (sim/vehicles.js): plates, grille, the gun on the roof
         for (const [a0, a1, c0, c1, col] of parts) {
           const A0 = Math.max(a0, i) - i, A1 = Math.min(a1, i + 1) - i, C0 = Math.max(c0, j) - j, C1 = Math.min(c1, j + 1) - j;
           if (A1 - A0 <= 0.02 || C1 - C0 <= 0.02) continue;
@@ -2299,6 +2314,13 @@ function drawObject(k, px, py, cs, n, cell = null) {
       ctx.fillStyle = "#56626e"; ctx.fillRect(px + cs * 0.15, py + cs * 0.1, cs * 0.7, cs * 0.8);
       ctx.strokeStyle = "#2a3038"; ctx.strokeRect(px + cs * 0.15, py + cs * 0.1, cs * 0.7, cs * 0.8);
       ctx.beginPath(); ctx.moveTo(cx, py + cs * 0.1); ctx.lineTo(cx, py + cs * 0.9); ctx.stroke();
+      break;
+    case "gunsafe": // sim/locks.js: a gun safe, dark steel with a brass dial
+      ctx.fillStyle = "#33383d"; ctx.fillRect(px + cs * 0.18, py + cs * 0.12, cs * 0.64, cs * 0.76);
+      ctx.strokeStyle = "#15181b"; ctx.strokeRect(px + cs * 0.18, py + cs * 0.12, cs * 0.64, cs * 0.76);
+      ctx.strokeStyle = "#5c636b"; ctx.strokeRect(px + cs * 0.24, py + cs * 0.18, cs * 0.52, cs * 0.64);
+      ctx.fillStyle = "#d9b23a"; ctx.beginPath(); ctx.arc(cx - cs * 0.05, cy, cs * 0.09, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#8a939c"; ctx.fillRect(px + cs * 0.62, cy - cs * 0.12, cs * 0.05, cs * 0.24);
       break;
     case "cabinet": case "counter":
       ctx.fillStyle = k === "counter" ? "#7a6a58" : "#6a5440"; ctx.fillRect(px + cs * 0.1, py + cs * 0.25, cs * 0.8, cs * 0.5);

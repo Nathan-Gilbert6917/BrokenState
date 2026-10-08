@@ -463,6 +463,69 @@ export function rollCustom(state, s, A) {
   return got;
 }
 
+// ---------- a normal start (2026-10-07, user request) ----------
+// The six at the hub have a background too: who they were before Calder fell, six years ago. Drawn as a hardcore crew
+// is (no two alike, a pick from the new-run screen in its seat), with dice of their own (the seed's, NORMAL_BG.SALT) so
+// the world's dice, the map and the groups stay where they were. A preset reshapes their skills and keeps the total
+// (a normal start stays as strong as it was): its bumps go on, then as many points come off their other skills, more
+// often from the higher ones; it pushes a fitting trait as in Hardcore. What they grabbed and the car are a hardcore
+// start's: six years on the hub's kit is theirs. A custom background (custombg.js, picked: not in Ironman) gives exactly
+// what it says, its kit too (normalStartKit).
+// ON: false starts the six without backgrounds (the tools compare against it).
+export const NORMAL_BG = { SALT: 0x6b67, ON: true };
+// Points back off the other skills until the total is what it was (bumped: the skills the background raised, taken
+// from last). Deterministic by the rng given.
+export function keepSkillTotal(rng, s, total, bumped = []) {
+  const sum = () => Object.values(s.skills).reduce((a, v) => a + v, 0);
+  let guard = 400;
+  while (sum() > total && guard-- > 0) {
+    let pool = Object.keys(s.skills).filter((k) => s.skills[k] > 0 && !bumped.includes(k));
+    if (!pool.length) pool = Object.keys(s.skills).filter((k) => s.skills[k] > 0);
+    if (!pool.length) break;
+    s.skills[rng.weighted(pool, (k) => s.skills[k])]--;
+  }
+}
+// Backgrounds for a normal start's people (world.js createWorld, before the new-run screen's edits go on: an edited
+// colonist keeps the skills typed in). crew[i].background: a pick (crew[i].rolled: kept, still the dice's).
+export function normalStartBackgrounds(state, crew = null) {
+  if (!NORMAL_BG.ON) return;
+  const worldRng = state.rng;
+  state.rng = new Rng(((state.seed ^ NORMAL_BG.SALT) >>> 0) % 2147483646 + 1);
+  try {
+    const people = state.survivors;
+    const picks = people.map((s, i) => { const k = crew && crew[i] && crew[i].background; return k && archetypeOf(state, k) ? k : null; });
+    const kinds = pickArchetypes(state, people.length, picks);
+    people.forEach((s, i) => {
+      const A = archetypeOf(state, kinds[i]);
+      if (!A) return;
+      const total = Object.values(s.skills).reduce((a, v) => a + v, 0);
+      applyArchetype(state, s, kinds[i]);
+      if (!A.custom) keepSkillTotal(state.rng, s, total, Object.keys(A.skills || {}));
+      if (picks[i] && !crew[i].rolled) s.bgPicked = true;
+    });
+  } finally {
+    state.rng = worldRng;
+  }
+}
+// A custom background's kit at a normal start (after the new-run screen's edits): what it says they wear, hold and
+// carry (whatever the hub had handed them goes to the armory), the supplies on them and what is in the car's back to
+// the hub's stores and armory, and the car itself parked at the hub when it names a kind and is ever theirs (odds > 0).
+export function normalStartKit(state, base) {
+  for (const s of state.survivors) {
+    const A = archetypeOf(state, s.background);
+    if (!A || !A.custom) continue;
+    for (const slot of Object.keys(A.gear || {})) if (s.gear[slot]) { base.armory.push(s.gear[slot]); s.gear[slot] = null; }
+    const got = rollCustom(state, s, A);
+    for (const k of ["food", "water", "ammo", "meds", "arrows"]) if (got[k]) base.stock[k] = (base.stock[k] || 0) + got[k];
+    if (A.car.type && A.car.odds > 0) {
+      const T = VEHICLE_TYPES[A.car.type];
+      createVehicle(state, A.car.type, { kind: "base", baseId: base.id }, { fuel: Math.round(T.tank * 0.5 * 10) / 10, condition: 70 });
+    }
+    for (const [k, q] of Object.entries(A.car.trunk || {})) if (SUPPLY_KEYS.includes(k) && q > 0) base.stock[k] = (base.stock[k] || 0) + q;
+    for (const key of A.car.items || []) if (GEAR[key]) base.armory.push(newItem(key, 1));
+  }
+}
+
 // ---------- the car ----------
 // Whose car it was (the three's carOdds), what it is (their CARS), its tank and condition (CAR), and what was in the
 // back (TRUNK: supplies and things). Makes the vehicle on the team and loads the cargo. Returns { owner, car, trunk }.

@@ -5,6 +5,9 @@
 //     what they wear, hold and carry, the supplies on top of the team's clamped days, the car (odds, kind, its back);
 //   - a preset can be picked too (no two alike among the drawn ones), and no pick is the same start as before;
 //   - every preset converts to a custom one that builds; a save keeps the world's copy;
+//   - a normal start (2026-10-07): the six have backgrounds with dice of their own (the map, the groups and every
+//     skill total as before), a preset or a custom one can be picked, a custom one's kit, supplies and car go to them
+//     and the hub;
 //   - the new-run screen: Customize shows the background select and the trait picker, sets skills past the budget;
 //     Ironman locks all of it (the box, Backgrounds…, the skill buttons) and the crew counts as customized after.
 // Usage: node tools/custombgtest.js
@@ -12,7 +15,9 @@ import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibr
 import { createWorld } from "../src/sim/world.js";
 import { GEAR, SKILLS, TRAITS } from "../src/sim/data.js";
 import { CUSTOM_BG, sanitizeBackground, sanitizeLibrary, isCustomBg, blankBackground } from "../src/sim/custombg.js";
-import { HC_START, archetypeOf, backgroundInfo, pickArchetypes } from "../src/sim/hardcore-start.js";
+import { HC_START, archetypeOf, backgroundInfo, pickArchetypes, NORMAL_BG, keepSkillTotal } from "../src/sim/hardcore-start.js";
+import { Rng } from "../src/sim/rng.js";
+import { vehiclesAtBase } from "../src/sim/vehicles.js";
 import { partyMembers, partyTile } from "../src/sim/parties.js";
 import { partyVehicle } from "../src/sim/vehicles.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
@@ -242,6 +247,65 @@ section("The backgrounds window");
   check(customLibrary()[del] && ui.bgEditor.confirmDel, "delete asks first");
   BG_ACTIONS["bg-del"](st, ui);
   check(!customLibrary()[del] && Object.keys(customLibrary()).length === 2, "then deletes");
+}
+
+section("A normal start: six backgrounds, the same world and the same skill totals");
+{
+  const tot = (x) => Object.values(x.skills).reduce((a, v) => a + v, 0);
+  const sig = (w) => JSON.stringify([w.bases[0].tile, w.factions.map((f) => [f.name, f.bases]), w.hives && w.hives.length, w.vehicles.length, w.survivors.map((x) => [x.name, tot(x), x.gear.weapon && x.gear.weapon.key])]);
+  let sameWorld = true, sameTotals = true, distinct = true, shaped = 0, n = 0;
+  for (const seed of [1, 2, 3, 5, 8, 13, 21, 34]) {
+    NORMAL_BG.ON = false;
+    const off = createWorld({ seed, factionCount: 7 });
+    NORMAL_BG.ON = true;
+    const on = createWorld({ seed, factionCount: 7 });
+    if (sig(on) !== sig(off)) sameWorld = false;
+    if (on.survivors.some((x, i) => tot(x) !== tot(off.survivors[i]))) sameTotals = false;
+    const kinds = on.survivors.map((x) => x.background);
+    if (!kinds.every((k) => HC_START.ARCHETYPES[k]) || new Set(kinds).size !== 6 || off.survivors.some((x) => x.background)) distinct = false;
+    on.survivors.forEach((x, i) => {
+      const ks = Object.keys(HC_START.ARCHETYPES[x.background].skills);
+      n++;
+      if (ks.reduce((a, k) => a + x.skills[k], 0) > ks.reduce((a, k) => a + off.survivors[i].skills[k], 0)) shaped++;
+    });
+  }
+  check(sameWorld, "the same hub, groups, hives, vehicles, names and weapons as without backgrounds (dice of their own)");
+  check(sameTotals, "every colonist's skill total as it was");
+  check(distinct, "six backgrounds each, no two alike");
+  check(shaped >= n * 0.85, `the background's skills higher than they were (${shaped} of ${n})`);
+  const rng = new Rng(9);
+  const x = { skills: { shooting: 2, stealth: 0, medicine: 18, farming: 5 } };
+  x.skills.medicine += 4;
+  keepSkillTotal(rng, x, 25, ["medicine"]);
+  check(Object.values(x.skills).reduce((a, v) => a + v, 0) === 25 && x.skills.medicine === 22, `keepSkillTotal takes from the others first (${JSON.stringify(x.skills)})`);
+  // Picked: a preset (the same total), a custom one (exactly, with its kit, supplies and car).
+  NORMAL_BG.ON = false;
+  const base = createWorld({ seed: 42, factionCount: 7 });
+  NORMAL_BG.ON = true;
+  const pre = createWorld({ seed: 42, factionCount: 7, crew: [{}, { background: "nurse" }] });
+  check(pre.survivors[1].background === "nurse" && pre.survivors[1].bgPicked && tot(pre.survivors[1]) === tot(base.survivors[1]) && pre.survivors.filter((y) => y.background === "nurse").length === 1, "a preset picked: theirs, the same total, nobody else drawn it");
+  const cus = createWorld({ seed: 42, factionCount: 7, crew: [{ background: "c_1", custom: true }], customBackgrounds: lib });
+  const c0 = cus.survivors[0], b0 = base.survivors[0], hubC = cus.bases[0], hubB = base.bases[0];
+  check(c0.background === "c_1" && c0.bgPicked && SKILLS.every((k) => c0.skills[k] === Math.min(20, b0.skills[k] + (MEDIC.skills[k] || 0))), "a custom one: exactly its bumps on their own skills");
+  check(c0.traits[0] === "tough" && c0.traits[1] === "keeneye", "its traits first");
+  check(c0.gear.weapon.key === "pistol" && c0.gear.armor.key === "vest" && c0.gear.backpack.key === "hikingpack" && c0.gear.head.key === "milhelmet", "its kit worn and held");
+  check(hubC.armory.some((it) => it.key === b0.gear.weapon.key) && hubC.armory.some((it) => it.key === "vest"), `what the hub had handed them is in the armory (${hubC.armory.map((it) => it.key).join(", ")})`);
+  check(hubC.stock.food === hubB.stock.food + MEDIC.supplies.food && hubC.stock.ammo === hubB.stock.ammo + MEDIC.supplies.ammo && hubC.stock.meds === hubB.stock.meds + MEDIC.supplies.meds + MEDIC.car.trunk.meds && hubC.stock.fuel === hubB.stock.fuel + MEDIC.car.trunk.fuel, "its supplies and the car's back in the hub's stores");
+  check(vehiclesAtBase(cus, hubC.id).some((v) => v.type === "hummer") && vehiclesAtBase(cus, hubC.id).length === vehiclesAtBase(base, hubB.id).length + 1 && ["sandbags", "fishrod"].every((k) => hubC.armory.some((it) => it.key === k)), "the car parks at the hub, its things in the armory");
+  // A rebuilt world (the snapshot) brings the custom kit once, not twice.
+  const again = createWorld({ seed: 42, factionCount: 7, crew: crewSnapshot(cus), customBackgrounds: lib });
+  check(again.bases[0].armory.length === hubC.armory.length && again.survivors[0].gear.weapon.key === "pistol" && again.survivors[0].bgPicked, `rebuilt: the same armory (${again.bases[0].armory.length}), the kit once`);
+  const noCar = createWorld({ seed: 42, factionCount: 7, crew: [{ background: "c_2", custom: true }], customBackgrounds: lib });
+  check(vehiclesAtBase(noCar, noCar.bases[0].id).length === vehiclesAtBase(base, hubB.id).length, "no car kind or odds 0: no car");
+  // The new-run screen, normal: a background select each with Customize; Ironman's crew is the dice's again.
+  const ui = { started: false, worldSize: "normal", factionCount: 7, freeEdit: true };
+  const html = newRunScreen(cus, ui);
+  check((html.match(/data-action="nr-bg"/g) || []).length === 6 && /same total/.test(html), "normal, Customize: a background select on each of the six");
+  const iron = createWorld({ seed: 42, factionCount: 7, crew: ironmanCrew(cus) });
+  check(!crewCustomized(iron) && iron.survivors.every((y, i) => y.background === createWorld({ seed: 42, factionCount: 7 }).survivors[i].background), "Ironman's crew: the dice's backgrounds");
+  // A save keeps them.
+  const ld = loadFromString(saveToString(cus));
+  check(ld.survivors.every((y, i) => y.background === cus.survivors[i].background) && backgroundInfo(ld, "c_1").custom, "a save keeps the backgrounds");
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

@@ -172,6 +172,8 @@ export interface Vehicle {
   cargo?: Cargo;
   // Found on a battle map (foundcars.js): the model, where and when, and what getting it running needs (null: it runs).
   found?: { model: string; at?: string; hour?: number; tries?: number; repair: { parts: number; scrap: number; hours: number; mech: number; what: string[] } | null };
+  // Upgrades (vehicles.js VEH_UPGRADES; missing = none): glass / mesh 0|1, plating 0|1|2, scrapPlate 0|1, a mounted gun.
+  upgrades?: { glass?: number; mesh?: number; plating?: number; scrapPlate?: number; turret?: { gun: string; item?: Item } | null };
 }
 
 // ---------- teams ----------
@@ -373,6 +375,7 @@ export interface State {
   idBase: number; // world.js localId
   woodcutting: number; // save marks (save.js migrations)
   rawWater: number;
+  groupWorks?: number; // barestart: the AI groups build their bases up (groupworks.js); absent in older saves
   grid: HexGrid;
   tiles: Tile[];
   cityId: number;

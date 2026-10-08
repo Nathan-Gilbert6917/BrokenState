@@ -235,7 +235,7 @@ function shop(rng, v) {
       break;
     case "gunstore":
       sales = S({ name: "Showroom", type: "gunshop", furnish: "gundesk", maxBoxes: 4 });
-      back = [[rng.int(4, 5), { role: "armory", name: "Gun cage", type: "gunshop", lock: ["vault", 0.8], boxLock: ["cage", 0.6], maxBoxes: 3 }], ["*", { role: "stock", type: "store", name: "Back room", maxBoxes: 3 }], [rng.int(3, 4), { role: "office", boxLock: ["safe", 0.25] }]];
+      back = [[rng.int(4, 5), { role: "armory", name: "Gun cage", type: "gunshop", lock: ["vault", 0.8], boxLock: ["cage", 0.6], maxBoxes: 3 }], ["*", { role: "stock", type: "store", name: "Back room", maxBoxes: 3 }], [rng.int(3, 4), { role: "office", gunSafe: ["gunsafe2", 0.5] }]]; // locks.js gun safes: the owner's safe
       break;
     case "hardware":
       sales = S({ name: "Hardware aisles", type: "workshop" });
@@ -338,8 +338,8 @@ function institution(rng, v, o = {}) {
     }
     case "police": {
       const bw = rng.int(23, 26), bh = rng.int(14, 16);
-      const main = corridorPlan([["*", { role: "office", name: "Detectives' office", boxLock: ["evidence", 0.25] }], [rng.int(5, 6), L({ name: "Front desk", type: "office" })], [4, { role: "lockerroom", type: "barracks" }], ["*", { role: "office", name: "Chief's office", boxLock: ["safe", 0.3] }]],
-        [[4, { role: "armory", lock: ["vault", 0.85], boxLock: ["cage", 0.5] }], [4, { role: "evidence", lock: ["door", 0.7], boxLock: ["evidence", 0.6] }], ["*", "cells"]], 5);
+      const main = corridorPlan([["*", { role: "office", name: "Detectives' office", boxLock: ["evidence", 0.25] }], [rng.int(5, 6), L({ name: "Front desk", type: "office" })], [4, { role: "lockerroom", type: "barracks" }], ["*", { role: "office", name: "Chief's office", gunSafe: ["gunsafe2", 0.3] }]], // locks.js: a gun safe, not a plain safe
+        [[4, { role: "armory", lock: ["vault", 0.85], boxLock: ["cage", 0.5], gunSafe: ["gunsafe3", 0.3] }], [4, { role: "evidence", lock: ["door", 0.7], boxLock: ["evidence", 0.6] }], ["*", "cells"]], 5);
       const port = [5, { role: "bays", name: "Sally port", type: "garage", maxBoxes: 2 }];
       const right = rng.chance(0.5);
       const n = rng.int(2, 3); // the squad room, interview rooms and records above
@@ -404,7 +404,7 @@ function institution(rng, v, o = {}) {
       const bw = rng.int(12, 14), bh = rng.int(10, 11);
       return {
         ...S(bw, bh), front: { width: 1 }, ground: "base", storeys: 1, foot: "small",
-        program: { split: "y", parts: [[3, { role: "foyer", name: "Issue desk", entry: true, type: "barracks" }], ["*", { split: "x", parts: leaves([["*", { role: "armory", lock: ["vault", 0.9], boxLock: ["cage", 0.6] }], ["*", { role: "armory", name: "Ammo store", lock: ["door", 0.5], boxLock: ["crate", 0.4] }], [3, "office"]]) }]] },
+        program: { split: "y", parts: [[3, { role: "foyer", name: "Issue desk", entry: true, type: "barracks" }], ["*", { split: "x", parts: leaves([["*", { role: "armory", lock: ["vault", 0.9], boxLock: ["cage", 0.6], gunSafe: ["gunsafe3", 0.35] }], ["*", { role: "armory", name: "Ammo store", lock: ["door", 0.5], boxLock: ["crate", 0.4] }], [3, "office"]]) }]] },
         exits: [{ side: "back", roles: ["office"], chance: 0.3, lock: 0.7 }],
       };
     }
@@ -412,7 +412,7 @@ function institution(rng, v, o = {}) {
       const bw = rng.int(20, 24), bh = rng.int(13, 15);
       return {
         ...S(bw, bh), front: { width: 1 }, ground: "base", storeys: 1, foot: "medium",
-        program: corridorPlan([["*", { role: "office", name: "Guard room", entry: true, hub: true }], [5, { role: "lockerroom", type: "cellblock" }], [4, { role: "armory", name: "Guard armory", lock: ["vault", 0.7], boxLock: ["cage", 0.4] }]], [["*", "cells"], ["*", "cells"]], 4),
+        program: corridorPlan([["*", { role: "office", name: "Guard room", entry: true, hub: true }], [5, { role: "lockerroom", type: "cellblock" }], [4, { role: "armory", name: "Guard armory", lock: ["vault", 0.7], boxLock: ["cage", 0.4], gunSafe: ["gunsafe3", 0.25] }]], [["*", "cells"], ["*", "cells"]], 4),
         exits: [{ side: "left", roles: ["corridor"], chance: 0.6, lock: 0.6 }, { side: "right", roles: ["corridor"], chance: 0.6, lock: 0.6 }],
       };
     }
@@ -1240,6 +1240,7 @@ export function assemble(rng, spec, opts = {}) {
     x0: r.ix0 - 1, y0: r.iy0 - 1, w: r.iw + 2, h: r.ih + 2, doors: r.doors.map((d) => d.slice ? d.slice() : d),
     hub: !!r.hub, locked: r.locked || null, up: !!r.up, entry: !!r.entry, noLabel: r.label === false,
   }));
+  rooms.forEach((r, i) => { if (r.gunSafe) areas[i].gunSafe = r.gunSafe.slice(); }); // locks.js placeGunSafes: a gun safe may stand here
   for (const a of outdoor) areas.push({ ...a, id: idBase + a.id, f: 0 });
   for (const c of containers) c.area += idBase;
   for (const d of lockedDoors) { d.f = f; if (d.area != null) d.area += idBase; }

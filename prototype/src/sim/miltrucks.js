@@ -10,6 +10,9 @@
 //            Guard base (NEAR_MIL: 45% a tile away, falling off to ~6% 8 tiles out): the convoys that tried to reach
 //            it or get away from it. 1, sometimes 2.
 //   base     a National Guard base: 3–5 in its motor pool (the evacuation took most of what they carried: BASE_RICH).
+//            The first two are always ready to go (MOTOR_POOL): an Army cargo truck and a Humvee with an M2 on the
+//            roof, both running (foundcars.js: the start switch, inspect, claim; plated and glassed, vehicles.js
+//            fitMilitary) and guarded (more of the turned crew round them: MILTRUCK.GUARD).
 //   crash    an Army helicopter wreck (crashes.js crash_mil): half of them have the Humvee of the recovery team.
 //   convoy   the "abandoned military convoy" event (below): 2–4 trucks on a road tile, a temporary site that is
 //            stripped by other groups and picked clean after some days (the crashes.js pattern).
@@ -21,7 +24,7 @@
 import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
-import { newItem } from "./inventory.js";
+import { lootItem } from "./inventory.js";
 import { log, addCard, hub, atBase, factionById, snapshot } from "./world.js";
 import { tileLabel, planPath, spawnAiParty, partyMembers, partyTile, teamName, launchExpedition, carryCapacity, supplyLoad } from "./parties.js";
 import { triggerConflict } from "./conflicts.js";
@@ -37,7 +40,7 @@ export const MILTRUCK = {
   DEAD: { road: 0.35, base: 0.45, crash: 0.5, convoy: 0.55 },
   // Raid maps: the turned crew standing round each truck (AROUND), the ones still strapped in (TRUCK_KINDS crew) who
   // rise when the cargo is opened: Heat +RISE_HEAT, everything within RISE_RADIUS hears it.
-  AROUND: [1, 2], RISE_HEAT: 6, RISE_RADIUS: 9,
+  AROUND: [1, 2], RISE_HEAT: 6, RISE_RADIUS: 9, GUARD: 2, // GUARD: more round a motor pool's ready vehicles
   // The headless search: the chance an hour of reaching an unopened truck, and the Heat it costs.
   SEARCH_P: 0.35, SEARCH_HEAT: 6,
 };
@@ -48,7 +51,7 @@ export const TRUCK_KINDS = {
   humvee: { name: "Humvee", short: "Humvee", L: 3, body: "humvee", crew: [1, 3], vehicle: "hummer" },
   mrap:   { name: "MRAP", short: "MRAP", L: 4, body: "mrap", crew: [2, 3], vehicle: "miltruck" },
 };
-// q: × supplies, items: × item chances, qual: item quality range, crew: × strapped-in crew.
+// q: × supplies, items: × item chances, qual: the old item quality range (items now take theirs from itemcond.js: an intact truck "military", a wrecked or burned-out one "wreck"), crew: × strapped-in crew.
 export const TRUCK_COND = {
   intact:  { name: "intact", q: 1, items: 1, qual: [0.6, 1], crew: 1 },
   wrecked: { name: "wrecked", q: 0.6, items: 0.6, qual: [0.4, 0.8], crew: 0.7 },
@@ -78,6 +81,8 @@ export const TRUCK_LOOT = {
     gear: [["ar", 0.35], ["carbine", 0.2], ["plate", 0.3], ["vest", 0.3], ["milhelmet", 0.35], ["nvg", 0.12], ["thermal", 0.06], ["milradio", 0.25], ["frag", 0.3], ["smokegren", 0.35], ["surgkit", 0.08], ["bandagekit", 0.35], ["rucksack", 0.12]],
   },
 };
+// A National Guard base's motor pool: the vehicles left ready to go (trucksAt i 0, 1): intact, running, a turret.
+export const MOTOR_POOL = [{ kind: "cargo", turret: null }, { kind: "humvee", turret: "m2hb" }];
 const BURNT_KEEP = new Set(["ammo", "parts", "ar", "carbine", "plate", "milhelmet", "frag", "smokegren"]);
 // Later branches (gun attachments, typed ammo) add to a truck's contents here: hook(rng, ctx, out) with ctx { kind,
 // cond, src, rich } and out { sup, gear } (change it in place).
@@ -102,8 +107,8 @@ export function truckLoot(rng, kind, cond = "intact", opts = {}) {
   for (const [k, p] of T.gear) {
     if (burnt && !BURNT_KEEP.has(k)) continue;
     if (!rng.chance(Math.min(0.95, p * C.items * rich))) continue;
-    const [a, b] = C.qual;
-    gear.push(newItem(k, Math.round((a + rng.next() * (b - a)) * 100) / 100));
+    rng.next(); // the old quality draw (TRUCK_COND qual), still taken so the truck's dice stay where they were
+    gear.push(lootItem(k, burnt || cond === "wrecked" ? "wreck" : "military", rng)); // itemcond.js: crates in good order, a wreck's knocked about
   }
   const out = { sup, gear };
   for (const hook of TRUCK_LOOT_HOOKS) hook(rng, { kind, cond, src: opts.src || null, rich }, out);
@@ -150,11 +155,12 @@ export function trucksAt(state, tileId) {
   for (let i = 0; i < n; i++) {
     if (taken.includes(i)) continue;
     const roll = (...k) => hash01(state.seed, "mtruck", key, i, ...k);
-    const kind = src === "convoy" && i === 0 ? "cargo" : pickW(roll("kind"), S.kinds);
-    const cond = src === "convoy" && i === 0 && n > 1 ? "intact" : pickW(roll("cond"), S.cond);
+    const pool = src === "base" ? MOTOR_POOL[i] : null; // a motor pool's ready vehicles
+    const kind = pool ? pool.kind : src === "convoy" && i === 0 ? "cargo" : pickW(roll("kind"), S.kinds);
+    const cond = pool ? "intact" : src === "convoy" && i === 0 && n > 1 ? "intact" : pickW(roll("cond"), S.cond);
     const K = TRUCK_KINDS[kind];
     const crew = Math.round((K.crew[0] + Math.floor(roll("crew") * (K.crew[1] - K.crew[0] + 1))) * TRUCK_COND[cond].crew);
-    out.push({ i, kind, cond, src, key, crew, rich: S.rich * 0.3 ** stripped, opened: opened.includes(i) });
+    out.push({ i, kind, cond, src, key, crew, rich: S.rich * 0.3 ** stripped, opened: opened.includes(i), ...(pool ? { runs: true, guard: true, ...(pool.turret ? { turret: pool.turret } : {}) } : {}) });
   }
   return out;
 }

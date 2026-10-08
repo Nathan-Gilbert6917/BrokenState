@@ -99,7 +99,7 @@ const WORKSHOP_QUALITY = 0.1; // workshop recipes come out a little better
 // sdMin), clamped to lo–1. XP per finished craft: base × kind[...] × √(worth of the inputs) × (1 + qSlope × (quality − qAt)).
 export const CRAFT_SKILL = "crafting";
 export const CRAFT_ROLL = { sd0: 0.09, sdPer: 0.003, sdMin: 0.025, lo: 0.6 };
-export const CRAFT_XP = { base: 2, qAt: 0.75, qSlope: 2, kind: { weapon: 1.2, armor: 1.1, medical: 1.1, tool: 1, camp: 0.8, kit: 0.9, supplies: 0.6 } };
+export const CRAFT_XP = { base: 0.55, qAt: 0.75, qSlope: 2, kind: { weapon: 1.2, armor: 1.1, medical: 1.1, tool: 1, camp: 0.8, kit: 0.9, supplies: 0.6 } }; // base 2 → 0.55 (skills.js balance pass, tools/skillcurve.js --drill: a crafter kept in materials finishes about 8 cheap jobs a day, which made 40+ XP a day at 2, against a farmer's 11)
 export const CRAFT_PERKS = { quickhands: 1.15, foreman: 1.15, goodeye: 0.04, mastercrafter: 0.06, scrapsaver: { min: 4, back: 1 } }; // skills.js PERK_TREE.crafting
 export const craftSkill = (s) => skill(s, CRAFT_SKILL);
 // May this person attempt the recipe? Its own skill at its min, and Crafting at its cmin.
