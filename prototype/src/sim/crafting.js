@@ -84,6 +84,8 @@ export const CRAFTS = {
   // Gun attachments (gunmods.js; docs/weapons-overhaul-plan.md section 5): a bottle over the muzzle in the field, a
   // solvent trap drilled out at a machine shop, a cheap magnifier for a scope, a rubber butt pad, a sling.
   bottlecan:   { gear: "bottlecan",   gearIn: { bottle: 1 }, in: { scrap: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },
+  makeshiftrig: { gear: "makeshiftrig", gearIn: { backpack: 1 }, in: { scrap: 1 }, hours: 3, skill: "mechanics", min: 0, field: true }, // carry kit (data-kit.js): a school bag cut into chest pouches
+  steelplate:  { gear: "steelplate",  in: { scrap: 8 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" }, // a plate carrier's steel insert (section 16)
   solventcan:  { gear: "solventcan",  in: { scrap: 3, gunparts: 1 }, hours: 10, skill: "mechanics", min: 6, needs: "machine_shop" },
   scrapscope:  { gear: "scrapscope",  gearIn: { monocular: 1 }, in: { scrap: 2 }, hours: 4, skill: "mechanics", min: 2 },
   recoilpad:   { gear: "recoilpad",   in: { scrap: 1, wood: 10 }, hours: 2, skill: "mechanics", min: 0, field: true },

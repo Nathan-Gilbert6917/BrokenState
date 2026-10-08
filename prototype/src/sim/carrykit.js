@@ -13,7 +13,7 @@
 //   kit (equipKit: the best rig and carrier, plates in the carrier, magazines into pouches; spare plates kept),
 //   and old saves (migrateKit: carriers get their plates, guns their spare magazines).
 import { GEAR } from "./data.js";
-import { MAGAZINES, CLIPS } from "./data-kit.js";
+import { MAGAZINES, CLIPS, KIT_LOOT } from "./data-kit.js";
 import { WEAPONS, KITS } from "./combat.js";
 import { hash01 } from "./skills.js";
 import { lootItem, newItem, stow, ensureInv, rigOf, rigPouches, pouchesOf, pouchReason, isCarrier, insertsOf, INSERT_SIDES, itemLoad, itemKg, allItems, storageFor, personPlace, carriedSpots, ensureRig, migrateCarrier, packOf } from "./inventory.js";
@@ -23,7 +23,7 @@ import { CALIBERS } from "./data-ammo.js";
 import { typeFor } from "./rounds.js";
 import { standardMag, magFitsGun, isMag, enemyMags, enemyMagCount, magLoad, takesMagItems, usesInternal } from "./mags.js";
 import { feelFactor, bandIndex, LOAD_BANDS } from "./load.js";
-import { kitSource } from "./itemcond.js";
+import { kitSource, siteSource, areaSource, traderSource } from "./itemcond.js";
 import { armourSpec, armourBroken } from "./armour.js";
 import { itemDur, itemDurMax } from "./crafting.js";
 
@@ -165,7 +165,7 @@ const staticCap = (u) => {
 // The enemy's carried kit onto its body (inventory.js enemyBody): its rig (a group's own, else a found one by its
 // kit's condition) and its spare magazines, loaded with its type, into the rig's pouches first. src: itemcond.js source.
 export function bodyKit(body, u, src) {
-  if (!u || u.kind !== "human") return;
+  if (!u || u.kind !== "human" || !KIT_LOOT.on) return;
   if (u.arsRig) body.gear.rig = u.arsRig;
   else if (u.rigKey && GEAR[u.rigKey] && !body.gear.rig && !(body.gear.armor && pouchesOf(body.gear.armor))) body.gear.rig = lootItem(u.rigKey, src, [u.id, "rig"]);
   if (body.gear.rig) ensureRig(body.gear.rig);
@@ -211,7 +211,7 @@ export function starterMags(s, armory = null) {
   if (!key || usesInternal(gun.key, gun)) return 0;
   let n = 0;
   for (let i = 0; i < CARRY.START; i++) {
-    const it = newItem(key);
+    const it = newItem(key); // starting gear (not loot): a magazine has no wear
     if (gun.load) it.load = gun.load;
     if (stow(s, it)) n++;
     else if (armory) { armory.push(it); n++; }
@@ -223,7 +223,7 @@ export function starterMags(s, armory = null) {
 // A found gun's spare magazines (0–2 of its standard one; own dice): the items to add beside it. salt: anything that
 // varies by find.
 export function gunMags(gun, source, ...salt) {
-  const key = gun && WEAPONS[gun.key] ? standardMag(gun.key) : null;
+  const key = gun && WEAPONS[gun.key] && KIT_LOOT.on ? standardMag(gun.key) : null;
   if (!key || usesInternal(gun.key, gun)) return [];
   const r = hash01("gunmags", gun.key, ...salt);
   const n = r < CARRY.GUN_MAGS[0] ? 0 : r < CARRY.GUN_MAGS[0] + CARRY.GUN_MAGS[1] ? 1 : 2;
@@ -238,13 +238,13 @@ export function withMags(gear, source, ...salt) {
 }
 // Loose magazines, rigs and plates by place (their own tables and dice; loot.js calls these after its own rolls).
 export const SITE_KIT = {
-  gunstore: { p: 0.1, items: { mag_glock_15: 3, mag_glock_17: 2, mag_glock_33: 0.5, mag_stanag_30: 2, mag_stanag_20: 1, mag_ak_30: 1, mag_22_10: 2, mag_22_25: 1, mag_1911_7: 1.5, mag_bolt_5: 1, speedloader: 2, stripper308: 1.5, chestrig: 0.6, steelplate: 0.4 } },
-  police: { p: 0.06, items: { mag_glock_15: 3, mag_glock_17: 2, mag_stanag_30: 2, speedloader: 1, tacvest: 0.8, softinsert: 1 } },
-  military: { p: 0.08, items: { mag_stanag_30: 5, mag_stanag_40: 1, mag_stanag_100: 0.2, mag_m249_100: 0.8, mag_ar10_20: 1, mag_glock_17: 1, chestrig: 1.5, ceramicplate: 1.5, softinsert: 0.6 } },
+  gunstore: { p: 0.1, items: { mag_glock_15: 3, mag_glock_17: 2, mag_glock_33: 0.5, mag_stanag_30: 2, mag_stanag_20: 1, mag_ak_30: 1, mag_22_10: 2, mag_22_25: 1, mag_1911_7: 1.5, mag_bolt_5: 1, mag_bolt_10: 0.5, mag_ar10_10: 0.5, mag_ak_45: 0.4, mag_glock_8: 1, speedloader: 2, stripper308: 1.5, chestrig: 0.6, steelplate: 0.4 } },
+  police: { p: 0.06, items: { mag_glock_15: 3, mag_glock_17: 2, mag_glock_8: 1, mag_stanag_30: 2, mag_mp5_30: 1, speedloader: 1, tacvest: 0.8, softinsert: 1 } },
+  military: { p: 0.08, items: { mag_stanag_30: 5, mag_stanag_40: 1, mag_stanag_100: 0.2, mag_m249_100: 0.8, mag_ar10_20: 1, mag_glock_17: 1, mag_mp5_30: 0.5, mag_50_10: 0.2, chestrig: 1.5, ceramicplate: 1.5, softinsert: 0.6 } },
   crash_mil: { p: 0.06, items: { mag_stanag_30: 3, chestrig: 1, ceramicplate: 1 } },
   convoy: { p: 0.05, items: { mag_stanag_30: 3, mag_m249_100: 0.6, chestrig: 1, ceramicplate: 0.8 } },
   prison: { p: 0.03, items: { mag_glock_15: 2, softinsert: 1, tacvest: 0.4 } },
-  lodge: { p: 0.03, items: { mag_22_10: 1, mag_bolt_5: 1, stripper308: 1 } },
+  lodge: { p: 0.03, items: { mag_22_10: 1, mag_bolt_5: 1, mag_bolt_10: 0.4, stripper308: 1 } },
   cabin: { p: 0.02, items: { mag_22_10: 1, stripper308: 1 } },
   town: { p: 0.008, items: { mag_glock_15: 1, mag_22_10: 1 } },
 };
@@ -257,8 +257,8 @@ export const AREA_KIT = {
 export const WARE_KIT = {
   traders: { p: 0.25, items: { mag_glock_15: 2, mag_stanag_30: 2, mag_22_10: 1, speedloader: 1, makeshiftrig: 1, steelplate: 0.5 } },
   military: { p: 0.3, items: { mag_stanag_30: 3, chestrig: 1.5, ceramicplate: 1.5, softinsert: 1 } },
-  raider: { p: 0.15, items: { mag_glock_15: 1, mag_ak_30: 1, makeshiftrig: 1.5, steelplate: 0.5 } },
-  merchants: { p: 0.35, items: { mag_stanag_30: 2, mag_stanag_40: 0.6, mag_ak_30: 1, mag_glock_17: 1, chestrig: 1, tacvest: 0.6, ceramicplate: 1, steelplate: 1 } },
+  raider: { p: 0.15, items: { mag_glock_15: 1, mag_ak_30: 1, mag_ak_45: 0.4, makeshiftrig: 1.5, steelplate: 0.5 } },
+  merchants: { p: 0.35, items: { mag_stanag_30: 2, mag_stanag_40: 0.6, mag_ak_30: 1, mag_ak_75: 0.3, mag_glock_17: 1, chestrig: 1, tacvest: 0.6, ceramicplate: 1, steelplate: 1 } },
 };
 function pickW(items, r) {
   const keys = Object.keys(items).filter((k) => GEAR[k]).sort();
@@ -268,9 +268,27 @@ function pickW(items, r) {
   return keys[keys.length - 1] || null;
 }
 export function rollKitTable(tab, gate, pickR, src, roll) {
-  if (!tab || gate >= tab.p) return null;
+  if (!tab || gate >= tab.p || !KIT_LOOT.on) return null;
   const key = pickW(tab.items, pickR);
   return key ? lootItem(key, src, roll) : null;
+}
+// A search hour's find (loot.js rollAnyModFind, after the attachments: only when they found nothing).
+export function rollSiteKit(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const tab = t && t.loc ? SITE_KIT[t.loc.type] : null;
+  if (!tab) return null;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  return rollKitTable({ ...tab, p: tab.p * loot * mult }, hash01(state.seed, "kitfind", tileId, state.hour, salt), hash01(state.seed, "kitpick", tileId, state.hour, salt), siteSource(t.loc.type), hash01(state.seed, "kitdur", tileId, state.hour, salt));
+}
+// A raid container's (loot.js rollAreaMod, when it found nothing).
+export function rollAreaKit(state, tileId, areaType, salt = "") {
+  const t = state.tiles[tileId];
+  return rollKitTable(AREA_KIT[areaType], hash01(state.seed, "areakit", tileId, salt), hash01(state.seed, "areakitpick", tileId, salt), areaSource(areaType, t && t.loc ? t.loc.type : null), hash01(state.seed, "areakitdur", tileId, salt));
+}
+// A trader's table (loot.js modWares, when it had no part).
+export function kitWares(state, type, name, salt = "") {
+  const it = rollKitTable(WARE_KIT[type], hash01(state.seed, "kitware", name, salt), hash01(state.seed, "kitwarepick", name, salt), traderSource(type), hash01(state.seed, "kitwareq", name, salt));
+  return it ? [it] : [];
 }
 
 // ---------- the autopilot's kit ----------
@@ -327,7 +345,6 @@ export function migrateKit(state) {
     if (o instanceof Map) { for (const v of o.values()) walk(v); return; }
     if (o instanceof Set || Array.isArray(o)) { for (const v of o) walk(v); return; }
     if (typeof o.key === "string" && GEAR[o.key] && GEAR[o.key].inserts && o.inserts === undefined && o.name) migrateCarrier(o);
-    if (typeof o.key === "string" && GEAR[o.key] && GEAR[o.key].pouches && o.name) ensureRig(o);
     for (const k of Object.keys(o)) { const v = o[k]; if (v && typeof v === "object") walk(v); }
   };
   walk(state);

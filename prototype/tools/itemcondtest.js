@@ -28,6 +28,7 @@ import { TRUCK_GEAR } from "../src/sim/data-guns.js"; // the roster's military g
 import { ensureWares, WARES, WARE_EXTRAS, gearSellPrice, gearBuyPrice } from "../src/sim/trade.js";
 import { WARE_BOOKS } from "../src/sim/skills.js";
 import { MILDEAD } from "../src/sim/deadsoldiers.js";
+import { KIT_LOOT } from "../src/sim/data-kit.js"; // the carry kit's loot (rigs, magazines on bodies and with found guns): off for the old baselines
 import * as V from "../src/sim/visitors.js";
 import {
   COND_SOURCES, rollCondition, condRolled, isPaper, rollsQuality, rollsWear, qualityWord, siteSource, areaSource, kitSource, traderSource,
@@ -84,7 +85,8 @@ check(meanQ("shop") > meanQ("home") && meanQ("home") > meanQ("wreck"), "a shop's
 section("2. Every creation point rolls its condition");
 // Static: loot code never calls newItem itself.
 const ALLOWED = {
-  "inventory.js": /export function newItem|condition\((factoryFit\()?newItem\(key, 1\)|g\.head = newItem\("footballhelmet"/, // the roller itself (lootItem: a gun's factory parts fitted first, factoryfit.js); an old save's helmet split
+  "inventory.js": /export function newItem|condition\((factoryFit\()?newItem\(key, 1\)|g\.head = newItem\("footballhelmet"|newItem\("ceramicplate"/, // the roller itself (lootItem: a gun's factory parts fitted first, factoryfit.js); an old save's helmet split; a carrier's plates (worn as the carrier is: lootItem wearInserts)
+  "carrykit.js": /starting gear/, // a colonist's starting spare magazines (not loot)
   "deadsoldiers.js": /newItem\(k, q\(range\), rng\)/, // the maker handed in (inventory.js armouredItem)
   "hardcore-start.js": /./, "recruits.js": /./, "world.js": /startdur/, // starting and recruit gear (START_DUR), not loot
   "blueprints.js": /bpItemKey/, "skills.js": /newItem\(key, 1\)|newItem\(list\[/, // paper
@@ -221,6 +223,7 @@ const BASE = {
 // own and only add: off for these samples, like the commune's extras below, so the old baselines hold.
 const bodyExtra = MILDEAD.BODY_EXTRA;
 MILDEAD.BODY_EXTRA = {};
+KIT_LOOT.on = false; // the carry kit (carrykit.js) only adds: checked below
 // (only the flashbang hook: the roster's guns and the rounds by calibre stay, they are in the baselines above)
 const isFlashHook = (f) => /truckflash/.test(String(f));
 const takeFlashHooks = () => { const out = TRUCK_LOOT_HOOKS.filter(isFlashHook); for (const f of out) TRUCK_LOOT_HOOKS.splice(TRUCK_LOOT_HOOKS.indexOf(f), 1); return out; };
@@ -255,6 +258,31 @@ const truckHooks = takeFlashHooks();
 }
 MILDEAD.BODY_EXTRA = bodyExtra;
 TRUCK_LOOT_HOOKS.push(...truckHooks);
+KIT_LOOT.on = true;
+{
+  // The carry kit on bodies (carrykit.js bodyKit: their rig and spare magazines; throwables into a rig's grenade pouch):
+  // the same dice, the same items, more of them (flattened: a rig's pouches and a pack's slots).
+  const runs = [];
+  for (const on of [false, true]) {
+    KIT_LOOT.on = on;
+    const rng = new Rng(9001), lists = [];
+    for (let i = 0; i < 300; i++) for (const kit of Object.keys(KITS)) {
+      const K = KITS[kit];
+      lists.push(flat(allItems(enemyBody(rng, { kind: "human", name: "x", id: i, kit, weapon: K.weapons[i % K.weapons.length], armorKey: K.armor[i % K.armor.length], mags: [{ key: "mag_stanag_30", cap: 30, where: "pocket", n: 30 }], rigKey: i % 2 ? "chestrig" : null }, K))).map((it) => it.key));
+    }
+    runs.push({ lists, state: rng.state });
+  }
+  KIT_LOOT.on = true;
+  let onlyAdds = runs[0].state === runs[1].state, added = 0;
+  const KIT_KEYS = (k) => !!(GEAR[k] && (GEAR[k].mag || GEAR[k].slot === "rig"));
+  runs[0].lists.forEach((was, i) => {
+    const now = [...runs[1].lists[i]];
+    for (const k of was) { const j = now.indexOf(k); if (j < 0) onlyAdds = false; else now.splice(j, 1); }
+    if (now.some((k) => !KIT_KEYS(k))) onlyAdds = false;
+    added += now.length;
+  });
+  check(onlyAdds && added > 0, `the carry kit on enemy bodies only adds (${added} rigs and magazines): the rest and the dice are as without it`);
+}
 {
   // With them on: the same dice, only flashbangs and smoke grenades added (each body and truck: what it had, and more).
   const runs = [];

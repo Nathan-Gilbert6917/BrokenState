@@ -143,6 +143,7 @@ export function starterKit(seed, salt, type, pop, gear = 1) {
   for (let i = 0; i < nT && T.length; i++) { const it = make(T[i % T.length], "t", i); if (it) out.push(it); }
   // Tasers and pepper spray (nonlethal.js NL_KIT: the share of a kit's people who carry one).
   for (const [key, share] of Object.entries(ARSENAL.NONLETHAL[kind] || {})) for (let i = 0; i < Math.round(n * share); i++) { const it = make(key, `n${key}`, i); if (it) out.push(it); }
+  out.push(...seedKit(seed, salt, kind, out)); // carrykit.js: rigs, spare magazines, spare plates (own dice; not in the fighting worth)
   return out;
 }
 
@@ -160,7 +161,6 @@ function put(A, f, it, why) {
 export function seedArsenal(state, f) {
   const A = (f.arsenal = newArsenal(f));
   for (const it of starterKit(state.seed, f.name, f.type, f.pop, f.gear || 1)) put(A, f, it, null);
-  for (const it of seedKit(state.seed, f.name, kitOf(f), A.items)) put(A, f, it, null); // carrykit.js: rigs, spare magazines, spare plates (own dice)
   A.seeded = A.items.length;
   A.gear = f.gear || 1; // the eras' arms this kit was dealt with (eraArms: a later gang's strong guns already carry them)
   return A;

@@ -116,14 +116,14 @@ export function fitMags(b, u, spots, staticCap) {
   u.magMode = "box";
   const fit = fittedMag(u.item);
   const gunLoad = typeFor(cal, u.load);
-  const left = {};
-  const take = (t, cap) => { if (left[t] == null) left[t] = avail(b, u, t); const n = Math.min(cap, left[t]); left[t] -= n; return n; };
-  u.mags = [{ key: fit ? fit.key : standardMag(key), cap: staticCap, load: gunLoad, n: take(gunLoad, staticCap), where: "gun" }];
+  // n = cap: what a magazine holds is bounded as it is used by the rounds of its type to hand that the gun and the
+  // quicker spares have not claimed (loaded).
+  u.mags = [{ key: fit ? fit.key : standardMag(key), cap: staticCap, load: gunLoad, n: staticCap, where: "gun" }];
   for (const x of spots) {
     if (!isMag(x.item) || !["rig", "pocket", "pack"].includes(x.where) || !magFitsGun(key, x.item.key)) continue;
     const load = magLoad(x.item, cal, u.load);
     const cap = magCapOf(x.item.key) || MAGAZINES[x.item.key].cap;
-    u.mags.push({ key: x.item.key, cap, load, n: take(load, cap), where: x.where });
+    u.mags.push({ key: x.item.key, cap, load, n: cap, where: x.where });
   }
 }
 // An enemy's magazines (carrykit.js kitEnemy): the gun's and `count` spares of its standard magazine (or the given

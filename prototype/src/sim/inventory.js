@@ -31,7 +31,7 @@ import { condition, kitSource, spend } from "./itemcond.js"; // the condition lo
 import { armourCond, lootArmour } from "./armour.js"; // per-hit armour: condition, an enemy body's worn piece
 import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it fought in
 import { MEDS } from "./medfinds.js"; // how rare meds are
-import { CLIPS, ADMIN_KG, POUCH_NAMES } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
+import { CLIPS, ADMIN_KG, POUCH_NAMES, KIT_LOOT } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
 import { bodyKit } from "./carrykit.js"; // an enemy's rig and magazines onto its body (call-time only: safe in the import cycle)
 import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
 
@@ -65,7 +65,6 @@ export function newItem(key, quality = 1, worn = null, range = FOUND_DUR) {
     item.dur = Math.max(1, Math.round(d.dur * (range.lo + (range.hi - range.lo) * u)));
   }
   if (d.slots) ensurePack(item);
-  if (d.pouches) ensureRig(item);
   if (d.inserts) item.inserts = { front: newItem("ceramicplate", quality), back: newItem("ceramicplate", quality) }; // a carrier comes with its plates (lootItem wears them as it wears the carrier)
   factoryFit(item, seedOf(worn)); // factoryfit.js: a sniper rifle comes with its scope and bipod (dice: worn's rng position)
   return item;
@@ -188,8 +187,7 @@ export function ensureInv(s) {
   if (!Array.isArray(s.pockets)) s.pockets = [];
   while (s.pockets.length < POCKETS) s.pockets.push(null);
   if (g.backpack) ensurePack(g.backpack);
-  if (g.rig) ensureRig(g.rig);
-  if (g.armor && pouchesOf(g.armor)) { ensureRig(g.armor); migrateCarrier(g.armor); }
+  if (g.armor && isCarrier(g.armor)) migrateCarrier(g.armor); // (pouches are made when first used: rigPouches)
   if (s.invV === INV_VERSION) return s;
   s.invV = INV_VERSION;
   for (const k of EQUIP_SLOTS) {
@@ -312,13 +310,14 @@ export function stow(s, item, prefix = `s:${s.id}`) {
 
 // The free rig pouch an item would go in when stowed (its own kind; meds and tablets an admin pouch), or -1.
 function pouchFor(s, item) {
-  const pr = rigPouches(s);
-  if (!pr) return -1;
-  const kinds = pouchesOf(rigOf(s));
+  const r = KIT_LOOT.on ? rigOf(s) : null;
+  if (!r) return -1;
+  const pr = r.contents || [];
+  const kinds = pouchesOf(r);
   const d = GEAR[item.key];
   const want = pouchKindOf(item) || (d && (d.medKit || d.tabs) ? "admin" : null);
   if (!want) return -1;
-  return pr.findIndex((x, i) => !x && kinds[i] === want && !pouchReason(item, want));
+  return kinds.findIndex((k, i) => !pr[i] && k === want && !pouchReason(item, want));
 }
 // Why an item cannot go in a slot ("" when it can). slot: an equip slot, "pocket", "pack", "pouch" (a rig pouch of
 // `kind`), "insert" (a carrier's plate pocket). h: the person (or body) it goes on: a chest rig does not go over a vest

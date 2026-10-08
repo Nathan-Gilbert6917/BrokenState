@@ -27,6 +27,7 @@ import { AMMO_GEAR } from "../src/sim/data-ammo.js";
 import { Rng } from "../src/sim/rng.js";
 import { TREAT_ORDER } from "../src/sim/needs.js";
 import { GUN_FINDS, SEARCH_TOOLS, GUN_STASH } from "../src/sim/gunsafes.js"; // gun safes, gun cases, drills (their own dice)
+import { SITE_KIT, AREA_KIT, WARE_KIT } from "../src/sim/carrykit.js"; // carry kit: magazines, rigs, plates (their own dice)
 
 const quiet = process.argv.includes("--quiet");
 let pass = 0, fail = 0;
@@ -78,6 +79,9 @@ for (const k of Object.keys(GEAR)) if (GEAR[k].blueprint) add(k, "blueprints");
 for (const [a, f] of Object.entries(GUN_FINDS)) addAll(Object.keys(f), `raid:${a}`); // gunsafes.js: tools and gun cases in raid containers
 for (const [t, f] of Object.entries(SEARCH_TOOLS)) addAll(Object.keys(f), `find:${t}`); // gunsafes.js: tools in the hour-by-hour search
 for (const [t, T] of Object.entries(GUN_STASH)) addAll([...Object.keys(T.guns), ...(T.items || []).flatMap(([w]) => (typeof w === "string" ? [w] : Object.keys(w)))], `safe:${t}`);
+for (const [t, f] of Object.entries(SITE_KIT)) addAll(Object.keys(f.items), `kitfind:${t}`); // carrykit.js: magazines, rigs, plates
+for (const [a, f] of Object.entries(AREA_KIT)) addAll(Object.keys(f.items), `raid:${a}`);
+for (const [t, f] of Object.entries(WARE_KIT)) addAll(Object.keys(f.items), `sold:${t}`);
 
 console.log("Sources");
 check(!unknown.length, `every listed item exists in GEAR${unknown.length ? ` (unknown: ${unknown.join(", ")})` : ""}`);
@@ -99,6 +103,8 @@ for (const [t, f] of Object.entries(SITE_GRENADES)) for (const k of Object.keys(
 for (const a of Object.keys(AREA_GRENADES)) if (!AREAS[a]) misfits.push(`grenades in unknown raid area ${a}`);
 for (const [a, f] of Object.entries(GUN_FINDS)) for (const k of Object.keys(f)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (gun finds)`);
 for (const [t, f] of Object.entries(SEARCH_TOOLS)) for (const k of Object.keys(f)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (tools)`);
+for (const [t, f] of Object.entries(SITE_KIT)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (carry kit)`);
+for (const [a, f] of Object.entries(AREA_KIT)) for (const k of Object.keys(f.items)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (carry kit)`);
 check(!misfits.length, `everything a site or raid area holds fits its theme${misfits.length ? ` (misfits: ${misfits.join("; ")})` : ""}`);
 const placed = new Set([...Object.values(LOCATIONS).flatMap((d) => d.gear), ...Object.values(SITE_FINDS).flatMap((f) => Object.keys(f.items)), ...Object.values(HUNT_FINDS).flatMap((f) => Object.keys(f.items)), ...Object.values(LIGHT_FINDS).flatMap((f) => Object.keys(f.items)), ...Object.values(AREAS).flatMap((d) => d.gear.map(([k]) => k)), ...Object.values(AREA_FINDS).flatMap((f) => Object.keys(f.items))]);
 check([...placed].every((k) => ITEM_TAGS[k]), `every item placed at a site has theme tags (missing: ${[...placed].filter((k) => !ITEM_TAGS[k]).join(", ") || "none"})`);

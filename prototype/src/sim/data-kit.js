@@ -48,6 +48,9 @@ export const CLIPS = {
   stripper308: { weapons: ["huntrifle"], n: 5, pouch: "rifle" },
 };
 
+// Carry kit in loot and on bodies (carrykit.js bodyKit / gunMags / the kit tables; inventory.js stowing into rig
+// pouches): off only for tools/itemcondtest.js's baselines (the old finds and dice, before the carry kit only added).
+export const KIT_LOOT = { on: true };
 // Rig pouch kinds (section 16): what goes in each.
 export const POUCH_NAMES = { rifle: "Rifle mag", pistol: "Pistol mag", grenade: "Grenade", radio: "Radio", admin: "Admin" };
 export const POUCH_ICON = { rifle: "▮", pistol: "▯", grenade: "●", radio: "📻", admin: "✚" };
@@ -58,10 +61,10 @@ const P = (spec) => spec.flatMap(([kind, n]) => Array.from({ length: n }, () => 
 /** @type {Record<string, any>} */
 export const KIT_GEAR = {
   // Rigs (EQUIP slot "rig"): pouches by kind; carry: kg added to the max load.
-  chestrig:     { name: "Chest rig", slot: "rig", skill: null, power: 0, req: 0, value: 30, noise: 0, weight: 0.8, carry: 2, cat: "rigs",
+  chestrig:     { name: "Chest rig", slot: "rig", skill: null, power: 0, req: 0, value: 30, noise: 0, weight: 0.8, carry: 2, cat: "packs",
     pouches: P([["rifle", 4], ["pistol", 2], ["grenade", 1], ["admin", 2]]),
     desc: "A military chest rig: 4 rifle magazine pouches, 2 pistol pouches, a grenade pouch and 2 admin pouches. A magazine from a pouch reloads in 1 action (2 from the pack); +2 kg max load. Not over a vest or a carrier with its own pouches." },
-  makeshiftrig: { name: "Makeshift rig", slot: "rig", skill: null, power: 0, req: 0, value: 6, noise: 0, weight: 0.7, carry: 1, cat: "rigs", makeshift: true, dur: 40, burnShare: 0.6,
+  makeshiftrig: { name: "Makeshift rig", slot: "rig", skill: null, power: 0, req: 0, value: 6, noise: 0, weight: 0.7, carry: 1, cat: "packs", makeshift: true, dur: 40, burnShare: 0.6,
     pouches: P([["rifle", 2], ["pistol", 1], ["grenade", 1], ["admin", 1]]),
     desc: "A school backpack cut down and sewn into pouches across the chest: 2 rifle magazine pouches, a pistol pouch, a grenade pouch and an admin pouch; +1 kg max load. Crafted from a backpack and a scrap." },
   tacvest:      { name: "Tactical vest", slot: "armor", skill: null, power: 2, req: 0, value: 70, noise: 0, weight: 3.2, carry: 2, dur: 45, cat: "armor",
@@ -88,6 +91,19 @@ for (const [k, m] of Object.entries(MAGAZINES)) {
 }
 for (const [k, c] of Object.entries(CLIPS)) KIT_GEAR[k].pouch = c.pouch;
 
+// Where each turns up (loot.js ITEM_TAGS: theme tags).
+/** @type {Record<string, string[]>} */
+export const KIT_TAGS = {
+  chestrig: ["military", "guns", "crash"], makeshiftrig: ["crime", "camp"], tacvest: ["police", "prison", "guns"],
+  ceramicplate: ["military", "crash"], steelplate: ["guns", "crime", "industry", "military"], softinsert: ["police", "military", "prison"],
+  speedloader: ["guns", "police", "home"], stripper308: ["hunt", "guns", "military"],
+};
+for (const [k, m] of Object.entries(MAGAZINES)) {
+  const p = m.plat;
+  KIT_TAGS[k] = p.includes("glock") || p.includes("p1911") ? ["guns", "police", "crime", "home"] : p.includes("rimpistol") ? ["guns", "hunt", "farm", "home"]
+    : p.includes("ak") ? ["guns", "crime", "military"] : p.includes("bolt") ? ["hunt", "guns", "military"] : p.includes("mp5") ? ["police", "military", "guns"]
+    : p.includes("amr") || (p.includes("m249") && !p.includes("ar15")) ? ["military"] : ["military", "guns", "police", "crash"];
+}
 // Magazines as gun parts (gunmods.js ATTACH: the gun builder's magazine slot lists them by platform).
 /** @type {Record<string, any>} */
 export const KIT_ATTACH = {};
