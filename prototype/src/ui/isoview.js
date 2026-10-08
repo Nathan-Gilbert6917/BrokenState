@@ -29,6 +29,7 @@ import { unitCanvas, unitFacing } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
+import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (sim/nonlethal.js)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -1703,6 +1704,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   }
   // Move: the path to the hovered cell; meds: who can be treated.
   const h = H.hover;
+  if (H.cone) fillCells(ctx, b, (i) => H.cone.has(i), "rgba(255,140,40,0.32)"); // the pepper spray's cone (ui/nonlethal.js)
   if (H.mode === "meds" && u) {
     ctx.strokeStyle = COL.good; ctx.lineWidth = 2; ctx.beginPath();
     for (const p of players) if (!p.dead && !p.left && (p === u || Math.max(Math.abs(u.x - p.x), Math.abs(u.y - p.y)) === 1)) diamond(ctx, p.x, p.y, tileTop(b, p.x, p.y), 1.5);
@@ -2002,7 +2004,7 @@ function drawLabels(ctx, b, s, H) {
   }
   const hh = hAt(b, t.x, t.y);
   const tags = [];
-  if (t.down) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? COL.good : COL.bad]);
+  if (t.down && !t.surr) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? COL.good : COL.bad]); // surr: its own tag (ui/nonlethal.js)
   if (t.ztype && !t.down) tags.push([`${t.short}${t.elite ? "★" : ""}`, ringOf(t)]);
   if (t.boss && !t.down) tags.push([t.boss === "broodmother" ? "BROOD" : "WALL", COL.bad]);
   if (t.ow) tags.push(["OW", "#e0a84f"]);
@@ -2011,6 +2013,7 @@ function drawLabels(ctx, b, s, H) {
   if (t.side === "enemy" && !t.aware && !t.ko) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]);
   if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : t.post === "wall" ? "W" : t.post === "tower" ? "T" : "P", "#e0a84f"]);
   if (t.surprised) tags.push(["!", "#ffd166"]);
+  tags.push(...nlTags(t)); // stunned, blinded, hands up, pulling blows (ui/nonlethal.js)
   if (hh && !t.down) tags.push(["▲".repeat(hh), "#ffe296"]);
   ctx.font = `700 ${fs}px Segoe UI, sans-serif`;
   let tx = X - bw / 2;

@@ -459,3 +459,12 @@ Object.assign(ITEM_TAGS, {
   powerdrill: ["tools", "garage", "industry", "farm", "home"], anglegrinder: ["tools", "industry", "garage", "military"],
   riflecase: ["hunt", "guns", "home", "farm", "travel", "police", "military", "outdoor"], pistolcase: ["guns", "home", "police", "travel", "crime", "hunt"],
 });
+
+// Non-lethal weapons (data-nonlethal.js, nonlethal.js): tasers, cartridges, pepper spray and stun batons where police,
+// guards and gun counters keep them (small finds: their own dice, through lootItem like every find). Guards' bodies
+// carry them too (combat.js KITS via data-nonlethal.js NL_KIT_PATCH).
+Object.assign(ITEM_TAGS, {
+  taser: ["police", "prison", "guns"], tasercart: ["police", "prison", "guns"], pepper: ["police", "prison", "guns", "shop"], stunbaton: ["police", "prison"],
+});
+for (const [where, items] of [[SITE_FINDS.police, { taser: 1.5, tasercart: 2, pepper: 2, stunbaton: 1 }], [SITE_FINDS.prison, { taser: 1, tasercart: 1.5, pepper: 1.5, stunbaton: 1 }], [SITE_FINDS.gunstore, { taser: 1.5, tasercart: 2, pepper: 2 }],
+  [AREA_FINDS.armory, { taser: 1, tasercart: 1.5, pepper: 1, stunbaton: 0.7 }], [AREA_FINDS.cellblock, { pepper: 0.7, stunbaton: 0.5, tasercart: 0.5 }], [AREA_FINDS.gunshop, { taser: 1, tasercart: 1.5, pepper: 1.5 }]]) Object.assign(where.items, items);

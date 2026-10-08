@@ -246,7 +246,7 @@ export function stunUnit(b, t, x, y, by = null) {
   return t.stun;
 }
 // A stun in words: "stunned (-2 actions, aim -30)" / "dazed (aim -15)".
-export const stunLabel = (s) => (!s ? "" : s.dazed ? `dazed (aim −${s.aim})` : `stunned (−${s.ap} action${s.ap === 1 ? "" : "s"}, aim −${s.aim})`);
+export const stunLabel = (s) => (!s ? "" : s.dazed ? `dazed (aim −${s.aim})` : `stunned (−${s.ap} action${s.ap === 1 ? "" : "s"}${s.aim ? `, aim −${s.aim}` : ""})`); // no aim part: a stun baton's shock (nonlethal.js)
 // The burst (landEffect): the stun on the living who see it, a scratch for anyone right next to it, the wake.
 function flashBurst(b, by, x, y) {
   const hit = [], hurt = [];
@@ -284,8 +284,14 @@ export function stunTurnStart(b, sides) {
   }
 }
 // The end of a side's turn: the stuns served in it wear off.
+// A stun with a daze to follow (s.then: a taser's, nonlethal.js applyStun) leaves that daze for the unit's next turn.
 export function stunTurnEnd(b, sides) {
-  for (const u of b.units) if (u.stun && sides.includes(u.side) && u.stun.next <= b.turn) delete u.stun;
+  for (const u of b.units) {
+    if (!u.stun || !sides.includes(u.side) || u.stun.next > b.turn) continue;
+    const th = u.stun.then;
+    if (th && th.aim > 0) u.stun = { aim: th.aim, ap: 0, next: u.stun.next + 1, dazed: true };
+    else delete u.stun;
+  }
 }
 // Their kit (combat.js enemyUnit): a soldier or a guard with a flashbang now and then (FLASH_KIT; seed: the battle's
 // dice position, read and never moved).
