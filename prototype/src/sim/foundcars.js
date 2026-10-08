@@ -82,6 +82,7 @@ export function carRecord(state, b, id) {
   const xs = cells.map((i) => i % W), ys = cells.map((i) => (i / W) | 0);
   const car = b.cells[cells[0]].car;
   if (car.escort) return null; // a caravan escort's vehicle (combat.js): settled when the battle ends (caravanraids.js)
+  if (car.owned) return (b.cars[id] = ownedRecord(state, b, id, car, xs, ys)); // a group's own vehicle in its motor pool (arsenal.js placeMotorPool)
   const model = modelOf(car);
   const M = MODELS[model];
   const r = (...k) => roll(state, b, id, ...k);
@@ -100,6 +101,21 @@ export function carRecord(state, b, id) {
   };
   b.cars[id] = rec;
   return rec;
+}
+// A group's own vehicle (f.vehicles) parked in its motor pool: it runs (its condition), locked like any car of its
+// model, no keys left in it (hotwire it; an Army one has a start switch); claiming it is stealing it (claimCar).
+const OWNED_MODEL = { sedan: "sedan", suv: "sedan", van: "van", truck: "pickup", hummer: "humvee", miltruck: "cargo" };
+function ownedRecord(state, b, id, car, xs, ys) {
+  const o = car.owned;
+  const model = OWNED_MODEL[o.type] || "pickup";
+  const M = MODELS[model];
+  return {
+    id, x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs) + 1, h: Math.max(...ys) - Math.min(...ys) + 1,
+    model, name: o.name || M.name, mil: M.mil ? { kind: model, cond: "intact", runs: true } : null, owned: { ...o },
+    locked: roll(state, b, id, "lock") < (CARS.LOCKED[model] ?? 0.4), open: false, keys: M.mil ? true : false, hot: false, tries: 0,
+    inspected: false, cond: { engine: o.condition > 0 ? "ok" : "dead", tyres: "ok", battery: "ok", fuel: Math.round(o.fuel || 0) }, condition: Math.round(o.condition || 0),
+    claimed: null,
+  };
 }
 const gap = (rec, x, y) => Math.max(rec.x - x, x - (rec.x + rec.w - 1), rec.y - y, y - (rec.y + rec.h - 1), 0);
 // The cars next to a unit (any of their cells within a step): ids, nearest first.
@@ -291,6 +307,7 @@ export function claimCar(state, b, rec) {
     name: type === "miltruck" && rec.model === "mrap" ? "MRAP" : M.name,
   });
   v.found = { model: rec.model, at: b.place, hour: state.hour, repair: fix };
+  if (rec.owned) { stolenFromGroup(state, b, rec, v); return v; } // arsenal.js: out of their motor pool
   if (rec.mil) fitMilitary(v, rec.mil.turret || null); // vehicles.js: an Army vehicle is plated and glassed (a motor pool's Humvee has its M2)
   rec.claimed = v.id;
   (b.claims = b.claims || []).push(v.id);
@@ -300,6 +317,25 @@ export function claimCar(state, b, rec) {
   log(state, `Your people claimed a ${v.name.toLowerCase()} at ${tileLabel(state, tile)}${fix ? ` (it needs ${fix.what.join(", ")} before it runs)` : ""}${rec.mil ? `: armour plate and bulletproof glass${rec.mil.turret ? ", an M2 on the roof (not yet usable)" : ""}` : ""}.`, "good");
   return v;
 }
+// A group's vehicle driven out of its motor pool: off their books (with its upgrades), and they know who took it.
+function stolenFromGroup(state, b, rec, v) {
+  const o = rec.owned;
+  const f = (state.factions || []).find((x) => x.id === o.fid);
+  rec.claimed = v.id;
+  (b.claims = b.claims || []).push(v.id);
+  if (o.upgrades) v.upgrades = JSON.parse(JSON.stringify(o.upgrades));
+  if (f) {
+    const list = f.vehicles || [];
+    const i = list.findIndex((x) => x.id === o.recId);
+    if (i >= 0) list.splice(i, 1);
+    f.goodwill = Math.max(-100, (f.goodwill || 0) - STEAL_GOODWILL);
+    f.lastProvoked = Math.floor(state.hour / 24);
+    f.vehiclesLostToYou = (f.vehiclesLostToYou || 0) + 1;
+  }
+  markAbandonedVehicle(state, v, "stolen");
+  log(state, `Your people drove the ${v.name} out of ${f ? `${f.name}'s` : "their"} motor pool. ${f ? `${f.name} know who took it (goodwill −${STEAL_GOODWILL}).` : ""}`, "danger");
+}
+export const STEAL_GOODWILL = 25;
 // When a battle ends (combat.js finishCombat): a claimed car that runs joins the team that claimed it (if it has no
 // vehicle and was not beaten), or the base it was defending; the rest stay parked on the tile.
 export function settleClaims(state, b, result) {

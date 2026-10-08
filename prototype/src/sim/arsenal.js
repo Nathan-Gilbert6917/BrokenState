@@ -37,7 +37,7 @@
 // over), your vehicles when a team is taken whole. Outflows: the dead's kit, wear (a use a fight; broken is gone),
 // rounds spent, explosives thrown at walls, what they sell, what others steal.
 import { GEAR, FACTION_TYPES, LOCATIONS } from "./data.js";
-import { KITS, WEAPONS, loadMag } from "./combat.js";
+import { KITS, WEAPONS, loadMag, placeCar, floodReach } from "./combat.js";
 import { lootItem } from "./inventory.js";
 import { kitSource, siteSource } from "./itemcond.js";
 import { enemyMods, fitMod, gunMods, modLabel, fittedSuppressor, takesMods, fittedMods } from "./gunmods.js";
@@ -55,11 +55,11 @@ export const ARSENAL = {
   HOME: 0.35, // the home guard's share of the people (and every third piece of kit from the second best)
   MOD: 0.2, ARMOUR: 0.5, // a gun part's worth; armour counts half its power (world.js combatPower)
   KIT_MIN: 0.15, KIT_MAX: 2.5,
-  KIT_WEIGHT: 0.5, // the kit's share of a group's fighting worth (the rest: its people, their numbers and training)
+  KIT_WEIGHT: 0.45, // the kit's share of a group's fighting worth (the rest: its people, their numbers and training)
   AMMO_NEED: 3, AMMO_SHORT: 0.7, // rounds a gun to count fully (your bases' 3 a head, world.js armedFactor); with none, the guns count 70%
   ROUNDS: 3, // rounds a fighter spends in a fight
   PICKUP_WEAR: [0.2, 0.5], // a piece picked up off a battlefield has lost this share of its uses
-  RECRUIT_ARMED: 0.75, // a newcomer brings a weapon
+  RECRUIT_ARMED: 0.9, // a newcomer is armed (from the group's kit list)
   SCAV_ITEMS: 6, // items a scavenging party finds per loot it takes (a full trip about 0.25 loot: 1.5 items)
   CRAFT: { every: 4, scrap: 3, weapons: ["pipespear", "spikedbat", "pipespear", "nailbat"], bombEvery: 6, bombScrap: 2, bombFuel: 1,
     // A group with a workshop (groupworks.js) rebuilds a gun of its kit from scrap and a part while it has fewer
@@ -307,6 +307,7 @@ export function armFromArsenal(state, b, u, n) {
   if (!b.arsIssue[f.id] || b.arsIssue[f.id].length < want) b.arsIssue[f.id] = issueKit(state, f, want, task);
   const lo = b.arsIssue[f.id][n - 1];
   f.arsenalSeen = day(state);
+  if (task === "home" && !b.motorPool) placeMotorPool(state, b, f); // their vehicles parked at their base
   u.arsFid = f.id;
   const it = lo && lo.weapon;
   if (it && WEAPONS[it.key]) {
@@ -333,6 +334,27 @@ export function armFromArsenal(state, b, u, n) {
   if (rack) for (const x of [u.arsItem, ...u.arsArmour]) { const i = x ? rack.indexOf(x) : -1; if (i >= 0) rack.splice(i, 1); }
 }
 
+// A group's motor pool on the battle map of its own base (an assault, a rescue raid): its running vehicles (up to
+// POOL), parked on its side of the map, each a car you can get into, hotwire and drive off (foundcars.js: stealing it
+// costs goodwill, foundcars.js STEAL_GOODWILL). Placed once, as the first of its people is armed.
+export const POOL = 2;
+export function placeMotorPool(state, b, f) {
+  b.motorPool = [];
+  const W = b.w, H = b.h;
+  const cars = factionVehicles(f).filter((v) => v.condition > 0 && v.type !== "bike").slice(0, POOL);
+  const ok = (x, y) => x >= 0 && y >= 0 && x < W && y < H && b.cells[y * W + x].k === "open" && !b.units.some((u) => u.x === x && u.y === y) && (!b.reach || b.reach[y * W + x]);
+  for (const v of cars) {
+    const big = v.type === "truck" || v.type === "miltruck" || v.type === "van";
+    let placed = null;
+    for (let x = W - 3; x >= Math.floor(W / 2) && !placed; x--) for (let y = 1; y < H - 2 && !placed; y++) {
+      placed = placeCar(b.cells, W, H, x, y, "y", big ? 4 : 3, big ? "truck" : "car", ok, 0, { body: v.type === "hummer" ? "humvee" : big ? "truck" : "car" });
+    }
+    if (!placed) continue;
+    for (let yy = placed.y0; yy < placed.y0 + placed.h; yy++) for (let xx = placed.x0; xx < placed.x0 + placed.w; xx++) b.cells[yy * W + xx].car.owned = { fid: f.id, recId: v.id, type: v.type, name: v.name, fuel: v.fuel, condition: v.condition, upgrades: v.upgrades || null };
+    b.motorPool.push(placed.id);
+  }
+  if (b.motorPool.length && b.cells.length) floodReach(b, 0, Math.floor(H / 2));
+}
 // After any fight with a group (combat.js finishCombat, before the handler): who lost what. battle: the map it was
 // played on (null: by the numbers). Returns { dropped: [items their dead carried, now off their books], took: [] }.
 export function settleArsenal(state, setup, result, battle = null) {
@@ -565,11 +587,15 @@ export function arsenalDaily(state, f) {
   const d = day(state);
   const salt = [state.seed, "arsday", f.name, tickOf(f)]; // groupcare.js tickOf: the group's own day count
   if (f.pop > A.pop0) {
-    const W = KITS.survivors.weapons;
+    const W = (KITS[kitOf(f)] || KITS.survivors).weapons; // armed from the group's own kit (what its people carry)
     for (let i = A.pop0; i < f.pop; i++) {
       if (hash01(...salt, "rec", i) >= ARSENAL.RECRUIT_ARMED) continue;
       const key = W[Math.floor(hash01(...salt, "rk", i) * W.length) % W.length];
-      addToArsenal(state, f, lootItem(key, "survivor", [...salt, "r", i]), "recruit");
+      addToArsenal(state, f, lootItem(key, kitSource(kitOf(f)), [...salt, "r", i]), "recruit");
+      // and armour from the kit's list (a share of them wear none: its null entries)
+      const AR = (KITS[kitOf(f)] || KITS.survivors).armor || [null];
+      const ak = AR[Math.floor(hash01(...salt, "ra", i) * AR.length) % AR.length];
+      if (ak && GEAR[ak]) addToArsenal(state, f, lootItem(ak, kitSource(kitOf(f)), [...salt, "ra", i]), "recruit");
     }
   }
   A.pop0 = f.pop;

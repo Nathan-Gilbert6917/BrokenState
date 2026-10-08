@@ -17,6 +17,16 @@ import { Rng } from "../src/sim/rng.js";
 import * as A from "../src/sim/arsenal.js";
 import * as C from "../src/sim/groupcare.js";
 import * as G from "../src/sim/groupworld.js";
+import * as V from "../src/sim/vehicletrade.js";
+import { groupCapacity } from "../src/sim/escorts.js";
+import { gangAmbush } from "../src/sim/caravanraids.js";
+import { NL_TAKE } from "../src/sim/nonlethal.js";
+import { wallGoal } from "../src/sim/groupworks.js";
+import { sendCaravan } from "../src/sim/caravans.js";
+import { openCaravanTrade, tradeContext, endTrade } from "../src/sim/trade.js";
+import { openRadioTrade } from "../src/sim/radiotrade.js";
+import { carRecord, claimCar } from "../src/sim/foundcars.js";
+import { planPath } from "../src/sim/parties.js";
 
 const seed = Number(process.argv[2] || 7);
 let passed = 0, failed = 0;
@@ -434,6 +444,107 @@ section("What they know: scouting, spies, stale intel");
   const before = f.scoutedYou;
   G.scoutYou(st, f, h, day(st), false);
   check(f.scoutedYou != null && f.scoutedYou >= (before ?? -1) && G.intelDef(st, f, h) > def0, "unseen, a scout gets home with your real defences");
+}
+
+// ======================================================================================
+section("One model: caravan escorts, rescue raids, non-lethal, the profiles");
+{
+  const st = world();
+  const f = typed(st, "traders");
+  const cap0 = groupCapacity(st, f);
+  check(cap0.guards > 0 && Math.abs(cap0.power - Math.round(A.unitPower(f, 2.2) * 10) / 10) < 0.11, `a caravan's guards come from the arsenal at the group's power by its kit (${cap0.guards} guards at ${cap0.power})`);
+  for (const it of f.arsenal.items.filter((x) => A.isWeaponKey(x.key))) A.removeFromArsenal(f, it, "test");
+  check(groupCapacity(st, f).guards === 0, "no guns past the home guard: no guards to send");
+  // A raided caravan's guards lose their kit (caravanraids.js).
+  const st2 = world(seed + 6);
+  const owner = typed(st2, "commune"), gang = typed(st2, "raider", [owner]);
+  const n0 = owner.arsenal.items.length, p0 = owner.pop;
+  const q = { id: 9e9 + 7, owner: owner.id, kind: "caravan", path: [owner.bases[0]], idx: 0, phase: "out", strength: 6, escort: { guards: 4 }, goods: { supplies: { food: 10 }, gear: [newItem("pistol", 0.8)] } };
+  st2.parties.push(q);
+  gang.pop = 60;
+  let took = false;
+  for (let i = 0; i < 8 && !took; i++) { took = gangAmbush(st2, gang, q); st2.hour++; }
+  check(took && owner.arsenal.items.length < n0 && owner.pop < p0, `a gang takes a commune caravan: its guards' kit and people are gone (${n0} -> ${owner.arsenal.items.length} items, ${p0} -> ${owner.pop} people)`);
+  check(gang.arsenal.items.some((it) => it.key === "pistol" && it.quality === 0.8), "and the pistol it carried goes to the gang's fighters");
+  // Rescue raids are fought with everything the group has at home.
+  const g = typed(st, "military", [f]);
+  const b = { setup: { handler: "rescueRaid", enemy: { count: 3 } }, units: [], nextId: 1, motorPool: [], rescue: { armory: { items: [...g.arsenal.items] } } };
+  const u = { id: 1, side: "enemy", kind: "human", factionId: g.id, dmgMult: 1, armor: 1 };
+  A.armFromArsenal(st, b, u, 1);
+  const best = A.issueKit(st, g, 1, "home")[0].weapon;
+  check(u.arsItem === best && !b.rescue.armory.items.includes(best), "a rescue raid: the base's guards take the best kit, and what they carry is off the rack");
+  check(NL_TAKE.raider === C.GROUP_PRIORITIES.raider.takeAlive && NL_TAKE.zealot === 0, "nonlethal.js NL_TAKE reads the profile table");
+  check(wallGoal({ type: "fortress", bases: [1] }, 2) > wallGoal({ type: "raider", bases: [1] }, 2), "a fortress walls every base (the profile's walled)");
+  const ng = typed(st, "traders", [f, g]);
+  A.seedArsenal(st, ng);
+  check(ng.arsenal.items.some((it) => it.key === "taser" || it.key === "pepper"), "traders' guards carry tasers and pepper spray in the arsenal (nonlethal.js)");
+}
+
+// ======================================================================================
+section("Vehicles in the trade window, the governor, their motor pool");
+{
+  const st = world(seed + 8);
+  const h = hub(st);
+  const f = st.factions.find((x) => x.alive && planPath(st, x.bases[0], h.tile, false));
+  f.type = "traders";
+  f.goodwill = 40;
+  factionVehicles(f).length = 0;
+  factionVehicles(f).push({ id: "t-sell", type: "truck", name: "Pickup", fuel: 8, condition: 75, owner: f.id });
+  const c = sendCaravan(st, f, h);
+  c.phase = "trading";
+  openCaravanTrade(st, c);
+  h.stock.scrap = 3000;
+  const offers = V.vehicleOffers(st, tradeContext(st));
+  check(offers.theirs.length === 1 && offers.theirs[0].price > 0, `their pickup is for sale at the gates (${offers.theirs[0] && offers.theirs[0].price})`);
+  const s0 = h.stock.scrap, v0 = st.vehicles.length;
+  const msg = V.buyVehicle(st, 0);
+  check(st.vehicles.length === v0 + 1 && h.stock.scrap < s0 && !factionVehicles(f).length, `bought: ${msg}`);
+  const mine = st.vehicles[st.vehicles.length - 1];
+  mine.cargo = { supplies: { food: 7 }, gear: [] };
+  const f0 = h.stock.food || 0;
+  const sell = V.vehicleOffers(st, tradeContext(st)).mine;
+  const worth = vehicleValue(mine);
+  const i = sell.findIndex((o) => o.v === mine);
+  f.stock.scrap = 3000;
+  const m2 = V.sellVehicle(st, i);
+  check(!st.vehicles.includes(mine) && factionVehicles(f).length === 1 && (h.stock.food || 0) === f0 + 7 && sell[i].price < worth * 1.5 && sell[i].price > worth * 0.4, `sold back at about its worth (${worth} -> ${sell[i].price}), its cargo unloaded: ${m2}`);
+  // The governor: no car at all, rich: buys one.
+  for (const v of [...st.vehicles]) if (v.type !== "bike") st.vehicles.splice(st.vehicles.indexOf(v), 1);
+  const g1 = V.governorVehicles(st);
+  check(/^Bought/.test(g1) && st.vehicles.some((v) => v.type !== "bike"), `the governor buys a car when there is none: ${g1}`);
+  // ... and sells a long-idle spare when the base has plenty.
+  for (let k = 0; k < 3; k++) createVehicle(st, "sedan", { kind: "base", baseId: h.id }, { condition: 60 });
+  for (const v of st.vehicles) v.idleDays = 40;
+  f.stock.scrap = 3000;
+  const g2 = V.governorVehicles(st);
+  check(/^Sold/.test(g2), `and sells a long-idle spare: ${g2}`);
+  // Over the radio: driven over a day later.
+  endTrade(st);
+  factionVehicles(f).push({ id: "t-radio", type: "van", name: "Van", fuel: 8, condition: 70, owner: f.id });
+  f.goodwill = 60;
+  const why = openRadioTrade(st, f, h.id);
+  if (!why) {
+    const nv = st.vehicles.length;
+    const r = V.buyVehicle(st, V.vehicleOffers(st, tradeContext(st)).theirs.findIndex((o) => o.rec.id === "t-radio"));
+    check(/drive it over/.test(r) && st.vehicles.length === nv, `bought over the radio: ${r}`);
+    endTrade(st);
+    st.hour += 48;
+    V.vehicleDeliveriesDaily(st);
+    check(st.vehicles.length === nv + 1, "and it arrives at the base");
+  } else check(true, `(radio skipped: ${why})`);
+  // Their motor pool on their base's map: hotwire one and drive off; they notice.
+  const mil = typed(st, "military");
+  const pool0 = factionVehicles(mil).length, gw0 = mil.goodwill;
+  const b = createBattle(st, { tile: mil.bases[0], baseId: h.id, enemy: { kind: "soldiers", count: 3, power: 5, factionId: mil.id, name: "test", arsTask: "home" }, ambush: null, canRetreat: true, handler: "arsenaltest" });
+  check(b.motorPool && b.motorPool.length > 0, `their motor pool is on the map (${b.motorPool && b.motorPool.length} vehicles)`);
+  if (b.motorPool && b.motorPool.length) {
+    const rec = carRecord(st, b, b.motorPool[0]);
+    check(rec && rec.owned && rec.cond.engine === "ok", `one of their own: the ${rec && rec.name}, it runs`);
+    rec.open = true; rec.hot = true; rec.inspected = true;
+    const v = claimCar(st, b, rec);
+    check(v && factionVehicles(mil).length === pool0 - 1 && mil.goodwill <= gw0 - 20, `driven off: off their books, and goodwill falls (${Math.round(gw0)} -> ${Math.round(mil.goodwill)})`);
+  }
+  st.combat = null;
 }
 
 // ======================================================================================

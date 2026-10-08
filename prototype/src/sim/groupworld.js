@@ -38,9 +38,10 @@ import { relation, changeRelation } from "./diplomacy.js";
 import { captivesOf } from "./conflicts.js";
 import { preparedDefense, strength } from "./factions.js";
 import { lookoutsSpot } from "./watch.js";
+import { vehicleDeliveriesDaily } from "./vehicletrade.js"; // vehicles bought over the radio arrive
 
 export const KNOW = {
-  START: 18, RANGE: 30, SCOUT: 0.06, SEE: 3, QUESTION: 7, AVOID: 1.5,
+  START: 18, YOU: 24, WATCH: 12, WATCH_DAYS: 10, RANGE: 30, SCOUT: 0.06, SEE: 3, QUESTION: 7, AVOID: 1.5,
   SPOT: 0.4, SPOT_WATCH: 0.8, SCOUTED: 1.6, SCOUTED_DAYS: 12, FRESH: 3,
 };
 export const VEH = { TAKE_RANGE: 2, TAKE: 0.08, FIND: 0.05, STEAL: 0.01, STEAL_RANGE: 8, STEAL_GROUP: 0.004, SELL: 0.02, FIT: 0.1, FIT_EVERY: 10, PER: 15 };
@@ -54,7 +55,7 @@ export function knowsOf(state, f) {
   if (f.knows) return f.knows;
   f.knows = { bases: {} };
   const d0 = day(state);
-  for (const b of state.bases) if (nearOwn(state, f, b.tile) <= KNOW.START - 6) learnBase(state, f, b.tile, d0);
+  for (const b of state.bases) if (nearOwn(state, f, b.tile) <= KNOW.YOU) learnBase(state, f, b.tile, d0); // your bases: known within YOU tiles from the start
   for (const o of state.factions) if (o !== f && o.alive) for (const t of o.bases) if (nearOwn(state, f, t) <= KNOW.START) learnBase(state, f, t, d0);
   return f.knows;
 }
@@ -90,6 +91,11 @@ export function fearsGroup(state, f, o) {
 // Scouting: one base a day KNOW.SCOUT × profile of the time, the least known within KNOW.RANGE.
 export function scoutDaily(state, f, d = day(state)) {
   const K = knowsOf(state, f);
+  // Their patrols keep an eye on what is close (WATCH tiles): looked at again every WATCH_DAYS days.
+  if ((tickOf(f) + Math.floor(h(state, f.name, "watchph") * KNOW.WATCH_DAYS)) % KNOW.WATCH_DAYS === 0) {
+    for (const b of state.bases) if (nearOwn(state, f, b.tile) <= KNOW.WATCH) learnBase(state, f, b.tile, d);
+    for (const o of state.factions) if (o !== f && o.alive) for (const t of o.bases) if (nearOwn(state, f, t) <= KNOW.WATCH) learnBase(state, f, t, d);
+  }
   // Your people they hold talk.
   if (d % KNOW.QUESTION === 0 && captivesOf(state, f.id).length) for (const b of state.bases) learnBase(state, f, b.tile, d);
   const odds = KNOW.SCOUT * Math.max(weightOf(f, "patrol"), weightOf(f, "raid"));
@@ -349,7 +355,7 @@ export function groupWorldDaily(state, f) {
   scoutDaily(state, f, d);
   vehicleDaily(state, f, d);
 }
-export function groupWorldWorld(state) { decayAbandoned(state, day(state)); }
+export function groupWorldWorld(state) { decayAbandoned(state, day(state)); vehicleDeliveriesDaily(state); }
 // A scavenging party's look around the site (aiscav.js): the bases within KNOW.SEE.
 export function scavSaw(state, f, site) {
   knowsOf(state, f);
