@@ -172,6 +172,8 @@ section("The jailer's keys: a captive downs him bare-handed, takes the keys, fre
   let blows = 0;
   while (!j.dead && !j.down && blows < 60) { u.ap = 2; j.aware = true; const e = combatAct(st, { type: "melee", unit: u.id, target: j.id }); if (e) { j.hp = 0; j.dead = true; } blows++; }
   check(j.dead || j.down, `a captive brings the jailer down with fists (${blows} blows)`);
+  // medics.js: a person brought to 0 goes down, bleeding, and lies across a cell; finished (a blow, Shift+K) he is a body.
+  if (j.down && !j.dead) { u.ap = 2; combatAct(st, { type: "finish", unit: u.id, target: j.id }); }
   u.ap = 2;
   check(combatAct(st, { type: "rescue", unit: u.id, op: "key" }) === "" && R.keyUnit === u.id, "and takes his keys");
   // To the door, unlock it.
@@ -609,6 +611,7 @@ section("The autopilot: a ransom first when it can afford it, a rescue raid when
 {
   const st = world(seed + 140);
   const f = raiders(st);
+  f.jails = { [f.bases[0]]: 3 }; // jailhouse: a cell for them (with none they would be sold on, freed by a military buyer, or killed), and a tight one (the ransom under test, not an escape)
   const a = captive(st, f, { skill: 5 });
   setAutopilot(st, true, "balanced");
   hub(st).radio = true;

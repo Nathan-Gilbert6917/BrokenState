@@ -87,6 +87,8 @@ import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILT
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
+// Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
+import * as MED from "./medics.js";
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -743,7 +745,7 @@ export const unitById = (b, id) => b.units.find((u) => u.id === id);
 // The evac strip: the left evacCols columns, or b.evacMask (a cell mask, deploy.js: base battles turned to face the
 // attack get theirs on the side away from it, b.evacSide) when there is one; then the cell's y is needed.
 export const inEvac = (b, x, y) => b.evacCols > 0 && (b.evacMask ? y != null && !!b.evacMask[y * b.w + x] : x < b.evacCols);
-const bump = (b) => { b.rev++; if (b.rams && b.rams.length) checkRams(b); trackGhosts(b); };
+const bump = (b) => { b.rev++; if (b.rams && b.rams.length) checkRams(b); MED.dragSweep(b); trackGhosts(b); }; // medics.js: a dragger who fell lets go
 
 export function say(b, text, k = "info") {
   b.log.push({ turn: b.turn, text, k });
@@ -1939,7 +1941,8 @@ function meleeAfter(b, a, t, w, crit) {
   if (w.bleed && t.kind === "human" && hash01(seed, "bleed", a.id, t.id) < w.bleed) { t.bleeding = MELEE.BLEED_TURNS; out += " Bleeding."; }
   return out;
 }
-// The start of a side's turn: the staggered lose an action, the bleeding bleed. sides: the sides whose turn it is.
+// The start of a side's turn: the staggered lose an action (the downed: nothing), the bleeding bleed (the downed: their
+// bleed-out comes a turn closer). sides: the sides whose turn it is.
 function meleeRound(b, sides) {
   for (const u of b.units) {
     if (!sides.includes(u.side)) continue;
@@ -1949,6 +1952,9 @@ function meleeRound(b, sides) {
     }
     if (u.bleeding > 0) {
       u.bleeding--;
+      // Down (medics.js: bleeding out on its own count, u.bleed): the wound brings that count a turn closer instead
+      // (never past the last turn: the bleed-out itself is medics.js's); stabilized, or dead, gone: it stops.
+      if (u.down && !u.dead && !u.stab && !u.ko && !u.surr) { if (u.bleed > 1) u.bleed -= 1; continue; }
       if (!active(u)) { u.bleeding = 0; continue; }
       const eff = Math.round(damage(b, u, MELEE.BLEED / (hitMult(u, null, { how: "bleed" }) || 1), null, false, { how: "bleed" }));
       say(b, `${u.name} bleeds (${eff})${u.dead ? " and dies" : u.down ? " and goes down" : ""}.`, u.side === "player" ? "danger" : "good");
@@ -2167,7 +2173,7 @@ function spendRounds(b, u, w) {
 }
 // Can this unit fire its gun right now (ranged weapon, loaded and, for the player, the rounds of its calibre and
 // loaded type there; a bow or crossbow, arrows)? One that cannot fights in melee (a gun or a bow swung as a club: BASH).
-export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon], u)) && !magEmpty(b, u) && !u.jam; // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js); a jammed gun (gunfire.js)
+export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && u.dragging == null && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon], u)) && !magEmpty(b, u) && !u.jam; // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js) or dragging a downed ally (medics.js); a jammed gun (gunfire.js)
 // A gun that can shoot now or after a reload (the AI's sense of a side's firepower, the threat preview): a reload of
 // its type, or of another type of its calibre when its own has run out.
 export const hasShots = (b, u) => canFire(b, u) || (isRanged(u) && (magEmpty(b, u) || (u.side === "player" && !!WEAPONS[u.weapon].ammo && !hasShot(b, WEAPONS[u.weapon], u))) && reloadType(b, u) != null && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)));
@@ -2177,6 +2183,7 @@ export function fireRefusal(b, u) {
   if (canFire(b, u)) return "";
   if (u.jam) return jamRefusal(u); // gunfire.js: "Jammed (stovepipe): Unjam (J), 1 action."
   if (u.carrying != null) return "Hands full: put the body down first.";
+  if (u.dragging != null) return "Hands full: dragging someone (put them down first, Shift+D).";
   if (u.side === "player" && !hasShot(b, WEAPONS[u.weapon], u)) {
     const cal = calOf(u.weapon);
     if (WEAPONS[u.weapon].arrows) return "Out of arrows.";
@@ -2270,6 +2277,7 @@ export function playerUnit(b, s) {
     ap: 2, aware: true, x: 0, y: 0, f: 0,
   };
   u.load = chooseLoad(b, u, item && key !== "fists" ? item.load : null); // ammo.js: the gun's own load (item.load), else its common round
+  MED.fitMedic(u, s); // medics.js: a med kit in a pocket or the pack counts too
   loadMag(u); // the gun starts the battle loaded
   fitArmour(u, s); // armour.js: the worn pieces (per-hit armour) and the Tough trait
   syncModes(u); // gunfire.js: the gun's fire modes
@@ -2327,6 +2335,7 @@ export function enemyUnit(b, rng, kind, power, n) {
     aim: 39 + p * 4 + kit.aim, meleeAim: 65 + p * 2, dmgMult: 0.7 + p * 0.05, armor: armorKey ? 1 - GEAR[armorKey].power * 0.06 : 1, armorKey,
     hp, maxHp: hp, mob: MOVE, sight: SIGHT, ap: 2, aware: true, x: 0, y: 0, f: b.floor || 0, fearless: !!kit.fearless, kit: kind,
   };
+  MED.enemyMedic(b, rng, u, kind); // medics.js: about one group in five of soldiers, guards, militia, fighters has a medic
   loadMag(u); // loaded; their reserve ammo is endless (only the magazine stops them)
   u.q = enemyGunQ(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // gunfire.js: their gun's condition (jams; the looted gun keeps it), own dice
   u.cond = enemyGunCond(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // its durability share (a worn gun jams more)
@@ -2569,6 +2578,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   if (nonLethal && nlDown(b, t, by)) return eff; // knocked out, either side (nonlethal.js; the dead die as usual)
   swarmHit(t, by); // carriers.js: brought down by the worms, they are in them
   if (t.gunner) leaveTurret(b, t, true); // a turret's gunner drops back inside (theirs: their own gun on their body)
+  if (MED.downedHit(b, t, by, eff)) return eff; // medics.js: a downed survivor hit again is finished; an enemy person goes down first
   if (t.side === "player") {
     t.down = true;
     (b.downedIds || (b.downedIds = [])).push(t.sid); // service record (relations.js)
@@ -2681,6 +2691,7 @@ export function moveAlong(b, u, path) {
     if (!active(u) || stopAtDoor) break;
   }
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
+  if (walked.length && u.dragging != null) MED.dragFollow(b, u, from, walked); // medics.js: the downed ally comes along behind
   if (walked.length && u.ram != null) afterMove(b, u); // siege.js: the ram's crew keeps up with its lead
   if (walked.length) u.movedT = b.turn; // moved this turn: a heavy or big gun's brace (data-guns.js heavy / brace)
   if (walked.length && u.spearOut && active(u)) stepOnSpear(b, u); // walked onto the spear it threw: picked up
@@ -2939,6 +2950,7 @@ export function combatAct(state, act) {
       break;
     }
     case "shoot": {
+      if (t && t.side === "enemy" && t.down && !t.dead) return `${t.name} is down: Finish them (Shift+K) to kill them for good, or leave them${t.ko ? "" : " to bleed"}.`; // medics.js: never by default
       if (!t || t.side === "player" || !active(t)) return "No target.";
       if (!isRanged(u)) return "No gun.";
       if (!canFire(b, u)) return fireRefusal(b, u);
@@ -2954,6 +2966,7 @@ export function combatAct(state, act) {
         u.ap = 0;
         break;
       }
+      if (t && t.side === "enemy" && t.down && !t.dead) return `${t.name} is down: Finish them (Shift+K) to kill them for good.`; // medics.js
       const why = meleeRefusal(b, u, t); // next to it (not across a wall's corner), or 2 tiles off with a spear; one strike a turn with a quick weapon
       if (why) return why;
       strike(b, u, t);
@@ -3046,6 +3059,7 @@ export function combatAct(state, act) {
       const target = t || u;
       if (target.side !== "player" || target.dead || target.left) return "No one to treat.";
       if (target !== u && !adjacent(u, target)) return "Must be next to them.";
+      if (target.down && medsLeft(b) < 1) { const err = MED.stabilizeByHand(b, u, target); if (err) return err; break; } // medics.js: no meds, bare hands
       if (medsLeft(b) < 1) return "No meds left.";
       if (target.stab) return "Already stabilized.";
       if (!target.down && target.hp >= target.maxHp) return "Not hurt.";
@@ -3053,6 +3067,13 @@ export function combatAct(state, act) {
       u.ap -= 1;
       break;
     }
+    // medics.js: a medic's Heal and Revive, dragging a downed ally (and putting them down, or into the vehicle),
+    // finishing a downed enemy.
+    case "heal": { const tt = t || u; const why = MED.healRefusal(b, u, tt); if (why) return why; MED.medicHeal(b, u, tt); break; }
+    case "revive": { const why = MED.reviveRefusal(b, u, t); if (why) return why; MED.revive(b, u, t); break; }
+    case "dragAlly": { const why = MED.liftRefusal(b, u, t); if (why) return why; MED.lift(b, u, t); break; }
+    case "dropAlly": { const why = MED.dropRefusal(b, u, act.into); if (why) return why; MED.dropAlly(b, u, act.into || null); break; }
+    case "finish": { const why = MED.finishOff(b, u, t); if (why) return why; break; }
     case "search": {
       if (!b.raid) return "Nothing to search.";
       const box = act.box != null ? b.raid.containers.find((c) => c.id === act.box) : searchableNear(b, u)[0];
@@ -3258,6 +3279,7 @@ export function endPlayerTurn(state) {
   // Storeys (buildingmaps.js): the floor the player looks at is kept and restored; the dead drifting between floors
   // arrive, then the next ones are sent; the Heat's waves come in on the ground floor.
   if (b.floors) { b.viewFloor = b.floor || 0; floorArrivals(b); floorDrift(b); }
+  MED.foesBleed(b); // medics.js: the enemy's downed bleed out unless their people stabilized them
   zTick(b); // zombietypes.js: spitters and screamers get ready again
   sowerRound(b); // middead.js: Sowers thicken the ground with eggs
   burnBodies(b); // sleepers.js: bodies in the flames burn, a Sleeper's worms with them
@@ -3403,6 +3425,7 @@ export function shotPriority(b, t) {
   if (t.ram != null && b.rams && isCrew(b, t)) v *= SHOT_PRIORITY.crew;
   else if (b.cells[t.y * b.w + t.x].k === "siegeladder") v *= SHOT_PRIORITY.climber;
   if (t.windup != null) v *= SHOT_PRIORITY.windup; // a Flinger about to throw (middead.js)
+  if (t.treating != null) v *= MED.treatingMult(b, t); // medics.js: a medic seen treating someone (or dragging them)
   return v;
 }
 function bestShot(b, u, foes, opts = {}) {
@@ -3442,7 +3465,10 @@ function scoreCell(b, u, x, y, foes, cost, field) {
   }
   s += best * 0.3;
   if (isSniper(u)) s += sniperCell(nearest); // gunfire.js: a sniper keeps its distance (10–15 tiles)
-  if (!best) s -= 8 + (field ? Math.min(40, field[idx(x, y)]) : nearest);
+  // Nothing to shoot: closer to the foes is better, the walking distance up to 40 tiles. A unit standing farther off than
+  // that still gets a slope toward them (a team left 40+ tiles off on a big fort map stood still for good:
+  // conquertest's stalled assault).
+  if (!best) s -= 8 + (field ? Math.min(field[idx(u.x, u.y)] > 40 ? 120 : 40, field[idx(x, y)]) : nearest);
   if (u.kind !== "zombie" && b.acid && b.acid.length && acidAt(b, x, y)) s -= ACID.stand; // a spitter's acid (acid.js)
   // The last stand (interior.js): once the yard is lost your people keep to the buildings.
   if (u.side === "player" && b.tier && b.tier.stage === "buildings" && b.tier.indoor) s += b.tier.indoor[idx(x, y)] ? 6 : -15;
@@ -3498,7 +3524,11 @@ function aiUnit(b, u) {
     u.ap = 0;
     return;
   }
-  if (u.side === "enemy" && u.kind === "human" && !u.fearless && shouldFlee(b)) return flee(b, u);
+  const flees = u.side === "enemy" && u.kind === "human" && !u.fearless && shouldFlee(b);
+  // medics.js: a downed ally to drag out of the line of fire, stabilize or revive; a medic healing the badly hurt;
+  // raiders finishing (or taking) your downed. The rest of the turn goes on as usual.
+  if (u.kind === "human" && MED.rescueTurn(b, u, flees) && (u.ap < 1 || !active(u))) return;
+  if (flees) return flee(b, u);
   if (u.kind === "human" && (u.side === "enemy" || (u.side === "player" && b.takeAlive)) && nlAI(b, u)) return; // nonlethal.js: tie up, spray, tase, club down the weak
   if (u.side === "enemy" && u.kind === "human" && siegeAI(b, u)) return; // siege.js: the ram, a ladder, storming, a grenade
   if (u.side === "player" && aiMeds(b, u)) { if (u.ap < 1) return; }
@@ -3531,7 +3561,7 @@ function aiUnit(b, u) {
     // Nothing to shoot and nowhere better to stand: an attacker at a wall, a door or the gate batters it.
     const wall = siegeTarget(b, u);
     if (wall) { bash(b, u, wall[0], wall[1]); u.ap = 0; return; }
-    if (!u.stun && (u.side === "player" || isSniper(u) || rng.chance(0.6))) u.ow = true; // a sniper always watches; stun: no overwatch through a flashbang's glare
+    if (!u.stun && (u.side === "player" || isSniper(u) || rng.chance(0.6) || MED.coveringRescue(b, u))) u.ow = true; // a sniper always watches; stun: no overwatch through a flashbang's glare; medics.js: covering a rescue
     else if (coverSides(b, u.x, u.y).some((c) => c)) u.hunker = true;
     u.ap = 0;
   }
@@ -4210,10 +4240,12 @@ function endBattle(state, b, outcome) {
   const zombies = setup.enemy.kind === "zombies";
   const hurtIds = [], deadIds = [];
   const lines = [];
-  const medic = Math.max(0, ...b.units.filter((u) => u.side === "player" && active(u)).map((u) => u.medicine));
+  MED.settleFoes(b, outcome); // medics.js: the enemy's downed: prisoners if stabilized or tied after a win, else dead
+  // medics.js medicLevel: Medicine (with the kit), and more for a medic with kit uses left.
+  const medic = MED.medicLevel(b.units.filter((u) => u.side === "player" && active(u)));
   // A retreat: the downed carried out by the sounded retreat (soundRetreat) or dragged onto the evac strip go with
   // the others, and pull through like the downed after a win (the medic among those who got out).
-  const outMedic = Math.max(0, ...b.units.filter((u) => u.side === "player" && u.left && !u.down && !u.dead).map((u) => u.medicine));
+  const outMedic = MED.medicLevel(b.units.filter((u) => u.side === "player" && u.left && !u.down && !u.dead));
   const carriedIds = [];
   lines.push(...nlBattleEnd(state, b, outcome)); // nonlethal.js: the enemy holding the field takes your knocked out and surrendered
   for (const u of b.units) {
@@ -4221,6 +4253,8 @@ function endBattle(state, b, outcome) {
     const s = survivorById(state, u.sid);
     if (!s || !s.alive) continue;
     if (u.captive && captiveStays(state, b, u, s, outcome)) continue; // rescueraid.js: still held: hurt, not lost
+    const gone = MED.takenAway(state, b, u, s, outcome); // medics.js: dragged off by raiders: their prisoner
+    if (gone) { lines.push(gone.line); if (gone.dead) deadIds.push(s.id); continue; }
     let dies = u.dead;
     const carried = outcome === "retreat" && !u.dead && u.down && (u.carried || evacAt(b, u.x, u.y));
     if (carried) {
@@ -4324,6 +4358,7 @@ function wearFielded(state, b, fought) {
     if (fought) for (const [slot, item] of u.fielded || []) if (s.gear[slot] === item && !(slot !== "weapon" && armourSpec(item.key))) wearSlot(state, s, slot); // armour pieces wore by their hits (armour.js)
     dropBroken(state, s); // armour.js: a piece broken or shattered in the fight is gone
     if (u.kitUses && u.medKit && s.gear.tool === u.medKit) wearSlot(state, s, "tool", u.kitUses);
+    MED.wearPackKit(state, u, s); // medics.js: a kit in a pocket or the pack
   }
 }
 
@@ -5093,6 +5128,7 @@ function endRaid(state, b) {
   b.over = true;
   settleVehicle(state, b); // everyone out of the vehicle; what ramming cost it
   b.phase = "over";
+  MED.settleFoes(b, "raid"); // medics.js: the downed guards (tied ones can still be taken out as prisoners)
   const hurtIds = [], deadIds = [], extractedIds = [], carriedIds = [];
   const home = new Set(); // units who come home with what they carry (raidloot.js)
   const lines = [];
@@ -5303,6 +5339,7 @@ function autoRaidTurn(state) {
       // field AI does (aiMelee), instead of standing in a doorway being chewed on with a dry or a shaky pistol.
       if (adj && !fair) { combatAct(state, { type: "melee", unit: u.id, target: adj.id }); break; }
       if (fair) { combatAct(state, { type: "shoot", unit: u.id, target: shot.t.id }); break; }
+      if (MED.rescueStep(b, u)) { if (u.dragging != null && !leave) u.ap = 0; continue; } // medics.js: a downed teammate dragged to cover, stabilized, revived; a medic heals
       const fallen = medsLeft(b) > 0 ? b.units.find((o) => o.side === "player" && o.down && !o.stab && !o.dead && !o.left && adjacent(u, o)) : null;
       if (fallen) { combatAct(state, { type: "meds", unit: u.id, target: fallen.id }); continue; }
       if (u.hp < 50 && medsLeft(b) > 0 && u.ap > 0) { combatAct(state, { type: "meds", unit: u.id, target: u.id }); continue; }
@@ -5375,3 +5412,6 @@ function nearestFloorWith(b, u, todo) {
 }
 
 export { survivorById, alive, log };
+
+// medics.js: the internals it needs (the meds pool, a round out of the gun, the alarm, whom a unit fights, plain meds).
+MED.setMedicHooks({ take, spendRounds, alertAll, foesOf, heal, fireRefusal, evacAt: (b, x, y) => evacAt(b, x, y) });

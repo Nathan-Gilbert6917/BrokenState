@@ -4,7 +4,7 @@
 // shelter's smaller job set), the actions' odds and effects (questioning and rough questioning, asking to join,
 // executing), save/load (old saves default to Short rations and Idle), the tab's HTML and selects, determinism.
 // Usage: node tools/prisonertest.js [seed]
-import { createWorld, hub, atBase, day } from "../src/sim/world.js";
+import { createWorld, hub, atBase, day, newId } from "../src/sim/world.js";
 import { addBuilding, buildRate } from "../src/sim/buildings.js";
 import { careToday } from "../src/sim/farming.js";
 import { waterProduction } from "../src/sim/economy.js";
@@ -28,12 +28,13 @@ const pct = (v) => `${Math.round(v * 1000) / 10}%`;
 const r2 = (v) => Math.round(v * 100) / 100;
 const t0 = Date.now();
 
-// A hub with a Holding cells building and n prisoners of a living group; plenty of food and water; everyone resting.
+// A hub with Holding cells and n prisoners of a living group; plenty of food and water; everyone resting. cells 2: two
+// holding cells as an older save keeps them (6 prisoners; a new base has one jail, buildings.js family "jail").
 function prisonWorld(s = seed, n = 2, cells = 1) {
   const st = createWorld({ seed: s, factionCount: 6 });
   st.started = true; st.visitorsOff = true;
   const h = hub(st);
-  for (let i = 0; i < cells; i++) addBuilding(h, "cells");
+  for (let i = 0; i < cells; i++) h.buildings.push({ id: newId(), type: "cells" });
   for (const p of atBase(st, h.id)) { p.role = "rest"; p.station = null; p.traits = []; p.mood = 60; }
   const f = st.factions.find((x) => x.alive && x.pop >= 10);
   const fakeB = { setup: { enemy: { kind: "raiders", power: 4, factionId: f.id, name: f.name } }, tileId: h.tile };
@@ -140,6 +141,7 @@ const day1 = (st) => { st.hour += 24; prisonersDaily(st); };
   setRation(st, p.id, "full");
   check(labourOutput(st, p, h) === 0, "Idle: no work");
   p.s.skills.farming = 0;
+  p.s.mood = 200 / 3; // their mood × 1 (prisoners.js moodWork: 0.6 + 0.6 × mood / 100)
   setTask(st, p.id, "farm");
   const lo = labourOutput(st, p, h);
   p.s.skills.farming = 10;
@@ -232,7 +234,7 @@ const day1 = (st) => { st.hour += 24; prisonersDaily(st); };
     const hungry = escapeOdds(x.st, x.list[0], { watch: labourWatch(x.st, x.h) });
     x.list[0].s.mood = PRISON.ESCAPE.lowMood - 5;
     const both = escapeOdds(x.st, x.list[0], { watch: labourWatch(x.st, x.h) });
-    check(near(base, PRISON.LABOUR.escapeUnguarded) && near(hungry, base * PRISON.RATIONS.starve.escape) && near(both, hungry * PRISON.ESCAPE.lowMoodMult), `unwatched at work: ${pct(base)}, on Starvation ${pct(hungry)}, and low mood ${pct(both)}`);
+    check(near(base, PRISON.LABOUR.escapeUnguarded) && near(hungry, base * PRISON.RATIONS.starve.escape) && near(both, hungry * PRISON.ESCAPE.lowMoodMult * PRISON.LABOUR.lowMoodMult), `unwatched at work: ${pct(base)}, on Starvation ${pct(hungry)}, and low mood ${pct(both)} (×${PRISON.ESCAPE.lowMoodMult} under ${PRISON.ESCAPE.lowMood}, ×${PRISON.LABOUR.lowMoodMult} more at work under ${PRISON.LABOUR.lowMood})`);
   }
   // Tiring, and weeks of work.
   noEscapes(() => {
@@ -379,7 +381,7 @@ const day1 = (st) => { st.hour += 24; prisonersDaily(st); };
   check(list.every((p) => taskOf(p) === "water"), "work for all");
   PRISON_ACTIONS["pr-question"](st, ui, { id: String(list[0].id), method: "rough" });
   check(list[0].questioned === day(st), `rough questioning from the button ("${ui.baseMsg.slice(0, 60)}")`);
-  check(Object.keys(TASKS).length === 6, `tasks: ${Object.values(TASKS).map((t) => t.name).join(", ")}`);
+  check(Object.keys(TASKS).length === 8, `tasks: ${Object.values(TASKS).map((t) => t.name).join(", ")}`);
 }
 
 // ---------- 9. determinism ----------

@@ -1,12 +1,23 @@
 // Prisoners: enemies knocked out in a won fight (stealth.js takedowns and Subdue) taken home.
 //   On the road they walk with the team: on foot each slows it 10% (at least 60% of its pace; in a vehicle they
 //   ride), they eat 1 food and 1 water a day from the team, and each tries to slip away (5% a day, 2% in a
-//   vehicle). When the team gets home they go to that base's cells.
-//   At a base: Holding cells (buildings.js "cells") hold 3 each; more prisoners than that sit in a shed. A day costs
-//   1 water each and their rations of food (below) from that base's stores (the food times the cold and the water
-//   times the day's thirst, weather.js: 1.3 in summer, 1.6 on a hot day, 0.9 in winter, as for anyone; upkeep.js
-//   counts them in the base's food and water lines). Escapes a day: in a cell with someone on the Guard role 0.4%,
-//   unguarded 3%, in the shed 8%, unfed +4%; six unfed days in a row and they die.
+//   vehicle). When the team gets home they go to that base's jail.
+//   Jails (JAIL; buildings.js family "jail", each tier upgrading the one below in place): Makeshift cells hold 2,
+//   Holding cells 3, a Jailhouse 8. No jail, no prisoners: a base keeps only as many as its jail holds (cellCap, less
+//   those already on their way to it). A fight that takes more than your bases have room for, a team that comes home
+//   with more than its base holds, or surrendered defenders with nowhere to go: each extra one gets a card (settle):
+//   Release (goodwill +4), Execute (its costs), Ask to join on the spot (SPOT: one try at a penalty; no means they
+//   go), or Hold at another base with room (they walk there with an escort, or with the team while it is still out).
+//   The autopilot decides by itself (settleAI): hold where there is room, ask the skilled, release the rest. A team
+//   in the field still leads its prisoners home as before (only the base needs room). Older saves: prisoners kept in
+//   a shed (more than the cells held) stay there at the shed's rates until a cell frees up or they are let go.
+//   A day costs 1 water each and their rations of food (below) from that base's stores (the food times the cold and
+//   the water times the day's thirst, weather.js: 1.3 in summer, 1.6 on a hot day, 0.9 in winter, as for anyone;
+//   upkeep.js counts them in the base's food and water lines). Escapes a day by the jail's tier, guarded (someone on
+//   the Guard role) / unguarded: makeshift 2% / 6%, holding cells 0.4% / 3%, a jailhouse 0.2% / 1.5%; the old shed
+//   8%; unfed +4%; six unfed days in a row and they die. What a prisoner has going for them (a pick, key or blade
+//   smuggled in, a loner's ways, Stealth 6+: escapeKit) counts × the tier's bonus each (makeshift 1.5, cells 1.25, a
+//   jailhouse 1.1). A makeshift cage (and the shed) sours them: mood −1 a day, won over at 0.6×.
 //   Rations (each prisoner, or all at a base; RATIONS): Full 1 food, Short 0.6 (the default, and old saves), Starvation
 //     0.3, None. Full heals them (+2 health a day), keeps them calmer (escapes ×0.8) and wins them over faster (×1.2);
 //     Short heals slowly toward 60; Starvation costs 1.5 health a day, escapes ×1.5, winning over ×0.4 (just held,
@@ -17,11 +28,15 @@
 //   Labour (TASKS; LABOUR): Idle in the cell, or out under guard 07–19: Farm (farm labour: the crops' care, farming.js
 //     careToday), Build (construction hours, buildings.js buildRate), Fetch water (+4 a day, economy.js
 //     waterProduction), Kitchen (dries and salts surplus fresh food by hand, 4 → 3 preserved, in this file), Clean
-//     and mend (wear off the buildings, breakdowns.js). Each works at 50–70% of a survivor by the task's skill (2% a
-//     point), times their rations (Full 1, Short 0.9, Starvation 0.6, None 0.3) and health (under 60 less; under 25
-//     they cannot). It tires them: mood −0.5 a day on Full, −1 Short, −2 Starvation, and health −0.5 on Short, −1.5
-//     Starvation. A guard (someone on the Guard role) watches up to 4 at work; a watched labourer escapes 1% a day, an
-//     unwatched one 4%. Weeks of good work (Full or Short) win them over: +1% a day worked to the winning-over rate
+//     and mend (wear off the buildings, breakdowns.js), Cut wood (firewood by hand from the best land within 2 tiles,
+//     woodcutting.js rates, no axe), Haul and sort scrap (1.5 scrap a day). Each works at 50–70% of a survivor by the
+//     task's skill (2% a point), times their rations (Full 1, Short 0.9, Starvation 0.6, None 0.3), health (under 60
+//     less; under 25 they cannot) and mood (0.6 + 0.6 × mood / 100, 0.6–1.15: a broken prisoner works at 60%, a
+//     content one a little above the rest). It tires them: mood −0.5 a day on Full, −1 Short, −2 Starvation, and
+//     health −0.5 on Short, −1.5 Starvation. A guard (someone on the Guard role) watches up to 4 at work (3 from a
+//     makeshift cage, all of them from a jailhouse's guard post); a watched labourer escapes 1% a day, an unwatched
+//     one 4% (× the jail's labour: makeshift 1.5, a jailhouse 0.5); under mood 25 ×1.3 more, and now and then
+//     (LABOUR.sabotage: 4% a day) they spoil a little of what they worked on. Weeks of good work (Full or Short) win them over: +1% a day worked to the winning-over rate
 //     (up to +40%) and +0.4% to asking them to join (up to +10%). Nobody goes out while the base is under attack.
 //   What you can do with them (at a base):
 //     question (every 3 days): Speech decides (45% + 3% a point of the best talker + 1% a point of the leader's
@@ -54,14 +69,14 @@
 //   tiles). It arrives 10 hours after the warning: defend in person (the deploy battle), man the walls (by the
 //   numbers: the base's defence ×1.3 against their strength), or hand them over (goodwill +3). Lost, they free
 //   every prisoner of theirs there and carry off a tenth of the stores.
-// Your own people taken captive by other groups are conflicts.js captives, not these.
+// Your own people taken captive by other groups are conflicts.js captives, not these; the groups' jails, labour and
+// prisoner trades are groupjails.js (the same JAIL tiers).
 import { SUPPLIES } from "./data.js";
 import {
   log, addCard, day, baseById, atBase, factionById, makeSurvivor, skill, snapshot, mergeKnowledge, hurt, newId,
 } from "./world.js";
 import { partyMembers, carried, takeSupply, carriedAny, takeAny, tileLabel } from "./parties.js";
 import { waterIn, drawWater } from "./water.js"; // purified and un-purified water (purified drunk first)
-import { count } from "./buildings.js";
 import { changeGoodwill, attitude, strength, isAggressiveType, baseDefense } from "./factions.js";
 import { raidTier } from "./defences.js";
 import { surpriseAt } from "./watch.js"; // a rescue that comes on an unwatched night
@@ -75,12 +90,40 @@ import { coldFactor, foodUse } from "./upkeep.js";
 import { eatFromStore, foodStore } from "./storage.js";
 import { underAttack, isShelter } from "./buildings.js";
 import { ensureConquest, CONQUEST } from "./conquest.js";
+import { baseWoodTiles, seasonWood, takeWood, WOOD } from "./woodcutting.js"; // prisoners on Cut wood (by hand)
 import { wormHealMult, WORM } from "./worm.js"; // the worm: half the healing while it is in them; treated prisoners (WORM.OTHERS)
+import { jailText } from "./groupjails.js"; // what a prisoner tells of their group's jail
 import { numbersSurrenders } from "./nonlethal.js"; // a decisive win by the numbers: a few of them give up
 
+// The jail tiers (buildings.js family "jail"; the AI groups' jails too, groupjails.js), lower ones easier to get out
+// of. cap: prisoners held; guarded / unguarded: escapes a day in the cell; bonus: × the escape for each thing a
+// prisoner has going for them (escapeKit); labour: × the work detail's escapes; watch: labourers one guard watches;
+// mood: theirs a day; opinion: × winning them over and the held drift; defence: × the base's defence against a rescue
+// raid by their group; block: what a rescue raid's map would show (the rescue branch, groupjails.js groupJailTier).
+// The holding cells' escapes are PRISON.ESCAPE's guarded and unguarded (0.4% / 3%, as they always were), a jailhouse's
+// half of those (0.2% / 1.5%), the shed's PRISON.ESCAPE.shed (8%): read at the time, so a tool that changes the rules
+// changes them all.
+export const JAIL = {
+  lockup:    { tier: 1, name: "Makeshift cells", cap: 2, guarded: 0.02, unguarded: 0.06, bonus: 1.5,  labour: 1.5, watch: 3,  mood: -1, opinion: 0.6, defence: 0.85, block: "a chain-link cage" },
+  cells:     { tier: 2, name: "Holding cells",   cap: 3, get guarded() { return PRISON.ESCAPE.guarded; }, get unguarded() { return PRISON.ESCAPE.unguarded; }, bonus: 1.25, labour: 1, watch: 4, mood: 0, opinion: 1, defence: 1, block: "barred cells" },
+  jailhouse: { tier: 3, name: "Jailhouse",       cap: 8, get guarded() { return PRISON.ESCAPE.guarded / 2; }, get unguarded() { return PRISON.ESCAPE.unguarded / 2; }, bonus: 1.1, labour: 0.5, watch: 99, mood: 0, opinion: 1.1, defence: 1.25, block: "a jailhouse block" },
+};
+// By tier number (0: none).
+export const JAIL_TIERS = [null, JAIL.lockup, JAIL.cells, JAIL.jailhouse];
+// Older saves: prisoners beyond the cells sit in a shed (nobody new is put there).
+export const SHED = { tier: 0, name: "Shed", cap: 0, get guarded() { return PRISON.ESCAPE.shed; }, get unguarded() { return PRISON.ESCAPE.shed; }, bonus: 1.5, labour: 1.5, watch: 3, mood: -1, opinion: 0.6, defence: 0.85 };
 export const PRISON = {
   CELL_CAP: 3, FOOD: 1, WATER: 1,
   ESCAPE: { guarded: 0.004, unguarded: 0.03, shed: 0.08, unfed: 0.04, road: 0.05, vehicle: 0.02, lowMood: 20, lowMoodMult: 1.25 },
+  // Something to slip out with (escapeKit): smuggled: the chance a new prisoner has one of items hidden on them;
+  // stealth: a Stealth this high counts too; and a loner (no group) knows the tricks. Each × the jail's bonus.
+  KIT: { smuggled: 0.12, stealth: 6, items: ["a lockpick sewn into a seam", "a key pressed in soap", "a blade in a boot"] },
+  // Asking one to join on the spot (settle): one try, without months of trust: base + the best talker's Speech and the
+  // leader's Leadership a point, × who they were (ASK.kind), min–max. No: they are let go (goodwill +goodwill).
+  // skilled: the autopilot asks those with a skill this high.
+  SPOT: { base: 0.12, speech: 0.012, lead: 0.008, skilled: 5, min: 0.03, max: 0.45, goodwill: 2 },
+  // An escort walking prisoners to another base (settle "hold"): hours a tile (at least 6), and their chance a day to slip away.
+  WALK: { perTile: 3, min: 6, escape: 0.03 },
   ROAD_SLOW: 0.1, ROAD_MIN: 0.6, STARVE_DAYS: 6,
   QUESTION: {
     every: 3, base: 0.45, speech: 0.03, lead: 0.01, zealot: -0.25, soldiers: -0.15, hungry: 0.1, liked: 0.15, sour: -6,
@@ -116,10 +159,15 @@ export const PRISON = {
   // tire: health and mood a day at work by rations; recruit*: winning-over and asking bonuses a day of good work.
   LABOUR: {
     min: 0.5, max: 0.7, perSkill: 0.02, hours: 12, minHealth: 25, healthFull: 60,
-    water: 4, kitchen: { food: 4, out: 3, keepDays: 15 },
-    guardWatch: 4, escapeGuarded: 0.01, escapeUnguarded: 0.04, // unwatched was 7%: a guard is strongly advised, not a must
+    water: 4, kitchen: { food: 4, out: 3, keepDays: 15 }, scrap: 1.5,
+    guardWatch: 4, escapeGuarded: 0.01, escapeUnguarded: 0.04, // unwatched was 7%: a guard is strongly advised, not a must; × the jail's labour (JAIL)
+    // Mood and work: output × (moodBase + moodPer × mood / 100), moodMin–moodMax; under lowMood a worker's escapes ×lowMoodMult.
+    moodBase: 0.6, moodPer: 0.6, moodMin: 0.6, moodMax: 1.15, lowMood: 25, lowMoodMult: 1.3,
+    // Sabotage: under lowMood, a chance a day of spoiling a little of what they worked on (how much, by task).
+    sabotage: { chance: 0.04, build: 3, farm: 3, water: 3, kitchen: 2, wood: 10, scrap: 2, upkeep: 0 },
     tire: { full: { health: 0, mood: -0.5 }, short: { health: -0.5, mood: -1 }, starve: { health: -1.5, mood: -2 }, none: { health: -3, mood: -3 } },
-    goodDay: 0.4, recruitPerDay: 0.01, recruitMax: 0.4, askPerDay: 0.004, askMax: 0.1,
+    goodDay: 0.3, // was 0.4 before mood counted in the work (×0.6–1.15): a sullen, unskilled prisoner on Short (0.27) does not count
+    recruitPerDay: 0.01, recruitMax: 0.4, askPerDay: 0.004, askMax: 0.1,
   },
 };
 // What a prisoner can be set to do (LABOUR above). out: what a full-output worker adds, for the UI.
@@ -130,6 +178,8 @@ export const TASKS = {
   water:   { name: "Fetch water", skill: null, out: `water: ${PRISON.LABOUR.water} a day at full output (up to the tanks' room)` },
   kitchen: { name: "Kitchen", skill: "farming", out: `dries and salts surplus fresh food by hand: ${PRISON.LABOUR.kitchen.food} → ${PRISON.LABOUR.kitchen.out} preserved a day at full output` },
   upkeep:  { name: "Clean and mend", skill: "mechanics", out: "keeps worn buildings in shape (wear off, as a builder's upkeep)" },
+  wood:    { name: "Cut wood", skill: "farming", out: "firewood by hand from the best land within 2 tiles (the Cut wood job's rates, no axe)" },
+  scrap:   { name: "Haul and sort scrap", skill: "mechanics", out: `scrap: ${PRISON.LABOUR.scrap} a day at full output, picked out of the junk around the base` },
 };
 const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -139,8 +189,31 @@ const listNames = (list) => list.map((p) => p.name).join(", ");
 export const prisonersOf = (state) => state.prisoners || (state.prisoners = []);
 export const prisonersAt = (state, baseId) => (state.prisoners || []).filter((p) => p.at.kind === "base" && p.at.baseId === baseId);
 export const prisonersWith = (state, partyId) => (state.prisoners || []).filter((p) => p.at.kind === "party" && p.at.partyId === partyId);
-export const cellCap = (base) => (base ? count(base, "cells") * PRISON.CELL_CAP : 0);
-export const freeCells = (state, base) => (base ? Math.max(0, cellCap(base) - prisonersAt(state, base.id).length) : 0);
+export const prisonersInTransit = (state) => (state.prisoners || []).filter((p) => p.at.kind === "transit");
+
+// ---------- jails and room ----------
+// The jail at a base: its tier (0: none; the best one standing) and what it does (JAIL); cellCap: the prisoners it
+// holds (older saves' two holding cells: 6).
+const jailBuildings = (base) => (base && base.buildings ? base.buildings.filter((b) => JAIL[b.type]) : []);
+export const jailTier = (base) => Math.max(0, ...jailBuildings(base).map((b) => JAIL[b.type].tier));
+export const jailOf = (base) => JAIL_TIERS[jailTier(base)] || null;
+export const jailName = (base) => (jailOf(base) ? jailOf(base).name : "No jail");
+export const cellCap = (base) => jailBuildings(base).reduce((a, b) => a + JAIL[b.type].cap, 0);
+// Prisoners on their way to a base: walked there by an escort (transit), or with a team that hands them over there (dest).
+export const incomingTo = (state, base) => (state.prisoners || []).filter((p) => (p.at.kind === "transit" && p.at.baseId === base.id) || (p.at.kind === "party" && p.dest === base.id)).length;
+// Room for more: the jail's room less those held and those on their way.
+export const freeCells = (state, base) => (base ? Math.max(0, cellCap(base) - prisonersAt(state, base.id).filter((p) => !p.awaiting).length - incomingTo(state, base)) : 0);
+// Your bases with room, the most room first: [{ base, room }].
+export const basesWithRoom = (state, except = null) => state.bases.filter((b) => b !== except).map((base) => ({ base, room: freeCells(state, base) })).filter((x) => x.room > 0).sort((a, b) => b.room - a.room || a.base.id - b.base.id);
+export const totalRoom = (state) => state.bases.reduce((a, b) => a + freeCells(state, b), 0);
+// "Room for 2 more prisoners at Millbrook Holdout (holding cells)": the battle screen, the Tie button, the cards.
+export function roomText(state, prefer = null) {
+  const list = basesWithRoom(state);
+  if (!list.length) return "No room for prisoners at your bases (build makeshift cells: 6 scrap). Take them anyway and decide at the end: release, execute, ask them to join.";
+  const top = (prefer && list.find((x) => x.base === prefer)) || list[0];
+  const more = list.filter((x) => x !== top);
+  return `Room for ${top.room} more prisoner${top.room === 1 ? "" : "s"} at ${top.base.name} (${jailName(top.base).toLowerCase()})${more.length ? `; ${more.map((x) => `${x.room} at ${x.base.name}`).join(", ")}` : ""}.`;
+}
 export const guardsAt = (state, base) => atBase(state, base.id).filter((s) => s.role === "guard" && !s.inBed);
 export const guarded = (state, base) => guardsAt(state, base).length > 0;
 
@@ -161,21 +234,48 @@ const hasTrait = (s, list) => (s.traits || []).some((t) => list.includes(t));
 // too weak, not at a base, or the base is under attack (everyone is locked in).
 // The tasks a base has work for. A Shelter (tier 0, buildings.js SHELTER) has a smaller set: no buildings to clean and
 // mend, and water only from a river or lake beside it (no well yet).
+// Cut wood needs trees or timber within 2 tiles (woodcutting.js baseWoodTiles).
 export function tasksAt(state, base) {
-  const all = Object.keys(TASKS);
+  const all = Object.keys(TASKS).filter((k) => k !== "wood" || baseWoodTiles(state, base).length > 0);
   if (!isShelter(base)) return all;
   const byWater = state.grid.neighbors(base.tile).some((id) => state.tiles[id] && state.tiles[id].terrain === "water");
   return all.filter((k) => k !== "upkeep" && (k !== "water" || byWater));
 }
+// Their mood × their work (LABOUR mood*): 0.6 at mood 0, 0.9 at 50, 1.15 from about 92.
+export const moodWork = (p) => { const L = PRISON.LABOUR; return clamp(L.moodBase + (L.moodPer * mood(p)) / 100, L.moodMin, L.moodMax); };
+// What holds a prisoner at a base: the jail (JAIL), or the shed for the ones beyond it (older saves, and those
+// waiting on a card: settle).
+export function holdOf(state, p) {
+  const base = heldAt(state, p);
+  if (!base) return null;
+  return inCell(state, p) ? jailOf(base) || SHED : SHED;
+}
+// What a prisoner has going for them in a break-out: a smuggled pick, key or blade, a loner's ways, Stealth.
+export function escapeKit(p) {
+  const out = [];
+  if (p.smuggled) out.push(p.smuggled);
+  if (p.factionId == null) out.push("a loner's tricks");
+  if (p.s && skill(p.s, "stealth") >= PRISON.KIT.stealth) out.push(`Stealth ${skill(p.s, "stealth")}`);
+  return out;
+}
 export function labourOutput(state, p, base = null) {
   const task = taskOf(p);
-  if (task === "idle" || !p.at || p.at.kind !== "base") return 0;
+  if (task === "idle" || !p.at || p.at.kind !== "base" || p.awaiting) return 0; // awaiting: tied up in the yard (settle)
   const b = base || baseById(state, p.at.baseId);
   if (!b || health(p) < PRISON.LABOUR.minHealth || underAttack(state, b)) return 0;
   if (isShelter(b) && !tasksAt(state, b).includes(task)) return 0; // nothing of that kind to do at a shelter
   const L = PRISON.LABOUR, T = TASKS[task];
   const eff = T.skill && p.s ? clamp(L.min + skill(p.s, T.skill) * L.perSkill, L.min, L.max) : (L.min + L.max) / 2;
-  return Math.round(eff * rationDef(p).labour * clamp(health(p) / L.healthFull, 0.3, 1) * 1000) / 1000;
+  return Math.round(eff * rationDef(p).labour * clamp(health(p) / L.healthFull, 0.3, 1) * moodWork(p) * 1000) / 1000;
+}
+// What holds their work back most, for the Prisoners tab ("works at 72%: mood low"): "" when nothing much.
+export function workWhy(state, p) {
+  const L = PRISON.LABOUR;
+  const bits = [];
+  if (moodWork(p) < 0.85) bits.push("mood low");
+  if (health(p) < L.healthFull) bits.push("weak");
+  if (rationDef(p).labour < 0.9) bits.push("hungry");
+  return bits.join(", ");
 }
 // The labour of every prisoner on `task` at a base (shares of a survivor).
 export const prisonLabour = (state, base, task) => prisonersAt(state, base.id).reduce((a, p) => a + (taskOf(p) === task ? labourOutput(state, p, base) : 0), 0);
@@ -185,30 +285,36 @@ export const prisonBuildRate = (state, base) => prisonLabour(state, base, "build
 export const prisonWater = (state, base) => Math.round(prisonLabour(state, base, "water") * PRISON.LABOUR.water * 10) / 10;
 // The prisoners out at work at a base (output > 0), the first ones (by id) watched by the guards: { guards, workers,
 // watched: Set of ids, cap }.
+// A guard watches the jail's `watch` (makeshift 3, holding cells 4, a jailhouse's guard post all of them).
+export const guardWatchAt = (base) => (jailOf(base) || SHED).watch;
 export function labourWatch(state, base) {
   const guards = guardsAt(state, base).length;
   const workers = prisonersAt(state, base.id).filter((p) => labourOutput(state, p, base) > 0).sort((a, b) => a.id - b.id);
-  const cap = guards * PRISON.LABOUR.guardWatch;
-  return { guards, workers, cap, watched: new Set(workers.slice(0, cap).map((p) => p.id)) };
+  const cap = guards * guardWatchAt(base);
+  return { guards, workers, cap, each: guardWatchAt(base), watched: new Set(workers.slice(0, cap).map((p) => p.id)) };
 }
-// Guards a base wants on duty for its prisoners (work.js, the Guard work type): one for the cells, one for each 4 at work.
+// Guards a base wants on duty for its prisoners (work.js, the Guard work type): one for the cells, one for each 4 at
+// work (3 from makeshift cells; a jailhouse's one guard on the post watches them all).
 export function prisonGuardsWanted(state, base) {
   const list = prisonersAt(state, base.id);
   if (!list.length) return 0;
   const workers = list.filter((p) => taskOf(p) !== "idle").length;
-  return Math.max(1, Math.ceil(workers / PRISON.LABOUR.guardWatch));
+  return Math.max(1, Math.ceil(workers / guardWatchAt(base)));
 }
 
 // The day's escape chance of a prisoner at a base (watch: labourWatch for the base; fed: predicted when not given).
 export function escapeOdds(state, p, { watch = null, fed = null } = {}) {
   const base = heldAt(state, p);
   if (!base) return 0;
-  const E = PRISON.ESCAPE;
-  let e = inCell(state, p) ? (guarded(state, base) ? E.guarded : E.unguarded) : E.shed;
+  const E = PRISON.ESCAPE, L = PRISON.LABOUR;
+  const J = holdOf(state, p); // the jail's tier (or the shed)
+  let e = guarded(state, base) ? J.guarded : J.unguarded;
   if (labourOutput(state, p, base) > 0) {
     const w = watch || labourWatch(state, base);
-    e = Math.max(e, w.watched.has(p.id) ? PRISON.LABOUR.escapeGuarded : PRISON.LABOUR.escapeUnguarded);
+    e = Math.max(e, (w.watched.has(p.id) ? L.escapeGuarded : L.escapeUnguarded) * J.labour);
+    if (mood(p) < L.lowMood) e *= L.lowMoodMult; // miserable at work: they look for the gap in the fence
   }
+  e *= J.bonus ** escapeKit(p).length; // a pick, a key, a blade, a loner's tricks: best against a makeshift cage
   const R = rationDef(p);
   e *= R.escape;
   if (mood(p) < E.lowMood) e *= E.lowMoodMult;
@@ -248,11 +354,12 @@ export function setAllTasks(state, baseId, task) {
   for (const p of list) p.task = task;
   return list.length ? (task === "idle" ? "Every prisoner here stays in the cells." : `Every prisoner here goes out to work: ${TASKS[task].name}.`) : "";
 }
-// Who is in a cell (the first ones caught) and who sits in the shed.
+// Who is in a cell (the first ones caught) and who sits in the shed (older saves' overflow, and those waiting on a
+// card: settle). One waiting on a card is never in a cell, so a settled prisoner does not lose their place.
 export function inCell(state, p) {
-  if (p.at.kind !== "base") return false;
+  if (p.at.kind !== "base" || p.awaiting) return false;
   const base = baseById(state, p.at.baseId);
-  return prisonersAt(state, p.at.baseId).indexOf(p) < cellCap(base);
+  return prisonersAt(state, p.at.baseId).filter((x) => !x.awaiting).indexOf(p) < cellCap(base);
 }
 
 // ---------- taking prisoners ----------
@@ -272,7 +379,9 @@ function makeRecord(state, o) {
   s.pending = true;
   s.health = state.rng.int(35, 75);
   s.mood = 30;
-  return { id: newId(), name: s.name, s, factionId: o.factionId, group: o.group, kit: o.kit, power: o.power, unitName: o.unitName || "", tile: o.tile, at: null, caught: null, mode: "hold", opinion: 0, questioned: null, intelDone: false, ransom: null, unfed: 0, report: "", ration: PRISON.RATION_DEFAULT, task: "idle", labourDays: 0, asked: null };
+  // A pick, a key or a blade hidden on them (escapeKit): searched or not, some get through.
+  const smuggled = state.rng.chance(PRISON.KIT.smuggled) ? state.rng.pick(PRISON.KIT.items) : null;
+  return { id: newId(), name: s.name, s, factionId: o.factionId, group: o.group, kit: o.kit, power: o.power, unitName: o.unitName || "", tile: o.tile, at: null, caught: null, mode: "hold", opinion: 0, questioned: null, intelDone: false, ransom: null, unfed: 0, report: "", ration: PRISON.RATION_DEFAULT, task: "idle", labourDays: 0, asked: null, ...(smuggled ? { smuggled } : {}) };
 }
 
 // Defenders who surrendered when you took their base (conquest.js): n prisoners of group f, held at that base.
@@ -289,6 +398,14 @@ export function takePrisonersAt(state, f, base, n) {
   if (out.length) state.stats.prisonersTaken = (state.stats.prisonersTaken || 0) + out.length;
   return out;
 }
+// The same, by the jail rules (conquest.js): those the base you took has room for stay there, the rest wait on a card
+// (settle: walked to a base with room, released, executed or asked to join).
+export function surrenderPrisoners(state, f, base, n) {
+  const room = freeCells(state, base);
+  const list = takePrisonersAt(state, f, base, n);
+  overflow(state, list.slice(room));
+  return list;
+}
 
 // The base a battle's prisoners would end up in.
 function destination(state, setup) {
@@ -298,8 +415,10 @@ function destination(state, setup) {
 }
 
 // After every battle (combat.js finishCombat, before its handler): the knocked out go with the team, or straight
-// into the cells when the fight was at a base. A battle by the numbers takes none, except the Aggressive autopilot
+// into the jail when the fight was at a base. A battle by the numbers takes none, except the Aggressive autopilot
 // that wants intel on a group (half the time, one, if a cell is free at home).
+// Room (cellCap): a team's prisoners are booked into a base with room (p.dest: its home first, then the base with the
+// most room); a fight at a base fills its jail. Those beyond the room of all your bases wait on a card (overflow).
 export function capturePrisoners(state, setup, result, battle) {
   let list = (result && result.prisoners) || [];
   if (!list.length && result && !result.tactical) list = numbersCapture(state, setup, result);
@@ -317,26 +436,151 @@ export function capturePrisoners(state, setup, result, battle) {
   if (party && partyMembers(state, party).length) at = { kind: "party", partyId: party.id };
   else if (base && state.bases.includes(base)) at = { kind: "base", baseId: base.id };
   if (!at) return [];
-  // The autopilot holds prisoners only where it has a free cell (its home base for a team).
-  if (state.autopilot) {
-    const room = freeCells(state, destination(state, setup));
-    leave(list.slice(room));
-    list = list.slice(0, room);
-    if (!list.length) return [];
-  }
   const all = prisonersOf(state);
+  const home = destination(state, setup);
+  const extra = [];
+  let roomHere = at.kind === "base" ? freeCells(state, base) : 0;
   for (const p of list) {
     p.at = at;
     p.caught = day(state);
     all.push(p);
     const f = factionById(state, p.factionId);
     if (f) f.pop = Math.max(0, f.pop - 1);
+    if (at.kind === "party") {
+      // Booked into a jail with room (home first): they walk with the team and are handed over there.
+      const to = home && freeCells(state, home) > 0 ? home : (basesWithRoom(state)[0] || {}).base;
+      if (to) p.dest = to.id; else extra.push(p);
+    } else if (roomHere-- <= 0) extra.push(p);
   }
   state.stats.prisonersTaken = (state.stats.prisonersTaken || 0) + list.length;
   if (party) teamPace(state, party);
   const where = at.kind === "party" ? "They walk with the team, tied." : `They are locked up at ${base.name}.`;
   log(state, `Taken prisoner: ${listNames(list)} (${list[0].group}). ${where}`, "good");
+  overflow(state, extra);
   return list;
+}
+
+// ---------- no room: the card for each one (settle) ----------
+// Prisoners beyond the room of your bases: each waits (p.awaiting: in the yard or walking with the team, not in a
+// cell) on a card: Release, Execute, Ask to join on the spot, or Hold at a base with room. The autopilot decides
+// at once (settleAI).
+function overflow(state, list) {
+  if (!list.length) return;
+  state.stats.prisonOverflow = (state.stats.prisonOverflow || 0) + list.length;
+  state.prisonOverflowDay = day(state); // the governor wants a jail (autopilot.js buildWishes)
+  for (const p of list) {
+    p.awaiting = true;
+    if (state.autopilot) { const how = settleAI(state, p); settle(state, p.id, how.how, how.baseId); continue; }
+    addCard(state, settleCard(state, p));
+  }
+  log(state, `No room in your jails for ${listNames(list)}: ${list.length === 1 ? "decide what to do with them" : "decide what to do with each"}.`, "warn");
+}
+// Where a waiting prisoner is: the base (in the yard) or the team; the people who see what is done to them.
+function settlePlace(state, p) {
+  if (p.at.kind === "party") {
+    const party = state.parties.find((x) => x.id === p.at.partyId);
+    return { party, base: null, people: party ? partyMembers(state, party) : [], home: party ? baseById(state, party.homeBaseId) : null };
+  }
+  const base = p.at.kind === "base" ? baseById(state, p.at.baseId) : null;
+  return { party: null, base, people: base ? atBase(state, base.id) : [], home: base };
+}
+// One try at asking them to join on the spot (SPOT): the best talker's Speech and the leader's Leadership among the
+// people there, × who they were.
+export function spotOdds(state, p) {
+  const S = PRISON.SPOT, A = PRISON.ASK;
+  const { people } = settlePlace(state, p);
+  const speech = Math.max(0, ...people.map((s) => skill(s, "speech")));
+  const lead = Math.max(0, ...people.filter((s) => s.leader).map((s) => skill(s, "leadership")));
+  const kind = p.factionId == null ? A.kind.none : A.kind[p.kit] || 1;
+  return clamp((S.base + speech * S.speech + lead * S.lead) * kind, S.min, S.max);
+}
+const bestSkill = (p) => (p.s ? Math.max(0, ...Object.values(p.s.skills || {})) : 0);
+// The autopilot's pick (and the card's ai): hold where there is room, ask the skilled to join, release the rest.
+export function settleAI(state, p) {
+  const room = basesWithRoom(state);
+  if (room.length) return { how: "hold", baseId: room[0].base.id };
+  if (bestSkill(p) >= PRISON.SPOT.skilled) return { how: "ask" };
+  return { how: "release" };
+}
+function settleCard(state, p) {
+  const { party, base } = settlePlace(state, p);
+  const f = factionById(state, p.factionId);
+  const ai = settleAI(state, p);
+  const odds = spotOdds(state, p);
+  const E = PRISON.EXECUTE;
+  const kind = { raiders: "a raider", soldiers: "a soldier", zealots: "a zealot", fighters: "a fighter", guards: "a guard", militia: "militia" }[p.kit] || "a fighter";
+  const top = p.s ? Object.entries(p.s.skills).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, n]) => `${k} ${n}`).join(", ") : "";
+  const holds = basesWithRoom(state).slice(0, 3);
+  const still = (st) => (st.prisoners || []).some((x) => x.id === p.id && x.awaiting);
+  return {
+    title: `No cell for ${p.name}`, kind: "prisonerSettle", prisonerId: p.id,
+    text: `${p.name}, ${kind} of ${p.group}${top ? ` (${top})` : ""}, is tied up ${party ? `with ${party.name || "the team"}` : base ? `in the yard at ${base.name}` : "here"}: there is no free cell for them${party ? " at your bases" : ` at ${base ? base.name : "the base"}`}. ${roomText(state)}`,
+    choices: [
+      ...holds.map(({ base: b, room }) => ({
+        label: `Hold at ${b.name}`, hint: `${party ? "They walk on with the team and go" : "An escort walks them"} to ${b.name}'s ${jailName(b).toLowerCase()} (${room} free).`,
+        ai: () => (ai.how === "hold" && ai.baseId === b.id ? 4 : 2),
+        resolve: (st) => (still(st) ? settle(st, p.id, "hold", b.id) : "Already settled."),
+      })),
+      { label: `Ask to join (${Math.round(odds * 100)}%)`, hint: `One try, on the spot: the best talker's Speech and the leader's Leadership, × who they were. No: they are let go (goodwill +${PRISON.SPOT.goodwill}).`,
+        ai: () => (ai.how === "ask" ? 3 : 0), resolve: (st) => (still(st) ? settle(st, p.id, "ask") : "Already settled.") },
+      { label: "Release", hint: `Untie them and let them go${f && f.alive ? ` back to ${f.name} (goodwill +${PRISON.RELEASE})` : ""}.`,
+        ai: () => 1, resolve: (st) => (still(st) ? settle(st, p.id, "release") : "Already settled.") },
+      { label: "Execute", hint: `Everyone there takes it hard (mood ${E.mood}); goodwill ${E.goodwill}${f && f.alive ? ` with ${f.name}` : ""} and ${E.others} with every group you know; infamy +${E.infamy}.`,
+        ai: () => -1, resolve: (st) => (still(st) ? settle(st, p.id, "execute") : "Already settled.") },
+    ],
+  };
+}
+// Settle a waiting prisoner: "hold" (at baseId), "ask", "release" or "execute". Returns the line to show.
+export function settle(state, id, how, baseId = null) {
+  const p = byId(state, id);
+  if (!p) return "They are gone.";
+  const { party, base, people, home } = settlePlace(state, p);
+  if (how === "hold") {
+    const to = baseById(state, Number(baseId));
+    if (!to || freeCells(state, to) <= 0) return `No free cell at ${to ? to.name : "that base"} any more. ${settle(state, id, "release")}`;
+    delete p.awaiting;
+    if (party) { p.dest = to.id; return `${p.name} walks on with the team, bound for ${to.name}'s ${jailName(to).toLowerCase()}.`; }
+    if (base === to) return `${p.name} goes into a cell at ${to.name}.`;
+    walkTo(state, p, base, to);
+    return `An escort sets off with ${p.name} for ${to.name}.`;
+  }
+  if (how === "ask") {
+    const odds = spotOdds(state, p);
+    if (state.rng.chance(odds)) {
+      drop(state, p);
+      const f = factionById(state, p.factionId);
+      if (f && f.alive) changeGoodwill(state, f, -2, "one of their people changed sides");
+      p.s.health = Math.max(p.s.health, 50);
+      p.s.mood = 40;
+      offerRecruits(state, [p.s], {
+        source: "prisoner", ...(party ? { partyId: party.id } : { baseId: (home || {}).id }), title: `${first(p.name)} will join`,
+        intro: `Untied and asked straight out, ${p.name}, once of ${p.group}, says yes.`,
+      });
+      state.stats.prisonersRecruited = (state.stats.prisonersRecruited || 0) + 1;
+      return `${p.name} says yes (${Math.round(odds * 100)}%).`;
+    }
+    goHome(state, p, PRISON.SPOT.goodwill, "you let their people go");
+    return `${p.name} will not join (${Math.round(odds * 100)}%). They are let go.`;
+  }
+  if (how === "execute") return executeHere(state, p, people, base);
+  return releasePrisoner(state, p.id);
+}
+// An escort walks a prisoner from one base to another (WALK): in transit, they arrive by the hour (prisonersHour).
+function walkTo(state, p, from, to) {
+  const tiles = from ? state.grid.distance(from.tile, to.tile) : 6;
+  p.at = { kind: "transit", baseId: to.id, from: from ? from.id : null, arrive: state.hour + Math.max(PRISON.WALK.min, tiles * PRISON.WALK.perTile) };
+}
+// Move a prisoner held at one base to another with room (the Prisoners tab's Move).
+export function movePrisoner(state, id, baseId) {
+  const p = byId(state, id);
+  const from = heldAt(state, p);
+  const to = baseById(state, Number(baseId));
+  if (!p || !from || !to || from === to) return "";
+  if (freeCells(state, to) <= 0) return `No free cell at ${to.name}.`;
+  delete p.awaiting;
+  p.task = "idle";
+  walkTo(state, p, from, to);
+  return `An escort sets off with ${p.name} for ${to.name} (about ${Math.round(p.at.arrive - state.hour)} hours).`;
 }
 
 function numbersCapture(state, setup, result) {
@@ -367,14 +611,27 @@ export function teamPace(state, party) {
   if (party.prisonSpeed === 1) delete party.prisonSpeed;
 }
 
-// A team home (parties.js returnHome): its prisoners go to that base's cells.
+// A team home (parties.js returnHome): its prisoners go into that base's jail; those booked for another base (p.dest)
+// are walked there by an escort; any left over (no room here or anywhere: older saves' teams, a jail lost meanwhile)
+// wait on a card (overflow). Those already waiting on one stay in the yard until it is answered.
 export function prisonersHome(state, party, home) {
   const list = prisonersWith(state, party.id);
   if (!list.length || !home) return;
-  for (const p of list) p.at = { kind: "base", baseId: home.id };
   delete party.prisonSpeed;
-  const shed = prisonersAt(state, home.id).length - cellCap(home);
-  log(state, `${listNames(list)} ${list.length === 1 ? "is" : "are"} locked up at ${home.name}${shed > 0 ? `; ${shed} sit${shed === 1 ? "s" : ""} in a shed (no free cell: build Holding cells)` : ""}.`, "info");
+  const locked = [], sent = [], extra = [];
+  for (const p of list) {
+    const dest = p.dest != null ? baseById(state, p.dest) : null;
+    delete p.dest;
+    p.at = { kind: "base", baseId: home.id };
+    if (p.awaiting) continue;
+    if (dest && dest !== home) { walkTo(state, p, home, dest); sent.push(p); continue; }
+    // p counts as held here now; those still to be handed over here (dest) are booked room.
+    if (prisonersAt(state, home.id).filter((x) => !x.awaiting).length + incomingTo(state, home) <= cellCap(home)) locked.push(p);
+    else extra.push(p);
+  }
+  if (locked.length) log(state, `${listNames(locked)} ${locked.length === 1 ? "is" : "are"} locked up at ${home.name} (${jailName(home).toLowerCase()}).`, "info");
+  if (sent.length) log(state, `An escort walks ${listNames(sent)} on to ${listNames(sent.map((p) => baseById(state, p.at.baseId)).filter((b, i, a) => a.indexOf(b) === i))}.`, "info");
+  overflow(state, extra);
 }
 
 // A prisoner leaves your hands: back to their group (pop +1), with goodwill if given.
@@ -460,6 +717,8 @@ export function gatherIntel(state, p, full = true) {
       f.known = true;
       f.intel = { day: day(state), pop: f.pop, food: Math.round(f.stock.food || 0), ammo: Math.round(f.stock.ammo || 0), scrap: Math.round(f.stock.scrap || 0), fuel: Math.round(f.stock.fuel || 0), meds: Math.round(f.stock.meds || 0) };
       lines.push(`${f.name} hold ${f.bases.map((t) => tileLabel(state, t)).join(", ")}: about ${f.pop} people, ${f.intel.food} food, ${f.intel.ammo} ammo, ${f.intel.meds} meds, ${f.intel.fuel} fuel.`);
+      const jt = jailText(state, f); // groupjails.js: their jail and who is in it (now known)
+      if (jt) lines.push(`Their jail: ${jt}.`);
     }
     const out = state.parties.filter((q) => q.owner === f.id && q.path);
     for (const q of out) tiles.add(q.path[Math.min(q.idx || 0, q.path.length - 1)]);
@@ -555,20 +814,28 @@ export function executePrisoner(state, id) {
   const p = byId(state, id);
   const base = heldAt(state, p);
   if (!p || !base) return "They are not held at a base.";
+  return executeHere(state, p, atBase(state, base.id), base);
+}
+// The execution itself: where they are held, or on the spot (settle: a team in the field or the yard of a base).
+// people: who sees it; base: the base (the others held there are cowed), or null.
+function executeHere(state, p, people, base) {
   drop(state, p);
   const E = PRISON.EXECUTE, S = PRISON.SEEN;
-  for (const s of atBase(state, base.id)) addMood(state, s, hasTrait(s, S.hardTraits) ? E.hardened : hasTrait(s, S.softTraits) ? E.soft : E.mood, `${first(p.name)} was executed`);
+  for (const s of people) addMood(state, s, hasTrait(s, S.hardTraits) ? E.hardened : hasTrait(s, S.softTraits) ? E.soft : E.mood, `${first(p.name)} was executed`);
   const f = factionById(state, p.factionId);
   if (f && f.alive) changeGoodwill(state, f, E.goodwill, "you executed one of their people");
   for (const o of state.factions) if (o !== f && o.alive && o.known) changeGoodwill(state, o, E.others, "word of an execution");
   const C = ensureConquest(state); // word gets round: infamy (conquest.js; it fades by itself)
   C.infamy = Math.min(CONQUEST.INFAMY.max, C.infamy + E.infamy);
   // The others held here saw it: cowed for a while.
-  base.prisonFear = day(state) + E.fearDays;
-  for (const o of prisonersAt(state, base.id)) if (o.s) o.s.mood = clamp(mood(o) + E.fearMood, 0, 100);
+  if (base) {
+    base.prisonFear = day(state) + E.fearDays;
+    for (const o of prisonersAt(state, base.id)) if (o.s) o.s.mood = clamp(mood(o) + E.fearMood, 0, 100);
+  }
   state.stats.executions = (state.stats.executions || 0) + 1;
-  log(state, `${p.name} of ${p.group} was executed at ${base.name}.`, "death");
-  return `${p.name} is dead. Nobody at ${base.name} looks at each other for a while.`;
+  const where = base ? base.name : "the roadside";
+  log(state, `${p.name} of ${p.group} was executed at ${where}.`, "death");
+  return `${p.name} is dead. Nobody ${base ? `at ${base.name}` : "on the team"} looks at each other for a while.`;
 }
 // What an execution would cost, for the UI: { mood, hardened, soft, goodwill, others, infamy, known (other groups) }.
 export function executeCost(state, p) {
@@ -588,7 +855,8 @@ export function recruitRate(state, p) {
   const mood = people.length ? people.reduce((a, s) => a + s.mood, 0) / people.length : 50;
   const kind = p.factionId == null ? R.kind.none : R.kind[p.kit] || 1;
   const work = 1 + Math.min(L.recruitMax, (p.labourDays || 0) * L.recruitPerDay);
-  return R.base * kind * rationDef(p).recruit * work * (1 + (sp ? skill(sp, "speech") : 0) * R.speech + (lead ? skill(lead, "leadership") : 0) * R.lead) * clamp(mood / 55, 0.6, 1.3);
+  const J = holdOf(state, p) || SHED; // a makeshift cage or the shed: slower (JAIL opinion)
+  return R.base * kind * rationDef(p).recruit * work * J.opinion * (1 + (sp ? skill(sp, "speech") : 0) * R.speech + (lead ? skill(lead, "leadership") : 0) * R.lead) * clamp(mood / 55, 0.6, 1.3);
 }
 
 // Asking a prisoner to join now: the odds, and whether it can be asked today.
@@ -648,6 +916,10 @@ export function prisonersDaily(state) {
       if (carried(party, "food") >= PRISON.FOOD && carriedAny(party, "water") >= drink) { takeSupply(party, "food", PRISON.FOOD); takeAny(party, "water", drink); fed = true; }
       escape = party.vehicle ? PRISON.ESCAPE.vehicle : PRISON.ESCAPE.road;
       teamPace(state, party);
+    } else if (p.at.kind === "transit") {
+      // Walked to another base by an escort (settle, movePrisoner): fed from the base they left, a chance to slip away.
+      fed = true;
+      escape = PRISON.WALK.escape;
     } else {
       const base = baseById(state, p.at.baseId);
       if (!base) continue;
@@ -667,13 +939,16 @@ export function prisonersDaily(state) {
         const H = fed ? RD : PRISON.RATIONS.none;
         const h0 = health(p);
         p.s.health = H.heal > 0 ? (h0 < H.healTo ? Math.min(H.healTo, h0 + H.heal * wormHealMult(p.s)) : Math.max(H.healTo, h0 - 0.5)) : h0 + H.heal; // worm.js: half the healing while it is in them
-        p.s.mood = clamp(mood(p) + H.mood, 0, 100);
+        p.s.mood = clamp(mood(p) + H.mood + (holdOf(state, p) || SHED).mood, 0, 100); // a makeshift cage or the shed sours them
         if (work > 0) {
           const T = PRISON.LABOUR.tire[fed ? rationOf(p) : "none"];
           p.s.health += T.health;
           p.s.mood = clamp(mood(p) + T.mood, 0, 100);
           if (fed && work >= PRISON.LABOUR.goodDay && RD.share >= PRISON.RATIONS.short.share) p.labourDays = (p.labourDays || 0) + 1;
           if (taskOf(p) === "kitchen") handDry(state, base, work);
+          if (taskOf(p) === "wood") handWood(state, base, work);
+          if (taskOf(p) === "scrap") base.stock.scrap = (base.stock.scrap || 0) + Math.round(PRISON.LABOUR.scrap * work * 100) / 100;
+          if (mood(p) < PRISON.LABOUR.lowMood && rng.chance(PRISON.LABOUR.sabotage.chance)) sabotage(state, p, base);
         }
         p.s.health = Math.min(100, Math.round(p.s.health * 10) / 10);
       }
@@ -681,7 +956,7 @@ export function prisonersDaily(state) {
       const R = PRISON.RECRUIT;
       if (fed && p.mode === "recruit") p.opinion += recruitRate(state, p);
       else if (fed && RD.sour) p.opinion += RD.sour;
-      else if (fed && p.opinion < R.holdCap) p.opinion = Math.min(R.holdCap, p.opinion + R.holdDrift);
+      else if (fed && p.opinion < R.holdCap) p.opinion = Math.min(R.holdCap, p.opinion + R.holdDrift * (holdOf(state, p) || SHED).opinion);
       if (p.ransom && today >= p.ransom.due) { ransomAnswer(state, p); if (!state.prisoners.includes(p)) continue; }
     }
     p.unfed = fed ? 0 : p.unfed + 1;
@@ -704,7 +979,7 @@ export function prisonersDaily(state) {
     if (rng.chance(escape)) {
       const out = p.at.kind === "base" && labourOutput(state, p) > 0;
       goHome(state, p);
-      log(state, `${p.name} (${p.group}) ${out ? "ran off from the work detail" : "slipped their bonds and escaped"}${p.at.kind === "base" ? ` at ${baseById(state, p.at.baseId).name}` : " from the team"}.`, "danger");
+      log(state, `${p.name} (${p.group}) ${out ? "ran off from the work detail" : "slipped their bonds and escaped"}${p.at.kind === "base" ? ` at ${baseById(state, p.at.baseId).name}` : p.at.kind === "transit" ? " from the escort" : " from the team"}.`, "danger");
       state.stats.prisonersEscaped = (state.stats.prisonersEscaped || 0) + 1;
       continue;
     }
@@ -720,6 +995,36 @@ export function prisonersDaily(state) {
   rescueRolls(state);
 }
 
+// A prisoner on Cut wood: firewood by hand (no axe for a prisoner) from the best land within 2 tiles, at the Cut wood
+// job's rates (woodcutting.js: RATE × the land × the season × its hours) × their work. Returns what they brought in.
+export function prisonWoodDay(state, base, work = 1) {
+  const tiles = baseWoodTiles(state, base);
+  if (!tiles.length) return 0;
+  return WOOD.rate * tiles[0].v * seasonWood(state) * WOOD.base.hours * work;
+}
+function handWood(state, base, work) {
+  const tile = (baseWoodTiles(state, base)[0] || {}).id;
+  if (tile == null) return 0;
+  const got = Math.round(prisonWoodDay(state, base, work) * (0.7 + 0.6 * state.rng.next()) * 100) / 100;
+  base.stock.wood = (base.stock.wood || 0) + got;
+  takeWood(state, tile, got);
+  return got;
+}
+// Sullen hands (mood under LABOUR.lowMood): a little of what they worked on is spoiled (LABOUR.sabotage, by task).
+function sabotage(state, p, base) {
+  const S = PRISON.LABOUR.sabotage, task = taskOf(p);
+  const n = S[task] || 0;
+  let what = "";
+  if (task === "build" && base.construction[0]) { base.construction[0].progress = Math.max(0, base.construction[0].progress - n); what = `${n} hours of work on the build undone`; }
+  else if (task === "farm" && (base.stock.food || 0) > n) { base.stock.food -= n; what = `${n} food trampled`; }
+  else if (task === "water" && (base.stock.rawwater || 0) > n) { base.stock.rawwater -= n; what = `${n} water spilled`; }
+  else if (task === "kitchen" && (base.stock.preserved || 0) > n) { base.stock.preserved -= n; what = `${n} preserved food spoiled`; }
+  else if (task === "wood" && (base.stock.wood || 0) > n) { base.stock.wood -= n; what = `${n} firewood left to rot`; }
+  else if (task === "scrap" && (base.stock.scrap || 0) > n) { base.stock.scrap -= n; what = `${n} scrap gone missing`; }
+  if (!what) return;
+  state.stats.prisonSabotage = (state.stats.prisonSabotage || 0) + 1;
+  log(state, `${base.name}: ${first(p.name)}, sullen on the work detail, spoiled what they could: ${what}.`, "warn");
+}
 // A prisoner in the kitchen dries and salts surplus fresh food by hand (no jars): food outside the stores, or above
 // keepDays of everyone's eating, → preserved.
 function handDry(state, base, work) {
@@ -745,6 +1050,8 @@ export function kitchenPlan(state, base) {
 }
 
 // ---------- rescue raids ----------
+// The base's defence × this against a rescue by their group (JAIL defence; no jail or the shed: as a makeshift cage).
+export const jailDefence = (base) => (jailOf(base) || SHED).defence;
 export function rescueChance(state, f, base) {
   const R = PRISON.RESCUE;
   if (!f || !f.alive || f.pop < R.minPop || !f.bases.length || !base) return 0;
@@ -776,7 +1083,7 @@ export function startRescue(state, f, base) {
 function rescueCard(state, r) {
   const f = factionById(state, r.factionId), base = baseById(state, r.baseId);
   const held = prisonersAt(state, base.id).filter((p) => p.factionId === f.id);
-  const def = () => baseDefense(state, base);
+  const def = () => baseDefense(state, base) * jailDefence(base); // JAIL defence: a makeshift cage is easier to break into than a jailhouse
   const pending = (st) => (st.rescues || []).includes(r) && st.bases.includes(base);
   return {
     title: `${f.name} come for their people`, kind: "rescue", rescueId: r.id,
@@ -851,6 +1158,15 @@ export function prisonersHour(state) {
         log(state, `${p.name}, a prisoner, got away in the confusion.`, "danger");
       } else if (p.at.kind === "base" && !baseById(state, p.at.baseId)) {
         goHome(state, p);
+      } else if (p.at.kind === "transit") {
+        // The escort arrives (settle "hold", movePrisoner); the base lost meanwhile: they are let go.
+        const to = baseById(state, p.at.baseId);
+        if (!to) { goHome(state, p); continue; }
+        if (state.hour < p.at.arrive) continue;
+        p.at = { kind: "base", baseId: to.id };
+        const over = prisonersAt(state, to.id).filter((x) => !x.awaiting).length + incomingTo(state, to) > cellCap(to);
+        if (over) overflow(state, [p]); // the jail there filled (or came down) on the way
+        else log(state, `${p.name} is locked up at ${to.name} (${jailName(to).toLowerCase()}).`, "info");
       }
     }
   }
@@ -863,7 +1179,7 @@ export function prisonersHour(state) {
     if (!prisonersAt(state, base.id).some((p) => p.factionId === f.id)) { log(state, `${f.name} turn back: their people are no longer at ${base.name}.`, "info"); continue; }
     // Walls not manned and nobody awake on watch at night (watch.js surpriseAt): over the wall before anyone woke.
     const sp = r.manned ? null : surpriseAt(state, base);
-    const def = baseDefense(state, base, !!sp) * (r.manned ? PRISON.RESCUE.manned : 1);
+    const def = baseDefense(state, base, !!sp) * (r.manned ? PRISON.RESCUE.manned : 1) * jailDefence(base); // JAIL defence
     const att = r.strength * state.rng.range(0.8, 1.2);
     const rt = raidTier(state, base, def, att, 1, 1, null, !!sp); // defences.js: the walls, then the yard
     let text = sp ? `${sp.why}: ${f.name} were over the wall before anyone woke. ` : "";
@@ -892,7 +1208,9 @@ export function autopilotPrisoners(state) {
   const style = (state.governor && state.governor.personality) || "balanced";
   const done = [];
   for (const p of list) {
-    if (!state.prisoners.includes(p)) continue;
+    if (!state.prisoners.includes(p) || p.awaiting) continue;
+    // In the old shed (an older save's overflow): walked to a base with a free cell.
+    if (!inCell(state, p)) { const to = basesWithRoom(state, heldAt(state, p))[0]; if (to) { done.push(movePrisoner(state, p.id, to.base.id)); continue; } }
     if (canQuestion(state, p) && (!p.intelDone || (wantsIntel(state, p.factionId) && day(state) - p.questioned >= 10))) done.push(questionPrisoner(state, p.id));
     if (p.unfed >= 2) { done.push(releasePrisoner(state, p.id)); continue; }
     const f = factionById(state, p.factionId);
@@ -917,7 +1235,8 @@ export function prisonerView(state, p, watch = null) {
   const work = base ? labourOutput(state, p, base) : 0;
   return {
     p, base, faction: f && f.alive ? f : null, days: day(state) - (p.caught || day(state)),
-    cell: inCell(state, p), guarded: base ? guarded(state, base) : false,
+    cell: inCell(state, p), guarded: base ? guarded(state, base) : false, hold: base ? holdOf(state, p) : null,
+    kit: escapeKit(p), moodWork: moodWork(p), why: workWhy(state, p), awaiting: !!p.awaiting,
     ration: rationOf(p), task: taskOf(p), food: prisonerFood(p) * coldFactor(state), work,
     watched: !!(w && w.watched.has(p.id)), escape: base ? escapeOdds(state, p, { watch: w }) : 0,
     question: { ok: canQuestion(state, p), odds: base ? questionOdds(state, p) : 0, rough: base ? questionOdds(state, p, "rough") : 0 },
@@ -935,6 +1254,8 @@ export function prisonSummary(state, base) {
   for (const k of Object.keys(TASKS)) if (k !== "idle") labour[k] = prisonLabour(state, base, k);
   const escapes = list.map((p) => escapeOdds(state, p, { watch }));
   return {
+    jail: jailOf(base), tier: jailTier(base), cap: cellCap(base), free: freeCells(state, base), incoming: incomingTo(state, base),
+    shed: list.filter((p) => !inCell(state, p)).length, wood: prisonWoodDay(state, base, labour.wood || 0), scrap: (labour.scrap || 0) * PRISON.LABOUR.scrap,
     n: list.length, food: prisonFoodAt(state, base) * coldFactor(state), fullFood: list.length * PRISON.FOOD * coldFactor(state),
     water: list.length * PRISON.WATER * thirstAt(state), labour, watch, water_hauled: prisonWater(state, base),
     build: prisonBuildRate(state, base) * 24, kitchen: kitchenPlan(state, base),

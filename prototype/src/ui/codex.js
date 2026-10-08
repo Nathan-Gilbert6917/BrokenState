@@ -201,7 +201,7 @@ function supplyEntries() {
   return Object.entries(SUPPLIES).map(([k, v]) => ({
     key: `s:${k}`, cat: "supplies", name: v.name, sub: "Supply",
     stats: [["Kind", cap((CATEGORIES[v.cat] || { name: v.cat }).name)], ["Weight", `${v.weight} kg a unit`]],
-    text: "", how: SUPPLY_HOW[k] || "", sprite: null,
+    text: "", how: SUPPLY_HOW[k] || (v.round ? "Rounds of one calibre and type (ammo.js): the guns of that calibre fire them, the type loaded decides (Reload picks another when there is some). Counted together as Ammo on the screens; carried in boxes." : ""), sprite: null,
   }));
 }
 function buildingEntries() {

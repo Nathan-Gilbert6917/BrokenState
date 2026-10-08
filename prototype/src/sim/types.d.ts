@@ -377,6 +377,7 @@ export interface State {
   rawWater: number;
   groupWorks?: number; // barestart: the AI groups build their bases up (groupworks.js); absent in older saves
   gunSlots?: number; // gunmods.js: guns have attachment slots (save.js moves an older save's parts on load)
+  groupJails?: number; // jailhouse: the AI groups keep prisoners in jails, work and trade them (groupjails.js); absent in older saves
   grid: HexGrid;
   tiles: Tile[];
   cityId: number;

@@ -23,6 +23,7 @@ import { pacingHelp } from "./pacing.js";
 import { displayHelp } from "./display.js"; // Minimap, Readability, Confirmations
 import { GUNMODS_HELP } from "../sim/gunmods.js"; // sights, suppressors, magazines on guns
 import { ROSTER_HELP } from "../sim/data-guns.js"; // the guns and melee weapons (the weapons overhaul)
+import { MEDICS_HELP } from "../sim/medics.js"; // medics, the downed, dragging, finishing
 import { NL_HELP } from "../sim/nonlethal.js"; // tasers, pepper spray, pulled blows, surrender
 import { CARAVAN_HELP } from "../sim/caravanraids.js"; // caravans on the road: escorts, robbing them, witnesses
 import { RESCUE_HELP } from "../sim/rescueraid.js"; // getting captives back: the rescue raid, ransoms
@@ -149,6 +150,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "time") add("Pause rules and the card tray", pacingHelp()); // ui/pacing.js
     if (out[out.length - 1].id === "inventory") add("Gun attachments", GUNMODS_HELP); // sim/gunmods.js
     if (out[out.length - 1].id === "gun-attachments") add("Guns and melee weapons", ROSTER_HELP); // sim/data-guns.js
+    if (out[out.length - 1].id === "battles") add("Medics and the downed", MEDICS_HELP); // sim/medics.js
     if (out[out.length - 1].id === "groups") { add("Caravans on the road", CARAVAN_HELP); add("Getting captives back", RESCUE_HELP); } // sim/caravanraids.js; sim/rescueraid.js, ransom.js
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
@@ -166,6 +168,7 @@ export function helpTopics() {
   if (!seen.has("the-harvest-festival")) add("The harvest festival", FESTIVAL_HELP);
   if (!seen.has("gun-attachments")) add("Gun attachments", GUNMODS_HELP);
   if (!seen.has("guns-and-melee-weapons")) add("Guns and melee weapons", ROSTER_HELP);
+  if (!seen.has("medics-and-the-downed")) add("Medics and the downed", MEDICS_HELP);
   add("Non-lethal weapons and surrender", NL_HELP); // sim/nonlethal.js
   if (!seen.has("caravans-on-the-road")) add("Caravans on the road", CARAVAN_HELP);
   if (!seen.has("getting-captives-back")) add("Getting captives back", RESCUE_HELP);

@@ -71,8 +71,25 @@ export const BUILDINGS = {
   gate:         { name: "Reinforced gate",  cost: { scrap: 14, parts: 1 },  hours: 20, max: 1, defence: true, desc: "Steel plate and a bar on the gate: the base holds back 20% more of a horde, the gate has 180 hit points instead of 100 on the battle map, plus two more barricades there. Needs walls to matter; a Wallbreaker smashes it when no barricade is left." },
   floodlights:  { name: "Floodlights",      cost: { scrap: 8, parts: 2 },   hours: 12, max: 1, defence: true, desc: "Work lights on the walls. Burns 2 fuel when a horde attacks: the base holds back 10% more, and defenders aim better on the battle map (+10 at night, +4 by day). No fuel, no lights." },
   watchtower:   { name: "Watchtower",     plot: "utility", cost: { scrap: 15 },            hours: 18, max: 1, desc: "+2 tiles of live vision around this base. Lookouts warn of raids sooner. On the battle maps it is two towers (height 2): full cover from anything not right next to them, +10 aim at anything lower and +4 sight, the widest view." },
-  // prisoners.js: where prisoners are held. Someone on the Guard role keeps them from slipping out.
-  cells:        { name: "Holding cells",  plot: "building", cost: { scrap: 16, parts: 1 },  hours: 20, max: 2, desc: "Barred rooms for 3 prisoners each (Prisoners tab). Each costs 1 food and 1 water a day. With someone on the Guard role here they rarely escape (0.4% a day; 3% unguarded; 8% for anyone kept in a shed when the cells are full)." },
+  // Jails (family "jail", tiers 1–3, each upgrading the one below in place; prisoners.js JAIL has what each tier does):
+  // a base keeps prisoners only in a jail (no jail, no room: the extras are released, executed, asked to join or walked
+  // to a base with room, prisoners.js settle). Costs:
+  //   Makeshift cells (tier 1): 6 scrap, 6 work-hours, no skill, a utility plot (a shelter can put one up): chain-link
+  //     and a padlock round a corner of the yard, or a shed with the window boarded. About a farm plot's scrap and half a
+  //     day for one builder, so the first prisoner never waits on a real build; it holds 2 and leaks (2% a day guarded,
+  //     6% unguarded) and its prisoners sour (mood −1 a day, won over at 0.6×).
+  //   Holding cells (tier 2, the old "cells" key: older saves keep theirs, two of them included): 12 scrap and a part,
+  //     16 hours, a building plot. Was 16 scrap and a part for a first building; as an upgrade the road to it is now 18
+  //     scrap, a part and 22 hours (about what it cost before), so a base pays a little more for a lockup on the way but
+  //     never more in total. Holds 3 at the old rates (0.4% / 3%).
+  //   Jailhouse (tier 3): 30 scrap, 2 parts, 36 hours, Mechanics 2: a block with a guard post. About a bunkhouse and a
+  //     half of scrap and the parts of a well and a garage: a mid-game build for a base that keeps people for labour,
+  //     ransom or recruits. Holds 8, escapes halved again (0.2% / 1.5%), one guard on the post watches every prisoner at
+  //     work, the work detail runs half as often, and a rescue meets the base's defence ×1.25.
+  // The AI groups build the same three tiers as abstract works (groupjails.js).
+  lockup:       { name: "Makeshift cells", plot: "utility", family: "jail", tier: 1, cost: { scrap: 6 }, hours: 6, max: 1, desc: "A cage of scrap and chain-link, or a locked shed: room for 2 prisoners (Prisoners tab). Each costs 1 food and 1 water a day. Poor: they slip out often (2% a day with someone on the Guard role, 6% unguarded), a smuggled pick or a loner's tricks count ×1.5, and they sour (mood −1 a day, slower to win over). Any base can put one up, a shelter too. Upgrade it into Holding cells." },
+  cells:        { name: "Holding cells",  plot: "building", family: "jail", tier: 2, upgrades: "lockup", cost: { scrap: 12, parts: 1 }, hours: 16, max: 1, desc: "Barred rooms for 3 prisoners (Prisoners tab). Each costs 1 food and 1 water a day. With someone on the Guard role here they rarely escape (0.4% a day; 3% unguarded). Upgrades the makeshift cells (a building plot). Upgrade it into a Jailhouse." },
+  jailhouse:    { name: "Jailhouse",      plot: "building", family: "jail", tier: 3, upgrades: "cells", cost: { scrap: 30, parts: 2 }, hours: 36, max: 1, req: { mechanics: 2 }, desc: "A cell block with a guard post: room for 8 prisoners. Escapes halved again (0.2% a day guarded, 1.5% unguarded); one Guard on the post watches every prisoner out at work, and the work detail runs half as often; a group come to free its people meets the base's defence ×1.25. Upgrades the holding cells on their plot. Needs a Mechanics 2+ survivor here to build." },
   radio:        { name: "Radio station",  plot: "building", cost: { scrap: 30, parts: 6 },  hours: 48, max: 1, req: { mechanics: 4 }, desc: "Live intel from teams in range, instant calls for help, radio diplomacy. Needs a Mechanics 4+ survivor here to build." },
   // radio.js: an unmanned repeater (no operator) that uses 1 part every 10 days; works only when linked to a station.
   // Any base, the hub too, but not where a radio station stands (canBuild: the station's 12 tiles cover its 6).
@@ -288,7 +305,7 @@ export const SHELTER = {
   river: 10,          // water a day hauled from a river or lake beside it (no well yet; the people carry it)
   // What a shelter may build (the most of each): yard things on its 2 utility plots (PLOTS.shelter), a barricade, a
   // garden patch and the step up.
-  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 1, farm_plot: 1, hub_up: 1, craftbench: 1 },
+  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 1, farm_plot: 1, hub_up: 1, craftbench: 1, lockup: 1 },
 };
 export const isShelter = (base) => !!base && base.tier === 0;
 export const baseTier = (base) => (isShelter(base) ? 0 : 1);
@@ -459,7 +476,8 @@ export function canBuild(state, base, type) {
   if (def.bench && benchTier(base, true) < def.bench) return { ok: false, reason: `Needs a ${BUILDINGS[Object.keys(BENCH)[def.bench - 1]].name.toLowerCase()} here first (upgrade the crafting bench)` };
   // Plots (PLOTS): a new building needs a free plot of its kind; a hospital upgrade stands on the old one's.
   const kind = def.plot;
-  const onOld = def.family && (base.buildings.some((x) => BUILDINGS[x.type].family === def.family));
+  // (jails: makeshift cells stand on a utility plot, the cells above them need a building plot of their own)
+  const onOld = def.family && (base.buildings.some((x) => BUILDINGS[x.type].family === def.family && BUILDINGS[x.type].plot === kind));
   if (kind && !onOld && plotsFree(base, kind) <= 0) {
     const cap = plotCap(base, kind);
     return { ok: false, noPlot: true, reason: cap ? `No free ${PLOT_NAMES[kind].toLowerCase()} (${plotsUsed(base, kind)}/${cap}): demolish something or build at a bigger base` : `A ${tierName(base).toLowerCase()} has no ${PLOT_NAMES[kind].toLowerCase()}s` };

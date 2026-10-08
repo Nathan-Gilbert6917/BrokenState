@@ -19,7 +19,7 @@ export function nlTags(t) {
 }
 
 // Adjacent enemies who gave up or are out cold (Execute, Tie).
-const helpless = (b, u) => b.units.filter((t) => t.side === "enemy" && (t.surr || t.ko) && !t.dead && !t.fled && adjacent(u, t));
+const helpless = (b, u) => b.units.filter((t) => t.side === "enemy" && (t.surr || t.ko || (t.wounded && t.down && t.tied)) && !t.dead && !t.fled && adjacent(u, t)); // a tied prisoner who went down (sim/medics.js) too
 
 // The buttons, after the stealth kit's.
 export function nlButtons(state, b, u, btn, cui) {
@@ -34,7 +34,7 @@ export function nlButtons(state, b, u, btn, cui) {
   if (u.nlPepper != null) html += btn("pepper", `Pepper spray (${u.nlPepper})`, u.nlPepper > 0 ? `1 action: a cone up to ${NL.PEPPER.range} tiles toward the tile you click (the preview shows it). Everyone living in it, yours too, is blinded for ${NL.PEPPER.turns} turns: −${NL.PEPPER.blind} aim, no overwatch. Nothing on the dead.` : "The can is empty.", ap > 0 && u.nlPepper > 0);
   html += btn("pull", u.pull ? "Pull blows: on" : "Pull blows", u.pull ? `${first(u)} pulls their blows: melee (and gun-butt) hits on the living do ${Math.round(NL.PULL.dmg * 100)}% damage at ${NL.PULL.aim} to hit and knock out instead of killing. Click to strike to kill again.` : `Free: ${first(u)}'s melee and gun-butt blows on the living knock out instead of killing (${Math.round(NL.PULL.dmg * 100)}% damage, ${NL.PULL.aim} to hit). The dead take a plain blow.`, ap > 0);
   const hl = helpless(b, u);
-  if (hl.length) html += btn("execute", "Execute", `1 action: kill ${hl[0].name}, who ${hl[0].surr ? "has surrendered" : "is out cold"}, right next to ${first(u)}. Everyone of yours here takes it hard (mood), and their group hears of it. Asks first.`, ap > 0);
+  if (hl.length) html += btn("execute", "Execute", `1 action: kill ${hl[0].name}, who ${hl[0].surr ? "has surrendered" : hl[0].ko ? "is out cold" : "lies tied up"}, right next to ${first(u)}. Everyone of yours here takes it hard (mood), and their group hears of it. Asks first.`, ap > 0);
   const why = surrenderRefusal(b, u);
   const k = (b.setup.enemy || {}).kind;
   const kind = NL_STYLE[k] && NL_STYLE[k].alive >= 0.5;
