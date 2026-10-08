@@ -16,7 +16,7 @@ import { releaseEscorts, ESCORTS } from "./sim/economy.js";
 import { queueBuild, cancelBuild, assignStations, queueBarrelUpgrade, setBarrelHolds, demolish, queueBunkhouseExpand, BUILDINGS, demolishRefund } from "./sim/buildings.js";
 // What pulling a building down gives back, for the question (sim/buildings.js demolishRefund).
 const demolishText = (bld) => { try { const r = demolishRefund(bld) || {}; return Object.entries(r).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ") || "nothing"; } catch { return "some of it"; } };
-import { refuel, repair } from "./sim/vehicles.js";
+import { refuel, repair, queueUpgrade, cancelGarageJob } from "./sim/vehicles.js";
 import { buryBody, burnBodyHome } from "./sim/carriers.js"; // bodies brought home in a team's car
 import {
   saveSupplyRun, dispatchSupplyRun, supplyRunById, jobForm, releaseHeld, pauseSupplyRun, deleteSupplyRun,
@@ -733,6 +733,8 @@ const actions = {
   cancelcraft: (d) => { ui.baseMsg = cancelCraft(state, baseOf(d), Number(d.id)); },
   refuel: (d) => { ui.baseMsg = refuel(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id))); },
   repairv: (d) => { ui.baseMsg = repair(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id))); },
+  vupgrade: (d) => { ui.baseMsg = queueUpgrade(state, baseOf(d), state.vehicles.find((v) => v.id === Number(d.id)), d.key, d.op || "fit"); }, // sim/vehicles.js: a garage job (glass, plating)
+  vgaragecancel: (d) => { ui.baseMsg = cancelGarageJob(state, baseOf(d), Number(d.id)); },
   burybody: (d) => { ui.baseMsg = buryBody(state, baseOf(d), Number(d.id)); }, // sim/carriers.js: a body brought home
   burnbody: (d) => { ui.baseMsg = burnBodyHome(state, baseOf(d), Number(d.id)); },
   survivor: (d) => { ui.survivor = Number(d.id); },

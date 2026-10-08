@@ -62,6 +62,7 @@ import {
   partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, removeParty, startReturn, orderMove, carryCapacity, planPath,
 } from "./parties.js";
 import { startCombat, registerCombatHandler, registerBattleLayout, registerBattleSize, winOdds } from "./combat.js";
+import { groupTurret, TURRET_ODDS } from "./vehicles.js"; // a military group's Humvee (M2 turret) defends its home base
 import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled base on one fort map
 import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
@@ -139,12 +140,13 @@ export function assaultForce(state, f, tile, p = null) {
     fortified: Math.round((1 + CONQUEST.WALL_FACTOR * walls * (1 - (walls >= 1 ? assaultCut(kit) : 0))) * 100) / 100, walls, people, occupied: !!(occ && occ.factionId === f.id),
     siegeKit: kit && (kit.ladders || kit.ram || kit.grenades) ? kit : null,
     allies: held ? { held, names: allies.names } : null,
+    ...(tile === f.bases[0] && !(occ && occ.factionId === f.id) && groupTurret(f) ? { turret: groupTurret(f) } : {}),
   };
 }
 // The odds the card shows (the same sum the statistical resolver uses: combat.js autoResolveCombat).
 export function assaultOdds(power, force, ammoOk = true, people = 0) {
   const mine = power * (ammoOk ? 1 : 0.6);
-  const theirs = force.count * force.power * force.fortified;
+  const theirs = force.count * force.power * force.fortified + (force.turret ? TURRET_ODDS[force.turret] || 0 : 0); // combat.js byNumbersOdds: their turret
   return winOdds(mine / Math.max(0.1, theirs), { kind: force.kind, count: force.count, people }); // combat.js: calibrated on the battle map
 }
 const carriedOf = (p, k) => Math.max(0, Math.floor(p.supplies[k] || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies[k]) || 0));

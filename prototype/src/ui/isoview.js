@@ -323,6 +323,31 @@ const MIL_TOPS = {
 };
 const MIL_WHEELS = { m35: (L) => [0.7, L - 1.5, L - 0.6], humvee: (L) => [0.6, L - 0.6], mrap: (L) => [0.7, L - 0.7] };
 // behind), wheels at the corners; a truck is a tall cab and a box. The cell's local x/y then turn with the view (r).
+// A vehicle's upgrades (sim/combat.js fitMapVehicle: car.up { p plating, s scrap plating, g glass, m mesh, t turret }):
+// steel plates along both sides (two rows at level 2; patchy scrap plates), a grille over the cab's glass, a thick green
+// tint for bulletproof glass, and a machine gun on a ring on the roof.
+const upKey = (u) => (u ? `${u.p || 0}${u.s || 0}${u.g || 0}${u.m || 0}${u.t || ""}` : "");
+const UP_ROOF = { humvee: [1.45, 19], m35: [0.8, 14], mrap: [1.2, 21], truck: [0.8, 16], car: [null, 15], vehicle: [null, 15] };
+function carUpParts(car, L, parts) {
+  const u = car.up;
+  const steel = flatM(PAL.metal), steelDk = flatM(PAL.metalDk), rust = flatM(PAL.rust);
+  if (u.p || u.s) {
+    const top = u.p > 1 ? 13 : 9;
+    for (const [c0, c1] of [[0.02, 0.12], [1.88, 1.98]]) {
+      if (u.s) for (let a = 0.1; a < L - 0.2; a += 0.7) parts.push([a, Math.min(L - 0.1, a + 0.55), c0, c1, 2, 8, ((a * 10) | 0) % 2 ? rust : steelDk]);
+      else parts.push([0.1, L - 0.1, c0, c1, 2, top, steel]);
+    }
+    if (u.p) parts.push([0.02, 0.1, 0.2, 1.8, 2, top, steel]); // the nose
+  }
+  const [ra, rz] = UP_ROOF[car.body] || UP_ROOF[car.kind] || UP_ROOF.car;
+  if (u.m) parts.push([ra ?? L / 2 - 0.6, (ra ?? L / 2 - 0.6) + 0.12, 0.3, 1.7, rz - 6, rz - 1, steelDk]); // a grille over the windscreen
+  if (u.g) parts.push([ra ?? L / 2 - 0.6, (ra ?? L / 2 - 0.6) + 0.06, 0.32, 1.68, rz - 6, rz - 2, flatM(hex("#5e8f86"))]); // thick green-tinted glass
+  if (u.t) {
+    const a = ra ?? L / 2;
+    parts.push([a - 0.2, a + 0.2, 0.8, 1.2, rz, rz + 3, steelDk]);                         // the ring and the gunner's shield
+    parts.push([Math.max(0, a - (u.t === "m2hb" ? 1.3 : 1.0)), a - 0.1, 0.95, 1.05, rz + 2, rz + 3, flatM(PAL.tar)]); // the barrel, over the cab (the front is a = 0)
+  }
+}
 function carPieces(car, r) {
   const { i, j, L, ax, kind, v } = car, big = kind === "truck" || car.body === "truck"; // "vehicle": the team's own (blue), a truck or a car by car.body
   const body = kind === "vehicle" ? PAL.blue : big ? mul(PAL.rust, 0.8) : CAR_COLORS[v % CAR_COLORS.length];
@@ -351,6 +376,7 @@ function carPieces(car, r) {
     else parts.push([0.8, 2.0, 0.3, 1.7, 9, 15, glass], [2.2, 3.8, 0.25, 1.75, 9, 11, paint]); // a pickup: cab and bed
     for (const a of [0.6, L - 0.6]) { wheel(a, 0.2); wheel(a, 1.8); }
   }
+  if (car.up) carUpParts(car, L, parts); // its upgrades (sim/vehicles.js): plating, grilles, the gun on its roof
   // Clip to this cell, to local 0..1 along the world axes, then into the view's frame.
   const loc = (fx, fy) => (r & 3) === 0 ? [fx, fy] : (r & 3) === 1 ? [1 - fy, fx] : (r & 3) === 2 ? [1 - fx, 1 - fy] : [fy, 1 - fx];
   const out = [];
@@ -619,7 +645,7 @@ const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", 
 
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${iso.rot & 3}` : ""}`;
+  const key = `${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
   let s = spriteCache.get(key);
   if (s === undefined) {
     const p = prims(k, o);

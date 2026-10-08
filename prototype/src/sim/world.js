@@ -24,7 +24,7 @@ import { growthAt, growthInfo } from "./hivetech.js";
 import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
-import { createVehicle, vehiclesDaily } from "./vehicles.js";
+import { createVehicle, vehiclesDaily, garageHour } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
 import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
@@ -356,13 +356,14 @@ export function residents(state, baseId) {
 /** @param {Survivor} s */
 const isFree = (s) => s.alive && !(s.location && s.location.kind === "captive");
 
-/** @param {Survivor} s @param {string} key @returns {number} */
 // Crafting for someone from before the skill (save.js, skills.js ensureSkills): 0.7 × Mechanics, the floor too.
+/** @param {Survivor} s */
 export function fillCrafting(s) {
   if (!s || !s.skills || Number.isFinite(s.skills.crafting)) return;
   s.skills.crafting = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0));
   if (s.skillFloor && !Number.isFinite(s.skillFloor.crafting)) s.skillFloor.crafting = s.skills.crafting;
 }
+/** @param {Survivor} s @param {string} key @returns {number} */
 export function skill(s, key) {
   let v = s.skills[key] || 0;
   if (key === "crafting" && s.skills.crafting == null) v = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0)); // people from before the skill (save.js fills it in)
@@ -762,6 +763,7 @@ export function tickHour(state) {
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   constructionHour(state);
   craftingHour(state);
+  garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating)
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);
   diplomacyHour(state); // diplomacy.js: jobs for other groups checked every hour (jobs.js)
