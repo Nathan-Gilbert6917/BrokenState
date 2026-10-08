@@ -8,6 +8,8 @@ import {
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
 import * as SIM from "../sim/combat.js";
+import { magsLine, spareRounds, reloadText } from "../sim/mags.js"; // magazines as items (section 15): spares, what a Reload does
+import { plateSwapPlan, PLATE_AP } from "../sim/carrykit.js"; // a broken plate swapped from the pack (2 actions)
 import { loadsFor } from "../sim/ammo.js"; // the reload chooser: the types of the gun's calibre to hand // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions } from "../sim/buildingmaps.js";
@@ -158,10 +160,22 @@ function gunText(b, u) {
   const m = magLabel(b, u);
   const jam = u.jam && !u.dead ? ' <b class="danger" data-tip="Jammed: Unjam clears it (or a Reload, for a double feed).">JAMMED</b>' : "";
   if (!m) return esc(u.weaponName) + jam;
-  if (jam || u.side === "player") return `${esc(u.weaponName)} <b>${m}</b>${u.side === "player" ? ownGunTag(u) : ""}${jam}${gunFlag(b, u)}`; // an enemy's line: the gun and its parts, never its ammo (section 20, R10)
+  if (jam || u.side === "player") return `${esc(u.weaponName)} <b>${m}</b>${u.side === "player" ? ownGunTag(u) + magsTag(b, u) : ""}${jam}${gunFlag(b, u)}`; // an enemy's line: the gun and its parts, never its ammo (section 20, R10)
   const flag = u.side === "player" && isRanged(u) && !u.dead && magShown(b, u) < (WEAPONS[u.weapon].ammo || 1)
     ? (reloadRefusal(b, u) ? ' <span class="danger">Out of ammo</span>' : ' <span class="danger">Empty — reload (I)</span>') : "";
   return `${esc(u.weaponName)} <b>${m}</b>${flag}`; // (a jammed gun: the line above, with its JAMMED badge)
+}
+// Swap plate (sim/carrykit.js): shown while a worn carrier has a broken, missing or badly worn plate.
+function plateButton(state, b, u, btn) {
+  const s = u.side === "player" && u.sid != null ? (state.survivors || []).find((x) => x.id === u.sid) : null;
+  const p = s ? plateSwapPlan(s) : null;
+  if (!p || /No plate carrier|sound/.test(p.why)) return "";
+  return btn("plate", "Swap plate", p.why ? `A plate in the carrier is broken or worn. ${p.why}` : `${PLATE_AP} actions: a spare plate from the pack into the carrier's ${p.side} pocket (a broken one is dropped).`, !p.why && u.ap >= PLATE_AP);
+}
+// The spare magazines a fighter of yours carries (sim/mags.js): "+3 mags", "2 clips".
+function magsTag(b, u) {
+  const t = magsLine(b, u);
+  return t ? ` <span class="muted" data-tip="${esc(`Spare magazines: a Reload takes the next loaded one (1 action from a rig pouch or a pocket, 2 from the pack); with none left it tops up the one in the gun (2 actions). ${spareRounds(b, u)} rounds in them.`)}">${esc(t)}</span>` : "";
 }
 function gunFlag(b, u) {
   return u.side === "player" && isRanged(u) && !u.dead && magShown(b, u) < (WEAPONS[u.weapon].ammo || 1)
@@ -1109,8 +1123,9 @@ export function renderCombatPanel(state) {
       ${btn("move", "Move", "Click a blue tile to move (1 action) or a yellow tile to dash (2 actions).", ap > 0)}
       ${b.evacOrder ? btn("evacStop", "Stop evac", "Call off the Evac: your people stay where they are and take orders again.", true) : btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).`, !evacRefusal(b))}
       ${btn("shoot", "Shoot", gun ? (ammo ? `Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance.${hasMag(u) ? ` ${esc(u.weaponName)}: ${magLabel(b, u)} loaded.` : ""}` : fireRefusal(b, u)) : "No usable gun.", ap > 0 && ammo, "F")}
-      ${gun && hasMag(u) ? btn("reload", magEmpty(b, u) && !reloadRefusal(b, u) ? '<span class="danger">Reload</span>' : "Reload", `1 action: fill the ${esc(u.weaponName)}'s magazine (${magLabel(b, u)} now) from the team's ammo. Reload with one action, shoot with the other.${reloadRefusal(b, u) ? ` ${reloadRefusal(b, u)}` : ""}${u.gunner ? " The turret's belt: both actions." : ""}${ammoToHand(state, b, u).length > 1 ? ` More than one kind of round for it is to hand: Reload asks which (${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next).` : ""}`, ap >= (u.gunner ? TURRET.RELOAD_AP : 1) && (!reloadRefusal(b, u) || ammoToHand(state, b, u).length > 1), "I") : ""}
+      ${gun && hasMag(u) ? btn("reload", magEmpty(b, u) && !reloadRefusal(b, u) ? '<span class="danger">Reload</span>' : "Reload", `${esc(u.weaponName)} (${magLabel(b, u)} now). ${reloadText(b, u)}${reloadRefusal(b, u) ? ` ${reloadRefusal(b, u)}` : ""}${u.gunner ? " The turret's belt: both actions." : ""}${ammoToHand(state, b, u).length > 1 ? ` More than one kind of round for it is to hand: Reload asks which (${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next).` : ""}`, ap >= (u.gunner ? TURRET.RELOAD_AP : 1) && (!reloadRefusal(b, u) || ammoToHand(state, b, u).length > 1), "I") : ""}
       ${gunButtons(state, b, u, btn)}
+      ${plateButton(state, b, u, btn)}
       ${btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E")}
       ${btn("overwatch", "Overwatch", OVERWATCH_TIP, ap > 0 && ammo, "O")}
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}

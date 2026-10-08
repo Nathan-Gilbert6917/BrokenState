@@ -154,7 +154,7 @@ export function pouchReason(item, kind) {
   if (!d) return "Unknown item.";
   const k = pouchKindOf(item);
   if (kind === "admin") return d.small && !d.mag && !d.throw && itemLoad(item) <= ADMIN_KG + 1e-9 ? "" : `An admin pouch takes small things up to ${ADMIN_KG} kg (meds, a flashlight, tablets, a small box of rounds).`;
-  if (k === kind) return "";
+  if (k === kind || (kind === "rifle" && k === "pistol")) return ""; // a pistol magazine fits a rifle pouch too
   if (kind === "pistol" && k === "rifle") return `The ${item.name} is too long for a pistol pouch.`;
   return `A ${String(POUCH_NAMES[kind] || kind).toLowerCase()} pouch does not take the ${item.name}.`;
 }
@@ -696,10 +696,10 @@ export function moveItem(state, fromStr, toStr) {
     taken(state, from, item);
     return `${item.name} → ${store.name}.`;
   }
+  if (B.owner && B.owner === item) return `The ${item.name} does not fit inside itself.`;
   const why = fitReason(item, tk, B.h, B.pouch);
   if (why) return why;
   if (to.slot === "pack" && from.o === to.o && from.id === to.id && from.slot === "backpack") return "A pack does not fit inside itself.";
-  if (B.owner && B.owner === item) return `The ${item.name} does not fit inside itself.`;
   const cur = B.get();
   if (gained || lostFrom) {
     // Onto a person from a body (the team gets heavier), or a worn pack moved (its wearer's max load drops).

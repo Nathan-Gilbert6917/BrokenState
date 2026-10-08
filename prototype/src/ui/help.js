@@ -22,6 +22,7 @@ import { BULK_HELP } from "./rosterbulk.js"; // the roster's bulk actions
 import { pacingHelp } from "./pacing.js";
 import { displayHelp } from "./display.js"; // Minimap, Readability, Confirmations
 import { GUNMODS_HELP } from "../sim/gunmods.js"; // sights, suppressors, magazines on guns
+import { KIT_HELP } from "../sim/carrykit.js"; // magazines as items, rigs, plate carriers, weight in a fight
 import { ROSTER_HELP } from "../sim/data-guns.js"; // the guns and melee weapons (the weapons overhaul)
 import { MEDICS_HELP } from "../sim/medics.js"; // medics, the downed, dragging, finishing
 import { NL_HELP } from "../sim/nonlethal.js"; // tasers, pepper spray, pulled blows, surrender
@@ -172,6 +173,7 @@ export function helpTopics() {
   if (!seen.has("guns-and-melee-weapons")) add("Guns and melee weapons", ROSTER_HELP);
   if (!seen.has("medics-and-the-downed")) add("Medics and the downed", MEDICS_HELP);
   add("Non-lethal weapons and surrender", NL_HELP); // sim/nonlethal.js
+  add("Magazines, rigs and plates", KIT_HELP); // sim/carrykit.js
   if (!seen.has("caravans-on-the-road")) add("Caravans on the road", CARAVAN_HELP);
   if (!seen.has("blocs-and-wars")) add("Blocs and wars", BLOCS_WARS_HELP);
   if (!seen.has("getting-captives-back")) add("Getting captives back", RESCUE_HELP);

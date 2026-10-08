@@ -417,3 +417,47 @@ export function governPlates(state, base, people, repair) {
   }
   return out;
 }
+
+// ---------- a plate swapped in a fight (combat.js act "plate") ----------
+// A worn carrier's broken, missing or badly worn plate (front first) replaced from the pack: PLATE_AP actions (free at
+// camp: the inventory). The broken plate is left behind; a worn one goes into the pack slot the spare came from.
+export const PLATE_AP = 2;
+export function plateSwapPlan(s) {
+  const c = s && s.gear && s.gear.armor;
+  if (!isCarrier(c)) return { why: "No plate carrier worn." };
+  const pk = packOf(s);
+  const cond = (it) => { const m = itemDurMax(it); return m ? (itemDur(it) ?? m) / m : 1; };
+  const ins = insertsOf(c);
+  const side = INSERT_SIDES.find((k) => !ins[k] || armourBroken(ins[k])) || INSERT_SIDES.find((k) => cond(ins[k]) < PLATE_SWAP);
+  if (!side) return { why: "Both plates are sound." };
+  let best = -1;
+  (pk || []).forEach((it, i) => { if (it && GEAR[it.key] && GEAR[it.key].slot === "insert" && !armourBroken(it) && (best < 0 || armourSpec(it.key).ac * 10 + cond(it) > armourSpec(pk[best].key).ac * 10 + cond(pk[best]))) best = i; });
+  if (best < 0) return { why: "No spare plate in the pack." };
+  return { why: "", side, i: best, cost: PLATE_AP };
+}
+export function swapPlate(s, plan) {
+  const ins = insertsOf(s.gear.armor), pk = packOf(s);
+  const old = ins[plan.side];
+  ins[plan.side] = pk[plan.i];
+  pk[plan.i] = old && !armourBroken(old) ? old : null;
+  return `${s.name.split(" ")[0]} pulls a ${ins[plan.side].name.toLowerCase()} from the pack into the carrier's ${plan.side} pocket${old ? (armourBroken(old) ? " (the broken one is dropped)" : "") : ""}.`;
+}
+
+// The Help topic (ui/help.js).
+export const KIT_HELP = `<b>Magazines</b> are items: a 9mm pistol magazine, a 30-round 5.56 magazine, a drum. Each holds one kind of round
+  (hollow points, AP...); the rounds themselves still come out of the team's ammo as they are fired. A gun with none fitted
+  has its standard one. Spare magazines in a rig pouch or a pocket reload in 1 action, from the pack in 2; the empty one
+  is kept. With no loaded spare left, a Reload tops up the magazine in the gun: 2 actions. A magazine of another kind of
+  round switches the gun to it. Pump and semi-auto shotguns, the lever-action, the hunting rifle, revolvers and double
+  barrels load a few rounds a Reload (a speedloader or a .308 stripper clip fills it at once, once a fight). Out of a
+  fight loading is free. Teams take spare magazines from the armory when they leave (4 a rifle, 3 a pistol); found
+  guns often come with one or two; enemies carry theirs and drop them.
+  <br><b>Rigs:</b> a chest rig (or a tactical vest's or a plate carrier's own pouches) holds magazines, a grenade, a radio
+  and small things (admin pouches: meds, a flashlight). A chest rig does not go over a vest with pouches.
+  <b>Plate carriers</b> hold two plates, front and back: ceramic (AC5, cracks and cannot be repaired), steel (AC4,
+  heavy, can be patched at a workbench) or soft (AC2). A hit on the chest meets the plate on that side, then the
+  carrier's soft backer. A broken plate is gone after the fight: swap in a spare (2 actions from the pack in a fight,
+  free at camp in the inventory). Starting carriers hold steel plates; military ones ceramic.
+  <br><b>Weight in a fight:</b> what someone wears and carries (the rounds in their magazines too) sets how they move:
+  Light up to 18 kg 5 tiles an action, Medium up to 28 still 5 but a dash 9, Heavy up to 38 4, Overloaded 3. Enemies
+  in full kit are slowed the same way. Heavy kit also makes escaping harder.`;

@@ -383,6 +383,7 @@ export function attachText(key) {
   if (a.opt) bits.push(`${sgn(a.opt)} tile${Math.abs(a.opt) === 1 ? "" : "s"} best range`);
   if (a.fall) bits.push(`${sgn(a.fall)} aim lost a tile beyond it`);
   if (a.dmg && a.dmg !== 1) bits.push(`damage ×${a.dmg}`);
+  if (a.magCap) bits.push(`a ${a.magCap}-round magazine`); // data-kit.js: a magazine item
   if (a.cap) bits.push(`${sgn(a.cap)} rounds a magazine`);
   if (a.capMult && a.capMult !== 1) bits.push(`magazine ×${a.capMult}`);
   if (a.noise && a.noise !== 1) bits.push(a.noise < 1 ? `shots ${Math.round(a.noise * 100)}% as loud` : `shots ${Math.round((a.noise - 1) * 100)}% louder`);

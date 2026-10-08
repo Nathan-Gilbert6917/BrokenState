@@ -185,7 +185,7 @@ export function reloadPlan(b, u, type = null) {
   });
   if (!sw && m >= max && best < 0) return { mode: "topup", cost: MAGS.TOPUP_AP, load: want, why: `The ${gunWord(u)} is full (${max}/${max}).` };
   if (!sw && m >= max) return { mode: "swap", cost: MAGS.AP[u.mags[best].where], i: best, load: want, why: `The ${gunWord(u)} is full (${max}/${max}).` };
-  const pick = best >= 0 ? best : avail(b, u, want) <= (sw ? 0 : m) ? bestAny : -1; // its own rounds gone: a loaded magazine of another type
+  const pick = best >= 0 ? best : bestAny; // none of its own type loaded: the next loaded magazine of another (a top-up only with no loaded spare left)
   if (pick >= 0) return { mode: "swap", cost: MAGS.AP[u.mags[pick].where] || 1, i: pick, load: u.mags[pick].load, why: "" };
   const pool = avail(b, u, want);
   if (pool < 1) return { mode: "topup", cost: MAGS.TOPUP_AP, load: want, why: `No ammo left to load (no ${roundName(cal, want)}).` };
@@ -249,3 +249,13 @@ export function magsLine(b, u) {
 export const spareRounds = (b, u) => spares(u).reduce((a, m) => a + loaded(b, u, m), 0);
 // The same unit's rounds in magazines (any), for a check: gun + spares.
 export const magRoundsUnit = (b, u) => num(u.mag) + spareRounds(b, u);
+// What Reload does now, in words (the battle screen's Reload button).
+export function reloadText(b, u) {
+  if (!tracksMags(u)) return "1 action: fill the magazine from the team's ammo.";
+  const p = reloadPlan(b, u);
+  const n = p.cost === 1 ? "1 action" : `${p.cost} actions`;
+  if (p.mode === "internal") return `${n}: ${internalOf(u.weapon)} more rounds in (an internal magazine; a speedloader or a stripper clip carried fills it at once).`;
+  if (p.mode === "clip") return `${n}: a ${String(GEAR[u.clips[p.i].key].name).toLowerCase()} fills it at once.`;
+  if (p.mode === "swap") return `${n}: a fresh magazine from ${u.mags[p.i].where === "pack" ? "the pack" : u.mags[p.i].where === "pocket" ? "a pocket" : "a rig pouch"} (the empty one is kept).`;
+  return `${n}: no loaded spare magazine, so the one in the gun is topped up from the team's ammo.`;
+}

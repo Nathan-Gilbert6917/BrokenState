@@ -87,7 +87,7 @@ import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILT
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
 import { armFromArsenal, settleArsenal } from "./arsenal.js"; // group arsenals: their units armed from what the group holds
 import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag } from "./mags.js"; // magazines as items (section 15): spares, reload sources, top-up, internal magazines
-import { weighPlayer, kitEnemy, unitMagItems, withMags } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines
+import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines
 import { allCarried, carriedSpots } from "./inventory.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
@@ -3067,6 +3067,16 @@ export function combatAct(state, act) {
       if (u.ap < reloadCost(b, u, act.ammo || null)) return "Not enough actions left to reload.";
       reload(b, u, act.ammo || null);
       if (u.gunner) { u.ap = 0; afterTurretReload(b, u); }
+      break;
+    }
+    case "plate": { // carrykit.js: a broken or missing plate replaced from the pack (2 actions)
+      const s = u.sid != null ? survivorById(state, u.sid) : null;
+      const p = plateSwapPlan(s);
+      if (p.why) return p.why;
+      if (u.ap < p.cost) return `Swapping a plate takes ${p.cost} actions.`;
+      say(b, swapPlate(s, p), "info");
+      u.ap -= p.cost;
+      u.hunker = false;
       break;
     }
     case "overwatch":
