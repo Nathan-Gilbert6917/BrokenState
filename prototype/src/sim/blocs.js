@@ -58,7 +58,8 @@
 //   bloc and stay out (two or more of them keep the bloc and its name between them, cold to you: no longer at your
 //   side). The bloc itself is folded into the coalition (its record says so).
 // - Not carried: the invited member goes in alone only when it voted agree (it leaves the bloc as before: under two
-//   members left the bloc is gone); otherwise it declines and nothing changes. Nobody breaks off from a vote lost.
+//   members left the bloc is gone); otherwise it declines and nothing changes (and the bloc hears no other invitation
+//   for VOTE.GAP days: blocVoteWait). Nobody breaks off from a vote lost.
 // - Shown: a log line naming each member's vote, the coalition's record, the radio news; the Groups tab and the
 //   coalition tab preview the vote before you send the invitation (previewVote: the same score on the same day).
 // - AI blocs (parity): two blocs facing the same foe, with every pair of types able to ally, nearest bases within
@@ -108,6 +109,7 @@ export const VOTE = {
   JITTER: 0.4, // a hashed nudge (−0.2 to +0.2): the same on the same day
   MARGIN: 5, // goodwill over the coalition's leaving line it needs to sit there at all
   MERGE_MID: 20, // AI merge: average relations with the larger bloc's members around this stand in for goodwill
+  GAP: 20, // days after a vote that kept everyone out before the bloc hears another invitation (alliance.js inviteProblem)
 };
 // Not blue (yours) and not too close to the groups' own colours.
 export const BLOC_COLORS = ["#ffd166", "#06d6a0", "#ef476f", "#e9ff70", "#f4a261", "#cdb4db", "#ff99c8", "#fb8500"];
@@ -445,10 +447,16 @@ export function blocJoinsCoalition(state, bloc, invitee) {
     return text;
   }
   d.blocStats.voteFails = (d.blocStats.voteFails || 0) + 1;
+  bloc.voteFailed = day(state);
   const text = `${title} voted on your invitation (${tally}): the bloc stays out, and ${invitee.name} with it.`;
   A.history.unshift({ day: day(state), text: `${blocTitle(bloc)} voted against joining (${invitee.name} invited).` });
   log(state, text, "info");
   return text;
+}
+// Days before a bloc that voted everyone out hears another invitation (0: it would vote now).
+export function blocVoteWait(state, f) {
+  const b = state.noBlocs ? null : blocOf(state, f);
+  return b && b.voteFailed != null ? Math.max(0, b.voteFailed + VOTE.GAP - day(state)) : 0;
 }
 // A member to carry the invitation of a whole bloc: one that meets your terms (the best goodwill), or null.
 export function blocCarrier(state, bloc, inviteProblem) {

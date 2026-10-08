@@ -481,6 +481,7 @@ section("A bloc votes on your invitation: together, alone, or not at all");
     check(v.votes.find((x) => x.f === a).vote !== "agree" && !v.carries, `with their foe in your coalition they will not come (${B.voteText(st, v)})`);
     const msg = AL.inviteToAlliance(st, a);
     check(!AL.isMember(st, a) && B.sameBloc(st, a, b) && B.sameBloc(st, a, c) && /stays out/.test(msg), `an invited group that did not agree stays out with its bloc: ${msg}`);
+    check(/voted against joining/.test(AL.inviteProblem(st, a)) && B.blocVoteWait(st, a) === B.VOTE.GAP, `no new invitation for ${B.VOTE.GAP} days (the governor does not ask again every day): ${AL.inviteProblem(st, a)}`);
   }
   {
     // "Invite the whole bloc": through a member that qualifies; none qualifies: why.
