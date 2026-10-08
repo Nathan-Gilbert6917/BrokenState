@@ -14,7 +14,9 @@ import { canRadioGroup, offerCard } from "../src/sim/radio.js";
 import { launchCaravan } from "../src/sim/caravans.js";
 import {
   openRadioTrade, setDelivery, setRadioBase, deliveryFee, deliveryRefusal, pendingDeal, radioDeals, radioDealsDaily, cancelRadioDeal, dealCaravanForm, bookDeal,
+  setFeeOffer, minFee,
 } from "../src/sim/radiotrade.js";
+import { crewAI, autopilotDaily, setAutopilot } from "../src/sim/autopilot.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { tradeWindow, radioModal, caravanPlanModal, groupsRadioHeader, TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "../src/ui/tradewindow.js";
 import { DIPLO_ACTIONS, DIPLO_CHANGE } from "../src/ui/diplomacy.js";
@@ -138,10 +140,10 @@ function drive(state, pred, maxHours, keep = () => false) {
   const done = card && card.choices.find((c) => /^Complete the radio deal/.test(c.label));
   check(done && !off(st, done), "at their gates: Complete the radio deal");
   if (done) {
-    const fAmmo = f.stock.ammo;
+    const fAmmo = f.stock.ammo, meds0 = p.cargo.supplies.meds || 0; // what it found on the road stays
     st.cards.splice(st.cards.indexOf(card), 1);
     done.resolve(st);
-    check(!pendingDeal(st, f) && p.cargo.supplies.meds === 6 && f.stock.ammo === fAmmo + ammo && f.wares.includes(pistol), "the swap: their meds in the caravan, your ammo and pistol with them");
+    check(!pendingDeal(st, f) && p.cargo.supplies.meds === meds0 + 6 && f.stock.ammo === fAmmo + ammo && f.wares.includes(pistol), `the swap: their meds in the caravan, your ammo and pistol with them (deal ${!pendingDeal(st, f)}, meds ${p.cargo.supplies.meds}, ammo ${f.stock.ammo - fAmmo} of ${ammo}, pistol ${f.wares.includes(pistol)})`);
     check(st.cards.some((c) => c.isCaravan && c.partyId === p.id && !c.choices.some((x) => /^Complete the radio/.test(x.label))), "the stop card comes back without the deal");
   }
 }
@@ -217,6 +219,110 @@ function drive(state, pred, maxHours, keep = () => false) {
   }
 }
 
+// 7. Your own fee: too low and they name their lowest; at it they come; over theirs earns goodwill.
+{
+  console.log("Your own delivery fee");
+  const { st, h, f } = setup(seed + 6);
+  f.goodwill = 40;
+  const fee = deliveryFee(st, f, h), low = minFee(st, f, h);
+  check(low < fee && low >= Math.ceil(fee * 0.6), `their lowest is under their fee (${low} of ${fee})`);
+  openRadioTrade(st, f, h.id, "deliver");
+  setQty(st, "theirs", "meds", 4);
+  setFeeOffer(st, low - 1);
+  check(tradeContext(st).fee === low - 1, "your offer replaces their fee on their side");
+  balanceWith(st, "ammo");
+  const no = executeTrade(st);
+  check(st.trade && new RegExp(`would do it for ${low}`).test(no) && !st.parties.some((q) => q.kind === "caravan" && q.owner === f.id), `too low: they stay home and name their lowest ("${no}")`);
+  setFeeOffer(st, low);
+  setQty(st, "mine", "ammo", 0);
+  balanceWith(st, "ammo");
+  executeTrade(st);
+  const c = st.parties.find((q) => q.kind === "caravan" && q.owner === f.id);
+  check(!st.trade && c && c.deal.fee === low, "at their lowest: they come, at your fee");
+  const { st: s2, h: h2, f: f2 } = setup(seed + 7);
+  openRadioTrade(s2, f2, h2.id, "deliver");
+  setQty(s2, "theirs", "meds", 4);
+  setFeeOffer(s2, deliveryFee(s2, f2, h2) + 30);
+  balanceWith(s2, "ammo");
+  const gw = f2.goodwill;
+  executeTrade(s2);
+  check(!s2.trade && f2.goodwill > gw, "over their fee: a little goodwill");
+  setFeeOffer(s2, null);
+}
+
+// 8. They ask you to bring it: their fee, or ask more (yes when they like you or need it; no: the call comes back).
+{
+  console.log("Asking more for the trip");
+  const ask = (s, gw) => {
+    const { st, h, f } = setup(s);
+    f.pop = 5; f.goodwill = gw; f.stock.meds = 200;
+    for (const k of Object.keys(f.stock)) if (k !== "meds") f.stock[k] = Math.max(f.stock[k], 400); // nothing short: only goodwill counts
+    f.stock.wood = 3000; // firewood they pay with has room for a higher fee
+    let card = null;
+    for (let i = 0; i < 40 && !card; i++) { const c = offerCard(st, f); if (c && c.bring && c.choices.some((x) => /^Ask more/.test(x.label))) card = c; }
+    return { st, h, f, card };
+  };
+  const a = ask(seed + 8, 40);
+  if (check(!!a.card, "a call with Ask more for the trip")) {
+    const more = a.card.choices.find((x) => /^Ask more/.test(x.label));
+    const want = Number(/: (\d+)/.exec(more.label)[1]);
+    more.resolve(a.st);
+    const d = pendingDeal(a.st, a.f);
+    check(d && Object.values(d.get.supplies)[0] === want, `goodwill 40: they pay the higher fee (${want})`);
+  }
+  const b = ask(seed + 9, 5);
+  if (b.card) {
+    const more = b.card.choices.find((x) => /^Ask more/.test(x.label));
+    const n = b.st.cards.length;
+    more.resolve(b.st);
+    const again = b.st.cards[b.st.cards.length - 1];
+    check(!pendingDeal(b.st, b.f) && b.st.cards.length === n + 1 && again.bring && !again.choices.some((x) => /^Ask more/.test(x.label)) && again.choices.some((x) => /^Agree and send/.test(x.label)), "goodwill 5, not short: no; the call comes back at their fee");
+  }
+}
+
+// 9. The autopilot: yes and the caravan sets out when the base can spare the goods and the people; no otherwise.
+{
+  console.log("The autopilot and calls to bring it");
+  const { st, h, f } = setup(seed + 10);
+  for (let i = 0; i < 4; i++) fighter(st);
+  setAutopilot(st, true, "balanced");
+  f.pop = 5; Object.assign(f.stock, { meds: 200, wood: 0, scrap: 0, food: 0 }); // they pay in light goods: a caravan of two carries it home
+  Object.assign(h.stock, { ammo: 2000, scrap: 400, parts: 40, fuel: 40, meds: 40, food: 600, water: 400 });
+  let card = null;
+  for (let i = 0; i < 60 && !card; i++) { const c = offerCard(st, f); if (c && c.bring) card = c; }
+  if (check(!!card, "a call asking you to bring it")) {
+    const pick = crewAI.answer(st, card, "balanced");
+    check(pick && /^Agree and send/.test(pick.label), `a well-stocked base with people to spare: yes (${pick && pick.label})`);
+    const text = pick ? pick.resolve(st) : "";
+    const d = pendingDeal(st, f);
+    const p = st.parties.find((q) => q.owner === "player" && d && q.dealId === d.id);
+    check(d && p && /sets out/.test(text), `the deal is booked and the caravan sets out: ${text}`);
+    if (p) {
+      // The autopilot answers its own cards as the hours go by (autopilot.js autopilotHour).
+      for (let i = 0; i < 24 * 20 && pendingDeal(st, f) && st.parties.includes(p); i++) { tickHour(st); p.lastConflict = st.hour; }
+      check(!pendingDeal(st, f), `the governor completes the deal at their gates (${st.parties.includes(p) ? `${p.phase} at ${partyTile(p)}, their base ${f.bases[0]}, cards ${st.cards.filter((c) => c.partyId === p.id).map((c) => c.title).join("; ")}` : "the caravan is home"})`);
+    }
+  }
+  const { st: s2, h: h2, f: f2 } = setup(seed + 11);
+  setAutopilot(s2, true, "balanced");
+  f2.pop = 5; f2.stock.meds = 200;
+  for (const s of s2.survivors) if (s.location && s.location.kind === "base") s.health = 30; // nobody fit to go
+  let c2 = null;
+  for (let i = 0; i < 60 && !c2; i++) { const c = offerCard(s2, f2); if (c && c.bring) c2 = c; }
+  if (c2) {
+    const pick = crewAI.answer(s2, c2, "balanced");
+    check(pick && /^No, thank/.test(pick.label), "nobody fit to send: no");
+  }
+  // A deal waiting from before the autopilot was on: its daily check sends the caravan.
+  const { st: s3, h: h3, f: f3 } = setup(seed + 12);
+  for (let i = 0; i < 4; i++) fighter(s3);
+  setAutopilot(s3, true, "balanced");
+  Object.assign(h3.stock, { ammo: 2000, food: 600, water: 400 });
+  const d3 = bookDeal(s3, f3, h3, { supplies: { ammo: 60 }, gear: [] }, { supplies: { meds: 4 }, gear: [] }, "you");
+  autopilotDaily(s3);
+  check(s3.parties.some((q) => q.owner === "player" && q.dealId === d3.id), "a deal already waiting: the daily check sends the caravan");
+}
+
 // 6. HTML: the window over the radio, the radio panel, the Groups header, the planner; every action handled.
 {
   console.log("HTML");
@@ -242,6 +348,13 @@ function drive(state, pred, maxHours, keep = () => false) {
   setQty(st, "theirs", "meds", 3);
   TRADE_ACTIONS["tw-delivery"](st, ui, { v: "deliver" });
   scan(tradeWindow(st, ui), "trade window over the radio (they bring it)");
+  TRADE_ACTIONS["tw-feemode"](st, ui, { v: "mine" });
+  check(st.trade.feeOffer === Math.round(deliveryFee(st, f, h)), "Your offer starts at their fee");
+  TRADE_CHANGE_ACTIONS["tw-fee"](st, ui, { value: "9" });
+  check(st.trade.feeOffer === 9 && tradeContext(st).fee === 9, "typing a fee sets it");
+  scan(tradeWindow(st, ui), "trade window over the radio (your fee)");
+  TRADE_ACTIONS["tw-feemode"](st, ui, { v: "theirs" });
+  check(st.trade.feeOffer == null, "Their fee again");
   TRADE_ACTIONS["tw-delivery"](st, ui, { v: "fetch" });
   TRADE_ACTIONS["tw-balance"](st, ui, { k: "ammo" });
   scan(tradeWindow(st, ui), "trade window over the radio (we fetch)");

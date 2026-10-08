@@ -25,7 +25,8 @@ import { estimatePlan } from "./plans.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
 import { crawlAutoStep } from "./citycrawl.js";
 import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand } from "./trade.js";
-import { autoCaravanTrade } from "./caravans.js";
+import { autoCaravanTrade, launchCaravan, caravanEstimate } from "./caravans.js";
+import { radioDeals, pendingDeal, dealCaravanForm, matchGear, goodsWeight, cancelRadioDeal } from "./radiotrade.js"; // radio deals your caravan fetches
 import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, relayReach, RELAY_RANGE, GROUP_REACH } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
@@ -436,12 +437,91 @@ export function autopilotDaily(state) {
   // prisoners.js: question them, then trade back (Cautious), ransom (Balanced) or slowly recruit (Aggressive).
   const held = autopilotPrisoners(state);
   if (held) say(state, `Prisoners: ${held}`);
+  // Radio deals waiting for a caravan of yours (radiotrade.js): sent when the base can spare the goods and the people.
+  for (const d of [...radioDeals(state)]) {
+    if (state.parties.some((p) => p.owner === "player" && p.dealId === d.id)) continue;
+    if (d.autoTries >= 1) { say(state, `Radio deal: ${cancelRadioDeal(state, d)} (the caravan came back without it)`); continue; } // one try
+    const sent = autoDealCaravan(state, d);
+    if (sent) say(state, `Radio deal: ${sent}`);
+  }
   // Cautious: scan the airwaves and make a radio deal for whatever is below its reserve (reserveRadio).
   if (persona(state).reserves && reserveRadio(state)) return;
   // Short of something and a group in radio reach has it: a radio deal (radio.js), their caravan brings it. Water and
   // food come first when the hub is short of them (needs: 2.5+), the campaign's ammo next (campaignAmmoWant).
   const deal = radioTradeIfShort(state, needs(state));
   if (deal) { noteTrade(state, deal); say(state, `Radio: ${deal}.`); }
+}
+
+// ---------- radio deals your caravan fetches (radiotrade.js) ----------
+// The governor agrees to bring its side to a group that asks (radio.js bringCard, at their fee), and sends the
+// caravan for any deal waiting, when the deal's base
+// - can spare the goods: not short of them (needs 0.8 or less), food and ammo within what it trades away (tradeSpare),
+//   the items in its armory;
+// - can feed the trip (caravanEstimate's food and water, packed from the base) and still keep 3 days of food and water
+//   a head for those at home;
+// - has people to send: 2 (3 for a trip of more than a day and a half there and back, up to 4 when their side is heavy),
+//   the healthy and willing beyond the style's share kept home (homeFrac, at least 2), never the base's leader or a
+//   medic, who can carry their side home (with half the road supplies left; a car when one has the fuel);
+// - is not under threat, the weather is not severe and the round trip is within twice the style's reach plus a day.
+// Otherwise the deal waits (checked daily). A caravan that comes back without doing it (one try) calls the deal off.
+// Returns { form } (the planner's form, crew and supplies filled in) or { why }.
+function dealCaravanPlan(state, deal) {
+  const base = state.bases.find((b) => b.id === deal.baseId);
+  const f = factionById(state, deal.factionId);
+  if (!base || !f || !f.alive || f.bases[0] == null) return { why: "the base or the group is gone" };
+  const P = persona(state);
+  if (threatAt(state, base).urgent) return { why: `${base.name} is under threat` };
+  if (wxNow(state).severe) return { why: "severe weather" };
+  const need = needs(state, base), spare = tradeSpare(state, base);
+  for (const [k, q] of Object.entries(deal.give.supplies || {})) {
+    if (q <= 0) continue;
+    if ((need[k] ?? 0) > 0.8) return { why: `${base.name} is short of ${k}` };
+    if ((k === "food" || k === "ammo") && q > spare[k]) return { why: `${base.name} cannot spare ${q} ${k}` };
+    if ((base.stock[k] || 0) < q) return { why: `${base.name} has only ${Math.floor(base.stock[k] || 0)} ${k}` };
+  }
+  if (!matchGear(base.armory, deal.give.gear || [])) return { why: "the items are not in the armory" };
+  const home = atBase(state, base.id);
+  const keep = Math.max(2, Math.ceil(home.length * P.homeFrac));
+  const pool = home.filter((s) => s.health >= P.minHealth && !s.woundInfected && !s.inBed && !s.pinned && s.mood >= 20 && !s.leader && s.role !== "medic" && !(base.steward && base.steward.leaderId === s.id));
+  const hands = Math.min(pool.length, home.length - keep);
+  const form = dealCaravanForm(state, deal);
+  const fit = (s) => combatPower(s) + skill(s, "speech") * 0.5;
+  const ranked = [...pool].sort((a, b) => fit(b) - fit(a) || a.id - b.id);
+  if (hands < 2) return { why: `too few people to send from ${base.name}` };
+  // The smallest crew (2, 3 for a long trip, up to 4) that can carry their side home with half its road supplies
+  // left, by car when one has the fuel for the whole route, else on foot.
+  const theirs = goodsWeight(deal.get || { supplies: {}, gear: [] });
+  let est = null, why = `no road to ${f.name}`;
+  for (let n = 2; n <= Math.min(4, hands) && !est; n++) {
+    const crew = ranked.slice(0, n);
+    for (const v of [...carsAtBase(state, base.id).filter((x) => x.condition >= 30), null]) {
+      const e = caravanEstimate(state, { ...form, crew: crew.map((s) => s.id), vehicleId: v ? v.id : null });
+      if (!e.ok || (v && e.fuel > v.fuel)) continue;
+      if (e.hours > P.maxHoursOut * 2 + 24) { why = `${f.name} is too far for a caravan`; continue; }
+      if (e.hours > 36 && n < 3 && hands >= 3) continue; // a long trip goes three strong
+      if (theirs + supplyLoad({ food: e.food * 0.5, water: e.water * 0.5 }) > carryCapacity(state, crew, v)) { why = `their side is too heavy to carry home`; continue; }
+      est = e; form.crew = crew.map((s) => s.id); form.vehicleId = v ? v.id : null;
+      break;
+    }
+  }
+  if (!est) return { why };
+  const left = Math.max(1, home.length - form.crew.length);
+  const food = (base.stock.food || 0) - (deal.give.supplies.food || 0) - est.food;
+  const water = (base.stock.water || 0) - (deal.give.supplies.water || 0) - est.water;
+  if (food < left * 3 || water < left * 3) return { why: `${base.name} cannot spare the food and water for the trip` };
+  form.travel = { food: est.food, water: est.water, fuel: 0 };
+  return { form };
+}
+// Sends the caravan for a waiting deal when the plan holds. Returns a log text ("" when it waits).
+function autoDealCaravan(state, deal) {
+  const plan = dealCaravanPlan(state, deal);
+  if (!plan.form) return "";
+  const res = launchCaravan(state, plan.form);
+  if (res.error) return "";
+  deal.autoTries = (deal.autoTries || 0) + 1;
+  gov(state).lastLaunch = day(state);
+  const f = factionById(state, deal.factionId);
+  return `a caravan of ${plan.form.crew.length} sets out for ${f ? f.name : "them"}${plan.form.vehicleId ? " by car" : " on foot"}.`;
 }
 
 // ---------- the defence plan (defenceplan.js) ----------
@@ -612,6 +692,16 @@ function pickChoice(state, card, opts, p) {
   }
   if (opts.some((c) => typeof c.ai === "function")) return [...opts].sort((a, b) => (b.ai ? b.ai(state) : -99) - (a.ai ? a.ai(state) : -99))[0];
   // Radio offers (radio.js): agree when the hub has the goods. A trade caravan's stop (caravans.js): move on.
+  // A group asking you to bring your side (radio.js bringCard): yes, at their fee, when the base can spare the goods
+  // and the people (dealCaravanPlan); the caravan sets out at once.
+  if (card.radioFrom != null && card.bring) {
+    const yes = card.choices.find((c) => /^Agree and send/.test(c.label));
+    const f = factionById(state, card.bring.factionId);
+    if (yes && f && !pendingDeal(state, f) && dealCaravanPlan(state, { ...card.bring, id: -1 }).form) {
+      return { label: yes.label, resolve: (st) => { const t = yes.resolve(st); const d = pendingDeal(st, f); const sent = d ? autoDealCaravan(st, d) : ""; return sent ? `${t} Then ${sent}` : t; } };
+    }
+    return find(/^No, thank/);
+  }
   if (card.radioFrom != null) { const yes = find(/^Agree/); return yes && yes.affordable && yes.affordable(state) ? yes : find(/^No, thank/); }
   if (card.isCaravan) return find(/^Complete the radio deal/) || find(/^Go on to/) || find(/^Return home/);
   if (/^After the fight/.test(t)) {

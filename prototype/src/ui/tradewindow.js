@@ -19,7 +19,7 @@ import {
   caravansAt, incomingCaravans, caravanGuards, attackCaravan, caravanDestinations, caravanEstimate, launchCaravan, caravanHome,
 } from "../sim/caravans.js";
 import {
-  openRadioTrade, setRadioBase, setDelivery, deliveryFee, deliveryHours, pendingDeal, radioDeals, dealById, cancelRadioDeal, dealCaravanForm, dealLine, goodsText,
+  openRadioTrade, setRadioBase, setDelivery, setFeeOffer, deliveryFee, deliveryHours, pendingDeal, radioDeals, dealById, cancelRadioDeal, dealCaravanForm, dealLine, goodsText,
 } from "../sim/radiotrade.js"; // trading over the radio
 import { captivesOf } from "../sim/conflicts.js";
 import { itemDur, itemDurMax } from "../sim/crafting.js";
@@ -125,7 +125,11 @@ function deliveryPick(state, ctx) {
   return `<div class="row small" style="margin:0.3rem 0;flex-wrap:wrap"><b>Delivery:</b>
     ${b("fetch", "We fetch it", `You send a trade caravan from ${base.name} to ${f.name} with your side, and it brings theirs back. They set their side aside for about ten days. No fee.`)}
     ${b("deliver", `They bring it${hrs != null ? ` · fee ${p1(fee)}` : ""}`, hrs != null ? `Their caravan brings their side to ${base.name} (about ${hrs}h) and takes yours back. The fee (in their prices) goes on their side; they may still say no.` : `They have no way to reach ${base.name} over land.`)}
-    <span class="muted">${ctx.delivery === "deliver" ? `Have your side ready at ${esc(base.name)} when they arrive.` : `Agreeing opens the trade caravan planner from ${esc(base.name)}.`}</span></div>`;
+    <span class="muted">${ctx.delivery === "deliver" ? `Have your side ready at ${esc(base.name)} when they arrive.` : `Agreeing opens the trade caravan planner from ${esc(base.name)}.`}</span></div>
+    ${ctx.delivery === "deliver" && hrs != null ? `<div class="row small" style="margin:0.2rem 0 0.3rem;flex-wrap:wrap"><b>Fee:</b>
+      <button class="mini ${ctx.t.feeOffer == null ? "active" : ""}" data-action="tw-feemode" data-v="theirs"${tip("They name the fee for the trip")}>Their fee · ${p1(fee)}</button>
+      <button class="mini ${ctx.t.feeOffer != null ? "active" : ""}" data-action="tw-feemode" data-v="mine"${tip("Name your own fee. Too low and they stay home (they tell you their lowest); more than theirs earns a little goodwill.")}>Your offer</button>
+      ${ctx.t.feeOffer != null ? `<input type="number" min="0" class="tw-qty" data-action="tw-fee" value="${ctx.t.feeOffer}"${tip("Your fee, in their prices")}>` : ""}</div>` : ""}`;
 }
 
 export function tradeWindow(state, ui) {
@@ -418,6 +422,7 @@ export const TRADE_ACTIONS = {
   },
   "rd-dealcancel": (state, ui, d) => { const deal = dealById(state, d.id); if (deal) ui.radioMsg = cancelRadioDeal(state, deal); },
   "tw-delivery": (state, ui, d) => { setDelivery(state, d.v); ui.tradeMsg = ""; },
+  "tw-feemode": (state, ui, d) => { const t = state.trade; if (t && t.radio) setFeeOffer(state, d.v === "mine" ? Math.round(deliveryFee(state, factionById(state, t.factionId), baseById(state, t.baseId))) : null); ui.tradeMsg = ""; },
   // Trade caravan planner.
   "cp-open": (state, ui) => { ui.caravanPlan = newCaravanForm(); ui.cvMsg = ""; },
   "cp-close": (state, ui) => { ui.caravanPlan = null; ui.cvMsg = ""; },
@@ -448,6 +453,7 @@ export const TRADE_ACTIONS = {
 };
 export const TRADE_CHANGE_ACTIONS = {
   "tw-set": (state, ui, el) => { setQty(state, el.dataset.side, el.dataset.k, el.value); ui.tradeMsg = ""; },
+  "tw-fee": (state, ui, el) => { setFeeOffer(state, el.value); ui.tradeMsg = ""; },
   "tw-radiobase": (state, ui, el) => { setRadioBase(state, el.value); ui.radioBase = Number(el.value); ui.tradeMsg = ""; },
   "rd-tradebase": (state, ui, el) => { ui.radioBase = Number(el.value); },
   "cp-from": (state, ui, el) => { const form = ui.caravanPlan; form.fromBaseId = Number(el.value); form.crew = []; form.gear = []; form.vehicleId = null; },
