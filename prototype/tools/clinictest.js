@@ -275,7 +275,8 @@ console.log("AI groups");
 console.log("AI sick bays");
 {
   const st = createWorld({ seed: SEED, factionCount: 6 });
-  const f = st.factions.find((x) => x.alive && x.bases && x.bases.length) || st.factions[0];
+  // A group that builds its jail late (traders, a commune: groupjails.js), so the sick bay is next after the quarters.
+  const f = st.factions.find((x) => x.alive && x.bases && x.bases.length && ["traders", "commune"].includes(x.type)) || st.factions.find((x) => x.alive && x.bases && x.bases.length);
   check(!!st.groupWorks && groupsBuild(st, f), "a new world's groups build");
   const main = f.bases[0];
   f.works = { [main]: { water: 9, farms: 9, beds: 9, walls: 9, bench: 1, store: 1 } };

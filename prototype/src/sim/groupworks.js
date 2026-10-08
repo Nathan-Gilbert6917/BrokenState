@@ -17,10 +17,10 @@
 //   the rest of the fields; a bench once the necessities are up (they make ammo and gear every day);
 //   a storehouse once their stores fill (a stock at STORE_FULL of what it can hold);
 //   walls up to their goal (the fortress and the military want theirs, others a home wall and a fence at their outposts).
-//   A sick bay (sickbayWork, at the main base; the same four tiers as your hospital: infirmary, field hospital, clinic,
-//   trauma hospital, f.works[tile].sickbay = the tier): the infirmary once quarters are up and the group has wounded or
-//   SICKBAY_FIRST people; each next tier after the workshop, once the group is big enough (SICKBAY[].pop ÷ its heal
-//   lean, groupcare.js GROUP_PRIORITIES) and its doctor good enough (SICKBAY[].doc, groupcare.js f.med: the clinic
+//   A sick bay (sickbayWork, at the main base, after the jail's first step; the four tiers of your hospital: infirmary,
+//   field hospital, clinic, trauma hospital; f.works[tile].sickbay = the tier): the infirmary once quarters are up and
+//   the group has wounded or SICKBAY_FIRST people; each next tier after the workshop, once the group is big enough
+//   (SICKBAY[].pop ÷ its heal lean, groupcare.js GROUP_PRIORITIES) and its doctor good enough (SICKBAY[].doc, groupcare.js f.med: the clinic
 //   needs a Medicine 6 doctor and the trauma hospital a 10, as yours). It speeds their healing (groupcare.js healRate,
 //   CARE.BAY) and sets how their doctor trains their medics (medicTraining, the tier's teach, ward, gap).
 //   A jail (groupjails.js jailWork, after water, fields and quarters): makeshift cells, holding cells, a jailhouse at
@@ -163,8 +163,8 @@ export function nextWork(state, f) {
     if (n(w, "water") < wanted(f, tile, "water")) return { tile, type: "water", why: "water" };
     if (foodShort && n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "food is short" };
     if (n(w, "beds") < wanted(f, tile, "beds")) return { tile, type: "beds", why: "people sleep rough" };
-    if (tile === mainOf(f)) { const sb = sickbayWork(state, f, false); if (sb) return sb; }
     if (tile === mainOf(f)) { const jail = jailWork(state, f); if (jail) return jail; }
+    if (tile === mainOf(f)) { const sb = sickbayWork(state, f, false); if (sb) return sb; }
     if (n(w, "walls") < goal && threatened(state, f, tile)) return { tile, type: "walls", why: "threatened" };
     if (n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "fields for everyone" };
     if (tile === mainOf(f)) { const jail = jailWork(state, f, true); if (jail) return jail; } // communes: later
