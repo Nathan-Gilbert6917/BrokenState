@@ -522,7 +522,7 @@ function pickChoice(state, card, opts, p) {
   if (opts.some((c) => typeof c.ai === "function")) return [...opts].sort((a, b) => (b.ai ? b.ai(state) : -99) - (a.ai ? a.ai(state) : -99))[0];
   // Radio offers (radio.js): agree when the hub has the goods. A trade caravan's stop (caravans.js): move on.
   if (card.radioFrom != null) { const yes = find(/^Agree/); return yes && yes.affordable && yes.affordable(state) ? yes : find(/^No, thank/); }
-  if (card.isCaravan) return find(/^Go on to/) || find(/^Return home/);
+  if (card.isCaravan) return find(/^Complete the radio deal/) || find(/^Go on to/) || find(/^Return home/);
   if (/^After the fight/.test(t)) {
     const fit = p && partyMembers(state, p).every((s) => s.health >= 55) && carriedDays(state, p) >= 2;
     return (fit ? find(/^Continue/) : null) || find(/^Return home/) || find(/^Continue/);
@@ -1100,6 +1100,7 @@ function handleTrade(state) {
     say(state, `Outsiders (${ctx.f.name}) at ${ctx.base ? ctx.base.name : "the roadside"}: ${autoVisitorTrade(state, needs(state), gov(state).personality, tradeSpare(state))}.`);
     return;
   }
+  if (ctx.kind === "radio") { state.trade = null; return; } // a radio trade left open by hand (radiotrade.js): closed
   if (ctx.kind === "caravan") {
     // Their caravan at one of your bases (caravans.js): only the Aggressive style ever attacks one.
     say(state, `Caravan from ${ctx.f.name} at ${ctx.base.name}: ${autoCaravanTrade(state, needs(state), gov(state).personality, tradeSpare(state)).replace(/\.$/, "")}.`);
