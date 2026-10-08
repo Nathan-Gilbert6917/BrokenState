@@ -1,7 +1,13 @@
-// Base stewards (suggestions-2 #7): hand one base, or parts of it, to the governor's logic (autopilot.js) while you
-// keep everything else (teams, trips, cards, the other bases). Normal play, not a dev tool.
+// Base stewards (suggestions-2 #7) and base leaders: hand one base, or parts of it, to the governor's logic
+// (autopilot.js) while you keep everything else (teams, trips, cards, the other bases). Normal play, not a dev tool.
 //
-// base.steward = { on, style, areas: { roles, building, production, medical, food, defence }, day: { ... } }
+// Each base runs under a leader: one of the people who live there (base.steward.leaderId), picked by you or, when you
+// hand the base over without picking, the best there by Leadership (Speech counts half). The leader keeps their own
+// work and is never sent out by the base; while they are away (on a team, held, on an errand) the base waits: nothing
+// is run until they are back (one log line each way). If they die, leave the group or settle at another base, the next
+// best there takes over (one line). A person leads one base at a time.
+//
+// base.steward = { on, style, leaderId, away, areas: { roles, building, production, medical, food, defence, supplies }, day: { ... } }
 // Every area is on by default; each can be switched off on its own:
 //   roles       sets everyone's role every hour (autopilot planRoles), but only within the areas it has: a role in
 //               an area that is off (farm = Farming & food, medic = Medical, guard = Defence, operate and craft =
@@ -12,15 +18,19 @@
 //               orders (govOrders: the player's own orders stand);
 //   medical     treats the hurt and sick with base meds and sets the meds reserve (planTreatment);
 //   food        farmers and the food side of building (farm plots, stores, water);
-//   defence     guards and the defence buildings.
+//   defence     guards and the defence buildings, the night watch roster (unless you set your own) and, each morning,
+//               a defence plan by role where you have saved none (stewardSafety);
+//   supplies    an emergency haul when the water would run out within a day or the food within two (stewardSupplies):
+//               the governor's water or food trip, from this base and back. Nothing drastic: no scavenging trips,
+//               trades, outposts, people moved, wars or fights picked.
 // Pinned survivors (s.pinned) are never moved, re-equipped or given a station by a steward (or the autopilot).
 // Taking over = switching it off: nothing is undone, everything stays as the steward left it. While the dev
 // autopilot is on it runs the whole holdout and stewards do nothing.
 // Once a day (STEWARD_LOG_HOUR) each steward writes one log line with what it did since the last one.
-import { log, hourOfDay, atBase } from "./world.js";
+import { log, hourOfDay, atBase, survivorById, skill } from "./world.js";
 import { BUILDINGS } from "./buildings.js";
 import { CRAFTS, craftName } from "./crafting.js";
-import { GOVERN_AREAS, PERSONALITIES, stewardRun, autopilotStats } from "./autopilot.js";
+import { PERSONALITIES, stewardRun, stewardSafety, stewardSupplies, autopilotStats } from "./autopilot.js";
 
 export const STEWARD_AREAS = {
   roles:      { name: "Roles", desc: "Sets everyone's role every hour by what the base needs (pinned people and roles in areas switched off are left alone)." },
@@ -28,28 +38,98 @@ export const STEWARD_AREAS = {
   production: { name: "Crafting & production orders", desc: "Hands out armory gear, queues crafts and sets the stations' standing orders (your own orders stand)." },
   medical:    { name: "Medical", desc: "Treats the hurt and sick with this base's meds, staffs the hospital, sets the meds reserve." },
   food:       { name: "Farming & food", desc: "Farmers for the plots, and the food and water buildings (plots, stores, wells, preserving)." },
-  defence:    { name: "Defence", desc: "Guards when raiders or hordes are near, a lookout at the hub, and walls, barricades and other defences." },
+  defence:    { name: "Defence", desc: "Guards when raiders or hordes are near, a lookout at the hub, walls, barricades and other defences, a night watch roster (unless you set your own) and a defence plan by role (unless you saved one)." },
+  supplies:   { name: "Emergency supplies", desc: "When the water would run out within a day or the food within two, a team from this base goes for it (the leader stays home). No other trips, trades or fights." },
 };
+const AREA_KEYS = Object.keys(STEWARD_AREAS);
 export const STEWARD_LOG_HOUR = 20;
-const emptyDay = () => ({ roles: 0, builds: [], crafts: [], treated: 0, equipped: 0, orders: 0, hours: 0 });
+const emptyDay = () => ({ roles: 0, builds: [], crafts: [], treated: 0, equipped: 0, orders: 0, hours: 0, trips: 0 });
 
 export function stewardOf(base) {
-  if (!base.steward) base.steward = { on: false, style: "balanced", areas: Object.fromEntries(GOVERN_AREAS.map((k) => [k, true])), day: emptyDay() };
+  if (!base.steward) base.steward = { on: false, style: "balanced", areas: Object.fromEntries(AREA_KEYS.map((k) => [k, true])), day: emptyDay() };
   const s = base.steward;
-  for (const k of GOVERN_AREAS) if (s.areas[k] === undefined) s.areas[k] = true;
+  for (const k of AREA_KEYS) if (s.areas[k] === undefined) s.areas[k] = true;
   if (!s.day) s.day = emptyDay();
+  if (s.leaderId === undefined) s.leaderId = null;
   return s;
 }
 export const stewardOn = (base) => !!(base && base.steward && base.steward.on);
 
+// ---------- the leader ----------
+export const leaderScore = (s) => skill(s, "leadership") + skill(s, "speech") * 0.5;
+const fit = (s) => !!(s && s.alive && !s.left);
+const livesAt = (s, base) => !!(s.location && s.location.kind === "base" && s.location.baseId === base.id);
+// The people who could lead this base: alive and living there now, best first.
+export function leaderChoices(state, base) {
+  return atBase(state, base.id).filter(fit).sort((a, b) => leaderScore(b) - leaderScore(a) || a.id - b.id);
+}
+// The leader as named (null: none, or dead or gone).
+export function leaderOf(state, base) {
+  const s = base.steward && base.steward.leaderId != null ? survivorById(state, base.steward.leaderId) : null;
+  return fit(s) ? s : null;
+}
+// Where the leader is: "here", "away" (on a team, held, on an errand or a route: the base waits), "gone" (dead, left
+// the group, or living at another base now), or "none" (nobody named).
+export function leaderStatus(state, base) {
+  const id = base.steward ? base.steward.leaderId : null;
+  if (id == null) return "none";
+  const s = survivorById(state, id);
+  if (!fit(s)) return "gone";
+  if (livesAt(s, base)) return "here";
+  return s.location && s.location.kind === "base" ? "gone" : "away";
+}
+// The base a person leads (null: none).
+export const ledBy = (state, s) => (s ? state.bases.find((b) => b.steward && b.steward.leaderId === s.id) || null : null);
+// Name someone at this base its leader (id null or "": nobody, only while you run it). A person leads one base:
+// another base they led gets its next best.
+export function setLeader(state, base, id) {
+  const s = stewardOf(base);
+  if (id == null || id === "") {
+    if (s.on) return `${base.name} needs a leader while it runs itself: take it over first.`;
+    s.leaderId = null;
+    return `${base.name} has no leader now.`;
+  }
+  const p = survivorById(state, Number(id));
+  if (!fit(p) || !livesAt(p, base)) return `${p ? p.name : "They"} must live at ${base.name} to lead it.`;
+  if (s.leaderId === p.id) return "";
+  const other = ledBy(state, p);
+  if (other && other !== base) dropLeader(state, other, `${p.name} now leads ${base.name}`, p);
+  s.leaderId = p.id;
+  s.away = false;
+  const msg = `${p.name} now leads ${base.name}${s.on ? "" : " (they run it once you hand it over)"}.`;
+  if (s.on) log(state, `🧭 ${msg}`, "info");
+  return msg;
+}
+// A base that lost its leader: the next best there takes over (not `not`, who leads elsewhere now), or you do.
+function dropLeader(state, base, why, not = null) {
+  const s = stewardOf(base);
+  s.leaderId = null;
+  s.away = false;
+  if (!s.on) return;
+  const next = leaderChoices(state, base).find((x) => x !== not && !ledBy(state, x));
+  if (next) { s.leaderId = next.id; log(state, `🧭 ${why}: ${next.name} leads ${base.name} in their place.`, "danger"); }
+  else { s.on = false; log(state, `🧭 ${why}: nobody is left at ${base.name} to lead it. You run it now.`, "danger"); }
+}
+
 export function setSteward(state, base, on) {
   const s = stewardOf(base);
   if (!!on === s.on) return "";
+  const st = leaderStatus(state, base);
+  if (on && st !== "here" && st !== "away") {
+    const pick = leaderChoices(state, base).find((x) => !ledBy(state, x));
+    if (!pick) return `Nobody at ${base.name} can lead it.`;
+    s.leaderId = pick.id;
+  }
   s.on = !!on;
+  s.away = false;
   s.day = emptyDay();
+  // Taken over: the leader's watchers (planRoles puts them on guard, s.govWatch) get their own job back; the roster
+  // stays and is stood as yours is (watch.js watchHour).
+  if (!on) for (const p of atBase(state, base.id)) if (p.govWatch) { if (p.role === "guard") { p.role = p.govWatch.role; p.station = p.govWatch.station ?? null; } delete p.govWatch; }
+  const L = leaderOf(state, base);
   const msg = on
-    ? `A steward now runs ${base.name} (${areaList(s)}). Pinned people are left alone; switch it off any time to take over.`
-    : `You take over ${base.name} from the steward. Everything stays as it is.`;
+    ? `${L.name} now runs ${base.name} (${areaList(s)}). Pinned people are left alone; take over any time.`
+    : `You take over ${base.name}${L ? ` from ${L.name}` : ""}. Everything stays as it is.`;
   log(state, `🧭 ${msg}`, "info");
   return msg;
 }
@@ -71,8 +151,8 @@ export function setPinned(state, s, on) {
   return `${s.name} is ${on ? "pinned: stewards will not change their role, station or gear" : "no longer pinned"}.`;
 }
 const areaList = (s) => {
-  const on = GOVERN_AREAS.filter((k) => s.areas[k]);
-  return on.length === GOVERN_AREAS.length ? "all areas" : on.length ? on.map((k) => STEWARD_AREAS[k].name).join(", ") : "no areas";
+  const on = AREA_KEYS.filter((k) => s.areas[k]);
+  return on.length === AREA_KEYS.length ? "all areas" : on.length ? on.map((k) => STEWARD_AREAS[k].name).join(", ") : "no areas";
 };
 
 // Hourly, from world.js tickHour (after the autopilot would run): every base with a steward on.
@@ -81,19 +161,43 @@ export function stewardHour(state) {
   for (const base of [...state.bases]) {
     if (!stewardOn(base)) continue;
     const s = stewardOf(base);
+    if (!leaderPresent(state, base, s)) continue;
     try {
       runOne(state, base, s);
     } catch (e) {
       if (typeof window === "undefined") throw e; // headless tools should see the crash
       console.error("Steward error:", e);
       s.on = false;
-      log(state, `🧭 The steward of ${base.name} stopped after an error (${e.message}). You have control there.`, "danger");
+      log(state, `🧭 ${base.name}'s leader stopped after an error (${e.message}). You have control there.`, "danger");
     }
     if (hourOfDay(state) === STEWARD_LOG_HOUR && state.bases.includes(base)) dailyLine(state, base, s);
   }
 }
 
+// The leader's hour: here, the base runs; away, the base waits (a line each way); gone, the next best takes over.
+function leaderPresent(state, base, s) {
+  let st = leaderStatus(state, base);
+  if (st === "gone" || st === "none") {
+    const was = st === "gone" ? survivorById(state, s.leaderId) : null;
+    const why = !was ? `${base.name} has no leader` : !was.alive ? `${was.name}, ${base.name}'s leader, is dead` : was.left ? `${was.name}, ${base.name}'s leader, has left` : `${was.name} lives at another base now`;
+    dropLeader(state, base, why);
+    if (!s.on) return false;
+    st = "here";
+  }
+  const L = leaderOf(state, base);
+  if (st === "away") {
+    if (!s.away) { s.away = true; log(state, `🧭 ${L.name} is away from ${base.name}: the base waits for its leader (it is yours until they are back).`, "info"); }
+    return false;
+  }
+  if (s.away) { s.away = false; log(state, `🧭 ${L.name} is back and runs ${base.name} again.`, "info"); }
+  return true;
+}
+
 function runOne(state, base, s) {
+  const L = leaderOf(state, base);
+  const say = (line) => { if (line) log(state, `🧭 ${L.name} (${base.name}): ${line}`, /^Emergency/.test(line) ? "danger" : "info"); };
+  if (s.areas.defence) say(stewardSafety(state, base, s.style));
+  if (s.areas.supplies) { const line = stewardSupplies(state, base, s.style, new Set([L.id])); if (line) { s.day.trips++; say(line); } }
   const before = autopilotStats(state);
   const builds = new Set(base.construction.map((j) => j.id));
   const crafts = new Set((base.crafting || []).map((j) => j.id));
@@ -125,6 +229,7 @@ export function stewardSummary(state, base) {
   if (d.treated) bits.push(`${d.treated} treatment${d.treated === 1 ? "" : "s"}`);
   if (d.equipped) bits.push(`${d.equipped} item${d.equipped === 1 ? "" : "s"} handed out`);
   if (d.orders) bits.push(`${d.orders} station order${d.orders === 1 ? "" : "s"} set`);
+  if (d.trips) bits.push(`${d.trips} emergency haul${d.trips === 1 ? "" : "s"}`);
   const counts = {};
   for (const p of atBase(state, base.id)) counts[p.role] = (counts[p.role] || 0) + 1;
   const roles = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([r, n]) => `${n} ${r}`).join(", ");
@@ -132,7 +237,8 @@ export function stewardSummary(state, base) {
   return `${bits.length ? bits.join("; ") : "no changes"}${roles ? ` · now ${roles}` : ""}${pinned ? ` · ${pinned} pinned` : ""}`;
 }
 function dailyLine(state, base, s) {
-  log(state, `🧭 Steward of ${base.name} today: ${stewardSummary(state, base)}.`, "info");
+  const L = leaderOf(state, base);
+  log(state, `🧭 ${L ? `${L.name}, leader of ${base.name},` : `${base.name}'s leader`} today: ${stewardSummary(state, base)}.`, "info");
   s.last = stewardSummary(state, base);
   s.day = emptyDay();
 }
