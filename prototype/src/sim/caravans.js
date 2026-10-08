@@ -5,7 +5,8 @@
 // - Sent when a radio deal or request is agreed (radio.js), or as aid. They walk with a wagon (the group's convoy
 //   sprite) along a land route from their main base; no land route, no caravan. Guards: 2 + 1 per 12 people
 //   (at most 5), each as strong as one of their fighters. Carry space 60 + 15 per guard.
-// - Hordes and raiders on the way can hit them like any other group party (parties.js aiPartyHour).
+// - Hordes and raiders on the way can hit them like any other group party (parties.js aiPartyHour); a raider gang
+//   that wins takes everything it carries. Your teams can attack one anywhere on the road (caravanraids.js).
 // - At your base the trade window opens (or waits its turn) with any radio deal filled in. The caravan stays
 //   CARAVAN_STAY_HOURS (24) and then goes home with what it has; reopen the window from the Bases tab meanwhile.
 //   A radio deal not done by then costs 3 goodwill.

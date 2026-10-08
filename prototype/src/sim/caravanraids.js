@@ -1,0 +1,605 @@
+// Caravans on the road, and robbing them: any caravan on the map can be attacked and everything it carries taken.
+//
+// What counts as a caravan here (roadCaravans)
+// - Merchants from outside (visitors.js, kind "merchants") on the road: their wagons, their escort (escorts.js: light,
+//   armed with a pickup, armoured with a Humvee or an MRAP), their stock and wares.
+// - The groups' caravans (caravans.js, party kind "caravan") on the road, to your bases, to another group (an escort
+//   job) or home again, and the groups' trade convoys between them (party kind "convoy": a truck or hand carts with
+//   what they deliver, AI_CONVOY_GOODS when nothing else is listed).
+// - Your own trade-route and supply convoys (party kind "convoy", owner "player"): the groups can rob those too. Your
+//   trade caravans (a team on the caravan mission) meet the groups on the road like any team (conflicts.js); lost, the
+//   whole cargo is taken (conflicts.js onConflictCombat, visitors.js onOutsiderFight).
+//
+// You attacking one (a team of yours within a tile of it)
+// - When a team meets a group's caravan or convoy on a road (one of you on a road tile, within a tile, in sight): a
+//   card. Attack it, or move on. Merchants met on the road have their own card (visitors.js: trade, news, rob them).
+// - From the team's orders card: "Attack <the caravan>" for one in sight within a tile (you pick the moment: you have
+//   the drop on them), or "Intercept <the caravan>" for one in sight within INTERCEPT.RANGE tiles: the team heads for
+//   it, follows it (re-routed every hour), and the attack card comes when it is within a tile (for INTERCEPT.HOURS
+//   at most).
+// - A battle on the road map: its guards (merchants: the escort's kit, combat.js KITS guards / escorts /
+//   contractors; a group's: its own fighters), and its vehicle parked behind them.
+// - Won: everything it carried (lootCaravan): all its supplies and goods, what the guards had on them (on the map
+//   you search the bodies; by the numbers, escorts.js guardGear), and its vehicle if it still runs (ESCORT_TAKE: 60%
+//   it runs and joins a team with no vehicle, else it is parked on the tile, marked; 30% it needs an engine repair
+//   (foundcars.js: Repair on the spot); 10% it is wrecked and stripped for parts and scrap). What the team cannot
+//   carry goes in the parked vehicle, or stays on the tile as cargo left behind (a death site with no names: "Recover"
+//   it).
+// - Consequences need a witness (witnessesOf): a guard or trader who got away (the fight was lost or broken off, one
+//   of them fled the map; merchants beaten by the numbers: a trader slips away WITNESS.TRADER_ESCAPE of the time),
+//   another group's base within WITNESS.BASE_RANGE tiles (their lookouts), or anyone else on the road within a tile
+//   (another caravan, travellers, raiders). Seen: merchants' reputation −45 and the traders, communes and fortresses
+//   you know think less of you (visitors.js blameYou); a group's caravan: that group turns hostile, and the groups
+//   you know that are not aggressive lose 5 goodwill (caravans.js turnHostile). Nobody to tell: no consequences;
+//   the caravan simply never arrived. A caravan at your gates is always seen (caravans.js, visitors.js).
+//
+// The groups robbing caravans (aiRaidsHour; dice of their own: hash01, never the world's)
+// - Raider gangs rob any caravan within AI_RAID.RANGE tiles of one of their bases (not a group they have a pact
+//   with); expansionists and zealots only the caravans of groups they are at war with; and your convoys, when the
+//   group would attack your teams (hostile, or aggressive with no pact or alliance). The groups' own caravans near a
+//   raider gang's base are ambushed in parties.js aiPartyHour (the same goods taken, the same odds).
+// - Only when their war band (AI_RAID.BAND × the group's strength) is at least AI_RAID.EDGE × the caravan's; an hourly
+//   chance of AI_RAID.CHANCE, more for a rich cargo (up to ×3). Won by the numbers (0.5 + 0.6 × (ratio − 1), 5–95%):
+//   all the supplies go into the group's stock and the items onto its shelf (its wares), the caravan is gone (your
+//   convoy: someone hurt, the cargo gone, it goes on empty). Lost: the band loses people, the caravan a guard or two.
+import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES } from "./data.js";
+import { log, addCard, day, factionById, hurt, localId, newId, combatPower } from "./world.js";
+import {
+  partyTile, partyMembers, tileLabel, removeParty, planPath, cargoRoom, unitsThatFit, addGearToCargo, wipeParty, awaitOrders, orderMove,
+} from "./parties.js";
+import { attitude, isAggressiveType, strength as groupStrength, changeGoodwill } from "./factions.js";
+import { startCombat, registerCombatHandler } from "./combat.js";
+import { fightOdds, halt, resume, afterFight, COOLDOWN_HOURS, rob } from "./conflicts.js";
+import { turnHostile, guardPower } from "./caravans.js";
+import { visitorsOf, visitorById, vStrength, leaveMap, goodsText, blameYou, openVisitorTrade, attackMerchants, visitorInfo } from "./visitors.js";
+import { createVehicle, VEHICLE_TYPES } from "./vehicles.js";
+import { markAbandonedVehicle, markDeathSite } from "./markers.js";
+import { joinTeam } from "./foundcars.js";
+import { hash01 } from "./skills.js";
+import { pactBetween, warBetween } from "./diplomacy.js";
+import { caravanGuarded } from "./jobs.js";
+import { inCoverage } from "./radio.js";
+import { chronicleNote } from "./chronicle.js";
+import { WARES_MAX } from "./trade.js";
+import { escortWords, escortShort, guardGear, ESCORT_VEHICLES, cargoValue } from "./escorts.js";
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const pct = (c) => `${Math.round(c * 100)}%`;
+const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+const planText = (sup) => Object.entries(sup).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${k}`).join(", ");
+
+export const INTERCEPT = { RANGE: 6, HOURS: 48 };
+export const MEET = { COOLDOWN: 48 };
+export const WITNESS = { BASE_RANGE: 3, TRADER_ESCAPE: 0.35 };
+// The escort's vehicle after a won fight: runs (a share), needs an engine (a share), else wrecked (stripped: parts, scrap).
+export const ESCORT_TAKE = { RUNS: 0.6, REPAIR: 0.3, FUEL: [6, 25], COND: [45, 75], REPAIR_COND: [25, 45], SALVAGE: { parts: [2, 4], scrap: [6, 12] } };
+export const AI_RAID = { RANGE: 3, CHANCE: 0.03, RICH: 600, BAND: 0.35, EDGE: 1.1, COOLDOWN: 24, KEEP: 1 };
+// A group's trade convoy carries what it delivers (parties.js aiPartyHour: 10 food, 10 scrap) when nothing is listed.
+export const AI_CONVOY_GOODS = { food: 10, scrap: 10 };
+// The groups' fighters by type (combat.js KITS), as in conflicts.js.
+const KIT_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
+
+// ---------- the caravans on the map ----------
+const pKey = (state, q) => `p${localId(state, q.id)}`;
+const vKey = (v) => `v${v.serial}`;
+// What one carries: { supplies, gear } (live: changes to these change the caravan).
+function goodsOf(c) {
+  if (c.type === "merchants") return { supplies: c.ref.stock, gear: c.ref.wares };
+  const q = c.ref;
+  if (c.owner === "player") return q.cargo || (q.cargo = { supplies: {}, gear: [] });
+  if (!q.goods) q.goods = { supplies: c.type === "convoy" ? { ...AI_CONVOY_GOODS } : {}, gear: [] };
+  return q.goods;
+}
+function aiEnemy(state, q, f) {
+  const power = f ? Math.round(guardPower(f) * 10) / 10 : 3;
+  const count = clamp(Math.round((q.strength || 2) / power), 1, 10);
+  return {
+    kind: (f && KIT_OF[f.type]) || "guards", count, power, factionId: f ? f.id : undefined, name: `${f ? f.name : "Their"} caravan guards`,
+    ...(q.vehicle ? { vehicle: "truck", vehicleName: "truck", escort: true } : {}),
+  };
+}
+// The fight a merchant caravan puts up (visitors.js enemyOf): its escort's kit, every guard, the scout and the turret
+// gunner, and its vehicle on the map.
+export function escortEnemy(v) {
+  const e = v.escort;
+  const V = e && e.vehicle && !v.vehicleLost ? ESCORT_VEHICLES[e.vehicle] : null;
+  return {
+    kind: (e && e.kit) || "guards", count: clamp(v.guards || 1, 1, 14), power: v.power, name: `${cap1(v.name)}'s guards`,
+    ...(V ? { vehicle: "truck", vehicleBody: V.body, vehicleName: V.name, escort: true } : {}), // combat.js: drawn by its body
+  };
+}
+
+// Every caravan on the road: { key, type, ref, tile, owner, name, strength, value, escort, vehicle }.
+export function roadCaravans(state, { player = false } = {}) {
+  const out = [];
+  for (const v of visitorsOf(state)) {
+    if (v.kind !== "merchants" || (v.phase !== "travel" && v.phase !== "search") || v.size <= 0) continue; // on the road (not trading at a base)
+    out.push({
+      key: vKey(v), type: "merchants", ref: v, tile: v.tile, owner: "outsider", name: v.name, strength: vStrength(v),
+      value: cargoValue(v.stock, v.wares), escort: v.escort || null, vehicle: v.escort && !v.vehicleLost ? v.escort.vehicle : null,
+    });
+  }
+  for (const q of state.parties) {
+    if (!q.path || !q.path.length || q.phase !== "out" && !(q.owner === "player" && q.phase === "back")) continue;
+    if (q.owner === "player") {
+      if (!player || q.kind !== "convoy") continue;
+      const g = q.cargo || { supplies: {}, gear: [] };
+      out.push({ key: pKey(state, q), type: "convoy", ref: q, tile: partyTile(q), owner: "player", name: "your convoy", strength: 0, value: cargoValue(g.supplies, g.gear), escort: null, vehicle: q.vehicle ? "truck" : null });
+      continue;
+    }
+    if (q.kind !== "caravan" && q.kind !== "convoy") continue;
+    const f = factionById(state, q.owner);
+    const c = { key: pKey(state, q), type: q.kind, ref: q, tile: partyTile(q), owner: q.owner, name: `the ${f ? f.name.replace(/^The /, "") : "group's"} ${q.kind}`, strength: q.strength || 2, escort: null, vehicle: q.vehicle ? "truck" : null };
+    const g = goodsOf(c);
+    c.value = cargoValue(g.supplies, g.gear);
+    out.push(c);
+  }
+  return out;
+}
+export const caravanByKey = (state, key) => roadCaravans(state, { player: true }).find((c) => c.key === key) || null;
+
+// In words, for cards and tooltips: who guards it, and what it carries.
+export function guardText(state, c) {
+  if (c.type === "merchants") return `${c.ref.guards} guards and ${2} traders: ${escortWords(c.escort)}`;
+  const f = factionById(state, c.owner);
+  const e = aiEnemy(state, c.ref, f);
+  return `${e.count} guard${e.count === 1 ? "" : "s"}${c.vehicle ? " and a truck" : c.type === "caravan" ? " with a wagon" : " with hand carts"}`;
+}
+export function cargoText(c) {
+  if (c.type === "merchants") return goodsText(c.ref);
+  const g = goodsOf(c);
+  const sup = Object.entries(g.supplies).filter(([, q]) => q >= 1).sort((a, b) => b[1] * SUPPLIES[b[0]].value - a[1] * SUPPLIES[a[0]].value).slice(0, 4).map(([k]) => SUPPLIES[k].name.toLowerCase());
+  return [...sup, ...g.gear.slice(0, 3).map((it) => it.name)].join(", ") || "not much";
+}
+
+// ---------- you attack ----------
+const teamOk = (state, p) => !!p && state.parties.includes(p) && p.owner === "player" && p.kind !== "convoy" && partyMembers(state, p).length > 0;
+const near = (state, a, b, r = 1) => state.grid.distance(a, b) <= r;
+function enemyFor(state, c) {
+  return c.type === "merchants" ? escortEnemy(c.ref) : aiEnemy(state, c.ref, factionById(state, c.owner));
+}
+
+// Starts the fight with a caravan (a group's: the "roadCaravan" battle; merchants: visitors.js attackMerchants).
+// ambush: "player" (you picked the moment) or null (face to face on the road).
+export function attackRoadCaravan(state, p, key, ambush = "player") {
+  const c = caravanByKey(state, key);
+  if (!c || c.owner === "player") return "The caravan is gone.";
+  if (!teamOk(state, p)) return "";
+  if (!near(state, partyTile(p), c.tile)) return "The caravan is out of reach.";
+  halt(p);
+  if (c.type === "merchants") return attackMerchants(state, c.ref, { partyId: p.id, ambush });
+  const f = factionById(state, c.owner);
+  const q = c.ref;
+  const enemy = enemyFor(state, c);
+  log(state, `Your team falls on ${c.name} near ${tileLabel(state, c.tile)}.`, "danger");
+  startCombat(state, {
+    tile: partyTile(p), partyId: p.id, enemy, ambush, canRetreat: true, handler: "roadCaravan",
+    context: { partyId: p.id, caravanId: q.id, key, factionId: f ? f.id : null, type: c.type, tile: c.tile, name: c.name, resumePhase: p.conflictResume || "out", vehicle: c.vehicle },
+  });
+  return "";
+}
+
+function onRoadCaravan(state, result, setup) {
+  const c = setup.context;
+  const p = state.parties.find((x) => x.id === c.partyId);
+  const q = state.parties.find((x) => x.id === c.caravanId);
+  const f = factionById(state, c.factionId);
+  const lines = [];
+  if (f && result.enemiesKilled) f.pop = Math.max(0, f.pop - Math.ceil(result.enemiesKilled * 0.7));
+  const tgt = { type: c.type, owner: c.factionId, ref: q, tile: c.tile, key: c.key };
+  const seen = witnessesOf(state, tgt, result, p);
+  const st = (state.stats.caravanRaids = state.stats.caravanRaids || { byYou: 0, won: 0, seen: 0, unseen: 0, byGroups: 0, groupsWon: 0, convoysLost: 0 });
+  st.byYou++;
+  if (p && state.parties.includes(p) && !partyMembers(state, p).length) {
+    wipeParty(state, p);
+    log(state, `The whole team was lost attacking ${c.name}.`, "death");
+    if (f && f.alive) consequences(state, tgt, ["their guards saw who you were"], lines);
+    addCard(state, { title: `The attack on ${c.name}`, text: `The whole team was lost attacking ${c.name}.${lines.length ? ` ${lines.join(" ")}` : ""}`, choices: [{ label: "OK", resolve: () => "" }] });
+    return;
+  }
+  if (!p || !state.parties.includes(p)) return;
+  if (result.outcome === "victory") {
+    st.won++;
+    lines.push(`You took ${c.name}: ${result.enemiesKilled || "all"} of the guards are down.`);
+    const goods = q ? goodsOf({ type: c.type, owner: c.factionId, ref: q }) : { supplies: {}, gear: [] };
+    lines.push(...lootCaravan(state, p, goods, { tile: partyTile(p), name: c.name, kit: setup.enemy.kind, guards: result.enemiesKilled || setup.enemy.count, tactical: !!result.tactical, vehicle: c.vehicle, key: c.key, result }));
+    if (q) removeParty(state, q);
+  } else {
+    if (q) { q.strength = Math.max(1, (q.strength || 2) * Math.max(0.3, (result.enemiesLeft || 1) / Math.max(1, setup.enemy.count))); q.met = { ...(q.met || {}), [localId(state, p.id)]: state.hour }; }
+    if (result.outcome === "retreat") lines.push(result.summary ? `${result.summary} You pulled back.` : "You pulled back; the caravan went on.");
+    else { const lost = rob(state, p, 0.25, f, false); lines.push(`You lost the fight. The guards took ${lost} off you.`); }
+  }
+  consequences(state, tgt, seen, lines);
+  const dead = (result.survivorsDead || []).length;
+  if (dead) lines.push(`${dead} of yours died.`);
+  log(state, `Attack on ${c.name} near ${tileLabel(state, partyTile(p))}: ${result.outcome}.`, result.outcome === "victory" ? "good" : "danger");
+  afterFight(state, p, { resumePhase: c.resumePhase }, lines.join(" "));
+}
+registerCombatHandler("roadCaravan", onRoadCaravan);
+
+// ---------- won: everything it carried ----------
+// Everything into the team's cargo as far as it goes: the escort's vehicle first (it may carry the rest), all the
+// supplies and items, the guards' gear (a fight by the numbers; on the map the bodies were searched), and what does
+// not fit in the parked vehicle or left on the tile. opts: { tile, name, kit, guards, tactical, vehicle, key, result }.
+// Returns the card's lines.
+export function lootCaravan(state, p, goods, opts) {
+  const out = [];
+  const dice = (...k) => hash01(state.seed, "cvloot", opts.key || "", state.hour, ...k);
+  const sup = {};
+  for (const [k, q] of Object.entries(goods.supplies || {})) if (SUPPLIES[k] && q >= 1) sup[k] = Math.floor(q);
+  const gear = [...(goods.gear || [])];
+  for (const k of Object.keys(goods.supplies || {})) goods.supplies[k] = 0;
+  if (goods.gear) goods.gear.length = 0;
+  if (!opts.tactical && opts.guards > 0) {
+    const gg = guardGear(opts.kit, opts.guards, (i, k) => dice("guard", i, k));
+    for (const [k, q] of Object.entries(gg.supplies)) sup[k] = (sup[k] || 0) + q;
+    gear.push(...gg.gear);
+    if (gg.gear.length) out.push(`The guards had ${gg.gear.map((it) => it.name).join(", ")} on them.`);
+  }
+  // The vehicle: runs, needs an engine, or wrecked (stripped).
+  let parked = null;
+  if (opts.vehicle && ESCORT_VEHICLES[opts.vehicle]) {
+    const V = ESCORT_VEHICLES[opts.vehicle];
+    const r = dice("veh");
+    const tile = opts.tile;
+    if (r < ESCORT_TAKE.RUNS + ESCORT_TAKE.REPAIR) {
+      const fix = r >= ESCORT_TAKE.RUNS;
+      const range = (lo, hi, k) => Math.round(lo + dice(k) * (hi - lo));
+      const T = VEHICLE_TYPES[V.type];
+      const v = createVehicle(state, V.type, { kind: "abandoned", tile, since: state.hour }, {
+        fuel: Math.min(T.tank, range(ESCORT_TAKE.FUEL[0], ESCORT_TAKE.FUEL[1], "fuel")),
+        condition: fix ? range(ESCORT_TAKE.REPAIR_COND[0], ESCORT_TAKE.REPAIR_COND[1], "cond") : range(ESCORT_TAKE.COND[0], ESCORT_TAKE.COND[1], "cond"),
+        name: V.model === "humvee" ? "Humvee" : V.model === "mrap" ? "MRAP" : undefined,
+      });
+      const mil = V.model === "humvee" || V.model === "mrap";
+      v.found = { model: V.model, at: tileLabel(state, tile), hour: state.hour, repair: fix ? { parts: 2, scrap: 2, hours: 6, mech: mil ? 5 : 4, what: ["the engine"] } : null };
+      if (!fix && p && state.parties.includes(p) && !p.vehicle) {
+        joinTeam(state, p, v);
+        out.push(`Their ${V.name} runs: it is the team's now (fuel ${Math.round(v.fuel)}, condition ${Math.round(v.condition)}%).`);
+      } else {
+        markAbandonedVehicle(state, v, fix ? "needs repair" : "taken from a caravan");
+        parked = v;
+        out.push(fix ? `Their ${V.name} took hits to the engine: it stands on the tile, marked on the map (Repair it there: 2 parts, 2 scrap, Mechanics ${mil ? 5 : 4}+).`
+          : `Their ${V.name} runs (fuel ${Math.round(v.fuel)}): the team already has a vehicle, so it is parked on the tile, marked (send someone home in it, or come back for it).`);
+      }
+    } else {
+      const P = ESCORT_TAKE.SALVAGE;
+      const parts = P.parts[0] + Math.floor(dice("sp") * (P.parts[1] - P.parts[0] + 1)), scrap = P.scrap[0] + Math.floor(dice("ss") * (P.scrap[1] - P.scrap[0] + 1));
+      sup.parts = (sup.parts || 0) + parts;
+      sup.scrap = (sup.scrap || 0) + scrap;
+      out.push(`Their ${V.name} was shot to pieces: stripped for ${parts} parts and ${scrap} scrap.`);
+    }
+  }
+  // Into the team's cargo as far as it goes.
+  const got = {}, left = {}, items = [], leftItems = [];
+  for (const [k, q] of Object.entries(sup)) {
+    const room = p && state.parties.includes(p) ? cargoRoom(state, p) : 0;
+    const take = Math.min(q, unitsThatFit(room, k));
+    if (take > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take; got[k] = take; }
+    if (q - take > 0) left[k] = q - take;
+  }
+  for (const it of gear) {
+    if (p && state.parties.includes(p) && addGearToCargo(state, p, it)) items.push(it.name);
+    else leftItems.push(it);
+  }
+  const taken = [planText(got), ...items].filter(Boolean).join(", ");
+  out.push(taken ? `Taken: ${taken}.` : "The team could carry none of it.");
+  if (Object.keys(left).length || leftItems.length) {
+    const what = [planText(left), ...leftItems.map((it) => it.name)].filter(Boolean).join(", ");
+    if (parked) {
+      parked.cargo = parked.cargo || { supplies: {}, gear: [] };
+      for (const [k, q] of Object.entries(left)) parked.cargo.supplies[k] = (parked.cargo.supplies[k] || 0) + q;
+      parked.cargo.gear.push(...leftItems);
+      out.push(`No room for the rest: ${what}, loaded in the ${parked.name} (Take the cargo left in the vehicle).`);
+    } else {
+      leaveCache(state, opts.tile, left, leftItems);
+      out.push(`No room for the rest: ${what}, left on the tile and marked (Recover it).`);
+    }
+  }
+  return out;
+}
+// Cargo left on a tile: a death site with no names ("Cargo left behind": the Recover mission picks it up).
+export function leaveCache(state, tile, supplies, gear) {
+  let site = state.deathSites.find((d) => d.tile === tile);
+  if (!site) { site = { id: newId(), tile, items: [], day: day(state), names: [], lastConfirmed: day(state) }; state.deathSites.push(site); }
+  for (const [k, q] of Object.entries(supplies)) {
+    if (!SUPPLIES[k] || q < 1) continue;
+    const cur = site.items.find((i) => i.kind === "supply" && i.key === k);
+    if (cur) { cur.qty += q; cur.value = cur.qty * SUPPLIES[k].value; } else site.items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: q, value: q * SUPPLIES[k].value });
+  }
+  for (const g of gear) site.items.push({ kind: "gear", key: g.key, name: g.name, qty: 1, value: 0, item: g });
+  markDeathSite(state, site);
+  return site;
+}
+
+// ---------- witnesses and consequences ----------
+// Why word of it gets out ([] when nobody saw). c: { type, owner, ref, tile, key }; result: the battle's; p: your team.
+export function witnessesOf(state, c, result, p) {
+  const why = [];
+  const g = state.grid, tile = c.tile;
+  if (!result || result.outcome !== "victory") why.push("their guards got away");
+  else if ((result.enemiesLeft || 0) > 0) why.push(`${result.enemiesLeft} of them got away`);
+  else if (c.type === "merchants" && !result.tactical && hash01(state.seed, "cvwit", c.key || "", state.hour) < WITNESS.TRADER_ESCAPE) why.push("one of the traders slipped away in the fighting");
+  const base = state.factions.find((f) => f.alive && f.id !== c.owner && f.bases.some((b) => g.distance(b, tile) <= WITNESS.BASE_RANGE));
+  if (base) why.push(`lookouts of ${base.known ? base.name : "a group's base"} nearby saw it`);
+  const other = state.parties.some((q) => q !== c.ref && q !== p && q.owner !== "player" && q.path && q.path.length && g.distance(partyTile(q), tile) <= 1)
+    || visitorsOf(state).some((v) => v !== c.ref && g.distance(v.tile, tile) <= 1);
+  if (other) why.push("others on the road saw it");
+  return why;
+}
+// Applies what word of the attack costs you (nothing when nobody saw). Adds a line to `lines`.
+export function consequences(state, c, why, lines) {
+  const st = (state.stats.caravanRaids = state.stats.caravanRaids || { byYou: 0, won: 0, seen: 0, unseen: 0, byGroups: 0, groupsWon: 0, convoysLost: 0 });
+  if (!why.length) {
+    st.unseen++;
+    lines.push("Nobody got away to tell who did it: as far as anyone knows, the caravan never arrived.");
+    return false;
+  }
+  st.seen++;
+  if (c.type === "merchants") {
+    if (c.ref && !c.ref.blamed) { blameYou(state, c.ref); c.ref.blamed = true; }
+    lines.push(`Word gets out (${why[0]}): merchants will shun you, and the traders you know think less of you.`);
+  } else {
+    const f = factionById(state, c.owner);
+    if (f && f.alive) {
+      turnHostile(state, f, "you attacked their caravan");
+      lines.push(`Word gets out (${why[0]}): ${f.name} are your enemies now.`);
+    }
+  }
+  return true;
+}
+
+// ---------- cards: meeting a caravan, catching up with one ----------
+function inTheOpen(state, p) {
+  if (!teamOk(state, p) || ["engaged", "holding", "helping", "siege"].includes(p.phase)) return false;
+  const tile = partyTile(p);
+  return tile != null && !state.bases.some((b) => state.grid.distance(b.tile, tile) <= 1);
+}
+const enemyOf = (state, q) => {
+  const f = factionById(state, q.owner);
+  if (!f || !f.alive) return true;
+  const att = attitude(f);
+  return att === "Hostile" || (isAggressiveType(f) && att !== "Allied" && !f.pact);
+};
+export function caravanCard(state, p, c, lead = "", ambush = null) {
+  halt(p);
+  const enemy = enemyFor(state, c);
+  const odds = fightOdds(state, p, enemy, ambush);
+  const key = c.key;
+  const ok = (st) => teamOk(st, p) && !!caravanByKey(st, key) && near(st, partyTile(p), caravanByKey(st, key).tile);
+  const done = (st, text) => { resume(st, p); return text; };
+  const f = c.type === "merchants" ? null : factionById(state, c.owner);
+  const who = c.type === "merchants" ? `A merchant caravan from ${c.ref.home}` : f && f.known ? `A ${f.name} ${c.type}` : `A ${c.type} of a group you have not met`;
+  const choices = [];
+  if (c.type === "merchants" && attitude(c.ref) !== "Hostile") choices.push({ label: "Trade with them", hint: "The trade window, from what the team carries", ai: () => 60, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, c.ref, { partyId: p.id }); delete p.conflictResume; return ""; } });
+  choices.push({
+    label: `Attack the caravan (${pct(odds)} by the numbers)`,
+    hint: `A fight with its guards (${guardText(state, c)}). Win and everything it carries is yours, and its vehicle if it still runs. If anyone gets away or sees it, ${c.type === "merchants" ? "merchants will shun you" : `${f ? f.name : "its group"} will be your enemies`}`,
+    fight: { odds, enemy, ambush }, ai: () => -50,
+    resolve: (st) => (ok(st) ? attackRoadCaravan(st, p, key, ambush) : done(st, "The caravan is gone.")),
+  });
+  choices.push({ label: "Let it pass", hint: "Carry on", ai: () => 20, resolve: (st) => done(st, "") });
+  return {
+    title: `${c.type === "merchants" ? "Merchants" : "A caravan"} on the road: ${cap1(c.name)}`, partyId: p.id, isCaravanMeet: true, where: tileLabel(state, partyTile(p)),
+    text: `${lead ? `${lead} ` : ""}${who}, ${guardText(state, c)}. ${c.type === "merchants" ? "Their wagons carry" : "It carries"} ${cargoText(c)}.${f && attitude(f) === "Hostile" ? ` ${f.name} are already your enemies.` : ""}`,
+    choices,
+  };
+}
+
+// The team's orders card (parties.js ordersCard): attack a caravan in sight within a tile, or go after one further out.
+export function caravanOrderChoices(state, p) {
+  if (!teamOk(state, p)) return [];
+  const tile = partyTile(p);
+  const out = [];
+  for (const c of roadCaravans(state)) {
+    if (!state.live.has(c.tile)) continue;
+    const d = state.grid.distance(tile, c.tile);
+    if (d <= 1) {
+      const enemy = enemyFor(state, c);
+      const odds = fightOdds(state, p, enemy, "player");
+      out.push({
+        label: `Attack ${c.name} (${pct(odds)})`, hint: `${cap1(guardText(state, c))}; carrying ${cargoText(c)}. You pick the moment: the team has the drop on them. Win and everything it carries is yours.`,
+        fight: { odds, enemy, ambush: "player" },
+        resolve: (st) => attackRoadCaravan(st, p, c.key, "player"),
+      });
+    } else if (d <= INTERCEPT.RANGE) {
+      out.push({
+        label: `Intercept ${c.name} (${d} tiles)`, hint: `${cap1(guardText(state, c))}; carrying ${cargoText(c)}. The team goes after it and follows it; when it is within a tile you decide whether to attack (for ${INTERCEPT.HOURS}h at most).`,
+        resolve: (st) => intercept(st, p, c.key),
+      });
+    }
+  }
+  return out;
+}
+export function intercept(state, p, key) {
+  const c = caravanByKey(state, key);
+  if (!c || !teamOk(state, p)) return "The caravan is gone.";
+  const msg = orderMove(state, p, c.tile);
+  if (p.dest !== c.tile) return msg;
+  p.intercept = { key, since: state.hour };
+  return `${msg} Going after ${c.name}.`;
+}
+
+// ---------- every hour ----------
+export function caravanRaidsHour(state) {
+  if (state.gameOver) return;
+  interceptsHour(state);
+  meetingsHour(state);
+  aiRaidsHour(state);
+}
+
+function interceptsHour(state) {
+  for (const p of state.parties) {
+    if (!p.intercept || p.owner !== "player") continue;
+    const c = caravanByKey(state, p.intercept.key);
+    const give = (text) => { delete p.intercept; if (p.phase === "out" || p.phase === "waiting") awaitOrders(state, p, text, { failed: true }); };
+    if (!teamOk(state, p)) { delete p.intercept; continue; }
+    if (!c) { give("The caravan the team was after is gone or out of reach (trading at a base)."); continue; }
+    if (state.hour - p.intercept.since > INTERCEPT.HOURS) { give(`The team gave up the chase after ${INTERCEPT.HOURS} hours.`); continue; }
+    const tile = partyTile(p);
+    if (near(state, tile, c.tile)) {
+      delete p.intercept;
+      if (state.cards.some((x) => x.partyId === p.id && !x.isOrders)) continue; // met already (visitors.js merchants' card)
+      for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].partyId === p.id && state.cards[i].isOrders) state.cards.splice(i, 1);
+      p.lastConflict = state.hour;
+      addCard(state, caravanCard(state, p, c, "The team has caught up with the caravan.", "player"));
+      continue;
+    }
+    if (p.phase === "waiting" || (p.phase === "out" && p.dest !== c.tile)) {
+      const res = planPath(state, tile, c.tile, p.vehicle);
+      if (!res) { give("The team cannot reach the caravan."); continue; }
+      for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].partyId === p.id && state.cards[i].isOrders) state.cards.splice(i, 1);
+      // The progress toward the next tile carries over (re-routed every hour it would never get anywhere otherwise).
+      Object.assign(p, { path: res.path, idx: 0, dest: c.tile, phase: "out", mission: "move" });
+    }
+  }
+}
+
+// A team on the road meets a group's caravan or convoy (not an enemy's: those attack it, conflicts.js contactAttack).
+function meetingsHour(state) {
+  const cars = roadCaravans(state).filter((c) => c.type !== "merchants" && c.owner !== "player" && !c.ref.escortJob && !enemyOf(state, c.ref));
+  if (!cars.length) return;
+  for (const p of state.parties) {
+    if (p.owner !== "player" || p.intercept || !inTheOpen(state, p)) continue;
+    if (state.cards.some((x) => x.partyId === p.id)) continue;
+    if (p.lastConflict != null && state.hour - p.lastConflict < COOLDOWN_HOURS) continue;
+    const tile = partyTile(p);
+    for (const c of cars) {
+      if (!near(state, tile, c.tile) || !state.live.has(c.tile) || !(state.tiles[tile].road || state.tiles[c.tile].road)) continue;
+      const met = c.ref.met || (c.ref.met = {});
+      const id = localId(state, p.id);
+      if (met[id] != null && state.hour - met[id] < MEET.COOLDOWN) continue;
+      met[id] = state.hour;
+      p.lastConflict = state.hour;
+      addCard(state, caravanCard(state, p, c, "", null));
+      break;
+    }
+  }
+}
+
+// ---------- the groups rob caravans ----------
+// Would group f rob this caravan?
+export function wouldRaid(state, f, c) {
+  if (!f.alive || !f.bases.length || f.id === c.owner) return false;
+  if (c.owner === "player") {
+    const att = attitude(f);
+    return att === "Hostile" || (isAggressiveType(f) && att !== "Allied" && !f.pact);
+  }
+  if (c.type === "merchants") return f.type === "raider";
+  const o = factionById(state, c.owner);
+  if (!o || !o.alive) return false;
+  if (f.type === "raider") return !(state.diplo && pactBetween(state, f, o));
+  return isAggressiveType(f) && !!state.diplo && !!warBetween(state, f, o);
+}
+export function aiRaidsHour(state) {
+  const g = state.grid;
+  const groups = state.factions.filter((f) => f.alive && f.bases.length && (isAggressiveType(f)));
+  if (!groups.length) return;
+  for (const c of roadCaravans(state, { player: true })) {
+    // The groups' caravans near a raider gang are ambushed on the way (parties.js aiPartyHour); escorted ones (jobs.js) are left alone.
+    if (c.type !== "merchants" && c.owner !== "player") continue;
+    if (c.ref.raidedAt != null && state.hour - c.ref.raidedAt < AI_RAID.COOLDOWN) continue;
+    const strength = c.owner === "player" ? partyMembers(state, c.ref).reduce((a, s) => a + combatPower(s), 0) * 1.1 : c.strength; // as visitors.js hitConvoy
+    for (const f of groups) {
+      if (!f.bases.some((b) => g.distance(b, c.tile) <= AI_RAID.RANGE) || !wouldRaid(state, f, c)) continue;
+      const band = groupStrength(f) * AI_RAID.BAND;
+      if (band < Math.max(1, strength) * AI_RAID.EDGE) continue;
+      const fi = state.factions.indexOf(f);
+      const chance = AI_RAID.CHANCE * (1 + Math.min(2, (c.value || 0) / AI_RAID.RICH));
+      if (hash01(state.seed, "cvraid", state.hour, c.key, fi) >= chance) continue;
+      groupRobs(state, f, c, band, strength);
+      break;
+    }
+  }
+}
+// A group falls on a caravan, decided by the numbers. Returns true when the caravan was taken.
+export function groupRobs(state, f, c, band = groupStrength(f) * AI_RAID.BAND, strength = c.strength) {
+  const st = (state.stats.caravanRaids = state.stats.caravanRaids || { byYou: 0, won: 0, seen: 0, unseen: 0, byGroups: 0, groupsWon: 0, convoysLost: 0 });
+  st.byGroups++;
+  const fi = state.factions.indexOf(f);
+  const win = hash01(state.seed, "cvwin", state.hour, c.key, fi) < clamp(0.5 + (band / Math.max(1, strength) - 1) * 0.6, 0.05, 0.95);
+  const seen = state.live.has(c.tile) || inCoverage(state, c.tile);
+  const who = f.known ? f.name : "Raiders";
+  const where = tileLabel(state, c.tile);
+  c.ref.raidedAt = state.hour;
+  if (!win) {
+    f.pop = Math.max(0, f.pop - 1 - Math.floor(hash01(state.seed, "cvloss", state.hour, c.key) * 2));
+    if (c.type === "merchants") { c.ref.size = Math.max(1, c.ref.size - 1); c.ref.guards = Math.max(0, (c.ref.guards || 0) - 1); }
+    if (c.owner === "player") log(state, `Your convoy near ${where} beat off ${who}.`, "good");
+    else if (seen) log(state, `The guards of ${c.name} beat off ${who} near ${where}.`, "info");
+    return false;
+  }
+  st.groupsWon++;
+  const goods = goodsOf(c);
+  const took = takeInto(f, goods);
+  if (c.type === "merchants") {
+    const v = c.ref;
+    f.pop = Math.max(0, f.pop - Math.ceil((v.guards || 0) * 0.25));
+    visitorInfo(state).stats.robbed++;
+    if (seen || v.known) log(state, `${who} fell on ${v.name} near ${where} and took everything they carried.`, "danger");
+    chronicleNote(state, `${who} plundered ${v.name}, merchants from outside, near ${where}.`, "world", c.tile);
+    leaveMap(state, v, "broken");
+  } else if (c.owner === "player") {
+    const q = c.ref;
+    st.convoysLost++;
+    const crew = partyMembers(state, q);
+    if (crew.length) hurt(state, crew[Math.floor(hash01(state.seed, "cvhurt", state.hour, c.key) * crew.length) % crew.length], 15 + Math.floor(hash01(state.seed, "cvdmg", state.hour) * 30), c.tile, `when ${who} robbed the convoy`);
+    log(state, `${who} ambushed your convoy near ${where} and took the whole load${took ? `: ${took}` : ""}.`, "danger");
+    chronicleNote(state, `${who} robbed your convoy near ${where}.`, "danger", c.tile);
+  }
+  return true;
+}
+// All of a caravan's goods into a group's stock (supplies) and onto its shelf (items). Returns what, in words.
+export function takeInto(f, goods) {
+  const got = {};
+  for (const [k, q] of Object.entries(goods.supplies || {})) {
+    if (!SUPPLIES[k] || q < 1) continue;
+    const tk = k === "rawwater" ? "water" : k;
+    f.stock[tk] = (f.stock[tk] || 0) + Math.floor(q);
+    got[k] = Math.floor(q);
+    goods.supplies[k] = 0;
+  }
+  const items = (goods.gear || []).splice(0);
+  if (items.length) f.wares = [...(f.wares || []), ...items].slice(-WARES_MAX);
+  if (f.lootedGear) for (const it of items) f.lootedGear.push(it.name);
+  return [planText(got), ...items.map((it) => it.name)].filter(Boolean).join(", ");
+}
+// parties.js aiPartyHour: a raider gang near its base ambushes a group's caravan or convoy (the encounter rolled
+// there): decided by the numbers; won, everything it carried is theirs. Returns true when the caravan is taken.
+export function gangAmbush(state, r, q) {
+  const c = { key: pKey(state, q), type: q.kind, ref: q, tile: partyTile(q), owner: q.owner, name: `a ${q.kind}`, strength: q.strength || 2 };
+  const band = groupStrength(r) * AI_RAID.BAND;
+  const st = (state.stats.caravanRaids = state.stats.caravanRaids || { byYou: 0, won: 0, seen: 0, unseen: 0, byGroups: 0, groupsWon: 0, convoysLost: 0 });
+  st.byGroups++;
+  const win = hash01(state.seed, "cvamb", state.hour, c.key, state.factions.indexOf(r)) < clamp(0.5 + (band / Math.max(1, c.strength) - 1) * 0.6, 0.05, 0.95);
+  if (!win) {
+    q.strength = (q.strength || 2) * 0.8;
+    r.pop = Math.max(0, r.pop - 1);
+    return false;
+  }
+  st.groupsWon++;
+  takeInto(r, goodsOf(c));
+  return true;
+}
+
+// ---------- tooltips ----------
+// Map tooltip lines for the groups' caravans and convoys on a tile you can see (render.js).
+export function caravanTipLines(state, tile, liveSet = state.live) {
+  if (!liveSet.has(tile)) return [];
+  const out = [];
+  for (const c of roadCaravans(state)) {
+    if (c.tile !== tile || c.type === "merchants") continue;
+    const f = factionById(state, c.owner);
+    if (f && !f.known) out.push(`A ${c.type} of a group you have not met: ${guardText(state, c)}`);
+    else out.push(`${cap1(c.name)}: ${guardText(state, c)}, carrying ${cargoText(c)}`);
+  }
+  return out;
+}
+export { escortShort };
+
+// ---------- Help (ui/help.js: "Caravans on the road") ----------
+export const CARAVAN_HELP = `Caravans travel the roads: <b>merchants from outside the state</b> with their wagons, the <b>groups' caravans</b> (to your bases, to each other) and their <b>trade convoys</b>, and your own convoys. Any of them can be attacked, and whoever wins takes <b>everything</b> it carried.<br><br>
+<b>Merchants' escorts.</b> What the wagons carry sets how well they are guarded (guns, armour and military kit count half again): under 550 worth, a few guards on foot with pistols and shotguns; up to 1000, armed guards with rifles and a pickup truck; above that an armoured escort: guards in vests and plates with automatic rifles, a scout riding ahead and a Humvee with a gunner in the turret (an MRAP from 1500). Every caravan has a speciality: general goods, guns and ammunition, armour and military kit, fuel, parts and tools, medicine, or food and water. The map shows the escort (a guard ahead of the wagon, a pickup behind it, a Humvee or MRAP leading it) and the tooltip says it in words.<br><br>
+<b>Attacking one.</b> A team within a tile of a caravan can attack it: from the card when they meet on a road, or from the team's orders card (<i>Attack …</i> for one in sight within a tile: you pick the moment and have the drop on them; <i>Intercept …</i> for one in sight up to ${INTERCEPT.RANGE} tiles away: the team follows it and asks again when it is close, for ${INTERCEPT.HOURS} hours at most). The battle is on the road: its guards, and its vehicle parked behind them. Win and you take all its goods, the guards' gear, and its vehicle if it still runs (it joins a team that has none; otherwise it waits on the tile, marked; one with a shot-up engine needs repairs there; a wreck is stripped for parts and scrap). What the team cannot carry stays in that vehicle or on the tile as <i>cargo left behind</i>: send a team to recover it.<br><br>
+<b>Witnesses.</b> Word gets out only if someone saw it: a guard or trader who got away (you lost, pulled back, one fled, or with merchants a trader slipped off in the fighting), another group's base within ${WITNESS.BASE_RANGE} tiles, or anyone else on the road within a tile. Then merchants shun you (reputation −45, the trading groups you know think less of you), or the caravan's group turns hostile and the peaceful groups you know lose goodwill. Leave no one to tell and the caravan simply never arrived. Attacking a caravan at your own gates is always seen.<br><br>
+<b>The groups rob them too.</b> Raider gangs fall on caravans that pass within ${AI_RAID.RANGE} tiles of their bases (expansionists and zealots only those of groups they are at war with), and on your convoys when they would attack your teams. It is decided by the numbers; the winners put the goods into their stores and the items on their shelves. A trade caravan of yours that loses a fight on the road loses its whole load.`;

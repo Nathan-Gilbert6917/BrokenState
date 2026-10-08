@@ -81,6 +81,7 @@ export function carRecord(state, b, id) {
   const W = b.w;
   const xs = cells.map((i) => i % W), ys = cells.map((i) => (i / W) | 0);
   const car = b.cells[cells[0]].car;
+  if (car.escort) return null; // a caravan escort's vehicle (combat.js): settled when the battle ends (caravanraids.js)
   const model = modelOf(car);
   const M = MODELS[model];
   const r = (...k) => roll(state, b, id, ...k);
@@ -106,7 +107,7 @@ export function carsNear(b, u) {
   for (let y = u.y - 1; y <= u.y + 1; y++) for (let x = u.x - 1; x <= u.x + 1; x++) {
     if (x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
     const c = b.cells[y * b.w + x];
-    if (!c.car || (c.k !== "car" && c.k !== "truck") || seen.has(c.car.id)) continue;
+    if (!c.car || (c.k !== "car" && c.k !== "truck") || c.car.escort || seen.has(c.car.id)) continue;
     seen.add(c.car.id);
     out.push(c.car.id);
   }
@@ -317,7 +318,7 @@ export function settleClaims(state, b, result) {
   }
 }
 // A found vehicle that runs becomes the team's (the fuel it carries poured in as far as the tank needs).
-function joinTeam(state, p, v) {
+export function joinTeam(state, p, v) {
   const pour = Math.max(0, Math.min(carried(p, "fuel"), tank(v) - v.fuel, Math.max(0, 6 - v.fuel)));
   if (pour > 0) v.fuel += takeSupply(p, "fuel", pour);
   v.loc = { kind: "party", partyId: p.id };

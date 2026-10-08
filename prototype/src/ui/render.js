@@ -24,6 +24,7 @@ import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
 import { jobPins } from "./diplomacy.js";
 import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
+import { caravanTipLines } from "../sim/caravanraids.js"; // the groups' caravans and convoys you can see
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
 import { stagingStage, stagingPct, workCap, stagingTip } from "../sim/staging.js";
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
@@ -1505,8 +1506,10 @@ export function render(state) {
     if (!seen && !heard) continue;
     const color = OUTSIDER_COLORS[v.kind] || "#8a8a86";
     const [px, py] = g.toPixel(v.tile, HEX);
-    const cv = outsiderPartyCanvas(v.kind, v.sub, Math.ceil(v.size / 2)), s = zoomBoost();
-    const w = gridW(cv) * (v.kind === "merchants" ? 1.3 : 1.15) * s;
+    // Merchants by their escort (sim/escorts.js): a guard ahead of the wagon, a pickup behind it, a Humvee or an MRAP leading it.
+    const esc = v.kind === "merchants" && v.escort ? { tier: v.escort.tier, vehicle: v.vehicleLost ? "" : v.escort.vehicle } : null;
+    const cv = outsiderPartyCanvas(v.kind, v.sub, Math.ceil(v.size / 2), esc), s = zoomBoost();
+    const w = gridW(cv) * (v.kind === "merchants" ? (esc && esc.tier !== "light" ? 1.75 : 1.4) : 1.15) * s;
     const next = v.path && v.path[v.idx + 1];
     const facing = next != null && next !== v.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
     const [x, y, k2] = besideBase(v.tile, px, py);
@@ -2083,6 +2086,7 @@ export function tileTooltip(state, id) {
   for (const line of convoyTip(state, id)) lines.push(`<span style="color:#c8d48a">${esc(line)}</span>`); // sim/miltrucks.js
   for (const line of surveyTip(state, id)) lines.push(`<span style="color:#f0c85a">${esc(line)}</span>`); // sim/survey.js: surveys and rumours
   for (const o of visitorTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color === "#7a1a1a" ? "#ff8a7f" : o.color}">${esc(o.text)}</span>`); // sim/visitors.js
+  for (const line of caravanTipLines(state, id, liveSet(state))) lines.push(`<span style="color:#e0c070">${esc(line)}</span>`); // sim/caravanraids.js: the groups' caravans and convoys
   for (const o of bandTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/hardcore-groups.js
   if (hasKey(state, id)) lines.push(`<span class="good">🔑 You hold a key for this place: it opens its locks.</span>`); // sim/locks.js
   const ru = ownHere ? null : ruinInfo(state, id);
