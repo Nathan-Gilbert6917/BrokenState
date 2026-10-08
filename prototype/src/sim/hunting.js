@@ -27,7 +27,8 @@
 //     hunting weapon: no hunt (set snares instead).
 //   Gunshots: each kill with a firearm is 1 shot, a second one (a miss first) 40% of the time for big game and 20% for
 //     small: 1 ammo and +6 Heat each (× the gun's noise / 3) on top of the hour's Heat, and each wandering horde
-//     within 3 tiles turns toward the shots 25% of the time. Bows add nothing. (A rifle hunt in good country fires
+//     within 3 tiles turns toward the shots 25% of the time (both × the gun attachments' noise, gunmods.js: a suppressor
+//     cuts them to 35–50%, a muzzle brake adds 30%). Bows add nothing. (A rifle hunt in good country fires
 //     5–8 shots in 8 hours: Heat ~40–50 from the shots alone.)
 //
 // The hunting mix (a setting per base, base.huntMix: traps / bows / guns in steps of 10%, DEFAULT_MIX all guns): the
@@ -85,6 +86,7 @@
 //   day turns toward it 25% of the time. Fish work / role: a base on a river or a lake shore, one rod or net a fisher
 //   (carried or in the armory), 3 hours a day. Expect a good hunter at a cabin in forest to bring in about 4–6 food a
 //   day once the land settles (a farmer about 2), less in spring and on farmland.
+import { gunMods, wearMuzzle } from "./gunmods.js"; // a suppressed gun is quieter on a hunt
 import { GEAR, SUPPLIES } from "./data.js";
 import { log, skill, gearEffect, atBase, newId, baseById, hub } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
@@ -208,7 +210,10 @@ export function huntWeaponInfo(item) {
   const noise = d.noise || 0;
   // Bows and crossbows hunt with arrows (bolts): a shot at game is often lost (ARROW).
   const bow = d.cat === "bow" || d.cat === "crossbow";
-  return { key: item.key, name: d.name, big: h.big, small: h.small, loud: noise >= 1, noise, ammo: noise >= 1, arrows: bow && noise < 1 };
+  // quiet: × the shot's noise from the gun's attachments (gunmods.js: a suppressor 0.35–0.5, a brake 1.3): the hunt's
+  // Heat, the base's hunting noise and the chance the wandering dead turn toward the shots all scale with it.
+  const quiet = noise >= 1 ? gunMods(item).noise : 1;
+  return { key: item.key, name: d.name, big: h.big, small: h.small, loud: noise >= 1, noise: noise * quiet, quiet, ammo: noise >= 1, arrows: bow && noise < 1 };
 }
 export const hunterSkill = (s) => 0.5 * skill(s, "shooting") + 0.35 * skill(s, "scouting") + 0.15 * skill(s, "stealth");
 export const hunterMult = (s) => (0.55 + 0.09 * hunterSkill(s)) * (hasPerk(s, "hunter") ? 1.25 : 1);
@@ -498,12 +503,13 @@ export function unloadGame(base, cargo) {
 
 // ---------- one hour of hunting (orders.js taskHour) ----------
 // Wandering hordes within reach turn toward gunshots.
-function drawHordes(state, tile) {
+// quiet: × the chance (a suppressed gun draws fewer; gunmods.js). The same dice either way.
+export function drawHordes(state, tile, quiet = 1) { // exported for tools/gunmodtest.js
   let n = 0;
   for (const h of state.hordes) {
     if (!["roam", "border", undefined, null].includes(h.role)) continue;
     if (state.grid.distance(h.tile, tile) > HUNT.drawRange || h.tile === tile) continue;
-    if (state.rng.chance(HUNT.drawChance)) { h.target = tile; h.path = null; n++; }
+    if (state.rng.chance(HUNT.drawChance * quiet)) { h.target = tile; h.path = null; n++; }
   }
   return n;
 }
@@ -549,7 +555,8 @@ export function huntHour(state, p) {
       const used = takeSupply(p, "ammo", shots);
       got.shots += Math.max(1, used);
       p.heat = Math.min(100, (p.heat || 0) + HUNT.shotHeat * (who.w.noise / 3) * Math.max(1, used));
-      got.drawn += drawHordes(state, tile);
+      got.drawn += drawHordes(state, tile, who.w.quiet ?? 1);
+      if (who.item && wearMuzzle(who.item, Math.max(1, used))) got.wornMod = who.item.name; // an oil filter shot out (gunmods.js)
     } else if (who.w.arrows) {
       // A bow: silent, but a shot at game is often an arrow lost in the brush or broken in the animal.
       const shots = 1 + (state.rng.chance(a.big ? HUNT.missChance : HUNT.missSmall) ? 1 : 0);
@@ -929,7 +936,7 @@ export function huntingDaily(state, base) {
   const dayStart = state.hour - 24;
   const got = { rations: 0, shots: 0 };
   let noise = 0;
-  const gunfire = new Set(); // hunting grounds with shots today: the dead nearby may come to look
+  const gunfire = new Map(); // hunting grounds with shots today: the dead nearby may come to look
   if (hunters.length && !huntWorkWhy(state, base)) {
     // The walls come first: the hunters leave the base's last ammo (3 a head + 10) for them.
     const spare = () => Math.max(0, (base.stock.ammo || 0) - ammoKeep(state, base));
@@ -963,7 +970,8 @@ export function huntingDaily(state, base) {
             base.stock.ammo = (base.stock.ammo || 0) - used;
             got.shots += used;
             noise += b.w.noise / 3;
-            gunfire.add(tile);
+            gunfire.set(tile, Math.max(gunfire.get(tile) || 0, b.w.quiet ?? 1)); // the loudest gun on that ground counts
+            wearMuzzle(b.item, Math.max(1, used)); // an oil filter wears a shot at a time (gunmods.js)
           } else if (b.w.arrows) {
             // Silent, but a shot at game is often an arrow lost (ARROW.lost a shot; a miss first now and then).
             const shots = 1 + (state.rng.chance(ANIMALS[k].big ? HUNT.missChance : HUNT.missSmall) ? 1 : 0);
@@ -999,7 +1007,7 @@ export function huntingDaily(state, base) {
   }
   base.huntNoise = Math.round(noise * 10) / 10; // hordes.js baseHeat: gunshots around the base
   // Gunfire carries: each wandering horde within 3 tiles of a hunting ground with shots today may turn toward it.
-  for (const tile of gunfire) got.drawn = (got.drawn || 0) + drawHordes(state, tile);
+  for (const [tile, quiet] of gunfire) got.drawn = (got.drawn || 0) + drawHordes(state, tile, quiet);
   if (got.hrs) base.huntLast = { day: Math.floor(state.hour / 24), mix: huntMixOf(base), hrs: got.hrs, rations: Math.round(got.rations * 10) / 10, shots: got.shots, arrows: got.arrows || 0, trapped: got.trapped || 0, drawn: got.drawn || 0, noise: base.huntNoise };
   if (fishers.length && !fishWorkWhy(state, base)) {
     const k0 = fishTools(state, base, fishers, { frozen: frozenAt(state) });

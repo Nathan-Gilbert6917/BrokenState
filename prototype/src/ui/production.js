@@ -2,7 +2,7 @@
 // the Order column of the Workshops tab, the drying racks' order, the Power card, the standing craft orders on the
 // Crafting tab, the Steward card on the Overview tab and the pin toggle next to a person. Actions are merged into
 // main.js's dispatcher (PROD_ACTIONS on click, PROD_CHANGE on change).
-import { baseById, survivorById, atBase } from "../sim/world.js";
+import { baseById, survivorById, atBase, skill } from "../sim/world.js";
 import { BUILDINGS, stations, count } from "../sim/buildings.js";
 import { SKILL_NAMES } from "../sim/data.js";
 import { CRAFTS, craftName, MAX_CRAFT_QUEUE } from "../sim/crafting.js";
@@ -12,8 +12,8 @@ import {
   productKey, inputKeys, untilMargin, craftOrders, addCraftOrder, setCraftOrder, removeCraftOrder, craftOrderStatus, bestQuality,
 } from "../sim/production.js";
 import { POWER, POWER_USERS, STILL, powerStatus, refreshPower, generators } from "../sim/power.js";
-import { STEWARD_AREAS, stewardOf, setSteward, setStewardArea, setStewardStyle, setPinned, stewardSummary, STEWARD_LOG_HOUR } from "../sim/steward.js";
-import { PERSONALITIES, GOVERN_AREAS } from "../sim/autopilot.js";
+import { STEWARD_AREAS, stewardOf, setSteward, setStewardArea, setStewardStyle, setPinned, stewardSummary, STEWARD_LOG_HOUR, leaderChoices, leaderOf, leaderStatus, leaderScore, ledBy, setLeader } from "../sim/steward.js";
+import { PERSONALITIES } from "../sim/autopilot.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -105,20 +105,36 @@ export function craftOrdersCard(state, b) {
 export function stewardCard(state, b) {
   const s = stewardOf(b);
   const pinned = atBase(state, b.id).filter((x) => x.pinned);
-  return `<h3>Steward</h3>
+  const L = leaderOf(state, b);
+  const where = leaderStatus(state, b);
+  const choices = leaderChoices(state, b);
+  if (L && !choices.includes(L)) choices.push(L); // away: still listed
+  const label = (x) => {
+    const other = ledBy(state, x);
+    return `${x.name} (Leadership ${skill(x, "leadership")}, Speech ${skill(x, "speech")})${other && other !== b ? ` · leads ${other.name}` : ""}`;
+  };
+  const pick = `<select data-action="stw-leader" data-base="${b.id}"${tip("Who leads this base: one of the people living here. The best by Leadership (Speech counts half) is picked for you if you hand it over without choosing. The leader keeps their own work and is never sent out by the base; while they are away the base waits, and if they die or move the next best takes over. A person leads one base.")}>
+      ${s.on ? "" : `<option value="" ${L ? "" : "selected"}>No leader</option>`}
+      ${choices.map((x) => `<option value="${x.id}" ${L === x ? "selected" : ""}>${esc(label(x))}</option>`).join("")}
+    </select>`;
+  const best = choices.slice().sort((x, y) => leaderScore(y) - leaderScore(x))[0];
+  const runs = s.on ? (where === "away" ? `${esc(L.name)} is away: ${esc(b.name)} waits for them` : `${esc(L ? L.name : "The leader")} runs this base`) : "You run this base";
+  const name = L ? first(L) : best ? first(best) : "a leader";
+  return `<h3>Base leader</h3>
     <div class="card small prodctl">
-      <div class="spread"><b>${s.on ? "A steward runs this base" : "You run this base"}</b><button class="${s.on ? "" : "primary"}" data-action="stw-toggle" data-base="${b.id}"${tip(s.on ? "Take over: the steward stops and everything stays as it is" : "Hand this base to a steward: it uses the governor's logic for the areas ticked below, every hour. You keep teams, trips, cards and the other bases; pinned people are left alone.")}>${s.on ? "Take over" : "Hand to a steward"}</button></div>
-      ${state.autopilot ? `<div class="muted">The dev autopilot runs the whole holdout now; stewards wait until it is off.</div>` : ""}
-      <div class="row" style="margin-top:0.3rem">Style <select data-action="stw-style" data-base="${b.id}"${tip("How careful the steward is (the governor's styles)")}>${Object.entries(PERSONALITIES).map(([k, p]) => `<option value="${k}" ${k === s.style ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></div>
-      <div class="stwareas">${GOVERN_AREAS.map((k) => `<label${tip(STEWARD_AREAS[k].desc)}><input type="checkbox" data-action="stw-area" data-base="${b.id}" data-area="${k}" ${s.areas[k] ? "checked" : ""}> ${esc(STEWARD_AREAS[k].name)}</label>`).join("")}</div>
+      <div class="row">Leader ${pick}</div>
+      <div class="spread" style="margin-top:0.3rem"><b>${runs}</b><button class="${s.on ? "" : "primary"}" data-action="stw-toggle" data-base="${b.id}"${tip(s.on ? "Take over: the leader stops running it and everything stays as it is" : `Let ${name} run this base: keep people safe and supplied with the governor's logic for the areas ticked below, every hour. Nothing drastic: no trips but emergency hauls for water or food, no trades, wars or moves. You keep teams, cards and the other bases; pinned people are left alone.`)}>${s.on ? "Take over" : `Let ${esc(name)} run it`}</button></div>
+      ${state.autopilot ? `<div class="muted">The dev autopilot runs the whole holdout now; base leaders wait until it is off.</div>` : ""}
+      <div class="row" style="margin-top:0.3rem">Style <select data-action="stw-style" data-base="${b.id}"${tip("How careful the leader is (the governor's styles)")}>${Object.entries(PERSONALITIES).map(([k, p]) => `<option value="${k}" ${k === s.style ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></div>
+      <div class="stwareas">${Object.keys(STEWARD_AREAS).map((k) => `<label${tip(STEWARD_AREAS[k].desc)}><input type="checkbox" data-action="stw-area" data-base="${b.id}" data-area="${k}" ${s.areas[k] ? "checked" : ""}> ${esc(STEWARD_AREAS[k].name)}</label>`).join("")}</div>
       ${s.on ? `<div class="muted">So far today: ${esc(stewardSummary(state, b))}. A summary goes to the log at ${STEWARD_LOG_HOUR}:00.</div>` : ""}
       ${s.last ? `<div class="muted">Last report: ${esc(s.last)}</div>` : ""}
-      <div class="muted">${pinned.length ? `Pinned (never moved): ${pinned.map((x) => esc(first(x))).join(", ")}` : "Nobody is pinned. Pin someone in the list of people to keep a steward off them."}</div>
+      <div class="muted">${pinned.length ? `Pinned (never moved): ${pinned.map((x) => esc(first(x))).join(", ")}` : "Nobody is pinned. Pin someone in the list of people to keep the leader off them."}</div>
     </div>`;
 }
 
 export function pinButton(s) {
-  return `<button class="mini${s.pinned ? " pinned" : ""}" data-action="pin" data-id="${s.id}"${tip(s.pinned ? "Pinned: stewards and the autopilot never change their role, station or gear. Click to unpin." : "Pin: stewards and the autopilot will never change this person's role, station or gear")}>${s.pinned ? "Pinned" : "Pin"}</button>`;
+  return `<button class="mini${s.pinned ? " pinned" : ""}" data-action="pin" data-id="${s.id}"${tip(s.pinned ? "Pinned: base leaders and the autopilot never change their role, station or gear. Click to unpin." : "Pin: base leaders and the autopilot will never change this person's role, station or gear")}>${s.pinned ? "Pinned" : "Pin"}</button>`;
 }
 
 // ---------- actions ----------
@@ -166,5 +182,6 @@ export const PROD_CHANGE = {
   "co-n": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setCraftOrder(state, b, el.dataset.id, { n: el.value })); },
   "co-q": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setCraftOrder(state, b, el.dataset.id, { minQ: el.value })); },
   "stw-style": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setStewardStyle(state, b, el.value)); },
+  "stw-leader": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setLeader(state, b, el.value)); },
 };
 

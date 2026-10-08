@@ -15,13 +15,17 @@
 //     unit stands (a lure on yourself, not used up). Handcuffs make tying up free.
 //   bodies: a guard who sees a body or a tied-up comrade within 5 tiles (3 at night) raises the alarm for its group
 //     (+6 Heat in a raid). Drag (1 action) moves a body, a knocked-out enemy or a downed teammate up to 3 tiles.
-//   suppressor: carried by the shooter (anywhere on them), it fits a pistol, hunting rifle or assault rifle: shots
-//     make half the noise (half the Heat, half the earshot) and each shot wears it (12 shots).
+//   suppressor: fitted to the gun (gunmods.js: a 9mm or rifle suppressor, or the makeshift oil filter on the muzzle
+//     mount), a shot makes the attachment's share of the noise (×0.35 / ×0.4 / ×0.5: that share of the Heat and the
+//     earshot); a muzzle brake or compensator makes it louder (×1.3 / ×1.15). The oil filter wears a shot at a time (12
+//     shots). An oil filter only carried (anywhere on them, a save from before attachments) still halves the shot of
+//     a 9mm pistol or a rifle without anything on its muzzle. Enemies' guns count their attachments the same way.
 //   night raids: enemy sight 7 (the dead 5), detection range ×0.6 (at least 2); your people see 7 too, more with a
 //     light (lights.js: a headlamp 8, a flashlight or torch 9, a lantern 10, a spotlight 12; noticed 1–6 tiles further)
 //     and normally with night vision goggles; a quick rummage in the dark without either is heard 2 tiles further
 //     (search.js; a full search is 1 action either way).
 import { GEAR } from "./data.js";
+import { gunMods, unitMods, fittedSuppressor, removeMod, modLabel } from "./gunmods.js"; // gun attachments: suppressors, brakes
 import { isNight, survivorById, baseById } from "./world.js";
 import { EQUIP_SLOTS, packOf } from "./inventory.js";
 import {
@@ -148,9 +152,7 @@ export function stealthSetup(state, b) {
       u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")); // a thermal monocular sees in the dark like night vision (optics.js)
       const t = s ? s.traits || [] : [];
       u.str = (t.includes("tough") ? 5 : 0) + (t.includes("brave") ? 5 : 0) - (t.includes("coward") ? 5 : 0);
-      const sup = s && SUPPRESSIBLE.includes(u.weapon) ? findCarried(s, "suppressor") : null;
-      u.suppressor = sup ? sup.item : null;
-      u.dropSuppressor = sup ? sup.take : null;
+      setSuppressor(u, s);
       u.daySight = u.sight; // refitSenses
       if (b.night && !u.nvg) u.sight = Math.min(u.sight, nightSight(u));
       u.optic = battleOptic(s, b.night); // optics.js: binoculars and scopes see further (by day; a thermal at night too)
@@ -190,18 +192,28 @@ export function detectRange(b, e, mover, perks = true) {
 // without a flashlight or night vision it is heard further (search.js quickRadius).
 export const searchCost = () => 1;
 
-// Noise of one shot. A suppressor halves it and loses a shot of wear; worn out, it is gone.
+// Noise of one shot: × the gun's attachments (gunmods.js: a suppressor cuts it, a brake adds to it), or × SUPPRESS
+// for an oil filter only carried. A makeshift suppressor loses a shot of wear; worn out, it is gone.
 export function shotNoise(b, a, w) {
   if (!w.noise) return 0;
-  if (a.side !== "player" || !a.suppressor) return w.noise;
-  const it = a.suppressor;
-  it.dur = Math.max(0, (it.dur ?? GEAR.suppressor.dur) - 1);
-  if (it.dur <= 0) {
-    if (a.dropSuppressor) a.dropSuppressor();
-    a.suppressor = null;
-    say(b, `${a.name}'s suppressor is shot out.`, "danger");
+  const gm = unitMods(a);
+  const sup = a.suppressor && (a.supFitted ? gm.noise < 1 : a.side === "player") ? a.suppressor : null;
+  const mult = gm.noise * (sup && !a.supFitted ? STEALTH.SUPPRESS : 1);
+  if (sup && GEAR[sup.key] && GEAR[sup.key].dur) {
+    sup.dur = Math.max(0, (sup.dur ?? GEAR[sup.key].dur) - 1);
+    if (sup.dur <= 0) {
+      if (a.supFitted) {
+        const gun = a.item || { key: a.weapon, mods: a.modItems };
+        if (gun.mods && gun.mods.muzzle === sup) removeMod(gun, "muzzle");
+        if (a.modItems && a.modItems.muzzle === sup) delete a.modItems.muzzle;
+        a.gm = gunMods(gun); // the rest of the gun's attachments still count
+        a.weaponName = modLabel(a.item || { name: WEAPONS[a.weapon].name, mods: gun.mods });
+      } else if (a.dropSuppressor) a.dropSuppressor();
+      a.suppressor = null;
+      say(b, `${a.name}'s suppressor is shot out.`, "danger");
+    }
   }
-  return w.noise * STEALTH.SUPPRESS;
+  return w.noise * mult;
 }
 
 // ---------- takedowns ----------
@@ -592,7 +604,16 @@ export function refitSenses(b, u, s) {
   u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal"));
   if (u.daySight != null) u.sight = b.night && !u.nvg ? Math.min(u.daySight, nightSight(u)) : u.daySight;
   u.optic = battleOptic(s, b.night);
-  const sup = SUPPRESSIBLE.includes(u.weapon) ? findCarried(s, "suppressor") : null;
+  setSuppressor(u, s);
+}
+// The suppressor a player unit shoots with: the one fitted to its gun (gunmods.js), else an oil filter it only carries
+// (when nothing is on the gun's muzzle). u.supFitted: it is on the gun (its noise is in u.gm).
+function setSuppressor(u, s) {
+  const gun = u.item && u.gmWeapon === u.weapon ? u.item : null;
+  const on = gun ? fittedSuppressor(gun) : null;
+  if (on) { u.suppressor = on; u.supFitted = true; u.dropSuppressor = null; return; }
+  const sup = s && SUPPRESSIBLE.includes(u.weapon) && !(gun && gun.mods && gun.mods.muzzle) ? findCarried(s, "suppressor") : null;
   u.suppressor = sup ? sup.item : null;
+  u.supFitted = false;
   u.dropSuppressor = sup ? sup.take : null;
 }
