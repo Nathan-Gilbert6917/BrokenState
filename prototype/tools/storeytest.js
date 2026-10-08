@@ -198,6 +198,14 @@ console.log("A raid in a building with storeys: floors, the stairs, what is off 
     check(err !== "" && u.f === 1 && u.ap === 2, `the climb up is refused while the cell above is taken ("${err}")`);
     place(b, blocker, 2, sx + 1, sy);
     if (!CELL[b.floors[2].cells[sy * b.w + sx + 1].k].walk) place(b, blocker, 2, sx, sy + 1);
+    // A wounded teammate lying on the landing above is no wall: they are moved aside (a raid used to stall on it).
+    {
+      const hurt = b.units.find((x) => x.side === "player" && x !== u);
+      hurt.left = false; hurt.down = true; hurt.stab = true; hurt.hp = 0;
+      place(b, hurt, 2, sx, sy);
+      check(stairOptions(b, u).up, "a wounded teammate lying on the landing above does not block the stairs");
+      hurt.left = true; hurt.down = false; hurt.stab = false; // out of the way again for the rest
+    }
     check(stairOptions(b, u).up, "and open again once it is free");
     // Off this floor: a unit a floor below at the same cell is neither seen nor bumped into nor reachable.
     const below = b.units.find((x) => x.side === "enemy" && !x.dead && x !== blocker);

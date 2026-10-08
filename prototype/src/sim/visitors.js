@@ -109,6 +109,7 @@ import { coalitionMask, controlledLand, ALLIANCE } from "./alliance.js";
 import { hcNoRaiders } from "./hardcore-groups.js";
 import { UPKEEP, coldFactor } from "./upkeep.js";
 import { eatFromStore } from "./storage.js";
+import { gunmodWares } from "./loot.js"; // a sight or a suppressor among a merchant's goods
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -304,6 +305,7 @@ function merchantGoods(state, v, rng) {
     if (it.dur) it.dur = Math.max(1, Math.round(it.dur * rng.range(0.6, 1)));
     v.wares.push(it);
   }
+  v.wares.push(...gunmodWares(state, "merchants", `${v.name}:${v.id}`, state.hour)); // loot.js: a sight or a suppressor (its own dice)
   // A few valuables to sell on (they also buy them: TRADE_PREFS merchants).
   for (const k of rng.shuffle([...MERCHANT_VALUABLES]).slice(0, rng.int(1, 2))) v.wares.push(newItem(k, 1));
 }
