@@ -1219,10 +1219,10 @@ const changeActions = {
     }
   },
   "nr-free": (el) => { ui.freeEdit = !!el.checked && !ui.ironman; }, // Customize (not with Ironman)
-  // Customize, Hardcore: who a colonist was (a preset, a custom background, or "" for the dice). The world is built
+  // Customize (Normal and Hardcore): who a colonist was (a preset, a custom background, or "" for the dice). The world is built
   // again on the same seed (a crew roll of its own from now on, so the map and the groups stay put).
   "nr-bg": (el) => {
-    if (ui.ironman || ui.started || state.mode !== "hardcore") return;
+    if (ui.ironman || ui.started) return;
     const crew = crewWithBackground(state, Number(el.dataset.id), el.value);
     if (crew) newWorld(state.seed, true, pickRebuild(crew));
   },
