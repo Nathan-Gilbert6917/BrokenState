@@ -1244,3 +1244,23 @@ Today nothing is repaired: makeshift items have `dur` (uses left) and break at 0
 - Autopilot: queue repairs for gear below 60% when the parts are there, best fighters' gear first.
 - Test: tools/repairtest.js (inputs drawn, skill gates, max loss formula, field kit worse, ceramic refused, worn-out refused, save round-trip of qmax/admax/maxDur, value falls with max).
 - Owner: C (wave 1), with repair.js; A2 owns the armour durability fields' wear side.
+
+---
+
+## 22. Sniper rifles with scopes and bipods (user request 2026-10-07; agent B data, C mods, D art)
+
+Add dedicated sniper rifles, found already fitted with a scope and a bipod (item.mods set when generated: loot, enemy KITS, gun safes, military trucks), on top of section 3's dmr and amr:
+
+| key | name | cal | dmg | opt | fall | aim | close | cap | noise | kg | value | req | power | jam % | platform | fitted when found | found |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| sniper (new) | Bolt-action sniper rifle (M24-style) | 308 | 30–40 | 15 | 1.2 | +9 | −14 | 5 | 3 | 5.5 | 220 | 11 | 8.5 | 0.1 | bolt | tacscope + bipod (always) | military armory 0.01, police SWAT armory 0.005, soldiers strong (1 in 10 at power 8+, "Sniper" label, keeps distance), gun safes high-military 3% |
+| dmr (section 3) | Marksman rifle (AR-10) | 308 | as section 3 | | | | | 20 | | | | | | | ar10 | acog or tacscope 60%, bipod 40% | as section 3 |
+| amr (section 3) | .50 BMG anti-materiel rifle | 50bmg | as section 3 | | | | | 10 | | | | | | | amr | tacscope always, bipod built in | as section 3 |
+| huntrifle (kept) | Hunting rifle | 308 | unchanged | | | | | | | | | | | | bolt | (scope part of its base stats; may take a bipod) | as today |
+
+- `brace` rule (section 3) applies: sniper −15 aim if it moved this turn; with a bipod deployed (+8 if the shooter did not move, from section 5) it is the best long-range gun short of the .50.
+- `heavy`: no. `pierce`: no (only the .50).
+- A "sniper" enemy behaviour (agent A2 or B, in the enemy AI): a unit with WEAPONS[w].sniper prefers a far cell with cover and line of sight (scoreCell bonus for distance 10–15), never closes in, and goes on overwatch when nothing is in sight.
+- Hunting: the sniper's `hunt` override `{ big: 1.25, small: 0.4 }` (a scope helps on big game).
+- Gun builder art: the bolt platform drawing with a long barrel variant (`look: "sniper"`).
+- Test: rostertest checks the sniper always comes with tacscope + bipod fitted from every source, and the brace penalty.
