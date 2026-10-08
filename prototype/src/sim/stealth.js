@@ -27,7 +27,7 @@
 import { GEAR } from "./data.js";
 import { gunMods, unitMods, fittedSuppressor, removeMod, modLabel } from "./gunmods.js"; // gun attachments: suppressors, brakes
 import { isNight, survivorById, baseById } from "./world.js";
-import { EQUIP_SLOTS, packOf } from "./inventory.js";
+import { carriedSpots } from "./inventory.js"; // everything carried, the rig's pouches too
 import { helmetNvg } from "./helmets.js"; // night vision goggles on a helmet
 import { hearMult, hearSetup } from "./hearing.js"; // the ears: what a guard hears behind them
 import {
@@ -90,29 +90,10 @@ const walk = (b, x, y) => x >= 0 && y >= 0 && x < b.w && y < b.h && CELL[b.cells
 // Every place an item can sit on a person: { item, take() } for the first item with this key (or null).
 export function findCarried(s, key) {
   if (!s || !s.gear) return null;
-  for (const slot of EQUIP_SLOTS) {
-    const it = s.gear[slot];
-    if (it && it.key === key) return { item: it, take: () => { s.gear[slot] = null; } };
-  }
-  for (let i = 0; i < (s.pockets || []).length; i++) {
-    const it = s.pockets[i];
-    if (it && it.key === key) return { item: it, take: () => { s.pockets[i] = null; } };
-  }
-  const pk = packOf(s);
-  for (let i = 0; pk && i < pk.length; i++) {
-    const it = pk[i];
-    if (it && it.key === key) return { item: it, take: () => { pk[i] = null; } };
-  }
-  return null;
+  const x = carriedSpots(s).find((c) => c.item.key === key); // inventory.js: worn, pockets, rig pouches, the pack
+  return x ? { item: x.item, take: x.take } : null;
 }
-const countCarried = (s, key) => {
-  if (!s || !s.gear) return 0;
-  let n = 0;
-  for (const slot of EQUIP_SLOTS) if (s.gear[slot] && s.gear[slot].key === key) n++;
-  for (const it of s.pockets || []) if (it && it.key === key) n++;
-  for (const it of packOf(s) || []) if (it && it.key === key) n++;
-  return n;
-};
+const countCarried = (s, key) => (s && s.gear ? carriedSpots(s).filter((c) => c.item.key === key).length : 0);
 // The shared store a battle can draw on: the team's cargo, or the base's armory.
 function storeOf(state, b) {
   if (b.setup.partyId != null) { const p = state.parties.find((x) => x.id === b.setup.partyId); return p && p.cargo ? p.cargo.gear : null; }

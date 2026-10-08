@@ -67,7 +67,7 @@ function fighter(state, weapon = "pistol") {
   console.log("Pieces");
   const keys = Object.keys(ARMOUR).filter((k) => GEAR[k]);
   check(keys.every((k) => GEAR[k].dur === ARMOUR[k].dmax), `every piece's GEAR dur is its section 17 dmax (${keys.map((k) => `${k} ${GEAR[k].dur}`).join(", ")})`);
-  check(armourSpec("vest").ac === 2 && armourSpec("plate").ac === 5 && armourSpec("plate").mat === "ceramic" && armourSpec("milhelmet").ac === 3 && armourSpec("riotarms").ac === 2, "vest AC 2, plate carrier AC 5 ceramic, combat helmet AC 3, riot arm guards AC 2");
+  check(armourSpec("vest").ac === 2 && armourSpec("plate").ac === 2 && armourSpec("ceramicplate").ac === 5 && armourSpec("ceramicplate").mat === "ceramic" && armourSpec("steelplate").ac === 4 && armourSpec("milhelmet").ac === 3 && armourSpec("riotarms").ac === 2, "vest AC 2, plate carrier a soft AC 2 backer with a ceramic AC 5 (steel AC 4) plate, combat helmet AC 3, riot arm guards AC 2");
   check(["head", "armor", "arms", "legs"].every((slot) => Object.keys(GEAR).filter((k) => GEAR[k].slot === slot && GEAR[k].cat === "armor").every((k) => armourSpec(k))), "every armour piece in GEAR has an AC");
   // Old saves: an armour item with no dur counts dmax × quality, written once.
   const old = { key: "vest", name: "Kevlar vest", quality: 0.5 };
@@ -90,15 +90,15 @@ function fighter(state, weapon = "pistol") {
   wearPiece(helm, 20, bite, false);
   check(bite.ad === "bite" && Math.abs(curDur(helm) - (30 - 20 * 0.2 * 0.8 / 10)) < 1e-9, "teeth on a hard helmet wear it at 0.2 × hard 0.8");
   // Ceramic: 6 hits of pen 30+ shatter it; pistol rounds never do.
-  const plate = newItem("plate");
+  const plate = newItem("ceramicplate"); // the carrier's insert (wave 2: the carrier holds the plates, section 16)
   let n = 0;
   while (!plate.shattered && n < 20) { wearPiece(plate, 10, r, false); n++; }
   check(plate.shattered && n === 6 && plate.dur === 0, `a ceramic plate shatters after ${n} hits of pen 30+`);
-  const plate2 = newItem("plate");
+  const plate2 = newItem("ceramicplate");
   plate2.dur = 13;
   wearPiece(plate2, 5, r, false);
   check(plate2.shattered, "or at once under 30% of its points (a pen 30 hit)");
-  const plate3 = newItem("plate");
+  const plate3 = newItem("ceramicplate");
   const p9 = roundOf({ weapon: "pistol" }, { how: "shot" });
   for (let i = 0; i < 12; i++) wearPiece(plate3, 18, p9, false);
   check(!plate3.shattered && plate3.dur > 0, `pistol rounds wear it but never shatter it (${plate3.dur} of 45 after 12)`);
@@ -155,10 +155,11 @@ function fighter(state, weapon = "pistol") {
   // An enemy's armour wears; their body keeps the durability left.
   if (e) {
     e.hp = e.maxHp = 100000;
-    const d0 = curDur(e.pieces.torso);
+    const worn = (t) => curDur(t) + (t.inserts ? Object.values(t.inserts).reduce((a, x) => a + (x ? curDur(x) : 0), 0) : 0); // a carrier: its plates take the hits first
+    const d0 = worn(e.pieces.torso);
     for (let i = 0; i < 10; i++) damage(b, e, 25, p, false, { how: "shot", crit: false });
     const d1 = e.pieces.torso.dur;
-    check(e.pieces.torso.key === e.armorKey && curDur(e.pieces.torso) < d0, `an enemy's ${e.armorKey} wears (${d0} → ${r2(curDur(e.pieces.torso))})`);
+    check(e.pieces.torso.key === e.armorKey && worn(e.pieces.torso) < d0, `an enemy's ${e.armorKey} wears (${d0} → ${r2(worn(e.pieces.torso))})`);
     if (e.pieces.torso.shattered) { const body = enemyBody(new Rng(seed), e, null); check(!body.gear.armor, "a shattered plate is not looted"); }
     else { const body = enemyBody(new Rng(seed), e, null); check(body.gear.armor && body.gear.armor.dur === Math.min(d1, GEAR[e.armorKey].dur), `their body's ${e.armorKey} has the ${d1} points left`); }
   } else check(false, "a soldier with armour to test");

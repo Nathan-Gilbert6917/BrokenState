@@ -39,7 +39,8 @@
 // people; never inside the arming range, never with a friend in the backblast cone, never a rocket from inside.
 // Every die is the battle's (b.rng) for what the player sees happen; wear and cook-off use hashes of their own.
 import { GEAR } from "./data.js";
-import { WEAPONS, say, fx, active, damage, canSeeAt, los, coverAgainst, COVER_DEF, unitAt, alertNear, sidearmOf, heldTerms, loadMag } from "./combat.js";
+import { WEAPONS, say, fx, active, damage, canSeeAt, los, coverAgainst, COVER_DEF, unitAt, alertNear, sidearmOf, heldTerms, loadMag, magCap } from "./combat.js";
+import { fitMags } from "./mags.js"; // the sidearm's magazines when the launcher is in the hands (w2-kit)
 import { throwBlind, throwLanding, blastSpot, landEffect, nextTurnOf, SMOKE } from "./throwables.js";
 import { gunMods, modLabel, NO_MODS } from "./gunmods.js";
 import { syncModes } from "./gunfire.js";
@@ -50,7 +51,7 @@ import { skill } from "./world.js";
 import { itemDur, itemDurMax } from "./crafting.js";
 import { findCarried } from "./stealth.js";
 import { breakRam, isCrew } from "./siege.js";
-import { lootItem, packOf } from "./inventory.js";
+import { lootItem, packOf, allCarried, carriedSpots, insertsOf, isCarrier } from "./inventory.js"; // allCarried: worn, held, pockets, rig pouches, the pack, a carrier's plates
 
 export const LAUNCH = {
   ARM: 3, DUD: [15, 25], // tiles; a round that does not arm hits as a slug
@@ -170,7 +171,7 @@ function carriedLauncher(s, skip = {}) {
   return null;
 }
 const BOMBS = ["frag", "pipebomb", "molotov"];
-const countKey = (s, key) => { let n = 0; const g = s.gear || {}; for (const k of Object.keys(g)) if (g[k] && g[k].key === key) n++; for (const it of s.pockets || []) if (it && it.key === key) n++; for (const it of packOf(s) || []) if (it && it.key === key) n++; return n; };
+const countKey = (s, key) => allCarried(s).filter((it) => it.key === key).length; // a rig's grenade pouch too
 export function fitLauncher(b, u, s) {
   if (!u || !s) return;
   OWNER.set(u, s);
@@ -190,6 +191,7 @@ export function fitLauncher(b, u, s) {
     u.gm = to.key === "fists" ? NO_MODS : gunMods(side); u.gmWeapon = u.weapon;
     u.load = chooseLoad(b, u, side ? side.load : null);
     u.mag = null; u.magW = null;
+    fitMags(b, u, carriedSpots(s), magCap(u)); // mags.js: the sidearm's magazine and its spares (the launcher has none)
     loadMag(u);
     u.modesW = null; syncModes(u);
   }
@@ -547,14 +549,19 @@ function cookBox(it, ...salt) {
 function cookRecord(rec, ...salt) {
   for (const k of Object.keys(rec || {})) if (/^a_/.test(k) && rec[k] >= 1) rec[k] = Math.max(0, Math.floor(rec[k] * (1 - cookShare(k, ...salt))));
 }
-// Every item of a person or a body (worn, held, pockets, the pack's contents, a gun's fitted parts with the gun).
-function everyItem(holder) {
-  const out = [];
-  const g = (holder && holder.gear) || {};
-  for (const k of Object.keys(g)) if (g[k]) out.push(g[k]);
-  for (const it of (holder && holder.pockets) || []) if (it) out.push(it);
-  const pk = g.backpack && Array.isArray(g.backpack.contents) ? g.backpack.contents : [];
-  for (const it of pk) if (it) out.push(it);
+// Every item of a person or a body (inventory.js allCarried: worn, held, pockets, the rig's pouches, the pack's
+// contents, a carrier's plates; a gun's fitted parts and a helmet's mounts go with it: wearShare). A pile: its items.
+const everyItem = (holder) => deepItems(Array.isArray(holder) ? holder : holder && holder.gear ? allCarried(holder) : []);
+// The items and what they hold (a rig's pouches, a pack's slots, a carrier's plates), each once.
+function deepItems(list) {
+  const out = [], seen = new Set();
+  const walk = (it) => {
+    if (!it || seen.has(it)) return;
+    seen.add(it); out.push(it);
+    if (Array.isArray(it.contents)) for (const c of it.contents) walk(c);
+    if (isCarrier(it)) for (const p of Object.values(insertsOf(it))) walk(p);
+  };
+  for (const it of list || []) walk(it);
   return out;
 }
 // A body (inventory.js enemyBody's, or a raid body's contents { sup, gear }) of someone the blasts hit: its gear worn
@@ -562,7 +569,7 @@ function everyItem(holder) {
 export function blastLoot(b, u, body) {
   if (!u || !(u.blastDmg > 0 || u.groundWear > 0) || !body) return body;
   const share = Math.max(u.blastDmg > 0 ? blastWearShare(u.blastDmg) : 0, u.groundWear || 0); // hit alive, or lying dead where a blast went off (groundBlast)
-  const items = Array.isArray(body.gear) ? body.gear : everyItem(body);
+  const items = everyItem(Array.isArray(body.gear) ? body.gear : body);
   for (const it of items) { wearShare(it, share); cookBox(it, u.id, "body"); }
   cookRecord(body.supplies || body.sup, u.id, "body");
   return body;
@@ -699,6 +706,7 @@ function blastStuff(b, gear, sup, share, at, where, salt, chain = true) {
     if (chain && BOMBS.includes(it.key) && hash01("groundchain", ...salt, it.key, i) < GROUND.CHAIN) { (b.cookQueue || (b.cookQueue = [])).push({ x: at[0], y: at[1], key: it.key, where }); return; }
     wearShare(it, share);
     cookBox(it, ...salt, i);
+    deepItems([it]).slice(1).forEach((c, j) => { wearShare(c, share); cookBox(c, ...salt, i, "in", j); }); // a rig's pouches, a pack's slots, a carrier's plates
     keep.push(it);
   });
   if (sup) cookRecord(sup, ...salt);

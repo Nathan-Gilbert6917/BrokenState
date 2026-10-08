@@ -302,6 +302,30 @@ section("5. Explosions vs gear: the vehicle, the bodies, cook-off");
   check(blastWearShare(0) === LAUNCH.GEAR_WEAR[0] && Math.abs(blastWearShare(60) - LAUNCH.GEAR_WEAR[1]) < 1e-9 && blastWearShare(30) > blastWearShare(10), "scaled by the blast damage taken");
   const k = Object.keys(clean.supplies).find((x) => /^a_/.test(x));
   check(!k || (body.supplies[k] || 0) <= clean.supplies[k], `rounds on them cook off (${k}: ${k ? clean.supplies[k] : 0} → ${k ? body.supplies[k] || 0 : 0})`);
+  {
+    // Your person after a fight the blasts hit (launcherBattleEnd): everything they carry is worn, the carry kit too
+    // (inventory.js allCarried: a rig pouch's magazine, a carrier's plates; a helmet's mounts with the helmet).
+    const { launcherBattleEnd } = await import("../src/sim/launchers.js");
+    const { rigPouches, insertsOf } = await import("../src/sim/inventory.js");
+    const { fitHelmetMod } = await import("../src/sim/helmets.js");
+    const stK = world();
+    const bK = openBattle(stK, (s, i) => {
+      if (i) return;
+      s.gear.rig = null; s.gear.armor = newItem("plate", 1);
+      insertsOf(s.gear.armor).front = newItem("steelplate", 1);
+      s.gear.head = newItem("highcut", 1); fitHelmetMod(s.gear.head, newItem("ballvisor", 1));
+      const rp = rigPouches(s); rp[0] = newItem("mag_stanag_30", 1); rp[3] = newItem("frag", 1); // the grenade pouch
+    });
+    const [pk] = P(bK);
+    const sK = stK.survivors.find((x) => x.id === pk.sid);
+    check(pk.bombs && pk.bombs.frag === 1, "a frag in a rig's grenade pouch is one a blast can set off");
+    const parts = [insertsOf(sK.gear.armor).front, sK.gear.head.mods && sK.gear.head.mods.face].filter(Boolean); // (magazine items have no condition: data-kit.js)
+    const before = parts.map((it) => itemDur(it));
+    pk.blastDmg = 60;
+    launcherBattleEnd(stK, bK);
+    const after = parts.map((it) => itemDur(it));
+    check(parts.length === 2 && after.every((d, j) => d < before[j]), `a blast's wear reaches the carrier's plate and the helmet's visor (${before.join("/")} → ${after.join("/")})`);
+  }
   // Cook-off of carried bombs: about 1 hit in 10 sets one off.
   let off = 0, hits = 0;
   for (let i = 0; i < 2000; i++) {

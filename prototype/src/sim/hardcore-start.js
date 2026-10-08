@@ -38,7 +38,7 @@
 import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES } from "./data.js";
 import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
-import { newItem, packOf, POCKETS, START_DUR } from "./inventory.js";
+import { newItem, packOf, POCKETS, START_DUR, startKit } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
 import { starterLoad, pocketBox, settleParty } from "./ammo.js"; // rounds by calibre
 // What someone has with them at the start, looked after but worn (inventory.js START_DUR).
@@ -443,7 +443,7 @@ export function rollCustom(state, s, A) {
   const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, meds: 0, arrows: 0, custom: true, left: [] };
   for (const [slot, key] of Object.entries(A.gear || {})) {
     if (!GEAR[key]) continue;
-    s.gear[slot] = newItem(key, 1);
+    s.gear[slot] = startKit(newItem(key, 1)); // inventory.js: a starting carrier's plates are steel
     if (slot === "backpack") got.bag = s.gear[slot];
     else if (slot === "weapon") got.weapon = s.gear[slot];
     else if (slot === "armor") got.armor = s.gear[slot];
@@ -451,7 +451,7 @@ export function rollCustom(state, s, A) {
   }
   for (const key of A.items || []) {
     if (!GEAR[key]) continue;
-    const item = newItem(key, 1);
+    const item = startKit(newItem(key, 1));
     const pk = packOf(s);
     if (GEAR[key].slot === "tool" && !s.gear.tool) s.gear.tool = item;
     else if (GEAR[key].small && s.pockets.indexOf(null) >= 0) s.pockets[s.pockets.indexOf(null)] = item;
@@ -522,7 +522,7 @@ export function normalStartKit(state, base) {
       createVehicle(state, A.car.type, { kind: "base", baseId: base.id }, { fuel: Math.round(T.tank * 0.5 * 10) / 10, condition: 70 });
     }
     for (const [k, q] of Object.entries(A.car.trunk || {})) if (SUPPLY_KEYS.includes(k) && q > 0) base.stock[k] = (base.stock[k] || 0) + q;
-    for (const key of A.car.items || []) if (GEAR[key]) base.armory.push(newItem(key, 1));
+    for (const key of A.car.items || []) if (GEAR[key]) base.armory.push(startKit(newItem(key, 1)));
   }
 }
 
@@ -544,7 +544,7 @@ export function rollCar(state, p, people) {
   const trunk = { supplies: {}, gear: [] };
   if (A.custom) { // exactly what the player put in the back
     for (const [k, q] of Object.entries(A.car.trunk)) if (SUPPLY_KEYS.includes(k) && q > 0) { trunk.supplies[k] = q; p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; }
-    for (const key of A.car.items) if (GEAR[key]) { const item = newItem(key, 1); p.cargo.gear.push(item); trunk.gear.push(item); }
+    for (const key of A.car.items) if (GEAR[key]) { const item = startKit(newItem(key, 1)); p.cargo.gear.push(item); trunk.gear.push(item); }
   }
   const TR = A.custom ? {} : A.trunk || {};
   for (const k of SUPPLY_KEYS) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) { trunk.supplies[k] = q; p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; } }

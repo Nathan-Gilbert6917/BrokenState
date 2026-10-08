@@ -61,6 +61,7 @@ import { tripDone } from "./relations.js";
 import { totalRounds, spendAmmo, ROUND_KEYS, GENERIC_KEYS } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
 import { packRounds, addRecord, drawTeamShots, sortFind } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
 import { packLauncherRounds } from "./launchers.js"; // the rounds for the launchers the crew carries (section 13)
+import { packMags } from "./carrykit.js"; // magazines as items (section 15): the spares go along
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
@@ -673,6 +674,7 @@ export function launchExpedition(state, opts) {
   if (v) v.loc = { kind: "party", partyId: p.id };
   for (const m of members) m.location = { kind: "party", partyId: p.id };
   state.parties.push(p);
+  packMags(home.armory, members); // carrykit.js: spare magazines for their guns from the armory (rig pouches, pockets, then the pack)
   packWater(state, p, home); // worm.js: the un-purified water packed carries the eggs of the base's
   if (opts.tabs) packTablets(state, home, p); // worm.js: a tube of purification tablets for the road (when the armory has one)
   // An assault takes the hub's siege kit along (kit.js packSiegeKit: the ram, ladders, grenades into the cargo, as

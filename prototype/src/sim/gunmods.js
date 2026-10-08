@@ -58,6 +58,7 @@ import { GEAR } from "./data.js";
 import { GUN_WEAPONS } from "./data-guns.js";
 import { CALIBERS } from "./data-ammo.js";
 import { SLOTS, SLOT_NAMES, SHARED, PLATFORMS, WEAPON_PLATFORM, WEAPON_SLOTS_OFF, BASE_CAL, MOD_ATTACH } from "./data-gunmods.js";
+import { KIT_ATTACH } from "./data-kit.js"; // magazines as items (section 15): the extended mag and the drum are magazine items now
 // The gun builder's sim calls on inventory locations (they live with the inventory's location handling).
 export { fitAt, stripAt } from "./inventory.js";
 export { SLOTS, SLOT_NAMES, PLATFORMS, WEAPON_PLATFORM };
@@ -92,7 +93,9 @@ const LEGACY = {
   tubeext:   { slot: "mag",      short: "tube extension", look: "tube_ext", fits: { plat: ["pump"] }, cap: 2 },
 };
 export const ATTACH = {};
-for (const [k, a] of Object.entries({ ...LEGACY, ...MOD_ATTACH })) ATTACH[k] = { ...a, mount: a.slot };
+for (const [k, a] of Object.entries({ ...LEGACY, ...MOD_ATTACH, ...KIT_ATTACH })) ATTACH[k] = { ...a, mount: a.slot };
+// A magazine item (data-kit.js MAGAZINES): its rounds (null: not a magazine).
+export const magCapOf = (key) => (ATTACH[key] && ATTACH[key].magCap) || null;
 export const isGunmod = (key) => !!ATTACH[key];
 export const modDef = (key) => ATTACH[key] || null;
 
@@ -380,6 +383,7 @@ export function attachText(key) {
   if (a.opt) bits.push(`${sgn(a.opt)} tile${Math.abs(a.opt) === 1 ? "" : "s"} best range`);
   if (a.fall) bits.push(`${sgn(a.fall)} aim lost a tile beyond it`);
   if (a.dmg && a.dmg !== 1) bits.push(`damage ×${a.dmg}`);
+  if (a.magCap) bits.push(`a ${a.magCap}-round magazine`); // data-kit.js: a magazine item
   if (a.cap) bits.push(`${sgn(a.cap)} rounds a magazine`);
   if (a.capMult && a.capMult !== 1) bits.push(`magazine ×${a.capMult}`);
   if (a.noise && a.noise !== 1) bits.push(a.noise < 1 ? `shots ${Math.round(a.noise * 100)}% as loud` : `shots ${Math.round((a.noise - 1) * 100)}% louder`);

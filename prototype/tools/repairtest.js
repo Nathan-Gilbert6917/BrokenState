@@ -49,7 +49,7 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   console.log("Kinds and inputs");
   check(repairKind(newItem("ar")).kind === "gun" && repairKind(newItem("pipegun")).kind === "zipgun" && repairKind(newItem("bat")).kind === "melee", "guns, a zip gun, a bat: their kinds");
   check(repairKind(newItem("vest")).kind === "soft" && repairKind(newItem("padding")).kind === "padding" && repairKind(newItem("milhelmet")).kind === "hard" && repairKind(newItem("scrapvest")).kind === "steel", "a Kevlar vest is soft armour, magazine arm guards padding, a combat helmet hard, a scrap plate vest steel");
-  check(!!repairKind(newItem("plate")).refuse, `ceramic plates cannot be repaired ("${repairKind(newItem("plate")).refuse}")`);
+  check(!!repairKind(newItem("ceramicplate")).refuse && !repairKind(newItem("steelplate")).refuse && repairKind(newItem("plate")).kind === "soft", `ceramic plates cannot be repaired ("${repairKind(newItem("ceramicplate")).refuse}"); a steel plate can, a carrier is soft (its backer)`);
   check(!repairKind(newItem("bandagekit")) && !repairKind(newItem("waterfilter")) && !repairKind(newItem("suppressor")) && !repairKind(newItem("repairkit")) && !repairKind(newItem("reddot")), "med kits, water filters, makeshift gun parts, the kits themselves and parts that do not wear: no repair");
   check(REPAIR_KINDS.gun.skill === "mechanics" && REPAIR_KINDS.soft.skill === "crafting" && REPAIR_KINDS.padding.skill === "crafting" && REPAIR_KINDS.hard.skill === "mechanics", "Mechanics for guns and hard armour, Crafting for soft goods");
   const { st, h } = setup();
@@ -162,7 +162,7 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   const ia = repairInfoAt(st, kl);
   check(ia.base === h && !ia.field && ia.ok && /Max durability/.test(ia.preview) && /queued/.test(repairAt(st, kl)) && h.armory.includes(knife), "repairAt (the buttons): at a base it queues at the bench");
   cancelRepair(st, h, h.gearRepairs[h.gearRepairs.length - 1].id);
-  h.armory.push(worn("plate", 10));
+  h.armory.push(worn("ceramicplate", 10));
   check(/Ceramic/.test(queueRepair(st, h, `armory:${h.id}:list:${h.armory.length - 1}`)), "a ceramic plate cannot be queued");
   check(st.repairStats.bench >= 4 && st.repairStats.paid.gunparts === 3, `repairs and their inputs are counted (state.repairStats: ${JSON.stringify(st.repairStats)})`);
 }

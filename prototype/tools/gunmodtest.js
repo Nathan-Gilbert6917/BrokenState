@@ -28,6 +28,8 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { GUNMOD_FINDS, AREA_GUNMODS, WARE_GUNMODS, SITE_MODS, AREA_MODS, WARE_MODS, ITEM_TAGS, SITE_TAGS, AREA_TAGS, fitsTags } from "../src/sim/loot.js";
 import { CRAFTS } from "../src/sim/crafting.js";
+import { magCap } from "../src/sim/combat.js";
+import { SITE_KIT, AREA_KIT, WARE_KIT } from "../src/sim/carrykit.js"; // magazines as items (section 15): their own loot tables
 import { Rng } from "../src/sim/rng.js";
 
 const seed = Number(process.argv[2] || 42);
@@ -76,14 +78,13 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   console.log("gunMods");
   check(gunMods(newItem("pistol")) === NO_MODS && gunMods(null) === NO_MODS && gunMods(newItem("knife")) === NO_MODS, "a bare gun, nothing or a knife: neutral");
   const m = gunMods(gunWith("pistol", "reddot", "pistolcan", "extmag", "laser"));
-  check(m.aim === 5 && m.close === 6 && m.opt === -1 && Math.abs(m.dmg - 0.95) < 1e-9 && m.cap === 9 && m.capMult === 1 && Math.abs(m.noise - 0.35) < 1e-9, `9mm with red dot, can, extended mag, laser: aim ${m.aim}, close ${m.close}, opt ${m.opt}, dmg ×${m.dmg}, +${m.cap} rounds, noise ×${m.noise}`);
+  check(m.aim === 5 && m.close === 6 && m.opt === -1 && Math.abs(m.dmg - 0.95) < 1e-9 && m.cap === 0 && m.capMult === 1 && Math.abs(m.noise - 0.35) < 1e-9, `9mm with red dot, can, extended mag (a magazine item now: its rounds are its own, not +cap), laser: aim ${m.aim}, close ${m.close}, opt ${m.opt}, dmg ×${m.dmg}, +${m.cap} rounds, noise ×${m.noise}`);
   const w = ["reddot", "pistolcan", "extmag", "laser"].reduce((a, k) => a + GEAR[k].weight, 0), v = ["reddot", "pistolcan", "extmag", "laser"].reduce((a, k) => a + GEAR[k].value, 0);
   check(Math.abs(m.weight - w) < 1e-9 && m.value === v, `weight +${m.weight.toFixed(2)} kg and value +${m.value} are the parts'`);
   const d = gunMods(gunWith("ar", "drum", "brake"));
-  check(d.capMult === 2 && d.aim === 1 && Math.abs(d.noise - 1.3) < 1e-9, `AR with a drum and a brake: magazine ×${d.capMult}, aim ${d.aim}, noise ×${d.noise}`);
-  // The magazine branch's formula: round(cap × capMult) + cap.
-  const mag = (key, item) => Math.round(30 * gunMods(item).capMult) + gunMods(item).cap;
-  check(mag("ar", gunWith("ar", "drum")) === 60 && Math.round(15 * gunMods(gunWith("pistol", "extmag")).capMult) + gunMods(gunWith("pistol", "extmag")).cap === 24, "magazines: a drum 30 → 60, an extended 9mm magazine 15 → 24");
+  check(d.capMult === 1 && d.aim === 1 && Math.abs(d.noise - 1.3) < 1e-9, `AR with a drum and a brake: aim ${d.aim} (the drum's −2), noise ×${d.noise}`);
+  // Magazines as items (section 15): a fitted magazine's rounds are the gun's magazine (combat.js magCap).
+  check(magCap({ weapon: "ar", item: gunWith("ar", "drum") }) === 60 && magCap({ weapon: "pistol", item: gunWith("pistol", "extmag") }) === 24 && magCap({ weapon: "pistol", item: newItem("pistol") }) === 15, "magazines: a drum 30 → 60, an extended 9mm magazine 15 → 24, none fitted the standard 15");
   const bad = newItem("revolver"); bad.mods = { muzzle: newItem("pistolcan") }; // a save edited by hand
   check(gunMods(bad).noise === 1, "a part on a gun it does not fit counts for nothing");
 }
@@ -307,7 +308,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   stow(s, newItem("reddot"));
   h.armory.push(newItem("pistolcan"), newItem("riflecan"), newItem("choke"));
   const gunLoc = `s:${s.id}:weapon`;
-  const choices = modChoices(st, gunLoc, s.id).map((c) => c.item.key).sort();
+  const choices = modChoices(st, gunLoc, s.id).map((c) => c.item.key).filter((k) => !GEAR[k].mag).sort(); // (the hub's spare magazines fit too: carrykit.js starterMags)
   check(choices.join() === "pistolcan,reddot", `only fitting parts within reach are offered (${choices.join(", ")})`);
   const dotLoc = modChoices(st, gunLoc, s.id).find((c) => c.item.key === "reddot").loc;
   const msg = fitModAt(st, gunLoc, dotLoc);
@@ -369,7 +370,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
 // 11. Loot tables.
 {
   console.log("Loot");
-  const all = [...Object.values(GUNMOD_FINDS), ...Object.values(AREA_GUNMODS), ...Object.values(WARE_GUNMODS), ...Object.values(SITE_MODS), ...Object.values(AREA_MODS), ...Object.values(WARE_MODS)].flatMap((t) => Object.keys(t.items));
+  const all = [...Object.values(GUNMOD_FINDS), ...Object.values(AREA_GUNMODS), ...Object.values(WARE_GUNMODS), ...Object.values(SITE_MODS), ...Object.values(AREA_MODS), ...Object.values(WARE_MODS), ...Object.values(SITE_KIT), ...Object.values(AREA_KIT), ...Object.values(WARE_KIT)].flatMap((t) => Object.keys(t.items)).filter((k) => ATTACH[k] || ["repairkit", "kevlarkit"].includes(k)); // carrykit.js: magazines (and rigs, plates: not attachments)
   const crafted = Object.values(CRAFTS).map((r) => r.gear);
   // The M203 (a launcher) is in army stock since the launcher wave: the launcher tables (loot.js SITE_LAUNCHERS /
   // AREA_LAUNCHERS, their own dice) and under soldiers' rifles (ENEMY_MODS).

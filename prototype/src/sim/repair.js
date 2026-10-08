@@ -39,14 +39,14 @@ export const REPAIR = {
 };
 // Materials of the armour pieces (section 17), where GEAR has none of its own (armour.js may add GEAR material / ac).
 const MATERIAL = {
-  vest: "soft", tacvest: "soft", softinsert: "soft", plate: "ceramic", ceramicplate: "ceramic", steelplate: "steel", scrapvest: "steel",
+  vest: "soft", tacvest: "soft", softinsert: "soft", plate: "soft", ceramicplate: "ceramic", steelplate: "steel", scrapvest: "steel",
   tirevest: "padding", sportspads: "padding", padding: "padding", shinguards: "padding",
   kneeguards: "hard", riotarms: "hard", riotlegs: "hard", bikehelmet: "hard", footballhelmet: "hard", riothelmet: "hard", milhelmet: "hard", rivethelmet: "hard",
 };
-const AC = { vest: 2, tacvest: 2, softinsert: 2, steelplate: 4, ceramicplate: 5, plate: 5, scrapvest: 3, milhelmet: 3, riothelmet: 2, riotarms: 2, riotlegs: 2 };
+const AC = { vest: 2, tacvest: 2, softinsert: 2, steelplate: 4, ceramicplate: 5, plate: 2, scrapvest: 3, milhelmet: 3, riothelmet: 2, riotarms: 2, riotlegs: 2 };
 export const materialOf = (key) => (GEAR[key] && GEAR[key].material) || MATERIAL[key] || null;
 export const acOf = (key) => (GEAR[key] && Number.isFinite(GEAR[key].ac) ? GEAR[key].ac : AC[key] || 0);
-const ARMOUR = ["armor", "head", "arms", "legs"];
+const ARMOUR = ["armor", "head", "arms", "legs", "insert"]; // insert: a plate carrier's plates (data-kit.js)
 const WOODEN = ["bat", "fireaxe", "sledge", "spear", "machete"]; // a wooden handle or haft (besides what burns: GEAR burnShare)
 const GUN_CATS = ["pistol", "shotgun", "rifle", "automatic"];
 

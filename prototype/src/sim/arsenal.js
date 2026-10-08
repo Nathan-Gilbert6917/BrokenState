@@ -54,6 +54,7 @@ import { workshopFactor } from "./groupworks.js";
 import { groupBrass, groupReloadDaily } from "./reloading.js"; // the reloading bench, theirs: brass from their fights, rounds from their workshop
 import { fitPeople, noteFight, weightOf, woundsFor, wearGroupVehicles, tickOf } from "./groupcare.js"; // AI parity: the wounded do not fight; a fight's dead and wounded
 import { armLauncher, settleArsenalLauncher } from "./launchers.js"; // a launcher issued beside the gun (section 13), its rounds from the stores
+import { armKit, seedKit, kitWorthy } from "./carrykit.js"; // carry kit (sections 15-16): their rigs, spare magazines and plates
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -150,9 +151,13 @@ export function starterKit(seed, salt, type, pop, gear = 1) {
   for (let i = 0; i < nT && T.length; i++) { const it = make(T[i % T.length], "t", i); if (it) out.push(it); }
   // Tasers and pepper spray (nonlethal.js NL_KIT: the share of a kit's people who carry one).
   for (const [key, share] of Object.entries(ARSENAL.NONLETHAL[kind] || {})) for (let i = 0; i < Math.round(n * share); i++) { const it = make(key, `n${key}`, i); if (it) out.push(it); }
+  // carrykit.js: rigs, spare magazines, spare plates for the guns and carriers dealt so far (own dice; not in the
+  // fighting worth). Dealt before the headgear and the launchers (a launcher takes no magazine and adds no rig), put after.
+  const carry = seedKit(seed, salt, kind, out);
   out.push(...starterHeadgear(kind, n, make)); // helmets.js HEAD_KIT: helmets and ear protection by kit (hashed)
   // Launchers (launchers.js): the Army's grenade launchers and rocket tubes.
   for (const [key, share] of Object.entries(ARSENAL.LAUNCHERS[kind] || {})) for (let i = 0; i < Math.round(n * share); i++) { const it = make(key, `l${key}`, i); if (it) out.push(it); }
+  out.push(...carry);
   return out;
 }
 // The rounds a starting kit's launchers come with (ARSENAL.LAUNCH_ROUNDS): { key: n }.
@@ -201,7 +206,7 @@ function headgearOnce(state, f) {
   for (const it of starterHeadgear(kind, Math.max(0, Math.round(A.pop0 ?? f.pop ?? 0)), (key, tag, i) => (GEAR[key] ? lootItem(key, src, [state.seed, "ars", f.name, tag, i]) : null))) put(A, f, it, null);
 }
 export function addToArsenal(state, f, it, why = "found") {
-  if (!arsenalWorthy(it)) return false;
+  if (!arsenalWorthy(it) && !kitWorthy(it)) return false; // carrykit.js: rigs, magazines, plates too
   const A = ensureArsenal(state, f);
   if (!A || A.items.includes(it)) return false;
   put(A, f, it, why);
@@ -423,10 +428,11 @@ function armExtras(state, b, f, u) {
     }
   }
   for (const it of [u.arsItem, ...(u.arsArmour || [])]) if (it) used.add(it);
+  armKit(u, kitOf(f), (pred) => { const it = f.arsenal.items.find((x) => pred(x) && !used.has(x)); if (it) used.add(it); return it || null; }); // carrykit.js: their rig and spare magazines
 }
 // What a unit carried besides its gun and armour (settleArsenal): its medic kit and the throwables it did not throw.
 function extrasOf(u) {
-  const out = u.arsMedKit ? [u.arsMedKit] : [];
+  const out = [...(u.arsMedKit ? [u.arsMedKit] : []), ...(u.arsRig ? [u.arsRig] : []), ...(u.arsMags || [])]; // carrykit.js: a rig and spare magazines go where the fighter goes
   const left = { ...(u.throwables || {}) };
   for (const it of u.arsThrows || []) if ((left[it.key] || 0) > 0) { left[it.key]--; out.push(it); }
   return out;

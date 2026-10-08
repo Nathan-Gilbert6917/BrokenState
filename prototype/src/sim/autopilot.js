@@ -13,7 +13,8 @@
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
 import { fitFromPool } from "./gunmods.js";
-import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
+import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants, queueRepair } from "./repair.js";
+import { equipKit, governPlates } from "./carrykit.js"; // carry kit: rigs, plates in the carriers, spare magazines; spare plates kept // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
 import {
@@ -2418,6 +2419,9 @@ function equipFromArmory(state, base) {
   }
   // Loose gun attachments to the guns in hand, the best fighters first (gunmods.js: one a mount, only what helps).
   for (const x of fitFromPool(base.armory, people.map((s) => s.gear.weapon))) handed.push(`${x.mod.name} on ${x.gun.name}`);
+  // carrykit.js: the best rig, plates into the carriers, spare magazines into pouches; worn plates swapped, steel ones mended.
+  for (const x of equipKit(base.armory, people)) handed.push(x.s ? `${first(x.s)} ${x.item.name}` : x.item.name);
+  for (const m of governPlates(state, base, people, { queue: queueRepair, craft: queueCraft })) handed.push(m);
   // Tools for the off hand: a crowbar to a scavenger, a med kit to a medic (else the best Medicine), anything
   // else to whoever has the skill for it. Water filters work from the armory and stay there.
   for (const item of [...base.armory]) {

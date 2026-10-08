@@ -117,6 +117,7 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   const st = createWorld({ seed: seed + 1, factionCount: 4 });
   const a = fighter(st, "pistol");
   a.pockets[0] = newBox("a_9mm_fmj", 3);
+  a.pockets[1] = Object.assign(newItem("mag_glock_15"), { load: "hp" }); // a spare magazine of hollow points (magazines as items: a type switch is a magazine of that type)
   const b = openBattle(st, [a], { a_556_fmj: 60 });
   const u = by(b, a);
   check(u.boxes.length === 1 && roundsOf(b, u) === 3, "the box in their pocket counts (3 rounds of 9mm FMJ)");

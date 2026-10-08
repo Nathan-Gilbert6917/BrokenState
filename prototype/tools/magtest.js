@@ -10,12 +10,17 @@ import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import {
   WEAPONS, createBattle, combatAct, registerCombatHandler, runEnemyPhase, enemyStep, endPlayerTurn, autoPlayerTurn, canFire,
   magCap, magIn, magMaxOf, magShown, magLabel, magEmpty, hasMag, reloadRefusal, fireRefusal, refitUnit, loadMag, ammoLeft,
+  reloadCost, reload,
 } from "../src/sim/combat.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { newItem } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { gunMods, NO_MODS } from "../src/sim/gunmods.js";
+import { starterMags, magRoundsKg } from "../src/sim/carrykit.js";
+import { reloadPlan } from "../src/sim/mags.js";
+import { GEAR } from "../src/sim/data.js";
+import { rigPouches as ensureRigOf, itemLoad } from "../src/sim/inventory.js";
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -30,6 +35,8 @@ function fighter(state, weapon = "pistol", shooting = 9) {
   s.health = 100;
   s.gear.weapon = weapon ? newItem(weapon) : null;
   for (const slot of ["head", "armor", "arms", "legs", "tool"]) s.gear[slot] = null;
+  s.pockets = s.pockets.map(() => null);
+  if (s.gear.weapon) starterMags(s); // carrykit.js: two spare magazines in the pockets, as a colonist starts with (section 15)
   s.location = { kind: "base", baseId: hub(state).id };
   state.survivors.push(s);
   return s;
@@ -276,10 +283,98 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   p.ap = 2;
   check(/no ammo/i.test(reloadRefusal(b, p)), "with no shells to hand it cannot be loaded (ammo.js: a gun takes its own calibre)");
   b.pools[0].a_12ga_buck = 20;
-  check(combatAct(st, { type: "reload", unit: p.id }) === "" && p.mag === 6, "with shells, it reloads to 6/6");
+  check(combatAct(st, { type: "reload", unit: p.id }) === "" && p.mag === 4 && p.ap === 1, "with shells, a Reload puts 4 in the pump's tube (4/6, 1 action: an internal magazine)");
   a.gear.weapon = null;
   refitUnit(b, p, a);
   check(p.weapon === "fists" && !hasMag(p) && magLabel(b, p) === "", "put down: fists, no magazine");
+}
+
+// 9. Magazines as items (wave 2, section 15: physical magazines, virtual rounds; src/sim/mags.js).
+{
+  console.log("Magazines as items");
+  const st = createWorld({ seed: seed + 20, factionCount: 4 });
+  const a = fighter(st, "ar");
+  a.pockets = a.pockets.map(() => null);
+  a.gear.rig = newItem("chestrig");
+  a.gear.backpack = newItem("assaultpack");
+  const rp = ensureRigOf(a);
+  rp[0] = newItem("mag_stanag_30"); // rig
+  a.pockets[0] = newItem("mag_stanag_20"); // pocket
+  a.gear.backpack.contents[0] = Object.assign(newItem("mag_stanag_30"), { load: "ap" }); // pack, AP
+  a.gear.backpack.contents[1] = newItem("mag_glock_15"); // does not fit an AR
+  const b = openBattle(st, [a], { kind: "raiders", count: 1, power: 3 });
+  b.pools[0].a_556_ap = 60;
+  const p = by(b, a);
+  const sp = p.mags.filter((m) => m.where !== "gun");
+  check(p.magMode === "box" && sp.length === 3 && sp.map((m) => m.where).sort().join() === "pack,pocket,rig" && p.mags[0].where === "gun" && p.mags[0].key === "mag_stanag_30", `u.mags: the gun's (implicit standard 30) and the 3 spares that fit, by where (${sp.map((m) => `${m.key}@${m.where}`).join(", ")})`);
+  check(magCap(p) === 30 && p.mag === 30, "the gun starts with its standard magazine full (30/30)");
+  place(p, 5, 5); place(foes(b)[0], 16, 5); toughen(foes(b)[0]); foes(b)[0].aware = false; // someone left on the map: the fight goes on
+  b.phase = "player";
+  loadMag(p, 0); p.ap = 2;
+  check(reloadCost(b, p) === 1 && combatAct(st, { type: "reload", unit: p.id }) === "" && p.ap === 1 && p.mag === 30 && p.mags.find((m) => m.where === "gun").cap === 30, "Reload: the rig's magazine (1 action), 30/30");
+  check(p.mags.filter((m) => m.where === "rig").length === 1 && p.mags.find((m) => m.where === "rig").n === 0, "the emptied one is kept, in the rig pouch the fresh one came from");
+  loadMag(p, 0); p.ap = 2; b.phase = "player";
+  check(combatAct(st, { type: "reload", unit: p.id }) === "" && p.ap === 1 && p.magMax === 20 && p.mag === 20, "next: the pocket's 20-round magazine (1 action, 20/20)");
+  loadMag(p, 0); p.ap = 2; b.phase = "player";
+  check(reloadCost(b, p) === 2 && combatAct(st, { type: "reload", unit: p.id }) === "" && p.ap === 0 && p.load === "ap" && p.mag === 30, "then the pack's: 2 actions, and its AP rounds switch the gun's load");
+  b.phase = "player"; loadMag(p, 3); p.ap = 1;
+  check(reloadCost(b, p) === 2 && /top-up takes 2/.test(combatAct(st, { type: "reload", unit: p.id })) && p.ap === 1, "no loaded spare left: a top-up takes 2 actions (refused with 1)");
+  p.ap = 2; b.phase = "player";
+  check(combatAct(st, { type: "reload", unit: p.id }) === "" && p.ap === 0 && p.mag === p.magMax && logHas(b, /top-up/), "with 2 it tops up the magazine in the gun");
+  b.phase = "player"; p.ap = 2;
+  check(reloadCost(b, p, "fmj") === 2, "a type with no loaded magazine of it: a top-up with it (2 actions)");
+  {
+    // A drum's −2 aim (and its jams) leave with the drum: a reload to a standard magazine recomputes the gun's numbers.
+    const stD = createWorld({ seed: seed + 22, factionCount: 4 });
+    const d = fighter(stD, "ar");
+    d.pockets = d.pockets.map(() => null);
+    d.gear.weapon.mods = { ...(d.gear.weapon.mods || {}), mag: newItem("drum") };
+    d.pockets[0] = newItem("mag_stanag_30");
+    const bD = openBattle(stD, [d], { kind: "raiders", count: 1, power: 3 });
+    const pd = by(bD, d);
+    const withDrum = gunMods(d.gear.weapon), bare = gunMods(Object.assign({}, d.gear.weapon, { mods: Object.fromEntries(Object.entries(d.gear.weapon.mods).filter(([k]) => k !== "mag")) }));
+    place(pd, 5, 5); place(foes(bD)[0], 16, 5); toughen(foes(bD)[0]); foes(bD)[0].aware = false;
+    bD.phase = "player"; loadMag(pd, 0); pd.ap = 2;
+    const aim0 = pd.gm.aim;
+    check(aim0 === withDrum.aim && withDrum.aim < bare.aim, `the drum fitted: its aim on the unit (${aim0}, without it ${bare.aim})`);
+    check(combatAct(stD, { type: "reload", unit: pd.id }) === "" && pd.magMax === 30 && pd.gm.aim === bare.aim && pd.gm.jam === bare.jam, `a reload to the standard 30: the drum's aim and jams are gone (aim ${pd.gm.aim})`);
+  }
+  // Internal magazines.
+  const st2 = createWorld({ seed: seed + 21, factionCount: 4 });
+  const crew = ["shotgun", "leverrifle", "huntrifle", "revolver", "dbshotgun"].map((k) => fighter(st2, k));
+  crew[3].pockets = crew[3].pockets.map(() => null); crew[3].pockets[0] = newItem("speedloader");
+  crew[2].pockets = crew[2].pockets.map(() => null); crew[2].pockets[0] = newItem("stripper308");
+  const h2 = hub(st2);
+  setRounds(h2.stock, 400, crew.map((s) => s.gear.weapon.key));
+  const b2 = (st2.combat = createBattle(st2, { tile: h2.tile, baseId: h2.id, fighterIds: crew.map((s) => s.id), enemy: { kind: "raiders", count: 1, power: 3 }, ambush: null, canRetreat: true, handler: "magtest", context: {} }));
+  for (const u of b2.units) if (u.side === "enemy") { u.x = -10; u.y = -10; u.dead = true; }
+  b2.phase = "player";
+  const inc = { shotgun: 4, leverrifle: 4, huntrifle: 3, revolver: 2, dbshotgun: 2 };
+  for (const s of crew) {
+    const u = by(b2, s);
+    loadMag(u, 0); u.ap = 2;
+    const k = u.weapon;
+    const first = reloadPlan(b2, u);
+    reload(b2, u);
+    const want = k === "revolver" || k === "huntrifle" ? u.magMax : Math.min(u.magMax, inc[k]);
+    check(u.magMode === "internal" && u.mag === want && u.ap === 1, `${WEAPONS[k].name}: an internal magazine, a Reload puts ${want} in (${first.mode}${first.mode === "clip" ? `: a ${GEAR[u.clips[first.i].key].name.toLowerCase()}` : ""}), 1 action`);
+    if (k === "revolver" || k === "huntrifle") { loadMag(u, 0); u.ap = 2; reload(b2, u); check(u.mag === inc[k], `${WEAPONS[k].name}: the clip is used once a fight; the next Reload puts ${inc[k]} in`); }
+  }
+  // An enemy's spares.
+  const st3 = createWorld({ seed: seed + 22, factionCount: 4 });
+  const b3 = openBattle(st3, [fighter(st3, "pistol")], { kind: "soldiers", count: 3, power: 5 });
+  const e = foes(b3).find((x) => x.magMode === "box");
+  if (e) {
+    const n = e.mags.filter((m) => m.where !== "gun").length;
+    let swaps = 0;
+    for (let i = 0; i < n; i++) { loadMag(e, 0); e.ap = 2; const pl = reloadPlan(b3, e); if (pl.mode === "swap") swaps++; reload(b3, e); }
+    check(swaps === n && n >= 3, `an enemy soldier changes magazines ${n} times (3–5 spares)`);
+  } else check(false, "a soldier with a magazine gun to test");
+  // Implicit magazine, an old extended mag, a drum, the tube extension, weights.
+  const old = newItem("pistol"); old.mods = { mag: { key: "extmag", name: "Extended pistol magazine", quality: 1 } };
+  check(magCap({ weapon: "pistol", item: newItem("pistol") }) === 15 && magCap({ weapon: "pistol", item: old }) === 24 && magCap({ weapon: "ar", item: Object.assign(newItem("ar"), { mods: { mag: newItem("drum") } }) }) === 60, "a gun with no magazine item: its standard one (15); an old save's extended mag: a 24-round magazine; a drum 60");
+  check(magCap({ weapon: "shotgun", item: Object.assign(newItem("shotgun"), { mods: { mag: newItem("tubeext") } }) }) === 8, "the tube extension stays an attachment (+2 shells)");
+  check(Math.abs(itemLoad(newItem("mag_stanag_30")) - 0.12) < 1e-9 && Math.abs(magRoundsKg({ gear: { weapon: null }, pockets: [newItem("mag_stanag_30")] }) - 30 * 0.012) < 1e-6, "a magazine weighs its empty weight as an item (0.12 kg); its rounds count in a fight (+0.36 kg loaded)");
 }
 
 // 8. The UI: the Reload button, the I key, the magazine on the unit panel, the empty flag.
