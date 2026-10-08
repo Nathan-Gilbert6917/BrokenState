@@ -28,7 +28,7 @@ import { GEAR } from "./data.js";
 import { skill } from "./world.js";
 import { hasPerk } from "./skills.js";
 import { allItems, itemLoad, carryBonus } from "./inventory.js";
-import { VEHICLE_TYPES, RIDER_KG, OVERLOAD_MAX, OVERLOAD_SPEED, fuelMultFor, isBike, isCar, typeSpeed, typeFuel, typeOffroad } from "./vehicles.js";
+import { VEHICLE_TYPES, RIDER_KG, OVERLOAD_MAX, OVERLOAD_SPEED, fuelMultFor, isBike, isCar, typeSpeed, typeFuel, typeOffroad, payloadOf } from "./vehicles.js";
 
 export const LOAD_BANDS = [
   { key: "light",  name: "Light",      upTo: 18,       slow: 0,    eat: 0 },
@@ -125,7 +125,7 @@ export function teamLoad(members, pool, v = null) {
     out.people = out.ride.people;
     out.mode = "bike";
   } else if (v) {
-    const payload = VEHICLE_TYPES[v.type]?.payload || VEHICLE_TYPES.truck.payload;
+    const payload = payloadOf(v); // vehicles.js: the type's payload less the weight of its upgrades (glass, plating)
     const load = pool + worn + members.length * RIDER_KG;
     out.fill = r4(load / payload);
     out.fuelMult = Math.round(fuelMultFor(out.fill) * typeFuel(v) * 100) / 100; // a thirsty type (vehicles.js: the Army truck ×2)

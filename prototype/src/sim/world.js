@@ -24,7 +24,7 @@ import { growthAt, growthInfo } from "./hivetech.js";
 import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
-import { createVehicle, vehiclesDaily } from "./vehicles.js";
+import { createVehicle, vehiclesDaily, garageHour } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
 import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
@@ -762,6 +762,7 @@ export function tickHour(state) {
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   constructionHour(state);
   craftingHour(state);
+  garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating)
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);
   diplomacyHour(state); // diplomacy.js: jobs for other groups checked every hour (jobs.js)

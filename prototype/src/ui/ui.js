@@ -40,7 +40,7 @@ import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, tierName,
   PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, BENCH, benchType,
 } from "../sim/buildings.js";
-import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG } from "../sim/vehicles.js";
+import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, payloadOf, upgradeText, upgradeEffects, upgradeOptions, garageQueue, garageJobStatus, vehicleValue, costText, vehicleById, SHOP_TEXT } from "../sim/vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
 import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadview.js";
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
@@ -874,7 +874,7 @@ function transportPick(state, h, pl, v, ids, where) {
   return `<div class="choices">
           <button data-action="pl-vehicle" data-v="" class="${!v ? "active" : ""}"${tip("Slow, silent, goes anywhere except water. People carry everything: heavy loads slow the team and make it eat and drink more (load bands).")}>On foot</button>
           ${nBikes && bikeStack ? `<button data-action="pl-vehicle" data-v="${bikeStack.id}" class="${isBike(v) ? "active" : ""}" ${bikeStack.condition <= 0 ? "disabled" : ""}${tip(`One bike each (${nBikes} at ${where}). No fuel. Faster than walking on roads, walking pace off-road. Each rack carries ${VEHICLE_TYPES.bike.rack} kg and riding takes 55% of the load's slow-down and extra rations away. Quiet.`)}>Bicycles<span class="hint">${nBikes} at ${where} · condition ${Math.round(bikeStack.condition)}%${ids.length > nBikes ? ` · need ${ids.length}` : ""}</span></button>` : ""}
-          ${parked.map((x) => `<button data-action="pl-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fast on roads, cannot cross mountains. Burns about 0.6 fuel per road tile, 1.5 off-road, more when it is loaded past 60% of its payload (×1.3 at 100%, up to ×1.6 at 125%). Payload ${VEHICLE_TYPES[x.type].payload} kg, riders (${RIDER_KG} kg each) included: they feel none of their load. Worn vehicles break down more.`)}>${esc(x.name)}<span class="hint">Fuel ${n0(x.fuel)}/${tank(x)} · condition ${Math.round(x.condition)}% · ${VEHICLE_TYPES[x.type].payload} kg payload</span></button>`).join("")}
+          ${parked.map((x) => `<button data-action="pl-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fast on roads, cannot cross mountains. Burns about 0.6 fuel per road tile, 1.5 off-road, more when it is loaded past 60% of its payload (×1.3 at 100%, up to ×1.6 at 125%). Payload ${payloadOf(x)} kg, riders (${RIDER_KG} kg each) included: they feel none of their load. Worn vehicles break down more.${upgradeText(x) ? ` ${upgradeText(x)}: ${upgradeEffects(x)}.` : ""}`)}>${esc(x.name)}<span class="hint">Fuel ${n0(x.fuel)}/${tank(x)} · condition ${Math.round(x.condition)}% · ${payloadOf(x)} kg payload${upgradeText(x) ? ` · ${esc(upgradeText(x))}` : ""}</span></button>`).join("")}
           ${parked.length || nBikes ? "" : `<span class="small muted">No vehicles or bikes at ${where}.</span>`}
         </div>`;
 }
@@ -1595,14 +1595,35 @@ function baseVehicles(state, b) {
       <div class="spread"><b>🚲 ${esc(vehicleLabel(v))}</b><span class="muted">${VEHICLE_TYPES.bike.rack} kg rack each</span></div>
       <div class="row"><span style="width:5.5rem" class="muted">Condition</span><div style="flex:1">${bar(v.condition, v.condition < 35 ? "var(--danger)" : "var(--good)")}</div><span style="width:3rem">${Math.round(v.condition)}%</span></div>
       <div class="row" style="margin-top:0.3rem"><button class="mini" data-action="repairv" data-base="${b.id}" data-id="${v.id}" ${(b.stock.scrap || 0) >= Math.ceil((v.count || 1) / 2) && v.condition < 100 ? "" : "disabled"}${tip("Patches, chain links, spokes: anyone can do it")}>Patch up (${Math.ceil((v.count || 1) / 2)} scrap)</button></div></div>` : `<div class="card small">
-      <div class="spread"><b>${esc(v.name)}</b><span class="muted"${tip(`Riders (${RIDER_KG} kg each), what they wear and the cargo; loaded past 60% it burns more fuel (×1.3 at 100%, up to ×1.6 at 125%, the most it takes).`)}>${VEHICLE_TYPES[v.type].payload} kg payload</span></div>
+      <div class="spread"><b>${esc(v.name)}</b><span class="muted"${tip(`Riders (${RIDER_KG} kg each), what they wear and the cargo; loaded past 60% it burns more fuel (×1.3 at 100%, up to ×1.6 at 125%, the most it takes).${upgradeText(v) ? ` Its upgrades weigh ${VEHICLE_TYPES[v.type].payload - payloadOf(v)} kg of the ${VEHICLE_TYPES[v.type].payload}.` : ""} Worth about ${vehicleValue(v)} in trade.`)}>${payloadOf(v)} kg payload</span></div>
+      ${upgradeText(v) ? `<div class="small"${tip(upgradeEffects(v))}>🛡 ${esc(upgradeText(v))}</div>` : ""}
       <div class="row"><span style="width:5.5rem" class="muted"${tip("Low condition means more breakdowns on the road")}>Condition</span><div style="flex:1">${bar(v.condition, v.condition < 35 ? "var(--danger)" : "var(--good)")}</div><span style="width:3rem">${Math.round(v.condition)}%</span></div>
       <div class="row"><span style="width:5.5rem" class="muted">Fuel</span><div style="flex:1">${bar((v.fuel / tank(v)) * 100, "var(--accent)")}</div><span style="width:3rem">${n0(v.fuel)}/${tank(v)}</span></div>
       <div class="row" style="margin-top:0.3rem">
         <button class="mini" data-action="refuel" data-base="${b.id}" data-id="${v.id}" ${v.fuel >= tank(v) || (b.stock.fuel || 0) < 1 ? "disabled" : ""}${tip(`Fill the tank from this base's fuel (${n0(b.stock.fuel)} in stock)`)}>Refuel</button>
         <button class="mini" data-action="repairv" data-base="${b.id}" data-id="${v.id}" ${rep.ok && (b.stock.parts || 0) >= 1 && v.condition < 100 ? "" : "disabled"}${tip(rep.ok ? `1 part → +${rep.per} condition` : "Needs a garage or a Mechanics 4+ survivor here")}>Repair (1 part)</button>
-      </div></div>`).join("") : `<div class="muted small">No vehicles parked here.</div>`}
+      </div>${garageRow(state, b, v)}</div>`).join("") : `<div class="muted small">No vehicles parked here.</div>`}
+    ${garageJobs(state, b)}
     ${elsewhere.length ? `<h3>Elsewhere</h3>${elsewhere.map((v) => `<div class="card small"><b>${esc(vehicleLabel(v))}</b> · ${where(v)}</div>`).join("")}` : ""}`;
+}
+
+// Upgrades in the garage (sim/vehicles.js): fit or strip glass, mesh grilles, armour plate, scrap plating.
+function garageRow(state, b, v) {
+  const opts = upgradeOptions(state, b, v);
+  if (!opts.length) return "";
+  const what = (o) => o.op === "strip"
+    ? `${o.hours}h, Mechanics ${o.mech}+; back: ${Object.entries(o.refund || {}).map(([k, q]) => (k === "spareGlass" ? "the glass, whole" : costText({ [k]: q }))).join(", ") || "nothing"}`
+    : `${o.spare ? "a spare glass set from this base" : costText(o.cost)}, ${o.hours}h, Mechanics ${o.mech}+${o.shop ? `, ${SHOP_TEXT[o.shop]}` : ""}; +${o.kg} kg`;
+  return `<div class="row" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="small muted"${tip("Garage jobs: the materials are paid when queued; people on the Craft role with the Mechanics level do the work. Stripping refunds half the car parts, and bulletproof glass comes out whole.")}>Garage:</span>${opts.map((o) => `<button class="mini" data-action="vupgrade" data-base="${b.id}" data-id="${v.id}" data-key="${o.key}" data-op="${o.op}" ${o.ok ? "" : "disabled"}${tip(`${o.name}: ${what(o)}.${o.ok ? "" : ` ${o.why}`}`)}>${esc(o.name)}</button>`).join("")}</div>`;
+}
+function garageJobs(state, b) {
+  const q = garageQueue(b);
+  if (!q.length && !b.spareGlass) return "";
+  return `<h3>Garage</h3>${b.spareGlass ? `<div class="small muted">${b.spareGlass} spare set${b.spareGlass === 1 ? "" : "s"} of bulletproof glass (fitted again with no materials).</div>` : ""}${q.map((j) => {
+    const v = vehicleById(state, j.vehicleId), why = garageJobStatus(state, b, j);
+    return `<div class="card small"><div class="spread"><b>${j.op === "strip" ? "Strip" : "Fit"} ${esc(j.key === "turret" ? "turret" : j.key === "scrapPlate" ? "scrap plating" : j.key === "plating" ? "armour plate" : j.key === "mesh" ? "mesh grilles" : "bulletproof glass")} · ${esc(v ? v.name : "?")}</b><button class="mini" data-action="vgaragecancel" data-base="${b.id}" data-id="${j.id}">Cancel</button></div>
+      <div class="row"><div style="flex:1">${bar((j.progress / j.hours) * 100, "var(--accent)")}</div><span style="width:4rem">${Math.floor(j.progress)}/${j.hours}h</span></div>${why ? `<div class="small warn">${esc(why)}</div>` : ""}</div>`;
+  }).join("")}`;
 }
 
 // ---------- supply runs ----------
