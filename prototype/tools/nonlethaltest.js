@@ -334,7 +334,7 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
     surrenderCheck(b);
     if (i % 2) { if (g.surr) zealot++; } else { tries++; if (g.surr) { gave++; if (!one) one = { st, b, g }; } }
   }
-  check(gave >= 6, `a beaten, hurt guard alone near your people gives up (${gave} of ${tries})`);
+  check(gave >= 3, `a beaten, hurt guard alone near your people gives up now and then (${gave} of ${tries}; one roll, about a third: SURRENDER)`);
   check(zealot === 0, "zealots never do");
   if (one) {
     const { st, b, g } = one;
@@ -488,8 +488,8 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
   const h = hub(st3);
   const f3 = st3.factions.find((x) => x.alive);
   let got = 0;
-  for (let i = 0; i < 10; i++) { st3.hour += 1; got += capturePrisoners(st3, { baseId: h.id, tile: h.tile, enemy: { kind: "guards", count: 6, power: 3, factionId: f3.id, name: f3.name } }, { outcome: "victory", tactical: false, survivorsDead: [] }, null).length; }
-  check(got >= 5, `played by hand, decisive wins by the numbers bring prisoners home (${got} in 10 wins)`);
+  for (let i = 0; i < 20; i++) { st3.hour += 1; got += capturePrisoners(st3, { baseId: h.id, tile: h.tile, enemy: { kind: "guards", count: 6, power: 3, factionId: f3.id, name: f3.name } }, { outcome: "victory", tactical: false, survivorsDead: [] }, null).length; }
+  check(got >= 2 && got <= 12, `played by hand, decisive wins by the numbers now and then bring prisoners home (${got} in 20 wins)`);
 }
 
 // 10. A battle saved mid-fight.

@@ -35,7 +35,7 @@
 //     actions off at the start of the unit's next turn, stunTurnEnd lifts it when that turn ends (combat.js).
 // The AI (combat.js autoPlayerTurn): a frag grenade, a pipe bomb or a Molotov on three or more enemies bunched up
 // (two at a breach, the gate or a doorway for a Molotov) and none of yours near, a smoke grenade when the retreat is
-// about to be sounded, a flashbang on two or more people bunched within its reach (flashSpot; the enemy's soldiers and
+// about to be sounded (the enemy's and the third side's the turn they start to fall back: siege.js coverSmoke), a flashbang on two or more people bunched within its reach (flashSpot; the enemy's soldiers and
 // guards carry them: kitFlashbangs, siege.js enemyThrow).
 import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell, structureName, vehicleBlast, los, coverAgainst } from "./combat.js";
 import { ZTYPES } from "./hiveconst.js";
@@ -55,10 +55,15 @@ export const FLARE = { r: 5, turns: 4, aim: 10 };
 // aim / daze: the aim penalty stunned / dazed; dmg within near; wake: people woken (tiles); noise: gunfire's; visor:
 // a riot helmet's visor's cut (cutMax: the most any protection takes off).
 export const FLASH = { r: 2, near: 1, ap: 1, apNear: 2, aim: 30, daze: 15, dmg: [0, 3], wake: 12, noise: 4, visor: 0.3, cutMax: 0.75 };
-// The soldiers and guards who carry a flashbang (or a guard a smoke grenade) into a fight (combat.js enemyUnit):
+// The soldiers and guards who carry a flashbang, and who carries a smoke grenade, into a fight (combat.js enemyUnit):
 // { key: [chance, how many] }. Their own dice (a hash of the battle's dice position and the unit), so nothing else in
-// the battle changes. What they never threw is on their body (inventory.js carriedThrowables).
-export const FLASH_KIT = { guards: { flashbang: [0.2, 1], smokegren: [0.1, 1] }, soldiers: { flashbang: [0.3, 1] } };
+// the battle changes. What they never threw is on their body (inventory.js carriedThrowables). Smoke covers a retreat
+// (siege.js coverSmoke): a squad of soldiers or contractors usually has one, militia sometimes, raiders rarely. A group
+// with an arsenal hands out only what it holds (arsenal.js ARSENAL.NONLETHAL stocks the same shares).
+export const FLASH_KIT = {
+  guards: { flashbang: [0.2, 1], smokegren: [0.1, 1] }, soldiers: { flashbang: [0.3, 1], smokegren: [0.35, 1] },
+  contractors: { smokegren: [0.3, 1] }, militia: { smokegren: [0.12, 1] }, fighters: { smokegren: [0.08, 1] }, raiders: { smokegren: [0.04, 1] },
+};
 // Where the flash is cut to FLASH.near: a sight line through a doorway, a broken or open door, a gate, a window.
 const DOORISH = new Set(["doorway", "odoor", "smashed", "breach", "gate", "window"]);
 export const SCATTER = { base: 0.45, perAim: 0.008, min: 0.08, max: 0.45, blind: 0.15, far: 5 };

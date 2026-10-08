@@ -17,11 +17,11 @@
 //     knocked out or has surrendered next to them, spray, tase, and close in on the weak to club them down. Your own
 //     AI does the same when the battle's "Take them alive" is on (b.takeAlive).
 //   Surrender: at the start of the enemy turn an enemy may give up when its side has lost half its people and is
-//     outnumbered, and it is hurt, out of shots, flanked or alone near your people (SURRENDER); zealots and the
-//     fearless never, raiders less, soldiers rarely, leaders hold out longer. It drops its weapon on its cell (loot),
-//     raises its hands and stops (down, not a target). Tie it up (the Tie act) and it is a prisoner after a win; left
-//     untied it walks off after 3 turns alone, or picks its weapon up again if its side recovers. Several giving up
-//     at once break the rest (combat.js shouldFlee). Execute (adjacent, 1 action) kills a surrendered or knocked-out
+//     outnumbered two to one, and it is hurt, out of shots, flanked or alone near your people (SURRENDER); zealots
+//     and the fearless never, militia and raiders less, soldiers rarely, leaders hold out longer. It drops its weapon
+//     on its cell (loot), raises its hands and stops (down, not a target). Tie it up (the Tie act) and it is a
+//     prisoner after a win; left untied it walks off after 3 turns alone, or picks its weapon up again if its side
+//     recovers. Several giving up at once break the rest (combat.js shouldFlee). Execute (adjacent, 1 action) kills a surrendered or knocked-out
 //     enemy, at a mood cost to your people (prisoners.js PRISON.EXECUTE) and goodwill with their group.
 //     Your people may surrender too (the Surrender act): police, soldiers and communes take them captive; raiders may
 //     finish them (SURRENDER.finish); zealots take no prisoners. The AI never surrenders for you.
@@ -30,9 +30,10 @@
 //     with no group behind them they come to after the enemy has gone. Tied surrendered enemies go home as
 //     prisoners (stealth.js battleCaptives, prisoners.js); untied ones walk away, their dropped weapons stay to loot.
 //   By the numbers: a group that takes people alive takes a share of a beaten group's losses as prisoners in AI raids
-//     (raidPrisoners: fewer dead), into its jail (groupjails.js: as many as it holds, the rest sold on, let go or killed
-//     by type; there they work, are ransomed back, swapped, sold, turned or escape: groupJailsDaily); a decisive
-//     win of yours by the numbers takes a couple of the beaten side prisoner (numbersSurrenders).
+//     (raidPrisoners: fewer dead; fewer from a group whose kit gives up less, SURRENDER.raidKo), into its jail
+//     (groupjails.js: as many as it holds, the rest sold on, let go or killed by type; there they work, are ransomed
+//     back, swapped, sold, turned or escape: groupJailsDaily); a decisive win of yours by the numbers now and then
+//     takes one or two of the beaten side prisoner (numbersSurrenders).
 import { GEAR } from "./data.js";
 import { AMMO_TYPES } from "./data-ammo.js";
 import {
@@ -79,14 +80,24 @@ export const TYPE_KIT = { raider: "raiders", expansionist: "fighters", zealot: "
 // AI raids between groups: the share of a beaten group's losses the winners take alive, by the winners' type.
 // One table for every type's leanings: groupcare.js GROUP_PRIORITIES takeAlive (read when used).
 export const NL_TAKE = new Proxy({}, { get: (_, t) => (typeof t === "string" ? weightOf({ type: t }, "takeAlive", null) : undefined), has: (_, t) => weightOf({ type: t }, "takeAlive", null) != null });
+// Giving up (surrenderCheck): only a broken side (lost at least `lost` of its people) that is badly outnumbered (your
+// people standing at least `outnumbered` times theirs). Then each one hurt, out of shots, flanked or alone rolls each
+// enemy turn: base + the reasons that hold, × the kit's will (kit) × leader for a leader, at most max. Tuned
+// 2026-10-08 (tools/enemyaitest.js measures it): it was lost 0.5, merely outnumbered, base 0.05, hurt 0.25, empty /
+// flanked / alone 0.15, max 0.8 and militia 1, and about half of all fights with militia, guards or loose survivors
+// ended with one of them giving up; now about a sixth (militia a little less: they hold out for their own people).
 export const SURRENDER = {
-  lost: 0.5, base: 0.05, hurt: 0.25, empty: 0.15, flanked: 0.15, alone: 0.15, max: 0.8, leader: 0.4, walk: 3, recover: 1.5,
-  kit: { guards: 1, militia: 1, survivors: 1, fighters: 0.8, raiders: 0.6, soldiers: 0.3, zealots: 0 },
+  lost: 0.5, outnumbered: 2, base: 0.03, hurt: 0.15, empty: 0.1, flanked: 0.08, alone: 0.1, max: 0.5, leader: 0.4, walk: 3, recover: 1.5,
+  kit: { guards: 1, militia: 0.8, survivors: 1, fighters: 0.8, raiders: 0.6, soldiers: 0.3, zealots: 0 },
   // Your people knocked out or surrendered where the enemy holds the field: the chance they finish them instead of
   // taking them (by kit; a tied one is always taken).
   finish: { raiders: 0.3, fighters: 0.15, survivors: 0.2, zealots: 1, soldiers: 0.05, guards: 0, militia: 0.05 },
-  // By the numbers: prisoners from a decisive win, per enemy, by kit (× SURRENDER.kit), at most NUMBERS_MAX.
-  numbers: 0.15, NUMBERS_MAX: 2,
+  // By the numbers: prisoners from a decisive win, per enemy, by kit (× SURRENDER.kit), at most NUMBERS_MAX. Cut with
+  // the battle map's rule (it was 0.15): six militia beaten by the numbers give up about as often as six on the map.
+  numbers: 0.06, NUMBERS_MAX: 2,
+  // AI raids between groups (raidPrisoners): of the winners' share taken alive (NL_TAKE), raidKo were knocked out or
+  // too hurt to get away; the rest gave up, by the beaten group's kit (× SURRENDER.kit, the same will as on the map).
+  raidKo: 0.5,
 };
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -286,7 +297,7 @@ export function surrenderCheck(b) {
   const standing = people.filter((u) => active(u));
   const mine = b.units.filter((u) => u.side === "player" && active(u));
   if (!start || !standing.length || !mine.length) return 0;
-  if ((start - standing.length) / start < SURRENDER.lost || standing.length >= mine.length) return 0;
+  if ((start - standing.length) / start < SURRENDER.lost || mine.length < standing.length * SURRENDER.outnumbered) return 0;
   let n = 0;
   for (const u of standing) {
     if (u.fearless || !u.aware) continue;
@@ -737,7 +748,8 @@ export const nlSpared = (u) => !!(u.ko || u.surr);
 // room. A record without bases (a tool's stand-in) is only counted.
 export function raidPrisoners(state, attacker, target, loss) {
   if (!attacker || !target || loss <= 0) return 0;
-  const share = NL_TAKE[attacker.type] ?? 0.2;
+  const tk = TYPE_KIT[target.type]; // the beaten side's will to give up (a record without a type: as before)
+  const share = (NL_TAKE[attacker.type] ?? 0.2) * (tk ? SURRENDER.raidKo + (1 - SURRENDER.raidKo) * (SURRENDER.kit[tk] ?? 0.8) : 1);
   const n = Math.min(loss, Math.floor(loss * share + hash01(state.seed, "nlraid", localId(state, attacker.id), localId(state, target.id), state.hour)));
   if (n <= 0) return 0;
   const out = { killed: 0 };
@@ -751,8 +763,8 @@ export const warCaptureMult = (attacker) => (attacker ? 0.5 + 2 * (NL_TAKE[attac
 // own rolls replaced the ones that were here). A save made with the old head counts (f.held) has them turned into
 // groupjails.js records (migrateHeld; groupJailsDaily calls it too).
 export const aiCaptivesDaily = (state) => migrateHeld(state);
-// A decisive win of yours by the numbers (no one of yours dead, at least 3 of them): a couple of the beaten side give
-// up and are taken (prisoners.js makes the records). Zealots never. Its own dice. Returns how many.
+// A decisive win of yours by the numbers (no one of yours dead, at least 3 of them): now and then one or two of the beaten
+// side give up and are taken (prisoners.js makes the records). Zealots never. Its own dice. Returns how many.
 export function numbersSurrenders(state, setup, result) {
   const e = setup && setup.enemy;
   if (!e || e.kind === "zombies" || !result || result.outcome !== "victory" || (result.survivorsDead || []).length || (e.count || 0) < 3) return 0;
@@ -791,11 +803,11 @@ export const NL_HELP = `<b>Knocked out, not killed.</b> A living person brought 
   the military remnant and communes take people when they are winning, raiders now and then (more for a strong or skilled
   one: slaves), zealots never, and any side that is losing fights to kill. Groups that take people alive also take more
   prisoners and kill fewer when they raid each other, as many as their jails hold; those prisoners are worked, ransomed back, swapped, sold, recruited or escape (Help: Prisoners and jails).
-  <br><b>Surrender.</b> Enemies who have lost half their people and are outnumbered may give up when they are hurt, out of
+  <br><b>Surrender.</b> Enemies who have lost half their people and are outnumbered two to one may give up when they are hurt, out of
   shots, flanked or alone near your people (zealots and the fearless never; raiders less, soldiers rarely; leaders hold out
   longer). They drop their weapon (loot it) and raise their hands: no longer a target. Tie (take prisoner) one next to you;
   left untied and alone for 3 turns they walk off, and if their side rallies they take the weapon up again. Several giving
   up at once can break the rest. Execute (next to them, asks first) kills one who gave up or is out cold: your people take it
   hard and their group hears of it. Your own people can Surrender too (asks first): police, soldiers and communes take them
   captive, raiders might not bother keeping them alive, zealots take no prisoners. The AI never surrenders for you. By the
-  numbers, a decisive win takes a couple of the beaten side prisoner.`;
+  numbers, a decisive win now and then takes one or two of the beaten side prisoner.`;

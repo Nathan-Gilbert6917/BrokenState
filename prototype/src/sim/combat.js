@@ -42,7 +42,7 @@ import { needsAim } from "./needs.js";
 import { tiredAim } from "./sleep.js"; // Tired or Exhausted from the watch
 import { illnessAim } from "./health.js";
 import { smokeAt, flareLit, fireStep, fireAt, burnRound, smokeBlocks, SMOKE, FLARE, stunTurnStart, stunTurnEnd, kitFlashbangs } from "./throwables.js";
-import { siegeSetup, siegeAct, siegeAI, botSiege, afterMove, checkRams, isCrew, CLIMB_AIM, CREW_AIM } from "./siege.js"; // ladders, the ram, rocks from the walls
+import { siegeSetup, siegeAct, siegeAI, botSiege, afterMove, checkRams, isCrew, CLIMB_AIM, CREW_AIM, coverSmoke } from "./siege.js"; // ladders, the ram, rocks from the walls; smoke over a retreat
 import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"; // decoys, fire and the senses of the dead; the Shepherd
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
@@ -3871,6 +3871,7 @@ function flee(b, u) {
   if (exitEdge(b, u.x, u.y)) { u.fled = true; u.ap = 0; say(b, `${u.name} runs off.`, "good"); return; }
   // Out of everyone's sight and well clear of them: gone, not a long run to the map's edge (battlesize.js).
   if (u.fleeing && fledFarEnough(b, u)) { u.fled = true; u.ap = 0; say(b, `${u.name} gets away.`, "good"); return; }
+  coverSmoke(b, u, foesOf(b, u)); // siege.js: the turn the retreat starts, one of them throws smoke behind them (an action)
   const r = reachable(b, u, u.mob * u.ap);
   const exits = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (exitEdge(b, x, y) && cellAt(b, x, y).walk) exits.push([x, y]);

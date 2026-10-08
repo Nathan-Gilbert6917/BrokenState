@@ -77,8 +77,8 @@ export const ARSENAL = {
   // The rest of a kit's people's gear, a share a head: tasers and spray (nonlethal.js NL_KIT), flashbangs and smoke
   // (throwables.js FLASH_KIT), medics' kits (medics.js MEDIC.ENEMY KITS: about one medic in sixteen people).
   NONLETHAL: {
-    guards: { taser: 0.4, pepper: 0.45, flashbang: 0.2, smokegren: 0.1, bandagekit: 0.06 }, soldiers: { taser: 0.12, pepper: 0.2, flashbang: 0.3, traumakit: 0.06 },
-    militia: { pepper: 0.25, bandagekit: 0.06 }, fighters: { pepper: 0.08, bandagekit: 0.06 }, raiders: { taser: 0.04 },
+    guards: { taser: 0.4, pepper: 0.45, flashbang: 0.2, smokegren: 0.1, bandagekit: 0.06 }, soldiers: { taser: 0.12, pepper: 0.2, flashbang: 0.3, smokegren: 0.35, traumakit: 0.06 },
+    militia: { pepper: 0.25, smokegren: 0.12, bandagekit: 0.06 }, fighters: { pepper: 0.08, smokegren: 0.08, bandagekit: 0.06 }, raiders: { taser: 0.04, smokegren: 0.04 },
   },
 };
 // The kit of each group type (the same as conflicts.js KIND_OF).

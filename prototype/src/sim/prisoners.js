@@ -584,7 +584,7 @@ export function movePrisoner(state, id, baseId) {
 }
 
 function numbersCapture(state, setup, result) {
-  // Played by hand (no autopilot): a decisive win takes a couple of the beaten side prisoner (nonlethal.js).
+  // Played by hand (no autopilot): a decisive win now and then takes one or two of the beaten side prisoner (nonlethal.js).
   if (!state.autopilot) {
     const f = setup.enemy && setup.enemy.factionId != null ? factionById(state, setup.enemy.factionId) : null;
     const n = numbersSurrenders(state, setup, result);
