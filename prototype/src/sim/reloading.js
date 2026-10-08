@@ -40,8 +40,8 @@ import { SUPPLIES } from "./data.js";
 import { count, countAll } from "./buildings.js";
 import { atBase, skill, log, newId, day } from "./world.js";
 import { WEAPON_PLATFORM } from "./data-gunmods.js";
-import { baseCals, calOf, nextHand, armoured } from "./ammo.js";
-import { roundsIn, baseType, withHand } from "./rounds.js";
+import { baseCals, partyCals, calOf, nextHand, armoured, kindMix } from "./ammo.js";
+import { roundsIn, baseType, withHand, ROUND_KEYS, roundOf } from "./rounds.js";
 import { hash01 } from "./skills.js";
 import { buildLock } from "./blueprints.js";
 import { relation, warsOf } from "./diplomacy.js";
@@ -66,6 +66,11 @@ export const RELOAD = {
            rel: -50, // a seller not at war with them and not a bitter enemy (traders deal with most)
            brass: 0.3, // of the rounds their fights spend, back as brass
            stock: { traders: { powder: [2, 6], primers: [2, 6] }, military: { powder: [3, 8], primers: [3, 8] } } }, // per head they keep to sell (restocked toward it)
+  // Pulling rounds (user, 2026-10-08: the rounds of calibres nobody uses pile up): a bullet puller takes rounds apart
+  // into their case, powder, a reusable primer (PRIMER of them) and lead (a scrap per LEAD bullets). RATE a day,
+  // Mechanics MIN; by calibre class the case and the charges (rimfire: no case or primer to reuse; .50 BMG: 10 charges).
+  PULL: { RATE: 60, MIN: 1, PRIMER: 0.8, KEEP: 20, CHARGE: { pistol: 1, rifle: 2.5, shotgun: 100 / 60, "22lr": 0.3, "50bmg": 10 },
+          GROUP: { below: 100, share: 0.02, max: 30, keepHead: 10 } }, // a group pulls when short of brass: up to max a day, share of the unused-calibre ammo, keeping keepHead a head
   // Merchant caravans (visitors.js merchantGoods): an arms dealer's powder and primers, anyone else's now and then.
   MERCHANT: { on: true, arms: { powder: [100, 300], primers: [100, 400], brass: [0, 200] }, other: { p: 0.25, powder: [0, 100], primers: [0, 100] } },
 };
@@ -136,8 +141,9 @@ export function queueReloadUpgrade(state, base, id) {
 
 // ---------- orders ----------
 /** @param {any} base */
-export const reloadOf = (base) => base.reload || (base.reload = { orders: [], wear: 0 });
+export const reloadOf = (base) => { const R = base.reload || (base.reload = { orders: [], wear: 0 }); if (!R.pulls) R.pulls = []; return R; };
 export const reloadOrders = (base) => (base && base.reload ? base.reload.orders : []);
+export const pullOrders = (base) => (base && base.reload && base.reload.pulls) || [];
 // Adds or sets a "keep at least n" order for a calibre and type. by: "player" (the UI) or "ai" (the governor).
 export function setReloadOrder(state, base, key, n, by = "player") {
   const r = SUPPLIES[key] && SUPPLIES[key].round;
@@ -221,9 +227,9 @@ export function reloadJob(state, base, op) {
 // Would a reloading bench here work an order today (the governor staffs it: autopilot.js stationWorth)? The best
 // Mechanics at the base as its operator.
 export function reloadWanted(state, base) {
-  if (!hasReloadBench(base) || !reloadOrders(base).length) return false;
+  if (!hasReloadBench(base) || !(reloadOrders(base).length || pullOrders(base).length)) return false;
   const op = atBase(state, base.id).filter((s) => !s.inBed).sort((a, b) => mech(b) - mech(a))[0];
-  return !!(op && reloadJob(state, base, op));
+  return !!(op && (reloadJob(state, base, op) || pullJob(state, base, op)));
 }
 
 // ---------- the day's work (buildings.js stationStatus / runStations) ----------
@@ -232,7 +238,12 @@ export function reloadWanted(state, base) {
 export function reloadStatus(state, base, st, op) {
   if (!op || !isReloadBench(st) || (base.orders && base.orders[st.id] && base.orders[st.id].mode === "off")) return null; // its station order Off: off altogether
   const job = reloadJob(state, base, op);
-  if (!job) return null;
+  if (!job) {
+    const pj = pullJob(state, base, op); // nothing to load: pull the rounds marked for it (their parts feed the loading)
+    if (!pj) return null;
+    const pio = pullIO(base, pj);
+    return { op, running: true, reason: `Pulling ${SUPPLIES[pj.key].name}`, recipe: "ammo", out: pio.out, in: pio.in, reload: pj };
+  }
   const io = jobIO(base, job);
   return { op, running: true, reason: `Loading ${SUPPLIES[job.order.key].name}`, recipe: "ammo", out: io.out, in: io.in, reload: job };
 }
@@ -264,6 +275,7 @@ function jobIO(base, job) {
 export function runReload(state, base, st, status) {
   const job = status.reload;
   if (!job) return 0;
+  if (job.pull) return runPull(state, base, job);
   const io = jobIO(base, job);
   for (const [k, v] of Object.entries(io.in)) base.stock[k] = num(base.stock[k]) - v;
   const hk = handKey(job.cal, job.type);
@@ -285,6 +297,77 @@ export function noteMake(state, hk, w0, n, m, bp = 0, mp = 0) {
   const mix = (a, b) => Math.round(((a * w + b * n) / Math.max(1, w + n)) * 1000) / 1000;
   H[hk] = cur ? { hq: mix(cur.hq, add.hq), bp: mix(cur.bp, add.bp), mp: mix(cur.mp, add.mp), lo: mix(cur.lo, add.lo) } : add;
   return H[hk];
+}
+
+// ---------- pulling rounds ----------
+// What one pulled round of a key gives: { brass, powder (charges), primers } (scrap: a LEAD-th of a bullet).
+/** @param {string} key */
+export function pullYield(key) {
+  const r = roundOf(key);
+  if (!r) return null;
+  const P = RELOAD.PULL, c = r.cal;
+  const charge = P.CHARGE[c] ?? P.CHARGE[LOAD_CLASS[c] || "rifle"];
+  const rim = c === "22lr";
+  return { brass: rim ? 0 : 1, powder: charge, primers: rim ? 0 : P.PRIMER };
+}
+// "Pull rounds of this key down to keep" (a factory or a handload key; any calibre). by: "player" or "ai".
+export function setPullOrder(state, base, key, keep, by = "player") {
+  if (!roundOf(key)) return "Not a round.";
+  const R = reloadOf(base);
+  const q = Math.max(0, Math.min(RELOAD.ORDER_MAX, Math.floor(Number(keep) || 0)));
+  let o = R.pulls.find((x) => x.key === key);
+  if (!o) { o = { id: newId(), key, keep: q, on: true, by }; R.pulls.push(o); }
+  else { o.keep = q; o.by = by; o.on = true; }
+  return `Pull ${SUPPLIES[key].name} down to ${q} at ${base.name}: their brass, powder and primers for the bench.`;
+}
+export function removePullOrder(state, base, id) {
+  const R = reloadOf(base);
+  const i = R.pulls.findIndex((x) => x.id === Number(id));
+  if (i < 0) return "That order is gone.";
+  const o = R.pulls.splice(i, 1)[0];
+  return `Pulling ${SUPPLIES[o.key].name} stopped.`;
+}
+// Every pull order's status for this operator today: [{ order, n, reason, have }].
+export function pullRows(state, base, op) {
+  const m = mech(op);
+  return pullOrders(base).map((o) => {
+    const have = Math.floor(num(base.stock[o.key]));
+    let n = 0, reason = "";
+    if (!o.on) reason = "paused";
+    else if (have <= o.keep) reason = `down to ${have} (keeps ${o.keep})`;
+    else if (!op) reason = "no operator";
+    else if (m < RELOAD.PULL.MIN) reason = `needs Mechanics ${RELOAD.PULL.MIN}`;
+    else n = Math.min(dayRate(RELOAD.PULL.RATE, m), have - o.keep);
+    return { order: o, n, reason, have };
+  });
+}
+// The pull job today (the order with most above its keep), or null. Loading comes first (reloadStatus).
+export function pullJob(state, base, op) {
+  let best = null;
+  for (const r of pullRows(state, base, op)) if (r.n >= 1 && (!best || r.have - r.order.keep > best.over)) best = { order: r.order, key: r.order.key, n: r.n, pull: true, over: r.have - r.order.keep };
+  return best;
+}
+// Any work for this operator today: loading first, then pulling (production.js keeps them at the bench for it).
+export const reloadWork = (state, base, op) => reloadJob(state, base, op) || pullJob(state, base, op);
+// What a pull job takes and gives.
+function pullIO(base, job) {
+  const y = pullYield(job.key), n = job.n, R = reloadOf(base);
+  const out = {};
+  if (y.brass) out.brass = n * y.brass;
+  out.powder = Math.floor(n * y.powder + 1e-6);
+  if (y.primers) out.primers = Math.floor(n * y.primers + 1e-6);
+  const lead = num(R.lead) + n / RELOAD.LEAD;
+  if (Math.floor(lead + 1e-9) > 0) out.scrap = Math.floor(lead + 1e-9);
+  return { in: { [job.key]: n }, out, lead: lead - (out.scrap || 0) };
+}
+function runPull(state, base, job) {
+  const io = pullIO(base, job), R = reloadOf(base);
+  for (const [k, v] of Object.entries(io.in)) base.stock[k] = num(base.stock[k]) - v;
+  for (const [k, v] of Object.entries(io.out)) base.stock[k] = num(base.stock[k]) + v;
+  R.lead = io.lead;
+  R.pulled = num(R.pulled) + job.n;
+  R.last = { day: day(state), key: job.key, n: job.n, pull: true };
+  return job.n;
 }
 
 // ---------- in a fight (gunfire.js) ----------
@@ -350,6 +433,19 @@ export function autoReloadOrders(state, base) {
   if (state.metArmour && r && loadRecipe(r, "ap")) want[ammoKey(r, "ap")] = RELOAD.AUTO.ap;
   const R = reloadOf(base);
   const out = [];
+  // Pull the rounds of calibres no gun here (or on a team from here) shoots, down to a trade reserve: their parts
+  // feed the loading of the calibres it needs.
+  const used = { ...baseCals(state, base) };
+  for (const p of state.parties || []) if (p.owner === "player" && p.homeBaseId === base.id) Object.assign(used, partyCals(state, p));
+  const pull = {};
+  for (const k of ROUND_KEYS) if (num(base.stock[k]) > RELOAD.PULL.KEEP && !used[roundOf(k).cal]) pull[k] = RELOAD.PULL.KEEP;
+  R.pulls = R.pulls.filter((o) => o.by === "player" || pull[o.key] != null);
+  for (const [k, n] of Object.entries(pull)) {
+    const o = R.pulls.find((x) => x.key === k);
+    if (o && (o.by === "player" || o.keep === n)) continue;
+    setPullOrder(state, base, k, n, "ai");
+    out.push(`pull:${k}`);
+  }
   R.orders = R.orders.filter((o) => o.by === "player" || want[o.key] != null);
   for (const [k, n] of Object.entries(want)) {
     const o = R.orders.find((x) => x.key === k);
@@ -397,6 +493,7 @@ export function groupReloadDaily(state, f, workshop) {
   const sell = G.stock[f.type];
   if (sell) for (const k of ["powder", "primers"]) { const cap = Math.round(f.pop * sell[k][1] * 10), want = Math.round(f.pop * sell[k][0] * 10); if (num(f.stock[k]) < want) f.stock[k] = Math.min(cap, num(f.stock[k]) + Math.ceil(f.pop * 2)); }
   if (!workshop) return 0;
+  groupPull(state, f);
   if (num(f.stock.brass) >= G.buyBrass && (num(f.stock.powder) < Math.min(G.want.powder, num(f.stock.brass) * G.pc) / 2 || num(f.stock.primers) < Math.min(G.want.primers, num(f.stock.brass)) / 2) && (f.reloadDeal == null || d - f.reloadDeal >= G.buyEvery)) groupBuyReload(state, f, d);
   const pc = G.pc;
   const n = Math.floor(Math.min(G.max, f.pop * G.perHead, num(f.stock.brass), num(f.stock.primers), num(f.stock.powder) / pc, num(f.stock.scrap) * RELOAD.LEAD));
@@ -404,6 +501,28 @@ export function groupReloadDaily(state, f, workshop) {
   f.stock.brass -= n; f.stock.primers -= n; f.stock.powder = Math.max(0, num(f.stock.powder) - n * pc); f.stock.scrap = Math.max(0, num(f.stock.scrap) - Math.ceil(n / RELOAD.LEAD));
   f.stock.ammo = num(f.stock.ammo) + n;
   f.reloaded = num(f.reloaded) + n;
+  return n;
+}
+// A group short of brass pulls rounds of the calibres its guns do not shoot (coarse: its one ammo count, by its kind's
+// mix of calibres against the calibres of the guns in its arsenal), into brass, powder, primers and scrap. Returns n.
+export function groupPull(state, f) {
+  const P = RELOAD.PULL, G = P.GROUP;
+  if (!f || !f.stock || num(f.stock.brass) >= G.below) return 0;
+  const guns = {};
+  for (const it of (f.arsenal && f.arsenal.items) || []) { const c = calOf(it && it.key); if (c) guns[c] = true; }
+  if (!Object.keys(guns).length) return 0;
+  const mix = kindMix(f.type);
+  let tot = 0, unused = 0, charge = 0;
+  for (const [k, w] of Object.entries(mix)) { const r = roundOf(k); if (!r) continue; tot += w; if (!guns[r.cal]) { unused += w; charge += w * (pullYield(k).powder); } }
+  if (!(unused > 0) || !(tot > 0)) return 0;
+  const n = Math.floor(Math.min(G.max, num(f.stock.ammo) * (unused / tot) * G.share, num(f.stock.ammo) - f.pop * G.keepHead));
+  if (!(n >= 1)) return 0;
+  f.stock.ammo -= n;
+  f.stock.brass = num(f.stock.brass) + n;
+  f.stock.powder = num(f.stock.powder) + Math.floor(n * charge / unused);
+  f.stock.primers = num(f.stock.primers) + Math.floor(n * P.PRIMER);
+  f.stock.scrap = num(f.stock.scrap) + Math.floor(n / RELOAD.LEAD);
+  f.pulled = num(f.pulled) + n;
   return n;
 }
 // Powder and primers bought from a trading or military group not at war with them (the hunger trade's pattern), as

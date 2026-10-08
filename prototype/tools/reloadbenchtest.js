@@ -15,6 +15,7 @@ import { HAND_SUPPLIES, HAND_GEAR, RELOAD_GEAR, RELOAD_SUPPLIES, LOADS, CALIBERS
 import {
   RELOAD, recipeList, inputsPer10, dayRate, handHq, canUpgradeAmmoBench, queueReloadUpgrade, setReloadOrder, reloadOrders, reloadJob, reloadRows,
   autoReloadOrders, autoReloadBench, reloadNeeds, groupReloadDaily, groupBuyReload, groupBrass, merchantReload, handMake, noteHandLoad, reloadWanted,
+  setPullOrder, pullOrders, pullJob, pullRows, pullYield, groupPull,
 } from "../src/sim/reloading.js";
 import { roundsIn, withHand, isHandKey, factoryKey, takeRounds } from "../src/sim/rounds.js";
 import { nextHand, takeBattleRounds, roundsOf, packRounds, unbox } from "../src/sim/ammo.js";
@@ -507,6 +508,73 @@ function openBattle(st, crew, stock) {
   check(packed.a_9mm_hp_hand === 30, `a team packs them for its guns (${JSON.stringify(packed)})`);
 }
 
+// 14b. Pulling rounds (user, 2026-10-08): rounds of calibres nobody uses taken apart for the bench.
+{
+  console.log("Pulling rounds");
+  const st = W();
+  const { h, b, op } = benchBase(st, 5, true);
+  fill(h, { a_762x39_fmj: 120, scrap: 10 });
+  setPullOrder(st, h, "a_762x39_fmj", 20);
+  const y = pullYield("a_762x39_fmj");
+  check(y.brass === 1 && y.powder === 2.5 && y.primers === RELOAD.PULL.PRIMER && pullYield("a_22lr_fmj").brass === 0 && pullYield("a_22lr_fmj").primers === 0 && pullYield("a_50bmg_ball").powder === 10 && pullYield("a_9mm_hp_hand").powder === 1,
+    "a pulled round: its case, its charges (rifle 2.5, pistol 1, .50 10), 80% of a primer; a .22's only powder");
+  const n = dayRate(RELOAD.PULL.RATE, 5);
+  const s0 = { ...h.stock };
+  runStations(st, h);
+  check(s0.a_762x39_fmj - h.stock.a_762x39_fmj === n && num(h.stock.brass) === n && num(h.stock.powder) === Math.floor(n * 2.5) && num(h.stock.primers) === Math.floor(n * 0.8) && h.stock.scrap - s0.scrap === Math.floor(n / 20),
+    `a day: ${n} rounds into ${num(h.stock.brass)} brass, ${num(h.stock.powder)} powder, ${num(h.stock.primers)} primers, ${h.stock.scrap - s0.scrap} scrap`);
+  runStations(st, h);
+  check(h.stock.a_762x39_fmj === 20 && !pullJob(st, h, op) && /down to 20/.test(pullRows(st, h, op)[0].reason), "down to the rounds kept, then no more");
+  check(Math.abs(h.reload.lead - ((100 / 20) % 1)) < 1e-9 && h.stock.scrap - s0.scrap === 5, "the lead: a scrap per 20 bullets, the rest carried over");
+  // Loading comes first; a load blocked for want of inputs gets them from pulling.
+  const st2 = W();
+  const B = benchBase(st2, 6, true);
+  fill(B.h, { a_308_fmj: 300, scrap: 40 });
+  setReloadOrder(st2, B.h, "a_9mm_hp", 50);
+  setPullOrder(st2, B.h, "a_308_fmj", 0);
+  check(!reloadJob(st2, B.h, B.op) && pullJob(st2, B.h, B.op), "nothing to load (no brass, powder, primers): it pulls");
+  runStations(st2, B.h);
+  check(num(B.h.stock.brass) > 0 && !num(B.h.stock.a_9mm_hp_hand), "day 1: pulled");
+  runStations(st2, B.h);
+  check(num(B.h.stock.a_9mm_hp_hand) > 0 && /Loading/.test(stationStatus(st2, B.h, B.b).reason) || num(B.h.stock.a_9mm_hp_hand) >= 50, `day 2: the pulled parts loaded into hollow points (${num(B.h.stock.a_9mm_hp_hand)})`);
+  // The governor: pulls calibres no gun here shoots, keeping a trade reserve; not the ones it shoots.
+  const st3 = W();
+  const C = benchBase(st3, 6, true);
+  const g = person(st3, C.h, "guard", 3); g.gear.weapon = newItem("pistol");
+  for (const k of Object.keys(C.h.stock)) if (SUPPLIES[k] && SUPPLIES[k].round) delete C.h.stock[k]; // the hub's starting rounds
+  C.h.armory = [];
+  fill(C.h, { a_762x39_fmj: 100, a_9mm_fmj: 100, a_50bmg_ball: 5 });
+  autoReloadOrders(st3, C.h);
+  const pk = () => pullOrders(C.h).map((o) => `${o.key}:${o.keep}:${o.by}`).sort().join(",");
+  check(pk() === `a_762x39_fmj:${RELOAD.PULL.KEEP}:ai`, `the governor pulls 7.62×39 down to ${RELOAD.PULL.KEEP}, not 9mm (it shoots it) nor 5 .50s (${pk()})`);
+  const g2 = person(st3, C.h, "guard", 3); g2.gear.weapon = newItem("ak");
+  autoReloadOrders(st3, C.h);
+  check(!pullOrders(C.h).length, "an AK here: the 7.62×39 is kept");
+  setPullOrder(st3, C.h, "a_9mm_fmj", 50);
+  autoReloadOrders(st3, C.h);
+  check(pullOrders(C.h).some((o) => o.key === "a_9mm_fmj" && o.by === "player"), "the player's pull order stands");
+  // The pulled parts feed the governor's own loading.
+  const st4 = W();
+  const D = benchBase(st4, 7, true);
+  const g4 = person(st4, D.h, "guard", 3); g4.gear.weapon = newItem("pistol");
+  fill(D.h, { a_308_fmj: 400, scrap: 60, gunparts: 4 });
+  for (let d = 0; d < 8; d++) { autoReloadOrders(st4, D.h); runStations(st4, D.h); }
+  check(roundsIn(D.h.stock, "9mm", "hp") >= 100 && D.h.stock.a_308_fmj >= RELOAD.PULL.KEEP, `junk .308 pulled into 100 9mm hollow points (${roundsIn(D.h.stock, "9mm", "hp")} HP, ${D.h.stock.a_308_fmj} .308 left)`);
+  // The other groups: a group short of brass pulls the rounds its guns do not shoot.
+  const f = st.factions.find((x) => x.alive && !x.outsider && x.type === "military") || st.factions.find((x) => x.alive && !x.outsider);
+  f.type = "military";
+  f.arsenal = { items: [newItem("pistol"), newItem("shotgun")] };
+  Object.assign(f.stock, { brass: 0, powder: 0, primers: 0, ammo: 2000 });
+  const pn = groupPull(st, f);
+  check(pn > 0 && f.stock.ammo === 2000 - pn && f.stock.brass === pn && f.stock.powder > pn && f.stock.primers === Math.floor(pn * RELOAD.PULL.PRIMER), `a military group with only pistols and shotguns pulls ${pn} of its 5.56 and .308 into ${f.stock.brass} brass, ${f.stock.powder} powder, ${f.stock.primers} primers`);
+  f.arsenal = { items: [newItem("pistol"), newItem("shotgun"), newItem("ar"), newItem("huntrifle"), newItem("ak"), newItem("pistol45")] };
+  Object.assign(f.stock, { brass: 0 });
+  const few = groupPull(st, f);
+  check(few < pn, `one whose guns shoot most of its calibres pulls less (${few})`);
+  f.stock.brass = 500;
+  check(groupPull(st, f) === 0, "and none while it has brass");
+}
+
 // 15. A save round trip.
 {
   console.log("Save");
@@ -514,11 +582,12 @@ function openBattle(st, crew, stock) {
   const { h } = benchBase(st, 7, true);
   fill(h, { ...rich });
   setReloadOrder(st, h, "a_9mm_hp", 500);
+  setPullOrder(st, h, "a_762x39_fmj", 10);
   runStations(st, h);
   h.stock.brass = 321;
   const back = loadFromString(saveToString(st));
   const h2 = hub(back);
-  check(h2.buildings.some((x) => x.type === "reload_bench") && h2.reload.orders[0].key === "a_9mm_hp" && h2.reload.orders[0].n === 500 && h2.reload.made === h.reload.made, "the bench, its orders and its wear come back");
+  check(h2.buildings.some((x) => x.type === "reload_bench") && h2.reload.orders[0].key === "a_9mm_hp" && h2.reload.orders[0].n === 500 && h2.reload.made === h.reload.made && h2.reload.pulls[0].key === "a_762x39_fmj", "the bench, its orders, pull orders and its wear come back");
   check(h2.stock.brass === 321 && h2.stock.a_9mm_hp_hand === h.stock.a_9mm_hp_hand && JSON.stringify(back.handloads) === JSON.stringify(st.handloads), "brass, handloads and their make come back");
   runStations(st, h); runStations(back, h2);
   check(h2.stock.a_9mm_hp_hand === h.stock.a_9mm_hp_hand && h2.stock.powder === h.stock.powder, "and the next day goes the same");

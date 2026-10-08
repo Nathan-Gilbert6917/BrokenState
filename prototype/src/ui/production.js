@@ -16,7 +16,7 @@ import { STEWARD_AREAS, stewardOf, setSteward, setStewardArea, setStewardStyle, 
 import { LEADER_LIFT } from "../sim/morale.js";
 import { PERSONALITIES } from "../sim/autopilot.js";
 import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js";
-import { RELOAD, recipeList, inputsPer10, dayRate, handHq, reloadOrders, reloadRows, reloadBenches, setReloadOrder, removeReloadOrder, toggleReloadOrder, handMake } from "../sim/reloading.js";
+import { RELOAD, recipeList, inputsPer10, dayRate, handHq, reloadOrders, reloadRows, reloadBenches, setReloadOrder, removeReloadOrder, toggleReloadOrder, handMake, pullRows, pullOrders, pullYield, setPullOrder, removePullOrder } from "../sim/reloading.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -126,8 +126,23 @@ export function reloadCard(state, b) {
       <div class="muted" style="margin:0.2rem 0">Each day the bench works the order furthest short that it can make; with none it makes common rounds from scrap like an ammo bench. Per round: a case, a primer, its powder; a scrap per ${RELOAD.LEAD} bullets; a gun part per ${RELOAD.WEAR} rounds (the dies). Typed rounds come out as handloads: they jam ×(2.5 − 1.5 × quality), quality 0.6 + 0.03 × Mechanics; loaded below Mechanics 8 they aim 1 worse. Black powder (jams ×1.5, louder) and match-head primers (×3) are used only when the factory ones run out. Brass comes back after a won fight.</div>
       ${orderRows || `<div class="muted">No reloading orders: the bench makes common rounds.</div>`}
       ${opts ? `<div class="row" style="margin-top:0.3rem"><select data-action="rl-add" data-base="${b.id}"${tip("Add a standing order: keep at least this many rounds of a calibre and type here")}><option value="">Add a reloading order…</option>${opts}</select></div>` : ""}
+      ${pullBlock(state, b, op)}
       <details style="margin-top:0.3rem"><summary>Recipes (inputs per 10 rounds, rounds a day for ${op ? esc(op.name.split(" ")[0]) : "Mechanics 0"})</summary><table class="t">${table}</table></details>
     </div>`;
+}
+
+// Pulling rounds: orders to take rounds apart down to a number kept (their case, powder, a primer, lead), worked when
+// there is nothing to load.
+function pullBlock(state, b, op) {
+  const rows = pullRows(state, b, op).map((r) => {
+    const o = r.order, data = `data-base="${b.id}" data-id="${o.id}"`, y = pullYield(o.key);
+    return `<div class="spread small prodctl"><span>Pull <b>${esc(SUPPLIES[o.key].name)}</b> down to <input type="number" min="0" max="${RELOAD.ORDER_MAX}" step="10" class="po-n" data-action="pl-keep" ${data} data-key="${o.key}" value="${o.keep}"${tip(`Rounds of it to keep (for trade). Each round pulled gives ${y.brass ? "its case, " : ""}${Math.round(y.powder * 100) / 100} powder charge${y.powder === 1 ? "" : "s"}${y.primers ? `, ${Math.round(y.primers * 100)}% of a primer` : ""} and a scrap per ${RELOAD.LEAD} bullets.`)}> · have ${r.have}${o.by === "ai" ? ` <span class="chip">steward</span>` : ""}</span>
+      <span class="row"><span class="${r.n ? "good" : "muted"}">${r.n ? `−${r.n} today (if nothing to load)` : esc(r.reason)}</span><button class="mini" data-action="pl-del" ${data}>Remove</button></span></div>`;
+  }).join("");
+  const have = new Set(pullOrders(b).map((o) => o.key));
+  const keys = Object.keys(b.stock).filter((k) => SUPPLIES[k] && SUPPLIES[k].round && b.stock[k] >= 1 && !have.has(k));
+  const add = keys.length ? `<div class="row" style="margin-top:0.2rem"><select data-action="pl-add" data-base="${b.id}"${tip("Take rounds of a calibre nobody here shoots apart for the bench: case, powder, primer, lead")}><option value="">Pull rounds apart…</option>${keys.map((k) => `<option value="${k}">${esc(SUPPLIES[k].name)} (${n0r(b.stock[k])})</option>`).join("")}</select></div>` : "";
+  return rows || add ? `<div style="margin-top:0.3rem"><b>Pulling</b> <span class="muted">(when there is nothing to load: ${RELOAD.PULL.RATE} a day +4% a Mechanics point)</span>${rows}${add}</div>` : "";
 }
 
 // ---------- Crafting tab ----------
@@ -219,6 +234,7 @@ export const PROD_ACTIONS = {
   "stw-toggle": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, setSteward(state, b, !stewardOf(b).on)); },
   "stw-area": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, setStewardArea(state, b, d.area, !stewardOf(b).areas[d.area])); },
   "rl-del": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, removeReloadOrder(state, b, d.id)); },
+  "pl-del": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, removePullOrder(state, b, d.id)); },
   "rl-toggle": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, toggleReloadOrder(state, b, d.id)); },
   pin: (state, ui, d) => { const s = survivorById(state, Number(d.id)); if (s) say(ui, setPinned(state, s, !s.pinned)); },
 };
@@ -245,6 +261,8 @@ export const PROD_CHANGE = {
   "co-n": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setCraftOrder(state, b, el.dataset.id, { n: el.value })); },
   "co-q": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setCraftOrder(state, b, el.dataset.id, { minQ: el.value })); },
   "rl-add": (state, ui, el) => { const b = baseOf(state, el.dataset); const r = el.value && SUPPLIES[el.value] && SUPPLIES[el.value].round; if (b && r) say(ui, setReloadOrder(state, b, el.value, RELOAD_N[r.type] ?? 50)); },
+  "pl-add": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b && el.value) say(ui, setPullOrder(state, b, el.value, RELOAD.PULL.KEEP)); },
+  "pl-keep": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b && el.dataset.key) say(ui, setPullOrder(state, b, el.dataset.key, el.value)); },
   "rl-n": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b && el.dataset.key) say(ui, setReloadOrder(state, b, el.dataset.key, el.value)); },
   "stw-style": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setStewardStyle(state, b, el.value)); },
   "stw-leader": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setLeader(state, b, el.value)); },

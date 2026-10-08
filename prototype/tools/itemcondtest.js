@@ -139,8 +139,12 @@ st.started = true;
   const w = createWorld({ seed: 77, factionCount: 8 });
   w.started = true;
   setAutopilot(w, true, "balanced");
-  while (day(w) <= 40 && !w.gameOver) tickHour(w);
-  const items = [...w.factions.flatMap((f) => f.wares || []), ...(w.visitors || []).flatMap((v) => v.wares || [])];
+  // Sampled every day (the stock on the map at one hour depends on which caravans happen to be there then).
+  const seen = new Set();
+  const items = [];
+  const take = () => { for (const it of [...w.factions.flatMap((f) => f.wares || []), ...(w.visitors || []).flatMap((v) => v.wares || [])]) if (it && !seen.has(it)) { seen.add(it); items.push(it); } };
+  while (day(w) <= 40 && !w.gameOver) { tickHour(w); if (w.hour % 24 === 12) take(); }
+  take();
   sampleCheck("a 40-day autopilot world's trade stock", items);
 }
 
