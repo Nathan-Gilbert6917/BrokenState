@@ -44,6 +44,7 @@ import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTre
 import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
+import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill } from "./crafting.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair, wreckSupplies } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
@@ -1675,7 +1676,7 @@ function threatAt(state, base) {
 // The area each role belongs to (a steward leaves roles in an area it was not handed alone); rest and scavenge
 // are plain Roles. Roles the governor does not plan (teaching, reading: skills.js) are always left as they are.
 // teach / read (skills.js planStudy) belong to "roles": without them every reader counted as pinned and kept reading for good.
-const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
+const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
   const people = atBase(state, base.id);
@@ -1852,6 +1853,18 @@ function planRoles(state, base, areas = ALL_AREAS) {
     const left = base.construction.reduce((a, j) => a + j.hours - j.progress, 0);
     const n = Math.min(3, Math.max(1, Math.ceil(left / 40)), Math.max(1, Math.floor(free.size / 2)));
     for (const s of ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed).slice(0, n)) give(s, "build");
+  }
+
+  // 5a. A Medic trainee (training.js planTrainees) while the base has too few skilled medics for its hospital and food
+  // for TRAINING.foodDays days: ahead of the comfortable farm crew (at the step of the teachers and readers, the farm
+  // had every hand of a small base and nobody ever trained), as an investment: a trainee learns from the doctor every
+  // day and counts as half a medic.
+  // A graduate (Medicine 6) goes to Medic while the hospital is short of medics, and while anyone trains the doctor
+  // stays on Medic duty, quiet ward or not (training.js planDoctor: off duty the lessons are halved).
+  if (areas.medical) {
+    const onMedic = () => people.filter((s) => (want.get(s.id) || {}).role === "medic");
+    planTrainees(state, base, free, give, { foodDays, urgent: !!threat.urgent, medics: onMedic().length });
+    planDoctor(state, base, free, give, { trainees: people.filter((s) => (want.get(s.id) || {}).role === "trainee").length, medics: onMedic() });
   }
 
   // 6. Farming to the comfortable level. More plots are wanted when every plot is in use and food runs low.

@@ -17,6 +17,12 @@
 //   the rest of the fields; a bench once the necessities are up (they make ammo and gear every day);
 //   a storehouse once their stores fill (a stock at STORE_FULL of what it can hold);
 //   walls up to their goal (the fortress and the military want theirs, others a home wall and a fence at their outposts).
+//   A sick bay (sickbayWork, at the main base, after the jail's first step; the four tiers of your hospital: infirmary,
+//   field hospital, clinic, trauma hospital; f.works[tile].sickbay = the tier): the infirmary once quarters are up and
+//   the group has wounded or SICKBAY_FIRST people; each next tier after the workshop, once the group is big enough
+//   (SICKBAY[].pop ÷ its heal lean, groupcare.js GROUP_PRIORITIES) and its doctor good enough (SICKBAY[].doc, groupcare.js f.med: the clinic
+//   needs a Medicine 6 doctor and the trauma hospital a 10, as yours). It speeds their healing (groupcare.js healRate,
+//   CARE.BAY) and sets how their doctor trains their medics (medicTraining, the tier's teach, ward, gap).
 //   A jail (groupjails.js jailWork, after water, fields and quarters): makeshift cells, holding cells, a jailhouse at
 //   the main base, early for raiders, the military, the fortress and groups at war, once they hold someone for the
 //   rest, after the fields for communes; a full one is upgraded. Their prisoners work the job too (f.prisonWork).
@@ -32,10 +38,10 @@
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
 import { day } from "./world.js";
-import { weightOf } from "./groupcare.js"; // the type profiles
+import { weightOf, medOf } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
 import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the groups' jails (abstract tiers)
 
-/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number }} Works */
+/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number }} Works */
 
 export const GROUP_WORKS = {
   WORKS: {
@@ -53,6 +59,17 @@ export const GROUP_WORKS = {
   FIELDS_MIN: 0.94, CROWDED_GROWTH: 0.7, WORKSHOP_MIN: 0.85, STORE_CAP: 0.85,
   THREAT: { HORDE: 6, HIVE: 10, RAIDED: 30, GROUP: 14 },
   WALL_DEF: 8, // the flat defence a group base had, now half of it bare and all of it behind the walls' goal
+  // Sick bays by tier (sickbayWork): cost, work in crew-days, the people it waits for (÷ the heal lean) and the doctor's
+  // Medicine it needs. Your hospitals cost 15 scrap + 2 meds up to 70 scrap, 8 parts, 12 meds; the groups' works are
+  // scaled to their stores as the rest of WORKS (a well 3 scrap).
+  // SICKBAY[0] is tier 1 (the infirmary); SICKBAY_FIRST: the people that want an infirmary with nobody wounded.
+  SICKBAY: [
+    { name: "an infirmary", cost: { scrap: 5, meds: 1 }, work: 3, pop: 0, doc: 0 },
+    { name: "a field hospital", cost: { scrap: 8, parts: 1, meds: 2 }, work: 5, pop: 10, doc: 0 },
+    { name: "a clinic", cost: { scrap: 12, parts: 2, meds: 3 }, work: 7, pop: 16, doc: 6 },
+    { name: "a trauma hospital", cost: { scrap: 18, parts: 3, meds: 4 }, work: 10, pop: 25, doc: 10 },
+  ],
+  SICKBAY_FIRST: 6,
 };
 const W = GROUP_WORKS;
 
@@ -119,6 +136,23 @@ function storesFull(state, f) {
   return (s.scrap || 0) >= p * 10 * c * W.STORE_FULL || (s.ammo || 0) >= p * 30 * c * W.STORE_FULL || (s.food || 0) >= p * 20;
 }
 
+// The sick bay's tier at a group's bases (the best of them; 0 = none).
+export const sickbayTier = (f) => Math.max(0, ...(f.bases || []).map((t) => n(f.works && f.works[t], "sickbay")));
+// The next sick bay step at the main base, or null. upper: the tiers above the infirmary (after the workshop).
+function sickbayWork(state, f, upper) {
+  const tile = mainOf(f);
+  const t = n(worksAt(f, tile), "sickbay");
+  const next = W.SICKBAY[t]; // the tier above t
+  if (!next) return null;
+  if (!upper) {
+    if (t > 0 || !((f.wounded || 0) > 0 || f.pop >= W.SICKBAY_FIRST)) return null;
+    return { tile, type: "sickbay", why: "a sick bay for the wounded", def: next };
+  }
+  if (t === 0) return null;
+  if (f.pop < next.pop / Math.max(0.3, weightOf(f, "heal")) || medOf(f).doc < next.doc) return null;
+  return { tile, type: "sickbay", why: `${next.name} (the sick bay upgraded)`, def: next };
+}
+
 // The next job a group would start: { tile, type, why } or null (all built).
 export function nextWork(state, f) {
   if (!groupsBuild(state, f) || !f.bases.length) return null;
@@ -130,12 +164,15 @@ export function nextWork(state, f) {
     if (foodShort && n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "food is short" };
     if (n(w, "beds") < wanted(f, tile, "beds")) return { tile, type: "beds", why: "people sleep rough" };
     if (tile === mainOf(f)) { const jail = jailWork(state, f); if (jail) return jail; }
+    if (tile === mainOf(f)) { const sb = sickbayWork(state, f, false); if (sb) return sb; }
     if (n(w, "walls") < goal && threatened(state, f, tile)) return { tile, type: "walls", why: "threatened" };
     if (n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "fields for everyone" };
     if (tile === mainOf(f)) { const jail = jailWork(state, f, true); if (jail) return jail; } // communes: later
     if (tile === mainOf(f)) {
       if (!hasAny(f, "bench")) return { tile, type: "bench", why: "a workshop for their gear and ammo" };
       if (!hasAny(f, "store") && storesFull(state, f)) return { tile, type: "store", why: "the stores are full" };
+      const sb = sickbayWork(state, f, true);
+      if (sb) return sb;
     }
   }
   for (const tile of f.bases) if (n(worksAt(f, tile), "walls") < wallGoal(f, tile)) return { tile, type: "walls", why: "walls" };
@@ -177,6 +214,9 @@ export function worksText(state, f) {
   bits.push(`walls ${groupWalls(state, f, main)}/${wallGoal(f, main)}`);
   if (t.bench) bits.push("a workshop");
   if (t.store) bits.push("a storehouse");
-  const job = f.job ? ` · building ${f.job.type === "jail" ? jailStepName(f) : W.WORKS[f.job.type].name}` : "";
+  const bay = sickbayTier(f);
+  if (bay) bits.push(W.SICKBAY[Math.min(W.SICKBAY.length, bay) - 1].name);
+  const jobName = () => (f.job.type === "jail" ? jailStepName(f) : f.job.type === "sickbay" ? (W.SICKBAY[n(worksAt(f, f.job.tile), "sickbay")] || W.SICKBAY[W.SICKBAY.length - 1]).name : W.WORKS[f.job.type].name);
+  const job = f.job ? ` · building ${jobName()}` : "";
   return `${bits.join(", ")}${job}`;
 }

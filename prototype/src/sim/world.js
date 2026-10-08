@@ -51,6 +51,7 @@ import { diaryRecord } from "./diary.js";
 import { onDeath } from "./relations.js";
 import { noteDeath, noteBaseLoss, lossHow, causesDaily } from "./causes.js"; // "Why?": the chain of causes of a death or a lost base
 import { skillsHour, skillsDaily, hasPerk, hash01 } from "./skills.js";
+import { trainingDaily } from "./training.js"; // the hospital trains medics
 import { diplomacyHour } from "./diplomacy.js";
 import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
 import { claimsDaily } from "./claims.js"; // land claims: lost under a base founded or taken, a hive, a hostile camp
@@ -833,6 +834,7 @@ export function tickHour(state) {
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
     visitorsDaily(state); // visitors.js: outsiders crossing the border, guests sheltering at your bases
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
+    trainingDaily(state); // training.js: medics' ward rounds, the doctor's lessons to Medic trainees
     familyDaily(state); // family.js: couples, expecting, births, children eating, growing up and joining the work
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
