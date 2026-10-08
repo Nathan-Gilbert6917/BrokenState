@@ -19,6 +19,7 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { mergeMix } from "./zombietypes.js";
 import { swarmArmor } from "./carriers.js";
+import { truckDeadShare } from "./miltrucks.js";
 
 export const MILDEAD = {
   // × damage by weapon key (combat.js WEAPONS); other: anything not listed of that kind (shot / melee).
@@ -28,7 +29,7 @@ export const MILDEAD = {
       w: {
         pistol: 0.5, revolver: 0.6, shotgun: 0.6, pipegun: 0.6, crossbow: 0.5, compbow: 0.45, xbow: 0.55,
         huntrifle: 0.75, leverrifle: 0.7, carbine: 0.75, ar: 0.75, acid: 1, // rifles: was 0.9 / 0.8 / 0.85 / 0.85 (the hunting rifle all but a full counter)
-        fists: 0.55, knife: 0.4, machete: 0.5, sawmachete: 0.5, pipespear: 0.45, fireaxe: 0.75,
+        fists: 0.55, knife: 0.4, machete: 0.5, sawmachete: 0.5, springmachete: 0.55, pipespear: 0.45, spear: 0.45, fireaxe: 0.75, pulleybow: 0.45,
         bat: 0.85, spikedbat: 0.8, nailbat: 0.8, prybar: 0.85, sledge: 1, baton: 0.75, claws: 0.7,
       },
     },
@@ -37,16 +38,16 @@ export const MILDEAD = {
       w: {
         pistol: 0.7, revolver: 0.8, shotgun: 0.75, pipegun: 0.75, crossbow: 0.7, compbow: 0.65, xbow: 0.7,
         huntrifle: 1, leverrifle: 1, carbine: 1, ar: 1, acid: 1,
-        fists: 0.4, knife: 0.45, machete: 0.55, sawmachete: 0.55, pipespear: 0.5, fireaxe: 0.65,
+        fists: 0.4, knife: 0.45, machete: 0.55, sawmachete: 0.55, springmachete: 0.6, pipespear: 0.5, spear: 0.5, fireaxe: 0.65, pulleybow: 0.65,
         bat: 0.6, spikedbat: 0.6, nailbat: 0.6, prybar: 0.6, sledge: 0.8, baton: 0.5, claws: 0.6,
       },
     },
   },
   // Blades that find the gap from behind or on the unaware (armour ignored).
-  STAB: ["knife", "machete", "sawmachete", "pipespear", "fireaxe"],
+  STAB: ["knife", "machete", "sawmachete", "springmachete", "pipespear", "spear", "fireaxe"],
   // Share among a site's dead, by site type; NEAR: within 1 tile of a military site (the cordon), ROAD: within 2 on a
   // road (the abandoned checkpoints); FALLEN: a fallen military base (hardcore) and the tiles around it.
-  SITE: { military: { soldier: 0.45 }, crash_mil: { soldier: 0.5 }, police: { riot: 0.3 }, prison: { riot: 0.2 }, city: { riot: 0.05 } },
+  SITE: { military: { soldier: 0.45 }, crash_mil: { soldier: 0.5 }, convoy: { soldier: 0.55 }, police: { riot: 0.3 }, prison: { riot: 0.2 }, city: { riot: 0.05 } },
   NEAR: 0.15, ROAD: 0.08, FALLEN: [0.6, 0.3],
   CHECKPOINT: 0.5, // a city crawl's barricaded checkpoint (citycrawl.js): the soldiers who held it
   RARE: 0.03, // a lone soldier among the dead anywhere else (per site and week)
@@ -96,7 +97,7 @@ export function stabsGap(a, t) {
 
 // ---------- where they are ----------
 const locType = (t) => (t && t.loc ? t.loc.type : null);
-const isMilSite = (t) => locType(t) === "military" || locType(t) === "crash_mil";
+const isMilSite = (t) => locType(t) === "military" || locType(t) === "crash_mil" || locType(t) === "convoy";
 // The fallen military base of a hardcore game (hardcore-groups.js keeps it in state.hardcore.groups.military).
 function fallenBase(state) {
   const m = state.hardcore && state.hardcore.groups && state.hardcore.groups.military;
@@ -111,6 +112,8 @@ export function siteDeadMix(state, tileId) {
   const add = (k, v) => { out[k] = Math.max(out[k] || 0, v); };
   const site = MILDEAD.SITE[locType(t)];
   if (site) for (const k in site) add(k, site[k]);
+  const trucks = truckDeadShare(state, tileId); // miltrucks.js: Army trucks nobody has opened yet, their crews about them
+  if (trucks) add("soldier", trucks);
   const fb = fallenBase(state);
   if (fb != null && g) {
     const d = fb === tileId ? 0 : g.distance(fb, tileId);
@@ -159,14 +162,14 @@ export function hordeMilitaryPickup(state, h) {
 }
 
 // ---------- their bodies ----------
-// What one of them carries: { sup: { ammo: 6 }, gear: [items] } (newItem: a function(key, quality)). null: not armoured.
+// What one of them carries: { sup: { ammo: 6 }, gear: [items] } (newItem: a function(key, quality, worn): inventory.js, worn part-way). null: not armoured.
 export function bodyLoot(rng, kind, newItem) {
   const B = MILDEAD.BODY[kind];
   if (!B) return null;
   const sup = {}, gear = [];
   const q = ([lo, hi]) => Math.round((lo + rng.next() * (hi - lo)) * 100) / 100;
-  for (const [k, p, range] of B.armor) if (rng.chance(p)) { gear.push(newItem(k, q(range))); break; }
-  for (const [k, p, range] of B.items) if (rng.chance(p)) gear.push(newItem(k, q(range)));
+  for (const [k, p, range] of B.armor) if (rng.chance(p)) { gear.push(newItem(k, q(range), rng)); break; }
+  for (const [k, p, range] of B.items) if (rng.chance(p)) gear.push(newItem(k, q(range), rng));
   for (const [k, p, lo, hi] of B.sup) if (rng.chance(p)) sup[k] = (sup[k] || 0) + rng.int(lo, hi);
   return { sup, gear };
 }

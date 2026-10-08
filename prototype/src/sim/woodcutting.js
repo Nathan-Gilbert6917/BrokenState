@@ -71,7 +71,7 @@ export const WOOD = {
 };
 export const WOOD_TERRAIN = { forest: 1, hills: 0.6, mountain: 0.35, plains: 0.25, suburb: 0.2, city: 0.05, water: 0 };
 // Cutting tools (a GEAR entry's own `chop` overrides): what each does for a woodcutter's output.
-export const CHOP = { fireaxe: 1.6, sledge: 1.3, machete: 1.25, sawmachete: 1.2 };
+export const CHOP = { fireaxe: 1.6, sledge: 1.3, machete: 1.25, sawmachete: 1.2, springmachete: 1.25 };
 const SITE_BONUS = (type) => (/cabin|lodge|camp|ranger/.test(type || "") ? 1.3 : /farm|ranch|barn|orchard/.test(type || "") ? 1.2 : 1);
 const r1 = (x) => Math.round(x * 10) / 10;
 const first = (s) => s.name.split(" ")[0];

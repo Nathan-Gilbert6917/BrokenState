@@ -31,6 +31,7 @@ export const SITE_TAGS = {
   truckstop: ["travel", "shop", "garage"], crashsite: ["travel", "crash", "garage"],
   crash_mil: ["military", "crash"], crash_cargo: ["crash", "camp", "medical"], crash_med: ["medical", "crash"],
   crash_news: ["tech", "crash"], airdrop: ["military", "camp", "medical"],
+  convoy: ["military", "travel", "camp"], // miltrucks.js: an abandoned Army convoy
 };
 export const AREA_TAGS = {
   house: ["home", "kitchen"], farmhouse: ["home", "farm", "hunt"], store: ["shop"], kitchen: ["kitchen"], pharmacy: ["medical", "shop"],
@@ -42,6 +43,7 @@ export const AREA_TAGS = {
   milwreck: ["military", "crash"], medwreck: ["medical", "crash"], newswreck: ["tech", "crash"], fuselage: ["crash", "travel"],
   cargodrop: ["crash", "camp", "military"],
   roadcars: ["travel", "home", "garage"], // the cars people fled in (combat.js AREAS.roadcars)
+  miltrucks: ["military", "travel"], // Army trucks (miltrucks.js: their cargo is truckLoot)
 };
 // Where each thing is normally kept. Books are placed by skills.js BOOK_SITES and blueprints by blueprints.js.
 export const ITEM_TAGS = {
@@ -53,6 +55,7 @@ export const ITEM_TAGS = {
   fireaxe: ["fire", "office", "school", "tools", "outdoor", "medical"], sledge: ["tools", "farm", "industry", "garage"], baton: ["police", "prison"],
   compbow: ["hunt", "sport", "mall", "outdoor"], xbow: ["hunt", "guns"], revolver: ["home", "guns", "farm", "travel", "crime", "police"],
   leverrifle: ["hunt", "farm", "guns", "outdoor"], carbine: ["police", "prison", "military"],
+  spear: ["hunt", "outdoor", "camp"],
   spikedbat: ["garage", "crime"], pipespear: ["camp", "crime"], sawmachete: ["crime", "tools"], crossbow: ["crime", "camp"], pipegun: ["crime"],
   // armor
   vest: ["police", "military", "guns", "prison", "crash", "crime"], plate: ["military", "crash"], bikehelmet: ["home", "garage", "fire", "sport", "crime"],
@@ -167,6 +170,7 @@ export const SITE_FINDS = {
   truckstop: { p: 0.187, items: { pocketradio: 1, handradio: 1, puritabs: 1, handwarmer: 1, alarmclock: 0.5, cigarettes: 2, smokes: 3, lighters: 2, candy: 2, chocolate: 2, instcoffee: 2, flare: 2, vodka: 1, batteries: 1, tobacco: 1, cards: 1, watch: 0.5, deodorant: 1, wetwipes: 1, toothpaste: 1, lipbalm: 1 } },
   crashsite: { p: 0.1, items: { flare: 2, phone: 2, smokes: 1, photos: 2, lighters: 1, goldring: 0.5, watch: 0.5 } },
   crash_mil: { p: 0.14, items: { frag: 1.5, smokegren: 3, flare: 2, chocolate: 2, cigarettes: 1, instcoffee: 1 } },
+  convoy: { p: 0.12, items: { frag: 1, smokegren: 2, flare: 2, chocolate: 2, cigarettes: 1, instcoffee: 1 } },
   crash_cargo: { p: 0.171, items: { chocolate: 2, instcoffee: 2, coffee: 1, batteries: 2, toiletpaper: 1, puritabs: 1, wetwipes: 1, toothpaste: 1 } },
   crash_med: { p: 0.125, items: { chocolate: 1, candy: 1, soap: 1, razors: 1, wetwipes: 1 } },
   crash_news: { p: 0.14, items: { camera: 3, phone: 2, laptop: 2, batteries: 1 } },
@@ -178,8 +182,8 @@ export const SITE_FINDS = {
 export const HUNT_FINDS = {
   farm: { p: 0.03, items: { snarewire: 1 } }, barn: { p: 0.03, items: { snarewire: 1 } }, ranch: { p: 0.04, items: { snarewire: 1 } },
   hardware: { p: 0.05, items: { fishrod: 1, snarewire: 1 } }, feedstore: { p: 0.04, items: { snarewire: 2, fishnet: 1 } },
-  cabin: { p: 0.06, items: { fishrod: 1, snarewire: 1 } }, lodge: { p: 0.08, items: { fishrod: 1.5, snarewire: 1.5, fishnet: 1 } },
-  campground: { p: 0.06, items: { fishrod: 2, fishnet: 1 } }, ranger: { p: 0.05, items: { snarewire: 1, fishrod: 1 } },
+  cabin: { p: 0.06, items: { fishrod: 1, snarewire: 1, spear: 0.4 } }, lodge: { p: 0.08, items: { fishrod: 1.5, snarewire: 1.5, fishnet: 1, spear: 0.8 } },
+  campground: { p: 0.06, items: { fishrod: 2, fishnet: 1, spear: 0.3 } }, ranger: { p: 0.05, items: { snarewire: 1, fishrod: 1, spear: 0.4 } },
 };
 
 // Gun attachments (gunmods.js) where guns are kept: a roll of its own each search hour (GUNMOD_FINDS; its own dice, so
@@ -290,7 +294,7 @@ export function rollFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "find", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "findpick", tileId, state.hour, salt));
-  return key ? newItem(key, 1) : null;
+  return key ? newItem(key, 1, hash01(state.seed, "finddur", tileId, state.hour, salt)) : null;
 }
 // Lights (lights.js) where people kept them: a roll of its own each search hour, like HUNT_FINDS (so adding them
 // changed no other find). Torches are made, not found (crafting.js).
@@ -310,7 +314,7 @@ export function rollLightFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "lightfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "lightpick", tileId, state.hour, salt));
-  return key ? newItem(key, 1) : null;
+  return key ? newItem(key, 1, hash01(state.seed, "lightdur", tileId, state.hour, salt)) : null;
 }
 // Hunting and fishing gear at a site this search hour (HUNT_FINDS; its own dice too), or null.
 export function rollHuntFind(state, tileId, mult = 1, salt = "") {
@@ -320,7 +324,7 @@ export function rollHuntFind(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "huntfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "huntpick", tileId, state.hour, salt));
-  return key ? newItem(key, 1) : null;
+  return key ? newItem(key, 1, hash01(state.seed, "huntdur", tileId, state.hour, salt)) : null;
 }
 
 // A small find in a raid container (the battle's random numbers, after the container's own loot), or null.
@@ -328,7 +332,7 @@ export function rollAreaFind(rng, areaType, rich = 1, scav = 0) {
   const a = AREA_FINDS[areaType];
   if (!a || !rng.chance(a.p * (0.5 + rich) * (1 + scav / 30))) return null;
   const key = pickWeighted(a.items, rng.next());
-  return key ? newItem(key, 1) : null;
+  return key ? newItem(key, 1, rng) : null;
 }
 
 // ---------- firewood (data.js SUPPLIES.wood) ----------

@@ -25,6 +25,11 @@ export const VEHICLE_TYPES = {
   suv:    { name: "SUV",          tank: 24, payload: 520, motor: true },
   hummer: { name: "Hummer",       tank: 40, payload: 700, motor: true },
   van:    { name: "Work van",     tank: 26, payload: 800, motor: true },
+  // An Army cargo truck or an MRAP got running again (miltrucks.js, foundcars.js): carries a great deal and seats a
+  // squad, but it is slow (speed: × the pace, load.js; about 1.5× a car's time a tile, and off-road worse: OFFROAD),
+  // drinks fuel (fuel: × every tile's fuel) and is loud (loud: draws hordes as it passes, parties.js onEnterTile; more
+  // camp Heat, fieldheat.js; more Heat driven on a battle map, combat.js DRIVE).
+  miltruck: { name: "Army cargo truck", tank: 150, payload: 2500, motor: true, speed: 0.67, fuel: 2, offroad: 0.75, loud: true, seats: 12 },
   bike:   { name: "Bicycles",     tank: 0,  rack: 15, motor: false },
 };
 export const RIDER_KG = 80;        // a person in a car, before what they wear
@@ -33,6 +38,11 @@ export const FUEL_FULL = { from: 0.6, atFull: 1.3, atMax: 1.6 }; // fuel multipl
 export const OVERLOAD_SPEED = 0.85;   // an overloaded car (past 100%) is this much slower
 export const OVERLOAD_WEAR = 1.5;     // and wears / breaks down this much more
 export const ROAD_FUEL = 0.6, OFFROAD_FUEL = 1.5; // fuel per tile entered, by road or off-road
+// By type (VEHICLE_TYPES speed / fuel / offroad, 1 when not given): × the pace, × the fuel a tile, × the pace off-road.
+export const typeSpeed = (v) => (v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].speed ?? 1 : 1);
+export const typeFuel = (v) => (v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].fuel ?? 1 : 1);
+export const typeOffroad = (v) => (v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].offroad ?? 1 : 1);
+export const isLoud = (v) => !!(v && VEHICLE_TYPES[v.type] && VEHICLE_TYPES[v.type].loud);
 
 export const isBike = (v) => !!v && v.type === "bike";
 export const isCar = (v) => !!v && !!VEHICLE_TYPES[v.type]?.motor;

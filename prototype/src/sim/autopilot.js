@@ -38,10 +38,10 @@ import { brokenAt, jobFor } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
-import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand } from "./buildings.js";
+import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
-import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe } from "./crafting.js";
+import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill } from "./crafting.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun } from "./supply.js";
@@ -1587,7 +1587,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   if (areas.production) {
     const fj = craftQueue(base).some(isFilterJob);
     if (fj && (waterRunningShort(state, base) || wormFilterUrgent(state, base))) {
-      const c = ranked("craft", (x) => skill(x, CRAFTS.waterfilter.skill), (x) => !x.inBed && skill(x, CRAFTS.waterfilter.skill) >= CRAFTS.waterfilter.min)[0];
+      const c = ranked("craft", (x) => craftSkill(x), (x) => !x.inBed && canAttempt(x, CRAFTS.waterfilter))[0];
       if (c) give(c, "craft");
     }
   }
@@ -1740,10 +1740,10 @@ function planRoles(state, base, areas = ALL_AREAS) {
   }
 
   // 8. One crafter while the craft queue has a job someone here can do.
-  const job = areas.production && craftQueue(base).find((j) => people.some((s) => skill(s, CRAFTS[j.recipe].skill) >= CRAFTS[j.recipe].min));
+  const job = areas.production && craftQueue(base).find((j) => people.some((s) => canAttempt(s, CRAFTS[j.recipe])));
   if (job) {
     const r = CRAFTS[job.recipe];
-    const c = ranked("craft", (x) => skill(x, r.skill), (x) => !x.inBed && skill(x, r.skill) >= r.min)[0];
+    const c = ranked("craft", (x) => craftSkill(x), (x) => !x.inBed && canAttempt(x, r))[0]; // the best at Crafting (crafting.js) who may attempt it
     if (c) give(c, "craft");
   }
 
@@ -1878,6 +1878,7 @@ const BUILD_AREA = {
   huntcabin: "food", farm_plot: "food", greenhouse: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
   boiler: "food", cookhouse: "food",
   ammo_bench: "production", machine_shop: "production", still: "production", generator: "production",
+  craftbench: "production", workbench: "production", toolbench: "production",
 };
 function planBuilds(state, base, areas = ALL_AREAS) {
   if (base.construction.length >= (base.type === "hub" ? 2 : 1)) return;
@@ -1995,6 +1996,10 @@ function buildWishes(state, base) {
     const blocked = gain.filter((f) => !isMember(state, f) && /out of radio reach/.test(inviteProblem(state, f)));
     if (gain.length) add("relay", `radio reach to ${gain.map((f) => f.name).join(", ")}${blocked.length ? " for the coalition" : ""}`, blocked.length > 0);
   }
+  // Crafting benches (buildings.js BENCH): all but the simple field recipes need one, and crafters work faster and
+  // better at one. A crafting bench where someone is on the Craft role or a job is queued, after the essentials above.
+  const benchQueued = base.construction.some((c) => BUILDINGS[c.type] && BUILDINGS[c.type].family === "bench");
+  if (!benchTier(base, true) && !benchQueued && (here.some((s) => s.role === "craft") || craftQueue(base).length > 0)) add("craftbench", "a bench for the crafters (faster, better gear; most recipes need one)");
   if (!isHub) return out;
   const hostileNear = state.factions.some((f) => f.alive && f.known && attitude(f) === "Hostile" && f.bases.some((b) => state.grid.distance(b, base.tile) <= 20));
   if (!base.watchtower && (hostileNear || state.hordes.some((h) => state.live.has(h.tile)))) add("watchtower", "earlier warning of raids and hordes");
@@ -2003,6 +2008,16 @@ function buildWishes(state, base) {
   if (next === "field_hosp" && pop >= 8 && (st.parts || 0) >= 3 && (st.meds || 0) >= 8) add("field_hosp", "more beds and no infected wounds");
   if (next === "clinic" && pop >= 11 && (st.parts || 0) >= 6 && (st.meds || 0) >= 12) add("clinic", "surgery and cleaned wounds");
   if (next === "hospital" && pop >= 16 && (st.parts || 0) >= 10 && (st.meds || 0) >= 16) add("hospital", "a proper trauma hospital");
+  // Ammo from scrap: an ammo bench needs a workbench here (it opens the workshop recipes too), so the crafting bench
+  // goes up and is upgraded first. Saved for while the ammo is below what would set the ammo bench to work
+  // (stationWorth: 15 a head + 60, or the hive campaign's stockpile); the hub used to start with an ammo bench.
+  if (!countAll(base, "ammo_bench") && !queued("ammo_bench")) {
+    const ammoLow = (st.ammo || 0) < Math.max(here.length * 15 + 60, campaignAmmoTarget(state, base));
+    const bt = benchTier(base, true);
+    if (!bt && !benchQueued) add("craftbench", "a crafting bench, the first step to an ammo bench", ammoLow);
+    else if (bt === 1 && !benchQueued && best("mechanics") >= BUILDINGS.workbench.req.mechanics) add("workbench", "a workbench: workshop recipes, and an ammo bench needs one", ammoLow);
+    else if (bt >= 2) add("ammo_bench", "ammo from scrap", ammoLow);
+  }
   if (!count(base, "med_station") && pop >= 6 && best("medicine") >= 3 && (st.meds || 0) < pop) add("med_station", "meds are short");
   if (!count(base, "storehouse") && (hostileNear || state.stats.raidsRepelled > 0)) add("storehouse", "raiders steal less");
   if (!count(base, "machine_shop") && pop >= 7 && (st.parts || 0) < 6 && best("mechanics") >= 4) add("machine_shop", "spare parts");
@@ -2129,7 +2144,7 @@ const byPriorityHere = (state, base) => (!state.autopilot || gov(state).priority
 // 2571 buildings to its 2711; with this hold 3968 and 2664, food unchanged. A water filter while the water runs short,
 // a weapon for the unarmed and dressings for short meds still go first.
 const buildKeep = (state, base) => (byPriorityHere(state, base) ? nextBuildScrap(state, base) : 0);
-function planCrafts(state, base) {
+export function planCrafts(state, base) {
   const q = craftQueue(base);
   const people = atBase(state, base.id);
   if (!people.length || q.length >= 4) return;
@@ -2170,7 +2185,7 @@ function planCrafts(state, base) {
     }
     return false;
   };
-  if (lacking("weapon") > 0 && tryCraft(["crossbow", "sawmachete", "spikedbat", "pipespear"], "someone has no usable weapon", 5)) return;
+  if (lacking("weapon") > 0 && tryCraft(["springmachete", "pulleybow", "crossbow", "sawmachete", "spikedbat", "pipespear"], "someone has no usable weapon", 5)) return; // the special ones first once a craft book or blueprint has opened them (blueprints.js)
   // Arrows: the bows and crossbows shoot them in every fight (and hunt with them): under half a dozen a bow, before
   // anything else (a bow with none fights with its fists; about half the arrows shot are picked up again after a win).
   const bows = people.filter((s) => hasBow([s])).length;
@@ -2189,7 +2204,10 @@ function planCrafts(state, base) {
   if (rs) floor = rs.scrap.target;
   keep = buildKeep(state, base); // on priorities: the rest only from scrap past the next building's (and the floors)
   if (lacking("armor") > 0 && tryCraft(["scrapvest", "tirevest"], "someone has no body armor", 35)) return;
+  if (lacking("head") > 0 && tryCraft(["rivethelmet"], "someone has no helmet", 40)) return; // only once Backyard Blacksmithing is read (blueprints.js)
   if (waterIn(st) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft([filterRecipe(base)], "the well cannot keep up (and purified water means less of the worm)", 15)) return;
+  // A base by the water with nothing to fish with (hunting.js): a makeshift rod, so the Fish job can be worked.
+  if (fishWorkWhy(state, base) === "no fishing rod, net or spear here" && !q.some((j) => j.recipe === "makeshiftrod") && tryCraft(["makeshiftrod"], "a rod for fishing the water by the base: food from the land", 12)) return;
   const scav = people.filter((s) => s.role === "scavenge");
   if (scav.length >= 2 && !scav.some((s) => s.gear.tool) && !base.armory.some((it) => it.key === "crowbar") && tryCraft(["crowbar"], "better base scavenging", 45)) return;
   if (lacking("backpack") > n - 2 && tryCraft(["backpack"], "packs: more to carry on trips", 55)) return;
@@ -2199,7 +2217,7 @@ function planCrafts(state, base) {
   // Field kit (kit.js packs it for trips): quiet boots and a ghillie wrap against Heat, Molotovs for the walls.
   const have = (k) => base.armory.filter((it) => it.key === k).length + q.filter((j) => CRAFTS[j.recipe].gear === k).length;
   if (have("ragboots") < 2 && tryCraft(["ragboots"], "rag-wrapped boots: less Heat on searches", 50)) return;
-  if (have("ghillie") < 1 && tryCraft(["ghillie"], "a ghillie wrap: less Heat in camp and on searches", 60)) return;
+  if (have("ghillie") + have("woodghillie") < 1 && tryCraft(["woodghillie", "ghillie"], "a ghillie wrap: less Heat in camp and on searches", 60)) return; // the woodland suit once the Bushcraft Field Guide is read
   if ((st.fuel || 0) >= 20 && base.armory.some((it) => it.key === "bottle") && have("molotov") < 3 && hordeThreat(state, base).any && tryCraft(["molotov"], "Molotovs for when the dead come", 0)) return;
   if (lacking("arms") > 0 && tryCraft(["padding"], "cheap arm guards", 65)) return;
   if (lacking("legs") > 0) tryCraft(["shinguards"], "cheap shin guards", 65);
@@ -2422,6 +2440,14 @@ function planTrip(state) {
     if (lostBikes) cands.push({ mission: "getvehicle", tile: m.tile, score: 1.6, crew: 2, why: "bring our bikes home", supplies: { scrap: 1 } });
     else if (m.type === "vehicle" && !carsAtBase(state, h.id).length) {
       const bad = m.info && m.info.condition < 15;
+      // One found on a map that needs work (foundcars.js): only with a good enough mechanic at the hub, and its parts.
+      const fv = state.vehicles.find((x) => x.id === m.info?.vehicleId);
+      const fix = fv && fv.found && fv.found.repair;
+      if (fix) {
+        if (!atBase(state, h.id).some((s) => skill(s, "mechanics") >= fix.mech)) continue;
+        cands.push({ mission: "getvehicle", tile: m.tile, score: 2, crew: 2, why: `repair the ${fv.name.toLowerCase()} we found`, supplies: { fuel: 12, parts: fix.parts, scrap: fix.scrap }, min: { parts: fix.parts, scrap: fix.scrap } });
+        continue;
+      }
       // It starts again only with 2 fuel between its tank and the team (no fuel to bring: no trip, not a wasted one).
       cands.push({ mission: "getvehicle", tile: m.tile, score: 2.4, crew: 2, why: "bring our vehicle home", supplies: { fuel: 12, parts: bad ? 1 : 0 }, min: { fuel: Math.max(0, 2 - ((m.info && m.info.fuel) || 0)) } });
     }

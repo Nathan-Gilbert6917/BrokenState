@@ -1244,7 +1244,7 @@ function victoryRewards(state, p, c, result) {
       out.push(`Taken from the bodies: ${addCargo(state, p, "ammo", rng.int(15, 45))} ammo, ${addCargo(state, p, "food", rng.int(2, 8))} food.`);
       if (rng.chance(0.3)) {
         const key = rng.pick(["pistol", "shotgun", "huntrifle", "vest"]);
-        const item = { key, name: GEAR[key].name, quality: rng.pick([0.7, 0.85, 1]) };
+        const item = newItem(key, rng.pick([0.7, 0.85, 1]), rng);
         out.push(stowGear(state, p, item) ? `Also a ${item.name}.` : `No room to carry the ${item.name} they had; it was left behind.`);
       }
     }

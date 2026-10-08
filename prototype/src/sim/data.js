@@ -1,6 +1,11 @@
 // @ts-check
 // Static definitions: terrain, locations, supplies, gear, traits, faction types, names.
 // Kept as plain data so it can later move to JSON files for modding.
+// The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
+import { GUN_GEAR } from "./data-guns.js";
+import { AMMO_GEAR, RELOAD_GEAR } from "./data-ammo.js";
+import { MOD_GEAR } from "./data-gunmods.js";
+import { KIT_GEAR } from "./data-kit.js";
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
 // off-road and a quarter of an hour on a road or a bridge (ROAD_COST); mountains are closed to cars.
@@ -95,7 +100,7 @@ export const GEAR = {
   // medKit = Medicine bonus when treating (crafting.medKitBonus; the surgical kit has it too), bonus = skill bonus for base work, water = water per day at a base,
   // carry = kg added to the wearer's max load (load.js), slots = pack slots (inventory.js).
   spikedbat:  { burnShare: 0.8, name: "Spiked bat",               slot: "weapon", skill: "shooting", power: 1.5, req: 0, value: 4,  noise: 0, makeshift: true, dur: 10, desc: "A bat studded with nails. Hits hard, splinters eventually.", weight: 1.2, cat: "melee" },
-  pipespear:  { name: "Pipe spear",               slot: "weapon", skill: "shooting", power: 1.2, req: 0, value: 3,  noise: 0, makeshift: true, dur: 8,  desc: "A kitchen knife taped to a steel pipe.", weight: 1.5, cat: "melee" },
+  pipespear:  { name: "Pipe spear",               slot: "weapon", skill: "shooting", power: 1.2, req: 0, value: 3,  noise: 0, makeshift: true, dur: 8,  fish: "spear", fishPower: 0.35, desc: "A kitchen knife taped to a steel pipe. A makeshift spear: it also spears fish in the shallows (fishing in daylight, not through ice).", weight: 1.5, cat: "melee" },
   sawmachete: { name: "Saw-blade machete",        slot: "weapon", skill: "shooting", power: 1.7, req: 0, value: 7,  noise: 0, makeshift: true, dur: 12, desc: "A circular-saw blade ground into a cleaver.", weight: 1.2, cat: "melee" },
   crossbow:   { name: "Scrap crossbow",           slot: "weapon", skill: "shooting", power: 2.5, req: 3, value: 18, noise: 0, makeshift: true, dur: 12, desc: "Leaf-spring limbs: silent, shoots bolts (arrows, 1 a shot; never ammo). With none it is a club. After a won fight about half the bolts shot are picked up again; hunting loses some.", weight: 3, cat: "bow" },
   pipegun:    { name: "Pipe shotgun",             slot: "weapon", skill: "shooting", power: 3.5, req: 3, value: 20, noise: 3, makeshift: true, dur: 8,  desc: "A zip gun: two pipes and a nail, one shell at a time (reload after every shot). Short range, fires shotgun shells (ammo).", weight: 2.5, cat: "shotgun" },
@@ -300,6 +305,21 @@ export const GEAR = {
   perfume:     { name: "Bottle of perfume",        slot: "pack", skill: null, power: 0, req: 0, value: 20, noise: 0, small: true, groom: 0.5, dur: 60, desc: "A designer bottle from a department store counter. A spritz and the world is less rotten for a while: +0.5 mood a day for whoever uses it. Traders like it too.", weight: 0.2, cat: "toiletries" },
   magazines:   { burnShare: 1, name: "Stack of magazines",       slot: "pack", skill: null, power: 0, req: 0, value: 2,  noise: 0, book: { mood: 2, hours: 3 }, desc: "Celebrity gossip from another world. +2 mood an hour read (a third of that read again). Teaches nothing.", weight: 0.4, cat: "luxury" },
   puzzlebook:  { burnShare: 1, name: "Crossword book",           slot: "pack", skill: null, power: 0, req: 0, value: 3,  noise: 0, book: { mood: 2, hours: 12 }, desc: "Half the puzzles still blank. +2 mood an hour read, and it lasts. Teaches nothing.", weight: 0.3, cat: "luxury" },
+  // ---------- craft books and special crafted gear (blueprints.js CRAFT_BOOKS / BLUEPRINTS, crafting.js CRAFTS) ----------
+  // Craft books teach Crafting like any skill book; once anyone has finished one, its recipes are unlocked for good and
+  // the recipes it covers come out a little better and faster (blueprints.js craftEdge). Their unlock lines are added
+  // to the desc by blueprints.js.
+  diybook:      { burnShare: 1, name: "The Complete DIY Manual",  slot: "pack", skill: null, power: 0, req: 0, value: 18, noise: 0, book: { skill: "crafting", max: 7, hours: 24 }, desc: "Fixing, fitting and making do around the house. Teaches Crafting up to 7.", weight: 1, cat: "books" },
+  forgebook:    { burnShare: 1, name: "Backyard Blacksmithing",   slot: "pack", skill: null, power: 0, req: 0, value: 40, noise: 0, book: { skill: "crafting", max: 11, hours: 40 }, desc: "Coal forges, quenching and riveting, from a hobbyist press. Teaches Crafting up to 11.", weight: 1.2, cat: "books" },
+  bushcraftbook:{ burnShare: 1, name: "Bushcraft Field Guide",    slot: "pack", skill: null, power: 0, req: 0, value: 25, noise: 0, book: { skill: "crafting", max: 9, hours: 30 }, desc: "Cordage, camouflage and camp craft from what the woods give. Teaches Crafting up to 9.", weight: 0.6, cat: "books" },
+  // Special crafted gear: locked until a craft book is read or a blueprint studied; better than ordinary makeshift
+  // gear (still wears out). combat.js WEAPONS has the weapons' battle numbers.
+  springmachete:{ name: "Leaf-spring machete",      slot: "weapon", skill: "shooting", power: 2.2, req: 0, value: 18, noise: 0, makeshift: true, dur: 22, desc: "A truck leaf spring forged, quenched and ground into a heavy blade: hits harder than a store-bought machete and keeps its edge a long time.", weight: 1.1, cat: "melee" },
+  pulleybow:    { name: "Pulley-limb bow",          slot: "weapon", skill: "shooting", power: 2.9, req: 3, value: 30, noise: 0, makeshift: true, dur: 18, desc: "Laminated limbs with salvaged pulleys: nearly a compound bow. Silent, and in a fight the arrows are picked up again (no ammo); hunting loses some (arrows). Needs Shooting 3.", weight: 1.8, cat: "bow" },
+  rivethelmet:  { name: "Riveted scrap helmet",     slot: "head",   skill: null,       power: 1.0, req: 0, value: 16, noise: 0, makeshift: true, dur: 16, desc: "Hammered steel plates riveted over a padded cap, with a nape guard. Better than a motorcycle helmet.", weight: 2, cat: "armor" },
+  woodghillie:  { burnShare: 1, name: "Woodland ghillie suit", slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, makeshift: true, heat: { stay: 0.75, search: 0.85 }, desc: "A full suit of netting, jute and local plants, built up layer by layer: a team with one gains Heat 25% slower while it stays put and 15% slower while it searches (with a ghillie wrap too, both count).", weight: 2, cat: "camp" },
+  traumakit:    { name: "Field trauma kit",         slot: "tool",   skill: "medicine", power: 2,   req: 4, value: 24, noise: 0, makeshift: true, dur: 8,  medKit: 3, small: true, desc: "Pressure dressings, a windlass tourniquet, chest seals and splints, packed the army way: +3 Medicine when treating (at a base, in the field or in battle). Needs Medicine 4 for the full bonus. Each treatment uses it up a little.", weight: 0.7, cat: "medical" },
+  // ---------- end of craft books and special crafted gear ----------
 };
 
 
@@ -426,7 +446,7 @@ export const LOCATIONS = {
   barn:        { name: "Barn",               glyph: "Br", cat: "rural", danger: 0, loot: { food: 3, fuel: 0.6, scrap: 2, jars: 0.5 }, gear: ["machete", "sledge", "prybar", "barbedwire", "beartrap"], richness: 0.35, known: "road" },
   ranch:       { name: "Ranch",              glyph: "R",  cat: "rural", danger: 0, loot: { food: 5, water: 2, ammo: 1, fuel: 0.3, jars: 0.75, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "leverrifle", "revolver", "barbedwire", "beartrap", "binoculars", "dewormer"], richness: 0.55, known: "road" },
   cabin:       { name: "Cabin",              glyph: "Cb", cat: "rural", danger: 0, loot: { food: 2, ammo: 2, water: 1, meds: 0.4, preserved: 0.5, jars: 0.25 }, gear: ["huntrifle", "machete", "waterfilter", "leverrifle", "fireaxe", "beartrap", "stove", "ghillie", "monocular", "binoculars"], richness: 0.35, known: "road" },
-  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 0.4, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "compbow", "xbow", "leverrifle", "ghillie", "camonet", "beartrap", "stove", "binoculars", "spotscope", "monocular"], richness: 0.55, known: "road" },
+  lodge:       { name: "Hunting lodge",      glyph: "L",  cat: "rural", danger: 0, loot: { ammo: 4, food: 3, meds: 0.4, preserved: 0.5 }, gear: ["huntrifle", "shotgun", "machete", "compbow", "xbow", "leverrifle", "ghillie", "camonet", "beartrap", "stove", "binoculars", "spotscope", "monocular", "spear"], richness: 0.55, known: "road" },
   campground:  { name: "Campground",         glyph: "Cg", cat: "rural", danger: 1, loot: { food: 2, water: 3, fuel: 0.3, scrap: 1, rawwater: 0.5 }, gear: ["knife", "pipespear", "waterfilter", "backpack", "bicycle", "hikingpack", "stove"], richness: 0.4, known: "road" },
   ranger:      { name: "Ranger station",     glyph: "Rs", cat: "rural", danger: 0, loot: { meds: 1, ammo: 2, food: 2, fuel: 0.3 }, gear: ["huntrifle", "bandagekit", "bicycle", "fireaxe", "hikingpack", "stove", "binoculars", "spotscope", "monocular"], richness: 0.5, known: "road" },
   radiotower:  { name: "Radio tower",        glyph: "Rt", cat: "rural", danger: 0, loot: { parts: 3, scrap: 2, fuel: 0.3 }, gear: ["flashlight", "prybar", "binoculars"], richness: 0.4, known: "road" },
@@ -439,6 +459,9 @@ export const LOCATIONS = {
   crash_med:   { name: "Medevac wreck",       glyph: "✈", cat: "special", danger: 2, temp: true, loot: { meds: 7, water: 2, scrap: 1, parts: 1 }, gear: ["surgkit", "bandagekit", "vest"], richness: 1.1, known: "secret" },
   crash_news:  { name: "News helicopter wreck", glyph: "✈", cat: "special", danger: 2, temp: true, loot: { parts: 3, scrap: 3, water: 1, food: 1, fuel: 0.4 }, gear: ["hikingpack", "slingbag"], richness: 0.9, known: "secret" },
   airdrop:     { name: "Supply drop",         glyph: "⇣", cat: "special", danger: 1, temp: true, loot: { food: 6, water: 4, meds: 2, ammo: 3, preserved: 2 }, gear: ["assaultpack", "vest", "bandagekit", "rucksack", "stove"], richness: 1.2, known: "secret" },
+  // The abandoned military convoy (miltrucks.js): Army trucks stopped on a road tile, their turned crews about them;
+  // stripped by other groups and burned out after 6–9 days. Its trucks hold most of what it is worth (truckLoot).
+  convoy:      { name: "Abandoned Army convoy", glyph: "🪖", cat: "special", danger: 2, temp: true, loot: { ammo: 5, fuel: 2, food: 2, meds: 1, parts: 1.5 }, gear: ["ar", "carbine", "vest", "plate", "milhelmet", "milradio", "assaultpack", "rucksack", "smokegren", "flare"], richness: 0.9, known: "secret" },
 };
 // Where a placed site stands (tile.loc.zone): map icon color and the inspect panel.
 export const SITE_ZONES = {
@@ -457,10 +480,14 @@ export const siteDanger = (loc) => {
   return loc.zone === "town" || loc.zone === "rural" ? Math.min(1, d) : d;
 };
 
-export const SKILLS = ["shooting", "stealth", "scavenging", "scouting", "medicine", "mechanics", "farming", "speech", "leadership"];
+export const SKILLS = ["shooting", "stealth", "scavenging", "scouting", "medicine", "mechanics", "farming", "speech", "leadership", "crafting"];
+// The skills a new survivor draws with the world's dice (world.js makeSurvivor): every skill but Crafting, which came
+// later and is rolled with its own dice (appearance.js craftingStart), so the same seed still makes the same people.
+export const ROLLED_SKILLS = SKILLS.filter((k) => k !== "crafting");
 export const SKILL_NAMES = {
   shooting: "Shooting", stealth: "Stealth", scavenging: "Scavenging", scouting: "Scouting",
   medicine: "Medicine", mechanics: "Mechanics", farming: "Farming", speech: "Speech", leadership: "Leadership",
+  crafting: "Crafting", // crafting.js: the quality, speed and XP of everything made by hand (each recipe's own skill is only its minimum)
 };
 
 export const TRAITS = {
@@ -505,8 +532,29 @@ export const TOWN_NAMES = ["Harlow", "Pine Ridge", "Millbrook", "Cedar Falls", "
 // Kept in a block of their own: the gear for food from the land. Fishing gear goes in a pack
 // slot or the cargo (not worn); a team fishes with what it carries, a base's fishers with what is in its armory.
 Object.assign(GEAR, {
-  fishrod:   { name: "Fishing rod",  slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, fish: "rod", weight: 0.8, cat: "tools", desc: "A telescopic rod and a tackle box. Fish on a river or a lake shore (team order, or the Fish job at a base by the water): about 0.6 food an hour, more at dawn and dusk." },
+  fishrod:   { name: "Fishing rod",  slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, fish: "rod", fishPower: 0.6, weight: 0.8, cat: "tools", desc: "A telescopic rod and a tackle box. Fish on a river or a lake shore (team order, or the Fish job at a base by the water): about 0.6 food an hour, more at dawn and dusk." },
   fishnet:   { name: "Fishing net",  slot: "pack", skill: null, power: 0, req: 0, value: 18, noise: 0, fish: "net", weight: 2.5, cat: "tools", desc: "A gill net with floats: worked by two, it catches about twice what a rod does (1.2 food an hour)." },
+  // A rod made by hand (crafting.js makeshiftrod): a sapling, fishing line from a spool or unpicked cord, a bent hook.
+  makeshiftrod: { name: "Makeshift fishing rod", slot: "pack", skill: null, power: 0, req: 0, value: 4, noise: 0, fish: "rod", fishPower: 0.42, makeshift: true, dur: 12, weight: 0.5, cat: "tools", desc: "A cut sapling, a length of line and a hook bent from a paperclip. Fishes like a rod, but catches about a third less (0.42 food an hour) and the line snaps in the end." },
+  // A real spear (looted): a weapon, and a gig for fish in the shallows (fish: "spear": daylight, not through ice).
+  spear:     { name: "Steel spear",  slot: "weapon", skill: "shooting", power: 1.8, req: 0, value: 14, noise: 0, fish: "spear", fishPower: 0.5, weight: 1.8, cat: "melee", desc: "A boar spear off a hunting lodge wall: a long steel head on an ash shaft. Keeps the dead at arm's length, and spears fish in the shallows (0.5 food an hour, best in daylight; no use through ice)." },
   snarewire: { name: "Snare wire",   slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, weight: 0.4, cat: "tools", desc: "A coil of brass wire: a line of 8 snares (team order, 2 hours). Quiet; about a rabbit a day in good country. The wire stays with the line and comes back when it is lifted." },
 });
 // Where they turn up: loot.js SITE_FINDS (their own dice, so adding them changes no other loot roll).
+
+// The weapons overhaul (docs/weapons-overhaul-plan.md): guns and melee, ammo boxes and reloading supplies, attachments,
+// carry kit. One line, so the agents filling those modules never edit the end of this file.
+Object.assign(GEAR, GUN_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR);
+
+// ---------- durability (crafting.js itemDur / wear) ----------
+// Real gear wears too, only slower than makeshift gear: dur = uses before it breaks (weapons and armor: fights;
+// the surgical kit: treatments; fishing gear: days of fishing; camp kit: days out in the field). Entries that set
+// their own dur (the makeshift gear, tablets, toiletries) keep it. Found and starting gear comes part-worn
+// (inventory.js newItem with an rng: FOUND_DUR); crafted gear lasts by its quality (crafting.js craftedDur).
+export const GEAR_DUR = {
+  knife: 40, machete: 45, bat: 30, prybar: 70, fireaxe: 50, sledge: 60, baton: 50, spear: 45,
+  pistol: 60, revolver: 80, shotgun: 60, huntrifle: 70, leverrifle: 70, carbine: 70, ar: 60, compbow: 50, xbow: 50,
+  vest: 40, plate: 50, bikehelmet: 40, riothelmet: 50, milhelmet: 60, kneeguards: 35, riotlegs: 45, riotarms: 45,
+  surgkit: 40, fishrod: 60, fishnet: 40, camonet: 60, stove: 80, ghillie: 20, ragboots: 14,
+};
+for (const [k, v] of Object.entries(GEAR_DUR)) if (GEAR[k] && !GEAR[k].dur) GEAR[k].dur = v;
