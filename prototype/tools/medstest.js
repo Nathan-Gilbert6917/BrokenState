@@ -162,15 +162,24 @@ if (!SAMPLE) {
     st.started = true;
     const h = hub(st);
     h.stock.meds = 30; h.stock.food = 400; h.stock.water = 400;
-    let spent = 0, spentHours = [];
+    // Everyone is made well at the top of each hour, but the hour's own dice can still give someone a cold (health.js
+    // SICK.common, about 0.6% a head a day: a 10-day run of six catches one about a third of the time, by seed) and the
+    // night's care then treats it: that is need, not a drain. So the drain is meds spent in an hour that ends with
+    // everyone still well; meds spent on someone who fell ill or hurt within the hour are counted apart, a dose a head.
+    let spent = 0, spentHours = [], onNeed = 0, needOk = true;
+    const unwell = () => alive(st).filter((s) => s.health < 100 || (s.conditions && s.conditions.length) || s.woundInfected);
     for (let i = 0; i < 24 * 10; i++) {
       for (const s of alive(st)) { s.health = 100; s.conditions = []; s.woundInfected = false; }
       st.cards = [];
       const before = h.stock.meds;
       tickHour(st);
-      if (h.stock.meds < before - 1e-9) { spent += before - h.stock.meds; spentHours.push(st.log.slice(0, 4).map((l) => l.text).join(" | ")); }
+      if (h.stock.meds < before - 1e-9) {
+        const ill = unwell();
+        if (ill.length) { onNeed += before - h.stock.meds; if (before - h.stock.meds > ill.length * 2) needOk = false; continue; }
+        spent += before - h.stock.meds; spentHours.push(st.log.slice(0, 4).map((l) => l.text).join(" | "));
+      }
     }
-    check(spent === 0, `a base where nobody is hurt or sick spends no meds in 10 days (${spent} spent${spentHours.length ? `: ${spentHours[0]}` : ""})`);
+    check(spent === 0 && needOk, `a base where nobody is hurt or sick spends no meds in 10 days (${spent} spent${spentHours.length ? `: ${spentHours[0]}` : ""}; ${onNeed} on someone taken ill within the hour)`);
     // A hurt one at the base: treated from the stock, about one meds a treatment.
     const st2 = createWorld({ seed: SEED + 1, factionCount: 4 });
     st2.started = true;
