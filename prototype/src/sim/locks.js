@@ -28,6 +28,7 @@ import { CELL, nearBox, inBox } from "./combat.js"; // nearBox / inBox: a contai
 import { say as sayB, fx as fxB, setFloor } from "./combat.js"; // gun safes: a charge that goes off at the start of a turn (safeTurn)
 import { THROWABLES } from "./stealth.js";
 import { landEffect } from "./throwables.js";
+import { toolSource } from "./gunsafes.js";
 import { rollGunStash, TIER_STASH, blastContents, rollAreaGunFinds, CAR_CASE, rollGunCase, SEARCH_TOOLS, isGunCase, openCase, CASE } from "./gunsafes.js";
 import { haulOf } from "./raidloot.js";
 
@@ -930,7 +931,7 @@ export function gunSearchHour(state, e, p, members) {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   let line = "";
   const tools = [];
-  for (const [k, pp] of Object.entries(SEARCH_TOOLS[site] || {})) if (GEAR[k] && roll("tool", k) < pp * loot) { const it = newItem(k, 1); e.found.gear.push(it); tools.push(it.name); }
+  for (const [k, pp] of Object.entries(SEARCH_TOOLS[site] || {})) if (GEAR[k] && roll("tool", k) < pp * loot) { const it = lootItem(k, toolSource(site), roll("toolq", k)); e.found.gear.push(it); tools.push(it.name); }
   if (tools.length) line += ` On a workbench: ${tools.join(" and ")}.`;
   let acc = 0;
   const r = roll("safe");

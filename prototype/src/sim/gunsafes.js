@@ -20,11 +20,13 @@
 // (combat.js wearFielded) nor fires. A locked case opens with a blade or a crowbar: 1 action and Heat +1 in a raid
 // (locks.js openCaseAct), free and silent at a base or a camp (openCase here).
 import { GEAR, SUPPLIES } from "./data.js";
-import { newItem, itemAt, placeOfLoc, storageFor } from "./inventory.js";
+import { lootItem, itemAt, placeOfLoc, storageFor } from "./inventory.js";
+import { siteSource } from "./itemcond.js"; // every item here gets its condition from itemcond.js (rollCondition by source)
 import { baseById } from "./world.js";
 
 // ---------- what is inside ----------
-// guns: weights (existing GEAR keys); n: [lo, hi] guns, more: the chance of one more; q: quality range; sup: supply
+// guns: weights (existing GEAR keys); n: [lo, hi] guns, more: the chance of one more; q: a quality range of the
+// table's own (else itemcond.js gives it by the source: "gunsafe" for a safe, the site's for a case); sup: supply
 // [lo, hi]; items: [key or weights, chance] each its own roll; rare: [chance, weights]; key: the chance of a site key
 // (locks.js keyFor); bp: blueprint rolls × this (locks.js lockedLoot); only: a gun only at these site types.
 const MIL_SITES = ["military", "crash_mil", "airdrop"];
@@ -35,7 +37,7 @@ export const GUN_STASH = {
     sup: { ammo: [10, 30] }, items: [[{ coins: 1, watch: 1, goldring: 1 }, 0.15]], key: 0, bp: 1,
   },
   mid: {
-    guns: { pistol: 3, revolver: 2, huntrifle: 2, shotgun: 2, leverrifle: 2, carbine: 1 }, n: [2, 4], q: [0.75, 1],
+    guns: { pistol: 3, revolver: 2, huntrifle: 2, shotgun: 2, leverrifle: 2, carbine: 1 }, n: [2, 4],
     sup: { ammo: [30, 80] }, items: [[{ coins: 1, goldchain: 1, watch: 1 }, 0.5]], key: 0.2, bp: 3,
     // The rare 8%: a collector's piece in top condition. On dev a plain pistol or hunting rifle; gunmods registers an
     // extra that fits a suppressor to the pistol (pistolcan) and a 4× scope to the rifle (scope4x), and section 3 swaps
@@ -43,18 +45,18 @@ export const GUN_STASH = {
     rare: [0.08, { pistol: 1, huntrifle: 1 }],
   },
   high: { // police or prison (the military one is highMil: highFor picks by site)
-    guns: { pistol: 3, carbine: 3, shotgun: 2 }, n: [2, 5], q: [0.75, 1],
+    guns: { pistol: 3, carbine: 3, shotgun: 2 }, n: [2, 5],
     sup: { ammo: [80, 200] }, items: [["riothelmet", 0.2]], key: 0, bp: 3,
     // TODO (later stages register these): ["riflecan", 0.15] (section 5 rifle suppressor), ["eardef", 0.1] (section 18).
   },
   highMil: {
-    guns: { ar: 3, carbine: 2 }, n: [2, 4], q: [0.75, 1],
+    guns: { ar: 3, carbine: 2 }, n: [2, 4],
     sup: { ammo: [100, 250] }, items: [["frag", 0.2]], key: 0, bp: 3,
     // TODO: dmr 1 in guns (section 3), ["highcut", 0.05] (section 18), ["m79", 0.04] (section 13), a .50 rifle 0.005
     // only if section 3 allows it here.
   },
-  pistolcase: { guns: { pistol: 3, revolver: 2 }, n: [1, 1], q: [0.7, 1], sup: { ammo: [6, 15] } },
-  riflecase: { guns: { huntrifle: 5, leverrifle: 2, shotgun: 2, carbine: 1 }, only: { carbine: [...COP_SITES, ...MIL_SITES] }, n: [1, 1], q: [0.7, 1], sup: { ammo: [5, 20] } },
+  pistolcase: { guns: { pistol: 3, revolver: 2 }, n: [1, 1], sup: { ammo: [6, 15] } },
+  riflecase: { guns: { huntrifle: 5, leverrifle: 2, shotgun: 2, carbine: 1 }, only: { carbine: [...COP_SITES, ...MIL_SITES] }, n: [1, 1], sup: { ammo: [5, 20] } },
 };
 export const TIER_STASH = { 1: "cheap", 2: "mid", 3: "high" };
 // The table a tier uses at a site: the armoury safe of a base or a military crash holds military guns.
@@ -77,29 +79,34 @@ export function pickWeighted(r, weights) {
   return list.length ? list[list.length - 1][0] : null;
 }
 const q2 = (v) => Math.round(v * 100) / 100;
+// The itemcond.js source of what is in a safe ("gunsafe") or a case (the site's: a police or a military one, else a home).
+const CASE_KINDS = ["pistolcase", "riflecase"];
+export const caseSource = (siteType) => { const s = siteSource(siteType); return s === "police" || s === "military" ? s : "home"; };
+export const stashSource = (tier, siteType) => (CASE_KINDS.includes(tier) ? caseSource(siteType) : "gunsafe");
 
 // What a safe or a case of this tier holds at a site of this type. roll: a hash01 closure. opts: passed to the extras.
 export function rollGunStash(roll, tier, siteType, opts = {}) {
   const name = stashTable(tier, siteType);
   const T = GUN_STASH[name] || GUN_STASH.cheap;
   const out = { gear: [], sup: {}, key: T.key || 0, bp: T.bp || 1 };
+  const src = stashSource(tier, siteType);
   const guns = { ...T.guns };
   for (const [k, sites] of Object.entries(T.only || {})) if (!sites.includes(siteType)) delete guns[k];
   let n = T.n[0] + Math.floor(roll("n") * (T.n[1] - T.n[0] + 1));
   if (T.more && roll("more") < T.more) n++;
   for (let i = 0; i < n; i++) {
     const k = pickWeighted(roll("g", i), guns);
-    if (k) out.gear.push(newItem(k, q2(T.q[0] + roll("q", i) * (T.q[1] - T.q[0]))));
+    if (k) out.gear.push(lootItem(k, src, roll("q", i), T.q ? { quality: q2(T.q[0] + roll("q", i) * (T.q[1] - T.q[0])) } : undefined));
   }
   if (T.rare && roll("rare") < T.rare[0]) {
     const k = pickWeighted(roll("rarek"), T.rare[1]);
-    if (k) out.gear.push(newItem(k, 1));
+    if (k) out.gear.push(lootItem(k, src, roll("rareq"), { quality: 1 })); // a collector's piece: top condition
   }
   for (const [k, [lo, hi]] of Object.entries(T.sup || {})) if (SUPPLIES[k]) out.sup[k] = lo + Math.floor(roll("s", k) * (hi - lo + 1));
   (T.items || []).forEach(([what, p], i) => {
     if (roll("i", i) >= p) return;
     const k = typeof what === "string" ? what : pickWeighted(roll("ik", i), what);
-    if (k && GEAR[k]) out.gear.push(newItem(k, 1));
+    if (k && GEAR[k]) out.gear.push(lootItem(k, src, roll("iq", i)));
   });
   for (const fn of EXTRAS) fn({ roll, tier, table: name, siteType, opts }, out);
   return out;
@@ -130,7 +137,7 @@ export const CASE = { locked: 0.4, raidAp: 1, raidHeat: 1, blades: ["knife", "ma
 export const isGunCase = (item) => !!(item && GEAR[item.key] && GEAR[item.key].gunCase);
 // A case with what it holds. kind: "riflecase" | "pistolcase".
 export function rollGunCase(roll, kind, siteType) {
-  const item = newItem(kind, 1);
+  const item = lootItem(kind, caseSource(siteType), roll("case"));
   const s = rollGunStash(roll, kind, siteType);
   item.contents = s.gear;
   item.sup = s.sup;
@@ -197,6 +204,8 @@ export const SEARCH_TOOLS = {
   hardware: { powerdrill: 0.04, anglegrinder: 0.015 }, autoshop: { powerdrill: 0.03, anglegrinder: 0.02 },
   factory: { anglegrinder: 0.03, powerdrill: 0.02 }, quarry: { anglegrinder: 0.02 }, dam: { powerdrill: 0.01 },
 };
+// A drill or a grinder's condition: new old stock in a shop (a hardware store), else a worksite's.
+export const toolSource = (siteType) => (siteSource(siteType) === "shop" ? "shop" : "site");
 // Items from GUN_FINDS for one container: cases come with their contents.
 export function rollAreaGunFinds(roll, areaType, siteType) {
   const f = GUN_FINDS[areaType];
@@ -204,7 +213,7 @@ export function rollAreaGunFinds(roll, areaType, siteType) {
   const out = [];
   for (const [k, p] of Object.entries(f)) {
     if (!GEAR[k] || roll("f", k) >= p) continue;
-    out.push(GEAR[k].gunCase ? rollGunCase((...x) => roll("fc", k, ...x), k, siteType) : newItem(k, 1));
+    out.push(GEAR[k].gunCase ? rollGunCase((...x) => roll("fc", k, ...x), k, siteType) : lootItem(k, toolSource(siteType), roll("fq", k)));
   }
   return out;
 }
