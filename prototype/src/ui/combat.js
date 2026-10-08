@@ -18,6 +18,7 @@ import { LIGHTS } from "../sim/lights.js";
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
 import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
+import { roomText, totalRoom } from "../sim/prisoners.js"; // jailhouse: prisoner room at your bases
 import { bodyEmpty } from "../sim/inventory.js";
 import { atVehicle, personalLoad, trunkInfo } from "../sim/raidloot.js";
 import { SEARCH, quickable, quickRefusal, quickRadius, quickHurtPct } from "../sim/search.js";
@@ -1066,7 +1067,7 @@ function stealthButtons(state, b, u, btn) {
   const have = throwablesOf(state, b, u);
   const kinds = THROW_KEYS.filter((k) => have[k]);
   let html = btn("subdue", "Subdue", subTip, ap > 0 && near.length > 0, "C");
-  html += btn("tie", "Tie up", "1 action: tie up someone knocked out next to you. Tied, they do not wake up, and after the fight they are your prisoner (in a raid, drag them into an extraction zone and leave from it).", ap > 0 && ko.length > 0, "T");
+  html += btn("tie", "Tie up", `1 action: tie up someone knocked out next to you. Tied, they do not wake up, and after the fight they are your prisoner (in a raid, drag them into an extraction zone and leave from it). ${roomText(state)}`, ap > 0 && ko.length > 0, "T");
   html += btn("drag", "Drag", `1 action: drag a body, someone knocked out or a downed teammate up to ${STEALTH.DRAG} tiles (out of a patrol's sight: a guard who sees a body raises the alarm).`, ap > 0 && bodies.length > 0, "⇧D");
   if (!kinds.length) html += btn("throw", "Throw", "Bottles, noise makers and firecrackers pull unaware guards and the dead to where they land. Nobody here carries one (search kitchens and houses, or craft them).", false, "G");
   for (const k of kinds) {
@@ -1257,11 +1258,14 @@ function interiorDeployPanel(state, b, u, D) {
 }
 
 // ---------- prisoners on the result screen (sim/prisoners.js) ----------
-function prisonersHtml(b) {
+function prisonersHtml(state, b) {
   const list = (b.result && b.result.prisoners) || [];
   if (!list.length) return "";
   const leave = !!b.leavePrisoners;
-  return `<div class="small" style="margin-top:0.5rem"><b>Prisoners:</b> ${esc(list.map((p) => `${p.name} (${p.group})`).join(", "))}. ${leave ? "You will leave them tied up here." : b.setup.baseId != null ? "They go into the cells (1 food and 1 water a day each)." : "They walk home with the team, tied (on foot each slows it 10%, and they may slip away)."}</div>
+  const room = totalRoom(state);
+  const over = Math.max(0, list.length - room);
+  return `<div class="small" style="margin-top:0.5rem"><b>Prisoners:</b> ${esc(list.map((p) => `${p.name} (${p.group})`).join(", "))}. ${leave ? "You will leave them tied up here." : b.setup.baseId != null ? "They go into the jail (1 food and 1 water a day each)." : "They walk home with the team, tied (on foot each slows it 10%, and they may slip away)."}</div>
+    <div class="small ${over && !leave ? "warn" : "muted"}">${esc(roomText(state))}${over && !leave ? ` ${over} more than your jails hold: for ${over === 1 ? "that one" : "each of them"} you choose once you take them: release, execute or ask to join on the spot.` : ""}</div>
     <div class="cbactions" style="margin-top:0.3rem">
       <button class="${leave ? "" : "active"}" data-action="cb-prison" data-v="take" data-tip="Take them: question them for intel, ransom them, trade them back for goodwill or slowly win them over (the Prisoners tab of the base).">Take them</button>
       <button class="${leave ? "active" : ""}" data-action="cb-prison" data-v="leave" data-tip="Leave them tied up here. Their group hears of the mercy (goodwill +2).">Leave them</button>
@@ -1286,7 +1290,7 @@ function raidResult(state, b) {
       <div>Killed</div><div>${r.enemiesKilled}${r.extraKilled ? ` (+${r.extraKilled} drawn by Heat)` : ""}</div>
     </div>
     ${b.summary.length ? `<div class="small muted" style="margin-top:0.4rem">${b.summary.map(esc).join("<br>")}</div>` : ""}
-    ${prisonersHtml(b)}
+    ${prisonersHtml(state, b)}
     <button class="primary" style="margin-top:0.7rem;width:100%" data-action="cb-close" data-tip="Return to the State Map. The team then waits for orders.">Continue</button>
     ${restartBtn(state, b, "margin-top:0.4rem;width:100%")}
   </div>
@@ -1321,7 +1325,7 @@ function resultHtml(state, b) {
       ${bodies ? `<div>Bodies</div><div>${bodies} with things on them</div>` : ""}
     </div>
     ${b.summary.length ? `<div class="small muted" style="margin-top:0.4rem">${b.summary.map(esc).join("<br>")}</div>` : ""}
-    ${prisonersHtml(b)}
+    ${prisonersHtml(state, b)}
     ${bodies ? `<button style="margin-top:0.7rem;width:100%" data-action="loot-open" data-tip="Search the dead one by one: see what each carries and move it to your people or the cargo.">Loot the bodies (${bodies})</button>
     <button class="primary" style="margin-top:0.4rem;width:100%" data-action="cb-close" data-take="1" data-tip="Take everything that fits (supplies first, then the most valuable items) and return to the State Map. (Enter)">Take all and continue</button>
     <button style="margin-top:0.4rem;width:100%" data-action="cb-close" data-take="0" data-tip="Return to the State Map. What is left on the bodies stays where they fell: a death site scavengers strip over the next days.">Leave the rest and continue</button>` :

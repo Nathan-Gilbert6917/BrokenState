@@ -70,6 +70,7 @@ import { reduceHorde } from "./hordes.js";
 import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { groupCapture, jailsOn, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the winner of a raid takes a few prisoners
 import { groupWorksDaily, fieldsFactor, growthFactor, workshopFactor, storeFactor, groupBaseDefence } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids
 
@@ -789,6 +790,9 @@ export function resolveRaidOnFaction(state, party, helpers) {
   if (att > def * 1.1) {
     const loss = Math.ceil(target.pop * rng.range(0.2, 0.35));
     target.pop -= loss;
+    // groupjails.js: a few of the beaten are taken prisoner, not killed (as many as the winner's jail holds; the rest
+    // sold on, let go or killed by type). Only in a world with the groups' jails (older saves roll no dice here).
+    if (attacker && jailsOn(state)) groupCapture(state, attacker, target, Math.min(loss, rng.int(0, GROUP_JAIL.RAID_TAKE)));
     for (const k of Object.keys(target.stock)) {
       const lost = target.stock[k] * 0.4;
       target.stock[k] -= lost;

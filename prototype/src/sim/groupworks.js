@@ -17,6 +17,9 @@
 //   the rest of the fields; a bench once the necessities are up (they make ammo and gear every day);
 //   a storehouse once their stores fill (a stock at STORE_FULL of what it can hold);
 //   walls up to their goal (the fortress and the military want theirs, others a home wall and a fence at their outposts).
+//   A jail (groupjails.js jailWork, after water, fields and quarters): makeshift cells, holding cells, a jailhouse at
+//   the main base, early for raiders, the military, the fortress and groups at war, once they hold someone for the
+//   rest, after the fields for communes; a full one is upgraded. Their prisoners work the job too (f.prisonWork).
 // - What the works do, small next to what the group is (people, arms, stores):
 //   walls: conquest.js nativeWalls (what your assault faces) is the walls built, up to its goal (WALL_GOAL: 7 for
 //   fortresses and the military, 4 at a main base, 1 elsewhere: the old fixed walls); and a raid or a horde on the
@@ -29,6 +32,7 @@
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
 import { day } from "./world.js";
+import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the groups' jails (abstract tiers)
 
 /** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number }} Works */
 
@@ -124,8 +128,10 @@ export function nextWork(state, f) {
     if (n(w, "water") < wanted(f, tile, "water")) return { tile, type: "water", why: "water" };
     if (foodShort && n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "food is short" };
     if (n(w, "beds") < wanted(f, tile, "beds")) return { tile, type: "beds", why: "people sleep rough" };
+    if (tile === mainOf(f)) { const jail = jailWork(state, f); if (jail) return jail; }
     if (n(w, "walls") < goal && threatened(state, f, tile)) return { tile, type: "walls", why: "threatened" };
     if (n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "fields for everyone" };
+    if (tile === mainOf(f)) { const jail = jailWork(state, f, true); if (jail) return jail; } // communes: later
     if (tile === mainOf(f)) {
       if (!hasAny(f, "bench")) return { tile, type: "bench", why: "a workshop for their gear and ammo" };
       if (!hasAny(f, "store") && storesFull(state, f)) return { tile, type: "store", why: "the stores are full" };
@@ -143,19 +149,20 @@ export function groupWorksDaily(state, f) {
   if (!f.job) {
     const next = nextWork(state, f);
     if (!next) return;
-    const def = W.WORKS[next.type];
+    const def = next.def || W.WORKS[next.type]; // a jail step brings its own (groupjails.js STEPS)
     const can = Object.entries(def.cost).every(([k, v]) => (f.stock[k] || 0) >= v);
     if (can) for (const [k, v] of Object.entries(def.cost)) f.stock[k] -= v;
     f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE), paid: can };
   }
-  f.job.left -= Math.max(1, f.pop / W.CREW);
+  f.job.left -= Math.max(1, f.pop / W.CREW) + (f.prisonWork || 0) / W.CREW; // their prisoners work too (groupjails.js)
   if (f.job.left > 0) return;
-  const w = worksAt(f, f.job.tile);
-  w[f.job.type] = n(w, f.job.type) + 1;
+  if (f.job.type === "jail") jailBuilt(state, f, f.job.tile);
+  else { const w = worksAt(f, f.job.tile); w[f.job.type] = n(w, f.job.type) + 1; }
   f.built = (f.built || 0) + 1;
   f.job = null;
 }
 
+const jailStepName = (f) => { const t = (f.jails && f.jails[f.job.tile]) || 0; return (GROUP_JAIL.STEPS[t + 1] || GROUP_JAIL.STEPS[1]).name; };
 // "water, 2 fields, quarters for 16, walls 2/4 · building a wall" (the Groups tab).
 export function worksText(state, f) {
   if (!groupsBuild(state, f) || !f.bases.length) return "";
@@ -169,6 +176,6 @@ export function worksText(state, f) {
   bits.push(`walls ${groupWalls(state, f, main)}/${wallGoal(f, main)}`);
   if (t.bench) bits.push("a workshop");
   if (t.store) bits.push("a storehouse");
-  const job = f.job ? ` · building ${W.WORKS[f.job.type].name}` : "";
+  const job = f.job ? ` · building ${f.job.type === "jail" ? jailStepName(f) : W.WORKS[f.job.type].name}` : "";
   return `${bits.join(", ")}${job}`;
 }

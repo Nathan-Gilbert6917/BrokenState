@@ -98,15 +98,18 @@ import { wormHealMult, WORM } from "./worm.js"; // the worm: half the healing wh
 // prisoner has going for them (escapeKit); labour: × the work detail's escapes; watch: labourers one guard watches;
 // mood: theirs a day; opinion: × winning them over and the held drift; defence: × the base's defence against a rescue
 // raid by their group; block: what a rescue raid's map would show (the rescue branch, groupjails.js groupJailTier).
+// The holding cells' escapes are PRISON.ESCAPE's guarded and unguarded (0.4% / 3%, as they always were), a jailhouse's
+// half of those (0.2% / 1.5%), the shed's PRISON.ESCAPE.shed (8%): read at the time, so a tool that changes the rules
+// changes them all.
 export const JAIL = {
-  lockup:    { tier: 1, name: "Makeshift cells", cap: 2, guarded: 0.02,  unguarded: 0.06,  bonus: 1.5,  labour: 1.5, watch: 3,  mood: -1, opinion: 0.6, defence: 0.85, block: "a chain-link cage" },
-  cells:     { tier: 2, name: "Holding cells",   cap: 3, guarded: 0.004, unguarded: 0.03,  bonus: 1.25, labour: 1,   watch: 4,  mood: 0,  opinion: 1,   defence: 1,    block: "barred cells" },
-  jailhouse: { tier: 3, name: "Jailhouse",       cap: 8, guarded: 0.002, unguarded: 0.015, bonus: 1.1,  labour: 0.5, watch: 99, mood: 0,  opinion: 1.1, defence: 1.25, block: "a jailhouse block" },
+  lockup:    { tier: 1, name: "Makeshift cells", cap: 2, guarded: 0.02, unguarded: 0.06, bonus: 1.5,  labour: 1.5, watch: 3,  mood: -1, opinion: 0.6, defence: 0.85, block: "a chain-link cage" },
+  cells:     { tier: 2, name: "Holding cells",   cap: 3, get guarded() { return PRISON.ESCAPE.guarded; }, get unguarded() { return PRISON.ESCAPE.unguarded; }, bonus: 1.25, labour: 1, watch: 4, mood: 0, opinion: 1, defence: 1, block: "barred cells" },
+  jailhouse: { tier: 3, name: "Jailhouse",       cap: 8, get guarded() { return PRISON.ESCAPE.guarded / 2; }, get unguarded() { return PRISON.ESCAPE.unguarded / 2; }, bonus: 1.1, labour: 0.5, watch: 99, mood: 0, opinion: 1.1, defence: 1.25, block: "a jailhouse block" },
 };
 // By tier number (0: none).
 export const JAIL_TIERS = [null, JAIL.lockup, JAIL.cells, JAIL.jailhouse];
 // Older saves: prisoners beyond the cells sit in a shed (nobody new is put there).
-export const SHED = { tier: 0, name: "Shed", cap: 0, guarded: 0.08, unguarded: 0.08, bonus: 1.5, labour: 1.5, watch: 3, mood: -1, opinion: 0.6, defence: 0.85 };
+export const SHED = { tier: 0, name: "Shed", cap: 0, get guarded() { return PRISON.ESCAPE.shed; }, get unguarded() { return PRISON.ESCAPE.shed; }, bonus: 1.5, labour: 1.5, watch: 3, mood: -1, opinion: 0.6, defence: 0.85 };
 export const PRISON = {
   CELL_CAP: 3, FOOD: 1, WATER: 1,
   ESCAPE: { guarded: 0.004, unguarded: 0.03, shed: 0.08, unfed: 0.04, road: 0.05, vehicle: 0.02, lowMood: 20, lowMoodMult: 1.25 },
@@ -161,7 +164,8 @@ export const PRISON = {
     // Sabotage: under lowMood, a chance a day of spoiling a little of what they worked on (how much, by task).
     sabotage: { chance: 0.04, build: 3, farm: 3, water: 3, kitchen: 2, wood: 10, scrap: 2, upkeep: 0 },
     tire: { full: { health: 0, mood: -0.5 }, short: { health: -0.5, mood: -1 }, starve: { health: -1.5, mood: -2 }, none: { health: -3, mood: -3 } },
-    goodDay: 0.4, recruitPerDay: 0.01, recruitMax: 0.4, askPerDay: 0.004, askMax: 0.1,
+    goodDay: 0.3, // was 0.4 before mood counted in the work (×0.6–1.15): a sullen, unskilled prisoner on Short (0.27) does not count
+    recruitPerDay: 0.01, recruitMax: 0.4, askPerDay: 0.004, askMax: 0.1,
   },
 };
 // What a prisoner can be set to do (LABOUR above). out: what a full-output worker adds, for the UI.
@@ -254,7 +258,7 @@ export function escapeKit(p) {
 }
 export function labourOutput(state, p, base = null) {
   const task = taskOf(p);
-  if (task === "idle" || !p.at || p.at.kind !== "base") return 0;
+  if (task === "idle" || !p.at || p.at.kind !== "base" || p.awaiting) return 0; // awaiting: tied up in the yard (settle)
   const b = base || baseById(state, p.at.baseId);
   if (!b || health(p) < PRISON.LABOUR.minHealth || underAttack(state, b)) return 0;
   if (isShelter(b) && !tasksAt(state, b).includes(task)) return 0; // nothing of that kind to do at a shelter
