@@ -2274,6 +2274,13 @@ function drawObject(k, px, py, cs, n, cell = null) {
       ctx.strokeStyle = "#2a3038"; ctx.strokeRect(px + cs * 0.15, py + cs * 0.1, cs * 0.7, cs * 0.8);
       ctx.beginPath(); ctx.moveTo(cx, py + cs * 0.1); ctx.lineTo(cx, py + cs * 0.9); ctx.stroke();
       break;
+    case "gunsafe": // sim/locks.js: a gun safe, dark steel with a brass dial
+      ctx.fillStyle = "#33383d"; ctx.fillRect(px + cs * 0.18, py + cs * 0.12, cs * 0.64, cs * 0.76);
+      ctx.strokeStyle = "#15181b"; ctx.strokeRect(px + cs * 0.18, py + cs * 0.12, cs * 0.64, cs * 0.76);
+      ctx.strokeStyle = "#5c636b"; ctx.strokeRect(px + cs * 0.24, py + cs * 0.18, cs * 0.52, cs * 0.64);
+      ctx.fillStyle = "#d9b23a"; ctx.beginPath(); ctx.arc(cx - cs * 0.05, cy, cs * 0.09, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#8a939c"; ctx.fillRect(px + cs * 0.62, cy - cs * 0.12, cs * 0.05, cs * 0.24);
+      break;
     case "cabinet": case "counter":
       ctx.fillStyle = k === "counter" ? "#7a6a58" : "#6a5440"; ctx.fillRect(px + cs * 0.1, py + cs * 0.25, cs * 0.8, cs * 0.5);
       ctx.strokeStyle = "#3a2c20"; ctx.strokeRect(px + cs * 0.1, py + cs * 0.25, cs * 0.8, cs * 0.5);

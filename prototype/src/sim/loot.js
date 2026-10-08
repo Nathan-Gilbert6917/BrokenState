@@ -335,3 +335,9 @@ export function rollAreaArrows(state, tileId, areaType, boxKind, salt = "") {
 
 // Does an item fit a place (shares a theme tag)? place: tags array.
 export const fitsTags = (key, tags) => (ITEM_TAGS[key] || []).some((t) => tags.includes(t));
+
+// Gun safes and gun cases (gunsafes.js GUN_FINDS, SEARCH_TOOLS; docs/weapons-overhaul-plan.md section 19).
+Object.assign(ITEM_TAGS, {
+  powerdrill: ["tools", "garage", "industry", "farm", "home"], anglegrinder: ["tools", "industry", "garage", "military"],
+  riflecase: ["hunt", "guns", "home", "farm", "travel", "police", "military", "outdoor"], pistolcase: ["guns", "home", "police", "travel", "crime", "hunt"],
+});

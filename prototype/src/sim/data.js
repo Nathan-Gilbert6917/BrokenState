@@ -492,3 +492,14 @@ Object.assign(GEAR, {
   snarewire: { name: "Snare wire",   slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, weight: 0.4, cat: "tools", desc: "A coil of brass wire: a line of 8 snares (team order, 2 hours). Quiet; about a rabbit a day in good country. The wire stays with the line and comes back when it is lifted." },
 });
 // Where they turn up: loot.js SITE_FINDS (their own dice, so adding them changes no other loot roll).
+
+// ---------- gun safes and gun cases (gunsafes.js, locks.js; docs/weapons-overhaul-plan.md section 19) ----------
+// The safe-cracking tools (carried, never worn: locks.js reads them on the person) and the gun cases, which hold a gun
+// and a little ammo (item.contents, item.sup; item.locked: a cheap lock on it). Where they turn up: gunsafes.js
+// GUN_FINDS and SEARCH_TOOLS (their own dice, so adding them changes no other loot roll).
+Object.assign(GEAR, {
+  powerdrill:   { name: "Cordless power drill", slot: "pack", skill: null, power: 0, req: 0, value: 25, noise: 0, dur: 3, drill: true, weight: 2.2, cat: "tools", desc: "A drill with a box of cobalt bits and two charged batteries. Drills the lock out of a gun safe in a raid: 1 + 0.05 a Mechanics point of progress an action (a gun cabinet takes 2, a gun safe 6, an armoury safe 12), loud (Heat about +2 an action, wakes everything within 8 tiles each turn). The bits are good for 3 safes." },
+  anglegrinder: { name: "Angle grinder",        slot: "pack", skill: null, power: 0, req: 0, value: 35, noise: 0, dur: 4, grind: true, weight: 3, cat: "tools", desc: "A cordless grinder and a stack of cutting discs: cuts a gun safe open twice as fast as a drill, louder still (Heat about +3 an action, wakes everything within 11 tiles each turn), and at night the sparks give the user away. The discs are good for 4 safes." },
+  riflecase:    { name: "Hard rifle case",      slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, bulky: true, gunCase: { long: 1, hand: 0, small: 2 }, weight: 3.5, cat: "containers", desc: "A foam-lined hard case for one long gun and a couple of small things, some with a cheap lock. A gun inside is not to hand: it does not wear and cannot be fired. Opening a locked one takes a blade or a crowbar (1 action and Heat +1 in a raid; free at a base or a camp)." },
+  pistolcase:   { name: "Pistol case",          slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, gunCase: { long: 0, hand: 1, small: 2 }, weight: 1, cat: "containers", desc: "A small lockable case for a handgun and a box of rounds. A gun inside is not to hand: it does not wear and cannot be fired. Opening a locked one takes a blade or a crowbar (1 action and Heat +1 in a raid; free at a base or a camp)." },
+});

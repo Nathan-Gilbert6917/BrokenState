@@ -53,6 +53,7 @@ import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./in
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { fightByNumbers } from "./breakoff.js";
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
+import { safeTurn } from "./locks.js"; // gun safes: a charge set on one goes off at the start of the next turn
 import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList, siteList } from "./zombietypes.js"; // a hive's special dead
 import { ZTYPES, MIDDEAD } from "./hiveconst.js";
 import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
@@ -503,6 +504,7 @@ export const CELL = {
   locker:  { walk: false, cover: 2, los: true,  name: "Lockers" },
   cabinet: { walk: false, cover: 1, los: false, name: "Cabinet" },
   counter: { walk: false, cover: 1, los: false, name: "Counter" },
+  gunsafe: { walk: false, cover: 2, los: false, name: "Gun safe" }, // locks.js / gunsafes.js: a steel safe, waist to head high
   vehicle: { walk: false, cover: 2, los: true,  name: "Your vehicle" },
   // Base defences against hordes and the inside of a hive (defences.js, hives.js). trap: what happens to one of
   // the dead that steps in (spikes hurt, a trench stops it for the turn).
@@ -2384,6 +2386,7 @@ function startPlayerTurn(state, b) {
   if (b.floors && b.viewFloor != null && b.viewFloor !== (b.floor || 0)) setFloor(b, b.viewFloor); // the floor the player was looking at
   burnRound(b); // throwables.js: the flames burn whoever stands in them; fires, smoke and flares burn down
   acidRound(b, ["player"], true); // acid.js: your people standing in a spitter's acid; the pools dry up a round
+  if (b.raid) safeTurn(state, b); // locks.js: a charge set on a gun safe last turn goes off
   for (const u of b.units) {
     if (u.side !== "player") continue;
     u.ow = false; u.hunker = false;

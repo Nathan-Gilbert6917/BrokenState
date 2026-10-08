@@ -180,6 +180,7 @@ export function detectRange(b, e, mover, perks = true) {
   let r = e.kind === "zombie" ? Math.min(range, 5) : range;
   if (perks && mover.sneak) r = Math.max(1, r - mover.sneak);
   if (b.night) r = Math.max(2, Math.round(r * STEALTH.NIGHT_DETECT) + lightSeen(mover)); // a light is seen from further off
+  if (b.night && mover.sparks === b.turn) r += 2; // locks.js: an angle grinder's sparks this turn (SAFE.grind.sparks)
   // A person looks the way they face: behind them only what they hear (half the range). The dead have no front.
   if (e.kind === "human" && isBehind(mover, e)) r = Math.max(1, Math.ceil(r * STEALTH.BEHIND_DETECT));
   if (perks && mover.ghost) r = Math.min(r, 2);
