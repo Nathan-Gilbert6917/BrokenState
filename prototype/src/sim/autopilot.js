@@ -12,7 +12,8 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
-import { fitFromPool } from "./gunmods.js"; // the autopilot fits loose gun attachments
+import { fitFromPool } from "./gunmods.js";
+import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
 import {
@@ -24,7 +25,7 @@ import { startOrder, resumeQueue, besideWater, FETCH_WATER_HOURS } from "./order
 import { estimatePlan } from "./plans.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
 import { crawlAutoStep } from "./citycrawl.js";
-import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand } from "./trade.js";
+import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand, gearBuyPrice } from "./trade.js";
 import { autoCaravanTrade, launchCaravan, caravanEstimate } from "./caravans.js";
 import { governorVehicles, idleDaily } from "./vehicletrade.js"; // buying and selling vehicles
 import { radioDeals, pendingDeal, dealCaravanForm, matchGear, goodsWeight, cancelRadioDeal } from "./radiotrade.js"; // radio deals your caravan fetches
@@ -64,6 +65,8 @@ import { ensureDiplo, joinProblem, joinWar } from "./diplomacy.js";
 // claims by water, through the team orders orders.js gives them ("Claim this tile" / "Dig a well": CLAIM_ORDER,
 // WELL_ORDER). Read through CL and guarded, so the governor stays whole if the module is ever missing.
 import * as CL from "./claims.js";
+import { baseAmmo, teamAmmo, partyCals, wantedKey, spareRounds } from "./ammo.js"; // rounds by calibre: what fits the guns there
+import { supplyAmt } from "./rounds.js"; // "ammo": every round there, any calibre
 const CLAIM_ORDER = "claim", WELL_ORDER = "well";
 const claimsReady = () => typeof CL.canClaim === "function" && typeof CL.playerClaims === "function";
 import { jobTripCands, jobById, activeJobs } from "./jobs.js";
@@ -240,6 +243,7 @@ export function autopilotHour(state) {
     else if (hourOfDay(state) === EMERGENCY.hour) emergencyTrips(state); // a second look in the afternoon: thirst does not wait for the morning
     for (const b of state.bases) govWatch(state, b); // the night watch's roster (before the roles: planRoles 1a)
     for (const b of state.bases) governRoles(state, b);
+    if (hourOfDay(state) === PLAN_HOUR) autoFieldRepairs(state); // repair.js: a team's urgent gear mended with a field kit
     resolvePending(state);
     autoFires(state);
   } catch (e) {
@@ -271,7 +275,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.medical) planTreatment(state, base);
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building) planBuilds(state, base, areas);
-  if (areas.production) { govOrders(state, base); planCrafts(state, base); }
+  if (areas.production) { govOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench
 }
 // Roles at one base (after the day's trip is planned). Returns the number of role changes.
 export function governRoles(state, base, areas = ALL_AREAS) {
@@ -484,9 +488,10 @@ function dealCaravanPlan(state, deal) {
   const need = needs(state, base), spare = tradeSpare(state, base);
   for (const [k, q] of Object.entries(deal.give.supplies || {})) {
     if (q <= 0) continue;
-    if ((need[k] ?? 0) > 0.8) return { why: `${base.name} is short of ${k}` };
-    if ((k === "food" || k === "ammo") && q > spare[k]) return { why: `${base.name} cannot spare ${q} ${k}` };
-    if ((base.stock[k] || 0) < q) return { why: `${base.name} has only ${Math.floor(base.stock[k] || 0)} ${k}` };
+    const kk = SUPPLIES[k] && SUPPLIES[k].round ? "ammo" : k; // rounds by calibre count as ammo here (ammo.js)
+    if ((need[kk] ?? 0) > 0.8) return { why: `${base.name} is short of ${kk}` };
+    if ((kk === "food" || kk === "ammo") && q > spare[kk]) return { why: `${base.name} cannot spare ${q} ${keyWord(k)}` };
+    if (supplyAmt(base.stock, k) < q) return { why: `${base.name} has only ${Math.floor(supplyAmt(base.stock, k))} ${keyWord(k)}` };
   }
   if (!matchGear(base.armory, deal.give.gear || [])) return { why: "the items are not in the armory" };
   const home = atBase(state, base.id);
@@ -564,7 +569,7 @@ function reserveRadio(state) {
   const rs = reserveStatus(state, h);
   const n = Math.max(1, mouthsAt(state, h).heads); // everyone fed at the hub (upkeep.js)
   const keep = (k) => (k === "food" ? n * (foodTarget(state, h) * 1.2 + 10) : rs[k] ? rs[k].target * 1.3 + 2 : Infinity);
-  const spare = (k) => Math.max(0, Math.floor((h.stock[k] || 0) - keep(k)));
+  const spare = (k) => Math.max(0, Math.floor(supplyAmt(h.stock, k) - keep(k)));
   const short = [...RESERVE_KEYS, "food"].filter((k) => rs[k] && rs[k].short).sort((a, b) => rs[a].have / Math.max(1, rs[a].target) - rs[b].have / Math.max(1, rs[b].target));
   const pays = Object.keys(RADIO_CAP).filter((k) => spare(k) >= 3).sort((a, b) => spare(b) * SUPPLIES[b].value - spare(a) * SUPPLIES[a].value);
   if (!short.length || !pays.length) return false;
@@ -720,7 +725,7 @@ function pickChoice(state, card, opts, p) {
   if (/^Raiders heading for /.test(t)) return raidWarningChoice(state, card, opts, P);
   if (/ asks for help$/.test(t)) {
     const h = hub(state);
-    const ammo = h.stock.ammo || 0;
+    const ammo = baseAmmo(state, h); // ammo.js: the rounds that fit its guns
     const fighters = atBase(state, h.id).sort((a, b) => combatPower(b) - combatPower(a));
     if (P.raid && fighters.length >= 7 && fighters.slice(0, 3).reduce((a, s) => a + combatPower(s), 0) >= 14) return find(/^Send a squad/) || find(/^Ignore/);
     const spare = P.reserves ? Math.max(200, reserveStatus(state, h).ammo.target + 40) : P.name === "Cautious" ? 200 : 110;
@@ -751,7 +756,7 @@ function pickChoice(state, card, opts, p) {
   if (/^The dead ahead/.test(t)) {
     const n = Number((/About (\d+)/.exec(card.text || "") || [0, 8])[1]);
     const ms = p ? partyMembers(state, p) : [];
-    const power = p ? ms.reduce((a, s) => a + combatPower(s), 0) * armedFactor(ms, p.supplies.ammo || 0, p.supplies.arrows || 0, { need: (k) => (n * k) / Math.max(1, ms.length), short: 0.5 }) : 0; // events.js: the bows shoot arrows
+    const power = p ? ms.reduce((a, s) => a + combatPower(s), 0) * armedFactor(ms, p.supplies, p.supplies.arrows || 0, { need: (k) => (n * k) / Math.max(1, ms.length), short: 0.5 }) : 0; // events.js: the bows shoot arrows
     if (P.raid && power > n * 0.9) return find(/^Fight/);
     return (chance(/^Sneak around/) >= P.risk ? find(/^Sneak around/) : null) || find(/long way/);
   }
@@ -782,7 +787,7 @@ function pickChoice(state, card, opts, p) {
   if (/^Cold feet/.test(t)) return find(/^Convince/);
   if (/^Horde of /.test(t)) return (p && p.vehicle && partyFuelOf(state, p) >= 8 ? find(/^Outrun/) : null) || find(/^Hide/);
   if (card.gathering != null) return find(/^Break up/) || find(/^Back off/); // hivebirth.js: sent to break up a gathering (gatheringCands)
-  if (/^A horde of /.test(t)) return (P.raid && (p?.supplies.ammo || 0) >= 30 ? find(/killzone/) : null) || find(/^Back off/);
+  if (/^A horde of /.test(t)) return (P.raid && teamAmmo(state, p, false) >= 30 ? find(/killzone/) : null) || find(/^Back off/);
   if (/^Wrecked car/.test(t)) return find(/^Restore/) || find(/^Strip/);
   return null;
 }
@@ -950,7 +955,8 @@ function waterRunWanted(state, base) {
 }
 // Scrap (or parts) held back for water at a base: other builds, repairs and crafts leave it alone.
 const WATER_BUILDS = ["well", "rain_catcher", "cistern", "boiler", "water_barrel"]; // the boiler: safe water (worm.js)
-const waterHold =(state, base, k = "scrap") => (base.owner == null || base.owner === "player" ? waterPlan(state, base).hold[k] || 0 : 0);
+// Also what an urgent gear repair waits for (repair.js repairHold): the stores keep it for the repair.
+const waterHold =(state, base, k = "scrap") => (base.owner == null || base.owner === "player" ? (waterPlan(state, base).hold[k] || 0) + repairHold(state, base, k) : 0);
 
 // ---------- food and the winter (the food planner) ----------
 // Days of food (fresh + preserved) a base should hold now. Crops take weeks, nothing grows outdoors in winter and
@@ -1259,7 +1265,7 @@ function chooseApproach(state, p, e) {
   const members = partyMembers(state, p);
   const power = members.reduce((a, s) => a + combatPower(s), 0);
   if (P.name === "Cautious" || e.guarded || t.infection > 0.5) return P.raid && power >= 16 && !e.guarded ? "normal" : "sneak";
-  if (P.raid && power >= 12 && (p.supplies.ammo || 0) >= members.length * 18) return "loud";
+  if (P.raid && power >= 12 && teamAmmo(state, p, false) >= members.length * 18) return "loud";
   return t.infection > 0.35 ? "sneak" : "normal";
 }
 
@@ -1272,7 +1278,7 @@ function shouldExtract(state, p, e) {
   if (members.some((s) => s.health < P.hurtStop)) return true;
   const room = cargoRoom(state, p);
   if (foundLoad(e) >= room * 0.95) return true;
-  if ((p.supplies.ammo || 0) < members.length * 2 && e.heat >= 25) return true;
+  if (teamAmmo(state, p, false) < members.length * 2 && e.heat >= 25) return true;
   const recent = e.log.slice(-2);
   return e.hours >= 2 && recent.length === 2 && recent.every((l) => /Nothing useful/.test(l));
 }
@@ -1314,16 +1320,28 @@ function handleTrade(state) {
   let budget = Object.entries(spare).reduce((a, [k, q]) => a + (q > 0 ? q * sellPrice(state, f, k, speech, q) : 0), 0);
   const ask = {};
   const caps = { meds: 10, parts: 6, food: 40, fuel: 20, ammo: 120, scrap: 40, water: 20, wood: 600 }; // wood: 60 kg of firewood
+  for (const k of ["gunparts", "carparts", "electronics"]) caps[k] = Math.max(1, Math.min(6, partDeficit(state, home, k))); // repair.js: up to the reorder level
   let askValue = 0;
   // Only what they can spare and the team can carry home (trade.js refuses the whole deal otherwise).
   let room = cargoRoom(state, p);
+  // A Kevlar kit or a field repair kit from their wares while the base is short of one (repair.js kitWants).
+  const askGear = [];
+  for (const k of kitWants(state, home)) {
+    const it = (f.wares || []).find((x) => x && x.key === k);
+    if (!it || budget <= 0) continue;
+    const cost = gearBuyPrice(state, f, it, speech);
+    if (cost > budget || (GEAR[k].weight || 1) > room) continue;
+    askGear.push(it); askValue += cost; budget -= cost; room -= GEAR[k].weight || 1;
+  }
   for (const k of Object.keys(need).sort((a, b) => need[b] - need[a])) {
     if (need[k] < 1.2 || budget <= 0 || !SUPPLIES[k]) continue;
-    const q = maxBuyable(state, f, k, speech, budget, Math.min(caps[k] || 10, Math.floor(room / SUPPLIES[k].weight)));
+    const kk = k === "ammo" ? wantedKey(partyCals(state, p), ctx.theirHave) : k; // ammo.js: generic ammo asked for as the rounds that fit the team's guns
+    if (!kk) continue;
+    const q = maxBuyable(state, f, kk, speech, budget, Math.min(caps[k] || 10, Math.floor(room / SUPPLIES[kk].weight)));
     if (q <= 0) continue;
-    const cost = q * buyPrice(state, f, k, speech, q);
-    room -= q * SUPPLIES[k].weight;
-    ask[k] = q;
+    const cost = q * buyPrice(state, f, kk, speech, q);
+    room -= q * SUPPLIES[kk].weight;
+    ask[kk] = q;
     askValue += cost;
     budget -= cost;
   }
@@ -1341,11 +1359,12 @@ function handleTrade(state) {
   if (askValue > 0 && offerValue >= askValue && p.apEnvoy !== f.id) { // an envoy keeps its goods for the gift
     state.trade.offer = offer;
     state.trade.ask = ask;
+    state.trade.askGear = askGear;
     const res = executeTrade(state);
     const list = (o) => Object.entries(o).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
     if (/^Traded/.test(res)) {
       g.stats.trades++;
-      text = `traded ${list(offer)} for ${list(ask)}`;
+      text = `traded ${list(offer)} for ${[list(ask), ...askGear.map((x) => x.name)].filter(Boolean).join(", ")}`;
     } else text = `no deal (${res})`; // e.g. more than the team can carry
   }
   if (!f.pact) {
@@ -1355,7 +1374,8 @@ function handleTrade(state) {
   // An envoy (envoyCandidate) gives what it brought and did not trade as a gift while their goodwill is short.
   if (p.apEnvoy === f.id && f.goodwill < ALLIANCE.GOODWILL + 10 && state.trade) {
     const gift = {};
-    for (const k of ["food", "ammo", "meds"]) { const q = Math.floor((p.supplies[k] || 0) - (keep[k] || 0)); if (q > 0) gift[k] = q; }
+    for (const k of ["food", "meds"]) { const q = Math.floor((p.supplies[k] || 0) - (keep[k] || 0)); if (q > 0) gift[k] = q; }
+    Object.assign(gift, spareRounds(p.supplies, keep.ammo, partyCals(state, p))); // ammo.js: rounds above the keep, the ones its guns need least
     if (Object.keys(gift).length) {
       state.trade.offer = gift;
       state.trade.ask = {};
@@ -1451,7 +1471,7 @@ function tradeSpare(state, h = hub(state)) {
   // A winter outlook that comes up short pays no food at all: foodTarget nets off crops that may only ripen in spring,
   // after the stores run out (seed 5062: short by the outlook, yet 66 food went to a caravan on day 72).
   const short = winterActive(state, h) && winterPlan(state, h).short > 0;
-  return { food: short ? 0 : Math.max(0, Math.floor(edibleFood(h) - foodTarget(state, h) * 1.5 * heads)), ammo: Math.max(0, Math.floor((h.stock.ammo || 0) - Math.max(campaignAmmoTarget(state), n * 15))) };
+  return { food: short ? 0 : Math.max(0, Math.floor(edibleFood(h) - foodTarget(state, h) * 1.5 * heads)), ammo: Math.max(0, Math.floor(baseAmmo(state, h) - Math.max(campaignAmmoTarget(state), n * 15))) };
 }
 // Hub needs per supply, 0 (plenty) .. 3 (urgent). Drives trips, trades and some buildings.
 function needs(state, h = hub(state)) { // h: a base leader's own base (stewardSupplies); the hub otherwise
@@ -1482,13 +1502,17 @@ function needs(state, h = hub(state)) { // h: a base leader's own base (stewardS
     scrap: pick(st.scrap || 0, [[20, 2.5], [45, 1.6], [90, 0.9], [Infinity, 0.35]]),
     parts: pick(st.parts || 0, [[2, 2], [6, 1.2], [12, 0.6], [Infinity, 0.2]]),
     // The hive campaign's stockpile (campaignAmmoWant: up to 2.4, under water's and food's 2.5+ when those are short).
-    ammo: Math.max(pick(st.ammo || 0, [[n * 6, 2], [n * 15, 0.9], [n * 40, 0.35], [Infinity, 0.1]]), campaignAmmoWant(state)),
+    ammo: Math.max(pick(baseAmmo(state, h), [[n * 6, 2], [n * 15, 0.9], [n * 40, 0.35], [Infinity, 0.1]]), campaignAmmoWant(state)),
     fuel: Math.max(vehicle ? pick(st.fuel || 0, [[12, 1.6], [35, 0.8], [Infinity, 0.2]]) : 0.15, heatFuelWant(state, h).want, campaignFuelWant(state)), // needs-gauges: winter heating; the campaign's fires
     // Empty jars for the preserving kitchen (storage.js), once there is one.
     jars: count(h, "kitchen") ? pick(st.jars || 0, [[4, 1.3], [12, 0.7], [Infinity, 0.1]]) : 0,
     // Firewood (woodcutting.js): bought only when the cold is near or here and the store is low; never sold (0.9).
     wood: (() => { const w = woodNeed(state, h, returning(state, h)); return w.short && (w.cold || w.toCold <= 14 || w.boiler > 0) && w.have < w.need * 0.3 ? 1.6 : 0.9; })(), // the boiler (worm.js) burns it in every season
   };
+  // Parts by kind (repair.js partNeeds): bought below their reorder levels, never sold; machine parts gain the urgency.
+  const pn = partNeeds(state, h);
+  for (const k of ["gunparts", "carparts", "electronics"]) out[k] = pn[k];
+  out.parts = Math.max(out.parts, pn.parts > 1.5 ? pn.parts : 0);
   return persona(state).reserves ? reserveNeeds(state, h, out) : out;
 }
 // Cautious: a supply below its reserve target is wanted (1.6, up to 3 when it is gone); one well above it
@@ -1571,8 +1595,9 @@ export function reserveStatus(state, base = hub(state)) {
   out.meds = row(st.meds || 0, sick + buffer, sick > 0 ? (st.meds || 0) / sick : null, `${sick} to treat now + ${buffer} spare`);
   const fight = 6 * Math.min(8, n) + 3 * n;
   const battles = Math.min(4, 2 + threat);
-  out.ammo = row(st.ammo || 0, fight * battles, null, `${battles} break-in battles at about ${fight} each (threat ${threat})`);
-  out.ammo.battles = Math.round(((st.ammo || 0) / fight) * 10) / 10;
+  const rounds = baseAmmo(state, base); // ammo.js: the rounds that fit the guns here
+  out.ammo = row(rounds, fight * battles, null, `${battles} break-in battles at about ${fight} each (threat ${threat}): rounds that fit the guns here`);
+  out.ammo.battles = Math.round((rounds / fight) * 10) / 10;
   const flood = count(base, "floodlights") ? 4 : 0;
   const heat = heatFuelWant(state, base); // needs-gauges: heating through the winter
   const heatFuel = heat.want ? heat.need : 0;
@@ -1743,7 +1768,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   }
   if (areas.food && !gov(state).noHunting && foodDays < landGoal) {
     const ahead = Math.max(1, Math.ceil(people.length * LAND_AP.share));
-    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st.ammo || 0, st.arrows || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
+    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st, st.arrows || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
     if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, fishWorkHands(state, base, landGoal)))) give(s, "fish");
   }
 
@@ -1759,7 +1784,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
     let d = baseWalls(base) * 2;
     const mult = (s) => (guards.has(s.id) || (want.get(s.id) || {}).role === "guard" ? 1.5 : base.alert ? 1.3 : 0.8);
     for (const s of people) d += combatPower(s) * mult(s);
-    return d * armedFactor(people, st.ammo || 0, st.arrows || 0, { short: 0.7, weight: mult }); // factions.js baseDefense: the bows' arrows too
+    return d * armedFactor(people, st, st.arrows || 0, { short: 0.7, weight: mult }); // factions.js baseDefense: the bows' arrows too
   };
   const addGuards = (target, cap) => {
     if (!areas.defence) return;
@@ -1840,8 +1865,11 @@ function planRoles(state, base, areas = ALL_AREAS) {
     }
   }
 
-  // 8. One crafter while the craft queue has a job someone here can do.
-  const job = areas.production && craftQueue(base).find((j) => people.some((s) => canAttempt(s, CRAFTS[j.recipe])));
+  // 8. One crafter while the craft queue has a job someone here can do; a repair waiting for one (repair.js) first.
+  const rep = areas.production && repairCrafterWanted(state, base);
+  const repper = rep && ranked("craft", (x) => skill(x, rep.skill), (x) => !x.inBed && skill(x, rep.skill) >= rep.min)[0];
+  if (repper) give(repper, "craft");
+  const job = !repper && areas.production && craftQueue(base).find((j) => people.some((s) => canAttempt(s, CRAFTS[j.recipe])));
   if (job) {
     const r = CRAFTS[job.recipe];
     const c = ranked("craft", (x) => craftSkill(x), (x) => !x.inBed && canAttempt(x, r))[0]; // the best at Crafting (crafting.js) who may attempt it
@@ -1901,7 +1929,7 @@ function stationWorth(state, base, recipe, station = null) {
     const r = reserveStatus(state, base)[recipe];
     if (r.short && (st.scrap || 0) >= (recipe === "ammo" ? (r.low ? 3 : 10) : (r.low ? 2 : 8)) && (recipe === "ammo" || (st.food || 0) >= n * 6)) return true;
   }
-  if (recipe === "ammo") return (byOrder || (st.ammo || 0) < Math.max(n * 15 + 60, campaignAmmoTarget(state, base))) && (st.scrap || 0) >= 30; // the hive campaign's stockpile first
+  if (recipe === "ammo") return (byOrder || baseAmmo(state, base) < Math.max(n * 15 + 60, campaignAmmoTarget(state, base))) && (st.scrap || 0) >= 30; // the hive campaign's stockpile first
   if (recipe === "meds") return (byOrder || (st.meds || 0) < Math.max(5, n)) && (st.scrap || 0) >= 15 && (st.food || 0) >= n * 6;
   if (recipe === "parts") return (byOrder || (st.parts || 0) < 8) && (st.scrap || 0) >= 45 && atBase(state, base.id).some((s) => skill(s, "mechanics") >= 4);
   if (recipe === "preserve") return preserveWorth(state, base);
@@ -2120,6 +2148,10 @@ function buildWishes(state, base) {
   // Crafting benches (buildings.js BENCH): all but the simple field recipes need one, and crafters work faster and
   // better at one. A crafting bench where someone is on the Craft role or a job is queued, after the essentials above.
   const benchQueued = base.construction.some((c) => BUILDINGS[c.type] && BUILDINGS[c.type].family === "bench");
+  // Fighters' gear worn past an urgent repair (repair.js benchWanted): the bench it needs, saved for.
+  const bw = !benchQueued ? benchWanted(state, base) : 0;
+  if (bw && !benchTier(base, true)) add("craftbench", "a bench to mend the fighters' worn gear", true);
+  else if (bw >= 2 && benchTier(base, true) === 1 && best("mechanics") >= BUILDINGS.workbench.req.mechanics) add("workbench", "a workbench to mend the fighters' guns and armour", true);
   if (!benchTier(base, true) && !benchQueued && (here.some((s) => s.role === "craft") || craftQueue(base).length > 0)) add("craftbench", "a bench for the crafters (faster, better gear; most recipes need one)");
   for (const w of jailWishes(state, base, best)) out.push(w);
   if (!isHub) return out;
@@ -2134,7 +2166,7 @@ function buildWishes(state, base) {
   // goes up and is upgraded first. Saved for while the ammo is below what would set the ammo bench to work
   // (stationWorth: 15 a head + 60, or the hive campaign's stockpile); the hub used to start with an ammo bench.
   if (!countAll(base, "ammo_bench") && !queued("ammo_bench")) {
-    const ammoLow = (st.ammo || 0) < Math.max(here.length * 15 + 60, campaignAmmoTarget(state, base));
+    const ammoLow = baseAmmo(state, base) < Math.max(here.length * 15 + 60, campaignAmmoTarget(state, base));
     const bt = benchTier(base, true);
     if (!bt && !benchQueued) add("craftbench", "a crafting bench, the first step to an ammo bench", ammoLow);
     else if (bt === 1 && !benchQueued && best("mechanics") >= BUILDINGS.workbench.req.mechanics) add("workbench", "a workbench: workshop recipes, and an ammo bench needs one", ammoLow);
@@ -2341,6 +2373,8 @@ export function planCrafts(state, base) {
   if (have("ragboots") < 2 && tryCraft(["ragboots"], "rag-wrapped boots: less Heat on searches", 50)) return;
   if (have("ghillie") + have("woodghillie") < 1 && tryCraft(["woodghillie", "ghillie"], "a ghillie wrap: less Heat in camp and on searches", 60)) return; // the woodland suit once the Bushcraft Field Guide is read
   if ((st.fuel || 0) >= 20 && base.armory.some((it) => it.key === "bottle") && have("molotov") < 3 && hordeThreat(state, base).any && tryCraft(["molotov"], "Molotovs for when the dead come", 0)) return;
+  // Field repair kits (repair.js): kept on hand for the teams, made at a workshop from spare gun and machine parts.
+  if (have("repairkit") < (base.type === "hub" ? 2 : 1) && (st.gunparts || 0) >= 3 && tryCraft(["repairkit"], "a field repair kit for the teams", 30)) return;
   if (lacking("arms") > 0 && tryCraft(["padding"], "cheap arm guards", 65)) return;
   if (lacking("legs") > 0) tryCraft(["shinguards"], "cheap shin guards", 65);
 }
@@ -2551,7 +2585,7 @@ function planTrip(state) {
     held.unshift(...held.splice(held.indexOf(raidFor), 1));
     const f = factionById(state, held[0].location.factionId);
     if (f && f.alive && f.bases.length) {
-      const ammo = Math.min(Math.max(0, (h.stock.ammo || 0) - 60), ransomValue(f, captivesAt(state, f.id)) * 2);
+      const ammo = Math.min(Math.max(0, baseAmmo(state, h) - 60), ransomValue(f, captivesAt(state, f.id)) * 2);
       cands.push({ mission: "rescue", tile: held[0].location.tile, score: 4, crew: 3, why: `get ${first(held[0])} back from ${f.name}`, supplies: { ammo } });
     }
   }
@@ -2695,7 +2729,7 @@ function envoyGoods(state) {
   const goods = {};
   const spare = tradeSpare(state); // never the food the winter plan needs (seed 5062)
   if ((h.stock.food || 0) > n * 30 + 20 && spare.food > 0) goods.food = Math.min(20, Math.floor(h.stock.food - n * 30), spare.food);
-  if ((h.stock.ammo || 0) > n * 15 + 100 && !campaignAmmoWant(state)) goods.ammo = Math.min(60, Math.floor(h.stock.ammo - n * 15 - 60)); // not the campaign's stockpile
+  if (baseAmmo(state, h) > n * 15 + 100 && !campaignAmmoWant(state)) goods.ammo = Math.min(60, Math.floor(baseAmmo(state, h) - n * 15 - 60)); // not the campaign's stockpile
   if ((h.stock.meds || 0) > n + 8) goods.meds = Math.min(4, Math.floor(h.stock.meds - n - 6));
   const value = Object.entries(goods).reduce((a, [k, q]) => a + q * SUPPLIES[k].value, 0);
   return value >= 40 ? goods : null;
@@ -2804,7 +2838,7 @@ function hiveCandidate(state, home, pool) {
   const fires = firesNeeded(state, hive, power, guard, Math.min(P.hiveFires, fuel));
   const d = state.grid.distance(hive.tile, h.tile);
   if (fires != null) {
-    if ((h.stock.ammo || 0) < campaignAmmoTarget(state, h)) return waits("ammo");
+    if (baseAmmo(state, h) < campaignAmmoTarget(state, h)) return waits("ammo");
     c.waits = "storm";
     const ratio = stormRatio(state, hive, power, guard, fires);
     return { mission: "hive", tile: hive.tile, score: 6, crew: HIVE_SQUAD, hive: true,
@@ -2817,7 +2851,7 @@ function hiveCandidate(state, home, pool) {
   c.waits = "fires";
   return { mission: "hive", tile: hive.tile, score: 5, crew: HIVE_SQUAD, hive: true, fireTrip: true,
     why: `set fires around ${hive.name} (guard about ${guard}, ${d} tiles off): the campaign's odds are not there yet (squad ${power.toFixed(1)} against the brood's ${(power / stormRatio(state, hive, power, guard, 0)).toFixed(1)})`,
-    supplies: { ammo: Math.min(40, Math.max(0, (h.stock.ammo || 0) - 20)), meds: 2, fuel: canFire * FIRE_FUEL }, min: { fuel: FIRE_FUEL }, fires: canFire };
+    supplies: { ammo: Math.min(40, Math.max(0, baseAmmo(state, h) - 20)), meds: 2, fuel: canFire * FIRE_FUEL }, min: { fuel: FIRE_FUEL }, fires: canFire };
 }
 // The hive card (hives.js): storm when the odds are there, else set fires while that helps and the fuel lasts
 // (the team then storms on its next orders: teamAct), else back off.
@@ -2830,7 +2864,7 @@ function hiveChoice(state, card, opts, p, find) {
   const guard = hiveForce(state, hive).guard; // the card says how many are packed around it
   const fired = p.apFires || 0;
   // Guns need ammo (an assault rifle 2 a shot): no storm with less than HIVE_AMMO a fighter (fires need none).
-  const ammo = (p.supplies.ammo || 0) + ((p.cargo && p.cargo.supplies && p.cargo.supplies.ammo) || 0);
+  const ammo = teamAmmo(state, p); // ammo.js: rounds that fit their guns
   const armed = ammo >= fit.length * HIVE_AMMO;
   if (armed && fit.length >= HIVE_SQUAD - 1 && stormRatio(state, hive, power, guard, 0) >= P.hiveOdds) return find(/^Storm the hive/);
   const lit = (choice) => { p.apFires = fired + 1; p.apHiveAgain = true; campaignFire(state, hive); return choice; };
@@ -2912,7 +2946,7 @@ function campaignAmmoWant(state) {
   const h = hub(state);
   const target = campaignAmmoTarget(state, h);
   if (!target) return 0;
-  const have = h.stock.ammo || 0;
+  const have = baseAmmo(state, h);
   return have < target * 0.5 ? 2.4 : have < target ? 1.9 : 0;
 }
 // Fuel for the campaign's fires (a trip's hiveFires × FIRE_FUEL, plus the 4 kept back) while the campaign waits for
@@ -2943,13 +2977,13 @@ export function campaignLine(state) {
   const allies = hiveAllies(state, hive).names.map((n) => n.replace(/ \(\d+\)$/, ""));
   const near = state.factions.filter((f) => f.alive && f.known && !isMember(state, f) && f.bases.some((b) => state.grid.distance(b, hive.tile) <= ALLIANCE.HIVE_RANGE)).map((f) => f.name);
   const WAIT = {
-    rest: "the squad to rest between hive missions", home: "enough people to keep the hub safe while the squad is out", squad: "six fit fighters", ammo: `the ammo stockpile (${Math.floor(h.stock.ammo || 0)} of ${target})`,
+    rest: "the squad to rest between hive missions", home: "enough people to keep the hub safe while the squad is out", squad: "six fit fighters", ammo: `the ammo stockpile (${baseAmmo(state, h)} of ${target})`,
     odds: "better odds: a stronger squad, allies near the mound, or fuel for fires", fires: "the next fire trip", storm: "nothing: the storm goes out", far: "a hive within reach", unknown: "a known hive",
   };
   // A storm or fire trip picked this morning that could not get away (launchTrip: rations, a car, a way there) is not out.
   const out = state.parties.some((p) => p.owner === "player" && p.mission === "hive");
   const wait = (c.waits === "storm" || c.waits === "fires") && !out ? "the squad to get away (its rations, a car for the drive, or a way there over land)" : WAIT[c.waits] || "the morning's plan";
-  return `Campaign on ${hive.name} (${state.grid.distance(hive.tile, h.tile)} tiles, guard about ${knownGuard(state, hive.tile)}): ${Math.floor(h.stock.ammo || 0)} of ${target} ammo, ${c.fires} fire${c.fires === 1 ? "" : "s"} set, allies: ${allies.length ? allies.join(", ") : "none yet"}${near.length ? ` (courting ${near.join(", ")})` : ""}. Waiting for ${wait}.`;
+  return `Campaign on ${hive.name} (${state.grid.distance(hive.tile, h.tile)} tiles, guard about ${knownGuard(state, hive.tile)}): ${baseAmmo(state, h)} of ${target} ammo, ${c.fires} fire${c.fires === 1 ? "" : "s"} set, allies: ${allies.length ? allies.join(", ") : "none yet"}${near.length ? ` (courting ${near.join(", ")})` : ""}. Waiting for ${wait}.`;
 }
 function campaignReport(state) {
   const line = campaignLine(state);
@@ -3081,7 +3115,7 @@ function growthChoice(state, card, opts, p, find) {
   const fit = partyMembers(state, p).filter((s) => s.health >= 60);
   const f = growthForce(state, g); // the card shows the guard
   const ratio = squadPower(fit) / (f.count * (f.power / 5.2) * typeStrength({ count: f.count, types: f.types, elite: f.elite }));
-  const ammo = (p.supplies.ammo || 0) + ((p.cargo && p.cargo.supplies && p.cargo.supplies.ammo) || 0);
+  const ammo = teamAmmo(state, p); // ammo.js: rounds that fit their guns
   if (fit.length >= 3 && ammo >= fit.length * 8 && ratio >= P.hiveOdds) return find(/^Fight its guard/);
   return find(/^Back off/);
 }
@@ -3120,7 +3154,7 @@ function conquestCandidate(state, home, pool) {
   if (today - (g.lastAssault ?? -99) < ASSAULT_REST) return null;
   if (home.length - HIVE_SQUAD < Math.max(HIVE_KEEP, Math.ceil(home.length * P.homeFrac * 0.6))) return null;
   const squad = [...pool].filter((s) => s.health >= ASSAULT_HEALTH && !s.woundInfected).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id).slice(0, HIVE_SQUAD);
-  if (squad.length < ASSAULT_MIN || (h.stock.ammo || 0) < squad.length * ASSAULT_AMMO + 30) return null;
+  if (squad.length < ASSAULT_MIN || baseAmmo(state, h) < squad.length * ASSAULT_AMMO + 30) return null;
   const power = squadValue(squad);
   const outsiders = state.factions.filter((f) => f.alive && !isMember(state, f));
   const onlyFoes = outsiders.length > 0 && outsiders.every((f) => attitude(f) === "Hostile");
@@ -3188,7 +3222,7 @@ function assaultChoice(state, card, opts, p, find) {
   const f = card.assault ? factionById(state, card.assault.factionId) : null;
   if (!p || !f || !f.alive || !f.bases.includes(card.assault.tile)) return find(/^Back off/);
   const fit = partyMembers(state, p).filter((s) => s.health >= 50);
-  const ammo = (p.supplies.ammo || 0) + ((p.cargo && p.cargo.supplies && p.cargo.supplies.ammo) || 0);
+  const ammo = teamAmmo(state, p); // ammo.js: rounds that fit their guns
   const odds = teamAssaultOdds(state, p, assaultForce(state, f, card.assault.tile, p));
   const retake = !!occupiedAt(state, card.assault.tile);
   const exile = !hub(state);
@@ -3490,7 +3524,7 @@ function tradeGoods(state, need) {
   const h = hub(state);
   const n = Math.max(1, atBase(state, h.id).length);
   const goods = {};
-  if (need.ammo <= 0.35 && (h.stock.ammo || 0) > n * 40 + 100) goods.ammo = Math.floor(Math.min(300, h.stock.ammo - n * 40));
+  if (need.ammo <= 0.35 && baseAmmo(state, h) > n * 40 + 100) goods.ammo = Math.floor(Math.min(300, baseAmmo(state, h) - n * 40));
   if (need.food <= 0.6 && (h.stock.food || 0) > n * 30) goods.food = Math.floor(Math.min(16, h.stock.food - n * 30));
   if (need.meds <= 0.3 && (h.stock.meds || 0) > n * 2 + 4) goods.meds = Math.floor(Math.min(6, h.stock.meds - n * 2));
   if (persona(state).reserves) {
@@ -3627,7 +3661,7 @@ function launchTrip(state, c, pool, spareHands) {
   // packed first: by late autumn the kitchen has turned the fresh food into the winter's preserved stores, and a hub
   // with 0 fresh and 1700 preserved called off every trip as one that "cannot spare" the food (seed 17: no
   // scavenging, no water hauls, no wells for 20 days while the water filters clogged up, then 21 dead of thirst).
-  const stock = (k) => Math.floor(k === "water" ? waterIn(h.stock) : k === "food" ? edibleFood(h) : h.stock[k] || 0);
+  const stock = (k) => Math.floor(k === "water" ? waterIn(h.stock) : k === "food" ? edibleFood(h) : k === "ammo" ? baseAmmo(state, h) : h.stock[k] || 0);
   const homeLeft = atBase(state, h.id).length - n;
   // A long search trip without a car: heavy body armor (7 kg and up) stays home while the team would leave Heavy.
   const looting = ["scavenge", "recon", "investigate", "recover", "getvehicle"].includes(c.mission) || !!c.haul;
@@ -3760,7 +3794,7 @@ function foodTripCands(state, h, pool, need, P) {
   if (!(short || need.food >= 1.4 || (season === "autumn" && foodDays < foodTarget(state, h) * 1.3))) return [];
   const boost = short ? 1.4 : season === "autumn" ? 1.15 : 1;
   const size = Math.min(3, Math.max(2, P.crew));
-  const ammo = Math.max(0, (h.stock.ammo || 0) - 20);
+  const ammo = Math.max(0, baseAmmo(state, h) - 20);
   const out = [];
   const hunters = [...pool].sort((a, b) => huntFit(b) - huntFit(a) || a.id - b.id).slice(0, size);
   const arrows = huntArrowsFor(state, h, hunters); // the bows' arrows go along (plans.js applyPlan)

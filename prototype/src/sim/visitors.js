@@ -76,7 +76,7 @@
 // Seen only when you can see them (state.live) or hear them (radio coverage, a faded sprite on the map); the
 // Groups tab lists those you know with their last known position. Decisions use state.visitorInfo.rng.
 import { Rng } from "./rng.js";
-import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, supplyFew } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, atBase, residents, combatPower, hurt, factionById, snapshot, mergeKnowledge, removeBase,
   supplyValue, skill, baseVision, localId, spendShots, arrowsBack,
@@ -102,7 +102,9 @@ import { spend } from "./itemcond.js"; // the condition of what they carry
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
 import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
 import { travelFactor, thirstAt, thirstAhead } from "./weather.js";
-import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear } from "./trade.js";
+import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear, groupPartsLow, groupStockKey, roundNeeds } from "./trade.js";
+import { partDeficit, kitWants } from "./repair.js"; // the parts and kits the governor keeps (it buys below them)
+const PART_KEYS = ["parts", "carparts", "gunparts", "electronics"];
 import { count } from "./buildings.js";
 import { partyVehicle, createVehicle } from "./vehicles.js";
 import { chronicleNote } from "./chronicle.js";
@@ -114,6 +116,8 @@ import { hcNoRaiders } from "./hardcore-groups.js";
 import { UPKEEP, coldFactor } from "./upkeep.js";
 import { eatFromStore } from "./storage.js";
 import { gunmodWares } from "./loot.js"; // a sight or a suppressor among a merchant's goods
+import { supplyAmt, spendAmmo } from "./rounds.js"; // "ammo": every round there, any calibre
+import { expandAmmo } from "./ammo.js"; // rounds by calibre
 import { merchantEscort, escortFighters, escortValue, escortWords, escortShort, ESCORT_VEHICLES } from "./escorts.js";
 import { escortEnemy, lootCaravan, witnessesOf, consequences } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
 
@@ -176,11 +180,11 @@ export const MERCHANT_VALUABLES = ["watch", "goldchain", "cigars", "scotch", "co
 // books and the supplies it brings more of follow it. gear / books: what it sells; stock: × those supplies.
 export const MERCHANT_SPECS = {
   arms:     { name: "Arms dealers", gear: ["ar", "carbine", "huntrifle", "leverrifle", "shotgun", "pistol", "revolver", "xbow", "compbow", "vest", "plate", "milhelmet", "riothelmet", "suppressor", "spotscope", "binoculars", "nvg", "thermal", "smokegren", "frag"],
-    books: ["gunbook", "armymanual", "leadbook"], stock: { ammo: 1.6 }, extra: [3, 6] },
+    books: ["gunbook", "armymanual", "leadbook"], stock: { ammo: 1.6, gunparts: 1.6 }, extra: [3, 6] },
   medic:    { name: "Medics", gear: ["surgkit", "traumakit", "bandagekit", "puritabs", "dewormer", "waterfilter", "soap", "wetwipes", "razors", "toothpaste", "headlamp", "flashlight"],
     books: ["medbook", "surgerybook"], stock: { meds: 1.6, water: 1.3 } },
   mechanic: { name: "Mechanics", gear: ["crowbar", "prybar", "sledge", "fireaxe", "flashlight", "headlamp", "lantern", "spotlight", "stove", "kneeguards", "milradio", "handradio", "ladder", "batteries", "waterfilter"],
-    books: ["enginebook", "diybook", "forgebook", "lockbook"], stock: { parts: 1.6, fuel: 1.4 }, extra: [0, 2] },
+    books: ["enginebook", "diybook", "forgebook", "lockbook"], stock: { parts: 1.6, fuel: 1.4, carparts: 1.6, electronics: 1.4 }, extra: [0, 2] },
   general:  { name: "General traders", gear: ["hikingpack", "rucksack", "assaultpack", "slingbag", "backpack", "camonet", "ghillie", "stove", "waterfilter", "flashlight", "lantern", "binoculars", "telescope", "guitar", "fishrod", "fishnet", "snarewire"],
     books: ["gardenbook", "survivalbook", "talkbook", "scavbook", "bushcraftbook"], stock: { food: 1.3, preserved: 1.3 } },
 };
@@ -264,7 +268,7 @@ function makeVisitor(state, kind, tile, opts = {}) {
     // What trade.js reads from a group: a visitor is priced like one.
     type: "traders", pop: 4, goodwill: 0, alive: true, outsider: true, pact: null, bases: [], lootedGear: [], color: VISITOR_COLORS[kind],
   };
-  for (const k of SUPPLY_KEYS) v.stock[k] = 0;
+  for (const k of STOCK_KEYS) v.stock[k] = 0; // rounds by calibre come in only when their ammo is traded (ammo.js expandAmmo)
   const taken = usedNames(state);
   if (kind === "raiders") {
     const R = O.raiders;
@@ -332,6 +336,9 @@ function merchantGoods(state, v, rng) {
     fuel: rng.int(15, 40), meds: rng.int(8, 22), preserved: rng.int(20, 50), parts: rng.int(3, 9), ammo: rng.int(60, 160),
     food: rng.int(5, 15), water: rng.int(10, 20), scrap: 0, jars: 0,
   });
+  // Parts by kind (data.js SUPPLIES; section 10), on dice of their own (the caravan's other goods come out as before);
+  // then the speciality's stock (a mechanic carries more car parts, an arms dealer more gun parts).
+  for (const [k, lo, hi] of [["carparts", 1, 4], ["gunparts", 0, 3], ["electronics", 1, 4]]) v.stock[k] = lo + Math.floor(hash01(state.seed, "mkinds", v.serial, k) * (hi - lo + 1));
   v.spec = merchantSpec(state, v);
   const S = MERCHANT_SPECS[v.spec];
   for (const [k, m] of Object.entries(S.stock)) if (v.stock[k] != null) v.stock[k] = Math.round(v.stock[k] * m);
@@ -766,7 +773,7 @@ export function stockPlan(stock, value) {
   let left = value;
   for (const k of PAY_ORDER) {
     if (left <= 0) break;
-    const have = Math.floor(stock[k] || 0);
+    const have = Math.floor(supplyAmt(stock, k));
     if (have <= 0) continue;
     const q = Math.min(have, Math.ceil(left / SUPPLIES[k].value));
     plan[k] = q;
@@ -777,7 +784,8 @@ export function stockPlan(stock, value) {
 const planText = (plan) => Object.entries(plan).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ");
 function payFromStock(stock, plan, to) {
   for (const [k, q] of Object.entries(plan)) {
-    stock[k] = Math.max(0, (stock[k] || 0) - q);
+    if (k === "ammo") spendAmmo(stock, q); // rounds.js: any calibre, the cheapest first
+    else stock[k] = Math.max(0, (stock[k] || 0) - q);
     if (to) to[k] = (to[k] || 0) + q;
   }
 }
@@ -1190,7 +1198,9 @@ function merchantsAtBase(state, v, base) {
 // the merchants lack, at the group's need on both sides (value for value), at most a third of the merchants' stock.
 export function tradeWithGroup(state, v, f) {
   // demand (trade.js): stock, kind and state on each side (a group at war wants ammo; merchants want food and scrap).
-  const want = (x, k) => demand(state, x, k);
+  // A group below its parts reorder level (trade.js groupPartsLow) buys parts of any kind (into its one count).
+  const low = groupPartsLow(f);
+  const want = (x, k) => (x === f && low && PART_KEYS.includes(k) ? Math.max(1.5, demand(state, x, k)) : demand(state, x, k));
   const sells = SUPPLY_KEYS.filter((k) => want(f, k) >= 1.2 && available(v, k) > 0).sort((a, b) => want(f, b) - want(f, a));
   const wants = SUPPLY_KEYS.filter((k) => want(v, k) >= 1.2 && available(f, k) > 0).sort((a, b) => want(v, b) - want(v, a));
   const gave = [], got = [];
@@ -1209,7 +1219,7 @@ export function tradeWithGroup(state, v, f) {
     }
     if (!Object.keys(pay).length) continue;
     v.stock[k] -= q;
-    f.stock[k] = (f.stock[k] || 0) + q;
+    f.stock[groupStockKey(k, f)] = (f.stock[groupStockKey(k, f)] || 0) + q; // part kinds into the group's one count of parts
     for (const [w, n] of Object.entries(pay)) { f.stock[w] -= n; v.stock[w] = (v.stock[w] || 0) + n; got.push(`${n} ${w}`); }
     gave.push(`${q} ${k}`);
   }
@@ -1303,7 +1313,9 @@ export function visitorTradeContext(state, t) {
   const v = visitorById(state, t.visitorId);
   if (!v || !v.alive) return null;
   const have = {}, theirHave = {};
+  expandAmmo(v.stock, v.kind === "raiders" ? "raider" : v.kind === "merchants" ? "guns" : "home"); // ammo.js: their ammo as rounds by calibre (by key in the deal)
   for (const k of SUPPLY_KEYS) theirHave[k] = available(v, k);
+  theirHave.ammo = 0;
   if (t.partyId == null) {
     const base = baseById(state, t.baseId);
     if (!base || v.phase !== "stop" || v.tile !== base.tile) return null;
@@ -1328,6 +1340,7 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
   const t = ctx.t;
   t.offer = {}; t.ask = {}; t.offerGear = []; t.askGear = []; t.deal = null;
   const out = [];
+  needs = roundNeeds(state, ctx, needs); // trade.js: ammo asked for and sold as rounds by calibre
   // Pay with what they want most (trade.js demand) among what the hub has plenty of.
   const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.6 && (ctx.have[k] || 0) > 0).sort((a, b) => demand(state, ctx.f, b) - demand(state, ctx.f, a) || needs[a] - needs[b]);
   const short = Object.keys(needs).filter((k) => needs[k] >= 1.2 && (ctx.theirHave[k] || 0) > 0).sort((a, b) => needs[b] - needs[a]);
@@ -1352,7 +1365,10 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
   // A manual for a building or craft you cannot make yet (blueprints.js), one at a time.
   const bp = ctx.theirGear.findIndex((g) => GEAR[g.key] && GEAR[g.key].blueprint && !isKnown(state, GEAR[g.key].blueprint));
   if (bp >= 0 && plenty.length && styleKey !== "aggressive") { t.askGear = [ctx.theirGear[bp]]; tryDeal(); }
-  for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" ? 80 : 20));
+  // A Kevlar kit, a field repair kit while the base is short of one (repair.js kitWants), one of each.
+  const home = ctx.base || hub(state);
+  if (home && plenty.length) for (const k of kitWants(state, home)) { const it = ctx.theirGear.find((g) => g && g.key === k); if (it) { t.askGear = [it]; tryDeal(); } }
+  for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" || (SUPPLIES[k] && SUPPLIES[k].round) ? 80 : PART_KEYS.includes(k) && home ? Math.max(1, partDeficit(state, home, k)) : 20));
   if (short.length) tryDeal();
   // At a base: valuables and spare weapons they pay well for (trade.js autoSellGear).
   if (ctx.base && tradeContext(state)) { const r = autoSellGear(state, needs); if (/^Traded/.test(r)) out.push(r.replace(/^Traded with [^:]+: /, "").replace(/\.$/, "")); }
@@ -1558,7 +1574,7 @@ function endShelter(state, v) {
   v.phase = "travel";
   if (base && v.hostile) {
     const took = {};
-    for (const k of ["food", "meds", "ammo"]) { const q = Math.floor((base.stock[k] || 0) * 0.12); if (q > 0) { base.stock[k] -= q; took[k] = q; } }
+    for (const k of ["food", "meds", "ammo"]) { const q = Math.floor(supplyAmt(base.stock, k) * 0.12); if (q > 0) { if (k === "ammo") spendAmmo(base.stock, q); else base.stock[k] -= q; took[k] = q; } } // ammo: any calibre (rounds.js)
     addToStock(v, took);
     v.hostile = false;
     log(state, `The guests at ${base.name} were thieves: ${cap1(v.name)} slipped away in the night with ${planText(took) || "what they could carry"}.`, "danger");

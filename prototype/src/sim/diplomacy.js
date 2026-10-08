@@ -59,6 +59,9 @@ import { allianceDaily, isMember } from "./alliance.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
 import { hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { raidTurretPower } from "./vehicles.js"; // the Humvee a raid brought (its M2)
+import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
+import { payAmmo } from "./ammo.js"; // rounds by calibre: the ones its guns need least go
 import { warCaptureMult } from "./nonlethal.js"; // groups that take people alive take more prisoners in a war
 
 export const DIPLO = {
@@ -356,7 +359,7 @@ export function warRaid(state, w, f, o) {
 export function resolveWarRaid(state, party, attacker, target, helpPower) {
   const d = ensureDiplo(state), rng = diploRng(state);
   const w = warById(state, party.warId);
-  const att = party.strength;
+  const att = party.strength + raidTurretPower(state, party); // vehicles.js: the Humvee they brought
   const def = 4 + strength(target) * 0.5 + helpPower;
   const won = rng.chance(att / (att + def));
   const report = state.live.has(party.target.tile) || (attacker && attacker.known && target.known);
@@ -509,10 +512,10 @@ export function warCard(state, w, f, foe) {
     choices: [
       { label: `Join the war beside ${f.name}`, hint: joinProblem(state, w, f) || `${foe.name}: goodwill −60 at most, pact torn up. ${f.name}: +10 goodwill, their raids 25% stronger`, disabled: (st) => !!joinProblem(st, w, f),
         ai: (st) => warJoinScore(st, w, f, foe), resolve: (st) => joinWar(st, w.id, f.id) },
-      { label: "Send 40 ammo", hint: `+5 goodwill with ${f.name}; ${foe.name} hears of it (−2)`, disabled: (st) => (hub(st).stock.ammo || 0) < 40 || !warById(st, w.id),
-        ai: (st) => ((hub(st).stock.ammo || 0) >= 160 && !(st.governor && st.governor.personality === "cautious") ? 1 : -1), resolve: (st) => {
-          if ((hub(st).stock.ammo || 0) < 40 || !warById(st, w.id)) return "It is too late for that.";
-          hub(st).stock.ammo -= 40; f.stock.ammo = (f.stock.ammo || 0) + 40;
+      { label: "Send 40 ammo", hint: `+5 goodwill with ${f.name}; ${foe.name} hears of it (−2)`, disabled: (st) => totalRounds(hub(st).stock) < 40 || !warById(st, w.id),
+        ai: (st) => (totalRounds(hub(st).stock) >= 160 && !(st.governor && st.governor.personality === "cautious") ? 1 : -1), resolve: (st) => {
+          if (totalRounds(hub(st).stock) < 40 || !warById(st, w.id)) return "It is too late for that.";
+          payAmmo(st, hub(st), 40); f.stock.ammo = (f.stock.ammo || 0) + 40;
           changeGoodwill(st, f, 5, "you sent ammo for their war"); changeGoodwill(st, foe, -2, "you armed their enemy");
           return `40 ammo sent to ${f.name}.`;
         } },
@@ -658,7 +661,7 @@ export function autoWarTrade(state, style, deal) {
   const d = ensureDiplo(state);
   if (d.autoSell != null && day(state) - d.autoSell < 8) return "";
   const h = hub(state);
-  const spare = Math.floor((h.stock.ammo || 0) - Math.max(1, atBase(state, h.id).length) * 25);
+  const spare = Math.floor(totalRounds(h.stock) - Math.max(1, atBase(state, h.id).length) * 25);
   if (spare < 30) return "";
   for (const f of state.factions) {
     if (!f.alive || !f.known || !atWar(state, f) || !canRadioGroup(state, f) || attitude(f) === "Hostile") continue;

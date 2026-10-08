@@ -451,12 +451,14 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (d.throw) check(!/power|armor/.test(text) && /thrown/.test(text) && /one use/.test(text), `${key}: a throwable says it is thrown, once (${text})`);
     else if (d.suppressor) check(!/power|armor/.test(text) && /halves the noise/.test(text) && /shots/.test(text), `${key}: the suppressor says what it does and how long it lasts (${text})`);
     else if (d.siege) check(!/power|armor/.test(text) && /wall|gate/.test(text), `${key}: siege kit says what it is for (${text})`); // sim/siege.js
+    else if (d.cat === "gunmod") check(!/power|armor/.test(text) && /gun attachment/.test(text) && /fits/.test(text), `${key}: a gun attachment says what it does and what it fits (${text})`); // sim/gunmods.js
     else if (d.slot === "cargo") check(!/power|armor/.test(text) && /bike/.test(text), `${key}: a bicycle says it is a bike for the base (${text})`); // sim/vehicles.js
     // Camp kit against Heat (fieldheat.js) and a base's defence kit (defences.js): carried or kept, not worn.
     else if (d.heat) check(!/power|armor/.test(text) && /Heat ×/.test(text), `${key}: camp kit says how much less Heat (${text})`);
     else if (d.defence) check(!/power|armor/.test(text) && /alarm/.test(text), `${key}: an alarm says what it does (${text})`);
     else if (r.gear === "dewormer") check(!/power|armor/.test(text) && /worm/.test(text) && /one use/.test(text), `${key}: the dewormer says what it cures (${text})`); // sim/worm.js
     else if (LIGHTS[r.gear]) check(!/power|armor/.test(text) && /at night sees \d+ tiles/.test(text), `${key}: a light says how far it sees at night (${text})`); // sim/lights.js (a headlamp is carried, not held)
+    else if (r.gear === "repairkit") check(!/power|armor /.test(text) && /repair kit/.test(text) && /repairs/.test(text), `${key}: the field repair kit says what it mends and how many repairs (${text})`); // sim/repair.js
     else if (r.gear === "puritabs") check(!/power|armor/.test(text) && /10 un-purified water safe/.test(text) && /lasts 10 tablets/.test(text), `${key}: the tablets say what one treats and how many there are (${text})`); // sim/worm.js
     else if (d.fish) check(!/power|armor/.test(text) && /food an hour/.test(text) && /days of fishing/.test(text), `${key}: fishing gear says what it catches and how long it lasts (${text})`); // sim/hunting.js
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);

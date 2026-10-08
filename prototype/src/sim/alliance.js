@@ -53,6 +53,7 @@ import { diploRng, relation, changeRelation, warsOf, enemyIn, warBetween, autoWa
 import { jobsDoneFor, activeJobs, makeJob, offerCard as jobOfferCard, autoJobsDaily } from "./jobs.js";
 import { eraProgress, ERAS, isLate } from "./eras.js";
 import { playerClaims, claimedLand } from "./claims.js";
+import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
 
 export const ALLIANCE = {
   NAME: "The Calder Coalition", GOODWILL: 50, LEAVE_GOODWILL: 20, VOTE_REL: 10, ASK_CHANCE: 0.03,
@@ -300,10 +301,10 @@ export function councilCard(state, kind, ms = allianceMembers(state)) {
       title: `The council: ${f.name} needs ${k}`, council: "supplies",
       text: `${A.name} meets for the season. ${f.name} is short of ${k} and the council asks you to send ${qty} ${k} from ${h.name}.`,
       choices: [
-        { label: `Send ${qty} ${k}`, hint: `${h.name} has ${Math.floor(h.stock[k] || 0)}. +6 goodwill with ${f.name}, +3 with the other members`, disabled: (st) => (hub(st).stock[k] || 0) < qty,
-          ai: (st) => ((hub(st).stock[k] || 0) >= qty * 3 ? 4 : -1), resolve: (st) => {
-            if ((hub(st).stock[k] || 0) < qty) return `${h.name} no longer has ${qty} ${k}.`;
-            hub(st).stock[k] -= qty; f.stock[k] = (f.stock[k] || 0) + qty;
+        { label: `Send ${qty} ${k}`, hint: `${h.name} has ${Math.floor(supplyAmt(h.stock, k))}. +6 goodwill with ${f.name}, +3 with the other members`, disabled: (st) => supplyAmt(hub(st).stock, k) < qty,
+          ai: (st) => (supplyAmt(hub(st).stock, k) >= qty * 3 ? 4 : -1), resolve: (st) => {
+            if (supplyAmt(hub(st).stock, k) < qty) return `${h.name} no longer has ${qty} ${k}.`;
+            useSupply(hub(st).stock, k, qty); f.stock[k] = (f.stock[k] || 0) + qty; // rounds.js: "ammo" as any rounds
             changeGoodwill(st, f, 6, "the council's request"); everyone(st, others, 3, "the council's request");
             A.stats.granted++; A.history.unshift({ day: day(st), text: `You sent ${qty} ${k} to ${f.name}.` });
             return `${qty} ${k} sent to ${f.name}.`;

@@ -329,7 +329,7 @@ const MIL_WHEELS = { m35: (L) => [0.7, L - 1.5, L - 0.6], humvee: (L) => [0.6, L
 // A vehicle's upgrades (sim/combat.js fitMapVehicle: car.up { p plating, s scrap plating, g glass, m mesh, t turret }):
 // steel plates along both sides (two rows at level 2; patchy scrap plates), a grille over the cab's glass, a thick green
 // tint for bulletproof glass, and a machine gun on a ring on the roof.
-const upKey = (u) => (u ? `${u.p || 0}${u.s || 0}${u.g || 0}${u.m || 0}${u.t || ""}` : "");
+const upKey = (u) => (u ? `${u.p || 0}${u.s || 0}${u.g || 0}${u.m || 0}${u.t || ""}${u.manned ? "*" : ""}` : "");
 const UP_ROOF = { humvee: [1.45, 19], m35: [0.8, 14], mrap: [1.2, 21], truck: [0.8, 16], car: [null, 15], vehicle: [null, 15] };
 function carUpParts(car, L, parts) {
   const u = car.up;
@@ -348,6 +348,7 @@ function carUpParts(car, L, parts) {
   if (u.t) {
     const a = ra ?? L / 2;
     parts.push([a - 0.2, a + 0.2, 0.8, 1.2, rz, rz + 3, steelDk]);                         // the ring and the gunner's shield
+    if (u.manned) parts.push([a - 0.3, a + 0.3, 0.7, 1.3, rz - 1, rz, flatM(hex("#e8c04a"))]); // manned: a bright ring round the hatch (the gunner stands in it)
     parts.push([Math.max(0, a - (u.t === "m2hb" ? 1.3 : 1.0)), a - 0.1, 0.95, 1.05, rz + 2, rz + 3, flatM(PAL.tar)]); // the barrel, over the cab (the front is a = 0)
   }
 }
@@ -1635,6 +1636,13 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     if (l.decoy) tag(ctx, kind === "heat" ? "HEAT" : kind === "light" ? "LIGHT" : "NOISE", X, Y - 9 * S, kind === "heat" ? "#ff9a6a" : kind === "light" ? "#fff2c0" : "#ffd166", Math.max(9, 2.8 * S));
   }
   for (const c of b.flares || []) { const [X, Y] = project(c.x + 0.5, c.y + 0.5, 2); ctx.fillStyle = "#ffe08a"; ctx.beginPath(); ctx.arc(X, Y, 2.5 * S, 0, Math.PI * 2); ctx.fill(); }
+  // Thrown spears where they lie (sim/combat.js b.spears): yours always, theirs where seen.
+  for (const sp of b.spears || []) {
+    if (!onFloor(b, sp) || (sp.side !== "player" && !vis[sp.y * b.w + sp.x])) continue;
+    const [X0, Y0] = project(sp.x + 0.2, sp.y + 0.8, 1), [X1, Y1] = project(sp.x + 0.8, sp.y + 0.2, 1);
+    ctx.strokeStyle = "#7a5a3a"; ctx.lineWidth = 2 * S; ctx.beginPath(); ctx.moveTo(X0, Y0); ctx.lineTo(X1, Y1); ctx.stroke();
+    ctx.fillStyle = "#d6dde2"; ctx.beginPath(); ctx.arc(X1, Y1, 1.8 * S, 0, Math.PI * 2); ctx.fill();
+  }
 
   // A raid: names on the areas, a marker on every container.
   if (b.raid) {

@@ -7,6 +7,7 @@
 // same with or without it. chronicleReader turns frames back into a state-like object that render() can draw.
 import { hub, alive } from "./world.js";
 import { vehicleById } from "./vehicles.js";
+import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 
 export const INF_Q = 63;     // infection stored as 0..63 (finer steps would not show in the overlay)
 const KEY_EVERY = 60;        // a full keyframe every 60 frames, so seeking never replays more than 59 deltas
@@ -190,7 +191,7 @@ function record(state, c) {
   const deltas = key ? 0 : ownD.length + infD.length;
   const d = new Uint16Array(HEAD + nF * 3 + deltas + hz.length + pt.length);
   const hb = hub(state), st = hb ? hb.stock : {};
-  d.set([alive(state).length, clamp16(st.food), clamp16((st.water || 0) + (st.rawwater || 0)), clamp16(st.ammo), clamp16(st.meds),
+  d.set([alive(state).length, clamp16(st.food), clamp16((st.water || 0) + (st.rawwater || 0)), clamp16(totalRounds(st)), clamp16(st.meds),
     key ? 0 : ownD.length / 2, key ? 0 : infD.length / 2, hz.length / 3, pt.length / 4, nF, land[1] || 0]);
   let o = HEAD;
   const live = new Map(state.factions.map((f) => [f.id, f]));

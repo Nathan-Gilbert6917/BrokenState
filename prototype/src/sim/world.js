@@ -24,14 +24,16 @@ import { growthAt, growthInfo } from "./hivetech.js";
 import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
-import { createVehicle, vehiclesDaily, garageHour } from "./vehicles.js";
+import { createVehicle, vehiclesDaily, garageHour, factionVehiclesDaily } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
 import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
 import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
+import { repairHour } from "./repair.js"; // gear repairs at the bench
 import { armorPower, armorMult, allItems, stripAll, newItem, START_DUR } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
+import { settleAll, starterLoad, pocketBox, gunsArmed, drawShots } from "./ammo.js"; // rounds by calibre
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
 import { autopilotHour } from "./autopilot.js";
@@ -127,6 +129,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     woodcutting: 2, // a world with firewood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
     groupWorks: 1, // barestart: the AI groups' bases start bare and they build (groupworks.js); an older save has them built up
+    gunSlots: 1, // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,
@@ -147,6 +150,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
     hardcoreAfterHives(state);
+    state.ammoCal = 1; // rounds by calibre from the start (save.js migrates older saves)
     updateVision(state);
     log(state, `Day 1. Calder is falling. ${state.startPeople === 1 ? "You got out alone" : `${countWord(state.startPeople).replace(/^./, (c) => c.toUpperCase())} of you got out`} with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
     startChronicle(state);
@@ -193,6 +197,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol"];
   state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
   state.survivors.forEach((s, i) => randomStarterMods(state.rng, s.gear.weapon, i)); // gunmods.js: a cheap part or two on some guns
+  state.survivors.forEach((s, i) => { const box = starterLoad(state.rng, s.gear.weapon, i); if (box && !pocketBox(s, box)) state.bases[0].stock[box.key] = (state.bases[0].stock[box.key] || 0) + box.dur; }); // ammo.js: now and then a typed load and a box of it
   state.survivors[0].gear.armor = newItem("vest", 1, hash01(state.seed, "startdur", "vest"), START_DUR);
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));
   state.survivors[0].leader = true;
@@ -202,6 +207,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   if (crew) applyCrew(state, crew);
   normalStartKit(state, hubBase);
   assignStartingRoles(state);
+  settleAll(state); // ammo.js: the hub's 80 rounds by the calibres of the guns it starts with
+  state.ammoCal = 1; // rounds by calibre from the start (save.js migrates older saves)
 
   ensureHives(state); // the hives mapgen.js placed, with their starting resources (hives.js)
   // Pre-war maps: geography is known, current conditions are not.
@@ -442,32 +449,37 @@ export const arrowsBack = (shot) => Math.round(Math.max(0, shot || 0) * ARROWS.B
 // need(archers), everyone else's while the ammo is under need(the rest); the power-weighted mean of the two (1 with
 // enough of both). weight(s): a person's share (a guard counts more). With no bows it is exactly the old rule (ammo
 // under need(everyone): short).
-/** @param {Survivor[]} people @param {number} ammo @param {number} arrows @param {{ need?: (n: number) => number, short?: number, weight?: ((s: Survivor) => number) | null }} [opts] @returns {number} */
+// ammo: a number (any rounds for anyone, the old rule) or a stock record (rounds by calibre, ammo.js): then each gun
+// counts by the rounds of its own calibre (generic ammo, other groups' abstract stores, fits any), need(how many guns
+// of that calibre); people with no gun by every round there, need(how many of them).
+/** @param {Survivor[]} people @param {number | Record<string, number>} ammo @param {number} arrows @param {{ need?: (n: number) => number, short?: number, weight?: ((s: Survivor) => number) | null }} [opts] @returns {number} */
 export function armedFactor(people, ammo, arrows, { need = (n) => n * 3, short = 0.6, weight = null } = {}) {
   let gun = 0, bow = 0, ng = 0, nb = 0;
+  const gunners = [];
   for (const s of people) {
     const p = combatPower(s) * (weight ? weight(s) : 1);
-    if (usesArrows(s)) { bow += p; nb++; } else { gun += p; ng++; }
+    if (usesArrows(s)) { bow += p; nb++; } else { gun += p; ng++; gunners.push(s); }
   }
-  const fg = (ammo || 0) >= need(ng) ? 1 : short, fb = (arrows || 0) >= need(nb) ? 1 : short;
+  const per = typeof ammo === "object" && ammo ? gunsArmed(gunners, ammo, need, (s) => combatPower(s) * (weight ? weight(s) : 1)) : null;
+  const fg = per ? (per.tot > 0 ? (per.ok + (per.tot - per.ok) * short) / per.tot : 1) : (typeof ammo === "number" ? ammo : 0) >= need(ng) ? 1 : short, fb = (arrows || 0) >= need(nb) ? 1 : short;
   if (!nb) return fg;
   if (!ng) return fb;
   return gun + bow > 0 ? (gun * fg + bow * fb) / (gun + bow) : 1;
 }
 // Shots by the numbers taken from a stock (a base's, a team's supplies): perHead a head, the archers' in arrows, the
-// rest's in ammo, as far as there is any. Returns what was taken: { ammo, arrows }.
-/** @param {Record<string, number>} stock @param {Survivor[]} people @param {number} perHead @returns {{ ammo: number, arrows: number }} */
+// rest's in rounds of their own gun's calibre (ammo.js drawShots: no gun, any rounds), as far as there are any.
+// Returns what was taken: { ammo, used: { key: q }, arrows }.
+/** @param {Record<string, number>} stock @param {Survivor[]} people @param {number} perHead @returns {{ ammo: number, used: Record<string, number>, arrows: number }} */
 export function spendShots(stock, people, perHead) {
-  const nb = archerCount(people), ng = people.length - nb;
-  const a0 = stock.ammo || 0;
-  stock.ammo = Math.max(0, a0 - ng * perHead);
+  const nb = archerCount(people);
+  const d = drawShots(stock, people.filter((s) => !usesArrows(s)), perHead);
   let arrows = 0;
   if (nb) {
     const b0 = stock.arrows || 0;
     stock.arrows = Math.max(0, b0 - nb * perHead);
     arrows = Math.max(0, b0 - stock.arrows);
   }
-  return { ammo: Math.max(0, a0 - stock.ammo), arrows };
+  return { ammo: d.n, used: d.used, arrows };
 }
 
 /** @param {State} state @returns {number} */
@@ -786,6 +798,7 @@ export function tickHour(state) {
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   constructionHour(state);
+  repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
   craftingHour(state);
   garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating)
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
@@ -801,6 +814,7 @@ export function tickHour(state) {
     basesDaily(state);
     craftingDaily(state);
     vehiclesDaily(state);
+    factionVehiclesDaily(state); // vehicles.js: a military group replaces a lost Humvee, slowly
     factionsDaily(state);
     hordesDaily(state);
     outbreakDaily(state); // outbreak.js: new hives from beyond the border while the outbreak there burns
@@ -827,6 +841,7 @@ export function tickHour(state) {
     ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");
   }
+  settleAll(state); // ammo.js: generic ammo that came in or went out this hour sorted into (or out of) rounds by calibre
   // Safety net: no stock below zero, whatever subtracted from it.
   for (const b of state.bases) for (const k of Object.keys(b.stock)) if (b.stock[k] < 0) b.stock[k] = 0;
   checkGameOver(state);

@@ -62,10 +62,11 @@ import { huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap, hunterMult, bestH
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
 import { foodUse, HEAT, woodFor } from "./upkeep.js";
 import { woodWorkWhy, woodHandsWanted, woodNeed, woodcutterMult, bestChop } from "./woodcutting.js";
-import { waterIn } from "./water.js"; // purified and un-purified water count together
+import { waterIn, stockHas } from "./water.js"; // purified and un-purified water count together
 import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (Defence tab)
 import { sleepingIn } from "./sleep.js"; // off a watch: sleep until rested
 import { wormFilterUrgent, woodCritical } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
+import { baseAmmo } from "./ammo.js"; // rounds by calibre: what fits the guns there
 
 export const PRIO_MAX = 5;
 const WATER_BUILDS = ["well", "rain_catcher", "cistern"]; // water first (autopilot.js waterPlan)
@@ -405,7 +406,7 @@ export function stationWork(state, base, st, opsNow = new Set()) {
   if (hasOrder(base, st)) {
     const hold = orderHold(state, base, st);
     if (hold) return hold;
-  } else if (k === "ammo") { if ((s.ammo || 0) >= n * 15 + 60) return `enough ammo (${n0(s.ammo)}; no order set)`; }
+  } else if (k === "ammo") { const a = baseAmmo(state, base); if (a >= n * 15 + 60) return `enough ammo (${n0(a)} rounds that fit the guns here; no order set)`; } // ammo.js
   else if (k === "meds") { if ((s.meds || 0) >= Math.max(5, n)) return `enough meds (${n0(s.meds)}; no order set)`; }
   else if (k === "parts") { if ((s.parts || 0) >= 8) return `enough parts (${n0(s.parts)}; no order set)`; }
   // Priorities staff a station as soon as it has work (the governor only with hands left over), so the floor is
@@ -445,7 +446,7 @@ function stationOpen(ctx, kindOk, none) {
     const why = free.length ? ctx.stationWhy(free[0]) : "every station has its operator";
     return { cap: 0, why: `${BUILDINGS[(free[0] || list[0]).type].name.toLowerCase()}: ${why}` };
   }
-  const urgent = ok.some((st) => ["ammo", "meds"].includes(stationKind(st)) && (ctx.base.stock[stationKind(st)] || 0) < ctx.people.length * 2);
+  const urgent = ok.some((st) => ["ammo", "meds"].includes(stationKind(st)) && stockHas(ctx.base.stock, stationKind(st)) < ctx.people.length * 2);
   // capacity counts the stations still free: holders were already left out
   return { cap: ok.length + ctx.used[kindOk("preserve") ? "cook" : "workshop"], urg: 2 + (urgent ? 3 : 0) };
 }

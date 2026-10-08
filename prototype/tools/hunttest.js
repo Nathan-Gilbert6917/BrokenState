@@ -15,6 +15,9 @@
 //   team panel shows it), the expected haul against the real one, rations.
 // - The autopilot in a lean year with and without hunting (hunger days, deaths of hunger, food brought in).
 // - Save / load mid-hunt and determinism; the tile panel, team panel, planner and right-click menu.
+import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
+// n rounds of generic ammo in a stock and no rounds by calibre (generic fits any gun: the hunts here judge the guns, not the calibres).
+const setAmmo = (rec, n) => { setRounds(rec, 0); rec.ammo = n; };
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, atBase, survivorById, newId, makeSurvivor, setNextId } from "../src/sim/world.js";
 import { autoResolveCombat } from "../src/sim/combat.js";
@@ -504,9 +507,9 @@ section("The hunting cabin, the Hunt and Fish jobs");
   people[0].gear.weapon = newItem("huntrifle"); people[0].skills.shooting = 7; people[0].skills.scouting = 5;
   people[1].gear.weapon = newItem("crossbow"); people[1].skills.shooting = 5;
   people[0].role = "hunt"; people[1].role = "hunt";
-  base.stock.ammo = 100;
+  setAmmo(base.stock, 100);
   const autumn = dayIn(state, "autumn");
-  let food = 0, ammo0 = base.stock.ammo;
+  let food = 0, ammo0 = totalRounds(base.stock);
   state.game = {};
   const daily = [];
   for (let d = 0; d < 28; d++) {
@@ -517,8 +520,8 @@ section("The hunting cabin, the Hunt and Fish jobs");
   }
   const land = state.grid.within(base.tile, H.CABIN.radius).filter((id) => H.gameAbundance(state, id) > 0.3);
   const lvl = mean(land.map((id) => H.gameLevel(state, id)));
-  note(`two hunters (rifle, crossbow) at a cabin through autumn: ${food} food in 28 days (first week ${daily.slice(0, 7).reduce((a, b) => a + b, 0)}, last week ${daily.slice(21).reduce((a, b) => a + b, 0)}); ${ammo0 - base.stock.ammo} ammo; the land down to ${Math.round(lvl * 100)}% on average`);
-  check(food > 0 && base.stock.ammo < ammo0, "the cabin's hunters bring in game and use the base's ammo");
+  note(`two hunters (rifle, crossbow) at a cabin through autumn: ${food} food in 28 days (first week ${daily.slice(0, 7).reduce((a, b) => a + b, 0)}, last week ${daily.slice(21).reduce((a, b) => a + b, 0)}); ${ammo0 - totalRounds(base.stock)} ammo; the land down to ${Math.round(lvl * 100)}% on average`);
+  check(food > 0 && totalRounds(base.stock) < ammo0, "the cabin's hunters bring in game and use the base's ammo");
   check(lvl < 0.95, "the land around the cabin is hunted down");
   check(food / 28 < 20, `about ${r1(food / 28)} food a day for two hunters: a help, not a farm's worth of the land`);
   // Fish job: an outpost on a river with a rod in the armory.
@@ -641,14 +644,14 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
     for (let run = 0; run < RUNS; run++) {
       state.game = {};
       hunters.forEach((s, i) => Object.assign(s, structuredClone(snap[i]))); // the same hunters every run (no skill gained)
-      base.stock.ammo = 300; base.stock.arrows = 100;
+      setAmmo(base.stock, 300); base.stock.arrows = 100;
       for (let d = 0; d < 20; d++) {
         state.hour = (autumn + d) * 24 + 24;
         const got = H.huntingDaily(state, base);
         r.food += got.rations / RUNS; r.noise += base.huntNoise / RUNS;
         for (const m of H.HUNT_METHODS) r.hrs[m] += got.hrs[m] / RUNS;
       }
-      r.ammo += (300 - base.stock.ammo) / RUNS; r.arrows += (100 - base.stock.arrows) / RUNS;
+      r.ammo += (300 - totalRounds(base.stock)) / RUNS; r.arrows += (100 - base.stock.arrows) / RUNS;
     }
     rows[k] = r;
   }
@@ -670,14 +673,14 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   check(dry.hrs.traps === 9 && !dry.shots && !dry.arrows, "bow hours with no arrows: the snare lines");
   // Guns with no ammo above the walls' keep: the bows (never louder than the mix).
   H.setHuntMix(base, H.DEFAULT_MIX);
-  base.stock.arrows = 50; base.stock.ammo = H.ammoKeep(state, base);
+  base.stock.arrows = 50; setAmmo(base.stock, H.ammoKeep(state, base));
   state.hour += 24;
   const noAmmo = H.huntingDaily(state, base);
-  check(noAmmo.hrs.bows === 9 && !noAmmo.shots && base.stock.ammo === H.ammoKeep(state, base), "gun hours with the ammo down to the walls' keep: the bows");
+  check(noAmmo.hrs.bows === 9 && !noAmmo.shots && totalRounds(base.stock) === H.ammoKeep(state, base), "gun hours with the ammo down to the walls' keep: the bows");
   // A hunter with only a rifle at 100% bows: the snare lines.
   hunters.forEach((s) => { s.gear.backpack.contents[0] = null; });
   H.setHuntMix(base, { traps: 0, bows: 100, guns: 0 });
-  base.stock.ammo = 300;
+  setAmmo(base.stock, 300);
   state.hour += 24;
   const rifles = H.huntingDaily(state, base);
   check(rifles.hrs.traps === 9 && !rifles.shots, "100% bows with only rifles: the snare lines, not a shot");
@@ -702,7 +705,7 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
       state.hordes.length = 0;
       const hz = makeHorde(state, { tile: ring, size: 30, role: "roam" });
       state.game = {};
-      base.stock.ammo = 300; base.stock.arrows = 100;
+      setAmmo(base.stock, 300); base.stock.arrows = 100;
       state.hour = (autumn + d % 20) * 24 + 24;
       const got = H.huntingDaily(state, base);
       if (got.shots || mix.guns === 0) days++;
@@ -716,15 +719,15 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   check(loud.n > 0 && loud.n < loud.days && quiet.n === 0, "gunfire at the cabin draws the dead nearby sometimes; bows and traps never");
   // The governor's mix.
   H.setHuntMix(base, H.DEFAULT_MIX);
-  base.stock.ammo = 300; base.stock.arrows = 0;
+  setAmmo(base.stock, 300); base.stock.arrows = 0;
   hunters[2].gear.weapon = newItem("huntrifle");
   check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.DEFAULT_MIX), "governor: no bows, nothing near: guns");
   hunters[2].gear.weapon = newItem("compbow");
   base.stock.arrows = 30;
   check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.MIX_PRESETS.mixed.mix), "governor: bows and arrows: bows and guns");
-  base.stock.ammo = H.ammoKeep(state, base) + 10;
+  setAmmo(base.stock, H.ammoKeep(state, base) + 10);
   check(H.autoHuntMix(state, base).guns === 0 && H.autoHuntMix(state, base).bows === 100, "governor: the ammo short with bows: bows only (the ammo is for the walls)");
-  base.stock.ammo = 300;
+  setAmmo(base.stock, 300);
   const near = state.grid.within(base.tile, 3).find((id) => state.grid.distance(id, base.tile) === 3 && state.tiles[id].terrain !== "water");
   makeHorde(state, { tile: near, size: 40, role: "roam" });
   check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.MIX_PRESETS.quiet.mix), "governor: the dead 3 tiles off the cabin: quiet (bows and traps)");

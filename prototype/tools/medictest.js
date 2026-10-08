@@ -535,7 +535,9 @@ section("One model of the downed with the non-lethal kit (nonlethal.js): states,
   const K = await import("../src/ui/keymap.js");
   const ev = (code) => ({ code, shiftKey: true, ctrlKey: false, altKey: false, metaKey: false });
   check(K.keyAction(ev("KeyH"), "battle") === "battle.heal" && K.keyAction(ev("KeyV"), "battle") === "battle.revive" && K.keyAction(ev("KeyK"), "battle") === "battle.finish" && K.keyAction(ev("KeyD"), "battle") === "battle.drag", "Shift+H heal, Shift+V revive, Shift+K finish, Shift+D drag");
-  check(["KeyF", "KeyJ", "KeyO", "KeyG", "KeyI", "KeyT"].every((c) => K.keyAction(ev(c), "battle") == null), "Shift+F, J, O, G, I, T left free (the wave1-int branch's)");
+  // (merged with the weapons overhaul: those Shift keys are its orders now, none of them the medics')
+  const W1 = { KeyF: "battle.firemode", KeyJ: "battle.unjam", KeyO: "battle.suppress", KeyG: "battle.throwspear", KeyI: "battle.ammocycle", KeyT: "battle.gunner" };
+  check(Object.entries(W1).every(([c, id]) => K.keyAction(ev(c), "battle") === id), "Shift+F, J, O, G, I, T are the weapons overhaul's (fire mode, unjam, suppress, throw spear, the ammo pick, the turret)");
   const seenChords = new Map(); let clash = "";
   for (const k of K.KEYMAP.filter((x) => x.ctx === "battle")) for (const c of k.keys) { if (seenChords.has(c)) clash += ` ${c}: ${seenChords.get(c)} / ${k.id}`; seenChords.set(c, k.id); }
   check(!clash, `no two battle actions on one key${clash ? `:${clash}` : ""}`);

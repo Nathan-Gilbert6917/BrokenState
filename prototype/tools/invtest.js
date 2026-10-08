@@ -2,6 +2,7 @@
 // armor sums, carry limits, looting bodies after a battle (by hand and headless), death sites, captives,
 // combat with the new model, and a render smoke test of the inventory and loot screens.
 // Usage: node tools/invtest.js [battles per matchup] [seed]
+import { totalRounds, isRoundKey } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, makeSurvivor, combatPower, hub, hurt, killSurvivor, newId, survivorById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { makeItem, wearAfterFight, itemDurMax } from "../src/sim/crafting.js";
@@ -41,19 +42,22 @@ section("Migration");
   const s = { id: newId(), name: "Old Timer", alive: true, traits: [], skills: { shooting: 5 }, health: 100, location: { kind: "base", baseId: h.id },
     gear: { weapon: { key: "pistol", name: GEAR.pistol.name, quality: 1 }, armor: { key: "padding", name: "Magazine arm guards", quality: 1, dur: 4 }, tool: { key: "backpack", name: "Improvised backpack", quality: 0.9 } } };
   state.survivors.push(s);
-  check(armorPower(s) === 0.6, "armor works before migration (arm guards counted where they are)");
+  // Armour protects by its condition (armour.js armourCond: durability left of the piece's GEAR dur).
+  const guards = 0.6 * (0.5 + 0.5 * 4 / GEAR.padding.dur);
+  check(Math.abs(armorPower(s) - guards) < 1e-9, "armor works before migration (arm guards counted where they are)");
   ensureInv(s);
   check(s.gear.arms && s.gear.arms.key === "padding" && !s.gear.armor, "arm guards moved from body to arms");
   check(s.gear.backpack && s.gear.backpack.key === "backpack" && !s.gear.tool, "backpack moved from the tool slot to the backpack slot");
   check(packOf(s) && packOf(s).length === GEAR.backpack.slots, `pack slots added (${packOf(s) && packOf(s).length})`);
   check(s.pockets.length === 4 && s.pockets.every((x) => x === null), "4 empty pockets added");
   check(s.gear.head === null && s.gear.legs === null, "head and legs slots added");
-  check(armorPower(s) === 0.6, "armor unchanged by migration");
+  check(Math.abs(armorPower(s) - guards) < 1e-9, "armor unchanged by migration");
   // The old combined football pads and helmet: split into pads (body) + helmet (head).
   const f = { id: newId(), name: "Linebacker", alive: true, traits: [], skills: {}, gear: { weapon: null, armor: { key: "sportspads", name: "Football pads and helmet", quality: 1, dur: 7 }, tool: null } };
   ensureInv(f);
   check(f.gear.armor.name === "Football pads" && f.gear.head && f.gear.head.key === "footballhelmet", "old football pads + helmet split into two pieces");
-  check(f.gear.head.dur === 7 && Math.abs(armorPower(f) - 1.2) < 1e-9, `the split keeps the old armor 1.2 (got ${armorPower(f)}) and wear (${f.gear.head.dur})`);
+  const split = 0.8 * (0.5 + 0.5 * 7 / GEAR.sportspads.dur) + 0.4 * (0.5 + 0.5 * 7 / GEAR.footballhelmet.dur);
+  check(f.gear.head.dur === 7 && Math.abs(armorPower(f) - split) < 1e-9, `the split keeps the old armor ${Math.round(split * 100) / 100} (got ${armorPower(f)}) and wear (${f.gear.head.dur})`);
   const g = { id: newId(), name: "Helmeted", alive: true, traits: [], skills: {}, gear: { armor: { key: "sportspads", name: "Football pads and helmet", quality: 1 }, head: item("riothelmet") } };
   ensureInv(g);
   check(g.gear.head.key === "riothelmet", "a split does not replace a helmet already worn");
@@ -226,7 +230,7 @@ function strongTeam(n) {
   const enemyB = bodies.filter((x) => x.sid == null && x.kind === "human");
   const ally = bodies.find((x) => x.sid === team[3].id);
   check(enemyB.length >= 1 && enemyB.every((x) => x.gear.weapon), `each dead raider has their weapon (${enemyB.length} bodies)`);
-  check(enemyB.every((x) => (x.supplies.ammo || 0) >= 3), "each dead raider carries ammo");
+  check(enemyB.every((x) => totalRounds(x.supplies) >= 3 && !x.supplies.ammo), "each dead raider carries rounds (by calibre: ammo.js)");
   check(!!ally && !team[3].alive, "the fallen teammate is a body to loot");
   check(b.result.loot.gear.length === 0 && !Object.keys(b.result.loot.supplies).length, "nothing is taken before the loot screen (browser)");
   const site = state.deathSites.find((d) => d.tile === b.tileId);
@@ -241,9 +245,10 @@ function strongTeam(n) {
   else check(taker.gear.weapon === gun && p.cargo.gear.length === cargoBefore + 1, "quick-taking a long gun equips it; the old one goes to the cargo");
   check(b.result.loot.gear.includes(gun), "taken items count as battle loot");
   check(/only for taking/.test(moveItem(state, `s:${taker.id}:pocket:0`, `body:${bi}:pocket:0`)) || !taker.pockets[0], "nothing goes back onto a body");
-  const ammo0 = p.cargo.supplies.ammo || 0;
-  takeSupply(state, bi, "ammo");
-  check((p.cargo.supplies.ammo || 0) > ammo0 && !enemyB[0].supplies.ammo, "taking the ammo stack puts it in the cargo");
+  const ak = Object.keys(enemyB[0].supplies).find((k) => isRoundKey(k) && enemyB[0].supplies[k] > 0); // their rounds (ammo.js)
+  const ammo0 = p.cargo.supplies[ak] || 0;
+  takeSupply(state, bi, ak);
+  check((p.cargo.supplies[ak] || 0) > ammo0 && !enemyB[0].supplies[ak], `taking the stack of rounds puts it in the cargo (${ak})`);
   // The fallen teammate's kit: take it into a pocket; it leaves the death site.
   const ai = bodies.indexOf(ally);
   const kit = team[3].pockets[0];
@@ -381,6 +386,13 @@ section("Screens");
   INV_ACTIONS["inv-open"](state, ui, { id: String(s.id) });
   let html = inventoryModal(state, ui) || "";
   check(/Pockets/.test(html) && html.includes(`s:${s.id}:pocket:0`) && html.includes(`armory:${h.id}:list`), "survivor inventory renders slots, pockets and the armory");
+  // The gun builder's ways in (ui/gunbuilder.js): the ⚙ on the gun in hand, Modify on a selected gun; the tooltip's compact version.
+  check(html.includes(`class="mini gbcog" data-action="gb-open" data-loc="s:${s.id}:weapon"`), "the gun in hand has a ⚙ (the gun builder)");
+  INV_ACTIONS["inv-click"](state, ui, { loc: `s:${s.id}:weapon` });
+  check(/data-action="gb-open"[^>]*>⚙ Modify/.test(inventoryModal(state, ui) || ""), "a selected gun: Modify");
+  ui.invSel = null;
+  const { itemTip } = await import("../src/ui/inventory.js");
+  check(/slots: .*\(empty\)/.test(itemTip(s.gear.weapon, s)) && /jams [\d.]+% a shot/.test(itemTip(s.gear.weapon, s)) && !/slots:/.test(itemTip(item("knife"), s)), "a gun's tooltip lists its slots and reliability (a knife's does not)");
   INV_ACTIONS["inv-click"](state, ui, { loc: `s:${s.id}:pocket:0` });
   check(ui.invSel === `s:${s.id}:pocket:0`, "clicking an item selects it");
   INV_ACTIONS["inv-click"](state, ui, { loc: `armory:${h.id}:list` });
@@ -400,6 +412,7 @@ section("Screens");
   INV_ACTIONS["loot-open"](state, ui, {});
   html = inventoryModal(state, ui) || "";
   check(/Loot the bodies/.test(html) && html.includes("body:0:weapon"), "the loot screen lists bodies and shows a body's paper doll");
+  check(!/data-action="gb-open"/.test(html), "no gun builder over the loot screen (a battle is open)");
   INV_ACTIONS["loot-takeall"](state, ui, {});
   check(/Took/.test(ui.invMsg), `Take everything: ${ui.invMsg.slice(0, 80)}…`);
   INV_ACTIONS["loot-done"](state, ui, {});

@@ -36,6 +36,7 @@ import { haulOf } from "./raidloot.js";
 import { thirdSideHit } from "./thirdside.js";
 import { offerRecruits } from "./recruits.js";
 import { talker } from "./conflicts.js";
+import { sortFind } from "./ammo.js"; // rounds by calibre
 
 export const FOLK = {
   SURVIVORS: {
@@ -311,6 +312,7 @@ function makeStash(state, b, room, n) {
   cells[I(b, spot[0], spot[1])].k = "crate";
   const kit = KITS.raiders;
   const sup = { ammo: rng.int(K.ammo[0], K.ammo[1]), food: rng.int(K.food[0], K.food[1]), water: rng.int(K.water[0], K.water[1]) };
+  sortFind(sup, "raider", "stash", room.id, f, spot[0], spot[1]); // ammo.js: the raiders' rounds, by calibre
   const gear = [];
   const g = rng.int(K.gear[0], K.gear[1]) + Math.floor(n / K.perBlocks);
   for (let i = 0; i < g; i++) gear.push(lootItem(rng.pick(kit.loot), "raider", spend(rng))); // itemcond.js: raiders' kit

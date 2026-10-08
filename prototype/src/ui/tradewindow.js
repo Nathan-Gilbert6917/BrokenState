@@ -1,7 +1,7 @@
 // Trade window (two columns like RimWorld / Fallout), the radio panel for one group, the trade caravan planner,
 // and the bits of the Groups and Bases tabs that lead to them. Handlers: TRADE_ACTIONS / TRADE_CHANGE_ACTIONS,
 // registered by main.js. The rules live in sim/trade.js, sim/radio.js and sim/caravans.js.
-import { SUPPLIES, SUPPLY_KEYS, GEAR, FACTION_TYPES } from "../sim/data.js";
+import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, FACTION_TYPES } from "../sim/data.js";
 import { hub, day, factionById, baseById, survivorById, atBase, skill, combatPower, RADIO_RANGE } from "../sim/world.js";
 import { attitude } from "../sim/factions.js";
 import { tileLabel, partyTile, carryCapacity, STANCES } from "../sim/parties.js";
@@ -32,6 +32,7 @@ import { vehicleOffers, buyVehicle, sellVehicle } from "../sim/vehicletrade.js";
 import { visitorTradeHead, visitorTradeButtons } from "./visitors.js";
 import { baseListenSection } from "./radiolisten.js"; // Listen in at a base (sim/radiolisten.js)
 import { ask } from "./confirm.js"; // attacking a caravan asks first (one confirmation style)
+import { supplyAmt } from "../sim/rounds.js"; // "ammo": every round, any calibre
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -62,7 +63,8 @@ const whyHtml = (why) => why.map((w) => `<span class="tw-why ${w.dir}">${w.dir =
 function supplyRows(state, ctx, side) {
   const { t, f, speech } = ctx;
   const mine = side === "mine";
-  return SUPPLY_KEYS.map((k) => {
+  // Rounds go by calibre and type (sim/ammo.js): a row for each kind either side has; never the generic "ammo".
+  return SUPPLY_KEYS.filter((k) => k !== "ammo" && (!SUPPLIES[k].round || (ctx.have[k] || 0) >= 1 || (ctx.theirHave[k] || 0) >= 1 || (t.offer[k] || 0) > 0 || (t.ask[k] || 0) > 0)).map((k) => {
     const have = mine ? ctx.have[k] || 0 : ctx.theirHave[k] || 0;
     const q = (mine ? t.offer[k] : t.ask[k]) || 0;
     const unit = mine ? sellPrice(state, f, k, speech, Math.max(1, q)) : buyPrice(state, f, k, speech, Math.max(1, q));
@@ -326,7 +328,7 @@ export function caravanPlanModal(state, ui) {
   for (const k of SUPPLY_KEYS) sup[k] = (form.goods[k] || 0) + (form.travel[k] || 0);
   const load = SUPPLY_KEYS.reduce((s, k) => s + sup[k] * SUPPLIES[k].weight, 0) + form.gear.reduce((s, i) => s + (h.armory[i] ? itemLoad(h.armory[i]) : 0), 0);
   const over = members.length && load > cap + 1e-9;
-  const shortStock = SUPPLY_KEYS.filter((k) => sup[k] > (h.stock[k] || 0));
+  const shortStock = SUPPLY_KEYS.filter((k) => sup[k] > supplyAmt(h.stock, k)); // "ammo": every round (sim/rounds.js)
   const canGo = members.length && form.stops.length && est.ok && !over && !shortStock.length;
   return `<div class="box wide"><h1>New trade caravan</h1>
     ${state.bases.length > 1 ? `<div class="row small">From <select data-action="cp-from">${state.bases.map((b) => `<option value="${b.id}" ${b.id === h.id ? "selected" : ""}>${esc(b.name)}</option>`).join("")}</select></div>` : ""}
@@ -348,7 +350,7 @@ export function caravanPlanModal(state, ui) {
       </div>
       <div>
         <h3>Goods to trade</h3>
-        <table class="t"><tr><th></th><th>Trade</th><th>To live on</th><th>${h.type === "hub" ? "Hub" : "Here"}</th></tr>${SUPPLY_KEYS.map((k) => `<tr><td>${SUPPLIES[k].name}</td><td><input type="number" min="0" class="tw-qty" data-action="cp-good" data-k="${k}" value="${form.goods[k] || 0}"></td><td>${["food", "water", "fuel", "meds", "ammo"].includes(k) ? `<input type="number" min="0" class="tw-qty" data-action="cp-travel" data-k="${k}" value="${form.travel[k] || 0}">` : ""}</td><td class="muted">${n0(h.stock[k])}</td></tr>`).join("")}</table>
+        <table class="t"><tr><th></th><th>Trade</th><th>To live on</th><th>${h.type === "hub" ? "Hub" : "Here"}</th></tr>${STOCK_KEYS.map((k) => `<tr><td>${SUPPLIES[k].name}</td><td><input type="number" min="0" class="tw-qty" data-action="cp-good" data-k="${k}" value="${form.goods[k] || 0}"></td><td>${["food", "water", "fuel", "meds", "ammo"].includes(k) ? `<input type="number" min="0" class="tw-qty" data-action="cp-travel" data-k="${k}" value="${form.travel[k] || 0}">` : ""}</td><td class="muted">${n0(supplyAmt(h.stock, k))}</td></tr>`).join("")}</table>
         <button class="mini" data-action="cp-autofill" style="margin-top:0.3rem"${tip("Food and water for the whole route plus 25%, and fuel for the vehicle")}>Auto-fill supplies</button>
         <h3>Items from the armory</h3>
         ${h.armory.length ? `<div class="small">${h.armory.map((g, i) => `<label class="layer"><input type="checkbox" data-action="cp-gear" data-i="${i}" ${form.gear.includes(i) ? "checked" : ""}> ${gearLabel(g)}</label>`).join("")}</div>` : `<div class="small muted">The armory is empty.</div>`}

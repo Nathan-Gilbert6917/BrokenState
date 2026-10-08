@@ -15,6 +15,8 @@
 //     hours, fails (wasting parts) or works; drive it home; save / load of the vehicle and the car records
 //   - the autopilot plays 40 days with a convoy and a found vehicle on its map without crashing
 // Usage: node tools/miltrucktest.js [seed = 7]
+import { TRUCK_GEAR } from "../src/sim/data-guns.js";
+import { totalRounds, isRoundKey } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, hub, atBase, tickHour, day } from "../src/sim/world.js";
 import { GEAR, SUPPLIES, LOCATIONS } from "../src/sim/data.js";
 import { Rng } from "../src/sim/rng.js";
@@ -50,7 +52,7 @@ const roadTruckTile = (st) => bareRoads(st).find((t) => trucksAt(st, t.id).lengt
 function team(st, tile, n = 3, opts = {}) {
   const h = hub(st);
   const crew = atBase(st, h.id).slice(0, n).map((s) => s.id);
-  const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "move", stance: "normal", vehicleId: opts.vehicleId ?? null, supplies: { food: 6, water: 6, ammo: Math.min(40, Math.floor(h.stock.ammo || 0)), meds: Math.min(2, Math.floor(h.stock.meds || 0)), fuel: Math.min(opts.fuel || 0, Math.floor(h.stock.fuel || 0)), parts: Math.min(opts.parts || 0, Math.floor(h.stock.parts || 0)), scrap: Math.min(opts.scrap || 0, Math.floor(h.stock.scrap || 0)) } });
+  const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "move", stance: "normal", vehicleId: opts.vehicleId ?? null, supplies: { food: 6, water: 6, ammo: Math.min(40, totalRounds(h.stock)), meds: Math.min(2, Math.floor(h.stock.meds || 0)), fuel: Math.min(opts.fuel || 0, Math.floor(h.stock.fuel || 0)), parts: Math.min(opts.parts || 0, Math.floor(h.stock.parts || 0)), scrap: Math.min(opts.scrap || 0, Math.floor(h.stock.scrap || 0)) } });
   if (res.error) throw new Error(res.error);
   const p = res.party;
   p.path = [tile]; p.idx = 0; p.phase = "waiting"; p.dest = tile;
@@ -105,15 +107,15 @@ let truckValue = 0;
     let v = 0, items = 0, ammo = 0;
     for (let i = 0; i < N; i++) {
       const got = truckLoot(rng, kind, cond);
-      v += valueOf(got); items += got.gear.length; ammo += got.sup.ammo || 0;
+      v += valueOf(got); items += got.gear.length; ammo += totalRounds(got.sup);
       for (const it of got.gear) keys.add(it.key);
-      for (const k of Object.keys(got.sup)) keys.add(k);
+      for (const k of Object.keys(got.sup)) keys.add(isRoundKey(k) ? "ammo" : k); // rounds by calibre (ammo.js): the table's "ammo"
     }
     avg[`${kind}/${cond}`] = { v: v / N, items: items / N, ammo: ammo / N };
   }
   for (const [k, a] of Object.entries(avg)) console.log(`    ${k.padEnd(16)} value ${Math.round(a.v)}, ${r2(a.items)} items, ${Math.round(a.ammo)} ammo`);
-  const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...(Object.keys(TRUCK_FLASH).length ? ["flashbang"] : [])]); // TRUCK_FLASH: the flashbang hook
-  check([...keys].every((k) => allowed.has(k)), "everything in a truck comes from its loot table (and the flashbang hook)");
+  const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k)), ...(Object.keys(TRUCK_FLASH).length ? ["flashbang"] : [])]); // TRUCK_GEAR: the weapons overhaul's hook; TRUCK_FLASH: the flashbang hook (TRUCK_LOOT_HOOKS)
+  check([...keys].every((k) => allowed.has(k)), "everything in a truck comes from its loot table (and the roster's and the flashbang hooks)");
   check(["ar", "carbine", "ammo", "plate", "vest", "milhelmet", "nvg", "milradio", "frag", "smokegren", "food", "meds", "assaultpack", "rucksack"].every((k) => keys.has(k)), "military guns, bulk ammo, armour, helmets, night vision, radios, grenades, rations, meds and packs all turn up");
   check(avg["cargo/intact"].v > avg["cargo/wrecked"].v && avg["cargo/wrecked"].v > avg["cargo/burnt"].v * 1.5, "a wrecked truck holds less, a burned-out one much less");
   check(avg["cargo/intact"].ammo >= 50, `an intact cargo truck: ammunition by the crate (${Math.round(avg["cargo/intact"].ammo)} rounds on average)`);
@@ -161,8 +163,8 @@ section("The raid map (combat.js placeMilTrucks, AREAS.miltrucks; the crews)");
     const err = combatAct(st, { type: "search", unit: u.id, box: box.id, open: true });
     if (err) { console.log("    search:", err); continue; }
     opened++;
-    const allowed = new Set(Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]));
-    if (box.contents && [...Object.keys(box.contents.sup).filter((k) => !["arrows", "wood"].includes(k)), ...box.contents.gear.filter((it) => !it.blueprint && !it.book && GEAR[it.key] && !["key"].includes(it.key)).map((it) => it.key)].every((k) => allowed.has(k) || k === "frag" || k === "smokegren")) lootOk++;
+    const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k))]); // TRUCK_GEAR: the weapons overhaul's hook (TRUCK_LOOT_HOOKS)
+    if (box.contents && [...Object.keys(box.contents.sup).filter((k) => !["arrows", "wood"].includes(k)), ...box.contents.gear.filter((it) => !it.blueprint && !it.book && GEAR[it.key] && !["key"].includes(it.key)).map((it) => it.key)].every((k) => allowed.has(k) || (isRoundKey(k) && allowed.has("ammo")) || k === "frag" || k === "smokegren")) lootOk++;
     value += box.contents ? valueOf(box.contents) : 0;
     const after = b.units.filter((x) => x.ztype === "soldier" && x.aware).length;
     if (crew > 0 && after > before) rose++;
@@ -225,7 +227,7 @@ section("The field battle map, the dead, the hour-by-hour search");
   const e = { tile: t.id, hours: 0, heat: 5, found: { supplies: {}, gear: [] } };
   let got = "", hours = 0;
   for (let i = 0; i < 40 && unopenedTrucks(st, t.id).length; i++) { st.hour += 1; e.hours++; hours++; got += truckSearchHour(st, e, p, partyMembers(st, p)); }
-  check(/Forced the back/.test(got) && (e.found.supplies.ammo || e.found.gear.length), `the hour-by-hour search reaches the trucks (all opened in ${hours} hours; Heat ${e.heat})`);
+  check(/Forced the back/.test(got) && (totalRounds(e.found.supplies) || e.found.gear.length), `the hour-by-hour search reaches the trucks (all opened in ${hours} hours; Heat ${e.heat})`);
   check(!siteDeadMix(st, t.id) || (siteDeadMix(st, t.id).soldier || 0) < MILTRUCK.DEAD.road, "once they are all opened the soldiers are no longer drawn to the tile");
 }
 
@@ -415,16 +417,20 @@ section("Found cars (foundcars.js)");
   check(/Mechanics 5\+/.test(fixProblem(st3, p3, fv)), `too low a Mechanics level says what is needed ("${fixProblem(st3, p3, fv)}")`);
   partyMembers(st3, p3)[0].skills.mechanics = 5;
   check(/parts/.test(fixProblem(st3, p3, fv)), `then the parts ("${fixProblem(st3, p3, fv)}")`);
-  p3.supplies.parts = 20; p3.supplies.scrap = 10;
-  check(fixProblem(st3, p3, fv) === "" && /\d+%/.test(orderOptions(st3, p3).find((o) => o.mission === "getvehicle").desc), "with Mechanics 5 and the parts: the repair is offered with its odds");
+  p3.supplies.parts = 5; p3.supplies.scrap = 10; // car parts (section 10): 3 car parts, or 2 machine parts for each: 5 is short
+  check(/car parts/.test(fixProblem(st3, p3, fv)), `machine parts stand in two for a car part (5 are not enough for 3: "${fixProblem(st3, p3, fv)}")`);
+  p3.supplies.parts = 6;
+  check(fixProblem(st3, p3, fv) === "", "6 machine parts are (two for each car part)");
+  p3.supplies.parts = 0; p3.supplies.carparts = 20;
+  check(fixProblem(st3, p3, fv) === "" && /\d+%/.test(orderOptions(st3, p3).find((o) => o.mission === "getvehicle").desc), "with Mechanics 5 and the car parts: the repair is offered with its odds");
   giveOrder(st3, p3, "getvehicle");
   check(p3.phase === "task" && p3.task.type === "fixcar" && p3.task.hours === 7, "the team works on it on the spot (a 7-hour task)");
   let fails = 0, guard = 0;
   while (fv.found && fv.found.repair && guard++ < 30) {
     st3.hour += 1; // a try an hour (the dice are by the hour)
-    const before = p3.supplies.parts;
+    const before = p3.supplies.carparts;
     const text = finishFixCar(st3, p3, { vehicleId: fv.id });
-    if (/wasted/.test(text)) { fails++; check(p3.supplies.parts === before - Math.ceil(3 / 2), `a failure wastes half the parts ("${text}")`); }
+    if (/wasted/.test(text)) { fails++; check(p3.supplies.carparts === before - Math.ceil(3 / 2), `a failure wastes half the car parts ("${text}")`); }
     if (fails > 1) break;
   }
   if (fv.found && fv.found.repair) { for (let i = 0; i < 30 && fv.found && fv.found.repair; i++) { st3.hour += 1; finishFixCar(st3, p3, { vehicleId: fv.id }); } }
@@ -435,13 +441,27 @@ section("Found cars (foundcars.js)");
   for (let i = 0; i < 12; i++) {
     const w = createVehicle(st3, "sedan", { kind: "abandoned", tile: t3.id, since: st3.hour }, { fuel: 5, condition: 30 });
     w.found = { model: "sedan", hour: st3.hour - i * 7, repair: { parts: 2, scrap: 0, hours: 2, mech: 5, what: ["flat tyres"] } };
-    p3.supplies.parts = 20;
+    p3.supplies.carparts = 20;
     const text = finishFixCar(st3, p3, { vehicleId: w.id });
     tried++;
-    if (/wasted/.test(text)) { failed++; if (p3.supplies.parts !== 19 || !w.found.repair) wastedOk = false; }
+    if (/wasted/.test(text)) { failed++; if (p3.supplies.carparts !== 19 || !w.found.repair) wastedOk = false; }
     st3.vehicles.splice(st3.vehicles.indexOf(w), 1);
   }
-  check(failed > 0 && failed < tried && wastedOk, `a failed repair wastes half the parts and can be tried again (${failed} of ${tried} first tries failed at 50%)`);
+  check(failed > 0 && failed < tried && wastedOk, `a failed repair wastes half the car parts and can be tried again (${failed} of ${tried} first tries failed at 50%)`);
+  // Machine parts in place of car parts: a success takes 2 of them for each car part short.
+  {
+    let ok = false;
+    for (let i = 0; i < 20 && !ok; i++) {
+      const w = createVehicle(st3, "sedan", { kind: "abandoned", tile: t3.id, since: st3.hour }, { fuel: 5, condition: 30 });
+      w.found = { model: "sedan", hour: st3.hour - 100 - i * 13, repair: { parts: 2, scrap: 0, hours: 2, mech: 5, what: ["flat tyres"] } };
+      p3.supplies.carparts = 1; p3.supplies.parts = 10; p3.cargo.supplies.carparts = 0; p3.cargo.supplies.parts = 0;
+      const text = finishFixCar(st3, p3, { vehicleId: w.id });
+      if (!w.found.repair) { ok = true; check(p3.supplies.carparts === 0 && p3.supplies.parts === 8, `a repair short of car parts takes 2 machine parts for the missing one ("${text}")`); }
+      if (st3.vehicles.includes(w)) st3.vehicles.splice(st3.vehicles.indexOf(w), 1);
+      if (p3.vehicleId === w.id) { p3.vehicleId = null; }
+    }
+    check(ok, "a repair with machine parts standing in was made");
+  }
   // Drive it home: a team that already has a vehicle sends one person home in the found one.
   const fv2 = createVehicle(st3, "sedan", { kind: "abandoned", tile: t3.id, since: st3.hour }, { fuel: 10, condition: 50 });
   fv2.found = { model: "sedan", repair: null };
