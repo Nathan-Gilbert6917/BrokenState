@@ -55,23 +55,38 @@ console.log("The hive's guard and a team on the mound after the card");
   check(!!hitP && hitP.horde === guard, "back on the mound on a plain move: the guard attacks");
 }
 
-console.log("The governor's hive squad goes home after the fires (seed 1, Aggressive, days 36–38)");
+// The governor's first fire trip to a hive on the Aggressive autopilot: the first of these seeds where one happens within
+// DAYS (seed 1 had it on days 36-38 when the fix went in; other branches' changes to the world move it, so the test
+// looks for the first trip rather than a fixed seed and day). The trip: from the squad leaving to it coming home.
+const SQUAD = { SEEDS: [1, 4, 2, 3], DAYS: 70 };
+console.log("The governor's hive squad goes home after the fires (Aggressive autopilot, the first fire trip)");
 {
-  const st = createWorld({ seed: 1, factionCount: 8 });
-  st.started = true;
-  setAutopilot(st, true, "aggressive");
-  let top = st.log[0];
-  const lines = [];
-  while (day(st) <= 38) {
-    tickHour(st);
-    for (let i = 0; i < st.log.length && st.log[i] !== top; i++) lines.push(st.log[i].text);
-    top = st.log[0];
+  let found = null;
+  for (const seed of SQUAD.SEEDS) {
+    const st = createWorld({ seed, factionCount: 8 });
+    st.started = true;
+    setAutopilot(st, true, "aggressive");
+    let top = st.log[0];
+    const lines = [];
+    let fire = -1, until = Infinity;
+    while (day(st) <= Math.min(SQUAD.DAYS, until)) {
+      tickHour(st);
+      for (let i = 0; i < st.log.length && st.log[i] !== top; i++) lines.push({ d: day(st), t: st.log[i].text });
+      top = st.log[0];
+      if (fire < 0) { fire = lines.findIndex((l) => /The hive: .*Set fires around it/.test(l.t)); if (fire >= 0) until = lines[fire].d + 3; }
+      if (fire >= 0 && lines.slice(fire).some((l) => /^Destroy hive team .* is home/.test(l.t))) break;
+    }
+    if (fire < 0) continue;
+    let from = fire;
+    while (from > 0 && !/^Destroy hive team .* left for/.test(lines[from].t)) from--;
+    found = { seed, day: lines[fire].d, trip: lines.slice(from).map((l) => l.t) };
+    break;
   }
-  const fired = lines.some((t) => /The hive: .*Set fires around it/.test(t));
-  check(fired, "the squad set fires around the hive");
-  check(!lines.some((t) => /^🤖 Destroy hive team .* moves on to .* to search it too/.test(t)), "and did not move on to search a site on the hive's land");
-  check(!lines.some((t) => /whole team was lost fighting the hive's dead/.test(t)), "and was not wiped out by the hive's guard on the mound");
-  check(lines.some((t) => /^Destroy hive team .* is home/.test(t)), "it came home");
+  check(!!found, `the squad set fires around the hive${found ? ` (seed ${found.seed}, day ${found.day})` : ` (none on seeds ${SQUAD.SEEDS.join(", ")} within ${SQUAD.DAYS} days)`}`);
+  const trip = found ? found.trip : [];
+  check(!trip.some((t) => /^🤖 Destroy hive team .* moves on to .* to search it too/.test(t)), "and did not move on to search a site on the hive's land");
+  check(!trip.some((t) => /whole team was lost fighting the hive's dead/.test(t)), "and was not wiped out by the hive's guard on the mound");
+  check(trip.some((t) => /^Destroy hive team .* is home/.test(t)), "it came home");
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

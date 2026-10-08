@@ -152,7 +152,9 @@ export const GROUP_PRIORITIES = {
     blocFit: { fortress: 1, traders: 1, commune: 1, military: 1, expansionist: 0.2 }, blocGang: 0, blocHunts: 0, blocPrey: 1, blocWord: "Accord", blocVote: 0.5, medStart: [7, 3], sickbayBuilt: 2,
     jail: { early: false, late: true, full: "release", unsold: null, buyer: null, share: 0.3, mood: 60, eat: 0.6, health: 0, captiveMood: -0.5, escapeWork: 1.1 } },
 };
-// A type's weight for an action (1 for an unknown type or action).
+// A type's weight for an action (1 for an unknown type or action), or its setting (a word, a list, a row: dflt for an
+// unknown type).
+/** @type {(f: any, act: string, dflt?: any) => any} */
 export const weightOf = (f, act, dflt = 1) => ((GROUP_PRIORITIES[f && f.type] || {})[act] ?? dflt);
 // The weight x the situation: hunger and the wounded push some choices up and others down.
 export function prio(f, act) {

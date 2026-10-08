@@ -290,7 +290,7 @@ Hives and hordes (`src/sim/hives.js`, `hordes.js`, `defences.js`; numbers in `hi
 node tools/hivecontacttest.js
 ```
 
-A team on a hive's mound after the card (`src/sim/hives.js` hiveArrive, `conflicts.js` contactOn; about 40 s): backed off or fires set and given new orders, a team still on the mound's tile is not ambushed by that hive's own guard (a team that came on a plain move is), the mark drops off the tile and survives save/load; the governor's fire-trip squad goes home instead of searching the hive's land (seed 1, Aggressive, days 36–38).
+A team on a hive's mound after the card (`src/sim/hives.js` hiveArrive, `conflicts.js` contactOn; about 2 minutes): backed off or fires set and given new orders, a team still on the mound's tile is not ambushed by that hive's own guard (a team that came on a plain move is), the mark drops off the tile and survives save/load; the governor's fire-trip squad goes home instead of searching the hive's land (the Aggressive autopilot's first fire trip on seeds 1, 4, 2, 3 within 70 days: seed 4, day 57 now).
 
 ```bash
 node tools/hordecensus.js 365 all 1-20
