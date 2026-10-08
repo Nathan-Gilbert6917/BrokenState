@@ -95,7 +95,9 @@ export function teamHoldings(state, p) {
   const v = partyVehicle(state, p);
   /** @type {Record<string, { packed: number, found: number, all: number }>} */
   const supplies = {};
-  for (const [pool, k2] of [[p.supplies || {}, "packed"], [p.cargo.supplies || {}, "found"]]) {
+  /** @type {[Stock, "packed" | "found"][]} */
+  const pools = [[p.supplies || {}, "packed"], [p.cargo.supplies || {}, "found"]];
+  for (const [pool, k2] of pools) {
     for (const [k, q] of Object.entries(pool)) {
       if (!SUPPLIES[k] || !(num(q) > 0)) continue;
       const e = supplies[k] || (supplies[k] = { packed: 0, found: 0, all: 0 });
@@ -229,6 +231,7 @@ export function dropAllCargo(state, p) {
 /** @param {State} state @param {Party} p */
 export function dropAllSupplies(state, p) {
   const h = teamHoldings(state, p);
+  /** @type {Record<string, number>} */
   const supplies = {};
   for (const k of Object.keys(h.cargo.supplies)) supplies[k] = Infinity;
   return dropOff(state, p, { supplies });
