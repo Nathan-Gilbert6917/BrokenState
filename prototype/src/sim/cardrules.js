@@ -74,6 +74,7 @@ export function cardIcon(card, kind) {
   if (card.moraleFor != null || card.breakFor != null || card.snapFor != null) return "💬";
   if (card.outbreakBase != null) return "🦠";
   if (card.crashId != null) return "✈";
+  if (card.convoyId != null) return "🪖"; // miltrucks.js: an abandoned Army convoy
   if (card.jobId != null || card.allianceAsk != null) return "📜";
   if (card.partyId != null) return "🚶";
   return "🃏";

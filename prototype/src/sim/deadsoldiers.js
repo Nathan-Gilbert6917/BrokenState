@@ -19,6 +19,7 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { mergeMix } from "./zombietypes.js";
 import { swarmArmor } from "./carriers.js";
+import { truckDeadShare } from "./miltrucks.js";
 
 export const MILDEAD = {
   // × damage by weapon key (combat.js WEAPONS); other: anything not listed of that kind (shot / melee).
@@ -46,7 +47,7 @@ export const MILDEAD = {
   STAB: ["knife", "machete", "sawmachete", "pipespear", "fireaxe"],
   // Share among a site's dead, by site type; NEAR: within 1 tile of a military site (the cordon), ROAD: within 2 on a
   // road (the abandoned checkpoints); FALLEN: a fallen military base (hardcore) and the tiles around it.
-  SITE: { military: { soldier: 0.45 }, crash_mil: { soldier: 0.5 }, police: { riot: 0.3 }, prison: { riot: 0.2 }, city: { riot: 0.05 } },
+  SITE: { military: { soldier: 0.45 }, crash_mil: { soldier: 0.5 }, convoy: { soldier: 0.55 }, police: { riot: 0.3 }, prison: { riot: 0.2 }, city: { riot: 0.05 } },
   NEAR: 0.15, ROAD: 0.08, FALLEN: [0.6, 0.3],
   CHECKPOINT: 0.5, // a city crawl's barricaded checkpoint (citycrawl.js): the soldiers who held it
   RARE: 0.03, // a lone soldier among the dead anywhere else (per site and week)
@@ -96,7 +97,7 @@ export function stabsGap(a, t) {
 
 // ---------- where they are ----------
 const locType = (t) => (t && t.loc ? t.loc.type : null);
-const isMilSite = (t) => locType(t) === "military" || locType(t) === "crash_mil";
+const isMilSite = (t) => locType(t) === "military" || locType(t) === "crash_mil" || locType(t) === "convoy";
 // The fallen military base of a hardcore game (hardcore-groups.js keeps it in state.hardcore.groups.military).
 function fallenBase(state) {
   const m = state.hardcore && state.hardcore.groups && state.hardcore.groups.military;
@@ -111,6 +112,8 @@ export function siteDeadMix(state, tileId) {
   const add = (k, v) => { out[k] = Math.max(out[k] || 0, v); };
   const site = MILDEAD.SITE[locType(t)];
   if (site) for (const k in site) add(k, site[k]);
+  const trucks = truckDeadShare(state, tileId); // miltrucks.js: Army trucks nobody has opened yet, their crews about them
+  if (trucks) add("soldier", trucks);
   const fb = fallenBase(state);
   if (fb != null && g) {
     const d = fb === tileId ? 0 : g.distance(fb, tileId);

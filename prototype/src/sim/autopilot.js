@@ -2301,6 +2301,14 @@ function planTrip(state) {
     if (lostBikes) cands.push({ mission: "getvehicle", tile: m.tile, score: 1.6, crew: 2, why: "bring our bikes home", supplies: { scrap: 1 } });
     else if (m.type === "vehicle" && !carsAtBase(state, h.id).length) {
       const bad = m.info && m.info.condition < 15;
+      // One found on a map that needs work (foundcars.js): only with a good enough mechanic at the hub, and its parts.
+      const fv = state.vehicles.find((x) => x.id === m.info?.vehicleId);
+      const fix = fv && fv.found && fv.found.repair;
+      if (fix) {
+        if (!atBase(state, h.id).some((s) => skill(s, "mechanics") >= fix.mech)) continue;
+        cands.push({ mission: "getvehicle", tile: m.tile, score: 2, crew: 2, why: `repair the ${fv.name.toLowerCase()} we found`, supplies: { fuel: 12, parts: fix.parts, scrap: fix.scrap }, min: { parts: fix.parts, scrap: fix.scrap } });
+        continue;
+      }
       // It starts again only with 2 fuel between its tank and the team (no fuel to bring: no trip, not a wasted one).
       cands.push({ mission: "getvehicle", tile: m.tile, score: 2.4, crew: 2, why: "bring our vehicle home", supplies: { fuel: 12, parts: bad ? 1 : 0 }, min: { fuel: Math.max(0, 2 - ((m.info && m.info.fuel) || 0)) } });
     }

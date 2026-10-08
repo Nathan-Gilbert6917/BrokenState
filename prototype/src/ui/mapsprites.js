@@ -110,6 +110,38 @@ function paintTruck(color) {
   return p;
 }
 
+// Army cargo truck (sim/miltrucks.js, vehicles.js miltruck): a tall square cab, a canvas-covered bed on six wheels,
+// olive drab with a white star; `color` tints the canvas a little (your team's colour on its own truck). burnt: black
+// and rusted, the canvas gone to ribs; wrecked: faded, a flat.
+function paintMilTruck(color = OLIVE, cond = "intact") {
+  const p = painter(24, 14);
+  const body = cond === "burnt" ? "#2b2723" : cond === "wrecked" ? "#55583e" : OLIVE;
+  const dark = shade(body, -0.35), lit = shade(body, 0.22);
+  const canvas = cond === "burnt" ? null : cond === "wrecked" ? "#7a7458" : mixHex(CANVAS, color, 0.15);
+  p.rect(1, 8, 22, 10, body); p.rect(1, 10, 22, 10, dark);           // chassis
+  if (canvas) { p.rect(1, 2, 14, 7, canvas); p.rect(1, 2, 14, 2, shade(canvas, 0.2)); for (const x of [4, 8, 12]) p.rect(x, 3, x, 7, shade(canvas, -0.18)); }
+  else for (const x of [1, 5, 9, 13]) { p.rect(x, 2, x, 7, "#3a2e26"); p.rect(1, 2, 14, 2, "#3a2e26"); } // the burnt canvas: bare ribs
+  p.rect(16, 3, 21, 7, body); p.rect(16, 3, 21, 3, lit);             // cab
+  p.rect(18, 4, 21, 5, cond === "burnt" ? "#1a1a1a" : GLASS);          // windscreen
+  p.rect(22, 6, 23, 8, body); p.set(23, 7, cond === "burnt" ? "#1a1a1a" : "#ffe28a"); // bonnet, headlight
+  if (cond !== "burnt") star(p, 16, 8, WHITE);
+  wheel(p, 2, 10); wheel(p, 7, 10); wheel(p, 17, 10);
+  if (cond === "wrecked") { p.clear(10, 13); p.rect(7, 13, 10, 13, TIRE); }
+  if (cond === "burnt") { p.set(10, 1, SMOKE_FAINT); p.set(11, 0, SMOKE_FAINT); p.set(6, 3, "#5a3a28"); p.set(19, 6, "#5a3a28"); }
+  return p;
+}
+function mixHex(a, b, f) { const [r1, g1, b1] = rgb(a), [r2, g2, b2] = rgb(b); return toHex(r1 + (r2 - r1) * f, g1 + (g2 - g1) * f, b1 + (b2 - b1) * f); }
+// The abandoned Army convoy (sim/miltrucks.js): two trucks nose to tail on a strip of road, a burnt one behind.
+function paintConvoySite() {
+  const p = painter(26, 16);
+  p.rect(0, 12, 25, 15, "#4b4b50"); for (let x = 1; x < 26; x += 4) p.rect(x, 14, x + 1, 14, "#b9b39a");
+  blit(p, paintMilTruck(OLIVE, "burnt"), 0, 0);
+  blit(p, paintMilTruck(OLIVE, "intact"), 3, 2);
+  return p;
+}
+// A truck spotted on the road (markers.js "miltruck"): a small Army truck with a white star.
+function paintMilTruckMarker() { return paintMilTruck(OLIVE, "wrecked"); }
+
 // Old sedan: low body, cabin with two windows.
 function paintSedan(color) {
   const p = painter(22, 12);
@@ -1475,6 +1507,7 @@ const POI_PAINT = {
   dam: paintDam, airport: paintAirport, factory: paintFactory, prison: paintPrison, military: paintMilitarySite,
   crash_mil: () => paintHeliWreck(OLIVE, shade(OLIVE, -0.3), "star"), crash_med: () => paintHeliWreck(WHITE, RED, "cross"),
   crash_news: () => paintHeliWreck("#3d6fb0", "#e8c04a", "stripe"), crash_cargo: paintCargoWreck, airdrop: paintAirDrop,
+  convoy: paintConvoySite, // sim/miltrucks.js: the abandoned Army convoy
 };
 
 // Grays a painter's colors (keeping see-through pixels see-through): picked-over sites.
@@ -1999,7 +2032,7 @@ function paintBikes(color, damaged) {
 
 function paintParked(type, color, needsFuel, damaged) {
   if (type === "bike") return paintBikes(color, damaged);
-  const base =type === "sedan" ? paintSedan(desatHex(color, 0.45)) : paintTruck(desatHex(color, 0.45));
+  const base = type === "sedan" ? paintSedan(desatHex(color, 0.45)) : type === "miltruck" ? paintMilTruck(desatHex(color, 0.45), damaged ? "wrecked" : "intact") : paintTruck(desatHex(color, 0.45));
   const p = painter(base.w + 2, base.h + 6);
   blit(p, base, 0, 6);
   for (const [x, y] of [[3, 13], [7, 14], [12, 13], [16, 14], [9, 12], [18, 12]]) if (p.get(x, y)) p.set(x, y, "#9a8a6a");
@@ -2099,6 +2132,7 @@ export function partySpriteCanvas(kind, color, count = 3) {
   return cached(`${kind}:${color}:${PEOPLE_KINDS.has(kind) ? n : ""}`, () => {
     if (kind === "truck") return paintTruck(color);
     if (kind === "sedan") return paintSedan(color);
+    if (kind === "miltruck") return paintMilTruck(color); // an Army truck got running (sim/foundcars.js)
     if (kind === "boat" || kind === "raft") return paintBoat(color, kind === "raft");
     if (kind === "convoy" || kind === "supply") return paintConvoyTruck(color, kind === "supply");
     if (kind === "cart" || kind === "supplycart") return paintHandcart(color, kind === "supplycart");
@@ -2268,6 +2302,7 @@ export function markerSpriteCanvas(type, color = "#4f8fd6", opt = {}) {
     if (type === "death") return paintGraveMarker(!opt.empty);
     if (type === "cache") return paintCacheMarker(!!opt.emptied);
     if (type === "car") return paintWreckMarker(!!opt.emptied);
+    if (type === "miltruck") return paintMilTruckMarker(); // an Army truck seen on the road (sim/miltrucks.js)
     if (type === "camp") return paintCampMarker(!!opt.emptied);
     if (type === "hive") return paintHive(0);
     return paintParked(opt.vehicle || "truck", color, !!opt.needsFuel, !!opt.damaged);
