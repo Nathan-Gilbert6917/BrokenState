@@ -4,6 +4,7 @@ import {
 } from "./sim/world.js";
 import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
+import { abandonProblem, abandonCard } from "./sim/occupy.js"; // Abandon outpost
 import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile } from "./sim/parties.js";
 import { stockHas } from "./sim/water.js"; // purified and un-purified water
 import { moveTeamOut, MOVE_OUT } from "./sim/moveout.js"; // a team moved out of a crowded base (the move-out planner)
@@ -898,6 +899,14 @@ const actions = {
   // The move-out planner's destination: another of your bases, or "" (pick a tile on the map once they are out).
   "pl-dest": (d) => { ui.planner.dest = d.tile === "" || d.tile == null ? null : Number(d.tile); autofill(ui.planner); ui.plannerError = ""; },
   moveout: (d) => openMoveOut(Number(d.base)),
+  // sim/occupy.js: Abandon outpost, asked on a card first.
+  abandonbase: (d) => {
+    const b = baseById(state, Number(d.base));
+    const why = abandonProblem(state, b);
+    if (why) { ui.baseMsg = why; return; }
+    if (!state.cards.some((c) => c.abandonBase === b.id)) addCard(state, abandonCard(state, b));
+    ui.baseView = null;
+  },
   "pl-launch": () => {
     const pl = ui.planner;
     const c = plannerLoad(state, pl);

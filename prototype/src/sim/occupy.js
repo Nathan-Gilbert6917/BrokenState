@@ -23,14 +23,15 @@
 //   costs their relations the same).
 // - The governor (autopilot.js) moves into a nearby abandoned base it can clear instead of founding an outpost when it
 //   wants one (occupyCandidate there).
-import { BUILDINGS, plotsFree, countAll, count, assignStations } from "./buildings.js";
+import { BUILDINGS, plotsFree, countAll, count, assignStations, underAttack } from "./buildings.js";
 import { SUPPLIES, STOCK_KEYS } from "./data.js";
-import { log, addCard, day, hub, newId, combatPower, armedFactor, snapshot } from "./world.js";
+import { log, addCard, day, hub, newId, combatPower, armedFactor, snapshot, atBase, removeBase } from "./world.js";
+import { evacuate, nearestOtherBase } from "./conquest.js"; // Abandon outpost: the people walk home
 import { abandonedAt, abandonedThreat, ABANDON } from "./groupworld.js";
-import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, settleInto } from "./parties.js";
+import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, settleInto, planPath } from "./parties.js";
 import { startCombat, registerCombatHandler, winOdds } from "./combat.js";
 import { changeGoodwill, recomputeOwnership } from "./factions.js";
-import { CLAIM } from "./claims.js";
+import { claimsTaken, takeGroupClaims } from "./claims.js"; // the groups' claims round it are yours (as Build outpost)
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { sumRecs, totalRounds } from "./rounds.js"; // rounds by calibre
 import { firstHubPending } from "./hardcore-start.js";
@@ -46,6 +47,11 @@ export const OCCUPY = {
   GOV_CREW: 3,      // and sends this many (more when the threat asks for it, up to GOV_CREW_MAX)
   GOV_CREW_MAX: 5,
   GOV_MIN_STANDING: 1, // and only one with at least this many buildings standing (a bare group base is no better than new ground)
+  // The governor abandons a doomed outpost (autopilot.js abandonDoomed), all of these at once: autumn or winter; on its
+  // own stores and fields it runs out of food within DOOM_DAYS; its supply line to the hub is weak (strength under
+  // DOOM_LINE, or cut off); the hub's own winter plan (with every outpost) is short too, so nothing can be sent; its
+  // people have a way home. At most one every DOOM_EVERY days.
+  DOOM_DAYS: 14, DOOM_LINE: 0.5, DOOM_EVERY: 30,
 };
 const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const emptyStock = () => ({ food: 0, water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 });
@@ -106,14 +112,7 @@ export function occupyGrievance(state, tile) {
   const out = [];
   const former = rec && typeof rec.from === "number" ? state.factions.find((f) => f.id === rec.from && f.alive) : null;
   if (former) out.push({ f: former, gw: OCCUPY.FORMER_GW, why: "it was their base" });
-  const claims = new Map();
-  if (state.claims) for (const id of state.grid.within(tile, CLAIM.BASE_RADIUS)) {
-    const c = state.claims[id];
-    if (!c || typeof c.owner !== "number") continue;
-    const f = state.factions.find((o) => o.id === c.owner && o.alive);
-    if (f) claims.set(f, (claims.get(f) || 0) + 1);
-  }
-  for (const [f, n] of claims) out.push({ f, gw: CLAIM.TAKEN * n, why: `${n} of their claims round it` });
+  for (const x of claimsTaken(state, tile)) out.push({ f: x.f, gw: x.gw, why: `${x.n} of their claims round it`, claims: true });
   return out;
 }
 const grievanceWords = (list) => list.map((g) => `${g.f.known ? g.f.name : "a group"} (${g.why}: goodwill ${g.gw})`).join(", ");
@@ -250,16 +249,55 @@ export function takeAbandoned(state, tile, p = null) {
   if (p && state.parties.includes(p)) settleInto(state, p, base);
   assignStations(state, base);
   recomputeOwnership(state);
-  // The groups' claims round it are yours now.
-  if (state.claims) for (const id of state.grid.within(tile, CLAIM.BASE_RADIUS)) {
-    const c = state.claims[id];
-    if (c && typeof c.owner === "number") state.claims[id] = { owner: "player", since: state.hour, ...(c.well ? { well: c.well } : {}) };
-  }
-  for (const g of griev) changeGoodwill(state, g.f, g.gw, g.why === "it was their base" ? "your expansion near their land: you moved into their old base" : "your expansion near their land: you took their claims");
+  // The groups' claims round it are yours now (claims.js, as Build outpost), and their old base.
+  takeGroupClaims(state, tile);
+  for (const g of griev) if (!g.claims) changeGoodwill(state, g.f, g.gw, "your expansion near their land: you moved into their old base");
   state.knowledge[tile] = snapshot(state, tile);
   state.stats.basesOccupied = (state.stats.basesOccupied || 0) + 1;
   const stand = base.buildings.length ? standingText(base.buildings) : "";
   const text = `${people ? `The team moved into ${mine ? `${base.name}, your old outpost` : `the base ${rec.fromName} left at ${tileLabel(state, tile)}`}` : `${base.name} is yours`}: ${base.type === "hub" ? "your new hub" : "a new outpost"}${stand ? ` with ${stand}` : ", bare"}.${rubble.length ? ` ${rubble.length} more ${rubble.length === 1 ? "was" : "were"} beyond saving (no plot or room for ${rubble.length === 1 ? "it" : "them"}).` : ""}${got ? ` Stores left there: ${got}.` : ""}${griev.length ? ` ${griev.map((g) => g.f.known ? g.f.name : "A group").join(" and ")} will not like it.` : ""}`;
   log(state, text, "good");
   return text;
+}
+
+// ---------- abandoning an outpost of yours ----------
+// Abandon outpost (the base screen's button; a confirm card): everyone there leaves for your nearest other base as a
+// team with what they can carry of its stores (conquest.js evacuate: water and food for the road, scrap, ammo, meds,
+// the best vehicle; the other vehicles stay parked there, marked), and the base is gone from your list (world.js
+// removeBase, voluntary: no "why was it lost"). Its buildings stay standing as an empty base, your old ownership
+// record with them (groupworld.js leavePlayerBase: ABANDON.STOCK_YOURS of the stores still there), rotting like any
+// other, for another group to move into, or for you to take back (Reoccupy your old outpost). Not the hub, not your
+// only base, not under attack, not when the people there have no way home over land.
+export function abandonProblem(state, base) {
+  if (!base || !state.bases.includes(base)) return "That base is no longer yours.";
+  if (base.type === "hub") return "The hub cannot be abandoned.";
+  if (state.bases.length < 2) return "It is your only base.";
+  if (underAttack(state, base)) return "Not while it is under attack.";
+  const to = nearestOtherBase(state, base);
+  if (atBase(state, base.id).length && (!to || !planPath(state, base.tile, to.tile, false))) return "The people there have no way home over land.";
+  return "";
+}
+export function abandonCard(state, base) {
+  const people = atBase(state, base.id);
+  const to = nearestOtherBase(state, base);
+  const cars = state.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === base.id && v.condition > 0);
+  return {
+    title: `Abandon ${base.name}?`, abandonBase: base.id,
+    text: `${people.length ? `${people.length === 1 ? "The one person" : `All ${people.length} people`} there leave${people.length === 1 ? "s" : ""} for ${to ? to.name : "your nearest base"} with what they can carry of its stores${cars.length ? ` and the ${cars[0].name}${cars.length > 1 ? ` (the other ${cars.length - 1} vehicle${cars.length === 2 ? "" : "s"} stay${cars.length === 2 ? "s" : ""} parked there)` : ""}` : ""}. ` : "Nobody lives there. "}` +
+      `Its buildings (${standingText(base.buildings)}) stay standing as an empty base with half of what is left in its stores: they rot month by month, another group may move in, and its land is no longer yours. You can take it back later (Reoccupy your old outpost: clear out whatever moved in, no scrap needed).`,
+    choices: [
+      { label: "Abandon it", hint: "The people walk home; the base stands empty", ai: () => 0, resolve: (st) => abandonOutpost(st, base) },
+      { label: "Keep it", hint: "Nothing changes", ai: () => 1, resolve: () => "Nothing changes." },
+    ],
+  };
+}
+export function abandonOutpost(state, base, why = "abandoned") {
+  const no = abandonProblem(state, base);
+  if (no) return no;
+  const team = evacuate(state, base, null, why); // conquest.js: the team home with what they carry
+  removeBase(state, base, "was abandoned", { voluntary: true }); // world.js: the rest, and the empty base (groupworld.js leavePlayerBase)
+  const rec = abandonedAt(state, base.tile);
+  if (rec) rec.left = { day: day(state), why };
+  state.stats.basesAbandoned = (state.stats.basesAbandoned || 0) + 1;
+  return `${base.name} is abandoned${team ? `: ${partyMembers(state, team).length} on the road home` : ""}. Its buildings stand empty.`;
 }

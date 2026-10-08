@@ -75,7 +75,7 @@ import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
 import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
-import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
+import { canClaim, CLAIM, claimsTaken, takeGroupClaims, claimsTakenText } from "./claims.js"; // the orders card: Claim this tile where the land borders yours; a new outpost takes the groups' claims round it
 import { enterTarget, enterCard } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
 import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, takeStock, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
 
@@ -1108,6 +1108,8 @@ export function orderOptions(state, p) {
     const scrap = (p.supplies.scrap || 0) + (p.cargo.supplies.scrap || 0);
     const need = outpostScrap(state, tile);
     add("outpost", scrap < need ? `Needs ${need} scrap carried${need < 15 ? " (on the ruins)" : ""} (have ${Math.floor(scrap)})` : null);
+    const taken = claimsTaken(state, tile); // claims.js: the groups' claims round it become yours
+    if (taken.length) out[out.length - 1].desc += ` Building here takes claims round it and angers ${claimsTakenText(taken)}.`;
   }
   const site = state.deathSites.find((d) => d.tile === tile);
   if (site && site.items.length) add("recover");
@@ -1356,7 +1358,8 @@ function arrive(state, p) {
       state.bases.push(base);
       settleInto(state, p, base);
       recomputeOwnership(state);
-      log(state, `${base.name} founded with ${members.length} staff.`, "good");
+      const took = takeGroupClaims(state, base.tile); // claims.js: the groups' claims round it are yours (as a group's new base takes yours)
+      log(state, `${base.name} founded with ${members.length} staff.${took.length ? ` Its land takes claims of ${claimsTakenText(took)}.` : ""}`, "good");
       return `${base.name} founded.`;
     }
     case "recover": {

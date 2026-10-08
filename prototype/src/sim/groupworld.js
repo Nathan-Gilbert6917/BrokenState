@@ -43,11 +43,11 @@ import { sameBloc, betray } from "./blocs.js"; // AI blocs: theft between member
 import { hash01 } from "./skills.js";
 import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, VEHICLE_TYPES, TURRET_KG } from "./vehicles.js";
 import { workshopFactor, worksAt } from "./groupworks.js";
-import { weightOf, tickOf } from "./groupcare.js";
+import { weightOf, tickOf, fitPeople } from "./groupcare.js";
 import { removeFromArsenal, issueKit } from "./arsenal.js";
 import { relation, changeRelation } from "./diplomacy.js"; // changeRelation: also a group moving into another's old base
 import { captivesOf } from "./conflicts.js";
-import { preparedDefense, strength } from "./factions.js";
+import { preparedDefense, strength, recomputeOwnership } from "./factions.js";
 import { lookoutsSpot } from "./watch.js";
 import { vehicleDeliveriesDaily } from "./vehicletrade.js"; // vehicles bought over the radio arrive
 
@@ -64,6 +64,10 @@ export const ABANDON = {
   SQUAT: 0.2, SQUAT_STOCK: 0.1, SQUAT_STOCK_PER: 100, SQUAT_MAX: 0.5, SQUAT_FROM: 5, SQUAT_EVERY: 10, SQUAT_N: [2, 5], SQUAT_POWER: 3.5, SQUAT_DEAD: 0.5,
   THIN_DAYS: 7,     // those your team killed in a failed attempt stay dead this long (the next ones drift in)
   AI_LOSS: 0.15, FORMER_REL: -10,
+  // A group gives up its farthest base (not its main one, not one of yours it holds) when it has fewer than AI_KEEP fit
+  // people for each base it holds: the base stands empty with its works and a share of the stores (leaveGroupBase), as
+  // your Abandon outpost leaves yours (occupy.js). At most one every AI_KEEP_EVERY days.
+  AI_KEEP: 3, AI_KEEP_EVERY: 20,
 };
 const h = (state, ...k) => hash01(state.seed, "groupworld", ...k);
 const dist = (state, a, b) => state.grid.distance(a, b);
@@ -436,12 +440,29 @@ function decayAbandoned(state, d) {
   }
 }
 
+// A group spread too thin gives up its farthest base (ABANDON.AI_KEEP): it stands empty for whoever comes.
+export function groupAbandonDaily(state, f, d = day(state)) {
+  if (!f.alive || f.outsider || f.bases.length < 2 || fitPeople(f) >= f.bases.length * ABANDON.AI_KEEP) return null;
+  if (d - (f.leftBaseDay ?? -999) < ABANDON.AI_KEEP_EVERY) return null;
+  const held = new Set(((state.conquest && state.conquest.occupied) || []).map((o) => o.tile)); // yours they hold: conquest.js
+  const main = f.bases[0];
+  const tile = f.bases.slice(1).filter((t) => !held.has(t)).sort((a, b) => dist(state, b, main) - dist(state, a, main) || a - b)[0];
+  if (tile == null) return null;
+  f.bases = f.bases.filter((t) => t !== tile);
+  f.leftBaseDay = d;
+  const rec = leaveGroupBase(state, f, tile, 1 / (f.bases.length + 1));
+  recomputeOwnership(state);
+  state.stats.groupsLeftBases = (state.stats.groupsLeftBases || 0) + 1;
+  if (f.known && state.live.has(tile)) log(state, `${f.name} gave up ${tileName(state, tile)}: too few of them to hold it. It stands empty.`, "info");
+  return rec;
+}
 // One group's day (factions.js factionsDaily).
 export function groupWorldDaily(state, f) {
   const d = day(state);
   knowsOf(state, f);
   scoutDaily(state, f, d);
   vehicleDaily(state, f, d);
+  groupAbandonDaily(state, f, d);
 }
 export function groupWorldWorld(state) { decayAbandoned(state, day(state)); vehicleDeliveriesDaily(state); }
 // A scavenging party's look around the site (aiscav.js): the bases within KNOW.SEE.

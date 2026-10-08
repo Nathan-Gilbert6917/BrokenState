@@ -7,10 +7,13 @@
 // Usage: node tools/occupytest.js [seed=42]
 import { createWorld, tickHour, hub, atBase, day, makeSurvivor, newId, removeBase, snapshot } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
-import { addBuilding, plotsUsed, plotCap, count } from "../src/sim/buildings.js";
+import { addBuilding, plotsUsed, plotCap, count, underAttack } from "../src/sim/buildings.js";
 import { launchExpedition, partyMembers, outpostName, orderOptions, planPath, giveOrder, missionProblem, MISSIONS } from "../src/sim/parties.js";
 import { recomputeOwnership, attitude } from "../src/sim/factions.js";
-import { setAutopilot, occupyCandidate } from "../src/sim/autopilot.js";
+import { setAutopilot, occupyCandidate, doomedOutpost, autopilotDaily } from "../src/sim/autopilot.js";
+import { season } from "../src/sim/weather.js";
+import { supplyLine } from "../src/sim/economy.js";
+import { claimsTaken } from "../src/sim/claims.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { relation } from "../src/sim/diplomacy.js";
 import { overwriteClaims, CLAIM } from "../src/sim/claims.js";
@@ -316,6 +319,152 @@ section("The governor moves in instead of founding an outpost");
   const got = st.bases.find((b) => b.tile === tile);
   for (const l of st.log.filter((x) => /Old Farm|occupy|🤖 Sent/i.test(x.text)).slice(0, process.env.OCCLOG ? 30 : 4).reverse()) console.log(`  log: ${l.text.slice(0, 160)}`);
   check(!!got, `the governor moved into it (${got ? `${got.name}, ${got.buildings.length} buildings` : "not in 12 days"})`);
+}
+
+// ======================================================================================
+section("Build outpost takes the groups' claims round it, as a group's new base takes yours");
+{
+  const st = world(seed + 8);
+  const h = hub(st);
+  const tile = nearFree(st, h.tile, 4, 8);
+  const o = st.factions.find((x) => x.alive);
+  o.known = true;
+  const near = st.grid.neighbors(tile).filter((t) => st.tiles[t].terrain !== "water").slice(0, 2);
+  st.claims = Object.fromEntries(near.map((t) => [t, { owner: o.id, since: 0 }]));
+  const at = { path: [tile], idx: 0, supplies: { scrap: 15 }, cargo: { supplies: {}, gear: [] } };
+  const opt = orderOptions(st, at).find((x) => x.mission === "outpost");
+  check(opt && new RegExp(`angers ${o.name}`).test(opt.desc), `the orders card says so before you build (${opt && opt.desc.slice(-80)})`);
+  check(claimsTaken(st, tile).length === 1 && claimsTaken(st, tile)[0].n === 2, "it would take their 2 claims");
+  const UI = await import("../src/ui/ui.js");
+  const crew = atBase(st, h.id).slice(0, 2).map((s) => s.id);
+  const modal = UI.renderModal(st, { started: true, planner: { dest: tile, mission: "outpost", crew: new Set(crew), vehicleId: null, stance: "normal", supplies: { scrap: 15, food: 6, water: 6 } }, plannerError: "" }) || "";
+  check(/Building here takes claims round it and angers/.test(modal), "the planner says so too");
+  Object.assign(h.stock, { scrap: 60, food: 100, water: 100 });
+  const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "outpost", stance: "normal", supplies: { scrap: 15, food: 6, water: 6 } });
+  check(!res.error, `the team leaves (${res.error || "ok"})`);
+  res.party.path = [tile]; res.party.idx = 0;
+  const g0 = o.goodwill;
+  giveOrder(st, res.party, "outpost");
+  check(st.bases.some((b) => b.tile === tile), "the outpost stands");
+  check(near.every((t) => st.claims[t].owner === "player"), "their claims round it are yours");
+  check(Math.abs(o.goodwill - (g0 + 2 * CLAIM.TAKEN)) < 1e-6, `${o.name} goodwill ${g0} → ${o.goodwill} (${CLAIM.TAKEN} a claim)`);
+  if (st.diplo) check(((o.griev && o.griev.growth) || 0) > 0, "a growth grievance, as for Occupy");
+  // The groups' side reaches as far: a group's new base takes the claims within the same radius (factions.js: CLAIM.BASE_RADIUS).
+  const src = (await import("node:fs")).readFileSync(new URL("../src/sim/factions.js", import.meta.url), "utf8");
+  check(/overwriteClaims\(state, t\.id, CLAIM\.BASE_RADIUS, f\.id/.test(src), "a group's new base takes claims within the same CLAIM.BASE_RADIUS");
+}
+
+// ======================================================================================
+section("Abandon outpost: the card, the walk home, the empty base, Reoccupy");
+{
+  const st = world(seed + 9);
+  const h = hub(st);
+  check(/hub/.test((await import("../src/sim/occupy.js")).abandonProblem(st, h)), "the hub cannot be abandoned");
+  const tile = nearFree(st, h.tile, 3, 6);
+  const b = outpost(st, tile);
+  addBuilding(b, "walls"); addBuilding(b, "well");
+  for (let i = 0; i < 2; i++) { const s = makeSurvivor(st, 0.9); s.location = { kind: "base", baseId: b.id }; st.survivors.push(s); }
+  check(O.abandonProblem(st, b) === "", `an outpost can be (${O.abandonProblem(st, b)})`);
+  b.alert = true;
+  check(/attack/.test(O.abandonProblem(st, b)), "not while it is under attack");
+  b.alert = false;
+  const card = O.abandonCard(st, b);
+  check(/Abandon/.test(card.title) && pick(card, /^Abandon it/) && pick(card, /^Keep it/) && /Reoccupy/.test(card.text), "a confirm card: Abandon it or Keep it");
+  pick(card, /^Keep it/).resolve(st);
+  check(st.bases.includes(b), "Keep it: nothing changes");
+  const food0 = b.stock.food;
+  const text = pick(card, /^Abandon it/).resolve(st);
+  check(!st.bases.includes(b), `abandoned (${text})`);
+  const team = st.parties.find((p) => p.owner === "player" && partyMembers(st, p).length === 2);
+  check(team && team.homeBaseId === h.id && (team.supplies.food || 0) > 0, `its people walk home with ${team ? Math.floor(team.supplies.food || 0) : 0} food of the ${food0}`);
+  const rec = G.abandonedAt(st, tile);
+  check(rec && rec.from === "player" && rec.left && rec.buildings.length === 2, "it stands empty with its buildings: your old ownership record");
+  check(!(st.losses || []).some((l) => l.id === b.id), "no 'why was it lost' for a base you gave up");
+  check(st.knowledge[tile] && st.knowledge[tile].abandoned, "your map shows it empty");
+  const UI = await import("../src/ui/ui.js");
+  check(UI.tileActions(st, tile).some(([m, l]) => m === "occupy" && /Reoccupy your old outpost/.test(l)), "right-click: Reoccupy your old outpost");
+  for (let i = 0; i < G.ABANDON.DECAY; i++) { daysOn(st, 1); G.groupWorldWorld(st); }
+  check(rec.buildings.reduce((a, x) => a + (x.wear || 0), 0) >= G.ABANDON.ROT, "it rots like any empty base");
+  // Your only base cannot be given up.
+  const st2 = world(seed + 10);
+  const b2 = outpost(st2, nearFree(st2, hub(st2).tile, 3, 6));
+  st2.bases.splice(st2.bases.indexOf(hub(st2)), 1);
+  check(/only base|hub/.test(O.abandonProblem(st2, b2)), `not your only base (${O.abandonProblem(st2, b2)})`);
+}
+
+// ======================================================================================
+section("The governor gives up a doomed outpost in winter; a group spread too thin gives up a base");
+{
+  const st = world(seed + 11);
+  const h = hub(st);
+  for (let d = 0; d < 112 && season(st).key !== "winter"; d++) st.hour += 24;
+  check(season(st).key === "winter", `winter (day ${day(st)})`);
+  const far = st.tiles.map((t) => t.id).filter((t) => free(st, t) && planPath(st, t, h.tile, false) && supplyLine(st, { tile: t }).strength < 0.5).sort((a, b) => st.grid.distance(a, h.tile) - st.grid.distance(b, h.tile))[0];
+  check(far != null, "a far outpost with a weak supply line");
+  const b = outpost(st, far);
+  Object.assign(b.stock, { food: 0, preserved: 0 });
+  Object.assign(h.stock, { food: 0, preserved: 0 });
+  for (let i = 0; i < 3; i++) { const s = makeSurvivor(st, 0.9); s.location = { kind: "base", baseId: b.id }; st.survivors.push(s); }
+  const d = doomedOutpost(st, b);
+  check(!!d, `doomed: food runs out in ${d ? d.runsIn : "?"} days, line ${d ? Math.round(d.line * 100) : "?"}%`);
+  h.stock.food = 5000; st.governor.winter = {}; // the winter plan is worked out once a day
+  check(!doomedOutpost(st, b), "not while the hub's winter stores could carry it");
+  h.stock.food = 0; st.governor.winter = {};
+  b.stock.food = 2000;
+  check(!doomedOutpost(st, b), "not while its own stores last");
+  b.stock.food = 0;
+  setAutopilot(st, true, "balanced");
+  st.cards.length = 0;
+  autopilotDaily(st);
+  check(!st.bases.includes(b) && G.abandonedAt(st, far) && G.abandonedAt(st, far).from === "player", "the governor gave it up: its people walk home, it stands empty");
+  check(st.governor.lastAbandon === day(st), "one every 30 days at most");
+  // A group spread too thin: its farthest base stands empty, the same record.
+  const f = st.factions.find((x) => x.alive && x.bases.length);
+  const extra = st.grid.within(f.bases[0], 8).filter((t) => free(st, t) && st.grid.distance(t, f.bases[0]) >= 3).slice(0, 2);
+  f.bases.push(...extra);
+  f.pop = 6; f.wounded = 0;
+  const left = G.groupAbandonDaily(st, f);
+  check(left && left.from === f.id && !f.bases.includes(left.tile) && f.bases.length === 2, `${f.name} (6 people, 3 bases) gave up one: an empty base`);
+  check(!G.groupAbandonDaily(st, f), "not again the next day");
+}
+
+// ======================================================================================
+section("The map: empty bases you know of, drawn with a tooltip");
+{
+  const st = world(seed + 12);
+  st.autoCombat = true;
+  const h = hub(st);
+  const near = st.grid.within(h.tile, 3).find((t) => t !== h.tile && free(st, t) && st.live.has(t));
+  const farT = st.tiles.find((t) => !st.live.has(t.id) && !st.knowledge[t.id] && free(st, t.id)).id;
+  st.abandoned = [
+    { tile: near, from: "player", fromName: "Old Mill Outpost", works: { walls: 1 }, buildings: [{ id: newId(), type: "walls", wear: 30 }], stock: {}, day: day(st) },
+    { tile: farT, from: 3, fromName: "Long Haul Co.", works: { walls: 2 }, stock: {}, day: day(st) },
+  ];
+  globalThis.window = globalThis.window || { addEventListener() {}, devicePixelRatio: 1 };
+  const R = await import("../src/ui/render.js");
+  const ctxStub = new Proxy({ measureText: (t) => ({ width: String(t).length * 5 }), getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) }, {
+    get: (o, k) => (k in o ? o[k] : () => {}), set: (o, k, v) => ((o[k] = v), true),
+  });
+  R.initRenderer({ getContext: () => ctxStub, getBoundingClientRect: () => ({ width: 1600, height: 900 }), width: 0, height: 0 });
+  R.view.layers = new Set(["pois", "territory", "teams", "hordes"]);
+  const draw = () => { R.camera.zoom = 1; R.centerOn(st, h.tile); R.redrawMap(true); R.render(st); };
+  draw();
+  const ov = R.mapOverlay();
+  check(ov.empty.includes(near) && !ov.ruins.includes(near), "an empty base in view is drawn (not as ruins)");
+  check(!ov.empty.includes(farT), "one you have never seen or heard of is not on your map");
+  const tipTxt = R.tileTooltip(st, near);
+  check(/Empty: Old Mill Outpost/.test(tipTxt) && /inside/.test(tipTxt) && /Reoccupy/.test(tipTxt), `the tooltip (${tipTxt.replace(/<[^>]+>/g, "").slice(0, 120)}…)`);
+  // Heard of it (a team's report): drawn as last seen, the tooltip says so.
+  st.knowledge[farT] = snapshot(st, farT);
+  draw();
+  check(R.mapOverlay().empty.includes(farT), "one in your last report is drawn");
+  check(/standing when last seen/.test(R.tileTooltip(st, farT)), "its tooltip goes by the report");
+  // Taken over since your report: still drawn as you saw it until you look again; moved into by you: gone.
+  st.abandoned.shift();
+  st.bases.push({ id: newId(), tile: near, type: "outpost", name: "Old Mill Outpost", stock: {}, buildings: [], construction: [], armory: [], radio: false, watchtower: false });
+  draw();
+  check(!R.mapOverlay().empty.includes(near), "your base there now: no empty base drawn");
+  delete globalThis.window;
 }
 
 console.log(`\n${passes} passed, ${fails} failed.`);

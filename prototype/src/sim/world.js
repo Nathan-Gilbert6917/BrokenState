@@ -645,11 +645,12 @@ function coalitionWins(state) {
 // A base is lost (overrun by a horde, taken in a raid). One place for everything that has to follow: the
 // people still there flee to the hub, vehicles parked there are left on the tile (abandoned, with a map
 // marker), supply runs to or from it are paused, and the log says what was lost.
-/** @param {State} state @param {Base} base @param {string} [cause] @returns {boolean} */
-export function removeBase(state, base, cause = "was lost") {
+// opts.voluntary: you abandoned it (occupy.js abandonOutpost: its people already left as a team): no "why was it lost".
+/** @param {State} state @param {Base} base @param {string} [cause] @param {{ voluntary?: boolean }} [opts] @returns {boolean} */
+export function removeBase(state, base, cause = "was lost", opts = {}) {
   const i = state.bases.indexOf(base);
   if (i < 0 || base.type === "hub") return false;
-  noteBaseLoss(state, base, lossHow(cause)); // causes.js: why it was lost (before the people leave)
+  if (!opts.voluntary) noteBaseLoss(state, base, lossHow(cause)); // causes.js: why it was lost (before the people leave)
   const h = hub(state);
   const fled = [];
   for (const s of state.survivors) {
@@ -690,12 +691,12 @@ export function removeBase(state, base, cause = "was lost") {
   if (base.buildings.length) bits.push(`${base.buildings.length} building${base.buildings.length === 1 ? "" : "s"}`);
   if (stock.length) bits.push(`its stock (${stock.join(", ")})`);
   if (base.armory.length) bits.push(`${base.armory.length} item${base.armory.length === 1 ? "" : "s"} in the armory`);
-  const parts = [`${base.name} ${cause}.`, bits.length ? `Lost with it: ${bits.join(", ")}.` : "Nothing of value was left there."];
-  if (abandonedAt(state, base.tile)) parts.push("Its buildings still stand there with some of its stores: send a team to Occupy it before someone else moves in.");
+  const parts = [`${base.name} ${cause}.`, bits.length ? `${opts.voluntary ? "Left behind there" : "Lost with it"}: ${bits.join(", ")}.` : "Nothing of value was left there."];
+  if (abandonedAt(state, base.tile)) parts.push(opts.voluntary ? "Its buildings stand empty with half of the stores left: Reoccupy it later, before someone else moves in." : "Its buildings still stand there with some of its stores: send a team to Occupy it before someone else moves in.");
   if (left.length) parts.push(`${left.length === 1 ? `The ${left[0]} was` : `${left.join(" and ")} were`} left behind there (marked on the map).`);
   if (fled.length) parts.push(`${fled.map((s) => firstOf(s.name)).join(", ")} fled to ${h.name}.`);
   if (paused) parts.push(`${paused} supply run${paused === 1 ? "" : "s"} to or from it ${paused === 1 ? "is" : "are"} paused.`);
-  log(state, parts.join(" "), "death");
+  log(state, parts.join(" "), opts.voluntary ? "info" : "death");
   return true;
 }
 

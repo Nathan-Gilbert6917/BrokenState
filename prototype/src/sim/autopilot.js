@@ -34,7 +34,7 @@ import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDe
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
 import { defaultRolePlan, plansOf } from "./defenceplan.js"; // the governor's defence plan (governorPlans, stewardSafety)
-import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
+import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort, supplyLine } from "./economy.js";
 import { mouthsAt, foodUse, HEAT } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { waterIn, teamWaterIn, RAW, keyWord } from "./water.js"; // purified and un-purified water: the governor counts both
 import { brokenAt, jobFor } from "./breakdowns.js";
@@ -78,7 +78,7 @@ import { gatheringCands } from "./hivebirth.js"; // hive birth you can see: cull
 import { GROWTHS, TECH } from "./hiveconst.js";
 import { typeStrength } from "./zombietypes.js";
 import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squadValue, nearestOtherBase } from "./conquest.js";
-import { OCCUPY, occupyProblem, occupyOdds, teamOccupyOdds, standingAt, occupyGrievance } from "./occupy.js"; // moving into an abandoned base instead of founding an outpost
+import { OCCUPY, occupyProblem, occupyOdds, teamOccupyOdds, standingAt, occupyGrievance, abandonProblem, abandonOutpost } from "./occupy.js"; // moving into an abandoned base instead of founding an outpost; giving up a doomed one
 import { abandonedThreat } from "./groupworld.js";
 import { autopilotPrisoners, jailTier, cellCap, prisonersAt } from "./prisoners.js";
 import { autopilotRescue, autoRescuePlan } from "./ransom.js"; // your people held by other groups: ransom first, a raid when strong
@@ -429,6 +429,7 @@ export function autopilotDaily(state) {
   idleDaily(state); // vehicletrade.js: how long each car has stood at a base
   winterReport(state);
   tidySupplyJobs(state);
+  abandonDoomed(state); // occupy.js: an outpost that cannot be fed through the winter is given up, its people home
   planCampaign(state); // the war on the hives: today's target (its ammo want feeds needs, trades and the stations)
   emergencyTrips(state); // water under a day, food under two: a haul goes out whatever the style's team limit
   wormCureRuns(state); // the worm where nothing can cure it: the sick walk to a base that can, or meds come to them
@@ -3624,6 +3625,38 @@ function outpostSite(state) {
     if (!best || score > best.score) best = { id, score };
   }
   return best ? best.id : null;
+}
+
+// ---------- giving up a doomed outpost (occupy.js abandonOutpost) ----------
+// Conservative (OCCUPY.DOOM_*): only in autumn or winter, an outpost whose own stores and fields run out within
+// DOOM_DAYS, whose supply line to the hub is weak or cut, while the hub's own winter plan (counting every outpost) is
+// short too, so nothing can be sent; its people must have a way home. One every DOOM_EVERY days. Its buildings stay
+// as an empty base (Reoccupy it in spring).
+export function doomedOutpost(state, o) {
+  const h = hub(state);
+  if (!h || o.type !== "outpost" || !atBase(state, o.id).length || abandonProblem(state, o)) return null;
+  if (!winterActive(state, h) || (wxSeason(state).key !== "autumn" && wxSeason(state).key !== "winter")) return null;
+  const own = winterOutlook(state, o);
+  const today = Math.floor(state.hour / 24);
+  if (own.runsOut == null || own.runsOut - today > OCCUPY.DOOM_DAYS) return null;
+  const line = supplyLine(state, o);
+  if (line.strength >= OCCUPY.DOOM_LINE) return null;
+  if (winterPlan(state, h).short <= 0) return null;
+  return { runsIn: Math.max(0, own.runsOut - today), line: line.strength };
+}
+function abandonDoomed(state) {
+  const g = gov(state);
+  if (day(state) - (g.lastAbandon ?? -999) < OCCUPY.DOOM_EVERY) return;
+  for (const o of state.bases.filter((b) => b.type === "outpost")) {
+    const d = doomedOutpost(state, o);
+    if (!d) continue;
+    const name = o.name;
+    const text = abandonOutpost(state, o, "it cannot be fed through the winter");
+    g.lastAbandon = day(state);
+    g.stats.abandoned = (g.stats.abandoned || 0) + 1;
+    say(state, `Gave up ${name}: its food runs out in about ${d.runsIn} day${d.runsIn === 1 ? "" : "s"}, its supply line is ${d.line > 0 ? `weak (${Math.round(d.line * 100)}%)` : "cut"} and the hub's winter stores are short too. ${text}`);
+    return;
+  }
 }
 
 // ---------- moving into an abandoned base (occupy.js) ----------
