@@ -28,7 +28,7 @@ import {
   removeParty, startReturn, STANCES,
 } from "./parties.js";
 import * as Parties from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, createVehicle, VEHICLE_TYPES, fitTechnical, ambushMult, raidTurret, loseRaidHumvee, humveeLeftText, TURRET_ODDS } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, createVehicle, VEHICLE_TYPES, fitTechnical, ambushMult, raidTurret, loseRaidHumvee, humveeLeftText, TURRET_ODDS, wearRaidHumvee } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer, raidRepelled, groupBroken } from "./factions.js";
 import { raidDamage } from "./breakdowns.js";
 import { perceptionChance, markAbandonedVehicle } from "./markers.js";
@@ -1655,6 +1655,8 @@ function onRaidDefenseCombat(state, result, setup) {
   const f = factionById(state, c.factionId);
   const base = state.bases.find((b) => b.id === c.baseId);
   if (f) f.pop = Math.max(0, f.pop - Math.ceil((result.enemiesKilled || 0) * 0.7));
+  const humveeKept = !!raid && (result.outcome !== "victory" || !!result.humveeOut); // combat.js raidCarTurn: it drove off with them, or they won
+  if (humveeKept && result.humveeWear) wearRaidHumvee(state, raid, result.humveeWear); // vehicles.js: what it took on the map
   let text;
   if (result.outcome === "retreat" && base && state.bases.includes(base) && raid && f) {
     // Pulled out of the fight: the base is abandoned to them (conquest.js), its people walk to the nearest base.
@@ -1668,7 +1670,7 @@ function onRaidDefenseCombat(state, result, setup) {
   }
   if (result.outcome === "victory") {
     if (raid) warRaidOnPlayer(state, raid, true); // diplomacy.js: a war raid beaten off counts for the war, as one held by the numbers
-    const hv = raid && base && state.bases.includes(base) ? loseRaidHumvee(state, raid, { base }) : null; // vehicles.js: the Humvee they brought is left behind
+    const hv = raid && base && state.bases.includes(base) && !humveeKept ? loseRaidHumvee(state, raid, { base }) : null; // vehicles.js: the Humvee they brought is left behind (unless it drove off)
     if (raid) removeParty(state, raid);
     if (base) base.alert = false;
     state.stats.raidsRepelled += 1;
@@ -1676,6 +1678,7 @@ function onRaidDefenseCombat(state, result, setup) {
     text = `${base ? base.name : "The base"} beat off the ${f ? f.name : ""} raid in a stand-up fight.`;
     log(state, text, "good");
     if (hv) { text += ` ${humveeLeftText(f, hv, base)}`; log(state, humveeLeftText(f, hv, base), "good"); }
+    else if (result.humveeOut) text += " Their Humvee got away.";
     // A stand-up fight at the walls still costs a little: a turn of the battle counts as 20 minutes of siege.
     if (base && raid && state.bases.includes(base)) {
       const dmg = raidDamage(state, base, { strength: raid.strength, hours: (raid.siegeHours || 0) + clamp((result.turns || 6) / 3, 1, 8), outcome: "won", by: f ? f.name : "the raiders" });

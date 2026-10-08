@@ -37,7 +37,7 @@
 // and the fight is held at the first tier where they match the attackers.
 import {
   CELL, active, unitAt, transformBattle, say, reachable, pathTo, distField, moveAlong, resizeBattle, floodReach,
-  coverAgainst, isRanged, WEAPONS, placeCar, CAR_LEN,
+  coverAgainst, isRanged, WEAPONS, placeCar, CAR_LEN, parkRaidCar,
 } from "./combat.js";
 import { count, countAll } from "./buildings.js";
 import { Rng } from "./rng.js";
@@ -579,6 +579,7 @@ export function toInterior(state, b, opts = {}) {
   let I = INTERIOR;
   const base = state.bases.find((x) => x.id === b.setup.baseId) || null;
   const side = T.side;
+  parkRaidCar(b); // combat.js: their Humvee stays outside the wall; its people get out and come on with the rest
   const un = sideUntf(side, T.w0, T.h0), tfA = sideTf(side, T.w0, T.h0);
   // The wall line as it stands now, east-facing, and where everyone is on the wall map.
   const rows = [];
