@@ -23,7 +23,8 @@ const list = (a) => a.join(", ") || "none";
 const NATURAL = ["claws", "acid"]; // a zombie's teeth, a spitter's acid: no item
 // The vehicle turret's guns (combat.js TURRET_WEAPON turret_m2 / turret_lmg, mounted: true) are no items either: the
 // gun belongs to the vehicle (vehicles.js upgrades), its belt is the team's ammo.
-const later = (k) => !!LATER_GEAR[k] || !!(WEAPONS[k] && WEAPONS[k].mounted);
+const later = (k) => !!(WEAPONS[k] && (WEAPONS[k].mounted || WEAPONS[k].mount)); // the turrets' guns and the M2 (bolted to military vehicles: never an item); the launchers are items since wave 2
+const launcherOrMount = (k) => !!(WEAPONS[k] && (WEAPONS[k].launcher || WEAPONS[k].mount));
 
 // ---------- every weapon ----------
 console.log("Weapons");
@@ -31,7 +32,7 @@ const keys = Object.keys(WEAPONS);
 const noGear = keys.filter((k) => k !== "fists" && !NATURAL.includes(k) && !later(k) && !GEAR[k]);
 check(!noGear.length, `every weapon has an item (missing: ${list(noGear)})`);
 // (the M203 is also the economy agent's under-barrel part, data-gunmods.js: an item, cat gunmod, that fires nothing yet)
-check(Object.keys(LATER_GEAR).filter((k) => WEAPONS[k]).every((k) => WEAPONS[k].launcher || WEAPONS[k].mount) && !Object.keys(LATER_GEAR).some((k) => GEAR[k] && !(ATTACH[k] && GEAR[k].cat === "gunmod")), "launchers and the M2: data only, not items yet (wave 2; the M203 only as a gun part)");
+check(Object.keys(LATER_GEAR).every((k) => WEAPONS[k] && WEAPONS[k].launcher && GEAR[k] === LATER_GEAR[k]) && GEAR.m203 && GEAR.m203.cat === "gunmod" && !GEAR.m2hb, "the launchers are items (wave 2: LATER_GEAR in GEAR; the M203 a gun part); the M2 never is");
 const guns = keys.filter((k) => !WEAPONS[k].melee && !WEAPONS[k].arrows && !WEAPONS[k].acid);
 const noCal = guns.filter((k) => !WEAPONS[k].cal || (!CALIBERS[WEAPONS[k].cal] && !WEAPONS[k].launcher));
 check(!noCal.length, `every gun has a known calibre (missing: ${list(noCal)})`);
@@ -82,7 +83,7 @@ for (const [kind, kit] of Object.entries(KITS)) for (const f of ["weapons", "str
 check(!badKit.length, `kits name real weapons (bad: ${list(badKit)})`);
 check(Object.values(KITS).every((kit) => (kit.loot || []).every((k) => GEAR[k])), "kit loot names real items");
 check(Object.keys(KIT_PATCH).every((k) => KITS[k]), "the patch names real kits");
-check(!Object.values(KITS).some((kit) => [...kit.weapons, ...kit.strong, ...kit.loot].some((k) => k === "amr" || later(k))), "no kit carries the .50 or a launcher");
+check(!Object.values(KITS).some((kit) => [...kit.weapons, ...kit.strong, ...kit.loot].some((k) => k === "amr" || later(k) || launcherOrMount(k))), "no kit carries the .50 or a launcher (launchers.js arms them apart)");
 const strong = KITS.soldiers.strong;
 const share = (k) => 0.5 * strong.filter((x) => x === k).length / strong.length;
 check(Math.abs(share("lmg") - 1 / 6) < 0.03 && Math.abs(share("sniper") - 1 / 10) < 0.01, `soldiers at power 7+: machine gun ${Math.round(share("lmg") * 100)}%, sniper ${Math.round(share("sniper") * 100)}%`);
@@ -97,7 +98,7 @@ for (const rows of Object.values(TRUCK_GEAR)) for (const [k] of rows) src.add(k)
 const orphans = Object.keys(GUN_GEAR).filter((k) => !src.has(k));
 check(!orphans.length, `every new item is found somewhere (none for: ${list(orphans)})`);
 check(Object.keys(ROSTER_TAGS).every((k) => ITEM_TAGS[k] && GEAR[k]) && Object.keys(GUN_GEAR).every((k) => ITEM_TAGS[k]), "every new item has loot theme tags");
-check(!Object.values(LOCATIONS).some((d) => d.gear.some(later)) && !Object.values(AREAS).some((a) => a.gear.some(([k]) => later(k))), "launchers stay out of loot until wave 2");
+check(!Object.values(LOCATIONS).some((d) => d.gear.some(launcherOrMount)) && !Object.values(AREAS).some((a) => a.gear.some(([k]) => launcherOrMount(k))), "launchers come only from their own tables (loot.js SITE_LAUNCHERS / AREA_LAUNCHERS), not the site gear lists");
 check(["lmg", "amr", "sniper", "dmr", "smg"].every((k) => !Object.values(LOCATIONS).some((d) => d.gear.includes(k))), "the rare guns only in raid boxes (with their own small chances), not the site searches");
 
 // ---------- the sniper rifle fitted ----------

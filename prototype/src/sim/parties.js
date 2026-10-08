@@ -58,8 +58,9 @@ import { travelFactor, travelEffects, travelHazard, thirstAt, thirstAhead, coldA
 import { thinIceStep } from "./rivers.js"; // frozen rivers: thin ice early and late in the freeze
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
-import { totalRounds, spendAmmo, ROUND_KEYS } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
+import { totalRounds, spendAmmo, ROUND_KEYS, GENERIC_KEYS } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
 import { packRounds, addRecord, drawTeamShots, sortFind } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
+import { packLauncherRounds } from "./launchers.js"; // the rounds for the launchers the crew carries (section 13)
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
@@ -633,7 +634,7 @@ export function launchExpedition(state, opts) {
   if (!est) return fail(v ? (bikes ? "No route by bike (water in the way)." : "No route for a vehicle (mountains or water). Try on foot.") : "No route to that tile.");
   // Water: purified and un-purified together (water.js), purified packed first.
   // "ammo": rounds of any calibre (packed below as the rounds that fit the crew's guns: ammo.js packRounds).
-  const stockFor = (k) => (k === "water" ? waterIn(home.stock) - Math.max(0, supplies[RAW] || 0) : k === "ammo" ? totalRounds(home.stock) - ROUND_KEYS.reduce((a, x) => a + (supplies[x] || 0), 0) : home.stock[k] || 0);
+  const stockFor = (k) => (k === "water" ? waterIn(home.stock) - Math.max(0, supplies[RAW] || 0) : k === "ammo" ? totalRounds(home.stock) - GENERIC_KEYS.reduce((a, x) => a + (supplies[x] || 0), 0) : home.stock[k] || 0);
   for (const [k, val] of Object.entries(supplies)) if (stockFor(k) < val) return fail(`Not enough ${k === "water" ? "water" : SUPPLIES[k].name.toLowerCase()} at ${at}.`);
   // Packed supplies have to be carried: what the people can carry on top of what they wear (load.js), plus the bikes'
   // racks or the car.
@@ -652,6 +653,7 @@ export function launchExpedition(state, opts) {
     if (d.raw > 0) packed[RAW] = (packed[RAW] || 0) + d.raw;
   }
   if (supplies.ammo > 0) { packed.ammo = 0; addRecord(packed, packRounds(home.stock, members, supplies.ammo)); } // ammo.js: the rounds that fit each one's gun
+  addRecord(packed, packLauncherRounds(home.stock, members, Math.max(0, cap - load))); // launchers.js: 40 mm and rockets for the launchers they carry, as far as they can carry
   Object.assign(supplies, packed);
   const stays = STAY_MISSIONS.includes(mission);
   /** @type {Party} */

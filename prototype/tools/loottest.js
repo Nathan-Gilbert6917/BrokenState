@@ -8,7 +8,8 @@
 import { MOD_ATTACH } from "../src/sim/data-gunmods.js";
 import { GEAR, LOCATIONS, CATEGORIES } from "../src/sim/data.js";
 import "../src/sim/blueprints.js"; // registers the blueprint items
-import { SITE_TAGS, AREA_TAGS, ITEM_TAGS, SITE_FINDS, AREA_FINDS, HUNT_FINDS, LIGHT_FINDS, GUNMOD_FINDS, AREA_GUNMODS, WARE_GUNMODS, SITE_MODS, AREA_MODS, WARE_MODS, PARTS_MIX, sortParts, splitParts, SITE_GRENADES, AREA_GRENADES, fitsTags, rollFind, rollAreaFind } from "../src/sim/loot.js";
+import { SITE_TAGS, AREA_TAGS, ITEM_TAGS, SITE_FINDS, AREA_FINDS, HUNT_FINDS, LIGHT_FINDS, GUNMOD_FINDS, AREA_GUNMODS, WARE_GUNMODS, SITE_MODS, AREA_MODS, WARE_MODS, PARTS_MIX, sortParts, splitParts, SITE_GRENADES, AREA_GRENADES, SITE_LAUNCHERS, AREA_LAUNCHERS, fitsTags, rollFind, rollAreaFind } from "../src/sim/loot.js";
+import { TRUCK_GEAR } from "../src/sim/data-guns.js"; // the new military weapons in Army trucks (factoryfit.js rosterTruckGear)
 import { FLASH_KIT } from "../src/sim/throwables.js"; // the flashbangs and smoke grenades soldiers and guards carry (on their bodies after)
 import { TRUCK_FLASH } from "../src/sim/miltrucks.js";
 import { AREAS, AREA_SETS, KITS, WEAPONS } from "../src/sim/combat.js";
@@ -66,6 +67,9 @@ addAll(ZBODY.FINDS, "body:zombie"); // one of the dead searched in a raid (inven
 for (const [k, B] of Object.entries(MILDEAD.BODY)) addAll([...B.armor, ...B.items, ...(MILDEAD.BODY_EXTRA[k] || [])].map(([key]) => key), `body:dead ${k}`);
 for (const [t, f] of Object.entries(SITE_GRENADES)) addAll(Object.keys(f.items), `find:${t}`); // flashbangs, smoke grenades (their own dice)
 for (const [a, f] of Object.entries(AREA_GRENADES)) addAll(Object.keys(f.items), `raid:${a}`);
+for (const [t, f] of Object.entries(SITE_LAUNCHERS)) addAll(Object.keys(f.items), `find:${t}`); // grenade launchers, rocket tubes, 40 mm, the M2 (launchers.js; their own dice)
+for (const [a, f] of Object.entries(AREA_LAUNCHERS)) addAll(Object.keys(f.items), `raid:${a}`);
+for (const [k, rows] of Object.entries(TRUCK_GEAR)) addAll(rows.map(([key]) => key), `truck:${k}`);
 for (const [k, kit] of Object.entries(FLASH_KIT)) addAll(Object.keys(kit), `body:${k}`);
 if (Object.keys(TRUCK_FLASH).length) addAll(["flashbang"], "truck"); // miltrucks.js: Army trucks' crates
 for (const [t, list] of Object.entries(WARES)) addAll(list, `sold:${t}`);
@@ -81,8 +85,8 @@ for (const [t, T] of Object.entries(GUN_STASH)) addAll([...Object.keys(T.guns), 
 
 console.log("Sources");
 check(!unknown.length, `every listed item exists in GEAR${unknown.length ? ` (unknown: ${unknown.join(", ")})` : ""}`);
-// The M203 is in GEAR (an attachment) but kept out of the loot until the launcher wave (data-guns.js LATER_GEAR).
-const orphans = Object.keys(GEAR).filter((k) => !src.has(k) && !(MOD_ATTACH[k] && MOD_ATTACH[k].launcher));
+// (The M203, an attachment, is in army stock since the launcher wave: loot.js SITE_MODS / AREA_MODS.)
+const orphans = Object.keys(GEAR).filter((k) => !src.has(k));
 check(!orphans.length, `every item has at least one source${orphans.length ? ` (none for: ${orphans.join(", ")})` : ""}`);
 const VAL5 = ["goldring", "cigarettes", "whiskey", "coffee", "batteries"];
 check(VAL5.every((k) => [...(src.get(k) || [])].some((l) => /^(find|raid|body):/.test(l))), "the five old valuables can now be found (searches, raids or bodies)");
@@ -97,6 +101,8 @@ for (const [t, def] of Object.entries(LOCATIONS)) for (const k of [...def.gear, 
 for (const [a, def] of Object.entries(AREAS)) for (const k of [...def.gear.map(([x]) => x), ...Object.keys((AREA_FINDS[a] || {}).items || {}), ...Object.keys((AREA_GUNMODS[a] || {}).items || {}), ...Object.keys((AREA_MODS[a] || {}).items || {}), ...Object.keys((AREA_GRENADES[a] || {}).items || {})]) if (!fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a}`);
 for (const [t, f] of Object.entries(SITE_GRENADES)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (grenades)`);
 for (const a of Object.keys(AREA_GRENADES)) if (!AREAS[a]) misfits.push(`grenades in unknown raid area ${a}`);
+for (const [t, f] of Object.entries(SITE_LAUNCHERS)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (launchers)`);
+for (const [a, f] of Object.entries(AREA_LAUNCHERS)) for (const k of Object.keys(f.items)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (launchers)`);
 for (const [a, f] of Object.entries(GUN_FINDS)) for (const k of Object.keys(f)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (gun finds)`);
 for (const [t, f] of Object.entries(SEARCH_TOOLS)) for (const k of Object.keys(f)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (tools)`);
 check(!misfits.length, `everything a site or raid area holds fits its theme${misfits.length ? ` (misfits: ${misfits.join("; ")})` : ""}`);

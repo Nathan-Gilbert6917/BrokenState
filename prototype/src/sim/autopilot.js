@@ -2385,6 +2385,7 @@ export function itemScore(s, item) { // also the roster's Equip best available (
   const d = GEAR[item.key];
   if (d.slot === "weapon") {
     const eff = gearEffect(s, item);
+    if (d.launcher) return eff.usable ? 0.5 + 1.5 * eff.mult : -1; // a launcher (launchers.js) is a second weapon: better than empty hands, never instead of a gun
     return eff.usable ? 0.5 + d.power * eff.mult * (item.quality || 1) : -1;
   }
   if (d.slot === "backpack") return d.carry || 0;

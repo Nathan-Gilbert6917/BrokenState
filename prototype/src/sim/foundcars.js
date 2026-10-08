@@ -315,7 +315,7 @@ export function claimCar(state, b, rec) {
   if (rec.mil) markTaken(state, rec.mil); // miltrucks.js: gone from the tile's maps from now on
   else (state.carClaims = state.carClaims || {})[tile] = state.hour;
   markAbandonedVehicle(state, v, fix ? "needs repair" : "found");
-  log(state, `Your people claimed a ${v.name.toLowerCase()} at ${tileLabel(state, tile)}${fix ? ` (it needs ${fix.what.join(", ")} before it runs)` : ""}${rec.mil ? `: armour plate and bulletproof glass${rec.mil.turret ? ", an M2 on the roof (not yet usable)" : ""}` : ""}.`, "good");
+  log(state, `Your people claimed a ${v.name.toLowerCase()} at ${tileLabel(state, tile)}${fix ? ` (it needs ${fix.what.join(", ")} before it runs)` : ""}${rec.mil ? `: armour plate and bulletproof glass${rec.mil.turret ? ", an M2 on the roof" : ""}` : ""}.`, "good");
   return v;
 }
 // A group's vehicle driven out of its motor pool: off their books (with its upgrades), and they know who took it.

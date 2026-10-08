@@ -87,9 +87,9 @@ export const ITEM_TAGS = {
   laser: ["guns", "police", "crime", "sport"], foregrip: ["guns", "military", "police"], bipod: ["guns", "hunt", "military"],
   pistolcan: ["guns", "military", "crime"], riflecan: ["military", "guns"], brake: ["guns", "hunt", "military"], comp: ["guns", "police", "sport"],
   choke: ["guns", "hunt", "farm", "sport"], extmag: ["guns", "police", "crime"], drum: ["military", "guns"], tubeext: ["guns", "police", "hunt"],
-  // the weapons overhaul's attachments (gunmods.js, data-gunmods.js) and the repair kits (repair.js); the M203's tag is
-  // where it will be kept, but it stays out of the loot tables (SITE_MODS) and off enemy guns (gunmods.js ENEMY_MODS)
-  // until the launcher wave
+  // the weapons overhaul's attachments (gunmods.js, data-gunmods.js) and the repair kits (repair.js); the M203 in army
+  // stock (SITE_LAUNCHERS, AREA_LAUNCHERS: their own dice) and under soldiers' rifles (gunmods.js ENEMY_MODS) since the
+  // launcher wave
   tritium: ["guns", "police"], rmr: ["guns", "police"], acog: ["military", "crash"], lpvo: ["military"], tacscope: ["military", "guns"],
   thermalscope: ["military"], scrapscope: ["crime", "camp"], scopemount: ["guns", "hunt"], sidemount: ["guns", "crime"],
   quadrail: ["military", "guns"], mlok: ["military", "guns"], can22: ["guns", "hunt"], can9: ["police", "military"], can556: ["military"],
@@ -141,6 +141,8 @@ export const ITEM_TAGS = {
   makeup: ["home", "mall", "shop", "travel", "school", "office"], perfume: ["mall", "home", "shop", "travel", "crash"],
 };
 Object.assign(ITEM_TAGS, ROSTER_TAGS); // the weapons overhaul's guns and melee weapons (data-guns.js)
+// The launchers' rounds (data-ammo.js boxes; launchers.js): army stock.
+Object.assign(ITEM_TAGS, { a_40mm_he: ["military", "crash"], a_40mm_buck: ["military"], a_40mm_smoke: ["military", "crash"], a_40mm_illum: ["military", "crash"], a_rocket_heat: ["military", "crime"] });
 
 // ---------- small finds per site type (the hour-by-hour search) ----------
 // p = chance per search hour at full loot (× the approach's pace, Treasure Hunter ×2); items = weights.
@@ -399,6 +401,45 @@ export function rollAreaGrenades(state, tileId, areaType, site = null, salt = ""
   if (!got) return [];
   const out = [];
   for (let i = 0; i < got[1]; i++) out.push(lootItem(got[0], areaSource(areaType, site), hash01(state.seed, "areagrendur", tileId, salt, i)));
+  return out;
+}
+
+// Grenade launchers (the M203 too), rocket tubes and their rounds (launchers.js; section 13 "found"): the Army's own stock. A roll of
+// their own each search hour (SITE_LAUNCHERS: a military base, a crashed military aircraft, a convoy) and one per raid
+// container (AREA_LAUNCHERS: an armoury, barracks, a military wreck, a motor pool). Their own dice: nothing else found
+// changed. { key: [weight, lo, hi] } like the grenades.
+export const SITE_LAUNCHERS = {
+  military: { p: 0.03, items: { m203: [1, 1, 1], a_40mm_he: [5, 1, 2], a_40mm_smoke: [1.5, 1, 1], a_40mm_illum: [1, 1, 1], a_40mm_buck: [1, 1, 1], m79: [1.2, 1, 1], at4: [0.6, 1, 1], m32: [0.2, 1, 1], rpg: [0.15, 1, 1], a_rocket_heat: [0.4, 1, 2] } },
+  crash_mil: { p: 0.015, items: { m203: [0.5, 1, 1], a_40mm_he: [3, 1, 1], m79: [0.6, 1, 1], at4: [0.8, 1, 1] } },
+  convoy: { p: 0.02, items: { m203: [0.5, 1, 1], a_40mm_he: [3, 1, 2], at4: [1.5, 1, 1], m79: [0.5, 1, 1] } },
+};
+export const AREA_LAUNCHERS = {
+  armory: { p: 0.05, items: { m203: [0.6, 1, 1], a_40mm_he: [4, 1, 3], a_40mm_smoke: [1, 1, 2], m79: [1, 1, 1], at4: [0.8, 1, 1], m32: [0.15, 1, 1], rpg: [0.15, 1, 1], a_rocket_heat: [0.4, 1, 2] } },
+  barracks: { p: 0.03, items: { m203: [0.8, 1, 1], a_40mm_he: [3, 1, 1], at4: [1, 1, 1], m79: [0.5, 1, 1] } },
+  milwreck: { p: 0.04, items: { m203: [0.6, 1, 1], a_40mm_he: [2, 1, 2], m79: [1, 1, 1], at4: [1, 1, 1] } },
+  motorpool: { p: 0.02, items: { at4: [1, 1, 1], a_40mm_he: [1, 1, 1] } },
+};
+// This search hour's launcher find at a site (SITE_LAUNCHERS): a list of items (often none).
+export function rollSiteLaunchers(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const site = t && t.loc ? SITE_LAUNCHERS[t.loc.type] : null;
+  if (!site) return [];
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "glfind", tileId, state.hour, salt) >= site.p * loot * mult) return [];
+  const got = pickGrenades(site.items, hash01(state.seed, "glpick", tileId, state.hour, salt), hash01(state.seed, "gln", tileId, state.hour, salt));
+  if (!got) return [];
+  const out = [];
+  for (let i = 0; i < got[1]; i++) out.push(lootItem(got[0], siteSource(t.loc.type), hash01(state.seed, "gldur", tileId, state.hour, salt, i)));
+  return out;
+}
+// A raid container's launcher find (AREA_LAUNCHERS), by its area type.
+export function rollAreaLaunchers(state, tileId, areaType, site = null, salt = "") {
+  const a = AREA_LAUNCHERS[areaType];
+  if (!a || hash01(state.seed, "areagl", tileId, salt) >= a.p) return [];
+  const got = pickGrenades(a.items, hash01(state.seed, "areaglpick", tileId, salt), hash01(state.seed, "areagln", tileId, salt));
+  if (!got) return [];
+  const out = [];
+  for (let i = 0; i < got[1]; i++) out.push(lootItem(got[0], areaSource(areaType, site), hash01(state.seed, "areagldur", tileId, salt, i)));
   return out;
 }
 
