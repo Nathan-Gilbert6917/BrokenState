@@ -8,7 +8,7 @@ import { packLights } from "./lights.js";
 
 export const KIT_KG = 1.5;
 // In order of preference: Heat first on a search trip, then morale, then the throwables.
-const SEARCH_KIT = ["scentmask", "ragboots", "ghillie", "tripwire", "stove", "camonet"];
+const SEARCH_KIT = ["scentmask", "ragboots", "woodghillie", "ghillie", "tripwire", "stove", "camonet"]; // woodghillie: crafted once the Bushcraft Field Guide is read (blueprints.js)
 const MORALE_KIT = ["harmonica", "cards"];
 const FIGHT_KIT = ["molotov", "pipebomb", "smokegren", "flare", "firecracker", "bottle"];
 // Optics (optics.js): a survey or recon takes the best the base has; other trips a pair of binoculars if there is one.

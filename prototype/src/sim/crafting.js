@@ -5,15 +5,19 @@
 // Gear has durability (item.dur, data.js GEAR dur / GEAR_DUR): it wears with every fight / treatment / day of work and
 // breaks at 0. Makeshift gear has few uses; a crafted item's quality sets how many (craftedDur).
 // Field crafting: a team in the field can make the simplest recipes (field: true) from what it carries.
+// The Crafting skill: every recipe's quality, speed and XP come from Crafting; the recipe's own skill + min (and cmin,
+// a Crafting minimum on the special recipes) only say who may attempt it. Quality is a roll around the expected
+// condition (craftQuality), narrower the better the crafter; each finished craft gives Crafting XP by the kind of thing,
+// the worth of what went into it and the quality it came out at (craftXp).
 import { LIGHTS } from "./lights.js";
-import { GEAR, SKILL_NAMES } from "./data.js";
+import { GEAR, SKILL_NAMES, SUPPLIES } from "./data.js";
 import { log, atBase, skill, newId, gearEffect } from "./world.js";
 import { count, BUILDINGS, benchOf } from "./buildings.js";
 import { partyMembers, addGearToCargo } from "./parties.js";
 import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf } from "./inventory.js";
 import { workFactor } from "./health.js";
-import { hasPerk } from "./skills.js";
-import { craftLock } from "./blueprints.js";
+import { hasPerk, hash01, gainXp } from "./skills.js";
+import { craftLock, craftEdgeQuality, craftEdgeSpeed } from "./blueprints.js";
 import { stockHas, useStock, teamWaterIn, takeTeamWater, waterIn, RAW } from "./water.js"; // recipes: water counts both kinds, un-purified used first
 import { WORM, rawWaterEggs, purifyCap } from "./worm.js"; // TABS_WATER: what one purification tablet treats (the recipe text); the filters in use
 import { WATER, waterCapacity, waterProduction } from "./economy.js"; // the filters in use: the tanks' room after the day's water (filtersInUse)
@@ -74,12 +78,34 @@ export const CRAFTS = {
   ghillie:     { gear: "ghillie",     in: { scrap: 2 },           hours: 6,  skill: "stealth",   min: 2, field: true },
   ragboots:    { gear: "ragboots",    in: { scrap: 1 },           hours: 2,  skill: "stealth",   min: 0, field: true },
   scentmask:   { gear: "scentmask",   in: { scrap: 1, water: 1 }, hours: 2,  skill: "stealth",   min: 1, field: true },
+  // ---------- special gear (craft-books): locked until a craft book is read or a blueprint studied (blueprints.js) ----------
+  // cmin: Crafting needed besides the recipe's own skill.
+  springmachete: { gear: "springmachete", in: { scrap: 8, parts: 1 }, hours: 14, skill: "mechanics", min: 3, cmin: 5, needs: "workshop" },
+  rivethelmet: { gear: "rivethelmet", in: { scrap: 6 },          hours: 10, skill: "mechanics", min: 2, cmin: 4 },
+  pulleybow:   { gear: "pulleybow",   in: { scrap: 5, parts: 2, wood: 30 }, hours: 16, skill: "mechanics", min: 3, cmin: 6, needs: "workshop" },
+  woodghillie: { gear: "woodghillie", in: { scrap: 3 },          hours: 10, skill: "stealth",   min: 3, cmin: 3 },
+  traumakit:   { gear: "traumakit",   in: { scrap: 2, meds: 2 }, hours: 8,  skill: "medicine",  min: 4, cmin: 3 },
+  // ---------- end of special gear ----------
 };
 
 export const WORKSHOP_TYPES = ["ammo_bench", "machine_shop"]; // stations with metal tools
 export const MAX_CRAFT_QUEUE = 8;
 const FIELD_QUALITY = -0.05;  // made on the road with less to work with
 const WORKSHOP_QUALITY = 0.1; // workshop recipes come out a little better
+
+// The Crafting skill (data.js SKILLS). Quality roll: expected condition ± a spread of sd0 − sdPer × Crafting (at least
+// sdMin), clamped to lo–1. XP per finished craft: base × kind[...] × √(worth of the inputs) × (1 + qSlope × (quality − qAt)).
+export const CRAFT_SKILL = "crafting";
+export const CRAFT_ROLL = { sd0: 0.09, sdPer: 0.003, sdMin: 0.025, lo: 0.6 };
+export const CRAFT_XP = { base: 2, qAt: 0.75, qSlope: 2, kind: { weapon: 1.2, armor: 1.1, medical: 1.1, tool: 1, camp: 0.8, kit: 0.9, supplies: 0.6 } };
+export const CRAFT_PERKS = { quickhands: 1.15, foreman: 1.15, goodeye: 0.04, mastercrafter: 0.06, scrapsaver: { min: 4, back: 1 } }; // skills.js PERK_TREE.crafting
+export const craftSkill = (s) => skill(s, CRAFT_SKILL);
+// May this person attempt the recipe? Its own skill at its min, and Crafting at its cmin.
+export const canAttempt = (s, r) => !!s && skill(s, r.skill) >= r.min && craftSkill(s) >= (r.cmin || 0);
+const attemptText = (r) => `${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` and Crafting ${r.cmin}+` : ""}`;
+// Recipe → its key (craftQuality gets the recipe itself).
+const KEY_OF = new Map();
+const keyOf = (r) => { if (!KEY_OF.has(r)) KEY_OF.set(r, Object.keys(CRAFTS).find((k) => CRAFTS[k] === r) || null); return KEY_OF.get(r); };
 
 export const craftName = (key) => CRAFTS[key].name || GEAR[CRAFTS[key].gear].name;
 export const craftQueue = (base) => base.crafting || (base.crafting = []);
@@ -147,18 +173,71 @@ export function durUnit(key) {
 // ---------- the base craft queue ----------
 // Crafters: people on the Craft role here (patients in a hospital bed do not work).
 export const crafters = (state, base) => atBase(state, base.id).filter((s) => s.role === "craft" && !s.inBed);
-const qualified = (state, base, r) => crafters(state, base).filter((s) => skill(s, r.skill) >= r.min);
+const qualified = (state, base, r) => crafters(state, base).filter((s) => canAttempt(s, r));
 
-// Work-hours per hour on a recipe: each skilled crafter gives 1 + 3% per point of the recipe's skill.
+// One crafter's work-hours per hour on a recipe: 1 + 3% per point of Crafting (× work factor, Machinist, Quick Hands;
+// Foreman: someone else crafting at the base).
+function crafterRate(s, team) {
+  const foreman = team.some((o) => o !== s && hasPerk(o, "foreman")) ? CRAFT_PERKS.foreman : 1;
+  return (1 + craftSkill(s) * 0.03) * workFactor(s) * (hasPerk(s, "machinist") ? 1.3 : 1) * (hasPerk(s, "quickhands") ? CRAFT_PERKS.quickhands : 1) * foreman; // the sick work less (health.js); perks (skills.js)
+}
+// Work-hours per hour on a recipe: what each crafter who may attempt it gives, × the recipe's edge (blueprints.js craftEdge).
 export function craftRate(state, base, key) {
   const r = CRAFTS[key];
-  return qualified(state, base, r).reduce((a, s) => a + (1 + skill(s, r.skill) * 0.03) * workFactor(s) * (hasPerk(s, "machinist") ? 1.3 : 1), 0) * benchBonus(base).rate; // the sick work less (health.js); Machinist (skills.js); the bench here
+  const team = crafters(state, base);
+  return qualified(state, base, r).reduce((a, s) => a + crafterRate(s, team), 0) * craftEdgeSpeed(state, key) * benchBonus(base).rate; // the bench here (benchBonus)
 }
 
-// Item condition from the best crafter's skill: 75% at 0, 100% at 20. Workshop recipes +10%.
-export function craftQuality(skillLevel, r, field = false) {
-  const q = 0.75 + skillLevel * 0.0125 + (r.needs ? WORKSHOP_QUALITY : 0) + (field ? FIELD_QUALITY : 0);
-  return Math.round(Math.max(0.6, Math.min(1, q)) * 100) / 100;
+// Expected item condition from Crafting: 75% at 0, 100% at 20. Workshop recipes +10%, field crafts −5%, the recipe's
+// edge from known manuals and read craft books (state; blueprints.js craftEdge). The roll (rollQuality) spreads around it.
+export function craftQuality(skillLevel, r, field = false, state = null) {
+  const q = 0.75 + skillLevel * 0.0125 + (r.needs ? WORKSHOP_QUALITY : 0) + (field ? FIELD_QUALITY : 0) + craftEdgeQuality(state, keyOf(r));
+  return Math.round(Math.max(CRAFT_ROLL.lo, Math.min(1, q)) * 100) / 100;
+}
+// The expected condition of a job at a base: the best qualified crafter's Crafting, plus Good Eye / Master Crafter
+// among the crafters there. null when nobody there may attempt it.
+export function craftMean(state, base, key) {
+  const r = CRAFTS[key];
+  const q = qualified(state, base, r);
+  if (!q.length) return null;
+  const team = crafters(state, base);
+  const perk = (team.some((s) => hasPerk(s, "goodeye")) ? CRAFT_PERKS.goodeye : 0) + (team.some((s) => hasPerk(s, "mastercrafter")) ? CRAFT_PERKS.mastercrafter : 0);
+  const m = benchQuality(craftQuality(Math.max(...q.map(craftSkill)), r, false, state) + perk, base); // the bench here (benchBonus)
+  return Math.round(Math.max(CRAFT_ROLL.lo, Math.min(1, m)) * 100) / 100;
+}
+// A quality roll around the mean: four uniforms (us, each 0–1) make a bell of sd 1, times the spread at this Crafting.
+export function rollQuality(mean, level, us) {
+  const z = (us[0] + us[1] + us[2] + us[3] - 2) * Math.sqrt(3);
+  const sd = Math.max(CRAFT_ROLL.sdMin, CRAFT_ROLL.sd0 - CRAFT_ROLL.sdPer * level);
+  return Math.round(Math.max(CRAFT_ROLL.lo, Math.min(1, mean + z * sd)) * 100) / 100;
+}
+// Rolled with hash01 (skills.js), never the world's random numbers: crafting moves no other result. tag: the craft.
+export function craftRoll(state, mean, level, tag, twice = false) {
+  const roll = (n) => rollQuality(mean, level, [0, 1, 2, 3].map((i) => hash01(state.seed, "craftq", tag, n, i)));
+  return twice ? Math.max(roll(0), roll(1)) : roll(0);
+}
+// Worth of what a recipe uses up (data.js SUPPLIES value, GEAR value for items).
+export function craftInputValue(r) {
+  let v = 0;
+  for (const [k, n] of Object.entries(r.in || {})) v += n * ((SUPPLIES[k] && SUPPLIES[k].value) || 0);
+  for (const [k, n] of Object.entries(r.gearIn || {})) v += n * ((GEAR[k] && GEAR[k].value) || 0);
+  return v;
+}
+// The kind of thing a recipe makes (CRAFT_XP.kind).
+export function craftKind(r) {
+  if (r.supplies) return r.supplies.meds ? "medical" : "supplies";
+  const d = GEAR[r.gear];
+  if (d.slot === "weapon") return "weapon";
+  if (ARMOR_SLOTS.includes(d.slot)) return "armor";
+  if (d.medKit || r.skill === "medicine") return "medical";
+  if (d.heat) return "camp";
+  if (d.throw || d.siege || d.suppressor || d.defence) return "kit";
+  return "tool";
+}
+// Crafting XP for one finished craft at this quality.
+export function craftXp(r, quality) {
+  const qf = Math.max(0.3, 1 + CRAFT_XP.qSlope * (quality - CRAFT_XP.qAt));
+  return Math.round(CRAFT_XP.base * (CRAFT_XP.kind[craftKind(r)] || 1) * Math.sqrt(Math.max(1, craftInputValue(r))) * qf * 100) / 100;
 }
 
 export function canCraft(state, base, key) {
@@ -166,7 +245,7 @@ export function canCraft(state, base, key) {
   if (!r) return { ok: false, reason: "Unknown recipe" };
   if (craftQueue(base).length >= MAX_CRAFT_QUEUE) return { ok: false, reason: `Queue is full (${MAX_CRAFT_QUEUE})` };
   if (!meetsNeeds(base, r)) return { ok: false, reason: `Needs ${needsText(r)} here` };
-  if (!atBase(state, base.id).some((s) => skill(s, r.skill) >= r.min)) return { ok: false, reason: `Needs a ${SKILL_NAMES[r.skill]} ${r.min}+ survivor here` };
+  if (!atBase(state, base.id).some((s) => canAttempt(s, r))) return { ok: false, reason: `Needs a ${attemptText(r)} survivor here` };
   for (const [k, v] of Object.entries(r.in)) if (stockHas(base.stock, k) < v) return { ok: false, reason: `Needs ${v} ${k} (have ${Math.floor(stockHas(base.stock, k))})` };
   for (const [k, v] of Object.entries(r.gearIn || {})) if (base.armory.filter((it) => it && it.key === k).length < v) return { ok: false, reason: `Needs ${v > 1 ? `${v} × ` : "a "}${GEAR[k].name} in the armory` };
   if (r.spent && (base.spentFilters || 0) < r.spent) return { ok: false, reason: "Needs a clogged water filter here (one is kept each time a filter clogs at this base)" };
@@ -216,11 +295,12 @@ export function craftJobStatus(state, base, job) {
   if (craftHeld(state, job)) return "Waits: the tanks are full enough and a build is queued (its scrap goes to the build first)";
   if (!crafters(state, base).length) return "No crafters. Set someone's role to Craft.";
   if (!meetsNeeds(base, r)) return `Needs ${needsText(r)} here`;
-  if (!qualified(state, base, r).length) return `No crafter with ${SKILL_NAMES[r.skill]} ${r.min}+`;
-  // A craft order's minimum quality (production.js): only a crafter who reaches it works the job.
+  if (!qualified(state, base, r).length) return `No crafter with ${attemptText(r)}`;
+  // A craft order's minimum quality (production.js): the job moves while the expected condition reaches it (a roll
+  // below it does not count toward the order, which then queues another).
   if (job.minQ && r.gear) {
-    const q = benchQuality(craftQuality(Math.max(0, ...qualified(state, base, r).map((s) => skill(s, r.skill))), r), base);
-    if (q + 1e-9 < job.minQ) return `No crafter good enough for ${Math.round(job.minQ * 100)}% (best ${Math.round(q * 100)}%)`;
+    const q = craftMean(state, base, job.recipe);
+    if (q + 1e-9 < job.minQ) return `No crafter good enough for ${Math.round(job.minQ * 100)}% (expected ${Math.round(q * 100)}%)`;
   }
   return "";
 }
@@ -235,16 +315,28 @@ export function craftingHour(state) {
     if (job.progress < job.hours) continue;
     q.splice(q.indexOf(job), 1);
     const r = CRAFTS[job.recipe];
+    const team = crafters(state, base);
+    const able = qualified(state, base, r);
+    const mean = craftMean(state, base, job.recipe) ?? benchQuality(craftQuality(0, r, false, state), base);
+    const best = Math.max(0, ...able.map(craftSkill));
+    // Tagged by the hour, the base's place and the recipe (not ids: they come from a counter shared by every world in a process).
+    const quality = r.supplies ? mean : craftRoll(state, mean, best, `${state.hour}:${state.bases.indexOf(base)}:${job.recipe}`, team.some((s) => hasPerk(s, "steadybench"))); // Steady Bench: the better of two
     if (r.supplies) {
       for (const [k, v] of Object.entries(r.supplies)) base.stock[k] = (base.stock[k] || 0) + v;
       log(state, `${craftName(job.recipe)} finished at ${base.name}.`, "good");
     } else {
-      const best = Math.max(0, ...qualified(state, base, r).map((s) => skill(s, r.skill)));
-      const item = makeItem(r.gear, benchQuality(craftQuality(best, r), base));
-      if (item.dur && crafters(state, base).some((s) => hasPerk(s, "tinkerer"))) { item.dur = Math.round(item.dur * 1.5); if (!GEAR[item.key].tabs) item.durMax = item.dur; } // Tinkerer (skills.js): lasts 50% longer
+      const item = makeItem(r.gear, quality);
+      if (item.dur && team.some((s) => hasPerk(s, "tinkerer"))) { item.dur = Math.round(item.dur * 1.5); if (!GEAR[item.key].tabs) item.durMax = item.dur; } // Tinkerer (skills.js): lasts 50% longer
       base.armory.push(item);
       log(state, `${item.name} crafted at ${base.name} (condition ${Math.round(item.quality * 100)}%). It is in the armory.`, "good");
     }
+    // Crafting XP for whoever worked it, by their share of the work this hour (skills.js gainXp: the daily use cap).
+    const xp = craftXp(r, quality);
+    const rates = able.map((s) => crafterRate(s, team));
+    const total = rates.reduce((a, v) => a + v, 0);
+    able.forEach((s, i) => gainXp(state, s, CRAFT_SKILL, total > 0 ? (xp * rates[i]) / total : xp / able.length));
+    // Scrap Saver: a big job gives a scrap back.
+    if ((r.in.scrap || 0) >= CRAFT_PERKS.scrapsaver.min && team.some((s) => hasPerk(s, "scrapsaver"))) base.stock.scrap = (base.stock.scrap || 0) + CRAFT_PERKS.scrapsaver.back;
   }
 }
 
@@ -427,10 +519,9 @@ function partyTake(p, k, qty) {
 export function fieldCraftOptions(state, party) {
   const members = party ? partyMembers(state, party) : [];
   return Object.entries(CRAFTS).filter(([, r]) => r.field).map(([key, r]) => {
-    const best = Math.max(0, ...members.map((s) => skill(s, r.skill)));
     let reason = "";
     if (!members.length) reason = "Nobody on this team.";
-    else if (best < r.min) reason = `Needs ${SKILL_NAMES[r.skill]} ${r.min}+ on the team`;
+    else if (!members.some((s) => canAttempt(s, r))) reason = `Needs ${attemptText(r)} on the team`;
     else {
       const miss = Object.entries(r.in).find(([k, v]) => partyHas(party, k) < v);
       if (miss) reason = `Needs ${miss[1]} ${miss[0]}; the team carries ${Math.floor(partyHas(party, miss[0]))}`;
@@ -472,13 +563,17 @@ export function fieldCraft(state, party, recipeKey) {
   for (const [k, v] of Object.entries(r.in)) partyTake(party, k, v);
   for (const [k, v] of Object.entries(r.gearIn || {})) for (let i = 0; i < v; i++) { const x = partyItems(state, party).find((y) => y.it.key === k); if (x) x.take(); }
   const members = partyMembers(state, party);
-  const maker = members.reduce((a, s) => (skill(s, r.skill) > skill(a, r.skill) ? s : a), members[0]);
+  const able = members.filter((s) => canAttempt(s, r));
+  const maker = able.reduce((a, s) => (craftSkill(s) > craftSkill(a) ? s : a), able[0]); // the best at Crafting who may attempt it
   const who = maker.name.split(" ")[0];
+  const mean = craftQuality(craftSkill(maker), r, true, state);
+  const quality = r.supplies ? mean : craftRoll(state, mean, craftSkill(maker), `f${state.parties.indexOf(party)}:${state.hour}:${recipeKey}:${maker.name}`, hasPerk(maker, "steadybench"));
+  gainXp(state, maker, CRAFT_SKILL, craftXp(r, quality)); // Crafting XP for the maker
   if (r.supplies) {
     for (const [k, v] of Object.entries(r.supplies)) party.supplies[k] = (party.supplies[k] || 0) + v;
     return `${who} makes ${craftName(recipeKey).toLowerCase()} (${opt.out}) in about ${r.hours} hours.`;
   }
-  const item = makeItem(r.gear, craftQuality(skill(maker, r.skill), r, true));
+  const item = makeItem(r.gear, quality);
   const slot = GEAR[r.gear].slot;
   // Worn kit to a free slot; small things (throwables, camp kit) to a pocket or a pack (they are not worn).
   if (!EQUIP_SLOTS.includes(slot)) {

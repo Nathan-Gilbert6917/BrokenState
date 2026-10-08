@@ -51,7 +51,7 @@ import { edibleFood, foodStore } from "./storage.js";
 import { season } from "./weather.js";
 import { hospitalDef, isHurt, isSevere } from "./medical.js";
 import { tooIllToWork, isSick, isContagious } from "./health.js";
-import { CRAFTS, craftQueue, craftQuality, benchQuality, meetsNeeds, craftHeld, isFilterJob } from "./crafting.js";
+import { CRAFTS, craftQueue, craftQuality, meetsNeeds, craftHeld, isFilterJob, benchQuality, canAttempt, craftSkill } from "./crafting.js";
 import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } from "./skills.js";
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt, WEAR } from "./breakdowns.js";
@@ -167,7 +167,7 @@ export const WORK_TYPES = {
     rank: (s, ctx) => Math.max(0, ...ctx.stationKinds.filter((k) => k !== "preserve").map((k) => skill(s, (RECIPES[k] && RECIPES[k].skill) || "mechanics"))),
   },
   craft: {
-    name: "Craft", ing: "Crafting", short: "Craft", role: "craft", skill: "mechanics",
+    name: "Craft", ing: "Crafting", short: "Craft", role: "craft", skill: "crafting",
     desc: "Works the craft queue by hand (base Crafting tab): one crafter at a time. Needs the recipe's skill. A queued job keeps one hand: someone with Craft set leaves scavenging, or the plots when they have more than their crew, for it; a water filter while the water runs short pulls the first hand with Craft set. A water filter the governor or a steward queued waits while the tanks are three-quarters full and something is queued to build (its scrap goes to the build first); the jobs behind it go first. As the queue never waits for spare hands, the governor or a steward queues crafts that can wait only from scrap past what the next building needs.",
     open(ctx) {
       const jobs = openCrafts(ctx);
@@ -188,11 +188,11 @@ export const WORK_TYPES = {
     can(ctx, s) {
       const ok = openCrafts(ctx).some((j) => {
         const r = CRAFTS[j.recipe];
-        return r && meetsNeeds(ctx.base, r) && skill(s, r.skill) >= r.min && (!j.minQ || !r.gear || benchQuality(craftQuality(skill(s, r.skill), r), ctx.base) + 1e-9 >= j.minQ);
+        return r && meetsNeeds(ctx.base, r) && canAttempt(s, r) && (!j.minQ || !r.gear || benchQuality(craftQuality(craftSkill(s), r, false, ctx.state), ctx.base) + 1e-9 >= j.minQ);
       });
       return ok ? "" : "not skilled enough for anything queued";
     },
-    rank: (s, ctx) => { const j = openCrafts(ctx)[0]; return j && CRAFTS[j.recipe] ? skill(s, CRAFTS[j.recipe].skill) : skill(s, "mechanics"); },
+    rank: (s, ctx) => craftSkill(s), // crafting.js: quality and speed come from Crafting (the recipe's own skill is only its minimum)
   },
   build: {
     name: "Build", ing: "Building", short: "Build", role: "build", skill: "mechanics",
@@ -476,7 +476,7 @@ function lessonFor(ctx, T) {
 function studyFor(ctx, s) {
   const bp = studyable(ctx.state, ctx.base).filter((id) => canStudy(s, id) && !ctx.studying.has(id));
   if (bp.length) return { bp: bp.includes(s.studying) ? s.studying : bp[0] };
-  const k = bestBook(s, ctx.books);
+  const k = bestBook(s, ctx.books, ctx.state); // an unread craft book counts (blueprints.js)
   if (!k || (!bookDef(k).skill && s.mood >= 55)) return null;
   return { book: k };
 }

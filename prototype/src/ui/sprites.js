@@ -257,6 +257,9 @@ function drawWeapon(p, key, R) {
     case "sawmachete": drawWeapon(p, "machete", R); p.set(hx + 2, hy - 5, "#7d858c"); p.set(hx + 2, hy - 3, "#7d858c"); break;
     case "crossbow": p.rect(R - 3, 13, R + 5, 13, wood); p.rect(R + 5, 11, R + 5, 15, metal); p.set(R + 6, 13, "#c2c9cf"); break;
     case "pipegun": p.rect(R - 3, 13, R + 5, 13, "#5b5f63"); p.rect(R - 5, 14, R - 2, 14, "#3a3d40"); p.set(R + 1, 14, gun); break;
+    // Special crafted weapons (craft books and blueprints).
+    case "springmachete": drawWeapon(p, "machete", R); p.set(hx + 1, hy - 8, "#c2c9cf"); p.rect(hx + 1, hy, hx + 1, hy + 2, "#5b3a22"); break;
+    case "pulleybow": p.rect(hx + 1, hy - 6, hx + 1, hy + 4, wood); p.set(hx + 1, hy - 7, metal); p.set(hx + 1, hy + 5, metal); p.rect(hx, hy - 5, hx, hy + 3, "#d6dde2"); break;
     default: break;
   }
 }
