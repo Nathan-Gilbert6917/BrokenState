@@ -65,6 +65,7 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   const ppl = atBase(st, h.id);
   setSkill(ppl, "mechanics", 0);
   setSkill(ppl, "medicine", 0);
+  setSkill(ppl, "crafting", 0); // Crafting sets the speed (craft-books)
   ppl.forEach((s) => (s.role = "farm"));
   Object.assign(h.stock, { scrap: 100, parts: 10, meds: 10, water: 40 });
   const armory0 = h.armory.length;
@@ -77,8 +78,8 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   const hours = runHours(st, h);
   check(!craftQueue(h).length && h.armory.length === armory0 + 1, `bat finished in ${hours}h and is in the armory`);
   const bat = h.armory[h.armory.length - 1];
-  check(bat.key === "spikedbat" && bat.dur === GEAR.spikedbat.dur && bat.quality >= 0.6 && bat.quality <= 1, "crafted bat has durability and condition");
-  check(hours >= 5 && hours <= 6, `a lone unskilled crafter takes about 6h (${hours})`);
+  check(bat.key === "spikedbat" && bat.dur === itemDurMax(bat) && bat.quality >= 0.6 && bat.quality <= 1, "crafted bat has durability and condition");
+  check(hours >= 4 && hours <= 5, `a lone unskilled crafter takes about 5h at the hub's crafting bench (6h without; ${hours})`);
   // Supplies recipe: dressings make meds.
   ppl[1].skills.medicine = 5;
   ppl[1].role = "craft";
@@ -247,7 +248,7 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   check(withKit > noKit, `bandage kit adds to field healing (${noKit} → ${withKit})`);
   party.supplies.meds = 5;
   fieldTreat(st, party, patient.id);
-  check(medic.gear.tool && medic.gear.tool.dur === GEAR.bandagekit.dur - 1, "a treatment wears the kit");
+  check(medic.gear.tool && medic.gear.tool.dur === itemDurMax(kit) - 1, "a treatment wears the kit");
   check(fieldCraft(st, party, "sawmachete").length > 0 && !party.cargo.gear.some((g) => g.key === "sawmachete"), "non-field recipes cannot be made on the road");
 }
 

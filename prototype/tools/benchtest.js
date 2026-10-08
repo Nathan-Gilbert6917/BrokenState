@@ -12,7 +12,7 @@ import {
 } from "../src/sim/buildings.js";
 import {
   CRAFTS, canCraft, queueCraft, craftQueue, craftRate, craftQuality, craftingHour, craftJobStatus, hasWorkshop, meetsNeeds,
-  benchNeeded, benchBonus, benchQuality, fieldCraft,
+  benchNeeded, benchBonus, benchQuality, fieldCraft, craftMean, craftSkill,
 } from "../src/sim/crafting.js";
 import { bestQuality } from "../src/sim/production.js";
 import { setAutopilot, governBase, housingAI } from "../src/sim/autopilot.js";
@@ -183,10 +183,15 @@ const benches = Object.keys(BENCH);
   o.buildings = o.buildings.filter((b) => !benches.includes(b.type));
   addBuilding(o, "craftbench");
   const a0 = o.armory.length;
+  const meanBench = craftMean(st, o, "spikedbat");
+  o.buildings = o.buildings.filter((b) => !benches.includes(b.type));
+  const meanBare = craftMean(st, o, "spikedbat");
+  addBuilding(o, "craftbench");
   queueCraft(st, o, "spikedbat");
   for (let i = 0; i < 50 && craftQueue(o).length; i++) craftingHour(st);
   const made = o.armory[a0];
-  check(made && made.key === "spikedbat" && Math.abs(made.quality - benchQuality(craftQuality(4, CRAFTS.spikedbat), o)) < 1e-9 && made.quality > craftQuality(4, CRAFTS.spikedbat), `the crafted bat gets the bench's condition (${made && made.quality})`);
+  // Quality is a roll around the expected condition (craft-books: Crafting); the bench raises the expectation.
+  check(made && made.key === "spikedbat" && Math.abs(meanBench - Math.min(1, meanBare + BENCH.craftbench.quality)) < 0.011 && Math.abs(made.quality - meanBench) <= 0.25, `the crafted bat comes out around the bench's condition (${made && made.quality}, expected ${meanBench}, ${meanBare} without)`);
   // Field crafting by a team gets no bench, wherever it set out from.
   const h = hub(st);
   check(count(h, "craftbench") === 1, "the hub has a bench");
@@ -197,7 +202,10 @@ const benches = Object.keys(BENCH);
   team.forEach((s) => (s.location = { kind: "party", partyId: p.id }));
   fieldCraft(st, p, "pipespear");
   const it = team.map((s) => s.gear.weapon).find((g) => g && g.key === "pipespear") || p.cargo.gear.find((g) => g.key === "pipespear");
-  check(it && it.quality === craftQuality(4, CRAFTS.pipespear, true), `a field-made spear gets no bench bonus (${it && it.quality} vs ${craftQuality(4, CRAFTS.pipespear, true)})`);
+  // The field roll has no base in it: its expectation is the maker's own (craftQuality field), whatever bench is at home.
+  const maker = team.reduce((x, y) => (craftSkill(y) > craftSkill(x) ? y : x), team[0]);
+  const fieldMean = craftQuality(craftSkill(maker), CRAFTS.pipespear, true, st);
+  check(it && Math.abs(it.quality - fieldMean) <= 0.25 && fieldMean < benchQuality(craftQuality(craftSkill(maker), CRAFTS.pipespear, false, st), h), `a field-made spear gets no bench bonus (${it && it.quality}, expected ${fieldMean})`);
 }
 
 // 6. The governor: a bench where someone crafts, the workbench and the ammo bench at the hub.

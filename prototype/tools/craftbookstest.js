@@ -18,7 +18,7 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { craftingStart, CRAFT_START } from "../src/sim/appearance.js";
 import * as BP from "../src/sim/blueprints.js";
 import {
-  CRAFTS, canCraft, queueCraft, craftingHour, craftQueue, craftQuality, craftRate, craftMean, rollQuality, craftRoll, craftXp,
+  CRAFTS, canCraft, queueCraft, craftingHour, craftQueue, craftQuality, craftRate, craftMean, rollQuality, craftRoll, craftXp, itemDurMax, benchQuality,
   makeItem, CRAFT_ROLL, canAttempt,
 } from "../src/sim/crafting.js";
 
@@ -203,7 +203,7 @@ console.log("Crafting skill: quality, speed, XP");
   check(made && made.key === "sawmachete" && made.quality >= 0.6 && made.quality <= 1, `the machete came out at ${made && made.quality}`);
   check(c.skills.crafting > lv || ((c.xp && c.xp.crafting) || 0) > before, `the crafter gained Crafting XP (${before} → ${(c.xp && c.xp.crafting) || 0})`);
   check(near((c.xpDay.use.crafting || 0), Math.min(15, craftXp(CRAFTS.sawmachete, made.quality)), 0.02), `the XP matches the craft (${c.xpDay.use.crafting} for ${craftXp(CRAFTS.sawmachete, made.quality)})`);
-  check(craftMean(st, h, "sawmachete") === craftQuality(skill(c, "crafting"), CRAFTS.sawmachete, false, st), "the expected condition comes from the best crafter's Crafting");
+  check(craftMean(st, h, "sawmachete") === benchQuality(craftQuality(skill(c, "crafting"), CRAFTS.sawmachete, false, st), h), "the expected condition comes from the best crafter's Crafting (and the bench here)");
 }
 
 // ======================================================================================
@@ -256,7 +256,7 @@ console.log("Fights");
     done++;
     if (last && last.outcome === "victory") wins++;
     check(h.stock.ammo >= ammo0, "neither uses ammo (a won fight may loot some)");
-    for (const s of team) if (s.alive && s.gear.weapon) check(s.gear.weapon.dur === GEAR[s.gear.weapon.key].dur - 1, `${s.gear.weapon.key} wears by a fight`);
+    for (const s of team) if (s.alive && s.gear.weapon) check(s.gear.weapon.dur === itemDurMax(s.gear.weapon) - 1, `${s.gear.weapon.key} wears by a fight`); // its own full uses (crafted by quality)
     for (const s of team) s.alive = false;
   }
   check(done >= 9, `battles finished (${done}/12)`);
