@@ -66,6 +66,7 @@ export function newItem(key, quality = 1, worn = null, range = FOUND_DUR) {
   }
   if (d.slots) ensurePack(item);
   if (d.inserts) item.inserts = { front: newItem("ceramicplate", quality), back: newItem("ceramicplate", quality) }; // a carrier comes with its plates (lootItem wears them as it wears the carrier)
+  if (d.inserts && range === START_DUR) startKit(item); // starting and recruit gear: steel plates (repairable)
   factoryFit(item, seedOf(worn)); // factoryfit.js: a sniper rifle comes with its scope and bipod (dice: worn's rng position)
   return item;
 }
@@ -73,6 +74,13 @@ export function newItem(key, quality = 1, worn = null, range = FOUND_DUR) {
 // (itemcond.js COND_SOURCES: "military", "shop", "raider", "merchant"...). roll: an Rng (its position is hashed, no
 // draw), a number 0–1 or a list of parts. opts.quality: a quality fixed by the caller (only the wear is rolled).
 // A gun's factory parts' chance rows roll on the same dice (factoryfit.js: newItem fitted the sure ones already).
+// Starting kit (a colonist's, a recruit's, a custom background's): a plate carrier holds steel plates, which a workbench
+// can patch (found military carriers hold ceramic, which cannot be repaired). Returns the item.
+export function startKit(item) {
+  if (!item || !GEAR[item.key] || !GEAR[item.key].inserts || !item.inserts) return item;
+  for (const side of Object.keys(item.inserts)) if (item.inserts[side]) item.inserts[side] = newItem("steelplate", item.quality ?? 1);
+  return item;
+}
 export const lootItem = (key, source, roll, opts) => wearInserts(condition(factoryFit(newItem(key, 1), seedOf(roll)), source, roll, opts));
 // The armoured dead's kit (deadsoldiers.js bodyLoot's maker): their table's quality, the wear by itemcond.js "armoured".
 export const armouredItem = (key, quality, rng) => lootItem(key, "armoured", rng, { quality });

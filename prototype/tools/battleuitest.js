@@ -240,9 +240,10 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
       const pick0 = cui.ammoPick[u.id];
       UI.combatKey(st, key("KeyI"));
       check(cui.ammoPick[u.id] !== pick0 && types.includes(cui.ammoPick[u.id]), `Shift+I picks the next kind (${pick0} → ${cui.ammoPick[u.id]})`);
-      const ap0 = u.ap;
+      const ap0 = u.ap, cost = C.reloadCost(b, u, types[1]); // mags.js: a magazine of that kind (1 action, 2 from the pack), else a top-up (2)
+      const why0 = C.reloadRefusal(b, u, types[1]);
       UI.combatAction(st, "cb-act", { v: "reload", k: types[1] });
-      check(cui.msg === "" ? u.ap === ap0 - 1 && cui.ammoAsk === null : cui.msg === C.reloadRefusal(b, u), `a kind picked: combatAct "reload" with act.ammo (${cui.msg || "reloaded"})`);
+      check(cui.msg === "" ? u.ap === ap0 - cost && cui.ammoAsk === null : cui.msg === why0 || cui.msg === C.reloadRefusal(b, u), `a kind picked: combatAct "reload" with act.ammo (${cui.msg || "reloaded"})`);
       // Your own line shows the round loaded; an enemy's never does.
       u.load = types[1];
       check(UI.renderCombatPanel(st).includes(`<span class="muted">${AMMO_TYPES[types[1]].name}</span>`), "your gun's line shows the kind loaded");

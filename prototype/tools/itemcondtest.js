@@ -85,7 +85,7 @@ check(meanQ("shop") > meanQ("home") && meanQ("home") > meanQ("wreck"), "a shop's
 section("2. Every creation point rolls its condition");
 // Static: loot code never calls newItem itself.
 const ALLOWED = {
-  "inventory.js": /export function newItem|condition\((factoryFit\()?newItem\(key, 1\)|g\.head = newItem\("footballhelmet"|newItem\("ceramicplate"/, // the roller itself (lootItem: a gun's factory parts fitted first, factoryfit.js); an old save's helmet split; a carrier's plates (worn as the carrier is: lootItem wearInserts)
+  "inventory.js": /export function newItem|condition\((factoryFit\()?newItem\(key, 1\)|g\.head = newItem\("footballhelmet"|newItem\("(ceramic|steel)plate"/, // the roller itself (lootItem: a gun's factory parts fitted first, factoryfit.js); an old save's helmet split; a carrier's plates (worn as the carrier is: lootItem wearInserts)
   "carrykit.js": /starting gear/, // a colonist's starting spare magazines (not loot)
   "deadsoldiers.js": /newItem\(k, q\(range\), rng\)/, // the maker handed in (inventory.js armouredItem)
   "hardcore-start.js": /./, "recruits.js": /./, "world.js": /startdur/, // starting and recruit gear (START_DUR), not loot

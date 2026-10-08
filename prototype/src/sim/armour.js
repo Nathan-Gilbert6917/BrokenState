@@ -33,7 +33,7 @@ export { armorMult };
 // The pieces (section 17 table: AC, material; dmax is the GEAR dur, checked by tools/armortest.js). The plate carrier
 // (wave 2, section 16) is a soft backer (AC 2) with two plate pockets: a hit on the torso meets the front plate (the
 // back plate when it comes from behind the way the wearer faces), else the backer (carrierGuard).
-/** @type {Record<string, { ac: number, dmax: number, mat: string, backer?: number }>} */
+/** @type {Record<string, { ac: number, dmax: number, mat: string, backer?: number, carrier?: boolean }>} */
 export const ARMOUR = {
   vest:           { ac: 2, dmax: 40, mat: "soft" },
   tacvest:        { ac: 2, dmax: 45, mat: "soft" },
