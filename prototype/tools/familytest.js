@@ -37,7 +37,10 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
   FAMILY.enabled = true;
 }
 const section = (t) => console.log(t);
-const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.cards.length = 0; st.started = true; return st; };
+// The hub starts bare (barestart: tools/barestarttest.js), six people in the town hall's four beds; these checks are
+// about a settled base (free beds for a child), so the hub gets the buildings it used to start with.
+const OLD_START = ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"];
+const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.cards.length = 0; st.started = true; for (const t of OLD_START) addBuilding(hub(st), t); return st; };
 const nextDay = (st) => { st.hour += 24; };
 const freshUi = () => ({ started: true, speed: 0, tab: "people", selected: -1, survivor: null, baseView: null, expedition: null, diary: null, roster: null, help: false, scale: 1, armed: { parties: new Map(), builds: new Set(), crafts: new Set() } });
 const logHas = (st, re) => st.log.some((l) => re.test(l.text));

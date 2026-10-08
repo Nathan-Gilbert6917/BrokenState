@@ -13,6 +13,7 @@ import * as E from "../src/sim/eras.js";
 import { ensureAlliance, controlledLand, landCentres, ALLIANCE, allianceVictory, goalsProgress } from "../src/sim/alliance.js";
 import { destroyHive, hivesSecured } from "../src/sim/hives.js";
 import { strength, makeGang, factionsDaily } from "../src/sim/factions.js";
+import { eraArms, unitPower } from "../src/sim/arsenal.js";
 import { assaultForce } from "../src/sim/conquest.js";
 import { relation, changeRelation } from "../src/sim/diplomacy.js";
 import { makeHorde } from "../src/sim/hordes.js";
@@ -60,10 +61,13 @@ async function main() {
     const agg = st.factions.find((f) => ["raider", "zealot", "expansionist"].includes(f.type) && f.alive);
     const calm = st.factions.find((f) => ["traders", "commune", "military", "fortress"].includes(f.type) && f.alive);
     factionsDaily(st);
-    check(agg.gear === E.gangArms(st) && Math.abs(strength(agg) - agg.pop * FACTION_TYPES[agg.type].arms * E.gangArms(st)) < 1e-9 && strength(calm) === calm.pop * FACTION_TYPES[calm.type].arms,
-      `year 6: an aggressive group's strength ×${agg.gear.toFixed(2)}; a ${calm.type} group's unchanged`);
+    // Through their arsenal (arsenal.js kitFactor × eraArms): the strength by the numbers and their battle units' power.
+    const noEra = (f, fn) => { const g0 = f.gear; f.gear = 1; const v = fn(f); f.gear = g0; return v; };
+    const ratio = strength(agg) / noEra(agg, strength), uRatio = (unitPower(agg) - 2.2) / (noEra(agg, unitPower) - 2.2);
+    check(agg.gear === E.gangArms(st) && Math.abs(ratio - E.gangArms(st)) < 1e-9 && Math.abs(uRatio - E.gangArms(st)) < 1e-9 && strength(calm) === noEra(calm, strength) && eraArms(calm) === 1,
+      `year 6: an aggressive group's strength ×${ratio.toFixed(2)} through its arsenal (its fighters' power too); a ${calm.type} group's unchanged`);
     const gang = makeGang(st, st.tiles.find((t) => t.loc && t.owner == null && !t.hive).id, { type: "raider", pop: 15 });
-    check(gang.gear === E.gangArms(st), "a new gang arrives with the year's arms");
+    check(gang.gear === E.gangArms(st) && eraArms(gang) === 1, "a new gang arrives with the year's arms, in the kit it brings (not counted twice)");
   }
 
   console.log("Coalition fighters in base assaults");

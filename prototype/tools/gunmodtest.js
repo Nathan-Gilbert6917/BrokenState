@@ -370,7 +370,10 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   console.log("Loot");
   const all = [...Object.values(GUNMOD_FINDS), ...Object.values(AREA_GUNMODS), ...Object.values(WARE_GUNMODS), ...Object.values(SITE_MODS), ...Object.values(AREA_MODS), ...Object.values(WARE_MODS)].flatMap((t) => Object.keys(t.items));
   const crafted = Object.values(CRAFTS).map((r) => r.gear);
-  check(all.every((k) => ATTACH[k] || ["repairkit", "kevlarkit"].includes(k)) && Object.keys(ATTACH).every((k) => all.includes(k) || crafted.includes(k)), `every attachment can be found, bought or crafted (${Object.keys(ATTACH).filter((k) => !all.includes(k) && !crafted.includes(k)).join(", ") || "all"})`);
+  // The M203 (a launcher) stays out of the loot and off enemy guns until the launcher wave (data-guns.js LATER_GEAR).
+  const later = (k) => !!ATTACH[k].launcher;
+  check(all.every((k) => (ATTACH[k] && !later(k)) || ["repairkit", "kevlarkit"].includes(k)) && Object.keys(ATTACH).every((k) => all.includes(k) || crafted.includes(k) || later(k)), `every attachment can be found, bought or crafted, launchers not yet (${Object.keys(ATTACH).filter((k) => !all.includes(k) && !crafted.includes(k) && !later(k)).join(", ") || "all"})`);
+  check(Object.values(ENEMY_MODS).every((slots) => Object.values(slots).every(([, list]) => list.every((k) => !ATTACH[k] || !later(k)))), "no launcher on an enemy's gun yet");
   check(["bottlecan", "solventcan", "scrapscope", "recoilpad", "sling"].every((k) => crafted.includes(k)), "the makeshift ones are crafted: a bottle can, a solvent trap, a scrap scope, a recoil pad, a sling");
   check(Object.keys(ATTACH).every((k) => ITEM_TAGS[k]), "every attachment has theme tags");
   check(Object.entries(GUNMOD_FINDS).every(([t, f]) => Object.keys(f.items).every((k) => fitsTags(k, SITE_TAGS[t] || []))) && Object.entries(AREA_GUNMODS).every(([a, f]) => Object.keys(f.items).every((k) => fitsTags(k, AREA_TAGS[a] || []))), "every site and raid area holds only parts that fit its theme");

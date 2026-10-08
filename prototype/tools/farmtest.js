@@ -5,6 +5,7 @@
 // fuel scarcity, and no NaN or negative stock over long campaigns.
 // Usage: node tools/farmtest.js [seed] [days for the long runs]
 import { ROUND_KEYS } from "../src/sim/ammo.js";
+import { PART_KINDS } from "../src/sim/trade.js";
 import { createWorld, hub, atBase, alive, residents, makeSurvivor, newId, day } from "../src/sim/world.js";
 import { tickHour } from "../src/sim/world.js";
 import {
@@ -627,8 +628,12 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   console.log("Fuel");
   const share = (t) => (LOCATIONS[t].loot.fuel || 0) / Object.values(LOCATIONS[t].loot).reduce((a, v) => a + v, 0);
   const sources = ["gas", "truckstop", "airport", "military"];
-  const others = Object.keys(LOCATIONS).filter((t) => !sources.includes(t) && LOCATIONS[t].loot.fuel);
+  // The abandoned Army convoy (miltrucks.js, a temporary road site) is military trucks with their tanks: a fuel source
+  // in between, more than anywhere ordinary, less than a military base's motor pool.
+  const military = ["convoy"];
+  const others = Object.keys(LOCATIONS).filter((t) => !sources.includes(t) && !military.includes(t) && LOCATIONS[t].loot.fuel);
   check(sources.every((t) => share(t) >= 0.2), `fuel stays common at ${sources.join(", ")}`);
+  check(military.every((t) => share(t) > Math.max(...others.map(share)) && share(t) <= share("military")), `an Army convoy is between (${military.map((t) => share(t).toFixed(2)).join(", ")})`);
   check(others.every((t) => share(t) <= 0.15), `fuel is a small share elsewhere (auto shops the most) (max ${Math.max(...others.map(share)).toFixed(2)})`);
   const st = W();
   check(hub(st).stock.fuel <= 12, `the hub starts with little fuel (${hub(st).stock.fuel})`);
@@ -652,7 +657,7 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
       if (st.hour % 24) continue;
       personDays += alive(st).length;
       for (const b of st.bases) {
-        for (const k of SUPPLY_KEYS) if ((b.stock[k] !== undefined || !ROUND_KEYS.includes(k)) && (!(b.stock[k] >= 0) || !Number.isFinite(b.stock[k]))) bad = `${b.name} ${k} = ${b.stock[k]}`; // rounds by calibre (ammo.js) are kept only where there are some
+        for (const k of SUPPLY_KEYS) if ((b.stock[k] !== undefined || !(ROUND_KEYS.includes(k) || PART_KINDS.includes(k))) && (!(b.stock[k] >= 0) || !Number.isFinite(b.stock[k]))) bad = `${b.name} ${k} = ${b.stock[k]}`; // rounds by calibre (ammo.js) and the part kinds (car, gun parts, electronics: weapons wave) are kept only where there are some
         for (const p of farmOf(st, b).plots) if (!["empty", "growing", "ripe", "dead"].includes(p.stage) || !Number.isFinite(p.grown) || !Number.isFinite(p.care) || !Number.isFinite(p.yieldLeft)) bad = `bad plot ${JSON.stringify(p)}`;
       }
       for (const s of st.survivors) {

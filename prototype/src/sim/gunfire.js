@@ -26,6 +26,7 @@ import { unitMods, gunMods, modRange, NO_MODS } from "./gunmods.js";
 import { weather } from "./weather.js";
 import { battleDice } from "./armour.js";
 import { hash01 } from "./skills.js";
+import { COND_SOURCES, kitSource } from "./itemcond.js";
 import { WEAPONS, CELL, magIn, magCap, loadMag, reload, reloadRefusal, say, isRanged, canSeeAt, unitAt, sightRange } from "./combat.js";
 
 export const FIRE_MODES = {
@@ -143,9 +144,12 @@ export function lootGun(u, item) {
   const m = itemDurMax(item);
   if (u.cond != null && m) item.dur = Math.max(1, Math.round(m * u.cond));
 }
-// An enemy's gun condition, rolled on its own dice (combat.js enemyUnit; the gun looted from them keeps it).
-export const enemyGunQ = (seed, id) => Math.round((JAM.ENEMY_Q[0] + (JAM.ENEMY_Q[1] - JAM.ENEMY_Q[0]) * hash01("enemygunq", seed, id)) * 100) / 100;
-export const enemyGunCond = (seed, id) => Math.round((JAM.ENEMY_COND[0] + (JAM.ENEMY_COND[1] - JAM.ENEMY_COND[0]) * hash01("enemyguncond", seed, id)) * 100) / 100;
+// An enemy's gun condition, rolled on its own dice (combat.js enemyUnit; the gun looted from them keeps it). With
+// their kit (combat.js KITS), in the ranges of the bodies that kit leaves (itemcond.js kitSource, COND_SOURCES: a
+// soldier's rifle looked after, a raider's not), as every other looted item; with none, JAM.ENEMY_Q / ENEMY_COND.
+const kitRange = (kit, key, fallback) => (kit && COND_SOURCES[kitSource(kit)] ? COND_SOURCES[kitSource(kit)][key] : fallback);
+export const enemyGunQ = (seed, id, kit = null) => { const [lo, hi] = kitRange(kit, "q", JAM.ENEMY_Q); return Math.round((lo + (hi - lo) * hash01("enemygunq", seed, id)) * 100) / 100; };
+export const enemyGunCond = (seed, id, kit = null) => { const [lo, hi] = kitRange(kit, "d", JAM.ENEMY_COND); return Math.round((lo + (hi - lo) * hash01("enemyguncond", seed, id)) * 100) / 100; };
 export function ammoJam(u) {
   const c = u.loadCond || "factory";
   const f = c === "hand" ? JAM.HAND[0] - JAM.HAND[1] * Math.max(0, Math.min(1, u.loadHq ?? 0.5)) : JAM.AMMO[c] ?? 1;

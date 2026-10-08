@@ -5,6 +5,7 @@
 // then a table of sources per item (with its worth tier and weight).
 // Also: frag grenades and the decoys have sources, ladders and rams are crafted siege kit, every lure has its senses.
 // Usage: node tools/loottest.js [--quiet]   (--quiet: checks only, no table)
+import { MOD_ATTACH } from "../src/sim/data-gunmods.js";
 import { GEAR, LOCATIONS, CATEGORIES } from "../src/sim/data.js";
 import "../src/sim/blueprints.js"; // registers the blueprint items
 import { SITE_TAGS, AREA_TAGS, ITEM_TAGS, SITE_FINDS, AREA_FINDS, HUNT_FINDS, LIGHT_FINDS, GUNMOD_FINDS, AREA_GUNMODS, WARE_GUNMODS, SITE_MODS, AREA_MODS, WARE_MODS, PARTS_MIX, sortParts, splitParts, SITE_GRENADES, AREA_GRENADES, fitsTags, rollFind, rollAreaFind } from "../src/sim/loot.js";
@@ -80,7 +81,8 @@ for (const [t, T] of Object.entries(GUN_STASH)) addAll([...Object.keys(T.guns), 
 
 console.log("Sources");
 check(!unknown.length, `every listed item exists in GEAR${unknown.length ? ` (unknown: ${unknown.join(", ")})` : ""}`);
-const orphans = Object.keys(GEAR).filter((k) => !src.has(k));
+// The M203 is in GEAR (an attachment) but kept out of the loot until the launcher wave (data-guns.js LATER_GEAR).
+const orphans = Object.keys(GEAR).filter((k) => !src.has(k) && !(MOD_ATTACH[k] && MOD_ATTACH[k].launcher));
 check(!orphans.length, `every item has at least one source${orphans.length ? ` (none for: ${orphans.join(", ")})` : ""}`);
 const VAL5 = ["goldring", "cigarettes", "whiskey", "coffee", "batteries"];
 check(VAL5.every((k) => [...(src.get(k) || [])].some((l) => /^(find|raid|body):/.test(l))), "the five old valuables can now be found (searches, raids or bodies)");

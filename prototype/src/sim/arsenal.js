@@ -17,7 +17,7 @@
 // a gun part) + ARMOUR × the power of each armour piece (world.js combatPower's sum for your people), best kit to
 // the first. The mean against REF (what the type's starting kit is worth a head: the same seeding averaged) is the
 // kit factor (KIT_MIN–KIT_MAX), × AMMO_SHORT–1 when the rounds are under AMMO_NEED a gun. strength = people × the
-// type's arms × kit factor × the eras' arms (f.gear), so on day 0 a group is as strong as before (kit factor ≈ 1)
+// type's arms × kit factor (with the eras' arms in it, eraArms), so on day 0 a group is as strong as before (kit factor ≈ 1)
 // and it grows or wanes with what it gathers and loses. A battle unit's power (2.2 + arms × 1.6 before) is
 // base + arms × 1.6 × kit factor. Launchers (none yet: the overhaul's) add WALL_LAUNCHER each against walls.
 //
@@ -160,6 +160,7 @@ export function seedArsenal(state, f) {
   const A = (f.arsenal = newArsenal(f));
   for (const it of starterKit(state.seed, f.name, f.type, f.pop, f.gear || 1)) put(A, f, it, null);
   A.seeded = A.items.length;
+  A.gear = f.gear || 1; // the eras' arms this kit was dealt with (eraArms: a later gang's strong guns already carry them)
   return A;
 }
 // The group's arsenal, made the first time it is read (an old save's groups: the same rule as a new world's).
@@ -284,15 +285,20 @@ export function ammoFactor(f) {
   const have = arsenalRounds(f);
   return !need || have >= need ? 1 : ARSENAL.AMMO_SHORT + (1 - ARSENAL.AMMO_SHORT) * have / need;
 }
+// The eras' arms (eras.js gangArms, f.gear: an aggressive group arms itself better each year from GROW_FROM), through
+// its kit: the share not already in the arsenal it was dealt (A.gear: a gang from beyond the border later in the run
+// brings some of its kit's strong guns, starterKit), so it is never counted twice.
+export const eraArms = (f) => (f.gear || 1) / ((f.arsenal && f.arsenal.gear) || 1);
 // The kit factor: the arsenal a head against the type's starting kit (1 on day 0, KIT_MIN–KIT_MAX), weighted
-// KIT_WEIGHT against the people themselves, × the ammo factor.
+// KIT_WEIGHT against the people themselves, × the ammo factor, × the eras' arms (eraArms). It is what their battle
+// units fight with (unitPower) as well as their strength by the numbers (groupStrength).
 export function kitFactor(f) {
   const A = f && f.arsenal;
   if (!A || !FACTION_TYPES[f.type]) return 1;
   const r = clamp(meanValue(A, Math.max(1, fitPeople(f))) / kitRef(f.type), ARSENAL.KIT_MIN, ARSENAL.KIT_MAX);
-  return (1 - ARSENAL.KIT_WEIGHT + ARSENAL.KIT_WEIGHT * r) * ammoFactor(f);
+  return (1 - ARSENAL.KIT_WEIGHT + ARSENAL.KIT_WEIGHT * r) * ammoFactor(f) * eraArms(f);
 }
-export const groupStrength = (f) => fitPeople(f) * FACTION_TYPES[f.type].arms * kitFactor(f) * (f.gear || 1); // groupcare.js: the wounded do not fight
+export const groupStrength = (f) => fitPeople(f) * FACTION_TYPES[f.type].arms * kitFactor(f); // groupcare.js: the wounded do not fight
 // A battle unit's power (combat.js enemyUnit: aim, hit points, damage): base + the type's arms × 1.6 × the kit factor.
 export const unitPower = (f, base = 2.2) => base + (FACTION_TYPES[f.type] ? FACTION_TYPES[f.type].arms : 1) * 1.6 * (f.arsenal ? kitFactor(f) : 1);
 // Launchers against walls: what a raid on a walled base gains from those it takes.

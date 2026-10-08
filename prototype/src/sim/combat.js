@@ -393,7 +393,11 @@ function carriedKeys(state, setup, people) {
 // a coin flip), the dead weaker per point of power than people (they come at you in the open), a mixed crowd in
 // between, and a little for the brood in a hive (it comes through the gaps of the mound). enemy: { kind, count,
 // people (how many fight for you), ambush ("player" / "enemy"), hive }. Clamped to 3–97%.
-export const ODDS = { RATIO: 3.77, NUMBERS: 1.85, ZOMBIES: 2.52, MIXED: 1.74, HIVE: 0.25, THEY_AMBUSH: 0.33, YOU_AMBUSH: -0.23, MIN: 0.03, MAX: 0.97 };
+// Refitted after the weapons wave (per-hit armour, bursts, jams: tools/calibrate.js seeds 5, 6, 8, 1944 fights; was
+// RATIO 3.77, NUMBERS 1.85, ZOMBIES 2.52, MIXED 1.74, HIVE 0.25, THEY_AMBUSH 0.33, YOU_AMBUSH -0.23): soldiers in plate
+// now win most even fights on the map (13-32% for you where the numbers said 50-88%), and against raiders and the dead
+// the map's odds rise faster with the power ratio.
+export const ODDS = { RATIO: 6.15, NUMBERS: -0.23, ZOMBIES: 4.45, MIXED: 1.23, SOLDIERS: -2.68, HIVE: -0.79, THEY_AMBUSH: 1.41, YOU_AMBUSH: -0.6, MIN: 0.03, MAX: 0.97 };
 export function winOdds(ratio, enemy = null) {
   const e = enemy || {};
   const dead = e.kind === "zombies";
@@ -401,6 +405,7 @@ export function winOdds(ratio, enemy = null) {
   if (!dead && e.people > 0 && e.count > 0) z += ODDS.NUMBERS * Math.log(e.people / e.count);
   if (dead) z += ODDS.ZOMBIES;
   else if (e.kind === "mixed") z += ODDS.MIXED;
+  else if (e.kind === "soldiers") z += ODDS.SOLDIERS;
   if (e.hive) z += ODDS.HIVE;
   if (e.ambush === "enemy") z += ODDS.THEY_AMBUSH;
   if (e.ambush === "player") z += ODDS.YOU_AMBUSH;
@@ -784,7 +789,7 @@ export const ammoLeft = (b) => sideRounds(b);
 export const arrowsLeft = (b) => pool(b, "arrows");
 // Has the player's side what this weapon shoots (rounds of its calibre and loaded type for a gun, with u the shooter;
 // arrows for a bow or crossbow)? Without u, any rounds.
-export const hasShot = (b, w, u = null) => (!w.ammo || (u ? roundsOf(b, u) : ammoLeft(b)) >= w.ammo) && (!w.arrows || arrowsLeft(b) >= w.arrows);
+export const hasShot = (b, w, u = null) => (!w.ammo || (u ? roundsOf(b, u) : ammoLeft(b)) >= (w.mounted ? 1 : w.ammo)) && (!w.arrows || arrowsLeft(b) >= w.arrows); // a turret: a short last burst (magEmpty)
 // A shot by one of your people: its rounds (its calibre and loaded type: its own boxes, the team's, the pools) or its
 // arrow from the pools (b.arrowsUsed: picked up again after a win).
 function spendShot(b, w, u) {
@@ -2135,8 +2140,10 @@ export function loadMag(u, n = null) {
 }
 // The rounds loaded as the player sees them: never more than the team's rounds of that calibre and type.
 export const magShown = (b, u) => (u.side === "player" ? Math.min(magIn(u), roundsOf(b, u)) : magIn(u));
-// A gun whose magazine has too few rounds for a shot (whatever the team's ammo).
-export const magEmpty = (b, u) => hasMag(u) && magIn(u) < WEAPONS[u.weapon].ammo;
+// A gun whose magazine has too few rounds for a shot (whatever the team's ammo). A turret's belt (100 or 200, 3 a
+// burst) fires its last burst with whatever is left: empty only at none (fire: the burst is the rounds there are).
+const shotRounds = (w) => (w.mounted ? 1 : w.ammo);
+export const magEmpty = (b, u) => hasMag(u) && magIn(u) < shotRounds(WEAPONS[u.weapon]);
 // "9mm pistol 7/15" (nothing for a weapon with no magazine).
 export const magLabel = (b, u) => (hasMag(u) ? `${magShown(b, u)}/${magMaxOf(u)}` : "");
 const gunWord = (u) => { const n = u.weaponName || WEAPONS[u.weapon].name; return /^[A-Z][a-z]/.test(n) ? n[0].toLowerCase() + n.slice(1) : n; };
@@ -2350,8 +2357,8 @@ export function enemyUnit(b, rng, kind, power, n) {
   };
   MED.enemyMedic(b, rng, u, kind); // medics.js: about one group in five of soldiers, guards, militia, fighters has a medic
   loadMag(u); // loaded; their reserve ammo is endless (only the magazine stops them)
-  u.q = enemyGunQ(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // gunfire.js: their gun's condition (jams; the looted gun keeps it), own dice
-  u.cond = enemyGunCond(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // its durability share (a worn gun jams more)
+  u.q = enemyGunQ(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id, kind); // gunfire.js: their gun's condition by their kit (itemcond.js kitSource; jams; the looted gun keeps it), own dice
+  u.cond = enemyGunCond(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id, kind); // its durability share (a worn gun jams more)
   syncModes(u);
   enemyPieces(b, u); // armour.js: their body armour as a piece that wears (the loot keeps what is left)
   kitFlashbangs(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // throwables.js FLASH_KIT: a soldier's or a guard's flashbang (its own dice)
@@ -2667,7 +2674,11 @@ export function moveAlong(b, u, path) {
   let reacted = null; // overwatchers that have fired at this mover already (once each per move)
   for (const [x, y] of path) {
     const there = unitAt(b, x, y);
-    if (there && (active(there) || (x === path[path.length - 1][0] && y === path[path.length - 1][1]))) break;
+    const last = x === path[path.length - 1][0] && y === path[path.length - 1][1];
+    // Your people squeeze past the third side on the way (reachable: through, never stopping there); stopping at the
+    // first of them left a man between two soldiers holding a corridor spending his actions where he stood, and the
+    // raid never ended (tools/wanderertest.js seed 904, once the enemy guns' condition came by kit).
+    if (there && (active(there) || last) && !(u.side === "player" && there.side === "third" && !last)) break;
     u.face = [Math.sign(x - u.x), Math.sign(y - u.y)]; // which way it faces (stealth.js: takedowns from behind)
     u.x = x; u.y = y;
     walked.push([x, y]);
@@ -2733,7 +2744,7 @@ export function fire(b, a, t, opts = {}) {
   if (a.side !== "player") aiMode(b, a, t, opts); // gunfire.js: enemies pick a mode (yours keep the one you set)
   const mode = modeOf(a), moded = !!gunModes(w);
   let rounds = modeRounds(a, mode);
-  if (moded) {
+  if (moded || w.mounted) { // a turret's last burst: the rounds left on the belt (magEmpty)
     if (hasMag(a)) rounds = Math.min(rounds, magIn(a));
     if (a.side === "player") rounds = Math.min(rounds, roundsOf(b, a)); // ammo.js: its calibre and loaded type
     rounds = Math.max(1, rounds);

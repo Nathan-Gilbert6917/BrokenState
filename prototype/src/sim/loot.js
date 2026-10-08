@@ -87,7 +87,9 @@ export const ITEM_TAGS = {
   laser: ["guns", "police", "crime", "sport"], foregrip: ["guns", "military", "police"], bipod: ["guns", "hunt", "military"],
   pistolcan: ["guns", "military", "crime"], riflecan: ["military", "guns"], brake: ["guns", "hunt", "military"], comp: ["guns", "police", "sport"],
   choke: ["guns", "hunt", "farm", "sport"], extmag: ["guns", "police", "crime"], drum: ["military", "guns"], tubeext: ["guns", "police", "hunt"],
-  // the weapons overhaul's attachments (gunmods.js, data-gunmods.js) and the repair kits (repair.js)
+  // the weapons overhaul's attachments (gunmods.js, data-gunmods.js) and the repair kits (repair.js); the M203's tag is
+  // where it will be kept, but it stays out of the loot tables (SITE_MODS) and off enemy guns (gunmods.js ENEMY_MODS)
+  // until the launcher wave
   tritium: ["guns", "police"], rmr: ["guns", "police"], acog: ["military", "crash"], lpvo: ["military"], tacscope: ["military", "guns"],
   thermalscope: ["military"], scrapscope: ["crime", "camp"], scopemount: ["guns", "hunt"], sidemount: ["guns", "crime"],
   quadrail: ["military", "guns"], mlok: ["military", "guns"], can22: ["guns", "hunt"], can9: ["police", "military"], can556: ["military"],
@@ -270,7 +272,7 @@ function modWares(state, type, name, salt) {
 export const SITE_MODS = {
   gunstore: { p: 0.1, items: { tritium: 2, rmr: 1.5, scopemount: 3, sidemount: 1, mlok: 1, can22: 1, can308: 0.4, flashhider: 2, recoilpad: 3, precision: 0.6, foldstock: 1, anglegrip: 1.5, revgrip: 2, weaponlight: 1.5, sling: 3, can12: 0.1, repairkit: 1, tacscope: 0.3 } },
   police: { p: 0.06, items: { tritium: 1.5, rmr: 1, can9: 0.4, collapsible: 1, anglegrip: 1, weaponlight: 2, recoilpad: 1, sling: 1, revgrip: 1, kevlarkit: 2 } },
-  military: { p: 0.07, items: { acog: 2, lpvo: 0.4, tacscope: 0.6, thermalscope: 0.02, quadrail: 1.5, mlok: 1, can9: 0.4, can556: 0.6, can308: 0.3, flashhider: 1.5, collapsible: 1.5, precision: 0.6, anglegrip: 1, weaponlight: 1.5, peq: 0.4, sling: 2, m203: 0.15, kevlarkit: 1.5, repairkit: 1 } },
+  military: { p: 0.07, items: { acog: 2, lpvo: 0.4, tacscope: 0.6, thermalscope: 0.02, quadrail: 1.5, mlok: 1, can9: 0.4, can556: 0.6, can308: 0.3, flashhider: 1.5, collapsible: 1.5, precision: 0.6, anglegrip: 1, weaponlight: 1.5, peq: 0.4, sling: 2, kevlarkit: 1.5, repairkit: 1 } },
   crash_mil: { p: 0.05, items: { acog: 2, weaponlight: 1, peq: 0.3, can556: 0.3, kevlarkit: 1 } },
   convoy: { p: 0.04, items: { acog: 1, weaponlight: 1, repairkit: 1, kevlarkit: 1 } },
   prison: { p: 0.02, items: { revgrip: 1, kevlarkit: 1 } },

@@ -54,8 +54,14 @@ export const BREAKOFF = {
   BADLY: 50,               // health under this is badly hurt ("most")
   WEAR: 1,                 // breaking off: a blow still to come has partly landed, WEAR × (share of the team down)^1.5 (rollFight)
   TILES: [2, 5],           // distance to safety (tiles, as the tactical strip): field fights start near the way out
+  // ... by the enemy (the map, tools/retreattest.js RT_PARTS=1, seeds 7, 9, 11: tiles a runner when the Cautious AI
+  // pulls out): against the dead nearer still, a team holds its ground near where it came in while they come to it
+  // (2.2-2.6; raiders 3.6-4.7, as TILES); soldiers are fought at range, from farther up the field (5.3-6.3); a mixed
+  // fight farther yet (5-9, few retreats).
+  TILES_BY: { zombies: [1, 3], soldiers: [3, 8], mixed: [4, 10] },
   AMBUSHED: 2, STRUCK_FIRST: -1, // they had the drop on you: farther; you struck first: closer
-  PIN_DEAD: 0.35,          // each of the dead left per runner: this many on them (next to them)
+  PIN_DEAD: 0.25,          // each of the dead left per runner: this many on them (next to them; the map: 0.1-0.25 on a runner,
+                           // the rest of them behind it, as chasers, when the Cautious AI pulls out; it was 0.35, 0.7 a runner)
   PIN_PEOPLE: 0.05,        // people rarely close to grappling range
   SHOOT: 0.35,             // shooters that see a runner: this share of the people left
   // ... × this by the end of round 1 / 2: people who have only just been engaged are spread over the field, behind
@@ -188,7 +194,7 @@ function planEscape(rng, model, ms, enemyLeft, close = 1, seen = 1) {
   const hs = humanShare(model.enemy.kind);
   const per = Math.max(1, standing.length);
   const plan = standing.map((m) => {
-    const span = model.tiles || BREAKOFF.TILES;
+    const span = model.tiles || BREAKOFF.TILES_BY[model.enemy.kind] || BREAKOFF.TILES;
     const tiles = rng.int(span[0], span[1]) + (model.ambush === "enemy" ? BREAKOFF.AMBUSHED : model.ambush === "player" ? BREAKOFF.STRUCK_FIRST : 0);
     const e = {
       tiles: Math.max(0, tiles),
