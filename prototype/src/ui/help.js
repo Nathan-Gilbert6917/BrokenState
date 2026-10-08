@@ -22,6 +22,7 @@ import { BULK_HELP } from "./rosterbulk.js"; // the roster's bulk actions
 import { pacingHelp } from "./pacing.js";
 import { displayHelp } from "./display.js"; // Minimap, Readability, Confirmations
 import { GUNMODS_HELP } from "../sim/gunmods.js"; // sights, suppressors, magazines on guns
+import { NL_HELP } from "../sim/nonlethal.js"; // tasers, pepper spray, pulled blows, surrender
 import { CARAVAN_HELP } from "../sim/caravanraids.js"; // caravans on the road: escorts, robbing them, witnesses
 import { RESCUE_HELP } from "../sim/rescueraid.js"; // getting captives back: the rescue raid, ransoms
 
@@ -162,6 +163,7 @@ export function helpTopics() {
   if (!seen.has("hives-being-born")) add("Hives being born", HIVE_BIRTH_HELP);
   if (!seen.has("the-harvest-festival")) add("The harvest festival", FESTIVAL_HELP);
   if (!seen.has("gun-attachments")) add("Gun attachments", GUNMODS_HELP);
+  add("Non-lethal weapons and surrender", NL_HELP); // sim/nonlethal.js
   if (!seen.has("caravans-on-the-road")) add("Caravans on the road", CARAVAN_HELP);
   if (!seen.has("getting-captives-back")) add("Getting captives back", RESCUE_HELP);
   add("Keys", keysSheet()); // ui/controls.js

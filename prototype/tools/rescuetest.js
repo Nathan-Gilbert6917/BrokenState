@@ -696,6 +696,7 @@ section("No blows across a wall's corner (combat.js cornerBlocked: the player's 
   check(/corner/.test(e) && me.ap === 2 && !(await import("../src/sim/combat.js")).meleeReach(b, me, g), `diagonally past two walls: no blow (${e})`);
   W2("idoor", "wall");
   check(/corner/.test(combatAct(st, { type: "melee", unit: me.id, target: g.id })), "a wall and a closed door: still no blow");
+  { const SL = await import("../src/sim/stealth.js"); check(!SL.canSubdue(me, g, b) && SL.canSubdue(me, g), "no takedown (Subdue) across it either"); }
   W2("crate", "sandbag");
   check((await import("../src/sim/combat.js")).meleeReach(b, me, g), "low cover (crates, sandbags) does not block a blow");
   W2("open", "wall");
@@ -742,6 +743,23 @@ section("One notion of tied: a captive, an enemy knocked out and tied, a teammat
   const g = b.units.find((u) => u.side === "enemy");
   g.down = true; g.ko = true; g.tied = true;
   check(!CB.active(g) && !RR.rescueOptions(st, b, m1).some((o) => o.op === "cut" && o.ok && /Raider|Guard/.test(o.tip)), "a tied enemy is nobody's to cut loose");
+  // A freed captive who gives up (nonlethal: surr) with a guard next to them is taken back and tied in the cell again.
+  const cu = capUnits(b)[0];
+  cu.tied = false; cu.surr = true; cu.down = true;
+  const g2 = b.units.find((u) => u.side === "enemy" && u !== g && CB.active(u));
+  for (const m of [m1, m2]) { m.x = 0; m.y = 0; }
+  const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [cu.x + dx, cu.y + dy]).find(([x, y]) => b.cells[y * b.w + x] && ["open", "odoor"].includes(b.cells[y * b.w + x].k) || (b.cells[y * b.w + x] && b.cells[y * b.w + x].f === "floor" && !["wall", "window", "door", "locker", "bars", "fence"].includes(b.cells[y * b.w + x].k) && !b.units.some((o) => o.x === x && o.y === y)));
+  g2.x = spot[0]; g2.y = spot[1]; g2.aware = true;
+  RR.rescueRound(st, b);
+  check(cu.tied && !cu.surr && !cu.down && RR.captiveStays !== undefined, "a captive who surrendered is taken back: tied, not down, no longer surrendered");
+  // Knocked out at the end of a failed raid: still their captive (not taken a second time, not finished off).
+  const s = survivorById(st, cu.sid);
+  const captured0 = st.stats.conflicts.captured;
+  cu.tied = false; cu.ko = true; cu.down = true;
+  for (const m of b.units.filter((u) => u.side === "player" && !u.captive)) m.left = true;
+  CB.endBattleNow(st, "retreat");
+  closeCombat(st);
+  check(isCaptive(s) && s.alive && st.stats.conflicts.captured === captured0, "knocked out when the team pulls out: still held, once");
   st.combat = null;
   browser(false);
 }

@@ -22,7 +22,7 @@ import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { KITS, AREAS } from "../src/sim/combat.js";
 import { enemyBody, deadBodyFinds, allItems, lootItem, newItem, ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZBODY } from "../src/sim/inventory.js";
-import { rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS } from "../src/sim/loot.js";
+import { SITE_FINDS, rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS } from "../src/sim/loot.js";
 import { truckLoot, TRUCK_LOOT, TRUCK_LOOT_HOOKS, TRUCK_FLASH } from "../src/sim/miltrucks.js";
 import { ensureWares, WARES, WARE_EXTRAS, gearSellPrice, gearBuyPrice } from "../src/sim/trade.js";
 import { WARE_BOOKS } from "../src/sim/skills.js";
@@ -190,6 +190,12 @@ check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])
 
 // ---------- 4. no world-dice drift ----------
 section("4. No world-dice drift (against dev 75793c5)");
+// The non-lethal kit (data-nonlethal.js, loot.js, the guards' kit) is new loot on purpose: the baseline is checked without it
+// (taken out of the finds tables and the kits for this section, put back after it).
+const NL_KEYS = new Set(["taser", "tasercart", "pepper", "stunbaton"]);
+const nlStash = [];
+for (const T of [SITE_FINDS, AREA_FINDS]) for (const v of Object.values(T)) for (const k of Object.keys(v.items)) if (NL_KEYS.has(k)) { nlStash.push([v.items, k, v.items[k]]); delete v.items[k]; }
+for (const K of Object.values(KITS)) for (const f of ["weapons", "strong", "loot", "finds"]) if (Array.isArray(K[f]) && K[f].some((k) => NL_KEYS.has(k))) { nlStash.push([K, f, K[f]]); K[f] = K[f].filter((k) => !NL_KEYS.has(k)); }
 const BASE = {
   bodies: { keys: "5cc93cfd8dbebeeb", rng: 94849467201019 }, areaFinds: { keys: "4f69608bbca97f26", rng: 19566617580356 }, trucks: "537afeab97d1a43f",
   siteFinds: "dab86d9ad75a6877", groupWares: { keys: "0a732c1de196a889", rng: 2670422955354 }, visitors: { keys: "3bdc366902700698", merchants: "70e09d390ad58668", rng: 12580090440502 },
@@ -285,6 +291,7 @@ TRUCK_LOOT_HOOKS.push(...truckHooks);
 }
 
 // ---------- 5. merchants' specialities ----------
+for (const [o, k, v] of nlStash) o[k] = v; // the non-lethal kit back
 section("5. Merchants' specialities");
 {
   const w = createWorld({ seed: 99, factionCount: 8 });

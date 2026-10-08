@@ -37,6 +37,7 @@ import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent
 import { statusIcons } from "./status.js"; // the survivor behind a unit: low mood, starving, thirsty, infected, sick (its own hit points are the bar)
 import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor } from "./isoview.js";
 import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
+import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
 
@@ -270,7 +271,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn"].includes(a.type)) cui.mode = "move";
   }
   autoSelect(b);
   return !err;
@@ -303,6 +304,7 @@ export function combatClick(state, px, py) {
   if (u && active(u) && u.ap > 0 && cui.mode === "move" && !who && b.cells[c.y * W + c.x].k === "tanktrap" && Math.max(Math.abs(u.x - c.x), Math.abs(u.y - c.y)) <= 1) return void act(state, { type: "melee", unit: u.id, x: c.x, y: c.y });
   // The stealth kit (sim/stealth.js): throw at a tile, drag a body (pick it, then where to), tie up the knocked out.
   if (u && active(u) && u.ap > 0 && cui.mode === "throw") return void act(state, { type: "throw", unit: u.id, item: cui.throwKey, x: c.x, y: c.y });
+  if (u && active(u) && u.ap > 0 && nlMapClick(state, b, u, c, cui, act)) return; // pepper spray toward a tile (ui/nonlethal.js)
   if (u && active(u) && u.ap > 0 && cui.mode === "drag") {
     if (cui.dragId == null) {
       const body = bodyAt(b, c.x, c.y);
@@ -316,7 +318,7 @@ export function combatClick(state, px, py) {
     return void act(state, { type: "drag", unit: u.id, target: id, x: c.x, y: c.y });
   }
   if (u && active(u) && u.ap > 0 && cui.mode === "tie") {
-    const t = b.units.find((o) => o.side === "enemy" && o.ko && !o.dead && o.x === c.x && o.y === c.y);
+    const t = b.units.find((o) => o.side === "enemy" && (o.ko || o.surr) && !o.dead && !o.fled && o.x === c.x && o.y === c.y);
     if (t) return void act(state, { type: "tie", unit: u.id, target: t.id });
   }
   // The worm (sim/carriers.js): a body clicked for Double tap, Pick up body or Crush skull.
@@ -412,8 +414,9 @@ function arrowsChip(b) {
 
 function attack(state, u, t) {
   const b = state.combat;
+  if (cui.mode === "taser") return void act(state, { type: "taser", unit: u.id, target: t.id }); // ui/nonlethal.js
   if (cui.mode === "subdue") {
-    if (!canSubdue(u, t)) { cui.msg = "Subdue needs them right next to you."; return; }
+    if (!canSubdue(u, t, b)) { cui.msg = "Subdue needs them right next to you."; return; }
     return void act(state, { type: "subdue", unit: u.id, target: t.id });
   }
   const wantMelee = cui.mode === "melee" || (!canFire(b, u) && meleeReach(b, u, t));
@@ -698,16 +701,17 @@ export function combatAction(state, key, d) {
   if (v === "retreat" && b.raid) { cui.msg = "In a raid you leave by extracting: move into a green extraction zone and press X."; return; }
   if (v === "move") { cui.mode = "move"; return; }
   if (v === "shoot" || v === "melee") { cui.mode = cui.mode === v ? "move" : v; cui.msg = v === "shoot" ? "Click a visible enemy to shoot." : "Click an adjacent enemy to strike."; return; }
+  if (nlCbAct(state, b, u, v, cui, act)) return; // tasers, pepper spray, pulled blows, Execute, Surrender, Take them alive (ui/nonlethal.js)
   // The stealth kit (sim/stealth.js).
   if (v === "subdue") {
-    const near = b.units.filter((t) => canSubdue(u, t));
+    const near = b.units.filter((t) => canSubdue(u, t, b));
     if (near.length === 1) return void act(state, { type: "subdue", unit: u.id, target: near[0].id });
     cui.mode = cui.mode === "subdue" ? "move" : "subdue";
     cui.msg = near.length ? "Click the person next to you to subdue." : "Subdue needs a person right next to you.";
     return;
   }
   if (v === "tie") {
-    const ko = b.units.filter((t) => t.side === "enemy" && t.ko && !t.tied && !t.dead && adjacent(u, t));
+    const ko = b.units.filter((t) => t.side === "enemy" && (t.ko || t.surr) && !t.tied && !t.dead && !t.fled && adjacent(u, t));
     if (ko.length === 1) return void act(state, { type: "tie", unit: u.id, target: ko[0].id });
     cui.mode = ko.length ? "tie" : "move";
     cui.msg = ko.length ? "Click the one to tie up." : "Tie up someone knocked out, right next to you.";
@@ -839,8 +843,8 @@ export function renderCombatPanel(state) {
 
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
-    const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`) :
-      [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.tied && !p.down ? "Tied up" : p.captive ? "Freed captive" : "", p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
+    const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`)) :
+      [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !alive(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = alive(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     // A building with storeys: everyone's floor (dimmer when it is not the one shown).
@@ -886,12 +890,14 @@ export function renderCombatPanel(state) {
       ${floorButtons(b, u, btn)}
       ${bodyButtons(state, b, u, btn)}
       ${stealthButtons(state, b, u, btn)}
+      ${nlButtons(state, b, u, btn, cui)}
       ${siegeButtons(b, u, btn)}
       ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
       ${b.raid ? raidButtons(state, b, u, btn) + lockPanel(state, b, u) : ""}
       ${b.rescue ? rescueButtons(state, b, u, btn) : ""}
       ${carPanel(state, b, u)}
     </div>`;
+    html += nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
   } else if (b.phase === "enemy") html += `<h3>Enemy turn</h3><div class="small muted">Watch the map. Your turn comes next.</div>`;
 
   html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
@@ -1069,16 +1075,16 @@ function bodyButtons(state, b, u, btn) {
 // ---------- the stealth kit (sim/stealth.js) ----------
 function stealthButtons(state, b, u, btn) {
   const ap = u.ap;
-  const near = b.units.filter((t) => canSubdue(u, t));
+  const near = b.units.filter((t) => canSubdue(u, t, b));
   const so = near.length ? subdueOdds(b, u, near[0]) : null;
   const subTip = so ? `${so.label} (${near[0].name}). Ends the turn. Takedowns work on the unaware and on anyone at 30% health or less; a knocked-out enemy wakes in 4–6 turns unless tied up, and after a won fight comes home as a prisoner.`
     : "Takedown or a non-lethal blow on a person right next to you: knocks them out instead of killing. Best from behind, from cover, with a club and with Stealth.";
-  const ko = b.units.filter((t) => t.side === "enemy" && t.ko && !t.tied && !t.dead && adjacent(u, t));
+  const ko = b.units.filter((t) => t.side === "enemy" && (t.ko || t.surr) && !t.tied && !t.dead && !t.fled && adjacent(u, t)); // surr: hands up (sim/nonlethal.js)
   const bodies = b.units.filter((o) => adjacent(u, o) && dragable(o) && !o.left && !o.fled);
   const have = throwablesOf(state, b, u);
   const kinds = THROW_KEYS.filter((k) => have[k]);
   let html = btn("subdue", "Subdue", subTip, ap > 0 && near.length > 0, "C");
-  html += btn("tie", "Tie up", "1 action: tie up someone knocked out next to you. Tied, they do not wake up, and after the fight they are your prisoner (in a raid, drag them into an extraction zone and leave from it).", ap > 0 && ko.length > 0, "T");
+  html += btn("tie", ko.some((t) => t.surr) ? "Tie (take prisoner)" : "Tie up", "1 action: tie up someone knocked out or who has surrendered next to you. Tied, they do not wake up, and after the fight they are your prisoner (in a raid, drag them into an extraction zone and leave from it).", ap > 0 && ko.length > 0, "T");
   html += btn("drag", "Drag", `1 action: drag a body, someone knocked out or a downed teammate up to ${STEALTH.DRAG} tiles (out of a patrol's sight: a guard who sees a body raises the alarm).`, ap > 0 && bodies.length > 0, "⇧D");
   if (!kinds.length) html += btn("throw", "Throw", "Bottles, noise makers and firecrackers pull unaware guards and the dead to where they land. Nobody here carries one (search kitchens and houses, or craft them).", false, "G");
   for (const k of kinds) {
@@ -1350,8 +1356,10 @@ const restartBtn = (state, b, style = "") => (restartable(state, b) ? `<button${
 
 // Odds for the selected unit against a target: shot if it can, melee if adjacent.
 function odds(b, u, t) {
+  const nlo = nlOdds(b, u, t, cui); // the taser (ui/nonlethal.js)
+  if (nlo) return nlo;
   if (cui.mode === "subdue") {
-    if (!canSubdue(u, t)) return { ok: false, label: t.kind === "zombie" ? "The dead cannot be subdued" : "Subdue needs them right next to you" };
+    if (!canSubdue(u, t, b)) return { ok: false, label: t.kind === "zombie" ? "The dead cannot be subdued" : "Subdue needs them right next to you" };
     const o = subdueOdds(b, u, t);
     return { ...o, ok: true, label: o.label };
   }
@@ -1396,6 +1404,8 @@ function previewHtml(b, state = null) {
   if (!h) return `<span class="muted">Hover a tile or enemy for details.</span>`;
   const v = view(b);
   const t = unitAt(b, h.x, h.y);
+  const nlp = nlPreview(b, t && (t.side === "player" || v.vis[h.y * W + h.x]) ? t : null, h, u, cui); // the pepper cone, hands up, your knocked out (ui/nonlethal.js)
+  if (nlp) return nlp;
   if (t && t.side === "enemy" && v.seen.has(t.id)) {
     const o = u && active(u) ? odds(b, u, t) : null;
     const stealthy = (t.investigate ? ' · <span class="warn">going to look at a noise</span>' : "") + (t.stun ? ` · <span class="good">${esc(stunLabel(t.stun))}: no overwatch</span>` : ""); // a flashbang (sim/throwables.js)
@@ -1629,6 +1639,9 @@ export function drawCombat(state, now) {
     outline(bands, (k) => k === 1, "rgba(110,175,255,0.95)");
   }
 
+  // The pepper spray's cone toward the hovered tile (ui/nonlethal.js).
+  const cone = nlConeMask(b, u, cui);
+  if (cone) { ctx.fillStyle = "rgba(255,140,40,0.30)"; for (const i of cone) ctx.fillRect(ox + (i % W) * cs, oy + ((i / W) | 0) * cs, cs, cs); }
   // Treat targets.
   if (cui.mode === "meds" && u) {
     for (const p of players(b)) if (!p.dead && !p.left && (p === u || adjacent(u, p))) {
@@ -1776,6 +1789,7 @@ function drawIsoView(state, b, now, cw, ch) {
     unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble,
     hits: hitLabels(b, v), retreatOpen: !!plan, plan,
     threat: (x, y) => threatAt(b, v, x, y), // the threat preview: lines from whoever could hit the hovered tile
+    cone: nlConeMask(b, v.u, cui), // the pepper spray's cone toward the hovered tile (ui/nonlethal.js)
     throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)
   });
 }
@@ -2655,6 +2669,7 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
   if (t.side === "enemy" && !t.aware && !t.ko) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]); // ??: going to look at a noise
   if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : t.post === "wall" ? "W" : "T", "#e0a84f"]);
   if (t.surprised) tags.push(["!", "#ffd166"]);
+  tags.push(...nlTags(t)); // stunned, blinded, hands up, pulling blows (ui/nonlethal.js)
   ctx.font = `700 ${Math.max(9, Math.round(cs * 0.2))}px Segoe UI, sans-serif`;
   tags.forEach(([txt, col], i) => {
     const tx = cx - r - 2 + i * cs * 0.32, ty = cy - r - 4;

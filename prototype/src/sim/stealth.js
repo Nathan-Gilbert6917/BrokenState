@@ -29,7 +29,7 @@ import { gunMods, unitMods, fittedSuppressor, removeMod, modLabel } from "./gunm
 import { isNight, survivorById, baseById } from "./world.js";
 import { EQUIP_SLOTS, packOf } from "./inventory.js";
 import {
-  CELL, WEAPONS, active, adjacent, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
+  CELL, WEAPONS, active, adjacent, cornerBlocked, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
   say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash,
 } from "./combat.js";
 import { landEffect, blastSpot, throwBlind, throwLanding, flashSpot, doorToss, BLAST, FRAG, FIRE } from "./throwables.js";
@@ -45,7 +45,7 @@ export const STEALTH = {
   INVESTIGATE_TURNS: 3, STAGGER: 0.3, BLUNT: 0.6, WAKE: [4, 6], BEHIND_DETECT: 0.5,
 };
 export const TAKEDOWN = { base: 30, stealth: 2.5, behind: 15, cover: 10, assassin: 20, staggering: -15, kit: { soldiers: -15, zealots: -5 } };
-const CLUB = { spikedbat: 20, pipespear: 5, spear: 5, knife: 10, machete: 10, sawmachete: 10, springmachete: 10, fists: 5, bat: 20, nailbat: 15, baton: 20, prybar: 15, fireaxe: 10, sledge: 10 }; // guns: a butt stroke, +5
+const CLUB = { spikedbat: 20, pipespear: 5, spear: 5, knife: 10, machete: 10, sawmachete: 10, springmachete: 10, fists: 5, bat: 20, nailbat: 15, baton: 20, prybar: 15, fireaxe: 10, sledge: 10, stunbaton: 20 }; // guns: a butt stroke, +5
 export const SUPPRESSIBLE = ["pistol", "huntrifle", "ar", "leverrifle", "carbine"];
 // Keyed like GEAR (the item's throw field). radius / turns: the lure (unaware guards and the dead within radius go to
 // look); fx: what else happens where it lands (throwables.js); self: used where the unit stands; keep: not used up.
@@ -229,7 +229,8 @@ export function isBehind(a, t) {
 }
 const flatFooted = (t) => !t.aware || !!t.surprised;
 export const staggering = (t) => t.hp <= t.maxHp * STEALTH.STAGGER;
-export const canSubdue = (a, t) => !!a && !!t && t.side === "enemy" && t.kind === "human" && active(t) && adjacent(a, t);
+// b: the battle, for the wall-corner check (combat.js cornerBlocked); the UI's quick checks may leave it out.
+export const canSubdue = (a, t, b = null) => !!a && !!t && t.side === "enemy" && t.kind === "human" && active(t) && adjacent(a, t) && !(b && cornerBlocked(b, a.x, a.y, t.x, t.y));
 
 // Odds of Subdue against an adjacent human: a takedown (knock-out roll) on the unaware or staggering, else a
 // non-lethal blow. { takedown, chance, dmg, behind, cover, label }.
@@ -298,13 +299,13 @@ function takedown(b, a, t) {
 export function stealthAct(state, b, u, t, act) {
   switch (act.type) {
     case "subdue": {
-      if (!canSubdue(u, t)) return "Subdue needs a person right next to you.";
+      if (!canSubdue(u, t, b)) return "Subdue needs a person right next to you.";
       takedown(b, u, t);
       u.ap = 0;
       return "";
     }
     case "tie": {
-      if (!t || t.side !== "enemy" || !t.ko || t.dead || !adjacent(u, t)) return "Tie up someone knocked out, right next to you.";
+      if (!t || t.side !== "enemy" || !(t.ko || t.surr) || t.dead || t.fled || !adjacent(u, t)) return "Tie up someone knocked out or who has surrendered, right next to you."; // surr: nonlethal.js
       if (t.tied) return "Already tied up.";
       t.tied = true;
       // Handcuffs (data.js cuffs) on the unit: no action, and they stay on the prisoner.
@@ -388,7 +389,7 @@ export function throwAt(b, u, key, x, y, blind = false) {
   return [lx, ly];
 }
 
-export const dragable = (t) => (t.side === "enemy" && t.kind === "human" && !t.off && (t.dead || t.ko)) || (t.side === "player" && t.down && !t.dead && !t.left);
+export const dragable = (t) => (t.side === "enemy" && t.kind === "human" && !t.off && !t.fled && (t.dead || t.ko || t.surr)) || (t.side === "player" && t.down && !t.dead && !t.left);
 function moveBody(b, t, x, y) {
   const box = b.raid ? b.raid.containers.find((c) => c.kind === "body" && c.uid === t.id) : null;
   t.x = x; t.y = y;
@@ -512,7 +513,8 @@ export function spotBodies(b, e) {
 // Prisoners from a finished battle: the knocked out after a win; in a raid only the tied ones lying in an
 // extraction zone that someone left from.
 export function battleCaptives(b, outcome) {
-  const enemies = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && u.ko && !u.dead && !u.reinforcement);
+  // Surrendered (nonlethal.js): only the ones tied up; the untied walk away.
+  const enemies = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && (u.ko || (u.surr && u.tied)) && !u.dead && !u.fled && !u.reinforcement);
   if (b.raid) {
     const zones = new Set(b.units.filter((u) => u.side === "player" && u.left && !u.dead && u.exitZone != null).map((u) => u.exitZone));
     return enemies.filter((u) => u.tied && zones.has(zoneAt(b, u.x, u.y)));
@@ -527,7 +529,7 @@ export function botStealth(state, b, u, combatAct) {
   const foes = b.units.filter((e) => e.side === "enemy" && active(e));
   const ko = b.units.find((e) => e.side === "enemy" && e.ko && !e.tied && !e.dead && adjacent(u, e));
   if (ko && u.ap > 0) return !combatAct(state, { type: "tie", unit: u.id, target: ko.id });
-  const prey = foes.filter((e) => canSubdue(u, e) && (flatFooted(e) || staggering(e)) && subdueOdds(b, u, e).chance >= 50);
+  const prey = foes.filter((e) => canSubdue(u, e, b) && (flatFooted(e) || staggering(e)) && subdueOdds(b, u, e).chance >= 50);
   if (prey.length) return !combatAct(state, { type: "subdue", unit: u.id, target: prey[0].id });
   // Stalk a lone unaware guard within 8 tiles (no comrade within 4 tiles of it): one action's move toward the cell
   // behind it, the takedown once next to it.

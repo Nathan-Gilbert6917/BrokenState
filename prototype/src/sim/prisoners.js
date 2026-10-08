@@ -76,6 +76,7 @@ import { eatFromStore, foodStore } from "./storage.js";
 import { underAttack, isShelter } from "./buildings.js";
 import { ensureConquest, CONQUEST } from "./conquest.js";
 import { wormHealMult, WORM } from "./worm.js"; // the worm: half the healing while it is in them; treated prisoners (WORM.OTHERS)
+import { numbersSurrenders } from "./nonlethal.js"; // a decisive win by the numbers: a few of them give up
 
 export const PRISON = {
   CELL_CAP: 3, FOOD: 1, WATER: 1,
@@ -339,6 +340,12 @@ export function capturePrisoners(state, setup, result, battle) {
 }
 
 function numbersCapture(state, setup, result) {
+  // Played by hand (no autopilot): a decisive win takes a couple of the beaten side prisoner (nonlethal.js).
+  if (!state.autopilot) {
+    const f = setup.enemy && setup.enemy.factionId != null ? factionById(state, setup.enemy.factionId) : null;
+    const n = numbersSurrenders(state, setup, result);
+    return Array.from({ length: n }, (_, i) => makeRecord(state, { factionId: f ? f.id : null, group: f ? f.name : setup.enemy.name || "strangers", kit: setup.enemy.kind === "mixed" ? "raiders" : setup.enemy.kind, power: setup.enemy.power || 3, unitName: `${setup.enemy.name || "Enemy"} ${i + 1}`, tile: setup.tile }));
+  }
   if (!state.autopilot || result.outcome !== "victory" || !setup.enemy || setup.enemy.kind === "zombies") return [];
   if (!state.governor || state.governor.personality !== "aggressive") return [];
   if (!wantsIntel(state, setup.enemy.factionId) || !freeCells(state, destination(state, setup))) return [];
