@@ -25,6 +25,7 @@ export const QUICK_MARK = "#7fb8e6"; // a container rummaged through but not sea
 import { unitCanvas, unitFacing, drawSprite, canvasURL, spriteImg } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { lockPanel, raidKeyLine, lockPreview, drawLocks } from "./locks.js";
+import { carPanel, carPreview } from "./carpanel.js"; // cars on the map: get in, keys, hotwire, inspect, claim (sim/foundcars.js)
 import { ZTYPES, CARRIER } from "../sim/hiveconst.js";
 import { ACID, acidAt } from "../sim/acid.js";
 import { thirdRing } from "../sim/thirdside.js";
@@ -877,6 +878,7 @@ export function renderCombatPanel(state) {
       ${siegeButtons(b, u, btn)}
       ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
       ${b.raid ? raidButtons(state, b, u, btn) + lockPanel(state, b, u) : ""}
+      ${carPanel(state, b, u)}
     </div>`;
   } else if (b.phase === "enemy") html += `<h3>Enemy turn</h3><div class="small muted">Watch the map. Your turn comes next.</div>`;
 
@@ -1352,6 +1354,16 @@ function odds(b, u, t) {
   return { ...o, ok: true, label: `${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT}), ${cover}${t.hunker ? ", hunkered" : ""}` };
 }
 
+// The Army trucks' bodies (sim/miltrucks.js TRUCK_KINDS body), drawn from the top in car-local units (a along 0..L,
+// c across 0..2): the cargo truck a cab and a canvas-covered bed, the Humvee low and wide with a turret ring, the MRAP
+// a tall armoured box with small dark windows. color: the paint (olive; wrecked faded; burned out near black).
+const MIL_BODY = {
+  m35: { wheels: (L) => [0.7, L - 1.5, L - 0.6], parts: (L, col) => [[0.1, 1.4, 0.15, 1.85, col], [0.2, 0.9, 0.35, 1.65, "#22281a"], [1.5, L - 0.1, 0.05, 1.95, "#6b6a48"], [1.5, L - 0.1, 0.9, 1.1, "#58573a"]] },
+  humvee: { wheels: (L) => [0.6, L - 0.6], parts: (L, col) => [[0.05, L - 0.05, 0.05, 1.95, col], [0.9, 1.9, 0.3, 1.7, "#22281a"], [1.25, 1.65, 0.75, 1.25, "#3a4228"]] },
+  mrap: { wheels: (L) => [0.7, L - 0.7], parts: (L, col) => [[0.05, L - 0.05, 0.05, 1.95, col], [0.15, 0.7, 0.4, 1.6, "#1c2016"], [1.2, L - 0.3, 0.3, 1.7, "#55603a"]] },
+};
+const milParts = (m, L, col) => m.parts(L, col);
+
 function previewHtml(b, state = null) {
   const h = cui.hover;
   const u = selUnit(b);
@@ -1407,6 +1419,7 @@ function previewHtml(b, state = null) {
   }
   const lure = (b.lures || []).find((l) => l.x === h.x && l.y === h.y);
   if (lure) return `<b>${esc(GEAR[lure.key].name)}</b>: ${lure.key === "noisemaker" ? `still ringing (${lure.turns} turn${lure.turns === 1 ? "" : "s"})` : "where it landed"}. Guards and the dead nearby come to look.`;
+  if (state && !(b.raid && boxAt(b, h.x, h.y))) { const carText = carPreview(state, b, h.x, h.y); if (carText) return carText; } // ui/carpanel.js: a car or Army truck (not a raid container: that has its own line)
   if (b.raid) {
     const lockText = lockPreview(b, u, h.x, h.y); // ui/locks.js: a locked container or door
     if (lockText) return lockText;
@@ -2213,9 +2226,11 @@ function drawObject(k, px, py, cs, n, cell = null) {
         const { i, j, L, ax, kind, v, body: bodyKind } = cell.car, big = kind === "truck" || bodyKind === "truck";
         const body = kind === "vehicle" ? "#2f5d8a" : big ? "#5a4030" : colors[v % colors.length];
         const bikeParts = [[0.15, 0.65, 0.3, 0.7, "#1e1e20"], [1.35, 1.85, 0.3, 0.7, "#1e1e20"], [0.45, 1.55, 0.42, 0.58, kind === "vehicle" ? "#2f5d8a" : "#8a8f96"], [0.75, 1.15, 0.36, 0.64, "#5a5244"]]; // a bike: 2 x 1
-        const parts = bodyKind === "bike" ? bikeParts : big ? [[0.1, 1.35, 0.15, 1.85, body], [0.25, 1.3, 0.3, 1.7, "#2a221c"], [1.5, L - 0.1, 0.1, 1.9, "#3a3a3c"]]
+        const mil = MIL_BODY[bodyKind]; // an Army truck (sim/miltrucks.js; the team's own Army truck too): olive, burned out near black
+        const parts = mil ? milParts(mil, L, kind === "vehicle" ? "#2f5d8a" : cell.car.mil && cell.car.mil.cond === "burnt" ? "#2b2723" : cell.car.mil && cell.car.mil.cond === "wrecked" ? "#4a4a34" : "#4d5a32")
+          : bodyKind === "bike" ? bikeParts : big ? [[0.1, 1.35, 0.15, 1.85, body], [0.25, 1.3, 0.3, 1.7, "#2a221c"], [1.5, L - 0.1, 0.1, 1.9, "#3a3a3c"]]
           : [[0.1, L - 0.1, 0.15, 1.85, body], ...(L === 3 ? [[0.9, 2.1, 0.3, 1.7, "#9fc0d8"]] : v % 2 ? [[0.8, 3.7, 0.3, 1.7, "#9fc0d8"]] : [[0.8, 2.0, 0.3, 1.7, "#9fc0d8"], [2.2, 3.8, 0.3, 1.7, "#3a3a3c"]])];
-        if (bodyKind !== "bike") for (const a of big ? [0.7, L - 1.4, L - 0.6] : [0.6, L - 0.6]) for (const c of [0.2, 1.8]) parts.unshift([a - 0.3, a + 0.3, c - 0.22, c + 0.22, "#1e1e20"]);
+        if (bodyKind !== "bike") for (const a of mil ? mil.wheels(L) : big ? [0.7, L - 1.4, L - 0.6] : [0.6, L - 0.6]) for (const c of [0.2, 1.8]) parts.unshift([a - 0.3, a + 0.3, c - 0.22, c + 0.22, "#1e1e20"]);
         for (const [a0, a1, c0, c1, col] of parts) {
           const A0 = Math.max(a0, i) - i, A1 = Math.min(a1, i + 1) - i, C0 = Math.max(c0, j) - j, C1 = Math.min(c1, j + 1) - j;
           if (A1 - A0 <= 0.02 || C1 - C0 <= 0.02) continue;

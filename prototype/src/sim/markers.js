@@ -4,6 +4,7 @@
 // when they get home, or right away over the radio.
 import { skill, isNight } from "./world.js";
 import { anyPerk } from "./skills.js";
+import { spotTrucks, unopenedTrucks } from "./miltrucks.js";
 
 export const MARKER_TYPES = {
   vehicle: { name: "Abandoned vehicle", glyph: "🚚", desc: "One of your vehicles left behind. Bring fuel to get it running again." },
@@ -11,6 +12,7 @@ export const MARKER_TYPES = {
   cache:   { name: "Supply cache",      glyph: "📦", desc: "A hidden stash someone left behind. Investigate to collect it." },
   car:     { name: "Wrecked car",       glyph: "🚗", desc: "Could be restored with parts and fuel, or stripped." },
   camp:    { name: "Abandoned camp",    glyph: "⛺", desc: "Someone lived here. Supplies, and maybe notes about the area." },
+  miltruck: { name: "Army truck",       glyph: "🪖", desc: "A military truck left on the road (miltrucks.js): rifles, ammunition and armour in the back, and its crew still about it. Scavenge the tile to search it." },
 };
 
 export const LAYERS = {
@@ -27,7 +29,7 @@ export const LAYERS = {
   known:     { name: "Known area",       desc: "Hatched where your people searched for hidden places" },
   coalition: { name: "Coalition land",   desc: "Land you and the coalition's members hold (goal: 50%)" },
 };
-export const LAYER_OF = { vehicle: "vehicles", death: "deaths", cache: "finds", car: "finds", camp: "finds" };
+export const LAYER_OF = { vehicle: "vehicles", death: "deaths", cache: "finds", car: "finds", camp: "finds", miltruck: "finds" };
 
 export function spot(p, entry) {
   if (!p.spotted) p.spotted = new Map();
@@ -78,6 +80,9 @@ export function perceive(state, p, members, tiles, bonus = 0) {
       spot(p, e);
       found.push(e);
     }
+    // An Army truck on the road (miltrucks.js: its own dice).
+    const truck = spotTrucks(state, p, id, chance);
+    if (truck && !p.spotted?.has(truck.key)) { spot(p, truck); found.push(truck); }
     // Your own dead and vehicles are easy to recognise.
     for (const d of state.deathSites) {
       if (d.tile !== id || !d.items.length) continue;
@@ -97,7 +102,7 @@ export function perceive(state, p, members, tiles, bonus = 0) {
 export const deathLabel = (d) => (d.names.length ? `Death site: ${d.names.join(", ")}${d.walked && d.walked.length ? ` (${d.walked.map((n) => `${n.split(" ")[0]}'s body is gone: they rose and walked`).join("; ")})` : ""}` : "Cargo left behind");
 const deathMark = (state, d) => ({ key: `death:${d.tile}`, type: "death", tile: d.tile, hour: state.hour, label: deathLabel(d), info: { items: d.items.length } });
 const hasCargo = (v) => !!(v.cargo && (v.cargo.gear.length || Object.values(v.cargo.supplies).some((q) => q >= 1)));
-const vehicleMark = (state, v, note) => ({
+const vehicleMark = (state, v, note = v.found ? (v.found.repair ? "found, needs repair" : "found") : "") => ({ // found: on a map (foundcars.js)
   key: `vehicle:${v.id}`, type: "vehicle", tile: v.loc.tile, hour: state.hour,
   label: `${v.name}${note || hasCargo(v) ? ` (${[note, hasCargo(v) ? "cargo inside" : ""].filter(Boolean).join(", ")})` : ""}`,
   info: { vehicleId: v.id, fuel: Math.round(v.fuel), condition: Math.round(v.condition) },
@@ -138,6 +143,7 @@ export function updateLiveMarkers(state) {
     if (!state.live.has(m.tile)) return true;
     if (m.type === "death") return state.deathSites.some((d) => d.tile === m.tile);
     if (m.type === "vehicle") return state.vehicles.some((v) => v.id === m.info?.vehicleId && v.loc.kind === "abandoned");
+    if (m.type === "miltruck") return unopenedTrucks(state, m.tile).length > 0; // miltrucks.js: searched or taken since
     return true;
   });
 }

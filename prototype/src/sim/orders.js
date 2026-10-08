@@ -14,6 +14,7 @@ import { boatPlan, launchBoat, landBoat, gatherMaterials, gatherProblem, GATHER_
 import { fieldCraftOptions, fieldCraft } from "./crafting.js";
 import { estimatePlan, startNearby } from "./plans.js";
 import { startSearchArea } from "./crashes.js";
+import { finishFixCar } from "./foundcars.js"; // a found vehicle repaired on the spot
 import { startSweep, sweepHour, sweepDone, sweepOpts, sweepEstimate, routeFuel } from "./survey.js";
 import { fireLit, FIRE } from "./fieldheat.js";
 import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSummary, snareProblem, snareWork, snareMode, snareHours } from "./hunting.js";
@@ -36,6 +37,7 @@ export function describeOrder(state, o) {
     case "mission": return MISSIONS[o.mission]?.name || o.mission;
     case "camp": return o.hours ? `Camp ${o.hours}h` : "Camp (until broken)";
     case "repair": return "Repair vehicle";
+    case "fixcar": return "Repair a found vehicle"; // foundcars.js
     case "treat": { const s = survivorById(state, o.survivorId); return `Treat ${s ? s.name.split(" ")[0] : "someone"}`; }
     case "survey": return "Look around";
     case "sweep": { const s = sweepOpts(o); return o.done != null ? `Surveying: ${o.done} of ${s.hours} hours, ${(o.found || []).length} place${(o.found || []).length === 1 ? "" : "s"} found` : `Survey ${s.radius} tiles around, ${s.hours}h`; }
@@ -498,6 +500,7 @@ function finishTask(state, p) {
   else if (t.type === "sweep") text = sweepDone(state, p);
   else if (t.type === "camp") text = `Broke camp after ${t.done} hour${t.done === 1 ? "" : "s"} of rest. ${healthLine(state, p)}${campForageNote(state, p, t)}`;
   else if (t.type === "repair") text = fieldRepair(state, p);
+  else if (t.type === "fixcar") text = finishFixCar(state, p, t); // foundcars.js: the Mechanics check, the parts
   else if (t.type === "treat") text = fieldTreat(state, p, t.survivorId);
   else if (t.type === "gather") text = gatherMaterials(state, p, partyTile(p));
   else if (t.type === "water") text = fetchWater(state, p);

@@ -315,6 +315,13 @@ const run = (ax, c0, c1, z0, z1, m, a0 = 0, a1 = 1) => (ax === "u" ? { u0: a0, u
 // One cell's share of a car that covers 2 × 3–4 cells (sim/combat.js placeCar: o.car = { i, j, L, ax, kind, v }). The
 // body is drawn in car-local units (a along its length 0..L, c across 0..2, z in art px) and clipped to this cell, so
 // the cells' pieces meet into one car: a low body, a cabin of glass in the middle (a van's longer, a pickup's bed
+// The Army trucks (sim/miltrucks.js TRUCK_KINDS body) in car-local units: [a0, a1, c0, c1, z0, z1, "body" | colour].
+const MIL_TOPS = {
+  m35: (L) => [[0.1, 1.4, 0.15, 1.85, 3, 13, "body"], [0.15, 0.5, 0.3, 1.7, 9, 14, "#1e2418"], [1.5, L - 0.1, 0.05, 1.95, 4, 19, "#6b6a48"], [1.5, L - 0.1, 0.92, 1.08, 19, 20, "#58573a"]],
+  humvee: (L) => [[0.05, L - 0.05, 0.05, 1.95, 3, 11, "body"], [0.9, 1.9, 0.3, 1.7, 11, 15, "#1e2418"], [1.25, 1.65, 0.75, 1.25, 15, 19, "#3a4228"]],
+  mrap: (L) => [[0.05, L - 0.05, 0.05, 1.95, 4, 20, "body"], [0.05, 0.4, 0.4, 1.6, 13, 18, "#1c2016"], [1.4, L - 0.4, 0.3, 1.7, 20, 21, "#55603a"]],
+};
+const MIL_WHEELS = { m35: (L) => [0.7, L - 1.5, L - 0.6], humvee: (L) => [0.6, L - 0.6], mrap: (L) => [0.7, L - 0.7] };
 // behind), wheels at the corners; a truck is a tall cab and a box. The cell's local x/y then turn with the view (r).
 function carPieces(car, r) {
   const { i, j, L, ax, kind, v } = car, big = kind === "truck" || car.body === "truck"; // "vehicle": the team's own (blue), a truck or a car by car.body
@@ -324,7 +331,13 @@ function carPieces(car, r) {
   const boxM = flatM(mul(PAL.tire, 1.6)), tire = flatM(PAL.tire);
   const parts = []; // [a0, a1, c0, c1, z0, z1, m]
   const wheel = (a, c) => parts.push([a - 0.3, a + 0.3, c - 0.2, c + 0.2, 0, 5, tire]);
-  if (car.body === "bike") { // a bike or a motorcycle: 2 x 1 cells, wheels at each end, a low frame, a seat and the bars
+  const mil = MIL_TOPS[car.body]; // an Army truck (sim/miltrucks.js): olive drab; wrecked faded, burned out near black; the team's own blue
+  if (mil) {
+    const col = kind === "vehicle" ? PAL.blue : car.mil && car.mil.cond === "burnt" ? hex("#2b2723") : car.mil && car.mil.cond === "wrecked" ? hex("#4a4a34") : hex("#4d5a32");
+    const m = (f, s, t, X, Y) => { const q = n2(X, Y, 13); return q > 0.94 ? mul(PAL.rust, car.mil && car.mil.cond === "burnt" ? 0.6 : 1) : mul(col, f === "top" ? 1 : 0.92); };
+    for (const [a0, a1, c0, c1, z0, z1, k] of mil(L)) parts.push([a0, a1, c0, c1, z0, z1, k === "body" ? m : flatM(hex(k))]);
+    for (const a of MIL_WHEELS[car.body](L)) { wheel(a, 0.2); wheel(a, 1.8); }
+  } else if (car.body === "bike") { // a bike or a motorcycle: 2 x 1 cells, wheels at each end, a low frame, a seat and the bars
     const frame = flatM(kind === "vehicle" ? PAL.blue : mul(PAL.metal, 1.1)), dark = flatM(PAL.tire);
     parts.push([0.15, 0.65, 0.4, 0.6, 0, 6, dark], [1.35, 1.85, 0.4, 0.6, 0, 6, dark], [0.45, 1.55, 0.44, 0.56, 4, 7, frame], [0.75, 1.15, 0.38, 0.62, 7, 9, flatM(PAL.cloth)], [1.45, 1.55, 0.2, 0.8, 9, 11, frame]);
   } else if (big) {
@@ -606,7 +619,7 @@ const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", 
 
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${iso.rot & 3}` : ""}`;
+  const key = `${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${iso.rot & 3}` : ""}`;
   let s = spriteCache.get(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -930,9 +943,9 @@ function blockTop0(k, o) {
     case "ladder": return LV;
     case "tree": return o.v === 3 && o.alt ? 30 : 40;
     case "hivewall": return 30;
-    case "truck": return o.car ? 17 : 23;
+    case "truck": return o.car ? (MIL_TOPS[o.car.body] ? 19 : 17) : 23;
     case "car": return o.car ? (o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16; // a multi-cell car: its cabin cells stand taller than the hood and the trunk
-    case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" ? 17 : o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16;
+    case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" || MIL_TOPS[o.car.body] ? 19 : o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16;
     case "locker": return 26; case "shelf": return 24; case "pump": return 22;
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
