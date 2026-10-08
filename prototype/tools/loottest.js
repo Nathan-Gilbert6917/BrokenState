@@ -8,7 +8,7 @@
 import { MOD_ATTACH } from "../src/sim/data-gunmods.js";
 import { GEAR, LOCATIONS, CATEGORIES } from "../src/sim/data.js";
 import "../src/sim/blueprints.js"; // registers the blueprint items
-import { SITE_TAGS, AREA_TAGS, ITEM_TAGS, SITE_FINDS, AREA_FINDS, HUNT_FINDS, LIGHT_FINDS, GUNMOD_FINDS, AREA_GUNMODS, WARE_GUNMODS, SITE_MODS, AREA_MODS, WARE_MODS, PARTS_MIX, sortParts, splitParts, SITE_GRENADES, AREA_GRENADES, fitsTags, rollFind, rollAreaFind, SITE_RELOAD, AREA_RELOAD, WARE_RELOAD } from "../src/sim/loot.js";
+import { SITE_TAGS, AREA_TAGS, ITEM_TAGS, SITE_FINDS, AREA_FINDS, HUNT_FINDS, LIGHT_FINDS, GUNMOD_FINDS, AREA_GUNMODS, WARE_GUNMODS, SITE_MODS, AREA_MODS, WARE_MODS, PARTS_MIX, sortParts, splitParts, SITE_GRENADES, AREA_GRENADES, fitsTags, rollFind, rollAreaFind, SITE_RELOAD, AREA_RELOAD } from "../src/sim/loot.js";
 import { FLASH_KIT } from "../src/sim/throwables.js"; // the flashbangs and smoke grenades soldiers and guards carry (on their bodies after)
 import { TRUCK_FLASH } from "../src/sim/miltrucks.js";
 import { AREAS, AREA_SETS, KITS, WEAPONS } from "../src/sim/combat.js";
@@ -52,10 +52,9 @@ for (const [t, f] of Object.entries(WARE_GUNMODS)) addAll(Object.keys(f.items), 
 for (const [t, f] of Object.entries(SITE_MODS)) addAll(Object.keys(f.items), `modfind:${t}`);
 for (const [a, f] of Object.entries(AREA_MODS)) addAll(Object.keys(f.items), `raid:${a}`);
 for (const [t, f] of Object.entries(WARE_MODS)) addAll(Object.keys(f.items), `sold:${t}`);
-// The reloading bench's brass, powder and primers (loot.js SITE_RELOAD / AREA_RELOAD / WARE_RELOAD: their own dice).
+// The reloading bench's brass, powder and primers (loot.js SITE_RELOAD / AREA_RELOAD: their own dice).
 for (const [t, f] of Object.entries(SITE_RELOAD)) addAll(Object.keys(f.items), `find:${t}`);
 for (const [a, f] of Object.entries(AREA_RELOAD)) addAll(Object.keys(f.items), `raid:${a}`);
-for (const [t, f] of Object.entries(WARE_RELOAD)) addAll(Object.keys(f.items), `sold:${t}`);
 for (const [a, def] of Object.entries(AREAS)) addAll(def.gear.map(([k]) => k), `raid:${a}`);
 for (const [a, f] of Object.entries(AREA_FINDS)) addAll(Object.keys(f.items), `raid:${a}`);
 for (const [t, b] of Object.entries(BOOK_SITES)) addAll(b.books, `books:${t}`);

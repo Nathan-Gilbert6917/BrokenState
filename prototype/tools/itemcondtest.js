@@ -29,6 +29,7 @@ import { ensureWares, WARES, WARE_EXTRAS, gearSellPrice, gearBuyPrice } from "..
 import { WARE_BOOKS } from "../src/sim/skills.js";
 import { MILDEAD } from "../src/sim/deadsoldiers.js";
 import * as V from "../src/sim/visitors.js";
+import { RELOAD } from "../src/sim/reloading.js"; // merchants' powder and primers (their own dice)
 import {
   COND_SOURCES, rollCondition, condRolled, isPaper, rollsQuality, rollsWear, qualityWord, siteSource, areaSource, kitSource, traderSource,
 } from "../src/sim/itemcond.js";
@@ -298,6 +299,7 @@ TRUCK_LOOT_HOOKS.push(...truckHooks);
   check(h16(gk.join("|")) === BASE.groupWares.keys, "group wares: the same kinds (less the commune's new extras)");
   check(w.rng.state - r0 === BASE.groupWares.rng, "group wares: the world's dice end where they did");
   const info = V.visitorInfo(w);
+  RELOAD.MERCHANT.on = false; // the reloading bench's powder and primers are new (their own dice): without them the caravans are what they were
   const vk = [], mk = [];
   for (let i = 0; i < 60; i++) for (const kind of ["merchants", "explorers"]) {
     const v = V.spawnVisitor(w, kind);
@@ -306,6 +308,7 @@ TRUCK_LOOT_HOOKS.push(...truckHooks);
     w.visitors.length = 0;
   }
   check(h16(vk.join("|")) === BASE.visitors.keys, "travellers: the same wares");
+  RELOAD.MERCHANT.on = true;
   check(h16(mk.join("|")) === BASE.visitors.merchants, "merchants: the same caravans, at the same places");
   check(info.rng.state === BASE.visitors.rng, "visitors: their dice end where they did (the specialities use dice of their own)");
 }

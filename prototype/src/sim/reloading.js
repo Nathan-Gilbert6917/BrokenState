@@ -62,11 +62,12 @@ export const RELOAD = {
   // Its trade wants (reloadNeeds): powder charges and primers to keep with a reloading bench.
   STOCK: { powder: 300, primers: 300 },
   // The other groups.
-  GROUP: { perHead: 1.2, max: 40, every: 1, buyEvery: 10, want: { powder: 150, primers: 150 }, rel: -20, markup: 1.25, pc: 1.6, // charges a round (their mix)
+  GROUP: { perHead: 1.2, max: 40, buyEvery: 10, buyBrass: 30, keepScrap: 1, want: { powder: 150, primers: 150 }, markup: 1.25, pc: 1.6, // pc: charges a round (their mix)
+           rel: -50, // a seller not at war with them and not a bitter enemy (traders deal with most)
            brass: 0.3, // of the rounds their fights spend, back as brass
            stock: { traders: { powder: [2, 6], primers: [2, 6] }, military: { powder: [3, 8], primers: [3, 8] } } }, // per head they keep to sell (restocked toward it)
   // Merchant caravans (visitors.js merchantGoods): an arms dealer's powder and primers, anyone else's now and then.
-  MERCHANT: { arms: { powder: [100, 300], primers: [100, 400], brass: [0, 200] }, other: { p: 0.25, powder: [0, 100], primers: [0, 100] } },
+  MERCHANT: { on: true, arms: { powder: [100, 300], primers: [100, 400], brass: [0, 200] }, other: { p: 0.25, powder: [0, 100], primers: [0, 100] } },
 };
 
 const num = (v) => (Number.isFinite(v) ? v : 0);
@@ -77,10 +78,11 @@ const mech = (s) => (s ? skill(s, "mechanics") : 0);
 /** @param {string} cal */
 export const loadClass = (cal) => LOAD_CLASS[cal] || null;
 // Every (calibre, type) the bench can load, grouped by calibre in CALIBERS order: [{ cal, types: [{ type, key, min, rate }] }].
+export const CAL_ORDER = ["9mm", "45acp", "357", "12ga", "556", "762x39", "308", "3030"]; // pistols, the shotgun, rifles (Object.keys puts "308" first)
 export function recipeList() {
   const out = [];
-  for (const cal of Object.keys(CALIBERS)) {
-    if (!LOAD_CLASS[cal]) continue;
+  for (const cal of CAL_ORDER) {
+    if (!LOAD_CLASS[cal] || !CALIBERS[cal]) continue;
     const types = [];
     for (const type of [CALIBERS[cal].base, ...CALIBERS[cal].types.filter((t) => t !== CALIBERS[cal].base)]) {
       const r = loadRecipe(cal, type);
@@ -168,7 +170,7 @@ export const orderHave = (base, o) => { const r = SUPPLIES[o.key].round; return 
 function inputsFor(state, base, cal, type) {
   const st = base.stock;
   const pc = (POWDER_PER10[loadClass(cal) || "pistol"] || 10) / 10;
-  const powder = Math.floor(num(st.powder) / pc + 1e-9) + Math.floor(num(st.blackpowder) / pc + 1e-9);
+  const powder = Math.floor(num(st.powder) / pc + 1e-6) + Math.floor(num(st.blackpowder) / pc + 1e-6);
   const primers = Math.floor(num(st.primers)) + Math.floor(num(st.matchprimers));
   const lead = Math.floor(num(st.scrap)) * RELOAD.LEAD;
   let n = Math.min(Math.floor(num(st.brass)), primers, powder, lead);
@@ -182,16 +184,15 @@ function inputsFor(state, base, cal, type) {
   if (R.wear >= RELOAD.WEAR && !(num(st.gunparts) >= 1)) return { n: 0, reason: "worn dies: needs a gun part" };
   return { n: Math.max(0, n), reason };
 }
-// The best job for this operator today: { order, cal, type, n, reason } or null; with all = true every order's
-// status for the UI ({ order, n, reason } each).
-export function reloadJob(state, base, op, all = false) {
+// Every order's status for this operator today (the UI): [{ order, n (rounds it would make), reason, have, short }].
+export function reloadRows(state, base, op) {
   const m = mech(op);
+  /** @type {{ order: any, n: number, reason: string, have: number, short: number, cal?: string, type?: string }[]} */
   const rows = [];
-  let best = null, bestShort = 0;
   for (const o of reloadOrders(base)) {
     const r = SUPPLIES[o.key] && SUPPLIES[o.key].round;
     const rec = r && loadRecipe(r.cal, r.type);
-    if (!rec) { rows.push({ order: o, n: 0, reason: "cannot be loaded" }); continue; }
+    if (!rec) { rows.push({ order: o, n: 0, reason: "cannot be loaded", have: 0, short: 0 }); continue; }
     const have = orderHave(base, o), short = o.n - have;
     let n = 0, reason = "";
     if (!o.on) reason = "paused";
@@ -203,10 +204,18 @@ export function reloadJob(state, base, op, all = false) {
       n = Math.min(dayRate(rec[1], m), short, inp.n);
       if (n < 1) { n = 0; reason = inp.reason || "short of inputs"; }
     }
-    rows.push({ order: o, n, reason, have, short: Math.max(0, short) });
-    if (n >= 1 && short / Math.max(1, o.n) > bestShort) { bestShort = short / Math.max(1, o.n); best = { order: o, cal: r.cal, type: r.type, n }; }
+    rows.push({ order: o, n, reason, have, short: Math.max(0, short), cal: r.cal, type: r.type });
   }
-  return all ? rows : best;
+  return rows;
+}
+// The best job for this operator today: the order furthest short (by share) it can work, { order, cal, type, n }, or null.
+export function reloadJob(state, base, op) {
+  let best = null, bestShort = 0;
+  for (const r of reloadRows(state, base, op)) {
+    const s = r.short / Math.max(1, r.order.n);
+    if (r.n >= 1 && s > bestShort) { bestShort = s; best = { order: r.order, cal: r.cal, type: r.type, n: r.n }; }
+  }
+  return best;
 }
 
 // Would a reloading bench here work an order today (the governor staffs it: autopilot.js stationWorth)? The best
@@ -220,8 +229,8 @@ export function reloadWanted(state, base) {
 // ---------- the day's work (buildings.js stationStatus / runStations) ----------
 // A reloading bench's status today when it works an order: the station status shape with job set; null when it has
 // none to work (it runs as an ammo bench: the common rounds from scrap, under its station order).
-export function reloadStatus(state, base, st, op, hold = "") {
-  if (!op || !isReloadBench(st) || (hold && /off/i.test(hold))) return null;
+export function reloadStatus(state, base, st, op) {
+  if (!op || !isReloadBench(st) || (base.orders && base.orders[st.id] && base.orders[st.id].mode === "off")) return null; // its station order Off: off altogether
   const job = reloadJob(state, base, op);
   if (!job) return null;
   const io = jobIO(base, job);
@@ -232,12 +241,13 @@ export function reloadStatus(state, base, st, op, hold = "") {
 function jobIO(base, job) {
   const st = base.stock, n = job.n;
   const pc = (POWDER_PER10[loadClass(job.cal) || "pistol"] || 10) / 10;
-  const smokeless = Math.min(n, Math.floor(num(st.powder) / pc + 1e-9));
+  const smokeless = Math.min(n, Math.floor(num(st.powder) / pc + 1e-6));
   const black = n - smokeless;
   const factoryP = Math.min(n, Math.floor(num(st.primers)));
   const match = n - factoryP;
-  const inp = { brass: n, primers: factoryP, powder: Math.ceil(smokeless * pc - 1e-9), scrap: Math.ceil(n / RELOAD.LEAD) };
-  if (black > 0) inp.blackpowder = Math.ceil(black * pc - 1e-9);
+  const charges = (q, have) => Math.min(num(have), Math.ceil(q * pc - 1e-6)); // a shotgun load is 1⅔ charges: never more than there is
+  const inp = { brass: n, primers: factoryP, powder: charges(smokeless, st.powder), scrap: Math.ceil(n / RELOAD.LEAD) };
+  if (black > 0) inp.blackpowder = charges(black, st.blackpowder);
   if (match > 0) inp.matchprimers = match;
   if (job.type === "ap") inp.parts = Math.ceil(n / RELOAD.CORES);
   for (const k of Object.keys(inp)) if (!(inp[k] > 0)) delete inp[k];
@@ -387,7 +397,7 @@ export function groupReloadDaily(state, f, workshop) {
   const sell = G.stock[f.type];
   if (sell) for (const k of ["powder", "primers"]) { const cap = Math.round(f.pop * sell[k][1] * 10), want = Math.round(f.pop * sell[k][0] * 10); if (num(f.stock[k]) < want) f.stock[k] = Math.min(cap, num(f.stock[k]) + Math.ceil(f.pop * 2)); }
   if (!workshop) return 0;
-  if ((num(f.stock.powder) < G.want.powder / 3 || num(f.stock.primers) < G.want.primers / 3) && (f.reloadDeal == null || d - f.reloadDeal >= G.buyEvery)) groupBuyReload(state, f, d);
+  if (num(f.stock.brass) >= G.buyBrass && (num(f.stock.powder) < Math.min(G.want.powder, num(f.stock.brass) * G.pc) / 2 || num(f.stock.primers) < Math.min(G.want.primers, num(f.stock.brass)) / 2) && (f.reloadDeal == null || d - f.reloadDeal >= G.buyEvery)) groupBuyReload(state, f, d);
   const pc = G.pc;
   const n = Math.floor(Math.min(G.max, f.pop * G.perHead, num(f.stock.brass), num(f.stock.primers), num(f.stock.powder) / pc, num(f.stock.scrap) * RELOAD.LEAD));
   if (!(n >= 1)) return 0;
@@ -396,8 +406,9 @@ export function groupReloadDaily(state, f, workshop) {
   f.reloaded = num(f.reloaded) + n;
   return n;
 }
-// Powder and primers bought from a trading or military group not at war with them (the hunger trade's pattern: paid
-// in scrap, then ammo above 3 a head, at worth × markup).
+// Powder and primers bought from a trading or military group not at war with them (the hunger trade's pattern), as
+// much as their brass would load (at most G.want), paid in scrap at worth × markup out of half the scrap they can spare
+// (above G.keepScrap a head, at least 10).
 export function groupBuyReload(state, f, d = day(state)) {
   const G = RELOAD.GROUP;
   const wars = new Set(warsOf(state, f).flatMap((w) => [w.a, w.b]));
@@ -407,19 +418,15 @@ export function groupBuyReload(state, f, d = day(state)) {
   const got = {};
   let owed = 0;
   for (const k of ["powder", "primers"]) {
-    const q = Math.max(0, Math.min(Math.floor(G.want[k] - num(f.stock[k])), Math.floor(num(o.stock[k]) / 2)));
+    const cap = Math.min(G.want[k], num(f.stock.brass) * (k === "powder" ? G.pc : 1));
+    const q = Math.max(0, Math.min(Math.floor(cap - num(f.stock[k])), Math.floor(num(o.stock[k]) / 2)));
     if (q > 0) { got[k] = q; owed += q * SUPPLIES[k].value * G.markup; }
   }
   if (!Object.keys(got).length) return null;
-  const spare = { scrap: Math.max(0, num(f.stock.scrap) - 5), ammo: Math.max(0, num(f.stock.ammo) - f.pop * 3) };
-  let paidV = 0;
-  const paid = {};
-  for (const k of ["scrap", "ammo"]) {
-    if (paidV >= owed) break;
-    const q = Math.min(Math.floor(spare[k]), Math.ceil((owed - paidV) / SUPPLIES[k].value));
-    if (q > 0) { paid[k] = q; paidV += q * SUPPLIES[k].value; }
-  }
-  if (paidV <= 0) return null;
+  const spare = Math.floor(Math.max(0, num(f.stock.scrap) - Math.max(10, f.pop * G.keepScrap)) / 2);
+  const q = Math.min(spare, Math.ceil(owed / SUPPLIES.scrap.value));
+  if (q <= 0) return null;
+  const paid = { scrap: q }, paidV = q * SUPPLIES.scrap.value;
   const share = Math.min(1, paidV / owed);
   for (const [k, q] of Object.entries(got)) { const g = Math.floor(q * share); got[k] = g; o.stock[k] -= g; f.stock[k] = num(f.stock[k]) + g; }
   for (const [k, q] of Object.entries(paid)) { f.stock[k] -= q; o.stock[k] = num(o.stock[k]) + q; }
@@ -428,8 +435,8 @@ export function groupBuyReload(state, f, d = day(state)) {
 }
 // A merchant caravan's powder, primers and brass (visitors.js merchantGoods), on dice of their own.
 export function merchantReload(state, v) {
-  if (!v || !v.stock) return;
   const M = RELOAD.MERCHANT;
+  if (!v || !v.stock || !M.on) return;
   const roll = (k, [lo, hi]) => lo + Math.floor(h(state.seed, "mreload", v.serial, k) * (hi - lo + 1));
   if (v.spec === "arms") { for (const k of ["powder", "primers", "brass"]) v.stock[k] = roll(k, M.arms[k]); return; }
   if (h(state.seed, "mreloadany", v.serial) < M.other.p) for (const k of ["powder", "primers"]) v.stock[k] = roll(k, M.other[k]);

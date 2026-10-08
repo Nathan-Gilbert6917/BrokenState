@@ -432,7 +432,7 @@ export function stationStatus(state, base, st) {
   if (recipe === "power") return generatorStatus(state, base, st, op); // power.js
   // production.js: today's inputs and outputs (power, the still's mash) and the station's standing order.
   const hold = orderHold(state, base, st);
-  const rs = reloadStatus(state, base, st, op, hold); // reloading.js: a reloading order to work today (its station order holds only the common rounds)
+  const rs = reloadStatus(state, base, st, op); // reloading.js: a reloading order to work today (its station order holds only the common rounds)
   if (rs) return rs;
   const io = stationIO(state, base, st, op);
   if (hold) return { op, running: false, idle: true, reason: hold, recipe, out: io.out, in: io.in, powered: io.powered };

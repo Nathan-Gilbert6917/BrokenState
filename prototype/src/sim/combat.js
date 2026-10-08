@@ -36,7 +36,7 @@ import { partyVehicle, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPG
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods, carriedThrowables } from "./inventory.js";
 import { areaSource, kitSource, spend } from "./itemcond.js";
-import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades } from "./loot.js";
+import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades, rollAreaReload } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
 import { tiredAim } from "./sleep.js"; // Tired or Exhausted from the watch
@@ -5100,6 +5100,8 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       // A gun attachment in an armoury, a gun shop, barracks (loot.js AREA_GUNMODS; its own dice too).
       const part = rollAreaGunmod(state, b.tileId, R.areas[box.area].type, `box${box.id}`);
       if (part) gear.push(part);
+      const rel = rollAreaReload(state, b.tileId, R.areas[box.area].type, `box${box.id}`); // brass, powder, primers in a gun shop, an armoury (loot.js AREA_RELOAD; its own dice)
+      if (rel) gear.push(rel);
       // A crate of flashbangs or smoke grenades in an armoury, a few in barracks lockers (loot.js AREA_GRENADES; its own dice too).
       gear.push(...rollAreaGrenades(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
       // Firewood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).

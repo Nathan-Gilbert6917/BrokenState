@@ -16,7 +16,7 @@ import { STEWARD_AREAS, stewardOf, setSteward, setStewardArea, setStewardStyle, 
 import { LEADER_LIFT } from "../sim/morale.js";
 import { PERSONALITIES } from "../sim/autopilot.js";
 import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js";
-import { RELOAD, recipeList, inputsPer10, dayRate, handHq, reloadOrders, reloadJob, reloadBenches, setReloadOrder, removeReloadOrder, toggleReloadOrder, handMake } from "../sim/reloading.js";
+import { RELOAD, recipeList, inputsPer10, dayRate, handHq, reloadOrders, reloadRows, reloadBenches, setReloadOrder, removeReloadOrder, toggleReloadOrder, handMake } from "../sim/reloading.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -102,7 +102,7 @@ export function reloadCard(state, b) {
     `<b>${n0r(st.primers)}</b> primers${st.matchprimers >= 1 ? ` (+${n0r(st.matchprimers)} match-head)` : ""}`,
     `<b>${n0r(st.scrap)}</b> scrap`, `<b>${n0r(st.gunparts)}</b> gun parts`,
   ].join(" · ");
-  const rows = reloadJob(state, b, op, true);
+  const rows = reloadRows(state, b, op);
   const orderRows = rows.map((r) => {
     const o = r.order, key = o.key, data = `data-base="${b.id}" data-id="${o.id}"`;
     const hk = key + "_hand", hm = SUPPLIES[hk] ? handMake(state, hk) : null;
