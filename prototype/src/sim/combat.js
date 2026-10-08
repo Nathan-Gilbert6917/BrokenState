@@ -2282,15 +2282,16 @@ export function restCell(b, x0, y0, x1, y1) {
 }
 // Firing from a vehicle that moved this side's turn (driveTo and turnVehicle mark it: v.movedK; user request
 // 2026-10-08): the one who drove or turned it this turn (a gunner who turned it from the turret, say) RIDE.DRIVER, the
-// turret's gunner RIDE.TURRET (the ring mount steadies the gun), anyone else aboard RIDE.RIDER. Either side: the
-// enemy's gunner on their Humvee (b.raidHumvee) the same, should it ever move. Overwatch shots in the other side's
+// turret's gunner RIDE.TURRET (the ring mount steadies the gun), anyone else aboard RIDE.RIDER. Either side: whichever
+// vehicle the shooter's side has (carOf: yours, or the raid's Humvee or a caravan's escort vehicle in b.raidHumvee,
+// which raidCarTurn drives in and pulls back) the same. Overwatch shots in the other side's
 // turn right after are the turret's too (user pick G2: the gunner's overwatch still sways, RIDE.TURRET); the turn
 // after that, nothing. Today only the gunner can fire after a drive (driving takes both actions, riders sit inside);
 // the rider and driver numbers are there for whatever lets them shoot.
 export const RIDE = { DRIVER: 25, RIDER: 15, TURRET: 10 };
 export function rideAim(b, a) {
   if (!b || !a || !(a.aboard || a.gunner)) return 0;
-  const v = a.side === "player" ? b.vehicle : b.raidHumvee;
+  const v = carOf(b, a);
   const k = strikeMark(b);
   if (!v || v.movedK == null) return 0;
   if (v.movedK === k - 1) return a.gunner ? -RIDE.TURRET : 0; // the other side's turn right after: the turret's overwatch

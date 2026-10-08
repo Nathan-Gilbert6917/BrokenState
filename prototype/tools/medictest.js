@@ -570,6 +570,28 @@ const ringOk = (b, v, u) => !(u.x >= v.x && u.y >= v.y && u.x < v.x + v.w && u.y
   }
 }
 {
+  // The enemy's Humvee carries a driver and riders now (combat.js crewRaidCar, carOf): one of them down inside is in
+  // their Humvee (vehicleOf, not your vehicle, which this map lacks), and you pull them out the same way.
+  const { st, b, ps } = arena({ kind: "soldiers" });
+  const [a] = ps;
+  wall(b, Array.from({ length: b.h }, (_, y) => [6, y]));
+  foe(b, "soldiers", 24, 12); foe(b, "soldiers", 26, 18);
+  const hv = placeRaidHumvee(b, "m2hb");
+  manEnemyTurret(b, "m2hb");
+  const v = { x: hv.x0, y: hv.y0, w: hv.w, h: hv.h };
+  const D = b.units.find((u) => u.side === "enemy" && u.kind === "human" && active(u) && !u.gunner);
+  D.aboard = true; D.off = true; D.x = v.x; D.y = v.y; b.raidHumvee.driver = D.id;
+  downFoe(b, D, a);
+  const r = MED.vehicleOf(b, D);
+  check(!b.vehicle && D.aboard && r && r.x === v.x && r.y === v.y && r.w === v.w && r.h === v.h, `${D.name}, at their wheel, goes down inside their Humvee: in its rect`);
+  const spot = [];
+  for (let y = v.y - 1; y <= v.y + v.h; y++) for (let x = v.x - 1; x <= v.x + v.w; x++) if (x >= 0 && y >= 0 && x < b.w && y < b.h && ringOk(b, v, { x, y }) && !b.units.some((o) => !o.dead && !o.off && o.x === x && o.y === y)) spot.push([x, y]);
+  for (const o of b.units) if (o.side === "enemy" && active(o) && !o.aboard && !o.gunner) { o.x = 30; o.y = 2; }
+  [a.x, a.y] = spot[0]; a.ap = 2;
+  const err = combatAct(st, { type: "pullOut", unit: a.id, target: D.id });
+  check(!err && !D.aboard && !D.off && D.down && ringOk(b, v, D), `${a.name} pulls the driver ${D.name} out of their Humvee onto (${D.x},${D.y}) (${err || "no error"})`);
+}
+{
   // The key: Shift+U, no clash in a battle.
   const KEYS = await import("../src/ui/keymap.js");
   KEYS.initKeymap({});

@@ -1333,7 +1333,7 @@ function medicButtons(state, b, u, btn) {
     const t = ok[0] || foes[0];
     html += btn("finish", "Finish", `1 action: kill a downed enemy for good (no revive, no prisoner): a blow from next to them, sure and silent, or one round (${MEDIC.FINISH.BASE}% out to ${MEDIC.FINISH.FROM} tiles, −${MEDIC.FINISH.PER} a tile past it; the noise of a shot). A plain click never does it. ${ok.length ? `${t.name}: ${finishOdds(u, t, b)}%.` : finishRefusal(b, u, t)}`, ap > 0 && ok.length > 0, keyLabel("battle.finish", 1) || "Shift+K");
   }
-  // Pull out (sim/medics.js): someone down inside a vehicle (a rider of yours, the gunner on the enemy's Humvee) is
+  // Pull out (sim/medics.js): someone down inside a vehicle (a rider of yours, one of theirs in their Humvee: driver, rider or gunner) is
   // out of reach until someone standing next to it pulls them out.
   const inCar = b.units.filter((o) => (o.side === "player" || playerSees(b, o)) && vehicleOf(b, o));
   if (inCar.length) {

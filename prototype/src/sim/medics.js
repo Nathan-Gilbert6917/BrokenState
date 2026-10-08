@@ -41,7 +41,7 @@ import { NL_TAKE, TYPE_KIT } from "./nonlethal.js"; // how much each group's typ
 import {
   say, fx, active, adjacent, unitById, unitAt, medsLeft, reachable, pathTo, moveAlong, coverAgainst, los, sightRange, canSeeAt,
   canFire, hasShots, isRanged, damage, meleeReach, distField, loadMag, magIn, hasMag, WEAPONS, shotOdds, CELL, aboardCount, alertNear,
-  leaveTurret,
+  leaveTurret, carOf,
 } from "./combat.js";
 
 export const MEDIC = {
@@ -399,15 +399,18 @@ export function dragSweep(b) {
 
 // ---------- pulling the downed out of a vehicle ----------
 // A downed person in a vehicle cannot be treated, dragged or finished where they lie: a rider of your vehicle (down
-// aboard: the turret's gunner who dropped inside, one hit by a blast through the windows, one laid in it), or the gunner
-// on the enemy's Humvee (combat.js manEnemyTurret), who drops on its roof. Pull out (MEDIC.PULL.AP actions, either
+// aboard: the turret's gunner who dropped inside, one hit by a blast through the windows, one laid in it), or one of
+// theirs in the enemy's Humvee or escort vehicle (its driver, riders, or the gunner who dropped back inside; an older
+// save's gunner who dropped on its roof). Pull out (MEDIC.PULL.AP actions, either
 // side): someone standing next to the vehicle hauls them out onto a free cell next to both (the one with the fewest eyes
 // on it), where they can be revived, stabilized, dragged, tied or finished as usual. Pulled out of your vehicle, one
 // laid in it no longer counts as carried out.
-// The vehicle's rect they lie in: { x, y, w, h } (your vehicle for a rider aboard, else the car under them), or null.
+// The vehicle's rect they lie in: { x, y, w, h } (for a rider aboard, their side's vehicle: combat.js carOf, yours or the
+// raid's Humvee or a caravan's escort with its driver, riders and the gunner who dropped inside; else the car under
+// them), or null.
 export function vehicleOf(b, t) {
   if (!t || !t.down || t.dead || t.left || t.taken) return null;
-  if (t.aboard) return b.vehicle ? { x: b.vehicle.x, y: b.vehicle.y, w: b.vehicle.w, h: b.vehicle.h } : null;
+  if (t.aboard) { const v = carOf(b, t); return v ? { x: v.x, y: v.y, w: v.w, h: v.h } : null; }
   if (t.off || t.x == null) return null;
   const c = b.cells[t.y * b.w + t.x];
   if (!c || !c.car || CELL[c.k].walk) return null;
@@ -907,7 +910,7 @@ export const MEDICS_HELP = `<b>Medics.</b> Anyone who takes a med kit into a fig
   free, and drag them: half the move distance (both actions can go on moving), no shooting. Shift+D again puts them down; next to the vehicle they can be laid
   in it (counts as carried out; one still bleeding is stabilized on the way in, 1 action: sure with meds, by hand
   without, and the button warns ⚠ when that may fail). <b>Pull out</b> (Shift+U): ${MEDIC.PULL.AP} actions from next to a vehicle: someone down inside it (a
-  rider, the gunner who dropped in, the gunner on the enemy's Humvee) is laid on a free cell next to you, to be treated,
+  rider, the gunner who dropped in, one of theirs in their Humvee: its driver, a rider or the gunner) is laid on a free cell next to you, to be treated,
   dragged, tied or finished as anyone on the ground. Drag them out of the line of fire: raiders and zealots finish the
   downed they can see when none of yours stands within ${F.GUARD} tiles of them, one chance in ${Math.round(1 / F.WILL)} a turn (as often as their group takes people alive, a quarter of the time for raiders, never for zealots, they take one next to
   them instead: one bleeding is dragged off, a prisoner of their group if they get away; down or badly hurt, the dragger
