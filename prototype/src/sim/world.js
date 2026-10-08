@@ -64,7 +64,7 @@ import { riseOnMap, walkingDaily } from "./carriers.js"; // the worm: someone wh
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
 import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
-import { countWord } from "./hardcore-start.js";
+import { countWord, normalStartBackgrounds, normalStartKit } from "./hardcore-start.js";
 import { stagingHour } from "./staging.js";
 import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
@@ -179,7 +179,11 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.survivors[0].gear.armor = newItem("vest", 1, hash01(state.seed, "startdur", "vest"), START_DUR);
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));
   state.survivors[0].leader = true;
+  // Who they were (hardcore-start.js normalStartBackgrounds, 2026-10-07): a background each, with dice of their own,
+  // before the new-run screen's edits; a custom background's kit after them.
+  normalStartBackgrounds(state, crew);
   if (crew) applyCrew(state, crew);
+  normalStartKit(state, hubBase);
   assignStartingRoles(state);
 
   ensureHives(state); // the hives mapgen.js placed, with their starting resources (hives.js)
