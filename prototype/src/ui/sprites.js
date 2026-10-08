@@ -13,6 +13,7 @@ import { spriteArmorKey } from "../sim/inventory.js";
 import { bossBattleCanvas, ztypeBattleCanvas } from "./hivesprites.js";
 
 const GW = 22, GH = 26;   // pixel grid
+const GRID_W = GW, GRID_H = GH; // the painter's defaults (painter / toCanvas take their own size)
 const UP = 4;             // pre-upscale factor for the cached canvas
 const OUTLINE = "#0b0c0e";
 
@@ -69,10 +70,11 @@ function mix(a, b, t) {
 const desat = (hex, t) => { const [r, g, b] = rgb(hex); const l = r * 0.3 + g * 0.59 + b * 0.11; return toHex(r + (l - r) * t, g + (l - g) * t, b + (l - b) * t); };
 
 // ---------- painter ----------
-function painter() {
+// A pixel grid (w × h: the sprites' 22 × 26 by default; ui/gunart.js paints its guns on a bigger one) and its canvas.
+export function painter(GW = GRID_W, GH = GRID_H) {
   const px = new Array(GW * GH).fill(null);
   const p = {
-    px,
+    px, w: GW, h: GH,
     set(x, y, c) { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < GW && y < GH && c) px[y * GW + x] = c; },
     get(x, y) { return x >= 0 && y >= 0 && x < GW && y < GH ? px[y * GW + x] : null; },
     rect(x0, y0, x1, y1, c) { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) p.set(x, y, c); },
@@ -81,8 +83,10 @@ function painter() {
   return p;
 }
 
-function toCanvas(p) {
+// up: canvas pixels a grid pixel (UP for the sprites).
+export function toCanvas(p, up = UP) {
   if (typeof document === "undefined") return null;
+  const GW = p.w || GRID_W, GH = p.h || GRID_H, UP = up;
   const cv = document.createElement("canvas");
   cv.width = GW * UP;
   cv.height = GH * UP;

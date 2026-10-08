@@ -15,7 +15,7 @@ import {
   personPlace, battlePlace, storageFor, battleBodies, bodyHolder, bodyEmpty, takeSupply, takeAllBody, takeAllBodies, itemLoad, allItems,
   breakDownInfo, breakDownAt, setFireMark, modChoices, fitModAt, unfitModAt,
 } from "../sim/inventory.js";
-import { ATTACH, MOUNTS, MOUNT_NAMES, takesMods, modsText, attachText, fitsText, modFitReason, modLabel } from "../sim/gunmods.js"; // gun attachments
+import { ATTACH, MOUNT_NAMES, modsText, attachText, fitsText, modFitReason, modLabel } from "../sim/gunmods.js"; // gun attachments
 import { isJunk, armoryJunk, burnablesWood, breakDownJunk, boilerJunkOn, BURN } from "../sim/woodcutting.js"; // break down for firewood; what the boiler may burn
 import { survivorURL, spriteImg, canvasURL, unitCanvas } from "./sprites.js";
 import { cui } from "./combat.js";
@@ -25,14 +25,16 @@ import { partyVehicle, vehicleLabel, isBike } from "../sim/vehicles.js";
 import { raidMove, raidItemAt, parseRaidLoc, raidTakeAll, stashAll, personalLoad, trunkInfo, atVehicle, raidParty, quickTarget, matesOf, hauled, haulBudget, HAUL, supplyFit } from "../sim/raidloot.js";
 import { combatAct } from "../sim/combat.js";
 import { SEARCH } from "../sim/search.js";
-import { ask } from "./confirm.js"; // breaking down anything above junk asks first (one confirmation style)
+import { ask } from "./confirm.js";
+import { isGunKey } from "./gunart.js"; // a gun (not a bow or a blade): the gun builder opens on it
+import { gunTipText, slotOfPart, SLOT_NAMES as PART_SLOT_NAMES } from "./gunbuilder.js"; // the gun builder (ui/gunbuilder.js) // breaking down anything above junk asks first (one confirmation style)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const first = (s) => esc(shortName(s)); // first name, with a last initial when two people share it
 
 // ---------- item tiles ----------
-const GUNS = new Set(["pistol", "shotgun", "huntrifle", "ar", "pipegun", "revolver", "leverrifle", "carbine"]);
+// Guns: any ranged weapon that is not a bow (combat.js WEAPONS; the overhaul's new guns too).
 const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "🥽", crowbar: "🔧", waterfilter: "💧", bicycle: "🚲",
   guitar: "🎸", harmonica: "🎵", cards: "🃏", photos: "🖼", pipebomb: "💣", molotov: "🔥", flare: "🎆", smokegren: "💨", cuffs: "⛓", gamecall: "📯",
   camonet: "⛺", ghillie: "🌿", stove: "⛺", scentmask: "🫙", ragboots: "🥾" };
@@ -42,7 +44,7 @@ const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", ar
 const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩" };
 function icon(key) {
   const d = GEAR[key];
-  if (GUNS.has(key)) return "🔫";
+  if (isGunKey(key)) return "🔫";
   return TOOL_ICON[key] || CAT_ICON[d.cat] || SLOT_ICON[d.slot] || (d.book ? "📖" : "▪");
 }
 
@@ -53,8 +55,9 @@ export function itemTip(item, s = null) {
   const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
   if (d.slot === "weapon") bits.push(`power ${d.power}${d.req ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}`);
   if (d.slot === "weapon" && item.mods) bits.push(modsText(item)); // sim/gunmods.js: what is fitted and the net effect
-  else if (d.slot === "weapon" && takesMods(item.key)) bits.push("takes attachments (select it to fit one)");
-  if (ATTACH[item.key]) bits.push(`gun attachment (${MOUNT_NAMES[ATTACH[item.key].mount].toLowerCase()}): ${attachText(item.key)}; fits ${fitsText(item.key)}`);
+  if (d.slot === "weapon" && isGunKey(item.key)) { const g = gunTipText(item); if (g) bits.push(g); } // ui/gunbuilder.js: its slots, its load, how reliable
+  if (ATTACH[item.key]) bits.push(`gun attachment (${MOUNT_NAMES[ATTACH[item.key].mount].toLowerCase()}): ${attachText(item.key)}; fits ${fitsText(item.key)}; fit it in the gun builder (⚙ Modify on the gun)`);
+  else if (slotOfPart(item.key)) bits.push(`gun part (${(PART_SLOT_NAMES[slotOfPart(item.key)] || slotOfPart(item.key)).toLowerCase()}): fit it in the gun builder (⚙ Modify on the gun)`);
   else if (["armor", "head", "arms", "legs"].includes(d.slot)) bits.push(`armor ${d.power} (adds up across body, head, arms and legs)`);
   else if (d.slot === "backpack") bits.push(`${packSize(item)} pack slots, +${d.carry || 0} kg max load${d.ease ? `, spreads the weight: the wearer's load counts ${Math.round(d.ease * 100)}% lighter for their load band` : ""}`);
   else if (d.book) bits.push(d.book.skill ? `${d.craftBook ? "craft book" : "book"}: teaches ${SKILL_NAMES[d.book.skill]} up to ${d.book.max}, ${d.book.hours} hours to read (Read role at a base, from the armory)` : `book: +${d.book.mood} mood an hour read, ${d.book.hours} hours`); // skills.js; a craft book's unlocks are in its description (blueprints.js)
@@ -95,7 +98,12 @@ function slotBox(state, ui, loc, label, s, readonly) {
   const item = itemAt(state, loc);
   const sel = ui.invSel === loc ? " sel" : "";
   const act = readonly ? "" : ` data-action="inv-click" data-loc="${loc}" data-drop="${loc}"`;
-  return `<div class="islot${sel}${item ? "" : " empty"}"${act}${item ? "" : tip(`${label}: empty`)}><span class="islab">${label}</span>${item ? tile(item, loc, s, !readonly) : ""}</div>`;
+  return `<div class="islot${sel}${item ? "" : " empty"}"${act}${item ? "" : tip(`${label}: empty`)}><span class="islab">${label}</span>${item ? tile(item, loc, s, !readonly) : ""}${!readonly && /:weapon$/.test(loc) ? gearCog(state, ui, item, loc) : ""}</div>`;
+}
+// ⚙ on a gun: the gun builder (ui/gunbuilder.js). Not on a body, not in the loot or search windows, not in a battle.
+function gearCog(state, ui, item, loc) {
+  if (!item || !isGunKey(item.key) || state.combat || !ui.inv || ui.inv.loot || ui.inv.raid || /^body:/.test(loc)) return "";
+  return `<button class="mini gbcog" data-action="gb-open" data-loc="${loc}" style="position:absolute;right:2px;top:2px;padding:0 0.25rem;line-height:1.2"${tip(`Modify the ${item.name}: the gun builder (sights, muzzle, magazine, stock, grip and the rest; the ammo it is loaded with)`)}>⚙</button>`;
 }
 
 // The paper doll: portrait in the middle, hands / off hand / pack on the left, head / body / arms / legs on the
@@ -146,7 +154,7 @@ function storageBox(state, ui, place, user) {
   }
   const tiles = st.list.map((it, i) => {
     const l = `${loc}:${i}`;
-    return `<div class="islot store${ui.invSel === l ? " sel" : ""}" data-action="inv-click" data-loc="${l}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(it) * 10) / 10} kg`)}>${tile(it, l, user)}</div>`;
+    return `<div class="islot store${ui.invSel === l ? " sel" : ""}" data-action="inv-click" data-loc="${l}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(it) * 10) / 10} kg`)}>${tile(it, l, user)}${gearCog(state, ui, it, l)}</div>`;
   }).join("");
   // The supplies kept here, as stacks with their weight (firewood too: 0.1 kg each): the team's found cargo, the base's stores.
   const pool = st.o === "cargo" ? st.party.cargo.supplies : ((baseById(state, st.id) || {}).stock || {});
@@ -172,28 +180,22 @@ function selBar(state, ui, place) {
     ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
     ${burnButtons(state, ui, item, from)}
     <button class="mini" data-action="inv-cancel">Cancel</button>
-    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" ? modBar(state, ui, item) : ""}</div>`;
+    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" && !state.combat ? modBar(state, ui, item) : ""}</div>`;
 }
-// Gun attachments (sim/gunmods.js) for the selected item: on a gun, what is fitted (Remove) and every loose attachment
-// within reach that fits it (Fit); on an attachment, the guns on the person whose inventory is open that take it.
+// Gun parts (the gun builder, ui/gunbuilder.js): on a gun, Modify opens it; on a loose part, Modify for each gun on the
+// person whose inventory is open that takes it (the builder opens on that gun at the part's slot).
 function modBar(state, ui, item) {
-  const d = GEAR[item.key];
-  if (d && d.slot === "weapon" && takesMods(item.key)) {
-    const on = MOUNTS.filter((m) => item.mods && item.mods[m]).map((m) => `<button class="mini" data-action="inv-unmod" data-mount="${m}"${tip(`Take the ${item.mods[m].name} off (${MOUNT_NAMES[m].toLowerCase()}): it goes to the armory or the team's cargo, or into a pocket or the pack.`)}>Remove ${esc(ATTACH[item.mods[m].key] ? ATTACH[item.mods[m].key].short : item.mods[m].name)}</button>`);
-    const can = modChoices(state, ui.invSel, ui.inv.sid).map((c) => {
-      const a = ATTACH[c.item.key];
-      const old = item.mods && item.mods[a.mount];
-      return `<button class="mini" data-action="inv-fitmod" data-mod="${c.loc}"${tip(`${c.item.name}: ${attachText(c.item.key)}.${old ? ` Swaps out the ${old.name}.` : ""}`)}>Fit ${esc(c.item.name)}</button>`;
-    });
-    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Attachments${item.mods ? ` (${esc(modLabel(item))})` : ""}:</span> ${[...on, ...can].join(" ") || `<span class="muted">none fitted, none within reach that fit it.</span>`}</div>`;
+  if (isGunKey(item.key)) {
+    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><button class="mini" data-action="gb-open" data-loc="${ui.invSel}"${tip(`The gun builder: the ${item.name} drawn large, a line to each slot (sight, muzzle, magazine and the rest), the parts within reach that fit each one with what they change, the ammo it is loaded with and how reliable it is.`)}>⚙ Modify</button>${item.mods ? `<span class="muted">${esc(modLabel(item))}</span>` : ""}</div>`;
   }
-  if (ATTACH[item.key]) {
+  const slot = slotOfPart(item.key);
+  if (slot) {
     const s = survivorById(state, ui.inv.sid);
     if (!s) return "";
     const locs = [`s:${s.id}:weapon`, ...s.pockets.map((_, i) => `s:${s.id}:pocket:${i}`), ...(packOf(s) || []).map((_, i) => `s:${s.id}:pack:${i}`)];
-    const guns = locs.map((l) => [l, itemAt(state, l)]).filter(([, g]) => g && g !== item && GEAR[g.key] && GEAR[g.key].slot === "weapon" && !modFitReason(g, item));
-    const btns = guns.map(([l, g]) => `<button class="mini" data-action="inv-fitto" data-gun="${l}"${tip(`Fit the ${item.name} to ${s.name.split(" ")[0]}'s ${g.name}${g.mods && g.mods[ATTACH[item.key].mount] ? ` (the ${g.mods[ATTACH[item.key].mount].name} comes off)` : ""}.`)}>Fit to ${esc(g.name)}</button>`);
-    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Fits ${esc(fitsText(item.key))}.</span> ${btns.join(" ") || `<span class="muted">${esc(first(s))} has no gun it fits.</span>`}</div>`;
+    const guns = locs.map((l) => [l, itemAt(state, l)]).filter(([, g]) => g && g !== item && isGunKey(g.key) && !modFitReason(g, item));
+    const btns = guns.map(([l, g]) => `<button class="mini" data-action="gb-open" data-loc="${l}" data-slot="${slot}"${tip(`Open the gun builder on ${s.name.split(" ")[0]}'s ${g.name} at its ${(PART_SLOT_NAMES[slot] || slot).toLowerCase()}: fit the ${item.name} there${g.mods && g.mods[slot] ? ` (the ${g.mods[slot].name} comes off)` : ""}.`)}>⚙ ${esc(g.name)}</button>`);
+    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Gun part (${esc((PART_SLOT_NAMES[slot] || slot).toLowerCase())}); fits ${esc(fitsText(item.key))}.</span> ${btns.join(" ") || `<span class="muted">${esc(first(s))} has no gun it fits.</span>`}</div>`;
   }
   return "";
 }

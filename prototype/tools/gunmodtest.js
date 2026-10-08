@@ -316,7 +316,8 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   check(done.length >= 3 && ar.mods.muzzle.key === "riflecan" && shotgun.mods.muzzle.key === "choke" && done.every((x) => !modFitReason(x.gun, x.mod)) && !pool.some((p) => done.some((x) => x.mod === p)), `the autopilot fits what helps (${done.map((x) => `${x.mod.key} on ${x.gun.key}`).join(", ")})`);
 }
 
-// 10b. The inventory screen (ui/inventory.js on stub canvases): the bar under a selected gun, the buttons, the tooltip.
+// 10b. The inventory screen (ui/inventory.js on stub canvases): the gun builder (ui/gunbuilder.js) replaced the fit /
+// remove bar under a selected gun: Modify opens it; its Fit and Remove; a selected part opens it on the gun it fits; the tooltip.
 {
   console.log("Inventory screen");
   const silent = () => new Proxy({ createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), measureText: (t) => ({ width: String(t).length * 6 }) }, { get: (o, k) => (k in o ? o[k] : () => {}) });
@@ -325,6 +326,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   globalThis.window = globalThis.window || { addEventListener() {}, devicePixelRatio: 1 };
   try {
     const UI = await import("../src/ui/inventory.js");
+    const GB = await import("../src/ui/gunbuilder.js");
     const st = world();
     const h = hub(st);
     const s = atBase(st, h.id)[0];
@@ -333,17 +335,22 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
     h.armory.push(newItem("pistolcan"), newItem("drum"));
     const ui = { inv: { sid: s.id, loot: false }, invSel: `s:${s.id}:weapon`, invMsg: "" };
     const html = UI.inventoryModal(st, ui);
-    check(/data-action="inv-unmod" data-mount="optic"/.test(html) && /Fit 9mm suppressor/.test(html) && !/Fit Drum/.test(html), "a selected gun: Remove for its red dot, Fit for the suppressor in the armory, nothing that does not fit");
+    check(new RegExp(`data-action="gb-open" data-loc="s:${s.id}:weapon"`).test(html), "a selected gun: Modify (the gun builder)");
+    GB.GB_ACTIONS["gb-open"](st, ui, { loc: `s:${s.id}:weapon` });
+    const choices = (sl) => GB.partsInReach(st, ui.gunb.loc, sl, s.id).map((c) => c.item.key);
+    check(choices("muzzle").join() === "pistolcan" && !choices("mag").includes("drum"), "the builder offers the suppressor in the armory, nothing that does not fit");
     const tipTxt = UI.itemTip(s.gear.weapon, s);
     check(/fitted: Red dot sight/.test(tipTxt) && /\+4 aim/.test(tipTxt), `its tooltip lists the parts and the net effect (${tipTxt.match(/fitted:[^)]*\)/)?.[0]})`);
-    const loc = (/data-action="inv-fitmod" data-mod="([^"]+)"/.exec(html) || [])[1];
-    UI.INV_ACTIONS["inv-fitmod"](st, ui, { mod: loc });
+    const loc = GB.partsInReach(st, ui.gunb.loc, "muzzle", s.id)[0].loc;
+    GB.GB_ACTIONS["gb-fit"](st, ui, { slot: "muzzle", part: loc });
+    ui.invMsg = ui.gunb.msg;
     check(s.gear.weapon.mods.muzzle && s.gear.weapon.mods.muzzle.key === "pistolcan" && ui.invSel === `s:${s.id}:weapon`, `Fit puts it on (${ui.invMsg})`);
-    UI.INV_ACTIONS["inv-unmod"](st, ui, { mount: "optic" });
+    GB.GB_ACTIONS["gb-strip"](st, ui, { slot: "optic" });
+    ui.invMsg = ui.gunb.msg;
     check(!s.gear.weapon.mods.optic && h.armory.some((x) => x.key === "reddot"), `Remove takes it off into the armory (${ui.invMsg})`);
     ui.invSel = `armory:${h.id}:list:${h.armory.findIndex((x) => x.key === "reddot")}`;
     const html2 = UI.inventoryModal(st, ui);
-    check(/data-action="inv-fitto" data-gun="s:\d+:weapon"/.test(html2), "a selected attachment: Fit to the gun in hand");
+    check(/data-action="gb-open" data-loc="s:\d+:weapon" data-slot="optic"/.test(html2), "a selected attachment: the gun builder on the gun in hand, at its slot");
     UI.INV_ACTIONS["inv-fitto"](st, ui, { gun: `s:${s.id}:weapon` });
     check(s.gear.weapon.mods.optic && s.gear.weapon.mods.optic.key === "reddot", "and it fits");
   } finally { delete globalThis.document; }

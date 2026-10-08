@@ -43,6 +43,7 @@ import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, iron
 import { BG_ACTIONS, BG_CHANGE, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
+import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
@@ -202,7 +203,7 @@ function blocked() {
   // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
   const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex;
 }
 
 // An exception in a frame (a sim tick, the autopilot, drawing) stops the clock and opens the error screen (ui/crash.js),
@@ -342,6 +343,7 @@ function tidyUi() {
   if (ui.qSel != null && (ui.expedition == null || ui.qSel >= (partyById(ui.expedition).orders || []).length)) ui.qSel = null; // the queue got shorter
   if (ui.moveParty != null && !partyById(ui.moveParty)) endMoveMode();
   if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid) { ui.inv = null; ui.invSel = null; } // only the loot screen and a raid's search window go over a battle
+  if (state.combat && ui.gunb) ui.gunb = null; // the gun builder: never during a battle
   // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
   if (ui.drillFrom != null && !(state.combat && state.combat.drill)) { if (!state.combat && baseById(state, ui.drillFrom)) ui.baseView = { id: ui.drillFrom, tab: "defence" }; ui.drillFrom = null; }
 }
@@ -1014,6 +1016,8 @@ for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state
 for (const [k, fn] of Object.entries(BG_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Inventory and loot screens (ui/inventory.js).
 for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ev: Shift+click on a supply stack (raid search window)
+// The gun builder (ui/gunbuilder.js): open, pick a slot, fit, remove; the Ammo list.
+for (const [k, fn] of Object.entries(GB_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Farming tab and illness (ui/farming.js, ui/health.js).
 for (const [k, fn] of Object.entries({ ...FARM_ACTIONS, ...HEALTH_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
 // Skills, perks, teaching and reading in the survivor screen (ui/skills.js).
@@ -1263,7 +1267,8 @@ for (const [k, fn] of Object.entries(DISPLAY_CHANGE)) changeActions[k] = (el) =>
 for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(DEFENCE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // prisoners-tab: the rations and work selects (ui/prisoners.js)
-for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // how many of a supply stack to move (ui/inventory.js)
+for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(GB_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the gun builder's Ammo list // how many of a supply stack to move (ui/inventory.js)
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
 // Everything about the old run goes: open screens, selections, the team panel, card results, move mode, the
@@ -1414,6 +1419,12 @@ document.addEventListener("contextmenu", (ev) => {
   releaseHold();
   act(() => fn(el.dataset, { button: 2, shiftKey: ev.shiftKey }));
   refresh();
+});
+// The gun builder's part row under the mouse: the stats panel shows before → after (ui/gunbuilder.js).
+document.addEventListener("mouseover", (ev) => {
+  if (!ui.gunb) return;
+  const el = ev.target.closest && ev.target.closest("[data-gbhover]");
+  if (GB_ACTIONS["gb-hover"](state, ui, { v: el ? el.dataset.gbhover : null })) refresh();
 });
 // The Work tab cell under the mouse takes the number keys (workKey).
 document.addEventListener("mouseover", (ev) => {
@@ -1728,6 +1739,11 @@ function closeTopLayer() {
     else if (!ui.settings.busy) ui.settings = null;
     return true;
   }
+  if (ui.gunb) { // the gun builder: the part list first, then the window (back to the inventory under it)
+    if (ui.gunb.slot) { ui.gunb.slot = null; ui.gunb.hover = null; }
+    else ui.gunb = null;
+    return true;
+  }
   if (ui.inv) { // drops the selection first, then closes
     if (ui.invSel) ui.invSel = null;
     else { ui.inv = null; ui.invMsg = ""; }
@@ -1788,7 +1804,7 @@ window.addEventListener("keydown", (e) => {
   // Esc with nothing of ours to close opens the menu (in a battle Esc cancels the current action; ⚙ Menu is in the panel).
   if (ui.title) { if (!ui.settings && !ui.zombieLook && titleKey(ui, e)) e.preventDefault(); return; } // the title screen (ui/title.js): only the menu's keys
   if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
-  if (ui.zombieLook || ui.bgEditor || ui.inv || ui.settings) return; // these screens take the keyboard
+  if (ui.zombieLook || ui.bgEditor || ui.inv || ui.gunb || ui.settings) return; // these screens take the keyboard
   if (state.combat) {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;

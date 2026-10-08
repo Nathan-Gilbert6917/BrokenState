@@ -102,6 +102,10 @@ export const KEYMAP = [
     ["tie", "Tie up", "KeyT"], ["throw", "Throw", "KeyG"], ["climb", "Climb", "KeyL"], ["peek", "Peek", "KeyK"], ["close", "Close a door", "KeyQ"], ["brace", "Brace a door", "KeyY"],
     ["crush", "Crush the skull of a body", "KeyU"], ["doubletap", "Double tap a body", "KeyJ"], ["pickup", "Pick up / put down a body", "KeyP"], ["stowbody", "Stow a body in the vehicle", "KeyZ"]]
     .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
+  // The weapons overhaul's gun orders (ui/combat.js gunButtons): every letter is taken, so they sit on Shift.
+  ...[["firemode", "Fire mode: single, burst, auto (free)", "Shift+KeyF"], ["unjam", "Clear a jam (Unjam)", "Shift+KeyJ"], ["suppress", "Suppressing fire (pick where)", "Shift+KeyO"],
+    ["throwspear", "Throw the spear", "Shift+KeyG"], ["pickspear", "Pick up your thrown spear", "Shift+KeyP"], ["ammocycle", "Reload: pick the next kind of round", "Shift+KeyI"]]
+    .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
 
   // ---------- the timelapse (ui/timelapse.js tlKey) ----------
   { id: "tl.play", label: "Play / pause", group: "Timelapse", ctx: "timelapse", keys: ["Space"] },

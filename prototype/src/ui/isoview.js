@@ -1621,6 +1621,13 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     if (l.decoy) tag(ctx, kind === "heat" ? "HEAT" : kind === "light" ? "LIGHT" : "NOISE", X, Y - 9 * S, kind === "heat" ? "#ff9a6a" : kind === "light" ? "#fff2c0" : "#ffd166", Math.max(9, 2.8 * S));
   }
   for (const c of b.flares || []) { const [X, Y] = project(c.x + 0.5, c.y + 0.5, 2); ctx.fillStyle = "#ffe08a"; ctx.beginPath(); ctx.arc(X, Y, 2.5 * S, 0, Math.PI * 2); ctx.fill(); }
+  // Thrown spears where they lie (sim/combat.js b.spears): yours always, theirs where seen.
+  for (const sp of b.spears || []) {
+    if (!onFloor(b, sp) || (sp.side !== "player" && !vis[sp.y * b.w + sp.x])) continue;
+    const [X0, Y0] = project(sp.x + 0.2, sp.y + 0.8, 1), [X1, Y1] = project(sp.x + 0.8, sp.y + 0.2, 1);
+    ctx.strokeStyle = "#7a5a3a"; ctx.lineWidth = 2 * S; ctx.beginPath(); ctx.moveTo(X0, Y0); ctx.lineTo(X1, Y1); ctx.stroke();
+    ctx.fillStyle = "#d6dde2"; ctx.beginPath(); ctx.arc(X1, Y1, 1.8 * S, 0, Math.PI * 2); ctx.fill();
+  }
 
   // A raid: names on the areas, a marker on every container.
   if (b.raid) {
