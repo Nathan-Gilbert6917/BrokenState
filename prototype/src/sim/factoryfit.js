@@ -10,7 +10,7 @@
 import { GEAR } from "./data.js";
 import { ATTACH, makeMod } from "./gunmods.js";
 import { FACTORY_FIT, TRUCK_GEAR } from "./data-guns.js";
-import { newItem } from "./inventory.js"; // call time only (inventory.js imports this module)
+import { lootItem } from "./inventory.js"; // call time only (inventory.js imports this module)
 import { hash01 } from "./skills.js";
 
 // The parts of a row that can go on this gun now.
@@ -56,6 +56,6 @@ export function rosterTruckGear(rng, ctx, out) {
   const m = (TRUCK_COND_ITEMS[ctx.cond] ?? 1) * (ctx.rich ?? 1);
   rows.forEach(([k, p], i) => {
     if (!GEAR[k] || hash01(seed, "trkgear", ctx.kind, k, i) >= Math.min(0.95, p * m)) return;
-    out.gear.push(newItem(k, Math.round((0.55 + 0.4 * hash01(seed, "trkq", k, i)) * 100) / 100, hash01(seed, "trkdur", k, i)));
+    out.gear.push(lootItem(k, ctx.cond === "intact" ? "military" : "wreck", hash01(seed, "trkdur", k, i))); // itemcond.js: the condition by the truck's state
   });
 }

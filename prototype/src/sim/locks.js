@@ -21,7 +21,8 @@
 import { GEAR, LOCATIONS, SUPPLIES } from "./data.js";
 import { log, skill, survivorById, day } from "./world.js";
 import { hash01, gainXp, hasPerk, anyPerk } from "./skills.js";
-import { newItem, allItems } from "./inventory.js";
+import { lootItem, allItems } from "./inventory.js";
+import { lockSource } from "./itemcond.js";
 import { rollBlueprint, bpOfItem } from "./blueprints.js";
 import { CELL, nearBox, inBox } from "./combat.js"; // nearBox / inBox: a container may cover several cells (a car)
 
@@ -364,7 +365,7 @@ export function lockedLoot(state, b, u, box, sup, gear) {
       if (!SUPPLIES[k] || roll("s", i) >= p) return;
       sup[k] = (sup[k] || 0) + lo + Math.floor(roll("q", i) * (hi - lo + 1));
     });
-    L.gear.forEach(([k, p], i) => { if (GEAR[k] && roll("g", i) < p) gear.push(newItem(k, 1, roll("gd", i))); });
+    L.gear.forEach(([k, p], i) => { if (GEAR[k] && roll("g", i) < p) gear.push(lootItem(k, lockSource(lk.loot), roll("gd", i))); }); // itemcond.js: a gun cage keeps its guns well
     giveKey(L.key, "lock");
   } else giveKey(0.03, "plain");
   const bp = rollBlueprint(state, b.tileId, (lk ? BP_MULT.lock : box.room ? BP_MULT.room : BP_MULT.plain) * (u.scavBonus ? 2 : 1), `box${box.id}`);
@@ -473,7 +474,7 @@ export function lockedSearchHour(state, e, p, members) {
     e.found.supplies[k] = (e.found.supplies[k] || 0) + q;
     bits.push(`${q} ${k}`);
   });
-  L.gear.forEach(([k, pp], i) => { if (GEAR[k] && roll("g", i) < pp) { const it = newItem(k, 1, roll("gd", i)); e.found.gear.push(it); bits.push(it.name); } });
+  L.gear.forEach(([k, pp], i) => { if (GEAR[k] && roll("g", i) < pp) { const it = lootItem(k, lockSource(def.loot), roll("gd", i)); e.found.gear.push(it); bits.push(it.name); } });
   const bp2 = rollBlueprint(state, e.tile, BP_MULT.lock, `shl${e.hours}`);
   if (bp2) { e.found.gear.push(bp2); bits.push(bp2.name); }
   if (L.key && roll("lkey") < L.key) {

@@ -31,20 +31,26 @@
 // - Request a trade (every 4 days): neutral-or-better groups (aggressive types need goodwill 0+) say yes with a
 //   chance of 45% + goodwill% (+25% traders, +15% commune), clamped 10–95%, and send a caravan of what they can
 //   spare (caravans.js) if a land route to your base exists.
-// - A deal ("we want 20 meds, paying 60 ammo"): accepted when it is fair for them at their prices (trade.js) and
-//   they have the goods; their caravan brings the goods and the trade window opens with the deal filled in.
+// - Trade over the radio (radiotrade.js): the full trade window with one of your bases' stores on your side. You
+//   fetch the goods with a caravan of yours, or ask them to bring them for a delivery fee (they may say no).
+// - A quick deal ("we want 20 meds, paying 60 ammo": the governor's way, dealQuote / radioDeal): accepted when it
+//   is fair for them at their prices (trade.js) with the delivery fee on top, they have the goods and they will send
+//   a caravan (radiotrade.js deliveryRefusal); their caravan brings the goods and the trade window opens with the deal
+//   filled in.
 // - Call for help (every 10 days, friendly or a pact): a raid on its way to you is harried (its strength × 0.7);
 //   with no raid and less than 3 days of food at the hub they send 20–30 food as aid; costs 4 goodwill either way.
 // - Pacts: the same rules as at their gates.
 // Groups also call you: each day a group in reach that is not hostile may radio an offer (their surplus for what
 // they need) or a request (they need something, paying with their surplus): 15% a day for traders, 10% for a
-// commune, 6% for others, at most one every 6 days per group, never while one of their caravans is out.
+// commune, 6% for others, at most one every 6 days per group, never while one of their caravans is out. Mostly they
+// bring their side; 30% of the time (always when they cannot send a caravan) they ask you to bring yours to them
+// and add the delivery fee to what they pay (radiotrade.js: agreeing books a deal your caravan fetches).
 import { RADIO_RANGE, day, log, hub, baseById, addCard, atBase, skill, snapshot } from "./world.js";
 import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew } from "./data.js";
 import { count } from "./buildings.js";
 import { radioBoost } from "./power.js";
 import { attitude, changeGoodwill, isAggressiveType, strength } from "./factions.js";
-import { planPath, spawnAiParty, partyTile } from "./parties.js";
+import { planPath, spawnAiParty, partyTile, tileLabel } from "./parties.js";
 import { packOf } from "./inventory.js";
 import { teamKit } from "./fieldheat.js";
 import { sellPrice, buyPrice, available, need, maxBuyable, minSellable, proposePact, ensureWares } from "./trade.js";
@@ -56,6 +62,7 @@ import { listenDaily } from "./radiolisten.js"; // listening in on a network's t
 import { thirstFactor } from "./weather.js";
 import { rumourFromNews, RUMOUR } from "./survey.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
+import { deliveryFee, deliveryRefusal, bookDeal, radioDealsDaily, pendingDeal } from "./radiotrade.js"; // trades over the radio
 
 export const RELAY_RANGE = 6;
 export const RELAY_UPKEEP_DAYS = 10;
@@ -363,8 +370,9 @@ export function dealQuote(state, f, d) {
   const speech = radioSpeech(state);
   const have = available(f, d.wantKey);
   const pay = payQty * sellPrice(state, f, d.payKey, speech, payQty);
-  const cost = wantQty * buyPrice(state, f, d.wantKey, speech, wantQty);
-  out.maxWant = maxBuyable(state, f, d.wantKey, speech, pay);
+  const fee = deliveryFee(state, f, tradeBase(state, f)); // they bring it (radiotrade.js)
+  const cost = wantQty * buyPrice(state, f, d.wantKey, speech, wantQty) + fee;
+  out.maxWant = maxBuyable(state, f, d.wantKey, speech, Math.max(0, pay - fee));
   const min = minSellable(state, f, d.payKey, speech, cost);
   out.minPay = Number.isFinite(min) ? min : null;
   if (have < wantQty) return { ...out, reason: `They can spare only ${have} ${d.wantKey}.` };
@@ -382,6 +390,8 @@ export function radioDeal(state, f, d) {
   if (!q.ok) return { ok: false, text: note(state, f, `${f.name}: no deal. ${q.reason}`) };
   const base = tradeBase(state, f);
   if (!base) return { ok: false, text: note(state, f, `${f.name} have no way to reach any of your bases over land.`) };
+  const no = deliveryRefusal(state, f, base);
+  if (no) return { ok: false, text: note(state, f, `${f.name} will not send a caravan: ${no}`) };
   const wantQty = Math.floor(Number(d.wantQty)), payQty = Math.floor(Number(d.payQty));
   const c = sendCaravan(state, f, base, { goods: { supplies: { [d.wantKey]: wantQty }, gear: [] }, deal: { offer: { [d.payKey]: payQty }, ask: { [d.wantKey]: wantQty } } });
   if (!c) return { ok: false, text: note(state, f, `${f.name} cannot get a caravan to ${base.name}.`) };
@@ -439,12 +449,13 @@ export function radioDaily(state) {
     if (f.wares && today - (f.waresDay || 0) >= 7) ensureWares(state, f, true);
     grudgeRaid(state, f);
   }
+  radioDealsDaily(state); // radiotrade.js: deals your caravan never came for lapse
   diplomacyDaily(state); // diplomacy.js: relations, pacts and wars between groups, market lists, jobs, the coalition
   listenDaily(state); // radiolisten.js: the groups' channel traffic, and what your tuned receivers pick up of it
   if (!hasNetwork(state)) return;
   for (const f of state.factions) {
     if (!f.alive || !f.known || refusal(state, f, true) || caravanEnRoute(state, f)) continue;
-    if (since(state, f, "offer") < COOLDOWN.offer || state.cards.some((c) => c.radioFrom === f.id)) continue;
+    if (since(state, f, "offer") < COOLDOWN.offer || state.cards.some((c) => c.radioFrom === f.id) || pendingDeal(state, f)) continue;
     const chance = f.type === "traders" ? 0.15 : f.type === "commune" ? 0.1 : 0.06;
     if (!rng.chance(chance)) continue;
     const card = offerCard(state, f);
@@ -467,8 +478,7 @@ function grudgeRaid(state, f) {
 }
 
 // What the hub can spare of a good (keeps a few days of food and water, some meds and ammo).
-function hubSpare(state, key) {
-  const h = hub(state);
+function hubSpare(state, key, h = hub(state)) {
   const n = Math.max(1, atBase(state, h.id).length);
   const keep = { food: n * 6, water: n * 5, meds: 3, ammo: n * 10, fuel: 8, parts: 2, scrap: 20 }[key] || 0;
   return Math.max(0, Math.floor((h.stock[key] || 0) - keep));
@@ -516,6 +526,15 @@ export function offerCard(state, f) {
   }
   const [giveKey, giveQty] = Object.entries(deal.offer)[0];
   const [getKey, getQty] = Object.entries(deal.ask)[0];
+  // They may ask you to bring your side to them instead (always when they will not send a caravan), adding the
+  // delivery fee to what they pay (radiotrade.js).
+  const cannot = deliveryRefusal(state, f, base);
+  if (cannot || rng.chance(0.3)) {
+    const fee = deliveryFee(state, f, base);
+    const extra = Math.min(available(f, getKey) - getQty, Math.max(1, Math.round(fee / buyPrice(state, f, getKey, speech, getQty))));
+    if (extra >= 1) return bringCard(state, f, base, giveKey, giveQty, getKey, getQty + extra, extra, text);
+    if (cannot) return null;
+  }
   return {
     title: `On the radio: ${f.name}`,
     radioFrom: f.id,
@@ -538,31 +557,67 @@ export function offerCard(state, f) {
     ],
   };
 }
+// A call asking you to bring your side to them: agree (a pending deal your caravan fetches; the trade caravan
+// planner opens) or decline.
+function bringCard(state, f, base, giveKey, giveQty, getKey, getQty, extra, said) {
+  const where = tileLabel(state, f.bases[0]);
+  const text = said.replace(/, delivered to [^."]+\./, ".");
+  return {
+    title: `On the radio: ${f.name}`,
+    radioFrom: f.id,
+    text: `${f.name} (${attitude(f).toLowerCase()}) call you. ${text} "Could you bring it to us at ${where}? We will add ${extra} ${getKey} for the trip." If you agree, they set ${getQty} ${getKey} aside for you and your caravan takes the ${giveKey} to them; the deal waits about ten days.`,
+    choices: [
+      {
+        label: `Agree and send a caravan: ${giveQty} ${giveKey} for ${getQty} ${getKey}…`,
+        affordable: () => false, // the governor does not run caravans for groups
+        hint: `Opens the trade caravan planner from ${base.name} with the ${giveKey} loaded (it has ${Math.floor(base.stock[giveKey] || 0)} now)`,
+        uiAction: { type: "radioCaravan", factionId: f.id },
+        resolve: (st) => {
+          const why = refusal(st, f, true);
+          if (why) return why;
+          if (pendingDeal(st, f)) return `A radio deal with ${f.name} is already waiting.`;
+          const d = bookDeal(st, f, base, { supplies: { [giveKey]: giveQty }, gear: [] }, { supplies: { [getKey]: getQty }, gear: [] }, "them");
+          return note(st, f, `Agreed: your caravan brings ${giveQty} ${giveKey} to ${f.name} by day ${d.due} and comes back with ${getQty} ${getKey}.`);
+        },
+      },
+      { label: "No, thank you: we will not send a caravan", hint: "Nothing changes", resolve: (st) => note(st, f, `You told ${f.name} you would not send a caravan.`) },
+    ],
+  };
+}
 const REF_QTY = { food: 25, water: 25, fuel: 12, meds: 8, ammo: 60, parts: 3, scrap: 20, wood: 600 }; // wood: woodcutting.js (60 kg)
 
 // ---------- autopilot: radio trade when the hub runs short ----------
 // needs: the governor's needs table (0 plenty … 3 urgent). Picks the most urgent good, a group in reach that has
 // it, and pays with the hub's most plentiful good. At most one radio deal every 6 days. Returns a log text or "".
-export function radioTradeIfShort(state, needs) {
+// base: a base leader's deal (steward.js, Trading) for that base: only with groups whose caravan comes to it (tradeBase),
+// paid from its own surplus, at its people's Speech, for the `keys` it may buy (default any), at most `cap` of each
+// (default REF_QTY); the caller keeps its own cooldown (state.radioAutoDay is the governor's).
+export function radioTradeIfShort(state, needs, { base = null, keys = null, cap = null } = {}) {
   if (!hasNetwork(state)) return "";
-  if (state.radioAutoDay != null && day(state) - state.radioAutoDay < 6) return "";
-  const short = Object.keys(needs).filter((k) => needs[k] >= 1.8).sort((a, b) => needs[b] - needs[a]);
-  const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.4 && hubSpare(state, k) >= supplyFew(k, 5)).sort((a, b) => needs[a] - needs[b]);
+  if (!base && state.radioAutoDay != null && day(state) - state.radioAutoDay < 6) return "";
+  const at = base || hub(state);
+  if (!at) return "";
+  const short = Object.keys(needs).filter((k) => needs[k] >= 1.8 && (!keys || keys.includes(k))).sort((a, b) => needs[b] - needs[a]);
+  const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.4 && hubSpare(state, k, at) >= supplyFew(k, 5)).sort((a, b) => needs[a] - needs[b]);
   if (!short.length || !plenty.length) return "";
-  const speech = radioSpeech(state);
+  const speech = base ? tradeSpeech(atBase(state, base.id)) : radioSpeech(state);
   for (const want of short) {
     // Every group and every way to pay, cheapest first (what the payment is worth to the hub per unit got): the
     // group that sells it cheap and wants what you pay with most (their kind and state, trade.js) wins.
     const deals = [];
     for (const f of state.factions) {
       if (!f.known || refusal(state, f, true) || caravanEnRoute(state, f) || available(f, want) < 3) continue;
+      const tb = tradeBase(state, f);
+      if (base && tb !== base) continue; // their caravan would go to another base
+      if (!tb || deliveryRefusal(state, f, tb)) continue; // they will not bring it (radiotrade.js)
+      const fee = deliveryFee(state, f, tb); // what they charge to bring it
       for (const pay of plenty) {
         if (pay === want) continue;
-        const budgetUnits = hubSpare(state, pay);
+        const budgetUnits = hubSpare(state, pay, at);
         const value = budgetUnits * sellPrice(state, f, pay, speech, budgetUnits);
-        const qty = Math.min(REF_QTY[want] || 10, maxBuyable(state, f, want, speech, value));
+        const qty = Math.min((cap && cap[want]) || REF_QTY[want] || 10, maxBuyable(state, f, want, speech, Math.max(0, value - fee)));
         if (qty < 2) continue;
-        const cost = qty * buyPrice(state, f, want, speech, qty);
+        const cost = qty * buyPrice(state, f, want, speech, qty) + fee;
         const payQty = minSellable(state, f, pay, speech, cost, budgetUnits);
         if (!Number.isFinite(payQty)) continue;
         deals.push({ f, pay, qty, payQty, per: (payQty * SUPPLIES[pay].value * (needs[pay] + 0.2)) / qty });
@@ -572,7 +627,7 @@ export function radioTradeIfShort(state, needs) {
     for (const d of deals) {
       const res = radioDeal(state, d.f, { wantKey: want, wantQty: d.qty, payKey: d.pay, payQty: d.payQty });
       if (res.ok) {
-        state.radioAutoDay = day(state);
+        if (!base) state.radioAutoDay = day(state);
         return `radio deal with ${d.f.name}: ${d.qty} ${want} for ${d.payQty} ${d.pay}`;
       }
     }

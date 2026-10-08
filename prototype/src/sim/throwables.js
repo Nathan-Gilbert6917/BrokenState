@@ -26,7 +26,7 @@
 // The AI (combat.js autoPlayerTurn): a frag grenade, a pipe bomb or a Molotov on three or more enemies bunched up
 // (two at a breach, the gate or a doorway for a Molotov) and none of yours near, a smoke grenade when the retreat is
 // about to be sounded.
-import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell, structureName } from "./combat.js";
+import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell, structureName, vehicleBlast } from "./combat.js";
 import { ZTYPES } from "./hiveconst.js";
 import { armorVs } from "./deadsoldiers.js";
 
@@ -136,7 +136,7 @@ export function landEffect(b, u, T, x, y) {
     b.noise = (b.noise || 0) + B.noise;
     alertNear(b, x, y, B.wake, "The blast wakes everything nearby.");
     const torn = wreck(b, x, y, B.r, B.struct, u);
-    return (parts.length ? `The blast catches ${parts.join(", ")}.` : "The blast hits nobody.") + torn;
+    return (parts.length ? `The blast catches ${parts.join(", ")}.` : "The blast hits nobody.") + torn + vehicleBlast(b, x, y, B.r, B.dmg, T.fx); // combat.js: the team's vehicle and its riders (plating, glass)
   }
   if (T.fx === "fire") {
     const parts = hurtAll(b, u, caught(b, x, y, FIRE.r), FIRE.hit, "FIRE");

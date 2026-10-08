@@ -13,7 +13,11 @@
 //   are yours; either way the group turns hostile (goodwill −70), tears up any pact, other groups you know that
 //   are not aggressive lose 5 goodwill, and for 60 days the group sends raids whatever its type (radio.js).
 //
+// - A radio trade they bring (radiotrade.js) carries its items too: the window fills them in and honours them.
+//
 // Your trade caravans (a team with mission "caravan")
+// - From the hub or another base (form.fromBaseId: a radio deal's base, or picked in the planner). At a group's base
+//   with a radio deal waiting (radiotrade.js), the stop card's first choice completes it.
 // - Crew, vehicle or on foot, goods to trade and gear from the hub's armory, and an ordered list of destinations
 //   (known groups' bases, your outposts). It runs on the normal order queue: a move to the next stop, then the
 //   caravan stop order. At each stop a card offers: trade there (the trade window), unload the goods (your
@@ -36,9 +40,10 @@ import {
 import { marketOf } from "./trade.js";
 import { escortArrived, pickupArrived } from "./jobs.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { pendingDeal, dealCarried, completeRadioDeal, goodsText } from "./radiotrade.js"; // deals agreed over the radio
 
 export const CARAVAN_STAY_HOURS = 24;
-const CARAVAN_SPEED = 0.9; // on foot with a wagon (parties.js aiPartyHour)
+export const CARAVAN_SPEED = 0.9; // on foot with a wagon (parties.js aiPartyHour)
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // ---------- their caravans ----------
@@ -48,6 +53,9 @@ export const caravansAt = (state, baseId) => state.parties.filter((p) => isCarav
 export const incomingCaravans = (state) => state.parties.filter((p) => isCaravan(p) && !p.leaving && p.escortJob == null); // an escorted caravan (jobs.js) goes to another group
 export const guardPower = (f) => 2.2 + FACTION_TYPES[f.type].arms * 1.6;
 export const caravanGuards = (f, c) => clamp(Math.round(c.strength / guardPower(f)), 1, 8);
+// Guards a group sends with a caravan, and what it can carry (radiotrade.js checks a radio deal against it).
+const guardsFor = (f) => clamp(2 + Math.floor(f.pop / 12), 2, 5);
+export const caravanCapacity = (f) => 60 + guardsFor(f) * 15;
 
 // What a group brings when you just ask for a caravan: about half of what it can spare of the goods on its
 // surplus list (trade.js marketOf: this week's), then of anything else it has plenty of, up to a value of about
@@ -74,7 +82,7 @@ export function sendCaravan(state, f, base, { goods = null, deal = null, gift = 
   if (from == null || !base) return null;
   const route = planPath(state, from, base.tile, false);
   if (!route) return null;
-  const guards = clamp(2 + Math.floor(f.pop / 12), 2, 5);
+  const guards = guardsFor(f);
   const p = spawnAiParty(state, f, "caravan", from, base.tile, { strength: guards * guardPower(f) });
   if (!p) return null;
   const g = { supplies: {}, gear: [] };
@@ -91,7 +99,7 @@ export function sendCaravan(state, f, base, { goods = null, deal = null, gift = 
     g.gear.push(item);
   }
   const eta = travelHours(state, route.path, { vehicle: false, speed: CARAVAN_SPEED }).hours;
-  Object.assign(p, { goods: g, deal, gift, dealDone: false, baseId: base.id, home: from, capacity: 60 + guards * 15, leaving: false, eta, sentDay: day(state) });
+  Object.assign(p, { goods: g, deal, gift, dealDone: false, baseId: base.id, home: from, capacity: caravanCapacity(f), leaving: false, eta, sentDay: day(state) });
   f.known = true;
   f.lastDiplomacy = day(state);
   log(state, `${f.name} ${gift ? "send aid" : "send a caravan"} to ${base.name}. It should arrive in about ${eta}h.`, "info");
@@ -285,7 +293,7 @@ const destName = (state, tile) => {
 
 // Leg by leg estimate for a planned caravan: { legs: [{ tile, name, hours | null }], back, hours, food, water, fuel }.
 export function caravanEstimate(state, form) {
-  const h = hub(state);
+  const h = caravanHome(state, form);
   const v0 = form.vehicleId ? vehicleById(state, form.vehicleId) : null;
   const v = isCar(v0) ? v0 : null; // caravans go by car or on foot
   // The caravan's load (goods and road supplies, load.js) sets its pace and rations, as for any team.
@@ -316,10 +324,13 @@ export function caravanEstimate(state, form) {
   return { legs, back, hours: total, ok, food: Math.ceil(eat * 1.25), water: Math.ceil(drink * 1.25), fuel: Math.ceil(fuel * 1.15), pace };
 }
 
-// Launches a trade caravan from the hub. form: { crew: [ids], vehicleId, stance, goods: { key: qty } to trade,
+// The base a planned caravan sets out from: form.fromBaseId (a radio deal's base, or picked in the planner), else the hub.
+export const caravanHome = (state, form) => (form.fromBaseId != null && baseById(state, form.fromBaseId)) || hub(state);
+
+// Launches a trade caravan from the hub (or form.fromBaseId). form: { crew: [ids], vehicleId, stance, goods: { key: qty } to trade,
 // travel: { key: qty } to live on, gear: [hub armory indices], stops: [tiles] }. Returns { party } or { error }.
 export function launchCaravan(state, form) {
-  const h = hub(state);
+  const h = caravanHome(state, form);
   const stops = (form.stops || []).filter((t) => Number.isInteger(t));
   if (!stops.length) return { error: "Add at least one destination." };
   const goods = {}, supplies = {};
@@ -332,7 +343,7 @@ export function launchCaravan(state, form) {
   const cap = carryCapacity(state, members, v);
   const load = supplyLoad(supplies) + items.reduce((s, g) => s + itemLoad(g), 0);
   if (members.length && load > cap + 1e-9) return { error: `Too much to carry: goods and supplies weigh ${Math.ceil(load)}, the crew${v ? ` and the ${v.name}` : ""} can carry ${cap}.` };
-  const res = launchExpedition(state, { memberIds: form.crew, dest: stops[0], mission: "move", stance: form.stance || "normal", vehicleId: form.vehicleId || null, supplies });
+  const res = launchExpedition(state, { memberIds: form.crew, dest: stops[0], mission: "move", stance: form.stance || "normal", vehicleId: form.vehicleId || null, supplies, fromBaseId: h.id });
   if (res.error) return res;
   const p = res.party;
   // The goods to trade travel as cargo; the rest is what the crew lives on.
@@ -387,6 +398,16 @@ export function caravanCard(state, p, text = "") {
   const cargo = Object.entries(p.cargo.supplies).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${k}`).concat(p.cargo.gear.map((g) => g.name));
   const route = c.stops.map((t, i) => `${i <= c.idx ? "✓ " : ""}${destName(state, t)}`).join(" → ");
   const choices = [];
+  const deal = f ? pendingDeal(state, f) : null;
+  if (deal) {
+    // A deal agreed over the radio (radiotrade.js): your side to them, theirs into the caravan.
+    const can = dealCarried(state, p, deal);
+    choices.push({
+      label: `Complete the radio deal: hand over ${goodsText(deal.give)}, load ${goodsText(deal.get)}`, disabled: !can.ok,
+      hint: can.ok ? `Agreed over the radio (by day ${deal.due})` : can.why,
+      resolve: (st) => { const msg = completeRadioDeal(st, p, deal); caravanCard(st, p, msg); return msg; },
+    });
+  }
   if (f) {
     const hostile = attitude(f) === "Hostile";
     choices.push({ label: `Trade with ${f.name}`, hint: hostile ? `${f.name} are hostile: they will not trade` : "Opens the trade window: supplies, every item, intel", disabled: hostile, resolve: (st) => { openTrade(st, p, f); return ""; } });
