@@ -125,20 +125,20 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   c.gear.weapon = ar;
   const gp0 = h.stock.gunparts, sc0 = h.stock.scrap;
   const msg = queueRepair(st, h, `s:${c.id}:weapon`);
-  check(h.repairs.length === 1 && !c.gear.weapon && h.stock.gunparts === gp0 - 3 && h.stock.scrap === sc0 - 1, `queued: the gun goes to the bench, its inputs paid (${msg})`);
-  check(queueRepair(st, h, `s:${c.id}:weapon`) === "Nothing there." && h.repairs.length === 1, "an empty slot cannot be queued");
+  check(h.gearRepairs.length === 1 && !c.gear.weapon && h.stock.gunparts === gp0 - 3 && h.stock.scrap === sc0 - 1, `queued: the gun goes to the bench, its inputs paid (${msg})`);
+  check(queueRepair(st, h, `s:${c.id}:weapon`) === "Nothing there." && h.gearRepairs.length === 1, "an empty slot cannot be queued");
   const hour0 = st.hour;
-  for (let i = 0; i < 4 && h.repairs.length; i++) { repairHour(st); st.hour++; }
-  check(!h.repairs.length && h.armory.includes(ar) && itemDur(ar) === itemDurMax(ar) && itemDurMax(ar) < 60, `done within ${st.hour - hour0} hours: in the armory at ${itemDur(ar)} of ${itemDurMax(ar)}`);
-  check(h.repairHour === st.hour - 1, "the crafters' hour went to the repair (no crafting that hour)");
+  for (let i = 0; i < 4 && h.gearRepairs.length; i++) { repairHour(st); st.hour++; }
+  check(!h.gearRepairs.length && h.armory.includes(ar) && itemDur(ar) === itemDurMax(ar) && itemDurMax(ar) < 60, `done within ${st.hour - hour0} hours: in the armory at ${itemDur(ar)} of ${itemDurMax(ar)}`);
+  check(h.gearRepairHour === st.hour - 1, "the crafters' hour went to the repair (no crafting that hour)");
   // Cancel: everything back.
   const bat = worn("bat", 3);
   h.armory.push(bat);
   const s0 = h.stock.scrap, w0 = h.stock.wood;
   queueRepair(st, h, `armory:${h.id}:list:${h.armory.indexOf(bat)}`);
-  const job = h.repairs[0];
+  const job = h.gearRepairs[0];
   cancelRepair(st, h, job.id);
-  check(!h.repairs.length && h.armory.includes(bat) && h.stock.scrap === s0 && h.stock.wood === w0, "cancelled before it started: the item and everything paid come back");
+  check(!h.gearRepairs.length && h.armory.includes(bat) && h.stock.scrap === s0 && h.stock.wood === w0, "cancelled before it started: the item and everything paid come back");
   // A ceramic plate refused at the queue.
   h.armory.push(worn("plate", 10));
   check(/Ceramic/.test(queueRepair(st, h, `armory:${h.id}:list:${h.armory.length - 1}`)), "a ceramic plate cannot be queued");
@@ -150,8 +150,8 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   const { st, h, people } = setup(2, { mechanics: 6, crafting: 6 });
   h.armory.push(worn("ar", 12));
   const msg = planRepairs(st, h);
-  check(h.repairs.length === 1 && /queued/.test(msg), `worn gear in the armory goes to the bench (${msg})`);
-  check(planRepairs(st, h) === "" && h.repairs.length === 1, "one a day");
+  check(h.gearRepairs.length === 1 && /queued/.test(msg), `worn gear in the armory goes to the bench (${msg})`);
+  check(planRepairs(st, h) === "" && h.gearRepairs.length === 1, "one a day");
   const fighter = people[1];
   fighter.gear.weapon = worn("carbine", 10);
   st.hour += 24;
@@ -172,10 +172,10 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   const low = { ...ar, durMax: 15, dur: 15 };
   check(itemValue(low) < v1, "the lower the maximum, the lower the worth");
   check(itemValue(newItem("ar")) === itemValue({ key: "ar", name: "x", quality: 1 }), "an item never repaired is worth what it was");
-  h.repairs = [{ id: 1, item: worn("vest", 5), hours: 3, progress: 1, paid: { scrap: 2 }, gearPaid: [] }];
+  h.gearRepairs = [{ id: 1, item: worn("vest", 5), hours: 3, progress: 1, paid: { scrap: 2 }, gearPaid: [] }];
   const back = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
   const a2 = hub(back).armory.find((x) => x.key === "ar" && x.durBase);
-  check(a2 && a2.durMax === ar.durMax && a2.durBase === 60 && a2.repairs === 1 && hub(back).repairs.length === 1 && hub(back).repairs[0].item.key === "vest", "the lowered maximum, the first one and the queue survive a save and load");
+  check(a2 && a2.durMax === ar.durMax && a2.durBase === 60 && a2.repairs === 1 && hub(back).gearRepairs.length === 1 && hub(back).gearRepairs[0].item.key === "vest", "the lowered maximum, the first one and the queue survive a save and load");
   let ok = true;
   try { for (let i = 0; i < 6; i++) tickHour(back); } catch (e) { ok = false; console.log(e); }
   check(ok, "a loaded world with a repair under way plays on");

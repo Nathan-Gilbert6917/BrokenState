@@ -231,7 +231,7 @@ function repairButtons(state, ui, item, from, place) {
 }
 // The base's repair queue (sim/repair.js): what is at the bench, how far along, why it waits; Cancel puts it back in the armory.
 function repairsBox(state, base) {
-  const q = base.repairs || [];
+  const q = base.gearRepairs || [];
   if (!q.length) return "";
   return `<div class="small" style="margin-top:0.3rem"><b${tip("Gear at the bench: people on the Craft role with the skill work it before the craft queue. Finished, it goes to the armory.")}>Repairs</b> ${q.map((j) => {
     const why = repairJobStatus(state, base, j);

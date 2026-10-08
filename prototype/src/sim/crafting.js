@@ -319,7 +319,7 @@ export function craftJobStatus(state, base, job) {
 // Hourly: crafters work the first job in the queue they can do (blocked jobs are skipped, not lost).
 export function craftingHour(state) {
   for (const base of state.bases) {
-    if (base.repairHour === state.hour) continue; // repair.js: the crafters spent this hour on a repair
+    if (base.gearRepairHour === state.hour) continue; // repair.js: the crafters spent this hour on a repair
     const q = craftQueue(base);
     const job = q.find((j) => !craftJobStatus(state, base, j));
     if (!job) continue;

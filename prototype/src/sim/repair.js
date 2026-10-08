@@ -196,9 +196,9 @@ export function repairItem(state, base, item, by, { kit = false, tier = null } =
 }
 
 // ---------- the base's repair queue ----------
-// base.repairs: [{ id, item, hours, progress, paid, gearPaid, from }]. Queueing pays the inputs and takes the item
+// base.gearRepairs: [{ id, item, hours, progress, paid, gearPaid, from }]. Queueing pays the inputs and takes the item
 // out of where it was (off the person, out of the armory) into the job; finished, it goes to the armory.
-export const repairQueue = (base) => base.repairs || (base.repairs = []);
+export const repairQueue = (base) => base.gearRepairs || (base.gearRepairs = []);
 export const MAX_REPAIR_QUEUE = 8;
 // Queues a repair of the item at loc at this base. Returns a message.
 export function queueRepair(state, base, loc) {
@@ -243,18 +243,18 @@ export function repairJobStatus(state, base, job) {
   return "";
 }
 // Hourly (world.js, before craftingHour): the crafters work the first repair they can; a base whose crafters repaired
-// this hour does no crafting this hour (base.repairHour). Finished: the item is repaired by the best of them and goes
+// this hour does no crafting this hour (base.gearRepairHour). Finished: the item is repaired by the best of them and goes
 // to the armory.
 export function repairHour(state) {
   for (const base of state.bases) {
-    const q = base.repairs;
+    const q = base.gearRepairs;
     if (!q || !q.length) continue;
     const job = q.find((j) => !repairJobStatus(state, base, j));
     if (!job) continue;
     const team = repairers(state, base, job.item);
     const sk = REPAIR_KINDS[repairKind(job.item).kind].skill;
     job.progress += team.reduce((a, s) => a + 1 + 0.03 * skill(s, sk), 0);
-    base.repairHour = state.hour;
+    base.gearRepairHour = state.hour;
     if (job.progress < job.hours) continue;
     q.splice(q.indexOf(job), 1);
     const r = repairItem(state, base, job.item, team[0]);
@@ -307,7 +307,7 @@ export function fieldRepair(state, loc) {
 // first (their weapon, then body armour, head, arms, legs, while the armory holds a spare for that slot; then the
 // armory's guns and armour), when the inputs are here and leave a little over (machine parts: 2 kept for buildings).
 export function planRepairs(state, base) {
-  if (!base || repairQueue(base).length >= 2 || base.repairDay === Math.floor(state.hour / 24)) return "";
+  if (!base || repairQueue(base).length >= 2 || base.gearRepairDay === Math.floor(state.hour / 24)) return "";
   const people = atBase(state, base.id).slice().sort((a, b) => (skill(b, "shooting") - skill(a, "shooting")) || a.id - b.id);
   const cands = [];
   // What people wear or hold only while the armory has a spare for that slot (the repair takes it off them for hours).
@@ -325,7 +325,7 @@ export function planRepairs(state, base) {
     if ((s.scrap || 0) && (base.stock.scrap || 0) - s.scrap < 6) continue;
     if ((s.fuel || 0) && (base.stock.fuel || 0) - s.fuel < 4) continue;
     if ((s.wood || 0) && (base.stock.wood || 0) - s.wood < 150) continue;
-    base.repairDay = Math.floor(state.hour / 24);
+    base.gearRepairDay = Math.floor(state.hour / 24);
     return queueRepair(state, base, loc);
   }
   return "";
