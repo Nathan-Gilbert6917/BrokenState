@@ -16,7 +16,7 @@
 // Rolls use hash01 (skills.js): finds never move the world's random numbers.
 import { GEAR, LOCATIONS, SKILL_NAMES } from "./data.js";
 import { log, atBase, skill } from "./world.js";
-import { hash01, gainXp, READ_HOURS } from "./skills.js";
+import { hash01, gainXp, READ_HOURS, BOOK_SITES, WARE_BOOKS, readReason } from "./skills.js";
 import { newItem } from "./inventory.js";
 import { workFactor } from "./health.js";
 
@@ -45,26 +45,85 @@ export const BLUEPRINTS = {
     sites: ["gunstore", "police", "prison", "military", "hardware", "lodge"], desc: "Leaf-spring crossbows and zip guns, with drawings." },
   armorsmith: { name: "Armor Smithing Notes", skill: "mechanics", min: 3, hours: 16, value: 45, unlocks: { crafts: ["scrapvest"] },
     sites: ["military", "police", "factory", "prison", "hardware"], desc: "Cutting, bending and riveting plate onto a carrier." },
+  // ---------- craft blueprints for special gear (crafting.js CRAFTS, the block at its end) ----------
+  // covers: ordinary recipes that come out better and faster once it is known (craftEdge; its unlocks count too).
+  bowyer: { name: "Bowyer's Drawings", skill: "crafting", min: 4, hours: 20, value: 55, unlocks: { crafts: ["pulleybow"] }, covers: ["crossbow", "arrows"],
+    sites: ["gunstore", "lodge", "cabin", "ranger", "mall"], desc: "Laminating limbs, cutting cams from scrap pulleys, tillering a bow true." },
+  combatmedic: { name: "Combat Medic's Notes", skill: "medicine", min: 4, hours: 18, value: 50, unlocks: { crafts: ["traumakit"] }, covers: ["bandagekit", "dressings"],
+    sites: ["military", "hospital", "firestation", "clinic", "police"], desc: "An army medic's packing lists: tourniquets, chest seals, pressure dressings." },
+  // ---------- end of craft blueprints ----------
 };
 export const BP_KEYS = Object.keys(BLUEPRINTS);
 export const bpItemKey = (id) => `bp_${id}`;
 export const bpOfItem = (key) => (GEAR[key] && GEAR[key].blueprint) || null;
+// Recipe keys whose gear key differs (crafting.js CRAFTS), for unlockName; the rest share the gear's key.
+const CRAFTS_GEAR = { dressings: "bandagekit", repackfilter: "waterfilter" };
 
-// What each blueprint locks: building type → { bp, from }, craft key → bp.
+// ---------- craft books (data.js GEAR entries with a book field) ----------
+// A book read on the Read role like any other (skills.js); once anyone has read one of these to the end at a base, it
+// is known for good (state.tech.known, the same list as studied blueprints): its unlocks.crafts can be made, and its
+// unlocks and covers get the crafting edge (craftEdge). Someone past the book's skill cap may still read it while it is
+// not known yet (no XP above the cap).
+export const CRAFT_BOOKS = {
+  diybook: { unlocks: {}, covers: ["backpack", "slingbag", "crowbar", "ladder", "tripwire", "padding", "shinguards", "tirevest"] },
+  forgebook: { unlocks: { crafts: ["springmachete", "rivethelmet"] }, covers: ["sawmachete", "spikedbat", "pipespear", "nailbat", "scrapvest"] },
+  bushcraftbook: { unlocks: { crafts: ["woodghillie"] }, covers: ["ghillie", "ragboots", "scentmask", "torch", "arrows", "waterfilter"] },
+  enginebook: { unlocks: {}, covers: ["bicycle", "lantern", "headlamp", "flashlight", "spotlight"] }, // Small Engine Repair (teaches Mechanics)
+};
+export const CRAFT_BOOK_KEYS = Object.keys(CRAFT_BOOKS);
+const isBookTech = (id) => !!CRAFT_BOOKS[id];
+export const techName = (id) => (BLUEPRINTS[id] ? BLUEPRINTS[id].name : GEAR[id] ? GEAR[id].name : id);
+
+// The crafting edge ("blueprints and certain books improve crafting"): each known blueprint or read craft book whose
+// unlocks or covers name a recipe makes it come out `quality` better on average (crafting.js craftQuality) and its
+// work go `speed` faster (crafting.js craftRate), up to `max` such sources a recipe.
+export const CRAFT_EDGE = { quality: 0.05, speed: 0.1, max: 2 };
+
+// What each blueprint locks: building type → { bp, from }, craft key → bp (or craft book).
 export const LOCKED = { buildings: {}, crafts: {} };
 for (const [id, d] of Object.entries(BLUEPRINTS)) {
   for (const t of d.unlocks.buildings || []) LOCKED.buildings[t] = { bp: id, from: (d.unlocks.from && d.unlocks.from[t]) || 0 };
   for (const k of d.unlocks.crafts || []) LOCKED.crafts[k] = id;
+}
+for (const [id, d] of Object.entries(CRAFT_BOOKS)) for (const k of d.unlocks.crafts || []) LOCKED.crafts[k] = id;
+// Recipe key → the tech ids that give it the edge (their unlocks and covers).
+export const EDGE_FROM = {};
+for (const [id, d] of [...Object.entries(BLUEPRINTS), ...Object.entries(CRAFT_BOOKS)]) {
+  for (const k of [...(d.unlocks.crafts || []), ...(d.covers || [])]) {
+    EDGE_FROM[k] = EDGE_FROM[k] || [];
+    if (!EDGE_FROM[k].includes(id)) EDGE_FROM[k].push(id);
+  }
+}
+// The edge a recipe has in this world: { n, quality, speed, from: [names] }.
+export function craftEdge(state, key) {
+  const from = state ? (EDGE_FROM[key] || []).filter((id) => isKnown(state, id)).slice(0, CRAFT_EDGE.max) : [];
+  return { n: from.length, quality: from.length * CRAFT_EDGE.quality, speed: 1 + from.length * CRAFT_EDGE.speed, from: from.map(techName) };
+}
+export const craftEdgeQuality = (state, key) => (state ? craftEdge(state, key).quality : 0);
+export const craftEdgeSpeed = (state, key) => (state ? craftEdge(state, key).speed : 1);
+// The edge line for an item's text: "x, y come out 5% better and are made 10% faster".
+function edgeText(d) {
+  const ks = [...new Set([...(d.unlocks.crafts || []), ...(d.covers || [])])];
+  if (!ks.length) return "";
+  return `${ks.map(unlockName).join(", ")} come out ${Math.round(CRAFT_EDGE.quality * 100)}% better and are made ${Math.round(CRAFT_EDGE.speed * 100)}% faster (up to ${CRAFT_EDGE.max} such manuals or books count for a recipe)`;
 }
 
 // The items (registered with the gear so trade, armories, cargo and the inventory know them). Not worn: a pack
 // item, kept in an armory, like a book.
 for (const [id, d] of Object.entries(BLUEPRINTS)) {
   const opens = [...(d.unlocks.buildings || []).map((t) => t), ...(d.unlocks.crafts || [])];
+  const edge = d.unlocks.crafts || d.covers ? edgeText(d) : "";
   GEAR[bpItemKey(id)] = {
     name: d.name, slot: "pack", skill: null, power: 0, req: 0, value: d.value, noise: 0, blueprint: id, cat: "manuals", weight: 0.2, // a folder of papers (load.js)
-    desc: `${d.desc} Study it at a base (Read role, ${SKILL_NAMES[d.skill]} ${d.min}+, ${d.hours}h) to unlock: ${opens.map(unlockName).join(", ")}.`,
+    desc: `${d.desc} Study it at a base (Read role, ${SKILL_NAMES[d.skill]} ${d.min}+, ${d.hours}h) to unlock: ${opens.map(unlockName).join(", ")}.${edge ? ` Once studied, ${edge}.` : ""}`,
   };
+}
+// The craft books' text: what reading one to the end does for the whole group.
+for (const [key, d] of Object.entries(CRAFT_BOOKS)) {
+  if (!GEAR[key] || GEAR[key].craftBook) continue;
+  GEAR[key].craftBook = true;
+  const opens = (d.unlocks.crafts || []).map(unlockName);
+  GEAR[key].desc += ` Once anyone has read it to the end at a base, for good:${opens.length ? ` unlocks ${opens.join(", ")};` : ""} ${edgeText(d)}.`;
 }
 function unlockName(k) {
   const names = {
@@ -72,7 +131,9 @@ function unlockName(k) {
     trench: "the trench", cistern: "the cistern", coldstore: "the cold store", kitchen: "a second preserving kitchen", relay: "the radio relay",
     crossbow: "the scrap crossbow", pipegun: "the pipe shotgun", scrapvest: "the scrap plate vest",
   };
-  return names[k] || k;
+  if (names[k]) return names[k];
+  const g = GEAR[CRAFTS_GEAR[k] || k];
+  return g ? `the ${g.name.toLowerCase()}` : k;
 }
 
 // ---------- the tech state ----------
@@ -86,7 +147,7 @@ export const studyHours = (state, id) => Math.max(0, tech(state).progress[id] ||
 // Tools and tests: everything known (no locks).
 export function unlockAll(state) {
   const t = tech(state);
-  t.known = [...BP_KEYS];
+  t.known = [...BP_KEYS, ...CRAFT_BOOK_KEYS];
 }
 
 // Where it may turn up, for the "Needs" lines: site names, plus the other ways.
@@ -106,7 +167,8 @@ export function buildLock(state, base, type) {
 }
 export function craftLock(state, key) {
   const id = LOCKED.crafts[key];
-  return id && !isKnown(state, id) ? `Needs the ${BLUEPRINTS[id].name} (studied)` : "";
+  if (!id || isKnown(state, id)) return "";
+  return isBookTech(id) ? `Needs ${techName(id)} (read to the end by someone at a base)` : `Needs the ${BLUEPRINTS[id].name} (studied)`;
 }
 // The blueprint a building or craft waits for (for the UI's "Needs: … (where)" lines), or null.
 export function lockOf(state, base, kind, key) {
@@ -117,11 +179,51 @@ export function lockOf(state, base, kind, key) {
 export function lockNote(state, base, kind, key) {
   const id = lockOf(state, base, kind, key);
   if (!id) return "";
+  if (isBookTech(id)) {
+    const b = GEAR[id].book;
+    const held = booksHeld(state, id);
+    const who = state.survivors.filter((s) => s.alive && s.role === "read" && s.reading === id);
+    const status = who.length ? ` (reading: ${who.map((s) => `${s.name.split(" ")[0]} ${Math.floor((s.books && s.books[id]) || 0)}/${b.hours}h`).join(", ")})` : held ? " (a copy is here: put someone on the Read role at the base that holds it)" : "";
+    return `Needs: ${techName(id)}, read to the end${status}. Look in: ${bookWhere(id)}.`;
+  }
   const d = BLUEPRINTS[id];
   const held = copiesHeld(state)[id];
   const prog = studyHours(state, id);
   const status = held ? (prog > 0 ? ` (studying: ${Math.floor(prog)}/${d.hours}h)` : ` (a copy is here: put someone with ${SKILL_NAMES[d.skill]} ${d.min}+ on the Read role)`) : "";
   return `Needs: ${d.name}${status}. Look in: ${whereFound(id)}.`;
+}
+
+// ---------- craft books: copies held, where they turn up, read to the end ----------
+// Copies of a book in every base armory and every team's cargo.
+export function booksHeld(state, key) {
+  let n = 0;
+  for (const b of state.bases) for (const it of b.armory || []) if (it && it.key === key) n++;
+  for (const p of state.parties) if (p.owner === "player" && p.cargo) for (const it of p.cargo.gear || []) if (it && it.key === key) n++;
+  return n;
+}
+export function bookWhere(key) {
+  const sites = Object.entries(BOOK_SITES).filter(([, d]) => d.books.includes(key)).map(([t]) => (LOCATIONS[t] ? LOCATIONS[t].name.toLowerCase() : t));
+  const sold = Object.values(WARE_BOOKS).some((d) => d.books.includes(key));
+  return `${sites.join(", ") || "nowhere on the shelves"}${sold ? "; traders" : ""}`;
+}
+// A craft book nobody has read to the end yet (skills.js: worth reading even past its skill cap).
+export const bookUnlocksPending = (state, key) => isBookTech(key) && !isKnown(state, key);
+// Someone finished reading a book (skills.js readHours): a craft book is known for good.
+export function learnBook(state, key, s = null) {
+  if (!isBookTech(key) || isKnown(state, key)) return false;
+  tech(state).known.push(key);
+  const d = CRAFT_BOOKS[key];
+  const opens = (d.unlocks.crafts || []).map(unlockName);
+  const n = new Set([...(d.unlocks.crafts || []), ...(d.covers || [])]).size;
+  log(state, `📗 ${s ? `${s.name.split(" ")[0]} read ${GEAR[key].name} to the end` : `${GEAR[key].name} is read`}: ${opens.length ? `${opens.join(", ")} can now be made, and ` : ""}${n} recipes come out better and faster.`, "good");
+  return true;
+}
+// For the UI: every craft book with its state.
+export function craftBookRows(state) {
+  return CRAFT_BOOK_KEYS.filter((k) => GEAR[k]).map((key) => {
+    const d = CRAFT_BOOKS[key];
+    return { key, name: GEAR[key].name, known: isKnown(state, key), held: booksHeld(state, key), opens: (d.unlocks.crafts || []).map(unlockName), covers: (d.covers || []).map(unlockName), where: bookWhere(key), desc: GEAR[key].desc };
+  });
 }
 
 // ---------- copies held ----------
@@ -138,8 +240,8 @@ export function copiesHeld(state) {
 // Chance per search hour (hour-by-hour search) or per container (raid map) by the site's zone, at full loot.
 const ZONE_P = { urban: 0.018, town: 0.012, rural: 0.008, special: 0.03 };
 export const CRASH_BP = {
-  crash_mil: ["armyeng", "genschem", "weaponplans", "armorsmith", "radioeng"],
-  crash_med: ["fieldsurgery", "hospitalops", "watertreat"],
+  crash_mil: ["armyeng", "genschem", "weaponplans", "armorsmith", "radioeng", "combatmedic"],
+  crash_med: ["fieldsurgery", "hospitalops", "watertreat", "combatmedic"],
   crash_news: ["radioeng", "genschem"],
   crash_cargo: ["refrig", "canning", "machinist", "watertreat"],
   airdrop: ["fieldsurgery", "watertreat", "armyeng"],
@@ -174,7 +276,7 @@ export function noteFound(state, id) {
 
 // A blueprint as a job reward (for diplomacy jobs): one you do not have, fitting the group, or null.
 export function blueprintReward(state, f, salt = "") {
-  const pref = { military: ["armyeng", "genschem", "weaponplans", "armorsmith"], traders: BP_KEYS, commune: ["canning", "watertreat", "refrig"], fortress: ["armyeng", "armorsmith", "machinist"] }[f && f.type] || BP_KEYS;
+  const pref = { military: ["armyeng", "genschem", "weaponplans", "armorsmith", "combatmedic"], traders: BP_KEYS, commune: ["canning", "watertreat", "refrig"], fortress: ["armyeng", "armorsmith", "machinist"] }[f && f.type] || BP_KEYS;
   const held = copiesHeld(state);
   const open = pref.filter((id) => !isKnown(state, id) && !held[id]);
   if (!open.length) return null;
@@ -186,7 +288,7 @@ export function blueprintReward(state, f, salt = "") {
 // What a group sells this week (skills.js bookWares adds it to their books): traders often, the military its manuals.
 const WARE_BP = {
   traders: { p: 0.3, list: BP_KEYS },
-  military: { p: 0.3, list: ["armyeng", "genschem", "weaponplans", "armorsmith", "radioeng"] },
+  military: { p: 0.3, list: ["armyeng", "genschem", "weaponplans", "armorsmith", "radioeng", "combatmedic"] },
   commune: { p: 0.2, list: ["canning", "watertreat", "refrig"] },
   fortress: { p: 0.15, list: ["armyeng", "armorsmith", "machinist"] },
 };
@@ -258,6 +360,23 @@ export function planBlueprintStudy(state, base, free, give) {
     pick.studying = id;
     give(pick, "read");
   }
+  // An unread craft book in the armory is read like a blueprint is studied (its recipes are for everyone): a free
+  // person who can read it, someone it still teaches first (skills.js readReason).
+  for (const key of unreadCraftBooks(state, base)) {
+    if (people.some((s) => s.role === "read" && s.reading === key && !free.has(s))) continue;
+    const b = GEAR[key].book;
+    const pick = [...free].filter((s) => !s.inBed && workFactor(s) >= 0.35 && !readReason(s, key, state))
+      .sort((a, c) => (skill(a, b.skill) >= b.max) - (skill(c, b.skill) >= b.max) || skill(c, b.skill) - skill(a, b.skill) || a.id - c.id)[0];
+    if (!pick) continue;
+    pick.reading = key;
+    give(pick, "read");
+  }
+}
+// Craft books in a base's armory that nobody has read to the end yet.
+export function unreadCraftBooks(state, base) {
+  const out = [];
+  for (const it of base.armory || []) if (it && isBookTech(it.key) && GEAR[it.key] && !isKnown(state, it.key) && !out.includes(it.key)) out.push(it.key);
+  return out;
 }
 
 // For the UI: every blueprint with its state.

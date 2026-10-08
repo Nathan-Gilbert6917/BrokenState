@@ -19,7 +19,7 @@ import {
   caravansAt, incomingCaravans, caravanGuards, attackCaravan, caravanDestinations, caravanEstimate, launchCaravan,
 } from "../sim/caravans.js";
 import { captivesOf } from "../sim/conflicts.js";
-import { itemDur } from "../sim/crafting.js";
+import { itemDur, itemDurMax } from "../sim/crafting.js";
 import { itemLoad } from "../sim/inventory.js";
 import { modLabel } from "../sim/gunmods.js";
 import { vehiclesAtBase, carsAtBase, vehicleById, tank } from "../sim/vehicles.js";
@@ -40,13 +40,13 @@ const first = (s) => esc(s.name.split(" ")[0]);
 function gearLabel(item) {
   const d = GEAR[item.key];
   const dur = itemDur(item);
-  return `${esc(modLabel(item))} <span class="muted">${Math.round((item.quality ?? 1) * 100)}%${dur != null ? ` · ${dur}/${d.dur} uses` : ""}</span>`; // a gun with its attachments (sim/gunmods.js): they sell with it
+  return `${esc(modLabel(item))} <span class="muted">${Math.round((item.quality ?? 1) * 100)}%${dur != null ? ` · ${dur}/${itemDurMax(item)} uses` : ""}</span>`; // a gun with its attachments (sim/gunmods.js): they sell with it
 }
 // No base value anywhere: what this group pays or charges, and why (sim/valuation.js).
 const gearTip = (item, price, mine, why) => {
   const d = GEAR[item.key];
   const dur = itemDur(item);
-  return `${d.name}: condition ${Math.round((item.quality ?? 1) * 100)}%${dur != null ? `, ${dur} of ${d.dur} uses left` : ""}. ${mine ? "They pay" : "They charge"} ${p1(price)}${why.length ? ` (${why.map((w) => w.text.toLowerCase()).join("; ")})` : ""}. ${d.desc || ""}`.trim();
+  return `${d.name}: condition ${Math.round((item.quality ?? 1) * 100)}%${dur != null ? `, ${dur} of ${itemDurMax(item)} uses left` : ""}. ${mine ? "They pay" : "They charge"} ${p1(price)}${why.length ? ` (${why.map((w) => w.text.toLowerCase()).join("; ")})` : ""}. ${d.desc || ""}`.trim();
 };
 // The "why" lines under a row: what moves this group's price for it (no numbers).
 const whyHtml = (why) => why.map((w) => `<span class="tw-why ${w.dir}">${w.dir === "up" ? "▲" : w.dir === "down" ? "▼" : "✕"} ${esc(w.text)}</span>`).join("");

@@ -4,7 +4,7 @@
 import { SKILL_NAMES } from "../sim/data.js";
 import { baseById, day, atBase, skill, survivorById } from "../sim/world.js";
 import { tileLabel } from "../sim/parties.js";
-import { blueprintRows, lockNote } from "../sim/blueprints.js";
+import { blueprintRows, lockNote, craftBookRows } from "../sim/blueprints.js";
 import { keyRing } from "../sim/locks.js";
 import { repairRows, repairPlan, startRepair, cancelRepair, reassignRepair, fixtureById, costText, FIXTURES, WEAR, RAID_DAMAGE, repairBill, startAllRepairs, brokenAt, jobFor } from "../sim/breakdowns.js";
 import { vehiclesAtBase, canRepair } from "../sim/vehicles.js";
@@ -18,7 +18,7 @@ const firstName = (s) => esc(String(s.name).split(" ")[0]);
 // ---------- "Needs: …" on locked buildings and recipes ----------
 export function lockLine(state, base, kind, key) {
   const note = lockNote(state, base, kind, key);
-  return note ? `<div class="small warn"${tip("Upper tiers are locked until the matching manual or blueprint is found and studied at a base (Read role, the blueprint's skill). See the Buildings tab's Blueprints list.")}>🔒 ${esc(note)}</div>` : "";
+  return note ? `<div class="small warn"${tip("Locked until the matching manual or blueprint is found and studied at a base (Read role, the blueprint's skill), or the craft book is read to the end by anyone at a base. See the Buildings tab's Blueprints list.")}>🔒 ${esc(note)}</div>` : "";
 }
 
 // ---------- Blueprints (Buildings tab) ----------
@@ -32,6 +32,16 @@ export function blueprintsCard(state, base) {
       r.held ? `<span class="chip"${tip(`A copy is in your hands. Put someone with ${SKILL_NAMES[r.d.skill]} ${r.d.min}+ on the Read role at the base that holds it.`)}>Copy held: needs ${SKILL_NAMES[r.d.skill]} ${r.d.min}+ reader</span>` :
       `<span class="muted"${tip(`Look in: ${r.where}.`)}>Not found</span>`;
     return `<tr${tip(`${r.d.desc} ${r.d.hours}h of study, ${SKILL_NAMES[r.d.skill]} ${r.d.min}+. Look in: ${r.where}.`)}><td><b>${esc(r.d.name)}</b><br><span class="muted">unlocks ${esc(r.opens.join(", "))}</span></td><td>${status}</td></tr>`;
+  }).join("")}</table>${craftBooksCard(state)}`;
+}
+// Craft books (blueprints.js CRAFT_BOOKS): read to the end by anyone at a base, they unlock recipes and the crafting edge.
+function craftBooksCard(state) {
+  const rows = craftBookRows(state);
+  return `<h3${tip("Some books teach crafting too: once anyone has read one to the end at a base (Read role), its recipes are unlocked for good and the recipes it covers come out better and faster.")}>Craft books (${rows.filter((r) => r.known).length} of ${rows.length} read)</h3>
+  <table class="t small">${rows.map((r) => {
+    const status = r.known ? `<span class="chip on">Read</span>` : r.held ? `<span class="chip">Copy held</span>` : `<span class="muted"${tip(`Look in: ${r.where}.`)}>Not found</span>`;
+    const what = [r.opens.length ? `unlocks ${r.opens.join(", ")}` : "", `better at ${r.covers.join(", ")}`].filter(Boolean).join("; ");
+    return `<tr${tip(`${r.desc} Look in: ${r.where}.`)}><td><b>${esc(r.name)}</b><br><span class="muted">${esc(what)}</span></td><td>${status}</td></tr>`;
   }).join("")}</table>`;
 }
 

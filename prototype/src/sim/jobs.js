@@ -366,7 +366,7 @@ export function completeJob(state, job, how = "") {
       got.push(`${n} ${k}`);
     }
     const rng = diploRng(state);
-    for (const k of r.gear) { const it = newItem(k, Math.round(rng.range(0.7, 1) * 100) / 100); h.armory.push(it); got.push(it.name); }
+    for (const k of r.gear) { const it = newItem(k, Math.round(rng.range(0.7, 1) * 100) / 100, rng); h.armory.push(it); got.push(it.name); }
     if (r.blueprint) {
       // blueprints.js: one you neither know nor hold, fitting the group; none left: ammo instead.
       const bp = blueprintReward(state, f, `job${job.id}`);

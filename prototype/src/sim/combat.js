@@ -623,6 +623,9 @@ export const WEAPONS = {
   sawmachete: { name: "Saw-blade machete", melee: true, dmg: [17, 27] },
   crossbow:   { name: "Scrap crossbow",    dmg: [18, 26], opt: 7, fall: 4, aim: -4, ammo: 0, arrows: 1, noise: 0 },
   pipegun:    { name: "Pipe shotgun",      dmg: [20, 32], opt: 3, fall: 8, aim: -6, ammo: 1, noise: 3, close: 8, cap: 1, cal: "12ga", rel: 1.2 }, // a single-shot zip gun: reloaded after every shot
+  // Special crafted weapons (craft books and blueprints, blueprints.js): better than the makeshift ones above.
+  springmachete: { name: "Leaf-spring machete", melee: true, dmg: [21, 31] },
+  pulleybow:  { name: "Pulley-limb bow",   dmg: [16, 25], opt: 7, fall: 5, aim: -2, ammo: 0, arrows: 1, noise: 0, close: -5 },
   // Found weapons with a role each: clubs for takedowns (stealth.js CLUB), the heavy hitters, quiet bows that shoot
   // arrows (1 a shot, never ammo), a loud hard-hitting revolver, a handy ranch rifle, the police carbine. meleeAim: to hit in melee (sledge).
   bat:        { name: "Baseball bat",      melee: true, dmg: [15, 24] },
@@ -631,6 +634,7 @@ export const WEAPONS = {
   fireaxe:    { name: "Fire axe",          melee: true, dmg: [21, 32] },
   sledge:     { name: "Sledgehammer",      melee: true, dmg: [25, 38], meleeAim: -10 },
   baton:      { name: "Police baton",      melee: true, dmg: [12, 19] },
+  spear:      { name: "Steel spear",       melee: true, dmg: [18, 28] }, // a long reach: between the machete and the fire axe
   compbow:    { name: "Compound bow",      dmg: [17, 26], opt: 7, fall: 5, aim: -2, ammo: 0, arrows: 1, noise: 0, close: -5 },
   xbow:       { name: "Hunting crossbow",  dmg: [20, 29], opt: 6, fall: 5, aim: 0, ammo: 0, arrows: 1, noise: 0, close: -5 },
   revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3, cap: 6, cal: "357", rel: 0.05 }, // a six-shot cylinder
@@ -4231,11 +4235,11 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       const kit = KITS[box.kit] || KITS.raiders;
       if (rng.chance(0.3)) {
         const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : rng.pick(kit.loot);
-        const it = newItem(key, rng.pick([0.7, 0.85, 1]));
+        const it = newItem(key, rng.pick([0.7, 0.85, 1]), rng);
         if (key === box.weapon && box.uid != null) carryMods(unitById(b, box.uid), it); // gunmods.js: their gun's attachments come with it
         gear.push(it);
       }
-      if (kit.finds && rng.chance(BODY_FINDS)) gear.push(newItem(rng.pick(kit.finds), 1)); // what was in their pockets
+      if (kit.finds && rng.chance(BODY_FINDS)) gear.push(newItem(rng.pick(kit.finds), 1, rng)); // what was in their pockets
     } else if (box.truck) {
       // An Army truck's cargo bed (miltrucks.js truckLoot: its own dice, the same truck holds the same things); the
       // tile remembers it was opened. The crew strapped in the cab rise at the noise.
@@ -4251,7 +4255,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
         if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
-      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(newItem(key, 1));
+      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(newItem(key, 1, rng));
       const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
