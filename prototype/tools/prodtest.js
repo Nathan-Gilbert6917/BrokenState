@@ -343,9 +343,9 @@ function makeOutpost(state, staff) {
   let lines = 0;
   for (let i = 0; i < 72; i++) {
     tickHour(st);
-    if (st.log[0] && /🧭 Steward of Test Outpost today/.test(st.log[0].text) && st.log[0].hour === st.hour) lines++;
+    if (st.log[0] && /🧭 .*, leader of Test Outpost, today/.test(st.log[0].text) && st.log[0].hour === st.hour) lines++;
   }
-  const allLines = st.log.filter((l) => /🧭 Steward of/.test(l.text));
+  const allLines = st.log.filter((l) => /🧭 .*, leader of /.test(l.text));
   check(lines === 3 && allLines.every((l) => /Test Outpost/.test(l.text) && l.hour % 24 === STEWARD_LOG_HOUR), `one log line a day for the base it runs (${lines} in 3 days)`);
   check(hubRoles() === before, "the hub (no steward) is left alone");
   check(pinnedOne.role === "guard", "the pinned guard keeps her role");
@@ -367,19 +367,22 @@ function makeOutpost(state, staff) {
   setStewardArea(st, o, "defence", true);
   // Take over: everything stays as it is.
   for (let i = 0; i < 3; i++) tickHour(st);
-  const snap = atBase(st, o.id).map((s) => `${s.id}:${s.role}:${s.station}`).join(",");
+  // Their own jobs: the night watch roster the leader kept stays after you take over and is stood (watch.js watchHour
+  // puts a Manual person on guard for their shift, s.watchWas holds their job; the leader's own watchers: s.govWatch).
+  const own = () => atBase(st, o.id).map((s) => { const j = s.watchWas || s.govWatch || s; return `${s.id}:${j.role}:${j.station ?? null}`; }).join(",");
+  const snap = own();
   const queue = o.construction.map((j) => j.id).join(",");
   setSteward(st, o, false);
   check(/take over/.test(st.log[0].text), "taking over is logged");
   for (let i = 0; i < 30; i++) tickHour(st);
-  check(atBase(st, o.id).map((s) => `${s.id}:${s.role}:${s.station}`).join(",") === snap, "after taking over nobody's role changes");
+  check(own() === snap, "after taking over nobody's role changes");
   check(o.construction.map((j) => j.id).join(",").startsWith(queue.split(",").slice(1).join(",")) || o.construction.length <= queue.split(",").length, "and nothing new is queued");
   // Nothing while the autopilot runs.
   setSteward(st, o, true);
   setAutopilot(st, true, "balanced");
-  const n0 = st.log.filter((l) => /🧭 Steward of/.test(l.text)).length;
+  const n0 = st.log.filter((l) => /🧭 .*, leader of /.test(l.text)).length;
   for (let i = 0; i < 30; i++) tickHour(st);
-  check(st.log.filter((l) => /🧭 Steward of/.test(l.text)).length === n0, "stewards are quiet while the dev autopilot runs");
+  check(st.log.filter((l) => /🧭 .*, leader of /.test(l.text)).length === n0, "stewards are quiet while the dev autopilot runs");
   check(stewardRun(st, o, stewardOf(o).areas, "balanced") === 0, "stewardRun refuses while the autopilot is on");
   setAutopilot(st, false);
   // The governor uses station orders.
@@ -432,7 +435,7 @@ function makeOutpost(state, staff) {
       if (h.power) { maxSupply = Math.max(maxSupply, h.power.supply); if (h.power.supply > 0) powered++; }
       if (h.stock.fuel > lastFuel) fuelMade += h.stock.fuel - lastFuel;
       lastFuel = h.stock.fuel;
-      if (st.log.slice(0, 3).some((l) => l.hour === st.hour && /🧭 Steward of/.test(l.text))) stewardLines++;
+      if (st.log.slice(0, 3).some((l) => l.hour === st.hour && /🧭 .*, leader of /.test(l.text))) stewardLines++;
     }
     check(!bad, `seed ${seed} (${mode}): no NaN or negative stock (${bad || "ok"})`);
     if (mode === "steward") check(Math.abs(stewardLines - (day(st) - 1)) <= 1, `seed ${seed}: one steward line a day (${stewardLines} in ${day(st) - 1} days)`);
