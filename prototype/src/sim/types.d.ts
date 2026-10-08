@@ -373,6 +373,7 @@ export interface State {
   idBase: number; // world.js localId
   woodcutting: number; // save marks (save.js migrations)
   rawWater: number;
+  groupWorks?: number; // barestart: the AI groups build their bases up (groupworks.js); absent in older saves
   grid: HexGrid;
   tiles: Tile[];
   cityId: number;

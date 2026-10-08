@@ -341,9 +341,11 @@ console.log("Blueprints: locks, finding, studying");
 // ======================================================================================
 console.log("Crash events");
 {
-  // Timing over a long quiet run.
+  // Timing over a long quiet run. The hub starts bare (barestart) and a hub left to itself with nothing built falls
+  // to crowding within weeks, so it gets what the old start had standing and lasts the 120 days.
   const st = createWorld({ seed, factionCount: 6 });
   st.started = true;
+  for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(hub(st), t);
   const seen = [];
   for (let k = 0; k < 24 * 120; k++) {
     tickHour(st);

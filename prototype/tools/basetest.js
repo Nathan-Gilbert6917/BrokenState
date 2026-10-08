@@ -512,7 +512,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   check(noLeader === 0, "exactly one leader at the start");
   const st = W();
   const roles = st.survivors.map((s) => s.role).sort().join(",");
-  check(roles === "build,farm,farm,farm,guard,scavenge", `starting roles: ${roles}`);
+  check(roles === "build,build,farm,farm,guard,scavenge", `starting roles: ${roles}`); // two builders: the hub starts bare (barestart)
   const best = (key) => st.survivors.reduce((x, s) => (skill(s, key) > skill(x, key) ? s : x));
   check(best("farming").role === "farm", "the best farmer farms");
   st.survivors.forEach((s) => { s.skills.mechanics = 0; s.skills.farming = 0; });

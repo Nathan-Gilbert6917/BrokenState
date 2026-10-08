@@ -75,6 +75,7 @@ import { markAbandonedVehicle } from "./markers.js";
 import { thirstAhead } from "./weather.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { noteBaseLoss } from "./causes.js"; // "Why?": the chain of causes of a lost base
+import { groupWalls, groupsBuild } from "./groupworks.js"; // barestart: the walls a group has built at its base
 
 export const CONQUEST = {
   FIGHT_SHARE: 0.6, MIN_DEF: 3, MAX_DEF: 16, HOME_WEIGHT: 2,
@@ -109,9 +110,11 @@ export function peopleAt(state, f, tile) {
   const w = f.bases.length - 1 + CONQUEST.HOME_WEIGHT;
   return Math.max(1, Math.round((f.pop * (i === 0 ? CONQUEST.HOME_WEIGHT : 1)) / w));
 }
-export function nativeWalls(f, tile) {
-  if (CONQUEST.WALLED_TYPES.includes(f.type)) return CONQUEST.WALLS.typed;
-  return f.bases[0] === tile ? CONQUEST.WALLS.home : CONQUEST.WALLS.open;
+// The walls at a group's base: what they have built there (groupworks.js, barestart: a group's base starts bare), up to
+// their goal (CONQUEST.WALLS by type and base; an old save's groups, and the hardcore military, have it all).
+export function nativeWalls(f, tile, state = null) {
+  const goal = CONQUEST.WALLED_TYPES.includes(f.type) ? CONQUEST.WALLS.typed : f.bases[0] === tile ? CONQUEST.WALLS.home : CONQUEST.WALLS.open;
+  return state ? Math.min(goal, groupWalls(state, f, tile)) : goal;
 }
 // What an assault on this base faces: { kind, count, power, fortified, walls, people, occupied }.
 const ALLY_SHARE = 0.4; // coalition fighters keep at most 40% of the defenders off your squad (at least MIN_DEF left)
@@ -127,7 +130,7 @@ export function assaultForce(state, f, tile, p = null) {
   } else {
     people = peopleAt(state, f, tile);
     count = clamp(Math.round(people * CONQUEST.FIGHT_SHARE), CONQUEST.MIN_DEF, Math.max(CONQUEST.MIN_DEF, Math.min(CONQUEST.MAX_DEF, people)));
-    walls = nativeWalls(f, tile);
+    walls = nativeWalls(f, tile, state);
   }
   // The coalition's fighters (alliance.js assaultAllies): members near the base each keep some defenders busy.
   const allies = assaultAllies(state, f, tile);
@@ -360,10 +363,11 @@ export function captureBase(state, f, tile, p, info = {}) {
   } else {
     base = newOutpost(state, tile);
     base.captured = { from: f.id, name: f.name, day: day(state) };
-    // What they built there: their palisade (battered: two sections behind strong walls, one otherwise) and their
-    // quarters (a bunkhouse, 6 beds).
-    for (let i = 0; i < (nativeWalls(f, tile) > 1 ? 2 : 1); i++) { const wb = addBuilding(base, "walls"); wb.wear = 70; }
-    addBuilding(base, "bunkhouse").wear = 30;
+    // What they built there: their palisade (battered: two sections behind strong walls, one behind any, none where they
+    // had put up none yet) and their quarters (a bunkhouse, 6 beds, where they had built some: groupworks.js).
+    const nw = nativeWalls(f, tile, state);
+    for (let i = 0; i < (nw > 1 ? 2 : nw > 0 ? 1 : 0); i++) { const wb = addBuilding(base, "walls"); wb.wear = 70; }
+    if (!groupsBuild(state, f) || ((f.works && f.works[tile] && f.works[tile].beds) || 0) > 0) addBuilding(base, "bunkhouse").wear = 30;
   }
   base.type = noHub ? "hub" : "outpost";
   base.alert = false;
