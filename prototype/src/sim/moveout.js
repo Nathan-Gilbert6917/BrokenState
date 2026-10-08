@@ -183,14 +183,15 @@ export function joinBase(state, p, base) {
     return "";
   }
   if (partyTile(p) !== base.tile) { awaitOrders(state, p, `The team is not at ${base.name}.`, { failed: true, hold: true }); return ""; }
-  const names = list(partyMembers(state, p).map(firstName));
+  const people = partyMembers(state, p), names = list(people.map(firstName));
   const name = teamName(state, p);
-  if (p.homeBaseId !== base.id) p.movingIn = true; // returnHome's log line: "moved into", not "is home" (its own home: "is home")
+  const own = p.homeBaseId === base.id; // its own home: "is home", not "moved into"
+  if (!own) p.movingIn = true; // returnHome's log line: "moved into", not "is home"
   p.homeBaseId = base.id;
   p.orders = [];
   startReturn(state, p);
   if (state.parties.includes(p)) return `${name} could not move into ${base.name}.`; // never expected: at the base already
   // You were told on the Enter card how full it is: no Overcrowded card for that straight after (crowdCardsHour).
   if (overBeds(state, base) > 0) base.crowdNote = { hour: state.hour, over: overBeds(state, base) };
-  return `${names} moved into ${base.name}.`;
+  return own ? `${names} ${people.length === 1 ? "is" : "are"} home at ${base.name}.` : `${names} moved into ${base.name}.`;
 }
