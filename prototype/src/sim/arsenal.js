@@ -55,7 +55,7 @@ export const ARSENAL = {
   HOME: 0.35, // the home guard's share of the people (and every third piece of kit from the second best)
   MOD: 0.2, ARMOUR: 0.5, // a gun part's worth; armour counts half its power (world.js combatPower)
   KIT_MIN: 0.15, KIT_MAX: 2.5,
-  KIT_WEIGHT: 0.45, // the kit's share of a group's fighting worth (the rest: its people, their numbers and training)
+  KIT_WEIGHT: 0.4, // the kit's share of a group's fighting worth (the rest: its people, their numbers and training)
   AMMO_NEED: 3, AMMO_SHORT: 0.7, // rounds a gun to count fully (your bases' 3 a head, world.js armedFactor); with none, the guns count 70%
   ROUNDS: 3, // rounds a fighter spends in a fight
   PICKUP_WEAR: [0.2, 0.5], // a piece picked up off a battlefield has lost this share of its uses
