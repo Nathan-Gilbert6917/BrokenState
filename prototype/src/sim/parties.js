@@ -1966,7 +1966,7 @@ function aiPartyHour(state, p) {
         factionById(state, p.target.factionId)?.bases.includes(p.target.tile);
       if (!stillThere) return removeParty(state, p);
       p.phase = "siege";
-      p.siegeLeft = p.target.kind === "player" ? 8 : 18;
+      p.siegeLeft = p.target.kind === "player" ? p.siegeLen || 8 : 18; // siegeLen: a siege in a war on you (playerwars.js)
       if (p.target.kind === "player" && !p.warned) {
         p.warned = true;
         // Not seen coming, at night, nobody awake on watch (watch.js surpriseAt): over the wall before anyone woke.

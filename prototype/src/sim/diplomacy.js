@@ -60,13 +60,18 @@ import { raidPaceOpen, noteRaid } from "./eras.js";
 import { hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { warCaptureMult } from "./nonlethal.js"; // groups that take people alive take more prisoners in a war
+import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES warlike: a group's temper for war
+import { sameBloc, blocSpare, blocWarJoin, blocsDaily, jointRaid } from "./blocs.js"; // AI blocs (alliances of groups)
+import { pwarsDaily } from "./playerwars.js"; // wars declared on you (and by you)
 
 export const DIPLO = {
   DRIFT: 0.02, PACT_REL: 28, PACT_BREAK: 10, PACT_CHANCE: 0.05, WAR_REL: -42, WAR_BASE: 0.01, WAR_RANGE: 18,
   WAR_STRENGTH: 0.6, PEACE_COOLDOWN: 90, MAX_WARS: 3, RAID_CHANCE: 0.06, RAID_CHANCE_AGG: 0.09, MIN_POP: 3, SUE_POP: 6, // war raids grind a group down to 3 (factions.js GROUP_BREAK); peace at once at 6
   EXHAUSTED: 55, LONG_WAR: 75, LAND_LEAD: 5, TRIBUTE_LEAD: 2, TRIBUTE: 0.25, BROKER_DAYS: 7, RESERVE_DAYS: 60,
 };
-const TEMPER = { raider: 1.5, expansionist: 1.4, zealot: 1.2, military: 0.5, fortress: 0.3, traders: 0.1, commune: 0.1 };
+// A group's temper for war: groupcare.js GROUP_PRIORITIES warlike (raiders 1.5, expansionists 1.4, zealots 1.2, military 0.5,
+// fortress 0.3, traders and communes 0.1: the old TEMPER table).
+const temper = (f) => weightOf(f, "warlike", 1);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
@@ -177,9 +182,11 @@ export function diplomacyDaily(state) {
   if (!state.noWars) {
     relationsDaily(state);
     pactsDaily(state);
+    if (!state.noBlocs) blocsDaily(state); // blocs.js: alliances between groups form, help, share, break
     warsDaily(state);
     if (!hcGroupRaidsQuiet(state)) declareWars(state); // hardcore-groups.js: no new wars while the bands found their hubs
   }
+  pwarsDaily(state); // playerwars.js: wars on you (declared, fought, ended on terms or weariness); state.noPlayerWars: none
   jobsDaily(state);
   allianceDaily(state);
 }
@@ -256,7 +263,7 @@ function warReason(state, a, b) {
   if ((state.hives || []).some((h) => a.bases.some((x) => g.distance(x, h.tile) <= 10) && b.bases.some((x) => g.distance(x, h.tile) <= 10))) return "hive";
   return "land";
 }
-const REASON_TEXT = { land: "over land", resources: "over food and ammo", hive: "over the ground around a hive" };
+const REASON_TEXT = { land: "over land", resources: "over food and ammo", hive: "over the ground around a hive", bloc: "beside its bloc" };
 
 function declareWars(state) {
   const d = state.diplo, rng = diploRng(state), today = day(state);
@@ -266,16 +273,16 @@ function declareWars(state) {
   for (const a of live) for (const b of live) {
     if (a === b || d.wars.length >= DIPLO.MAX_WARS) continue;
     // a is the one who starts it: the more aggressive of the pair checks first.
-    if (TEMPER[a.type] < TEMPER[b.type] || (TEMPER[a.type] === TEMPER[b.type] && a.id > b.id)) continue;
-    if (warBetween(state, a, b) || pactBetween(state, a, b)) continue;
+    if (temper(a) < temper(b) || (temper(a) === temper(b) && a.id > b.id)) continue;
+    if (warBetween(state, a, b) || pactBetween(state, a, b) || sameBloc(state, a, b)) continue; // blocs.js: a bloc keeps its own peace
     if (relation(state, a, b) > DIPLO.WAR_REL) continue;
     if (warsOf(state, a).length >= maxWars(a) || warsOf(state, b).length >= maxWars(b)) continue;
-    if (a.pop < 10 || b.pop < 8 || strength(a) < strength(b) * DIPLO.WAR_STRENGTH) continue;
+    if (a.pop < 10 || b.pop < 8 || strength(a) + blocSpare(state, a) < (strength(b) + blocSpare(state, b)) * DIPLO.WAR_STRENGTH) continue; // blocs.js: what its bloc could send counts
     if (baseDistance(state, a, b) > DIPLO.WAR_RANGE) continue;
     if (isMember(state, a) && isMember(state, b)) continue; // the coalition keeps its own peace
     const last = d.lastPeace[key(a, b)];
     if (last != null && today - last < DIPLO.PEACE_COOLDOWN) continue;
-    if (!rng.chance(DIPLO.WAR_BASE * TEMPER[a.type])) continue;
+    if (!rng.chance(DIPLO.WAR_BASE * temper(a))) continue;
     startWar(state, a, b, warReason(state, a, b));
   }
 }
@@ -297,15 +304,28 @@ export function startWar(state, a, b, reason = "land") {
   for (const p of pactsOf(state, b)) {
     if (p === a || warBetween(state, p, a) || warsOf(state, p).length >= (isAggressiveType(p) ? 2 : 1) || d.wars.length >= DIPLO.MAX_WARS + 1) continue;
     if (!rng.chance(0.4)) continue;
-    const w2 = { ...w, id: d.seq++, a: p.id, b: a.id, reason: "pact", start: day(state), score: { [p.id]: 0, [a.id]: 0 }, exh: { [p.id]: 0, [a.id]: 0 }, pop0: { [p.id]: p.pop, [a.id]: a.pop }, captives: { [p.id]: 0, [a.id]: 0 }, playerSide: null };
-    d.wars.push(w2);
-    d.stats.wars++;
-    changeRelation(state, p, a, -30);
+    allyWar(state, p, a, "pact");
     news(state, `${cap(knownAs(state, p))} stands by its pact with ${knownAs(state, b)}: it is at war with ${knownAs(state, a)} too.`, "danger", [p, a, b]);
   }
+  blocWarJoin(state, w, a, b); // blocs.js: the defender's bloc comes in on its side, the attacker's may march with it
   syncWarFlags(state);
   askPlayerToJoin(state, w);
   return w;
+}
+
+// A war a group joins beside another (a pact partner, a bloc member: blocs.js blocWarJoin): its own war with the enemy.
+export function allyWar(state, p, enemy, reason = "pact") {
+  const d = ensureDiplo(state);
+  if (warBetween(state, p, enemy)) return null;
+  const w2 = {
+    id: d.seq++, a: p.id, b: enemy.id, reason, start: day(state), score: { [p.id]: 0, [enemy.id]: 0 }, exh: { [p.id]: 0, [enemy.id]: 0 },
+    pop0: { [p.id]: p.pop, [enemy.id]: enemy.pop }, raids: 0, captives: { [p.id]: 0, [enemy.id]: 0 }, playerSide: null, brokerDay: -99, asked: false,
+  };
+  d.wars.push(w2);
+  d.stats.wars++;
+  changeRelation(state, p, enemy, -30);
+  d.pacts = d.pacts.filter((x) => !((x.a === p.id && x.b === enemy.id) || (x.a === enemy.id && x.b === p.id)));
+  return w2;
 }
 
 // Raids, exhaustion and peace, once a day for every war.
@@ -346,6 +366,8 @@ export function warRaid(state, w, f, o) {
   const p = spawnAiParty(state, f, "raid", origin, tgt.tile, { strength: Math.max(4, strength(f) * rng.range(0.3, 0.45) * mult), target: tgt });
   if (!p) return null;
   p.warId = w.id;
+  const j = jointRaid(state, f, tgt.tile, tgt.kind === "player" ? { kind: "player", id: "player" } : { kind: "group", id: o.id }); // blocs.js: bloc members march with them
+  if (j) { p.strength += j.power; p.joint = j.ids; }
   if (tgt.kind === "player") noteRaid(state); // eras.js: the pace of raids on you
   w.raids++;
   state.diplo.stats.raids++;
@@ -641,7 +663,7 @@ export const reservedForYou = (state, tile) => !!state.diplo && (state.diplo.res
 // factions.js launchRaid: a group does not raid its pact partners; it prefers its war enemies.
 export function raidWeight(state, f, o) {
   if (!state.diplo) return 1;
-  if (pactBetween(state, f, o)) return 0;
+  if (pactBetween(state, f, o) || sameBloc(state, f, o)) return 0; // blocs.js: never a member of their own bloc
   if (isMember(state, f) && isMember(state, o)) return 0;
   return warBetween(state, f, o) ? 0 : 1; // the war raids (warRaid) are the raids between enemies
 }

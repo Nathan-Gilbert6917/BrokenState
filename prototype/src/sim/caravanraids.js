@@ -57,6 +57,7 @@ import { markAbandonedVehicle, markDeathSite } from "./markers.js";
 import { joinTeam } from "./foundcars.js";
 import { hash01 } from "./skills.js";
 import { pactBetween, warBetween } from "./diplomacy.js";
+import { atWarWithYou, PW } from "./playerwars.js"; // wars with you: your convoys hunted
 import { caravanGuarded } from "./jobs.js";
 import { inCoverage } from "./radio.js";
 import { chronicleNote } from "./chronicle.js";
@@ -541,7 +542,7 @@ export function wouldRaid(state, f, c) {
 }
 export function aiRaidsHour(state) {
   const g = state.grid;
-  const groups = state.factions.filter((f) => f.alive && f.bases.length && (isAggressiveType(f)));
+  const groups = state.factions.filter((f) => f.alive && f.bases.length && (isAggressiveType(f) || atWarWithYou(state, f))); // playerwars.js: at war with you, peaceful types rob your convoys too
   if (!groups.length) return;
   for (const c of roadCaravans(state, { player: true })) {
     // The groups' caravans near a raider gang are ambushed on the way (parties.js aiPartyHour); escorted ones (jobs.js) are left alone.
@@ -549,11 +550,12 @@ export function aiRaidsHour(state) {
     if (c.ref.raidedAt != null && state.hour - c.ref.raidedAt < AI_RAID.COOLDOWN) continue;
     const strength = c.owner === "player" ? partyMembers(state, c.ref).reduce((a, s) => a + combatPower(s), 0) * 1.1 : c.strength; // as visitors.js hitConvoy
     for (const f of groups) {
-      if (!f.bases.some((b) => g.distance(b, c.tile) <= AI_RAID.RANGE) || !wouldRaid(state, f, c)) continue;
+      const war = c.owner === "player" && atWarWithYou(state, f); // playerwars.js: your convoys near an enemy at war
+      if (!f.bases.some((b) => g.distance(b, c.tile) <= AI_RAID.RANGE + (war ? PW.CARAVAN_RANGE : 0)) || !wouldRaid(state, f, c)) continue;
       const band = groupStrength(f) * AI_RAID.BAND;
       if (band < Math.max(1, strength) * AI_RAID.EDGE) continue;
       const fi = state.factions.indexOf(f);
-      const chance = AI_RAID.CHANCE * (1 + Math.min(2, (c.value || 0) / AI_RAID.RICH));
+      const chance = AI_RAID.CHANCE * (1 + Math.min(2, (c.value || 0) / AI_RAID.RICH)) * (war ? PW.CARAVAN : 1);
       if (hash01(state.seed, "cvraid", state.hour, c.key, fi) >= chance) continue;
       groupRobs(state, f, c, band, strength);
       break;

@@ -41,6 +41,7 @@ import { noteRescue } from "./relations.js";
 import { anyPerk, hasPerk, gainXp, gainXpAll, USE } from "./skills.js";
 import { driveOff } from "./aiscav.js";
 import { warRaidOnPlayer } from "./diplomacy.js";
+import { pwarTeamMult, pwarTeamRange } from "./playerwars.js"; // wars with you: their patrols hunt your teams
 import { retreatFrom } from "./conquest.js";
 import { siteDeadMix, armoredOf, maxMix, bodyLoot } from "./deadsoldiers.js";
 import { siteList } from "./zombietypes.js";
@@ -333,11 +334,12 @@ export function conflictChance(state, p, tileId) {
   for (const f of state.factions) {
     if (!f.alive || !f.bases.length) continue;
     const d = minBaseDist(state, f, tileId);
-    if (d > 5) continue;
+    const reach = pwarTeamRange(state, f); // playerwars.js: a group at war with you hunts your teams further out
+    if (d > reach) continue;
     const att = attitude(f);
     let w = att === "Hostile" ? 1 : isAggressiveType(f) ? 0.5 : (f.type === "military" || f.type === "fortress") ? 0.3 : 0.12;
     if (f.pact) w *= 0.5;
-    w *= 1 - d / 6.5;
+    w *= (1 - d / (reach + 1.5)) * pwarTeamMult(state, f);
     if (t.owner === f.id) w *= 1.4;
     humans += w;
     sources.push({ f, w });

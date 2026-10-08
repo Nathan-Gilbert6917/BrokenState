@@ -78,6 +78,8 @@ import { thirstAhead } from "./weather.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { noteBaseLoss } from "./causes.js"; // "Why?": the chain of causes of a lost base
 import { groupWalls, groupsBuild } from "./groupworks.js"; // barestart: the walls a group has built at its base
+import { blocAssaultHelp } from "./blocs.js"; // AI blocs: members' fighters at an ally's walls
+import { pwarBaseTaken } from "./playerwars.js"; // wars with you: a base taken counts
 
 export const CONQUEST = {
   FIGHT_SHARE: 0.6, MIN_DEF: 3, MAX_DEF: 16, HOME_WEIGHT: 2,
@@ -139,11 +141,15 @@ export function assaultForce(state, f, tile, p = null) {
   const kit = p && state.parties.includes(p) ? teamKit(state, partyMembers(state, p), (p.cargo && p.cargo.gear) || []) : null;
   const held = Math.min(allies.fighters, Math.floor(count * ALLY_SHARE), Math.max(0, count - CONQUEST.MIN_DEF));
   count -= held;
+  // blocs.js: their bloc's fighters from bases nearby man the walls with them (a base they took from you: its garrison).
+  const bloc = occ && occ.factionId === f.id ? { fighters: 0, names: [] } : blocAssaultHelp(state, f, tile);
+  count += bloc.fighters;
   return {
     kind: KIND_OF[f.type], count, power: Math.round(unitPower(f, 2.6) * 10) / 10, factionId: f.id, name: `${f.name} defenders`, arsTask: "home", // arsenal.js: by their kit, all of it at home
     fortified: Math.round((1 + CONQUEST.WALL_FACTOR * walls * (1 - (walls >= 1 ? assaultCut(kit) : 0))) * 100) / 100, walls, people, occupied: !!(occ && occ.factionId === f.id),
     siegeKit: kit && (kit.ladders || kit.ram || kit.grenades) ? kit : null,
     allies: held ? { held, names: allies.names } : null,
+    bloc: bloc.fighters ? bloc : null,
     ...(tile === f.bases[0] && !(occ && occ.factionId === f.id) && groupTurret(f) ? { turret: groupTurret(f) } : {}),
   };
 }
@@ -432,7 +438,8 @@ export function captureBase(state, f, tile, p, info = {}) {
     if (gone) bits0.push(`Their leaders fell with it: ${gone} of ${f.name} scattered.`);
   }
   const defeated = !f.bases.length || groupBroken(f);
-  fallout(state, f, defeated);
+  if (!info.ceded) fallout(state, f, defeated); // a base handed over in a peace (playerwars.js) is no conquest
+  pwarBaseTaken(state, f, tile); // playerwars.js: it counts for a war with them
   const where = occ ? `${base.name} is yours again` : `${f.name}'s base at ${tileLabel(state, tile)} is yours`;
   const bits = [`${where}${base.type === "hub" ? " (your new hub)" : ""}.`];
   if (got.length) bits.push(`Their stores there: ${got.slice(0, 5).join(", ")}.`);
@@ -442,7 +449,7 @@ export function captureBase(state, f, tile, p, info = {}) {
   if (fled) bits.push(`${fled} got away to their other base${f.bases.length === 1 ? "" : "s"}.`);
   bits.push(...bits0);
   history(state, occ ? `You took ${base.name} back from ${f.name}.` : `You took ${tileLabel(state, tile)} from ${f.name}.`);
-  log(state, `${occ ? `Your team took ${base.name} back from ${f.name}.` : `Your team took ${f.name}'s base at ${tileLabel(state, tile)}.`} ${bits.slice(1).join(" ")}`, "good");
+  log(state, `${info.ceded ? `${f.name} handed over ${occ ? base.name : `their base at ${tileLabel(state, tile)}`}.` : occ ? `Your team took ${base.name} back from ${f.name}.` : `Your team took ${f.name}'s base at ${tileLabel(state, tile)}.`} ${bits.slice(1).join(" ")}`, "good");
   if (join) {
     const list = Array.from({ length: join }, () => makeCandidate(state, { quality: 0.8, minHealth: 40 }));
     offerRecruits(state, list, { source: "conquest", baseId: base.id, title: `${f.name} fighters lay down their arms`, intro: `Some of ${f.name}'s people at ${tileLabel(state, tile)} ask to join you rather than run.` });
@@ -562,7 +569,7 @@ export function occupyPlayerBase(state, base, f, opts = {}) {
   f.known = true; // they took it: you know who they are
   const wasHub = base.type === "hub";
   noteBaseLoss(state, base, opts.retreated ? "retreat" : "taken", f); // causes.js: why it was lost (before the people leave)
-  if (!opts.retreated) evacuate(state, base, f, `${f.name} took it`);
+  if (!opts.retreated) evacuate(state, base, f, opts.ceded ? `handed over to ${f.name} in the peace` : `${f.name} took it`);
   // Anyone left there (nobody, normally) is gone with it; prisoners of that group walk free; others are left to
   // prisoners.js (a base that is gone).
   for (const s of atBase(state, base.id)) s.location = { kind: "captive", factionId: f.id, tile: base.tile, since: state.hour };
@@ -607,10 +614,10 @@ export function occupyPlayerBase(state, base, f, opts = {}) {
   state.knowledge[base.tile] = snapshot(state, base.tile); // the last look your people had: theirs now
   clearStaleAlerts(state);
   const broken = fixtures(base).filter((fx) => fx.broken).map((fx) => fixtureName(fx).toLowerCase());
-  const text = `${f.name} ${opts.retreated ? "moved into" : "took"} ${base.name}${took.length ? ` and carried off ${took.slice(0, 4).join(", ")}` : ""}. They hold it with about ${garrison} people${broken.length ? `; ${broken.slice(0, 3).join(", ")} ${broken.length === 1 ? "is" : "are"} broken` : ""}.` +
+  const text = `${f.name} ${opts.ceded ? "were handed" : opts.retreated ? "moved into" : "took"} ${base.name}${took.length ? ` and carried off ${took.slice(0, 4).join(", ")}` : ""}. They hold it with about ${garrison} people${broken.length ? `; ${broken.slice(0, 3).join(", ")} ${broken.length === 1 ? "is" : "are"} broken` : ""}.` +
     `${newHub ? ` ${newHub.name} is your hub now.` : wasHub && !hub(state) ? " You have no base left." : ""} Send an Assault their base team to take it back: the sooner, the weaker its walls.`;
-  log(state, text, "death");
-  addCard(state, { title: `${base.name} has fallen`, text, lostBase: base.tile, choices: [{ label: "OK", resolve: () => "" }] });
+  log(state, text, opts.ceded ? "danger" : "death");
+  if (!opts.ceded) addCard(state, { title: `${base.name} has fallen`, text, lostBase: base.tile, choices: [{ label: "OK", resolve: () => "" }] }); // ceded in a peace (playerwars.js): no card
   return C.occupied[C.occupied.length - 1];
 }
 // The hub is gone: the nearest base becomes the hub. Returns it (null: no base left).

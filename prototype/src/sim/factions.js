@@ -77,7 +77,10 @@ import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, rai
 import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
 import { groupWorldDaily, groupWorldWorld, intelDef, knownBase, fearsGroup, KNOW, abandonedAt, abandonedPull, occupyAbandoned, leaveGroupBase } from "./groupworld.js"; // AI parity: what they know, their vehicles, abandoned bases
 import { raidPrisoners } from "./nonlethal.js"; // groups that take people alive: some of the beaten are taken, not killed
+import { hash01 } from "./skills.js";
 import { escortParty } from "./caravans.js"; // a convoy's guards (escorts.js)
+import { noteGrievance, ceasefireWith, pwarRaidDone, pwarById, goalText } from "./playerwars.js"; // wars with you: what they hold against you, ceasefires, the score
+import { sameBloc, blocOf, blocHelpFor, blocHelpAfter, jointRaid, jointAfter, blocPlayerHelp } from "./blocs.js"; // AI blocs: help, joint raids
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -194,6 +197,7 @@ export function changeGoodwill(state, f, amount, reason) {
   const after = attitude(f);
   if (before !== after && f.known) log(state, `${f.name} is now ${after.toLowerCase()} toward you${reason ? ` (${reason})` : ""}.`, after === "Hostile" ? "danger" : "good");
   breakPactIfHostile(state, f);
+  if (amount < 0 && state.diplo) noteGrievance(state, f, amount, reason); // playerwars.js: filed as a grievance (a casus belli)
 }
 
 // A pact does not survive open hostility: a hostile group tears it up (and can raid you again, launchRaid).
@@ -409,7 +413,8 @@ export function factionsDaily(state) {
     if ((f.type === "traders" || f.type === "commune" || f.type === "fortress") && rng.chance(0.15)) {
       const partners = state.factions.filter((o) => o.alive && o !== f && !isAggressiveType(o));
       if (partners.length) {
-        const to = rng.pick(partners);
+        const mates = partners.filter((o) => sameBloc(state, f, o)); // blocs.js: trade first within the bloc
+        const to = rng.pick(mates.length && hash01(state.seed, "convoy", f.name, today) < 0.6 ? mates : partners);
         const q = spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
         // caravans.js escortParty: what it carries (the 10 food and 10 scrap it delivers) is worth a token guard to them.
         if (q) { q.goods = { supplies: { food: 10, scrap: 10 }, gear: [] }; escortParty(state, f, q, q.goods); }
@@ -560,7 +565,7 @@ function launchRaid(state, f) {
   // Only a hostile group raids you: the same line as the "Hostile" label (and a hostile group has no pact left).
   // Eras (eras.js): only when the pace of raids on you allows a new one, and only a base it can take on: its whole
   // strength at least PREP × the base's defence with everyone at a post (rising over the years: fewer, bigger raids).
-  if (attitude(f) === "Hostile" && raidPaceOpen(state)) {
+  if (attitude(f) === "Hostile" && raidPaceOpen(state) && !ceasefireWith(state, f)) { // playerwars.js: not under a ceasefire with you
     for (const b of state.bases) {
       const from = nearestOwnBase(state, f, b.tile);
       const d = g.distance(from, b.tile);
@@ -585,17 +590,27 @@ function launchRaid(state, f) {
   if (!targets.length) return;
   const tgt = rng.weighted(targets, (t) => t.w);
   if (tgt.kind === "player") {
-    const base = baseById(state, tgt.baseId);
-    const p = spawnAiParty(state, f, "raid", tgt.from, tgt.tile, { strength: raidSize(state, f, base), target: { kind: "player", baseId: tgt.baseId, tile: tgt.tile } });
-    if (p) {
-      p.esc = f.raidEsc || 1; f.raidedYou = day(state); noteRaid(state); // the autopilot's grudge (autopilot.js conquest); the pace (eras.js)
-      // Siege kit by how prepared they are (siege.js): ladders, a ram, grenades against a walled base.
-      p.siege = capSiegeKit(state, f, raidSiegeKit(state, base, { count: raidForce(f, p.strength).count, key: p.id, prepared: p.esc > 1.01 || f.type === "military" || f.type === "expansionist", kind: f.type === "military" ? "frag" : "pipebomb" })); // arsenal.js: only the explosives they hold
-    }
+    launchRaidOnBase(state, f, baseById(state, tgt.baseId), { from: tgt.from });
     return;
   }
   const raidStrength = Math.max(RAIDS.MIN, strength(f) * rng.range(0.25, 0.4));
-  spawnAiParty(state, f, "raid", origin, tgt.tile, { strength: raidStrength, target: tgt });
+  const p = spawnAiParty(state, f, "raid", origin, tgt.tile, { strength: raidStrength, target: tgt });
+  // blocs.js: a raid on their bloc's foe draws members along.
+  const b = p && blocOf(state, f);
+  if (b && b.foe && b.foe.kind === "group" && b.foe.id === tgt.factionId) { const j = jointRaid(state, f, tgt.tile, { kind: "group", id: tgt.factionId }); if (j) { p.strength += j.power; p.joint = j.ids; } }
+}
+// A raid of f's on one of your bases (launchRaid; playerwars.js war raids). opts: { from (the tile they march from),
+// prepared (siege kit as if they had been beaten off before) }. Returns the party or null.
+export function launchRaidOnBase(state, f, base, opts = {}) {
+  if (!f || !base) return null;
+  const from = opts.from ?? nearestOwnBase(state, f, base.tile);
+  const p = spawnAiParty(state, f, "raid", from, base.tile, { strength: raidSize(state, f, base), target: { kind: "player", baseId: base.id, tile: base.tile } });
+  if (p) {
+    p.esc = f.raidEsc || 1; f.raidedYou = day(state); noteRaid(state); // the autopilot's grudge (autopilot.js conquest); the pace (eras.js)
+    // Siege kit by how prepared they are (siege.js): ladders, a ram, grenades against a walled base.
+    p.siege = capSiegeKit(state, f, raidSiegeKit(state, base, { count: raidForce(f, p.strength).count, key: p.id, prepared: !!opts.prepared || p.esc > 1.01 || f.type === "military" || f.type === "expansionist", kind: f.type === "military" ? "frag" : "pipebomb" })); // arsenal.js: only the explosives they hold
+  }
+  return p;
 }
 
 // How much a group wants to hit one of your bases (see the header): greed, your land, their grudge, their size, distance.
@@ -672,6 +687,14 @@ export function baseDefense(state, base, surprise = false) {
 // opts.beaten ("overrun" | "broken"): the defenders already fought this raid on the battle map and lost
 // (conflicts.js). Then only the break-in is applied: no second fight by the numbers, no further injuries.
 export function resolveRaidOnPlayer(state, party, opts = {}) {
+  const res = resolveRaidOnPlayerNow(state, party, opts);
+  if (res) {
+    pwarRaidDone(state, party, res); // playerwars.js: a raid in a war with you counts for the war
+    jointAfter(state, party, res.outcome !== "held"); // blocs.js: the members who marched with them
+  }
+  return res;
+}
+function resolveRaidOnPlayerNow(state, party, opts = {}) {
   const rng = state.rng;
   const base = baseById(state, party.target.baseId);
   const f = factionById(state, party.owner);
@@ -689,6 +712,7 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
   const people = beaten ? [] : atBase(state, base.id);
   const armory0 = opts.armory0 ?? base.armory.length; // arsenal.js: what is added to the armory from here on is your dead's gear
   const allies = beaten ? { power: 0, names: [] } : allianceRaidHelp(state, base, f); // alliance.js: coalition members send fighters
+  if (!beaten) { const bh = blocPlayerHelp(state, base, f, baseDefense(state, base, !!party.surprise)); if (bh.power > 0) { allies.power += bh.power; allies.names = [...allies.names, ...bh.names]; } } // blocs.js: a bloc you stand with
   const caught = !!party.surprise; // watch.js surpriseAt: they came on an unwatched night (parties.js, at the walls)
   const def = baseDefense(state, base, caught) + allies.power;
   const att = party.strength + groupTurretPower(f) + (baseWalls(base) ? wallPower(state, f, raidCount(f, party.strength)) : 0); // vehicles.js: a military group's Humvee and its M2 come with the raid; arsenal.js: launchers against walls
@@ -796,19 +820,30 @@ export function stolenText(before, after) {
 }
 
 export function resolveRaidOnFaction(state, party, helpers) {
-  const rng = state.rng;
   const target = factionById(state, party.target.factionId);
   const attacker = typeof party.owner === "number" ? factionById(state, party.owner) : null;
   if (!target || !target.alive) return;
   // Trade prices remember it (valuation.js): raided lately, or a horde at their walls.
   target.hitDay = day(state);
   if (!attacker && !party.raidName) target.hordeHitDay = day(state);
-  const helpPower = helpers.reduce((s, h) => s + h, 0);
+  // blocs.js: the target's bloc sends what it can spare to the base hit.
+  const bloc = blocHelpFor(state, target, party.target.tile, attacker);
+  const helpPower = helpers.reduce((s, h) => s + h, 0) + bloc.power;
   if (party.warId != null) { // diplomacy.js: raids in a war between groups, with their own odds and terms
     const held = resolveWarRaid(state, party, attacker, target, helpPower);
+    blocHelpAfter(state, bloc, held, target);
+    jointAfter(state, party, !held);
     if (groupBroken(target)) collapseFaction(state, target, attacker);
     return held;
   }
+  const held = resolveOrdinaryRaid(state, party, attacker, target, helpPower);
+  blocHelpAfter(state, bloc, held, target);
+  jointAfter(state, party, !held);
+  return held;
+}
+// An ordinary raid between groups (or by raiders from outside, or a horde) at its end: true when the defenders held.
+function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
+  const rng = state.rng;
   raidSoured(state, attacker, target);
   const def = groupBaseDefence(state, target, party.target.tile) + strength(target) * 0.8 + helpPower + (party.target.tile === target.bases[0] ? groupTurretPower(target) : 0); // 8 for a walled base (groupworks.js: half that bare); vehicles.js: a military group's Humvee at home
   const att = party.strength + groupTurretPower(attacker); // and on their raids
@@ -1028,7 +1063,7 @@ export function raidWarning(state, party) {
   const tributeNow = () => ({ food: Math.min(Math.floor(base.stock.food || 0), Math.ceil((base.stock.food || 0) * 0.3)), ammo: 30 });
   addCard(state, {
     title: `Raiders heading for ${base.name}`,
-    text: `${caught ? `${caught}: the raiders were over the wall before anyone woke. Until they are beaten off the walls do not count, and everyone but the guards fights half-asleep (${SURPRISE.ASLEEP}× their combat power instead of 0.8×) unless you rouse them (Prepare defenses). ` : ""}${razeChance(state, f, base.tile) >= 0.15 ? `${f.name} burn what they cannot hold: if they overrun ${base.name} they may raze it. ` : ""}Lookouts spot about ${force.count} ${f.name} fighter${force.count === 1 ? "" : "s"} on the way (strength about ${Math.round(party.strength)}${(party.esc || 1) > 1.01 ? `, ${Math.round(((party.esc || 1) - 1) * 100)}% more than they would have sent before you beat them off` : ""}). ${party.watchSaw ? `${party.watchSaw.trim()} ` : ""}${party.siege ? `${kitText(party.siege)} ` : ""}Current defense: ${Math.round(def)}. Held at ${RAIDS.HOLD}× their strength (walls, a watchtower, the gate and the trench add to it), a break-in from ${RAIDS.BREAK}× (barricades, sandbags, wire and the buildings help push one back); the longer they stay at the walls, the more they smash.`,
+    text: `${caught ? `${caught}: the raiders were over the wall before anyone woke. Until they are beaten off the walls do not count, and everyone but the guards fights half-asleep (${SURPRISE.ASLEEP}× their combat power instead of 0.8×) unless you rouse them (Prepare defenses). ` : ""}${razeChance(state, f, base.tile) >= 0.15 ? `${f.name} burn what they cannot hold: if they overrun ${base.name} they may raze it. ` : ""}Lookouts spot about ${force.count} ${f.name} fighter${force.count === 1 ? "" : "s"} on the way (strength about ${Math.round(party.strength)}${(party.esc || 1) > 1.01 ? `, ${Math.round(((party.esc || 1) - 1) * 100)}% more than they would have sent before you beat them off` : ""}). ${party.watchSaw ? `${party.watchSaw.trim()} ` : ""}${party.siege ? `${kitText(party.siege)} ` : ""}${raidWarLine(state, party)}Current defense: ${Math.round(def)}. Held at ${RAIDS.HOLD}× their strength (walls, a watchtower, the gate and the trench add to it), a break-in from ${RAIDS.BREAK}× (barricades, sandbags, wire and the buildings help push one back); the longer they stay at the walls, the more they smash.`,
     choices: [
       { label: "Prepare defenses", hint: `Everyone at the base takes a post: non-guards count 1.3× their combat power instead of 0.8× (guards stay at 1.5×). Defense ${Math.round(def)} → ${Math.round(prepared)}. Building and repairs stop here until the raid is over`, resolve: (st) => { base.alert = true; return `${base.name} prepares for the attack.`; } },
       {
@@ -1058,6 +1093,13 @@ export function raidWarning(state, party) {
       { label: "Hold as you are", resolve: () => "You wait." },
     ],
   });
+}
+
+// A raid in a war with you (playerwars.js) or with bloc members along (blocs.js): a line for the warning card.
+function raidWarLine(state, party) {
+  const w = party.pwarId != null ? pwarById(state, party.pwarId) : null;
+  const along = (party.joint || []).map((id) => factionById(state, id)).filter(Boolean).map((x) => (x.known ? x.name : "another group"));
+  return `${w ? `This is their war on you (their goal: ${goalText(state, w)})${party.siegeLen ? `: a siege, ${party.siegeLen} hours at the walls unless you drive them off sooner` : ""}. ` : ""}${along.length ? `Fighters from ${along.join(" and ")} march with them. ` : ""}`;
 }
 
 // "Retreat": everyone at the base leaves before the raid gets there (conquest.js retreatFrom); the raiders walk in

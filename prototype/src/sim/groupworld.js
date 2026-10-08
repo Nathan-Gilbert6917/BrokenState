@@ -2,7 +2,8 @@
 // know, the vehicles they take, trade and fit out, and the bases left empty that they move into. Coarse, once a day per
 // group (factions.js factionsDaily), hashed dice only (skills.js hash01) except a card's own choices.
 //
-// Knowledge (f.knows = { bases: { tile: { kind: "player" | "group", id, def, walls, day } } }): a group starts knowing
+// Knowledge (f.knows = { bases: { tile: { kind: "player" | "group", id, def, walls, value, day } } }; value: your base's
+// stores as they saw them, for a war for loot, playerwars.js; a bloc's members share all of it, blocs.js): a group starts knowing
 // the bases within KNOW.START tiles of its own; it learns more by scouting (KNOW.SCOUT a day × its profile's patrol,
 // raid-minded types × raid for your bases: one target base within KNOW.RANGE, the least known first), by its scavenging
 // parties (bases within KNOW.SEE of the site they worked) and by questioning the people of yours it holds (all your
@@ -28,7 +29,8 @@
 // a site (more for its kind: raiders like walls, communes fields, expansionists anything), moves in, takes the works
 // and the stores; yours: a card. First come, first served.
 import { SUPPLIES, GEAR } from "./data.js";
-import { day, log, addCard, atBase } from "./world.js";
+import { day, log, addCard, atBase, supplyValue } from "./world.js";
+import { sameBloc, betray } from "./blocs.js"; // AI blocs: theft between members is betrayal
 import { hash01 } from "./skills.js";
 import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, VEHICLE_TYPES, TURRET_KG } from "./vehicles.js";
 import { workshopFactor, worksAt } from "./groupworks.js";
@@ -64,7 +66,7 @@ export function learnBase(state, f, tile, d = day(state)) {
   const K = f.knows || (f.knows = { bases: {} });
   const pb = state.bases.find((b) => b.tile === tile);
   if (pb) {
-    K.bases[tile] = { kind: "player", id: pb.id, def: Math.round(defOf(state, pb)), walls: pb.buildings.filter((x) => x.type === "walls" && !x.broken).length, day: d };
+    K.bases[tile] = { kind: "player", id: pb.id, def: Math.round(defOf(state, pb)), walls: pb.buildings.filter((x) => x.type === "walls" && !x.broken).length, value: Math.round(supplyValue(pb.stock)), day: d }; // value: the stores they saw (playerwars.js: a war for loot)
     return K.bases[tile];
   }
   const o = state.factions.find((x) => x.alive && x !== f && x.bases.includes(tile));
@@ -205,6 +207,7 @@ export function stealFromGroup(state, f, o, d = day(state)) {
   f.vehiclesStolen = (f.vehiclesStolen || 0) + 1;
   if (h(state, f.name, o.name, tickOf(f), "found") < 0.5) {
     changeRelation(state, f, o, -15);
+    if (sameBloc(state, f, o)) betray(state, f, o, `it stole their ${v.name}`); // blocs.js: a thief in the bloc is out
     if ((f.known && o.known) || false) log(state, `${o.name} say ${f.name} stole their ${v.name}.`, "info");
   }
   return v;
