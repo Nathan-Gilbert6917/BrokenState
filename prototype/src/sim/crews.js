@@ -27,7 +27,7 @@ import {
 import { startOrder } from "./orders.js";
 import { nearbySites } from "./plans.js";
 import { searchHour, extract } from "./scavenge.js";
-import { vehiclesAtBase, vehicleById, refuel } from "./vehicles.js";
+import { vehiclesAtBase, vehicleById, refuel, wreckSupplies } from "./vehicles.js";
 import { saveSupplyRun, dispatchSupplyRun, deleteSupplyRun, supplyRunById } from "./supply.js";
 import { attitude, isAggressiveType } from "./factions.js";
 import { weather, severeSoon, thirstAhead } from "./weather.js";
@@ -72,7 +72,9 @@ export const FIELD_TYPES = {
     name: "Vehicles and wrecks", desc: "A vehicle of yours left out there (bring fuel and a part), and wrecked cars to restore or strip.",
     cands: (ctx) => markers(ctx, (m) => (m.type === "vehicle" && !(m.info && m.info.emptied)) || (m.type === "car" && !(m.info && m.info.emptied))).map((m) => m.type === "vehicle"
       ? { tile: m.tile, mission: "getvehicle", score: 2.4, why: "bring our vehicle home", supplies: { fuel: 12, parts: m.info && m.info.condition < 15 ? 1 : 0 }, min: { fuel: Math.max(0, 2 - ((m.info && m.info.fuel) || 0)) } }
-      : { tile: m.tile, mission: "investigate", score: 1.6, why: "a wrecked car to restore or strip", supplies: { parts: 2, fuel: 6 } }),
+      : wreckSupplies(ctx.base.stock) // vehicles.js: the car parts (or machine parts) and fuel, when the base can pay them
+        ? { tile: m.tile, mission: "investigate", score: 1.6, why: "a wrecked car to restore", supplies: wreckSupplies(ctx.base.stock) }
+        : { tile: m.tile, mission: "investigate", score: 0.8, why: "a wrecked car to strip for parts" }),
   },
   trade: {
     name: "Trade visits", desc: "A friendly or neutral group within range, when the hub has goods to spare and a real need (at most one a week).",

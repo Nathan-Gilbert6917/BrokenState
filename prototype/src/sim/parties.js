@@ -26,7 +26,7 @@ import { startScavenge } from "./scavenge.js";
 import { offerCrawl } from "./citycrawl.js"; // a team moved onto a city asks whether to go in
 import {
   vehicleById, partyVehicle, partyFuel, useFuel, wear, abandonVehicle, tank, createVehicle, travelMode, tileFuel, isBike, isCar,
-  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee,
+  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee, wreckCost, carPartsText, WRECK,
 } from "./vehicles.js";
 import { convoysHour, truckEngineNoise } from "./miltrucks.js";
 import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome } from "./foundcars.js"; // vehicles found on a map: repair, drive home // Army trucks: the convoy event, a running Army truck's engine
@@ -1438,6 +1438,10 @@ function investigate(state, p) {
   const t = state.tiles[tile];
   const h = t.hidden;
   if (!h || h.taken) {
+    // The marker is put right when the team reports (an older sighting could put a find back on the map after another
+    // team had taken it, and the governor sent a team to the same empty wreck every few days: census seed 1, balanced).
+    const m = state.markers.find((x) => x.tile === tile && (x.type === "car" || x.type === "cache" || x.type === "camp") && !(x.info && x.info.emptied));
+    if (m) spot(p, { key: m.key, type: m.type, tile, hour: state.hour, label: m.label, info: { emptied: true } });
     awaitOrders(state, p, "Someone has already cleaned it out.", { failed: true });
     return "";
   }
@@ -1469,27 +1473,31 @@ function investigate(state, p) {
   p.phase = "engaged";
   const mech = bestSkill(state, p, "mechanics");
   const chance = Math.max(0.1, Math.min(0.95, (mech + 10 - 6 + 1) / 10));
-  const cannot = () => p.vehicle || carried(p, "parts") < 2 || carried(p, "fuel") < 6;
+  // Car parts (machine parts stand in, 2 for each: vehicles.js carPartsCost) and fuel, from what the team carries.
+  const cost = () => wreckCost((k) => carried(p, k));
+  const cannot = () => p.vehicle || !cost().ok;
   addCard(state, {
     title: "Wrecked car",
     text: `An old sedan sits in the ditch, tires flat, but the engine block looks intact. Your best Mechanics: ${mech}.`,
     partyId: p.id,
     choices: [
       {
-        label: "Restore it (2 parts, 6 fuel)",
+        label: `Restore it (${carPartsText(WRECK.parts)}, ${WRECK.fuel} fuel)`,
         hint: p.vehicle ? "The team already has a vehicle to drive" : `Mechanics check, ${Math.round(chance * 100)}%. Success gives you a new vehicle`,
         get disabled() { return !!cannot(); }, // read when shown and checked again when chosen
         resolve: (st) => {
           if (cannot()) {
-            awaitOrders(st, p, "The team does not have the 2 parts and 6 fuel (or already has a vehicle).", { failed: true });
+            awaitOrders(st, p, `The team does not have the ${carPartsText(WRECK.parts)} and ${WRECK.fuel} fuel (or already has a vehicle).`, { failed: true });
             return "Not possible any more.";
           }
-          takeSupply(p, "parts", 2);
+          const pay = cost();
+          if (pay.car) takeSupply(p, "carparts", pay.car);
+          if (pay.parts) takeSupply(p, "parts", pay.parts);
           if (!st.rng.chance(chance)) {
             awaitOrders(st, p, "The repair failed and wasted the parts.");
-            return "Two parts wasted. The car will not start.";
+            return "The parts are wasted. The car will not start.";
           }
-          takeSupply(p, "fuel", 6);
+          takeSupply(p, "fuel", WRECK.fuel);
           const car = createVehicle(st, "sedan", { kind: "party", partyId: p.id }, { fuel: 6, condition: 35 });
           p.vehicle = true;
           p.vehicleId = car.id;

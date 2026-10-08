@@ -182,6 +182,21 @@ export function carPartsCost(have, n) {
 // "1 car part" / "2 car parts (or 2 machine parts each)".
 /** @param {number} n */
 export const carPartsText = (n) => `${n} car part${n === 1 ? "" : "s"} (or ${CARPART_SUB} machine parts for each)`;
+// A wrecked car found on the map (a hidden "car", parties.js investigate): restoring it takes WRECK.parts car parts (or
+// machine parts for them) and WRECK.fuel fuel. What a stock or a team's load would pay: { ok, car, parts, fuel }.
+export const WRECK = { parts: 2, fuel: 6 };
+/** @param {(k: string) => number} have */
+export function wreckCost(have) {
+  const pay = carPartsCost(have, WRECK.parts);
+  return { ...pay, fuel: WRECK.fuel, ok: pay.ok && have("fuel") >= WRECK.fuel - 1e-9 };
+}
+// What a team packs for a wreck it may restore: the car parts (machine parts for any short) and the fuel, or nothing
+// when the stock cannot pay (the team goes to strip it).
+/** @param {Record<string, number>} stock */
+export function wreckSupplies(stock) {
+  const c = wreckCost((k) => Math.max(0, stock[k] || 0));
+  return c.ok ? { ...(c.car ? { carparts: c.car } : {}), ...(c.parts ? { parts: c.parts } : {}), fuel: c.fuel } : null;
+}
 
 export function repair(state, base, v) {
   if (isBike(v)) {

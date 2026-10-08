@@ -51,11 +51,19 @@ export function mergeSpots(state, spotted) {
       if (cur && cur.hour <= s.hour) state.markers.splice(state.markers.indexOf(cur), 1);
       continue;
     }
+    // A find one of your teams has taken since (only your teams take them: parties.js investigate) is not put back
+    // by an older sighting: an old report re-added a restored wreck, and the governor kept walking to it.
+    const find = s.type === "cache" || s.type === "car" || s.type === "camp";
+    const gone = find && state.tiles[s.tile].hidden && state.tiles[s.tile].hidden.taken && !(s.info && s.info.emptied);
+    if (gone) {
+      if (cur && !(cur.info && cur.info.emptied)) cur.info = { ...(cur.info || {}), emptied: true };
+      continue;
+    }
     if (!cur) {
       state.markers.push({ ...s });
       added++;
     } else if (cur.hour <= s.hour) Object.assign(cur, s);
-    if (s.type === "cache" || s.type === "car" || s.type === "camp") state.tiles[s.tile].hidden.known = true;
+    if (find) state.tiles[s.tile].hidden.known = true;
   }
   return added;
 }

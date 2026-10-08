@@ -45,7 +45,7 @@ import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, ba
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill } from "./crafting.js";
-import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair } from "./vehicles.js";
+import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair, wreckSupplies } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun, linesText } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
@@ -2533,6 +2533,9 @@ function siteScore(state, id, need, P) {
   return { value: value * loot * Math.max(0.1, 1 - risk * P.riskAversion), loot, risk, hostile };
 }
 
+// A find (a cache, a camp, a wrecked car) the governor sent a team to waits this many days before another try: a wreck
+// left for later or a restore that failed stays on the map, and a team went back to it every two to four days.
+const FIND_COOLDOWN = 20;
 function planTrip(state) {
   const g = gov(state);
   const P = persona(state);
@@ -2593,8 +2596,17 @@ function planTrip(state) {
   for (const m of state.markers) {
     if (state.grid.distance(m.tile, h.tile) > P.range) continue;
     if (state.parties.some((p) => p.owner === "player" && p.dest === m.tile)) continue;
-    if ((m.type === "cache" || m.type === "camp") && !(m.info && m.info.emptied)) cands.push({ mission: "investigate", tile: m.tile, score: m.type === "cache" ? 2.6 : 1.8, crew: 2, why: `check the ${m.label.toLowerCase()}` });
-    if (m.type === "car" && !(m.info && m.info.emptied)) cands.push({ mission: "investigate", tile: m.tile, score: carsAtBase(state, h.id).length ? 1 : 2.2, crew: 2, why: "a wrecked car to restore or strip", supplies: { parts: 2, fuel: 6 } });
+    // A find tried lately waits FIND_COOLDOWN days (a wreck left, a restore that failed, a find already gone).
+    const tried = (g.findTried || {})[m.key];
+    if ((m.type === "cache" || m.type === "camp" || m.type === "car") && tried != null && today - tried < FIND_COOLDOWN) continue;
+    if ((m.type === "cache" || m.type === "camp") && !(m.info && m.info.emptied)) cands.push({ mission: "investigate", tile: m.tile, score: m.type === "cache" ? 2.6 : 1.8, crew: 2, why: `check the ${m.label.toLowerCase()}`, findKey: m.key });
+    if (m.type === "car" && !(m.info && m.info.emptied)) {
+      // Restored with the car parts and fuel the hub can pay (vehicles.js wreckSupplies), else stripped for its parts.
+      const kit = carsAtBase(state, h.id).length ? null : wreckSupplies(h.stock);
+      cands.push(kit
+        ? { mission: "investigate", tile: m.tile, score: 2.2, crew: 2, why: "a wrecked car to restore", supplies: kit, findKey: m.key }
+        : { mission: "investigate", tile: m.tile, score: 1, crew: 2, why: "a wrecked car to strip for parts", findKey: m.key });
+    }
     if (m.type === "death" && m.info && m.info.items > 0) cands.push({ mission: "recover", tile: m.tile, score: Math.min(2.5, 0.8 + m.info.items * 0.3), crew: 2, why: "recover our dead's gear" });
     const lostBikes = m.type === "vehicle" && isBike(state.vehicles.find((x) => x.id === m.info?.vehicleId));
     if (lostBikes) cands.push({ mission: "getvehicle", tile: m.tile, score: 1.6, crew: 2, why: "bring our bikes home", supplies: { scrap: 1 } });
@@ -2696,6 +2708,7 @@ function planTrip(state) {
     g.lastLaunch = today;
     if (c.mission === "outpost") g.lastOutpost = today;
     if (c.mission === "rescue") g.lastRescue = today;
+    if (c.findKey) (g.findTried = g.findTried || {})[c.findKey] = today; // FIND_COOLDOWN
     if (c.mission === "trade" && !c.envoy) g.lastTrade = today;
     if (c.envoy) { (g.lastEnvoy = g.lastEnvoy || {})[c.envoy] = today; res.apEnvoy = c.envoy; }
     if (c.mission === "hive") g.lastHive = today;
