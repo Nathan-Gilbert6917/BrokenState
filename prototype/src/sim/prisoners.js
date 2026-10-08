@@ -388,6 +388,12 @@ function goHome(state, p, goodwill = 0, why = "") {
   }
   refreshTeam(state, p);
 }
+// Handed over to their group in a ransom or an exchange (ransom.js): they go home, no goodwill either way here.
+export function handOver(state, id) {
+  const p = (state.prisoners || []).find((x) => x.id === Number(id));
+  if (p) goHome(state, p, 0);
+  return !!p;
+}
 // A prisoner gone for good (worm.js: died of the worm in the cells).
 export function dropPrisoner(state, p) { drop(state, p); }
 function drop(state, p) {
