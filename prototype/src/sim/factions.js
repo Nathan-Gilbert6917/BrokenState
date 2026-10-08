@@ -74,6 +74,8 @@ import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every r
 import { payAmmo } from "./ammo.js";
 import { groupWorksDaily, fieldsFactor, growthFactor, workshopFactor, storeFactor, groupBaseDefence } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
+import { raidPrisoners } from "./nonlethal.js"; // groups that take people alive: some of the beaten are taken, not killed
+import { escortParty } from "./caravans.js"; // a convoy's guards (escorts.js)
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -389,7 +391,9 @@ export function factionsDaily(state) {
       const partners = state.factions.filter((o) => o.alive && o !== f && !isAggressiveType(o));
       if (partners.length) {
         const to = rng.pick(partners);
-        spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
+        const q = spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
+        // caravans.js escortParty: what it carries (the 10 food and 10 scrap it delivers) is worth a token guard to them.
+        if (q) { q.goods = { supplies: { food: 10, scrap: 10 }, gear: [] }; escortParty(state, f, q, q.goods); }
       }
     }
 
@@ -794,6 +798,7 @@ export function resolveRaidOnFaction(state, party, helpers) {
   if (att > def * 1.1) {
     const loss = Math.ceil(target.pop * rng.range(0.2, 0.35));
     target.pop -= loss;
+    const taken = raidPrisoners(state, attacker, target, loss); // nonlethal.js: held by the raiders (its own dice)
     for (const k of Object.keys(target.stock)) {
       const lost = target.stock[k] * 0.4;
       target.stock[k] -= lost;
@@ -808,7 +813,7 @@ export function resolveRaidOnFaction(state, party, helpers) {
       else if (fate === "raze") razeGroupBase(state, target, lost, attacker);
       recomputeOwnership(state); // a base changed hands: the land around it follows at once
     }
-    if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${whom} hard (${loss} dead).`, "danger");
+    if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${whom} hard (${loss - taken} dead${taken ? `, ${taken} taken prisoner` : ""}).`, "danger");
     if (attacker && isAggressiveType(attacker) && rng.chance(0.5)) attacker.pop += 1; // a win draws fighters to them
     if (groupBroken(target)) collapseFaction(state, target, attacker);
     return false;

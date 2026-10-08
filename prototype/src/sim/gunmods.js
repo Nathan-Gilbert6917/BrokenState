@@ -441,6 +441,8 @@ export function modsText(item) {
 export const ENEMY_MODS = {
   soldiers: { optic: [0.55, ["reddot", "holo", "holo", "scope4x", "acog", "acog"]], muzzle: [0.25, ["riflecan", "pistolcan", "can556", "flashhider", "flashhider"]], grip: [0.2, ["foregrip", "foregrip", "anglegrip"]], tactical: [0.25, ["weaponlight", "weaponlight", "laser", "peq"]], under: [0.125, ["m203"]], mag: [0.08, ["drum"]], sling: [0.3, ["sling"]] },
   guards:   { optic: [0.1, ["reddot", "rmr"]], tactical: [0.2, ["laser", "weaponlight", "weaponlight"]], mag: [0.08, ["extmag", "tubeext"]] },
+  escorts:  { optic: [0.15, ["scope4x", "reddot"]], bipod: [0.04, ["bipod"]], tactical: [0.04, ["laser"]], mag: [0.06, ["extmag", "tubeext"]] }, // merchant caravans' riflemen (escorts.js)
+  contractors: { optic: [0.45, ["reddot", "holo", "scope4x"]], muzzle: [0.15, ["riflecan", "comp"]], grip: [0.08, ["foregrip"]], tactical: [0.08, ["laser"]], mag: [0.08, ["drum"]] }, // their hired guns
   militia:  { optic: [0.15, ["scope4x", "scope4x", "reddot"]], bipod: [0.1, ["bipod"]], stock: [0.12, ["recoilpad"]], sling: [0.25, ["sling"]] },
   fighters: { optic: [0.12, ["scope4x", "reddot"]], grip: [0.04, ["foregrip"]], bipod: [0.04, ["bipod"]], mag: [0.05, ["extmag", "tubeext"]], sling: [0.1, ["sling"]] },
   raiders:  { mount: [0.06, ["sidemount"]], optic: [0.1, ["reddot"]], muzzle: [0.1, ["comp", "suppressor", "choke"]], mag: [0.08, ["extmag", "tubeext"]], stock: [0.08, ["foldstock"]] },

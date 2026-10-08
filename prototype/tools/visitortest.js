@@ -167,6 +167,10 @@ section("Raiders at your base");
   // Pay off and talk down.
   clearCards(st);
   Object.assign(h.stock, { food: 300, ammo: 400, meds: 20 });
+  // Someone on watch: the break-in above can kill the hub's only guard (which of them dies is the dice's: with the
+  // normal start's backgrounds, seed 42 loses its guard there), and on an unwatched night nobody at the base sees a
+  // band coming (watch.js lookoutsSpot) until it is at the walls. The warning card is wanted 2 tiles out.
+  if (!atBase(st, h.id).some((s) => s.role === "guard")) atBase(st, h.id)[0].role = "guard";
   const p1 = V.spawnVisitor(st, "raiders", { size: 6, power: 3 });
   place(st, p1, ringLand(st, h.tile, 2)[0]);
   p1.goal = { kind: "base", baseId: h.id, tile: h.tile };
@@ -359,11 +363,11 @@ section("Merchants: goods, prices, the trade window, groups, the radio");
   tick(st, 24);
   clearCards(st);
   const h = hub(st);
-  const m = V.spawnVisitor(st, "merchants");
+  const m = V.spawnVisitor(st, "merchants", { spec: "general" }); // escorts.js: general goods (the others carry by their speciality)
   const bp = m.wares.filter((g) => /^bp_/.test(g.key));
   console.log(`  ${m.name}: ${V.goodsText(m)}`);
   check(m.stock.fuel >= 15 && m.stock.meds >= 8 && m.stock.preserved >= 20 && m.wares.length >= 3, "rare goods: fuel, meds, preserved food, items");
-  check(m.guards >= 3 && m.size === m.guards + 2, `guards and traders (${m.guards} + 2)`);
+  check(m.guards >= 2 && m.size === m.guards + 2 && m.escort, `guards and traders (${m.guards} + 2, ${m.escort && m.escort.tier} escort)`);
   check(buyPrice(st, m, "fuel", 0, 10) < buyPrice(st, m, "food", 0, 10) * 1.5 + 2 && sellPrice(st, m, "food", 0, 10) > 2 * 0.75 * 1.2, `cheap fuel (${buyPrice(st, m, "fuel", 0, 10).toFixed(2)} a unit), dear food (they pay ${sellPrice(st, m, "food", 0, 10).toFixed(2)})`);
   check(need(m, "fuel") <= 0.6 && need(m, "food") >= 1.4, "their need: plenty of fuel, short of food");
   // At the hub: the trade window, a blueprint bought with ammo.
@@ -393,7 +397,7 @@ section("Merchants: goods, prices, the trade window, groups, the radio");
   // With a group.
   const f = st.factions.find((x) => x.alive && x.type !== "raider" && x.type !== "zealot");
   f.stock.meds = 0; f.stock.food = f.pop * 20;
-  const m2 = V.spawnVisitor(st, "merchants");
+  const m2 = V.spawnVisitor(st, "merchants", { spec: "general" });
   const meds0 = m2.stock.meds, lack0 = ["food", "water", "scrap", "jars"].map((k) => m2.stock[k] || 0);
   const traded = V.tradeWithGroup(st, m2, f);
   const gotLack = ["food", "water", "scrap", "jars"].filter((k, i) => (m2.stock[k] || 0) > lack0[i]);
@@ -522,7 +526,7 @@ section("The autopilot");
   const h = hub(st);
   Object.assign(h.stock, { ammo: 800, scrap: 150, food: 250 });
   h.stock.meds = 0;
-  const m = V.spawnVisitor(st, "merchants");
+  const m = V.spawnVisitor(st, "merchants", { spec: "general" });
   place(st, m, h.tile);
   m.goal = { kind: "base", baseId: h.id, tile: h.tile };
   m.phase = "travel";

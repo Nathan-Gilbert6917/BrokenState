@@ -38,7 +38,7 @@ const first = (s) => esc(shortName(s)); // first name, with a last initial when 
 // ---------- item tiles ----------
 // Guns: any ranged weapon that is not a bow (combat.js WEAPONS; the overhaul's new guns too).
 const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "🥽", crowbar: "🔧", waterfilter: "💧", bicycle: "🚲",
-  guitar: "🎸", harmonica: "🎵", cards: "🃏", photos: "🖼", pipebomb: "💣", molotov: "🔥", flare: "🎆", smokegren: "💨", cuffs: "⛓", gamecall: "📯",
+  guitar: "🎸", harmonica: "🎵", cards: "🃏", photos: "🖼", pipebomb: "💣", molotov: "🔥", flare: "🎆", smokegren: "💨", flashbang: "💥", cuffs: "⛓", gamecall: "📯",
   camonet: "⛺", ghillie: "🌿", stove: "⛺", scentmask: "🫙", ragboots: "🥾" };
 // By trade category (data.js CATEGORIES): valuables and treats at a glance.
 const CAT_ICON = { jewelry: "💍", smokes: "🚬", liquor: "🍾", treats: "🍫", gadgets: "📱", collectibles: "🪙", household: "🧻", defence: "🚧", bow: "🏹" };

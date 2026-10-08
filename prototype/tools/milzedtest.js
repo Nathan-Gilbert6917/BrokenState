@@ -314,6 +314,8 @@ if (!QUICK) {
   const meanSe = (xs) => { const m = xs.reduce((s, v) => s + v, 0) / xs.length; const sd = Math.sqrt(xs.reduce((s, v) => s + (v - m) ** 2, 0) / Math.max(1, xs.length - 1)); return { m, se: sd / Math.sqrt(xs.length) }; };
   const dd = meanSe(pairs.map((p) => p.d)), dt = meanSe(pairs.map((p) => p.t));
   check(pairs.length >= N * 0.8 && dd.m >= -2 * dd.se, `not safer than the ordinary dead beyond chance: deaths/raid ${r2(a.deaths / a.raids)} vs ${r2(z.deaths / z.raids)}, paired over ${pairs.length} raids ${dd.m >= 0 ? "+" : ""}${r2(dd.m)} ± ${r2(dd.se)} (turns ${dt.m >= 0 ? "+" : ""}${r2(dt.m)} ± ${r2(dt.se)}: they leave sooner with the armour)`);
+  // Strict: the armour on the armoured dead's bodies (what a raid makes available), not the haul, which since the
+  // flashbang branch an armoury's crate of flashbangs (loot.js AREA_GRENADES) can fill in both arms alike.
   check(a.armor / a.raids > z.armor / z.raids, `and richer: armour on the bodies ${r2(a.armor / a.raids)} vs ${r2(z.armor / z.raids)} a raid`);
 }
 

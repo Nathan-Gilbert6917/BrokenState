@@ -36,18 +36,21 @@
 //   of Speech (at most 30%).
 //
 // Merchants (kind "merchants")
-// - Traders from another state: 3–5 guards (+1 every 90 days, at most 7, power 3.5 + min(2.5, day / 120)) and 2
-//   traders, walking with wagons along the roads. They visit up to 3 bases of the map's groups (never raider gangs or
+// - Traders from another state: an escort and 2 traders, walking with wagons along the roads. What the wagons are
+//   worth sets how much of the company's means it wants on guard (escorts.js: a token guard for cheap cargo, all it
+//   can spare for rich cargo; the company's hired guns, gear and vehicles, its own dice, cap it); their goods are by speciality (MERCHANT_SPECS). They visit up to 3 bases of the map's groups (never raider gangs or
 //   zealots), trading with them (goods the group is short of for what the merchants lack), and one of your bases when
 //   invited over the radio, or unannounced 55% of the time when nobody hears them. They carry what the map is short
-//   of: fuel 15–40, meds 8–22, preserved food 20–50, parts 3–9, ammo 60–160, a manual or blueprint (75%, a second
-//   25%), 1–3 books and 2–4 pieces of good gear, and want food, water, scrap and jars. Prices follow trade.js (their
+//   of (general traders: fuel 15–40, meds 8–22, preserved food 20–50, parts 3–9, ammo 60–160 and 2–4 pieces of good
+//   gear; the others by their speciality), a manual or blueprint (75%, a second 25%), 1–3 books, and want food,
+//   water, scrap and jars. Prices follow trade.js (their
 //   stock per head sets their need: cheap fuel and meds, dear food) with their own profile (data.js TRADE_PREFS
 //   "merchants": food, water, scrap and jars wanted, valuables and collectibles prized for resale, fuel, meds and ammo
 //   cheaper, and a margin: they sell dear; travellers: "explorers", food, water, meds and camp gear). They trade with
 //   the groups by demand on both sides (stock, kind and state). At your base they stay 24 hours and the trade
 //   window opens; a team that meets them can trade on the road too.
-// - Attack them (trade window or a road card) and word spreads: merchant reputation −45 (new merchants arrive with
+// - Attack them (trade window or a road card; on the road word spreads only if someone saw it: caravanraids.js
+//   witnessesOf) and word spreads: merchant reputation −45 (new merchants arrive with
 //   goodwill 15 + reputation, hostile at −40: no trade, and they skip your bases from −30), known traders −15,
 //   known communes and fortresses −8. Reputation recovers 0.25 a day.
 // - When they come into your radio coverage they call: "a caravan from the north is passing Dunmore; we can stop at
@@ -103,7 +106,7 @@ import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdic
 import { partDeficit, kitWants } from "./repair.js"; // the parts and kits the governor keeps (it buys below them)
 const PART_KEYS = ["parts", "carparts", "gunparts", "electronics"];
 import { count } from "./buildings.js";
-import { partyVehicle } from "./vehicles.js";
+import { partyVehicle, createVehicle } from "./vehicles.js";
 import { chronicleNote } from "./chronicle.js";
 import { knownLoc } from "./discovery.js";
 import { rumourFromNews } from "./survey.js";
@@ -115,6 +118,8 @@ import { eatFromStore } from "./storage.js";
 import { gunmodWares } from "./loot.js"; // a sight or a suppressor among a merchant's goods
 import { supplyAmt, spendAmmo } from "./rounds.js"; // "ammo": every round there, any calibre
 import { expandAmmo } from "./ammo.js"; // rounds by calibre
+import { merchantEscort, escortFighters, escortValue, escortWords, escortShort, ESCORT_VEHICLES } from "./escorts.js";
+import { escortEnemy, lootCaravan, witnessesOf, consequences } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -125,6 +130,7 @@ export const OUTSIDERS = {
     keepOff: 2, toll: 0.35, tollCap: 3, siteMin: 0.45, siteTake: [0.1, 0.18], groupKeep: 0.6,
   },
   merchants: {
+    // guards / guardPower: the escort before escorts.js (kept for older tools); the escort now comes from the cargo.
     firstDay: 8, firstSpread: 6, gap: [10, 16], caps: [[0, 1], [150, 2]], guards: [3, 5], guardsPerDays: 90, guardsMax: 7,
     guardPower: 3.5, guardPowerPerDays: 120, guardPowerMax: 2.5, traders: 2, stops: 3, stayYou: 24, stayGroup: 12, speed: 0.9,
     hubChance: 0.55, stay: 18, capacity: 300, capPerGuard: 40, goodwill: 15, skipYou: -30,
@@ -170,14 +176,15 @@ export const RARE_GEAR = ["ar", "plate", "nvg", "milradio", "surgkit", "assaultp
 export const TRAVEL_GEAR = ["comic", "novel", "survivalbook", "waterfilter", "bandagekit", "crowbar", "flashlight", "slingbag", "harmonica", "cards", "stove", "ragboots", "scentmask", "chocolate", "instcoffee", "flare", "photos", "monocular", "binoculars"];
 export const MERCHANT_VALUABLES = ["watch", "goldchain", "cigars", "scotch", "coffee", "cigarettes", "coins", "camera", "diamond", "tea"];
 // What a merchant caravan deals in: each comes with one speciality (by its own dice, MERCHANT_SPEC_W), and its gear,
+// (extra: [lo, hi] more of its trade goods on top of the 2–4 everyone brings; escorts.js: the escort follows the cargo),
 // books and the supplies it brings more of follow it. gear / books: what it sells; stock: × those supplies.
 export const MERCHANT_SPECS = {
   arms:     { name: "Arms dealers", gear: ["ar", "carbine", "huntrifle", "leverrifle", "shotgun", "pistol", "revolver", "xbow", "compbow", "vest", "plate", "milhelmet", "riothelmet", "suppressor", "spotscope", "binoculars", "nvg", "thermal", "smokegren", "frag"],
-    books: ["gunbook", "armymanual", "leadbook"], stock: { ammo: 1.6, gunparts: 1.6 } },
+    books: ["gunbook", "armymanual", "leadbook"], stock: { ammo: 1.6, gunparts: 1.6 }, extra: [3, 6] },
   medic:    { name: "Medics", gear: ["surgkit", "traumakit", "bandagekit", "puritabs", "dewormer", "waterfilter", "soap", "wetwipes", "razors", "toothpaste", "headlamp", "flashlight"],
     books: ["medbook", "surgerybook"], stock: { meds: 1.6, water: 1.3 } },
   mechanic: { name: "Mechanics", gear: ["crowbar", "prybar", "sledge", "fireaxe", "flashlight", "headlamp", "lantern", "spotlight", "stove", "kneeguards", "milradio", "handradio", "ladder", "batteries", "waterfilter"],
-    books: ["enginebook", "diybook", "forgebook", "lockbook"], stock: { parts: 1.6, fuel: 1.4, carparts: 1.6, electronics: 1.4 } },
+    books: ["enginebook", "diybook", "forgebook", "lockbook"], stock: { parts: 1.6, fuel: 1.4, carparts: 1.6, electronics: 1.4 }, extra: [0, 2] },
   general:  { name: "General traders", gear: ["hikingpack", "rucksack", "assaultpack", "slingbag", "backpack", "camonet", "ghillie", "stove", "waterfilter", "flashlight", "lantern", "binoculars", "telescope", "guitar", "fishrod", "fishnet", "snarewire"],
     books: ["gardenbook", "survivalbook", "talkbook", "scavbook", "bushcraftbook"], stock: { food: 1.3, preserved: 1.3 } },
 };
@@ -213,7 +220,8 @@ export function visitorInfo(state) {
 const vrng = (state) => visitorInfo(state).rng;
 export const visitorsOf = (state) => state.visitors || [];
 export const visitorById = (state, id) => visitorsOf(state).find((v) => v.id === Number(id)) || null;
-export const vStrength = (v) => Math.max(0, v.size) * v.power;
+// A merchant caravan's escort vehicle adds its strength (escorts.js ESCORT_VEHICLES: a pickup +3, a Humvee +8, an MRAP +11).
+export const vStrength = (v) => Math.max(0, v.size) * v.power + (v.escort && v.escort.vehicle && v.size > 0 ? v.escort.vehPower || 0 : 0);
 export const merchantRep = (state) => visitorInfo(state).rep;
 const capFor = (kind, d) => O[kind].caps.reduce((n, [from, k]) => (d >= from ? k : n), 0);
 
@@ -280,16 +288,22 @@ function makeVisitor(state, kind, tile, opts = {}) {
     const M = O.merchants;
     const fam = rng.pick(MERCHANT_NAMES.filter((n) => !taken.has(`the ${n} caravan`)).concat(MERCHANT_NAMES));
     v.name = `the ${fam} caravan`;
-    const guards = clamp(rng.int(M.guards[0], M.guards[1]) + Math.floor(d / M.guardsPerDays), M.guards[0], M.guardsMax);
-    v.guards = guards;
-    v.size = guards + M.traders;
-    v.power = Math.round((M.guardPower + Math.min(M.guardPowerMax, d / M.guardPowerPerDays)) * 10) / 10;
-    v.pop = v.size;
+    rng.int(M.guards[0], M.guards[1]); // the old guard count's draw, still taken (the visitors' dice stay where they were)
     v.goodwill = clamp(M.goodwill + visitorInfo(state).rep, -100, 40);
-    v.capacity = M.capacity + guards * M.capPerGuard;
     v.until = state.hour + 24 * M.stay;
     v.wantsYou = rng.chance(M.hubChance) && visitorInfo(state).rep > M.skipYou;
+    if (opts.spec && MERCHANT_SPECS[opts.spec]) v.spec = opts.spec; // tools: a speciality of their choosing (merchantSpec keeps it)
     merchantGoods(state, v, rng);
+    // escorts.js: the cargo's worth sets how much of the company's means it wants on guard; the company's means
+    // (hired guns, their gear, its vehicles: its own dice) cap it.
+    const esc = merchantEscort(state, v.serial, opts.cargoValue ?? escortValue(v.stock, v.wares), d, opts.company || null);
+    v.escort = esc;
+    const guards = Math.max(1, escortFighters(esc));
+    v.guards = guards;
+    v.size = guards + M.traders;
+    v.power = esc.power;
+    v.pop = v.size;
+    v.capacity = M.capacity + guards * M.capPerGuard + (esc.vehicle ? ESCORT_VEHICLES[esc.vehicle].power * 60 : 0);
   } else {
     const E = O.explorers;
     const r = rng.next();
@@ -339,7 +353,9 @@ function merchantGoods(state, v, rng) {
   for (const k of local.shuffle(S.books.filter((x) => GEAR[x])).slice(0, nBooks)) v.wares.push(newItem(k, 1));
   const old = rng.shuffle(RARE_GEAR.filter((k) => GEAR[k])).slice(0, rng.int(2, 4)); // the old draws (any rare gear), still taken
   for (const k of old) spend(rng, GEAR[k].dur ? 2 : 1);
-  local.shuffle(S.gear.filter((k) => GEAR[k])).slice(0, old.length).forEach((k, i) => v.wares.push(lootItem(k, "merchant", roll(i))));
+  // escorts.js reads what they carry for the escort: an arms dealer's wagons hold more of their trade (S.extra, its own dice).
+  const extra = S.extra ? local.int(S.extra[0], S.extra[1]) : 0;
+  local.shuffle(S.gear.filter((k) => GEAR[k])).slice(0, old.length + extra).forEach((k, i) => v.wares.push(lootItem(k, "merchant", roll(i))));
   // loot.js: a sight or a suppressor (its own dice; by the serial, never the id: ids are process-wide). Only the arms
   // dealers and the general traders carry them.
   if (v.spec === "arms" || v.spec === "general") v.wares.push(...gunmodWares(state, "merchants", `${v.name}:${v.serial}`, state.hour));
@@ -1002,6 +1018,7 @@ function robAiParty(state, v, q) {
   if (vStrength(v) >= (q.strength || 2) * 1.1) {
     if (q.goods && q.goods.supplies) addToStock(v, q.goods.supplies);
     else addToStock(v, { food: 10, scrap: 10 });
+    if (q.goods && q.goods.gear && q.goods.gear.length) v.wares = [...(v.wares || []), ...q.goods.gear.splice(0)]; // the items too
     visitorInfo(state).stats.robbed++;
     if (seen) log(state, `${cap1(v.name)}, raiders from outside, robbed a ${f && f.known ? `${f.name} ` : ""}caravan near ${tileLabel(state, partyTile(q))}.`, "danger");
     removeParty(state, q);
@@ -1020,17 +1037,17 @@ function robMerchants(state, v, m) {
   const win = rng.chance(clamp(0.5 + (a / Math.max(1, d) - 1) * 0.6, 0.05, 0.95));
   const seen = state.live.has(m.tile) || state.live.has(v.tile);
   if (win) {
+    // Everything in the wagons is theirs (as far as they can carry it: the rest is burned or scattered), the items
+    // too; the merchants who got away walk home with nothing.
     addToStock(v, m.stock);
-    for (const k of SUPPLY_KEYS) m.stock[k] = Math.floor((m.stock[k] || 0) * 0.3);
-    m.wares.splice(0, Math.ceil(m.wares.length / 2));
-    m.size = Math.max(1, m.size - rng.int(1, 3));
-    m.guards = Math.max(0, (m.guards || 0) - 2);
+    v.wares = [...(v.wares || []), ...m.wares];
+    m.wares = [];
+    for (const k of SUPPLY_KEYS) m.stock[k] = 0;
     v.size -= rng.int(0, 1);
     visitorInfo(state).stats.robbed++;
-    if (seen || m.known) log(state, `${cap1(v.name)} fell on ${m.name} near ${tileLabel(state, m.tile)} and plundered the wagons.`, "danger");
+    if (seen || m.known) log(state, `${cap1(v.name)} fell on ${m.name} near ${tileLabel(state, m.tile)} and took everything they carried.`, "danger");
     chronicleNote(state, `Raiders from outside plundered ${m.name} ${placeOf(state, m.tile)}.`, "world", m.tile);
-    m.phase = "travel";
-    headOut(state, m, "after the robbery");
+    leaveMap(state, m, "broken");
   } else {
     v.size -= rng.int(1, 3);
     m.size = Math.max(1, m.size - rng.int(0, 1));
@@ -1048,17 +1065,20 @@ function hitConvoy(state, v, p) {
   const win = rng.chance(clamp(0.5 + (vStrength(v) / Math.max(1, mine) - 1) * 0.6, 0.05, 0.95));
   const where = tileLabel(state, partyTile(p));
   if (win) {
+    // The whole load (caravanraids.js: any caravan robbed loses all it carries); the crew keep their own supplies.
     const taken = {};
     for (const k of Object.keys(p.cargo.supplies)) {
-      const q = Math.floor((p.cargo.supplies[k] || 0) * 0.5);
+      const q = Math.floor(p.cargo.supplies[k] || 0);
       if (q <= 0) continue;
       p.cargo.supplies[k] -= q;
       taken[k] = q;
     }
     addToStock(v, taken);
+    const items = p.cargo.gear.splice(0);
+    if (items.length) v.wares = [...(v.wares || []), ...items];
     if (members.length) hurt(state, members[rng.int(0, members.length - 1)], rng.int(15, 45), partyTile(p), `when ${v.name} hit the convoy`);
     visitorInfo(state).stats.robbed++;
-    log(state, `${cap1(v.name)}, raiders from outside, hit your convoy near ${where} and took ${planText(taken) || "nothing much"}.`, "danger");
+    log(state, `${cap1(v.name)}, raiders from outside, hit your convoy near ${where} and took ${[planText(taken), ...items.map((it) => it.name)].filter(Boolean).join(", ") || "nothing much"}.`, "danger");
   } else {
     v.size -= rng.int(1, 2);
     log(state, `Your convoy near ${where} beat off ${v.name}, raiders from outside.`, "good");
@@ -1371,7 +1391,7 @@ function tributeStarves(st, base, plan) {
 }
 
 // Attacking merchants (the trade window at your base, or a team's road card): reputation first, then the fight.
-function blameYou(state, v) {
+export function blameYou(state, v) {
   const info = visitorInfo(state);
   info.rep = clamp(info.rep - O.rep.attack, -100, 30);
   info.stats.attacked++;
@@ -1382,6 +1402,8 @@ function blameYou(state, v) {
     else if (f.type === "commune" || f.type === "fortress") changeGoodwill(state, f, -O.rep.others, "word of your attack on travelling merchants spreads");
   }
 }
+// where: { baseId } (at your gates: word always gets out, at once) or { partyId, ambush } (on the road: the blame waits
+// for the outcome, caravanraids.js witnessesOf).
 export function attackMerchants(state, v, where) {
   if (!state.visitors.includes(v) || v.kind === "raiders") return "They are gone.";
   const base = where.baseId != null ? baseById(state, where.baseId) : null;
@@ -1389,13 +1411,15 @@ export function attackMerchants(state, v, where) {
   if (base && !atBase(state, base.id).length) return `Nobody at ${base.name} can fight.`;
   if (!base && !p) return "";
   if (state.trade && state.trade.visitorId === v.id) state.trade = null;
-  blameYou(state, v);
+  const later = !base && v.kind === "merchants";
+  if (!later) blameYou(state, v);
   log(state, `You turn your guns on ${v.name}${base ? ` at ${base.name}` : ""}.`, "danger");
   v.phase = "battle";
   startCombat(state, {
     tile: base ? base.tile : partyTile(p), baseId: base ? base.id : undefined, partyId: p ? p.id : undefined,
-    enemy: { kind: v.kind === "merchants" ? "guards" : "raiders", count: clamp(v.kind === "merchants" ? (v.guards || 1) : v.size, 1, 14), power: v.power, name: `${cap1(v.name)}'s guards` },
-    ambush: "player", canRetreat: true, handler: "outsiderFight", context: { visitorId: v.id, baseId: base ? base.id : null, partyId: p ? p.id : null, robbing: true },
+    enemy: v.kind === "merchants" ? escortEnemy(v) : { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: `${cap1(v.name)}'s guards` },
+    ambush: where.ambush !== undefined ? where.ambush : "player", canRetreat: true, handler: "outsiderFight",
+    context: { visitorId: v.id, baseId: base ? base.id : null, partyId: p ? p.id : null, robbing: true, blameLater: later, tile: v.tile, key: `v${v.serial}` },
   });
   return "";
 }
@@ -1639,7 +1663,7 @@ function meetCard(state, v, p) {
   return explorerRoadCard(state, v, p);
 }
 
-const enemyOf = (v) => ({ kind: v.kind === "merchants" ? "guards" : "raiders", count: clamp(v.kind === "merchants" ? (v.guards || 1) : v.size, 1, 14), power: v.power, name: cap1(v.name) });
+const enemyOf = (v) => (v.kind === "merchants" ? escortEnemy(v) : { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: cap1(v.name) });
 function teamFight(state, v, p, ambush, extra = {}) {
   if (!state.visitors.includes(v)) { resume(state, p); return "They are gone."; }
   v.phase = "battle";
@@ -1725,14 +1749,14 @@ function merchantRoadCard(state, v, p) {
   const hostile = attitude(v) === "Hostile";
   return {
     title: `Traders on the road: ${cap1(v.name)}`, partyId: p.id, visitorId: v.id, where: tileLabel(state, partyTile(p)),
-    text: `A caravan from ${v.home}: wagons, ${v.guards} guards and ${O.merchants.traders} traders, ${v.act}. They carry ${goodsText(v)}.${hostile ? " They have heard what you did to other traders and keep their rifles on you." : ""}`,
+    text: `A caravan from ${v.home}: wagons, ${v.guards} guards and ${O.merchants.traders} traders (${escortWords(v.escort) || "guards on foot"}), ${v.act}. They carry ${goodsText(v)}.${hostile ? " They have heard what you did to other traders and keep their rifles on you." : ""}`,
     choices: [
       { label: "Trade with them", hint: hostile ? "They will not trade with you" : "The trade window, from what the team carries", disabled: hostile, ai: () => 60, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, v, { partyId: p.id }); delete p.conflictResume; return ""; } },
       {
         label: "Ask for news of the road", hint: "Free: the way they came, on your team's map, and news of other states", disabled: () => !!v.done.roadNews || hostile, ai: () => 70,
         resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); v.done.roadNews = true; const n = giveIntel(st, v, 1, p); return done(st, `"${rumor(st, v)}" They mark the way they came (${n} tiles).`); },
       },
-      { label: `Rob them (${pct(odds)} by the numbers)`, hint: "A fight with their guards. Every trading group hears of it, and merchants will shun you", fight: { odds, enemy: enemyOf(v), ambush: "player" }, ai: () => -50, resolve: (st) => (ok(st) ? attackMerchants(st, v, { partyId: p.id }) : done(st, "They are gone.")) },
+      { label: `Rob them (${pct(odds)} by the numbers)`, hint: "A fight with their guards. Win and everything in the wagons is yours, their vehicle too if it still runs. If anyone gets away or sees it, every trading group hears of it and merchants will shun you", fight: { odds, enemy: enemyOf(v), ambush: "player" }, ai: () => -50, resolve: (st) => (ok(st) ? attackMerchants(st, v, { partyId: p.id }) : done(st, "They are gone.")) },
       { label: "Move on", ai: () => 20, resolve: (st) => done(st, "") },
     ],
   };
@@ -1821,20 +1845,31 @@ function onOutsiderFight(state, result, setup) {
   if (result.outcome === "victory") {
     let got = {};
     let items = [];
+    let after = [];
     if (v) {
-      if (p && state.parties.includes(p)) {
+      if (p && state.parties.includes(p) && v.kind === "merchants") {
+        // caravanraids.js: everything in the wagons, the guards' gear, their vehicle if it still runs; what the team
+        // cannot carry stays in the vehicle or on the tile.
+        after = lootCaravan(state, p, { supplies: v.stock, gear: v.wares }, { tile: partyTile(p), name: v.name, kit: setup.enemy.kind, guards: result.enemiesKilled || setup.enemy.count, tactical: !!result.tactical, vehicle: v.escort && !v.vehicleLost ? v.escort.vehicle : null, key: c.key || `v${v.serial}`, result });
+      } else if (p && state.parties.includes(p)) {
         got = cargoAdd(state, p, v.stock);
         for (const g of [...v.wares]) { if (typeof Parties.addGearToCargo === "function") { Parties.addGearToCargo(state, p, g); if (p.cargo.gear.includes(g)) items.push(g.name); } }
       } else if (base) {
         for (const k of SUPPLY_KEYS) { const q = Math.floor(v.stock[k] || 0); if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got[k] = q; } }
         items = v.wares.map((g) => g.name);
         base.armory.push(...v.wares);
+        const V = v.escort && v.escort.vehicle && !v.vehicleLost ? ESCORT_VEHICLES[v.escort.vehicle] : null;
+        if (V) { // their vehicle, into the base's motor pool (beaten up in the fight)
+          const car = createVehicle(state, V.type, { kind: "base", baseId: base.id }, { fuel: 10, condition: 50, name: V.model === "humvee" ? "Humvee" : V.model === "mrap" ? "MRAP" : undefined });
+          items.push(`their ${car.name.toLowerCase() === "humvee" || car.name === "MRAP" ? car.name : car.name.toLowerCase()} (in the motor pool)`);
+        }
       }
       leaveMap(state, v, "broken");
     }
     lines.push(`You beat ${name}.`);
     const what = [planText(got), ...items].filter(Boolean).join(", ");
     if (what) lines.push(`Taken from them: ${what}.`);
+    lines.push(...after);
     log(state, `${name} ${c.robbing ? "were robbed" : "were beaten"}${p ? ` near ${tileLabel(state, partyTile(p))}` : base ? ` at ${base.name}` : ""}.`, c.robbing ? "danger" : "good");
   } else {
     if (p && state.parties.includes(p)) {
@@ -1844,6 +1879,8 @@ function onOutsiderFight(state, result, setup) {
         for (const k of Object.keys(pool)) { const q = Math.floor((pool[k] || 0) * frac); if (q > 0) { pool[k] -= q; taken[k] = (taken[k] || 0) + q; } }
       }
       if (v && !c.robbing) addToStock(v, taken);
+      // A trade caravan of yours beaten by raiders: they take the whole load, not a share.
+      if (v && !c.robbing && result.outcome !== "retreat" && p.caravan) { const items = p.cargo.gear.splice(0); for (const k of Object.keys(p.cargo.supplies)) { const q = Math.floor(p.cargo.supplies[k] || 0); if (q > 0) { p.cargo.supplies[k] -= q; taken[k] = (taken[k] || 0) + q; addToStock(v, { [k]: q }); } } v.wares = [...(v.wares || []), ...items]; }
       lines.push(result.outcome === "retreat" ? `You pulled back${planText(taken) ? `, dropping ${planText(taken)}` : ""}.` : `You lost the fight${planText(taken) ? ` and they took ${planText(taken)}` : ""}.`);
     } else lines.push(c.robbing ? "Their guards held you off and the wagons got away." : "You lost the fight.");
     log(state, `Fight with ${name}: ${result.outcome}.`, "danger");
@@ -1856,6 +1893,7 @@ function onOutsiderFight(state, result, setup) {
       }
     }
   }
+  if (c.blameLater && v) consequences(state, { type: "merchants", owner: "outsider", ref: v, tile: c.tile ?? (p ? partyTile(p) : v.tile), key: c.key, name: v.name, by: p && state.parties.includes(p) ? Parties.teamName(state, p) : "your people" }, witnessesOf(state, { type: "merchants", owner: "outsider", ref: v, tile: c.tile ?? v.tile, key: c.key }, result, p), lines);
   const dead = (result.survivorsDead || []).length;
   if (dead) lines.push(`${dead} of yours died.`);
   if (p && state.parties.includes(p)) {
@@ -2008,7 +2046,7 @@ export function visitorTipLines(state, tile, liveSet = state.live) {
   const out = [];
   for (const v of visitorsOf(state)) {
     if (v.tile !== tile || !(liveSet.has(tile) || inCoverage(state, tile))) continue;
-    out.push({ color: VISITOR_COLORS[v.kind], text: `${cap1(v.name)} (${KIND_LABEL[v.kind].toLowerCase()}, ${v.size}): ${v.act}` });
+    out.push({ color: VISITOR_COLORS[v.kind], text: `${cap1(v.name)} (${KIND_LABEL[v.kind].toLowerCase()}, ${v.size}): ${v.act}${v.kind === "merchants" && v.escort ? `. Escort: ${escortWords(v.escort)}` : ""}` });
   }
   return out;
 }

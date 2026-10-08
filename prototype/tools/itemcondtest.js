@@ -22,8 +22,8 @@ import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { KITS, AREAS } from "../src/sim/combat.js";
 import { enemyBody, deadBodyFinds, allItems, lootItem, newItem, ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZBODY } from "../src/sim/inventory.js";
-import { rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS, WARE_MODS, SITE_MODS, AREA_MODS, rollSiteMod } from "../src/sim/loot.js"; // WARE_MODS / SITE_MODS / AREA_MODS: the economy agent's parts
-import { truckLoot, TRUCK_LOOT } from "../src/sim/miltrucks.js";
+import { SITE_FINDS, rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS, WARE_MODS, SITE_MODS, AREA_MODS, rollSiteMod } from "../src/sim/loot.js"; // WARE_MODS / SITE_MODS / AREA_MODS: the economy agent's parts
+import { truckLoot, TRUCK_LOOT, TRUCK_LOOT_HOOKS, TRUCK_FLASH } from "../src/sim/miltrucks.js";
 import { TRUCK_GEAR } from "../src/sim/data-guns.js"; // the roster's military guns in Army trucks (factoryfit.js rosterTruckGear, plan section 22)
 import { ensureWares, WARES, WARE_EXTRAS, gearSellPrice, gearBuyPrice } from "../src/sim/trade.js";
 import { WARE_BOOKS } from "../src/sim/skills.js";
@@ -165,10 +165,10 @@ for (const kit of Object.keys(KITS)) {
     const B = MILDEAD.BODY[z];
     const its = [];
     for (let i = 0; i < 2000; i++) its.push(...deadBodyFinds(rng, z).gear);
-    within(`an armoured ${z}'s body`, its, new Set([...B.armor, ...B.items].map((x) => x[0])));
+    within(`an armoured ${z}'s body`, its, new Set([...B.armor, ...B.items, ...(MILDEAD.BODY_EXTRA[z] || [])].map((x) => x[0]))); // BODY_EXTRA: a flashbang now and then
   }
 }
-for (const kind of Object.keys(TRUCK_LOOT)) { const rng = new Rng(3); const its = []; for (let i = 0; i < 300; i++) its.push(...truckLoot(rng, kind, "intact").gear); within(`a ${kind} truck`, its, new Set([...TRUCK_LOOT[kind].gear, ...(TRUCK_GEAR[kind] || TRUCK_GEAR.cargo)].map((x) => x[0]))); }
+for (const kind of Object.keys(TRUCK_LOOT)) { const rng = new Rng(3); const its = []; for (let i = 0; i < 300; i++) its.push(...truckLoot(rng, kind, "intact").gear); within(`a ${kind} truck`, its, new Set([...TRUCK_LOOT[kind].gear.map((x) => x[0]), ...(TRUCK_GEAR[kind] || TRUCK_GEAR.cargo).map((x) => x[0]), ...(TRUCK_FLASH[kind] ? ["flashbang"] : [])])); } // TRUCK_GEAR: the roster's guns; TRUCK_FLASH: the hook's flashbangs
 for (const a of Object.keys(AREA_FINDS)) { const rng = new Rng(a.length); const its = []; for (let i = 0; i < 400; i++) { const it = rollAreaFind(rng, a, 1, 20); if (it) its.push(it); } if (its.length) within(`small finds in a ${a}`, its, new Set(Object.keys(AREA_FINDS[a].items))); }
 check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])), "every raid area's gear list is real gear");
 {
@@ -207,14 +207,29 @@ section("4. No world-dice drift (against dev 75793c5; bodies' and trucks' keys a
 // Checked when re-taken: with every AREA_MODS and WARE_MODS chance at 0 and the three part kinds left out of the
 // merchants' stock count, the hashes come out as before (site finds dab86d9ad75a6877, group wares 0a732c1de196a889,
 // merchants 70e09d390ad58668).
+// The non-lethal kit (data-nonlethal.js, loot.js, the guards' kit) is new loot on purpose: the baseline is checked without it
+// (taken out of the finds tables and the kits for this section, put back after it).
+const NL_KEYS = new Set(["taser", "tasercart", "pepper", "stunbaton"]);
+const nlStash = [];
+for (const T of [SITE_FINDS, AREA_FINDS]) for (const v of Object.values(T)) for (const k of Object.keys(v.items)) if (NL_KEYS.has(k)) { nlStash.push([v.items, k, v.items[k]]); delete v.items[k]; }
+for (const K of Object.values(KITS)) for (const f of ["weapons", "strong", "loot", "finds"]) if (Array.isArray(K[f]) && K[f].some((k) => NL_KEYS.has(k))) { nlStash.push([K, f, K[f]]); K[f] = K[f].filter((k) => !NL_KEYS.has(k)); }
 const BASE = {
   bodies: { keys: "917048c944387995", rng: 94849467201019 }, areaFinds: { keys: "4f69608bbca97f26", rng: 19566617580356 }, trucks: "ddd64fb55272735e",
   siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "8b17671c3192515c", rng: 2670422955354 }, visitors: { keys: "3bdc366902700698", merchants: "706e068b336b9d26", rng: 12580090440502 },
 };
+// The flashbang branch's extras (deadsoldiers.js MILDEAD.BODY_EXTRA, miltrucks.js TRUCK_LOOT_HOOKS) roll dice of their
+// own and only add: off for these samples, like the commune's extras below, so the old baselines hold.
+const bodyExtra = MILDEAD.BODY_EXTRA;
+MILDEAD.BODY_EXTRA = {};
+// (only the flashbang hook: the roster's guns and the rounds by calibre stay, they are in the baselines above)
+const isFlashHook = (f) => /truckflash/.test(String(f));
+const takeFlashHooks = () => { const out = TRUCK_LOOT_HOOKS.filter(isFlashHook); for (const f of out) TRUCK_LOOT_HOOKS.splice(TRUCK_LOOT_HOOKS.indexOf(f), 1); return out; };
+const truckHooks = takeFlashHooks();
 {
   const rng = new Rng(9001);
   const ks = [];
-  for (let i = 0; i < 400; i++) for (const kit of Object.keys(KITS)) {
+  const NEW_KITS = ["escorts", "contractors"]; // added after the baseline (escorts.js: merchant caravans' guards)
+  for (let i = 0; i < 400; i++) for (const kit of Object.keys(KITS).filter((k) => !NEW_KITS.includes(k))) {
     const K = KITS[kit];
     ks.push(keysOf(allItems(enemyBody(rng, { kind: "human", name: "x", id: i, kit, weapon: K.weapons[i % K.weapons.length], armorKey: K.armor[i % K.armor.length] }, K))));
   }
@@ -237,6 +252,30 @@ const BASE = {
     ks.push(String(rng.state));
   }
   check(h16(ks.join("|")) === BASE.trucks, "trucks: the same items, the dice where they were");
+}
+MILDEAD.BODY_EXTRA = bodyExtra;
+TRUCK_LOOT_HOOKS.push(...truckHooks);
+{
+  // With them on: the same dice, only flashbangs and smoke grenades added (each body and truck: what it had, and more).
+  const runs = [];
+  for (const on of [false, true]) {
+    const saved = MILDEAD.BODY_EXTRA, hooks = on ? [] : takeFlashHooks();
+    if (!on) MILDEAD.BODY_EXTRA = {};
+    const rng = new Rng(9001), lists = [];
+    for (let i = 0; i < 1500; i++) lists.push(allItems(enemyBody(rng, { kind: "zombie", name: "z", id: i, ztype: i % 3 === 0 ? "soldier" : "riot" }, null)).filter(Boolean).map((it) => it.key));
+    for (let i = 0; i < 300; i++) lists.push(truckLoot(rng, "cargo", "intact").gear.map((it) => it.key));
+    runs.push({ lists, state: rng.state });
+    MILDEAD.BODY_EXTRA = saved;
+    TRUCK_LOOT_HOOKS.push(...hooks);
+  }
+  let onlyAdds = runs[0].state === runs[1].state, added = 0;
+  runs[0].lists.forEach((was, i) => {
+    const now = [...runs[1].lists[i]];
+    for (const k of was) { const j = now.indexOf(k); if (j < 0) onlyAdds = false; else now.splice(j, 1); }
+    if (now.some((k) => k !== "flashbang" && k !== "smokegren")) onlyAdds = false;
+    added += now.length;
+  });
+  check(onlyAdds && added > 0, `the flashbang extras (the armoured dead, Army trucks) only add (${added} flashbangs and smoke grenades): the rest and the dice are as without them`);
 }
 {
   const w = createWorld({ seed: 4242, factionCount: 8 });
@@ -272,6 +311,7 @@ const BASE = {
 }
 
 // ---------- 5. merchants' specialities ----------
+for (const [o, k, v] of nlStash) o[k] = v; // the non-lethal kit back
 section("5. Merchants' specialities");
 {
   const w = createWorld({ seed: 99, factionCount: 8 });

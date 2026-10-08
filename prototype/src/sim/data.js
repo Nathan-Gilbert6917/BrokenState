@@ -6,6 +6,7 @@ import { GUN_GEAR, GEAR_PATCH } from "./data-guns.js";
 import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES } from "./data-ammo.js";
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
+import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spray, the stun baton (nonlethal.js)
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
 // off-road and a quarter of an hour on a road or a bridge (ROAD_COST); mountains are closed to cars.
@@ -104,7 +105,7 @@ export const GEAR = {
   surgkit:    { name: "Surgical kit",             slot: "tool",   skill: "medicine", power: 4, req: 10, value: 90, noise: 0, small: true, medKit: 4, desc: "Real instruments: +4 Medicine when treating (at a base, in the field or in battle). Needs Medicine 10 for the full bonus; no use below Medicine 3.", weight: 1.5, cat: "medical" },
   // Extra worn pieces (inventory.js): head, arms and legs armor and a real pack.
   bikehelmet: { name: "Motorcycle helmet",        slot: "head",   skill: null,       power: 0.7, req: 0, value: 15, noise: 0, desc: "Scratched but solid. Keeps teeth off your skull.", weight: 1.5, cat: "armor" },
-  riothelmet: { name: "Riot helmet",              slot: "head",   skill: null,       power: 1.2, req: 0, value: 35, noise: 0, desc: "Police issue, with a visor.", weight: 1.8, cat: "armor" },
+  riothelmet: { name: "Riot helmet",              slot: "head",   skill: null,       power: 1.2, req: 0, value: 35, noise: 0, visor: true, desc: "Police issue, with a visor. The visor takes the edge off a flashbang's glare.", weight: 1.8, cat: "armor" },
   milhelmet:  { name: "Combat helmet",            slot: "head",   skill: null,       power: 1.4, req: 0, value: 45, noise: 0, desc: "An army helmet, kevlar under the cloth cover. Stops a bite to the skull and most splinters. Usually taken off one of the dead soldiers.", weight: 1.5, cat: "armor" },
   kneeguards: { name: "Knee and shin guards",     slot: "legs",   skill: null,       power: 0.5, req: 0, value: 10, noise: 0, desc: "Hard plastic from a dirt-bike shop. Bites slide off.", weight: 1, cat: "armor" },
   assaultpack:{ name: "Assault pack",             slot: "backpack", skill: null,     power: 1, req: 0,   value: 40, noise: 0, carry: 10, slots: 8, ease: 0.12, desc: "A military pack: 8 pack slots, +10 kg max load, and its frame spreads the weight: the wearer's load counts 12% lighter for their load band.", weight: 2, cat: "packs" },
@@ -257,6 +258,7 @@ export const GEAR = {
   molotov:     { name: "Molotov cocktail",         slot: "pack", skill: null, power: 0, req: 0, value: 8,  noise: 0, small: true, throw: "molotov", desc: "A bottle of fuel with a burning rag. Thrown (up to 6 tiles), it sets a 3 × 3 patch on fire for 2–3 turns: 12–18 damage to whoever is there; the dead walk into the flames (they follow light and heat) and burn 16–24 a turn, people 8–14, and the raiders' AI walks around it. Fire spreads to grass, hay, crates and wooden barricades nearby and its smoke blocks sight. Three of them set a hive on fire. One use.", weight: 0.9, cat: "explosive" },
   flare:       { name: "Road flare",               slot: "pack", skill: null, power: 0, req: 0, value: 4,  noise: 0, small: true, throw: "flare", desc: "Thrown (up to 8 tiles), it burns red for 4 turns: light and heat that pull the dead within 10 tiles that follow either (even those that have seen you, unless a Shepherd leads them), and at night your people see anything within 5 tiles of it and aim at it better (+10). One use.", weight: 0.2, cat: "explosive" },
   smokegren:   { name: "Smoke grenade",            slot: "pack", skill: null, power: 0, req: 0, value: 18, noise: 0, small: true, throw: "smokegren", desc: "Thrown (up to 7 tiles): a thick cloud 2 tiles around for 3 turns. Shots into or out of it are −30 to hit, and anyone in it or within 2 tiles of it gets away more easily when the retreat is sounded (+20). One use.", weight: 0.4, cat: "explosive" },
+  flashbang:   { name: "Flashbang",                slot: "pack", skill: null, power: 0, req: 0, value: 20, noise: 0, small: true, throw: "flashbang", desc: "Thrown (up to 7 tiles): a deafening bang and a blinding flash. People within 2 tiles of it who see it (1 tile through a doorway) lose an action next turn (2 within a tile), aim −30 until their next turn ends and cannot overwatch; those facing away are only dazed (aim −15). The dead are not blinded but come to the noise. Barely hurts (0–3 right next to it), breaks no cover. Very loud: wakes everyone around and raises Heat. Good for clearing a room through the door. One use.", weight: 0.4, cat: "explosive" },
   gamecall:    { name: "Deer call",                slot: "pack", skill: null, power: 0, req: 0, value: 5,  noise: 0, small: true, throw: "gamecall", desc: "A hunter's grunt call. Blown (1 action, not used up), it pulls unaware guards and the dead within 7 tiles to look where you are: lure a lone guard into a takedown.", weight: 0.1, cat: "camp" },
   // Siege kit (siege.js): a frag grenade thrown over the walls, a ladder up them and a ram for the gate. Bulky: the
   // team's cargo or the base armory; raiders bring their own by how prepared they are (eras.js).
@@ -570,6 +572,7 @@ Object.assign(GEAR, {
 // carry kit. One line, so the agents filling those modules never edit the end of this file.
 Object.assign(GEAR, GUN_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR);
 for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // data-guns.js: changed descriptions
+Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 
 // ---------- durability (crafting.js itemDur / wear) ----------
 // Real gear wears too, only slower than makeshift gear: dur = uses before it breaks (weapons and armor: fights;

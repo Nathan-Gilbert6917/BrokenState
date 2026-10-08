@@ -305,6 +305,7 @@ function drawWeapon(p, key, R) {
     case "fireaxe": p.rect(hx + 1, hy - 7, hx + 1, hy + 2, "#b08a5a"); p.rect(hx + 2, hy - 8, hx + 3, hy - 5, "#c8362e"); p.set(hx + 4, hy - 7, metal); p.set(hx + 4, hy - 6, metal); break;
     case "sledge": p.rect(hx + 1, hy - 6, hx + 1, hy + 2, wood); p.rect(hx - 1, hy - 9, hx + 3, hy - 7, "#55595e"); break;
     case "baton": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#1a1c20"); p.set(hx + 1, hy - 6, "#3a3d40"); break;
+    case "stunbaton": drawWeapon(p, "baton", R); p.set(hx + 1, hy - 6, "#ffd23f"); p.set(hx + 1, hy - 5, "#c9a227"); break; // data-nonlethal.js: the contacts at its tip
     default: break;
   }
 }
