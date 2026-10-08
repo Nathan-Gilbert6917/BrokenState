@@ -271,6 +271,18 @@ console.log("Save, load, short run");
   check(!f0 || (f1 && f1.med && f1.med.staff === f0.med.staff && f1.med.staffXp === f0.med.staffXp), "a group's medics survive save and load");
   const h2 = again.bases.find((b) => b.id === h.id);
   check(T.trainingInfo(again, h2).trainees.length === 1, "the loaded world shows the trainee");
+  // The screens: the Medical tab's Training card, the Overview's role count, the Help topic.
+  const UI = await import("../src/ui/ui.js");
+  const { helpTopics } = await import("../src/ui/help.js");
+  const ui = { started: true, speed: 0, tab: "bases", selected: h.tile, survivor: null, baseView: { id: h.id, tab: "medical" }, expedition: null, diary: null, roster: null, help: false };
+  let html = "", crash = "";
+  try { html = UI.renderModal(st, ui) || ""; ui.baseView.tab = "overview"; html += "@@SPLIT@@" + (UI.renderModal(st, ui) || ""); } catch (e) { crash = e.stack.split(String.fromCharCode(10)).slice(0, 3).join(" | "); }
+  check(!crash, `Medical and Overview tabs drawn ${crash}`);
+  const med = html.split("@@SPLIT@@")[0];
+  check(/<h3[^>]*>Training<\/h3>/.test(med) && med.includes("Doctor: <b>") && med.includes(ppl[1].name) && med.includes('data-action="traineeop"'), "the Medical tab shows the doctor, the trainee and the trainee picker");
+  check(/places? · each counts as half a medic/.test(med) && /Ward rounds:/.test(med), "…the places and the ward rounds");
+  check(/<b>Trainee<\/b> 1/.test(html.split("@@SPLIT@@")[1] || ""), "the Overview counts the trainee");
+  check(helpTopics().some((t) => /Training medics/.test(t.title) && /Medic trainees/.test(t.html || t.body || "")), "Help has a Training medics topic");
 }
 
 // ---------- --measure ----------
