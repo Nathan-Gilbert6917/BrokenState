@@ -370,6 +370,12 @@ section("The convoy's guard (miltrucks.js CONVOY_GUARD: more dead soldiers and m
     const want = soldiers * G.AI_LOSS * G.AI_REF / Math.max(1, unitPower(f, 2.2));
     check(soldiers > 0 && Math.abs(mean - want) < 0.35, `an AI salvage party loses ${mean.toFixed(2)} people on average to ${soldiers.toFixed(1)} soldiers (expected ${want.toFixed(2)})`);
     check(convoyAiLosses(st, c, f, 1) <= 1 && convoyAiLosses(st, c, f, 0) === 0, "never more than the party has");
+    { // its dice never use run-time ids: a second world of the same seed (other ids) loses the same
+      const w1 = convoyAt(SEED * 50 + 2), w2 = convoyAt(SEED * 50 + 2);
+      const f1 = w1.st.factions.find((x) => x.alive && x.bases.length), f2 = w2.st.factions.find((x) => x.name === f1.name);
+      const ls = (w, g) => [0, 1, 2, 3, 4, 5].map((i) => convoyAiLosses(w.st, { ...w.c, id: w.c.id + 1000 * i }, g, 6)).join(",");
+      check(!!f2 && f2.id !== f1.id && ls(w1, f1) === ls(w2, f2), `the same losses in a second world of the same seed, whose groups have other ids (${ls(w1, f1)})`);
+    }
     const pop0 = f.pop;
     const q = spawnAiParty(st, f, "salvage", f.bases[0], c.tile, { strength: 6 });
     q.convoy = c.id; q.path = [c.tile]; q.idx = 0;

@@ -290,13 +290,14 @@ export function convoySoldiers(state, tileId) {
   const list = unopenedTrucks(state, tileId).filter((x) => x.src === "convoy");
   return list.reduce((a, x) => a + around + x.crew, 0) + guardedTrucks(state, tileId).length * guardMean();
 }
-// An AI group's salvage party fights its way to the trucks: the people it loses (at most its strength), its own dice.
+// An AI group's salvage party fights its way to the trucks: the people it loses (at most its strength), its own dice
+// (by the group's name, never its run-time id: a loaded save or a second world hands out other ids).
 export function convoyAiLosses(state, c, f, strength) {
   const soldiers = convoySoldiers(state, c.tile);
   if (!soldiers || !f) return 0;
   const power = Math.max(1, unitPower(f, 2.2));
   const exp = soldiers * CONVOY_GUARD.AI_LOSS * (CONVOY_GUARD.AI_REF / power);
-  return Math.min(Math.max(0, Math.round(strength || 0)), Math.floor(exp + hash01(state.seed, "convoyai", c.id, f.id, c.stripped || 0)));
+  return Math.min(Math.max(0, Math.round(strength || 0)), Math.floor(exp + hash01(state.seed, "convoyai", c.id, f.name, c.stripped || 0)));
 }
 const RACE = { raider: 0.7, military: 0.9, expansionist: 0.6, zealot: 0.4, fortress: 0.35, traders: 0.3, commune: 0.15 };
 const croll = (state, ...k) => hash01(state.seed, "convoy", ...k);
