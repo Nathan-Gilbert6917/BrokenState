@@ -513,8 +513,12 @@ export function cancelBuild(state, base, id) {
   return `Cancelled ${jobName(job)}. ${full ? "All" : "Half"} the materials were returned.`;
 }
 
+// A builder the governor (or a base leader with roles) keeps on upkeep (s.upkeep, autopilot.js UPKEEP_CREW): they mend
+// worn fixtures every day (breakdowns.js) and add nothing to the construction. The mark counts only while the base is
+// governed: one left behind when the autopilot or the leader is switched off is ignored.
+export const onUpkeep = (state, base, s) => !!s.upkeep && s.role === "build" && (!!state.autopilot || !!(base.steward && base.steward.on));
 export function buildRate(state, base) {
-  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed).reduce((a, s) => a + (1 + skill(s, "mechanics") * 0.03) * workFactor(s) * buildMult(s), 0) // buildMult: Handy / Master Builder (skills.js)
+  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed && !onUpkeep(state, base, s)).reduce((a, s) => a + (1 + skill(s, "mechanics") * 0.03) * workFactor(s) * buildMult(s), 0) // buildMult: Handy / Master Builder (skills.js)
     + prisonBuildRate(state, base); // prisoners-tab: prisoners set to Build (prisoners.js labour, 12 hours a day at 50–70%)
 }
 

@@ -35,6 +35,7 @@
 // Every roll is a hash (skills.js hash01): the world's dice are not touched (bar a recruit card's own).
 import { SUPPLIES, GEAR } from "./data.js";
 import { day, log, hub } from "./world.js";
+import { groupPayoutSpare } from "./upkeep.js"; // the pay-out reserve (food)
 import { Rng } from "./rng.js";
 import { growthFactor } from "./groupworks.js";
 import { issueKit, removeFromArsenal, addToArsenal } from "./arsenal.js";
@@ -255,7 +256,8 @@ export function raidAnswer(state, attacker, target, att, def) {
   if (!attacker || !target || att < def * CARE.HOLD_RATIO) return null;
   if (h(state, target.name, attacker.name, state.hour, "tribute") >= CARE.TRIBUTE_ODDS * weightOf(target, "yield")) return null; // zealots never pay
   for (const k of ["food", "ammo", "meds", "scrap"]) {
-    const q = Math.floor((target.stock[k] || 0) * CARE.TRIBUTE);
+    // Food never out of the pay-out reserve (upkeep.js PAYOUT: PAYOUT.days a head), as your governor's tribute.
+    const q = Math.min(Math.floor((target.stock[k] || 0) * CARE.TRIBUTE), groupPayoutSpare(target, k));
     target.stock[k] -= q;
     attacker.stock[k] = (attacker.stock[k] || 0) + q;
   }

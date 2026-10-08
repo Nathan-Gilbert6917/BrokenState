@@ -13,7 +13,7 @@
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
 import { fitFromPool } from "./gunmods.js";
-import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
+import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants, spareGun } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
 import {
@@ -34,10 +34,10 @@ import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDe
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
 import { defaultRolePlan, plansOf } from "./defenceplan.js"; // the governor's defence plan (governorPlans, stewardSafety)
-import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
-import { mouthsAt, foodUse, HEAT } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
+import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort, WATER } from "./economy.js";
+import { mouthsAt, foodUse, HEAT, payoutSpare, payoutBreaks } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { waterIn, teamWaterIn, RAW, keyWord } from "./water.js"; // purified and un-purified water: the governor counts both
-import { brokenAt, jobFor } from "./breakdowns.js";
+import { brokenAt, jobFor, fixtures, isWaterFixture, repairPlan } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
@@ -50,7 +50,7 @@ import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun, linesText } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
 import { allCaptives, ransomValue } from "./conflicts.js";
-import { ensureInv, armorMult, itemLoad } from "./inventory.js";
+import { ensureInv, armorMult, itemLoad, salvageAt } from "./inventory.js";
 import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST, seasonOfDay, foodNeedFactor, coldAhead } from "./weather.js";
 import { teamCold } from "./needs.js"; // tune-winter: a team's food in the cold (×1.1 / ×1.2 without a lit camp fire)
 import { autoRecruitPick } from "./recruits.js";
@@ -274,9 +274,36 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.production) equipFromArmory(state, base);
   if (areas.medical) planTreatment(state, base);
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
+  if (areas.building && hourOfDay(state) === WATER_WAIT.hour) waterSalvage(state, base);
   if (areas.building) planBuilds(state, base, areas);
   if (areas.production) { govOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench
 }
+// ---------- a broken well waiting for scrap ----------
+// A broken well or pump the repairs cannot start for want of scrap (breakdowns.js: a proper repair 3 scrap and a part,
+// a jury-rig 1 scrap, short scrap paid in parts; no scrap and no part left = nothing at all): the hour before the
+// repairs start (WATER_WAIT.hour; breakdowns.js starts them at 08:00) a spare gun (repair.js spareGun: one with a
+// twin here, the cheapest) is taken apart for its scrap and gun parts (inventory.js salvageAt: a scrap each), up to
+// WATER_WAIT.salvage a day, until the jury-rig can be paid. While it still waits, scrap is wanted hard at this base
+// and at the hub that supplies it (needs: WATER_WAIT.need, trips and trades go for it) until the repair is paid.
+const WATER_WAIT = { hour: PLAN_HOUR, salvage: 2, need: 2.4 };
+// Broken water fixtures at a base waiting for scrap: no repair started, someone here could do it, and neither a
+// repair nor a jury-rig can be paid.
+export function waterWaitsScrap(state, base) {
+  return brokenAt(base).filter((fx) => {
+    if (!isWaterFixture(fx) || jobFor(base, fx)) return false;
+    const rig = repairPlan(state, base, fx, "rig");
+    return !rig.ok && !!rig.who && /^Needs /.test(rig.why);
+  }).length;
+}
+function waterSalvage(state, base) {
+  for (let i = 0; i < WATER_WAIT.salvage && waterWaitsScrap(state, base); i++) {
+    const gun = spareGun(state, base);
+    if (!gun) return;
+    const msg = salvageAt(state, `armory:${base.id}:list:${base.armory.indexOf(gun)}`);
+    say(state, `${msg.replace(/\.$/, "")}: ${base.name}'s broken well waits for scrap.`);
+  }
+}
+
 // Roles at one base (after the day's trip is planned). Returns the number of role changes.
 export function governRoles(state, base, areas = ALL_AREAS) {
   return areas.roles ? planRoles(state, base, areas) : 0;
@@ -490,7 +517,8 @@ function dealCaravanPlan(state, deal) {
     if (q <= 0) continue;
     const kk = SUPPLIES[k] && SUPPLIES[k].round ? "ammo" : k; // rounds by calibre count as ammo here (ammo.js)
     if ((need[kk] ?? 0) > 0.8) return { why: `${base.name} is short of ${kk}` };
-    if ((kk === "food" || kk === "ammo") && q > spare[kk]) return { why: `${base.name} cannot spare ${q} ${keyWord(k)}` };
+    if ((kk === "food" || kk === "ammo" || kk === "water") && q > spare[kk]) return { why: `${base.name} cannot spare ${q} ${keyWord(k)}` };
+    if (payoutBreaks(state, base, { [k]: q })) return { why: `${base.name} cannot spare ${q} ${keyWord(k)} (its reserve)` }; // preserved, un-purified water
     if (supplyAmt(base.stock, k) < q) return { why: `${base.name} has only ${Math.floor(supplyAmt(base.stock, k))} ${keyWord(k)}` };
   }
   if (!matchGear(base.armory, deal.give.gear || [])) return { why: "the items are not in the armory" };
@@ -812,9 +840,39 @@ function roomAt(state, h, k) {
   const foodDays = (edibleFood(fh) - 5 * k) / Math.max(1, nf + k);
   const wo = waterOutlook(state, h);
   if (!(foodDays >= Math.max(10, foodTarget(state, fh)) && wo.dryNet - k * wo.need.rate >= -1.5 && waterIn(h.stock) / Math.max(1, n + k) >= 3 && droughtWater(state, h, n + k))) return false;
+  // A hub with no river or lake within a water run's reach grows only as far as its wells and rain carry it through a
+  // summer (GROWTH_WATER): filters clog and cost scrap, so they do not count towards newcomers.
+  if (isHub && !GROWTH_WATER.ok(state, h, k)) return false;
   // No newcomers while the winter stores would not feed them too (farming.js winterOutlook with k more mouths).
   return !winterActive(state, fh) || winterOutlook(state, fh, { extra: k + homeMouths(state, fh), also: winterPool(state, fh) }).short <= 0;
 }
+
+// For the headless tests (tools/autosafetytest.js): the pay-out reserve, a broken well waiting for scrap, the upkeep
+// hands and the newcomer rule, read-only but for salvage (it takes a spare gun apart).
+export const safetyAI = {
+  tradeSpare: (state, base) => tradeSpare(state, base), needs: (state, base) => needs(state, base), tributeSpared: (state, base) => tributeSpared(state, base),
+  waterWaitsScrap: (state, base) => waterWaitsScrap(state, base), salvage: (state, base) => waterSalvage(state, base), upkeepCrew: (state, base, n) => upkeepCrew(state, base, n),
+  roomAt: (state, base, k) => roomAt(state, base, k), planRoles: (state, base) => planRoles(state, base),
+};
+
+// ---------- growth and the wells ----------
+// A hub with no river or lake (no stream beside it and no shore within a water run's reach, shoreFor) takes no newcomer
+// past what its wells, its spring, the claimed wells hauled and its rain catchers give on an average summer day
+// (economy.js summerWater with no filters: everyone drinking 1.3, the crops in the ground their share), times
+// `margin` of headroom kept. (2026-10-08 thirst diagnosis: hubs of 40-50 on two wells lived on 15+ water filters; when
+// the scrap for new ones ran short or the wells broke, the water ran out within days.)
+export const GROWTH_WATER = {
+  margin: 1.1,
+  // Has the hub a river: a stream beside it, or a shore a water run can reach.
+  river: (state, base) => waterProduction(state, base).stream > 0 || shoreFor(state, base) != null,
+  // { river, heads }: the people its wells and rain can carry (Infinity by a river).
+  cap(state, base) {
+    if (GROWTH_WATER.river(state, base)) return { river: true, heads: Infinity };
+    const sw = summerWater(state, base, { people: 0, filterShare: 0 }); // need: the crops and any prisoners
+    return { river: false, heads: Math.max(0, Math.floor((sw.inflow / GROWTH_WATER.margin - sw.need) / (sw.rate * WATER.drink))) };
+  },
+  ok: (state, base, k) => residents(state, base.id).length + returning(state, base) + k <= GROWTH_WATER.cap(state, base).heads,
+};
 
 // ---------- housing ----------
 // For the headless tests (tools/plotstest.js): the housing plan below, read-only.
@@ -1072,6 +1130,12 @@ function utility(ch, P) {
 // Aggressive under 0.6× (and it fights in person first when the odds are poor).
 const TRIBUTE_LEAN = { Cautious: 1.4, Balanced: 1, Aggressive: 0.6 };
 const RAID_BREAK = 0.8; // factions.js RAIDS.BREAK: below it a raid overruns the base
+// Never out of the food reserve (upkeep.js PAYOUT): a group's tribute (factions.js tributeNow: 30% of the fresh food)
+// that would leave the base under PAYOUT.days of food is not paid.
+function tributeSpared(state, base) {
+  const food = Math.min(Math.floor(base.stock.food || 0), Math.ceil((base.stock.food || 0) * 0.3));
+  return !payoutBreaks(state, base, { food });
+}
 function raidWarningChoice(state, card, opts, P) {
   const find = (re) => opts.find((c) => re.test(c.label));
   const base = state.bases.find((b) => card.title === `Raiders heading for ${b.name}`);
@@ -1080,7 +1144,7 @@ function raidWarningChoice(state, card, opts, P) {
   planRoles(state, base);
   const stakes = raidStakes(state, base, raid);
   if (stakes.ratio >= P.holdRatio) return find(/^Prepare/);
-  const pay = stakes.tribute < stakes.fight * (TRIBUTE_LEAN[P.name] ?? 1) ? find(/^Pay tribute/) : null;
+  const pay = stakes.tribute < stakes.fight * (TRIBUTE_LEAN[P.name] ?? 1) && tributeSpared(state, base) ? find(/^Pay tribute/) : null;
   // Retreat (conquest.js) when the base would be overrun anyway and the tribute cannot be paid: an outpost below the
   // style's retreatBelow, the hub only when it is hopeless (a quarter of what it takes) and another base can take
   // everyone in; never the last base.
@@ -1293,13 +1357,15 @@ function handleTrade(state) {
   }
   if (ctx.visitor) {
     // Merchants or travellers from outside (visitors.js): a manual nobody has studied, then what the hub is short of.
-    say(state, `Outsiders (${ctx.f.name}) at ${ctx.base ? ctx.base.name : "the roadside"}: ${autoVisitorTrade(state, needs(state), gov(state).personality, tradeSpare(state))}.`);
+    // The base they stopped at pays: its own needs and what it can spare (an outpost's, not the hub's).
+    const at = ctx.base || hub(state);
+    say(state, `Outsiders (${ctx.f.name}) at ${ctx.base ? ctx.base.name : "the roadside"}: ${autoVisitorTrade(state, needs(state, at), gov(state).personality, tradeSpare(state, at))}.`);
     return;
   }
   if (ctx.kind === "radio") { state.trade = null; return; } // a radio trade left open by hand (radiotrade.js): closed
   if (ctx.kind === "caravan") {
     // Their caravan at one of your bases (caravans.js): only the Aggressive style ever attacks one.
-    say(state, `Caravan from ${ctx.f.name} at ${ctx.base.name}: ${autoCaravanTrade(state, needs(state), gov(state).personality, tradeSpare(state)).replace(/\.$/, "")}.`);
+    say(state, `Caravan from ${ctx.f.name} at ${ctx.base.name}: ${autoCaravanTrade(state, needs(state, ctx.base), gov(state).personality, tradeSpare(state, ctx.base)).replace(/\.$/, "")}.`);
     return;
   }
   const { p, f, speech } = ctx;
@@ -1471,7 +1537,9 @@ function tradeSpare(state, h = hub(state)) {
   // A winter outlook that comes up short pays no food at all: foodTarget nets off crops that may only ripen in spring,
   // after the stores run out (seed 5062: short by the outlook, yet 66 food went to a caravan on day 72).
   const short = winterActive(state, h) && winterPlan(state, h).short > 0;
-  return { food: short ? 0 : Math.max(0, Math.floor(edibleFood(h) - foodTarget(state, h) * 1.5 * heads)), ammo: Math.max(0, Math.floor(baseAmmo(state, h) - Math.max(campaignAmmoTarget(state), n * 15))) };
+  // Water and food never below the pay-out reserve (upkeep.js payoutSpare: PAYOUT.days of everyone's need), whatever
+  // the needs table rates them (a hub whose wells keep up rates its water plenty and sold it all).
+  return { food: short ? 0 : Math.min(payoutSpare(state, h, "food"), Math.max(0, Math.floor(edibleFood(h) - foodTarget(state, h) * 1.5 * heads))), water: payoutSpare(state, h, "water"), ammo: Math.max(0, Math.floor(baseAmmo(state, h) - Math.max(campaignAmmoTarget(state), n * 15))) };
 }
 // Hub needs per supply, 0 (plenty) .. 3 (urgent). Drives trips, trades and some buildings.
 function needs(state, h = hub(state)) { // h: a base leader's own base (stewardSupplies); the hub otherwise
@@ -1509,6 +1577,10 @@ function needs(state, h = hub(state)) { // h: a base leader's own base (stewardS
     // Firewood (woodcutting.js): bought only when the cold is near or here and the store is low; never sold (0.9).
     wood: (() => { const w = woodNeed(state, h, returning(state, h)); return w.short && (w.cold || w.toCold <= 14 || w.boiler > 0) && w.have < w.need * 0.3 ? 1.6 : 0.9; })(), // the boiler (worm.js) burns it in every season
   };
+  // A broken well or pump here (or, at the hub, at an outpost it supplies) waiting for scrap (waterWaitsScrap): scrap
+  // is wanted hard until the repair can be paid.
+  const waits = waterWaitsScrap(state, h) + (h.type === "hub" ? state.bases.filter((o) => o.type === "outpost").reduce((a, o) => a + waterWaitsScrap(state, o), 0) : 0);
+  if (waits && (st.scrap || 0) < 3 * waits + 1) out.scrap = Math.max(out.scrap, WATER_WAIT.need);
   // Parts by kind (repair.js partNeeds): bought below their reorder levels, never sold; machine parts gain the urgency.
   const pn = partNeeds(state, h);
   for (const k of ["gunparts", "carparts", "electronics"]) out[k] = pn[k];
@@ -1664,6 +1736,9 @@ function threatAt(state, base) {
 // The area each role belongs to (a steward leaves roles in an area it was not handed alone); rest and scavenge
 // are plain Roles. Roles the governor does not plan (teaching, reading: skills.js) are always left as they are.
 // teach / read (skills.js planStudy) belong to "roles": without them every reader counted as pinned and kept reading for good.
+// The farm crew (planRoles): extra = the ideal crew's multiple put on the plots while food is short (it was every
+// day food was not plentiful).
+const FARM_AP = { extra: 1.6 };
 const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
@@ -1673,7 +1748,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   const P = persona(state);
   const free = new Set(people);
   const want = new Map();
-  const give = (s, role, station = null) => { want.set(s.id, { role, station }); free.delete(s); };
+  const give = (s, role, station = null, upkeep = false) => { want.set(s.id, { role, station, upkeep }); free.delete(s); };
   // 0. Pinned people (s.pinned, the survivor screen and the base's people list) keep what they do, and so does
   // anyone in a role whose area this base's steward was not handed.
   // People on work priorities (work.js) run themselves: a steward leaves them alone (the dev autopilot only with
@@ -1837,6 +1912,11 @@ function planRoles(state, base, areas = ALL_AREAS) {
     const n = Math.min(3, Math.max(1, Math.ceil(left / 40)), Math.max(1, Math.floor(free.size / 2)));
     for (const s of ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed).slice(0, n)) give(s, "build");
   }
+  // 5a. Upkeep at a big hub (UPKEEP_CREW): one or two builders kept on upkeep, build queue or not, while anything is
+  // worn, so the wells and pumps are mended before they break (breakdowns.js: only builders with nothing to build did
+  // upkeep, and a big hub always has something queued: its wells broke over and over).
+  const mend = areas.building ? upkeepCrew(state, base, people.length) : 0;
+  if (mend) for (const s of ranked("build", (x) => skill(x, "mechanics") + (x.upkeep ? STICKY : 0), (x) => !x.inBed).slice(0, mend)) give(s, "build", null, true);
 
   // 6. Farming to the comfortable level. More plots are wanted when every plot is in use and food runs low.
   farmTo(foodDays < Math.max(15, foodTarget(state)) ? fw.ideal : fw.need);
@@ -1889,7 +1969,12 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // are the limit) and take the hands the firewood leaves (below); before that one or two and a reader per 6, here.
   const plenty = foodDays >= Math.max(40, foodTarget(state) * 1.5);
   if (!plenty) planStudy(state, base, free, give, { foodDays, urgent: !!threat.urgent }); // skills.js: a teacher and readers when food is comfortable
-  if (!plenty) farmTo(Math.ceil(fw.ideal * 1.6));
+  // The extra hands on the plots (FARM_AP.extra × the ideal crew) only while the food is below its target or the
+  // winter stores fall short: past the ideal crew a farmer adds little (farming.js tendMult: 1.2 a plot 1.29, 1.9 a
+  // plot 1.39), and "until food is plentiful" kept two thirds of every colony on the plots with months of food in
+  // store (2026-10-08: 65-85% of the colonist-days at a base on Farm, 100+ days of food at the hub). The rest scavenge
+  // around the base, cut wood, study and teach: the other skills rise.
+  if (foodDays < Math.max(15, foodTarget(state, base)) || winterShort(state, base) > 0) farmTo(Math.ceil(fw.ideal * FARM_AP.extra));
   // ...and while food is short the hands left over forage instead of picking through the ruins (foraging.js).
   if (foraging) {
     const have = [...want.values()].filter((w) => w.role === "forage").length;
@@ -1907,6 +1992,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   for (const s of people) {
     const w = want.get(s.id) || { role: "scavenge", station: null };
     if (s.role !== w.role) { s.role = w.role; changed++; }
+    if (w.upkeep) s.upkeep = true; else if (s.upkeep) delete s.upkeep; // 5a: kept on upkeep (buildings.js onUpkeep)
     if (w.role === "operate") { if (s.station !== w.station) { s.station = w.station; changed++; } }
     else s.station = null;
   }
@@ -1915,6 +2001,15 @@ function planRoles(state, base, areas = ALL_AREAS) {
     assignStations(state, base);
   }
   return changed;
+}
+
+// Upkeep hands at a hub of UPKEEP_CREW.from people or more (two from UPKEEP_CREW.two), while any fixture there is worn
+// past UPKEEP_CREW.wear or broken (breakdowns.js; each hand takes WEAR.upkeep, 1.5 wear, off the most worn a day).
+export const UPKEEP_CREW = { from: 12, two: 24, wear: 20 };
+function upkeepCrew(state, base, n) {
+  if (base.type !== "hub" || n < UPKEEP_CREW.from) return 0;
+  if (!fixtures(base).some((fx) => fx.broken || (fx.wear || 0) >= UPKEEP_CREW.wear)) return 0;
+  return n >= UPKEEP_CREW.two ? 2 : 1;
 }
 
 // station: the building, when known. Its standing order (production.js; the governor's own from govOrders, or the
@@ -4374,11 +4469,12 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
     const fix = staff ? waterRepairLoad(state, h, o) : null; // scrap and parts for its broken well or pump
     if (moves && staff < 2 && !o.captured && home.length >= 7 && crewPool.length) { // a base taken from a group (conquest.js) is held by whoever took it
       const s = [...crewPool].sort((a, b) => skill(b, "farming") - skill(a, "farming"))[0];
-      form = { crew: [s.id], deliver: [{ key: "food", qty: 6 }, { key: "scrap", qty: Math.min(8, Math.max(0, Math.floor((h.stock.scrap || 0) - 30))) }], atDest: "disband" };
+      form = { crew: [s.id], deliver: [{ key: "food", qty: Math.min(6, payoutSpare(state, h, "food")) }, { key: "scrap", qty: Math.min(8, Math.max(0, Math.floor((h.stock.scrap || 0) - 30))) }].filter((l) => l.qty > 0), atDest: "disband" };
       why = `${first(s)} joins the outpost (only ${staff} there)`;
-    } else if (staff && outpostThirsty(state, o) && waterIn(h.stock) - home.length * 5 >= 12 && crewPool.length) {
-      // An outpost's spring gives 3 a day (less in a dry spell): water from the hub before anyone goes thirsty.
-      const qty = Math.min(30, Math.floor(waterIn(h.stock) - home.length * 5));
+    } else if (staff && outpostThirsty(state, o) && Math.min(waterIn(h.stock) - home.length * 5, payoutSpare(state, h, "water")) >= 12 && crewPool.length) {
+      // An outpost's spring gives 3 a day (less in a dry spell): water from the hub before anyone goes thirsty (never
+      // out of the hub's own pay-out reserve, upkeep.js PAYOUT).
+      const qty = Math.min(30, Math.floor(waterIn(h.stock) - home.length * 5), payoutSpare(state, h, "water"));
       const crew = [];
       const fixKg = fix ? fix.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0) : 0; // the repair's scrap and parts ride along
       for (const s of crewPool) if (carryCapacity(state, crew, null) < qty * SUPPLIES.water.weight + fixKg && crew.length < Math.min(spare, 2)) crew.push(s);
@@ -4402,7 +4498,7 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
       // Farmers first (an outpost has to feed itself); the hub's medics, builders and station hands last.
       const keepHome = (s) => (s.role === "medic" || s.role === "build" || s.role === "operate" ? 6 : 0);
       const crew = [...crewPool].sort((a, b) => skill(b, "farming") - keepHome(b) - (skill(a, "farming") - keepHome(a))).slice(0, n);
-      const food = Math.min(HOUSING.moveFood * n, Math.max(0, Math.floor((h.stock.food || 0) - home.length * 5)));
+      const food = Math.min(HOUSING.moveFood * n, Math.max(0, Math.floor((h.stock.food || 0) - home.length * 5)), payoutSpare(state, h, "food"));
       form = { crew: crew.map((s) => s.id), deliver: food > 0 ? [{ key: "food", qty: food }] : [], atDest: "disband" };
       why = `${names(crew)} move${crew.length === 1 ? "s" : ""} there: ${h.name} has outgrown its building plots (${residents(state, h.id).length} people for ${baseBeds(h)} beds), ${o.name} has ${outpostBedsFree(state, o)} free`;
     } else {
@@ -4416,7 +4512,7 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
       if (wish && (scrapShort ? (h.stock.scrap || 0) >= scrap + 25 : partsShort) && home.length >= 5 && crewPool.length >= 1) {
         const deliver = scrapShort ? [{ key: "scrap", qty: scrap + 2 }] : [];
         if (partsShort) deliver.push({ key: "parts", qty: parts - Math.floor(o.stock.parts || 0) });
-        if ((o.stock.food || 0) < staff * 3) deliver.push({ key: "food", qty: 8 });
+        if ((o.stock.food || 0) < staff * 3 && payoutSpare(state, h, "food") >= 8) deliver.push({ key: "food", qty: 8 });
         // Enough hands to carry it (people stay home: at most a third of the hub goes).
         const load = deliver.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0);
         const crew = [];

@@ -8,7 +8,8 @@
 // built) + weather (frost for pumps, storms for pumps, masts and roofs) + attacks (a horde at the walls; raids: raidDamage below),
 // × the operator's Mechanics (−2.5% a point, from ×1.15, at least ×0.65), × a Grease Monkey (×0.8) or Handy (×0.85)
 // survivor living there, × 1.6 while jury-rigged. Builders with no construction job do upkeep: 1.5 wear off the most
-// worn fixture per builder a day. A fixture breaks at 100, and from 60 up with a daily chance ((wear − 60) / 40)² × 30%.
+// worn fixture per builder a day; a builder kept on upkeep (s.upkeep: the governor's at a big hub, autopilot.js
+// UPKEEP_CREW) does it every day, build queue or not, and adds nothing to the construction (buildings.js buildRate). A fixture breaks at 100, and from 60 up with a daily chance ((wear − 60) / 40)² × 30%.
 //
 // Raid damage (raidDamage, called when a raid on your base is settled: factions.js, conflicts.js, visitors.js).
 // Raiders smash what they reach: the damage is a budget of wear points = the raid's strength × 3 × (hours the
@@ -37,7 +38,7 @@
 // their role. The autopilot, and a steward with Building on, start the repairs themselves (repair if they can pay,
 // else jury-rig) and replace a repairer who left. The old storm "broken well pump" hub event is this system now.
 // Rolls use hash01 (skills.js), never the world's random numbers.
-import { BUILDINGS, count, assignStations, underAttack } from "./buildings.js";
+import { BUILDINGS, count, assignStations, underAttack, onUpkeep } from "./buildings.js";
 import { log, addCard, day, hourOfDay, atBase, survivorById, skill } from "./world.js";
 import { hash01, gainXp, buildMult, hasPerk, USE } from "./skills.js";
 import { workFactor } from "./health.js";
@@ -359,8 +360,10 @@ export function breakdownsDaily(state) {
     // Upkeep by builders with nothing to build, and by prisoners set to Clean and mend (prisoners-tab: prisoners.js
     // labour, at their share of a builder's upkeep, build queue or not).
     const cleaners = WEAR.upkeep * prisonLabour(state, base, "upkeep");
-    if (!base.construction.length || cleaners > 0) {
-      let pts = (base.construction.length ? 0 : atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed).reduce((a, s) => a + WEAR.upkeep * workFactor(s), 0)) + cleaners;
+    // Builders kept on upkeep (s.upkeep) mend whether or not a building is queued; the rest only with nothing to build.
+    const menders = atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed && (onUpkeep(state, base, s) || !base.construction.length));
+    if (menders.length || cleaners > 0) {
+      let pts = menders.reduce((a, s) => a + WEAR.upkeep * workFactor(s), 0) + cleaners;
       for (const fx of [...list].filter((f) => !f.broken).sort((a, b) => (b.wear || 0) - (a.wear || 0))) {
         if (pts <= 0) break;
         const cut = Math.min(pts, fx.wear || 0);

@@ -66,6 +66,7 @@ import { raidPrep } from "./eras.js";
 import { hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { tileLabel } from "./parties.js";
 import { keyWord } from "./water.js";
+import { payoutBreaks } from "./upkeep.js"; // the governor never pays food out of the hub's pay-out reserve
 
 export const PW = {
   FROM: 40, GAP: 80, MAX: 1, COOLDOWN: 120, RANGE: 30, GW: -40, PEACEFUL_GRIEV: 25, BASE: 0.015, MIN_FIT: 10,
@@ -627,6 +628,10 @@ function giveInScore(state, w, terms, offered = false) {
   const style = state.governor ? state.governor.personality : "balanced";
   if (termsProblem(state, w, terms)) return -9;
   const hb = hub(state);
+  // Never out of the pay-out reserve (upkeep.js PAYOUT): tribute or a tithe that leaves the hub under its days of food.
+  const paid = {};
+  for (const t of terms) if ((t.kind === "tribute" && t.payer === "you") || t.kind === "convert") for (const [k, q] of Object.entries(t.goods || {})) paid[k] = (paid[k] || 0) + q;
+  if (hb && payoutBreaks(state, hb, paid)) return -9;
   const worth = Math.max(200, hb ? supplyValue(hb.stock) : 200);
   const cost = termsCost(state, terms) / worth;
   const hurting = w.exh.you >= PW.TIRED || w.score.them - w.score.you >= PW.LEAD;
