@@ -5,7 +5,7 @@
 // an empty base; the AI side (a group moving in pays in people); the planner's problems and the team's orders; the
 // governor choosing to occupy instead of founding an outpost; save/load of an abandoned base and of one moved into.
 // Usage: node tools/occupytest.js [seed=42]
-import { createWorld, tickHour, hub, atBase, day, makeSurvivor, newId, removeBase } from "../src/sim/world.js";
+import { createWorld, tickHour, hub, atBase, day, makeSurvivor, newId, removeBase, snapshot } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { addBuilding, plotsUsed, plotCap, count } from "../src/sim/buildings.js";
 import { launchExpedition, partyMembers, outpostName, orderOptions, planPath, giveOrder, missionProblem, MISSIONS } from "../src/sim/parties.js";
@@ -304,13 +304,14 @@ section("The governor moves in instead of founding an outpost");
   st.abandoned[0].from = f.id; f.pact = "trade";
   check(!occupyCandidate(st, h, pool, 4), "not the old base of a pact partner");
   f.pact = null; st.abandoned[0].from = "player";
+  st.knowledge[tile] = snapshot(st, tile); // a team saw it (the live view is redrawn every hour)
   // End to end: the governor runs its days and moves in (it wants an outpost: enough people, food, a while since the last).
   for (let i = 0; i < 8; i++) { const s = makeSurvivor(st, 0.8); s.location = { kind: "base", baseId: h.id }; st.survivors.push(s); }
   Object.assign(h.stock, { food: 600, water: 300, meds: 30, scrap: 10 });
   st.governor.lastOutpost = -99;
   for (let i = 0; i < 24 * 12 && !st.bases.some((b) => b.tile === tile); i++) { tickHour(st); if (!st.autopilot) break; }
   const got = st.bases.find((b) => b.tile === tile);
-  for (const l of st.log.filter((x) => /Old Farm|occupy/i.test(x.text)).slice(0, 4).reverse()) console.log(`  log: ${l.text.slice(0, 160)}`);
+  for (const l of st.log.filter((x) => /Old Farm|occupy|🤖 Sent/i.test(x.text)).slice(0, process.env.OCCLOG ? 30 : 4).reverse()) console.log(`  log: ${l.text.slice(0, 160)}`);
   check(!!got, `the governor moved into it (${got ? `${got.name}, ${got.buildings.length} buildings` : "not in 12 days"})`);
 }
 
