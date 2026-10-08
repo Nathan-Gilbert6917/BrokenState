@@ -233,9 +233,9 @@ function repairButtons(state, ui, item, from, place) {
 function repairsBox(state, base) {
   const q = base.gearRepairs || [];
   if (!q.length) return "";
-  return `<div class="small" style="margin-top:0.3rem"><b${tip("Gear at the bench: people on the Craft role with the skill work it before the craft queue. Finished, it goes to the armory.")}>Repairs</b> ${q.map((j) => {
+  return `<div class="small" style="margin-top:0.3rem"><b${tip("Gear queued for repair: it stays in use, and people on the Craft role with the skill mend it while it is at the base (urgent ones first, before the craft queue).")}>Repairs</b> ${q.map((j) => {
     const why = repairJobStatus(state, base, j);
-    return `<span class="chip"${tip(why || `${Math.floor(j.progress)} of ${j.hours} work-hours done`)}>${esc(j.item.name)} ${why ? `<span class="muted">(${esc(why)})</span>` : `${Math.round((j.progress / j.hours) * 100)}%`} <button class="mini" data-action="inv-cancelrepair" data-base="${base.id}" data-id="${j.id}"${tip("Cancel: the item goes back to the armory (what was paid comes back, half once started)")}>×</button></span>`;
+    return `<span class="chip"${tip(why || `${Math.floor(j.progress)} of ${j.hours} work-hours done`)}>${esc(j.item.name)} ${why ? `<span class="muted">(${esc(why)})</span>` : `${Math.round((j.progress / j.hours) * 100)}%`} <button class="mini" data-action="inv-cancelrepair" data-base="${base.id}" data-id="${j.id}"${tip("Cancel the repair (what was paid comes back, half once started)")}>×</button></span>`;
   }).join(" ")}</div>`;
 }
 function burnButtons(state, ui, item, from) {

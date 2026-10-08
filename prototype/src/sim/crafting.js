@@ -391,8 +391,11 @@ export function wear(item, n = 1) {
 }
 
 // Wears what a survivor has in a slot; a broken item is gone.
+// item.lastUsed: the day it last wore (repair.js: the autopilot mends what is used first).
+const used = (state, item) => { if (item && state && Number.isFinite(state.hour) && itemDur(item) != null) item.lastUsed = Math.floor(state.hour / 24); };
 export function wearSlot(state, s, slot, n = 1) {
   const item = s.gear[slot];
+  used(state, item);
   if (!item || !wear(item, n)) return false;
   s.gear[slot] = null;
   log(state, `${s.name.split(" ")[0]}'s ${item.name} broke.`, "danger");
@@ -402,6 +405,7 @@ export function wearSlot(state, s, slot, n = 1) {
 // Wears an item wherever it is kept: on one of these people (a slot, a pocket, the pack) or in one of these lists (a
 // team's cargo, a base's armory). A broken item is gone. Returns true when it broke.
 export function wearHeld(state, item, people = [], lists = [], n = 1) {
+  used(state, item);
   if (!item || !wear(item, n)) return false;
   let who = null;
   for (const s of people) {

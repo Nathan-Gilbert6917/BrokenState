@@ -26,7 +26,8 @@ import { atBase, skill, log, newId } from "./world.js";
 import { benchTier } from "./buildings.js";
 import { itemDur, itemDurMax, wear } from "./crafting.js";
 import { burnShare } from "./woodcutting.js";
-import { itemAt, removeAt, parseLoc, placeOfLoc, storageFor, unlistFromSites } from "./inventory.js";
+import { itemAt, parseLoc, placeOfLoc, storageFor, salvageAt } from "./inventory.js";
+import { itemValue } from "./valuation.js";
 import { gainXp, USE } from "./skills.js";
 
 export const REPAIR = {
@@ -196,16 +197,28 @@ export function repairItem(state, base, item, by, { kit = false, tier = null } =
 }
 
 // ---------- the base's repair queue ----------
-// base.gearRepairs: [{ id, item, hours, progress, paid, gearPaid, from }]. Queueing pays the inputs and takes the item
-// out of where it was (off the person, out of the armory) into the job; finished, it goes to the armory.
+// base.gearRepairs: [{ id, item, hours, progress, paid, gearPaid, urgent, away }]. Queueing pays the inputs; the item
+// stays where it is (worn, held or in the armory: nobody is stripped of their gear) and the crafters work on it while
+// it is at the base (in the evenings, between trips). A team that takes it away pauses the job; away for
+// REPAIR.AWAY_HOURS, or broken, the job is dropped (half the inputs back). urgent: the autopilot's urgent repairs
+// (planRepairs) go first.
 export const repairQueue = (base) => base.gearRepairs || (base.gearRepairs = []);
 export const MAX_REPAIR_QUEUE = 8;
-// Queues a repair of the item at loc at this base. Returns a message.
-export function queueRepair(state, base, loc) {
+REPAIR.AWAY_HOURS = 240;
+const stats = (state) => state.repairStats || (state.repairStats = { bench: 0, field: 0, paid: {} });
+// Is the item at this base: in its armory, or worn, held or carried by someone there?
+export function atBaseItem(state, base, item) {
+  if (!item) return false;
+  if (base.armory.includes(item)) return true;
+  return atBase(state, base.id).some((s) => Object.values(s.gear || {}).includes(item) || (s.pockets || []).includes(item) || ((s.gear && s.gear.backpack && s.gear.backpack.contents) || []).includes(item));
+}
+// Queues a repair of the item at loc at this base. Returns a message. opts.urgent: ahead of the others.
+export function queueRepair(state, base, loc, { urgent = false } = {}) {
   const item = itemAt(state, loc);
   if (!item) return "Nothing there.";
   if (parseLoc(loc).o === "body") return "Take it first.";
   if (placeOfLoc(state, loc) !== `base:${base.id}`) return "Only things at this base can be repaired here.";
+  if (repairQueue(base).some((j) => j.item === item)) return `The ${item.name} is already queued for repair.`;
   if (repairQueue(base).length >= MAX_REPAIR_QUEUE) return `The repair queue is full (${MAX_REPAIR_QUEUE}).`;
   const info = repairInfo(state, base, item);
   const noCrafter = info.reason && /Craft role/.test(info.reason) && !info.who;
@@ -214,15 +227,18 @@ export function queueRepair(state, base, loc) {
     for (const [k, v] of Object.entries(info.inputs.supplies)) if (have(base, k) < v) return `Needs ${v} ${k} (have ${Math.floor(have(base, k))}).`;
     for (const [k, v] of Object.entries(info.inputs.gear)) if (base.armory.filter((it) => it && it.key === k).length < v) return `Needs a ${GEAR[k].name.toLowerCase()} in the armory.`;
   }
-  for (const [k, v] of Object.entries(info.inputs.supplies)) base.stock[k] = (base.stock[k] || 0) - v;
+  const rs = stats(state);
+  for (const [k, v] of Object.entries(info.inputs.supplies)) { base.stock[k] = (base.stock[k] || 0) - v; rs.paid[k] = (rs.paid[k] || 0) + v; }
   const gearPaid = [];
-  for (const [k, v] of Object.entries(info.inputs.gear)) for (let i = 0; i < v; i++) gearPaid.push(...base.armory.splice(base.armory.findIndex((it) => it && it.key === k), 1));
-  removeAt(state, loc);
-  unlistFromSites(state, item);
-  repairQueue(base).push({ id: newId(), item, hours: info.hours, progress: 0, paid: { ...info.inputs.supplies }, gearPaid });
-  return `${item.name} queued for repair at ${base.name} (${info.hours} h)${noCrafter ? ": nobody on the Craft role can do it yet" : ""}.`;
+  for (const [k, v] of Object.entries(info.inputs.gear)) for (let i = 0; i < v; i++) { gearPaid.push(...base.armory.splice(base.armory.findIndex((it) => it && it.key === k), 1)); rs.paid[k] = (rs.paid[k] || 0) + 1; }
+  rs.bench++;
+  const job = { id: newId(), item, hours: info.hours, progress: 0, paid: { ...info.inputs.supplies }, gearPaid };
+  const q = repairQueue(base);
+  if (urgent) { job.urgent = true; const at = q.findIndex((j) => !j.urgent); q.splice(at < 0 ? q.length : at, 0, job); }
+  else q.push(job);
+  return `${item.name} queued for repair at ${base.name} (${info.hours} h; it stays in use, mended while it is here)${noCrafter ? ": nobody on the Craft role can do it yet" : ""}.`;
 }
-// Cancels a queued repair: the item goes to the armory; untouched, everything paid comes back, started, half.
+// Cancels a queued repair: untouched, everything paid comes back; started, half (the kit is used up).
 export function cancelRepair(state, base, id) {
   const q = repairQueue(base);
   const job = q.find((j) => j.id === id);
@@ -230,26 +246,31 @@ export function cancelRepair(state, base, id) {
   const full = job.progress <= 0;
   for (const [k, v] of Object.entries(job.paid || {})) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.ceil(v / 2));
   if (full) base.armory.push(...(job.gearPaid || []));
-  base.armory.push(job.item);
   q.splice(q.indexOf(job), 1);
-  return `Cancelled the repair of the ${job.item.name}: it is in the armory.`;
+  return `Cancelled the repair of the ${job.item.name}.`;
 }
 // Why a queued repair is not moving ("" when it is).
 export function repairJobStatus(state, base, job) {
   const rk = repairKind(job.item);
   if (!rk || !rk.def) return "Nothing to repair";
+  if (!atBaseItem(state, base, job.item)) return "Not here (out with a team)";
   if (benchTier(base) < (rk.def.soft || GEAR[job.item.key].makeshift ? 1 : 2)) return "Needs a bench here";
   if (!repairers(state, base, job.item).length) return `No crafter with ${SKILL_NAMES[rk.def.skill]} ${minFor(job.item, rk.def)}+`;
   return "";
 }
-// Hourly (world.js, before craftingHour): the crafters work the first repair they can; a base whose crafters repaired
-// this hour does no crafting this hour (base.gearRepairHour). Finished: the item is repaired by the best of them and goes
-// to the armory.
+// Hourly (world.js, before craftingHour): the crafters work the first repair they can (urgent ones first); a base
+// whose crafters repaired this hour does no crafting this hour (base.gearRepairHour). Finished: the item is repaired
+// where it is, by the best of them.
 export function repairHour(state) {
   for (const base of state.bases) {
     const q = base.gearRepairs;
     if (!q || !q.length) continue;
-    const job = q.find((j) => !repairJobStatus(state, base, j));
+    for (const j of [...q]) { // gone for good: broken, or away too long
+      if (atBaseItem(state, base, j.item)) { delete j.away; continue; }
+      if (j.away == null) j.away = state.hour;
+      if ((j.item.dur ?? 1) <= 0 || state.hour - j.away >= REPAIR.AWAY_HOURS) { j.progress = Math.max(j.progress, 0.001); cancelRepair(state, base, j.id); }
+    }
+    const job = q.find((j) => j.urgent && !repairJobStatus(state, base, j)) || q.find((j) => !repairJobStatus(state, base, j));
     if (!job) continue;
     const team = repairers(state, base, job.item);
     const sk = REPAIR_KINDS[repairKind(job.item).kind].skill;
@@ -257,9 +278,7 @@ export function repairHour(state) {
     base.gearRepairHour = state.hour;
     if (job.progress < job.hours) continue;
     q.splice(q.indexOf(job), 1);
-    const r = repairItem(state, base, job.item, team[0]);
-    base.armory.push(job.item);
-    log(state, `${r.msg} It is in ${base.name}'s armory.`, "good");
+    log(state, repairItem(state, base, job.item, team[0]).msg, "good");
   }
 }
 
@@ -299,6 +318,8 @@ export function fieldRepair(state, loc) {
   const item = itemAt(state, loc);
   const k = findKit(state, placeOfLoc(state, loc));
   if (wear(k.kit, 1)) k.drop();
+  const rs = stats(state);
+  rs.field++; rs.paid.repairkit = (rs.paid.repairkit || 0) + 1;
   return repairItem(state, null, item, info.who, { kit: true }).msg;
 }
 
@@ -319,30 +340,148 @@ export function repairAt(state, loc) {
 }
 
 // ---------- the autopilot ----------
-// Queues one repair a day per base (autopilot.js governBase): worn gear below 60% of its maximum, the best fighters'
-// first (their weapon, then body armour, head, arms, legs, while the armory holds a spare for that slot; then the
-// armory's guns and armour), when the inputs are here and leave a little over (machine parts: 2 kept for buildings).
-export function planRepairs(state, base) {
-  if (!base || repairQueue(base).length >= 2 || base.gearRepairDay === Math.floor(state.hour / 24)) return "";
-  const people = atBase(state, base.id).slice().sort((a, b) => (skill(b, "shooting") - skill(a, "shooting")) || a.id - b.id);
-  const cands = [];
-  // What people wear or hold only while the armory has a spare for that slot (the repair takes it off them for hours).
-  const spare = (slot) => base.armory.some((it) => it && GEAR[it.key] && GEAR[it.key].slot === slot);
-  for (const s of people) for (const slot of ["weapon", "armor", "head", "arms", "legs"]) if (s.gear && s.gear[slot] && spare(slot)) cands.push(`s:${s.id}:${slot}`);
-  base.armory.forEach((it, i) => { if (it && GEAR[it.key] && (GEAR[it.key].slot === "weapon" || ARMOUR.includes(GEAR[it.key].slot))) cands.push(`armory:${base.id}:list:${i}`); });
-  for (const loc of cands) {
-    const it = itemAt(state, loc);
-    const max = itemDurMax(it);
-    if (!max || itemDur(it) >= REPAIR.AUTO_BELOW * max) continue;
-    const info = repairInfo(state, base, it);
-    if (!info.ok) continue;
-    const s = info.inputs.supplies;
-    if ((s.parts || 0) && (base.stock.parts || 0) - s.parts < 2) continue;
-    if ((s.scrap || 0) && (base.stock.scrap || 0) - s.scrap < 6) continue;
-    if ((s.fuel || 0) && (base.stock.fuel || 0) - s.fuel < 4) continue;
-    if ((s.wood || 0) && (base.stock.wood || 0) - s.wood < 150) continue;
-    base.gearRepairDay = Math.floor(state.hour / 24);
-    return queueRepair(state, base, loc);
+// Which gear to mend first: how much it is needed × how much it is used × how worn it is.
+//   need: worn or held by a fighter (their weapon or armour worn in a fight or on the road in the last 30 days, or on
+//         the Guard or Hunt role) 3, by anyone else here 2, the only one of its kind here (the only rifle, the only
+//         vest) in the armory 2, a spare 0;
+//   use:  worn in the last 14 days (item.lastUsed: crafting.js wearSlot / wearHeld) 2, in the last 45 days 1;
+//   wear: below 35% of its maximum urgent (×3), below 60% (×1.5), up to 85% only for a fighter's gear in daily use.
+// Spares nobody uses are never repaired by the autopilot (a spare gun is salvaged for gun parts when an urgent gun
+// needs them).
+export const AUTO = { URGENT: 0.35, LOW: REPAIR.AUTO_BELOW, TOP: 0.85, FIGHTER_DAYS: 30, RECENT: 14, LATELY: 45, URGENT_QUEUE: 4 };
+const today = (state) => Math.floor(state.hour / 24);
+const cond = (it) => { const m = itemDurMax(it); return m ? itemDur(it) / m : 1; };
+const kindOf = (it) => { const d = GEAR[it.key]; return d.slot === "weapon" ? `w:${d.cat}` : `s:${d.slot}`; };
+const SLOTS_WORN = ["weapon", "armor", "head", "arms", "legs", "tool"];
+// A fighter: their weapon or armour worn in the last 30 days (a fight, the road), or on the Guard or Hunt role.
+export function isFighter(state, s) {
+  if (!s || !s.gear) return false;
+  if (s.role === "guard" || s.role === "hunt") return true;
+  return ["weapon", "armor", "head", "arms", "legs"].some((k) => s.gear[k] && s.gear[k].lastUsed != null && today(state) - s.gear[k].lastUsed <= AUTO.FIGHTER_DAYS);
+}
+// The candidates at a base, best first: [{ loc, item, s, score, cond, urgent, need, used }].
+export function repairCandidates(state, base) {
+  const people = atBase(state, base.id);
+  const queued = new Set(repairQueue(base).map((j) => j.item));
+  const kinds = {};
+  const all = [];
+  for (const s of people) for (const slot of SLOTS_WORN) { const it = s.gear && s.gear[slot]; if (it) all.push({ loc: `s:${s.id}:${slot}`, item: it, s }); }
+  base.armory.forEach((it, i) => { if (it) all.push({ loc: `armory:${base.id}:list:${i}`, item: it, s: null }); });
+  for (const x of all) if (GEAR[x.item.key]) kinds[kindOf(x.item)] = (kinds[kindOf(x.item)] || 0) + 1;
+  const out = [];
+  for (const x of all) {
+    const it = x.item;
+    if (!GEAR[it.key] || queued.has(it) || !itemDurMax(it)) continue;
+    const rk = repairKind(it);
+    if (!rk || (!rk.def && !rk.refuse)) continue;
+    const c = cond(it);
+    if (c >= AUTO.TOP) continue;
+    const fighter = x.s && isFighter(state, x.s);
+    const need = x.s ? (fighter ? 3 : 2) : kinds[kindOf(it)] === 1 ? 2 : 0;
+    const age = it.lastUsed == null ? Infinity : today(state) - it.lastUsed;
+    const used = age <= AUTO.RECENT ? 2 : age <= AUTO.LATELY ? 1 : 0;
+    if (need === 0 && used === 0) continue; // a spare nobody uses
+    if (c >= AUTO.LOW && !(need >= 3 && used >= 2)) continue; // no over-repair: 60–85% only for a fighter's gear in daily use
+    const urgent = c < AUTO.URGENT && need >= 2;
+    const score = (need + used) * (c < AUTO.URGENT ? 3 : c < AUTO.LOW ? 1.5 : 0.5) + (1 - c);
+    out.push({ loc: x.loc, item: it, s: x.s, score, cond: c, urgent, need, used });
   }
-  return "";
+  return out.sort((a, b) => b.score - a.score || a.cond - b.cond || a.loc.localeCompare(b.loc));
+}
+// Inputs held back from crafts and builds while an urgent repair waits for them (autopilot.js waterHold): this hour's.
+export const repairHold = (state, base, k) => (base.repairHold && base.repairHold.hour >= state.hour - 1 ? base.repairHold[k] || 0 : 0);
+// The bench tier an urgent repair here needs and the base lacks (0: none). autopilot.js buildWishes.
+export function benchWanted(state, base) {
+  let want = 0;
+  for (const c of repairCandidates(state, base)) {
+    const rk = repairKind(c.item);
+    if (!c.urgent || !rk.def) continue;
+    want = Math.max(want, rk.def.soft || GEAR[c.item.key].makeshift ? 1 : 2);
+  }
+  return want > benchTier(base, true) ? want : 0;
+}
+// The skill a crafter needs for the first repair waiting here with nobody on the Craft role able to do it, or null
+// (autopilot.js planRoles: a crafter for it). { skill, min, urgent }.
+export function repairCrafterWanted(state, base) {
+  for (const j of repairQueue(base)) {
+    const rk = repairKind(j.item);
+    if (!rk || !rk.def || !atBaseItem(state, base, j.item)) continue;
+    if (repairers(state, base, j.item).length) return null;
+    return { skill: rk.def.skill, min: minFor(j.item, rk.def), urgent: !!j.urgent };
+  }
+  return null;
+}
+// A spare gun in the armory to take apart for gun parts: not the only one of its kind here, the cheapest first.
+function spareGun(state, base) {
+  const isGun = (it) => it && GEAR[it.key] && GEAR[it.key].slot === "weapon" && ["pistol", "shotgun", "rifle", "automatic"].includes(GEAR[it.key].cat);
+  const guns = base.armory.filter((it) => isGun(it) && !repairQueue(base).some((j) => j.item === it));
+  const n = (k) => base.armory.filter((g) => g && g.key === k).length + atBase(state, base.id).filter((s) => s.gear && s.gear.weapon && s.gear.weapon.key === k).length;
+  return guns.filter((g) => n(g.key) > 1).sort((a, b) => itemValue(a) - itemValue(b))[0] || null;
+}
+// The autopilot's repairs at a base (autopilot.js governBase, hourly): the best candidates first; urgent pieces
+// (below 35%) as soon as the inputs are there, several a day (up to AUTO.URGENT_QUEUE waiting); the rest one a day
+// while the stores keep a reserve. A fighter's urgent piece that cannot be mended (a ceramic plate, a vest with no
+// Kevlar kit here, worn out) is swapped for a like one in better shape from the armory. An urgent gun short of gun
+// parts: a spare gun is taken apart for them. Inputs an urgent repair is short of are held back from crafts and builds
+// (repairHold). Returns the last message.
+export function planRepairs(state, base) {
+  if (!base) return "";
+  const q = repairQueue(base);
+  let msg = "";
+  const hold = { hour: state.hour };
+  for (const c of repairCandidates(state, base)) {
+    const urgentQueued = q.filter((j) => j.urgent).length;
+    if (c.urgent ? urgentQueued >= AUTO.URGENT_QUEUE || q.length >= MAX_REPAIR_QUEUE : q.length >= 2 || base.gearRepairDay === today(state)) continue;
+    const info = repairInfo(state, base, c.item);
+    const waits = c.urgent && !info.ok && !info.who && /Craft role/.test(info.reason); // queued: a crafter is put on it
+    if (!info.ok && !waits) {
+      if (c.urgent && c.s && /cannot be repaired|Kevlar|worn out|bench/i.test(info.reason)) { const m = rotateWorn(state, base, c); if (m) msg = m; }
+      if (c.urgent && /^Needs \d+ /.test(info.reason)) {
+        for (const [k, v] of Object.entries(info.inputs.supplies)) if (have(base, k) < v) hold[k] = Math.max(hold[k] || 0, v);
+        if (have(base, "gunparts") < (info.inputs.supplies.gunparts || 0)) { const g = spareGun(state, base); if (g) msg = salvageAt(state, `armory:${base.id}:list:${base.armory.indexOf(g)}`); }
+      }
+      continue;
+    }
+    const s = info.inputs.supplies;
+    if (!c.urgent) {
+      if ((s.parts || 0) && (base.stock.parts || 0) - s.parts < 2) continue;
+      if ((s.scrap || 0) && (base.stock.scrap || 0) - s.scrap < 6) continue;
+      if ((s.fuel || 0) && (base.stock.fuel || 0) - s.fuel < 4) continue;
+      if ((s.wood || 0) && (base.stock.wood || 0) - s.wood < 150) continue;
+    }
+    const r = queueRepair(state, base, c.loc, { urgent: c.urgent });
+    if (/queued/.test(r)) { msg = r; if (!c.urgent) base.gearRepairDay = today(state); }
+  }
+  base.repairHold = Object.keys(hold).length > 1 ? hold : null;
+  return msg;
+}
+// A fighter's urgent piece that cannot be mended here, swapped for a like piece (same slot, as good) in better shape
+// from the armory.
+function rotateWorn(state, base, c) {
+  const slot = GEAR[c.item.key].slot;
+  const alt = base.armory.filter((it) => it && GEAR[it.key] && GEAR[it.key].slot === slot && (GEAR[it.key].power || 0) >= (GEAR[c.item.key].power || 0) - 0.3 && cond(it) >= AUTO.LOW)
+    .sort((a, b) => (GEAR[b.key].power || 0) - (GEAR[a.key].power || 0) || cond(b) - cond(a))[0];
+  if (!alt || !c.s || c.s.gear[slot] !== c.item) return "";
+  base.armory.splice(base.armory.indexOf(alt), 1);
+  base.armory.push(c.item);
+  c.s.gear[slot] = alt;
+  return `${c.s.name.split(" ")[0]} swaps the worn ${c.item.name} for the ${alt.name} from the armory.`;
+}
+// A team on the road (autopilot.js, once a day): a member's urgent weapon or armour mended with a field repair kit the
+// team carries, two a day at most a team.
+export function autoFieldRepairs(state) {
+  for (const p of state.parties) {
+    if (p.owner !== "player") continue;
+    let n = 0;
+    for (const s of (state.survivors || []).filter((x) => x.alive && x.location && x.location.kind === "party" && x.location.partyId === p.id)) {
+      for (const slot of ["weapon", "armor", "head", "arms", "legs"]) {
+        const it = s.gear && s.gear[slot];
+        if (n >= 2 || !it || !itemDurMax(it) || cond(it) >= AUTO.URGENT) continue;
+        const loc = `s:${s.id}:${slot}`;
+        if (!fieldRepairInfo(state, loc).ok) continue;
+        fieldRepair(state, loc);
+        n++;
+      }
+    }
+  }
 }

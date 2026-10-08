@@ -7,11 +7,12 @@
 import { createWorld, hub, atBase, tickHour } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { newItem, stow } from "../src/sim/inventory.js";
-import { itemDur, itemDurMax } from "../src/sim/crafting.js";
+import { itemDur, itemDurMax, wearAfterFight } from "../src/sim/crafting.js";
 import { addBuilding, benchTier } from "../src/sim/buildings.js";
 import {
   REPAIR, REPAIR_KINDS, repairKind, repairInfo, repairItem, repairMath, lossRate, queueRepair, cancelRepair, repairHour,
-  fieldRepair, fieldRepairInfo, planRepairs, wornOut, repairPreview, repairInfoAt, repairAt,
+  fieldRepair, fieldRepairInfo, planRepairs, wornOut, repairPreview, repairInfoAt, repairAt, repairJobStatus, repairCandidates,
+  isFighter, repairHold, benchWanted, repairCrafterWanted, autoFieldRepairs,
 } from "../src/sim/repair.js";
 import { itemValue } from "../src/sim/valuation.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -117,7 +118,7 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   check(![...c.pockets, ...(c.gear.backpack.contents || [])].includes(kit), "the last use: the kit is gone");
 }
 
-// 5. The base queue.
+// 5. The base queue: the item stays where it is (nobody is stripped of their gear) and is mended while it is here.
 {
   console.log("The queue");
   const { st, h, c } = setup(2, { mechanics: 6, crafting: 6 });
@@ -125,44 +126,125 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   c.gear.weapon = ar;
   const gp0 = h.stock.gunparts, sc0 = h.stock.scrap;
   const msg = queueRepair(st, h, `s:${c.id}:weapon`);
-  check(h.gearRepairs.length === 1 && !c.gear.weapon && h.stock.gunparts === gp0 - 3 && h.stock.scrap === sc0 - 1, `queued: the gun goes to the bench, its inputs paid (${msg})`);
-  check(queueRepair(st, h, `s:${c.id}:weapon`) === "Nothing there." && h.gearRepairs.length === 1, "an empty slot cannot be queued");
+  check(h.gearRepairs.length === 1 && c.gear.weapon === ar && h.stock.gunparts === gp0 - 3 && h.stock.scrap === sc0 - 1, `queued: the gun stays in hand, its inputs paid (${msg})`);
+  check(/already queued/.test(queueRepair(st, h, `s:${c.id}:weapon`)) && h.gearRepairs.length === 1, "the same item is not queued twice");
+  check(queueRepair(st, h, `s:${c.id}:pocket:0`) === "Nothing there.", "an empty pocket cannot be queued");
   const hour0 = st.hour;
   for (let i = 0; i < 4 && h.gearRepairs.length; i++) { repairHour(st); st.hour++; }
-  check(!h.gearRepairs.length && h.armory.includes(ar) && itemDur(ar) === itemDurMax(ar) && itemDurMax(ar) < 60, `done within ${st.hour - hour0} hours: in the armory at ${itemDur(ar)} of ${itemDurMax(ar)}`);
+  check(!h.gearRepairs.length && c.gear.weapon === ar && itemDur(ar) === itemDurMax(ar) && itemDurMax(ar) < 60, `done within ${st.hour - hour0} hours, mended in hand: ${itemDur(ar)} of ${itemDurMax(ar)}`);
   check(h.gearRepairHour === st.hour - 1, "the crafters' hour went to the repair (no crafting that hour)");
+  // Away with a team: the job waits; away too long, it is dropped and half paid back.
+  const bat = worn("bat", 3);
+  h.armory.push(bat);
+  queueRepair(st, h, `armory:${h.id}:list:${h.armory.indexOf(bat)}`);
+  h.armory.splice(h.armory.indexOf(bat), 1); // taken out on a trip
+  repairHour(st);
+  check(h.gearRepairs.length === 1 && /Not here/.test(repairJobStatus(st, h, h.gearRepairs[0])) && h.gearRepairs[0].progress === 0, "taken away, the job waits (nothing done)");
+  st.hour += REPAIR.AWAY_HOURS;
+  const sc1 = h.stock.scrap;
+  repairHour(st);
+  check(!h.gearRepairs.length && h.stock.scrap > sc1, "away for 10 days: dropped, part of the inputs back");
+  // Cancel: everything back.
+  h.armory.push(bat);
+  const s0 = h.stock.scrap, w0 = h.stock.wood;
+  queueRepair(st, h, `armory:${h.id}:list:${h.armory.indexOf(bat)}`);
+  cancelRepair(st, h, h.gearRepairs[0].id);
+  check(!h.gearRepairs.length && h.armory.includes(bat) && h.stock.scrap === s0 && h.stock.wood === w0, "cancelled before it started: everything paid comes back");
   const knife = worn("knife", 5);
   h.armory.push(knife);
   const kl = `armory:${h.id}:list:${h.armory.indexOf(knife)}`;
   const ia = repairInfoAt(st, kl);
-  check(ia.base === h && !ia.field && ia.ok && /Max durability/.test(ia.preview) && /queued/.test(repairAt(st, kl)) && !h.armory.includes(knife), "repairAt (the buttons): at a base it queues at the bench");
+  check(ia.base === h && !ia.field && ia.ok && /Max durability/.test(ia.preview) && /queued/.test(repairAt(st, kl)) && h.armory.includes(knife), "repairAt (the buttons): at a base it queues at the bench");
   cancelRepair(st, h, h.gearRepairs[h.gearRepairs.length - 1].id);
-  // Cancel: everything back.
-  const bat = worn("bat", 3);
-  h.armory.push(bat);
-  const s0 = h.stock.scrap, w0 = h.stock.wood;
-  queueRepair(st, h, `armory:${h.id}:list:${h.armory.indexOf(bat)}`);
-  const job = h.gearRepairs[0];
-  cancelRepair(st, h, job.id);
-  check(!h.gearRepairs.length && h.armory.includes(bat) && h.stock.scrap === s0 && h.stock.wood === w0, "cancelled before it started: the item and everything paid come back");
-  // A ceramic plate refused at the queue.
   h.armory.push(worn("plate", 10));
   check(/Ceramic/.test(queueRepair(st, h, `armory:${h.id}:list:${h.armory.length - 1}`)), "a ceramic plate cannot be queued");
+  check(st.repairStats.bench >= 4 && st.repairStats.paid.gunparts === 3, `repairs and their inputs are counted (state.repairStats: ${JSON.stringify(st.repairStats)})`);
 }
 
-// 6. The autopilot.
+// 6. The autopilot: need × use × wear, urgent first, spares last, several a day, the bench it wants.
 {
   console.log("The autopilot");
-  const { st, h, people } = setup(2, { mechanics: 6, crafting: 6 });
-  h.armory.push(worn("ar", 12));
-  const msg = planRepairs(st, h);
-  check(h.gearRepairs.length === 1 && /queued/.test(msg), `worn gear in the armory goes to the bench (${msg})`);
-  check(planRepairs(st, h) === "" && h.gearRepairs.length === 1, "one a day");
-  const fighter = people[1];
-  fighter.gear.weapon = worn("carbine", 10);
-  st.hour += 24;
+  const { st, h, c, people } = setup(2, { mechanics: 6, crafting: 6 });
+  const d = Math.floor(st.hour / 24);
+  const [, fighter, homebody] = people;
+  fighter.gear.weapon = worn("carbine", 14); fighter.gear.weapon.lastUsed = d - 2; // 20%: a fighter's gun in use
+  fighter.gear.armor = worn("vest", 10); fighter.gear.armor.lastUsed = d - 2;
+  homebody.gear.weapon = worn("bat", 15); // 50%, never used lately
+  homebody.role = "farm";
+  const spare = worn("pistol", 10); // a spare pistol nobody uses
+  h.armory.push(spare, newItem("pistol"));
+  for (const x of people) x.gear.legs = null;
+  const only = worn("kneeguards", 15); // the only leg armour here: needed
+  h.armory.push(only);
+  const cands = repairCandidates(st, h);
+  const order = cands.map((x) => x.item.key);
+  check(isFighter(st, fighter) && !isFighter(st, homebody), "a fighter: their gear worn on the road lately");
+  check(order[0] === "carbine" && cands[0].urgent && order.indexOf("carbine") < order.indexOf("bat"), `a fighter's urgent gun first (${order.join(", ")})`);
+  check(!order.includes("pistol"), "the spare pistol nobody uses: never");
+  check(order.includes("kneeguards") && order.indexOf("kneeguards") > order.indexOf("carbine"), "the only leg armour, in the armory: mended, after the fighter's gear");
+  const fine = newItem("ar"); fine.dur = Math.round(GEAR.ar.dur * 0.9); fighter.gear.tool = null;
+  check(!repairCandidates(st, h).some((x) => x.item === fine), "nothing above 85% is mended");
+  // Several a day while urgent ones wait.
+  const g2 = people[3] || people[2];
+  g2.gear.weapon = worn("shotgun", 12); g2.gear.weapon.lastUsed = d - 1;
+  h.armory.push(newItem("kevlarkit"));
   planRepairs(st, h);
-  check(fighter.gear.weapon && fighter.gear.weapon.key === "carbine", "a fighter's only gun is not taken off them (no spare in the armory)");
+  const urgentQ = h.gearRepairs.filter((j) => j.urgent).map((j) => j.item.key);
+  check(urgentQ.includes("carbine") && urgentQ.includes("shotgun") && urgentQ.includes("vest"), `urgent repairs queued together, the same hour (${urgentQ.join(", ")})`);
+  check(h.gearRepairs[0].urgent && fighter.gear.weapon && fighter.gear.armor, "urgent ones head the queue; nobody is stripped of their gear");
+  // Urgent ones are worked first.
+  const ord = [];
+  for (let i = 0; i < 40 && h.gearRepairs.length; i++) { const n = h.gearRepairs.length; const before = h.gearRepairs.map((j) => j.item.key); repairHour(st); st.hour++; if (h.gearRepairs.length < n) ord.push(before.find((k) => !h.gearRepairs.some((j) => j.item.key === k))); planRepairs(st, h); }
+  check(ord.length >= 3 && ["carbine", "shotgun", "vest"].includes(ord[0]), `worked urgent first (${ord.join(", ")})`);
+  // Inputs short for an urgent repair: held back, and a spare gun taken apart for gun parts.
+  const s2 = setup(2, { mechanics: 6, crafting: 6 });
+  const f2 = s2.people[1];
+  f2.gear.weapon = worn("ar", 8); f2.gear.weapon.lastUsed = Math.floor(s2.st.hour / 24);
+  s2.h.stock.gunparts = 0;
+  s2.h.armory.push(newItem("pistol"), newItem("pistol"));
+  const m2 = planRepairs(s2.st, s2.h);
+  check(/apart/.test(m2) && s2.h.stock.gunparts > 0 && s2.h.armory.filter((x) => x.key === "pistol").length === 1, `an urgent gun short of gun parts: a spare pistol taken apart (${m2})`);
+  s2.h.stock.gunparts = 0; s2.h.armory = [];
+  s2.h.gearRepairs = [];
+  planRepairs(s2.st, s2.h);
+  check(repairHold(s2.st, s2.h, "gunparts") > 0, "and what it still lacks is held back from crafts and builds");
+  // A fighter's ceramic plate past mending: swapped for a better one from the armory.
+  const s3 = setup(2, { mechanics: 6, crafting: 6 });
+  const f3 = s3.people[1];
+  f3.gear.armor = worn("plate", 5); f3.gear.armor.lastUsed = Math.floor(s3.st.hour / 24);
+  const fresh = newItem("plate");
+  s3.h.armory.push(fresh);
+  const m3 = planRepairs(s3.st, s3.h);
+  check(f3.gear.armor === fresh && s3.h.armory.some((x) => x.key === "plate" && x !== fresh), `a worn ceramic plate is swapped for the spare (${m3})`);
+  // No bench: the governor wants one for the fighters' worn gear.
+  const s4 = setup(0, { mechanics: 6, crafting: 6 });
+  const f4 = s4.people[1];
+  f4.gear.weapon = worn("ar", 8); f4.gear.weapon.lastUsed = Math.floor(s4.st.hour / 24);
+  check(benchWanted(s4.st, s4.h) === 2, "no bench and a fighter's gun worn: a workbench is wanted");
+  // A crafter for a waiting repair (planRoles step 8 reads repairCrafterWanted).
+  const s5 = setup(2, { mechanics: 6, crafting: 6 });
+  s5.c.role = "rest";
+  const f5 = s5.people[1];
+  f5.gear.weapon = worn("ar", 8); f5.gear.weapon.lastUsed = Math.floor(s5.st.hour / 24);
+  planRepairs(s5.st, s5.h);
+  const want = repairCrafterWanted(s5.st, s5.h);
+  check(s5.h.gearRepairs.length === 1 && want && want.skill === "mechanics" && want.urgent, `an urgent repair with nobody on the Craft role is queued and asks for a crafter (${JSON.stringify(want)})`);
+  // A team on the road: a field kit on an urgent piece.
+  const s6 = setup(2, { mechanics: 6, crafting: 6 });
+  const p = { id: 999001, owner: "player", cargo: { supplies: {}, gear: [newItem("repairkit")] } };
+  s6.st.parties.push(p);
+  const f6 = s6.people[1];
+  f6.location = { kind: "party", partyId: p.id };
+  f6.gear.weapon = worn("ar", 6); f6.skills.mechanics = 5;
+  autoFieldRepairs(s6.st);
+  check(itemDur(f6.gear.weapon) > 6 && s6.st.repairStats.field === 1, `a team's urgent gun mended with the kit they carry (${itemDur(f6.gear.weapon)} of ${itemDurMax(f6.gear.weapon)})`);
+  s6.st.parties.splice(s6.st.parties.indexOf(p), 1);
+  // lastUsed is stamped where wear happens.
+  const s7 = setup();
+  const k7 = s7.people[1];
+  k7.gear.weapon = worn("knife", 20);
+  wearAfterFight(s7.st, [k7]);
+  check(k7.gear.weapon.lastUsed === Math.floor(s7.st.hour / 24), "a fight stamps the day on what it wore (item.lastUsed)");
 }
 
 // 7. Saves and worth.
