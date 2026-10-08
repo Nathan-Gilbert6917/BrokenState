@@ -32,7 +32,7 @@ import { count } from "./buildings.js";
 import { baseHeat } from "./hordes.js";
 import { hash01 } from "./skills.js";
 import { weightOf } from "./groupcare.js";
-import { day, log, snapshot } from "./world.js";
+import { day, log, snapshot, localId } from "./world.js";
 
 export const HIDE = {
   TYPE: { hub: 0, outpost: 0.2 },
@@ -155,7 +155,7 @@ export function hidingDaily(state) {
     const t = Number(ts);
     const team = state.parties.find((p) => p.owner === "player" && p.path && p.path.length && g.distance(partyPos(p), t) <= HIDE.FIND_NEAR);
     if (team) { foundOutpost(state, t, "One of your teams"); continue; }
-    if (state.live && state.live.has(t) && hash01(state.seed, "hide-find", t, fid, d) < HIDE.FIND_DAILY * (1 - HIDE.AI_CONCEAL)) foundOutpost(state, t, "Your lookouts");
+    if (state.live && state.live.has(t) && hash01(state.seed, "hide-find", t, localId(state, fid), d) < HIDE.FIND_DAILY * (1 - HIDE.AI_CONCEAL)) foundOutpost(state, t, "Your lookouts");
   }
 }
 const partyPos = (p) => p.path[Math.min(p.idx || 0, p.path.length - 1)];

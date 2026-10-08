@@ -69,7 +69,7 @@ console.log("The governor's hive squad goes home after the fires (Aggressive aut
     let top = st.log[0];
     const lines = [];
     let fire = -1, until = Infinity;
-    while (day(st) <= Math.min(SQUAD.DAYS, until)) {
+    while (day(st) <= (fire < 0 ? SQUAD.DAYS : until)) { // a trip found near the end is followed home
       tickHour(st);
       for (let i = 0; i < st.log.length && st.log[i] !== top; i++) lines.push({ d: day(st), t: st.log[i].text });
       top = st.log[0];

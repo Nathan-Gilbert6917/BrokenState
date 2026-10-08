@@ -1,6 +1,6 @@
 // @ts-check
 // Buildings, workshop stations and the construction queue for every base (hub and outposts).
-import { log, atBase, skill, newId, day } from "./world.js";
+import { log, atBase, skill, newId, day, localId } from "./world.js";
 import { SILENT } from "./hiding.js"; // a base running silent: its stations work in quiet spells
 import { SKILL_NAMES } from "./data.js";
 import { workFactor } from "./health.js";
@@ -447,7 +447,7 @@ export function runStations(state, base) {
   for (const st of stations(base)) {
     const status = stationStatus(state, base, st);
     if (!status.running || status.recipe === "power") continue;
-    if (base.silent && hash01(state.seed, "silentwork", base.id, day(state), st.id) < SILENT.WORK_SKIP) continue; // hiding.js: running silent, the workshops work in quiet spells
+    if (base.silent && hash01(state.seed, "silentwork", localId(state, base.id), day(state), localId(state, st.id)) < SILENT.WORK_SKIP) continue; // hiding.js: running silent, the workshops work in quiet spells
     const r = RECIPES[status.recipe];
     const inp = status.in || r.in;
     for (const [k, v] of Object.entries(inp)) useStock(base.stock, k, v);

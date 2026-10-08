@@ -150,7 +150,7 @@ export function playerAir(state, d = day(state)) {
       put({ key: `call:${lid(state, f.id)}:${k}:${at}`, kind, to: f.id, bases: named([dfBase(state, f), subj]), rich: kind === "trade" });
     }
   }
-  for (const deal of radioDeals(state)) if (deal.day >= d - 1) put({ key: `deal:${deal.id}`, kind: "trade", to: deal.factionId, bases: named([baseById(state, deal.baseId)]), rich: true });
+  for (const deal of radioDeals(state)) if (deal.day >= d - 1) put({ key: `deal:${lid(state, deal.id)}`, kind: "trade", to: deal.factionId, bases: named([baseById(state, deal.baseId)]), rich: true });
   for (const p of state.parties) {
     if (p.owner !== "player" || !(p.teamMission === "caravan" || p.kind === "convoy") || !p.path || p.path.length < 2) continue;
     if (p.phase !== "out" && p.phase !== "back") continue;
@@ -381,7 +381,7 @@ export function scoutFalse(state, f, base) {
   const d = day(state);
   const k = learnBase(state, f, base.tile, d);
   if (!k) return "They were gone.";
-  const ok = h(state, "false", f.name, base.id, d) < falseOdds(state, base);
+  const ok = h(state, "false", f.name, lid(state, base.id), d) < falseOdds(state, base);
   if (!ok) { f.scoutedYou = d; bump(state, "falseFailed"); return `The watcher did not swallow it: ${f.known ? f.name : "they"} know what ${base.name} really holds.`; }
   k.def = Math.round(k.def * INTEL.SCOUT.FALSE_DEF);
   k.value = Math.round((k.value || 0) * INTEL.SCOUT.FALSE_VALUE);
@@ -394,7 +394,7 @@ export function scoutKilled(state, f, base) {
   if (!f.alive) return "They were gone.";
   f.pop = Math.max(0, f.pop - 1);
   bump(state, "scoutsKilled");
-  if (h(state, "killfound", f.name, base.id, day(state)) < INTEL.SCOUT.KILL_FOUND) {
+  if (h(state, "killfound", f.name, lid(state, base.id), day(state)) < INTEL.SCOUT.KILL_FOUND) {
     changeGoodwill(state, f, INTEL.SCOUT.KILL_GW, "you killed their scout");
     return `Your people shot the watcher in the treeline. ${f.known ? f.name : "Their group"} found the body (goodwill ${INTEL.SCOUT.KILL_GW}).`;
   }
