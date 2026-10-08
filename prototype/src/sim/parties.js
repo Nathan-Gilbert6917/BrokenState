@@ -76,6 +76,7 @@ import { establishOption, establishArrive, strikeOption, strikeArrive } from "./
 import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
 import { enterTarget, enterCard } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
 import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, takeStock, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
+import { partySaw } from "./groupworld.js"; // a group learns your bases its parties pass
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -1912,7 +1913,9 @@ function aiPartyHour(state, p) {
   if (p.kind === "caravan" && p.phase !== "out") return caravanHour(state, p); // at your gates (caravans.js)
   if (p.kind === "scav" && p.phase === "search") return scavSearchHour(state, p); // scavenging a site (aiscav.js)
   const entered = stepAlong(state, p, p.vehicle ? 1 : 0.9);
+  const owner = entered.length && state.bases.length ? factionById(state, p.owner) : null;
   for (const tileId of entered) {
+    if (owner) partySaw(state, owner, tileId); // groupworld.js: what they see of your bases on the way
     // Hordes chew up whoever walks into them.
     const horde = state.hordes.find((h) => h.tile === tileId);
     if (horde) {

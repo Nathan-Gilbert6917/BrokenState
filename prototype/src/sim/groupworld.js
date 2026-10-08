@@ -2,12 +2,20 @@
 // know, the vehicles they take, trade and fit out, and the bases left empty that they move into. Coarse, once a day per
 // group (factions.js factionsDaily), hashed dice only (skills.js hash01) except a card's own choices.
 //
-// Knowledge (f.knows = { bases: { tile: { kind: "player" | "group", id, def, walls, value, day } } }; value: your base's
-// stores as they saw them, for a war for loot, playerwars.js; a bloc's members share all of it, blocs.js): a group starts knowing
-// the bases within KNOW.START tiles of its own; it learns more by scouting (KNOW.SCOUT a day × its profile's patrol,
-// raid-minded types × raid for your bases: one target base within KNOW.RANGE, the least known first), by its scavenging
-// parties (bases within KNOW.SEE of the site they worked) and by questioning the people of yours it holds (all your
-// bases, every KNOW.QUESTION days). def is what the base was worth when they looked (your base: its defence with
+// Knowledge (f.knows = { bases: { tile: { kind: "player" | "group", id, def, walls, value, day } }, reach }; value: your
+// base's stores as they saw them, for a war for loot, playerwars.js; a bloc's members share all of it, blocs.js). What a
+// group knows of your bases is what it has scouted (user, 2026-10-08: "how far away they know your bases: as far as
+// they have scouted"), not a fixed radius: reach is how far out from its bases its scouts have been. It starts at
+// KNOW.REACH0 (its home ground: your bases there are known from the start; the other groups' bases within KNOW.START,
+// they were neighbours before you came); each scouting trip (KNOW.SCOUT a day × its profile's patrol, raid-minded
+// types × raid) either pushes the frontier KNOW.STEP tiles further (KNOW.EXPLORE of the trips while it is short of
+// KNOW.RANGE: every base in the new ring is found) or looks again at the least known base within reach (one not yet
+// seen first: a base you built there since). It also learns by its parties on the road (parties.js aiPartyHour: raids,
+// scavengers, convoys and caravans see your bases within KNOW.PASS of their way, and the one they visit), its
+// scavenging parties (bases within KNOW.SEE of the site they worked), questioning the people of yours it holds (all
+// your bases, every KNOW.QUESTION days), its bloc (blocs.js shareIntel) and the radio (radioGossip: every
+// KNOW.RADIO.EVERY days a group hears what a friend of its knows of your bases: a pact or relations KNOW.RADIO.REL+,
+// bases within KNOW.RADIO.RANGE, KNOW.RADIO.CHANCE a friend). Saved with the group. def is what the base was worth when they looked (your base: its defence with
 // everyone at a post; a group's: its strength), and stays what it was: a raid sized on old intel can meet new walls.
 // Raids only go for bases they know (factions.js launchRaid); a group they think too strong for them (known strength
 // over KNOW.AVOID × theirs) they leave alone. A scout at your base: your lookouts (watch.js lookoutsSpot) see them
@@ -37,15 +45,18 @@ import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, VEHICLE_TYPES, 
 import { workshopFactor, worksAt } from "./groupworks.js";
 import { weightOf, tickOf } from "./groupcare.js";
 import { removeFromArsenal, issueKit } from "./arsenal.js";
-import { relation, changeRelation } from "./diplomacy.js";
+import { relation, changeRelation, pactBetween } from "./diplomacy.js";
 import { captivesOf } from "./conflicts.js";
 import { preparedDefense, strength } from "./factions.js";
 import { lookoutsSpot } from "./watch.js";
 import { vehicleDeliveriesDaily } from "./vehicletrade.js"; // vehicles bought over the radio arrive
 
 export const KNOW = {
-  START: 18, YOU: 24, WATCH: 12, WATCH_DAYS: 10, RANGE: 30, SCOUT: 0.06, SEE: 3, QUESTION: 7, AVOID: 1.5,
+  START: 18, WATCH: 12, WATCH_DAYS: 10, RANGE: 30, SCOUT: 0.06, SEE: 3, QUESTION: 7, AVOID: 1.5,
   SPOT: 0.4, SPOT_WATCH: 0.8, SCOUTED: 1.6, SCOUTED_DAYS: 12, FRESH: 3,
+  // How far they have scouted (before: every base of yours within 24 tiles known from the start).
+  REACH0: 10, STEP: 5, EXPLORE: 0.7, PASS: 3,
+  RADIO: { EVERY: 7, REL: 25, RANGE: 30, CHANCE: 0.5 },
 };
 export const VEH = { TAKE_RANGE: 2, TAKE: 0.08, FIND: 0.05, STEAL: 0.01, STEAL_RANGE: 8, STEAL_GROUP: 0.004, SELL: 0.02, FIT: 0.1, FIT_EVERY: 10, PER: 15 };
 export const ABANDON = { DECAY: 30, PULL: 3, STOCK: 0.5 };
@@ -55,13 +66,14 @@ const nearOwn = (state, f, tile) => (f.bases.length ? Math.min(...f.bases.map((b
 
 // ---------- knowledge ----------
 export function knowsOf(state, f) {
-  if (f.knows) return f.knows;
-  f.knows = { bases: {} };
+  if (f.knows) { if (f.knows.reach == null) f.knows.reach = KNOW.REACH0; return f.knows; } // an older save: its intel stays, the frontier starts here
+  f.knows = { bases: {}, reach: KNOW.REACH0 };
   const d0 = day(state);
-  for (const b of state.bases) if (nearOwn(state, f, b.tile) <= KNOW.YOU) learnBase(state, f, b.tile, d0); // your bases: known within YOU tiles from the start
+  for (const b of state.bases) if (nearOwn(state, f, b.tile) <= KNOW.REACH0) learnBase(state, f, b.tile, d0); // your bases: only on their home ground
   for (const o of state.factions) if (o !== f && o.alive) for (const t of o.bases) if (nearOwn(state, f, t) <= KNOW.START) learnBase(state, f, t, d0);
   return f.knows;
 }
+export const reachOf = (state, f) => knowsOf(state, f).reach;
 // What they now know of the base on this tile (true values, as of today).
 export function learnBase(state, f, tile, d = day(state)) {
   const K = f.knows || (f.knows = { bases: {} });
@@ -96,23 +108,71 @@ export function scoutDaily(state, f, d = day(state)) {
   const K = knowsOf(state, f);
   // Their patrols keep an eye on what is close (WATCH tiles): looked at again every WATCH_DAYS days.
   if ((tickOf(f) + Math.floor(h(state, f.name, "watchph") * KNOW.WATCH_DAYS)) % KNOW.WATCH_DAYS === 0) {
-    for (const b of state.bases) if (nearOwn(state, f, b.tile) <= KNOW.WATCH) learnBase(state, f, b.tile, d);
-    for (const o of state.factions) if (o !== f && o.alive) for (const t of o.bases) if (nearOwn(state, f, t) <= KNOW.WATCH) learnBase(state, f, t, d);
+    const w = Math.min(KNOW.WATCH, K.reach ?? KNOW.REACH0); // never past where they have been
+    for (const b of state.bases) if (nearOwn(state, f, b.tile) <= w) learnBase(state, f, b.tile, d);
+    for (const o of state.factions) if (o !== f && o.alive) for (const t of o.bases) if (nearOwn(state, f, t) <= w) learnBase(state, f, t, d);
   }
   // Your people they hold talk.
   if (d % KNOW.QUESTION === 0 && captivesOf(state, f.id).length) for (const b of state.bases) learnBase(state, f, b.tile, d);
   const odds = KNOW.SCOUT * Math.max(weightOf(f, "patrol"), weightOf(f, "raid"));
   if (h(state, f.name, tickOf(f), "scout") >= odds) return null;
-  const cands = [...state.bases.map((b) => b.tile), ...state.factions.filter((o) => o.alive && o !== f).flatMap((o) => o.bases)]
-    .filter((t) => nearOwn(state, f, t) <= KNOW.RANGE)
+  const all = () => [...state.bases.map((b) => b.tile), ...state.factions.filter((o) => o.alive && o !== f).flatMap((o) => o.bases)];
+  const reach = K.reach ?? KNOW.REACH0;
+  const cands = all().filter((t) => nearOwn(state, f, t) <= reach)
     .map((t) => [t, K.bases[t] ? d - K.bases[t].day : 999, h(state, f.name, tickOf(f), "pick", t)])
     .sort((a, b) => b[1] - a[1] || a[2] - b[2]);
+  // Further out: the frontier moves, and every base in the new ring is found (a base of yours there: the scout at
+  // your walls, scoutYou, for the nearest; the others on the way). A base within reach they have never seen comes first.
+  if (reach < KNOW.RANGE && !(cands.length && cands[0][1] === 999) && (!cands.length || h(state, f.name, tickOf(f), "explore") < KNOW.EXPLORE)) {
+    K.reach = Math.min(KNOW.RANGE, reach + KNOW.STEP);
+    const ring = all().filter((t) => { const r = nearOwn(state, f, t); return r > reach && r <= K.reach; }).sort((a, b) => nearOwn(state, f, a) - nearOwn(state, f, b) || a - b);
+    let seen = null;
+    for (const t of ring) {
+      const pb = state.bases.find((b) => b.tile === t);
+      if (pb && !seen) seen = scoutYou(state, f, pb, d);
+      else learnBase(state, f, t, d);
+    }
+    return { tile: ring[0] ?? null, reach: K.reach, found: ring.length };
+  }
   if (!cands.length) return null;
   const tile = cands[0][0];
   const pb = state.bases.find((b) => b.tile === tile);
   if (pb) return scoutYou(state, f, pb, d);
   learnBase(state, f, tile, d);
   return { tile };
+}
+// One of their parties on the road (parties.js aiPartyHour, each tile it enters): your bases within KNOW.PASS of it,
+// when they did not know them or have not seen them for KNOW.FRESH days.
+export function partySaw(state, f, tile) {
+  if (!f || !f.alive || f.outsider || !f.bases) return 0;
+  let n = 0;
+  for (const b of state.bases) {
+    if (dist(state, b.tile, tile) > KNOW.PASS) continue;
+    const k = knowsOf(state, f).bases[b.tile];
+    if (k && day(state) - k.day < KNOW.FRESH) continue;
+    learnBase(state, f, b.tile);
+    n++;
+  }
+  return n;
+}
+// Over the radio: friends tell each other what they know of your bases (see the header). Returns how many they learned.
+export function radioGossip(state, f, d = day(state)) {
+  const R = KNOW.RADIO;
+  if ((d + Math.floor(h(state, f.name, "gossipph") * R.EVERY)) % R.EVERY !== 0) return 0;
+  const K = knowsOf(state, f).bases;
+  let n = 0;
+  for (const o of state.factions) {
+    if (o === f || !o.alive || o.outsider || !o.bases.length || !o.knows) continue;
+    if (!pactBetween(state, f, o) && relation(state, f, o) < R.REL) continue;
+    if (Math.min(...o.bases.map((t) => nearOwn(state, f, t))) > R.RANGE) continue;
+    if (h(state, f.name, o.name, d, "gossip") >= R.CHANCE) continue;
+    for (const [t, k] of Object.entries(o.knows.bases)) {
+      if (k.kind !== "player" || !state.bases.some((b) => b.tile === Number(t))) continue;
+      if (!K[t] || K[t].day < k.day) { K[t] = { ...k }; n++; }
+    }
+  }
+  if (n) f.heardOfYou = (f.heardOfYou || 0) + n;
+  return n;
 }
 // A scout at your walls.
 export function scoutYou(state, f, base, d = day(state), force = null) {
@@ -175,7 +235,7 @@ function vehicleDaily(state, f, d) {
   }
   // Parked at a base of yours with nobody there.
   if (h(state, f.name, tickOf(f), "steal") < VEH.STEAL * S) {
-    const v = state.vehicles.find((x) => x.loc.kind === "base" && x.type !== "bike" && (() => { const b = state.bases.find((bb) => bb.id === x.loc.baseId); return b && b.type !== "hub" && !atBase(state, b.id).length && nearOwn(state, f, b.tile) <= VEH.STEAL_RANGE; })());
+    const v = state.vehicles.find((x) => x.loc.kind === "base" && x.type !== "bike" && (() => { const b = state.bases.find((bb) => bb.id === x.loc.baseId); return b && b.type !== "hub" && !atBase(state, b.id).length && nearOwn(state, f, b.tile) <= VEH.STEAL_RANGE && !!knownBase(state, f, b.tile); })()); // only at a base they know
     if (v) { stealYours(state, f, v); return; }
   }
   // From another group.
@@ -359,6 +419,7 @@ export function groupWorldDaily(state, f) {
   const d = day(state);
   knowsOf(state, f);
   scoutDaily(state, f, d);
+  radioGossip(state, f, d);
   vehicleDaily(state, f, d);
 }
 export function groupWorldWorld(state) { decayAbandoned(state, day(state)); vehicleDeliveriesDaily(state); }
