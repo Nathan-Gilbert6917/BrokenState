@@ -357,6 +357,7 @@ export function byNumbersOdds(state, setup, people = combatants(state, setup), a
   if (setup.ambush === "player") mine *= 1.4;
   if (setup.ambush === "enemy") theirs *= 1.4 * vo.theirsAmbush;
   theirs += vo.theirsAdd;
+  mine += vo.mineAdd; // the team's own turret (a Humvee's M2)
   if (setup.allyPower) mine += setup.allyPower; // thirdside.js: soldiers or survivors fighting the same enemy (wanderers.js)
   const ratio = mine / Math.max(0.1, theirs);
   return { mine, theirs, ratio, win: winOdds(ratio, { ...setup.enemy, people: people.length, ambush: setup.ambush, hive: setup.layout === "hive" }) };
@@ -845,6 +846,7 @@ export const RAMMING = {
 const rammable = (c) => RAMMING.WEAR[c.k] != null;
 const vehicleCells = (v) => { const out = []; for (let cy = v.y; cy < v.y + v.h; cy++) for (let cx = v.x; cx < v.x + v.w; cx++) out.push([cx, cy]); return out; };
 const inVehicle = (v, x, y) => x >= v.x && y >= v.y && x < v.x + v.w && y < v.y + v.h;
+const GUNNER_ACTS = new Set(["shoot", "turret", "reload", "overwatch", "gunner", "drive", "turn", "disembark", "extract"]);
 export const aboardCount = (b) => b.units.filter((u) => u.aboard && !u.dead).length;
 // Board from next to it (1 action): the unit rides, off the map (not a target, not drawn), until it gets out.
 export function boardVehicle(b, u) {
@@ -863,6 +865,7 @@ export function disembark(b, u, force = false) {
   bindDims(b);
   const v = b.vehicle;
   if (!v || !u.aboard) return "Not in the vehicle.";
+  if (u.gunner) leaveTurret(b, u, true); // off the turret on the way out
   const ring = [];
   const scan = (r) => {
     for (let cy = v.y - r; cy <= v.y + v.h + r - 1; cy++) for (let cx = v.x - r; cx <= v.x + v.w + r - 1; cx++) {
@@ -886,6 +889,7 @@ export function landAll(b) { if (b.vehicle) for (const u of b.units) if (u.aboar
 export function leaveAboard(b) {
   const riders = b.units.filter((u) => u.aboard && !u.dead);
   if (!riders.length) return 0;
+  for (const u of riders) if (u.gunner) leaveTurret(b, u, true);
   for (const u of riders) { u.aboard = false; u.off = false; u.left = true; u.exitVehicle = true; u.exitZone = b.raid ? b.raid.vehicleZone : undefined; u.ap = 0; u.ow = u.hunker = false; if (b.vehicle) { u.x = b.vehicle.x; u.y = b.vehicle.y; } }
   say(b, `${riders.map((u) => u.name).join(", ")} ${riders.length === 1 ? "drives" : "drive"} off in the ${b.vehicle ? b.vehicle.kind : "vehicle"}.`, "good");
   return riders.length;
@@ -908,6 +912,7 @@ export function turnVehicle(b, u) {
   v.x = tx; v.y = ty; v.w = nw; v.h = nh; v.ax = v.ax === "x" ? "y" : "x";
   for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[idx(cx, cy)]; c.k = "vehicle"; c.car = { ...car, ax: v.ax, i: v.ax === "x" ? cx - v.x : cy - v.y, j: v.ax === "x" ? cy - v.y : cx - v.x }; }
   for (const o of b.units) if (o.aboard) { o.x = v.x; o.y = v.y; }
+  syncGunner(b); // the gunner stays up on the roof
   u.ap = Math.max(0, u.ap - 1);
   b.losCache.fill(0);
   const at = u.aboard ? (v.x > 0 ? [v.x - 1, v.y] : [v.x + v.w, v.y]) : [u.x, u.y];
@@ -1006,6 +1011,7 @@ export function driveTo(b, u, x, y) {
   v.x = tx; v.y = ty;
   for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[idx(cx, cy)]; c.k = "vehicle"; c.car = { ...car, i: v.ax === "x" ? cx - v.x : cy - v.y, j: v.ax === "x" ? cy - v.y : cx - v.x }; }
   for (const o of b.units) if (o.aboard) { o.x = v.x; o.y = v.y; }
+  syncGunner(b); // the gunner stays up on the roof
   if (!u.aboard) {
     const ring = ringOf(u);
     u.x = ring[0][0]; u.y = ring[0][1];
@@ -1079,11 +1085,173 @@ export function vehicleBlast(b, x, y, r, [lo, hi], kind = "blast") {
   const m = UPGRADE_FX.riderBlast * riderHitMult(b, { how: "blast" });
   const hurt = [];
   for (const u of b.units) {
-    if (!u.aboard || u.dead) continue;
+    if (!u.aboard || u.dead || u.gunner) continue; // the gunner is out in the open (caught by the blast itself)
     const eff = Math.max(0, Math.min(u.hp - 1, Math.round(b.rng.int(lo, hi) * m)));
     if (eff > 0) { u.hp -= eff; hurt.push(`${u.name} ${eff}`); }
   }
   return ` The ${v.mil ? "Army truck" : v.kind} takes the blast (condition −${wear}${v.up && (v.up.plating || v.up.scrapPlate) ? ", the plating took most of it" : ""})${hurt.length ? `; fragments through the windows catch ${hurt.join(", ")}${v.up && v.up.glass ? " (the bulletproof glass stopped most)" : ""}` : ""}.`;
+}
+
+
+// The Humvee a raid on your base brought (vehicles.js raidHumvee; conflicts.js defendInPerson sets setup.enemy.turret):
+// parked behind the attackers on the defence map, olive with the gun on its roof, full cover (plated), theirs until the
+// fight is won (foundcars.js: no claiming it now; beaten off, it is left at the base: vehicles.js loseRaidHumvee).
+// No dice: the nearest open spot behind them. Returns the rect or null.
+export function placeRaidHumvee(b, gun = "m2hb") {
+  bindDims(b);
+  const foes = b.units.filter((u) => u.side === "enemy" && !u.dead);
+  if (!foes.length) return null;
+  // Behind the attacker nearest your people (the front of their attack), a little back from it.
+  const mine = b.units.filter((u) => u.side === "player" && !u.dead);
+  const px = mine.length ? mine.reduce((a, u) => a + u.x, 0) / mine.length : W / 2, py = mine.length ? mine.reduce((a, u) => a + u.y, 0) / mine.length : H / 2;
+  const lead = foes.slice().sort((p, q) => Math.hypot(p.x - px, p.y - py) - Math.hypot(q.x - px, q.y - py) || p.id - q.id)[0];
+  const cx = lead.x, cy = lead.y, back = Math.hypot(cx - px, cy - py) + 2;
+  const spots = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) spots.push([x, y, Math.hypot(x - cx, y - cy) + 2 * Math.max(0, back - Math.hypot(x - px, y - py))]); // not nearer your people than the front
+  spots.sort((a, c) => a[2] - c[2] || a[1] - c[1] || a[0] - c[0]);
+  for (const [x, y] of spots.slice(0, 400)) for (const ax of ["x", "y"]) {
+    const r = placeCar(b.cells, W, H, x, y, ax, TRUCK_KINDS.humvee.L, "truck", (xx, yy) => inside(xx, yy) && b.cells[idx(xx, yy)].k === "open" && !unitAt(b, xx, yy), 0, { body: TRUCK_KINDS.humvee.body });
+    if (!r) continue;
+    for (let yy = r.y0; yy < r.y0 + r.h; yy++) for (let xx = r.x0; xx < r.x0 + r.w; xx++) {
+      const c = b.cells[idx(xx, yy)];
+      c.car.mil = { kind: "humvee", cond: "intact", enemy: true };
+      c.car.up = { p: 1, s: 0, g: 1, m: 0, t: gun };
+    }
+    if (b.losCache) b.losCache.fill(0);
+    b.raidHumvee = { x: r.x0, y: r.y0, w: r.w, h: r.h };
+    say(b, `They brought their Humvee, a heavy machine gun on its roof: it stands behind them. Beat them off and it is yours.`, "danger");
+    return r;
+  }
+  return null;
+}
+
+
+// ---------- the mounted machine gun (plan section 11: the turret; vehicles.js upgrades.turret) ----------
+// A rider in the team's vehicle mans its turret (act "gunner", 1 action; act again or get out to leave it): they become
+// the gunner (u.gunner), the only rider on the map (off: false): seen and shot at on the vehicle's middle cell, a level up
+// (c.h 1: they see over the cab, +2 sight, +5 aim downhill), at half cover (full with plate x2: gunnerCover), the one the
+// enemy aims at. They fire the mounted gun (TURRET_WEAPONS: turret_m2 / turret_lmg; act "turret", or Shoot) from its own
+// belt (b.vehicle.belt, shown as u.turretMag; a reload is both actions), 3 rounds a burst from the team's ammo
+// (turretRounds / spendTurretRounds: generic rounds for now, its calibre's boxes once they exist). It is very loud (the
+// noise 6 wakes the whole map; Heat +TURRET.HEAT a burst on a raid) and pins: everyone within TURRET.PIN_R of where a
+// burst lands shoots at -TURRET.PIN their next turn. Overwatch from the turret works as anyone's. Downed, the gunner drops
+// back inside; their own gun is back in their hands when they leave the turret (u.gunSave).
+// The enemy's turret: the Humvee a raid brings to your base (placeRaidHumvee) is manned by one of them (gunnerAI: no
+// moving, the M2 at the best target, the ones in the open first; a reload when the belt is out).
+export const TURRET_WEAPONS = {
+  turret_m2:  { name: "M2 turret", dmg: [40, 58], opt: 14, fall: 1.5, aim: 6, ammo: 3, noise: 6, cap: 100, pierce: 1, cal: "50bmg", rel: 0.1, mounted: true },
+  turret_lmg: { name: "LMG turret", dmg: [22, 32], opt: 8, fall: 3.5, aim: 6, ammo: 3, noise: 4, cap: 200, cal: "556", rel: 0.4, mounted: true },
+};
+Object.assign(WEAPONS, TURRET_WEAPONS);
+export const TURRET_WEAPON = { m2hb: "turret_m2", lmg: "turret_lmg" };
+export const TURRET = { PIN: 10, PIN_R: 1, RELOAD_AP: 2, HEAT: 4 };
+// The rounds the turret can draw on (your side): the team's generic ammo for now (agent A: the .50 / 5.56 boxes).
+export const turretRounds = (b) => ammoLeft(b);
+function spendTurretRounds(b, w) { take(b, "ammo", w.ammo); b.ammoUsed += w.ammo; }
+export const vehicleTurret = (b) => (b && b.vehicle && b.vehicle.up && b.vehicle.up.turret ? b.vehicle.up.turret.gun : null);
+export const gunnerOf = (b, side = "player") => b.units.find((u) => u.gunner && u.side === side && !u.dead && !u.down) || null;
+// Where the gunner stands: the middle of the vehicle (its roof).
+const roofCell = (r) => [r.x + Math.floor((r.w - 1) / 2), r.y + Math.floor((r.h - 1) / 2)];
+// The gunner's cover: half, full behind plate x2 (an enemy Humvee: its own plate).
+export function gunnerCover(b, u) {
+  const plate = u.side === "player" ? (b.vehicle && b.vehicle.up ? b.vehicle.up.plating || 0 : 0) : 1;
+  return { level: plate >= 2 ? 2 : 1, any: true, flanked: false };
+}
+// The gunner's cell a level up, the vehicle's cells drawn manned; after manning, leaving, driving or turning.
+export function syncGunner(b) {
+  bindDims(b);
+  const v = b.vehicle;
+  if (!v) return;
+  if (v.gunAt != null && b.cells[v.gunAt]) delete b.cells[v.gunAt].h;
+  v.gunAt = null;
+  const g = gunnerOf(b);
+  if (g) {
+    const [x, y] = roofCell(v);
+    g.x = x; g.y = y;
+    v.gunAt = idx(x, y);
+    b.cells[v.gunAt].h = 1;
+  }
+  for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[idx(cx, cy)]; if (c.car && c.car.up) c.car.up = { ...c.car.up, manned: !!g }; }
+  if (b.losCache) b.losCache.fill(0);
+}
+function takeGun(u, key, belt) {
+  u.gunSave = { weapon: u.weapon, weaponName: u.weaponName ?? null, item: u.item ?? null, mag: u.mag ?? null, magW: u.magW ?? null, magMax: u.magMax ?? null };
+  u.weapon = key; u.weaponName = WEAPONS[key].name; u.item = null;
+  u.magW = key; u.magMax = WEAPONS[key].cap; u.mag = Math.max(0, Math.min(u.magMax, belt ?? u.magMax));
+  u.turretMag = u.mag;
+  u.gunner = true;
+}
+function giveGunBack(u) {
+  const g = u.gunSave || {};
+  u.weapon = g.weapon || "fists"; u.item = g.item ?? null;
+  if (g.weaponName == null) delete u.weaponName; else u.weaponName = g.weaponName;
+  for (const k of ["mag", "magW", "magMax"]) { if (g[k] == null) delete u[k]; else u[k] = g[k]; }
+  delete u.gunSave; delete u.turretMag;
+  u.gunner = false;
+}
+// Man the turret (1 action); a gunner who does it again gets down. Returns an error or "".
+export function manTurret(b, u) {
+  const gun = vehicleTurret(b);
+  if (!gun) return "This vehicle has no turret.";
+  if (!u.aboard) return "Get in the vehicle first.";
+  if (u.gunner) return leaveTurret(b, u);
+  const was = gunnerOf(b);
+  if (was) leaveTurret(b, was, true);
+  const key = TURRET_WEAPON[gun] || "turret_m2";
+  takeGun(u, key, b.vehicle.belt ?? WEAPONS[key].cap);
+  u.off = false; u.ow = u.hunker = false;
+  u.ap = Math.max(0, u.ap - 1);
+  syncGunner(b);
+  say(b, `${u.name} ${was ? `takes over the ${WEAPONS[key].name} from ${was.name}` : `stands up behind the ${WEAPONS[key].name}`} (belt ${Math.min(u.mag, turretRounds(b))}/${u.magMax}): exposed, the one they will shoot at.`, "info");
+  bump(b);
+  return "";
+}
+// Off the turret, back down inside (quiet: no line in the log, no action spent).
+export function leaveTurret(b, u, quiet = false) {
+  if (!u || !u.gunner) return "";
+  if (u.side === "player" && b.vehicle) b.vehicle.belt = magIn(u);
+  giveGunBack(u);
+  if (u.aboard) { u.off = true; u.ow = false; if (b.vehicle) { u.x = b.vehicle.x; u.y = b.vehicle.y; } }
+  if (u.side === "player") syncGunner(b);
+  if (!quiet) { u.ap = Math.max(0, u.ap - 1); say(b, `${u.name} gets down off the turret.`, "info"); bump(b); }
+  return "";
+}
+// A burst from a turret: the belt synced, Heat, the pin round where it landed.
+function afterTurretBurst(b, a, t) {
+  if (a.side === "player" && b.vehicle) b.vehicle.belt = magIn(a);
+  a.turretMag = magIn(a);
+  if (b.raid) b.raid.heat = Math.min(100, b.raid.heat + TURRET.HEAT);
+  const when = a.side === "player" ? b.turn : b.turn + 1; // their next turn (the enemy phase is the rest of this one)
+  for (const o of b.units) if (o.side === t.side && active(o) && Math.max(Math.abs(o.x - t.x), Math.abs(o.y - t.y)) <= TURRET.PIN_R) o.pinT = when;
+}
+function afterTurretReload(b, u) { if (u.side === "player" && b.vehicle) b.vehicle.belt = magIn(u); u.turretMag = magIn(u); }
+// The enemy's gunner: one of the raiders up on the Humvee placeRaidHumvee put on the map.
+export function manEnemyTurret(b, gun = "m2hb") {
+  bindDims(b);
+  const r = b.raidHumvee;
+  if (!r) return null;
+  const [x, y] = roofCell(r);
+  const u = b.units.filter((o) => o.side === "enemy" && o.kind === "human" && active(o)).sort((p, q) => dist(p.x, p.y, x, y) - dist(q.x, q.y, x, y) || p.id - q.id)[0];
+  if (!u) return null;
+  takeGun(u, TURRET_WEAPON[gun] || "turret_m2", null);
+  u.x = x; u.y = y; u.post = null;
+  b.cells[idx(x, y)].h = 1;
+  r.gunAt = idx(x, y);
+  for (let cy = r.y; cy < r.y + r.h; cy++) for (let cx = r.x; cx < r.x + r.w; cx++) { const c = b.cells[idx(cx, cy)]; if (c.car && c.car.up) c.car.up = { ...c.car.up, manned: true }; }
+  if (b.losCache) b.losCache.fill(0);
+  say(b, `${u.name} climbs up behind the M2 on their Humvee.`, "danger");
+  return u;
+}
+// The gunner's turn (either side, the AI): never moves; reloads an empty belt (both actions); fires at the best target,
+// the ones in the open first; otherwise watches.
+function gunnerAI(b, u) {
+  if (magEmpty(b, u) && !reloadRefusal(b, u)) { reload(b, u); afterTurretReload(b, u); u.ap = 0; return; }
+  const foes = foesOf(b, u).filter((f) => canSee(b, u, f));
+  const open = foes.filter((f) => shotOdds(b, u, f).cover === 0);
+  const shot = bestShot(b, u, open.length ? open : foes);
+  if (shot) fire(b, u, shot.t);
+  else if (canFire(b, u)) u.ow = true;
+  u.ap = 0;
 }
 
 
@@ -1623,12 +1791,13 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (d > rg.opt && !a.noFall) aim -= (d - rg.opt) * rg.fall; // noFall: the Sniper perk (skills.js)
   if (d <= 2.5 && (w.close || gm.close)) aim += (w.close || 0) + gm.close;
   const flat = t.surprised || (!t.aware && t.side === "enemy");
-  const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : coverAgainst(b, t.x, t.y, ax, ay);
+  const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : t.gunner ? gunnerCover(b, t) : coverAgainst(b, t.x, t.y, ax, ay); // a turret's gunner: half cover (full behind plate x2)
   aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js)
   if (t.hunker && cov.level) aim -= HUNKER_DEF;
   if (flat) aim += 15;
   if (opts.reaction && !a.owSure) aim -= 15; // owSure: the Suppressor perk (skills.js)
   if (opts.volley) aim += 15; // caught before they could take cover
+  if (a.pinT === b.turn) aim -= TURRET.PIN; // pinned by a machine-gun burst (the turret)
   // A break-in map (deploy.js): the floodlit area, and shooting from a watchtower.
   if (b.lit && b.floodAim && inside(t.x, t.y) && b.lit[idx(t.x, t.y)]) aim += b.floodAim;
   // Smoke and flares (throwables.js): a shot into or out of a cloud, your people at a target in a flare's light at night.
@@ -1685,7 +1854,7 @@ export function loadMag(u, n = null) {
   u.mag = n == null ? u.magMax : Math.max(0, Math.min(u.magMax, n));
 }
 // The rounds loaded as the player sees them: never more than the team's ammo.
-export const magShown = (b, u) => (u.side === "player" ? Math.min(magIn(u), ammoLeft(b)) : magIn(u));
+export const magShown = (b, u) => (u.side === "player" ? Math.min(magIn(u), WEAPONS[u.weapon] && WEAPONS[u.weapon].mounted ? turretRounds(b) : ammoLeft(b)) : magIn(u));
 // A gun whose magazine has too few rounds for a shot (whatever the team's ammo).
 export const magEmpty = (b, u) => hasMag(u) && magIn(u) < WEAPONS[u.weapon].ammo;
 // "9mm pistol 7/15" (nothing for a weapon with no magazine).
@@ -1716,11 +1885,11 @@ export function reload(b, u) {
 // Rounds out of the gun for a shot (fire, a double tap): the magazine, and your side's pools.
 function spendRounds(b, u, w) {
   if (hasMag(u)) loadMag(u, magIn(u) - w.ammo);
-  if (u.side === "player") spendShot(b, w); // ammo, or a bow's arrow
+  if (u.side === "player") { if (w.mounted) spendTurretRounds(b, w); else spendShot(b, w); } // ammo, or a bow's arrow; a turret's belt (turretRounds)
 }
 // Can this unit fire its gun right now (ranged weapon, loaded and, for the player, the ammo there; a bow or crossbow,
 // arrows)? One that cannot fights in melee (a gun or a bow swung as a club: BASH).
-export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon])) && !magEmpty(b, u); // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js)
+export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && (u.side !== "player" || (WEAPONS[u.weapon].mounted ? turretRounds(b) >= WEAPONS[u.weapon].ammo : hasShot(b, WEAPONS[u.weapon]))) && !magEmpty(b, u); // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js)
 // A gun that can shoot now or after a reload (the AI's sense of a side's firepower, the threat preview).
 export const hasShots = (b, u) => canFire(b, u) || (isRanged(u) && magEmpty(b, u) && !reloadRefusal(b, u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)));
 // Why this unit cannot shoot ("" when it can): empty, out of ammo, no gun.
@@ -1990,6 +2159,7 @@ export function createBattle(state, setup) {
   });
   if (setup.third && setup.third.length) placeThird(b, setup.third, rng, pickCells, W); // thirdside.js: soldiers or survivors in the middle
   if (layout) layout(b, layoutCtx("units"));
+  if (setup.enemy && setup.enemy.turret && setup.layout === "baseDefence" && placeRaidHumvee(b, setup.enemy.turret)) manEnemyTurret(b, setup.enemy.turret); // the Humvee a raid brought (vehicles.js raidTurret), one of them on its gun
   // Their vehicle (conflicts.js: a scavenging party that drove here, aiscav.js): parked behind their people, cover for them
   // and theirs to lose (endBattle: won, it is left for you: result.enemyVehicle).
   if (setup.enemy && setup.enemy.vehicle && !setup.layout) {
@@ -2074,6 +2244,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   }
   if (nonLethal && t.side === "enemy" && t.kind === "human") { knockOut(b, t, by); return eff; }
   swarmHit(t, by); // carriers.js: brought down by the worms, they are in them
+  if (t.gunner) leaveTurret(b, t, true); // a turret's gunner drops back inside (theirs: their own gun on their body)
   if (t.side === "player") {
     t.down = true;
     (b.downedIds || (b.downedIds = [])).push(t.sid); // service record (relations.js)
@@ -2220,6 +2391,7 @@ export function fire(b, a, t, opts = {}) {
   // Any hit that leaves a sleeper alive wakes its group, however quiet the weapon (a crossbow bolt, a shot from
   // beyond earshot in a raid).
   if (hit && t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
+  if (w.mounted) afterTurretBurst(b, a, t); // the turret: its belt, Heat, the pin
 }
 
 function strike(b, a, t) {
@@ -2306,8 +2478,11 @@ export function combatAct(state, act) {
   // A unit on another storey than the one being looked at (buildingmaps.js storeys): acting with it looks at its floor.
   if (u && u.side === "player" && b.floors && (u.f || 0) !== (b.floor || 0) && activeAny(u)) setFloor(b, u.f || 0);
   // Aboard the team's vehicle (boardVehicle): off the map, but they can drive it, turn it, get out, or extract with it.
-  const aboardAct = u && u.aboard && !u.dead && ["drive", "turn", "disembark", "extract"].includes(act.type);
+  const aboardAct = u && u.aboard && !u.dead && ["drive", "turn", "disembark", "extract", "gunner"].includes(act.type);
   if (!u || u.side !== "player" || !(active(u) || aboardAct) || u.ap < 1) return "That unit cannot act.";
+  // On the turret (manTurret): fire it, reload the belt, watch, drive, or get down.
+  if (u.gunner && !GUNNER_ACTS.has(act.type)) return "On the turret: fire, reload the belt, overwatch, drive, or get down (Man the turret again).";
+  if (act.type === "turret") { if (!u.gunner) return vehicleTurret(b) ? "Man the turret first." : "No turret here."; act = { ...act, type: "shoot" }; }
   const t = act.target != null ? unitById(b, act.target) : null;
   switch (act.type) {
     case "move": {
@@ -2352,6 +2527,7 @@ export function combatAct(state, act) {
       break;
     }
     case "board": { const err = boardVehicle(b, u); if (err) return err; break; } // in (1 action, SEATS)
+    case "gunner": { const err = manTurret(b, u); if (err) return err; break; } // up behind the turret, or back down (1 action)
     case "disembark": { const err = disembark(b, u); if (err) return err; break; } // out onto a free cell round it (1 action)
     case "turn": { // a quarter turn (1 action, from inside or next to it)
       if (!b.vehicle) return "You came on foot: there is no vehicle here.";
@@ -2363,7 +2539,9 @@ export function combatAct(state, act) {
     case "reload": { // the magazines section: 1 action, the magazine full (as far as the team's ammo goes)
       const why = reloadRefusal(b, u);
       if (why) return why;
+      if (u.gunner && u.ap < TURRET.RELOAD_AP) return "A new belt takes both actions.";
       reload(b, u);
+      if (u.gunner) { u.ap = 0; afterTurretReload(b, u); }
       break;
     }
     case "overwatch":
@@ -2440,6 +2618,7 @@ export function combatAct(state, act) {
       if (!b.raid) return "Use Retreat.";
       if (u.aboard) { // everyone in the vehicle leaves with it, from the zone it stands at
         const riders = b.units.filter((o) => o.aboard && !o.dead);
+        for (const o of riders) if (o.gunner) leaveTurret(b, o, true);
         for (const o of riders) { o.aboard = false; o.off = false; o.left = true; o.exitZone = b.raid.vehicleZone; o.exitVehicle = true; o.ap = 0; o.ow = o.hunker = false; }
         say(b, `${riders.map((o) => o.name).join(", ")} extract in the ${b.vehicle.kind}.`, "good");
         break;
@@ -2781,6 +2960,7 @@ function bestMove(b, u, foes, field = null) {
 
 function aiUnit(b, u) {
   if (!active(u)) return;
+  if (u.gunner) return gunnerAI(b, u); // a turret's gunner (either side): stays on the gun
   if (u.dormant) { u.ap = 0; return; } // a Sleeper lies where it is (sleepers.js)
   if (u.side === "third") { // thirdside.js: neutrals stay put, defend themselves or run; soldiers fight the dead
     const plan = thirdPlan(b, u);

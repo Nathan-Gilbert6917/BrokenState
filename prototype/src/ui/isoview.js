@@ -326,7 +326,7 @@ const MIL_WHEELS = { m35: (L) => [0.7, L - 1.5, L - 0.6], humvee: (L) => [0.6, L
 // A vehicle's upgrades (sim/combat.js fitMapVehicle: car.up { p plating, s scrap plating, g glass, m mesh, t turret }):
 // steel plates along both sides (two rows at level 2; patchy scrap plates), a grille over the cab's glass, a thick green
 // tint for bulletproof glass, and a machine gun on a ring on the roof.
-const upKey = (u) => (u ? `${u.p || 0}${u.s || 0}${u.g || 0}${u.m || 0}${u.t || ""}` : "");
+const upKey = (u) => (u ? `${u.p || 0}${u.s || 0}${u.g || 0}${u.m || 0}${u.t || ""}${u.manned ? "*" : ""}` : "");
 const UP_ROOF = { humvee: [1.45, 19], m35: [0.8, 14], mrap: [1.2, 21], truck: [0.8, 16], car: [null, 15], vehicle: [null, 15] };
 function carUpParts(car, L, parts) {
   const u = car.up;
@@ -345,6 +345,7 @@ function carUpParts(car, L, parts) {
   if (u.t) {
     const a = ra ?? L / 2;
     parts.push([a - 0.2, a + 0.2, 0.8, 1.2, rz, rz + 3, steelDk]);                         // the ring and the gunner's shield
+    if (u.manned) parts.push([a - 0.3, a + 0.3, 0.7, 1.3, rz - 1, rz, flatM(hex("#e8c04a"))]); // manned: a bright ring round the hatch (the gunner stands in it)
     parts.push([Math.max(0, a - (u.t === "m2hb" ? 1.3 : 1.0)), a - 0.1, 0.95, 1.05, rz + 2, rz + 3, flatM(PAL.tar)]); // the barrel, over the cab (the front is a = 0)
   }
 }

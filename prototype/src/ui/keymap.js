@@ -95,6 +95,7 @@ export const KEYMAP = [
   { id: "battle.search", label: "Search the container next to the unit", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyS"], v: "search" },
   { id: "battle.quick", label: "Quick search (raid)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyQ"], v: "quick" },
   { id: "battle.drag", label: "Drag a body", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyD"], v: "drag" },
+  { id: "battle.gunner", label: "Man the vehicle's turret (again: get down)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyT"], v: "gunner" },
   // The unit orders (combatAction "cb-act" with v).
   ...[["shoot", "Shoot", "KeyF"], ["melee", "Melee", "KeyE"], ["meds", "Meds", "KeyM"], ["overwatch", "Overwatch", "KeyO"], ["hunker", "Hunker down", "KeyH"], ["reload", "Reload the gun", "KeyI"],
     ["retreat", "Retreat (from the evac strip)", "KeyR"], ["vehicle", "Open the vehicle", "KeyN"], ["extract", "Extract (raid)", "KeyX"], ["subdue", "Subdue", "KeyC"],

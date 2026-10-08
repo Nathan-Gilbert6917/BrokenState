@@ -24,7 +24,7 @@ import { growthAt, growthInfo } from "./hivetech.js";
 import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
-import { createVehicle, vehiclesDaily, garageHour } from "./vehicles.js";
+import { createVehicle, vehiclesDaily, garageHour, factionVehiclesDaily } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
 import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
 import { supplyDaily } from "./supply.js";
@@ -779,6 +779,7 @@ export function tickHour(state) {
     basesDaily(state);
     craftingDaily(state);
     vehiclesDaily(state);
+    factionVehiclesDaily(state); // vehicles.js: a military group replaces a lost Humvee, slowly
     factionsDaily(state);
     hordesDaily(state);
     outbreakDaily(state); // outbreak.js: new hives from beyond the border while the outbreak there burns

@@ -70,7 +70,7 @@ import { reduceHorde } from "./hordes.js";
 import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
-import { factionVehicles, groupTurretPower } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids
+import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
 
 export const RAIDS = {
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
@@ -653,7 +653,7 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
   const allies = beaten ? { power: 0, names: [] } : allianceRaidHelp(state, base, f); // alliance.js: coalition members send fighters
   const caught = !!party.surprise; // watch.js surpriseAt: they came on an unwatched night (parties.js, at the walls)
   const def = baseDefense(state, base, caught) + allies.power;
-  const att = party.strength + groupTurretPower(f); // vehicles.js: a military group's Humvee and its M2 come with the raid
+  const att = party.strength + raidTurretPower(state, party); // vehicles.js: the Humvee and its M2 if the raid brought it
   if (allies.names.length) log(state, `Fighters from ${allies.names.join(" and ")} came to help defend ${base.name}.`, "good");
   const shot = beaten ? { ammo: 0, arrows: 0 } : spendShots(base.stock, people, 3); // 3 a head: the bows' in arrows, the rest's in ammo
   // The walls, the yard and the buildings (defences.js raidTier): held at the wall, a break-in pushed back from the
@@ -675,6 +675,8 @@ export function resolveRaidOnPlayer(state, party, opts = {}) {
     f.pop = Math.max(0, f.pop - rng.int(1, 3));
     raidRepelled(state, f);
     if (shot.arrows) base.stock.arrows = (base.stock.arrows || 0) + arrowsBack(shot.arrows); // the field is yours: about half the arrows picked up
+    const hv = loseRaidHumvee(state, party, { base }); // vehicles.js: the Humvee they brought is left behind, yours
+    if (hv) head += ` ${humveeLeftText(f, hv, base)}`;
   } else if (ratio >= RAIDS.BREAK) {
     outcome = "broken";
     head = rt && rt.tier === "buildings" ? `${f.name} broke into ${base.name} and took the yard, but your people held the buildings and drove them out.` : `${f.name} broke into ${base.name} before being pushed out.`;
@@ -758,12 +760,13 @@ export function resolveRaidOnFaction(state, party, helpers) {
   const helpPower = helpers.reduce((s, h) => s + h, 0);
   if (party.warId != null) { // diplomacy.js: raids in a war between groups, with their own odds and terms
     const held = resolveWarRaid(state, party, attacker, target, helpPower);
+    if (held) loseRaidHumvee(state, party, { faction: target }); // vehicles.js: the raid's Humvee falls to the defenders
     if (groupBroken(target)) collapseFaction(state, target, attacker);
     return held;
   }
   raidSoured(state, attacker, target);
   const def = 8 + strength(target) * 0.8 + helpPower + (party.target.tile === target.bases[0] ? groupTurretPower(target) : 0); // vehicles.js: a military group's Humvee at home
-  const att = party.strength + groupTurretPower(attacker); // and on their raids
+  const att = party.strength + raidTurretPower(state, party); // and the one a raid brought
   // Only report fights you could know about: raids on groups you know, anything you can see. Groups you have not
   // met are not named.
   const who = attacker ? knownName(attacker) : party.raidName || "a horde"; // raidName: raiders from outside (visitors.js)
@@ -805,7 +808,8 @@ export function resolveRaidOnFaction(state, party, helpers) {
   }
   target.pop = Math.max(1, target.pop - rng.int(0, 2));
   if (attacker) attacker.pop = Math.max(0, attacker.pop - rng.int(1, 3));
-  if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} held off ${who}.`, "info");
+  const hv = loseRaidHumvee(state, party, { faction: target }); // vehicles.js: the raid's Humvee falls to the defenders
+  if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} held off ${who}${hv ? ` and took their ${hv.name}` : ""}.`, "info");
   return true;
 }
 
