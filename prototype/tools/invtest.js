@@ -285,10 +285,11 @@ function strongTeam(n) {
   closeCombat(state);
   check(!state.combat, "closes cleanly");
   // Base defense: everything goes to the armory, no carry limit.
-  const fighters = strongTeam(3);
-  const arm0 = h.armory.length;
+  let arm0 = h.armory.length;
   let bb = null; tries = 0;
   while (tries++ < 20) {
+    const fighters = strongTeam(3); // a fresh team each try (a lost fight leaves the last one down: no retry would field anyone)
+    arm0 = h.armory.length;
     bb = fight({ tile: h.tile, baseId: h.id, fighterIds: fighters.map((s) => s.id), enemy: { kind: "soldiers", count: 3, power: 2 }, ambush: "player", canRetreat: false, handler: "test", context: {} }, { manual: false });
     if (bb.over && bb.result.outcome === "victory") break;
     state.combat = null;

@@ -2633,7 +2633,7 @@ export function hitMult(t, by, hit) {
   return t.armor;
 }
 export function damage(b, t, raw, by, nonLethal = false, hit = null) {
-  if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
+  if (t.side === "third" && !(hit && hit.overpen)) thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you (not a round that went through someone else: an accident, like a friend hit that way)
   if (!nonLethal) nonLethal = nlHit(t, by, hit); // nonlethal.js: a stun baton, beanbag and rubber rounds
   let eff;
   if (personHit(t, hit) && (t.pieces || (t.side !== "player" && t.pieces === undefined))) {

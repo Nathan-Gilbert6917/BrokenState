@@ -5,7 +5,7 @@
 // the odds the cards show) against the map's win rate. --raw path writes every map fight (for fitting the model).
 // Fails when, over the whole grid, the wins by the numbers are more than 8 points or the deaths a fight more than 25%
 // from the map's. The fitted numbers live in combat.js ODDS (the odds) and breakoff.js BREAKOFF (the blood).
-// Usage: node tools/calibrate.js [fights per matchup=24] [seed=5] [--raw path]
+// Usage: node tools/calibrate.js [fights per matchup=48] [seed=5] [--raw path]
 import { writeFileSync } from "node:fs";
 import { createWorld, makeSurvivor, hub, combatPower } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
@@ -15,7 +15,7 @@ import "../src/sim/hives.js"; // the "hive" battle layout
 const args = process.argv.slice(2);
 const rawAt = args.indexOf("--raw");
 const rawPath = rawAt >= 0 ? args.splice(rawAt, 2)[1] : null;
-const N = Number(args[0] || 24);
+const N = Number(args[0] || 48); // 48 a matchup (1,296 fights): at 24 the gap between the two modes moved 3–8 points from seed to seed on dice alone
 const seed = Number(args[1] || 5);
 let last = null;
 registerCombatHandler("cal", (st, result) => { last = result; });
