@@ -31,6 +31,7 @@ import { radioDiploBlock } from "./diplomacy.js";
 import { vehicleOffers, buyVehicle, sellVehicle } from "../sim/vehicletrade.js"; // the Vehicles section
 import { visitorTradeHead, visitorTradeButtons } from "./visitors.js";
 import { baseListenSection } from "./radiolisten.js"; // Listen in at a base (sim/radiolisten.js)
+import { radioSecurity } from "./intel.js"; // radio discipline, encryption, decoys (sim/intel.js)
 import { ask } from "./confirm.js"; // attacking a caravan asks first (one confirmation style)
 import { supplyAmt } from "../sim/rounds.js"; // "ammo": every round, any calibre
 
@@ -257,6 +258,7 @@ export function groupsRadioHeader(state) {
       <button data-action="cp-open"${tip("A trade caravan of yours: crew, goods and a list of destinations (groups' bases, your outposts)")}>New trade caravan…</button>
     </div>
     ${baseListenSection(state)}
+    ${radioSecurity(state)}
     ${radioDeals(state).map((d) => `<div style="margin-top:0.3rem">Radio deal: ${esc(dealLine(state, d))} <button class="mini" data-action="rd-dealcaravan" data-id="${d.id}"${tip("Open the trade caravan planner with your side loaded")}>Send a caravan…</button></div>`).join("")}
     ${coming.length ? coming.map((c) => {
       const f = factionById(state, c.owner);

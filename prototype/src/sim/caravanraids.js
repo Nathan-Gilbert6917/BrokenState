@@ -43,6 +43,8 @@
 //   chance of AI_RAID.CHANCE, more for a rich cargo (up to ×3). Won by the numbers (0.5 + 0.6 × (ratio − 1), 5–95%):
 //   all the supplies go into the group's stock and the items onto its shelf (its wares), the caravan is gone (your
 //   convoy: someone hurt, the cargo gone, it goes on empty). Lost: the band loses people, the caravan a guard or two.
+// - A group that overheard your convoy's route on the radio (intel.js g.lying) hunts it INTEL.AMBUSH.RANGE tiles further
+//   out and INTEL.AMBUSH.MULT × as often until it has passed.
 import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES } from "./data.js";
 import { log, addCard, day, factionById, hurt, newId, combatPower } from "./world.js";
 import {
@@ -67,6 +69,7 @@ import { escortWords, escortShort, guardGear, ESCORT_VEHICLES, cargoValue } from
 import { addToArsenal, removeFromArsenal, partyLost, issueKit } from "./arsenal.js"; // group arsenals: loot to their fighters, guards' kit lost
 import { noteFight } from "./groupcare.js";
 import { teamName } from "./parties.js";
+import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your convoy's route waits for it
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const pct = (c) => `${Math.round(c * 100)}%`;
@@ -552,13 +555,15 @@ export function aiRaidsHour(state) {
     const strength = c.owner === "player" ? partyMembers(state, c.ref).reduce((a, s) => a + combatPower(s), 0) * 1.1 : c.strength; // as visitors.js hitConvoy
     for (const f of groups) {
       const war = c.owner === "player" && atWarWithYou(state, f); // playerwars.js: your convoys near an enemy at war
-      if (!f.bases.some((b) => g.distance(b, c.tile) <= AI_RAID.RANGE + (war ? PW.CARAVAN_RANGE : 0)) || !wouldRaid(state, f, c)) continue;
+      const lying = c.owner === "player" && lyingFor(state, f, c.ref); // intel.js: they heard its route on your radio
+      if (!f.bases.some((b) => g.distance(b, c.tile) <= AI_RAID.RANGE + (war ? PW.CARAVAN_RANGE : 0) + (lying ? INTEL.AMBUSH.RANGE : 0)) || !wouldRaid(state, f, c)) continue;
       const band = groupStrength(f) * AI_RAID.BAND;
       if (band < Math.max(1, strength) * AI_RAID.EDGE) continue;
       const fi = state.factions.indexOf(f);
-      const chance = AI_RAID.CHANCE * (1 + Math.min(2, (c.value || 0) / AI_RAID.RICH)) * (war ? PW.CARAVAN : 1);
+      const chance = AI_RAID.CHANCE * (1 + Math.min(2, (c.value || 0) / AI_RAID.RICH)) * (war ? PW.CARAVAN : 1) * (lying ? INTEL.AMBUSH.MULT : 1);
       if (hash01(state.seed, "cvraid", state.hour, c.key, fi) >= chance) continue;
-      groupRobs(state, f, c, band, strength);
+      const took = groupRobs(state, f, c, band, strength);
+      if (lying) ambushSprung(state, f, c.ref, took); // "They knew we were coming"
       break;
     }
   }

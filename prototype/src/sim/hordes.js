@@ -21,6 +21,7 @@ import { sowTile } from "./middead.js"; // Sowers
 import { hordeMilitaryPickup } from "./deadsoldiers.js";
 import { shelterHeat } from "./fieldheat.js";
 import { hordeOverrun, baseHold } from "./groupflight.js"; // a group whose base the dead overran may leave it
+import { SILENT } from "./hiding.js"; // a base running silent makes less noise
 // A horde may carry special dead from its hive's growths (hivetech.js): h.mix is the share of each kind
 // ({ runner: 0.15, brute: 0.08 }), kept through merges (weighted) and splits; h.elite from a mutation vat. Many
 // runners move it a quarter faster; screamers in it pull wandering hordes within 3 tiles along with it.
@@ -91,7 +92,9 @@ export function baseHeat(state, base) {
   const workshop = mannedStations(state, base); // stations with an operator at work; idle "Operate" people make no noise
   // A shelter (tier 0, buildings.js): its fire, vehicles parked and shooting nearby (fieldheat.js shelterHeat) instead of the hub's flat 3.
   const own = base.type !== "hub" ? 0 : base.tier === 0 ? Math.round(shelterHeat(state, base).total * 10) / 10 : 3;
-  return people.length + workshop * 3 + (base.radio ? 2 : 0) + own + generatorHeat(base) + (base.huntNoise || 0) + (base.woodNoise || 0); // a running generator is loud (power.js); hunters' gunshots (hunting.js); axes (woodcutting.js)
+  // Running silent (hiding.js): quiet workshops, small fires, the radio off, the generator muffled: × SILENT.HEAT.
+  const q = base.silent ? SILENT.HEAT : 1;
+  return people.length + (workshop * 3 + (base.radio && !base.silent ? 2 : 0) + own + generatorHeat(base)) * q + (base.huntNoise || 0) + (base.woodNoise || 0); // a running generator is loud (power.js); hunters' gunshots (hunting.js); axes (woodcutting.js)
 }
 
 // Hordes that meet merge when they are on the same errand: wandering ones (roaming or from the border), or

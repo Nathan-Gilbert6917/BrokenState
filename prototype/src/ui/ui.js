@@ -1,5 +1,6 @@
 // DOM panels and modals. Every user action goes through the action dispatcher in main.js.
 // Any element with data-tip="..." shows a hover description.
+import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts you have not found
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger, SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, SKILLS, SKILL_NAMES, TRAITS, FACTION_TYPES } from "../sim/data.js";
 import {
   day, hourOfDay, isNight, hub, alive, atBase, skill, combatPower, factionById, survivorById, baseById, gearEffect, RADIO_RANGE, residents,
@@ -398,7 +399,7 @@ function renderTeams(state, ui) {
 // Another group's base on a tile, as far as the player knows: seen there now, seen there in the last report, or
 // the main base of a group you know (the Groups tab shows where that is).
 function knownGroupBase(state, id, isLive, snap) {
-  if (isLive) return state.factions.find((f) => f.alive && f.known && f.bases.includes(id)) || null;
+  if (isLive) return unseenOutpost(state, id) ? null : state.factions.find((f) => f.alive && f.known && f.bases.includes(id)) || null; // sim/hiding.js
   const seen = snap && snap.factionBase != null ? factionById(state, snap.factionBase) : null;
   if (seen && seen.alive && seen.known) return seen;
   return state.factions.find((f) => f.alive && f.known && f.bases[0] === id) || null;

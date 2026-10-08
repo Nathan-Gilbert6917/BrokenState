@@ -20,7 +20,10 @@
 // Raids only go for bases they know (factions.js launchRaid); a group they think too strong for them (known strength
 // over KNOW.AVOID × theirs) they leave alone. A scout at your base: your lookouts (watch.js lookoutsSpot) see them
 // KNOW.SPOT of the time (KNOW.SPOT_WATCH with the watch manned) and you get a card: chase them off (they learn nothing),
-// capture them (one of theirs gone, their gun in your armory, goodwill falls) or let them be. Scouted (seen or not), a
+// capture them (one of theirs gone, their gun in your armory, the scout a prisoner of yours: prisoners.js; goodwill
+// falls), kill them (intel.js scoutKilled), feed them false information (intel.js scoutFalse) or let them be. A hidden
+// base (hiding.js concealment) is missed by scouts and passing parties now and then, and one nothing confirms may slip
+// out of what they know (hiding.js forgetDaily). Scouted (seen or not), a
 // group raids you KNOW.SCOUTED × as often for KNOW.SCOUTED_DAYS days and knows your defences.
 // Vehicles (f.vehicles, vehicles.js records): a group takes vehicles left on the map within VEH.TAKE_RANGE of its bases
 // (yours too: a card; VEH.TAKE a day × its vehicles weight), now and then brings one home from a scavenging trip
@@ -58,6 +61,9 @@ import { captivesOf } from "./conflicts.js";
 import { preparedDefense, strength, recomputeOwnership } from "./factions.js";
 import { lookoutsSpot } from "./watch.js";
 import { vehicleDeliveriesDaily } from "./vehicletrade.js"; // vehicles bought over the radio arrive
+import { HIDE, missesBase, forgetDaily } from "./hiding.js"; // hidden bases: missed by scouts and parties, forgotten
+import { scoutFalse, scoutKilled, falseOdds, INTEL } from "./intel.js"; // counter-intel at the walls
+import { surrenderPrisoners } from "./prisoners.js"; // a captured scout goes to the cells
 
 export const KNOW = {
   START: 18, WATCH: 12, WATCH_DAYS: 10, RANGE: 30, SCOUT: 0.06, SEE: 3, QUESTION: 7, AVOID: 1.5,
@@ -130,8 +136,8 @@ export function scoutDaily(state, f, d = day(state)) {
   // Their patrols keep an eye on what is close (WATCH tiles): looked at again every WATCH_DAYS days.
   if ((tickOf(f) + Math.floor(h(state, f.name, "watchph") * KNOW.WATCH_DAYS)) % KNOW.WATCH_DAYS === 0) {
     const w = Math.min(KNOW.WATCH, K.reach ?? KNOW.REACH0); // never past where they have been
-    for (const b of state.bases) if (nearOwn(state, f, b.tile) <= w) learnBase(state, f, b.tile, d);
-    for (const o of state.factions) if (o !== f && o.alive) for (const t of o.bases) if (nearOwn(state, f, t) <= w) learnBase(state, f, t, d);
+    for (const b of state.bases) if (nearOwn(state, f, b.tile) <= w && !missesBase(state, f, b.tile, HIDE.SCOUT, "watch", d)) learnBase(state, f, b.tile, d); // hiding.js: a hidden base may be missed
+    for (const o of state.factions) if (o !== f && o.alive) for (const t of o.bases) if (nearOwn(state, f, t) <= w && !missesBase(state, f, t, HIDE.SCOUT, "watch", d)) learnBase(state, f, t, d);
   }
   // Your people they hold talk.
   if (d % KNOW.QUESTION === 0 && captivesOf(state, f.id).length) for (const b of state.bases) learnBase(state, f, b.tile, d);
@@ -141,6 +147,7 @@ export function scoutDaily(state, f, d = day(state)) {
   const reach = K.reach ?? KNOW.REACH0;
   const cands = all().filter((t) => nearOwn(state, f, t) <= reach)
     .map((t) => [t, K.bases[t] ? d - K.bases[t].day : 999, h(state, f.name, tickOf(f), "pick", t)])
+    .filter(([t, age]) => age !== 999 || !missesBase(state, f, t, HIDE.SCOUT, "look", d)) // hiding.js: one never seen that the scout misses today is as if it were not there
     .sort((a, b) => b[1] - a[1] || a[2] - b[2]);
   // Further out: the frontier moves, and every base in the new ring is found (a base of yours there: the scout at
   // your walls, scoutYou, for the nearest; the others on the way). A base within reach they have never seen comes first.
@@ -149,6 +156,7 @@ export function scoutDaily(state, f, d = day(state)) {
     const ring = all().filter((t) => { const r = nearOwn(state, f, t); return r > reach && r <= K.reach; }).sort((a, b) => nearOwn(state, f, a) - nearOwn(state, f, b) || a - b);
     let seen = null;
     for (const t of ring) {
+      if (missesBase(state, f, t, HIDE.SCOUT, "ring", d)) continue; // hiding.js: walked past it
       const pb = state.bases.find((b) => b.tile === t);
       if (pb && !seen) seen = scoutYou(state, f, pb, d);
       else learnBase(state, f, t, d);
@@ -157,6 +165,7 @@ export function scoutDaily(state, f, d = day(state)) {
   }
   if (!cands.length) return null;
   const tile = cands[0][0];
+  if (missesBase(state, f, tile, HIDE.SCOUT, "look", d)) return { tile, missed: true }; // hiding.js: they looked and did not find it
   const pb = state.bases.find((b) => b.tile === tile);
   if (pb) return scoutYou(state, f, pb, d);
   learnBase(state, f, tile, d);
@@ -171,6 +180,7 @@ export function partySaw(state, f, tile) {
     if (dist(state, b.tile, tile) > KNOW.PASS) continue;
     const k = knowsOf(state, f).bases[b.tile];
     if (k && day(state) - k.day < KNOW.FRESH) continue;
+    if (missesBase(state, f, b.tile, HIDE.PASS, "pass")) continue; // hiding.js: one look a day, and a hidden base may be missed
     learnBase(state, f, b.tile);
     n++;
   }
@@ -206,22 +216,32 @@ export function scoutYou(state, f, base, d = day(state), force = null) {
     text: `Your lookouts at ${base.name} spot someone in the treeline, watching the walls and counting heads. ${f.known ? `By the look of them, one of ${f.name}.` : "Nobody you know."} If they get home, ${name} will know what ${base.name} has.`,
     choices: [
       { label: "Chase them off", hint: "They learn nothing", ai: () => 1, resolve: (st) => { f.knowsChased = (f.knowsChased || 0) + 1; return `The watcher ran for the trees. ${name[0].toUpperCase() + name.slice(1)} learned nothing this time.`; } },
-      { label: "Capture them", hint: "One of theirs gone, their gun is yours; relations with them fall", disabled: (st) => !atBase(st, base.id).length, ai: (st) => (atBase(st, base.id).length >= 3 ? 2 : -1), resolve: (st) => captureScout(st, f, base) },
+      { label: "Capture them", hint: "One of theirs gone, their gun is yours, and they go to the cells (question them: what their group knows of you); relations with them fall", disabled: (st) => !atBase(st, base.id).length, ai: (st) => (atBase(st, base.id).length >= 3 ? 2 : -1), resolve: (st) => captureScout(st, f, base) },
+      { label: "Kill them", hint: `They learn nothing and one of theirs is gone; ${Math.round(INTEL.SCOUT.KILL_FOUND * 100)}% they find the body (goodwill falls)`, disabled: (st) => !atBase(st, base.id).length, ai: () => -1, resolve: (st) => { const t = scoutKilled(st, f, base); const g = f.alive ? takeScoutGun(st, f, base) : null; return `${t}${g ? ` Their ${g} is yours.` : ""}`; } },
+      { label: "Feed them false information", hint: `Let them see what you want seen: they go home thinking ${base.name} far stronger and poorer than it is (${Math.round(falseOdds(state, base) * 100)}% they swallow it, by the best Speech here; else they learn the truth)`, disabled: (st) => !atBase(st, base.id).length, ai: () => -1, resolve: (st) => scoutFalse(st, f, base) },
       { label: "Let them watch", hint: `${name[0].toUpperCase() + name.slice(1)} learn your defences and are more likely to raid`, resolve: (st) => { learnBase(st, f, base.tile); f.scoutedYou = day(st); return "You let them watch."; } },
     ],
   });
   return { tile: base.tile, seen: true };
 }
 const lookoutsSpotSafe = (state, base) => lookoutsSpot(state, base, base.tile, 1, true);
+// Their scout's gun into the base's armory (out of their arsenal). Returns its name or null.
+function takeScoutGun(state, f, base) {
+  const lo = issueKit(state, f, f.pop + 1, "field")[0];
+  if (lo && lo.weapon && removeFromArsenal(f, lo.weapon, "captured")) { base.armory.push(lo.weapon); return lo.weapon.name; }
+  return null;
+}
 function captureScout(state, f, base) {
   if (!f.alive) return "They were gone.";
   f.pop = Math.max(0, f.pop - 1);
-  const lo = issueKit(state, f, f.pop + 1, "field")[0];
-  const got = [];
-  if (lo && lo.weapon && removeFromArsenal(f, lo.weapon, "captured")) { base.armory.push(lo.weapon); got.push(lo.weapon.name); }
+  const gun = takeScoutGun(state, f, base);
   f.goodwill = Math.max(-100, f.goodwill - 4);
   f.scoutsCaught = (f.scoutsCaught || 0) + 1;
-  return `Your people caught the watcher${f.known ? `, one of ${f.name}` : ""}${got.length ? `, and took their ${got[0]}` : ""}.`;
+  // prisoners.js: to the cells here if there is room, else a card (hold elsewhere, release, ...). Questioned, they
+  // tell what their group knows of your bases (intel.js knowsLine).
+  const held = surrenderPrisoners(state, f, base, 1)[0];
+  if (held) held.scout = true;
+  return `Your people caught the watcher${f.known ? `, one of ${f.name}` : ""}${gun ? `, and took their ${gun}` : ""}. Question them to learn what their group knows of you.`;
 }
 
 // ---------- vehicles ----------
@@ -521,6 +541,7 @@ export function groupWorldDaily(state, f) {
   knowsOf(state, f);
   scoutDaily(state, f, d);
   radioGossip(state, f, d);
+  forgetDaily(state, f, d); // hiding.js: a hidden base nothing confirms slips out of what they know
   vehicleDaily(state, f, d);
   groupAbandonDaily(state, f, d);
 }

@@ -27,6 +27,7 @@ import { visitorTipLines } from "../sim/visitors.js";
 import { caravanTipLines } from "../sim/caravanraids.js"; // the groups' caravans and convoys you can see
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
 import { stagingStage, stagingPct, workCap, stagingTip } from "../sim/staging.js";
+import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { allianceMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
 import { claimText, wellText } from "../sim/claims.js"; // land claims: the Territory layer and the hover text
@@ -588,7 +589,7 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
   fbAt.clear(); factionIdx.clear(); besiegedFb.clear();
   state.factions.forEach((f, i) => {
     factionIdx.set(f, i);
-    if (f.alive) for (const b of f.bases) if (!fbAt.has(b)) fbAt.set(b, f);
+    if (f.alive) for (const b of f.bases) if (!fbAt.has(b) && !unseenOutpost(state, b)) fbAt.set(b, f); // sim/hiding.js: a hidden outpost you have not found
   });
   for (const q of state.parties) if (q.phase === "siege" && q.target && q.target.kind === "faction") besiegedFb.add(q.target.tile);
   const rezoom = G.descZoom !== F.zoom;

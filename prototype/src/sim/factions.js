@@ -78,6 +78,8 @@ import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, hum
 import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
 import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
 import { groupWorldDaily, groupWorldWorld, intelDef, knownBase, fearsGroup, KNOW, abandonedAt, abandonedPull, occupyAbandoned, leaveGroupBase } from "./groupworld.js"; // AI parity: what they know, their vehicles, abandoned bases
+import { knowsOf } from "./groupworld.js"; // decoy outposts they believe in (intel.js)
+import { decoyRaid, heardPull, knownByRadio, INTEL } from "./intel.js"; // what they overheard of yours on the radio
 import { raidPrisoners } from "./nonlethal.js"; // groups that take people alive: some of the beaten are taken, not killed
 import { hash01 } from "./skills.js";
 import { escortParty } from "./caravans.js"; // a convoy's guards (escorts.js)
@@ -401,7 +403,8 @@ export function factionsDaily(state) {
     const scouted = f.scoutedYou != null && today - f.scoutedYou <= KNOW.SCOUTED_DAYS ? KNOW.SCOUTED : 1;
     if (raidRate > 0 && f.raidCooldown <= 0 && fitPeople(f) >= 8 && !hcGroupRaidsQuiet(state) && rng.chance(raidRate * 1.5 * scouted * (weightOf(f, "raid") ? prio(f, "raid") / weightOf(f, "raid") : 1))) {
       launchRaid(state, f);
-      f.raidCooldown = rng.int(8, 16);
+      f.raidCooldown = rng.int(8, 16) + (f.decoyWaste || 0); // intel.js decoyRaid: the march to a decoy outpost and back
+      f.decoyWaste = 0;
     }
 
     // The hives near them are a threat to everyone: a war party against one now and then (GROUP_HIVE).
@@ -576,6 +579,13 @@ function launchRaid(state, f) {
       if (strength(f) * RAIDS.CAP < raidPrep(state) * known) continue;
       targets.push({ kind: "player", baseId: b.id, tile: b.tile, from, w: playerRaidWeight(state, f, b, d) });
     }
+    // intel.js decoys: an outpost of yours they heard of on the radio that is not there (weak and rich by the talk).
+    for (const [t, k] of Object.entries(knowsOf(state, f).bases)) {
+      if (!k.fake || state.bases.some((b) => b.tile === Number(t))) continue;
+      const d = g.distance(nearestOwnBase(state, f, Number(t)), Number(t));
+      if (d > RAIDS.REACH) continue;
+      targets.push({ kind: "decoy", tile: Number(t), w: RAIDS.PLAYER_W * clamp((k.value || 0) / RAIDS.GREED, 0.4, 3) / (1 + d / RAIDS.DIST) });
+    }
   }
   // Peaceful groups you provoked only come for you; aggressive ones raid their neighbours too.
   if (FACTION_TYPES[f.type].raid > 0) for (const o of state.factions) {
@@ -590,6 +600,7 @@ function launchRaid(state, f) {
   }
   if (!targets.length) return;
   const tgt = rng.weighted(targets, (t) => t.w);
+  if (tgt.kind === "decoy") { decoyRaid(state, f, tgt.tile); return; } // intel.js: empty ground
   if (tgt.kind === "player") {
     launchRaidOnBase(state, f, baseById(state, tgt.baseId), { from: tgt.from });
     return;
@@ -608,6 +619,7 @@ export function launchRaidOnBase(state, f, base, opts = {}) {
   const p = spawnAiParty(state, f, "raid", from, base.tile, { strength: raidSize(state, f, base), target: { kind: "player", baseId: base.id, tile: base.tile } });
   if (p) {
     p.esc = f.raidEsc || 1; f.raidedYou = day(state); noteRaid(state); // the autopilot's grudge (autopilot.js conquest); the pace (eras.js)
+    if (knownByRadio(state, f, base)) p.viaRadio = true; // intel.js: they know this base only from your radio (the warning says so)
     // Siege kit by how prepared they are (siege.js): ladders, a ram, grenades against a walled base.
     p.siege = capSiegeKit(state, f, raidSiegeKit(state, base, { count: raidForce(f, p.strength).count, key: p.id, prepared: !!opts.prepared || p.esc > 1.01 || weightOf(f, "siegePrep", 0) > 0, kind: weightOf(f, "bombs", "pipebomb") })); // arsenal.js: only the explosives they hold
   }
@@ -620,7 +632,7 @@ export function playerRaidWeight(state, f, b, d) {
   const land = 1 + RAIDS.LAND * Math.max(0, state.bases.filter((x) => !x.captured).length - 1); // bases you took from groups (conquest.js) do not count: the spoils of war, not your sprawl
   const grudge = 1 + RAIDS.GRUDGE * Math.min(RAIDS.GRUDGE_MAX, f.grudge || 0);
   const size = clamp(strength(f) / RAIDS.SIZE_REF, 0.6, 2);
-  return RAIDS.PLAYER_W * greed * land * grudge * size / (1 + d / RAIDS.DIST);
+  return RAIDS.PLAYER_W * greed * land * grudge * size * heardPull(state, f, b) / (1 + d / RAIDS.DIST); // intel.js: stores they heard of on your radio
 }
 
 // The base's defence with everyone at a post ("Prepare defenses"): what a group's scouts size a raid to.
@@ -831,7 +843,10 @@ export function resolveRaidOnFaction(state, party, helpers) {
   if (!attacker && !party.raidName) target.hordeHitDay = day(state);
   // blocs.js: the target's bloc sends what it can spare to the base hit.
   const bloc = blocHelpFor(state, target, party.target.tile, attacker);
-  const helpPower = helpers.reduce((s, h) => s + h, 0) + bloc.power;
+  // intel.js: they heard this raid coming on the attackers' channel and stood ready.
+  const braced = target.bracedFor != null && target.bracedFor === party.id ? strength(target) * INTEL.BRACED : 0;
+  if (braced) target.bracedFor = null;
+  const helpPower = helpers.reduce((s, h) => s + h, 0) + bloc.power + braced;
   if (party.warId != null) { // diplomacy.js: raids in a war between groups, with their own odds and terms
     const held = resolveWarRaid(state, party, attacker, target, helpPower);
     if (held) loseRaidHumvee(state, party, { faction: target }); // vehicles.js: the raid's Humvee falls to the defenders
@@ -1070,9 +1085,10 @@ export function raidWarning(state, party) {
   const force = raidForce(f, party.strength);
   // Tribute is a share of the food on hand when it is paid, and never more than there is.
   const tributeNow = () => ({ food: Math.min(Math.floor(base.stock.food || 0), Math.ceil((base.stock.food || 0) * 0.3)), ammo: 30 });
+  if (party.viaRadio) log(state, `${f.name} knew where ${base.name} was, though none of theirs was seen near it: someone must have been listening to our radio.`, "danger"); // intel.js
   addCard(state, {
     title: `Raiders heading for ${base.name}`,
-    text: `${caught ? `${caught}: the raiders were over the wall before anyone woke. Until they are beaten off the walls do not count, and everyone but the guards fights half-asleep (${SURPRISE.ASLEEP}× their combat power instead of 0.8×) unless you rouse them (Prepare defenses). ` : ""}${razeChance(state, f, base.tile) >= 0.15 ? `${f.name} burn what they cannot hold: if they overrun ${base.name} they may raze it. ` : ""}Lookouts spot about ${force.count} ${f.name} fighter${force.count === 1 ? "" : "s"} on the way (strength about ${Math.round(party.strength)}${(party.esc || 1) > 1.01 ? `, ${Math.round(((party.esc || 1) - 1) * 100)}% more than they would have sent before you beat them off` : ""}). ${party.watchSaw ? `${party.watchSaw.trim()} ` : ""}${party.siege ? `${kitText(party.siege)} ` : ""}${raidWarLine(state, party)}Current defense: ${Math.round(def)}. Held at ${RAIDS.HOLD}× their strength (walls, a watchtower, the gate and the trench add to it), a break-in from ${RAIDS.BREAK}× (barricades, sandbags, wire and the buildings help push one back); the longer they stay at the walls, the more they smash.`,
+    text: `${caught ? `${caught}: the raiders were over the wall before anyone woke. Until they are beaten off the walls do not count, and everyone but the guards fights half-asleep (${SURPRISE.ASLEEP}× their combat power instead of 0.8×) unless you rouse them (Prepare defenses). ` : ""}${razeChance(state, f, base.tile) >= 0.15 ? `${f.name} burn what they cannot hold: if they overrun ${base.name} they may raze it. ` : ""}Lookouts spot about ${force.count} ${f.name} fighter${force.count === 1 ? "" : "s"} on the way (strength about ${Math.round(party.strength)}${(party.esc || 1) > 1.01 ? `, ${Math.round(((party.esc || 1) - 1) * 100)}% more than they would have sent before you beat them off` : ""}). ${party.watchSaw ? `${party.watchSaw.trim()} ` : ""}${party.siege ? `${kitText(party.siege)} ` : ""}${party.viaRadio ? `Nobody of theirs was seen scouting ${base.name}: they must have heard of it on your radio. ` : ""}${raidWarLine(state, party)}Current defense: ${Math.round(def)}. Held at ${RAIDS.HOLD}× their strength (walls, a watchtower, the gate and the trench add to it), a break-in from ${RAIDS.BREAK}× (barricades, sandbags, wire and the buildings help push one back); the longer they stay at the walls, the more they smash.`,
     choices: [
       { label: "Prepare defenses", hint: `Everyone at the base takes a post: non-guards count 1.3× their combat power instead of 0.8× (guards stay at 1.5×). Defense ${Math.round(def)} → ${Math.round(prepared)}. Building and repairs stop here until the raid is over`, resolve: (st) => { base.alert = true; return `${base.name} prepares for the attack.`; } },
       {

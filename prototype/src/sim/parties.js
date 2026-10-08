@@ -79,6 +79,7 @@ import { canClaim, CLAIM, claimsTaken, takeGroupClaims, claimsTakenText } from "
 import { enterTarget, enterCard } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
 import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, takeStock, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
 import { partySaw } from "./groupworld.js"; // a group learns your bases its parties pass
+import { lyingFor, INTEL } from "./intel.js"; // a gang that overheard a group's caravan waits for it
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -1947,7 +1948,9 @@ function aiPartyHour(state, p) {
         // Raider gangs (not a group they have a pact with), and aggressive groups at war with its group (caravanraids.js wouldRaid).
         if (!r.alive || r.id === p.owner || !isAggressiveType(r)) continue;
         if (!wouldRaid(state, r, { owner: p.owner, type: p.kind })) continue;
-        if (r.bases.some((b) => state.grid.distance(b, tileId) <= 2) && state.rng.chance(0.12)) {
+        const lying = lyingFor(state, r, p); // intel.js: they overheard this caravan on its group's channel
+        if (r.bases.some((b) => state.grid.distance(b, tileId) <= 2 + (lying ? INTEL.AMBUSH.AI_RANGE : 0)) && state.rng.chance(0.12 * (lying ? INTEL.AMBUSH.MULT : 1))) {
+          if (lying) r.lying = null; // the band has done what it came out for, either way
           const from = factionById(state, p.owner);
           // caravanraids.js gangAmbush: by the numbers; won, everything it carried goes into their stock and onto their shelf.
           if (!gangAmbush(state, r, p)) {
