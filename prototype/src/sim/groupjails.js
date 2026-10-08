@@ -12,9 +12,10 @@
 //   (f.prisoners: { id, from: a group id, power, since }). Both count against the room (groupRoom). Groups take
 //   prisoners from each other in raids they win (factions.js resolveRaidOnFaction: groupCapture; war raids keep their
 //   own head count, diplomacy.js w.captives).
-// - No room (FULL, by type): raiders, expansionists and traders sell the extra one to a group with room (your people:
-//   a ransom asked of you at once if nobody buys; raiders kill on a refusal, traders let them go), the military, the
-//   fortress and communes let them go, zealots kill them. Your captive's fate comes on a card.
+// - No room (FULL, by type): raiders, expansionists and traders sell the extra one to a group with room (UNSOLD:
+//   raiders and expansionists kill them, traders let them go; your people: a ransom asked of you at once if nobody
+//   buys, raiders kill on a refusal, the others let them go), the military, the fortress and communes let them go,
+//   zealots kill them. Your captive's fate comes on a card.
 // - Labour (WORK): every prisoner works for them, a share of a worker by type (raiders lean hardest) × a stand-in for
 //   their mood (raiders treat theirs worst: low output, but they feed them little): food and scrap a day, and their
 //   building goes faster (f.prisonWork, groupworks.js). Your people held are worked too: health and mood fall a day by
@@ -43,6 +44,7 @@ export const GROUP_JAIL = {
   EARLY: ["raider", "military", "fortress"], LATE: ["commune"], JAILHOUSE_POP: 15,
   // No room for one more: what they do (sell / kill / release).
   FULL: { raider: "sell", expansionist: "sell", traders: "sell", zealot: "kill", military: "release", fortress: "release", commune: "release" },
+  UNSOLD: { raider: "kill", expansionist: "kill", traders: "release" }, // a sale that finds no buyer
   // Who buys people: as labour, or to free them.
   BUYERS: { raider: "labour", expansionist: "labour", military: "free", fortress: "free" },
   // Labour: a worker's share per prisoner by type, × their mood stand-in (prisoners.js moodWork's curve); food and scrap
@@ -180,15 +182,16 @@ function fullFate(state, f, rec) {
   const how = G.FULL[f.type] || "release";
   const from = factionById(state, rec.from);
   if (how === "sell" && sellTo(state, f, rec)) return;
-  if (how === "kill") { bump(state, "killedFull"); return; }
+  if (how === "kill" || (how === "sell" && G.UNSOLD[f.type] === "kill")) { bump(state, "killedFull"); return; }
   if (from && from.alive) { from.pop += 1; changeRelation(state, f, from, 1); }
   bump(state, "releasedFull");
 }
 // A buyer for a prisoner of f's: a group with room that buys people (BUYERS), not the prisoner's own group, not at war
 // with f, with something to pay.
 function buyerFor(state, f, fromId, price) {
+  // Labour buyers deal with anyone not their enemy; the military and the fortress buy people free from anyone.
   const list = state.factions.filter((o) => o.alive && o !== f && o.id !== fromId && G.BUYERS[o.type] && o.bases.length &&
-    groupRoom(state, o) > 0 && !warBetween(state, f, o) && relation(state, f, o) > G.TRADE.enemyRel - 30 && payWith(o, price));
+    groupRoom(state, o) > 0 && !warBetween(state, f, o) && (G.BUYERS[o.type] === "free" || relation(state, f, o) > G.TRADE.enemyRel - 30) && payWith(o, price));
   if (!list.length) return null;
   return list.sort((a, b) => relation(state, f, b) - relation(state, f, a) || a.id - b.id)[0];
 }
@@ -323,7 +326,7 @@ function sellYours(state, s, f, buyer, value) {
   const terms = payWith(buyer, value);
   if (terms) pay(buyer, f, terms);
   const tile = buyer.bases[0];
-  s.location = { kind: "captive", factionId: buyer.id, tile, since: s.location.since };
+  s.location = { kind: "captive", factionId: buyer.id, tile, since: s.location.since, soldDay: day(state) };
   if (G.BUYERS[buyer.type] === "free") {
     bump(state, "yoursFreed");
     homeFree(state, s, buyer, `${buyer.name} free ${first(s)}`, `${buyer.name} bought ${s.name} from ${f.name} and set them free. ${first(s)} is back at ${hub(state).name}.`);
@@ -385,14 +388,14 @@ export function groupJailsDaily(state) {
         }
       }
       // Sale: raiders and their like sell people as labour (or to the military, who free them).
-      if (G.FULL[f.type] === "sell" && rng.chance(T.sale) && sellTo(state, f, rec)) continue;
+      if (G.FULL[f.type] === "sell" && rec.since !== day(state) && rng.chance(T.sale) && sellTo(state, f, rec)) continue; // not one bought today
       // Turned: held long, one joins them.
       if (day(state) - rec.since >= T.recruitDays && rng.chance(T.recruit)) { list.splice(list.indexOf(rec), 1); f.pop += 1; bump(state, "turned"); }
     }
     // Your people sold on (raiders and the like), where someone has room.
     if (G.FULL[f.type] === "sell") {
       for (const s of yours) {
-        if (!rng.chance(T.sellYours)) continue;
+        if (s.location.soldDay === day(state) || !rng.chance(T.sellYours)) continue; // not one bought today
         const value = G.YOURS.value + G.YOURS.perSkill * Object.values(s.skills || {}).sort((a, b) => b - a).slice(0, 3).reduce((a, v) => a + v, 0);
         const buyer = buyerFor(state, f, null, value);
         if (buyer) sellYours(state, s, f, buyer, value);

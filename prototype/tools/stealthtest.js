@@ -253,7 +253,10 @@ function prisonWorld(s, n = 2, cells = 1) {
     n++;
     const key = p.ransom.key;
     st.hour = p.ransom.due * 24;
+    const esc0 = { ...PRISON.ESCAPE };
+    PRISON.ESCAPE.guarded = 0; PRISON.ESCAPE.unguarded = 0; // the answer under test, not an escape that day (jailhouse: the dice moved)
     prisonersDaily(st);
+    Object.assign(PRISON.ESCAPE, esc0);
     if (!st.prisoners.includes(p)) { if ((h.stock[key] || 0) > (stock0[key] || 0) && f.goodwill <= g0) paid++; }
     else if (f.goodwill < g0 && f.angryUntil) refused++;
     if (i === 0) console.log(`    ${msg}`);
