@@ -16,8 +16,11 @@ import {
   radioCooldown, refusal, tradeBase, radioSummary, RELAY_RANGE, GROUP_REACH, listeners, relaySpotFor,
 } from "../sim/radio.js";
 import {
-  caravansAt, incomingCaravans, caravanGuards, attackCaravan, caravanDestinations, caravanEstimate, launchCaravan,
+  caravansAt, incomingCaravans, caravanGuards, attackCaravan, caravanDestinations, caravanEstimate, launchCaravan, caravanHome,
 } from "../sim/caravans.js";
+import {
+  openRadioTrade, setRadioBase, setDelivery, deliveryFee, deliveryHours, pendingDeal, radioDeals, dealById, cancelRadioDeal, dealCaravanForm, dealLine, goodsText,
+} from "../sim/radiotrade.js"; // trading over the radio
 import { captivesOf } from "../sim/conflicts.js";
 import { itemDur, itemDurMax } from "../sim/crafting.js";
 import { itemLoad } from "../sim/inventory.js";
@@ -104,6 +107,23 @@ export function moodBlock(state, f) {
     ${s.length ? `<div>Right now: ${esc(cap(s.join(", ")))}.</div>` : ""}</div>`;
 }
 
+// Over the radio: the base whose stores are on your side (a pick when you have more than one).
+function radioBasePick(state, ctx) {
+  if (state.bases.length < 2) return esc(ctx.base.name);
+  return `<select data-action="tw-radiobase"${tip("The base whose stores and armory you trade from. The goods go from and to there.")}>${state.bases.map((b) => `<option value="${b.id}" ${b.id === ctx.base.id ? "selected" : ""}>${esc(b.name)}</option>`).join("")}</select>`;
+}
+// Over the radio: who carries the goods.
+function deliveryPick(state, ctx) {
+  const { f, base } = ctx;
+  const hrs = deliveryHours(state, f, base);
+  const fee = deliveryFee(state, f, base);
+  const b = (v, label, hint) => `<button class="mini ${ctx.delivery === v ? "active" : ""}" data-action="tw-delivery" data-v="${v}"${tip(hint)}>${label}</button>`;
+  return `<div class="row small" style="margin:0.3rem 0;flex-wrap:wrap"><b>Delivery:</b>
+    ${b("fetch", "We fetch it", `You send a trade caravan from ${base.name} to ${f.name} with your side, and it brings theirs back. They set their side aside for about ten days. No fee.`)}
+    ${b("deliver", `They bring it${hrs != null ? ` · fee ${p1(fee)}` : ""}`, hrs != null ? `Their caravan brings their side to ${base.name} (about ${hrs}h) and takes yours back. The fee (in their prices) goes on their side; they may still say no.` : `They have no way to reach ${base.name} over land.`)}
+    <span class="muted">${ctx.delivery === "deliver" ? `Have your side ready at ${esc(base.name)} when they arrive.` : `Agreeing opens the trade caravan planner from ${esc(base.name)}.`}</span></div>`;
+}
+
 export function tradeWindow(state, ui) {
   const ctx = tradeContext(state);
   if (!ctx) return `<div class="box"><h1>Trade</h1><div class="text">There is nobody to trade with any more.</div><button class="primary" data-action="tradeleave">Close</button></div>`;
@@ -113,7 +133,10 @@ export function tradeWindow(state, ui) {
   const a = attitude(f);
   const sp = spread(f, speech);
   const c = ctx.caravan;
-  const where = ctx.visitor // outsiders (ui/visitors.js)
+  const radio = ctx.kind === "radio";
+  const where = radio
+    ? `Over the radio · trading from ${radioBasePick(state, ctx)}'s stores and armory · nothing changes hands until a caravan carries it`
+    : ctx.visitor // outsiders (ui/visitors.js)
     ? `${visitorTradeHead(state, ctx)} · ${ctx.base ? `at ${esc(ctx.base.name)} until ${when(ctx.visitor.stayUntil)} · trading from ${esc(ctx.base.name)}'s stores and armory` : `met on the road (${esc(tileLabel(state, ctx.center))}) · trading from what the team carries`}`
     : ctx.kind === "visit"
     ? `Your team at their gates (${esc(tileLabel(state, ctx.center))}) · trading from what the team carries`
@@ -125,6 +148,7 @@ export function tradeWindow(state, ui) {
     <div class="where">${FACTION_TYPES[f.type].label} · <span style="color:${attColor(a)}">${a}</span> · goodwill ${Math.round(f.goodwill)} · your best Speech ${speech}${f.pact ? ` · ${f.pact === "trade" ? "trade pact" : "non-aggression pact"}` : ""}</div>
     <div class="small muted">${where}</div>
     ${held.length ? `<div class="small danger">They hold ${held.map(first).join(", ")}. A ransom was offered when you arrived; a Rescue team can also get them out.</div>` : ""}
+    ${radio ? deliveryPick(state, ctx) : ""}
     ${t.deal ? `<div class="small good">Agreed over the radio: you give ${Object.entries(t.deal.offer).map(([k, q]) => `${q} ${k}`).join(", ")} for ${Object.entries(t.deal.ask).map(([k, q]) => `${q} ${k}`).join(", ")}. They honour it as agreed.</div>` : ""}
     ${moodBlock(state, f)}
     <div class="small muted" style="margin:0.3rem 0"${tip("Every group prices things its own way: what kind of group it is, the state it is in (war, hordes, hunger, sickness, the season, wealth) and how much of it it already has. An item's condition and uses left count too. They pay you less than they charge: Speech and goodwill narrow the gap.")}>Haggling: they pay you about ${Math.round((sp.sell / (sp.buy * marginOf(f))) * 100)}% of what they would charge for the same thing (Speech ${speech}, goodwill ${Math.round(f.goodwill)}${marginOf(f) > 1 ? "; they sell dear" : ""}).</div>
@@ -134,21 +158,21 @@ export function tradeWindow(state, ui) {
       <div><h3>You get</h3><table class="t"><tr><th></th><th>They have</th><th>Each</th><th>In the deal</th></tr>${supplyRows(state, ctx, "theirs")}</table>
         <h3>Their items</h3>${gearRows(state, ctx, "theirs")}</div>
     </div>
-    ${intelBlock(state, ctx)}
+    ${radio ? "" : intelBlock(state, ctx) /* news goes by Ask for news on the radio */}
     <div class="tw-totals">
-      <div class="spread small"><span${tip("What your side is worth to them")}>Your side: <b>${p1(tot.offer)}</b></span><span${tip("What their side costs at their prices")}>Their side: <b>${p1(tot.ask)}</b></span></div>
+      <div class="spread small"><span${tip("What your side is worth to them")}>Your side: <b>${p1(tot.offer)}</b></span><span${tip(ctx.fee ? "What their side costs at their prices, with the delivery fee" : "What their side costs at their prices")}>Their side: <b>${p1(tot.ask)}</b>${ctx.fee ? ` <span class="muted">(${p1(ctx.fee)} of it the delivery fee)</span>` : ""}</span></div>
       <div class="tw-balance"${tip("Left: what you give. Right: what you take. The deal is fair for them when your side is at least as big.")}><i style="width:${pct}%"></i><b style="left:50%"></b></div>
       <div class="small ${v.ok ? "good" : "danger"}">${esc(v.reason)}</div>
       <div class="row small" style="margin-top:0.3rem">Balance with ${["ammo", "scrap", "food"].map((k) => `<button class="mini" data-action="tw-balance" data-k="${k}"${tip(`Short: adds ${k} to your side until it is fair. Overpaying: asks for ${k} until the sides meet.`)}>${SUPPLIES[k].name}</button>`).join("")}</div>
     </div>
     ${ui.tradeMsg ? `<div class="result">${esc(ui.tradeMsg)}</div>` : ""}
     <div class="row" style="margin-top:0.7rem;flex-wrap:wrap">
-      <button class="primary" data-action="dotrade" ${v.ok ? "" : "disabled"}${tip(v.ok ? "Swap the goods. Bigger deals and overpaying earn goodwill (up to 4 a day)." : v.reason)}>Accept the deal</button>
-      <button data-action="gift" ${tot.offer > 0 ? "" : "disabled"}${tip("Give your side for nothing in return. Raises goodwill (up to 15 a day).")}>Give your side as a gift</button>
+      <button class="primary" data-action="dotrade" ${v.ok ? "" : "disabled"}${tip(!v.ok ? v.reason : radio ? (ctx.delivery === "deliver" ? "Ask them to bring it. They may say no; if they agree, their caravan sets out and the trade window opens when it arrives." : "Book the deal. Their side is set aside for you, and the trade caravan planner opens to take your side to them.") : "Swap the goods. Bigger deals and overpaying earn goodwill (up to 4 a day).")}>${radio ? "Agree the deal" : "Accept the deal"}</button>
+      ${radio ? "" : `<button data-action="gift" ${tot.offer > 0 ? "" : "disabled"}${tip("Give your side for nothing in return. Raises goodwill (up to 15 a day).")}>Give your side as a gift</button>`}
       ${ctx.visitor ? visitorTradeButtons(state, ui, ctx) : `<button data-action="pact" data-k="nonaggression" ${f.pact ? "disabled" : ""}${tip("They stop treating you as a target. Needs goodwill about -10 or more.")}>Non-aggression pact</button>
       <button data-action="pact" data-k="trade" ${f.pact === "trade" ? "disabled" : ""}${tip("Lets you set up a recurring trade route. Needs goodwill 20.")}>Trade pact</button>
       ${c ? `<button data-action="tw-attack" data-id="${c.id}"${tip(`Fight its ${caravanGuards(f, c)} guards for everything it carries. ${f.name} turn hostile for good, other groups think less of you, and ${f.name} will raid you. Asks first.`)}>Attack the caravan…</button>` : ""}`}
-      <button data-action="tradeleave" style="margin-left:auto"${tip(c ? "Close the window. The caravan stays until its day is up; reopen it from the Bases tab." : "End the visit. The team then waits for orders.")}>${c ? "Close" : "Leave"}</button>
+      <button data-action="tradeleave" style="margin-left:auto"${tip(radio ? "Hang up: back to the radio panel" : c ? "Close the window. The caravan stays until its day is up; reopen it from the Bases tab." : "End the visit. The team then waits for orders.")}>${radio ? "Hang up" : c ? "Close" : "Leave"}</button>
     </div></div>`;
 }
 
@@ -162,11 +186,9 @@ export function radioModal(state, ui) {
   const noTrade = refusal(state, f, true);
   const cd = (k) => radioCooldown(state, f, k);
   const btn = (action, label, hint, dis, extra = "") => `<button data-action="${action}" data-id="${f.id}"${extra} ${dis ? "disabled" : ""}${tip(hint)}>${label}</button>`;
-  const d = ui.radioDeal || { wantKey: "meds", wantQty: 10, payKey: "ammo", payQty: 40 };
-  const q = dealQuote(state, f, d);
   const base = tradeBase(state, f);
-  const keys = SUPPLY_KEYS;
-  const sel = (fld, val) => `<select data-action="rd-dealf" data-f="${fld}">${keys.map((k) => `<option value="${k}" ${val === k ? "selected" : ""}>${SUPPLIES[k].name}</option>`).join("")}</select>`;
+  const pend = pendingDeal(state, f); // a radio deal waiting for your caravan (sim/radiotrade.js)
+  const tb = state.bases.some((b) => b.id === ui.radioBase) ? ui.radioBase : (base || state.bases[0] || {}).id;
   const coming = incomingCaravans(state).filter((c) => c.owner === f.id);
   return `<div class="box wide"><h1>📻 ${esc(f.name)}</h1>
     <div class="where">${FACTION_TYPES[f.type].label} · <span style="color:${attColor(a)}">${a}</span> · goodwill ${Math.round(f.goodwill)}${f.pact ? ` · ${f.pact === "trade" ? "trade pact" : "non-aggression pact"}` : ""} · ${reach ? `<span class="good">in radio reach</span>` : outOfReachTag(state, f)}</div>
@@ -183,13 +205,11 @@ export function radioModal(state, ui) {
         </div>
       </div>
       <div>
-        <h3${tip("Name what you want and what you pay. They agree when it is fair for them at their prices (Speech of your best talker at the hub and their goodwill count). Their caravan brings the goods; the trade window opens with the deal filled in.")}>Make a deal</h3>
-        <div class="row small">We want <input type="number" min="1" class="tw-qty" data-action="rd-dealf" data-f="wantQty" value="${d.wantQty}"> ${sel("wantKey", d.wantKey)}</div>
-        <div class="row small" style="margin-top:0.3rem">paying <input type="number" min="1" class="tw-qty" data-action="rd-dealf" data-f="payQty" value="${d.payQty}"> ${sel("payKey", d.payKey)}</div>
-        <div class="small ${q.ok ? "good" : "danger"}" style="margin-top:0.3rem">${esc(q.reason)}${!q.ok && q.minPay != null ? "" : ""}</div>
-        <div class="small muted">They have ${n0(f.stock[d.wantKey])} ${esc(d.wantKey)}; at most ${q.maxWant ?? 0} for that payment.${q.minPay != null ? ` For ${d.wantQty} they want at least ${q.minPay} ${esc(d.payKey)}.` : ""}</div>
-        <div>${whyHtml(priceWhy(state, f, d.wantKey, { max: 1 }))}${whyHtml(priceWhy(state, f, d.payKey, { max: 1 }))}</div>
-        ${btn("rd-deal", "Propose this deal", noTrade || (coming.length ? "Their caravan is already out" : q.ok ? `Their caravan brings it to ${base ? base.name : "your base"}` : q.reason), !!noTrade || !q.ok || coming.length, "")}
+        <h3${tip("The full trade window over the radio: one of your bases' stores and armory against what they can spare. Nothing changes hands on the air: you fetch it with a caravan of yours, or ask them to bring it for a fee.")}>Trade over the radio</h3>
+        ${pend ? `<div class="small">A deal is waiting: ${esc(dealLine(state, pend))}.</div>
+          <div class="row" style="margin-top:0.3rem"><button data-action="rd-dealcaravan" data-id="${pend.id}"${tip("Open the trade caravan planner with your side loaded")}>Send a caravan…</button><button data-action="rd-dealcancel" data-id="${pend.id}"${tip("Their side goes back into their stores; they think less of you (goodwill -3)")}>Call it off</button></div>`
+        : `<div class="row small">From ${state.bases.length > 1 ? `<select data-action="rd-tradebase">${state.bases.map((b) => `<option value="${b.id}" ${b.id === tb ? "selected" : ""}>${esc(b.name)}</option>`).join("")}</select>` : esc(state.bases[0] ? state.bases[0].name : "nowhere")}</div>
+          <div style="margin-top:0.3rem">${btn("rd-trade", "Open the trade window…", noTrade || (state.trade ? "Finish the trade on screen first" : "Their spare stock and wares against your base's stores. Afterwards a caravan carries the goods: yours, or theirs for a fee."), !!noTrade || !!state.trade)}</div>`}
         ${coming.length ? `<div class="small" style="margin-top:0.4rem">${coming.map((c) => c.phase === "trading" ? `Their caravan is at ${esc(baseById(state, c.baseId)?.name || "your base")} until ${when(c.stayUntil)}.` : `Their caravan is on the way to ${esc(baseById(state, c.baseId)?.name || "your base")}.`).join(" ")}</div>` : ""}
       </div>
     </div>
@@ -215,6 +235,7 @@ export function groupsRadioHeader(state) {
       <button data-action="cp-open"${tip("A trade caravan of yours: crew, goods and a list of destinations (groups' bases, your outposts)")}>New trade caravan…</button>
     </div>
     ${baseListenSection(state)}
+    ${radioDeals(state).map((d) => `<div style="margin-top:0.3rem">Radio deal: ${esc(dealLine(state, d))} <button class="mini" data-action="rd-dealcaravan" data-id="${d.id}"${tip("Open the trade caravan planner with your side loaded")}>Send a caravan…</button></div>`).join("")}
     ${coming.length ? coming.map((c) => {
       const f = factionById(state, c.owner);
       const b = baseById(state, c.baseId);
@@ -256,7 +277,7 @@ export const newCaravanForm = () => ({ crew: [], vehicleId: null, stance: "norma
 // What each group on the route would give for the goods and items loaded (today's prices, before Speech), with
 // what moves it: the planner's way to pick the best buyer without seeing any base value.
 function worthAtStops(state, form) {
-  const h = hub(state);
+  const h = caravanHome(state, form);
   const gear = form.gear.map((i) => h.armory[i]).filter(Boolean);
   const goods = Object.fromEntries(Object.entries(form.goods).filter(([, q]) => q > 0));
   if (!Object.keys(goods).length && !gear.length) return "";
@@ -273,7 +294,8 @@ function worthAtStops(state, form) {
 
 export function caravanPlanModal(state, ui) {
   const form = ui.caravanPlan;
-  const h = hub(state);
+  const h = caravanHome(state, form); // the hub, or the base picked (a radio deal's base)
+  const deal = form.dealId != null ? dealById(state, form.dealId) : null;
   const pool = atBase(state, h.id);
   const est = caravanEstimate(state, form);
   const v = form.vehicleId ? vehicleById(state, form.vehicleId) : null;
@@ -287,6 +309,8 @@ export function caravanPlanModal(state, ui) {
   const shortStock = SUPPLY_KEYS.filter((k) => sup[k] > (h.stock[k] || 0));
   const canGo = members.length && form.stops.length && est.ok && !over && !shortStock.length;
   return `<div class="box wide"><h1>New trade caravan</h1>
+    ${state.bases.length > 1 ? `<div class="row small">From <select data-action="cp-from">${state.bases.map((b) => `<option value="${b.id}" ${b.id === h.id ? "selected" : ""}>${esc(b.name)}</option>`).join("")}</select></div>` : ""}
+    ${deal ? `<div class="small good" style="margin:0.3rem 0"${tip("At their base the caravan's stop card offers Complete the radio deal when it carries your side")}>For the radio deal with ${esc(dealLine(state, deal))}.</div>` : ""}
     <div class="grid2">
       <div>
         <h3>Destinations, in order</h3>
@@ -297,19 +321,19 @@ export function caravanPlanModal(state, ui) {
         <div class="small muted" style="margin-top:0.3rem">At each stop: trade there, unload (your outposts), stay a day, go on, or return home. Planned: about ${Math.round(est.hours)}h with 6h at each stop.</div>
         ${worthAtStops(state, form)}
         <h3>Crew (${members.length})</h3>
-        <div class="crew" style="grid-template-columns:1fr">${pool.map((s) => `<label class="${form.crew.includes(s.id) ? "on" : ""}"><input type="checkbox" data-action="cp-crew" data-id="${s.id}" ${form.crew.includes(s.id) ? "checked" : ""}> ${esc(s.name)} <span class="small muted">Speech ${skill(s, "speech")} · Combat ${combatPower(s).toFixed(1)}</span></label>`).join("") || `<span class="muted">Nobody is at the hub.</span>`}</div>
+        <div class="crew" style="grid-template-columns:1fr">${pool.map((s) => `<label class="${form.crew.includes(s.id) ? "on" : ""}"><input type="checkbox" data-action="cp-crew" data-id="${s.id}" ${form.crew.includes(s.id) ? "checked" : ""}> ${esc(s.name)} <span class="small muted">Speech ${skill(s, "speech")} · Combat ${combatPower(s).toFixed(1)}</span></label>`).join("") || `<span class="muted">Nobody is at ${esc(h.name)}.</span>`}</div>
         <h3>Transport</h3>
         <div class="row"><button data-action="cp-vehicle" data-v="" class="${!v ? "active" : ""}">On foot</button>${carsAtBase(state, h.id).map((x) => `<button data-action="cp-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fuel ${n0(x.fuel)}/${tank(x)}, condition ${Math.round(x.condition)}%`)}>${esc(x.name)}</button>`).join("")}</div>
         <div class="row" style="margin-top:0.3rem">${Object.entries(STANCES).map(([k, s]) => `<button data-action="cp-stance" data-v="${k}" class="${form.stance === k ? "active" : ""}"${tip(s.desc)}>${s.name}</button>`).join("")}</div>
       </div>
       <div>
         <h3>Goods to trade</h3>
-        <table class="t"><tr><th></th><th>Trade</th><th>To live on</th><th>Hub</th></tr>${SUPPLY_KEYS.map((k) => `<tr><td>${SUPPLIES[k].name}</td><td><input type="number" min="0" class="tw-qty" data-action="cp-good" data-k="${k}" value="${form.goods[k] || 0}"></td><td>${["food", "water", "fuel", "meds", "ammo"].includes(k) ? `<input type="number" min="0" class="tw-qty" data-action="cp-travel" data-k="${k}" value="${form.travel[k] || 0}">` : ""}</td><td class="muted">${n0(h.stock[k])}</td></tr>`).join("")}</table>
+        <table class="t"><tr><th></th><th>Trade</th><th>To live on</th><th>${h.type === "hub" ? "Hub" : "Here"}</th></tr>${SUPPLY_KEYS.map((k) => `<tr><td>${SUPPLIES[k].name}</td><td><input type="number" min="0" class="tw-qty" data-action="cp-good" data-k="${k}" value="${form.goods[k] || 0}"></td><td>${["food", "water", "fuel", "meds", "ammo"].includes(k) ? `<input type="number" min="0" class="tw-qty" data-action="cp-travel" data-k="${k}" value="${form.travel[k] || 0}">` : ""}</td><td class="muted">${n0(h.stock[k])}</td></tr>`).join("")}</table>
         <button class="mini" data-action="cp-autofill" style="margin-top:0.3rem"${tip("Food and water for the whole route plus 25%, and fuel for the vehicle")}>Auto-fill supplies</button>
         <h3>Items from the armory</h3>
         ${h.armory.length ? `<div class="small">${h.armory.map((g, i) => `<label class="layer"><input type="checkbox" data-action="cp-gear" data-i="${i}" ${form.gear.includes(i) ? "checked" : ""}> ${gearLabel(g)}</label>`).join("")}</div>` : `<div class="small muted">The armory is empty.</div>`}
         <div class="small ${over ? "danger" : "muted"}" style="margin-top:0.4rem">Load ${p1(load)} of ${cap}${over ? ": too heavy" : ""} · needs about ${est.food} food, ${est.water} water${v ? `, ${est.fuel} fuel` : ""}</div>
-        ${shortStock.length ? `<div class="small danger">Not enough at the hub: ${shortStock.join(", ")}.</div>` : ""}
+        ${shortStock.length ? `<div class="small danger">Not enough at ${esc(h.name)}: ${shortStock.join(", ")}.</div>` : ""}
         ${!est.ok && form.stops.length ? `<div class="small danger">No route for one of the legs${v ? " by vehicle" : ""}.</div>` : ""}
       </div>
     </div>
@@ -335,10 +359,21 @@ export const TRADE_ACTIONS = {
   "tw-balance": (state, ui, d) => { ui.tradeMsg = balanceWith(state, d.k); },
   offer: (state, ui, d) => { const t = state.trade; if (t) setQty(state, "mine", d.k, (t.offer[d.k] || 0) + Number(d.d)); ui.tradeMsg = ""; },
   ask: (state, ui, d) => { const t = state.trade; if (t) setQty(state, "theirs", d.k, (t.ask[d.k] || 0) + Number(d.d)); ui.tradeMsg = ""; },
-  dotrade: (state, ui) => { ui.tradeMsg = executeTrade(state); },
+  dotrade: (state, ui) => {
+    const t = state.trade;
+    const f = t && t.radio ? factionById(state, t.factionId) : null;
+    ui.tradeMsg = executeTrade(state);
+    if (!f || state.trade) return;
+    // Booked over the radio (sim/radiotrade.js): back to the radio panel, or on to the caravan planner when you fetch.
+    const deal = pendingDeal(state, f);
+    if (deal && t.delivery === "fetch") { ui.caravanPlan = dealCaravanForm(state, deal); ui.cvMsg = ""; ui.radioWith = null; }
+    else ui.radioWith = f.id;
+    ui.radioMsg = ui.tradeMsg;
+    ui.tradeMsg = "";
+  },
   gift: (state, ui) => { ui.tradeMsg = giftAll(state); },
   pact: (state, ui, d) => { const f = state.trade && factionById(state, state.trade.factionId); if (f) ui.tradeMsg = proposePact(state, f, d.k); },
-  tradeleave: (state, ui) => { endTrade(state); ui.tradeMsg = ""; ui.attackConfirm = null; },
+  tradeleave: (state, ui) => { if (state.trade && state.trade.radio) ui.radioWith = state.trade.factionId; endTrade(state); ui.tradeMsg = ""; ui.attackConfirm = null; },
   // Attack the caravan: asks first (ui/confirm.js), then a battle at your base against its guards.
   "tw-attack": (state, ui, d) => {
     const c = caravanById(state, d.id), f = c ? factionById(state, c.owner) : null;
@@ -361,6 +396,24 @@ export const TRADE_ACTIONS = {
   "rd-help": (state, ui) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioHelp(state, f); },
   "rd-pact": (state, ui, d) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioPact(state, f, d.k); },
   "rd-deal": (state, ui) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioDeal(state, f, ui.radioDeal || {}).text; },
+  // Trade over the radio (sim/radiotrade.js): the trade window from a base; a pending deal's caravan.
+  "rd-trade": (state, ui) => {
+    const f = radioF(state, ui);
+    if (!f) return;
+    const b = state.bases.find((x) => x.id === ui.radioBase) || tradeBase(state, f) || state.bases[0];
+    const why = openRadioTrade(state, f, b && b.id);
+    ui.radioMsg = why;
+    ui.tradeMsg = "";
+  },
+  "rd-dealcaravan": (state, ui, d) => {
+    const deal = dealById(state, d.id);
+    if (!deal) return;
+    ui.caravanPlan = dealCaravanForm(state, deal);
+    ui.cvMsg = "";
+    ui.radioWith = null;
+  },
+  "rd-dealcancel": (state, ui, d) => { const deal = dealById(state, d.id); if (deal) ui.radioMsg = cancelRadioDeal(state, deal); },
+  "tw-delivery": (state, ui, d) => { setDelivery(state, d.v); ui.tradeMsg = ""; },
   // Trade caravan planner.
   "cp-open": (state, ui) => { ui.caravanPlan = newCaravanForm(); ui.cvMsg = ""; },
   "cp-close": (state, ui) => { ui.caravanPlan = null; ui.cvMsg = ""; },
@@ -375,7 +428,7 @@ export const TRADE_ACTIONS = {
     else if (d.op === "down" && i < s.length - 1) [s[i + 1], s[i]] = [s[i], s[i + 1]];
   },
   "cp-autofill": (state, ui) => {
-    const form = ui.caravanPlan, h = hub(state), est = caravanEstimate(state, form);
+    const form = ui.caravanPlan, h = caravanHome(state, form), est = caravanEstimate(state, form);
     const v = form.vehicleId ? vehicleById(state, form.vehicleId) : null;
     form.travel.food = Math.min(n0(h.stock.food) - (form.goods.food || 0), est.food);
     form.travel.water = Math.min(n0(waterIn(h.stock)) - (form.goods.water || 0) - (form.goods.rawwater || 0), est.water); // both kinds (sim/water.js): purified packed first
@@ -391,6 +444,9 @@ export const TRADE_ACTIONS = {
 };
 export const TRADE_CHANGE_ACTIONS = {
   "tw-set": (state, ui, el) => { setQty(state, el.dataset.side, el.dataset.k, el.value); ui.tradeMsg = ""; },
+  "tw-radiobase": (state, ui, el) => { setRadioBase(state, el.value); ui.radioBase = Number(el.value); ui.tradeMsg = ""; },
+  "rd-tradebase": (state, ui, el) => { ui.radioBase = Number(el.value); },
+  "cp-from": (state, ui, el) => { const form = ui.caravanPlan; form.fromBaseId = Number(el.value); form.crew = []; form.gear = []; form.vehicleId = null; },
   "rd-dealf": (state, ui, el) => {
     const d = (ui.radioDeal = ui.radioDeal || { wantKey: "meds", wantQty: 10, payKey: "ammo", payQty: 40 });
     const f = el.dataset.f;

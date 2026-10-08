@@ -48,6 +48,7 @@ import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
 import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
 import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
+import { radioDeals } from "./sim/radiotrade.js"; // radio deals your caravan fetches
 import { VISITOR_ACTIONS } from "./ui/visitors.js";
 import { DIPLO_ACTIONS, DIPLO_CHANGE } from "./ui/diplomacy.js";
 import { renderDevPanel, devSample, DEV_SPEEDS } from "./ui/devtools.js";
@@ -121,7 +122,7 @@ const freshUi = () => ({
   inv: null, invSel: null, invMsg: "", // inventory / loot screen (ui/inventory.js)
   lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null, bgEditor: null, // bgEditor: the custom backgrounds window (ui/backgrounds.js)
   dev: false, showFps: false, armed: newArmed(),
-  radioWith: null, radioMsg: "", radioDeal: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
+  radioWith: null, radioMsg: "", radioDeal: null, radioBase: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
   codex: null, paletteRecent: [], palFocus: null, // ui/codex.js window; ui/cmdpalette.js recent picks and a build button to light up
   ledger: null, // ui/ledger.js: the Ledger window is open
@@ -938,6 +939,12 @@ const actions = {
       return;
     }
     if (c.uiAction && c.uiAction.type === "moveout") { openMoveOut(c.uiAction.baseId); return; } // the Overcrowded card (sim/moveout.js)
+    if (c.uiAction && c.uiAction.type === "radioCaravan") { // a group asked you to bring your side (sim/radiotrade.js): the planner for that deal
+      const deal = radioDeals(state).find((x) => x.factionId === c.uiAction.factionId);
+      if (deal) TRADE_ACTIONS["rd-dealcaravan"](state, ui, { id: deal.id });
+      else if (text) ui.cardResult = { title: card.title, text };
+      return;
+    }
     // Orders that take time, and choices that open a battle: the result goes to the log instead of a screen.
     if (c.order || state.combat) {
       if (text) log(state, text, "info");
