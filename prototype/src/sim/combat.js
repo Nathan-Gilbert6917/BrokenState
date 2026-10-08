@@ -393,7 +393,11 @@ function carriedKeys(state, setup, people) {
 // a coin flip), the dead weaker per point of power than people (they come at you in the open), a mixed crowd in
 // between, and a little for the brood in a hive (it comes through the gaps of the mound). enemy: { kind, count,
 // people (how many fight for you), ambush ("player" / "enemy"), hive }. Clamped to 3–97%.
-export const ODDS = { RATIO: 3.77, NUMBERS: 1.85, ZOMBIES: 2.52, MIXED: 1.74, HIVE: 0.25, THEY_AMBUSH: 0.33, YOU_AMBUSH: -0.23, MIN: 0.03, MAX: 0.97 };
+// Refitted after the weapons wave (per-hit armour, bursts, jams: tools/calibrate.js seeds 5, 6, 8, 1944 fights; was
+// RATIO 3.77, NUMBERS 1.85, ZOMBIES 2.52, MIXED 1.74, HIVE 0.25, THEY_AMBUSH 0.33, YOU_AMBUSH -0.23): soldiers in plate
+// now win most even fights on the map (13-32% for you where the numbers said 50-88%), and against raiders and the dead
+// the map's odds rise faster with the power ratio.
+export const ODDS = { RATIO: 6.15, NUMBERS: -0.23, ZOMBIES: 4.45, MIXED: 1.23, SOLDIERS: -2.68, HIVE: -0.79, THEY_AMBUSH: 1.41, YOU_AMBUSH: -0.6, MIN: 0.03, MAX: 0.97 };
 export function winOdds(ratio, enemy = null) {
   const e = enemy || {};
   const dead = e.kind === "zombies";
@@ -401,6 +405,7 @@ export function winOdds(ratio, enemy = null) {
   if (!dead && e.people > 0 && e.count > 0) z += ODDS.NUMBERS * Math.log(e.people / e.count);
   if (dead) z += ODDS.ZOMBIES;
   else if (e.kind === "mixed") z += ODDS.MIXED;
+  else if (e.kind === "soldiers") z += ODDS.SOLDIERS;
   if (e.hive) z += ODDS.HIVE;
   if (e.ambush === "enemy") z += ODDS.THEY_AMBUSH;
   if (e.ambush === "player") z += ODDS.YOU_AMBUSH;
