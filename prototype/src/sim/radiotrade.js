@@ -6,14 +6,18 @@
 //   (state.radioDeals): their side is set aside for you (out of their stock and wares) and the trade caravan planner
 //   opens from that base, aimed at their base with your side loaded. At their base the caravan's stop card has
 //   "Complete the radio deal": your side goes to them, theirs into the caravan, which brings it home.
-// - "deliver": the caller asks the other side to send its caravan, for a fee (DELIVERY_FEE: 6 + 0.4 a hour on the
-//   road, a quarter less from traders, a fifth less with a pact; in their prices, added to what you must give). They
-//   may say no (deliveryRefusal: too few of them, the dead at their walls, at war, no trust, too far); then you can
+// - "deliver": the caller asks the other side to send its caravan, for a fee (deliveryFee: 6 + 0.4 a hour on the
+//   road, a quarter less from traders, a fifth less with a pact; in their prices, added to what you must give). You
+//   take their fee or offer your own (t.feeOffer): they go as low as minFee (their fee × 1 − goodwill/200, traders
+//   another 10% off, never under 60%) and say what that is when you offer less; paying over their fee earns goodwill
+//   (1 per 10 over, at most 3). They may also say no (deliveryRefusal: too few of them, the dead at their walls, at war, no trust, too far); then you can
 //   fetch it yourself. If they agree, their caravan (caravans.js) brings their side to your base and the trade window
 //   opens there with the deal filled in.
 // Groups call you the same way (radio.js offerCard): mostly they bring their side themselves; sometimes (more often
-// when they cannot send a caravan) they ask you to bring yours and add a fee to what they pay. You may agree, which
-// books the same pending deal and opens the planner, or decline.
+// when they cannot send a caravan) they ask you to bring yours and add a fee to what they pay. You may agree at their
+// fee, ask for half as much again (they agree with goodwill 25+ or when short of what you bring: counterOk; else the
+// call comes back without that choice), or decline. Agreeing books the same pending deal and opens the planner; the
+// governor agrees at their fee when the base can spare the goods and the people (autopilot.js autoDealCaravan).
 // A pending deal waits RADIO_DEAL_DAYS (10, or longer for a far base) for your caravan. Not collected by then, or
 // called off, their goods go back to their stores and they think less of you (goodwill −5 / −3). One pending deal per
 // group at a time. Gear is matched by what it is (key, condition, uses, contents), so a save and load keeps a deal.
@@ -21,7 +25,7 @@ import { SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { log, day, factionById, baseById, atBase, skill } from "./world.js";
 import { planPath, travelHours, partyMembers, cargoRoom } from "./parties.js";
 import { attitude, changeGoodwill } from "./factions.js";
-import { available, poolKey, ensureWares, WARES_MAX } from "./trade.js";
+import { available, poolKey, ensureWares, WARES_MAX, need } from "./trade.js";
 import { refusal } from "./radio.js";
 import { sendCaravan, caravanEnRoute, caravanCapacity, CARAVAN_SPEED } from "./caravans.js";
 import { tradeSpeech, gainXp, USE } from "./skills.js";
@@ -68,6 +72,22 @@ export function deliveryFee(state, f, base) {
   if (h == null) return 0;
   return Math.round((6 + h * 0.4) * (f.type === "traders" ? 0.75 : 1) * (f.pact ? 0.8 : 1));
 }
+// The lowest fee they take: theirs less a goodwill discount (traders another 10%), never under 60% of it.
+export function minFee(state, f, base) {
+  const fee = deliveryFee(state, f, base);
+  return Math.ceil(fee * Math.max(0.6, 1 - Math.max(0, f.goodwill) / 200 - (f.type === "traders" ? 0.1 : 0)));
+}
+// The fee on the table for a radio trade: your offer, else theirs.
+export const feeOf = (state, f, base, t) => (t.delivery !== "deliver" ? 0 : t.feeOffer != null ? t.feeOffer : deliveryFee(state, f, base));
+// Your own offer (null: their fee).
+export function setFeeOffer(state, v) {
+  const t = state.trade;
+  if (!t || !t.radio) return;
+  t.feeOffer = v == null || v === "" ? null : Math.max(0, Math.round(Number(v) || 0));
+}
+// A group asking you to bring your side: would they pay half as much again for the trip?
+export const counterOk = (state, f, giveKey) => f.goodwill >= 25 || need(f, giveKey) >= 1.4;
+
 // Why they will not send a caravan to this base for you (null: they will).
 export function deliveryRefusal(state, f, base) {
   if (!f || !f.alive) return "Nobody answers any more.";
@@ -119,8 +139,8 @@ export function radioTradeContext(state, t) {
     have[k] = Math.max(0, Math.floor(base.stock[k] || 0));
     theirHave[k] = available(f, k);
   }
-  const fee = t.delivery === "deliver" ? deliveryFee(state, f, base) : 0;
-  return { kind: "radio", t, f, base, p: null, caravan: null, speech: tradeSpeech(atBase(state, base.id)), have, theirHave, myGear: base.armory, theirGear: (f.wares = f.wares || []), center: f.bases[0], fee, delivery: t.delivery };
+  const fee = feeOf(state, f, base, t);
+  return { kind: "radio", t, f, base, p: null, caravan: null, speech: tradeSpeech(atBase(state, base.id)), have, theirHave, myGear: base.armory, theirGear: (f.wares = f.wares || []), center: f.bases[0], fee, theirFee: t.delivery === "deliver" ? deliveryFee(state, f, base) : 0, delivery: t.delivery };
 }
 // trade.js tradeVerdict: what only a radio trade can fail on (null: nothing).
 export function radioTradeProblem(state, ctx, offerGear, askGear) {
@@ -151,6 +171,9 @@ export function bookRadioTrade(state, v) {
   if (t.delivery === "deliver") {
     const no = deliveryRefusal(state, f, base);
     if (no) return `${f.name} will not bring it: ${no} Pick "We fetch it" to send a caravan of your own.`;
+    const low = minFee(state, f, base);
+    if (t.feeOffer != null && t.feeOffer < low) return `${f.name}: "For ${t.feeOffer} we stay home. We would do it for ${low}." Raise your offer, take their fee, or fetch it yourself.`;
+    if (ctx.fee > ctx.theirFee + 1) changeGoodwill(state, f, Math.min(3, (ctx.fee - ctx.theirFee) / 10), "a generous fee");
     const c = sendCaravan(state, f, base, { goods: { supplies: ask, gear: askGear }, deal: { offer, ask, offerGear, askGear, fee: ctx.fee } });
     if (!c) return `${f.name} cannot get a caravan to ${base.name}.`;
     f.lastDiplomacy = day(state);
@@ -257,7 +280,8 @@ export function completeRadioDeal(state, p, deal) {
     const pk = poolKey(k);
     f.stock[pk] = (f.stock[pk] || 0) + q;
   }
-  for (const g of c.gear) { p.cargo.gear.splice(p.cargo.gear.indexOf(g), 1); (f.wares = f.wares || []).push(g); }
+  f.wares = f.wares || [];
+  for (const g of c.gear) { p.cargo.gear.splice(p.cargo.gear.indexOf(g), 1); f.wares.push(g); }
   if (f.wares.length > WARES_MAX) f.wares.splice(0, f.wares.length - WARES_MAX);
   for (const [k, q] of Object.entries(deal.get.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
   p.cargo.gear.push(...deal.get.gear);

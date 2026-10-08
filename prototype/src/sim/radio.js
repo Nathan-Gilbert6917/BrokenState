@@ -62,7 +62,7 @@ import { listenDaily } from "./radiolisten.js"; // listening in on a network's t
 import { thirstFactor } from "./weather.js";
 import { rumourFromNews, RUMOUR } from "./survey.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
-import { deliveryFee, deliveryRefusal, bookDeal, radioDealsDaily, pendingDeal } from "./radiotrade.js"; // trades over the radio
+import { deliveryFee, deliveryRefusal, bookDeal, radioDealsDaily, pendingDeal, counterOk } from "./radiotrade.js"; // trades over the radio
 
 export const RELAY_RANGE = 6;
 export const RELAY_UPKEEP_DAYS = 10;
@@ -532,7 +532,7 @@ export function offerCard(state, f) {
   if (cannot || rng.chance(0.3)) {
     const fee = deliveryFee(state, f, base);
     const extra = Math.min(available(f, getKey) - getQty, Math.max(1, Math.round(fee / buyPrice(state, f, getKey, speech, getQty))));
-    if (extra >= 1) return bringCard(state, f, base, giveKey, giveQty, getKey, getQty + extra, extra, text);
+    if (extra >= 1) return bringCard(state, f, base, { giveKey, giveQty, getKey, getQty: getQty + extra, extra, more: Math.min(available(f, getKey) - getQty - extra, Math.max(1, Math.ceil(extra / 2))) }, text);
     if (cannot) return null;
   }
   return {
@@ -559,29 +559,45 @@ export function offerCard(state, f) {
 }
 // A call asking you to bring your side to them: agree (a pending deal your caravan fetches; the trade caravan
 // planner opens) or decline.
-function bringCard(state, f, base, giveKey, giveQty, getKey, getQty, extra, said) {
+// b: { giveKey, giveQty, getKey, getQty (their fee included), extra (their fee), more (what you may ask on top; 0: you
+// asked already) }. The governor answers through card.bring (autopilot.js).
+function bringCard(state, f, base, b, said) {
+  const { giveKey, giveQty, getKey, getQty, extra, more } = b;
   const where = tileLabel(state, f.bases[0]);
   const text = said.replace(/, delivered to [^."]+\./, ".");
+  const agree = (qty, label, hint) => ({
+    label, hint, uiAction: { type: "radioCaravan", factionId: f.id },
+    affordable: () => false, // the governor answers through card.bring (autopilot.js)
+    resolve: (st) => {
+      const why = refusal(st, f, true);
+      if (why) return why;
+      if (pendingDeal(st, f)) return `A radio deal with ${f.name} is already waiting.`;
+      const d = bookDeal(st, f, base, { supplies: { [giveKey]: giveQty }, gear: [] }, { supplies: { [getKey]: qty }, gear: [] }, "them");
+      return note(st, f, `Agreed: your caravan brings ${giveQty} ${giveKey} to ${f.name} by day ${d.due} and comes back with ${qty} ${getKey}.`);
+    },
+  });
+  const choices = [agree(getQty, `Agree and send a caravan: ${giveQty} ${giveKey} for ${getQty} ${getKey}…`, `Their fee: ${extra} ${getKey}. Opens the trade caravan planner from ${base.name} with the ${giveKey} loaded (it has ${Math.floor(base.stock[giveKey] || 0)} now)`)];
+  if (more > 0) {
+    // Set your own fee: ask for more for the trip. Yes: the deal at your fee and the planner; no: the call again, at their fee.
+    const yes = agree(getQty + more, "", "");
+    choices.push({
+      label: `Ask more for the trip: ${getQty + more} ${getKey} (fee ${extra + more})…`,
+      hint: `They may agree (they like you, or they need the ${giveKey}); if not, their offer stands`,
+      uiAction: { type: "radioCaravan", factionId: f.id }, affordable: () => false,
+      resolve: (st) => {
+        if (counterOk(st, f, giveKey) && available(f, getKey) >= getQty + more) return `${f.name}: "Fair enough." ${yes.resolve(st)}`;
+        addCard(st, bringCard(st, f, base, { ...b, more: 0 }, said));
+        return note(st, f, `${f.name}: "We cannot pay more than ${extra} ${getKey} for the trip."`);
+      },
+    });
+  }
+  choices.push({ label: "No, thank you: we will not send a caravan", hint: "Nothing changes", resolve: (st) => note(st, f, `You told ${f.name} you would not send a caravan.`) });
   return {
     title: `On the radio: ${f.name}`,
     radioFrom: f.id,
-    text: `${f.name} (${attitude(f).toLowerCase()}) call you. ${text} "Could you bring it to us at ${where}? We will add ${extra} ${getKey} for the trip." If you agree, they set ${getQty} ${getKey} aside for you and your caravan takes the ${giveKey} to them; the deal waits about ten days.`,
-    choices: [
-      {
-        label: `Agree and send a caravan: ${giveQty} ${giveKey} for ${getQty} ${getKey}…`,
-        affordable: () => false, // the governor does not run caravans for groups
-        hint: `Opens the trade caravan planner from ${base.name} with the ${giveKey} loaded (it has ${Math.floor(base.stock[giveKey] || 0)} now)`,
-        uiAction: { type: "radioCaravan", factionId: f.id },
-        resolve: (st) => {
-          const why = refusal(st, f, true);
-          if (why) return why;
-          if (pendingDeal(st, f)) return `A radio deal with ${f.name} is already waiting.`;
-          const d = bookDeal(st, f, base, { supplies: { [giveKey]: giveQty }, gear: [] }, { supplies: { [getKey]: getQty }, gear: [] }, "them");
-          return note(st, f, `Agreed: your caravan brings ${giveQty} ${giveKey} to ${f.name} by day ${d.due} and comes back with ${getQty} ${getKey}.`);
-        },
-      },
-      { label: "No, thank you: we will not send a caravan", hint: "Nothing changes", resolve: (st) => note(st, f, `You told ${f.name} you would not send a caravan.`) },
-    ],
+    bring: { factionId: f.id, baseId: base.id, give: { supplies: { [giveKey]: giveQty }, gear: [] }, get: { supplies: { [getKey]: getQty }, gear: [] } },
+    text: `${f.name} (${attitude(f).toLowerCase()}) call you. ${text} "Could you bring it to us at ${where}? We will add ${extra} ${getKey} for the trip." If you agree, they set the ${getKey} aside for you and your caravan takes the ${giveKey} to them; the deal waits about ten days.`,
+    choices,
   };
 }
 const REF_QTY = { food: 25, water: 25, fuel: 12, meds: 8, ammo: 60, parts: 3, scrap: 20, wood: 600 }; // wood: woodcutting.js (60 kg)
