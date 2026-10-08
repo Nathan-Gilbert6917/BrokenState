@@ -11,7 +11,7 @@ import { itemDur, itemDurMax } from "../src/sim/crafting.js";
 import { addBuilding, benchTier } from "../src/sim/buildings.js";
 import {
   REPAIR, REPAIR_KINDS, repairKind, repairInfo, repairItem, repairMath, lossRate, queueRepair, cancelRepair, repairHour,
-  fieldRepair, fieldRepairInfo, planRepairs, wornOut, repairPreview,
+  fieldRepair, fieldRepairInfo, planRepairs, wornOut, repairPreview, repairInfoAt, repairAt,
 } from "../src/sim/repair.js";
 import { itemValue } from "../src/sim/valuation.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -131,6 +131,12 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   for (let i = 0; i < 4 && h.gearRepairs.length; i++) { repairHour(st); st.hour++; }
   check(!h.gearRepairs.length && h.armory.includes(ar) && itemDur(ar) === itemDurMax(ar) && itemDurMax(ar) < 60, `done within ${st.hour - hour0} hours: in the armory at ${itemDur(ar)} of ${itemDurMax(ar)}`);
   check(h.gearRepairHour === st.hour - 1, "the crafters' hour went to the repair (no crafting that hour)");
+  const knife = worn("knife", 5);
+  h.armory.push(knife);
+  const kl = `armory:${h.id}:list:${h.armory.indexOf(knife)}`;
+  const ia = repairInfoAt(st, kl);
+  check(ia.base === h && !ia.field && ia.ok && /Max durability/.test(ia.preview) && /queued/.test(repairAt(st, kl)) && !h.armory.includes(knife), "repairAt (the buttons): at a base it queues at the bench");
+  cancelRepair(st, h, h.gearRepairs[h.gearRepairs.length - 1].id);
   // Cancel: everything back.
   const bat = worn("bat", 3);
   h.armory.push(bat);

@@ -360,7 +360,7 @@ function unstow(h, item) {
 // partLoc into `slot` of the gun at gunLoc (checks gunmods.js fitsSlot; what was there goes where the part came from),
 // and strip a slot (children first; into the place's storage, else a pocket or the pack, else refused). No time cost.
 // Both return a message.
-export function fitAt(state, gunLoc, slot, partLoc) {
+export function fitAt(state, gunLoc, slot, partLoc, sid = null) { // sid: the person whose inventory is open (unused: the part's own place decides)
   const gun = itemAt(state, gunLoc), part = itemAt(state, partLoc);
   if (!gun || !part) return "Nothing to fit.";
   if (state.combat && !state.combat.over) return "Not in the middle of a fight.";

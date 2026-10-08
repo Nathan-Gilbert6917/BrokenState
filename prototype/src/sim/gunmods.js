@@ -180,8 +180,10 @@ export const childSlots = (item, slot) => {
 // The built-in parts of a gun (the light machine gun's and the .50's bipod): { slot: key }.
 export const builtinMods = (gunKey) => ({ ...builtinOf(gunKey) });
 
-// Why this part cannot go in that slot of this gun ("" when it can; whatever is in that slot now comes off).
+// Why this part cannot go in that slot of this gun ("" when it can; whatever is in that slot now comes off). Takes
+// (gun, part, slot?) or the gun builder's order (gun, slot, part).
 export function fitsSlot(gun, mod, slot = null) {
+  if (typeof mod === "string") [mod, slot] = [slot, mod];
   const a = mod && ATTACH[mod.key];
   if (!a) return `${mod ? mod.name : "That"} is not a gun attachment.`;
   if (!gun || !GEAR[gun.key]) return "No gun to fit it to.";
@@ -578,10 +580,11 @@ export const GUNMODS_HELP = `Sights, mounts, suppressors, muzzle brakes, bigger 
   launcher share the space under the handguard. Muzzle devices fit by calibre, the rest by the kind of gun. They are
   found where guns are kept (gun stores, police stations, the National Guard, hunting lodges and cabins, army wrecks,
   sports shelves in malls), on the guns of soldiers and now and then of raiders and other fighters (they come with the
-  gun when you loot it), and traders and merchants sell them. In the inventory, select a gun: the bar below lists what
-  is fitted (Remove puts it in the armory or the team's cargo, or on the person) and every loose attachment within
-  reach that fits it (Fit). Select an attachment to fit it to the gun in that person's hands. A fitted attachment adds
-  its weight and worth to the gun, and is sold or looted with it.
+  gun when you loot it), traders and merchants sell them, and a few makeshift ones are crafted. To fit or take them
+  off, open the gun builder: select a gun in the inventory and press Modify (or the ⚙ on the gun in someone's hands).
+  It shows the gun with a box for every slot it has; click a box to fit a part from the person's pockets and pack or
+  the storage here, or to take one off (into storage, else a pocket or the pack). Not during a fight. A fitted
+  attachment adds its weight and worth to the gun, and is sold or looted with it.
   <br>Sights: a red dot (+4 aim), a holographic sight (+5, +3 up close), a 4× scope or an ACOG (more range, less up
   close), a tactical scope (far range, −14 up close), tritium sights and weapon lights for the night. Muzzle: a
   suppressor makes a shot a third to two thirds as loud (fewer of the dead and the guards hear it, less Heat, a hunt

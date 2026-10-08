@@ -302,6 +302,22 @@ export function fieldRepair(state, loc) {
   return repairItem(state, null, item, info.who, { kit: true }).msg;
 }
 
+// ---------- the buttons (ui/inventory.js, the gun builder) ----------
+// What the Repair button on the item at loc would do: at a base the bench queue (repairInfo), in the field a kit
+// (fieldRepairInfo). { ...repairInfo, base, field, preview }.
+export function repairInfoAt(state, loc) {
+  const place = placeOfLoc(state, loc);
+  const base = place && place.startsWith("base:") ? (state.bases || []).find((b) => b.id === Number(place.split(":")[1])) || null : null;
+  const item = itemAt(state, loc);
+  const info = base ? repairInfo(state, base, item) : fieldRepairInfo(state, loc);
+  return { ...info, base, field: !base, preview: repairPreview(info) };
+}
+// Presses it: queues the repair at the base's bench, or repairs with a field kit on the road. Returns the message.
+export function repairAt(state, loc) {
+  const r = repairInfoAt(state, loc);
+  return r.base ? queueRepair(state, r.base, loc) : fieldRepair(state, loc);
+}
+
 // ---------- the autopilot ----------
 // Queues one repair a day per base (autopilot.js governBase): worn gear below 60% of its maximum, the best fighters'
 // first (their weapon, then body armour, head, arms, legs, while the armory holds a spare for that slot; then the

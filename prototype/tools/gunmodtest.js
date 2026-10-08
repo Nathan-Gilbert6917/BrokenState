@@ -511,6 +511,8 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   const msg = stripAt(st, gl, "mount");
   check(!s.gear.weapon.mods && h.armory.some((x) => x.key === "scope4x") && h.armory.some((x) => x.key === "scopemount"), `stripAt takes the mount and its sight back to the armory (${msg})`);
   check(slotsOf(s.gear.weapon).join() === baseSlots("leverrifle").join() && mountFor("leverrifle", "optic") === "scopemount", "slotsOf a bare gun is its base slots");
+  const lv = newItem("leverrifle");
+  check(fitsSlot(lv, "mount", newItem("scopemount")) === "" && /scope mount first/.test(fitsSlot(lv, "optic", newItem("reddot"))) && fitsSlot(lv, newItem("scopemount")) === "", "fitsSlot takes (gun, slot, part) as well as (gun, part)");
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
