@@ -5,6 +5,7 @@
 // rules (no drilling past the Heat cap, never a blast), the hour-by-hour search, a save round-trip, the loot tags.
 // Usage: node tools/gunsafetest.js [seed]
 import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
+import { standardMag, usesInternal } from "../src/sim/mags.js";
 import { SUPPLIES } from "../src/sim/data.js";
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
@@ -370,23 +371,26 @@ console.log("Contents by tier (rollGunStash)");
 {
   const N = 3000;
   const stats = (tier, site) => {
-    let guns = 0, ammo = 0, items = 0, minQ = 9, maxQ = 0, val = 0, gren = 0;
+    let guns = 0, ammo = 0, items = 0, minQ = 9, maxQ = 0, val = 0, gren = 0, mags = 0, magGuns = 0;
     const keys = {};
     for (let i = 0; i < N; i++) {
       const out = G.rollGunStash((...k) => hash01(seed, "gstest", tier, site, i, ...k), tier, site);
       for (const it of out.gear) {
+        if (GEAR[it.key].slot === "weapon" && standardMag(it.key) && !usesInternal(it.key, it)) magGuns++;
         if (GEAR[it.key].slot === "weapon") { guns++; keys[it.key] = (keys[it.key] || 0) + 1; minQ = Math.min(minQ, it.quality); maxQ = Math.max(maxQ, it.quality); } else if (it.key === "flashbang" || it.key === "smokegren") gren++; // the flashbang branch's extra (gunsafes.js STASH_GRENADES)
+        else if (GEAR[it.key].mag) mags++; // carrykit.js: a gun's spare magazines (0-2 a gun)
         else { items++; val += GEAR[it.key].value; }
       }
       ammo += totalRounds(out.sup); // ammo.js: the rounds by calibre
     }
-    return { guns: guns / N, ammo: ammo / N, items: items / N, minQ, maxQ, keys, gren: gren / N };
+    return { guns: guns / N, ammo: ammo / N, items: items / N, minQ, maxQ, keys, gren: gren / N, mags: mags / N, magGuns: magGuns / N };
   };
   const ch = stats("cheap", "farm"), md = stats("mid", "gunstore"), hp = stats("high", "police"), hm = stats("high", "military"), pc = stats("pistolcase", "town"), rc = stats("riflecase", "town"), rcm = stats("riflecase", "military");
   console.log(`  cheap ${ch.guns.toFixed(2)} guns ${ch.ammo.toFixed(0)} ammo · mid ${md.guns.toFixed(2)} / ${md.ammo.toFixed(0)} · high (police) ${hp.guns.toFixed(2)} / ${hp.ammo.toFixed(0)} · high (military) ${hm.guns.toFixed(2)} / ${hm.ammo.toFixed(0)}`);
   check(near(ch.guns, 1.35, 0.05) && ch.minQ >= 0.6 && ch.maxQ <= 0.9 && near(ch.ammo, 20, 1.5) && Object.keys(ch.keys).every((k) => ["huntrifle", "shotgun", "leverrifle", "revolver"].includes(k)), `cheap: 1 gun, 35% a second (${ch.guns.toFixed(2)}), condition 0.6–0.9, ammo 10–30, hunting guns only`);
   check(near(md.guns, 3.08, 0.1) && md.minQ >= 0.75 && md.maxQ <= 1 && near(md.ammo, 55, 3) && near(md.items, 0.5, 0.05), `mid: 2–4 guns + the rare 8% (${md.guns.toFixed(2)}), condition 0.75–1, ammo 30–80 (${md.ammo.toFixed(0)}), valuables 50% (${md.items.toFixed(2)})`);
   check(near(hp.guns, 3.5, 0.1) && near(hp.ammo, 140, 6) && Object.keys(hp.keys).every((k) => ["pistol", "carbine", "shotgun"].includes(k)) && near(hp.items, 0.2, 0.04), `high (police, prison): 2–5 service guns (${hp.guns.toFixed(2)}), ammo 80–200, a riot helmet 20% (${hp.items.toFixed(2)})`);
+  check(md.magGuns > 0.3 && Math.abs(md.mags / md.magGuns - 0.85) < 0.08, `the guns that take magazines come with spare ones (${md.mags.toFixed(2)} a safe for ${md.magGuns.toFixed(2)} such guns; carrykit.js GUN_MAGS: 0.85 a gun)`);
   check(near(hm.guns, 3, 0.1) && near(hm.ammo, 175, 7) && Object.keys(hm.keys).every((k) => ["ar", "carbine"].includes(k)) && near(hm.items, 0.2, 0.04), `high (military): 2–4 rifles (${hm.guns.toFixed(2)}), ammo 100–250, a frag 20% (${hm.items.toFixed(2)})`);
   check(near(hp.gren, 1, 0.08) && near(hm.gren, 1, 0.08) && !ch.gren && !md.gren && !pc.gren, `an armoury safe (high) keeps 0–2 flashbangs or smoke grenades (police ${hp.gren.toFixed(2)}, military ${hm.gren.toFixed(2)}); nothing in the others`);
   check(pc.guns === 1 && Object.keys(pc.keys).every((k) => ["pistol", "revolver"].includes(k)) && near(pc.ammo, 10.5, 0.6), "a pistol case: one handgun, 6–15 rounds");
