@@ -42,6 +42,7 @@ import { RAW, keyWord } from "./water.js";
 import { isRoundKey, totalRounds, ROUND_KEYS, roundOf, spendAmmo } from "./rounds.js"; // rounds by calibre
 import { kindShare, kindTheme, expandAmmo, partyCals, baseCals, wantedKey, dealRounds } from "./ammo.js";
 import { radioTradeContext, radioTradeProblem, bookRadioTrade, matchGear, sameGear } from "./radiotrade.js"; // the trade window over the radio
+import { intoArsenalFromShelf, shelfSurplus } from "./arsenal.js"; // group arsenals: the guns you sell them they use; their surplus is for sale
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -375,6 +376,7 @@ export function ensureWares(state, f, refresh = false) {
   }
   keep.push(...gunmodWares(state, f.type, f.name, day(state))); // loot.js: a gun attachment now and then (its own dice)
   keep.push(...bookWares(state, f)); // skills.js: now and then a book (its own dice: the rest of the stock is unchanged)
+  keep.push(...shelfSurplus(state, f)); // arsenal.js: weapons beyond what their people need (no dice)
   f.wares = keep.slice(-WARES_MAX);
   f.waresDay = day(state);
   return f.wares;
@@ -753,6 +755,7 @@ export function executeTrade(state) {
   }
   for (const g of offerGear) { moveItem(ctx.myGear, theirGear, g); gave.push(g.name); }
   for (const g of askGear) { moveItem(theirGear, ctx.myGear, g); got.push(g.name); }
+  if (ctx.kind !== "caravan") intoArsenalFromShelf(state, f, offerGear); // arsenal.js: the guns and armour they bought go to their fighters
   if (ctx.kind === "visit" && f.wares.length > WARES_MAX) f.wares.splice(0, f.wares.length - WARES_MAX);
   // Intel: the tiles paid for are reported (a team carries the report home, or radios it in when in contact).
   const tiles = intelTiles(state, ctx.center, t.intel);
@@ -798,7 +801,9 @@ export function giftAll(state) {
     const tk = ctx.kind === "caravan" ? k : groupStockKey(k, f);
     theirSup[tk] = (theirSup[tk] || 0) + q;
   }
-  for (const g of liveGear(t.offerGear, ctx.myGear)) moveItem(ctx.myGear, theirGear, g);
+  const given = liveGear(t.offerGear, ctx.myGear);
+  for (const g of given) moveItem(ctx.myGear, theirGear, g);
+  if (ctx.kind !== "caravan") intoArsenalFromShelf(state, f, given); // arsenal.js
   const today = day(state);
   if (f.giftGwDay !== today) { f.giftGwDay = today; f.giftGw = 0; }
   const gain = Math.max(0, Math.min(tot.offer / 6, 15 - f.giftGw));

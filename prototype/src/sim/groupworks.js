@@ -32,6 +32,7 @@
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
 import { day } from "./world.js";
+import { weightOf } from "./groupcare.js"; // the type profiles
 import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the groups' jails (abstract tiers)
 
 /** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number }} Works */
@@ -73,7 +74,7 @@ function peopleAt(f, tile) {
 }
 const wanted = (f, tile, k) => Math.ceil(peopleAt(f, tile) / W.SERVES[k]);
 export function wallGoal(f, tile) {
-  if (W.WALLED_TYPES.includes(f.type)) return W.WALL_GOAL.typed;
+  if (weightOf(f, "walled", W.WALLED_TYPES.includes(f.type) ? 1 : 0) >= 1) return W.WALL_GOAL.typed; // groupcare.js GROUP_PRIORITIES walled
   return mainOf(f) === tile ? W.WALL_GOAL.home : W.WALL_GOAL.open;
 }
 // Walls standing at a group's base (conquest.js nativeWalls): the goal itself where they do not build.

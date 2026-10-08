@@ -19,6 +19,7 @@
 import { factoryFit, seedOf } from "./factoryfit.js";
 import { FACTORY_FIT } from "./data-guns.js"; // guns found already fitted (section 22)
 import { fitMod, stripMod, modFitReason, fitsSlot, isGunmod, takesMods, fittedKg, ATTACH } from "./gunmods.js";
+import { itemDur } from "./crafting.js"; // a group's med kit with its uses (arsenal.js)
 import { GEAR, SUPPLIES } from "./data.js";
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
@@ -639,17 +640,23 @@ export function enemyBody(rng, u, kit) {
   if (rng.chance(0.3)) add("scrap", rng.int(1, 2));
   // What they fought with, worse for wear: how worse goes by who they were (itemcond.js KIT_SOURCE).
   const src = u.kit ? kitSource(u.kit) : kit ? "raider" : "survivor"; // no kit named: the callers arm them as raiders
-  if (GEAR[u.weapon]) body.gear.weapon = lootItem(u.weapon, src, spend(rng));
+  // A group's people (arsenal.js armFromArsenal) carry their group's own items: the very gun, parts and wear.
+  if (u.arsItem && u.arsItem.key === u.weapon) { spend(rng); body.gear.weapon = u.arsItem; }
+  else if (GEAR[u.weapon]) body.gear.weapon = lootItem(u.weapon, src, spend(rng));
   if (body.gear.weapon) carryMods(u, body.gear.weapon); // gunmods.js: the attachments on their gun come with it
-  if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = lootItem(u.armorKey, src, spend(rng));
+  const worn = (u.arsArmour || []).find((it) => it.key === u.armorKey); // arsenal.js: the very piece they were issued (its wear)
+  if (worn) { spend(rng); body.gear.armor = worn; }
+  else if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = lootItem(u.armorKey, src, spend(rng));
   if (body.gear.armor && !lootArmour(u, body.gear.armor)) body.gear.armor = null; // armour.js: the durability its piece had left after the fight (broken: none)
+  for (const it of u.arsArmour || []) if (it !== worn && GEAR[it.key] && !body.gear[GEAR[it.key].slot]) body.gear[GEAR[it.key].slot] = it; // a helmet, arm or leg guards
   if (body.gear.weapon) lootGun(u, body.gear.weapon); // gunfire.js: the quality and condition their gun fought (and jammed) in
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = lootItem(kit.pack[0], src, spend(rng));
   if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, lootItem(rng.pick(kit.finds), src, rng), ""); // pockets: smokes, a ring (combat.js KITS finds)
   for (const it of carriedThrowables(u, src)) stow(body, it, ""); // a flashbang or a smoke grenade they never threw
-  // Their medic's kit (medics.js makeEnemyMedic), as worn as the uses they had left.
-  if (u.isMedicKit && u.medKit && GEAR[u.medKit.key] && (u.kitUses || 0) < (u.kitLeft || 0)) {
+  // Their medic's kit (medics.js makeEnemyMedic), as worn as the uses they had left; a group's own kit (arsenal.js).
+  if (u.arsMedKit && u.medKit === u.arsMedKit) { if (itemDur(u.arsMedKit) !== 0) stow(body, u.arsMedKit, ""); }
+  else if (u.isMedicKit && u.medKit && GEAR[u.medKit.key] && (u.kitUses || 0) < (u.kitLeft || 0)) {
     const it = lootItem(u.medKit.key, src, spend(rng));
     if (it.dur != null) it.dur = Math.max(1, Math.min(it.dur, u.kitLeft - (u.kitUses || 0)));
     stow(body, it, "");
@@ -662,6 +669,11 @@ export const BODY_THROWABLES = ["flashbang", "smokegren"];
 export function carriedThrowables(u, src) {
   const out = [];
   if (!u || !u.throwables) return out;
+  if (u.arsThrows) { // a group's own (arsenal.js): the very items, those not thrown
+    const left = { ...u.throwables };
+    for (const it of u.arsThrows) if ((left[it.key] || 0) > 0) { left[it.key]--; out.push(it); }
+    return out;
+  }
   for (const k of BODY_THROWABLES) for (let i = 0; i < (u.throwables[k] || 0); i++) out.push(lootItem(k, src, [u.id, k, i]));
   return out;
 }

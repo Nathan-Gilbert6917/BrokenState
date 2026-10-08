@@ -41,7 +41,7 @@ import {
 } from "./combat.js";
 import { knockOut, findCarried } from "./stealth.js";
 import { nextTurnOf } from "./throwables.js"; // one stun for everything: a flashbang's u.stun (stunTurnStart / stunTurnEnd)
-import { survivorById, baseById, factionById } from "./world.js";
+import { survivorById, baseById, factionById, localId } from "./world.js"; // localId: world-local ids for the dice
 import { EQUIP_SLOTS, packOf, lootItem, ensureInv, stow } from "./inventory.js";
 import { kitSource } from "./itemcond.js";
 import { hash01 } from "./skills.js";
@@ -49,6 +49,8 @@ import { takeCaptive } from "./conflicts.js";
 import { PRISON } from "./prisoners.js";
 import { addMood } from "./relations.js";
 import { changeGoodwill } from "./factions.js";
+import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: takeAlive (NL_TAKE)
+import { removeFromArsenal } from "./arsenal.js";
 import { groupCapture, migrateHeld } from "./groupjails.js"; // jailhouse: one model of the groups' prisoners
 
 export const NL = {
@@ -75,7 +77,8 @@ export const NL_STYLE = {
 // A group type's kit (conflicts.js KIND_OF).
 export const TYPE_KIT = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 // AI raids between groups: the share of a beaten group's losses the winners take alive, by the winners' type.
-export const NL_TAKE = { traders: 0.45, commune: 0.4, military: 0.35, fortress: 0.35, raider: 0.25, expansionist: 0.2, zealot: 0 };
+// One table for every type's leanings: groupcare.js GROUP_PRIORITIES takeAlive (read when used).
+export const NL_TAKE = new Proxy({}, { get: (_, t) => (typeof t === "string" ? weightOf({ type: t }, "takeAlive", null) : undefined), has: (_, t) => weightOf({ type: t }, "takeAlive", null) != null });
 export const SURRENDER = {
   lost: 0.5, base: 0.05, hurt: 0.25, empty: 0.15, flanked: 0.15, alone: 0.15, max: 0.8, leader: 0.4, walk: 3, recover: 1.5,
   kit: { guards: 1, militia: 1, survivors: 1, fighters: 0.8, raiders: 0.6, soldiers: 0.3, zealots: 0 },
@@ -185,6 +188,7 @@ export function arsenalCount(f, key) {
   const a = f && f.arsenal;
   if (!a) return null;
   if (Array.isArray(a)) return a.filter((x) => (typeof x === "string" ? x : x && x.key) === key).length;
+  if (Array.isArray(a.items)) return a.items.filter((x) => x && x.key === key).length; // arsenal.js: { items: [...] }
   if (typeof a === "object") { const v = a[key]; return typeof v === "number" ? v : Array.isArray(v) ? v.length : v ? 1 : 0; }
   return null;
 }
@@ -734,7 +738,7 @@ export const nlSpared = (u) => !!(u.ko || u.surr);
 export function raidPrisoners(state, attacker, target, loss) {
   if (!attacker || !target || loss <= 0) return 0;
   const share = NL_TAKE[attacker.type] ?? 0.2;
-  const n = Math.min(loss, Math.floor(loss * share + hash01(state.seed, "nlraid", attacker.id, target.id, state.hour)));
+  const n = Math.min(loss, Math.floor(loss * share + hash01(state.seed, "nlraid", localId(state, attacker.id), localId(state, target.id), state.hour)));
   if (n <= 0) return 0;
   const out = { killed: 0 };
   if (Array.isArray(attacker.bases)) groupCapture(state, attacker, target, n, out);

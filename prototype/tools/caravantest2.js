@@ -354,7 +354,7 @@ section("The groups rob caravans");
     r.pop = Math.max(r.pop, 40);
     let ok = false;
     for (let i = 0; i < 6 && !ok; i++) { ok = C.gangAmbush(st, r, cq); st.hour++; } // 5% of the time a strong gang is still beaten off
-    check(ok && r.stock.food === rf + 25 && cq.goods.gear.length === 0 && (r.wares || []).some((it) => it.key === "vest"), "a gang's ambush on a group's caravan takes everything");
+    check(ok && r.stock.food === rf + 25 && cq.goods.gear.length === 0 && ((r.wares || []).some((it) => it.key === "vest") || (r.arsenal && r.arsenal.items.some((it) => it.name === "Vest"))), "a gang's ambush on a group's caravan takes everything (the vest to their fighters: arsenal.js)");
     st.parties.splice(st.parties.indexOf(cq), 1);
   }
 }

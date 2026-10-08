@@ -28,6 +28,7 @@ import { itemLoad } from "../sim/inventory.js";
 import { modLabel } from "../sim/gunmods.js";
 import { vehiclesAtBase, carsAtBase, vehicleById, tank } from "../sim/vehicles.js";
 import { radioDiploBlock } from "./diplomacy.js";
+import { vehicleOffers, buyVehicle, sellVehicle } from "../sim/vehicletrade.js"; // the Vehicles section
 import { visitorTradeHead, visitorTradeButtons } from "./visitors.js";
 import { baseListenSection } from "./radiolisten.js"; // Listen in at a base (sim/radiolisten.js)
 import { ask } from "./confirm.js"; // attacking a caravan asks first (one confirmation style)
@@ -102,6 +103,16 @@ function intelBlock(state, ctx) {
       <button class="mini ${it.sell ? "active" : ""}" data-action="tw-intel" data-f="sell" ${io.sell.ok || it.sell ? "" : "disabled"}${tip(io.sell.ok ? `Sell your own maps: ${io.sell.tiles} tiles you know well near them` : io.sell.why)}>Sell your maps · ${p1(io.sell.value * sp.sell)}</button></div>`;
 }
 
+// Vehicles (sim/vehicletrade.js): bought and sold on their own, paid in goods at their worth, outside the deal above.
+function vehicleBlock(state, ctx) {
+  const o = vehicleOffers(state, ctx);
+  if (!o.theirs.length && !o.mine.length) return "";
+  const row = (name, sub, price, act, i, label, hint) => `<tr${tip(hint)}><td>${esc(name)} <span class="muted">${esc(sub)}</span></td><td class="muted">${price}</td><td><button class="mini" data-action="${act}" data-i="${i}">${label}</button></td></tr>`;
+  const sub = (v) => `${Math.round(v.condition)}% · fuel ${Math.round(v.fuel || 0)}${v.upgrades && Object.values(v.upgrades).some(Boolean) ? " · upgraded" : ""}`;
+  return `<h3${tip("A vehicle changes hands on its own, paid in goods at their worth (scrap, fuel, ammo, parts, then food and meds): its type, condition and upgrades, how much they want one, and your Speech and goodwill set the price. A vehicle you sell leaves its cargo with you.")}>Vehicles</h3>
+    <div class="grid2"><div>${o.mine.length ? `<table class="t">${o.mine.map((x, i) => row(x.v.name, sub(x.v), x.price, "tw-vsell", i, "Sell", `They pay goods worth ${x.price}`)).join("")}</table>` : `<div class="small muted">${ctx.visitor ? "Merchants do not buy vehicles." : "No vehicle of yours here to sell."}</div>`}</div>
+    <div>${o.theirs.length ? `<table class="t">${o.theirs.map((x, i) => row(x.rec.name, sub(x.rec), x.price, "tw-vbuy", i, "Buy", ctx.kind === "radio" ? `Goods worth ${x.price} from ${ctx.base.name}; they drive it over (a day)` : `Goods worth ${x.price}`)).join("")}</table>` : `<div class="small muted">No vehicles for sale.</div>`}</div></div>`;
+}
 // What moves this group's prices right now, and what their kind prizes and shuns (no numbers).
 const marginOf = (f) => margin(f);
 export function moodBlock(state, f) {
@@ -168,6 +179,7 @@ export function tradeWindow(state, ui) {
       <div><h3>You get</h3><table class="t"><tr><th></th><th>They have</th><th>Each</th><th>In the deal</th></tr>${supplyRows(state, ctx, "theirs")}</table>
         <h3>Their items</h3>${gearRows(state, ctx, "theirs")}</div>
     </div>
+    ${vehicleBlock(state, ctx)}
     ${radio ? "" : intelBlock(state, ctx) /* news goes by Ask for news on the radio */}
     <div class="tw-totals">
       <div class="spread small"><span${tip("What your side is worth to them")}>Your side: <b>${p1(tot.offer)}</b></span><span${tip(ctx.fee ? "What their side costs at their prices, with the delivery fee" : "What their side costs at their prices")}>Their side: <b>${p1(tot.ask)}</b>${ctx.fee ? ` <span class="muted">(${p1(ctx.fee)} of it the delivery fee)</span>` : ""}</span></div>
@@ -366,6 +378,8 @@ export const TRADE_ACTIONS = {
   },
   "tw-gear": (state, ui, d) => { toggleGear(state, d.side, d.i); ui.tradeMsg = ""; },
   "tw-intel": (state, ui, d) => { setIntel(state, d.f, d.v); ui.tradeMsg = ""; },
+  "tw-vbuy": (state, ui, d) => { ui.tradeMsg = buyVehicle(state, Number(d.i)); },
+  "tw-vsell": (state, ui, d) => { ui.tradeMsg = sellVehicle(state, Number(d.i)); },
   "tw-balance": (state, ui, d) => { ui.tradeMsg = balanceWith(state, d.k); },
   offer: (state, ui, d) => { const t = state.trade; if (t) setQty(state, "mine", d.k, (t.offer[d.k] || 0) + Number(d.d)); ui.tradeMsg = ""; },
   ask: (state, ui, d) => { const t = state.trade; if (t) setQty(state, "theirs", d.k, (t.ask[d.k] || 0) + Number(d.d)); ui.tradeMsg = ""; },

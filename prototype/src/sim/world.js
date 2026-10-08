@@ -75,6 +75,7 @@ import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
 import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and moving people between your bases)
 import { familyDaily } from "./family.js"; // children and generations
+import { leavePlayerBase } from "./groupworld.js"; // a lost outpost stands empty for a group to move into
 
 export const HUB_VISION = 3;
 // A normal start's hub is bare (barestart): no buildings, every construction plot free. Its stores carry the first
@@ -681,6 +682,7 @@ export function removeBase(state, base, cause = "was lost") {
   }
   for (const p of state.parties) if (p.owner === "player" && p.homeBaseId === base.id) p.homeBaseId = h.id;
   state.bases.splice(i, 1);
+  leavePlayerBase(state, base); // groupworld.js: it stands empty, its buildings there for a group to move into
   assignStations(state, h);
   const stock = SUPPLY_KEYS.filter((k) => (base.stock[k] || 0) >= 1).map((k) => `${Math.floor(base.stock[k])} ${keyWord(k)}`); // water.js keyWord: "un-purified water", not the key
   const bits = [];

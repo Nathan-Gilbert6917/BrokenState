@@ -40,6 +40,7 @@ import { changeRelation, relation, warBetween, atWar, news, knownAs } from "./di
 import { available } from "./trade.js";
 import { tileLabel } from "./parties.js";
 import { openNegotiation, dealFor, talksOf } from "./ransom.js"; // rescue: buying your people back
+import { weightOf } from "./groupcare.js"; // the type profiles
 
 export const GROUP_JAIL = {
   // The step up to each tier (groupworks.js job "jail"): what it costs and crew-days of work.
@@ -397,7 +398,7 @@ export function groupJailsDaily(state) {
       // Sale: raiders and their like sell people as labour (or to the military, who free them).
       if (G.FULL[f.type] === "sell" && rec.since !== day(state) && rng.chance(T.sale) && sellTo(state, f, rec)) continue; // not one bought today
       // Turned: held long, one joins them.
-      if (day(state) - rec.since >= T.recruitDays && rng.chance(T.recruit)) { list.splice(list.indexOf(rec), 1); f.pop += 1; bump(state, "turned"); }
+      if (day(state) - rec.since >= T.recruitDays && rng.chance(T.recruit * weightOf(f, "recruit"))) { list.splice(list.indexOf(rec), 1); f.pop += 1; bump(state, "turned"); } // groupcare.js GROUP_PRIORITIES recruit
     }
     // Your people sold on (raiders and the like), where someone has room: held over their room (overflow), a buyer is
     // looked for every day, and the days for a ransom run out (overflowDue).

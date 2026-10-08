@@ -27,6 +27,7 @@ import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
 import { crawlAutoStep } from "./citycrawl.js";
 import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand, gearBuyPrice } from "./trade.js";
 import { autoCaravanTrade, launchCaravan, caravanEstimate } from "./caravans.js";
+import { governorVehicles, idleDaily } from "./vehicletrade.js"; // buying and selling vehicles
 import { radioDeals, pendingDeal, dealCaravanForm, matchGear, goodsWeight, cancelRadioDeal } from "./radiotrade.js"; // radio deals your caravan fetches
 import { autoVisitorTrade } from "./visitors.js";
 import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, relayReach, RELAY_RANGE, GROUP_REACH } from "./radio.js";
@@ -346,6 +347,8 @@ export function stewardTrade(state, base, style = "balanced", lead = null) {
   return leaderTurn(state, style, () => {
     const ctx = tradeContext(state);
     if (ctx && ctx.kind === "caravan" && ctx.base && ctx.base.id === base.id) {
+      const veh = governorVehicles(state); // vehicletrade.js: a car when there is none, a long-idle spare sold
+      if (veh) say(state, veh);
       const text = autoCaravanTrade(state, needs(state, base), style === "aggressive" ? "balanced" : style, tradeSpare(state, base));
       return `the ${ctx.f.name} caravan at the gates: ${text.replace(/\.$/, "")}`;
     }
@@ -421,6 +424,7 @@ export function stewardWarnings(state, base, style = "balanced") {
 export function autopilotDaily(state) {
   if (!state.autopilot || state.gameOver) return;
   roleSummaries(state);
+  idleDaily(state); // vehicletrade.js: how long each car has stood at a base
   winterReport(state);
   tidySupplyJobs(state);
   planCampaign(state); // the war on the hives: today's target (its ammo want feeds needs, trades and the stations)

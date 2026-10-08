@@ -383,6 +383,9 @@ section("Relations between groups, pacts and wars");
   atk.pop = 40;
   b.pop = 20;
   while (b.bases.length < 3) b.bases.push(nearTile(st, b.bases[0], 2, 5));
+  // Only this war: one the drift above happened to start (a third group against either side) is called off first.
+  st.diplo.wars = st.diplo.wars.filter((x) => ![x.a, x.b].some((id) => id === atk.id || id === b.id));
+  D.syncWarFlags(st);
   const w = D.startWar(st, atk, b, "land");
   clearCards(st);
   check(w && atk.atWar === 1 && b.atWar === 1 && D.warBetween(st, atk, b) === w, "war declared: both at war");

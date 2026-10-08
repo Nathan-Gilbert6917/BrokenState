@@ -260,6 +260,16 @@ export function fitArmour(u, s) {
 // durability (own dice).
 export function enemyPieces(b, u) {
   if (!u || u.pieces !== undefined || u.kind !== "human" || u.side === "player") return u && u.pieces;
+  // Armed from a group's arsenal (arsenal.js armFromArsenal): the issued pieces themselves, with their wear (they wear
+  // as they are hit, and the body drops them as they are left).
+  const ars = (u.arsArmour || []).filter((it) => it && armourSpec(it.key) && GEAR[it.key]);
+  if (ars.length) {
+    const SLOT = { armor: "torso", head: "head", arms: "arms", legs: "legs" };
+    u.pieces = { torso: null, head: null, arms: null, legs: null };
+    for (const it of ars) { const k = SLOT[GEAR[it.key].slot]; if (k && !u.pieces[k]) { ensureDur(it); u.pieces[k] = it; } }
+    if (u.tough == null) u.tough = 1;
+    return u.pieces;
+  }
   const key = u.armorKey && armourSpec(u.armorKey) ? u.armorKey : null;
   const s = key ? armourSpec(key) : null;
   const seed = b && b.dseed != null ? b.dseed : b && b.rng ? b.rng.state : 0;
