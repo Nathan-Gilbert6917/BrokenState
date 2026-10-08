@@ -308,7 +308,7 @@ if (!QUICK) {
   // Not poorer (>=): since the flashbang branch an armoury's crate of flashbangs (loot.js AREA_GRENADES) fills the same
   // hands in both arms, and at 60 raids the gap (dev e6b583b: 0.25 vs 0.24 at seed 7) is within one vest; at 120 raids
   // seeds 8 and 9 still show it clearly (0.14 vs 0.10, 0.26 vs 0.22).
-  check(a.armor / a.raids >= z.armor / z.raids, `and not poorer: armour off the bodies ${r2(a.armor / a.raids)} vs ${r2(z.armor / z.raids)} a raid`);
+  check(a.armor / a.raids > z.armor / z.raids, `and richer: armour off the bodies ${r2(a.armor / a.raids)} vs ${r2(z.armor / z.raids)} a raid`);
 }
 
 // ---------- balance: one weapon at a time ----------
