@@ -646,9 +646,11 @@ section("Base battles: a way out on the side away from the attack, and what pull
   const raid = { id: newId(), owner: f.id, kind: "raid", path: [t], idx: 0, strength: 50, target: { kind: "player", baseId: o.id, tile: t } };
   st.parties.push(raid);
   const setup = { tile: t, baseId: o.id, enemy: { kind: "raiders", count: 5, power: 4, factionId: f.id }, canRetreat: true, handler: "raidDefense", layout: "baseDefence", deploy: true, context: { strip: true, raidId: raid.id, baseId: o.id, factionId: f.id } };
-  const raze = RAIDS.RAZE; RAIDS.RAZE = {}; // what is checked is that they take it (burning it down instead is its own roll)
+  const { GROUP_PRIORITIES: GP } = await import("../src/sim/groupcare.js");
+  const raze = Object.fromEntries(Object.entries(GP).map(([k, v]) => [k, v.raze]));
+  for (const v of Object.values(GP)) v.raze = 0; // what is checked is that they take it (burning it down instead is its own roll)
   finishCombat(st, setup, { outcome: "retreat", enemiesKilled: 1, enemiesLeft: 4, survivorsHurt: [], survivorsDead: [], ammoUsed: 0, loot: { supplies: {}, gear: [] }, tactical: true, worn: true });
-  RAIDS.RAZE = raze;
+  for (const [k, v] of Object.entries(raze)) GP[k].raze = v;
   check(!st.bases.includes(o) && f.bases.includes(t), "pulling out of a raid fight: the raiders keep the base");
   check(st.parties.some((p) => p.owner === "player" && p.teamMission === "retreat"), "its people are on their way to the hub");
   // hordeBreakIn: the dead wreck it and move on, the base stays yours.

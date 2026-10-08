@@ -48,7 +48,7 @@ export const KNOW = {
   SPOT: 0.4, SPOT_WATCH: 0.8, SCOUTED: 1.6, SCOUTED_DAYS: 12, FRESH: 3,
 };
 export const VEH = { TAKE_RANGE: 2, TAKE: 0.08, FIND: 0.05, STEAL: 0.01, STEAL_RANGE: 8, STEAL_GROUP: 0.004, SELL: 0.02, FIT: 0.1, FIT_EVERY: 10, PER: 15 };
-export const ABANDON = { DECAY: 30, PULL: 3, STOCK: 0.5 };
+export const ABANDON = { DECAY: 30, PULL: 3, STOCK: 0.5, LIKED: 1.5 }; // LIKED: × the pull of one with the works its type likes (GROUP_PRIORITIES likes)
 const h = (state, ...k) => hash01(state.seed, "groupworld", ...k);
 const dist = (state, a, b) => state.grid.distance(a, b);
 const nearOwn = (state, f, tile) => (f.bases.length ? Math.min(...f.bases.map((b) => dist(state, b, tile))) : Infinity);
@@ -184,7 +184,7 @@ function vehicleDaily(state, f, d) {
     if (o) stealFromGroup(state, f, o, d);
   }
   // Sell a spare.
-  if (live(f).length > vehicleWant(f) + 1 && f.type !== "military" && h(state, f.name, tickOf(f), "sell") < VEH.SELL) {
+  if (live(f).length > vehicleWant(f) + 1 && weightOf(f, "sellsCars", 1) > 0 && h(state, f.name, tickOf(f), "sell") < VEH.SELL) { // GROUP_PRIORITIES sellsCars
     const buyer = state.factions.filter((x) => x.alive && x !== f && !x.outsider && live(x).length < vehicleWant(x) && relation(state, f, x) > -15).sort((a, b) => weightOf(b, "vehicles") - weightOf(a, "vehicles") || a.id - b.id)[0];
     if (buyer) sellBetween(state, f, buyer);
   }
@@ -275,17 +275,17 @@ export function scavVehicle(state, f, site) {
   if (!VEHICLE_TYPES[type]) return null;
   return record(f, { id: state.hour, type, name: VEHICLE_TYPES[type].name, fuel: 2, condition: 25 + Math.round(35 * h(state, f.name, state.hour, "vcond")) }, { salt: "s" });
 }
-// Fit one upgrade by type (raiders: scrap plating; the military: plate, then glass; a fortress: plate; traders and
-// communes: mesh), paid from the stock; a machine gun in the arsenal goes on a turret.
-const FITS = { raider: ["scrapPlate"], expansionist: ["scrapPlate", "mesh"], zealot: ["mesh"], military: ["plating", "glass"], fortress: ["plating", "mesh"], traders: ["mesh"], commune: ["mesh"] };
+// Fit one upgrade by type (GROUP_PRIORITIES fits: raiders scrap plating; the military plate, then glass; a fortress
+// plate; traders and communes mesh; × fitting, communes seldom bother), paid from the stock; a machine gun in the
+// arsenal goes on a turret.
 export function fitUpgrade(state, f) {
   const cars = live(f).filter((v) => v.type !== "bike");
-  if (!cars.length || h(state, f.name, tickOf(f), "fit") >= VEH.FIT * 10 * weightOf(f, "vehicles") * (f.type === "commune" ? 0.3 : 1)) return null;
+  if (!cars.length || h(state, f.name, tickOf(f), "fit") >= VEH.FIT * 10 * weightOf(f, "vehicles") * weightOf(f, "fitting", 1)) return null;
   // A machine gun from the arsenal on a turret.
   const mg = f.arsenal && f.arsenal.items.find((it) => TURRET_KG[it.key]);
   const bare = cars.find((v) => !upgradesOf(v).turret);
   if (mg && bare) { removeFromArsenal(f, mg, "turret"); bare.upgrades = { ...upgradesOf(bare), turret: { gun: mg.key, item: mg } }; return { v: bare, key: "turret" }; }
-  for (const key of FITS[f.type] || []) {
+  for (const key of weightOf(f, "fits", null) || []) {
     const v = cars.find((x) => { const u = upgradesOf(x); return key === "plating" ? u.plating < 1 && !u.scrapPlate : key === "scrapPlate" ? !u.plating && !u.scrapPlate : !u[key] && !(key === "mesh" && u.glass) && !(key === "glass" && u.mesh); });
     if (!v) continue;
     // (trade.js groupStockKey: a group keeps one count of parts, so car parts come out of it)
@@ -327,10 +327,8 @@ export function leavePlayerBase(state, base) {
 // How much more a group wants this abandoned base than an empty site.
 export function abandonedPull(f, rec) {
   const w = rec.works || {};
-  let fit = 1;
-  if (f.type === "raider" && (w.walls || 0) >= 1) fit = 1.5;
-  if (f.type === "commune" && (w.farms || 0) >= 1) fit = 1.5;
-  if (f.type === "fortress" && (w.walls || 0) >= 2) fit = 1.5;
+  const likes = weightOf(f, "likes", null); // GROUP_PRIORITIES: raiders walls, a commune fields, a fortress two walls
+  const fit = likes && Object.entries(likes).every(([k, n]) => (w[k] || 0) >= n) ? ABANDON.LIKED : 1;
   return ABANDON.PULL * weightOf(f, "expand") * fit;
 }
 export function occupyAbandoned(state, f, tile) {

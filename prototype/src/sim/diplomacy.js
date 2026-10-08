@@ -50,7 +50,7 @@
 //   from the groups' expansion for 60 days). After the peace the enemy settles at goodwill −35 (wary, not hostile).
 import { Rng } from "./rng.js";
 import { groupCapture, jailsOn } from "./groupjails.js"; // jailhouse: war captives into the raider's jail
-import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS, supplyFew } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, supplyFew } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
 import { clashKit, raidCount } from "./arsenal.js"; // group arsenals: a war raid's dead lose their kit, the side holding the field picks some up
@@ -69,6 +69,7 @@ import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every r
 import { payAmmo } from "./ammo.js"; // rounds by calibre: the ones its guns need least go
 import { warCaptureMult } from "./nonlethal.js"; // groups that take people alive take more prisoners in a war
 import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES warlike: a group's temper for war
+import { noteStrife, SPLINTER } from "./splinters.js"; // a lost war stirs strife (splinter bands)
 import { sameBloc, blocSpare, blocWarJoin, blocsDaily, jointRaid } from "./blocs.js"; // AI blocs (alliances of groups)
 import { pwarsDaily } from "./playerwars.js"; // wars declared on you (and by you)
 
@@ -103,15 +104,14 @@ export function diploRng(state) {
   return state.diploRng;
 }
 const key = (a, b) => (a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`);
-const agg = (t) => FACTION_TYPES[t].attitude === "Aggressive";
+// The two types' resting relation (groupcare.js GROUP_PRIORITIES relKin / relOut / relRank): with its own type a
+// group's relKin; with another, the relOut of the type with the higher relRank (the lower relOut on a tie).
+const TYPE_REL = 18; // an unknown type's (relKin and relOut)
 function typeRel(a, b) {
-  const A = a.type, B = b.type;
-  if (A === "raider" || B === "raider") return A === B ? -20 : -44;
-  if (A === "zealot" || B === "zealot") return A === B ? 20 : -34;
-  if (agg(A) && agg(B)) return -28;
-  if (agg(A) || agg(B)) return -24;
-  if (A === "traders" || B === "traders" || A === "commune" || B === "commune") return 30;
-  return 18;
+  if (a.type === b.type) return weightOf(a, "relKin", TYPE_REL);
+  const ra = weightOf(a, "relRank", 0), rb = weightOf(b, "relRank", 0);
+  const oa = weightOf(a, "relOut", TYPE_REL), ob = weightOf(b, "relOut", TYPE_REL);
+  return ra > rb ? oa : rb > ra ? ob : Math.min(oa, ob);
 }
 export function baseDistance(state, a, b) {
   let best = Infinity;
@@ -487,6 +487,7 @@ export function makePeace(state, w, how = "terms") {
     text = `${cap(knownAs(state, a))} and ${knownAs(state, b)} made peace. Neither side gained anything.`;
   }
   endWar(state, w, terms, text);
+  if (terms === "land" || terms === "tribute") noteStrife(lose, SPLINTER.WAR_LOST, "war"); // splinters.js: a lost war stirs strife
   if (w.playerSide != null) {
     const ally = factionById(state, w.playerSide);
     const foe = ally === a ? b : a;

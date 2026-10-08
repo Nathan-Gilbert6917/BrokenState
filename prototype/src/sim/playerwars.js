@@ -53,6 +53,7 @@ import { day, log, hub, factionById, addCard, alive, atBase, supplyValue, player
 import { SUPPLIES } from "./data.js";
 import { hash01 } from "./skills.js";
 import { attitude, changeGoodwill, strength, isAggressiveType, launchRaidOnBase, playerRaidWeight, nearestOwnBase, RAIDS } from "./factions.js";
+import { noteStrife, SPLINTER } from "./splinters.js"; // a war on you they lost stirs strife (splinter bands)
 import { ensureDiplo, knownAs, relation, DIPLO } from "./diplomacy.js";
 import { weightOf, fitPeople } from "./groupcare.js";
 import { knowsOf } from "./groupworld.js";
@@ -168,8 +169,8 @@ export function warGoalFor(state, f) {
     revenge: g.raid + 1.5 * g.execution + g.prisoners + 0.5 * g.theft,
     loot: (richV >= PW.RICH ? 20 : richV >= PW.RICH / 2 ? 10 : 0) + (hungry ? 12 : 0) + 0.5 * g.theft + 8 * weightOf(f, "raid"),
     territory: near ? 15 + g.growth + 8 * weightOf(f, "expand") : 0,
-    conversion: f.type === "zealot" ? 30 : 0,
-    rival: f.type === "expansionist" || f.type === "military" ? 40 * land + (playerStrength(state) > strength(f) ? 10 : 0) : 0,
+    conversion: weightOf(f, "cbConversion", 0), // groupcare.js GROUP_PRIORITIES: zealots
+    rival: weightOf(f, "cbRival", 0) ? weightOf(f, "cbRival", 0) * land + (playerStrength(state) > strength(f) ? 10 : 0) : 0, // expansionists, the military
   };
   const goal = Object.keys(scores).reduce((a, b) => (scores[b] > scores[a] ? b : a));
   const top = GRIEVANCES.filter((k) => g[k] >= 8).sort((a, b) => g[b] - g[a])[0];
@@ -617,6 +618,9 @@ export function endPwar(state, w, how, text, terms = []) {
   if (d.pwarEnded.length > 20) d.pwarEnded.length = 20;
   d.pwarStats.peace++;
   if (how in d.pwarStats) d.pwarStats[how]++;
+  // splinters.js: a war on you they lost (worn out, or paying for the peace) stirs strife.
+  const main = factionById(state, w.fid);
+  if (main && (how === "weary" || (how === "terms" && terms.some((t) => t.payer === "them")))) noteStrife(main, SPLINTER.WAR_LOST, "war");
   for (const c of [...state.cards]) if (c.pwarId === w.id) state.cards.splice(state.cards.indexOf(c), 1);
   record(state, text, how === "gone" ? "info" : "good");
 }

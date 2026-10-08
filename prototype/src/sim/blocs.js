@@ -8,7 +8,7 @@
 // expansionists with expansionists (0.7), fortresses and traders (0.35), communes (0.2); raiders only with raiders
 // (0.8: loose gangs); zealots only with zealots (0.8). Never across those lines.
 // Forming (BLOC.FORM a day × fit × √(ally a × ally b)): two groups outside any bloc and outside your coalition, with
-// relations at least BLOC.REL by type (the higher of the two: communes and traders 18, fortress 22, military 25,
+// relations at least blocRel by type (GROUP_PRIORITIES; the higher of the two: communes and traders 18, fortress 22, military 25,
 // expansionists 28, zealots 12, raiders −26), nearest bases within BLOC.RANGE tiles, not at war with each other, and a
 // shared threat (sharedThreat, read from their knowledge): a common war enemy; you (both at war with you, or both
 // hostile to you (goodwill PLAYER_FOE_GW or worse) and both knowing a base of yours, or the coalition holding
@@ -65,7 +65,7 @@ import { spawnAiParty } from "./parties.js";
 import { atWarWithYou, pwarOf } from "./playerwars.js";
 
 export const BLOC = {
-  REL: { commune: 18, traders: 18, fortress: 22, military: 25, expansionist: 28, zealot: 12, raider: -26 },
+  REL: 20, // an unknown type's (each type's: groupcare.js GROUP_PRIORITIES blocRel)
   BREAK: 25, FORM: 0.025, JOIN: 0.03, MAX: 4, RANGE: 22, THREAT_RANGE: 18, FOE_REL: -30, IDLE: 45,
   COHESION: 0.4, GANG_COHESION: 0.13, FOE_SOUR: 0.2, COALITION_SOUR: 0.15,
   HELP_RANGE: 16, SPARE: 0.3, HELP_CAP: 1.0, GANG_HELP: 0.5, JOINT_RANGE: 18, JOINT: 0.35, JOINT_SHARE: 0.8,
@@ -119,7 +119,7 @@ export function typesFit(a, b) {
   if (A === "expansionist" || B === "expansionist") { const o = A === "expansionist" ? B : A; return o === "expansionist" ? 0.7 : o === "fortress" || o === "traders" ? 0.35 : 0.2; }
   return 1;
 }
-const relLine = (a, b) => Math.max(BLOC.REL[a.type] ?? 20, BLOC.REL[b.type] ?? 20);
+const relLine = (a, b) => Math.max(weightOf(a, "blocRel", BLOC.REL), weightOf(b, "blocRel", BLOC.REL));
 const eligible = (state, f) => f && f.alive && !f.outsider && f.bases.length && !isMember(state, f) && !f.hcNoGrow;
 
 // ---------- threats (read from what they know) ----------
