@@ -48,7 +48,7 @@ const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "�
 // By trade category (data.js CATEGORIES): valuables and treats at a glance.
 const CAT_ICON = { jewelry: "💍", smokes: "🚬", liquor: "🍾", treats: "🍫", gadgets: "📱", collectibles: "🪙", household: "🧻", defence: "🚧", bow: "🏹" };
 const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", arms: "🧤", legs: "🦵", backpack: "🎒", rig: "🦺", insert: "▭" };
-const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌" };
+export const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌" };
 function icon(key) {
   const d = GEAR[key];
   if (isGunKey(key)) return "🔫";
@@ -94,7 +94,7 @@ export function itemTip(item, s = null) {
 }
 
 const pouchText = (P) => { const n = {}; for (const k of P || []) n[k] = (n[k] || 0) + 1; return Object.entries(n).map(([k, c]) => `${c} ${String(POUCH_NAMES[k] || k).toLowerCase()}${c > 1 ? "s" : ""}`).join(", ") || "no pouches"; };
-function tile(item, loc, s, drag = true) {
+export function tile(item, loc, s, drag = true) {
   const d = GEAR[item.key];
   const dur = itemDur(item);
   const frac = dur != null ? dur / itemDurMax(item) : item.quality || 1;
@@ -121,7 +121,7 @@ function gearCog(state, ui, item, loc) {
 
 // The paper doll: portrait in the middle, hands / off hand / pack on the left, head / body / arms / legs on the
 // right, pockets and pack below. holder = survivor or body; prefix = "s:<id>" or "body:<i>".
-function doll(state, ui, holder, prefix, portrait, { readonly = false, user = null, weightLine = null } = {}) {
+export function doll(state, ui, holder, prefix, portrait, { readonly = false, user = null, weightLine = null } = {}) {
   ensureInv(holder);
   const box = (slot) => slotBox(state, ui, `${prefix}:${slot}`, SLOT_NAMES[slot], user, readonly);
   const pk = packOf(holder);
@@ -170,7 +170,7 @@ function battleLine(holder) {
   return `<div class="small muted"${tip(`In a fight they carry ${Math.round(kg * 10) / 10} kg (worn, held, pockets, rig, pack and the rounds in their magazines): Light up to 18 kg moves 5 tiles an action, Medium up to 28 still 5 but a dash (both actions) 9, Heavy up to 38 4, more 3. Enemies are slowed by their kit the same way.`)}>Fight: ${esc(B.name)} (${esc(what)})</div>`;
 }
 // Storage at a place: the base armory or the team's cargo, as a drop box with item tiles.
-function storageBox(state, ui, place, user) {
+export function storageBox(state, ui, place, user) {
   const st = storageFor(state, place);
   if (!st) return "";
   const loc = `${st.o}:${st.id}:list`;
@@ -204,7 +204,7 @@ function whoTabs(state, ui, people, sid) {
   return `<div class="invwho">${people.map((p) => `<button class="mini ${p.id === sid ? "active" : ""}" data-action="inv-who" data-id="${p.id}"${tip(`Show ${p.name}'s inventory. Combat power ${combatPower(p).toFixed(1)}.`)}>${first(p)}</button>`).join("")}</div>`;
 }
 
-function selBar(state, ui, place) {
+export function selBar(state, ui, place) {
   if (!ui.invSel) return "";
   const item = itemAt(state, ui.invSel);
   if (!item) return "";
