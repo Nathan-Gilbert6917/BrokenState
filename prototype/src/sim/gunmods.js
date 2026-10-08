@@ -192,6 +192,8 @@ export function modsText(item) {
 export const ENEMY_MODS = {
   soldiers: { optic: [0.55, ["reddot", "holo", "holo", "scope4x"]], muzzle: [0.25, ["riflecan", "pistolcan"]], under: [0.2, ["foregrip", "laser", "bipod"]], mag: [0.08, ["drum"]] },
   guards:   { optic: [0.1, ["reddot"]], under: [0.15, ["laser"]], mag: [0.08, ["extmag", "tubeext"]] },
+  escorts:  { optic: [0.15, ["scope4x", "reddot"]], under: [0.08, ["bipod", "laser"]], mag: [0.06, ["extmag", "tubeext"]] }, // merchant caravans' riflemen (escorts.js)
+  contractors: { optic: [0.45, ["reddot", "holo", "scope4x"]], muzzle: [0.15, ["riflecan", "comp"]], under: [0.15, ["foregrip", "laser"]], mag: [0.08, ["drum"]] }, // their hired guns
   militia:  { optic: [0.15, ["scope4x", "scope4x", "reddot"]], under: [0.1, ["bipod"]] },
   fighters: { optic: [0.12, ["scope4x", "reddot"]], under: [0.06, ["bipod", "foregrip"]], mag: [0.05, ["extmag", "tubeext"]] },
   raiders:  { optic: [0.1, ["reddot"]], muzzle: [0.1, ["comp", "suppressor", "choke"]], mag: [0.08, ["extmag", "tubeext"]] },

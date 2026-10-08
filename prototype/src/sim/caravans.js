@@ -5,7 +5,8 @@
 // - Sent when a radio deal or request is agreed (radio.js), or as aid. They walk with a wagon (the group's convoy
 //   sprite) along a land route from their main base; no land route, no caravan. Guards: 2 + 1 per 12 people
 //   (at most 5), each as strong as one of their fighters. Carry space 60 + 15 per guard.
-// - Hordes and raiders on the way can hit them like any other group party (parties.js aiPartyHour).
+// - Hordes and raiders on the way can hit them like any other group party (parties.js aiPartyHour); a raider gang
+//   that wins takes everything it carries. Your teams can attack one anywhere on the road (caravanraids.js).
 // - At your base the trade window opens (or waits its turn) with any radio deal filled in. The caravan stays
 //   CARAVAN_STAY_HOURS (24) and then goes home with what it has; reopen the window from the Bases tab meanwhile.
 //   A radio deal not done by then costs 3 goodwill.
@@ -40,6 +41,7 @@ import {
 import { marketOf } from "./trade.js";
 import { escortArrived, pickupArrived } from "./jobs.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
+import { groupEscort, escortStrength, cargoValue } from "./escorts.js"; // a caravan's guards: the cargo's wish, what they can spare
 import { pendingDeal, dealCarried, completeRadioDeal, goodsText } from "./radiotrade.js"; // deals agreed over the radio
 
 export const CARAVAN_STAY_HOURS = 24;
@@ -52,7 +54,7 @@ export const caravanEnRoute = (state, f) => state.parties.some((p) => isCaravan(
 export const caravansAt = (state, baseId) => state.parties.filter((p) => isCaravan(p) && p.phase === "trading" && p.baseId === baseId);
 export const incomingCaravans = (state) => state.parties.filter((p) => isCaravan(p) && !p.leaving && p.escortJob == null); // an escorted caravan (jobs.js) goes to another group
 export const guardPower = (f) => 2.2 + FACTION_TYPES[f.type].arms * 1.6;
-export const caravanGuards = (f, c) => clamp(Math.round(c.strength / guardPower(f)), 1, 8);
+export const caravanGuards = (f, c) => (c.escort ? clamp(c.escort.guards, 1, 14) : clamp(Math.round(c.strength / guardPower(f)), 1, 8)); // escorts.js: who went with it
 // Guards a group sends with a caravan, and what it can carry (radiotrade.js checks a radio deal against it).
 const guardsFor = (f) => clamp(2 + Math.floor(f.pop / 12), 2, 5);
 export const caravanCapacity = (f) => 60 + guardsFor(f) * 15;
@@ -100,10 +102,19 @@ export function sendCaravan(state, f, base, { goods = null, deal = null, gift = 
   }
   const eta = travelHours(state, route.path, { vehicle: false, speed: CARAVAN_SPEED }).hours;
   Object.assign(p, { goods: g, deal, gift, dealDone: false, baseId: base.id, home: from, capacity: caravanCapacity(f), leaving: false, eta, sentDay: day(state) });
+  escortParty(state, f, p, g); // escorts.js: the guards the cargo is worth to them, out of what they can spare
   f.known = true;
   f.lastDiplomacy = day(state);
   log(state, `${f.name} ${gift ? "send aid" : "send a caravan"} to ${base.name}. It should arrive in about ${eta}h.`, "info");
   return p;
+}
+
+// A group's caravan or convoy gets its escort (escorts.js groupEscort): what the cargo makes them want to send, out
+// of the fighters they can spare from home (and their Humvee, if they have one free); its strength follows.
+export function escortParty(state, f, p, goods) {
+  p.escort = groupEscort(state, f, cargoValue(goods.supplies, goods.gear));
+  p.strength = Math.max(1, escortStrength(p.escort));
+  return p.escort;
 }
 
 // parties.js aiPartyHour: a caravan reached the end of its path.

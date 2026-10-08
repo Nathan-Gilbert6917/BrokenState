@@ -270,9 +270,9 @@ function groupEntries() {
     sprite: () => enemyCanvas("raiders", "#7a1a1a", null, null, 9),
   }, {
     key: "o:merchants", cat: "groups", name: "Merchant caravan", sub: "Outsiders",
-    stats: [["Guards", "3–5 at first, up to 7"], ["Carries", "fuel, meds, preserved food, parts, ammo, manuals, books and good gear"]],
+    stats: [["Escort", "what the cargo is worth to them, out of their company's 2–8 hired guns and its vehicles (a pickup, a Humvee or an MRAP)"], ["Carries", "by speciality (arms dealers, medics, mechanics, general traders); manuals, books and valuables"]],
     text: "Traders from another state, walking the roads with wagons. They visit the groups' bases and, when invited over the radio (or by chance), yours: the trade window opens for a day.",
-    how: "Invite them over the radio when they call. They want food, water, scrap and jars. Attack one and every merchant hears of it.",
+    how: "Invite them over the radio when they call. They want food, water, scrap and jars. Rob one on the road and everything in the wagons is yours; if anyone gets away or sees it, every merchant hears of it.",
     sprite: () => enemyCanvas("raiders", "#d9a520", null, null, 4),
   }, {
     key: "o:explorers", cat: "groups", name: "Travellers", sub: "Outsiders",

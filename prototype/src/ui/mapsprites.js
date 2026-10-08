@@ -1753,6 +1753,14 @@ function paintRaiderTruck(c) {
 // Humvee: a wide, low olive truck with a roof gun; a pennant in the group's color.
 function paintHumvee(c) {
   const p = painter(24, 14);
+  humvee(p, c);
+  return p;
+}
+// A painter that draws everything shifted by (ox, oy) into another (a vehicle beside a wagon in one sprite).
+function shifted(p, ox, oy) {
+  return { w: p.w, h: p.h, set: (x, y, c) => p.set(x + ox, y + oy, c), get: (x, y) => p.get(x + ox, y + oy), rect: (x0, y0, x1, y1, c) => p.rect(x0 + ox, y0 + oy, x1 + ox, y1 + oy, c), clear: (x, y) => p.clear(x + ox, y + oy) };
+}
+function humvee(p, c) {
   const body = OLIVE, dark = shade(OLIVE, -0.35);
   p.rect(1, 6, 21, 10, body); p.rect(1, 10, 21, 10, dark); p.rect(1, 6, 21, 6, shade(body, 0.2));
   p.rect(6, 3, 16, 6, body); p.rect(6, 3, 16, 3, shade(body, 0.25));
@@ -1762,7 +1770,17 @@ function paintHumvee(c) {
   p.rect(3, 0, 3, 5, METAL); p.rect(4, 0, 6, 1, c);                 // antenna pennant
   p.set(4, 8, c); p.set(5, 8, c);
   for (const wx of [3, 15]) { p.rect(wx, 9, wx + 4, 13, TIRE); p.rect(wx + 1, 10, wx + 3, 12, "#3a3a3c"); p.set(wx + 2, 11, HUB); }
-  return p;
+}
+// An MRAP: a tall, slab-sided olive truck with a V hull, small armoured windows and a turret on the roof.
+function mrap(p, c) {
+  const body = OLIVE, dark = shade(OLIVE, -0.35);
+  p.rect(1, 4, 22, 11, body); p.rect(1, 4, 22, 4, shade(body, 0.22)); p.rect(1, 11, 22, 11, dark);
+  p.rect(3, 12, 20, 12, dark);                                        // the V hull
+  p.rect(15, 5, 18, 7, shade(GLASS, -0.3)); p.rect(19, 6, 21, 7, shade(GLASS, -0.3));
+  p.rect(7, 2, 11, 3, dark); p.rect(11, 2, 17, 2, "#3a3a3a");        // turret and gun
+  p.rect(3, 0, 3, 4, METAL); p.rect(4, 0, 6, 1, c);
+  p.set(22, 9, "#ffe28a");
+  for (const wx of [3, 16]) { p.rect(wx, 11, wx + 4, 15, TIRE); p.rect(wx + 1, 12, wx + 3, 14, "#3a3a3c"); p.set(wx + 2, 13, HUB); }
 }
 
 // Armored truck: riveted steel box with slit windows and a big banner on a pole.
@@ -1919,8 +1937,24 @@ function paintOutsiderRaiders(n) {
   slots.forEach(([x, y], i) => person(p, x, y + 2, { cloth: i % 2 ? "#2c2420" : shade(OUT_RED, -0.2), hat: "hood", hatColor: shade(OUT_RED, -0.35), band: "#c03030", arm: i === 1 ? "rifle" : "raised", pants: "#24222a" }));
   return p;
 }
-function paintOutsiderMerchants() {
-  const p = painter(36, 17);
+// The merchants' escort (sim/escorts.js): light, a guard walking ahead; armed, a pickup behind the wagon; armoured, a
+// Humvee or an MRAP leading it.
+function paintOutsiderMerchants(tier = "", vehicle = "") {
+  if (tier === "armed" || tier === "armoured") {
+    const p = painter(62, 18);
+    wagonAndOxen(shifted(p, 26, 1));
+    if (vehicle === "mrap") mrap(p, OUT_GOLD);
+    else if (vehicle === "hummer") humvee(shifted(p, 0, 3), OUT_GOLD);
+    else pickup(shifted(p, 1, 4), 0, 0, "#5a5a52");
+    if (tier === "armoured") person(p, 57, 6, { cloth: "#4d5440", pants: "#34363c", hat: "helmet", hatColor: "#3a4030", arm: "rifle" });
+    return p;
+  }
+  const p = painter(44, 17);
+  wagonAndOxen(p);
+  person(p, 38, 4, { cloth: "#6a5a3a", pants: "#34363c", hat: "cap", hatColor: "#4a3a2a", arm: "rifle" }); // a guard walking ahead
+  return p;
+}
+function wagonAndOxen(p) {
   // Two oxen in harness.
   const ox = "#6a4a34";
   for (const x0 of [24, 29]) { p.rect(x0, 8, x0 + 5, 11, ox); p.rect(x0, 8, x0 + 5, 8, shade(ox, 0.2)); p.rect(x0 + 5, 6, x0 + 6, 9, ox); p.set(x0 + 6, 5, BONE); p.set(x0 + 4, 5, BONE); p.rect(x0, 12, x0, 14, ox); p.rect(x0 + 4, 12, x0 + 4, 14, ox); }
@@ -1932,7 +1966,6 @@ function paintOutsiderMerchants() {
   p.rect(1, 9, 21, 10, WOOD); p.rect(1, 9, 21, 9, WOOD_LIT); crate(p, 0, 6, 3, 3);
   for (const wx of [3, 15]) { p.rect(wx, 10, wx + 4, 14, "#5c4128"); p.rect(wx + 1, 11, wx + 3, 13, "#3a2a1a"); p.set(wx + 2, 12, WOOD_LIT); p.set(wx + 2, 10, WOOD_LIT); }
   p.rect(21, 2, 21, 6, METAL); p.set(22, 2, FIRE); p.set(22, 3, FIRE_HOT);      // lantern pole
-  return p;
 }
 function paintOutsiderTravellers(sub, n) {
   const p = painter(sub === "refugees" ? 28 : 22, 17);
@@ -2195,11 +2228,12 @@ export function groupPartyCanvas(type, kind, color, n = 3) {
 export const siegeCampCanvas = (color) => cached(`siege:${color}`, () => paintSiegeCamp(color));
 
 // Outsiders (sim/visitors.js) by kind: "raiders" | "merchants" | "explorers" (sub: "scouts" | "refugees" |
-// "wanderers"); n: people shown (1–3).
-export function outsiderPartyCanvas(kind, sub = "", n = 3) {
+// "wanderers"); n: people shown (1–3); escort: a merchant caravan's (sim/escorts.js { tier, vehicle }).
+export function outsiderPartyCanvas(kind, sub = "", n = 3, escort = null) {
   const k = Math.max(1, Math.min(3, n));
-  return cached(`out:${kind}:${sub || ""}:${kind === "merchants" ? 0 : k}`, () =>
-    kind === "raiders" ? paintOutsiderRaiders(k) : kind === "merchants" ? paintOutsiderMerchants() : paintOutsiderTravellers(sub || "wanderers", k));
+  const tier = kind === "merchants" && escort ? escort.tier : "", veh = kind === "merchants" && escort ? escort.vehicle || "" : "";
+  return cached(`out:${kind}:${sub || ""}:${kind === "merchants" ? `${tier}:${veh}` : k}`, () =>
+    kind === "raiders" ? paintOutsiderRaiders(k) : kind === "merchants" ? paintOutsiderMerchants(tier, veh) : paintOutsiderTravellers(sub || "wanderers", k));
 }
 
 // A horde of n figures (2–7) in the current zombie look (palette and eyes from the Zombies settings).
