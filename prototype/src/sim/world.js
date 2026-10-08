@@ -57,6 +57,7 @@ import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
 import { claimsDaily } from "./claims.js"; // land claims: lost under a base founded or taken, a hive, a hostile camp
 import { conquestDaily } from "./conquest.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
+import { ransomHour } from "./ransom.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { caravanRaidsHour } from "./caravanraids.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
@@ -801,6 +802,7 @@ export function tickHour(state) {
   medicalHour(state);
   diplomacyHour(state); // diplomacy.js: jobs for other groups checked every hour (jobs.js)
   prisonersHour(state); // prisoners.js: rescue raids arriving, prisoners whose team or base is gone
+  ransomHour(state); // ransom.js: captives brought home, envoys back with their price, handovers nobody came to
   if (state.hour % 24 === 0) {
     workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
     watchDayRoles(state); // watch.js: Manual people on watch likewise

@@ -122,6 +122,20 @@ console.log("Reach");
   e.x = 7; e.y = 5; place(f, 6, 5);
   check(!inMelee(b, u, e), "not with someone standing between");
   f.x = -10; f.dead = true;
+  // Wall corners (combat.js cornerBlocked): a diagonal reach past a corner at either step is blocked, as a blow is.
+  {
+    const cellAt = (x, y) => b.cells[y * b.w + x];
+    const keep = [[6, 5], [5, 6], [7, 6], [6, 7]].map(([x, y]) => [x, y, { ...cellAt(x, y) }]);
+    e.x = 7; e.y = 7;
+    cellAt(6, 5).k = "wall"; cellAt(5, 6).k = "wall";
+    check(!inMelee(b, u, e), "a spear's diagonal reach: not past a wall's corner at the first step");
+    cellAt(6, 5).k = "open"; cellAt(5, 6).k = "open"; cellAt(7, 6).k = "wall"; cellAt(6, 7).k = "wall";
+    check(!inMelee(b, u, e), "nor at the second");
+    for (const [x, y, c] of keep) b.cells[y * b.w + x] = c;
+    if (b.losCache) b.losCache.fill(0);
+    check(inMelee(b, u, e), "the corners clear: it reaches again");
+    e.x = 7; e.y = 5;
+  }
   place(g, 17, 15); toughen(g);
   check(!inMelee(b, uk, g) && combatAct(st, { type: "melee", unit: uk.id, target: g.id }) === "Must be next to the target.", "a knife does not reach 2");
   fresh(b);

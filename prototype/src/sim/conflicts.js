@@ -11,8 +11,10 @@
 // the battle resolves instantly or on the tactical battle screen.
 //
 // Captured survivors get location { kind: "captive", factionId, tile, since }. They can be
-// rescued (Rescue mission), ransomed (during a trade visit or at the gates), or released when
-// goodwill is high. Over time they may escape, be recruited by their captors, or die.
+// rescued (Rescue mission: sneaked or stormed out on their base's map, rescueraid.js, or by the numbers here),
+// ransomed (by radio or envoy with any group, raiders included: ransom.js; during a trade visit or at the gates), or
+// released when goodwill is high. Over time they may escape (likelier with a pin, lockpicks or the keys they kept:
+// location.tool), be recruited by their captors, or die.
 import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { zombieToughness } from "./hives.js";
 import { stripAll, itemLoad, lootItem, armouredItem } from "./inventory.js";
@@ -47,6 +49,7 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalIn, sumRecs, ROUND_KEYS, isRoundKey } from "./rounds.js"; // rounds by calibre
 import { addFindVia, kindTheme } from "./ammo.js";
 import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsiders on the same tile (contactAttack)
+import { startRescueRaid, tacticalPossible, jailTier, JAIL } from "./rescueraid.js"; // the rescue played out on their base's map
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -255,7 +258,7 @@ export function takeCaptive(state, s, f, p) {
   log(state, `${s.name} was taken prisoner by ${f.name}.`, "danger");
 }
 
-function freeCaptive(state, s, p) {
+export function freeCaptive(state, s, p) {
   s.location = { kind: "party", partyId: p.id };
   if (!p.members.includes(s.id)) p.members.push(s.id);
   s.mood = Math.min(100, s.mood + 15);
@@ -1314,6 +1317,7 @@ function victoryRewards(state, p, c, result) {
 }
 
 // ---------- rescue missions ----------
+const jailWord = (f, tile) => (JAIL[jailTier(f, tile)] || JAIL.makeshift).name;
 export function guardsFor(state, p, f) {
   const def = FACTION_TYPES[f.type];
   return {
@@ -1357,8 +1361,22 @@ function rescueCard(state, p, f, held) {
     title: `Rescue at ${tileLabel(state, p.dest)}`,
     text: `${f.name} hold ${names(held)} here. About ${guards.count} guards are on the walls${night ? ", fewer awake at this hour" : ""}.`,
     choices: [
+      ...(tacticalPossible(state) ? [
+        {
+          label: "Sneak in on the map",
+          hint: `Play it out on their base's map: nobody has seen you${night ? ", a third of them are asleep and the rest see less in the dark" : " (night would help: a third of them asleep)"}. Reach the ${jailWord(f, partyTile(p))}, get past its lock (the jailer's keys, lockpicks, force) and the ropes, and get everyone out by the edge of the map. Your people inside can work at the ropes and the lock themselves. Once the alarm is up, they all come. About ${pct(assault)} if it comes to a straight fight`,
+          fight: { odds: assault, enemy: guards, ambush: null },
+          resolve: (st) => { bump(st, "outcomes", "rescue-raid-sneak"); return startRescueRaid(st, p, f, "sneak"); },
+        },
+        {
+          label: "Storm the base on the map",
+          hint: `Play it out on their base's map, guns first: about ${pct(assault)} to beat the ${guards.count} guards. Their armory can be raided; your people inside can break out. Goodwill with ${f.name} collapses`,
+          fight: { odds: assault, enemy: guards, ambush: null },
+          resolve: (st) => { bump(st, "outcomes", "rescue-raid-assault"); return startRescueRaid(st, p, f, "assault"); },
+        },
+      ] : []),
       {
-        label: "Sneak in and get them out",
+        label: tacticalPossible(state) ? "Sneak in by the numbers" : "Sneak in and get them out",
         hint: `Stealth check, ${pct(sneak)}${night ? " (night helps)" : " (better at night)"}. Failure: the alarm goes up and you fight the guards on their terms`,
         resolve: (st) => {
           if (st.rng.chance(sneak)) {
@@ -1371,14 +1389,14 @@ function rescueCard(state, p, f, held) {
             return "";
           }
           bump(st, "outcomes", "rescue-alarm");
-          return startRescueFight(st, p, f, guards, "enemy", "alarm");
+          return startRescueFight(st, p, f, guards, "enemy", "alarm", true);
         },
       },
       {
-        label: "Storm the base",
+        label: tacticalPossible(state) ? "Storm by the numbers" : "Storm the base",
         hint: `About ${pct(assault)} to win against ${guards.count} guards. Victory frees everyone held here. Goodwill with ${f.name} collapses`,
         fight: { odds: assault, enemy: guards, ambush: null },
-        resolve: (st) => startRescueFight(st, p, f, guards, null, "assault"),
+        resolve: (st) => startRescueFight(st, p, f, guards, null, "assault", true),
       },
       {
         label: "Negotiate their release",
@@ -1426,15 +1444,18 @@ function rescueCard(state, p, f, held) {
   };
 }
 
-function startRescueFight(state, p, f, guards, ambush, mode) {
+// quick: by the numbers even with the battle screen there (the card's "by the numbers" choices).
+function startRescueFight(state, p, f, guards, ambush, mode, quick = false) {
   p.phase = "engaged";
   startCombat(state, {
-    tile: partyTile(p), partyId: p.id, enemy: { ...guards }, ambush, canRetreat: true, handler: "rescue",
+    tile: partyTile(p), partyId: p.id, enemy: { ...guards }, ambush, canRetreat: true, handler: "rescue", quick,
     context: { partyId: p.id, factionId: f.id, mode },
   });
   return "";
 }
 
+// The rescue's fight settled (by the numbers; rescueraid.js hands a raid fought by the numbers here too).
+export function settleRescue(state, result, setup) { return onRescueCombat(state, result, setup); }
 function onRescueCombat(state, result, setup) {
   const c = setup.context;
   const p = state.parties.find((x) => x.id === c.partyId);
@@ -1517,6 +1538,8 @@ export function ransomOnTradeCard(state, p, f) {
 }
 
 // ---------- captives over time ----------
+// A captive who kept something hidden after a failed rescue (rescueraid.js: location.tool) escapes likelier, a day.
+export const CAPTIVE_TOOL = { pin: 0.005, picks: 0.01, key: 0.015 };
 export function captivesDaily(state) {
   const rng = state.rng;
   if (!hub(state)) return; // no base left (conquest.js exiles): nowhere to come home to; they stay where they are
@@ -1550,7 +1573,7 @@ export function captivesDaily(state) {
       f.pop += 1;
       captiveEvent(state, "recruited", `${first(s)} has joined ${f.name}`, `After ${Math.floor(days)} days as a prisoner, ${s.name} has taken ${f.name}'s side. They are one of them now.`, "death");
       checkGameOver(state); // the last one alive changing sides ends the run (world.js)
-    } else if (rng.chance(0.005 + skill(s, "stealth") * 0.001)) {
+    } else if (rng.chance(0.005 + skill(s, "stealth") * 0.001 + (CAPTIVE_TOOL[s.location.tool] || 0))) { // a pin, lockpicks or the keys kept hidden (rescueraid.js)
       s.health = Math.max(10, s.health - rng.int(5, 25));
       releaseHome(state, s);
       captiveEvent(state, "escaped", `${first(s)} escaped!`, `${s.name} slipped out of ${f.name}'s base and made it home, hungry and hurt.`, "good");
