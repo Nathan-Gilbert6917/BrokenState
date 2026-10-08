@@ -96,6 +96,7 @@ export const bodyName = (c) => (c.side === "player" ? c.name : `${c.name}'s body
 export function swarmArmor(hit, by = null) {
   if (!hit) return CARRIER.BASH; // a trap, a spike pit
   if (hit.how === "shot") {
+    if (hit.spread !== undefined) return hit.spread ? CARRIER.SHOTGUN * (hit.swarm || 1) : CARRIER.SHOT; // ammo.js: buckshot and birdshot spread; a slug does not
     const w = hit.weapon || (by && by.weapon);
     return w && GEAR[w] && GEAR[w].cat === "shotgun" ? CARRIER.SHOTGUN : CARRIER.SHOT;
   }

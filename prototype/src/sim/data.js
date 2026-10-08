@@ -3,7 +3,7 @@
 // Kept as plain data so it can later move to JSON files for modding.
 // The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
 import { GUN_GEAR } from "./data-guns.js";
-import { AMMO_GEAR, RELOAD_GEAR } from "./data-ammo.js";
+import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES } from "./data-ammo.js";
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
 
@@ -33,7 +33,7 @@ export const SUPPLIES = {
   rawwater: { name: "Un-purified water", value: 0.5, weight: 1, cat: "water" },
   fuel:  { name: "Fuel",  value: 3,   weight: 1, cat: "fuel" },
   meds:  { name: "Meds",  value: 8,   weight: 0.1, cat: "medical" }, // semi-rare outside pharmacies and clinics (medfinds.js): dear
-  ammo:  { name: "Ammo",  value: 0.5, weight: 0.02, cat: "ammo" },
+  ammo:  { name: "Ammo",  value: 0.5, weight: 0.02, cat: "ammo" }, // abstract rounds (other groups' stores, a plan's or a deal's "N ammo"); yours are by calibre (ROUND_SUPPLIES)
   // Arrows and crossbow bolts: what a bow or crossbow shoots (1 a shot; it never uses ammo). Hunting (hunting.js) often
   // loses one (in the brush, broken in the animal); in a fight about half the arrows shot are picked up again after a
   // win and none after a loss or a retreat (world.js ARROWS, combat.js). Made by hand from firewood and a little scrap
@@ -55,7 +55,12 @@ export const SUPPLIES = {
   // bulk: what counts as one where a rule asks for "a few" of a supply (supplyFew: 5 to spare is 150 firewood).
   wood:  { name: "Firewood", value: 0.02, weight: 0.1, cat: "firewood", bulk: 30 },
 };
+// Rounds by calibre and type (data-ammo.js ROUND_SUPPLIES: a_9mm_fmj, a_12ga_buck…; ammo.js): what your stocks hold.
+// "ammo" above stays as the abstract count (other groups' stores, what a plan or a deal asks for).
+Object.assign(SUPPLIES, ROUND_SUPPLIES);
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
+// The supplies a screen lists one by one: every key but the rounds (shown together as "Ammo", ammo.js totalRounds).
+export const STOCK_KEYS = SUPPLY_KEYS.filter((k) => !ROUND_SUPPLIES[k]);
 // Firewood units to one before firewood was 0.1 kg a unit (a 3 kg bundle): save.js scales an older save's firewood by it.
 export const WOOD_UNITS = 30;
 // "A few" of a supply in a rule (n to spare, n to lose): n units, × its bulk (firewood: 30 a unit of the old 3 kg bundle).

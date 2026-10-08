@@ -56,9 +56,10 @@ export function ammoPen(cal, type) {
 }
 export const ammoKey = (cal, type) => `a_${cal}_${type}`;
 
-// The boxes: one GEAR entry per calibre and type, built from the two tables above so they always agree.
-// PHASE 0: AMMO_GEAR stays empty (merged into GEAR, it would need loot sources: loottest's audit). The ammo agent (A)
-// switches it on with `Object.assign(AMMO_GEAR, ammoBoxes())` once the boxes have sources.
+// The boxes: one GEAR entry per calibre and type, built from the two tables above so they always agree. A box is the
+// portable form of a supply of the same key (ROUND_SUPPLIES below): a box in a survivor's pockets or pack is theirs
+// (a fight draws on it first: ammo.js roundsOf); one put in a base's armory or a team's cargo is opened into the
+// stock (ammo.js settleBase / settleParty). Sources: merchants' wares (ammo.js WARE_AMMO), starting colonists.
 /** @type {Record<string, any>} */
 export const AMMO_GEAR = {};
 export function ammoBoxes() {
@@ -77,6 +78,51 @@ export function ammoBoxes() {
   }
   return out;
 }
+Object.assign(AMMO_GEAR, ammoBoxes());
+
+// Rounds as a supply (section 20, R1: full per-calibre). Every calibre and type is its own supply key, the same key as
+// its box: a base's stock, a team's supplies and cargo, a battle's pools and a body's or a container's finds hold
+// rounds by key ({ a_9mm_fmj: 120, a_12ga_buck: 30 }). value and weight are per round. The old generic "ammo" key
+// stays only as an abstract count: the AI groups' stores (f.stock.ammo), what a plan or a deal asks for ("40 ammo":
+// packed or paid as the rounds that fit, ammo.js) and the by-the-numbers figures. data.js merges these into SUPPLIES.
+/** @type {Record<string, { name: string, value: number, weight: number, cat: string, round: { cal: string, type: string } }>} */
+export const ROUND_SUPPLIES = {};
+for (const [cal, c] of Object.entries(CALIBERS)) {
+  for (const type of c.types) {
+    const t = AMMO_TYPES[type];
+    ROUND_SUPPLIES[ammoKey(cal, type)] = { name: `${c.name} ${t.name}`, value: Math.round(c.value * t.value * 1000) / 1000, weight: c.kg, cat: "ammo", round: { cal, type } };
+  }
+}
+
+// Where rounds of which kind turn up (weights by "cal_type"). A site type or raid area uses the first theme it has
+// (ammo.js mixFor: military, police, prison, guns, hunt, farm, raider, else home); an AI group's stores (f.stock.ammo,
+// abstract) are offered in trade by its kind's theme (KIND_MIX). Calibres with no gun yet still turn up (trade goods).
+/** @type {Record<string, Record<string, number>>} */
+export const AMMO_MIX = {
+  military: { "556_fmj": 44, "556_ap": 8, "556_tracer": 4, "556_match": 2, "308_fmj": 12, "308_ap": 3, "308_match": 2, "9mm_fmj": 12, "12ga_buck": 6, "762x39_fmj": 3, "45acp_fmj": 2, "50bmg_ball": 1 },
+  police:   { "9mm_fmj": 30, "9mm_hp": 14, "12ga_buck": 18, "12ga_slug": 8, "556_fmj": 14, "357_fmj": 5, "45acp_fmj": 4, "45acp_hp": 2, "9mm_ap": 1 },
+  prison:   { "12ga_buck": 20, "9mm_fmj": 16, "556_fmj": 8, "12ga_slug": 4, "357_fmj": 2 },
+  guns:     { "9mm_fmj": 14, "9mm_hp": 6, "9mm_plusp": 2, "9mm_subsonic": 1, "45acp_fmj": 5, "45acp_hp": 2, "357_fmj": 6, "357_hp": 2, "12ga_buck": 10, "12ga_slug": 4, "12ga_bird": 5,
+              "22lr_fmj": 8, "22lr_hp": 2, "308_fmj": 6, "308_sp": 5, "308_subsonic": 1, "3030_sp": 6, "556_fmj": 6, "762x39_fmj": 3, "762x39_sp": 1 },
+  hunt:     { "308_sp": 14, "308_fmj": 6, "3030_sp": 14, "12ga_bird": 10, "12ga_slug": 8, "12ga_buck": 6, "22lr_fmj": 10, "357_fmj": 3 },
+  farm:     { "12ga_buck": 14, "12ga_bird": 14, "12ga_slug": 5, "22lr_fmj": 14, "3030_sp": 8, "308_sp": 4, "357_fmj": 3 },
+  raider:   { "9mm_fmj": 22, "9mm_hp": 6, "12ga_buck": 16, "12ga_bird": 4, "556_fmj": 10, "762x39_fmj": 8, "357_fmj": 6, "45acp_fmj": 4, "308_fmj": 3, "3030_sp": 3 },
+  home:     { "9mm_fmj": 20, "12ga_buck": 14, "22lr_fmj": 10, "357_fmj": 8, "45acp_fmj": 5, "9mm_hp": 3, "308_sp": 4, "3030_sp": 3, "12ga_bird": 4, "556_fmj": 3 },
+};
+// The AI groups by kind (data.js FACTION_TYPES): which theme their stores look like.
+export const KIND_MIX = { military: "military", fortress: "police", expansionist: "police", raider: "raider", traders: "guns", commune: "farm", zealot: "home" };
+
+// Starting colonists (ammo.js starterLoad, section 6): by calibre, the chance of a typed load and the box that comes
+// with it (rounds). Never AP, API or match. A calibre not listed starts on its common round.
+export const STARTER_AMMO = {
+  "9mm":   [[0.2, "hp", 20]],
+  "45acp": [[0.2, "hp", 20]],
+  "357":   [[0.15, "hp", 12]],
+  "12ga":  [[0.15, "bird", 10], [0.15, "slug", 5]],
+  "308":   [[0.4, "sp", 10]],
+  "762x39": [[0.3, "sp", 10]],
+  "22lr":  [[0.3, "hp", 50]],
+};
 
 /** @type {Record<string, any>} brass, powder, primers (section 12; economy agent C, wave 2) */
 export const RELOAD_GEAR = {};
