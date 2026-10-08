@@ -29,7 +29,7 @@
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
 import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack } from "./world.js";
-import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty } from "./parties.js";
+import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
 import { partyVehicle, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
@@ -87,7 +87,7 @@ import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILT
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
 import { armFromArsenal, settleArsenal } from "./arsenal.js"; // group arsenals: their units armed from what the group holds
 // Grenade launchers and rockets (section 13) and what explosions do to gear (section 24): a unit's second weapon (u.gl).
-import { fitLauncher, refitLauncher, kitLauncher, launchRefusal, launch, glReloadRefusal, glReload, aiLaunch, launcherBody, launcherLoot, blastLoot, launcherBattleEnd, blownUpCargo, blastHit } from "./launchers.js";
+import { fitLauncher, refitLauncher, kitLauncher, launchRefusal, launch, glReloadRefusal, glReload, aiLaunch, launcherBody, launcherLoot, blastLoot, launcherBattleEnd, blownUpCargo, blastHit, blastBox, blastPiles } from "./launchers.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
@@ -1087,9 +1087,11 @@ export function settleVehicle(state, b, outcome = null) {
   const pv = party ? partyVehicle(state, party) : null;
   if (!pv) return;
   pv.condition = Math.max(1, Math.round((pv.condition - v.wear) * 10) / 10);
-  log(state, `The ${pv.name} took a beating at ${b.place}: condition ${Math.round(pv.condition)}%.`, "danger");
-  const blown = blownUpCargo(state, b, party); // launchers.js (section 24): blown up, its cargo went with it
+  if (v.blownUp) { pv.condition = 0; pv.destroyed = true; } // launchers.js: a wreck for good (nothing repairs it; strip it for parts)
+  log(state, v.blownUp ? `The ${pv.name} was blown up at ${b.place}: a burnt-out wreck now, past repair.` : `The ${pv.name} took a beating at ${b.place}: condition ${Math.round(pv.condition)}%.`, "danger");
+  const blown = blownUpCargo(state, b, party); // launchers.js (section 24): blown up, its cargo went with it; shaken, worn
   if (blown) log(state, blown, "danger");
+  if (v.blownUp && party.vehicleId === pv.id) leaveVehicle(state, party, b.tileId ?? partyTile(party), "blown up"); // the team goes on on foot; what it cannot carry stays in the wreck
   v.wear = 0;
 }
 // ---------- the team's vehicle's upgrades on the map (vehicles.js: glass, mesh grilles, plating, a turret) ----------
@@ -1143,10 +1145,11 @@ export function vehicleBlast(b, x, y, r, [lo, hi], kind = "blast") {
     if (!u.aboard || u.dead || u.gunner) continue; // the gunner is out in the open (caught by the blast itself)
     // The glass (or grilles) first, then what the rider wears (hitMult: a blast is not a located hit, armour.js: the flat multiplier).
     // Blown up: the blast in full, through everything (and it can bring them down).
-    if (blown) { const eff = Math.round(damage(b, u, b.rng.int(lo, hi), null, false, { how: "blast" })); blastHit(b, u, eff); hurt.push(`${u.name} ${eff}${u.dead ? " (dead)" : u.down ? " (down)" : ""}`); continue; }
+    if (blown) { const eff = Math.round(damage(b, u, b.rng.int(lo, hi), null, false, { how: "blast" })); blastHit(b, u, eff); hurt.push(`${u.name} ${eff}${u.dead ? " (dead)" : u.down ? " (down)" : ""}`); if (!u.dead) disembark(b, u, true); continue; } // thrown clear of the wreck
     const eff = Math.max(0, Math.min(u.hp - 1, Math.round(b.rng.int(lo, hi) * m * hitMult(u, null, { how: "blast" }))));
     if (eff > 0) { u.hp -= eff; hurt.push(`${u.name} ${eff}`); }
   }
+  if (blown) for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[cy * b.w + cx]; if (c && c.car) c.car = { ...c.car, wrecked: true }; } // drawn burnt out
   if (blown) return ` The ${v.mil ? "Army truck" : v.kind} is blown up (condition −${wear})${hurt.length ? `: the blast tears through ${hurt.join(", ")}` : ""}. Its cargo goes up with it.`;
   return ` The ${v.mil ? "Army truck" : v.kind} takes the blast (condition −${wear}${v.up && (v.up.plating || v.up.scrapPlate) ? ", the plating took most of it" : ""})${hurt.length ? `; fragments through the windows catch ${hurt.join(", ")}${v.up && v.up.glass ? " (the bulletproof glass stopped most)" : ""}` : ""}.`;
 }
@@ -2979,6 +2982,7 @@ export function combatAct(state, act) {
   if (u && isTied(u) && !u.down && !boundAct && u.side === "player") return rescueRefusal(b, u);
   if (!u || u.side !== "player" || !(active(u) || aboardAct || boundAct) || u.ap < 1) return "That unit cannot act.";
   // On the turret (manTurret): fire it, reload the belt, watch, drive, or get down.
+  if (b.vehicle && b.vehicle.blownUp && ["board", "drive", "turn", "gunner"].includes(act.type)) return "The vehicle is a burnt-out wreck."; // launchers.js: blown up
   if (u.gunner && !GUNNER_ACTS.has(act.type)) return "On the turret: fire, reload the belt, overwatch, drive, or get down (Man the turret again).";
   if (act.type === "turret") { if (!u.gunner) return vehicleTurret(b) ? "Man the turret first." : "No turret here."; act = { ...act, type: "shoot" }; }
   const t = act.target != null ? unitById(b, act.target) : null;
@@ -4373,7 +4377,7 @@ function endBattle(state, b, outcome) {
       b.bodies.push(e.turned ? turnedBody(rng, e) : launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || (e.kind === "zombie" ? null : KITS.raiders)))); // launchers.js: their launcher and rounds; a blast's wear (section 24)
     }
     for (const e of captives) { const body = launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || KITS.raiders)); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
-    b.bodies.push(...nlDropPiles(state, b)); // nonlethal.js: the weapons the surrendered threw down
+    b.bodies.push(...blastPiles(b, nlDropPiles(state, b))); // nonlethal.js: the weapons the surrendered threw down (launchers.js: worn by a blast that reached them)
     for (const u of b.units) {
       const s = u.side === "player" && deadIds.includes(u.sid) ? survivorById(state, u.sid) : null;
       // carriers.js: still walking as one of the dead, there is no body here (their things stay at the death site
@@ -5158,6 +5162,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
     const site = state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null;
     sortFind(sup, box.kind === "body" ? "home" : box.truck ? "military" : raidTheme(site, box.area != null && R.areas[box.area] ? R.areas[box.area].type : "house"), "box", b.tileId, box.id); // ammo.js: what turns up there, by calibre
     box.contents = { sup, gear };
+    blastBox(b, box); // launchers.js: a blast reached it before anyone looked inside
   }
   // search.js: a rummage hides part of it (and is heard); a full search brings out what a rummage missed.
   const name = box.kind === "body" ? box.label : box.label.toLowerCase();

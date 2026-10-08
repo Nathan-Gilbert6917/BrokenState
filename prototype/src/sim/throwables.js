@@ -41,7 +41,7 @@ import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell
 import { ZTYPES } from "./hiveconst.js";
 import { armorVs } from "./deadsoldiers.js";
 import { GEAR } from "./data.js";
-import { blastHit, cookOffs } from "./launchers.js"; // section 24: what a blast does to the gear of those it hits; carried bombs set off
+import { blastHit, cookOffs, groundBlast } from "./launchers.js"; // section 24: what a blast does to the gear of those it hits (and to what lies there); carried bombs set off
 export { registerHearing } from "./launchers.js"; // hearing.js (w2-helmets) hands its deafen here: launcher blasts and rocket launches call it
 import { breakRam } from "./siege.js"; // a rocket breaks a battering ram
 
@@ -168,6 +168,7 @@ export function landEffect(b, u, T, x, y) {
     alertNear(b, x, y, B.wake, "The blast wakes everything nearby.");
     const torn = wreck(b, x, y, B.r, B.struct, u, !!B.heavy);
     const rams = B.rams ? ramsHit(b, x, y, B.r) : "";
+    groundBlast(b, x, y, B.r, !!B.heavy); // launchers.js: what lies within it (containers, the dead, spears, dropped guns, the vehicle's cargo) is worn by how close
     const veh = vehicleBlast(b, x, y, B.r, B.dmg, B.kind || T.fx); // combat.js: the team's vehicle and its riders (plating, glass)
     const cooked = b.cookQueue && b.cookQueue.length ? ` ${cookOffs(b)}` : ""; // launchers.js: bombs the blast set off on someone
     return (parts.length ? `The blast catches ${parts.join(", ")}.` : "The blast hits nobody.") + torn + rams + veh + cooked;

@@ -15,6 +15,7 @@
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { GEAR, SUPPLIES } from "../src/sim/data.js";
 import { createBattle, combatAct, registerCombatHandler, endPlayerTurn, enemyStep, enemyUnit, active, unitAt, WEAPONS, KITS, settleVehicle, endBattleNow, closeCombat, vehicleBlast } from "../src/sim/combat.js";
+import { blastBox } from "../src/sim/launchers.js";
 import { LAUNCH, GL_HE, ROCKET, launch, launchRefusal, glReloadRefusal, launchSpot, aiLaunch, glLabel, glRounds, backblastCells, blastHit, blastLoot, launcherBody, launcherLoot, blastWearShare, packLauncherRounds, isLauncherKey, LAUNCH_HELP } from "../src/sim/launchers.js";
 import { landEffect, blastSpot } from "../src/sim/throwables.js";
 import { ROUND_SUPPLIES, CALIBERS, AMMO_GEAR } from "../src/sim/data-ammo.js";
@@ -28,7 +29,11 @@ import { condRolled } from "../src/sim/itemcond.js";
 import * as A from "../src/sim/arsenal.js";
 import { itemDur, itemDurMax } from "../src/sim/crafting.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
-import { createVehicle } from "../src/sim/vehicles.js";
+import { createVehicle, repair as vrepair, upgradeProblem, vehicleLabel, stripVehicle } from "../src/sim/vehicles.js";
+import { fixProblem, runnerAt, fixableAt } from "../src/sim/foundcars.js";
+import { repairInfo as orderRepairInfo } from "../src/sim/orders.js";
+import { groupCareDaily } from "../src/sim/groupcare.js";
+import { THROWABLES } from "../src/sim/stealth.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { hash01 } from "../src/sim/skills.js";
 import { Rng } from "../src/sim/rng.js";
@@ -357,6 +362,123 @@ section("5. Explosions vs gear: the vehicle, the bodies, cook-off");
     }
   }
   if (!done) check(true, "(no vehicle at the hub in this world: vehicle part skipped)");
+}
+
+// ======================================================================================
+section("5b. A blown-up vehicle is a wreck for good; blasts wear what lies on the ground");
+{
+  // The wreck: condition 0, nothing repairs it, it can be stripped.
+  const st = world();
+  const h = hub(st);
+  const v = createVehicle(st, "truck", { kind: "base", baseId: h.id }, { fuel: 30, condition: 50 });
+  const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, 2).map((s) => s.id), dest: h.tile, mission: "move", stance: "normal", vehicleId: v.id, supplies: { food: 6, water: 6, fuel: 4 } });
+  const party = res && res.party;
+  let done = false;
+  if (party) {
+    party.path = [h.tile]; party.idx = 0; party.phase = "waiting";
+    party.cargo.gear = [newItem("huntrifle", 1)];
+    st.combat = createBattle(st, { tile: h.tile, partyId: party.id, enemy: { kind: "raiders", count: 3, power: 3 }, ambush: null, canRetreat: false, handler: "gl", context: {} });
+    const b = st.combat;
+    if (b.vehicle) {
+      for (let k = 0; k < 4 && !b.vehicle.blownUp; k++) vehicleBlast(b, b.vehicle.x, b.vehicle.y, ROCKET.r, ROCKET.dmg, "rocket");
+      const cell = b.cells.find((c) => c.k === "vehicle");
+      check(cell && cell.car && cell.car.wrecked, "on the battle map it is drawn burnt out");
+      const u0 = b.units.find((u) => u.side === "player" && active(u));
+      b.phase = "player"; u0.ap = 2;
+      check(/wreck/.test(combatAct(st, { type: "board", unit: u0.id })), "nobody gets into it or drives it");
+      settleVehicle(st, b, "victory");
+      check(v.condition === 0 && v.destroyed && party.vehicleId == null && v.loc.kind === "abandoned", `after the fight: condition 0, destroyed, left on the tile (${v.loc.kind}); the team goes on on foot`);
+      check(/wrecked/.test(vehicleLabel(v)), `the vehicle list says so ("${vehicleLabel(v)}")`);
+      // Every repair path refuses it.
+      v.loc = { kind: "base", baseId: h.id };
+      h.stock.carparts = 10; h.stock.parts = 10;
+      for (const s of atBase(st, h.id)) s.skills.mechanics = 8;
+      const why = vrepair(st, h, v);
+      check(/wreck/.test(why) && v.condition === 0, `the garage: "${why}"`);
+      check(/wreck/.test(upgradeProblem(st, h, v, "plating")), "no upgrades on it");
+      check(/wreck/.test(fixProblem(st, party, v)) && !runnerAt(st, h.tile) && !fixableAt(st, h.tile), "no claim, hotwire or field fix");
+      const fake = { id: -1, owner: "player", supplies: { parts: 5 }, cargo: { supplies: { parts: 5 }, gear: [] }, members: party.members, vehicle: true, vehicleId: v.id };
+      v.loc = { kind: "party", partyId: -1 };
+      st.parties.push(fake);
+      const ri = orderRepairInfo(st, fake);
+      check(!ri.ok && /wreck/.test(ri.reason), `a roadside repair: "${ri.reason}"`);
+      st.parties.splice(st.parties.indexOf(fake), 1);
+      const wf = (await import("../src/sim/groupworks.js")).workshopFactor;
+      const f = st.factions.find((x) => x.alive && wf(st, x) >= 1) || st.factions.find((x) => x.alive);
+      const av = { id: "w1", type: "truck", name: "Pickup", fuel: 5, condition: 0, destroyed: true, owner: f.id };
+      f.vehicles = [av]; f.stock.parts = 50; f.stock.scrap = 50;
+      const bv = { id: "w2", type: "truck", name: "Van", fuel: 5, condition: 40, owner: f.id };
+      f.vehicles.push(bv);
+      for (let d = 0; d < 30; d++) { st.hour += 24; f.stock.parts = 50; f.stock.scrap = 50; f.stock.food = 1000; groupCareDaily(st, f); }
+      check(av.condition === 0 && (bv.condition > 40 || wf(st, f) < 1), `an AI group's workshop mends its other vehicles (${bv.condition}%), never a wreck (${av.condition}%)`);
+      // It can be stripped for parts and scrap.
+      v.loc = { kind: "base", baseId: h.id };
+      const cp0 = h.stock.carparts || 0, sc0 = h.stock.scrap || 0;
+      stripVehicle(st, h, v);
+      check(!st.vehicles.includes(v) && h.stock.carparts > cp0 && h.stock.scrap > sc0, `stripped at a base: car parts ${cp0} → ${h.stock.carparts}, scrap ${sc0} → ${h.stock.scrap}`);
+      done = true;
+    }
+  }
+  if (!done) check(false, "a team vehicle on the battle map");
+
+  // Ground items: a raid's containers.
+  const mk = (st2) => {
+    const b = openBattle(st2, () => {});
+    for (const x of E(b)) place(x, 30, 1 + E(b).indexOf(x));
+    for (const x of P(b)) place(x, 1, 1 + P(b).indexOf(x));
+    b.raid = { containers: [], heat: 0, zones: [], areas: [] };
+    return b;
+  };
+  const crate = (b, id, x, y, gear, sup = {}, kind = "crate", contents = true) => { const c = { id, x, y, f: 0, kind, searched: false, label: `crate ${id}`, ...(contents ? { contents: { gear, sup } } : {}) }; b.raid.containers.push(c); return c; };
+  const st2 = world();
+  const b2 = mk(st2);
+  const gIn = newItem("huntrifle", 1), gEdge = newItem("huntrifle", 1);
+  const dur0 = itemDur(gIn);
+  const cIn = crate(b2, 1, 10, 10, [gIn], { a_556_fmj: 30 }), cEdge = crate(b2, 2, 11, 11, [gEdge]);
+  crate(b2, 3, 20, 20, [newItem("huntrifle", 1)]);
+  landEffect(b2, P(b2)[0], { fx: "blast", blast: GL_HE }, 10, 10);
+  const lossIn = 1 - itemDur(gIn) / dur0, lossEdge = 1 - itemDur(gEdge) / dur0;
+  check(lossIn >= 0.29 && lossIn <= 0.61 && lossEdge >= 0.09 && lossEdge <= 0.36 && lossIn > lossEdge, `on the blast's cell an item loses ${Math.round(lossIn * 100)}%, at the edge ${Math.round(lossEdge * 100)}% (30–60 / 10–35)`);
+  check(cIn.contents.sup.a_556_fmj <= 30 && b2.raid.containers[2].contents.gear[0].dur === dur0, `rounds there cook off (${cIn.contents.sup.a_556_fmj} of 30); nothing outside the blast`);
+  // A crate nobody opened yet: the damage waits for its contents; a rocket blows it open.
+  const cShut = crate(b2, 4, 15, 5, null, null, "crate", false);
+  cShut.lock = { open: false };
+  landEffect(b2, P(b2)[0], { fx: "blast", blast: ROCKET }, 15, 5);
+  check(cShut.blast >= 0.3 && cShut.spilled && cShut.lock.open, `a rocket on a shut crate: blown open, its contents to be worn ${Math.round(cShut.blast * 100)}%`);
+  const inside = newItem("pistol", 1);
+  const pd0 = itemDur(inside);
+  cShut.contents = { gear: [inside], sup: {} };
+  blastBox(b2, cShut);
+  check(itemDur(inside) < pd0 && !cShut.blast, `rolled after: its contents are worn (${pd0} → ${itemDur(inside)})`);
+  // A frag does the same at its own radius.
+  const st3 = world();
+  const b3 = mk(st3);
+  const gF = newItem("huntrifle", 1);
+  crate(b3, 1, 12, 12, [gF]);
+  landEffect(b3, P(b3)[0], THROWABLES.frag, 13, 12);
+  check(itemDur(gF) < dur0, `a frag grenade wears the things lying next to it (${dur0} → ${itemDur(gF)})`);
+  // Chain detonation: explosives lying in the blast go off one time in ten.
+  let chained = 0, frags = 0, text = "";
+  for (let i = 0; i < 40 && !chained; i++) {
+    const st4 = world(seed + i);
+    const b4 = mk(st4);
+    const bombs = Array.from({ length: 6 }, () => newItem("frag", 1));
+    const c = crate(b4, 1, 10, 10, bombs);
+    b4.dseed = 1000 + i;
+    text = landEffect(b4, P(b4)[0], { fx: "blast", blast: GL_HE }, 10, 10);
+    frags += 6;
+    if (c.contents.gear.length < 6) chained = 6 - c.contents.gear.length;
+  }
+  check(chained > 0 && /goes off/.test(text), `a crate of frag grenades in the blast: ${chained} go off (${text.slice(text.indexOf("The frag"), text.indexOf("The frag") + 60)}...)`);
+  // A body lying in a field battle: its loot worn by the blast that went off next to it.
+  const st5 = world();
+  const b5 = openBattle(st5, () => {}, { kind: "soldiers", count: 4, power: 5 });
+  const [d0] = E(b5);
+  for (const x of E(b5)) place(x, 30, 1 + E(b5).indexOf(x));
+  place(d0, 12, 12); d0.dead = true; d0.hp = 0;
+  landEffect(b5, P(b5)[0], { fx: "blast", blast: GL_HE }, 12, 12);
+  const clean = enemyBody(new Rng(9), { ...d0, groundWear: 0 }, KITS.soldiers), worn = launcherBody(b5, d0, enemyBody(new Rng(9), d0, KITS.soldiers));
+  check(d0.groundWear >= 0.3 && itemDur(worn.gear.weapon) < itemDur(clean.gear.weapon), `a body lying where it went off: its gun worn (${itemDur(clean.gear.weapon)} → ${itemDur(worn.gear.weapon)})`);
 }
 
 // ======================================================================================

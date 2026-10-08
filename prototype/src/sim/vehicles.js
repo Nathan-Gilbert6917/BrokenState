@@ -70,7 +70,11 @@ export const partyVehicle = (state, p) => (p.vehicleId ? vehicleById(state, p.ve
 export const tank = (v) => VEHICLE_TYPES[v.type].tank;
 // Cargo a vehicle adds to a team: a car's payload, a stack of bikes' racks.
 export const vehicleCapacity = (v) => (!v ? 0 : isBike(v) ? (v.count || 1) * VEHICLE_TYPES.bike.rack : payloadOf(v));
-export const vehicleLabel = (v) => (isBike(v) ? `${v.count || 1} bicycle${(v.count || 1) === 1 ? "" : "s"}` : v.name);
+export const vehicleLabel = (v) => (isBike(v) ? `${v.count || 1} bicycle${(v.count || 1) === 1 ? "" : "s"}` : v.destroyed ? `${v.name} (wrecked)` : v.name);
+// Blown up in a fight (launchers.js): condition 0 for good, a wreck nothing repairs; stripped for parts at a base or
+// where it lies (parties.js recoverVehicle).
+export const isWreck = (v) => !!(v && v.destroyed);
+export const WRECK_TEXT = "Blown up: a burnt-out wreck nothing can repair. Strip it for parts and scrap.";
 
 // Fuel multiplier for a car this full (load / payload): 1 up to 60%, 1.3 at 100%, 1.6 at 125% (the most).
 export function fuelMultFor(fill) {
@@ -199,6 +203,7 @@ export function wreckSupplies(stock) {
 }
 
 export function repair(state, base, v) {
+  if (isWreck(v)) return WRECK_TEXT;
   if (isBike(v)) {
     // Bikes: patches, a chain link, spokes. Anyone can do it with a bit of scrap per bike.
     const need = Math.max(1, Math.ceil((v.count || 1) / 2));
@@ -493,6 +498,7 @@ const stripMech = (U) => Math.max(1, U.mech - 2);
 // Why this upgrade cannot be fitted (or stripped: op "strip") on v at this base now ("" when it can).
 export function upgradeProblem(state, base, v, key, op = "fit") {
   if (!v || !isCar(v)) return "Only cars and trucks take upgrades.";
+  if (isWreck(v)) return WRECK_TEXT;
   if (!(v.loc.kind === "base" && v.loc.baseId === base.id)) return "Park it at this base first.";
   const u = upgradesOf(v);
   if (garageQueue(base).some((j) => j.vehicleId === v.id)) return "Already in the garage for another job.";

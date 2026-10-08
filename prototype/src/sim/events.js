@@ -423,7 +423,7 @@ function breakdownCard(state, p, v) {
           if (!pay.ok) return "No spare part left. Nothing was done.";
           if (pay.car) takeSupply(p, "carparts", pay.car);
           if (pay.parts) takeSupply(p, "parts", pay.parts);
-          v.condition = Math.min(100, v.condition + 10);
+          if (!v.destroyed) v.condition = Math.min(100, v.condition + 10); // a wreck (launchers.js) stays one
           delay(p, 1);
           return "Back on the road quickly.";
         },

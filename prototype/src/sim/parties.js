@@ -26,7 +26,7 @@ import { startScavenge } from "./scavenge.js";
 import { offerCrawl } from "./citycrawl.js"; // a team moved onto a city asks whether to go in
 import {
   vehicleById, partyVehicle, partyFuel, useFuel, wear, abandonVehicle, tank, createVehicle, travelMode, tileFuel, isBike, isCar,
-  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee, wreckCost, carPartsText, WRECK,
+  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee, wreckCost, carPartsText, WRECK, stripYield,
 } from "./vehicles.js";
 import { convoysHour, truckEngineNoise } from "./miltrucks.js";
 import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome } from "./foundcars.js"; // vehicles found on a map: repair, drive home // Army trucks: the convoy event, a running Army truck's engine
@@ -1568,6 +1568,15 @@ function recoverVehicle(state, p) {
     awaitOrders(state, p, text, { failed: !c.got.length });
     return "";
   };
+  if (v.destroyed) { // blown up (launchers.js): no restart; what is left in it, then stripped where it lies
+    const c = takeVehicleCargo(state, p, v);
+    const y = stripYield(v), got = [];
+    for (const k of ["carparts", "scrap"]) { const q = addCargo(state, p, SUPPLIES[k] ? k : "parts", y[k] || 0); if (q > 0) got.push(`${q} ${SUPPLIES[SUPPLIES[k] ? k : "parts"].name.toLowerCase()}`); }
+    if (!vehicleCargo(v)) state.vehicles.splice(state.vehicles.indexOf(v), 1);
+    spot(p, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: v.name, remove: !vehicleCargo(v) });
+    awaitOrders(state, p, `The ${v.name} is a burnt-out wreck past repair.${c.got.length ? ` The team took ${c.got.join(", ")} out of it.` : ""} Stripped for ${got.join(" and ") || "nothing they could carry"}.${vehicleCargo(v) ? ` Still inside: ${c.left.join(", ")}.` : " Nothing is left of it."}`);
+    return "";
+  }
   if (p.vehicle) return salvage(`The team already has a vehicle, so the ${v.name} stays.`);
   if (isBike(v)) {
     // Bikes: no fuel; a badly damaged stack needs a bit of scrap or a part to get rolling.

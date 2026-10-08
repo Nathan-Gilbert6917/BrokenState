@@ -518,7 +518,7 @@ export function cookOffs(b) {
   for (let n = 0; b.cookQueue && b.cookQueue.length && n < 6; n++) {
     const c = b.cookQueue.shift();
     const T = { fx: c.key === "frag" ? "frag" : c.key === "pipebomb" ? "blast" : "fire" };
-    out.push(`The ${GEAR[c.key] ? GEAR[c.key].name.toLowerCase() : c.key} on ${c.who} goes off! ${landEffect(b, null, T, c.x, c.y)}`);
+    out.push(`The ${GEAR[c.key] ? GEAR[c.key].name.toLowerCase() : c.key} ${c.where || `on ${c.who}`} goes off! ${landEffect(b, null, T, c.x, c.y)}`);
   }
   if (b.cookQueue) b.cookQueue = [];
   return out.join(" ");
@@ -557,8 +557,8 @@ function everyItem(holder) {
 // A body (inventory.js enemyBody's, or a raid body's contents { sup, gear }) of someone the blasts hit: its gear worn
 // by the blast damage, its rounds cooked off. u: the unit it was. Changes it in place.
 export function blastLoot(b, u, body) {
-  if (!u || !(u.blastDmg > 0) || !body) return body;
-  const share = blastWearShare(u.blastDmg);
+  if (!u || !(u.blastDmg > 0 || u.groundWear > 0) || !body) return body;
+  const share = Math.max(u.blastDmg > 0 ? blastWearShare(u.blastDmg) : 0, u.groundWear || 0); // hit alive, or lying dead where a blast went off (groundBlast)
   const items = Array.isArray(body.gear) ? body.gear : everyItem(body);
   for (const it of items) { wearShare(it, share); cookBox(it, u.id, "body"); }
   cookRecord(body.supplies || body.sup, u.id, "body");
@@ -624,7 +624,8 @@ export function launcherBattleEnd(state, b) {
 // a condition is worn 20–60%. party: the team; salt: anything for the dice. Returns a log line or "".
 export function blownUpCargo(state, b, party) {
   const v = b && b.vehicle;
-  if (!v || !v.blownUp || !party || !party.cargo || v.cargoDone) return "";
+  if (!v || !party || !party.cargo || v.cargoDone) return "";
+  if (!v.blownUp) return cargoShaken(state, b, party);
   v.cargoDone = true;
   const salt = [state.seed, "blownup", party.id, b.turn || 0];
   const [l0, l1] = LAUNCH.CARGO_LOST, [w0, w1] = LAUNCH.CARGO_WEAR;
@@ -635,7 +636,7 @@ export function blownUpCargo(state, b, party) {
   gear.forEach((it, i) => {
     if (!it) return;
     if (hash01(...salt, "item", i) < share) { lost++; return; }
-    if (itemDurMax(it)) wearShare(it, w0 + (w1 - w0) * hash01(...salt, "wear", i));
+    if (itemDurMax(it)) wearShare(it, Math.max(v.cargoWear || 0, w0 + (w1 - w0) * hash01(...salt, "wear", i)));
     cookBox(it, ...salt, i);
     keep.push(it);
   });
@@ -649,6 +650,118 @@ export function blownUpCargo(state, b, party) {
   }
   return `The ${v.mil ? "Army truck" : v.kind} was blown up: ${lost} of the ${gear.length} things in its cargo ${lost === 1 ? "is" : "are"} gone${sup ? ` and ${sup} of its supplies` : ""}; the rest is knocked about.`;
 }
+// A blast that reached the vehicle without blowing it up (groundBlast: v.cargoWear, by how close): what is in its
+// cargo is worn by that share, its rounds cook off, and an explosive in it may go off (it did, in the fight: gone).
+function cargoShaken(state, b, party) {
+  const v = b.vehicle;
+  if (!(v.cargoWear > 0)) return "";
+  v.cargoDone = true;
+  const salt = [state.seed, "cargoshake", party.id, b.turn || 0];
+  const gear = party.cargo.gear || [];
+  let n = 0;
+  party.cargo.gear = gear.filter((it, i) => {
+    if (!it) return false;
+    if (BOMBS.includes(it.key) && hash01(...salt, "chain", i) < GROUND.CHAIN) return false;
+    if (wearShare(it, v.cargoWear)) n++;
+    cookBox(it, ...salt, i);
+    return true;
+  });
+  cookRecord(party.cargo.supplies, ...salt);
+  return n ? `The blasts next to the ${v.mil ? "Army truck" : v.kind} knocked about what is in it (${n} thing${n === 1 ? "" : "s"} worn).` : "";
+}
+
+// ---------- explosions vs what lies on the ground (the user's rule) ----------
+// Everything lying within a blast (frag, pipe bomb, 40 mm, rocket: each at its own radius) is worn by how close it
+// was: on the cell it went off in 30–60% of its condition, in the splash 10–35% (less the further off). Rounds lying
+// there cook off 0–40%, an explosive lying there goes off one time in ten (a chain: throwables.js landEffect sets them
+// off after the blast), and a rocket landing on (or next to) a crate, shelf, cabinet or counter blows it open: its
+// contents spill out (unlocked), with the damage done. What it reaches: a raid's containers and bodies (their contents
+// now, or once rolled: box.blast, blastBox), the dead lying on a battle map (u.groundWear: their body's loot,
+// blastLoot), a thrown spear, the weapons dropped by those who gave up, the cargo of the team's vehicle.
+export const GROUND = { impact: [0.3, 0.6], splash: [0.1, 0.35], CHAIN: 0.1, SPILL: ["crate", "shelf", "cabinet", "counter", "barrel"] };
+// The share for something d tiles from the blast's cell (onCell: on it).
+export function groundShare(d, r, onCell, ...salt) {
+  const h = hash01("groundwear", ...salt);
+  if (onCell) return GROUND.impact[0] + (GROUND.impact[1] - GROUND.impact[0]) * h;
+  const near = clamp(1 - (Math.max(1, d) - 1) / Math.max(0.5, r), 0, 1);
+  return GROUND.splash[0] + (GROUND.splash[1] - GROUND.splash[0]) * clamp(near * (0.8 + 0.2 * h), 0, 1);
+}
+const both = (a, s) => Math.min(0.95, 1 - (1 - (a || 0)) * (1 - s)); // two blasts: what is left of the first, worn again
+// Items and rounds lying together (a container's contents): worn, cooked off; explosives may go off (where: the log's
+// "in the crate"). Returns the items still there.
+function blastStuff(b, gear, sup, share, at, where, salt, chain = true) {
+  const keep = [];
+  (gear || []).forEach((it, i) => {
+    if (!it) return;
+    if (chain && BOMBS.includes(it.key) && hash01("groundchain", ...salt, it.key, i) < GROUND.CHAIN) { (b.cookQueue || (b.cookQueue = [])).push({ x: at[0], y: at[1], key: it.key, where }); return; }
+    wearShare(it, share);
+    cookBox(it, ...salt, i);
+    keep.push(it);
+  });
+  if (sup) cookRecord(sup, ...salt);
+  return keep;
+}
+const boxCells = (c) => { const out = []; for (let y = c.y; y < c.y + (c.h || 1); y++) for (let x = c.x; x < c.x + (c.w || 1); x++) out.push([x, y]); return out; };
+// A blast at (x, y) of radius r (heavy: a rocket) on what lies there. Returns how many things it reached.
+export function groundBlast(b, x, y, r, heavy = false) {
+  let n = 0;
+  const salt0 = [b.dseed ?? 0, b.turn || 0, x, y];
+  const floor = b.floor || 0;
+  for (const box of (b.raid && b.raid.containers) || []) {
+    if ((box.f || 0) !== floor || box.burnt) continue;
+    let d = Infinity, on = false, at = [box.x, box.y];
+    for (const [cx, cy] of boxCells(box)) { const dd = dist(cx, cy, x, y); if (dd < d) { d = dd; at = [cx, cy]; } if (cx === x && cy === y) on = true; }
+    if (d > r + 1e-6) continue;
+    const share = groundShare(d, r, on, ...salt0, "box", box.id);
+    if (heavy && d <= 1 + 1e-6 && GROUND.SPILL.includes(box.kind) && !box.spilled) { box.spilled = true; if (box.lock) box.lock.open = true; box.label = `${box.label} (blown open)`; }
+    if (box.contents) box.contents.gear = blastStuff(b, box.contents.gear, box.contents.sup, share, at, `in the ${String(box.label).toLowerCase()}`, [...salt0, box.id]);
+    else box.blast = both(box.blast, share);
+    n++;
+  }
+  for (const t of b.units) {
+    if (b.raid || t.kind !== "human" || !t.dead || t.side === "player" || t.burnt || t.off || dist(t.x, t.y, x, y) > r + 1e-6) continue; // a raid's dead are its body containers (above)
+    t.groundWear = both(t.groundWear, groundShare(dist(t.x, t.y, x, y), r, t.x === x && t.y === y, ...salt0, "dead", t.id));
+    const carried = t.throwables || {};
+    for (const k of BOMBS) if (carried[k] > 0 && hash01("deadchain", ...salt0, t.id, k) < GROUND.CHAIN) { carried[k] -= 1; (b.cookQueue || (b.cookQueue = [])).push({ x: t.x, y: t.y, key: k, where: `on ${t.name}'s body` }); }
+    n++;
+  }
+  for (const sp of b.spears || []) {
+    if ((sp.f || 0) !== floor || dist(sp.x, sp.y, x, y) > r + 1e-6) continue;
+    const owner = b.units.find((o) => o.id === sp.owner);
+    const it = sp.item || (owner && owner.spearOut && owner.spearOut.item);
+    if (it) { wearShare(it, groundShare(dist(sp.x, sp.y, x, y), r, sp.x === x && sp.y === y, ...salt0, "spear", sp.owner)); n++; }
+  }
+  if (!b.raid) for (const d of b.nlDrops || []) {
+    if (d.gone || dist(d.x, d.y, x, y) > r + 1e-6) continue;
+    d.blast = both(d.blast, groundShare(dist(d.x, d.y, x, y), r, d.x === x && d.y === y, ...salt0, "drop", d.uid));
+    n++;
+  }
+  const v = b.vehicle;
+  if (v && v.kind !== "bike") {
+    let d = Infinity, on = false;
+    for (const [cx, cy] of boxCells(v)) { d = Math.min(d, dist(cx, cy, x, y)); if (cx === x && cy === y) on = true; }
+    if (d <= r + 0.5 + 1e-6) { v.cargoWear = both(v.cargoWear, groundShare(d, r + 0.5, on, ...salt0, "cargo")); n++; }
+  }
+  return n;
+}
+// A raid container's contents rolled after a blast reached it (combat.js searchBox): the wear it took then.
+export function blastBox(b, box) {
+  if (!box || !(box.blast > 0) || !box.contents) return;
+  box.contents.gear = blastStuff(b, box.contents.gear, box.contents.sup, box.blast, [box.x, box.y], "", [b.dseed ?? 0, "boxlate", box.id], false);
+  delete box.blast;
+}
+// The piles of weapons the surrendered threw down (nonlethal.js nlDropPiles, in their order): a blast's wear on them.
+export function blastPiles(b, piles) {
+  const drops = (b.nlDrops || []).filter((d) => !d.gone);
+  piles.forEach((pile, i) => { const d = drops[i]; if (d && d.blast > 0) for (const it of everyItem(pile)) wearShare(it, d.blast); });
+  return piles;
+}
+
+// ---------- the wreck: a vehicle blown up is gone for good (the user's rule) ----------
+// Condition 0 and destroyed: no garage, roadside, card, AI or autopilot repair restores it, no claim or recovery
+// restarts it; it can be stripped for parts and scrap (vehicles.js stripVehicle at a base; a team that goes back to it
+// strips it where it lies, parties.js recoverVehicle) and what is left of its cargo taken out. An M2 on it is lost.
+export const isWrecked = (v) => !!(v && v.destroyed);
 
 // ---------- the AI ----------
 const foesOf = (b, u) => b.units.filter((t) => t.side !== u.side && active(t) && !t.off);

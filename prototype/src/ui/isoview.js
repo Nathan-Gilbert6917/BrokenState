@@ -354,7 +354,7 @@ function carUpParts(car, L, parts) {
 }
 function carPieces(car, r) {
   const { i, j, L, ax, kind, v } = car, big = kind === "truck" || car.body === "truck"; // "vehicle": the team's own (blue), a truck or a car by car.body
-  const body = kind === "vehicle" ? PAL.blue : big ? mul(PAL.rust, 0.8) : CAR_COLORS[v % CAR_COLORS.length];
+  const body = car.wrecked ? hex("#2b2723") : kind === "vehicle" ? PAL.blue : big ? mul(PAL.rust, 0.8) : CAR_COLORS[v % CAR_COLORS.length]; // wrecked: blown up (sim/launchers.js)
   const paint = (f, s, t, X, Y) => { const q = n2(X, Y, 13); return big && q < 0.35 ? mul(PAL.tire, 1.4) : q > 0.93 ? mul(PAL.rust, 1.1) : mul(body, f === "top" ? 1 : 0.95); };
   const glass = (f) => (f === "top" ? mul(body, 0.8) : PAL.glass);
   const boxM = flatM(mul(PAL.tire, 1.6)), tire = flatM(PAL.tire);
@@ -362,7 +362,7 @@ function carPieces(car, r) {
   const wheel = (a, c) => parts.push([a - 0.3, a + 0.3, c - 0.2, c + 0.2, 0, 5, tire]);
   const mil = MIL_TOPS[car.body]; // an Army truck (sim/miltrucks.js): olive drab; wrecked faded, burned out near black; the team's own blue
   if (mil) {
-    const col = kind === "vehicle" ? PAL.blue : car.mil && car.mil.cond === "burnt" ? hex("#2b2723") : car.mil && car.mil.cond === "wrecked" ? hex("#4a4a34") : hex("#4d5a32");
+    const col = car.wrecked ? hex("#2b2723") : kind === "vehicle" ? PAL.blue : car.mil && car.mil.cond === "burnt" ? hex("#2b2723") : car.mil && car.mil.cond === "wrecked" ? hex("#4a4a34") : hex("#4d5a32");
     const m = (f, s, t, X, Y) => { const q = n2(X, Y, 13); return q > 0.94 ? mul(PAL.rust, car.mil && car.mil.cond === "burnt" ? 0.6 : 1) : mul(col, f === "top" ? 1 : 0.92); };
     for (const [a0, a1, c0, c1, z0, z1, k] of mil(L)) parts.push([a0, a1, c0, c1, z0, z1, k === "body" ? m : flatM(hex(k))]);
     for (const a of MIL_WHEELS[car.body](L)) { wheel(a, 0.2); wheel(a, 1.8); }

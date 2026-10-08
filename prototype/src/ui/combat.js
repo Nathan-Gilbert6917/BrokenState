@@ -2734,10 +2734,10 @@ function drawObject(k, px, py, cs, n, cell = null) {
         // clipped to this cell, so the cells meet into one car; glass over the cabin, wheels at the corners. The team's
         // own vehicle ("vehicle", combat.js placeVehicle) is the blue one.
         const { i, j, L, ax, kind, v, body: bodyKind } = cell.car, big = kind === "truck" || bodyKind === "truck";
-        const body = kind === "vehicle" ? "#2f5d8a" : big ? "#5a4030" : colors[v % colors.length];
+        const body = cell.car && cell.car.wrecked ? "#2b2723" : kind === "vehicle" ? "#2f5d8a" : big ? "#5a4030" : colors[v % colors.length]; // wrecked: blown up (sim/launchers.js), burnt out
         const bikeParts = [[0.15, 0.65, 0.3, 0.7, "#1e1e20"], [1.35, 1.85, 0.3, 0.7, "#1e1e20"], [0.45, 1.55, 0.42, 0.58, kind === "vehicle" ? "#2f5d8a" : "#8a8f96"], [0.75, 1.15, 0.36, 0.64, "#5a5244"]]; // a bike: 2 x 1
         const mil = MIL_BODY[bodyKind]; // an Army truck (sim/miltrucks.js; the team's own Army truck too): olive, burned out near black
-        const parts = mil ? milParts(mil, L, kind === "vehicle" ? "#2f5d8a" : cell.car.mil && cell.car.mil.cond === "burnt" ? "#2b2723" : cell.car.mil && cell.car.mil.cond === "wrecked" ? "#4a4a34" : "#4d5a32")
+        const parts = mil ? milParts(mil, L, cell.car.wrecked ? "#2b2723" : kind === "vehicle" ? "#2f5d8a" : cell.car.mil && cell.car.mil.cond === "burnt" ? "#2b2723" : cell.car.mil && cell.car.mil.cond === "wrecked" ? "#4a4a34" : "#4d5a32")
           : bodyKind === "bike" ? bikeParts : big ? [[0.1, 1.35, 0.15, 1.85, body], [0.25, 1.3, 0.3, 1.7, "#2a221c"], [1.5, L - 0.1, 0.1, 1.9, "#3a3a3c"]]
           : [[0.1, L - 0.1, 0.15, 1.85, body], ...(L === 3 ? [[0.9, 2.1, 0.3, 1.7, "#9fc0d8"]] : v % 2 ? [[0.8, 3.7, 0.3, 1.7, "#9fc0d8"]] : [[0.8, 2.0, 0.3, 1.7, "#9fc0d8"], [2.2, 3.8, 0.3, 1.7, "#3a3a3c"]])];
         if (bodyKind !== "bike") for (const a of mil ? mil.wheels(L) : big ? [0.7, L - 1.4, L - 0.6] : [0.6, L - 0.6]) for (const c of [0.2, 1.8]) parts.unshift([a - 0.3, a + 0.3, c - 0.22, c + 0.22, "#1e1e20"]);
