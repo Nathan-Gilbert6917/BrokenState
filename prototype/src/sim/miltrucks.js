@@ -86,6 +86,18 @@ const BURNT_KEEP = new Set(["ammo", "parts", "ar", "carbine", "plate", "milhelme
 // Later branches (gun attachments, typed ammo) add to a truck's contents here: hook(rng, ctx, out) with ctx { kind,
 // cond, src, rich } and out { sup, gear } (change it in place).
 export const TRUCK_LOOT_HOOKS = [];
+// Flashbangs (throwables.js FLASH) in the crates now and then: [chance, lo, hi] by kind, x the truck's richness; none
+// left in a burned-out one. Dice of their own (a hash of the truck's dice position: no draw, the rest of the truck is
+// as it was).
+export const TRUCK_FLASH = { cargo: [0.25, 1, 3], humvee: [0.2, 1, 2], mrap: [0.25, 1, 2] };
+TRUCK_LOOT_HOOKS.push((rng, ctx, out) => {
+  const F = TRUCK_FLASH[ctx.kind];
+  if (!F || ctx.cond === "burnt") return;
+  const r = (...k) => hash01(rng && Number.isFinite(rng.state) ? rng.state : 0, "truckflash", ctx.kind, ctx.cond, ...k);
+  if (r("p") >= F[0] * Math.min(1.2, ctx.rich ?? 1)) return;
+  const n = F[1] + Math.floor(r("n") * (F[2] - F[1] + 1));
+  for (let i = 0; i < n; i++) out.gear.push(lootItem("flashbang", "military", r("q", i)));
+});
 
 // What is in one truck: { sup: { ammo: 60, … }, gear: [items] }. rng: an Rng (or anything with next / chance / int);
 // kind: TRUCK_KINDS key; cond: TRUCK_COND key; opts.rich: × supplies and item chances (a base's motor pool, a convoy

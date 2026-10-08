@@ -554,7 +554,23 @@ export function enemyBody(rng, u, kit) {
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = lootItem(kit.pack[0], src, spend(rng));
   if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, lootItem(rng.pick(kit.finds), src, rng), ""); // pockets: smokes, a ring (combat.js KITS finds)
+  for (const it of carriedThrowables(u, src)) stow(body, it, ""); // a flashbang or a smoke grenade they never threw
+  // Their medic's kit (medics.js makeEnemyMedic), as worn as the uses they had left.
+  if (u.isMedicKit && u.medKit && GEAR[u.medKit.key] && (u.kitUses || 0) < (u.kitLeft || 0)) {
+    const it = lootItem(u.medKit.key, src, spend(rng));
+    if (it.dur != null) it.dur = Math.max(1, Math.min(it.dur, u.kitLeft - (u.kitUses || 0)));
+    stow(body, it, "");
+  }
   return body;
+}
+// What a soldier or a guard carried into the fight and never threw (combat.js enemyUnit u.throwables: throwables.js
+// FLASH_KIT): on the body, through itemcond.js like any loot (its own dice: no draw).
+export const BODY_THROWABLES = ["flashbang", "smokegren"];
+export function carriedThrowables(u, src) {
+  const out = [];
+  if (!u || !u.throwables) return out;
+  for (const k of BODY_THROWABLES) for (let i = 0; i < (u.throwables[k] || 0); i++) out.push(lootItem(k, src, [u.id, k, i]));
+  return out;
 }
 // The attachments a battle unit's gun carried (combat.js enemyUnit: u.modItems, for the gun it was given) onto the gun
 // item looted from it. Only while the unit still holds that gun (u.gmWeapon), and each part only where it fits.

@@ -19,7 +19,7 @@
 // (Finish: a shot, FINISH, or a blow from next to them): dead for good. After a won battle the downed who were
 // stabilized or tied up are prisoners (stealth.js battleCaptives); the rest die.
 // Raiders and zealots finish your downed when nothing more urgent is going on (a line of sight and less than full
-// cover, or from next to them); now and then (FINISH.CAPTURE) one next to a downed survivor drags them off toward
+// cover, or from next to them); now and then (nonlethal.js NL_TAKE, by the group's type) one next to a downed survivor drags them off toward
 // the edge instead: freed if the dragger goes down or is hurt badly, a captive of their group (conflicts.js
 // takeCaptive) if the dragger gets them off the map or the battle is lost with them still in hand.
 // The AI (both sides, the raid bot, "the AI plays my side") weighs a rescue against the fight: one rescuer for each
@@ -34,6 +34,7 @@ import { takeCaptive } from "./conflicts.js";
 import { dropHaul, atVehicle } from "./raidloot.js";
 import { WORM } from "./worm.js";
 import { shotNoise } from "./stealth.js";
+import { NL_TAKE, TYPE_KIT } from "./nonlethal.js"; // how much each group's type takes people alive
 import {
   say, fx, active, adjacent, unitById, unitAt, medsLeft, reachable, pathTo, moveAlong, coverAgainst, los, sightRange, canSeeAt,
   canFire, hasShots, isRanged, damage, distField, loadMag, magIn, hasMag, WEAPONS, shotOdds, CELL, aboardCount, alertNear,
@@ -52,9 +53,11 @@ export const MEDIC = {
   ENEMY: { GROUP: 0.2, KITS: { soldiers: "traumakit", guards: "bandagekit", militia: "bandagekit", fighters: "bandagekit" }, MED: [3, 6], USES: 4 },
   // Finishing someone who is down: a shot BASE% out to FROM tiles, PER% less a tile past it (at least MIN), a blow
   // from next to them sure. Enemy KITS may do it (WILL of the time they could: when no standing foe is next to them and
-  // no shot of URGENT% or more at one is on offer); CAPTURE of the time one next to a downed survivor drags them off as
-  // a prisoner instead; a dragger hurt under LET_GO of their health lets go.
-  FINISH: { BASE: 90, FROM: 6, PER: 5, MIN: 30, KITS: ["raiders", "zealots"], URGENT: 35, WILL: 0.5, CAPTURE: 0.15, LET_GO: 0.5 },
+  // no shot of URGENT% or more at one is on offer). One next to a downed survivor takes them instead the share of the
+  // time their group's type takes people alive (nonlethal.js NL_TAKE: raiders 25%, zealots never): one bleeding or
+  // stabilized is dragged off toward the edge, one knocked out or surrendered is tied up (taken after the battle,
+  // nonlethal.js takenByEnemy). A dragger hurt under LET_GO of their health lets go.
+  FINISH: { BASE: 90, FROM: 6, PER: 5, MIN: 30, KITS: ["raiders", "zealots"], URGENT: 35, WILL: 0.5, LET_GO: 0.5 },
   // The AI's sense of danger at a cell (exposure): a shooter that sees it through full / half / no cover, a melee foe
   // within MELEE_R. HEAVY: open ground under fire (a rescuer goes there only when the
   // downed ally is within one move); REVIVE: a medic revives (2 actions) only under this.
@@ -185,7 +188,14 @@ export function medicHeal(b, u, t) {
 
 export const reviveOdds = (u, t) => Math.min(MEDIC.REVIVE.MAX, Math.round(MEDIC.REVIVE.BASE + MEDIC.REVIVE.MED * medSkill(u) + MEDIC.REVIVE.KIT * (u.kitBonus || 0) + (t && t.stab ? MEDIC.REVIVE.STAB : 0)));
 // Someone down who could be revived (not one knocked out: they come to by themselves, stealth.js).
-const revivable = (t) => !!t && t.down && !t.dead && !t.left && !t.off && !t.ko;
+// The states of the downed (stealth.js heldDown has the whole list): bleeding (down) or stabilized (down + stab) can be
+// revived and stabilized; knocked out (ko) comes to by itself; surrendered (surr) is not down in need.
+const revivable = (t) => !!t && t.down && !t.dead && !t.left && !t.off && !t.ko && !t.surr;
+// Who a teammate can drag: the bleeding, the stabilized and the knocked out.
+const draggable = (t) => !!t && t.down && !t.dead && !t.left && !t.off && !t.surr;
+// The share of the time an enemy of this kit takes one of yours alive rather than finish them (nonlethal.js NL_TAKE by
+// the group type the kit stands for: raiders 25%, zealots 0).
+export const takeShare = (kit) => { const type = Object.keys(TYPE_KIT).find((k) => TYPE_KIT[k] === kit); return (type && NL_TAKE[type]) || 0; };
 export function reviveRefusal(b, u, t) {
   if (!u.medKit || !(u.kitBonus > 0) || (u.kitUses || 0) >= u.kitLeft) return "Revive needs a med kit with uses left (a bandage, trauma or surgical kit) and meds: anyone can only stabilize (Use meds).";
   if (u.side === "player" && medsLeft(b) < 1) return "Revive needs meds as well as the kit: none left.";
@@ -268,7 +278,7 @@ export const dragging = (b, u) => (u && u.dragging != null ? unitById(b, u.dragg
 export function liftRefusal(b, u, t) {
   if (u.dragging != null) return "Already dragging someone: put them down first.";
   if (u.carrying != null) return "Hands full: put the body down first.";
-  if (!revivable(t) || t.side !== u.side) return "Drag a downed ally next to you.";
+  if (!draggable(t) || t.side !== u.side) return "Drag a downed ally next to you.";
   if (t.draggedBy != null) return "Someone is already dragging them.";
   if (!adjacent(u, t)) return "Move next to them first.";
   if ((t.f || 0) !== (u.f || 0)) return "They are on another floor.";
@@ -395,21 +405,24 @@ export function foesBleed(b) {
   }
 }
 // combat.js endBattle / endRaid: the enemy's downed after the battle. Won: those stabilized or tied up are prisoners
-// (knocked out to stealth.js battleCaptives); the rest die. Anything else: they die (their people leave with them or
+// (stealth.js prisonerOf: the one rule for battleCaptives, with the knocked out and the tied who surrendered); the rest die. Anything else: they die (their people leave with them or
 // they are left to bleed: either way not yours).
 export function settleFoes(b, outcome) {
   for (const t of b.units) {
     if (t.side !== "enemy" || !t.wounded || !t.down || t.dead) continue;
     releaseDragged(b, t);
-    if ((outcome === "victory" || outcome === "raid") && (t.stab || t.tied)) { t.ko = true; continue; }
+    if ((outcome === "victory" || outcome === "raid") && (t.stab || t.tied)) continue; // prisoners (stealth.js prisonerOf, battleCaptives)
     t.dead = true;
   }
 }
 
 // ---------- finishing a downed enemy (your side: act "finish") ----------
-const finishable = (t) => !!t && t.side === "enemy" && t.kind === "human" && t.down && !t.dead && !t.off && !t.left;
+// Finish: the bleeding or stabilized (u.wounded) who are not tied. Someone who gave up, is out cold or tied is a
+// prisoner: killing them is Execute (nonlethal.js), which your people take hard.
+const finishable = (t) => !!t && t.side === "enemy" && t.kind === "human" && t.down && t.wounded && !t.ko && !t.surr && !t.tied && !t.dead && !t.off && !t.left;
 export const finishOdds = (u, t) => (adjacent(u, t) ? 100 : Math.max(MEDIC.FINISH.MIN, Math.min(95, Math.round(MEDIC.FINISH.BASE - MEDIC.FINISH.PER * Math.max(0, dist(u.x, u.y, t.x, t.y) - MEDIC.FINISH.FROM)))));
 export function finishRefusal(b, u, t) {
+  if (t && t.side === "enemy" && !t.dead && (t.ko || t.surr || t.tied)) return `${t.name} ${t.surr ? "has given up" : t.ko ? "is out cold" : "is tied up"}: a prisoner. Execute (next to them) kills them, and your people take it hard.`;
   if (!finishable(t)) return "Finish needs an enemy who is down.";
   if (adjacent(u, t)) return "";
   if (!isRanged(u)) return "Move next to them to finish them with a blow.";
@@ -596,7 +609,8 @@ export function rescueStep(b, u) {
 // off as a prisoner instead. true when it acted.
 export function finishTurn(b, u) {
   if (u.side !== "enemy" || u.kind !== "human" || !MEDIC.FINISH.KITS.includes(u.kit) || u.dragging != null || u.ap < 1) return false;
-  const prey = b.units.filter((t) => t.side === "player" && t.down && !t.dead && !t.left && !t.off && !t.taken && (t.f || 0) === (u.f || 0));
+  // Your downed of every state but tied (already theirs): bleeding, stabilized, knocked out, surrendered.
+  const prey = b.units.filter((t) => t.side === "player" && t.down && !t.dead && !t.left && !t.off && !t.taken && !t.tied && (t.f || 0) === (u.f || 0));
   if (!prey.length) return false;
   const foes = threats(b, u);
   if (foes.some((f) => adjacent(u, f))) return false;
@@ -606,11 +620,15 @@ export function finishTurn(b, u) {
   if (!inSight || !b.rng.chance(MEDIC.FINISH.WILL)) return false; // not every time: they may have other things on their mind
   if (adj) {
     const fid = b.setup && b.setup.enemy ? b.setup.enemy.factionId : null;
-    if (fid != null && !b.raid && adj.draggedBy == null && b.rng.chance(MEDIC.FINISH.CAPTURE)) {
-      lift(b, u, adj, true);
-      say(b, `${u.name} drags ${adj.name} away as a prisoner!`, "death");
-      captorStep(b, u);
-      return true;
+    if (fid != null && b.rng.chance(takeShare(u.kit))) {
+      // Out cold or hands up: tied where they lie (the enemy takes them if it holds the field, nonlethal.js).
+      if (adj.ko || adj.surr) { adj.tied = true; u.ap -= 1; say(b, `${u.name} ties up ${adj.name} to take them away.`, "danger"); return true; }
+      if (!b.raid && adj.draggedBy == null) {
+        lift(b, u, adj, true);
+        say(b, `${u.name} drags ${adj.name} away as a prisoner!`, "death");
+        captorStep(b, u);
+        return true;
+      }
     }
     u.ap -= 1;
     killDowned(b, adj, u, " with a blow");
@@ -688,17 +706,24 @@ export const MEDICS_HELP = `<b>Medics.</b> Anyone who takes a med kit into a fig
   <b>Stabilize</b> (Use meds, M): anyone can. With meds it is sure; with none, by hand (pressure, a belt for a tourniquet):
   ${MEDIC.HANDS.BASE}% + ${MEDIC.HANDS.MED} a point of Medicine, at most ${MEDIC.HANDS.MAX}%, and a failed try can be repeated. Healing
   health always needs meds.<br>
-  <b>Drag ally</b> (Shift+G): anyone can take hold of a downed teammate next to them, for free, and drag them: half the move
-  distance (both actions can go on moving), no shooting. Shift+G again puts them down; next to the vehicle they can be laid
+  <b>Drag</b> (Shift+D) a downed teammate: anyone can take hold of one next to them (bleeding, stabilized or knocked out), for
+  free, and drag them: half the move distance (both actions can go on moving), no shooting. Shift+D again puts them down; next to the vehicle they can be laid
   in it (counts as carried out). Drag them out of the line of fire: raiders and zealots finish the downed they can see
-  (now and then they drag one off instead, a prisoner of their group if they get away: down or badly hurt, the dragger
-  lets go), and the dead go for the downed in their way. Other groups' people leave your downed be.<br>
+  (as often as their group takes people alive, a quarter of the time for raiders, never for zealots, they take one next to
+  them instead: one bleeding is dragged off, a prisoner of their group if they get away; down or badly hurt, the dragger
+  lets go; one knocked out or who gave up is tied up and taken if they hold the field), and the dead go for the downed in
+  their way. Other groups' people leave your downed be (they take people alive their own way: Non-lethal weapons).<br>
+  <b>One model of the downed</b>, both sides: bleeding (down), stabilized, knocked out, surrendered, and tied up on top of
+  any of them. Bleeding becomes stabilized (meds, a kit, bare hands) and stabilized gets up again (Revive); knocked out
+  comes to unless tied; surrendered walks off unless tied. Finish is for the bleeding and the stabilized; killing one who
+  is out cold, gave up or is tied is Execute.<br>
   <b>The enemy's downed.</b> People you fight go down at 0 health too (a blow of twice their health kills outright) and bleed
   out in ${MEDIC.BLEED} turns. Their friends drag them into cover, stabilize them, and their medic (about one group in five of
-  soldiers, guards, militia and fighters) revives them. <b>Finish</b> (Shift+F): 1 action, a blow from next to them (sure,
+  soldiers, guards, militia and fighters) revives them. <b>Finish</b> (Shift+K): 1 action, a blow from next to them (sure,
   silent) or one round (${F.BASE}% out to ${F.FROM} tiles, −${F.PER} a tile past it, the noise of a shot): dead for good. A plain
-  click never does it. Tie them up (T) instead and, after a won fight, the ones stabilized or tied up come home as
-  prisoners.<br>
+  click never does it. Tie them up (T) instead: after a won fight the stabilized, the tied, the knocked out and the
+  tied who surrendered come home as prisoners (one rule); the bleeding die and the untied who gave up walk off. Their
+  medic's kit is on the body to loot.<br>
   <b>Who draws fire.</b> A medic seen treating or dragging someone is shot first (×${MEDIC.TREATING}).<br>
   <b>The AI</b> (AI plays my side, the raid bot, the enemy): one rescuer for each of the downed, only when the way there is
   not open ground under fire (unless it is close); it drags them to the cell with the most cover and the fewest eyes on it,

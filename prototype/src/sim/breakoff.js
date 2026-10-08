@@ -29,7 +29,7 @@ import { hurt, isNight, skill, log, factionById, survivorById, localId } from ".
 import { armorMult, armorPower } from "./inventory.js";
 import { Rng } from "./rng.js";
 import { woundTrauma } from "./health.js";
-import { fightXp } from "./skills.js";
+import { fightXp, hash01 } from "./skills.js";
 import { takeCaptive } from "./conflicts.js";
 import { memberMedic, MEDIC } from "./medics.js"; // a medic's kit: the carried and the fallen pull through more often
 
@@ -333,13 +333,16 @@ export function rollFight(rng, model, policy = "never") {
 }
 
 // A won fight fought to the end (medics.js MEDIC.NUMBERS): each member who fell is saved, barely alive, by the best
-// medic with a kit still standing (SAVE + PER_MED a point of their Medicine, at most MAX). One draw for each who fell,
-// medic or not, so the same fight with and without a medic goes on with the same dice. Sets m.saved.
+// medic with a kit still standing (SAVE + PER_MED a point of their Medicine, at most MAX). Its own dice, read off the
+// stream's state without drawing from it (skills.js hash01), so a fight with or without a medic goes on with exactly
+// the same dice as before medics existed. Sets m.saved.
 function medicSaves(rng, ms) {
   const medics = ms.filter((m) => !m.down && m.kit);
-  const med = medics.length ? Math.max(...medics.map((m) => m.medicine || 0)) : 0;
-  const p = medics.length ? Math.min(MEDIC.NUMBERS.MAX, MEDIC.NUMBERS.SAVE + MEDIC.NUMBERS.PER_MED * med) : 0;
-  for (const m of ms) if (m.down && rng.next() < p) m.saved = true;
+  if (!medics.length) return;
+  const med = Math.max(...medics.map((m) => m.medicine || 0));
+  const p = Math.min(MEDIC.NUMBERS.MAX, MEDIC.NUMBERS.SAVE + MEDIC.NUMBERS.PER_MED * med);
+  const at = Number.isFinite(rng.state) ? rng.state : 0;
+  for (const m of ms) if (m.down && hash01("medicsave", at, m.id) < p) m.saved = true;
 }
 
 // ---------- the real fight ----------

@@ -30,6 +30,7 @@ import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprit
 import { thirdRing } from "../sim/thirdside.js";
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
 import { isMedic } from "../sim/medics.js"; // a med kit makes a medic: the cross tag
+import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (sim/nonlethal.js)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -1693,8 +1694,18 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     arrow(ctx, X0, Y0, X1, Y1, COL.bad, 4 * S);
   }
 
+  // Throw mode (ui/combat.js throwPreview): the range, the reach of the hovered spot, who it would catch.
+  if (H.throwMarks) {
+    for (const [x, y, k] of H.throwMarks.cells) {
+      ctx.fillStyle = k === 2 ? "rgba(255,255,235,0.45)" : k === 1 ? "rgba(255,245,200,0.28)" : "rgba(255,209,102,0.08)";
+      ctx.beginPath(); diamond(ctx, x, y, tileTop(b, x, y)); ctx.fill();
+    }
+    ctx.lineWidth = 2;
+    for (const t of H.throwMarks.caught) { ctx.strokeStyle = t.side === "player" ? COL.bad : "#ffffff"; ctx.beginPath(); diamond(ctx, t.x, t.y, tileTop(b, t.x, t.y), 2); ctx.stroke(); }
+  }
   // Move: the path to the hovered cell; meds: who can be treated.
   const h = H.hover;
+  if (H.cone) fillCells(ctx, b, (i) => H.cone.has(i), "rgba(255,140,40,0.32)"); // the pepper spray's cone (ui/nonlethal.js)
   if (H.mode === "meds" && u) {
     ctx.strokeStyle = COL.good; ctx.lineWidth = 2; ctx.beginPath();
     for (const p of players) if (!p.dead && !p.left && (p === u || Math.max(Math.abs(u.x - p.x), Math.abs(u.y - p.y)) === 1)) diamond(ctx, p.x, p.y, tileTop(b, p.x, p.y), 1.5);
@@ -1994,7 +2005,7 @@ function drawLabels(ctx, b, s, H) {
   }
   const hh = hAt(b, t.x, t.y);
   const tags = [];
-  if (t.down) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? COL.good : COL.bad]);
+  if (t.down && !t.surr) tags.push([t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", t.ko ? "#9aa0a8" : t.stab ? COL.good : COL.bad]); // surr: its own tag (ui/nonlethal.js)
   if (t.ztype && !t.down) tags.push([`${t.short}${t.elite ? "★" : ""}`, ringOf(t)]);
   if (!t.down && isMedic(t)) tags.push(["✚", "#ff6b6b"]); // a medic (sim/medics.js)
   if (t.dragging != null) tags.push(["DRAG", "#e0a84f"]);
@@ -2002,9 +2013,11 @@ function drawLabels(ctx, b, s, H) {
   if (t.boss && !t.down) tags.push([t.boss === "broodmother" ? "BROOD" : "WALL", COL.bad]);
   if (t.ow) tags.push(["OW", "#e0a84f"]);
   if (t.hunker) tags.push(["HD", "#4aa3ff"]);
+  if (t.stun && !t.down && !t.dead) tags.push(t.stun.dazed ? ["DZ", "#cfd6e0"] : ["STN", "#ffffff"]); // a flashbang (sim/throwables.js)
   if (t.side === "enemy" && !t.aware && !t.ko) tags.push(t.investigate ? ["??", "#e0a84f"] : ["?", "#ffd166"]);
   if (t.side === "player" && t.post && b.phase === "deploy") tags.push([t.post === "gate" ? "G" : t.post === "wall" ? "W" : t.post === "tower" ? "T" : "P", "#e0a84f"]);
   if (t.surprised) tags.push(["!", "#ffd166"]);
+  tags.push(...nlTags(t)); // stunned, blinded, hands up, pulling blows (ui/nonlethal.js)
   if (hh && !t.down) tags.push(["▲".repeat(hh), "#ffe296"]);
   ctx.font = `700 ${fs}px Segoe UI, sans-serif`;
   let tx = X - bw / 2;
@@ -2047,6 +2060,11 @@ function drawFxIso(ctx, b, now, H) {
         ctx.beginPath(); ctx.moveTo(fx, fy); ctx.quadraticCurveTo((fx + gx) / 2, (fy + gy) / 2 - 60 * S, gx, gy); ctx.stroke(); ctx.setLineDash([]);
         ctx.fillStyle = f.item === "molotov" ? "#ff9a3a" : f.item === "flare" ? "#ff5a3a" : "#c9b048";
         ctx.beginPath(); ctx.arc(px, py, 2.5 * S, 0, Math.PI * 2); ctx.fill();
+      } else if (f.item === "flashbang" && el < 1000) { // the flash (sim/throwables.js FLASH)
+        const a = 1 - (el - 500) / 500, R = 60 * S;
+        const g = ctx.createRadialGradient(tx, ty, 0, tx, ty, R);
+        g.addColorStop(0, `rgba(255,255,255,${0.95 * a})`); g.addColorStop(0.5, `rgba(255,250,220,${0.5 * a})`); g.addColorStop(1, "rgba(255,250,220,0)");
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(tx, ty, R, 0, Math.PI * 2); ctx.fill();
       }
       continue;
     }

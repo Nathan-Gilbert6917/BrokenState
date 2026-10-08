@@ -373,7 +373,7 @@ section("Raiders mostly finish, rarely drag one off: a captive of their group; f
     MED.finishTurn(b, R);
     if (n.dead) finish++; else if (n.draggedBy === R.id || n.taken !== undefined) grab++;
   }
-  check(grab > 0 && grab < finish && grab / 300 > 0.05 && grab / 300 < 0.3, `next to a downed survivor: finished ${finish} times, dragged off ${grab} of 300 (~${Math.round(MED.MEDIC.FINISH.CAPTURE * 100)}%)`);
+  check(grab > 0 && grab < finish && grab / 300 > 0.05 && grab / 300 < 0.3, `next to a downed survivor: finished ${finish} times, dragged off ${grab} of 300 (takes alive ${Math.round(MED.takeShare("raiders") * 100)}% of the times they act: nonlethal.js NL_TAKE)`);
 }
 {
   const { st, b, ps, f } = arena();
@@ -452,6 +452,103 @@ section("A save in the middle of a battle keeps it all");
   check(u(D.id).down && u(D.id).wounded && u(a.id).shaken, "the enemy's downed and the shaken kept");
   const err = combatAct(L, { type: "move", unit: c.id, x: 6, y: 2 });
   check(!err && u(c.id).x === 6 && u(n.id).x === 5, `the loaded battle goes on: the drag continues (${err || "no error"})`);
+}
+
+section("One model of the downed with the non-lethal kit (nonlethal.js): states, finish or execute, prisoners, the raiders' choice");
+{
+  const { st, b, ps } = arena({ kind: "raiders" });
+  const [a, c] = ps;
+  a.x = 10; a.y = 10; c.x = 2; c.y = 22;
+  const Stab = foe(b, "raiders", 11, 10), Tied = foe(b, "raiders", 11, 11), Bleed = foe(b, "raiders", 9, 10), SurrT = foe(b, "raiders", 9, 11), SurrU = foe(b, "raiders", 25, 20), KO = foe(b, "raiders", 10, 11);
+  for (const e of [Stab, Tied, Bleed]) downFoe(b, e, a);
+  Stab.stab = true;
+  const { surrender } = await import("../src/sim/nonlethal.js");
+  const { knockOut, heldDown, prisonerOf } = await import("../src/sim/stealth.js");
+  surrender(b, SurrT); surrender(b, SurrU); knockOut(b, KO, a);
+  check([Stab, Tied, Bleed, SurrT, SurrU, KO].every(heldDown), "down, stabilized, surrendered and knocked out are all held down (stealth.js heldDown): Tie, Drag, Execute or Finish apply");
+  a.ap = 2;
+  const eT = combatAct(st, { type: "tie", unit: a.id, target: Tied.id }); a.ap = 2;
+  const eS = combatAct(st, { type: "tie", unit: a.id, target: SurrT.id }); a.ap = 2;
+  check(!eT && !eS && Tied.tied && SurrT.tied, `Tie works on one who went down and on one who gave up (${eT || eS || "no error"})`);
+  // Finish only the bleeding and stabilized who are not tied; the rest is Execute.
+  const fK = MED.finishRefusal(b, a, KO), fS = MED.finishRefusal(b, a, SurrT), fT = MED.finishRefusal(b, a, Tied);
+  check(/Execute/.test(fK) && /Execute/.test(fS) && /Execute/.test(fT) && !MED.finishRefusal(b, a, Bleed), `Finish refuses the knocked out, the surrendered and the tied: “${fT}”`);
+  check(MED.finishRefusal(b, a, Stab) === "", "a stabilized one can be finished");
+  check(prisonerOf(Stab) && prisonerOf(Tied) && prisonerOf(KO) && prisonerOf(SurrT) && !prisonerOf(SurrU) && !prisonerOf(Bleed), "prisoners after a win (stealth.js prisonerOf, one rule): stabilized, tied, knocked out, surrendered and tied; not the untied who gave up, not the bleeding");
+  b.units.filter((u) => u.side === "enemy" && active(u)).forEach((u) => { u.dead = true; });
+  endBattleNow(st, "victory");
+  const names = (b.result.prisoners || []).map((x) => x.name || x);
+  check(b.result.knockedOut === 4 && Bleed.dead && !Stab.dead, `the battle won: ${b.result.knockedOut} prisoners (stabilized, tied, out cold, tied after giving up); the bleeding one died`);
+  void names;
+}
+{
+  // The raiders' choice, from nonlethal.js NL_TAKE (raiders 25%, zealots 0): one of yours out cold next to them is tied up
+  // (taken after the battle), never dragged; zealots never take anyone.
+  check(MED.takeShare("raiders") === 0.25 && MED.takeShare("zealots") === 0 && MED.takeShare("soldiers") > 0, `takes alive: raiders ${MED.takeShare("raiders")}, zealots ${MED.takeShare("zealots")} (nonlethal.js NL_TAKE)`);
+  const { b, ps } = arena();
+  const [a, c, n] = ps;
+  a.x = 2; a.y = 22; c.x = 3; c.y = 22;
+  n.x = 12; n.y = 12;
+  const { koSurvivor } = await import("../src/sim/nonlethal.js");
+  koSurvivor(b, n, null);
+  const R = foe(b, "raiders", 13, 12);
+  let tied = 0, killed = 0;
+  for (let i = 0; i < 200; i++) {
+    n.dead = false; n.tied = false; n.down = true; n.ko = true; R.ap = 2;
+    MED.finishTurn(b, R);
+    if (n.tied) tied++; else if (n.dead) killed++;
+    if (n.draggedBy != null) tied = -999; // never dragged
+  }
+  check(tied > 0 && killed > tied, `one of yours out cold next to a raider: finished ${killed}, tied up to be taken ${tied} of 200 (never dragged off)`);
+  const Z = foe(b, "zealots", 11, 12);
+  let zt = 0;
+  for (let i = 0; i < 100; i++) { n.dead = false; n.tied = false; n.down = true; n.ko = true; Z.ap = 2; R.ap = 0; MED.finishTurn(b, Z); if (n.tied) zt++; }
+  check(zt === 0, "zealots never take anyone alive");
+}
+{
+  // Execute (nonlethal.js) covers a tied prisoner who went down.
+  const { st, b, ps } = arena();
+  const [a] = ps;
+  a.x = 10; a.y = 10;
+  const T = foe(b, "raiders", 11, 10);
+  downFoe(b, T, a);
+  a.ap = 2; combatAct(st, { type: "tie", unit: a.id, target: T.id }); a.ap = 2;
+  const err = combatAct(st, { type: "execute", unit: a.id, target: T.id });
+  check(!err && T.dead, `Execute kills a tied prisoner who went down (${err || "no error"})`);
+}
+{
+  // An enemy medic's kit is on their body.
+  const { st, b, ps } = arena({ kind: "soldiers" });
+  const M = MED.makeEnemyMedic(foe(b, "soldiers", 12, 12), "traumakit", 4);
+  M.dead = true;
+  b.units.filter((u) => u.side === "enemy").forEach((u) => { u.dead = true; });
+  endBattleNow(st, "victory");
+  const { allItems } = await import("../src/sim/inventory.js");
+  const body = (b.bodies || []).find((x) => x.uid === M.id) || null;
+  const kit = body ? allItems(body).find((it) => it.key === "traumakit") : null;
+  check(!!kit, `${M.name}'s Field trauma kit is on the body to loot${kit && kit.dur != null ? ` (${kit.dur} uses)` : ""}`);
+  void ps;
+}
+{
+  // The keys: Shift+H heal, Shift+V revive, Shift+K finish, Shift+D drags a downed teammate; nothing on the wave1-int
+  // branch's Shift+F, J, O, G, I, T; no two battle actions on one chord.
+  const K = await import("../src/ui/keymap.js");
+  const ev = (code) => ({ code, shiftKey: true, ctrlKey: false, altKey: false, metaKey: false });
+  check(K.keyAction(ev("KeyH"), "battle") === "battle.heal" && K.keyAction(ev("KeyV"), "battle") === "battle.revive" && K.keyAction(ev("KeyK"), "battle") === "battle.finish" && K.keyAction(ev("KeyD"), "battle") === "battle.drag", "Shift+H heal, Shift+V revive, Shift+K finish, Shift+D drag");
+  check(["KeyF", "KeyJ", "KeyO", "KeyG", "KeyI", "KeyT"].every((c) => K.keyAction(ev(c), "battle") == null), "Shift+F, J, O, G, I, T left free (the wave1-int branch's)");
+  const seenChords = new Map(); let clash = "";
+  for (const k of K.KEYMAP.filter((x) => x.ctx === "battle")) for (const c of k.keys) { if (seenChords.has(c)) clash += ` ${c}: ${seenChords.get(c)} / ${k.id}`; seenChords.set(c, k.id); }
+  check(!clash, `no two battle actions on one key${clash ? `:${clash}` : ""}`);
+  // Shift+D next to a downed teammate takes hold of them.
+  const { st, b, ps } = arena();
+  const [a, c, n] = ps;
+  n.x = 3; n.y = 2; c.x = 4; c.y = 2; a.x = 2; a.y = 20;
+  downPlayer(b, n);
+  UI.renderCombatPanel(st); UI.cui.sel = c.id;
+  UI.combatAction(st, "cb-act", { v: "drag" });
+  check(c.dragging === n.id, `Shift+D (Drag) next to a downed teammate: ${c.name} takes hold of ${n.name}`);
+  UI.combatAction(st, "cb-act", { v: "drag" });
+  check(c.dragging == null && n.draggedBy == null, "Shift+D again puts them down");
 }
 
 section("Whole battles played by the AI on both sides (AI plays my side), and the raid bot");
