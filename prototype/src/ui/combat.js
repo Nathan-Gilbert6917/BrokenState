@@ -14,7 +14,7 @@ import { INTERIOR } from "../sim/interior.js";
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { rescueOptions } from "../sim/rescueraid.js"; // a rescue raid on a group's base: captives, the cell, the armory
-import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, searchCost, STEALTH } from "../sim/stealth.js";
+import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, heldDown, searchCost, STEALTH } from "../sim/stealth.js";
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
 import { LIGHTS } from "../sim/lights.js";
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
@@ -37,6 +37,7 @@ import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent
 import { statusIcons } from "./status.js"; // the survivor behind a unit: low mood, starving, thirsty, infected, sick (its own hit points are the bar)
 import { iso, drawIso, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor } from "./isoview.js";
 import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
+import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
@@ -271,7 +272,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish"].includes(a.type)) cui.mode = "move";
   }
   autoSelect(b);
   return !err;
@@ -309,6 +310,7 @@ export function combatClick(state, px, py) {
     if (cui.dragId == null) {
       const body = bodyAt(b, c.x, c.y);
       if (!body || !adjacent(u, body)) { cui.msg = "Click a body, someone knocked out or a downed teammate right next to you."; return; }
+      if (body.side === "player" && !body.dead) return void act(state, { type: "dragAlly", unit: u.id, target: body.id }); // sim/medics.js: dragged along
       cui.dragId = body.id;
       cui.msg = `Now click where to drag ${body.dead ? `${body.name}'s body` : body.name} (up to ${STEALTH.DRAG} tiles).`;
       return;
@@ -318,7 +320,7 @@ export function combatClick(state, px, py) {
     return void act(state, { type: "drag", unit: u.id, target: id, x: c.x, y: c.y });
   }
   if (u && active(u) && u.ap > 0 && cui.mode === "tie") {
-    const t = b.units.find((o) => o.side === "enemy" && (o.ko || o.surr) && !o.dead && !o.fled && o.x === c.x && o.y === c.y);
+    const t = b.units.find((o) => o.side === "enemy" && heldDown(o) && !o.fled && o.x === c.x && o.y === c.y); // knocked out, surrendered, down (sim/stealth.js heldDown)
     if (t) return void act(state, { type: "tie", unit: u.id, target: t.id });
   }
   // The worm (sim/carriers.js): a body clicked for Double tap, Pick up body or Crush skull.
@@ -327,6 +329,9 @@ export function combatClick(state, px, py) {
     if (!body) { cui.msg = cui.mode === "doubletap" ? "Click a body in sight to put a round through its head." : cui.mode === "pickup" ? "Click a body right next to you to pick it up." : "Click a body right next to you to crush its skull."; return; }
     return void act(state, { type: cui.mode, unit: u.id, target: body.id });
   }
+  // sim/medics.js: Heal, Revive and Drag ally take the teammate clicked; Finish the downed enemy clicked.
+  if (u && active(u) && u.ap > 0 && ["heal", "revive", "dragAlly"].includes(cui.mode) && who && who.side === "player") return void act(state, { type: cui.mode, unit: u.id, target: who.id });
+  if (u && active(u) && u.ap > 0 && cui.mode === "finish" && who && who.side === "enemy" && who.down && !who.dead) return void act(state, { type: "finish", unit: u.id, target: who.id });
   if (who && who.side === "player") {
     if (cui.mode === "meds" && u && (who === u || adjacent(u, who))) return void act(state, { type: "meds", unit: u.id, target: who.id });
     cui.sel = who.id;
@@ -346,6 +351,7 @@ export function combatClick(state, px, py) {
   }
   if (!u || !active(u) || u.ap < 1) { cui.msg = "Pick a unit that still has actions."; return; }
   if (who && who.side === "enemy" && active(who) && v.seen.has(who.id)) return void attack(state, u, who);
+  if (who && who.side === "enemy" && who.down && !who.dead && playerSees(b, who)) return void attack(state, u, who); // sim/medics.js: a downed enemy (never finished by a plain click)
   // The third side (sim/thirdside.js): attacking them takes a second click, and turns them (or all the soldiers) on you.
   if (who && who.side === "third" && active(who) && v.seen.has(who.id)) {
     if (cui.thirdAsk === who.id) { cui.thirdAsk = null; return void attack(state, u, who); }
@@ -415,6 +421,12 @@ function arrowsChip(b) {
 function attack(state, u, t) {
   const b = state.combat;
   if (cui.mode === "taser") return void act(state, { type: "taser", unit: u.id, target: t.id }); // ui/nonlethal.js
+  // A downed enemy (sim/medics.js): only Finish kills them; a plain click says so.
+  if (t.side === "enemy" && t.down && !t.dead) {
+    if (cui.mode === "finish") return void act(state, { type: "finish", unit: u.id, target: t.id });
+    cui.msg = `${t.name} is down${t.ko ? " (out cold)" : t.stab ? " (stabilized)" : " and bleeding"}. Finish them (${keyLabel("battle.finish", 1) || "Shift+K"}) to kill them for good${t.ko || t.wounded ? ", tie them up (T) to take them prisoner" : ""}, or leave them.`;
+    return;
+  }
   if (cui.mode === "subdue") {
     if (!canSubdue(u, t, b)) { cui.msg = "Subdue needs them right next to you."; return; }
     return void act(state, { type: "subdue", unit: u.id, target: t.id });
@@ -711,7 +723,7 @@ export function combatAction(state, key, d) {
     return;
   }
   if (v === "tie") {
-    const ko = b.units.filter((t) => t.side === "enemy" && (t.ko || t.surr) && !t.tied && !t.dead && !t.fled && adjacent(u, t));
+    const ko = b.units.filter((t) => t.side === "enemy" && heldDown(t) && !t.tied && !t.fled && adjacent(u, t)); // sim/stealth.js heldDown: out cold, hands up, down
     if (ko.length === 1) return void act(state, { type: "tie", unit: u.id, target: ko[0].id });
     cui.mode = ko.length ? "tie" : "move";
     cui.msg = ko.length ? "Click the one to tie up." : "Tie up someone knocked out, right next to you.";
@@ -728,6 +740,12 @@ export function combatAction(state, key, d) {
     return;
   }
   if (v === "drag") {
+    // One Drag (Shift+D): a downed teammate is taken hold of and dragged along (sim/medics.js: half speed, no shooting,
+    // Shift+D again puts them down); a body or a prisoner is pulled up to STEALTH.DRAG tiles (sim/stealth.js).
+    if (dragging(b, u)) return void act(state, { type: "dropAlly", unit: u.id });
+    const mates = players(b).filter((o) => o.down && !o.dead && !o.left && !o.off && !o.surr && o.draggedBy == null && adjacent(u, o));
+    const others = b.units.filter((o) => o.side !== "player" && adjacent(u, o) && dragable(o) && !o.left && !o.fled);
+    if (mates.length === 1 && !others.length) return void act(state, { type: "dragAlly", unit: u.id, target: mates[0].id });
     cui.mode = cui.mode === "drag" ? "move" : "drag";
     cui.dragId = null;
     const near = b.units.filter((o) => adjacent(u, o) && dragable(o) && !o.left && !o.fled);
@@ -773,6 +791,40 @@ export function combatAction(state, key, d) {
     if (!list.length) { cui.msg = v === "peek" ? "Stand right next to a door or doorway to peek through it." : v === "close" ? "Stand next to an open door with nobody in the doorway." : "Stand next to a closed door to brace it."; return; }
     cui.mode = cui.mode === v ? "move" : v;
     cui.msg = `Click the door to ${v === "peek" ? "peek through" : v}.`;
+    return;
+  }
+  // sim/medics.js: Heal, Revive, Drag ally / Put down / Into the vehicle, Finish.
+  if (v === "heal") {
+    const near = players(b).filter((o) => o !== u && active(o) && adjacent(u, o) && o.hp < o.maxHp);
+    if (!near.length) return void act(state, { type: "heal", unit: u.id, target: u.id });
+    cui.mode = cui.mode === "heal" ? "move" : "heal";
+    cui.msg = cui.mode === "heal" ? "Click yourself or a hurt teammate next to you to treat." : "";
+    return;
+  }
+  if (v === "revive") {
+    const near = players(b).filter((o) => o.down && !o.dead && !o.left && !o.off && adjacent(u, o));
+    if (!near.length) { cui.msg = reviveRefusal(b, u, null) || "Revive needs a downed teammate next to you."; return; }
+    if (near.length === 1) return void act(state, { type: "revive", unit: u.id, target: near[0].id });
+    cui.mode = cui.mode === "revive" ? "move" : "revive";
+    cui.msg = cui.mode === "revive" ? "Click the downed teammate to revive." : "";
+    return;
+  }
+  if (v === "dragAlly") {
+    if (dragging(b, u)) return void act(state, { type: "dropAlly", unit: u.id });
+    const near = players(b).filter((o) => o.down && !o.dead && !o.left && !o.off && o.draggedBy == null && adjacent(u, o));
+    if (!near.length) { cui.msg = "Drag ally needs a downed teammate right next to you."; return; }
+    if (near.length === 1) return void act(state, { type: "dragAlly", unit: u.id, target: near[0].id });
+    cui.mode = cui.mode === "dragAlly" ? "move" : "dragAlly";
+    cui.msg = cui.mode === "dragAlly" ? "Click the downed teammate to drag." : "";
+    return;
+  }
+  if (v === "dropVehicle") return void act(state, { type: "dropAlly", unit: u.id, into: "vehicle" });
+  if (v === "finish") {
+    const foes = b.units.filter((t) => t.side === "enemy" && t.down && !t.dead && !t.off && playerSees(b, t) && !finishRefusal(b, u, t));
+    if (!foes.length) { cui.msg = "Finish needs a downed enemy next to you, or one in sight with a loaded gun."; return; }
+    if (foes.length === 1) return void act(state, { type: "finish", unit: u.id, target: foes[0].id });
+    cui.mode = cui.mode === "finish" ? "move" : "finish";
+    cui.msg = cui.mode === "finish" ? "Click the downed enemy to finish (dead for good)." : "";
     return;
   }
   if (v === "meds") {
@@ -843,14 +895,14 @@ export function renderCombatPanel(state) {
 
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
-    const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`)) :
-      [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
+    const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`)) + (p.draggedBy != null ? `, dragged by ${(unitById(b, p.draggedBy) || {}).name || "someone"}` : "") :
+      [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !alive(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = alive(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     // A building with storeys: everyone's floor (dimmer when it is not the one shown).
     const fl = floorsOf(b) && p.f != null ? ` <span class="cbfl${p.f === floorNo(b) ? "" : " off"}" data-tip="${esc(`${p.name.split(" ")[0]} is on ${floorLabel(b, p.f).toLowerCase()}${p.f === floorNo(b) ? " (shown)" : ": selecting them shows that floor"}.`)}">F${p.f + 1}</span>` : "";
     html += `<div class="${cls}" data-action="cb-sel" data-id="${p.id}" data-tip="${esc(`${p.name}. Weapon: ${p.weaponName}${hasMag(p) ? ` (${magLabel(b, p)} loaded)` : ""}. Aim ${Math.round(p.aim)}. Press ${i + 1} or Tab to select.`)}">
-      <div class="spread"><span>${spriteImg(canvasURL(unitCanvas(state, b, p, cui.salt)), 1.5)}<span class="muted">${i + 1}</span> <b>${esc(p.name)}</b>${p.sid != null && alive(p) ? statusIcons(state, state.survivors.find((s) => s.id === p.sid), { skip: ["health"] }) : ""}${fl}</span>${pips}</div>
+      <div class="spread"><span>${spriteImg(canvasURL(unitCanvas(state, b, p, cui.salt)), 1.5)}<span class="muted">${i + 1}</span> <b>${esc(p.name)}</b>${medicBadge(p)}${p.sid != null && alive(p) ? statusIcons(state, state.survivors.find((s) => s.id === p.sid), { skip: ["health"] }) : ""}${fl}</span>${pips}</div>
       <div class="bar"><i style="width:${pct(p) * 100}%;background:${hpColor(pct(p))}"></i></div>
       <div class="small muted">${gunText(b, p)} · ${Math.round(p.hp)} hp${status ? ` · <span class="${p.down || p.dead ? "danger" : ""}">${status}</span>` : ""}${p.aboard ? ' · <span class="good">in the vehicle</span>' : ""}</div>
     </div>`;
@@ -886,7 +938,8 @@ export function renderCombatPanel(state) {
       ${b.vehicle && !u.aboard ? btn("board", "Get in", `1 action, from next to it: ride in the ${b.vehicle.kind} (${b.vehicle.seats || 4} seats, ${aboardCount(b)} aboard). Inside you are off the map (not a target, not drawn, no shooting) and can drive, turn, get out, or extract with it from a zone it stands at.`, ap > 0 && atVehicle(b, u) && aboardCount(b) < (b.vehicle.seats || 4)) : ""}
       ${u.aboard ? btn("disembark", "Get out", "1 action: out onto a free cell round the vehicle.", ap > 0) : ""}
       ${b.vehicle ? btn("turn", "Turn", "1 action, from inside or next to it: a quarter turn at the same corner (it needs open ground with nobody on it on the cells it turns onto).", ap > 0 && (u.aboard || atVehicle(b, u))) : ""}
-      ${btn("meds", "Use meds", "1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive.", ap > 0 && medsLeft(b) > 0, "M")}
+      ${btn("meds", "Use meds", `1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive. With no meds left, someone down can still be stabilized by hand (${handsOdds(u)}%: pressure and a belt; it can be tried again).`, ap > 0 && (medsLeft(b) > 0 || players(b).some((o) => o.down && !o.dead && !o.left && !o.stab && adjacent(u, o))), "M")}
+      ${medicButtons(state, b, u, btn)}
       ${floorButtons(b, u, btn)}
       ${bodyButtons(state, b, u, btn)}
       ${stealthButtons(state, b, u, btn)}
@@ -904,14 +957,14 @@ export function renderCombatPanel(state) {
   if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
 
   const v = view(b);
-  const seen = b.units.filter((t) => v.seen.has(t.id));
+  const seen = [...b.units.filter((t) => v.seen.has(t.id)), ...b.units.filter((t) => t.side === "enemy" && t.down && !t.dead && !t.off && playerSees(b, t))]; // sim/medics.js: the downed too (Finish)
   if (seen.length && u && active(u)) {
     html += `<h3>Enemies in sight</h3><div class="cbtargets">`;
     for (const t of seen) {
       const o = odds(b, u, t);
       const tip = o ? `${t.name}: ${o.label}. Click to attack with ${u.name}.` : `${t.name}: ${u.name} cannot hit them from here.`;
       html += `<button class="cbtarget" data-action="cb-target" data-id="${t.id}" ${o && o.ok && b.phase === "player" && u.ap > 0 ? "" : "disabled"} data-tip="${esc(tip)}">
-        <span>${spriteImg(canvasURL(unitCanvas(state, b, t, cui.salt)), 1.5)}${esc(t.name)}${t.aware ? "" : ' <span class="warn">(unaware)</span>'}${t.stun ? ` <span class="good">(${esc(t.stun.dazed ? "dazed" : "stunned")})</span>` : ""}</span><span class="small">${Math.round(t.hp)} hp${o && o.ok ? ` · <b>${o.chance}%</b>` : ""}</span></button>`;
+        <span>${spriteImg(canvasURL(unitCanvas(state, b, t, cui.salt)), 1.5)}${esc(t.name)}${t.down ? ` <span class="muted">(${t.surr ? "gave up" : "down"}${t.ko ? ", out cold" : t.surr ? "" : t.stab ? ", stabilized" : `, bleeding ${t.bleed || 0}`}${t.tied ? ", tied" : ""})</span>` : t.aware ? "" : ' <span class="warn">(unaware)</span>'}${t.stun ? ` <span class="good">(${esc(t.stun.dazed ? "dazed" : "stunned")})</span>` : ""}${isMedic(t) && !t.down ? ' <span class="danger" data-tip="A medic: revives and drags their downed, heals the hurt.">✚</span>' : ""}</span><span class="small">${Math.round(t.hp)} hp${o && o.ok ? ` · <b>${o.chance}%</b>` : ""}</span></button>`;
     }
     html += `</div>`;
   }
@@ -1049,6 +1102,52 @@ function chooseHtml(b) {
 // ---------- the worm (sim/carriers.js) ----------
 // The body buttons: Crush skull (U) and Pick up body (P) with a body next to the unit, Double tap (J) with one in
 // sight and a gun in hand; carrying a body, Put down (P) and, at the team's car, Put body in car (Z).
+// ---------- medics (sim/medics.js) ----------
+// The roster's medic badge: a small cross, with the kit and its uses left.
+function medicBadge(p) {
+  if (!isMedic(p)) return "";
+  const left = p.kitLeft === Infinity ? null : Math.max(0, p.kitLeft - (p.kitUses || 0));
+  const tip = `Medic: ${p.medKit.name}${left == null ? "" : `, ${left} use${left === 1 ? "" : "s"} left`}, Medicine ${Math.round(p.medicine)}. Heal (${keyLabel("battle.heal", 1) || "Shift+H"}) and Revive (${keyLabel("battle.revive", 1) || "Shift+V"}).`;
+  return ` <span class="good cbmedic" data-tip="${esc(tip)}">✚</span>`;
+}
+// Heal and Revive (a med kit makes a medic; Revive shown disabled with the reason without one), Drag ally / Put down /
+// Into the vehicle, Finish a downed enemy.
+function medicButtons(state, b, u, btn) {
+  let html = "";
+  const ap = u.ap;
+  const medic = isMedic(u);
+  const kitTip = medic ? `${u.name.split(" ")[0]}'s ${u.medKit.name}, Medicine ${Math.round(u.medicine)}` : "";
+  if (medic) {
+    const hurtNear = players(b).filter((o) => active(o) && (o === u || adjacent(u, o)) && o.hp < o.maxHp).sort((a, c) => a.hp - c.hp)[0];
+    const why = hurtNear ? healRefusal(b, u, hurtNear) : "Nobody hurt next to them.";
+    html += btn("heal", "Heal", `1 action, 1 meds and a use of the kit (${kitTip}): a medic's treatment, +${healAmount(u, hurtNear || u)} health on themselves or a teammate next to them (plain meds: less).${why ? ` ${why}` : ""}`, ap > 0 && !why, keyLabel("battle.heal", 1) || "Shift+H");
+  }
+  const downNear = players(b).filter((o) => o.down && !o.dead && !o.left && !o.off && adjacent(u, o));
+  const anyDown = players(b).some((o) => o.down && !o.dead && !o.left && !o.off);
+  if (medic || anyDown) {
+    const t = downNear[0] || null;
+    const why = reviveRefusal(b, u, t);
+    const p = t && medic ? reviveOdds(u, t) : null;
+    html += btn("revive", p != null ? `Revive ${p}%` : "Revive", `Both actions, 1 meds and a use of the kit: get a downed teammate next to them back on their feet, ${MEDIC.REVIVE.HP.map((x) => Math.round(x * 100)).join("–")}% health, acting from their next turn, shaken (−${MEDIC.REVIVE.SHAKEN} aim for the rest of the battle). ${MEDIC.REVIVE.BASE}% + ${MEDIC.REVIVE.MED} a point of Medicine + ${MEDIC.REVIVE.KIT} a point of the kit's bonus (+${MEDIC.REVIVE.STAB} if already stabilized), at most ${MEDIC.REVIVE.MAX}%. A failed try still stabilizes them. Only with a med kit (bandage, trauma or surgical) and meds: anyone else can stabilize (Use meds).${why ? ` ${why}` : ""}`, !why, keyLabel("battle.revive", 1) || "Shift+V");
+  }
+  const held = dragging(b, u);
+  if (held) {
+    html += btn("dragAlly", "Put down", `Free: lay ${held.name} down where they are, behind ${u.name.split(" ")[0]}. In cover, out of the line of fire, or on the evac strip (carried out with the last one to leave).`, true, keyLabel("battle.drag", 1) || "Shift+D");
+    if (b.vehicle) html += btn("dropVehicle", "Into vehicle", `Free, from next to the vehicle: lay ${held.name} in it (a seat). In the vehicle counts as carried out.`, !dropRefusal(b, u, "vehicle"));
+  } else if (downNear.length) {
+    const t = downNear.find((o) => o.draggedBy == null) || downNear[0];
+    const why = liftRefusal(b, u, t);
+    html += btn("dragAlly", "Drag ally", `Free: take hold of ${t.name} and drag them: moving at half speed (both actions can go on moving), no shooting. Out of the line of fire: raiders finish the downed they can see, and the dead go for them. Put them down (${keyLabel("battle.drag", 1) || "Shift+D"}) in cover, on the evac strip, or in the vehicle.${why ? ` ${why}` : ""}`, ap > 0 && !why, keyLabel("battle.drag", 1) || "Shift+D");
+  }
+  const foes = b.units.filter((t) => t.side === "enemy" && t.down && !t.dead && !t.off && playerSees(b, t));
+  if (foes.length) {
+    const ok = foes.filter((t) => !finishRefusal(b, u, t));
+    const t = ok[0] || foes[0];
+    html += btn("finish", "Finish", `1 action: kill a downed enemy for good (no revive, no prisoner): a blow from next to them, sure and silent, or one round (${MEDIC.FINISH.BASE}% out to ${MEDIC.FINISH.FROM} tiles, −${MEDIC.FINISH.PER} a tile past it; the noise of a shot). A plain click never does it. ${ok.length ? `${t.name}: ${finishOdds(u, t, b)}%.` : finishRefusal(b, u, t)}`, ap > 0 && ok.length > 0, keyLabel("battle.finish", 1) || "Shift+K");
+  }
+  return html;
+}
+
 function bodyButtons(state, b, u, btn) {
   let html = "";
   const held = carriedBy(b, u);
@@ -1079,7 +1178,7 @@ function stealthButtons(state, b, u, btn) {
   const so = near.length ? subdueOdds(b, u, near[0]) : null;
   const subTip = so ? `${so.label} (${near[0].name}). Ends the turn. Takedowns work on the unaware and on anyone at 30% health or less; a knocked-out enemy wakes in 4–6 turns unless tied up, and after a won fight comes home as a prisoner.`
     : "Takedown or a non-lethal blow on a person right next to you: knocks them out instead of killing. Best from behind, from cover, with a club and with Stealth.";
-  const ko = b.units.filter((t) => t.side === "enemy" && (t.ko || t.surr) && !t.tied && !t.dead && !t.fled && adjacent(u, t)); // surr: hands up (sim/nonlethal.js)
+  const ko = b.units.filter((t) => t.side === "enemy" && heldDown(t) && !t.tied && !t.fled && adjacent(u, t)); // sim/stealth.js heldDown: out cold, hands up (sim/nonlethal.js), down (sim/medics.js)
   const bodies = b.units.filter((o) => adjacent(u, o) && dragable(o) && !o.left && !o.fled);
   const have = throwablesOf(state, b, u);
   const kinds = THROW_KEYS.filter((k) => have[k]);
@@ -1358,6 +1457,11 @@ const restartBtn = (state, b, style = "") => (restartable(state, b) ? `<button${
 function odds(b, u, t) {
   const nlo = nlOdds(b, u, t, cui); // the taser (ui/nonlethal.js)
   if (nlo) return nlo;
+  if (t.side === "enemy" && t.down && !t.dead) { // sim/medics.js: Finish (downed)
+    const why = finishRefusal(b, u, t);
+    const p = finishOdds(u, t, b);
+    return { ok: !why, chance: p, finish: true, label: why ? `Finish (downed): ${why}` : `Finish (downed): ${p}%, ${SIM.meleeReach(b, u, t) ? "a blow from next to them" : "one round"}: dead for good, no revive, no prisoner. Use Finish (${keyLabel("battle.finish", 1) || "Shift+K"}); a plain click does not` };
+  }
   if (cui.mode === "subdue") {
     if (!canSubdue(u, t, b)) return { ok: false, label: t.kind === "zombie" ? "The dead cannot be subdued" : "Subdue needs them right next to you" };
     const o = subdueOdds(b, u, t);
@@ -2640,6 +2744,13 @@ function drawUnit(state, b, t, cx, cy, cs, selected) {
     ctx.textAlign = "center";
     ctx.fillText(t.ko ? (t.tied ? "TIED" : "ZZ") : t.stab ? "+" : "!", cx, cy - cs * 0.12);
   }
+  // A medic (sim/medics.js): a small red cross by the head.
+  if (!t.down && isMedic(t)) {
+    const mx = cx + r * 0.75, my = cy - cs * 0.32, a = Math.max(2, cs * 0.06), l = Math.max(4, cs * 0.13);
+    ctx.fillStyle = "#f4f4f4"; ctx.fillRect(mx - l - 1, my - l - 1, l * 2 + 2, l * 2 + 2);
+    ctx.fillStyle = "#d33a3a"; ctx.fillRect(mx - a, my - l, a * 2, l * 2); ctx.fillRect(mx - l, my - a, l * 2, a * 2);
+  }
+  if (t.dragging != null) tag(cx, cy - cs * 0.62, "DRAGGING", "#e0a84f", cs);
   // On raised ground (verticality): ▲ by the ring.
   const hh = heightAt(b, t.x, t.y);
   if (hh && !t.down) {

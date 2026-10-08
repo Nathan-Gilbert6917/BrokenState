@@ -29,7 +29,7 @@ import { gunMods, unitMods, fittedSuppressor, removeMod, modLabel } from "./gunm
 import { isNight, survivorById, baseById } from "./world.js";
 import { EQUIP_SLOTS, packOf } from "./inventory.js";
 import {
-  CELL, WEAPONS, active, adjacent, cornerBlocked, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
+  CELL, WEAPONS, active, adjacent, cornerBlocked, meleeReach, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
   say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash,
 } from "./combat.js";
 import { landEffect, blastSpot, throwBlind, throwLanding, flashSpot, doorToss, BLAST, FRAG, FIRE } from "./throwables.js";
@@ -305,7 +305,7 @@ export function stealthAct(state, b, u, t, act) {
       return "";
     }
     case "tie": {
-      if (!t || t.side !== "enemy" || !(t.ko || t.surr) || t.dead || t.fled || !adjacent(u, t)) return "Tie up someone knocked out or who has surrendered, right next to you."; // surr: nonlethal.js
+      if (!t || t.side !== "enemy" || !heldDown(t) || t.dead || t.fled || !meleeReach(b, u, t)) return "Tie up someone knocked out, down or who has surrendered, right next to you (not across a wall's corner).";
       if (t.tied) return "Already tied up.";
       t.tied = true;
       // Handcuffs (data.js cuffs) on the unit: no action, and they stay on the prisoner.
@@ -347,7 +347,7 @@ export function stealthAct(state, b, u, t, act) {
     }
     case "drag": {
       if (!t || !dragable(t)) return "Drag a body, someone knocked out or a downed teammate.";
-      if (!adjacent(u, t)) return "Move next to them first.";
+      if (!meleeReach(b, u, t)) return "Move next to them first (not across a wall's corner).";
       const x = Number(act.x), y = Number(act.y);
       const r = reachable(b, u, STEALTH.DRAG);
       const c = x >= 0 && y >= 0 && x < b.w && y < b.h ? r.dist[y * b.w + x] : Infinity;
@@ -389,7 +389,21 @@ export function throwAt(b, u, key, x, y, blind = false) {
   return [lx, ly];
 }
 
-export const dragable = (t) => (t.side === "enemy" && t.kind === "human" && !t.off && !t.fled && (t.dead || t.ko || t.surr)) || (t.side === "player" && t.down && !t.dead && !t.left);
+export const dragable = (t) => (t.side === "enemy" && t.kind === "human" && !t.off && !t.fled && (t.dead || heldDown(t))) || (t.side === "player" && t.down && !t.dead && !t.left);
+// The states of a person who is down (one model, both sides):
+//   down    bleeding (u.down; medics.js: an enemy person brought to 0 is u.wounded too): bleeds out in 3 turns
+//   stab    stabilized (u.down + u.stab): no longer bleeding
+//   ko      knocked out (u.down + u.ko; nonlethal.js, Subdue): wakes after a few turns unless tied
+//   surr    surrendered (u.down + u.surr; nonlethal.js): hands up, walks off if left untied
+//   tied    tied up (any of the above + u.tied; the Tie act, the enemy's nlAI)
+// Transitions: down → stab (meds, a kit, bare hands) → up again (Revive, medics.js); down/stab → dead (bled out,
+// finished); ko → awake (wake turn) or tied; surr → tied, walks off, or takes the weapon up again. An enemy held down
+// this way (heldDown) can be tied, dragged and executed or finished; after a won battle the ones who are prisoners
+// (prisonerOf) go home with the team (battleCaptives).
+// Enemies only: one of yours who is tied (a captive in a rescue raid, rescueraid.js; one the enemy tied up) is theirs
+// to be freed (Cut free), never a prisoner of yours. tied is the one shared flag (combat.js isTied).
+export const heldDown = (t) => !!t && t.side !== "player" && !t.captive && !t.dead && (t.ko || t.surr || (t.wounded && t.down));
+export const prisonerOf = (t) => !!t && t.side !== "player" && !t.captive && !t.dead && !t.fled && (t.ko || (t.surr && t.tied) || (t.wounded && t.down && (t.stab || t.tied)));
 function moveBody(b, t, x, y) {
   const box = b.raid ? b.raid.containers.find((c) => c.kind === "body" && c.uid === t.id) : null;
   t.x = x; t.y = y;
@@ -514,7 +528,8 @@ export function spotBodies(b, e) {
 // extraction zone that someone left from.
 export function battleCaptives(b, outcome) {
   // Surrendered (nonlethal.js): only the ones tied up; the untied walk away.
-  const enemies = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && (u.ko || (u.surr && u.tied)) && !u.dead && !u.fled && !u.reinforcement);
+  // Down and stabilized or tied (medics.js): theirs to carry home too. One rule: prisonerOf.
+  const enemies = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && prisonerOf(u) && !u.reinforcement);
   if (b.raid) {
     const zones = new Set(b.units.filter((u) => u.side === "player" && u.left && !u.dead && u.exitZone != null).map((u) => u.exitZone));
     return enemies.filter((u) => u.tied && zones.has(zoneAt(b, u.x, u.y)));

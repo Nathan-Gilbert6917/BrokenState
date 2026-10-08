@@ -520,7 +520,7 @@ export function nlAct(state, b, u, t, act) {
       return ""; // free
     }
     case "execute": {
-      if (!t || t.side !== "enemy" || t.dead || !(t.surr || t.ko)) return "Execute someone who has surrendered or is knocked out.";
+      if (!t || t.side !== "enemy" || t.dead || !(t.surr || t.ko || (t.wounded && t.down && t.tied))) return "Execute someone who has surrendered, is knocked out or lies tied up (a downed one who is not: Finish).";
       if (!meleeReach(b, u, t)) return "Move next to them first (not across a wall's corner).";
       execute(state, b, u, t);
       u.ap -= 1;
@@ -557,7 +557,7 @@ export function surrenderRefusal(b, u) {
   return "";
 }
 function execute(state, b, u, t) {
-  t.down = false; t.ko = false; t.surr = false; t.tied = false;
+  t.down = false; t.ko = false; t.surr = false; t.tied = false; t.wounded = false; // wounded: medics.js, so the blow kills (no going down)
   t.hp = Math.max(1, t.hp);
   damage(b, t, 9999, u);
   say(b, `${u.name} executes ${t.name}.`, "death");
