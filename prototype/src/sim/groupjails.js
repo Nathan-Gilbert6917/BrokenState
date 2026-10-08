@@ -22,8 +22,14 @@
 //   their mood (raiders treat theirs worst: low output, but they feed them little): food and scrap a day, and their
 //   building goes faster (f.prisonWork, groupworks.js). Your people held are worked too: health and mood fall a day by
 //   captor (CAPTIVE; raiders grimmest), the broken die of it, and escapes and turning follow (conflicts.js captivesDaily).
-// - Escapes (captiveEscape, prisonerEscape): the jail's tier as for yours: cell rate on idle days, the work detail's
-//   (× the tier's labour) on worked days, a captive's Stealth × the tier's bonus.
+// - Guards (GUARDS, groupJailGuards): a group puts guards on its jail while it holds anyone, by its head count × its
+//   leaning to prisoners and patrols (groupcare.js GROUP_PRIORITIES), fewer while hungry or at war, at most one more
+//   than it holds and GUARDS.max: a big, well-run group 2–4, a band of a handful none. Each counts as one average
+//   guard of yours (prisoners.js JAIL_GUARD: the same diminishing stack). The rescue raid's map posts them at the cell
+//   (rescueraid.js) and the rescue card names them (conflicts.js).
+// - Escapes (captiveEscape, prisonerEscape): the jail's tier and guards as for yours (prisoners.js cellEscape): the
+//   cell rate, × the work detail on worked days (CAPTIVE escapeWork, the type's share of days), a captive's Stealth
+//   × the tier's bonus. Holding cells, raiders: 3.7% a day with no guard, 0.49% with one, 0.15% with two.
 // - Trades a day (TRADE): ransom back (their own group buys them, not at war, with what it can spare), exchange (two
 //   groups each holding the other's swap one for one), sale (raiders sell people as labour to raiders and
 //   expansionists; the military and the fortress buy only to free them, which their group remembers), recruitment
@@ -34,12 +40,12 @@
 //   prisoners.js JAIL block).
 import { day, log, addCard, factionById, hub, skill, hurt, newId, checkGameOver } from "./world.js";
 import { SUPPLIES } from "./data.js";
-import { JAIL_TIERS, PRISON } from "./prisoners.js";
+import { JAIL_TIERS, PRISON, cellEscape, guardTighten, groupGuardStrength } from "./prisoners.js";
 import { allCaptives, CAPTIVE_TOOL } from "./conflicts.js";
 import { changeRelation, relation, warBetween, atWar, news, knownAs } from "./diplomacy.js";
 import { available } from "./trade.js";
 import { tileLabel } from "./parties.js";
-import { openNegotiation, dealFor, talksOf } from "./ransom.js"; // rescue: buying your people back
+import { openNegotiation, dealFor, talksOf, groupMemberWorth } from "./ransom.js"; // rescue: buying your people back; the value rule
 import { weightOf } from "./groupcare.js"; // the type profiles
 
 export const GROUP_JAIL = {
@@ -59,17 +65,24 @@ export const GROUP_JAIL = {
     food: 1.1, scrap: 0.25, eat: { raider: 0.3, other: 0.6 },
   },
   // Your people held and worked: health and mood a day (raiders grimmest), the chance a day of dying once worn below
-  // dyingAt, × their work-detail escapes, × turning (recruited) once their mood is below broken.
+  // dyingAt, × the cell's escape on worked days (escapeWork: out on the work detail they try more; was × a flat 1% work
+  // rate, which put a raider's captive at 1.3% a day before Stealth), × turning (recruited) once their mood is below broken.
   CAPTIVE: {
     health: { raider: -1.2, expansionist: -0.6, zealot: -0.8, traders: -0.3, fortress: -0.2, military: -0.1, commune: 0 },
     mood: { raider: -2, other: -0.5 }, floor: 8, dyingAt: 12, death: 0.04,
-    escapeWork: { raider: 1.4, other: 1.1 }, broken: 20, brokenTurn: 1.5, stealth: 0.001,
+    escapeWork: { raider: 1.25, other: 1.1 }, broken: 20, brokenTurn: 1.5, stealth: 0.001,
   },
   // Trades a day: chances, the price of one (value + perPower × power, in what the buyer can spare), relations.
   TRADE: { ransom: 0.04, exchange: 0.06, sale: 0.03, sellYours: 0.012, recruitDays: 30, recruit: 0.012, value: 15, perPower: 4, ransomRel: 3, exchangeRel: 2, enemySaleRel: -6, freeRel: 6, enemyRel: -15 },
   // Your person when nobody will buy them: their price to a buyer (value + perSkill × their best three skills), and the
   // days their captors keep them over their room for you to ransom them (ransom.js) before they kill or free them.
   YOURS: { value: 20, perSkill: 2, days: 6 },
+  // The jail's guards while anyone is held (groupJailGuards): pop × perPop × the type's prisoners and patrol weights,
+  // × hungry (food under 3 days a head) and × war, rounded; at most one more than held and max (the hardcore military: max).
+  GUARDS: { perPop: 0.1, hungry: 0.7, war: 0.7, max: 4 },
+  // Buying one of their own back (groupJailsDaily ransom; ransom.js groupMemberWorth, the same value rule as yours):
+  // only when the person is worth the price to them and the pay leaves keepDays of food a head.
+  RANSOM_KEEP_DAYS: 3,
 };
 const G = GROUP_JAIL;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -134,24 +147,43 @@ export function groupLabour(state, f) {
   return n * (G.WORK.share[f.type] ?? 0.4) * moodMult(G.WORK.mood[f.type] ?? 40);
 }
 
+// ---------- guards ----------
+// The guards on a group's jail (GUARDS): none while it holds nobody.
+export function groupJailGuards(state, f) {
+  if (!f || !f.alive) return 0;
+  const held = groupPrisoners(f).length + allCaptives(state).filter((s) => s.location.factionId === f.id).length; // yours just taken too
+  if (!held) return 0;
+  const U = G.GUARDS;
+  if (f.hcMilitary) return U.max;
+  const hungry = (f.stock && (f.stock.food || 0) < f.pop * 3) ? U.hungry : 1;
+  const n = Math.round(f.pop * U.perPop * weightOf(f, "prisoners") * weightOf(f, "patrol") * hungry * (atWar(state, f) ? U.war : 1));
+  return clamp(n, 0, Math.min(U.max, held + 1));
+}
+
 // ---------- escapes ----------
-// A group's prisoner (not yours): worked every day, in their jail (none: the shed's rate).
+// A group's prisoner (not yours): worked every day, in their jail (none: as a makeshift cage), by its guards: the cell
+// rate or the work detail's (watched while the guards can watch them all), whichever is higher.
 export function prisonerEscape(state, f, tile) {
   const J = groupJail(f, tile, state) || JAIL_TIERS[1]; // no jail of theirs there (held over their room): as a makeshift cage, the rescue map's too
-  const work = Math.max(J.guarded, PRISON.LABOUR.escapeGuarded * J.labour);
+  const n = groupJailGuards(state, f), Gs = groupGuardStrength(n);
+  const watched = n * J.watch >= groupHeld(state, f);
+  const work = Math.max(cellEscape(J, Gs), (watched ? PRISON.LABOUR.escapeGuarded * guardTighten(J, Gs) : PRISON.LABOUR.escapeUnguarded) * J.labour);
   return work * (G.WORK.mood[f.type] < PRISON.LABOUR.lowMood ? PRISON.LABOUR.lowMoodMult : 1);
 }
-// Your captive's chance a day (conflicts.js captivesDaily), one formula: the tier's base (idle days at the cell rate,
-// worked days, the type's share, at the work detail's × the tier's labour × CAPTIVE escapeWork: raiders' prisoners try
-// hardest) + their Stealth × the tier's bonus + a pin, lockpicks or the keys kept hidden (rescue: conflicts.js
-// CAPTIVE_TOOL +0.5% / +1% / +1.5%, as in holding cells; × the tier's bonus over the cells': ×1.2 in makeshift cells,
-// ×0.88 in a jailhouse). Old saves (holding cells): about 1% a day; the old flat rate was 0.5% + Stealth + the tool.
+// Your captive's chance a day (conflicts.js captivesDaily): the cell's escape by the jail's tier and guards (prisoners.js
+// cellEscape), × on worked days (the type's share) CAPTIVE escapeWork (raiders' prisoners try hardest), + their
+// Stealth × the tier's bonus + a pin, lockpicks or the keys kept hidden (rescue: conflicts.js CAPTIVE_TOOL +0.5% / +1%
+// / +1.5%, as in holding cells; × the tier's bonus over the cells': ×1.2 in makeshift cells, ×0.88 in a jailhouse),
+// those two less with each guard past the first (guardTighten). Holding cells, raiders, Stealth 0: 3.7% a day with no
+// guard, 0.49% with one, 0.15% with two, 0.07% with three (it was 1.3% with any number: a flat 1% work-detail rate).
 export function captiveEscape(state, s, f) {
   const J = groupJail(f, s.location.tile, state) || JAIL_TIERS[1]; // no jail there: as a makeshift cage (rescueraid.js jailTier too)
   const share = G.WORK.share[f.type] ?? 0.4;
-  const work = Math.max(J.guarded, PRISON.LABOUR.escapeGuarded * J.labour) * (G.CAPTIVE.escapeWork[f.type] || G.CAPTIVE.escapeWork.other);
+  const Gs = groupGuardStrength(groupJailGuards(state, f));
+  const worked = 1 + share * ((G.CAPTIVE.escapeWork[f.type] || G.CAPTIVE.escapeWork.other) - 1);
   const tool = (CAPTIVE_TOOL && CAPTIVE_TOOL[s.location.tool]) || 0;
-  return share * work + (1 - share) * J.guarded + skill(s, "stealth") * G.CAPTIVE.stealth * J.bonus + tool * (J.bonus / (JAIL_TIERS[2] ? JAIL_TIERS[2].bonus : 1.25));
+  const extra = (skill(s, "stealth") * G.CAPTIVE.stealth * J.bonus + tool * (J.bonus / (JAIL_TIERS[2] ? JAIL_TIERS[2].bonus : 1.25))) * guardTighten(J, Gs);
+  return cellEscape(J, Gs) * worked + extra;
 }
 // A day of being worked (conflicts.js captivesDaily): health and mood down by captor; true when it killed them.
 export function captiveDecline(state, s, f) {
@@ -371,7 +403,8 @@ export function groupJailsDaily(state) {
       // Ransom back: their own group buys them, not at war.
       if (from && from.alive && !warBetween(state, f, from) && rng.chance(T.ransom)) {
         const terms = payWith(from, priceOf(rec));
-        if (terms) {
+        // The value rule (ransom.js groupMemberWorth, as yours): worth the price to them, and not out of their last days of food.
+        if (terms && groupMemberWorth(from, rec.power) >= priceOf(rec) && (terms.key !== "food" || (from.stock.food || 0) - terms.qty >= from.pop * G.RANSOM_KEEP_DAYS)) {
           pay(from, f, terms);
           list.splice(list.indexOf(rec), 1);
           from.pop += 1;
@@ -428,5 +461,6 @@ export function jailText(state, f) {
   const J = JAIL_TIERS[mainJailTier(state, f)];
   const n = groupHeld(state, f);
   const yours = yoursHeldBy(state, f).length;
-  return `${J ? J.name.toLowerCase() : "no jail"}${n ? `, holds ${n} prisoner${n === 1 ? "" : "s"}${yours ? ` (${yours} of yours)` : ""}` : ", nobody held"}`;
+  const g = groupJailGuards(state, f);
+  return `${J ? J.name.toLowerCase() : "no jail"}${n ? `, holds ${n} prisoner${n === 1 ? "" : "s"}${yours ? ` (${yours} of yours)` : ""}, ${g ? `${g} guard${g === 1 ? "" : "s"} on it` : "nobody guards it"}` : ", nobody held"}`;
 }

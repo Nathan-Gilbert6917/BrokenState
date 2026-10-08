@@ -11,6 +11,7 @@ import {
   PRISON, JAIL, JAIL_TIERS, SHED, TASKS, prisonersAt, prisonersWith, captiveRecords, capturePrisoners, prisonersDaily, prisonersHour,
   cellCap, freeCells, jailTier, escapeOdds, labourOutput, moodWork, setTask, settle, labourWatch, prisonGuardsWanted, jailDefence,
   recruitRate, prisonWoodDay, roomText, surrenderPrisoners, takePrisonersAt, inCell, movePrisoner,
+  JAIL_GUARD, guardTighten, groupGuardStrength, cellEscape, guardStrength, jailGuardHour, toggleJailGuard, fillJailGuards, jailGuardsOn, jailGuardsWanted,
 } from "../src/sim/prisoners.js";
 import { prisonTab } from "../src/ui/prisoners.js";
 import { launchExpedition, startReturn } from "../src/sim/parties.js";
@@ -18,9 +19,10 @@ import { housingAI, setAutopilot } from "../src/sim/autopilot.js";
 import { takeCaptive, captivesOf, allCaptives, CAPTIVE_TOOL } from "../src/sim/conflicts.js";
 import {
   GROUP_JAIL, groupJailTier, groupJailCap, groupRoom, groupHeld, groupCapture, groupJailsHour, groupJailsDaily, captiveEscape,
-  groupLabour, jailWork, jailText, groupPrisoners,
+  groupLabour, jailWork, jailText, groupPrisoners, groupJailGuards,
 } from "../src/sim/groupjails.js";
 import { nextWork, groupWorksDaily } from "../src/sim/groupworks.js";
+import { workState, assignRole, planBase, schedAt, roleOf, taskWhy, toManual } from "../src/sim/work.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { relation } from "../src/sim/diplomacy.js";
 import { talksOf, openNegotiation } from "../src/sim/ransom.js";
@@ -39,6 +41,8 @@ const t0 = Date.now();
 const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; st.visitorsOff = true; return st; };
 const jail = (h, type) => { h.buildings = h.buildings.filter((b) => !JAIL[b.type]); if (type) addBuilding(h, type); };
 const groupOf = (st, pred = () => true) => st.factions.find((f) => f.alive && f.pop >= 8 && f.bases.length && pred(f));
+// One average jail guard (prisoners.js JAIL_GUARD: Scouting 4 counts 1), on the roster and the Guard role.
+const guardOn = (st, h, s = atBase(st, h.id)[0]) => { s.role = "guard"; s.skills.scouting = 4; s.tired = 0; h.jailGuards = [...(h.jailGuards || []), s.id]; return s; };
 function take(st, h, n, f = groupOf(st)) {
   const fakeB = { setup: { enemy: { kind: "raiders", power: 3, factionId: f.id, name: f.name } }, tileId: h.tile };
   const recs = captiveRecords(st, fakeB, Array.from({ length: n }, (_, i) => ({ kit: "raiders", name: `Raider ${i + 1}`, factionId: f.id })));
@@ -225,7 +229,8 @@ const noDice = (fn) => {
     jail(h, type);
     st.prisoners = [];
     for (const s of atBase(st, h.id)) s.role = "rest";
-    if (guard) atBase(st, h.id)[0].role = "guard";
+    delete h.jailGuards;
+    if (guard) guardOn(st, h);
     const [p] = take(st, h, 1, f);
     p.s.health = 80; p.s.mood = 50; p.s.skills.stealth = 0;
     if (kit) p.smuggled = PRISON.KIT.items[0];
@@ -256,7 +261,7 @@ const noDice = (fn) => {
   jail(h, "jailhouse"); st.prisoners = []; take(st, h, 6, f);
   for (const p of prisonersAt(st, h.id)) { p.s.health = 80; setTask(st, p.id, "farm"); }
   for (const s of atBase(st, h.id)) s.role = "rest";
-  atBase(st, h.id)[0].role = "guard";
+  guardOn(st, h);
   check(labourWatch(st, h).watched.size === 6 && prisonGuardsWanted(st, h) === 1, "a jailhouse's guard post: one guard watches all six at work");
 }
 
@@ -442,7 +447,9 @@ const noDice = (fn) => {
     delete s.location.fresh;
     s.skills.stealth = 0;
     const row = [1, 2, 3].map((t) => { f.jails = { [f.bases[0]]: t }; delete s.location.tool; const a = captiveEscape(st, s, f); s.location.tool = "key"; return { a, b: captiveEscape(st, s, f) }; });
-    check(row.every((r) => r.b > r.a) && near(row[1].b - row[1].a, CAPTIVE_TOOL.key, 1e-9) && row[0].b - row[0].a > row[2].b - row[2].a && row[0].b > row[1].b && row[1].b > row[2].b,
+    f.jails = { [f.bases[0]]: 2 };
+    const tight = guardTighten(JAIL_TIERS[2], groupGuardStrength(groupJailGuards(st, f))); // the tool counts less past the first guard
+    check(row.every((r) => r.b > r.a) && near(row[1].b - row[1].a, CAPTIVE_TOOL.key * tight, 1e-9) && row[0].b - row[0].a > row[2].b - row[2].a && row[0].b > row[1].b && row[1].b > row[2].b,
       `hidden keys: ${row.map((r) => `${pct(r.a)} → ${pct(r.b)}`).join(", ")} (makeshift, cells, jailhouse)`);
   }
   // No room: by type.
@@ -599,6 +606,98 @@ const noDice = (fn) => {
   delete back.groupJails;
   for (const x of back.factions) delete x.jails;
   check(groupJailCap(back, fb) === Infinity && groupJailTier(fb, fb.bases[0], back) === 2, "an older save: groups hold anyone, in holding cells");
+}
+
+// ---------- 14. the jail's guards (JAIL_GUARD) ----------
+{
+  console.log("Jail guards");
+  const st = world(seed + 16);
+  const h = hub(st);
+  const f = groupOf(st);
+  jail(h, "cells");
+  const people = atBase(st, h.id).filter((s) => !s.leader);
+  for (const s of people) { s.role = "farm"; s.tired = 0; }
+  Object.assign(h.stock, { food: 300, water: 300 });
+  st.prisoners = [];
+  const [p] = takePrisonersAt(st, f, h, 1);
+  p.s.health = 80; p.s.mood = 50; p.s.skills.stealth = 0; delete p.smuggled;
+  const withGuards = (n, o = {}) => {
+    for (const s of people) { s.role = "farm"; s.tired = 0; }
+    delete h.jailGuards;
+    for (let i = 0; i < n; i++) { guardOn(st, h, people[i]); if (o.scouting != null) people[i].skills.scouting = o.scouting; if (o.tired) people[i].tired = o.tired; }
+    if (o.lookout) people[n].role = "guard";
+    return escapeOdds(st, p);
+  };
+  const e = [0, 1, 2, 3, 4].map((n) => withGuards(n));
+  check(near(e[0], JAIL.cells.unguarded) && near(e[1], JAIL.cells.guarded, 1e-6), `holding cells: nobody ${pct(e[0])}, one average guard ${pct(e[1])}`);
+  check(e.every((x, i) => i === 0 || x < e[i - 1]), `every guard more makes it harder: ${e.map((x) => `${Math.round(x * 10000) / 100}%`).join(" > ")}`);
+  check(e[2] / e[1] > e[1] / e[0] && e[3] / e[2] > e[2] / e[1], `diminishing: each next guard cuts less (×${(e[1] / e[0]).toFixed(2)}, ×${(e[2] / e[1]).toFixed(2)}, ×${(e[3] / e[2]).toFixed(2)})`);
+  const look = withGuards(0, { lookout: true });
+  check(look < e[0] && look > e[1], `a lookout on the walls (not on the roster) counts a little: ${pct(look)}`);
+  const sharp = withGuards(1, { scouting: 10 }), dull = withGuards(1, { scouting: 0 }), worn = withGuards(1, { tired: 40 });
+  check(sharp < e[1] && dull > e[1] && worn > e[1], `Scouting 10 ${pct(sharp)}, Scouting 0 ${pct(dull)}, an exhausted guard ${pct(worn)} (an average one ${pct(e[1])})`);
+  const tiers = ["lockup", "cells", "jailhouse"].map((t) => { jail(h, t); return withGuards(2); });
+  jail(h, "cells");
+  check(tiers[0] > tiers[1] && tiers[1] > tiers[2], `two guards, by tier: ${tiers.map(pct).join(" > ")}`);
+  // Manual people on the roster take the Guard role while anyone is held, their own job back after.
+  for (const s of people) s.role = "farm";
+  delete h.jailGuards;
+  const g = people[0];
+  toggleJailGuard(st, h, g.id);
+  jailGuardHour(st);
+  check(g.role === "guard" && g.jailWas && g.jailWas.role === "farm" && jailGuardsOn(st, h).includes(g), "on the roster: on guard while anyone is held (their farm job kept)");
+  const saved = st.prisoners; st.prisoners = [];
+  jailGuardHour(st);
+  check(g.role === "farm" && !g.jailWas, "the cells empty: back to the farm");
+  st.prisoners = saved;
+  jailGuardHour(st);
+  toggleJailGuard(st, h, g.id);
+  check(g.role === "farm" && !h.jailGuards, "taken off the roster: back to the farm");
+  check(/Jail guards/.test(prisonTab(st, h, {})), "the Prisoners tab shows the roster");
+  // On work priorities: their Work hours go to the jail while anyone is held.
+  {
+    const W = workState(st);
+    const pr = people[1];
+    assignRole(st, pr, W.roles[0].id);
+    toggleJailGuard(st, h, pr.id);
+    while (schedAt(roleOf(st, pr), st.hour % 24) !== "w") st.hour++;
+    planBase(st, h);
+    check(pr.role === "guard" && /jail|cells/.test(taskWhy(st, pr)) && jailGuardsOn(st, h).includes(pr), `on priorities, in their Work hours: ${taskWhy(st, pr)}`);
+    toggleJailGuard(st, h, pr.id);
+    toManual(st, pr);
+  }
+  // Save round-trip: the roster and the job kept.
+  toggleJailGuard(st, h, g.id);
+  jailGuardHour(st);
+  st.cards = [];
+  const back = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
+  const hb = back.bases.find((b) => b.id === h.id), gb = back.survivors.find((x) => x.id === g.id);
+  check(hb.jailGuards && hb.jailGuards[0] === g.id && gb.jailWas && gb.jailWas.role === "farm" && gb.role === "guard", "the roster and the job kept survive a save");
+  // The governor fills the roster: one per 4 held, at most a quarter of the people.
+  const st2 = world(seed + 17);
+  const h2 = hub(st2);
+  jail(h2, "jailhouse");
+  Object.assign(h2.stock, { food: 400, water: 400 });
+  takePrisonersAt(st2, groupOf(st2), h2, 5);
+  setAutopilot(st2, true, "balanced");
+  for (let i = 0; i < 3; i++) tickHour(st2);
+  const on = jailGuardsOn(st2, h2);
+  check(on.length >= 1 && on.length <= jailGuardsWanted(st2, h2) && on.every((s) => s.role === "guard"), `the governor's jail guards: ${on.map((s) => s.name).join(", ")} (${jailGuardsWanted(st2, h2)} wanted for ${prisonersAt(st2, h2.id).length} held)`);
+  // The AI groups: guards by head count and leanings; a big group's captives rarely get out, a handful's often.
+  const st3 = world(seed + 18);
+  const r = groupOf(st3, (x) => x.type === "raider") || st3.factions[0];
+  r.type = "raider"; r.jails = { [r.bases[0]]: 2 }; r.stock.food = 500;
+  const c = atBase(st3, hub(st3).id)[1];
+  takeCaptive(st3, c, r, null);
+  groupJailsHour(st3);
+  c.skills.stealth = 0; delete c.location.tool;
+  const at = (pop) => { r.pop = pop; return { g: groupJailGuards(st3, r), e: captiveEscape(st3, c, r) }; };
+  const tiny = at(3), mid = at(12), big = at(40);
+  check(tiny.g === 0 && mid.g === 1 && big.g >= 2, `raiders' guards on the jail: ${tiny.g} at 3 people, ${mid.g} at 12, ${big.g} at 40`);
+  check(tiny.e > 0.03 && mid.e > 0.003 && mid.e <= 0.0055 && big.e < 0.002, `your captive's escape a day (holding cells): ${pct(tiny.e)} with a handful, ${pct(mid.e)} at 12 (was 1.3%), ${pct(big.e)} at 40`);
+  r.pop = 12;
+  const jt = jailText(st3, Object.assign(Object.create(Object.getPrototypeOf(r)), r, { intel: { day: 1 } }));
+  check(/guard/.test(jt), `their jail as you know it: ${jt}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

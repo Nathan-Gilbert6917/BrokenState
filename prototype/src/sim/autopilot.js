@@ -15,7 +15,7 @@
 import { fitFromPool } from "./gunmods.js";
 import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
-import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
+import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, survivorById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
 import {
   launchExpedition, estimateTrip, startReturn, partyMembers, partyTile, tileLabel, teamName, orderOptions, orderMove,
   hoursLeft, planPath, partyCapacity, cargoLoad, cargoRoom, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards, giveOrder,
@@ -49,7 +49,7 @@ import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, trav
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun, linesText } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
-import { allCaptives, ransomValue } from "./conflicts.js";
+import { allCaptives, ransomValue, isCaptive } from "./conflicts.js";
 import { ensureInv, armorMult, itemLoad } from "./inventory.js";
 import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST, seasonOfDay, foodNeedFactor, coldAhead } from "./weather.js";
 import { teamCold } from "./needs.js"; // tune-winter: a team's food in the cold (×1.1 / ×1.2 without a lit camp fire)
@@ -78,8 +78,8 @@ import { gatheringCands } from "./hivebirth.js"; // hive birth you can see: cull
 import { GROWTHS, TECH } from "./hiveconst.js";
 import { typeStrength } from "./zombietypes.js";
 import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squadValue, nearestOtherBase } from "./conquest.js";
-import { autopilotPrisoners, jailTier, cellCap, prisonersAt } from "./prisoners.js";
-import { autopilotRescue, autoRescuePlan } from "./ransom.js"; // your people held by other groups: ransom first, a raid when strong
+import { autopilotPrisoners, jailTier, cellCap, prisonersAt, planJailGuards } from "./prisoners.js";
+import { autopilotRescue, autoRescuePlan, teamPayOk } from "./ransom.js"; // your people held by other groups: ransom first, a raid when strong
 import { isManaged, healthRest } from "./work.js";
 import { onWatchNow, inShift } from "./watch.js"; // the night watch (govWatch)
 import { tiredLevel } from "./sleep.js";
@@ -1033,12 +1033,23 @@ function carriedDays(state, p, extra = 0) {
 function bestByUtility(state, card, opts, P) {
   let best = null, bestU = -Infinity;
   for (const ch of opts) {
-    const u = utility(ch, P);
+    const u = PAY_RANSOM.test(ch.label) ? payUtility(state, card) : utility(ch, P);
     if (u > bestU) { best = ch; bestU = u; }
   }
   return best;
 }
 
+// A ransom paid from what the team carries (conflicts.js rescue, trade-visit and road cards): by the value rule
+// (ransom.js teamPayOk: your people worth the price, the team's food and water for the road home kept), not always.
+const PAY_RANSOM = /^Pay (a|the) ransom|^Pay for them/;
+function payUtility(state, card) {
+  const c = card.conflict || {};
+  const p = state.parties.find((x) => x.id === card.partyId);
+  const f = factionById(state, c.factionId);
+  const held = (c.held || []).map((id) => survivorById(state, id)).filter((s) => s && isCaptive(s));
+  if (!p || !f || !held.length) return 0.4; // strangers only: no better than leaving
+  return teamPayOk(state, p, f, held, ransomValue(f, held.length + (c.strangers || 0))) ? 5 : -1;
+}
 function utility(ch, P) {
   const L = ch.label, H = ch.hint || "";
   let c = pctIn(H);
@@ -1061,7 +1072,6 @@ function utility(ch, P) {
   if (/^Join in/.test(L)) return P.raidBias - 1;
   if (/^Draw the dead/.test(L)) return 5 * k - 6 * (1 - k);
   if (/^Sneak in/.test(L)) return 8 * k - 7 * (1 - k);
-  if (/^Pay (a|the) ransom|^Pay for them/.test(L)) return 5;
   if (/^Leave|^Not now/.test(L)) return 0.5;
   return 0;
 }
@@ -1776,6 +1786,11 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // but one hand stays free for a queued build (often the very farm plots and stores the winter needs: with every
   // hand on the plots they were never built).
   if (winterShort(state, base) > 0) farmTo(Math.min(fw.need, people.filter((s) => !s.inBed).length - (areas.building && base.construction.length ? 1 : 0)));
+
+  // 1d. The jail's guards (prisoners.js JAIL_GUARD): with anyone held here the roster is the governor's (a leader's
+  // with Defence): one per 4 held, enough to watch the work detail, at most a quarter of the people, the sharpest
+  // (Scouting) and the ones already on it first. They guard all day while anyone is held; an empty jail frees them.
+  if (areas.defence) for (const s of planJailGuards(state, base, [...free])) give(s, "guard");
 
   // 3. Guards for a raid that is on its way or a horde at the door.
   const threat = threatAt(state, base);

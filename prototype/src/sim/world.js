@@ -55,7 +55,7 @@ import { diplomacyHour } from "./diplomacy.js";
 import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
 import { claimsDaily } from "./claims.js"; // land claims: lost under a base founded or taken, a hive, a hostile camp
 import { conquestDaily } from "./conquest.js";
-import { prisonersHour, prisonersDaily } from "./prisoners.js";
+import { prisonersHour, prisonersDaily, jailGuardHour } from "./prisoners.js";
 import { groupJailsDaily, groupJailsHour } from "./groupjails.js"; // jailhouse: the groups' jails, prisoner labour and trades
 import { ransomHour } from "./ransom.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
@@ -855,6 +855,7 @@ export function tickHour(state) {
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
+  jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
   historyHour(state); // history.js: stock flows marked, a row a day for the Ledger and the run summary
