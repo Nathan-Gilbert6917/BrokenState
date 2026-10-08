@@ -219,7 +219,7 @@ export const SEARCH_TOOLS = {
   hardware: { powerdrill: 0.04, anglegrinder: 0.015 }, autoshop: { powerdrill: 0.03, anglegrinder: 0.02 },
   factory: { anglegrinder: 0.03, powerdrill: 0.02 }, quarry: { anglegrinder: 0.02 }, dam: { powerdrill: 0.01 },
 };
-// A drill or a grinder's condition: new old stock in a shop (a hardware store), else a worksite's.
+// A drill or a grinder's condition: a shop's picked-over stock (a hardware store), else a worksite's.
 export const toolSource = (siteType) => (siteSource(siteType) === "shop" ? "shop" : "site");
 // Items from GUN_FINDS for one container: cases come with their contents.
 export function rollAreaGunFinds(roll, areaType, siteType) {

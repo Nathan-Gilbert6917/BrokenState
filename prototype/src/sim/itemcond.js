@@ -4,8 +4,8 @@
 // What an item IS comes from where it was found (a site's gear list, a raid container, a body's kit, a trader's ware
 // list: those tables live with their sources). How GOOD it is comes from here: rollCondition gives it a quality
 // (item.quality, the condition the trade window shows and itemValue prices: valuation.js) and the uses left
-// (item.dur of its full GEAR dur) from the kind of place it came from (COND_SOURCES). A gun shop's stock is new old
-// stock, a burned-out wreck's is scorched, a soldier's rifle was looked after, a raider's was not.
+// (item.dur of its full GEAR dur) from the kind of place it came from (COND_SOURCES). A gun shop's stock is good but
+// picked over, a burned-out wreck's is scorched, a soldier's rifle was looked after, a raider's was not.
 //
 // Dice: a hash of the roll in hand (an Rng's position, a number 0–1 from a hash of its own, or a list of parts) and
 // the item. It never draws from an Rng, so making loot with it moves none of the world's random numbers. Where a
@@ -19,17 +19,27 @@
 import { GEAR } from "./data.js";
 
 // q: quality range; d: uses left as a share of full. name: what the source is (the report table, tools/itemcondtest.js).
+// boxed (optional): { p, q, d }: a share p of the finds roll from these ranges instead (a sealed box at the back).
+// Shops: the stock sat for months behind broken windows, rained on, knocked off the shelves and picked over by every
+// looter before you; what is left is good but used (quality 50–88%, uses 45–85%), now and then (6%) something still
+// boxed (92–102%, 90–100%). Their edge is how much they hold and what kinds (the gear lists), not the condition: a
+// military crate or a soldier's kit is kept better. (Before: 80–105% and 80–100%, better than the Army's own.)
+export const SHOP = { q: [0.5, 0.88], d: [0.45, 0.85], boxed: { p: 0.06, q: [0.92, 1.02], d: [0.9, 1] } };
 export const COND_SOURCES = {
   military: { name: "Military crates and trucks", q: [0.75, 1], d: [0.6, 1] },
   gunsafe:  { name: "Gun safes and gun cages", q: [0.75, 1], d: [0.7, 1] },
   police:   { name: "Police and prisons", q: [0.7, 1], d: [0.5, 1] },
-  shop:     { name: "Shops (new old stock)", q: [0.8, 1.05], d: [0.8, 1] },
+  shop:     { name: "Shops (picked-over stock)", ...SHOP },
   home:     { name: "Homes", q: [0.6, 1], d: [0.4, 1] },
   site:     { name: "Workplaces, farms, the outdoors", q: [0.55, 1], d: [0.3, 1] },
   wreck:    { name: "Wrecks and burned sites", q: [0.4, 0.8], d: [0.15, 0.6] },
-  // Bodies, by kit (combat.js KITS; KIT_SOURCE).
-  soldier:  { name: "Soldiers' bodies", q: [0.7, 0.95], d: [0.25, 0.9] },
-  guard:    { name: "Guards' bodies", q: [0.6, 0.9], d: [0.25, 0.9] },
+  // Bodies, by kit (combat.js KITS; KIT_SOURCE). Professionals look after their kit: a soldier's (and a hired
+  // contractor's) rifle is cleaned and its worn parts swapped, so its uses left start at 55% (typically 65–85%); a
+  // guard's (and a caravan escort's) at 45%. Everyone else's runs from 25%. The battle path takes the same ranges
+  // (gunfire.js enemyGunQ / enemyGunCond: the looted gun keeps the condition it fought in), and so do fights by the
+  // numbers (conflicts.js, wanderers.js, escorts.js guardGear) and the groups' arsenals (arsenal.js starterKit).
+  soldier:  { name: "Soldiers' and contractors' bodies", q: [0.7, 0.95], d: [0.55, 0.95] },
+  guard:    { name: "Guards' and escorts' bodies", q: [0.6, 0.9], d: [0.45, 0.9] },
   fighter:  { name: "Fighters' bodies", q: [0.55, 0.9], d: [0.25, 0.9] },
   militia:  { name: "Militia bodies", q: [0.5, 0.9], d: [0.25, 0.9] },
   raider:   { name: "Raiders' and zealots' bodies", q: [0.45, 0.85], d: [0.25, 0.9] },
@@ -66,7 +76,7 @@ export const LOCK_SOURCE = {
   crash: "military", miltruck: "military", car: "home",
 };
 // A body by its kit (combat.js KITS).
-export const KIT_SOURCE = { soldiers: "soldier", guards: "guard", fighters: "fighter", militia: "militia", raiders: "raider", zealots: "raider", survivors: "survivor" };
+export const KIT_SOURCE = { soldiers: "soldier", contractors: "soldier", guards: "guard", escorts: "guard", fighters: "fighter", militia: "militia", raiders: "raider", zealots: "raider", survivors: "survivor" };
 // A group's trader by its type (data.js FACTION_TYPES).
 export const TRADER_SOURCE = { military: "traderMil", raider: "traderRaider", zealot: "traderRaider" };
 
@@ -108,8 +118,9 @@ const r2 = (v) => Math.round(v * 100) / 100;
 export function rollCondition(key, source, roll, opts = {}) {
   const d = GEAR[key];
   if (!d) return null;
-  const S = COND_SOURCES[source] || COND_SOURCES.site;
+  const S0 = COND_SOURCES[source] || COND_SOURCES.site;
   const base = rollBase(roll);
+  const S = S0.boxed && mix01(base, key, source, "box") < S0.boxed.p ? S0.boxed : S0; // a boxed one (shops): its own ranges
   const quality = opts.quality != null ? opts.quality : rollsQuality(key) ? r2(lerp(S.q, mix01(base, key, source, "q"))) : 1;
   const dur = rollsWear(key) ? Math.max(1, Math.round(d.dur * lerp(S.d, mix01(base, key, source, "d")))) : d.dur ? d.dur : null;
   return { quality, dur };

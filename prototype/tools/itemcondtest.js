@@ -13,6 +13,8 @@
 //   5. Merchants' specialities: each turns up, its gear and books from its list, its supplies (ammo, meds, parts) larger.
 //   6. Prices fall with condition (valuation.js itemValue): a worse copy sells and buys for less; the trade window
 //      shows the condition in a word and the uses left.
+//   7. The balance between sources: shops picked over (good but used, now and then boxed), below the Army's crates;
+//      soldiers' and contractors' guns off their bodies from 55% uses (guards' and escorts' 45%) on every path.
 // Usage: node tools/itemcondtest.js
 import { readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -34,6 +36,11 @@ import {
 } from "../src/sim/itemcond.js";
 import { itemValue } from "../src/sim/valuation.js";
 import { tradeWindow } from "../src/ui/tradewindow.js";
+import { SHOP } from "../src/sim/itemcond.js";
+import { enemyGunQ, enemyGunCond } from "../src/sim/gunfire.js";
+import { itemDurMax } from "../src/sim/crafting.js";
+import { guardGear } from "../src/sim/escorts.js";
+import { starterKit } from "../src/sim/arsenal.js";
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -46,19 +53,29 @@ const pct = (v) => `${Math.round(v * 100)}%`;
 // ---------- 1. distributions ----------
 section("1. Distributions per source");
 const table = [];
+// A source with boxed finds (shops: itemcond.js SHOP.boxed) rolls those from their own ranges: each part checked apart.
+const inR = (v, [a, b], e) => v >= a - e && v <= b + e;
 for (const [src, S] of Object.entries(COND_SOURCES)) {
-  let qlo = 9, qhi = -9, dlo = 9, dhi = -9;
+  const parts = [{ R: S, qlo: 9, qhi: -9, dlo: 9, dhi: -9, n: 0 }, ...(S.boxed ? [{ R: S.boxed, qlo: 9, qhi: -9, dlo: 9, dhi: -9, n: 0, boxed: true }] : [])];
+  let stray = 0;
   for (let i = 0; i < 4000; i++) {
     const c = rollCondition("pistol", src, [src, i]);
-    qlo = Math.min(qlo, c.quality); qhi = Math.max(qhi, c.quality);
     const f = c.dur / GEAR.pistol.dur;
-    dlo = Math.min(dlo, f); dhi = Math.max(dhi, f);
+    // Which part it came from: the boxed ranges sit above the main ones (a roll in both counts as the main).
+    const P = inR(c.quality, S.q, 0.005) && inR(f, S.d, 0.02) ? parts[0] : parts[1] && inR(c.quality, S.boxed.q, 0.005) && inR(f, S.boxed.d, 0.02) ? parts[1] : null;
+    if (!P) { stray++; continue; }
+    P.n++;
+    P.qlo = Math.min(P.qlo, c.quality); P.qhi = Math.max(P.qhi, c.quality);
+    P.dlo = Math.min(P.dlo, f); P.dhi = Math.max(P.dhi, f);
   }
-  check(qlo >= S.q[0] - 0.005 && qhi <= S.q[1] + 0.005, `${src}: quality ${qlo}–${qhi} within ${S.q.join("–")}`);
-  check(qlo <= S.q[0] + 0.03 && qhi >= S.q[1] - 0.03, `${src}: quality spreads over its range (${qlo}–${qhi})`);
-  check(dlo >= S.d[0] - 0.02 && dhi <= S.d[1] + 0.02, `${src}: uses ${pct(dlo)}–${pct(dhi)} within ${S.d.map(pct).join("–")}`);
-  check(dlo <= S.d[0] + 0.04 && dhi >= S.d[1] - 0.04, `${src}: uses spread over their range (${pct(dlo)}–${pct(dhi)})`);
-  table.push(`  ${S.name.padEnd(44)} quality ${S.q.join("–").padEnd(10)} uses ${S.d.map(pct).join("–")}`);
+  check(!stray, `${src}: every roll within its ranges (${stray} outside)`);
+  for (const P of parts) {
+    const R = P.R, tag = P.boxed ? `${src} (boxed)` : src;
+    check(P.qlo <= R.q[0] + 0.03 * (P.boxed ? 2 : 1) && P.qhi >= R.q[1] - 0.03 * (P.boxed ? 2 : 1), `${tag}: quality spreads over its range (${P.qlo}–${P.qhi})`);
+    check(P.dlo <= R.d[0] + 0.04 * (P.boxed ? 2 : 1) && P.dhi >= R.d[1] - 0.04 * (P.boxed ? 2 : 1), `${tag}: uses spread over their range (${pct(P.dlo)}–${pct(P.dhi)})`);
+  }
+  if (S.boxed) check(Math.abs(parts[1].n / 4000 - S.boxed.p) < 0.02, `${src}: ${pct(parts[1].n / 4000)} boxed (${pct(S.boxed.p)} meant)`);
+  table.push(`  ${S.name.padEnd(44)} quality ${S.q.join("–").padEnd(10)} uses ${S.d.map(pct).join("–")}${S.boxed ? `; ${pct(S.boxed.p)} boxed: quality ${S.boxed.q.join("–")}, uses ${S.boxed.d.map(pct).join("–")}` : ""}`);
 }
 console.log(table.join("\n"));
 // What does not roll.
@@ -73,12 +90,12 @@ check(rollCondition("pistol", "home", new Rng(5)).quality === rollCondition("pis
 check(["poor", "worn", "good", "fine", "excellent"].every((w, i) => qualityWord([0.4, 0.6, 0.8, 0.95, 1.02][i]) === w), "quality in words: poor, worn, good, fine, excellent");
 check(siteSource("gunstore") === "shop" && siteSource("military") === "military" && siteSource("crash_mil") === "wreck" && siteSource("factory") === "site", "site sources: a gun store is a shop, a crash is a wreck, a factory plain");
 check(areaSource("armory", "police") === "police" && areaSource("armory", "military") === "military" && areaSource("house") === "home" && areaSource("milwreck") === "wreck", "area sources: an armoury by its site, a house a home, a wreck a wreck");
-check(kitSource("soldiers") === "soldier" && kitSource("zealots") === "raider" && kitSource(undefined) === "survivor", "kit sources");
+check(kitSource("soldiers") === "soldier" && kitSource("contractors") === "soldier" && kitSource("escorts") === "guard" && kitSource("zealots") === "raider" && kitSource(undefined) === "survivor", "kit sources (a hired contractor's kit kept like a soldier's, an escort's like a guard's)");
 check(traderSource("military") === "traderMil" && traderSource("raider") === "traderRaider" && traderSource("commune") === "trader" && traderSource("merchants") === "merchant", "trader sources");
 // Military better than raiders, on average.
 const meanQ = (src) => { let a = 0; for (let i = 0; i < 2000; i++) a += rollCondition("ar", src, [i]).quality; return a / 2000; };
 check(meanQ("traderMil") > meanQ("trader") && meanQ("trader") > meanQ("traderRaider"), "the military's stock is better kept than a trader's, a trader's than raiders'");
-check(meanQ("shop") > meanQ("home") && meanQ("home") > meanQ("wreck"), "a shop's stock is better than a home's, a home's than a wreck's");
+check(meanQ("military") > meanQ("shop") && meanQ("shop") > meanQ("wreck") && meanQ("home") > meanQ("wreck"), "the Army's crates are better kept than a picked-over shop's stock; a shop's and a home's better than a wreck's");
 
 // ---------- 2. every creation point ----------
 section("2. Every creation point rolls its condition");
@@ -368,6 +385,69 @@ section("6. Prices fall with condition");
     check(/\d+\/\d+ uses/.test(html), "the trade window shows the uses left of the most");
     check(html.includes(`Merchants (${V.specName(v)})`), `the trade window says what they deal in (${V.specName(v)})`);
     check(!/undefined|NaN/.test(html), "no undefined or NaN in the trade window");
+  }
+}
+
+// ---------- 7. the balance between sources ----------
+// Shops are picked over (good but used, now and then something boxed), below the Army's crates; professionals' guns
+// (soldiers, contractors; guards and escorts less so) come off their bodies from a higher floor, on every path:
+// a body's kit (enemyBody, with the gun's condition as it fought: gunfire.js enemyGunCond / lootGun), the dead searched
+// on a raid map and fights by the numbers (lootItem by kitSource), caravan guards by the numbers (escorts.js
+// guardGear) and a group's arsenal (arsenal.js starterKit: what its people carry and what is looted off them).
+section("7. Condition by source (shops picked over; professionals' guns kept)");
+{
+  const stats = (rolls) => {
+    const Q = rolls.map((c) => c.q).sort((a, b) => a - b), D = rolls.map((c) => c.d).sort((a, b) => a - b);
+    const at = (a, p) => a[Math.floor(p * (a.length - 1))], mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+    return { q: mean(Q), d: mean(D), q10: at(Q, 0.1), q90: at(Q, 0.9), d10: at(D, 0.1), d90: at(D, 0.9), dmin: D[0], worth: mean(rolls.map((c) => (0.2 + 0.8 * c.q) * (0.3 + 0.7 * c.d))), n: rolls.length };
+  };
+  const bySource = (srcs, keys, n = 1500) => stats(srcs.flatMap((src) => keys.flatMap((k) => Array.from({ length: n }, (_, i) => { const c = rollCondition(k, src, ["bal", src, k, i]); return { q: c.quality, d: c.dur / GEAR[k].dur }; }))));
+  const GUNS = ["pistol", "huntrifle", "shotgun", "ar"];
+  const rows = {
+    "Gun store": bySource([siteSource("gunstore"), areaSource("gunshop", "gunstore")], GUNS),
+    "Hardware store": bySource([siteSource("hardware"), areaSource("store", "hardware")], ["crowbar", "fireaxe", "sledge", "machete"]),
+    "Homes": bySource([siteSource("town"), areaSource("house", "town")], GUNS),
+    "Police": bySource([siteSource("police"), areaSource("armory", "police")], GUNS),
+    "Military sites": bySource([siteSource("military"), areaSource("armory", "military")], ["ar", "carbine", "vest", "plate"]),
+  };
+  // Bodies: the gun on a body after a fight (enemyBody: the gun's condition as it fought), by kit.
+  const bodyGuns = (kit) => {
+    const K = KITS[kit], rng = new Rng(kit.length * 13 + 1), out = [];
+    for (let i = 0; i < 1500; i++) {
+      const w = K.weapons[i % K.weapons.length];
+      const u = { kind: "human", name: "x", id: i, kit, weapon: w, armorKey: null, q: enemyGunQ(i * 7 + 3, i, kit), cond: enemyGunCond(i * 7 + 3, i, kit) };
+      const g = enemyBody(rng, u, K).gear.weapon;
+      if (g && GEAR[g.key].dur) out.push({ q: g.quality, d: g.dur / itemDurMax(g) });
+    }
+    return stats(out);
+  };
+  for (const kit of ["soldiers", "contractors", "guards", "escorts", "raiders", "militia"]) rows[`${KITS[kit].label}s' guns (battle)`] = bodyGuns(kit);
+  const line = (name, r) => `  ${name.padEnd(28)} quality ${pct(r.q)} (${pct(r.q10)}–${pct(r.q90)})  uses ${pct(r.d)} (${pct(r.d10)}–${pct(r.d90)}, lowest ${pct(r.dmin)})  worth ×${r.worth.toFixed(2)}`;
+  console.log(Object.entries(rows).map(([k, r]) => line(k, r)).join("\n"));
+  const G = rows["Gun store"], H = rows["Hardware store"], M = rows["Military sites"];
+  for (const [name, r] of [["gun store", G], ["hardware store", H]]) {
+    check(r.worth < M.worth && r.q < M.q && r.d < M.d, `a ${name}'s stock is worse kept than a military site's (worth ×${r.worth.toFixed(2)} vs ×${M.worth.toFixed(2)})`);
+    check(r.q10 >= 0.45 && r.q90 <= 0.9 && r.d10 >= 0.45 && r.d90 <= 0.88, `a ${name}'s finds are good but used: quality ${pct(r.q10)}–${pct(r.q90)}, uses ${pct(r.d10)}–${pct(r.d90)} (10th–90th)`);
+  }
+  { let boxed = 0; for (let i = 0; i < 4000; i++) { const c = rollCondition("ar", "shop", ["box", i]); if (c.quality >= SHOP.boxed.q[0]) boxed++; } check(boxed > 4000 * SHOP.boxed.p * 0.7 && boxed < 4000 * SHOP.boxed.p * 1.3, `now and then one still boxed, near new (${boxed} of 4000 rifles: ${pct(boxed / 4000)})`); }
+  for (const kit of ["soldiers", "contractors"]) { const r = rows[`${KITS[kit].label}s' guns (battle)`]; check(r.dmin >= 0.55 - 0.01 && r.d10 >= 0.58 && r.d90 >= 0.88, `a ${kit === "soldiers" ? "soldier" : "contractor"}'s gun off the body: uses from 55% (lowest ${pct(r.dmin)}, typically ${pct(r.d10)}–${pct(r.d90)})`); }
+  for (const kit of ["guards", "escorts"]) { const r = rows[`${KITS[kit].label}s' guns (battle)`]; check(r.dmin >= 0.45 - 0.01, `a${kit === "escorts" ? "n escort" : " guard"}'s gun off the body: uses from 45% (lowest ${pct(r.dmin)})`); }
+  for (const kit of ["raiders", "militia"]) { const r = rows[`${KITS[kit].label}s' guns (battle)`]; check(r.dmin < 0.3, `${kit}' guns as worn as before (lowest ${pct(r.dmin)})`); }
+  // Fights by the numbers and the dead searched on a raid map: lootItem by kitSource (conflicts.js, wanderers.js, combat.js).
+  { let lo = 9; for (let i = 0; i < 2000; i++) { const it = lootItem("ar", kitSource("soldiers"), ["numbers", i]); lo = Math.min(lo, it.dur / GEAR.ar.dur); } check(lo >= 0.54, `a soldier's rifle taken after a fight by the numbers: uses from ${pct(lo)}`); }
+  // Caravan guards by the numbers (escorts.js guardGear): a contractor's rifle like a soldier's, a guard's like a guard's.
+  for (const [kit, floor] of [["contractors", 0.55], ["escorts", 0.45], ["guards", 0.45]]) {
+    let lo = 9, n = 0;
+    for (let r = 0; r < 200; r++) for (const it of guardGear(kit, 4, (i, k) => (((r * 31 + i * 7 + k.length * 13) % 97) + 0.5) / 97).gear) if (GEAR[it.key].slot === "weapon" && GEAR[it.key].dur) { lo = Math.min(lo, it.dur / GEAR[it.key].dur); n++; }
+    check(n > 0 && lo >= floor - 0.01, `caravan ${kit}' guns by the numbers (escorts.js guardGear): uses from ${pct(lo)} (${n} guns)`);
+  }
+  // The groups' arsenals: a military group's guns (what its people fight with, and what is looted off them).
+  {
+    const kit = starterKit(5, "Fort test", "military", 30), guns = kit.filter((it) => GEAR[it.key].slot === "weapon" && GEAR[it.key].dur && !GEAR[it.key].throw);
+    const lo = Math.min(...guns.map((it) => it.dur / GEAR[it.key].dur));
+    check(guns.length > 10 && lo >= 0.54, `a military group's arsenal: its guns from ${pct(lo)} uses (${guns.length} guns)`);
+    const rk = starterKit(5, "Red test", "raider", 30).filter((it) => GEAR[it.key].slot === "weapon" && GEAR[it.key].dur && !GEAR[it.key].throw);
+    check(Math.min(...rk.map((it) => it.dur / GEAR[it.key].dur)) < 0.4, "a raider group's guns as worn as before");
   }
 }
 
