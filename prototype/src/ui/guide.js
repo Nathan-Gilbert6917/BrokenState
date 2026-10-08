@@ -65,7 +65,7 @@ const STEPS = {
     show: (state, ui, act) => { openHub(state, ui, act, "work"); return ['[data-action="weveryone"]', '[data-action="basetab"][data-tab="work"]']; },
   },
   build: {
-    title: "Queue a building", why: "Buildings bring water, food, beds and defence. Scrap and parts pay for them; your builders do the work.",
+    title: "Queue a building", why: "Your hub starts bare: the town hall has four beds for six people, six crop plots, a well and a fence, and nothing else is built. What goes up first is your call: a bunkhouse so nobody sleeps crowded, a crafting bench for gear, farm plots, a wall. Scrap and parts pay for them; your builders do the work.",
     done: (state, g) => state.bases.some((b) => (b.construction || []).length) || buildingCount(state) > g.b0,
     show: (state, ui, act) => { openHub(state, ui, act, "construction"); return ['[data-action="queuebuild"]:not([disabled])']; },
   },

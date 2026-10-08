@@ -5,7 +5,7 @@
 // Usage: node tools/moveouttest.js [seed]
 import { createWorld, tickHour, hub, atBase, residents, makeSurvivor, newId } from "../src/sim/world.js";
 import { planPath, partyTile, partyMembers, orderMove, giveOrder, orderOptions, outpostName, launchExpedition, teamName, MISSIONS } from "../src/sim/parties.js";
-import { baseBeds } from "../src/sim/buildings.js";
+import { baseBeds, addBuilding } from "../src/sim/buildings.js";
 import { CROWD_CARD, MOVE_OUT, crowdCardsHour, moveTeamOut, enterTarget, overBeds, freeBeds } from "../src/sim/moveout.js";
 import { crewAI } from "../src/sim/autopilot.js";
 
@@ -20,6 +20,10 @@ function mk(seed = SEED) {
   state.autoCombat = true;
   state.noWanderers = true; // people met on the road (wanderers.js) bring cards of their own
   Object.assign(hub(state).stock, { food: 300, water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100 });
+  // The hub starts bare (barestart: 6 people in 4 beds, the card held back for its first days); these checks start
+  // from a hub where everyone has a bed, as the old start's bunkhouse gave.
+  addBuilding(hub(state), "bunkhouse");
+  delete hub(state).crowdNote;
   return state;
 }
 const addPerson = (st, base) => { const s = makeSurvivor(st, 1); s.traits = []; s.location = { kind: "base", baseId: base.id }; s.role = "farm"; st.survivors.push(s); return s; };

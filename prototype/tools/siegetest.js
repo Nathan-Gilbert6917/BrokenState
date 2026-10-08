@@ -43,6 +43,7 @@ import { defendInPerson } from "../src/sim/conflicts.js";
 import { assaultForce } from "../src/sim/conquest.js";
 import { launchExpedition, poolLoad } from "../src/sim/parties.js";
 import { CRAFTS } from "../src/sim/crafting.js";
+import { worksAt } from "../src/sim/groupworks.js"; // barestart: a group's walls are what it has built
 
 const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -493,6 +494,7 @@ section("Siege kit by the numbers: the walls count less, an assault's walls, dec
   // An assault on a group's base with kit.
   const f = st.factions.find((x) => x.alive && x.bases.length);
   const tile = f.bases[0];
+  worksAt(f, tile).walls = 7; // a group's base starts bare (barestart: groupworks.js); these are the walls it builds up to
   const crew = atBase(st, h.id).slice(0, 5);
   for (const k2 of ["ram", "ladder", "ladder", "frag", "frag"]) h.armory.push(newItem(k2));
   const before = h.armory.length;

@@ -28,7 +28,16 @@ export const RECIPES = {
 // crafting at a base (crafting.js) needs one for every recipe but the simple ones a team makes on the road (field)
 // and those made at their own station (needs). rate: crafters' work-hours ×, quality: + the item's condition (at
 // most 100%), workshop: opens the workshop recipes (needs: "workshop") and lets an ammo bench be built here. Field
-// crafting by teams gets nothing from a bench. The new hub starts with a crafting bench (world.js).
+// crafting by teams gets nothing from a bench.
+// Costs (barestart): no base starts with a bench any more (world.js HUB_START), so the crafting bench is the first one
+// a base puts up, and it is priced as a real early decision rather than a formality: 12 scrap and a part (about a
+// quarter of a new hub's 50 scrap and one of its 3 parts) and 12 work-hours (half a day for the hub's two starting
+// builders, a day for one). It costs as much scrap as a farm plot and a half, more than half a bunkhouse, so a hub
+// that builds it first sleeps crowded or plants less for a few days; one that waits makes only the Field recipes.
+// No skill needed: anyone can bolt a vise to a table. A part keeps it from being the throwaway first click it was at
+// 8 scrap. The workbench (16 scrap, a part, 18 hours, Mechanics 2) and the master workbench (28, 3 parts, 30 hours,
+// Mechanics 5) are unchanged: each still costs more than the tier below and the whole road to a workbench is now
+// 28 scrap and 2 parts (it was 24 and 1).
 export const BENCH = {
   craftbench: { rate: 1.25, quality: 0.05, workshop: false },
   workbench:  { rate: 1.4,  quality: 0.08, workshop: true },
@@ -39,7 +48,7 @@ const BENCH_GATE = "Hand crafting at a base needs a bench for everything but the
 
 export const BUILDINGS = {
   farm_plot:    { name: "Farm plot",      cost: { scrap: 8 },             hours: 12, max: 10, desc: "+2 crop plots (Farming tab). Every base starts with some plots: the hub 6, an outpost 2." },
-  craftbench:   { name: "Crafting bench", plot: "utility", family: "bench", tier: 1, cost: { scrap: 8 }, hours: 10, max: 1, craft: BENCH.craftbench,
+  craftbench:   { name: "Crafting bench", plot: "utility", family: "bench", tier: 1, cost: { scrap: 12, parts: 1 }, hours: 12, max: 1, craft: BENCH.craftbench, // BENCH: why it costs this
                   desc: `A heavy table with a vise and hand tools in the yard. ${BENCH_GATE}: with this one ${benchText("craftbench")}. Upgrade it into a workbench for the workshop recipes and an ammo bench.` },
   workbench:    { name: "Workbench",      plot: "utility", family: "bench", tier: 2, upgrades: "craftbench", cost: { scrap: 16, parts: 1 }, hours: 18, max: 1, req: { mechanics: 2 }, craft: BENCH.workbench,
                   desc: `Bench grinder, drill press and clamps under a roof of tin: ${benchText("workbench")}. It counts as a workshop: the workshop recipes can be made here, and an ammo bench can be built at this base. Upgrades the crafting bench on its plot. Needs a Mechanics 2+ survivor here to build.` },

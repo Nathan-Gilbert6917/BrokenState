@@ -476,6 +476,7 @@ section("Where mood settles: the fade against the daily factors");
   const settle = (st, s) => { for (let i = 0; i < 150; i++) s.mood = Math.max(0, Math.min(100, s.mood + moodFactors(st, s).net)); return s.mood; };
   const st = W();
   const h = hub(st);
+  addBuilding(h, "bunkhouse"); // a bed each (the hub starts bare: barestart)
   const ppl = atBase(st, h.id);
   h.armory = [];
   for (const a of ppl) { a.perks = []; for (const b of ppl) if (a !== b) setO(st, a, b, 0); }
@@ -551,6 +552,8 @@ section(`Determinism, and ${longDays} days on autopilot without NaN`);
     s2.started = true;
     s2.cards.length = 0;
     const h2 = hub(s2);
+    // A set-up hub (the hub starts bare: barestart): what the old start had standing.
+    for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(h2, t);
     while (atBase(s2, h2.id).length < 10) addPerson(s2, h2, 60);
     for (const p of atBase(s2, h2.id)) p.mood = 60;
     Object.assign(h2.stock, { scrap: 400, parts: 40, food: 400, water: 300, meds: 20 });
