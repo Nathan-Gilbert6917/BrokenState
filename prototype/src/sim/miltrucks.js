@@ -21,7 +21,10 @@
 // The headless search (scavenge.js searchHour) reaches the trucks too: truckSearchHour.
 // The dead: a tile with unopened trucks has soldiers among its dead (truckDeadShare, read by deadsoldiers.js
 // siteDeadMix), so raids, fights by the numbers and the hour-by-hour search all meet them.
-import { LOCATIONS } from "./data.js";
+import { LOCATIONS, SUPPLIES } from "./data.js";
+import { isRoundKey } from "./rounds.js"; // a truck's rounds by calibre, into a group's one ammo count
+import { itemValue } from "./valuation.js";
+import { takeInto } from "./caravanraids.js"; // goods into a group's stock, arsenal and shelf
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
 import { lootItem } from "./inventory.js";
@@ -250,7 +253,8 @@ export function spotTrucks(state, p, tileId, chance) {
 // there (data.js LOCATIONS convoy, raid areas combat.js AREA_SETS.convoy) with 2–4 trucks and their turned crews, and
 // a guard of more dead soldiers round each truck while nobody has stripped it (CONVOY_GUARD: more of them and more Heat
 // by the truck). Other groups within CONVOY.raceRange send salvage parties; one that gets there fights the dead
-// soldiers by the numbers (convoyAiLosses) and strips it (stripKeep of what is left, its trucks' cargo too). It is
+// soldiers by the numbers (convoyAiLosses) and strips it (stripKeep of what is left, its trucks' cargo too: the rest
+// goes into its stock and arsenal, convoyHaul). It is
 // burned out or picked clean CONVOY.life days after it was found.
 // =====================================================================================================================
 export const CONVOY = { firstMin: 12, firstMax: 20, gapMin: 14, gapMax: 28, minDist: 4, maxDist: 12, radioDist: 18, lifeMin: 6, lifeMax: 9, trucks: [2, 4], raceRange: 22, raceMin: 18, raceMax: 48, stripKeep: 0.3 };
@@ -482,11 +486,39 @@ export function convoysHour(state) {
   }
   if (state.convoys && state.convoys.length > 10) state.convoys = state.convoys.filter((c) => !c.gone || state.hour - c.expires < 30 * 24);
 }
+// A group strips the convoy: what it takes from the trucks it reached (convoyHaul) goes into its stock and arsenal; the
+// site and every truck keep stripKeep of what they held (the trucks' share through x.rich: trucksAt).
 export function stripConvoy(state, c, f) {
   const t = state.tiles[c.tile];
+  if (f && f.alive && !f.outsider) {
+    const got = convoyHaul(state, c);
+    if (got.gear.length || Object.keys(got.supplies).length) {
+      c.aiHaul = (c.aiHaul || 0) + got.value;
+      takeInto(f, got, state); // caravanraids.js: supplies into its stock, guns, armour and explosives into its arsenal (arsenal.js), the rest on its shelf
+    }
+  }
   if (t.loc && t.loc.convoy === c.id) t.loot = Math.max(0.03, (t.loot || 0) * CONVOY.stripKeep);
   c.stripped += 1;
   if (state.live.has(c.tile)) log(state, `${f && f.known ? f.name : "Another group"} reached the ${c.name} and stripped most of it.`, "danger");
+}
+// AI parity: the cargo a salvage party takes out of the convoy's unopened trucks, the share a strip removes (1 −
+// stripKeep of what is in each now): the same truckLoot your teams open (its condition by itemcond.js: military
+// crates, a wreck's knocked about), on dice of its own per strip (the truck's own cargo dice are left for you).
+// { supplies, gear, value }: rounds by calibre counted into the group's generic ammo (its stock keeps one count).
+export function convoyHaul(state, c) {
+  const supplies = {}, gear = [];
+  let value = 0;
+  for (const x of unopenedTrucks(state, c.tile)) {
+    if (x.src !== "convoy") continue;
+    const got = truckLoot(truckRng(state, x, `ai${c.stripped || 0}`), x.kind, x.cond, { rich: x.rich * (1 - CONVOY.stripKeep), src: x.src });
+    for (const [k, q] of Object.entries(got.sup)) {
+      const kk = isRoundKey(k) ? "ammo" : k;
+      supplies[kk] = (supplies[kk] || 0) + q;
+      value += (SUPPLIES[k] ? SUPPLIES[k].value : 0) * q;
+    }
+    for (const it of got.gear) { gear.push(it); value += itemValue(it); }
+  }
+  return { supplies, gear, value: Math.round(value) };
 }
 export function expireConvoy(state, c) {
   const t = state.tiles[c.tile];

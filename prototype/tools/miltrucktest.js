@@ -10,7 +10,8 @@
 //   - the convoy event: the card, the site, its trucks, the race (a salvage party strips it), it expires; save / load
 //   - the convoy's guard (CONVOY_GUARD): more dead soldiers round each truck on the raid map, Heat from the start and
 //     more when one is forced open, the hour-by-hour search's Heat and threat, a fight by the numbers there counts
-//     them, an AI salvage party loses people to them before it strips it; a stripped convoy has no guard
+//     them, an AI salvage party loses people to them before it strips it and takes the trucks' cargo home (stock, arsenal); a
+//     stripped convoy has no guard
 //   - the Army truck as a vehicle: slower (×0.67, off-road ×0.75 more), ×2 fuel, 2500 kg, 12 seats, loud (hordes turn,
 //     camp Heat, Heat when driven on a battle map)
 //   - found cars: get in (locked: pick / force / break the glass, the noise), keys, hotwire, inspect, siphon, claim;
@@ -26,11 +27,12 @@ import { Rng } from "../src/sim/rng.js";
 import {
   MILTRUCK, TRUCK_KINDS, TRUCK_LOOT, TRUCK_LOOT_HOOKS, TRUCK_FLASH, truckLoot, trucksAt, unopenedTrucks, roadTruckChance, milDistance, truckSearchHour,
   spawnConvoy, convoysHour, convoyById, activeConvoys, CONVOY, truckEngineNoise, ENGINE,
-  CONVOY_GUARD, guardedTrucks, convoyGuards, convoyHeat0, convoyThreat, convoySoldiers, convoyAiLosses,
+  CONVOY_GUARD, guardedTrucks, convoyGuards, convoyHeat0, convoyThreat, convoySoldiers, convoyAiLosses, convoyHaul,
 } from "../src/sim/miltrucks.js";
 import { startScavenge } from "../src/sim/scavenge.js";
 import { triggerConflict } from "../src/sim/conflicts.js";
-import { unitPower } from "../src/sim/arsenal.js";
+import { unitPower, arsenalWorthy } from "../src/sim/arsenal.js";
+import { condRolled } from "../src/sim/itemcond.js";
 import { isNight } from "../src/sim/world.js";
 import {
   carsNear, carRecord, carOptions, carAct, settleClaims, repairOf, runs, fixProblem, startFixCar, finishFixCar, fixChance, driveHome, fixableAt, runnerAt, MODELS,
@@ -380,8 +382,15 @@ section("The convoy's guard (miltrucks.js CONVOY_GUARD: more dead soldiers and m
     const q = spawnAiParty(st, f, "salvage", f.bases[0], c.tile, { strength: 6 });
     q.convoy = c.id; q.path = [c.tile]; q.idx = 0;
     const lost = convoyAiLosses(st, c, f, 6);
+    // AI parity: the trucks' cargo goes home with it (convoyHaul: truckLoot, its condition by itemcond.js; into the
+    // group's stock and arsenal through caravanraids.js takeInto / arsenal.js addToArsenal).
+    const plan = convoyHaul(st, c), ars0 = f.arsenal ? f.arsenal.items.length : 0, ammo0 = f.stock.ammo || 0;
+    const worthy = plan.gear.filter((it) => arsenalWorthy(it)).length, rich0 = unopenedTrucks(st, c.tile).map((x) => x.rich);
     convoysHour(st);
     check(f.pop === pop0 - lost && (c.aiLost || 0) === lost && c.stripped === 1, `it reaches the convoy: ${lost} of its people fall (group ${pop0} → ${f.pop}), then it strips it`);
+    check(plan.value > 0 && c.aiHaul === plan.value && plan.gear.every((it) => condRolled(it)), `it takes the trucks' cargo home (worth ${plan.value}: ${plan.gear.map((it) => it.name).join(", ") || "no gear"}; every piece rolled by itemcond.js)`);
+    check((f.arsenal ? f.arsenal.items.length : 0) - ars0 === worthy && (f.stock.ammo || 0) - ammo0 === (plan.supplies.ammo || 0), `${worthy} guns, armour and grenades into its arsenal, ${plan.supplies.ammo || 0} rounds into its stock`);
+    check(unopenedTrucks(st, c.tile).every((x, i) => Math.abs(x.rich - rich0[i] * CONVOY.stripKeep) < 1e-9), `the trucks keep ${CONVOY.stripKeep * 100}% of their cargo for whoever comes next`);
     check(!guardedTrucks(st, c.tile).length && convoyGuards(st, c.tile) === 0 && convoyHeat0(st, c.tile) === 0, "a stripped convoy has no guard left (the first group there put them down)");
     const back = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
     check(convoyById(back, c.id).aiLost === c.aiLost && convoyById(back, c.id).stripped === 1, "its losses and the strip survive a save and a load");

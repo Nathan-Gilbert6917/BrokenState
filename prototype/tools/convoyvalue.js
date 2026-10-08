@@ -6,7 +6,7 @@
 //           the raid's Heat at the end
 //   search  the hour-by-hour search (scavenge.js, "normal", out at Heat 50 or after 8 hours)
 //   ai      an AI group's salvage party reaching the convoy (miltrucks.js convoysHour → stripConvoy): the share of its
-//           people lost to the guards
+//           people lost to the guards, and the trucks' cargo it takes home (convoyHaul: worth, arsenal pieces, ammo)
 // Usage: node tools/convoyvalue.js [seeds = 8] [first seed = 21]
 import { createWorld, hub, atBase, supplyValue } from "../src/sim/world.js";
 import { launchExpedition, spawnAiParty, partyMembers } from "../src/sim/parties.js";
@@ -98,10 +98,10 @@ function ai(seed) {
   if (!q) return null;
   q.convoy = c.id;
   q.path = [tile]; q.idx = 0;
-  const pop0 = f.pop, str0 = q.strength;
+  const pop0 = f.pop, str0 = q.strength, ars0 = f.arsenal ? f.arsenal.items.length : 0, ammo0 = f.stock.ammo || 0;
   convoysHour(st);
   const cc = convoyById(st, c.id);
-  return { lost: Math.max(0, pop0 - f.pop), share: str0 ? Math.max(0, (str0 - (q.strength ?? str0)) / str0) : 0, stripped: cc ? cc.stripped : 0, trucks: c.trucks };
+  return { lost: Math.max(0, pop0 - f.pop), share: str0 ? Math.max(0, (str0 - (q.strength ?? str0)) / str0) : 0, stripped: cc ? cc.stripped : 0, trucks: c.trucks, haul: cc ? cc.aiHaul || 0 : 0, arsenal: (f.arsenal ? f.arsenal.items.length : 0) - ars0, ammo: (f.stock.ammo || 0) - ammo0 };
 }
 
 // Everything on the street map (every container opened, the trucks too; the miltrucktest.js base check): what the site
@@ -157,5 +157,5 @@ const ratio = (m, k) => (avg(res.base[m], k) ? avg(res.convoy[m], k) / avg(res.b
 console.log(`Convoy / base: holds ${Math.round(100 * ratio("haul", "value"))}% of the value with ${Math.round(100 * ratio("haul", "enemies"))}% of the dead; raid value ${Math.round(100 * ratio("raid", "value"))}%, raid deaths ${Math.round(100 * ratio("raid", "dead"))}%, raid hp lost ${Math.round(100 * ratio("raid", "hpLost"))}%; search value ${Math.round(100 * ratio("search", "value"))}%, search hp lost ${Math.round(100 * ratio("search", "hpLost"))}%`);
 const A = [];
 for (let i = 0; i < N; i++) { const a = ai(S0 + i); if (a) A.push(a); }
-console.log(`AI salvage parties: n ${A.length}, ${avg(A, "trucks").toFixed(1)} trucks, people lost ${avg(A, "lost").toFixed(2)}, party strength lost ${Math.round(100 * avg(A, "share"))}%, stripped ${avg(A, "stripped").toFixed(2)}`);
+console.log(`AI salvage parties: n ${A.length}, ${avg(A, "trucks").toFixed(1)} trucks, people lost ${avg(A, "lost").toFixed(2)}, party strength lost ${Math.round(100 * avg(A, "share"))}%, stripped ${avg(A, "stripped").toFixed(2)}; took home cargo worth ${Math.round(avg(A, "haul"))} (${avg(A, "arsenal").toFixed(1)} pieces into its arsenal, ${Math.round(avg(A, "ammo"))} ammo)`);
 console.log(`(${Math.round(performance.now() - t0)} ms)`);
