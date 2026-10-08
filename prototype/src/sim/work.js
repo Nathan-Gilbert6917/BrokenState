@@ -53,6 +53,7 @@ import { hospitalDef, isHurt, isSevere } from "./medical.js";
 import { tooIllToWork, isSick, isContagious } from "./health.js";
 import { CRAFTS, craftQueue, craftQuality, meetsNeeds, craftHeld, isFilterJob, benchQuality, canAttempt, craftSkill } from "./crafting.js";
 import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } from "./skills.js";
+import { doctorAt, TRAINING } from "./training.js"; // Medic trainees
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt, WEAR } from "./breakdowns.js";
 import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity } from "./economy.js";
@@ -129,6 +130,23 @@ export const WORK_TYPES = {
     },
     // A patient in danger and nobody on duty: the first person with Doctor set goes, whatever its priority.
     emergency(ctx) { const o = this.open(ctx); return o.danger && !ctx.people.some((s) => s.role === "medic" && !ctx.free.has(s)) ? { slots: 1, why: "a patient is in danger" } : null; },
+  },
+  // Medic trainees (training.js): learn Medicine from the doctor on the ward; the hospital tier's places are the cap.
+  trainee: {
+    name: "Trainee", ing: "Training on the ward", short: "Trn", role: "trainee", skill: "medicine",
+    desc: "Medic trainee: works on the ward of the infirmary or hospital and learns Medicine from the doctor (the best medic here, Medicine 6+) every day, up to 2 below the doctor's. Counts as half a medic toward the hospital's staff. Places: 1 (infirmary, field hospital), 2 (clinic), 3 (trauma hospital).",
+    open(ctx) {
+      const def = hospitalDef(ctx.base);
+      if (!def.tier || !def.train) return { cap: 0, why: "no infirmary or hospital" };
+      if (!docOf(ctx)) return { cap: 0, why: `no doctor here (Medicine ${TRAINING.docMin}+)` };
+      return { cap: def.train, urg: 1.5 };
+    },
+    can(ctx, s) {
+      const doc = docOf(ctx);
+      if (!doc || doc.s === s) return "they are the best medic here";
+      const cap = skill(doc.s, "medicine") - TRAINING.gap;
+      return skill(s, "medicine") < cap ? "" : `Medicine ${skill(s, "medicine")}: lessons go up to ${cap}`;
+    },
   },
   guard: {
     name: "Guard", ing: "On guard", short: "Grd", role: "guard", skill: "shooting",
@@ -459,6 +477,12 @@ function takeStation(ctx, s, kindOk) {
   return { role: "operate", station: st.id, note: `the ${BUILDINGS[st.type].name.toLowerCase()}` };
 }
 
+// The doctor at this base for the Trainee type (training.js doctorAt), once per plan.
+function docOf(ctx) {
+  if (!ctx.memo.has("doc")) ctx.memo.set("doc", doctorAt(ctx.state, ctx.base));
+  return ctx.memo.get("doc");
+}
+
 // The best lesson T can give to learners nobody else teaches this hour (skills.js bestLesson's scoring).
 function lessonFor(ctx, T) {
   const key = `l${T.id}`;
@@ -489,7 +513,7 @@ export const DEFAULT_ROLES = () => [
   { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, forage: 3, wood: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
   { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, wood: 3, study: 4, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
-  { name: "Medic", pri: P({ doctor: 1, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
+  { name: "Medic", pri: P({ doctor: 1, trainee: 2, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
   { name: "Crafter", pri: P({ craft: 1, workshop: 1, cook: 2, repair: 3, build: 3, farm: 4, study: 4 }) },
   { name: "Night watch", pri: P({ guard: 2, build: 2, repair: 2, craft: 3, farm: 3 }), sched: SCHED_PRESETS.night.sched },
   { name: "Hunter", pri: P({ hunt: 1, fish: 1, forage: 2, wood: 2, guard: 3, farm: 3, repair: 4, build: 4, scavenge: 4 }) },

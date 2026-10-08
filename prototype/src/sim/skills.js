@@ -15,7 +15,8 @@
 //   Mechanics   Build 11 (2 with nothing queued), Operate 11, Craft 11   repairs 6 (×2 at a base), cars 1-4
 //   Crafting    Craft role: each finished craft by kind, inputs and quality (crafting.js craftXp, about 0.5-3 a
 //               craft; CRAFT_XP.base 2 → 0.55 in this pass: a crafter kept in materials made 40+ a day)
-//   Medicine    Medic role 8                                             wound 5, surgery 10, illness 4, field 6, battle heal 4
+//   Medicine    Medic role 8; ward rounds by the patients (training.js,   wound 5, surgery 10, illness 4, field 6, battle heal 4
+//               own cap 4-10 by hospital tier); Trainee role 4 + lessons
 //   Shooting    Guard role 6 + 0.25 an hour on guard (the night watch)  battle: shot 1, hit 2, kill 2, melee 1;
 //                                                                         fight by the numbers 8 (+4 won); game shot 2/6
 //   Scavenging  Scavenge role 9; 4 an hour searching                     a container in a raid 3
@@ -53,6 +54,8 @@ export const SKILL_MAX = 20;
 export const CAP_USE = 20;        // use XP per skill per day
 export const CAP_STUDY = 25;      // teaching + reading XP per skill per day
 export const CAP_FIGHT = 30;      // fighting XP (battles on the map, fights by the numbers) per skill per day
+export const CAP_WARD = 10;       // ward rounds (training.js: Medicine for medics on duty, by the patients) per day; the
+                                  // hospital tier sets each day's own cap (BUILDINGS med.ward 4-10) below this one
 export const DECAY_AFTER = 14;    // days without use before a skill above DECAY_FLOOR slips
 export const DECAY_PER_DAY = 2;   // XP lost a day after that
 export const DECAY_FLOOR = 10;    // never slips below this (nor below the starting level)
@@ -237,7 +240,7 @@ export function skillProgress(s, key) {
   const need = xpNeed(raw);
   const xp = Math.max(0, (s && s.xp && s.xp[key]) || 0);
   const t = s && s.xpDay ? s.xpDay : null;
-  const today = t ? (t.use[key] || 0) + (t.study[key] || 0) + ((t.fight && t.fight[key]) || 0) : 0;
+  const today = t ? (t.use[key] || 0) + (t.study[key] || 0) + ((t.fight && t.fight[key]) || 0) + ((t.ward && t.ward[key]) || 0) : 0;
   const maxed = raw >= SKILL_MAX;
   const nextMs = MILESTONES.find((m) => m > level) || null;
   return {
@@ -263,7 +266,7 @@ export function pendingPerks(s) {
 // every gainXp; onDecay(state, s, key, lost) when an unused skill slips.
 export const xpHooks = { onGain: null, onDecay: null };
 
-// Adds XP to one skill (src "use", "study" or "fight"; each has its own daily cap). Returns the XP actually added.
+// Adds XP to one skill (src "use", "study", "fight" or "ward"; each has its own daily cap). Returns the XP actually added.
 export function gainXp(state, s, key, amount, src = "use") {
   const added = gainXpRaw(state, s, key, amount, src);
   if (xpHooks.onGain && s && amount > 0) xpHooks.onGain(state, s, key, amount, added, src);
@@ -275,14 +278,15 @@ function gainXpRaw(state, s, key, amount, src) {
   const d = day(state);
   if (s.xpDay.d !== d) s.xpDay = { d, use: {}, study: {} };
   if (src === "fight" && !s.xpDay.fight) s.xpDay.fight = {}; // saves from before the fight bucket
+  if (src === "ward" && !s.xpDay.ward) s.xpDay.ward = {}; // made on first use (training.js ward rounds)
   let amt = amount;
   // Mentor: teammates on a trip with them learn more from what they do.
-  if (src !== "study" && s.location && s.location.kind === "party") {
+  if (src !== "study" && src !== "ward" && s.location && s.location.kind === "party") {
     const p = state.parties.find((x) => x.id === s.location.partyId);
     if (p && teamOf(state, p).some((o) => o !== s && hasPerk(o, "mentor"))) amt *= 1.25;
   }
-  const bucket = src === "study" ? s.xpDay.study : src === "fight" ? s.xpDay.fight : s.xpDay.use;
-  const cap = src === "study" ? CAP_STUDY : src === "fight" ? CAP_FIGHT : CAP_USE;
+  const bucket = src === "study" ? s.xpDay.study : src === "fight" ? s.xpDay.fight : src === "ward" ? s.xpDay.ward : s.xpDay.use;
+  const cap = src === "study" ? CAP_STUDY : src === "fight" ? CAP_FIGHT : src === "ward" ? CAP_WARD : CAP_USE;
   amt = Math.min(amt, cap - (bucket[key] || 0));
   if (amt <= 1e-9) return 0;
   bucket[key] = (bucket[key] || 0) + amt;

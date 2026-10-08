@@ -123,18 +123,21 @@ export const BUILDINGS = {
   // guards = beds stop wounds getting infected, cures = cleans infected wounds reliably,
   // severe = healing speed for wounds below 30 health in a bed (0.4 without a bed), surgery = operates on
   // severe wounds (full speed plus a bigger heal per treatment), craft = extra meds per day from each med station. See medical.js.
+  // Training (training.js): train = Medic trainee places (people on the Trainee role learning from the doctor),
+  // teach = how fast lessons and ward rounds teach here (×), ward = the most Medicine XP a medic on duty earns a day
+  // from the patients (ward rounds, on top of the Medic role's 8 and the treatments).
   infirmary:    { name: "Makeshift infirmary", plot: "building", family: "hospital", tier: 1, cost: { scrap: 15, meds: 2 }, hours: 20, max: 1,
-                  med: { beds: 2, heal: 6, eff: 1.25, treat: 14, staff: 1, guards: false, cures: false, severe: 0.6, surgery: false, craft: 0 },
-                  desc: "Cots behind a curtain. 2 beds: +6 health/day for patients, meds 25% more effective, severe wounds (below 30) heal at 60% instead of 40%. Needs 1 survivor on the Medic role." },
+                  med: { beds: 2, heal: 6, eff: 1.25, treat: 14, staff: 1, guards: false, cures: false, severe: 0.6, surgery: false, craft: 0, train: 1, teach: 1, ward: 4 },
+                  desc: "Cots behind a curtain. 2 beds: +6 health/day for patients, meds 25% more effective, severe wounds (below 30) heal at 60% instead of 40%. Needs 1 survivor on the Medic role. Takes 1 Medic trainee: the doctor (the best medic, Medicine 6+) teaches them Medicine every day." },
   field_hosp:   { name: "Field hospital",      plot: "building", family: "hospital", tier: 2, upgrades: "infirmary", cost: { scrap: 30, parts: 2, meds: 4 }, hours: 36, max: 1,
-                  med: { beds: 4, heal: 10, eff: 1.5, treat: 16, staff: 1, guards: true, cures: false, severe: 0.8, surgery: false, craft: 0 },
-                  desc: "Army tents, clean water, real dressings. 4 beds: +10 health/day, meds 50% more effective, wounds in bed do not get infected, severe wounds heal at 80%. Upgrades the infirmary. Needs 1 Medic." },
+                  med: { beds: 4, heal: 10, eff: 1.5, treat: 16, staff: 1, guards: true, cures: false, severe: 0.8, surgery: false, craft: 0, train: 1, teach: 1.2, ward: 6 },
+                  desc: "Army tents, clean water, real dressings. 4 beds: +10 health/day, meds 50% more effective, wounds in bed do not get infected, severe wounds heal at 80%. Upgrades the infirmary. Needs 1 Medic. Takes 1 Medic trainee; lessons and ward rounds teach 20% faster than in the infirmary." },
   clinic:       { name: "Clinic",              plot: "building", family: "hospital", tier: 3, upgrades: "field_hosp", cost: { scrap: 45, parts: 4, meds: 8 }, hours: 60, max: 1, req: { medicine: 6 },
-                  med: { beds: 6, heal: 16, eff: 1.8, treat: 18, staff: 2, guards: true, cures: true, severe: 1, surgery: true, craft: 1 },
-                  desc: "A proper treatment room with sterilised tools. 6 beds: +16 health/day, meds 80% more effective, cleans infected wounds, surgery for severe wounds (full speed, bigger treatments), med stations make +1 meds a day. Upgrades the field hospital. Needs 2 Medics and a Medicine 6+ survivor here to build." },
+                  med: { beds: 6, heal: 16, eff: 1.8, treat: 18, staff: 2, guards: true, cures: true, severe: 1, surgery: true, craft: 1, train: 2, teach: 1.45, ward: 8 },
+                  desc: "A proper treatment room with sterilised tools. 6 beds: +16 health/day, meds 80% more effective, cleans infected wounds, surgery for severe wounds (full speed, bigger treatments), med stations make +1 meds a day. Upgrades the field hospital. Needs 2 Medics (a Medic trainee counts as half of one) and a Medicine 6+ survivor here to build. Takes 2 Medic trainees; lessons and ward rounds teach 45% faster than in the infirmary." },
   hospital:     { name: "Trauma hospital",     plot: "building", family: "hospital", tier: 4, upgrades: "clinic", cost: { scrap: 70, parts: 8, meds: 12 }, hours: 96, max: 1, req: { medicine: 10, mechanics: 4 },
-                  med: { beds: 10, heal: 24, eff: 2.2, treat: 22, staff: 3, guards: true, cures: true, severe: 1.2, surgery: true, craft: 1 },
-                  desc: "Operating theatre on generator power. 10 beds: +24 health/day, meds 120% more effective, cleans infected wounds, full surgery (severe wounds heal 20% faster), med stations make +1 meds a day. Upgrades the clinic. Needs 3 Medics, and Medicine 10+ and Mechanics 4+ survivors here to build." },
+                  med: { beds: 10, heal: 24, eff: 2.2, treat: 22, staff: 3, guards: true, cures: true, severe: 1.2, surgery: true, craft: 1, train: 3, teach: 1.75, ward: 10 },
+                  desc: "Operating theatre on generator power. 10 beds: +24 health/day, meds 120% more effective, cleans infected wounds, full surgery (severe wounds heal 20% faster), med stations make +1 meds a day. Upgrades the clinic. Needs 3 Medics (a Medic trainee counts as half of one), and Medicine 10+ and Mechanics 4+ survivors here to build. Takes 3 Medic trainees; lessons and ward rounds teach 75% faster than in the infirmary." },
   // Water barrels (WATER_BARREL below): up to 4, each upgraded on its own and set to hold purified or un-purified water.
   water_barrel: { name: "Water barrel",   plot: "utility", cost: { scrap: 4 },  hours: 6,  max: 4, barrel: true, desc: "A drum on a stand: 25 more water room, kept for the kind you choose. Un-purified: room for the well, rain and river water. Purified: room only safe water may use (water filters' surplus, bottled water brought home), so the well's water never crowds it out and teams always find safe water to pack. Upgrade each barrel on its own: a barrel rack (50), then a water tank (100)." },
   // Storage crates (storage.js storeSpaces): a little dry room for food, outdoors.

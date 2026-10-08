@@ -1149,6 +1149,15 @@ const changeActions = {
     if (s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId));
     ui.baseMsg = `${s.name} now works as a medic.`;
   },
+  traineeop: (el) => {
+    if (!el.value) return;
+    const s = survivorById(state, Number(el.value));
+    toManual(state, s); // a job picked by hand: off work priorities
+    s.role = "trainee";
+    s.station = null;
+    if (s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId));
+    ui.baseMsg = `${s.name} now trains as a medic on the ward.`;
+  },
   craftop: (el) => {
     if (!el.value) return;
     const s = survivorById(state, Number(el.value));

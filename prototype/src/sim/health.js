@@ -521,7 +521,7 @@ export function illnessRisk(state, s, ctx = null) {
       let q = d.spread * (0.5 + c.sev / 100) * (c.mending ? Sp.mending : 1);
       if (ctx.kind === "base") q *= (ctx.crowd > 0 ? Sp.crowd : 1) * (ctx.quarantine ? Sp.quarantine : 1);
       else q *= Sp.team;
-      if (s.role === "medic" && s.location.kind === "base" && !hasPerk(s, "plaguedoctor")) q *= Sp.medic; // Plague Doctor (skills.js)
+      if ((s.role === "medic" || s.role === "trainee") && s.location.kind === "base" && !hasPerk(s, "plaguedoctor")) q *= Sp.medic; // Plague Doctor (skills.js); a Medic trainee works the ward too (training.js)
       if (q > best) { best = q; from = { src, key: c.key }; }
     }
   }
