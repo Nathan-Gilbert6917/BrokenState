@@ -34,7 +34,7 @@ import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDe
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
 import { defaultRolePlan, plansOf } from "./defenceplan.js"; // the governor's defence plan (governorPlans, stewardSafety)
-import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
+import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort, supplyLine } from "./economy.js";
 import { mouthsAt, foodUse, HEAT } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { waterIn, teamWaterIn, RAW, keyWord } from "./water.js"; // purified and un-purified water: the governor counts both
 import { brokenAt, jobFor } from "./breakdowns.js";
@@ -79,6 +79,8 @@ import { gatheringCands } from "./hivebirth.js"; // hive birth you can see: cull
 import { GROWTHS, TECH } from "./hiveconst.js";
 import { typeStrength } from "./zombietypes.js";
 import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squadValue, nearestOtherBase } from "./conquest.js";
+import { OCCUPY, occupyProblem, occupyOdds, teamOccupyOdds, standingAt, occupyGrievance, abandonProblem, abandonOutpost } from "./occupy.js"; // moving into an abandoned base instead of founding an outpost; giving up a doomed one
+import { abandonedThreat } from "./groupworld.js";
 import { autopilotPrisoners, jailTier, cellCap, prisonersAt, planJailGuards } from "./prisoners.js";
 import { autopilotRescue, autoRescuePlan, teamPayOk } from "./ransom.js"; // your people held by other groups: ransom first, a raid when strong
 import { isManaged, healthRest } from "./work.js";
@@ -428,6 +430,7 @@ export function autopilotDaily(state) {
   idleDaily(state); // vehicletrade.js: how long each car has stood at a base
   winterReport(state);
   tidySupplyJobs(state);
+  abandonDoomed(state); // occupy.js: an outpost that cannot be fed through the winter is given up, its people home
   planCampaign(state); // the war on the hives: today's target (its ammo want feeds needs, trades and the stations)
   emergencyTrips(state); // water under a day, food under two: a haul goes out whatever the style's team limit
   wormCureRuns(state); // the worm where nothing can cure it: the sick walk to a base that can, or meds come to them
@@ -2601,8 +2604,12 @@ function planTrip(state) {
   // A hub that has outgrown its plots (hubCramped) founds one more than its style would, once no outpost it founded has a
   // bed free (built or queued: they build ahead of the people sent to them; taken bases get nobody, planSupplyRuns).
   const cramped = hubCramped(state, h) && state.bases.filter((b) => b.type === "outpost" && !b.captured).every((o) => outpostBedsFree(state, o) <= 0);
-  if (outposts < P.outposts + (cramped ? 1 : 0) + (push ? (goalsProgress(state).alliance.allIn ? LAND_OUTPOSTS_ALL_IN : LAND_OUTPOSTS) : 0) && alive(state).length >= P.outpostPop && today - g.lastOutpost >= 15 && (h.stock.scrap || 0) >= (push ? 25 : 50) && // the land push makes do with what founding takes
-      (h.stock.food || 0) >= home.length * 10 && spareHands >= 2) {
+  const wantsOutpost = outposts < P.outposts + (cramped ? 1 : 0) + (push ? (goalsProgress(state).alliance.allIn ? LAND_OUTPOSTS_ALL_IN : LAND_OUTPOSTS) : 0) && alive(state).length >= P.outpostPop && today - g.lastOutpost >= 15 &&
+    (h.stock.food || 0) >= home.length * 10 && spareHands >= 2;
+  // occupy.js: a base standing empty nearby that the crew can clear comes first (no scrap, and it is built already).
+  const oc = wantsOutpost ? occupyCandidate(state, h, pool, spareHands) : null;
+  if (oc) cands.push(oc);
+  else if (wantsOutpost && (h.stock.scrap || 0) >= (push ? 25 : 50)) { // the land push makes do with what founding takes
     const land = push && outposts >= P.outposts ? landOutpostSite(state) : null;
     const site = land ? land.id : outpostSite(state);
     const crowded = cramped || alive(state).length > baseBeds(h) + 2;
@@ -2735,7 +2742,7 @@ function planTrip(state) {
     if (!res) continue;
     if (c.outer) g.stats.farTrips = (g.stats.farTrips || 0) + 1;
     g.lastLaunch = today;
-    if (c.mission === "outpost") g.lastOutpost = today;
+    if (c.mission === "outpost" || c.mission === "occupy") g.lastOutpost = today;
     if (c.mission === "rescue") g.lastRescue = today;
     if (c.findKey) (g.findTried = g.findTried || {})[c.findKey] = today; // FIND_COOLDOWN
     if (c.mission === "trade" && !c.envoy) g.lastTrade = today;
@@ -3290,6 +3297,17 @@ function exileAct(state, p) {
     say(state, `${teamName(state, p)}: no base left, so it goes to take ${lost.o.name} back (${Math.round(lost.odds * 100)}%).`);
     return;
   }
+  // occupy.js: a base standing empty within reach that the team can clear: a home already built (not while a staging
+  // camp is well under way).
+  const empty = going ? null : (state.abandoned || []).filter((r) => g.distance(here, r.tile) <= OCCUPY.GOV_RANGE && !occupyProblem(state, r.tile) && planPath(state, here, r.tile, p.vehicle))
+    .map((r) => ({ r, odds: teamOccupyOdds(state, p, abandonedThreat(state, r.tile)), d: g.distance(here, r.tile) })).filter((x) => x.odds >= OCCUPY.AI_ODDS).sort((a, b) => a.d - b.d || b.odds - a.odds)[0];
+  if (empty) {
+    if (here === empty.r.tile) { giveOrder(state, p, "occupy"); return; }
+    orderMove(state, p, empty.r.tile);
+    p.orders = [{ type: "mission", mission: "occupy" }];
+    say(state, `${teamName(state, p)}: no base left, so it goes to move into the empty base at ${tileLabel(state, empty.r.tile)} (${Math.round(empty.odds * 100)}%).`);
+    return;
+  }
   roadAct(state, p);
 }
 
@@ -3638,6 +3656,72 @@ function outpostSite(state) {
   return best ? best.id : null;
 }
 
+// ---------- giving up a doomed outpost (occupy.js abandonOutpost) ----------
+// Conservative (OCCUPY.DOOM_*): only in autumn or winter, an outpost whose own stores and fields run out within
+// DOOM_DAYS, whose supply line to the hub is weak or cut, while the hub's own winter plan (counting every outpost) is
+// short too, so nothing can be sent; its people must have a way home. One every DOOM_EVERY days. Its buildings stay
+// as an empty base (Reoccupy it in spring).
+export function doomedOutpost(state, o) {
+  const h = hub(state);
+  if (!h || o.type !== "outpost" || !atBase(state, o.id).length || abandonProblem(state, o)) return null;
+  if (!winterActive(state, h) || (wxSeason(state).key !== "autumn" && wxSeason(state).key !== "winter")) return null;
+  const own = winterOutlook(state, o);
+  const today = Math.floor(state.hour / 24);
+  if (own.runsOut == null || own.runsOut - today > OCCUPY.DOOM_DAYS) return null;
+  const line = supplyLine(state, o);
+  if (line.strength >= OCCUPY.DOOM_LINE) return null;
+  if (winterPlan(state, h).short <= 0) return null;
+  return { runsIn: Math.max(0, own.runsOut - today), line: line.strength };
+}
+function abandonDoomed(state) {
+  const g = gov(state);
+  if (day(state) - (g.lastAbandon ?? -999) < OCCUPY.DOOM_EVERY) return;
+  for (const o of state.bases.filter((b) => b.type === "outpost")) {
+    const d = doomedOutpost(state, o);
+    if (!d) continue;
+    const name = o.name;
+    const text = abandonOutpost(state, o, "it cannot be fed through the winter");
+    g.lastAbandon = day(state);
+    g.stats.abandoned = (g.stats.abandoned || 0) + 1;
+    say(state, `Gave up ${name}: its food runs out in about ${d.runsIn} day${d.runsIn === 1 ? "" : "s"}, its supply line is ${d.line > 0 ? `weak (${Math.round(d.line * 100)}%)` : "cut"} and the hub's winter stores are short too. ${text}`);
+    return;
+  }
+}
+
+// ---------- moving into an abandoned base (occupy.js) ----------
+// When the governor wants an outpost, a base standing empty within OCCUPY.GOV_RANGE tiles of the hub that the map shows
+// (live, or a report) and that the fittest of the pool can clear at OCCUPY.AI_ODDS (OCCUPY.GOV_CREW of them, up to
+// GOV_CREW_MAX when the dead or squatters inside ask for more) comes first: it costs no scrap and what stands there
+// is weeks of building. Not where moving in would anger a coalition member or a pact partner. More standing, nearer:
+// better.
+const OCC_FIT = (s) => (s.health >= 60 && !s.woundInfected ? combatPower(s) : -99);
+export function occupyCandidate(state, h, pool, spareHands) {
+  const g = state.grid;
+  const squad = [...pool].filter((s) => OCC_FIT(s) > -99).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id);
+  const most = Math.min(spareHands, OCCUPY.GOV_CREW_MAX, squad.length);
+  let best = null;
+  for (const rec of state.abandoned || []) {
+    const d = g.distance(rec.tile, h.tile);
+    if (d > OCCUPY.GOV_RANGE || occupyProblem(state, rec.tile)) continue;
+    const known = state.live.has(rec.tile) || !!(state.knowledge[rec.tile] && state.knowledge[rec.tile].abandoned);
+    if (!known || state.parties.some((p) => p.owner === "player" && p.dest === rec.tile)) continue;
+    if (occupyGrievance(state, rec.tile).some((x) => isMember(state, x.f) || x.f.pact)) continue;
+    const stand = standingAt(state, rec).filter((b) => !b.broken).length;
+    if (stand < OCCUPY.GOV_MIN_STANDING) continue; // a bare group base: no better than new ground
+    const threat = abandonedThreat(state, rec.tile);
+    let n = Math.min(OCCUPY.GOV_CREW, most), odds = 0;
+    for (; n <= most; n++) { odds = occupyOdds(squad.slice(0, n), threat); if (odds >= OCCUPY.AI_ODDS) break; }
+    if (n > most || n < 2 || odds < OCCUPY.AI_ODDS) continue;
+    const score = 3.6 + Math.min(1.5, stand * 0.2) - d * 0.05;
+    if (!best || score > best.score) best = { rec, n, odds, stand, score, threat };
+  }
+  if (!best) return null;
+  const { rec, n } = best;
+  return { mission: "occupy", tile: rec.tile, score: best.score, crew: n, squadMin: 2, fit: OCC_FIT,
+    why: `move into ${rec.from === "player" ? `${rec.fromName}, our old outpost` : `the base ${rec.fromName} left`} (${best.stand} building${best.stand === 1 ? "" : "s"} standing; ${best.threat.count ? `${Math.round(best.odds * 100)}% against ${best.threat.count} inside` : "nobody inside"}) instead of building an outpost`,
+    supplies: { ammo: 10 * n, meds: 1 } };
+}
+
 // Pick the crew, a vehicle if it pays, pack supplies and send the team. Returns the party or null.
 function launchTrip(state, c, pool, spareHands) {
   const P = persona(state);
@@ -3665,19 +3749,19 @@ function launchTrip(state, c, pool, spareHands) {
     return null;
   };
   const n = ids.length;
-  if (cand && (dist >= 3 || (c.wood && dist >= 1)) && c.mission !== "outpost" && c.mission !== "rescue" && c.mission !== "sweep") { // a survey goes on foot or bikes (a car sees little off the road)
+  if (cand && (dist >= 3 || (c.wood && dist >= 1)) && c.mission !== "outpost" && c.mission !== "occupy" && c.mission !== "rescue" && c.mission !== "sweep") { // a survey goes on foot or bikes (a car sees little off the road)
     if (cand.condition < 50 && (h.stock.parts || 0) >= 2 && canRepair(state, h).ok) repair(state, h, cand);
     const vEst = cand.condition >= 30 && estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: true, v: cand, stance: P.stance, homeBaseId: h.id, supplies: roughSupplies(n, 2) });
     if (vEst && vEst.fuel <= cand.fuel + Math.max(0, (h.stock.fuel || 0) - 4 - tripFuelHold(state, h, c))) v = cand; // needs-gauges: not the heating fuel, nor the campaign's fires
   }
   if (v) refuelKeeping(state, h, v, tripFuelHold(state, h, c)); // needs-gauges: the winter's heating fuel stays home (and the campaign's fires')
   // No car: bikes, one each, for anything past the next couple of tiles (no fuel, faster on roads, racks for the haul).
-  if (!v && dist >= 2 && c.mission !== "outpost" && c.mission !== "rescue" && bikesAtBase(state, h.id) >= n) {
+  if (!v && dist >= 2 && c.mission !== "outpost" && c.mission !== "occupy" && c.mission !== "rescue" && bikesAtBase(state, h.id) >= n) {
     const stack = parkBikes(state, h);
     if (stack && stack.condition >= 25) v = stack;
   }
   const plannedV = isBike(v) ? { ...v, count: n } : v;
-  let onSite = c.onSite != null ? c.onSite : c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "recon" ? P.searchHours + 8 : 4;
+  let onSite = c.onSite != null ? c.onSite : c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "occupy" ? 2 : c.mission === "recon" ? P.searchHours + 8 : 4;
   let steps = c.steps;
   // The estimate with what the team would pack (its load sets its pace and rations, load.js).
   const tripOpts = (supplies) => ({ memberIds: ids, dest: c.tile, vehicle: travelMode(v), v: plannedV, stance: P.stance, homeBaseId: h.id, fuel: isCar(v) ? v.fuel + (h.stock.fuel || 0) : 0, supplies });
@@ -3740,8 +3824,9 @@ function launchTrip(state, c, pool, spareHands) {
   // Weighed twice: what the team packs changes its load, and so its pace and what it eats.
   for (let pass = 0; pass < 2; pass++) {
     const r = ration(est);
-    sup.food = Math.ceil(r * 1.25) + 1 + (c.mission === "outpost" ? 6 : 0);
-    sup.water = Math.ceil(r * 1.25 * thirstAhead(state, (est.hours + onSite) / 24)) + 1 + (c.mission === "outpost" ? 4 : 0); // summer, heat waves (weather.js)
+    const settles = c.mission === "outpost" || c.mission === "occupy"; // the team lives there after: a few days' stores
+    sup.food = Math.ceil(r * 1.25) + 1 + (settles ? 6 : 0);
+    sup.water = Math.ceil(r * 1.25 * thirstAhead(state, (est.hours + onSite) / 24)) + 1 + (settles ? 4 : 0); // summer, heat waves (weather.js)
     sup.fuel = isCar(v) ? Math.max(0, Math.min(stock("fuel") - tripFuelHold(state, h, c), Math.ceil(est.fuel * 1.25 - v.fuel))) : 0; // needs-gauges: not the heating fuel, nor the campaign's fires
     if (pass === 0) est = estimateTrip(state, tripOpts({ ...sup, ...(c.supplies || {}) })) || est;
   }
@@ -3809,6 +3894,7 @@ function launchTrip(state, c, pool, spareHands) {
   if (c.food) g.stats[c.food] = (g.stats[c.food] || 0) + 1; // huntTrips, fishTrips
   g.stats.launched++;
   if (c.mission === "outpost") g.stats.outposts++;
+  if (c.mission === "occupy") g.stats.occupyTrips = (g.stats.occupyTrips || 0) + 1;
   say(state, `Sent ${names(crew)} (${c.food === "huntTrips" ? "hunt" : c.food === "fishTrips" ? "fish" : c.food === "woodTrips" ? "cut wood" : c.mission === "scavenge" ? "scavenge" : c.mission}) to ${tileLabel(state, c.tile)}${isBike(v) ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}: ${c.why}. Back in about ${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"}.${stashed.length ? ` Heavy armor left home for the walk: ${stashed.map(([x, a]) => `${first(x)}'s ${a.name}`).join(", ")}.` : ""}`);
   return res.party;
 }

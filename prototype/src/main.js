@@ -4,6 +4,7 @@ import {
 } from "./sim/world.js";
 import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
+import { abandonProblem, abandonCard } from "./sim/occupy.js"; // Abandon outpost
 import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile } from "./sim/parties.js";
 import { stockHas } from "./sim/water.js"; // purified and un-purified water
 import { moveTeamOut, MOVE_OUT } from "./sim/moveout.js"; // a team moved out of a crowded base (the move-out planner)
@@ -571,7 +572,7 @@ function autofill(pl) {
   const archers = archerCount(ids.map((id) => survivorById(state, id)).filter(Boolean));
   let est = null;
   for (let pass = 0; pass < 2; pass++) {
-    est = (pl.mission !== "outpost" && !out && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest ?? h.tile, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies, homeBaseId: h.id });
+    est = (!Parties.SETTLE_MISSIONS.includes(pl.mission) && !out && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest ?? h.tile, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies, homeBaseId: h.id });
     view.preview = est && pl.dest != null ? est.path : null;
     if (!est) return;
     const ahead = out ? n * MOVE_OUT.days : 0;
@@ -900,6 +901,14 @@ const actions = {
   // The move-out planner's destination: another of your bases, or "" (pick a tile on the map once they are out).
   "pl-dest": (d) => { ui.planner.dest = d.tile === "" || d.tile == null ? null : Number(d.tile); autofill(ui.planner); ui.plannerError = ""; },
   moveout: (d) => openMoveOut(Number(d.base)),
+  // sim/occupy.js: Abandon outpost, asked on a card first.
+  abandonbase: (d) => {
+    const b = baseById(state, Number(d.base));
+    const why = abandonProblem(state, b);
+    if (why) { ui.baseMsg = why; return; }
+    if (!state.cards.some((c) => c.abandonBase === b.id)) addCard(state, abandonCard(state, b));
+    ui.baseView = null;
+  },
   "pl-launch": () => {
     const pl = ui.planner;
     const c = plannerLoad(state, pl);
@@ -920,7 +929,7 @@ const actions = {
       }
       return;
     }
-    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, plan: pl.mission === "outpost" ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
+    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, plan: Parties.SETTLE_MISSIONS.includes(pl.mission) ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
     if (res.error) { ui.plannerError = res.error; return; }
     rememberLaunch(state, res.party, pl); // sim/trips.js: for Repeat trip when it gets home, and its retreat policy
     ui.planner = null;

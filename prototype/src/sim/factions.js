@@ -51,7 +51,7 @@ import { defendInPerson, raidForce } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { resolveWarRaid, warRaidOnPlayer, raidWeight, raidSoured, reservedForYou } from "./diplomacy.js";
 import { allianceRaidHelp } from "./alliance.js";
-import { overwriteClaims } from "./claims.js"; // claims.js: a base founded takes the claims around it (agent A's hook)
+import { overwriteClaims, CLAIM } from "./claims.js"; // claims.js: a base founded takes the claims around it (agent A's hook); CLAIM.BASE_RADIUS: the same reach as your new bases'
 import { aiScavDaily, FACTION_MAKE } from "./aiscav.js";
 import { outsiderRaidOn } from "./visitors.js";
 import { worldScale, stateSizeDef } from "./worldsize.js";
@@ -360,7 +360,7 @@ export function factionsDaily(state) {
         f.bases.push(t.id);
         occupyAbandoned(state, f, t.id); // groupworld.js: the works and stores left there are theirs (a card when it was yours)
         expanded(f);
-        overwriteClaims(state, t.id, 2, f.id, t.loc ? `${knownName(f, "a group")} has taken over ${t.loc.name}` : `${knownName(f, "a group")} has barricaded the bridge at ${tileLabel(state, t.id)}`); // claims.js (agent A's hook: keep it)
+        overwriteClaims(state, t.id, CLAIM.BASE_RADIUS, f.id, t.loc ? `${knownName(f, "a group")} has taken over ${t.loc.name}` : `${knownName(f, "a group")} has barricaded the bridge at ${tileLabel(state, t.id)}`); // claims.js (agent A's hook: keep it)
         if (state.knowledge[t.id] && state.live.has(t.id)) log(state, t.loc ? `${knownName(f, "An unknown group")} has taken over ${t.loc.name}.` : `${knownName(f, "An unknown group")} has barricaded the bridge at ${tileLabel(state, t.id)}: the road over the river is closed to everyone else.`, "danger");
       }
     }
@@ -870,6 +870,7 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
     if (attacker) clashKit(state, attacker, 0, 0, target, 0, "a", 0.2, false); // arsenal.js: the spare kit left behind there, half carried off
     const kept = attacker && rng.chance(keepChance(state, attacker, lost));
     if (kept) attacker.bases.push(lost);
+    else leaveGroupBase(state, target, lost, 0.5 / Math.max(1, target.bases.length + 1)); // groupworld.js: "it stands empty" was only words: its works stand there for whoever comes (an Occupy order, another group)
     recomputeOwnership(state);
     state.stats.abandonedBases = (state.stats.abandonedBases || 0) + 1;
     if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} gave up ${tileLabel(state, lost)} to ${who} without a fight${kept ? "" : " (it stands empty)"}.`, "info");
