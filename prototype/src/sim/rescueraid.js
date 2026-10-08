@@ -4,8 +4,8 @@
 // The map: the group's base as a fort (fort.js fortAssault: their buildings in a yard; a wall ring with a gate in each
 // side and breaches, or no walls at all for a group that has built none: the ring is opened up). Two of their buildings
 // matter:
-//   the cell   your captives, by the group's jail tier (JAIL; jailhouse.js groupJailTier when that is in the game, else
-//              a chain-link cage for raiders and the like, holding cells for soldiers): its doors are locked (locks.js
+//   the cell   your captives, by the group's jail tier (JAIL; groupjails.js groupJailTier: makeshift cells (a chain-link
+//              cage), holding cells (barred cells) or a jailhouse block): its doors are locked (locks.js
 //              difficulty by the tier), its windows bars or chain-link. A guard with the keys (the jailer) stands by it.
 //   the armory a rack of the group's weapons (their arsenal when the arsenal work is in, else a few of their kit's guns
 //              and armour, kept on the group: f.armory) and some of their ammo; its door is locked about two times in
@@ -62,7 +62,8 @@ import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, addGearTo
 import { itemValue } from "./valuation.js";
 import { hasPerk, gainXp } from "./skills.js";
 import { Rng } from "./rng.js";
-import * as Groupworks from "./groupworks.js"; // groupJailTier (the jailhouse work), when it is there
+import { groupJailTier } from "./groupjails.js"; // jailhouse: the group's jail tier (0 none, 1 makeshift, 2 holding cells, 3 jailhouse)
+import { JAIL as JAIL_TIER } from "./prisoners.js"; // the tiers' names and cell blocks, shared with your own jails
 
 export const RESCUE_RAID = {
   ROPES: { base: 0.1, stealth: 0.03, min: 0.05, max: 0.75, beat: [5, 10] },
@@ -71,22 +72,27 @@ export const RESCUE_RAID = {
   SPARE: { dmg: 0.6, losing: 0.4 }, SURRENDER: { hp: 0.4, guards: 3, range: 2, alone: 3, chance: 0.5 },
   RETAKE: { near: 4, guards: 2 }, ASLEEP: 0.35, SENTRY_SIGHT: 2, GOODWILL: { assault: -30, sneak: -20, quiet: -10 },
 };
-// Jail tiers (jailhouse.js groupworks when merged): the cell doors' lock difficulty, the ropes and the windows.
+// Jail tiers (groupjails.js groupJailTier; the names and cell blocks are prisoners.js JAIL's, the same as your own
+// jails'): the cell doors' lock difficulty, the ropes and the windows. name: the jail ("makeshift cells"), block: the
+// building on the map ("a chain-link cage"). Read at the time (getters): prisoners.js may load after this file.
+const tierName = (k) => (JAIL_TIER && JAIL_TIER[k] ? JAIL_TIER[k].name.toLowerCase() : k);
+const tierBlock = (k) => (JAIL_TIER && JAIL_TIER[k] ? JAIL_TIER[k].block : k);
 export const JAIL = {
-  makeshift: { name: "chain-link cage", diff: 1, ropes: 0.1, window: "fence" },
-  holding:   { name: "holding cell",    diff: 2, ropes: 0,   window: "bars" },
-  jailhouse: { name: "jailhouse block", diff: 3, ropes: -0.05, window: "bars" },
+  makeshift: { tier: 1, get name() { return tierName("lockup"); }, get block() { return tierBlock("lockup"); }, diff: 1, ropes: 0.1, window: "fence" },
+  holding:   { tier: 2, get name() { return tierName("cells"); }, get block() { return tierBlock("cells"); }, diff: 2, ropes: 0, window: "bars" },
+  jailhouse: { tier: 3, get name() { return tierName("jailhouse"); }, get block() { return tierBlock("jailhouse"); }, diff: 3, ropes: -0.05, window: "bars" },
 };
+const TIER_KEY = [null, "makeshift", "holding", "jailhouse"];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const first = (n) => String(n).split(" ")[0];
 const cheb = (a, x, y) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y));
 const N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
-export function jailTier(f, tile) {
-  const fn = Groupworks && typeof Groupworks.groupJailTier === "function" ? Groupworks.groupJailTier : null;
-  const t = fn ? fn(f, tile) : null;
-  if (t && JAIL[t]) return t;
-  return f && (f.type === "military" || f.type === "fortress") ? "holding" : "makeshift";
+// The group's jail at that base as a key of JAIL (groupjails.js groupJailTier: an older save's groups, holding cells;
+// no jail at all, a makeshift cage for whoever they hold over their room). state: the world (the groups' jail records).
+export function jailTier(f, tile, state = null) {
+  const t = TIER_KEY[groupJailTier(f, tile, state)];
+  return t || "makeshift";
 }
 
 // ---------- the group's armory ----------
@@ -137,7 +143,7 @@ export function startRescueRaid(state, p, f, mode = "assault") {
     tile, partyId: p.id,
     enemy: { kind: force.kind, count: force.count, power: force.power, factionId: f.id, name: `${f.name} guards`, walls: force.walls, fortified: mode === "sneak" ? 1 : force.fortified },
     ambush: mode === "sneak" ? "player" : null, canRetreat: true, handler: "rescueRaid", layout: "rescueRaid",
-    context: { partyId: p.id, factionId: f.id, tile, mode, captiveIds: list.map((s) => s.id), people: force.people, night, tier: jailTier(f, tile) },
+    context: { partyId: p.id, factionId: f.id, tile, mode, captiveIds: list.map((s) => s.id), people: force.people, night, tier: jailTier(f, tile, state) },
   });
   return "";
 }

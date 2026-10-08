@@ -27,7 +27,6 @@ import { addBuilding, constructionHour, assignStations } from "./buildings.js";
 import { createVehicle, vehiclesDaily, garageHour } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
 import { captivesDaily, releaseStranded, contactHour } from "./conflicts.js";
-import { aiCaptivesDaily } from "./nonlethal.js"; // people the groups took from each other in raids
 import { supplyDaily } from "./supply.js";
 import { medicalHour } from "./medical.js";
 import { craftingHour, craftingDaily } from "./crafting.js";
@@ -55,6 +54,7 @@ import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
 import { claimsDaily } from "./claims.js"; // land claims: lost under a base founded or taken, a hive, a hostile camp
 import { conquestDaily } from "./conquest.js";
 import { prisonersHour, prisonersDaily } from "./prisoners.js";
+import { groupJailsDaily, groupJailsHour } from "./groupjails.js"; // jailhouse: the groups' jails, prisoner labour and trades
 import { ransomHour } from "./ransom.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { caravanRaidsHour } from "./caravanraids.js";
@@ -126,6 +126,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     woodcutting: 2, // a world with firewood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
     groupWorks: 1, // barestart: the AI groups' bases start bare and they build (groupworks.js); an older save has them built up
+    groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,
     hour: 6, // campaign starts at 06:00 on day 1
@@ -789,6 +790,7 @@ export function tickHour(state) {
   medicalHour(state);
   diplomacyHour(state); // diplomacy.js: jobs for other groups checked every hour (jobs.js)
   prisonersHour(state); // prisoners.js: rescue raids arriving, prisoners whose team or base is gone
+  groupJailsHour(state); // groupjails.js: your people just taken: jailed, or sold, ransomed, let go or killed when there is no room
   ransomHour(state); // ransom.js: captives brought home, envoys back with their price, handovers nobody came to
   if (state.hour % 24 === 0) {
     workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
@@ -805,8 +807,8 @@ export function tickHour(state) {
     supplyDaily(state);
     deathSitesDaily(state);
     walkingDaily(state); // carriers.js: the walking dead drift a tile; a body with the worm left unburied at a base gets up
+    groupJailsDaily(state); // groupjails.js: the groups' prisoners work, escape, are ransomed, swapped, sold or turned
     captivesDaily(state);
-    aiCaptivesDaily(state); // nonlethal.js: people the groups took from each other: recruited, ransomed, escaped
     prisonersDaily(state); // prisoners.js: food, escapes, ransoms, recruiting, rescue raids
     conquestDaily(state); // conquest.js: infamy fades, bases taken from you are patched up by their holders
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you

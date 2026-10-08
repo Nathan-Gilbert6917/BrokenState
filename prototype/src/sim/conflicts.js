@@ -47,6 +47,7 @@ import { siteList } from "./zombietypes.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsiders on the same tile (contactAttack)
+import { captiveEscape, captiveDecline, captiveTurnMult } from "./groupjails.js"; // jailhouse: their jail's tier, the work they are put to
 import { startRescueRaid, tacticalPossible, jailTier, JAIL } from "./rescueraid.js"; // the rescue played out on their base's map
 
 // ---------- small helpers ----------
@@ -248,7 +249,9 @@ export function takeCaptive(state, s, f, p) {
   // Everything on them is taken: worn, held, pockets and pack (inventory.js).
   for (const g of stripAll(s)) f.lootedGear.push(`${first(s)}'s ${g.name}`);
   s.station = null;
-  s.location = { kind: "captive", factionId: f.id, tile: f.bases[0], since: state.hour };
+  // fresh: their captors have still to find room for them (groupjails.js groupJailsHour: jailed, or sold, ransomed at
+  // once, let go or killed when their jail is full).
+  s.location = { kind: "captive", factionId: f.id, tile: f.bases[0], since: state.hour, fresh: true };
   stats(state).captured += 1;
   log(state, `${s.name} was taken prisoner by ${f.name}.`, "danger");
 }
@@ -1312,7 +1315,7 @@ function victoryRewards(state, p, c, result) {
 }
 
 // ---------- rescue missions ----------
-const jailWord = (f, tile) => (JAIL[jailTier(f, tile)] || JAIL.makeshift).name;
+const jailWord = (f, tile, state = null) => (JAIL[jailTier(f, tile, state)] || JAIL.makeshift).name; // jailhouse: the group's own jail (groupjails.js)
 export function guardsFor(state, p, f) {
   const def = FACTION_TYPES[f.type];
   return {
@@ -1359,7 +1362,7 @@ function rescueCard(state, p, f, held) {
       ...(tacticalPossible(state) ? [
         {
           label: "Sneak in on the map",
-          hint: `Play it out on their base's map: nobody has seen you${night ? ", a third of them are asleep and the rest see less in the dark" : " (night would help: a third of them asleep)"}. Reach the ${jailWord(f, partyTile(p))}, get past its lock (the jailer's keys, lockpicks, force) and the ropes, and get everyone out by the edge of the map. Your people inside can work at the ropes and the lock themselves. Once the alarm is up, they all come. About ${pct(assault)} if it comes to a straight fight`,
+          hint: `Play it out on their base's map: nobody has seen you${night ? ", a third of them are asleep and the rest see less in the dark" : " (night would help: a third of them asleep)"}. Reach the ${jailWord(f, partyTile(p), state)}, get past its lock (the jailer's keys, lockpicks, force) and the ropes, and get everyone out by the edge of the map. Your people inside can work at the ropes and the lock themselves. Once the alarm is up, they all come. About ${pct(assault)} if it comes to a straight fight`,
           fight: { odds: assault, enemy: guards, ambush: null },
           resolve: (st) => { bump(st, "outcomes", "rescue-raid-sneak"); return startRescueRaid(st, p, f, "sneak"); },
         },
@@ -1554,6 +1557,12 @@ export function captivesDaily(state) {
     }
     if (!f.bases.includes(s.location.tile)) s.location.tile = f.bases[0];
     s.mood = Math.max(0, s.mood - 2);
+    // groupjails.js: worked by their captors (health and mood down; raiders worst), and some do not survive it.
+    if (captiveDecline(state, s, f)) {
+      captiveEvent(state, "killed", `${s.name} is dead`, `Word comes that ${s.name} was worked to death by ${f.name}.`, "death");
+      checkGameOver(state);
+      continue;
+    }
     const att = attitude(f);
     if ((att === "Friendly" || att === "Allied") && rng.chance(0.35)) {
       releaseHome(state, s);
@@ -1561,14 +1570,14 @@ export function captivesDaily(state) {
     } else if (f.type === "zealot" && days > 2 && rng.chance(0.05)) {
       hurt(state, s, 999, null, `at the hands of ${f.name}`);
       captiveEvent(state, "killed", `${s.name} is dead`, `Word comes that ${f.name} "purified" ${s.name}.`, "death");
-    } else if (days > 10 && !s.leader && rng.chance(f.type === "zealot" ? 0.01 : 0.015)) {
+    } else if (days > 10 && !s.leader && rng.chance((f.type === "zealot" ? 0.01 : 0.015) * captiveTurnMult(s))) { // broken by it: more likely
       s.alive = false;
       s.left = true;
       s.recruitedBy = f.id;
       f.pop += 1;
       captiveEvent(state, "recruited", `${first(s)} has joined ${f.name}`, `After ${Math.floor(days)} days as a prisoner, ${s.name} has taken ${f.name}'s side. They are one of them now.`, "death");
       checkGameOver(state); // the last one alive changing sides ends the run (world.js)
-    } else if (rng.chance(0.005 + skill(s, "stealth") * 0.001 + (CAPTIVE_TOOL[s.location.tool] || 0))) { // a pin, lockpicks or the keys kept hidden (rescueraid.js)
+    } else if (rng.chance(captiveEscape(state, s, f))) { // groupjails.js: their jail's tier, the work detail, Stealth, and a pin, lockpicks or the keys kept hidden (CAPTIVE_TOOL, rescueraid.js)
       s.health = Math.max(10, s.health - rng.int(5, 25));
       releaseHome(state, s);
       captiveEvent(state, "escaped", `${first(s)} escaped!`, `${s.name} slipped out of ${f.name}'s base and made it home, hungry and hurt.`, "good");

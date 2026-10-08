@@ -102,7 +102,10 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   check(near(waterNeed(st, h).prisoners, Math.round(2 * drinkRate(st) * 10) / 10) && waterNeed(st, h).nPrisoners === 2, "and drink as anyone");
   // prisonersDaily takes their food from the base (fresh, then preserved).
   h.stock.food = 0; h.stock.preserved = 10;
+  const esc0 = { ...PRISON.ESCAPE };
+  for (const k of ["guarded", "unguarded", "shed"]) PRISON.ESCAPE[k] = 0; // the meal under test, not the dice of an escape
   prisonersDaily(st);
+  Object.assign(PRISON.ESCAPE, esc0);
   check(near(h.stock.preserved, 10 - 2 * pr * coldFactor(st), 1e-6), `prisoners eat preserved food when the fresh is gone (${h.stock.preserved} left)`);
   // Guests sheltering: three travellers.
   h.stock.food = 0; h.stock.preserved = 20;

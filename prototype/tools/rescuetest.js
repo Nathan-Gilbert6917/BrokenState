@@ -611,6 +611,7 @@ section("The autopilot: a ransom first when it can afford it, a rescue raid when
 {
   const st = world(seed + 140);
   const f = raiders(st);
+  f.jails = { [f.bases[0]]: 3 }; // jailhouse: a cell for them (with none they would be sold on, freed by a military buyer, or killed), and a tight one (the ransom under test, not an escape)
   const a = captive(st, f, { skill: 5 });
   setAutopilot(st, true, "balanced");
   hub(st).radio = true;

@@ -54,7 +54,7 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   const st = W();
   const h = hub(st);
   bare(h); rich(h); skilled(st, h);
-  const fill = ["bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "cellar", "cellar", "storehouse", "common_room", "common_room", "chapel", "garage", "cells", "cells", "infirmary"];
+  const fill = ["bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "cellar", "cellar", "storehouse", "common_room", "common_room", "chapel", "garage", "cells", "kitchen", "infirmary"]; // jailhouse: one jail a base (buildings.js family "jail"), so a kitchen takes the second plot;
   check(fill.length === PLOTS.hub.building, "the fill list is the hub's building plots");
   for (const t of fill) addBuilding(h, t);
   check(plotsUsed(h, "building") === PLOTS.hub.building && plotsFree(h, "building") === 0, "every building plot is in use");
@@ -218,7 +218,7 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
 
   console.log("Expanding a bunkhouse into a barracks");
   bare(h);
-  const fill = ["bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "cellar", "cellar", "storehouse", "common_room", "common_room", "chapel", "garage", "cells", "cells", "infirmary"];
+  const fill = ["bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "bunkhouse", "cellar", "cellar", "storehouse", "common_room", "common_room", "chapel", "garage", "cells", "kitchen", "infirmary"]; // jailhouse: one jail a base (buildings.js family "jail"), so a kitchen takes the second plot;
   for (const t of fill) addBuilding(h, t);
   const bunks = h.buildings.filter((x) => x.type === "bunkhouse");
   const beds0 = baseBeds(h);
@@ -256,7 +256,7 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   h3.stock.parts = 0;
   check(housingAI.next(st3, h3).type === "bunkhouse", "no parts for a barracks: a bunkhouse on a free plot");
   h3.stock.parts = 50;
-  addBuilding(h3, "garage"); addBuilding(h3, "chapel"); addBuilding(h3, "cells"); // every plot taken
+  addBuilding(h3, "garage"); addBuilding(h3, "chapel"); addBuilding(h3, "greenhouse"); // every plot taken (the cells are in the fill already: one jail a base)
   const ex = housingAI.next(st3, h3);
   check(ex && ex.upgrade != null && h3.buildings.find((x) => x.id === ex.upgrade).type === "bunkhouse" && ex.beds === 6, "no plot free: expand a bunkhouse (+6)");
   const ws = housingAI.wishes(st3, h3);

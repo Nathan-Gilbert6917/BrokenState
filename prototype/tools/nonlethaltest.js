@@ -6,6 +6,7 @@
 // dropped, tie → prisoner, an untied one walking off, execute and its mood cost, your own surrender); loot through
 // itemcond; by the numbers (AI raids: prisoners instead of dead; a decisive win of yours); a battle saved mid-fight.
 // Usage: node tools/nonlethaltest.js [seed]
+import { groupJailsDaily } from "../src/sim/groupjails.js"; // jailhouse: the groups' prisoners, one model
 import { createWorld, hub, atBase, survivorById, factionById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { AMMO_TYPES } from "../src/sim/data-ammo.js";
@@ -457,15 +458,27 @@ const giveTaser = (st, s, shots = 2, carts = 1) => { const it = newItem("taser")
   console.log(`    AI raids, share of the beaten taken alive: ${types.map((t) => `${t} ${pct(row[t])}`).join(", ")}`);
   check(row.traders > row.raider && row.commune > row.raider && row.raider > row.zealot && row.zealot === 0, "groups that take people alive take more prisoners and kill fewer; zealots none");
   check(Math.abs(row.traders - NL_TAKE.traders) < 0.08, `the shift is small and as set (traders ${pct(row.traders)} of ${pct(NL_TAKE.traders)})`);
-  // Held prisoners: recruited, ransomed back or escaping over the days.
+  // Held prisoners (jailhouse: one model, groupjails.js): an older save's head count becomes jail records, and over
+  // the days they go home (ransomed, swapped, escaped), join their captors or are sold on.
   const st2 = world(seed + 13);
   const [A, B] = st2.factions.filter((f) => f.alive);
   A.held = { [B.id]: 10 };
   B.stock.food = 1000;
+  aiCaptivesDaily(st2);
+  check(!A.held && (A.prisoners || []).filter((r) => r.from === B.id).length === 10, "an older save's 10 held become 10 records in their jail");
   const popA = A.pop, popB = B.pop;
-  for (let d = 0; d < 60; d++) { st2.hour += 24; aiCaptivesDaily(st2); }
-  const left = A.held ? A.held[B.id] || 0 : 0;
-  check(left < 10 && A.pop + B.pop - popA - popB === 10 - left, `in 60 days ${10 - left} of 10 held went home or joined their captors (${A.pop - popA} joined, ${B.pop - popB} back)`);
+  const ofB = () => st2.factions.reduce((a, f) => a + (f.prisoners || []).filter((r) => r.from === B.id).length, 0);
+  for (let d = 0; d < 60; d++) { st2.hour += 24; groupJailsDaily(st2); }
+  const left = ofB();
+  check(left < 10 && A.pop - popA + B.pop - popB <= 10 - left, `in 60 days ${10 - left} of 10 held went home, joined their captors or were sold on (${A.pop - popA} joined, ${B.pop - popB} back)`);
+  // A raid between real groups: the share taken alive goes into the winner's jail, as many as it holds.
+  const st4 = world(seed + 16);
+  const tr = st4.factions.find((f) => f.alive && f.bases.length && NL_TAKE[f.type] > 0.3) || st4.factions.find((f) => f.alive && f.bases.length);
+  const vic = st4.factions.find((f) => f.alive && f !== tr);
+  tr.jails = { [tr.bases[0]]: 1 }; tr.prisoners = [];
+  let lived = 0;
+  for (let i = 0; i < 20; i++) { st4.hour += 1; lived += raidPrisoners(st4, tr, vic, 8); }
+  check(tr.prisoners.length === 2 && lived >= 2, `${tr.name} (${tr.type}) takes ${lived} alive in 20 raids; its makeshift cells hold ${tr.prisoners.length}, the rest sold on, let go or killed`);
   // A decisive win of yours by the numbers: a couple taken.
   const n = numbersSurrenders(st2, { enemy: { kind: "guards", count: 6, factionId: B.id } }, { outcome: "victory", survivorsDead: [] });
   const nz = numbersSurrenders(st2, { enemy: { kind: "zealots", count: 6 } }, { outcome: "victory", survivorsDead: [] });
