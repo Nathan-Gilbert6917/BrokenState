@@ -437,18 +437,40 @@ section("The governor's night watch (autopilot.js govWatch)");
   const h = armHub(st, ["walls", "bunkhouse", "bunkhouse"], 5);
   setAutopilot(st, true, "balanced");
   setHour(st, 17);
-  for (let i = 0; i < 6; i++) tickHour(st); // to 23:00
+  for (let i = 0; i < 2; i++) tickHour(st); // to 19:00: the day's jobs, before the watch
+  const dayRole = new Map(atBase(st, h.id).map((s) => [s.id, s.role]));
+  for (let i = 0; i < 4; i++) tickHour(st); // to 23:00
   const W = h.watch;
   check(W && W.gov && W.shifts.length === 2 && W.shifts.every((sh) => sh.ids.length >= 1), `a base of ${atBase(st, h.id).length}: a night watch in two shifts (${W ? W.shifts.map((sh) => `${sh.name} ${sh.from}–${sh.to}: ${sh.ids.length}`).join(", ") : "none"})`);
   const tonight = W ? W.shifts.flatMap((sh) => sh.ids) : [];
-  const fw = W ? st.survivors.find((s) => s.id === W.shifts[0].ids[0]) : null;
-  check(fw && fw.role === "guard" && fw.govWatch, `at 23:00 the first watch stands guard, their job kept (${fw && fw.govWatch && fw.govWatch.role})`);
+  // The first watch at 23:00 stands guard with their own job kept (s.govWatch), and at midnight counts at it in the
+  // day's work. The best shot (picked first) can be the hub's standing lookout (planRoles 9), already on guard by day:
+  // nothing to keep, and the lookout's job is guard (seed 42 since the bare start: no plots to tend, so the best shot is
+  // free when the lookout is posted). Either way the kept job is checked on two nights (the watch rotates).
+  let keptJob = 0;
+  const firstWatch = (label, before) => {
+    const w = h.watch;
+    const fw = w ? st.survivors.find((s) => s.id === w.shifts[0].ids[0]) : null;
+    const kept = fw && (fw.govWatch ? fw.govWatch.role : before(fw) === "guard" ? "guard" : null);
+    check(fw && fw.role === "guard" && kept && (!fw.govWatch || kept !== "guard"), `${label} at 23:00 the first watch stands guard, their job kept (${fw && fw.name.split(" ")[0]}: ${kept}${fw && !fw.govWatch ? ", the lookout" : ""})`);
+    if (fw && fw.govWatch) keptJob++;
+    return { fw, kept };
+  };
+  const n1 = firstWatch("night 1:", (s) => dayRole.get(s.id));
   check(!surpriseAt(st, h), "so the base is not caught asleep");
   watchDayRoles(st);
-  check(fw && fw.role !== "guard" && !fw.govWatch, `at midnight they count at their own job in the day's work (${fw && fw.role})`);
-  for (let i = 0; i < 24; i++) tickHour(st);
+  check(n1.fw && n1.fw.role === n1.kept && !n1.fw.govWatch, `at midnight they count at their own job in the day's work (${n1.fw && n1.fw.role})`);
+  for (let i = 0; i < 20; i++) tickHour(st); // to 19:00 the next day
+  const dayRole2 = new Map(atBase(st, h.id).map((s) => [s.id, s.role]));
+  for (let i = 0; i < 4; i++) tickHour(st); // 23:00
   const next = h.watch ? h.watch.shifts.flatMap((sh) => sh.ids) : [];
   check(next.length && next.some((id) => !tonight.includes(id)), `the next night others take it (${next.filter((id) => !tonight.includes(id)).length} of ${next.length} new)`);
+  const n2 = firstWatch("night 2:", (s) => dayRole2.get(s.id));
+  if (n2.fw && n2.fw.govWatch) {
+    watchDayRoles(st); // the next hour's planRoles puts them back on watch
+    check(n2.fw.role === n2.kept && !n2.fw.govWatch, `night 2: at midnight their own job again (${n2.fw.role})`);
+  }
+  check(keptJob >= 1, `a watcher's own job kept and given back on at least one of the two nights (${keptJob})`);
   let peak = 0;
   for (let i = 0; i < 24 * 8; i++) { tickHour(st); for (const s of atBase(st, h.id)) peak = Math.max(peak, s.tired || 0); }
   check(peak < TIRED.TIRED, `eight days on the governor's watch: nobody Tired (most owed ${peak})`);
