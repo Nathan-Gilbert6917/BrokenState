@@ -24,9 +24,10 @@
 // Where it applies: a team's fight in the field (setup.partyId, a way out, not a raid, not a base defence):
 // road conflicts, ambushes, rescues, outsider fights, group-base assaults. A base defence (defences.js, raids)
 // does not use it: breakOff below is the helper for "abandon the base" there.
-import { RETREAT, downChance } from "./combat.js";
+import { RETREAT, downChance, loadPenalty } from "./combat.js";
+import { battleKg } from "./carrykit.js"; // the kit carried (kg): the escape check's load penalty
 import { hurt, isNight, skill, log, factionById, survivorById, localId } from "./world.js";
-import { armorMult, armorPower } from "./inventory.js";
+import { armorMult } from "./inventory.js";
 import { absorbOffscreen } from "./armour.js"; // per-hit armour: what a wound by the numbers wears off the armour worn
 import { Rng } from "./rng.js";
 import { woundTrauma } from "./health.js";
@@ -137,7 +138,7 @@ export const crewPolicy = (c) => validPolicy(c && c.retreat) || STYLE_POLICY[(c 
 
 // ---------- the escape check ----------
 // The tactical check (combat.js escapeOdds) with the map's numbers given: 100 − 3 a tile (4.5 carrying) − 25 per
-// enemy on them − (6 a shooter in sight + 4 a chaser, at most 35) − up to 30 for wounds − 2 a point of armor + 1 a
+// enemy on them − (6 a shooter in sight + 4 a chaser, at most 35) − up to 30 for wounds − 0.5 a kg carried over 8 + 1 a
 // point of Scouting + 10 at night − 10 carrying; by the numbers also + 10 a car (+ 5 bikes) and + 10 a stealthy
 // stance. 5–95; safe with nobody on them, nobody shooting or chasing and nobody to carry.
 // m: { hp, maxHp?, load, scouting, mult }. e: { tiles, pinned, shooters, chasers, night, carrying, vehicle, stealthy, smoke }
@@ -151,7 +152,7 @@ export function escapeChanceByNumbers(m, e) {
   add(`${e.pinned || 0} on them`, -(e.pinned || 0) * R.PINNED);
   add("shooters and chasers", -threat);
   add("wounds", -R.WOUNDS * Math.max(0, 1 - m.hp / (m.maxHp || 100)));
-  add("armor worn", -R.ARMOR * (m.load || 0));
+  add("load carried", -loadPenalty(m.load)); // combat.js: the kg carried over 8
   add(`Scouting ${m.scouting || 0}`, R.SCOUTING * (m.scouting || 0));
   add("night", e.night ? R.NIGHT : 0);
   add("smoke cover", e.smoke || 0);
@@ -165,13 +166,13 @@ export function escapeChanceByNumbers(m, e) {
 }
 
 // ---------- the fight's model (plain data, no state: the real fight and the card's forecast both use it) ----------
-// A member: { id, name, hp, mult (damage taken ×: tough, armor), load (armor), scouting, medicine }.
+// A member: { id, name, hp, mult (damage taken ×: tough, armor), load (kg carried), scouting, medicine }.
 function memberOf(s) {
   const med = memberMedic(s); // medics.js: a med kit anywhere on them adds to their Medicine; kit: they are a medic
   return {
     id: s.id, name: s.name, hp: s.health, maxHp: 100,
     mult: (s.traits.includes("tough") ? 0.75 : 1) * armorMult(s),
-    load: armorPower(s), scouting: skill(s, "scouting"), medicine: skill(s, "medicine") + med.bonus, kit: med.kit,
+    load: battleKg(s), scouting: skill(s, "scouting"), medicine: skill(s, "medicine") + med.bonus, kit: med.kit,
   };
 }
 // The fight as the model sees it. win: the chance to win fought to the end (the odds the card shows).

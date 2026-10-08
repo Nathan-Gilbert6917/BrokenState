@@ -39,14 +39,14 @@ export const REPAIR = {
 };
 // Materials of the armour pieces (section 17), where GEAR has none of its own (armour.js may add GEAR material / ac).
 const MATERIAL = {
-  vest: "soft", tacvest: "soft", softinsert: "soft", plate: "ceramic", ceramicplate: "ceramic", steelplate: "steel", scrapvest: "steel",
+  vest: "soft", tacvest: "soft", softinsert: "soft", plate: "soft", ceramicplate: "ceramic", steelplate: "steel", scrapvest: "steel",
   tirevest: "padding", sportspads: "padding", padding: "padding", shinguards: "padding",
   kneeguards: "hard", riotarms: "hard", riotlegs: "hard", bikehelmet: "hard", footballhelmet: "hard", riothelmet: "hard", milhelmet: "hard", rivethelmet: "hard",
 };
-const AC = { vest: 2, tacvest: 2, softinsert: 2, steelplate: 4, ceramicplate: 5, plate: 5, scrapvest: 3, milhelmet: 3, riothelmet: 2, riotarms: 2, riotlegs: 2 };
+const AC = { vest: 2, tacvest: 2, softinsert: 2, steelplate: 4, ceramicplate: 5, plate: 2, scrapvest: 3, milhelmet: 3, riothelmet: 2, riotarms: 2, riotlegs: 2 };
 export const materialOf = (key) => (GEAR[key] && GEAR[key].material) || MATERIAL[key] || null;
 export const acOf = (key) => (GEAR[key] && Number.isFinite(GEAR[key].ac) ? GEAR[key].ac : AC[key] || 0);
-const ARMOUR = ["armor", "head", "arms", "legs"];
+const ARMOUR = ["armor", "head", "arms", "legs", "insert"]; // insert: a plate carrier's plates (data-kit.js)
 const WOODEN = ["bat", "fireaxe", "sledge", "spear", "machete"]; // a wooden handle or haft (besides what burns: GEAR burnShare)
 const GUN_CATS = ["pistol", "shotgun", "rifle", "automatic"];
 
@@ -65,6 +65,7 @@ export const REPAIR_KINDS = {
   steel:   { name: "steel plate",         skill: "mechanics", min: 3, in: { scrap: 4, fuel: 1 }, hours: 4 },
   camp:    { name: "camp kit",            skill: "crafting",  min: 1, in: { scrap: 1 }, hours: 1, soft: true },
   fish:    { name: "fishing gear",        skill: "crafting",  min: 0, in: { scrap: 1 }, hours: 1, soft: true },
+  recharge: { name: "battery swap",       skill: "mechanics", min: 0, in: {}, gearIn: { batteries: 1 }, hours: 0.5, soft: true }, // electronic ear protection, a team headset (data-helmets.js recharge: nothing off the maximum)
 };
 
 // The kind of repair an item takes ({ kind, def }), { refuse: why }, or null (it does not wear, or it is used up
@@ -74,6 +75,8 @@ export function repairKind(item) {
   if (!d || !d.dur || d.tabs || d.groom || d.count) return null;
   if (d.medKit || d.water || d.throw || d.use || d.cat === "gunmod" || item.key === "repairkit" || item.key === "kevlarkit") return null;
   const k = (kind) => ({ kind, def: REPAIR_KINDS[kind] });
+  if (d.noRepair) return { refuse: d.noRepair }; // a cracked ballistic visor (data-helmets.js)
+  if (d.recharge) return k("recharge"); // new batteries (data-helmets.js)
   if (ARMOUR.includes(d.slot)) {
     const mat = materialOf(item.key) || (d.makeshift ? "padding" : "hard");
     if (mat === "ceramic") return { refuse: `Ceramic plates cannot be repaired: the ${item.name} has to be replaced.` };
@@ -110,7 +113,7 @@ export function repairMath(item, skillLevel, opts = {}) {
   const max = itemDurMax(item), dur = itemDur(item);
   const gap = Math.max(0, max - dur);
   const restore = opts.kit ? Math.ceil(gap * REPAIR.KIT_RESTORE - 1e-9) : gap;
-  const loss = round1(restore * lossRate(skillLevel, opts));
+  const loss = GEAR[item.key] && GEAR[item.key].recharge ? 0 : round1(restore * lossRate(skillLevel, opts)); // a battery swap wears nothing out
   const newMax = round1(Math.max(1, max - loss));
   return { restore, oldMax: max, newMax, dur: Math.min(newMax, dur + restore), loss: round1(max - newMax) };
 }
@@ -518,7 +521,7 @@ export function partPlan(state, base) {
   const cnt = (t) => base.buildings.filter((b) => b.type === t).length;
   const targets = {
     gunparts: 2 + Math.floor(guns / 3),
-    parts: 3 + cnt("generator") + cnt("well") + cnt("ammo_bench") + cnt("machine_shop"),
+    parts: 3 + cnt("generator") + cnt("well") + cnt("ammo_bench") + cnt("reload_bench") + cnt("machine_shop"),
     carparts: 2 + 2 * cars,
     electronics: 1 + (base.radio ? 1 : 0) + Math.floor(n((it) => ELEC.has(it.key)) / 2),
     kevlarkit: Math.ceil(vests / 3),

@@ -26,6 +26,7 @@ import { say, fx, active, adjacent, reachable, pathTo, moveAlong, los, distField
 import { hangBack } from "./zombietypes.js";
 import { releaseSwarm } from "./carriers.js";
 import { log } from "./world.js";
+import { earHold, deafen, HEAR } from "./hearing.js"; // ear protection against the scream
 
 const BB = MIDDEAD.BONEBACK, CL = MIDDEAD.CLIMBER, FL = MIDDEAD.FLINGER, SW = MIDDEAD.SOWER, NM = MIDDEAD.NIGHTMARE;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -169,13 +170,14 @@ function scream(b, u, foes) {
   for (const f of foes) {
     if (dist(u, f) > NM.RANGE || f.terror) continue;
     const friend = b.units.some((o) => o !== f && o.side === "player" && active(o) && adjacent(o, f));
-    const hold = Math.max(0.05, Math.min(0.95, NM.HOLD + (f.nerve || 0) + (friend ? NM.NEAR : 0)));
+    const hold = Math.max(0.05, Math.min(0.95, NM.HOLD + (f.nerve || 0) + (friend ? NM.NEAR : 0) + earHold(f))); // hearing.js: ear protection, deafened
     if (b.rng.chance(hold)) continue;
     f.terror = true;
     f.ow = false;
     panicked.push(f.name.split(" ")[0]);
     fx(b, { type: "loot", to: [f.x, f.y], text: "PANIC" });
   }
+  deafen(b, u.x, u.y, HEAR.SCREAM); // hearing.js: right next to it, the scream rings in the ears too
   say(b, `${u.name} screams, a sound no throat should make${b.raid ? ` (Heat +${NM.HEAT})` : ""}.${panicked.length ? ` ${panicked.join(", ")} ${panicked.length === 1 ? "panics and will run" : "panic and will run"} next turn.` : " Your people hold their nerve."}`, panicked.length ? "danger" : "info");
 }
 // The start of your turn (combat.js startPlayerTurn): whoever panicked spends the turn running.

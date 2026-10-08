@@ -46,6 +46,7 @@ import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
+import { queueReloadUpgrade } from "./sim/reloading.js"; // the reloading bench
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
 import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
 import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
@@ -715,6 +716,7 @@ const actions = {
   // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (asks first: ui/confirm.js) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
   "bunk-expand": (d) => { ui.baseMsg = queueBunkhouseExpand(state, baseOf(d), Number(d.id)); },
+  "reload-up": (d) => { ui.baseMsg = queueReloadUpgrade(state, baseOf(d), Number(d.id)); }, // sim/reloading.js: an ammo bench into a reloading bench
   demolish: (d) => {
     const id = Number(d.id), b = baseOf(d), what = b && b.buildings.find((x) => x.id === id);
     const name = what && BUILDINGS[what.type] ? BUILDINGS[what.type].name : "this building";

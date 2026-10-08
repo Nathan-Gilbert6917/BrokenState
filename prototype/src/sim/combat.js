@@ -29,14 +29,14 @@
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
 import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack } from "./world.js";
-import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty } from "./parties.js";
+import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
 import { partyVehicle, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods, carriedThrowables } from "./inventory.js";
 import { areaSource, kitSource, spend } from "./itemcond.js";
-import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades } from "./loot.js";
+import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades, rollAreaLaunchers, rollAreaReload } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
 import { tiredAim } from "./sleep.js"; // Tired or Exhausted from the watch
@@ -61,6 +61,7 @@ import { ZTYPES, MIDDEAD } from "./hiveconst.js";
 import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
 import { armorVs, stabsGap, ARMORED, armoredOf, wearPlate } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
 import { armourHit, armourExpect, locatedHit, enemyPieces, fitArmour, wearByNumbers, absorbOffscreen, battleArmor, battleDice, roundOf, armourSpec, dropBroken } from "./armour.js"; // per-hit armour: pieces, locations, penetration, wear
+import { noteBrass, pickUpBrass } from "./reloading.js"; // the reloading bench: brass back after a won fight
 import { syncModes, modeOf, modeRounds, modeRolls, modeAim, modeRefusal, FIRE_MODES, rollTrigger, jamGun, jamRefusal, jamLabel, foul, unjam, unjamRefusal, jamReload, aiUnjam, aiMode, noteJamWeather, enemyGunQ, enemyGunCond, SUPPRESS, suppressRounds, suppressRefusal, coneTargets, bestCone, nextInLine, overpenChance, piercesCover, OVERPEN, braceAim, sniperCell, isSniper, gunModes } from "./gunfire.js"; // fire modes, jams, suppressing fire, over-penetration
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } from "./middead.js"; // the mid game's special dead
@@ -86,10 +87,17 @@ import { calOf, calName, roundsOf, takeBattleRounds, sideRounds, chooseLoad, ene
 import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
 import { armFromArsenal, settleArsenal } from "./arsenal.js"; // group arsenals: their units armed from what the group holds
+// Grenade launchers and rockets (section 13) and what explosions do to gear (section 24): a unit's second weapon (u.gl).
+import { fitLauncher, refitLauncher, kitLauncher, launchRefusal, launch, glReloadRefusal, glReload, aiLaunch, launcherBody, launcherLoot, blastLoot, launcherBattleEnd, blownUpCargo, blastHit, blastBox, blastPiles } from "./launchers.js";
+import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag } from "./mags.js"; // magazines as items (section 15): spares, reload sources, top-up, internal magazines
+import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines
+import { allCarried, carriedSpots } from "./inventory.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
 import * as MED from "./medics.js";
+import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
+import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -379,10 +387,7 @@ export function byNumbersOdds(state, setup, people = combatants(state, setup), a
 // The keys of everything a fight's people carry, and their team's cargo (decoys.js lureEdge).
 function carriedKeys(state, setup, people) {
   const out = [];
-  for (const s of people) {
-    for (const it of Object.values(s.gear || {})) if (it) { out.push(it.key); for (const c of it.contents || []) if (c) out.push(c.key); }
-    for (const it of s.pockets || []) if (it) out.push(it.key);
-  }
+  for (const s of people) for (const it of allCarried(s)) out.push(it.key); // inventory.js: worn, pockets, rig pouches, the pack
   const p = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
   for (const it of (p && p.cargo && p.cargo.gear) || []) if (it) out.push(it.key);
   return out;
@@ -793,7 +798,7 @@ export const hasShot = (b, w, u = null) => (!w.ammo || (u ? roundsOf(b, u) : amm
 // A shot by one of your people: its rounds (its calibre and loaded type: its own boxes, the team's, the pools) or its
 // arrow from the pools (b.arrowsUsed: picked up again after a win).
 function spendShot(b, w, u) {
-  if (w.ammo) b.ammoUsed += takeBattleRounds(b, u, w.ammo);
+  if (w.ammo) { const n = takeBattleRounds(b, u, w.ammo); b.ammoUsed += n; noteBrass(b, u, n); } // reloading.js: its brass, picked up after a win
   if (w.arrows) { take(b, "arrows", w.arrows); b.arrowsUsed = (b.arrowsUsed || 0) + w.arrows; }
 }
 // After the fight: about half the arrows loosed are picked up again when the field is yours (world.js ARROWS.BACK),
@@ -1085,7 +1090,11 @@ export function settleVehicle(state, b, outcome = null) {
   const pv = party ? partyVehicle(state, party) : null;
   if (!pv) return;
   pv.condition = Math.max(1, Math.round((pv.condition - v.wear) * 10) / 10);
-  log(state, `The ${pv.name} took a beating at ${b.place}: condition ${Math.round(pv.condition)}%.`, "danger");
+  if (v.blownUp) { pv.condition = 0; pv.destroyed = true; } // launchers.js: a wreck for good (nothing repairs it; strip it for parts)
+  log(state, v.blownUp ? `The ${pv.name} was blown up at ${b.place}: a burnt-out wreck now, past repair.` : `The ${pv.name} took a beating at ${b.place}: condition ${Math.round(pv.condition)}%.`, "danger");
+  const blown = blownUpCargo(state, b, party); // launchers.js (section 24): blown up, its cargo went with it; shaken, worn
+  if (blown) log(state, blown, "danger");
+  if (v.blownUp && party.vehicleId === pv.id) leaveVehicle(state, party, b.tileId ?? partyTile(party), "blown up"); // the team goes on on foot; what it cannot carry stays in the wreck
   v.wear = 0;
 }
 // ---------- the team's vehicle's upgrades on the map (vehicles.js: glass, mesh grilles, plating, a turret) ----------
@@ -1094,6 +1103,7 @@ export function settleVehicle(state, b, outcome = null) {
 const carUpTag = (u) => (u.plating || u.scrapPlate || u.glass || u.mesh || u.turret ? { p: u.plating || 0, s: u.scrapPlate || 0, g: u.glass || 0, m: u.mesh || 0, t: u.turret ? u.turret.gun : null } : null);
 export function fitMapVehicle(b, pv) {
   const v = b.vehicle;
+  if (v && pv && Number.isFinite(pv.condition)) v.cond0 = pv.condition; // the condition it came in with: blasts that wear it past this blow it up (vehicleBlast)
   if (!v || !pv || isBike(pv)) return;
   const u = upgradesOf(pv);
   v.up = { glass: u.glass, mesh: u.mesh, plating: u.plating, scrapPlate: u.scrapPlate, turret: u.turret ? { gun: u.turret.gun } : null };
@@ -1117,7 +1127,10 @@ export function riderHitMult(b, hit = {}) {
 // A blast next to the team's vehicle (throwables.js landEffect): it wears the vehicle (BLAST_WEAR × 0.6 a plating level)
 // and its fragments come in at the windows: the riders aboard take UPGRADE_FX.riderBlast of it (× the glass or the
 // grilles: riderHitMult), never more than leaves them on their feet (they get down below the doors). Returns log text.
-export const BLAST_WEAR = { frag: 4, blast: 8 };
+// gl: a 40 mm HE grenade, rocket: a rocket (launchers.js GL_HE / ROCKET: section 13's +70). A vehicle whose blast wear
+// this fight reaches the condition it came in with (v.cond0) is blown up: its riders take the blast in full and after
+// the fight its cargo is mostly gone (launchers.js blownUpCargo, settleVehicle).
+export const BLAST_WEAR = { frag: 4, blast: 8, gl: 6, rocket: 70 };
 export function vehicleBlast(b, x, y, r, [lo, hi], kind = "blast") {
   const v = b.vehicle;
   if (!v || v.kind === "bike") return "";
@@ -1126,14 +1139,21 @@ export function vehicleBlast(b, x, y, r, [lo, hi], kind = "blast") {
   if (!near) return "";
   const wear = Math.round((BLAST_WEAR[kind] || BLAST_WEAR.blast) * mapWearMult(v) * 10) / 10;
   v.wear = Math.round(((v.wear || 0) + wear) * 10) / 10;
+  v.blastWear = Math.round(((v.blastWear || 0) + wear) * 10) / 10;
+  const blown = !v.blownUp && v.cond0 != null && v.blastWear >= v.cond0;
+  if (blown) v.blownUp = true;
   const m = UPGRADE_FX.riderBlast * riderHitMult(b, { how: "blast" });
   const hurt = [];
   for (const u of b.units) {
     if (!u.aboard || u.dead || u.gunner) continue; // the gunner is out in the open (caught by the blast itself)
     // The glass (or grilles) first, then what the rider wears (hitMult: a blast is not a located hit, armour.js: the flat multiplier).
+    // Blown up: the blast in full, through everything (and it can bring them down).
+    if (blown) { const eff = Math.round(damage(b, u, b.rng.int(lo, hi), null, false, { how: "blast" })); blastHit(b, u, eff); hurt.push(`${u.name} ${eff}${u.dead ? " (dead)" : u.down ? " (down)" : ""}`); if (!u.dead) disembark(b, u, true); continue; } // thrown clear of the wreck
     const eff = Math.max(0, Math.min(u.hp - 1, Math.round(b.rng.int(lo, hi) * m * hitMult(u, null, { how: "blast" }))));
     if (eff > 0) { u.hp -= eff; hurt.push(`${u.name} ${eff}`); }
   }
+  if (blown) for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[cy * b.w + cx]; if (c && c.car) c.car = { ...c.car, wrecked: true }; } // drawn burnt out
+  if (blown) return ` The ${v.mil ? "Army truck" : v.kind} is blown up (condition −${wear})${hurt.length ? `: the blast tears through ${hurt.join(", ")}` : ""}. Its cargo goes up with it.`;
   return ` The ${v.mil ? "Army truck" : v.kind} takes the blast (condition −${wear}${v.up && (v.up.plating || v.up.scrapPlate) ? ", the plating took most of it" : ""})${hurt.length ? `; fragments through the windows catch ${hurt.join(", ")}${v.up && v.up.glass ? " (the bulletproof glass stopped most)" : ""}` : ""}.`;
 }
 
@@ -1183,9 +1203,13 @@ export function placeRaidHumvee(b, gun = "m2hb") {
 // back inside; their own gun is back in their hands when they leave the turret (u.gunSave).
 // The enemy's turret: the Humvee a raid brings to your base (placeRaidHumvee) is manned by one of them (gunnerAI: no
 // moving, the M2 at the best target, the ones in the open first; a reload when the belt is out).
+// The LMG turret fires the roster's hand-held LMG (the very item: vehicles.js TURRET_FIT) with the mount's +MOUNT_AIM and
+// a 200-round belt; the M2's numbers are its own (data-guns.js m2hb: bolted to a military vehicle, never an item).
+export const MOUNT_AIM = 6;
+const mountedOf = (k, extra) => { const w = WEAPONS[k]; return { dmg: w.dmg.slice(), opt: w.opt, fall: w.fall, aim: (w.aim || 0) + MOUNT_AIM, noise: w.noise, cal: w.cal, ...extra, mounted: true }; };
 export const TURRET_WEAPONS = {
-  turret_m2:  { name: "M2 turret", dmg: [40, 58], opt: 14, fall: 1.5, aim: 6, ammo: 3, noise: 6, cap: 100, pierce: 1, cal: "50bmg", rel: 0.1, mounted: true },
-  turret_lmg: { name: "LMG turret", dmg: [22, 32], opt: 8, fall: 3.5, aim: 6, ammo: 3, noise: 4, cap: 200, cal: "556", rel: 0.4, mounted: true },
+  turret_m2:  { name: "M2 turret", ...mountedOf("m2hb", { aim: 6, ammo: 3, cap: 100, pierce: 1, rel: 0.1 }) },
+  turret_lmg: { name: "LMG turret", ...mountedOf("lmg", { ammo: 3, cap: 200, rel: 0.4 }) },
 };
 Object.assign(WEAPONS, TURRET_WEAPONS);
 export const TURRET_WEAPON = { m2hb: "turret_m2", lmg: "turret_lmg" };
@@ -1617,7 +1641,7 @@ export function los(b, x0, y0, x1, y1) {
 
 // How far a unit sees from where it stands: its sight (night, a flashlight, night vision: stealth.js), +HEIGHT.SIGHT
 // a level up, + optics (binoculars, a thermal at night: u.optic, stealth.js).
-export const sightRange = (b, a, x = a.x, y = a.y) => a.sight + HEIGHT.SIGHT * hAt(b, x, y) + (a.optic || 0);
+export const sightRange = (b, a, x = a.x, y = a.y) => a.sight + HEIGHT.SIGHT * hAt(b, x, y) + (a.optic || 0) + (a.vsight || 0); // vsight: a ballistic visor down (helmets.js)
 // Can a unit see a cell? Light shows your people what stands in it out to the full daylight range, however dark: a
 // flare (throwables.js) and, at night, a floodlit cell (deploy.js).
 export function canSeeAt(b, a, x, y) {
@@ -1854,7 +1878,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const rg = gm === NO_MODS ? w : modRange(w, gm);
   const af = calOf(a.weapon) ? typeFx(typeFor(calOf(a.weapon), a.load)) : {}; // ammo.js: the loaded type (match, slugs, birdshot…; a common round: nothing)
   const opt = rg.opt + (af.opt || 0), fall = rg.fall * (af.fallMult ?? 1);
-  let aim = a.aim + (w.aim || 0) + gm.aim + (af.aim || 0) - nlAimPen(a); // nonlethal.js: a taser's daze, pepper spray
+  let aim = a.aim + (w.aim || 0) + gm.aim + (af.aim || 0) - nlAimPen(a) - (a.loadAim || 0); // nonlethal.js: a taser's daze, pepper spray; reloading.js: handloads loaded below Mechanics 8
   if (d > opt && !a.noFall) aim -= (d - opt) * fall; // noFall: the Sniper perk (skills.js)
   if (d <= 2.5 && (w.close || gm.close || af.close)) aim += (w.close || 0) + gm.close + (af.close || 0);
   if (gm !== NO_MODS) aim += situationalAim(b, a, d, gm); // gunmods.js: a bipod braced, a sling on the move, night sights and lights
@@ -1877,6 +1901,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (b.smoke && b.smoke.length && (smokeAt(b, t.x, t.y) || smokeAt(b, ax, ay))) aim -= SMOKE.aim;
   if (b.flares && b.flares.length && a.side === "player" && (b.night || b.dark) && flareLit(b, t.x, t.y)) aim += FLARE.aim;
   if (a.stun) aim -= a.stun.aim; // still seeing spots from a flashbang (throwables.js FLASH)
+  aim += visorAim(a, b) + linkAim(b, a, t) - dazedAim(a); // helmets.js: a visor down (fogged, cracked); hearing.js: a team headset's callout, dazed by a bang
   // Shooting down from higher ground (a walkway, a roof, a watchtower: verticality).
   const up = inside(ax, ay) ? hAt(b, ax, ay) - hAt(b, t.x, t.y) : 0;
   if (up > 0) aim += Math.min(HEIGHT.MAX_AIM, up * HEIGHT.AIM);
@@ -1982,7 +2007,7 @@ function meleeRound(b, sides) {
 }
 
 // A survivor's weapon-dependent numbers for an item in the hands (playerUnit's): null or unusable = fists.
-function heldTerms(s, item) {
+export function heldTerms(s, item) {
   const eff = gearEffect(s, item);
   const key = item && eff.usable && WEAPONS[item.key] ? item.key : "fists";
   const mult = key === "fists" ? 1 : eff.mult;
@@ -1990,7 +2015,7 @@ function heldTerms(s, item) {
   return { key, item: key === "fists" ? null : item, aim: -(1 - mult) * 30, dmg: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q), risk: key === "fists" ? 0 : eff.damageChance };
 }
 // A gun to draw when the spear is gone: one in the off hand or a pocket that the survivor can use.
-const sidearmOf = (s) => (s ? [s.gear && s.gear.tool, ...(s.pockets || [])].find((it) => it && WEAPONS[it.key] && !WEAPONS[it.key].melee && !WEAPONS[it.key].launcher && !WEAPONS[it.key].mount && gearEffect(s, it).usable) || null : null);
+export const sidearmOf = (s) => (s ? [s.gear && s.gear.tool, ...(s.pockets || [])].find((it) => it && WEAPONS[it.key] && !WEAPONS[it.key].melee && !WEAPONS[it.key].launcher && !WEAPONS[it.key].mount && gearEffect(s, it).usable) || null : null);
 // The spear has left u's hands: a sidearm (yours) or bare hands. s: the survivor (your people), else null.
 function unarm(b, u, s) {
   const was = { key: u.weapon, name: u.weaponName, gm: u.gm, gmWeapon: u.gmWeapon, item: u.item, gearRisk: u.gearRisk, aimD: 0, dmgF: 1 };
@@ -2127,9 +2152,16 @@ const magItem = (u) => (u.item ? gunMods(u.item) : u.gm && u.gmWeapon === u.weap
 export const hasMag = (u) => !!(WEAPONS[u.weapon] && WEAPONS[u.weapon].cap > 0);
 export function magCap(u) {
   if (!hasMag(u)) return 0;
+  const g = gunEntry(u); // mags.js: the magazine in the gun now (a spare of another size after a reload)
+  if (g) return g.cap;
   const m = magItem(u);
-  return Math.max(1, Math.round(WEAPONS[u.weapon].cap * (m.capMult ?? 1)) + (m.cap || 0));
+  const fit = fittedMag(u.item || u.arsItem || (u.modItems && u.gmWeapon === u.weapon ? { mods: u.modItems } : null)); // a magazine item fitted: its rounds (data-kit.js)
+  return Math.max(1, Math.round((fit ? MAG_CAP(fit.key) : WEAPONS[u.weapon].cap) * (m.capMult ?? 1)) + (m.cap || 0));
 }
+const MAG_CAP = (k) => (GEAR[k] && GEAR[k].mag ? GEAR[k].mag.cap : 1);
+// Actions a Reload takes now (mags.js: 1 from a pouch or a pocket, 2 from the pack or a top-up; 1 for a unit with no
+// magazines tracked).
+export const reloadCost = (b, u, type = null) => (tracksMags(u) ? reloadPlan(b, u, type).cost : 1);
 export const magMaxOf = (u) => (u.magW === u.weapon && u.magMax != null ? u.magMax : magCap(u));
 export const magIn = (u) => (u.magW === u.weapon && u.mag != null ? u.mag : magCap(u));
 // Set the magazine (n rounds, clamped; full when n is null) for the weapon the unit holds now.
@@ -2158,6 +2190,12 @@ export function reloadRefusal(b, u, type = null) {
   const sw = !!(type && typeFor(cal, type) !== typeFor(cal, u.load));
   const m = magIn(u), max = magMaxOf(u);
   if (!sw && m >= max) return `The ${gunWord(u)} is full (${max}/${max}).`;
+  if (tracksMags(u)) { // mags.js: a spare, a top-up, an internal magazine
+    const p = reloadPlan(b, u, type);
+    if (p.why) return p.why;
+    if (u.ap > 0 && u.ap < p.cost) return p.mode === "topup" ? `No loaded spare magazine: a top-up takes ${p.cost} actions.` : `The spare magazine is in the pack: ${p.cost} actions.`;
+    return "";
+  }
   if (u.side === "player") {
     const pool = roundsOf(b, u, sw ? type : undefined);
     const what = cal ? roundName(cal, sw ? type : u.load) : "ammo";
@@ -2177,6 +2215,14 @@ export function reloadType(b, u, foes = []) {
 // type of the calibre (act.ammo): u.load becomes it and the magazine is filled with it (rounds are counted only when
 // fired, so nothing goes back). Check reloadRefusal(b, u, type) first.
 export function reload(b, u, type = null) {
+  if (tracksMags(u)) { // mags.js: the next loaded magazine (1 action from a pouch or a pocket, 2 from the pack), else a top-up (2)
+    const p = reloadPlan(b, u, type);
+    const line = doReload(b, u, p);
+    u.ap = Math.max(0, u.ap - p.cost);
+    u.hunker = false;
+    say(b, line, "info");
+    return;
+  }
   const cal = calOf(u.weapon);
   const sw = !!(type && cal && typeFor(cal, type) !== typeFor(cal, u.load));
   if (sw) u.load = typeFor(cal, type);
@@ -2254,7 +2300,7 @@ export function enemyGhosts(b) {
     const g = b.ghosts[e.id];
     if (!g || e.side !== "enemy" || e.dead || e.left || e.fled || e.off || playerSees(b, e)) continue;
     if (b.floors && (g[3] || 0) !== (b.floor || 0)) continue; // last seen on another floor: not drawn on this one
-    out.push({ id: e.id, x: g[0], y: g[1], turn: g[2], f: g[3] || 0, kind: e.kind, name: e.name, unit: e });
+    out.push({ id: e.id, x: g[0], y: g[1], turn: g[2], f: g[3] || 0, kind: e.kind, name: e.name, unit: e, heard: !!g[4] }); // heard: heard, not seen (hearing.js heardGhosts)
   }
   return out;
 }
@@ -2298,9 +2344,13 @@ export function playerUnit(b, s) {
   };
   u.load = chooseLoad(b, u, item && key !== "fists" ? item.load : null); // ammo.js: the gun's own load (item.load), else its common round
   MED.fitMedic(u, s); // medics.js: a med kit in a pocket or the pack counts too
+  fitMags(b, u, carriedSpots(s), magCap(u)); // mags.js: the gun's magazine and the spares they carry (pouches, pockets, pack)
+  weighPlayer(u, s); // carrykit.js: kg worn and carried → mob by load band (R17), u.armLoad (kg)
   loadMag(u); // the gun starts the battle loaded
   fitArmour(u, s); // armour.js: the worn pieces (per-hit armour) and the Tough trait
+  fitHeadgear(u, s); // hearing.js: ear protection, the helmet's muffle, the team headset, the visor
   syncModes(u); // gunfire.js: the gun's fire modes
+  fitLauncher(b, u, s); // launchers.js: a grenade launcher or rocket in hand (a sidearm besides), an M203 under the rifle, one carried
   return u;
 }
 
@@ -2318,7 +2368,10 @@ export function refitUnit(b, u, s) {
   if (f.medKit !== u.medKit) { u.medKit = f.medKit; u.kitBonus = f.kitBonus; u.kitLeft = f.kitLeft; }
   u.fit = { aim: f.aim, dmgMult: f.dmgMult, armor: f.armor, medicine: f.medicine };
   const held = u.weapon, rounds = magIn(u), heldLoad = u.load;
-  for (const k of ["weapon", "weaponName", "item", "gearRisk", "fielded", "armLoad", "gm", "gmWeapon", "load", "boxes"]) u[k] = f[k];
+  const keepMags = u.weapon === f.weapon && tracksMags(u);
+  for (const k of ["weapon", "weaponName", "item", "gearRisk", "fielded", "armLoad", "gm", "gmWeapon", "load", "boxes", "loadBand", "dash"]) u[k] = f[k];
+  if (!keepMags) for (const k of ["mags", "magsW", "clips", "magMode"]) u[k] = f[k]; // another gun: its own magazines (mags.js)
+  if (u.mob0 == null && u.dragMob == null) u.mob = f.mob; // the load band's mob (not while carrying or dragging someone)
   if (u.weapon === held && heldLoad) u.load = heldLoad; // the same gun keeps the rounds it has loaded
   // The magazine: the same kind of gun keeps what was loaded (up to its capacity now, a magazine attachment may have
   // changed); another gun is taken up empty (Reload, 1 action), so swapping guns never hands out a free full one.
@@ -2326,7 +2379,9 @@ export function refitUnit(b, u, s) {
   if (u.spearOut && u.weapon === u.spearOut.key) { delete u.spearOut; unarm(b, u, s); } // its spear still lies where it was thrown
   if (u.weapon !== held) u.jam = null; // another gun: the jammed one is put away
   fitArmour(u, s); // armour.js: the pieces worn now
+  fitHeadgear(u, s); // hearing.js: the ears and the visor as worn now
   syncModes(u);
+  refitLauncher(b, u, f, s); // launchers.js: the same launcher keeps its round, another is taken up empty
   refitSenses(b, u, s); // stealth.js: a flashlight, night vision, scope or suppressor counts at once
 }
 setRefit(refitUnit);
@@ -2360,8 +2415,11 @@ export function enemyUnit(b, rng, kind, power, n) {
   u.q = enemyGunQ(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id, kind); // gunfire.js: their gun's condition by their kit (itemcond.js kitSource; jams; the looted gun keeps it), own dice
   u.cond = enemyGunCond(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id, kind); // its durability share (a worn gun jams more)
   syncModes(u);
-  enemyPieces(b, u); // armour.js: their body armour as a piece that wears (the loot keeps what is left)
+  kitHeadgear(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // helmets.js: a helmet and ear protection by kit (own dice)
   kitFlashbangs(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // throwables.js FLASH_KIT: a soldier's or a guard's flashbang (its own dice)
+  kitLauncher(b, u, kind, p, n, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // launchers.js: an M203 on a soldier's rifle, now and then an RPG (its own dice)
+  kitEnemy(b, u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // carrykit.js: a rig (a guard's tactical vest), spare magazines, the kit's weight → mob (own dice; after the helmet and the launcher: their kg)
+  enemyPieces(b, u); // armour.js: their body armour as a piece that wears (the loot keeps what is left; after kitEnemy's tactical vest, with kitHeadgear's helmet)
   return u;
 }
 
@@ -2575,7 +2633,7 @@ export function hitMult(t, by, hit) {
   return t.armor;
 }
 export function damage(b, t, raw, by, nonLethal = false, hit = null) {
-  if (t.side === "third") thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you
+  if (t.side === "third" && !(hit && hit.overpen)) thirdSideHit(b, t, by); // thirdside.js: your people hit them, so they (or all the soldiers) turn on you (not a round that went through someone else: an accident, like a friend hit that way)
   if (!nonLethal) nonLethal = nlHit(t, by, hit); // nonlethal.js: a stun baton, beanbag and rubber rounds
   let eff;
   if (personHit(t, hit) && (t.pieces || (t.side !== "player" && t.pieces === undefined))) {
@@ -2767,6 +2825,7 @@ export function fire(b, a, t, opts = {}) {
   const noise = shotNoise(b, a, w); // stealth.js: a suppressor halves it (and wears a shot)
   b.noise += noise;
   if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise; // camp danger (fieldheat.js noteGunfire): a muffled shot counts half
+  deafen(b, a.x, a.y, bangOf(b, a, w, noise, mode), a); // hearing.js: the bang (one an action; a stream louder)
   if (a.xpT) a.xpT.shots++;
   const rolls = moded ? trig.fired : trig.jam ? 0 : 1; // a gun without modes (or a bow: no rounds at all) makes one roll unless it jammed
   const line = sayFirst(b);
@@ -2845,6 +2904,7 @@ export function suppress(b, a, x, y) {
   b.noise += noise;
   if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise;
   if (a.xpT) a.xpT.shots++;
+  if (trig.fired > 0) deafen(b, a.x, a.y, bangOf(b, a, w, noise, gunModes(w) && gunModes(w).auto ? "auto" : "burst"), a); // hearing.js
   const pinned = trig.fired > 0 ? coneTargets(b, a, x, y, foesOf(b, a)) : [];
   for (const t of pinned) {
     t.suppressed = SUPPRESS.TURNS;
@@ -2958,13 +3018,14 @@ export function combatAct(state, act) {
   if (u && isTied(u) && !u.down && !boundAct && u.side === "player") return rescueRefusal(b, u);
   if (!u || u.side !== "player" || !(active(u) || aboardAct || boundAct) || u.ap < 1) return "That unit cannot act.";
   // On the turret (manTurret): fire it, reload the belt, watch, drive, or get down.
+  if (b.vehicle && b.vehicle.blownUp && ["board", "drive", "turn", "gunner"].includes(act.type)) return "The vehicle is a burnt-out wreck."; // launchers.js: blown up
   if (u.gunner && !GUNNER_ACTS.has(act.type)) return "On the turret: fire, reload the belt, overwatch, drive, or get down (Man the turret again).";
   if (act.type === "turret") { if (!u.gunner) return vehicleTurret(b) ? "Man the turret first." : "No turret here."; act = { ...act, type: "shoot" }; }
   const t = act.target != null ? unitById(b, act.target) : null;
   switch (act.type) {
     case "move": {
       if (!inside(act.x, act.y)) return "Cannot move there.";
-      const r = reachable(b, u, u.mob * u.ap, { manual: true, wary: !!act.wary }); // wary: the raid bot goes round acid (acid.js)
+      const r = reachable(b, u, dashRange(u), { manual: true, wary: !!act.wary }); // wary: the raid bot goes round acid (acid.js)
       const c = r.dist[idx(act.x, act.y)];
       if (!isFinite(c) || c === 0) return "Cannot move there.";
       u.ap -= c <= u.mob ? 1 : 2;
@@ -3033,11 +3094,23 @@ export function combatAct(state, act) {
     }
     case "reload": { // the magazines section: 1 action, the magazine full (as far as the team's ammo goes); act.ammo: a type to load instead (ammo.js)
       if (u.gunner && u.ap < TURRET.RELOAD_AP) return "A new belt takes both actions."; // (before a double feed is cleared by it)
+      if (u.ap < reloadCost(b, u, act.ammo || null) && !u.jam) return reloadRefusal(b, u, act.ammo || null) || "Not enough actions left to reload."; // mags.js: from the pack or a top-up: 2 actions
       jamReload(b, u); // gunfire.js: a double feed is cleared by dropping the magazine (then this reload fills a fresh one)
       const why = reloadRefusal(b, u, act.ammo || null);
       if (why) return why;
+      if (u.ap < reloadCost(b, u, act.ammo || null)) return "Not enough actions left to reload.";
       reload(b, u, act.ammo || null);
       if (u.gunner) { u.ap = 0; afterTurretReload(b, u); }
+      break;
+    }
+    case "plate": { // carrykit.js: a broken or missing plate replaced from the pack (2 actions)
+      const s = u.sid != null ? survivorById(state, u.sid) : null;
+      const p = plateSwapPlan(s);
+      if (p.why) return p.why;
+      if (u.ap < p.cost) return `Swapping a plate takes ${p.cost} actions.`;
+      say(b, swapPlate(s, p), "info");
+      u.ap -= p.cost;
+      u.hunker = false;
       break;
     }
     case "overwatch":
@@ -3055,6 +3128,13 @@ export function combatAct(state, act) {
       if (why) return why;
       unjam(b, u);
       break;
+    }
+    case "visor": { // helmets.js: raise or lower the visor (free)
+      const why = toggleVisor(b, u);
+      if (why) return why;
+      say(b, `${u.name} ${u.visorUp ? "raises" : "lowers"} the visor.`, "info");
+      bump(b);
+      return "";
     }
     case "firemode": {
       syncModes(u);
@@ -3074,6 +3154,21 @@ export function combatAct(state, act) {
       if (t && !canSee(b, u, t)) return "No line of sight.";
       suppress(b, u, x, y);
       u.ap = 0;
+      break;
+    }
+    // launchers.js: a grenade launcher or a rocket at a cell (act.x / act.y, or act.target's), and its reload (act.ammo:
+    // a type of 40 mm to load instead). The turn's attack, like a shot.
+    case "launch": {
+      const x = t ? t.x : Number(act.x), y = t ? t.y : Number(act.y);
+      const why = launchRefusal(b, u, x, y);
+      if (why) return why;
+      launch(b, u, x, y);
+      break;
+    }
+    case "glreload": {
+      const why = glReloadRefusal(b, u, act.ammo || null);
+      if (why) return why;
+      glReload(b, u, act.ammo || null);
       break;
     }
     case "hunker":
@@ -3250,6 +3345,7 @@ export function combatAct(state, act) {
       const noise = shotNoise(b, u, w); // stealth.js: a suppressor halves it
       b.noise += noise;
       if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise;
+      deafen(b, u.x, u.y, bangOf(b, u, w, noise, "single"), u); // hearing.js
       tap(b, u, t);
       if (noise && b.raid) alertNear(b, u.x, u.y, (9 + w.noise * 2) * (noise / w.noise), noise < w.noise ? "The muffled shot still carries." : "The gunshot alerts everything nearby.");
       else if (noise && noise < w.noise) alertNear(b, u.x, u.y, (9 + w.noise * 2) * (noise / w.noise), "The muffled shot still carries.");
@@ -3299,6 +3395,7 @@ export function endPlayerTurn(state) {
   b.phase = "enemy";
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
   stunTurnStart(b, ["enemy", "third"]); // throwables.js: the ones a flashbang caught lose their actions
+  tickEars(b, ["enemy", "third"]); // hearing.js: their deafness and daze wear off a turn
   nlEnemyPhase(b); // nonlethal.js: the stunned lose actions, the blinded stay blind, the beaten may surrender
   meleeRound(b, ["enemy", "third"]); // the staggered lose an action, the bleeding bleed (melee section)
   // Storeys (buildingmaps.js): the floor the player looks at is kept and restored; the dead drifting between floors
@@ -3353,6 +3450,8 @@ export function runEnemyPhase(state) {
 }
 
 function startPlayerTurn(state, b) {
+  heardGhosts(b); // hearing.js: the enemies your people heard move or fire unseen ("?" markers), before the ears tick
+  tickEars(b, ["player"]); // hearing.js: deafness and a daze wear off a turn
   stunTurnEnd(b, ["enemy", "third"]); // throwables.js: their stun wears off with the enemy turn
   b.turn++;
   b.phase = "player";
@@ -3726,7 +3825,7 @@ function aiMelee(b, u) {
     const adj = foes.filter((f) => inMelee(b, u, f) && !(u.side !== (b.holders || "player") && barredCell(b.cells[idx(f.x, f.y)]))).sort((a, c) => a.hp - c.hp); // inMelee: a spear reaches 2
     if (adj.length) { strike(b, u, adj[0]); u.ap = 0; return; }
     if (aiFetchSpear(b, u, foes) || aiThrowSpear(b, u, foes)) continue; // a thrown spear: back for it; a zealot's throw
-    const r = reachable(b, u, u.mob * u.ap);
+    const r = reachable(b, u, dashRange(u));
     const field = distField(b, foes.map((f) => [f.x, f.y]), u);
     let best = null;
     for (let i = 0; i < W * H; i++) {
@@ -3871,7 +3970,7 @@ function flee(b, u) {
   if (exitEdge(b, u.x, u.y)) { u.fled = true; u.ap = 0; say(b, `${u.name} runs off.`, "good"); return; }
   // Out of everyone's sight and well clear of them: gone, not a long run to the map's edge (battlesize.js).
   if (u.fleeing && fledFarEnough(b, u)) { u.fled = true; u.ap = 0; say(b, `${u.name} gets away.`, "good"); return; }
-  const r = reachable(b, u, u.mob * u.ap);
+  const r = reachable(b, u, dashRange(u));
   const exits = [];
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (exitEdge(b, x, y) && cellAt(b, x, y).walk) exits.push([x, y]);
   const field = distField(b, exits);
@@ -3903,7 +4002,13 @@ function evacCells(b) {
 export const RETREAT = {
   PER_TILE: 3, CARRY_TILE: 4.5, MAX_TILES: 20, PINNED: 25, SHOOTER: 6, CHASER: 4, THREAT_MAX: 35,
   WOUNDS: 30, ARMOR: 2, SCOUTING: 1, NIGHT: 10, CARRY: 10, MIN: 5, MAX: 95, BLOW: [18, 32],
+  KG: 0.5, FREE_KG: 8, // the load carried (u.armLoad, kg: carrykit.js): −0.5 a kg over 8 (a vest and a rifle about −3, full kit about −10)
 };
+// The escape check's penalty for the kit carried (kg) (escapeOdds and breakoff.js by the numbers).
+export const loadPenalty = (kg) => RETREAT.KG * Math.max(0, (Number.isFinite(kg) ? kg : 0) - RETREAT.FREE_KG);
+// How far a unit can go with the actions it has: mob a tile an action, a Medium load's dash (both actions) a tile less
+// (carrykit.js weighPlayer / weighEnemy: u.dash).
+export const dashRange = (u) => u.mob * u.ap + (u.ap >= 2 ? u.dash || 0 : 0);
 
 // ---------- Evac (the Evac button: combatAct "evac") ----------
 // Everyone still standing heads for the way out with the actions they have: the extraction zones of a raid or the
@@ -3952,7 +4057,7 @@ export function evacTurn(state, b) {
       const targets = evacTargets(b, u);
       if (!targets.length) break;
       const field = distField(b, targets, u);
-      const r = reachable(b, u, u.mob * u.ap, { manual: true });
+      const r = reachable(b, u, dashRange(u), { manual: true });
       const here = field[idx(u.x, u.y)];
       let best = -1;
       for (let i = 0; i < W * H; i++) {
@@ -4011,9 +4116,10 @@ export function escapeOdds(b, u, carrying = null, field = null) {
   add(`${pinned} enem${pinned === 1 ? "y" : "ies"} next to them`, -pinned * RETREAT.PINNED);
   add([shooters ? `${shooters} shooter${shooters === 1 ? "" : "s"} in sight` : "", chasers ? `${chasers} close behind` : ""].filter(Boolean).join(", "), -threat);
   add("wounds", -RETREAT.WOUNDS * Math.max(0, 1 - u.hp / u.maxHp));
-  add("armor worn", -RETREAT.ARMOR * (u.armLoad || 0));
+  add("load carried", -loadPenalty(u.armLoad));
   add(`Scouting ${u.scouting || 0}`, RETREAT.SCOUTING * (u.scouting || 0));
   add("night", b.night || b.dark ? RETREAT.NIGHT : 0);
+  add("team headset", linkEscape(b, u)); // hearing.js: a linked teammate calls the way out
   add("smoke cover", b.smoke && b.smoke.length && smokeAt(b, u.x, u.y, SMOKE.near) ? SMOKE.retreat : 0); // a smoke grenade (throwables.js)
   add(carrying ? `carrying ${carrying.name}` : "", carrying ? -RETREAT.CARRY : 0);
   const safe = !pinned && (onStrip ? !carrying : !threat && !carrying);
@@ -4219,6 +4325,7 @@ export function autoPlayerTurn(state, opts = {}) {
     if (active(u) && u.ap > 0) botSiege(state, b, u); // siege.js: push a ladder, rocks on the ram, lead the ram, set a ladder
     if (active(u) && u.ap > 0) botDecoy(state, b, u); // decoys.js: a decoy to pull the dead off your people
     if (active(u) && u.ap > 0) botAttackThrow(state, b, u); // stealth.js: a grenade, a pipe bomb or a Molotov on a crowd
+    if (active(u) && u.ap > 0 && u.gl) aiLaunch(b, u); // launchers.js: HE on a crowd, a rocket at their ram, their Humvee, their gate
     if (active(u) && u.ap > 0 && b.tier) tierAI(b, u); // interior.js: into the buildings once the yard is lost
     const skull = botCrush(b, u); // carriers.js: a body in danger next to them (a Carrier near, the worm in it), crushed before it gets up
     if (skull) combatAct(state, skull);
@@ -4333,10 +4440,10 @@ function endBattle(state, b, outcome) {
       if (!e.dead || e.roseAs != null || e.ztype === "swarm" || e.ztype === "sleeper" || e.burnt || e.inVehicle) continue;
       if (e.walking) { b.bodies.push(walkingBody(state, b, e)); continue; }
       if (e.turned && e.turned.sid != null) continue;
-      b.bodies.push(e.turned ? turnedBody(rng, e) : enemyBody(rng, e, KITS[e.kit] || (e.kind === "zombie" ? null : KITS.raiders)));
+      b.bodies.push(e.turned ? turnedBody(rng, e) : launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || (e.kind === "zombie" ? null : KITS.raiders)))); // launchers.js: their launcher and rounds; a blast's wear (section 24)
     }
-    for (const e of captives) { const body = enemyBody(rng, e, KITS[e.kit] || KITS.raiders); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
-    b.bodies.push(...nlDropPiles(state, b)); // nonlethal.js: the weapons the surrendered threw down
+    for (const e of captives) { const body = launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || KITS.raiders)); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
+    b.bodies.push(...blastPiles(b, nlDropPiles(state, b))); // nonlethal.js: the weapons the surrendered threw down (launchers.js: worn by a blast that reached them)
     for (const u of b.units) {
       const s = u.side === "player" && deadIds.includes(u.sid) ? survivorById(state, u.sid) : null;
       // carriers.js: still walking as one of the dead, there is no body here (their things stay at the death site
@@ -4347,6 +4454,7 @@ function endBattle(state, b, outcome) {
   }
   // The arrows loosed: about half picked up again when the field is yours (world.js ARROWS.BACK), none otherwise.
   const arrowsBackN = pickUpArrows(b, outcome === "victory");
+  lines.push(...pickUpBrass(state, b, outcome === "victory")); // reloading.js: the brass fired, picked up when the field is yours
   if (b.arrowsUsed) lines.push(arrowsBackN ? `Picked up ${arrowsBackN} of the ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot.` : `The ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot ${b.arrowsUsed === 1 ? "is" : "are"} lost.`);
   b.result = {
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed - captives.length,
@@ -4384,7 +4492,9 @@ function wearFielded(state, b, fought) {
     dropBroken(state, s); // armour.js: a piece broken or shattered in the fight is gone
     if (u.kitUses && u.medKit && s.gear.tool === u.medKit) wearSlot(state, s, "tool", u.kitUses);
     MED.wearPackKit(state, u, s); // medics.js: a kit in a pocket or the pack
+    settleEars(u, s, fought); // hearing.js: a pair of earplugs used
   }
+  launcherBattleEnd(state, b); // launchers.js: the rocket tubes fired are gone; the blasts' wear on what your people carry
 }
 
 // Closes a finished battle: hands the result to the registered handler. take: first take everything that fits
@@ -5071,6 +5181,8 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       }
       if (kit.finds && rng.chance(BODY_FINDS)) gear.push(lootItem(rng.pick(kit.finds), kitSource(box.kit), rng)); // what was in their pockets
       gear.push(...carriedThrowables(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // inventory.js: a flashbang they never threw
+      const bu = box.uid != null ? unitById(b, box.uid) : null;
+      if (bu) { const L = launcherLoot(bu, kitSource(box.kit)); gear.push(...L.gear); for (const [k, n] of Object.entries(L.sup)) sup[k] = (sup[k] || 0) + n; blastLoot(b, bu, { gear, sup }); } // launchers.js: their launcher, its rounds; a blast's wear
     } else if (box.truck) {
       // An Army truck's cargo bed (miltrucks.js truckLoot: its own dice, the same truck holds the same things); the
       // tile remembers it was opened. The crew strapped in the cab rise at the noise.
@@ -5098,8 +5210,12 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       // A gun attachment in an armoury, a gun shop, barracks (loot.js AREA_GUNMODS; its own dice too).
       const part = rollAreaGunmod(state, b.tileId, R.areas[box.area].type, `box${box.id}`);
       if (part) gear.push(part);
+      const rel = rollAreaReload(state, b.tileId, R.areas[box.area].type, `box${box.id}`); // brass, powder, primers in a gun shop, an armoury (loot.js AREA_RELOAD; its own dice)
+      if (rel) gear.push(rel);
       // A crate of flashbangs or smoke grenades in an armoury, a few in barracks lockers (loot.js AREA_GRENADES; its own dice too).
       gear.push(...rollAreaGrenades(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
+      // A grenade launcher, a rocket tube, a crate of 40 mm in army stock (loot.js AREA_LAUNCHERS; its own dice too).
+      gear.push(...rollAreaLaunchers(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
       // Firewood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
       const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;
@@ -5112,10 +5228,13 @@ function searchBox(state, b, u, box, open = false, quick = false) {
         alertNear(b, box.x, box.y, 12, "The alarm wakes everything nearby.");
       }
     }
+    if (box.kind === "body" && !box.zombie) gear.push(...unitMagItems(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // carrykit.js: their spare magazines
+    else if (box.kind !== "body") withMags(gear, box.truck ? "military" : areaSource(R.areas[box.area] ? R.areas[box.area].type : "house", null), "box", b.tileId, box.id); // carrykit.js: a gun found keeps 0-2 spare magazines (own dice)
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     const site = state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null;
     sortFind(sup, box.kind === "body" ? "home" : box.truck ? "military" : raidTheme(site, box.area != null && R.areas[box.area] ? R.areas[box.area].type : "house"), "box", b.tileId, box.id); // ammo.js: what turns up there, by calibre
     box.contents = { sup, gear };
+    blastBox(b, box); // launchers.js: a blast reached it before anyone looked inside
   }
   // search.js: a rummage hides part of it (and is heard); a full search brings out what a rummage missed.
   const name = box.kind === "body" ? box.label : box.label.toLowerCase();
@@ -5207,6 +5326,7 @@ function endRaid(state, b) {
   const cleared = !enemies.some((u) => activeAny(u) && u.aware);
   settleSpears(state, b, outcome === "extracted" && cleared, lines); // thrown spears: picked up on the way out of a cleared site, else lost
   const arrowsBackN = pickUpArrows(b, outcome === "extracted" && cleared);
+  lines.push(...pickUpBrass(state, b, outcome === "extracted" && cleared)); // reloading.js: brass, as the arrows
   if (b.arrowsUsed) lines.push(arrowsBackN ? `Picked up ${arrowsBackN} of the ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot.` : `The ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot ${b.arrowsUsed === 1 ? "is" : "are"} lost.`);
   b.result = {
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js
@@ -5352,6 +5472,7 @@ function autoRaidTurn(state) {
       // stealth.js: a flashbang into a room (or a knot) of two or more people who know the team is there, then the rest
       // of the turn (the stunned cannot watch the doorway).
       if (!leave && botFlash(state, b, u, true)) continue;
+      if (!leave && u.gl && aiLaunch(b, u)) break; // launchers.js: HE or a rocket on three or more bunched up (the turn's attack)
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
       // A jammed gun: cleared (gunfire.js: a double feed by a reload when it can, else Unjam), then on.
@@ -5403,7 +5524,7 @@ function autoRaidTurn(state) {
       }
       if (!targets.length) { u.ap = 0; break; }
       const field = distField(b, targets);
-      const r = reachable(b, u, u.mob * u.ap);
+      const r = reachable(b, u, dashRange(u));
       // A spitter's acid (acid.js): not to stop in, and the way there goes round it when it can.
       const pools = b.acid && b.acid.length ? (i) => (acidAt(b, i % W, (i / W) | 0) ? ACID.cost : 0) : null;
       const score = pools ? (i) => field[i] + pools(i) : (i) => field[i];

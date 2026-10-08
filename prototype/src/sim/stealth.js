@@ -27,7 +27,9 @@
 import { GEAR } from "./data.js";
 import { gunMods, unitMods, fittedSuppressor, removeMod, modLabel } from "./gunmods.js"; // gun attachments: suppressors, brakes
 import { isNight, survivorById, baseById } from "./world.js";
-import { EQUIP_SLOTS, packOf } from "./inventory.js";
+import { carriedSpots } from "./inventory.js"; // everything carried, the rig's pouches too
+import { helmetNvg } from "./helmets.js"; // night vision goggles on a helmet
+import { hearMult, hearSetup } from "./hearing.js"; // the ears: what a guard hears behind them
 import {
   CELL, WEAPONS, active, adjacent, cornerBlocked, meleeReach, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
   say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash,
@@ -39,6 +41,7 @@ import { BMAP, throwLanding as interiorLanding, noiseDamp } from "./buildingmaps
 import { battleOptic } from "./optics.js";
 import { LIGHTS, lightOf } from "./lights.js"; // headlamps, flashlights, torches, lanterns, spotlights
 import { loadNoise } from "./ammo.js"; // a round's noise (subsonic, +P)
+import { RELOAD_FX } from "./data-ammo.js"; // black-powder handloads are louder (reloading.js)
 
 export const STEALTH = {
   NIGHT_SIGHT: 7, NIGHT_ZOMBIE_SIGHT: 5, LIGHT_SIGHT: 9, NIGHT_DETECT: 0.6, LIGHT_DETECT: 3, // LIGHT_*: a flashlight's (each light's own: lights.js LIGHTS)
@@ -87,29 +90,10 @@ const walk = (b, x, y) => x >= 0 && y >= 0 && x < b.w && y < b.h && CELL[b.cells
 // Every place an item can sit on a person: { item, take() } for the first item with this key (or null).
 export function findCarried(s, key) {
   if (!s || !s.gear) return null;
-  for (const slot of EQUIP_SLOTS) {
-    const it = s.gear[slot];
-    if (it && it.key === key) return { item: it, take: () => { s.gear[slot] = null; } };
-  }
-  for (let i = 0; i < (s.pockets || []).length; i++) {
-    const it = s.pockets[i];
-    if (it && it.key === key) return { item: it, take: () => { s.pockets[i] = null; } };
-  }
-  const pk = packOf(s);
-  for (let i = 0; pk && i < pk.length; i++) {
-    const it = pk[i];
-    if (it && it.key === key) return { item: it, take: () => { pk[i] = null; } };
-  }
-  return null;
+  const x = carriedSpots(s).find((c) => c.item.key === key); // inventory.js: worn, pockets, rig pouches, the pack
+  return x ? { item: x.item, take: x.take } : null;
 }
-const countCarried = (s, key) => {
-  if (!s || !s.gear) return 0;
-  let n = 0;
-  for (const slot of EQUIP_SLOTS) if (s.gear[slot] && s.gear[slot].key === key) n++;
-  for (const it of s.pockets || []) if (it && it.key === key) n++;
-  for (const it of packOf(s) || []) if (it && it.key === key) n++;
-  return n;
-};
+const countCarried = (s, key) => (s && s.gear ? carriedSpots(s).filter((c) => c.item.key === key).length : 0);
 // The shared store a battle can draw on: the team's cargo, or the base's armory.
 function storeOf(state, b) {
   if (b.setup.partyId != null) { const p = state.parties.find((x) => x.id === b.setup.partyId); return p && p.cargo ? p.cargo.gear : null; }
@@ -141,6 +125,7 @@ function takeThrowable(state, b, u, key) {
 
 // ---------- battle setup (createBattle / createRaid) ----------
 export function stealthSetup(state, b) {
+  hearSetup(state, b); // hearing.js: visors fog up in freezing or wet weather
   // Night counts in raids and in base battles (a break-in, a raid at the walls: deploy.js, where the floodlights light
   // the dark); other battles keep daylight sight as before.
   const ctxNight = b.setup && b.setup.context ? b.setup.context.night : undefined;
@@ -153,7 +138,7 @@ export function stealthSetup(state, b) {
       const s = survivorById(state, u.sid);
       const tool = s && s.gear.tool;
       setLight(u, s);
-      u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal; // a thermal monocular sees in the dark like night vision (optics.js); so does a thermal sight on the gun (gunmods.js)
+      u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal || helmetNvg(s); // a thermal monocular sees in the dark like night vision (optics.js); so does a thermal sight on the gun (gunmods.js); goggles on the helmet leave the off hand free (helmets.js)
       const t = s ? s.traits || [] : [];
       u.str = (t.includes("tough") ? 5 : 0) + (t.includes("brave") ? 5 : 0) - (t.includes("coward") ? 5 : 0);
       setSuppressor(u, s);
@@ -188,7 +173,7 @@ export function detectRange(b, e, mover, perks = true) {
   if (b.night) r = Math.max(2, Math.round(r * STEALTH.NIGHT_DETECT) + lightSeen(mover)); // a light is seen from further off
   if (b.night && mover.sparks === b.turn) r += 2; // locks.js: an angle grinder's sparks this turn (SAFE.grind.sparks)
   // A person looks the way they face: behind them only what they hear (half the range). The dead have no front.
-  if (e.kind === "human" && isBehind(mover, e)) r = Math.max(1, Math.ceil(r * STEALTH.BEHIND_DETECT));
+  if (e.kind === "human" && isBehind(mover, e)) r = Math.max(1, Math.ceil(r * STEALTH.BEHIND_DETECT * hearMult(e))); // hearing.js: deafened by a bang (from a tile only), ear protection
   if (perks && mover.ghost) r = Math.min(r, 2);
   return r;
 }
@@ -218,7 +203,7 @@ export function shotNoise(b, a, w) {
       say(b, `${a.name}'s suppressor is shot out.`, "danger");
     }
   }
-  return w.noise * mult * loadNoise(a, !!sup); // ammo.js: the loaded type (subsonic quieter, +P louder)
+  return w.noise * mult * loadNoise(a, !!sup) + (a.loadCond === "hand" && a.loadBp ? a.loadBp * RELOAD_FX.BLACK_NOISE : 0); // ammo.js: the loaded type (subsonic quieter, +P louder); reloading.js: black-powder handloads
 }
 
 // ---------- takedowns ----------
@@ -635,7 +620,7 @@ export function refitSenses(b, u, s) {
   if (!s) return;
   const tool = s.gear.tool;
   setLight(u, s);
-  u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal;
+  u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal || helmetNvg(s); // helmets.js: goggles on the helmet
   if (u.daySight != null) u.sight = b.night && !u.nvg ? Math.min(u.daySight, nightSight(u)) : u.daySight;
   u.optic = battleOptic(s, b.night);
   setSuppressor(u, s);

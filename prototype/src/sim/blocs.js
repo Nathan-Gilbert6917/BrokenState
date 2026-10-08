@@ -53,7 +53,7 @@
 // - A bloc against you (foe: you) comes into your wars together (playerwars.js: members join a war declared on you,
 //   and one you declare on a member).
 // Colours: each bloc a colour (BLOC_COLORS) ringed round its members' bases on the map.
-import { day, log, hub, factionById, addCard } from "./world.js";
+import { day, log, hub, factionById, addCard, localId } from "./world.js";
 import { hash01 } from "./skills.js";
 import { attitude, changeGoodwill, strength } from "./factions.js";
 import { ensureDiplo, relation, changeRelation, warsOf, enemyIn, warBetween, news, knownAs, baseDistance, allyWar, DIPLO } from "./diplomacy.js";
@@ -447,7 +447,7 @@ export function jointAfter(state, party, won) {
     const m = factionById(state, id);
     if (!m || !m.alive) continue;
     if (won) { if (lead) changeRelation(state, m, lead, 2); }
-    else if (m.pop > 4 && h(state, m.name, party.id % 997, "jloss") < 0.5) m.pop -= 1;
+    else if (m.pop > 4 && h(state, m.name, localId(state, party.id) % 997, "jloss") /* localId: ids are process-wide */ < 0.5) m.pop -= 1;
   }
 }
 // diplomacy.js startWar: a war on a member brings the bloc in.

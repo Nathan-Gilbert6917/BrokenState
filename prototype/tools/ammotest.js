@@ -14,7 +14,7 @@
 // Usage: node tools/ammotest.js [seed]
 import { createWorld, makeSurvivor, hub, armedFactor, spendShots, tickHour } from "../src/sim/world.js";
 import { GEAR, SUPPLIES, SUPPLY_KEYS, STOCK_KEYS } from "../src/sim/data.js";
-import { CALIBERS, AMMO_TYPES, KIT_AMMO, ammoKey } from "../src/sim/data-ammo.js";
+import { CALIBERS, AMMO_TYPES, KIT_AMMO, ammoKey, HAND_SUPPLIES } from "../src/sim/data-ammo.js";
 import {
   WEAPONS, createBattle, combatAct, registerCombatHandler, canFire, fireRefusal, magShown, reloadRefusal, shotOdds, shotHit, damage,
   autoResolveCombat, enemyUnit, autoPlayerTurn, closeCombat, endBattleNow, byNumbersOdds,
@@ -74,7 +74,7 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
 // 1. The tables.
 {
   console.log("Tables");
-  const want = Object.values(CALIBERS).reduce((a, c) => a + c.types.length, 0);
+  const want = Object.values(CALIBERS).reduce((a, c) => a + c.types.length, 0) + Object.keys(HAND_SUPPLIES).length; // and the reloading bench's handload keys (reloading.js)
   check(ROUND_KEYS.length === want && ROUND_KEYS.every((k) => SUPPLIES[k] && GEAR[k] && SUPPLY_KEYS.includes(k)), `every calibre and type is a supply and a box (${ROUND_KEYS.length})`);
   check(ROUND_KEYS.every((k) => !STOCK_KEYS.includes(k)) && STOCK_KEYS.includes("ammo"), "the screens list rounds together as Ammo (STOCK_KEYS)");
   check(SUPPLIES.a_9mm_fmj.value === 0.5 && SUPPLIES.a_9mm_fmj.weight === 0.012 && SUPPLIES.a_12ga_slug.value > SUPPLIES.a_12ga_buck.value && SUPPLIES.a_556_ap.value > SUPPLIES.a_556_fmj.value * 2, "per round: 9mm FMJ 0.5 (the old ammo), slugs and AP dearer");
@@ -117,6 +117,7 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   const st = createWorld({ seed: seed + 1, factionCount: 4 });
   const a = fighter(st, "pistol");
   a.pockets[0] = newBox("a_9mm_fmj", 3);
+  a.pockets[1] = Object.assign(newItem("mag_glock_15"), { load: "hp" }); // a spare magazine of hollow points (magazines as items: a type switch is a magazine of that type)
   const b = openBattle(st, [a], { a_556_fmj: 60 });
   const u = by(b, a);
   check(u.boxes.length === 1 && roundsOf(b, u) === 3, "the box in their pocket counts (3 rounds of 9mm FMJ)");

@@ -41,6 +41,10 @@ import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell
 import { ZTYPES } from "./hiveconst.js";
 import { armorVs } from "./deadsoldiers.js";
 import { GEAR } from "./data.js";
+import { deafen, HEAR } from "./hearing.js"; // the bang: deafened near a blast
+import { blastHit, cookOffs, groundBlast } from "./launchers.js"; // section 24: what a blast does to the gear of those it hits (and to what lies there); carried bombs set off
+export { registerHearing } from "./launchers.js"; // hearing.js (w2-helmets) hands its deafen here: launcher blasts and rocket launches call it
+import { breakRam } from "./siege.js"; // a rocket breaks a battering ram
 
 export const BLAST = { r: 1.5, dmg: [22, 34], wake: 14, noise: 4, struct: [40, 60] };
 export const FRAG = { r: 1.5, dmg: [20, 30], wake: 12, noise: 4, struct: [30, 45] };
@@ -97,6 +101,7 @@ function hurtAll(b, by, list, [lo, hi], what) {
   const how = what === "FIRE" ? "fire" : "blast"; // the armoured dead (deadsoldiers.js): fire ignores their armour
   for (const t of list) {
     const eff = Math.round(damage(b, t, b.rng.int(lo, hi), by, false, { how }));
+    if (how === "blast") blastHit(b, t, eff); // launchers.js (section 24): their gear's wear, a carried bomb going off
     if (by && by.xpT && t.side === "enemy") { by.xpT.hits++; if (t.dead) by.xpT.kills++; }
     parts.push(`${t.name} ${eff}${t.dead ? " (dead)" : t.down ? " (down)" : ""}`);
     fx(b, { type: "melee", from: [t.x, t.y], to: [t.x, t.y], hit: true, crit: false, dmg: eff, side: by ? by.side : "enemy", text: what });
@@ -130,15 +135,17 @@ export function throwLanding(b, u, T, x, y, blind) {
   return [lx, ly, true];
 }
 
-// A blast tears apart light cover and hits doors, the gate and wall sections (half) within its radius.
-function wreck(b, x, y, r, [lo, hi], by) {
+// A blast tears apart light cover and hits doors, the gate and wall sections (half) within its radius. heavy (a
+// rocket, launchers.js ROCKET): a building's doors and a bridge's tank traps too.
+const HEAVY = new Set(["idoor", "door", "tanktrap"]);
+function wreck(b, x, y, r, [lo, hi], by, heavy = false) {
   let torn = 0;
   const hit = [];
   for (let cy = Math.floor(y - r); cy <= Math.ceil(y + r); cy++) for (let cx = Math.floor(x - r); cx <= Math.ceil(x + r); cx++) {
     if (!inside(b, cx, cy) || dist(cx, cy, x, y) > r + 1e-6) continue;
     const c = cellOf(b, cx, cy);
     if (LIGHT.has(c.k)) { c.k = "rubble"; delete c.t; torn++; continue; }
-    if (c.hp > 0 && (c.k === "palisade" || c.k === "gate" || c.k === "bdoor" || c.k === "window" || c.k === "siegeladder")) {
+    if (c.hp > 0 && (c.k === "palisade" || c.k === "gate" || c.k === "bdoor" || c.k === "window" || c.k === "siegeladder" || (heavy && HEAVY.has(c.k)))) {
       const dmg = Math.round(b.rng.int(lo, hi) * (c.k === "palisade" || c.k === "siegeladder" ? 0.5 : 1));
       const name = structureName(c).toLowerCase();
       c.hp = Math.max(0, c.hp - dmg);
@@ -150,15 +157,23 @@ function wreck(b, x, y, r, [lo, hi], by) {
   return (torn ? ` ${torn} cell${torn > 1 ? "s" : ""} of cover blown apart.` : "") + (hit.length ? ` It hits ${hit.join(", ")}.` : "");
 }
 
-// A throwable with fx lands at (x, y). Returns extra text for the log line.
+// A throwable with fx lands at (x, y). Returns extra text for the log line. T.blast: the blast's own table (a launcher's
+// round, launchers.js GL_HE / ROCKET: impact on the cell it lands on, dmg the splash around it; struct; kind: the
+// vehicle's wear, combat.js BLAST_WEAR; heavy: doors and tank traps too; rams: a battering ram is broken).
 export function landEffect(b, u, T, x, y) {
   if (T.fx === "blast" || T.fx === "frag") {
-    const B = T.fx === "frag" ? FRAG : BLAST;
-    const parts = hurtAll(b, u, caught(b, x, y, B.r), B.dmg, "BOOM");
+    const B = T.blast || (T.fx === "frag" ? FRAG : BLAST);
+    const list = caught(b, x, y, B.r);
+    const parts = B.impact ? [...hurtAll(b, u, list.filter((t) => t.x === x && t.y === y), B.impact, "BOOM"), ...hurtAll(b, u, list.filter((t) => t.x !== x || t.y !== y), B.dmg, "BOOM")] : hurtAll(b, u, list, B.dmg, "BOOM");
     b.noise = (b.noise || 0) + B.noise;
+    if (!T.blast) deafen(b, x, y, HEAR.BLAST[T.fx] || HEAR.BLAST.frag); // hearing.js: the bang deafens those near it (a launcher's round: launchers.js deafenAt, its own bang, once)
     alertNear(b, x, y, B.wake, "The blast wakes everything nearby.");
-    const torn = wreck(b, x, y, B.r, B.struct, u);
-    return (parts.length ? `The blast catches ${parts.join(", ")}.` : "The blast hits nobody.") + torn + vehicleBlast(b, x, y, B.r, B.dmg, T.fx); // combat.js: the team's vehicle and its riders (plating, glass)
+    const torn = wreck(b, x, y, B.r, B.struct, u, !!B.heavy);
+    const rams = B.rams ? ramsHit(b, x, y, B.r) : "";
+    groundBlast(b, x, y, B.r, !!B.heavy); // launchers.js: what lies within it (containers, the dead, spears, dropped guns, the vehicle's cargo) is worn by how close
+    const veh = vehicleBlast(b, x, y, B.r, B.dmg, B.kind || T.fx); // combat.js: the team's vehicle and its riders (plating, glass)
+    const cooked = b.cookQueue && b.cookQueue.length ? ` ${cookOffs(b)}` : ""; // launchers.js: bombs the blast set off on someone
+    return (parts.length ? `The blast catches ${parts.join(", ")}.` : "The blast hits nobody.") + torn + rams + veh + cooked;
   }
   if (T.fx === "fire") {
     const parts = hurtAll(b, u, caught(b, x, y, FIRE.r), FIRE.hit, "FIRE");
@@ -181,6 +196,20 @@ export function landEffect(b, u, T, x, y) {
   }
   if (T.fx === "flash") return flashBurst(b, u, x, y);
   return "";
+}
+
+// A rocket breaks any battering ram within its blast (siege.js breakRam: its crew lets go).
+function ramsHit(b, x, y, r) {
+  const hit = [];
+  for (const ram of [...(b.rams || [])]) {
+    if (ram.inVehicle) continue;
+    const lead = ram.lead != null ? b.units.find((o) => o.id === ram.lead) : null;
+    const rx = lead && !ram.dropped ? lead.x : ram.x, ry = lead && !ram.dropped ? lead.y : ram.y;
+    if (rx == null || dist(rx, ry, x, y) > r + 0.5 + 1e-6) continue;
+    breakRam(b, ram);
+    hit.push(ram);
+  }
+  return hit.length ? ` The battering ram${hit.length > 1 ? "s are" : " is"} blown apart.` : "";
 }
 
 // ---------- the flashbang ----------
@@ -218,7 +247,7 @@ export function flashCells(b, x, y) {
 }
 // The share of a flashbang a unit shrugs off: ear protection (u.earCut, when it has it) and a visor (GEAR visor).
 export function flashCut(u) {
-  const visor = !!u.visor || (u.fielded || []).some(([, it]) => it && GEAR[it.key] && GEAR[it.key].visor);
+  const visor = !u.visorUp && (!!u.visor || (u.fielded || []).some(([, it]) => it && GEAR[it.key] && GEAR[it.key].visor)); // visorUp: raised (helmets.js)
   return Math.min(FLASH.cutMax, Math.max(0, Number(u.earCut) || 0) + (visor ? FLASH.visor : 0));
 }
 const facingAway = (u, x, y) => { const f = u.face || [0, 0]; return !!(f[0] || f[1]) && (x - u.x) * f[0] + (y - u.y) * f[1] < 0; };
@@ -264,6 +293,7 @@ function flashBurst(b, by, x, y) {
     if (s) hit.push(`${t.name} ${stunLabel(s)}`);
   }
   b.noise = (b.noise || 0) + FLASH.noise;
+  deafen(b, x, y, HEAR.BLAST.flash); // hearing.js: the bang rings in the ears too
   // The people within earshot wake (the dead turn to the noise instead: the lure, stealth.js throwAt).
   const pods = new Set();
   for (const e of b.units) if (e.side === "enemy" && e.kind === "human" && !e.aware && active(e) && dist(e.x, e.y, x, y) <= FLASH.wake) pods.add(e.pod);
@@ -273,6 +303,13 @@ function flashBurst(b, by, x, y) {
 // The start of a side's turn (combat.js): the stunned of these sides whose turn it is lose their actions.
 export function stunTurnStart(b, sides) {
   for (const u of b.units) {
+    // A rocket fired in a room (launchers.js backblast): the shooter loses an action at the start of their next turn.
+    if (u.reel && sides.includes(u.side) && u.reel.next <= b.turn) {
+      const lost = active(u) ? Math.min(u.ap, 1) : 0;
+      u.ap -= lost;
+      if (lost) say(b, `${u.name} is still reeling from ${u.reel.why || "the blast"} (−1 action).`, u.side === "player" ? "danger" : "good");
+      delete u.reel;
+    }
     const s = u.stun;
     if (!s || !sides.includes(u.side) || s.applied || s.next !== b.turn) continue;
     s.applied = true;
@@ -404,6 +441,9 @@ function burnOut(b, x, y) {
 const CHOKE = new Set(["gate", "breach", "doorway", "smashed", "siegeladder"]);
 // The best spot for a grenade, a pipe bomb or a Molotov: at least 3 foes caught (2 at a chokepoint for a Molotov),
 // none of the thrower's side within the radius + 1, a cell its side knows (throwBlind). side: whose foes.
+// opts.min: the nearest it may be (2; a launcher's arming range, launchers.js); opts.direct: the thrower must see the
+// cell itself (a rocket, a grenade launcher indoors); opts.clear: how far its own side must be from the spot (r + 1;
+// a launcher allows for the tile or two it can land off).
 export function blastSpot(b, u, range, r, opts = {}) {
   const foes = b.units.filter((t) => t.side !== u.side && active(t) && !t.off);
   const mine = b.units.filter((t) => t.side === u.side && active(t));
@@ -414,15 +454,15 @@ export function blastSpot(b, u, range, r, opts = {}) {
       const x = f.x + dx, y = f.y + dy;
       if (!inside(b, x, y)) continue;
       const d = dist(u.x, u.y, x, y);
-      if (d > range || d < 2) continue;
-      if (mine.some((m) => dist(m.x, m.y, x, y) <= r + 1)) continue;
+      if (d > range || d < (opts.min ?? 2)) continue;
+      if (mine.some((m) => dist(m.x, m.y, x, y) <= (opts.clear ?? r + 1))) continue;
       const n = foes.filter((t) => dist(t.x, t.y, x, y) <= r + 1e-6).length;
       const choke = opts.fire && [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([ax, ay]) => inside(b, x + ax, y + ay) && CHOKE.has(cellOf(b, x + ax, y + ay).k));
       if (n < (choke ? Math.min(need, 2) : need)) continue;
       if (opts.fire && fireAt(b, x, y)) continue;
       const sc = n + (choke ? 1 : 0);
       if (best && sc <= best.sc) continue;
-      if (throwBlind(b, u, x, y) === null) continue;
+      if (opts.direct ? !canSeeAt(b, u, x, y) : throwBlind(b, u, x, y) === null) continue;
       best = { x, y, n, sc };
     }
   }

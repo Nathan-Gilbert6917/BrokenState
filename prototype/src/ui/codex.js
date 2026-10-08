@@ -11,6 +11,7 @@
 // worm once spotted, an infected wound), a group you know, an outsider party on a live tile. Until then it shows as
 // "???" with its category. state.codex = { seen: { key: day }, fresh: [keys not looked at yet] } is saved with the
 // campaign (sim/save.js writes the whole state); an older save without it opens what its world already shows.
+import { HELMETS, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts (codex lines)
 import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES } from "../sim/data.js";
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
@@ -175,6 +176,10 @@ function itemEntries() {
     if (LOCKED.crafts[k]) stats.push(["Recipe", `locked until ${techName(LOCKED.crafts[k])} is ${CRAFT_BOOKS[LOCKED.crafts[k]] ? "read" : "studied"}`]);
     if (k === "flashbang") stats.push(["Flash", `${FLASH.r} tiles in sight (${FLASH.near} through a doorway): −${FLASH.ap} action next turn (−${FLASH.apNear} within a tile), aim −${FLASH.aim}, no overwatch; facing away: aim −${FLASH.daze}`]);
     if (g.visor) stats.push(["Visor", `takes ${Math.round(FLASH.visor * 100)}% off a flashbang`]);
+    if (g.ears) stats.push(["Ears", `${g.ears.cut} off a bang's loudness, hearing ${g.ears.hear > 0 ? "+" : ""}${g.ears.hear} tiles${g.ears.elec ? ", electronic" : ""}${g.ears.link ? ", team link" : ""}`]); // sim/hearing.js
+    if (HELMETS[k]) stats.push(["Mounts", HELMETS[k].mounts.map((m) => HELM_MOUNTS[m].toLowerCase()).join(", ") || "none (a full shell)"]); // sim/helmets.js
+    if (HELMET_ATTACH[k]) stats.push(["Helmet mount", `${HELM_MOUNTS[HELMET_ATTACH[k].mount].toLowerCase()}${HELMET_ATTACH[k].fits ? `: ${HELMET_ATTACH[k].fits.map((x) => (GEAR[x] ? GEAR[x].name : x).toLowerCase()).join(", ")}` : ""}`]);
+    if (g.ac) stats.push(["Armour class", `${g.ac}${g.blunt ? " (blows and bites only)" : ""}`]);
     stats.push(["Weight", `${g.weight} kg${g.small ? ", fits a pocket" : g.bulky ? ", bulky" : ""}`]);
     out.push({ key: `i:${k}`, cat: "items", name: g.name, sub: cat ? cap(cat.name) : "Item", stats, text: g.desc, how: ITEM_HOW_KEY[k] || ITEM_HOW[g.cat] || TRADE_HOW, sprite: null });
   }
@@ -196,12 +201,18 @@ const SUPPLY_HOW = {
   carparts: "Vehicle repairs, garage upgrades and car-part recipes take them. Garages, gas stations and wrecks hold them; stripping a car gives several.",
   gunparts: "Springs, pins and barrels: repairs to guns and their attachments take them. Gun stores, armouries and barracks hold them; a spare gun salvaged gives some.",
   electronics: "Repairs to lights, lasers, night vision and radios take them. Radio towers, offices and news wrecks hold them; salvaged gadgets give some.",
+  // The reloading bench (sim/reloading.js).
+  brass: "Fired cases and shotgun hulls: a reloading bench loads a round into each. About 60% of the rounds your side fires come back after a won fight (a revolver's all); gun stores, ranges and lodges have bags of it.",
+  powder: "Smokeless powder, in charges (a 1 lb can holds 100 pistol, 40 rifle or 60 shotgun loads) for the reloading bench. Gun stores, lodges and ranches; arms dealers sell it.",
+  primers: "A reloading bench needs one for every round. Rare: gun stores, the military; arms dealers and trading groups sell them.",
+  blackpowder: "Made at a reloading bench from firewood, scrap and food (crafting): used when the smokeless powder runs out. Its loads jam more (×1.5) and are louder.",
+  matchprimers: "Made at a reloading bench (crafting, Mechanics 8): used when the factory primers run out. They fail three times as often.",
 };
 function supplyEntries() {
   return Object.entries(SUPPLIES).map(([k, v]) => ({
     key: `s:${k}`, cat: "supplies", name: v.name, sub: "Supply",
     stats: [["Kind", cap((CATEGORIES[v.cat] || { name: v.cat }).name)], ["Weight", `${v.weight} kg a unit`]],
-    text: "", how: SUPPLY_HOW[k] || (v.round ? "Rounds of one calibre and type (ammo.js): the guns of that calibre fire them, the type loaded decides (Reload picks another when there is some). Counted together as Ammo on the screens; carried in boxes." : ""), sprite: null,
+    text: "", how: SUPPLY_HOW[k] || (v.round && v.round.hand ? "Rounds loaded at a reloading bench (sim/reloading.js): fired like factory rounds of the same type (the factory ones first), but they jam more, less the better the loader was; loaded below Mechanics 8 they aim 1 worse." : v.round ? "Rounds of one calibre and type (ammo.js): the guns of that calibre fire them, the type loaded decides (Reload picks another when there is some). Counted together as Ammo on the screens; carried in boxes." : ""), sprite: null,
   }));
 }
 function buildingEntries() {

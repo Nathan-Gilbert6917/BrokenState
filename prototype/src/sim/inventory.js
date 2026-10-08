@@ -13,6 +13,8 @@
 //
 // Locations are short strings so the UI can keep them in data attributes:
 //   "s:<survivorId>:<slot>"  "s:<id>:pocket:<i>"  "s:<id>:pack:<i>"   a living survivor
+//   "s:<id>:rig:<i>"  a rig pouch (the chest rig's, or a tactical vest's or plate carrier's: rigOf)
+//   "s:<id>:insert:front|back"  a plate in the worn carrier (section 16)
 //   "armory:<baseId>:list[:<i>]"  "cargo:<partyId>:list[:<i>]"       storage (a base armory, a team's cargo)
 //   "body:<bodyIndex>:<slot>[:<i>]"  "body:<bodyIndex>:sup:<key>"     bodies of the battle that just ended
 // Items only move between people, storage and bodies at the same place (one base, or one team).
@@ -29,14 +31,17 @@ import { condition, kitSource, spend } from "./itemcond.js"; // the condition lo
 import { armourCond, lootArmour } from "./armour.js"; // per-hit armour: condition, an enemy body's worn piece
 import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it fought in
 import { MEDS } from "./medfinds.js"; // how rare meds are
+import { CLIPS, ADMIN_KG, POUCH_NAMES, KIT_LOOT } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
+import { bodyKit } from "./carrykit.js"; // an enemy's rig and magazines onto its body (call-time only: safe in the import cycle)
 import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
+import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet and ear protection on its body
 
 export const POCKETS = 4;
 export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to this (plate carrier alone is 4)
 export const ARMOR_SLOTS = ["head", "armor", "arms", "legs"];
-export const EQUIP_SLOTS = ["weapon", "tool", "head", "armor", "arms", "legs", "backpack"];
-export const SLOT_NAMES = { weapon: "Hands", tool: "Off hand", head: "Head", armor: "Body", arms: "Arms", legs: "Legs", backpack: "Backpack", pocket: "Pocket", pack: "Pack", cargo: "Cargo" };
-const INV_VERSION = 1;
+export const EQUIP_SLOTS = ["weapon", "tool", "head", "armor", "arms", "legs", "rig", "backpack"];
+export const SLOT_NAMES = { weapon: "Hands", tool: "Off hand", head: "Head", armor: "Body", arms: "Arms", legs: "Legs", rig: "Rig", backpack: "Backpack", pocket: "Pocket", pack: "Pack", cargo: "Cargo", pouch: "Rig pouch", insert: "Plate carrier" };
+const INV_VERSION = 2; // 2: the rig slot, plate carriers with inserts (section 16)
 
 // Odd things the dead still carry in their pockets (a zombie body has one now and then).
 export const ZOMBIE_FINDS = ["knife", "knife", "bandagekit", "pistol", "padding", "phone", "phone", "photos", "goldring", "watch", "smokes", "lighters", "candy", "batteries", "baton"];
@@ -61,6 +66,8 @@ export function newItem(key, quality = 1, worn = null, range = FOUND_DUR) {
     item.dur = Math.max(1, Math.round(d.dur * (range.lo + (range.hi - range.lo) * u)));
   }
   if (d.slots) ensurePack(item);
+  if (d.inserts) item.inserts = { front: newItem("ceramicplate", quality), back: newItem("ceramicplate", quality) }; // a carrier comes with its plates (lootItem wears them as it wears the carrier)
+  if (d.inserts && range === START_DUR) startKit(item); // starting and recruit gear: steel plates (repairable)
   factoryFit(item, seedOf(worn)); // factoryfit.js: a sniper rifle comes with its scope and bipod (dice: worn's rng position)
   return item;
 }
@@ -68,7 +75,14 @@ export function newItem(key, quality = 1, worn = null, range = FOUND_DUR) {
 // (itemcond.js COND_SOURCES: "military", "shop", "raider", "merchant"...). roll: an Rng (its position is hashed, no
 // draw), a number 0–1 or a list of parts. opts.quality: a quality fixed by the caller (only the wear is rolled).
 // A gun's factory parts' chance rows roll on the same dice (factoryfit.js: newItem fitted the sure ones already).
-export const lootItem = (key, source, roll, opts) => condition(factoryFit(newItem(key, 1), seedOf(roll)), source, roll, opts);
+// Starting kit (a colonist's, a recruit's, a custom background's): a plate carrier holds steel plates, which a workbench
+// can patch (found military carriers hold ceramic, which cannot be repaired). Returns the item.
+export function startKit(item) {
+  if (!item || !GEAR[item.key] || !GEAR[item.key].inserts || !item.inserts) return item;
+  for (const side of Object.keys(item.inserts)) if (item.inserts[side]) item.inserts[side] = newItem("steelplate", item.quality ?? 1);
+  return item;
+}
+export const lootItem = (key, source, roll, opts) => wearInserts(condition(factoryFit(newItem(key, 1), seedOf(roll)), source, roll, opts));
 // The armoured dead's kit (deadsoldiers.js bodyLoot's maker): their table's quality, the wear by itemcond.js "armoured".
 export const armouredItem = (key, quality, rng) => lootItem(key, "armoured", rng, { quality });
 // 0–1 from an rng's position and the item (FNV-1a and a final mix): no draw from the rng itself.
@@ -92,7 +106,8 @@ export const itemKg = (item) => {
   return d.count && d.dur && Number.isFinite(item.dur) ? d.weight * Math.max(0, item.dur) / d.dur : d.weight;
 };
 // A gun also weighs its fitted attachments (gunmods.js: item.mods).
-export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item);
+export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item) + insertsKg(item);
+const insertsKg = (item) => (item && GEAR[item.key] && GEAR[item.key].inserts ? Object.values(insertsOf(item)).reduce((a, x) => a + (x ? itemKg(x) : 0), 0) : 0); // a carrier's plates (section 16)
 const modsKg = (item) => (item && item.mods ? Object.values(item.mods).reduce((a, m) => a + (m ? fittedKg(m) : 0), 0) : 0); // a lighter handguard or stock replaces the factory one (gunmods.js fittedKg)
 
 export function ensurePack(item) {
@@ -104,6 +119,73 @@ export function ensurePack(item) {
 }
 export const packOf = (s) => (s && s.gear && s.gear.backpack ? ensurePack(s.gear.backpack) : null);
 
+// ---------- rigs and plate carriers (docs/weapons-overhaul-plan.md section 16) ----------
+// A rig's pouches are its item.contents, one slot a pouch, of the kinds in GEAR[key].pouches (data-kit.js): rifle and
+// pistol magazines (and clips), a grenade (anything thrown, 40 mm rounds), a radio, admin (small things up to ADMIN_KG:
+// meds, a flashlight, tablets, a small box of rounds). The rig is the chest rig (slot "rig") or a worn armour piece
+// with pouches of its own (a tactical vest, a plate carrier): rigOf. A chest rig does not go over a pouched vest.
+export const pouchesOf = (item) => (item && GEAR[item.key] && GEAR[item.key].pouches) || null;
+export function ensureRig(item) {
+  const P = pouchesOf(item);
+  if (!P) return null;
+  if (!Array.isArray(item.contents)) item.contents = [];
+  while (item.contents.length < P.length) item.contents.push(null);
+  return item.contents;
+}
+export function rigOf(s) {
+  const g = s && s.gear;
+  if (!g) return null;
+  if (g.rig && pouchesOf(g.rig)) return g.rig;
+  if (g.armor && pouchesOf(g.armor)) return g.armor;
+  return null;
+}
+export const rigPouches = (s) => { const r = rigOf(s); return r ? ensureRig(r) : null; };
+// The kind of pouch a thing goes in (null: only an admin pouch, if it is small and light enough).
+export function pouchKindOf(item) {
+  const d = item && GEAR[item.key];
+  if (!d) return null;
+  if (d.mag || CLIPS[item.key]) return d.pouch || "rifle";
+  if (d.throw || (d.rounds && d.rounds.cal === "40mm")) return "grenade";
+  if (d.listen || d.radio || item.key === "milradio" || item.key === "handradio") return "radio";
+  return null;
+}
+// Why an item does not go in a pouch of this kind ("" when it does).
+export function pouchReason(item, kind) {
+  const d = item && GEAR[item.key];
+  if (!d) return "Unknown item.";
+  const k = pouchKindOf(item);
+  if (kind === "admin") return d.small && !d.mag && !d.throw && itemLoad(item) <= ADMIN_KG + 1e-9 ? "" : `An admin pouch takes small things up to ${ADMIN_KG} kg (meds, a flashlight, tablets, a small box of rounds).`;
+  if (k === kind || (kind === "rifle" && k === "pistol")) return ""; // a pistol magazine fits a rifle pouch too
+  if (kind === "pistol" && k === "rifle") return `The ${item.name} is too long for a pistol pouch.`;
+  return `A ${String(POUCH_NAMES[kind] || kind).toLowerCase()} pouch does not take the ${item.name}.`;
+}
+// A plate carrier's insert pockets (front, back): { front: item | null, back: item | null }. A carrier from before
+// inserts (a save made with the single-piece plate carrier) gets two ceramic plates at its own condition, and its own
+// durability becomes the soft backer's (migrateCarrier).
+export const isCarrier = (item) => !!(item && GEAR[item.key] && GEAR[item.key].inserts);
+export const isInsert = (item) => !!(item && GEAR[item.key] && GEAR[item.key].slot === "insert");
+export const INSERT_SIDES = ["front", "back"];
+export const OLD_PLATE_DUR = 45; // the single-piece plate carrier's durability (before inserts)
+export function migrateCarrier(item) {
+  if (!isCarrier(item) || item.inserts !== undefined) return item;
+  const share = item.dur != null ? Math.max(0, Math.min(1, item.dur / OLD_PLATE_DUR)) : Math.max(0, Math.min(1, item.quality ?? 1));
+  const broken = !!item.shattered || (item.dur != null && item.dur <= 0);
+  const plate = () => { const p = newItem("ceramicplate", item.quality ?? 1); p.dur = Math.max(1, Math.round(GEAR.ceramicplate.dur * share)); if (item.hits30) p.hits30 = item.hits30; return p; };
+  item.inserts = { front: broken ? null : plate(), back: broken ? null : plate() };
+  if (item.dur != null) item.dur = broken ? Math.max(1, Math.round(GEAR[item.key].dur * 0.5)) : Math.max(1, Math.round(GEAR[item.key].dur * share)); // a shattered plate's carrier keeps its backer
+  delete item.shattered; delete item.hits30; delete item.chip;
+  return item;
+}
+export const insertsOf = (item) => (isCarrier(item) ? migrateCarrier(item).inserts || (item.inserts = { front: null, back: null }) : { front: null, back: null });
+// A carrier found worn: its plates as worn as it is (lootItem).
+function wearInserts(item) {
+  if (!isCarrier(item) || !item.inserts) return item;
+  const d = GEAR[item.key];
+  const share = item.dur != null && d.dur ? Math.max(0, Math.min(1, item.dur / d.dur)) : 1;
+  for (const p of Object.values(item.inserts)) if (p && GEAR[p.key] && GEAR[p.key].dur) { p.dur = Math.max(1, Math.round(GEAR[p.key].dur * share)); p.quality = item.quality; }
+  return item;
+}
+
 // Adds the new slots to a survivor (or a body) made before them and moves old gear to where it belongs now:
 // the improvised backpack was a tool, arm guards were body armor, and the old "Football pads and helmet"
 // becomes pads (body) plus a helmet (head). Safe to call any number of times.
@@ -114,6 +196,7 @@ export function ensureInv(s) {
   if (!Array.isArray(s.pockets)) s.pockets = [];
   while (s.pockets.length < POCKETS) s.pockets.push(null);
   if (g.backpack) ensurePack(g.backpack);
+  if (g.armor && isCarrier(g.armor)) migrateCarrier(g.armor); // (pouches are made when first used: rigPouches)
   if (s.invV === INV_VERSION) return s;
   s.invV = INV_VERSION;
   for (const k of EQUIP_SLOTS) {
@@ -141,6 +224,11 @@ export function ensureInv(s) {
 // durability: its quality); anything else's is item.quality.
 export const itemArmor = (item) => {
   if (!item || !GEAR[item.key]) return 0;
+  if (isCarrier(item)) { // the front plate's, else the soft backer's (AC2: a vest's)
+    const ins = insertsOf(item).front;
+    const c = armourCond(item);
+    return Math.max(c > 0 ? 2 * (0.5 + 0.5 * c) : 0, ins ? itemArmor(ins) : 0);
+  }
   const c = armourCond(item);
   return GEAR[item.key].power * (c == null ? 0.5 + 0.5 * Math.max(0, Math.min(1, item.quality ?? 1)) : c <= 0 ? 0 : 0.5 + 0.5 * c);
 };
@@ -159,7 +247,7 @@ export const armorMult = (s) => 1 - armorPower(s) * 0.06;
 export function carryBonus(s) {
   const g = s && s.gear;
   if (!g) return 0;
-  return carryOf(g.backpack) + (g.tool && GEAR[g.tool.key] && GEAR[g.tool.key].slot === "backpack" ? carryOf(g.tool) : 0);
+  return carryOf(g.backpack) + (g.tool && GEAR[g.tool.key] && GEAR[g.tool.key].slot === "backpack" ? carryOf(g.tool) : 0) + carryOf(g.rig) + carryOf(g.armor); // a rig, a pouched vest or a carrier spreads the weight too
 }
 
 // The armor key the sprite draws on the body: body armor, else arm guards.
@@ -174,6 +262,33 @@ export function allItems(s) {
   ensureInv(s);
   return [...EQUIP_SLOTS.map((k) => s.gear[k]), ...s.pockets].filter(Boolean);
 }
+// Everything a person carries, one item at a time: worn and held (a rig and a pack themselves too), pockets, the rig's
+// pouches, the pack's slots, a carrier's plates. The one iterator for "has X on them" (hunting, stealth, kit, combat's
+// carried keys, throws and meds).
+export function allCarried(s) {
+  if (!s || !s.gear) return [];
+  ensureInv(s);
+  const out = allItems(s);
+  for (const it of rigPouches(s) || []) if (it) out.push(it);
+  for (const it of packOf(s) || []) if (it) out.push(it);
+  if (isCarrier(s.gear.armor)) for (const p of Object.values(insertsOf(s.gear.armor))) if (p) out.push(p);
+  return out;
+}
+// The same with where each is (the slot for worn and held, "pocket", "rig", "pack") and how to take it away:
+// [{ item, where, loc, take() }] (loc: an inventory location string). Pockets, then the rig, then the pack.
+export function carriedSpots(s) {
+  if (!s || !s.gear) return [];
+  ensureInv(s);
+  const out = [];
+  const pre = `s:${s.id}`;
+  for (const k of EQUIP_SLOTS) { const it = s.gear[k]; if (it) out.push({ item: it, where: k, loc: `${pre}:${k}`, take: () => { s.gear[k] = null; } }); }
+  s.pockets.forEach((it, i) => { if (it) out.push({ item: it, where: "pocket", loc: `${pre}:pocket:${i}`, take: () => { s.pockets[i] = null; } }); });
+  const rp = rigPouches(s);
+  (rp || []).forEach((it, i) => { if (it) out.push({ item: it, where: "rig", loc: `${pre}:rig:${i}`, take: () => { rp[i] = null; } }); });
+  const pk = packOf(s);
+  (pk || []).forEach((it, i) => { if (it) out.push({ item: it, where: "pack", loc: `${pre}:pack:${i}`, take: () => { pk[i] = null; } }); });
+  return out;
+}
 // Takes everything off a person (captured, for example) and returns it.
 export function stripAll(s) {
   const items = allItems(s);
@@ -187,7 +302,9 @@ export function stripAll(s) {
 export function stow(s, item, prefix = `s:${s.id}`) {
   ensureInv(s);
   const slot = GEAR[item.key].slot;
-  if (EQUIP_SLOTS.includes(slot) && !s.gear[slot]) { s.gear[slot] = item; return `${prefix}:${slot}`; } // books (slot "pack") are never worn
+  if (EQUIP_SLOTS.includes(slot) && !s.gear[slot] && !fitReason(item, slot, s)) { s.gear[slot] = item; return `${prefix}:${slot}`; } // books (slot "pack") are never worn
+  const pi = pouchFor(s, item); // a magazine, a grenade, a radio, meds: a rig pouch of its kind first
+  if (pi >= 0) { rigPouches(s)[pi] = item; return `${prefix}:rig:${pi}`; }
   if (isSmall(item.key)) {
     const i = s.pockets.indexOf(null);
     if (i >= 0) { s.pockets[i] = item; return `${prefix}:pocket:${i}`; }
@@ -200,20 +317,41 @@ export function stow(s, item, prefix = `s:${s.id}`) {
   return "";
 }
 
-// Why an item cannot go in a slot ("" when it can).
-export function fitReason(item, slot) {
+// The free rig pouch an item would go in when stowed (its own kind; meds and tablets an admin pouch), or -1.
+function pouchFor(s, item) {
+  const r = KIT_LOOT.on ? rigOf(s) : null;
+  if (!r) return -1;
+  const pr = r.contents || [];
+  const kinds = pouchesOf(r);
+  const d = GEAR[item.key];
+  const want = pouchKindOf(item) || (d && (d.medKit || d.tabs) ? "admin" : null);
+  if (!want) return -1;
+  return kinds.findIndex((k, i) => !pr[i] && k === want && !pouchReason(item, want));
+}
+// Why an item cannot go in a slot ("" when it can). slot: an equip slot, "pocket", "pack", "pouch" (a rig pouch of
+// `kind`), "insert" (a carrier's plate pocket). h: the person (or body) it goes on: a chest rig does not go over a vest
+// or a carrier with pouches of its own, and such a piece not under a chest rig.
+export function fitReason(item, slot, h = null, kind = null) {
   const d = GEAR[item.key];
   if (!d) return "Unknown item.";
   if (slot === "pocket") return d.small ? "" : `The ${item.name} is too big for a pocket.`;
   if (slot === "pack") return packSize(item) ? "A pack does not fit inside a pack." : d.bulky ? `The ${item.name} is too big for a pack: it goes in the cargo.` : "";
-  if (EQUIP_SLOTS.includes(slot)) return d.slot === slot ? "" : `The ${item.name} goes in ${SLOT_NAMES[d.slot]}, not ${SLOT_NAMES[slot]}.`;
+  if (slot === "pouch") return kind ? pouchReason(item, kind) : "No pouch there.";
+  if (slot === "insert") return isInsert(item) ? "" : `Only a plate goes in a plate carrier's plate pocket.`;
+  if (EQUIP_SLOTS.includes(slot)) {
+    if (d.slot !== slot) return `The ${item.name} goes in ${SLOT_NAMES[d.slot] || d.slot}, not ${SLOT_NAMES[slot]}.`;
+    const g = h && h.gear;
+    if (g && slot === "rig" && g.armor && pouchesOf(g.armor)) return `The ${item.name} does not go over the ${g.armor.name}: it has pouches of its own.`;
+    if (g && slot === "armor" && d.pouches && g.rig && g.rig !== item) return `Take the ${g.rig.name} off first: the ${item.name} has pouches of its own.`;
+    return "";
+  }
   return "";
 }
 
 // ---------- locations ----------
 export function parseLoc(str) {
   const [o, id, slot, i] = String(str).split(":");
-  return { o, id: Number(id), slot: slot || "list", i: i == null || i === "" ? null : slot === "sup" ? i : Number(i) };
+  return { o, id: Number(id), slot: slot || "list", i: i == null || i === "" ? null : slot === "sup" || slot === "insert" ? i : Number(i) };
 }
 
 // Bodies of the battle that just ended (only while its result screen is open).
@@ -277,17 +415,27 @@ function ref(state, loc) {
   }
   const h = holderAt(state, loc);
   if (!h) return null;
-  let arr, key;
-  if (loc.slot === "pocket" || loc.slot === "pack") {
-    arr = loc.slot === "pocket" ? h.pockets : packOf(h);
+  let arr, key, owner = null, pouch = null;
+  if (loc.slot === "pocket" || loc.slot === "pack" || (loc.slot === "rig" && loc.i != null)) {
+    arr = loc.slot === "pocket" ? h.pockets : loc.slot === "pack" ? packOf(h) : rigPouches(h);
+    owner = loc.slot === "pack" ? h.gear.backpack : loc.slot === "rig" ? rigOf(h) : null;
     key = loc.i;
     if (!arr || key == null || key < 0 || key >= arr.length) return null;
+    if (loc.slot === "rig") pouch = pouchesOf(owner)[key];
+  } else if (loc.slot === "insert") {
+    owner = h.gear.armor;
+    if (!isCarrier(owner) || !INSERT_SIDES.includes(String(loc.i))) return null;
+    arr = insertsOf(owner);
+    key = String(loc.i);
   } else if (EQUIP_SLOTS.includes(loc.slot)) {
     arr = h.gear;
     key = loc.slot;
   } else return null;
-  return { h, get: () => arr[key] || null, set: (it) => (arr[key] = it), remove: () => (arr[key] = null) };
+  return { h, owner, pouch, get: () => arr[key] || null, set: (it) => (arr[key] = it), remove: () => (arr[key] = null) };
 }
+// The kind of place a location is for fitReason: a rig pouch ("s:1:rig:2") is "pouch", the chest rig itself
+// ("s:1:rig") its equip slot.
+export const slotKind = (loc) => (loc.slot === "rig" && loc.i != null ? "pouch" : loc.slot);
 
 export function itemAt(state, str) {
   const r = ref(state, parseLoc(str));
@@ -534,7 +682,9 @@ export function moveItem(state, fromStr, toStr) {
   const item = A.get();
   if (!item) return "Nothing there.";
   const store = storageFor(state, place);
-  const lostFrom = from.slot === "backpack" ? carryOf(item) : 0;
+  const fk = slotKind(from), tk = slotKind(to);
+  const equipped = (k) => EQUIP_SLOTS.includes(k); // a pack, a rig, a carrier: what it adds to the max load
+  const lostFrom = equipped(fk) ? carryOf(item) : 0;
   // Taken from a body, it adds to what the team carries; between people and cargo it weighs the same.
   const gained = from.o === "body" ? itemLoad(item) : 0;
 
@@ -547,17 +697,18 @@ export function moveItem(state, fromStr, toStr) {
     taken(state, from, item);
     return `${item.name} → ${store.name}.`;
   }
-  const why = fitReason(item, to.slot);
+  if (B.owner && B.owner === item) return `The ${item.name} does not fit inside itself.`;
+  const why = fitReason(item, tk, B.h, B.pouch);
   if (why) return why;
   if (to.slot === "pack" && from.o === to.o && from.id === to.id && from.slot === "backpack") return "A pack does not fit inside itself.";
   const cur = B.get();
   if (gained || lostFrom) {
     // Onto a person from a body (the team gets heavier), or a worn pack moved (its wearer's max load drops).
-    const gain = to.slot === "backpack" ? (cur ? carryOf(cur) : 0) - carryOf(item) : 0;
+    const gain = equipped(tk) ? (cur ? carryOf(cur) : 0) - carryOf(item) : 0;
     const err = roomCheck(store, item, gained, lostFrom + gain);
     if (err) return err;
   }
-  if (cur && !A.list && from.o !== "body" && !fitReason(cur, from.slot)) {
+  if (cur && !A.list && from.o !== "body" && !fitReason(cur, fk, A.h, A.pouch) && !(A.owner && A.owner === cur)) {
     // Straight swap between two slots.
     A.set(cur);
     B.set(item);
@@ -565,19 +716,19 @@ export function moveItem(state, fromStr, toStr) {
   }
   if (cur) {
     if (!store) return "No room for the item already there.";
-    const lost = to.slot === "backpack" ? carryOf(cur) - carryOf(item) : 0;
+    const lost = equipped(tk) ? carryOf(cur) - carryOf(item) : 0;
     const err = roomCheck(store, cur, 0, lost + lostFrom);
     if (err) return err;
     A.remove(item);
     B.set(item);
     store.list.push(cur);
     taken(state, from, item);
-    return `${item.name} in ${SLOT_NAMES[to.slot]}; the ${cur.name} went to ${store.name}.`;
+    return `${item.name} in ${SLOT_NAMES[tk]}; the ${cur.name} went to ${store.name}.`;
   }
   A.remove(item);
   B.set(item);
   taken(state, from, item);
-  return `${item.name} → ${SLOT_NAMES[to.slot]}.`;
+  return `${item.name} → ${SLOT_NAMES[tk]}.`;
 }
 
 // Quick move (click an item twice): storage or a body → onto this person; on a person → into storage.
@@ -590,6 +741,9 @@ export function quickMove(state, fromStr, sid) {
   ensureInv(s);
   const slot = GEAR[item.key].slot;
   const tries = EQUIP_SLOTS.includes(slot) ? [`s:${sid}:${slot}`] : []; // books (slot "pack") go in the pack
+  if (isInsert(item) && isCarrier(s.gear.armor)) for (const side of INSERT_SIDES) if (!insertsOf(s.gear.armor)[side]) tries.push(`s:${sid}:insert:${side}`); // a plate into the worn carrier's empty pocket
+  const rp = rigPouches(s), kinds = rp ? pouchesOf(rigOf(s)) : [];
+  if (rp) rp.forEach((x, i) => { if (!x && (pouchKindOf(item) ? kinds[i] === pouchKindOf(item) : false) && !pouchReason(item, kinds[i])) tries.push(`s:${sid}:rig:${i}`); }); // a magazine, a grenade, a radio: its pouch
   if (isSmall(item.key)) s.pockets.forEach((x, i) => { if (!x) tries.push(`s:${sid}:pocket:${i}`); });
   const pk = packOf(s);
   if (pk && !packSize(item) && !isBulky(item.key)) pk.forEach((x, i) => { if (!x) tries.push(`s:${sid}:pack:${i}`); });
@@ -648,11 +802,13 @@ export function enemyBody(rng, u, kit) {
   if (worn) { spend(rng); body.gear.armor = worn; }
   else if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = lootItem(u.armorKey, src, spend(rng));
   if (body.gear.armor && !lootArmour(u, body.gear.armor)) body.gear.armor = null; // armour.js: the durability its piece had left after the fight (broken: none)
-  for (const it of u.arsArmour || []) if (it !== worn && GEAR[it.key] && !body.gear[GEAR[it.key].slot]) body.gear[GEAR[it.key].slot] = it; // a helmet, arm or leg guards
+  for (const it of u.arsArmour || []) if (it !== worn && GEAR[it.key] && !body.gear[GEAR[it.key].slot]) body.gear[GEAR[it.key].slot] = it; else if (it !== worn && GEAR[it.key]) earsOnBody(body, it); // a helmet, arm or leg guards; ear protection (helmets.js issueEars)
+  dropHeadgear(u, body, src); // helmets.js: a kit helmet at the wear it ended with, ear protection (own dice)
   if (body.gear.weapon) lootGun(u, body.gear.weapon); // gunfire.js: the quality and condition their gun fought (and jammed) in
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = lootItem(kit.pack[0], src, spend(rng));
   if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, lootItem(rng.pick(kit.finds), src, rng), ""); // pockets: smokes, a ring (combat.js KITS finds)
+  bodyKit(body, u, src); // carrykit.js: their rig and spare magazines (loaded with their type)
   for (const it of carriedThrowables(u, src)) stow(body, it, ""); // a flashbang or a smoke grenade they never threw
   // Their medic's kit (medics.js makeEnemyMedic), as worn as the uses they had left; a group's own kit (arsenal.js).
   if (u.arsMedKit && u.medKit === u.arsMedKit) { if (itemDur(u.arsMedKit) !== 0) stow(body, u.arsMedKit, ""); }
@@ -768,7 +924,7 @@ export function takeAllBody(state, bi) {
   }
   return out;
 }
-const worth = (item) => GEAR[item.key].value * (item.quality || 1) + (item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + worth(c), 0) : 0) + (item.mods ? Object.values(item.mods).reduce((a, m) => a + (m && GEAR[m.key] ? worth(m) : 0), 0) : 0); // a gun's attachments (gunmods.js) too
+const worth = (item) => GEAR[item.key].value * (item.quality || 1) + (item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + worth(c), 0) : 0) + (item.mods ? Object.values(item.mods).reduce((a, m) => a + (m && GEAR[m.key] ? worth(m) : 0), 0) : 0) + (item.inserts ? Object.values(item.inserts).reduce((a, p) => a + (p && GEAR[p.key] ? worth(p) : 0), 0) : 0); // a gun's attachments (gunmods.js), a carrier's plates too
 
 // Every body at once (headless battles do this as soon as they end; the "Take all" button too).
 export function takeAllBodies(state) {

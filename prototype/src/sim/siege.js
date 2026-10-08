@@ -37,6 +37,7 @@ import { ACID } from "./acid.js";
 import { count } from "./buildings.js";
 import { ZTYPES, SHEPHERD } from "./hiveconst.js";
 import { raidPrep, outsiderPrep } from "./eras.js";
+import { aiLaunch } from "./launchers.js"; // a grenade launcher or a rocket (section 13): rockets at your gate, your ram, your vehicle first
 
 export const LADDER = { SLOW: 1, PUSH: 35, PUSH_AIM: 0.2, CLIMBER: -15, MIN: 15, MAX: 80, FALL: [10, 18] };
 export const RAM = { DMG: [16, 24], CREW: 3, MIN: 2, MOB: 3, NOISE: 3, WAKE: 12, DETOUR: 8 }; // DETOUR: a gate is worth the ram when the way round (a breach) is this much longer
@@ -366,6 +367,13 @@ export function checkRam(b, r) {
   }
 }
 export function checkRams(b) { for (const r of b.rams || []) checkRam(b, r); }
+// A rocket's blast breaks the ram (launchers.js ROCKET, throwables.js landEffect): its crew lets go, it is gone.
+export function breakRam(b, r) {
+  if (!r || !b.rams) return;
+  for (const id of r.crew.slice()) { const o = unitById(b, id); if (o) leaveCrew(b, r, o, ""); }
+  r.crew = []; r.lead = null; r.dropped = true; r.broken = true;
+  b.rams = b.rams.filter((x) => x !== r);
+}
 // Let go of the ram (the crew is free again), or take a dropped one up with whoever of your side stands next to you.
 function dropRam(b, u) {
   const r = ramOf(b, u);
@@ -627,6 +635,7 @@ export function siegeAI(b, u) {
   // A dropped ram of theirs with two of them close: take it up again.
   const dropped = (b.rams || []).find((x) => x.dropped && x.side === u.side && cheb(x.x, x.y, u.x, u.y) <= 1 && ramGoalsExist(b, u));
   if (dropped && !takeRam(b, u)) return true;
+  if (u.gl && aiLaunch(b, u)) return true; // launchers.js: the turn's attack
   return enemyThrow(b, u);
 }
 const ramGoalsExist = (b, u) => b.cells.some((c) => ramable(c));

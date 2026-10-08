@@ -13,7 +13,8 @@
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
 import { fitFromPool } from "./gunmods.js";
-import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
+import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants, queueRepair } from "./repair.js";
+import { equipKit, governPlates } from "./carrykit.js"; // carry kit: rigs, plates in the carriers, spare magazines; spare plates kept // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
 import {
@@ -67,6 +68,7 @@ import { ensureDiplo, joinProblem, joinWar } from "./diplomacy.js";
 import * as CL from "./claims.js";
 import { baseAmmo, teamAmmo, partyCals, wantedKey, spareRounds } from "./ammo.js"; // rounds by calibre: what fits the guns there
 import { supplyAmt } from "./rounds.js"; // "ammo": every round there, any calibre
+import { autoReloadOrders, autoReloadBench, reloadNeeds, reloadCaps, reloadWanted } from "./reloading.js"; // the reloading bench: its orders, the upgrade, powder and primers to buy
 const CLAIM_ORDER = "claim", WELL_ORDER = "well";
 const claimsReady = () => typeof CL.canClaim === "function" && typeof CL.playerClaims === "function";
 import { jobTripCands, jobById, activeJobs } from "./jobs.js";
@@ -275,7 +277,8 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.medical) planTreatment(state, base);
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building) planBuilds(state, base, areas);
-  if (areas.production) { govOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench
+  if (areas.production) { govOrders(state, base); autoReloadOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench; reloading.js: HP, slugs, AP to keep
+  if (areas.building) { const up = autoReloadBench(state, base); if (up) say(state, up); } // reloading.js: an ammo bench upgraded once there are inputs to load with
 }
 // Roles at one base (after the day's trip is planned). Returns the number of role changes.
 export function governRoles(state, base, areas = ALL_AREAS) {
@@ -1321,6 +1324,7 @@ function handleTrade(state) {
   const ask = {};
   const caps = { meds: 10, parts: 6, food: 40, fuel: 20, ammo: 120, scrap: 40, water: 20, wood: 600 }; // wood: 60 kg of firewood
   for (const k of ["gunparts", "carparts", "electronics"]) caps[k] = Math.max(1, Math.min(6, partDeficit(state, home, k))); // repair.js: up to the reorder level
+  for (const [k, v] of Object.entries(reloadCaps(state, home))) caps[k] = Math.max(1, v); // reloading.js: powder and primers up to the bench's stock
   let askValue = 0;
   // Only what they can spare and the team can carry home (trade.js refuses the whole deal otherwise).
   let room = cargoRoom(state, p);
@@ -1513,6 +1517,7 @@ function needs(state, h = hub(state)) { // h: a base leader's own base (stewardS
   const pn = partNeeds(state, h);
   for (const k of ["gunparts", "carparts", "electronics"]) out[k] = pn[k];
   out.parts = Math.max(out.parts, pn.parts > 1.5 ? pn.parts : 0);
+  if (h) Object.assign(out, reloadNeeds(state, h)); // reloading.js: powder and primers bought for a reloading bench, kept for one
   return persona(state).reserves ? reserveNeeds(state, h, out) : out;
 }
 // Cautious: a supply below its reserve target is wanted (1.6, up to 3 when it is gone); one well above it
@@ -1920,6 +1925,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
 // station: the building, when known. Its standing order (production.js; the governor's own from govOrders, or the
 // player's) comes first: a station it holds is never staffed, and an until / keep order replaces the stock check.
 function stationWorth(state, base, recipe, station = null) {
+  if (station && station.type === "reload_bench" && reloadWanted(state, base)) return true; // reloading.js: a reloading order short and makeable (its station order holds only the common rounds)
   if (station && orderHold(state, base, station)) return false;
   const byOrder = !!station && stationOrder(base, station).mode !== "forever";
   const st = base.stock;
@@ -2165,7 +2171,7 @@ function buildWishes(state, base) {
   // Ammo from scrap: an ammo bench needs a workbench here (it opens the workshop recipes too), so the crafting bench
   // goes up and is upgraded first. Saved for while the ammo is below what would set the ammo bench to work
   // (stationWorth: 15 a head + 60, or the hive campaign's stockpile); the hub used to start with an ammo bench.
-  if (!countAll(base, "ammo_bench") && !queued("ammo_bench")) {
+  if (!countAll(base, "ammo_bench") && !countAll(base, "reload_bench") && !queued("ammo_bench")) { // a reloading bench is an ammo bench upgraded (reloading.js)
     const ammoLow = baseAmmo(state, base) < Math.max(here.length * 15 + 60, campaignAmmoTarget(state, base));
     const bt = benchTier(base, true);
     if (!bt && !benchQueued) add("craftbench", "a crafting bench, the first step to an ammo bench", ammoLow);
@@ -2385,6 +2391,7 @@ export function itemScore(s, item) { // also the roster's Equip best available (
   const d = GEAR[item.key];
   if (d.slot === "weapon") {
     const eff = gearEffect(s, item);
+    if (d.launcher) return eff.usable ? 0.5 + 1.5 * eff.mult : -1; // a launcher (launchers.js) is a second weapon: better than empty hands, never instead of a gun
     return eff.usable ? 0.5 + d.power * eff.mult * (item.quality || 1) : -1;
   }
   if (d.slot === "backpack") return d.carry || 0;
@@ -2412,6 +2419,9 @@ function equipFromArmory(state, base) {
   }
   // Loose gun attachments to the guns in hand, the best fighters first (gunmods.js: one a mount, only what helps).
   for (const x of fitFromPool(base.armory, people.map((s) => s.gear.weapon))) handed.push(`${x.mod.name} on ${x.gun.name}`);
+  // carrykit.js: the best rig, plates into the carriers, spare magazines into pouches; worn plates swapped, steel ones mended.
+  for (const x of equipKit(base.armory, people)) handed.push(x.s ? `${first(x.s)} ${x.item.name}` : x.item.name);
+  for (const m of governPlates(state, base, people, { queue: queueRepair, craft: queueCraft })) handed.push(m);
   // Tools for the off hand: a crowbar to a scavenger, a med kit to a medic (else the best Medicine), anything
   // else to whoever has the skill for it. Water filters work from the armory and stay there.
   for (const item of [...base.armory]) {
@@ -2615,6 +2625,7 @@ function planTrip(state) {
       // One found on a map that needs work (foundcars.js): only with a good enough mechanic at the hub, and its parts.
       const fv = state.vehicles.find((x) => x.id === m.info?.vehicleId);
       const fix = fv && fv.found && fv.found.repair;
+      if (fv && fv.destroyed) { cands.push({ mission: "getvehicle", tile: m.tile, score: 0.8, crew: 2, why: `strip the wreck of our ${fv.name.toLowerCase()}`, supplies: {} }); continue; } // launchers.js: blown up, past repair
       if (fix) {
         if (!atBase(state, h.id).some((s) => skill(s, "mechanics") >= fix.mech)) continue;
         cands.push({ mission: "getvehicle", tile: m.tile, score: 2, crew: 2, why: `repair the ${fv.name.toLowerCase()} we found`, supplies: { fuel: 12, parts: fix.parts, scrap: fix.scrap }, min: { parts: fix.parts, scrap: fix.scrap } });

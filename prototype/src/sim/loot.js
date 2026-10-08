@@ -15,6 +15,9 @@ import { hash01 } from "./skills.js";
 import { lootItem } from "./inventory.js";
 import { siteSource, areaSource, traderSource } from "./itemcond.js"; // the condition finds come in, by source
 import { ROSTER_TAGS } from "./data-guns.js";
+import { rollHeadFind, rollAreaHead, headWares } from "./helmets.js"; // helmets and ear protection (their own dice)
+import { KIT_TAGS } from "./data-kit.js"; // carry kit: magazines, rigs, plates (wave 2)
+import { rollSiteKit, rollAreaKit, kitWares } from "./carrykit.js"; // their own tables and dice, after the attachments
 
 // ---------- theme tags ----------
 export const SITE_TAGS = {
@@ -87,9 +90,9 @@ export const ITEM_TAGS = {
   laser: ["guns", "police", "crime", "sport"], foregrip: ["guns", "military", "police"], bipod: ["guns", "hunt", "military"],
   pistolcan: ["guns", "military", "crime"], riflecan: ["military", "guns"], brake: ["guns", "hunt", "military"], comp: ["guns", "police", "sport"],
   choke: ["guns", "hunt", "farm", "sport"], extmag: ["guns", "police", "crime"], drum: ["military", "guns"], tubeext: ["guns", "police", "hunt"],
-  // the weapons overhaul's attachments (gunmods.js, data-gunmods.js) and the repair kits (repair.js); the M203's tag is
-  // where it will be kept, but it stays out of the loot tables (SITE_MODS) and off enemy guns (gunmods.js ENEMY_MODS)
-  // until the launcher wave
+  // the weapons overhaul's attachments (gunmods.js, data-gunmods.js) and the repair kits (repair.js); the M203 in army
+  // stock (SITE_LAUNCHERS, AREA_LAUNCHERS: their own dice) and under soldiers' rifles (gunmods.js ENEMY_MODS) since the
+  // launcher wave
   tritium: ["guns", "police"], rmr: ["guns", "police"], acog: ["military", "crash"], lpvo: ["military"], tacscope: ["military", "guns"],
   thermalscope: ["military"], scrapscope: ["crime", "camp"], scopemount: ["guns", "hunt"], sidemount: ["guns", "crime"],
   quadrail: ["military", "guns"], mlok: ["military", "guns"], can22: ["guns", "hunt"], can9: ["police", "military"], can556: ["military"],
@@ -141,6 +144,15 @@ export const ITEM_TAGS = {
   makeup: ["home", "mall", "shop", "travel", "school", "office"], perfume: ["mall", "home", "shop", "travel", "crash"],
 };
 Object.assign(ITEM_TAGS, ROSTER_TAGS); // the weapons overhaul's guns and melee weapons (data-guns.js)
+// Helmets, visors, helmet mounts and ear protection (helmets.js: HEAD_FINDS, AREA_HEAD, WARE_HEAD, their own dice).
+Object.assign(ITEM_TAGS, {
+  hardhat: ["tools", "industry"], earmuffs: ["guns", "tools", "industry"], eardef: ["guns", "police"], earplugs: ["guns", "tools", "industry", "military"],
+  commset: ["military"], highcut: ["military"], ballvisor: ["military"], riotvisor: ["police", "prison"],
+  helmetlight: ["tools", "police", "military"], nvgmount: ["tools", "military"],
+});
+// The launchers' rounds (data-ammo.js boxes; launchers.js): army stock.
+Object.assign(ITEM_TAGS, { a_40mm_he: ["military", "crash"], a_40mm_buck: ["military"], a_40mm_smoke: ["military", "crash"], a_40mm_illum: ["military", "crash"], a_rocket_heat: ["military", "crime"] });
+Object.assign(ITEM_TAGS, KIT_TAGS); // the carry kit (data-kit.js)
 
 // ---------- small finds per site type (the hour-by-hour search) ----------
 // p = chance per search hour at full loot (× the approach's pace, Treasure Hunter ×2); items = weights.
@@ -226,7 +238,7 @@ export function rollGunmodFind(state, tileId, mult = 1, salt = "") {
   return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "moddur", tileId, state.hour, salt)) : null;
 }
 // rollGunmodFind, or when it found nothing the overhaul's table (SITE_MODS; its own dice). scavenge.js searchHour.
-export const rollAnyModFind = (state, tileId, mult = 1, salt = "") => rollGunmodFind(state, tileId, mult, salt) || rollSiteMod(state, tileId, mult, salt);
+export const rollAnyModFind = (state, tileId, mult = 1, salt = "") => rollGunmodFind(state, tileId, mult, salt) || rollSiteMod(state, tileId, mult, salt) || rollHeadFind(state, tileId, mult, salt) || rollSiteKit(state, tileId, mult, salt); // helmets.js HEAD_FINDS, then carrykit.js SITE_KIT (magazines, rigs, plates), each on its own dice
 export const AREA_GUNMODS = {
   armory: { p: 0.12, items: { reddot: 2, laser: 2, extmag: 2, holo: 1, foregrip: 1, tubeext: 1, scope4x: 0.5, riflecan: 0.3 } },
   gunshop: { p: 0.12, items: { reddot: 2, scope4x: 2, laser: 1.5, comp: 1.5, choke: 1.5, extmag: 1.5, bipod: 1, brake: 1, holo: 0.7, pistolcan: 0.3 } },
@@ -253,14 +265,14 @@ export const WARE_GUNMODS = {
 };
 export function gunmodWares(state, type, name, salt = "") {
   const w = WARE_GUNMODS[type];
-  const more = modWares(state, type, name, salt); // the overhaul's parts (WARE_MODS; their own dice)
+  const more = [...modWares(state, type, name, salt), ...headWares(state, type, name, salt)]; // the overhaul's parts (WARE_MODS), helmets and ear protection (helmets.js WARE_HEAD); their own dice
   if (!w || hash01(state.seed, "modware", name, salt) >= w.p) return more;
   const key = pickWeighted(w.items, hash01(state.seed, "modwarepick", name, salt));
   return key ? [lootItem(key, traderSource(type), hash01(state.seed, "modwareq", name, salt)), ...more] : more;
 }
 function modWares(state, type, name, salt) {
   const w = WARE_MODS[type];
-  if (!w || hash01(state.seed, "newmodware", name, salt) >= w.p) return [];
+  if (!w || hash01(state.seed, "newmodware", name, salt) >= w.p) return kitWares(state, type, name, salt); // carrykit.js WARE_KIT (its own dice)
   const key = pickWeighted(w.items, hash01(state.seed, "newmodwarepick", name, salt));
   return key ? [lootItem(key, traderSource(type), hash01(state.seed, "newmodwareq", name, salt))] : []; // itemcond.js: by the trader
 }
@@ -304,7 +316,7 @@ export function rollSiteMod(state, tileId, mult = 1, salt = "") {
 }
 export function rollAreaMod(state, tileId, areaType, salt = "") {
   const a = AREA_MODS[areaType];
-  if (!a || hash01(state.seed, "newareamod", tileId, salt) >= a.p) return null;
+  if (!a || hash01(state.seed, "newareamod", tileId, salt) >= a.p) return rollAreaHead(state, tileId, areaType, salt) || rollAreaKit(state, tileId, areaType, salt); // helmets.js AREA_HEAD, then carrykit.js AREA_KIT (each on its own dice)
   const key = pickWeighted(a.items, hash01(state.seed, "newareamodpick", tileId, salt));
   const t = state.tiles[tileId];
   return key ? lootItem(key, areaSource(areaType, t && t.loc ? t.loc.type : null), hash01(state.seed, "newareamoddur", tileId, salt)) : null; // itemcond.js: by the area
@@ -399,6 +411,45 @@ export function rollAreaGrenades(state, tileId, areaType, site = null, salt = ""
   if (!got) return [];
   const out = [];
   for (let i = 0; i < got[1]; i++) out.push(lootItem(got[0], areaSource(areaType, site), hash01(state.seed, "areagrendur", tileId, salt, i)));
+  return out;
+}
+
+// Grenade launchers (the M203 too), rocket tubes and their rounds (launchers.js; section 13 "found"): the Army's own stock. A roll of
+// their own each search hour (SITE_LAUNCHERS: a military base, a crashed military aircraft, a convoy) and one per raid
+// container (AREA_LAUNCHERS: an armoury, barracks, a military wreck, a motor pool). Their own dice: nothing else found
+// changed. { key: [weight, lo, hi] } like the grenades.
+export const SITE_LAUNCHERS = {
+  military: { p: 0.03, items: { m203: [1, 1, 1], a_40mm_he: [5, 1, 2], a_40mm_smoke: [1.5, 1, 1], a_40mm_illum: [1, 1, 1], a_40mm_buck: [1, 1, 1], m79: [1.2, 1, 1], at4: [0.6, 1, 1], m32: [0.2, 1, 1], rpg: [0.15, 1, 1], a_rocket_heat: [0.4, 1, 2] } },
+  crash_mil: { p: 0.015, items: { m203: [0.5, 1, 1], a_40mm_he: [3, 1, 1], m79: [0.6, 1, 1], at4: [0.8, 1, 1] } },
+  convoy: { p: 0.02, items: { m203: [0.5, 1, 1], a_40mm_he: [3, 1, 2], at4: [1.5, 1, 1], m79: [0.5, 1, 1] } },
+};
+export const AREA_LAUNCHERS = {
+  armory: { p: 0.05, items: { m203: [0.6, 1, 1], a_40mm_he: [4, 1, 3], a_40mm_smoke: [1, 1, 2], m79: [1, 1, 1], at4: [0.8, 1, 1], m32: [0.15, 1, 1], rpg: [0.15, 1, 1], a_rocket_heat: [0.4, 1, 2] } },
+  barracks: { p: 0.03, items: { m203: [0.8, 1, 1], a_40mm_he: [3, 1, 1], at4: [1, 1, 1], m79: [0.5, 1, 1] } },
+  milwreck: { p: 0.04, items: { m203: [0.6, 1, 1], a_40mm_he: [2, 1, 2], m79: [1, 1, 1], at4: [1, 1, 1] } },
+  motorpool: { p: 0.02, items: { at4: [1, 1, 1], a_40mm_he: [1, 1, 1] } },
+};
+// This search hour's launcher find at a site (SITE_LAUNCHERS): a list of items (often none).
+export function rollSiteLaunchers(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const site = t && t.loc ? SITE_LAUNCHERS[t.loc.type] : null;
+  if (!site) return [];
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "glfind", tileId, state.hour, salt) >= site.p * loot * mult) return [];
+  const got = pickGrenades(site.items, hash01(state.seed, "glpick", tileId, state.hour, salt), hash01(state.seed, "gln", tileId, state.hour, salt));
+  if (!got) return [];
+  const out = [];
+  for (let i = 0; i < got[1]; i++) out.push(lootItem(got[0], siteSource(t.loc.type), hash01(state.seed, "gldur", tileId, state.hour, salt, i)));
+  return out;
+}
+// A raid container's launcher find (AREA_LAUNCHERS), by its area type.
+export function rollAreaLaunchers(state, tileId, areaType, site = null, salt = "") {
+  const a = AREA_LAUNCHERS[areaType];
+  if (!a || hash01(state.seed, "areagl", tileId, salt) >= a.p) return [];
+  const got = pickGrenades(a.items, hash01(state.seed, "areaglpick", tileId, salt), hash01(state.seed, "areagln", tileId, salt));
+  if (!got) return [];
+  const out = [];
+  for (let i = 0; i < got[1]; i++) out.push(lootItem(got[0], areaSource(areaType, site), hash01(state.seed, "areagldur", tileId, salt, i)));
   return out;
 }
 
@@ -577,3 +628,46 @@ Object.assign(ITEM_TAGS, {
 });
 for (const [where, items] of [[SITE_FINDS.police, { taser: 1.5, tasercart: 2, pepper: 2, stunbaton: 1 }], [SITE_FINDS.prison, { taser: 1, tasercart: 1.5, pepper: 1.5, stunbaton: 1 }], [SITE_FINDS.gunstore, { taser: 1.5, tasercart: 2, pepper: 2 }],
   [AREA_FINDS.armory, { taser: 1, tasercart: 1.5, pepper: 1, stunbaton: 0.7 }], [AREA_FINDS.cellblock, { pepper: 0.7, stunbaton: 0.5, tasercart: 0.5 }], [AREA_FINDS.gunshop, { taser: 1, tasercart: 1.5, pepper: 1.5 }]]) Object.assign(where.items, items);
+
+// The reloading bench's inputs (data-ammo.js RELOAD_GEAR; reloading.js): bags of fired brass, cans of powder and
+// boxes of primers where shooters kept them. Their own tables and dice, rolled on their own in each search hour
+// (scavenge.js searchHour) and raid container (combat.js), so every find from before comes out as it did. A bag, can
+// or box is found part-used (RELOAD_LEFT of it). Primers are rare: a gun store about 0.08 a search hour. Traders sell
+// powder and primers as supplies (reloading.js: arms dealers, the traders' and soldiers' groups).
+export const SITE_RELOAD = {
+  gunstore: { p: 0.2, items: { brass: 3, powder: 3, primers: 4 } },
+  lodge: { p: 0.08, items: { brass: 2, powder: 2, primers: 0.5 } },
+  ranch: { p: 0.05, items: { brass: 1, powder: 2 } },
+  military: { p: 0.05, items: { brass: 2, primers: 1 } },
+  police: { p: 0.03, items: { brass: 2, primers: 0.5 } },
+  cabin: { p: 0.02, items: { brass: 1, powder: 1 } },
+  farm: { p: 0.015, items: { powder: 1, brass: 0.5 } },
+};
+export const AREA_RELOAD = {
+  gunshop: { p: 0.1, items: { brass: 2, powder: 2, primers: 1.5 } },
+  armory: { p: 0.06, items: { brass: 2, primers: 1 } },
+  barracks: { p: 0.04, items: { brass: 2, primers: 0.5 } },
+  cabin: { p: 0.03, items: { brass: 1, powder: 1 } },
+  farmhouse: { p: 0.02, items: { powder: 1, brass: 0.5 } },
+};
+export const RELOAD_LEFT = [0.3, 1];
+Object.assign(ITEM_TAGS, {
+  brass: ["guns", "hunt", "police", "military", "farm", "outdoor", "home", "camp"], powder: ["guns", "hunt", "farm", "home", "outdoor", "military"], primers: ["guns", "hunt", "military", "police"],
+});
+const partUsed = (it, u) => { if (it && it.dur > 1) it.dur = Math.max(1, Math.round(it.dur * (RELOAD_LEFT[0] + (RELOAD_LEFT[1] - RELOAD_LEFT[0]) * u))); return it; };
+export function rollSiteReload(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const site = t && t.loc ? SITE_RELOAD[t.loc.type] : null;
+  if (!site) return null;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "reloadfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
+  const key = pickWeighted(site.items, hash01(state.seed, "reloadpick", tileId, state.hour, salt));
+  return key ? partUsed(lootItem(key, siteSource(t.loc.type), hash01(state.seed, "reloaddur", tileId, state.hour, salt)), hash01(state.seed, "reloadleft", tileId, state.hour, salt)) : null;
+}
+export function rollAreaReload(state, tileId, areaType, salt = "") {
+  const a = AREA_RELOAD[areaType];
+  if (!a || hash01(state.seed, "areareload", tileId, salt) >= a.p) return null;
+  const key = pickWeighted(a.items, hash01(state.seed, "areareloadpick", tileId, salt));
+  const t = state.tiles[tileId];
+  return key ? partUsed(lootItem(key, areaSource(areaType, t && t.loc ? t.loc.type : null), hash01(state.seed, "areareloaddur", tileId, salt)), hash01(state.seed, "areareloadleft", tileId, salt)) : null;
+}

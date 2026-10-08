@@ -93,7 +93,7 @@ const allItems = (st) => st.survivors.filter((s) => s.alive).reduce((a, s) => a 
   for (let i = 0; i < 4; i++) pk[i] = newItem("sledge");
   d.gear.armor = null;
   h.armory.length = 0;
-  h.armory.push(newItem("plate"));
+  h.armory.push(Object.assign(newItem("plate"), { inserts: { front: newItem("ceramicplate"), back: newItem("ceramicplate") } })); // w2-kit: a carrier's weight is mostly its plates
   check(!weightOk(d, "armor", h.armory[0]), "the weight rule refuses a plate carrier on a heavy load with a bad back");
   equipBest(st, [d]);
   check(!d.gear.armor && h.armory.length === 1, "and Equip best leaves it in the armory");

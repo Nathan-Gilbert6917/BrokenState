@@ -14,6 +14,7 @@ import { baseById, combatPower, gearEffect, skill, newId, survivorById, factionB
 import { ensureInv, itemLoad, packSize, ensurePack } from "./inventory.js";
 import { wornLoad, maxLoad, feelFactor, LOAD_BANDS } from "./load.js";
 import { itemScore } from "./autopilot.js";
+import { equipKit } from "./carrykit.js"; // carry kit: the best rig, plates into the carrier, spare magazines
 import { activeHospital, bedReason } from "./medical.js";
 import { conditionsOf } from "./health.js";
 import { supplyRuns, dispatchSupplyRun, jobParty, planSupplyRun, deleteSupplyRun } from "./supply.js";
@@ -48,7 +49,7 @@ const packStuffKg = (pack) => (pack && pack.contents ? pack.contents.filter(Bool
 // The old piece goes back to the armory; a pack's contents move into the new pack.
 export function weightOk(s, slot, item) {
   const now = wornLoad(s), cur = s.gear[slot];
-  const after = now - itemLoad(cur) + itemLoad(item) + (slot === "backpack" ? packStuffKg(cur) : 0);
+  const after = now - (cur ? itemLoad(cur) : 0) + itemLoad(item) /* an empty slot weighs nothing (itemKg of nothing is 1) */ + (slot === "backpack" ? packStuffKg(cur) : 0);
   if (after <= now + 1e-9) return true;
   const felt = after * feelFactor(s);
   return felt <= BULK.KIT_FELT_MAX + 1e-9 && after <= maxLoad(s) + 1e-9;
@@ -102,6 +103,7 @@ export function equipBest(state, people) {
         got.get(s).push({ slot, item: best, was: cur || null });
       }
     }
+    for (const x of equipKit(base.armory, crew)) if (x.s && got.has(x.s)) got.get(x.s).push({ slot: GEAR[x.item.key] && GEAR[x.item.key].slot === "rig" ? "rig" : "armor", item: x.item, was: x.was || null });
     for (const item of [...base.armory]) {
       const d = GEAR[item.key];
       if (!d || d.slot !== "tool" || d.water) continue;

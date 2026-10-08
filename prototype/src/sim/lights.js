@@ -13,6 +13,7 @@
 // only for someone whose off hand is free; a headlamp for anyone).
 import { GEAR } from "./data.js";
 import { EQUIP_SLOTS, packOf, stow } from "./inventory.js";
+import { helmetLight } from "./helmets.js";
 
 export const LIGHTS = {
   headlamp:   { sight: 8,  seen: 1, survey: 0.42, free: true,  cone: 3.5, name: "headlamp" },
@@ -44,6 +45,7 @@ export function lightOf(s) {
   for (const it of carriedItems(s)) if (LIGHTS[it.key] && LIGHTS[it.key].free) best = brighter(best, it.key);
   const gun = s.gear.weapon; // a weapon light on the gun (gunmods.js): a flashlight that leaves the off hand free
   if (gun && gun.mods && gun.mods.tactical && gun.mods.tactical.key === "weaponlight" && LIGHTS.flashlight) best = brighter(best, "flashlight");
+  if (helmetLight(s) && LIGHTS.flashlight) best = brighter(best, "flashlight"); // a helmet light (helmets.js): a flashlight, hands free
   return best;
 }
 export const hasLight = (s) => !!lightOf(s);

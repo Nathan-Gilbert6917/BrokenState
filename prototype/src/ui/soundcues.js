@@ -17,7 +17,11 @@ export const HORDE_NEAR_BASE = 6; // tiles: the same distance as the horde alert
 export const HORDE_NEAR_TEAM = 3; // tiles from one of your teams on the map
 export const MAX_BATTLE_SOUNDS = 5; // effects heard per frame in a battle; the rest of a volley is dropped
 export const VOLLEY_SPREAD = 0.07;  // seconds between the shots of one frame's volley (plus a little jitter)
-export const ALERT_QUIET_HOURS = 12; // an alert gone for less than this and back is not heard again
+export const ALERT_QUIET_HOURS = 12;
+// Deafened (sim/hearing.js): while the selected unit is deaf, the battle is heard at DEAF_GAIN with a ring as it starts.
+// LISTEN.sel: a getter of the selected unit's id (ui/combat.js sets it; headless: none, nothing changes).
+export const DEAF_GAIN = 0.3;
+export const LISTEN = { sel: null }; // an alert gone for less than this and back is not heard again
 
 // ---------- cards ----------
 // Titles that mean your base is being attacked or about to be (raid warnings, a group's attack, an assault on it).
@@ -107,6 +111,13 @@ export function battleCues(b, mem, now = 0) {
     } else if (f.type === "throw") out.push({ name: throwSound(f.item), delay: 0.25 });
     else if (f.type === "scream") out.push({ name: "scream" });
   }
+  // The selected unit deafened by a bang (sim/hearing.js): everything muffled, a ring as it starts.
+  const selId = typeof LISTEN.sel === "function" ? LISTEN.sel() : null;
+  const lu = selId != null ? b.units.find((u) => u.id === selId && u.side === "player") : null;
+  const deaf = !!(lu && lu.deaf > 0);
+  if (deaf) for (const c of out) c.gain = (c.gain ?? 1) * DEAF_GAIN;
+  if (deaf && !mem.deaf) out.push({ name: "ring", gain: 0.5 });
+  mem.deaf = deaf;
   // Your people going down or dying (the sim marks them; no effect is logged for it).
   for (const u of b.units) {
     const now2 = u.dead ? "dead" : u.down ? "down" : "up";

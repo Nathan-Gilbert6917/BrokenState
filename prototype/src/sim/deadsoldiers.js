@@ -87,7 +87,7 @@ export const MILDEAD = {
   // More on them now and then, by dice of their own (a hash of the body's dice position: no draw, so the rest of the
   // body is as it was): a soldier's flashbang, a riot cop's smoke grenade or flashbang (throwables.js FLASH).
   BODY_EXTRA: {
-    soldier: [["flashbang", 0.05, [1, 1]]],
+    soldier: [["flashbang", 0.05, [1, 1]], ["commset", 0.04, [0.4, 0.8]]], // commset: a team headset (helmets.js; section 18.6)
     riot: [["smokegren", 0.05, [1, 1]], ["flashbang", 0.03, [1, 1]]],
   },
 };
@@ -223,7 +223,7 @@ export function bodyLoot(rng, kind, newItem, plateDur = null) {
   if (!B) return null;
   const sup = {}, gear = [];
   const q = ([lo, hi]) => Math.round((lo + rng.next() * (hi - lo)) * 100) / 100;
-  const worn = (it) => { if (plateDur != null && it.dur != null) it.dur = Math.max(1, Math.round(it.dur * Math.max(0, Math.min(1, plateDur)))); return it; };
+  const worn = (it) => { if (plateDur != null && it.dur != null) it.dur = Math.max(1, Math.round(it.dur * Math.max(0, Math.min(1, plateDur)))); if (plateDur != null && it.inserts) for (const p of Object.values(it.inserts)) if (p && p.dur != null) p.dur = Math.max(1, Math.round(p.dur * Math.max(0, Math.min(1, plateDur)))); return it; }; // a carrier's plates as worn (section 16)
   for (const [k, p, range] of B.armor) if (rng.chance(p)) { gear.push(worn(newItem(k, q(range), rng))); break; }
   for (const [k, p, range] of B.items) if (rng.chance(p)) gear.push(newItem(k, q(range), rng));
   for (const [k, p, lo, hi] of B.sup) if (rng.chance(p)) sup[k] = (sup[k] || 0) + rng.int(lo, hi);
