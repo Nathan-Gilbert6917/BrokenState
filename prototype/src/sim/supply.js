@@ -36,6 +36,15 @@ export const supplyRunById = (state, id) => supplyRuns(state).find((j) => j.id =
 export const jobParty = (state, job) => (job.partyId ? state.parties.find((p) => p.id === job.partyId) || null : null);
 export const escortFor = (n) => (n >= 5 ? "heavy" : n >= 2 ? "standard" : "light");
 const first = (s) => s.name.split(" ")[0];
+// What a base has left for the road once the delivery is out: water of both kinds; food fresh and preserved
+// (storage.js edibleFood: by winter the kitchen has turned the fresh food into preserved, and a hub with 0 fresh and
+// 934 preserved kept every supply run home for want of "food" while an outpost of 8 died of thirst: census seed 3,
+// aggressive, day 318-331).
+function roadLeft(stock, deliver, k) {
+  if (k === "water") return Math.floor(waterIn(stock)) - (deliver.water || 0) - (deliver[RAW] || 0);
+  if (k === "food") return Math.floor(Math.max(0, stock.food || 0) + Math.max(0, stock.preserved || 0)) - (deliver.food || 0) - (deliver.preserved || 0);
+  return Math.floor(supplyAmt(stock, k)) - (deliver[k] || 0);
+}
 
 export function jobName(state, job) {
   const o = baseById(state, job.originId), d = baseById(state, job.destId);
@@ -141,7 +150,7 @@ export function supplyEstimate(state, f) {
     if (have < q) warnings.push(`${origin.name} has only ${have} ${k} (sending ${q})${f.allowPartial ? ": it sends what is there" : ": the run waits until there is enough"}.`);
   }
   for (const k of ["food", "water"]) {
-    const left = k === "water" ? Math.floor(waterIn(origin.stock)) - (deliver.water || 0) - (deliver[RAW] || 0) : Math.floor(supplyAmt(origin.stock, k)) - (deliver[k] || 0);
+    const left = roadLeft(origin.stock, deliver, k);
     const need = k === "water" ? plan.needWater : plan.need;
     if (left < need) warnings.push(`Not enough ${k} left at ${origin.name} for the road (needs ${need} after the delivery).`);
   }
@@ -192,14 +201,18 @@ export function dispatchSupplyRun(state, job, manual = false) {
     return blockRun(state, job, `the load (${Math.ceil(plan.load)}) is more than the ${plan.useVehicle ? "crew and vehicle" : "crew"} can carry (${plan.capacity})${plan.vProblem ? `, and ${plan.vProblem}` : ""}`, manual);
   }
   // Road supplies come from what is left after the delivery.
-  const left = (k) => (k === "water" ? Math.floor(waterIn(origin.stock)) - (deliver.water || 0) - (deliver[RAW] || 0) : Math.floor(supplyAmt(origin.stock, k)) - (deliver[k] || 0));
+  const left = (k) => roadLeft(origin.stock, deliver, k);
   for (const k of ["food", "water"]) {
     const need = k === "water" ? plan.needWater : plan.need;
     if (left(k) < need) return blockRun(state, job, `not enough ${k} at ${origin.name} for the road (needs ${need} after the delivery, has ${Math.max(0, left(k))})`, manual);
   }
-  const supplies = { food: Math.min(plan.want, left("food")), water: Math.min(plan.wantWater, left("water")), fuel: 0, meds: 0, ammo: Math.max(0, Math.min(ready.length * 5, left("ammo"))) };
+  // The road's food: fresh first, preserved for the rest (the convoy eats both: parties.js).
+  const food = Math.min(plan.want, left("food"));
+  const fresh = Math.min(food, Math.max(0, Math.floor(supplyAmt(origin.stock, "food")) - (deliver.food || 0)));
+  const supplies = { food: fresh, water: Math.min(plan.wantWater, left("water")), fuel: 0, meds: 0, ammo: Math.max(0, Math.min(ready.length * 5, left("ammo"))) };
+  if (food > fresh) supplies.preserved = food - fresh;
   for (const [k, q] of Object.entries(deliver)) useSupply(origin.stock, k, q); // rounds.js: "ammo" as any rounds
-  for (const k of ["food", "ammo"]) useSupply(origin.stock, k, supplies[k]);
+  for (const k of ["food", "preserved", "ammo"]) useSupply(origin.stock, k, supplies[k]);
   const w = drawWater(origin.stock, supplies.water); // purified first (water.js)
   supplies.water = w.pure;
   supplies[RAW] = w.raw;

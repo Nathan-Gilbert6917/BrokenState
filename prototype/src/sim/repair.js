@@ -513,7 +513,9 @@ export function partPlan(state, base) {
   const guns = n((it, d) => d.slot === "weapon" && GUN_CATS.includes(d.cat));
   const vests = n((it) => materialOf(it.key) === "soft");
   const cars = (state.vehicles || []).filter((v) => v.type !== "bike" && ((v.loc.kind === "base" && v.loc.baseId === base.id) || (v.loc.kind === "party" && (state.parties || []).some((p) => p.id === v.loc.partyId && p.homeBaseId === base.id)))).length;
-  const cnt = (t) => base.buildings.filter((b) => b.type === t && !b.broken).length;
+  // Broken ones too: a broken well or generator needs its part more, not less (the reorder level used to drop as
+  // the wells broke, so the parts a repair waited on could be sold).
+  const cnt = (t) => base.buildings.filter((b) => b.type === t).length;
   const targets = {
     gunparts: 2 + Math.floor(guns / 3),
     parts: 3 + cnt("generator") + cnt("well") + cnt("ammo_bench") + cnt("machine_shop"),
