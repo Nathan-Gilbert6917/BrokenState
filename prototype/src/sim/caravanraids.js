@@ -62,6 +62,8 @@ import { inCoverage } from "./radio.js";
 import { chronicleNote } from "./chronicle.js";
 import { WARES_MAX } from "./trade.js";
 import { escortWords, escortShort, guardGear, ESCORT_VEHICLES, cargoValue } from "./escorts.js";
+import { addToArsenal, removeFromArsenal, partyLost, issueKit } from "./arsenal.js"; // group arsenals: loot to their fighters, guards' kit lost
+import { noteFight } from "./groupcare.js";
 import { teamName } from "./parties.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -246,6 +248,9 @@ export function lootCaravan(state, p, goods, opts) {
   if (!opts.tactical && opts.guards > 0) {
     const gg = guardGear(opts.kit, opts.guards, (i, k) => dice("guard", i, k));
     for (const [k, q] of Object.entries(gg.supplies)) sup[k] = (sup[k] || 0) + q;
+    // A group's guards (arsenal.js settleArsenal): what they really carried, not new gear.
+    const real = opts.result && opts.result.arsDropped;
+    if (real && real.length) gg.gear = real.slice();
     gear.push(...gg.gear);
     if (gg.gear.length) out.push(`The guards had ${gg.gear.map((it) => it.name).join(", ")} on them.`);
   }
@@ -566,7 +571,9 @@ export function groupRobs(state, f, c, band = groupStrength(f) * AI_RAID.BAND, s
   const where = tileLabel(state, c.tile);
   c.ref.raidedAt = state.hour;
   if (!win) {
-    f.pop = Math.max(0, f.pop - 1 - Math.floor(hash01(state.seed, "cvloss", state.hour, c.key) * 2));
+    const lost = Math.min(f.pop, 1 + Math.floor(hash01(state.seed, "cvloss", state.hour, c.key) * 2));
+    partyLost(state, f, lost); // arsenal.js: beaten off, their dead's kit stays with the caravan's guards
+    f.pop = Math.max(0, f.pop - lost);
     if (c.type === "merchants") { c.ref.size = Math.max(1, c.ref.size - 1); c.ref.guards = Math.max(0, (c.ref.guards || 0) - 1); }
     if (c.owner === "player") log(state, `Your convoy near ${where} beat off ${who}.`, "good");
     else if (seen) log(state, `The guards of ${c.name} beat off ${who} near ${where}.`, "info");
@@ -574,7 +581,8 @@ export function groupRobs(state, f, c, band = groupStrength(f) * AI_RAID.BAND, s
   }
   st.groupsWon++;
   const goods = goodsOf(c);
-  const took = takeInto(f, goods);
+  const took = takeInto(f, goods, state);
+  if (c.type !== "merchants" && c.owner !== "player") escortLost(state, factionById(state, c.owner), c.ref, f);
   if (c.type === "merchants") {
     const v = c.ref;
     f.pop = Math.max(0, f.pop - Math.ceil((v.guards || 0) * 0.25));
@@ -593,7 +601,7 @@ export function groupRobs(state, f, c, band = groupStrength(f) * AI_RAID.BAND, s
   return true;
 }
 // All of a caravan's goods into a group's stock (supplies) and onto its shelf (items). Returns what, in words.
-export function takeInto(f, goods) {
+export function takeInto(f, goods, state = null) {
   const got = {};
   for (const [k, q] of Object.entries(goods.supplies || {})) {
     if (!SUPPLIES[k] || q < 1) continue;
@@ -603,7 +611,9 @@ export function takeInto(f, goods) {
     goods.supplies[k] = 0;
   }
   const items = (goods.gear || []).splice(0);
-  if (items.length) f.wares = [...(f.wares || []), ...items].slice(-WARES_MAX);
+  // arsenal.js: guns, armour and explosives go to their fighters; the rest on their shelf.
+  const shelf = state ? items.filter((it) => !addToArsenal(state, f, it, "stolen")) : items;
+  if (shelf.length) f.wares = [...(f.wares || []), ...shelf].slice(-WARES_MAX);
   if (f.lootedGear) for (const it of items) f.lootedGear.push(it.name);
   return [planText(got), ...items.map((it) => it.name)].filter(Boolean).join(", ");
 }
@@ -621,11 +631,24 @@ export function gangAmbush(state, r, q) {
     return false;
   }
   st.groupsWon++;
-  takeInto(r, goodsOf(c));
+  takeInto(r, goodsOf(c), state);
+  escortLost(state, factionById(state, q.owner), q, r); // arsenal.js: the guards' dead and their kit
   loseGroupVehicle(state, q);
   return true;
 }
 
+// A group's caravan taken: half its guards are dead (people and kit gone from its books), the winners pick up their
+// kit (arsenal.js clashKit: the field is theirs).
+function escortLost(state, owner, q, winner) {
+  if (!owner || !owner.alive || !owner.arsenal) return;
+  const guards = q && q.escort ? q.escort.guards : Math.max(1, Math.round(((q && q.strength) || 2) / 4));
+  const dead = Math.min(owner.pop, Math.ceil(guards / 2));
+  if (dead <= 0) return;
+  const issue = issueKit(state, owner, guards, "field");
+  issue.slice(0, dead).forEach((lo, i) => { for (const it of [lo.weapon, ...Object.values(lo.armour)]) if (it && removeFromArsenal(owner, it, "died:caravan") && winner && i % 2 === 0) addToArsenal(state, winner, it, "field"); });
+  owner.pop = Math.max(0, owner.pop - dead);
+  noteFight(owner, dead, 0);
+}
 // ---------- tooltips ----------
 // Map tooltip lines for the groups' caravans and convoys on a tile you can see (render.js).
 export function caravanTipLines(state, tile, liveSet = state.live) {

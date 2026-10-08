@@ -34,6 +34,7 @@ import { lootItem } from "./inventory.js";
 import { kitSource, spend } from "./itemcond.js";
 import { halt, resume, afterFight, rob, talkSkill, talker, runBonus, addCargo, triggerConflict, spotFirstChance } from "./conflicts.js";
 import { bandsOf } from "./hardcore-groups.js";
+import { wandererJoinChance, wandererJoins } from "./groupcare.js"; // AI parity: groups recruit wanderers by type, food and beds
 
 export const WANDER = {
   // The road: per tile a team enters, ROAD × the tile's density × the mode's factor (× NIGHT at night), at most ROAD_MAX;
@@ -771,8 +772,10 @@ export function wanderersDaily(state) {
     const n = g.people.length;
     const band = bandsOf(state).find((b) => b.pop > 0 && g0.distance(b.tile, g.tile) <= 2);
     if (band && h("band") < S.JOIN_BAND) { band.pop += n; bump(state, "joined-band", n); gone(); continue; }
-    const f = state.factions.find((x) => x.alive && x.type !== "raider" && x.bases.length && Math.min(...x.bases.map((b) => g0.distance(b, g.tile))) <= 3);
-    if (f && h("group") < S.JOIN_GROUP) { f.pop += n; bump(state, "joined-group", n); gone(); continue; }
+    // A group with a base within 3 tiles may take them in (groupcare.js: its type, food and beds, their mood; raiders
+    // press-gang); their gear goes into its arsenal.
+    const f = state.factions.find((x) => x.alive && !x.outsider && x.bases.length && Math.min(...x.bases.map((b) => g0.distance(b, g.tile))) <= 3);
+    if (f && g.kind !== "hostile" && h("group") < wandererJoinChance(state, f, g)) { wandererJoins(state, f, g); bump(state, "joined-group", n); gone(); continue; }
     if (d - g.since > S.SETTLE_AFTER && h("settle") < S.SETTLE) { bump(state, "settled", n); gone(); continue; }
   }
 }

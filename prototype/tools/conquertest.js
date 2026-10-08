@@ -372,7 +372,7 @@ section("Razing: aggressive raiders may burn a base instead of keeping it");
   b3.bases.push(extra);
   for (let i = 0; i < 60 && b3.bases.includes(extra); i++) { b3.pop = 20; resolveRaidOnFaction(s3, { owner: a3.id, strength: 300, target: { kind: "faction", factionId: b3.id, tile: extra } }, []); }
   check(!b3.bases.includes(extra), "a crushing raid takes the base from them");
-  check((s3.stats.razedGroups || 0) + (a3.bases.includes(extra) ? 1 : 0) + (s3.stats.abandonedBases || 0) >= 1, `kept, razed or abandoned (razed ${s3.stats.razedGroups || 0})`);
+  check((s3.stats.razedGroups || 0) + (a3.bases.includes(extra) ? 1 : 0) + (s3.stats.abandonedBases || 0) + (s3.stats.leftBases || 0) >= 1, `kept, razed, abandoned or left standing (razed ${s3.stats.razedGroups || 0}, left ${s3.stats.leftBases || 0})`);
   // The warning card names the risk.
   const s4 = world();
   const f4 = s4.factions.find((x) => x.alive);

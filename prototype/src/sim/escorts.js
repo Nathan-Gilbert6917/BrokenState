@@ -35,6 +35,8 @@ import { lootItem } from "./inventory.js";
 import { itemValue, itemCat } from "./valuation.js";
 import { hash01 } from "./skills.js";
 import { factionVehicles } from "./vehicles.js";
+import { issueKit, unitPower } from "./arsenal.js"; // a group's guards armed from its arsenal (home guard kept)
+import { weightOf, fitPeople } from "./groupcare.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -97,15 +99,26 @@ export function companyFor(state, serial, d) {
 export function groupCapacity(state, f) {
   const fighters = Math.floor(Math.max(0, f.pop || 0) * ESCORT.FIGHTERS);
   const threat = (f.atWar || 0) > 0 || (state.hordes || []).some((h) => f.bases.some((b) => state.grid.distance(b, h.tile) <= ESCORT.THREAT_RANGE));
-  const guards = Math.max(0, fighters - Math.ceil(fighters * (threat ? ESCORT.HOME_THREAT : ESCORT.HOME)));
+  // groupcare.js GROUP_PRIORITIES escort: how much of its fighters a type will put on the road (fit people only).
+  const share = clamp(1 - (threat ? ESCORT.HOME_THREAT : ESCORT.HOME) * (f.arsenal ? 1 / weightOf(f, "escort") : 1), 0, 1);
+  let guards = Math.max(0, Math.min(fighters - Math.ceil(fighters * (1 - share)), f.arsenal ? fitPeople(f) - Math.ceil(f.pop * (1 - ESCORT.FIGHTERS)) : Infinity));
   const def = FACTION_TYPES[f.type] || { arms: 1 };
-  const guns = (f.wares || []).filter((it) => ["rifle", "automatic", "shotgun", "pistol", "armor"].includes(itemCat(it.key))).length;
-  const power = r1(2.2 + def.arms * 1.6 + Math.min(ESCORT.WARES_MAX, guns * ESCORT.WARES_GUN)); // caravans.js guardPower, and the shelf
+  let power;
+  if (f.arsenal) {
+    // arsenal.js: the guards are armed from the arsenal past the home guard (issueKit "field"): no more guards than
+    // guns for them, at the group's power by its kit.
+    const armed = issueKit(state, f, guards, "field").filter((lo) => lo.weapon).length;
+    guards = Math.min(guards, armed);
+    power = r1(unitPower(f, 2.2));
+  } else {
+    const guns = (f.wares || []).filter((it) => ["rifle", "automatic", "shotgun", "pistol", "armor"].includes(itemCat(it.key))).length;
+    power = r1(2.2 + def.arms * 1.6 + Math.min(ESCORT.WARES_MAX, guns * ESCORT.WARES_GUN)); // caravans.js guardPower, and the shelf
+  }
   const busy = new Set((state.parties || []).filter((q) => q.owner === f.id && q.escort && q.escort.vehicleId != null).map((q) => q.escort.vehicleId));
   const free = factionVehicles(f).filter((v) => v.condition > 0 && !busy.has(v.id));
   const vehicles = [], ids = {};
   for (const v of free) { const k = v.type === "hummer" ? "hummer" : v.type === "truck" ? "truck" : null; if (k && !ids[k]) { vehicles.push(k); ids[k] = v.id; } }
-  return { guards, power, vehicles, vehicleIds: ids, home: fighters - guards, threat };
+  return { guards: Math.max(0, guards), power, vehicles, vehicleIds: ids, home: fighters - Math.max(0, guards), threat };
 }
 // What goes with this cargo: { tier, guards, scout, gunner, kit, power, vehicle, vehPower, vehicleId, value, want, could }.
 export function escortFrom(value, cap) {
