@@ -3644,11 +3644,12 @@ export function occupyCandidate(state, h, pool, spareHands) {
     const known = state.live.has(rec.tile) || !!(state.knowledge[rec.tile] && state.knowledge[rec.tile].abandoned);
     if (!known || state.parties.some((p) => p.owner === "player" && p.dest === rec.tile)) continue;
     if (occupyGrievance(state, rec.tile).some((x) => isMember(state, x.f) || x.f.pact)) continue;
+    const stand = standingAt(state, rec).filter((b) => !b.broken).length;
+    if (stand < OCCUPY.GOV_MIN_STANDING) continue; // a bare group base: no better than new ground
     const threat = abandonedThreat(state, rec.tile);
     let n = Math.min(OCCUPY.GOV_CREW, most), odds = 0;
     for (; n <= most; n++) { odds = occupyOdds(squad.slice(0, n), threat); if (odds >= OCCUPY.AI_ODDS) break; }
     if (n > most || n < 2 || odds < OCCUPY.AI_ODDS) continue;
-    const stand = standingAt(state, rec).filter((b) => !b.broken).length;
     const score = 3.6 + Math.min(1.5, stand * 0.2) - d * 0.05;
     if (!best || score > best.score) best = { rec, n, odds, stand, score, threat };
   }

@@ -303,6 +303,9 @@ section("The governor moves in instead of founding an outpost");
   const f = st.factions.find((x) => x.alive);
   st.abandoned[0].from = f.id; f.pact = "trade";
   check(!occupyCandidate(st, h, pool, 4), "not the old base of a pact partner");
+  const keep = st.abandoned[0].buildings; st.abandoned[0].buildings = [];
+  check(!occupyCandidate(st, h, pool, 4), "not a bare one (nothing standing: no better than new ground)");
+  st.abandoned[0].buildings = keep;
   f.pact = null; st.abandoned[0].from = "player";
   st.knowledge[tile] = snapshot(st, tile); // a team saw it (the live view is redrawn every hour)
   // End to end: the governor runs its days and moves in (it wants an outpost: enough people, food, a while since the last).

@@ -45,6 +45,7 @@ export const OCCUPY = {
   GOV_RANGE: 10,    // the governor looks this many tiles from the hub for one to move into
   GOV_CREW: 3,      // and sends this many (more when the threat asks for it, up to GOV_CREW_MAX)
   GOV_CREW_MAX: 5,
+  GOV_MIN_STANDING: 1, // and only one with at least this many buildings standing (a bare group base is no better than new ground)
 };
 const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const emptyStock = () => ({ food: 0, water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 });
