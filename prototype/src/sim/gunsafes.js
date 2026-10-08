@@ -160,7 +160,7 @@ export function openCase(item, gear, sup) {
   if (!isGunCase(item)) return [];
   const out = [];
   for (const it of item.contents || []) if (it) { gear.push(it); out.push(it.name); }
-  for (const [k, v] of Object.entries(item.sup || {})) if (v > 0) { sup[k] = (sup[k] || 0) + v; out.push(`${v} ${k}`); }
+  for (const [k, v] of Object.entries(item.sup || {})) if (v > 0) { sup[k] = (sup[k] || 0) + v; out.push(`${v} ${SUPPLIES[k] && SUPPLIES[k].round ? SUPPLIES[k].name : k}`); } // rounds: "17 12 gauge 00 buckshot" (ammo.js)
   item.contents = [];
   item.sup = {};
   item.locked = false;

@@ -290,7 +290,7 @@ section("A normal start: six backgrounds, the same world and the same skill tota
   check(c0.traits[0] === "tough" && c0.traits[1] === "keeneye", "its traits first");
   check(c0.gear.weapon.key === "pistol" && c0.gear.armor.key === "vest" && c0.gear.backpack.key === "hikingpack" && c0.gear.head.key === "milhelmet", "its kit worn and held");
   check(hubC.armory.some((it) => it.key === b0.gear.weapon.key) && hubC.armory.some((it) => it.key === "vest"), `what the hub had handed them is in the armory (${hubC.armory.map((it) => it.key).join(", ")})`);
-  check(hubC.stock.food === hubB.stock.food + MEDIC.supplies.food && hubC.stock.ammo === hubB.stock.ammo + MEDIC.supplies.ammo && hubC.stock.meds === hubB.stock.meds + MEDIC.supplies.meds + MEDIC.car.trunk.meds && hubC.stock.fuel === hubB.stock.fuel + MEDIC.car.trunk.fuel, "its supplies and the car's back in the hub's stores");
+  check(hubC.stock.food === hubB.stock.food + MEDIC.supplies.food && totalRounds(hubC.stock) === totalRounds(hubB.stock) + MEDIC.supplies.ammo && hubC.stock.meds === hubB.stock.meds + MEDIC.supplies.meds + MEDIC.car.trunk.meds && hubC.stock.fuel === hubB.stock.fuel + MEDIC.car.trunk.fuel, "its supplies and the car's back in the hub's stores");
   check(vehiclesAtBase(cus, hubC.id).some((v) => v.type === "hummer") && vehiclesAtBase(cus, hubC.id).length === vehiclesAtBase(base, hubB.id).length + 1 && ["sandbags", "fishrod"].every((k) => hubC.armory.some((it) => it.key === k)), "the car parks at the hub, its things in the armory");
   // A rebuilt world (the snapshot) brings the custom kit once, not twice.
   const again = createWorld({ seed: 42, factionCount: 7, crew: crewSnapshot(cus), customBackgrounds: lib });

@@ -40,7 +40,7 @@ import { armsSold } from "./diplomacy.js";
 import { visitorTradeContext, resumeVisitorTrade } from "./visitors.js";
 import { RAW, keyWord } from "./water.js";
 import { isRoundKey, totalRounds, ROUND_KEYS, roundOf, spendAmmo } from "./rounds.js"; // rounds by calibre
-import { kindShare, kindTheme, expandAmmo, partyCals, baseCals, wantedKey, dealRounds, ammoWares } from "./ammo.js";
+import { kindShare, kindTheme, expandAmmo, partyCals, baseCals, wantedKey, dealRounds } from "./ammo.js";
 import { radioTradeContext, radioTradeProblem, bookRadioTrade, matchGear, sameGear } from "./radiotrade.js"; // the trade window over the radio
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -332,7 +332,6 @@ export function ensureWares(state, f, refresh = false) {
     if (key) keep.push(lootItem(key, src, [state.seed, "wareexd", f.name, day(state)]));
   }
   keep.push(...gunmodWares(state, f.type, f.name, day(state))); // loot.js: a gun attachment now and then (its own dice)
-  keep.push(...ammoWares(state, f.type, f.name, day(state))); // ammo.js: a box of rounds now and then (its own dice)
   keep.push(...bookWares(state, f)); // skills.js: now and then a book (its own dice: the rest of the stock is unchanged)
   f.wares = keep.slice(-WARES_MAX);
   f.waresDay = day(state);

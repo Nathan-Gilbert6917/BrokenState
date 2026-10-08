@@ -2229,7 +2229,7 @@ export function shotHit(a, crit = false) {
   const cal = calOf(a.weapon);
   const ammo = cal ? typeFor(cal, a.load) : null;
   const fx = typeFx(ammo);
-  return { how: "shot", crit, weapon: a.weapon, cal, ammo, spread: cal ? !!fx.spread : undefined, swarm: fx.swarm || 1 };
+  return { how: "shot", crit, weapon: a.weapon, cal, ammo, spread: cal ? !!fx.spread : undefined, swarm: fx.swarm || 1, ...(fx.nonlethal ? { nonLethal: true } : {}) }; // nonLethal: beanbags, rubber (the non-lethal branch's damage hook)
 }
 
 export function fire(b, a, t, opts = {}) {

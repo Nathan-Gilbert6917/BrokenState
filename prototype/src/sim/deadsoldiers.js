@@ -66,7 +66,7 @@ export const MILDEAD = {
     riot: {
       armor: [["vest", 0.15, [0.35, 0.6]]],
       items: [["riothelmet", 0.35, [0.4, 0.7]], ["riotarms", 0.15, [0.4, 0.7]], ["riotlegs", 0.12, [0.4, 0.7]], ["baton", 0.12, [0.6, 0.9]], ["cuffs", 0.15, [1, 1]], ["pistol", 0.04, [0.4, 0.6]], ["flashlight", 0.06, [0.6, 0.9]]],
-      sup: [["a_9mm_fmj", 0.3, 3, 8]], // their sidearm's rounds
+      sup: [["a_12ga_beanbag", 0.3, 3, 8]], // their riot gun's less-lethal shells (ammo.js; police and prisons only)
     },
   },
 };

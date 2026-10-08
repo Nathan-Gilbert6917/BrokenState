@@ -324,29 +324,6 @@ export function bodyRounds(u, n) {
 }
 
 // ---------- boxes ----------
-// Boxes of rounds on a group's shelf (trade.js ensureWares: their own dice, so the rest of the stock is unchanged): a
-// chance a week and the boxes each kind deals in (the traders anything; the military its own calibres). Bought, a box
-// goes into your armory or the team's cargo and is opened into the stock.
-const allBoxes = () => Object.keys(ROUND_SUPPLIES);
-export const WARE_AMMO = {
-  traders: { p: 0.5, keys: allBoxes() },
-  military: { p: 0.4, keys: Object.keys(themeMix("military")).concat(["a_556_ap", "a_308_ap", "a_308_match", "a_556_match", "a_556_tracer", "a_762x39_tracer", "a_762x39_ap", "a_50bmg_ball", "a_50bmg_api"]) },
-  fortress: { p: 0.3, keys: Object.keys(themeMix("police")) },
-  expansionist: { p: 0.3, keys: Object.keys(themeMix("police")) },
-  raider: { p: 0.3, keys: Object.keys(themeMix("raider")).concat(["a_9mm_plusp", "a_357_plusp", "a_762x39_sp"]) },
-  commune: { p: 0.25, keys: Object.keys(themeMix("farm")).concat(["a_22lr_hp", "a_22lr_subsonic", "a_3030_fmj"]) },
-  zealot: { p: 0.15, keys: Object.keys(themeMix("home")) },
-};
-for (const w of Object.values(WARE_AMMO)) w.keys = [...new Set(w.keys)].filter((k) => ROUND_SUPPLIES[k]);
-/** @param {any} state @param {string} type a group's kind @param {string} name @param {any} [salt] */
-export function ammoWares(state, type, name, salt = "") {
-  const w = WARE_AMMO[type];
-  if (!w || !w.keys.length || hash01(state.seed, "ammoware", name, salt) >= w.p) return [];
-  const key = w.keys[Math.floor(hash01(state.seed, "ammowarepick", name, salt) * w.keys.length) % w.keys.length];
-  const full = CALIBERS[ROUND_SUPPLIES[key].round.cal].box;
-  const box = newBox(key, Math.max(1, Math.round(full * (0.5 + 0.5 * hash01(state.seed, "ammowareq", name, salt)))));
-  return box ? [box] : [];
-}
 // A box item of a round key holding n rounds (a count stack: item.dur).
 /** @param {string} key @param {number} n */
 export function newBox(key, n) {

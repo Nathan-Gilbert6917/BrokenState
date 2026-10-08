@@ -73,7 +73,7 @@
 // Seen only when you can see them (state.live) or hear them (radio coverage, a faded sprite on the map); the
 // Groups tab lists those you know with their last known position. Decisions use state.visitorInfo.rng.
 import { Rng } from "./rng.js";
-import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, supplyFew } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, atBase, residents, combatPower, hurt, factionById, snapshot, mergeKnowledge, removeBase,
   supplyValue, skill, baseVision, localId, spendShots, arrowsBack,
@@ -258,7 +258,7 @@ function makeVisitor(state, kind, tile, opts = {}) {
     // What trade.js reads from a group: a visitor is priced like one.
     type: "traders", pop: 4, goodwill: 0, alive: true, outsider: true, pact: null, bases: [], lootedGear: [], color: VISITOR_COLORS[kind],
   };
-  for (const k of SUPPLY_KEYS) v.stock[k] = 0;
+  for (const k of STOCK_KEYS) v.stock[k] = 0; // rounds by calibre come in only when their ammo is traded (ammo.js expandAmmo)
   const taken = usedNames(state);
   if (kind === "raiders") {
     const R = O.raiders;

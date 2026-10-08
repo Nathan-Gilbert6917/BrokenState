@@ -208,6 +208,24 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   check(f1 > f0, `match rounds aim better at range (${f0}% → ${f1}%)`);
 }
 
+// 4b. Less-lethal rounds (the non-lethal branch: hit.nonLethal).
+{
+  console.log("Beanbags and rubber");
+  check(CALIBERS["12ga"].types.includes("beanbag") && CALIBERS["9mm"].types.includes("rubber") && AMMO_TYPES.beanbag.nonlethal && AMMO_TYPES.rubber.nonlethal, "12 gauge beanbags and 9mm (5.56, .308) rubber rounds");
+  const u = { weapon: "shotgun", load: "beanbag", side: "player" };
+  const h = shotHit(u);
+  check(h.nonLethal === true && h.ammo === "beanbag" && !shotHit({ weapon: "shotgun", load: "buck" }).nonLethal, "a beanbag's hit says nonLethal; buckshot's does not");
+  let pol = 0, other = 0;
+  for (let i = 0; i < 300; i++) {
+    for (const k of Object.keys(findRounds("police", 20, i))) if (/beanbag|rubber/.test(k)) pol++;
+    for (const th of ["military", "guns", "hunt", "farm", "raider", "home"]) for (const k of Object.keys(findRounds(th, 20, i))) if (/beanbag|rubber/.test(k)) other++;
+  }
+  check(pol > 0 && other === 0, `only police and prison places hold them (${pol} police finds, ${other} elsewhere)`);
+  let bb = 0, n = 0;
+  for (let i = 0; i < 400; i++) { const t = enemyLoad("guards", "shotgun", 9, i); n++; if (t === "beanbag") bb++; }
+  check(Math.abs(bb / n - 0.3) < 0.08 && enemyLoad("soldiers", "shotgun", 1, 1) !== "beanbag", `police shotguns load beanbags now and then (${Math.round((bb / n) * 100)}%)`);
+}
+
 // 5. Enemy loads, bodies.
 {
   console.log("The enemy's rounds");
