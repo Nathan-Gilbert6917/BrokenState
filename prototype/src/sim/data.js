@@ -1,6 +1,11 @@
 // @ts-check
 // Static definitions: terrain, locations, supplies, gear, traits, faction types, names.
 // Kept as plain data so it can later move to JSON files for modding.
+// The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
+import { GUN_GEAR } from "./data-guns.js";
+import { AMMO_GEAR, RELOAD_GEAR } from "./data-ammo.js";
+import { MOD_GEAR } from "./data-gunmods.js";
+import { KIT_GEAR } from "./data-kit.js";
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
 // off-road and a quarter of an hour on a road or a bridge (ROAD_COST); mountains are closed to cars.
@@ -510,3 +515,7 @@ Object.assign(GEAR, {
   snarewire: { name: "Snare wire",   slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, weight: 0.4, cat: "tools", desc: "A coil of brass wire: a line of 8 snares (team order, 2 hours). Quiet; about a rabbit a day in good country. The wire stays with the line and comes back when it is lifted." },
 });
 // Where they turn up: loot.js SITE_FINDS (their own dice, so adding them changes no other loot roll).
+
+// The weapons overhaul (docs/weapons-overhaul-plan.md): guns and melee, ammo boxes and reloading supplies, attachments,
+// carry kit. One line, so the agents filling those modules never edit the end of this file.
+Object.assign(GEAR, GUN_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR);

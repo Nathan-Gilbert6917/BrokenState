@@ -102,7 +102,7 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // kept as state.startPeople. A normal start is a full hub of six and ignores it.
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
- *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null }} opts
+ *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any }} opts
  * @returns {State}
  */
 export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null }) {

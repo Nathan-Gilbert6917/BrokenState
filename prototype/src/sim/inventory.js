@@ -52,7 +52,12 @@ export const packSize = (item) => (item && GEAR[item.key] && GEAR[item.key].slot
 export const carryOf = (item) => (item && GEAR[item.key] && GEAR[item.key].carry) || 0;
 export const isBulky = (key) => !!(GEAR[key] && GEAR[key].bulky);
 // What an item weighs (kg): its own weight, and a pack also what is inside it.
-export const itemKg = (item) => (item && GEAR[item.key] && Number.isFinite(GEAR[item.key].weight) ? GEAR[item.key].weight : 1);
+// A count stack (GEAR count: true, item.dur = how many are left: a box of rounds) weighs its share left.
+export const itemKg = (item) => {
+  const d = item && GEAR[item.key];
+  if (!d || !Number.isFinite(d.weight)) return 1;
+  return d.count && d.dur && Number.isFinite(item.dur) ? d.weight * Math.max(0, item.dur) / d.dur : d.weight;
+};
 // A gun also weighs its fitted attachments (gunmods.js: item.mods).
 export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item);
 const modsKg = (item) => (item && item.mods ? Object.values(item.mods).reduce((a, m) => a + (m ? itemKg(m) : 0), 0) : 0);
