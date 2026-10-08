@@ -44,7 +44,9 @@ import { attitude } from "./factions.js";
 import { triggerConflict } from "./conflicts.js";
 import { ZONE_RICHNESS } from "./mapgen.js";
 import { haulMult } from "./medfinds.js";
-import { scavFinds, partyLost } from "./arsenal.js"; // group arsenals: weapons and armour found at the site; a party lost is people and kit lost
+import { scavFinds, partyLost } from "./arsenal.js";
+import { prio } from "./groupcare.js";
+import { scavVehicle, scavSaw } from "./groupworld.js"; // a wreck brought home now and then; the bases they saw // GROUP_PRIORITIES scavenge: how often a type sends parties out // group arsenals: weapons and armour found at the site; a party lost is people and kit lost
 
 export const AISCAV = {
   minPop: 6, gapMin: 6, gapMax: 10, retry: 3, minNeed: 0.25, baseWant: 0.15, range: 10, share: 0.12,
@@ -169,7 +171,7 @@ export function aiScavDaily(state) {
     const site = Math.max(...Object.values(need)) >= AISCAV.minNeed ? bestSite(state, f) : null;
     if (!site) { f.scavNext = state.hour + 24 * AISCAV.retry; return; }
     sendParty(state, f, site.from, site.tile);
-    f.scavNext = state.hour + 24 * (AISCAV.gapMin + Math.floor(roll(state, "gap", i, n, state.hour) * (AISCAV.gapMax - AISCAV.gapMin + 1)));
+    f.scavNext = state.hour + Math.round(24 * (AISCAV.gapMin + Math.floor(roll(state, "gap", i, n, state.hour) * (AISCAV.gapMax - AISCAV.gapMin + 1))) / Math.max(0.5, prio(f, "scavenge")));
   });
 }
 // Sites inside a group's land (including the ones it lives on).
@@ -207,12 +209,14 @@ export function scavArrived(state, p) {
       for (const [k, q] of Object.entries(p.scav.got)) f.stock[k] = (f.stock[k] || 0) + Math.floor(q);
       S.stats.goods += Object.values(p.scav.got).reduce((a, q) => a + Math.floor(q), 0);
       S.stats.gear = (S.stats.gear || 0) + scavFinds(state, f, p).length; // arsenal.js: guns, armour, explosives by the site's gear list
+      if (scavVehicle(state, f, p.scav.site)) S.stats.vehicles = (S.stats.vehicles || 0) + 1; // groupworld.js
     }
     S.stats.home++;
     removeParty(state, p);
     return;
   }
   p.phase = "search";
+  if (f && f.alive) scavSaw(state, f, p.scav.site); // groupworld.js: what they see around the site
   const t = state.tiles[p.scav.site];
   if (t.infection > 0.5) p.strength *= 0.9; // the dead are thick here
   contest(state, p);

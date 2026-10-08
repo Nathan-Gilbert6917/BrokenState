@@ -46,6 +46,7 @@ import { itemDur, itemDurMax, wear } from "./crafting.js";
 import { day, factionById } from "./world.js";
 import { factionVehicles, groupTurret } from "./vehicles.js";
 import { workshopFactor } from "./groupworks.js";
+import { fitPeople, noteFight, weightOf, woundsFor, wearGroupVehicles, tickOf } from "./groupcare.js"; // AI parity: the wounded do not fight; a fight's dead and wounded
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -262,7 +263,7 @@ function gunsIn(A, pop) { meanValue(A, pop); return VALUE.get(A).guns; }
 export function ammoFactor(f) {
   const A = f && f.arsenal;
   if (!A) return 1;
-  const need = gunsIn(A, f.pop) * ARSENAL.AMMO_NEED;
+  const need = gunsIn(A, Math.max(1, fitPeople(f))) * ARSENAL.AMMO_NEED;
   const have = arsenalRounds(f);
   return !need || have >= need ? 1 : ARSENAL.AMMO_SHORT + (1 - ARSENAL.AMMO_SHORT) * have / need;
 }
@@ -271,10 +272,10 @@ export function ammoFactor(f) {
 export function kitFactor(f) {
   const A = f && f.arsenal;
   if (!A || !FACTION_TYPES[f.type]) return 1;
-  const r = clamp(meanValue(A, f.pop) / kitRef(f.type), ARSENAL.KIT_MIN, ARSENAL.KIT_MAX);
+  const r = clamp(meanValue(A, Math.max(1, fitPeople(f))) / kitRef(f.type), ARSENAL.KIT_MIN, ARSENAL.KIT_MAX);
   return (1 - ARSENAL.KIT_WEIGHT + ARSENAL.KIT_WEIGHT * r) * ammoFactor(f);
 }
-export const groupStrength = (f) => f.pop * FACTION_TYPES[f.type].arms * kitFactor(f) * (f.gear || 1);
+export const groupStrength = (f) => fitPeople(f) * FACTION_TYPES[f.type].arms * kitFactor(f) * (f.gear || 1); // groupcare.js: the wounded do not fight
 // A battle unit's power (combat.js enemyUnit: aim, hit points, damage): base + the type's arms × 1.6 × the kit factor.
 export const unitPower = (f, base = 2.2) => base + (FACTION_TYPES[f.type] ? FACTION_TYPES[f.type].arms : 1) * 1.6 * (f.arsenal ? kitFactor(f) : 1);
 // Launchers against walls: what a raid on a walled base gains from those it takes.
@@ -341,6 +342,8 @@ export function settleArsenal(state, setup, result, battle = null) {
       else for (const it of kit) wearOwned(f, it);
     }
     takeArsenalRounds(f, units.filter((u) => u.arsItem && usesRounds(u.arsItem.key)).length * ARSENAL.ROUNDS);
+    // groupcare.js: who came back hurt (under 60% of their hit points) joins the group's wounded.
+    noteFight(f, 0, units.filter((u) => !u.dead && u.hp < u.maxHp * 0.6 && (u.fled || u.left || !won)).length);
     if (!won && !raidMap) {
       // They hold the field: the gear of your dead lies there (world.js killSurvivor: the death site).
       for (const u of battle.units) {
@@ -360,8 +363,11 @@ export function settleArsenal(state, setup, result, battle = null) {
       }
     }
     takeArsenalRounds(f, issue.filter((lo) => lo.weapon && usesRounds(lo.weapon.key)).length * ARSENAL.ROUNDS);
+    // groupcare.js: the handlers count 60-70% of their "killed" as dead; the rest come home wounded.
+    noteFight(f, 0, Math.floor((result.enemiesKilled || 0) * 0.4));
     if (!won) for (const id of result.survivorsDead || []) out.took.push(...takeDeadGear(state, f, id));
   }
+  if (e.turret) wearGroupVehicles(state, f, won, `fight${state.hour}`); // groupcare.js: the turret vehicle in the fight
   // The explosives a raid threw at your walls (siege.js grenades).
   if (e.siege && e.siege.grenades) throwExplosives(f, e.siege.grenades, e.siege.kind);
   result.arsDropped = out.dropped;
@@ -428,7 +434,7 @@ export function raidOnBase(state, f, base, party, o) {
   if (!f || !ensureArsenal(state, f)) return out;
   const n = raidCount(f, party.strength || 4);
   const issue = issueKit(state, f, n, baseWallsOf(base) ? "walls" : "raid");
-  const dead = pickDead(state, issue, Math.min(n, o.theirDead || 0), `raid|${party.id}|${state.hour}`);
+  const dead = pickDead(state, issue, Math.min(n, o.theirDead || 0), `raid|${base.tile}|${state.hour}`);
   const youHold = o.outcome !== "overrun";
   // Stealing first (what they carry off is what was in the armory before their dead's kit is added).
   if (!youHold || o.outcome === "broken") {
@@ -450,6 +456,8 @@ export function raidOnBase(state, f, base, party, o) {
     }
   }
   takeArsenalRounds(f, n * ARSENAL.ROUNDS);
+  noteFight(f, o.theirDead || 0, woundsFor(o.theirDead || 0) + (o.outcome === "held" ? 1 : 0)); // groupcare.js
+  wearGroupVehicles(state, f, o.outcome === "held", `raid${base.tile}`); // groupcare.js: their Humvee at your walls
   if (party.siege && party.siege.grenades && baseWallsOf(base)) throwExplosives(f, party.siege.grenades, party.siege.kind);
   return out;
 }
@@ -473,6 +481,7 @@ export function clashKit(state, a, aN, aDead, b, bDead, holder, steal = 0, fough
   };
   const aKit = side(a, aN, "raid", aDead);
   const bKit = side(b, b ? Math.ceil(b.pop * (1 - ARSENAL.HOME)) : 0, "home", bDead);
+  if (fought) { noteFight(a, aDead); noteFight(b, bDead); wearGroupVehicles(state, a, holder === "b", "a"); wearGroupVehicles(state, b, holder === "a", "b"); } // groupcare.js: the dead's wounded; their turret vehicles
   // The side holding the field picks up the other's dead's kit, knocked about (PICKUP_WEAR); with nobody to pick it up
   // (the dead won) it is gone.
   const moveHalf = (from, to, list, why) => list.forEach((it, i) => {
@@ -496,6 +505,7 @@ export function partyLost(state, f, people) {
   if (!f || !ensureArsenal(state, f)) return;
   const issue = issueKit(state, f, people, "field");
   for (const lo of issue) for (const it of loadoutItems(lo)) removeFromArsenal(f, it, "died:lost");
+  noteFight(f, people, 0);
 }
 
 // ---------- inflows ----------
@@ -543,7 +553,7 @@ export function arsenalDaily(state, f) {
   const A = ensureArsenal(state, f);
   if (!A) return;
   const d = day(state);
-  const salt = [state.seed, "arsday", f.name, d];
+  const salt = [state.seed, "arsday", f.name, tickOf(f)]; // groupcare.js tickOf: the group's own day count
   if (f.pop > A.pop0) {
     const W = KITS.survivors.weapons;
     for (let i = A.pop0; i < f.pop; i++) {
@@ -554,6 +564,7 @@ export function arsenalDaily(state, f) {
   }
   A.pop0 = f.pop;
   const C = ARSENAL.CRAFT, phase = Math.floor(h(state.seed, f.name, "craft") * 12);
+  if (hash01(...salt, "crafty") >= weightOf(f, "craft")) { A.pop0 = f.pop; return; } // groupcare.js GROUP_PRIORITIES: some types craft less
   const o = sortedKit(A);
   if ((d + phase) % C.every === 0 && o.W.length < f.pop && (f.stock.scrap || 0) >= C.scrap + 2) {
     f.stock.scrap -= C.scrap;
@@ -579,7 +590,7 @@ export function arsenalDaily(state, f) {
 export function captureVehicle(f, v) {
   if (!f || !v) return null;
   const rec = { id: `f${f.id}-v${v.id}`, type: v.type, name: v.name, fuel: v.fuel || 0, condition: v.condition ?? 60, owner: f.id };
-  if (v.up) rec.up = JSON.parse(JSON.stringify(v.up));
+  if (v.upgrades) rec.upgrades = JSON.parse(JSON.stringify(v.upgrades));
   factionVehicles(f).push(rec);
   return rec;
 }
