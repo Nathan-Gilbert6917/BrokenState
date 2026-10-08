@@ -39,6 +39,7 @@ import { tradeSpeech, bookWares, gainXp, USE, hash01 } from "./skills.js";
 import { armsSold } from "./diplomacy.js";
 import { visitorTradeContext, resumeVisitorTrade } from "./visitors.js";
 import { RAW, keyWord } from "./water.js";
+import { radioTradeContext, radioTradeProblem, bookRadioTrade, matchGear, sameGear } from "./radiotrade.js"; // the trade window over the radio
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -355,6 +356,8 @@ function intelTiles(state, center, intel) {
 // state.trade is the trade on screen:
 //   a visit: { partyId, factionId, ... } (your team at their base, or a trade caravan of yours there)
 //   a caravan: { caravanId, baseId, factionId, deal?, ... } (their caravan at one of your bases)
+//   over the radio: { radio: true, factionId, baseId, delivery: "fetch" | "deliver", ... } (radiotrade.js: a base's
+//   stores and armory against their spare stock and wares; agreeing books the deal, a caravan carries it)
 // Both: offer / ask = supplies { key: qty } you give / you take; offerGear / askGear = the items; intel =
 // { area: "" | "near" | "region" | "wide", sightings, sell }. A second trade that comes up while one is open
 // waits in state.tradeQueue (like battles in combat.js).
@@ -389,6 +392,10 @@ export function openCaravanTrade(state, c) {
   if (t.deal) {
     t.offer = { ...t.deal.offer };
     t.ask = { ...t.deal.ask };
+    // Items agreed over the radio (radiotrade.js): yours still in the base's armory, theirs on the caravan.
+    const base = baseById(state, c.baseId);
+    t.offerGear = (base && matchGear(base.armory, t.deal.offerGear || [])) || [];
+    t.askGear = matchGear(c.goods.gear, t.deal.askGear || []) || [];
   }
   if (state.trade && tradeContext(state)) {
     const q = (state.tradeQueue = state.tradeQueue || []);
@@ -432,6 +439,7 @@ export function tradeContext(state) {
   const t = state.trade;
   if (!t) return null;
   if (t.visitorId != null) return visitorTradeContext(state, t); // merchants and travellers from outside (visitors.js)
+  if (t.radio) return radioTradeContext(state, t); // over the radio (radiotrade.js)
   const f = factionById(state, t.factionId);
   if (!f || !f.alive) return null;
   const have = {}, theirHave = {};
@@ -492,6 +500,7 @@ export function tradeTotals(state) {
     if (side.inDeal) { if (side.mine) offer += side.price; else ask += side.price; }
   }
   lines.gear = gearLines;
+  if (ctx.fee) { lines.fee = ctx.fee; ask += ctx.fee; } // over the radio, they bring it: the delivery fee (radiotrade.js)
   const intel = t.intel || {};
   if (intel.area || intel.sightings || intel.sell) {
     const io = intelOffer(state, ctx);
@@ -529,7 +538,10 @@ export function tradeVerdict(state) {
   for (const [k, q] of Object.entries(t.offer)) if (q > (ctx.have[k] || 0)) return out(false, `You only have ${ctx.have[k] || 0} ${k}.`);
   for (const [k, q] of Object.entries(t.ask)) if (q > (ctx.theirHave[k] || 0)) return out(false, `They can spare only ${ctx.theirHave[k] || 0} ${k}.`);
   // Carry space: a team carries what it gets; their caravan carries what it takes.
-  if (ctx.kind === "visit") {
+  if (ctx.kind === "radio") {
+    const why = radioTradeProblem(state, ctx, offerGear, askGear); // radiotrade.js: a deal waiting, their caravan's load
+    if (why) return out(false, why);
+  } else if (ctx.kind === "visit") {
     const p = ctx.p;
     const freed = weigh(t.offer) + gearWeight(offerGear); // what leaves the team is weight it no longer carries (sim/load.js: one pool)
     const room = cargoRoom(state, p) + freed;
@@ -542,7 +554,7 @@ export function tradeVerdict(state) {
     const need = weigh(t.offer) + gearWeight(offerGear);
     if (need > room + 1e-9 && need > weigh(t.ask) + gearWeight(askGear) + 1e-9) return out(false, `Their caravan cannot carry that much: your goods weigh ${Math.ceil(need)}, and they have room for ${Math.max(0, Math.floor(room))}.`);
   }
-  if (t.deal && sameMap(t.offer, t.deal.offer) && sameMap(t.ask, t.deal.ask) && !offerGear.length && !askGear.length && !t.intel.area && !t.intel.sightings && !t.intel.sell) {
+  if (t.deal && sameMap(t.offer, t.deal.offer) && sameMap(t.ask, t.deal.ask) && sameGear(offerGear, t.deal.offerGear) && sameGear(askGear, t.deal.askGear) && !t.intel.area && !t.intel.sightings && !t.intel.sell) {
     return out(true, "The deal agreed over the radio.", { honoured: true });
   }
   if (tot.offer + 1e-9 < tot.ask) return out(false, `Not enough for them: your side is worth ${Math.floor(tot.offer)} to them, theirs ${Math.ceil(tot.ask)}.`);
@@ -573,7 +585,7 @@ export function toggleGear(state, side, index) {
 }
 export function setIntel(state, field, value) {
   const ctx = tradeContext(state);
-  if (!ctx) return;
+  if (!ctx || ctx.kind === "radio") return; // news goes by Ask for news (radio.js)
   const it = ctx.t.intel;
   if (field === "area") it.area = INTEL[value] && it.area !== value ? value : "";
   else if (field === "sightings") it.sightings = !it.sightings;
@@ -628,6 +640,7 @@ export function executeTrade(state) {
   const v = tradeVerdict(state);
   if (!v.ok) return v.reason || "The deal is not balanced.";
   const { ctx, tot } = v;
+  if (ctx.kind === "radio") return bookRadioTrade(state, v); // over the radio: booked, a caravan carries it (radiotrade.js)
   const { t, f } = ctx;
   const offerGear = liveGear(t.offerGear, ctx.myGear), askGear = liveGear(t.askGear, ctx.theirGear);
   const theirSup = ctx.kind === "caravan" ? ctx.caravan.goods.supplies : f.stock;
@@ -684,6 +697,7 @@ export function giftAll(state) {
   const ctx = tradeContext(state);
   const tot = tradeTotals(state);
   if (!ctx || tot.offer <= 0) return "Offer something first.";
+  if (ctx.kind === "radio") return "A gift cannot go over the radio: give it at their gates, or when their caravan is at yours.";
   const { t, f } = ctx;
   const theirSup = ctx.kind === "caravan" ? ctx.caravan.goods.supplies : f.stock;
   const theirGear = ctx.kind === "caravan" ? ctx.caravan.goods.gear : (f.wares = f.wares || []);
