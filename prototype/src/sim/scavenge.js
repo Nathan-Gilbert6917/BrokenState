@@ -279,7 +279,7 @@ export function searchHour(state) {
   }
   e.log.push(`Hour ${e.hours} [${stage.name}]: ${line}`);
   gainXpAll(state, partyMembers(state, p), "scavenging", USE.searchHour); // skills.js
-  if (e.approach === "sneak") gainXpAll(state, partyMembers(state, p), "stealth", USE.sneakSearch);
+  gainXpAll(state, partyMembers(state, p), "stealth", e.approach === "sneak" ? USE.sneakSearch : USE.searchStealth); // moving quietly through the ruins; more sneaking
   searchHazards(state, partyMembers(state, p), tileLabel(state, e.tile)); // cuts and fevers while searching (health.js)
   wormSearch(state, p, e.tile, 1); // worm.js: the eggs on what they handled, rolled tonight or at home
   if (!partyMembers(state, p).length) {

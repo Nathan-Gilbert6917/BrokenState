@@ -33,7 +33,7 @@
 // and the preserving kitchen take it (storage.js).
 import { log, skill, atBase } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, planPath, partySpeed } from "./parties.js";
-import { hasPerk, gainXp } from "./skills.js";
+import { hasPerk, gainXp, USE } from "./skills.js";
 import { zombieToughness } from "./hives.js";
 import * as Weather from "./weather.js";
 import { workFactor, addCondition } from "./health.js";
@@ -329,8 +329,8 @@ export function foragingDaily(state, base) {
       addCondition(state, s, "dysentery", "after eating a mushroom picked in the wild", { sev: state.rng.int(FORAGE.mushroomSev[0], FORAGE.mushroomSev[1]) });
       got.sick.push(s.id);
     }
-    gainXp(state, s, "farming", 4);
-    gainXp(state, s, "scouting", 2);
+    gainXp(state, s, "farming", USE.forage); // skills.js
+    gainXp(state, s, "scouting", USE.forageScout);
   }
   base.stock.food = (base.stock.food || 0) + got.rations;
   if (got.herbs) base.stock.meds = (base.stock.meds || 0) + got.herbs;
