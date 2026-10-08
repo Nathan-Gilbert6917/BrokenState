@@ -8,7 +8,7 @@
 import { LIGHTS } from "./lights.js";
 import { GEAR, SKILL_NAMES } from "./data.js";
 import { log, atBase, skill, newId, gearEffect } from "./world.js";
-import { count, BUILDINGS } from "./buildings.js";
+import { count, BUILDINGS, benchOf } from "./buildings.js";
 import { partyMembers, addGearToCargo } from "./parties.js";
 import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf } from "./inventory.js";
 import { workFactor } from "./health.js";
@@ -83,14 +83,22 @@ const WORKSHOP_QUALITY = 0.1; // workshop recipes come out a little better
 
 export const craftName = (key) => CRAFTS[key].name || GEAR[CRAFTS[key].gear].name;
 export const craftQueue = (base) => base.crafting || (base.crafting = []);
-export const hasWorkshop = (base) => WORKSHOP_TYPES.some((t) => count(base, t) > 0);
+export const hasWorkshop = (base) => WORKSHOP_TYPES.some((t) => count(base, t) > 0) || !!(benchOf(base) && benchOf(base).workshop); // a workbench or better (buildings.js BENCH)
+// Crafting benches (buildings.js BENCH): a recipe needs one here unless a team can make it on the road (field), it
+// has its own station (needs) or it only re-packs a clogged filter (spent). A workshop counts as a bench (old saves).
+export const benchNeeded = (r) => !r.field && !r.needs && !r.spent;
+export const hasBench = (base) => !!benchOf(base) || hasWorkshop(base);
+// What the working bench here adds to hand crafting at this base: { rate: × work-hours, quality: + condition }.
+export const benchBonus = (base) => { const b = base && benchOf(base); return { rate: b ? b.rate : 1, quality: b ? b.quality : 0 }; };
+// An item's condition made at this base with its bench (craftQuality is the crafter's own; still at most 100%).
+export const benchQuality = (q, base) => Math.round(Math.min(1, q + benchBonus(base).quality) * 100) / 100;
 
 export function meetsNeeds(base, r) {
-  if (!r.needs) return true;
+  if (!r.needs) return !benchNeeded(r) || hasBench(base);
   if (r.needs === "workshop") return hasWorkshop(base);
   return count(base, r.needs) > 0;
 }
-const needsText = (r) => (r.needs === "workshop" ? "a workshop (ammo bench or machine shop)" : BUILDINGS[r.needs] ? `a ${BUILDINGS[r.needs].name.toLowerCase()}` : r.needs);
+const needsText = (r) => (!r.needs ? "a crafting bench" : r.needs === "workshop" ? "a workshop (a workbench, ammo bench or machine shop)" : BUILDINGS[r.needs] ? `a ${BUILDINGS[r.needs].name.toLowerCase()}` : r.needs);
 
 // Short description of what a recipe makes (for the UI).
 export function craftOutputText(key) {
@@ -144,7 +152,7 @@ const qualified = (state, base, r) => crafters(state, base).filter((s) => skill(
 // Work-hours per hour on a recipe: each skilled crafter gives 1 + 3% per point of the recipe's skill.
 export function craftRate(state, base, key) {
   const r = CRAFTS[key];
-  return qualified(state, base, r).reduce((a, s) => a + (1 + skill(s, r.skill) * 0.03) * workFactor(s) * (hasPerk(s, "machinist") ? 1.3 : 1), 0); // the sick work less (health.js); Machinist (skills.js)
+  return qualified(state, base, r).reduce((a, s) => a + (1 + skill(s, r.skill) * 0.03) * workFactor(s) * (hasPerk(s, "machinist") ? 1.3 : 1), 0) * benchBonus(base).rate; // the sick work less (health.js); Machinist (skills.js); the bench here
 }
 
 // Item condition from the best crafter's skill: 75% at 0, 100% at 20. Workshop recipes +10%.
@@ -211,7 +219,7 @@ export function craftJobStatus(state, base, job) {
   if (!qualified(state, base, r).length) return `No crafter with ${SKILL_NAMES[r.skill]} ${r.min}+`;
   // A craft order's minimum quality (production.js): only a crafter who reaches it works the job.
   if (job.minQ && r.gear) {
-    const q = craftQuality(Math.max(0, ...qualified(state, base, r).map((s) => skill(s, r.skill))), r);
+    const q = benchQuality(craftQuality(Math.max(0, ...qualified(state, base, r).map((s) => skill(s, r.skill))), r), base);
     if (q + 1e-9 < job.minQ) return `No crafter good enough for ${Math.round(job.minQ * 100)}% (best ${Math.round(q * 100)}%)`;
   }
   return "";
@@ -232,7 +240,7 @@ export function craftingHour(state) {
       log(state, `${craftName(job.recipe)} finished at ${base.name}.`, "good");
     } else {
       const best = Math.max(0, ...qualified(state, base, r).map((s) => skill(s, r.skill)));
-      const item = makeItem(r.gear, craftQuality(best, r));
+      const item = makeItem(r.gear, benchQuality(craftQuality(best, r), base));
       if (item.dur && crafters(state, base).some((s) => hasPerk(s, "tinkerer"))) { item.dur = Math.round(item.dur * 1.5); if (!GEAR[item.key].tabs) item.durMax = item.dur; } // Tinkerer (skills.js): lasts 50% longer
       base.armory.push(item);
       log(state, `${item.name} crafted at ${base.name} (condition ${Math.round(item.quality * 100)}%). It is in the armory.`, "good");

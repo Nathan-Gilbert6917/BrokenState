@@ -346,12 +346,12 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   const st = W();
   const h = hub(st);
   Object.assign(h.stock, { scrap: 100, parts: 10 });
-  queueBuild(st, h, "ammo_bench");
+  queueBuild(st, h, "well"); // 15 scrap and 1 part (the ammo bench's cost; that needs a workbench now)
   let job = h.construction[h.construction.length - 1];
   let msg = cancelBuild(st, h, job.id);
   check(h.stock.scrap === 100 && h.stock.parts === 10, `an untouched job refunds everything (${h.stock.scrap} scrap, ${h.stock.parts} parts)`);
   check(/All the materials/.test(msg), `the message says so (${msg})`);
-  queueBuild(st, h, "ammo_bench");
+  queueBuild(st, h, "well");
   job = h.construction[h.construction.length - 1];
   job.progress = 3;
   msg = cancelBuild(st, h, job.id);

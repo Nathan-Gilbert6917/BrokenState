@@ -51,7 +51,7 @@ import { edibleFood, foodStore } from "./storage.js";
 import { season } from "./weather.js";
 import { hospitalDef, isHurt, isSevere } from "./medical.js";
 import { tooIllToWork, isSick, isContagious } from "./health.js";
-import { CRAFTS, craftQueue, craftQuality, meetsNeeds, craftHeld, isFilterJob } from "./crafting.js";
+import { CRAFTS, craftQueue, craftQuality, benchQuality, meetsNeeds, craftHeld, isFilterJob } from "./crafting.js";
 import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } from "./skills.js";
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt, WEAR } from "./breakdowns.js";
@@ -188,7 +188,7 @@ export const WORK_TYPES = {
     can(ctx, s) {
       const ok = openCrafts(ctx).some((j) => {
         const r = CRAFTS[j.recipe];
-        return r && meetsNeeds(ctx.base, r) && skill(s, r.skill) >= r.min && (!j.minQ || !r.gear || craftQuality(skill(s, r.skill), r) + 1e-9 >= j.minQ);
+        return r && meetsNeeds(ctx.base, r) && skill(s, r.skill) >= r.min && (!j.minQ || !r.gear || benchQuality(craftQuality(skill(s, r.skill), r), ctx.base) + 1e-9 >= j.minQ);
       });
       return ok ? "" : "not skilled enough for anything queued";
     },

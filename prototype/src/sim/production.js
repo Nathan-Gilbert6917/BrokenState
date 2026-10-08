@@ -25,7 +25,7 @@
 // loop forever), and looted or worn-down items below Q do not stop new ones being made.
 import { log, atBase, skill, newId } from "./world.js";
 import { BUILDINGS, RECIPES, stations, recipeOutput } from "./buildings.js";
-import { CRAFTS, craftQueue, canCraft, queueCraft, craftQuality, craftName } from "./crafting.js";
+import { CRAFTS, craftQueue, canCraft, queueCraft, craftQuality, craftName, benchQuality } from "./crafting.js";
 import { POWER_USERS, POWER_BOOST, STILL, isPowered, refreshPower } from "./power.js";
 import { isManaged } from "./work.js";
 import { stockHas } from "./water.js"; // a Keep-at-least order on water counts both kinds
@@ -259,7 +259,7 @@ export function bestQuality(state, base, recipe) {
   const r = CRAFTS[recipe];
   const able = atBase(state, base.id).filter((s) => !s.inBed && skill(s, r.skill) >= r.min);
   if (!able.length) return null;
-  return craftQuality(Math.max(...able.map((s) => skill(s, r.skill))), r);
+  return benchQuality(craftQuality(Math.max(...able.map((s) => skill(s, r.skill))), r), base); // with the bench here
 }
 // { have, queued, need, ready, reason } for one order.
 export function craftOrderStatus(state, base, o) {

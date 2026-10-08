@@ -48,7 +48,8 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   check(/Mechanics 3/.test(canCraft(st, h, "sawmachete").reason || ""), "saw-blade machete needs Mechanics 3");
   ppl[0].skills.mechanics = 8;
   check(canCraft(st, h, "sawmachete").ok, "Mechanics 8 survivor unlocks the machete");
-  check(hasWorkshop(h) && canCraft(st, h, "crossbow").ok, "the hub's ammo bench counts as a workshop");
+  addBuilding(h, "ammo_bench"); // the new hub starts with a crafting bench only (benchtest.js)
+  check(hasWorkshop(h) && canCraft(st, h, "crossbow").ok, "an ammo bench counts as a workshop");
   h.buildings = h.buildings.filter((b) => b.type !== "ammo_bench");
   check(!hasWorkshop(h) && /workshop/.test(canCraft(st, h, "crossbow").reason || ""), "crossbow needs a workshop");
   check(canCraft(st, h, "tirevest").ok, "hand recipes work without a workshop");

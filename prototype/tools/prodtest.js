@@ -163,6 +163,7 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   console.log("Craft orders and quality");
   const st = W();
   const h = quietHub(st);
+  h.buildings = h.buildings.filter((b) => b.type !== "craftbench"); // no bench bonus (benchtest.js): the qualities below are the crafters' own
   const [c, d] = people(st, h);
   for (const s of people(st, h)) s.skills.mechanics = 0;
   c.role = "craft";
