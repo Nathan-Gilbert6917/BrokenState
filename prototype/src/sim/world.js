@@ -76,6 +76,7 @@ import { wanderersDaily } from "./wanderers.js";
 import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and moving people between your bases)
 import { familyDaily } from "./family.js"; // children and generations
 import { leavePlayerBase } from "./groupworld.js"; // a lost outpost stands empty for a group to move into
+import { noteLootAge } from "./itemcond.js"; // the years since the fall: shops and homes keep getting worse (COND_AGE)
 
 export const HUB_VISION = 3;
 // A normal start's hub is bare (barestart): no buildings, every construction plot free. Its stores carry the first
@@ -146,6 +147,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   // hardcore crew's picks resolve whatever the browser's list holds later. Not in a world without any.
   const bgs = customBackgrounds ? sanitizeLibrary(customBackgrounds) : {};
   if (Object.keys(bgs).length) state.customBackgrounds = bgs;
+  noteLootAge(state); // itemcond.js: the loot rolled from here on is as old as this world (a new world: year 1)
   if (state.mode === "hardcore") {
     hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
@@ -785,6 +787,7 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
 export function tickHour(state) {
   if (state.gameOver) return;
   state.hour += 1;
+  noteLootAge(state); // itemcond.js: the years since the fall, for every piece of loot rolled this hour
   weatherHour(state); // weather.js: seasons and the day's weather (fixed ahead, so ETAs hold)
   riversHour(state); // rivers.js: rivers freezing over or thawing (before anyone moves this hour)
   skillsHour(state); // skills.js: travel XP, Pathfinder's pace

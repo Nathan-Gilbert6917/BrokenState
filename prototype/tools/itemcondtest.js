@@ -14,7 +14,10 @@
 //   6. Prices fall with condition (valuation.js itemValue): a worse copy sells and buys for less; the trade window
 //      shows the condition in a word and the uses left.
 //   7. The balance between sources: shops picked over (good but used, now and then boxed), below the Army's crates;
-//      soldiers' and contractors' guns off their bodies from 55% uses (guards' and escorts' 45%) on every path.
+//      soldiers' and contractors' guns off their bodies from 55% uses (guards' and escorts' 45%) on every path;
+//      homes as picked over as the shops.
+//   8. Shops and homes over the years since the fall (COND_AGE: a normal game from its day 1, a hardcore run from the
+//      fall), set by the world every hour, at creation and on load; a gun store's cages and safes in the Army's range.
 // Usage: node tools/itemcondtest.js
 import { readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -36,7 +39,9 @@ import {
 } from "../src/sim/itemcond.js";
 import { itemValue } from "../src/sim/valuation.js";
 import { tradeWindow } from "../src/ui/tradewindow.js";
-import { SHOP } from "../src/sim/itemcond.js";
+import { SHOP, COND_AGE, setLootAge, lootAge, lootAgeOf, ageShare, agedSource, lockSource, GUNSTORE_LOCKED } from "../src/sim/itemcond.js";
+import { stashSource } from "../src/sim/gunsafes.js";
+import { serializeState, deserializeState } from "../src/sim/save.js";
 import { enemyGunQ, enemyGunCond } from "../src/sim/gunfire.js";
 import { itemDurMax } from "../src/sim/crafting.js";
 import { guardGear } from "../src/sim/escorts.js";
@@ -52,6 +57,7 @@ const pct = (v) => `${Math.round(v * 100)}%`;
 
 // ---------- 1. distributions ----------
 section("1. Distributions per source");
+setLootAge(0); // a world in its first year (shops and homes as their table says: section 8 ages them)
 const table = [];
 // A source with boxed finds (shops: itemcond.js SHOP.boxed) rolls those from their own ranges: each part checked apart.
 const inR = (v, [a, b], e) => v >= a - e && v <= b + e;
@@ -394,7 +400,8 @@ section("6. Prices fall with condition");
 // a body's kit (enemyBody, with the gun's condition as it fought: gunfire.js enemyGunCond / lootGun), the dead searched
 // on a raid map and fights by the numbers (lootItem by kitSource), caravan guards by the numbers (escorts.js
 // guardGear) and a group's arsenal (arsenal.js starterKit: what its people carry and what is looted off them).
-section("7. Condition by source (shops picked over; professionals' guns kept)");
+section("7. Condition by source (shops and homes picked over; professionals' guns kept)");
+setLootAge(0);
 {
   const stats = (rolls) => {
     const Q = rolls.map((c) => c.q).sort((a, b) => a - b), D = rolls.map((c) => c.d).sort((a, b) => a - b);
@@ -429,6 +436,11 @@ section("7. Condition by source (shops picked over; professionals' guns kept)");
     check(r.worth < M.worth && r.q < M.q && r.d < M.d, `a ${name}'s stock is worse kept than a military site's (worth ×${r.worth.toFixed(2)} vs ×${M.worth.toFixed(2)})`);
     check(r.q10 >= 0.45 && r.q90 <= 0.9 && r.d10 >= 0.45 && r.d90 <= 0.88, `a ${name}'s finds are good but used: quality ${pct(r.q10)}–${pct(r.q90)}, uses ${pct(r.d10)}–${pct(r.d90)} (10th–90th)`);
   }
+  {
+    const Ho = rows["Homes"];
+    check(Ho.q10 >= 0.5 && Ho.q90 <= 0.9 && Ho.q < 0.75, `homes as picked over as the shops: quality ${pct(Ho.q)} (${pct(Ho.q10)}–${pct(Ho.q90)}), uses ${pct(Ho.d)}`);
+    check(Math.abs(Ho.worth - G.worth) < 0.06, `a home's guns and a gun store's are about equally worn (worth ×${Ho.worth.toFixed(2)} and ×${G.worth.toFixed(2)})`);
+  }
   { let boxed = 0; for (let i = 0; i < 4000; i++) { const c = rollCondition("ar", "shop", ["box", i]); if (c.quality >= SHOP.boxed.q[0]) boxed++; } check(boxed > 4000 * SHOP.boxed.p * 0.7 && boxed < 4000 * SHOP.boxed.p * 1.3, `now and then one still boxed, near new (${boxed} of 4000 rifles: ${pct(boxed / 4000)})`); }
   for (const kit of ["soldiers", "contractors"]) { const r = rows[`${KITS[kit].label}s' guns (battle)`]; check(r.dmin >= 0.55 - 0.01 && r.d10 >= 0.58 && r.d90 >= 0.88, `a ${kit === "soldiers" ? "soldier" : "contractor"}'s gun off the body: uses from 55% (lowest ${pct(r.dmin)}, typically ${pct(r.d10)}–${pct(r.d90)})`); }
   for (const kit of ["guards", "escorts"]) { const r = rows[`${KITS[kit].label}s' guns (battle)`]; check(r.dmin >= 0.45 - 0.01, `a${kit === "escorts" ? "n escort" : " guard"}'s gun off the body: uses from 45% (lowest ${pct(r.dmin)})`); }
@@ -449,6 +461,60 @@ section("7. Condition by source (shops picked over; professionals' guns kept)");
     const rk = starterKit(5, "Red test", "raider", 30).filter((it) => GEAR[it.key].slot === "weapon" && GEAR[it.key].dur && !GEAR[it.key].throw);
     check(Math.min(...rk.map((it) => it.dur / GEAR[it.key].dur)) < 0.4, "a raider group's guns as worn as before");
   }
+}
+
+// ---------- 8. the years since the fall; a gun store's locks ----------
+// Shops and homes slide toward their floor ranges with the years since the fall (COND_AGE), counted by the game's day:
+// a normal game's day 1 is NORMAL_FALL days after the fall, a hardcore run's day 1 is the fall itself. Locked storage,
+// military crates and bodies do not age. A gun store's cages and safes roll in the military's range (GUNSTORE_LOCKED).
+section("8. Shops and homes over the years; a gun store's cages and safes");
+{
+  const statsAt = (src, keys, age) => {
+    const Q = [], D = [];
+    for (const k of keys) for (let i = 0; i < 1500; i++) { const c = rollCondition(k, src, ["age", src, k, i], { age }); Q.push(c.quality); D.push(c.dur / GEAR[k].dur); }
+    const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+    return { q: mean(Q), d: mean(D), dmin: Math.min(...D) };
+  };
+  const GUNS = ["pistol", "huntrifle", "shotgun", "ar"];
+  // Years since the fall at the start of each game year of a normal game (eras.js: year 1 day 1, then every 112 days from day 99).
+  const ageAtYear = (y) => lootAgeOf({ hour: ((y <= 1 ? 1 : 112 * (y - 1) - 14 + 1) - 1) * 24, mode: "normal" });
+  const lines = [];
+  let prev = null, mono = true;
+  for (const y of [1, 2, 3, 5, 7, 8, 9, 12]) {
+    const a = ageAtYear(y), sh = statsAt("shop", GUNS, a), ho = statsAt("home", GUNS, a), mi = statsAt("military", GUNS, a);
+    lines.push(`  year ${String(y).padStart(2)} (${a.toFixed(2)} years since the fall, ${pct(ageShare(a))} of the way): shops quality ${pct(sh.q)} uses ${pct(sh.d)}; homes ${pct(ho.q)} / ${pct(ho.d)}; military ${pct(mi.q)} / ${pct(mi.d)}`);
+    if (prev && (sh.q > prev.sh.q + 1e-9 || ho.d > prev.ho.d + 1e-9 || Math.abs(mi.q - prev.mi.q) > 1e-9)) mono = false;
+    prev = { sh, ho, mi };
+  }
+  console.log(lines.join("\n"));
+  check(ageShare(ageAtYear(1)) === 0 && ageShare(lootAgeOf({ hour: 80 * 24, mode: "normal" })) === 0, "a normal game's first year: shops and homes as their table says");
+  check(mono, "shops and homes only get worse over the years; the Army's crates do not change");
+  const y5 = statsAt("shop", GUNS, ageAtYear(5)), y1 = statsAt("shop", GUNS, ageAtYear(1)), y12 = statsAt("shop", GUNS, ageAtYear(12));
+  check(y5.q < y1.q - 0.05 && y5.q > y12.q + 0.04, `slowly: a shop's guns ${pct(y1.q)} in year 1, ${pct(y5.q)} in year 5, ${pct(y12.q)} at the floor`);
+  check(ageShare(ageAtYear(9)) === 1 && ageShare(ageAtYear(20)) === 1, "the floor from year 9 on (never worse)");
+  { const F = COND_AGE.SOURCES.shop, A = agedSource("shop", 50); check(A.q[0] === F.q[0] && A.q[1] === F.q[1] && A.d[0] === F.d[0] && A.d[1] === F.d[1] && A.boxed === SHOP.boxed, `the shops' floor: quality ${F.q.map(pct).join("–")}, uses ${F.d.map(pct).join("–")} (a sealed box keeps its own)`); }
+  check(["gunsafe", "police", "military", "soldier", "wreck"].every((src) => agedSource(src, 50) === COND_SOURCES[src]), "locked storage, the Army's and the police's, bodies and wrecks do not age");
+  // The world's clock: a new world, an hour, a load; a hardcore run counts from the fall (its own day 1).
+  const w = createWorld({ seed: 31, factionCount: 6 });
+  check(Math.abs(lootAge() - lootAgeOf(w)) < 1e-12 && Math.abs(lootAge() - COND_AGE.NORMAL_FALL / 112) < 1e-9, `a new normal world: ${lootAge().toFixed(3)} years since the fall (day 1 is ${COND_AGE.NORMAL_FALL} days after it)`);
+  w.hour = 112 * 24 * 4; w.cards = []; tickHour(w);
+  const after = lootAge();
+  check(Math.abs(after - lootAgeOf(w)) < 1e-12 && after > 4, `every hour sets it from the game's day (${after.toFixed(2)} years after 4 game years)`);
+  w.cards = []; w.combat = null;
+  const saved = JSON.parse(JSON.stringify(serializeState(w, { dropCards: true })));
+  setLootAge(0);
+  const back = deserializeState(saved);
+  check(Math.abs(lootAge() - lootAgeOf(back)) < 1e-12 && lootAge() > 4, "a load sets it from the loaded world");
+  const hc = createWorld({ seed: 31, factionCount: 6, mode: "hardcore" });
+  const hcAge = lootAge();
+  check(hc.mode === "hardcore" && hcAge < 0.01, `a hardcore run starts on the day of the fall: ${hcAge.toFixed(3)} years`);
+  check(Math.abs(lootAgeOf({ hour: 400 * 24, mode: "hardcore" }) - lootAgeOf({ hour: (400 - COND_AGE.NORMAL_FALL) * 24, mode: "normal" })) < 1e-9, `a hardcore run's day N is as old as a normal game's day N − ${COND_AGE.NORMAL_FALL}: its first year (the outbreak) counts`);
+  setLootAge(0);
+  // A gun store's cages and safes: the Army's range, not the gun safe's; elsewhere unchanged.
+  check(lockSource("guns", "gunstore") === GUNSTORE_LOCKED && lockSource("guns", "police") === "gunsafe" && lockSource("guns") === "gunsafe" && lockSource("meds", "gunstore") === "shop", "a gun store's gun cage: the military's range; a police one still a gun safe's");
+  check(stashSource(2, "gunstore") === GUNSTORE_LOCKED && stashSource(2, "town") === "gunsafe" && stashSource("riflecase", "gunstore") === "home", "a gun store's gun safe: the military's range; a home's safe still a gun safe's");
+  const cage = statsAt(lockSource("guns", "gunstore"), GUNS, 0), army = statsAt("military", GUNS, 0), safe = statsAt("gunsafe", GUNS, 0), floor = statsAt("shop", GUNS, 0);
+  check(Math.abs(cage.d - army.d) < 1e-9 && cage.d < safe.d && cage.dmin >= 0.59 && cage.q > floor.q + 0.1, `a gun store's cage: uses from ${pct(cage.dmin)} (mean ${pct(cage.d)}, the Army's ${pct(army.d)}, a gun safe elsewhere ${pct(safe.d)}), better than the shop floor (quality ${pct(cage.q)} vs ${pct(floor.q)})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

@@ -17,6 +17,7 @@
 // roll no wear. Crafted items keep the crafting roll (crafting.js makeItem). Starting and recruit gear is not loot
 // (inventory.js START_DUR).
 import { GEAR } from "./data.js";
+import { YEAR_DAYS } from "./eras.js"; // the game year (112 days); eras.js imports nothing
 
 // q: quality range; d: uses left as a share of full. name: what the source is (the report table, tools/itemcondtest.js).
 // boxed (optional): { p, q, d }: a share p of the finds roll from these ranges instead (a sealed box at the back).
@@ -30,7 +31,9 @@ export const COND_SOURCES = {
   gunsafe:  { name: "Gun safes and gun cages", q: [0.75, 1], d: [0.7, 1] },
   police:   { name: "Police and prisons", q: [0.7, 1], d: [0.5, 1] },
   shop:     { name: "Shops (picked-over stock)", ...SHOP },
-  home:     { name: "Homes", q: [0.6, 1], d: [0.4, 1] },
+  // Homes: as picked over as the shops (quality 50–90%, uses 40–90%; before 60–100% and 40–100%): what people left
+  // behind when they ran, and every looter since.
+  home:     { name: "Homes", q: [0.5, 0.9], d: [0.4, 0.9] },
   site:     { name: "Workplaces, farms, the outdoors", q: [0.55, 1], d: [0.3, 1] },
   wreck:    { name: "Wrecks and burned sites", q: [0.4, 0.8], d: [0.15, 0.6] },
   // Bodies, by kit (combat.js KITS; KIT_SOURCE). Professionals look after their kit: a soldier's (and a hired
@@ -53,6 +56,46 @@ export const COND_SOURCES = {
   traderRaider: { name: "Raider and zealot traders", q: [0.45, 0.85], d: [0.3, 0.9] },
   traveller:    { name: "Travellers' packs", q: [0.5, 0.9], d: [0.35, 0.95] },
 };
+
+// ---------- the years since the fall (shops and homes keep getting worse) ----------
+// Shops and homes lie open to the weather: the longer since the fall, the worse what is left in them. Their ranges (q,
+// d above) hold through the first year and a half since the fall (FROM: a normal game's year 1, which starts
+// NORMAL_FALL days after the fall); then they slide, a little every year, to the floor ranges (SOURCES) reached FULL
+// years after the fall (late in a normal game's year 8). Boxed finds keep their own ranges (a sealed box keeps), only the
+// main ranges slide. Locked storage, military crates and bodies do not age (their owners kept them, or the lock did).
+// In years since the fall: a normal game's day 1 is NORMAL_FALL days after it (the middle of a hardcore run's 56–112
+// days to the normal start: hardcore-outbreak.js ERA_OFFSET); a hardcore run starts on the day of the fall itself, so
+// its first year (the outbreak spreading) counts from its own day 1.
+// How far along, at the start of each game year (normal game): year 1 0, year 2 2%, year 3 16%, year 5 45%, year 7 73%,
+// year 8 88%, the floor from late in year 8 (day ~870). A hardcore run's day N is a normal game's day N − 84 here.
+export const COND_AGE = {
+  FROM: 1.5, FULL: 8.5, NORMAL_FALL: 84,
+  SOURCES: {
+    shop: { q: [0.35, 0.72], d: [0.3, 0.7] }, // from 50–88% and 45–85%
+    home: { q: [0.35, 0.75], d: [0.3, 0.75] }, // from 50–90% and 40–90%
+  },
+};
+// The world's age in years since the fall, for the roller (it has no state to hand: set by world.js every hour, at
+// createWorld and on load: noteLootAge). A tool rolling loot with no world sets it itself (setLootAge).
+let LOOT_AGE = 0;
+export const setLootAge = (years) => { LOOT_AGE = Math.max(0, Number(years) || 0); return LOOT_AGE; };
+export const lootAge = () => LOOT_AGE;
+export function lootAgeOf(state) {
+  if (!state || !Number.isFinite(state.hour)) return 0;
+  const days = Math.floor(state.hour / 24) + (state.mode === "hardcore" ? 0 : COND_AGE.NORMAL_FALL);
+  return days / YEAR_DAYS;
+}
+export const noteLootAge = (state) => setLootAge(lootAgeOf(state));
+// How far a source has slid to its floor (0–1) at an age in years since the fall.
+export const ageShare = (years) => Math.max(0, Math.min(1, (years - COND_AGE.FROM) / (COND_AGE.FULL - COND_AGE.FROM)));
+// A source's ranges at an age: its own, slid toward its floor.
+export function agedSource(source, years = LOOT_AGE) {
+  const S = COND_SOURCES[source] || COND_SOURCES.site;
+  const F = COND_AGE.SOURCES[source], t = F ? ageShare(years) : 0;
+  if (!t) return S;
+  const mix = (a, b) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  return { ...S, q: mix(S.q, F.q), d: mix(S.d, F.d) };
+}
 
 // Where a source comes from. A site type (data.js LOCATIONS), anything not listed: "site".
 export const SITE_SOURCE = {
@@ -85,7 +128,10 @@ export function areaSource(area, site = null) {
   if (area === "armory") return site === "military" ? "military" : "police";
   return AREA_SOURCE[area] || (site ? siteSource(site) : "site");
 }
-export const lockSource = (loot) => LOCK_SOURCE[loot] || "site";
+// A gun store's gun cages and safes (site "gunstore"): the military's range, not the gun safe's. The lock is still
+// worth opening (better than the shop floor), but a store's back room does not beat the Army's own crates.
+export const GUNSTORE_LOCKED = "military";
+export const lockSource = (loot, site = null) => { const s = LOCK_SOURCE[loot] || "site"; return s === "gunsafe" && site === "gunstore" ? GUNSTORE_LOCKED : s; };
 export const kitSource = (kit) => KIT_SOURCE[kit] || "survivor";
 export const traderSource = (type) => (type === "merchants" ? "merchant" : TRADER_SOURCE[type] || "trader");
 
@@ -114,11 +160,12 @@ const r2 = (v) => Math.round(v * 100) / 100;
 
 // The condition one item gets from a source: { quality, dur } (dur: uses left, or null for an item that does not
 // wear). opts.quality: a quality fixed by the caller (the armoured dead's own table), only the wear is rolled.
-/** @param {string} key @param {string} source @param {any} roll @param {{ quality?: number }} [opts] */
+// opts.age: years since the fall (else the world's: noteLootAge); shops and homes slide with it (COND_AGE).
+/** @param {string} key @param {string} source @param {any} roll @param {{ quality?: number, age?: number }} [opts] */
 export function rollCondition(key, source, roll, opts = {}) {
   const d = GEAR[key];
   if (!d) return null;
-  const S0 = COND_SOURCES[source] || COND_SOURCES.site;
+  const S0 = agedSource(source, opts.age != null ? opts.age : LOOT_AGE);
   const base = rollBase(roll);
   const S = S0.boxed && mix01(base, key, source, "box") < S0.boxed.p ? S0.boxed : S0; // a boxed one (shops): its own ranges
   const quality = opts.quality != null ? opts.quality : rollsQuality(key) ? r2(lerp(S.q, mix01(base, key, source, "q"))) : 1;
@@ -128,7 +175,7 @@ export function rollCondition(key, source, roll, opts = {}) {
 
 // Gives an item (made by inventory.js newItem) its condition from a source, in place. Returns the item.
 const ROLLED = new WeakSet(); // tools/itemcondtest.js: every piece of loot passed through here
-/** @param {any} item @param {string} source @param {any} roll @param {{ quality?: number }} [opts] */
+/** @param {any} item @param {string} source @param {any} roll @param {{ quality?: number, age?: number }} [opts] */
 export function condition(item, source, roll, opts = {}) {
   const c = item && rollCondition(item.key, source, roll, opts);
   if (!c) return item;
