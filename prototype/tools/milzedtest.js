@@ -131,7 +131,7 @@ section("Their bite, their armour, critical hits (combat.js meleeOdds, damage, C
     `20 raw, walker / soldier / riot cop: ${cut.map((r) => `${r.w}${r.how === "bash" ? " butt" : ""} ${r.walker}/${r.sol}/${r.riot}`).join(", ")} (a riot vest does not stop rifle rounds)`);
   // Critical hits: × CRIT_MULT, through the armour. The battle's dice forced (hit, crit or not, the lowest damage).
   const forced = (critOn, fn) => { const real = b.rng; b.rng = Object.assign(Object.create(real), { chance: (p) => (p >= 1 || critOn.length ? critOn.shift() ?? true : true), int: (lo) => lo }); try { return fn(); } finally { b.rng = real; } };
-  const strikeAt = (z, w, crit) => { z.hp = z.maxHp = 500; z.plateDur = 1; z.x = me.x + 1; z.y = me.y; z.aware = true; z.face = [-1, 0]; me.weapon = w; me.ap = 2; b.phase = "player"; b.queue = []; const hp0 = z.hp; forced([true, crit], () => combatAct(st, { type: "melee", unit: me.id, target: z.id })); return r2(hp0 - z.hp); };
+  const strikeAt = (z, w, crit) => { me.struck = null; z.hp = z.maxHp = 500; z.plateDur = 1; z.x = me.x + 1; z.y = me.y; z.aware = true; z.face = [-1, 0]; me.weapon = w; me.ap = 2; b.phase = "player"; b.queue = []; const hp0 = z.hp; forced([true, crit], () => combatAct(st, { type: "melee", unit: me.id, target: z.id })); return r2(hp0 - z.hp); };
   const lo = WEAPONS.knife.dmg[0];
   const wN = strikeAt(walker, "knife", false), wC = strikeAt(walker, "knife", true), sN = strikeAt(sol, "knife", false), sC = strikeAt(sol, "knife", true);
   check(CRIT_MULT === 2 && wN === lo && wC === lo * CRIT_MULT && sC === lo * CRIT_MULT && sN === r2(lo * MILDEAD.ARMOR.soldier.w.knife),
