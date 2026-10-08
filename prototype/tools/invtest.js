@@ -41,19 +41,22 @@ section("Migration");
   const s = { id: newId(), name: "Old Timer", alive: true, traits: [], skills: { shooting: 5 }, health: 100, location: { kind: "base", baseId: h.id },
     gear: { weapon: { key: "pistol", name: GEAR.pistol.name, quality: 1 }, armor: { key: "padding", name: "Magazine arm guards", quality: 1, dur: 4 }, tool: { key: "backpack", name: "Improvised backpack", quality: 0.9 } } };
   state.survivors.push(s);
-  check(armorPower(s) === 0.6, "armor works before migration (arm guards counted where they are)");
+  // Armour protects by its condition (armour.js armourCond: durability left of the piece's GEAR dur).
+  const guards = 0.6 * (0.5 + 0.5 * 4 / GEAR.padding.dur);
+  check(Math.abs(armorPower(s) - guards) < 1e-9, "armor works before migration (arm guards counted where they are)");
   ensureInv(s);
   check(s.gear.arms && s.gear.arms.key === "padding" && !s.gear.armor, "arm guards moved from body to arms");
   check(s.gear.backpack && s.gear.backpack.key === "backpack" && !s.gear.tool, "backpack moved from the tool slot to the backpack slot");
   check(packOf(s) && packOf(s).length === GEAR.backpack.slots, `pack slots added (${packOf(s) && packOf(s).length})`);
   check(s.pockets.length === 4 && s.pockets.every((x) => x === null), "4 empty pockets added");
   check(s.gear.head === null && s.gear.legs === null, "head and legs slots added");
-  check(armorPower(s) === 0.6, "armor unchanged by migration");
+  check(Math.abs(armorPower(s) - guards) < 1e-9, "armor unchanged by migration");
   // The old combined football pads and helmet: split into pads (body) + helmet (head).
   const f = { id: newId(), name: "Linebacker", alive: true, traits: [], skills: {}, gear: { weapon: null, armor: { key: "sportspads", name: "Football pads and helmet", quality: 1, dur: 7 }, tool: null } };
   ensureInv(f);
   check(f.gear.armor.name === "Football pads" && f.gear.head && f.gear.head.key === "footballhelmet", "old football pads + helmet split into two pieces");
-  check(f.gear.head.dur === 7 && Math.abs(armorPower(f) - 1.2) < 1e-9, `the split keeps the old armor 1.2 (got ${armorPower(f)}) and wear (${f.gear.head.dur})`);
+  const split = 0.8 * (0.5 + 0.5 * 7 / GEAR.sportspads.dur) + 0.4 * (0.5 + 0.5 * 7 / GEAR.footballhelmet.dur);
+  check(f.gear.head.dur === 7 && Math.abs(armorPower(f) - split) < 1e-9, `the split keeps the old armor ${Math.round(split * 100) / 100} (got ${armorPower(f)}) and wear (${f.gear.head.dur})`);
   const g = { id: newId(), name: "Helmeted", alive: true, traits: [], skills: {}, gear: { armor: { key: "sportspads", name: "Football pads and helmet", quality: 1 }, head: item("riothelmet") } };
   ensureInv(g);
   check(g.gear.head.key === "riothelmet", "a split does not replace a helmet already worn");

@@ -20,6 +20,9 @@ import { hash01 } from "./skills.js";
 import { mergeMix } from "./zombietypes.js";
 import { swarmArmor } from "./carriers.js";
 import { truckDeadShare } from "./miltrucks.js";
+import { ammoPen, CALIBERS } from "./data-ammo.js";
+import { roundOf, AR } from "./armour.js";
+import { WEAPONS } from "./combat.js";
 
 export const MILDEAD = {
   // × damage by weapon key (combat.js WEAPONS); other: anything not listed of that kind (shot / melee).
@@ -43,6 +46,18 @@ export const MILDEAD = {
       },
     },
   },
+  // Weapons not in the tables above (the overhaul's guns and melee weapons): by calibre, by melee class (w.mclass).
+  CAL: {
+    soldier: { "22lr": 0.35, "9mm": 0.5, "45acp": 0.5, "357": 0.6, "12ga": 0.6, "556": 0.75, "762x39": 0.75, "308": 0.8, "3030": 0.7, "50bmg": 1 },
+    riot: { "22lr": 0.5, "9mm": 0.7, "45acp": 0.7, "357": 0.7, "12ga": 0.75, "556": 1, "762x39": 1, "308": 1, "3030": 1, "50bmg": 1 },
+  },
+  MCLASS: {
+    soldier: { blade: 0.45, pierce: 0.85, chop: 0.7, blunt: 0.85, heavy: 1 },
+    riot: { blade: 0.5, pierce: 0.75, chop: 0.6, blunt: 0.6, heavy: 0.8 },
+  },
+  // Their plates wear (plateDur 1 → 0, a dead soldier's or riot cop's own): the plate as a piece (armour.js wear rule),
+  // and how far the round's penetration over the weapon's common round moves the multiplier (PEN_SPAN a step).
+  PLATE: { soldier: { dmax: 45, mat: "ceramic" }, riot: { dmax: 25, mat: "hard" } }, PEN_SPAN: 40, PEN_CLAMP: [0.2, 1.6],
   // Blades that find the gap from behind or on the unaware (armour ignored).
   STAB: ["knife", "machete", "sawmachete", "springmachete", "pipespear", "spear", "fireaxe"],
   // Share among a site's dead, by site type; NEAR: within 1 tile of a military site (the cordon), ROAD: within 2 on a
@@ -85,7 +100,39 @@ export function armorVs(t, a, hit) {
   if (hit.crit || hit.sneak) return 1;
   const w = a && a.weapon;
   if (hit.how === "bash") return A.bash; // a gun butt
-  return A.w[w] ?? (hit.how === "melee" ? A.melee : A.shot);
+  const m = baseVs(t.ztype, w, hit);
+  // The round against what the weapon's common round does (section 2): AP gets through better, HP worse; and the
+  // plates wear (plateDur): m' = 1 − (1 − m) × clamp(1 − (pen − penCommon) / 40, 0.2, 1.6) × plateDur^0.5.
+  const W = WEAPONS[w];
+  let k = 1;
+  if (hit.how === "shot" && W && W.cal && CALIBERS[W.cal]) {
+    const pen = roundOf(a, hit).pen, common = ammoPen(W.cal, CALIBERS[W.cal].base);
+    k = Math.max(MILDEAD.PEN_CLAMP[0], Math.min(MILDEAD.PEN_CLAMP[1], 1 - (pen - common) / MILDEAD.PEN_SPAN));
+  }
+  const dur = Math.max(0, Math.min(1, t.plateDur ?? 1));
+  return round(Math.min(1, 1 - (1 - m) * k * Math.sqrt(dur)));
+}
+// × by weapon key, else by calibre, else by melee class, else the kind's shot / melee figure.
+function baseVs(kind, w, hit) {
+  const A = MILDEAD.ARMOR[kind];
+  if (A.w[w] != null) return A.w[w];
+  const W = WEAPONS[w];
+  if (W && W.cal && MILDEAD.CAL[kind] && MILDEAD.CAL[kind][W.cal] != null && hit.how === "shot") return MILDEAD.CAL[kind][W.cal];
+  if (W && W.mclass && MILDEAD.MCLASS[kind] && MILDEAD.MCLASS[kind][W.mclass] != null && hit.how === "melee") return MILDEAD.MCLASS[kind][W.mclass];
+  return hit.how === "melee" ? A.melee : A.shot;
+}
+// A hit on one of them (combat.js damage, real hits only): their plates lose durability by the armour.js wear rule
+// (raw × the round's ad × material / 10 / the plate's dmax), half of it when the hit mostly got through. Crits and
+// blades in the gap do not touch the plate.
+export function wearPlate(t, a, hit, raw) {
+  const P = t && MILDEAD.PLATE[t.ztype];
+  if (!P || !hit || hit.crit || hit.sneak || !(hit.how === "shot" || hit.how === "melee" || hit.how === "bash") || !(raw > 0)) return 0;
+  const r = roundOf(a, hit);
+  const ad = r.ad === "bite" ? AR.BITE_AD[P.mat] : r.ad;
+  const m = armorVs(t, a, hit);
+  const loss = (raw * ad * (AR.WEAR[P.mat] ?? 1)) / 10 / P.dmax * (m >= 0.85 ? 0.5 : 1);
+  t.plateDur = round(Math.max(0, (t.plateDur ?? 1) - loss));
+  return loss;
 }
 // A blade from behind (the half it does not face) or on one that has not noticed you finds the gap.
 export function stabsGap(a, t) {
@@ -163,12 +210,14 @@ export function hordeMilitaryPickup(state, h) {
 
 // ---------- their bodies ----------
 // What one of them carries: { sup: { ammo: 6 }, gear: [items] } (newItem: a function(key, quality, worn): inventory.js, worn part-way). null: not armoured.
-export function bodyLoot(rng, kind, newItem) {
+// plateDur: what their plates had left when they fell (wearPlate; null: never hit): the body armour's durability × it.
+export function bodyLoot(rng, kind, newItem, plateDur = null) {
   const B = MILDEAD.BODY[kind];
   if (!B) return null;
   const sup = {}, gear = [];
   const q = ([lo, hi]) => Math.round((lo + rng.next() * (hi - lo)) * 100) / 100;
-  for (const [k, p, range] of B.armor) if (rng.chance(p)) { gear.push(newItem(k, q(range), rng)); break; }
+  const worn = (it) => { if (plateDur != null && it.dur != null) it.dur = Math.max(1, Math.round(it.dur * Math.max(0, Math.min(1, plateDur)))); return it; };
+  for (const [k, p, range] of B.armor) if (rng.chance(p)) { gear.push(worn(newItem(k, q(range), rng))); break; }
   for (const [k, p, range] of B.items) if (rng.chance(p)) gear.push(newItem(k, q(range), rng));
   for (const [k, p, lo, hi] of B.sup) if (rng.chance(p)) sup[k] = (sup[k] || 0) + rng.int(lo, hi);
   return { sup, gear };
