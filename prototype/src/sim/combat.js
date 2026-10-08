@@ -90,6 +90,8 @@ import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
 import * as MED from "./medics.js";
+import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
+import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -1617,7 +1619,7 @@ export function los(b, x0, y0, x1, y1) {
 
 // How far a unit sees from where it stands: its sight (night, a flashlight, night vision: stealth.js), +HEIGHT.SIGHT
 // a level up, + optics (binoculars, a thermal at night: u.optic, stealth.js).
-export const sightRange = (b, a, x = a.x, y = a.y) => a.sight + HEIGHT.SIGHT * hAt(b, x, y) + (a.optic || 0);
+export const sightRange = (b, a, x = a.x, y = a.y) => a.sight + HEIGHT.SIGHT * hAt(b, x, y) + (a.optic || 0) + (a.vsight || 0); // vsight: a ballistic visor down (helmets.js)
 // Can a unit see a cell? Light shows your people what stands in it out to the full daylight range, however dark: a
 // flare (throwables.js) and, at night, a floodlit cell (deploy.js).
 export function canSeeAt(b, a, x, y) {
@@ -1877,6 +1879,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (b.smoke && b.smoke.length && (smokeAt(b, t.x, t.y) || smokeAt(b, ax, ay))) aim -= SMOKE.aim;
   if (b.flares && b.flares.length && a.side === "player" && (b.night || b.dark) && flareLit(b, t.x, t.y)) aim += FLARE.aim;
   if (a.stun) aim -= a.stun.aim; // still seeing spots from a flashbang (throwables.js FLASH)
+  aim += visorAim(a, b) + linkAim(b, a, t) - dazedAim(a); // helmets.js: a visor down (fogged, cracked); hearing.js: a team headset's callout, dazed by a bang
   // Shooting down from higher ground (a walkway, a roof, a watchtower: verticality).
   const up = inside(ax, ay) ? hAt(b, ax, ay) - hAt(b, t.x, t.y) : 0;
   if (up > 0) aim += Math.min(HEIGHT.MAX_AIM, up * HEIGHT.AIM);
@@ -2254,7 +2257,7 @@ export function enemyGhosts(b) {
     const g = b.ghosts[e.id];
     if (!g || e.side !== "enemy" || e.dead || e.left || e.fled || e.off || playerSees(b, e)) continue;
     if (b.floors && (g[3] || 0) !== (b.floor || 0)) continue; // last seen on another floor: not drawn on this one
-    out.push({ id: e.id, x: g[0], y: g[1], turn: g[2], f: g[3] || 0, kind: e.kind, name: e.name, unit: e });
+    out.push({ id: e.id, x: g[0], y: g[1], turn: g[2], f: g[3] || 0, kind: e.kind, name: e.name, unit: e, heard: !!g[4] }); // heard: heard, not seen (hearing.js heardGhosts)
   }
   return out;
 }
@@ -2300,6 +2303,7 @@ export function playerUnit(b, s) {
   MED.fitMedic(u, s); // medics.js: a med kit in a pocket or the pack counts too
   loadMag(u); // the gun starts the battle loaded
   fitArmour(u, s); // armour.js: the worn pieces (per-hit armour) and the Tough trait
+  fitHeadgear(u, s); // hearing.js: ear protection, the helmet's muffle, the team headset, the visor
   syncModes(u); // gunfire.js: the gun's fire modes
   return u;
 }
@@ -2326,6 +2330,7 @@ export function refitUnit(b, u, s) {
   if (u.spearOut && u.weapon === u.spearOut.key) { delete u.spearOut; unarm(b, u, s); } // its spear still lies where it was thrown
   if (u.weapon !== held) u.jam = null; // another gun: the jammed one is put away
   fitArmour(u, s); // armour.js: the pieces worn now
+  fitHeadgear(u, s); // hearing.js: the ears and the visor as worn now
   syncModes(u);
   refitSenses(b, u, s); // stealth.js: a flashlight, night vision, scope or suppressor counts at once
 }
@@ -2360,6 +2365,7 @@ export function enemyUnit(b, rng, kind, power, n) {
   u.q = enemyGunQ(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id, kind); // gunfire.js: their gun's condition by their kit (itemcond.js kitSource; jams; the looted gun keeps it), own dice
   u.cond = enemyGunCond(rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id, kind); // its durability share (a worn gun jams more)
   syncModes(u);
+  kitHeadgear(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // helmets.js: a helmet and ear protection by kit (own dice)
   enemyPieces(b, u); // armour.js: their body armour as a piece that wears (the loot keeps what is left)
   kitFlashbangs(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // throwables.js FLASH_KIT: a soldier's or a guard's flashbang (its own dice)
   return u;
@@ -2767,6 +2773,7 @@ export function fire(b, a, t, opts = {}) {
   const noise = shotNoise(b, a, w); // stealth.js: a suppressor halves it (and wears a shot)
   b.noise += noise;
   if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise; // camp danger (fieldheat.js noteGunfire): a muffled shot counts half
+  deafen(b, a.x, a.y, bangOf(b, a, w, noise, mode), a); // hearing.js: the bang (one an action; a stream louder)
   if (a.xpT) a.xpT.shots++;
   const rolls = moded ? trig.fired : trig.jam ? 0 : 1; // a gun without modes (or a bow: no rounds at all) makes one roll unless it jammed
   const line = sayFirst(b);
@@ -2845,6 +2852,7 @@ export function suppress(b, a, x, y) {
   b.noise += noise;
   if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise;
   if (a.xpT) a.xpT.shots++;
+  if (trig.fired > 0) deafen(b, a.x, a.y, bangOf(b, a, w, noise, gunModes(w) && gunModes(w).auto ? "auto" : "burst"), a); // hearing.js
   const pinned = trig.fired > 0 ? coneTargets(b, a, x, y, foesOf(b, a)) : [];
   for (const t of pinned) {
     t.suppressed = SUPPRESS.TURNS;
@@ -3056,6 +3064,13 @@ export function combatAct(state, act) {
       unjam(b, u);
       break;
     }
+    case "visor": { // helmets.js: raise or lower the visor (free)
+      const why = toggleVisor(b, u);
+      if (why) return why;
+      say(b, `${u.name} ${u.visorUp ? "raises" : "lowers"} the visor.`, "info");
+      bump(b);
+      return "";
+    }
     case "firemode": {
       syncModes(u);
       const mode = act.mode || u.modes[(u.modes.indexOf(u.mode) + 1) % Math.max(1, u.modes.length)]; // no mode given: the next one
@@ -3250,6 +3265,7 @@ export function combatAct(state, act) {
       const noise = shotNoise(b, u, w); // stealth.js: a suppressor halves it
       b.noise += noise;
       if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise;
+      deafen(b, u.x, u.y, bangOf(b, u, w, noise, "single"), u); // hearing.js
       tap(b, u, t);
       if (noise && b.raid) alertNear(b, u.x, u.y, (9 + w.noise * 2) * (noise / w.noise), noise < w.noise ? "The muffled shot still carries." : "The gunshot alerts everything nearby.");
       else if (noise && noise < w.noise) alertNear(b, u.x, u.y, (9 + w.noise * 2) * (noise / w.noise), "The muffled shot still carries.");
@@ -3299,6 +3315,7 @@ export function endPlayerTurn(state) {
   b.phase = "enemy";
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
   stunTurnStart(b, ["enemy", "third"]); // throwables.js: the ones a flashbang caught lose their actions
+  tickEars(b, ["enemy", "third"]); // hearing.js: their deafness and daze wear off a turn
   nlEnemyPhase(b); // nonlethal.js: the stunned lose actions, the blinded stay blind, the beaten may surrender
   meleeRound(b, ["enemy", "third"]); // the staggered lose an action, the bleeding bleed (melee section)
   // Storeys (buildingmaps.js): the floor the player looks at is kept and restored; the dead drifting between floors
@@ -3353,6 +3370,8 @@ export function runEnemyPhase(state) {
 }
 
 function startPlayerTurn(state, b) {
+  heardGhosts(b); // hearing.js: the enemies your people heard move or fire unseen ("?" markers), before the ears tick
+  tickEars(b, ["player"]); // hearing.js: deafness and a daze wear off a turn
   stunTurnEnd(b, ["enemy", "third"]); // throwables.js: their stun wears off with the enemy turn
   b.turn++;
   b.phase = "player";
@@ -4014,6 +4033,7 @@ export function escapeOdds(b, u, carrying = null, field = null) {
   add("armor worn", -RETREAT.ARMOR * (u.armLoad || 0));
   add(`Scouting ${u.scouting || 0}`, RETREAT.SCOUTING * (u.scouting || 0));
   add("night", b.night || b.dark ? RETREAT.NIGHT : 0);
+  add("team headset", linkEscape(b, u)); // hearing.js: a linked teammate calls the way out
   add("smoke cover", b.smoke && b.smoke.length && smokeAt(b, u.x, u.y, SMOKE.near) ? SMOKE.retreat : 0); // a smoke grenade (throwables.js)
   add(carrying ? `carrying ${carrying.name}` : "", carrying ? -RETREAT.CARRY : 0);
   const safe = !pinned && (onStrip ? !carrying : !threat && !carrying);
@@ -4384,6 +4404,7 @@ function wearFielded(state, b, fought) {
     dropBroken(state, s); // armour.js: a piece broken or shattered in the fight is gone
     if (u.kitUses && u.medKit && s.gear.tool === u.medKit) wearSlot(state, s, "tool", u.kitUses);
     MED.wearPackKit(state, u, s); // medics.js: a kit in a pocket or the pack
+    settleEars(u, s, fought); // hearing.js: a pair of earplugs used
   }
 }
 

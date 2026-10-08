@@ -28,6 +28,8 @@ import { GEAR } from "./data.js";
 import { gunMods, unitMods, fittedSuppressor, removeMod, modLabel } from "./gunmods.js"; // gun attachments: suppressors, brakes
 import { isNight, survivorById, baseById } from "./world.js";
 import { EQUIP_SLOTS, packOf } from "./inventory.js";
+import { helmetNvg } from "./helmets.js"; // night vision goggles on a helmet
+import { hearMult, hearSetup } from "./hearing.js"; // the ears: what a guard hears behind them
 import {
   CELL, WEAPONS, active, adjacent, cornerBlocked, meleeReach, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
   say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash,
@@ -141,6 +143,7 @@ function takeThrowable(state, b, u, key) {
 
 // ---------- battle setup (createBattle / createRaid) ----------
 export function stealthSetup(state, b) {
+  hearSetup(state, b); // hearing.js: visors fog up in freezing or wet weather
   // Night counts in raids and in base battles (a break-in, a raid at the walls: deploy.js, where the floodlights light
   // the dark); other battles keep daylight sight as before.
   const ctxNight = b.setup && b.setup.context ? b.setup.context.night : undefined;
@@ -153,7 +156,7 @@ export function stealthSetup(state, b) {
       const s = survivorById(state, u.sid);
       const tool = s && s.gear.tool;
       setLight(u, s);
-      u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal; // a thermal monocular sees in the dark like night vision (optics.js); so does a thermal sight on the gun (gunmods.js)
+      u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal || helmetNvg(s); // a thermal monocular sees in the dark like night vision (optics.js); so does a thermal sight on the gun (gunmods.js); goggles on the helmet leave the off hand free (helmets.js)
       const t = s ? s.traits || [] : [];
       u.str = (t.includes("tough") ? 5 : 0) + (t.includes("brave") ? 5 : 0) - (t.includes("coward") ? 5 : 0);
       setSuppressor(u, s);
@@ -188,7 +191,7 @@ export function detectRange(b, e, mover, perks = true) {
   if (b.night) r = Math.max(2, Math.round(r * STEALTH.NIGHT_DETECT) + lightSeen(mover)); // a light is seen from further off
   if (b.night && mover.sparks === b.turn) r += 2; // locks.js: an angle grinder's sparks this turn (SAFE.grind.sparks)
   // A person looks the way they face: behind them only what they hear (half the range). The dead have no front.
-  if (e.kind === "human" && isBehind(mover, e)) r = Math.max(1, Math.ceil(r * STEALTH.BEHIND_DETECT));
+  if (e.kind === "human" && isBehind(mover, e)) r = Math.max(1, Math.ceil(r * STEALTH.BEHIND_DETECT * hearMult(e))); // hearing.js: deafened by a bang (from a tile only), ear protection
   if (perks && mover.ghost) r = Math.min(r, 2);
   return r;
 }
@@ -635,7 +638,7 @@ export function refitSenses(b, u, s) {
   if (!s) return;
   const tool = s.gear.tool;
   setLight(u, s);
-  u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal;
+  u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal || helmetNvg(s); // helmets.js: goggles on the helmet
   if (u.daySight != null) u.sight = b.night && !u.nvg ? Math.min(u.daySight, nightSight(u)) : u.daySight;
   u.optic = battleOptic(s, b.night);
   setSuppressor(u, s);

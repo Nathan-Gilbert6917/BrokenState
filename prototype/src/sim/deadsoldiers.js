@@ -87,7 +87,7 @@ export const MILDEAD = {
   // More on them now and then, by dice of their own (a hash of the body's dice position: no draw, so the rest of the
   // body is as it was): a soldier's flashbang, a riot cop's smoke grenade or flashbang (throwables.js FLASH).
   BODY_EXTRA: {
-    soldier: [["flashbang", 0.05, [1, 1]]],
+    soldier: [["flashbang", 0.05, [1, 1]], ["commset", 0.04, [0.4, 0.8]]], // commset: a team headset (helmets.js; section 18.6)
     riot: [["smokegren", 0.05, [1, 1]], ["flashbang", 0.03, [1, 1]]],
   },
 };

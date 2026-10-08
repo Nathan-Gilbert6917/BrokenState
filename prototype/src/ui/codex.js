@@ -11,6 +11,7 @@
 // worm once spotted, an infected wound), a group you know, an outsider party on a live tile. Until then it shows as
 // "???" with its category. state.codex = { seen: { key: day }, fresh: [keys not looked at yet] } is saved with the
 // campaign (sim/save.js writes the whole state); an older save without it opens what its world already shows.
+import { HELMETS, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts (codex lines)
 import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES } from "../sim/data.js";
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
@@ -175,6 +176,10 @@ function itemEntries() {
     if (LOCKED.crafts[k]) stats.push(["Recipe", `locked until ${techName(LOCKED.crafts[k])} is ${CRAFT_BOOKS[LOCKED.crafts[k]] ? "read" : "studied"}`]);
     if (k === "flashbang") stats.push(["Flash", `${FLASH.r} tiles in sight (${FLASH.near} through a doorway): −${FLASH.ap} action next turn (−${FLASH.apNear} within a tile), aim −${FLASH.aim}, no overwatch; facing away: aim −${FLASH.daze}`]);
     if (g.visor) stats.push(["Visor", `takes ${Math.round(FLASH.visor * 100)}% off a flashbang`]);
+    if (g.ears) stats.push(["Ears", `${g.ears.cut} off a bang's loudness, hearing ${g.ears.hear > 0 ? "+" : ""}${g.ears.hear} tiles${g.ears.elec ? ", electronic" : ""}${g.ears.link ? ", team link" : ""}`]); // sim/hearing.js
+    if (HELMETS[k]) stats.push(["Mounts", HELMETS[k].mounts.map((m) => HELM_MOUNTS[m].toLowerCase()).join(", ") || "none (a full shell)"]); // sim/helmets.js
+    if (HELMET_ATTACH[k]) stats.push(["Helmet mount", `${HELM_MOUNTS[HELMET_ATTACH[k].mount].toLowerCase()}${HELMET_ATTACH[k].fits ? `: ${HELMET_ATTACH[k].fits.map((x) => (GEAR[x] ? GEAR[x].name : x).toLowerCase()).join(", ")}` : ""}`]);
+    if (g.ac) stats.push(["Armour class", `${g.ac}${g.blunt ? " (blows and bites only)" : ""}`]);
     stats.push(["Weight", `${g.weight} kg${g.small ? ", fits a pocket" : g.bulky ? ", bulky" : ""}`]);
     out.push({ key: `i:${k}`, cat: "items", name: g.name, sub: cat ? cap(cat.name) : "Item", stats, text: g.desc, how: ITEM_HOW_KEY[k] || ITEM_HOW[g.cat] || TRADE_HOW, sprite: null });
   }

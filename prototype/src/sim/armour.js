@@ -28,6 +28,7 @@ import { WEAPONS } from "./combat.js";
 import { armorMult, ARMOR_SLOTS } from "./inventory.js";
 import { wearSlot, itemDurMax } from "./crafting.js";
 import { log } from "./world.js";
+import { faceOf, FACE } from "./helmets.js"; // the face zone of a head hit: the visor, the face cover
 export { armorMult };
 
 // The pieces (section 17 table: AC, material; dmax is the GEAR dur, checked by tools/armortest.js). Wave 1: the vest
@@ -165,12 +166,13 @@ export function rollLoc(roll, hit) {
   return "torso";
 }
 
-// What protects a location: { spec, cond, piece, backer } or null.
-function guardAt(t, loc) {
+// What protects a location: { spec, cond, piece, backer } or null. shot: a hard hat (GEAR blunt) stops no bullet.
+function guardAt(t, loc, shot = false) {
   const piece = t.pieces && t.pieces[loc];
   if (!piece) return null;
   const spec = armourSpec(piece.key);
   if (!spec) return null;
+  if (shot && GEAR[piece.key] && GEAR[piece.key].blunt) return null;
   if (!armourBroken(piece)) return { spec, cond: armourCond(piece), piece, backer: false };
   if (spec.backer) return { spec: { ac: spec.backer, dmax: spec.dmax, mat: "soft" }, cond: AR.BACKER_COND, piece, backer: true };
   return null;
@@ -186,7 +188,9 @@ export function armourHit(b, t, raw, by, hit) {
   const msgs = [];
   if (!wears(t) && r.soft === 1) return { mult: tough, extra: 0, loc: null, through: true, msgs }; // nothing to roll for
   const loc = rollLoc(hit.crit ? 0 : battleDice(b, "loc"), hit);
-  const g = guardAt(t, loc);
+  // The face (helmets.js; section 18.5): of the head hits on someone wearing a helmet, FACE.SHARE land on the face.
+  if (loc === "head" && t.pieces && t.pieces.head && battleDice(b, "face") < FACE.SHARE) return faceHit(b, t, raw, r, hit, msgs, tough);
+  const g = guardAt(t, loc, hit.how === "shot");
   if (!g) return { mult: tough * r.soft, extra: 0, loc, through: true, msgs };
   const through = battleDice(b, "pen") < penChance(r.pen, g.spec.ac, g.cond);
   const mult = through ? throughMult(g.spec.ac) : bluntMult(g.spec.ac);
@@ -198,6 +202,32 @@ export function armourHit(b, t, raw, by, hit) {
   if (!through && loc === "head") msgs.push([`${t.name}'s ${pieceName(g.piece)} stops it.`, "info"]);
   if (!g.backer) wearPiece(g.piece, raw, r, through, t, msgs);
   return { mult: mult * tough, extra: extra * tough, loc, through, piece: g.piece, msgs };
+}
+
+// A hit on the face (armourHit): what covers it (helmets.js faceOf: nothing with the visor up). Bites and blows: × the
+// cover's FACE.SOFT, a bite wears it FACE.BITE_WEAR (a built-in visor: the helmet). Shots: a ballistic visor rolls its
+// AC 3 like any piece (and cracks like ceramic: cracked, it covers nothing), a riot visor AC 1, a motorcycle visor or a
+// football cage nothing. Uncovered: the whole hit (a soft point's bonus too).
+function faceHit(b, t, raw, r, hit, msgs, tough) {
+  const f = faceOf(t);
+  const bare = { mult: tough * r.soft, extra: 0, loc: "head", face: true, through: true, msgs };
+  if (!f || f.cracked) return bare;
+  const cover = f.item || t.pieces.head;
+  if (hit.how !== "shot") {
+    if (r.ad === "bite") takeDur(cover, FACE.BITE_WEAR);
+    else wearPiece(cover, raw, r, false, t, msgs);
+    return { mult: tough * (FACE.SOFT[f.kind] ?? 0.4), extra: 0, loc: "head", face: true, through: false, piece: cover, msgs };
+  }
+  const ac = f.kind === "ballistic" && f.item ? armourSpec(f.item.key).ac : f.kind === "riot" ? FACE.RIOT_AC : 0;
+  if (!ac) return bare;
+  const cond = f.item ? armourCond(f.item) ?? 1 : 1;
+  const through = battleDice(b, "facepen") < penChance(r.pen, ac, cond);
+  if (f.item) {
+    wearPiece(f.item, raw, r, through, t, msgs);
+    if (f.kind === "ballistic" && armourBroken(f.item)) msgs.push([`Visor cracked! ${t.name} can barely see through it.`, "danger"]);
+  }
+  if (!through) msgs.push([`${t.name}'s visor stops it.`, "info"]);
+  return { mult: tough * (through ? throughMult(ac) : bluntMult(ac)), extra: 0, loc: "head", face: true, through, piece: f.item || null, msgs };
 }
 
 // Points off a piece (fractions kept in item.chip; whole points come off dur).
@@ -233,7 +263,7 @@ export function armourExpect(t, by, hit) {
   const tough = t.tough ?? 1;
   const r = roundOf(by, hit);
   if (!wears(t) && r.soft === 1) return tough;
-  const one = (loc) => { const g = guardAt(t, loc); return g ? pieceMult(r.pen, g.spec.ac, g.cond) : r.soft; };
+  const one = (loc) => { const g = guardAt(t, loc, !!hit && hit.how === "shot"); return g ? pieceMult(r.pen, g.spec.ac, g.cond) : r.soft; };
   if (hit && hit.crit) return tough * one("head");
   const W = weights(hit);
   let tot = 0, sum = 0;
@@ -275,6 +305,9 @@ export function enemyPieces(b, u) {
   const seed = b && b.dseed != null ? b.dseed : b && b.rng ? b.rng.state : 0;
   const q = AR.ENEMY_DUR[0] + (AR.ENEMY_DUR[1] - AR.ENEMY_DUR[0]) * hash01("enemyarmour", seed, u.id, u.name);
   u.pieces = { torso: s ? { key, name: GEAR[key].name, dur: Math.max(1, Math.round(s.dmax * q)) } : null, head: null, arms: null, legs: null };
+  // Their helmet by kit (helmets.js kitHeadgear: u.helmKey), its own durability roll (the body drops it as it is left).
+  const hs = u.helmKey && GEAR[u.helmKey] ? armourSpec(u.helmKey) : null;
+  if (hs) u.pieces.head = { key: u.helmKey, name: GEAR[u.helmKey].name, dur: Math.max(1, Math.round(hs.dmax * (AR.ENEMY_DUR[0] + (AR.ENEMY_DUR[1] - AR.ENEMY_DUR[0]) * hash01("enemyhelmet", seed, u.id, u.name)))) };
   if (u.tough == null) u.tough = 1;
   return u.pieces;
 }

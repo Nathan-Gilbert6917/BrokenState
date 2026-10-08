@@ -1976,6 +1976,14 @@ function drawUnitIso(ctx, state, b, s, H, now) {
 function drawGhost(ctx, state, b, q, H) {
   const s = { t: q.unit, wx: q.x + 0.5, wy: q.y + 0.5, z: standZ(b, q.x, q.y) };
   const [X, Y] = feet(s), S = FR.S;
+  if (q.heard) { // heard, not seen (sim/hearing.js): a "?" with sound arcs, no silhouette
+    ctx.strokeStyle = "rgba(255,209,102,0.7)"; ctx.lineWidth = 1.5;
+    for (const k of [5, 8, 11]) { ctx.beginPath(); ctx.arc(X, Y - 8 * S, k * S, -Math.PI * 0.3, Math.PI * 0.3); ctx.stroke(); ctx.beginPath(); ctx.arc(X, Y - 8 * S, k * S, Math.PI * 0.7, Math.PI * 1.3); ctx.stroke(); }
+    ctx.font = `800 ${Math.max(12, Math.round(5 * S))}px Segoe UI, sans-serif`;
+    ctx.textAlign = "center"; ctx.fillStyle = "rgba(255,209,102,0.95)";
+    ctx.fillText("?", X, Y - 5 * S);
+    return;
+  }
   ctx.globalAlpha = 0.3;
   drawBody(ctx, state, b, s, H, true);
   ctx.globalAlpha = 1;

@@ -18,6 +18,8 @@ import { rescueOptions } from "../sim/rescueraid.js"; // a rescue raid on a grou
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, heldDown, searchCost, STEALTH } from "../sim/stealth.js";
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
 import { LIGHTS } from "../sim/lights.js";
+import { LISTEN } from "./soundcues.js"; // deafened: the battle is heard muffled through the selected unit's ears
+import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chips, the Visor toggle (sim/helmets.js)
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
 import { partyCapacity, cargoLoad, poolLoad } from "../sim/parties.js";
@@ -50,6 +52,7 @@ let W = MAP_W, H = MAP_H;
 const ENEMY_STEP_MS = 420;
 
 export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false }; // autoPlay: the AI plays your side (cb-autoplay)
+LISTEN.sel = () => cui.sel; // ui/soundcues.js: whose ears the battle is heard through
 let canvas = null, ctx = null;
 const geo = { cs: 40, ox: 0, oy: 0 };
 
@@ -503,6 +506,8 @@ function gunButtons(state, b, u, btn) {
   let html = "";
   const key = (id, def) => keyLabel(id, 1) || def;
   const modes = unitModes(u);
+  const vs = visorState(u); // sim/helmets.js: a visor to raise or lower (free)
+  if (vs) html += btn("visor", vs === "down" ? "Visor up" : "Visor down", vs === "down" ? "Free: raise the visor. No aim or sight lost to it (or to its fog), but the face is bare: bites and blows to it do their full damage." : "Free: lower the visor over the face: bites and blows to the face count much less (a ballistic visor stops bullets too), at a little aim (a ballistic visor 2 and a tile of sight; 3 more fogged up in the cold or the rain).", true, key("battle.visor", "Shift+Y"));
   if (isRanged(u) && modes.length > 1) {
     const m = curMode(u), next = modes[(modes.indexOf(m) + 1) % modes.length];
     html += btn("firemode", `Fire: ${MODE_NAME[m] || m}`, `Free: switch the fire mode (${modes.map((x) => MODE_NAME[x] || x).join(" → ")}). Now ${m}; next ${next}. Single: 1 round, the best aim. Burst: 2–3 rounds, each its own roll at a little less aim. Auto: 10–15 rounds, worse aim, the best for suppressing and overwatch. Overwatch reactions fire in this mode.`, true, key("battle.firemode", "Shift+F"));
@@ -533,6 +538,7 @@ function gunOrder(state, b, u, v, d) {
     act(state, { type: "firemode", unit: u.id, mode: d.mode && l.includes(d.mode) ? d.mode : l[(l.indexOf(curMode(u)) + 1) % l.length] });
     return true;
   }
+  if (v === "visor") { if (!visorState(u)) { cui.msg = "No visor to raise or lower."; return true; } act(state, { type: "visor", unit: u.id }); return true; }
   if (v === "unjam") { if (!u.jam) { cui.msg = "The gun is not jammed."; return true; } act(state, { type: "unjam", unit: u.id }); return true; }
   if (v === "suppress") {
     if (!canSuppressUI(u)) { cui.msg = "Suppressing fire needs a gun with a burst or automatic mode."; return true; }
@@ -1075,7 +1081,7 @@ export function renderCombatPanel(state) {
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
     const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`)) + (p.draggedBy != null ? `, dragged by ${(unitById(b, p.draggedBy) || {}).name || "someone"}` : "") :
-      [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.jam ? "JAMMED" : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.suppressed > 0 ? "Suppressed" : "", p.spearOut ? "Spear thrown" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
+      [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), ...earStatus(p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.jam ? "JAMMED" : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.suppressed > 0 ? "Suppressed" : "", p.spearOut ? "Spear thrown" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !alive(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = alive(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     // A building with storeys: everyone's floor (dimmer when it is not the one shown).
@@ -1736,6 +1742,7 @@ function previewHtml(b, state = null) {
   }
   // A last-seen ghost (sim/combat.js enemyGhosts): where an enemy was when your people last saw it.
   const ghost = (v.ghosts || []).find((g) => g.x === h.x && g.y === h.y && !v.vis[h.y * W + h.x]);
+  if (ghost && ghost.heard) return `<b>Heard something</b> <span class="muted">here on turn ${ghost.turn}: moving or firing, out of sight. Your people hear what they cannot see within a few tiles (ear protection and helmets change how far; nothing while deafened).</span>`;
   if (ghost) return `<b>${esc(ghost.name)}</b> <span class="muted">last seen here on turn ${ghost.turn}. Nobody sees this tile now: it may have moved.</span>`;
   if (b.phase === "deploy") {
     const k = b.cells[h.y * W + h.x].k;
@@ -2313,8 +2320,19 @@ function drawBuildingNames(b, cs) {
   }
 }
 
-// A ghost: a faded silhouette with "?" and the turn it was last seen.
+// A ghost: a faded silhouette with "?" and the turn it was last seen. Heard, not seen (sim/hearing.js heardGhosts): a
+// "?" with sound arcs, no silhouette (nobody saw who it was).
 function drawGhost(state, b, g, cx, cy, cs) {
+  if (g.heard) {
+    ctx.strokeStyle = "rgba(255,209,102,0.7)";
+    ctx.lineWidth = 1.5;
+    for (const k of [0.22, 0.34, 0.46]) { ctx.beginPath(); ctx.arc(cx, cy, cs * k, -Math.PI * 0.3, Math.PI * 0.3); ctx.stroke(); ctx.beginPath(); ctx.arc(cx, cy, cs * k, Math.PI * 0.7, Math.PI * 1.3); ctx.stroke(); }
+    ctx.font = `800 ${Math.max(10, Math.round(cs * 0.42))}px Segoe UI, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,209,102,0.95)";
+    ctx.fillText("?", cx, cy + cs * 0.15);
+    return;
+  }
   ctx.globalAlpha = 0.32;
   drawSprite(ctx, unitCanvas(state, b, g.unit, cui.salt), cx, cy, cs, { facing: unitFacing(b, g.unit), lying: false, alpha: 1 });
   ctx.globalAlpha = 1;

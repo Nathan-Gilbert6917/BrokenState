@@ -29,6 +29,7 @@ import { SEARCH } from "../sim/search.js";
 import { ask } from "./confirm.js"; // breaking down anything above junk asks first (one confirmation style)
 import { isGunKey } from "./gunart.js"; // a gun (not a bow or a blade): the gun builder opens on it
 import { gunTipText, slotOfPart, SLOT_NAMES as PART_SLOT_NAMES } from "./gunbuilder.js"; // the gun builder (ui/gunbuilder.js)
+import { isHelmet, isHelmetPart, helmetSlots, helmetChoices, helmetFitReason, fitHelmetAt, stripHelmetAt, helmetLabel, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts: visors, night vision, a light, ear protection
 import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -57,6 +58,8 @@ export function itemTip(item, s = null) {
   const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
   if (d.slot === "weapon") bits.push(`power ${d.power}${d.req ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}`);
   if (d.slot === "weapon" && item.mods) bits.push(modsText(item)); // sim/gunmods.js: what is fitted and the net effect
+  if (isHelmet(item.key)) bits.push(`${item.mods ? `fitted: ${helmetLabel(item).replace(/^[^(]*\(|\)$/g, "")}; ` : ""}mounts: ${helmetSlots(item).map((m) => HELM_MOUNTS[m].toLowerCase()).join(", ") || "none (a full shell)"}`); // sim/helmets.js
+  if (isHelmetPart(item.key) && !GEAR[item.key].ears) bits.push(`helmet part (${HELM_MOUNTS[HELMET_ATTACH[item.key].mount].toLowerCase()}): select a helmet and fit it`);
   if (d.slot === "weapon" && isGunKey(item.key)) { const g = gunTipText(item); if (g) bits.push(g); } // ui/gunbuilder.js: its slots, its load, how reliable
   if (ATTACH[item.key]) bits.push(`gun attachment (${MOUNT_NAMES[ATTACH[item.key].mount].toLowerCase()}): ${attachText(item.key)}; fits ${fitsText(item.key)}; fit it in the gun builder (⚙ Modify on the gun)`);
   else if (slotOfPart(item.key)) bits.push(`gun part (${(PART_SLOT_NAMES[slotOfPart(item.key)] || slotOfPart(item.key)).toLowerCase()}): fit it in the gun builder (⚙ Modify on the gun)`);
@@ -184,7 +187,7 @@ function selBar(state, ui, place) {
     ${isGunCase(item) && from.o !== "body" ? `<button class="mini" data-action="inv-opencase"${tip(`Inside: ${caseText(item)}${item.locked ? " (locked: prised open with a blade or a crowbar)" : ""}. Opening it here is free: the gun goes into ${st ? st.name : "storage"}, the rounds into the stores.`)}>${item.locked ? "Prise open" : "Open"} case</button>` : ""}
     ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" ? repairButtons(state, ui, item, from, place) : ""}
     <button class="mini" data-action="inv-cancel">Cancel</button>
-    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" && !state.combat ? modBar(state, ui, item) : ""}</div>`;
+    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" && !state.combat ? modBar(state, ui, item) + helmetBar(state, ui, item) : ""}</div>`;
 }
 // Gun parts (the gun builder, ui/gunbuilder.js): on a gun, Modify opens it; on a loose part, Modify for each gun on the
 // person whose inventory is open that takes it (the builder opens on that gun at the part's slot).
@@ -200,6 +203,30 @@ function modBar(state, ui, item) {
     const guns = locs.map((l) => [l, itemAt(state, l)]).filter(([, g]) => g && g !== item && isGunKey(g.key) && !modFitReason(g, item));
     const btns = guns.map(([l, g]) => `<button class="mini" data-action="gb-open" data-loc="${l}" data-slot="${slot}"${tip(`Open the gun builder on ${s.name.split(" ")[0]}'s ${g.name} at its ${(PART_SLOT_NAMES[slot] || slot).toLowerCase()}: fit the ${item.name} there${g.mods && g.mods[slot] ? ` (the ${g.mods[slot].name} comes off)` : ""}.`)}>⚙ ${esc(g.name)}</button>`);
     return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Gun part (${esc((PART_SLOT_NAMES[slot] || slot).toLowerCase())}); fits ${esc(fitsText(item.key))}.</span> ${btns.join(" ") || `<span class="muted">${esc(first(s))} has no gun it fits.</span>`}</div>`;
+  }
+  return "";
+}
+// A helmet's mounts (sim/helmets.js): a box per mount with what is on it (× takes it off) or the parts within reach
+// that fit it; a loose helmet part: fit it to the helmet the person wears. No time; not in a fight.
+function helmetBar(state, ui, item) {
+  const box = (label, body) => `<span class="chip" style="display:inline-flex;gap:0.2rem;align-items:center"><span class="muted">${esc(label)}:</span> ${body}</span>`;
+  if (isHelmet(item.key)) {
+    const choices = helmetChoices(state, ui.invSel, ui.inv && ui.inv.sid);
+    const slots = helmetSlots(item);
+    const boxes = slots.map((m) => {
+      const on = item.mods && item.mods[m];
+      if (on) return box(HELM_MOUNTS[m], `${esc(on.name)} <button class="mini" data-action="inv-helmstrip" data-mount="${m}"${tip(`Take the ${on.name} off the ${item.name} (into storage, or carried)`)}>×</button>`);
+      const fit = choices.filter((c) => HELMET_ATTACH[c.item.key].mount === m);
+      return box(HELM_MOUNTS[m], fit.length ? fit.map((c) => `<button class="mini" data-action="inv-helmfit" data-part="${c.loc}"${tip(`Fit the ${c.item.name} to the ${item.name}`)}>${esc(c.item.name)}</button>`).join(" ") : `<span class="muted">empty</span>`);
+    });
+    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><span class="muted">Helmet mounts:</span> ${boxes.join(" ") || `<span class="muted">none: a full shell (only earplugs in a pocket protect the ears)</span>`}</div>`;
+  }
+  if (isHelmetPart(item.key) && ui.inv) {
+    const s = survivorById(state, ui.inv.sid);
+    const h = s && s.gear && s.gear.head;
+    if (!h || !isHelmet(h.key) || h === item) return "";
+    const why = helmetFitReason(h, item);
+    return `<div class="row small" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.3rem"><button class="mini" data-action="inv-helmon" ${why ? "disabled" : ""}${tip(why || `Fit the ${item.name} to ${first(s)}'s ${h.name}`)}>Fit to ${esc(h.name)}</button></div>`;
   }
   return "";
 }
@@ -583,6 +610,10 @@ export const INV_ACTIONS = {
   "inv-fitmod": (state, ui, d) => { if (!ui.invSel) return; const gun = itemAt(state, ui.invSel); ui.invMsg = fitModAt(state, ui.invSel, d.mod); reselect(state, ui, gun); },
   "inv-unmod": (state, ui, d) => { if (ui.invSel && ui.inv) ui.invMsg = unfitModAt(state, ui.invSel, d.mount, ui.inv.sid); },
   "inv-fitto": (state, ui, d) => { if (ui.invSel) ui.invMsg = fitModAt(state, d.gun, ui.invSel); ui.invSel = d.gun; },
+  // Helmet mounts (sim/helmets.js fitHelmetAt / stripHelmetAt).
+  "inv-helmfit": (state, ui, d) => { if (!ui.invSel) return; const h = itemAt(state, ui.invSel); ui.invMsg = fitHelmetAt(state, ui.invSel, d.part, ui.inv && ui.inv.sid); reselect(state, ui, h); },
+  "inv-helmstrip": (state, ui, d) => { if (ui.invSel) ui.invMsg = stripHelmetAt(state, ui.invSel, d.mount, ui.inv && ui.inv.sid); },
+  "inv-helmon": (state, ui) => { if (!ui.invSel || !ui.inv) return; ui.invMsg = fitHelmetAt(state, `s:${ui.inv.sid}:head`, ui.invSel, ui.inv.sid); ui.invSel = null; },
   "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
   // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks first (ui/confirm.js).
   // Repairs and salvage (sim/repair.js, sim/inventory.js salvageAt).

@@ -29,7 +29,8 @@ import { condition, kitSource, spend } from "./itemcond.js"; // the condition lo
 import { armourCond, lootArmour } from "./armour.js"; // per-hit armour: condition, an enemy body's worn piece
 import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it fought in
 import { MEDS } from "./medfinds.js"; // how rare meds are
-import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
+import { burnOf, burnShare } from "./woodcutting.js";
+import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet and ear protection on its body // the firewood an item makes (call-time only: safe in the import cycle)
 
 export const POCKETS = 4;
 export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to this (plate carrier alone is 4)
@@ -648,7 +649,8 @@ export function enemyBody(rng, u, kit) {
   if (worn) { spend(rng); body.gear.armor = worn; }
   else if (u.armorKey && GEAR[u.armorKey]) body.gear.armor = lootItem(u.armorKey, src, spend(rng));
   if (body.gear.armor && !lootArmour(u, body.gear.armor)) body.gear.armor = null; // armour.js: the durability its piece had left after the fight (broken: none)
-  for (const it of u.arsArmour || []) if (it !== worn && GEAR[it.key] && !body.gear[GEAR[it.key].slot]) body.gear[GEAR[it.key].slot] = it; // a helmet, arm or leg guards
+  for (const it of u.arsArmour || []) if (it !== worn && GEAR[it.key] && !body.gear[GEAR[it.key].slot]) body.gear[GEAR[it.key].slot] = it; else if (it !== worn && GEAR[it.key]) earsOnBody(body, it); // a helmet, arm or leg guards; ear protection (helmets.js issueEars)
+  dropHeadgear(u, body, src); // helmets.js: a kit helmet at the wear it ended with, ear protection (own dice)
   if (body.gear.weapon) lootGun(u, body.gear.weapon); // gunfire.js: the quality and condition their gun fought (and jammed) in
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = lootItem(kit.pack[0], src, spend(rng));
   if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
