@@ -44,6 +44,7 @@ import { herded, sensesOf } from "../sim/decoys.js";
 import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent, bodyAt as humanBodyAt, bodyName, unitBodyLoad, carRoom } from "../sim/carriers.js"; // the Carrier: bodies in danger, the risen, bodies carried, shot or burnt
 import { statusIcons } from "./status.js"; // the survivor behind a unit: low mood, starving, thirsty, infected, sick (its own hit points are the bar)
 import { barkFrame } from "./barks.js"; // combat barks: short speech bubbles over the units' heads
+import { ingestMarks } from "./battlemarks.js"; // blood, brass and scorch read off each action's fx before the short fx list drops them
 import { iso, drawIso, project, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor, ISO_ZOOMS, LV, liftOf } from "./isoview.js";
 import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
 import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy
@@ -314,6 +315,7 @@ function follow(b) {
 function act(state, a) {
   const b = state.combat;
   const err = combatAct(state, a);
+  if (b) ingestMarks(b, performance.now());
   cui.msg = err || "";
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
@@ -1159,6 +1161,7 @@ export function combatTick(state, now) {
     cui.endAsk = cui.retreatAsk = cui.fallAsk = null;
     cui.mode = "move";
     SIM.autoPlayerTurn(state);
+    ingestMarks(b, now);
     cui.sel = null;
     if (state.combat === b && b.phase === "player") autoSelect(b);
     return true;
@@ -1170,6 +1173,7 @@ export function combatTick(state, now) {
   for (let i = 0; i < 30 && b.phase === "enemy" && !b.over; i++) {
     const before = b.fxSeq;
     const u = enemyStep(state);
+    ingestMarks(b, now);
     if (!u) break;
     // Pause only when something happened that the player can see.
     if (b.fx.some((f) => f.seq > before && (f.type !== "move" || playerSees(b, u)))) break;

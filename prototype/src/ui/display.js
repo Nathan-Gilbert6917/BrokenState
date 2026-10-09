@@ -5,7 +5,9 @@
 // owns: M (minimap), ` (dev tools, when they are shown) and Shift+P (autopilot, a dev tool) are all in displayKey.
 import { setPalette } from "./palette.js";
 import { setReadable, setMapAnim, redrawMap, view } from "./render.js";
-import { MINIMAP_SIZES } from "./displayopts.js";
+import { MINIMAP_SIZES, BATTLE_LOOK_LEVELS } from "./displayopts.js";
+import { setMarksLevel } from "./battlemarks.js"; // Battle ground marks
+import { setEdgeLevel } from "./battleedge.js"; // Battle map edge
 import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -33,6 +35,8 @@ export function applyDisplay() {
   }
   setReadable({ text: OPT.bigText ? BIG_TEXT : 1, still: !!OPT.calm });
   setMapAnim(OPT.mapAnim !== false && !OPT.calm);
+  setMarksLevel(OPT.battleMarks || "full");
+  setEdgeLevel(OPT.battleEdge || "full");
 }
 
 // The Dev button and the ` key: with "Show dev tools" on, or while the dev tools are open (a tool or the desktop
@@ -44,6 +48,7 @@ export const devButton = (ui) => (devAllowed(ui)
 
 // The rows added to the Options tab's Display section.
 export function displayRows(o) {
+  const look = (act, v, label, t) => `<label${tip(t)}>${label} <select data-action="${act}">${Object.entries(BATTLE_LOOK_LEVELS).map(([k, l]) => `<option value="${k}" ${(v || "full") === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>`;
   const box = (k, on, label, t) => `<button class="setopt ${on ? "active" : ""}" data-action="dsp-opt" data-k="${k}"${tip(t)}>${on ? "✔" : "✗"} ${label}</button>`;
   return `<div class="setrow">
       ${box("cbPalette", o.cbPalette, "Colour-blind-safe colours", "Blue and orange instead of green and red for good and bad (moods, stock, odds, health, friend and foe), purple instead of red for the Infection layer and hive land, and the battle's threat lines and hit chances in the same colours")}
@@ -54,6 +59,10 @@ export function displayRows(o) {
       ${box("minimap", o.minimap !== false, "Minimap", "The whole state in the map's bottom-right corner: your bases and teams, the hordes and hives you know of, and the part on screen; click or drag on it to look there (M)")}
       <label${tip("How big the minimap is (it also grows with the UI size)")}>size <select data-action="dsp-mmsize"${o.minimap !== false ? "" : " disabled"}>${Object.entries(MINIMAP_SIZES).map(([k, s]) => `<option value="${k}" ${o.minimapSize === k ? "selected" : ""}>${s.label}</option>`).join("")}</select></label>
       ${box("devTools", o.devTools, "Show dev tools", "The Dev button in the top bar and the ` key: reveal the map, autopilot, fast forward, the frame rate and the trackers. For testing; they are not part of the game")}
+    </div>
+    <div class="setrow">
+      ${look("dsp-bmarks", o.battleMarks, "Battle ground marks", "What a fight leaves on the ground for the rest of it: blood where someone was hit or fell, spent brass under the shooters, scorch marks and ash where grenades, Molotovs, rockets and fire went off, broken glass. Light: blood, scorch and glass only. Off for slow machines (the bodies always stay)")}
+      ${look("dsp-bedge", o.battleEdge, "Battle map edge", "The ground running on a few tiles past the battle map's edges and fading into fog the colour of the sky (night, the weather), with a soft vignette. Light: a narrower plain strip, no vignette. Off: the fog colour behind the map")}
     </div>`;
 }
 
@@ -69,7 +78,10 @@ export const DISPLAY_ACTIONS = {
   "dsp-opt": (ui, d) => toggle(ui, d.k),
   "mm-toggle": (ui) => toggle(ui, "minimap"),
 };
+const setLook = (k, v) => { if (OPT && Object.hasOwn(BATTLE_LOOK_LEVELS, v)) { OPT[k] = v; if (SAVE) SAVE(); applyDisplay(); } };
 export const DISPLAY_CHANGE = {
+  "dsp-bmarks": (ui, el) => setLook("battleMarks", el.value),
+  "dsp-bedge": (ui, el) => setLook("battleEdge", el.value),
   "dsp-mmsize": (ui, el) => { if (OPT && MINIMAP_SIZES[el.value]) { OPT.minimapSize = el.value; if (SAVE) SAVE(); applyDisplay(); } },
 };
 
