@@ -14,6 +14,7 @@
 // fizz and sizzle; the 40 mm thoonk and the rocket's launch are gun voices (ui/gunsfx.js gl40, rocket).
 import { rngOf, hashStr, noiseLayer, toneLayer, metalLayer, shape, rollTail } from "./sfxdsp.js";
 import { spatialOut, busOf, place, GUN_TRIM, GUNVOL, HANDLING } from "./gunsfx.js";
+import { groupGain, assignGroup } from "./soundgroups.js"; // the mixer: Explosions and grenades
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // size: 0–1.2 (merging, ducking, the distance rolloff); level: the body's peak; crack { amp, tau, hp }; sub { f0, f1,
@@ -45,7 +46,8 @@ export const BLASTS = {
   glass:    { label: "Bottle (glass)", size: 0.05, level: 0.4, smash: true, rumble: { amp: 0.02, len: 0.3, lp: 500 }, len: 0.6 },
   clatter:  { label: "Something lands (clatter)", size: 0.02, level: 0.3, clatter: true, rumble: { amp: 0.02, len: 0.3, lp: 500 }, len: 0.6 },
 };
-export const BLAST_TRIM = 0.89; // all blasts under the effects slider: up 5 dB with the guns (a frag still well over a rifle), × the Gunfire volume
+assignGroup(Object.keys(BLASTS).map((k) => `blast:${k}`).concat(["fireloop"]), "weapons.blasts"); // the mixer's names for these (tools/soundmixtest.js)
+export const BLAST_TRIM = 0.89; // all blasts under the effects slider: up 5 dB with the guns (a frag still well over a rifle), × the Explosions and grenades group
 export const BIG = new Set(["pipebomb", "frag", "gl40", "rocket", "vehicle", "secondary", "flash"]);
 
 // Grenade handling and the small things (rendered like the gun handling, ui/gunsfx.js HANDLING).
@@ -61,6 +63,7 @@ Object.assign(HANDLING, {
   smash:   [TN(0, 0.5, 220, 120, 0.05, 0.015), NZ(0, 1, 0.12, 0.03, 4200, 0.7), ...[0.004, 0.015, 0.028, 0.04, 0.06, 0.08, 0.11].map((s, i) => MT(s, 0.6 - i * 0.05, [[3000 + i * 410, 0.05, 1], [4700 + i * 330, 0.03, 0.5]], 0.2))],
 });
 
+assignGroup(["pin", "fuse", "light", "strike", "clatter", "smash"].map((k) => `hand:${k}`), "weapons.blasts"); // a throw's handling: Explosions and grenades
 // ---------- rendering ----------
 function norm(buf, peak) {
   let pk = 0;
@@ -181,7 +184,7 @@ export function playBlast(c, t, B, sp = place({})) {
   const K = BLASTS[B.kind] || BLASTS.frag;
   const s2 = blastPlace(sp);
   const n = Math.max(1, B.n || 1);
-  const out = spatialOut(c, s2, { gain: BLAST_TRIM * GUNVOL.v * Math.min(1.6, 1 + 0.25 * (n - 1)) * (B.gain ?? 1), raw: true });
+  const out = spatialOut(c, s2, { gain: BLAST_TRIM * GUNVOL.v * groupGain("weapons.blasts") * Math.min(1.6, 1 + 0.25 * (n - 1)) * (B.gain ?? 1), raw: true });
   const tb = t + s2.delay, b = bufs(c, B.kind);
   const s = c.createBufferSource(); s.buffer = b.body; s.connect(out); s.start(tb);
   if (b.tail) { const g = c.createGain(); g.gain.value = (sp.tail ?? 1) * Math.min(1.5, 1 + 0.2 * (n - 1)); const st = c.createBufferSource(); st.buffer = b.tail; st.connect(g); g.connect(out); st.start(tb + 0.01); }

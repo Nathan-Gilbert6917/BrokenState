@@ -440,21 +440,27 @@ console.log("The map");
   lay.update({ horde: 1, hive: 0, near: 1, size: 900, big: 1, night: 1, close: 1 }, 1, 2);
   check(lay.level <= Z.MAP_LEVELS.horde * 2 + 1e-9 && !S2.bad.length, `at full level and the slider at the top the bed is ${lay.level.toFixed(2)} into a soft limiter, then the ambience bus`);
   const AU = await import("../src/ui/audio.js");
-  const so = AU.soundOptions({});
-  check(so.horde === 0.7 && AU.hordeVolume(so.horde) === 1 && AU.hordeVolume(0) === 0 && AU.hordeVolume(1) > 1.9 && AU.soundOptions({ sound: { horde: 5 } }).horde === 1,
-    "the Map horde volume: 70% by default (× 1), 0 is silent, 100% about +6 dB, bad values clamped");
-  // The Zombie volume: 0–150%, 100% the new louder level; the zombie bus +4 dB into a soft limiter.
-  const zo = AU.soundOptions({ sound: { zombie: 9 } }), zd = AU.soundOptions({});
-  check(zd.zombie === 1 && zo.zombie === 1.5 && AU.soundOptions({ sound: { zombie: -1 } }).zombie === 0 && Z.zombieVolume(1) === 1 && Z.zombieVolume(1.5) === 2.25 && Z.zombieVolume(0) === 0,
-    "the Zombie volume: 100% by default, up to 150% (× 2.25), clamped");
-  const zh = AU.soundOptionsHtml({ sound: { zombie: 1.2 } });
-  check(/data-k="zombie"/.test(zh) && /max="150"[^>]*value="120"|value="120"[^>]*max="150"|max="150" step="5" value="120"/.test(zh), "Options → Sound has the Zombies slider (0–150%) at the saved level");
+  // The old Map horde and Zombie volumes become the mixer's groups (ui/soundgroups.js) at the same loudness.
+  const so = AU.soundOptions({ sound: { horde: 1, zombie: 1.2 } }), sh = AU.soundOptions({ sound: { horde: 5 } }), sd = AU.soundOptions({});
+  check(Math.abs(so.groups["zombies.hordes"] - 1 / 0.7) < 1e-3 && so.groups.zombies === 1.2 && Math.abs(sh.groups["zombies.hordes"] - 1 / 0.7) < 1e-3 && !sd.groups["zombies.hordes"],
+    "an old Map horde volume becomes the Map hordes group (70% → 100%, 100% → 143%, bad values clamped), an old Zombie volume the Zombies group");
+  check(Z.zombieVolume(1) === 1 && Z.zombieVolume(1.5) === 2.25 && Z.zombieVolume(0) === 0 && AU.soundOptions({ sound: { zombie: 9 } }).groups.zombies === 1.5, "a slider value to a gain: squared, up to 150% (× 2.25), clamped");
+  const zh = AU.soundOptionsHtml({ sound: { groups: { zombies: 1.2 } } });
+  check(/max="150" step="5" value="120" data-action="snd-grp" data-g="zombies"/.test(zh), "Options → Sound has the Zombies group (0–150%) at the saved level");
   const S3 = stub();
   const busOut = S3.ctx.createGain();
   const zb = Z.makeZombieBus(S3.ctx, busOut);
+  const setTo = [];
+  const keepSet = zb.input.gain.setValueAtTime;
+  zb.input.gain.setValueAtTime = (x, t) => { setTo.push(x); return keepSet(x, t); };
   zb.setVolume(1.5, 0, true);
-  check(Math.abs(20 * Math.log10(Z.ZOMBIE_BUS_GAIN) - 4) < 0.05 && zb.comp && zb.comp.ratio.value >= 10 && !S3.bad.length, `the zombie bus: +${(20 * Math.log10(Z.ZOMBIE_BUS_GAIN)).toFixed(1)} dB, a soft limiter (ratio ${zb.comp.ratio.value}) and a soft clip at -1 dBFS`);
-  check(/data-k="horde"/.test(AU.soundOptionsHtml({ sound: { horde: 0.4 } })) && /value="40"/.test(AU.soundOptionsHtml({ sound: { horde: 0.4 } })), "Options → Sound has the Map hordes slider at the saved level");
+  zb.setGain(0.5, 0, true);
+  check(Math.abs(20 * Math.log10(Z.ZOMBIE_BUS_GAIN) - 2) < 0.05 && Math.abs(setTo[0] - Z.ZOMBIE_BUS_GAIN * 2.25) < 1e-9 && Math.abs(setTo[1] - Z.ZOMBIE_BUS_GAIN * 0.5) < 1e-9 && zb.comp && zb.comp.ratio.value >= 10 && !S3.bad.length,
+    `the zombie bus: +${(20 * Math.log10(Z.ZOMBIE_BUS_GAIN)).toFixed(1)} dB (was +4) × the Crowd murmur group, a soft limiter (ratio ${zb.comp.ratio.value}) and a soft clip at -1 dBFS`);
+  AU.soundMixer.open = true;
+  const mh = AU.soundOptionsHtml({ sound: { groups: { "zombies.hordes": 0.4 } } });
+  AU.soundMixer.open = false;
+  check(/value="40" data-action="snd-grp" data-g="zombies.hordes"/.test(mh) && /data-g="zombies.hive"/.test(mh), "the Advanced mixer has Map hordes (at the saved level) and Hive drone");
 }
 
 // ---------- 7b. routing (gun-sfx's spatial chain) ----------
@@ -468,16 +474,15 @@ console.log("Routing");
   const head = (o = {}) => Z.zRoute(S.ctx, null, 0, o).gain.value; // out null: on a context with a battle bus it is not used
   const g1 = head({ dist: 0 });
   G.setGunVolume(2.25);
-  const gGuns = head({ dist: 0 });
-  Z.setZombieVolume(1.5);
-  const gZ = head({ dist: 0 }), gun = G.GUNVOL.v;
-  Z.setZombieVolume(0);
-  const g0 = head({ dist: 0 });
-  Z.setZombieVolume(1); G.setGunVolume(1);
-  const far = head({ dist: 0, far: true }), d12 = head({ dist: 12 });
-  check(Math.abs(g1 - Z.ZOMBIE_BUS_GAIN) < 1e-9 && gGuns === g1 && Math.abs(gZ - Z.ZOMBIE_BUS_GAIN * 2.25) < 1e-9 && gun === 2.25 && g0 === 0 && !S.bad.length,
-    `a voice plays into the battle bus at the zombie gain (+4 dB × the Zombies slider: ${g1.toFixed(3)}, at 150% ${gZ.toFixed(3)}, at 0 silent); the Gunfire slider leaves it (${gGuns.toFixed(3)}) and it leaves the Gunfire (${gun})`);
-  check(Math.abs(far / g1 - Z.FAR_GAIN) < 1e-9 && d12 < g1 * 0.8, `a voice made to carry ×${Z.FAR_GAIN}; 12 tiles off it falls with gun-sfx's distance (${(d12 / g1).toFixed(2)})`);
+  const gGuns = head({ dist: 0 }), gun = G.GUNVOL.v;
+  G.setGunVolume(1);
+  const gZ = head({ dist: 0, group: 2.25 }), g0 = head({ dist: 0, group: 0 });
+  const far = head({ dist: 0, far: true }), d12 = head({ dist: 12 }), f16 = head({ dist: 16, far: true }), d16 = head({ dist: 16 });
+  check(Math.abs(g1 - Z.ZOMBIE_VOICE_GAIN) < 1e-9 && gGuns === g1 && Math.abs(gZ - Z.ZOMBIE_VOICE_GAIN * 2.25) < 1e-9 && gun === 2.25 && g0 === 0 && !S.bad.length,
+    `a voice plays into the battle bus at the zombie voice gain (${g1.toFixed(3)}) × its mixer group (at 150% ${gZ.toFixed(3)}, at 0 silent); the guns' gain leaves it (${gGuns.toFixed(3)}) and it leaves the guns (${gun})`);
+  check(Math.abs(far / g1 - Z.FAR_GAIN) < 1e-9 && d12 < g1 * 0.8 && f16 / Z.FAR_GAIN > d16 * 1.2, `a voice made to carry ×${Z.FAR_GAIN} and falls off slower (16 tiles: ${(f16 / Z.FAR_GAIN / g1).toFixed(2)} against ${(d16 / g1).toFixed(2)}); 12 tiles off a voice falls with gun-sfx's distance (${(d12 / g1).toFixed(2)})`);
+  check(Z.EVENT_TRIM.idle > 1 && Z.EVENT_TRIM.aggro < 1 && Z.RECIPE_TRIM.roar < 1 && Math.abs(20 * Math.log10(Z.ZOMBIE_VOICE_GAIN * Z.EVENT_TRIM.idle) - 1.5) < 0.1,
+    `the levels for the mix: voices ${(20 * Math.log10(Z.ZOMBIE_VOICE_GAIN)).toFixed(1)} dB (were +4), moans ${(20 * Math.log10(Z.ZOMBIE_VOICE_GAIN * Z.EVENT_TRIM.idle)).toFixed(1)} dB, aggro ×${Z.EVENT_TRIM.aggro}, a brute's roar ×${Z.RECIPE_TRIM.roar}`);
   const L = Z.zListener(null, { w: 20, h: 20, units: [{ id: 1, side: "player", x: 2, y: 10 }] }, null);
   const near = Z.zPlace(L, 3, 10), away = Z.zPlace(L, 18, 10);
   check(near.sp && away.sp && away.dist > near.dist && away.pan > 0 && away.sp.gain < near.sp.gain && away.sp.lp < near.sp.lp, `headless (no view): heard from your people (${near.dist} tiles: ${near.sp.gain.toFixed(2)}, ${away.dist} tiles to the right: ${away.sp.gain.toFixed(2)}, pan ${away.pan})`);

@@ -22,10 +22,11 @@
 //   you is a low organic drone with a slow heartbeat (the Broodmother). hordeChorus: distant moans under the map sting.
 // zRoute is the one place a voice meets the speakers: ui/gunsfx.js spatialOut (pan by the screen, level and highs by
 //   distance, muffled out of sight, the room's reverb, the battle bus with its ducking and the deafened muffle), at the
-//   zombie gain (ZOMBIE_BUS_GAIN × the Zombie volume). The crowd bed goes through the zombie bus; the map layer through
-//   the ambience bus (both unpositioned).
+//   zombie voice gain (ZOMBIE_VOICE_GAIN with its trims × the event's mixer group, ui/soundgroups.js). The crowd bed
+//   goes through the zombie bus (the Crowd murmur group); the map layer through the ambience bus (Map hordes, Hive drone).
 import { MIDDEAD } from "../sim/hiveconst.js";
-import { spatial, spatialOut, isIndoor, place } from "./gunsfx.js"; // the battle's sound space (shared with the guns, the blows and the steps)
+import { spatial, spatialOut, isIndoor, place } from "./gunsfx.js";
+import { groupGain, groupOf } from "./soundgroups.js"; // the mixer: each event's group (Moans, Attacks, Shrieks, Special) as it is played // the battle's sound space (shared with the guns, the blows and the steps)
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const clamp01 = (v) => clamp(v, 0, 1);
@@ -873,9 +874,11 @@ export function playZombie(ev, c, out, t, o = {}) {
   const rnd = mulberry(hash32(seed ^ Math.imul(++takes, 0x27d4eb2d)));
   const name = recipeFor(kind, ev, rnd);
   if (!name || name === "silent") return name;
+  const group = groupGain(groupOf(EVENT_CUE[ev]) || "zombies"); // the mixer (ui/soundgroups.js): off, nothing is built
+  if (!(group > 0)) return name;
   const vp = voiceParams(seed);
   const far = o.far ?? (ev === "shriek" || ev === "smash");
-  const dest = zRoute(c, out, t, { ...o, far, ev, recipe: name });
+  const dest = zRoute(c, out, t, { ...o, far, ev, recipe: name, group });
   const X = { c, t, vp, rnd, P: PROFILE[kind], g: Number.isFinite(o.gain) ? o.gain : 1, p: vp.pitch * (Number.isFinite(o.pitch) ? o.pitch : 1), o, kind, ev };
   RECIPES[name](X, dest);
   return name;
@@ -886,26 +889,29 @@ export const ZOMBIE_VOICES = Object.fromEntries(Object.entries(EVENT_CUE).map(([
 }]));
 
 // ---------- the zombie bus ----------
-// The crowd bed goes through it on its way to the battle bus (ui/audio.js): a gain (ZOMBIE_BUS_GAIN, +4 dB, × the
-// Zombie volume), a soft limiter (a fast compressor, threshold -6 dB, ratio 12) and a soft clip whose ceiling is -1 dBFS,
-// so a horde never clips whatever the sliders say. The voices take the same gain in zRoute and go through gun-sfx's
-// spatial chain instead (its battle bus and the effects bus's limiter: ui/sfxlab.js makeLimiter). zombieVolume: the slider (0–1.5, 1 the default) to a gain (squared,
-// like the other sliders).
-export const ZOMBIE_BUS_GAIN = 1.259; // the crowd bed: +3 dB over the level it was first made at (+4 with the louder guns, then 1 dB back so the mix fits)
-export const ZOMBIE_VOICE_GAIN = 0.944; // the voices: -0.5 dB (were +4: 4.5 dB back so a firefight into a horde fits under the effects limiter; the moans 2.5 dB back: EVENT_TRIM)
+// The crowd bed goes through it on its way to the battle bus (ui/audio.js): a gain (ZOMBIE_BUS_GAIN, +2 dB, × the
+// mixer's Crowd murmur group), a soft limiter (a fast compressor, threshold -6 dB, ratio 12) and a soft clip whose
+// ceiling is -1 dBFS, so a horde never clips whatever the sliders say. The voices go through gun-sfx's spatial chain
+// instead (zRoute: its battle bus and the effects bus's limiter, ui/sfxlab.js makeLimiter). zombieVolume: a 0–1.5
+// slider value to a gain (squared, like the other sliders).
+// The levels came down for the mixer (the user: zombie voices down a touch so everything fits without the limiter
+// working as hard): in a firefight into a horde of 24 the effects limiter was pulling 1.3 dB on average, 5 dB at most,
+// 84% of the time; now about 0.1 dB, 2.5 at most, a third of the time (tools/zombiesfxpreview.cjs; the report).
+export const ZOMBIE_BUS_GAIN = 1.259; // the crowd bed: +2 dB over the level it was first made at (was +4)
+export const ZOMBIE_VOICE_GAIN = 0.944; // the voices: -0.5 dB (were +4), the moans at +1.5 (EVENT_TRIM)
 export const ZOMBIE_CEIL = 0.891;     // -1 dBFS
 export const ZOMBIE_TRIM = 0.785;         // × after the limiter: undoes the make-up gain browsers add to a compressor (measured)
 export const zombieVolume = (v = 1) => clamp(Number.isFinite(Number(v)) ? Number(v) : 1, 0, 1.5) ** 2;
-// The Zombie volume as a gain, read by zRoute as each voice is played (ui/audio.js applyGains sets it from the slider).
+// An extra gain on every voice, read by zRoute (1; the mixer's groups do the player's volumes; the measuring tools use it).
 export const ZOMVOL = { v: 1 };
 export function setZombieVolume(v) { ZOMVOL.v = zombieVolume(v); }
 // Trims on top of ZOMBIE_VOICE_GAIN, by event and by recipe: the moans 2 dB back up (2.5 dB under where they were, still
-// well over the old groan), a bite at arm's length 1 dB off, the loudest (a runner's shriek or a brute's roar as it spots you) 2 dB more off, and a
-// brute's roar 1.5 dB more again (it was louder than a screamer's shriek at arm's length), so a horde charging does not
-// pin the limiter and the screamer's call is the one that carries.
+// well over the old groan); a bite at arm's length 1 dB off; the loudest (a runner's shriek or a brute's roar as it
+// spots you) 2 dB more off, and a brute's roar 1.5 dB more again (it was louder than a screamer's shriek at arm's
+// length). So a horde charging does not pin the limiter, and the screamer's call is the one that carries.
 export const EVENT_TRIM = { idle: 1.259, aggro: 0.79, bite: 0.89 };
 export const RECIPE_TRIM = { roar: 0.84 };
-export const FAR_GAIN = 1.1; // a voice made to carry (the screamer's shriek, a smash): a little over the rest at any distance
+export const FAR_GAIN = 1.1; // a voice made to carry (the screamer's shriek, a smash): a little over the rest, and it falls off slower (CARRY)
 const CLIP = new Map();
 function softClip(k) { // linear to 0.7 of the ceiling, then a tanh knee up to it
   let cv = CLIP.get(k);
@@ -925,7 +931,7 @@ export function makeZombieBus(c, dest, o = {}) {
   const input = gainN(c, ZOMBIE_BUS_GAIN);
   let tail = input;
   let comp = null;
-  if (o.limiter === false) { input.connect(dest); return { input, comp, setVolume(v, t = c.currentTime) { input.gain.setValueAtTime(ZOMBIE_BUS_GAIN * zombieVolume(v), t); } }; }
+  if (o.limiter === false) { input.connect(dest); return { input, comp, setVolume(v, t = c.currentTime) { input.gain.setValueAtTime(ZOMBIE_BUS_GAIN * zombieVolume(v), t); }, setGain(g, t = c.currentTime) { input.gain.setValueAtTime(ZOMBIE_BUS_GAIN * g, t); } }; }
   if (c.createDynamicsCompressor) {
     comp = c.createDynamicsCompressor();
     comp.threshold.value = -6; comp.knee.value = 4; comp.ratio.value = 12; comp.attack.value = 0.002; comp.release.value = 0.2;
@@ -940,9 +946,11 @@ export function makeZombieBus(c, dest, o = {}) {
   } else tail.connect(dest);
   return {
     input, comp,
-    setVolume(v, t = c.currentTime, now = false) {
-      const g = ZOMBIE_BUS_GAIN * zombieVolume(v);
-      if (now) input.gain.setValueAtTime(g, t); else input.gain.setTargetAtTime(g, t, 0.08);
+    setVolume(v, t = c.currentTime, now = false) { this.setGain(zombieVolume(v), t, now); },
+    // The mixer's Crowd murmur group (ui/soundgroups.js groupGain: × Zombies): a gain, ramped.
+    setGain(k, t = c.currentTime, now = false) {
+      const g = ZOMBIE_BUS_GAIN * Math.max(0, Number(k) || 0);
+      if (now) input.gain.setValueAtTime(g, t); else input.gain.setTargetAtTime(g, t, 0.06);
     },
   };
 }
@@ -950,9 +958,10 @@ export function makeZombieBus(c, dest, o = {}) {
 // ---------- where a voice is heard from ----------
 // The one place a zombie voice meets the speakers: gun-sfx's spatial chain (ui/gunsfx.js spatialOut: level and highs
 // by distance, muffled out of sight, pan, the room's reverb send, into the battle bus with its ducking and the deafened
-// muffle, then the effects bus and its limiter). The voice's level is the zombie gain: ZOMBIE_BUS_GAIN (+4 dB) × the
-// Zombie volume (ZOMVOL; so the Gunfire slider never touches the dead, nor this one the guns or the blows), × FAR_GAIN
-// for a voice made to carry. o.sp: the placement soundcues gave the cue (gunsfx.js spatial); else { pan, dist, seen,
+// muffle, then the effects bus and its limiter). The voice's level: ZOMBIE_VOICE_GAIN × its trims (EVENT_TRIM, RECIPE_TRIM)
+// × o.group (the mixer's gain for the event's group, ui/soundgroups.js: Moans, Attacks, Shrieks, Special, each × Zombies;
+// so the Gunfire group never touches the dead, nor these the guns or the blows) × FAR_GAIN for a voice made to carry ×
+// ZOMVOL (1: a lever for the measuring tools). o.sp: the placement soundcues gave the cue (gunsfx.js spatial); else { pan, dist, seen,
 // room } of its own (the sound test: near and in front). out: where it goes on a context with no battle bus (spatialOut
 // finds the bus on the context; a bare offline render or a test stub has none).
 // A voice made to carry (o.far) also falls off more slowly past CARRY.FROM tiles (half the distance counts), so the
@@ -1401,7 +1410,8 @@ export function makeMapLayer(c, out, t = c.currentTime, o = {}) {
   const s = c.createBufferSource();
   s.buffer = B.dense; s.loop = true; s.playbackRate.value = 0.82;
   s.connect(bp); s.start(t, 1.3);
-  const hiveG = gainN(c, 0, out);
+  const hiveOut = gainN(c, 1, out); // the Hive drone group (its drone and heartbeat)
+  const hiveG = gainN(c, 0, hiveOut);
   const breathe = gainN(c, 0.7, hiveG); // the drone breathes (0.4–1 of its level)
   const dlp = biq(c, "lowpass", 140, 0.7, breathe);
   const o1 = osc(c, "sine", 41, t, 1e5, gainN(c, 0.5, dlp)), o2 = osc(c, "sine", 43.7, t, 1e5, gainN(c, 0.4, dlp));
@@ -1412,8 +1422,9 @@ export function makeMapLayer(c, out, t = c.currentTime, o = {}) {
   const rnd = mulberry(0xbeef);
   return {
     nodes: 22, idleSince: null, nextSwell: t + 1 + rnd() * 2, swellEnd: 0, nextBeat: t + 0.5, lv: null, beats: 0, swells: 0,
-    update(lv, now, vol = 1) {
+    update(lv, now, vol = 1, hiveVol = 1) {
       this.lv = lv;
+      hiveOut.gain.setTargetAtTime(hiveVol, now, 0.06);
       this.level = lv.horde * MAP_LEVELS.horde * vol;
       level.gain.setTargetAtTime(this.level, now, 1.5);
       lp.frequency.setTargetAtTime(350 + 800 * lv.close + 500 * lv.night + 600 * (lv.big || 0), now, 2);
@@ -1431,8 +1442,8 @@ export function makeMapLayer(c, out, t = c.currentTime, o = {}) {
         if (this.nextBeat < now) this.nextBeat = now + 0.05;
         while (this.nextBeat < now + 0.6) {
           const bt = this.nextBeat, pk = lv.hive * MAP_LEVELS.beat;
-          beat(c, out, bt, 52, pk, rnd);
-          beat(c, out, bt + 0.24, 44, pk * 0.7, rnd);
+          beat(c, hiveOut, bt, 52, pk, rnd);
+          beat(c, hiveOut, bt + 0.24, 44, pk * 0.7, rnd);
           this.beats++;
           this.nextBeat += 1.35 - 0.25 * lv.hive;
         }
@@ -1448,11 +1459,11 @@ function beat(c, out, t, f, peak, rnd) {
 }
 const MAPS = new WeakMap();
 // ui/audio.js every ambience tick on the map: lv from hordeAmbience (null: nothing, e.g. in a battle or on the title);
-// vol: the Map horde volume (× the horde's level; 1 at the default).
-export function zombieMapAmbience(c, out, lv, t = c.currentTime, vol = 1) {
+// vol: the Map hordes group's gain (× the horde's level; 1 at the default); hiveVol: the Hive drone group's.
+export function zombieMapAmbience(c, out, lv, t = c.currentTime, vol = 1, hiveVol = 1) {
   let L = lv || { horde: 0, hive: 0, near: 99, size: 0, big: 0, night: 0, close: 0 };
   const d = DEMO.map;
-  if (d && t < d.until) L = { horde: 0.9, hive: d.hive ? 0.8 : 0, near: 2, size: 150, big: 0.85, night: 1, close: 0.9 };
+  if (d && t < d.until) L = { horde: d.hiveOnly ? 0 : 0.9, hive: d.hive ? 0.8 : 0, near: 2, size: 150, big: 0.85, night: 1, close: 0.9 };
   else if (d) DEMO.map = null;
   let m = MAPS.get(c);
   if (!m) {
@@ -1460,7 +1471,7 @@ export function zombieMapAmbience(c, out, lv, t = c.currentTime, vol = 1) {
     m = makeMapLayer(c, out, t);
     MAPS.set(c, m);
   }
-  m.update(L, t, vol);
+  m.update(L, t, vol, hiveVol);
   if (m.idleSince != null && t - m.idleSince > 5) { m.stop(t); MAPS.delete(c); return null; }
   return m;
 }
@@ -1505,6 +1516,8 @@ export function zombieTestHtml(esc = (s) => s) {
 }
 // A few seconds of a near horde on the map (the Map horde volume slider, as it is dragged).
 export const demoMapHorde = (t, secs = 5) => { DEMO.map = { from: t, until: t + secs, hive: false }; };
+export const demoMapHive = (t, secs = 5) => { DEMO.map = { from: t, until: t + secs, hive: true, hiveOnly: true }; }; // the mixer's Hive drone preview
+export const demoCrowd = (t, secs = 6) => { DEMO.crowd = { from: t, until: t + secs }; }; // the mixer's Crowd murmur preview
 export const zombiePick = (v) => { if (v != null && ZOMBIE_TESTS.some((g) => g.items.some(([x]) => x === v))) zPick = v; return zPick; };
 // Plays the picked test: play(name, opts) is ui/audio.js sfx; t: the context's time (for the demos).
 export function playZombieTest(value, play, t = 0) {

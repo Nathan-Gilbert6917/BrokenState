@@ -589,6 +589,21 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
 .settings .btnlike.disabled { opacity: 0.4; pointer-events: none; }
 .settings .setkeys { border-collapse: collapse; font-size: 0.85rem; }
 .settings .setkeys td { padding: 0.15rem 0.6rem 0.15rem 0; vertical-align: top; }
+/* Settings → Sound: the mixer (ui/audio.js soundOptionsHtml, groups in ui/soundgroups.js). One grid: name, slider,
+   value, On, ▶; the parts of a group indented under it when the Advanced mixer is open. Sized in rem: follows UI size. */
+.settings .sndmix { display: grid; grid-template-columns: minmax(9rem, max-content) minmax(8rem, 20rem) 3.2rem max-content max-content; gap: 0.25rem 0.7rem; align-items: center; margin: 0.35rem 0 0.6rem; max-width: 46rem; }
+.settings .sndrow { display: contents; }
+.settings .sndname { white-space: nowrap; }
+.settings .sndbus .sndname { font-weight: 600; }
+.settings .sndtop .sndname { font-weight: 600; color: var(--accent); }
+.settings .sndmix.open .sndtop .sndname { padding-top: 0.45rem; }
+.settings .sndchild .sndname { padding-left: 1.2rem; color: var(--muted); font-size: 0.92em; }
+.settings .sndoff .sndname, .settings .sndoff .sndval { opacity: 0.5; text-decoration: line-through; }
+.settings .sndrange { width: 100%; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.settings .sndrange:disabled { opacity: 0.35; cursor: default; }
+.settings .sndval { font-variant-numeric: tabular-nums; text-align: right; min-width: 3.2rem; }
+.settings .sndon { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.88em; white-space: nowrap; cursor: pointer; }
+.settings .sndprev { min-width: 1.9rem; }
 #cbpanel .cbmenu { float: right; margin: 0 0 0.3rem 0.4rem; }
 #cbpanel .cbview { display: flex; flex-wrap: wrap; gap: 0.2rem; margin: 0 0 0.4rem; align-items: center; }
 #cbpanel .cbview button { min-width: 1.9rem; }

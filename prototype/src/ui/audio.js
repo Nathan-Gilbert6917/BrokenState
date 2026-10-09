@@ -10,10 +10,12 @@
 // context is made (or resumed) on that first gesture. Muted, or with the window in the background and "Mute when
 // not focused" on, the context is suspended (no CPU). Nothing here runs at import time, so node tools can import it.
 import { battleCues, worldCues, ambienceMix, makeThrottle, LISTEN, battleCrowd } from "./soundcues.js";
-import { installBus, spatial, setGunVolume, playGun, labPlan, place } from "./gunsfx.js"; // the gun voices, the battle's sound space (pan, distance, reverb, ducking, the deafened muffle)
+import { installBus, spatial, playGun, playHand, labPlan, place } from "./gunsfx.js"; // the gun voices, the battle's sound space (pan, distance, reverb, ducking, the deafened muffle)
 import { frameListener, playCue, cueSpan, prewarmBattle } from "./battlesfx.js"; // guns, blasts and handling cues to their voices
 import { LAB, LAB_ACTIONS, LAB_CHANGE, labGunHtml, makeLimiter } from "./sfxlab.js"; // Settings → Sound: the gun and blast sound test
-import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest, demoMapHorde, makeZombieBus, zombieVolume, setZombieVolume } from "./zombiesfx.js"; // the dead's voices
+import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest, demoMapHorde, demoMapHive, demoCrowd, makeZombieBus } from "./zombiesfx.js"; // the dead's voices
+import { playBlast } from "./blastsfx.js"; // the mixer's Explosions preview
+import { GROUPS, TOP_GROUPS, childrenOf, groupDef, groupGain, groupOf, groupVolume, groupOn, setGroupVolume, setGroupOn, groupBus, applyGroups, cleanMix, useMix, PRESETS, applyPreset, presetOf, resetMix } from "./soundgroups.js"; // the mixer: every sound's group
 import { weatherAt, season } from "../sim/weather.js";
 import { playerTile } from "../sim/hardcore-start.js";
 import { screenToTile, view } from "./render.js";
@@ -26,36 +28,34 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 
 // ---------- options ----------
-// options.sound (ui/saves.js keeps it with the other options): volumes 0–1, mute, mute when the window is not focused;
-// steps: the Footsteps slider (under Effects); guns: the Gunfire volume 0–1.5 (guns, their handling and blasts: ui/gunsfx.js GUNVOL);
-// zombie: the Zombie volume (0–1.5: the dead's voices, the battle's crowd and the map's hordes; 1 the default; ui/zombiesfx.js ZOMVOL);
-// horde: the Map horde volume (the moaning of hordes near you on the State Map, under the ambience and zombie sliders).
-export const SOUND_DEFAULTS = { master: 0.7, sfx: 0.8, amb: 0.5, steps: 0.7, guns: 1, mute: false, muteBlur: true, horde: 0.7, zombie: 1 };
-export const VOL_MAX = { guns: 1.5, zombie: 1.5 };
+// options.sound (ui/saves.js keeps it with the other options): the three buses' volumes 0–1 (master, effects, ambience),
+// mute, mute when the window is not focused; groups: the mixer's group volumes (id -> 0–1.5, only those not at 100%) and
+// off: the groups switched off (ui/soundgroups.js). An old save's Gunfire, Zombies, Map hordes and Footsteps sliders
+// (guns, zombie, horde, steps) become groups at the same loudness (soundgroups.js migrateOld) and are dropped.
+export const SOUND_DEFAULTS = { master: 0.7, sfx: 0.8, amb: 0.5, mute: false, muteBlur: true };
 const vol = (v, d, max = 1) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(max, Number(v))) : d);
 export function soundOptions(o) {
   const s = o && typeof o.sound === "object" && o.sound ? o.sound : {};
   const D = SOUND_DEFAULTS;
   const clean = {
-    master: vol(s.master, D.master), sfx: vol(s.sfx, D.sfx), amb: vol(s.amb, D.amb), steps: vol(s.steps, D.steps), guns: vol(s.guns, D.guns, VOL_MAX.guns),
+    master: vol(s.master, D.master), sfx: vol(s.sfx, D.sfx), amb: vol(s.amb, D.amb),
     mute: typeof s.mute === "boolean" ? s.mute : D.mute, muteBlur: typeof s.muteBlur === "boolean" ? s.muteBlur : D.muteBlur,
-    horde: vol(s.horde, D.horde), zombie: vol(s.zombie, D.zombie, VOL_MAX.zombie),
+    ...cleanMix(s),
   };
   if (o) o.sound = clean;
+  if (o && o === OPT) useMix(clean); // the mixer reads and writes these very objects
   return clean;
 }
 // Slider position to gain: squared, so the low half of the slider is usable (loudness is not linear).
 const curve = (v) => v * v;
 const SFX_TRIM = 0.8, AMB_TRIM = 1; // the buses' fixed levels under their sliders
-// The Map horde volume as a multiplier of the hordes' level: 1 at the default (70%), 0 at 0, about +6 dB at 100%.
-export const hordeVolume = (v = SOUND_DEFAULTS.horde) => (v / SOUND_DEFAULTS.horde) ** 2;
 
 // ---------- the engine ----------
 let OPT = null;          // main.js's options object
 let SAVE = () => {};
 let A = null;            // { ctx, master, sfx, amb, comp, amb layers… } once the first gesture made the context
 let offWanted = false;   // the context was suspended on purpose (muted, window in the background)
-const LIMITS = {
+export const LIMITS = {
   click: { gap: 0.04, max: 3 }, cardRoutine: { gap: 1, max: 1 }, cardWarning: { gap: 1, max: 1 }, cardCrisis: { gap: 1, max: 1 },
   alert: { gap: 2.5, max: 1 }, good: { gap: 3, max: 1 }, bark: { gap: 0.5, max: 1 }, alarm: { gap: 12, max: 1 }, horde: { gap: 6, max: 1 }, battle: { gap: 3, max: 1 },
   pistol: { gap: 0.045, max: 4 }, revolver: { gap: 0.045, max: 4 }, rifle: { gap: 0.045, max: 4 }, shotgun: { gap: 0.06, max: 3 },
@@ -99,22 +99,22 @@ function makeContext(test = null) {
   limit.connect(master);
   ambBus.connect(master);
   const gb = installBus(ctx, sfxBus); // the battle's sounds: ducked by a close blast, muffled while deafened, a reverb by place (ui/gunsfx.js)
-  const zom = makeZombieBus(ctx, gb.in); // the dead's crowd bed: +4 dB, the Zombie volume, a soft limiter, into the battle bus (ui/zombiesfx.js; their voices go through zRoute → spatialOut)
+  const zom = makeZombieBus(ctx, gb.in); // the dead's crowd bed: +2 dB, the Crowd murmur group, a soft limiter, into the battle bus (ui/zombiesfx.js; their voices go through zRoute → spatialOut)
   A = { ctx, comp, limit, gb, master, sfx: sfxBus, amb: ambBus, zom, layers: null, next: { thunder: 0, bird: 0, cricket: 0 }, mix: null, test: !!test };
+  A.wx = groupBus(ctx, "world.weather", ambBus); A.wild = groupBus(ctx, "world.wildlife", ambBus); // the mixer's Weather and Wildlife groups for the ambience's beds (its one-shots read them in sfx)
   applyGains(true);
   return A;
 }
 // The volumes and the mute (also the window's focus): the buses follow the sliders, and a silent context is suspended.
 export function applyGains(now = false) {
-  if (OPT) setGunVolume(curve(OPT.sound.guns ?? SOUND_DEFAULTS.guns)); // the Gunfire volume: read as each gun, blast or reload is played
-  if (OPT) setZombieVolume(OPT.sound.zombie ?? SOUND_DEFAULTS.zombie); // the Zombie volume: read as each of the dead's voices is played (ui/zombiesfx.js ZOMVOL)
   if (!A || !OPT) return;
   const s = OPT.sound, t = A.ctx.currentTime, on = wantOn();
   const set = (p, v) => (now ? p.setValueAtTime(v, t) : p.setTargetAtTime(v, t, 0.08));
   set(A.master.gain, on ? curve(s.master) : 0);
   set(A.sfx.gain, curve(s.sfx) * SFX_TRIM);
   set(A.amb.gain, curve(s.amb) * AMB_TRIM);
-  A.zom.setVolume(s.zombie, t, now);
+  A.zom.setGain(groupGain("zombies.crowd"), t, now); // the mixer (ui/soundgroups.js): the crowd bed follows at once,
+  applyGroups(t, now); // and every group bus; one-shots read their group as they are made
   if (A.test) return;
   if (!on && A.ctx.state === "running") {
     offWanted = true;
@@ -146,22 +146,30 @@ export function initAudio(options, save) {
   // A soft click on every button the player presses.
   document.addEventListener("click", (ev) => {
     const el = ev.target && ev.target.closest ? ev.target.closest("button, [data-action]") : null;
-    if (!el || el.disabled || el.tagName === "SELECT" || el.tagName === "INPUT" || el.dataset.action === "snd-test" || el.dataset.action === "lab-play" || el.dataset.action === "zsnd-test") return;
+    if (!el || el.disabled || el.tagName === "SELECT" || el.tagName === "INPUT" || el.dataset.action === "snd-test" || el.dataset.action === "snd-prev" || el.dataset.action === "lab-play" || el.dataset.action === "zsnd-test") return;
     const snd = clickSound(el); // ui/sfx-gear.js: an inventory cell is heard as the item picked up or put down instead
     if (snd) sfx(snd);
   });
   // A volume slider being dragged is heard at once (the change event saves it: SOUND_CHANGE).
   document.addEventListener("input", (ev) => {
     const el = ev.target;
-    if (!el || !el.dataset || el.dataset.action !== "snd-vol") return;
-    setVolume(el.dataset.k, Number(el.value) / 100);
-    const out = el.parentElement && el.parentElement.querySelector(".sndval");
+    if (!el || !el.dataset || (el.dataset.action !== "snd-vol" && el.dataset.action !== "snd-grp")) return;
+    if (el.dataset.action === "snd-grp") setMixVolume(el.dataset.g, Number(el.value) / 100);
+    else setVolume(el.dataset.k, Number(el.value) / 100);
+    const row = el.closest ? el.closest(".sndrow") : null;
+    const out = (row || el.parentElement) && (row || el.parentElement).querySelector(".sndval");
     if (out) out.textContent = `${Math.round(Number(el.value))}%`;
   });
 }
 function setVolume(k, v) {
-  if (!OPT || !["master", "sfx", "amb", "steps", "guns", "horde", "zombie"].includes(k)) return;
-  OPT.sound[k] = vol(v, SOUND_DEFAULTS[k], VOL_MAX[k] || 1);
+  if (!OPT || !["master", "sfx", "amb"].includes(k)) return;
+  OPT.sound[k] = vol(v, SOUND_DEFAULTS[k]);
+  applyGains();
+}
+function setMixVolume(id, v) {
+  if (!OPT || !groupDef(id) || groupDef(id).reserved) return;
+  useMix(OPT.sound);
+  setGroupVolume(id, v);
   applyGains();
 }
 
@@ -171,11 +179,11 @@ export const voiceOpts = (opts = {}) => ({ ...opts, gain: Number.isFinite(opts.g
 export function sfx(name, opts = {}) {
   const V = VOICES[name];
   if (!V || !live() || !wantOn()) return false;
-  if (V.steps) { // the Footsteps slider (off: not even built)
-    const k = curve(OPT ? OPT.sound.steps ?? SOUND_DEFAULTS.steps : SOUND_DEFAULTS.steps) / curve(SOUND_DEFAULTS.steps);
-    if (!(k > 0)) return false;
-    opts = { ...opts, gain: (Number.isFinite(opts.gain) ? opts.gain : 1) * k };
-  }
+  // The mixer (ui/soundgroups.js): the sound's group as it is made; a group switched off or at 0 is not even built. The
+  // dead's voices (routes) take theirs in ui/zombiesfx.js zRoute.
+  const k = groupGain(groupOf(name, V));
+  if (!(k > 0)) return false;
+  if (!V.routes && k !== 1) opts = { ...opts, gain: (Number.isFinite(opts.gain) ? opts.gain : 1) * k };
   const ctx = A.ctx;
   const t = ctx.currentTime + 0.01 + Math.max(0, opts.delay || 0);
   if (!(V.steps ? stepThrottle.allow("step", t, V.dur) : throttle.allow(name, t, V.dur))) { audioDebug.dropped++; return false; }
@@ -296,17 +304,17 @@ function layers() {
   L.windBand = c.createBiquadFilter(); L.windBand.type = "bandpass"; L.windBand.Q.value = 0.9; L.windBand.frequency.value = 400;
   L.gust = c.createGain(); L.gust.gain.value = 1;
   L.wind = c.createGain(); L.wind.gain.value = 0;
-  brown.connect(L.windBand); L.windBand.connect(L.gust); L.gust.connect(L.wind); L.wind.connect(A.amb);
+  brown.connect(L.windBand); L.windBand.connect(L.gust); L.gust.connect(L.wind); L.wind.connect(A.wx || A.amb);
   lfo(c, 0.09, 0.45, L.gust.gain);
   lfo(c, 0.05, 120, L.windBand.frequency);
   // Rain: white noise, high and bright, over a low wash (a storm's roar).
   const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1200;
   const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 7000;
   L.rain = c.createGain(); L.rain.gain.value = 0;
-  white.connect(hp); hp.connect(lp); lp.connect(L.rain); L.rain.connect(A.amb);
+  white.connect(hp); hp.connect(lp); lp.connect(L.rain); L.rain.connect(A.wx || A.amb);
   const low = c.createBiquadFilter(); low.type = "lowpass"; low.frequency.value = 450;
   L.rainLow = c.createGain(); L.rainLow.gain.value = 0;
-  brown.connect(low); low.connect(L.rainLow); L.rainLow.connect(A.amb);
+  brown.connect(low); low.connect(L.rainLow); L.rainLow.connect(A.wx || A.amb);
   // The drone: two low sines a fifth apart, beating slowly, and an octave above, under a low-pass.
   const dlp = c.createBiquadFilter(); dlp.type = "lowpass"; dlp.frequency.value = 300;
   L.drone = c.createGain(); L.drone.gain.value = 0;
@@ -315,7 +323,7 @@ function layers() {
     const og = c.createGain(); og.gain.value = g;
     o.connect(og); og.connect(dlp); o.start();
   }
-  dlp.connect(L.drone); L.drone.connect(A.amb);
+  dlp.connect(L.drone); L.drone.connect(A.wx || A.amb);
   lfo(c, 0.04, 0.02, L.drone.gain);
   A.layers = L;
   return L;
@@ -342,8 +350,7 @@ function ambience(state, ui) {
   // hive's heartbeat on the ambience bus.
   const fight = state.combat && !ui.timelapse ? state.combat : null;
   zombieCrowd(c, A.zom.input, fight ? battleCrowd(fight) : null, t);
-  const s = OPT ? OPT.sound : SOUND_DEFAULTS;
-  zombieMapAmbience(c, A.amb, fight || ui.timelapse || ui.title || !ui.started ? null : hordeAmbience(state), t, hordeVolume(s.horde) * zombieVolume(s.zombie));
+  zombieMapAmbience(c, A.amb, fight || ui.timelapse || ui.title || !ui.started ? null : hordeAmbience(state), t, groupGain("zombies.hordes"), groupGain("zombies.hive")); // the mixer's Map hordes and Hive drone
 }
 
 // ---------- building blocks ----------
@@ -665,21 +672,76 @@ const SOUND_LABELS = {
   ...MELEE_LABELS, ...STEP_LABELS, ...GEAR_LABELS,
 };
 let hearPick = "pistol";
+let mixOpen = false; // the Advanced mixer shown (this session)
+// ---------- the mixer's previews ----------
+// ▶ beside each group (and the sound a slider makes as it is let go): a representative sound of the group, at the new
+// level. The top groups play their most typical child's. Music: none (its bus joins at integration).
+const ZSEED = () => (Math.random() * 4294967296) >>> 0;
+export const GROUP_PREVIEW = {
+  "weapons.guns": () => (A ? playGun(A.ctx, A.ctx.currentTime + 0.02, labPlan("pistol"), place({ dist: 2 })) : 0), // a 9mm near you
+  "weapons.blasts": () => (A ? playBlast(A.ctx, A.ctx.currentTime + 0.02, { kind: "frag" }, place({ dist: 8 })) : 0),
+  "weapons.handling": () => (A ? playHand(A.ctx, A.ctx.currentTime + 0.02, { kind: "reload", rel: "rifle", n: 4 }, place({ dist: 2 })) : 0),
+  "weapons.melee": () => sfx("hearBat", { pitch: 1 }),
+  "zombies.moans": () => sfx("zIdle", { kind: "walker", seed: ZSEED(), pitch: 1 }),
+  "zombies.attacks": () => sfx("zBite", { kind: "walker", seed: ZSEED(), pitch: 1, human: true }),
+  "zombies.shrieks": () => sfx("zShriek", { kind: "screamer", seed: ZSEED(), pitch: 1 }),
+  "zombies.special": () => sfx("zSpit", { kind: "spitter", seed: ZSEED(), pitch: 1 }),
+  "zombies.crowd": () => (A ? demoCrowd(A.ctx.currentTime, 6) : 0), // a crowd closing in (6 s)
+  "zombies.hordes": () => (A ? demoMapHorde(A.ctx.currentTime, 5) : 0), // a near horde on the map
+  "zombies.hive": () => (A ? demoMapHive(A.ctx.currentTime, 5) : 0),
+  "people.voices": () => sfx("bark", { pitch: 1 }),
+  "people.steps": () => sfx("hearStepGrass", { pitch: 1 }),
+  "people.gear": () => sfx("rummage", { pitch: 1 }),
+  "people.downed": () => sfx("downed", { pitch: 1 }),
+  "world.weather": () => sfx("thunder", { near: 0.8, pitch: 1 }),
+  "world.wildlife": () => sfx("bird", { pitch: 1 }),
+  "world.heartbeat": () => sfx("heartbeat", { gain: 0.9, pitch: 1 }),
+  "ui.clicks": () => sfx("click", { pitch: 1 }),
+  "ui.cards": () => sfx("cardWarning", { pitch: 1 }),
+  "ui.stings": () => sfx("alert", { gain: 0.8, pitch: 1 }),
+  weapons: () => GROUP_PREVIEW["weapons.guns"](),
+  zombies: () => sfx("zAggro", { kind: "walker", seed: ZSEED(), pitch: 1 }),
+  people: () => GROUP_PREVIEW["people.steps"](),
+  world: () => GROUP_PREVIEW["world.weather"](),
+  ui: () => GROUP_PREVIEW["ui.cards"](),
+};
+export function previewGroup(id) {
+  const f = GROUP_PREVIEW[id];
+  if (!f) return false;
+  unlock();
+  if (!A || !live() || !wantOn()) return false;
+  try { f(); } catch (e) { console.warn(`Broken State: the ${id} preview failed`, e); return false; }
+  return true;
+}
+
 export function soundOptionsHtml(options) {
   const s = soundOptions(options);
-  const slider = (k, label, t) => `<label class="sndvol" style="margin-right:0.6rem"${tip(t)}>${label} <input type="range" min="0" max="${Math.round((VOL_MAX[k] || 1) * 100)}" step="5" value="${Math.round(s[k] * 100)}" data-action="snd-vol" data-k="${k}"> <span class="sndval">${Math.round(s[k] * 100)}%</span></label>`;
+  useMix(s);
+  const pct = (v) => `${Math.round(v * 100)}%`;
+  const range = (attrs, v, max, label, off = false) => `<input type="range" class="sndrange" min="0" max="${Math.round(max * 100)}" step="5" value="${Math.round(v * 100)}" ${attrs} aria-label="${esc(label)}"${off ? " disabled" : ""}>`;
+  const bus = (k, label, t) => `<div class="sndrow sndbus"><span class="sndname"${tip(t)}>${label}</span>${range(`data-action="snd-vol" data-k="${k}"`, s[k], 1, label)}<span class="sndval">${pct(s[k])}</span><span></span><span></span></div>`;
+  const row = (id, child) => {
+    const g = groupDef(id), v = groupVolume(id), on = groupOn(id), res = !!g.reserved;
+    const prev = GROUP_PREVIEW[id] && !res ? `<button class="mini sndprev" data-action="snd-prev" data-g="${id}"${tip(`Hear ${g.label.toLowerCase()} at this level`)}>▶</button>` : "<span></span>";
+    const box = `<label class="sndon"${tip(on ? "On: untick to mute this group" : "Muted: tick to hear it again")}><input type="checkbox" data-action="snd-gon" data-g="${id}" ${on ? "checked" : ""}${res ? " disabled" : ""}> On</label>`;
+    return `<div class="sndrow${child ? " sndchild" : " sndtop"}${on ? "" : " sndoff"}"><span class="sndname"${tip(g.tip + (res ? " (not in the game yet)" : ""))}>${esc(g.label)}</span>${range(`data-action="snd-grp" data-g="${id}"`, v, g.max, g.label, res)}<span class="sndval">${res ? "—" : pct(v)}</span>${mixOpen || !on ? box : "<span></span>"}${mixOpen ? prev : "<span></span>"}</div>`;
+  };
   const box = (k, on, label, t) => `<button class="setopt ${on ? "active" : ""}" data-action="snd-opt" data-k="${k}"${tip(t)}>${on ? "✔" : "✗"} ${label}</button>`;
   const locked = A ? A.ctx.state === "suspended" && !offWanted && !A.unlocked : !A;
+  const cur = presetOf();
+  const presets = `<label${tip("A ready mix of the groups' volumes (the On switches are kept)")}>Mix <select data-action="snd-preset">${cur ? "" : `<option value="" selected>Custom</option>`}${Object.entries(PRESETS).map(([k, P]) => `<option value="${k}" ${k === cur ? "selected" : ""}${tip(P.tip)}>${esc(P.label)}</option>`).join("")}</select></label>`;
+  const groups = TOP_GROUPS.map((id) => row(id, false) + (mixOpen ? childrenOf(id).map((c) => row(c, true)).join("") : "")).join("");
   return `<h3>Sound</h3><div class="setrow">
       ${box("on", !s.mute, "Sound", "All sound on or off. Sounds are made on the spot (no audio files): clicks, card chimes, gunfire and the dead in battle, wind, rain and night around you, a sting when a horde is seen near you, the alarm bell when a base is raided.")}
-      ${slider("master", "Master", "Everything")}
-      ${slider("sfx", "Effects", "Clicks, card chimes, battle sounds, the horde sting and the alarm")}
-      ${slider("guns", "Gunfire", "Gunshots, reloads and explosions in battle, under Effects: 100% is the usual level, up to 150% for more punch (the limiter keeps it from clipping). Not the ambience, the interface or the dead.")}
-      ${slider("steps", "Footsteps", "Footsteps in battle (everyone's: yours, the enemy's, the dead's shuffle), under Effects. 0 turns them off")}
-      ${slider("zombie", "Zombies", "The dead: their voices in battle, the crowd of them, and the hordes on the map, under Effects (not the guns or their footsteps: Gunfire and Footsteps have their own). Up to 150%")}
-      ${slider("amb", "Ambience", "Wind and rain with the weather, thunder in storms, a low drone at night, birds by day, crickets on warm nights")}
-      ${slider("horde", "Map hordes", "How loud hordes near your bases and teams moan on the State Map (louder the bigger and nearer they are, more at night). Under the Ambience volume. Dragging it plays a near horde.")}
       ${box("muteBlur", s.muteBlur, "Mute when the window is not focused", "Silence while you are in another window or tab")}
+      ${presets}
+      <button data-action="snd-mix" class="${mixOpen ? "active" : ""}"${tip("Each group's parts on its own slider, with an On switch and ▶ to hear it")}>${mixOpen ? "▾" : "▸"} Advanced mixer…</button>
+      <button data-action="snd-reset"${tip("Every volume back to its default and every group on (the Sound and Mute when not focused switches are kept)")}>Reset to defaults</button>
+    </div><div class="sndmix${mixOpen ? " open" : ""}">
+      ${bus("master", "Master", "Everything")}
+      ${bus("sfx", "Effects", "The effects bus: battle sounds, the interface, the horde sting and the alarm (the groups below sit under it or under Ambience)")}
+      ${bus("amb", "Ambience", "The ambience bus: weather and wildlife, the heartbeat, hordes and hives on the map")}
+      ${groups}
     </div><div class="setrow">
       <label${tip("Hear one sound, to set the volumes or to judge it")}>Hear <select data-action="snd-pick">${HEAR_NAMES.map((n) => `<option value="${n}" ${n === hearPick ? "selected" : ""}>${esc(SOUND_LABELS[n] || n)}</option>`).join("")}</select></label>
       <button data-action="snd-test"${tip("Play the sound picked")}>▶ Play</button>
@@ -699,6 +761,17 @@ export const SOUND_ACTIONS = {
     applyGains();
     SAVE();
   },
+  "snd-mix": () => { mixOpen = !mixOpen; },
+  "snd-prev": (state, ui, d) => { previewGroup(d.g); },
+  "snd-reset": () => {
+    if (!OPT) return;
+    const s = OPT.sound;
+    for (const k of ["master", "sfx", "amb"]) s[k] = SOUND_DEFAULTS[k];
+    useMix(s);
+    resetMix();
+    applyGains();
+    SAVE();
+  },
   "snd-test": () => { unlock(); sfx(hearPick, { pitch: 1 }); },
   ...LAB_ACTIONS, // the gun and blast sound test (ui/sfxlab.js)
   "zsnd-test": () => { unlock(); if (A) playZombieTest(null, sfx, A.ctx.currentTime); }, // ui/zombiesfx.js
@@ -707,19 +780,36 @@ export const SOUND_CHANGE = {
   "snd-vol": (state, ui, el) => {
     setVolume(el.dataset.k, Number(el.value) / 100);
     SAVE();
-    if (el.dataset.k === "guns") { if (A && live() && wantOn()) playGun(A.ctx, A.ctx.currentTime + 0.02, labPlan("pistol"), place({ dist: 2 })); } // a 9mm near you at the new level
-    else if (el.dataset.k === "steps") sfx("hearStepGrass", { pitch: 1 });
-    else if (el.dataset.k === "horde") { if (A) demoMapHorde(A.ctx.currentTime, 5); } // hear a near horde at the new level
-    else if (el.dataset.k === "zombie") sfx("zAggro", { kind: "walker", pitch: 1 }); // one of the dead at the new level
-    else if (el.dataset.k !== "amb") sfx("alert", { gain: 0.8 });
+    if (el.dataset.k !== "amb") sfx("alert", { gain: 0.8 });
     try { el.blur(); } catch { /* ignore */ } // Esc closes the menu again
+  },
+  "snd-grp": (state, ui, el) => { // a group's slider let go: saved, and its sound heard at the new level
+    setMixVolume(el.dataset.g, Number(el.value) / 100);
+    SAVE();
+    previewGroup(el.dataset.g);
+    try { el.blur(); } catch { /* ignore */ }
+  },
+  "snd-gon": (state, ui, el) => {
+    if (!OPT || !groupDef(el.dataset.g)) return;
+    useMix(OPT.sound);
+    setGroupOn(el.dataset.g, !!el.checked);
+    applyGains();
+    SAVE();
+  },
+  "snd-preset": (state, ui, el) => {
+    if (!OPT || !PRESETS[el.value]) return;
+    useMix(OPT.sound);
+    applyPreset(el.value);
+    applyGains();
+    SAVE();
   },
   "snd-pick": (state, ui, el) => { if (VOICES[el.value]) { hearPick = el.value; unlock(); sfx(hearPick, { pitch: 1 }); } },
   ...LAB_CHANGE,
   "zsnd-pick": (state, ui, el) => { zombiePick(el.value); unlock(); if (A) playZombieTest(null, sfx, A.ctx.currentTime); },
 };
+export const soundMixer = { get open() { return mixOpen; }, set open(v) { mixOpen = !!v; } }; // tests and the browser checks
 
 // The Help tab's topic (ui/help.js).
 export function soundHelp() {
-  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each calibre has its own report (a .22's pop to a .50's thump, 12 gauge, the machine guns, launchers), bursts and full auto round by round, suppressed shots, reloads, jams and brass, placed left or right and near or far, muffled out of sight, in the echo of the place; grenades, rockets and explosions in layers, with hits, misses, melee blows by weapon and by what took the blow, blasts and fire; footsteps by ground, gait and load; the dead each have a voice of their own (a walker's moan, a runner's shriek, a brute's roar, a spitter hawking, the screamer's shriek that calls more of them, a crawler's hiss as it strikes, a Carrier bursting into worms), and a crowd of them murmurs louder the more of them come and the nearer they get; and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. On the map a horde near you is heard as moaning on the wind (more at night), a hive near you as a low heartbeat. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: master, effects, gunfire, footsteps, zombies, ambience and map hordes volumes (Gunfire: guns, reloads and explosions, up to 150%; Footsteps: everyone's steps in battle; Zombies: the dead's voices and crowd, up to 150%; Map hordes: hordes moaning near you on the map), sound on / off, mute when the window is not focused, <b>Hear</b> to play any one sound, the gun and blast sound test, and <b>Zombie sounds</b> to hear each kind of the dead. Browsers start sound only after your first click or key press.`;
+  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each calibre has its own report (a .22's pop to a .50's thump, 12 gauge, the machine guns, launchers), bursts and full auto round by round, suppressed shots, reloads, jams and brass, placed left or right and near or far, muffled out of sight, in the echo of the place; grenades, rockets and explosions in layers, with hits, misses, melee blows by weapon and by what took the blow, blasts and fire; footsteps by ground, gait and load; the dead each have a voice of their own (a walker's moan, a runner's shriek, a brute's roar, a spitter hawking, the screamer's shriek that calls more of them, a crawler's hiss as it strikes, a Carrier bursting into worms), and a crowd of them murmurs louder the more of them come and the nearer they get; and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. On the map a horde near you is heard as moaning on the wind (more at night), a hive near you as a low heartbeat. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: sound on / off, mute when the window is not focused, the <b>Master</b>, <b>Effects</b> and <b>Ambience</b> volumes, and a mixer of sound groups: <b>Weapons</b> (gunfire, explosions and grenades, reloads and handling, melee), <b>Zombies</b> (moans, attacks and bites, shrieks and roars, the special dead, the battle's crowd, hordes and hives on the map), <b>People</b> (voices, footsteps, gear, someone going down), <b>World</b> (weather, wildlife, the heartbeat) and <b>Interface</b> (clicks, card chimes, alerts and stings). Each group goes up to 150%; a part's level is its own × its group's. <b>Advanced mixer…</b> shows every part with an On switch and ▶ to hear it; <b>Mix</b> picks a ready mix (Default, Quieter zombies, Focus on combat, Atmosphere, Hush the interface); <b>Reset to defaults</b> puts every volume back. <b>Hear</b> plays any one sound, then the gun and blast sound test, and <b>Zombie sounds</b> to hear each kind of the dead. Browsers start sound only after your first click or key press.`;
 }
