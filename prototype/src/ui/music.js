@@ -442,19 +442,22 @@ export function musicOptionsHtml(esc, tip) {
       <span class="small muted" data-music-now>Playing: ${esc(override ? TEST[override] || override : now)}</span>
     </div>`;
 }
+function showPlaying(text) {
+  const el = typeof document !== "undefined" && document.querySelector("[data-music-now]");
+  if (el) el.textContent = `Playing: ${text}`;
+}
 function audition(pick) {
   testPick = pick;
   if (BIND) BIND.unlock();
   if (BIND && !ENG) ensureEngine(BIND.bus());
-  if (pick === "auto") { override = null; if (ENG && DIR.key) ENG.jump(DIR.key, ENG.ctx.currentTime, { season: SIT.last && SIT.last.season }); return; }
+  if (pick === "auto") { override = null; if (ENG && DIR.key) ENG.jump(DIR.key, ENG.ctx.currentTime, { season: SIT.last && SIT.last.season }); showPlaying(DIR.key && STATES[DIR.key] ? STATES[DIR.key].label : "nothing yet"); return; }
   if (!ENG) return;
   const t = ENG.ctx.currentTime;
-  if (pick.startsWith("sting:")) { ENG.sting(pick.slice(6), t + 0.05); return; }
+  if (pick.startsWith("sting:")) { ENG.sting(pick.slice(6), t + 0.05); showPlaying(`${TEST[pick]} (over the music)`); return; }
   override = pick;
   const [a, b] = pick.includes(":") ? pick.split(":") : [null, pick];
   ENG.jump(b, t, a === "down" ? { down: true } : a ? { season: a } : { season: "spring" });
-  const el = typeof document !== "undefined" && document.querySelector("[data-music-now]");
-  if (el) el.textContent = `Playing: ${TEST[pick] || pick}`;
+  showPlaying(TEST[pick] || pick);
 }
 export const MUSIC_ACTIONS = { "mus-test": () => audition(testPick) };
 // A sting now over whatever plays (the mixer's ▶ for Music and its Stings): false with no live context.
