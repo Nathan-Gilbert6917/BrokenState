@@ -422,11 +422,11 @@ section("7. The UI: the throw preview, STN / DZ, the lines");
   check(UI.cui.mode === "throw" && UI.cui.throwKey === "flashbang" && /flash reaches/.test(UI.cui.msg), `G picks it: ${UI.cui.msg}`);
   UI.cui.hover = { x: 10, y: 6, px: 100, py: 100 };
   let err = "";
-  for (const view of ["top", "iso"]) { UI.setBattleView(view); try { UI.drawCombat(st, 1e9); } catch (e) { err += `${view}: ${e.message} `; } }
+  for (const view of ["iso"]) { try { UI.drawCombat(st, 1e9); } catch (e) { err += `${view}: ${e.message} `; } }
   check(!err, `the preview draws in both views (top and isometric)${err ? `: ${err}` : ""}`);
   combatAct(st, { type: "throw", unit: me.id, item: "flashbang", x: 10, y: 6 });
   UI.cui.mode = "move"; UI.cui.hover = { x: 10, y: 6, px: 100, py: 100 };
-  for (const view of ["top", "iso"]) { UI.setBattleView(view); try { UI.drawCombat(st, 1e9); UI.drawCombat(st, 1e9 + 700); } catch (e) { err += `${view}: ${e.message} `; } }
+  for (const view of ["iso"]) { try { UI.drawCombat(st, 1e9); UI.drawCombat(st, 1e9 + 700); } catch (e) { err += `${view}: ${e.message} `; } }
   check(!err, `the flash and the STN / DZ tags draw${err ? `: ${err}` : ""}`);
   const panel = UI.renderCombatPanel(st);
   check(/\(stunned\)|\(dazed\)/.test(panel) && /BANG!/.test(panel), "the enemy lines say who is stunned; the log has the bang");

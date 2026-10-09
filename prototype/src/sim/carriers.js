@@ -65,6 +65,7 @@ import { GEAR, SUPPLIES } from "./data.js";
 import { partyMembers, cargoRoom, bodyLoad } from "./parties.js";
 import { partyVehicle, isCar } from "./vehicles.js";
 import { atVehicle, raidVehicle } from "./raidloot.js";
+import { groundFire } from "./ground.js"; // the things lying on a burning cell burn too
 import { hasWorm, catchWorm, clearWorm, wormRise, wormOf, dayHp } from "./worm.js";
 
 const cheb = (a, x, y) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y));
@@ -119,6 +120,7 @@ export function burnBody(b, c) {
 function burnUnderFire(b) {
   if (!b.fires || !b.fires.length) return;
   for (const c of b.units) if (isBody(c) && !c.burnt && fireAt(b, c.x, c.y)) burnBody(b, c);
+  groundFire(b); // ground.js: the piles on the ground
 }
 // A carrier who is down, dead or gone puts the body down where they are.
 function dropIfDown(b) {

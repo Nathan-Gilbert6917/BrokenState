@@ -676,18 +676,3 @@ export function unitCanvas(state, b, t, salt = 0) {
   return enemyCanvas(t.kit || "raiders", f ? f.color : null, t.weapon, t.armorKey, seed);
 }
 
-// Draws a unit sprite centered on (cx, cy) in a cell of size cs. facing: 1 right, -1 left.
-// lying: true for downed/dead units (sprite turned on its side).
-export function drawSprite(ctx, cv, cx, cy, cs, { facing = 1, lying = false, alpha = 1 } = {}) {
-  if (!cv) return;
-  const h = cs * 0.92, w = h * (GW / GH);
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.imageSmoothingEnabled = h / GH < 2.2;
-  ctx.imageSmoothingQuality = "high";
-  ctx.translate(cx, cy);
-  if (lying) ctx.rotate(Math.PI / 2 * facing);
-  if (facing < 0 && !lying) ctx.scale(-1, 1);
-  ctx.drawImage(cv, -w / 2, -h * 0.56, w, h);
-  ctx.restore();
-}

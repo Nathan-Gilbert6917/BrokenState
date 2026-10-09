@@ -44,11 +44,22 @@ import { survivorById } from "./world.js";
 import { partyMembers, cargoRoom, poolLoad, unitsThatFit } from "./parties.js";
 import { partyVehicle, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "./load.js";
-import { ensureInv, packOf, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES } from "./inventory.js";
+import { ensureInv, packOf, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried } from "./inventory.js";
+import { gunLeavesTeam, unloadInto } from "./gunload.js"; // the rounds in a gun go with it (call-time only: safe in the import cycle)
 
 const EPS = 1e-9;
 export const HAUL = { free: 8, per: 12 }; // kg a turn for free, then kg an action
 const r1 = (x) => Math.round(x * 10) / 10;
+
+// ---------- the loot layer ----------
+// What this module works on: the raid (b.raid: its containers, found, foundGear, lootBy, vehicle zone) or, in a field
+// battle, b.fieldLoot (ground.js: the bodies searched where they fell and the things on the ground), made on first
+// use with the same fields. lootLayer: whichever there is (null in a field battle nothing was searched or dropped in).
+export const lootLayer = (b) => (b ? b.raid || b.fieldLoot || null : null);
+export function fieldLayer(b) {
+  if (!b) return null;
+  return b.raid || b.fieldLoot || (b.fieldLoot = { containers: [], found: {}, foundGear: [], vehicleZone: -1, zones: [], field: true });
+}
 
 // ---------- setup ----------
 export const raidParty = (state, b) => (b && b.setup ? state.parties.find((x) => x.id === b.setup.partyId) || null : null);
@@ -148,8 +159,9 @@ const isList = (loc) => loc.o !== "s";
 
 // The pieces of one location: { item, take(), put(it) } for gear, or { sup (object), key } for a supply stack.
 function place(state, b, loc) {
-  const R = b.raid;
+  const R = lootLayer(b);
   if (loc.o === "rbox") {
+    if (!R) return null;
     const box = R.containers.find((c) => c.id === loc.id);
     if (!box || !box.contents) return null;
     return { gear: box.contents.gear, sup: box.contents.sup, box };
@@ -198,8 +210,10 @@ function reach(state, b, u, loc) {
     return o && (o === u || matesOf(b, u).includes(o)) ? "" : "Only someone right next to them can hand things over.";
   }
   if (loc.o === "rbox") {
-    const box = b.raid.containers.find((c) => c.id === loc.id);
+    const L = lootLayer(b);
+    const box = L && L.containers.find((c) => c.id === loc.id);
     if (!box) return "That is not there any more.";
+    if (box.kind === "ground" || (box.kind === "body" && L.field)) return (box.f || 0) === (u.f || 0) && Math.max(Math.abs(u.x - box.x), Math.abs(u.y - box.y)) <= 1 ? "" : `${u.name.split(" ")[0]} has to be on it or next to it.`; // ground.js: a pile, a body searched where it fell
     return Math.max(Math.abs(u.x - box.x), Math.abs(u.y - box.y)) <= 1 ? "" : `${u.name.split(" ")[0]} has to be next to it.`;
   }
   if (loc.o === "trunk") return atVehicle(b, u) ? "" : `${u.name.split(" ")[0]} has to be at the vehicle.`;
@@ -252,14 +266,14 @@ const noTime = (u, what) => `No time: ${u.name.split(" ")[0]} has no actions lef
 // survivor in unit `uid`. Returns a message ("" when nothing happened).
 export function raidMove(state, uid, fromStr, toStr, qty = Infinity) {
   const b = state.combat;
-  if (!b || !b.raid || b.over) return "";
+  if (!b || !lootLayer(b) || b.over) return "";
   const u = b.units.find((x) => x.id === uid && x.side === "player");
   if (!u || u.dead || u.left) return "Nobody to carry it.";
   if (fromStr === toStr) return "";
   const from = parseRaidLoc(fromStr), to = parseRaidLoc(toStr);
   const e = reach(state, b, u, from) || reach(state, b, u, to);
   if (e) return e;
-  b.raid.lootBy = u.id; // the one whose window it is (messages name the others)
+  lootLayer(b).lootBy = u.id; // the one whose window it is (messages name the others)
   if (from.slot === "sup") return moveSupply(state, b, u, from, to, qty);
   return moveGear(state, b, u, from, to);
 }
@@ -269,7 +283,7 @@ export function raidMove(state, uid, fromStr, toStr, qty = Infinity) {
 // the move touches and, when it is hauling, the time left this turn.
 export function supplyFit(state, uid, fromStr, toStr, qty = Infinity) {
   const b = state.combat;
-  const u = b && b.raid && b.units.find((x) => x.id === uid && x.side === "player");
+  const u = b && lootLayer(b) && b.units.find((x) => x.id === uid && x.side === "player");
   if (!u) return { have: 0, n: 0, err: "Nobody to carry it." };
   const from = parseRaidLoc(fromStr), to = parseRaidLoc(toStr);
   if (from.slot !== "sup") return { have: 0, n: 0, err: "Not a supply stack." };
@@ -392,24 +406,28 @@ function moveGear(state, b, u, from, to) {
     const o = ownerOf(b, loc), sv = survivorById(state, loc.id);
     if (o && sv) refit(state, b, o, sv);
   }
+  // gunload.js: a gun carried into the fight that leaves your people unfired goes out loaded (its rounds with it).
+  const team = (l) => l && (l.o === "s" || l.o === "haul");
+  if (team(from) && !team(to)) gunLeavesTeam(b, item);
+  if (cur && team(to) && curTo && !team(curTo)) gunLeavesTeam(b, cur);
   return cur ? `${item.name} → ${where(state, b, to)}; the ${cur.name} → ${where(state, b, curTo)}.` : `${item.name} → ${where(state, b, to)}.`;
 }
 
 function where(state, b, loc) {
-  if (loc.o === "rbox") return "left in the container";
+  if (loc.o === "rbox") { const c = lootLayer(b).containers.find((x) => x.id === loc.id); return c && c.kind === "ground" ? "on the ground" : c && c.kind === "body" ? "left on the body" : "left in the container"; }
   if (loc.o === "haul") {
     const o = b.units.find((x) => x.id === loc.id);
-    return o && o.id !== b.raid.lootBy ? `${o.name.split(" ")[0]} (carried)` : "carried";
+    return o && o.id !== lootLayer(b).lootBy ? `${o.name.split(" ")[0]} (carried)` : "carried";
   }
   if (loc.o === "trunk") return isBike(raidVehicle(state, b)) ? "the bike racks" : "the vehicle";
   const o = ownerOf(b, loc);
-  return `${SLOT_NAMES[loc.slot] || "worn"}${o && o.id !== b.raid.lootBy ? ` (${o.name.split(" ")[0]})` : ""}`;
+  return `${SLOT_NAMES[loc.slot] || "worn"}${o && o.id !== lootLayer(b).lootBy ? ` (${o.name.split(" ")[0]})` : ""}`;
 }
 
 // What the raid found (b.raid.found / foundGear, shown in the panel and the result): things out of a container count,
 // things put back do not.
 function tally(b, from, to, { item, sup, n }) {
-  const R = b.raid;
+  const R = lootLayer(b);
   // A container counts; a pile a fallen teammate dropped holds things already found (dropHaul).
   const box = (loc) => loc.o === "rbox" && !R.containers.find((c) => c.id === loc.id)?.drop;
   const sign = box(from) && !box(to) ? 1 : box(to) && !box(from) ? -1 : 0;
@@ -441,7 +459,7 @@ function refit(state, b, u, s) { if (refitHook) refitHook(b, u, s); }
 export function raidTakeAll(state, uid, boxId) {
   const b = state.combat;
   const u = b && b.units.find((x) => x.id === uid);
-  const box = b && b.raid && b.raid.containers.find((c) => c.id === boxId);
+  const box = b && lootLayer(b) && lootLayer(b).containers.find((c) => c.id === boxId);
   if (!u || !box || !box.contents) return { got: [], left: 0 };
   const got = [];
   const src = `rbox:${box.id}`;
@@ -554,6 +572,9 @@ export function raidHome(state, b, homeUids) {
     for (const k of Object.keys(h.sup)) h.sup[k] = 0;
     h.gear.length = 0;
   }
+  // gunload.js: the guns that came home with rounds in them are unloaded into the team's cargo.
+  if (p) p.cargo = p.cargo || { supplies: {}, gear: [] };
+  if (p) unloadInto(null, [...b.units.filter((u) => u.side === "player" && homeUids.has(u.id)).flatMap((u) => { const s = survivorById(state, u.sid); return s && s.gear ? allCarried(s) : []; }), ...(p.cargo.gear || [])], p.cargo.supplies || (p.cargo.supplies = {}));
   // The piles nobody picked up stay behind: they were found, but nobody brought them home.
   for (const c of R.containers) {
     if (!c.drop || !c.contents) continue;

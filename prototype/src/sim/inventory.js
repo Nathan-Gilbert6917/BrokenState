@@ -34,6 +34,7 @@ import { MEDS } from "./medfinds.js"; // how rare meds are
 import { CLIPS, ADMIN_KG, POUCH_NAMES, KIT_LOOT } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
 import { bodyKit } from "./carrykit.js"; // an enemy's rig and magazines onto its body (call-time only: safe in the import cycle)
 import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
+import { enemyGunLoaded, unloadInto, stockFor } from "./gunload.js"; // the rounds left in a gun, kept on it (call-time only: safe in the import cycle)
 import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet and ear protection on its body
 
 export const POCKETS = 4;
@@ -258,9 +259,11 @@ export function spriteArmorKey(s) {
 }
 
 // Every item a person has on them (worn, held, pockets; a pack counts as one item with its contents inside).
+// A pile body (ground.js groundBodies: what lay on the ground or was left on a body searched in the battle) holds its
+// things loose (s.loose, holes where something was taken): they count too.
 export function allItems(s) {
   ensureInv(s);
-  return [...EQUIP_SLOTS.map((k) => s.gear[k]), ...s.pockets].filter(Boolean);
+  return [...EQUIP_SLOTS.map((k) => s.gear[k]), ...s.pockets, ...(s.loose || [])].filter(Boolean);
 }
 // Everything a person carries, one item at a time: worn and held (a rig and a pack themselves too), pockets, the rig's
 // pouches, the pack's slots, a carrier's plates. The one iterator for "has X on them" (hunting, stealth, kit, combat's
@@ -294,6 +297,7 @@ export function stripAll(s) {
   const items = allItems(s);
   for (const k of EQUIP_SLOTS) s.gear[k] = null;
   s.pockets = s.pockets.map(() => null);
+  if (s.loose) s.loose = [];
   return items;
 }
 
@@ -416,7 +420,11 @@ function ref(state, loc) {
   const h = holderAt(state, loc);
   if (!h) return null;
   let arr, key, owner = null, pouch = null;
-  if (loc.slot === "pocket" || loc.slot === "pack" || (loc.slot === "rig" && loc.i != null)) {
+  if (loc.slot === "loose") { // a pile body's loose things (ground.js): "body:<i>:loose:<j>"
+    if (!Array.isArray(h.loose) || loc.i == null || loc.i < 0 || loc.i >= h.loose.length) return null;
+    arr = h.loose;
+    key = loc.i;
+  } else if (loc.slot === "pocket" || loc.slot === "pack" || (loc.slot === "rig" && loc.i != null)) {
     arr = loc.slot === "pocket" ? h.pockets : loc.slot === "pack" ? packOf(h) : rigPouches(h);
     owner = loc.slot === "pack" ? h.gear.backpack : loc.slot === "rig" ? rigOf(h) : null;
     key = loc.i;
@@ -658,6 +666,8 @@ function taken(state, loc, item) {
   if (b && b.result) b.result.loot.gear.push(item);
   const body = battleBodies(state)[loc.id];
   if (body && body.sid != null) unlistFromSites(state, item);
+  const st = storageFor(state, battlePlace(b));
+  unloadInto(st, [item, ...(Array.isArray(item.contents) ? item.contents : [])], stockFor(state, st)); // gunload.js: a gun's rounds into the stores
 }
 // (A site whose body got up and walked off, carriers.js, stays on the map with nothing on it: site.walked.)
 export function unlistFromSites(state, item) {
@@ -805,6 +815,7 @@ export function enemyBody(rng, u, kit) {
   for (const it of u.arsArmour || []) if (it !== worn && GEAR[it.key] && !body.gear[GEAR[it.key].slot]) body.gear[GEAR[it.key].slot] = it; else if (it !== worn && GEAR[it.key]) earsOnBody(body, it); // a helmet, arm or leg guards; ear protection (helmets.js issueEars)
   dropHeadgear(u, body, src); // helmets.js: a kit helmet at the wear it ended with, ear protection (own dice)
   if (body.gear.weapon) lootGun(u, body.gear.weapon); // gunfire.js: the quality and condition their gun fought (and jammed) in
+  if (body.gear.weapon) enemyGunLoaded(u, body.gear.weapon); // gunload.js: the rounds left in it
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = lootItem(kit.pack[0], src, spend(rng));
   if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, lootItem(rng.pick(kit.finds), src, rng), ""); // pockets: smokes, a ring (combat.js KITS finds)
@@ -911,7 +922,7 @@ export function takeAllBody(state, bi) {
   }
   const h = bodyHolder(state, body);
   if (!h) return out;
-  const locs = [...EQUIP_SLOTS.map((k) => `body:${bi}:${k}`), ...h.pockets.map((_, i) => `body:${bi}:pocket:${i}`)]
+  const locs = [...EQUIP_SLOTS.map((k) => `body:${bi}:${k}`), ...h.pockets.map((_, i) => `body:${bi}:pocket:${i}`), ...(h.loose || []).map((_, i) => `body:${bi}:loose:${i}`)]
     .filter((l) => itemAt(state, l))
     .sort((x, y) => worth(itemAt(state, y)) - worth(itemAt(state, x)));
   const st = storageFor(state, battlePlace(state.combat));
