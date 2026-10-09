@@ -211,7 +211,8 @@ export interface Party {
   homeBaseId?: number;
   members?: number[]; // survivor ids
   stance?: string; // parties.js STANCES key
-  vehicleId?: number | null;
+  vehicleId?: number | null; // the lead vehicle (vehicles.js fleets)
+  vehicleIds?: number[]; // every vehicle of the team's, the lead first (up to vehicles.js MAX_VEHICLES)
   supplies?: Stock;
   cargo?: Cargo;
   seen?: Map<number, TileSnapshot>;

@@ -32,7 +32,7 @@ import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect,
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
-import { partyVehicle, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
+import { partyVehicle, partyVehicles, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated, SEATS } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods, carriedThrowables } from "./inventory.js";
 import { areaSource, kitSource, spend } from "./itemcond.js";
@@ -883,7 +883,7 @@ export function syncVehicleZone(b) {
   for (let i = 0; i < R.zones.length; i++) R.zones[i].vehicle = i === R.vehicleZone;
 }
 // Seats: who can ride in the team's vehicle (board / disembark), by its model (vehicles.js VEHICLE_TYPES).
-export const SEATS = { sedan: 4, suv: 5, hummer: 4, van: 7, truck: 5, bike: 1, miltruck: 12 }; // a bike or a motorcycle: its rider
+export { SEATS }; // vehicles.js (a fleet's seats on the road use them too)
 // Ramming (driveTo): the vehicle drives through people (any side, RAMMING.HIT damage, the dead ZOMBIE_HIT) and light
 // obstacles (WEAR: what each costs the vehicle's condition, settled when the battle ends: settleVehicle). Walls, trees,
 // other cars, water, railings and trenches stop it.
