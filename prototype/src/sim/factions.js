@@ -45,7 +45,7 @@ import {
 } from "./world.js";
 import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
 import { baseWalls, count } from "./buildings.js";
-import { radioBasesInRange, removeBase } from "./world.js";
+import { radioBasesInRange, removeBase, localId } from "./world.js";
 import { playerTile } from "./hardcore-start.js";
 import { defendInPerson, raidForce } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
@@ -610,7 +610,7 @@ export function launchRaidOnBase(state, f, base, opts = {}) {
   if (p) {
     p.esc = f.raidEsc || 1; f.raidedYou = day(state); noteRaid(state); // the autopilot's grudge (autopilot.js conquest); the pace (eras.js)
     // Siege kit by how prepared they are (siege.js): ladders, a ram, grenades against a walled base.
-    p.siege = capSiegeKit(state, f, raidSiegeKit(state, base, { count: raidForce(f, p.strength).count, key: p.id, prepared: !!opts.prepared || p.esc > 1.01 || f.type === "military" || f.type === "expansionist", kind: f.type === "military" ? "frag" : "pipebomb" })); // arsenal.js: only the explosives they hold
+    p.siege = capSiegeKit(state, f, raidSiegeKit(state, base, { count: raidForce(f, p.strength).count, key: localId(state, p.id) /* localId: ids are process-wide */, prepared: !!opts.prepared || p.esc > 1.01 || f.type === "military" || f.type === "expansionist", kind: f.type === "military" ? "frag" : "pipebomb" })); // arsenal.js: only the explosives they hold
   }
   return p;
 }
