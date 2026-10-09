@@ -23,6 +23,11 @@ button.primary { background: #4a3816; border-color: var(--accent); }
 button.active { background: #4a3816; border-color: var(--accent); }
 select, input { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.25rem 0.4rem; }
 input[type="number"] { width: 4.5rem; }
+/* A slider is not a text box: no padding, border or panel fill around it, or the track stops short of its end at 100%
+   (:where keeps it as weak as the input rule above, so a styled slider such as .smrange still wins) */
+input:where([type="range"]) { padding: 0; border: none; border-radius: 0; background: transparent; accent-color: var(--accent); vertical-align: middle; cursor: pointer; }
+/* A slider's readout keeps one width from 0% to 100%, so nothing beside it shifts when it gains a digit */
+.sndval { display: inline-block; min-width: 4.8ch; text-align: right; font-variant-numeric: tabular-nums; }
 h2 { font-size: 1.1rem; margin: 0.2rem 0 0.6rem; }
 h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
 .muted { color: var(--muted); }
