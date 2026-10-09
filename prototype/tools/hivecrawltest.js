@@ -274,6 +274,10 @@ console.log("The core");
   const { p: q } = squad(s2, h2, { weapon: "pistol", armor: null, shoot: 3, n: 4 });
   const num = HC.coreSetup(s2, q, h2, true), map = HC.coreSetup(s2, q, h2);
   check(num.enemy.power > map.enemy.power, `by the numbers the bosses add to the brood's power (${map.enemy.power} → ${num.enemy.power})`);
+  // Fitted to the map (progression census 2026-10-09: the numbers said 80% where the map won 25%): the bosses count
+  // HIVEMIND.numbersK times their flat power by the numbers.
+  const cf = HC.coreForce(s2, h2), H = HC.HIVEMIND;
+  check(H.numbersK > 1 && Math.abs(cf.bossPower - (H.power + H.powerTier * cf.tier + H.broodPower) * H.numbersK) < 1e-9, `the core's bosses by the numbers: ${cf.bossPower.toFixed(1)} (× ${H.numbersK}, fitted to the map)`);
 }
 
 // ---------- 5. the autopilot ----------
