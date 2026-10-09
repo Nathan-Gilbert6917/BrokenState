@@ -18,6 +18,7 @@ import { edibleFood, eatFromStore } from "./storage.js";
 import { vehicleById, partyVehicle, tank } from "./vehicles.js";
 import { assignStations } from "./buildings.js";
 import { isCaptive } from "./conflicts.js";
+import { healMult } from "./traits.js"; // Quick Healer
 import { wormHealMult } from "./worm.js"; // the worm: half the healing while it is in them
 import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
 import { chooseRounds, baseCals } from "./ammo.js";
@@ -545,7 +546,7 @@ function holdUpkeep(state, p, job) {
     const fed = draw("food"), watered = draw("water");
     if (!fed) hurt(state, m, 6, dest.tile, `of hunger while holding at ${dest.name}`, { raw: true });
     if (!watered && m.alive) hurt(state, m, 8, dest.tile, `of thirst while holding at ${dest.name}`, { raw: true });
-    if (fed && watered) m.health = Math.min(100, m.health + 3 * wormHealMult(m)); // worm.js: half the healing while the worm is in them
+    if (fed && watered) m.health = Math.min(100, m.health + 3 * wormHealMult(m) * healMult(m)); // worm.js: half the healing while the worm is in them; Quick Healer (traits.js)
     else short = !fed && !watered ? "food and water" : !fed ? "food" : "water";
   }
   if (short) log(state, `The convoy holding at ${dest.name} (${jobName(state, job)}) has no ${short}. Send it home or stock the base.`, "danger");

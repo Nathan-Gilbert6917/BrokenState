@@ -5,7 +5,7 @@
 // A world built with them keeps a copy (state.customBackgrounds, saved with the game), so a save shows the background
 // whatever the browser's list holds later. hardcore-start.js archetypeOf / applyArchetype / rollCustom use them.
 // Not in an Ironman run (ui/newgame.js: ticking Ironman puts the colonists back as rolled, and Start refuses a custom crew).
-import { GEAR, TRAITS, SKILLS } from "./data.js";
+import { GEAR, TRAITS, SKILLS, clashIn } from "./data.js";
 import { VEHICLE_TYPES } from "./vehicles.js";
 
 export const CUSTOM_BG = {
@@ -13,7 +13,7 @@ export const CUSTOM_BG = {
   MAX: 24, // backgrounds kept in the list
   NAME: 30, BLURB: 60, // characters
   SKILL: 10, // the most a background adds to one skill (a colonist's own skills cap at 20 as ever)
-  TRAITS: 3, // traits it gives (never Brave with Coward); a colonist keeps at most TRAITS in all, the background's first
+  TRAITS: 3, // traits it gives (never two that clash: data.js TRAIT_CLASH); a colonist keeps at most TRAITS in all, the background's first
   ITEMS: 12, TRUNK_ITEMS: 10,
   // On them (on top of the team's clamped 1–3 days, like a prepper's bag) and in the car's back.
   SUPPLY: { food: 30, water: 30, ammo: 200, arrows: 60, meds: 10 },
@@ -43,7 +43,7 @@ const amounts = (src, caps) => {
   return out;
 };
 
-// Anything the browser kept (or a save carried), made safe: unknown keys dropped, numbers clamped, Brave or Coward.
+// Anything the browser kept (or a save carried), made safe: unknown keys dropped, numbers clamped, no clashing traits.
 export function sanitizeBackground(raw, id = raw && raw.id) {
   const C = CUSTOM_BG, r = raw && typeof raw === "object" ? raw : {};
   const skills = {};
@@ -51,7 +51,7 @@ export function sanitizeBackground(raw, id = raw && raw.id) {
   const traits = [];
   for (const t of Array.isArray(r.traits) ? r.traits : []) {
     if (!customTraitKeys().includes(t) || traits.includes(t) || traits.length >= C.TRAITS) continue;
-    if ((t === "brave" && traits.includes("coward")) || (t === "coward" && traits.includes("brave"))) continue;
+    if (clashIn(traits, t)) continue; // never two that clash (data.js TRAIT_CLASH): the first stays
     traits.push(t);
   }
   const gear = {};

@@ -19,6 +19,7 @@ import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { zombieToughness } from "./hives.js";
 import { stripAll, itemLoad, lootItem, armouredItem } from "./inventory.js";
 import { kitSource, spend } from "./itemcond.js";
+import { hasTrait } from "./traits.js"; // Fleet-Footed: a team on foot that runs from trouble
 import {
   log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
   armedFactor, usesArrows,
@@ -676,6 +677,7 @@ export function runBonus(state, p) {
   if (p.vehicle && partyFuel(state, p) >= 2) b += state.tiles[partyTile(p)].road ? 4 : 3;
   if (isNight(state)) b += 1;
   if (partyMembers(state, p).length >= 4) b -= 1;
+  if (!p.vehicle && partyMembers(state, p).every((m) => hasTrait(m, "fleet"))) b += 1; // a team on foot runs at its slowest: all Fleet-Footed (traits.js)
   return b;
 }
 

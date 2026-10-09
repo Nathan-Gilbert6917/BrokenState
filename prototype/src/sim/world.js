@@ -6,7 +6,8 @@ import { keyWord } from "./water.js"; // supply names in log lines (call-time on
 import { Rng } from "./rng.js";
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
-import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { TRAIT_FX, traitDice, swapNewTraits, noteBornTraits, woundMult } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
 import { appearanceFor, craftingStart, CRAFT_START } from "./appearance.js";
 export { radioBasesInRange };
@@ -234,7 +235,10 @@ export function makeSurvivor(state, quality = 1) {
   for (let i = 0; i < 2; i++) skills[rng.pick(ROLLED_SKILLS)] += rng.int(3, 7);
   for (const k of ROLLED_SKILLS) skills[k] = Math.min(20, skills[k]);
   skills.crafting = craftingStart(state.seed, (state.peopleMade || 0) + 1, skills.mechanics, quality); // its own dice (appearance.js)
-  const traits = rollTraits(rng);
+  // The world's dice draw the traits as ever; the newer ones come in with dice of their own (traits.js), keyed like the
+  // looks below by the seed and how many people this world has made.
+  const born = rollTraits(rng, null);
+  const traits = swapNewTraits([...born], traitDice(state.seed, (state.peopleMade || 0) + 1));
   /** @type {Survivor} */
   const s = {
     id: newId(),
@@ -252,20 +256,22 @@ export function makeSurvivor(state, quality = 1) {
   // and the world's rng sequence is untouched.
   state.peopleMade = (state.peopleMade || 0) + 1;
   s.appearance = appearanceFor(state.seed, state.peopleMade);
+  noteBornTraits(s, born); // what the world's dice rolled (a start's backgrounds weigh their trait by it)
   return s;
 }
 
-// One or two traits, never Brave with Coward (makeSurvivor; the new-run screen's Randomize all).
-/** @param {import("./rng.js").Rng} rng @returns {string[]} */
-export function rollTraits(rng) {
-  const traitKeys = Object.keys(TRAITS);
+// One or two traits, never two that clash (data.js TRAIT_CLASH) (makeSurvivor; the new-run screen's Randomize all; a
+// child's own). Drawn from BIRTH_TRAITS with rng, as they always were; then the newer traits come in with `dice`
+// (traits.js swapNewTraits; null: not here, the caller does it with dice of its own).
+/** @param {import("./rng.js").Rng} rng @param {{ next: () => number } | null} [dice] @returns {string[]} */
+export function rollTraits(rng, dice = rng) {
   const traits = [];
   const count = rng.chance(0.6) ? 1 : 2;
   while (traits.length < count) {
-    const t = rng.pick(traitKeys);
-    if (!traits.includes(t) && !(t === "brave" && traits.includes("coward")) && !(t === "coward" && traits.includes("brave"))) traits.push(t);
+    const t = rng.pick(BIRTH_TRAITS);
+    if (!traits.includes(t) && !clashIn(traits, t)) traits.push(t);
   }
-  return traits;
+  return dice ? swapNewTraits(traits, dice) : traits;
 }
 
 // A name nobody in this world has had: no first name twice while one is free (messages use first names), and
@@ -313,7 +319,7 @@ export function applyCrew(state, crew) {
     if (c.name && String(c.name).trim()) s.name = String(c.name).trim();
     if (c.skills) for (const k of SKILLS) if (c.skills[k] != null) s.skills[k] = Math.max(0, Math.min(20, Math.round(c.skills[k])));
     // Traits and the skill-point budget belong to the edited colonist, not to the seed.
-    if (Array.isArray(c.traits)) s.traits = [...new Set(c.traits.filter((t) => TRAITS[t]))];
+    if (Array.isArray(c.traits)) s.traits = [...new Set(c.traits.filter((t) => TRAITS[t]))].filter((t, i, all) => !clashIn(all.slice(0, i), t)); // none that clash (data.js TRAIT_CLASH): the first stays
     if (Number.isFinite(c.budget)) s.skillBudget = c.budget;
     if (c.appearance) s.appearance = { ...c.appearance };
     // A normal start's weapon and armor (Randomize all hands the kit out again). Hardcore's come from what they grabbed.
@@ -404,7 +410,10 @@ export function skill(s, key) {
   if (key === "crafting" && s.skills.crafting == null) v = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0)); // people from before the skill (save.js fills it in)
   if (key === "medicine" && s.traits.includes("medic")) v += 4;
   if (key === "stealth" && s.traits.includes("loud")) v -= 3;
+  if (key === "farming" && s.traits.includes("farmraised")) v += TRAIT_FX.FARM;
+  if (key === "speech" && s.traits.includes("persuasive")) v += TRAIT_FX.SPEECH;
   if (s.traits.includes("lucky")) v += 1;
+  if (s.traits.includes("unlucky")) v -= 1;
   return Math.max(0, v);
 }
 
@@ -493,11 +502,11 @@ export function playerStrength(state) {
   return alive(state).reduce((sum, s) => sum + combatPower(s), 0);
 }
 
-// opts.raw: damage that armor and toughness do nothing against (hunger, thirst, infection).
+// opts.raw: damage that armor and toughness (Tough, Frail) do nothing against (hunger, thirst, infection).
 /** @param {State} state @param {Survivor} s @param {number} amount @param {number | null} tileId @param {string} cause @param {{ raw?: boolean }} [opts] */
 export function hurt(state, s, amount, tileId, cause, opts = {}) {
   if (!opts || !opts.raw) {
-    if (s.traits.includes("tough")) amount *= 0.75;
+    amount *= woundMult(s); // Tough × 0.75, Frail × 1.25 (traits.js)
     amount *= armorMult(s);
   }
   s.health -= amount;

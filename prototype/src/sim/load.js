@@ -8,11 +8,11 @@
 // A survivor's load = what they wear, hold and keep in pockets and pack + their share of the team's supplies and
 // cargo. The team shares that pool out so everyone ends up equally burdened (the same felt load, each up to
 // their own max), so whoever carries best (a good pack, no bad back, a higher max) takes more.
-// Max load: 40 kg (Bad Back 28), + the pack's `carry` (improvised backpack +6, assault pack +10), + 8 with Packrat.
+// Max load: 40 kg (Bad Back 28, Strong Back 48: traits.js), + the pack's `carry` (improvised backpack +6, assault pack +10), + 8 with Packrat.
 // A team can never carry more than its people's max loads together (plus its vehicle).
 //
 // Load bands, the same for everyone, by felt load (the load × 0.88 with an assault pack (its `ease`), × 1.2 with a
-// Bad Back):
+// Bad Back, × 0.9 with a Strong Back):
 //   Light ≤ 18 kg: full pace, normal rations · Medium ≤ 28: -10% pace, +15% food and water
 //   Heavy ≤ 38: -25% pace, +35% · Overloaded (above 38, up to the max): -45% pace, +60%.
 // Scouting (fieldcraft: pacing, packing, resting right) takes 2.5% a point off both the slow-down and the extra
@@ -24,6 +24,7 @@
 // The team is weighed when it sets off and when it stops (parties.js weighTeam): eating on the way does not
 // lighten its band until it stops, but anything picked up on the move counts at once. That keeps the trip planner's
 // ETA, rations and fuel the same as the trip's.
+import { TRAIT_FX } from "./traits.js"; // Strong Back
 import { GEAR } from "./data.js";
 import { skill } from "./world.js";
 import { hasPerk } from "./skills.js";
@@ -50,12 +51,12 @@ const r4 = (x) => Math.round(x * 1e4) / 1e4;
 // ---------- one person ----------
 export const kgOf = (key) => GEAR[key]?.weight ?? 1;
 export const wornLoad = (s) => (s ? allItems(s).reduce((a, it) => a + itemLoad(it), 0) : 0);
-export const maxLoad = (s) => (s.traits.includes("badback") ? BADBACK_MAX : MAX_LOAD) + carryBonus(s) + (hasPerk(s, "packrat") ? PACKRAT_KG : 0);
+export const maxLoad = (s) => (s.traits.includes("badback") ? BADBACK_MAX : s.traits.includes("strongback") ? TRAIT_FX.STRONG_MAX : MAX_LOAD) + carryBonus(s) + (hasPerk(s, "packrat") ? PACKRAT_KG : 0);
 export const packEase = (s) => {
   const pk = s && s.gear && s.gear.backpack;
   return (pk && GEAR[pk.key] && GEAR[pk.key].ease) || 0;
 };
-export const feelFactor = (s) => (1 - packEase(s)) * (s.traits.includes("badback") ? BADBACK_FEEL : 1);
+export const feelFactor = (s) => (1 - packEase(s)) * (s.traits.includes("badback") ? BADBACK_FEEL : s.traits.includes("strongback") ? TRAIT_FX.STRONG_FEEL : 1);
 export const loadEase = (s) => Math.min(EASE_MAX, Math.max(0, skill(s, EASE_SKILL)) * EASE_PER_POINT);
 export const bandIndex = (felt) => {
   const i = LOAD_BANDS.findIndex((b) => felt <= b.upTo + 1e-9);

@@ -140,7 +140,7 @@ export function stealthSetup(state, b) {
       setLight(u, s);
       u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal || helmetNvg(s); // a thermal monocular sees in the dark like night vision (optics.js); so does a thermal sight on the gun (gunmods.js); goggles on the helmet leave the off hand free (helmets.js)
       const t = s ? s.traits || [] : [];
-      u.str = (t.includes("tough") ? 5 : 0) + (t.includes("brave") ? 5 : 0) - (t.includes("coward") ? 5 : 0);
+      u.str = (t.includes("tough") ? 5 : 0) - (t.includes("frail") ? 5 : 0) + (t.includes("brave") ? 5 : 0) - (t.includes("coward") ? 5 : 0);
       setSuppressor(u, s);
       u.daySight = u.sight; // refitSenses
       if (b.night && !u.nvg) u.sight = Math.min(u.sight, nightSight(u));

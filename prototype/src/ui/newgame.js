@@ -9,6 +9,7 @@ import { HC_START, backgroundInfo, countWord } from "../sim/hardcore-start.js"; 
 import { customLibrary } from "./backgrounds.js";
 import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/custombg.js), kept in this browser
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
+import { traitPickerHtml, traitBlock } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, fitSkills, skillTotal, SKILL_MAX,
 } from "../sim/appearance.js";
@@ -69,11 +70,7 @@ function traitMod(s, k) {
 const freeEdit = (ui) => !!ui.freeEdit && !ui.ironman;
 const MAX_TRAITS = 3;
 function traitPicker(s) {
-  return `<div class="row" style="gap:0.2rem;margin-top:0.3rem">${Object.keys(TRAITS).map((t) => {
-    const on = s.traits.includes(t);
-    const off = !on && (s.traits.length >= MAX_TRAITS || (t === "brave" && s.traits.includes("coward")) || (t === "coward" && s.traits.includes("brave")));
-    return `<button class="mini ${on ? "active" : ""}" data-action="nr-trait" data-id="${s.id}" data-k="${t}" ${off ? "disabled" : ""}${tip(`${TRAITS[t].desc}${on ? ". Click to remove" : off ? (s.traits.length >= MAX_TRAITS ? `. At most ${MAX_TRAITS} traits` : ". Not Brave and Coward both") : ". Click to add"}`)}>${TRAITS[t].name}</button>`;
-  }).join("")}</div>`;
+  return `<div style="margin-top:0.3rem">${traitPickerHtml(Object.keys(TRAITS), s.traits, MAX_TRAITS, `data-action="nr-trait" data-id="${s.id}"`)}</div>`;
 }
 // Who they were (Hardcore): the dice (what was drawn, in brackets), a preset, or one of the custom backgrounds.
 function backgroundPicker(state, s) {
@@ -362,12 +359,12 @@ export const LOOK_ACTIONS = {
     s.startCustom = true;
     ui.crewEdited = true;
   },
-  // Customize: a trait on or off (at most MAX_TRAITS, never Brave with Coward).
+  // Customize: a trait on or off (at most MAX_TRAITS, never two that clash: data.js TRAIT_CLASH).
   "nr-trait": (state, ui, d) => {
     const s = survivorById(state, Number(d.id));
     if (!s || ui.started || !freeEdit(ui) || !TRAITS[d.k]) return;
     if (s.traits.includes(d.k)) s.traits = s.traits.filter((t) => t !== d.k);
-    else if (s.traits.length < MAX_TRAITS && !(d.k === "brave" && s.traits.includes("coward")) && !(d.k === "coward" && s.traits.includes("brave"))) s.traits = [...s.traits, d.k];
+    else if (!traitBlock(s.traits, d.k, MAX_TRAITS)) s.traits = [...s.traits, d.k];
     else return;
     s.startCustom = true;
     ui.crewEdited = true;
