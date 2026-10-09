@@ -261,7 +261,7 @@ async function main() {
     jobs.push({ seed: SEED0 + i, mode, style, groups, size, days: DAYS, keep: KEEP, logN: LOGN, grep: GREP, startPeople: START_PEOPLE_N });
   }
   const perSize = jobs.filter((j) => j.size === SIZE);
-  console.log(`${GAMES} games to day ${DAYS}${SIZES.length > 1 ? ` on each of ${SIZES.length} sizes (${SIZES.join(", ")})` : ""}: ${perSize.filter((j) => j.mode === "normal").length} normal + ${perSize.filter((j) => j.mode === "hardcore").length} hardcore starts, size ${SIZES.join("/")}, ${GMIN}-${GMAX} AI groups, styles ${STYLES.join("/")}, keep playing after a hive win: ${KEEP}${START_PEOPLE_N != null ? `, hardcore starting people ${START_PEOPLE_N}` : ""}${PRESET_NAME ? `, preset ${PRESET_NAME}` : ""}, commit ${COMMIT}`);
+  console.log(`${GAMES} games to day ${DAYS}${SIZES.length > 1 ? ` on each of ${SIZES.length} sizes (${SIZES.join(", ")})` : ""}: ${perSize.filter((j) => j.mode === "normal").length} normal + ${perSize.filter((j) => j.mode === "hardcore").length} hardcore starts, size ${SIZES.join("/")}, ${GROUPS_LIST ? GROUPS_LIST.join("/") : `${GMIN}-${GMAX}`} AI groups, styles ${STYLES.join("/")}, keep playing after a hive win: ${KEEP}${START_PEOPLE_N != null ? `, hardcore starting people ${START_PEOPLE_N}` : ""}${PRESET_NAME ? `, preset ${PRESET_NAME}` : ""}, commit ${COMMIT}`);
   console.log(`legend: h hive win, a coalition win, l loss, g still going at the cap, X crash`);
   const t0 = Date.now();
   // --jsonl: the games already done (the same seed, size, mode and days) are read back instead of run again.
