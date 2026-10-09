@@ -48,7 +48,7 @@ import { Rng } from "./rng.js";
 import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { isCustomBg } from "./custombg.js";
-import { grabStartGear, addPickedSupplies } from "./startgear.js"; // gear picked on the new-run screen (Customize)
+import { grabStartGear, addPickedSupplies, trunkFromPicks } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
 import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./staging.js";
 
@@ -523,13 +523,14 @@ export function normalStartKit(state, base) {
   for (const s of state.survivors) {
     const A = archetypeOf(state, s.background);
     if (!A || !A.custom) continue;
-    for (const slot of Object.keys(A.gear || {})) if (s.gear[slot]) { base.armory.push(s.gear[slot]); s.gear[slot] = null; }
+    for (const slot of Object.keys(A.gear || {})) if (s.gear[slot]) { if (!s.startPoints) base.armory.push(s.gear[slot]); s.gear[slot] = null; } // built on points: the dice's kit is not handed out on top
     const got = rollCustom(state, s, A);
     for (const k of ["food", "water", "ammo", "meds", "arrows"]) if (got[k]) base.stock[k] = (base.stock[k] || 0) + got[k];
     if (A.car.type && A.car.odds > 0) {
       const T = VEHICLE_TYPES[A.car.type];
       createVehicle(state, A.car.type, { kind: "base", baseId: base.id }, { fuel: Math.round(T.tank * 0.5 * 10) / 10, condition: 70 });
     }
+    if (s.startPoints) continue; // Customize: the pickup's back is what was picked (startgear.js normalStartVehicle)
     for (const [k, q] of Object.entries(A.car.trunk || {})) if (SUPPLY_KEYS.includes(k) && q > 0) base.stock[k] = (base.stock[k] || 0) + q;
     for (const key of A.car.items || []) if (GEAR[key]) base.armory.push(startKit(newItem(key, 1)));
   }
@@ -538,11 +539,17 @@ export function normalStartKit(state, base) {
 // ---------- the car ----------
 // Whose car it was (the three's carOdds), what it is (their CARS), its tank and condition (CAR), and what was in the
 // back (TRUNK: supplies and things). Makes the vehicle on the team and loads the cargo. Returns { owner, car, trunk }.
+// Customize (custompoints.js, startgear.js): whoever pays for the back on the new-run screen (s.startVehicle) owns the
+// car (the dice's pick is still drawn, so the dice after it are where they were), and with anyone built on points the
+// back is exactly what was picked (the dice's back is drawn and noted on the owner, s.diceTrunk, for "Start from the
+// dice", but not loaded). The seats a small team loaded stay as they are.
 export function rollCar(state, p, people) {
   const rng = state.rng, C = HC_START;
   // A custom background's odds may be 0 (never theirs); all 0: anyone's.
   const odds = (s) => { const a = archetypeOf(state, s.background) || {}; return a.custom ? a.car.odds : a.carOdds || 1; };
-  const owner = people.some((s) => odds(s) > 0) ? rng.weighted(people, odds) : rng.pick(people);
+  const drawn = people.some((s) => odds(s) > 0) ? rng.weighted(people, odds) : rng.pick(people);
+  const owner = people.find((s) => s.startVehicle) || drawn;
+  const picked = people.some((s) => s.startPoints);
   const A = archetypeOf(state, owner.background) || {};
   const type = A.custom && A.car.type ? A.car.type : pickW(rng, A.custom ? { sedan: 2, truck: 1 } : A.cars || { sedan: 2, truck: 1 });
   const T = VEHICLE_TYPES[type];
@@ -552,11 +559,11 @@ export function rollCar(state, p, people) {
   p.vehicleId = car.id;
   const trunk = { supplies: {}, gear: [] };
   if (A.custom) { // exactly what the player put in the back
-    for (const [k, q] of Object.entries(A.car.trunk)) if (SUPPLY_KEYS.includes(k) && q > 0) { trunk.supplies[k] = q; p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; }
-    for (const key of A.car.items) if (GEAR[key]) { const item = startKit(newItem(key, 1)); p.cargo.gear.push(item); trunk.gear.push(item); }
+    for (const [k, q] of Object.entries(A.car.trunk)) if (SUPPLY_KEYS.includes(k) && q > 0) trunk.supplies[k] = q;
+    for (const key of A.car.items) if (GEAR[key]) trunk.gear.push(startKit(newItem(key, 1)));
   }
   const TR = A.custom ? {} : A.trunk || {};
-  for (const k of SUPPLY_KEYS) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) { trunk.supplies[k] = q; p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; } }
+  for (const k of SUPPLY_KEYS) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) trunk.supplies[k] = q; }
   if (TR.gear) {
     const table = { ...TR.gear };
     for (let n = rng.int(TR.n[0], TR.n[1]); n > 0 && Object.keys(table).length; n--) {
@@ -564,10 +571,13 @@ export function rollCar(state, p, people) {
       delete table[key];
       if (!GEAR[key]) continue;
       const item = startItem(rng, key, Math.round(rng.range(0.6, 1) * 100) / 100);
-      p.cargo.gear.push(item);
       trunk.gear.push(item);
     }
   }
+  owner.diceTrunk = { items: trunk.gear.map((it) => it.key), supplies: { ...trunk.supplies } }; // the dice's back (until Start)
+  if (picked) { const mine = trunkFromPicks(owner.startVehicle); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
+  for (const [k, q] of Object.entries(trunk.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
+  p.cargo.gear.push(...trunk.gear);
   // A team of one or two loaded the empty seats too (HC_START.SMALL SEAT per seat short of three): trunk.seats.
   const seats = emptySeats(people.length);
   if (seats) {

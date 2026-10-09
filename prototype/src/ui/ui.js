@@ -1,6 +1,8 @@
 // DOM panels and modals. Every user action goes through the action dispatcher in main.js.
 // Any element with data-tip="..." shows a hover description.
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger, SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, SKILLS, SKILL_NAMES, TRAITS, FACTION_TYPES } from "../sim/data.js";
+import { traitChips, traitChip, traitWords } from "./traitpick.js"; // trait chips: coloured by kind, the tier
+import { traitOf } from "../sim/traits.js";
 import {
   day, hourOfDay, isNight, hub, alive, atBase, skill, combatPower, factionById, survivorById, baseById, gearEffect, RADIO_RANGE, residents,
 } from "../sim/world.js";
@@ -327,7 +329,7 @@ function personCard(state, s) {
     ${gaugeRows(s, { mood: false })}
     <div class="row small"${moodTipAttr(state, s)}><span style="width:3.5rem" class="muted">Mood</span><div style="flex:1">${bar(s.mood, "var(--info)")}</div><span style="width:2rem">${n0(s.mood)}</span></div>${moodRiskChip(s) || relChip(state, s) || familyChip(state, s) ? `<div class="small">${moodRiskChip(s)}${relChip(state, s)}${familyChip(state, s)}</div>` : ""}` :
     isCaptive(s) ? "" : s.location.kind === "errand" ? `<div class="small muted">Away on a personal errand: back around day ${s.location.until}.</div>` : `<div class="small muted"${tip("Teams report when they get home, wait for orders, or come into radio range of a radio station.")}>No contact: health and mood unknown until the team reports in.</div>`}
-    <div>${topSkills}${backgroundInfo(state, s.background) ? `<span class="chip"${tip(`Who they were before Calder fell${backgroundInfo(state, s.background).blurb ? `: ${backgroundInfo(state, s.background).blurb}` : ""}${backgroundInfo(state, s.background).custom ? " (a custom background)" : ""}`)}>${esc(backgroundInfo(state, s.background).name)}</span>` : ""}${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
+    <div>${topSkills}${backgroundInfo(state, s.background) ? `<span class="chip"${tip(`Who they were before Calder fell${backgroundInfo(state, s.background).blurb ? `: ${backgroundInfo(state, s.background).blurb}` : ""}${backgroundInfo(state, s.background).custom ? " (a custom background)" : ""}`)}>${esc(backgroundInfo(state, s.background).name)}</span>` : ""}${traitChips(s)}</div>
   </div>`;
 }
 
@@ -377,7 +379,7 @@ function renderPeople(state) {
 function personWords(state, s) {
   const role = roleOf(state, s);
   const bg = backgroundInfo(state, s.background);
-  return [s.name, role ? role.name : "", ROLES[s.role] ? ROLES[s.role].name : "", ...Object.keys(s.skills || {}).filter((k) => skill(s, k) >= 5).map((k) => SKILL_NAMES[k]), bg ? bg.name : "", ...(s.traits || []).map((t) => (TRAITS[t] ? TRAITS[t].name : t))].join(" ").toLowerCase();
+  return [s.name, role ? role.name : "", ROLES[s.role] ? ROLES[s.role].name : "", ...Object.keys(s.skills || {}).filter((k) => skill(s, k) >= 5).map((k) => SKILL_NAMES[k]), bg ? bg.name : "", traitWords(s)].join(" ").toLowerCase();
 }
 // The compact People tab: one line a person (name and status icons, job, health), the full card a click away
 // (the survivor screen) or a switch back (Cards). Hover: health, mood and top skills.
@@ -1022,7 +1024,7 @@ function crewPick(state, crewPool, pl, where) {
       <label class="${pl.crew.has(s.id) ? "on" : ""}"${tip(`${s.name}: ${ROLES[s.role]?.name || s.role} at ${where}. Taking them pauses that work.`)}><input type="checkbox" data-action="pl-crew" data-id="${s.id}" ${pl.crew.has(s.id) ? "checked" : ""}>
         <span><b>${s.leader ? "★ " : ""}${esc(s.name)}</b>${stIcons(state, s)} <span class="muted small">HP ${n0(s.health)} · ${ROLES[s.role]?.name || s.role}</span><br>
         <span class="small">${keySkills.map((k) => `${SKILL_SHORT[k]} ${skill(s, k)}`).join(" · ")}</span><br>
-        <span class="small muted">${[s.gear.weapon, s.gear.armor, s.gear.tool].filter(Boolean).map((g) => esc(g.name)).join(", ") || "No gear"} · wears ${n1(wornLoad(s))} of ${maxLoad(s)} kg${s.traits.length ? " · " + s.traits.map((t) => TRAITS[t].name).join(", ") : ""}</span></span></label>`).join("") || `<span class="muted">Nobody is at ${where}.</span>`}</div>`;
+        <span class="small muted">${[s.gear.weapon, s.gear.armor, s.gear.tool].filter(Boolean).map((g) => esc(g.name)).join(", ") || "No gear"} · wears ${n1(wornLoad(s))} of ${maxLoad(s)} kg${s.traits.length ? " · " + traitWords(s) : ""}</span></span></label>`).join("") || `<span class="muted">Nobody is at ${where}.</span>`}</div>`;
 }
 // The shared picker (ui/fleetpick.js): up to four vehicles, click to take or leave each.
 function transportPick(state, h, pl, v, ids, where) {
@@ -1320,7 +1322,7 @@ function survivorModal(state, ui) {
     ${s.alive ? workLine(state, s, base) : ""}
     <div class="grid2">
       ${skillsBlock(state, s)}
-      <div><h3>Traits</h3>${s.traits.map((t) => `<div class="small"><b>${TRAITS[t].name}</b> <span class="muted">${TRAITS[t].desc}</span></div>`).join("")}
+      <div><h3>Traits</h3>${s.traits.map((t) => `<div class="small">${traitChip(s, t)} <span class="muted">${esc(traitOf(s, t).desc)}</span></div>`).join("")}
         <div class="spread"><h3>Gear</h3><button class="mini primary" data-action="inv-open" data-id="${s.id}" ${personPlace(s) ? "" : "disabled"}${tip("Paper-doll inventory: what they wear, hold and carry in pockets and pack. Move items to and from the armory (at a base) or teammates and the cargo (on a team).")}>Inventory</button></div>
         <div class="small muted">Armor ${Math.round(armorPower(s) * 10) / 10} from worn pieces · ${carried} item${carried === 1 ? "" : "s"} in pockets and pack</div>
         ${slots.map((slot) => {

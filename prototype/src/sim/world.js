@@ -9,7 +9,7 @@ import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worlds
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
-import { sanitizeStartGear, hasPicks, normalStartGear } from "./startgear.js"; // gear picked on the new-run screen (Customize)
+import { sanitizeStartGear, hasPicks, normalStartGear, sanitizeStartVehicle } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { appearanceFor, craftingStart, CRAFT_START } from "./appearance.js";
 export { radioBasesInRange };
 
@@ -321,6 +321,9 @@ export function applyCrew(state, crew) {
   state.survivors.forEach((s, i) => {
     const c = crew[i];
     if (!c) return;
+    // What the dice made of them, before any edit (the new-run screen's "Start from the dice" loads it; not saved:
+    // startgear.js clearStartGear takes it off at Start).
+    s.diceRoll = { skills: { ...s.skills }, traits: [...s.traits], traitTier: { ...(s.traitTier || {}) } };
     if (c.name && String(c.name).trim()) s.name = String(c.name).trim();
     if (c.skills) for (const k of SKILLS) if (c.skills[k] != null) s.skills[k] = Math.max(0, Math.min(20, Math.round(c.skills[k])));
     // Traits and the skill-point budget belong to the edited colonist, not to the seed.
@@ -339,6 +342,11 @@ export function applyCrew(state, crew) {
     // Customized past the dice on the new-run screen (free skills, traits, a picked background: ui/newgame.js), which an
     // Ironman run may not start with.
     if (c.custom) s.startCustom = true;
+    // Built on customization points (custompoints.js): their picks are what they have, the dice's kit is not handed out
+    // on top (startgear.js); and the vehicle's back if they pay for it.
+    if (c.points) { s.startPoints = true; s.startCustom = true; }
+    const sv = sanitizeStartVehicle(c.startVehicle);
+    if (sv) s.startVehicle = sv; else delete s.startVehicle;
   });
 }
 

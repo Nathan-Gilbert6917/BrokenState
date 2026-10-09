@@ -12,6 +12,8 @@
   --death: #ff4d4d;
   --info: #8fb4e0;
   --danger-soft: color-mix(in srgb, var(--danger) 28%, var(--panel-2)); /* the stack mover's "no room" track */
+  /* trait chips (ui/traitpick.js): good greenish, bad reddish, neutral grey (the colour-blind palette: blue, orange) */
+  --t-good: #8fdba6; --t-good-bg: #1d3826; --t-bad: #f2a69c; --t-bad-bg: #432220; --t-neutral: #c7cbd1; --t-neutral-bg: #2f343b;
   --sm-k0: var(--info); --sm-k1: #c39be0; --sm-k2: #6cc9bf; --sm-k3: var(--text); /* the stack mover's destinations (fit bars, chips) */
   font-size: calc(16px * var(--ui-scale));
 }
@@ -206,6 +208,9 @@ button.mini { padding: 0.15rem 0.45rem; font-size: 0.82rem; }
 .chip.on { background: #21402c; color: var(--good); }
 .chip.off { background: #402424; color: var(--danger); }
 .chip.trait { background: #3a2f1c; }
+.chip.trait.t-good { background: var(--t-good-bg); color: var(--t-good); }
+.chip.trait.t-bad { background: var(--t-bad-bg); color: var(--t-bad); }
+.chip.trait.t-neutral { background: var(--t-neutral-bg); color: var(--t-neutral); }
 .chip.rel { background: #2a2f45; color: #c9b6ff; } /* ui/relations.js: ♥ partner, +friends, −rivals */
 /* ui/status.js: stacking status icons next to a name (low mood, starving, thirsty, low health, infected, sick) */
 .st-icons { display: inline-flex; gap: 0.1rem; margin-left: 0.3rem; vertical-align: middle; font-weight: normal; }
@@ -314,6 +319,19 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 .sginfo { grid-column: 2 / -1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sgwhere { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.2rem; }
 .sgwhere .chip { margin: 0.05rem 0.1rem; }
+/* the containers, placed by hand: a cell a slot (pocket, pouch, pack slot); click a thing, then where it goes */
+.sgbox { margin-top: 0.35rem; }
+.sgcells { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.15rem; }
+button.sgcell { min-width: 6.2rem; max-width: 10rem; padding: 0.15rem 0.35rem; font-size: 0.76rem; text-align: left; display: flex; flex-direction: column; line-height: 1.15; }
+button.sgcell.empty { border-style: dashed; color: var(--muted); }
+button.sgcell.sel { border-color: var(--accent); background: #4a3816; }
+button.sgcell.bad { border-color: var(--danger); }
+button.sgcell .sgkind { font-size: 0.66rem; color: var(--muted); }
+button.sgcell .sgname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sgcellwrap { display: inline-flex; align-items: stretch; }
+.sgcellwrap button.mini { padding: 0 0.3rem; margin-left: -1px; }
+.sgtrunk { margin-top: 0.6rem; border-top: 1px solid var(--line); padding-top: 0.4rem; }
+.sgtrunk .lookopts { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 
 /* running orders (map overlay) and the team panel */
 #orders { position: absolute; left: 0.6rem; top: 0.6rem; width: 15rem; max-height: 45%; overflow-y: auto; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.55rem; font-size: 0.82rem; z-index: 4; }
@@ -904,6 +922,7 @@ body.tl-on #watchlist, body.tl-on #noteedit { display: none !important; }
 :root.cb .warn { color: #f0e442; }
 :root.cb .chip.on { background: #17344a; }
 :root.cb .chip.off { background: #45300f; }
+:root.cb { --t-good: #8ccbf2; --t-good-bg: #15324a; --t-bad: #f2b552; --t-bad-bg: #452f0e; }
 :root.cb .perk.taken { background: rgba(86, 180, 233, 0.18); }
 :root.cb .al.al-warn { border-left-color: #f0e442; }
 :root.calm *, :root.calm *::before, :root.calm *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
@@ -1187,11 +1206,24 @@ body.ov-dragging #mapwrap > * { transition: none !important; animation: none !im
 .namebox .nameinput { width: 100%; font-size: 1.15rem; padding: 0.45rem 0.6rem; margin-top: 0.6rem; border-color: var(--accent); }
 .namebox .namechips { flex-wrap: wrap; gap: 0.3rem; }
 
-/* ui/traitpick.js: the trait picker (Customize on the new-run screen, a custom background): good and bad traits in two
-   compact rows; a clashing one is off with why in its hover text */
+/* ui/traitpick.js: the trait picker (Customize on the new-run screen, a custom background): good, neutral and bad
+   traits in three compact rows, coloured like the chips; a clashing one is off with why in its hover text; a picked
+   one with tiers has − and + beside it */
 .tp { display: flex; flex-direction: column; gap: 0.15rem; }
 .tp-row { display: flex; flex-wrap: wrap; gap: 0.15rem; align-items: center; }
 .tp-label { width: 2.2rem; flex: none; }
 button.mini.tp-chip { padding: 0.05rem 0.35rem; font-size: 0.76rem; }
-button.mini.tp-chip.tp-bad:not(.active) { color: #e5a39a; }
+button.mini.tp-chip.t-good { color: var(--t-good); }
+button.mini.tp-chip.t-bad { color: var(--t-bad); }
+button.mini.tp-chip.t-neutral { color: var(--t-neutral); }
+button.mini.tp-chip.active.t-good { background: var(--t-good-bg); border-color: var(--t-good); }
+button.mini.tp-chip.active.t-bad { background: var(--t-bad-bg); border-color: var(--t-bad); }
+button.mini.tp-chip.active.t-neutral { background: var(--t-neutral-bg); border-color: var(--t-neutral); }
+.tp-pts { font-style: normal; opacity: 0.8; margin-left: 0.15rem; font-size: 0.7rem; }
+.tp-sel { display: inline-flex; gap: 0; }
+.tp-sel button.mini.tp-tier { padding: 0.05rem 0.3rem; font-size: 0.72rem; margin-left: -1px; }
+/* Customization points on the crew card and in the gear window (ui/newgame.js pointsBar) */
+.ptsbar { margin-top: 0.3rem; }
+.ptsbar .bar { height: 0.5rem; }
+.ptsbar.over b, .ptsbar.over .ptsleft { color: var(--danger); }
 button.mini.tp-chip:disabled { opacity: 0.4; }
