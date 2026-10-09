@@ -104,6 +104,7 @@ import { initAudio, audioFrame } from "./ui/audio.js"; // sound: WebAudio, made 
 import { initDisplay, DISPLAY_ACTIONS, DISPLAY_CHANGE, displayKey } from "./ui/display.js";
 import { initMinimap, minimapFrame } from "./ui/minimap.js";
 import { initConfirm, askHtml, askKey, ASK_ACTIONS, ask } from "./ui/confirm.js";
+import { clickPick, syncPick, MAPSEL_ACTIONS } from "./ui/mapselect.js"; // selecting teams, parties and bands on the map like tiles
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 // MAX_SPEED (ui/pacing.js): the fastest normal speed (5×); anything above is a dev fast-forward
@@ -130,6 +131,7 @@ const freshUi = () => ({
   codex: null, paletteRecent: [], palFocus: null, // ui/codex.js window; ui/cmdpalette.js recent picks and a build button to light up
   ledger: null, // ui/ledger.js: the Ledger window is open
   ask: null, // ui/confirm.js: the question up before an order that cannot be undone
+  mapSel: null, selParty: null, // ui/mapselect.js: a party, band or outsiders selected on the map; selParty: your selected team's id
 });
 const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: START_PEOPLE.DEF, ironman: false, freeEdit: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: Hardcore's starting team, 1–4
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
@@ -399,6 +401,7 @@ function refresh(user = true) {
   dirtyNow = false;
   lastRefresh = last;
   tidyUi();
+  syncPick(state, ui); // ui/mapselect.js: a selected party followed as it moves, the gold ring on the map
   noteNames(state);
   codexScan(state, ui); // ui/codex.js: open the entries for what the player now sees (before the alerts: it may flash)
   guideCheck(state, ui); // the first-week guide ticks off what is done (ui/guide.js), before the alerts show its toast
@@ -1060,6 +1063,7 @@ for (const [k, fn] of Object.entries(CRAWL_ACTIONS)) actions[k] = (d) => fn(stat
 // Needs (ui/needs.js): a team's rations and who eats first, a treat used by hand.
 for (const [k, fn] of Object.entries(NEEDS_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 for (const [k, fn] of Object.entries(PACE_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the card tray, Options → Pause for… (ui/pacing.js)
+for (const [k, fn] of Object.entries(MAPSEL_ACTIONS)) actions[k] = (d) => { fn(state, ui, d); mapClicked = true; }; // ui/mapselect.js: the "On this tile" row
 actions["tray-rules"] = () => openSettings(ui, "options");
 for (const [k, fn] of Object.entries(LISTEN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // xp-listen, bl-listen
 // The Watching panel and map notes (ui/watchlist.js): pin, go, unpin, the note editor; going there uses center and xp-open.
@@ -1530,10 +1534,9 @@ window.addEventListener("mouseup", (e) => {
     const p = ui.moveParty != null && id >= 0 ? partyById(ui.moveParty) : null;
     if (p) act(() => pickMove(p, id));
     else if (id >= 0 && ui.moveParty == null) {
-      // Clicking a team you are in touch with opens its panel; any other tile goes back to the tile view.
-      const team = state.parties.find((q) => contactable(q) && partyTile(q) === id);
-      ui.expedition = team ? team.id : null;
-      ui.xpMsg = "";
+      // A team, another group's party, a band or outsiders on the tile are selected first (a team opens its panel),
+      // the same tile again goes on to the next and then the tile; Shift+click picks the tile (ui/mapselect.js).
+      clickPick(state, ui, id, e.shiftKey);
       mapClicked = true; // its info is in the right panel: a folded one opens (autoShow)
     }
     ui.selected = id;

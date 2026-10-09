@@ -11,6 +11,7 @@
 //   opens its team panel (ui.expedition) as before; the others get a card here. A selected party is followed as it
 //   moves while you can see it; out of sight the card says where it was last. Selecting another tile some other way
 //   (Locate, the search box) drops it.
+// - ui.selParty: the id of your party selected on the map (a team, its panel open, or your convoy), else null.
 // - view.pick ("kind:id") tells the map which sprite to ring in gold (ui/render.js pickRing).
 // Only what you could see: the same sight (state.live, by night as far as your people see) and radio coverage the
 // map draws by.
@@ -133,6 +134,9 @@ export function syncPick(state, ui) {
       sel.gone = !at;
     }
   }
+  // ui.selParty: the id of your party (a team or a convoy) selected on the map, else null: the one field other code
+  // reads for "the selected team" (its team panel open counts too).
+  ui.selParty = ui.expedition != null ? Number(ui.expedition) : ui.mapSel && ui.mapSel.kind === "convoy" ? Number(ui.mapSel.id) : null;
   const key = ui.expedition != null ? `team:${ui.expedition}` : pickKey(ui.mapSel);
   if (view.pick !== key) { view.pick = key; redrawMap(); }
 }
