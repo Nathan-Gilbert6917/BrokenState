@@ -7,7 +7,7 @@
  * travelHours' options: the way of travel and pace, where on the path it starts, the fuel there is, the hours to
  * step through and whether the weather counts.
  * @typedef {{ vehicle?: boolean | "bike", speed?: number, footSpeed?: number | null, fuelMult?: number, progress?: number,
- *   idx?: number, fuel?: number, offroad?: number, onroad?: number, maxHours?: number, startHour?: number, weather?: boolean, known?: number }} TravelOpts
+ *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, maxHours?: number, startHour?: number, weather?: boolean, known?: number }} TravelOpts
  */
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
 import { findPath } from "./hex.js";
@@ -79,6 +79,7 @@ import { establishOption, establishArrive, strikeOption, strikeArrive } from "./
 import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
 import { askBaseName } from "./basenames.js"; // the naming popup for a base you found
 import { enterTarget, enterCard, enterOption, joinBase } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
+import { shedSurplusVehicles, reseat, afterVehicleLoss } from "./walkers.js"; // one person to each vehicle; walkers after a vehicle is lost
 import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, takeStock, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
 
 export const STANCES = {
@@ -371,7 +372,9 @@ export function outpostName(state, tile) {
 /** @param {Party} p @param {boolean | "bike"} [mode] */
 export const loadPace = (p, mode = p.vehicle) => (!p.burden ? 1 : mode ? p.burden.ride ?? 1 : p.burden.foot ?? 1);
 /** @param {Party} p */
-export const partySpeed = (p) => (p.kind === "convoy" && p.routeKind !== "supply" ? 1 : (STANCES[p.stance]?.speed || 1) * (p.perkSpeed || 1) * (p.prisonSpeed || 1) * loadPace(p)); // prisonSpeed: prisoners walking with the team (prisoners.js)
+// Walkers (walkers.js: people without a seat after a vehicle was lost): the whole team at their pace, each carrying only
+// their own kit (the cargo rides in the vehicles).
+export const partySpeed = (p) => (p.kind === "convoy" && p.routeKind !== "supply" ? 1 : p.walkers > 0 && p.vehicle ? (STANCES[p.stance]?.speed || 1) * (p.perkSpeed || 1) * (p.prisonSpeed || 1) : (STANCES[p.stance]?.speed || 1) * (p.perkSpeed || 1) * (p.prisonSpeed || 1) * loadPace(p)); // prisonSpeed: prisoners walking with the team (prisoners.js)
 // The pace on foot (after a vehicle runs dry or is left: estimates switch to it, as the real team does).
 /** @param {Party} p */
 export const footSpeed = (p) => (p.kind === "convoy" && p.routeKind !== "supply" ? 1 : (STANCES[p.stance]?.speed || 1) * (p.vehicle ? 1 : (p.perkSpeed || 1) * (p.prisonSpeed || 1)) * loadPace(p, false));
@@ -382,7 +385,11 @@ export const modeSpeed = (p, mode) => (!!mode === !!p.vehicle ? partySpeed(p) : 
 export const fuelMultOf = (p) =>(p.burden && p.vehicle === true ? p.burden.fuelMult || 1 : 1);
 // The options travelHours needs for a team as it is: { speed, footSpeed, fuelMult }.
 /** @param {Party} p */
-export const paceOpts = (p) => ({ speed: partySpeed(p), footSpeed: footSpeed(p), fuelMult: fuelMultOf(p), offroad: offroadOf(p), onroad: onroadOf(p) });
+export const paceOpts = (p) => ({ speed: partySpeed(p), footSpeed: footSpeed(p), fuelMult: fuelMultOf(p), offroad: offroadOf(p), onroad: onroadOf(p), walkers: p.walkers > 0 && p.vehicle ? p.walkers : 0 });
+// How a team's steps are costed: as it travels, except that with walkers (walkers.js) the vehicles keep to their road
+// but every step takes a walker's time.
+/** @param {any} p */
+export const stepMode = (p) => (p.walkers > 0 && p.vehicle ? false : p.vehicle);
 // × the pace off-road in the vehicle (vehicles.js VEHICLE_TYPES offroad: the Army truck 0.75), from the last weighing.
 /** @param {Party} p */
 export const offroadOf = (p) => (p.burden && p.vehicle === true ? p.burden.offroad || 1 : 1);
@@ -390,7 +397,7 @@ export const offroadOf = (p) => (p.burden && p.vehicle === true ? p.burden.offro
 /** @param {Party} p */
 export const onroadOf = (p) => (p.burden && p.vehicle === true ? p.burden.onroad || 1 : 1);
 // The cost of one step for a team (or a planning copy with its own offroad): an off-road step in a slow vehicle costs more.
-const offroadStep = (state, p, from, to) => (p.vehicle !== true ? 1 : !state.tiles[from].roadLinks.includes(to) ? 1 / ((p.offroad ?? offroadOf(p)) || 1) : 1 / ((p.onroad ?? onroadOf(p)) || 1));
+const offroadStep = (state, p, from, to) => (p.vehicle !== true || p.walkers > 0 ? 1 : !state.tiles[from].roadLinks.includes(to) ? 1 / ((p.offroad ?? offroadOf(p)) || 1) : 1 / ((p.onroad ?? onroadOf(p)) || 1));
 
 // The same for a team already out, from its last weighing (p.burden).
 /** @param {State} state @param {Party} p */
@@ -434,8 +441,8 @@ export function plannedPace(state, { members, supplies = {}, v = null, stance = 
 // known: the hour the estimate is made in (now): only the weather fronts already on the map by then count (weather.js),
 // so a front that forms later can still make the trip slower than estimated.
 /** @param {State} state @param {number[]} path @param {TravelOpts} [opts] */
-export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed = null, fuelMult = 1, offroad = 1, onroad = 1, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true, known = state.hour } = {}) {
-  const sim = { path: [...path], idx, progress, vehicle: vehicle || false, offroad, onroad };
+export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed = null, fuelMult = 1, offroad = 1, onroad = 1, walkers = 0, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true, known = state.hour } = {}) {
+  const sim = { path: [...path], idx, progress, vehicle: vehicle || false, offroad, onroad, walkers };
   let f = fuel, hours = 0, dryAt = null, rideHours = 0;
   while (sim.idx < sim.path.length - 1 && hours < maxHours) {
     hours += 1;
@@ -825,7 +832,7 @@ function stepAlong(state, p, speed, hour = state.hour, known = Infinity) {
     const from = p.path[p.idx], to = p.path[p.idx + 1];
     // A bridge barricaded since the way was planned stops the team at its foot (bridgeClosedTo); the last tile of the
     // way is the destination itself and is never closed.
-    const cost = moveCost(state, from, to, p.vehicle, p.idx + 1 === p.path.length - 1 ? undefined : p.owner, hour ?? state.hour) * (hour == null ? 1 : travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour, known })) * offroadStep(state, p, from, to);
+    const cost = moveCost(state, from, to, stepMode(p), p.idx + 1 === p.path.length - 1 ? undefined : p.owner, hour ?? state.hour) * (hour == null ? 1 : travelFactor(state, { vehicle: stepMode(p), tileId: to, from, hour, known })) * offroadStep(state, p, from, to);
     if (!isFinite(cost)) {
       p.path = p.path.slice(0, p.idx + 1);
       if (p.owner === "player" && p.phase === "out" && state.tiles[to].bridge) p.bridgeStop = to; // told on arrival (arrive)
@@ -853,7 +860,7 @@ export function glideAt(state, p, frac) {
   const hour = state.hour + 1; // the hour being travelled (tickHour moves the clock on, then the teams)
   for (let i = p.idx; i < p.path.length - 1; i++) {
     const from = p.path[i], to = p.path[i + 1];
-    const cost = moveCost(state, from, to, p.vehicle, i + 1 === p.path.length - 1 ? undefined : p.owner, hour) * travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour }) * offroadStep(state, p, from, to);
+    const cost = moveCost(state, from, to, stepMode(p), i + 1 === p.path.length - 1 ? undefined : p.owner, hour) * travelFactor(state, { vehicle: stepMode(p), tileId: to, from, hour }) * offroadStep(state, p, from, to);
     if (!(cost > 0) || !isFinite(cost)) return { from, to: from, t: 0 };
     if (prog < cost) return { from, to, t: Math.max(0, prog / cost) };
     prog -= cost;
@@ -910,6 +917,8 @@ function playerPartyHour(state, p) {
   // Hourly sweep: however the last member was lost, the team ends as a wiped team (never silently deleted).
   if (wipeIfEmpty(state, p)) return;
   shedOverload(state, p);
+  shedSurplusVehicles(state, p); // walkers.js: no vehicle goes on with nobody to drive or ride it
+  reseat(state, p); // walkers.js: a seat for the walkers again when one turned up
   const members = partyMembers(state, p);
   // A supply convoy parked at one of your bases eats from that base (handled daily in supply.js).
   if (p.phase === "holding") {
@@ -1084,6 +1093,7 @@ export function leaveVehicle(state, p, tile, reason, which = null) {
   if (!v) return "";
   abandonVehicle(state, p, tile, reason, which && all.length > 1 ? which : null);
   weighTeam(state, p);
+  if (which && all.length > 1) afterVehicleLoss(state, p); // walkers.js: fewer seats than people now? those without one walk
   v.cargo = v.cargo || { supplies: {}, gear: [] };
   const left = trimCargo(state, p, v.cargo).text;
   if (!vehicleCargo(v)) delete v.cargo;
@@ -1639,6 +1649,7 @@ function recoverVehicle(state, p) {
     if (v.condition < 15) takeSupply(p, carried(p, "scrap") >= 1 ? "scrap" : "parts", 1);
     v.condition = Math.max(v.condition, 20);
     setPartyVehicles(state, p, [v]);
+    shedSurplusVehicles(state, p); // walkers.js: a bike each, the spare ones stay
     const c = takeVehicleCargo(state, p, v);
     delete v.cargo;
     spot(p, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: v.name, remove: true });
@@ -1658,6 +1669,7 @@ function recoverVehicle(state, p) {
   const pour = Math.max(0, Math.min(fuel, tank(v) - v.fuel));
   v.fuel += takeSupply(p, "fuel", pour);
   setPartyVehicles(state, p, [...have, v]); // one more of the team's (or its only one)
+  reseat(state, p); // walkers.js: seats for those who walked
   delete v.found; // a vehicle found on a map (foundcars.js) is just the team's now
   // What was left inside it is cargo again (the vehicle carries it).
   const c = takeVehicleCargo(state, p, v);

@@ -25,12 +25,13 @@
 import { log, survivorById, skill, newId, hub, baseById } from "./world.js";
 import { hash01, gainXp, USE } from "./skills.js";
 import { openOdds, picksOf, PICK, FORCE, SMASH } from "./locks.js";
-import { createVehicle, vehicleById, isCar, tank, VEHICLE_TYPES, partyVehicle, fitMilitary, carPartsCost, carPartsText, fleetJoinProblem, addPartyVehicle } from "./vehicles.js";
+import { createVehicle, vehicleById, isCar, tank, VEHICLE_TYPES, partyVehicle, fitMilitary, carPartsCost, carPartsText, fleetJoinProblem, addPartyVehicle, partyVehicles, driversFor } from "./vehicles.js";
 import { markTaken } from "./miltrucks.js"; // (names below are literal: the modules load in a circle)
 import { markAbandonedVehicle } from "./markers.js";
 import { partyMembers, partyTile, carried, takeSupply, cargoRoom, unitsThatFit, weighTeam, awaitOrders, startReturn, tileLabel, bestSkill, teamName } from "./parties.js";
 import { startTask } from "./orders.js";
 import { SUPPLIES } from "./data.js";
+import { reseat } from "./walkers.js"; // seats for walkers when a car joins
 
 export const CARS = {
   // Doors locked, keys left in it (visor, glovebox), by model; BODY_KEYS more with one of the dead lying near.
@@ -361,6 +362,7 @@ export function joinTeam(state, p, v) {
   const pour = Math.max(0, Math.min(carried(p, "fuel"), tank(v) - v.fuel, Math.max(0, 6 - v.fuel)));
   if (pour > 0) v.fuel += takeSupply(p, "fuel", pour);
   addPartyVehicle(state, p, v); // its only vehicle, or one more (vehicles.js fleets)
+  reseat(state, p); // walkers.js: seats for those who walked
   delete v.found;
   if (p.spotted) p.spotted.set(`vehicle:${v.id}`, { key: `vehicle:${v.id}`, type: "vehicle", tile: partyTile(p), hour: state.hour, label: v.name, remove: true });
   const m = state.markers.find((x) => x.key === `vehicle:${v.id}`);
@@ -442,7 +444,7 @@ export function driveHomeOption(state, p, v) {
   return {
     mission: "drivehome", label: `Drive the ${v.name} home`,
     desc: `One of the team drives the found ${v.name.toLowerCase()} home on their own (fuel ${Math.round(v.fuel)}${v.fuel < 4 ? ", topped up from the team's cans" : ""}); the rest carry on here.`,
-    disabled: n < 2 ? "Needs two people: one stays with the team's own vehicle." : v.fuel + carried(p, "fuel") < 2 ? "Needs 2 fuel (in its tank or carried)." : null,
+    disabled: n < 2 ? "Needs two people: one stays with the team's own vehicle." : n - 1 < driversFor(partyVehicles(state, p)) ? "Every vehicle of the team's needs its own person: nobody is free to drive this one home." : v.fuel + carried(p, "fuel") < 2 ? "Needs 2 fuel (in its tank or carried)." : null,
   };
 }
 // One of the team (the best Mechanics, never the last one) takes the found vehicle home as a team of their own.
@@ -452,6 +454,7 @@ export function driveHome(state, p) {
   const members = partyMembers(state, p);
   if (!v) { awaitOrders(state, p, "There is no found vehicle here that runs.", { failed: true }); return ""; }
   if (members.length < 2) { awaitOrders(state, p, "Needs two people: one stays with the team's own vehicle.", { failed: true }); return ""; }
+  if (members.length - 1 < driversFor(partyVehicles(state, p))) { awaitOrders(state, p, "Every vehicle of the team's needs its own person: nobody is free to drive this one home.", { failed: true }); return ""; }
   const driver = members.slice().sort((a, b) => skill(b, "mechanics") - skill(a, "mechanics") || a.id - b.id)[0];
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { awaitOrders(state, p, "There is no base to drive it to.", { failed: true }); return ""; }

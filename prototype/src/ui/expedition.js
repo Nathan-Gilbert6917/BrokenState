@@ -128,7 +128,7 @@ export function renderExpedition(state, ui, p) {
   const ord = (type, extra, label, hint, disabled) => btn(`data-action="xp-order" data-id="${p.id}" data-type="${type}"${extra}`, label, hint, disabled);
 
   const head = `<div class="spread"><h2 style="margin:0">Team: ${members.map(first).join(", ")}</h2><span class="row">${watchlistPin(state, "team", p.id, `team (${members.map((m) => m.name.split(" ")[0]).join(", ")})`)}<button class="mini" data-action="xp-close"${tip("Back to the tile view (Esc)")}>✕</button></span></div>
-    <div class="small muted">${esc(MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team")} · ${v ? esc(vehicleLabel(partyFleet(state, p))) : "on foot"} · ${STANCES[p.stance]?.name || ""} · home ${esc(home.name)}</div>${teamInvBar(state, p, live)}${live ? editTeamButton(state, p) : ""}`;
+    <div class="small muted">${esc(MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team")} · ${v ? esc(vehicleLabel(partyFleet(state, p))) : "on foot"}${p.walkers > 0 && p.vehicle ? ` <span class="warn"${tip("Not enough seats after a vehicle was lost: they walk, and the team goes at walking pace (the cargo stays in the vehicles) until a seat turns up")}>(${p.walkers} walking: foot pace)</span>` : ""} · ${STANCES[p.stance]?.name || ""} · home ${esc(home.name)}</div>${teamInvBar(state, p, live)}${live ? editTeamButton(state, p) : ""}`;
 
   const status = `<div class="card small" style="margin-top:0.5rem">
       <div class="spread"><b>Now</b>${live ? `<button class="mini" data-action="center" data-tile="${tile}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>

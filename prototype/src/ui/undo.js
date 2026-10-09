@@ -59,10 +59,10 @@ export const undoCount = (state, ui, kind, baseId = null) => { const st = stack(
 
 // ---------- snapshots ----------
 function snapPlanner(pl) {
-  return { mission: pl.mission, stance: pl.stance, crew: [...pl.crew], vehicleId: pl.vehicleId ?? null, supplies: { ...pl.supplies }, plan: clone(pl.plan) ?? null, sweep: clone(pl.sweep) ?? null, tabs: !!pl.tabs, lights: pl.lights !== false, policy: pl.policy ?? null, tplNotes: clone(pl.tplNotes) ?? null };
+  return { mission: pl.mission, stance: pl.stance, crew: [...pl.crew], vehicleId: pl.vehicleId ?? null, vehicleIds: [...(pl.vehicleIds || [])], supplies: { ...pl.supplies }, plan: clone(pl.plan) ?? null, sweep: clone(pl.sweep) ?? null, tabs: !!pl.tabs, lights: pl.lights !== false, policy: pl.policy ?? null, tplNotes: clone(pl.tplNotes) ?? null };
 }
 function restorePlanner(pl, s) {
-  Object.assign(pl, { mission: s.mission, stance: s.stance, crew: new Set(s.crew), vehicleId: s.vehicleId, supplies: { ...s.supplies }, plan: clone(s.plan) || undefined, sweep: clone(s.sweep) || undefined, tabs: s.tabs, lights: s.lights, policy: s.policy, tplNotes: clone(s.tplNotes) });
+  Object.assign(pl, { mission: s.mission, stance: s.stance, crew: new Set(s.crew), vehicleId: s.vehicleId, vehicleIds: [...(s.vehicleIds || [])], supplies: { ...s.supplies }, plan: clone(s.plan) || undefined, sweep: clone(s.sweep) || undefined, tabs: s.tabs, lights: s.lights, policy: s.policy, tplNotes: clone(s.tplNotes) });
   if (!pl.plan) delete pl.plan;
   if (!pl.sweep) delete pl.sweep;
   if (!pl.tplNotes) delete pl.tplNotes; // what a template changed (ui/trips.js)

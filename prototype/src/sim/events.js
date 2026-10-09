@@ -5,7 +5,7 @@ import {
   partyMembers, bestSkill, partyTile, STANCES, tileLabel, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, partySpeed,
   carried, takeSupply, takeShots, addGearToCargo, leaveVehicle, startReturn, wipeIfEmpty, cardStale,
 } from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, partyVehicles, breakdownRoll, fleetProblem, isBike, carPartsCost } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, partyVehicles, breakdownRoll, seatsOf, fleetOf, isBike, carPartsCost } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { rollConflict } from "./conflicts.js";
 import { rollWanderer } from "./wanderers.js";
@@ -409,7 +409,9 @@ function breakdownCard(state, p, v) {
   const here = (s) => p.vehicle && partyVehicles(s, p).includes(v);
   // With other vehicles: left behind alone when the rest still seat everyone (vehicles.js fleetProblem), else they all stay.
   const others = () => partyVehicles(state, p).filter((x) => x !== v);
-  const alone = () => others().length > 0 && !fleetProblem(others(), p.members.length) && (others().length > 1 || !isBike(others()[0]) || (others()[0].count || 1) >= p.members.length);
+  // Pick-list 3b: the others go on even when they cannot seat everyone (walkers.js: those without a seat walk).
+  const alone = () => others().length > 0 && (others().some((x) => !isBike(x)) || others().reduce((a, x) => a + (x.count || 1), 0) >= p.members.length);
+  const short = () => Math.max(0, p.members.length - seatsOf(fleetOf(others())));
   const gone = `The ${v.name} is no longer with the team.`;
   return {
     title: "Breakdown",
@@ -434,7 +436,7 @@ function breakdownCard(state, p, v) {
       },
       {
         label: "Abandon it",
-        get hint() { return alone() ? `Leave the ${v.name} here (it is marked on the map); the team goes on in its other vehicles. Cargo they cannot carry stays in it` : others().length ? "Leave it here (marked on the map). The other vehicles cannot seat everyone, so they are all left and the team continues on foot. Cargo the team cannot carry stays in them" : "Leave it here (it is marked on the map) and continue on foot. Cargo the team cannot carry stays in it"; },
+        get hint() { return alone() ? `Leave the ${v.name} here (it is marked on the map); the team goes on in its other vehicles${short() ? `, ${short()} on foot beside them (walking pace until a seat turns up)` : ""}. Cargo they cannot carry stays in it` : "Leave it here (it is marked on the map) and continue on foot. Cargo the team cannot carry stays in it"; },
         resolve: (s) => {
           if (!here(s)) return gone;
           if (alone()) { const left = leaveVehicle(s, p, partyTile(p), "broke down", v); return `The ${v.name} is left by the road. The team goes on without it.${left ? ` Left in it: ${left}.` : ""}`; }

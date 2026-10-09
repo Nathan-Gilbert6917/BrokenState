@@ -7,8 +7,9 @@
 // waiting formed team (and editing it after the load); and a render smoke test of the window and its buttons.
 // Usage: node tools/teamformtest.js [seed]
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
-import { partyTile, partyMembers, poolLoad, partyCapacity, teamName, orderOptions, MISSIONS, planPath, travelHours, paceOpts, carryCapacity, leaveVehicle, wipeParty } from "../src/sim/parties.js";
-import { vehiclesAtBase, vehicleById, partyVehicle, isBike, createVehicle, parkBikes, seatsOf, MAX_VEHICLES, fleetOf, partyVehicles, payloadOf, typeSpeed, typeFuel, roadPace, partyFuel, useFuel, breakdownRoll } from "../src/sim/vehicles.js";
+import { partyTile, partyMembers, poolLoad, partyCapacity, teamName, orderOptions, MISSIONS, planPath, travelHours, paceOpts, carryCapacity, leaveVehicle, wipeParty, launchExpedition, movePartiesHour, orderMove, hoursLeft, partySpeed } from "../src/sim/parties.js";
+import { reseat } from "../src/sim/walkers.js";
+import { vehiclesAtBase, vehicleById, partyVehicle, isBike, createVehicle, parkBikes, seatsOf, MAX_VEHICLES, fleetOf, partyVehicles, payloadOf, typeSpeed, typeFuel, roadPace, partyFuel, useFuel, breakdownRoll, fleetJoinProblem, addPartyVehicle, driversFor } from "../src/sim/vehicles.js";
 import { createBattle, registerCombatHandler, vehicleBlast, settleVehicle } from "../src/sim/combat.js";
 import { ROCKET } from "../src/sim/launchers.js";
 import { newItem, stripAll, allCarried, itemLoad, packOf, quickMove, carriedSpots } from "../src/sim/inventory.js";
@@ -299,7 +300,7 @@ section("Fleets: 1 to 4 vehicles, a 5th refused; seats and cargo summed");
   const two = formPreview(state, { baseId: h.id, memberIds: people.slice(0, 2).map((s) => s.id), vehicleIds: [cars[0].id, cars[1].id] });
   check(two.cap > one.cap + 500, `two trucks carry more than one (${Math.round(one.cap)} → ${Math.round(two.cap)} kg)`);
   check(seatsOf(fleetOf([cars[0], cars[1]])) === 10 && payloadOf(fleetOf([cars[0], cars[1]])) === 2 * payloadOf(cars[0]), "seats and payload add up (5 + 5 seats, two payloads)");
-  check(/drivers/.test(formPreview(state, { baseId: h.id, memberIds: [people[0].id], vehicleIds: [cars[0].id, cars[1].id] }).problem), "two cars need two drivers");
+  check(/own person/.test(formPreview(state, { baseId: h.id, memberIds: [people[0].id], vehicleIds: [cars[0].id, cars[1].id] }).problem), "two cars need two drivers");
   const sedans = carsAt(state, h, 2, "sedan");
   const nine = atBase(state, h.id).slice(0, 9);
   if (nine.length === 9) check(/seats/.test(formPreview(state, { baseId: h.id, memberIds: nine.map((s) => s.id), vehicleIds: sedans.map((v) => v.id) }).problem), "nine people, two sedans (8 seats): refused");
@@ -496,6 +497,135 @@ section("Keep or undo the gear changes");
   check(u.inv && !gearChanged(state, s3) && h.armory.includes(rifle), "the window's Undo changes button puts it back and stays open");
   ui.TEAMFORM_ACTIONS["tf-close"](state, u, {});
   check(!u.inv, "with nothing changed it closes without asking");
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Trip planner: the shared picker, a launch with three vehicles");
+{
+  const state = mk();
+  const { h, crew } = setup(state);
+  for (const v of vehiclesAtBase(state, h.id)) if (!isBike(v)) v.loc = { kind: "abandoned", tile: 0, since: 0 };
+  const cars = carsAt(state, h, 3);
+  const fp = await import("../src/ui/fleetpick.js");
+  const uiMod = await import("../src/ui/ui.js");
+  const pl = { dest: null, mission: "move", crew: new Set(crew.slice(0, 3).map((s) => s.id)), vehicleIds: [], vehicleId: null, stance: "normal", supplies: { food: 6, water: 6 } };
+  for (const v of cars) { const r = fp.toggleFleetIds(state, pl.vehicleIds, v.id); pl.vehicleIds = r.ids; pl.vehicleId = fp.leadId(state, r.ids); }
+  check(pl.vehicleIds.length === 3 && pl.vehicleId === cars[0].id, "three clicks pick three vehicles; the first car leads");
+  const html = fp.fleetPicker(state, { base: h, ids: pl.vehicleIds, crewN: 3, cans: 0, action: "pl-vehicle" });
+  check(/3\/4 vehicles/.test(html) && /15 seats/.test(html) && /pl-vehicle/.test(html), "the planner's picker shows the totals (3/4 vehicles, 15 seats)");
+  const v = uiMod.plannerVehicle(state, pl);
+  check(v && v.fleet && v.fleet.length === 3 && payloadOf(v) === 3 * payloadOf(cars[0]), "the planner's estimates use all three (payload summed)");
+  check(uiMod.plannerFleetProblem(state, pl) === "", "no problem with three people for three cars");
+  pl.crew = new Set(crew.slice(0, 2).map((s) => s.id));
+  check(/own person/.test(uiMod.plannerFleetProblem(state, pl)), "two people for three cars: refused in the planner");
+  pl.crew = new Set(crew.slice(0, 3).map((s) => s.id));
+  const dest = state.tiles.find((t) => t.id !== h.tile && t.road && state.grid.distance(h.tile, t.id) >= 3 && planPath(state, h.tile, t.id, true));
+  const res = launchExpedition(state, { memberIds: [...pl.crew], dest: dest.id, mission: "move", stance: "normal", vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds, supplies: { ...pl.supplies } });
+  check(res.party && partyVehicles(state, res.party).length === 3 && res.party.phase === "out", `the trip sets off with all three (${res.error || ""})`);
+  // Move-out planner: the same through moveTeamOut.
+  const cars2 = carsAt(state, h, 2);
+  const mo = await import("../src/sim/moveout.js");
+  const r2 = mo.moveTeamOut(state, { baseId: h.id, memberIds: crew.slice(3, 4).concat(atBase(state, h.id).filter((s) => !crew.includes(s)).slice(0, 1)).map((s) => s.id), dest: null, vehicleId: cars2[0].id, vehicleIds: cars2.map((x) => x.id), supplies: { food: 2 } });
+  check(r2.party && partyVehicles(state, r2.party).length === 2, `moving out with two vehicles (${r2.error || ""})`);
+}
+
+section("One person to each vehicle, everywhere");
+{
+  const state = mk();
+  const { h, crew } = setup(state);
+  const cars = carsAt(state, h, 2);
+  check(/own person/.test(formPreview(state, { baseId: h.id, memberIds: [crew[0].id], vehicleIds: cars.map((v) => v.id) }).problem), "Form: one person, two cars");
+  check(/own person/.test(launchExpedition(state, { memberIds: [crew[0].id], dest: h.tile, mission: "move", stance: "normal", vehicleIds: cars.map((v) => v.id), supplies: {} }).error || ""), "the trip planner's launch: one person, two cars");
+  const p = formTeam(state, { baseId: h.id, memberIds: [crew[0].id], vehicleIds: [cars[0].id] }).party;
+  check(/own person/.test(toggleVehicle(state, p, cars[1].id)), "Edit: a second car for a team of one");
+  const other = createVehicle(state, "sedan", { kind: "abandoned", tile: h.tile, since: 0 }, { fuel: 10, condition: 60 });
+  check(/own person/.test(fleetJoinProblem(state, p, other)), "a found or recovered car: nobody free to drive it");
+  addMember(state, p, crew[1].id);
+  check(fleetJoinProblem(state, p, other) === "", "with a second person it may join");
+  check(/Leave a vehicle/.test(removeMember(state, p, crew[1].id) || "") || partyVehicles(state, p).length <= p.members.length, "Edit: nobody leaves a vehicle without a person");
+}
+
+section("Surplus vehicles after deaths: left on the tile, the least useful first");
+{
+  const state = mk();
+  const { h, crew } = setup(state);
+  const cars = carsAt(state, h, 3);
+  cars[0].condition = 90; cars[1].condition = 40; cars[2].condition = 70;
+  const p = formTeam(state, { baseId: h.id, memberIds: crew.slice(0, 3).map((s) => s.id), vehicleIds: cars.map((v) => v.id) }).party;
+  const away = state.tiles.find((t) => t.id !== h.tile && !state.bases.some((b) => b.tile === t.id) && t.terrain !== "water" && planPath(state, h.tile, t.id, true));
+  p.path = [away.id]; p.idx = 0; p.phase = "waiting";
+  crew[2].alive = false;
+  movePartiesHour(state);
+  check(partyVehicles(state, p).length === 2 && cars[1].loc.kind === "abandoned" && cars[1].loc.tile === away.id, "one dies: the car in the worst shape is left there");
+  check(p.spotted && p.spotted.has(`vehicle:${cars[1].id}`), "marked for the map (recoverable)");
+  check(state.cards.some((c) => c.title === "Vehicles left behind" && c.partyId === p.id), "a card says so");
+  // Bikes go first: a team with a car and bikes that loses a rider leaves a bike.
+  const st2 = mk();
+  const s2 = setup(st2);
+  createVehicle(st2, "bike", { kind: "base", baseId: s2.h.id }, { count: 4 });
+  const stack = parkBikes(st2, s2.h);
+  const car = carsAt(st2, s2.h, 1)[0];
+  const q = formTeam(st2, { baseId: s2.h.id, memberIds: s2.crew.slice(0, 3).map((s) => s.id), vehicleIds: [car.id, stack.id] }).party;
+  q.path = [away.id]; q.idx = 0; q.phase = "waiting";
+  s2.crew[1].alive = false;
+  movePartiesHour(st2);
+  const bk = partyVehicles(st2, q).find(isBike);
+  check(partyVehicles(st2, q).includes(car) && bk && bk.count === 1 && st2.vehicles.some((x) => isBike(x) && x.loc.kind === "abandoned"), "a rider lost: a bike is left, the car stays");
+  check(driversFor(partyVehicles(st2, q)) <= partyMembers(st2, q).length, "no vehicle goes on with nobody in it");
+}
+
+section("Walkers after a vehicle is lost: walking pace, the split card, seats again");
+{
+  const state = mk();
+  const { h } = setup(state);
+  const six = atBase(state, h.id).slice(0, 6);
+  for (const s of six) { s.traits = []; stripAll(s); }
+  const truck = createVehicle(state, "truck", { kind: "base", baseId: h.id }, { fuel: 30, condition: 100 });
+  const sedan = createVehicle(state, "sedan", { kind: "base", baseId: h.id }, { fuel: 18, condition: 100 });
+  const p = formTeam(state, { baseId: h.id, memberIds: six.map((s) => s.id), vehicleIds: [truck.id, sedan.id], supplies: { food: 12, water: 12 } }).party;
+  check(p && !p.walkers, `six people, 9 seats: nobody walks (${p ? "" : "no team"})`);
+  const dest = state.tiles.find((t) => t.id !== h.tile && t.road && state.grid.distance(h.tile, t.id) >= 4 && planPath(state, h.tile, t.id, true));
+  orderMove(state, p, dest.id);
+  const before = hoursLeft(state, p);
+  const fast = partySpeed(p);
+  leaveVehicle(state, p, h.tile, "blown up", truck);
+  check(p.walkers === 2 && partyVehicles(state, p).length === 1, `the truck lost: 4 seats for 6, ${p.walkers} walk`);
+  check(partySpeed(p) <= fast && hoursLeft(state, p) > before, `the team goes at walking pace (${before}h → ${hoursLeft(state, p)}h)`);
+  check(paceOpts(p).walkers === 2, "the estimates (queue, right-click hours) count the walkers");
+  const card = state.cards.find((c) => c.walkersFor === p.id);
+  check(card && card.choices.some((c) => /follow on foot/.test(c.label)) && card.choices.some((c) => /Stay together/.test(c.label)), "a card offers to leave the walkers to follow on foot, or stay together");
+  // Save and load with the walkers.
+  state.cards.length = 0;
+  const ld = loadFromString(saveToString(state));
+  const lp = ld.parties.find((x) => x.id === p.id);
+  check(lp && lp.walkers === 2 && hoursLeft(ld, lp) === hoursLeft(state, p), "save and load: still 2 walking, the same hours");
+  // Seats again: another car picked up.
+  const spare = createVehicle(state, "van", { kind: "abandoned", tile: partyTile(p), since: 0 }, { fuel: 20, condition: 80 });
+  addPartyVehicle(state, p, spare);
+  reseat(state, p);
+  check(!p.walkers && partySpeed(p) >= fast - 1e-9, "a van picked up: everyone rides again");
+  // The split: the walkers become a team of their own on foot.
+  const st2 = mk();
+  const s2 = setup(st2);
+  const six2 = atBase(st2, s2.h.id).slice(0, 6);
+  const t2 = createVehicle(st2, "truck", { kind: "base", baseId: s2.h.id }, { fuel: 30, condition: 100 });
+  const c2 = createVehicle(st2, "sedan", { kind: "base", baseId: s2.h.id }, { fuel: 18, condition: 100 });
+  const q = formTeam(st2, { baseId: s2.h.id, memberIds: six2.map((s) => s.id), vehicleIds: [t2.id, c2.id], supplies: { food: 12, water: 12 } }).party;
+  leaveVehicle(st2, q, s2.h.tile, "out of fuel", t2);
+  const card2 = st2.cards.find((c) => c.walkersFor === q.id);
+  const n0 = st2.parties.length;
+  card2.choices.find((c) => /follow on foot/.test(c.label)).resolve(st2);
+  const walkersTeam = st2.parties.length === n0 + 1 ? st2.parties[st2.parties.length - 1] : null;
+  check(walkersTeam && walkersTeam.members.length === 2 && !partyVehicles(st2, walkersTeam).length && walkersTeam.vehicle === false, "Leave the walkers: two go on foot as their own team");
+  check(!q.walkers && q.members.length === 4 && partyVehicles(st2, q).length === 1, "and the four ride on in the sedan at its pace");
+  check(teamHas(walkersTeam, "food") > 0, "with a share of the food");
+  // A single car that never lost one still takes everyone (pick-list 1a).
+  const st3 = mk();
+  const s3 = setup(st3);
+  const six3 = atBase(st3, s3.h.id).slice(0, 6);
+  const sed = createVehicle(st3, "sedan", { kind: "base", baseId: s3.h.id }, { fuel: 18, condition: 100 });
+  const r3 = formTeam(st3, { baseId: s3.h.id, memberIds: six3.map((s) => s.id), vehicleIds: [sed.id] });
+  check(r3.party && !r3.party.walkers, "six in one sedan with no loss: nobody walks (as before)");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
