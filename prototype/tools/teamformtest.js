@@ -130,8 +130,8 @@ section("Forming on foot and on bikes");
   sameCensus(before2, census(state), "forming on bikes");
   // Adding someone takes one more bike; removing gives it back.
   const n0 = bikesTotal(state);
-  check(addMember(state, r2.party, crew[3].id) && v.count === 3 && crew[3].location.partyId === r2.party.id, "adding a person takes another bike");
-  check(removeMember(state, r2.party, crew[3].id) && v.count === 2 && crew[3].location.kind === "base", "removing them puts it back");
+  check(addMember(state, r2.party, crew[3].id) && partyVehicle(state, r2.party).count === 3 && crew[3].location.partyId === r2.party.id, "adding a person takes another bike");
+  check(removeMember(state, r2.party, crew[3].id) && partyVehicle(state, r2.party).count === 2 && crew[3].location.kind === "base", "removing them puts it back");
   check(bikesTotal(state) === n0, "bikes add up");
 }
 
@@ -168,7 +168,7 @@ section("Editing at the base: people, vehicle, supplies, gear");
   const before = census(state);
   check(/joins/.test(addMember(state, p, crew[1].id)) && p.members.includes(crew[1].id) && crew[1].location.partyId === p.id, "add a person from the base");
   check(/not at/.test(addMember(state, p, crew[1].id)), "not twice");
-  check(/takes the/.test(setVehicle(state, p, car.id)) && partyVehicle(state, p) === car && p.vehicle === true && car.loc.partyId === p.id, "take the car");
+  check(/now has the/.test(setVehicle(state, p, car.id)) && partyVehicle(state, p) === car && p.vehicle === true && car.loc.partyId === p.id, "take the car");
   check(/food/.test(setSupply(state, p, "food", 20)) && near(teamHas(p, "food"), 20), "load more food (20)");
   check(/food/.test(setSupply(state, p, "food", 6)) && near(teamHas(p, "food"), 6), "drop some off (6)");
   const lr = loadFromBase(state, p, { items: [armoryLoc(h, knife)] }, crew[1].id);
