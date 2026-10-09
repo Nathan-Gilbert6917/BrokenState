@@ -92,7 +92,7 @@ export const HCRAWL = {
   // lost: at least lost): the blows spread over the team as on the map (small fights rarely kill; the generic model
   // costs a life in a third of even the smallest fights).
   NUMBERS: { k: 135, exp: 1.9, cap: 340, lost: 260, ambush: 1.3, blow: [8, 30], shots: 3 },
-  AUTO: { hurt: 45, treat: 70, fit: 60, sureOdds: 0.8, fightOdds: 0.6, sneakOdds: 0.7, coreFit: 4, wear: 0.04, lie: 70 },
+  AUTO: { coreOdds: 0.75, hurt: 45, treat: 70, fit: 60, sureOdds: 0.8, fightOdds: 0.6, sneakOdds: 0.7, coreFit: 4, wear: 0.04, lie: 70 },
   // The AI groups' crawl (groupHiveCrawl), in the guard's units: the Hivemind and the Broodmother cost boss + bossTier ×
   // tier of a war party's strength on top of the brood on the way and in the core.
   GROUP: { boss: 6, bossTier: 6, depthDiv: 3 },
@@ -928,9 +928,17 @@ export function coreSetup(state, p, hive, numbers = false) {
   return {
     tile: hive.tile, partyId: p.id, ambush: null, canRetreat: true, handler: "hiveAssault", layout: "hivecore",
     enemy: { kind: "zombies", count: n, power: numbers ? Math.round(((count * f.power + f.bossPower) / n) * 10) / 10 : f.power, types: f.types, elite: !!f.elite, name: `the core of ${hive.name}`, brood: count, broodPower: f.power, hp: f.hp },
-    aiStyle: tacticalStyleFor(state, p),
+    aiStyle: coreStyle(state, p), // the core's brood keeps coming out of the walls: no Aggressive last stand there
     context: { hiveId: hive.id, partyId: p.id, crawl: !!p.hiveCrawl, tier: f.tier, warmth: 100, met: count, allies: allies.fighters },
   };
+}
+// The style the AI fights the core in, played headless: the team's own retreat policy, else the autopilot's style but
+// never Aggressive (it holds on until two thirds are down, and the Hivemind's brood never stops coming).
+function coreStyle(state, p) {
+  const own = tacticalStyleFor(state, p);
+  if (own) return own;
+  const gov = state.autopilot && state.governor ? state.governor.personality : null;
+  return gov === "aggressive" ? "balanced" : gov || undefined;
 }
 export function assaultHive(state, p, hive, opts = {}) {
   const setup = coreSetup(state, p, hive, !!opts.quick);
@@ -1142,7 +1150,7 @@ export function hiveCrawlAutoStep(state, p) {
     const opts = encounterOptions(state, p);
     const get = (id) => opts.find((o) => o.id === id);
     if (c.enc.kind === "core") {
-      const ok = fit >= Math.min(A.coreFit, members.length) && hurtBad <= 1 && get("numbers").odds >= A.fightOdds;
+      const ok = fit >= Math.min(A.coreFit, members.length) && fit === members.length && get("numbers").odds >= A.coreOdds; // only the whole team fit, at good odds
       resolveHiveEnc(state, p, ok ? "fight" : "back", { map: false });
       if (!ok && p.hiveCrawl && !p.hiveCrawl.enc) { p.hiveCrawl.leaving = true; say2(p.hiveCrawl, "The core is too much for the team as it is: it turns back, to come again.", "danger", state.hour); }
       return;
