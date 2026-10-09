@@ -46,6 +46,7 @@ import {
   partyMembers, partyTile, carried, takeSupply, tileLabel, teamName, awaitOrders, outpostName, settleInto, cargoRoom,
 } from "./parties.js";
 import { firstHubPending, hubFounded } from "./hardcore-start.js";
+import { askBaseName } from "./basenames.js"; // the naming popup for the new shelter
 import { sourceEggs, addWormWater } from "./worm.js";
 import { teamWaterIn, takeTeamWater, moveWater, drawWater, keyWord, RAW } from "./water.js"; // purified and un-purified water (the camp's river water is un-purified)
 
@@ -463,6 +464,7 @@ function tryFinish(state, camp) {
   for (const k of STORE_KEYS) base.stock[k] = Math.max(0, n0(camp.stores[k]) - (STAGING.USED.includes(k) ? camp.needs[k] || 0 : 0));
   if (t.ruin) { log(state, `The camp was built on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }
   state.bases.push(base);
+  askBaseName(state, base);
   state.staging = null;
   const people = here.reduce((a, p) => a + partyMembers(state, p).length, 0);
   for (const p of here) settleInto(state, p, base);
