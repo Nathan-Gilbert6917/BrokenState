@@ -357,6 +357,48 @@ section("Your teams meet them");
 }
 
 // ======================================================================================
+section("The governor and a toll that would strand the team");
+{
+  // Progression census 2026-10-09 (seed 7002 hardcore): a hive squad three days out paid its water and its fire fuel
+  // as a toll, went home parched and never set the fire. The toll's score (the governor's) drops to 5 when it would
+  // leave the team less water or food than the way home takes, or takes a hive squad's fuel.
+  const tollAi = (supplies, mission = "move", far = 9) => {
+    const st = world(seed + 11);
+    tick(st, 24);
+    clearCards(st);
+    const h = hub(st);
+    st.autoCombat = true;
+    for (const [k, q] of Object.entries(supplies)) h.stock[k] = Math.max(h.stock[k] || 0, q + 20);
+    const dest = st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === far && planPath(st, h.tile, t.id, false)).id;
+    const crew = atBase(st, h.id).slice(0, 3).map((s) => s.id);
+    const res = launchExpedition(st, { memberIds: crew, dest, mission, stance: "normal", supplies });
+    const p = res.party;
+    if (!p) return { why: res.error };
+    tick(st, 2);
+    // The band stops them (Raiders from outside) unless the team spots it first (Raiders ahead): a fresh band until it does.
+    for (let i = 0; i < 12; i++) {
+      clearCards(st);
+      p.lastConflict = null;
+      st.visitors.length = 0;
+      const r = V.spawnVisitor(st, "raiders", { size: 9, power: 5 });
+      place(st, r, partyTile(p));
+      r.goal = { kind: "party", partyId: p.id, tile: partyTile(p) };
+      tick(st);
+      const c = st.cards.find((x) => x.partyId === p.id && /^Raiders from outside/.test(x.title));
+      const pay = c && c.choices.find((x) => /^Pay the toll/.test(x.label));
+      if (pay) return { ai: pay.ai(st), label: pay.label };
+    }
+    return { why: "no toll card in 12 tries" };
+  };
+  const dry = tollAi({ water: 9, food: 6 });
+  check(dry.ai === 5, `a toll paid in the water the team needs to get home: score ${dry.ai} (${dry.label || dry.why})`);
+  const rich = tollAi({ water: 20, food: 12, scrap: 30 });
+  check(rich.ai >= 55, `a toll paid from spare scrap: the usual score ${rich.ai} (${rich.label || rich.why})`);
+  const fire = tollAi({ water: 20, food: 12, fuel: 12 }, "hive");
+  check(fire.ai === 5 || !/fuel/.test(fire.label || ""), `a hive squad's fire fuel as a toll: score ${fire.ai} (${fire.label || fire.why})`);
+}
+
+// ======================================================================================
 section("Merchants: goods, prices, the trade window, groups, the radio");
 {
   const st = world();

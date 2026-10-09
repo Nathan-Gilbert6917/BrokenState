@@ -1676,6 +1676,20 @@ function teamFight(state, v, p, ambush, extra = {}) {
   });
   return "";
 }
+// A toll the governor will not pay (the toll's ai score): one that leaves the team less water or food than the way
+// home takes (the hours still to go out and back, at the rate it eats and drinks), or that takes a hive squad's fuel
+// for the fires it went out to set. (Progression census 2026-10-09, seed 7002 hardcore: a hive squad three days out
+// paid 26 water and its 12 fuel to raiders, went home parched and never set the fire; a dozen such trips in a year.)
+function tollStrands(state, p, plan) {
+  if (!partyMembers(state, p).length) return false;
+  const hours = p.phase === "back" ? Parties.hoursLeft(state, p) : 2 * Parties.hoursLeft(state, p) + 10;
+  const perDay = Math.max(1, Parties.partyPace(state, p).eatMove);
+  const left = (k) => (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0) - (plan[k] || 0);
+  const need = hours / 24 + 0.5;
+  if ((plan.water || plan.rawwater) && (left("water") + left("rawwater")) / thirstAt(state) / perDay < need) return true;
+  if (plan.food && left("food") / perDay < need) return true;
+  return p.mission === "hive" && (plan.fuel || 0) > 0;
+}
 const fightAi = (st, odds) => { const need = { cautious: 0.8, balanced: 0.65, aggressive: 0.5 }[style(st)] ?? 0.65; return odds >= need ? 80 + odds * 10 : odds * 40; };
 
 // They found you: fight, pay the toll, talk, or run.
@@ -1702,7 +1716,7 @@ function stopCard(state, v, p) {
       { label: `Fight (${pct(odds)} by the numbers)`, hint: "A battle: they have the drop on you", fight: { odds, enemy, ambush: "enemy" }, ai: (st) => fightAi(st, odds), resolve: (st) => (ok(st) ? teamFight(st, v, p, "enemy") : done(st, "They are gone.")) },
       {
         label: `Pay the toll (${t0 ? planText(t0) : "not enough"})`, hint: "They take it and let you pass", disabled: (st) => !ok(st) || !toll(),
-        ai: (st) => (toll() ? (style(st) === "cautious" ? 75 : 55) : -99),
+        ai: (st) => { const plan = toll(); return !plan ? -99 : tollStrands(st, p, plan) ? 5 : style(st) === "cautious" ? 75 : 55; },
         resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); const plan = toll(); if (!plan) return done(st, "You have nothing they want."); payToll(st, plan); return done(st, `You paid ${planText(plan)} and walked on.`); },
       },
       {
