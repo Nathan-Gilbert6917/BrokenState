@@ -207,6 +207,7 @@ export const poolLoad = (p) => supplyLoad(p.supplies) + cargoLoad(p.cargo);
 export function cargoRoom(state, p) {
   let cap = partyCapacity(state, p);
   if (p.haulCap != null && !p.vehicle) cap = Math.min(cap, p.haulCap);
+  if (p.task && p.task.capKg != null && p.task.pool0 != null) cap = Math.min(cap, p.task.pool0 + p.task.capKg); // carry.js capTask: collect only as much as asked
   return Math.max(0, cap - poolLoad(p));
 }
 
