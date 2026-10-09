@@ -61,6 +61,7 @@ console.log("Watching a fight of your people lent out");
   const card = V.watchCard(st, loan);
   check(card.choices.map((c) => c.label).join(" / ") === "Watch the fight / Let it play out" && card.choices[1].default, `the card: ${card.choices.map((c) => c.label).join(" / ")} (left alone: Let it play out)`);
   const setup = V.watchSetup(st, loan);
+  check(Object.keys(setup.pool).some((k) => /^a_/.test(k) && setup.pool[k] > 0), `their group hands them rounds for their guns (${Object.entries(setup.pool).map(([k, v]) => `${k} ${v}`).join(", ")})`);
   const b = battle(st, setup);
   st.combat = b;
   const mine = b.units.filter((u) => u.side === "player");

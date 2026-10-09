@@ -64,7 +64,7 @@ export function volRequestModal(state, ui) {
   const answer = !q ? `<div class="muted">Pick a group and a team.</div>`
     : q.refuse ? `<div class="danger">${esc(q.refuse)}</div>`
     : `<table class="t small"><tr><th>What weighs</th><th>Points</th></tr>${q.parts.map((x) => `<tr><td>${esc(x.label)}</td><td class="${x.v < 0 ? "danger" : "good"}">${sign(x.v)}</td></tr>`).join("")}<tr><td><b>Total</b></td><td><b>${sign(q.points)}</b></td></tr></table>
-       <div class="${q.yes ? "good" : "danger"}" style="margin-top:0.3rem">${q.yes ? `They would agree: ${q.n} of their people for ${q.days} days.${!offer && !r.favour ? ` Asking with nothing in return costs ${VOL.ASK_GW} goodwill.` : ""}` : "They would say no. Offer something, ask for fewer or for less time, or do them a job first."}</div>`;
+       <div class="${q.yes ? "good" : "danger"}" style="margin-top:0.3rem">${q.yes ? `They would agree: ${q.n} of their people for ${q.days} days.${!offer && !r.favour && !(r.share > 0) ? ` Asking with nothing in return costs ${VOL.ASK_GW} goodwill.` : ""}` : "They would say no. Offer something, ask for fewer or for less time, or do them a job first."}</div>`;
   return `<div class="box wide vol-req"><h1>🤝 Ask for volunteers</h1>
     <div class="small muted" style="margin-bottom:0.5rem">${esc(VOL_HELP)}</div>
     <div class="grid2">

@@ -250,7 +250,7 @@ export function askVolunteers(state, f, p, opts = {}) {
     f.stock[offer.key] = (f.stock[offer.key] || 0) + offer.qty;
   }
   if (opts.favour) f.volFavour = { day: day(state) };
-  if (!offer && !opts.favour) changeGoodwill(state, f, -VOL.ASK_GW, "you asked them for people");
+  if (!offer && !opts.favour && !(opts.share > 0)) changeGoodwill(state, f, -VOL.ASK_GW, "you asked them for people"); // a share of the haul is something in return too
   const share = VOL.SHARE.choices.includes(opts.share) ? opts.share : 0;
   const req = { id: V.nextAsk++, fid: f.id, partyId: p.id, n: q.n, days: q.days, mission: m.kind, label: m.label, day: day(state), share, cargoStart: supplyOf(p), homeBaseId: p.homeBaseId };
   (V.reqs || (V.reqs = [])).push(req);
@@ -318,7 +318,7 @@ export function volunteersHour(state) {
     if (!ownMembers(state, p).length) { gone.push([s, "none of your people are left with them"]); continue; }
     if (attitude(f) === "Hostile" || f.goodwill < VOL.GW_LEAVE) { gone.push([s, `${f.name} called them home`]); continue; }
     if (state.hour >= s.vol.until && !busy(state, p)) gone.push([s, "their time is up"]);
-    else if (s.health < VOL.PULL.hp && !fighting(state, p)) gone.push([s, `hurt (health ${Math.round(s.health)}): ${s.vol.group} pull them out`]); // between fights, between a crawl's chambers too
+    else if (s.health < VOL.PULL.hp && !fighting(state, p)) { gone.push([s, `hurt (health ${Math.round(s.health)}): ${s.vol.group} pull them out`]); V.stats.pulled = (V.stats.pulled || 0) + 1; } // between fights, between a crawl's chambers too
   }
   if (gone.length) sendHomeAll(state, gone);
   noteHaul(state);
@@ -677,8 +677,17 @@ export function watchSetup(state, loan, rng = volRng(state)) {
   const enemy = war
     ? { kind: foe && foe.type === "military" ? "soldiers" : "raiders", count: rng.int(W.war[0], W.war[1]), power: Math.round((foe ? unitPower(foe) : 4) * 10) / 10, factionId: foe ? foe.id : null, name: foe ? `${foe.name}'s fighters` : "their enemies" }
     : { kind: "zombies", count: rng.int(W.dead[0], W.dead[1]), power: rng.int(W.deadPower[0], W.deadPower[1]), name: "the dead" };
+  // Their group arms them for it: rounds for each one's gun from its stores, and a couple of meds.
+  const pool = { meds: Math.min(2, Math.max(0, Math.floor(f.stock.meds || 0))) };
+  for (const s of loanPeople(state, loan)) {
+    const cal = s.gear.weapon && calOf(s.gear.weapon.key);
+    if (!cal) continue;
+    const got = takeArsenalRounds(f, VOL.BRING.ammo);
+    if (got > 0) pool[baseKey(cal)] = (pool[baseKey(cal)] || 0) + got;
+  }
+  f.stock.meds = Math.max(0, (f.stock.meds || 0) - pool.meds);
   return {
-    tile: f.bases[0], lentIds: loan.ids.slice(), watch: { fid: f.id, group: f.name, loanId: loan.id }, enemy, ambush: null, canRetreat: true, handler: "lentFight", context: { loanId: loan.id },
+    pool, tile: f.bases[0], lentIds: loan.ids.slice(), watch: { fid: f.id, group: f.name, loanId: loan.id }, enemy, ambush: null, canRetreat: true, handler: "lentFight", context: { loanId: loan.id },
     third: [{ side: "military", kind: kitOf(f), count: clamp(Math.round(f.pop / 6), W.allies[0], W.allies[1]), power: unitPower(f), name: f.name, factionId: f.id }],
   };
 }
