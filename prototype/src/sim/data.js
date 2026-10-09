@@ -519,7 +519,7 @@ export const TRAITS = {
   coward:    { name: "Coward",       bad: true, desc: "Fights worse: -1 fighting strength, -5% to hit in battle; may lose their nerve on a trip" },
   nightowl:  { name: "Night Owl",    neutral: true, desc: "At night their team is 15% more likely to spot others first; by day, drowsy, 5% less likely" },
   medic:     { name: "Former Medic", desc: "+4 Medicine" },
-  greedy:    { name: "Greedy",       neutral: true, desc: "Finds 15% more when scavenging around a base, but others like them less (-10 opinion), a low mood hits them harder and they take twice as much if they walk out" },
+  greedy:    { name: "Greedy",       neutral: true, desc: "Finds 15% more when scavenging around a base and a gift from the stores pleases them more, but others like them less (-10 opinion), they are the likeliest thief, and they take twice as much if they walk out" },
   tough:     { name: "Tough",        desc: "Takes 25% less damage from wounds (not from hunger, thirst or infection)" },
   keeneye:   { name: "Keen Eye",     desc: "+1 sight radius for their team, and it notices hidden finds more often" },
   loud:      { name: "Loud",         bad: true, desc: "-3 Stealth" },
