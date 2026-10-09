@@ -582,6 +582,11 @@ export const raidTurret = (state, p) => { const v = raidHumvee(state, p); return
 export const raidTurretPower = (state, p) => raidHumvees(state, p).reduce((a, v) => a + (upgradesOf(v).turret ? TURRET_ODDS[upgradesOf(v).turret.gun] || 0 : 0), 0);
 // The raid failed: the group loses the vehicles it brought. to: { base } (yours: they join the base's vehicles) or
 // { faction } (theirs). Returns the record the first became, or null.
+// A vehicle's id for the dice, world-local (world.js localId): a group's vehicle has a string id with ids in it
+// ("f<group id>-hummer-2", "f<group id>-v<vehicle id>": arsenal.js, groupworld.js, vehicletrade.js), and ids are
+// process-wide. A save without state.idBase keeps its raw ids (localId), so its rolls are as they were.
+export const vehKey = (state, v) => (typeof v.id === "number" ? localId(state, v.id)
+  : String(v.id).replace(/^f(\d+)/, (_, n) => `f${localId(state, Number(n))}`).replace(/-v(\d+)/, (_, n) => `-v${localId(state, Number(n))}`));
 export function loseRaidHumvee(state, p, to) {
   const all = raidHumvees(state, p);
   if (all.length > 1) {
@@ -597,7 +602,7 @@ export function loseRaidHumvee(state, p, to) {
   f.vehLost = state.hour;
   p.humvee = null;
   p.humvees = null;
-  const roll = (k) => hash01(state.seed, "humvee", localId(state, f.id), localId(state, v.id) /* localId: ids are process-wide */, state.hour, k);
+  const roll = (k) => hash01(state.seed, "humvee", localId(state, f.id), vehKey(state, v) /* world-local: ids are process-wide */, state.hour, k);
   const ups = JSON.parse(JSON.stringify(upgradesOf(v)));
   if (to && to.base) {
     const [c0, c1] = HUMVEE.LEFT_COND, [f0, f1] = HUMVEE.LEFT_FUEL;

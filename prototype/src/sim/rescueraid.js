@@ -49,7 +49,7 @@
 // alone (they make for a teammate), then make for the way out; the team goes for the cell, opens it (keys, picks,
 // force), cuts the ropes, then everyone evacuates.
 import { CELL, WEAPONS, KITS, active, isTied, cornerBlocked, meleeReach, unitAt, moveAlong, say, fx, playerUnit, refitUnit, reachable, pathTo, distField, canSee, adjacent, unitById, evacAt, combatAct, registerBattleLayout, registerBattleSize, registerCombatHandler, startCombat, enemyUnit, isRanged, loadMag } from "./combat.js";
-import { survivorById, skill, factionById, log, isNight, hub, addCard } from "./world.js";
+import { survivorById, skill, factionById, log, isNight, hub, addCard, localId } from "./world.js";
 import { FACTION_TYPES, GEAR } from "./data.js";
 import { captivesOf, freeCaptive, settleRescue, isCaptive } from "./conflicts.js";
 import { assaultForce } from "./conquest.js";
@@ -107,7 +107,7 @@ export function groupArmory(state, f) {
   if (f.arsenal && Array.isArray(f.arsenal.items)) return f.arsenal.items;
   if (!f.armory) {
     const kit = KITS[kindOf(f)] || KITS.raiders;
-    const rng = new Rng(((state.seed || 1) * 7919 + f.id * 104729) >>> 0);
+    const rng = new Rng(((state.seed || 1) * 7919 + localId(state, f.id) * 104729) >>> 0); // localId: ids are process-wide
     const S = RESCUE_RAID.ARMORY_SEED;
     const n = clamp(Math.round(S.min + f.pop / 6), S.min, S.max);
     f.armory = [];

@@ -38,7 +38,7 @@
 // the attackers move first). They cannot be placed in the deploy step either. Nobody on watch: nobody at a post.
 import { active, unitAt, say, createBattle, WEAPONS, isRanged } from "./combat.js";
 import { sideTf, sideUntf, canPlace, postAt, setLit, LIT_ZONES, deployAct } from "./deploy.js";
-import { day, atBase } from "./world.js";
+import { day, atBase, localId } from "./world.js";
 import { readiness } from "./watch.js";
 import { Rng } from "./rng.js";
 
@@ -537,7 +537,7 @@ export const GOV_PLAN = { NAME: "Governor", SHOOT: ["tower", "wall", "perch", "i
 export function defaultRolePlan(state, base, by = "governor") {
   if (state.combat || !base || !atBase(state, base.id).length) return "";
   const saved = state.rng;
-  state.rng = new Rng((Number(state.seed) || 0) * 31 + base.id * 7919 + 17);
+  state.rng = new Rng((Number(state.seed) || 0) * 31 + localId(state, base.id) * 7919 + 17); // localId: ids are process-wide
   let b;
   try { b = drillBattle(state, base, null, { noPlan: true }); } finally { state.rng = saved; }
   const key = planKey(b);

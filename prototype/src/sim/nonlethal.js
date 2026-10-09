@@ -763,7 +763,7 @@ export function numbersSurrenders(state, setup, result) {
   const kit = e.kind === "mixed" ? "raiders" : e.kind;
   const km = SURRENDER.kit[kit] ?? 0.8;
   if (!km) return 0;
-  const n = Math.floor(e.count * SURRENDER.numbers * km + hash01(state.seed, "nlnumbers", e.factionId ?? e.name ?? "", state.hour));
+  const n = Math.floor(e.count * SURRENDER.numbers * km + hash01(state.seed, "nlnumbers", localId(state, e.factionId) ?? e.name ?? "", state.hour));
   return Math.min(SURRENDER.NUMBERS_MAX, n);
 }
 

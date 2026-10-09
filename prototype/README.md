@@ -494,6 +494,12 @@ node tools/dettest.js 60
 Determinism across worlds in one process (`world.js` `newId` is one counter for the whole process): for seeds 42, 7 and 1234 (or `node tools/dettest.js [days] [seeds...]`) world A runs 60 days on the Balanced autopilot, then world B on the same seed in the same process; a digest (stocks, buildings, wear and repairs, survivors' health / skills / XP / perks / mood / place, parties (with scavenging parties' hauls), hordes, hives, factions (and when they next scavenge), every site's loot and the loot you know there, the base's picked-over surroundings, diplomacy, jobs, the coalition, prisoners, crashes, tech, relationships, stats and every log line) must be identical, ids compared by their offset from the world's first id (each world here starts its ids at the next million, so anything hashed on an id shows up). Then each seed again with a world on another seed and style run in between, a pair after another world, and the same run in a fresh Node process. Last, a tactical battle played alone and with another world's battle (on a map turned to 13 × 18) set up while it is under way must play out the same (`combat.js` points its grid helpers at each battle's own size).
 
 ```bash
+node tools/sameseedtest.js 120
+```
+
+Same seed, same game, over a long run (`node tools/sameseedtest.js [days] [seeds] [styles] [normal|hardcore]`): for seeds 42, 7, 1234 and 99 and each autopilot style (Balanced, Aggressive, Cautious), world A plays 120 days, then world B on the same seed in the same process (its ids a million higher); survivors alive, every base's stocks, each group's strength, population and stores, a hash of every log line and the whole dettest digest must match. Then, for each seed and each kind of enemy (raiders, soldiers, guards, fighters, militia, zealots, the dead), a tactical battle at the hub on day 10 is fought in both worlds and must go the same way, unit by unit and line by line (soldiers' plates, launchers, rigs, medics, staggers and bleeds). Anything that feeds a process-wide id (`world.js` `newId`) to the dice instead of a world-local key (`localId`, a serial, a battle's own unit numbers, a tile) shows up here.
+
+```bash
 node tools/savetest.js 120
 ```
 
