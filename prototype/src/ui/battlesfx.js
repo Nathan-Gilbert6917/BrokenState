@@ -1,8 +1,8 @@
 // The battle's rich sounds: the router between the cues ui/soundcues.js plans (a cue with .gun, .blast or .hand) and
 // the voices that play them (ui/gunsfx.js guns and handling, ui/blastsfx.js blasts and grenades), placed for this
 // frame's listener. ui/audio.js calls frameListener once a frame and playCue for each such cue (after its throttle).
-import { spatial, place, listener, roomOf, playGun, playHand } from "./gunsfx.js";
-import { playBlast } from "./blastsfx.js";
+import { spatial, place, listener, roomOf, playGun, playHand, prewarm, busOf, shotPlan } from "./gunsfx.js";
+import { playBlast, prewarmBlasts } from "./blastsfx.js";
 
 // The listener this frame: the selected unit of yours (LISTEN.sel), the battle view (LISTEN.cam) and the fog of war
 // (LISTEN.vis), all set by ui/combat.js; the room by where the battle is.
@@ -26,4 +26,27 @@ export function playCue(ctx, base, t, c, L) {
   }
   if (c.hand) return playHand(ctx, t, { ...c.hand, gain: g }, sp);
   return 0;
+}
+
+// Bake what a battle will need while nothing is happening yet (a voice is 5–40 ms of work the first time): the
+// room's reverb, each gun on the field (suppressed too where fitted), the common blasts. One job an idle moment.
+export function prewarmBattle(ctx, state, b) {
+  const jobs = [];
+  const room = roomOf(state, b), bus = busOf(ctx);
+  if (bus) { jobs.push(() => bus.verb(room)); if (room !== "inside") jobs.push(() => bus.verb("inside")); }
+  const seen = new Set();
+  for (const u of b.units || []) {
+    if (u.kind !== "human" || !u.weapon) continue;
+    const p = shotPlan({ rounds: 1 }, u);
+    if (p.generic) continue; // a club or a blade
+    const k = `${p.v}|${p.act}|${p.sup}|${p.sub}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    jobs.push(() => prewarm(ctx, [p]));
+  }
+  for (const k of ["frag", "pipebomb", "molotov", "gl40", "rocket", "flash", "smoke", "secondary", "glass"]) jobs.push(() => prewarmBlasts(ctx, [k]));
+  const idle = typeof requestIdleCallback === "function" ? (f) => requestIdleCallback(f, { timeout: 500 }) : (f) => setTimeout(f, 30);
+  const next = () => { const j = jobs.shift(); if (!j) return; try { j(); } catch { /* best effort */ } idle(next); };
+  idle(next);
+  return jobs.length;
 }

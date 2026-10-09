@@ -38,7 +38,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // rise, echoes }; nlen: the N-wave in ms (longer for a bigger bullet); rpm: the cyclic rate (automatics).
 const E = (...a) => a; // [t, amp] echo
 export const GUN_VOICES = {
-  p22:   { label: ".22 (pop)", level: 0.42, crack: 0.12, nlen: 0.22,
+  p22:   { label: ".22 (pop)", level: 0.75, crack: 0.12, nlen: 0.22,
            blast: { tau: 0.0010, hp: 600, pop: 950, popAmp: 0.25, drive: 1.6 }, body: { f: 2700, q: 1.3, tau: 0.010, amp: 0.45, sweep: [520, 260, 0.02, 0.15] },
            boom: { lp: 1000, tau: 0.035, amp: 0.12 }, tail: { amp: 0.10, len: 0.5, lp: 1600, echoes: [E(0.12, 0.3)] } },
   p9:    { label: "9mm pistol", level: 0.74, crack: 0.2, nlen: 0.28,
@@ -90,7 +90,7 @@ export const GUN_VOICES = {
            blast: { tau: 0.006, hp: 120, pop: 140, popAmp: 0.8, drive: 3.4 }, body: { f: 600, q: 0.5, tau: 0.16, amp: 1, sweep: [130, 50, 0.2, 0.7] },
            boom: { lp: 1800, tau: 0.35, amp: 0.9 }, tail: { amp: 0.55, len: 2.4, lp: 900, lpEnd: 350, rise: 0.12, echoes: [E(0.25, 0.35), E(0.8, 0.2)] } },
 };
-export const GUN_TRIM = 0.62; // all gun voices: a 9mm pistol near you about as loud as the old pistol (tools/sfxpreview.cjs measures it)
+export const GUN_TRIM = 0.31; // all gun voices: a 9mm pistol near you about as loud as the old pistol (tools/sfxpreview.cjs measures it)
 
 // ---------- which gun makes which voice ----------
 // v: the voice; act: the action slamming home a few ms after the shot (MECH); cycle: a manual action played after it
@@ -249,7 +249,7 @@ function normalise(buf, peak) {
 // The suppressed form of a voice: the blast and body muffled to a thud, the boom and tail short and low.
 export function suppressedSpec(V, sub) {
   return {
-    ...V, crack: sub ? 0 : V.crack, level: V.level * 0.5, sup: true,
+    ...V, crack: sub ? 0 : V.crack, level: V.level * 0.7, sup: true,
     blast: { ...V.blast, popAmp: V.blast.popAmp * 0.5, drive: 1.4, hp: 120, lp: 1400 },
     body: { ...V.body, f: V.body.f * 0.45, q: 0.9, tau: V.body.tau * 0.7, amp: V.body.amp * 0.45, sweep: [V.body.sweep[0] * 0.8, V.body.sweep[1], V.body.sweep[2], V.body.sweep[3] * 0.35], ring: null },
     boom: { ...V.boom, lp: V.boom.lp * 0.6, tau: V.boom.tau * 0.5, amp: V.boom.amp * 0.3 },
@@ -479,8 +479,10 @@ export function playGun(c, t, p, sp = place({}), rnd = Math.random) {
     const tk = t0 + times[k], rate = (p.pitch || 1) * (1 + (rnd() - 0.5) * (n > 1 ? 0.05 : 0.04));
     const lv = n > 1 ? Math.pow(10, ((rnd() - 0.5) * 3) / 20) * (k === 0 ? 1 : 0.92) : 1;
     const v = (k + Math.floor(rnd() * VARIANTS)) % VARIANTS;
-    if (vb.crack) src(c, vb.crack[v], tk - lag * 0.2, out, rate, lv);
-    src(c, vb.body[v], tk + lag, out, rate, lv);
+    let dest = out;
+    if (lv !== 1) { dest = c.createGain(); dest.gain.value = lv; dest.connect(out); } // one level for the round's crack and bang
+    if (vb.crack) src(c, vb.crack[v], tk - lag * 0.2, dest, rate);
+    src(c, vb.body[v], tk + lag, dest, rate);
   }
   // one tail for the burst: louder for more rounds (not one each), and a second as the last round dies
   const span = times[n - 1] || 0, tg = (sp.tail ?? 1) * (1 + 0.1 * Math.min(8, n - 1));
@@ -525,10 +527,10 @@ export function handScript(h) {
         default: return [["magOut", 0], ["magIn", 0.48], ["charge", 0.82]]; // rifle
       }
     }
-    case "jam": return [["jam", 0]];
-    case "unjam": return [["rack", 0]];
-    case "dry": return [["dry", 0]];
-    case "empty": return [["lockOpen", 0]];
+    case "jam": return [["jam", 0, 2]];
+    case "unjam": return [["rack", 0, 1.4]];
+    case "dry": return [["dry", 0, 2.5]];
+    case "empty": return [["lockOpen", 0, 1.6]];
     case "taser": return [["taser", 0, 0.6]];
     case "throw": return [[h.h, 0]]; // a grenade's pin and spoon, a fuse, a lighter, a flare struck (ui/blastsfx.js)
     case "clatter": return [["clatter", 0]];

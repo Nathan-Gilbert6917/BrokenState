@@ -45,7 +45,7 @@ export const BLASTS = {
   glass:    { label: "Bottle (glass)", size: 0.05, level: 0.4, smash: true, rumble: { amp: 0.02, len: 0.3, lp: 500 }, len: 0.6 },
   clatter:  { label: "Something lands (clatter)", size: 0.02, level: 0.3, clatter: true, rumble: { amp: 0.02, len: 0.3, lp: 500 }, len: 0.6 },
 };
-export const BLAST_TRIM = 0.9; // all blasts under the effects slider (a frag near you about as loud as the old blast, at a sharper attack)
+export const BLAST_TRIM = 0.5; // all blasts under the effects slider (a frag near you about as loud as the old blast, at a sharper attack)
 export const BIG = new Set(["pipebomb", "frag", "gl40", "rocket", "vehicle", "secondary", "flash"]);
 
 // Grenade handling and the small things (rendered like the gun handling, ui/gunsfx.js HANDLING).
@@ -165,6 +165,7 @@ function bufs(c, kind) {
   m.set(kind, b);
   return b;
 }
+export function prewarmBlasts(c, kinds) { for (const k of kinds) bufs(c, k); }
 export const bakedBlast = (sr, kind) => { const key = `${sr}|${kind}`; let d = BAKED.get(key); if (!d) { d = renderBlast(kind, sr); BAKED.set(key, d); } return d; };
 
 // ---------- playing ----------

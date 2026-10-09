@@ -11,7 +11,7 @@
 // not focused" on, the context is suspended (no CPU). Nothing here runs at import time, so node tools can import it.
 import { battleCues, worldCues, ambienceMix, makeThrottle, LISTEN } from "./soundcues.js";
 import { installBus, spatial } from "./gunsfx.js"; // the gun voices, the battle's sound space (pan, distance, reverb, ducking, the deafened muffle)
-import { frameListener, playCue, cueSpan } from "./battlesfx.js"; // guns, blasts and handling cues to their voices
+import { frameListener, playCue, cueSpan, prewarmBattle } from "./battlesfx.js"; // guns, blasts and handling cues to their voices
 import { LAB, LAB_ACTIONS, LAB_CHANGE, labGunHtml, makeLimiter } from "./sfxlab.js"; // Settings → Sound: the gun and blast sound test
 import { weatherAt, season } from "../sim/weather.js";
 import { playerTile } from "../sim/hardcore-start.js";
@@ -188,6 +188,7 @@ export function audioFrame(state, ui, nowMs = performance.now()) {
   // The memories move on even while silent, so unmuting does not play what happened meanwhile.
   if (state.combat && !ui.timelapse) {
     const cues = battleCues(state.combat, battleMem, now);
+    if (on && A.warm !== state.combat) { A.warm = state.combat; prewarmBattle(A.ctx, state, state.combat); } // bake its guns, blasts and reverb while it opens
     if (on && cues.length) {
       const L = frameListener(state, state.combat, LISTEN); // where you are listening from: the selected unit, the view, the fog
       for (const c of cues) battleSound(c, L);

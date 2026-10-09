@@ -127,7 +127,8 @@ export const LAB_CHANGE = {
 // ---------- offline renders (the WAV previews, the browser checks) ----------
 // The game's chain for the effects at the default sliders: the effects gain, (the new limiter), the master gain, the
 // master compressor; then `makeup` for listening (the same for old and new, so their levels compare).
-export const GAME_LEVELS = { sfx: 0.8 * 0.8 * 0.8, master: 0.7 * 0.7 };
+export const GAME_LEVELS = { sfx: 0.8 * 0.8 * 0.8, master: 0.7 * 0.7 }; // the default sliders (ui/audio.js: squared, the effects trim 0.8)
+export const MAX_LEVELS = { sfx: 1 * 1 * 0.8, master: 1 }; // both sliders at 100%
 export function makeLimiter(c) {
   const l = c.createDynamicsCompressor();
   l.threshold.value = -8; l.knee.value = 3; l.ratio.value = 16; l.attack.value = 0.001; l.release.value = 0.12;
@@ -143,8 +144,9 @@ export async function labRender(fn, secs, o = {}) {
   const OAC = typeof window !== "undefined" && (window.OfflineAudioContext || window.webkitOfflineAudioContext);
   if (!OAC) return null;
   const sr = o.sr || 48000, c = new OAC(2, Math.ceil(sr * secs), sr);
-  const sfx = c.createGain(); sfx.gain.value = GAME_LEVELS.sfx;
-  const master = c.createGain(); master.gain.value = GAME_LEVELS.master;
+  const lv = o.max ? MAX_LEVELS : GAME_LEVELS;
+  const sfx = c.createGain(); sfx.gain.value = lv.sfx;
+  const master = c.createGain(); master.gain.value = lv.master;
   const comp = makeMasterComp(c), mk = c.createGain(); mk.gain.value = o.makeup ?? 4;
   if (o.limiter !== false) { const l = makeLimiter(c); sfx.connect(l); l.connect(master); } else sfx.connect(master);
   master.connect(comp); comp.connect(mk); mk.connect(c.destination);
