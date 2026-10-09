@@ -139,10 +139,15 @@ export const HCRAWL = {
 // and lash and the brood it keeps calling grind a team down on the map far more than a flat power says); × 2.75 fits
 // them (Brier 0.42 → 0.09), so the odds the core room shows, the fight by the numbers and the autopilot's choice
 // match what the map gives; 2.5 so an ideal squad (plate, Shooting 7, full health) is not shown far less than it wins.
+// Refitted 2026-10-10 with the dark, lights and the weak spots (tools/hivecorecalib.js --fit: 96 configurations, four
+// squads from a rifle team in plate to a scrappy one of shotguns and pistols at Shooting 5, tiers 1/2/4, guards 60/120,
+// lit or not, with and without 2 Molotovs and 2 flashbangs, 12 battles each): numbersK 2 for a team in the dark with
+// nothing for the Hivemind (the best fit is 1.7, RMS 0.180; 2 costs little, 0.188, and leans careful where the numbers
+// overrate weak teams), × (1 − 0.325 × the share lit) × (1 − 0.4 × the Molotovs − 0.15 × the bangs, up to 2 of each).
 // P2: its second phase, below `at` of its health (once): the pulse reaches further and hits harder (pulse, pulseDmg,
 // stun), the walls give up brood every spawnEvery turns (spawn), cap more of them, and the cave quakes (quake: pillars
 // of flesh and bone come down in the open, everyone of yours caught under one hurt quakeDmg at quakeHit odds).
-export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9, numbersK: 2.5,
+export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9, numbersK: 2,
   P2: { on: true, at: 0.5, pulse: 4, pulseDmg: [6, 12], stun: 0.45, spawnEvery: 2, spawn: [3, 4], cap: 1, quake: [3, 5], quakeDmg: [3, 8], quakeHit: 0.35 } };
 // Its weak spots (WEAK): fire on it or next to it (a Molotov, flames spreading to it) burns it burnDmg a turn for
 // burnTurns of its turns after the last flames touched it, and while it burns the walls give up no brood; a bang next
@@ -156,7 +161,7 @@ HIVEMIND.WEAK = { burnDmg: [30, 45], burnTurns: 2, near: 1, flash: 3, blast: 2, 
 // brings, up to kit, − stun × the flashbangs, grenades and pipe bombs, up to kit). Fitted to the map with
 // tools/hivecorecalib.js (--fit): the rifle squad and the shotgun squad, tiers 1, 2 and 4, lit or not, with and without
 // two Molotovs and two flashbangs. A fight by the numbers spends what it counts.
-HIVEMIND.NUMBERS = { lit: 0.3, fire: 0.2, stun: 0.15, kit: 2 };
+HIVEMIND.NUMBERS = { lit: 0.325, fire: 0.4, stun: 0.15, kit: 2 };
 // What the core battles did (the tools' calibration): battles fought on the map, how many saw the second phase, how
 // many saw the Hivemind burn or reel.
 export const HM_STATS = { battles: 0, phase2: 0, burned: 0, stunned: 0 };

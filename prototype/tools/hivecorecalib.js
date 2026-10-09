@@ -59,7 +59,7 @@ export function predict(t, k) {
   const N = HC.HIVEMIND.NUMBERS;
   const mult = (1 - k.lit * t.prep.lit) * Math.max(0.3, 1 - k.fire * Math.min(1, t.prep.fire / N.kit) - k.stun * Math.min(1, t.prep.stun / N.kit));
   const theirs = t.S * (t.count * t.power + t.bossBase * k.K * mult);
-  return winOdds(t.mine / Math.max(0.1, theirs), t.enemy);
+  return winOdds((t.mine / Math.max(0.1, theirs)) ** (k.g ?? 1), t.enemy);
 }
 async function runFit(N) {
   const rows = [];
@@ -75,9 +75,10 @@ async function runFit(N) {
   return fitRows(rows);
 }
 export function fitRows(rows, fixed = {}) {
+  if (process.env.FIT_NOSTEEP) fixed = { ...fixed, g: 1 };
   const loss = (k) => rows.reduce((a, r) => { const p = r.terms.reduce((x, t) => x + predict(t, k), 0) / r.terms.length; return a + (p - r.rate) ** 2; }, 0);
-  let k = { K: HC.HIVEMIND.numbersK, lit: HC.HIVEMIND.NUMBERS.lit, fire: HC.HIVEMIND.NUMBERS.fire, stun: HC.HIVEMIND.NUMBERS.stun };
-  const span = { K: [0.5, 5, 0.05], lit: [0, 0.7, 0.025], fire: [0, 0.65, 0.025], stun: [0, 0.5, 0.025] };
+  let k = { K: HC.HIVEMIND.numbersK, lit: HC.HIVEMIND.NUMBERS.lit, fire: HC.HIVEMIND.NUMBERS.fire, stun: HC.HIVEMIND.NUMBERS.stun, g: HC.HIVEMIND.NUMBERS.steep ?? 1 };
+  const span = { K: [0.5, 5, 0.05], lit: [0, 0.7, 0.025], fire: [0, 0.65, 0.025], stun: [0, 0.5, 0.025], g: [1, 3, 0.05] };
   for (let pass = 0; pass < 6; pass++) for (const key of Object.keys(span)) {
     if (fixed[key] != null) { k[key] = fixed[key]; continue; }
     let best = k[key], bl = loss(k);
@@ -85,7 +86,7 @@ export function fitRows(rows, fixed = {}) {
     k[key] = best;
   }
   const before = { K: HC.HIVEMIND.numbersK, lit: 0, fire: 0, stun: 0 };
-  console.log(`fit: numbersK ${k.K}, lit ${k.lit}, fire ${k.fire}, stun ${k.stun}; RMS error ${Math.sqrt(loss(k) / rows.length).toFixed(3)} (numbersK ${before.K} alone: ${Math.sqrt(loss(before) / rows.length).toFixed(3)}; current: ${Math.sqrt(loss({ K: HC.HIVEMIND.numbersK, ...HC.HIVEMIND.NUMBERS }) / rows.length).toFixed(3)})`);
+  console.log(`fit: numbersK ${k.K}, lit ${k.lit}, fire ${k.fire}, stun ${k.stun}, steep ${k.g}; RMS error ${Math.sqrt(loss(k) / rows.length).toFixed(3)} (numbersK ${before.K} alone: ${Math.sqrt(loss(before) / rows.length).toFixed(3)}; current: ${Math.sqrt(loss({ K: HC.HIVEMIND.numbersK, ...HC.HIVEMIND.NUMBERS }) / rows.length).toFixed(3)})`);
   for (const r of rows) { const p = r.terms.reduce((x, t) => x + predict(t, k), 0) / r.terms.length; console.log(`  ${r.sq.padEnd(8)} t${r.tier} g${r.guard} ${r.lights ? "lit  " : "dark "} ${r.prep ? "prep" : "    "}  map ${String(Math.round(r.rate * 100)).padStart(3)}%  numbers ${String(Math.round(p * 100)).padStart(3)}%`); }
 }
 if (process.argv[1] && process.argv[1].endsWith("hivecorecalib.js") && process.argv[2] === "--fit") { await runFit(Number(process.argv[3] || 16)); process.exit(0); }
