@@ -7,6 +7,7 @@
 // Not in an Ironman run (ui/newgame.js: ticking Ironman puts the colonists back as rolled, and Start refuses a custom crew).
 import { GEAR, TRAITS, SKILLS, clashIn } from "./data.js";
 import { VEHICLE_TYPES } from "./vehicles.js";
+import { cleanTier, tierCount } from "./traits.js"; // a trait's tier (traits.js TRAIT_TIERS)
 
 export const CUSTOM_BG = {
   PREFIX: "c_",
@@ -32,7 +33,7 @@ export const trunkOptions = () => Object.keys(GEAR);
 export const carTypes = () => Object.keys(VEHICLE_TYPES).filter((k) => VEHICLE_TYPES[k].motor);
 
 export function blankBackground(id) {
-  return { id, name: "New background", blurb: "", skills: {}, traits: [], gear: {}, items: [], supplies: {}, car: { odds: 1, type: null, trunk: {}, items: [] } };
+  return { id, name: "New background", blurb: "", skills: {}, traits: [], traitTier: {}, gear: {}, items: [], supplies: {}, car: { odds: 1, type: null, trunk: {}, items: [] } };
 }
 
 const int = (v, lo, hi) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : lo; };
@@ -54,6 +55,9 @@ export function sanitizeBackground(raw, id = raw && raw.id) {
     if (clashIn(traits, t)) continue; // never two that clash (data.js TRAIT_CLASH): the first stays
     traits.push(t);
   }
+  // Each trait's tier (traits.js; missing: tier I).
+  const traitTier = {};
+  for (const t of traits) { const n = cleanTier(t, r.traitTier && r.traitTier[t]); if (n > 1 && tierCount(t) > 1) traitTier[t] = n; }
   const gear = {};
   for (const slot of C.SLOTS) { const k = r.gear && r.gear[slot]; if (k && GEAR[k] && GEAR[k].slot === slot) gear[slot] = k; }
   const carry = new Set(carryOptions()), trunkOk = new Set(trunkOptions());
@@ -64,7 +68,7 @@ export function sanitizeBackground(raw, id = raw && raw.id) {
     id: String(id || `${C.PREFIX}1`),
     name: str(r.name, C.NAME) || "Custom background",
     blurb: str(r.blurb, C.BLURB),
-    skills, traits, gear, items,
+    skills, traits, traitTier, gear, items,
     supplies: amounts(r.supplies, C.SUPPLY),
     car: {
       odds,
@@ -98,7 +102,7 @@ export function newBackgroundId(lib) {
 // A one-line summary for the editor's list and tooltips: "+4 Medicine, +2 Speech; Former Medic; Kitchen knife...".
 export function backgroundSummary(def, names = {}) {
   const sk = Object.entries(def.skills || {}).map(([k, v]) => `+${v} ${names[k] || k}`);
-  const tr = (def.traits || []).map((t) => TRAITS[t].name);
+  const tr = (def.traits || []).map((t) => `${TRAITS[t].name}${def.traitTier && def.traitTier[t] > 1 ? ` ${["", "I", "II", "III"][def.traitTier[t]]}` : ""}`);
   const kit = [...Object.values(def.gear || {}), ...(def.items || [])].map((k) => GEAR[k].name);
   return [sk.join(", "), tr.join(", "), kit.slice(0, 4).join(", ") + (kit.length > 4 ? ` +${kit.length - 4} more` : "")].filter(Boolean).join("; ") || "nothing yet";
 }

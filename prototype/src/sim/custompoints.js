@@ -26,8 +26,9 @@ import { START_GEAR, sanitizeStartGear, CARRY_PLACES } from "./startgear.js";
 export const CUSTOM_POINTS = {
   // Each colonist's max, the same for the whole crew (the new-run screen's "Points each" box). DEF: about what an
   // average rolled colonist and their usual start kit come to by this table (tools/custompointstest.js measures it:
-  // the median of a few hundred rolled colonists, normal and Hardcore starts).
-  DEF: 85, MIN: 0, MAX: 400,
+  // 360 rolled colonists of each mode, 2026-10-08: a normal start's median 70 (skills 62, kit 13), Hardcore's 85
+  // (skills 72: the backgrounds' bumps on top; kit 10), both 78; rounded to 80).
+  DEF: 80, MIN: 0, MAX: 400,
   // A skill level's price by the level it reaches: levels 1–10 cost 1 each, 11–15 cost 2, 16–20 cost 3 (so 10 is 10
   // points, 15 is 20 and 20 is 35).
   SKILL_STEPS: [[10, 1], [15, 2], [20, 3]],
