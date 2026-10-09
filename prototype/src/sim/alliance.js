@@ -56,7 +56,7 @@ import { jobsDoneFor, activeJobs, makeJob, offerCard as jobOfferCard, autoJobsDa
 import { eraProgress, ERAS, isLate } from "./eras.js";
 import { playerClaims, claimedLand } from "./claims.js";
 import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
-import { volunteerGroupsAt } from "./volunteers.js"; // volunteers with your team: no double count at a hive or an assault
+import { volunteerGroupsAt, councilWar, councilVolCard } from "./volunteers.js"; // volunteers with your team: no double count at a hive or an assault
 import { blocOf, blocById, blocMembers, blocTitle, blocJoinsCoalition, blocCarrier, blocVoteWait } from "./blocs.js"; // AI blocs vote on joining together
 
 export const ALLIANCE = {
@@ -310,6 +310,7 @@ function council(state, ms) {
   const rng = diploRng(state);
   const kinds = ["supplies", "job"];
   if (ms.length >= 2) kinds.push("ruling", "ruling");
+  if (ms.length >= 2 && councilWar(state, ms)) kinds.push("volunteers"); // volunteers.js: a member at war asks for fighters
   for (let i = 0; i < 4; i++) {
     const card = councilCard(state, rng.pick(kinds), ms);
     if (card) { addCard(state, card); return; }
@@ -366,6 +367,7 @@ export function councilCard(state, kind, ms = allianceMembers(state)) {
     }
     return null;
   }
+  if (kind === "volunteers") return councilVolCard(state, ms, ALLIANCE.VOTE_REL); // volunteers.js: the council votes on fighters for a member's war
   if (kind === "ruling" && ms.length >= 2) {
     const [a, b] = rng.shuffle([...ms]).slice(0, 2);
     const what = rng.pick(["a stretch of farmland between them", "a well both claim", "salvage rights at a site between their bases", "a quarrel over stolen livestock"]);
