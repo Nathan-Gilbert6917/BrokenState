@@ -41,7 +41,7 @@ export const HIVE_KILL = /^The hive [^.]* was destroyed by your team/;
 export const CONTENT = [
   ["hive storm sortie", /^(🤖 )?Destroy hive team \(.*\) left for/],
   ["hive destroyed by you", HIVE_KILL],
-  ["hive fires set", /fires? (set )?around|set fires|Set fires/i],
+  ["hive core fire and bangs", /The Hivemind (burns|reels)/], // the core's weak spots (hivecrawl.js; the fires around the mound are gone, 2026-10)
   ["growth burned", /^(🤖 )?Burn the growth team \(.*\) left for|was destroyed by your team\. It (breeds|grows|sends|raises)/],
   ["hive gathering broken", /gathering|massing/i],
   ["conquest (base taken)", /^Your team took .*'s base/],

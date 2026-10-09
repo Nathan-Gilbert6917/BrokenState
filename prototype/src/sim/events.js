@@ -174,17 +174,6 @@ const EVENTS = [
         title: "A hive",
         text: `The team comes upon an infestation hive: a mound of fused bodies, warm and pulsing, the dead packed around it. Hordes are born here. Destroying it takes a real assault (the Destroy hive mission).${names.length ? ` The dead have grown things around it: ${names.join(", ")}. They go on the map when the team reports (the Burn the growth mission).` : ""}`,
         choices: [
-          burns(st, p, 5, { label: "Set fires at its edge (5 fuel)", hint: `${hint(st, p, "stealth", 10)}. Burns part of its guard and its stores; it does not destroy the hive`, resolve: (s) => {
-            const hv = hiveAt(s, hiveTile);
-            if (!hv) return "The hive is gone already.";
-            if (check(s, p, "stealth", 10).ok) {
-              const guard = s.hordes.find((h) => h.role === "guard" && h.hive === hv.id);
-              if (guard) reduceHorde(s, guard, Math.round(guard.size * 0.25));
-              hv.res = Math.max(0, hv.res - 10);
-              return "The fires take. Part of its brood burns, and the hive is set back.";
-            }
-            return `They wake before the fire catches. ${injureRandom(s, p, 20, 50, "setting fire to a hive")}`;
-          } }),
           { label: "Mark it and move on", resolve: () => "Noted on the map." },
         ],
       };

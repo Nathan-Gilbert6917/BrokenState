@@ -129,6 +129,18 @@ export function registerBossAI(kind, fn) {
   (bossAIs = bossAIs || new Map()).set(kind, fn);
 }
 const bossAI = (u) => (u && u.boss && bossAIs ? bossAIs.get(u.boss) || null : null);
+// A boss with a weak spot (fn.throwAt(b, boss, thrower, have): { item, x, y } or null) asks the battle AI to throw at
+// it (stealth.js botAttackThrow, before a crowd): the Hivemind and its fire and bangs (hivecrawl.js).
+export function bossThrowTarget(b, u, have) {
+  if (!bossAIs) return null;
+  for (const o of b.units) {
+    if (o.dead || o.side === u.side) continue;
+    const ai = bossAI(o);
+    const t = ai && ai.throwAt ? ai.throwAt(b, o, u, have) : null;
+    if (t) return t;
+  }
+  return null;
+}
 
 // People met inside a building (buildingmaps.js placeInterior, from wanderers.js interiorOccupants) by side. "hostile"
 // groups are placed as the raid's guards (enemy units). A side with no handler ("neutral" survivors, "military"

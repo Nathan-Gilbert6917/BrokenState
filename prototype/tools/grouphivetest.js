@@ -1,8 +1,8 @@
 // The AI groups against the hives (src/sim/factions.js groupHiveWar, GROUP_HIVE): a group with a hive within 12 tiles
 // sends a war party every 20–40 days by type (zealots always, the military and a fortress often, traders rarely,
 // raiders never); each party crawls the hive's den as your teams do (hivecrawl.js groupHiveCrawl: chamber by chamber on
-// the shortest way, then the core), cuts the hive's guard by its fighters' power and loses a few people, and burns the hive
-// out when the guard left is small (hives.js destroyHive: the records and the hive victory as for any hive). A fortress
+// the shortest way, then the core), cuts the hive's guard by its fighters' power and loses a few people, and kills the
+// Hivemind in the core (the hive dies) when it pays for the core (hives.js destroyHive: the records and the hive victory as for any hive). A fortress
 // beside a hive wears it down and destroys it within a season; traders rarely go; a hive you fought lately earns the
 // group's goodwill; the log lines come only when the group is in radio reach or the hive is in sight; the new fields
 // round-trip through a save and old saves without them load; a whole year of the sim with the groups at war with the
@@ -126,7 +126,7 @@ function warDays(st, f, days, onDay = null) {
 {
   console.log("What you hear of it");
   const lines = (st, re) => st.log.filter((l) => re.test(l.text)).length;
-  const RE = /fighters crawled .* (were driven off|burned it out)/;
+  const RE = /fighters crawled .* (were driven off|killed its Hivemind)/;
   // Out of reach, out of sight, the group known: nothing.
   const { st, f } = setup(6, "zealot", 30, { guard: 5000, fromHub: 20 });
   const r = warDays(st, f, 80);
@@ -151,7 +151,7 @@ function warDays(st, f, days, onDay = null) {
   const { st: s5, f: f5, hv: h5 } = setup(10, "fortress", 40, { guard: 10 });
   s5.live.add(h5.tile);
   warDays(s5, f5, 120);
-  check(!s5.hives.includes(h5) && lines(s5, /burned it out/) === 1 && lines(s5, /was destroyed by/) === 0, `a hive burned out: "${(s5.log.find((l) => /burned it out/.test(l.text)) || { text: "?" }).text}"`);
+  check(!s5.hives.includes(h5) && lines(s5, /killed its Hivemind in the core/) === 1 && lines(s5, /was destroyed by/) === 0, `a hive burned out: "${(s5.log.find((l) => /killed its Hivemind in the core/.test(l.text)) || { text: "?" }).text}"`);
 }
 
 // 5. The hive victory counts a hive the groups destroyed.

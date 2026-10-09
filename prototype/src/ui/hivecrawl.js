@@ -102,7 +102,7 @@ function mapSvg(state, p, c, den) {
     const v = !!c.visited[r.id], cur = r.id === c.at, ex = exits.has(r.id) && !c.enc && !c.leaving;
     const w = warmthOf(den, r);
     const h = !v && c.heard ? c.heard[r.id] : null; // heard or lit from a passage (Listen, Flare)
-    const initial = (k) => (k === "core" ? "★" : ROOM_KINDS[k] ? ROOM_KINDS[k].name[0] : "?");
+    const initial = (k) => (k === "core" ? "★" : ROOM_KINDS[k] ? ROOM_KINDS[k].short : "?");
     const label = v ? initial(r.kind) : h ? `${initial(h.kind)}${h.q === "exact" ? "" : "?"}` : "?";
     const title = v ? `${roomName(r)} (warmth ${w})${broodLeft(state, crawlHive(state, c), r) && r.kind !== "core" ? `: ${broodLeft(state, crawlHive(state, c), r)} of the brood` : ""}` : h ? `${h.by === "flare" ? "Lit by a flare" : "Heard"}: ${heardText(h)}${h.q === "vague" ? " (a guess)" : ""}` : "Not explored";
     const glow = h && h.by === "flare" ? `<circle cx="${x}" cy="${y}" r="16" fill="rgba(255,70,40,0.28)"/>` : "";
@@ -110,7 +110,7 @@ function mapSvg(state, p, c, den) {
     nodes += ex ? `<g data-action="hc-move" data-id="${p.id}" data-room="${r.id}" style="cursor:pointer"><title>${esc(title)} — go there</title>${circle}</g>` : `<g><title>${esc(title)}</title>${circle}</g>`;
   }
   return `<svg class="hc-map" viewBox="0 0 ${Wd} ${Hd}" style="width:100%;max-height:16rem;background:rgba(0,0,0,0.25);border-radius:6px">${lines}${nodes}</svg>
-    <div class="small muted" style="margin-top:0.2rem">The mouth on the left; the core lies somewhere to the right. Letters: the kind of chamber (T tunnel, G gallery, N nursery, E eggs, B bones, W worm pool, R root, C collapse); ? not explored; a letter with ? heard through the wall, ringed red lit by a flare.</div>`;
+    <div class="small muted" style="margin-top:0.2rem">The mouth on the left; the core lies somewhere to the right. Letters: the kind of chamber (M the mouth, T tunnel, G gallery, N nursery, E eggs, B bones, W worm pool, R root, C collapse); ? not explored; a letter with ? heard through the wall, ringed red lit by a flare.</div>`;
 }
 
 function roomCard(state, p, c, den, room, w) {
@@ -150,7 +150,7 @@ function encounterCard(state, p, c, den) {
   const room = roomById(den, e.room) || roomById(den, c.at);
   const title = e.kind === "core" ? `The core: the ${BOSS_NAMES.hivemind}` : e.kind === "swarm" ? "The brood converges" : e.kind === "turned" ? "One of you turned" : `The brood in ${roomName(room).toLowerCase()}`;
   const n = e.enemy ? e.enemy.count : broodLeft(state, crawlHive(state, c), room);
-  const text = e.kind === "core" ? `A hill of flesh fills the end of the chamber and beats like a heart: the ${BOSS_NAMES.hivemind}. The ${BOSS_NAMES.hive} squats at its foot among the last of the brood. It never moves; kill it and the hive dies.` : `${n} of the brood${e.spotted ? ", and they have seen you" : ""}. ${(ROOM_KINDS[room.kind] || {}).text || ""}`;
+  const text = e.kind === "core" ? `A hill of flesh fills the end of the chamber and beats like a heart: the ${BOSS_NAMES.hivemind}. The ${BOSS_NAMES.hive} squats at its foot among the last of the brood. It never moves; kill it and the hive dies. Fire burns it and keeps its brood in the walls; a flashbang or a grenade stuns it.` : `${n} of the brood${e.spotted ? ", and they have seen you" : ""}. ${(ROOM_KINDS[room.kind] || {}).text || ""}`;
   return `<div class="card attn"><b>${esc(title)}</b>
     <div class="small" style="margin:0.25rem 0 0.5rem">${esc(text)}</div>
     <div class="choices">${opts.map((o) => `<button data-action="hc-enc" data-id="${p.id}" data-ch="${o.id}" ${o.disabled ? "disabled" : ""}>${esc(o.label)}<span class="hint">${esc(o.tip)}</span></button>`).join("")}</div></div>`;

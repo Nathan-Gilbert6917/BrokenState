@@ -32,7 +32,7 @@ import { helmetNvg } from "./helmets.js"; // night vision goggles on a helmet
 import { hearMult, hearSetup } from "./hearing.js"; // the ears: what a guard hears behind them
 import {
   CELL, WEAPONS, active, adjacent, cornerBlocked, meleeReach, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
-  say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash,
+  say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash, bossThrowTarget,
 } from "./combat.js";
 import { landEffect, blastSpot, throwBlind, throwLanding, flashSpot, doorToss, BLAST, FRAG, FIRE } from "./throwables.js";
 import { sensesAny } from "./decoys.js";
@@ -576,6 +576,8 @@ export function botStealth(state, b, u, combatAct) {
 export function botAttackThrow(state, b, u) {
   if (b.botAttackTurn === b.turn || !active(u) || u.ap < 1) return false;
   const have = throwablesOf(state, b, u);
+  const boss = u.side === "player" ? bossThrowTarget(b, u, have) : null; // combat.js: a boss's weak spot first (the Hivemind: fire, a bang)
+  if (boss) { b.botAttackTurn = b.turn; return !stealthAct(state, b, u, null, { type: "throw", item: boss.item, x: boss.x, y: boss.y }); }
   for (const key of ["frag", "pipebomb", "molotov"]) {
     if (!have[key]) continue;
     const spot = blastSpot(b, u, THROWABLES[key].range, key === "frag" ? FRAG.r : key === "pipebomb" ? BLAST.r : FIRE.r, { fire: key === "molotov" });

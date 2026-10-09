@@ -176,6 +176,7 @@ function wreck(b, x, y, r, [lo, hi], by, heavy = false) {
 // round, launchers.js GL_HE / ROCKET: impact on the cell it lands on, dmg the splash around it; struct; kind: the
 // vehicle's wear, combat.js BLAST_WEAR; heavy: doors and tank traps too; rams: a battering ram is broken).
 export function landEffect(b, u, T, x, y) {
+  if (T.fx) { const L = b.landed || (b.landed = []); L.push({ fx: T.fx, x, y, side: u ? u.side : null }); if (L.length > 20) L.shift(); } // what landed where (the Hivemind's weak spots: hivecrawl.js)
   if (T.fx === "blast" || T.fx === "frag") {
     const B = T.blast || (T.fx === "frag" ? FRAG : BLAST);
     const list = caught(b, x, y, B.r);

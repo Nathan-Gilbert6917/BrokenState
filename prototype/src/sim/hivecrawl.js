@@ -13,8 +13,8 @@
 // or colder (a team with poor Scouting misreads one now and then: the visit's own dice, hash01, never the world's).
 // The brood in a chamber grows with its depth (more of them, tougher, the special dead and the elite deeper; the
 // chambers next to the core are the worst) and with the hive's guard horde (hives.js hiveGuard): the guard is the brood
-// spread through the den, so each one killed inside takes its share of the guard (cutGuard), and a guard thinned by
-// fires outside means emptier chambers. Cleared chambers stay clear for REFILL_DAYS (longer once its eggs are burned),
+// spread through the den, so each one killed inside takes its share of the guard (cutGuard), and a guard thinned by a
+// war party's crawl means emptier chambers (nothing from outside the hive hurts it any more: no fires, no bombs). Cleared chambers stay clear for REFILL_DAYS (longer once its eggs are burned),
 // then the brood flows back from the guard. The memory is the hive's (hive.denMem), so it is the same for your teams
 // and the AI groups' war parties (groupHiveCrawl): the AI groups crawl the same den with the same depth, coarsely.
 //
@@ -37,7 +37,7 @@ import { log, hurt, tickHour, day, snapshot, survivorById } from "./world.js";
 import { partyMembers, partyTile, bestSkill, awaitOrders, wipeParty, tileLabel, teamName, cargoRoom, unitsThatFit } from "./parties.js";
 import {
   registerCombatHandler, registerBattleLayout, registerBattleSize, registerBossAI, startCombat, autoResolveCombat, finishCombat, byNumbersOdds,
-  say, fx, damage, enemyUnit, active,
+  say, fx, damage, enemyUnit, active, reachable, pathTo, moveAlong, los,
 } from "./combat.js";
 import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
 import { hiveById, hiveGuard, broodForce, destroyHive, molotovsOf } from "./hives.js";
@@ -60,7 +60,9 @@ import { absorbOffscreen } from "./armour.js";
 import { LIGHTS, lightOf } from "./lights.js"; // lights in the dark of the hive: the drafts, the cave battles
 import { carriedSpots } from "./inventory.js"; // road flares carried (worn, pockets, rig pouches, the pack)
 import { leaveCache } from "./caravanraids.js"; // the core's hoard: what the team cannot carry stays on the hive's tile
-import { addToArsenal, addArsenalRounds } from "./arsenal.js"; // AI parity: a war party's share of the hoard
+import { addToArsenal, addArsenalRounds, removeFromArsenal } from "./arsenal.js"; // AI parity: a war party's share of the hoard, its fire and bangs for the core
+import { THROWABLES } from "./stealth.js"; // the throws' reach (the Hivemind's weak spots)
+import { throwBlind } from "./throwables.js";
 
 // ---------- tuning ----------
 export const HCRAWL = {
@@ -99,7 +101,7 @@ export const HCRAWL = {
   AUTO: { coreOdds: 0.75, hurt: 45, treat: 70, fit: 60, sureOdds: 0.8, fightOdds: 0.6, sneakOdds: 0.7, coreFit: 4, wear: 0.04, lie: 70 },
   // The AI groups' crawl (groupHiveCrawl), in the guard's units: the Hivemind and the Broodmother cost boss + bossTier ×
   // tier of a war party's strength on top of the brood on the way and in the core.
-  GROUP: { boss: 6, bossTier: 6, depthDiv: 3, phase2: 2, light: 0.08 },
+  GROUP: { boss: 6, bossTier: 6, depthDiv: 3, phase2: 2, light: 0.08, prep: 0.25, prepKit: 4 },
   // Lights (lights.js) in the hive. The team's lights on (c.lit, the default when anyone has one): the drafts out of the
   // chamber it stands in are read in the light (the misreading × draft), but the brood sees it (Alert + move a move,
   // creeping past + sneak to the roll's DC). On a cave map the dark is the hive's own (b.dark): someone without a light
@@ -137,27 +139,46 @@ export const HCRAWL = {
 // and lash and the brood it keeps calling grind a team down on the map far more than a flat power says); × 2.75 fits
 // them (Brier 0.42 → 0.09), so the odds the core room shows, the fight by the numbers and the autopilot's choice
 // match what the map gives; 2.5 so an ideal squad (plate, Shooting 7, full health) is not shown far less than it wins.
+// Refitted 2026-10-10 with the dark, lights and the weak spots (tools/hivecorecalib.js --fit: 96 configurations, four
+// squads from a rifle team in plate to a scrappy one of shotguns and pistols at Shooting 5, tiers 1/2/4, guards 60/120,
+// lit or not, with and without 2 Molotovs and 2 flashbangs, 12 battles each): numbersK 2 for a team in the dark with
+// nothing for the Hivemind (the best fit is 1.7, RMS 0.180; 2 costs little, 0.188, and leans careful where the numbers
+// overrate weak teams), × (1 − 0.325 × the share lit) × (1 − 0.4 × the Molotovs − 0.15 × the bangs, up to 2 of each).
 // P2: its second phase, below `at` of its health (once): the pulse reaches further and hits harder (pulse, pulseDmg,
 // stun), the walls give up brood every spawnEvery turns (spawn), cap more of them, and the cave quakes (quake: pillars
 // of flesh and bone come down in the open, everyone of yours caught under one hurt quakeDmg at quakeHit odds).
-export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9, numbersK: 2.5,
+export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9, numbersK: 2,
   P2: { on: true, at: 0.5, pulse: 4, pulseDmg: [6, 12], stun: 0.45, spawnEvery: 2, spawn: [3, 4], cap: 1, quake: [3, 5], quakeDmg: [3, 8], quakeHit: 0.35 } };
-// What the core battles did (the tools' calibration): battles fought on the map, how many saw the second phase.
-export const HM_STATS = { battles: 0, phase2: 0 };
+// Its weak spots (WEAK): fire on it or next to it (a Molotov, flames spreading to it) burns it burnDmg a turn for
+// burnTurns of its turns after the last flames touched it, and while it burns the walls give up no brood; a bang next
+// to it stuns it (a flashbang within flash tiles: stunFlash of its turns; a frag grenade or a pipe bomb within blast:
+// stunBlast): no pulse, no lash and no brood called while it reels, and its flesh lies open until its next turn (it
+// takes stunArmor of each hit instead of its armour's share). The battle AI (and AI plays my side) throws them at it first
+// (throwAt: combat.js bossThrowTarget, stealth.js botAttackThrow), never with one of yours in the fire or the flash.
+HIVEMIND.WEAK = { burnDmg: [30, 45], burnTurns: 2, near: 1, flash: 3, blast: 2, stunFlash: 3, stunBlast: 2, safe: 2, stunArmor: 1 };
+// The core by the numbers (coreSetup, coreGate): the bosses' power (× numbersK, fitted to the map on the autopilot's
+// teams, most of them without lights) × (1 − lit × the share of the team with a light) × (1 − fire × the Molotovs it
+// brings, up to kit, − stun × the flashbangs, grenades and pipe bombs, up to kit). Fitted to the map with
+// tools/hivecorecalib.js (--fit): the rifle squad and the shotgun squad, tiers 1, 2 and 4, lit or not, with and without
+// two Molotovs and two flashbangs. A fight by the numbers spends what it counts.
+HIVEMIND.NUMBERS = { lit: 0.325, fire: 0.4, stun: 0.15, kit: 2 };
+// What the core battles did (the tools' calibration): battles fought on the map, how many saw the second phase, how
+// many saw the Hivemind burn or reel.
+export const HM_STATS = { battles: 0, phase2: 0, burned: 0, stunned: 0 };
 
-// The kinds of chamber: name, share of the brood (brood) and its power, the special dead among them (special), what
+// The kinds of chamber: short (its letter on the crawl window's map), name, share of the brood (brood) and its power, the special dead among them (special), what
 // can be done there (burn: eggs or a growth's root; search: what lies in it), its battle map size, how it reads.
 export const ROOM_KINDS = {
-  mouth:    { name: "The mouth", brood: 0.8, power: 1, special: false, size: [28, 16], text: "A wet throat of flesh where the hive swallows the light. The guard shuffles in and out." },
-  tunnel:   { name: "Tunnel", brood: 0.7, power: 1, special: true, size: [28, 13], text: "A low, ribbed passage you have to stoop in. It sweats." },
-  gallery:  { name: "Gallery", brood: 1, power: 1, special: true, size: [30, 18], text: "A long hall of fused bodies, columns of flesh holding up the roof. The brood rests along the walls." },
-  nursery:  { name: "Nursery", brood: 1.4, power: 0.55, special: false, size: [28, 18], text: "Cradles of membrane, and the newly turned crawling out of them: many, but weak." },
-  eggs:     { name: "Egg chamber", brood: 0.6, power: 1, special: false, burn: true, size: [26, 16], text: "Amber sacs heaped to the ceiling, something turning inside each. Fire would take them." },
-  bones:    { name: "Bone pit", brood: 0.5, power: 1, special: false, search: true, size: [26, 16], text: "Bones picked clean, and among them the packs and guns of the teams that came before you." },
-  pool:     { name: "Worm pool", brood: 0.8, power: 1, special: true, search: true, size: [26, 16], text: "Black water to the knee, and it moves. The worm breeds here: every step is a risk." },
-  growth:   { name: "Growth root", brood: 1, power: 1, special: true, burn: true, size: [28, 16], text: "The roots of one of the hive's growths reach down here, thick as a man and beating." },
-  collapse: { name: "Collapsed tunnel", brood: 0, power: 1, special: false, size: [24, 14], text: "The roof has come down. Rubble and flesh seal the far end: nothing lives here, and there is no way on." },
-  core:     { name: "The core", brood: 0, power: 1, special: false, size: [34, 22], text: "The heart of the hive." },
+  mouth:    { short: "M", name: "The mouth", brood: 0.8, power: 1, special: false, size: [28, 16], text: "A wet throat of flesh where the hive swallows the light. The guard shuffles in and out." },
+  tunnel:   { short: "T", name: "Tunnel", brood: 0.7, power: 1, special: true, size: [28, 13], text: "A low, ribbed passage you have to stoop in. It sweats." },
+  gallery:  { short: "G", name: "Gallery", brood: 1, power: 1, special: true, size: [30, 18], text: "A long hall of fused bodies, columns of flesh holding up the roof. The brood rests along the walls." },
+  nursery:  { short: "N", name: "Nursery", brood: 1.4, power: 0.55, special: false, size: [28, 18], text: "Cradles of membrane, and the newly turned crawling out of them: many, but weak." },
+  eggs:     { short: "E", name: "Egg chamber", brood: 0.6, power: 1, special: false, burn: true, size: [26, 16], text: "Amber sacs heaped to the ceiling, something turning inside each. Fire would take them." },
+  bones:    { short: "B", name: "Bone pit", brood: 0.5, power: 1, special: false, search: true, size: [26, 16], text: "Bones picked clean, and among them the packs and guns of the teams that came before you." },
+  pool:     { short: "W", name: "Worm pool", brood: 0.8, power: 1, special: true, search: true, size: [26, 16], text: "Black water to the knee, and it moves. The worm breeds here: every step is a risk." },
+  growth:   { short: "R", name: "Growth root", brood: 1, power: 1, special: true, burn: true, size: [28, 16], text: "The roots of one of the hive's growths reach down here, thick as a man and beating." },
+  collapse: { short: "C", name: "Collapsed tunnel", brood: 0, power: 1, special: false, size: [24, 14], text: "The roof has come down. Rubble and flesh seal the far end: nothing lives here, and there is no way on." },
+  core:     { short: "★", name: "The core", brood: 0, power: 1, special: false, size: [34, 22], text: "The heart of the hive." },
 };
 const DRAFT_WORD = { warmer: "warmer", colder: "colder", level: "no draft" };
 
@@ -829,7 +850,9 @@ export function encounterOptions(state, p) {
   const odds = byNumbersOdds(state, setup);
   const out = [];
   if (e.kind === "core") {
-    out.push({ id: "fight", label: `Fight the ${BOSS_NAMES.hivemind} (battle map)`, tip: `The core room: ${setup.enemy.count} of the brood, the ${BOSS_NAMES.hive} and the ${BOSS_NAMES.hivemind} (it never moves: it pulses, lashes out and calls brood out of the walls). Kill it and the hive dies, its brood with it. By the numbers about ${Math.round(odds.win * 100)}%.`, odds: odds.win });
+    const prep = corePrep(state, partyMembers(state, p), p);
+    const weak = ` Its weak spots: fire (a Molotov on it burns it ${HIVEMIND.WEAK.burnDmg[0]}–${HIVEMIND.WEAK.burnDmg[1]} a turn and the walls give up no brood while it burns) and a bang (a flashbang or a grenade next to it: no pulse, no lash, no brood and its flesh open for a turn or more). You carry ${prep.fire} Molotov${prep.fire === 1 ? "" : "s"} and ${prep.stun} flashbang${prep.stun === 1 ? "" : "s"} or grenade${prep.stun === 1 ? "" : "s"}${prep.lit < 1 ? `; ${Math.round((1 - prep.lit) * partyMembers(state, p).length)} of you without a light in its dark` : ""}.`;
+    out.push({ id: "fight", label: `Fight the ${BOSS_NAMES.hivemind} (battle map)`, tip: `The core room: ${setup.enemy.count} of the brood, the ${BOSS_NAMES.hive} and the ${BOSS_NAMES.hivemind} (it never moves: it pulses, lashes out and calls brood out of the walls). Kill it and the hive dies, its brood with it. By the numbers about ${Math.round(odds.win * 100)}%.${weak}`, odds: odds.win });
     out.push({ id: "numbers", label: "Fight it by the numbers", tip: `Quick: about ${Math.round(odds.win * 100)}% to win. A lost fight here can cost everyone.`, odds: odds.win });
   } else {
     out.push({ id: "fight", label: "Fight (battle map)", tip: `Fight the brood in ${roomThe(room)}. By the numbers you would win about ${Math.round(odds.win * 100)}%. Noise: Alert +${HCRAWL.ALERT.mapFight} and more with every shot.`, odds: odds.win });
@@ -1221,15 +1244,16 @@ export function hiveCrawlTurned(state, p, s) {
 // played out by the AI on both sides, as the old storm was).
 // numbers: the setup for a fight by the numbers (the bosses folded into the brood's power: byNumbersOdds counts
 // count × power); on the map the brood keeps its own power and the bosses are units (the layout).
-// (No darkMult here: the core's numbers are fitted to the map as the autopilot's teams fought it, HIVEMIND.numbersK.)
+// By the numbers the bosses count × coreBossMult: the team's lights and what it brings for the Hivemind's weak spots.
 export function coreSetup(state, p, hive, numbers = false) {
   const f = coreForce(state, hive);
   const allies = hiveAllies(state, hive);
   const count = f.count ? broodAfterAllies(f.count, allies.fighters) : 0;
   const n = Math.max(1, count);
+  const boss = numbers ? f.bossPower * coreBossMult(corePrep(state, partyMembers(state, p), p)) : 0;
   return {
     tile: hive.tile, partyId: p.id, ambush: null, canRetreat: true, handler: "hiveAssault", layout: "hivecore",
-    enemy: { kind: "zombies", count: n, power: numbers ? Math.round(((count * f.power + f.bossPower) / n) * 10) / 10 : f.power, types: f.types, elite: !!f.elite, name: `the core of ${hive.name}`, brood: count, broodPower: f.power, hp: f.hp },
+    enemy: { kind: "zombies", count: n, power: numbers ? Math.round(((count * f.power + boss) / n) * 10) / 10 : f.power, types: f.types, elite: !!f.elite, name: `the core of ${hive.name}`, brood: count, broodPower: f.power, hp: f.hp },
     aiStyle: coreStyle(state, p), // the core's brood keeps coming out of the walls: no Aggressive last stand there
     context: { hiveId: hive.id, partyId: p.id, crawl: !!p.hiveCrawl, tier: f.tier, warmth: 100, met: count, allies: allies.fighters },
   };
@@ -1242,11 +1266,50 @@ function coreStyle(state, p) {
   const gov = state.autopilot && state.governor ? state.governor.personality : null;
   return gov === "aggressive" ? "balanced" : gov || undefined;
 }
+// What a team brings to the core for the Hivemind: { lit (share of the people with a light), fire (Molotovs), stun
+// (flashbangs, frag grenades, pipe bombs) }. people: who fights; p: their team (its cargo), or null. extra: { lights,
+// fire, stun } the autopilot would pack from the armory (coreGate).
+const FIRE_KEYS = ["molotov"], STUN_KEYS = ["flashbang", "frag", "pipebomb"];
+export function corePrep(state, people, p = null, extra = {}) {
+  const n = people.length || 1;
+  const lit = Math.min(n, people.filter((s) => !!lightOf(s)).length + (extra.lights || 0));
+  let fire = extra.fire || 0, stun = extra.stun || 0;
+  for (const s of people) for (const x of carriedSpots(s)) { const k = x.item && x.item.key; if (FIRE_KEYS.includes(k)) fire++; else if (STUN_KEYS.includes(k)) stun++; }
+  for (const it of (p && p.cargo && p.cargo.gear) || []) { if (!it) continue; if (FIRE_KEYS.includes(it.key)) fire++; else if (STUN_KEYS.includes(it.key)) stun++; }
+  return { lit: lit / n, fire, stun };
+}
+// The bosses' power by the numbers × this (HIVEMIND.NUMBERS).
+export function coreBossMult(prep) {
+  const N = HIVEMIND.NUMBERS;
+  return (1 - N.lit * prep.lit) * Math.max(0.3, 1 - N.fire * Math.min(1, prep.fire / N.kit) - N.stun * Math.min(1, prep.stun / N.kit));
+}
+// The core's odds by the numbers for a squad not yet in the hive (the autopilot's gate, autopilot.js hiveCandidate):
+// the core at a guard of G, its bosses × coreBossMult for what the squad carries and would pack (extra), the brood and
+// bosses × the wear of the fights on the shortest way in (crawlEstimate). { win, ratio }.
+export function coreGate(state, hive, people, G = guardSize(state, hive), extra = {}) {
+  const f = coreForce(state, hive, G);
+  const est = crawlEstimate(state, hive, G);
+  const allies = hiveAllies(state, hive);
+  const count = f.count ? broodAfterAllies(f.count, allies.fighters) : 0;
+  const n = Math.max(1, count);
+  const boss = f.bossPower * coreBossMult(corePrep(state, people, null, extra));
+  const setup = { tile: hive.tile, ambush: null, layout: "hivecore", enemy: { kind: "zombies", count: n, power: Math.round((((count * f.power + boss) / n) * est.wear) * 10) / 10, types: f.types, elite: !!f.elite } };
+  const o = byNumbersOdds(state, /** @type {any} */ (setup), people);
+  return { win: o.win, ratio: o.ratio };
+}
+// A fight in the core by the numbers spends what it counted for the Hivemind (up to NUMBERS.kit of each).
+function spendPrep(state, p) {
+  const K = HIVEMIND.NUMBERS.kit;
+  for (const keys of [FIRE_KEYS, STUN_KEYS]) {
+    let left = K;
+    for (const key of keys) for (const x of teamKit(state, p, key)) { if (left <= 0) break; x.take(); left--; }
+  }
+}
 export function assaultHive(state, p, hive, opts = {}) {
   const setup = coreSetup(state, p, hive, !!opts.quick);
   const allies = hiveAllies(state, hive);
   if (allies.fighters) log(state, `Fighters from ${allies.names.join(", ")} fight beside your squad in ${hive.name}.`, "good");
-  if (opts.quick) { const res = crawlByNumbers(state, setup); finishCombat(state, setup, res); return null; }
+  if (opts.quick) { const res = crawlByNumbers(state, setup); spendPrep(state, p); finishCombat(state, setup, res); return null; }
   if (opts.map && typeof window !== "undefined" && !state.autoCombat) return onFoot(p, () => startCombat(state, setup));
   return onFoot(p, () => fightNow(state, setup));
 }
@@ -1262,7 +1325,7 @@ registerCombatHandler("hiveAssault", (state, result, setup, battle) => {
   const won = result.outcome === "victory" && !!hive;
   let hoard = "";
   if (won && p && state.parties.includes(p) && partyMembers(state, p).length) hoard = takeHoard(state, p, hive, p.hiveCrawl || null); // before the hive goes: its tier and stores
-  if (battle) { HM_STATS.battles++; if (battle.hivemind && battle.hivemind.phase2) HM_STATS.phase2++; }
+  if (battle) { HM_STATS.battles++; const hm = battle.hivemind || {}; if (hm.phase2) HM_STATS.phase2++; if (hm.burned) HM_STATS.burned++; if (hm.stunned) HM_STATS.stunned++; }
   if (won) {
     destroyHive(state, hive, "by your team");
     text = `The ${BOSS_NAMES.hivemind} bursts and the hive dies around you: the brood falls where it stands and the walls go still and cold. The infection around it will fade over the coming weeks.`;
@@ -1436,17 +1499,92 @@ function phaseTwo(b, u, st) {
   }
   say(b, `${fell.length} pillar${fell.length === 1 ? "" : "s"} of flesh and bone come down${hurt.length ? `: ${hurt.join(", ")} caught under the falling flesh` : ""}.`, "danger");
 }
+// The Hivemind's weak spots at the start of its turn (HIVEMIND.WEAK): what landed near it since its last turn
+// (throwables.js b.landed) and the flames around it. Returns { burning, stunned } for this turn.
+function weakSpots(b, u, st) {
+  const W = HIVEMIND.WEAK, rng = b.rng;
+  const cheb = (x, y) => Math.max(Math.abs(x - u.x), Math.abs(y - u.y));
+  for (const L of b.landed || []) {
+    if (L.side === "enemy") continue;
+    if (L.fx === "fire" && cheb(L.x, L.y) <= W.near + 1) st.burnLeft = W.burnTurns;
+    else if (L.fx === "flash" && cheb(L.x, L.y) <= W.flash) st.stunLeft = Math.max(st.stunLeft || 0, W.stunFlash);
+    else if ((L.fx === "frag" || L.fx === "blast") && cheb(L.x, L.y) <= W.blast) st.stunLeft = Math.max(st.stunLeft || 0, W.stunBlast);
+  }
+  if (b.landed) b.landed.length = 0;
+  if ((b.fires || []).some((c) => cheb(c.x, c.y) <= W.near)) st.burnLeft = W.burnTurns; // the flames are on it
+  const out = { burning: false, stunned: false };
+  if ((st.burnLeft || 0) > 0) {
+    st.burnLeft--;
+    st.burned = (st.burned || 0) + 1;
+    out.burning = true;
+    const eff = Math.round(damage(b, u, rng.int(W.burnDmg[0], W.burnDmg[1]), null, false, { how: "fire" }));
+    fx(b, { type: "melee", from: [u.x, u.y], to: [u.x, u.y], hit: true, crit: false, dmg: eff, side: "fire", text: "BURNS" });
+    say(b, `The ${BOSS_NAMES.hivemind} burns (${eff}): it shrieks through the flesh, and no brood comes out of the burning walls.`, "good");
+  }
+  if (u.armorBase == null) u.armorBase = u.armor;
+  u.armor = u.armorBase;
+  if (!u.dead && (st.stunLeft || 0) > 0) {
+    st.stunLeft--;
+    u.armor = Math.max(u.armorBase, W.stunArmor); // open to your shots until its next turn
+    st.stunned = (st.stunned || 0) + 1;
+    out.stunned = true;
+    fx(b, { type: "melee", from: [u.x, u.y], to: [u.x, u.y], hit: true, crit: false, dmg: 0, side: "player", text: "STUNNED" });
+    say(b, `The ${BOSS_NAMES.hivemind} reels from the bang: its pulse falters, its tendrils hang slack and the walls stay shut.`, "good");
+  }
+  return out;
+}
+// Where the battle AI throws at it (combat.js bossThrowTarget): a Molotov while it does not burn, else a flashbang, a
+// frag grenade or a pipe bomb while it is not reeling; in range, somewhere the thrower's side can see or knows of, and
+// none of the thrower's side within WEAK.safe (+1 for the flash) of it. null: nothing to throw.
+function hivemindThrowAt(b, u, t, have) {
+  if (!have || u.dead || !active(t)) return null;
+  const W = HIVEMIND.WEAK, st = b.hivemind || {};
+  const d = Math.hypot(t.x - u.x, t.y - u.y);
+  const clear = (r) => !b.units.some((o) => o.side === t.side && active(o) && Math.max(Math.abs(o.x - u.x), Math.abs(o.y - u.y)) <= r);
+  const burning = (st.burnLeft || 0) > 0 || (b.fires || []).some((c) => Math.max(Math.abs(c.x - u.x), Math.abs(c.y - u.y)) <= W.near);
+  const want = [];
+  if (have.molotov && !burning && clear(W.safe)) want.push("molotov");
+  if (!((st.stunLeft || 0) > 0)) {
+    if (have.flashbang && clear(W.safe + 1)) want.push("flashbang");
+    for (const key of ["frag", "pipebomb"]) if (have[key] && clear(W.safe)) want.push(key);
+  }
+  if (!want.length) return null;
+  const key = want[0], range = THROWABLES[key].range;
+  // Out of reach: a step closer first (an action), to a cell in reach that sees it and is outside its pulse.
+  if (d > range) {
+    if (t.ap < 2 || d > range + (t.mob || 3) + 1) return null;
+    const pulse = (st.phase2 ? HIVEMIND.P2.pulse : HIVEMIND.pulse) + 1;
+    const r = reachable(b, t, t.mob || 3);
+    let best = null;
+    for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+      const c = r.dist[y * b.w + x];
+      if (!(c < Infinity)) continue;
+      const dd = Math.hypot(x - u.x, y - u.y), ch = Math.max(Math.abs(x - u.x), Math.abs(y - u.y));
+      if (dd > range || ch <= pulse || !los(b, x, y, u.x, u.y)) continue;
+      if (!best || c < best.c) best = { x, y, c };
+    }
+    if (!best) return null;
+    t.ap -= 1;
+    moveAlong(b, t, pathTo(r, best.x, best.y));
+    if (!active(t) || t.ap < 1) return null;
+  }
+  if (throwBlind(b, t, u.x, u.y) === null) return null;
+  return { item: key, x: u.x, y: u.y };
+}
 // The Hivemind's turn (combat.js registerBossAI): the pulse, a lash, the brood out of the walls.
 registerBossAI("hivemind", {
+  throwAt: hivemindThrowAt,
   turn(b, u) {
     const M = HIVEMIND, rng = b.rng;
     const st = b.hivemind || (b.hivemind = { id: u.id, tier: 0, spawned: 0, turns: 0 });
     st.turns++;
+    const weak = weakSpots(b, u, st);
+    if (u.dead) return;
     if (M.P2.on && !st.phase2 && u.hp < u.maxHp * M.P2.at) phaseTwo(b, u, st);
     const P = st.phase2 ? M.P2 : M;
     const cheb = (o) => Math.max(Math.abs(o.x - u.x), Math.abs(o.y - u.y));
     const foes = b.units.filter((o) => o.side === "player" && active(o));
-    const near = foes.filter((o) => cheb(o) <= P.pulse);
+    const near = weak.stunned ? [] : foes.filter((o) => cheb(o) <= P.pulse); // reeling from a bang: no pulse, no lash
     if (near.length) {
       say(b, st.phase2 ? `The ${BOSS_NAMES.hivemind} convulses: a scalding wave through the flesh.` : `The ${BOSS_NAMES.hivemind} pulses: a wave of heat and pressure through the flesh.`, "danger");
       for (const t of near) {
@@ -1455,7 +1593,7 @@ registerBossAI("hivemind", {
         if (active(t) && rng.chance(P.stun) && !(t.stun && !t.stun.applied && t.stun.next >= nextTurnOf(b, t))) t.stun = { aim: 15, ap: 1, next: nextTurnOf(b, t), dazed: false };
       }
     }
-    const lash = foes.filter((o) => active(o) && cheb(o) <= 1);
+    const lash = weak.stunned ? [] : foes.filter((o) => active(o) && cheb(o) <= 1);
     if (lash.length) {
       const t = rng.pick(lash);
       const eff = Math.round(damage(b, t, rng.int(M.lash[0], M.lash[1]), u, false, { how: "melee", crit: false }));
@@ -1464,7 +1602,7 @@ registerBossAI("hivemind", {
     }
     const cap = M.cap + M.capTier * (st.tier || 0) + (st.phase2 ? M.P2.cap : 0);
     const due = st.phase2 ? (st.turns - st.phase2) % M.P2.spawnEvery === 0 : st.turns % M.spawnEvery === 1;
-    if (due && st.spawned < cap) {
+    if (due && st.spawned < cap && !weak.burning && !weak.stunned) { // burning or reeling: the walls give up nothing
       const cells = [];
       for (let y = u.y - 6; y <= u.y + 6; y++) for (let x = u.x - 8; x <= u.x + 1; x++) {
         if (x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
@@ -1608,7 +1746,7 @@ export function crawlEstimate(state, hive, G = guardSize(state, hive)) {
 // the core the Hivemind and the Broodmother on top (GROUP.boss + bossTier × tier). The guard it kills: the brood it
 // killed × the guard each stands for (as your teams', cutGuard). It clears
 // what it pays for (the hive remembers: the chambers stay clear for a while, for your teams too), stops where the
-// budget runs out (driven off partway; a later party starts from what is still clear), and burns the hive out when it
+// budget runs out (driven off partway; a later party starts from what is still clear), and kills the Hivemind (the hive dies) when it
 // reaches and pays for the core. Returns { burned, cut (the guard killed), met (all it ran into), reached (chambers
 // deep), depth }.
 export function groupHiveCrawl(state, hive, budget, fid = null) {
@@ -1627,9 +1765,11 @@ export function groupHiveCrawl(state, hive, budget, fid = null) {
   for (const id of path) {
     const r = roomById(den, id);
     if (r.kind === "core") {
-      const cost = core.count * unit + HCRAWL.GROUP.boss + HCRAWL.GROUP.bossTier * den.tier + (HIVEMIND.P2.on ? HCRAWL.GROUP.phase2 : 0); // its second phase too
+      const prep = groupPrep(state, fid);
+      const cost = core.count * unit + (HCRAWL.GROUP.boss + HCRAWL.GROUP.bossTier * den.tier + (HIVEMIND.P2.on ? HCRAWL.GROUP.phase2 : 0)) * (1 - HCRAWL.GROUP.prep * prep.share); // its second phase too; their fire and bangs on it
       met += cost;
       reached = den.depth;
+      prep.spend();
       if (left >= cost) { burned = true; killed += core.count; left -= cost; } else { killed += unit > 0 ? Math.min(core.count, Math.floor(left / unit)) : 0; left = 0; }
       break;
     }
@@ -1649,12 +1789,21 @@ export function groupHiveCrawl(state, hive, budget, fid = null) {
   return { burned, cut, met: Math.round(met), reached, depth: den.depth, spent: Math.round(budget - left) };
 }
 
+// What a group's war party brings for the Hivemind (coarse, AI parity): the Molotovs, flashbangs, frag grenades and
+// pipe bombs in its arsenal (arsenal.js), up to GROUP.prepKit; share: what they bring of it; spend(): used at the core.
+function groupPrep(state, fid) {
+  const f = fid != null ? state.factions.find((x) => x.id === fid) : null;
+  const items = f && f.arsenal ? f.arsenal.items.filter((it) => it && (FIRE_KEYS.includes(it.key) || STUN_KEYS.includes(it.key))).slice(0, HCRAWL.GROUP.prepKit) : [];
+  return { share: items.length / HCRAWL.GROUP.prepKit, spend: () => { for (const it of items) removeFromArsenal(f, it, "the hive's core"); } };
+}
+
 // ---------- help ----------
 export const HIVE_CRAWL_HELP = `A hive is destroyed from the inside. Send a team with the <b>Destroy hive</b> mission and choose <b>Enter the hive</b> on its card: the team crawls through the hive chamber by chamber, from the mouth to the <b>core room</b>, where the <b>${BOSS_NAMES.hivemind}</b> sits, the organ that thinks for the hive. Kill it and the hive dies, its brood with it. A young hive is shallow (${HCRAWL.DEPTH[0]} chambers from the mouth to the core); every tier it grows makes it deeper (${HCRAWL.DEPTH.join(", ")} by tier, one more with a screamer spire): the crawl is the mid and late game's work.<br>
 <b>Finding the way.</b> The chambers form a web: at least two routes run to the core, with side branches, dead ends and loops. You see the passages out of every chamber you have been in; what lies beyond is dark until you go. The core is the hottest place in the hive: every chamber has a <b>warmth</b> (the gauge, and the air: <i>cool and damp</i>, <i>close and clammy</i>, <i>warm as breath</i>, <i>hot</i>, <i>the walls sweat</i>), and every passage a draft, <i>warmer</i> or <i>colder</i>. A team without a good scout misreads a draft now and then (${Math.round(HCRAWL.DRAFT.miss * 100)}% less ${Math.round(HCRAWL.DRAFT.perScout * 1000) / 10} a point of the best Scouting). The deeper, the louder and faster the hive's pulse and the warmer its drone (the mixer's <i>Hive crawl pulse</i>), and the redder the window.<br>
-<b>The brood.</b> Every chamber holds some of the hive's brood: more and tougher the deeper you go, the special dead the hive breeds among them, the elite deeper still, and the chambers next to the core the worst. A hive's guard horde is its brood: every one killed inside thins the guard, and fires set outside (or a war party) mean emptier chambers. Fight them (on a cave map or by the numbers), creep past (Stealth; they stay there and you meet them again on the way back), or fall back. Cleared chambers stay clear for about ${HCRAWL.REFILL_DAYS} days, then the brood flows back: you can crawl part of the way, come home to heal and come back. Kinds of chamber: tunnels, galleries, <i>nurseries</i> (many and weak), <i>egg chambers</i> (burn them with ${HCRAWL.BURN.fuel} fuel or a Molotov: the hive loses stores and some of its guard, and fills its chambers more slowly), <i>bone pits</i> (the remains of teams that came before: their worn guns, armour, packs, ammunition and meds), <i>worm pools</i> (the worm's eggs: wading through is a risk, feeling through the water more), the <i>roots</i> of the hive's growths (burn one to hurt the growth above), and collapses that lead nowhere.<br>
+<b>The brood.</b> Every chamber holds some of the hive's brood: more and tougher the deeper you go, the special dead the hive breeds among them, the elite deeper still, and the chambers next to the core the worst. A hive's guard horde is its brood: every one killed inside thins the guard, and a war party's crawl means emptier chambers. Nothing from outside the hive hurts it: no fires, no bombs; the crawl is the only way to kill a hive. Fight them (on a cave map or by the numbers), creep past (Stealth; they stay there and you meet them again on the way back), or fall back. Cleared chambers stay clear for about ${HCRAWL.REFILL_DAYS} days, then the brood flows back: you can crawl part of the way, come home to heal and come back. Kinds of chamber: tunnels, galleries, <i>nurseries</i> (many and weak), <i>egg chambers</i> (burn them with ${HCRAWL.BURN.fuel} fuel or a Molotov: the hive loses stores and some of its guard, and fills its chambers more slowly), <i>bone pits</i> (the remains of teams that came before: their worn guns, armour, packs, ammunition and meds), <i>worm pools</i> (the worm's eggs: wading through is a risk, feeling through the water more), the <i>roots</i> of the hive's growths (burn one to hurt the growth above), and collapses that lead nowhere.<br>
 <b>The hive's Alert.</b> Moving, fighting, fire and a failed sneak make noise; lying still lets it fade. From ${HCRAWL.ALERT.converge} the brood converges on you: it pours into your chamber and fills the chambers behind you again; from ${HCRAWL.ALERT.block} it packs the mouth. Leaving means going back the way you came.<br>
-<b>The ${BOSS_NAMES.hivemind}.</b> In the core the ${BOSS_NAMES.hive} and the last of the brood guard it. It never moves, but every turn it pulses (everyone within ${HIVEMIND.pulse} tiles hurt and sometimes stunned), lashes at anyone next to it, and every other turn tears more brood out of the walls. It has ${HIVEMIND.hp} health (+${HIVEMIND.perTier} a tier) and thick flesh. Below ${Math.round(HIVEMIND.P2.at * 100)}% it tears open in a <b>second phase</b>: the cave quakes and pillars of flesh come down, its pulse reaches ${HIVEMIND.P2.pulse} tiles and hits harder, and the walls give up ${HIVEMIND.P2.spawn[0]}–${HIVEMIND.P2.spawn[1]} brood at a time. Its death kills the brood around it. The other groups crawl hives too (their war parties clear chambers on the shortest way and come back, and take the hoard of a hive they burn), and allied fighters thin the brood in every chamber.<br>
+<b>The ${BOSS_NAMES.hivemind}.</b> In the core the ${BOSS_NAMES.hive} and the last of the brood guard it. It never moves, but every turn it pulses (everyone within ${HIVEMIND.pulse} tiles hurt and sometimes stunned), lashes at anyone next to it, and every other turn tears more brood out of the walls. It has ${HIVEMIND.hp} health (+${HIVEMIND.perTier} a tier) and thick flesh. Below ${Math.round(HIVEMIND.P2.at * 100)}% it tears open in a <b>second phase</b>: the cave quakes and pillars of flesh come down, its pulse reaches ${HIVEMIND.P2.pulse} tiles and hits harder, and the walls give up ${HIVEMIND.P2.spawn[0]}–${HIVEMIND.P2.spawn[1]} brood at a time. Its death kills the brood around it.<br>
+<b>Its weak spots.</b> Fire: a Molotov on it or next to it burns it ${HIVEMIND.WEAK.burnDmg[0]}–${HIVEMIND.WEAK.burnDmg[1]} a turn (through its thick flesh) for ${HIVEMIND.WEAK.burnTurns} of its turns after the last flames touch it, and while it burns the walls give up no brood. A bang: a flashbang within ${HIVEMIND.WEAK.flash} tiles stuns it for ${HIVEMIND.WEAK.stunFlash} of its turns, a frag grenade or a pipe bomb within ${HIVEMIND.WEAK.blast} for ${HIVEMIND.WEAK.stunBlast}: no pulse, no lash, no brood called, and its flesh lies open to your shots. The battle AI (and <i>AI plays my side</i>) steps into reach and throws them at it first, never with one of yours in the fire or the flash. By the numbers, Molotovs and bangs (up to ${HIVEMIND.NUMBERS.kit} of each) and lights count against its power. Bring them: preparation beats headcount. The autopilot packs lights, Molotovs, flashbangs, a grenade and road flares for its hive squads when the armory has them. The other groups crawl hives too (their war parties clear chambers on the shortest way and come back, and take the hoard of a hive they burn), and allied fighters thin the brood in every chamber.<br>
 <b>The hoard.</b> In the dead core lies what the hive dragged in from the dead: guns, armour, rounds, meds, gun parts and scrap, now and then something rare (night vision, a thermal sight, a military radio, a surgical kit), all worn as the dead left it; more the higher the hive's tier and the fuller its stores. The team takes what fits (the best first); the rest stays at the hive, marked on the map: Recover it.<br>
 <b>Lights, flares and listening.</b> The hive is dark. With the team's lights on (the default when anyone carries one: headlamp, flashlight, torch, lantern) the drafts out of your chamber are misread half as often, but the brood sees you coming (Alert +${HCRAWL.LIGHT.move} a move, creeping past a little harder); douse them in the window. In a fight in the hive someone without a light sees ${HCRAWL.LIGHT.dark} tiles, with one their light's reach + ${HCRAWL.LIGHT.lit}; by the numbers the brood in a chamber counts up to ${Math.round(HCRAWL.LIGHT.numbers * 100)}% more for the share of the team in the dark. A <b>road flare</b> thrown down a passage lights the chamber beyond: its kind, its brood exactly and the true draft (Alert +${HCRAWL.FLARE.alert}; found at gas stations, police and fire stations and campgrounds, made from scrap, fuel and a few rounds). <b>Listen</b> at a passage (${HCRAWL.LISTEN.hours} h): your best listener's (Scouting + Stealth) / 2 + d10 against ${HCRAWL.LISTEN.dc} (+${HCRAWL.LISTEN.perLayer} a chamber deep): well, the kind and the brood exactly; enough, the kind and roughly how many; poorly, a guess that can be wrong; badly, a noise that warns them (Alert +${HCRAWL.LISTEN.alert}, they wait for you). The autopilot listens with a good listener and throws flares without one.<br>
 <b>Your record.</b> Every hive keeps what your teams learned of it: how deep they got, the chambers mapped, whether they found the core (the State Map's hive tile and its ⛏ label, the Goals card). When the hive grows deeper its chambers are new and the map starts again.`;
