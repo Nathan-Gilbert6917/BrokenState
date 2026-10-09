@@ -65,6 +65,7 @@ import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
 import { radioDeals } from "./sim/radiotrade.js"; // radio deals your caravan fetches
 import { VISITOR_ACTIONS } from "./ui/visitors.js";
 import { DIPLO_ACTIONS, DIPLO_CHANGE } from "./ui/diplomacy.js";
+import { VOL_ACTIONS, VOL_CHANGE, openVolPick, plannerVolAsk } from "./ui/volunteers.js"; // volunteers: asking a group for people, a group's ask of you
 import { renderDevPanel, devSample, DEV_SPEEDS } from "./ui/devtools.js";
 import { TL_ACTIONS, tlFrame, tlKey, closeTimelapse } from "./ui/timelapse.js";
 import { REL_ACTIONS } from "./ui/relations.js";
@@ -979,6 +980,7 @@ const actions = {
     const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, plan: Parties.SETTLE_MISSIONS.includes(pl.mission) ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
     if (res.error) { ui.plannerError = res.error; return; }
     rememberLaunch(state, res.party, pl); // sim/trips.js: for Repeat trip when it gets home, and its retreat policy
+    plannerVolAsk(state, pl, res.party); // ui/volunteers.js: volunteers asked for in the planner (the answer is in the log)
     ui.planner = null;
     view.preview = null;
   },
@@ -1007,6 +1009,7 @@ const actions = {
       actions.plan({ tile: c.uiAction.tile, mission: c.uiAction.mission });
       return;
     }
+    if (c.uiAction && c.uiAction.type === "volpick") { openVolPick(ui, c.uiAction.askId); return; } // sim/volunteers.js: a group's ask, choose who goes
     if (c.uiAction && c.uiAction.type === "moveout") { openMoveOut(c.uiAction.baseId); return; } // the Overcrowded card (sim/moveout.js)
     if (c.uiAction && c.uiAction.type === "radioCaravan") { // a group asked you to bring your side (sim/radiotrade.js): the planner for that deal
       const deal = radioDeals(state).find((x) => x.factionId === c.uiAction.factionId);
@@ -1077,7 +1080,7 @@ const actions = {
   keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
 
-for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay"]) actions[k] = (d) => combatAction(state, k, d);
+for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder"]) actions[k] = (d) => combatAction(state, k, d);
 // Prisoners tab of a base (ui/prisoners.js): question, ransom, trade back, release, recruit, execute.
 for (const [k, fn] of Object.entries(PRISON_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // The planner's PLAN section (ui/plan.js): presets, steps, conditions; supplies are packed again for the new plan.
@@ -1108,6 +1111,7 @@ for (const [k, fn] of Object.entries(TRADE_ACTIONS)) actions[k] = (d) => fn(stat
 for (const [k, fn] of Object.entries(VISITOR_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Jobs, market board, world affairs and the coalition (ui/diplomacy.js); some reuse the handlers above (plan, center, rd-open).
 for (const [k, fn] of Object.entries(DIPLO_ACTIONS)) actions[k] = (d) => fn(state, ui, d, actions);
+for (const [k, fn] of Object.entries(VOL_ACTIONS)) actions[k] = (d) => fn(state, ui, d, actions); // ui/volunteers.js
 // Timelapse viewer (ui/timelapse.js). It never opens over a battle (the battle screen would cover it).
 for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => {
   if (k === "tl-open" && state.combat) return;
@@ -1287,6 +1291,7 @@ const changeActions = {
   ...Object.fromEntries(Object.entries(LOOK_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   ...Object.fromEntries(Object.entries(TRADE_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   ...Object.fromEntries(Object.entries(DIPLO_CHANGE).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
+  ...Object.fromEntries(Object.entries(VOL_CHANGE).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   seed: (el) => newWorld(cleanSeed(el.value), true),
   factioncount: (el) => { ui.factionCount = clampGroups(ui.worldSize, el.value); newWorld(state.seed, true); },
   // A new world size: the same seed on the new map, with that size's usual number of groups (sim/worldsize.js).
@@ -1967,6 +1972,8 @@ function closeTopLayer() {
     return true;
   }
   if (state.combat) return false; // the battle has its own Esc (cancel the current action)
+  if (ui.volPick) { ui.volPick = null; return true; } // ui/volunteers.js
+  if (ui.volReq) { ui.volReq = null; return true; }
   if (ui.why) { ui.why = null; return true; } // ui/causes.js: the "Why?" panel
   if (!ui.started) {
     if (ui.lookEdit == null) return false;

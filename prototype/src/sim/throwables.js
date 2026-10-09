@@ -38,7 +38,7 @@
 // (two at a breach, the gate or a doorway for a Molotov) and none of yours near, a smoke grenade when the retreat is
 // about to be sounded (the enemy's and the third side's the turn they start to fall back: siege.js coverSmoke), a flashbang on two or more people bunched within its reach (flashSpot; the enemy's soldiers and
 // guards carry them: kitFlashbangs, siege.js enemyThrow).
-import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell, structureName, vehicleBlast, los, coverAgainst } from "./combat.js";
+import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell, structureName, vehicleBlast, los, coverAgainst, bossOnLand } from "./combat.js";
 import { ZTYPES } from "./hiveconst.js";
 import { armorVs } from "./deadsoldiers.js";
 import { GEAR } from "./data.js";
@@ -176,6 +176,7 @@ function wreck(b, x, y, r, [lo, hi], by, heavy = false) {
 // round, launchers.js GL_HE / ROCKET: impact on the cell it lands on, dmg the splash around it; struct; kind: the
 // vehicle's wear, combat.js BLAST_WEAR; heavy: doors and tank traps too; rams: a battering ram is broken).
 export function landEffect(b, u, T, x, y) {
+  if (T.fx) { const L = b.landed || (b.landed = []); const e = { fx: T.fx, x, y, side: u ? u.side : null }; L.push(e); if (L.length > 20) L.shift(); bossOnLand(b, e); } // what landed where (the Hivemind's weak spots, the Broodmother dazed: hivecrawl.js)
   if (T.fx === "blast" || T.fx === "frag") {
     const B = T.blast || (T.fx === "frag" ? FRAG : BLAST);
     const list = caught(b, x, y, B.r);

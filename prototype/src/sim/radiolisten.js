@@ -115,7 +115,7 @@ export function channelTraffic(state, today = day(state)) {
       const cut = Math.max(0, now.kills - m.kills);
       const target = groupHiveTarget(state, f);
       const name = burned ? m.hive || "a hive" : (target && target.name) || m.hive || "a hive";
-      put({ key: `hive:${lid(f.id)}:${now.fights}`, kind: "hive", text: burned ? `their fighters stormed ${name} and burned it out.` : `their fighters stormed ${name} and were driven off${cut ? `, after cutting down about ${cut} of its brood` : ""}.` });
+      put({ key: `hive:${lid(f.id)}:${now.fights}`, kind: "hive", text: burned ? `their fighters crawled to the core of ${name} and killed its Hivemind.` : `their fighters stormed ${name} and were driven off${cut ? `, after cutting down about ${cut} of its brood` : ""}.` });
     }
     const target = groupHiveTarget(state, f);
     c.memo[f.id] = { ...now, hive: target ? target.name : null };

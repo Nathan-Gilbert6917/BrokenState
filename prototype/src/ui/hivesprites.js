@@ -151,7 +151,23 @@ function paintHivemind() {
   p.rect(6, 23, 16, 24, DARK);
   return p;
 }
-export const bossBattleCanvas = (kind) => cached(`boss:${kind}`, () => (kind === "broodmother" ? paintBroodmother() : kind === "hivemind" ? paintHivemind() : paintWallbreaker()));
+// Its second phase (sim/hivecrawl.js HIVEMIND.P2): swollen redder, torn open down the middle with light pouring out of
+// the wound, the pods burst, the veins standing out.
+function paintHivemind2() {
+  const p = painter(22, 26);
+  const FLESH = "#b8566a", DARK = "#5a1a2a", LIT = "#e07a8a", FOLD = "#7a2a3a", VEIN = "#ff3a2a", GLOW = "#ffd36b", CORE = "#fff4c8";
+  p.disc(11, 23, 10.5, 2.6, "#3a0c14");                                          // the pool, darker with blood
+  p.disc(11, 14, 10.5, 10, FLESH);                                               // swollen
+  p.disc(10, 11, 7, 6, LIT);
+  for (const [x0, y0, x1] of [[3, 8, 9], [12, 6, 18], [4, 13, 10], [13, 12, 19], [6, 18, 16]]) for (let x = x0; x <= x1; x++) p.set(x, y0 + ((x * 7) % 3) - 1, FOLD);
+  for (const [x, y] of [[6, 9], [15, 8], [4, 15], [17, 15], [9, 19], [14, 19]]) { p.set(x, y, VEIN); p.set(x + 1, y + 1, VEIN); p.set(x + 2, y + 1, VEIN); } // veins burning
+  for (let y = 5; y <= 21; y++) { const w = y < 8 || y > 18 ? 0 : y < 11 || y > 15 ? 1 : 2; for (let dx = -w; dx <= w; dx++) p.set(11 + dx + ((y * 3) % 2), y, Math.abs(dx) === w && w ? GLOW : CORE); } // the wound, pouring light
+  for (const [x, y] of [[2, 20], [19, 19], [4, 22], [17, 22]]) { p.disc(x, y, 1.4, 1.1, DARK); p.set(x, y - 1, VEIN); } // the pods burst
+  p.rect(0, 20, 3, 20, DARK); p.rect(18, 22, 21, 22, DARK); p.set(1, 19, DARK); p.set(20, 21, DARK); p.set(0, 18, DARK); p.set(21, 20, DARK); // tendrils thrashing
+  p.rect(6, 23, 16, 24, DARK);
+  return p;
+}
+export const bossBattleCanvas = (kind) => cached(`boss:${kind}`, () => (kind === "broodmother" ? paintBroodmother() : kind === "hivemind" ? paintHivemind() : kind === "hivemind2" ? paintHivemind2() : paintWallbreaker()));
 
 // ---------- a hive's growths on the map (sim/hivetech.js) ----------
 // Small organic structures in the hive's flesh and bone, each with one thing that tells it apart: the pit's

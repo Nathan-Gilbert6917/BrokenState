@@ -812,12 +812,12 @@ function launchStrike(state, f, m) {
   };
   const s = m.strike;
   const place = tileLabel(state, city);
-  log(state, `📻 ${f.name}: "${cap1(the)} is moving on ${place}. We burn the hive out at the source. Everyone else, stay off the roads."`, "info");
+  log(state, `📻 ${f.name}: "${cap1(the)} is moving on ${place}. We strike the hive at the source and cut its brood down. Everyone else, stay off the roads."`, "info");
   log(state, `${f.name} sent ${sent} soldiers in trucks against the hive in ${place}. ${f.pop} stayed to hold ${tileLabel(state, m.tile)}.`, "info");
   chronicleNote(state, `${f.name} sent ${the} (${sent} soldiers) against the hive in ${place}.`, "world", m.tile, true);
   if (inContact(state, f, s)) addCard(state, {
     title: `${f.name} goes on the attack`,
-    text: `The radio crackles with orders: ${f.name} is sending ${the}, ${sent} soldiers in a column of trucks, to burn out the hive in ${place} where it all began. ${f.pop} stay behind to hold ${tileLabel(state, m.tile)}. If they win, the state has a chance.`,
+    text: `The radio crackles with orders: ${f.name} is sending ${the}, ${sent} soldiers in a column of trucks, to strike the hive in ${place} where it all began. ${f.pop} stay behind to hold ${tileLabel(state, m.tile)}. If they win, the state has a chance.`,
     choices: [{ label: "Good luck to them", resolve: () => "" }],
   });
 }
@@ -1015,7 +1015,7 @@ function militaryFalls(state, f, how) {
   const dead = Math.round(pop * rng.range(M.DEAD[0], M.DEAD[1])); // in the last fight
   const fallenAll = Math.max(dead, m.startPop - (pop - dead)); // all the soldiers the base cost
   if (!taken) {
-    // dead: the garrison's own dead fill it; a hive burned out nearby (hives.js destroyHive) fades only what the
+    // dead: the garrison's own dead fill it; a hive killed nearby (its Hivemind dead: hives.js destroyHive) fades only what the
     // hive radiated, never below this, until someone builds on the ruin.
     t.ruin = { name: place, day: d, by: "the dead", from: f.name, dead: 0.85 };
     t.loot = Math.max(t.loot || 0, M.RUIN_LOOT);

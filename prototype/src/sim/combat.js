@@ -72,6 +72,7 @@ import { hasWorm, WORM } from "./worm.js"; // the worm in a living person (half 
 import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
+import { volFought } from "./volunteers.js"; // volunteers: an allied group's people with your team, moved by their AI (volunteerTurn below)
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
 import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; // who holds the upper floors of a city building (the crawl)
 import { isHardcore } from "./hardcore.js";
@@ -128,6 +129,24 @@ export function registerBossAI(kind, fn) {
   (bossAIs = bossAIs || new Map()).set(kind, fn);
 }
 const bossAI = (u) => (u && u.boss && bossAIs ? bossAIs.get(u.boss) || null : null);
+// A boss with a weak spot (fn.throwAt(b, boss, thrower, have): { item, x, y } or null) asks the battle AI to throw at
+// it (stealth.js botAttackThrow, before a crowd): the Hivemind and its fire and bangs (hivecrawl.js).
+// A throw landed (throwables.js landEffect): bosses that react to it at once (fn.onLand(b, boss, { fx, x, y, side }):
+// the Broodmother dazed by a bang, the Hivemind counting what was spent on it: hivecrawl.js).
+export function bossOnLand(b, L) {
+  if (!bossAIs) return;
+  for (const o of b.units) { if (o.dead) continue; const ai = bossAI(o); if (ai && ai.onLand) ai.onLand(b, o, L); }
+}
+export function bossThrowTarget(b, u, have) {
+  if (!bossAIs) return null;
+  for (const o of b.units) {
+    if (o.dead || o.side === u.side) continue;
+    const ai = bossAI(o);
+    const t = ai && ai.throwAt ? ai.throwAt(b, o, u, have) : null;
+    if (t) return t;
+  }
+  return null;
+}
 
 // People met inside a building (buildingmaps.js placeInterior, from wanderers.js interiorOccupants) by side. "hostile"
 // groups are placed as the raid's guards (enemy units). A side with no handler ("neutral" survivors, "military"
@@ -308,6 +327,7 @@ export function combatants(state, setup) {
     const p = state.parties.find((x) => x.id === setup.partyId);
     list = p ? partyMembers(state, p) : [];
   } else if (setup.baseId) list = atBase(state, setup.baseId);
+  else if (setup.lentIds) list = setup.lentIds.map((id) => survivorById(state, id)).filter((s) => s && s.alive); // volunteers.js: your people lent out, in their group's fight you watch
   if (setup.fighterIds) list = list.filter((s) => setup.fighterIds.includes(s.id));
   return list;
 }
@@ -358,6 +378,7 @@ export function finishCombat(state, setup, result) {
   // the numbers wears everyone who was counted in it.
   if (!(result && result.worn) && (setup.mode !== "raid" || (result && result.enemiesKilled))) wearByNumbers(state, combatants(state, setup)); // armour.js: armour pieces wear by their hits (absorbOffscreen), the rest a use a fight
   battleRecord(state, setup, result, battle, combatants(state, setup)); // relations.js: kills, downed, rescues, shared hardship
+  volFought(state, combatants(state, setup)); // volunteers.js: they fought beside you (goodwill when they get home)
   capturePrisoners(state, setup, result, battle); // prisoners.js: the knocked out go with the team or into the cells
   if (battle) settleClaims(state, battle, result); // foundcars.js: the cars claimed on the map join the team or stay parked there
   settleCarried(state, setup, result, battle); // carry.js: won, the loads set down are picked up again; else they stay on the ground
@@ -2900,6 +2921,7 @@ export function playerUnit(b, s) {
   fitHeadgear(u, s); // hearing.js: ear protection, the helmet's muffle, the team headset, the visor
   syncModes(u); // gunfire.js: the gun's fire modes
   fitLauncher(b, u, s); // launchers.js: a grenade launcher or rocket in hand (a sidearm besides), an M203 under the rifle, one carried
+  if (s.vol) { u.vol = s.vol.fid; u.volGroup = s.vol.group; } // volunteers.js: on your side, moved by their group's AI (volunteerTurn), never by your orders
   return u;
 }
 
@@ -2998,7 +3020,7 @@ export function createBattle(state, setup) {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: placeName(tile),
     units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: 1,
-    pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [{}],
+    pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [setup.pool || {}], // setup.pool: the rounds and meds a group hands your people lent out (volunteers.js watchSetup)
     ammoUsed: 0, arrowsUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
     evacCols: setup.canRetreat ? 2 : 0, over: false, result: null, acted: false, queue: [],
     losCache: makeLosCache(W, H), rng, dark: isNight(state), // dark: escapes are easier (escapeOdds)
@@ -3158,6 +3180,9 @@ export function createBattle(state, setup) {
       if (shot) fire(b, u, shot.t, { volley: true });
     }
   }
+  // volunteers.js: a fight of your people lent out that you watch: theirs are the group's orders, so everyone on your
+  // side is moved by the AI (volunteerTurn) and you only watch.
+  if (setup.watch) { for (const u of b.units) if (u.side === "player") { u.vol = setup.watch.fid; u.volGroup = setup.watch.group; u.watched = true; } say(b, `You watch your people fight beside ${setup.watch.group}: their orders, not yours.`, "info"); }
   if (b.evacCols) say(b, `The green strip on the ${b.evacSide || "left"} edge is your way out. Units standing there can retreat, or sound the retreat to pull everyone out at once.`, "info");
   stageAtStart(state, b); // carry.js: a fight the team starts: the loads into the vehicle, the rest set down where they start
   checkEnd(state, b);
@@ -3581,6 +3606,8 @@ export function combatAct(state, act) {
   if (act.type === "evacStop") { b.evacOrder = false; say(b, "The evac is called off.", "info"); bump(b); return ""; }
   if (act.type === "dropCarried" || act.type === "dropAllCarried") { const err = carriedAct(state, b, act); if (!err) bump(b); return err; } // carry.js: free, even with no actions left
   const u = unitById(b, act.unit);
+  if (u && u.vol != null && u.side === "player" && act.type === "volOrder") return volOrder(b, u, act); // volunteers.js: a simple order they follow in their own way
+  if (u && u.vol != null && u.side === "player" && !aiDrive) return volRefusal(u); // volunteers.js: their group's orders, not yours
   // A unit on another storey than the one being looked at (buildingmaps.js storeys): acting with it looks at its floor.
   if (u && u.side === "player" && b.floors && (u.f || 0) !== (b.floor || 0) && activeAny(u)) setFloor(b, u.f || 0);
   // Aboard the team's vehicle (boardVehicle): off the map, but they can drive it, turn it, get out, or extract with it.
@@ -3976,6 +4003,8 @@ export function endPlayerTurn(state) {
   const b = state.combat;
   bindDims(b);
   if (!b || b.over || b.phase !== "player") return;
+  volunteerTurn(state, b); // volunteers.js: the volunteers with the team act on their own at the end of your turn
+  if (b.over) return;
   MED.selfStabTurn(b, "player"); // medics.js: your downed who have a tourniquet or a trauma kit in reach and did not try yet
   for (const u of b.units) if (u.side === "player") { u.ap = 0; u.suppressed = 0; } // pinned (suppressing fire) until their own turn ends
   stunTurnEnd(b, ["player"]); // throwables.js: a flashbang's stun served this turn wears off
@@ -4635,6 +4664,10 @@ function evacTargets(b, u) {
   return out;
 }
 export function evacTurn(state, b) {
+  aiDrive++; // the volunteers follow the Evac too
+  try { return evacTurnNow(state, b); } finally { aiDrive--; }
+}
+function evacTurnNow(state, b) {
   bindDims(b);
   let moved = 0;
   const seatsLeft = () => (b.vehicle ? (b.vehicle.seats || 4) - aboardCount(b) : 0);
@@ -4846,14 +4879,19 @@ function firepower(b, u, vsPeople) {
 }
 export function fightOutlook(b) {
   bindDims(b);
-  const mine = b.units.filter((u) => u.side === "player" && active(u));
+  const mine = b.units.filter((u) => (u.side === "player" || (b.setup.watch && u.side === "third")) && active(u)); // volunteers.js: a fight you watch: the group's own fighters stand with your people
   const theirs = b.units.filter((u) => u.side === "enemy" && active(u) && !u.fleeing);
   const team = b.units.filter((u) => u.side === "player" && !(u.left && !u.carried));
   const people = theirs.filter((u) => u.kind === "human").length / Math.max(1, theirs.length);
   // A rooted boss (hivecrawl.js's Hivemind) reaches only those who come close: a quarter of its blows, half its flesh.
-  const fire = (list, vsPeople) => list.reduce((a, u) => a + firepower(b, u, vsPeople) * (u.rooted ? 0.25 : 1), 0);
-  const life = (list) => list.reduce((a, u) => a + (u.hp / Math.max(0.05, u.armor)) * (u.rooted ? 0.5 : 1), 0);
-  const ours = fire(mine, people >= 0.5) * life(mine), them = fire(theirs, true) * life(theirs);
+  // A boss with an outlook of its own (registerBossAI fn.outlook(b, u): { fire, life, ours }): the Hivemind burning
+  // or reeling counts for less, and fire and bangs still in hand count for your side (hivecrawl.js).
+  const adj = new Map();
+  for (const u of theirs) { const ai = bossAI(u); const j = ai && ai.outlook ? ai.outlook(b, u) : null; if (j) adj.set(u, j); }
+  const fire = (list, vsPeople) => list.reduce((a, u) => a + firepower(b, u, vsPeople) * (u.rooted ? 0.25 : 1) * (adj.get(u)?.fire ?? 1), 0);
+  const life = (list) => list.reduce((a, u) => a + (u.hp / Math.max(0.05, u.armor)) * (u.rooted ? 0.5 : 1) * (adj.get(u)?.life ?? 1), 0);
+  const edge = [...adj.values()].reduce((a, j) => a * (j.ours ?? 1), 1);
+  const ours = fire(mine, people >= 0.5) * life(mine) * edge, them = fire(theirs, true) * life(theirs);
   return {
     ratio: them > 0 ? ours / them : Infinity, mine: mine.length, theirs: theirs.length,
     down: team.filter((u) => u.down || u.dead).length / Math.max(1, team.length),
@@ -4894,6 +4932,10 @@ export function retreatAdvice(b, style = "balanced") {
 // Runs a whole player turn with the AI (used by headless tests).
 // opts.style: the style it fights in (aiStyle); opts.retreat === false: it never sounds the retreat (tools measuring it).
 export function autoPlayerTurn(state, opts = {}) {
+  aiDrive++;
+  try { return autoPlayerTurnNow(state, opts); } finally { aiDrive--; }
+}
+function autoPlayerTurnNow(state, opts) {
   const b = state.combat;
   bindDims(b);
   if (b) noteJamWeather(state, b);
@@ -4904,7 +4946,7 @@ export function autoPlayerTurn(state, opts = {}) {
     const list = b.raid.choose;
     const pick = list[Math.floor(hash01(state.seed, "autobuilding", b.tileId, state.hour) * list.length) % list.length];
     chooseBuilding(state, pick.id);
-    if (state.combat !== b) return autoPlayerTurn(state, opts);
+    if (state.combat !== b) return autoPlayerTurnNow(state, opts);
     b.raid.choose = null;
   }
   if (b.raid) return autoRaidTurn(state);
@@ -4921,7 +4963,7 @@ export function autoPlayerTurn(state, opts = {}) {
   autoDrop(state, b); // carry.js: the AI sets down what it carries by hand before it fights (free)
   if (b.rescue) rescueBot(state, b); // rescueraid.js: to the cell, the door, the ropes, the keys; captives escape; then the way out
   botCar(state, b); // your turreted vehicle: a crew in, then driven as theirs is (carTurn)
-  for (const u of b.units.filter((x) => x.side === "player")) {
+  for (const u of b.units.filter((x) => x.side === "player" && x.vol == null)) { // volunteers act in volunteerTurn
     if (b.over) return;
     if (active(u) && u.ap > 0) botSiege(state, b, u); // siege.js: push a ladder, rocks on the ram, lead the ram, set a ladder
     if (active(u) && u.ap > 0) botDecoy(state, b, u); // decoys.js: a decoy to pull the dead off your people
@@ -4945,9 +4987,105 @@ export function afterDeploy(state, b) {
   endPlayerTurn(state);
 }
 
+// ---------- volunteers (volunteers.js) ----------
+// An allied group's people with your team: side "player" (the enemy fights them, they count in the outlook and the
+// end of the fight), u.vol their group's id. They take no orders from you (combatAct refuses them unless the AI is
+// driving: aiDrive); they act on their own at the end of your turn (volunteerTurn): while the enemy has not noticed
+// anyone they keep near your people and hold their fire (they follow your lead when you sneak), else they fight as the
+// battle AI fights your side (aiUnit: cover, shots, reloads, meds and dragging the downed). In a raid they fight what
+// is aware and near (VOL_RAID tiles), else stay with the team. The Evac and the retreat take them along; when your
+// people are all out they go too (volunteersFollow); with your people down and none out they fight on.
+let aiDrive = 0;
+export const VOL_RAID = 10;
+export const volRefusal = (u) => `${u.name} is a volunteer from ${u.volGroup || "another group"}: they follow their own group's orders, not yours.`;
+export const isVolUnit = (u) => !!(u && u.vol != null && u.side === "player");
+export function volunteerTurn(state, b) {
+  const vols = b.units.filter((u) => u.side === "player" && u.vol != null && active(u) && u.ap > 0);
+  if (!vols.length || b.over) return;
+  aiDrive++;
+  try {
+    for (const u of vols) {
+      if (b.over) break;
+      if (!active(u) || u.ap < 1) continue;
+      const view = b.floors ? b.floor || 0 : null;
+      if (b.floors && (u.f || 0) !== view) setFloor(b, u.f || 0);
+      bindDims(b);
+      const hot = b.units.some((e) => e.side === "enemy" && active(e) && e.aware && (u.f || 0) === (e.f || 0) && (!b.raid || dist(u.x, u.y, e.x, e.y) <= VOL_RAID));
+      const order = u.volOrder || "free";
+      const lead = order === "follow" ? unitById(b, u.volLead) : null;
+      if (order === "hold") volHold(b, u, hot);
+      else if (order === "follow" && lead && activeAny(lead)) { if (!(hot && volShotHere(b, u))) volFollow(b, u, lead); }
+      else if (hot) aiUnit(b, u);
+      else volFollow(b, u);
+      if (b.floors && (b.floor || 0) !== view) setFloor(b, view);
+      bindDims(b);
+      checkEnd(state, b);
+    }
+  } finally { aiDrive--; }
+  bump(b);
+}
+// The orders you can give a volunteer (combatAct "volOrder"): "free" (their own judgement, the default), "hold" (stay
+// where they are: shoot from there, reload, else watch), "follow" (keep with one of your people: shoot from where they
+// stand when there is a fair shot, else move up to them). Never in a fight you only watch.
+export const VOL_ORDERS = { free: "Free", hold: "Hold here", follow: "Follow" };
+function volOrder(b, u, act) {
+  if (u.watched) return volRefusal(u);
+  if (!VOL_ORDERS[act.order]) return "No such order.";
+  if (act.order === "follow") {
+    const t = unitById(b, act.target);
+    if (!t || t.side !== "player" || t.vol != null || !activeAny(t)) return "Pick one of your people for them to follow.";
+    u.volLead = t.id;
+  }
+  u.volOrder = act.order;
+  say(b, `${u.name}: ${act.order === "follow" ? `following ${unitById(b, u.volLead).name}` : VOL_ORDERS[act.order].toLowerCase()}.`, "info");
+  bump(b);
+  return "";
+}
+function volShotHere(b, u) {
+  if (aiReload(b, u) && u.ap < 1) return true;
+  if (!canFire(b, u)) return false;
+  const shot = bestShot(b, u, foesOf(b, u));
+  if (!shot || shot.o.chance < 40) return false;
+  fire(b, u, shot.t);
+  u.ap = 0;
+  return true;
+}
+function volHold(b, u, hot) {
+  if (hot && !volShotHere(b, u) && u.ap > 0) { const adj = foesOf(b, u).find((f) => meleeReach(b, u, f)); if (adj) { aiMelee(b, u); return; } u.ow = !u.stun; }
+  u.ap = 0;
+}
+// Nobody to fight: stay within 2 tiles of the nearest of your own people (on their floor), else hold. lead: the one
+// they were told to follow.
+function volFollow(b, u, lead = null) {
+  const own = b.units.filter((o) => o.side === "player" && o.vol == null && activeAny(o) && (o.f || 0) === (u.f || 0));
+  if (!own.length && !lead) { u.ap = 0; return; }
+  lead = lead || own.sort((a, c) => dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, c.x, c.y))[0];
+  if (dist(u.x, u.y, lead.x, lead.y) <= 2.5) { u.ap = 0; return; }
+  const r = reachable(b, u, u.mob * Math.min(2, u.ap));
+  let best = -1, bd = dist(u.x, u.y, lead.x, lead.y);
+  for (let i = 0; i < W * H; i++) {
+    if (!isFinite(r.dist[i]) || r.dist[i] <= 0 || unitAt(b, i % W, (i / W) | 0)) continue;
+    const d = dist(i % W, (i / W) | 0, lead.x, lead.y);
+    if (d < bd - 0.01 && d >= 1) { bd = d; best = i; }
+  }
+  if (best >= 0) moveAlong(b, u, pathTo(r, best % W, (best / W) | 0));
+  u.ap = 0;
+}
+function volunteersFollow(b) {
+  if (b.setup && b.setup.watch) return; // a fight you watch: there are none of yours to follow
+  const vols = b.units.filter((u) => u.side === "player" && u.vol != null && activeAny(u));
+  if (!vols.length) return;
+  const own = b.units.filter((u) => u.side === "player" && u.vol == null);
+  if (own.some((u) => (b.raid ? activeAny(u) : active(u)))) return;
+  if (!b.raid && own.length && !own.some((u) => u.left && !u.dead)) return; // your people down, nobody out: they fight on
+  for (const u of vols) { u.left = true; u.ap = 0; }
+  say(b, `${vols.map((u) => u.name.split(" ")[0]).join(", ")} pull${vols.length === 1 ? "s" : ""} out with your people.`, "info");
+}
+
 // ---------- ending ----------
 function checkEnd(state, b) {
   if (b.over) return;
+  volunteersFollow(b); // volunteers.js: your people all out (or, in a raid, none of them standing): they pull out with them
   if (b.raid) {
     if (!b.units.some((u) => u.side === "player" && activeAny(u))) { leaveAboard(b); endRaid(state, b); } // nobody on foot on any floor (buildingmaps.js storeys): whoever is in the vehicle drives off with it
     return;
@@ -5062,6 +5200,7 @@ function endBattle(state, b, outcome) {
   const arrowsBackN = pickUpArrows(b, outcome === "victory");
   lines.push(...pickUpBrass(state, b, outcome === "victory")); // reloading.js: the brass fired, picked up when the field is yours
   if (b.arrowsUsed) lines.push(arrowsBackN ? `Picked up ${arrowsBackN} of the ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot.` : `The ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot ${b.arrowsUsed === 1 ? "is" : "are"} lost.`);
+  if (setup.watch) b.bodies = []; // volunteers.js: a fight you watched: the field is the group's (your people get their share)
   b.result = {
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed - captives.length,
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, arrowsUsed: b.arrowsUsed || 0, arrowsBack: arrowsBackN, loot,
@@ -6046,7 +6185,7 @@ function autoRaidTurn(state) {
     }
     if (why) R.botOut = { turn: b.turn, why };
   }
-  for (const u of b.units.filter((x) => x.side === "player")) {
+  for (const u of b.units.filter((x) => x.side === "player" && x.vol == null)) { // volunteers act in volunteerTurn
     if (b.floors && activeAny(u) && (u.f || 0) !== (b.floor || 0)) setFloor(b, u.f || 0); // storeys: each one acts on its own floor
     // Cut off: the safe way to the exit (down the stairs first, upstairs) against the plain one, two turns running.
     if (!R.botOut && active(u) && u.exitTurn !== b.turn) {

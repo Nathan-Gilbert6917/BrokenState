@@ -3,6 +3,7 @@
 // Jobs, Market board, World affairs (wars, pacts, relations between groups) and Coalition (members, council,
 // both victories). Handlers: DIPLO_ACTIONS / DIPLO_CHANGE, registered by main.js. Rules: sim/jobs.js,
 // sim/diplomacy.js, sim/alliance.js, sim/trade.js (market lists).
+import { crawlProgressLine } from "../sim/hivecrawl.js"; // the Goals card: how deep your crawls got
 import { SUPPLIES, SUPPLY_KEYS } from "../sim/data.js";
 import { day, factionById, hub } from "../sim/world.js";
 import { attitude } from "../sim/factions.js";
@@ -23,7 +24,8 @@ import {
   ensureAlliance, isMember, allianceMembers, memberLand, inviteProblem, inviteToAlliance, inviteBloc, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE, controlRadius,
 } from "../sim/alliance.js";
 import { bandsOf, knownBands, bandInfo, militaryStatus } from "../sim/hardcore-groups.js";
-import { ask } from "./confirm.js"; // joining or leaving a war, expelling a member, giving up a job ask first
+import { ask } from "./confirm.js";
+import { volAskButton } from "./volunteers.js"; // ask a group for volunteers (sim/volunteers.js) // joining or leaving a war, expelling a member, giving up a job ask first
 import { ensureBlocs, blocOf, blocMembers, blocTitle, foeText, leaveBlocSide, BLOC, previewVote, voteText, blocCarrier } from "../sim/blocs.js"; // AI blocs
 import {
   ensurePwars, pwarOf, goalText, cbText, termOptions, offerTerms, talkWait, talkVia, declareByPlayer, playerDeclareProblem, ceasefireUntil, ceasefireWith, PW,
@@ -106,6 +108,7 @@ function goalsCard(state, g, compact) {
     ${eraLine}
     <div style="margin-top:0.2rem"><b>Destroy every hive</b></div>
     <div>${hiveLine}</div>
+    ${crawlProgressLine(state) ? `<div class="muted"${tip("The hive crawl (Help: The hive crawl): each hive your teams have been inside, the deepest chamber reached of its depth; ★ its core found, ☆ heard or lit from a passage. The State Map's hive tile has the rest.")}>⛏ Crawled: ${esc(crawlProgressLine(state))}</div>` : ""}
     ${state.autopilot && state.governor && state.governor.campaign && state.governor.campaign.line ? `<div class="muted"${tip("The AI governor's hive campaign (sim/autopilot.js): the hive it works toward, the ammo stockpiled, fires set, allies, and what it waits for")}>🤖 ${esc(state.governor.campaign.line)}</div>` : ""}
     ${clearLine}
     <div style="margin-top:0.3rem"><b>${esc(ALLIANCE.NAME)}</b></div>
@@ -322,6 +325,7 @@ export function radioDiploBlock(state, f) {
     <button class="mini" data-action="dp-open" data-tab="market"${tip("Every group in reach, best price first")}>Market board</button>
     <button class="mini" data-action="dp-open" data-tab="affairs"${tip("Wars and pacts between the groups")}>World affairs</button>
     ${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inviteTip(state, f, inv))}>Invite to the coalition</button>`}
+    ${volAskButton(state, f)}
   </div>`;
 }
 

@@ -39,6 +39,7 @@ export function packTripKit(state, base, crew, mission, target = null) {
   const taken = new Set();
   // A light each first (lights.js: the lightest that works for them), outside the kit's weight budget.
   out.push(...packLights(base, crew));
+  if (mission === "hive") out.push(...packHiveKit(base, crew)); // the core's Hivemind: fire and bangs, flares for the passages
   for (const key of want) {
     if (taken.has(key) || crew.some((s) => hasOn(s, key))) continue;
     const i = base.armory.findIndex((it) => it && it.key === key);
@@ -52,6 +53,28 @@ export function packTripKit(state, base, crew, mission, target = null) {
     taken.add(key);
     kg += w;
     out.push(it.name);
+  }
+  return out;
+}
+
+// A hive squad's extra kit (outside the weight budget, into free pockets and pack slots): HIVE_KIT of each, the
+// Molotovs and the bangs for the Hivemind's weak spots in the core (hivecrawl.js HIVEMIND.WEAK: fire burns it and stops
+// its brood, a flashbang or a grenade stuns it), road flares to light the passages ahead. Returns what went along.
+export const HIVE_KIT = { molotov: 2, flashbang: 2, frag: 1, pipebomb: 1, flare: 2 };
+export function packHiveKit(base, crew) {
+  if (!base || !base.armory) return [];
+  const out = [];
+  for (const [key, n] of Object.entries(HIVE_KIT)) {
+    let have = crew.reduce((a, s) => a + allCarried(s).filter((it) => it && it.key === key).length, 0);
+    while (have < n) {
+      const i = base.armory.findIndex((it) => it && it.key === key);
+      if (i < 0) break;
+      const it = base.armory[i];
+      if (!crew.find((s) => stow(s, it))) break;
+      base.armory.splice(i, 1);
+      out.push(it.name);
+      have++;
+    }
   }
   return out;
 }
