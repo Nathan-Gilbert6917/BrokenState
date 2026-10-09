@@ -25,7 +25,7 @@
 import { log, survivorById, skill, newId, hub, baseById } from "./world.js";
 import { hash01, gainXp, USE } from "./skills.js";
 import { openOdds, picksOf, PICK, FORCE, SMASH } from "./locks.js";
-import { createVehicle, vehicleById, isCar, tank, VEHICLE_TYPES, partyVehicle, fitMilitary, carPartsCost, carPartsText } from "./vehicles.js";
+import { createVehicle, vehicleById, isCar, tank, VEHICLE_TYPES, partyVehicle, fitMilitary, carPartsCost, carPartsText, fleetJoinProblem, addPartyVehicle } from "./vehicles.js";
 import { markTaken } from "./miltrucks.js"; // (names below are literal: the modules load in a circle)
 import { markAbandonedVehicle } from "./markers.js";
 import { partyMembers, partyTile, carried, takeSupply, cargoRoom, unitsThatFit, weighTeam, awaitOrders, startReturn, tileLabel, bestSkill, teamName } from "./parties.js";
@@ -347,7 +347,7 @@ export function settleClaims(state, b, result) {
   for (const id of b.claims) {
     const v = vehicleById(state, id);
     if (!v || v.loc.kind !== "abandoned" || (v.found && v.found.repair) || v.destroyed) continue; // a wreck (launchers.js) never runs
-    if (!lost && p && state.parties.includes(p) && partyMembers(state, p).length && !p.vehicle) {
+    if (!lost && p && state.parties.includes(p) && partyMembers(state, p).length && !fleetJoinProblem(state, p, v)) { // vehicles.js: a team with vehicles takes it along when it has a driver and seats
       joinTeam(state, p, v);
       log(state, `The ${v.name} joins ${teamName(state, p)} (fuel ${Math.round(v.fuel)}, condition ${Math.round(v.condition)}%).`, "good");
     } else if (!lost && base && !p) {
@@ -360,9 +360,7 @@ export function settleClaims(state, b, result) {
 export function joinTeam(state, p, v) {
   const pour = Math.max(0, Math.min(carried(p, "fuel"), tank(v) - v.fuel, Math.max(0, 6 - v.fuel)));
   if (pour > 0) v.fuel += takeSupply(p, "fuel", pour);
-  v.loc = { kind: "party", partyId: p.id };
-  p.vehicle = true;
-  p.vehicleId = v.id;
+  addPartyVehicle(state, p, v); // its only vehicle, or one more (vehicles.js fleets)
   delete v.found;
   if (p.spotted) p.spotted.set(`vehicle:${v.id}`, { key: `vehicle:${v.id}`, type: "vehicle", tile: partyTile(p), hour: state.hour, label: v.name, remove: true });
   const m = state.markers.find((x) => x.key === `vehicle:${v.id}`);
@@ -433,11 +431,11 @@ export function finishFixCar(state, p, t) {
   v.condition = Math.max(v.condition, Math.min(60, 30 + 3 * mech));
   const marker = state.markers.find((m) => m.key === `vehicle:${v.id}`);
   if (marker) marker.label = `${v.name} (found, runs)`;
-  if (!p.vehicle && v.fuel + carried(p, "fuel") >= 2) {
+  if (!fleetJoinProblem(state, p, v) && v.fuel + carried(p, "fuel") >= 2) {
     joinTeam(state, p, v);
     return `The ${v.name} roars into life (${Math.round(chance * 100)}%, condition ${Math.round(v.condition)}%): it is the team's now.`;
   }
-  return `The ${v.name} roars into life (${Math.round(chance * 100)}%, condition ${Math.round(v.condition)}%).${p.vehicle ? " The team already has a vehicle: send someone home in it (Drive it home) or come back for it." : " It needs 2 fuel to go anywhere."}`;
+  return `The ${v.name} roars into life (${Math.round(chance * 100)}%, condition ${Math.round(v.condition)}%).${p.vehicle && fleetJoinProblem(state, p, v) ? ` ${fleetJoinProblem(state, p, v)} Send someone home in it (Drive it home) or come back for it.` : " It needs 2 fuel to go anywhere."}`;
 }
 export function driveHomeOption(state, p, v) {
   const n = partyMembers(state, p).length;

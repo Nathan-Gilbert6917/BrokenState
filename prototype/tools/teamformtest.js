@@ -7,15 +7,17 @@
 // waiting formed team (and editing it after the load); and a render smoke test of the window and its buttons.
 // Usage: node tools/teamformtest.js [seed]
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
-import { partyTile, partyMembers, poolLoad, partyCapacity, teamName, orderOptions, MISSIONS } from "../src/sim/parties.js";
-import { vehiclesAtBase, vehicleById, partyVehicle, isBike, createVehicle, parkBikes } from "../src/sim/vehicles.js";
-import { newItem, stripAll, allCarried, itemLoad, packOf } from "../src/sim/inventory.js";
+import { partyTile, partyMembers, poolLoad, partyCapacity, teamName, orderOptions, MISSIONS, planPath, travelHours, paceOpts, carryCapacity, leaveVehicle, wipeParty } from "../src/sim/parties.js";
+import { vehiclesAtBase, vehicleById, partyVehicle, isBike, createVehicle, parkBikes, seatsOf, MAX_VEHICLES, fleetOf, partyVehicles, payloadOf, typeSpeed, typeFuel, roadPace, partyFuel, useFuel, breakdownRoll } from "../src/sim/vehicles.js";
+import { createBattle, registerCombatHandler, vehicleBlast, settleVehicle } from "../src/sim/combat.js";
+import { ROCKET } from "../src/sim/launchers.js";
+import { newItem, stripAll, allCarried, itemLoad, packOf, quickMove, carriedSpots } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { SUPPLIES } from "../src/sim/data.js";
 import { contactable } from "../src/sim/orders.js";
 import { enterOption, joinBase } from "../src/sim/moveout.js";
 import { loadFromBase, dropOff } from "../src/sim/teaminv.js";
-import { formTeam, formPreview, editBase, editProblem, editableTeams, addMember, removeMember, setVehicle, setSupply, teamHas, FORMED } from "../src/sim/teamform.js";
+import { formTeam, formPreview, editBase, editProblem, editableTeams, addMember, removeMember, setVehicle, setVehicles, toggleVehicle, setSupply, teamHas, FORMED, gearSnapshot, gearChanged, restoreGear } from "../src/sim/teamform.js";
 
 const SEED = Number(process.argv[2] || 42);
 let passed = 0, failed = 0;
@@ -80,6 +82,23 @@ function setup(state) {
   return { h, crew, car, rifle, pack, knife, crowbar };
 }
 const armoryLoc = (b, it) => `armory:${b.id}:list:${b.armory.indexOf(it)}`;
+// Where every item is, as a path (a base's armory slot, a person's slot or pocket, a team's cargo, inside a pack, a rig,
+// a carrier or a gun): the undo test compares them all.
+function placesOf(state) {
+  const m = new Map();
+  const walk = (it, path) => {
+    if (!it || typeof it !== "object" || !it.key) return;
+    m.set(it, path);
+    (it.contents || []).forEach((c, i) => walk(c, `${path}>c${i}`));
+    for (const [k, c] of Object.entries(it.inserts || {})) walk(c, `${path}>i${k}`);
+    for (const [k, c] of Object.entries(it.mods || {})) walk(c, `${path}>m${k}`);
+  };
+  for (const b of state.bases) b.armory.forEach((it, i) => walk(it, `b${b.id}:${i}`));
+  for (const s of state.survivors) if (s.alive && s.gear) { for (const [k, it] of Object.entries(s.gear)) walk(it, `s${s.id}:${k}`); (s.pockets || []).forEach((it, i) => walk(it, `s${s.id}:p${i}`)); }
+  for (const p of state.parties) ((p.cargo && p.cargo.gear) || []).forEach((it, i) => walk(it, `c${p.id}:${i}`));
+  return m;
+}
+const where = (state, it) => placesOf(state).get(it);
 
 // ---------------------------------------------------------------------------------------------------------
 section("Forming: people, a car, supplies and cargo leave the base, nothing lost or doubled");
@@ -130,8 +149,8 @@ section("Forming on foot and on bikes");
   sameCensus(before2, census(state), "forming on bikes");
   // Adding someone takes one more bike; removing gives it back.
   const n0 = bikesTotal(state);
-  check(addMember(state, r2.party, crew[3].id) && v.count === 3 && crew[3].location.partyId === r2.party.id, "adding a person takes another bike");
-  check(removeMember(state, r2.party, crew[3].id) && v.count === 2 && crew[3].location.kind === "base", "removing them puts it back");
+  check(addMember(state, r2.party, crew[3].id) && partyVehicle(state, r2.party).count === 3 && crew[3].location.partyId === r2.party.id, "adding a person takes another bike");
+  check(removeMember(state, r2.party, crew[3].id) && partyVehicle(state, r2.party).count === 2 && crew[3].location.kind === "base", "removing them puts it back");
   check(bikesTotal(state) === n0, "bikes add up");
 }
 
@@ -168,7 +187,7 @@ section("Editing at the base: people, vehicle, supplies, gear");
   const before = census(state);
   check(/joins/.test(addMember(state, p, crew[1].id)) && p.members.includes(crew[1].id) && crew[1].location.partyId === p.id, "add a person from the base");
   check(/not at/.test(addMember(state, p, crew[1].id)), "not twice");
-  check(/takes the/.test(setVehicle(state, p, car.id)) && partyVehicle(state, p) === car && p.vehicle === true && car.loc.partyId === p.id, "take the car");
+  check(/now has the/.test(setVehicle(state, p, car.id)) && partyVehicle(state, p) === car && p.vehicle === true && car.loc.partyId === p.id, "take the car");
   check(/food/.test(setSupply(state, p, "food", 20)) && near(teamHas(p, "food"), 20), "load more food (20)");
   check(/food/.test(setSupply(state, p, "food", 6)) && near(teamHas(p, "food"), 6), "drop some off (6)");
   const lr = loadFromBase(state, p, { items: [armoryLoc(h, knife)] }, crew[1].id);
@@ -255,6 +274,228 @@ section("Render: the window, the ways in");
     check(p.members.includes(crew[1].id), "editing: a click on a person adds them");
   } catch (e) { ok = false; why = e.stack || String(e); }
   check(ok, `the window renders without throwing ${why}`);
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Several vehicles to a team (vehicles.js fleets, MAX_VEHICLES).
+const carsAt = (state, b, n, type = "truck", fuel = 20) => Array.from({ length: n }, () => createVehicle(state, type, { kind: "base", baseId: b.id }, { fuel, condition: 100 }));
+section("Fleets: 1 to 4 vehicles, a 5th refused; seats and cargo summed");
+{
+  const state = mk();
+  const { h, crew } = setup(state);
+  const extra = atBase(state, h.id).filter((s) => !crew.includes(s));
+  const people = [...crew, ...extra].slice(0, 6);
+  for (const s of people) { s.traits = []; stripAll(s); }
+  for (const v of vehiclesAtBase(state, h.id)) if (!isBike(v)) { v.loc = { kind: "abandoned", tile: 0, since: 0 }; } // only the cars made here
+  const cars = carsAt(state, h, 5);
+  for (let n = 1; n <= 4; n++) {
+    const pre = formPreview(state, { baseId: h.id, memberIds: people.slice(0, Math.max(n, 2)).map((s) => s.id), vehicleIds: cars.slice(0, n).map((v) => v.id) });
+    check(!pre.problem, `${n} vehicle${n > 1 ? "s" : ""}: no problem (${pre.problem})`);
+  }
+  const p5 = formPreview(state, { baseId: h.id, memberIds: people.slice(0, 6).map((s) => s.id), vehicleIds: cars.map((v) => v.id) });
+  check(/At most 4/.test(p5.problem), `a 5th is refused (${p5.problem})`);
+  check(MAX_VEHICLES === 4, "the cap is 4");
+  const one = formPreview(state, { baseId: h.id, memberIds: people.slice(0, 2).map((s) => s.id), vehicleIds: [cars[0].id] });
+  const two = formPreview(state, { baseId: h.id, memberIds: people.slice(0, 2).map((s) => s.id), vehicleIds: [cars[0].id, cars[1].id] });
+  check(two.cap > one.cap + 500, `two trucks carry more than one (${Math.round(one.cap)} → ${Math.round(two.cap)} kg)`);
+  check(seatsOf(fleetOf([cars[0], cars[1]])) === 10 && payloadOf(fleetOf([cars[0], cars[1]])) === 2 * payloadOf(cars[0]), "seats and payload add up (5 + 5 seats, two payloads)");
+  check(/drivers/.test(formPreview(state, { baseId: h.id, memberIds: [people[0].id], vehicleIds: [cars[0].id, cars[1].id] }).problem), "two cars need two drivers");
+  const sedans = carsAt(state, h, 2, "sedan");
+  const nine = atBase(state, h.id).slice(0, 9);
+  if (nine.length === 9) check(/seats/.test(formPreview(state, { baseId: h.id, memberIds: nine.map((s) => s.id), vehicleIds: sedans.map((v) => v.id) }).problem), "nine people, two sedans (8 seats): refused");
+  // Forming with three: all three ride with the team, nothing lost.
+  const before = census(state);
+  const r = formTeam(state, { baseId: h.id, memberIds: people.slice(0, 4).map((s) => s.id), vehicleIds: cars.slice(0, 3).map((v) => v.id), supplies: { food: 6, water: 6, fuel: 6 } }); // four people: a driver for a fourth car
+  check(r.party && partyVehicles(state, r.party).length === 3 && cars.slice(0, 3).every((v) => v.loc.kind === "party" && v.loc.partyId === r.party.id), `three vehicles go with the team (${r.error || ""})`);
+  sameCensus(before, census(state), "forming with three vehicles");
+  check(r.party && partyVehicle(state, r.party) === cars[0] && r.party.vehicle === true, "the first car leads");
+  check(r.party && Math.abs(partyCapacity(state, r.party) - carryCapacity(state, partyMembers(state, r.party), fleetOf(cars.slice(0, 3)))) < 1e-6, "the team's capacity counts all three");
+  // Editing: add the fourth, then a fifth refused, then back to one.
+  check(r.party && /now has/.test(toggleVehicle(state, r.party, cars[3].id)) && partyVehicles(state, r.party).length === 4, "edit: a fourth joins");
+  check(r.party && /At most 4/.test(toggleVehicle(state, r.party, cars[4].id)), "edit: a fifth is refused");
+  check(r.party && /now has/.test(setVehicles(state, r.party, [cars[1].id])) && partyVehicles(state, r.party).length === 1 && cars[0].loc.kind === "base" && cars[2].loc.kind === "base", "edit: back to one, the others park at the base");
+}
+
+section("Fleets: the slowest sets the pace; bikes among cars keep to the bikes on roads");
+{
+  const state = mk();
+  const { h, crew } = setup(state);
+  const truck = createVehicle(state, "truck", { kind: "base", baseId: h.id }, { fuel: 30, condition: 100 });
+  const army = createVehicle(state, "miltruck", { kind: "base", baseId: h.id }, { fuel: 100, condition: 100 });
+  const f = fleetOf([truck, army]);
+  check(Math.abs(typeSpeed(f) - typeSpeed(army)) < 1e-9 && typeSpeed(f) < typeSpeed(truck), `pace: the Army truck's (${typeSpeed(f)})`);
+  check(Math.abs(typeFuel(f) - (typeFuel(truck) + typeFuel(army))) < 1e-9, "fuel a tile: both cars' together");
+  createVehicle(state, "bike", { kind: "base", baseId: h.id }, { count: 4 });
+  const bikes = parkBikes(state, h);
+  check(roadPace(fleetOf([truck, { ...bikes, count: 2 }])) === 0.5 && roadPace(fleetOf([truck, army])) === 1, "bikes among cars: half a car's road pace; cars alone: their own");
+  const r = formTeam(state, { baseId: h.id, memberIds: crew.slice(0, 3).map((s) => s.id), vehicleIds: [truck.id, bikes.id], supplies: { food: 3 } });
+  const p = r.party;
+  check(p && p.vehicle === true && partyVehicles(state, p).length === 2 && partyVehicles(state, p).find(isBike).count === 2, `a truck and two bikes (one each for those not driving) (${r.error || ""})`);
+  check(p && p.burden && p.burden.onroad === 0.5, "its weighing keeps the bikes' road pace");
+  // The same trip takes longer with the bikes than with the truck alone (roads: the bikes' pace).
+  const dest = state.tiles.find((t) => t.id !== h.tile && t.road && state.grid.distance(h.tile, t.id) >= 4 && planPath(state, h.tile, t.id, true));
+  if (p && dest) {
+    const path = planPath(state, h.tile, dest.id, true).path;
+    const mixed = travelHours(state, path, { vehicle: true, ...paceOpts(p), fuel: 100 }).hours;
+    const alone = travelHours(state, path, { vehicle: true, ...paceOpts(p), onroad: 1, fuel: 100 }).hours;
+    check(mixed >= alone, `a trip on roads: ${mixed}h with the bikes, ${alone}h without`);
+  }
+}
+
+section("Fleets: fuel drawn from each car's own tank; an empty one shares the others'");
+{
+  const state = mk();
+  const { h, crew } = setup(state);
+  const [a, b] = carsAt(state, h, 2, "truck", 10);
+  const p = formTeam(state, { baseId: h.id, memberIds: crew.slice(0, 2).map((s) => s.id), vehicleIds: [a.id, b.id] }).party;
+  check(p && Math.abs(partyFuel(state, p) - 20) < 1e-9, "the team's fuel: both tanks");
+  useFuel(state, p, 4);
+  check(Math.abs(a.fuel - 8) < 1e-9 && Math.abs(b.fuel - 8) < 1e-9, `each burns its share (${a.fuel}, ${b.fuel})`);
+  a.fuel = 0;
+  check(useFuel(state, p, 4) && Math.abs(b.fuel - 4) < 1e-9, `an empty tank is fed from the other car (${b.fuel} left)`);
+  check(!useFuel(state, p, 10), "out of fuel: false");
+}
+
+section("Fleets: a breakdown hits one vehicle; leaving it, the team goes on in the others");
+{
+  const state = mk();
+  const { h, crew } = setup(state);
+  const cars = carsAt(state, h, 3);
+  const p = formTeam(state, { baseId: h.id, memberIds: crew.slice(0, 3).map((s) => s.id), vehicleIds: cars.map((v) => v.id) }).party;
+  const rng0 = state.rng;
+  state.rng = { ...rng0, chance: () => true, next: () => 0.999, int: rng0.int ? rng0.int.bind(rng0) : () => 0, range: rng0.range ? rng0.range.bind(rng0) : () => 0, pick: (xs) => xs[0] };
+  const hit = breakdownRoll(state, p, 0);
+  state.rng = rng0;
+  check(hit === cars[2], "the roll picks one of them (by each one's chance)");
+  const before = census(state);
+  leaveVehicle(state, p, h.tile, "broke down", cars[2]);
+  check(partyVehicles(state, p).length === 2 && cars[2].loc.kind === "abandoned" && p.vehicle === true, "left behind alone; the team keeps the other two");
+  check(p.spotted && p.spotted.has(`vehicle:${cars[2].id}`), "and it is marked for the map");
+  sameCensus(before, census(state), "leaving one");
+  // Wiped far from a base: every vehicle stays there, marked.
+  const away = state.tiles.find((t) => t.id !== h.tile && !state.bases.some((b) => b.tile === t.id) && t.terrain !== "water");
+  p.path = [away.id]; p.idx = 0;
+  const vs = partyVehicles(state, p);
+  wipeParty(state, p);
+  check(vs.every((v) => v.loc.kind === "abandoned" && v.loc.tile === away.id), "a lost team leaves all its vehicles there");
+  check(vs.every((v) => state.markers.some((m) => m.key === `vehicle:${v.id}`)), "each one marked on the map");
+}
+
+section("Fleets: every vehicle on the battle map; one blown up is left, the others stay");
+{
+  registerCombatHandler("teamformtest", () => {});
+  const state = mk();
+  const { h, crew } = setup(state);
+  const cars = carsAt(state, h, 3, "truck", 20);
+  const p = formTeam(state, { baseId: h.id, memberIds: crew.slice(0, 3).map((s) => s.id), vehicleIds: cars.map((v) => v.id), supplies: { food: 3 } }).party;
+  const tile = state.tiles.find((t) => t.id !== h.tile && !t.loc && t.road && !t.bridge && t.terrain !== "water" && state.grid.distance(t.id, h.tile) > 1);
+  p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
+  state.combat = createBattle(state, { tile: tile.id, partyId: p.id, enemy: { kind: "raiders", count: 2, power: 3 }, ambush: null, canRetreat: true, handler: "teamformtest", context: {} });
+  const b = state.combat;
+  check(b.vehicle && b.convoy && b.convoy.length === 2, `the lead to drive and two more parked (${b.convoy ? b.convoy.length : "none"})`);
+  const cells = b.cells.filter((c) => c.k === "vehicle").length;
+  check(cells >= 3 * 6, `their cells are the team's own vehicles (${cells})`);
+  if (b.convoy && b.convoy[0]) {
+    const c = b.convoy[0];
+    for (let k = 0; k < 6 && !c.blownUp; k++) vehicleBlast(b, c.x, c.y, ROCKET.r, ROCKET.dmg, "rocket");
+    check(c.blownUp, "a rocket blows one of them up");
+    settleVehicle(state, b, "victory");
+    const gone = state.vehicles.find((v) => v.id === c.vid);
+    check(gone && gone.destroyed && gone.loc.kind === "abandoned" && !partyVehicles(state, p).includes(gone), "after the fight it is a wreck left there");
+    check(partyVehicles(state, p).length === 2, "the team goes on in the other two");
+  }
+  state.combat = null;
+}
+
+section("Fleets: Enter base parks every vehicle");
+{
+  const state = mk();
+  const { h, crew } = setup(state);
+  const cars = carsAt(state, h, 2);
+  createVehicle(state, "bike", { kind: "base", baseId: h.id }, { count: 3 });
+  const bikes = parkBikes(state, h);
+  const nb = bikes.count;
+  const p = formTeam(state, { baseId: h.id, memberIds: crew.slice(0, 3).map((s) => s.id), vehicleIds: [cars[0].id, cars[1].id, bikes.id] }).party;
+  check(p && partyVehicles(state, p).length === 3, "two cars and the bikes go");
+  joinBase(state, p, h);
+  check(cars.every((v) => v.loc.kind === "base" && v.loc.baseId === h.id), "both cars are parked at the base");
+  check(vehiclesAtBase(state, h.id).filter(isBike).reduce((a, v) => a + (v.count || 1), 0) === nb, "and every bike, in one stack");
+}
+
+section("Fleets: an old single-vehicle save loads as a list of one");
+{
+  const state = mk();
+  const { h, crew, car } = setup(state);
+  const p = formTeam(state, { baseId: h.id, memberIds: [crew[0].id], vehicleId: car.id }).party;
+  // The old shape: no list, no migration flag.
+  delete p.vehicleIds;
+  delete state.fleetV;
+  state.cards.length = 0;
+  const ld = loadFromString(saveToString(state));
+  const lp = ld.parties.find((x) => x.id === p.id);
+  check(lp && Array.isArray(lp.vehicleIds) && lp.vehicleIds.length === 1 && lp.vehicleIds[0] === car.id && ld.fleetV === 1, "migrated: vehicleIds [its car]");
+  check(lp && partyVehicle(ld, lp) && partyVehicle(ld, lp).id === car.id && partyVehicles(ld, lp).length === 1, "the lead and the list agree");
+  // A save with a fleet keeps it.
+  const cars = carsAt(state, h, 2);
+  const q = formTeam(state, { baseId: h.id, memberIds: crew.slice(1, 3).map((s) => s.id), vehicleIds: cars.map((v) => v.id) }).party;
+  state.cards.length = 0;
+  const ld2 = loadFromString(saveToString(state));
+  const lq = ld2.parties.find((x) => x.id === q.id);
+  check(lq && partyVehicles(ld2, lq).length === 2, "a team with two vehicles keeps both through save and load");
+}
+
+section("Keep or undo the gear changes");
+{
+  const state = mk();
+  const { h, crew, rifle, pack, knife } = setup(state);
+  const [a, b] = crew;
+  const snap = gearSnapshot(state, h, null);
+  check(!gearChanged(state, snap), "nothing changed yet");
+  const placesBefore = new Map([...itemsOf(state)].map((it) => [it, where(state, it)]));
+  const stockBefore = { ...h.stock };
+  // Moves: the rifle onto Ann, the pack onto Bob, a knife into the pack, a magazine's load changed, 5 food used.
+  quickMove(state, armoryLoc(h, rifle), a.id);
+  quickMove(state, armoryLoc(h, pack), b.id);
+  quickMove(state, armoryLoc(h, knife), b.id);
+  h.stock.food -= 5;
+  check(gearChanged(state, snap), "the moves count as changes");
+  restoreGear(state, snap);
+  check(!gearChanged(state, snap), "undone: nothing differs from the snapshot");
+  check([...placesBefore].every(([it, w]) => where(state, it) === w), "every item back exactly where it was");
+  check(Object.keys(stockBefore).every((k) => near(h.stock[k] || 0, stockBefore[k] || 0)), "the stores as they were");
+  sameCensus({ items: new Set(placesBefore.keys()), n: placesBefore.size, sup: suppliesOf(state), people: state.survivors.filter((s) => s.alive).length, cars: state.vehicles.filter((v) => !isBike(v)).length, bikes: bikesTotal(state) }, census(state), "after undo");
+  // Editing a team: load, then undo puts it back in the armory and the stores.
+  const p = formTeam(state, { baseId: h.id, memberIds: [a.id, b.id], supplies: { food: 4 } }).party;
+  const s2 = gearSnapshot(state, h, p);
+  loadFromBase(state, p, { items: [armoryLoc(h, rifle)], supplies: { food: 6 } }, a.id);
+  check(gearChanged(state, s2) && !h.armory.includes(rifle), "a load from the base is a change");
+  restoreGear(state, s2);
+  check(h.armory.includes(rifle) && near(teamHas(p, "food"), 4) && !gearChanged(state, s2), "undone: the rifle back in the armory, the food back in the stores");
+  // The window: closing with changes asks; Keep keeps, Undo undoes.
+  const ui = await import("../src/ui/teamform.js");
+  const u = { inv: null };
+  ui.TEAMFORM_ACTIONS["tf-open"](state, u, { base: h.id });
+  quickMove(state, armoryLoc(h, knife), crew[2].id);
+  ui.TEAMFORM_ACTIONS["tf-close"](state, u, {});
+  check(u.inv && u.inv.form.asking, "closing with gear moved asks first");
+  check(/Keep gear changes/.test(ui.teamFormModal(state, u)) && /Undo changes/.test(ui.teamFormModal(state, u)), "the question offers Keep gear changes and Undo changes");
+  ui.TEAMFORM_ACTIONS["tf-keep"](state, u, {});
+  check(!u.inv && !h.armory.includes(knife), "Keep: closed, the knife stays with them");
+  const bobWas = where(state, knife);
+  ui.TEAMFORM_ACTIONS["tf-open"](state, u, { base: h.id });
+  const spot = carriedSpots(crew[2]).find((x) => x.item === knife);
+  if (spot) quickMove(state, spot.loc, crew[2].id); // off Bob into the armory
+  check(spot && h.armory.includes(knife), "a move after opening again: the knife into the armory");
+  ui.TEAMFORM_ACTIONS["tf-close"](state, u, {});
+  ui.TEAMFORM_ACTIONS["tf-undoclose"](state, u, {});
+  check(!u.inv && where(state, knife) === bobWas && !h.armory.includes(knife), "Undo changes: closed, the knife back on them exactly where it was");
+  ui.TEAMFORM_ACTIONS["tf-open"](state, u, { base: h.id });
+  const s3 = u.inv.form.snap;
+  quickMove(state, armoryLoc(h, rifle), crew[2].id);
+  ui.TEAMFORM_ACTIONS["tf-undo"](state, u, {});
+  check(u.inv && !gearChanged(state, s3) && h.armory.includes(rifle), "the window's Undo changes button puts it back and stays open");
+  ui.TEAMFORM_ACTIONS["tf-close"](state, u, {});
+  check(!u.inv, "with nothing changed it closes without asking");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

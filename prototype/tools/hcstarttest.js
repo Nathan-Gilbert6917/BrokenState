@@ -330,7 +330,7 @@ const landNear = (st, from, d) => st.tiles.find((t) => t.terrain !== "water" && 
     queueBuild(st, h, "farm_plot");
     check(!canBuild(st, h, "farm_plot").ok && /room for 1/.test(canBuild(st, h, "farm_plot").reason), "one farm plot at most");
     h.construction.length = 0;
-    st.cards.length = 0; // the base panel sits under any open card
+    st.cards.length = 0; st.nameAsk = []; // the base panel sits under any open card, and under the naming window (ui/basename.js)
     const html = renderModal(st, { ...freshUi(), baseView: { id: h.id, tab: "overview" } }) || "";
     check(/Shelter/.test(html) && /Build up into a base/.test(html) && /data-action="campfire"/.test(html) && /Water source/.test(html), "the base panel shows the stage, the step up (button), the water source and the fire");
     check(/queued/.test(queueBuild(st, h, "hub_up")), "Build up into a base is queued");

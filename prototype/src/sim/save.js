@@ -192,6 +192,12 @@ export function deserializeState(save) {
   // carrykit.js: carry kit (wave 2): plate carriers from before get their two plates, your people's guns their spare
   // magazines. Once: state.kitV.
   if (!(state.kitV >= 2)) migrateKit(state);
+  // vehicles.js fleets: a team's vehicles as a list (p.vehicleIds) with the lead one in p.vehicleId; a save from before
+  // has the one vehicleId, which becomes a list of one. Once: state.fleetV.
+  if (!(state.fleetV >= 1)) {
+    for (const p of state.parties || []) if (!Array.isArray(p.vehicleIds) && p.vehicleId != null) p.vehicleIds = [p.vehicleId];
+    state.fleetV = 1;
+  }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   // A raid in a building with storeys (combat.js setFloor): b.cells / b.reach / b.losCache alias the active floor's
   // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points
