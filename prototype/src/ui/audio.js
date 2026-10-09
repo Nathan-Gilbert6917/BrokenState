@@ -13,7 +13,7 @@ import { battleCues, worldCues, ambienceMix, makeThrottle, LISTEN, battleCrowd }
 import { installBus, spatial, setGunVolume, playGun, labPlan, place } from "./gunsfx.js"; // the gun voices, the battle's sound space (pan, distance, reverb, ducking, the deafened muffle)
 import { frameListener, playCue, cueSpan, prewarmBattle } from "./battlesfx.js"; // guns, blasts and handling cues to their voices
 import { LAB, LAB_ACTIONS, LAB_CHANGE, labGunHtml, makeLimiter } from "./sfxlab.js"; // Settings → Sound: the gun and blast sound test
-import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest, demoMapHorde, makeZombieBus, zombieVolume } from "./zombiesfx.js"; // the dead's voices
+import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest, demoMapHorde, makeZombieBus, zombieVolume, setZombieVolume } from "./zombiesfx.js"; // the dead's voices
 import { weatherAt, season } from "../sim/weather.js";
 import { playerTile } from "../sim/hardcore-start.js";
 import { screenToTile, view } from "./render.js";
@@ -28,7 +28,7 @@ const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 // ---------- options ----------
 // options.sound (ui/saves.js keeps it with the other options): volumes 0–1, mute, mute when the window is not focused;
 // steps: the Footsteps slider (under Effects); guns: the Gunfire volume 0–1.5 (guns, their handling and blasts: ui/gunsfx.js GUNVOL);
-// zombie: the Zombie volume (0–1.5: the dead's voices, the battle's crowd and the map's hordes; 1 the default; ui/zombiesfx.js);
+// zombie: the Zombie volume (0–1.5: the dead's voices, the battle's crowd and the map's hordes; 1 the default; ui/zombiesfx.js ZOMVOL);
 // horde: the Map horde volume (the moaning of hordes near you on the State Map, under the ambience and zombie sliders).
 export const SOUND_DEFAULTS = { master: 0.7, sfx: 0.8, amb: 0.5, steps: 0.7, guns: 1, mute: false, muteBlur: true, horde: 0.7, zombie: 1 };
 export const VOL_MAX = { guns: 1.5, zombie: 1.5 };
@@ -99,7 +99,7 @@ function makeContext(test = null) {
   limit.connect(master);
   ambBus.connect(master);
   const gb = installBus(ctx, sfxBus); // the battle's sounds: ducked by a close blast, muffled while deafened, a reverb by place (ui/gunsfx.js)
-  const zom = makeZombieBus(ctx, sfxBus); // the dead: +4 dB, the Zombie volume, a soft limiter (ui/zombiesfx.js)
+  const zom = makeZombieBus(ctx, gb.in); // the dead's crowd bed: +4 dB, the Zombie volume, a soft limiter, into the battle bus (ui/zombiesfx.js; their voices go through zRoute → spatialOut)
   A = { ctx, comp, limit, gb, master, sfx: sfxBus, amb: ambBus, zom, layers: null, next: { thunder: 0, bird: 0, cricket: 0 }, mix: null, test: !!test };
   applyGains(true);
   return A;
@@ -107,6 +107,7 @@ function makeContext(test = null) {
 // The volumes and the mute (also the window's focus): the buses follow the sliders, and a silent context is suspended.
 export function applyGains(now = false) {
   if (OPT) setGunVolume(curve(OPT.sound.guns ?? SOUND_DEFAULTS.guns)); // the Gunfire volume: read as each gun, blast or reload is played
+  if (OPT) setZombieVolume(OPT.sound.zombie ?? SOUND_DEFAULTS.zombie); // the Zombie volume: read as each of the dead's voices is played (ui/zombiesfx.js ZOMVOL)
   if (!A || !OPT) return;
   const s = OPT.sound, t = A.ctx.currentTime, on = wantOn();
   const set = (p, v) => (now ? p.setValueAtTime(v, t) : p.setTargetAtTime(v, t, 0.08));
@@ -178,9 +179,9 @@ export function sfx(name, opts = {}) {
   const ctx = A.ctx;
   const t = ctx.currentTime + 0.01 + Math.max(0, opts.delay || 0);
   if (!(V.steps ? stepThrottle.allow("step", t, V.dur) : throttle.allow(name, t, V.dur))) { audioDebug.dropped++; return false; }
-  let out = V.amb ? A.amb : V.routes ? A.zom.input : opts.battle && A.gb ? A.gb.in : A.sfx; // the dead through their own bus
+  let out = V.amb ? A.amb : opts.battle && A.gb ? A.gb.in : A.sfx;
   if (V.own) out = voiceOut(ctx, opts.sp || placeOf(opts), out, !!(opts.battle && A.gb)); // ui/sfx-out.js: in battle ui/gunsfx.js spatialOut
-  else if (!V.routes) { // the dead's voices pan themselves (ui/zombiesfx.js zRoute)
+  else if (!V.routes) { // the dead's voices place themselves (ui/zombiesfx.js zRoute → ui/gunsfx.js spatialOut)
     if (opts.lp > 0 && opts.lp < Math.min(16000, ctx.sampleRate * 0.45)) { // far away or out of sight (ui/gunsfx.js spatial)
       const f = ctx.createBiquadFilter();
       f.type = "lowpass"; f.frequency.value = opts.lp; f.Q.value = 0.6;
@@ -216,7 +217,7 @@ export function audioFrame(state, ui, nowMs = performance.now()) {
   const on = live();
   // The memories move on even while silent, so unmuting does not play what happened meanwhile.
   if (state.combat && !ui.timelapse) {
-    const cues = battleCues(state.combat, battleMem, now);
+    const cues = battleCues(state.combat, battleMem, now, state);
     const more = [...stepCues(state, stepMem, now), ...gearCues(state, gearMem)]; // footsteps, searches, doors, the vehicle (ui/sfx-steps.js, ui/sfx-gear.js)
     if (on && A.warm !== state.combat) { A.warm = state.combat; prewarmBattle(A.ctx, state, state.combat); } // bake its guns, blasts and reverb while it opens
     if (on && (cues.length || more.length)) {
@@ -225,7 +226,7 @@ export function audioFrame(state, ui, nowMs = performance.now()) {
       for (const c of more) battleSound(c, L);
     }
     if (on && A.gb) A.gb.setMuffle(!!battleMem.deaf); // deafened: everything through a low-pass
-  }
+  } else if (on && A.gb && A.gb.muffled) A.gb.setMuffle(false); // out of battle the ears clear (the map's horde sting and the sound tests use the bus too)
   if (nowMs - lastWorld >= 150 && ui.started && !ui.timelapse) {
     lastWorld = nowMs;
     for (const c of worldCues(state, ui, worldMem)) if (on) sfx(c.name, { gain: c.gain, delay: c.delay });
@@ -239,7 +240,10 @@ export function audioFrame(state, ui, nowMs = performance.now()) {
 
 // A battle cue: a gun, a blast or a handling sound (ui/battlesfx.js), else one of the VOICES placed where it happens.
 function battleSound(c, L) {
-  if (VOICES[c.name] && VOICES[c.name].routes) return sfx(c.name, { ...c, pan: c.pan ?? (Math.random() - 0.5) * 0.5 }); // the dead (ui/zombiesfx.js): placed by their cue, through the zombie bus
+  if (VOICES[c.name] && VOICES[c.name].routes) { // the dead (ui/zombiesfx.js): placed by soundcues (c.sp: gun-sfx's spatial), played into spatialOut by zRoute
+    const sp = c.sp || (c.at && L ? spatial(L, c.at[0], c.at[1], { enemy: true }) : null);
+    return sfx(c.name, { ...c, sp, delay: (c.delay || 0) + (sp ? sp.delay : 0), battle: true });
+  }
   if (!(c.gun || c.blast || c.hand)) {
     let sp = c.at && L ? spatial(L, c.at[0], c.at[1], { enemy: c.enemy }) : null;
     if (VOICES[c.name] && VOICES[c.name].own) { // ui/sfx-melee.js, sfx-steps.js, sfx-gear.js: played into spatialOut at the placement

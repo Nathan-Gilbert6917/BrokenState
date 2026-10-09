@@ -448,7 +448,7 @@ export function place(p) {
 }
 // The node a sound at a placement plays into: level → highs cut → pan → the battle bus (and the room's reverb).
 // sp: what spatial() or place() gave, or a bare { pan | x, dist, seen, room | layout }. o.raw: past the ducking (a
-// blast itself). Without a bus (a bare offline context) it goes straight to the destination.
+// blast itself). Without a bus (a bare offline context) it goes to o.dest, else straight to the destination.
 export function spatialOut(c, sp = {}, o = {}) {
   if (sp.gain == null) sp = place({ pan: sp.pan ?? sp.x ?? 0, dist: sp.dist ?? sp.d ?? 0, seen: sp.seen, room: sp.room || roomForLayout(sp.layout) });
   const B = busOf(c);
@@ -458,7 +458,7 @@ export function spatialOut(c, sp = {}, o = {}) {
   const nyq = c.sampleRate * 0.45;
   if (sp.lp < Math.min(16000, nyq)) { const f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = sp.lp; f.Q.value = 0.6; node.connect(f); node = f; }
   if (sp.pan && c.createStereoPanner) { const pn = c.createStereoPanner(); pn.pan.value = sp.pan; node.connect(pn); node = pn; }
-  node.connect(B ? (o.raw ? B.raw : B.in) : c.destination);
+  node.connect(B ? (o.raw ? B.raw : B.in) : o.dest || c.destination);
   if (B && sp.send > 0 && o.dry !== true) { const s = c.createGain(); s.gain.value = sp.send * (o.send ?? 1); node.connect(s); s.connect(B.verb(sp.room)); }
   return g;
 }

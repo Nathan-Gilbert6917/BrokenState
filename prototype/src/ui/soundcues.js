@@ -5,7 +5,7 @@
 //   cardUrgency(card)        routine | warning | crisis, by what the card is about
 //   isBaseAttack(card)       a raid on one of your bases (the alarm instead of a chime)
 //   weaponSound(key, unit)   the gunshot a weapon makes: pistol, revolver, rifle, shotgun, auto, bow, acid, suppressed
-//   battleCues(b, mem, now)  the new battle effects (b.fx), the downed, the dead's voices (ui/zombiesfx.js): { name, gain, delay, at }
+//   battleCues(b, mem, now, state) the new battle effects (b.fx), the downed, the dead's voices (ui/zombiesfx.js): { name, gain, delay, at | sp }
 //   worldCues(state, ui, mem) new cards, new alerts, a horde newly seen near a base or a team, a raid at a base
 //   ambienceMix(...)         wind, rain, thunder, the night drone, birds and crickets for a weather and an hour
 //   makeThrottle(limits)     keeps a 20-unit firefight from stacking 200 shots in one frame
@@ -15,7 +15,8 @@ import { partyTile } from "../sim/parties.js";
 import { meleeCue } from "./sfx-melee.js"; // a blow by weapon class, armour and kill (ui/sfx-melee.js)
 import { shotPlan, handCues, launched, isIndoor, OWN_VOICE } from "./gunsfx.js"; // the gun voices, the handling seen between frames
 import { THROW_BLAST, THROW_HAND, THROW_CLATTER, THROW_FLIGHT, FUSE, BIG, flight, launchBlast, mergeBlasts, glassNear } from "./blastsfx.js"; // blasts and grenades
-import { zombieMemory, zombieFxCue, zombieUnitCues, zombieIdleCue, listenerOf, crowdState, Z_PRIORITY } from "./zombiesfx.js"; // the dead's voices
+import { zombieMemory, zombieFxCue, zombieUnitCues, zombieIdleCue, listenerOf, zListener, crowdState, Z_PRIORITY } from "./zombiesfx.js"; // the dead's voices
+import { frameListener } from "./battlesfx.js"; // where the battle is heard from (gun-sfx's listener: the selected unit, the view, the fog)
 
 export const HORDE_NEAR_BASE = 6; // tiles: the same distance as the horde alert (ui/alerts.js HORDE_ALERT_TILES)
 export const HORDE_NEAR_TEAM = 3; // tiles from one of your teams on the map
@@ -84,7 +85,7 @@ const rand = (mem) => (mem.rng ? mem.rng() : Math.random());
 
 // The new things heard in battle b since the last call. mem: this battle's memory (kept by the caller; a new battle
 // or a loaded one starts a fresh memory, and what was already on the field makes no sound). now: seconds.
-export function battleCues(b, mem, now = 0) {
+export function battleCues(b, mem, now = 0, state = null) {
   const out = [];
   if (!b) return out;
   if (mem.battle !== b) {
@@ -107,7 +108,7 @@ export function battleCues(b, mem, now = 0) {
   const landed = [];
   const blastAt = (to, kind) => { if (BIG.has(kind)) landed.push(to); };
   const selId = typeof LISTEN.sel === "function" ? LISTEN.sel() : null;
-  const L = listenerOf(b, selId); // where the dead are heard from (ui/zombiesfx.js)
+  const L = zListener(frameListener(state, b, LISTEN), b, selId); // where the dead are heard from (ui/zombiesfx.js: gun-sfx's listener)
   if (!mem.zm) mem.zm = zombieMemory(b);
   for (const f of fresh) {
     const zn = out.length;
