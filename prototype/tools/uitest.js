@@ -76,8 +76,9 @@ const actionsIn = (html) => [...html.matchAll(/<(\w+)([^>]*?)data-action="([^"]+
 const mainSrc = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const inMain = (name) => new RegExp(`(^|[\\s{,])("${name}"|${/^[a-z]\w*$/i.test(name) ? name : "\\u0000"})\\s*:`, "m").test(mainSrc);
 import { WHY_ACTIONS } from "../src/ui/causes.js"; // Why? links on deaths and lost bases
-const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS, ...WATCHLIST_ACTIONS, ...CONTROLS_ACTIONS, ...CODEX_ACTIONS, ...WHY_ACTIONS };
-const CHANGE = { ...DIARY_CHANGE, ...ROSTER_CHANGE, ...EXPLORE_CHANGE };
+import { BN_ACTIONS, BN_INPUT } from "../src/ui/basename.js"; // naming and renaming bases
+const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS, ...WATCHLIST_ACTIONS, ...CONTROLS_ACTIONS, ...CODEX_ACTIONS, ...WHY_ACTIONS, ...BN_ACTIONS };
+const CHANGE = { ...DIARY_CHANGE, ...ROSTER_CHANGE, ...EXPLORE_CHANGE, ...BN_INPUT };
 function handlersOk(html, where) {
   const missing = [];
   for (const a of actionsIn(html)) {
@@ -1326,7 +1327,6 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
   ISO.setIsoCanvas(cvs);
   const screen = { clientWidth: 1600, clientHeight: 900, width: 0, height: 0, getContext: () => rec };
   UI.initCombatUI(screen);
-  UI.setBattleView("iso");
   const NOW = 1e9;
   try {
     // Every layout: a field encounter (town, forest, city), a raid, a hive assault and a growth, an assault on a walled
@@ -1431,15 +1431,11 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     // The cutaway: a building with one of your people inside loses its roof and its near walls drop to stubs.
     const yb = yard.b, inside = yb.units.filter((u) => u.side === "player" && C.active(u) && yb.tier.indoor[u.y * yb.w + u.x]);
     check(inside.length > 0, `on the yard map after the fall back, ${inside.length} of your people are inside the buildings (the roofs over them cut away)`);
-    // The view toggle: Options, I, the panel's view bar; the top-down view draws as before; the keys are handled.
+    // The view: isometric only (no top-down battle view, no toggle); the keys are handled.
     const isoFrames = ISO.iso.frames;
-    UI.setBattleView("top");
     UI.drawCombat(ft.st, NOW);
-    check(UI.cui.view === "top" && ISO.iso.frames === isoFrames, "Battle view: Top-down draws the flat grid (the isometric renderer is not used)");
+    check(ISO.iso.frames > isoFrames && UI.setBattleView === undefined && UI.cui.view === undefined, "the battle map is drawn isometric, the only view (no top-down, no toggle)");
     const key = (code, extra = {}) => UI.combatKey(ft.st, { code, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...extra });
-    UI.setBattleView("iso");
-    key("KeyI"); // I is Reload now (sim/combat.js magazines)
-    check(UI.cui.view === "iso", "the battle view is always isometric (I no longer switches to top-down)");
     const r0 = ISO.iso.rot, z0 = ISO.iso.zoom, roofs0 = ISO.iso.roofs;
     check(key("Period") && ISO.iso.rot === (r0 + 1) % 4 && key("Comma") && ISO.iso.rot === r0 && key("Equal") && ISO.iso.zoom === Math.min(ISO.ISO_ZOOMS.length - 1, z0 + 1) && key("Minus") && key("KeyB") && ISO.iso.roofs === !roofs0 && key("KeyB") && ISO.iso.roofs === roofs0 && key("KeyV"), ", . turn the view, + − zoom, B roofs, V centers on the selected unit");
     check(key("ArrowLeft") && ISO.iso.keys.has("ArrowLeft") && (UI.combatKeyUp(ft.st, { code: "ArrowLeft" }), !ISO.iso.keys.has("ArrowLeft")), "the arrow keys pan while held");
@@ -1478,7 +1474,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     }
     check(!bar.includes(`data-v="top"`) && ["rotl", "rotr", "zin", "zout", "center", "roofs"].every((v) => bar.includes(`data-v="${v}"`)) && mainSrc.includes("\"cb-view\""), "the panel's view bar: turn, zoom, center, roofs, no top-down (main.js handles cb-view)");
     for (const v of ["rotr", "rotl", "zin", "zout", "center", "roofs", "roofs"]) UI.combatAction(ft.st, "cb-view", { v });
-    check(UI.cui.view === "iso" && ISO.iso.rot === r0, "the view bar's buttons work");
+    check(ISO.iso.rot === r0, "the view bar's buttons work");
     // Mouse: a press that moves pans (no click), one that does not clicks on release; the wheel zooms.
     ISO.iso.zoom = 4; UI.drawCombat(ft.st, NOW);
     const cx0 = ISO.iso.cx;
@@ -1511,13 +1507,11 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       mine[0].down = true; mine[1].down = true; mine[1].ko = true;
       rb.raid.containers.push({ id: 99999, x: fallen[0].x, y: fallen[0].y, kind: "body", uid: fallen[0].id, searched: true, label: "a body" });
       let bad = 0, imgs = 0;
-      for (const v of ["iso", "top"]) {
-        UI.setBattleView(v);
+      for (const v of ["iso"]) {
         try { ISO.iso.battle = null; UI.drawCombat(rd.st, NOW); log = []; UI.drawCombat(rd.st, NOW); imgs += log.filter((l) => l.startsWith("drawImage")).length; } catch (e) { bad++; console.log(`  error drawing the fallen (${v}): ${e.stack}`); }
       }
-      UI.setBattleView("iso");
       const pics = [...fallen, mine[0], mine[1]].map((u) => DS.unitDownCanvas(rd.st, rb, u, 0));
-      check(!bad && !nan && imgs > 10 && pics.every(Boolean) && pics[0] !== DS.unitDownCanvas(rd.st, { ...rb, raid: { ...rb.raid, containers: [] } }, fallen[0], 0), `the fallen draw in both views (${fallen.length} dead, 2 down; ${imgs} images), each with its own downed picture, a searched body with its own`);
+      check(!bad && !nan && imgs > 10 && pics.every(Boolean) && pics[0] !== DS.unitDownCanvas(rd.st, { ...rb, raid: { ...rb.raid, containers: [] } }, fallen[0], 0), `the fallen draw in the view (${fallen.length} dead, 2 down; ${imgs} images), each with its own downed picture, a searched body with its own`);
       for (const u of rb.units) { u.dead = false; u.down = false; u.ko = false; }
     }
     // Speed (headless, a stub canvas: the script's share of a frame) on the biggest maps.
@@ -1565,7 +1559,6 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       const mine = b.units.filter((u) => u.side === "player" && (C.activeAny || C.active)(u));
       for (const u of mine) u.ap = 2;
       check(n >= 2 && b.floors[1].cells.filter((c) => c.k === "void").length > b.w * b.h / 2 && b.floors[top].cells[stairs].k === "stairs" && b.floors[0].cells[stairs].k === "stairs" && mine.length >= 2, `${real ? "the sim's" : "the fixture's"} ${n} floors of ${b.w}×${b.h}: void outside the footprint, a stairwell on every floor`);
-      UI.setBattleView("iso");
       ISO.iso.battle = null; UI.drawCombat(st, NOW);
       ISO.iso.rot = 0; ISO.iso.zoom = 4; ISO.iso.target = null;
       const n0 = nan;
@@ -1653,13 +1646,11 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       check(new RegExp(`Showing floor 2 of ${n}`).test(html) && /data-v="fgo"/.test(html) && !/data-v="goup"/.test(html), "looking at another floor: the panel says so with a way back, no actions for the unit");
       UI.combatAction(st, "cb-view", { v: "fgo" });
       check(b.floor === 0, "Go to <name> returns to their floor");
-      // The top-down view draws the active floor too (void dark, the floor in the banner).
-      UI.setBattleView("top");
+      // Each floor draws, the banner naming the floor shown.
       let bad = 0;
-      for (const f of [top, 0]) { UI.setViewFloor(b, f); try { log = []; UI.drawCombat(st, NOW); if (f === top && !log.some((l) => l.includes(`FLOOR ${n} OF ${n}`))) bad++; } catch (e) { bad++; console.log(`  error drawing floor ${f} top-down: ${e.stack}`); } }
-      check(!bad && nan === n0, `the top-down view draws each floor, the banner naming it (FLOOR ${n} OF ${n})`);
-      check(key("PageUp") && b.floor === 1, "PageUp works in the top-down view too");
-      UI.setBattleView("iso");
+      for (const f of [top, 0]) { UI.setViewFloor(b, f); try { log = []; UI.drawCombat(st, NOW); if (f === top && !log.some((l) => l.includes(`FLOOR ${n} OF ${n}`))) bad++; } catch (e) { bad++; console.log(`  error drawing floor ${f}: ${e.stack}`); } }
+      check(!bad && nan === n0, `each floor draws, the banner naming it (FLOOR ${n} OF ${n})`);
+      check(key("PageUp") && b.floor === 1, "PageUp shows the floor above");
       check((await import("../src/ui/help.js")).helpTopics().find((t) => t.id === "battle-view").html.includes("PageUp") && readme.includes("PageUp / PageDown"), "Help → Battle view and the README explain the floors and PageUp / PageDown");
       // The fixture off again: the battle draws as a single floor.
       if (!real) {

@@ -2,14 +2,15 @@
 // save), New game (the new-run screen), Load game (the menu's save list), Settings (the menu's Options tab), How to
 // play (its Help tab) and, in the desktop app, Quit. The menu itself (ui/settings.js) opens over the title.
 //
-// Behind it, four animated backgrounds drawn in code take turns: a ruined skyline at dusk, a campfire at night, a
-// holdout's wall in a storm and a hive, each held for a while and then cross-faded into the next.
+// Behind it, three animated backgrounds drawn in code take turns: a ruined skyline at dusk, a campfire at night and a
+// holdout's wall in a storm, each held for a while and then cross-faded into the next.
 import { latestSave, listSaves } from "./saves.js";
 import { openSettings } from "./settings.js";
 import { GAME_VERSION } from "../sim/save.js";
 import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
+import { ambLightning } from "./ambience.js"; // the storm scene's lightning: its thunder follows (ui/ambweather.js)
 
-const SCENES = ["skyline", "camp", "walls", "hive"];
+const SCENES = ["skyline", "camp", "walls"];
 const HOLD_S = 45;  // how long each background stays before the next fades in
 const FADE_S = 3;   // the cross-fade
 const PIXEL_BUDGET = 5e6; // a background layer's pixels at most (a 4K screen gets a softer, cheaper scene)
@@ -112,7 +113,7 @@ export function titleFrame(state, ui, now) {
   }
   const get = (i) => {
     if (!scenes[i]) {
-      const scene = SCENES[i] === "camp" ? campScene() : SCENES[i] === "walls" ? wallsScene() : SCENES[i] === "hive" ? hiveScene() : skylineScene();
+      const scene = SCENES[i] === "camp" ? campScene() : SCENES[i] === "walls" ? wallsScene() : skylineScene();
       const L = layer(W, H, res);
       scene.resize(W, H, res);
       scenes[i] = { scene, L };
@@ -1446,6 +1447,7 @@ function wallsScene() {
       bolt.pts.push([x, y]);
       while (y < fieldTop - H * 0.02) { y += H * (0.02 + Math.random() * 0.04); x += (Math.random() - 0.5) * H * 0.06; bolt.pts.push([x, y]); }
       nextBolt = 7 + Math.random() * 12;
+      ambLightning(0.25 + Math.random() * 0.6); // its thunder, a second or three after the flash (ui/ambweather.js)
     }
     if (bolt) { bolt.age += dt; if (bolt.age > 1.4) bolt = null; }
     // The flash: two strikes close together, then the glow dying away.
@@ -1531,293 +1533,6 @@ function wallsScene() {
     for (const d of rain) { if (d.a >= 0.18) continue; g.moveTo(d.x, d.y); g.lineTo(d.x - d.l * 0.3, d.y + d.l * 1.2); }
     g.stroke();
     if (flash > 0) { g.fillStyle = `rgba(200,210,240,${(flash * 0.1).toFixed(3)})`; g.fillRect(0, 0, W, H); }
-  }
-  return { resize, frame };
-}
-
-// ---------- background: a hive ----------
-// A town the worm has taken: the Broodmother's mass risen among the ruins, breathing, its growth climbing the walls,
-// egg sacs and veins pulsing in the ground with its heartbeat, worms in the soil, the dead gathered and swaying
-// before it, spores drifting up. A scout crouches behind a wreck in the foreground, flashlight on it.
-function hiveScene() {
-  let W = 0, H = 0, res = 1, sky, ruins, mother, ground, veins, fore, fog;
-  let horizon = 0, groundY = 0, mx = 0, my = 0, scoutX = 0, scoutY = 0;
-  let pores = [], sacs = [], worms = [], spores = [], dead = [];
-  const glowG = puff("120,230,170"), glowT = puff("90,220,200", 0.15), spore = puff("170,240,190", 0.3), glowR = puff("190,60,90");
-  // The heartbeat: a double beat every 2.6 s, smooth.
-  const beat = (t) => { const p = (t % 2.6) / 2.6; const k = (c, w) => Math.exp(-((p - c) * (p - c)) / w); return Math.min(1, k(0.08, 0.004) + 0.6 * k(0.22, 0.004)); };
-  const shade = (g, x, y, rx, ry, inner, outer) => { const gr = g.createRadialGradient(x - rx * 0.3, y - ry * 0.4, rx * 0.1, x, y, rx * 1.1); gr.addColorStop(0, inner); gr.addColorStop(1, outer); g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); g.fill(); };
-  // A tendril: a thick tapered curve from (x0,y0) to (x1,y1), bulging towards cx,cy.
-  const tendril = (g, x0, y0, x1, y1, cx, cy, w, c) => {
-    g.strokeStyle = c; g.lineCap = "round";
-    for (let i = 0; i < 4; i++) { const f = i / 4; g.lineWidth = w * (1 - f * 0.8); g.beginPath(); g.moveTo(lerp(x0, x1, f), lerp(y0, y1, f)); g.quadraticCurveTo(cx, cy, x1, y1); g.stroke(); }
-  };
-
-  function ruinsLayer() {
-    const L = layer(W, H * 0.45, res), R = rng(2027), g = L.g;
-    g.translate(0, -H * 0.35);
-    // A row of broken buildings, dark, with the growth climbing them in lumps.
-    for (let x = -20; x < W + 20;) {
-      const w = H * (0.08 + R() * 0.14), h = H * (0.1 + R() * 0.26), y = horizon - h;
-      g.fillStyle = `rgb(${18 + (R() * 6) | 0},${12 + (R() * 4) | 0},${20 + (R() * 6) | 0})`;
-      g.beginPath(); g.moveTo(x, horizon + 4); g.lineTo(x, y + (R() < 0.4 ? h * 0.2 * R() : 0));
-      const n = 3 + (R() * 4) | 0;
-      for (let i = 1; i < n; i++) g.lineTo(x + (w * i) / n, y + (R() < 0.5 ? h * R() * 0.25 : 0));
-      g.lineTo(x + w, y + h * R() * 0.3); g.lineTo(x + w, horizon + 4); g.closePath(); g.fill();
-      // Windows, a few glowing with what grows inside.
-      const cw = Math.max(2, H * 0.006);
-      for (let yy = y + h * 0.15; yy < horizon - cw * 2; yy += cw * 2.6) for (let xx = x + w * 0.12; xx < x + w * 0.88; xx += cw * 2.2) {
-        if (R() < 0.45) continue;
-        g.fillStyle = R() < 0.1 ? "rgba(120,230,170,0.35)" : "rgba(0,0,0,0.5)";
-        g.fillRect(xx, yy, cw, cw * 1.4);
-      }
-      // Growth: vines climbing the wall from the ground, small lumps hanging off them, most near the mother.
-      const near = Math.max(0, 1 - Math.abs(x + w / 2 - mx) / (W * 0.45));
-      for (let i = 0; i < 1 + near * 5; i++) {
-        let vx = x + R() * w, vy = horizon + 2;
-        g.strokeStyle = "rgba(70,20,40,0.85)";
-        for (let j = 0; j < 7; j++) {
-          const nx = vx + (R() - 0.5) * w * 0.25, ny = vy - h * (0.06 + R() * 0.08) * (0.4 + near);
-          g.lineWidth = 2.5 * (1 - j / 8) + 0.5;
-          g.beginPath(); g.moveTo(vx, vy); g.lineTo(nx, ny); g.stroke();
-          if (R() < 0.5) { const r = H * (0.0025 + R() * 0.005) * (0.5 + near); shade(g, nx, ny + r, r, r * 1.3, "#4a1a2a", "#160810"); }
-          vx = nx; vy = ny;
-        }
-      }
-      // A fleshy crust along the foot of the wall.
-      g.fillStyle = "#1e0a14";
-      for (let gx = x; gx < x + w; gx += H * 0.012) { const r = H * (0.004 + R() * 0.008) * (0.5 + near); g.beginPath(); g.ellipse(gx, horizon + 1, r * 1.4, r, 0, Math.PI, 0); g.fill(); }
-      x += w * (0.75 + R() * 0.4);
-    }
-    return L;
-  }
-
-  // The Broodmother: a mass of lobes, shaded, ridged, with pores that glow; tendrils to the ground and the ruins.
-  function motherLayer() {
-    const L = layer(W, H, res), R = rng(99), g = L.g;
-    pores = [];
-    const rx = H * 0.27, ry = H * 0.2, cy = my - ry * 0.75;
-    // Tendrils first (they go behind the mass).
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * Math.PI - Math.PI * 0.05, len = H * (0.25 + R() * 0.35);
-      const x1 = mx + Math.cos(a) * len * 1.3, y1 = my + H * 0.02 + Math.abs(Math.sin(a * 2)) * H * 0.06 + R() * H * 0.05;
-      tendril(g, mx + Math.cos(a) * rx * 0.5, cy + ry * 0.4, x1, Math.min(y1, groundY + H * 0.16), mx + Math.cos(a) * len * 0.5, cy - ry * 0.2 + R() * ry, H * (0.02 + R() * 0.02), "#2e1020");
-    }
-    for (let i = 0; i < 3; i++) { // up and over the ruins
-      const dir = i === 1 ? -1 : 1, x1 = mx + dir * (rx * 0.9 + R() * H * 0.2), y1 = horizon - H * (0.05 + R() * 0.12);
-      tendril(g, mx + dir * rx * 0.3, cy, x1, y1, mx + dir * rx * 1.1, cy - ry * 0.9, H * 0.025, "#2e1020");
-    }
-    // Lobes: the main dome and smaller ones around it, lighter towards the top left.
-    const lobes = [[0, 0.05, 1, 0.95], [-0.55, 0.35, 0.55, 0.5], [0.6, 0.3, 0.5, 0.45], [-0.25, -0.45, 0.48, 0.38], [0.3, -0.5, 0.4, 0.33], [0.05, -0.75, 0.25, 0.2], [0.75, 0.6, 0.35, 0.3], [-0.8, 0.65, 0.32, 0.28]];
-    for (const [ox, oy, sx, sy] of lobes) shade(g, mx + ox * rx, cy + oy * ry, rx * sx, ry * sy, "#5c2030", "#1c0810");
-    for (let i = 0; i < 14; i++) { const ox = -1.05 + (i / 13) * 2.1, r = ry * (0.12 + R() * 0.14); shade(g, mx + ox * rx, cy + ry * (0.7 + R() * 0.2), r * 1.3, r, "#4e1a2a", "#160810"); } // the bumpy foot
-    // Ridges: dark arcs across the dome; a wet sheen along the upper edge.
-    g.strokeStyle = "rgba(20,6,12,0.3)"; g.lineWidth = Math.max(2, H * 0.004);
-    for (let i = 0; i < 5; i++) { const yy = cy - ry * 0.5 + (i / 5) * ry * 1.1; g.beginPath(); g.ellipse(mx + (R() - 0.5) * rx * 0.2, yy, rx * (0.8 - Math.abs(i - 2) * 0.1), ry * 0.1, (R() - 0.5) * 0.2, 0.3, Math.PI - 0.3); g.stroke(); }
-    g.strokeStyle = "rgba(230,150,170,0.18)"; g.lineWidth = Math.max(2, H * 0.005);
-    g.beginPath(); g.ellipse(mx - rx * 0.05, cy - ry * 0.08, rx * 0.9, ry * 0.88, 0, Math.PI * 1.1, Math.PI * 1.7); g.stroke();
-    // Pores: lit from inside, each with its own phase.
-    for (let i = 0; i < 26; i++) {
-      const a = R() * Math.PI * 2, d = Math.sqrt(R()) * 0.85, px = mx + Math.cos(a) * rx * d, py = cy + Math.sin(a) * ry * d;
-      const r = H * (0.0025 + R() * 0.005);
-      g.fillStyle = "#140608";
-      g.beginPath(); g.ellipse(px, py, r * 1.3, r, 0, 0, Math.PI * 2); g.fill();
-      pores.push({ x: px, y: py, r, ph: R() * 6 });
-    }
-    return L;
-  }
-
-  function groundLayer() {
-    const L = layer(W, H - groundY, res), R = rng(404), g = L.g;
-    g.translate(0, -groundY);
-    const gr = g.createLinearGradient(0, groundY, 0, H);
-    gr.addColorStop(0, "#1c1018"); gr.addColorStop(0.5, "#130a10"); gr.addColorStop(1, "#0a0508");
-    g.fillStyle = gr;
-    g.fillRect(0, groundY, W, H - groundY);
-    for (let i = 0; i < 2000; i++) { const y = groundY + Math.pow(R(), 0.8) * (H - groundY), f = (y - groundY) / (H - groundY); g.fillStyle = R() < 0.5 ? `rgba(90,40,60,${(0.05 + f * 0.08).toFixed(3)})` : `rgba(0,0,0,${(0.1 + f * 0.1).toFixed(3)})`; const s = 1 + f * 2.5; g.fillRect(R() * W, y, s, s * 0.6); }
-    // The pool of flesh the mass sits in, and the roots spreading out from under it.
-    shade(g, mx, groundY + H * 0.025, H * 0.34, H * 0.045, "#3a1222", "#14060c");
-    for (let i = 0; i < 14; i++) {
-      const a = Math.PI * (0.1 + R() * 0.8), len = H * (0.15 + R() * 0.45);
-      let x = mx + (R() - 0.5) * H * 0.3, y = groundY + H * 0.01, w = H * (0.008 + R() * 0.01);
-      g.strokeStyle = "#2a0e1a"; g.lineCap = "round";
-      for (let j = 0; j < 6; j++) { const nx = x + Math.cos(a) * len / 6 + (R() - 0.5) * H * 0.04, ny = y + Math.abs(Math.sin(a)) * len / 6 * 0.5 + R() * H * 0.01; g.lineWidth = w * (1 - j / 7); g.beginPath(); g.moveTo(x, y); g.lineTo(nx, ny); g.stroke(); x = nx; y = ny; }
-    }
-    // Egg sacs in clusters, their bases here (they glow each frame).
-    sacs = [];
-    for (let c = 0; c < 6; c++) {
-      const cx = mx + (R() - 0.5) * W * 0.7, cyy = groundY + H * 0.04 + R() * (H - groundY) * 0.7, f = (cyy - groundY) / (H - groundY);
-      for (let i = 0; i < 2 + (R() * 3) | 0; i++) {
-        const x = cx + (R() - 0.5) * H * 0.07, y = cyy + (R() - 0.5) * H * 0.015, r = H * (0.006 + R() * 0.009) * (0.5 + f);
-        g.fillStyle = "rgba(0,0,0,0.5)"; g.beginPath(); g.ellipse(x + r * 0.2, y + r * 0.9, r * 1.1, r * 0.35, 0, 0, Math.PI * 2); g.fill();
-        shade(g, x, y, r, r * 1.15, "#8a3a52", "#2a0c18");
-        g.fillStyle = "rgba(240,190,210,0.18)"; g.beginPath(); g.ellipse(x - r * 0.3, y - r * 0.5, r * 0.3, r * 0.2, -0.5, 0, Math.PI * 2); g.fill();
-        sacs.push({ x, y, r, ph: R() * 6 });
-      }
-    }
-    // Bones and a rifle someone dropped.
-    g.strokeStyle = "#d9d0c4"; g.lineWidth = Math.max(1.5, H * 0.003); g.lineCap = "round";
-    for (let i = 0; i < 9; i++) { const x = R() * W, y = groundY + H * 0.03 + R() * (H - groundY) * 0.8, l = H * (0.015 + R() * 0.03), a = R() * Math.PI; g.globalAlpha = 0.35 + R() * 0.3; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l * 0.35); g.stroke(); }
-    g.globalAlpha = 1;
-    return L;
-  }
-  // The veins in the ground, lit from within: drawn once, shown each frame with the heartbeat.
-  function veinsLayer() {
-    const L = layer(W, H - groundY, res), R = rng(505), g = L.g;
-    g.translate(0, -groundY);
-    g.lineCap = "round";
-    for (let i = 0; i < 18; i++) {
-      let x = mx + (R() - 0.5) * H * 0.4, y = groundY + H * 0.02 + R() * H * 0.03;
-      const a = Math.PI * (0.05 + R() * 0.9), steps = 5 + (R() * 7) | 0;
-      for (let j = 0; j < steps; j++) {
-        const nx = x + Math.cos(a) * H * 0.05 + (R() - 0.5) * H * 0.04, ny = y + Math.abs(Math.sin(a)) * H * 0.025 + R() * H * 0.012;
-        const f = 1 - j / steps;
-        g.strokeStyle = `rgba(200,70,110,${(0.35 * f).toFixed(2)})`; g.lineWidth = 2 * f + 0.5;
-        g.beginPath(); g.moveTo(x, y); g.lineTo(nx, ny); g.stroke();
-        g.strokeStyle = `rgba(255,150,180,${(0.15 * f).toFixed(2)})`; g.lineWidth = 1;
-        g.beginPath(); g.moveTo(x, y); g.lineTo(nx, ny); g.stroke();
-        x = nx; y = ny;
-      }
-    }
-    return L;
-  }
-  // The scout behind the wreck of a van, flashlight up; the van's tail is cropped by the screen's edge.
-  function foreLayer() {
-    const L = layer(W, H, res), g = L.g;
-    const vx = W * 0.02, vy = H * 0.97, vw = H * 0.42, vh = H * 0.19;
-    g.fillStyle = "#06040a";
-    g.beginPath(); g.moveTo(vx - H * 0.1, vy); g.lineTo(vx - H * 0.1, vy - vh * 0.95); g.lineTo(vx + vw * 0.6, vy - vh); g.lineTo(vx + vw * 0.78, vy - vh * 0.6); g.lineTo(vx + vw, vy - vh * 0.5); g.lineTo(vx + vw, vy); g.closePath(); g.fill();
-    g.fillStyle = "rgba(120,200,170,0.08)";
-    g.beginPath(); g.moveTo(vx + vw * 0.62, vy - vh * 0.95); g.lineTo(vx + vw * 0.75, vy - vh * 0.62); g.lineTo(vx + vw * 0.5, vy - vh * 0.62); g.lineTo(vx + vw * 0.45, vy - vh * 0.95); g.fill();
-    g.fillStyle = "#06040a";
-    g.beginPath(); g.arc(vx + vw * 0.8, vy, vh * 0.2, 0, Math.PI * 2); g.fill();
-    // The scout, crouched at the van's front corner, one knee down, the flashlight in the raised hand.
-    g.save();
-    g.translate(scoutX, scoutY);
-    const s = H * 0.17 / 100;
-    g.scale(s, s);
-    g.fillStyle = g.strokeStyle = "#07050a";
-    g.lineCap = g.lineJoin = "round";
-    g.lineWidth = 13; g.beginPath(); g.moveTo(-14, 0); g.lineTo(-4, -34); g.lineTo(16, -30); g.lineTo(22, 0); g.stroke(); // legs, one knee down
-    g.lineWidth = 22; g.beginPath(); g.moveTo(0, -36); g.lineTo(10, -74); g.stroke();
-    g.beginPath(); g.arc(14, -86, 10, 0, Math.PI * 2); g.fill();
-    g.fillRect(4, -96, 22, 5);
-    g.lineWidth = 8; g.beginPath(); g.moveTo(12, -68); g.lineTo(34, -78); g.lineTo(44, -72); g.stroke(); // the arm with the torch
-    g.fillRect(40, -78, 14, 9);
-    g.lineWidth = 7; g.beginPath(); g.moveTo(6, -60); g.lineTo(-10, -50); g.lineTo(-16, -36); g.stroke(); // the other hand on the wreck
-    g.restore();
-    return L;
-  }
-
-  function resize(w, h, r) {
-    W = w; H = h; res = r;
-    horizon = H * 0.66; groundY = H * 0.7;
-    mx = W * 0.62; my = H * 0.72;
-    scoutX = W * 0.02 + H * 0.4; scoutY = H * 0.95;
-    const R = rng(2028);
-    sky = layer(W, H, res);
-    let g = sky.g;
-    const gr = g.createLinearGradient(0, 0, 0, H);
-    gr.addColorStop(0, "#07060c"); gr.addColorStop(0.5, "#120c1a"); gr.addColorStop(0.66, "#1e1022"); gr.addColorStop(1, "#0a060c");
-    g.fillStyle = gr;
-    g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 160; i++) { const y = Math.pow(R(), 1.6) * horizon * 0.8; g.fillStyle = `rgba(200,210,230,${(0.1 + R() * 0.35).toFixed(2)})`; g.fillRect(R() * W, y, 1, 1); }
-    ruins = ruinsLayer();
-    mother = motherLayer();
-    ground = groundLayer();
-    veins = veinsLayer();
-    fore = foreLayer();
-    fog = fogStrip(W, H * 0.16, "80,60,90", 41, res, 1);
-    worms = Array.from({ length: 22 }, (_, i) => ({ x: R() * W, y: groundY + H * 0.03 + R() * (H - groundY) * 0.75, dir: R() < 0.5 ? -1 : 1, ph: R() * 6, len: H * (0.02 + R() * 0.02), v: H * (0.004 + R() * 0.006), turn: 3 + R() * 10 }));
-    spores = Array.from({ length: 70 }, () => ({ x: R() * W, y: R() * H, vy: H * (0.008 + R() * 0.012), k: R() * 9, r: 2 + R() * 4 }));
-    dead = walkers(11, 808, {}).map((z) => { z.k.crawl = false; z.k.idle = R() < 0.7; z.k.lurch = false; return z; });
-  }
-
-  function frame(g, t, dt) {
-    const b = beat(t), breathe = 0.012 * Math.sin(t * 0.9) + 0.006 * b;
-    for (const w of worms) {
-      w.turn -= dt; if (w.turn <= 0) { w.turn = 3 + Math.random() * 10; w.dir = -w.dir; }
-      w.x += w.dir * w.v * dt * 10; if (w.x < -w.len) w.x = W + w.len; else if (w.x > W + w.len) w.x = -w.len;
-    }
-    for (const s of spores) { s.y -= s.vy * dt * 10; s.x += Math.sin(t * 0.5 + s.k) * 10 * dt; if (s.y < -10) { s.y = H + 5; s.x = Math.random() * W; } }
-    g.drawImage(sky.c, 0, 0, W, H);
-    // The hive's glow behind the ruins, with the heartbeat.
-    g.globalCompositeOperation = "lighter";
-    g.globalAlpha = 0.16 + 0.1 * b;
-    const gr = H * 0.6;
-    g.drawImage(glowG, mx - gr, horizon - gr * 0.75, gr * 2, gr * 1.4);
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = "source-over";
-    drawStrip(g, fog, t * 3, horizon - H * 0.2, W, H * 0.16);
-    g.drawImage(ruins.c, 0, H * 0.35, W, ruins.h);
-    // The mass, breathing around its base; its pores light up with the beat, each a little out of step.
-    g.save();
-    g.translate(mx, my);
-    g.scale(1 + breathe, 1 + breathe * 1.7);
-    g.translate(-mx, -my);
-    g.drawImage(mother.c, 0, 0, W, H);
-    g.globalCompositeOperation = "lighter";
-    for (const p of pores) {
-      const a = Math.max(0, Math.sin(t * 1.1 + p.ph)) ** 2 * 0.35 + b * 0.5;
-      g.globalAlpha = Math.min(1, a);
-      g.drawImage(glowT, p.x - p.r * 3, p.y - p.r * 3, p.r * 6, p.r * 6);
-    }
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = "source-over";
-    g.restore();
-    g.drawImage(ground.c, 0, groundY, W, ground.h);
-    g.globalCompositeOperation = "lighter";
-    g.globalAlpha = 0.25 + 0.45 * b;
-    g.drawImage(veins.c, 0, groundY, W, veins.h);
-    for (const s of sacs) {
-      const a = Math.max(0, Math.sin(t * 0.7 + s.ph)) ** 3 * 0.45 + b * 0.25;
-      g.globalAlpha = Math.min(1, a);
-      g.drawImage(glowR, s.x - s.r * 1.6, s.y - s.r * 1.6, s.r * 3.2, s.r * 3.2);
-    }
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = "source-over";
-    // Worms in the soil: short bodies that ripple as they go.
-    g.lineCap = "round";
-    for (const w of worms) {
-      const f = (w.y - groundY) / (H - groundY), th = 1.5 + f * 3;
-      g.strokeStyle = "#6a2a40"; g.lineWidth = th;
-      g.beginPath();
-      for (let i = 0; i <= 8; i++) { const u = i / 8, x = w.x - w.dir * u * w.len, y = w.y + Math.sin(u * 6 + t * 6 * w.dir + w.ph) * th * 0.9; if (i) g.lineTo(x, y); else g.moveTo(x, y); }
-      g.stroke();
-      g.strokeStyle = "rgba(230,150,170,0.35)"; g.lineWidth = th * 0.35; g.stroke();
-    }
-    // The flashlight's beam from the scout, sweeping a little; the dead in it stand out.
-    const ang = -0.34 + 0.1 * Math.sin(t * 0.23), half = 0.07, bx = scoutX + H * 0.09, by = scoutY - H * 0.125, blen = W * 0.9;
-    const ex = bx + Math.cos(ang) * blen, ey = by + Math.sin(ang) * blen;
-    const beamLit = (x, y) => { const d = Math.atan2(y - by, x - bx) - ang, dist = Math.hypot(x - bx, y - by); return x > bx ? Math.max(0, 1 - Math.abs(d) / half) * Math.max(0, 1 - dist / blen) : 0; };
-    // The dead before the mother, far to near, swaying; lit by the hive's glow from behind and the torch from the front.
-    const sorted = dead.slice().sort((a, c) => a.depth - c.depth);
-    for (const z of sorted) {
-      const s = H * (0.07 + z.depth * 0.09), span = W + s * 2;
-      if (!z.k.idle) { z.pos = (z.pos ?? z.x * span) + z.speed * s * 0.1 * dt * z.dir; } else z.pos = z.pos ?? z.x * span;
-      const x = ((z.pos % span) + span) % span - s, y = groundY + H * 0.015 + z.depth * H * 0.2;
-      const dir = z.k.idle ? (Math.sign(mx - x) || 1) : z.dir;
-      const l = beamLit(x, y - s * 0.5);
-      const c = Math.round(14 + l * 160);
-      g.fillStyle = `rgba(0,0,0,${(0.3 + z.depth * 0.25).toFixed(2)})`;
-      g.beginPath(); g.ellipse(x, y + 1, s * 0.2, s * 0.03, 0, 0, Math.PI * 2); g.fill();
-      shambler(g, x, y, s, t * 2 * z.speed + z.ph, dir, z.k, `rgb(${c},${Math.round(c * 0.9)},${Math.round(c * 0.95)})`, `rgba(${120 + l * 100},${220},${180},${(0.3 + 0.2 * b + l * 0.4).toFixed(2)})`);
-    }
-    g.globalCompositeOperation = "lighter";
-    const beam = g.createLinearGradient(bx, by, ex, ey);
-    beam.addColorStop(0, "rgba(255,245,220,0.16)"); beam.addColorStop(1, "rgba(255,245,220,0)");
-    g.fillStyle = beam;
-    g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + Math.cos(ang - half) * blen, by + Math.sin(ang - half) * blen); g.lineTo(bx + Math.cos(ang + half) * blen, by + Math.sin(ang + half) * blen); g.fill();
-    g.globalAlpha = 0.7;
-    g.drawImage(puff("255,245,220"), bx - H * 0.02, by - H * 0.02, H * 0.04, H * 0.04);
-    // Spores drifting up through the light.
-    for (const s of spores) { g.globalAlpha = 0.25 + 0.2 * Math.sin(t * 1.3 + s.k); g.drawImage(spore, s.x - s.r, s.y - s.r, s.r * 2, s.r * 2); }
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = "source-over";
-    g.drawImage(fore.c, 0, 0, W, H);
-    g.globalAlpha = 0.5;
-    drawStrip(g, fog, -t * 5 + W * 0.3, H * 0.84, W, H * 0.16);
-    g.globalAlpha = 1;
   }
   return { resize, frame };
 }

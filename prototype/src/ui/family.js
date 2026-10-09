@@ -48,9 +48,9 @@ export function childCard(state, c) {
     <div>${c.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t] ? TRAITS[t].desc : "")}>${esc(TRAITS[t] ? TRAITS[t].name : t)}</span>`).join("")}${c.chores ? `<span class="chip"${tip("Food from helping in the fields and the kitchen so far")}>Chores ${c.chores}</span>` : ""}</div>
   </div>`;
 }
-// The People tab: the children at each base (and any with the exiles).
-export function childrenPeople(state) {
-  const kids = childrenOf(state);
+// The People tab: the children at each base (and any with the exiles). keep: the tab's find box (only those it matches).
+export function childrenPeople(state, keep = null) {
+  const kids = childrenOf(state).filter((c) => !keep || keep(c));
   if (!kids.length) return "";
   const groups = new Map();
   for (const c of kids) { const k = c.baseId; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); }

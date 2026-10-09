@@ -36,7 +36,7 @@ import {
 import { teamLoad, burdenRecord, wornLoad } from "./load.js";
 import { expectForage } from "./foraging.js";
 import { expectWood, chopCrew, chopPower, fireLandOk, WOOD } from "./woodcutting.js";
-import { partyVehicle } from "./vehicles.js";
+import { partyFleet } from "./vehicles.js";
 import { supplyLoad, poolLoad } from "./parties.js";
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 
@@ -182,7 +182,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   const arrows0 = p ? Math.max(0, (p.supplies.arrows || 0) + ((p.cargo && p.cargo.supplies.arrows) || 0)) : supplies.arrows || 0;
   const arrows = p ? arrows0 : arrows0 + ((steps || []).some((s) => s.kind === "hunt") ? huntArrowsFor(state, home0, members, arrows0) : 0);
   const huntMix = huntMixOf(home0); // the home base's hunting mix
-  const pv0 = p ? partyVehicle(state, p) : pv;
+  const pv0 = p ? partyFleet(state, p) : pv; // every vehicle of the team's (vehicles.js fleets)
   const pool0 = p ? poolLoad(p) : supplyLoad(supplies);
   const worn = members.reduce((a, s) => a + wornLoad(s), 0);
   let haul = 0, haulKg = 0, woodHaul = 0; // woodHaul: firewood (woodcutting.js), not food

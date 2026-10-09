@@ -6,7 +6,8 @@ import { SUPPLIES } from "../sim/data.js";
 import { partyMembers, partyTile, carried, planPath, partySpeed, tileLabel, teamName } from "../sim/parties.js";
 import { thirstAt } from "../sim/weather.js";
 import { roadTeam, hubSites } from "../sim/hardcore-start.js";
-import { stagingView, needText, ESTABLISH_LABEL, STAGING, storesText, isWorking, storeOf, stagesText, waterText } from "../sim/staging.js";
+import { stagingView, needText, ESTABLISH_LABEL, STAGING, STAGES, storesText, isWorking, storeOf, waterText, establishProblem } from "../sim/staging.js";
+import { RAW } from "../sim/water.js";
 import { MODES, isHardcore } from "../sim/hardcore.js";
 import { landFoodHint, landFoodOptions, FORAGE } from "../sim/foraging.js"; // food from the land when the team runs low
 
@@ -15,7 +16,30 @@ const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const n0 = (v) => Math.floor((v || 0) + 1e-9);
 const r1 = (v) => Math.round((v || 0) * 10) / 10;
 const pct = (f) => `${Math.round((f || 0) * 100)}%`;
-const bar = (f, color) => `<div class="bar" style="height:6px;background:rgba(255,255,255,0.08);border-radius:3px;margin-top:0.3rem"><div style="height:100%;width:${Math.round(Math.max(0, Math.min(1, f)) * 100)}%;background:${color};border-radius:3px"></div></div>`;
+const NEED_KEYS = ["scrap", "parts", "food", "water"]; // sim/staging.js stagingRows
+const clamp01 = (f) => Math.max(0, Math.min(1, f || 0));
+// A construction bar with its % written on it. cap: the lighter part, as far as the materials in the stores allow.
+export function buildBar(f, { cap = null, done = false, text = "" } = {}) {
+  const w = (x) => `${Math.round(clamp01(x) * 100)}%`;
+  return `<div class="buildbar${done ? " done" : ""}">${cap != null && cap > f ? `<i class="cap" style="width:${w(cap)}"></i>` : ""}<i style="width:${w(f)}"></i><span>${esc(text || `${pct(f)} built`)}</span></div>`;
+}
+// Camp → Shelter → Base as steps: the ones behind you ticked, the one you are at lit.
+export function stageSteps(stage) {
+  return `<span class="stagesteps">${STAGES.map((s, i) => `<span class="${i < stage ? "past" : i === stage ? "now" : ""}">${i < stage ? "✓ " : ""}${esc(s)}</span>`).join("<b>→</b>")}</span>`;
+}
+// The camp's needs against its stores, and (with a team) what that team carries toward each.
+function suppliesTable(state, v, p = null) {
+  const rows = v.camp ? v.rows : NEED_KEYS.filter((k) => v.needs[k]).map((k) => ({ key: k, need: v.needs[k], have: 0, short: v.needs[k], ok: false }));
+  const carry = (k) => (p ? n0(k === "food" ? carried(p, "food") + carried(p, "preserved") : k === "water" ? carried(p, "water") + carried(p, RAW) : carried(p, k)) : 0);
+  const head = `<div class="muted">Supply</div><div class="muted">${v.camp ? "At the camp" : "Needed"}</div>${p ? `<div class="muted"${tip("What this team carries now. Food and water: it keeps two days of each for the road and unloads the rest.")}>Team has</div>` : ""}`;
+  const body = rows.map((r) => {
+    const c = carry(r.key), fills = !r.ok && c >= r.short;
+    return `<div>${v.camp ? (r.ok ? "✓ " : "✗ ") : ""}${esc(SUPPLIES[r.key].name)}</div>
+      <div class="${r.ok ? "good" : "warn"}">${v.camp ? `${r.have} / ${r.need}${r.ok ? "" : ` <span class="muted">(${r.short} more)</span>`}` : r.need}</div>
+      ${p ? `<div class="${r.ok ? "muted" : fills ? "good" : c ? "" : "muted"}">${c}</div>` : ""}`;
+  }).join("");
+  return `<div class="suptable${p ? " three" : ""}">${head}${body}</div>`;
+}
 
 export const modeLabel = (state) => (MODES[isHardcore(state) ? "hardcore" : "normal"] || MODES.normal).label;
 
@@ -54,28 +78,70 @@ export function roadStock(state) {
     cell("food", `About ${r1(d.food)} days for the team.`) + cell("water", `About ${r1(d.water)} days for the team at today's thirst.`) + cell("scrap") + cell("parts") + cell("ammo") + cell("meds") + campCell;
 }
 
+// Where the camp stands in one line: what is happening and what it waits on.
+function campState(v) {
+  if (v.done && v.miss.length) return { cls: "warn", text: `The building is done: bring ${missText(v.miss)}, and the shelter stands.` };
+  if (v.done) return { cls: "good", text: "Done: it becomes your shelter as soon as a team is there." };
+  if (v.workers && v.canWork) return { cls: "good", text: `${v.workers} at work · about ${r1(v.left)} days left${v.miss.length ? ` (the materials in hand last to ${pct(v.capPct)})` : ""}` };
+  if (!v.canWork) return { cls: "warn", text: `The work waits on materials: bring ${missText(v.miss.filter((r) => STAGING.USED.includes(r.key))) || missText(v.miss)}.` };
+  return { cls: "warn", text: `Nobody at work: ${r1(v.leftFor3)} days of work left for three.` };
+}
+const BUILT_TIP = `Work: daylight hours (${STAGING.DAY[0]}:00–${STAGING.DAY[1]}:00), 1 an hour a worker (+3% a Mechanics point, less when hurt or sick). It goes on as far as the scrap and parts in the stores allow (the lighter part of the bar); the shelter stands once the work is done and the stores hold everything.`;
+// The camp's progress: the stages, the bar, and what it is waiting on.
+function campProgress(v) {
+  const now = campState(v);
+  return `<div style="margin-top:0.35rem">${stageSteps(0)}</div>
+    <div${tip(BUILT_TIP)}>${buildBar(v.pct, { cap: v.capPct, done: v.done, text: `Camp ${pct(v.pct)} built` })}</div>
+    <div class="${now.cls}">${esc(now.text)}</div>`;
+}
+
 // The camp's card body: stores against needs, the work, workers, dangers.
 function campBody(state, v) {
   const c = v.camp;
-  const rows = v.rows.map((r) => `<div>${esc(SUPPLIES[r.key].name)}</div><div class="${r.ok ? "good" : ""}">${r.have} / ${r.need}${r.ok ? " ✓" : ` <span class="muted">(${r.short} more)</span>`}</div>`).join("");
-  const left = v.workers ? `${v.workers} at work · about ${r1(v.left)} days left` : v.done ? "the building is done" : `nobody at work (${r1(v.leftFor3)} days for three)`;
-  const capped = !v.done && v.capPct < 1 ? ` · materials for ${pct(v.capPct)}` : "";
-  return `<div class="kv small" style="margin-top:0.4rem">
+  return `${campProgress(v)}${suppliesTable(state, v)}<div class="kv small" style="margin-top:0.4rem">
       <div${tip("Where the camp stands. Click to center the map on it.")}>Camp</div><div><a class="link" data-action="center" data-tile="${c.tile}">${esc(tileLabel(state, c.tile))}</a> · day ${c.started}</div>
-      ${rows}
-      <div${tip(`Work: daylight hours (${STAGING.DAY[0]}:00–${STAGING.DAY[1]}:00), 1 an hour a worker (+3% a Mechanics point, less when hurt or sick). It goes on as far as the scrap and parts in the stores allow; the hub stands once the work is done and the stores hold everything.`)}>Built</div><div>${pct(v.pct)}${capped}</div>
-      <div>Work</div><div class="${v.workers ? "good" : "muted"}">${esc(left)}</div>
       ${v.away >= 1 && !v.present ? `<div${tip(`Nobody at the camp. After ${STAGING.ABANDON} days alone it may be looted: part of the stores and of the barricade lost.`)}>Alone</div><div class="${v.away >= STAGING.ABANDON ? "danger" : "warn"}">${Math.floor(v.away)} day${Math.floor(v.away) === 1 ? "" : "s"}</div>` : ""}
       ${v.threats.length ? `<div${tip("People working on one spot draw the dead and raiders (Heat). Hordes nearby may walk in.")}>Threats</div><div class="danger">${esc(v.threats.join("; "))}</div>` : ""}
-      ${stageRows(v.tier)}
+      ${v.tier && v.tier.next ? `<div>Next: ${esc(v.tier.next)}</div><div class="muted">${esc(v.tier.needs)}</div>` : ""}
       <div${tip("No spring at a camp: beside a river or lake the people there drink from it and haul water into the stores; anywhere else every drop is carried in (Fetch water at a shore, or found searching).")}>Water</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}${v.riverside ? " · they drink from it" : " · carried in"}</div>
       ${dangerRows(v.danger, v.fire, `data-camp="1"`)}
-    </div>${bar(v.pct, v.done ? "#6fbf73" : "#d9a520")}`;
+    </div>`;
 }
-// The three stages and what the next one takes (sim/staging.js tierInfo).
+// The three stages and what the next one takes (sim/staging.js tierInfo), with a bar while the step up is building.
 export function stageRows(t) {
   if (!t) return "";
-  return `<div${tip("Your home grows in three stages: a staging camp, a shelter you can live at (tier 0), then a base (the hub). Each step takes materials and work.")}>Stage</div><div>${esc(stagesText(t.stage))}</div>${t.next ? `<div>Next: ${esc(t.next)}</div><div class="muted">${esc(t.needs)}</div>` : ""}`;
+  const q = t.queued, f = q && q.hours ? q.progress / q.hours : 0;
+  return `<div${tip("Your home grows in three stages: a staging camp, a shelter you can live at (tier 0), then a base (the hub). Each step takes materials and work.")}>Stage</div><div>${stageSteps(t.stage)}</div>${t.next ? `<div>Next: ${esc(t.next)}</div><div class="muted">${q ? buildBar(f, { text: `${t.next} ${pct(f)} built` }) : esc(t.needs)}</div>` : ""}`;
+}
+
+// The team panel's card while you have no base (ui/expedition.js): is there a camp yet, how far it is built, what it
+// still needs against what this team carries, and what the team should do about it.
+export function campStatusCard(state, p) {
+  const v = view(state);
+  if (!v) return "";
+  const at = partyTile(p);
+  if (!v.camp) {
+    const heading = p.mission === "establish" && (p.phase === "out" || p.phase === "back") && p.path && p.path.length ? p.path[p.path.length - 1] : null;
+    const why = heading == null ? establishProblem(state, at) : null;
+    const line = heading != null ? `On the way to pitch the camp ${esc(tileLabel(state, heading))}.`
+      : why ? `Not here: ${esc(why)}` : `Give the order <b>${ESTABLISH_LABEL}</b> (Orders, below) to pitch the camp right here.`;
+    return `<div class="card small attn campcard">
+      <div class="spread"><b>No base yet</b>${stageSteps(-1)}</div>
+      <div style="margin-top:0.3rem">${line} It takes these brought in, then about ${work3(v)} days of work for three:</div>
+      ${suppliesTable(state, v, p)}
+    </div>`;
+  }
+  const c = v.camp, here = c.tile === at;
+  const working = isWorking(state, p);
+  const todo = here
+    ? working ? "This team is working on it." : v.miss.length ? `The order <b>Unload and work on the camp</b> puts what this team carries into the stores.` : "Give the order <b>Work on the camp</b> to keep it going."
+    : `It stands ${esc(tileLabel(state, c.tile))}: bring what it still needs and give the order there.`;
+  return `<div class="card small attn campcard">
+    <div class="spread"><b>Staging camp${here ? " (here)" : ""}</b>${here ? "" : `<button class="mini" data-action="center" data-tile="${c.tile}"${tip("Center the map on the staging camp")}>Locate camp</button>`}</div>
+    ${campProgress(v)}
+    ${suppliesTable(state, v, p)}
+    <div class="muted" style="margin-top:0.3rem">Not a base yet: it becomes your shelter once the work is done and every supply is in. ${todo}</div>
+  </div>`;
 }
 // The camp's danger: Heat an hour by cause (the fire, the people, vehicles, shooting lately, the work), where it
 // settles, and the fire toggle (sim/fieldheat.js CAMP_HEAT). attrs: what the toggle acts on.

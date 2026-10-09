@@ -45,6 +45,13 @@ import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, iron
 import { BG_ACTIONS, BG_CHANGE, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
+import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
+import { toggleFleetIds, leadId } from "./ui/fleetpick.js"; // the planners' vehicle picker (up to four)
+import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormEsc, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
+import { CARRY_ACTIONS, CARRY_CHANGE, carryHtml, askQty, carryKey } from "./ui/carry.js"; // supplies in pockets, packs and arms; the ground; how much to collect
+import { renameBase } from "./sim/basenames.js";
+import { BN_ACTIONS, BN_INPUT, bnKey, nameModalUp } from "./ui/basename.js"; // naming a base you found, renaming any base
+import { stackKey, stackInput, stackWheel, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the wheel, the drop popover
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
@@ -94,7 +101,9 @@ import { toManual } from "./sim/work.js";
 import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
-import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initOverlays, syncOverlays, resetOverlays } from "./ui/overlaydrag.js"; // the boxes over the map move (drag a header, Alt+arrows)
+import { keepFocusBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
 import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
 import { CONTROLS_ACTIONS, controlsKey } from "./ui/controls.js";
 import { initPalette, openPalette, paletteIndex } from "./ui/cmdpalette.js"; // the search box (Ctrl+K or /)
@@ -106,7 +115,11 @@ import { initAudio, audioFrame } from "./ui/audio.js"; // sound: WebAudio, made 
 // Display options and their keys (M, `, Shift+P), the minimap, and the one confirmation box (ui/display.js, ui/minimap.js, ui/confirm.js).
 import { initDisplay, DISPLAY_ACTIONS, DISPLAY_CHANGE, displayKey } from "./ui/display.js";
 import { initMinimap, minimapFrame } from "./ui/minimap.js";
+import { initEdgeFx, edgeFrame } from "./ui/edgefx.js"; // red pulses at the screen edge for an attack off screen (map and battle)
 import { initConfirm, askHtml, askKey, ASK_ACTIONS, ask } from "./ui/confirm.js";
+import { selectedTeam } from "./ui/teamsel.js"; // the selected team (its panel open, or picked on the map)
+import { teamTileMenu, teamCtxHtml, runTeamAction } from "./ui/teamctx.js"; // its right-click menu: actions for the tile
+import { clickPick, syncPick, MAPSEL_ACTIONS } from "./ui/mapselect.js"; // selecting teams, parties and bands on the map like tiles
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 // MAX_SPEED (ui/pacing.js): the fastest normal speed (5×); anything above is a dev fast-forward
@@ -133,6 +146,7 @@ const freshUi = () => ({
   codex: null, paletteRecent: [], palFocus: null, // ui/codex.js window; ui/cmdpalette.js recent picks and a build button to light up
   ledger: null, // ui/ledger.js: the Ledger window is open
   ask: null, // ui/confirm.js: the question up before an order that cannot be undone
+  mapSel: null, selParty: null, // ui/mapselect.js: a party, band or outsiders selected on the map; selParty: your selected team's id
 });
 const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: START_PEOPLE.DEF, ironman: false, freeEdit: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: Hardcore's starting team, 1–4
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
@@ -189,6 +203,8 @@ initPanels({ layout, relayout: (fn) => relayout(fn), refresh: () => { dirtyNow =
 initRenderer(canvas);
 initCombatUI($("combatmap"));
 initMinimap($("mapwrap"), canvas, options); // ui/minimap.js: the map's corner
+initEdgeFx($("mapwrap"), $("cbmapwrap"), () => refresh(false)); // ui/edgefx.js: the screen-edge warnings
+initOverlays({ refresh: () => { dirtyNow = true; } }); // ui/overlaydrag.js: the boxes over the map keep where the player put them
 // The map follows its box whatever changes it (a panel folded or dragged wider, the UI size).
 if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(() => {
@@ -208,7 +224,7 @@ function blocked() {
   // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
   const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex || !!ui.carry || nameModalUp(state, ui);
 }
 
 // An exception in a frame (a sim tick, the autopilot, drawing) stops the clock and opens the error screen (ui/crash.js),
@@ -263,6 +279,7 @@ function step(now) {
     drawCombat(state, now);
   } else if (!titleCovers(ui)) render(state); // the title screen hides the map (unless the map is its background)
   minimapFrame(state, ui, now); // ui/minimap.js (hidden over a battle, the title and the timelapse)
+  edgeFrame(state, ui, now, !ui.timelapse && !state.combat && !titleCovers(ui)); // ui/edgefx.js: attacks off screen
   if (ui.title) titleFrame(state, ui, now);
   audioFrame(state, ui, now); // battle and map cues, the ambience (ui/audio.js)
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
@@ -299,8 +316,10 @@ function setHTML(id, html, user) {
     heldBack = true;
     return false;
   }
+  const keep = keepFocusBefore(el); // a text box being typed in keeps its focus and caret (ui/panelfold.js)
   el.innerHTML = html;
   shown.set(id, html);
+  afterPanelWrite(el, keep); // and the boxes that scroll fade at the edges with more to see
   return true;
 }
 function setPanel(id, html, user) {
@@ -394,7 +413,7 @@ function autoShow() {
 // The alerts stack, or its folded button (ui/layout.js alertsPill).
 function alertsHTML(html) {
   if (layout.alerts) return alertsPill(ui.alertList, (/<div class="al-flash">[\s\S]*?<\/div>/.exec(html) || [""])[0]);
-  return html.includes('class="al ') ? alertsFoldButton() + html : html;
+  return html.includes('class="al ') ? alertsFoldButton((ui.alertList || []).length, (ui.alertList || []).some((a) => a && a.tone === "danger")) + html : html;
 }
 
 function refresh(user = true) {
@@ -402,6 +421,7 @@ function refresh(user = true) {
   dirtyNow = false;
   lastRefresh = last;
   tidyUi();
+  syncPick(state, ui); // ui/mapselect.js: a selected party followed as it moves, the gold ring on the map
   noteNames(state);
   codexScan(state, ui); // ui/codex.js: open the entries for what the player now sees (before the alerts: it may flash)
   guideCheck(state, ui); // the first-week guide ticks off what is done (ui/guide.js), before the alerts show its toast
@@ -422,6 +442,7 @@ function refresh(user = true) {
   }
   if (!layout.log) setHTML("log", renderLogPanel(state, ui), user); // filters and links (ui/diary.js)
   else setLogLine(state.log && state.log[0] ? String(state.log[0].text || "") : "");
+  if (layout.left) setRailBadges({ teams: ui.started ? state.parties.filter((p) => p.owner === "player" && p.phase === "waiting").length : 0, tab: ui.tab }); // the folded left panel's rail
   refreshModal(user);
   setHTML("legend", renderLegend(view, ui, ui.started ? state : null), user);
   if (ui.started) devSample(state);
@@ -432,7 +453,8 @@ function refresh(user = true) {
   renderCombat(user);
   setPanel("banner", bannerHTML(), user);
   syncWatchlist(state, ui, { act: actions, refresh }); // places the Watching panel; the map-note editor
-  setPanel("ask", askHtml(ui), user); // ui/confirm.js
+  syncOverlays(); // ui/overlaydrag.js: moved boxes in their place, every box kept on the map
+  setPanel("ask", askHtml(ui) + carryHtml(state, ui), user); // ui/confirm.js; ui/carry.js: how much to collect, picking up from the ground
   syncTitle(state, ui); // ui/title.js
   $("banner").classList.toggle("dev", !!ui.dev);
   const fps = $("fps");
@@ -468,6 +490,7 @@ function refreshModal(user) {
       const elog = $("elog");
       if (elog) elog.scrollTop = elog.scrollHeight;
       modal.classList.remove("hidden"); // shown before the charts measure themselves
+      if (!same) { const af = modal.querySelector("input[autofocus]"); if (af) { af.focus({ preventScroll: true }); af.select(); } } // a new window with a box to type in (ui/basename.js): ready to type
       drawCharts(modal); // the Ledger's and the run summary's charts (ui/ledger.js)
     }
   }
@@ -653,12 +676,18 @@ const actions = {
   // they first were).
   "panel-toggle": (d) => foldPanel(d.p, d.v === undefined ? undefined : d.v === "1"),
   "panel-close": (d) => shutPanel(d.p, d.v === undefined ? undefined : d.v === "1"),
+  // The folded left panel's rail (ui/windows.js): a tab's button opens the panel on that tab.
+  "panel-tab": (d) => { ui.tab = d.tab; foldPanel("left", false); },
   "panel-all": () => { relayout(() => { toggleAll(layout); applyLayout(layout); }); saveLayout(layout); },
   "win-reset": () => {
     resetWindows();
     relayout(() => { resetLayout(layout); applyLayout(layout); });
     saveLayout(layout);
     if (ui.settings) { ui.settings.msg = "Windows and panels are back to their usual size and place."; ui.settings.err = false; }
+  },
+  "ov-reset": () => { // ui/overlaydrag.js: the boxes over the map back where they start
+    resetOverlays();
+    if (ui.settings) { ui.settings.msg = "The boxes over the map are back where they start."; ui.settings.err = false; }
   },
   // Base management.
   openbase: (d) => {
@@ -790,7 +819,9 @@ const actions = {
   "xp-order": (d) => {
     const p = partyById(d.id);
     if (!p || !(contactable(p) || commandable(state, p))) return; // the radio rule is checked for every team order below
+    if (askQty(state, ui, d)) return; // ui/carry.js: how much water, firewood, food or game (the box gives d.qty)
     const o = { type: d.type };
+    if (d.qty != null && d.qty !== "") o.qty = Number(d.qty);
     if (d.mission) o.mission = d.mission;
     if (d.type === "camp") o.hours = d.hours ? Number(d.hours) : null;
     if (d.sid) o.survivorId = Number(d.sid);
@@ -897,7 +928,14 @@ const actions = {
   "pl-tabs": () => { ui.planner.tabs = !ui.planner.tabs; ui.plannerError = ""; }, // a tube of purification tablets from the armory
   "pl-lights": () => { ui.planner.lights = ui.planner.lights === false; ui.plannerError = ""; }, // a light each from the armory (sim/lights.js), on by default
   "pl-crew": (d) => { const s = ui.planner.crew, id = Number(d.id); s.has(id) ? s.delete(id) : s.add(id); autofill(ui.planner); ui.plannerError = ""; },
-  "pl-vehicle": (d) => { ui.planner.vehicleId = d.v ? Number(d.v) : null; autofill(ui.planner); ui.plannerError = ""; },
+  "pl-vehicle": (d) => { // ui/fleetpick.js: up to four vehicles, click to take or leave each; vehicleId the lead
+    const pl = ui.planner;
+    const r = toggleFleetIds(state, pl.vehicleIds && pl.vehicleIds.length ? pl.vehicleIds : pl.vehicleId ? [pl.vehicleId] : [], d.v ? Number(d.v) : null);
+    pl.vehicleIds = r.ids;
+    pl.vehicleId = leadId(state, r.ids);
+    autofill(pl);
+    ui.plannerError = r.msg;
+  },
   "pl-stance": (d) => { ui.planner.stance = d.v; autofill(ui.planner); },
   "pl-autofill": () => { autofill(ui.planner); ui.plannerError = ""; },
   "pl-cancel": () => { ui.planner = null; view.preview = null; },
@@ -917,7 +955,7 @@ const actions = {
     const c = plannerLoad(state, pl);
     if (c.over) { ui.plannerError = c.why; return; }
     if (pl.moveOut) {
-      const res = moveTeamOut(state, { baseId: pl.fromBaseId, memberIds: [...pl.crew], dest: pl.dest, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, tabs: !!pl.tabs, lights: pl.lights !== false });
+      const res = moveTeamOut(state, { baseId: pl.fromBaseId, memberIds: [...pl.crew], dest: pl.dest, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, tabs: !!pl.tabs, lights: pl.lights !== false });
       if (res.error) { ui.plannerError = res.error; return; }
       ui.planner = null;
       view.preview = null;
@@ -932,7 +970,7 @@ const actions = {
       }
       return;
     }
-    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, plan: Parties.SETTLE_MISSIONS.includes(pl.mission) ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
+    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, plan: Parties.SETTLE_MISSIONS.includes(pl.mission) ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
     if (res.error) { ui.plannerError = res.error; return; }
     rememberLaunch(state, res.party, pl); // sim/trips.js: for Repeat trip when it gets home, and its retreat policy
     ui.planner = null;
@@ -1038,7 +1076,11 @@ for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state
 // Custom backgrounds window (ui/backgrounds.js); its Done is bg-close in the table above.
 for (const [k, fn] of Object.entries(BG_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Inventory and loot screens (ui/inventory.js).
+for (const [k, fn] of Object.entries(BN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/basename.js
 for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ev: Shift+click on a supply stack (raid search window)
+for (const [k, fn] of Object.entries(TEAMINV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ui/teaminv.js
+for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => { fn(state, ui, d, ev); hideCtx(); }; // ui/teamform.js
+for (const [k, fn] of Object.entries(CARRY_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev, actions); // ui/carry.js
 // The gun builder (ui/gunbuilder.js): open, pick a slot, fit, remove; the Ammo list.
 for (const [k, fn] of Object.entries(GB_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Farming tab and illness (ui/farming.js, ui/health.js).
@@ -1072,6 +1114,7 @@ for (const [k, fn] of Object.entries(CRAWL_ACTIONS)) actions[k] = (d) => fn(stat
 // Needs (ui/needs.js): a team's rations and who eats first, a treat used by hand.
 for (const [k, fn] of Object.entries(NEEDS_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 for (const [k, fn] of Object.entries(PACE_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the card tray, Options → Pause for… (ui/pacing.js)
+for (const [k, fn] of Object.entries(MAPSEL_ACTIONS)) actions[k] = (d) => { fn(state, ui, d); mapClicked = true; }; // ui/mapselect.js: the "On this tile" row
 actions["tray-rules"] = () => openSettings(ui, "options");
 for (const [k, fn] of Object.entries(LISTEN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // xp-listen, bl-listen
 for (const [k, fn] of Object.entries(INTEL_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // hide-silent, intel-decoy
@@ -1143,7 +1186,8 @@ document.addEventListener("drop", (ev) => {
   ev.preventDefault();
   releaseHold();
   const from = ev.dataTransfer.getData("text/plain");
-  if (from) { invDrop(state, ui, from, el.dataset.drop, ev.shiftKey, ev.ctrlKey || ev.metaKey); refresh(); } // Shift: half a supply stack, Ctrl: one (raid search window)
+  if (from && ui.inv.form) { teamFormDrop(state, ui, from, el.dataset.drop); refresh(); return; } // ui/teamform.js: between a team and the armory
+  if (from) { invDrop(state, ui, from, el.dataset.drop, ev.shiftKey, ev.ctrlKey || ev.metaKey, dropPoint(ev)); refresh(); } // a supply stack: a popover asks how many (Shift: half, Ctrl: one)
 });
 
 const changeActions = {
@@ -1280,11 +1324,10 @@ const changeActions = {
   // Any base can be renamed from its screen (the name shows on the map, in the log and in the timelapse).
   baserename: (el) => {
     const b = baseOf(el.dataset);
-    const name = String(el.value ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
-    if (!b || !name || name === b.name) return;
-    if (state.bases.some((x) => x !== b && x.name.toLowerCase() === name.toLowerCase())) { ui.baseMsg = `Another base is already called ${name}.`; return; }
-    ui.baseMsg = `${b.name} is now called ${name}.`;
-    b.name = name;
+    if (!b) return;
+    const before = b.name, why = renameBase(state, b, el.value); // sim/basenames.js: cleaned, no two bases alike
+    if (why) { ui.baseMsg = why; el.value = b.name; return; }
+    if (b.name !== before) ui.baseMsg = `${before} is now called ${b.name}.`;
   },
 };
 for (const [k, fn] of Object.entries({ ...FARM_CHANGE, ...HEALTH_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
@@ -1302,6 +1345,9 @@ for (const [k, fn] of Object.entries(DEFENCE_CHANGE)) changeActions[k] = (el) =>
 for (const [k, fn] of Object.entries(INTEL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // intel-discipline
 for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // prisoners-tab: the rations and work selects (ui/prisoners.js)
 for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(TEAMINV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teaminv.js: how many of a picked supply
+for (const [k, fn] of Object.entries(TEAMFORM_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teamform.js: sort, supply amounts, days
+for (const [k, fn] of Object.entries(CARRY_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/carry.js
 for (const [k, fn] of Object.entries(GB_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the gun builder's Ammo list // how many of a supply stack to move (ui/inventory.js)
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
@@ -1408,6 +1454,10 @@ initTitle({ desktop: settingsApi.desktop, quit: settingsApi.quit });
 for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Order templates and Repeat trip (ui/trips.js), the undo button and the build queue's ▲ ▼ (ui/undo.js); then every
 // planner, build-queue and Work tab action is wrapped so its edits can be undone (installUndo, last).
+// The People tab's view switch and find box (ui/panelfold.js; the box also filters as you type: the input listener).
+Object.assign(actions, { "ppl-view": (d) => PANEL_ACTIONS["ppl-view"](d), "ppl-clear": (d) => PANEL_ACTIONS["ppl-clear"](d) });
+Object.assign(changeActions, { "ppl-q": (el) => PANEL_INPUT["ppl-q"](el) });
+for (const [k, fn] of Object.entries(BN_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the naming window's box: the draft as you type
 const tripApi = { plan: (d) => actions.plan(d), autofill: (pl) => autofill(pl) };
 const tripAct = (fn) => (d) => fn(state, ui, d, tripApi), tripChange = (fn) => (el) => fn(state, ui, el);
 Object.assign(actions, {
@@ -1465,6 +1515,8 @@ document.addEventListener("mouseover", (ev) => {
   const el = ev.target.closest && ev.target.closest(".wcell");
   ui.workHover = el ? { ...el.dataset } : null;
 });
+document.addEventListener("input", (ev) => stackInput(ev.target)); // the stack mover's slider: the panel follows as it moves
+document.addEventListener("wheel", (ev) => { const w = stackWheel(state, ui, ev); if (w) ev.preventDefault(); if (w > 1) refresh(); }, { passive: false }); // the wheel over a stack, the slider or the box: how many (else it scrolls)
 document.addEventListener("change", (ev) => {
   const el = ev.target.closest("[data-action]");
   if (!el) return;
@@ -1473,6 +1525,14 @@ document.addEventListener("change", (ev) => {
   fn(el);
   if (el.tagName === "SELECT" || el.type === "checkbox") { releaseHold(); dropFocus(); }
   refresh(); // a panel with the mouse button down on it waits (so the click on a button after typing lands)
+});
+// Typing that filters as you go (the People tab's find box, ui/panelfold.js): every key press redraws.
+document.addEventListener("input", (ev) => {
+  const el = ev.target.closest && ev.target.closest("[data-action]");
+  const fn = el && PANEL_INPUT[el.dataset.action];
+  if (!fn) return;
+  fn(el);
+  refresh();
 });
 
 // ---------- hover descriptions ----------
@@ -1553,10 +1613,9 @@ window.addEventListener("mouseup", (e) => {
     const p = ui.moveParty != null && id >= 0 ? partyById(ui.moveParty) : null;
     if (p) act(() => pickMove(p, id));
     else if (id >= 0 && ui.moveParty == null) {
-      // Clicking a team you are in touch with opens its panel; any other tile goes back to the tile view.
-      const team = state.parties.find((q) => contactable(q) && partyTile(q) === id);
-      ui.expedition = team ? team.id : null;
-      ui.xpMsg = "";
+      // A team, another group's party, a band or outsiders on the tile are selected first (a team opens its panel),
+      // the same tile again goes on to the next and then the tile; Shift+click picks the tile (ui/mapselect.js).
+      clickPick(state, ui, id, e.shiftKey);
       mapClicked = true; // its info is in the right panel: a folded one opens (autoShow)
     }
     ui.selected = id;
@@ -1590,6 +1649,10 @@ canvas.addEventListener("wheel", (e) => {
   const r = canvas.getBoundingClientRect();
   zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.12 : 1 / 1.12);
 }, { passive: false });
+// Right-click on the map: the tile's menu. With a team selected (ui/teamsel.js) it leads with that team's actions for
+// the tile (ui/teamctx.js; Shift+right-click adds them to its queue), the other teams and the hub's missions folded
+// below; with none, the menu lists every team you are in touch with and the hub's missions.
+let ctxAt = null; // { tile, x, y }: where the menu was opened (its toggles redraw it in place)
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
   const r = canvas.getBoundingClientRect();
@@ -1597,6 +1660,13 @@ canvas.addEventListener("contextmenu", (e) => {
   if (id < 0 || ui.timelapse || !ui.started) return;
   ui.selected = id;
   view.selected = id;
+  ctxAt = { tile: id, x: e.clientX - r.left, y: e.clientY - r.top };
+  ui.tcAppend = !!e.shiftKey;
+  showCtx();
+});
+function showCtx() {
+  if (!ctxAt) return;
+  const id = ctxAt.tile;
   const t = state.tiles[id];
   const acts = tileActions(state, id);
   const waiting = state.parties.filter((p) => contactable(p) && commandable(state, p)); // radio rule (plans.js)
@@ -1604,15 +1674,61 @@ canvas.addEventListener("contextmenu", (e) => {
   const none = own ? "Your base" : t.terrain === "water" && !t.bridge ? "Open water: teams cross it by boat from a shore" : "Nothing to do here";
   const menu = $("ctxmenu");
   const loc = mapLoc(state, id); // a hidden site nobody has found (sim/discovery.js) is just a tile
-  menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` +
-    waiting.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
-    (t.terrain === "water" && !t.bridge ? "" : waiting.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
-    ctxBoats(waiting, id) + ctxLand(waiting, id) + ctxClaim(waiting, id) + ctxWatchlist(state, id) + // 📌 watch, map notes (ui/watchlist.js)
-    (acts.length ? acts.map(([m, l, pre]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}>${l} (from hub)</button>`).join("") : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
-  menu.style.left = `${e.clientX - r.left}px`;
-  menu.style.top = `${e.clientY - r.top}px`;
-  menu.classList.remove("hidden");
+  const hubHtml = acts.map(([m, l, pre]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}>${l} (from hub)</button>`).join("");
+  const sel = selectedTeam(state, ui);
+  if (!sel) {
+    menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` + ctxTeams(waiting, id) +
+      ctxWatchlist(state, id) + formTeamCtx(state, id) + // 📌 watch, map notes (ui/watchlist.js); Form a team at your base (ui/teamform.js)
+      (acts.length ? hubHtml : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
+  } else {
+    const rest = ctxTeams(waiting.filter((p) => p !== sel), id) + hubHtml;
+    menu.innerHTML = teamCtxHtml(state, ui, teamTileMenu(state, ui, sel, id, { append: !!ui.tcAppend })) +
+      (rest ? `<button class="tcfold" data-action="tc-more" data-tip="Other teams you are in touch with, and teams sent from the hub">${ui.ctxMore ? "▾" : "▸"} Other teams and the hub</button>${ui.ctxMore ? rest : ""}` : "") +
+      ctxWatchlist(state, id) + formTeamCtx(state, id);
+  }
+  placeCtx(menu, ctxAt.x, ctxAt.y);
   dirtyNow = true;
+}
+// Every team in touch: move here, survey, boats, food from the land, claims (the menu with no team selected, and the
+// folded part of a selected team's menu).
+function ctxTeams(teams, id) {
+  const t = state.tiles[id];
+  return teams.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
+    (t.terrain === "water" && !t.bridge ? "" : teams.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
+    ctxBoats(teams, id) + ctxLand(teams, id) + ctxClaim(teams, id);
+}
+// Keep the menu on the map: flipped left or up at the edges, never taller than the map (it scrolls); sizes follow the
+// interface scale (rem).
+function placeCtx(menu, x, y) {
+  const wrap = menu.parentElement;
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  menu.style.maxHeight = `${Math.max(120, H - 8)}px`;
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.classList.remove("hidden");
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  const left = x + w > W - 4 ? Math.max(4, x - w) : x;
+  const top = y + h > H - 4 ? (y - h >= 4 ? y - h : Math.max(4, H - 4 - h)) : y;
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+// A press anywhere outside the menu closes it (the map's own mousedown closes it too).
+document.addEventListener("mousedown", (e) => {
+  const menu = $("ctxmenu");
+  if (!menu.classList.contains("hidden") && !menu.contains(/** @type {Node} */ (e.target))) hideCtx();
+}, true);
+Object.assign(actions, {
+  // A selected team's item (ui/teamctx.js): replace its plan or queue; the confirmation box first when orders under way would go.
+  "tc-do": (d) => {
+    hideCtx();
+    const msg = runTeamAction(state, ui, d, actions);
+    if (msg === null) return; // asked first (ui/confirm.js): Yes runs it again
+    if (msg) log(state, msg, "info");
+    if (ui.expedition === Number(d.id)) ui.xpMsg = msg || "";
+    endMoveMode();
+  },
+  "tc-mode": () => { ui.tcAppend = !ui.tcAppend; showCtx(); }, // replace ⇄ add to the queue
+  "tc-more": () => { ui.ctxMore = !ui.ctxMore; showCtx(); },   // the other teams and the hub, folded
 });
 // Right-click on the land straight across one water tile from a team you are in touch with: build a boat.
 function ctxBoats(teams, id) {
@@ -1711,11 +1827,11 @@ actions.ctxmove = (d) => {
 };
 // Radio rule (sim/plans.js commandable): out of radio contact a team follows its plan; orders only through the
 // cards it raises (answering one opens contact for that hour) or once it is back in coverage.
-for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim"]) {
+for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim", "tc-do"]) {
   const fn = actions[k];
   actions[k] = (d) => {
     const p = partyById(d.id);
-    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
+    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim" || k === "tc-do") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
     return fn(d);
   };
 }
@@ -1740,15 +1856,13 @@ const cbCanvas = $("combatmap");
 const cbPos = (e) => { const r = cbCanvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 cbCanvas.addEventListener("mousemove", (e) => { if (state.combat) combatMouse(state, ...cbPos(e)); });
 cbCanvas.addEventListener("mouseleave", () => { if (state.combat) combatLeave(); });
-// The isometric view (ui/isoview.js): a press that moves pans the map, one that does not is the click (on release);
-// the top-down view clicks on the press, as it always did. Right click cancels the current action.
+// The isometric view (ui/isoview.js), the only battle view: a press that moves pans the map, one that does not is the
+// click (on release). Right click cancels the current action (on the release: a drag does not).
 const cancelAction = () => { if (state.combat) { cui.mode = "move"; cui.msg = ""; refresh(); } };
 cbCanvas.addEventListener("mousedown", (e) => {
   if (!state.combat) return;
   if (e.button === 1) e.preventDefault();
-  if (!combatPress(state, ...cbPos(e), e.button)) return;
-  combatClick(state, ...cbPos(e));
-  refresh();
+  combatPress(state, ...cbPos(e), e.button);
 });
 window.addEventListener("mouseup", (e) => {
   if (!state.combat) return;
@@ -1757,10 +1871,7 @@ window.addEventListener("mouseup", (e) => {
   else if (what === "cancel") cancelAction();
 });
 cbCanvas.addEventListener("wheel", (e) => { if (state.combat && combatWheel(state, ...cbPos(e), e.deltaY)) e.preventDefault(); }, { passive: false });
-cbCanvas.addEventListener("contextmenu", (e) => {
-  e.preventDefault();
-  if (state.combat && cui.view === "top") cancelAction(); // the isometric view cancels on the release (a drag does not)
-});
+cbCanvas.addEventListener("contextmenu", (e) => e.preventDefault()); // right click cancels on the release (combatRelease)
 
 // ---------- keyboard ----------
 // Esc closes one layer per press, the topmost first. Returns false when there was nothing of ours to close.
@@ -1778,6 +1889,7 @@ function closeTopLayer() {
     else ui.gunb = null;
     return true;
   }
+  if (ui.inv && ui.inv.form && teamFormEsc(state, ui)) return true; // ui/teamform.js: asks before closing with gear moved
   if (ui.inv) { // drops the selection first, then closes
     if (ui.invSel) ui.invSel = null;
     else { ui.inv = null; ui.invMsg = ""; }
@@ -1824,9 +1936,12 @@ window.addEventListener("keydown", (e) => {
   // Menu → Controls waiting for a key (ui/controls.js): the next key press is the new binding.
   if (controlsKey(ui, e, settingsApi)) { e.preventDefault(); refresh(); return; }
   const t = e.target || {};
+  if (stackKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // the stack mover (ui/stackmove.js): Enter moves, Esc cancels, from its number box too
+  if (bnKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // the naming window (ui/basename.js): Enter names it, Esc keeps the name
   if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "checkbox")) return;
   // A question before an order that cannot be undone (ui/confirm.js) takes the keyboard: Enter yes, Esc cancel.
   if (ui.ask) { e.preventDefault(); act(() => askKey(ui, e, actions)); refresh(); return; }
+  if (ui.carry) { e.preventDefault(); act(() => carryKey(state, ui, e, actions)); refresh(); return; } // ui/carry.js: Enter collects, Esc cancels
   // The timelapse viewer takes the keyboard (play, step, speed, pan, Esc closes).
   if (ui.timelapse) {
     if (tlKey(state, ui, e)) { e.preventDefault(); refresh(); }
@@ -1838,6 +1953,7 @@ window.addEventListener("keydown", (e) => {
   // Esc with nothing of ours to close opens the menu (in a battle Esc cancels the current action; ⚙ Menu is in the panel).
   if (ui.title) { if (!ui.settings && !ui.zombieLook && titleKey(ui, e)) e.preventDefault(); return; } // the title screen (ui/title.js): only the menu's keys
   if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
+  if (ui.inv && ui.inv.form && !ui.gunb && !ui.settings && teamFormKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // ui/teamform.js: tabs, picking people, Enter
   if (ui.zombieLook || ui.bgEditor || ui.inv || ui.gunb || ui.settings) return; // these screens take the keyboard
   if (state.combat) {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }

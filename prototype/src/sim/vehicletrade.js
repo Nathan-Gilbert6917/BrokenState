@@ -17,7 +17,7 @@
 import { SUPPLIES } from "./data.js";
 import { day, log, hub, baseById } from "./world.js";
 import { tradeContext, spread } from "./trade.js";
-import { factionVehicles, vehicleValue, createVehicle, VEHICLE_TYPES, upgradesOf, carsAtBase, isCar } from "./vehicles.js";
+import { factionVehicles, vehicleValue, createVehicle, VEHICLE_TYPES, upgradesOf, carsAtBase, isCar, partyVehicles, dropPartyVehicle } from "./vehicles.js";
 import { vehicleWant } from "./groupworld.js";
 import { joinTeam } from "./foundcars.js";
 
@@ -73,7 +73,7 @@ export function vehicleOffers(state, ctx) {
     out.theirs.push({ rec, price: Math.round(vehicleValue(rec) * VTRADE.WANT.sell * sp.buy) });
   }
   const theyWant = n < want ? VTRADE.WANT.short : VTRADE.WANT.plenty;
-  const mine = ctx.kind === "visit" ? (ctx.p && ctx.p.vehicleId ? state.vehicles.filter((v) => v.id === ctx.p.vehicleId && isCar(v)) : []) : ctx.base ? carsAtBase(state, ctx.base.id) : [];
+  const mine = ctx.kind === "visit" ? (ctx.p ? partyVehicles(state, ctx.p).filter(isCar) : []) : ctx.base ? carsAtBase(state, ctx.base.id) : [];
   for (const v of mine) out.mine.push({ v, price: Math.round(vehicleValue(v) * theyWant * sp.sell) });
   return out;
 }
@@ -125,7 +125,7 @@ export function sellVehicle(state, i) {
     else if (ctx.p) ctx.p.cargo.gear.push(...(v.cargo.gear || []));
     v.cargo = null;
   }
-  if (ctx.kind === "visit" && ctx.p) { ctx.p.vehicle = false; ctx.p.vehicleId = null; }
+  if (ctx.kind === "visit" && ctx.p) dropPartyVehicle(state, ctx.p, v); // the team's other vehicles stay (vehicles.js fleets)
   state.vehicles.splice(state.vehicles.indexOf(v), 1);
   f.vehSeq = (f.vehSeq || 0) + 1;
   const rec = { id: `f${f.id}-b${f.vehSeq}`, type: v.type, name: v.name, fuel: Math.round(v.fuel || 0), condition: Math.round(v.condition), owner: f.id };

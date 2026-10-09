@@ -4,7 +4,7 @@
 //   (the latest save's name), Load game is enabled; Quit only in the desktop app. Clean HTML, every button has a handler.
 // - New game hides the title; Load game, Settings and How to play open the menu at the right tab over it; the title
 //   is never covered by the new-run screen (ui.js) while it is up.
-// - The backgrounds take turns: four scenes, each held and then cross-faded into the next, round and round.
+// - The backgrounds take turns: three scenes, each held and then cross-faded into the next, round and round.
 // - main.js: opens on the title (unless ?notitle), hands Esc and the map keys to it, loading a game closes it, and the
 //   menu's Exit / Save and exit go back to it (settings.js).
 import { readFileSync } from "node:fs";
@@ -65,9 +65,9 @@ check(titleCovers({ title: true }) && !titleCovers({ title: false }), "the title
 const read = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), "utf8");
 const title = read("ui/title.js"), main = read("main.js"), uiSrc = read("ui/ui.js"), settings = read("ui/settings.js");
 const scenes = (title.match(/const SCENES = \[([^\]]+)\]/) || [])[1] || "";
-check(scenes.split(",").length === 4 && /skyline/.test(scenes) && /camp/.test(scenes) && /walls/.test(scenes) && /hive/.test(scenes), `four backgrounds take turns (${scenes.trim()})`);
+check(scenes.split(",").length === 3 && /skyline/.test(scenes) && /camp/.test(scenes) && /walls/.test(scenes) && !/hive/.test(scenes), `three backgrounds take turns, no hive (${scenes.trim()})`);
 check(/HOLD_S = \d+/.test(title) && /FADE_S = \d+/.test(title) && /\(show\.cur \+ 1\) % SCENES\.length/.test(title), "each is held, then the next fades in, round and round");
-for (const fn of ["skylineScene", "campScene", "wallsScene", "hiveScene"]) check(new RegExp(`function ${fn}\\(\\)`).test(title) && new RegExp(`${fn}\\(\\)`).test(title.slice(0, title.indexOf(`function ${fn}`))), `${fn} exists and is used`);
+for (const fn of ["skylineScene", "campScene", "wallsScene"]) check(new RegExp(`function ${fn}\\(\\)`).test(title) && new RegExp(`${fn}\\(\\)`).test(title.slice(0, title.indexOf(`function ${fn}`))), `${fn} exists and is used`);
 check(!/title-bg|title-style|tt-look|TITLE_BGS|TITLE_STYLES/.test(title) && !/tt-look|tt-pick/.test(readFileSync(new URL("../title.css", import.meta.url), "utf8")), "no background or title picker");
 check(/class="tt-runs"/.test(title) && !/<g id="tt-drips">[\s\S]*filter=/.test(title.slice(title.indexOf('class="tt-runs"'))), "the paint runs live outside the filtered lettering");
 check(/showTitle\(ui\)/.test(main) && /notitle/.test(main), "main.js opens on the title, ?notitle skips it");

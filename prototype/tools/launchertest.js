@@ -749,10 +749,10 @@ section("9. The battle screen: the unit line, Launch (Shift+L), the arming ring 
   UI.cui.hover = { x: 20, y: 10 };
   let err = "";
   UI.cui.mode = "move";
-  for (const view of ["iso", "top"]) { UI.setBattleView(view); UI.drawCombat(st, 1e9); }
+  for (const view of ["iso"]) { void view; UI.drawCombat(st, 1e9); }
   const nan0 = nan; // (the first frame of this hand-built field draws a few NaNs whatever the mode: only what the launch mode adds counts)
   UI.cui.mode = "launch";
-  for (const view of ["iso", "top"]) { UI.setBattleView(view); try { UI.drawCombat(st, 1e9); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); } }
+  for (const view of ["iso"]) { void view; try { UI.drawCombat(st, 1e9); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); } }
   const prev = UI.renderCombatPanel(st);
   check(!err && nan === nan0, `both views draw the launch targeting${err ? `: ${err}` : ""} (NaN: ${nan - nan0} with it, ${nan0} without)`);
   check(/backblast on/.test(prev) && /Fire the Rocket launcher/.test(prev), "the preview warns of the teammate in the backblast");

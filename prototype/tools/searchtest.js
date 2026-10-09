@@ -17,7 +17,8 @@ import { SEARCH, hiddenCount, shownCount, quickRadius, quickHurtChance, quickHur
 import { openOdds, PICK, LOCKS } from "../src/sim/locks.js";
 import { BMAP } from "../src/sim/buildingmaps.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
-import { inventoryModal, INV_ACTIONS, INV_CHANGE, invDrop, pickedQty } from "../src/ui/inventory.js";
+import { inventoryModal, INV_ACTIONS, INV_CHANGE, invDrop } from "../src/ui/inventory.js";
+import { chosenQty } from "../src/ui/stackmove.js";
 import { renderCombatPanel } from "../src/ui/combat.js";
 
 const seed = Number(process.argv[2] || 7);
@@ -137,16 +138,16 @@ console.log("The search window: pick how many, then where");
   const ui = { inv: { raid: true, uid: u.id, box: box.id }, invSel: null, invMsg: "" };
   const src = `rbox:${box.id}:sup:food`;
   INV_ACTIONS["inv-click"](st, ui, { loc: src });
-  check(ui.invSel === src && ui.invQty == null && pickedQty(ui, 6) === 6, "click a stack: it is picked, all 6 by default");
-  INV_ACTIONS["rl-qty"](st, ui, { v: "one" });
-  INV_ACTIONS["rl-qty"](st, ui, { v: "inc" });
-  check(ui.invQty === 2, `1, then +: ${ui.invQty}`);
-  INV_CHANGE["rl-qtyset"](st, ui, { value: "40" });
-  check(ui.invQty === 6, `typed 40: held to the stack (${ui.invQty})`);
-  INV_CHANGE["rl-qtyset"](st, ui, { value: "3" });
+  check(ui.invSel === src && ui.stack && ui.stack.ns === "raid" && chosenQty(st, ui, "raid") === 6, "click a stack: it is picked and the stack mover opens, all 6 (they all fit) by default");
+  INV_ACTIONS["sm-qty"](st, ui, { v: "one" });
+  INV_ACTIONS["sm-qty"](st, ui, { v: "inc" });
+  check(chosenQty(st, ui, "raid") === 2, `1, then +: ${chosenQty(st, ui, "raid")}`);
+  INV_CHANGE["sm-qtyset"](st, ui, { value: "40" });
+  check(chosenQty(st, ui, "raid") === 6, `typed 40: held to the stack (${chosenQty(st, ui, "raid")})`);
+  INV_CHANGE["sm-qtyset"](st, ui, { value: "3" });
   let html = "";
   try { html = inventoryModal(st, ui) || ""; } catch (e) { html = `ERR ${e.message}`; }
-  check(/data-action="rl-qtyset"/.test(html) && /value="3"/.test(html) && /fit on/.test(html), `the window shows the number to move and how many fit (${html.startsWith("ERR") ? html : "ok"})`);
+  check(/data-action="sm-qtyset"/.test(html) && /value="3"/.test(html) && /fit in /.test(html), `the window shows the number to move and how many fit (${html.startsWith("ERR") ? html : "ok"})`);
   INV_ACTIONS["inv-click"](st, ui, { loc: `haul:${u.id}:list` });
   check(u.haul.sup.food === 3 && box.contents.sup.food === 3 && ui.invSel == null, `then click Carried: 3 taken, 3 left (${ui.invMsg})`);
   INV_ACTIONS["inv-click"](st, ui, { loc: src }, { shiftKey: true });

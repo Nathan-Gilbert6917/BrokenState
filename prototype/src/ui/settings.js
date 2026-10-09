@@ -15,6 +15,7 @@ import { saveBlocker, saveToString, SAVE_VERSION, GAME_VERSION, SaveError } from
 import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, stateSizeDef } from "../sim/worldsize.js";
 import { cui, setConfirmEnd, setAutoRedeploy } from "./combat.js";
+import { barkMode, setBarkMode, BARK_MODES } from "./barks.js"; // Combat barks: speech bubbles in battle
 import { helpTab } from "./help.js";
 import { controlsTab } from "./controls.js"; // the Controls tab: every key, rebindable (ui/keymap.js)
 import { modeLabel } from "./hardcore.js";
@@ -160,6 +161,7 @@ const MOUSE = [
   ["The bar beside a panel", "Click to fold or show the panel, drag to make it wider or narrower"],
   ["✕ on a folded strip, or ◧ ◨ ⬓ in the top bar", "Close the left panel / right panel / log completely (no strip), again to bring it back; the slim tab at the map's edge opens it again too"],
   ["Window edges, title", "Drag to resize or move a window; double-click the title for its usual size"],
+  ["Header of a box over the map", "Drag to move it anywhere over the map (a folded box by its tab, the minimap by its ✥ grip); with the header focused, Alt+arrow keys nudge it, Alt+Home puts it back"],
 ];
 
 function optionsTab(state, ui, api) {
@@ -175,6 +177,7 @@ function optionsTab(state, ui, api) {
       ${box("pauseOnBlur", o.pauseOnBlur, "Pause when the window loses focus", "Switching to another window or tab pauses the clock")}
       ${box("confirmEnd", !!cui.confirmEnd, "Battles: ask before ending a turn with actions left", "Space or End turn asks once while units still have actions (Enter always ends at once)")}
       ${box("autoRedeploy", !!cui.autoRedeploy, "Base battles: skip the redeploy after falling back", "When your people fall back from the walls to the yard and the buildings, keep the default posts and fight on at once instead of placing them again")}
+      <label${tip("Short speech bubbles over heads in battle (Reloading!, I'm hit!, Man down!). Important only: just someone of yours going down and the shout that they are (with a short chirp). Enemies are heard only while your people see them.")}>Combat barks <select data-action="set-barks">${BARK_MODES.map(([v, l]) => `<option value="${v}" ${barkMode() === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
     </div>
     ${soundOptionsHtml(o)}
     ${pacingOptionsHTML()}
@@ -189,6 +192,7 @@ function optionsTab(state, ui, api) {
     <h3>Windows and panels</h3><div class="setrow">
       ${box("autoOpen", o.autoOpen !== false, "Auto-open panels on select", "A folded panel opens when you pick something it shows: a tile, site or team on the map (right panel), a tab key (left panel), a new urgent alert")}
       <button data-action="win-reset"${tip("Every window back to its usual size and place; the side panels and the log shown again at their usual width")}>Reset window sizes</button>
+      <button data-action="ov-reset"${tip("The boxes over the map (Running orders, Watching, Layers, alerts, minimap) back where they start. Drag a box's header to move it; Alt+arrow keys on a focused header nudge it")}>Reset overlay positions</button>
       <button class="mini" data-action="help-open" data-sec="windows-and-panels"${tip("Help: windows and panels")}>?</button>
     </div>
     <h3>Keys and mouse</h3><div class="setrow"><button data-action="set-tab" data-tab="controls"${tip("Every key, by group: change any of them")}>Controls…</button><button data-action="help-open" data-sec="keys"${tip("Every key as it is set now, ready to print")}>Key sheet…</button></div>
@@ -391,6 +395,7 @@ export const SETTINGS_ACTIONS = {
 
 export const SETTINGS_CHANGE = {
   ...SOUND_CHANGE, // ui/audio.js: the volume sliders, the sound to hear
+  "set-barks": (state, ui, el) => setBarkMode(String(el.value)), // ui/barks.js (remembered in this browser)
   "set-name": (state, ui, el) => { if (ui.settings) ui.settings.name = String(el.value ?? "").slice(0, 60); },
   "set-mapanim": (state, ui, el, api) => {
     api.options.mapAnim = el.value !== "off";

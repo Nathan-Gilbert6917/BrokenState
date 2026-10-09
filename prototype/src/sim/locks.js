@@ -330,17 +330,19 @@ export function openLock(state, b, u, act, H) {
       if (area) H.say(b, `The ${area.name.toLowerCase()} is open.`, "info");
       else H.say(b, "The way out is open.", "info");
     }
-    H.fx(b, { type: "loot", to: [t.x, t.y], text: "unlocked" });
-  } else H.fx(b, { type: "loot", to: [t.x, t.y], text: "locked" });
+    H.fx(b, { type: "loot", to: [t.x, t.y], text: "unlocked", how: fxHow(act.method, o) });
+  } else H.fx(b, { type: "loot", to: [t.x, t.y], text: "locked", how: fxHow(act.method, o) });
   return "";
 }
+// How it was tried, for the sound of it (ui/sfx-doors.js doorLoot): key, pick, pry (a crowbar), kick (no tool), glass.
+const fxHow = (method, o) => (method === "force" ? (o && o.glass ? "glass" : o && o.crowbar ? "pry" : "kick") : method);
 
 // ---------- loot (combat.js searchBox, when a container's contents are rolled) ----------
 // Extras by lock kind: [supply, chance, lo, hi] and gear [key, chance].
 const LOCK_LOOT = {
   cash:     { sup: [["ammo", 0.6, 6, 15], ["meds", 0.15, 1, 1]], gear: [["pistol", 0.1], ["knife", 0.1]], key: 0.2 },
   gear:     { sup: [["ammo", 0.4, 5, 12]], gear: [["vest", 0.1], ["bikehelmet", 0.1], ["kneeguards", 0.1], ["backpack", 0.1]], key: 0.1 },
-  meds:     { sup: [["meds", 0.95, 3, 6]], gear: [["surgkit", 0.1], ["bandagekit", 0.2]], key: 0.08 },
+  meds:     { sup: [["meds", 0.95, 3, 6]], gear: [["surgkit", 0.1], ["bandagekit", 0.2], ["tourniquet", 0.2]], key: 0.08 },
   evidence: { sup: [["ammo", 0.8, 10, 25]], gear: [["pistol", 0.3], ["shotgun", 0.15], ["lockbook", 0.1], ["riothelmet", 0.1], ["flashbang", 0.2], ["smokegren", 0.15]], key: 0.3 }, // flashbangs, smoke: the SWAT kit (throwables.js FLASH)
   cargo:    { sup: [["food", 0.5, 4, 10], ["parts", 0.5, 1, 3], ["fuel", 0.25, 1, 3]], gear: [["assaultpack", 0.05]], key: 0.05 },
   guns:     { sup: [["ammo", 0.95, 20, 40]], gear: [["pistol", 0.4], ["shotgun", 0.3], ["huntrifle", 0.25], ["ar", 0.1]], key: 0.1 },
@@ -770,8 +772,8 @@ function openSafe(state, b, u, t, o, act, H) {
   if (ok) {
     lock.open = true;
     lock.how = act.method;
-    H.fx(b, { type: "loot", to: [t.x, t.y], text: "unlocked" });
-  } else H.fx(b, { type: "loot", to: [t.x, t.y], text: act.method === "drill" || act.method === "grind" ? `${lock.prog}/${o.need}` : "locked" });
+    H.fx(b, { type: "loot", to: [t.x, t.y], text: "unlocked", how: act.method });
+  } else H.fx(b, { type: "loot", to: [t.x, t.y], text: act.method === "drill" || act.method === "grind" ? `${lock.prog}/${o.need}` : "locked", how: act.method });
   return "";
 }
 // Takes one item off a person (pocket, pack, a slot). Returns true if it was there.

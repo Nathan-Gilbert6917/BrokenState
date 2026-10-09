@@ -42,7 +42,7 @@ import {
   partyMembers, partyTile, tileLabel, teamName, planPath, moveCost, leaveVehicle, fuelMultOf, sightRadius,
   awaitOrders, launchExpedition, orderMove,
 } from "./parties.js";
-import { partyVehicle, wear, useFuel, tileFuel } from "./vehicles.js";
+import { partyVehicle, partyVehicles, wear, useFuel, tileFuel } from "./vehicles.js";
 import { perceive, MARKER_TYPES } from "./markers.js";
 import { hiddenSites, siteKnown, siteKnownTo, noteLooked } from "./discovery.js";
 import { weather } from "./weather.js";
@@ -54,6 +54,7 @@ import { crashSurvey } from "./crashes.js";
 import { opticsFor, OPTICS } from "./optics.js";
 import { carriedAll } from "./comforts.js";
 import { listeners } from "./radio.js";
+import { withLook, surveyErr } from "./intelnotes.js"; // a close look at a group's base (the State Map's estimates)
 
 export const SURVEY = {
   radius: { min: 2, max: 4, def: 3 },
@@ -266,6 +267,8 @@ export function sweepHour(state, p) {
   const opt = opticsFor(members, p.cargo, { still: true, night: isNightAt(state.hour) });
   const bonus = SURVEY.finds + (opt.look - 1) * 0.3;
   const looked = state.grid.within(here, 1 + opt.reach);
+  // A group's base in close reach: a good look at it (intelnotes.js; the State Map's estimates, intelest.js).
+  for (const id of looked) if (state.tiles[id] && state.factions.some((f) => f.alive && f.bases.includes(id))) p.seen.set(id, withLook(state, snapshot(state, id), id, "survey", surveyErr(state, opt)));
   const found = perceive(state, p, members, looked, bonus);
   for (const f of found) t.finds.push({ type: f.type, tile: f.tile });
   noteLooked(state, p, looked); // discovery.js: the spot is searched (the map's Known area layer)
@@ -281,7 +284,7 @@ function enterTile(state, p, from, to) {
   if (p.vehicle) {
     const v = partyVehicle(state, p);
     const onRoad = state.tiles[from].roadLinks.includes(to);
-    if (v) wear(v, onRoad, p.burden ? p.burden.fill : 0);
+    for (const x of partyVehicles(state, p)) wear(x, onRoad, p.burden ? p.burden.fill : 0); // every vehicle (vehicles.js fleets)
     if (!useFuel(state, p, tileFuel(p.vehicle, onRoad, fuelMultOf(p)))) {
       log(state, `The ${v ? v.name : "vehicle"} ran out of fuel during the survey near ${tileLabel(state, to)}. The team left it there and goes on on foot.`, "danger");
       leaveVehicle(state, p, to, "out of fuel");
@@ -293,7 +296,7 @@ function enterTile(state, p, from, to) {
   }
   const members = partyMembers(state, p);
   const around = state.grid.within(to, sightRadius(state, p));
-  for (const id of around) p.seen.set(id, snapshot(state, id));
+  for (const id of around) p.seen.set(id, withLook(state, snapshot(state, id), id)); // intelnotes.js: a group's base seen in passing
   perceive(state, p, members, around);
   crashSurvey(state, p); // crashes.js: a wreck in reach, or its circle narrowed
   // One card at a time; none on the last step back to the centre (a delay then would fall on the next leg instead of

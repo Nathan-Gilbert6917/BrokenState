@@ -182,7 +182,7 @@ export const MERCHANT_VALUABLES = ["watch", "goldchain", "cigars", "scotch", "co
 export const MERCHANT_SPECS = {
   arms:     { name: "Arms dealers", gear: ["ar", "carbine", "huntrifle", "leverrifle", "shotgun", "pistol", "revolver", "xbow", "compbow", "vest", "plate", "milhelmet", "riothelmet", "suppressor", "spotscope", "binoculars", "nvg", "thermal", "smokegren", "frag"],
     books: ["gunbook", "armymanual", "leadbook"], stock: { ammo: 1.6, gunparts: 1.6 }, extra: [3, 6] },
-  medic:    { name: "Medics", gear: ["surgkit", "traumakit", "bandagekit", "puritabs", "dewormer", "waterfilter", "soap", "wetwipes", "razors", "toothpaste", "headlamp", "flashlight"],
+  medic:    { name: "Medics", gear: ["surgkit", "traumakit", "bandagekit", "tourniquet", "puritabs", "dewormer", "waterfilter", "soap", "wetwipes", "razors", "toothpaste", "headlamp", "flashlight"],
     books: ["medbook", "surgerybook"], stock: { meds: 1.6, water: 1.3 } },
   mechanic: { name: "Mechanics", gear: ["crowbar", "prybar", "sledge", "fireaxe", "flashlight", "headlamp", "lantern", "spotlight", "stove", "kneeguards", "milradio", "handradio", "ladder", "batteries", "waterfilter"],
     books: ["enginebook", "diybook", "forgebook", "lockbook"], stock: { parts: 1.6, fuel: 1.4, carparts: 1.6, electronics: 1.4 }, extra: [0, 2] },

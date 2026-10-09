@@ -75,7 +75,7 @@ export const MILDEAD = {
   BODY: {
     soldier: {
       armor: [["plate", 0.15, [0.3, 0.55]], ["vest", 0.3, [0.35, 0.6]]], // one or the other
-      items: [["milhelmet", 0.35, [0.4, 0.7]], ["ar", 0.04, [0.4, 0.6]], ["carbine", 0.03, [0.4, 0.6]], ["milradio", 0.05, [0.5, 0.8]], ["smokegren", 0.06, [1, 1]], ["flare", 0.05, [1, 1]], ["bandagekit", 0.08, [0.6, 1]], ["assaultpack", 0.05, [0.4, 0.6]], ["instcoffee", 0.06, [1, 1]], ["chocolate", 0.06, [1, 1]]],
+      items: [["milhelmet", 0.35, [0.4, 0.7]], ["ar", 0.04, [0.4, 0.6]], ["carbine", 0.03, [0.4, 0.6]], ["milradio", 0.05, [0.5, 0.8]], ["smokegren", 0.06, [1, 1]], ["flare", 0.05, [1, 1]], ["bandagekit", 0.08, [0.6, 1]], ["tourniquet", 0.2, [1, 1]], ["assaultpack", 0.05, [0.4, 0.6]], ["instcoffee", 0.06, [1, 1]], ["chocolate", 0.06, [1, 1]]],
       sup: [["a_556_fmj", 0.6, 3, 10], ["a_556_ap", 0.15, 10, 20], ["meds", 0.08, 1, 1]], // 5.56 rounds (ammo.js); the second: a rifle magazine of armour-piercing
     },
     riot: {

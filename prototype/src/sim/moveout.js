@@ -13,18 +13,22 @@
 //     base waiting for orders and the map goes straight to move mode (main.js); with another of your bases as the
 //     destination it walks or drives there. On the map it is a team like any other: Build outpost founds a new base
 //     with it (it needs the 15 scrap carried, packed by default), Move to another tile takes it anywhere.
-//   - The Enter card: a team of yours that ends a move on one of your bases that is not its home, with nothing queued
+//   - The Enter card: a team of yours that ends a move on one of your bases (its home too), with nothing queued
 //     after (parties.js arrive), is asked "Enter <base>?". Yes: its people live there from now on, what it carries goes
 //     into that base's stores and armory and its vehicle parks there (joinBase: the team is home there, parties.js
 //     startReturn; the Overcrowded card there waits as if it had just been shown: the Enter card said how full it is).
 //     No: it stays a team on the map and waits for orders (the orders card). Not for convoys, caravans or
 //     crews (they have their own business at a base). The autopilot says yes when its own plan sent the team there
-//     (p.joinBaseId, moveTeamOut's destination) or the base has a bed for each of them, else no.
+//     (p.joinBaseId, moveTeamOut's destination), it is the team's own home, or the base has a bed for each of them,
+//     else no.
+//   - Enter base (an order, enterOption): any team of yours standing on one of your bases (its home too: one that
+//     waited outside, ended another order there, or said No on the Enter card) moves in the same way, from the team
+//     panel, the orders card, the Teams tab or the tile panel's team card.
 import { log, addCard, baseById, residents } from "./world.js";
 import { baseBeds } from "./buildings.js";
 import { crowdInfo } from "./morale.js";
 import { launchExpedition, partyMembers, partyTile, awaitOrders, startReturn, teamName } from "./parties.js";
-import { partyVehicle } from "./vehicles.js";
+import { partyFleet as partyVehicle, vehicleLabel } from "./vehicles.js"; // all the team's vehicles (vehicles.js fleets)
 
 export const CROWD_CARD = { days: 5, worse: 2 };
 // What the move-out planner packs by default (main.js autofill): the trip there and back like any trip, plus
@@ -89,7 +93,7 @@ export function moveTeamOut(state, opts) {
   const dest = opts.dest != null && opts.dest !== base.tile ? opts.dest : null;
   const to = dest != null ? state.bases.find((b) => b.tile === dest) || null : null;
   const res = launchExpedition(state, {
-    memberIds: opts.memberIds, dest: dest ?? base.tile, mission: "move", stance: opts.stance || "normal", vehicleId: opts.vehicleId || null,
+    memberIds: opts.memberIds, dest: dest ?? base.tile, mission: "move", stance: opts.stance || "normal", vehicleId: opts.vehicleId || null, vehicleIds: opts.vehicleIds || [], // up to four (vehicles.js fleets)
     supplies: opts.supplies || {}, fromBaseId: base.id, lights: opts.lights !== false, tabs: !!opts.tabs, quiet: true,
   });
   if (res.error) return res;
@@ -116,10 +120,29 @@ export function moveTeamOut(state, opts) {
 
 // ---------- moving into another base ----------
 // The base of yours a team stands on when it is not the team's home (null otherwise, or not a team that may join).
-export function enterTarget(state, p) {
+// home: its own home counts too (a Move that ends there, parties.js arrive: "Enter <home>?" as for any base; a team that
+// moved out with no destination waits outside and is not asked).
+export function enterTarget(state, p, { home = false } = {}) {
   if (!p || p.owner !== "player" || p.kind !== "expedition" || p.caravan || p.crewRole != null) return null;
   const b = state.bases.find((x) => x.tile === partyTile(p));
-  return b && b.id !== p.homeBaseId ? b : null;
+  return b && (home || b.id !== p.homeBaseId) ? b : null;
+}
+
+// The Enter base order (parties.js orderOptions, MISSIONS.enter; the team panel, the orders card, the tile panel's
+// team card): any team of yours standing on one of your bases, its home included (a team that waited outside, ended
+// another order there or said No on the Enter card), moves in now: the same as Yes on the Enter card (joinBase).
+// Not for convoys, caravans or crews (they have their own business at a base). Null when it does not apply.
+export function enterOption(state, p, tile = partyTile(p)) {
+  if (!p || p.owner !== "player" || p.kind !== "expedition" || p.caravan || p.crewRole != null) return null;
+  const base = state.bases.find((b) => b.tile === tile);
+  if (!base) return null;
+  const n = partyMembers(state, p).length, free = freeBeds(state, base);
+  const v = partyVehicle(state, p);
+  const home = baseById(state, p.homeBaseId);
+  return {
+    mission: "enter", label: `Enter ${base.name}`, disabled: n ? null : "Nobody left on the team.",
+    desc: `Move into ${base.name}: ${n === 1 ? "they live" : "everyone on the team lives"} and works there from now on${home && home !== base ? ` instead of ${home.name}` : ""}, what the team carries goes into its stores and armory${v ? `, the ${v.name} parks there` : ""}, and the team is disbanded. ${baseBeds(base)} beds for ${residents(state, base.id).length} people: ${free >= n ? "room for them" : `with them it is over by ${n - free} (crowding costs mood)`}.`,
+  };
 }
 
 export function enterCard(state, p, base) {
@@ -131,14 +154,14 @@ export function enterCard(state, p, base) {
   const beds = `${base.name} has ${baseBeds(base)} beds for ${residents(state, base.id).length} people: ${free >= n ? `room for ${n === 1 ? "them" : `all ${n}`}` : free > 0 ? `room for ${free}, with them it is over by ${n - free}` : `with them it is over by ${n - free}`}.`;
   return {
     title: `Enter ${base.name}?`,
-    text: `${list(people.map(firstName))} reached ${base.name}. Move in? They would live and work there from now on${home ? ` instead of ${home.name}` : ""}: what they carry goes into its stores and armory${v ? `, and the ${v.name} parks there` : ""}. ${beds}`,
+    text: `${list(people.map(firstName))} reached ${base.name}. Move in? They would live and work there from now on${home && home !== base ? ` instead of ${home.name}` : ""}: what they carry goes into its stores and armory${v ? `, and the ${v.name} parks there` : ""}. ${beds}`,
     partyId: p.id,
     enterBase: base.id,
     choices: [
       {
         label: `Yes, move into ${base.name}`,
         hint: `They become people of ${base.name}; the team ends here.${free < n ? " Crowding there costs mood every day." : ""}`,
-        ai: () => (p.joinBaseId === base.id || freeBeds(state, base) >= partyMembers(state, p).length ? 5 : -1),
+        ai: () => (p.joinBaseId === base.id || p.homeBaseId === base.id || freeBeds(state, base) >= partyMembers(state, p).length ? 5 : -1),
         resolve: (st) => joinBase(st, p, base),
       },
       {
@@ -163,14 +186,15 @@ export function joinBase(state, p, base) {
     return "";
   }
   if (partyTile(p) !== base.tile) { awaitOrders(state, p, `The team is not at ${base.name}.`, { failed: true, hold: true }); return ""; }
-  const names = list(partyMembers(state, p).map(firstName));
+  const people = partyMembers(state, p), names = list(people.map(firstName));
   const name = teamName(state, p);
+  const own = p.homeBaseId === base.id; // its own home: "is home", not "moved into"
+  if (!own) p.movingIn = true; // returnHome's log line: "moved into", not "is home"
   p.homeBaseId = base.id;
-  p.movingIn = true; // returnHome's log line: "moved into", not "is home"
   p.orders = [];
   startReturn(state, p);
   if (state.parties.includes(p)) return `${name} could not move into ${base.name}.`; // never expected: at the base already
   // You were told on the Enter card how full it is: no Overcrowded card for that straight after (crowdCardsHour).
   if (overBeds(state, base) > 0) base.crowdNote = { hour: state.hour, over: overBeds(state, base) };
-  return `${names} moved into ${base.name}.`;
+  return own ? `${names} ${people.length === 1 ? "is" : "are"} home at ${base.name}.` : `${names} moved into ${base.name}.`;
 }

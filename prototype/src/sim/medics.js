@@ -12,6 +12,8 @@
 // for a tourniquet): HANDS.BASE + HANDS.MED a point of Medicine, at most HANDS.MAX, and a failed try can be repeated.
 // Anyone can drag a downed ally (Drag ally): picked up for free, moved at half speed (both actions go on moving, no
 // shooting), put down for free: in cover, on the evac strip, or laid in the team's vehicle.
+// Someone down and bleeding with a tourniquet or a field trauma kit within reach can stabilize themselves (SELF,
+// selfStabilize): their one action while down, a try a turn; both sides.
 //
 // Enemy people go down at 0 health too (they used to die): they bleed out in BLEED turns unless stabilized, their own
 // people drag them out of the line of fire and stabilize them, and a medic among them (MEDIC.ENEMY: about one group
@@ -31,7 +33,7 @@
 import { GEAR } from "./data.js";
 import { gearEffect, survivorById, factionById, hurt } from "./world.js";
 import { carriedSpots } from "./inventory.js";
-import { itemDur, wearHeld } from "./crafting.js";
+import { itemDur, wearHeld, wear } from "./crafting.js";
 import { hash01 } from "./skills.js";
 import { takeCaptive } from "./conflicts.js";
 import { dropHaul, atVehicle } from "./raidloot.js";
@@ -87,6 +89,14 @@ export const MEDIC = {
   // By the numbers (breakoff.js rollFight): a won fight fought to the end; each member who fell is saved (barely
   // alive) by a medic with a kit still standing: SAVE + PER_MED a point of their Medicine, at most MAX.
   NUMBERS: { SAVE: 0.15, PER_MED: 0.025, MAX: 0.6 },
+  // Stabilizing oneself (selfStabilize): by the item (GEAR selfStab), BASE% + MED a point of Medicine skill (the kit's
+  // bonus does not count), at most MAX. REACH: where it can be reached lying down. KIT: the share of each enemy kit's
+  // people who carry a tourniquet (out of their group's arsenal when it has one: arsenal.js armExtras).
+  SELF: {
+    traumakit: { BASE: 60, MED: 5, MAX: 95 }, tourniquet: { BASE: 35, MED: 5, MAX: 85 },
+    REACH: ["tool", "pocket", "rig"],
+    KIT: { soldiers: 0.6, contractors: 0.5, guards: 0.3, escorts: 0.25, militia: 0.15, fighters: 0.15, raiders: 0.1, survivors: 0.08, zealots: 0.03 },
+  },
 };
 
 // combat.js internals the medic code needs (set once by combat.js: setMedicHooks). `var`: usable before this module's
@@ -115,6 +125,7 @@ export function kitBonusOf(s, it) {
 }
 // combat.js playerUnit: a kit in a pocket or the pack counts in battle too (the off hand's is counted there already).
 export function fitMedic(u, s) {
+  fitSelfAid(u, s); // a tourniquet or a trauma kit in reach to stabilize themselves when down
   if (u.medKit) return;
   const k = kitOf(s);
   if (!k || !k.pack) return;
@@ -145,7 +156,21 @@ function useKit(b, u) {
 }
 // combat.js wearFielded: a kit carried in a pocket or the pack wears by its uses too.
 export function wearPackKit(state, u, s) {
-  if (u.kitUses && u.medKit && u.kitPack) wearHeld(state, u.medKit, [s], [], u.kitUses);
+  if (u.kitUses && u.medKit && u.kitPack) {
+    wearHeld(state, u.medKit, [s], [], u.kitUses);
+    takeSpent(s, u.medKit); // wearHeld misses a rig pouch
+  }
+  // A tourniquet or a trauma kit (not their med kit: counted above) used on themselves: its uses spent; one used up
+  // is gone (a tourniquet stays on the limb).
+  for (const k of u.selfKits || []) if (k.used && k.item && k.item !== u.medKit && wear(k.item, k.used)) takeSpent(s, k.item);
+}
+// combat.js refitUnit: what is in reach after the inventory changed in the middle of a raid (the uses spent stay spent).
+export function refitSelfAid(u, s) { fitSelfAid(u, s, u.selfKits); }
+// An item worn to nothing comes off them, wherever it is carried (inventory.js carriedSpots).
+function takeSpent(s, it) {
+  if (itemDur(it) !== 0) return;
+  const c = carriedSpots(s).find((x) => x.item === it);
+  if (c) c.take();
 }
 // Meds out of your side's pool (the enemy carries their own: their kit).
 function spendMeds(b, u) {
@@ -305,6 +330,99 @@ function stabilize(b, u, t) {
     return;
   }
   stabilizeByHand(b, u, t);
+}
+
+// ---------- stabilizing oneself (a tourniquet, a field trauma kit) ----------
+// Someone down and bleeding who has a tourniquet or a field trauma kit (GEAR selfStab) within reach lying down (the
+// off hand, a pocket or a rig pouch: SELF.REACH; not the pack, which is under them and takes two hands and time they
+// do not have) can try to stop their own bleeding. The downed have no actions: this is the one thing they can do,
+// once a turn (u.selfTry), in their side's turn. SELF[item] odds; stopped: stabilized (still down: a medic gets them
+// up) and a use of the item spent (a tourniquet has one: it stays on the limb; a trauma kit loses one of its uses);
+// failed: nothing spent, tried again next turn while the bleed turns last. With nothing in reach there is no try: bare
+// hands on your own wound at 0 health are not enough (a teammate's are: Use meds). Both sides, by the same rule
+// (selfStabTurn): at the end of its side's turn each one who has not tried yet tries, unless an ally is coming in time
+// (the AI's: the enemy, the raid bot, the AI playing your side); your people can also try earlier, from the panel. Your people's items are what they carry (fitSelfAid); the enemy's by
+// kit (kitSelfAid, SELF.KIT), and their medic's trauma kit.
+// The items one can use: [{ item, key, name, left, used }] (item: the carried object, or null for an enemy's own).
+const selfOpts = (u) => {
+  const out = [...(u.selfKits || [])];
+  if (u.side !== "player" && u.medKit && GEAR[u.medKit.key] && GEAR[u.medKit.key].selfStab && !out.some((k) => k.item === u.medKit)) out.push({ item: u.medKit, key: u.medKit.key, name: u.medKit.name, left: u.kitLeft, used: 0 });
+  return out;
+};
+// The uses left: the unit's med kit counts its kit uses (kitUses), the others their own.
+const selfLeft = (u, k) => (k.item && k.item === u.medKit ? (u.kitLeft ?? Infinity) - (u.kitUses || 0) : (k.left ?? 1) - (k.used || 0));
+export const selfOdds = (u, key) => { const R = MEDIC.SELF[key] || MEDIC.SELF.tourniquet; return Math.min(R.MAX, Math.round(R.BASE + R.MED * medSkill(u))); };
+// The best item to hand with a use left (the best odds first), or null.
+export function selfKit(u) {
+  const ok = selfOpts(u).filter((k) => selfLeft(u, k) > 0);
+  ok.sort((a, c) => selfOdds(u, c.key) - selfOdds(u, a.key));
+  return ok[0] || null;
+}
+const selfItem = (it) => !!(it && GEAR[it.key] && GEAR[it.key].selfStab && (itemDur(it) == null || itemDur(it) > 0));
+// combat.js playerUnit (through fitMedic) and refitUnit: what this survivor has in reach for it, and the first one in
+// the pack (u.selfPack: its name, for the reason it cannot be used). kept: the unit's list so far (the uses spent stay
+// spent on the same items).
+export function fitSelfAid(u, s, kept = null) {
+  const spots = carriedSpots(s);
+  const old = new Map((kept || []).map((k) => [k.item, k]));
+  u.selfKits = spots.filter((c) => MEDIC.SELF.REACH.includes(c.where) && selfItem(c.item))
+    .map((c) => old.get(c.item) || { item: c.item, key: c.item.key, name: c.item.name || GEAR[c.item.key].name, left: itemDur(c.item) ?? 1, used: 0 });
+  const pk = spots.find((c) => c.where === "pack" && selfItem(c.item));
+  u.selfPack = pk ? pk.item.name || GEAR[pk.item.key].name : null;
+  if (!u.selfKits.length) delete u.selfKits;
+}
+// combat.js enemyUnit: a tourniquet for SELF.KIT of each kit's people (own dice: the battle's are not used).
+export function kitSelfAid(u, kind, seed) {
+  const p = MEDIC.SELF.KIT[kind] || 0;
+  if (!p || !GEAR.tourniquet || hash01("selfaid", kind, u.id, seed) >= p) return;
+  u.selfKits = [{ item: null, key: "tourniquet", name: GEAR.tourniquet.name, left: GEAR.tourniquet.dur || 1, used: 0 }];
+}
+export function selfStabRefusal(b, u) {
+  if (!u || u.kind !== "human" || !u.down || u.dead || u.left || u.taken || (u.off && !u.aboard)) return "Only someone who is down can stabilize themselves.";
+  if (u.ko) return "Out cold: they come to by themselves.";
+  if (u.surr) return "They have given up.";
+  if (u.tied) return "Tied up: their hands are bound.";
+  if (u.stab) return "Already stabilized: a medic can get them back up (Revive).";
+  if (u.selfTry === b.turn) return "Already tried this turn: again next turn, while they still bleed.";
+  if (!selfKit(u)) {
+    return u.selfPack ? `The ${u.selfPack.toLowerCase()} is in the pack: out of reach lying down (carry it in the off hand, a pocket or a rig pouch).`
+      : "No tourniquet or trauma kit within reach (the off hand, a pocket or a rig pouch): a teammate can stabilize them (Use meds).";
+  }
+  return "";
+}
+// One try. Returns "" or the reason it cannot be tried.
+export function selfStabilize(b, u) {
+  const why = selfStabRefusal(b, u);
+  if (why) return why;
+  const k = selfKit(u);
+  const p = selfOdds(u, k.key);
+  const what = k.key === "tourniquet" ? "a tourniquet" : `the ${k.name.toLowerCase()}`;
+  u.selfTry = b.turn;
+  const ok = b.rng.chance(p / 100);
+  const mine = u.side === "player";
+  fx(b, { type: "heal", to: [u.x, u.y], self: k.key, ok, text: ok ? "STABLE" : "SLIPS" }); // ui/sfx-gear.js: the strap and the windlass
+  if (!ok) { say(b, `${u.name} fumbles with ${what} and cannot stop the bleeding (${p}%). ${mine ? "They can try again next turn." : ""}`.trim(), mine ? "danger" : "info"); return ""; }
+  u.stab = true;
+  if (u.miracle) u.stabSure = true;
+  if (u.xpT) u.xpT.heals++;
+  if (k.item && k.item === u.medKit) { // a use of their med kit
+    u.kitUses = (u.kitUses || 0) + 1;
+    if (u.kitUses >= u.kitLeft && u.kitBonus) { u.medicine -= u.kitBonus; u.kitBonus = 0; say(b, `${u.name}'s ${u.medKit.name} is used up.`, "info"); }
+  } else k.used = (k.used || 0) + 1;
+  say(b, `${u.name} cinches ${what} on their own wound (${p}%): stabilized, still down.`, mine ? "good" : "info");
+  return "";
+}
+// The end of a side's turn (combat.js endPlayerTurn, the end of the enemy phase): each of its downed still bleeding who
+// has not tried this turn tries, unless an ally claimed them this turn (rescueStep: the AI's) or a medic is named to
+// revive them, with time left for them to get there (two bleed turns or more).
+export function selfStabTurn(b, side) {
+  for (const u of b.units) {
+    if (u.side !== side || selfStabRefusal(b, u)) continue;
+    const by = u.rescuer != null && u.rescueTurn === b.turn ? unitById(b, u.rescuer) : null;
+    const medic = u.plan ? unitById(b, u.plan.medic) : null; // a named medic (the drag-then-revive plan)
+    if (((by && active(by)) || (medic && active(medic))) && (u.bleed || 0) >= 2) continue;
+    selfStabilize(b, u);
+  }
 }
 
 // ---------- dragging ----------
@@ -905,6 +1023,16 @@ export const MEDICS_HELP = `<b>Medics.</b> Anyone who takes a med kit into a fig
   <b>Stabilize</b> (Use meds, M): anyone can. With meds it is sure; with none, by hand (pressure, a belt for a tourniquet):
   ${MEDIC.HANDS.BASE}% + ${MEDIC.HANDS.MED} a point of Medicine, at most ${MEDIC.HANDS.MAX}%, and a failed try can be repeated. Healing
   health always needs meds.<br>
+  <b>Stabilize yourself.</b> Someone down and bleeding with a tourniquet or a field trauma kit within reach (the off hand, a
+  pocket or a rig pouch: not the pack, out of reach lying down) can spend their turn on their own wound (the one thing the
+  downed can do, once a turn): a tourniquet ${MEDIC.SELF.tourniquet.BASE}% + ${MEDIC.SELF.tourniquet.MED} a point of Medicine (at most
+  ${MEDIC.SELF.tourniquet.MAX}%), a trauma kit ${MEDIC.SELF.traumakit.BASE}% + ${MEDIC.SELF.traumakit.MED} (at most ${MEDIC.SELF.traumakit.MAX}%). Stopped:
+  stabilized, still down (a medic gets them up), and the item's use is spent (a tourniquet is one use; a trauma kit
+  loses one of its uses). Failed: nothing spent, tried again next turn while they still bleed. Bare hands are not
+  enough on yourself. The button is on the downed one's panel (select them in the roster); anyone who has not tried by
+  the end of your turn tries then by themselves. The enemy does the same: soldiers carry a tourniquet more often than
+  not, guards about one in three, militia and fighters one in seven, raiders one in ten; their medic's trauma kit counts.
+  A downed enemy who stops their own bleeding is a prisoner after a won fight, like any stabilized one.<br>
   <b>Drag</b> (Shift+D) a downed teammate: anyone can take hold of one next to them (bleeding, stabilized or knocked out), for
   free, and drag them: half the move distance (both actions can go on moving), no shooting. Shift+D again puts them down; next to the vehicle they can be laid
   in it (counts as carried out; one still bleeding is stabilized on the way in, 1 action: sure with meds, by hand

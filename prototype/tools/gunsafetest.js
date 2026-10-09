@@ -641,11 +641,10 @@ console.log("The screen: the safe drawn (both views), its buttons and its toolti
   c.kind = "gunsafe";
   c.lock = { kind: "gunsafe2", open: false, tries: 1, mech: "keypad", ref: `c${c.id}`, prog: 2 };
   const errs = [];
-  for (const view of ["iso", "2d"]) {
-    UI.setBattleView(view);
+  for (const view of ["iso"]) {
     try { UI.drawCombat(st, 1e9); } catch (e) { errs.push(`${view}: ${e.stack.split("\n").slice(0, 2).join(" ")}`); }
   }
-  check(!errs.length && !nan, `a gun safe on the raid map draws in the iso view and the 2D view with no error or NaN${errs.length ? ` (${errs.join("; ")})` : ""}`);
+  check(!errs.length && !nan, `a gun safe on the raid map draws in the iso view with no error or NaN${errs.length ? ` (${errs.join("; ")})` : ""}`);
   const u = b.units.find((x) => x.side === "player");
   u.x = c.x + 1; u.y = c.y;
   const s = survivorOf(st, u);

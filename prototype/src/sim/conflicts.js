@@ -30,7 +30,7 @@ import {
   removeParty, startReturn, STANCES,
 } from "./parties.js";
 import * as Parties from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, createVehicle, VEHICLE_TYPES, fitTechnical, ambushMult, raidTurret, loseRaidHumvee, humveeLeftText, TURRET_ODDS, wearRaidHumvee } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, partyVehicles, createVehicle, VEHICLE_TYPES, fitTechnical, ambushMult, raidTurret, loseRaidHumvee, humveeLeftText, TURRET_ODDS, wearRaidHumvee } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer, raidRepelled, groupBroken } from "./factions.js";
 import { raidDamage } from "./breakdowns.js";
 import { perceptionChance, markAbandonedVehicle } from "./markers.js";
@@ -289,8 +289,7 @@ function releaseHome(state, s) {
 // If the whole team is gone (captured), the party ends: the vehicle is seized.
 function endIfEmpty(state, p, f) {
   if (!state.parties.includes(p) || partyMembers(state, p).length) return false;
-  const v = partyVehicle(state, p);
-  if (v) {
+  for (const v of partyVehicles(state, p)) { // every one of the team's (vehicles.js fleets)
     state.vehicles.splice(state.vehicles.indexOf(v), 1);
     if (f) captureVehicle(f, v); // arsenal.js: it is theirs now (f.vehicles)
     log(state, `${f ? f.name : "They"} took the ${v.name}.`, "danger");

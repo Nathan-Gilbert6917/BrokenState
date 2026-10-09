@@ -23,6 +23,7 @@ import { ensureHives, hivesSecured } from "./hives.js";
 import { growthAt, growthInfo } from "./hivetech.js";
 import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
+import { groundDaily } from "./carry.js"; // food left on the ground spoils
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
 import { createVehicle, vehiclesDaily, garageHour, factionVehiclesDaily } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
@@ -79,6 +80,7 @@ import { familyDaily } from "./family.js"; // children and generations
 import { leavePlayerBase, abandonedAt } from "./groupworld.js"; // a lost outpost stands empty for a group to move into (or for your Occupy order)
 import { noteLootAge } from "./itemcond.js"; // the years since the fall: shops and homes keep getting worse (COND_AGE)
 import { starterMags } from "./carrykit.js"; // a starting gun's spare magazines
+import { noteLook, keepLook } from "./intelnotes.js"; // what your people learned of the groups' bases (the State Map's estimates, intelest.js)
 
 export const HUB_VISION = 3;
 // A normal start's hub is bare (barestart): no buildings, every construction plot free. Its stores carry the first
@@ -129,6 +131,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const state = {
     seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",
     idBase: nextId - 1, // localId: this world's ids counted from its own start
+    fleetV: 1, // several vehicles to a team (vehicles.js fleets: p.vehicleIds); save.js gives older saves the list
     kitV: 2, // carry kit (w2-kit): a new world in either mode is born with it (carrykit.js migrateKit is for older saves only; a hardcore world never set it and gained magazines on every load)
     woodcutting: 2, // a world with firewood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
@@ -775,7 +778,7 @@ export function updateVision(state) {
   state.live = live;
   for (const id of live) {
     state.knowledge[id] = snapshot(state, id);
-    for (const f of state.factions) if (f.bases.includes(id)) f.known = true;
+    for (const f of state.factions) if (f.bases.includes(id)) { f.known = true; if (f.alive) noteLook(state, id, "sight"); } // intelnotes.js: what the base looks like
   }
   // Hidden sites (discovery.js) the bases and watchtowers see for the first time: a log line.
   for (const b of state.bases) noteFinds(state, state.grid.within(b.tile, baseVision(b, state)), { base: b });
@@ -791,6 +794,7 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
     const cur = state.knowledge[id];
     // Radio news of a stripped site (aiscav.js) newer than the team's look keeps its loot.
     if (!cur || cur.hour <= snap.hour) state.knowledge[id] = cur && cur.lootHour > snap.hour ? { ...snap, loot: cur.loot, lootHour: cur.lootHour, lootSrc: cur.lootSrc } : snap;
+    if (snap.gb) keepLook(state, id, snap.gb); // intelnotes.js: what the team saw of a group's base
     if (snap.factionBase) {
       const f = factionById(state, snap.factionBase);
       if (f) f.known = true;
@@ -843,6 +847,7 @@ export function tickHour(state) {
     routesDaily(state);
     supplyDaily(state);
     deathSitesDaily(state);
+    groundDaily(state); // carry.js: food on the ground (dropped cargo, the dead's rations) spoils
     walkingDaily(state); // carriers.js: the walking dead drift a tile; a body with the worm left unburied at a base gets up
     groupJailsDaily(state); // groupjails.js: the groups' prisoners work, escape, are ransomed, swapped, sold or turned
     captivesDaily(state);

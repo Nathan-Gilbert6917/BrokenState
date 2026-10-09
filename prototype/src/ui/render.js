@@ -4,6 +4,7 @@ import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
 import { partyTile, plannedTile, outpostScrap, glideAt, partyMembers } from "../sim/parties.js";
 import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
+import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card does not glide
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById } from "../sim/vehicles.js";
@@ -26,7 +27,7 @@ import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
 import { caravanTipLines } from "../sim/caravanraids.js"; // the groups' caravans and convoys you can see
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
-import { stagingStage, stagingPct, workCap, stagingTip } from "../sim/staging.js";
+import { stagingStage, stagingPct, workCap, stagingTip, stagingMissing } from "../sim/staging.js";
 import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { allianceMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
@@ -41,6 +42,8 @@ import {
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
 import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
 import { blocOf, blocColorOf } from "../sim/blocs.js"; // AI blocs: a ring in the bloc's colour round its members' bases
+import { drawNight } from "./nightfx.js"; // the time-of-day shade and the lights through it
+import { lightningFrame, drawLightning, lightningWants } from "./lightningfx.js"; // lightning in storms: lifts the night shade, flashes after it
 
 export const HEX = 26;
 const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
@@ -48,13 +51,14 @@ const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the he
 export const camera = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_LAYERS = ["pois", "territory", "teams", "hordes", "deaths", "vehicles", "finds", "weather"];
 // hourFrac: how much of the coming hour has gone by (main.js): your moving teams glide between tiles by it.
-export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0 };
+export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0, pick: null }; // pick: "kind:id" ringed in gold (ui/mapselect.js)
 const on = (k) => view.layers.has(k);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // A new world starts with the default view: nothing selected, the fog back on, the standard layers, zoom 1.
 export function resetView() {
   view.selected = -1;
+  view.pick = null;
   view.hover = -1;
   view.preview = null;
   view.devReveal = false;
@@ -1031,6 +1035,7 @@ export function redrawMap(all = false) {
 export function render(state) {
   if (!ctx) return;
   const now = performance.now();
+  if (lightningWants(now)) forceDraw = true; // ui/lightningfx.js: a flash running or a strike due
   if (!state.timelapse && unchanged(state, now)) { mapStats.skipped++; return; }
   frameNo++;
   mapStats.drawn++;
@@ -1142,6 +1147,11 @@ export function render(state) {
     lastFrac = view.hourFrac;
     if (drawFronts(ctx, state, { hex: HEX, view: { minX, maxX, minY, maxY }, frac: hourFrac(), strong: on("fronts"), zoom: zoom / (readable.text || 1) }) && animOn() && !readable.still && moving) wantFrames(150);
   }
+  // Night (ui/nightfx.js): the shade over the ground and the cached sites, the lights cutting through it; what is drawn
+  // after it (bases, teams, hordes, labels, icons, selection) stays at full brightness.
+  lightningFrame({ state, cw, ch: chh, S, ox, oy, hex: HEX, frac: hourFrac(), timelapse: !!state.timelapse, now }); // ui/lightningfx.js: strikes due; a flash lifts the shade
+  drawNight(ctx, { state, cw, ch: chh, S, ox, oy, boost: zoomBoost(), G, frac: hourFrac(), timelapse: !!state.timelapse });
+  drawLightning(ctx); // ui/lightningfx.js: the flash and the bolt (what is drawn after it is never flashed)
   const inView = (id) => { const px = G.x[id], py = G.y[id]; return !(px < minX || px > maxX || py < minY || py > maxY); };
   let animating = false;
   glidingNow = false;
@@ -1257,13 +1267,20 @@ export function render(state) {
     if (camp.fire !== false) { const [fx, fy] = gridPoint(cv, px, cy, w, 13.5, 15); fireGlow(camp.tile * 3 + 1, fx, fy, s); smokeWisps(camp.tile * 3 + 2, fx, fy - 2 * s, s, { n: 3, rise: 14 }); } // mapsprites.js paintStaging: campfire at 12, 17
     const h = spriteH(cv, w);
     noteSprite(px, cy, w, h);
-    const bw = 22 * s, bx = px - bw / 2, by = cy + h / 2 + 2 * s, f = stagingPct(camp), cap = camp.needs ? Math.min(1, workCap(camp) / camp.work) : f;
-    ctx.fillStyle = "rgba(13,15,18,0.8)";
-    ctx.fillRect(bx - 1, by - 1, bw + 2, 3 * s + 2);
-    if (cap > f) { ctx.fillStyle = "rgba(217,165,32,0.35)"; ctx.fillRect(bx, by, bw * cap, 3 * s); }
-    ctx.fillStyle = "#d9a520";
-    ctx.fillRect(bx, by, bw * f, 3 * s);
-    labels.push({ text: `Staging camp ${Math.round(f * 100)}%`, x: px, y: crowded(camp.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : by + 3 * s + 7, pri: -1, screen: true, color: "#cfe2f7", size: 9 });
+    const f = stagingPct(camp), cap = camp.needs ? Math.min(1, workCap(camp) / camp.work) : f;
+    buildBarOnMap(px, cy - h / 2 - 7 * s, s, f, cap); // above the sprite: the team standing there covers the ground below it
+    const short = camp.needs && stagingMissing(camp).length, busy = camp.workers > 0 && f < cap - 1e-6;
+    labels.push({ text: `Camp ${Math.round(f * 100)}% · ${busy ? "building" : short ? "needs supplies" : f >= 1 ? "done" : "idle"}`, x: px, y: crowded(camp.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 9 * s, pri: -1, screen: true, color: short && !busy ? "#ffd166" : "#cfe2f7", size: 9 });
+  }
+  // A team on its way to pitch the camp (Establish base): a dashed ring where it will stand.
+  if (!camp && !state.bases.length) for (const p of state.parties) {
+    if (p.owner !== "player" || p.mission !== "establish" || !(p.phase === "out" || p.phase === "back") || !p.path || !p.path.length) continue;
+    const dest = p.path[p.path.length - 1];
+    if (!inView(dest)) continue;
+    const px = G.x[dest], py = G.y[dest], s = zoomBoost();
+    ctx.strokeStyle = "rgba(255,209,102,0.8)"; ctx.lineWidth = 1.5 * s; ctx.setLineDash([3 * s, 3 * s]);
+    ctx.beginPath(); ctx.arc(px, py, 13 * s, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    labels.push({ text: "Camp site", x: px, y: py + 13 * s + 7, pri: -1, screen: true, color: "#ffd166", size: 9 });
   }
   // Player bases: a walled town for the hub, a cabin for outposts, showing walls and notable buildings.
   const nodes = radioNodes(state);
@@ -1288,7 +1305,10 @@ export function render(state) {
     }
     if (festivalNow(state, b)) for (let i = 0; i < 4; i++) fireGlow(b.id * 7 + 40 + i, px + (i - 1.5) * w * 0.24, cy + h / 2 - (i % 2 ? 1 : 3) * s, s); // sim/festival.js: bonfires on the festival day
     if (b.alert) sprite(iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s + stepBob(b.id * 3 + 3, 1.6 * s, 900), ICON_W * s);
-    labels.push({ text: b.tier === 0 ? `${b.name} (shelter)` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
+    // A shelter building up into a base (buildings.js hub_up): a bar of the work under it.
+    const up = b.tier === 0 && b.construction.find((c) => c.type === "hub_up");
+    if (up) buildBarOnMap(px, cy - h / 2 - 7 * s, s, up.hours ? up.progress / up.hours : 0);
+    labels.push({ text: b.tier === 0 ? `${b.name} (${up ? `building a base: ${Math.round((up.hours ? up.progress / up.hours : 0) * 100)}%` : "shelter"})` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).
     const node = nodes.find((n) => n.base === b);
     if (node) {
@@ -1492,6 +1512,7 @@ export function render(state) {
       sprite(siegeCampCanvas(color), px - 25 * o, py + 17 * o, 26 * s);
       smokeWisps(p.id * 3 + 1, px - 25 * o, py + 17 * o - 8 * s, s, { n: 3, rise: 14 });
       groundRing(px + 24 * o, py + 12 * o, color, false, true);
+      if (view.pick === `group:${p.id}`) pickRing(px + 24 * o, py + 12 * o);
       sprite(cv, px + 24 * o, py + 12 * o - 3, w, { facing: -1 });
       sprite(iconCanvas("siege"), px, py - 30 * s, ICON_W * 1.2 * s);
       noteSprite(px + 24 * o, py + 12 * o - 3, w, spriteH(cv, w));
@@ -1500,6 +1521,7 @@ export function render(state) {
     // On a base's tile (passing through, or arriving) the party stands beside the base, not on top of it.
     const [x, y, k2] = besideBase(tile, px, py);
     groundRing(x, y, color, false, p.kind === "raid");
+    if (view.pick === `group:${p.id}`) pickRing(x, y); // selected on the map (ui/mapselect.js)
     const fo = facingOf(state, p), onWay = p.path && p.idx < p.path.length - 1;
     if (onWay && kind === "convoy") dustTrail(p.id, x, y + 4 * s, s, fo, w * k2);
     const dy = !onWay ? 0 : kind === "convoy" ? rumble(p.id, 0.35 * s) : stepBob(p.id, 1.1 * s, 380);
@@ -1517,6 +1539,7 @@ export function render(state) {
     const facing = next != null && next !== b.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
     const [x, y, k2] = besideBase(b.tile, px, py);
     groundRing(x, y, b.color, false, false);
+    if (view.pick === `band:${b.id}`) pickRing(x, y);
     const onWay = next != null && next !== b.tile;
     if (onWay && b.convoy) dustTrail(b.tile * 13 + 7, x, y + 4 * s, s, facing, w * k2);
     sprite(cv, x, y - 3 + (!onWay ? 0 : b.convoy ? rumble(b.tile * 13, 0.35 * s) : stepBob(b.tile * 13 + 1, 1.1 * s, 380)), w * k2, { facing });
@@ -1538,6 +1561,7 @@ export function render(state) {
     const facing = next != null && next !== v.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
     const [x, y, k2] = besideBase(v.tile, px, py);
     groundRing(x, y, color, heard, v.kind === "raiders");
+    if (view.pick === `visitor:${v.id}`) pickRing(x, y);
     const onWay = !heard && next != null && next !== v.tile;
     sprite(cv, x, y - 3 + (onWay ? stepBob((v.id || v.tile) * 17 + 3, 1.1 * s, v.kind === "merchants" ? 520 : 380) : 0), w * k2, { facing, alpha: heard ? 0.55 : 1 });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
@@ -1702,6 +1726,17 @@ function blocRing(x, y, color, s) {
   ctx.stroke();
   ctx.restore();
 }
+// A construction bar under a sprite, centered at x with its top at y: the work done (amber, green once full) and,
+// lighter, as far as the materials allow (cap). Returns the y of its bottom edge.
+function buildBarOnMap(x, y, s, f, cap = f) {
+  const bw = 30 * s, bh = 4 * s, bx = x - bw / 2;
+  ctx.fillStyle = "rgba(13,15,18,0.85)";
+  ctx.fillRect(bx - 1.5, y - 1.5, bw + 3, bh + 3);
+  if (cap > f) { ctx.fillStyle = "rgba(224,168,79,0.35)"; ctx.fillRect(bx, y, bw * Math.min(1, cap), bh); }
+  ctx.fillStyle = f >= 1 ? PAL.good : "#e0a84f";
+  ctx.fillRect(bx, y, bw * Math.max(0, Math.min(1, f)), bh);
+  return y + bh;
+}
 // The bloc a group's base belongs to, as a small number for the site code (0: none).
 const blocNo = (state, f) => { const b = blocOf(state, f); return b ? (b.id % 255) + 1 : 0; };
 function ownerPlate(x, y, color, s, rx, besieged) {
@@ -1814,6 +1849,16 @@ function groundRing(x, y, color, dashed, raid = false) {
   ctx.setLineDash(dashed ? [3, 3] : []);
   ctx.stroke();
   ctx.setLineDash([]);
+}
+
+// The gold ring of a party selected on the map (ui/mapselect.js), around its ground ring: the selected tile's color.
+function pickRing(x, y) {
+  const s = zoomBoost();
+  ctx.beginPath();
+  ctx.ellipse(x, y + 7 * s, 17 * s, 7.5 * s, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = "#e0a84f";
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
 }
 
 // Status icon at a sprite's top right: "alert" (waiting for orders), "work", "radio", "unknown" ("?" in color).
@@ -1939,7 +1984,8 @@ function drawPlayerParty(state, p) {
   if (p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task") {
     let [px, py] = g.toPixel(partyTile(p), HEX);
     // On the move: part of the way to the next tile, by the minutes gone of the hour (sim/parties.js glideAt).
-    const gl = state.timelapse ? null : glideAt(state, p, hourFrac());
+    // A team holding for a card in the tray (ui/pacing.js) stays put: it does not move on when the hour ticks.
+    const gl = state.timelapse ? null : glideAt(state, p, hourFrac(), holdsNextHour(state, p));
     const glide = gl && gl.to !== gl.from && gl.t > 0 ? gl : null;
     const from = glide ? p.path.indexOf(glide.to, p.idx) : p.idx;
     let gx = px, gy = py;
@@ -2007,6 +2053,7 @@ function drawPlayerParty(state, p) {
     }
     if (isNight(state)) lightGlow(state, p, px, py); // sim/lights.js: a team carrying lights glows in the dark
     groundRing(px, py, ring, false);
+    if (view.pick === `team:${p.id}` || view.pick === `convoy:${p.id}`) pickRing(px, py); // selected (ui/mapselect.js)
     const cvp = partySpriteCanvas(look.kind, look.color, look.count, look.ups), wp = spriteW(look.kind) * k2;
     // On the move: people bob in step, a cart a little slower; a vehicle rumbles and raises dust.
     const onWay = (p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1;
@@ -2063,6 +2110,7 @@ function drawPlayerParty(state, p) {
   }
   // Faded sprite on a dashed ring: where the team should be if the plan held.
   groundRing(ex, ey, color, true);
+  if (view.pick === `team:${p.id}` || view.pick === `convoy:${p.id}`) pickRing(ex, ey);
   const cve = partySpriteCanvas(look.kind, look.color, look.count, look.ups), we = spriteW(look.kind) * ke;
   sprite(cve, ex, ey - 3, we, { facing: lastFacing.get(p) || 1, alpha: 0.5 });
   noteSprite(ex, ey - 3, we, spriteH(cve, we));

@@ -274,9 +274,11 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   const p = mine(b);
   p.fit = { aim: p.aim, dmgMult: p.dmgMult, armor: p.armor, medicine: p.medicine };
   loadMag(p, 9);
+  const first = a.gear.weapon;
   a.gear.weapon = newItem("pistol");
   refitUnit(b, p, a);
-  check(p.weapon === "pistol" && p.mag === 9 && p.magMax === 15, "another pistol: the 9 loaded rounds stay (9/15)");
+  // gunload.js: the rounds are the gun's, not the hand's: the old pistol keeps its 9, another one found comes empty.
+  check(p.weapon === "pistol" && p.mag === 0 && p.magMax === 15 && first.loaded && first.loaded.n === 9, "another pistol (found): it comes empty (0/15); the 9 loaded rounds stay in the old one");
   a.gear.weapon = newItem("shotgun");
   refitUnit(b, p, a);
   check(p.weapon === "shotgun" && p.mag === 0 && p.magMax === 6 && magEmpty(b, p), "a shotgun picked up: it comes empty (0/6), Reload to load it");

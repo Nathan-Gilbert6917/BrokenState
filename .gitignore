@@ -13,3 +13,11 @@ Desktop.ini
 # Local, per-machine Claude Code settings
 .claude/settings.local.json
 .claude/worktrees/
+
+# Sound previews (prototype/tools/sfxpreview/main.cjs, prototype/tools/zombiesfxpreview.cjs, prototype/tools/ambiencepreview/main.cjs)
+sfx-preview/
+vd-preview/
+amb-preview/
+
+# Music previews (prototype/tools/musicpreview/main.cjs)
+music-preview/

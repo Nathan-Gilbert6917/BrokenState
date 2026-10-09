@@ -749,6 +749,7 @@ section("No blows across a wall's corner (combat.js cornerBlocked: the player's 
   const b = st.combat;
   b.phase = "player";
   const me = b.units.find((u) => u.side === "player" && !u.captive);
+  if (me.hands || me.bag) combatAct(st, { type: "dropCarried", unit: me.id }); // carry.js: the team's supplies set down first (free): this is about the corner
   const foes = b.units.filter((u) => u.side === "enemy");
   const g = foes[0];
   for (const o of foes.slice(1)) { o.dead = true; o.hp = 0; } // one guard left, the field otherwise quiet

@@ -5,7 +5,7 @@
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
 import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom } from "../sim/parties.js";
-import { partyVehicle, tank, isBike, vehicleLabel, upgradeText, upgradeEffects } from "../sim/vehicles.js";
+import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
 import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, describeOrder, CAMP_HOURS, REPAIR_HOURS, SURVEY_HOURS, besideWater, FETCH_WATER_HOURS } from "../sim/orders.js";
@@ -20,7 +20,7 @@ import { weather as wxNow, travelEffects, foodNeedFactor } from "../sim/weather.
 import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
 import { listenBlock, teamRadioLine } from "./radiolisten.js"; // the team's receiver: Listen in, what it heard
 import { heatInfo, rowsText } from "../sim/fieldheat.js";
-import { fireButton } from "./hardcore.js";
+import { fireButton, campStatusCard } from "./hardcore.js"; // the staging camp while you have no base
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE, partyHuntMix, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { teamWormText, teamWaterHow, teamTabCount, WORM } from "../sim/worm.js";
 import { teamWaterIn, teamRawIn } from "../sim/water.js"; // purified and un-purified water
@@ -32,6 +32,10 @@ import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low h
 import { watchlistPin } from "./watchlist.js"; // 📌 pin the team to the Watching panel
 import { totalRounds, sumRecs } from "../sim/rounds.js"; // rounds by calibre
 import { roundsLine } from "../sim/ammo.js";
+import { teamInvBar } from "./teaminv.js"; // 🎒 Team inventory; Drop off / Load at a base
+import { editTeamButton } from "./teamform.js"; // Edit team… while it waits on one of your bases
+import { teamCarryCard } from "./carry.js"; // who carries what (pockets, packs, arms, vehicle), the ground here
+import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -91,8 +95,11 @@ function statusLine(state, ui, p) {
 export function renderRunningOrders(state, ui) {
   const mine = state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy");
   if (!mine.length) return "";
-  if (ui.ordersCollapsed) return `<button class="mini" data-action="xp-orderstoggle"${tip("Show the running orders of your teams")}>Orders (${mine.length}) ▸</button>`;
-  return `<div class="spread"><b>Running orders</b><button class="mini" data-action="xp-orderstoggle"${tip("Hide this list")}>▾</button></div>
+  const waiting = mine.filter((p) => p.phase === "waiting").length;
+  const box = { icon: "🚶", title: ui.ordersCollapsed ? "Orders" : "Running orders", count: mine.length, action: "xp-orderstoggle",
+    badges: waiting ? [{ text: `${waiting} waiting`, tone: "warn", tip: "Teams waiting for orders (Tab or N jumps to the next)" }] : [] };
+  if (ui.ordersCollapsed) return panelTab({ ...box, tip: "Show the running orders of your teams (Shift+[)" });
+  return `${panelHead({ ...box, tip: "Fold this list away (Shift+[)" })}
     ${mine.map((p) => {
       const s = statusLine(state, ui, p);
       const q = (p.orders || []).length;
@@ -122,7 +129,7 @@ export function renderExpedition(state, ui, p) {
   const ord = (type, extra, label, hint, disabled) => btn(`data-action="xp-order" data-id="${p.id}" data-type="${type}"${extra}`, label, hint, disabled);
 
   const head = `<div class="spread"><h2 style="margin:0">Team: ${members.map(first).join(", ")}</h2><span class="row">${watchlistPin(state, "team", p.id, `team (${members.map((m) => m.name.split(" ")[0]).join(", ")})`)}<button class="mini" data-action="xp-close"${tip("Back to the tile view (Esc)")}>✕</button></span></div>
-    <div class="small muted">${esc(MISSIONS[p.mission]?.name || "Team")} · ${v ? esc(v.name) : "on foot"} · ${STANCES[p.stance]?.name || ""} · home ${esc(home.name)}</div>`;
+    <div class="small muted">${esc(MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team")} · ${v ? esc(vehicleLabel(partyFleet(state, p))) : "on foot"}${p.walkers > 0 && p.vehicle ? ` <span class="warn"${tip("Not enough seats after a vehicle was lost: they walk, and the team goes at walking pace (the cargo stays in the vehicles) until a seat turns up")}>(${p.walkers} walking: foot pace)</span>` : ""} · ${STANCES[p.stance]?.name || ""} · home ${esc(home.name)}</div>${teamInvBar(state, p, live)}${live ? editTeamButton(state, p) : ""}`;
 
   const status = `<div class="card small" style="margin-top:0.5rem">
       <div class="spread"><b>Now</b>${live ? `<button class="mini" data-action="center" data-tile="${tile}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>
@@ -135,8 +142,10 @@ export function renderExpedition(state, ui, p) {
       ${live ? heatBlock(state, p) : ""}
     </div>`;
 
+  const camp = campStatusCard(state, p); // no base yet: the staging camp's progress and what it still needs
+
   if (!cmd) {
-    return head + status + teamRadioLine(state, p, true) + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
+    return head + camp + status + teamRadioLine(state, p, true) + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
       `<h3>People</h3>${members.map((m) => memberCard(state, p, m, false)).join("")}`;
   }
 
@@ -179,7 +188,7 @@ export function renderExpedition(state, ui, p) {
       ${ui.xpMsg ? `<div class="result small" style="margin-top:0.4rem">${esc(ui.xpMsg)}</div>` : ""}
     </div>`;
 
-  return head + status + actions +
+  return head + camp + status + actions + teamCarryCard(state, ui, p) +
     `<h3>People (${members.length})</h3>${teamNeedsBlock(state, p, true)}${members.map((m) => memberCard(state, p, m, true, queueing)).join("")}` +
     suppliesBlock(state, p) + vehicleBlock(state, p, v);
 }
@@ -376,6 +385,12 @@ function suppliesBlock(state, p) {
 }
 
 function vehicleBlock(state, p, v) {
+  // Several vehicles (sim/vehicles.js fleets): one card each, the lead (driven on a battle map) first.
+  const vs = partyVehicles(state, p);
+  if (vs.length > 1) {
+    const f = partyFleet(state, p);
+    return `<h3${tip(`Up to ${MAX_VEHICLES} vehicles: seats, payload and fuel add up, the slowest sets the pace. Every vehicle wears on the road; a breakdown hits one of them. The first is the one driven on a battle map.`)}>Vehicles (${vs.length}) · ${seatsOf(f)} seats</h3>${vs.map((x) => vehicleBlock(state, { ...p, vehicleIds: [x.id], vehicleId: x.id }, x).replace(/^<h3>Vehicle<\/h3>/, "")).join("")}`;
+  }
   if (!v) return `<h3>Vehicle</h3><div class="card small muted">On foot.</div>`;
   if (isBike(v)) return `<h3>Vehicle</h3><div class="card small">
     <b>${esc(vehicleLabel(v))}</b>

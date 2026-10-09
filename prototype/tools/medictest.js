@@ -47,7 +47,6 @@ const ISO = await import("../src/ui/isoview.js");
 const UI = await import("../src/ui/combat.js");
 ISO.setIsoCanvas(cvs);
 UI.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, getContext: () => silent() });
-UI.setBattleView("iso");
 
 // Dice that always (or never) come up: the battle's chance() for one call.
 const forced = (b, v, fn) => { const c = b.rng.chance; b.rng.chance = () => v; try { return fn(); } finally { b.rng.chance = c; } };

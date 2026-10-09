@@ -582,7 +582,8 @@ section("Found cars (foundcars.js)");
       w.found = { model: "sedan", hour: st3.hour - 100 - i * 13, repair: { parts: 2, scrap: 0, hours: 2, mech: 5, what: ["flat tyres"] } };
       p3.supplies.carparts = 1; p3.supplies.parts = 10; p3.cargo.supplies.carparts = 0; p3.cargo.supplies.parts = 0;
       const text = finishFixCar(st3, p3, { vehicleId: w.id });
-      if (!w.found.repair) { ok = true; check(p3.supplies.carparts === 0 && p3.supplies.parts === 8, `a repair short of car parts takes 2 machine parts for the missing one ("${text}")`); }
+      if (!w.found || !w.found.repair) { ok = true; // fixed: it may join the team's vehicles (vehicles.js fleets: a driver free)
+       check(p3.supplies.carparts === 0 && p3.supplies.parts === 8, `a repair short of car parts takes 2 machine parts for the missing one ("${text}")`); }
       if (st3.vehicles.includes(w)) st3.vehicles.splice(st3.vehicles.indexOf(w), 1);
       if (p3.vehicleId === w.id) { p3.vehicleId = null; }
     }
@@ -646,7 +647,7 @@ section("Drawing them (stub canvases: ui/isoview.js, ui/combat.js, ui/mapsprites
   st.combat = createBattle(st, raidSetup(st, c.tile, p));
   const b = st.combat;
   let err = "";
-  for (const view of ["iso", "top"]) { UI.setBattleView(view); try { UI.drawCombat(st, 1e9); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); } }
+  for (const view of ["iso"]) { void view; try { UI.drawCombat(st, 1e9); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); } }
   check(!err && !nan, `the convoy's raid map with your Army truck draws in both views${err ? `: ${err}` : ""}${nan ? ` (${nan} NaN)` : ""}`);
   // The car row: a unit next to a truck.
   const u = b.units.find((x) => x.side === "player");

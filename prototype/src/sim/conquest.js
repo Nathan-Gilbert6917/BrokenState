@@ -61,7 +61,7 @@ import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { log, addCard, day, hub, atBase, factionById, newId, combatPower, baseById, checkGameOver, alive, supplyValue, snapshot, armedFactor } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, recomputeOwnership, clearStaleAlerts, groupBroken, GROUP_BREAK } from "./factions.js";
 import {
-  partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, removeParty, startReturn, orderMove, carryCapacity, planPath,
+  partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, removeParty, startReturn, orderMove, carryCapacity, planPath, settleInto,
 } from "./parties.js";
 import { startCombat, registerCombatHandler, registerBattleLayout, registerBattleSize, winOdds } from "./combat.js";
 import { groupTurret, TURRET_ODDS, seizeGroupVehicles, upgradeText } from "./vehicles.js"; // a military group's Humvee (M2 turret) defends its home base
@@ -81,6 +81,7 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { noteBaseLoss } from "./causes.js"; // "Why?": the chain of causes of a lost base
 import { groupWalls, groupsBuild } from "./groupworks.js"; // barestart: the walls a group has built at its base
 import { blocAssaultHelp } from "./blocs.js"; // AI blocs: members' fighters at an ally's walls
+import { askBaseName } from "./basenames.js"; // name a base you take
 import { pwarBaseTaken } from "./playerwars.js"; // wars with you: a base taken counts
 
 export const CONQUEST = {
@@ -397,6 +398,7 @@ export function captureBase(state, f, tile, p, info = {}) {
   if (kit.length) got.push(kit.length === 1 ? kit[0].name : `${kit.length} pieces of their kit`);
   f.bases = f.bases.filter((t) => t !== tile);
   state.bases.push(base);
+  askBaseName(state, base);
   const seized = home && f.vehicles && f.vehicles.length ? seizeGroupVehicles(state, f, base) : []; // vehicles.js: their Army truck and Humvee are yours
   // Who holds it: one or two of the team (the weakest fighters), everyone when you have no other base.
   const team = p && state.parties.includes(p) ? partyMembers(state, p) : [];
@@ -407,13 +409,9 @@ export function captureBase(state, f, tile, p, info = {}) {
     p.members = p.members.filter((id) => id !== s.id);
   }
   if (p && state.parties.includes(p) && !partyMembers(state, p).length) {
-    // The whole team moved in: what it carried and the vehicle too, and prisoners go to the cells here.
-    for (const pr of prisonersOf(state)) if (pr.at && pr.at.kind === "party" && pr.at.partyId === p.id) pr.at = { kind: "base", baseId: base.id };
-    for (const pool of [p.supplies, p.cargo.supplies]) for (const [k, q] of Object.entries(pool)) if (SUPPLIES[k] && q >= 1) base.stock[k] = (base.stock[k] || 0) + Math.floor(q);
-    base.armory.push(...p.cargo.gear);
-    const v = p.vehicleId ? state.vehicles.find((x) => x.id === p.vehicleId) : null;
-    if (v) v.loc = { kind: "base", baseId: base.id };
-    removeParty(state, p);
+    // The whole team moved in: what it carried and the vehicle too, and prisoners go to the cells here (parties.js
+    // settleInto, as a team that founds a base; the team is disbanded).
+    settleInto(state, p, base);
   }
   // Their people at this base.
   const bits0 = [];

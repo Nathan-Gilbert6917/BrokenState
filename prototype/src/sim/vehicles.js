@@ -41,13 +41,17 @@ export const OVERLOAD_WEAR = 1.5;     // and wears / breaks down this much more
 export const ROAD_FUEL = 0.6, OFFROAD_FUEL = 1.5; // fuel per tile entered, by road or off-road
 // By type (VEHICLE_TYPES speed / fuel / offroad, 1 when not given): × the pace, × the fuel a tile, × the pace off-road.
 // Both × what the vehicle's armour does to it (upgradeSpeed / upgradeFuel: plating is heavy).
-export const typeSpeed = (v) => (v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].speed ?? 1 : 1) * upgradeSpeed(v);
-export const typeFuel = (v) => (v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].fuel ?? 1 : 1) * upgradeFuel(v);
-export const typeOffroad = (v) => (v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].offroad ?? 1 : 1);
-export const isLoud = (v) => !!(v && VEHICLE_TYPES[v.type] && VEHICLE_TYPES[v.type].loud);
+// A fleet (several vehicles, fleetOf): the slowest car's pace and off-road pace, every car's fuel summed.
+export const typeSpeed = (v) => (v && v.fleet ? Math.min(1, ...v.fleet.filter(isCarOne).map(typeSpeed)) : (v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].speed ?? 1 : 1) * upgradeSpeed(v));
+export const typeFuel = (v) => (v && v.fleet ? v.fleet.filter(isCarOne).reduce((a, x) => a + typeFuel(x), 0) : (v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].fuel ?? 1 : 1) * upgradeFuel(v));
+export const typeOffroad = (v) => (v && v.fleet ? Math.min(1, ...v.fleet.filter(isCarOne).map(typeOffroad)) : v && VEHICLE_TYPES[v.type] ? VEHICLE_TYPES[v.type].offroad ?? 1 : 1);
+export const isLoud = (v) => (v && v.fleet ? v.fleet.some(isLoud) : !!(v && VEHICLE_TYPES[v.type] && VEHICLE_TYPES[v.type].loud));
 
-export const isBike = (v) => !!v && v.type === "bike";
-export const isCar = (v) => !!v && !!VEHICLE_TYPES[v.type]?.motor;
+const isBikeOne = (v) => !!v && v.type === "bike";
+const isCarOne = (v) => !!v && !!VEHICLE_TYPES[v.type]?.motor;
+// A fleet: bikes when every one is a bike, a car when any is (it travels as cars do).
+export const isBike = (v) => (v && v.fleet ? v.fleet.every(isBikeOne) : isBikeOne(v));
+export const isCar = (v) => (v && v.fleet ? v.fleet.some(isCarOne) : isCarOne(v));
 // How a team with this vehicle moves: false (on foot), true (a car) or "bike" (parties.js moveCost, planPath).
 export const travelMode = (v) => (!v ? false : isBike(v) ? "bike" : true);
 
@@ -66,11 +70,99 @@ export const vehiclesAtBase = (state, baseId) => state.vehicles.filter((v) => v.
 // Cars only (supply runs, trade routes and caravans need an engine).
 export const carsAtBase = (state, baseId) => vehiclesAtBase(state, baseId).filter(isCar);
 export const bikesAtBase = (state, baseId) => vehiclesAtBase(state, baseId).filter(isBike).reduce((n, v) => n + (v.count || 1), 0);
-export const partyVehicle = (state, p) => (p.vehicleId ? vehicleById(state, p.vehicleId) : null);
-export const tank = (v) => VEHICLE_TYPES[v.type].tank;
-// Cargo a vehicle adds to a team: a car's payload, a stack of bikes' racks.
-export const vehicleCapacity = (v) => (!v ? 0 : isBike(v) ? (v.count || 1) * VEHICLE_TYPES.bike.rack : payloadOf(v));
-export const vehicleLabel = (v) => (isBike(v) ? `${v.count || 1} bicycle${(v.count || 1) === 1 ? "" : "s"}` : v.destroyed ? `${v.name} (wrecked)` : v.name);
+// ---------- several vehicles to a team (teamform.js) ----------
+// p.vehicleIds lists a team's vehicles (a stack of bikes is one entry; an old save's single vehicleId becomes a list of
+// one, save.js), cars first. p.vehicleId stays the lead one (the first car, else the bikes): what "the team's vehicle"
+// means where only one can be (the one driven on a battle map, the map sprite, the vehicle on a card). A fleet object
+// (fleetOf: { fleet: [...] }) stands for them together where they add up: seats, payload, racks and tanks summed
+// (seatsOf, payloadOf, vehicleCapacity, tank), the slowest car's pace (typeSpeed, typeOffroad), every car's fuel
+// (typeFuel summed: useFuel takes it from each car's own tank, an empty tank topped up from the cans, then from the other
+// cars), and with bikes among the cars the convoy keeps to the bikes on roads (roadPace) and to the cars off them.
+// One vehicle is itself (fleetOf returns it), so a team with one vehicle is exactly what it always was.
+// Each vehicle needs someone driving or riding it, and with two or more everyone needs a seat (fleetProblem); a lone
+// car takes anyone who squeezes in, as it always has (its payload counts 80 kg a rider).
+export const MAX_VEHICLES = 4;
+// Seats: who can ride in a vehicle (a battle map's board / disembark; a fleet's room on the road), by its model.
+export const SEATS = { sedan: 4, suv: 5, hummer: 4, van: 7, truck: 5, bike: 1, miltruck: 12 }; // a bike or a motorcycle: its rider
+/** @param {any} p @returns {number[]} */
+// p.vehicleId (the lead) is the word: none, no vehicles; a lead the list does not hold (older code that set the one
+// vehicle directly) is the only one.
+export const partyVehicleIds = (p) => (!p || !p.vehicleId ? [] : Array.isArray(p.vehicleIds) && p.vehicleIds.includes(p.vehicleId) ? p.vehicleIds : [p.vehicleId]);
+/** @returns {any[]} */
+export const partyVehicles = (state, p) => partyVehicleIds(p).map((id) => vehicleById(state, id)).filter(Boolean);
+// The lead vehicle (old callers: "the team's vehicle"); partyFleet for all of them together.
+export const partyVehicle = (state, p) => (p.vehicleId ? vehicleById(state, p.vehicleId) || null : partyVehicles(state, p)[0] || null);
+export const partyFleet = (state, p) => fleetOf(partyVehicles(state, p));
+const leadOrder = (vs) => [...vs.filter((v) => !isBikeOne(v)), ...vs.filter(isBikeOne)];
+// null, the one vehicle itself, or { fleet, id (the lead's), type (the lead's), upgrades (the lead's), count (bikes),
+// fuel (every car's), condition (the worst), name ("Pickup truck + Old sedan") }.
+export function fleetOf(vs) {
+  const list = leadOrder((vs || []).filter(Boolean));
+  if (!list.length) return null;
+  if (list.length === 1) return list[0];
+  const lead = list[0];
+  const cars = list.filter(isCarOne), bikes = list.filter(isBikeOne);
+  const f = { fleet: list, id: lead.id, type: lead.type, upgrades: lead.upgrades, loc: lead.loc };
+  if (bikes.length) f.count = bikes.reduce((a, v) => a + (v.count || 1), 0);
+  Object.defineProperty(f, "fuel", { get: () => cars.reduce((a, v) => a + (v.fuel || 0), 0), enumerable: true });
+  Object.defineProperty(f, "condition", { get: () => Math.min(...list.map((v) => v.condition)), enumerable: true });
+  Object.defineProperty(f, "name", { get: () => fleetName(list), enumerable: true });
+  return f;
+}
+const oneLabel = (v) => (isBikeOne(v) ? `${v.count || 1} bicycle${(v.count || 1) === 1 ? "" : "s"}` : v.destroyed ? `${v.name} (wrecked)` : v.name);
+const fleetName = (list) => list.map(oneLabel).join(" + ");
+const fleetParts = (v) => (v && v.fleet ? v.fleet : v ? [v] : []);
+// Seats in it or them: cars by model, a bike its rider.
+export const seatsOf = (v) => fleetParts(v).reduce((a, x) => a + (isBikeOne(x) ? x.count || 1 : SEATS[x.type] ?? 4), 0);
+export const fleetSize = (v) => fleetParts(v).length;
+// People it takes to move them: one at each car's wheel, one on each bike.
+export const driversFor = (vs) => (Array.isArray(vs) ? vs : fleetParts(vs)).reduce((a, x) => a + (isBikeOne(x) ? x.count || 1 : 1), 0);
+// Why these people cannot take these vehicles ("" when they can). n: how many people.
+export function fleetProblem(vs, n) {
+  const list = (vs || []).filter(Boolean);
+  if (list.length > MAX_VEHICLES) return `At most ${MAX_VEHICLES} vehicles to a team.`;
+  if (!list.length) return "";
+  // One person to each vehicle: a car its driver, a bike its rider (pick-list: "at least one person per vehicle").
+  const need = driversFor(list);
+  if (need > n) return `Each vehicle needs its own person (a driver for a car, a rider for a bike): ${need} for ${n} ${n === 1 ? "person" : "people"}.`;
+  if (list.length < 2) return "";
+  const seats = seatsOf(fleetOf(list));
+  if (seats < n) return `Not enough seats: ${seats} for ${n} people.`;
+  return "";
+}
+// Why a car cannot join a team's vehicles now ("" when it can: a free driver, a seat each, under the cap). A team
+// with no vehicle can always take one.
+export function fleetJoinProblem(state, p, v) {
+  const have = partyVehicles(state, p);
+  if (!have.length) return p.vehicle ? "The team already has a vehicle." : ""; // (a vehicle record gone from under it: as before fleets)
+  if (have.includes(v)) return "It is already the team's.";
+  if (have.length >= MAX_VEHICLES) return `The team has ${MAX_VEHICLES} vehicles already.`;
+  if (isBikeOne(v)) return "The team already has vehicles: bikes go to a team without one.";
+  return fleetProblem([...have, v], (p.members || []).length);
+}
+// One more vehicle for the team (fleetJoinProblem first): cars first, the lead stays the lead.
+export function addPartyVehicle(state, p, v) {
+  return setPartyVehicles(state, p, [...partyVehicles(state, p), v]);
+}
+// One of the team's vehicles gone (sold, given away): the rest stay.
+export function dropPartyVehicle(state, p, v) {
+  return setPartyVehicles(state, p, partyVehicles(state, p).filter((x) => x !== v));
+}
+// On roads with bikes among the cars, the convoy keeps to the bikes (half a car's road pace).
+export const roadPace = (v) => (v && v.fleet && v.fleet.some(isBikeOne) && v.fleet.some(isCarOne) ? 0.5 : 1);
+// The team's vehicles from now on (cars first: the lead is p.vehicleId), each riding with it; p.vehicle its way of travel.
+export function setPartyVehicles(state, p, vs) {
+  const list = leadOrder((vs || []).filter(Boolean));
+  p.vehicleIds = list.map((v) => v.id);
+  p.vehicleId = list.length ? list[0].id : null;
+  for (const v of list) v.loc = { kind: "party", partyId: p.id };
+  p.vehicle = travelMode(fleetOf(list));
+  return list;
+}
+export const tank = (v) => (v && v.fleet ? v.fleet.filter(isCarOne).reduce((a, x) => a + VEHICLE_TYPES[x.type].tank, 0) : VEHICLE_TYPES[v.type].tank);
+// Cargo a vehicle adds to a team: a car's payload, a stack of bikes' racks (a fleet: all of them).
+export const vehicleCapacity = (v) => (!v ? 0 : v.fleet ? v.fleet.reduce((a, x) => a + vehicleCapacity(x), 0) : isBike(v) ? (v.count || 1) * VEHICLE_TYPES.bike.rack : payloadOf(v));
+export const vehicleLabel = (v) => (v && v.fleet ? fleetName(v.fleet) : oneLabel(v));
 // Blown up in a fight (launchers.js): condition 0 for good, a wreck nothing repairs; stripped for parts at a base or
 // where it lies (parties.js recoverVehicle).
 export const isWreck = (v) => !!(v && v.destroyed);
@@ -115,12 +207,35 @@ export function takeBikes(state, base, n) {
 }
 
 // Fuel a party can use: the vehicle's tank plus jerry cans carried as supplies.
+// Several cars: every car's tank.
 export function partyFuel(state, p) {
+  const vs = partyVehicles(state, p);
+  if (vs.length > 1) return vs.filter(isCarOne).reduce((a, v) => a + (v.fuel || 0), 0) + (p.supplies.fuel || 0);
   const v = partyVehicle(state, p);
   return (v ? v.fuel : 0) + (p.supplies.fuel || 0);
 }
 
+// amount: what the team's cars burn together (tileFuel × the fleet's multiplier, typeFuel summed). Several cars: each
+// takes its share (by its own typeFuel) from its own tank, an empty tank is topped up from the cans, then from the
+// other cars' tanks (the convoy shares its fuel). False when it ran out.
 export function useFuel(state, p, amount) {
+  const vs = partyVehicles(state, p);
+  const cars = vs.filter(isCarOne);
+  if (cars.length > 1) {
+    const total = cars.reduce((a, v) => a + typeFuel(v), 0) || 1;
+    let short = 0;
+    for (const v of cars) {
+      const want = (amount * typeFuel(v)) / total;
+      const fromTank = Math.min(v.fuel, want);
+      v.fuel -= fromTank;
+      short += want - fromTank;
+    }
+    const fromCans = Math.min(p.supplies.fuel || 0, short);
+    p.supplies.fuel = (p.supplies.fuel || 0) - fromCans;
+    short -= fromCans;
+    for (const v of cars) { if (short <= 1e-9) break; const q = Math.min(v.fuel, short); v.fuel -= q; short -= q; }
+    return short <= 1e-9;
+  }
   const v = partyVehicle(state, p);
   let need = amount;
   if (v) {
@@ -142,18 +257,49 @@ export function breakdownChance(v, fill = 0) {
   return (0.01 + ((100 - v.condition) / 100) * 0.08) * (fill > 1 ? OVERLOAD_WEAR : 1) * UPGRADE_FX.breakdown ** armourOf(v); // plating shields the engine and the tyres
 }
 
+// Which of the team's vehicles breaks down on this tile (events.js rollTravelEvent), or null. One vehicle: one roll, as
+// always. Several: one roll for any of them (1 − every one holding up), then which one, each by its own chance.
+export function breakdownRoll(state, p, fill = 0) {
+  const vs = partyVehicles(state, p);
+  if (vs.length <= 1) { const v = partyVehicle(state, p); return v && state.rng.chance(breakdownChance(v, fill)) ? v : null; }
+  const cs = vs.map((v) => breakdownChance(v, fill));
+  const any = 1 - cs.reduce((a, c) => a * (1 - c), 1);
+  if (!state.rng.chance(any)) return null;
+  let r = state.rng.next() * cs.reduce((a, c) => a + c, 0);
+  for (let i = 0; i < vs.length; i++) { r -= cs[i]; if (r <= 0) return vs[i]; }
+  return vs[vs.length - 1];
+}
+
 export function wear(v, onRoad, fill = 0) {
   const w = isBike(v) ? (onRoad ? 0.1 : 0.4) : (onRoad ? 0.25 : 0.9) * (fill > 1 ? OVERLOAD_WEAR : 1);
   v.condition = Math.max(0, v.condition - w);
 }
 
 // The team leaves the vehicle where it stopped; it becomes a marker they know about.
-export function abandonVehicle(state, p, tile, reason) {
+// which: one of several vehicles (the rest stay with the team); left out, every vehicle the team has.
+export function abandonVehicle(state, p, tile, reason, which = null) {
+  const all = partyVehicles(state, p);
+  if (which && all.length > 1 && all.includes(which)) {
+    setPartyVehicles(state, p, all.filter((x) => x !== which));
+    markLeft(state, p, which, tile, reason);
+    return;
+  }
+  if (!which && all.length > 1) {
+    for (const x of all) markLeft(state, p, x, tile, reason);
+    p.vehicleIds = [];
+    p.vehicle = false;
+    p.vehicleId = null;
+    return;
+  }
   const v = partyVehicle(state, p);
   if (!v) return;
-  v.loc = { kind: "abandoned", tile, since: state.hour };
+  p.vehicleIds = [];
+  markLeft(state, p, v, tile, reason);
   p.vehicle = false;
   p.vehicleId = null;
+}
+export function markLeft(state, p, v, tile, reason) {
+  v.loc = { kind: "abandoned", tile, since: state.hour };
   if (p.spotted) p.spotted.set(`vehicle:${v.id}`, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: `${v.name} (${reason})`, info: { vehicleId: v.id, fuel: Math.round(v.fuel), condition: Math.round(v.condition) } });
 }
 
@@ -289,7 +435,7 @@ export function upgradeKg(v) {
   return u.glass * VEH_UPGRADES.glass.kg + u.mesh * VEH_UPGRADES.mesh.kg + u.plating * VEH_UPGRADES.plating.kg + u.scrapPlate * VEH_UPGRADES.scrapPlate.kg + (u.turret ? TURRET_KG[u.turret.gun] || 60 : 0);
 }
 // What a car takes after the weight of its upgrades.
-export const payloadOf = (v) => Math.max(50, (VEHICLE_TYPES[v.type] || VEHICLE_TYPES.truck).payload - upgradeKg(v));
+export const payloadOf = (v) => v && v.fleet ? v.fleet.filter(isCarOne).reduce((a, x) => a + payloadOf(x), 0) : Math.max(50, (VEHICLE_TYPES[v.type] || VEHICLE_TYPES.truck).payload - upgradeKg(v));
 export const upgradeFuel = (v) => { const u = upgradesOf(v); return VEH_UPGRADES.plating.fuel ** u.plating * VEH_UPGRADES.scrapPlate.fuel ** u.scrapPlate; };
 export const upgradeSpeed = (v) => { const u = upgradesOf(v); return VEH_UPGRADES.plating.speed ** u.plating * VEH_UPGRADES.scrapPlate.speed ** u.scrapPlate; };
 // × what ramming, a blast or (later) a rocket costs its condition.
@@ -407,30 +553,51 @@ export const groupTurretPower = (f) => { const g = groupTurret(f); return g ? TU
 // gets a new one HUMVEE.REPLACE days after its last loss (60–90, its own dice) while it is still HUMVEE.MIN_POP strong
 // (factionVehiclesDaily); until then its raids and its home have no turret.
 export const HUMVEE = { REPLACE: [60, 90], MIN_POP: 12, LEFT_COND: [25, 45], LEFT_FUEL: [3, 10] };
+// Several (AI parity with your teams' fleets, coarse): a big raid brings more of the group's free turreted vehicles, one
+// for each RAID_FLEET.PER of its strength over the first, up to MAX_VEHICLES (p.humvees; p.humvee the first, the one on
+// the defence map). Their turrets add up by the numbers (raidTurretPower); a failed raid loses them all.
+export const RAID_FLEET = { PER: 25 };
 export function assignRaidHumvee(state, f, p) {
   if (!f || !p || !f.vehicles) return null;
-  const busy = new Set((state.parties || []).filter((q) => q !== p && q.humvee != null).map((q) => q.humvee));
-  const v = f.vehicles.find((x) => x.condition > 0 && upgradesOf(x).turret && !busy.has(x.id));
-  if (v) p.humvee = v.id;
-  return v || null;
+  const busy = new Set((state.parties || []).filter((q) => q !== p).flatMap((q) => (q.humvees && q.humvees.length ? q.humvees : q.humvee != null ? [q.humvee] : [])));
+  const free = f.vehicles.filter((x) => x.condition > 0 && upgradesOf(x).turret && !busy.has(x.id));
+  const n = Math.min(MAX_VEHICLES, free.length, 1 + Math.floor(Math.max(0, p.strength || 0) / RAID_FLEET.PER));
+  const take = free.slice(0, n);
+  if (take.length) { p.humvee = take[0].id; if (take.length > 1) p.humvees = take.map((x) => x.id); }
+  return take[0] || null;
 }
-// The vehicle a raid party brought (still the group's), or null.
+// The vehicles a raid party brought (still the group's).
+export function raidHumvees(state, p) {
+  if (!p || p.humvee == null || typeof p.owner !== "number") return [];
+  const f = (state.factions || []).find((x) => x.id === p.owner);
+  const ids = p.humvees && p.humvees.length ? p.humvees : [p.humvee];
+  return f && f.vehicles ? f.vehicles.filter((x) => ids.includes(x.id) && x.condition > 0) : [];
+}
+// The first of them (the one on the defence map), or null.
 export function raidHumvee(state, p) {
   if (!p || p.humvee == null || typeof p.owner !== "number") return null;
   const f = (state.factions || []).find((x) => x.id === p.owner);
-  return (f && f.vehicles && f.vehicles.find((x) => x.id === p.humvee && x.condition > 0)) || null;
+  return (f && f.vehicles && f.vehicles.find((x) => x.id === p.humvee && x.condition > 0)) || raidHumvees(state, p)[0] || null;
 }
 export const raidTurret = (state, p) => { const v = raidHumvee(state, p); return v && upgradesOf(v).turret ? upgradesOf(v).turret.gun : null; };
-export const raidTurretPower = (state, p) => { const g = raidTurret(state, p); return g ? TURRET_ODDS[g] || 0 : 0; };
-// The raid failed: the group loses the vehicle it brought. to: { base } (yours: it joins the base's vehicles) or
-// { faction } (theirs). Returns the vehicle record it became, or null.
+export const raidTurretPower = (state, p) => raidHumvees(state, p).reduce((a, v) => a + (upgradesOf(v).turret ? TURRET_ODDS[upgradesOf(v).turret.gun] || 0 : 0), 0);
+// The raid failed: the group loses the vehicles it brought. to: { base } (yours: they join the base's vehicles) or
+// { faction } (theirs). Returns the record the first became, or null.
 export function loseRaidHumvee(state, p, to) {
+  const all = raidHumvees(state, p);
+  if (all.length > 1) {
+    const first = all.find((x) => x.id === p.humvee) || all[0];
+    for (const x of all.filter((y) => y !== first)) { p.humvee = x.id; p.humvees = null; loseRaidHumvee(state, p, to); }
+    p.humvee = first.id;
+    p.humvees = null;
+  }
   const v = raidHumvee(state, p);
   if (!v) return null;
   const f = state.factions.find((x) => x.id === p.owner);
   f.vehicles = f.vehicles.filter((x) => x !== v);
   f.vehLost = state.hour;
   p.humvee = null;
+  p.humvees = null;
   const roll = (k) => hash01(state.seed, "humvee", f.id, v.id, state.hour, k);
   const ups = JSON.parse(JSON.stringify(upgradesOf(v)));
   if (to && to.base) {
@@ -495,7 +662,9 @@ export function vehicleOdds(state, setup) {
   const p = setup && setup.partyId != null ? (state.parties || []).find((x) => x.id === setup.partyId) : null;
   const v = p && p.vehicle === true ? partyVehicle(state, p) : null;
   const enemy = (setup && setup.enemy) || {};
-  const mine = v && upgradesOf(v).turret ? TURRET_ODDS[upgradesOf(v).turret.gun] || 0 : 0;
+  const tur = (x) => (upgradesOf(x).turret ? TURRET_ODDS[upgradesOf(x).turret.gun] || 0 : 0);
+  // Several cars: every turret on them (each car's crew mans its own).
+  const mine = !v ? 0 : partyVehicles(state, p).length > 1 ? partyVehicles(state, p).filter(isCarOne).reduce((a, x) => a + tur(x), 0) : tur(v);
   return { theirsAmbush: setup && setup.ambush === "enemy" ? ambushMult(v, enemy.kind) : 1, theirsAdd: enemy.turret ? TURRET_ODDS[enemy.turret] || 0 : 0, mineAdd: mine };
 }
 

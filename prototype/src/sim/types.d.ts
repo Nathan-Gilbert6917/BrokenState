@@ -65,6 +65,8 @@ export interface TileSnapshot {
   abandoned?: { from: string | number; fromName: string; day: number; standing: number } | null; // a base standing empty (groupworld.js, occupy.js)
   lootHour?: number; // radio news of a stripped site (aiscav.js)
   lootSrc?: any;
+  gb?: any; // intelnotes.js: what a team saw of a group's base here (it goes to state.intelLedger with the report)
+  via?: string; // a report, not your own eyes (alliance.js "ally", hivetech.js "rumour"…)
 }
 
 // ---------- people ----------
@@ -101,6 +103,8 @@ export interface Gear {
   arms: Item | null;
   legs: Item | null;
   backpack: Item | null;
+  /** carry.js: a bag carried in the arms instead of worn (a looted pack, a rig, a gun case): hands full */
+  carry?: Item | null;
 }
 
 export interface Survivor {
@@ -212,7 +216,9 @@ export interface Party {
   homeBaseId?: number;
   members?: number[]; // survivor ids
   stance?: string; // parties.js STANCES key
-  vehicleId?: number | null;
+  vehicleId?: number | null; // the lead vehicle (vehicles.js fleets)
+  walkers?: number; // people without a seat after a vehicle was lost: the team goes at their pace (walkers.js)
+  vehicleIds?: number[]; // every vehicle of the team's, the lead first (up to vehicles.js MAX_VEHICLES)
   supplies?: Stock;
   cargo?: Cargo;
   seen?: Map<number, TileSnapshot>;

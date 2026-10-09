@@ -75,15 +75,15 @@ export const TRUCK_LOOT = {
   cargo: {
     sup: [["ammo", 0.85, 40, 110], ["food", 0.7, 4, 12], ["water", 0.5, 4, 10], ["meds", 0.45, 1, 3], ["fuel", 0.55, 2, 6], ["parts", 0.35, 1, 2], ["preserved", 0.3, 2, 6]],
     gear: [["ar", 0.4], ["carbine", 0.3], ["ar", 0.12], ["plate", 0.25], ["vest", 0.4], ["milhelmet", 0.4], ["milhelmet", 0.2], ["nvg", 0.1], ["thermal", 0.05], ["milradio", 0.15],
-      ["frag", 0.35], ["frag", 0.15], ["smokegren", 0.4], ["flare", 0.45], ["assaultpack", 0.2], ["rucksack", 0.2], ["camonet", 0.15], ["sandbags", 0.1], ["bandagekit", 0.3], ["chocolate", 0.3], ["instcoffee", 0.25]],
+      ["frag", 0.35], ["frag", 0.15], ["smokegren", 0.4], ["flare", 0.45], ["assaultpack", 0.2], ["rucksack", 0.2], ["camonet", 0.15], ["sandbags", 0.1], ["bandagekit", 0.3], ["tourniquet", 0.4], ["chocolate", 0.3], ["instcoffee", 0.25]],
   },
   humvee: {
     sup: [["ammo", 0.8, 20, 50], ["food", 0.4, 2, 5], ["water", 0.4, 2, 5], ["meds", 0.35, 1, 2], ["fuel", 0.4, 1, 4]],
-    gear: [["ar", 0.3], ["carbine", 0.25], ["vest", 0.3], ["plate", 0.12], ["milhelmet", 0.3], ["nvg", 0.08], ["thermal", 0.04], ["milradio", 0.3], ["frag", 0.25], ["smokegren", 0.3], ["flare", 0.3], ["assaultpack", 0.12], ["bandagekit", 0.2]],
+    gear: [["ar", 0.3], ["carbine", 0.25], ["vest", 0.3], ["plate", 0.12], ["milhelmet", 0.3], ["nvg", 0.08], ["thermal", 0.04], ["milradio", 0.3], ["frag", 0.25], ["smokegren", 0.3], ["flare", 0.3], ["assaultpack", 0.12], ["bandagekit", 0.2], ["tourniquet", 0.3]],
   },
   mrap: {
     sup: [["ammo", 0.85, 30, 70], ["food", 0.5, 2, 6], ["water", 0.5, 3, 6], ["meds", 0.5, 1, 3], ["fuel", 0.4, 2, 5]],
-    gear: [["ar", 0.35], ["carbine", 0.2], ["plate", 0.3], ["vest", 0.3], ["milhelmet", 0.35], ["nvg", 0.12], ["thermal", 0.06], ["milradio", 0.25], ["frag", 0.3], ["smokegren", 0.35], ["surgkit", 0.08], ["bandagekit", 0.35], ["rucksack", 0.12]],
+    gear: [["ar", 0.35], ["carbine", 0.2], ["plate", 0.3], ["vest", 0.3], ["milhelmet", 0.35], ["nvg", 0.12], ["thermal", 0.06], ["milradio", 0.25], ["frag", 0.3], ["smokegren", 0.35], ["surgkit", 0.08], ["bandagekit", 0.35], ["rucksack", 0.12], ["tourniquet", 0.4]],
   },
 };
 // A National Guard base's motor pool: the vehicles left ready to go (trucksAt i 0, 1): intact, running, a turret.

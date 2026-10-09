@@ -49,6 +49,7 @@ import { ammoKey, CALIBERS } from "./data-ammo.js";
 import { hash01 } from "./skills.js";
 import { skill } from "./world.js";
 import { itemDur, itemDurMax } from "./crafting.js";
+import { burnShare } from "./woodcutting.js"; // what burns (fire on things lying on the ground: fireStuff)
 import { findCarried } from "./stealth.js";
 import { breakRam, isCrew } from "./siege.js";
 import { lootItem, packOf, allCarried, carriedSpots, insertsOf, isCarrier } from "./inventory.js"; // allCarried: worn, held, pockets, rig pouches, the pack, a carrier's plates
@@ -713,12 +714,124 @@ function blastStuff(b, gear, sup, share, at, where, salt, chain = true) {
   return keep;
 }
 const boxCells = (c) => { const out = []; for (let y = c.y; y < c.y + (c.h || 1); y++) for (let x = c.x; x < c.x + (c.w || 1); x++) out.push([x, y]); return out; };
+// Fire on what lies on the ground (ground.js groundFire: a pile on a burning cell, each turn it burns): what burns
+// (woodcutting.js burnShare half or more: wood, cloth, paper, a pack and what is in it) is gone, the rest is worn by
+// the heat like a blast's wear on the cell (GROUND.impact), boxed rounds and loose rounds cook off (cookBox,
+// cookRecord); food, meds, firewood, fuel, arrows, powder and primers burn. Returns { gear (what is left), lost }.
+export const GROUND_FIRE = { BURN_AT: 0.5, SUPPLIES: ["food", "preserved", "meds", "wood", "fuel", "arrows", "powder", "blackpowder", "primers", "matchprimers"] };
+export function fireStuff(gear, sup, ...salt) {
+  const keep = [];
+  let lost = 0;
+  (gear || []).forEach((it, i) => {
+    if (!it) return;
+    if (burnShare(it.key) >= GROUND_FIRE.BURN_AT || BOMBS.includes(it.key)) { lost++; return; } // a bomb past FIRE_COOK_N.CAP: it burns (the rest went off: cookFrom first)
+    const share = GROUND.impact[0] + (GROUND.impact[1] - GROUND.impact[0]) * hash01("groundfire", ...salt, it.key, i);
+    for (const c of deepItems([it])) { wearShare(c, share); cookBox(c, ...salt, i); }
+    if (Array.isArray(it.contents)) it.contents.forEach((c, j) => { if (c && burnShare(c.key) >= GROUND_FIRE.BURN_AT) { it.contents[j] = null; lost++; } }); // a pouch's or a case's burnables
+    keep.push(it);
+  });
+  if (sup) {
+    cookRecord(sup, ...salt);
+    for (const k of GROUND_FIRE.SUPPLIES) if (sup[k] > 0) { lost += Math.floor(sup[k]); delete sup[k]; }
+  }
+  return { gear: keep, lost };
+}
+// ---------- explosives in a fire (the user's call: grenades in fire explode) ----------
+// What goes off in the flames, by item or round key, and what it does where it lies (throwables.js landEffect, the
+// same as thrown or fired there): a frag or pipe bomb blasts (units, gear on the ground, cover, vehicles), a Molotov
+// starts a fire, a smoke grenade smokes, a flashbang flashes, a road flare lights up; a 40 mm HE round and a rocket
+// blast with their own tables, 40 mm smoke smokes, 40 mm illumination lights up. Canister rounds and boxed rifle
+// rounds cook off as before (cookRecord, cookBox: lost, nothing more).
+export const FIRE_COOK = {
+  frag: { fx: "frag" }, pipebomb: { fx: "blast" }, molotov: { fx: "fire" }, smokegren: { fx: "smoke" }, flashbang: { fx: "flash" }, flare: { fx: "flare" },
+  a_40mm_he: { fx: "blast", blast: GL_HE }, a_rocket_heat: { fx: "blast", blast: ROCKET }, a_40mm_smoke: { fx: "smoke" }, a_40mm_illum: { fx: "illum" },
+};
+// FIRE.TURN: how many go off at each burn tick (the start of each side's turn); the rest go at the next one, so a crate
+// of grenades is a string of blasts, not one frame. FIRE.CAP: at most this many from one pile or body (the rest burn).
+export const FIRE_COOK_N = { TURN: 2, CAP: 12 };
+const cookName = (k) => (k === "a_40mm_he" ? "40 mm grenade" : k === "a_rocket_heat" ? "rocket" : k === "a_40mm_smoke" ? "40 mm smoke round" : k === "a_40mm_illum" ? "40 mm flare round" : GEAR[k] ? GEAR[k].name.toLowerCase() : k);
+// How many go off for an item (a box of launcher rounds: one a round; anything else: one).
+const cookCount = (it) => (GEAR[it.key] && GEAR[it.key].count ? Math.max(0, Math.floor(it.dur || 0)) : 1);
+function queueCook(b, key, n, x, y, where, left) {
+  const q = b.fireCook || (b.fireCook = []);
+  let k = 0;
+  for (; k < n && left.n > 0; k++, left.n--) q.push({ key, x, y, where });
+  return k;
+}
+// The explosives in what lies on a burning cell (gear: an item list, deep: a bag's contents, a rig's pouches; sup: a
+// supply record), taken out and queued to go off there. Returns how many were queued.
+export function cookFrom(b, gear, sup, x, y, where) {
+  if (!b) return 0;
+  const left = { n: FIRE_COOK_N.CAP };
+  let n = 0;
+  const walk = (arr) => {
+    for (let i = 0; i < (arr || []).length; i++) {
+      const it = arr[i];
+      if (!it) continue;
+      if (FIRE_COOK[it.key]) { n += queueCook(b, it.key, cookCount(it), x, y, where, left); arr[i] = null; continue; }
+      if (Array.isArray(it.contents)) walk(it.contents);
+    }
+  };
+  walk(gear);
+  if (Array.isArray(gear)) for (let i = gear.length - 1; i >= 0; i--) if (!gear[i]) gear.splice(i, 1); // a list closes up (a bag's slots stay)
+  for (const k of Object.keys(sup || {})) if (FIRE_COOK[k] && sup[k] >= 1) { n += queueCook(b, k, Math.floor(sup[k]), x, y, where, left); delete sup[k]; }
+  return n;
+}
+// A body burning (carriers.js burnBody): the grenades, bombs and launcher rounds on it go off in turn. A body searched
+// in the fight: what is left in its container; otherwise what the fighter carried (the enemy's counts and launcher
+// rounds; one of yours: their kit, a bag in the arms too). Returns how many were queued.
+export function cookBody(b, t) {
+  if (!b || !t) return 0;
+  const where = `on ${t.name}'s burning body`;
+  const boxes = b.raid ? b.raid.containers : b.fieldLoot ? b.fieldLoot.containers : [];
+  const box = boxes.find((c) => c.kind === "body" && c.uid === t.id && c.contents);
+  if (box) return cookFrom(b, box.contents.gear, box.contents.sup, t.x, t.y, where);
+  const left = { n: FIRE_COOK_N.CAP };
+  let n = 0;
+  if (t.side === "player") {
+    const s = OWNER.get(t);
+    if (s && s.gear) for (const it of deepItems(allCarried(s))) if (FIRE_COOK[it.key]) n += queueCook(b, it.key, cookCount(it), t.x, t.y, where, left); // their things burn with them anyway (claimFallen)
+  } else {
+    for (const [k, c] of Object.entries(t.throwables || {})) if (FIRE_COOK[k] && c > 0) n += queueCook(b, k, c, t.x, t.y, where, left);
+    t.throwables = {};
+    const g = t.gl;
+    if (g) {
+      const key = g.cal === "rocket" ? "a_rocket_heat" : `a_40mm_${g.load || "he"}`;
+      if (FIRE_COOK[key]) n += queueCook(b, key, Math.max(0, (g.mag || 0) + (g.res || 0)), t.x, t.y, where, left);
+      delete t.gl;
+    }
+  }
+  return n;
+}
+// The queued cook-offs go off (carriers.js burnUnderFire, after the burning piles and bodies): FIRE_COOK_N.TURN at a
+// time, each with its own log line. Returns the lines.
+export function fireCookOffs(b) {
+  const out = [];
+  for (let i = 0; b.fireCook && b.fireCook.length && i < FIRE_COOK_N.TURN && !b.over; i++) {
+    const c = b.fireCook.shift();
+    const T = FIRE_COOK[c.key];
+    if (!T) continue;
+    fx(b, { type: "cookoff", from: [c.x, c.y], to: [c.x, c.y], item: c.key, hit: true, text: T.fx === "fire" ? "WHOOMPH" : T.fx === "smoke" || T.fx === "illum" || T.fx === "flare" ? "HISS" : "BOOM" });
+    let what;
+    if (T.fx === "illum") { (b.flares || (b.flares = [])).push({ x: c.x, y: c.y, r: ILLUM.r, turns: ILLUM.turns }); what = `A flare burns there: everything within ${ILLUM.r} tiles is lit.`; }
+    else {
+      what = landEffect(b, null, T, c.x, c.y);
+      if (T.blast) deafenAt(b, c.x, c.y, blastBang(T.blast));
+    }
+    const line = `The fire sets off the ${cookName(c.key)} ${c.where}! ${what}`.replace(/\s+/g, " ").trim();
+    say(b, line, "danger");
+    out.push(line);
+  }
+  if (b.fireCook && !b.fireCook.length) delete b.fireCook;
+  return out;
+}
 // A blast at (x, y) of radius r (heavy: a rocket) on what lies there. Returns how many things it reached.
 export function groundBlast(b, x, y, r, heavy = false) {
   let n = 0;
   const salt0 = [b.dseed ?? 0, b.turn || 0, x, y];
   const floor = b.floor || 0;
-  for (const box of (b.raid && b.raid.containers) || []) {
+  const field = !b.raid && b.fieldLoot ? b.fieldLoot.containers : []; // ground.js: a field battle's piles on the ground and bodies searched there
+  for (const box of (b.raid ? b.raid.containers : field)) {
     if ((box.f || 0) !== floor || box.burnt) continue;
     let d = Infinity, on = false, at = [box.x, box.y];
     for (const [cx, cy] of boxCells(box)) { const dd = dist(cx, cy, x, y); if (dd < d) { d = dd; at = [cx, cy]; } if (cx === x && cy === y) on = true; }
@@ -731,6 +844,7 @@ export function groundBlast(b, x, y, r, heavy = false) {
   }
   for (const t of b.units) {
     if (b.raid || t.kind !== "human" || !t.dead || t.side === "player" || t.burnt || t.off || dist(t.x, t.y, x, y) > r + 1e-6) continue; // a raid's dead are its body containers (above)
+    if (field.some((c) => c.kind === "body" && c.uid === t.id)) continue; // searched in the battle: its container (above)
     t.groundWear = both(t.groundWear, groundShare(dist(t.x, t.y, x, y), r, t.x === x && t.y === y, ...salt0, "dead", t.id));
     const carried = t.throwables || {};
     for (const k of BOMBS) if (carried[k] > 0 && hash01("deadchain", ...salt0, t.id, k) < GROUND.CHAIN) { carried[k] -= 1; (b.cookQueue || (b.cookQueue = [])).push({ x: t.x, y: t.y, key: k, where: `on ${t.name}'s body` }); }

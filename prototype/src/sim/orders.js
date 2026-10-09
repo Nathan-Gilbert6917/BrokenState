@@ -8,7 +8,7 @@ import {
   survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom,
 } from "./parties.js";
 import { SUPPLIES } from "./data.js";
-import { partyVehicle, partyFuel } from "./vehicles.js";
+import { partyVehicle, partyVehicles, partyFuel } from "./vehicles.js";
 import { fieldTreat, fieldTreatInfo, FIELD_TREAT_HOURS, BASE_HEAL_PER_DAY, isHurt } from "./medical.js";
 import { boatPlan, launchBoat, landBoat, gatherMaterials, gatherProblem, GATHER_HOURS } from "./crossing.js";
 import { fieldCraftOptions, fieldCraft } from "./crafting.js";
@@ -24,6 +24,7 @@ import { woodProblem, woodHour, woodSummary, campFireHour } from "./woodcutting.
 import { CLAIM, canClaim, claimTile, wellProblem, digWell } from "./claims.js"; // land claims and wells on them
 import { LISTEN, listenProblem, listenIn } from "./radiolisten.js"; // Listen in: tune a receiver to a radio network
 import { networkById } from "./radio.js";
+import { capTask, holdName, COLLECT } from "./carry.js"; // a quantity to collect (o.qty: the team panel asks)
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
@@ -44,17 +45,17 @@ export function describeOrder(state, o) {
     case "home": return "Return home";
     case "cross": return `Build a boat, cross to ${tileLabel(state, o.tile)}${o.mode === "leave" ? " (leave the vehicle)" : o.mode === "raft" ? " (raft the vehicle)" : ""}`;
     case "gather": return "Gather boat materials";
-    case "water": return "Fetch water";
+    case "water": return `Fetch water${o.qty != null ? ` (${o.qty})` : ""}`;
     case "craft": return `Craft: ${fieldCraftOptions(state, null).find((x) => x.key === o.recipe)?.name || o.recipe}`;
     case "nearby": return `Scavenge the best site within ${o.radius || 3} tiles${(o.count || 1) > 1 ? ` (×${o.count})` : ""}`;
     case "wait": return `Wait ${o.hours}h`;
     case "stage": return "Work on the staging camp"; // staging.js: until it is done or the materials run out
     case "searcharea": return "Search the area for the wreck";
     case "crewsearch": return "Scavenge"; // a crew's own search (crews.js)
-    case "hunt": return `Hunt ${huntHours(o)}h`;
-    case "fish": return `Fish ${huntHours(o)}h`;
-    case "forage": return `Forage ${huntHours(o)}h`; // foraging.js
-    case "wood": return `Cut wood ${huntHours(o)}h`; // woodcutting.js
+    case "hunt": return `Hunt ${huntHours(o)}h${qtyNote(o)}`;
+    case "fish": return `Fish ${huntHours(o)}h${qtyNote(o)}`;
+    case "forage": return `Forage ${huntHours(o)}h${qtyNote(o)}`; // foraging.js
+    case "wood": return `Cut wood ${huntHours(o)}h${qtyNote(o)}`; // woodcutting.js
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
     case "well": return "Dig a well"; // claims.js: on a claim next to one of your bases
@@ -62,6 +63,9 @@ export function describeOrder(state, o) {
   }
   return o.type;
 }
+
+// A collecting order with a quantity (carry.js): ", at most 20 fresh game".
+const qtyNote = (o) => (o.qty != null && COLLECT[o.type] ? `, at most ${o.qty} ${holdName(COLLECT[o.type])}` : "");
 
 // The order the team is busy with right now.
 export function orderLabel(state, p) {
@@ -353,33 +357,33 @@ export function startOrder(state, p, o) {
     case "water": {
       // Only on a tile next to a river or lake: every free container is filled (cargo room, by weight).
       if (!besideWater(state, partyTile(p))) return fail("Fetch water: only on a tile next to a river or lake.");
-      startTask(state, p, { type: "water", hours: FETCH_WATER_HOURS });
+      startTask(state, p, { type: "water", hours: FETCH_WATER_HOURS, qty: o.qty });
       return `The team fills every container it has with water (${FETCH_WATER_HOURS}h).`;
     }
     case "hunt": {
       const why = huntProblem(state, p);
       if (why) return fail(`Hunt: ${why}`);
-      startTask(state, p, { type: "hunt", hours: huntHours(o) });
+      startTask(state, p, { type: "hunt", hours: huntHours(o), qty: o.qty });
       return `The team goes hunting (${huntHours(o)}h).`;
     }
     case "fish": {
       const why = fishProblem(state, p);
       if (why) return fail(`Fish: ${why}`);
-      startTask(state, p, { type: "fish", hours: huntHours(o) });
+      startTask(state, p, { type: "fish", hours: huntHours(o), qty: o.qty });
       return `The team goes fishing (${huntHours(o)}h).`;
     }
     case "forage": {
       // Wild food off the land (foraging.js): berries, nuts, mushrooms, greens, roots, by the terrain and the season.
       const why = forageProblem(state, p);
       if (why) return fail(`Forage: ${why}`);
-      startTask(state, p, { type: "forage", hours: huntHours(o) });
+      startTask(state, p, { type: "forage", hours: huntHours(o), qty: o.qty });
       return `The team goes foraging (${huntHours(o)}h).`;
     }
     case "wood": {
       // Firewood for the winter (woodcutting.js): by the land, the tools and the people.
       const why = woodProblem(state, p);
       if (why) return fail(`Cut wood: ${why}`);
-      startTask(state, p, { type: "wood", hours: huntHours(o) });
+      startTask(state, p, { type: "wood", hours: huntHours(o), qty: o.qty });
       return `The team cuts wood (${huntHours(o)}h).`;
     }
     case "snare": {
@@ -459,6 +463,8 @@ export function startTask(state, p, task) {
   p.progress = Math.min(0, p.progress);
   p.dest = tile;
   p.task = { ...task, done: 0 };
+  if (p.task.qty == null) delete p.task.qty;
+  else capTask(p, p.task); // carry.js: stop collecting at the quantity asked (parties.js cargoRoom)
   p.orderStart = state.hour;
 }
 
@@ -544,7 +550,9 @@ const take = takeSupply; // found cargo first, then packed supplies (parties.js)
 // One part and a few hours: worth more with a good mechanic (+8% and +1.5% per Mechanics point; a base repairs
 // +25% per part with a garage, +12% without: vehicles.js repair).
 export function repairInfo(state, p) {
-  const v = partyVehicle(state, p);
+  // Several vehicles: the worst one that can still be mended (vehicles.js fleets).
+  const fixable = partyVehicles(state, p).filter((x) => !x.destroyed && x.condition < 100).sort((a, b) => a.condition - b.condition);
+  const v = fixable[0] || partyVehicle(state, p);
   const mech = bestSkill(state, p, "mechanics");
   const gain = Math.round(8 + mech * 1.5);
   let reason = "";
