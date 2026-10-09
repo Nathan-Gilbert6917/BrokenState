@@ -43,7 +43,7 @@ import { recText, handsKg, carriedNear, handsBusy, armsText } from "../sim/carry
 import { statusIcons } from "./status.js"; // the survivor behind a unit: low mood, starving, thirsty, infected, sick (its own hit points are the bar)
 import { iso, drawIso, project, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor } from "./isoview.js";
 import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
-import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy
+import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC, selfKit, selfOdds, selfStabRefusal } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy
 import { groundButtons, groundCbAct, groundClick } from "./ground.js"; // bodies searched where they fell, things on the ground (sim/ground.js)
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
 
@@ -51,7 +51,7 @@ import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPrevie
 let W = MAP_W, H = MAP_H;
 const ENEMY_STEP_MS = 420;
 
-export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false }; // autoPlay: the AI plays your side (cb-autoplay)
+export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false, pickedDown: null }; // autoPlay: the AI plays your side (cb-autoplay); pickedDown: one of the downed picked in the roster (autoSelect keeps them)
 LISTEN.sel = () => cui.sel; // ui/soundcues.js: whose ears the battle is heard through
 // ui/gunsfx.js: where on screen a sound is (pan, distance from the middle) and what your people see (out of sight: muffled).
 LISTEN.cam = () => { if (!iso.cw) return null; const [x0, y0] = project(0, 0, 0), [x1, y1] = project(1, 0, 0); return { cw: iso.cw, ch: iso.ch, S: Math.hypot(x1 - x0, y1 - y0) / Math.hypot(16, 8), project }; };
@@ -126,6 +126,7 @@ function sync(b) {
 function autoSelect(b) {
   const cur = cui.sel != null ? unitById(b, cui.sel) : null;
   if (cur && cur.side === "player" && alive(cur) && cur.ap > 0) return;
+  if (cur && cur.side === "player" && cur.down && !cur.dead && b.phase === "player" && (cui.pickedDown === cur.id || !selfStabRefusal(b, cur))) return; // sim/medics.js: one of the downed picked in the roster (their panel: stabilize yourself)
   const next = players(b).find((u) => alive(u) && u.ap > 0);
   cui.sel = next ? next.id : cur && alive(cur) ? cur.id : null;
   cui.mode = "move";
@@ -307,6 +308,7 @@ function act(state, a) {
   const b = state.combat;
   const err = combatAct(state, a);
   cui.msg = err || "";
+  cui.pickedDown = null; // a downed one picked in the roster stays picked only until something is done
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
@@ -956,7 +958,7 @@ export function combatAction(state, key, d) {
     }
     return;
   }
-  if (key === "cb-sel") { cui.sel = Number(d.id); cui.mode = "move"; cui.msg = ""; follow(b); return; }
+  if (key === "cb-sel") { cui.sel = Number(d.id); cui.pickedDown = cui.sel; cui.mode = "move"; cui.msg = ""; follow(b); return; }
   // Only a couple of far-off stragglers left (sim/battlesize.js clearEnough): call the fight won.
   if (key === "cb-clear") { if (clearEnough(b)) act(state, { type: "callClear" }); else cui.msg = "There are still enemies close by or coming."; return; }
   // A base's wall map (sim/interior.js): everyone off the walls, into the yard and the buildings.
@@ -1196,13 +1198,13 @@ export function renderCombatPanel(state) {
 
   html += `<h3>Your team</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
-    const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`)) + (p.draggedBy != null ? `, dragged by ${(unitById(b, p.draggedBy) || {}).name || "someone"}` : "") :
+    const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})${selfNote(b, p)}`)) + (p.draggedBy != null ? `, dragged by ${(unitById(b, p.draggedBy) || {}).name || "someone"}` : "") :
       [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), ...earStatus(p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.jam ? "JAMMED" : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.suppressed > 0 ? "Suppressed" : "", p.spearOut ? "Spear thrown" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", handsBusy(p) ? `Hands full (${armsText(p)})` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !alive(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = alive(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     // A building with storeys: everyone's floor (dimmer when it is not the one shown).
     const fl = floorsOf(b) && p.f != null ? ` <span class="cbfl${p.f === floorNo(b) ? "" : " off"}" data-tip="${esc(`${p.name.split(" ")[0]} is on ${floorLabel(b, p.f).toLowerCase()}${p.f === floorNo(b) ? " (shown)" : ": selecting them shows that floor"}.`)}">F${p.f + 1}</span>` : "";
-    html += `<div class="${cls}" data-action="cb-sel" data-id="${p.id}" data-tip="${esc(`${p.name}. Weapon: ${p.weaponName}${hasMag(p) ? ` (${magLabel(b, p)} loaded)` : ""}. Aim ${Math.round(p.aim)}. Press ${i + 1} or Tab to select.`)}">
+    html += `<div class="${cls}" data-action="cb-sel" data-id="${p.id}" data-tip="${esc(`${p.name}. Weapon: ${p.weaponName}${hasMag(p) ? ` (${magLabel(b, p)} loaded)` : ""}. Aim ${Math.round(p.aim)}.${selfTip(b, p)} Press ${i + 1} or Tab to select.`)}">
       <div class="spread"><span>${spriteImg(canvasURL(unitCanvas(state, b, p, cui.salt)), 1.5)}<span class="muted">${i + 1}</span> <b>${esc(p.name)}</b>${medicBadge(p)}${p.sid != null && alive(p) ? statusIcons(state, state.survivors.find((s) => s.id === p.sid), { skip: ["health"] }) : ""}${fl}</span>${pips}</div>
       <div class="bar"><i style="width:${pct(p) * 100}%;background:${hpColor(pct(p))}"></i></div>
       <div class="small muted">${gunText(b, p)} · ${Math.round(p.hp)} hp${status ? ` · <span class="${p.down || p.dead ? "danger" : ""}">${status}</span>` : ""}${p.gunner ? ' · <span class="warn">on the turret</span>' : p.aboard ? ' · <span class="good">in the vehicle</span>' : ""}</div>
@@ -1222,6 +1224,8 @@ export function renderCombatPanel(state) {
   if (u && u.tied && !u.dead && b.phase === "player") { // a captive still tied up on a rescue raid (sim/rescueraid.js)
     const btn = (v, label, tip, ok, key) => `<button class="${cui.mode === v ? "active" : ""}" data-action="cb-act" data-v="${v}" ${ok ? "" : "disabled"} data-tip="${esc(tip)}">${label}${key ? ` <span class="key">${key}</span>` : ""}</button>`;
     html += `<h3>${esc(u.name)} · tied up · ${u.ap} action${u.ap === 1 ? "" : "s"}</h3><div class="cbactions">${rescueButtons(state, b, u, btn)}</div>`;
+  } else if (u && u.side === "player" && u.down && !u.dead && !u.left && b.phase === "player") { // sim/medics.js: down, a tourniquet or a trauma kit in reach
+    html += selfStabHtml(b, u);
   } else if (u && (active(u) || u.aboard) && b.phase === "player") { // aboard the vehicle: Drive, Turn, Get out, Extract
     const ap = u.ap;
     const gun = isRanged(u), ammo = canFire(b, u);
@@ -1405,6 +1409,29 @@ function chooseHtml(b) {
 // The body buttons: Crush skull (U) and Pick up body (P) with a body next to the unit, Double tap (J) with one in
 // sight and a gun in hand; carrying a body, Put down (P) and, at the team's car, Put body in car (Z).
 // ---------- medics (sim/medics.js) ----------
+// Stabilizing oneself (sim/medics.js selfStabilize): the downed one's note in the roster, its tip, and their panel with
+// the button (greyed with the reason when it cannot be tried).
+const selfLabel = (u) => { const k = selfKit(u); return k ? `${k.key === "tourniquet" ? "Tourniquet" : k.name} ${selfOdds(u, k.key)}%` : ""; };
+function selfNote(b, u) {
+  const why = selfStabRefusal(b, u);
+  if (!why) return `: can stabilize themselves (${selfLabel(u)})`;
+  return u.selfTry === b.turn && !u.stab && selfKit(u) ? ", tried to stabilize themselves" : "";
+}
+function selfTip(b, u) {
+  if (!u.down || u.dead || u.stab || u.ko || u.surr) return "";
+  const k = selfKit(u);
+  if (k) return ` Down with ${k.key === "tourniquet" ? "a tourniquet" : `the ${k.name.toLowerCase()}`} in reach: they can save themselves, ${selfOdds(u, k.key)}% a try (select them: Stabilize yourself), and try by themselves at the end of the turn.`;
+  return u.selfPack ? ` Their ${u.selfPack.toLowerCase()} is in the pack: out of reach lying down.` : "";
+}
+function selfStabHtml(b, u) {
+  const why = selfStabRefusal(b, u);
+  const k = selfKit(u);
+  const label = k ? `${k.key === "tourniquet" ? "Tourniquet" : esc(k.name)}: stabilize yourself (${selfOdds(u, k.key)}%)` : "Stabilize yourself";
+  const R = MEDIC.SELF;
+  const tip = `The one thing someone down can do, once a turn: stop their own bleeding with a tourniquet (${R.tourniquet.BASE}% + ${R.tourniquet.MED} a point of Medicine, at most ${R.tourniquet.MAX}%) or a field trauma kit (${R.traumakit.BASE}% + ${R.traumakit.MED}, at most ${R.traumakit.MAX}%) in the off hand, a pocket or a rig pouch (not the pack: out of reach lying down). Stopped: stabilized, still down (a medic gets them up), the item's use spent. Failed: nothing spent, try again next turn. Not tried by the end of the turn: they try by themselves.${why ? ` ${why}` : ""}`;
+  const cond = u.stab ? "stabilized" : u.ko ? "out cold" : u.surr ? "gave up" : `bleeding out (${u.bleed} turn${u.bleed === 1 ? "" : "s"} left)`;
+  return `<h3>${esc(u.name)} · down, ${cond}</h3><div class="cbactions"><button data-action="cb-act" data-v="selfStab" ${why ? "disabled" : ""} data-tip="${esc(tip)}">${label}</button></div>${why ? `<div class="small muted">${esc(why)}</div>` : ""}`;
+}
 // The roster's medic badge: a small cross, with the kit and its uses left.
 function medicBadge(p) {
   if (!isMedic(p)) return "";

@@ -332,7 +332,7 @@ function pouchFor(s, item) {
   const pr = r.contents || [];
   const kinds = pouchesOf(r);
   const d = GEAR[item.key];
-  const want = pouchKindOf(item) || (d && (d.medKit || d.tabs) ? "admin" : null);
+  const want = pouchKindOf(item) || (d && (d.medKit || d.tabs || d.selfStab) ? "admin" : null);
   if (!want) return -1;
   return kinds.findIndex((k, i) => !pr[i] && k === want && !pouchReason(item, want));
 }
@@ -838,6 +838,11 @@ export function enemyBody(rng, u, kit) {
     const it = lootItem(u.medKit.key, src, spend(rng));
     if (it.dur != null) it.dur = Math.max(1, Math.min(it.dur, u.kitLeft - (u.kitUses || 0)));
     stow(body, it, "");
+  }
+  // A tourniquet they never used on themselves (medics.js kitSelfAid): the group's own, else one by its own dice.
+  for (const k of u.selfKits || []) {
+    if ((k.used || 0) >= (k.left ?? 1) || (k.item && (k.item === u.medKit || itemDur(k.item) === 0))) continue;
+    stow(body, k.item || lootItem(k.key, src, [u.id, "selfaid", k.key]), "");
   }
   return body;
 }

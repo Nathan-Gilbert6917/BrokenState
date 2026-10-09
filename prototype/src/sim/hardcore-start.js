@@ -112,7 +112,7 @@ export const HC_START = {
                   blurb: "saw it coming" },
     veteran:    { name: "Veteran",            w: 1, skills: { shooting: [3, 5], leadership: [1, 2], scouting: [1, 2] }, traits: { brave: 3, tough: 2 }, carOdds: 1.2, food: { pack: [1, 2], pockets: [0, 1] },
                   pack: 0.8, packs: { assaultpack: 3, rucksack: 2, backpack: 1 }, weapons: { pistol: 3, huntrifle: 1, machete: 1.5, knife: 1.5 }, weaponOdds: 0.8, rounds: 1.5, armor: { vest: 0.35 },
-                  stuff: { binoculars: 2, bandagekit: 2, flare: 1.5, milradio: 0.3, smokegren: 0.5 },
+                  stuff: { binoculars: 2, bandagekit: 2, tourniquet: 2, flare: 1.5, milradio: 0.3, smokegren: 0.5 },
                   cars: { truck: 3, hummer: 2, suv: 1 }, trunk: { food: [2, 5], water: [2, 5], ammo: [8, 18], n: [1, 3], gear: { milradio: 0.5, binoculars: 1, flare: 1, smokegren: 0.5, bandagekit: 1, assaultpack: 0.5, vest: 0.4, nvg: 0.1 } },
                   blurb: "two tours and a bad knee" },
     student:    { name: "College student",    w: 1, skills: { stealth: [1, 3], scavenging: [1, 3], speech: [1, 2], scouting: [1, 2] }, traits: { lucky: 1, nightowl: 2 }, carOdds: 0.7,
