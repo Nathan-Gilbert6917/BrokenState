@@ -1077,10 +1077,10 @@ export function addGearToCargo(state, p, item) {
 }
 
 // ---------- orders ----------
-// What the team can do on the tile where it stands.
-/** @param {State} state @param {Party} p */
-export function orderOptions(state, p) {
-  const tile = partyTile(p);
+// What the team can do on the tile where it stands. tile: another tile instead (the right-click menu, ui/teamctx.js,
+// asks for the tile the team would move to first: the labels, and the reasons an option would fail with what it carries).
+/** @param {State} state @param {Party} p @param {number} [tile] */
+export function orderOptions(state, p, tile = partyTile(p)) {
   const t = state.tiles[tile];
   const out = [];
   const add = (m, why) => out.push({ mission: m, label: MISSIONS[m].name, desc: MISSIONS[m].desc, disabled: why || null });

@@ -410,16 +410,25 @@ export function tileActions(state, id) {
   const actions = [];
   if (t.terrain === "water" && !t.bridge) return actions;
   if (state.bases.some((b) => b.tile === id) || !hub(state)) return actions; // no hub (conquest.js exiles): nothing to send from
-  const isLive = state.live.has(id);
-  const snap = isLive ? null : state.knowledge[id];
-  const info = isLive ? { owner: t.owner, loot: t.loot, hordeSize: state.hordes.filter((h) => h.tile === id).reduce((a, h) => a + h.size, 0) } : snap;
-  const markers = state.markers.filter((m) => m.tile === id);
   actions.push(["recon", "Send recon"]);
   actions.push(["move", "Send a team here"]);
   actions.push(["sweep", "Survey the area"]);
   // Food from the land (sim/hunting.js): the planner with the Hunting / Fishing trip preset.
   if (gameAbundance(state, id) >= 0.08) actions.push(["move", "Hunting trip", "hunt", "Plan a hunting trip here: go, hunt 8 hours (change it in the plan), come home with the game. Forest and hills are best, autumn the best season; fresh game is heavy and spoils fast."]);
   if (huntInfo(state, id).fishSpot) actions.push(["move", "Fishing trip", "fish", "Plan a fishing trip here: go, fish 8 hours, come home. Needs a fishing rod, a net or a spear (the hub's goes along)."]);
+  return actions.concat(siteMissions(state, id));
+}
+
+// The missions a site offers as far as the player knows (the hub's menu above, and a selected team's right-click
+// menu, ui/teamctx.js): [mission, label]. Nothing on open water.
+export function siteMissions(state, id) {
+  const t = state.tiles[id];
+  const actions = [];
+  if (!t || (t.terrain === "water" && !t.bridge)) return actions;
+  const isLive = state.live.has(id);
+  const snap = isLive ? null : state.knowledge[id];
+  const info = isLive ? { owner: t.owner, loot: t.loot, hordeSize: state.hordes.filter((h) => h.tile === id).reduce((a, h) => a + h.size, 0) } : snap;
+  const markers = state.markers.filter((m) => m.tile === id);
   // A site nobody has reported on yet is assumed to hold something (the map draws it untouched, too).
   if (info ? info.loot > 0.05 : !!mapLoc(state, id)) actions.push(["scavenge", "Scavenge / raid"]);
   const fb = knownGroupBase(state, id, isLive, snap);
