@@ -70,6 +70,8 @@ import { canUpgradeAmmoBench, RELOAD } from "../sim/reloading.js"; // the reload
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../sim/inventory.js";
 import { inventoryModal, takeLootReq } from "./inventory.js";
 import { teamInvModal, teamsHereCard } from "./teaminv.js"; // the team inventory window; teams on a base's tile
+import { fleetPicker } from "./fleetpick.js"; // the vehicle picker the planners share (up to four)
+import { plannedFleet, pickProblem } from "../sim/teamform.js";
 import { teamFormModal, formTeamButton, editTeamButton, formTeamRow } from "./teamform.js"; // Form a team… at a base; Edit team… for a team waiting on one
 import { gunBuilderModal, GUNBUILDER_HELP } from "./gunbuilder.js"; // the gun builder (over the inventory or the base screen)
 import { isGunKey } from "./gunart.js";
@@ -959,11 +961,15 @@ function conflictModal(state, card) {
     }).join("")}</div></div>`;
 }
 
-// The vehicle the planner means: a car, or the hub's bikes (one for each person on the crew).
+// The vehicles the planner means: a car, the base's bikes (one for each person on the crew), or up to four together
+// (pl.vehicleIds: ui/fleetpick.js, sim/vehicles.js fleets).
+export const plannerIds = (pl) => (pl.vehicleIds && pl.vehicleIds.length ? pl.vehicleIds : pl.vehicleId ? [pl.vehicleId] : []);
+const plannerHome = (state, pl) => (pl.fromBaseId != null ? baseById(state, pl.fromBaseId) : hub(state));
 export function plannerVehicle(state, pl) {
-  const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
-  return isBike(v) ? { ...v, count: Math.max(1, pl.crew.size || 0) } : v;
+  return plannedFleet(state, plannerHome(state, pl), plannerIds(pl), pl.crew.size || 0);
 }
+// Why the picked vehicles cannot go ("" when they can): a person to each, a seat each, bikes, fuel (sim/teamform.js).
+export const plannerFleetProblem = (state, pl) => pickProblem(state, plannerHome(state, pl), plannerIds(pl), pl.crew.size || 0, pl.supplies.fuel || 0);
 // The planner's load: packed supplies against what the crew can carry on top of what they wear (sim/load.js), plus
 // the bikes' racks or the car. The same carryCapacity the sim checks at launch; t = everyone's load and band.
 export function plannerLoad(state, pl) {
@@ -1011,16 +1017,10 @@ function crewPick(state, crewPool, pl, where) {
         <span class="small">${keySkills.map((k) => `${SKILL_SHORT[k]} ${skill(s, k)}`).join(" · ")}</span><br>
         <span class="small muted">${[s.gear.weapon, s.gear.armor, s.gear.tool].filter(Boolean).map((g) => esc(g.name)).join(", ") || "No gear"} · wears ${n1(wornLoad(s))} of ${maxLoad(s)} kg${s.traits.length ? " · " + s.traits.map((t) => TRAITS[t].name).join(", ") : ""}</span></span></label>`).join("") || `<span class="muted">Nobody is at ${where}.</span>`}</div>`;
 }
+// The shared picker (ui/fleetpick.js): up to four vehicles, click to take or leave each.
 function transportPick(state, h, pl, v, ids, where) {
-  const parked = carsAtBase(state, h.id);
-  const bikeStack = vehiclesAtBase(state, h.id).find(isBike);
-  const nBikes = bikesAtBase(state, h.id);
-  return `<div class="choices">
-          <button data-action="pl-vehicle" data-v="" class="${!v ? "active" : ""}"${tip("Slow, silent, goes anywhere except water. People carry everything: heavy loads slow the team and make it eat and drink more (load bands).")}>On foot</button>
-          ${nBikes && bikeStack ? `<button data-action="pl-vehicle" data-v="${bikeStack.id}" class="${isBike(v) ? "active" : ""}" ${bikeStack.condition <= 0 ? "disabled" : ""}${tip(`One bike each (${nBikes} at ${where}). No fuel. Faster than walking on roads, walking pace off-road. Each rack carries ${VEHICLE_TYPES.bike.rack} kg and riding takes 55% of the load's slow-down and extra rations away. Quiet.`)}>Bicycles<span class="hint">${nBikes} at ${where} · condition ${Math.round(bikeStack.condition)}%${ids.length > nBikes ? ` · need ${ids.length}` : ""}</span></button>` : ""}
-          ${parked.map((x) => `<button data-action="pl-vehicle" data-v="${x.id}" class="${v && v.id === x.id ? "active" : ""}" ${x.condition <= 0 ? "disabled" : ""}${tip(`Fast on roads, cannot cross mountains. Burns about 0.6 fuel per road tile, 1.5 off-road, more when it is loaded past 60% of its payload (×1.3 at 100%, up to ×1.6 at 125%). Payload ${payloadOf(x)} kg, riders (${RIDER_KG} kg each) included: they feel none of their load. Worn vehicles break down more.${upgradeText(x) ? ` ${upgradeText(x)}: ${upgradeEffects(x)}.` : ""}`)}>${esc(x.name)}<span class="hint">Fuel ${n0(x.fuel)}/${tank(x)} · condition ${Math.round(x.condition)}% · ${payloadOf(x)} kg payload${upgradeText(x) ? ` · ${esc(upgradeText(x))}` : ""}</span></button>`).join("")}
-          ${parked.length || nBikes ? "" : `<span class="small muted">No vehicles or bikes at ${where}.</span>`}
-        </div>`;
+  void v; void where;
+  return fleetPicker(state, { base: h, ids: plannerIds(pl), crewN: ids.length, cans: pl.supplies.fuel || 0, action: "pl-vehicle" });
 }
 const PLAN_SUPPLY_KEYS = ["food", "preserved", "water", "fuel", "meds", "ammo", "arrows", "parts", "scrap"];
 function suppliesTable(state, h, pl, label) {
@@ -1055,7 +1055,8 @@ function plannerModal(state, ui) {
     if ((pl.supplies.water || 0) > Math.floor(h.stock.water || 0) && !pl.tabs && !armoryTabs(h).length) warn.push(`Water: only ${Math.floor(h.stock.water || 0)} of it purified; the rest is packed un-purified (boil it at a camp fire)`);
     if (isCar(v) && v.fuel + (pl.supplies.fuel || 0) < need.fuel) warn.push(`Fuel: tank ${n0(v.fuel)} + cans ${pl.supplies.fuel || 0}, need about ${need.fuel} ${needFor}`);
   }
-  if (isBike(v) && bikesAtBase(state, h.id) < ids.length) warn.push(`Bikes: ${ids.length} people, ${bikesAtBase(state, h.id)} bikes at the hub (one each)`);
+  const fleetWhy = ids.length ? plannerFleetProblem(state, pl) : ""; // a person to each vehicle, seats, bikes, fuel
+  if (fleetWhy) warn.push(fleetWhy);
   warn.push(...loadWarnings(carry.t));
   if (pl.mission === "outpost" && (pl.supplies.scrap || 0) < Parties.outpostScrap(state, pl.dest)) warn.push(`Outposts need ${Parties.outpostScrap(state, pl.dest)} scrap carried`);
   if (pl.mission === "getvehicle" && (pl.supplies.fuel || 0) < 2) warn.push("Bring fuel cans to restart the vehicle");
@@ -1097,7 +1098,7 @@ function plannerModal(state, ui) {
     ${pl.mission === "outpost" ? `<div class="small muted" style="margin-top:0.5rem">The team stays at the new outpost: no plan after it.</div>` : planSection(state, pl, pe || (est ? planEstimate(state, pl) : null))}
     ${problem ? `<div class="danger" style="margin-top:0.6rem">${esc(problem)}</div>` : ""}
     ${ui.plannerError ? `<div class="danger" style="margin-top:0.6rem">${esc(ui.plannerError)}</div>` : ""}
-    <div class="row" style="margin-top:1rem;justify-content:flex-end"><button data-action="pl-cancel">Cancel</button><button class="primary" data-action="pl-launch" ${!ids.length || !est || carry.over || problem ? "disabled" : ""}${tip(!ids.length ? "Pick at least one person" : !est ? "No route" : carry.over ? carry.why : problem || "The team leaves now. If the game is paused, it sets off when you unpause.")}>Send team</button></div>
+    <div class="row" style="margin-top:1rem;justify-content:flex-end"><button data-action="pl-cancel">Cancel</button><button class="primary" data-action="pl-launch" ${!ids.length || !est || carry.over || problem || fleetWhy ? "disabled" : ""}${tip(!ids.length ? "Pick at least one person" : !est ? "No route" : carry.over ? carry.why : problem || fleetWhy || "The team leaves now. If the game is paused, it sets off when you unpause.")}>Send team</button></div>
   </div>`;
 }
 
@@ -1121,7 +1122,8 @@ function moveOutModal(state, ui) {
   const lvl = (n) => crowdLevel(n / Math.max(1, beds));
   const others = state.bases.filter((x) => x !== b);
   const warn = [];
-  if (isBike(v) && bikesAtBase(state, b.id) < ids.length) warn.push(`Bikes: ${ids.length} people, ${bikesAtBase(state, b.id)} bikes at ${where} (one each)`);
+  const fleetWhy = ids.length ? plannerFleetProblem(state, pl) : ""; // a person to each vehicle, seats, bikes, fuel
+  if (fleetWhy) warn.push(fleetWhy);
   if (pl.dest == null && (pl.supplies.scrap || 0) < MOVE_OUT.scrap) warn.push(`A new outpost needs ${MOVE_OUT.scrap} scrap carried (5 on the ruins of a base): pack it now, or find it on the way`);
   if (to && ids.length > freeBeds(state, to)) warn.push(`${to.name} has ${Math.max(0, freeBeds(state, to))} free bed${freeBeds(state, to) === 1 ? "" : "s"} for ${ids.length}: it would be crowded`);
   if (pl.dest != null && !est) warn.push(`No route to ${to ? to.name : "there"}${v ? " for the vehicle" : ""}.`);
@@ -1159,7 +1161,7 @@ function moveOutModal(state, ui) {
       </div>
     </div>
     ${ui.plannerError ? `<div class="danger" style="margin-top:0.6rem">${esc(ui.plannerError)}</div>` : ""}
-    <div class="row" style="margin-top:1rem;justify-content:flex-end"><button data-action="pl-cancel">Cancel</button><button class="primary" data-action="pl-launch" ${!ids.length || carry.over || (pl.dest != null && !est) ? "disabled" : ""}${tip(go)}>Move out</button></div>
+    <div class="row" style="margin-top:1rem;justify-content:flex-end"><button data-action="pl-cancel">Cancel</button><button class="primary" data-action="pl-launch" ${!ids.length || carry.over || fleetWhy || (pl.dest != null && !est) ? "disabled" : ""}${tip(fleetWhy || go)}>Move out</button></div>
   </div>`;
 }
 

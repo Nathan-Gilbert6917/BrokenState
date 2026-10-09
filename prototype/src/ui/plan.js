@@ -8,8 +8,9 @@ import { heatPreview } from "../sim/fieldheat.js";
 import { searchRiskText } from "../sim/worm.js"; // the worm: searching badly infected ground
 import { jobTargets } from "./diplomacy.js";
 import { sweepPreview, sweepOpts, rumoursOf, SURVEY } from "../sim/survey.js";
-import { survivorById } from "../sim/world.js";
-import { travelMode } from "../sim/vehicles.js";
+import { survivorById, baseById, hub } from "../sim/world.js";
+import { travelMode, isCar } from "../sim/vehicles.js";
+import { plannedFleet } from "../sim/teamform.js"; // the planner's vehicles, up to four
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -29,11 +30,11 @@ export const ensureSweep = (pl) => (pl.sweep = sweepOpts(pl.sweep || {}));
 // Estimate for the whole plan (null without a route). ids/v: the planner's crew and vehicle.
 export function planEstimate(state, pl) {
   const plan = ensure(pl);
-  const v0 = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
-  const v = v0 && v0.type === "bike" ? { ...v0, count: Math.max(1, pl.crew.size || 0) } : v0; // one bike each
+  // One vehicle (bikes one each) or up to four together (sim/teamform.js plannedFleet, sim/vehicles.js fleets).
+  const v = plannedFleet(state, pl.fromBaseId != null ? baseById(state, pl.fromBaseId) : hub(state), pl.vehicleIds && pl.vehicleIds.length ? pl.vehicleIds : pl.vehicleId ? [pl.vehicleId] : [], pl.crew.size || 0);
   return estimatePlan(state, {
-    memberIds: [...pl.crew].length ? [...pl.crew] : [0], dest: pl.dest, vehicle: !v ? false : v.type === "bike" ? "bike" : true, v, stance: pl.stance,
-    fuel: v && v.type !== "bike" ? v.fuel + (pl.supplies.fuel || 0) : 0, mission: pl.mission, steps: plan.steps, supplies: pl.supplies, sweep: ensureSweep(pl),
+    memberIds: [...pl.crew].length ? [...pl.crew] : [0], dest: pl.dest, vehicle: travelMode(v), v, stance: pl.stance,
+    fuel: isCar(v) ? v.fuel + (pl.supplies.fuel || 0) : 0, mission: pl.mission, steps: plan.steps, supplies: pl.supplies, sweep: ensureSweep(pl),
   });
 }
 // For main.js autofill: the plan's needs when it has steps, else null (the plain round-trip estimate is used).

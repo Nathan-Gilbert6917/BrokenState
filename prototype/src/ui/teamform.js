@@ -30,6 +30,7 @@ import { packLights, hasLight } from "../sim/lights.js";
 import { loadFromBase, dropOff } from "../sim/teaminv.js";
 import { formTeam, formPreview, editBase, editProblem, addMember, removeMember, setVehicles, toggleVehicle, setSupply, teamHas, gearSnapshot, gearChanged, restoreGear } from "../sim/teamform.js";
 import { doll, storageBox, selBar, tile, SUPPLY_ICON, INV_ACTIONS, invDrop } from "./inventory.js";
+import { fleetPicker, toggleFleetIds } from "./fleetpick.js"; // the vehicle picker the planners share
 import { loadWarnings, paceLine, carLine } from "./loadview.js";
 import { statusIcons } from "./status.js";
 import { survivorURL, spriteImg } from "./sprites.js";
@@ -208,36 +209,10 @@ function peopleTab(state, ui, F, b, p, crew) {
   return `${head}${table}<div class="grid2" style="margin-top:0.6rem"><div><h3>Vehicle</h3>${vehiclePick(state, F, b, p, crew)}</div><div>${stance}<h3>${editing(F) ? "On the map" : "After forming"}</h3><div class="small muted">The team stands on ${esc(b.name)}'s tile waiting for orders: Move (click a tile), any order on its panel, the team inventory, or Enter ${esc(b.name)} to bring everyone back in. ${editing(F) ? "" : "It is shown in the Teams tab and on the map, and its panel opens."}</div></div></div>`;
 }
 
-// Up to MAX_VEHICLES (sim/vehicles.js fleets): click a vehicle to take it or leave it; On foot leaves them all.
+// Up to MAX_VEHICLES (sim/vehicles.js fleets): the planners' shared picker (ui/fleetpick.js).
 function vehiclePick(state, F, b, p, crew) {
   const own = p ? partyVehicles(state, p) : [];
-  const pickedIds = p ? own.map((x) => x.id) : F.vehicleIds;
-  const picked = pickedIds.map((id) => vehicleById(state, id)).filter(Boolean);
-  const isOn = (x) => picked.includes(x) || (isBike(x) && picked.some(isBike));
-  const full = picked.length >= MAX_VEHICLES;
-  const cars = [...own.filter(isCar), ...carsAtBase(state, b.id)];
-  const ownBikes = own.filter(isBike).reduce((a, x) => a + (x.count || 1), 0);
-  const nBikes = bikesAtBase(state, b.id) + ownBikes;
-  const bikeStack = vehiclesAtBase(state, b.id).find(isBike) || own.find(isBike) || null;
-  const nCars = picked.filter(isCar).length;
-  const bikeNeed = nCars ? Math.max(1, crew.length - nCars) : Math.max(1, crew.length);
-  const btn = (id, active, label, hint, sub, off = "") => `<button data-action="tf-vehicle" data-v="${id}" class="${active ? "active" : ""}" ${off ? "disabled" : ""}${tip(off || hint)}>${active ? "✓ " : ""}${label}<span class="hint">${sub}</span></button>`;
-  const opts = [btn("", !picked.length, "On foot", "Slow, silent, goes anywhere but water. The people carry everything: a heavy load slows them and makes them eat and drink more. Leaves every vehicle at the base.", "no vehicle")];
-  if (bikeStack && nBikes) {
-    const on = isOn(bikeStack);
-    opts.push(btn(bikeStack.id, on, "Bicycles", `Faster than walking on roads, walking pace off them. No fuel, quiet. Each rack carries ${VEHICLE_TYPES.bike.rack} kg; riding takes most of the load's slow-down away. A bike each, or with cars a bike for each person not driving one; with cars the convoy keeps to the bikes' pace on roads.`,
-      `${nBikes} at the base · ${bikeNeed} needed · rack ${VEHICLE_TYPES.bike.rack} kg each · condition ${Math.round(bikeStack.condition)}%`, !on && full ? `${MAX_VEHICLES} vehicles already` : !on && nBikes < bikeNeed ? `Only ${nBikes} bike${nBikes === 1 ? "" : "s"} for ${bikeNeed}` : bikeStack.condition <= 0 ? "Needs repairs" : ""));
-  }
-  for (const v of cars) {
-    const on = isOn(v);
-    const seats = SEATS[v.type] || 4;
-    const noFuel = !on && v.fuel < 1 && !(p ? teamHas(p, "fuel") : F.supplies.fuel) ? `The ${v.name} has no fuel: refuel it at the base, or pack fuel cans (Supplies tab)` : "";
-    opts.push(btn(v.id, on, esc(v.name), `Fast on roads, cannot cross mountains. Burns about 0.6 fuel a road tile, 1.5 off-road, more when loaded past 60%. Payload ${payloadOf(v)} kg, riders (80 kg each) included: they feel none of their load. ${seats} seats. Each car needs a driver; with two or more vehicles everyone needs a seat.${upgradeText(v) ? ` ${upgradeText(v)}.` : ""}`,
-      `${seats} seats · ${payloadOf(v)} kg payload · fuel ${n0(v.fuel)}/${tank(v)} · condition ${Math.round(v.condition)}%${upgradeText(v) ? ` · ${esc(upgradeText(v))}` : ""}`, v.condition <= 0 ? "Needs repairs first" : !on && full ? `${MAX_VEHICLES} vehicles already` : noFuel));
-  }
-  const fleet = picked.length ? (p ? partyFleet(state, p) : formPreview(state, previewOpts(F)).v) : null;
-  const sum = fleet ? `${picked.length}/${MAX_VEHICLES} vehicles · ${seatsOf(fleet)} seats · ${Math.round(vehicleCapacity(fleet))} kg payload and racks${isCar(fleet) ? ` · fuel ${n0(fleet.fuel)}/${tank(fleet)}` : ""}` : `0/${MAX_VEHICLES} vehicles`;
-  return `<div class="choices">${opts.join("")}</div><div class="small muted"${tip(`Up to ${MAX_VEHICLES} vehicles: seats, payload and fuel add up; the slowest sets the pace (bikes among cars: the bikes' pace on roads, the cars' off them). Each car needs a driver, and with two or more vehicles everyone needs a seat. Wear hits every vehicle, a breakdown one of them (it can be left behind if the others seat everyone). On a battle map the first car is the one you drive; the others stand beside it.`)}>${sum}${cars.length ? "" : ` · no cars at ${esc(b.name)}`}</div>`;
+  return fleetPicker(state, { base: b, ids: p ? own.map((x) => x.id) : F.vehicleIds, crewN: crew.length, cans: p ? teamHas(p, "fuel") : F.supplies.fuel || 0, action: "tf-vehicle", own, party: p });
 }
 
 // ---------- tab 2: gear ----------
@@ -403,14 +378,9 @@ export const TEAMFORM_ACTIONS = {
     const id = d.v ? Number(d.v) : null;
     const p = partyOf(state, F);
     if (p) { ui.invMsg = id == null ? setVehicles(state, p, []) : toggleVehicle(state, p, id); return; }
-    if (id == null) { F.vehicleIds = []; return; }
-    const v = vehicleById(state, id);
-    if (!v) return;
-    const has = F.vehicleIds.map((x) => vehicleById(state, x)).filter(Boolean);
-    const on = has.includes(v) || (isBike(v) && has.some(isBike));
-    if (on) F.vehicleIds = has.filter((x) => x !== v && !(isBike(v) && isBike(x))).map((x) => x.id);
-    else if (has.length < MAX_VEHICLES) F.vehicleIds = [...F.vehicleIds, id];
-    else ui.invMsg = `At most ${MAX_VEHICLES} vehicles to a team.`;
+    const r = toggleFleetIds(state, F.vehicleIds, id); // ui/fleetpick.js
+    F.vehicleIds = r.ids;
+    if (r.msg) ui.invMsg = r.msg;
   },
   "tf-stance": (state, ui, d) => { const F = formOf(ui); if (F && STANCES[d.v]) F.stance = d.v; },
   "tf-who": (state, ui, d) => { if (ui.inv) { ui.inv.sid = Number(d.id); ui.invSel = null; } },

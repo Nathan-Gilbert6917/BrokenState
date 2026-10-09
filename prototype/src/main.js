@@ -44,6 +44,7 @@ import { BG_ACTIONS, BG_CHANGE, customLibrary } from "./ui/backgrounds.js"; // c
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
+import { toggleFleetIds, leadId } from "./ui/fleetpick.js"; // the planners' vehicle picker (up to four)
 import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormEsc, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
 import { renameBase } from "./sim/basenames.js";
 import { BN_ACTIONS, BN_INPUT, bnKey, nameModalUp } from "./ui/basename.js"; // naming a base you found, renaming any base
@@ -910,7 +911,14 @@ const actions = {
   "pl-tabs": () => { ui.planner.tabs = !ui.planner.tabs; ui.plannerError = ""; }, // a tube of purification tablets from the armory
   "pl-lights": () => { ui.planner.lights = ui.planner.lights === false; ui.plannerError = ""; }, // a light each from the armory (sim/lights.js), on by default
   "pl-crew": (d) => { const s = ui.planner.crew, id = Number(d.id); s.has(id) ? s.delete(id) : s.add(id); autofill(ui.planner); ui.plannerError = ""; },
-  "pl-vehicle": (d) => { ui.planner.vehicleId = d.v ? Number(d.v) : null; autofill(ui.planner); ui.plannerError = ""; },
+  "pl-vehicle": (d) => { // ui/fleetpick.js: up to four vehicles, click to take or leave each; vehicleId the lead
+    const pl = ui.planner;
+    const r = toggleFleetIds(state, pl.vehicleIds && pl.vehicleIds.length ? pl.vehicleIds : pl.vehicleId ? [pl.vehicleId] : [], d.v ? Number(d.v) : null);
+    pl.vehicleIds = r.ids;
+    pl.vehicleId = leadId(state, r.ids);
+    autofill(pl);
+    ui.plannerError = r.msg;
+  },
   "pl-stance": (d) => { ui.planner.stance = d.v; autofill(ui.planner); },
   "pl-autofill": () => { autofill(ui.planner); ui.plannerError = ""; },
   "pl-cancel": () => { ui.planner = null; view.preview = null; },
@@ -922,7 +930,7 @@ const actions = {
     const c = plannerLoad(state, pl);
     if (c.over) { ui.plannerError = c.why; return; }
     if (pl.moveOut) {
-      const res = moveTeamOut(state, { baseId: pl.fromBaseId, memberIds: [...pl.crew], dest: pl.dest, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, tabs: !!pl.tabs, lights: pl.lights !== false });
+      const res = moveTeamOut(state, { baseId: pl.fromBaseId, memberIds: [...pl.crew], dest: pl.dest, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, tabs: !!pl.tabs, lights: pl.lights !== false });
       if (res.error) { ui.plannerError = res.error; return; }
       ui.planner = null;
       view.preview = null;
@@ -937,7 +945,7 @@ const actions = {
       }
       return;
     }
-    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, supplies: { ...pl.supplies }, plan: pl.mission === "outpost" ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
+    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, plan: pl.mission === "outpost" ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
     if (res.error) { ui.plannerError = res.error; return; }
     rememberLaunch(state, res.party, pl); // sim/trips.js: for Repeat trip when it gets home, and its retreat policy
     ui.planner = null;

@@ -370,3 +370,21 @@ export function restoreGear(state, snap) {
   const over = p ? poolLoad(p) - carryCapacity(state, partyMembers(state, p), partyFleet(state, p)) : 0;
   return `Gear and supplies are back as they were.${over > EPS ? ` The team is now ${Math.ceil(over)} kg over what it can carry (its people or vehicles changed since): drop something off or take a vehicle.` : ""}`;
 }
+
+// ---------- the planners' vehicles (ui/fleetpick.js: the Form window, the trip planner, the move-out planner) ----------
+// The vehicles a planner means for n people from a base: null, one vehicle (bikes as one each), or a fleet (fleetPlan).
+/** @param {State} state @param {Base | null} base @param {number[]} ids @param {number} n */
+export function plannedFleet(state, base, ids, n) {
+  const list = [...new Set((ids || []).filter((x) => x != null).map(Number))];
+  if (!list.length) return null;
+  if (list.length === 1) { const v = vehicleById(state, list[0]); return v && isBike(v) ? { ...v, count: Math.max(1, n) } : v || null; }
+  return base ? fleetPlan(state, base, null, list, Math.max(1, n)).fleet : null;
+}
+// Why these vehicles cannot go with n people from the base ("" when they can): the cap, a person to each, a seat each,
+// enough bikes, every car with fuel in its tank or cans packed. cans: fuel cans packed.
+/** @param {State} state @param {Base | null} base @param {number[]} ids @param {number} n @param {number} [cans] */
+export function pickProblem(state, base, ids, n, cans = 0) {
+  if (!base || !(ids || []).length) return "";
+  const plan = fleetPlan(state, base, null, ids, Math.max(1, n));
+  return plan.problem || fuelProblem(plan.cars, cans);
+}
