@@ -44,13 +44,13 @@ const MOTIF3 = [
 // states are not lost and the busy ones do not shout: about −19 dB RMS calm, −16 in a fight at the default volume).
 const D = (o) => ({ meter: 4, chordBars: 1, density: 0.6, rest: 0.2, motifP: 0.25, padCut: 1400, keysInst: "epiano", pluckInst: "guitar", tex: "none", ...o });
 export const STATES = {
-  title: D({ trim: 2.4, label: "Title", bpm: 64, mode: "aeolian", prog: [0, 5, 2, 6], chordBars: 2, levels: { pad: 0.8, bass: 0.35, keys: 0.85, pluck: 0.55, drums: 0, tex: 0 },
+  title: D({ trim: 4.2, label: "Title", bpm: 64, mode: "aeolian", prog: [0, 5, 2, 6], chordBars: 2, levels: { pad: 0.8, bass: 0.35, keys: 0.85, pluck: 0.55, drums: 0, tex: 0 },
     pad: "drone", bass: "root", keys: "melody", pluck: "sparse", drums: "none", density: 0.45, rest: 0.12, motifP: 0.65, padCut: 900 }),
   day: D({ trim: 1.5, label: "Map: day", bpm: 76, mode: "dorian", prog: [0, 3, 6, 0, 2, 3, 6, 6], chordBars: 2, levels: { pad: 0.55, bass: 0.45, keys: 0.6, pluck: 0.85, drums: 0, tex: 0 },
     pad: "chord", bass: "roots", keys: "melody", pluck: "arp", drums: "none", density: 0.6, rest: 0.4, motifP: 0.3, padCut: 1600 }),
-  night: D({ trim: 4.6, label: "Map: night", bpm: 60, mode: "aeolian", prog: [0, 5, 3, 0], chordBars: 2, levels: { pad: 0.75, bass: 0.3, keys: 0.55, pluck: 0.3, drums: 0, tex: 0 },
+  night: D({ trim: 7, label: "Map: night", bpm: 60, mode: "aeolian", prog: [0, 5, 3, 0], chordBars: 2, levels: { pad: 0.75, bass: 0.3, keys: 0.55, pluck: 0.3, drums: 0, tex: 0 },
     pad: "drone", bass: "root", keys: "bells", keysInst: "bell", pluck: "sparse", drums: "none", density: 0.35, rest: 0.45, motifP: 0.2, padCut: 700 }),
-  festival: D({ trim: 1, label: "Harvest festival", bpm: 96, meter: 3, mode: "ionian", prog: [0, 3, 4, 0, 5, 3, 4, 4], levels: { pad: 0.45, bass: 0.55, keys: 0.6, pluck: 0.9, drums: 0.5, tex: 0 },
+  festival: D({ trim: 1, label: "Harvest festival", bpm: 96, meter: 3, mode: "ionian", prog: [0, 3, 4, 0, 5, 3, 4, 4], chordBars: 2, levels: { pad: 0.45, bass: 0.55, keys: 0.6, pluck: 0.9, drums: 0.5, tex: 0 },
     pad: "chord", bass: "waltz", keys: "melody", pluck: "waltz", pluckInst: "banjo", drums: "festival", density: 0.7, rest: 0.25, motifP: 0.4, padCut: 2000 }),
   tension: D({ trim: 5, label: "Tension", bpm: 84, mode: "phrygian", prog: [0, 1, 0, 1, 0, 5, 1, 0], levels: { pad: 0.75, bass: 0.6, keys: 0.35, pluck: 0.35, drums: 0.5, tex: 0.6 },
     pad: "cluster", bass: "pulse", keys: "bells", keysInst: "bell", pluck: "mute8", drums: "tick", tex: "swell", density: 0.45, rest: 0.5, motifP: 0, padCut: 1100 }),
@@ -60,11 +60,11 @@ export const STATES = {
     pad: "drone", bass: "pulse", keys: "bells", keysInst: "bell", pluck: "none", drums: "heartbeat", tex: "swell", density: 0.3, rest: 0.6, motifP: 0, padCut: 650 }),
   battleSeen: D({ trim: 4.1, label: "Battle: enemies in sight", bpm: 104, mode: "aeolian", prog: [0, 5, 3, 4], levels: { pad: 0.65, bass: 0.7, keys: 0.35, pluck: 0.35, drums: 0.7, tex: 0.5 },
     pad: "power", bass: "roots8", keys: "bells", keysInst: "bell", pluck: "mute8", drums: "toms", tex: "riser", density: 0.55, rest: 0.5, motifP: 0, padCut: 1200 }),
-  battleFight: D({ trim: 0.5, label: "Battle: firefight", bpm: 126, mode: "harmonic", prog: [0, 0, 5, 4], levels: { pad: 0.55, bass: 0.85, keys: 0.6, pluck: 0, drums: 1, tex: 0.65 },
+  battleFight: D({ trim: 0, label: "Battle: firefight", bpm: 126, mode: "harmonic", prog: [0, 0, 5, 4], levels: { pad: 0.55, bass: 0.85, keys: 0.6, pluck: 0, drums: 1, tex: 0.65 },
     pad: "power", bass: "ostinato", keys: "stabs", pluck: "none", drums: "full", tex: "anvil", density: 0.75, rest: 0, motifP: 0, padCut: 2200 }),
-  battleWin: D({ trim: 0, label: "Battle: winning", bpm: 126, mode: "dorian", prog: [0, 6, 3, 0], levels: { pad: 0.6, bass: 0.85, keys: 0.6, pluck: 0, drums: 1, tex: 0.5 },
+  battleWin: D({ trim: -0.5, label: "Battle: winning", bpm: 126, mode: "dorian", prog: [0, 6, 3, 0], levels: { pad: 0.6, bass: 0.85, keys: 0.6, pluck: 0, drums: 1, tex: 0.5 },
     pad: "power", bass: "ostinato", keys: "stabs", pluck: "none", drums: "full", tex: "anvil", density: 0.75, rest: 0, motifP: 0, padCut: 2600 }),
-  battleLose: D({ trim: 0.5, label: "Battle: losing", bpm: 120, mode: "phrygian", prog: [0, 1, 5, 1], levels: { pad: 0.7, bass: 0.85, keys: 0.5, pluck: 0, drums: 0.9, tex: 0.7 },
+  battleLose: D({ trim: 0, label: "Battle: losing", bpm: 120, mode: "phrygian", prog: [0, 1, 5, 1], levels: { pad: 0.7, bass: 0.85, keys: 0.5, pluck: 0, drums: 0.9, tex: 0.7 },
     pad: "cluster", bass: "ostinato", keys: "stabs", pluck: "none", drums: "full", tex: "anvil", density: 0.65, rest: 0, motifP: 0, padCut: 1500 }),
   gameover: D({ trim: 2, label: "Game over", bpm: 54, mode: "aeolian", prog: [0, 5, 2, 6, 3, 0, 4, 4], chordBars: 1, levels: { pad: 0.85, bass: 0.45, keys: 0.9, pluck: 0.35, drums: 0, tex: 0 },
     pad: "chord", bass: "root", keys: "melody", pluck: "sparse", drums: "none", density: 0.4, rest: 0.08, motifP: 0.7, padCut: 1000, theme: true }),
@@ -82,7 +82,7 @@ export function stateDef(key, mods = {}) {
   const d = { ...S, key, levels: { ...S.levels } };
   const calm = key === "day" || key === "night";
   if (calm && mods.season === "winter") { // colder and sparser: the aeolian, bells high, no arpeggio running
-    Object.assign(d, { bpm: S.bpm * 0.9, density: S.density * 0.6, rest: Math.min(0.7, S.rest + 0.15), mode: "aeolian", keysInst: "bell", keys: "bells", padCut: S.padCut * 0.8, pad: "drone", winter: true, trim: (S.trim || 0) + (key === "day" ? 2.5 : 1) });
+    Object.assign(d, { bpm: S.bpm * 0.9, density: S.density * 0.6, rest: Math.min(0.7, S.rest + 0.15), mode: "aeolian", keysInst: "bell", keys: "bells", padCut: S.padCut * 0.8, pad: "drone", winter: true, trim: (S.trim || 0) + (key === "day" ? 5 : 1) });
     d.levels.pluck *= key === "day" ? 0.55 : 0.4; d.levels.bass *= 0.6;
     if (key === "day") d.pluck = "sparse";
   } else if (calm && mods.season === "summer") { // warmer: the mixolydian by day, fuller strums
@@ -205,10 +205,10 @@ export function composeBar(def, mem, rng, bar) {
   if ((def.chordBars <= 1 || bar % def.chordBars === 0) && def.pad !== "none") {
     const len = M * (def.chordBars || 1);
     const r = near(ch.root, 45);
-    const notes = def.pad === "drone" ? [r - 12 >= 33 ? r - 12 : r, r + 7] :
-      def.pad === "power" ? [r, r + 7] :
+    const notes = def.pad === "drone" ? [r - 12, near(ch.fifth, 40)] :
+      def.pad === "power" ? [near(ch.root, 45), near(ch.fifth, 45)] :
       def.pad === "cluster" ? [r, r + 1 + (rng() < 0.5 ? 0 : 12), r + 7] :
-      [r, r + (ch.fifth - ch.root), near(ch.third, r + 5)];
+      [near(ch.root, 47), near(ch.fifth, 47), near(ch.third, 47)]; // a chord voiced in one octave window: the next chord shares its common tones (held on, not struck again)
     for (const m of notes) put("pad", "pad", m, 0, 0.8, len);
   }
   // Bass.
@@ -231,7 +231,9 @@ export function composeBar(def, mem, rng, bar) {
     const n = def.density < 0.4 ? 1 : 2;
     for (let i = 0; i < n; i++) if (dens(0.55)) {
       const d = pick(rng, [...ch.tones.map((t) => t + 7), ch.tones[0] + 14, ch.tones[2] + 7 + (def.winter ? 7 : 0)]);
-      put("keys", "bell", TONIC + 24 + degSemis(def.mode, d) - (def.winter ? 0 : 12 * (rng() < 0.4 ? 1 : 0)), Math.floor(rng() * M * 2) / 2, 0.35 + rng() * 0.25, 2);
+      let m = TONIC + 24 + degSemis(def.mode, d) - (def.winter ? 0 : 12 * (rng() < 0.4 ? 1 : 0));
+      while (m > (def.winter ? 93 : 88)) m -= 12; // distant, not shrill (winter a little higher)
+      put("keys", "bell", m, Math.floor(rng() * M * 2) / 2, 0.35 + rng() * 0.25, 2);
     }
   } else if (def.keys === "stabs") {
     const r = near(ch.root, 50);
@@ -252,7 +254,7 @@ export function composeBar(def, mem, rng, bar) {
     if (dens(0.5)) for (let k = 1; k < 4; k++) put("pluck", pi, tones[k], M / 2 + 1 + k * 0.03, 0.35, 1);
   } else if (def.pluck === "waltz") {
     put("pluck", pi, tones[0] - 12, 0, 0.7, 1);
-    for (const q of [1, 2]) for (let k = 1; k < 4; k++) put("pluck", pi, tones[k], q + k * 0.03, 0.42 - k * 0.03, 0.9);
+    for (const q of [1, 2]) for (let k = 1; k < 4; k++) put("pluck", pi, tones[k], q + k * 0.03, 0.42 - k * 0.03, 0.55); // the pah-pahs short
     if (dens(0.45)) put("pluck", pi, tones[4], 2.5, 0.35, 0.5);
   } else if (def.pluck === "mute8") {
     for (let e = 0; e < M * 2; e++) if (dens(0.6)) put("pluck", "muted", e % 4 === 3 ? tones[1] : tones[0], e / 2, e % 2 ? 0.35 : 0.5, 0.4);

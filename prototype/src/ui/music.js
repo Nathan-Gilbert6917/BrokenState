@@ -35,7 +35,7 @@ export const MUSIC = {
                           // (the bus compressor and the master's add their automatic make-up gain: set on the renders, tools/musicpreview)
   NODE_CAP: 40,           // nodes sounding at once at most, the fixed graph's included
   STING_DIP: 0.4,         // the bed under a sting (−8 dB)
-  HUSH: 0.6,              // the bed in the quiet after a death (−4.4 dB)
+  HUSH: 0.7,              // the bed in the quiet after a death (−3 dB; the music thins out as well)
   DUCK_RELEASE: 0.45,     // s: the duck's recovery time constant (back within about 1.5 s)
   WOBBLE: 0.0009,         // s: the tape's slow pitch drift (depth of the delay's swing)
   HISS: 0.012,            // the tape hiss's level
@@ -46,7 +46,7 @@ export const LAYER_LEVEL = { pad: 0.2, bass: 0.36, keys: 0.3, pluck: 0.32, drums
 export const MAX_VOICES = { pad: 6, bass: 2, keys: 4, pluck: 4, drums: 6, tex: 2, sting: 10 };
 const PRIORITY = { sting: 6, drums: 5, bass: 4, pad: 3, keys: 2, tex: 1, pluck: 1 }; // who keeps sounding when the node cap is reached
 const ATTACK = { pad: 0.9, guitar: 0.002, banjo: 0.002, epiano: 0.003, bell: 0.002, swell: 0.01 };
-const RING = { guitar: 0.5, banjo: 0.4, epiano: 1.4, bell: 2.4, swell: 0 }; // s a note may ring past its length before its release
+const RING = { guitar: 0.5, banjo: 0.15, epiano: 0.9, bell: 2.4, swell: 0 }; // s a note may ring past its length before its release
 const RELEASE = { pad: 1.3, guitar: 0.3, banjo: 0.25, epiano: 0.5, bell: 0.8, swell: 0.02 };
 
 // ---------- the bus (ui/audio.js) ----------
@@ -134,7 +134,7 @@ export function createEngine(ctx, dest, o = {}) {
     ctx, bank, rng, paused: false, fixed: fixed + 2, // + the bus's two
     key: null, def: null, target: null, mods: { season: "summer" }, downBars: 0, hushBars: 0,
     bpm: 72, bar: 0, nextBar: null, queue: [], voices: [], mem: {}, bedLevel: 1, stingUntil: -1, duckUntil: -1, duckDepth: 1,
-    stats: { notes: 0, dropped: 0, droppedBy: {}, stolen: 0, stolenBy: {}, late: 0, peakNodes: 0, peakVoices: 0, ticks: 0, tickMs: 0, maxTickMs: 0, bars: 0, changes: [] },
+    stats: { notes: 0, held: 0, dropped: 0, droppedBy: {}, stolen: 0, stolenBy: {}, late: 0, peakNodes: 0, peakVoices: 0, ticks: 0, tickMs: 0, maxTickMs: 0, bars: 0, changes: [] },
     lookahead: () => MUSIC.LOOKAHEAD,
   };
   const layerTarget = (def, k) => (def.levels[k] || 0) * LAYER_LEVEL[k] * Math.pow(10, (def.trim || 0) / 20); // trim: the state's loudness (dB), so calm and busy states sit near each other
@@ -156,6 +156,20 @@ export function createEngine(ctx, dest, o = {}) {
     const end = Math.max(from + 0.03, t);
     try { v.src.stop(end); } catch { /* fine */ }
     v.end = Math.min(v.end, end);
+    v.released = true;
+  }
+  // A pad note the next chord shares (a common tone) is held on instead of struck again: smoother, and half the voices.
+  function holdOn(v, t, vel, secs, rel) {
+    const p = v.g.gain, hold = t + secs;
+    if (p.cancelScheduledValues) p.cancelScheduledValues(t);
+    p.setValueAtTime(v.vel, t);
+    p.linearRampToValueAtTime(vel, t + 0.3);
+    p.setValueAtTime(vel, hold);
+    p.linearRampToValueAtTime(0, hold + rel);
+    v.end = hold + rel + 0.02; v.holdEnd = hold; v.vel = vel;
+    try { v.src.stop(v.end); } catch { /* a source takes its last stop time */ }
+    E.stats.held++;
+    return v;
   }
   // A note: a buffer source at the baked pitch's rate, through a gain of its own when the instrument needs one. Within
   // MAX_VOICES a layer and MUSIC.NODE_CAP in all: over either, the oldest voice of a layer that matters less (or of the
@@ -163,6 +177,10 @@ export function createEngine(ctx, dest, o = {}) {
   function voice(layer, inst, midi, t, vel, len, spb, relOver, now) {
     E.voices = E.voices.filter((v) => v.end > now);
     const gained = GAINED.has(inst), need = gained ? 2 : 1, pri = PRIORITY[layer] ?? 1;
+    if (inst === "pad") {
+      const same = E.voices.find((v) => v.inst === "pad" && v.midi === midi && v.layer === layer && !v.released && v.holdEnd != null && Math.abs(v.holdEnd - t) < 0.08 && v.t < t);
+      if (same) return holdOn(same, t, vel, len * spb, relOver ?? RELEASE.pad);
+    }
     const live = E.voices.filter((v) => v.layer === layer && v.t <= t + 1e-6 && v.end > t);
     if (live.length >= (MAX_VOICES[layer] || 4)) {
       const old = live.filter((v) => v.g).sort((a, b) => a.t - b.t)[0];
@@ -199,7 +217,7 @@ export function createEngine(ctx, dest, o = {}) {
     // A pad starts anywhere in its loop; a swell is cut so it ends at its peak (on the beat it leads to).
     src.start(t, e.loop ? rng() * (e.loop[1] - 1) : inst === "swell" ? Math.max(0, e.secs - len * spb) : 0);
     src.stop(end);
-    const v = { layer, t, end, src, g, nodes: need };
+    const v = { layer, inst, midi, vel, t, end, src, g, nodes: need, holdEnd: inst === "pad" && g ? t + len * spb : null };
     E.voices.push(v);
     E.stats.notes++;
     const n = E.fixed + soundingAt(t);
