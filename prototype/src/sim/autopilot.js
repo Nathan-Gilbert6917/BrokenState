@@ -2927,7 +2927,7 @@ function planTrip(state) {
   cands.sort((a, b) => b.score - a.score);
 
   for (const c of cands.slice(0, P.reserves ? 20 : 8)) {
-    const res = launchTrip(state, c, pool, c.mission === "hive" || c.mission === "assault" ? HIVE_SQUAD : spareHands); // hiveCandidate / conquestCandidate checked who stays home
+    const res = launchTrip(state, c, pool, c.mission === "hive" ? Math.max(HIVE_SQUAD, c.crew || 0) : c.mission === "assault" ? HIVE_SQUAD : spareHands); // hiveCandidate / conquestCandidate checked who stays home
     if (!res) continue;
     if (c.outer) g.stats.farTrips = (g.stats.farTrips || 0) + 1;
     g.lastLaunch = today;
@@ -3027,7 +3027,12 @@ function stormValue(s) {
   const hit = w.melee ? 0.2 : Math.max(0.05, Math.min(0.95, (40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + (w.aim || 0) + traitAim(s)) / 100)); // Brave, Coward (traits.js)
   return ((hit * dmg) / 10) * (0.5 + s.health / 200) * Math.sqrt(1 / Math.max(0.3, armorMult(s)));
 }
-const hiveSquad = (pool) => [...pool].filter((s) => s.health >= HIVE_HEALTH && !s.woundInfected).sort((a, b) => stormValue(b) - stormValue(a)).slice(0, HIVE_SQUAD);
+const hiveSquad = (pool, size = HIVE_SQUAD) => [...pool].filter((s) => s.health >= HIVE_HEALTH && !s.woundInfected).sort((a, b) => stormValue(b) - stormValue(a)).slice(0, size);
+// A bigger hub sends a bigger squad into a hive (progression census 2026-10-09: the core room of a tier-1 hive beat
+// six of the autopilot's fighters three times in four on the battle map; a player with forty people would not send
+// six): 24 or more at the hub send eight, 36 or more ten. [people at home, squad]
+const HIVE_SQUAD_BIG = [[36, 10], [24, 8]];
+const hiveSquadSize = (n) => { for (const [k, size] of HIVE_SQUAD_BIG) if (n >= k) return size; return HIVE_SQUAD; };
 const squadPower = (list) => list.reduce((a, s) => a + stormValue(s), 0);
 // The guard you know of at a hive: what is in sight there now, else the last look (never below the 40 a hive
 // rebuilds its guard to), else a guess.
@@ -3069,9 +3074,10 @@ function hiveCandidate(state, home, pool) {
   const hive = hiveById(state, c.hiveId);
   if (!hive) return waits("unknown");
   if (today < P.hiveFrom || today - (g.lastHive ?? -99) < P.hiveRest) return waits("rest");
-  if (home.length - HIVE_SQUAD < Math.max(HIVE_KEEP, Math.ceil(home.length * P.homeFrac * 0.6))) return waits("home");
-  const squad = hiveSquad(pool);
-  if (squad.length < HIVE_SQUAD) return waits("squad");
+  const size = hiveSquadSize(home.length);
+  if (home.length - size < Math.max(HIVE_KEEP, Math.ceil(home.length * P.homeFrac * 0.6))) return waits("home");
+  const squad = hiveSquad(pool, size);
+  if (squad.length < size) return waits("squad");
   const power = squadPower(squad);
   const fuel = Math.max(0, Math.floor(((h.stock.fuel || 0) - 4) / FIRE_FUEL));
   const guard = knownGuard(state, hive.tile);
@@ -3082,7 +3088,7 @@ function hiveCandidate(state, home, pool) {
     c.waits = "storm";
     const ratio = stormRatio(state, hive, power, guard, fires);
     const kit = crawlKit(state, hive); // deeper hives: more ammo and meds, longer inside
-    return { mission: "hive", tile: hive.tile, score: 6, crew: HIVE_SQUAD, hive: true, onSite: kit.hours,
+    return { mission: "hive", tile: hive.tile, score: 6, crew: size, hive: true, onSite: kit.hours,
       why: `destroy ${hive.name} (squad ${power.toFixed(1)} against the hive's ${(power / ratio).toFixed(1)}${fires ? ` after ${fires} fire${fires > 1 ? "s" : ""}` : ""}, its core ${crawlEstimate(state, hive).depth} chambers in; the campaign's ${c.fires} fire${c.fires === 1 ? "" : "s"} so far)`,
       supplies: { ammo: kit.ammo, meds: kit.meds, fuel: Math.max(fires * FIRE_FUEL, 3) }, min: { fuel: fires * FIRE_FUEL }, fires };
   }
@@ -3097,13 +3103,13 @@ function hiveCandidate(state, home, pool) {
     if (baseAmmo(state, h) < campaignAmmoTarget(state, h)) return waits("ammo");
     c.waits = "crawl";
     const kit = crawlKit(state, hive);
-    return { mission: "hive", tile: hive.tile, score: 5, crew: HIVE_SQUAD, hive: true, crawlTrip: true, onSite: kit.hours,
+    return { mission: "hive", tile: hive.tile, score: 5, crew: size, hive: true, crawlTrip: true, onSite: kit.hours,
       why: `crawl into ${hive.name} (its core ${crawlEstimate(state, hive).depth} chambers in): clear the way and thin its brood for the storm (squad ${power.toFixed(1)}, the core's odds not there yet)`,
       supplies: { ammo: kit.ammo, meds: kit.meds, fuel: 3 }, min: {}, fires: 0 };
   }
   if (!fireWay) return waits("odds");
   c.waits = "fires";
-  return { mission: "hive", tile: hive.tile, score: 5, crew: HIVE_SQUAD, hive: true, fireTrip: true,
+  return { mission: "hive", tile: hive.tile, score: 5, crew: size, hive: true, fireTrip: true,
     why: `set fires around ${hive.name} (guard about ${guard}, ${d} tiles off): the campaign's odds are not there yet (squad ${power.toFixed(1)} against the brood's ${(power / stormRatio(state, hive, power, guard, 0)).toFixed(1)})`,
     supplies: { ammo: Math.min(40, Math.max(0, baseAmmo(state, h) - 20)), meds: 2, fuel: canFire * FIRE_FUEL }, min: { fuel: FIRE_FUEL }, fires: canFire };
 }
