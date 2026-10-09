@@ -77,7 +77,7 @@ function warDays(st, f, days, onDay = null) {
   // Guard-less hive: a party burns it out at once.
   const { st: s2, f: f2, hv: h2 } = setup(2, "fortress", 30, { guard: 0 });
   const r2 = warDays(s2, f2, 120);
-  check(r2.length === 1 && r2[0].r === "burned" && !s2.hives.includes(h2), `a hive with no guard left is burned out by the first party (${r2.map((x) => x.r).join(", ")})`);
+  check(r2.length === 1 && r2[0].r === "burned" && !s2.hives.includes(h2), `a hive with no guard left has its Hivemind killed by the first party (${r2.map((x) => x.r).join(", ")})`);
 }
 
 // 2. By type: zealots always, traders rarely, raiders never; nothing out of reach; too few people: nobody goes.
@@ -160,7 +160,7 @@ function warDays(st, f, days, onDay = null) {
   const { st, f, hv } = setup(20, "zealot", 40, { guard: 10 });
   st.erasOff = true; // the eras' own clocks are tools/eratest.js's: the rule itself
   warDays(st, f, 120);
-  check(!st.hives.includes(hv) && st.victory && st.gameOver && st.victoryReason === "hives", `the last hive burned out by a group wins the game (${st.log.find((l) => /^Every hive is destroyed/.test(l.text)) ? "the victory line is in the log" : "no victory line"})`);
+  check(!st.hives.includes(hv) && st.victory && st.gameOver && st.victoryReason === "hives", `the last hive killed in its core by a group wins the game (${st.log.find((l) => /^Every hive is destroyed/.test(l.text)) ? "the victory line is in the log" : "no victory line"})`);
 }
 
 // 6. Save and load: the new fields round-trip; a save without them loads and plays.

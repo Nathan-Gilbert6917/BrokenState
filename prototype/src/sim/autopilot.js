@@ -53,7 +53,7 @@ import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun, linesText } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
 import { allCaptives, ransomValue, isCaptive } from "./conflicts.js";
-import { ensureInv, armorMult, itemLoad, salvageAt } from "./inventory.js";
+import { ensureInv, armorMult, itemLoad, salvageAt, allCarried } from "./inventory.js";
 import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST, seasonOfDay, foodNeedFactor, coldAhead } from "./weather.js";
 import { teamCold } from "./needs.js"; // tune-winter: a team's food in the cold (×1.1 / ×1.2 without a lit camp fire)
 import { autoRecruitPick } from "./recruits.js";
@@ -99,7 +99,7 @@ import {
 import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageDay } from "./foraging.js";
 import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, woodTime, WOOD } from "./woodcutting.js";
 import { siteKnown } from "./discovery.js";
-import { packTripKit } from "./kit.js";
+import { packTripKit, HIVE_KIT } from "./kit.js";
 import { openCasesIn } from "./gunsafes.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
 import { autoTreats } from "./comforts.js";
@@ -2572,6 +2572,14 @@ export function planCrafts(state, base) {
   const dewormers = baseDewormers(state, base) + q.filter((j) => j.recipe === "dewormer").length;
   if (dewormers < (base.type === "hub" ? 2 : 1) && (st.meds || 0) >= 8 && tryCraft(["dewormer"], "a dewormer on hand: the worm kills within a week", 4)) return;
   if (filters < 1 && tryCraft([filterRecipe(base)], "clean water: a filter purifies 10 a day against the worm and an upset stomach (worm.js)", 8)) return;
+  // The hive campaign's kit for the core (hivecrawl.js HIVEMIND.WEAK; kit.js HIVE_KIT): Molotovs (a bottle and fuel) and
+  // road flares at the hub while the armory is short, from a few days before the campaign's first storm.
+  const camp = gov(state).campaign;
+  if (camp && base.type === "hub" && day(state) >= persona(state).hiveFrom - 10) {
+    const kitHave = (k) => base.armory.filter((it) => it && it.key === k).length + q.filter((j) => CRAFTS[j.recipe].gear === k).length + atBase(state, base.id).reduce((a, s) => a + allCarried(s).filter((it) => it && it.key === k).length, 0);
+    if (kitHave("molotov") < HIVE_KIT.molotov && (st.fuel || 0) >= 6 && base.armory.some((it) => it && it.key === "bottle") && tryCraft(["molotov"], "Molotovs for the Hivemind in the core (fire burns it and keeps its brood in the walls)", 3)) return;
+    if (kitHave("flare") < HIVE_KIT.flare && (st.fuel || 0) >= 6 && baseAmmo(state, base) >= 40 && tryCraft(["flare"], "road flares to light the hive's passages", 5)) return;
+  }
   if (rs) floor = rs.scrap.target;
   keep = buildKeep(state, base); // on priorities: the rest only from scrap past the next building's (and the floors)
   if (lacking("armor") > 0 && tryCraft(["scrapvest", "tirevest"], "someone has no body armor", 35)) return;

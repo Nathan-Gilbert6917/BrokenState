@@ -66,7 +66,7 @@ import { raidSiegeKit, kitText } from "./siege.js";
 import { freezeShare } from "./woodcutting.js";
 import { ensureHives, hiveGuard, destroyHive, hivesLeftText } from "./hives.js";
 import { markThreat } from "./hivetech.js";
-import { groupHiveCrawl, groupTakeHoard } from "./hivecrawl.js"; // a war party crawls the same den as your teams; the core's hoard
+import { groupHiveCrawl, groupTakeHoard, groupMakeKit } from "./hivecrawl.js"; // a war party crawls the same den as your teams; the core's hoard
 import { BOSS_NAMES } from "./hiveconst.js";
 import { reduceHorde } from "./hordes.js";
 import { broodGrowth } from "./eras.js";
@@ -469,6 +469,7 @@ export function groupHiveWar(state, f, today = day(state)) {
   if (f.pop < GROUP_HIVE.MIN_POP || !odds || !rng.chance(odds)) return null;
   const { fighters, power } = groupHiveParty(f);
   const kill = Math.round((power * GROUP_HIVE.FIGHT * rng.range(0.7, 1.3)) / broodGrowth(state));
+  groupMakeKit(state, f); // hivecrawl.js: Molotovs for the core from its fuel, when it has the inputs (AI parity)
   const crawl = groupHiveCrawl(state, hive, kill, f.id); // hivecrawl.js: chamber by chamber to the core
   const cut = crawl.cut;
   hive.res = Math.max(0, hive.res - Math.round(cut * GROUP_HIVE.STORES));

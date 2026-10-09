@@ -401,7 +401,7 @@ console.log("The Hivemind's weak spots");
   const rate = (o) => { let w = 0; for (let i = 0; i < TRIALS; i++) w += coreTrial(100 + i, 4, { guard: 120, ...o }).won; return w / TRIALS; };
   const bare = rate({ lights: true }), prep = rate({ lights: true, fire: 2, stun: 2 }), six = bare, five = rate({ lights: true, n: 5, fire: 2, stun: 2 });
   console.log(`    the core at tier 4, guard 120 (${TRIALS} battles): six with headlamps ${Math.round(bare * 100)}%, with 2 Molotovs and 2 flashbangs ${Math.round(prep * 100)}%; five prepared ${Math.round(five * 100)}% against six bare ${Math.round(six * 100)}%`);
-  check(prep >= bare + 0.2, "a squad bringing fire and bangs clearly beats the same squad without");
+  check(prep >= bare + 0.2 && five >= six, "a squad bringing fire and bangs clearly beats the same squad without, and five prepared beat six bare");
   // By the numbers (and the AI groups): the bosses count less for what a team brings.
   const { st, hv } = world(SEED, 900, 60);
   const { p, people } = squad(st, hv, { lights: false });
@@ -499,6 +499,91 @@ console.log("The crawl window's map");
   const html = UI.hiveCrawlModal(st, { started: true });
   const mouth = /<title>The mouth[^<]*<\/title><circle[^>]*\/><text[^>]*>([^<]*)<\/text>/.exec(html);
   check(mouth && mouth[1] === "M", `the mouth's node reads ${mouth ? `"${mouth[1]}"` : "?"} (M, not T for "The mouth")`);
+}
+
+// ---------- 12. batch 3: the retreat counts the fire, the Broodmother dazed, the brood panicked, kit made ----------
+console.log("Batch 3: the AI's outlook, the Broodmother, the brood, the kit made");
+{
+  const C = await import("../src/sim/combat.js");
+  const T = await import("../src/sim/throwables.js");
+  const mk = (seed, fire = 0, stun = 0) => {
+    const { st, hv } = world(seed, 2100, 80);
+    const { p, people } = squad(st, hv);
+    for (const [i, s] of people.entries()) { if (i < fire) s.pockets[1] = item("molotov"); if (i >= 6 - stun) s.pockets[2] = item("flashbang"); }
+    globalThis.window = {};
+    let b;
+    try { b = createBattle(st, HC.coreSetup(st, p, hv)); } finally { delete globalThis.window; }
+    st.combat = b;
+    return { st, b, hm: b.units.find((u) => u.boss === "hivemind"), bm: b.units.find((u) => u.boss === "broodmother") };
+  };
+  // The AI's outlook (its retreat): the fire and bangs in hand count, a burning Hivemind counts for less.
+  {
+    const bare = mk(SEED), prep = mk(SEED, 2, 2);
+    const o0 = C.fightOutlook(bare.b).ratio, o1 = C.fightOutlook(prep.b).ratio;
+    check(prep.b.hivemind.prep === 4 && o1 > o0 * 1.3, `the battle AI's outlook counts the Molotovs and bangs in hand (${o0.toFixed(2)} bare → ${o1.toFixed(2)} with 2 + 2)`);
+    prep.b.fires = [{ x: prep.hm.x - 1, y: prep.hm.y, r: 0.5, turns: 3 }];
+    const o2 = C.fightOutlook(prep.b).ratio;
+    check(o2 > o1, `... and the Hivemind burning counts for less (${o1.toFixed(2)} → ${o2.toFixed(2)})`);
+    T.landEffect(prep.b, prep.b.units.find((u) => u.side === "player"), { fx: "flash" }, 0, 0); // a bang far off: one less in hand
+    check(prep.b.hivemind.used === 1 && C.fightOutlook(prep.b).ratio < o2, `what is thrown is out of hand (${prep.b.hivemind.used} used)`);
+    bare.st.combat = null; prep.st.combat = null;
+  }
+  // The Broodmother dazed by a bang next to her.
+  {
+    const { st, b, bm } = mk(SEED + 1);
+    const thrower = b.units.find((u) => u.side === "player");
+    T.landEffect(b, thrower, { fx: "flash" }, bm.x, bm.y);
+    check(bm.stun && bm.stun.ap === HC.HIVEMIND.WEAK.dazeFlash && b.log.some((l) => /is dazed by the bang/.test(l.text)), `a flashbang next to the ${bm.name} dazes her (−${bm.stun && bm.stun.ap} actions on her next turn)`);
+    const ap0 = 2;
+    if (b.phase === "player") endPlayerTurn(st);
+    check(bm.dead || bm.ap <= ap0 - HC.HIVEMIND.WEAK.dazeFlash || b.log.some((l) => /still reeling/.test(l.text) && l.text.includes(bm.name)), "... and she loses them");
+    st.combat = null;
+  }
+  // The brood it called shy from the flames.
+  {
+    const { st, b, hm } = mk(SEED + 2);
+    const z = C.enemyUnit(b, b.rng, "zombies", 5, 99);
+    let spot = null;
+    for (let dy = -4; dy <= 4 && !spot; dy++) for (let dx = 3; dx <= 6 && !spot; dx++) { const x = hm.x - dx, y = hm.y + dy; if (x >= 0 && y >= 2 && y < b.h && b.cells[y * b.w + x].k === "open" && !b.units.some((o) => o.x === x && o.y === y)) spot = [x, y]; }
+    z.x = spot[0]; z.y = spot[1]; z.called = true; z.aware = true;
+    b.units.push(z);
+    T.landEffect(b, b.units.find((u) => u.side === "player"), { fx: "fire" }, z.x, z.y - 2);
+    check(z.reel && /flames/.test(z.reel.why) && b.log.some((l) => /shy away from the flames/.test(l.text)), `a Molotov bursting by the brood it called: they shy away (an action lost: "${(b.log.find((l) => /shy away/.test(l.text)) || {}).text}")`);
+    st.combat = null;
+  }
+  // The autopilot makes Molotovs and flares at the hub for the campaign; a group makes Molotovs before a war party.
+  {
+    const A = await import("../src/sim/autopilot.js");
+    const W = await import("../src/sim/world.js");
+    const w = createWorld({ seed: SEED, factionCount: 3 });
+    w.started = true;
+    A.setAutopilot(w, true, "aggressive");
+    ensureHives(w);
+    w.hour = 200 * 24;
+    const h = W.hub(w);
+    w.governor.campaign = { hiveId: w.hives[0].id, tile: w.hives[0].tile, since: 0, fires: 0, trips: 0, waits: "odds" };
+    h.armory = h.armory.filter((it) => it && it.key !== "molotov" && it.key !== "flare");
+    h.armory.push(item("bottle"), item("bottle"));
+    Object.assign(h.stock, { fuel: 30, scrap: 60, ammo: 200, food: 200, water: 200, meds: 20 });
+    const seen = [];
+    const Cr = await import("../src/sim/crafting.js");
+    for (let i = 0; i < 8; i++) { h.crafting = []; A.planCrafts(w, h); seen.push(...h.crafting.map((j) => j.recipe)); for (const j of h.crafting) { const g = Cr.CRAFTS[j.recipe].gear; if (g && GEAR[g]) h.armory.push(item(g)); } } // as if made
+    check(seen.includes("molotov") && seen.includes("flare"), `the autopilot queues Molotovs and road flares at the hub for the campaign's core (${seen.join(", ")})`);
+    check(seen.filter((r) => r === "molotov").length <= 2 && seen.filter((r) => r === "flare").length <= 2, "... only while the armory is short");
+    const f = w.factions.find((x) => x.alive);
+    ensureArsenal(w, f);
+    f.arsenal.items = f.arsenal.items.filter((it) => it.key !== "molotov");
+    f.stock.fuel = 10;
+    const made = HC.groupMakeKit(w, f);
+    check(made === HC.HCRAWL.GROUP.makeKit && f.stock.fuel === 10 - made * HC.HCRAWL.GROUP.molotovFuel && f.arsenal.items.filter((it) => it.key === "molotov").length === made, `AI parity: a group makes ${made} Molotovs from its fuel before a war party (fuel 10 → ${f.stock.fuel})`);
+    f.stock.fuel = 1;
+    f.arsenal.items = f.arsenal.items.filter((it) => it.key !== "molotov");
+    check(HC.groupMakeKit(w, f) === 0, "... none without the fuel");
+  }
+  // The military's radio: a strike, not a burning.
+  const fs = await import("node:fs");
+  const src = fs.readFileSync(new URL("../src/sim/hardcore-groups.js", import.meta.url), "utf8");
+  check(!/burn the hive out|burn out the hive/.test(src) && /We strike the hive at the source/.test(src), "the hardcore military's radio speaks of a strike on the hive, not of burning it out");
 }
 
 console.log(`\n${passed} passed, ${failed} failed (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
