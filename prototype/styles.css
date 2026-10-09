@@ -1211,7 +1211,7 @@ body.ov-dragging #mapwrap > * { transition: none !important; animation: none !im
    one with tiers has − and + beside it */
 .tp { display: flex; flex-direction: column; gap: 0.15rem; }
 .tp-row { display: flex; flex-wrap: wrap; gap: 0.15rem; align-items: center; }
-.tp-label { width: 2.2rem; flex: none; }
+.tp-label { width: 3.3rem; flex: none; }
 button.mini.tp-chip { padding: 0.05rem 0.35rem; font-size: 0.76rem; }
 button.mini.tp-chip.t-good { color: var(--t-good); }
 button.mini.tp-chip.t-bad { color: var(--t-bad); }

@@ -664,12 +664,12 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
       const ui = { started: false, ironman: false };
       BG_ACTIONS["bg-open"](w, ui);
       htmlOk(backgroundEditor(w, ui), `backgrounds window (${mode})`);
-      const g = createWorld({ seed: seed + 9, factionCount: 7, mode, crew: [{ startGear: { slots: { weapon: "ar", backpack: "" }, items: ["frag", "laptop"] } }] });
+      const g = createWorld({ seed: seed + 9, factionCount: 7, mode, crew: [{ points: true, startGear: { slots: { weapon: "ar", backpack: "" }, carry: { pocket: ["frag"], pack: ["laptop"] } } }] });
       const gu = { started: false, ironman: false, freeEdit: true };
       SG_ACTIONS["sg-open"](g, gu, { id: g.survivors[0].id });
       htmlOk(startGearEditor(g, gu), `starting gear window (${mode}, picks)`);
       gu.gearEdit = { i: 1 };
-      htmlOk(startGearEditor(g, gu), `starting gear window (${mode}, as rolled)`);
+      htmlOk(startGearEditor(g, gu), `starting gear window (${mode}, another colonist)`);
     }
     setCustomLibrary([]);
     check(inMain("nr-free") && inMain("nr-bg") && inMain("bg-close") && mainSrc.includes("customBackgrounds: ui.ironman ? null : customLibrary()"), "main.js handles Customize, the background select and Done, and passes the list (not in Ironman)");

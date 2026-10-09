@@ -204,8 +204,11 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol"];
   state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
   state.survivors.forEach((s, i) => randomStarterMods(state.rng, s.gear.weapon, i)); // gunmods.js: a cheap part or two on some guns
-  state.survivors.forEach((s, i) => { const box = starterLoad(state.rng, s.gear.weapon, i); if (box && !pocketBox(s, box)) state.bases[0].stock[box.key] = (state.bases[0].stock[box.key] || 0) + box.dur; }); // ammo.js: now and then a typed load and a box of it
-  state.survivors.forEach((s) => starterMags(s, state.bases[0].armory)); // carrykit.js: two spare magazines with a starting gun (section 15)
+  // Built on Customize's points (crew[i].points): what the dice hand them is theirs only as picks, so none of it
+  // overflows to the hub (the dice are drawn all the same).
+  const onPoints = (i) => !!(crew && crew[i] && crew[i].points);
+  state.survivors.forEach((s, i) => { const box = starterLoad(state.rng, s.gear.weapon, i); if (box && !pocketBox(s, box) && !onPoints(i)) state.bases[0].stock[box.key] = (state.bases[0].stock[box.key] || 0) + box.dur; }); // ammo.js: now and then a typed load and a box of it
+  state.survivors.forEach((s, i) => starterMags(s, onPoints(i) ? null : state.bases[0].armory)); // carrykit.js: two spare magazines with a starting gun (section 15)
   state.kitV = 2; // carry kit: rigs, magazines as items, carriers with plates (carrykit.js migrateKit for older saves)
   state.survivors[0].gear.armor = newItem("vest", 1, hash01(state.seed, "startdur", "vest"), START_DUR);
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));

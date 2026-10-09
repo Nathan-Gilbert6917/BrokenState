@@ -81,15 +81,18 @@ export function sanitizeStartGear(raw) {
     const k = raw.slots && raw.slots[slot];
     if (k === "" || (typeof k === "string" && GEAR[k] && GEAR[k].slot === slot)) slots[slot] = k;
   }
+  /** @type {Record<string, (string | null)[]> | undefined} */
   let carry;
   if (raw.carry && typeof raw.carry === "object") {
     const ok = new Set(carryChoices());
-    carry = {};
+    /** @type {Record<string, (string | null)[]>} */
+    const c = {};
     for (const where of CARRY_PLACES) {
-      const list = Array.isArray(raw.carry[where]) ? raw.carry[where].slice(0, limitOf(where)) : [];
-      carry[where] = list.map((k) => (typeof k === "string" && ok.has(k) ? k : null));
-      while (carry[where].length && carry[where][carry[where].length - 1] == null) carry[where].pop(); // trailing empties
+      const list = (Array.isArray(raw.carry[where]) ? raw.carry[where].slice(0, limitOf(where)) : []).map((/** @type {any} */ k) => (typeof k === "string" && ok.has(k) ? k : null));
+      while (list.length && list[list.length - 1] == null) list.pop(); // trailing empties
+      c[where] = list;
     }
+    carry = c;
   }
   if (!Object.keys(slots).length && !carry) return null;
   return carry ? { slots, carry } : { slots };
@@ -149,7 +152,7 @@ export function carryReason(key, where, i, spec) {
 export function firstFit(P, key, spec) {
   const carry = (P && P.carry) || {};
   const free = (where, i) => !(carry[where] && carry[where][i]);
-  const order = [...(pouchKindOf(probeItem(key)) ? ["pouch"] : []), ...(isSmall(key) ? ["pocket"] : []), "pack", "pouch", "pocket"];
+  const order = ["pouch", ...(isSmall(key) ? ["pocket"] : []), "pack", "pocket"]; // a pouch that takes it (magazines, grenades, a radio, meds in the admin pouch) first
   for (const where of order) {
     for (let i = 0; i < spec[where].n; i++) if (free(where, i) && !carryReason(key, where, i, spec)) return { where, i };
   }
