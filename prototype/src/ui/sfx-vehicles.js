@@ -31,7 +31,7 @@ import { camera, HEX } from "./render.js";
 import { selectedTeam } from "./teamsel.js";
 import { assignGroup, groupBus } from "./soundgroups.js"; // the mixer: People → Vehicles
 
-export const VEHICLE_SOUNDS = ["engineStart", "engineNoStart", "engineStop", "breakdown", "drive", "carDoor", "tailgate", "hotwire"];
+export const VEHICLE_SOUNDS = ["engineStart", "engineNoStart", "engineStop", "breakdown", "drive", "carDoor", "tailgate", "hotwire", "horn"];
 export const VEHICLE_LOOPS = ["engineIdle", "convoyHum"];
 export const VEHICLE_GROUP = assignGroup([...VEHICLE_SOUNDS, ...VEHICLE_LOOPS], "people.vehicles"); // the loops follow it live (groupBus)
 
@@ -367,6 +367,22 @@ export function mapCues(state, ui, mem, cam = null) {
   const prev = mem.teams || new Map();
   const say = (name, o) => out.push({ gain: MAP_GAIN, ...o, name });
   const camOf = () => cam || (cam = mapCam(state));
+  // Setting off from one of your bases: the doors, the engine catching, a beep-beep from the lead vehicle (once, a
+  // convoy too; bikes ring their bells), then the gate opening as they pull out. On foot: the gate. Cosmetic: the sim
+  // never hears the horn (it draws nothing).
+  const setOff = (s, base, pan) => {
+    const key = s.keys[0], lead = s.lead || {};
+    let gate = 0;
+    if (key) {
+      const o = { key, keys: s.keys, cond: lead.condition, fuel: lead.fuel, hot: !!(lead.found && lead.found.hot), go: true };
+      const horn = 0.9 + startTiming(key, o).catchAt + 1;
+      say("carDoor", { heavy: doorOf(key), n: doorsFor(s), pan });
+      say("engineStart", { ...o, pan, delay: 0.9 });
+      say("horn", { key, pan, delay: horn });
+      gate = horn + 0.6;
+    } else if (s.bike) { say("engineStart", { key: "bicycle", bell: false, pan }); say("horn", { key: "bicycle", pan, delay: 0.5 }); gate = 1.1; }
+    say("gateOpen", { dk: gateKind(base), pan, close: true, delay: gate });
+  };
   // City crawls (sim/citycrawl.js p.crawl.inside): into a building and out again: its door. Heard in battle too
   // (going in starts the building's fight).
   if (seen && live) for (const [id, { s }] of now) {
@@ -396,11 +412,7 @@ export function mapCues(state, ui, mem, cam = null) {
       if (!was) {
         // A team that has just left one of your bases (sent out, moved out): the gate, then the doors and the engine.
         const base = s.tile != null && s.moving ? playerBase(state, s.tile) : null;
-        if (base) { // in the yard: doors, the engine, and the gate opening as they pull out (on foot: the gate)
-          if (car) { say("carDoor", { heavy: doorOf(key), n: doorsFor(s), pan }); say("engineStart", { key, keys: s.keys, cond: lead.condition, fuel: lead.fuel, hot: !!(lead.found && lead.found.hot), go: true, pan, delay: 0.9 }); }
-          else if (s.bike) say("engineStart", { key: "bicycle", pan });
-          say("gateOpen", { dk: gateKind(base), pan, close: true, delay: car ? 2.2 : s.bike ? 0.8 : 0 });
-        }
+        if (base) setOff(s, base, pan);
         continue;
       }
       s.dead = was.dead && !s.moving;
@@ -411,8 +423,8 @@ export function mapCues(state, ui, mem, cam = null) {
       }
       if (s.moving && !was.moving) {
         const base = s.tile != null ? playerBase(state, s.tile) : null;
-        if (base) say("gateOpen", { dk: gateKind(base), pan, close: true, delay: car ? 2.2 : s.bike ? 0.8 : 0 }); // leaving one of your bases
-        if (car) { say("carDoor", { heavy: doorOf(key), n: doorsFor(s), pan }); say("engineStart", { key, keys: s.keys, cond: lead.condition, fuel: lead.fuel, hot: !!(lead.found && lead.found.hot), go: true, pan, delay: 0.9 }); }
+        if (base) setOff(s, base, pan); // leaving one of your bases
+        else if (car) { say("carDoor", { heavy: doorOf(key), n: doorsFor(s), pan }); say("engineStart", { key, keys: s.keys, cond: lead.condition, fuel: lead.fuel, hot: !!(lead.found && lead.found.hot), go: true, pan, delay: 0.9 }); }
         else if (s.bike) say("engineStart", { key: "bicycle", pan });
       } else if (!s.moving && was.moving && !was.dead && !s.dead) {
         if (car) { say("engineStop", { key, pan }); say("carDoor", { heavy: doorOf(key), n: doorsFor(s), pan, delay: 1.2 }); }
@@ -605,6 +617,17 @@ function makeLoop(c, dest, w, t0, K) {
   };
 }
 
+// ---------- the horn ----------
+// f: the low tone (Hz), third: the upper tone's ratio, band (Hz, Q): the horn's bell, droop: a big horn sags as the air
+// runs (× by the end of a beep), level: how loud under the doors and engine.
+export const HORNS = {
+  car:   { f: 415, third: 1.19, wave: "square", band: 1250, q: 1.4, beep: 0.12, gap: 0.1, level: 0.5 },
+  mid:   { f: 340, third: 1.2, wave: "square", band: 1000, q: 1.3, beep: 0.12, gap: 0.1, level: 0.55 },
+  heavy: { f: 205, third: 1.25, wave: "sawtooth", band: 620, q: 1.1, beep: 0.13, gap: 0.1, level: 0.6, droop: 0.97 },
+};
+const HORN_OF = { compact: "car", sedan: "car", motorbike: "car", suv: "mid", van: "mid", pickup: "mid", humvee: "heavy", miltruck: "heavy" };
+export const hornOf = (key) => (ENGINES[key] && ENGINES[key].bike ? "bell" : HORN_OF[key] || "car");
+
 // ---------- the voices ----------
 let KIT0 = null; // audio.js's building blocks, kept for the loops (engineLoops' default)
 export function vehicleVoices(K) {
@@ -723,7 +746,7 @@ export function vehicleVoices(K) {
     // A bicycle: the bell and the chain.
     engineStart: { dur: 2.5, play(c, out, t, o) {
       const key = keyOf(o), E = ENGINES[key], g = gv(o);
-      if (E.bike) { bikeBell(c, out, t, g); chainRun(c, out, t + 0.3, 1.3, g); return; }
+      if (E.bike) { if (o.bell !== false) bikeBell(c, out, t, g); chainRun(c, out, t + 0.3, 1.3, g); return; }
       const T = startTiming(key, o), low = (o.fuel ?? 10) < 2;
       if (o.hot) sparks(c, out, t, g);
       else if (E.diesel) toggle(c, out, t, g);
@@ -835,14 +858,32 @@ export function vehicleVoices(K) {
     } },
     // Hotwiring a found car (sim/foundcars.js "hotwire"): the wires buzzing and sparking; o.ok: it takes.
     hotwire: { dur: 0.6, play(c, out, t, o) { sparks(c, out, t, gv(o) * 5, o.ok !== false); } },
+    // The horn as a team sets off (the map): beep beep, two tones about a minor third apart, detuned, through a band;
+    // by vehicle (HORNS: a car's high, a pickup's or a van's middle, the Army truck's and the Humvee's deep blat).
+    // A bicycle rings its bell twice.
+    horn: { dur: 0.6, play(c, out, t, o) {
+      const key = keyOf(o), E = ENGINES[key], g = gv(o);
+      if (E.bike) { bikeBell(c, out, t, g * 2); return; }
+      const H = HORNS[hornOf(key)];
+      for (let i = 0; i < 2; i++) {
+        const tt = t + i * (H.beep + H.gap);
+        const e = env(c, out, tt, H.level * g, 0.03, 0.008, H.beep - 0.03);
+        const bp = filt(c, "bandpass", H.band, H.q, e);
+        const lp = filt(c, "lowpass", H.band * 2.6, 0.7, bp);
+        for (const [f, k] of [[H.f, 1], [H.f * 1.003, 0.6], [H.f * H.third, 0.85], [H.f * H.third * 0.997, 0.5]]) {
+          const osc = tone(c, H.wave, f, H.droop ? f * H.droop : 0, tt, H.beep + 0.02, null);
+          const og = c.createGain(); og.gain.value = k * 0.3; osc.connect(og); og.connect(lp);
+        }
+      }
+    } },
   };
 }
 export const VEHICLE_LABELS = {
   engineStart: "Engine starting", engineNoStart: "Engine that will not start", engineStop: "Engine off", breakdown: "Breakdown on the road", drive: "A vehicle driven in battle",
-  carDoor: "Car doors", tailgate: "Tailgate or rear doors", hotwire: "Hotwiring a car",
+  carDoor: "Car doors", tailgate: "Tailgate or rear doors", hotwire: "Hotwiring a car", horn: "Horn (a team sets off)",
 };
 // The throttle's limits (ui/audio.js LIMITS): gap in seconds between two starts, how many at once.
 export const VEHICLE_LIMITS = {
   engineStart: { gap: 1.5, max: 1 }, engineNoStart: { gap: 1.5, max: 1 }, engineStop: { gap: 1.5, max: 1 }, breakdown: { gap: 2, max: 1 }, drive: { gap: 0.8, max: 1 },
-  carDoor: { gap: 0.12, max: 3 }, tailgate: { gap: 1, max: 1 }, hotwire: { gap: 0.4, max: 1 },
+  carDoor: { gap: 0.12, max: 3 }, tailgate: { gap: 1, max: 1 }, hotwire: { gap: 0.4, max: 1 }, horn: { gap: 2, max: 1 },
 };
