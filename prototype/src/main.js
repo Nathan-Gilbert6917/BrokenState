@@ -92,6 +92,7 @@ import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { keepFocusBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
 import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
 import { CONTROLS_ACTIONS, controlsKey } from "./ui/controls.js";
 import { initPalette, openPalette, paletteIndex } from "./ui/cmdpalette.js"; // the search box (Ctrl+K or /)
@@ -296,8 +297,10 @@ function setHTML(id, html, user) {
     heldBack = true;
     return false;
   }
+  const keep = keepFocusBefore(el); // a text box being typed in keeps its focus and caret (ui/panelfold.js)
   el.innerHTML = html;
   shown.set(id, html);
+  afterPanelWrite(el, keep); // and the boxes that scroll fade at the edges with more to see
   return true;
 }
 function setPanel(id, html, user) {
@@ -1388,6 +1391,9 @@ initTitle({ desktop: settingsApi.desktop, quit: settingsApi.quit });
 for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Order templates and Repeat trip (ui/trips.js), the undo button and the build queue's ▲ ▼ (ui/undo.js); then every
 // planner, build-queue and Work tab action is wrapped so its edits can be undone (installUndo, last).
+// The People tab's view switch and find box (ui/panelfold.js; the box also filters as you type: the input listener).
+Object.assign(actions, { "ppl-view": (d) => PANEL_ACTIONS["ppl-view"](d), "ppl-clear": (d) => PANEL_ACTIONS["ppl-clear"](d) });
+Object.assign(changeActions, { "ppl-q": (el) => PANEL_INPUT["ppl-q"](el) });
 const tripApi = { plan: (d) => actions.plan(d), autofill: (pl) => autofill(pl) };
 const tripAct = (fn) => (d) => fn(state, ui, d, tripApi), tripChange = (fn) => (el) => fn(state, ui, el);
 Object.assign(actions, {
@@ -1453,6 +1459,14 @@ document.addEventListener("change", (ev) => {
   fn(el);
   if (el.tagName === "SELECT" || el.type === "checkbox") { releaseHold(); dropFocus(); }
   refresh(); // a panel with the mouse button down on it waits (so the click on a button after typing lands)
+});
+// Typing that filters as you go (the People tab's find box, ui/panelfold.js): every key press redraws.
+document.addEventListener("input", (ev) => {
+  const el = ev.target.closest && ev.target.closest("[data-action]");
+  const fn = el && PANEL_INPUT[el.dataset.action];
+  if (!fn) return;
+  fn(el);
+  refresh();
 });
 
 // ---------- hover descriptions ----------

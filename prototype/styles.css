@@ -990,3 +990,53 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 .tm-stat { padding: 0.04rem 0.45rem; border-radius: 99px; background: #2c3139; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tm-status { margin-top: 0.15rem; }
 #left .card.attn { box-shadow: inset 3px 0 0 #ffd166; }
+
+/* A card that folds to one line (ui/panelfold.js fold with cls "pf-card": the Bases tab's base cards, the Groups tab's
+   group cards): the line is the whole summary, with a chevron at its end; open, the card's body as before. */
+.pf.pf-card { margin-top: 0.3rem; }
+.pf.pf-card > summary { display: flex; align-items: center; gap: 0.4rem; width: 100%; margin: 0; padding: 0.15rem 0.2rem; color: var(--text); font-size: 1em; }
+.pf.pf-card > summary::before { content: none; }
+.pf.pf-card > summary::after { content: "▸"; flex: none; margin-left: auto; color: var(--muted); font-size: 0.8em; transition: transform 0.12s; }
+.pf.pf-card[open] > summary::after { transform: rotate(90deg); }
+.pf.pf-card > summary:hover::after { color: var(--accent); }
+.pf.pf-card > .pf-body { max-height: none; overflow: visible; margin-top: 0.3rem; padding: 0; border: none; background: none; color: var(--text); }
+.gc .pf.pf-card { margin-top: 0; }
+.gc .pf.pf-card > .pf-body { padding-top: 0.35rem; border-top: 1px solid var(--line); border-radius: 0; }
+
+/* The Bases tab: a base at a glance (people, defence, heat, food, warnings). */
+.bs-strip { display: flex; flex-wrap: wrap; gap: 0.25rem; min-width: 0; }
+.bs-chip { padding: 0.06rem 0.45rem; border-radius: 99px; background: #2c3139; font-size: 0.82rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bs-chip.danger { background: #4d2220; }
+.bs-chip.good { background: #21402c; }
+
+/* The Groups tab: the folded line of a group. */
+.gc-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.45rem; min-width: 0; flex: 1; }
+.gc-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-sum > .att-chip { order: 2; }
+.gc-fig { order: 3; flex: 1 0 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The Bases tab's illness row: a headline, then the detail. */
+.ill-head, .ill-sub { display: block; }
+.ill-nomeds { margin: 0 0 0 0.25rem; font-weight: 600; }
+
+/* The People tab: the find box and view switch on top (they stay under the tabs while the list scrolls), and the
+   compact one-line rows. */
+.ppl-bar { position: sticky; top: 2.35rem; z-index: 1; display: flex; gap: 0.3rem; align-items: center; margin: -0.2rem -0.9rem 0.3rem; padding: 0.3rem 0.9rem; background: var(--panel); }
+.ppl-q { flex: 1; min-width: 0; padding: 0.25rem 0.5rem; font-size: 0.88rem; }
+.ppl-view { flex: none; white-space: nowrap; }
+.ppl-found { margin: 0 0 0.3rem; }
+#left .card.surv.prow { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.6rem; margin-bottom: 0.3rem; }
+.prow-name { flex: 1 1 auto; display: flex; align-items: center; min-width: 0; font-size: 0.9rem; }
+.prow-name > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow-name > .st-icons { flex: none; margin-left: 0.25rem; }
+.prow-hp { flex: none; display: flex; align-items: center; gap: 0.3rem; width: 3.8rem; font-size: 0.8rem; }
+.prow-hp .pk-meter { flex: 1; margin: 0; }
+.prow > select { flex: 0 1 auto; max-width: 6.4rem; padding: 0.1rem 0.25rem; font-size: 0.8rem; }
+.prow > .wtask { flex: 0 1 auto; min-width: 0; max-width: 4.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; }
+
+/* A box that scrolls fades out at the edge with more to see that way (ui/panelfold.js marks it only while it
+   overflows: no mask otherwise). */
+.sf-top, .sf-bot { --sf: 0.9rem; }
+.sf-top:not(.sf-bot) { mask-image: linear-gradient(to bottom, transparent, #000 var(--sf)); }
+.sf-bot:not(.sf-top) { mask-image: linear-gradient(to top, transparent, #000 var(--sf)); }
+.sf-top.sf-bot { mask-image: linear-gradient(to bottom, transparent, #000 var(--sf), #000 calc(100% - var(--sf)), transparent); }

@@ -31,7 +31,7 @@ import { ERAS } from "../sim/eras.js";
 import { ROLES, ESCORTS, supplyLine, farmOutput, scavengeOutput, foodForecast } from "../sim/economy.js";
 import { baseFarming, foodCellHtml, waterCellHtml, foodLine, waterLine, woodLine, storeCellHtml, upkeepCellHtml, upkeepLine } from "./farming.js";
 import { HEAT } from "../sim/upkeep.js"; // the boiler's fuel a head in the help (firewood × HEAT.wood)
-import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPerDayText, nextTreatLine, illnessRowHtml, othersWormHtml } from "./health.js";
+import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPerDayText, nextTreatLine, illnessRowHtml, illnessSummary, othersWormHtml } from "./health.js";
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
 import { activeCrawl } from "../sim/citycrawl.js";
 import { crawlModal } from "./citycrawl.js";
@@ -118,7 +118,7 @@ import { devButton } from "./display.js"; // the top bar's Dev button (Menu → 
 import { totalRounds, sumRecs } from "../sim/rounds.js"; // rounds by calibre
 import { roundsLine, baseAmmo } from "../sim/ammo.js";
 import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
-import { fold } from "./panelfold.js"; // long breakdowns in the side panels fold under a short line
+import { fold, peopleQuery, peopleIsCompact } from "./panelfold.js"; // side-panel folds; the People tab's find box and view
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -229,9 +229,8 @@ function renderBases(state) {
     const beds = baseBeds(b);
     // The card in four groups (styles.css .pk): how the base stands, its supplies, what threatens it, what it is
     // building and who it talks to. Every row is a label and a value; long values wrap or fold.
-    return `<div class="card">
-      <div class="spread pk-head"><h2 style="margin:0">${esc(b.name)}</h2><span class="muted small">${tierName(b)} ${watchlistPin(state, "base", b.id, b.name)}</span></div>
-      <div class="pk small">
+    // On top a strip of chips (people, defence, heat, food and any warning) that opens the full card under it.
+    const detail = `<div class="pk small">
         ${pkSec("Status")}
         <div class="kv">
           <div>People</div><div><span class="${people.length > beds ? "warn" : ""}"${people.length > beds ? tip("More people than beds: crowding lowers mood and raises the chance of illness") : ""}>${people.length} / ${beds} beds</span>${meter(beds ? people.length / beds : 1, people.length > beds ? "var(--danger)" : "var(--info)")}</div>
@@ -256,10 +255,28 @@ function renderBases(state) {
           <div>Building</div><div>${job ? `${buildJobName(job)}: ${rate > 0 ? `${Math.ceil((job.hours - job.progress) / rate)}h left` : "paused, no builders"}` : "<span class='muted'>Nothing queued</span>"}</div>
           ${caravanLines(state, b)}
         </div>
-      </div>
+      </div>`;
+    return `<div class="card">
+      <div class="spread pk-head"><h2 style="margin:0">${esc(b.name)}</h2><span class="muted small">${tierName(b)} ${watchlistPin(state, "base", b.id, b.name)}</span></div>
+      ${fold(`base:${b.id}`, baseStrip(state, b, people.length, beds), detail, { cls: "pf-card", tipText: "Show or hide the details: status, supplies, risks, building and radio" })}
       <div class="row pk-foot"><button class="primary" data-action="openbase" data-id="${b.id}"${tip("Workshops, buildings, construction, armory and vehicles")}>Manage</button><button data-action="center" data-tile="${b.tile}"${tip("Center the map here")}>Locate</button></div>
     </div>`;
   }).join("") + (!stagingView(state) ? `<div class="small muted pk-hint">Found outposts by sending a team with 15 scrap and choosing Build outpost.</div>` : "");
+}
+// A base at a glance (the Bases tab card's fold line): people and beds, defence, heat, days of food, and the red
+// warnings (crowded, cold, the boiler unlit, ill with no meds) so they show with the card folded.
+function baseStrip(state, b, n, beds) {
+  const f = foodLine(state, b);
+  const u = upkeepLine(state, b);
+  const sick = illnessSummary(state, b);
+  const chip = (cls, text, t) => `<span class="bs-chip${cls ? ` ${cls}` : ""}"${tip(t)}>${text}</span>`;
+  return `<span class="bs-strip">${chip(n > beds ? "danger" : "", `👥 ${n}/${beds}`, `People ${n}, beds ${beds}${n > beds ? ". More people than beds: crowding lowers mood and raises the chance of illness" : ""}`)}` +
+    chip("", `🛡 ${Math.round(baseDefense(state, b))}`, "Defense: walls, guards and everyone else at the base. Ammo shortages cut it by 30%.") +
+    chip("", `🔥 ${baseHeat(state, b)}`, "Heat: noise and light that draw hordes. Workshop operators add 3 each.") +
+    chip(f.cls, `🥫 ${esc(f.short.split(" · ")[0])}`, `Food: ${f.short}. ${f.tip}`) +
+    (u.cold ? chip("danger", "❄ Cold", "Out of firewood and fuel: everyone here is cold") : "") +
+    (u.boilerCold ? chip("danger", "💧 Boiler cold", "The water boiler is cold today: nothing to burn, the water is unboiled") : "") +
+    (sick.noMeds ? chip("danger", "💊 No meds", "People here are ill and there are no meds at this base to treat them") : "") + `</span>`;
 }
 // A section heading inside a side-panel card (Status, Supplies, ...), and a thin bar under a value (share 0..1).
 const pkSec = (name, tipText = "") => `<div class="pk-sec"${tip(tipText)}>${name}</div>`;
@@ -337,7 +354,35 @@ function renderPeople(state) {
   if (errands.length) groups.push(["Away on personal errands", errands]);
   const held = alive(state).filter(isCaptive);
   if (held.length) groups.push(["Held captive", held]);
-  return groups.map(([name, ppl]) => `<h3>${esc(name)} (${ppl.length})</h3>${ppl.map((s) => personCard(state, s)).join("")}`).join("") + childrenPeople(state); // ui/family.js
+  // The find box and the view switch on top (ui/panelfold.js); a group with nobody matching is left out.
+  const q = peopleQuery().trim().toLowerCase();
+  const compact = peopleIsCompact();
+  const hit = (s) => !q || personWords(state, s).includes(q);
+  const shownGroups = groups.map(([name, ppl]) => [name, ppl, ppl.filter(hit)]).filter(([, , f]) => f.length);
+  const found = shownGroups.reduce((a, [, , f]) => a + f.length, 0);
+  const total = groups.reduce((a, [, p]) => a + p.length, 0);
+  const head = `<div class="ppl-bar"><input type="search" class="ppl-q" data-action="ppl-q" data-keep="ppl-q" maxlength="40" placeholder="Find: name, job or skill" value="${esc(peopleQuery())}" aria-label="Find people by name, job or skill"${tip("Type to show only the people whose name, job, skill, background or trait has this in it")}>${q ? `<button class="mini" data-action="ppl-clear"${tip("Show everyone again")}>✕</button>` : ""}<button class="mini ppl-view" data-action="ppl-view" aria-pressed="${compact}"${tip(compact ? "Show everyone as full cards (health, hunger, thirst, mood, skills, traits)" : "Show everyone as one line each (name, job, health): more people on the screen")}>${compact ? "▤ Cards" : "☰ Compact"}</button></div>${q ? `<div class="small muted ppl-found">${found} of ${total} match “${esc(peopleQuery())}”</div>` : ""}`;
+  const row = (s) => (compact && !isCaptive(s) ? personRow(state, s) : personCard(state, s));
+  return head + shownGroups.map(([name, ppl, f]) => `<h3>${esc(name)} (${q ? `${f.length} of ${ppl.length}` : ppl.length})</h3>${f.map(row).join("")}`).join("") +
+    childrenPeople(state, q ? (c) => String(c.name || "").toLowerCase().includes(q) : null); // ui/family.js
+}
+// What the People tab's find box looks through for one person: name, job (role), skills, background, traits.
+function personWords(state, s) {
+  const role = roleOf(state, s);
+  const bg = backgroundInfo(state, s.background);
+  return [s.name, role ? role.name : "", ROLES[s.role] ? ROLES[s.role].name : "", ...Object.keys(s.skills || {}).filter((k) => skill(s, k) >= 5).map((k) => SKILL_NAMES[k]), bg ? bg.name : "", ...(s.traits || []).map((t) => (TRAITS[t] ? TRAITS[t].name : t))].join(" ").toLowerCase();
+}
+// The compact People tab: one line a person (name and status icons, job, health), the full card a click away
+// (the survivor screen) or a switch back (Cards). Hover: health, mood and top skills.
+function personRow(state, s) {
+  const known = inContact(state, s);
+  const top = Object.entries(s.skills).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => `${SKILL_NAMES[k]} ${skill(s, k)}`).join(", ");
+  const hover = `${known ? `Health ${n0(s.health)} · mood ${n0(s.mood)}` : s.location.kind === "errand" ? `Away on a personal errand: back around day ${s.location.until}` : "No contact: health and mood unknown until the team reports in"} · ${top}. Click for skills, traits and gear.`;
+  return `<div class="card surv prow" data-action="survivor" data-id="${s.id}"${tip(hover)}>
+    <span class="prow-name"><b>${s.leader ? "★ " : ""}${esc(s.name)}</b>${stIcons(state, s)}</span>
+    ${known ? `<span class="prow-hp${s.health < 40 ? " danger" : ""}">${meter(s.health / 100, s.health < 40 ? "var(--danger)" : "var(--good)")}<span class="pk-num">${n0(s.health)}</span></span>` : `<span class="small muted prow-hp">${s.location.kind === "errand" ? "errand" : "no contact"}</span>`}
+    ${s.location.kind === "base" ? roleSelect(state, s) : ""}
+  </div>`;
 }
 
 function renderGroups(state) {
@@ -348,9 +393,10 @@ function renderGroups(state) {
     ${known.length ? known.map((f) => {
       const a = attitude(f);
       const route = routes.find((r) => r.factionId === f.id);
-      return `<div class="card gc">
-        <div class="spread"><b><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</b><span class="gc-att">${f.alive ? `<span class="att-chip" style="color:${attColor(a)}">${a}</span> ${watchlistPin(state, "group", f.id, f.name)}` : `<span class="muted">Collapsed</span>`}</span></div>
-        <div class="small muted">${FACTION_TYPES[f.type].label} · about ${f.alive ? Math.round(f.pop / 5) * 5 || f.pop : 0} people · ${f.bases.length} base${f.bases.length === 1 ? "" : "s"}${f.pact ? ` · ${f.pact === "trade" ? "Trade pact" : "Non-aggression pact"}` : ""}</div>
+      // Folded to one line (name, about how many, goodwill, attitude); the whole card opens under it.
+      const pop = f.alive ? Math.round(f.pop / 5) * 5 || f.pop : 0;
+      const summary = `<span class="gc-sum"><b class="gc-name"><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</b><span class="gc-fig small muted">${f.alive ? `~${pop} people · goodwill <span style="color:${attColor(a)}">${Math.round(f.goodwill)}</span>${f.pact ? " · pact" : ""}${f.atWar ? ` · <span class="danger">⚔</span>` : ""}` : ""}</span>${f.alive ? `<span class="att-chip" style="color:${attColor(a)}">${a}</span>` : `<span class="muted small">Collapsed</span>`}</span>`;
+      const body = `<div class="spread small"><span class="muted">${FACTION_TYPES[f.type].label} · about ${pop} people · ${f.bases.length} base${f.bases.length === 1 ? "" : "s"}${f.pact ? ` · ${f.pact === "trade" ? "Trade pact" : "Non-aggression pact"}` : ""}</span>${f.alive ? watchlistPin(state, "group", f.id, f.name) : ""}</div>
         <div class="row small"><span class="muted" style="width:4.5rem"${tip("-100 to 100. Hostile at -40 or below, friendly at 20+, allied at 70+.")}>Goodwill</span><div style="flex:1">${bar((f.goodwill + 100) / 2, attColor(a))}</div><span>${Math.round(f.goodwill)}</span></div>
         ${f.lootedGear.length ? `<div class="small danger">Seen carrying: ${f.lootedGear.slice(-3).map(esc).join(", ")}</div>` : ""}
         <div class="gc-extra">${groupCardExtras(state, f)}</div>
@@ -358,8 +404,8 @@ function renderGroups(state) {
           <button data-action="center" data-tile="${f.bases[0]}"${tip("Center the map on their main base")}>Locate</button>
           ${canRadio(state, f) ? `<button data-action="rd-open" data-id="${f.id}"${tip("Radio panel: greet, ask for news, ask for a trade caravan, make a deal, call for help, pacts")}>Radio…</button>` : ""}${f.heard ? `<span class="small muted"${tip("You found them by scanning the airwaves")}>heard on the radio</span>` : ""}
           ${f.pact === "trade" && !route ? `<button data-action="routesetup" data-id="${f.id}"${tip("Recurring convoys with an escort you choose")}>Set up trade route</button>` : ""}
-        </div>` : ""}
-      </div>`;
+        </div>` : ""}`;
+      return `<div class="card gc">${fold(`group:${f.id}`, summary, body, { cls: "pf-card", tipText: `${f.name}: click for the whole card (goodwill, wars and pacts, what they want and have spare, their arms, Locate and Radio)` })}</div>`;
     }).join("") : `<div class="muted small">You have not found any other groups yet. Send recon teams out.</div>`}
     ${unknown ? `<div class="muted small" style="margin-top:0.5rem">${unknown} group${unknown === 1 ? " is" : "s are"} still out there, unknown.</div>` : ""}
     ${bandsSection(state)}
