@@ -81,6 +81,7 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { noteBaseLoss } from "./causes.js"; // "Why?": the chain of causes of a lost base
 import { groupWalls, groupsBuild } from "./groupworks.js"; // barestart: the walls a group has built at its base
 import { blocAssaultHelp } from "./blocs.js"; // AI blocs: members' fighters at an ally's walls
+import { askBaseName } from "./basenames.js"; // name a base you take
 import { pwarBaseTaken } from "./playerwars.js"; // wars with you: a base taken counts
 
 export const CONQUEST = {
@@ -397,6 +398,7 @@ export function captureBase(state, f, tile, p, info = {}) {
   if (kit.length) got.push(kit.length === 1 ? kit[0].name : `${kit.length} pieces of their kit`);
   f.bases = f.bases.filter((t) => t !== tile);
   state.bases.push(base);
+  askBaseName(state, base);
   const seized = home && f.vehicles && f.vehicles.length ? seizeGroupVehicles(state, f, base) : []; // vehicles.js: their Army truck and Humvee are yours
   // Who holds it: one or two of the team (the weakest fighters), everyone when you have no other base.
   const team = p && state.parties.includes(p) ? partyMembers(state, p) : [];
