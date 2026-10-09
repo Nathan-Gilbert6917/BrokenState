@@ -4,10 +4,10 @@
 // may kill them), take their own life, set a building alight, wreck the stores, walk out past the walls into the
 // dead, drive off with a car, or shut down for days. At a base or on the road with a team (a "place": placeOf):
 // which one is weighed by what is there (a car, a burnable building, other people, infected ground) and who they are
-// (grieving, armed, a coward, their rivals and partner).
+// (grieving, armed, a coward, a hothead, their rivals and partner).
 //   - The counter (s.lowDays) counts mornings with mood under SNAP.at, at a base or on a team; a morning at or over it
 //     resets it. On the SNAP.days-th morning the log warns once and the People tab shows "May break down"; from then
-//     on each morning there is SNAP.base + SNAP.per × (SNAP.at − mood) of a break. After one, SNAP.cooldown days
+//     on each morning there is SNAP.base + SNAP.per × (SNAP.at − mood) of a break (half that with Iron Will: traits.js). After one, SNAP.cooldown days
 //     before the next, and whoever is still here and alive gets SNAP.relief mood (it is out of them, for now).
 //   - An attack (snapAttack): the victim is the person they like least (the leader only when they dislike them, a
 //     third of the time), struck with whatever is in their hand for SNAP.ATTACK.dmg (+ SNAP.ATTACK.armed with a
@@ -28,6 +28,7 @@
 //     hours getting them walking again (events.js-style delay) and they do nothing that day.
 // Every outcome is one log line (kind "death" where someone dies), a moment on the record where it fits, and a count
 // in state.relStats.snaps[kind] for the tools. Only state.rng is drawn, only inside the daily tick (deterministic).
+import { hasTrait, traitFx, breakMult } from "./traits.js"; // Iron Will, Hothead
 import { log, addCard, day, atBase, hurt, killSurvivor, hub, skill } from "./world.js";
 import { BUILDINGS, count, assignStations } from "./buildings.js";
 import { GEAR } from "./data.js";
@@ -100,7 +101,7 @@ export function mentalBreaksDaily(state) {
       s.lowDays = (s.lowDays || 0) + 1;
       if (s.lowDays === SNAP.days) log(state, `${s.name} has been at rock bottom for ${SNAP.days} days${pl.party ? " on the road" : ""} (mood ${Math.round(s.mood)}). Nobody knows what they might do.`, "danger");
       if (s.lowDays < SNAP.days || (s.snapCd || 0) > d) continue;
-      if (!rng.chance(SNAP.base + SNAP.per * (SNAP.at - s.mood))) continue;
+      if (!rng.chance((SNAP.base + SNAP.per * (SNAP.at - s.mood)) * breakMult(s))) continue; // Iron Will (traits.js): half as likely
       snap(state, pl, s, rng);
     }
   }
@@ -117,7 +118,7 @@ export function snap(state, pl, s, rng, force = null) {
   const stock = pl.base ? pl.base.stock : pl.party.supplies;
   const kinds = [];
   if (!s.leader) kinds.push(["runoff", 3]);
-  if (others.length) kinds.push(["attack", 3 * (rivalsOf(state, s).length ? 1.5 : 1)]);
+  if (others.length) kinds.push(["attack", 3 * (rivalsOf(state, s).length ? 1.5 : 1) * (hasTrait(s, "hothead") ? traitFx(s, "hothead", "attack") : 1)]); // a Hothead (traits.js)
   kinds.push(["suicide", 1 + (s.grief ? 1 : 0) + (partnerOf(state, s) ? 0 : 0.3)]);
   if (pl.base && pl.base.buildings.some((b) => FIRE.burnable.includes(b.type))) kinds.push(["fire", 1.5]);
   if ((stock.food || 0) + (stock.water || 0) + (stock.rawwater || 0) >= (pl.base ? 20 : 6)) kinds.push(["stores", 1.5]);

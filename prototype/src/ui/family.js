@@ -6,6 +6,7 @@
 // Children are not survivors: no role, gear or survivor screen; a parent's name opens theirs.
 import { baseById, survivorById, day } from "../sim/world.js";
 import { TRAITS, SKILL_NAMES } from "../sim/data.js";
+import { traitChipAt } from "./traitpick.js"; // trait chips: coloured by kind
 import {
   FAMILY, STAGES, childrenOf, stageOf, ageOf, daysToAdult, familyOfPerson, familyOn, conceiveInfo, birthRisk,
 } from "../sim/family.js";
@@ -45,7 +46,7 @@ export function childCard(state, c) {
   return `<div class="card surv child"${tip(childTip(state, c))}>
     <div class="spread"><b>${spriteImg(appearanceURL(c.appearance), SIZE[st])}${STAGES[st].icon} ${esc(c.name)}</b><span class="small muted">${esc(childAgeText(state, c))}</span></div>
     <div class="small">Parents: ${parentsText(state, c)}${c.hungry ? ` · <span class="danger">Hungry</span>` : ""}</div>
-    <div>${c.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t] ? TRAITS[t].desc : "")}>${esc(TRAITS[t] ? TRAITS[t].name : t)}</span>`).join("")}${c.chores ? `<span class="chip"${tip("Food from helping in the fields and the kitchen so far")}>Chores ${c.chores}</span>` : ""}</div>
+    <div>${c.traits.map((t) => traitChipAt(t, 1, "A child's trait: its tier is set when they grow up")).join("")}${c.chores ? `<span class="chip"${tip("Food from helping in the fields and the kitchen so far")}>Chores ${c.chores}</span>` : ""}</div>
   </div>`;
 }
 // The People tab: the children at each base (and any with the exiles). keep: the tab's find box (only those it matches).
@@ -109,7 +110,7 @@ export function rosterChildren(state) {
   const rows = kids.slice().sort((a, b) => (b.grown || 0) - (a.grown || 0)).map((c) => {
     const st = stageOf(c);
     const b = c.baseId != null ? baseById(state, c.baseId) : null;
-    return `<tr${tip(childTip(state, c))}><td class="ro-name">${spriteImg(appearanceURL(c.appearance), SIZE[st] * 0.8)}${STAGES[st].icon} ${esc(c.name)}</td><td>${esc(STAGES[st].name)}</td><td>${ageOf(state, c)} d</td><td>${daysToAdult(c)} d</td><td>${esc(b ? b.name : "With the exiles")}</td><td>${parentsText(state, c)}</td><td>${c.traits.map((t) => esc(TRAITS[t] ? TRAITS[t].name : t)).join(", ")}</td><td>${c.chores || ""}${c.hungry ? ` <span class="danger">Hungry</span>` : ""}</td></tr>`;
+    return `<tr${tip(childTip(state, c))}><td class="ro-name">${spriteImg(appearanceURL(c.appearance), SIZE[st] * 0.8)}${STAGES[st].icon} ${esc(c.name)}</td><td>${esc(STAGES[st].name)}</td><td>${ageOf(state, c)} d</td><td>${daysToAdult(c)} d</td><td>${esc(b ? b.name : "With the exiles")}</td><td>${parentsText(state, c)}</td><td>${c.traits.map((t) => traitChipAt(t)).join("")}</td><td>${c.chores || ""}${c.hungry ? ` <span class="danger">Hungry</span>` : ""}</td></tr>`;
   }).join("");
   return `<h3${tip("Children are not on the roster's work: they grow up in a year and then join it.")}>Children (${kids.length})</h3>
     <table class="t ro-table"><thead><tr><th>Name</th><th>Stage</th><th>Age</th><th>Grows up in</th><th>Where</th><th>Parents</th><th>Traits</th><th>Chores (food)</th></tr></thead><tbody>${rows}</tbody></table>`;

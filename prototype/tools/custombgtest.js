@@ -13,7 +13,7 @@
 // Usage: node tools/custombgtest.js
 import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld } from "../src/sim/world.js";
-import { GEAR, SKILLS, TRAITS } from "../src/sim/data.js";
+import { GEAR, SKILLS, TRAITS, TRAIT_CLASH } from "../src/sim/data.js";
 import { CUSTOM_BG, sanitizeBackground, sanitizeLibrary, isCustomBg, blankBackground } from "../src/sim/custombg.js";
 import { HC_START, archetypeOf, backgroundInfo, pickArchetypes, NORMAL_BG, keepSkillTotal } from "../src/sim/hardcore-start.js";
 import { Rng } from "../src/sim/rng.js";
@@ -177,8 +177,9 @@ section("The new-run screen: Customize, and Ironman locks it");
   s.skillBudget = total; // no points left
   for (let i = 0; i < 3; i++) LOOK_ACTIONS["nr-skill"](st, ui, { id: s.id, k, d: 1 });
   check(s.skills[k] === before + 3 && s.startCustom && crewCustomized(st), `Customize: ${k} ${before} → ${s.skills[k]} with no points left; the crew counts as customized`);
-  LOOK_ACTIONS["nr-trait"](st, ui, { id: s.id, k: "lucky" });
-  check(s.traits.includes("lucky") || s.traits.length >= 3, `a trait added (${s.traits.join()})`);
+  const add = ["lucky", "tough", "brave", "medic"].find((t) => !s.traits.includes(t) && !s.traits.some((x) => TRAIT_CLASH.some(([p, q]) => (p === x && q === t) || (p === t && q === x)))); // one that does not clash with theirs
+  LOOK_ACTIONS["nr-trait"](st, ui, { id: s.id, k: add });
+  check(s.traits.includes(add) || s.traits.length >= 5, `a trait added (${s.traits.join()})`);
   const t0n = s.traits.length;
   LOOK_ACTIONS["nr-trait"](st, ui, { id: s.id, k: s.traits[0] });
   check(s.traits.length === t0n - 1, "and taken off");

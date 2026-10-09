@@ -589,7 +589,9 @@ export const vehKey = (state, v) => (typeof v.id === "number" ? localId(state, v
   : String(v.id).replace(/^f(\d+)/, (_, n) => `f${localId(state, Number(n))}`).replace(/-v(\d+)/, (_, n) => `-v${localId(state, Number(n))}`));
 export function loseRaidHumvee(state, p, to) {
   const all = raidHumvees(state, p);
-  if (all.length > 1) {
+  // Only a fleet (p.humvees) is split up: each one is then lost on its own with p.humvees cleared, so a save from before
+  // ids were numbered, with two vehicles under one id, loses them one at a time instead of recursing forever.
+  if (all.length > 1 && p.humvees && p.humvees.length > 1) {
     const first = all.find((x) => x.id === p.humvee) || all[0];
     for (const x of all.filter((y) => y !== first)) { p.humvee = x.id; p.humvees = null; loseRaidHumvee(state, p, to); }
     p.humvee = first.id;
@@ -614,7 +616,11 @@ export function loseRaidHumvee(state, p, to) {
   if (to && to.faction) {
     const g = to.faction;
     g.vehicles = factionVehicles(g);
-    const nv = { ...v, id: `f${g.id}-${v.type}-${state.hour}`, owner: g.id, condition: Math.max(20, Math.round(v.condition * 0.7)), upgrades: ups };
+    // Two of a kind taken in the same hour (a fleet lost at once) would share an id: number the later ones.
+    const base = `f${g.id}-${v.type}-${state.hour}`;
+    let id = base;
+    for (let n = 2; g.vehicles.some((x) => x.id === id); n++) id = `${base}-${n}`;
+    const nv = { ...v, id, owner: g.id, condition: Math.max(20, Math.round(v.condition * 0.7)), upgrades: ups };
     g.vehicles.push(nv);
     return nv;
   }

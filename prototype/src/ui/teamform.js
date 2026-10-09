@@ -15,6 +15,7 @@
 // Keys while it is open (teamFormKey, main.js): 1 2 3 the tabs, ↑ ↓ pick a person in the list, Space take or leave
 // them, F the filter, S the sort, Enter Form team (or Done).
 import { SUPPLIES, SKILL_NAMES } from "../sim/data.js";
+import { traitWords } from "./traitpick.js"; // "Tough II, Loud I"
 import { survivorById, atBase, baseById, skill } from "../sim/world.js";
 import { partyMembers, teamName, poolLoad, partyCapacity, STANCES } from "../sim/parties.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, isBike, isCar, partyVehicles, partyFleet, vehicleLabel, payloadOf, tank, upgradeText, vehicleById, VEHICLE_TYPES, MAX_VEHICLES, seatsOf, vehicleCapacity } from "../sim/vehicles.js";
@@ -194,7 +195,7 @@ function peopleTab(state, ui, F, b, p, crew) {
     const cur = F.cursor === i ? "outline:2px solid var(--accent);" : "";
     const bg = on ? "background:var(--panel-2);" : "";
     const where = editing(F) ? (on ? "on the team: click to send them back into the base" : "at the base: click to add them to the team") : (on ? "picked: click to leave them" : "click to take them");
-    return `<tr data-action="tf-crew" data-id="${s.id}" style="cursor:pointer;${bg}${cur}"${tip(`${s.name}, ${where}. ${ROLES[s.role] ? ROLES[s.role].name : s.role || ""}${s.traits && s.traits.length ? ` · traits: ${s.traits.join(", ")}` : ""}`)}>
+    return `<tr data-action="tf-crew" data-id="${s.id}" style="cursor:pointer;${bg}${cur}"${tip(`${s.name}, ${where}. ${ROLES[s.role] ? ROLES[s.role].name : s.role || ""}${s.traits && s.traits.length ? ` · traits: ${traitWords(s)}` : ""}`)}>
       <td><input type="checkbox" data-action="tf-crew" data-id="${s.id}" ${on ? "checked" : ""}></td>
       <td>${s.leader ? "★ " : ""}<b>${esc(s.name)}</b>${statusIcons(state, s)}</td>
       <td class="small">${esc(ROLES[s.role] ? ROLES[s.role].name : on && editing(F) ? "team" : s.role || "")}</td>

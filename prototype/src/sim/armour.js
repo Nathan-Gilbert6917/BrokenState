@@ -21,6 +21,7 @@
 //   a hurt person wears by the wound and the enemy kind's typical round; the per-fight wearSlot stays for the rest.
 // The flat multiplier (inventory.js armorMult: hurt() off the map, escapes, carriers) reads the same condition.
 // Dice: battleDice (hash01 on the battle's own seed and a counter), so the battle's rng stream is not shifted.
+import { woundMult, TRAIT_FX } from "./traits.js"; // Tough, Frail
 import { GEAR } from "./data.js";
 import { CALIBERS, AMMO_TYPES, ammoPen } from "./data-ammo.js";
 import { hash01 } from "./skills.js";
@@ -74,7 +75,7 @@ export const AR = {
   PEN: { arrow: 12, blade: 12, pierce: 20, chop: 16, blunt: 4, heavy: 10, bash: 4, claws: 6, fists: 0 },
   MELEE_CLASS: { knife: "blade", machete: "blade", sawmachete: "blade", springmachete: "blade", pipespear: "pierce", spear: "pierce", fireaxe: "chop", bat: "blunt", spikedbat: "blunt", nailbat: "blunt", prybar: "blunt", baton: "blunt", sledge: "heavy", fists: "fists", claws: "claws" },
   RIFLE: ["556", "762x39", "308", "3030", "50bmg"], // calibres whose stopped round spalls off steel
-  TOUGH: 0.75,
+  TOUGH: TRAIT_FX.TOUGH, // the Tough trait (traits.js)
   // By the numbers: a wound wears what is worn by dmg × OFFSCREEN × the enemy kind's typical round ad, by location.
   OFFSCREEN: 0.6,
   KIND_AD: { soldiers: 0.85, raiders: 0.55, fighters: 0.55, guards: 0.45, militia: 0.6, survivors: 0.45, zealots: 0.45, mixed: 0.5 },
@@ -294,8 +295,9 @@ export function wornPieces(s) {
   for (const p of Object.values(insertsOf(g.armor))) if (p) ensureDur(p);
   return out;
 }
-export const toughOf = (s) => (s && s.traits && s.traits.includes("tough") ? AR.TOUGH : 1);
-// combat.js playerUnit / refitUnit: the pieces and the Tough trait on the battle unit.
+// Tough × AR.TOUGH, Frail × 1.25 (traits.js woundMult: the one rule for wounds, on the map and off it).
+export const toughOf = (s) => (s && s.traits ? woundMult(s) : 1);
+// combat.js playerUnit / refitUnit: the pieces and the Tough (or Frail) trait on the battle unit.
 export function fitArmour(u, s) {
   u.pieces = wornPieces(s);
   u.tough = toughOf(s);

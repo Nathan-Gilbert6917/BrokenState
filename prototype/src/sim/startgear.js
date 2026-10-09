@@ -1,0 +1,377 @@
+// @ts-check
+// Starting gear picked on the new-run screen (2026-10-08, user requests: "when starting and setting new characters for
+// a start and checking customization allow to set starting gear"; then "Manually set the gear and items in backpack and
+// items in starting vehicle"). With Customize ticked (not with Ironman), each colonist's worn and held slots, what they
+// carry (placed by hand in each pocket, rig or vest pouch and pack slot) and what is in the starting vehicle's back
+// are set from the whole catalogue, each thing priced in customization points (custompoints.js).
+//
+// s.startGear (on the colonist only while the new-run screen is up: ui/newgame.js crewSnapshot carries it through every
+// rebuild, world.js applyCrew puts it back, main.js's Start takes it off; once the run starts it is ordinary gear):
+//   slots: { [slot]: key | "" }  a picked slot: that item ("" : nothing there). A slot not named is as rolled (the dice,
+//                                 or a custom background's kit). Under Customize every slot is named.
+//   carry: { pocket: [], pouch: [], pack: [] } | undefined   what they carry, placed by hand: each list one entry a
+//                                 slot of that container (a key, or null for an empty one): the 4 pockets, the pouches
+//                                 of the rig (or of a vest or carrier with pouches of its own) in order, the pack's
+//                                 slots. Undefined: as rolled; all empty: nothing carried.
+//   rolled, left, rig             written when the picks are put on (applyStartGear) for the editor: what the dice gave
+//                                 in each picked slot, the picked things there was no room for, a rig that would not go
+//                                 over the vest. Never carried into a rebuild (sanitizeStartGear drops them).
+// s.startDice: { weapon?, armor? } the dice's items a pick replaced, so a normal start's crew snapshot carries the dice's
+// weapon and vest (Randomize all shuffles them) and not the picked ones: a pick cleared later gets the dice's back.
+// s.diceKit: what the dice gave them, as picks (every slot and where each carried thing was), written as the picks go
+// on: the new-run screen's "Start from the dice" loads it. s.diceTrunk (on the vehicle's owner): what the dice put in
+// the vehicle's back. Neither is carried into a rebuild.
+// s.startVehicle: { items: [keys], supplies: { key: n } } on the colonist who pays for the vehicle's back (custompoints.js:
+// the owner pays): Hardcore, the car the team flees in is theirs and this is its back; a normal start, the hub's
+// pickup is unloaded into the hub's armory and stores on the first day.
+//
+// The picks go on after the dice and any custom background (the same dice for everyone else, so picking for one
+// colonist changes nobody else's start):
+//   a normal start (normalStartGear, world.js createWorld): what a pick replaces goes to the hub's armory (the hub's kit
+//     total does not drop), and so do the things there is no room for; a colonist built on points (s.startPoints,
+//     Customize) paid for their kit, so the dice's is not handed out on top: what their picks replace is gone;
+//   Hardcore (grabStartGear, hardcore-start.js setupHardcoreStart): a replaced grab is simply not grabbed, the rounds
+//     that came with a replaced gun neither; what does not fit is left behind.
+// Picked items are made new (the item factory, no wear: what a custom background gives; a carrier with steel plates).
+// A picked gun comes with its rounds (a full load and two more, the common round of its calibre: the team's or the
+// hub's stock, where rounds are counted); a launcher with LAUNCH of its rounds (a one-shot tube: its rocket is in it),
+// a bow or crossbow with a quiver of ARROWS. Outside Customize (the tools) it also brings the start kit's two spare
+// magazines where it takes them (carrykit.js starterMags); under Customize the magazines are things you place.
+// Player only: the AI groups do not pick gear (a new-run option).
+import { GEAR, SUPPLIES } from "./data.js";
+import { WEAPONS } from "./combat.js";
+import { KIT_LOOT } from "./data-kit.js";
+import { newItem, startKit, ensureInv, packOf, rigOf, rigPouches, pouchesOf, pouchKindOf, pouchReason, packSize, isBulky, isSmall, fitReason, POCKETS } from "./inventory.js";
+import { calOf, addRecord } from "./ammo.js";
+import { keyFor } from "./rounds.js";
+import { starterMags } from "./carrykit.js";
+import { standardMag, magFitsGun } from "./mags.js";
+import { wornLoad, maxLoad, feelFactor, bandIndex, LOAD_BANDS } from "./load.js";
+
+export const START_GEAR = {
+  // Worn and held, in the order the editor lists them (inventory.js EQUIP_SLOTS but the arms' carried bag).
+  SLOTS: ["weapon", "tool", "armor", "head", "arms", "legs", "rig", "backpack"],
+  POUCHES: 16, PACK: 24, // the most a rig's pouches and a pack's slots are kept for (the frame rucksack has 14)
+  LOADS: 3, // a picked gun's rounds: its full load this many times (one in the gun, two spares)
+  LAUNCH: 2, // a picked grenade launcher's or rocket launcher's rounds (a one-shot tube: none, its rocket is in it)
+  ARROWS: 12, // a picked bow or crossbow: a quiver (as Hardcore's grab)
+};
+// Where carried things go, in the order they are listed.
+export const CARRY_PLACES = ["pocket", "pouch", "pack"];
+export const PLACE_NAMES = { pocket: "Pockets", pouch: "Pouches", pack: "Pack" };
+
+// The catalogue for a worn or held slot, and for the things carried (anything that goes in a pocket, a pouch or a
+// pack: no packs, no rig, nothing bulky, no bicycle).
+/** @param {string} slot */
+export const slotChoices = (slot) => Object.keys(GEAR).filter((k) => GEAR[k].slot === slot);
+export const carryChoices = () => Object.keys(GEAR).filter((k) => { const d = GEAR[k]; return !["backpack", "cargo", "rig"].includes(d.slot) && !d.bulky && !d.slots; });
+// The vehicle's back holds anything but another vehicle.
+export const trunkChoices = () => Object.keys(GEAR).filter((k) => k !== "bicycle");
+
+const limitOf = (where) => (where === "pocket" ? POCKETS : where === "pouch" ? START_GEAR.POUCHES : START_GEAR.PACK); // (read late: inventory.js loads after this file)
+// Anything kept on the colonist or carried in a crew snapshot, made safe: unknown keys and slots dropped, an item only
+// in its own slot, each carried list a list of keys or nulls no longer than its container can be. null when nothing
+// is picked.
+/** @param {any} raw @returns {{ slots: Record<string, string>, carry?: Record<string, (string | null)[]> } | null} */
+export function sanitizeStartGear(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  /** @type {Record<string, string>} */
+  const slots = {};
+  for (const slot of START_GEAR.SLOTS) {
+    const k = raw.slots && raw.slots[slot];
+    if (k === "" || (typeof k === "string" && GEAR[k] && GEAR[k].slot === slot)) slots[slot] = k;
+  }
+  /** @type {Record<string, (string | null)[]> | undefined} */
+  let carry;
+  if (raw.carry && typeof raw.carry === "object") {
+    const ok = new Set(carryChoices());
+    /** @type {Record<string, (string | null)[]>} */
+    const c = {};
+    for (const where of CARRY_PLACES) {
+      const list = (Array.isArray(raw.carry[where]) ? raw.carry[where].slice(0, limitOf(where)) : []).map((/** @type {any} */ k) => (typeof k === "string" && ok.has(k) ? k : null));
+      while (list.length && list[list.length - 1] == null) list.pop(); // trailing empties
+      c[where] = list;
+    }
+    carry = c;
+  }
+  if (!Object.keys(slots).length && !carry) return null;
+  return carry ? { slots, carry } : { slots };
+}
+/** @param {any} sg */
+export const hasPicks = (sg) => !!(sg && ((sg.slots && Object.keys(sg.slots).length) || sg.carry));
+// Every carried pick in order: [{ key, where, i }].
+/** @param {any} P */
+export const carryList = (P) => (P && P.carry ? CARRY_PLACES.flatMap((where) => (P.carry[where] || []).map((key, i) => ({ key, where, i })).filter((x) => x.key)) : []);
+
+// A picked item: new (no wear), its factory parts, a carrier's plates steel (inventory.js startKit).
+/** @param {string} key */
+const makeItem = (key) => startKit(newItem(key, 1));
+
+// ---------- the containers ----------
+// What they can carry with these picks (the slots picked, else what they wear now): { pocket: { n }, pouch: { kinds,
+// name }, pack: { n, name } }. A chest rig's pouches, else a vest's or carrier's own; none when a chest rig would go over a
+// pouched vest (it does not fit: fitReason).
+/** @param {any} P @param {any} [s] */
+export function carrySpec(P, s = null) {
+  const keyIn = (slot) => (P && P.slots && slot in P.slots ? P.slots[slot] || null : s && s.gear && s.gear[slot] ? s.gear[slot].key : null);
+  const bag = keyIn("backpack"), rig = keyIn("rig"), armor = keyIn("armor");
+  const armorPouches = armor && GEAR[armor].pouches;
+  const rigKey = rig && GEAR[rig].pouches && !armorPouches ? rig : armorPouches ? armor : null;
+  return {
+    pocket: { n: POCKETS, name: "Pockets" },
+    pouch: { n: rigKey ? GEAR[rigKey].pouches.length : 0, kinds: rigKey ? [...GEAR[rigKey].pouches] : [], name: rigKey ? GEAR[rigKey].name : "" },
+    pack: { n: bag ? GEAR[bag].slots || 0 : 0, name: bag ? GEAR[bag].name : "" },
+  };
+}
+const probe = new Map();
+/** @param {string} key */
+const probeItem = (key) => { if (!probe.has(key)) probe.set(key, newItem(key, 1)); return probe.get(key); };
+// Why this thing cannot go in that place ("" when it can): the container's own rules (a pocket: small things; a
+// pouch: its kind; a pack: no packs, nothing bulky) and that the slot is there.
+/** @param {string} key @param {string} where @param {number} i @param {ReturnType<typeof carrySpec>} spec */
+export function carryReason(key, where, i, spec) {
+  const d = GEAR[key];
+  if (!d) return "Unknown item.";
+  const it = probeItem(key);
+  if (where === "pocket") return i < 0 || i >= spec.pocket.n ? "No such pocket." : fitReason(it, "pocket");
+  if (where === "pouch") {
+    if (!spec.pouch.n) return "No rig or vest with pouches: pick one under Rig or Body first.";
+    if (i < 0 || i >= spec.pouch.n) return `The ${spec.pouch.name} has ${spec.pouch.n} pouches.`;
+    return pouchReason(it, spec.pouch.kinds[i]);
+  }
+  if (where === "pack") {
+    if (!spec.pack.n) return "No bag: pick one under Bag first.";
+    if (i < 0 || i >= spec.pack.n) return `The ${spec.pack.name} has ${spec.pack.n} slots.`;
+    return fitReason(it, "pack");
+  }
+  return "Nowhere to put it.";
+}
+// The first free place a thing fits (a pouch of its kind, a pocket for a small thing, the pack), as { where, i }, or
+// null. The editor's Add and the dice's load use it.
+/** @param {any} P @param {string} key @param {ReturnType<typeof carrySpec>} spec */
+export function firstFit(P, key, spec) {
+  const carry = (P && P.carry) || {};
+  const free = (where, i) => !(carry[where] && carry[where][i]);
+  const order = ["pouch", ...(isSmall(key) ? ["pocket"] : []), "pack", "pocket"]; // a pouch that takes it (magazines, grenades, a radio, meds in the admin pouch) first
+  for (const where of order) {
+    for (let i = 0; i < spec[where].n; i++) if (free(where, i) && !carryReason(key, where, i, spec)) return { where, i };
+  }
+  return null;
+}
+// Carried picks that no longer fit these containers (a smaller bag, the rig gone): [{ key, where, i, why }].
+/** @param {any} P @param {ReturnType<typeof carrySpec>} spec */
+export const misfits = (P, spec) => carryList(P).map((x) => ({ ...x, why: carryReason(x.key, x.where, x.i, spec) })).filter((x) => x.why);
+
+// Everything in their pockets, rig pouches and pack, taken out (to be put back where it fits). In that order.
+/** @param {any} s */
+function takeCarried(s) {
+  const out = [];
+  s.pockets.forEach((it, i) => { if (it) { out.push(it); s.pockets[i] = null; } });
+  for (const list of [rigPouches(s), packOf(s)]) (list || []).forEach((it, i) => { if (it) { out.push(it); list[i] = null; } });
+  return out;
+}
+// A rig pouch of its kind (meds and tablets an admin pouch), else a pocket for a small thing, else the pack (no pack in
+// a pack, nothing bulky). Returns false when there is no room.
+/** @param {any} s @param {any} it */
+function place(s, it) {
+  const r = KIT_LOOT.on ? rigOf(s) : null;
+  if (r) {
+    const pr = rigPouches(s) || [], kinds = pouchesOf(r) || [], d = GEAR[it.key];
+    const want = pouchKindOf(it) || (d && (d.medKit || d.tabs || d.selfStab) ? "admin" : null);
+    const i = want ? kinds.findIndex((k, j) => !pr[j] && k === want && !pouchReason(it, want)) : -1;
+    if (i >= 0) { pr[i] = it; return true; }
+  }
+  if (isSmall(it.key)) { const i = s.pockets.indexOf(null); if (i >= 0) { s.pockets[i] = it; return true; } }
+  const pk = packOf(s);
+  if (pk && !packSize(it) && !isBulky(it.key)) { const i = pk.indexOf(null); if (i >= 0) { pk[i] = it; return true; } }
+  return false;
+}
+// Exactly where it was put (Customize), if it still fits there; else anywhere it fits (place). false: no room.
+/** @param {any} s @param {any} it @param {string} where @param {number} i */
+function placeAt(s, it, where, i) {
+  const list = where === "pocket" ? s.pockets : where === "pouch" ? rigPouches(s) : packOf(s);
+  const kind = where === "pouch" && rigOf(s) ? (pouchesOf(rigOf(s)) || [])[i] : null;
+  const fits = list && i < list.length && !list[i] && !(where === "pocket" ? fitReason(it, "pocket") : where === "pouch" ? pouchReason(it, kind) : fitReason(it, "pack"));
+  if (fits) { list[i] = it; return true; }
+  return place(s, it);
+}
+// A rolled thing that only went with the gun a pick replaced: its spare magazines and boxes of its rounds (not the
+// picked gun's).
+/** @param {any} it @param {any} gun */
+function wentWithOldGun(it, gun) {
+  const d = GEAR[it.key];
+  if (!d) return false;
+  if (d.mag) return !(gun && magFitsGun(gun.key, it.key));
+  if (d.rounds && d.count) return !(gun && calOf(gun.key) === d.rounds.cal);
+  return false;
+}
+// What the dice gave them, as picks (every slot, and where each thing they carry was): s.diceKit.
+/** @param {any} s */
+export function noteDiceKit(s) {
+  ensureInv(s);
+  /** @type {Record<string, string>} */
+  const slots = {};
+  for (const slot of START_GEAR.SLOTS) slots[slot] = s.gear[slot] ? s.gear[slot].key : "";
+  const keys = (list) => (list || []).map((it) => (it && GEAR[it.key] ? it.key : null));
+  s.diceKit = sanitizeStartGear({ slots, carry: { pocket: keys(s.pockets), pouch: keys(rigPouches(s)), pack: keys(packOf(s)) } });
+}
+
+// Puts a colonist's picks on them (after the dice and any custom background). Returns what the caller hands on:
+// { replaced: items the picks took off them, left: picked things with no room, mags: spare magazines with no room,
+//   rounds: { round key: n } for a picked gun or launcher, arrows, gun: a gun was picked (its rolled rounds are not
+//   theirs) } or null with no picks.
+/** @param {any} s */
+export function applyStartGear(s) {
+  noteDiceKit(s);
+  const P = sanitizeStartGear(s && s.startGear);
+  if (!P) return null;
+  ensureInv(s);
+  /** @type {{ replaced: any[], left: any[], mags: any[], rounds: Record<string, number>, arrows: number, gun: boolean }} */
+  const out = { replaced: [], left: [], mags: [], rounds: {}, arrows: 0, gun: "weapon" in P.slots };
+  /** @type {Record<string, string>} */
+  const rolled = {};
+  // What they carry comes out first when where it goes changes: a new pack, rig or vest, a new gun (its own
+  // magazines and rounds), or their own placing.
+  const moves = ["weapon", "armor", "rig", "backpack"].some((k) => k in P.slots) || !!P.carry;
+  const loose = moves ? takeCarried(s) : [];
+  for (const slot of START_GEAR.SLOTS) {
+    if (!(slot in P.slots)) continue;
+    const old = s.gear[slot];
+    rolled[slot] = old ? old.name : "";
+    if (slot === "weapon" || slot === "armor") s.startDice = { ...(s.startDice || {}), [slot]: old || null };
+    if (old) out.replaced.push(old);
+    s.gear[slot] = P.slots[slot] ? makeItem(P.slots[slot]) : null;
+  }
+  // A chest rig does not go over a vest with pouches of its own (inventory.js fitReason): the body armour stays.
+  let rigOff = "";
+  if (s.gear.rig && fitReason(s.gear.rig, "rig", s)) {
+    rigOff = fitReason(s.gear.rig, "rig", s);
+    (P.slots.rig ? out.left : out.replaced).push(s.gear.rig);
+    s.gear.rig = null;
+  }
+  if (P.carry) { // placed by hand: each where it was put (or wherever it fits, if the containers changed since)
+    out.replaced.push(...loose);
+    for (const { key, where, i } of carryList(P)) { const it = makeItem(key); if (!placeAt(s, it, where, i)) out.left.push(it); }
+  } else {
+    let things = loose;
+    if (out.gun) { // as rolled, but what only went with the replaced gun goes with it
+      out.replaced.push(...loose.filter((it) => wentWithOldGun(it, s.gear.weapon)));
+      things = loose.filter((it) => !wentWithOldGun(it, s.gear.weapon));
+    }
+    for (const it of things) if (!place(s, it)) out.replaced.push(it);
+  }
+  // A picked gun: its rounds (and outside Customize the start kit's spare magazines); a launcher's rounds; a bow's quiver.
+  const gun = P.slots.weapon ? s.gear.weapon : null;
+  const w = gun && WEAPONS[gun.key];
+  if (gun && w) {
+    if (standardMag(gun.key) && !s.startPoints) starterMags(s, out.mags);
+    const cal = calOf(gun.key);
+    if (cal) out.rounds[keyFor(cal, null)] = Math.max(1, w.cap || 1) * START_GEAR.LOADS;
+    else if (w.launcher && !w.oneShot) out.rounds[keyFor(w.launcher, null)] = START_GEAR.LAUNCH;
+    if (GEAR[gun.key].cat === "bow") out.arrows = START_GEAR.ARROWS;
+  }
+  // For the editor (the next rebuild writes them again).
+  s.startGear = { ...P, rolled, left: out.left.map((it) => it.name), ...(rigOff ? { rig: rigOff } : {}) };
+  return out;
+}
+
+// A normal start (world.js createWorld, after the custom backgrounds' kit): everyone's picks on them; what they replace
+// (not for a colonist built on points: s.startPoints), what has no room and spare magazines with no room go to the
+// hub's armory; a picked gun's rounds and a bow's arrows to its stock. Then the hub's pickup is unloaded (normalStartVehicle).
+/** @param {any} state @param {any} base */
+export function normalStartGear(state, base) {
+  for (const s of state.survivors) {
+    const out = applyStartGear(s);
+    if (!out) continue;
+    if (!s.startPoints) base.armory.push(...out.replaced);
+    base.armory.push(...out.left, ...out.mags);
+    addRecord(base.stock, out.rounds);
+    if (out.arrows) base.stock.arrows = (base.stock.arrows || 0) + out.arrows;
+  }
+  normalStartVehicle(state, base);
+}
+
+// ---------- the vehicle's back ----------
+// What the back can be loaded with on the new-run screen: at most this much of each supply and ITEMS things (and no
+// more than the vehicle's payload: ui/startgear.js). Priced like anything else (custompoints.js).
+export const START_TRUNK = { SUPPLIES: { food: 60, water: 60, fuel: 40, meds: 20, ammo: 300, arrows: 60, scrap: 40, parts: 20 }, ITEMS: 16 };
+const TRUNK_CAPS = START_TRUNK.SUPPLIES, TRUNK_ITEMS = START_TRUNK.ITEMS;
+export const TRUNK_SUPPLIES = Object.keys(TRUNK_CAPS);
+// The vehicle's back made safe: { items: [keys] (at most TRUNK_ITEMS), supplies: { key: n } (TRUNK_CAPS) } or null.
+/** @param {any} raw */
+export function sanitizeStartVehicle(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const ok = new Set(trunkChoices());
+  const items = (Array.isArray(raw.items) ? raw.items : []).filter((k) => typeof k === "string" && ok.has(k)).slice(0, TRUNK_ITEMS);
+  /** @type {Record<string, number>} */
+  const supplies = {};
+  for (const [k, cap] of Object.entries(TRUNK_CAPS)) { const n = Math.round(Number(raw.supplies && raw.supplies[k])); if (n > 0) supplies[k] = Math.min(cap, n); }
+  return { items, supplies };
+}
+// What the back weighs (kg): its things and supplies.
+/** @param {any} v */
+export function trunkKg(v) {
+  if (!v) return 0;
+  const kg = (v.items || []).reduce((a, k) => a + (GEAR[k] ? GEAR[k].weight ?? 1 : 0), 0) + Object.entries(v.supplies || {}).reduce((a, [k, n]) => a + (SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0) * n, 0);
+  return Math.round(kg * 10) / 10;
+}
+// Whose vehicle's back it is (the colonist with s.startVehicle): one only.
+/** @param {any} state */
+export const vehicleOwner = (state) => (state.survivors || []).find((s) => s.startVehicle) || null;
+// A normal start: the hub's pickup's back (picked on the new-run screen) is unloaded into the armory and the stores.
+/** @param {any} state @param {any} base */
+export function normalStartVehicle(state, base) {
+  const o = vehicleOwner(state);
+  const v = o && sanitizeStartVehicle(o.startVehicle);
+  if (!v) return;
+  for (const key of v.items) base.armory.push(makeItem(key));
+  for (const [k, n] of Object.entries(v.supplies)) base.stock[k] = (base.stock[k] || 0) + n;
+}
+// Hardcore (hardcore-start.js rollCar): the picked back in place of the dice's. Returns { gear: items, supplies }.
+/** @param {any} v */
+export function trunkFromPicks(v) {
+  const P = sanitizeStartVehicle(v);
+  return { gear: P ? P.items.map(makeItem) : [], supplies: P ? { ...P.supplies } : {} };
+}
+
+// Hardcore (hardcore-start.js setupHardcoreStart, right after one survivor's grab is rolled): their picks on them in
+// place of what they grabbed, which is not grabbed (nor the rounds and arrows of a replaced gun, unless a custom
+// background set them). got is updated for the day-1 lines (the bag, the weapon, the vest, the things); got.rounds:
+// the picked gun's rounds, for the line. Returns { rounds, arrows } to add to the team's supplies, or null.
+/** @param {any} state @param {any} s @param {any} got */
+export function grabStartGear(state, s, got) {
+  const out = applyStartGear(s);
+  if (!out) return null;
+  if (out.gun && !got.custom) { got.ammo = 0; got.arrows = 0; }
+  got.weapon = s.gear.weapon;
+  got.armor = s.gear.armor;
+  got.bag = s.gear.backpack;
+  got.items = [s.gear.tool, s.gear.head, s.gear.arms, s.gear.legs, s.gear.rig, ...s.pockets, ...(rigPouches(s) || []), ...(packOf(s) || [])].filter(Boolean);
+  got.rounds = Object.values(out.rounds).reduce((a, n) => a + n, 0);
+  return { rounds: out.rounds, arrows: out.arrows };
+}
+// The team's supplies get what the picks brought (rounds by key, arrows).
+/** @param {Record<string, number>} sup @param {{ rounds: Record<string, number>, arrows: number }[]} list */
+export function addPickedSupplies(sup, list) {
+  for (const x of list) {
+    addRecord(sup, x.rounds);
+    if (x.arrows) sup.arrows = (sup.arrows || 0) + x.arrows;
+  }
+}
+
+// What a colonist's own kit weighs against what they can carry (load.js): { kg, max, band } (band: Light, Medium,
+// Heavy, Overloaded by the felt load: an assault pack's frame, a bad back). The team's supplies are shared out on top.
+/** @param {any} s */
+export function kitLoad(s) {
+  const kg = Math.round(wornLoad(s) * 10) / 10;
+  const band = bandIndex(kg * feelFactor(s));
+  return { kg, max: maxLoad(s), band, name: LOAD_BANDS[band].name };
+}
+
+// Start: the picks are ordinary gear from here on; nothing of the new-run screen stays on the colonists.
+/** @param {any} state */
+export function clearStartGear(state) {
+  for (const s of state.survivors) {
+    for (const k of ["startGear", "startDice", "diceKit", "diceRoll", "diceTrunk", "startVehicle", "startPoints"]) delete s[k];
+  }
+}

@@ -9,6 +9,7 @@
  * @typedef {{ vehicle?: boolean | "bike", speed?: number, footSpeed?: number | null, fuelMult?: number, progress?: number,
  *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, maxHours?: number, startHour?: number, weather?: boolean, known?: number }} TravelOpts
  */
+import { teamTraitFx } from "./traits.js"; // Keen Eye: the team's sight
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
 import { findPath } from "./hex.js";
 import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
@@ -314,7 +315,7 @@ export function sightRadius(state, p) {
   if (isNight(state)) return Math.max(0, (nightEyesOn(m) ? NIGHT_SIGHT.goggles : NIGHT_SIGHT.dark) + Math.min(0, fx.sight));
   let r = 1;
   if (bestSkill(state, p, "scouting") >= 10) r += 1;
-  if (m.some((s) => s.traits.includes("keeneye"))) r += 1;
+  r += teamTraitFx(m, "keeneye", "sight"); // Keen Eye, the team's best tier (traits.js)
   if (m.some((s) => hasPerk(s, "lookout"))) r += 1; // Lookout (skills.js)
   // Binoculars a tile more by day; a thermal at night and in fog (optics.js). A spotting scope only while it stays put.
   r += opticsFor(m, p.cargo, { still: !onTheMove(p), night: state.hour % 24 < 6 || state.hour % 24 >= 20, fog: fx.sight < 0 }).sight;

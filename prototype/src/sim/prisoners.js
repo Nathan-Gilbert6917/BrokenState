@@ -91,6 +91,7 @@ import { eatFromStore, foodStore } from "./storage.js";
 import { underAttack, isShelter } from "./buildings.js";
 import { ensureConquest, CONQUEST } from "./conquest.js";
 import { baseWoodTiles, seasonWood, takeWood, WOOD } from "./woodcutting.js"; // prisoners on Cut wood (by hand)
+import { healMult } from "./traits.js"; // Quick Healer: a prisoner heals by the same rule
 import { wormHealMult, WORM } from "./worm.js"; // the worm: half the healing while it is in them; treated prisoners (WORM.OTHERS)
 import { jailText } from "./groupjails.js"; // what a prisoner tells of their group's jail
 import { numbersSurrenders } from "./nonlethal.js"; // a decisive win by the numbers: a few of them give up
@@ -150,8 +151,8 @@ export const PRISON = {
   },
   RATION_DEFAULT: "short",
   WEAK: { health: 20, death: 0.03 }, // on Starvation or None below this health: a chance a day of dying
-  // Your people seeing prisoners starve (Starvation or None at their base): mood a day; soft: Former Medic; hard: Brave, Tough.
-  SEEN: { mood: -1, soft: -2, hard: 0, softTraits: ["medic"], hardTraits: ["brave", "tough"] },
+  // Your people seeing prisoners starve (Starvation or None at their base): mood a day; soft: Former Medic; hard: Brave, Tough, Iron Will.
+  SEEN: { mood: -1, soft: -2, hard: 0, softTraits: ["medic"], hardTraits: ["brave", "tough", "ironwill"] },
   // Prisoner labour. skill: the task's skill (output min + perSkill a point, up to max of a survivor; null: the middle);
   // hours: out of the cell 07–19 (construction counts hours/24 of an hour's work each hour); minHealth: too weak below;
   // water: water a day at full output; kitchen: fresh food dried a day at full output → out preserved, from food
@@ -938,7 +939,7 @@ export function prisonersDaily(state) {
       if (p.s) {
         const H = fed ? RD : PRISON.RATIONS.none;
         const h0 = health(p);
-        p.s.health = H.heal > 0 ? (h0 < H.healTo ? Math.min(H.healTo, h0 + H.heal * wormHealMult(p.s)) : Math.max(H.healTo, h0 - 0.5)) : h0 + H.heal; // worm.js: half the healing while it is in them
+        p.s.health = H.heal > 0 ? (h0 < H.healTo ? Math.min(H.healTo, h0 + H.heal * wormHealMult(p.s) * healMult(p.s)) : Math.max(H.healTo, h0 - 0.5)) : h0 + H.heal; // worm.js: half the healing while it is in them
         p.s.mood = clamp(mood(p) + H.mood + (holdOf(state, p) || SHED).mood, 0, 100); // a makeshift cage or the shed sours them
         if (work > 0) {
           const T = PRISON.LABOUR.tire[fed ? rationOf(p) : "none"];

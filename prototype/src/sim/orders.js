@@ -19,6 +19,7 @@ import { startSweep, sweepHour, sweepDone, sweepOpts, sweepEstimate, routeFuel }
 import { fireLit, FIRE } from "./fieldheat.js";
 import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSummary, snareProblem, snareWork, snareMode, snareHours } from "./hunting.js";
 import { forageProblem, forageHour, forageSummary, campForageHour, campForageNote } from "./foraging.js";
+import { healMult } from "./traits.js"; // Quick Healer
 import { sourceEggs, addWormWater, teamWaterHow, wormHealMult } from "./worm.js";
 import { woodProblem, woodHour, woodSummary, campFireHour } from "./woodcutting.js";
 import { CLAIM, canClaim, claimTile, wellProblem, digWell } from "./claims.js"; // land claims and wells on them
@@ -531,7 +532,7 @@ const healthLine = (state, p) => `Health: ${partyMembers(state, p).map((m) => `$
 // An infected wound does not heal in camp (it needs meds); anyone with the worm in them heals at half the rate (worm.js). A camp with no food or no water gives no rest:
 // nobody heals and nobody cheers up until the team eats and drinks again (parties.js consume). In daylight the fit
 // forage around the camp, part of each hour (foraging.js campForageHour): a hungry camp feeds itself a little.
-export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected && !starving(p) ? ((BASE_HEAL_PER_DAY * 2 + bestSkill(state, p, "medicine") * 0.4) / 24) * wormHealMult(s) : 0);
+export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected && !starving(p) ? ((BASE_HEAL_PER_DAY * 2 + bestSkill(state, p, "medicine") * 0.4) / 24) * wormHealMult(s) * healMult(s) : 0); // Quick Healer (traits.js)
 // The camp fire (fieldheat.js FIRE, a toggle in the team panel) lifts spirits more: +0.3 an hour lit, +0.1 out.
 function campHour(state, p) {
   campForageHour(state, p);

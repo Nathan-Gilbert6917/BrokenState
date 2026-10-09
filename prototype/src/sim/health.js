@@ -41,12 +41,13 @@
 //   - wounds: a hit of 10+ health that does not kill: 25% a deep cut that needs dressing (world.hurt); an untreated
 //     cut can become an infected wound (medical.js woundInfected);
 //   - foraged mushrooms (foraging.js), the bites of the dead (combat.js: their own rules).
-// Frailty (frailty): hunger or thirst below 50 up to ×2 each, below 50 health ×1.3, hard work at a base (building,
+// Frailty (frailty): hunger or thirst below 50 up to ×2 each, below 50 health ×1.3, the Sickly trait ×1.5 (traits.js), hard work at a base (building,
 // scavenging, foraging) or a long march under a load (needs.js counts the hours) up to ×SICK.march.cap, sleeping rough
 // on a team ×SICK.rough; both gauges at 75+ ×SICK.fed. A base's hospital (×(1 − SICK.hospital × tier): cleaner, the sick kept apart) lowers everything but
 // the weather and work.
 // The worm is not a condition here: it has its own stages, spotting and cures (worm.js), and only its work factor
 // joins the rest (workFactor). The UI shows it beside these (ui/health.js wormChip, the Illness line, the alerts).
+import { hasTrait, accidentMult, sicklyMult, sicklyDrift } from "./traits.js"; // Sickly, Clumsy (by tier)
 import { log, addCard, alive, atBase, residents, skill, hurt, day, baseById } from "./world.js";
 import { wormWork } from "./worm.js";
 import { fireWarmed } from "./upkeep.js"; // a shelter's fire warms only while lit and fed (woodcutting.js shelterFire)
@@ -457,6 +458,7 @@ export function frailty(state, s, ctx = null) {
   if (t < W.below) mul(1 + W.max * (W.below - t) / W.below, "thirsty");
   if (h >= SICK.fed && t >= SICK.fed) mul(SICK.fedMult, "well fed");
   if (s.health < SICK.frailHealth.below) mul(SICK.frailHealth.mult, "weak from wounds");
+  if (hasTrait(s, "sickly")) mul(sicklyMult(s), "sickly"); // traits.js, by tier
   const kind = ctx ? ctx.kind : s.location.kind === "party" ? "team" : "base";
   if (kind === "base" && s.location.kind === "base" && !s.inBed) mul(SICK.hardWork[s.role] || 1, "hard work");
   if (kind === "team") {
@@ -575,6 +577,7 @@ export function conditionDrift(state, s, c) {
   }
   if (c.treatedDay >= today - 1) drift = Math.min(drift, -2);
   if (c.mending) drift = Math.min(drift, 0) - SICK.mend;
+  if (d.kind === "illness" && hasTrait(s, "sickly")) drift += sicklyDrift(s); // Sickly (traits.js): it clears slower
   return drift;
 }
 // Days until it is gone at today's rate, or null while it is getting worse (or holding).
@@ -666,7 +669,7 @@ function baseOnsets(state, base) {
     const role = s.location.kind === "base" ? s.role : "rest";
     const working = s.location.kind === "base" && !s.inBed;
     // Work accidents.
-    if (working && rng.chance((WORK_RISK[role] || 0) * workFactor(s))) {
+    if (working && rng.chance((WORK_RISK[role] || 0) * workFactor(s) * accidentMult(s))) { // Clumsy (traits.js): more cuts and sprains
       const key = rng.chance(role === "scavenge" ? 0.65 : 0.55) ? "cut" : "sprain";
       const what = { farm: "in the fields", wood: "cutting wood", build: "on the building site", craft: "at the workbench", operate: "at a workshop station", scavenge: "scavenging around the base", guard: "on watch" }[role] || "at work";
       addCondition(state, s, key, `${what} ${ctx.where}`, { cause: "work" });
@@ -689,7 +692,7 @@ function teamOnsets(state) {
 export function searchHazards(state, members, where = "") {
   for (const s of members) {
     if (!s || !s.alive) continue;
-    if (state.rng.chance(0.008)) addCondition(state, s, "cut", `searching ${where}`.trim(), { cause: "search" });
+    if (state.rng.chance(0.008 * accidentMult(s))) addCondition(state, s, "cut", `searching ${where}`.trim(), { cause: "search" }); // Clumsy (traits.js)
     else if (state.rng.chance(0.0025)) addCondition(state, s, "fever", `from the filth at ${where}`.trim(), { cause: "search" });
   }
 }

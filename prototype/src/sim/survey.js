@@ -36,6 +36,7 @@
 // here uses the world's random numbers (hash01), so rumours shift no other result.
 import { LIGHTS, surveyLight } from "./lights.js"; // the best light carried: a survey's night hours
 const bestLamp = (keys) => keys.filter((k) => LIGHTS[k]).sort((a, b) => LIGHTS[b].survey - LIGHTS[a].survey)[0] || null;
+import { teamTraitFx } from "./traits.js"; // Keen Eye
 import { TERRAIN, LOCATIONS } from "./data.js";
 import { log, snapshot, hub, day, skill, atBase } from "./world.js";
 import {
@@ -167,7 +168,7 @@ export function sweepEstimate(state, { center, radius, hours, mode = false, stan
 // What the team brings to the look (members: survivors; cargo: its found gear). The parts the odds use.
 export function lookContext(state, members, { mode = false, stance = "normal", cargo = null } = {}) {
   const scout = Math.max(0, ...members.map((s) => skill(s, "scouting")));
-  const keen = members.some((s) => s.traits.includes("keeneye"));
+  const keen = teamTraitFx(members, "keeneye", "notice"); // Keen Eye: the team's best tier (traits.js), 0 without
   const spotter = anyPerk(members, "spotter");
   const kit = members.flatMap(carriedAll).map((it) => it && it.key);
   return {
@@ -178,7 +179,7 @@ export function lookContext(state, members, { mode = false, stance = "normal", c
 }
 // Multipliers that do not depend on the site (everything but terrain, distance and rumour), with the reasons.
 function teamFactors(ctx) {
-  const skill = 0.5 + 0.05 * ctx.scout + (ctx.keen ? 0.15 : 0) + (ctx.spotter ? 0.15 : 0);
+  const skill = 0.5 + 0.05 * ctx.scout + (ctx.keen === true ? 0.15 : ctx.keen || 0) + (ctx.spotter ? 0.15 : 0);
   const team = Math.min(1.3, 1 + 0.08 * Math.max(0, ctx.n - 1));
   return { skill, team, vehicle: SURVEY.vehicle[ctx.mode] || 1, stance: SURVEY.stance[ctx.stance] || 1 };
 }

@@ -19,6 +19,7 @@ import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { zombieToughness } from "./hives.js";
 import { stripAll, itemLoad, lootItem, armouredItem } from "./inventory.js";
 import { kitSource, spend } from "./itemcond.js";
+import { hasTrait, teamTraitFx } from "./traits.js"; // Fleet-Footed, Slow: a team on foot that runs from trouble; Night Owl
 import {
   log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
   armedFactor, usesArrows,
@@ -377,6 +378,7 @@ export function spotFirstChance(state, p) {
   const fx = travelEffects(state, state.hour, partyTile(p)); // the weather where the team is (weather.js)
   c -= fx.ambush; // fog and whiteouts hide the other side until it is close
   if (isNight(state) && members.some((m) => m.traits.includes("nightowl") || (m.gear.tool && m.gear.tool.key === "nvg"))) c += 0.15;
+  else if (!isNight(state)) c -= teamTraitFx(members, "nightowl", "day"); // Night Owl (traits.js): drowsy by day
   c += opticsFor(members, p.cargo, { still: p.phase !== "out" && p.phase !== "back", night: isNight(state), fog: fx.sight < 0 }).spot; // binoculars, a thermal at night (optics.js)
   return clamp(c, 0.05, 0.9);
 }
@@ -675,6 +677,8 @@ export function runBonus(state, p) {
   if (p.vehicle && partyFuel(state, p) >= 2) b += state.tiles[partyTile(p)].road ? 4 : 3;
   if (isNight(state)) b += 1;
   if (partyMembers(state, p).length >= 4) b -= 1;
+  if (!p.vehicle && partyMembers(state, p).every((m) => hasTrait(m, "fleet"))) b += 1; // a team on foot runs at its slowest: all Fleet-Footed (traits.js)
+  if (!p.vehicle && partyMembers(state, p).some((m) => hasTrait(m, "slow"))) b -= 1; // and anyone Slow holds it back
   return b;
 }
 
