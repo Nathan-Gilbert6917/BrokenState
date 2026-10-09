@@ -57,6 +57,10 @@ import { settleParty, drawTeamShots } from "./ammo.js";
 import { fightXp } from "./skills.js";
 import { fieldTreatInfo, fieldTreat } from "./medical.js"; // tending the wounded in a quiet chamber
 import { absorbOffscreen } from "./armour.js";
+import { LIGHTS, lightOf } from "./lights.js"; // lights in the dark of the hive: the drafts, the cave battles
+import { carriedSpots } from "./inventory.js"; // road flares carried (worn, pockets, rig pouches, the pack)
+import { leaveCache } from "./caravanraids.js"; // the core's hoard: what the team cannot carry stays on the hive's tile
+import { addToArsenal, addArsenalRounds } from "./arsenal.js"; // AI parity: a war party's share of the hoard
 
 // ---------- tuning ----------
 export const HCRAWL = {
@@ -95,13 +99,45 @@ export const HCRAWL = {
   AUTO: { coreOdds: 0.75, hurt: 45, treat: 70, fit: 60, sureOdds: 0.8, fightOdds: 0.6, sneakOdds: 0.7, coreFit: 4, wear: 0.04, lie: 70 },
   // The AI groups' crawl (groupHiveCrawl), in the guard's units: the Hivemind and the Broodmother cost boss + bossTier ×
   // tier of a war party's strength on top of the brood on the way and in the core.
-  GROUP: { boss: 6, bossTier: 6, depthDiv: 3 },
+  GROUP: { boss: 6, bossTier: 6, depthDiv: 3, phase2: 2, light: 0.08 },
+  // Lights (lights.js) in the hive. The team's lights on (c.lit, the default when anyone has one): the drafts out of the
+  // chamber it stands in are read in the light (the misreading × draft), but the brood sees it (Alert + move a move,
+  // creeping past + sneak to the roll's DC). On a cave map the dark is the hive's own (b.dark): someone without a light
+  // sees dark tiles, with one their light's sight + lit (lights.js LIGHTS); by the numbers the brood counts numbers
+  // more for the share of the team without a light.
+  LIGHT: { draft: 0.5, move: 1, sneak: 1, numbers: 0.1, dark: 8, lit: 4 },
+  // A road flare (data.js flare) thrown down a passage: the chamber beyond is lit for a moment, its kind and its brood
+  // seen as they are and the draft from it read true; the brood sees the glare (Alert + alert). No time.
+  FLARE: { alert: 5 },
+  // Listening at a passage (hours): the best listener's (Scouting + Stealth) / 2 + d10 (the visit's own dice) against dc
+  // + perLayer × the layer beyond. By exact or more: its kind and the brood exactly; by rough or more: its kind and
+  // roughly how many; less: a guess (the kind may be wrong, the count off); by fumble or worse: Alert + alert and the
+  // brood beyond is waiting (spotted). The autopilot listens with a listener of auto or better.
+  LISTEN: { hours: 1, dc: 9, perLayer: 0.4, exact: 4, rough: 0, fumble: -4, alert: 6, auto: 5 },
+  // The core's hoard (hiveHoard): what the hive took from the dead it dragged in, searched once the Hivemind is dead.
+  // guns 1 + tier × perTier + stores / perRes; armour (base + tier × perTier + stores / perRes); a rare piece at
+  // rare[0] + rare[1] a tier (two from tier 3); rounds, meds, gun parts and scrap by the tier and the stores; flares.
+  // Each piece worn as the dead left it (itemcond.js: a survivor's kit, a soldier's now and then).
+  HOARD: {
+    guns: { base: 1, perTier: 0.8, perRes: 30 }, armour: { base: 0.5, perTier: 0.5, perRes: 60 }, rare: [0.15, 0.12],
+    ammo: [20, 18, 0.8], meds: [2, 1.5, 1 / 12], gunparts: [0, 1], scrap: [3, 2], flares: [0, 0.5], soldier: 0.3,
+    guns1: ["pistol", "revolver", "shotgun", "huntrifle", "leverrifle", "dbshotgun", "compact9", "pistol45"],
+    guns2: ["carbine", "ar", "ak", "smg", "semishotgun", "huntrifle"], guns3: ["dmr", "lmg", "sniper", "ar", "ak"],
+    armourKeys: ["vest", "plate", "tacvest", "milhelmet", "riothelmet", "highcut", "ceramicplate", "kneeguards", "riotarms"],
+    rareKeys: ["nvg", "thermal", "milradio", "surgkit", "traumakit", "m79", "helmetlight", "commset"],
+  },
 };
 // The Hivemind on the battle map (defences.js BOSSES.hivemind, its turn here): hp + perTier × the hive's tier; every
 // turn a pulse within pulse tiles (pulseDmg, stun: the chance to cost the next turn an action) and a lash at someone
 // next to it; every spawnEvery turns spawn of the brood from the walls near it, at most cap + capTier × tier in all.
 // power: what it counts for by the numbers (with the Broodmother's broodPower).
-export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9 };
+// P2: its second phase, below `at` of its health (once): the pulse reaches further and hits harder (pulse, pulseDmg,
+// stun), the walls give up brood every spawnEvery turns (spawn), cap more of them, and the cave quakes (quake: pillars
+// of flesh and bone come down in the open, everyone of yours caught under one hurt quakeDmg at quakeHit odds).
+export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9,
+  P2: { on: true, at: 0.5, pulse: 4, pulseDmg: [6, 12], stun: 0.45, spawnEvery: 2, spawn: [3, 4], cap: 4, quake: [3, 5], quakeDmg: [3, 8], quakeHit: 0.35 } };
+// What the core battles did (the tools' calibration): battles fought on the map, how many saw the second phase.
+export const HM_STATS = { battles: 0, phase2: 0 };
 
 // The kinds of chamber: name, share of the brood (brood) and its power, the special dead among them (special), what
 // can be done there (burn: eggs or a growth's root; search: what lies in it), its battle map size, how it reads.
@@ -143,7 +179,10 @@ export function denOf(state, hive) {
   if (hive.den && hive.den.v === 1 && hive.den.depth === depth) return hive.den;
   const grew = !!hive.den;
   hive.den = genDen(state, hive, depth, clamp(hiveTier(state, hive), 0, 4));
-  if (grew) hive.den.grew = state.hour;
+  if (grew) {
+    hive.den.grew = state.hour;
+    if (hive.crawlRec) { hive.crawlRec.mapped = {}; hive.crawlRec.core = false; hive.crawlRec.coreHeard = false; hive.crawlRec.grew = day(state); } // its chambers are new: the map starts again
+  }
   return hive.den;
 }
 export const roomById = (den, id) => den.rooms.find((r) => r.id === id) || null;
@@ -362,13 +401,17 @@ export function startHiveCrawl(state, p, hive) {
     at: den.mouth, from: null, trail: [den.mouth], visited: { [den.mouth]: true }, seen: {}, slipped: {},
     alert: clamp(Math.round(Math.max(HCRAWL.ALERT.start, left)), 0, 100), enc: null, leaving: false, deepest: 0,
     kills: 0, lost: [], log: [], tally: { supplies: {}, gear: [] }, hadVehicle: !!p.vehicle,
+    lit: true, heard: {}, warned: {},
   };
   const c = p.hiveCrawl;
+  const rec = crawlRecOf(state, hive);
+  rec.visits += 1;
   markSeen(den, c, den.mouth);
   markThreat(state, hive); // hivetech.js: it builds for defence
   hive.playerDay = day(state); // hives.js notePlayerFight: a group fighting it warms to you
   const mouth = roomById(den, den.mouth);
-  say2(c, `${teamName(state, p)} ${partyMembers(state, p).length === 1 ? "goes" : "go"} into ${hive.name}. ${den.grew ? "It has grown deeper since anyone was last inside. " : ""}The air is ${warmthText(warmthOf(den, mouth))}.`, "info", state.hour);
+  const lights = teamLights(state, p);
+  say2(c, `${teamName(state, p)} ${partyMembers(state, p).length === 1 ? "goes" : "go"} into ${hive.name}. ${den.grew ? "It has grown deeper since anyone was last inside. " : ""}The air is ${warmthText(warmthOf(den, mouth))}. ${lights ? `${lights} light${lights === 1 ? "" : "s"} on.` : "Nobody has a light: you feel your way in the dark."}`, "info", state.hour);
   log(state, `${teamName(state, p)} crawls into ${hive.name}.`, "info");
   enterRoom(state, p, c, mouth, null);
   return true;
@@ -387,6 +430,7 @@ function enterRoom(state, p, c, room, from) {
   c.visited[room.id] = true;
   markSeen(den, c, room.id);
   c.deepest = Math.max(c.deepest, room.layer);
+  noteRoom(state, hive, room);
   if (room.kind === "core") {
     const f = coreForce(state, hive);
     c.enc = { kind: "core", room: room.id, back: from, spotted: true };
@@ -397,7 +441,8 @@ function enterRoom(state, p, c, room, from) {
   const K = ROOM_KINDS[room.kind];
   const look = `${roomName(room)}: ${fresh ? K.text + " " : ""}The air is ${warmthText(warmthOf(den, room))}.`;
   if (n > 0 && !c.slipped[room.id]) {
-    const spotted = c.alert >= 50 && hash01(state.seed, "hcspot", c.hiveId, room.id, c.visit, state.hour) < (c.alert - 40) / 100;
+    const spotted = (c.warned && c.warned[room.id]) || (c.alert >= 50 && hash01(state.seed, "hcspot", c.hiveId, room.id, c.visit, state.hour) < (c.alert - 40) / 100); // warned: a listener they heard
+
     c.enc = { kind: "brood", room: room.id, back: from, spotted };
     say2(c, `${look} ${n} of the brood${spotted ? " have seen you and turn" : " are here"}.`, spotted ? "danger" : "info", state.hour);
   } else say2(c, `${look}${n > 0 ? ` The brood you crept past are still here (${n}).` : ""}`, "info", state.hour);
@@ -456,7 +501,7 @@ export function exitsOf(state, p) {
   const here = roomById(den, c.at);
   return here.links.map((id) => {
     const r = roomById(den, id);
-    return { id, room: c.visited[id] ? r : null, kind: c.visited[id] ? r.kind : null, draft: draftOf(state, p, c, den, here, r), visited: !!c.visited[id], back: id === c.from, core: id === den.core && !!c.visited[id] };
+    return { id, room: c.visited[id] ? r : null, kind: c.visited[id] ? r.kind : null, draft: draftOf(state, p, c, den, here, r), visited: !!c.visited[id], back: id === c.from, core: id === den.core && !!c.visited[id], heard: (c.heard && c.heard[id]) || null };
   });
 }
 // The draft from a passage as the team reads it: warmer, colder or level; misread now and then by a team without a
@@ -465,10 +510,13 @@ export function draftOf(state, p, c, den, from, to) {
   const d = warmthOf(den, to) - warmthOf(den, from);
   let w = d > 0 ? "warmer" : d < 0 ? "colder" : "level";
   if (c.visited[to.id]) return w; // been there: no guessing
-  if (hash01(state.seed, "hcdraft", c.hiveId, from.id, to.id, c.visit) < draftMiss(state, p)) w = w === "warmer" ? "colder" : "warmer";
+  if (c.heard && c.heard[to.id] && c.heard[to.id].by === "flare") return w; // a flare lit it: the draft reads true
+  if (hash01(state.seed, "hcdraft", c.hiveId, from.id, to.id, c.visit) < draftMissHere(state, p, c)) w = w === "warmer" ? "colder" : "warmer";
   return w;
 }
 export const draftMiss = (state, p) => Math.max(HCRAWL.DRAFT.min, HCRAWL.DRAFT.miss - HCRAWL.DRAFT.perScout * bestSkill(state, p, "scouting"));
+// ... in the team's chamber now: in the light of its lights (lights on) the misreading × LIGHT.draft.
+export const draftMissHere = (state, p, c) => draftMiss(state, p) * (lightsOn(state, p, c) ? HCRAWL.LIGHT.draft : 1);
 export const draftWord = (w) => DRAFT_WORD[w] || w;
 // Can the team move on from its chamber (no brood in it, or it crept past)?
 export function canMoveOn(state, c) {
@@ -490,7 +538,7 @@ export function moveTo(state, p, id) {
   const to = roomById(den, id);
   if (!to || !here.links.includes(id)) return "No passage leads there.";
   if (!canMoveOn(state, c) && id !== c.from) return "The brood is still in this chamber: fight it, creep past, or go back the way you came.";
-  addAlert(c, HCRAWL.ALERT.move);
+  addAlert(c, HCRAWL.ALERT.move + (lightsOn(state, p, c) ? HCRAWL.LIGHT.move : 0)); // lights: the brood sees them coming
   if (!passHours(state, p, HCRAWL.MOVE_HOURS)) return goneText(state, p);
   if (!p.hiveCrawl) return "";
   if (c.enc) return ""; // the brood came for you on the way (converge)
@@ -543,7 +591,7 @@ const backHurt = (room) => Math.min(0.9, HCRAWL.BACK.hurt + HCRAWL.BACK.perLayer
 export function sneakOdds(state, p, c, room, e = c.enc) {
   const S = HCRAWL.SNEAK;
   const n = partyMembers(state, p).length;
-  const dc = Math.ceil(S.dc + S.perLayer * room.layer + c.alert * S.perAlert + Math.max(0, n - 3) * S.big + (e && e.spotted ? S.spotted : 0));
+  const dc = Math.ceil(S.dc + S.perLayer * room.layer + c.alert * S.perAlert + Math.max(0, n - 3) * S.big + (e && e.spotted ? S.spotted : 0) + (lightsOn(state, p, c) ? HCRAWL.LIGHT.sneak : 0));
   return { dc, p: clamp((bestSkill(state, p, "stealth") + 10 - dc + 1) / 10, 0, 1) };
 }
 // The answer. opts.map: a fight on the battle map (the browser), else by the numbers.
