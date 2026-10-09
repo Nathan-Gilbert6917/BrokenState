@@ -32,6 +32,7 @@ import { launchExpedition, partyMembers, carryCapacity, supplyLoad, poolLoad, we
 import { vehicleById, partyVehicles, partyFleet, isBike, isCar, parkBikes, createVehicle, vehicleLabel, fleetOf, fleetProblem, setPartyVehicles, MAX_VEHICLES } from "./vehicles.js";
 import { itemLoad, parseLoc } from "./inventory.js";
 import { teamBase, transferProblem, loadFromBase, dropOff, isPlayerTeam } from "./teaminv.js";
+import { reseat } from "./walkers.js";
 import { stockHas } from "./water.js"; // water: purified and un-purified; "ammo": any calibre
 
 const EPS = 1e-6;
@@ -102,6 +103,7 @@ function applyFleet(state, p, base, plan) {
   setPartyVehicles(state, p, [...plan.cars, ...(bikes ? [bikes] : [])]);
   p.planVehicle = p.vehicle;
   weighTeam(state, p);
+  reseat(state, p); // walkers.js: a seat for those who walked in
 }
 
 // What the window shows and formTeam checks before anything moves: { members, v, cap, load, cargoKg, problem }.
