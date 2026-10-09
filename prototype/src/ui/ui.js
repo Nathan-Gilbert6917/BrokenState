@@ -38,7 +38,7 @@ import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPe
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
 import { activeCrawl } from "../sim/citycrawl.js";
 import { crawlModal } from "./citycrawl.js";
-import { activeHiveCrawl } from "../sim/hivecrawl.js";
+import { activeHiveCrawl, crawlRecText } from "../sim/hivecrawl.js";
 import { hiveCrawlModal } from "./hivecrawl.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
@@ -621,6 +621,7 @@ export function renderRight(state, ui) {
         <div>Horde</div><div>${isLive ? here.map((h) => watchlistPin(state, "horde", h.id, `horde of ${h.size}`)).join("") + " " : ""}${info.hordeSize ? `<span class="danger"${tip("Score from its size: how tough it is in a fight and how much it adds to a new hive (small about 3, medium 8, large 16)")}>${Math.round(info.hordeSize)}${isLive ? "" : " (then)"} · score ${hordeScore(info.hordeSize)}${info.hordeBoss ? ` · ${BOSS_NAMES.horde}` : ""}</span>` : "None seen"}</div>
         ${info.hordeSize && info.hordeMix ? `<div${tip(specialTip(info.hordeMix))}>Special dead</div><div class="danger">${esc(mixText(info.hordeMix, info.hordeSize))}</div>` : ""}
         ${info.hive ? `<div${tip(`An infestation hive: it grows hordes, radiates infection over its land and holds the ${BOSS_NAMES.hive}. Destroy every hive to win (Destroy hive mission; see Help → Eras and winning).`)}>Hive</div><div class="danger">Yes${liveHive ? ` · tier ${hiveTier(state, liveHive)}` : ""}</div>` : ""}
+        ${info.hive ? hiveCrawlRow(state, id) : ""}
         ${hiveGrowths.length ? `<div${tip("Structures the hive has grown on the land around it (Burn the growth mission on each one's tile): income, a bigger guard, the special dead its hordes carry, Wallbreakers.")}>Growths</div><div class="danger">${esc(hiveGrowths.join(", "))}</div>` : ""}
         ${info.growth ? `<div${tip(`${GROWTHS[info.growth.kind] ? GROWTHS[info.growth.kind].desc : ""} Burn it (Burn the growth: fight its guard, or 4 fuel / 2 Molotovs a fire) and its hive loses that. It regrows its flesh a little every day.`)}>Hive growth</div><div class="danger">${esc(info.growth.name)}${info.growth.withered ? " · withered (its hive is gone)" : info.growth.growing ? " · still growing" : ` · flesh ${info.growth.hp}%`}${isLive ? "" : " (then)"}</div>` : ""}
         ${info.site ? `<div${tip(`The dead gather here to build a new hive: it stands once ${HIVE.SITE_BIOMASS} of them have gone into it. Send a Cull horde team and Break up the gathering: before the mound is begun the site is given up, after that the hive loses a big part of what has gone in and starts over (Help: Hives being born).`)}>Hive being built</div><div class="danger">${info.site.started ? "under way" : "gathering"} · ${Math.round(info.site.biomass)}/${HIVE.SITE_BIOMASS} dead${siteText(state, id) ? `<div class="small">${esc(siteText(state, id))}</div>` : ""}</div>` : ""}` : ""}
@@ -662,6 +663,16 @@ function enterButton(state, p) {
 
 // Game, fish and your snares on a tile (sim/hunting.js): what the land holds now and what a hunt would bring: the
 // team standing here, else the hub's two best hunters.
+// The hive crawl's record on a hive's tile (sim/hivecrawl.js hive.crawlRec): how deep your teams got, the chambers
+// mapped and whether the core was found; and how deep the war parties of groups you know got (hive.groupCrawl).
+function hiveCrawlRow(state, id) {
+  const hv = (state.hives || []).find((h) => h.tile === id);
+  if (!hv) return "";
+  const mine = crawlRecText(state, hv);
+  const others = Object.entries(hv.groupCrawl || {}).map(([fid, n]) => { const f = factionById(state, Number(fid)); return f && f.known ? `${esc(f.name)} ${n} deep` : ""; }).filter(Boolean);
+  if (!mine && !others.length) return "";
+  return `<div${tip("The hive crawl: how deep your teams have been (the deepest chamber of the depth to the core), the chambers mapped of the den, and whether they found its core (★ been in it, ☆ heard or lit it from a passage). It is kept on the hive; when the hive grows deeper its chambers are new and the map starts again.")}>Crawled</div><div>${mine ? esc(mine) : "<span class=\"muted\">not by you</span>"}${others.length ? `<div class="small muted">War parties: ${others.join(", ")}</div>` : ""}</div>`;
+}
 function landRows(state, id, teamsHere) {
   const t = state.tiles[id];
   if (!t || t.terrain === "water") return "";

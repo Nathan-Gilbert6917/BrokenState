@@ -98,9 +98,11 @@ function deadEntries() {
     stats: [["Health", `${HIVEMIND.hp} (+${HIVEMIND.perTier} a tier of its hive)`], ["Takes", `${pct(hm.armor)} of each hit`], ["Moves", "never: it is rooted in the core"],
       ["Pulse", `every turn: everyone within ${HIVEMIND.pulse} tiles takes ${HIVEMIND.pulseDmg[0]}–${HIVEMIND.pulseDmg[1]}, ${pct(HIVEMIND.stun)} of them stunned (an action less)`],
       ["Lash", `${HIVEMIND.lash[0]}–${HIVEMIND.lash[1]} to someone next to it`], ["Brood", `${HIVEMIND.spawn[0]}–${HIVEMIND.spawn[1]} torn out of the walls every ${HIVEMIND.spawnEvery} turns, ${HIVEMIND.cap} + ${HIVEMIND.capTier} a tier in all`],
+      ["Second phase", `below ${pct(HIVEMIND.P2.at)} of its health it tears open: the cave quakes (${HIVEMIND.P2.quake[0]}–${HIVEMIND.P2.quake[1]} pillars come down), its pulse reaches ${HIVEMIND.P2.pulse} tiles for ${HIVEMIND.P2.pulseDmg[0]}–${HIVEMIND.P2.pulseDmg[1]} (${pct(HIVEMIND.P2.stun)} stunned), ${HIVEMIND.P2.spawn[0]}–${HIVEMIND.P2.spawn[1]} brood at a time and ${HIVEMIND.P2.cap} more in all`],
+      ["Hoard", "what the hive dragged in from the dead lies in its core: guns, armour, rounds, meds, now and then something rare (richer the older and fatter the hive)"],
       ["Comes from", `the core room of every hive, ${HCRAWL.DEPTH[0]}–${HCRAWL.DEPTH[HCRAWL.DEPTH.length - 1]} chambers in from its mouth by its tier`]],
-    text: "The organ that thinks for a hive: a hill of folded flesh that beats like a heart at the end of the core room. Kill it and the hive dies around you, its brood dropping where it stands.",
-    how: "Crawl to it (follow the warmth: the core is the hottest place in the hive), with meds for the way and the fight. Keep out of its pulse when you can and shoot it from range; the battle AI aims for it first. Burning egg chambers on the way means fewer brood when you come back.",
+    text: "The organ that thinks for a hive: a hill of folded flesh that beats like a heart at the end of the core room. Wounded past half it tears open and pulls the whole hive in with it. Kill it and the hive dies around you, its brood dropping where it stands.",
+    how: "Crawl to it (follow the warmth: the core is the hottest place in the hive), with meds for the way and the fight, and a light each: the core is dark, and a light lets its carrier see further. Keep out of its pulse when you can and shoot it from range; the battle AI aims for it first. Save something for its second phase. Burning egg chambers on the way means fewer brood when you come back. Search its hoard after.",
     sprite: () => bossBattleCanvas("hivemind"),
   });
   return out;

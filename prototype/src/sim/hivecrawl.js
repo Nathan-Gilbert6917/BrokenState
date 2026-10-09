@@ -32,8 +32,8 @@
 // (the pulse and the drone that grow with the warmth), ui/ui.js and main.js.
 import { Rng } from "./rng.js";
 import { hash01, gainXpAll, USE } from "./skills.js";
-import { SUPPLIES } from "./data.js";
-import { log, hurt, tickHour, day, snapshot } from "./world.js";
+import { SUPPLIES, GEAR } from "./data.js";
+import { log, hurt, tickHour, day, snapshot, survivorById } from "./world.js";
 import { partyMembers, partyTile, bestSkill, awaitOrders, wipeParty, tileLabel, teamName, cargoRoom, unitsThatFit } from "./parties.js";
 import {
   registerCombatHandler, registerBattleLayout, registerBattleSize, registerBossAI, startCombat, autoResolveCombat, finishCombat, byNumbersOdds,
@@ -57,6 +57,10 @@ import { settleParty, drawTeamShots } from "./ammo.js";
 import { fightXp } from "./skills.js";
 import { fieldTreatInfo, fieldTreat } from "./medical.js"; // tending the wounded in a quiet chamber
 import { absorbOffscreen } from "./armour.js";
+import { LIGHTS, lightOf } from "./lights.js"; // lights in the dark of the hive: the drafts, the cave battles
+import { carriedSpots } from "./inventory.js"; // road flares carried (worn, pockets, rig pouches, the pack)
+import { leaveCache } from "./caravanraids.js"; // the core's hoard: what the team cannot carry stays on the hive's tile
+import { addToArsenal, addArsenalRounds } from "./arsenal.js"; // AI parity: a war party's share of the hoard
 
 // ---------- tuning ----------
 export const HCRAWL = {
@@ -95,7 +99,33 @@ export const HCRAWL = {
   AUTO: { coreOdds: 0.75, hurt: 45, treat: 70, fit: 60, sureOdds: 0.8, fightOdds: 0.6, sneakOdds: 0.7, coreFit: 4, wear: 0.04, lie: 70 },
   // The AI groups' crawl (groupHiveCrawl), in the guard's units: the Hivemind and the Broodmother cost boss + bossTier ×
   // tier of a war party's strength on top of the brood on the way and in the core.
-  GROUP: { boss: 6, bossTier: 6, depthDiv: 3 },
+  GROUP: { boss: 6, bossTier: 6, depthDiv: 3, phase2: 2, light: 0.08 },
+  // Lights (lights.js) in the hive. The team's lights on (c.lit, the default when anyone has one): the drafts out of the
+  // chamber it stands in are read in the light (the misreading × draft), but the brood sees it (Alert + move a move,
+  // creeping past + sneak to the roll's DC). On a cave map the dark is the hive's own (b.dark): someone without a light
+  // sees dark tiles, with one their light's sight + lit (lights.js LIGHTS); by the numbers the brood counts numbers
+  // more for the share of the team without a light.
+  LIGHT: { draft: 0.5, move: 1, sneak: 1, numbers: 0.15, dark: 9, lit: 4 },
+  // A road flare (data.js flare) thrown down a passage: the chamber beyond is lit for a moment, its kind and its brood
+  // seen as they are and the draft from it read true; the brood sees the glare (Alert + alert). No time.
+  FLARE: { alert: 5 },
+  // Listening at a passage (hours): the best listener's (Scouting + Stealth) / 2 + d10 (the visit's own dice) against dc
+  // + perLayer × the layer beyond. By exact or more: its kind and the brood exactly; by rough or more: its kind and
+  // roughly how many; less: a guess (the kind may be wrong, the count off); by fumble or worse: Alert + alert and the
+  // brood beyond is waiting (spotted). The autopilot listens with a listener of auto or better.
+  LISTEN: { hours: 1, dc: 9, perLayer: 0.4, exact: 3, rough: 0, fumble: -4, alert: 6, auto: 5 },
+  // The core's hoard (hiveHoard): what the hive took from the dead it dragged in, searched once the Hivemind is dead.
+  // guns 1 + tier × perTier + stores / perRes; armour (base + tier × perTier + stores / perRes); a rare piece at
+  // rare[0] + rare[1] a tier (two from tier 3); rounds, meds, gun parts and scrap by the tier and the stores; flares.
+  // Each piece worn as the dead left it (itemcond.js: a survivor's kit, a soldier's now and then).
+  HOARD: {
+    guns: { base: 1, perTier: 0.8, perRes: 30 }, armour: { base: 0.5, perTier: 0.5, perRes: 60 }, rare: [0.15, 0.12],
+    ammo: [20, 18, 0.8], meds: [2, 1.5, 1 / 12], gunparts: [0, 1], scrap: [3, 2], flares: [0, 0.5], soldier: 0.3,
+    guns1: ["pistol", "revolver", "shotgun", "huntrifle", "leverrifle", "dbshotgun", "compact9", "pistol45"],
+    guns2: ["carbine", "ar", "ak", "smg", "semishotgun", "huntrifle"], guns3: ["dmr", "lmg", "sniper", "ar", "ak"],
+    armourKeys: ["vest", "plate", "tacvest", "milhelmet", "riothelmet", "highcut", "ceramicplate", "kneeguards", "riotarms"],
+    rareKeys: ["nvg", "thermal", "milradio", "surgkit", "traumakit", "m79", "helmetlight", "commset"],
+  },
 };
 // The Hivemind on the battle map (defences.js BOSSES.hivemind, its turn here): hp + perTier × the hive's tier; every
 // turn a pulse within pulse tiles (pulseDmg, stun: the chance to cost the next turn an action) and a lash at someone
@@ -107,7 +137,13 @@ export const HCRAWL = {
 // and lash and the brood it keeps calling grind a team down on the map far more than a flat power says); × 2.75 fits
 // them (Brier 0.42 → 0.09), so the odds the core room shows, the fight by the numbers and the autopilot's choice
 // match what the map gives; 2.5 so an ideal squad (plate, Shooting 7, full health) is not shown far less than it wins.
-export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9, numbersK: 2.5 };
+// P2: its second phase, below `at` of its health (once): the pulse reaches further and hits harder (pulse, pulseDmg,
+// stun), the walls give up brood every spawnEvery turns (spawn), cap more of them, and the cave quakes (quake: pillars
+// of flesh and bone come down in the open, everyone of yours caught under one hurt quakeDmg at quakeHit odds).
+export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9, numbersK: 2.5,
+  P2: { on: true, at: 0.5, pulse: 4, pulseDmg: [6, 12], stun: 0.45, spawnEvery: 2, spawn: [3, 4], cap: 1, quake: [3, 5], quakeDmg: [3, 8], quakeHit: 0.35 } };
+// What the core battles did (the tools' calibration): battles fought on the map, how many saw the second phase.
+export const HM_STATS = { battles: 0, phase2: 0 };
 
 // The kinds of chamber: name, share of the brood (brood) and its power, the special dead among them (special), what
 // can be done there (burn: eggs or a growth's root; search: what lies in it), its battle map size, how it reads.
@@ -153,7 +189,10 @@ export function denOf(state, hive) {
   if (hive.den && hive.den.v === 1 && state.parties.some((p) => p.hiveCrawl && p.hiveCrawl.hiveId === hive.id)) return hive.den;
   const grew = !!hive.den;
   hive.den = genDen(state, hive, depth, clamp(hiveTier(state, hive), 0, 4));
-  if (grew) hive.den.grew = state.hour;
+  if (grew) {
+    hive.den.grew = state.hour;
+    if (hive.crawlRec) { hive.crawlRec.mapped = {}; hive.crawlRec.core = false; hive.crawlRec.coreHeard = false; hive.crawlRec.grew = day(state); } // its chambers are new: the map starts again
+  }
   return hive.den;
 }
 export const roomById = (den, id) => den.rooms.find((r) => r.id === id) || null;
@@ -372,13 +411,17 @@ export function startHiveCrawl(state, p, hive) {
     at: den.mouth, from: null, trail: [den.mouth], visited: { [den.mouth]: true }, seen: {}, slipped: {},
     alert: clamp(Math.round(Math.max(HCRAWL.ALERT.start, left)), 0, 100), enc: null, leaving: false, deepest: 0,
     kills: 0, lost: [], log: [], tally: { supplies: {}, gear: [] }, hadVehicle: !!p.vehicle,
+    lit: true, heard: {}, warned: {},
   };
   const c = p.hiveCrawl;
+  const rec = crawlRecOf(state, hive);
+  rec.visits += 1;
   markSeen(den, c, den.mouth);
   markThreat(state, hive); // hivetech.js: it builds for defence
   hive.playerDay = day(state); // hives.js notePlayerFight: a group fighting it warms to you
   const mouth = roomById(den, den.mouth);
-  say2(c, `${teamName(state, p)} ${partyMembers(state, p).length === 1 ? "goes" : "go"} into ${hive.name}. ${den.grew ? "It has grown deeper since anyone was last inside. " : ""}The air is ${warmthText(warmthOf(den, mouth))}.`, "info", state.hour);
+  const lights = teamLights(state, p);
+  say2(c, `${teamName(state, p)} ${partyMembers(state, p).length === 1 ? "goes" : "go"} into ${hive.name}. ${den.grew ? "It has grown deeper since anyone was last inside. " : ""}The air is ${warmthText(warmthOf(den, mouth))}. ${lights ? `${lights} light${lights === 1 ? "" : "s"} on.` : "Nobody has a light: you feel your way in the dark."}`, "info", state.hour);
   log(state, `${teamName(state, p)} crawls into ${hive.name}.`, "info");
   enterRoom(state, p, c, mouth, null);
   return true;
@@ -397,6 +440,7 @@ function enterRoom(state, p, c, room, from) {
   c.visited[room.id] = true;
   markSeen(den, c, room.id);
   c.deepest = Math.max(c.deepest, room.layer);
+  noteRoom(state, hive, room);
   if (room.kind === "core") {
     const f = coreForce(state, hive);
     c.enc = { kind: "core", room: room.id, back: from, spotted: true };
@@ -407,7 +451,8 @@ function enterRoom(state, p, c, room, from) {
   const K = ROOM_KINDS[room.kind];
   const look = `${roomName(room)}: ${fresh ? K.text + " " : ""}The air is ${warmthText(warmthOf(den, room))}.`;
   if (n > 0 && !c.slipped[room.id]) {
-    const spotted = c.alert >= 50 && hash01(state.seed, "hcspot", c.hiveId, room.id, c.visit, state.hour) < (c.alert - 40) / 100;
+    const spotted = (c.warned && c.warned[room.id]) || (c.alert >= 50 && hash01(state.seed, "hcspot", c.hiveId, room.id, c.visit, state.hour) < (c.alert - 40) / 100); // warned: a listener they heard
+
     c.enc = { kind: "brood", room: room.id, back: from, spotted };
     say2(c, `${look} ${n} of the brood${spotted ? " have seen you and turn" : " are here"}.`, spotted ? "danger" : "info", state.hour);
   } else say2(c, `${look}${n > 0 ? ` The brood you crept past are still here (${n}).` : ""}`, "info", state.hour);
@@ -466,7 +511,7 @@ export function exitsOf(state, p) {
   const here = roomById(den, c.at);
   return here.links.map((id) => {
     const r = roomById(den, id);
-    return { id, room: c.visited[id] ? r : null, kind: c.visited[id] ? r.kind : null, draft: draftOf(state, p, c, den, here, r), visited: !!c.visited[id], back: id === c.from, core: id === den.core && !!c.visited[id] };
+    return { id, room: c.visited[id] ? r : null, kind: c.visited[id] ? r.kind : null, draft: draftOf(state, p, c, den, here, r), visited: !!c.visited[id], back: id === c.from, core: id === den.core && !!c.visited[id], heard: (c.heard && c.heard[id]) || null };
   });
 }
 // The draft from a passage as the team reads it: warmer, colder or level; misread now and then by a team without a
@@ -475,10 +520,13 @@ export function draftOf(state, p, c, den, from, to) {
   const d = warmthOf(den, to) - warmthOf(den, from);
   let w = d > 0 ? "warmer" : d < 0 ? "colder" : "level";
   if (c.visited[to.id]) return w; // been there: no guessing
-  if (hash01(state.seed, "hcdraft", c.hiveId, from.id, to.id, c.visit) < draftMiss(state, p)) w = w === "warmer" ? "colder" : "warmer";
+  if (c.heard && c.heard[to.id] && c.heard[to.id].by === "flare") return w; // a flare lit it: the draft reads true
+  if (hash01(state.seed, "hcdraft", c.hiveId, from.id, to.id, c.visit) < draftMissHere(state, p, c)) w = w === "warmer" ? "colder" : "warmer";
   return w;
 }
 export const draftMiss = (state, p) => Math.max(HCRAWL.DRAFT.min, HCRAWL.DRAFT.miss - HCRAWL.DRAFT.perScout * bestSkill(state, p, "scouting"));
+// ... in the team's chamber now: in the light of its lights (lights on) the misreading × LIGHT.draft.
+export const draftMissHere = (state, p, c) => draftMiss(state, p) * (lightsOn(state, p, c) ? HCRAWL.LIGHT.draft : 1);
 export const draftWord = (w) => DRAFT_WORD[w] || w;
 // Can the team move on from its chamber (no brood in it, or it crept past)?
 export function canMoveOn(state, c) {
@@ -486,6 +534,242 @@ export function canMoveOn(state, c) {
   const hive = crawlHive(state, c);
   const room = roomById(denOf(state, hive), c.at);
   return broodLeft(state, hive, room) === 0 || !!c.slipped[room.id];
+}
+
+// ---------- lights, flares and listening ----------
+// How many of the team have a working light (lights.js lightOf: the off hand, a headlamp, a weapon or helmet light).
+export const teamLights = (state, p) => partyMembers(state, p).filter((s) => !!lightOf(s)).length;
+// The team's lights are on (the default; c.lit false: doused) and someone has one.
+export const lightsOn = (state, p, c) => !!c && c.lit !== false && teamLights(state, p) > 0;
+// Lights on or off (no time).
+export function setLights(state, p, on) {
+  const c = hiveCrawlOf(state, p);
+  if (!c) return "The team is not in a hive.";
+  const n = teamLights(state, p);
+  if (!n) return "Nobody in the team has a light.";
+  c.lit = !!on;
+  const text = on ? `${n} light${n === 1 ? "" : "s"} on: the drafts are easier to read, but the brood sees you coming.` : "Lights off: you feel your way in the dark, and the drafts are harder to read.";
+  say2(c, text, "info", state.hour);
+  return text;
+}
+// Items of a kind the team carries (worn, pockets, rig pouches, the pack; then the cargo): [{ item, take }].
+export function teamKit(state, p, key) {
+  const out = [];
+  for (const s of partyMembers(state, p)) for (const x of carriedSpots(s)) if (x.item && x.item.key === key) out.push({ item: x.item, take: x.take });
+  const cargo = (p.cargo && p.cargo.gear) || [];
+  for (const it of cargo) if (it && it.key === key) out.push({ item: it, take: () => { const i = cargo.indexOf(it); if (i >= 0) cargo.splice(i, 1); } });
+  return out;
+}
+export const flaresOf = (state, p) => teamKit(state, p, "flare");
+// What the team learns of the chamber beyond a passage: { by, q (exact, rough, vague), kind, n, lo, hi, who, hour }.
+const heardOf = (c) => c.heard || (c.heard = {});
+const chamberTruth = (state, hive, room) => (room.kind === "core" ? coreForce(state, hive).count : broodLeft(state, hive, room));
+// The best listener: (Scouting + Stealth) / 2 of whoever is best at it.
+export function listener(state, p) {
+  let best = null, v = -1;
+  for (const s of partyMembers(state, p)) { const x = ((s.skills.scouting || 0) + (s.skills.stealth || 0)) / 2; if (x > v) { v = x; best = s; } }
+  return { who: best, v: Math.max(0, v) };
+}
+// The odds of a listen at a passage: { dc, skill, exact, rough, fumble }.
+export function listenOdds(state, p, c, to) {
+  const L = HCRAWL.LISTEN, { v } = listener(state, p);
+  const dc = L.dc + L.perLayer * (to ? to.layer : 0);
+  const atLeast = (m) => clamp(Math.floor(v + 10 - dc - m + 1e-9) / 10, 0, 1); // P(v + d10 − dc ≥ m), d10 = 1..10
+  return { dc: Math.round(dc * 10) / 10, skill: v, exact: atLeast(L.exact), rough: atLeast(L.rough), fumble: 1 - atLeast(L.fumble + 0.001) };
+}
+const KIND_GUESS = ["tunnel", "gallery", "nursery", "eggs", "bones", "pool"];
+// Listening at a passage (LISTEN.hours): the visit's own dice (the same listen every time this visit).
+export function listenAt(state, p, id) {
+  const c = hiveCrawlOf(state, p);
+  if (!c) return "The team is not in a hive.";
+  if (c.enc) return "Deal with what is in front of you first.";
+  const hive = crawlHive(state, c), den = denOf(state, hive);
+  const here = roomById(den, c.at), to = roomById(den, id);
+  if (!to || !here.links.includes(id)) return "No passage leads there.";
+  if (c.visited[id]) return "You have been there.";
+  const H = heardOf(c);
+  if (H[id] && (H[id].by === "listen" || H[id].q === "exact")) return "You have listened there already.";
+  const L = HCRAWL.LISTEN, { who, v } = listener(state, p);
+  const d10 = 1 + Math.floor(hash01(state.seed, "hclisten", c.hiveId, here.id, id, c.visit) * 10);
+  const m = v + d10 - (L.dc + L.perLayer * to.layer);
+  const n = chamberTruth(state, hive, to);
+  const name = who ? first(who) : "Someone";
+  /** @type {any} */
+  let rec;
+  let text, k = "info";
+  if (m >= L.exact) {
+    rec = { by: "listen", q: "exact", kind: to.kind, n };
+    text = `${name} listens at the passage: ${heardText(rec)}. Sure of it.`;
+    k = "good";
+  } else if (m >= L.rough) {
+    const lo = n ? Math.max(1, Math.floor(n * 0.6)) : 0, hi = n ? Math.ceil(n * 1.5) + 1 : 0;
+    rec = { by: "listen", q: "rough", kind: to.kind, n: null, lo, hi };
+    text = `${name} listens at the passage: ${heardText(rec)}.`;
+  } else {
+    const h1 = hash01(state.seed, "hclisten", c.hiveId, here.id, id, c.visit, "kind"), h2 = hash01(state.seed, "hclisten", c.hiveId, here.id, id, c.visit, "n");
+    const others = KIND_GUESS.filter((x) => x !== to.kind);
+    const wrong = to.kind !== "core" && h1 < 0.5;
+    const guessKind = wrong ? others[Math.floor(h1 * 2 * others.length) % others.length] : to.kind;
+    const g = Math.max(0, Math.round(n * (0.3 + 1.4 * h2) + (h2 > 0.7 ? 2 : 0)));
+    rec = { by: "listen", q: "vague", kind: guessKind, n: null, lo: g, hi: g };
+    text = `${name} listens, but the hive's own noise drowns it: ${heardText(rec)}, maybe.`;
+    if (m <= L.fumble) {
+      addAlert(c, L.alert);
+      (c.warned || (c.warned = {}))[id] = true;
+      text += ` A bone cracks under ${name}'s knee, and on the other side something goes quiet (Alert +${L.alert}).`;
+      k = "danger";
+    }
+  }
+  rec.who = who ? who.name : null;
+  rec.hour = state.hour;
+  H[id] = rec;
+  if (to.kind === "core" && rec.kind === "core") crawlRecOf(state, hive).coreHeard = true;
+  if (who) gainXpAll(state, [who], "scouting", USE.sneakSearch);
+  say2(c, text, k, state.hour);
+  if (!passHours(state, p, L.hours)) return goneText(state, p);
+  return text;
+}
+// A road flare down a passage: the chamber beyond lit, its kind and brood seen as they are (Alert + FLARE.alert).
+export function throwFlare(state, p, id) {
+  const c = hiveCrawlOf(state, p);
+  if (!c) return "The team is not in a hive.";
+  if (c.enc) return "Deal with what is in front of you first.";
+  const hive = crawlHive(state, c), den = denOf(state, hive);
+  const here = roomById(den, c.at), to = roomById(den, id);
+  if (!to || !here.links.includes(id)) return "No passage leads there.";
+  const fl = flaresOf(state, p);
+  if (!fl.length) return "The team has no road flares.";
+  fl[0].take();
+  addAlert(c, HCRAWL.FLARE.alert);
+  const rec = { by: "flare", q: "exact", kind: to.kind, n: chamberTruth(state, hive, to), hour: state.hour, who: null };
+  heardOf(c)[id] = rec;
+  if (to.kind === "core") crawlRecOf(state, hive).coreHeard = true;
+  const text = `You strike a flare and throw it down the passage. Red light: ${heardText(rec)}. The brood stirs at the glare (Alert +${HCRAWL.FLARE.alert}).`;
+  say2(c, text, "info", state.hour);
+  return text;
+}
+// "a gallery, 4 of the brood" / "a nursery, about 3–7 of the brood" / "a tunnel, 5 of the brood or so".
+export function heardText(h) {
+  if (!h) return "";
+  const nm = ROOM_KINDS[h.kind] ? ROOM_KINDS[h.kind].name.toLowerCase() : String(h.kind);
+  if (h.kind === "collapse") return "no draft and no sound: a dead end";
+  const kind = h.kind === "core" ? `a vast slow beat: the core, the ${BOSS_NAMES.hivemind}` : `${/^[aeiou]/.test(nm) ? "an" : "a"} ${nm}`;
+  const n = h.q === "exact" ? (h.n ? `${h.n} of the brood` : "nothing moving") : h.q === "rough" ? (h.hi ? `about ${h.lo}–${h.hi} of the brood` : "silence") : h.lo ? `${h.lo} of the brood or so` : "nothing moving";
+  return `${kind}, ${n}`;
+}
+
+// ---------- the crawl's record (the State Map, the Goals card) ----------
+// What your teams have learned of a hive's den over every visit: hive.crawlRec = { v, deepest (the deepest layer
+// reached), mapped ({ room id: 1 }), core (been in it), coreHeard (heard or lit it from a passage), visits, first,
+// last (days), grew (the day the den grew deeper and the map started again) }. Old saves: none until a team goes in.
+export function crawlRecOf(state, hive) {
+  return hive.crawlRec || (hive.crawlRec = { v: 1, deepest: 0, mapped: {}, core: false, coreHeard: false, visits: 0, first: day(state), last: day(state) });
+}
+function noteRoom(state, hive, room) {
+  const r = crawlRecOf(state, hive);
+  r.deepest = Math.max(r.deepest, room.layer);
+  r.mapped[room.id] = 1;
+  if (room.kind === "core") r.core = true;
+  r.last = day(state);
+}
+// The record as the UI shows it, or null: { deepest, depth, mapped, rooms, core, coreHeard, visits, last, grew }.
+export function crawlRecord(state, hive) {
+  const r = hive && hive.crawlRec;
+  if (!r) return null;
+  const den = denOf(state, hive);
+  const mapped = den.rooms.filter((x) => r.mapped && r.mapped[x.id]).length;
+  return { deepest: Math.min(r.deepest || 0, den.depth), depth: den.depth, mapped, rooms: den.rooms.length, core: !!r.core, coreHeard: !!r.coreHeard, visits: r.visits || 0, last: r.last, grew: r.grew ?? null };
+}
+// "4 of 7 chambers deep · 9 of 23 chambers mapped · core found".
+export function crawlRecText(state, hive) {
+  const r = crawlRecord(state, hive);
+  if (!r) return "";
+  return `${r.deepest ? `${r.deepest} of ${r.depth} chambers deep` : `no further than the mouth (${r.depth} deep)`} · ${r.mapped} of ${r.rooms} chambers mapped · ${r.core ? "core found" : r.coreHeard ? "core located" : "core not found"}${r.grew != null && r.mapped <= 1 ? " (it has grown deeper since)" : ""}`;
+}
+// The Goals card's line: the hives your teams have been inside, deepest first ("Hive name: 4/7 ★").
+export function crawlProgressLine(state) {
+  const rows = (state.hives || []).map((h) => ({ h, r: crawlRecord(state, h) })).filter((x) => x.r).sort((a, b) => b.r.deepest / b.r.depth - a.r.deepest / a.r.depth);
+  if (!rows.length) return "";
+  return rows.slice(0, 4).map(({ h, r }) => `${h.name}: ${r.deepest}/${r.depth}${r.core ? " ★" : r.coreHeard ? " ☆" : ""}`).join(" · ") + (rows.length > 4 ? ` · ${rows.length - 4} more` : "");
+}
+// The AI groups' war parties (groupHiveCrawl): how deep each got, by group id (hive.groupCrawl).
+function noteGroupCrawl(hive, fid, reached) {
+  if (fid == null) return;
+  const g = hive.groupCrawl || (hive.groupCrawl = {});
+  g[fid] = Math.max(g[fid] || 0, reached);
+}
+
+// ---------- the core's hoard ----------
+// What the hive dragged into its core from the dead (HCRAWL.HOARD), from the world's seed and the hive (its own dice:
+// the world's untouched): richer with the tier and the hive's stores. { gear: [items], supplies: { key: qty } }.
+export function hiveHoard(state, hive) {
+  const H = HCRAWL.HOARD;
+  const tier = clamp(hiveTier(state, hive), 0, 4), res = Math.max(0, hive.res || 0);
+  const rng = new Rng(seedOf(state.seed, "hoard", hive.id, hive.tile));
+  const gear = [];
+  let i = 0;
+  const add = (key) => { if (!GEAR[key]) return; const src = rng.chance(H.soldier) ? "soldier" : "survivor"; gear.push(lootItem(key, src, [state.seed, "hoard", hive.id, i++])); };
+  const nGuns = Math.floor(H.guns.base + H.guns.perTier * tier + res / H.guns.perRes);
+  for (let k = 0; k < nGuns; k++) {
+    const pool = tier >= 3 && rng.chance(0.3) ? H.guns3 : tier >= 1 && rng.chance(0.35 + 0.15 * tier) ? H.guns2 : H.guns1;
+    add(rng.pick(pool));
+  }
+  const nArm = Math.floor(H.armour.base + H.armour.perTier * tier + res / H.armour.perRes);
+  for (let k = 0; k < nArm; k++) add(rng.pick(H.armourKeys));
+  const rare = Math.min(0.9, H.rare[0] + H.rare[1] * tier);
+  for (let k = 0; k < (tier >= 3 ? 2 : 1); k++) if (rng.chance(rare)) add(rng.pick(H.rareKeys));
+  const nFl = Math.floor(H.flares[0] + H.flares[1] * tier + rng.next());
+  for (let k = 0; k < nFl; k++) add("flare");
+  const supplies = {
+    ammo: Math.round(H.ammo[0] + H.ammo[1] * tier + H.ammo[2] * res), meds: Math.round(H.meds[0] + H.meds[1] * tier + H.meds[2] * res),
+    gunparts: Math.round(H.gunparts[0] + H.gunparts[1] * tier), scrap: Math.round(H.scrap[0] + H.scrap[1] * tier),
+  };
+  for (const k of Object.keys(supplies)) if (!(supplies[k] > 0)) delete supplies[k];
+  sortFind(supplies, "home", "hivehoard", hive.tile, hive.id); // ammo.js: the rounds by calibre
+  return { gear, supplies };
+}
+const gearValue = (it) => (it && GEAR[it.key] ? (GEAR[it.key].value || 0) * (it.quality || 1) : 0);
+export const HOARD_LAST = { gear: 0, taken: 0, left: 0 }; // the last hoard searched (the tools)
+// The team searches the hoard once the Hivemind is dead: what fits goes in its cargo (the most valuable first), the
+// rest stays on the hive's tile (a cache on the map: Recover it, like any cargo left behind). Returns the text.
+function takeHoard(state, p, hive, c) {
+  const h = hiveHoard(state, hive);
+  const tally = c ? c.tally : { supplies: {}, gear: [] };
+  p.cargo = p.cargo || { supplies: {}, gear: [] };
+  let room = cargoRoom(state, p);
+  const got = [], leftSup = {}, leftGear = [];
+  const takeSup = (k, q) => {
+    if (!(q > 0) || !SUPPLIES[k]) return;
+    const take = Math.min(q, unitsThatFit(room, k));
+    if (take > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take; tally.supplies[k] = (tally.supplies[k] || 0) + take; room -= take * SUPPLIES[k].weight; got.push(`${take} ${SUPPLIES[k].name.toLowerCase()}`); }
+    if (q - take > 0) leftSup[k] = q - take;
+  };
+  takeSup("meds", h.supplies.meds); // the meds first, then the best of the gear, then the rest
+  for (const g of [...h.gear].sort((a, b) => gearValue(b) - gearValue(a))) {
+    if (room >= itemLoad(g)) { p.cargo.gear.push(g); tally.gear.push(g.name); room -= itemLoad(g); got.push(g.name); } else leftGear.push(g);
+  }
+  for (const [k, q] of Object.entries(h.supplies)) if (k !== "meds") takeSup(k, q);
+  const left = [...Object.entries(leftSup).map(([k, q]) => `${q} ${SUPPLIES[k].name.toLowerCase()}`), ...leftGear.map((g) => g.name)];
+  if (left.length) leaveCache(state, hive.tile, leftSup, leftGear);
+  HOARD_LAST.gear = h.gear.length; HOARD_LAST.taken = got.length; HOARD_LAST.left = left.length;
+  return `In the dead core lies the hive's hoard, what it dragged in from the dead: ${got.length ? `the team takes ${got.join(", ")}` : "the team has no room for any of it"}${left.length ? `; the rest (${left.slice(0, 6).join(", ")}${left.length > 6 ? ` and ${left.length - 6} more` : ""}) is left at the hive, marked on the map (Recover it)` : ""}.`;
+}
+// AI parity: a group whose war party burned a hive out takes the hoard into its stores (coarse: the rounds into its
+// one count, meds, scrap and gun parts into f.stock, its guns and armour into the group's arsenal, arsenal.js).
+// Returns { items, rounds }.
+export function groupTakeHoard(state, f, hive) {
+  const h = hiveHoard(state, hive);
+  let rounds = 0;
+  f.stock = f.stock || {};
+  for (const [k, q] of Object.entries(h.supplies)) {
+    if (!(q > 0)) continue;
+    if (k === "meds" || k === "scrap" || k === "gunparts") f.stock[k] = (f.stock[k] || 0) + q;
+    else if (/^a_/.test(k)) rounds += q;
+  }
+  addArsenalRounds(f, rounds);
+  let items = 0;
+  for (const it of h.gear) if (addToArsenal(state, f, it, "hive hoard")) items++;
+  return { items, rounds };
 }
 
 // Move to a chamber next to this one (an hour).
@@ -500,7 +784,7 @@ export function moveTo(state, p, id) {
   const to = roomById(den, id);
   if (!to || !here.links.includes(id)) return "No passage leads there.";
   if (!canMoveOn(state, c) && id !== c.from) return "The brood is still in this chamber: fight it, creep past, or go back the way you came.";
-  addAlert(c, HCRAWL.ALERT.move);
+  addAlert(c, HCRAWL.ALERT.move + (lightsOn(state, p, c) ? HCRAWL.LIGHT.move : 0)); // lights: the brood sees them coming
   if (!passHours(state, p, HCRAWL.MOVE_HOURS)) return goneText(state, p);
   if (!p.hiveCrawl) return "";
   if (c.enc) return ""; // the brood came for you on the way (converge)
@@ -521,10 +805,17 @@ function encSetup(state, p, c, e) {
   const K = ROOM_KINDS[room.kind] || ROOM_KINDS.tunnel;
   return {
     tile: hive.tile, partyId: p.id, ambush: e.spotted ? "enemy" : null, canRetreat: true, handler: "hiveChamber", layout: "hivechamber",
-    enemy: { kind: "zombies", count: Math.max(1, count), power: f.power, types: f.types && count !== f.count ? broodTypes(state, hive, count, room.layer) : f.types, elite: !!f.elite, name: f.name },
+    enemy: { kind: "zombies", count: Math.max(1, count), power: Math.round(f.power * darkMult(state, p) * 10) / 10, types: f.types && count !== f.count ? broodTypes(state, hive, count, room.layer) : f.types, elite: !!f.elite, name: f.name },
     aiStyle: tacticalStyleFor(state, p), // played headless: the team's retreat policy (breakoff.js)
     context: { hiveCrawl: { hiveId: hive.id, room: room.id, kind: e.kind, size: K.size, layer: room.layer, warmth: warmthOf(den, room), met: count } },
   };
+}
+// By the numbers the dark counts for the brood in a chamber: its power × (1 + LIGHT.numbers × the share of the team
+// without a light). Not in the core: its fight by the numbers is fitted to the map (HIVEMIND.numbersK) as the
+// autopilot's real teams fought it, and the autopilot's gate for it (AUTO.coreOdds) sits right at that fit.
+export function darkMult(state, p) {
+  const m = partyMembers(state, p);
+  return m.length ? 1 + HCRAWL.LIGHT.numbers * (1 - teamLights(state, p) / m.length) : 1;
 }
 // The odds and the answers to what is in front of the team (the window and the autopilot).
 export function encounterOptions(state, p) {
@@ -553,7 +844,7 @@ const backHurt = (room) => Math.min(0.9, HCRAWL.BACK.hurt + HCRAWL.BACK.perLayer
 export function sneakOdds(state, p, c, room, e = c.enc) {
   const S = HCRAWL.SNEAK;
   const n = partyMembers(state, p).length;
-  const dc = Math.ceil(S.dc + S.perLayer * room.layer + c.alert * S.perAlert + Math.max(0, n - 3) * S.big + (e && e.spotted ? S.spotted : 0));
+  const dc = Math.ceil(S.dc + S.perLayer * room.layer + c.alert * S.perAlert + Math.max(0, n - 3) * S.big + (e && e.spotted ? S.spotted : 0) + (lightsOn(state, p, c) ? HCRAWL.LIGHT.sneak : 0));
   return { dc, p: clamp((bestSkill(state, p, "stealth") + 10 - dc + 1) / 10, 0, 1) };
 }
 // The answer. opts.map: a fight on the battle map (the browser), else by the numbers.
@@ -677,9 +968,9 @@ registerCombatHandler("hiveChamber", (state, result, setup, battle) => {
   const c = p.hiveCrawl;
   if (!c) { awaitOrders(state, p, "The team is out of the fight."); return; }
   c.kills += killed;
-  for (const id of result.survivorsDead || []) { const s = state.survivors.find((x) => x.id === id); if (s) c.lost.push(s.name); }
+  for (const id of result.survivorsDead || []) { const s = survivorById(state, id); if (s) c.lost.push(s.name); }
   addAlert(c, battle ? HCRAWL.ALERT.mapFight + (result.ammoUsed || battle.gunshots || 0) / 20 : HCRAWL.ALERT.fight);
-  const dead = (result.survivorsDead || []).map((id) => state.survivors.find((x) => x.id === id)?.name).filter(Boolean);
+  const dead = (result.survivorsDead || []).map((id) => survivorById(state, id)?.name).filter(Boolean);
   const won = result.outcome === "victory";
   say2(c, `Fight with ${setup.enemy.name}${result.odds != null ? ` (${Math.round(result.odds * 100)}% odds)` : ""}: ${won ? "won" : result.outcome === "retreat" ? "broke off" : "lost"} (${killed} killed).${dead.length ? ` Killed: ${dead.join(", ")}.` : ""}`, won ? "good" : "danger", state.hour);
   const e = c.enc || { kind: ctx.kind, room: ctx.room, back: c.from };
@@ -893,7 +1184,7 @@ export function finishHiveCrawl(state, p, extra = "") {
   const hive = crawlHive(state, c);
   if (hive) { const mem = memOf(hive); mem.lastAlert = c.alert; mem.lastHour = state.hour; }
   delete p.hiveCrawl;
-  const got = [...Object.entries(c.tally.supplies).map(([k, v]) => `${v} ${k}`), ...c.tally.gear];
+  const got = [...Object.entries(c.tally.supplies).map(([k, v]) => `${v} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k}`), ...c.tally.gear];
   const den = hive ? denOf(state, hive) : null;
   const text = `${extra ? extra + " " : ""}Out of ${c.name} after ${state.hour - c.started} h, ${c.deepest ? `${c.deepest} chamber${c.deepest === 1 ? "" : "s"} deep${den ? ` of ${den.depth}` : ""}` : "no deeper than the mouth"}, ${c.kills} of the brood killed${got.length ? `, with ${got.join(", ")}` : ""}.${c.lost.length ? ` Lost: ${c.lost.join(", ")}.` : ""}`;
   log(state, `${teamName(state, p)}: ${text}`, c.lost.length ? "danger" : "info");
@@ -930,6 +1221,7 @@ export function hiveCrawlTurned(state, p, s) {
 // played out by the AI on both sides, as the old storm was).
 // numbers: the setup for a fight by the numbers (the bosses folded into the brood's power: byNumbersOdds counts
 // count × power); on the map the brood keeps its own power and the bosses are units (the layout).
+// (No darkMult here: the core's numbers are fitted to the map as the autopilot's teams fought it, HIVEMIND.numbersK.)
 export function coreSetup(state, p, hive, numbers = false) {
   const f = coreForce(state, hive);
   const allies = hiveAllies(state, hive);
@@ -959,7 +1251,7 @@ export function assaultHive(state, p, hive, opts = {}) {
   return onFoot(p, () => fightNow(state, setup));
 }
 // The core fight is over (combat.js finishCombat): the Hivemind dead destroys the hive.
-registerCombatHandler("hiveAssault", (state, result, setup) => {
+registerCombatHandler("hiveAssault", (state, result, setup, battle) => {
   const c0 = setup.context || {};
   const hive = hiveById(state, c0.hiveId);
   const p = partyById(state, c0.partyId);
@@ -968,6 +1260,9 @@ registerCombatHandler("hiveAssault", (state, result, setup) => {
   if (hive) { hive.playerDay = day(state); }
   let text;
   const won = result.outcome === "victory" && !!hive;
+  let hoard = "";
+  if (won && p && state.parties.includes(p) && partyMembers(state, p).length) hoard = takeHoard(state, p, hive, p.hiveCrawl || null); // before the hive goes: its tier and stores
+  if (battle) { HM_STATS.battles++; if (battle.hivemind && battle.hivemind.phase2) HM_STATS.phase2++; }
   if (won) {
     destroyHive(state, hive, "by your team");
     text = `The ${BOSS_NAMES.hivemind} bursts and the hive dies around you: the brood falls where it stands and the walls go still and cold. The infection around it will fade over the coming weeks.`;
@@ -980,9 +1275,9 @@ registerCombatHandler("hiveAssault", (state, result, setup) => {
   if (!partyMembers(state, p).length) { if (c) crawlWiped(state, p, "Killed in the core."); else if (state.parties.includes(p)) { log(state, "The whole team was lost storming a hive.", "death"); wipeParty(state, p); } return; }
   if (c) {
     c.kills += killed;
-    for (const id of result.survivorsDead || []) { const s = state.survivors.find((x) => x.id === id); if (s) c.lost.push(s.name); }
+    for (const id of result.survivorsDead || []) { const s = survivorById(state, id); if (s) c.lost.push(s.name); }
     c.enc = null;
-    if (won) { say2(c, text, "good", state.hour); finishHiveCrawl(state, p, text); return; }
+    if (won) { say2(c, text, "good", state.hour); if (hoard) say2(c, hoard, "good", state.hour); finishHiveCrawl(state, p, text); if (hoard) log(state, hoard, "good"); return; }
     addAlert(c, HCRAWL.ALERT.fight);
     say2(c, text, "danger", state.hour);
     const den = hive ? denOf(state, hive) : null;
@@ -992,6 +1287,7 @@ registerCombatHandler("hiveAssault", (state, result, setup) => {
     return;
   }
   if (!won) log(state, `${text} (${tileLabel(state, partyTile(p))})`, "danger");
+  if (hoard) log(state, hoard, "good");
   awaitOrders(state, p, text);
 });
 
@@ -1038,7 +1334,24 @@ function carveCave(ctx, kind) {
   }
   return ty;
 }
+// The dark of the hive (both cave maps, once both sides are placed): b.dark (the battle's lights and beams, a flare's
+// light and aim, the retreat), and each of yours sees LIGHT.dark tiles without a light (night-vision goggles see as by
+// day), with one its sight + LIGHT.lit. The brood lives in the dark: its sight is its own.
+export function caveDark(state, b) {
+  b.dark = true;
+  b.hiveDark = true;
+  for (const u of b.units) {
+    if (u.side !== "player" || u.sid == null) continue;
+    const s = survivorById(state, u.sid); // volunteers.js: an allied group's volunteers see by their own lights too
+    if (!s) continue;
+    const tool = s.gear && s.gear.tool;
+    if (tool && (tool.key === "nvg" || tool.key === "thermal")) continue;
+    const L = lightOf(s);
+    u.sight = Math.min(u.sight, L && LIGHTS[L] ? LIGHTS[L].sight + HCRAWL.LIGHT.lit : HCRAWL.LIGHT.dark);
+  }
+}
 registerBattleLayout("hivechamber", (b, ctx) => {
+  if (ctx.phase === "units") { if (ctx.state) caveDark(ctx.state, b); return; }
   if (ctx.phase !== "map") return;
   const c = (b.setup.context && b.setup.context.hiveCrawl) || {};
   const room = c.kind === "swarm" || c.kind === "turned" ? "tunnel" : null;
@@ -1070,7 +1383,8 @@ registerBattleLayout("hivecore", (b, ctx) => {
     b.hiveWarmth = 100;
     return;
   }
-  // Units: the Hivemind in its pocket, the Broodmother in front of it.
+  // Units: the Hivemind in its pocket, the Broodmother in front of it; the dark.
+  if (ctx.state) caveDark(ctx.state, b);
   const setup = b.setup;
   const hm = bossUnit(b, "hivemind");
   const hp = (setup.enemy && setup.enemy.hp) || HIVEMIND.hp;
@@ -1085,21 +1399,60 @@ registerBattleLayout("hivecore", (b, ctx) => {
   if (placeUnitRight(b, ctx, bm, Math.max(0, hx - 9), hx - 2)) b.units.push(bm);
   say(b, `The core of the hive. At its far end the ${BOSS_NAMES.hivemind} beats in a pocket of flesh: it never moves, but it pulses, lashes out and calls the brood out of the walls. Kill it and the hive dies with it.`, "danger");
 });
+// The Hivemind's second phase (HIVEMIND.P2), once, below half its health: it convulses (u.phase2: its sprite, the hive's
+// pulse sound), the cave quakes (pillars of flesh and bone come down in the open, never closing a passage: only where
+// all eight neighbours are open and nobody stands; those of yours next to one may be hurt), and from now on it pulses
+// further and harder and tears more brood out of the walls (st.phase2: the turn it began).
+function phaseTwo(b, u, st) {
+  const P = HIVEMIND.P2, rng = b.rng;
+  st.phase2 = st.turns;
+  u.phase2 = true;
+  b.hivePhase2 = b.turn || 1;
+  say(b, `The ${BOSS_NAMES.hivemind} tears open and bleeds light: it is dying, and it pulls the whole hive in with it. The cave shakes.`, "danger");
+  fx(b, { type: "melee", from: [u.x, u.y], to: [u.x, u.y], hit: true, crit: false, dmg: 0, side: "enemy", text: "ENRAGED" });
+  const free = (x, y) => x >= 0 && y >= 0 && x < b.w && y < b.h && b.cells[y * b.w + x].k === "open" && !b.units.some((o) => o.x === x && o.y === y && !o.dead && !o.left);
+  const n = rng.int(P.quake[0], P.quake[1]);
+  const fell = [];
+  for (let tries = 0; tries < 80 && fell.length < n; tries++) {
+    const x = rng.int(2, b.w - 3), y = rng.int(1, b.h - 2);
+    if (!free(x, y) || Math.max(Math.abs(x - u.x), Math.abs(y - u.y)) <= 2) continue;
+    let ok = true;
+    for (let dy = -1; dy <= 1 && ok; dy++) for (let dx = -1; dx <= 1; dx++) { if (!(dx || dy)) continue; const xx = x + dx, yy = y + dy; if (!(xx >= 0 && yy >= 0 && xx < b.w && yy < b.h) || b.cells[yy * b.w + xx].k !== "open") { ok = false; break; } }
+    if (!ok) continue;
+    const c = b.cells[y * b.w + x];
+    for (const key of Object.keys(c)) delete c[key];
+    c.k = "hivewall"; c.f = "dirt";
+    fell.push([x, y]);
+  }
+  if (b.losCache) b.losCache.fill(0);
+  b.rev = (b.rev || 0) + 1;
+  const hurt = [];
+  for (const t of b.units) {
+    if (t.side !== "player" || !active(t)) continue;
+    const close = fell.some(([x, y]) => Math.max(Math.abs(t.x - x), Math.abs(t.y - y)) <= 1);
+    if (!rng.chance(close ? Math.min(0.9, P.quakeHit * 2) : P.quakeHit * 0.3)) continue;
+    damage(b, t, rng.int(P.quakeDmg[0], P.quakeDmg[1]), null, false, null);
+    hurt.push(t.name);
+  }
+  say(b, `${fell.length} pillar${fell.length === 1 ? "" : "s"} of flesh and bone come down${hurt.length ? `: ${hurt.join(", ")} caught under the falling flesh` : ""}.`, "danger");
+}
 // The Hivemind's turn (combat.js registerBossAI): the pulse, a lash, the brood out of the walls.
 registerBossAI("hivemind", {
   turn(b, u) {
     const M = HIVEMIND, rng = b.rng;
     const st = b.hivemind || (b.hivemind = { id: u.id, tier: 0, spawned: 0, turns: 0 });
     st.turns++;
+    if (M.P2.on && !st.phase2 && u.hp < u.maxHp * M.P2.at) phaseTwo(b, u, st);
+    const P = st.phase2 ? M.P2 : M;
     const cheb = (o) => Math.max(Math.abs(o.x - u.x), Math.abs(o.y - u.y));
     const foes = b.units.filter((o) => o.side === "player" && active(o));
-    const near = foes.filter((o) => cheb(o) <= M.pulse);
+    const near = foes.filter((o) => cheb(o) <= P.pulse);
     if (near.length) {
-      say(b, `The ${BOSS_NAMES.hivemind} pulses: a wave of heat and pressure through the flesh.`, "danger");
+      say(b, st.phase2 ? `The ${BOSS_NAMES.hivemind} convulses: a scalding wave through the flesh.` : `The ${BOSS_NAMES.hivemind} pulses: a wave of heat and pressure through the flesh.`, "danger");
       for (const t of near) {
-        damage(b, t, rng.int(M.pulseDmg[0], M.pulseDmg[1]), u, false, null);
+        damage(b, t, rng.int(P.pulseDmg[0], P.pulseDmg[1]), u, false, null);
         fx(b, { type: "melee", from: [u.x, u.y], to: [t.x, t.y], hit: true, crit: false, dmg: 0, side: "enemy", text: "PULSE" });
-        if (active(t) && rng.chance(M.stun) && !(t.stun && !t.stun.applied && t.stun.next >= nextTurnOf(b, t))) t.stun = { aim: 15, ap: 1, next: nextTurnOf(b, t), dazed: false };
+        if (active(t) && rng.chance(P.stun) && !(t.stun && !t.stun.applied && t.stun.next >= nextTurnOf(b, t))) t.stun = { aim: 15, ap: 1, next: nextTurnOf(b, t), dazed: false };
       }
     }
     const lash = foes.filter((o) => active(o) && cheb(o) <= 1);
@@ -1109,8 +1462,9 @@ registerBossAI("hivemind", {
       say(b, `A tendril lashes out of the ${BOSS_NAMES.hivemind} at ${t.name} for ${eff}.`, "danger");
       fx(b, { type: "melee", from: [u.x, u.y], to: [t.x, t.y], hit: true, crit: false, dmg: eff, side: "enemy" });
     }
-    const cap = M.cap + M.capTier * (st.tier || 0);
-    if (st.turns % M.spawnEvery === 1 && st.spawned < cap) {
+    const cap = M.cap + M.capTier * (st.tier || 0) + (st.phase2 ? M.P2.cap : 0);
+    const due = st.phase2 ? (st.turns - st.phase2) % M.P2.spawnEvery === 0 : st.turns % M.spawnEvery === 1;
+    if (due && st.spawned < cap) {
       const cells = [];
       for (let y = u.y - 6; y <= u.y + 6; y++) for (let x = u.x - 8; x <= u.x + 1; x++) {
         if (x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
@@ -1121,7 +1475,7 @@ registerBossAI("hivemind", {
         if (wall) cells.push([x, y]);
       }
       rng.shuffle(cells);
-      const n = Math.min(cap - st.spawned, rng.int(M.spawn[0], M.spawn[1]), cells.length);
+      const n = Math.min(cap - st.spawned, rng.int(P.spawn[0], P.spawn[1]), cells.length);
       const power = (b.setup.enemy && b.setup.enemy.broodPower) || 5;
       for (let i = 0; i < n; i++) {
         const z = enemyUnit(b, rng, "zombies", power, b.units.filter((o) => o.kind === "zombie").length + 1);
@@ -1183,6 +1537,13 @@ export function hiveCrawlAutoStep(state, p) {
   const den = denOf(state, hive);
   if (search && crawlRoom(state, c).kind === "bones") { roomAct(state, p, "search"); return; }
   if (!canMoveOn(state, c)) { leaveHive(state, p); return; }
+  // Two or more ways on that do not read colder and that it knows nothing of: a good listener listens at the first
+  // (an hour), else a flare goes down it while the hive is quiet (the window's Listen and Flare).
+  const unknown = exitsOf(state, p).filter((x) => !x.visited && !x.heard && x.draft !== "colder").sort((a, b) => a.id.localeCompare(b.id));
+  if (unknown.length >= 2 && c.alert < A.lie - 10) {
+    if (listener(state, p).v >= HCRAWL.LISTEN.auto) { listenAt(state, p, unknown[0].id); return; }
+    if (c.alert < 40 && flaresOf(state, p).length) { throwFlare(state, p, unknown[0].id); return; }
+  }
   const next = autoNext(state, p, c, den);
   if (!next) { leaveHive(state, p); return; }
   moveTo(state, p, next);
@@ -1191,9 +1552,11 @@ export function hiveCrawlAutoStep(state, p) {
 // (not back), else the first step toward the nearest chamber it knows of and has not been in.
 function autoNext(state, p, c, den) {
   const ex = exitsOf(state, p).filter((x) => !(x.visited && x.room && (x.room.kind === "collapse" || x.room.dead && !ROOM_KINDS[x.room.kind].burn && !ROOM_KINDS[x.room.kind].search)));
-  const fresh = ex.filter((x) => !x.visited);
+  const fresh = ex.filter((x) => !x.visited && !(x.heard && x.heard.q !== "vague" && x.heard.kind === "collapse")); // heard or lit: a dead end
+  // What it knows of a way on (listening, a flare): the core first, then the fewest of the brood; unknown ones as 6.
+  const est = (x) => (!x.heard ? 6 : x.heard.kind === "core" && x.heard.q !== "vague" ? -1 : x.heard.q === "exact" ? x.heard.n : (x.heard.lo + x.heard.hi) / 2);
   const warm = fresh.filter((x) => x.draft === "warmer");
-  if (warm.length) return warm.sort((a, b) => a.id.localeCompare(b.id))[0].id;
+  if (warm.length) return warm.sort((a, b) => est(a) - est(b) || a.id.localeCompare(b.id))[0].id;
   const level = fresh.filter((x) => x.draft === "level");
   if (level.length) return level[0].id;
   // Known chambers: a breadth-first walk over the chambers the team has been in to the nearest unexplored passage.
@@ -1248,7 +1611,8 @@ export function crawlEstimate(state, hive, G = guardSize(state, hive)) {
 // budget runs out (driven off partway; a later party starts from what is still clear), and burns the hive out when it
 // reaches and pays for the core. Returns { burned, cut (the guard killed), met (all it ran into), reached (chambers
 // deep), depth }.
-export function groupHiveCrawl(state, hive, budget) {
+export function groupHiveCrawl(state, hive, budget, fid = null) {
+  budget *= 1 + HCRAWL.GROUP.light; // torches and flares, listening at the passages: the party's strength goes further (coarse)
   const den = denOf(state, hive);
   const g = hiveGuard(state, hive);
   const G = g ? g.size : 0;
@@ -1263,7 +1627,7 @@ export function groupHiveCrawl(state, hive, budget) {
   for (const id of path) {
     const r = roomById(den, id);
     if (r.kind === "core") {
-      const cost = core.count * unit + HCRAWL.GROUP.boss + HCRAWL.GROUP.bossTier * den.tier;
+      const cost = core.count * unit + HCRAWL.GROUP.boss + HCRAWL.GROUP.bossTier * den.tier + (HIVEMIND.P2.on ? HCRAWL.GROUP.phase2 : 0); // its second phase too
       met += cost;
       reached = den.depth;
       if (left >= cost) { burned = true; killed += core.count; left -= cost; } else { killed += unit > 0 ? Math.min(core.count, Math.floor(left / unit)) : 0; left = 0; }
@@ -1281,6 +1645,7 @@ export function groupHiveCrawl(state, hive, budget) {
   }
   const cut = Math.min(G, Math.round(killed * share));
   if (g && cut > 0) reduceHorde(state, g, cut);
+  noteGroupCrawl(hive, fid, reached); // how deep its parties got (the State Map's hive panel)
   return { burned, cut, met: Math.round(met), reached, depth: den.depth, spent: Math.round(budget - left) };
 }
 
@@ -1289,4 +1654,7 @@ export const HIVE_CRAWL_HELP = `A hive is destroyed from the inside. Send a team
 <b>Finding the way.</b> The chambers form a web: at least two routes run to the core, with side branches, dead ends and loops. You see the passages out of every chamber you have been in; what lies beyond is dark until you go. The core is the hottest place in the hive: every chamber has a <b>warmth</b> (the gauge, and the air: <i>cool and damp</i>, <i>close and clammy</i>, <i>warm as breath</i>, <i>hot</i>, <i>the walls sweat</i>), and every passage a draft, <i>warmer</i> or <i>colder</i>. A team without a good scout misreads a draft now and then (${Math.round(HCRAWL.DRAFT.miss * 100)}% less ${Math.round(HCRAWL.DRAFT.perScout * 1000) / 10} a point of the best Scouting). The deeper, the louder and faster the hive's pulse and the warmer its drone (the mixer's <i>Hive crawl pulse</i>), and the redder the window.<br>
 <b>The brood.</b> Every chamber holds some of the hive's brood: more and tougher the deeper you go, the special dead the hive breeds among them, the elite deeper still, and the chambers next to the core the worst. A hive's guard horde is its brood: every one killed inside thins the guard, and fires set outside (or a war party) mean emptier chambers. Fight them (on a cave map or by the numbers), creep past (Stealth; they stay there and you meet them again on the way back), or fall back. Cleared chambers stay clear for about ${HCRAWL.REFILL_DAYS} days, then the brood flows back: you can crawl part of the way, come home to heal and come back. Kinds of chamber: tunnels, galleries, <i>nurseries</i> (many and weak), <i>egg chambers</i> (burn them with ${HCRAWL.BURN.fuel} fuel or a Molotov: the hive loses stores and some of its guard, and fills its chambers more slowly), <i>bone pits</i> (the remains of teams that came before: their worn guns, armour, packs, ammunition and meds), <i>worm pools</i> (the worm's eggs: wading through is a risk, feeling through the water more), the <i>roots</i> of the hive's growths (burn one to hurt the growth above), and collapses that lead nowhere.<br>
 <b>The hive's Alert.</b> Moving, fighting, fire and a failed sneak make noise; lying still lets it fade. From ${HCRAWL.ALERT.converge} the brood converges on you: it pours into your chamber and fills the chambers behind you again; from ${HCRAWL.ALERT.block} it packs the mouth. Leaving means going back the way you came.<br>
-<b>The ${BOSS_NAMES.hivemind}.</b> In the core the ${BOSS_NAMES.hive} and the last of the brood guard it. It never moves, but every turn it pulses (everyone within ${HIVEMIND.pulse} tiles hurt and sometimes stunned), lashes at anyone next to it, and every other turn tears more brood out of the walls. It has ${HIVEMIND.hp} health (+${HIVEMIND.perTier} a tier) and thick flesh. Its death kills the brood around it. The other groups crawl hives too (their war parties clear chambers on the shortest way and come back), and allied fighters thin the brood in every chamber.`;
+<b>The ${BOSS_NAMES.hivemind}.</b> In the core the ${BOSS_NAMES.hive} and the last of the brood guard it. It never moves, but every turn it pulses (everyone within ${HIVEMIND.pulse} tiles hurt and sometimes stunned), lashes at anyone next to it, and every other turn tears more brood out of the walls. It has ${HIVEMIND.hp} health (+${HIVEMIND.perTier} a tier) and thick flesh. Below ${Math.round(HIVEMIND.P2.at * 100)}% it tears open in a <b>second phase</b>: the cave quakes and pillars of flesh come down, its pulse reaches ${HIVEMIND.P2.pulse} tiles and hits harder, and the walls give up ${HIVEMIND.P2.spawn[0]}–${HIVEMIND.P2.spawn[1]} brood at a time. Its death kills the brood around it. The other groups crawl hives too (their war parties clear chambers on the shortest way and come back, and take the hoard of a hive they burn), and allied fighters thin the brood in every chamber.<br>
+<b>The hoard.</b> In the dead core lies what the hive dragged in from the dead: guns, armour, rounds, meds, gun parts and scrap, now and then something rare (night vision, a thermal sight, a military radio, a surgical kit), all worn as the dead left it; more the higher the hive's tier and the fuller its stores. The team takes what fits (the best first); the rest stays at the hive, marked on the map: Recover it.<br>
+<b>Lights, flares and listening.</b> The hive is dark. With the team's lights on (the default when anyone carries one: headlamp, flashlight, torch, lantern) the drafts out of your chamber are misread half as often, but the brood sees you coming (Alert +${HCRAWL.LIGHT.move} a move, creeping past a little harder); douse them in the window. In a fight in the hive someone without a light sees ${HCRAWL.LIGHT.dark} tiles, with one their light's reach + ${HCRAWL.LIGHT.lit}; by the numbers the brood in a chamber counts up to ${Math.round(HCRAWL.LIGHT.numbers * 100)}% more for the share of the team in the dark. A <b>road flare</b> thrown down a passage lights the chamber beyond: its kind, its brood exactly and the true draft (Alert +${HCRAWL.FLARE.alert}; found at gas stations, police and fire stations and campgrounds, made from scrap, fuel and a few rounds). <b>Listen</b> at a passage (${HCRAWL.LISTEN.hours} h): your best listener's (Scouting + Stealth) / 2 + d10 against ${HCRAWL.LISTEN.dc} (+${HCRAWL.LISTEN.perLayer} a chamber deep): well, the kind and the brood exactly; enough, the kind and roughly how many; poorly, a guess that can be wrong; badly, a noise that warns them (Alert +${HCRAWL.LISTEN.alert}, they wait for you). The autopilot listens with a good listener and throws flares without one.<br>
+<b>Your record.</b> Every hive keeps what your teams learned of it: how deep they got, the chambers mapped, whether they found the core (the State Map's hive tile and its ⛏ label, the Goals card). When the hive grows deeper its chambers are new and the map starts again.`;

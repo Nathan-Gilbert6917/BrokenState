@@ -1220,6 +1220,10 @@ export function render(state) {
       ctx.fill();
     }
     sprite(hiveSpriteCanvas(level), px, py - 1 * s, w, { alpha: isLive ? 1 : 0.8 });
+    // How deep your crawls got (sim/hivecrawl.js hive.crawlRec): "⛏ 4/7", a star once its core was found.
+    const hv = state.hives && state.hives.find((h) => h.tile === id);
+    const rec = hv && hv.crawlRec && hv.den ? hv.crawlRec : null;
+    if (rec) labels.push({ text: `⛏ ${Math.min(rec.deepest || 0, hv.den.depth)}/${hv.den.depth}${rec.core ? " ★" : rec.coreHeard ? " ☆" : ""}`, x: px, y: py + 9 * s + 6, pri: 1, screen: true, color: rec.core ? "#ffcf6a" : "#e0a080", size: 9 });
   }
   // A hive's growths (sim/hivetech.js) you know about: small organic structures beside it, smaller and faint while
   // still growing, grey husks once their hive is gone. Live ones as they are, the rest as last reported.
