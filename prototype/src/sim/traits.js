@@ -225,7 +225,10 @@ export function traitSkill(s, k) {
 /** @param {any} state @param {any} s @param {string} how @returns {boolean} */
 export function stomachShrugs(state, s, how) {
   if (!hasTrait(s, "ironstomach") || !FX.STOMACH_HOW.includes(how)) return false;
-  return traitHash((state && state.seed) || 1, s.id | 0, (state && state.hour) | 0, FX.STOMACH_HOW.indexOf(how)) < traitFx(s, "ironstomach", "shrug");
+  // The person's world-local id (world.js localId, written out here to keep this module free of world.js): ids are
+  // process-wide, and the same seed must roll the same in a second world.
+  const local = (s.id | 0) - ((state && state.idBase) || 0);
+  return traitHash((state && state.seed) || 1, local, (state && state.hour) | 0, FX.STOMACH_HOW.indexOf(how)) < traitFx(s, "ironstomach", "shrug");
 }
 
 // A hash of whole numbers to 0 ≤ x < 1 (deterministic dice that draw nothing from any rng).

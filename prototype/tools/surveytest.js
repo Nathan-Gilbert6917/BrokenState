@@ -20,6 +20,7 @@
 // - save / load mid-survey plays on the same; determinism (two worlds, one process)
 // - how fast the autopilot finds the hidden sites near the hub (≤ 12 tiles) with surveys and without (state.surveyOff)
 import { createWorld, tickHour, hub, day, atBase, snapshot, survivorById, baseVision } from "../src/sim/world.js";
+import { appetite } from "../src/sim/traits.js";
 import { NEEDS, teamCold } from "../src/sim/needs.js";
 import { personRation } from "../src/sim/load.js";
 import { thirstAt, coldAt } from "../src/sim/weather.js";
@@ -58,7 +59,7 @@ const land = (st, t) => st.tiles[t].terrain !== "water";
 const forceWeather = (st, key, fromHour = st.hour, days = 4) => { for (let d = 0; d < days; d++) { const dn = Math.floor(fromHour / 24) + d + 1; weatherOnDay(st, dn); Object.assign(st.weather.days[dn - 1], { k: key, all: true }); } }; // all: the whole state, fronts or not (weather.js)
 const pct = (v) => `${Math.round(v * 100)}%`;
 // A person with a set Scouting (and no traits that change it).
-const scoutOf = (st, n, scout) => atBase(st, hub(st).id).slice(0, n).map((s) => { s.skills.scouting = scout; s.traits = s.traits.filter((t) => !["keeneye", "lucky"].includes(t)); s.perks = []; return s; });
+const scoutOf = (st, n, scout) => atBase(st, hub(st).id).slice(0, n).map((s) => { s.skills.scouting = scout; s.traits = []; s.traitTier = {}; s.perks = []; return s; });
 const giveItem = (s, key) => { const it = newItem(key, 1); if (!stow(s, it)) s.pockets[0] = it; return it; };
 const clearOptics = (s) => { for (const k of ["tool"]) if (s.gear[k] && GEAR[s.gear[k].key].optics) s.gear[k] = null; s.pockets = (s.pockets || []).map((it) => (it && GEAR[it.key] && GEAR[it.key].optics ? null : it)); if (s.gear.backpack && s.gear.backpack.contents) s.gear.backpack.contents = s.gear.backpack.contents.map((it) => (it && GEAR[it.key] && GEAR[it.key].optics ? null : it)); };
 
@@ -411,8 +412,9 @@ console.log("Estimates in winter: the cold and the camp fire");
     const rateNow = () => {
       const mv = onTheMove(p) || sweeping(p);
       const r = partyMembers(st, p).reduce((a, s) => a + personRation(p.burden, s, p.vehicle, mv), 0) / 24;
+      const rf = partyMembers(st, p).reduce((a, s) => a + personRation(p.burden, s, p.vehicle, mv) * appetite(s), 0) / 24; // a Glutton eats more (traits.js)
       const f = coldAt(st, st.hour + 1), warm = f > 1 && teamFire(st, p) === true;
-      return { food: r * (warm ? 1 : f), water: r * thirstAt(st, st.hour + 1), warm, cold: f > 1 && !warm };
+      return { food: rf * (warm ? 1 : f), water: r * thirstAt(st, st.hour + 1), warm, cold: f > 1 && !warm };
     };
     let delay = 0, start = st.hour, eatenOut = 0, drunkOut = 0, foodHome = food0, last = { food: 0, water: 0 }, warmH = 0, coldH = 0, gulps = true;
     for (let i = 0; i < 24 * 12 && st.parties.includes(p); i++) {
