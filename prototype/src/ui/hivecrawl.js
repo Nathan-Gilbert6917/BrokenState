@@ -34,7 +34,8 @@ export function hiveCrawlModal(state, ui) {
   const msg = ui.hcMsg && ui.hcMsgKey === `${p.id}:${c.started}` ? `<div class="result" style="margin:0.4rem 0">${esc(ui.hcMsg)}</div>` : "";
   // The warmth on the window: a tint and a vignette that redden toward the core.
   const style = `background:linear-gradient(180deg, ${warmColor(w, 0.10 + w / 600)}, rgba(0,0,0,0) 55%), var(--panel);box-shadow:inset 0 0 ${30 + w * 0.9}px ${warmColor(w, 0.18 + w / 280)}, 0 10px 40px rgba(0,0,0,0.5);border-color:${warmColor(w, 0.8)}`;
-  return `<div class="box wide hivecrawl" data-warmth="${w}" style="${style}"><h1>${esc(c.name)} · ${esc(roomName(room))}<span class="muted small" style="font-weight:normal"> — ${room.layer ? `${room.layer} chamber${room.layer === 1 ? "" : "s"} in` : "the mouth"}</span></h1>
+  const title = c.name ? c.name[0].toUpperCase() + c.name.slice(1) : "The hive";
+  return `<div class="box wide hivecrawl" data-warmth="${w}" style="${style}"><h1>${esc(title)} · ${esc(roomName(room))}<span class="muted small" style="font-weight:normal"> — ${room.layer ? `${room.layer} chamber${room.layer === 1 ? "" : "s"} in` : "the mouth"}</span></h1>
     ${hud(state, p, c, den, room, w)}${msg}
     <div class="grid2" style="gap:0.7rem;align-items:start">
       <div>${mapSvg(state, p, c, den)}</div>

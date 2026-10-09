@@ -68,7 +68,7 @@ export const HCRAWL = {
   // The brood in a chamber: (base + perLayer × its layer) × its kind's share × the guard's scale (√(guard / guardRef),
   // within scale), between min and max; × nearCore next to the core. Their power: the hive's brood (hives.js
   // broodForce of the guard, eras.js broodGrowth in it) × (1 + powerPerLayer × layer) × the kind's.
-  BROOD: { base: 3, perLayer: 0.9, min: 2, max: 14, powerPerLayer: 0.06, nearCore: 1.3, guardRef: 80, scale: [0.5, 1.8] },
+  BROOD: { base: 3, perLayer: 0.9, min: 2, max: 14, powerPerLayer: 0.06, nearCore: 1.3, guardRef: 80, scale: [0.35, 1.8] },
   SPECIAL: { base: 0.08, perLayer: 0.06, max: 0.6 }, // the share of the special dead (the kinds its growths breed) by layer
   ELITE_FROM: 0.6,              // elite brood (a mutation vat) from this share of the depth; always next to the core from tier 3
   REFILL_DAYS: 14, EGG_REFILL: 2, // a cleared chamber fills again after this many days (× EGG_REFILL once its eggs burned)
@@ -86,7 +86,7 @@ export const HCRAWL = {
   BURN: { fuel: 3, molotovs: 1, res: 8, guard: 0.05, growth: 70, wake: 0.3 }, // burning eggs or a growth's root
   BONES: { items: [1, 3], ammo: [6, 20], meds: [0, 3], keys: ["pistol", "revolver", "shotgun", "huntrifle", "machete", "vest", "hikingpack", "bikehelmet", "knife", "ar", "hatchet", "plate", "bat"] },
   POOL_WORM: 2,                 // hours of the worm's exposure (worm.js wormSearch) wading through a worm pool; ×2 searching it
-  CORE: { base: 6, perDepth: 0.5, min: 3, max: 16 }, // the brood around the Hivemind (× the guard's scale)
+  CORE: { base: 6, perDepth: 0.3, min: 3, max: 14, powerPerDepth: 0.025 }, // the brood around the Hivemind (× the guard's scale; its power + powerPerDepth a chamber of depth)
   // A fight in the hive by the numbers (crawlByNumbers), fitted to the same fights played on the cave map by the AI on
   // both sides (6 fighters against 3–16 brood; the team's health lost ≈ k × (their strength / yours)^exp, at most cap;
   // lost: at least lost): the blows spread over the team as on the map (small fights rarely kill; the generic model
@@ -101,7 +101,7 @@ export const HCRAWL = {
 // turn a pulse within pulse tiles (pulseDmg, stun: the chance to cost the next turn an action) and a lash at someone
 // next to it; every spawnEvery turns spawn of the brood from the walls near it, at most cap + capTier × tier in all.
 // power: what it counts for by the numbers (with the Broodmother's broodPower).
-export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 2, power: 18, powerTier: 8, broodPower: 10 };
+export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9 };
 
 // The kinds of chamber: name, share of the brood (brood) and its power, the special dead among them (special), what
 // can be done there (burn: eggs or a growth's root; search: what lies in it), its battle map size, how it reads.
@@ -300,7 +300,7 @@ export function coreForce(state, hive, G = guardSize(state, hive)) {
   const den = denOf(state, hive);
   const C = HCRAWL.CORE, s = guardScale(G);
   const count = s ? clamp(Math.round((C.base + C.perDepth * den.depth) * s), C.min, C.max) : 0;
-  const power = Math.round(broodForce(Math.max(HIVE.GUARD_MIN, G), state).power * (1 + HCRAWL.BROOD.powerPerLayer * den.depth) * 10) / 10;
+  const power = Math.round(broodForce(Math.max(HIVE.GUARD_MIN, G), state).power * (1 + C.powerPerDepth * den.depth) * 10) / 10;
   return {
     count, power, types: broodTypes(state, hive, count, den.depth), elite: hiveMods(state, hive).elite, tier: den.tier, depth: den.depth,
     hp: HIVEMIND.hp + HIVEMIND.perTier * den.tier, bossPower: HIVEMIND.power + HIVEMIND.powerTier * den.tier + HIVEMIND.broodPower,
@@ -1205,18 +1205,19 @@ function autoNext(state, p, c, den) {
 export function crawlEstimate(state, hive, G = guardSize(state, hive)) {
   const den = denOf(state, hive);
   const path = shortestPath(den);
-  let fights = 0, brood = 0;
+  let fights = 0, brood = 0, worst = 0;
   for (const id of path) {
     const r = roomById(den, id);
     if (r.kind === "core") continue;
     const n = Math.min(roomFull(state, hive, den, r, G), broodLeft(state, hive, r, G));
-    if (n > 0) { fights++; brood += (n * roomPower(state, hive, den, r, G)) / 5.2; }
+    const v = (n * roomPower(state, hive, den, r, G)) / 5.2;
+    if (n > 0) { fights++; brood += v; worst = Math.max(worst, v); }
   }
   const core = coreForce(state, hive, G);
   const allies = hiveAllies(state, hive).fighters;
   const count = core.count ? broodAfterAllies(core.count, allies) : 0;
   const coreStrength = (count * core.power + core.bossPower) / 5.2;
-  return { depth: den.depth, fights, brood, coreStrength, wear: 1 + HCRAWL.AUTO.wear * fights, strength: coreStrength * (1 + HCRAWL.AUTO.wear * fights), hours: den.depth * (HCRAWL.MOVE_HOURS + HCRAWL.FIGHT_HOURS) + 6 };
+  return { depth: den.depth, fights, brood, worst, coreStrength, wear: 1 + HCRAWL.AUTO.wear * fights, strength: coreStrength * (1 + HCRAWL.AUTO.wear * fights), hours: den.depth * (HCRAWL.MOVE_HOURS + HCRAWL.FIGHT_HOURS) + 6 };
 }
 
 // ---------- the AI groups' crawl ----------

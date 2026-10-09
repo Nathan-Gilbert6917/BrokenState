@@ -10,7 +10,8 @@
 // fight with its guard), decay at a destroyed hive, the horde mix (merging, splitting, battle counts, the walls'
 // weight, crawlers slipping past, border hordes), determinism and save/load; the special dead in battle (stats, a
 // hidden crawler, acid through cover, a brute smashing a barricade, a screamer calling the dead, the same battle
-// twice). Then the two battles calibrated: storming a hive (well-armed vs poorly armed team) and break-ins at the
+// twice). Then the two battles calibrated: the core of a hive at the end of its crawl (hivecrawl.js: the Hivemind, the
+// Broodmother and the brood; well-armed vs poorly armed team) and break-ins at the
 // hub by horde size.
 // Usage: node tools/hivetest.js [trials=24]
 import { createWorld, tickHour, day, makeSurvivor, hub, alive } from "../src/sim/world.js";
@@ -33,6 +34,7 @@ import { createBattle, canSee, shotOdds, CELL, registerCombatHandler, autoPlayer
 import { crawlerSlip } from "../src/sim/defences.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { clusterSize } from "../src/sim/hives.js";
+import { coreForce } from "../src/sim/hivecrawl.js";
 
 const TRIALS = Number(process.argv[2] || 24);
 let pass = 0, fail = 0;
@@ -612,7 +614,7 @@ function stormTrial(seed, n, weapon, armor, shooting) {
   console.log(`Calibration (${TRIALS} battles each, played by the AI on both sides)`);
   const fw = world(1), fh = fw.hives[0];
   makeHorde(fw, { tile: fh.tile, size: 80, role: "guard", hive: fh.id, target: fh.tile });
-  const force = hiveForce(fw, fh);
+  const force = coreForce(fw, fh); // the core room at the end of the crawl (hivecrawl.js): assaultHive is its fight
   const rows = [
     ["6 fighters, assault rifles + plate, Shooting 10", 6, "ar", "plate", 10],
     ["5 fighters, shotguns + vests, Shooting 7", 5, "shotgun", "vest", 7],
@@ -623,7 +625,7 @@ function stormTrial(seed, n, weapon, armor, shooting) {
     let won = 0, dead = 0;
     for (let i = 0; i < TRIALS; i++) { const r = stormTrial(100 + i, n, w, a, sh); won += r.won; dead += r.dead; }
     res.push(won / TRIALS);
-    console.log(`    storm a hive (guard 80: ${force.count} brood at power ${force.power} and the Broodmother) with ${label}: won ${Math.round((won / TRIALS) * 100)}%, ${(dead / TRIALS).toFixed(1)} dead a battle`);
+    console.log(`    the core of a hive (guard 80: ${force.count} brood at power ${force.power}, the Broodmother and the Hivemind, ${force.hp} hp) with ${label}: won ${Math.round((won / TRIALS) * 100)}%, ${(dead / TRIALS).toFixed(1)} dead a battle`);
   }
   check(res[0] >= 0.5, "a well-armed team usually destroys a hive");
   check(res[2] <= 0.35, "a poorly armed team usually does not");

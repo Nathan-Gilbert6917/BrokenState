@@ -1,4 +1,6 @@
 // The autopilot's hive campaign, emergency hauls and land claims (sim/autopilot.js; docs/coalition-war-plan.md "Autopilot (C)").
+// (hivecrawl.js: a hive is crawled to its core; when the core is beyond the squad the campaign sends crawl trips that
+// clear the way and thin the brood, counted as crawlTrips.)
 // Forced scenarios in the wintest.js manner (the setup is rigged, the rules are the game's):
 // 1. Campaign: a Balanced hub with six well-armed fighters, a known hive with a 150-strong guard about 20 tiles off
 //    (every other hive removed, destroyHive's bookkeeping intact) and a friendly group near it. Within 400 days the
@@ -102,8 +104,9 @@ function campaignScenario(seed) {
   state.gameOver = false;
   const st = autopilotStats(state);
   const rj = st.hiveRejects || {};
-  console.log(`  day ${day(state)}: ${lines} campaign lines, ammo peak ${maxAmmo} (92 reached ${ammoDay != null ? `day ${ammoDay}` : "never"}), ${fires} fires, fire trips ${st.fireTrips || 0}, storm trips ${st.stormTrips || 0}${stormDay != null ? ` (first day ${stormDay})` : ""}, ${f.name} ${inviteDay != null ? `joined day ${inviteDay}` : "not a member"}, hive ${hiveAt(state, hive.tile) ? "stands" : "destroyed"}, ${alive(state).length} alive`);
+  console.log(`  day ${day(state)}: ${lines} campaign lines, ammo peak ${maxAmmo} (92 reached ${ammoDay != null ? `day ${ammoDay}` : "never"}), ${fires} fires, fire trips ${st.fireTrips || 0}, crawl trips ${st.crawlTrips || 0}, storm trips ${st.stormTrips || 0}${stormDay != null ? ` (first day ${stormDay})` : ""}, ${f.name} ${inviteDay != null ? `joined day ${inviteDay}` : "not a member"}, hive ${hiveAt(state, hive.tile) ? "stands" : "destroyed"}, ${alive(state).length} alive`);
   console.log(`  rejects: ${REJECT_KEYS.map((k) => `${k} ${rj[k] ?? "-"}`).join(", ")}`);
+  if (process.env.CTLOG) for (const l of state.log.filter((x) => /hive|Hive|brood|died/.test(x.text))) console.log(`    d${Math.floor((l.hour ?? 0) / 24)} ${l.text}`);
   console.log(`  first line: ${firstLine}`);
   check(lines > 0 && /^Campaign on /.test(firstLine), "the campaign line is logged each morning (campaignLine)");
   check(REJECT_KEYS.every((k) => Number.isFinite(rj[k])) && REJECT_KEYS.reduce((a, k) => a + rj[k], 0) > 0, "hiveRejects counters populated");
@@ -115,7 +118,7 @@ function campaignScenario(seed) {
   const byGroup = !hiveAt(state, hive.tile) && (st.stormTrips || 0) === 0 && !logHas(state, /was destroyed by your team/);
   if (byGroup) console.log(`  note: a group's war party destroyed the hive on its own (day ${day(state)}): the fire and storm checks do not apply`);
   else {
-    check(fires > 0 || logHas(state, /The hive: .*→ (Set fires|Firebomb)/) || (st.stormTrips || 0) > 0, `fires set at the mound (${fires}), or the storm went without needing them`);
+    check(fires > 0 || logHas(state, /The hive: .*→ (Set fires|Firebomb)/) || (st.stormTrips || 0) + (st.crawlTrips || 0) > 0, `fires set at the mound (${fires}), or the storm (or a crawl trip, hivecrawl.js) went without needing them`);
     check((st.stormTrips || 0) > 0 || logHas(state, /The hive: .*→ Enter the hive/) || !hiveAt(state, hive.tile), "a storm launched");
     check(day(state) >= P.hiveFrom, "ran past the style's hiveFrom day");
   }
