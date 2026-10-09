@@ -58,8 +58,8 @@ console.log("Voice sets");
   const kinds = Object.keys(Z.PROFILE);
   const zk = Object.keys(ZTYPES).map((k) => Z.voiceKind({ kind: "zombie", ztype: k }));
   check(Object.keys(ZTYPES).every((k, i) => Z.VOICE_SETS[zk[i]]), `every ZTYPES kind has a voice set (${Object.keys(ZTYPES).map((k, i) => `${k}→${zk[i]}`).join(", ")})`);
-  check(Z.voiceKind({ kind: "zombie", ztype: "soldier" }) === "armoured" && Z.voiceKind({ kind: "zombie", ztype: "riot" }) === "armoured", "the armoured dead (soldiers, riot police) clank");
-  check(Z.voiceKind({ kind: "zombie" }) === "walker" && Z.voiceKind({ kind: "zombie", turned: true, name: "Dana (turned)" }) === "walker", "the common dead and the turned: walkers");
+  check(Z.voiceKind({ kind: "zombie", ztype: "soldier" }) === "armoured" && Z.voiceKind({ kind: "zombie", ztype: "riot" }) === "riot" && Z.VOICE_SETS.riot.step === "clank", "the armoured dead: soldiers clank, riot police behind a visor");
+  check(Z.voiceKind({ kind: "zombie" }) === "walker" && Z.voiceKind({ kind: "zombie", turned: true, name: "Dana (turned)" }) === "turned", "the common dead walk; the turned keep half a human voice");
   check(Z.voiceKind({ kind: "zombie", boss: "wallbreaker" }) === "wallbreaker" && Z.voiceKind({ kind: "zombie", boss: "broodmother" }) === "broodmother", "Wallbreakers and the Broodmother have their own");
   const missing = [];
   for (const k of kinds) for (const ev of Z.CORE_EVENTS) { const r = Z.recipeFor(k, ev, () => 0); if (!r || !Z.RECIPES[r]) missing.push(`${k}.${ev}`); }
@@ -74,6 +74,26 @@ console.log("Voice sets");
   check(Z.PROFILE.walker.f0 < 85 && Z.PROFILE.brute.f0 < 50 && Z.PROFILE.walker.sub > 0, `the dead sit low, below a human voice (walker ${Z.PROFILE.walker.f0} Hz, brute ${Z.PROFILE.brute.f0} Hz), a torn second pulse under them`);
   check(Z.ZOMBIE_STEPS.on === false && !Z.ZOMBIE_TESTS.some((g) => g.items.some(([v]) => v === "walker:step")) && Z.ZOMBIE_TESTS.some((g) => g.items.some(([v]) => v === "swarm:step")),
     "footsteps are off (the sfx-melee-steps branch has them); the swarm's squirm stays");
+}
+
+// Every kind of the dead the simulation makes: scan src/sim for ztype values, applyZType kinds and boss kinds.
+{
+  const fs = await import("node:fs");
+  const dir = new URL("../src/sim/", import.meta.url);
+  const found = new Set(Object.keys(ZTYPES)), bosses = new Set();
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith(".js")) continue;
+    const src = fs.readFileSync(new URL(f, dir), "utf8");
+    for (const m of src.matchAll(/ztype\s*(?:===|!==|=)\s*"([a-z]+)"/g)) found.add(m[1]);
+    for (const m of src.matchAll(/applyZType\([^,]+,\s*"([a-z]+)"/g)) found.add(m[1]);
+    for (const m of src.matchAll(/bossUnit\(b,\s*"([a-z]+)"/g)) bosses.add(m[1]);
+  }
+  const bad = [...found].filter((k) => { const v = Z.voiceKind({ kind: "zombie", ztype: k }); return !Z.VOICE_SETS[v] || v === "walker"; });
+  check(!bad.length && found.size >= 16, `every ztype in src/sim has its own voice set (${found.size}: ${[...found].map((k) => `${k}→${Z.voiceKind({ kind: "zombie", ztype: k })}`).join(", ")})${bad.length ? `; walker fallback: ${bad.join(", ")}` : ""}`);
+  check([...bosses].every((k) => Z.voiceKind({ kind: "zombie", boss: k }) === k) && bosses.size === 2, `the bosses: ${[...bosses].join(", ")}`);
+  check(Z.voiceKind({ kind: "zombie", turned: { sid: 3 } }) === "turned" && Z.voiceKind({ kind: "zombie", walking: { who: "Dana" } }) === "turned" && Z.voiceKind({ kind: "zombie", ztype: "riot" }) === "riot",
+    "the risen (turned, walking loot) and riot police have their own; soldiers the armoured dead's");
+  check(Z.voiceKind({ kind: "zombie", called: true }) === "walker" && Z.FALLBACK_TO_WALKER.length >= 4, `walker voice, by design: ${Z.FALLBACK_TO_WALKER.join(", ")}`);
 }
 
 // ---------- 2. voice seeds ----------
@@ -377,6 +397,95 @@ console.log("Silences and snarls");
     C.fx(b, { type: "move", unit: quietOne.id, from, path: [[quietOne.x, quietOne.y]] });
     check(battleCues(b, mem, (tt += 0.1)).some((c) => c.name === "zAggro" && c.seed === Z.unitSeed(b, quietOne)), "a quiet one that comes within 2 tiles of your people: always heard then");
   }
+}
+
+// ---------- 6d. close breathing ----------
+console.log("Close breathing");
+{
+  // A battle with one of your people at a free spot and the dead put where asked; runs secs at 10 frames a second.
+  const setup = (seed = 33) => {
+    const [x] = battles(seed, ["field-forest"]);
+    const { b } = x;
+    const me = b.units.find((u) => u.side === "player" && !u.dead);
+    for (const u of b.units) if (u.side === "player" && u !== me) u.left = true;
+    const zs = b.units.filter((u) => u.kind === "zombie" && !u.dead);
+    zs.forEach((z, i) => { z.x = (me.x + 6 + i) % b.w; z.y = (me.y + 6) % b.h; z.aware = true; }); // all far off
+    return { b, me, zs };
+  };
+  const run = (b, mem, t0, secs, log, onTick) => {
+    for (let t = t0; t < t0 + secs - 1e-9; t += 0.1) {
+      if (onTick) onTick(t);
+      for (const c of battleCues(b, mem, Math.round(t * 10) / 10)) if (c.name === "zBreath" || /^z/.test(c.name)) log.push({ t: Math.round(t * 10) / 10, ...c });
+    }
+  };
+  const put = (z, me, dx, dy) => { z.x = me.x + dx; z.y = me.y + dy; };
+  {
+    const { b, me, zs } = setup();
+    const mem = {}, log = [];
+    battleCues(b, mem, 0);
+    put(zs[0], me, 2, 0);
+    run(b, mem, 0.1, 20, log);
+    const br = log.filter((c) => c.name === "zBreath");
+    check(br.length >= 4 && br.every((c) => c.seed === Z.unitSeed(b, zs[0])) && br[0].fade === true && !br[1].fade, `one of the dead 2 tiles off: it breathes (${br.length} breaths in 20 s, the first fading in)`);
+    check(br[0].t <= 1, `it starts within a second of coming close (${br[0].t} s)`);
+    check(br.every((c) => c.sp && Number.isFinite(c.sp.gain) && Number.isFinite(c.dist)), "each breath carries its place in the battle's sound space (sp, as the other cues)");
+    const gaps = br.slice(1).map((c, i) => +(c.t - br[i].t).toFixed(1));
+    check(new Set(gaps).size >= Math.min(4, gaps.length), `slow and irregular (${gaps.join(", ")} s between breaths)`);
+    put(zs[0], me, 3, 0);
+    const after = [];
+    run(b, mem, 20.1, 10, after);
+    check(!after.some((c) => c.name === "zBreath"), "3 tiles off: it stops");
+    // Its own voice: no breath starts while it is sounding.
+    put(zs[0], me, 1, 1);
+    const mix = [];
+    run(b, mem, 30.1, 25, mix, (t) => { if (Math.abs(t - 32) < 0.05 || Math.abs(t - 40) < 0.05 || Math.abs(t - 47) < 0.05) C.fx(b, { type: "melee", from: [zs[0].x, zs[0].y], to: [me.x, me.y], hit: false, side: "enemy" }); });
+    const seed0 = Z.unitSeed(b, zs[0]);
+    const vocals = mix.filter((c) => c.name !== "zBreath" && c.seed === seed0), breaths = mix.filter((c) => c.name === "zBreath");
+    check(vocals.length >= 3 && breaths.length >= 3 && breaths.every((br2) => vocals.every((v) => br2.t < v.t || br2.t >= v.t + Z.EVENT_DUR[Object.keys(Z.EVENT_CUE).find((k) => Z.EVENT_CUE[k] === v.name)] + (v.delay || 0) - 0.11)),
+      `it never starts a breath while its own voice is sounding (${vocals.length} lunges, ${breaths.length} breaths)`);
+  }
+  {
+    const { b, me, zs } = setup(34);
+    applyZType(zs[0], "crawler", false, 3);
+    zs[0].low = true;
+    const mem = {}, log = [];
+    battleCues(b, mem, 0);
+    put(zs[0], me, 2, 0);
+    run(b, mem, 0.1, 8, log);
+    check(!log.some((c) => c.name === "zBreath"), "a crawler hidden in the grass 2 tiles off: not heard");
+    put(zs[0], me, 1, 0);
+    run(b, mem, 8.1, 8, log);
+    check(log.some((c) => c.name === "zBreath" && c.kind === "crawler"), "right next to you, hidden or not: its hissing wheeze");
+  }
+  {
+    const { b, me, zs } = setup(35);
+    const mem = {}, log = [];
+    battleCues(b, mem, 0);
+    put(zs[0], me, 1, 0); put(zs[1], me, 0, 2); put(zs[2], me, 2, 2); put(zs[3], me, -2, 1);
+    run(b, mem, 0.1, 20, log);
+    const who = new Set(log.filter((c) => c.name === "zBreath").map((c) => c.seed));
+    check(who.size === 2 && who.has(Z.unitSeed(b, zs[0])), `four of the dead close: only the nearest two breathe (${who.size})`);
+    const again = [], mem2 = {};
+    const s2 = setup(35);
+    battleCues(s2.b, mem2, 0);
+    put(s2.zs[0], s2.me, 1, 0); put(s2.zs[1], s2.me, 0, 2); put(s2.zs[2], s2.me, 2, 2); put(s2.zs[3], s2.me, -2, 1);
+    run(s2.b, mem2, 0.1, 20, again);
+    check(JSON.stringify(again.filter((c) => c.name === "zBreath").map((c) => [c.t, c.n])) === JSON.stringify(log.filter((c) => c.name === "zBreath").map((c) => [c.t, c.n])), "the same battle: the same breaths");
+    b.night = true;
+    const night = [];
+    run(b, mem, 20.1, 10, night);
+    check(night.filter((c) => c.name === "zBreath").every((c) => c.gain > 1.2), "more present at night");
+  }
+  // The kinds.
+  const B = Z.BREATH;
+  check(Z.recipeFor("swarm", "breath") === "silent" && Z.recipeFor("walker", "breath") === "breathe" && Z.recipeFor("armoured", "breath") === "breathe" && Z.PROFILE.armoured.muffle > 0,
+    "every kind breathes but the worm swarm (its squirm) and a Sleeper; the armoured dead through the helmet");
+  const per = (k) => Z.breathPlan(k, 12345, 0).pair;
+  check(B.brute.band < B.walker.band && B.walker.band < B.runner.band && per("brute") > per("walker") && per("walker") > per("runner") && B.runner.pairs === 2,
+    `a brute deep and slow (${per("brute").toFixed(1)} s a breath), a walker (${per("walker").toFixed(1)} s), a runner fast and ragged (${per("runner").toFixed(1)} s, panting two)`);
+  check(B.crawler.hiss === 1 && B.spitter.wet === 1 && B.carrier.wet === 1, "a crawler wheezes and hisses, spitters bubble, Carriers gurgle");
+  check(Z.BREATH_LEVEL <= Z.LEVELS.moan * 0.5 && Z.ZOMBIE_LIMITS.zBreath.max === 2 && Z.Z_PRIORITY.zBreath > Z.Z_PRIORITY.zIdle,
+    `quiet: its peak ${Z.BREATH_LEVEL} against a moan's ${Z.LEVELS.moan}; two at a time; the last in a busy frame`);
 }
 
 // ---------- 7. the map ----------
