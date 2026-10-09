@@ -22,6 +22,7 @@ import { ZOMBIE_MOVE, playerSees } from "../sim/combat.js";
 import { zRevealed } from "../sim/zombietypes.js";
 import { FLASH } from "../sim/throwables.js"; // a flashbang's numbers
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
+import { MEDIC } from "../sim/medics.js"; // stabilizing oneself: the odds by item (MEDIC.SELF)
 import { durUnit } from "../sim/crafting.js"; // what an item's uses count (fights, days of fishing...)
 import { day } from "../sim/world.js";
 import { BLUEPRINTS, CRAFT_BOOKS, LOCKED, techName, unlockName } from "../sim/blueprints.js"; // what a manual or craft book unlocks
@@ -158,6 +159,7 @@ function itemEntries() {
     if (g.req) stats.push(["Needs", `${SKILL_NAMES[g.skill] || g.skill} ${g.req} for full effect`]);
     if (g.noise) stats.push(["Noise", g.noise]);
     if (g.medKit) stats.push(["Medicine", `+${g.medKit} when treating`]);
+    if (g.selfStab && MEDIC.SELF[k]) stats.push(["Stabilize yourself", `down and bleeding in battle, in the off hand, a pocket or a rig pouch: ${MEDIC.SELF[k].BASE}% + ${MEDIC.SELF[k].MED} a point of Medicine, at most ${MEDIC.SELF[k].MAX}%, a try a turn; a use when it works`]);
     if (g.slots) stats.push(["Pack", `${g.slots} slots, +${g.carry || 0} kg load`]);
     if (g.tabs) stats.push(["Tablets", g.dur]);
     else if (g.count) stats.push(["Holds", g.dur]);

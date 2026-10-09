@@ -629,6 +629,13 @@ Object.assign(ITEM_TAGS, {
 for (const [where, items] of [[SITE_FINDS.police, { taser: 1.5, tasercart: 2, pepper: 2, stunbaton: 1 }], [SITE_FINDS.prison, { taser: 1, tasercart: 1.5, pepper: 1.5, stunbaton: 1 }], [SITE_FINDS.gunstore, { taser: 1.5, tasercart: 2, pepper: 2 }],
   [AREA_FINDS.armory, { taser: 1, tasercart: 1.5, pepper: 1, stunbaton: 0.7 }], [AREA_FINDS.cellblock, { pepper: 0.7, stunbaton: 0.5, tasercart: 0.5 }], [AREA_FINDS.gunshop, { taser: 1, tasercart: 1.5, pepper: 1.5 }]]) Object.assign(where.items, items);
 
+// Tourniquets (medics.js MEDIC.SELF: a downed survivor stabilizes themselves with one): small finds where medics,
+// police, firefighters and the Army kept them (their own Object.assign, as the non-lethal ones above).
+ITEM_TAGS.tourniquet = ["medical", "police", "military", "fire", "crash", "outdoor", "camp"];
+for (const [where, n] of [[SITE_FINDS.hospital, 3], [SITE_FINDS.clinic, 2], [SITE_FINDS.pharmacy, 2], [SITE_FINDS.police, 2], [SITE_FINDS.military, 3], [SITE_FINDS.firestation, 2.5],
+  [SITE_FINDS.ranger, 1], [SITE_FINDS.crash_mil, 2], [SITE_FINDS.crash_med, 2], [SITE_FINDS.convoy, 2], [SITE_FINDS.airdrop, 1],
+  [AREA_FINDS.clinic, 1.5], [AREA_FINDS.nurse, 1], [AREA_FINDS.pharmacy, 1], [AREA_FINDS.armory, 1], [AREA_FINDS.barracks, 2], [AREA_FINDS.medwreck, 2], [AREA_FINDS.milwreck, 1.5], [AREA_FINDS.cargodrop, 0.5]]) where.items.tourniquet = n;
+
 // The reloading bench's inputs (data-ammo.js RELOAD_GEAR; reloading.js): bags of fired brass, cans of powder and
 // boxes of primers where shooters kept them. Their own tables and dice, rolled on their own in each search hour
 // (scavenge.js searchHour) and raid container (combat.js), so every find from before comes out as it did. A bag, can
