@@ -5,7 +5,8 @@
 // owns: M (minimap), ` (dev tools, when they are shown) and Shift+P (autopilot, a dev tool) are all in displayKey.
 import { setPalette } from "./palette.js";
 import { setReadable, setMapAnim, redrawMap, view } from "./render.js";
-import { MINIMAP_SIZES } from "./displayopts.js";
+import { MINIMAP_SIZES, NIGHT_SHADES } from "./displayopts.js";
+import { setNightShade, NIGHT_LEVELS } from "./nightfx.js"; // the State Map's night shade (Display → Night darkness)
 import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -33,6 +34,7 @@ export function applyDisplay() {
   }
   setReadable({ text: OPT.bigText ? BIG_TEXT : 1, still: !!OPT.calm });
   setMapAnim(OPT.mapAnim !== false && !OPT.calm);
+  setNightShade(OPT.nightShade); // ui/nightfx.js (setMapAnim above draws the map again)
 }
 
 // The Dev button and the ` key: with "Show dev tools" on, or while the dev tools are open (a tool or the desktop
@@ -54,6 +56,11 @@ export function displayRows(o) {
       ${box("minimap", o.minimap !== false, "Minimap", "The whole state in the map's bottom-right corner: your bases and teams, the hordes and hives you know of, and the part on screen; click or drag on it to look there (M)")}
       <label${tip("How big the minimap is (it also grows with the UI size)")}>size <select data-action="dsp-mmsize"${o.minimap !== false ? "" : " disabled"}>${Object.entries(MINIMAP_SIZES).map(([k, s]) => `<option value="${k}" ${o.minimapSize === k ? "selected" : ""}>${s.label}</option>`).join("")}</select></label>
       ${box("devTools", o.devTools, "Show dev tools", "The Dev button in the top bar and the ` key: reveal the map, autopilot, fast forward, the frame rate and the trackers. For testing; they are not part of the game")}
+    </div>
+    <div class="setrow">
+      <label${tip("How dark the State Map gets at night: dusk fades in from 19:00 to 21:00 and dawn out from 05:00 to 07:00. Your bases, lit camps, fires and teams carrying lights glow through it; names, icons and the selection stay bright. Not in the timelapse or the minimap.")}>Night darkness <select data-action="dsp-night">${NIGHT_SHADES.map((k) => `<option value="${k}" ${(o.nightShade || "dark") === k ? "selected" : ""}>${NIGHT_LEVELS[k].label}</option>`).join("")}</select></label>
+      ${box("edgeWarn", o.edgeWarn !== false, "Screen-edge warnings", "A red pulse at the edge of the screen, toward the place, when something off screen is under attack: a base of yours besieged or attacked, a raid or horde about to hit one, a team of yours in a fight or ambushed; in a battle, one of your people shot at or hit out of view. Click it to look there")}
+      ${box("heartbeat", !!o.heartbeat, "Heartbeat while a base is attacked", "A soft heartbeat in the ambience while a base of yours is under attack (siege, raid or horde at the walls). Follows the Ambience volume")}
     </div>`;
 }
 
@@ -71,6 +78,7 @@ export const DISPLAY_ACTIONS = {
 };
 export const DISPLAY_CHANGE = {
   "dsp-mmsize": (ui, el) => { if (OPT && MINIMAP_SIZES[el.value]) { OPT.minimapSize = el.value; if (SAVE) SAVE(); applyDisplay(); } },
+  "dsp-night": (ui, el) => { if (OPT && NIGHT_SHADES.includes(el.value)) { OPT.nightShade = el.value; if (SAVE) SAVE(); applyDisplay(); } },
 };
 
 // The keys (main.js keydown, before the other map keys). modal: a window is up (ui.js modalKind). Returns true when the
@@ -88,7 +96,7 @@ export function displayKey(ui, e, modal) {
 export function displayHelp() {
   return [
     ["Minimap", `The whole state in the bottom-right corner of the map, as far as you know it: the land bright where you see it now, dimmer where you have a report, dark where you have none; water and roads; your bases (blue squares, the hub bigger) and teams (light blue dots, yellow when one waits for orders, faded where a team out of radio contact should be by its plan); the hordes (dots, bigger for bigger hordes, faded where one was last seen) and hives (diamonds) you know of; and with the Territory layer on, other groups' bases you know in their colour and the land they hold. The Territory, Infection and Coalition layers tint it like the map. The white frame is the part of the map on screen. <b>Click or drag</b> on it to look there. <b>M</b> (or its – button) hides it; ▣ Minimap in the same corner, or M again, brings it back. Its size is in ⚙ Menu → Options → Display (and it grows with the UI size); it is remembered.`],
-    ["Readability", `In ⚙ Menu → Options → Display. <b>Colour-blind-safe colours</b>: green and red, which most colour-blind people cannot tell apart, become blue (good: safe, healthy, a good chance, friendly) and orange (bad: danger, wounds, a poor chance, hostile) everywhere, the in-between amber becomes yellow, and the Infection layer and hive land turn purple. The battle's threat lines and hit chances use the same colours. <b>Larger map text</b>: the names, number badges and crew tags drawn on the State Map ${Math.round(BIG_TEXT * 100)}% of their size, on top of the UI size (which sizes the panels, windows and buttons but not the map's own drawing). <b>Reduce motion</b>: no map animations, teams jump from tile to tile instead of gliding along the road, hives and besieged bases do not pulse, and nothing on the screen slides or blinks (the urgent-alert pulse, the title screen). <b>Show dev tools</b>: the Dev button and the \` key (for testing; the autopilot's Shift+P too).`],
+    ["Readability", `In ⚙ Menu → Options → Display. <b>Colour-blind-safe colours</b>: green and red, which most colour-blind people cannot tell apart, become blue (good: safe, healthy, a good chance, friendly) and orange (bad: danger, wounds, a poor chance, hostile) everywhere, the in-between amber becomes yellow, and the Infection layer and hive land turn purple. The battle's threat lines and hit chances use the same colours. <b>Larger map text</b>: the names, number badges and crew tags drawn on the State Map ${Math.round(BIG_TEXT * 100)}% of their size, on top of the UI size (which sizes the panels, windows and buttons but not the map's own drawing). <b>Reduce motion</b>: no map animations, teams jump from tile to tile instead of gliding along the road, hives and besieged bases do not pulse, and nothing on the screen slides or blinks (the urgent-alert pulse, the title screen). <b>Night darkness</b>: how dark the State Map gets at night (Off, Light, Dark): dusk fades in from 19:00 to 21:00 and dawn out from 05:00 to 07:00; your bases, lit camps, fires and teams carrying lights glow through it, and names, icons and the selection stay bright. <b>Screen-edge warnings</b>: a red pulse at the edge of the map toward a base of yours under attack, a team of yours in a fight or ambushed, or a raid or horde about to hit a base, when it is off screen; in a battle, toward one of your people shot at or hit out of view. Click its badge to look there. <b>Heartbeat while a base is attacked</b> (off by default) adds a soft heartbeat to the ambience. <b>Show dev tools</b>: the Dev button and the \` key (for testing; the autopilot's Shift+P too).`],
     ["Confirmations", `Orders that cannot be taken back ask first, all in the same box: what happens, then <b>Yes</b> (or <b>Enter</b>) and <b>Cancel</b> (or <b>Esc</b>). They are: executing or releasing a prisoner, pulling a building down, breaking gear worth more than junk down for firewood, attacking a caravan or robbing merchants, joining or leaving a war, expelling a coalition member, giving up a job, ending a trade route, deleting a supply run or a work role, and digging a growing crop under. Tick <b>Don't ask again</b> in the box to stop asking for that kind of order; ⚙ Menu → Options → Confirmations lists the kinds you stopped, with Ask again. The menu's own questions (loading, exiting without saving, a new campaign, deleting a save) use the same box; the one about leaving with progress not saved can be stopped there too (the option Confirm before leaving a game). Battles keep their own: the end turn asks "Space again" while units still have actions, and sounding the retreat or falling back from the walls shows each unit's odds first.`],
   ];
 }

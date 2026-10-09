@@ -39,6 +39,7 @@ import {
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
 import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
 import { blocOf, blocColorOf } from "../sim/blocs.js"; // AI blocs: a ring in the bloc's colour round its members' bases
+import { drawNight } from "./nightfx.js"; // the time-of-day shade and the lights through it
 
 export const HEX = 26;
 const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
@@ -1123,6 +1124,9 @@ export function render(state) {
     lastFrac = view.hourFrac;
     if (drawFronts(ctx, state, { hex: HEX, view: { minX, maxX, minY, maxY }, frac: hourFrac(), strong: on("fronts"), zoom: zoom / (readable.text || 1) }) && animOn() && !readable.still && moving) wantFrames(150);
   }
+  // Night (ui/nightfx.js): the shade over the ground and the cached sites, the lights cutting through it; what is drawn
+  // after it (bases, teams, hordes, labels, icons, selection) stays at full brightness.
+  drawNight(ctx, { state, cw, ch: chh, S, ox, oy, boost: zoomBoost(), G, frac: hourFrac(), timelapse: !!state.timelapse });
   const inView = (id) => { const px = G.x[id], py = G.y[id]; return !(px < minX || px > maxX || py < minY || py > maxY); };
   let animating = false;
   glidingNow = false;

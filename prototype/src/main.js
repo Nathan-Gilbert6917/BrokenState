@@ -103,6 +103,7 @@ import { initAudio, audioFrame } from "./ui/audio.js"; // sound: WebAudio, made 
 // Display options and their keys (M, `, Shift+P), the minimap, and the one confirmation box (ui/display.js, ui/minimap.js, ui/confirm.js).
 import { initDisplay, DISPLAY_ACTIONS, DISPLAY_CHANGE, displayKey } from "./ui/display.js";
 import { initMinimap, minimapFrame } from "./ui/minimap.js";
+import { initEdgeFx, edgeFrame } from "./ui/edgefx.js"; // red pulses at the screen edge for an attack off screen (map and battle)
 import { initConfirm, askHtml, askKey, ASK_ACTIONS, ask } from "./ui/confirm.js";
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
@@ -186,6 +187,7 @@ initPanels({ layout, relayout: (fn) => relayout(fn), refresh: () => { dirtyNow =
 initRenderer(canvas);
 initCombatUI($("combatmap"));
 initMinimap($("mapwrap"), canvas, options); // ui/minimap.js: the map's corner
+initEdgeFx($("mapwrap"), $("cbmapwrap"), () => refresh(false)); // ui/edgefx.js: the screen-edge warnings
 // The map follows its box whatever changes it (a panel folded or dragged wider, the UI size).
 if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(() => {
@@ -260,6 +262,7 @@ function step(now) {
     drawCombat(state, now);
   } else if (!titleCovers(ui)) render(state); // the title screen hides the map (unless the map is its background)
   minimapFrame(state, ui, now); // ui/minimap.js (hidden over a battle, the title and the timelapse)
+  edgeFrame(state, ui, now, !ui.timelapse && !state.combat && !titleCovers(ui)); // ui/edgefx.js: attacks off screen
   if (ui.title) titleFrame(state, ui, now);
   audioFrame(state, ui, now); // battle and map cues, the ambience (ui/audio.js)
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
