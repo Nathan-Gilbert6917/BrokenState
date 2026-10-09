@@ -829,3 +829,120 @@ body.tl-on #minimap, body.tl-on #mm-show { display: none !important; }
 .stagesteps > b { color: var(--muted); font-weight: 400; margin: 0 0.2rem; }
 .suptable { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.8rem; margin-top: 0.35rem; }
 .suptable.three { grid-template-columns: auto 1fr auto; }
+
+/* ---------- The panel shell around the State Map (ui/windows.js, ui/layout.js panelHead / panelTab) ----------
+   One look for every panel that folds: the left and right panels and the log (a slim bar with a handle while open,
+   a rail with the panel's name, its key and a ✕ while folded; the left panel's rail has a button per tab), and the
+   boxes over the map (Running orders, Watching, Layers, alerts: a header with icon, title, count and chevron; folded,
+   a slim tab with the same). Sized in rem so the UI size (Options → Display) scales it for a TV across the room. */
+:root { --fp-bg: rgba(19, 21, 25, 0.95); --fp-head: #20242b; --focus: #ffd166; }
+#app { --gut: 0.75rem; --strip: 2.6rem; }
+body.fold-log #app { --bgut: 2.1rem; }
+/* Keyboard focus is always visible (mouse clicks do not show it). */
+:where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.gut:focus-visible { outline-offset: -2px; }
+#left, #right, #log, #orders, #watchlist, #legend, #alerts, #modal .box { scrollbar-width: thin; scrollbar-color: #444b56 transparent; }
+
+/* The bar between a panel and the map: a handle in the middle (click folds, drag resizes, Tab + arrows too). */
+.gut { transition: background-color 0.15s, color 0.15s; }
+.gut-open { display: flex; align-items: center; justify-content: center; gap: 0.35rem; width: 100%; height: 100%; flex-direction: column; }
+.gut-log .gut-open { flex-direction: row; }
+.gut-grip { display: block; width: 0.22rem; height: 2.6rem; border-radius: 99px; background: var(--line); transition: background-color 0.15s, height 0.15s, width 0.15s; }
+.gut-log .gut-grip { width: 2.6rem; height: 0.22rem; }
+.gut-open .gut-chev { font-size: 0.75rem; line-height: 1; opacity: 0.8; }
+.gut:hover .gut-grip, .gut:focus-visible .gut-grip { background: var(--accent); height: 3.4rem; }
+.gut-log:hover .gut-grip, .gut-log:focus-visible .gut-grip { height: 0.22rem; width: 3.4rem; }
+
+/* Folded: a rail. Left and right: a column (chevron, tabs or icon, the name written down the rail, key, ✕ at the
+   foot); the log: a row with its latest line. */
+.gut-left .gut-shut, .gut-right .gut-shut { writing-mode: horizontal-tb; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0.45rem; width: 100%; height: 100%; padding: 0.5rem 0 0.45rem; font-size: 0.9rem; }
+.gut-left .gut-label, .gut-right .gut-label { writing-mode: vertical-rl; white-space: nowrap; letter-spacing: 0.04em; color: var(--text); opacity: 0.85; overflow: hidden; min-height: 0; }
+.gut-shut .gut-chev { display: flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.6rem; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font-size: 0.85rem; flex: none; }
+.gut:hover .gut-shut .gut-chev, .gut:focus-visible .gut-shut .gut-chev { border-color: var(--accent); color: var(--accent); }
+.gut-icon { font-size: 1.05rem; line-height: 1; flex: none; }
+.gut-tabs { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.3rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); flex: none; }
+.gut-tab { position: relative; display: flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; padding: 0; font-size: 1.05rem; line-height: 1; background: transparent; border-color: transparent; border-radius: 6px; writing-mode: horizontal-tb; }
+.gut-tab:hover:not(:disabled) { background: var(--panel-2); border-color: var(--accent); }
+.gut-tab.on { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+.gut-badge { position: absolute; top: -0.25rem; right: -0.3rem; min-width: 1.05rem; height: 1.05rem; padding: 0 0.2rem; border-radius: 99px; background: #ffd166; color: #15171b; font: 700 0.68rem/1.05rem "Segoe UI", system-ui, sans-serif; text-align: center; box-shadow: 0 0 0 2px var(--panel); }
+.gut-shut kbd { flex: none; }
+.gut-left .gut-shut .gut-close, .gut-right .gut-shut .gut-close { margin-top: auto; flex: none; }
+.gut-close { padding: 0.1rem 0.35rem; font-size: 0.8rem; border-radius: 5px; }
+.gut-log .gut-shut { gap: 0.6rem; padding: 0 0.6rem; font-size: 0.92rem; }
+.gut-log .gut-shut .gut-chev { width: 1.7rem; height: 1.45rem; }
+.gut-log .gut-label { color: var(--text); font-weight: 600; }
+.gut-log .gut-line { opacity: 0.9; }
+
+/* A closed panel's tab at the map's edge: easier to see and hit. */
+.edgetab { flex-direction: column; gap: 0.35rem; font-size: 0.85rem; opacity: 0.85; color: var(--text); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.edgetab-left, .edgetab-right { width: 1.6rem; height: auto; min-height: 5rem; padding: 0.5rem 0; }
+.edgetab-log { flex-direction: row; width: auto; min-width: 5rem; height: 1.6rem; padding: 0 0.8rem; }
+.edgetab-label { writing-mode: vertical-rl; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.edgetab-log .edgetab-label { writing-mode: horizontal-tb; }
+.edgetab:hover .edgetab-label, .edgetab:focus-visible .edgetab-label { color: var(--accent); }
+
+/* The side panels: the left panel's tabs stay on top as one control while its list scrolls; the right panel's title
+   stays on top too. They ease in when they open. */
+#left > .tabs:first-child { position: sticky; top: -0.7rem; z-index: 2; margin: -0.7rem -0.9rem 0.6rem; padding: 0.55rem 0.9rem 0.5rem; background: var(--panel); border-bottom: 1px solid var(--line); gap: 0.2rem; }
+#left > .tabs:first-child button { flex: 1 1 auto; padding: 0.32rem 0.35rem; font-size: 0.92rem; background: transparent; border-color: transparent; color: var(--muted); white-space: nowrap; }
+#left > .tabs:first-child button:hover:not(:disabled) { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+#left > .tabs:first-child button.active { color: var(--text); background: #4a3816; border-color: var(--accent); font-weight: 600; }
+#right > h2:first-child, #right > .spread:first-child { position: sticky; top: -0.7rem; z-index: 2; margin: -0.7rem -0.9rem 0.35rem; padding: 0.6rem 0.9rem 0.45rem; background: var(--panel); border-bottom: 1px solid var(--line); }
+#right > .spread:first-child h2 { margin: 0; }
+#left h3, #right h3 { font-size: 0.85rem; margin: 0.9rem 0 0.35rem; padding-bottom: 0.2rem; border-bottom: 1px solid var(--line); }
+body:not(.fold-left) #left { animation: panel-in-l 0.18s ease-out; }
+body:not(.fold-right) #right { animation: panel-in-r 0.18s ease-out; }
+body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
+@keyframes panel-in-l { from { opacity: 0; transform: translateX(-0.8rem); } }
+@keyframes panel-in-r { from { opacity: 0; transform: translateX(0.8rem); } }
+@keyframes panel-in-b { from { opacity: 0; transform: translateY(0.6rem); } }
+
+/* The boxes over the map: one frame, a sticky header, compact rows, scrolling inside (never off the map). */
+#orders, #watchlist, #legend { background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.45); padding: 0 0.5rem 0.4rem; font-size: 0.88rem; color: var(--text); }
+#orders, #watchlist { width: 16rem; }
+#legend { max-width: 17rem; max-height: calc(100% - 1.2rem); overflow-y: auto; }
+#orders:has(> .fp-tab:only-child), #watchlist:has(> .fp-tab:only-child), #legend:has(> .fp-tab:only-child) { width: auto; padding: 0; border: none; background: none; box-shadow: none; overflow: visible; }
+.fp-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 0.25rem; margin: 0 -0.5rem 0.2rem; padding: 0.25rem 0.3rem; background: var(--fp-head); border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+.fp-toggle, .fp-tab, #alerts .al-pill, #alerts .al-fold { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; font-weight: 600; font-size: 0.92rem; line-height: 1.25; text-align: left; color: var(--text); }
+.fp-toggle { flex: 1; padding: 0.18rem 0.4rem; background: none; border: 1px solid transparent; border-radius: 6px; }
+.fp-toggle:hover:not(:disabled) { background: var(--panel-2); border-color: var(--line); }
+.fp-tab, #alerts .al-pill, #alerts .al-fold { max-width: 100%; padding: 0.32rem 0.6rem 0.32rem 0.45rem; background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.fp-tab:hover:not(:disabled), #alerts .al-pill:hover:not(:disabled), #alerts .al-fold:hover:not(:disabled) { border-color: var(--accent); }
+#alerts .al-pill.danger { border-color: var(--danger); color: #ffd0cc; }
+#alerts .al-fold { align-self: flex-end; font-size: 0.85rem; padding: 0.2rem 0.55rem 0.2rem 0.4rem; }
+.fp-ico { flex: none; width: 1.25em; text-align: center; font-weight: 400; }
+.fp-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fp-chev { flex: none; margin-left: auto; padding-left: 0.2rem; color: var(--muted); font-size: 0.78rem; }
+.fp-toggle:hover .fp-chev, .fp-tab:hover .fp-chev, .al-pill:hover .fp-chev, .al-fold:hover .fp-chev { color: var(--accent); }
+.fp-badge { flex: none; padding: 0.02rem 0.42rem; border-radius: 99px; background: #2f343d; color: var(--text); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fp-badge.warn { background: #4a3a14; color: #ffd166; }
+.fp-badge.danger { background: #4d2220; color: #ffb7b0; }
+.fp-extra { display: flex; gap: 0.2rem; flex: none; }
+.fp-extra button.mini { padding: 0.08rem 0.45rem; }
+#orders .ro { padding: 0.3rem 0.3rem; border-radius: 5px; }
+#orders .fp-head + .ro, #watchlist .fp-head + .wl-row { border-top: none; }
+#watchlist .wl-row { padding: 0.28rem 0.3rem; border-radius: 5px; }
+#watchlist .wl-sub { margin: 0.35rem -0.1rem 0.1rem; padding: 0.3rem 0.1rem 0.1rem; }
+#legend .fp-body { display: flex; flex-direction: column; gap: 0.05rem; padding-top: 0.1rem; }
+#legend .layer { padding: 0.08rem 0.25rem; border-radius: 5px; font-size: 0.86rem; line-height: 1.3; }
+#legend .layer:hover { background: var(--panel-2); }
+/* Folding or opening a box eases it in (ui/windows.js watchFolds). */
+#orders.fp-anim, #watchlist.fp-anim { animation: fp-in 0.16s ease-out; transform-origin: top left; }
+#alerts.fp-anim { animation: fp-in 0.16s ease-out; transform-origin: top right; }
+#legend.fp-anim { animation: fp-in-up 0.16s ease-out; transform-origin: bottom left; }
+@keyframes fp-in { from { opacity: 0; transform: translateY(-0.35rem) scale(0.98); } }
+@keyframes fp-in-up { from { opacity: 0; transform: translateY(0.35rem) scale(0.98); } }
+@media (prefers-reduced-motion: reduce) { #left, #right, #log, .fp-anim { animation: none !important; } .gut, .gut-grip { transition: none; } }
+
+/* ---------- Moving the boxes over the map (ui/overlaydrag.js) ----------
+   Headers, folded tabs and the minimap's grip are the handles: a move cursor, no text selection and no browser
+   panning under a finger. Nothing eases while a box is dragged; the box being dragged stays on top. */
+#orders .fp-head, #watchlist .fp-head, #legend .fp-head, #orders > .fp-tab, #watchlist > .fp-tab, #legend > .fp-tab,
+#alerts .al-fold, #alerts .al-pill, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #mm-show { touch-action: none; user-select: none; -webkit-user-select: none; }
+#orders .fp-head, #watchlist .fp-head, #legend .fp-head, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip { cursor: move; }
+#minimap .ov-grip { position: absolute; top: 0.2rem; right: 0.2rem; padding: 0 0.35rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.85); opacity: 0.75; }
+#minimap .ov-grip:hover, #minimap .ov-grip:focus-visible { opacity: 1; color: var(--accent); }
+body.ov-dragging, body.ov-dragging * { cursor: grabbing !important; user-select: none !important; }
+body.ov-dragging #mapwrap > * { transition: none !important; animation: none !important; }
+#mapwrap > .ov-drag { z-index: 9 !important; box-shadow: 0 10px 28px rgba(0,0,0,0.6); outline: 1px dashed var(--accent); outline-offset: 2px; }
+#alerts.ov-drag { outline: none; box-shadow: none; }

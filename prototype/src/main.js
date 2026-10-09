@@ -93,7 +93,8 @@ import { toManual } from "./sim/work.js";
 import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
-import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initOverlays, syncOverlays, resetOverlays } from "./ui/overlaydrag.js"; // the boxes over the map move (drag a header, Alt+arrows)
 import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
 import { CONTROLS_ACTIONS, controlsKey } from "./ui/controls.js";
 import { initPalette, openPalette, paletteIndex } from "./ui/cmdpalette.js"; // the search box (Ctrl+K or /)
@@ -190,6 +191,7 @@ initPanels({ layout, relayout: (fn) => relayout(fn), refresh: () => { dirtyNow =
 initRenderer(canvas);
 initCombatUI($("combatmap"));
 initMinimap($("mapwrap"), canvas, options); // ui/minimap.js: the map's corner
+initOverlays({ refresh: () => { dirtyNow = true; } }); // ui/overlaydrag.js: the boxes over the map keep where the player put them
 // The map follows its box whatever changes it (a panel folded or dragged wider, the UI size).
 if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(() => {
@@ -395,7 +397,7 @@ function autoShow() {
 // The alerts stack, or its folded button (ui/layout.js alertsPill).
 function alertsHTML(html) {
   if (layout.alerts) return alertsPill(ui.alertList, (/<div class="al-flash">[\s\S]*?<\/div>/.exec(html) || [""])[0]);
-  return html.includes('class="al ') ? alertsFoldButton() + html : html;
+  return html.includes('class="al ') ? alertsFoldButton((ui.alertList || []).length, (ui.alertList || []).some((a) => a && a.tone === "danger")) + html : html;
 }
 
 function refresh(user = true) {
@@ -424,6 +426,7 @@ function refresh(user = true) {
   }
   if (!layout.log) setHTML("log", renderLogPanel(state, ui), user); // filters and links (ui/diary.js)
   else setLogLine(state.log && state.log[0] ? String(state.log[0].text || "") : "");
+  if (layout.left) setRailBadges({ teams: ui.started ? state.parties.filter((p) => p.owner === "player" && p.phase === "waiting").length : 0, tab: ui.tab }); // the folded left panel's rail
   refreshModal(user);
   setHTML("legend", renderLegend(view, ui, ui.started ? state : null), user);
   if (ui.started) devSample(state);
@@ -434,6 +437,7 @@ function refresh(user = true) {
   renderCombat(user);
   setPanel("banner", bannerHTML(), user);
   syncWatchlist(state, ui, { act: actions, refresh }); // places the Watching panel; the map-note editor
+  syncOverlays(); // ui/overlaydrag.js: moved boxes in their place, every box kept on the map
   setPanel("ask", askHtml(ui) + carryHtml(state, ui), user); // ui/confirm.js; ui/carry.js: how much to collect, picking up from the ground
   syncTitle(state, ui); // ui/title.js
   $("banner").classList.toggle("dev", !!ui.dev);
@@ -655,12 +659,18 @@ const actions = {
   // they first were).
   "panel-toggle": (d) => foldPanel(d.p, d.v === undefined ? undefined : d.v === "1"),
   "panel-close": (d) => shutPanel(d.p, d.v === undefined ? undefined : d.v === "1"),
+  // The folded left panel's rail (ui/windows.js): a tab's button opens the panel on that tab.
+  "panel-tab": (d) => { ui.tab = d.tab; foldPanel("left", false); },
   "panel-all": () => { relayout(() => { toggleAll(layout); applyLayout(layout); }); saveLayout(layout); },
   "win-reset": () => {
     resetWindows();
     relayout(() => { resetLayout(layout); applyLayout(layout); });
     saveLayout(layout);
     if (ui.settings) { ui.settings.msg = "Windows and panels are back to their usual size and place."; ui.settings.err = false; }
+  },
+  "ov-reset": () => { // ui/overlaydrag.js: the boxes over the map back where they start
+    resetOverlays();
+    if (ui.settings) { ui.settings.msg = "The boxes over the map are back where they start."; ui.settings.err = false; }
   },
   // Base management.
   openbase: (d) => {

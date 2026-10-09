@@ -15,6 +15,8 @@
 // corners and moved by its title. Sizes are kept in rem (they grow with the UI size), places in pixels, both clamped
 // to the screen. Remembered per kind of window in the browser (localStorage, failures ignored).
 
+import { OVERLAYS_HELP } from "./overlaydrag.js"; // the boxes over the map move (Help line)
+
 export const LAYOUT_KEY = "brokenstate.layout";
 export const WINDOWS_KEY = "brokenstate.windows";
 
@@ -147,15 +149,47 @@ export function newDangerAlerts(seen, list) {
   return { seen: new Set(keys), fresh: keys.filter((k) => !seen.has(k)) };
 }
 
-// The alerts folded: one button with the count (a red dot when one of them is a danger), plus the flash line.
+// ---------- the boxes over the map: one look ----------
+// The Running orders, the Watching panel, the Layers box and the alerts share a header (icon, title, a count, the
+// fold chevron) and, folded, a slim tab with the same icon, title and count (styles.css .fp-head / .fp-tab). The
+// renderers (ui/expedition.js, ui/watchlist.js, ui/ui.js, main.js) only say what goes in them.
+//   icon, title   what the box is
+//   count         a number or short text in a badge (null: none); tone "warn" / "danger" colours it
+//   badges        more badges after it: [{ text, tone, tip }]
+//   action, data  the fold toggle's data-action and other data-* attributes (an object)
+//   tip           the toggle's hover text
+//   extra         buttons of the box's own, on the header's right (open header only)
+const attrEsc = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+function fpBadges(o) {
+  const out = [];
+  if (o.count != null && o.count !== "") out.push(`<span class="fp-badge${o.tone ? ` ${o.tone}` : ""}">${o.count}</span>`);
+  for (const b of o.badges || []) if (b && b.text != null && b.text !== "") out.push(`<span class="fp-badge${b.tone ? ` ${b.tone}` : ""}"${b.tip ? ` data-tip="${attrEsc(b.tip)}"` : ""}>${b.text}</span>`);
+  return out.join("");
+}
+function fpToggle(o, open, cls) {
+  const data = Object.entries(o.data || {}).map(([k, v]) => ` data-${k}="${attrEsc(v)}"`).join("");
+  return `<button class="${cls}" data-action="${o.action}"${data} aria-expanded="${open}"${o.tip ? ` data-tip="${attrEsc(o.tip)}"` : ""}>` +
+    `<span class="fp-ico" aria-hidden="true">${o.icon || ""}</span><span class="fp-title">${o.title}</span>${fpBadges(o)}<span class="fp-chev" aria-hidden="true">${open ? "▾" : "▸"}</span></button>`;
+}
+// The header of an open box: the whole title is the fold button.
+export function panelHead(o) {
+  return `<div class="fp-head">${fpToggle(o, true, "fp-toggle")}${o.extra ? `<span class="fp-extra">${o.extra}</span>` : ""}</div>`;
+}
+// A folded box: one slim tab.
+export const panelTab = (o) => fpToggle(o, false, `fp-tab${o.cls ? ` ${o.cls}` : ""}`);
+
+// The alerts folded: one tab with the count (red when one of them is a danger), plus the flash line.
 export function alertsPill(list, flashHtml = "") {
   const n = (list || []).length;
   const danger = (list || []).some((a) => a && a.tone === "danger");
   if (!n) return flashHtml;
-  return `${flashHtml}<button class="al-pill${danger ? " danger" : ""}" data-action="panel-toggle" data-p="alerts" data-tip="Show the alerts (Shift+])">🔔 ${n} alert${n === 1 ? "" : "s"} ▾</button>`;
+  return `${flashHtml}<button class="al-pill${danger ? " danger" : ""}" data-action="panel-toggle" data-p="alerts" aria-expanded="false" data-tip="Show the alerts (Shift+])"><span class="fp-ico" aria-hidden="true">🔔</span><span class="fp-title">${n} alert${n === 1 ? "" : "s"}</span><span class="fp-chev" aria-hidden="true">▸</span></button>`;
 }
-// The fold button over the alerts when they are open.
-export const alertsFoldButton = () => `<button class="al-fold" data-action="panel-toggle" data-p="alerts" data-tip="Fold the alerts away (Shift+])">▴</button>`;
+// The fold button over the alerts when they are open (n: how many, danger: one is urgent).
+export const alertsFoldButton = (n = null, danger = false) => `<button class="al-fold"data-action="panel-toggle" data-p="alerts" aria-expanded="true" data-tip="Fold the alerts away (Shift+])"><span class="fp-ico" aria-hidden="true">🔔</span><span class="fp-title">Alerts</span>${n ? `<span class="fp-badge${danger ? " danger" : ""}">${n}</span>` : ""}<span class="fp-chev" aria-hidden="true">▴</span></button>`;
+
+// The folded left panel's rail: a button per tab (opens the panel on it). The glyphs match the watch list's.
+export const RAIL_TABS = [["bases", "🏠", "Bases", "B"], ["people", "👥", "People", "P"], ["groups", "🏴", "Groups", "G"], ["teams", "🚶", "Teams", "T"]];
 
 // ---------- windows ----------
 // The kind of window to remember a size for (the survivor screen is one kind whoever it shows), or "" when this
@@ -224,9 +258,10 @@ export function windowFrame(html, kind) {
 // ---------- help ----------
 export function windowsHelp() {
   return `The panels around the map fold away to give the map more room, and big windows can be resized and moved.<br><br>
-    <b>Panels:</b> click the slim bar between a panel and the map (⟨ ⟩) to fold it to a strip; click the strip to bring it back. Drag the bar to make the panel wider or narrower (Options → <i>Reset window sizes</i> brings back the usual widths). Keys: <b>[</b> the left panel, <b>]</b> the right panel, <b>L</b> the log, <b>Shift+]</b> the alerts, <b>Shift+[</b> the running orders. The Layers box folds with its ▾ button. A folded log shows its latest line on its strip.<br><br>
+    <b>Panels:</b> click the slim bar between a panel and the map (⟨ ⟩) to fold it to a strip; click the strip to bring it back. Drag the bar to make the panel wider or narrower (Options → <i>Reset window sizes</i> brings back the usual widths). Keys: <b>[</b> the left panel, <b>]</b> the right panel, <b>L</b> the log, <b>Shift+]</b> the alerts, <b>Shift+[</b> the running orders. The boxes over the map (Running orders, Watching, Layers, the alerts) fold from their header and come back from the slim tab left in their place, which keeps their count. A folded log shows its latest line on its strip; the folded left panel's strip has a button per tab (🏠 Bases, 👥 People, 🏴 Groups, 🚶 Teams, with the number of teams waiting) that opens it on that tab. With the keyboard: Tab to a bar, Enter or Space folds or shows its panel, the arrow keys make it narrower or wider (Shift: by more), Home gives it its usual size.<br><br>
     <b>Closing a panel completely:</b> <b>Alt+[</b>, <b>Alt+]</b> or <b>Alt+L</b>, the ✕ on a folded strip, or the panel's button in the top bar (◧ the left panel, ◨ the right panel, ⬓ the log), closes it with nothing left over, strip and all, and the map takes the room. A closed panel comes back open with the same Alt key or top-bar button (dark while the panel is closed), the slim tab at that edge of the map (⟩ ⟨ ▴), its plain key (<b>[</b> <b>]</b> <b>L</b>), or by itself when you pick something it shows (below). Folded and closed panels are remembered in this browser.<br><br>
     <b>Map only:</b> <b>\\</b> (backslash) or the ▣ button in the top bar folds every panel and box at once; press it again to put them back the way they were. A closed panel stays closed through both.<br><br>
     <b>Opening by themselves:</b> when you pick something a folded or closed panel shows, it opens: a tile, site, base or team clicked on the map, a team opened from a list, an alert or a log link: the right panel; a tab key (B P G T): the left panel; a new urgent alert (red) opens folded alerts, except in map-only mode. The log never opens for a new line. Switch this off in the menu: Options → <i>Auto-open panels on select</i>.<br><br>
-    <b>Windows:</b> drag a window's edges or corners to resize it, and its title to move it; double-click the title for its usual size and place. The content scrolls inside. Each kind of window (base, survivor, trade, inventory, planner, menu, diary, roster…) remembers its size and place in this browser; Options → <i>Reset window sizes</i> puts every window and panel back. Sizes follow the UI size.`;
+    <b>Windows:</b> drag a window's edges or corners to resize it, and its title to move it; double-click the title for its usual size and place. The content scrolls inside. Each kind of window (base, survivor, trade, inventory, planner, menu, diary, roster…) remembers its size and place in this browser; Options → <i>Reset window sizes</i> puts every window and panel back. Sizes follow the UI size.<br><br>
+    ${OVERLAYS_HELP}`;
 }
