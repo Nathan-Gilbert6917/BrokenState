@@ -36,7 +36,9 @@ import { roundsLine } from "../sim/ammo.js";
 import { teamInvBar } from "./teaminv.js"; // 🎒 Team inventory; Drop off / Load at a base
 import { editTeamButton } from "./teamform.js"; // Edit team… while it waits on one of your bases
 import { teamCarryCard } from "./carry.js"; // who carries what (pockets, packs, arms, vehicle), the ground here
-import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
+import { panelHead, panelTab } from "./layout.js";
+import { teamVolBlock } from "./volunteers.js"; // volunteers from allied groups with the team (sim/volunteers.js)
+import { volLine } from "../sim/volunteers.js"; // the boxes over the map share one header and folded tab
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -189,7 +191,7 @@ export function renderExpedition(state, ui, p) {
       ${ui.xpMsg ? `<div class="result small" style="margin-top:0.4rem">${esc(ui.xpMsg)}</div>` : ""}
     </div>`;
 
-  return head + camp + status + actions + teamCarryCard(state, ui, p) +
+  return head + camp + status + actions + teamCarryCard(state, ui, p) + teamVolBlock(state, p) +
     `<h3>People (${members.length})</h3>${teamNeedsBlock(state, p, true)}${members.map((m) => memberCard(state, p, m, true, queueing)).join("")}` +
     suppliesBlock(state, p) + vehicleBlock(state, p, v);
 }
@@ -343,15 +345,16 @@ function memberCard(state, p, m, live, queueing) {
     return `<span class="chip ${eff.usable ? "" : "off"}"${tip(`${SLOT_NAMES[slot]}: ${g.name}${eff.gap > 0 ? ` (skill gap ${eff.gap}${eff.usable ? ", weaker" : ", unusable"})` : ""}`)}>${esc(g.name)}</span>`;
   }).join("") || `<span class="muted">No gear</span>`;
   // Inventory (ui/inventory.js): swap gear between teammates and the team's cargo, fill pockets and packs.
-  const inv = live ? `<button class="mini" data-action="inv-open" data-id="${m.id}"${tip("Paper-doll inventory: move items between this person, teammates and the team's cargo")}>Inventory</button>` : "";
+  const inv = live && !m.vol ? `<button class="mini" data-action="inv-open" data-id="${m.id}"${tip("Paper-doll inventory: move items between this person, teammates and the team's cargo")}>Inventory</button>` : "";
   let treat = "";
-  if (live) {
+  if (live && !m.vol) { // a volunteer's wounds are their group's to tend (sim/volunteers.js: they heal on the road)
     const info = fieldTreatInfo(state, p, m);
     treat = `<button class="mini" data-action="xp-order" data-id="${p.id}" data-type="treat" data-sid="${m.id}" ${info.ok || (queueing && m.health < 100) ? "" : "disabled"}${tip(info.ok ? `${info.hours}h, ${info.cost} med${info.cost === 1 ? "" : "s"}: about +${info.heal} health${info.cureChance ? `, ${Math.round(info.cureChance * 100)}% to clean the infection` : ""}${info.medic ? ` (${info.medic.name.split(" ")[0]} treats)` : ""}.` : info.reason)}>Treat</button>`;
   }
   const heal = live && p.phase === "task" && p.task?.type === "camp" ? campHealPerHour(state, p, m) : 0;
   return `<div class="card small">
-    <div class="spread"><b>${m.leader ? "★ " : ""}${esc(m.name)}${live ? statusIcons(state, m) : ""}</b><span>${inv}${treat}</span></div>
+    <div class="spread"><b>${m.leader ? "★ " : ""}${m.vol ? `<span class="vol-tag">VOL</span> ` : ""}${esc(m.name)}${live ? statusIcons(state, m) : ""}</b><span>${inv}${treat}</span></div>
+    ${m.vol ? `<div class="vol-text"${tip("Another group's person: they carry, eat the team's food and fight beside your people, but their own group's AI moves them in a battle. They keep their kit.")}>${esc(volLine(state, m))}</div>` : ""}
     ${live ? `<div class="row"><span class="muted" style="width:3.5rem">Health</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2.2rem;text-align:right">${n0(m.health)}</span></div>
     ${gaugeRows(m, { label: "3.5rem" })}${needsEffectText(m) ? `<div class="warn">${esc(needsEffectText(m))}</div>` : ""}${treatsRow(state, m)}
     ${m.woundInfected ? `<div class="danger"${tip("Gets worse every hour away from a base. Treat with meds.")}>Infected wound</div>` : ""}

@@ -1911,7 +1911,7 @@ function shieldsIso(ctx, b, x, y, alpha) {
 
 // ---------- units ----------
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
-const ringOf = (t) => (t.side === "player" ? "#8fc1ff" : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? COL.bad : "#b5d36a") : "#ff8f85");
+const ringOf = (t) => (t.side === "player" ? (t.vol != null ? "#c9a2ff" : "#8fc1ff") : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? COL.bad : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
 function drawBody(ctx, state, b, s, H, silhouette = false) {
@@ -2033,7 +2033,7 @@ function drawLabels(ctx, b, s, H) {
   ctx.fillStyle = "rgba(12,14,17,0.9)"; ctx.fillRect(X - bw / 2 - 1, by - 1, bw + 2, 5);
   ctx.fillStyle = f > 0.6 ? COL.good : f > 0.3 ? COL.mid : COL.bad; ctx.fillRect(X - bw / 2, by, bw * f, 3);
   const fs = Math.max(10, Math.round(3.4 * S));
-  if (t.side === "player" && active(t) && b.phase === "player") for (let i = 0; i < 2; i++) {
+  if (t.side === "player" && t.vol == null && active(t) && b.phase === "player") for (let i = 0; i < 2; i++) {
     ctx.fillStyle = i < t.ap ? "#8fc1ff" : "#2c3139";
     ctx.beginPath(); ctx.arc(X + bw / 2 + 5 + i * 7, by + 1, 2.8, 0, Math.PI * 2); ctx.fill();
   }
@@ -2043,6 +2043,7 @@ function drawLabels(ctx, b, s, H) {
   else if (t.tied && !t.down) tags.push(["TIED", "#c9a74a"]); // a captive of yours tied up on a rescue raid (sim/rescueraid.js)
   if (t.ztype && !t.down) tags.push([`${t.short}${t.elite ? "★" : ""}`, ringOf(t)]);
   if (!t.down && isMedic(t)) tags.push(["✚", "#ff6b6b"]); // a medic (sim/medics.js)
+  if (t.side === "player" && t.vol != null && !t.dead) tags.push(["VOL", "#c9a2ff"]); // a volunteer from an allied group: their own orders (sim/volunteers.js)
   if (t.dragging != null) tags.push(["DRAG", "#e0a84f"]);
   if (t.shaken && !t.down) tags.push(["SHK", "#ffd166"]); // revived: shaken, −10 aim
   if (t.boss && !t.down) tags.push([t.boss === "broodmother" ? "BROOD" : t.boss === "hivemind" ? "MIND" : "WALL", COL.bad]);

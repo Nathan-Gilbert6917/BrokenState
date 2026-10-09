@@ -8,7 +8,8 @@ import { LAYERS } from "../sim/markers.js";
 import { helpText } from "./ui.js";
 import { windowsHelp } from "./layout.js";
 import { HIVE_BIRTH_HELP } from "../sim/hivebirth.js";
-import { HIVE_CRAWL_HELP } from "../sim/hivecrawl.js"; // the hive crawl: from the mouth to the Hivemind
+import { HIVE_CRAWL_HELP } from "../sim/hivecrawl.js";
+import { VOLUNTEERS_HELP } from "../sim/volunteers.js"; // volunteers lent between groups // the hive crawl: from the mouth to the Hivemind
 import { FESTIVAL_HELP } from "../sim/festival.js";
 import { keysSheet } from "./controls.js"; // Help → Keys: the printable key sheet (the keys as they are set now)
 import { keyLabel } from "./keymap.js";
@@ -158,7 +159,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "gun-attachments") add("Guns and melee weapons", ROSTER_HELP); // sim/data-guns.js
     if (out[out.length - 1].id === "battles") add("Medics and the downed", MEDICS_HELP); // sim/medics.js
     if (out[out.length - 1].id === "medical") add("Training medics", TRAINING_HELP); // sim/training.js
-    if (out[out.length - 1].id === "groups") { add("Caravans on the road", CARAVAN_HELP); add("Getting captives back", RESCUE_HELP); add("Blocs and wars", BLOCS_WARS_HELP); } // sim/caravanraids.js; sim/rescueraid.js, ransom.js; sim/blocs.js, playerwars.js
+    if (out[out.length - 1].id === "groups") { add("Caravans on the road", CARAVAN_HELP); add("Getting captives back", RESCUE_HELP); add("Blocs and wars", BLOCS_WARS_HELP); add("Volunteers", VOLUNTEERS_HELP); } // sim/caravanraids.js; sim/rescueraid.js, ransom.js; sim/blocs.js, playerwars.js
   }
   if (!seen.has("map-layers")) { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
   if (!seen.has("windows-and-panels")) add("Windows and panels", windowsHelp());
@@ -172,6 +173,7 @@ export function helpTopics() {
   if (!seen.has("pause-rules-and-the-card-tray")) add("Pause rules and the card tray", pacingHelp());
   for (const [title, html] of displayHelp()) if (!seen.has(slug(title))) add(title, html);
   if (!seen.has("the-hive-crawl")) add("The hive crawl", HIVE_CRAWL_HELP);
+  if (!seen.has("volunteers")) add("Volunteers", VOLUNTEERS_HELP); // sim/volunteers.js
   if (!seen.has("hives-being-born")) add("Hives being born", HIVE_BIRTH_HELP);
   if (!seen.has("the-harvest-festival")) add("The harvest festival", FESTIVAL_HELP);
   if (!seen.has("gun-attachments")) add("Gun attachments", GUNMODS_HELP);

@@ -1,7 +1,7 @@
 // Tactical combat screen: canvas battle map plus the side panel. Reads state.combat; all rules live in sim/combat.js.
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import {
-  MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
+  volRefusal, MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, canSeeAt, coverSides, isRanged, adjacent, meleeReach, canFire, ammoLeft, arrowsLeft, medsLeft, combatAct, enemyStep, playerSees,
   hasMag, magLabel, magEmpty, magShown, reloadRefusal, fireRefusal, hasShots,
   vehicleTurret, TURRET, RIDE, turretRounds, los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
@@ -105,7 +105,9 @@ const VOIDDEF = { walk: false, cover: 0, los: false, name: "Open air" };
 const CDEF = (c) => CELL[c.k] || VOIDDEF;
 
 // ---------- helpers ----------
-const players = (b) => b.units.filter((u) => u.side === "player");
+const players = (b) => b.units.filter((u) => u.side === "player" && u.vol == null); // yours to order (volunteers are not: sim/combat.js volunteerTurn)
+const allSide = (b) => b.units.filter((u) => u.side === "player"); // your side, volunteers too (heal, revive, drag)
+const VOL_COLOR = "#c9a2ff"; // volunteers' ring, name and tag (ui/isoview.js the same)
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const pct = (u) => Math.max(0, Math.min(1, u.hp / u.maxHp));
 const hpColor = (f) => (f > 0.6 ? PAL.good : f > 0.3 ? PAL.mid : PAL.bad);
@@ -334,7 +336,7 @@ export function combatClick(state, px, py) {
     const t = p && p.unit != null ? unitById(b, p.unit) : null;
     if (t && t.f != null && t.f !== floorNo(b)) {
       setViewFloor(b, t.f);
-      if (t.side === "player" && alive(t)) { cui.sel = t.id; cui.mode = "move"; cui.msg = ""; }
+      if (t.side === "player" && t.vol == null && alive(t)) { cui.sel = t.id; cui.mode = "move"; cui.msg = ""; }
       return;
     }
   }
@@ -385,6 +387,7 @@ export function combatClick(state, px, py) {
   if (u && active(u) && u.ap > 0 && cui.mode === "finish" && who && who.side === "enemy" && who.down && !who.dead) return void act(state, { type: "finish", unit: u.id, target: who.id });
   if (who && who.side === "player") {
     if (cui.mode === "meds" && u && (who === u || adjacent(u, who))) return void act(state, { type: "meds", unit: u.id, target: who.id });
+    if (who.vol != null) { cui.msg = volRefusal(who); return; } // sim/volunteers.js: their own group's orders
     cui.sel = who.id;
     cui.mode = "move";
     cui.msg = "";
@@ -1050,7 +1053,7 @@ export function combatAction(state, key, d) {
     // One Drag (Shift+D): a downed teammate is taken hold of and dragged along (sim/medics.js: half speed, no shooting,
     // Shift+D again puts them down); a body or a prisoner is pulled up to STEALTH.DRAG tiles (sim/stealth.js).
     if (dragging(b, u)) return void act(state, { type: "dropAlly", unit: u.id });
-    const mates = players(b).filter((o) => o.down && !o.dead && !o.left && !o.off && !o.surr && o.draggedBy == null && adjacent(u, o));
+    const mates = allSide(b).filter((o) => o.down && !o.dead && !o.left && !o.off && !o.surr && o.draggedBy == null && adjacent(u, o));
     const others = b.units.filter((o) => o.side !== "player" && adjacent(u, o) && dragable(o) && !o.left && !o.fled);
     if (mates.length === 1 && !others.length) return void act(state, { type: "dragAlly", unit: u.id, target: mates[0].id });
     cui.mode = cui.mode === "drag" ? "move" : "drag";
@@ -1103,14 +1106,14 @@ export function combatAction(state, key, d) {
   }
   // sim/medics.js: Heal, Revive, Drag ally / Put down / Into the vehicle, Finish.
   if (v === "heal") {
-    const near = players(b).filter((o) => o !== u && active(o) && adjacent(u, o) && o.hp < o.maxHp);
+    const near = allSide(b).filter((o) => o !== u && active(o) && adjacent(u, o) && o.hp < o.maxHp);
     if (!near.length) return void act(state, { type: "heal", unit: u.id, target: u.id });
     cui.mode = cui.mode === "heal" ? "move" : "heal";
     cui.msg = cui.mode === "heal" ? "Click yourself or a hurt teammate next to you to treat." : "";
     return;
   }
   if (v === "revive") {
-    const near = players(b).filter((o) => o.down && !o.dead && !o.left && !o.off && adjacent(u, o));
+    const near = allSide(b).filter((o) => o.down && !o.dead && !o.left && !o.off && adjacent(u, o));
     if (!near.length) { cui.msg = reviveRefusal(b, u, null) || "Revive needs a downed teammate next to you."; return; }
     if (near.length === 1) return void act(state, { type: "revive", unit: u.id, target: near[0].id });
     cui.mode = cui.mode === "revive" ? "move" : "revive";
@@ -1119,7 +1122,7 @@ export function combatAction(state, key, d) {
   }
   if (v === "dragAlly") {
     if (dragging(b, u)) return void act(state, { type: "dropAlly", unit: u.id });
-    const near = players(b).filter((o) => o.down && !o.dead && !o.left && !o.off && o.draggedBy == null && adjacent(u, o));
+    const near = allSide(b).filter((o) => o.down && !o.dead && !o.left && !o.off && o.draggedBy == null && adjacent(u, o));
     if (!near.length) { cui.msg = "Drag ally needs a downed teammate right next to you."; return; }
     if (near.length === 1) return void act(state, { type: "dragAlly", unit: u.id, target: near[0].id });
     cui.mode = cui.mode === "dragAlly" ? "move" : "dragAlly";
@@ -1136,7 +1139,7 @@ export function combatAction(state, key, d) {
     return;
   }
   if (v === "meds") {
-    const others = players(b).filter((o) => o !== u && !o.dead && !o.left && adjacent(u, o) && (o.down ? !o.stab : o.hp < o.maxHp));
+    const others = allSide(b).filter((o) => o !== u && !o.dead && !o.left && adjacent(u, o) && (o.down ? !o.stab : o.hp < o.maxHp));
     if (!others.length) return void act(state, { type: "meds", unit: u.id, target: u.id });
     cui.mode = "meds";
     cui.msg = "Click yourself or an adjacent teammate to treat.";
@@ -1219,6 +1222,20 @@ export function renderCombatPanel(state) {
     </div>`;
   });
   html += `</div>`;
+  // Volunteers from an allied group (sim/volunteers.js): on your side, not yours to order.
+  const vols = allSide(b).filter((p) => p.vol != null);
+  if (vols.length) {
+    html += `<h3 data-tip="${esc("Volunteers from an allied group: their own group's orders. They act on their own at the end of your turn, follow the Evac and the retreat, and leave with your people.")}">Volunteers <span class="muted small">(their own orders)</span></h3><div class="cbroster">`;
+    for (const p of vols) {
+      const st = p.dead ? "Dead" : p.left ? "Got away" : p.down ? (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`) : [p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", p.jam ? "JAMMED" : ""].filter(Boolean).join(", ");
+      html += `<div class="cbunit vol ${!alive(p) ? "out" : ""}" data-tip="${esc(`Volunteer from ${p.volGroup || "an allied group"}: their own orders. ${p.name}. Weapon: ${p.weaponName}.`)}">
+      <div class="spread"><span>${spriteImg(canvasURL(unitCanvas(state, b, p, cui.salt)), 1.5)}<span class="vol-tag">VOL</span> <b style="color:${VOL_COLOR}">${esc(p.name)}</b></span><span class="small muted">${esc(p.volGroup || "")}</span></div>
+      <div class="bar"><i style="width:${pct(p) * 100}%;background:${hpColor(pct(p))}"></i></div>
+      <div class="small muted">${gunText(b, p)} · ${Math.round(p.hp)} hp${st ? ` · <span class="${p.down || p.dead ? "danger" : ""}">${st}</span>` : ""}</div>
+    </div>`;
+    }
+    html += `</div>`;
+  }
 
   if (b.over) return html + resultHtml(state, b);
   if (b.phase === "deploy") return html + deployPanel(state, b, u);
@@ -1456,12 +1473,12 @@ function medicButtons(state, b, u, btn) {
   const medic = isMedic(u);
   const kitTip = medic ? `${u.name.split(" ")[0]}'s ${u.medKit.name}, Medicine ${Math.round(u.medicine)}` : "";
   if (medic) {
-    const hurtNear = players(b).filter((o) => active(o) && (o === u || adjacent(u, o)) && o.hp < o.maxHp).sort((a, c) => a.hp - c.hp)[0];
+    const hurtNear = allSide(b).filter((o) => active(o) && (o === u || adjacent(u, o)) && o.hp < o.maxHp).sort((a, c) => a.hp - c.hp)[0];
     const why = hurtNear ? healRefusal(b, u, hurtNear) : "Nobody hurt next to them.";
     html += btn("heal", "Heal", `1 action, 1 meds and a use of the kit (${kitTip}): a medic's treatment, +${healAmount(u, hurtNear || u)} health on themselves or a teammate next to them (plain meds: less).${why ? ` ${why}` : ""}`, ap > 0 && !why, keyLabel("battle.heal", 1) || "Shift+H");
   }
-  const downNear = players(b).filter((o) => o.down && !o.dead && !o.left && !o.off && adjacent(u, o));
-  const anyDown = players(b).some((o) => o.down && !o.dead && !o.left && !o.off);
+  const downNear = allSide(b).filter((o) => o.down && !o.dead && !o.left && !o.off && adjacent(u, o));
+  const anyDown = allSide(b).some((o) => o.down && !o.dead && !o.left && !o.off);
   if (medic || anyDown) {
     const t = downNear[0] || null;
     const why = reviveRefusal(b, u, t);
@@ -1873,6 +1890,7 @@ function previewHtml(b, state = null) {
   if (t && t.side === "third" && v.seen.has(t.id)) return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br><span class="small">${t.team === "military" ? "A soldier: fights the dead and anyone who attacks them, not you unless you fire on them." : "A survivor keeping to themselves: they defend themselves or run. Talk to them after the fight."} Click twice to attack.</span>`;
   // The knocked out (sim/stealth.js).
   if (t && t.side === "enemy" && t.ko && v.vis[h.y * W + h.x]) return `<b>${esc(t.name)}</b> · ${t.tied ? "tied up: your prisoner if you win" : `out cold, wakes in about ${Math.max(1, t.wake - b.turn)} turn${t.wake - b.turn === 1 ? "" : "s"}: Tie up (T) from next to them`}. <span class="muted">Drag (Shift+D) moves them out of sight.</span>`;
+  if (t && t.side === "player" && t.vol != null) return `<b style="color:${VOL_COLOR}">${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)}/${t.maxHp} hp · ${gunText(b, t)}</span><br><span class="small">Volunteer from ${esc(t.volGroup || "an allied group")}: their own orders. They act on their own at the end of your turn.</span>`; // sim/volunteers.js
   if (t && t.side === "player") {
     if (b.phase === "deploy") return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.post === "gate" ? " · holds the gate" : t.post === "tower" ? " · on a tower" : ""}</span>`;
     const hh = heightAt(b, t.x, t.y);

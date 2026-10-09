@@ -242,6 +242,10 @@ a.link { color: var(--info); cursor: pointer; text-decoration: underline; }
 .cbunit.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 .cbunit.done { opacity: 0.65; }
 .cbunit.out { opacity: 0.5; }
+.cbunit.vol { cursor: default; border-color: #6f5a99; } /* a volunteer (sim/volunteers.js): not yours to select */
+.cbunit.vol:hover { border-color: #6f5a99; }
+.vol-tag { display: inline-block; font-size: 0.68em; font-weight: 700; letter-spacing: 0.04em; color: #1b1424; background: #c9a2ff; border-radius: 3px; padding: 0 0.25em; vertical-align: 1px; }
+.vol-text { color: #c9a2ff; }
 .cbunit .bar { margin: 0.2rem 0; }
 .cbunit .ap i { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: #2c3139; margin-left: 0.2rem; }
 .cbunit .ap i.on { background: #8fc1ff; }
