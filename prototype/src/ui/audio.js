@@ -684,7 +684,7 @@ export function soundOptionsHtml(options) {
       <label${tip("Hear one sound, to set the volumes or to judge it")}>Hear <select data-action="snd-pick">${HEAR_NAMES.map((n) => `<option value="${n}" ${n === hearPick ? "selected" : ""}>${esc(SOUND_LABELS[n] || n)}</option>`).join("")}</select></label>
       <button data-action="snd-test"${tip("Play the sound picked")}>▶ Play</button>
       ${locked ? `<span class="small muted">The browser starts sound after your first click or key press.</span>` : ""}
-    </div>${labGunHtml()}${zombieTestHtml(esc)}`;
+    </div>${zombieTestHtml(esc)}${labGunHtml()}`; // the two pickers to hear one sound together, then the gun and blast test (ui/sfxlab.js)
 }
 // The sound test plays through the game's own context and battle bus (ui/sfxlab.js).
 LAB.ctx = () => { unlock(); return A && live() && wantOn() ? A.ctx : null; };
