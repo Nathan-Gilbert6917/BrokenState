@@ -11,7 +11,7 @@ import { bandChip, BANDS_HELP } from "./loadview.js";
 import { itemDur, itemDurMax, durUnit } from "../sim/crafting.js";
 import { worthTier } from "../sim/valuation.js";
 import {
-  EQUIP_SLOTS, SLOT_NAMES, POCKETS, ensureInv, packOf, packSize, armorPower, itemAt, parseLoc, moveItem, quickMove, toStorage,
+  EQUIP_SLOTS, SLOT_NAMES, POCKETS, ensureInv, packOf, packSize, ensurePack, armorPower, itemAt, parseLoc, moveItem, quickMove, toStorage,
   personPlace, battlePlace, storageFor, battleBodies, bodyHolder, bodyEmpty, takeSupply, takeAllBody, takeAllBodies, itemLoad, allItems,
   breakDownInfo, breakDownAt, setFireMark, modChoices, fitModAt, unfitModAt, salvageInfo, salvageAt, salvageYield, salvageText, placeOfLoc,
 } from "../sim/inventory.js";
@@ -36,6 +36,7 @@ import { rigOf, pouchesOf, isCarrier, insertsOf } from "../sim/inventory.js"; //
 import { POUCH_NAMES, POUCH_ICON, MAGAZINES } from "../sim/data-kit.js";
 import { battleKg, bandFor } from "../sim/carrykit.js"; // the battle load band (R17)
 import { typeName } from "../sim/rounds.js";
+import { holdSection } from "./carry.js"; // the team's supplies this person carries (pockets, pack, arms), the ground
 import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -139,7 +140,7 @@ export function doll(state, ui, holder, prefix, portrait, { readonly = false, us
     weight = `<div class="small"${tip(`${team ? `Wears ${Math.round(worn * 10) / 10} kg and carries ${Math.round((pl.load - worn) * 10) / 10} kg of the team's supplies and cargo (shared so everyone is equally burdened)` : `Wears and carries ${Math.round(worn * 10) / 10} kg`}, of a ${max} kg max load (40, 28 with a Bad Back, + the pack and Packrat). On foot: pace ${Math.round(pl.speed * 100)}%, food and water ${Math.round(pl.eat * 100)}% on the move. ${BANDS_HELP}`)}>${Math.round(pl.load)}/${max} kg ${bandChip(pl.band)}</div>`;
   }
   return `<div class="doll">
-      <div class="dollside">${box("weapon")}${box("tool")}${box("rig")}${box("backpack")}</div>
+      <div class="dollside">${box("weapon")}${box("tool")}${box("rig")}${box("backpack")}${box("carry")}</div>
       <div class="dollport">${portrait}<div class="small muted"${tip("Armor from every worn piece (body, head, arms, legs) adds up, to a cap of 5.5. Each point cuts damage taken by 6%.")}>Armor ${Math.round(arm * 10) / 10}</div>${weight}${battleLine(holder)}</div>
       <div class="dollside">${box("head")}${box("armor")}${insertBoxes(state, ui, holder, prefix, user, readonly)}${box("arms")}${box("legs")}</div>
     </div>
@@ -147,9 +148,18 @@ export function doll(state, ui, holder, prefix, portrait, { readonly = false, us
     <div class="invgrid">${Array.from({ length: POCKETS }, (_, i) => slotBox(state, ui, `${prefix}:pocket:${i}`, "", user, readonly)).join("")}</div>
     ${rigBoxes(state, ui, holder, prefix, user, readonly)}
     <div class="invlabel"${tip("A pack holds anything but another pack or something bulky. Wear a backpack to get pack slots and a higher max load. Everything in it still weighs what it weighs.")}>Pack${pk ? ` (${pk.filter(Boolean).length}/${pk.length})` : ""}</div>
-    ${pk ? `<div class="invgrid">${pk.map((_, i) => slotBox(state, ui, `${prefix}:pack:${i}`, "", user, readonly)).join("")}</div>` : `<div class="small muted">No backpack, no pack slots.</div>`}`;
+    ${pk ? `<div class="invgrid">${pk.map((_, i) => slotBox(state, ui, `${prefix}:pack:${i}`, "", user, readonly)).join("")}</div>` : `<div class="small muted">No backpack, no pack slots.</div>`}${carriedBagBoxes(state, ui, holder, prefix, user, readonly)}`;
 }
 
+// A bag carried in the arms (In arms slot, sim/carry.js): its weight, the hands-full rule, and its contents to take
+// things out of (or put in). Put it on by moving it to Backpack (or Rig) when that is free.
+function carriedBagBoxes(state, ui, holder, prefix, user, readonly) {
+  const bag = holder.gear && holder.gear.carry;
+  if (!bag) return "";
+  const cells = packSize(bag) ? ensurePack(bag) : null;
+  return `<div class="invlabel warn"${tip(`Carried in the arms, not worn: ${Math.round(itemLoad(bag) * 10) / 10} kg with what is in it, on top of the load. Hands full: no shooting, blows with a weapon, reloading, throwing or treating until it is set down (free in a fight). Move it to Backpack to wear it (if the back is free), or take things out of it here.`)}>In arms: ${esc(bag.name)} (${Math.round(itemLoad(bag) * 10) / 10} kg${cells ? `, ${cells.filter(Boolean).length}/${cells.length}` : ""})</div>
+    ${cells ? `<div class="invgrid">${cells.map((_, i) => slotBox(state, ui, `${prefix}:bag:${i}`, "", user, readonly)).join("")}</div>` : ""}`;
+}
 // The rig's pouches (a chest rig, a tactical vest's, a plate carrier's): one box a pouch, labelled by kind.
 function rigBoxes(state, ui, holder, prefix, user, readonly) {
   const rig = rigOf(holder);
@@ -346,7 +356,7 @@ export function inventoryModal(state, ui) {
     ${ui.invMsg ? `<div class="result small">${esc(ui.invMsg)}</div>` : ""}
     ${readonly ? `<div class="small warn">${esc(s.name.split(" ")[0])} is out of reach: nothing can be changed.</div>` : ""}
     <div class="invcols">
-      <div class="invcol">${whoTabs(state, ui, people, s.id)}${body}</div>
+      <div class="invcol">${whoTabs(state, ui, people, s.id)}${body}${readonly ? "" : holdSection(state, ui, s)}</div>
       <div class="invcol">${readonly ? "" : storageBox(state, ui, place, s)}</div>
     </div>
     ${selBar(state, ui, place)}

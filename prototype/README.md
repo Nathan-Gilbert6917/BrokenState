@@ -187,6 +187,12 @@ node tools/mapmovetest.js
 Moving on the State Map (`src/sim/parties.js` glideAt, `src/ui/render.js`, `src/ui/pacing.js`; or `node tools/mapmovetest.js [seed]`, a few seconds): runs the main loop's clock frame by frame at 0.5×, 1×, 2× and 3× while a team crosses several tiles on foot (normal, stealthy, rushed), by truck on a road and off it, on bikes, with road blockages and while held by a card in the tray, and checks the map never draws it going back (no snap back to the tile it left when it gets somewhere before the hour is out or when the hour ticks), never jumps ahead and ends on the destination; then that a plain move that got there raises no card in radio contact (a log line instead), still does under the autopilot and for a recon, and out of contact raises its orders card in the tray (no pop-up), which opens by itself if left 8 hours.
 
 ```bash
+node tools/carrytest.js 7
+```
+
+Carrying the team's supplies (`src/sim/carry.js`, `src/ui/carry.js`; or `node tools/carrytest.js [seed]`, about 20 s): the pool stays one pool, placed person by person (`p.hold`): packs (2 water, 4 rations or 20 firewood a free slot), pockets (one ration or bottle each, small things only), the arms (up to 25 kg, the weakest fighter first) or the vehicle (a car takes it all, bikes' racks 15 kg); drinking and eating lighten the arms first, an item put in the pack pushes supplies out, fresh game is its own 1 kg stack; hands full in a tactical fight (shoot, melee, reload refused; carrying a body blocks melee too), Drop carried free, Pick up load 1 action, the battle AI drops before it fights; won, everything is picked up again, retreated (on the map or by the numbers) what was set down stays on the tile's ground; the ground on the State Map ("Cargo left behind" with its contents on the marker, food spoiling, another team picking part of it up, Pick up all, what does not fit staying); a bag carried in the arms (a looted pack moved into the In arms slot weighs on its carrier with what is in it, hands full the same way, Drop carried sets it down whole, the AI drops it, won it comes back, retreated it stays on the ground, picked up into another's arms, put on and off, saved, unloaded into the armory at home); how much to collect (the box's numbers, Fetch water stopping at 12, Cut wood capped at 30 firewood, no quantity = the most that fits); save and load; 20 days on autopilot with every team's supplies always placed.
+
+```bash
 node tools/teamtest.js
 ```
 

@@ -33,6 +33,7 @@ import { watchlistPin } from "./watchlist.js"; // 📌 pin the team to the Watch
 import { totalRounds, sumRecs } from "../sim/rounds.js"; // rounds by calibre
 import { roundsLine } from "../sim/ammo.js";
 import { teamInvBar } from "./teaminv.js"; // 🎒 Team inventory; Drop off / Load at a base
+import { teamCarryCard } from "./carry.js"; // who carries what (pockets, packs, arms, vehicle), the ground here
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -182,7 +183,7 @@ export function renderExpedition(state, ui, p) {
       ${ui.xpMsg ? `<div class="result small" style="margin-top:0.4rem">${esc(ui.xpMsg)}</div>` : ""}
     </div>`;
 
-  return head + camp + status + actions +
+  return head + camp + status + actions + teamCarryCard(state, ui, p) +
     `<h3>People (${members.length})</h3>${teamNeedsBlock(state, p, true)}${members.map((m) => memberCard(state, p, m, true, queueing)).join("")}` +
     suppliesBlock(state, p) + vehicleBlock(state, p, v);
 }

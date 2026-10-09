@@ -209,6 +209,7 @@ export const poolLoad = (p) => supplyLoad(p.supplies) + cargoLoad(p.cargo);
 export function cargoRoom(state, p) {
   let cap = partyCapacity(state, p);
   if (p.haulCap != null && !p.vehicle) cap = Math.min(cap, p.haulCap);
+  if (p.task && p.task.capKg != null && p.task.pool0 != null) cap = Math.min(cap, p.task.pool0 + p.task.capKg); // carry.js capTask: collect only as much as asked
   return Math.max(0, cap - poolLoad(p));
 }
 
@@ -1815,6 +1816,7 @@ export function settleInto(state, p, base) {
   for (const m of members) {
     m.location = { kind: "base", baseId: base.id };
     m.role = "scavenge";
+    if (m.gear && m.gear.carry) { base.armory.push(m.gear.carry); m.gear.carry = null; } // carry.js: a bag carried home goes in the armory
   }
   mergeKnowledge(state, p.seen, p.spotted, p);
   removeParty(state, p);
