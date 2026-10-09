@@ -14,6 +14,7 @@ import { stockHas, useStock } from "./water.js"; // recipes: water counts both k
 import { prisonBuildRate } from "./prisoners.js"; // prisoners-tab: prisoner labour on the build queue
 import { benchRounds } from "./ammo.js"; // the ammo bench makes rounds by calibre
 import { reloadStatus, runReload } from "./reloading.js"; // the reloading bench: an ammo bench upgraded in place
+import { livestockYield, PEN } from "./farming.js"; // the animal pen (station "livestock")
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 ammo per day (+4% per Mechanics point)" },
@@ -25,6 +26,8 @@ export const RECIPES = {
   // the generator burns fuel for power (its fuel is paid in power.js refreshPower, not by runStations).
   still: { name: "Ethanol", in: { food: 8, water: 2 }, out: { fuel: 3 }, skill: "farming", main: "food", desc: "8 food + 2 water → 3 fuel per day. Up to 4 of the food can be yesterday's spoiled food (mash). Give it a Keep-at-least order so it only takes the surplus." },
   power: { name: "Power", in: { fuel: 2 }, out: {}, skill: "mechanics", main: "fuel", desc: "2 fuel a day → 6 power while something draws it (stands by otherwise). Loud: +4 Heat while running." },
+  // farming.js PEN: the animal pen's keeper (eggs and milk every day, all year; recipeOutput: livestockYield).
+  livestock: { name: "Livestock", in: { water: 1 }, out: { food: 3 }, skill: "farming", desc: "1 water → 3 fresh food a day (eggs and milk; +1 with Farming 6+), in every season (× 0.75 in winter, on stored hay); half without walls standing at the base. The animals graze 2 of the base's outdoor crop plots." },
 };
 
 // Crafting benches (family "bench", tiers 1–3 on one utility plot, each upgrading the one below in place): hand
@@ -125,6 +128,8 @@ export const BUILDINGS = {
   greenhouse:   { name: "Greenhouse",     plot: "building", cost: { scrap: 20, parts: 3 },  hours: 36, max: 2, desc: "+2 sheltered crop plots: grow in every season (winter too), stand 10 °C more cold, and the weather rarely harms them." },
   // Mood (relations.js moodFactors): no operator needed.
   common_room:  { name: "Common room",    plot: "building", cost: { scrap: 22 },            hours: 30, max: 2, desc: "Chairs, a stove and a card table: +1.5 mood a day for everyone living here, up to 15 people a room (spread thinner above that). No operator." },
+  // farming.js PEN (2026-10-09, the progression picks): food a guarded base grows on its own land, in winter too.
+  animal_pen:   { name: "Animal pen",     plot: "building", cost: { scrap: 14 },            hours: 20, max: 2, station: "livestock", desc: "Hens and a few goats behind a fence. Workshop station: a keeper (Farming) gets 3 fresh food a day from them (eggs and milk; 4 with Farming 6+) for 1 water, in every season (three quarters of it in winter, on stored hay). The animals graze 2 of the base's outdoor crop plots (2 fewer plots for each pen). Without walls standing at the base they stray and the dead take some: half the food." },
   chapel:       { name: "Chapel",         plot: "building", cost: { scrap: 16 },            hours: 24, max: 1, desc: "A quiet room with candles: +1 mood a day for everyone here, grief weighs half as much, and a memorial service held here lifts everyone 2 more. No operator." },
   // Hospital tiers (family "hospital"): each one upgrades the one below and replaces it when finished.
   // med: beds = patients that get the bonus, heal = extra health per day in a bed, eff = meds multiplier,
@@ -352,7 +357,7 @@ export const baseBeds = (base) => (isShelter(base) ? SHELTER.beds : base.type ==
 // barracks (the difference). The autopilot counts them as beds to come (autopilot.js buildWishes, roomFor).
 export const queuedBeds = (base) => base.construction.reduce((a, c) => a + (!BEDS[c.type] ? 0 : c.target ? BEDS[c.type] - BEDS[BUILDINGS[c.type].from] : BEDS[c.type]), 0);
 // Crop plots (farming.js plotLimit): hub 6, outpost and shelter 2, +2 per Farm plot building.
-export const farmSlots = (base) => (isShelter(base) ? SHELTER.plots : base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2;
+export const farmSlots = (base) => Math.max(0, (isShelter(base) ? SHELTER.plots : base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2 - count(base, "animal_pen") * PEN.pasture); // the pens' pasture (farming.js)
 export const stations = (base) => base.buildings.filter((b) => BUILDINGS[b.type].station);
 // The crafting bench here (BENCH): the highest tier standing, 0 for none. Broken ones count only with any (a build
 // gate: it is repaired); benchOf is what the crafters get from the working one (null: none, so no bonus; old saves).
@@ -422,6 +427,7 @@ export function recipeOutput(s, recipe, base = null, state = null) {
     if (recipe === "meds" && skill(s, "medicine") >= 8) q += 1;
     if (recipe === "meds") q += hospitalCraft(state, base);
     if (recipe === "preserve" && skill(s, "farming") >= 8) q += 1;
+    if (recipe === "livestock" && k === "food") q = base && state ? livestockYield(state, base, s) : v; // farming.js: the season, the walls, the keeper
     out[k] = q;
   }
   return out;

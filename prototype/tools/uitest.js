@@ -1248,6 +1248,9 @@ section("Map overlays: Known area, ruins, Coalition land (render.js, help.js, si
   // Coalition land: the same tiles controlledLand counts, each in its nearest owner's color.
   const ms = w.factions.filter((x) => x.alive && x.bases.length).slice(0, 2);
   ensureAlliance(w).members.push(...ms.map((x) => x.id));
+  // Members a year in and at peace (sim/alliance.js memberLand: only their land counts and is drawn).
+  for (const x of ms) w.alliance.joined[x.id] = Math.floor(w.hour / 24) + 1 - ALLIANCE.LAND_AFTER;
+  if (w.diplo) w.diplo.wars = w.diplo.wars.filter((x) => !ms.some((m) => m.id === x.a || m.id === x.b));
   R.view.layers = new Set(["pois", "territory", "coalition"]);
   const c0 = R.overlayStats.coalition;
   const coalDraw = draw(w);

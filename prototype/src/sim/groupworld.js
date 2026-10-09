@@ -418,7 +418,7 @@ export const abandonedList = (state) => state.abandoned || (state.abandoned = []
 export const abandonedAt = (state, tile) => (state.abandoned || []).find((a) => a.tile === tile) || null;
 // Your buildings as a group's works (the keys are buildings.js BUILDINGS: this table used some names no building has,
 // "farm", "raincatcher", "bench", so a lost outpost's fields, catchers and benches were never counted).
-const PLAYER_WORKS = { walls: "walls", farm_plot: "farms", greenhouse: "farms", well: "water", rain_catcher: "water", cistern: "water", bunkhouse: "beds", barracks: "beds", craftbench: "bench", workbench: "bench", toolbench: "bench", machine_shop: "bench", ammo_bench: "bench", storehouse: "store", cellar: "store" };
+const PLAYER_WORKS = { walls: "walls", farm_plot: "farms", greenhouse: "farms", animal_pen: "pens", well: "water", rain_catcher: "water", cistern: "water", bunkhouse: "beds", barracks: "beds", craftbench: "bench", workbench: "bench", toolbench: "bench", machine_shop: "bench", ammo_bench: "bench", storehouse: "store", cellar: "store" };
 // A lost outpost's buildings as works (standing ones only).
 function worksOfBuildings(list) {
   const works = {};

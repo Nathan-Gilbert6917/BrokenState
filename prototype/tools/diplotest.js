@@ -647,6 +647,10 @@ section("Alliance victory");
   for (const f of live) { f.goodwill = 80; f.pact = "trade"; done(f); f.known = true; }
   for (const f of live.slice(0, -1)) { const r = A.inviteToAlliance(st, f); if (!A.isMember(st, f)) { f.bases.unshift(nearTile(st, hub(st).tile, 2, 7)); A.inviteToAlliance(st, f); } }
   const last = live[live.length - 1];
+  // Members a year in and at peace (alliance.js memberLand: only then does a member's land count; tools/progpickstest.js
+  // checks that rule): this section checks the victory's rule itself.
+  const seasoned = () => { const AL = A.ensureAlliance(st); for (const id of AL.members) AL.joined[id] = Math.min(AL.joined[id] ?? Infinity, day(st) - A.ALLIANCE.LAND_AFTER); if (st.diplo) st.diplo.wars = st.diplo.wars.filter((w) => !AL.members.includes(w.a) && !AL.members.includes(w.b)); };
+  seasoned();
   const g0 = A.goalsProgress(st);
   console.log(`  start: land ${(g0.alliance.land.pct * 100).toFixed(1)}%, ${g0.alliance.members} of ${g0.alliance.groups} groups in, ${g0.hives.left} hives`);
   check(!A.allianceVictory(st), "not with hives standing, land under half and a group outside");
@@ -663,6 +667,7 @@ section("Alliance victory");
   check(A.controlledLand(st).pct > 0.5 && A.allianceVictory(st), `land ${(A.controlledLand(st).pct * 100).toFixed(1)}% held with ${last.name} outside: the victory stands (groups outside no longer block it; members are enough)`);
   last.bases.unshift(nearTile(st, hub(st).tile, 2, 7));
   A.inviteToAlliance(st, last);
+  seasoned();
   check(A.isMember(st, last) && A.allianceVictory(st), "land over half, every group in, no hive: victory");
   st.hives.push({ id: 999, tile: 0, res: 0 });
   check(A.allianceVictory(st), "a hive still standing does not stop it (the coalition is its own victory)");
@@ -677,6 +682,7 @@ section("Alliance victory");
   outsider.alive = false; outsider.bases = [];
   check(A.allianceVictory(st) === (A.controlledLand(st).pct > 0.5), "a collapsed group does not count");
   st.alliance.members.push(outsider.id);
+  seasoned();
   outsider.alive = true;
   outsider.bases = [nearTile(st, hub(st).tile, 2, 7)];
   check(checkGameOver(st) && st.victory && st.victoryReason === "alliance" && st.log.some((l) => /^The Calder Coalition holds/.test(l.text)), "checkGameOver: the coalition's victory, with its reason");
