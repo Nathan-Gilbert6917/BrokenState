@@ -598,7 +598,7 @@ export function loseRaidHumvee(state, p, to) {
 function loseOneRaidCar(state, f, v, to) {
   f.vehicles = f.vehicles.filter((x) => x !== v);
   f.vehLost = state.hour;
-  const roll = (k) => hash01(state.seed, "humvee", f.name, v.type, state.hour, k); // never by ids (process-wide, world.js newId)
+  const roll = (k) => hash01(state.seed, "humvee", localId(state, f.id), localId(state, v.id) /* localId: ids are process-wide */, state.hour, k);
   const ups = JSON.parse(JSON.stringify(upgradesOf(v)));
   if (to && to.base) {
     const [c0, c1] = HUMVEE.LEFT_COND, [f0, f1] = HUMVEE.LEFT_FUEL;

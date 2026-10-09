@@ -37,7 +37,7 @@
 // Taking over = switching it off: nothing is undone, everything stays as the steward left it. While the dev
 // autopilot is on it runs the whole holdout and stewards do nothing.
 // Once a day (STEWARD_LOG_HOUR) each steward writes one log line with what it did since the last one.
-import { log, hourOfDay, atBase, survivorById, skill } from "./world.js";
+import { log, hourOfDay, atBase, survivorById, skill, localId } from "./world.js";
 import { hash01 } from "./skills.js";
 import { BUILDINGS } from "./buildings.js";
 import { CRAFTS, craftName } from "./crafting.js";
@@ -235,7 +235,7 @@ function leaderPresent(state, base, s) {
 
 function runOne(state, base, s, L) {
   // Slow to act: a leader under LEADER.sharp gets nothing done in some hours (a fixed hash, not the game's dice).
-  if (actsShare(L) < 1 && hash01("lead", state.seed, base.id, state.hour) >= actsShare(L)) { s.day.slow++; return; }
+  if (actsShare(L) < 1 && hash01("lead", state.seed, localId(state, base.id) /* localId: ids are process-wide */, state.hour) >= actsShare(L)) { s.day.slow++; return; }
   const say = (line) => { if (line) { log(state, `🧭 ${L.name} (${base.name}): ${line}`, /^Emergency|heading for/.test(line) ? "danger" : "info"); s.day.did.push(line); } };
   const keep = new Set([L.id, s.leaderId, ...atBase(state, base.id).filter((x) => x.pinned).map((x) => x.id)]);
   if (s.areas.defence) { say(stewardWarnings(state, base, s.style)); say(stewardSafety(state, base, s.style)); }

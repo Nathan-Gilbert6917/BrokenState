@@ -343,15 +343,15 @@ export function rollFight(rng, model, policy = "never") {
 // A won fight fought to the end (medics.js MEDIC.NUMBERS): each member who fell is saved, barely alive, by the best
 // medic with a kit still standing (SAVE + PER_MED a point of their Medicine, at most MAX). Its own dice, read off the
 // stream's state without drawing from it (skills.js hash01), so a fight with or without a medic goes on with exactly
-// the same dice as before medics existed. Sets m.saved.
+// the same dice as before medics existed. Sets m.saved. Each member's dice go by their place in the team, not their id
+// (world.js newId is process-wide: the same world made twice in one process has other ids, and the same fight must go
+// the same way; tools/dettest.js).
 function medicSaves(rng, ms) {
   const medics = ms.filter((m) => !m.down && m.kit);
   if (!medics.length) return;
   const med = Math.max(...medics.map((m) => m.medicine || 0));
   const p = Math.min(MEDIC.NUMBERS.MAX, MEDIC.NUMBERS.SAVE + MEDIC.NUMBERS.PER_MED * med);
   const at = Number.isFinite(rng.state) ? rng.state : 0;
-  // By the member's place in the fight, never its id: ids come from one counter for the whole process (world.js
-  // newId), so a second world of the same seed (or a loaded save) rolled other saves.
   ms.forEach((m, i) => { if (m.down && hash01("medicsave", at, i) < p) m.saved = true; });
 }
 
