@@ -594,7 +594,9 @@ export function listenAt(state, p, id) {
   const m = v + d10 - (L.dc + L.perLayer * to.layer);
   const n = chamberTruth(state, hive, to);
   const name = who ? first(who) : "Someone";
-  let rec, text, k = "info";
+  /** @type {any} */
+  let rec;
+  let text, k = "info";
   if (m >= L.exact) {
     rec = { by: "listen", q: "exact", kind: to.kind, n };
     text = `${name} listens at the passage: ${heardText(rec)}. Sure of it.`;
@@ -808,7 +810,9 @@ function encSetup(state, p, c, e) {
     context: { hiveCrawl: { hiveId: hive.id, room: room.id, kind: e.kind, size: K.size, layer: room.layer, warmth: warmthOf(den, room), met: count } },
   };
 }
-// By the numbers the dark counts for the brood: its power × (1 + LIGHT.numbers × the share of the team without a light).
+// By the numbers the dark counts for the brood in a chamber: its power × (1 + LIGHT.numbers × the share of the team
+// without a light). Not in the core: its fight by the numbers is fitted to the map (HIVEMIND.numbersK) as the
+// autopilot's real teams fought it, and the autopilot's gate for it (AUTO.coreOdds) sits right at that fit.
 export function darkMult(state, p) {
   const m = partyMembers(state, p);
   return m.length ? 1 + HCRAWL.LIGHT.numbers * (1 - teamLights(state, p) / m.length) : 1;
@@ -1180,7 +1184,7 @@ export function finishHiveCrawl(state, p, extra = "") {
   const hive = crawlHive(state, c);
   if (hive) { const mem = memOf(hive); mem.lastAlert = c.alert; mem.lastHour = state.hour; }
   delete p.hiveCrawl;
-  const got = [...Object.entries(c.tally.supplies).map(([k, v]) => `${v} ${k}`), ...c.tally.gear];
+  const got = [...Object.entries(c.tally.supplies).map(([k, v]) => `${v} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k}`), ...c.tally.gear];
   const den = hive ? denOf(state, hive) : null;
   const text = `${extra ? extra + " " : ""}Out of ${c.name} after ${state.hour - c.started} h, ${c.deepest ? `${c.deepest} chamber${c.deepest === 1 ? "" : "s"} deep${den ? ` of ${den.depth}` : ""}` : "no deeper than the mouth"}, ${c.kills} of the brood killed${got.length ? `, with ${got.join(", ")}` : ""}.${c.lost.length ? ` Lost: ${c.lost.join(", ")}.` : ""}`;
   log(state, `${teamName(state, p)}: ${text}`, c.lost.length ? "danger" : "info");
@@ -1217,6 +1221,7 @@ export function hiveCrawlTurned(state, p, s) {
 // played out by the AI on both sides, as the old storm was).
 // numbers: the setup for a fight by the numbers (the bosses folded into the brood's power: byNumbersOdds counts
 // count × power); on the map the brood keeps its own power and the bosses are units (the layout).
+// (No darkMult here: the core's numbers are fitted to the map as the autopilot's teams fought it, HIVEMIND.numbersK.)
 export function coreSetup(state, p, hive, numbers = false) {
   const f = coreForce(state, hive);
   const allies = hiveAllies(state, hive);
@@ -1224,7 +1229,7 @@ export function coreSetup(state, p, hive, numbers = false) {
   const n = Math.max(1, count);
   return {
     tile: hive.tile, partyId: p.id, ambush: null, canRetreat: true, handler: "hiveAssault", layout: "hivecore",
-    enemy: { kind: "zombies", count: n, power: numbers ? Math.round(((count * f.power + f.bossPower) / n) * darkMult(state, p) * 10) / 10 : f.power, types: f.types, elite: !!f.elite, name: `the core of ${hive.name}`, brood: count, broodPower: f.power, hp: f.hp },
+    enemy: { kind: "zombies", count: n, power: numbers ? Math.round(((count * f.power + f.bossPower) / n) * 10) / 10 : f.power, types: f.types, elite: !!f.elite, name: `the core of ${hive.name}`, brood: count, broodPower: f.power, hp: f.hp },
     aiStyle: coreStyle(state, p), // the core's brood keeps coming out of the walls: no Aggressive last stand there
     context: { hiveId: hive.id, partyId: p.id, crawl: !!p.hiveCrawl, tier: f.tier, warmth: 100, met: count, allies: allies.fighters },
   };
@@ -1651,5 +1656,5 @@ export const HIVE_CRAWL_HELP = `A hive is destroyed from the inside. Send a team
 <b>The hive's Alert.</b> Moving, fighting, fire and a failed sneak make noise; lying still lets it fade. From ${HCRAWL.ALERT.converge} the brood converges on you: it pours into your chamber and fills the chambers behind you again; from ${HCRAWL.ALERT.block} it packs the mouth. Leaving means going back the way you came.<br>
 <b>The ${BOSS_NAMES.hivemind}.</b> In the core the ${BOSS_NAMES.hive} and the last of the brood guard it. It never moves, but every turn it pulses (everyone within ${HIVEMIND.pulse} tiles hurt and sometimes stunned), lashes at anyone next to it, and every other turn tears more brood out of the walls. It has ${HIVEMIND.hp} health (+${HIVEMIND.perTier} a tier) and thick flesh. Below ${Math.round(HIVEMIND.P2.at * 100)}% it tears open in a <b>second phase</b>: the cave quakes and pillars of flesh come down, its pulse reaches ${HIVEMIND.P2.pulse} tiles and hits harder, and the walls give up ${HIVEMIND.P2.spawn[0]}–${HIVEMIND.P2.spawn[1]} brood at a time. Its death kills the brood around it. The other groups crawl hives too (their war parties clear chambers on the shortest way and come back, and take the hoard of a hive they burn), and allied fighters thin the brood in every chamber.<br>
 <b>The hoard.</b> In the dead core lies what the hive dragged in from the dead: guns, armour, rounds, meds, gun parts and scrap, now and then something rare (night vision, a thermal sight, a military radio, a surgical kit), all worn as the dead left it; more the higher the hive's tier and the fuller its stores. The team takes what fits (the best first); the rest stays at the hive, marked on the map: Recover it.<br>
-<b>Lights, flares and listening.</b> The hive is dark. With the team's lights on (the default when anyone carries one: headlamp, flashlight, torch, lantern) the drafts out of your chamber are misread half as often, but the brood sees you coming (Alert +${HCRAWL.LIGHT.move} a move, creeping past a little harder); douse them in the window. In a fight in the hive someone without a light sees ${HCRAWL.LIGHT.dark} tiles, with one their light's reach + ${HCRAWL.LIGHT.lit}; by the numbers the brood counts up to ${Math.round(HCRAWL.LIGHT.numbers * 100)}% more for the share of the team in the dark. A <b>road flare</b> thrown down a passage lights the chamber beyond: its kind, its brood exactly and the true draft (Alert +${HCRAWL.FLARE.alert}; found at gas stations, police and fire stations and campgrounds, made from scrap, fuel and a few rounds). <b>Listen</b> at a passage (${HCRAWL.LISTEN.hours} h): your best listener's (Scouting + Stealth) / 2 + d10 against ${HCRAWL.LISTEN.dc} (+${HCRAWL.LISTEN.perLayer} a chamber deep): well, the kind and the brood exactly; enough, the kind and roughly how many; poorly, a guess that can be wrong; badly, a noise that warns them (Alert +${HCRAWL.LISTEN.alert}, they wait for you). The autopilot listens with a good listener and throws flares without one.<br>
+<b>Lights, flares and listening.</b> The hive is dark. With the team's lights on (the default when anyone carries one: headlamp, flashlight, torch, lantern) the drafts out of your chamber are misread half as often, but the brood sees you coming (Alert +${HCRAWL.LIGHT.move} a move, creeping past a little harder); douse them in the window. In a fight in the hive someone without a light sees ${HCRAWL.LIGHT.dark} tiles, with one their light's reach + ${HCRAWL.LIGHT.lit}; by the numbers the brood in a chamber counts up to ${Math.round(HCRAWL.LIGHT.numbers * 100)}% more for the share of the team in the dark. A <b>road flare</b> thrown down a passage lights the chamber beyond: its kind, its brood exactly and the true draft (Alert +${HCRAWL.FLARE.alert}; found at gas stations, police and fire stations and campgrounds, made from scrap, fuel and a few rounds). <b>Listen</b> at a passage (${HCRAWL.LISTEN.hours} h): your best listener's (Scouting + Stealth) / 2 + d10 against ${HCRAWL.LISTEN.dc} (+${HCRAWL.LISTEN.perLayer} a chamber deep): well, the kind and the brood exactly; enough, the kind and roughly how many; poorly, a guess that can be wrong; badly, a noise that warns them (Alert +${HCRAWL.LISTEN.alert}, they wait for you). The autopilot listens with a good listener and throws flares without one.<br>
 <b>Your record.</b> Every hive keeps what your teams learned of it: how deep they got, the chambers mapped, whether they found the core (the State Map's hive tile and its ⛏ label, the Goals card). When the hive grows deeper its chambers are new and the map starts again.`;
