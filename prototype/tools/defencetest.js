@@ -366,9 +366,14 @@ section("The tiers by the numbers");
   const c = holdCheck(st, h, 2000);
   const small = holdCheck(st, h, 30);
   check(small.holds && small.tier === "wall" && !c.holds && c.through > 0 && c.tier === "overrun" && c.buildingsLimit >= c.yardLimit, `holdCheck: 30 held at the walls; 2000 breaks in (${c.through} inside) past the yard (holds ${c.yardLimit}) and the buildings (${c.buildingsLimit})`);
-  const lim0 = tierLimits(st, h).yard;
+  // One barricade raises the yard's multiplier; the limit is a horde count, and the horde's strength has flat stretches
+  // (one step can land on one, as the defenders' traits move their power), so it must not fall and two must raise it.
+  const lim0 = tierLimits(st, h).yard, yard0 = tierMults(st, h, false).yard;
   addBuilding(h, "barricades");
-  check(tierLimits(st, h).yard > lim0, `one more barricade: the yard holds more (${lim0} → ${tierLimits(st, h).yard})`);
+  const lim1 = tierLimits(st, h).yard;
+  addBuilding(h, "barricades");
+  const lim2 = tierLimits(st, h).yard;
+  check(tierMults(st, h, false).yard > yard0 && lim1 >= lim0 && lim2 > lim0, `more barricades: the yard holds more (${lim0} → ${lim1} → ${lim2})`);
   // A raid by the numbers through the tiers.
   const r1 = raidTier(st, h, 100, 70, 1.2, 0.8), r2 = raidTier(st, h, 100, 115, 1.2, 0.8), r3 = raidTier(st, h, 100, 400, 1.2, 0.8);
   check(r1.tier === "wall" && ["yard", "buildings"].includes(r2.tier) && r2.ratio >= 0.8 && r2.ratio < 1.2 && r3.tier === "overrun", `raids: 100 against 70 held at the wall, against 115 pushed back from the ${r2.tier}, against 400 overrun`);
