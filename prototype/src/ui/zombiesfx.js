@@ -25,7 +25,7 @@
 //   zombie gain (ZOMBIE_BUS_GAIN × the Zombie volume). The crowd bed goes through the zombie bus; the map layer through
 //   the ambience bus (both unpositioned).
 import { MIDDEAD } from "../sim/hiveconst.js";
-import { spatial, spatialOut, isIndoor } from "./gunsfx.js"; // the battle's sound space (shared with the guns, the blows and the steps)
+import { spatial, spatialOut, isIndoor, place } from "./gunsfx.js"; // the battle's sound space (shared with the guns, the blows and the steps)
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const clamp01 = (v) => clamp(v, 0, 1);
@@ -875,7 +875,7 @@ export function playZombie(ev, c, out, t, o = {}) {
   if (!name || name === "silent") return name;
   const vp = voiceParams(seed);
   const far = o.far ?? (ev === "shriek" || ev === "smash");
-  const dest = zRoute(c, out, t, { ...o, far });
+  const dest = zRoute(c, out, t, { ...o, far, ev, recipe: name });
   const X = { c, t, vp, rnd, P: PROFILE[kind], g: Number.isFinite(o.gain) ? o.gain : 1, p: vp.pitch * (Number.isFinite(o.pitch) ? o.pitch : 1), o, kind, ev };
   RECIPES[name](X, dest);
   return name;
@@ -891,14 +891,21 @@ export const ZOMBIE_VOICES = Object.fromEntries(Object.entries(EVENT_CUE).map(([
 // so a horde never clips whatever the sliders say. The voices take the same gain in zRoute and go through gun-sfx's
 // spatial chain instead (its battle bus and the effects bus's limiter: ui/sfxlab.js makeLimiter). zombieVolume: the slider (0–1.5, 1 the default) to a gain (squared,
 // like the other sliders).
-export const ZOMBIE_BUS_GAIN = 1.585; // +4 dB over the level they were first made at (with the louder guns)
+export const ZOMBIE_BUS_GAIN = 1.259; // the crowd bed: +3 dB over the level it was first made at (+4 with the louder guns, then 1 dB back so the mix fits)
+export const ZOMBIE_VOICE_GAIN = 0.944; // the voices: -0.5 dB (were +4: 4.5 dB back so a firefight into a horde fits under the effects limiter; the moans 2.5 dB back: EVENT_TRIM)
 export const ZOMBIE_CEIL = 0.891;     // -1 dBFS
 export const ZOMBIE_TRIM = 0.785;         // × after the limiter: undoes the make-up gain browsers add to a compressor (measured)
 export const zombieVolume = (v = 1) => clamp(Number.isFinite(Number(v)) ? Number(v) : 1, 0, 1.5) ** 2;
 // The Zombie volume as a gain, read by zRoute as each voice is played (ui/audio.js applyGains sets it from the slider).
 export const ZOMVOL = { v: 1 };
 export function setZombieVolume(v) { ZOMVOL.v = zombieVolume(v); }
-export const FAR_GAIN = 1.3; // a voice made to carry (the screamer's shriek, a smash): a little over the rest at any distance
+// Trims on top of ZOMBIE_VOICE_GAIN, by event and by recipe: the moans 2 dB back up (2.5 dB under where they were, still
+// well over the old groan), a bite at arm's length 1 dB off, the loudest (a runner's shriek or a brute's roar as it spots you) 2 dB more off, and a
+// brute's roar 1.5 dB more again (it was louder than a screamer's shriek at arm's length), so a horde charging does not
+// pin the limiter and the screamer's call is the one that carries.
+export const EVENT_TRIM = { idle: 1.259, aggro: 0.79, bite: 0.89 };
+export const RECIPE_TRIM = { roar: 0.84 };
+export const FAR_GAIN = 1.1; // a voice made to carry (the screamer's shriek, a smash): a little over the rest at any distance
 const CLIP = new Map();
 function softClip(k) { // linear to 0.7 of the ceiling, then a tanh knee up to it
   let cv = CLIP.get(k);
@@ -948,8 +955,15 @@ export function makeZombieBus(c, dest, o = {}) {
 // for a voice made to carry. o.sp: the placement soundcues gave the cue (gunsfx.js spatial); else { pan, dist, seen,
 // room } of its own (the sound test: near and in front). out: where it goes on a context with no battle bus (spatialOut
 // finds the bus on the context; a bare offline render or a test stub has none).
+// A voice made to carry (o.far) also falls off more slowly past CARRY.FROM tiles (half the distance counts), so the
+// screamer's call is plain at 12–16 tiles without being hot up close.
+export const CARRY = { FROM: 6, K: 0.35 };
+export const carryDist = (d) => (d > CARRY.FROM ? CARRY.FROM + (d - CARRY.FROM) * CARRY.K : d);
 export function zRoute(c, out, t, o = {}) {
-  return spatialOut(c, o.sp || { pan: o.pan, dist: o.dist, seen: o.seen, room: o.room }, { gain: ZOMBIE_BUS_GAIN * ZOMVOL.v * (o.far ? FAR_GAIN : 1), dest: out });
+  let sp = o.sp || { pan: o.pan, dist: o.dist, seen: o.seen, room: o.room };
+  const d = Number(sp.dist) || 0;
+  if (o.far && d > CARRY.FROM) sp = { ...place({ pan: sp.pan ?? sp.x ?? 0, dist: carryDist(d), seen: sp.seen, room: sp.room }), delay: sp.delay ?? 0 };
+  return spatialOut(c, sp, { gain: ZOMBIE_VOICE_GAIN * ZOMVOL.v * (EVENT_TRIM[o.ev] ?? 1) * (RECIPE_TRIM[o.recipe] ?? 1) * (o.far ? FAR_GAIN : 1) * (o.group ?? 1), dest: out });
 }
 
 // ---------- the battle's cues (soundcues.js battleCues; pure) ----------
