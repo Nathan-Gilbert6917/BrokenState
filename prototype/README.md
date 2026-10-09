@@ -143,6 +143,8 @@ Crafting benches (`src/sim/buildings.js` BENCH: a crafting bench 12 scrap + 1 pa
 node tools/invtest.js 60 11
 ```
 
+Team inventory (`src/sim/teaminv.js`, `src/ui/teaminv.js`; `node tools/teaminvtest.js [seed]`, seconds): the team panel's **🎒 Team inventory** opens every member's paper doll and the team's cargo side by side (move things between them as in the one-person inventory). While the team stands on one of your bases' tiles, **Drop off at <base>…** and **Load from <base>…** (also on the base's Armory tab under *Teams here*) open a transfer view: the team's people and cargo on the left, the base's armory and stores on the right; click items and supplies to pick them (how many of each supply), then Drop off picked / Load picked (items onto the member marked ✓ or into the cargo; supplies into the packed supplies), or *Drop off all cargo* / *Drop off all supplies*. Items move as themselves (condition, a magazine's load, a box's rounds, a pack's contents, a carrier's plates); supplies by key (each calibre and type of round its own). Nothing loaded takes the team over its carry limit or a person over their own max load; a worn pack or rig the load needs stays. The tool checks the listing, drop off and load by item and count, fresh game and the worm's eggs, bodies in the car, the refusals, only at your own base, a save and load round trip and the window's views.
+
 ```bash
 node tools/rosterqoltest.js 42
 ```
