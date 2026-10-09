@@ -16,11 +16,26 @@ const BY = flag("--by", "style");
 const JSON_OUT = flag("--json", null);
 if (!files.length) { console.log("usage: node tools/progreport.js <census.json|games.jsonl> [more ...] [--by style|mode|size|groups] [--json out.json]"); process.exit(2); }
 
+// Your hive kills from the dated events (campaign50's `events`): the first trackers (before 2026-10-09's fix)
+// counted a growth burned by your team as a hive. The first one's day, and the mid-game marker from it.
+const HIVE_KILL = /^The hive [^.]* was destroyed by your team/;
+function normalize(r) {
+  const p = r.prog;
+  if (!p || p.error || !Array.isArray(r.events)) return r;
+  const kills = r.events.filter((e) => HIVE_KILL.test(e.text)).map((e) => e.day);
+  p.first.yourHive = kills.length ? kills[0] : null;
+  p.yourHiveKills = kills.length;
+  for (const s of p.years || []) s.yourKills = kills.filter((d) => d <= s.day).length;
+  const f = p.first;
+  const or = f.yourHive != null || f.member != null ? Math.min(f.yourHive ?? Infinity, f.member ?? Infinity) : null;
+  f.MID = f.midEra != null && f.secondBase != null && or != null ? Math.max(f.midEra, f.secondBase, or) : null;
+  p.markers = { ...(p.markers || {}), mid: f.MID };
+  return r;
+}
 const load = (f) => {
   const txt = readFileSync(f, "utf8");
-  if (/\.jsonl$/.test(f)) return txt.split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  const j = JSON.parse(txt);
-  return j.results || j;
+  const list = /\.jsonl$/.test(f) ? txt.split("\n").filter(Boolean).map((l) => JSON.parse(l)) : (() => { const j = JSON.parse(txt); return j.results || j; })();
+  return list.map(normalize);
 };
 
 const YEAR_DAYS = 112, START_OFFSET = 14; // eras.js

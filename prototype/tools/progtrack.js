@@ -35,10 +35,12 @@ import { combatPower } from "../src/sim/world.js";
 import { BUILDINGS } from "../src/sim/buildings.js";
 import { ensureConquest } from "../src/sim/conquest.js";
 
+// A hive (not one of its growths: "The runner warren at the hive near ... was destroyed by your team") destroyed by your team (hives.js destroyHive).
+export const HIVE_KILL = /^The hive [^.]* was destroyed by your team/;
 // Systems the autopilot can reach, by the log lines they write (any line, the governor's 🤖 lines too).
 export const CONTENT = [
   ["hive storm sortie", /^(🤖 )?Destroy hive team \(.*\) left for/],
-  ["hive destroyed by you", /hive .* was destroyed by your team/i],
+  ["hive destroyed by you", HIVE_KILL],
   ["hive fires set", /fires? (set )?around|set fires|Set fires/i],
   ["growth burned", /^(🤖 )?Burn the growth team \(.*\) left for|was destroyed by your team\. It (breeds|grows|sends|raises)/],
   ["hive gathering broken", /gathering|massing/i],
@@ -164,7 +166,7 @@ export function progTracker(state, deathTotal = () => 0) {
       for (const l of fresh) {
         const t = l.text;
         for (const [k, re] of CONTENT) if (re.test(t)) content[k]++;
-        if (/was destroyed by your team|Your team destroyed|your squad destroyed/i.test(t)) { yourHiveKills.n++; mark("yourHive", day(state)); }
+        if (HIVE_KILL.test(t)) { yourHiveKills.n++; mark("yourHive", day(state)); }
       }
       if (state.hour % 24 === 0) { const d = day(state); if (d !== lastDay) { lastDay = d; try { daily(d); } catch (e) { first.trackError = first.trackError || String(e.stack || e).split("\n").slice(0, 3).join(" | "); } } }
     },
