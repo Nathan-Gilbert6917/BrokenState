@@ -82,6 +82,7 @@ import { familyDaily } from "./family.js"; // children and generations
 import { leavePlayerBase, abandonedAt } from "./groupworld.js"; // a lost outpost stands empty for a group to move into (or for your Occupy order)
 import { noteLootAge } from "./itemcond.js"; // the years since the fall: shops and homes keep getting worse (COND_AGE)
 import { starterMags } from "./carrykit.js"; // a starting gun's spare magazines
+import { volunteersHour, volunteerFell } from "./volunteers.js"; // people lent between groups, both ways
 import { noteLook, keepLook } from "./intelnotes.js"; // what your people learned of the groups' bases (the State Map's estimates, intelest.js)
 
 export const HUB_VISION = 3;
@@ -404,7 +405,7 @@ export const hub = (state) => state.bases.find((b) => b.type === "hub");
 /** @type {(state: State, id: number) => Base | undefined} */
 export const baseById = (state, id) => state.bases.find((b) => b.id === id);
 /** @type {(state: State, id: number) => Survivor | undefined} */
-export const survivorById = (state, id) => state.survivors.find((s) => s.id === id);
+export const survivorById = (state, id) => state.survivors.find((s) => s.id === id) || (state.vols ? state.vols.people.find((s) => s.id === id) : undefined); // volunteers.js: an allied group's people with your teams
 /** @type {(state: State) => Survivor[]} */
 export const alive = (state) => state.survivors.filter((s) => s.alive);
 /** @type {(state: State, baseId: number) => Survivor[]} */
@@ -541,8 +542,11 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
   s.station = null;
   s.inBed = false;
   log(state, `${s.name} died ${cause}.`, "death");
-  const entry = onDeath(state, s, tileId, cause); // relations.js: grief for friends and a partner, a line on the memorial wall
-  noteDeath(state, s, tileId, cause, entry); // causes.js: why it happened, on the memorial entry
+  if (s.vol) volunteerFell(state, s, tileId, cause); // volunteers.js: another group's person: their group mourns, not your memorial wall
+  else {
+    const entry = onDeath(state, s, tileId, cause); // relations.js: grief for friends and a partner, a line on the memorial wall
+    noteDeath(state, s, tileId, cause, entry); // causes.js: why it happened, on the memorial entry
+  }
   // Died on the tile of one of your bases (hunger, an infected wound, a scavenging accident, a raid or horde at
   // the walls, a convoy starving while it holds there): their things go to that base's armory. No death site
   // inside the walls: no team could be sent to recover it, and passers-by cannot loot it. The one exception is
@@ -856,6 +860,7 @@ export function tickHour(state) {
   prisonersHour(state); // prisoners.js: rescue raids arriving, prisoners whose team or base is gone
   groupJailsHour(state); // groupjails.js: your people just taken: jailed, or sold, ransomed, let go or killed when there is no room
   ransomHour(state); // ransom.js: captives brought home, envoys back with their price, handovers nobody came to
+  volunteersHour(state); // volunteers.js: volunteers joining and leaving your teams, your people lent out, the groups' asks
   if (state.hour % 24 === 0) {
     workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
     watchDayRoles(state); // watch.js: Manual people on watch likewise

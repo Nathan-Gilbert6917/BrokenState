@@ -280,7 +280,7 @@ export function gainXp(state, s, key, amount, src = "use") {
   return added;
 }
 function gainXpRaw(state, s, key, amount, src) {
-  if (!state || !s || !s.alive || !isSkill(key) || !(amount > 0)) return 0;
+  if (!state || !s || !s.alive || !isSkill(key) || !(amount > 0) || s.vol) return 0; // s.vol: a volunteer from another group (volunteers.js) learns nothing on your books
   ensureSkills(state, s);
   const d = day(state);
   if (s.xpDay.d !== d) s.xpDay = { d, use: {}, study: {} };
