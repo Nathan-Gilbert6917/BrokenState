@@ -548,30 +548,51 @@ export const groupTurretPower = (f) => { const g = groupTurret(f); return g ? TU
 // gets a new one HUMVEE.REPLACE days after its last loss (60–90, its own dice) while it is still HUMVEE.MIN_POP strong
 // (factionVehiclesDaily); until then its raids and its home have no turret.
 export const HUMVEE = { REPLACE: [60, 90], MIN_POP: 12, LEFT_COND: [25, 45], LEFT_FUEL: [3, 10] };
+// Several (AI parity with your teams' fleets, coarse): a big raid brings more of the group's free turreted vehicles, one
+// for each RAID_FLEET.PER of its strength over the first, up to MAX_VEHICLES (p.humvees; p.humvee the first, the one on
+// the defence map). Their turrets add up by the numbers (raidTurretPower); a failed raid loses them all.
+export const RAID_FLEET = { PER: 25 };
 export function assignRaidHumvee(state, f, p) {
   if (!f || !p || !f.vehicles) return null;
-  const busy = new Set((state.parties || []).filter((q) => q !== p && q.humvee != null).map((q) => q.humvee));
-  const v = f.vehicles.find((x) => x.condition > 0 && upgradesOf(x).turret && !busy.has(x.id));
-  if (v) p.humvee = v.id;
-  return v || null;
+  const busy = new Set((state.parties || []).filter((q) => q !== p).flatMap((q) => (q.humvees && q.humvees.length ? q.humvees : q.humvee != null ? [q.humvee] : [])));
+  const free = f.vehicles.filter((x) => x.condition > 0 && upgradesOf(x).turret && !busy.has(x.id));
+  const n = Math.min(MAX_VEHICLES, free.length, 1 + Math.floor(Math.max(0, p.strength || 0) / RAID_FLEET.PER));
+  const take = free.slice(0, n);
+  if (take.length) { p.humvee = take[0].id; if (take.length > 1) p.humvees = take.map((x) => x.id); }
+  return take[0] || null;
 }
-// The vehicle a raid party brought (still the group's), or null.
+// The vehicles a raid party brought (still the group's).
+export function raidHumvees(state, p) {
+  if (!p || p.humvee == null || typeof p.owner !== "number") return [];
+  const f = (state.factions || []).find((x) => x.id === p.owner);
+  const ids = p.humvees && p.humvees.length ? p.humvees : [p.humvee];
+  return f && f.vehicles ? f.vehicles.filter((x) => ids.includes(x.id) && x.condition > 0) : [];
+}
+// The first of them (the one on the defence map), or null.
 export function raidHumvee(state, p) {
   if (!p || p.humvee == null || typeof p.owner !== "number") return null;
   const f = (state.factions || []).find((x) => x.id === p.owner);
-  return (f && f.vehicles && f.vehicles.find((x) => x.id === p.humvee && x.condition > 0)) || null;
+  return (f && f.vehicles && f.vehicles.find((x) => x.id === p.humvee && x.condition > 0)) || raidHumvees(state, p)[0] || null;
 }
 export const raidTurret = (state, p) => { const v = raidHumvee(state, p); return v && upgradesOf(v).turret ? upgradesOf(v).turret.gun : null; };
-export const raidTurretPower = (state, p) => { const g = raidTurret(state, p); return g ? TURRET_ODDS[g] || 0 : 0; };
-// The raid failed: the group loses the vehicle it brought. to: { base } (yours: it joins the base's vehicles) or
-// { faction } (theirs). Returns the vehicle record it became, or null.
+export const raidTurretPower = (state, p) => raidHumvees(state, p).reduce((a, v) => a + (upgradesOf(v).turret ? TURRET_ODDS[upgradesOf(v).turret.gun] || 0 : 0), 0);
+// The raid failed: the group loses the vehicles it brought. to: { base } (yours: they join the base's vehicles) or
+// { faction } (theirs). Returns the record the first became, or null.
 export function loseRaidHumvee(state, p, to) {
+  const all = raidHumvees(state, p);
+  if (all.length > 1) {
+    const first = all.find((x) => x.id === p.humvee) || all[0];
+    for (const x of all.filter((y) => y !== first)) { p.humvee = x.id; p.humvees = null; loseRaidHumvee(state, p, to); }
+    p.humvee = first.id;
+    p.humvees = null;
+  }
   const v = raidHumvee(state, p);
   if (!v) return null;
   const f = state.factions.find((x) => x.id === p.owner);
   f.vehicles = f.vehicles.filter((x) => x !== v);
   f.vehLost = state.hour;
   p.humvee = null;
+  p.humvees = null;
   const roll = (k) => hash01(state.seed, "humvee", f.id, v.id, state.hour, k);
   const ups = JSON.parse(JSON.stringify(upgradesOf(v)));
   if (to && to.base) {
