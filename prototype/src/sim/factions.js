@@ -66,6 +66,8 @@ import { raidSiegeKit, kitText } from "./siege.js";
 import { freezeShare } from "./woodcutting.js";
 import { ensureHives, hiveGuard, destroyHive, hivesLeftText } from "./hives.js";
 import { markThreat } from "./hivetech.js";
+import { groupHiveCrawl } from "./hivecrawl.js"; // a war party crawls the same den as your teams
+import { BOSS_NAMES } from "./hiveconst.js";
 import { reduceHorde } from "./hordes.js";
 import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
@@ -107,9 +109,13 @@ export const RAIDS = {
 // of its bases looks at it every EVERY days and sends a war party ODDS of the time by type (zealots always, the
 // military and a fortress often, expansionists sometimes, traders and communes rarely, raiders never), with at least
 // MIN_POP people. The party is SHARE of the group (at least MIN fighters) at the group's arms (strength); it kills
-// FIGHT of the hive's guard per point of its strength (× 0.7–1.3, ÷ the brood's growth over the years, eras.js),
-// burns STORES of the hive's stores per kill, and burns the hive out when the guard left is SMALL or fewer. The group
-// loses people to it: LOSS × the guard's size against the kills, at most LOSS_MAX of the party. A hive you fought
+// FIGHT of the hive's guard per point of its strength (× 0.7–1.3, ÷ the brood's growth over the years, eras.js) and
+// spends it crawling the hive's den as your teams do (hivecrawl.js groupHiveCrawl: the same chambers on the shortest
+// way, the same depth by the hive's tier, the brood each chamber holds in the guard's units, then the core: its brood,
+// the Hivemind and the Broodmother); what it clears stays clear for a while (for a later party, and for your teams),
+// it is driven off where its strength runs out, and it burns the hive out when it pays for the core. It burns STORES of
+// the hive's stores per kill. The group loses people to it: LOSS × all it ran into against its strength, at most
+// LOSS_MAX of the party. (SMALL: no longer used, kept for old tools.) A hive you fought
 // within PLAYER_DAYS days (fires, Molotovs, a storm: hives.js notePlayerFight): +GOODWILL with the group, you are
 // fighting the same enemy. You hear of it when the group is in radio reach (radio.js canRadioGroup) or the hive is
 // in sight; a hive destroyed counts like any other (hives.js destroyHive: the hive victory, the records).
@@ -460,14 +466,13 @@ export function groupHiveWar(state, f, today = day(state)) {
   const odds = GROUP_HIVE.ODDS[f.type] ?? 0;
   if (f.pop < GROUP_HIVE.MIN_POP || !odds || !rng.chance(odds)) return null;
   const { fighters, power } = groupHiveParty(f);
-  const guard = hiveGuard(state, hive);
-  const size = guard ? guard.size : 0;
   const kill = Math.round((power * GROUP_HIVE.FIGHT * rng.range(0.7, 1.3)) / broodGrowth(state));
-  const cut = Math.min(size, kill);
-  if (guard && cut > 0) reduceHorde(state, guard, cut);
+  const crawl = groupHiveCrawl(state, hive, kill); // hivecrawl.js: chamber by chamber to the core
+  const cut = crawl.cut;
   hive.res = Math.max(0, hive.res - Math.round(cut * GROUP_HIVE.STORES));
   markThreat(state, hive); // hivetech.js: it builds for defence
-  const dead = Math.min(fighters, Math.round(fighters * Math.min(GROUP_HIVE.LOSS_MAX, (GROUP_HIVE.LOSS * size) / Math.max(1, kill)) * rng.range(0.5, 1.5)));
+  const dead = Math.min(fighters, Math.round(fighters * Math.min(GROUP_HIVE.LOSS_MAX, (GROUP_HIVE.LOSS * crawl.met) / Math.max(1, kill)) * rng.range(0.5, 1.5)));
+  f.hiveDeep = Math.max(f.hiveDeep || 0, crawl.reached); // the deepest its parties got
   f.pop = Math.max(0, f.pop - dead);
   clashKit(state, f, fighters, dead, null, 0, "b", 0, true, "hive"); // arsenal.js: the dead's kit stays on the hive's ground
   f.hiveFights = (f.hiveFights || 0) + 1;
@@ -476,17 +481,17 @@ export function groupHiveWar(state, f, today = day(state)) {
   stats.groupStorms = (stats.groupStorms || 0) + 1;
   // Fighting the hive you fought lately: they think better of you.
   if (hive.playerDay != null && today - hive.playerDay <= GROUP_HIVE.PLAYER_DAYS) changeGoodwill(state, f, GROUP_HIVE.GOODWILL, "fighting the same hive as you");
-  const burned = size - cut <= GROUP_HIVE.SMALL;
+  const burned = crawl.burned;
   const heard = state.live.has(hive.tile) || canRadioGroup(state, f); // in sight, or the group within radio reach
   const who = knownName(f, "An unknown group");
   if (burned) {
     f.hivesBurned = (f.hivesBurned || 0) + 1;
     stats.groupKills = (stats.groupKills || 0) + 1;
     destroyHive(state, hive, `by ${knownName(f, "another group")}'s fighters`, { quiet: true }); // the hive victory and the records as for any hive
-    if (heard) log(state, `${who}'s fighters stormed ${hive.name} and burned it out${dead ? `, losing ${dead} of their own` : ""}. ${hivesLeftText(state)}`, "good");
+    if (heard) log(state, `${who}'s fighters crawled ${crawl.depth} chambers into ${hive.name}, killed its ${BOSS_NAMES.hivemind} and burned it out${dead ? `, losing ${dead} of their own` : ""}. ${hivesLeftText(state)}`, "good");
     return "burned";
   }
-  if (heard) log(state, `${who}'s fighters stormed ${hive.name} and were driven off${cut ? ` after cutting down about ${cut} of its brood` : ""}${dead ? ` (${dead} of them killed)` : ""}.`, "info");
+  if (heard) log(state, `${who}'s fighters crawled into ${hive.name} and were driven off ${crawl.reached >= crawl.depth ? "at its core" : crawl.reached ? `${crawl.reached} chamber${crawl.reached === 1 ? "" : "s"} in of ${crawl.depth}` : "at its mouth"}${cut ? `, after cutting down about ${cut} of its brood` : ""}${dead ? ` (${dead} of them killed)` : ""}.`, "info");
   return "driven";
 }
 

@@ -14,6 +14,7 @@ import { installBus, spatial, playGun, playHand, labPlan, place } from "./gunsfx
 import { frameListener, playCue, cueSpan, prewarmBattle } from "./battlesfx.js"; // guns, blasts and handling cues to their voices
 import { LAB, LAB_ACTIONS, LAB_CHANGE, labGunHtml, makeLimiter } from "./sfxlab.js"; // Settings → Sound: the gun and blast sound test
 import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest, demoMapHorde, demoMapHive, demoCrowd, makeZombieBus } from "./zombiesfx.js"; // the dead's voices
+import { hiveCrawlAmbience, hiveCrawlHeard, demoHiveCrawl } from "./hivecrawlsfx.js"; // inside a hive: the pulse and the drone by the warmth
 import { playBlast } from "./blastsfx.js"; // the mixer's Explosions preview
 import { TOP_GROUPS, childrenOf, groupDef, groupGain, groupOf, groupVolume, groupOn, setGroupVolume, setGroupOn, groupBus, applyGroups, cleanMix, useMix, PRESETS, applyPreset, presetOf, resetMix } from "./soundgroups.js"; // the mixer: every sound's group
 import { weatherAt, season } from "../sim/weather.js";
@@ -331,6 +332,7 @@ function ambience(state, ui) {
   const fight = state.combat && !ui.timelapse ? state.combat : null;
   zombieCrowd(c, A.zom.input, fight ? battleCrowd(fight) : null, t);
   zombieMapAmbience(c, A.amb, fight || ui.timelapse || ui.title || !ui.started ? null : hordeAmbience(state), t, groupGain("zombies.hordes"), groupGain("zombies.hive")); // the mixer's Map hordes and Hive drone
+  hiveCrawlAmbience(c, A.amb, hiveCrawlHeard(state, ui), t, groupGain("zombies.hivecrawl")); // ui/hivecrawlsfx.js: inside a hive, the pulse and the drone by the warmth
   humanMapVoices(c, A.amb, fight || ui.timelapse || ui.title || !ui.started ? null : state, view.selected, t); // a selected base's murmur, a scream at a base (ui/humansfx.js)
 }
 
@@ -674,6 +676,7 @@ export const GROUP_PREVIEW = {
   "zombies.crowd": () => (A ? demoCrowd(A.ctx.currentTime, 6) : 0), // a crowd closing in (6 s)
   "zombies.hordes": () => (A ? demoMapHorde(A.ctx.currentTime, 5) : 0), // a near horde on the map
   "zombies.hive": () => (A ? demoMapHive(A.ctx.currentTime, 5) : 0),
+  "zombies.hivecrawl": () => (A ? demoHiveCrawl(A.ctx.currentTime, 5) : 0), // ui/hivecrawlsfx.js: five seconds walking into the core
   "people.voices": () => sfx("bark", { pitch: 1 }),
   "people.steps": () => sfx("hearStepGrass", { pitch: 1 }),
   "people.gear": () => sfx("rummage", { pitch: 1 }),

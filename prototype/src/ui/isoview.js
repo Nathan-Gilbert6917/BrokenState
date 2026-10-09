@@ -1927,7 +1927,7 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   if (!cv) return;
   let facing = unitFacing(b, t);
   if (FR.r === 1 || FR.r === 2) facing = -facing;
-  const big = t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1;
+  const big = t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1;
   const hgt = UNIT_H * big * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -1987,7 +1987,7 @@ function drawUnitIso(ctx, state, b, s, H, now) {
   if (t.terror && !t.dead && !t.down) isoTag(ctx, X, Y - UNIT_H * 1.05 * S, "PANIC", ZRING.nightmare, S);
   // Its rectangle on screen, for clicking it.
   if (!t.dead && !t.down) {
-    const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, hgt = UNIT_H * big * S;
+    const big = t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, hgt = UNIT_H * big * S;
     iso.rects.push({ x0: X - hgt * 0.36, x1: X + hgt * 0.36, y0: Y - hgt * 0.94, y1: Y, x: t.x, y: t.y, id: t.id });
   }
 }
@@ -2027,7 +2027,7 @@ function drawLabels(ctx, b, s, H) {
     return;
   }
   const S = FR.S, [X, Y0] = feet(s);
-  const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1;
+  const big = t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1;
   const top = t.down ? Y0 - 10 * S : Y0 - UNIT_H * big * S;
   const f = Math.max(0, Math.min(1, t.hp / t.maxHp)), bw = Math.max(22, 16 * S), by = top - 6;
   ctx.fillStyle = "rgba(12,14,17,0.9)"; ctx.fillRect(X - bw / 2 - 1, by - 1, bw + 2, 5);
@@ -2045,7 +2045,7 @@ function drawLabels(ctx, b, s, H) {
   if (!t.down && isMedic(t)) tags.push(["✚", "#ff6b6b"]); // a medic (sim/medics.js)
   if (t.dragging != null) tags.push(["DRAG", "#e0a84f"]);
   if (t.shaken && !t.down) tags.push(["SHK", "#ffd166"]); // revived: shaken, −10 aim
-  if (t.boss && !t.down) tags.push([t.boss === "broodmother" ? "BROOD" : "WALL", COL.bad]);
+  if (t.boss && !t.down) tags.push([t.boss === "broodmother" ? "BROOD" : t.boss === "hivemind" ? "MIND" : "WALL", COL.bad]);
   if (t.ow) tags.push(["OW", "#e0a84f"]);
   if (t.hunker) tags.push(["HD", "#4aa3ff"]);
   if (t.stun && !t.down && !t.dead) tags.push(t.stun.dazed ? ["DZ", "#cfd6e0"] : ["STN", "#ffffff"]); // a flashbang (sim/throwables.js)

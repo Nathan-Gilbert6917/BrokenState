@@ -134,7 +134,24 @@ function paintBroodmother() {
   p.rect(4, 24, 18, 25, DARK);                                                    // the base of the mound she grows from
   return p;
 }
-export const bossBattleCanvas = (kind) => cached(`boss:${kind}`, () => (kind === "broodmother" ? paintBroodmother() : paintWallbreaker()));
+// The Hivemind (sim/hivecrawl.js): the organ at the heart of a hive, rooted in the floor of its core room. A swollen,
+// folded mass of grey-pink flesh like a brain the size of a car, veined and glowing from inside, with amber pods and
+// tendrils coiled at its foot.
+function paintHivemind() {
+  const p = painter(22, 26);
+  const FLESH = "#b07a86", DARK = "#6a3a4a", LIT = "#d8a8b2", FOLD = "#8a4a5a", VEIN = "#8a1c22", GLOW = "#ffb43b", POD = "#e8b46a";
+  p.disc(11, 23, 10.5, 2.6, "#2a1018");                                          // the pool of flesh it grows from
+  p.disc(11, 14, 10, 9.5, FLESH);                                                // the mass
+  p.disc(10, 11, 7, 6, LIT);
+  for (const [x0, y0, x1] of [[3, 8, 9], [12, 6, 18], [4, 13, 10], [13, 12, 19], [6, 18, 16]]) for (let x = x0; x <= x1; x++) p.set(x, y0 + ((x * 7) % 3) - 1, FOLD); // its folds
+  for (const [x, y] of [[7, 10], [14, 9], [10, 15], [16, 16], [5, 16]]) { p.set(x, y, VEIN); p.set(x + 1, y + 1, VEIN); }
+  for (const [x, y] of [[9, 12], [13, 14], [8, 17]]) { p.set(x, y, GLOW); p.set(x + 1, y, "#fff0c0"); } // light from inside
+  for (const [x, y] of [[2, 20], [19, 19], [4, 22], [17, 22]]) { p.disc(x, y, 1.6, 1.4, POD); p.set(x, y - 1, "#fff0c0"); } // pods at its foot
+  p.rect(0, 21, 2, 21, DARK); p.rect(19, 23, 21, 23, DARK); p.set(1, 20, DARK); p.set(20, 22, DARK); // tendrils
+  p.rect(6, 23, 16, 24, DARK);
+  return p;
+}
+export const bossBattleCanvas = (kind) => cached(`boss:${kind}`, () => (kind === "broodmother" ? paintBroodmother() : kind === "hivemind" ? paintHivemind() : paintWallbreaker()));
 
 // ---------- a hive's growths on the map (sim/hivetech.js) ----------
 // Small organic structures in the hive's flesh and bone, each with one thing that tells it apart: the pit's

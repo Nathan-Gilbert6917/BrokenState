@@ -116,7 +116,7 @@ function campaignScenario(seed) {
   if (byGroup) console.log(`  note: a group's war party destroyed the hive on its own (day ${day(state)}): the fire and storm checks do not apply`);
   else {
     check(fires > 0 || logHas(state, /The hive: .*→ (Set fires|Firebomb)/) || (st.stormTrips || 0) > 0, `fires set at the mound (${fires}), or the storm went without needing them`);
-    check((st.stormTrips || 0) > 0 || logHas(state, /The hive: .*→ Storm the hive/) || !hiveAt(state, hive.tile), "a storm launched");
+    check((st.stormTrips || 0) > 0 || logHas(state, /The hive: .*→ Enter the hive/) || !hiveAt(state, hive.tile), "a storm launched");
     check(day(state) >= P.hiveFrom, "ran past the style's hiveFrom day");
   }
   check(campaignLine(state) === "" || /^Campaign on /.test(campaignLine(state)), "campaignLine is a line or empty");

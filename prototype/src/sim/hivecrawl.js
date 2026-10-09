@@ -95,13 +95,13 @@ export const HCRAWL = {
   AUTO: { hurt: 45, treat: 70, fit: 60, sureOdds: 0.8, fightOdds: 0.6, sneakOdds: 0.7, coreFit: 4, wear: 0.04, lie: 70 },
   // The AI groups' crawl (groupHiveCrawl), in the guard's units: the Hivemind and the Broodmother cost boss + bossTier ×
   // tier of a war party's strength on top of the brood on the way and in the core.
-  GROUP: { boss: 6, bossTier: 6 },
+  GROUP: { boss: 6, bossTier: 6, depthDiv: 3 },
 };
 // The Hivemind on the battle map (defences.js BOSSES.hivemind, its turn here): hp + perTier × the hive's tier; every
 // turn a pulse within pulse tiles (pulseDmg, stun: the chance to cost the next turn an action) and a lash at someone
 // next to it; every spawnEvery turns spawn of the brood from the walls near it, at most cap + capTier × tier in all.
 // power: what it counts for by the numbers (with the Broodmother's broodPower).
-export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 2, power: 30, powerTier: 6, broodPower: 12 };
+export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 2, power: 18, powerTier: 8, broodPower: 10 };
 
 // The kinds of chamber: name, share of the brood (brood) and its power, the special dead among them (special), what
 // can be done there (burn: eggs or a growth's root; search: what lies in it), its battle map size, how it reads.
@@ -616,7 +616,7 @@ export function crawlByNumbers(state, setup) {
   settleParty(state, p); // ammo.js: rounds by calibre
   const pools = [p.supplies, p.cargo ? p.cargo.supplies : {}];
   const drawn = drawTeamShots(pools, people, Math.min(people.length * 6, Math.ceil(setup.enemy.count * N.shots)));
-  const odds = byNumbersOdds(state, setup, people, { ammo: drawn.used, arrows: 0 });
+  const odds = byNumbersOdds(state, setup, people, /** @type {any} */ ({ ammo: drawn.used, arrows: 0 })); // the rounds drawn, by calibre (as autoResolveCombat)
   const win = rng.chance(odds.win);
   let dmg = Math.min(N.cap, N.k * Math.max(0.05, odds.ratio) ** -N.exp) * rng.range(0.6, 1.4);
   if (!win) dmg = Math.max(dmg, N.lost * clamp(1 / Math.max(0.05, odds.ratio), 0.6, 1.3)) * rng.range(0.9, 1.2);
@@ -1221,8 +1221,10 @@ export function crawlEstimate(state, hive, G = guardSize(state, hive)) {
 
 // ---------- the AI groups' crawl ----------
 // A war party of an AI group (factions.js groupHiveWar) crawls the same den, coarsely: its strength is a budget in the
-// guard's units (its fighters' power × GROUP_HIVE.FIGHT, as before); each chamber on the shortest way costs its brood
-// left × the guard each one stands for, the core its brood and the bosses (GROUP.boss + bossTier × tier). It clears
+// guard's units (its fighters' power × GROUP_HIVE.FIGHT, as before); the whole way in costs the guard × (depth + 1) /
+// GROUP.depthDiv, spread over the brood on the shortest way and in the core (each chamber costs its brood left), and
+// the core the Hivemind and the Broodmother on top (GROUP.boss + bossTier × tier). The guard it kills: the brood it
+// killed × the guard each stands for (as your teams', cutGuard). It clears
 // what it pays for (the hive remembers: the chambers stay clear for a while, for your teams too), stops where the
 // budget runs out (driven off partway; a later party starts from what is still clear), and burns the hive out when it
 // reaches and pays for the core. Returns { burned, cut (the guard killed), met (all it ran into), reached (chambers
@@ -1231,32 +1233,36 @@ export function groupHiveCrawl(state, hive, budget) {
   const den = denOf(state, hive);
   const g = hiveGuard(state, hive);
   const G = g ? g.size : 0;
-  const per = G / Math.max(1, denBroodTotal(state, hive, G));
-  let left = budget, met = 0, reached = 0, burned = false, stopped = false;
-  for (const id of shortestPath(den)) {
+  const path = shortestPath(den);
+  const core = coreForce(state, hive, G);
+  // What a brood costs a war party: the whole way in (the brood on the shortest way and in the core, full) is worth
+  // the guard × (depth + 1) / depthDiv of its strength: a young hive about its guard, a deep one three times it.
+  const full = path.reduce((a, id) => { const r = roomById(den, id); return a + (r.kind === "core" ? core.count : roomFull(state, hive, den, r, G)); }, 0);
+  const unit = full > 0 ? (G * (den.depth + 1)) / (HCRAWL.GROUP.depthDiv * full) : 0;
+  const share = G / Math.max(1, denBroodTotal(state, hive, G)); // the guard each brood stands for (cutGuard)
+  let left = budget, met = 0, reached = 0, burned = false, killed = 0;
+  for (const id of path) {
     const r = roomById(den, id);
     if (r.kind === "core") {
-      const core = coreForce(state, hive, G);
-      const cost = core.count * per + HCRAWL.GROUP.boss + HCRAWL.GROUP.bossTier * den.tier;
+      const cost = core.count * unit + HCRAWL.GROUP.boss + HCRAWL.GROUP.bossTier * den.tier;
       met += cost;
-      if (left >= cost) { burned = true; left -= cost; } else left = 0;
       reached = den.depth;
+      if (left >= cost) { burned = true; killed += core.count; left -= cost; } else { killed += unit > 0 ? Math.min(core.count, Math.floor(left / unit)) : 0; left = 0; }
       break;
     }
     const n = broodLeft(state, hive, r, G);
-    const cost = n * per;
+    const cost = n * unit;
     met += cost;
-    if (left >= cost) { left -= cost; if (n) setLeft(state, hive, r, 0); reached = r.layer + 1; continue; }
-    const k = per > 0 ? Math.floor(left / per) : n;
+    if (left >= cost) { left -= cost; killed += n; if (n) setLeft(state, hive, r, 0); reached = r.layer + 1; continue; }
+    const k = unit > 0 ? Math.floor(left / unit) : n;
+    killed += k;
     setLeft(state, hive, r, n - k);
     left = 0;
-    stopped = true;
     break;
   }
-  void stopped;
-  const cut = Math.min(G, Math.round(budget - left));
+  const cut = Math.min(G, Math.round(killed * share));
   if (g && cut > 0) reduceHorde(state, g, cut);
-  return { burned, cut, met: Math.round(met), reached, depth: den.depth };
+  return { burned, cut, met: Math.round(met), reached, depth: den.depth, spent: Math.round(budget - left) };
 }
 
 // ---------- help ----------

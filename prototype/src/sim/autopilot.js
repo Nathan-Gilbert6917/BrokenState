@@ -73,7 +73,8 @@ import { autoReloadOrders, autoReloadBench, reloadNeeds, reloadCaps, reloadWante
 const CLAIM_ORDER = "claim", WELL_ORDER = "well";
 const claimsReady = () => typeof CL.canClaim === "function" && typeof CL.playerClaims === "function";
 import { jobTripCands, jobById, activeJobs } from "./jobs.js";
-import { hiveAt, hiveForce, broodForce, hiveById, zombieToughness } from "./hives.js";
+import { hiveAt, hiveForce, hiveById, zombieToughness } from "./hives.js";
+import { crawlEstimate, hiveCrawlAutoStep } from "./hivecrawl.js"; // the hive crawl: the odds of the way to the core, a crawl step an hour
 import { isLate } from "./eras.js";
 import { BREAKOFF } from "./breakoff.js";
 import { growthAt, ensureGrowths, growthForce } from "./hivetech.js";
@@ -1216,6 +1217,7 @@ function idleTeams(state) {
     if (p.owner !== "player" || p.kind === "convoy" || !state.parties.includes(p)) continue;
     const hasCard = state.cards.some((c) => c.partyId === p.id);
     if (p.crawl) { if (!hasCard && !state.combat) crawlAutoStep(state, p); continue; } // a city crawl left open when the autopilot came on (citycrawl.js)
+    if (p.hiveCrawl) { if (!hasCard && !state.combat) hiveCrawlAutoStep(state, p); continue; } // a hive crawl: follow the warmth to the core (hivecrawl.js)
     if (p.phase === "waiting" && !hasCard) teamAct(state, p);
     const halted = p.phase === "engaged" && !hasCard && !(state.engagement && state.engagement.partyId === p.id) &&
       !(state.trade && state.trade.partyId === p.id) && !state.combat;
@@ -2821,12 +2823,14 @@ function knownGuard(state, id) {
   return k && k.hordeSize ? Math.max(HIVE_GUARD_MIN, k.hordeSize) : HIVE_GUESS;
 }
 const HIVE_GUARD_MIN = 40;
-// Squad power over the brood's strength after `fires` fires, with the allies' fighters off.
+// Squad power over the hive's strength after `fires` fires (hivecrawl.js crawlEstimate: the core's brood, the
+// Hivemind and the Broodmother as one strength, × the wear of the fights on the shortest way in; the allies' fighters
+// off), on the scale the old storm's brood had (count × power / 5.2).
 function stormRatio(state, hive, power, guard, fires) {
-  const f = broodForce(Math.round(guard * FIRE_CUT ** fires), state);
-  const count = broodAfterAllies(f.count, hiveAllies(state, hive).fighters);
-  return power / (count * (f.power / 5.2));
+  return power / crawlEstimate(state, hive, Math.round(guard * FIRE_CUT ** fires)).strength;
 }
+// What a crawl takes: ammo and meds by the den's depth, hours inside (launchTrip's time on site).
+const crawlKit = (state, hive) => { const e = crawlEstimate(state, hive); return { ammo: 60 + 15 * e.depth, meds: 3 + Math.ceil(e.depth / 2), hours: e.hours }; };
 // Fewest fires that bring the odds up to the style's margin (null: not even with every fire it may set).
 function firesNeeded(state, hive, power, guard, maxFires) {
   const P = persona(state);
@@ -2863,9 +2867,10 @@ function hiveCandidate(state, home, pool) {
     if (baseAmmo(state, h) < campaignAmmoTarget(state, h)) return waits("ammo");
     c.waits = "storm";
     const ratio = stormRatio(state, hive, power, guard, fires);
-    return { mission: "hive", tile: hive.tile, score: 6, crew: HIVE_SQUAD, hive: true,
-      why: `destroy ${hive.name} (squad ${power.toFixed(1)} against the brood's ${(power / ratio).toFixed(1)}${fires ? ` after ${fires} fire${fires > 1 ? "s" : ""}` : ""}; the campaign's ${c.fires} fire${c.fires === 1 ? "" : "s"} so far)`,
-      supplies: { ammo: 80, meds: 4, fuel: fires * FIRE_FUEL }, min: { fuel: fires * FIRE_FUEL }, fires };
+    const kit = crawlKit(state, hive); // deeper hives: more ammo and meds, longer inside
+    return { mission: "hive", tile: hive.tile, score: 6, crew: HIVE_SQUAD, hive: true, onSite: kit.hours,
+      why: `destroy ${hive.name} (squad ${power.toFixed(1)} against the hive's ${(power / ratio).toFixed(1)}${fires ? ` after ${fires} fire${fires > 1 ? "s" : ""}` : ""}, its core ${crawlEstimate(state, hive).depth} chambers in; the campaign's ${c.fires} fire${c.fires === 1 ? "" : "s"} so far)`,
+      supplies: { ammo: kit.ammo, meds: kit.meds, fuel: Math.max(fires * FIRE_FUEL, 3) }, min: { fuel: fires * FIRE_FUEL }, fires };
   }
   // Not this trip: a fire trip when the campaign's fires would get there (and there is fuel for one at least).
   const canFire = Math.min(P.hiveFires, fuel);
@@ -2888,7 +2893,7 @@ function hiveChoice(state, card, opts, p, find) {
   // Guns need ammo (an assault rifle 2 a shot): no storm with less than HIVE_AMMO a fighter (fires need none).
   const ammo = teamAmmo(state, p); // ammo.js: rounds that fit their guns
   const armed = ammo >= fit.length * HIVE_AMMO;
-  if (armed && fit.length >= HIVE_SQUAD - 1 && stormRatio(state, hive, power, guard, 0) >= P.hiveOdds) return find(/^Storm the hive/);
+  if (armed && fit.length >= HIVE_SQUAD - 1 && stormRatio(state, hive, power, guard, 0) >= P.hiveOdds) return find(/^Enter the hive/); // hivecrawl.js: the crawl to the core (hiveCrawlAutoStep)
   const lit = (choice) => { p.apFires = fired + 1; p.apHiveAgain = true; campaignFire(state, hive); return choice; };
   // Molotovs (hives.js FIREBOMB) before fuel: a bigger fire, and the fuel stays for the drive.
   const bomb = find(/^Firebomb/);
@@ -2923,9 +2928,9 @@ function hiveJobOk(state, job) {
   if (squad.length < HIVE_SQUAD) return false;
   const f = factionById(state, job.fid);
   const extra = f ? Math.max(1, Math.min(3, Math.round(f.pop / 10))) : 0; // their fighters once the job is taken
-  const base = broodForce(Math.round(knownGuard(state, hive.tile) * FIRE_CUT ** Math.min(P.hiveFires, Math.floor(((h.stock.fuel || 0) - 4) / FIRE_FUEL))), state);
-  const count = broodAfterAllies(base.count, hiveAllies(state, hive).fighters + extra);
-  return squadPower(squad) / (count * (base.power / 5.2)) >= P.hiveOdds && state.grid.distance(h.tile, hive.tile) <= 40;
+  const est = crawlEstimate(state, hive, Math.round(knownGuard(state, hive.tile) * FIRE_CUT ** Math.min(P.hiveFires, Math.floor(((h.stock.fuel || 0) - 4) / FIRE_FUEL))));
+  const thin = 1 - Math.min(0.3, extra * 0.05); // their fighters thin the brood in every chamber (alliance.js)
+  return squadPower(squad) / (est.strength * thin) >= P.hiveOdds && state.grid.distance(h.tile, hive.tile) <= 40;
 }
 
 // ---------- the hive campaign ----------
