@@ -155,7 +155,7 @@ export function escapeChanceByNumbers(m, e) {
   add("wounds", -R.WOUNDS * Math.max(0, 1 - m.hp / (m.maxHp || 100)));
   add("load carried", -loadPenalty(m.load)); // combat.js: the kg carried over 8
   add(`Scouting ${m.scouting || 0}`, R.SCOUTING * (m.scouting || 0));
-  add("Fleet-Footed", m.fleet || 0); // traits.js
+  add((m.fleet || 0) < 0 ? "Slow" : "Fleet-Footed", m.fleet || 0); // traits.js (Slow: below 0)
   add("night", e.night ? R.NIGHT : 0);
   add("smoke cover", e.smoke || 0);
   add("carrying", e.carrying ? -R.CARRY : 0);

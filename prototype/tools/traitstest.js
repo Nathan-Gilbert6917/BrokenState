@@ -8,8 +8,11 @@
 //   - a save keeps them; a short autopilot run with them on everyone has no errors.
 // Usage: node tools/traitstest.js
 import { createWorld, tickHour, day, hub, atBase, skill, hurt, makeSurvivor, rollTraits, newId } from "../src/sim/world.js";
-import { TRAITS, SKILLS, BIRTH_TRAITS, NEW_TRAITS, TRAIT_CLASH, traitsClash, clashIn } from "../src/sim/data.js";
-import { TRAIT_FX, TRAIT_ROLL, woundMult, stomachShrugs } from "../src/sim/traits.js";
+import { TRAITS, SKILLS, SKILL_NAMES, BIRTH_TRAITS, NEW_TRAITS, TRAIT_CLASH, traitsClash, clashIn, traitKind } from "../src/sim/data.js";
+import { TRAIT_FX, TRAIT_ROLL, TRAIT_TIERS, TIER_ROLL, woundMult, stomachShrugs, tierCount, tierFx, traitTier, setTier, tidyTiers, rollTiers, traitLabel, traitDesc, traitAim, breakMult, accidentMult, stomachMult } from "../src/sim/traits.js";
+import { combatPower, isNight } from "../src/sim/world.js";
+import { perceptionChance } from "../src/sim/markers.js";
+import { moodFactors, onDeath } from "../src/sim/relations.js";
 import { Rng } from "../src/sim/rng.js";
 import { gainXp, ensureSkills, tradeSpeech } from "../src/sim/skills.js";
 import { catchWorm, sickRoll } from "../src/sim/worm.js";
@@ -34,10 +37,12 @@ import { sanitizeBackground } from "../src/sim/custombg.js";
 import { LOOK_ACTIONS } from "../src/ui/newgame.js";
 import { traitPickerHtml, traitBlock } from "../src/ui/traitpick.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
+const deserialize = (o) => loadFromString(JSON.stringify(o));
 import { setAutopilot, autopilotResolve } from "../src/sim/autopilot.js";
 
 let pass = 0, fail = 0;
-const check = (ok, msg) => { if (ok) pass++; else { fail++; console.log(`FAIL ${msg}`); } return ok; };
+const VERBOSE = process.argv.includes("-v");
+const check = (ok, msg) => { if (ok) { pass++; if (VERBOSE) console.log(`  ok ${msg}`); } else { fail++; console.log(`FAIL ${msg}`); } return ok; };
 const section = (t) => console.log(`\n== ${t}`);
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 const r3 = (v) => Math.round(v * 1000) / 1000;
@@ -56,7 +61,7 @@ function twin(st, s, traits) {
 function plain(st, lvl = 5) {
   const h = hub(st);
   const s = makeSurvivor(st, 1);
-  s.traits = []; s.perks = []; s.conditions = []; s.worm = null;
+  s.traits = []; s.perks = []; s.conditions = []; s.worm = null; delete s.traitTier; // tier I unless a test sets one
   for (const k of SKILLS) s.skills[k] = lvl;
   stripAll(s);
   s.location = { kind: "base", baseId: h.id }; s.role = "farm"; s.health = 100; s.mood = 60; s.hunger = 100; s.thirst = 100;
@@ -66,7 +71,7 @@ function plain(st, lvl = 5) {
 
 section("The table");
 {
-  check(Object.keys(TRAITS).length === BIRTH_TRAITS.length + NEW_TRAITS.length && NEW_TRAITS.length === 14, `${BIRTH_TRAITS.length} old + ${NEW_TRAITS.length} new traits`);
+  check(Object.keys(TRAITS).length === BIRTH_TRAITS.length + NEW_TRAITS.length && NEW_TRAITS.length === 21, `${BIRTH_TRAITS.length} old + ${NEW_TRAITS.length} new traits (14 on 2026-10-08, 7 more bad ones with the tiers)`);
   check(BIRTH_TRAITS.join() === "brave,coward,nightowl,medic,greedy,tough,keeneye,loud,lucky,badback", "the birth draw's list is the old one, in its order");
   check(!Object.keys(TRAITS).includes("prepper") && !!TRAITS.prepper, "the prepper's background trait is still not enumerable");
   check(Object.values(TRAITS).every((t) => t.name && t.desc), "every trait has a name and a desc");
@@ -293,6 +298,216 @@ section("Hothead: gets along worse");
   check(tr(a, b) === 0 && tr(h, b) === -10, `the Traits part of getting along: ${tr(a, b)} → ${tr(h, b)}`);
 }
 
+section("Tiers: the table, good, bad and neutral");
+{
+  const keys = Object.keys(TRAITS);
+  check(keys.every((t) => TRAIT_TIERS[t]) && TRAIT_TIERS.prepper, `every trait has a row in TRAIT_TIERS (${keys.length} and the prepper)`);
+  const good = keys.filter((t) => traitKind(t) === "good"), bad = keys.filter((t) => traitKind(t) === "bad"), neutral = keys.filter((t) => traitKind(t) === "neutral");
+  check(good.length === 13 && bad.length === 16 && neutral.length === 2 && traitKind("prepper") === "neutral", `${good.length} good, ${bad.length} bad, ${neutral.length} neutral (${neutral.join(", ")}), the prepper neutral`);
+  const up = (a) => a.every((v, i) => i === 0 || v > a[i - 1]), down = (a) => a.every((v, i) => i === 0 || v < a[i - 1]);
+  check(good.every((t) => TRAIT_TIERS[t].pts.every((p) => p > 0) && up(TRAIT_TIERS[t].pts)), "good traits cost points, more for each tier");
+  check(bad.every((t) => TRAIT_TIERS[t].pts.every((p) => p < 0) && down(TRAIT_TIERS[t].pts)), "bad traits give points back, more for each tier");
+  check(neutral.every((t) => TRAIT_TIERS[t].pts.length === 1 && TRAIT_TIERS[t].pts[0] === 0), "neutral traits are free and have one tier");
+  check(keys.every((t) => Object.values(TRAIT_TIERS[t].fx).every((row) => row.length >= tierCount(t))), "every number has a value for every tier");
+  check(keys.filter((t) => tierCount(t) === 2).sort().join() === "lucky,unlucky" && keys.filter((t) => tierCount(t) === 3).length === good.length + bad.length - 2, "three tiers each but Lucky and Unlucky (two)");
+  // Tier I is the trait as it was: the old numbers.
+  check(TRAIT_FX.TOUGH === 0.75 && TRAIT_FX.FRAIL === 1.25 && TRAIT_FX.LEARN === 1.25 && TRAIT_FX.HEAL === 1.3 && TRAIT_FX.STRONG_MAX === 48 && TRAIT_FX.FLEET_ESCAPE === 10 && TRAIT_FX.WILL === 0.5 && TRAIT_FX.GLUTTON === 1.25 && TRAIT_FX.HOTHEAD_OPINION === 10, "tier I keeps the old numbers");
+  check(traitLabel("tough", 2) === "Tough II" && traitLabel("greedy") === "Greedy" && traitLabel("lucky", 3) === "Lucky II", `labels: ${traitLabel("tough", 2)}, ${traitLabel("greedy")}, a tier past the top clamped (${traitLabel("lucky", 3)})`);
+  check(/35% less/.test(traitDesc("tough", 2)) && /45% less/.test(traitDesc("tough", 3)) && /\+6 Medicine/.test(traitDesc("medic", 2)), `the hover text says the tier's numbers: "${traitDesc("tough", 3)}"`);
+  const st = world();
+  const s = plain(st);
+  s.traits = ["tough"];
+  check(traitTier(s, "tough") === 1 && traitTier(s, "frail") === 0, "no tier written: tier I (an old save)");
+  setTier(s, "tough", 3);
+  check(traitTier(s, "tough") === 3 && s.traitTier.tough === 3, "setTier");
+  setTier(s, "tough", 9);
+  check(traitTier(s, "tough") === 3, "a tier past the top is the top");
+  setTier(s, "tough", 1);
+  check(!s.traitTier, "tier I is not written");
+  s.traitTier = { tough: 2, frail: 3 };
+  tidyTiers(s);
+  check(JSON.stringify(s.traitTier) === '{"tough":2}', "tiers of traits they do not have are dropped");
+}
+
+section("Tiers scale the effects: paired against an identical survivor");
+{
+  const st = world();
+  const h = hub(st);
+  const a = plain(st, 8);
+  const at = (traits, tier) => { const t = twin(st, a, traits); t.traitTier = Object.fromEntries(traits.map((k) => [k, tier])); return t; };
+  const tiers = (t) => Array.from({ length: tierCount(t) }, (_, i) => i + 1);
+  const fx = (t, n, k) => tierFx(t, n)[k];
+  // Skills (world.js skill).
+  const skillCases = [["medic", "medicine", (n) => fx("medic", n, "skill")], ["farmraised", "farming", (n) => fx("farmraised", n, "skill")], ["persuasive", "speech", (n) => fx("persuasive", n, "skill")],
+    ["loud", "stealth", (n) => -fx("loud", n, "skill")], ["nearsighted", "scouting", (n) => -fx("nearsighted", n, "scout")], ["nearsighted", "shooting", (n) => -fx("nearsighted", n, "shoot")],
+    ["squeamish", "medicine", (n) => -fx("squeamish", n, "skill")], ["lucky", "crafting", (n) => fx("lucky", n, "all")], ["unlucky", "speech", (n) => -fx("unlucky", n, "all")]];
+  for (const [t, k, d] of skillCases) {
+    const got = tiers(t).map((n) => skill(at([t], n), k) - skill(a, k));
+    check(got.every((v, i) => v === d(i + 1)), `${TRAITS[t].name}: ${SKILL_NAMES[k]} ${got.map((v) => (v > 0 ? `+${v}` : v)).join(" / ")} by tier`);
+  }
+  // Fighting strength and aim (Brave, Coward).
+  for (const t of ["brave", "coward"]) {
+    const sign = t === "brave" ? 1 : -1;
+    const pw = tiers(t).map((n) => r3(combatPower(at([t], n)) - combatPower(a)));
+    const want = tiers(t).map((n) => r3(sign * fx(t, n, "power") * (0.5 + a.health / 200)));
+    check(JSON.stringify(pw) === JSON.stringify(want) && tiers(t).every((n) => traitAim(at([t], n)) === sign * fx(t, n, "aim")), `${TRAITS[t].name}: strength ${pw.join(" / ")}, to hit ${tiers(t).map((n) => sign * fx(t, n, "aim")).join(" / ")}`);
+  }
+  // Wounds (Tough, Frail).
+  for (const t of ["tough", "frail"]) {
+    const got = tiers(t).map((n) => { const x = at([t], n); x.health = 100; hurt(st, x, 20, null, "in a test"); return r3(100 - x.health); });
+    check(got.every((v, i) => near(v, 20 * fx(t, i + 1, "mult"), 1e-6)) && tiers(t).every((n) => toughOf(at([t], n)) === fx(t, n, "mult")), `${TRAITS[t].name}: a 20 wound takes ${got.join(" / ")} (and the battle map's toughOf)`);
+  }
+  // XP (Quick Study, Slow Learner).
+  for (const t of ["quicklearner", "slowlearner"]) {
+    const got = tiers(t).map((n) => { const x = at([t], n), y = twin(st, a, []); ensureSkills(st, x); ensureSkills(st, y); x.xp.farming = 0; y.xp.farming = 0; return r3(gainXp(st, x, "farming", 4) / gainXp(st, y, "farming", 4)); });
+    check(got.every((v, i) => near(v, fx(t, i + 1, "learn"), 1e-3)), `${TRAITS[t].name}: XP ×${got.join(" / ×")}`);
+  }
+  // Healing (Quick Healer).
+  {
+    a.health = 60;
+    const r0 = healRatePerHour(st, h, a);
+    const got = tiers("quickheal").map((n) => { const x = at(["quickheal"], n); x.health = 60; return r3(healRatePerHour(st, h, x) / r0); });
+    a.health = 100;
+    check(got.every((v, i) => near(v, fx("quickheal", i + 1, "heal"), 1e-3)), `Quick Healer: healing ×${got.join(" / ×")}`);
+  }
+  // Load (Strong Back, Bad Back, Feeble).
+  check(tiers("strongback").every((n) => maxLoad(at(["strongback"], n)) === fx("strongback", n, "max") && near(feelFactor(at(["strongback"], n)), feelFactor(a) * fx("strongback", n, "feel"))), `Strong Back: max load ${tiers("strongback").map((n) => maxLoad(at(["strongback"], n))).join(" / ")}, loads feel lighter`);
+  check(tiers("badback").every((n) => maxLoad(at(["badback"], n)) === fx("badback", n, "max") && near(feelFactor(at(["badback"], n)), feelFactor(a) * fx("badback", n, "feel"))), `Bad Back: max load ${tiers("badback").map((n) => maxLoad(at(["badback"], n))).join(" / ")}, loads feel heavier`);
+  check(tiers("feeble").every((n) => maxLoad(at(["feeble"], n)) === maxLoad(a) - fx("feeble", n, "kg")), `Feeble: max load ${tiers("feeble").map((n) => maxLoad(at(["feeble"], n))).join(" / ")}`);
+  // Battle: moves and the escape (Fleet-Footed, Slow); melee (Clumsy, Feeble).
+  for (const t of ["fleet", "slow"]) {
+    const sign = t === "fleet" ? 1 : -1;
+    const ua = {}; weighPlayer(ua, a);
+    const mobs = tiers(t).map((n) => { const u = {}; weighPlayer(u, at([t], n)); return u.mob - ua.mob; });
+    const fm = fightModel(st, tiers(t).map((n) => at([t], n)), { win: 0.5, enemy: { kind: "raiders", count: 3 } });
+    check(mobs.every((v, i) => v === sign * fx(t, i + 1, "mob")) && fm.members.every((m, i) => m.fleet === sign * fx(t, i + 1, "escape")), `${TRAITS[t].name}: moves ${mobs.map((v) => (v > 0 ? `+${v}` : v)).join(" / ")}, breaking off ${fm.members.map((m) => (m.fleet > 0 ? `+${m.fleet}` : m.fleet)).join(" / ")}`);
+  }
+  {
+    const people = atBase(st, h.id).slice(0, 2);
+    st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: people.map((s) => s.id), enemy: { kind: "raiders", count: 2, power: 3 }, ambush: null, canRetreat: true, handler: "tt", context: {} });
+    const ua = playerUnit(st.combat, a);
+    for (const [t, k] of [["clumsy", "melee"], ["feeble", "melee"]]) {
+      const got = tiers(t).map((n) => playerUnit(st.combat, at([t], n)).meleeAim - ua.meleeAim);
+      check(got.every((v, i) => v === -fx(t, i + 1, k)), `${TRAITS[t].name}: melee to hit ${got.join(" / ")}`);
+    }
+    const aims = tiers("brave").map((n) => playerUnit(st.combat, at(["brave"], n)).aim - ua.aim);
+    check(aims.every((v, i) => v === fx("brave", i + 1, "aim")), `Brave on the battle map: to hit +${aims.join(" / +")}`);
+    const slowEsc = (() => { const b = at(["slow"], 3), ub = playerUnit(st.combat, b); const ref = st.combat.units.find((u) => u.side === "player"); ub.x = ref.x; ub.y = ref.y; return escapeOdds(st.combat, ub); })();
+    check(slowEsc.parts.some(([l, v]) => l === "Slow" && v === -fx("slow", 3, "escape")), `Slow III in the escape check: ${JSON.stringify(slowEsc.parts.filter(([l]) => /Slow|Fleet/.test(l)))}`);
+    st.combat = null;
+  }
+  check(tiers("clumsy").every((n) => accidentMult(at(["clumsy"], n)) === fx("clumsy", n, "hurt")), `Clumsy: cuts and sprains ×${tiers("clumsy").map((n) => fx("clumsy", n, "hurt")).join(" / ×")}`);
+  // Mind (Iron Will), stomach (Iron Stomach, Weak Stomach), illness (Sickly), food (Glutton).
+  check(tiers("ironwill").every((n) => breakMult(at(["ironwill"], n)) === fx("ironwill", n, "mult")), `Iron Will: breaks ×${tiers("ironwill").map((n) => fx("ironwill", n, "mult")).join(" / ×")}`);
+  check(tiers("ironstomach").every((n) => stomachMult(at(["ironstomach"], n)) === fx("ironstomach", n, "sick")) && tiers("weakstomach").every((n) => stomachMult(at(["weakstomach"], n)) === fx("weakstomach", n, "sick")), "Iron Stomach and Weak Stomach: an upset stomach × their tier");
+  {
+    const fa = frailty(st, a).f;
+    const got = tiers("sickly").map((n) => r3(frailty(st, at(["sickly"], n)).f / fa));
+    const c = { key: "chestcold", sev: 30, days: 2, treatedDay: -99 };
+    const drift = tiers("sickly").map((n) => r3(conditionDrift(st, at(["sickly"], n), c) - conditionDrift(st, a, c)));
+    check(got.every((v, i) => near(v, fx("sickly", i + 1, "sick"), 1e-3)) && drift.every((v, i) => near(v, fx("sickly", i + 1, "drift"))), `Sickly: falls ill ×${got.join(" / ×")}, clears ${drift.join(" / ")} a day slower`);
+  }
+  {
+    const people = atBase(st, h.id);
+    const keep = people.map((s) => [s.traits, s.traitTier]);
+    people.forEach((s) => { s.traits = []; delete s.traitTier; });
+    const u0 = foodUse(st, h);
+    const got = tiers("glutton").map((n) => { people[0].traits = ["glutton"]; people[0].traitTier = { glutton: n }; return r3((foodUse(st, h).total - u0.total) / u0.rate); });
+    people.forEach((s, i) => { s.traits = keep[i][0]; if (keep[i][1]) s.traitTier = keep[i][1]; else delete s.traitTier; });
+    check(got.every((v, i) => near(v, fx("glutton", i + 1, "eat") - 1, 1e-3)), `Glutton: a base's food +${got.join(" / +")} of a ration`);
+  }
+  // Getting along (Hothead), mood (Pessimist), seeing (Keen Eye).
+  {
+    const b = twin(st, a, []);
+    const tr = (x) => (compat(st, x, b).parts.find((p) => p[0] === "Traits") || [0, 0])[1];
+    const got = tiers("hothead").map((n) => tr(at(["hothead"], n)));
+    check(got.every((v, i) => v === -fx("hothead", i + 1, "opinion")), `Hothead: getting along ${got.join(" / ")}`);
+    const mf = tiers("pessimist").map((n) => { const x = at(["pessimist"], n); return (moodFactors(st, x).list.find((f) => /Pessimist/.test(f.label)) || {}).v; });
+    check(mf.every((v, i) => near(v, -fx("pessimist", i + 1, "mood"))) && !moodFactors(st, a).list.some((f) => /Pessimist/.test(f.label)), `Pessimist: mood ${mf.join(" / ")} a day (in the mood breakdown)`);
+    const p0 = perceptionChance(st, [a]);
+    const pk = tiers("keeneye").map((n) => r3(perceptionChance(st, [a, at(["keeneye"], n)]) - p0));
+    check(pk.every((v, i) => near(v, fx("keeneye", i + 1, "notice") * (isNight(st) ? 0.6 : 1), 1e-3)), `Keen Eye: the team notices +${pk.join(" / +")}`);
+  }
+  // Squeamish: a death in the group, by tier, on top of any grief.
+  {
+    const sq = tiers("squeamish").map((n) => at(["squeamish"], n));
+    const plainOne = twin(st, a, []);
+    for (const x of [...sq, plainOne]) x.mood = 60;
+    const dead = plain(st);
+    onDeath(st, dead, h.tile, "in a test");
+    const hits = sq.map((x) => r3(60 - x.mood));
+    check(hits.every((v, i) => near(v, fx("squeamish", i + 1, "grief"))) && plainOne.mood === 60, `Squeamish: a death in the group, mood −${hits.join(" / −")} (nobody else's moves)`);
+  }
+}
+
+section("The new bad traits on the road and in the camp");
+{
+  const hw = world(5, "hardcore");
+  const tp = hw.parties.find((x) => x.owner === "player");
+  const keepV = tp.vehicle;
+  tp.vehicle = null;
+  const ms = partyMembers(hw, tp);
+  ms.forEach((x) => { x.traits = []; delete x.traitTier; });
+  const r0 = runBonus(hw, tp);
+  ms[0].traits = ["slow"];
+  const r1 = runBonus(hw, tp);
+  tp.vehicle = keepV;
+  const r2 = runBonus(hw, tp);
+  ms[0].traits = [];
+  const r3v = runBonus(hw, tp);
+  check(r1 === r0 - 1 && r2 === r3v, `Slow: Run for it on foot ${r0} → ${r1} with one Slow (in the car: no change)`);
+  const st = world();
+  const a = plain(st), w = twin(st, a, ["weakstomach"]);
+  w.traitTier = { weakstomach: 3 };
+  let sa = 0, sw = 0;
+  for (let i = 0; i < 6000; i++) {
+    if (sickRoll(st, a, 0.1, "from un-purified water")) sa++;
+    if (sickRoll(st, w, 0.1, "from un-purified water")) sw++;
+    removeCondition(a, "stomach"); removeCondition(w, "stomach");
+  }
+  check(sa > 480 && sa < 720 && sw > sa * 2 && sw < sa * 3, `Weak Stomach III: an upset stomach at 10%: ${sa}/6000 plain, ${sw}/6000 (×2.5)`);
+  const nRun = (t) => Object.keys(TRAITS).filter((k) => traitsClash(k, t));
+  check(["fleet/slow", "quicklearner/slowlearner", "ironstomach/weakstomach", "keeneye/nearsighted", "strongback/feeble", "medic/squeamish", "ironwill/pessimist"].every((p) => { const [x, y] = p.split("/"); return traitsClash(x, y); }) && nRun("pessimist").join() === "ironwill", "the new clash pairs: Slow, Slow Learner, Weak Stomach, Nearsighted, Feeble, Squeamish, Pessimist against their good opposites");
+  // Night Owl (neutral): better by night, worse by day.
+  check(TRAIT_TIERS.nightowl.fx.night[0] === 0.15 && TRAIT_TIERS.nightowl.fx.day[0] === 0.05 && traitKind("nightowl") === "neutral", "Night Owl: +15% by night, −5% by day, neutral");
+}
+
+section("Tiers at birth: dice of their own");
+{
+  const st = world(31);
+  const n = [0, 0, 0, 0];
+  let tiered = 0, stray = 0;
+  for (let i = 0; i < 2000; i++) {
+    const s = makeSurvivor(st, 0.9);
+    for (const t of s.traits) { if (tierCount(t) < 3) continue; n[traitTier(s, t)]++; tiered++; }
+    if (s.traitTier && !Object.keys(s.traitTier).every((t) => s.traits.includes(t))) stray++;
+  }
+  check(stray === 0, "a tier only for a trait they have");
+  const sh = n.map((v) => r3(v / tiered));
+  check(Math.abs(sh[1] - TIER_ROLL.ODDS[0]) < 0.04 && Math.abs(sh[2] - TIER_ROLL.ODDS[1]) < 0.04 && Math.abs(sh[3] - TIER_ROLL.ODDS[2]) < 0.03, `2000 people made in play (recruits, wanderers, prisoners): tiers I / II / III ${sh.slice(1).join(" / ")} (aimed at ${TIER_ROLL.ODDS.join(" / ")})`);
+  const fp = (w) => JSON.stringify({ rng: w.rng.state, map: w.tiles.map((t) => t.terrain + (t.loc ? t.loc.type : "")).join(""), people: w.survivors.map((s) => [s.name, s.skills, s.traits, s.background, s.appearance]), groups: w.factions.map((f) => [f.name, f.type, f.strength]) });
+  let same = 0, k = 0, differ = 0;
+  for (const mode of ["normal", "hardcore"]) for (const seed of [1, 42, 777]) {
+    TIER_ROLL.ON = false;
+    const a = createWorld({ seed, factionCount: 5, mode });
+    const ra = []; for (let i = 0; i < 12; i++) { const s = makeSurvivor(a, 0.9); ra.push([s.name, s.skills, s.traits]); }
+    TIER_ROLL.ON = true;
+    const b = createWorld({ seed, factionCount: 5, mode });
+    const rb = []; for (let i = 0; i < 12; i++) { const s = makeSurvivor(b, 0.9); rb.push([s.name, s.skills, s.traits]); }
+    k++;
+    if (fp(a) === fp(b) && JSON.stringify(ra) === JSON.stringify(rb)) same++;
+    if (b.survivors.some((s) => s.traitTier)) differ++;
+  }
+  TIER_ROLL.ON = true;
+  check(same === k, `${same}/${k} worlds the same with the tiers rolled or not: map, names, skills, traits, groups, 12 people after, the world's dice`);
+  check(differ >= 3, `and the tiers do come up in the crews (${differ}/${k})`);
+  const x = createWorld({ seed: 19, factionCount: 5 }), y = createWorld({ seed: 19, factionCount: 5 });
+  check(JSON.stringify(x.survivors.map((s) => s.traitTier || null)) === JSON.stringify(y.survivors.map((s) => s.traitTier || null)), "the same seed, the same tiers");
+  // A child grown up: the same dice, keyed by its id (family.js comeOfAge).
+  const c1 = rollTiers({ traits: ["tough", "brave", "greedy"] }, 5, 1234), c2 = rollTiers({ traits: ["tough", "brave", "greedy"] }, 5, 1234);
+  check(JSON.stringify(c1.traitTier || null) === JSON.stringify(c2.traitTier || null) && !(c1.traitTier && c1.traitTier.greedy), "rollTiers: the same key, the same tiers; a one-tier trait never gets one");
+}
+
 section("The clash table everywhere");
 {
   const rng = new Rng(7);
@@ -316,7 +531,7 @@ section("The clash table everywhere");
   const html = traitPickerHtml(Object.keys(TRAITS), ["brave"], 3, `data-action="nr-trait" data-id="1"`);
   const btn = (k) => (html.match(new RegExp(`<button[^>]*data-k="${k}"[^>]*>`)) || [""])[0];
   check(/disabled/.test(btn("coward")) && /Not with Brave/.test(btn("coward")) && !/disabled/.test(btn("lucky")), "the picker: Coward off beside Brave, with why");
-  check(/tp-row/.test(html) && /Good/.test(html) && /Bad/.test(html) && /tp-bad[^>]*data-k="frail"/.test(html), "good and bad in their own rows");
+  check(/tp-row/.test(html) && /Good/.test(html) && /Bad/.test(html) && /t-bad[^>]*data-k="frail"/.test(html), "good and bad in their own rows");
   const full = traitPickerHtml(Object.keys(TRAITS), ["brave", "lucky", "tough"], 3, "").match(/<button[^>]*data-k="medic"[^>]*>/)[0];
   check(!/At most/.test(btn("lucky")) && /At most 3/.test(full) && /disabled/.test(full), "three picked: the rest off (at most 3)");
   check(traitBlock(["tough"], "frail", 3) === "Not with Tough" && traitBlock(["tough"], "lucky", 3) === "", "traitBlock");
@@ -364,6 +579,17 @@ section("A save keeps them");
   const ld = loadFromString(saveToString(st));
   check(ld.survivors.every((s, i) => s.traits.join() === st.survivors[i].traits.join()), "every survivor's traits after a save and a load");
   check(ld.survivors.every((s, i) => maxLoad(s) === maxLoad(st.survivors[i]) && skill(s, "farming") === skill(st.survivors[i], "farming")), "and what they do");
+  // Tiers: kept; an old save without them loads as tier I.
+  const t0s = st.survivors[0];
+  t0s.traits = ["tough", "loud"]; t0s.traitTier = { tough: 3, loud: 2 };
+  const text = saveToString(st);
+  const back = loadFromString(text).survivors[0];
+  check(JSON.stringify(back.traitTier) === '{"tough":3,"loud":2}' && woundMult(back) === TRAIT_TIERS.tough.fx.mult[2] && skill(back, "stealth") === skill(t0s, "stealth"), `the tiers after a save and a load (Tough III ×${woundMult(back)}, Loud II)`);
+  const old = JSON.parse(text);
+  const list = old.survivors || (old.state && old.state.survivors) || [];
+  for (const x of list) delete x.traitTier;
+  const oldS = deserialize(old).survivors[0];
+  check(list.length > 0 && !oldS.traitTier && traitTier(oldS, "tough") === 1 && woundMult(oldS) === 0.75 && skill(oldS, "stealth") === Math.max(0, oldS.skills.stealth - 3), "an old save without tiers: everyone tier I, the old numbers");
 }
 
 section("An autopilot run with them on everyone");

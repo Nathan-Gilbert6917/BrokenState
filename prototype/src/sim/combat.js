@@ -4216,7 +4216,7 @@ export function escapeOdds(b, u, carrying = null, field = null) {
   add("wounds", -RETREAT.WOUNDS * Math.max(0, 1 - u.hp / u.maxHp));
   add("load carried", -loadPenalty(u.armLoad));
   add(`Scouting ${u.scouting || 0}`, RETREAT.SCOUTING * (u.scouting || 0));
-  add("Fleet-Footed", u.fleet || 0); // traits.js
+  add((u.fleet || 0) < 0 ? "Slow" : "Fleet-Footed", u.fleet || 0); // traits.js (Slow: below 0)
   add("night", b.night || b.dark ? RETREAT.NIGHT : 0);
   add("team headset", linkEscape(b, u)); // hearing.js: a linked teammate calls the way out
   add("smoke cover", b.smoke && b.smoke.length && smokeAt(b, u.x, u.y, SMOKE.near) ? SMOKE.retreat : 0); // a smoke grenade (throwables.js)
