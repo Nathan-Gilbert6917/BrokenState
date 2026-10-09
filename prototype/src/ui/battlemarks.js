@@ -199,8 +199,8 @@ function fromFx(st, f, now, full) {
     } else if (f.item === "flashbang") add(st, { k: "scorch", x: x + 0.5, y: y + 0.5, r: 0.3, a: 0, n: 2, seed: f.seq * 3, f: fl, throw: f.seq }, now);
   }
 }
-// A blast's scorch, radius r (tiles: sim/throwables.js FRAG, BLAST; sim/launchers.js GL_HE, ROCKET), and the glass of
-// any window or car within it.
+// A blast's scorch, radius r (tiles: sim/throwables.js FRAG, BLAST; sim/launchers.js GL_HE, ROCKET). The glass of a
+// window or car it breaks comes from the cells (ingestMarks).
 function blast(st, x, y, r, seq, now, fl, dark) {
   add(st, { k: "scorch", x: x + 0.5, y: y + 0.5, r: r * 0.75, a: 0, n: 7, seed: seq * 3, f: fl, throw: seq, dark }, now);
 }
@@ -296,11 +296,11 @@ export function paintMark(c, m, g) {
     case "scorch": {
       const dk = m.dark || 0.8;
       const gr = c.createRadialGradient(X, Y, 0, X, Y, Math.max(1, R));
-      if (gr && gr.addColorStop) { gr.addColorStop(0, `rgba(12,10,8,${0.78 * dk})`); gr.addColorStop(0.55, `rgba(20,16,12,${0.5 * dk})`); gr.addColorStop(1, "rgba(24,20,16,0)"); }
+      if (gr && gr.addColorStop) { gr.addColorStop(0, `rgba(8,7,6,${0.92 * dk})`); gr.addColorStop(0.45, `rgba(14,12,10,${0.72 * dk})`); gr.addColorStop(0.8, `rgba(20,16,12,${0.3 * dk})`); gr.addColorStop(1, "rgba(24,20,16,0)"); }
       c.fillStyle = gr && gr.addColorStop ? gr : `rgba(16,12,10,${0.5 * dk})`;
       c.beginPath(); c.arc(X, Y, Math.max(1, R), 0, 6.283); c.fill();
       // Ragged streaks out from the middle.
-      c.fillStyle = `rgba(14,12,10,${0.45 * dk})`;
+      c.fillStyle = `rgba(10,9,8,${0.6 * dk})`;
       c.beginPath();
       for (let k = 0; k < m.n; k++) {
         const a = rnd(k) * 6.283, d = R * (0.5 + rnd(k + 30) * 0.5), rr = Math.max(0.6, R * (0.12 + rnd(k + 50) * 0.14));
