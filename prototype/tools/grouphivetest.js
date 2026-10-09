@@ -1,6 +1,7 @@
 // The AI groups against the hives (src/sim/factions.js groupHiveWar, GROUP_HIVE): a group with a hive within 12 tiles
 // sends a war party every 20–40 days by type (zealots always, the military and a fortress often, traders rarely,
-// raiders never); each party cuts the hive's guard by its fighters' power and loses a few people, and burns the hive
+// raiders never); each party crawls the hive's den as your teams do (hivecrawl.js groupHiveCrawl: chamber by chamber on
+// the shortest way, then the core), cuts the hive's guard by its fighters' power and loses a few people, and burns the hive
 // out when the guard left is small (hives.js destroyHive: the records and the hive victory as for any hive). A fortress
 // beside a hive wears it down and destroys it within a season; traders rarely go; a hive you fought lately earns the
 // group's goodwill; the log lines come only when the group is in radio reach or the hive is in sight; the new fields
@@ -125,7 +126,7 @@ function warDays(st, f, days, onDay = null) {
 {
   console.log("What you hear of it");
   const lines = (st, re) => st.log.filter((l) => re.test(l.text)).length;
-  const RE = /fighters stormed .* and (were driven off|burned it out)/;
+  const RE = /fighters crawled .* (were driven off|burned it out)/;
   // Out of reach, out of sight, the group known: nothing.
   const { st, f } = setup(6, "zealot", 30, { guard: 5000, fromHub: 20 });
   const r = warDays(st, f, 80);
@@ -134,13 +135,13 @@ function warDays(st, f, days, onDay = null) {
   const { st: s2, f: f2, hv: h2 } = setup(7, "zealot", 30, { guard: 5000, fromHub: 20 });
   s2.live.add(h2.tile);
   const r2 = warDays(s2, f2, 80);
-  check(r2.length >= 1 && lines(s2, RE) === r2.length && s2.log.some((l) => l.text.startsWith(`${f2.name}'s fighters stormed`)), `the hive in sight: "${s2.log.find((l) => RE.test(l.text)).text}"`);
+  check(r2.length >= 1 && lines(s2, RE) === r2.length && s2.log.some((l) => l.text.startsWith(`${f2.name}'s fighters crawled`)), `the hive in sight: "${s2.log.find((l) => RE.test(l.text)).text}"`);
   // Not known: "An unknown group".
   const { st: s3, f: f3, hv: h3 } = setup(8, "zealot", 30, { guard: 5000, fromHub: 20 });
   f3.known = false;
   s3.live.add(h3.tile);
   warDays(s3, f3, 80);
-  check(s3.log.some((l) => l.text.startsWith("An unknown group's fighters stormed")), "a group you have not met is not named");
+  check(s3.log.some((l) => l.text.startsWith("An unknown group's fighters crawled")), "a group you have not met is not named");
   // In radio reach (a radio station at the hub, the group's base within its range): the line.
   const { st: s4, f: f4 } = setup(9, "fortress", 40, { guard: 5000, fromHub: RADIO_RANGE - 2 });
   hub(s4).radio = true;

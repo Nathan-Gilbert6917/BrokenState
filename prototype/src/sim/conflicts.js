@@ -1718,6 +1718,7 @@ export function engagedWith(state, p) {
   if (state.engagement && state.engagement.partyId === p.id) return "search";
   if (tradePending(state, p.id)) return "trade";
   if (p.crawl) return "crawl"; // a city crawl (citycrawl.js): its block card holds the team
+  if (p.hiveCrawl) return "crawl"; // a hive crawl (hivecrawl.js): its window holds the team
   return null;
 }
 

@@ -8,6 +8,7 @@ import { LAYERS } from "../sim/markers.js";
 import { helpText } from "./ui.js";
 import { windowsHelp } from "./layout.js";
 import { HIVE_BIRTH_HELP } from "../sim/hivebirth.js";
+import { HIVE_CRAWL_HELP } from "../sim/hivecrawl.js"; // the hive crawl: from the mouth to the Hivemind
 import { FESTIVAL_HELP } from "../sim/festival.js";
 import { keysSheet } from "./controls.js"; // Help → Keys: the printable key sheet (the keys as they are set now)
 import { keyLabel } from "./keymap.js";
@@ -147,7 +148,7 @@ export function helpTopics() {
     add(title, m && (m[2] || m[3]) ? chunk.slice(m[0].length).replace(/^[a-z]/, (c) => c.toUpperCase()) : chunk);
     if (out[out.length - 1].id === "map") { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
     if (out[out.length - 1].id === "keys-on-the-map") add("Windows and panels", windowsHelp()); // ui/layout.js
-    if (out[out.length - 1].id === "hives-and-hordes") add("Hives being born", HIVE_BIRTH_HELP); // sim/hivebirth.js
+    if (out[out.length - 1].id === "hives-and-hordes") { add("The hive crawl", HIVE_CRAWL_HELP); add("Hives being born", HIVE_BIRTH_HELP); } // sim/hivecrawl.js, sim/hivebirth.js
     if (out[out.length - 1].id === "food-and-the-winter") add("The harvest festival", FESTIVAL_HELP); // sim/festival.js
     if (out[out.length - 1].id === "sending-a-team") add("Templates, Repeat trip and Undo", tripsHelp()); // ui/trips.js
     if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP); // ui/causes.js
@@ -170,6 +171,7 @@ export function helpTopics() {
   for (const t of [BULK_HELP, WATCHLIST_HELP]) add(t.title, t.html);
   if (!seen.has("pause-rules-and-the-card-tray")) add("Pause rules and the card tray", pacingHelp());
   for (const [title, html] of displayHelp()) if (!seen.has(slug(title))) add(title, html);
+  if (!seen.has("the-hive-crawl")) add("The hive crawl", HIVE_CRAWL_HELP);
   if (!seen.has("hives-being-born")) add("Hives being born", HIVE_BIRTH_HELP);
   if (!seen.has("the-harvest-festival")) add("The harvest festival", FESTIVAL_HELP);
   if (!seen.has("gun-attachments")) add("Gun attachments", GUNMODS_HELP);

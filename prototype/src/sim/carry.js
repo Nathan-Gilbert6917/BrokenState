@@ -575,7 +575,7 @@ export function handsRefusal(u, type) {
 // The fights the team goes into on purpose (the user's call): a raid, an assault on a base, a hive or a growth, a
 // rescue. Their loads are set down before it starts (stageLoads); any other fight on the road catches them with full
 // arms.
-export const STAGED_HANDLERS = new Set(["baseAssault", "hiveAssault", "growthAssault", "rescueRaid", "rescue", "jobRescue"]);
+export const STAGED_HANDLERS = new Set(["baseAssault", "hiveAssault", "hiveChamber", "growthAssault", "rescueRaid", "rescue", "jobRescue"]);
 export const stagedStart = (b) => !!(b && b.setup && (b.raid || b.setup.mode === "raid" || STAGED_HANDLERS.has(b.setup.handler)));
 // A battle starting (combat.js createBattle, createRaid): who starts with their arms full. A team's field battle on the
 // road: the team's supplies held in the arms (settleHold) and a bag carried in the arms. A fight the team starts

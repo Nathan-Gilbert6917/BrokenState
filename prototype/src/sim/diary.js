@@ -37,7 +37,7 @@ const ROBOT_PRE = ROBOT + " ";
 // Order matters: a death in a horde fight is a death, a horde breaking in is a horde line, and so on.
 const RX = {
   d: /\bdied\b|lost hope and walked away|\bwas killed\b|whole team was lost|has fallen|dead or gone/,
-  h: /horde|\bhives?\b|Wallbreaker|Broodmother|\bbrood\b|the dead overran|overrun by the dead|spike pits|decoy fire|the dead surge/i,
+  h: /horde|\bhives?\b|Wallbreaker|Broodmother|Hivemind|\bbrood\b|the dead overran|overrun by the dead|spike pits|decoy fire|the dead surge/i,
   c: /fight|ambush|drove off|broke into|\braid(?!ing team| team)|raiders?\b|attack|captive|prisoner|ransom|rescue|surrender|battle|defen[cs]es held|overran|checkpoint|shot\b/i,
   m: /\bflu\b|dysentery|pneumonia|fever|sprain|deep cut|wounds?\b|infect|\bmeds\b|night care|treated|got over|hospital|infirmary|clinic|medic|\bsick\b|\bill\b|outbreak|quarantine|bitten|turning|bandage|dressings/i,
   t: /trad(e|ed|ers?|ing)\b|caravan|radio|goodwill|\bpacts?\b|barter|\bdeal\b|(neutral|hostile|friendly) toward|allied|tribute/i,

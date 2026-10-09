@@ -38,7 +38,7 @@ export const HIVE = {
   BOSS_GAP: 90,       // days after a hive raises a Wallbreaker before it can raise the next
   BOSS_DEN: true,     // Wallbreakers come only from a hive with a Wallbreaker den (GROWTHS.den); false: the calendar alone (BOSS_DAY)
 };
-export const BOSS_NAMES = { horde: "Wallbreaker", hive: "Broodmother" };
+export const BOSS_NAMES = { horde: "Wallbreaker", hive: "Broodmother", hivemind: "Hivemind" }; // hivemind: the heart of a hive, met in its core room (hivecrawl.js)
 
 // ---------- the hive tech tree (hivetech.js) ----------
 // A hive grows structures ("growths") on land within TECH.RANGE tiles of itself, bought with its resources and

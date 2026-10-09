@@ -34,6 +34,7 @@ export const GROUPS = [
   { id: "zombies.crowd", label: "Crowd murmur (battle)", max: 1.5, tip: "The murmur and shuffle of many dead in a battle, louder the more and nearer they are" },
   { id: "zombies.hordes", label: "Map hordes", max: 1.5, tip: "Hordes near your bases and teams moaning on the State Map (more at night). Under the Ambience volume" },
   { id: "zombies.hive", label: "Hive drone", max: 1.5, tip: "A known hive near you on the map: its low drone and heartbeat. Under the Ambience volume" },
+  { id: "zombies.hivecrawl", label: "Hive crawl pulse", max: 1.5, tip: "Inside a hive (the hive crawl window and its battles): its pulse and warm drone, louder and faster the nearer the core. Under the Ambience volume" },
   { id: "people", label: "People", max: 1.5, tip: "Your people and others: voices, footsteps, gear, someone going down" },
   { id: "people.voices", label: "Voices", max: 1.5, tip: "People's voices: hurt, crying out, going down, dying, effort, panting, coughs, shouts and taunts in battle; the chirp of an important combat bark" },
   { id: "people.steps", label: "Footsteps", max: 1.5, tip: "Everyone's footsteps in battle: yours, the enemy's, the dead's shuffle. By ground, gait and load" },
@@ -82,6 +83,7 @@ assignGroup(["zSpit", "zSizzle", "zStrike", "zBurst", "zWorms", "zHeave", "zFlin
 assignGroup(["crowd"], "zombies.crowd");
 assignGroup(["mapHorde"], "zombies.hordes");
 assignGroup(["hive", "hiveBeat"], "zombies.hive");
+assignGroup(["hiveCrawlDrone", "hiveCrawlBeat"], "zombies.hivecrawl"); // ui/hivecrawlsfx.js HC_SOUND_NAMES
 assignGroup(["bark", "hDown", "hCry", "hDeath", "hShout", "hGasp", "hHurt", "hTaunt", "hEcstatic", "hDeaf", "hPlea", "hPanic", "hEffort", "hScared",
   "hPant", "hWheeze", "hCough", "hMuffled"], "people.voices"); // ui/humansfx.js HUMAN_CUES
 assignGroup(["step", "hearStepGrass", "hearStepRoad", "hearStepWood", "hearStepGravel", "hearStepMud", "hearStepSnow", "hearStepLaden", "hearStepSneak",

@@ -52,7 +52,8 @@ const G = await import("../src/ui/gunsfx.js");
 const B = await import("../src/ui/blastsfx.js");
 const Z = await import("../src/ui/zombiesfx.js");
 const H = await import("../src/ui/humansfx.js");
-const AM = await import("../src/ui/ambience.js"); // the ambience's weather and wildlife (ui/ambweather.js, ui/ambwild.js)
+const AM = await import("../src/ui/ambience.js");
+const HC = await import("../src/ui/hivecrawlsfx.js"); // the hive crawl's pulse and drone // the ambience's weather and wildlife (ui/ambweather.js, ui/ambwild.js)
 let EDGE = null;
 try { EDGE = await import("../src/ui/edgefx.js"); } catch { EDGE = null; } // adds the heartbeat voice (needs the battle view: may not load in node)
 
@@ -63,10 +64,10 @@ console.log("Registry");
   check(ids.length === new Set(ids).size && SG.GROUPS.every((g) => g.label && g.max > 0 && (!SG.parentOf(g.id) || ids.includes(SG.parentOf(g.id)))), `${ids.length} groups, ids unique, each with a label and a slider top, every child's parent a group`);
   check(JSON.stringify(SG.TOP_GROUPS) === JSON.stringify(["weapons", "zombies", "people", "world", "ui", "music"]), `the top groups: ${SG.TOP_GROUPS.join(", ")}`);
   const want = {
-    weapons: ["guns", "blasts", "handling", "melee"], zombies: ["moans", "attacks", "shrieks", "special", "crowd", "hordes", "hive"],
+    weapons: ["guns", "blasts", "handling", "melee"], zombies: ["moans", "attacks", "shrieks", "special", "crowd", "hordes", "hive", "hivecrawl"],
     people: ["voices", "steps", "gear", "vehicles", "doors", "downed"], world: ["weather", "wildlife", "base", "heartbeat"], ui: ["clicks", "cards", "stings"], music: ["stings"],
   };
-  check(Object.entries(want).every(([p, kids]) => JSON.stringify(SG.childrenOf(p)) === JSON.stringify(kids.map((k) => `${p}.${k}`))), "each group's parts as asked (Weapons 4, Zombies 7, People 6 with Vehicles and Doors, World 4 with Base and camp, Interface 3, Music 1)");
+  check(Object.entries(want).every(([p, kids]) => JSON.stringify(SG.childrenOf(p)) === JSON.stringify(kids.map((k) => `${p}.${k}`))), "each group's parts as asked (Weapons 4, Zombies 8 with the Hive crawl pulse, People 6 with Vehicles and Doors, World 4 with Base and camp, Interface 3, Music 1)");
   check(!SG.groupDef("music").reserved && SG.groupDef("music").max === 1 && SG.groupDef("music.stings").max === 1.5, "Music: the music bus plays through it (no longer reserved; its slider 0–100%, 100% the usual level), with a Stings and phrases part");
   SG.useMix({ groups: {}, off: {} });
   check(ids.every((id) => SG.groupGain(id) === 1), "at the defaults every group's gain is 1");
@@ -96,6 +97,7 @@ console.log("Every sound in a group");
     "humansfx cues": [...H.HUMAN_SOUND_NAMES, ...Object.keys(H.HUMAN_LIMITS), ...Object.keys(H.H_PRIORITY)],
     "ambience beds": [...Object.keys(AU.AMB_LEVELS), "crowd", "mapHorde", "hive", "murmur"],
     "edge heartbeat": ["heartbeat"],
+    "hive crawl beds": HC.HC_SOUND_NAMES, // ui/hivecrawlsfx.js
     "ambience weather and wildlife": [...AM.AMB_SOUNDS.weather, ...AM.AMB_SOUNDS.wildlife],
     "music.js names": MU.MUSIC_SOUND_NAMES,
   };

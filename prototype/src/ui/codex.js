@@ -27,6 +27,7 @@ import { durUnit } from "../sim/crafting.js"; // what an item's uses count (figh
 import { day } from "../sim/world.js";
 import { BLUEPRINTS, CRAFT_BOOKS, LOCKED, techName, unlockName } from "../sim/blueprints.js"; // what a manual or craft book unlocks
 import { BIRTH } from "../sim/hivebirth.js"; // a hive being born: breaking up the gathering
+import { HCRAWL, HIVEMIND } from "../sim/hivecrawl.js"; // the hive crawl and the Hivemind
 import { FRONT_KINDS, FRONT, ICE, WEATHER, visibleFronts, iceRow } from "../sim/weather.js"; // weather fronts and river ice
 import { zombieCanvas, armoredCanvas, enemyCanvas } from "./sprites.js";
 import { keyLabel } from "./keymap.js";
@@ -87,9 +88,20 @@ function deadEntries() {
   out.push({
     key: "z:broodmother", cat: "dead", name: BOSS_NAMES.hive, sub: "Boss",
     stats: [["Health", bm.hp], ["Takes", `${pct(bm.armor)} of each hit`], ["Damage", `${x(bm.dmgMult)} (crushing blows, ${bm.meleeAim} melee aim)`], ["Moves", `${bm.mob} tiles an action`], ["Comes from", "the heart of every hive"]],
-    text: "The hive's mother: met when you storm a hive (the Destroy hive mission), among its brood.",
-    how: "Bring your best shooters, armor, meds and Molotovs (they burn the hive's guard down before the assault). Thin the brood first; focus fire on her.",
+    text: `The hive's mother: she guards the ${BOSS_NAMES.hivemind} in the core room at the end of a hive crawl (the Destroy hive mission), among the last of the brood.`,
+    how: `Bring your best shooters, armor, meds and Molotovs (they burn the hive's guard down before the crawl). Thin the brood first; she falls with the ${BOSS_NAMES.hivemind}.`,
     sprite: () => bossBattleCanvas("broodmother"),
+  });
+  const hm = boss("hivemind");
+  out.push({
+    key: "z:hivemind", cat: "dead", name: BOSS_NAMES.hivemind, sub: "Boss",
+    stats: [["Health", `${HIVEMIND.hp} (+${HIVEMIND.perTier} a tier of its hive)`], ["Takes", `${pct(hm.armor)} of each hit`], ["Moves", "never: it is rooted in the core"],
+      ["Pulse", `every turn: everyone within ${HIVEMIND.pulse} tiles takes ${HIVEMIND.pulseDmg[0]}–${HIVEMIND.pulseDmg[1]}, ${pct(HIVEMIND.stun)} of them stunned (an action less)`],
+      ["Lash", `${HIVEMIND.lash[0]}–${HIVEMIND.lash[1]} to someone next to it`], ["Brood", `${HIVEMIND.spawn[0]}–${HIVEMIND.spawn[1]} torn out of the walls every ${HIVEMIND.spawnEvery} turns, ${HIVEMIND.cap} + ${HIVEMIND.capTier} a tier in all`],
+      ["Comes from", `the core room of every hive, ${HCRAWL.DEPTH[0]}–${HCRAWL.DEPTH[HCRAWL.DEPTH.length - 1]} chambers in from its mouth by its tier`]],
+    text: "The organ that thinks for a hive: a hill of folded flesh that beats like a heart at the end of the core room. Kill it and the hive dies around you, its brood dropping where it stands.",
+    how: "Crawl to it (follow the warmth: the core is the hottest place in the hive), with meds for the way and the fight. Keep out of its pulse when you can and shoot it from range; the battle AI aims for it first. Burning egg chambers on the way means fewer brood when you come back.",
+    sprite: () => bossBattleCanvas("hivemind"),
   });
   return out;
 }
@@ -99,7 +111,7 @@ function hiveEntries() {
     key: "h:hive", cat: "hives", name: "Infestation hive", sub: "Hive",
     stats: [["Holds", `the land within ${HIVE.TERRITORY} tiles (sites there show at least 3 skulls)`], ["Ring", `${HIVE.RING} tile of red-skull ground: much tougher dead`], ["Infection", `radiates out to ${HIVE.RADIATE} tiles`], ["Attacks", `your bases from up to ${HIVE.ATTACK_RANGE} tiles`]],
     text: "A red, glowing mound where the dead gather. It gains resources every day (more with other hives near) and spends them on hordes, Wallbreakers and growths; its hordes attack bases and its growths let it breed special dead.",
-    how: "Destroy it with the Destroy hive mission (a hard battle against its brood and the Broodmother): Molotovs carried by the team burn its guard down first. Burning its growths weakens it until you can.",
+    how: `Destroy it with the Destroy hive mission: Enter the hive and crawl its chambers to the core (${HCRAWL.DEPTH.join(", ")} chambers deep by its tier), then kill the ${BOSS_NAMES.hivemind}. Fires and Molotovs around it burn its guard (its brood) down first. Burning its growths weakens it until you can.`,
     sprite: null,
   }, {
     key: "h:site", cat: "hives", name: "Hive being built", sub: "Hive",
