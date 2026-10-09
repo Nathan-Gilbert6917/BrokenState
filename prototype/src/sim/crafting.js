@@ -39,6 +39,8 @@ export const CRAFTS = {
   tirevest:    { gear: "tirevest",    in: { scrap: 6 },           hours: 8,  skill: "mechanics", min: 2 },
   scrapvest:   { gear: "scrapvest",   in: { scrap: 10, parts: 1 },hours: 18, skill: "mechanics", min: 4, needs: "workshop" },
   bandagekit:  { gear: "bandagekit",  in: { scrap: 2, meds: 1 },  hours: 4,  skill: "medicine",  min: 2, field: true },
+  // medics.js MEDIC.SELF: a strap cut from a belt or webbing, a scrap rod for the windlass.
+  tourniquet:  { gear: "tourniquet",  in: { scrap: 1 },           hours: 1,  skill: "medicine",  min: 1, field: true },
   dressings:   { name: "Boiled-rag dressings", supplies: { meds: 1 }, in: { scrap: 2, water: 2 }, hours: 6, skill: "medicine", min: 3, field: true,
                  desc: "Rags boiled clean and folded into dressings: 1 meds. Slower than a med station, but needs no building." },
   // Arrows and bolts for hunting with a bow or crossbow (hunting.js): straight shoots split from the firewood, fletched,
@@ -168,6 +170,7 @@ export function craftOutputText(key) {
   else {
     const fx = [];
     if (d.medKit) fx.push(`+${d.medKit} Medicine when treating`);
+    if (d.selfStab) fx.push(`lets someone down and bleeding in battle stabilize themselves (a try a turn, better with Medicine) when carried in the off hand, a pocket or a rig pouch${d.medKit ? ": a use of the kit" : ": one use"}`);
     for (const [k, v] of Object.entries(d.bonus || {})) fx.push(`+${v} ${SKILL_NAMES[k]}${k === "scavenging" ? " for base scavenging" : ""}`);
     if (d.water) fx.push(`+${d.water} purified water a day at its base and purifies ${WORM.PURIFY_FILTER} un-purified water a day there (strains out the worm's eggs)`);
     // The stealth kit (stealth.js): thrown to pull guards away, a suppressor, a light for night raids.
@@ -178,7 +181,7 @@ export function craftOutputText(key) {
     if (LIGHTS[r.gear]) fx.push(`a light: at night sees ${LIGHTS[r.gear].sight} tiles (7 without) and searches without fumbling, but is seen ${LIGHTS[r.gear].seen} tile${LIGHTS[r.gear].seen === 1 ? "" : "s"} further${LIGHTS[r.gear].free ? "; hands free" : "; in the off hand"}`); // lights.js
     if (d.heat) fx.push(`${Object.entries(d.heat).filter(([k]) => k !== "hours").map(([k, v]) => `Heat ×${v} ${k === "stay" ? "staying put" : k === "camp" ? "camping" : "searching"}`).join(", ")}${d.heat.hours ? `, for ${d.heat.hours} hours, used up` : ""}`);
     if (d.defence && d.defence.alarm) fx.push("an alarm for a base (everyone counts half on the walls) or a camp (less trouble)");
-    bits.push(`${d.throw || d.suppressor || d.siege || d.cat === "gunmod" ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
+    bits.push(`${d.throw || d.suppressor || d.siege || d.cat === "gunmod" || (d.selfStab && !d.medKit) ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }
   if (d.req && d.skill) bits.push(`needs ${SKILL_NAMES[d.skill]} ${d.req}`);
   if (d.dur) bits.push(`lasts ${ownMax(d) ? `about ${d.dur}` : d.dur} ${durUnit(r.gear)}${ownMax(d) ? " (more when well made)" : ""}`);
@@ -191,6 +194,7 @@ export function durUnit(key) {
   if (d.count) return "left"; // a count stack (data-ammo.js: a box of rounds, primers): what is in it
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
   if (d.medKit) return "treatments";
+  if (d.selfStab) return "use"; // a tourniquet (medics.js MEDIC.SELF): one use
   if (key === "repairkit") return "repairs"; // repair.js: a field repair a use
   if (d.suppressor) return "shots";
   if (d.cat === "gunmod") return key === "scrapscope" ? "fights" : "shots"; // makeshift gun parts (gunmods.js)
