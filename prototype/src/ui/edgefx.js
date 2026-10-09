@@ -66,8 +66,9 @@ export function edgeFrame(state, ui, now, mapShown) {
   const on = enabled() && ui.started && !state.gameOver;
   // The map's sources (also for the heartbeat while a battle is open: none then, the battle has its own sounds).
   if (now - lastSrc >= SOURCE_MS) { lastSrc = now; mapSrc = on || heartOn() ? mapAttackSources(state) : []; }
-  if (on && mapShown) {
-    const cv = document.getElementById("map"), w = cv ? cv.clientWidth : 0, h = cv ? cv.clientHeight : 0;
+  // The canvas sizes are read only while there is something to show (a layout read every frame would cost).
+  if (on && mapShown && (mapSrc.length || mapTrack.size)) {
+    const [w, h] = sizeOf("map");
     const rect = { x0: MARGIN, y0: MARGIN, x1: w - MARGIN, y1: h - MARGIN };
     const srcs = [];
     if (w && h) for (const s of mapSrc) {
@@ -81,10 +82,11 @@ export function edgeFrame(state, ui, now, mapShown) {
   } else if (mapLayer.count()) { mapLayer.hide(); edgeStats.map = 0; }
   // The battle: the isometric view only (the top view shows the whole field).
   const b = state.combat;
-  if (on && b && cui.view !== "top") {
-    const cv = document.getElementById("combatmap"), w = cv ? cv.clientWidth : 0, h = cv ? cv.clientHeight : 0;
+  const hits = on && b && cui.view !== "top" ? battleHitSources(b, cbMem, now) : null;
+  if (hits && (hits.length || cbTrack.size)) {
+    const [w, h] = sizeOf("combatmap");
     const rect = { x0: MARGIN, y0: MARGIN, x1: w - MARGIN, y1: h - MARGIN };
-    const srcs = battleHitSources(b, cbMem, now).map((s) => {
+    const srcs = hits.map((s) => {
       const [x, y] = project(s.unit.x + 0.5, s.unit.y + 0.5, 0);
       return { ...s, off: w && h ? snap(edgePoint(x, y, rect), w, h) : null };
     });
@@ -98,4 +100,5 @@ export function edgeFrame(state, ui, now, mapShown) {
     if (sfx("heartbeat", { gain: 0.9, pitch: 1 })) edgeStats.beats++;
   }
 }
+const sizeOf = (id) => { const cv = document.getElementById(id); return cv ? [cv.clientWidth, cv.clientHeight] : [0, 0]; };
 const heartOn = () => { const o = displayOptions(); return !!(o && o.heartbeat); };
