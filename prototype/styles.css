@@ -12,6 +12,7 @@
   --death: #ff4d4d;
   --info: #8fb4e0;
   --danger-soft: color-mix(in srgb, var(--danger) 28%, var(--panel-2)); /* the stack mover's "no room" track */
+  --sm-k0: var(--info); --sm-k1: #c39be0; --sm-k2: #6cc9bf; --sm-k3: var(--text); /* the stack mover's destinations (fit bars, chips) */
   font-size: calc(16px * var(--ui-scale));
 }
 * { box-sizing: border-box; }
@@ -396,6 +397,31 @@ span.smto { border-color: var(--accent); color: var(--accent); }
 .smbtn { flex: 1; min-width: 0; font-weight: 600; padding: 0.42rem 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .smkeys { flex: none; font-size: 0.7rem; }
 .smhint { margin-top: -0.15rem; font-size: 0.75rem; }
+/* The track: the slider, and on wide panels a fit bar per destination under it (ui/stackmove.js fitBars). */
+.smove.dock { container-type: inline-size; }
+.smtrack { flex: 1; min-width: 5rem; display: flex; flex-direction: column; justify-content: center; }
+.smtrack .smrange { flex: none; width: 100%; min-width: 0; margin: 0; }
+.smove .k0 { --c: var(--sm-k0); } .smove .k1 { --c: var(--sm-k1); } .smove .k2 { --c: var(--sm-k2); } .smove .k3 { --c: var(--sm-k3); }
+.smfits, .smsw { display: none; }
+.smfits { position: relative; margin: 0.3rem 0.55rem 0; } /* inset by half the thumb: a bar ends under the thumb at that amount */
+.smfitrow { position: relative; height: 0.95rem; }
+.smfitrow i { position: absolute; left: 0; bottom: 0.12rem; height: 0.22rem; min-width: 0.22rem; border-radius: 99px; background: var(--c); opacity: 0.35; }
+.smfitrow[data-fit="0"] i { display: none; }
+.smfitrow span { position: absolute; top: 0; font-size: 0.62rem; line-height: 0.7rem; white-space: nowrap; color: var(--c); opacity: 0.7; transform: translateX(-0.1rem); }
+.smfitrow span.end { transform: translateX(0.1rem); }
+.smfitrow.ok i, .smfitrow.ok span { opacity: 1; }
+.smqline { position: absolute; top: -0.15rem; bottom: 0; width: 1px; margin-left: -0.5px; background: var(--text); opacity: 0.5; }
+.smsw { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 2px; background: var(--c); align-self: center; }
+@container (min-width: 34rem) {
+  .smfits { display: block; }
+  .smsw { display: inline-block; }
+  .smamt.barred { align-items: flex-start; }
+  .smamt.barred > .smstep, .smamt.barred > .smnum { margin-top: -0.35rem; }
+}
+/* Split (✂): the stack cut in two where it lies; which part moves, Join. The tile shows "16 + 8". */
+.smparts { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; font-size: 0.8rem; }
+.smsplitbtn small { color: var(--muted); margin-left: 0.15rem; }
+.smsplit b { color: var(--accent); }
 
 /* Dev tools panel (ui/devtools.js) */
 #devpanel { position: absolute; right: 0.6rem; top: 0.6rem; width: min(26rem, calc(100% - 1.2rem)); max-height: 70%; overflow-y: auto; overflow-x: hidden; background: rgba(20,22,26,0.92); border: 1px solid #7a5cff; border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 0.8rem; z-index: 5; }
