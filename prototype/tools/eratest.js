@@ -1,9 +1,9 @@
 // Eras (src/sim/eras.js, outbreak.js): the calendar (game years of 112 days, as weather.js), the threats growing by
 // year (hordes, the aggressive groups' arms, recruits and new gangs, outsider raider bands), the victories' clocks
-// (no victory before year 8, the Calder Accord held for a year, the hive victory only once the outbreak beyond the
+// (no victory before year 10, the Calder Accord held for a year of the late game, the hive victory only once the outbreak beyond the
 // border has burned out and the state has been kept clear for a season), new hives rising near the border while
 // it burns, and then a short long-run check: autopilot campaigns (one per style) to the end of year 6 — no victory
-// before year 8, hives and aggressive groups still in the state at the start of year 5, no NaN, no crash.
+// before year 10, hives and aggressive groups still in the state at the start of year 5, no NaN, no crash.
 // Usage: node tools/eratest.js [days=658] (the long-run part; 658 = the last day of year 6)
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
@@ -40,7 +40,11 @@ async function main() {
     check(ok, "yearOfDay matches the season display's year on days 1, 98, 99, 435, 547, 995, 1555, 1667 ...");
     check([2, 5, 6, 10, 15].every((y) => E.yearOfDay(E.yearStartDay(y)) === y && E.yearOfDay(E.yearStartDay(y) - 1) === y - 1), `years start on days ${[2, 5, 6, 10, 15].map(E.yearStartDay).join(", ")} (years 2, 5, 6, 10, 15)`);
     const st = world();
-    check(E.eraOf(at(st, 50)).key === "early" && E.eraOf(at(st, E.yearStartDay(3))).key === "mid" && E.eraOf(at(st, E.yearStartDay(8))).key === "late", "eras: early in years 1–2, mid from year 3, late from year 8");
+    // Retimed 2026-10-09 (the progression census): the mid game from year 5, the late game (and the victories) from year 10.
+    const [, mid, late] = E.ERAS.LIST.map((x) => x.from);
+    check(mid === 5 && late === 10 && E.ERAS.WIN_FROM_YEAR === late, `the eras: mid game from year ${mid}, late game from year ${late}, the victories open with it (year ${E.ERAS.WIN_FROM_YEAR})`);
+    check(E.eraOf(at(st, 50)).key === "early" && E.eraOf(at(st, E.yearStartDay(mid) - 1)).key === "early" && E.eraOf(at(st, E.yearStartDay(mid))).key === "mid" && E.eraOf(at(st, E.yearStartDay(late) - 1)).key === "mid" && E.eraOf(at(st, E.yearStartDay(late))).key === "late",
+      `eras: early in years 1–${mid - 1}, mid from year ${mid} (day ${E.yearStartDay(mid)}), late from year ${late} (day ${E.yearStartDay(late)})`);
   }
 
   console.log("Threats grow by year");
@@ -48,7 +52,7 @@ async function main() {
     const st = world();
     const g = (d) => { at(st, d); return { h: E.hordeGrowth(st), a: E.gangArms(st), r: E.raiderSizeBonus(st), p: E.raiderPowerBonus(st), gp: E.gangPopBonus(st), rc: E.recruitBonus(st) }; };
     const y2 = g(E.yearStartDay(3) - 1), y3 = g(E.yearStartDay(3)), y5 = g(E.yearStartDay(5)), y30 = g(E.yearStartDay(30));
-    check(y2.h === 1 && y2.a === 1 && y2.r === 0 && y2.p === 0 && y2.gp === 0 && y2.rc === 0, "nothing grows in the early game (years 1–2)");
+    check(y2.h === 1 && y2.a === 1 && y2.r === 0 && y2.p === 0 && y2.gp === 0 && y2.rc === 0, `nothing grows before year ${E.ERAS.GROW_FROM}`);
     check(y3.h > 1 && y5.h > y3.h && y5.a > y3.a && y5.r > y3.r && y5.p > y3.p, `year 3 → 5: hordes ×${y3.h.toFixed(2)} → ×${y5.h.toFixed(2)}, gang arms ×${y3.a.toFixed(2)} → ×${y5.a.toFixed(2)}, raider bands +${y3.r} → +${y5.r} people, +${y3.p.toFixed(1)} → +${y5.p.toFixed(1)} power`);
     check(y30.h === 1 + E.ERAS.GROW.hordeMax && y30.a === 1 + E.ERAS.GROW.gangArmsMax && y30.r === E.ERAS.GROW.raiderSizeMax, "the growth stops at its caps");
     // A new roaming horde in year 6 is bigger, a split part is not.
@@ -87,7 +91,7 @@ async function main() {
       const A = ensureAlliance(st);
       A.members.push(m.id);
       const mid = assaultForce(st, f, f.bases[0]);
-      at(st, E.yearStartDay(8));
+      at(st, E.yearStartDay(E.ERAS.LIST[2].from)); // the late game
       const late = assaultForce(st, f, f.bases[0]);
       check(mid.count < before.count && mid.allies && late.count < mid.count,
         `a member nearby keeps defenders busy: ${before.count} → ${mid.count} (year 1) → ${late.count} (late game, one more fighter)`);
@@ -115,8 +119,11 @@ async function main() {
     }
     check(allianceVictory(st), `the coalition's conditions hold on day 30 (${n} outposts, ${(controlledLand(st).pct * 100).toFixed(0)}% land)`);
     check(!checkGameOver(st), "but no victory: it is year 1 and the Accord has not been held");
+    E.erasVictoryDaily(st, true, false); E.erasVictoryDaily(st, true, false);
+    check(st.era.accord === 0 && st.era.accordFirst != null, `the Accord's clock does not run before year ${E.ERAS.WIN_FROM_YEAR} (the land held on day 30: first held noted, 0 days counted)`);
+    at(st, E.yearStartDay(E.ERAS.WIN_FROM_YEAR));
     E.erasVictoryDaily(st, true, false); E.erasVictoryDaily(st, true, false); E.erasVictoryDaily(st, false, false);
-    check(st.era.accord === 0 && st.era.accordFirst != null, "the Accord counts a day it holds and loses two for a day it does not");
+    check(st.era.accord === 0, "from then it counts a day it holds and loses two for a day it does not");
     at(st, E.yearStartDay(E.ERAS.WIN_FROM_YEAR) - 1);
     st.era.accord = E.ERAS.ACCORD.DAYS;
     check(!checkGameOver(st), `a full Accord in year ${E.ERAS.WIN_FROM_YEAR - 1}: still no victory (none before year ${E.ERAS.WIN_FROM_YEAR})`);
@@ -150,6 +157,9 @@ async function main() {
     check(E.hiveFloor(s3) >= 1 && !checkGameOver(s3), `year ${E.burnoutYear(s3) - 1}: the outbreak beyond the border still burns (it keeps ${E.hiveFloor(s3)} hive(s)): no hive victory`);
     at(s3, E.yearStartDay(E.burnoutYear(s3)));
     check(E.hiveFloor(s3) === 0 && E.burnedOut(s3), `year ${E.burnoutYear(s3)}: it has burned out (this world's year, ${E.ERAS.OUTBREAK.BURNOUT.join("–")})`);
+    const capAfter = E.hiveCap(s3), capBefore = E.hiveCap(at(world(5), E.yearStartDay(E.burnoutYear(s3)) - 1));
+    check(capAfter === 0 && capBefore > 0, `and from then no new hive site is picked (hiveCap ${capAfter}; the year before, ${capBefore})`);
+    check(E.hiveStarve(s3) === E.ERAS.OUTBREAK.STARVE && E.ERAS.OUTBREAK.STARVE < 1 && E.hiveStarve(at(world(5), E.yearStartDay(E.burnoutYear(s3)) - 1)) === 1, `and the hives left starve: their resources × ${E.ERAS.OUTBREAK.STARVE} (× 1 the year before)`);
     E.ensureEraState(s3).clear = E.ERAS.CONTAIN.DAYS - 1;
     check(!checkGameOver(s3), "a day short of a season clear: no victory");
     s3.era.clear = E.ERAS.CONTAIN.DAYS;

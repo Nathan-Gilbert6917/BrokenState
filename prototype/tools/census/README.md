@@ -61,3 +61,20 @@ note in the write-up what moved. A `--size normal,large,huge,120x80` sweep write
 ignore it.
 
 A quick self-check that the runner and its columns work: `node tools/campaign50.js 2 10 --size normal --groups 7-7`.
+
+## The progression census (2026-10-09)
+
+`review/progression-census-2026-10-09.md` (the write-up). 100 games to day 1700 (about 15 years): `node tools/campaign50.js
+50 1700 --size normal,large --groups-list 6,10,14,20 --seed 6000 --mode both --workers 14 --jsonl games.jsonl --out x.json`
+(half normal, half hardcore starts per size; the seven autopilot styles rotated; groups 6 / 10 / 14 / 20). Each game
+also carries `prog` (`tools/progtrack.js`: a snapshot a game year, milestone days, the mid / end game markers, the
+content checklist, the hive crawl's numbers); read them with `node tools/progreport.js <file> [<file> ...]` (several
+files: an A/B table). These three are slimmed (no monthly `samples`; `events` only hive kills, coalition joins and the
+endings).
+
+| file | commit | what it ran on | games | hive win | coalition | fell | mid in years 5–8 | end in years 10–15 |
+|---|---|---|---|---|---|---|---|---|
+| `2026-10-09-progression-baseline-44f5dcd.json` | 44f5dcd | dev a91ea33 + the census tooling (no hive crawl) | 100 | 0 | 35 | 16 | 20 | 9 |
+| `2026-10-09-progression-pre-dev9e19c18.json` | 0c9b80f | dev 9e19c18 (bal-int, the hive crawl) + tooling, eras as on dev | 100 | 0 | 34 | 19 | 17 | 12 |
+| `2026-10-09-progression-post-partial-00fe1ff.json` | 00fe1ff | + the era retune, the core fitted to the map, starving hives (stopped at 34) | 34 | 0 | 11 | 9 | 25 of 34 | 24 of 34 |
+

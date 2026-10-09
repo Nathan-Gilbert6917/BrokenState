@@ -38,7 +38,7 @@ import { bossUnit, placeUnitRight } from "./defences.js";
 import { startHiveCrawl, denOf, crawlEstimate } from "./hivecrawl.js"; // the hive crawl: from the mouth to the Hivemind in the core
 export { assaultHive } from "./hivecrawl.js"; // the core fight (the old storm's entry point: the tools call it)
 import { HIVE, BOSS_NAMES, GROWTHS, ZTYPES } from "./hiveconst.js";
-import { broodGrowth, hiveCap, hordePaceOpen, noteHorde, rampDay } from "./eras.js";
+import { broodGrowth, hiveCap, hordePaceOpen, noteHorde, rampDay, hiveStarve } from "./eras.js";
 import { worldScale } from "./worldsize.js";
 import { findPath } from "./hex.js";
 import { isPublicSite, knownLoc } from "./discovery.js";
@@ -155,7 +155,7 @@ export function hivesDaily(state) {
   const info = state.hiveInfo;
   for (const hive of [...state.hives]) {
     const n = clusterSize(state, hive);
-    hive.income = growthIncome(state, hive, hiveIncome(n)); // biomass pits, feeding grounds (hivetech.js)
+    hive.income = Math.round(growthIncome(state, hive, hiveIncome(n)) * hiveStarve(state) * 10) / 10; // biomass pits, feeding grounds (hivetech.js); the outbreak burned out: starving (eras.js)
     hive.res = Math.min(HIVE.RES_CAP, hive.res + hive.income);
     growthStep(state, hive); // its guard first, then a growth it wants (or saves for)
     produce(state, hive, n, rd);

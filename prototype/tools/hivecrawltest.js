@@ -274,6 +274,10 @@ console.log("The core");
   const { p: q } = squad(s2, h2, { weapon: "pistol", armor: null, shoot: 3, n: 4 });
   const num = HC.coreSetup(s2, q, h2, true), map = HC.coreSetup(s2, q, h2);
   check(num.enemy.power > map.enemy.power, `by the numbers the bosses add to the brood's power (${map.enemy.power} → ${num.enemy.power})`);
+  // Fitted to the map (progression census 2026-10-09: the numbers said 80% where the map won 25%): the bosses count
+  // HIVEMIND.numbersK times their flat power by the numbers.
+  const cf = HC.coreForce(s2, h2), H = HC.HIVEMIND;
+  check(H.numbersK > 1 && Math.abs(cf.bossPower - (H.power + H.powerTier * cf.tier + H.broodPower) * H.numbersK) < 1e-9, `the core's bosses by the numbers: ${cf.bossPower.toFixed(1)} (× ${H.numbersK}, fitted to the map)`);
 }
 
 // ---------- 5. the autopilot ----------
@@ -336,6 +340,30 @@ console.log("The groups");
   const cost = (dayN) => { const w = world(SEED, dayN, 100); return HC.groupHiveCrawl(w.st, w.hv, 99999).met; };
   const c0 = cost(0), c4 = cost(2100);
   check(c4 > c0, `a deep hive costs a war party more to burn (${c0} on day 0, ${c4} in year 19)`);
+}
+
+// ---------- 6b. the hive deepens with a team inside ----------
+// Progression census 2026-10-09 (seed 6002): a hive reached the next tier while a team stood in one of its chambers;
+// the deeper den lacked that chamber and the autopilot's next step crashed on it. The den keeps its shape while a team
+// is inside and deepens once it is out.
+console.log("The hive deepens with a team inside");
+{
+  const { st, hv } = world(SEED, 1, 80);
+  const { p } = squad(st, hv);
+  HC.startHiveCrawl(st, p, hv);
+  const den0 = HC.denOf(st, hv);
+  const c = p.hiveCrawl;
+  st.hour = 2000 * 24; // past every tier's day: the hive would be far deeper now
+  const deeper = HC.denDepth(st, hv);
+  // A chamber of the young den that the deeper one does not have (a side pocket, a wide layer's last chamber).
+  const later = new Set(HC.genDen(st, hv, deeper, 4).rooms.map((r) => r.id));
+  for (let s = 0; s < 40 && den0.rooms.every((r) => later.has(r.id)); s++) den0.rooms.push({ id: `p${1 + s}`, layer: 1, slot: 9, kind: "bones", links: [den0.mouth], dist: 1, pocket: true, dead: true });
+  const far = den0.rooms.filter((r) => !later.has(r.id) && r.kind !== "core")[0];
+  c.at = far.id; c.enc = null; c.trail = [den0.mouth, far.id]; c.from = den0.mouth;
+  let err = null;
+  try { HC.roomActions(st, p); for (let i = 0; i < 40 && p.hiveCrawl; i++) HC.hiveCrawlAutoStep(st, p); } catch (e) { err = e.message; }
+  check(deeper > den0.depth && !err, `a team in ${far.id} of a ${den0.depth}-deep den as the hive grows ${deeper} deep: no crash${err ? ` (${err})` : ""}`);
+  check(!p.hiveCrawl ? HC.denOf(st, hv).depth === deeper : hv.den === den0, `the den keeps its shape while the team is inside and deepens once it is out (now ${hv.den.depth})`);
 }
 
 // ---------- 7. the window and the sound ----------

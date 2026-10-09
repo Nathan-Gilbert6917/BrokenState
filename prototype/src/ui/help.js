@@ -15,6 +15,7 @@ import { keyLabel } from "./keymap.js";
 import { tripsHelp } from "./trips.js"; // templates, Repeat trip and undo
 import { soundHelp } from "./audio.js";
 import { ledgerHelp } from "./ledger.js"; // the Ledger and the run summary
+import { ERAS } from "../sim/eras.js"; // the year the victories open (Winning and losing)
 import { familyHelp } from "./family.js"; // children and families (sim/family.js)
 import { FAMILY } from "../sim/family.js";
 import { savesHelpHtml } from "./savelist.js"; // autosaves, the save list and the error screen
@@ -121,7 +122,7 @@ function startHereTopic() {
     <b>The State Map.</b> Bright land is what your people see now, dim land your last report of it, dark land unknown. Hordes of the dead roam it, hives breed them, and other groups hold towns of their own: trade with them, ally or fight.${see(["map", "Map"], ["map-legend", "Map legend"], ["groups", "Groups"])}<br><br>
     <b>Cards and alerts.</b> When something happens (a team meets strangers, a fight starts, someone falls ill) a card asks what to do. The big ones (a fight, a raid, a death, a team waiting for orders) stop the clock; the rest wait in the card tray at the top of the map while the clock runs, and take their safest answer if left for 8 hours (⚙ Menu → Options → Pause for… sets which stop it). The alerts on the right list what needs you now; click one to go there.${see(["time", "Time"], ["pause-rules-and-the-card-tray", "Pause rules and the card tray"], ["alerts", "Alerts"])}<br><br>
     <b>The clock.</b> A new game starts paused: look around and give your first orders, then press Space. 1–5 set the speed (5× for quiet stretches; it drops back to 1× when something happens); windows and the cards that stop the clock hold it while they are open.<br><br>
-    <b>Winning and losing.</b> You win by destroying every hive, or by building a coalition with other groups that holds more than half the land for a year; neither comes before year 8. You lose when the last of your people is dead or gone.${see(["eras-and-winning", "Eras and winning"], ["hives-and-hordes", "Hives and hordes"])}`;
+    <b>Winning and losing.</b> You win by destroying every hive, or by building a coalition with other groups that holds more than half the land for a year; neither comes before year ${ERAS.WIN_FROM_YEAR}. You lose when the last of your people is dead or gone.${see(["eras-and-winning", "Eras and winning"], ["hives-and-hordes", "Hives and hordes"])}`;
 }
 
 // "Why?" on deaths and lost bases (sim/causes.js, ui/causes.js).

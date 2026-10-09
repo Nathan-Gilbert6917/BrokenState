@@ -101,7 +101,13 @@ export const HCRAWL = {
 // turn a pulse within pulse tiles (pulseDmg, stun: the chance to cost the next turn an action) and a lash at someone
 // next to it; every spawnEvery turns spawn of the brood from the walls near it, at most cap + capTier × tier in all.
 // power: what it counts for by the numbers (with the Broodmother's broodPower).
-export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9 };
+// numbersK: the bosses' power by the numbers is × this (progression census 2026-10-09: over 56 core rooms the
+// autopilot's real teams met in its games, each played out on the map 8 times, the played fight was won 25% of the
+// time where the numbers said 80%, a fresh rifle team of six at 97% lost 8 of 8 (the Hivemind's hit points, its pulse
+// and lash and the brood it keeps calling grind a team down on the map far more than a flat power says); × 2.75 fits
+// them (Brier 0.42 → 0.09), so the odds the core room shows, the fight by the numbers and the autopilot's choice
+// match what the map gives; 2.5 so an ideal squad (plate, Shooting 7, full health) is not shown far less than it wins.
+export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9, numbersK: 2.5 };
 
 // The kinds of chamber: name, share of the brood (brood) and its power, the special dead among them (special), what
 // can be done there (burn: eggs or a growth's root; search: what lies in it), its battle map size, how it reads.
@@ -141,6 +147,10 @@ export function denDepth(state, hive) {
 export function denOf(state, hive) {
   const depth = denDepth(state, hive);
   if (hive.den && hive.den.v === 1 && hive.den.depth === depth) return hive.den;
+  // Not while a team is inside: its chamber, trail and the chambers it has seen are this den's (the progression census
+  // of 2026-10-09, seed 6002: a hive reached tier 1 with a team in a side pocket that the deeper den does not have,
+  // and the crawl crashed on the missing chamber). It deepens once the team is out.
+  if (hive.den && hive.den.v === 1 && state.parties.some((p) => p.hiveCrawl && p.hiveCrawl.hiveId === hive.id)) return hive.den;
   const grew = !!hive.den;
   hive.den = genDen(state, hive, depth, clamp(hiveTier(state, hive), 0, 4));
   if (grew) hive.den.grew = state.hour;
@@ -303,7 +313,7 @@ export function coreForce(state, hive, G = guardSize(state, hive)) {
   const power = Math.round(broodForce(Math.max(HIVE.GUARD_MIN, G), state).power * (1 + C.powerPerDepth * den.depth) * 10) / 10;
   return {
     count, power, types: broodTypes(state, hive, count, den.depth), elite: hiveMods(state, hive).elite, tier: den.tier, depth: den.depth,
-    hp: HIVEMIND.hp + HIVEMIND.perTier * den.tier, bossPower: HIVEMIND.power + HIVEMIND.powerTier * den.tier + HIVEMIND.broodPower,
+    hp: HIVEMIND.hp + HIVEMIND.perTier * den.tier, bossPower: (HIVEMIND.power + HIVEMIND.powerTier * den.tier + HIVEMIND.broodPower) * HIVEMIND.numbersK,
   };
 }
 // Every brood of the den when full (the core's too): the guard spread through it (cutGuard).
