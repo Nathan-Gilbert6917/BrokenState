@@ -21,6 +21,8 @@ import { meleeVoices, MELEE_LABELS } from "./sfx-melee.js"; // melee by weapon c
 import { stepCues, stepVoices, STEP_LABELS } from "./sfx-steps.js"; // footsteps in battle (ui/sfx-steps.js)
 import { gearCues, uiCues, clickSound, gearVoices, GEAR_LABELS, GEAR_LIMITS } from "./sfx-gear.js"; // searching, doors, bandages, engines, windows, items
 import { voiceOut, placeOf } from "./sfx-out.js"; // the output stage of the voices above (pan, distance, out of sight)
+import { ambTarget, ambBeds, ambPlay } from "./ambience.js"; // the ambience: weather and wildlife where you listen (ui/ambscene.js, ambweather.js, ambwild.js)
+import { camera } from "./render.js"; // the zoom: zoomed far out the ambience is a soft general bed
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -275,50 +277,14 @@ function listenTile(state) {
   } catch { /* no map yet */ }
   return playerTile(state);
 }
+const AMB_MEM = {}; // what the ambience remembers between frames: gunfire, the silence, the wet (ui/ambscene.js)
 function ambienceTarget(state, ui) {
-  const off = { wind: 0, windTone: 400, rain: 0, rainLow: 0, thunder: 0, drone: 0, birds: 0, crickets: 0 };
-  if (ui.timelapse) return off;
-  if (ui.title || !ui.started) return { ...off, wind: 0.3, drone: 0.45 }; // the title and new-run screens: wind and the drone
-  let wx = null, sKey = "summer";
-  try {
-    wx = weatherAt(state, listenTile(state));
-    sKey = season(state).key;
-  } catch { /* a world with no weather yet */ }
-  const mix = ambienceMix(wx, (state.hour % 24) + (view.hourFrac || 0), sKey);
-  if (state.combat) mix.birds = 0; // the birds keep quiet in a firefight
-  return mix;
+  let tile = null;
+  if (state && ui.started && !ui.title && !ui.timelapse) try { tile = listenTile(state); } catch { /* no map yet */ }
+  return ambTarget(state, ui, AMB_MEM, A ? A.ctx.currentTime : 0, { tile, zoom: camera.zoom, hourFrac: view.hourFrac || 0 }); // ui/ambience.js
 }
 function layers() {
-  if (A.layers) return A.layers;
-  const c = A.ctx, L = {};
-  const white = loopNoise(c, "white"), brown = loopNoise(c, "brown");
-  // Wind: brown noise through a band that drifts, with slow gusts.
-  L.windBand = c.createBiquadFilter(); L.windBand.type = "bandpass"; L.windBand.Q.value = 0.9; L.windBand.frequency.value = 400;
-  L.gust = c.createGain(); L.gust.gain.value = 1;
-  L.wind = c.createGain(); L.wind.gain.value = 0;
-  brown.connect(L.windBand); L.windBand.connect(L.gust); L.gust.connect(L.wind); L.wind.connect(A.amb);
-  lfo(c, 0.09, 0.45, L.gust.gain);
-  lfo(c, 0.05, 120, L.windBand.frequency);
-  // Rain: white noise, high and bright, over a low wash (a storm's roar).
-  const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1200;
-  const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 7000;
-  L.rain = c.createGain(); L.rain.gain.value = 0;
-  white.connect(hp); hp.connect(lp); lp.connect(L.rain); L.rain.connect(A.amb);
-  const low = c.createBiquadFilter(); low.type = "lowpass"; low.frequency.value = 450;
-  L.rainLow = c.createGain(); L.rainLow.gain.value = 0;
-  brown.connect(low); low.connect(L.rainLow); L.rainLow.connect(A.amb);
-  // The drone: two low sines a fifth apart, beating slowly, and an octave above, under a low-pass.
-  const dlp = c.createBiquadFilter(); dlp.type = "lowpass"; dlp.frequency.value = 300;
-  L.drone = c.createGain(); L.drone.gain.value = 0;
-  for (const [f, type, g] of [[55, "sine", 0.6], [82.8, "sine", 0.45], [110.4, "triangle", 0.15]]) {
-    const o = c.createOscillator(); o.type = type; o.frequency.value = f;
-    const og = c.createGain(); og.gain.value = g;
-    o.connect(og); og.connect(dlp); o.start();
-  }
-  dlp.connect(L.drone); L.drone.connect(A.amb);
-  lfo(c, 0.04, 0.02, L.drone.gain);
-  A.layers = L;
-  return L;
+  return A.layers || (A.layers = ambBeds(A.ctx, A.amb)); // ui/ambience.js: the weather and wildlife buses and beds (built as they are first heard)
 }
 // Layer levels: how loud each one is at mix 1 (under the ambience slider). Fades are slow (weather changes by the day,
 // night comes over two hours).
@@ -327,17 +293,7 @@ function ambience(state, ui) {
   const L = layers(), c = A.ctx, t = c.currentTime;
   const m = ambienceTarget(state, ui);
   A.mix = m;
-  L.wind.gain.setTargetAtTime(m.wind * AMB_LEVELS.wind, t, 1.5);
-  L.windBand.frequency.setTargetAtTime(m.windTone, t, 2);
-  L.rain.gain.setTargetAtTime(m.rain * AMB_LEVELS.rain, t, 1.5);
-  L.rainLow.gain.setTargetAtTime(m.rainLow * AMB_LEVELS.rainLow, t, 1.5);
-  L.drone.gain.setTargetAtTime(m.drone * AMB_LEVELS.drone, t, 3);
-  // The one-shots: thunder every 12–40 s in a storm, birds every few seconds (more at dawn), cricket trains.
-  const N = A.next;
-  if (m.thunder && t >= N.thunder) { if (N.thunder) sfx("thunder", { near: Math.random() }); N.thunder = t + 12 + Math.random() * 28; }
-  if (!m.thunder) N.thunder = 0;
-  if (m.birds > 0.05 && t >= N.bird) { if (N.bird) sfx("bird", { gain: 0.5 + m.birds * 0.5 }); N.bird = t + (2 + Math.random() * 8) / m.birds; }
-  if (m.crickets > 0.05 && t >= N.cricket) { if (N.cricket) sfx("cricket", { gain: m.crickets }); N.cricket = t + 0.6 + Math.random() * 1.6 / m.crickets; }
+  ambPlay(L, m, t); // ui/ambience.js: wind, rain, thunder, snow, water, ice, the drone; birds, insects, frogs, mammals (silent near danger)
   // The dead (ui/zombiesfx.js): the battle's crowd bed on the effects bus; on the map a horde near you on the wind and a
   // hive's heartbeat on the ambience bus.
   const fight = state.combat && !ui.timelapse ? state.combat : null;
