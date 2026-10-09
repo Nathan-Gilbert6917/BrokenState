@@ -381,16 +381,24 @@ section("Save and load with caravans on the road");
 }
 
 // ======================================================================================
-section("A long run with the autopilot");
+section("Long runs with the autopilot");
 {
-  const st = world(seed + 60);
-  setAutopilot(st, true, "balanced");
-  while (day(st) < 200 && !st.gameOver) tickHour(st);
-  const s = st.stats.caravanRaids || {};
-  console.log(`  200 days: ${JSON.stringify(s)}; merchants ${V.visitorInfo(st).stats.merchants}, robbed ${V.visitorInfo(st).stats.robbed}`);
-  const bad = st.bases.some((b) => Object.values(b.stock).some((q) => !Number.isFinite(q))) || st.factions.some((f) => Object.values(f.stock).some((q) => !Number.isFinite(q)));
+  // Whether the groups rob a caravan in one world is luck (one seed went 3 robberies → 0 when an unrelated fight's dice
+  // changed), so: 8 worlds (seed + 58 … seed + 65) of RUN_DAYS each, and the groups must rob caravans in at least
+  // ROB_BAR of them. Measured on seeds 100–107 at 120 days: 5 of 8 (at 200 days: 7 of 8).
+  const RUN_DAYS = 120, SEEDS = 8, ROB_BAR = 4;
+  let robbing = 0, bad = false;
+  for (let i = 0; i < SEEDS; i++) {
+    const st = world(seed + 58 + i);
+    setAutopilot(st, true, "balanced");
+    while (day(st) < RUN_DAYS && !st.gameOver) tickHour(st);
+    const s = st.stats.caravanRaids || {};
+    console.log(`  seed ${seed + 58 + i}, ${RUN_DAYS} days: ${JSON.stringify(s)}; merchants ${V.visitorInfo(st).stats.merchants}, robbed ${V.visitorInfo(st).stats.robbed}`);
+    bad ||= st.bases.some((b) => Object.values(b.stock).some((q) => !Number.isFinite(q))) || st.factions.some((f) => Object.values(f.stock).some((q) => !Number.isFinite(q)));
+    if ((s.byGroups || 0) > 0) robbing++;
+  }
   check(!bad, "no NaN in stocks");
-  check((s.byGroups || 0) > 0, "the groups rob caravans");
+  check(robbing >= ROB_BAR, `the groups rob caravans (in ${robbing} of ${SEEDS} worlds; at least ${ROB_BAR})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
