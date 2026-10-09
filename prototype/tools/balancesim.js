@@ -266,7 +266,10 @@ export function runCampaign({ seed, style, days, size = "normal", tune = "" }) {
       for (const p of state.parties) if (p.owner === "player" && p.mission === "hive" && !hiveTeams.has(p.id)) { hiveTeams.add(p.id); r.hiveAssaults.push(today()); }
       for (const p of state.parties) {
         if (p.owner !== "player" || p.phase !== "engaged") { engagedSince.delete(p.id); continue; }
-        const pending = state.cards.some((c) => c.partyId === p.id) || (state.engagement && state.engagement.partyId === p.id) || (state.trade && state.trade.partyId === p.id);
+        // A hive crawl in progress (hivecrawl.js p.hiveCrawl: rooms, fights and rests logged hour by hour) is engaged for
+        // days by design: it is stuck only once its own log stops for a day.
+        const crawl = p.hiveCrawl && p.hiveCrawl.log && p.hiveCrawl.log.length && state.hour - p.hiveCrawl.log[p.hiveCrawl.log.length - 1].hour <= 24;
+        const pending = crawl || state.cards.some((c) => c.partyId === p.id) || (state.engagement && state.engagement.partyId === p.id) || (state.trade && state.trade.partyId === p.id);
         if (pending) { engagedSince.delete(p.id); continue; }
         const since = engagedSince.get(p.id) ?? state.hour;
         engagedSince.set(p.id, since);
