@@ -827,3 +827,17 @@ body.tl-on #minimap, body.tl-on #mm-show { display: none !important; }
 .deftab .dplan { padding: 0.25rem 0; border-bottom: 1px solid #2c313a; }
 .deftab .dplan:last-of-type { border-bottom: none; }
 .cbactions .dshname { width: 8rem; font-weight: 700; }
+
+/* Construction progress: the staging camp, a shelter building up into a base (ui/hardcore.js buildBar, stageSteps). */
+.buildbar { position: relative; height: 1.15rem; margin: 0.35rem 0 0.25rem; background: #2c3139; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.buildbar > i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(#e0a84f, #b9852f); }
+.buildbar > i.cap { background: rgba(224, 168, 79, 0.28); }
+.buildbar.done > i:not(.cap) { background: linear-gradient(#6cc48a, #4e9a68); }
+.buildbar > span { position: relative; display: block; text-align: center; font-size: 0.78rem; line-height: 1.1rem; font-weight: 600; color: #fff; text-shadow: 0 1px 2px #000; }
+.stagesteps { font-size: 0.78rem; white-space: nowrap; }
+.stagesteps > span { padding: 0.05rem 0.4rem; border-radius: 99px; background: #2c3139; color: var(--muted); }
+.stagesteps > span.past { color: var(--good); }
+.stagesteps > span.now { background: #4a3816; color: var(--accent); font-weight: 600; }
+.stagesteps > b { color: var(--muted); font-weight: 400; margin: 0 0.2rem; }
+.suptable { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.8rem; margin-top: 0.35rem; }
+.suptable.three { grid-template-columns: auto 1fr auto; }

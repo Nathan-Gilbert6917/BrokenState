@@ -20,7 +20,7 @@ import { weather as wxNow, travelEffects, foodNeedFactor } from "../sim/weather.
 import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
 import { listenBlock, teamRadioLine } from "./radiolisten.js"; // the team's receiver: Listen in, what it heard
 import { heatInfo, rowsText } from "../sim/fieldheat.js";
-import { fireButton } from "./hardcore.js";
+import { fireButton, campStatusCard } from "./hardcore.js"; // the staging camp while you have no base
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE, partyHuntMix, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { teamWormText, teamWaterHow, teamTabCount, WORM } from "../sim/worm.js";
 import { teamWaterIn, teamRawIn } from "../sim/water.js"; // purified and un-purified water
@@ -137,8 +137,10 @@ export function renderExpedition(state, ui, p) {
       ${live ? heatBlock(state, p) : ""}
     </div>`;
 
+  const camp = campStatusCard(state, p); // no base yet: the staging camp's progress and what it still needs
+
   if (!cmd) {
-    return head + status + teamRadioLine(state, p, true) + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
+    return head + camp + status + teamRadioLine(state, p, true) + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
       `<h3>People</h3>${members.map((m) => memberCard(state, p, m, false)).join("")}`;
   }
 
@@ -181,7 +183,7 @@ export function renderExpedition(state, ui, p) {
       ${ui.xpMsg ? `<div class="result small" style="margin-top:0.4rem">${esc(ui.xpMsg)}</div>` : ""}
     </div>`;
 
-  return head + status + actions +
+  return head + camp + status + actions +
     `<h3>People (${members.length})</h3>${teamNeedsBlock(state, p, true)}${members.map((m) => memberCard(state, p, m, true, queueing)).join("")}` +
     suppliesBlock(state, p) + vehicleBlock(state, p, v);
 }

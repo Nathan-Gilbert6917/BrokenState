@@ -26,7 +26,7 @@ import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
 import { caravanTipLines } from "../sim/caravanraids.js"; // the groups' caravans and convoys you can see
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
-import { stagingStage, stagingPct, workCap, stagingTip } from "../sim/staging.js";
+import { stagingStage, stagingPct, workCap, stagingTip, stagingMissing } from "../sim/staging.js";
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { allianceMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
 import { claimText, wellText } from "../sim/claims.js"; // land claims: the Territory layer and the hover text
@@ -1240,13 +1240,20 @@ export function render(state) {
     if (camp.fire !== false) { const [fx, fy] = gridPoint(cv, px, cy, w, 13.5, 15); fireGlow(camp.tile * 3 + 1, fx, fy, s); smokeWisps(camp.tile * 3 + 2, fx, fy - 2 * s, s, { n: 3, rise: 14 }); } // mapsprites.js paintStaging: campfire at 12, 17
     const h = spriteH(cv, w);
     noteSprite(px, cy, w, h);
-    const bw = 22 * s, bx = px - bw / 2, by = cy + h / 2 + 2 * s, f = stagingPct(camp), cap = camp.needs ? Math.min(1, workCap(camp) / camp.work) : f;
-    ctx.fillStyle = "rgba(13,15,18,0.8)";
-    ctx.fillRect(bx - 1, by - 1, bw + 2, 3 * s + 2);
-    if (cap > f) { ctx.fillStyle = "rgba(217,165,32,0.35)"; ctx.fillRect(bx, by, bw * cap, 3 * s); }
-    ctx.fillStyle = "#d9a520";
-    ctx.fillRect(bx, by, bw * f, 3 * s);
-    labels.push({ text: `Staging camp ${Math.round(f * 100)}%`, x: px, y: crowded(camp.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : by + 3 * s + 7, pri: -1, screen: true, color: "#cfe2f7", size: 9 });
+    const f = stagingPct(camp), cap = camp.needs ? Math.min(1, workCap(camp) / camp.work) : f;
+    buildBarOnMap(px, cy - h / 2 - 7 * s, s, f, cap); // above the sprite: the team standing there covers the ground below it
+    const short = camp.needs && stagingMissing(camp).length, busy = camp.workers > 0 && f < cap - 1e-6;
+    labels.push({ text: `Camp ${Math.round(f * 100)}% · ${busy ? "building" : short ? "needs supplies" : f >= 1 ? "done" : "idle"}`, x: px, y: crowded(camp.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 9 * s, pri: -1, screen: true, color: short && !busy ? "#ffd166" : "#cfe2f7", size: 9 });
+  }
+  // A team on its way to pitch the camp (Establish base): a dashed ring where it will stand.
+  if (!camp && !state.bases.length) for (const p of state.parties) {
+    if (p.owner !== "player" || p.mission !== "establish" || !(p.phase === "out" || p.phase === "back") || !p.path || !p.path.length) continue;
+    const dest = p.path[p.path.length - 1];
+    if (!inView(dest)) continue;
+    const px = G.x[dest], py = G.y[dest], s = zoomBoost();
+    ctx.strokeStyle = "rgba(255,209,102,0.8)"; ctx.lineWidth = 1.5 * s; ctx.setLineDash([3 * s, 3 * s]);
+    ctx.beginPath(); ctx.arc(px, py, 13 * s, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    labels.push({ text: "Camp site", x: px, y: py + 13 * s + 7, pri: -1, screen: true, color: "#ffd166", size: 9 });
   }
   // Player bases: a walled town for the hub, a cabin for outposts, showing walls and notable buildings.
   const nodes = radioNodes(state);
@@ -1271,7 +1278,10 @@ export function render(state) {
     }
     if (festivalNow(state, b)) for (let i = 0; i < 4; i++) fireGlow(b.id * 7 + 40 + i, px + (i - 1.5) * w * 0.24, cy + h / 2 - (i % 2 ? 1 : 3) * s, s); // sim/festival.js: bonfires on the festival day
     if (b.alert) sprite(iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s + stepBob(b.id * 3 + 3, 1.6 * s, 900), ICON_W * s);
-    labels.push({ text: b.tier === 0 ? `${b.name} (shelter)` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
+    // A shelter building up into a base (buildings.js hub_up): a bar of the work under it.
+    const up = b.tier === 0 && b.construction.find((c) => c.type === "hub_up");
+    if (up) buildBarOnMap(px, cy - h / 2 - 7 * s, s, up.hours ? up.progress / up.hours : 0);
+    labels.push({ text: b.tier === 0 ? `${b.name} (${up ? `building a base: ${Math.round((up.hours ? up.progress / up.hours : 0) * 100)}%` : "shelter"})` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).
     const node = nodes.find((n) => n.base === b);
     if (node) {
@@ -1684,6 +1694,17 @@ function blocRing(x, y, color, s) {
   ctx.lineWidth = 2.5;
   ctx.stroke();
   ctx.restore();
+}
+// A construction bar under a sprite, centered at x with its top at y: the work done (amber, green once full) and,
+// lighter, as far as the materials allow (cap). Returns the y of its bottom edge.
+function buildBarOnMap(x, y, s, f, cap = f) {
+  const bw = 30 * s, bh = 4 * s, bx = x - bw / 2;
+  ctx.fillStyle = "rgba(13,15,18,0.85)";
+  ctx.fillRect(bx - 1.5, y - 1.5, bw + 3, bh + 3);
+  if (cap > f) { ctx.fillStyle = "rgba(224,168,79,0.35)"; ctx.fillRect(bx, y, bw * Math.min(1, cap), bh); }
+  ctx.fillStyle = f >= 1 ? "#6cc48a" : "#e0a84f";
+  ctx.fillRect(bx, y, bw * Math.max(0, Math.min(1, f)), bh);
+  return y + bh;
 }
 // The bloc a group's base belongs to, as a small number for the site code (0: none).
 const blocNo = (state, f) => { const b = blocOf(state, f); return b ? (b.id % 255) + 1 : 0; };
