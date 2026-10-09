@@ -64,6 +64,15 @@ console.log("Engines");
   check(dry.crank > n.crank && hot.pre > n.pre && dz.crank > n.crank, "an empty tank cranks longer (and sputters), a hotwire takes longer than a key, a diesel cranks longer");
 }
 
+// ---------- the horn ----------
+console.log("Horn");
+{
+  const { HORNS, hornOf } = VS;
+  check(hornOf("sedan") === "car" && hornOf("compact") === "car" && ["suv", "van", "pickup"].every((k) => hornOf(k) === "mid") && hornOf("humvee") === "heavy" && hornOf("miltruck") === "heavy", "horns by vehicle: cars high, SUVs, vans and pickups middle, the Humvee and the Army truck deep");
+  check(HORNS.car.f > HORNS.mid.f && HORNS.mid.f > HORNS.heavy.f && Object.values(HORNS).every((H) => H.third > 1.15 && H.third < 1.3 && Math.abs(H.beep - 0.12) < 0.02 && Math.abs(H.gap - 0.1) < 0.01),
+    `beep beep: about 0.12 s each, 0.1 s apart, two tones a minor third or so apart (${Object.entries(HORNS).map(([k, H]) => `${k} ${H.f}/${Math.round(H.f * H.third)} Hz`).join(", ")})`);
+}
+
 // ---------- voices ----------
 console.log("Voices");
 let ctx, made, bad, node;
@@ -103,6 +112,7 @@ let ctx, made, bad, node;
   }
   for (const heavy of ["car", "van", "truck", "mil"]) for (const o of [{}, { n: 4 }, { only: "open" }, { only: "close" }]) { play("carDoor", { heavy, ...o }); play("tailgate", { heavy }); }
   play("hotwire", { ok: true }); play("hotwire", { ok: false });
+  for (const key of VS.ENGINE_KEYS) play("horn", { key });
   for (const dk of [...DS.DOOR_KINDS, undefined]) {
     for (const name of ["door", "doorClose", "doorRattle", "threshold", "doorPeek", "doorBrace"]) play(name, { dk });
     for (const how of ["kick", "pry", "glass"]) for (const ok of [true, false]) play("doorForce", { dk, how, ok });
@@ -323,7 +333,11 @@ console.log("The map");
   // sets off from the base
   st.parties.push(team(901, { vehicleId: car1.id, vehicle: true }));
   let cues = seen(G.uiCues(st, ui, mem));
-  check(names(cues).join() === "carDoor,engineStart,gateOpen" && cues[1].go && cues[2].delay > cues[1].delay, `a team leaves the base: doors, the engine pulling away, the gate (${names(cues).join(", ")})`);
+  check(names(cues).join() === "carDoor,engineStart,horn,gateOpen" && cues[1].go && cues[3].delay > cues[2].delay, `a team leaves the base: doors, the engine pulling away, the horn, the gate (${names(cues).map((n, i) => `${n}@${(cues[i].delay || 0).toFixed(2)}`).join(", ")})`);
+  const hornCue = cues.find((c) => c.name === "horn"), startCue = cues.find((c) => c.name === "engineStart");
+  check(hornCue && hornCue.key === "pickup" && hornCue.delay > startCue.delay + VS.startTiming("pickup", startCue).catchAt, "the horn after the engine has caught, before the gate: the pickup's");
+  st.parties[st.parties.length - 1].idx = 0;
+  check(!names(seen(G.uiCues(st, ui, mem))).includes("horn"), "once a departure: the next frame does not beep again");
   // breaks down on the road: the card
   st.parties[st.parties.length - 1].idx = 1;
   G.uiCues(st, ui, mem);
@@ -358,10 +372,17 @@ console.log("The map");
   st.parties.splice(st.parties.indexOf(p), 1);
   cues = seen(G.uiCues(st, ui, mem));
   check(names(cues).includes("gateOpen") && names(cues).includes("carDoor") && cues.find((c) => c.name === "gateOpen").close !== false, `home: the gate opens and shuts behind, the doors (${names(cues).join(", ")})`);
+  // bicycles: the bell twice instead of a horn
+  const bikes = VEH.createVehicle(st, "bike", { kind: "party" }, { count: 2 });
+  st.parties.push(team(905, { vehicleId: bikes.id, vehicle: "bike" }));
+  cues = seen(G.uiCues(st, ui, mem));
+  check(names(cues).join() === "engineStart,horn,gateOpen" && cues[0].bell === false && cues[1].key === "bicycle" && VS.hornOf("bicycle") === "bell", "bikes set off: the chain, the bell rung twice (the horn's place), the gate");
+  st.parties.pop();
+  G.uiCues(st, ui, mem);
   // on foot: just the gate, both ways
   st.parties.push(team(902));
   cues = seen(G.uiCues(st, ui, mem));
-  check(names(cues).join() === "gateOpen", "a team on foot leaves: the gate");
+  check(names(cues).join() === "gateOpen", "a team on foot leaves: the gate (no horn)");
   st.parties.pop();
   cues = seen(G.uiCues(st, ui, mem));
   check(names(cues).join() === "gateOpen", "and comes home: the gate");
@@ -401,6 +422,8 @@ console.log("The map");
   const fleet = [car2, VEH.createVehicle(st, "truck", { kind: "party" }, { fuel: 20 }), VEH.createVehicle(st, "sedan", { kind: "party" }, { fuel: 20 })];
   tg.vehicleIds = fleet.map((v) => v.id);
   tg.phase = "out"; tg.path = [home.tile, away, away + 1]; tg.idx = 0; tg.progress = 0;
+  cues = seen(G.uiCues(st, ui, mem));
+  check(names(cues).filter((n) => n === "horn").length === 1 && cues.find((c) => c.name === "horn").key === "miltruck", `a convoy of 3 sets off: one beep-beep, from the lead vehicle (${names(cues).join(", ")})`);
   const cam = { zoom: 1.6, w: 0, h: 0, toScreen: () => [0, 0] };
   ui.expedition = 904;
   for (const q of st.parties) if (q.id !== 904) q.phase = "waiting";

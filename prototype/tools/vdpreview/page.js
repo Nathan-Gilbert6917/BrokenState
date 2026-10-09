@@ -7,7 +7,7 @@ import { VOICES } from "../../src/ui/audio.js";
 import { labRender } from "../../src/ui/sfxlab.js";
 import { place, playGun, labPlan, spatialOut, busOf } from "../../src/ui/gunsfx.js";
 import { stats } from "../../src/ui/sfxdsp.js";
-import { engineLoops, MAP_GAIN, ENGINE_KEYS, isBikeKey } from "../../src/ui/sfx-vehicles.js";
+import { engineLoops, MAP_GAIN, ENGINE_KEYS, isBikeKey, startTiming } from "../../src/ui/sfx-vehicles.js";
 import { DOOR_KINDS } from "../../src/ui/sfx-doors.js";
 import { STEP_GAIN } from "../../src/ui/sfx-steps.js";
 
@@ -62,7 +62,13 @@ R.cardoor_van_sliding = { secs: 1.8, fn: bv("carDoor", { heavy: "van", n: 2 }) }
 R.tailgate_truck = { secs: 1.8, fn: mv("tailgate", { heavy: "truck" }) };
 R.tailgate_military = { secs: 1.8, fn: mv("tailgate", { heavy: "mil" }) };
 // the map: a team setting off from a base (doors, start, pulling away, the gate, the hum) and coming home
-R.map_team_sets_off = { secs: 9.5, fn: seq(mv("carDoor", { heavy: "car", n: 3 }), mv("engineStart", { key: "suv", go: true, delay: 0.9 }), mv("gateOpen", { dk: "gate", delay: 2.2 }), loop({ id: "map", battle: false, keys: ["suv"], n: 1, level: 0.8, pan: 0, rpmK: 1.9, bump: 0.06, road: true, delay: 4.2 }, 9)) };
+// the same timings as ui/sfx-vehicles.js mapCues setOff: the horn a second after the engine catches, the gate 0.6 s on
+const hornAt = 0.9 + startTiming("suv", { go: true }).catchAt + 1;
+R.map_team_sets_off = { secs: 10, fn: seq(mv("carDoor", { heavy: "car", n: 3 }), mv("engineStart", { key: "suv", go: true, delay: 0.9 }), mv("horn", { key: "suv", delay: hornAt }), mv("gateOpen", { dk: "gate", delay: hornAt + 0.6 }), loop({ id: "map", battle: false, keys: ["suv"], n: 1, level: 0.8, pan: 0, rpmK: 1.9, bump: 0.06, road: true, delay: hornAt + 2 }, 9.5)) };
+R.horn_car = { secs: 1, fn: mv("horn", { key: "sedan" }) };
+R.horn_truck = { secs: 1, fn: mv("horn", { key: "pickup" }) };
+R.horn_miltruck = { secs: 1, fn: mv("horn", { key: "miltruck" }) };
+R.horn_bicycle_bell = { secs: 1.6, fn: mv("horn", { key: "bicycle" }) };
 R.map_team_arrives = { secs: 6.5, fn: seq(mv("gateOpen", { dk: "gate" }), mv("engineStop", { key: "suv", delay: 1.4 }), mv("carDoor", { heavy: "car", n: 3, delay: 2.6 })) };
 R.map_convoy3_hum_road = { secs: 6.5, fn: loop({ id: "map", battle: false, keys: ["miltruck", "pickup"], n: 3, level: 1.4, pan: 0, rpmK: 1.9, bump: 0.06, road: true }, 6) };
 R.map_convoy3_hum_offroad = { secs: 6.5, fn: loop({ id: "map", battle: false, keys: ["miltruck", "pickup"], n: 3, level: 1.4, pan: 0, rpmK: 2.3, bump: 0.3, road: false }, 6) };
