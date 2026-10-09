@@ -1,7 +1,7 @@
 // The battle screen's side of sim/ground.js: Search a body where it fell (a field battle, Shift+S), Ground (Shift+X:
-// put things down, pick them up), the piles on the map (top-down and iso). The moving itself is the search window's
+// put things down, pick them up), the piles on the map (the iso view). The moving itself is the search window's
 // (ui/inventory.js raidModal: the survivor, the body or pile, the ground under them).
-import { bodiesNear, bodyBoxOf, pilesNear, groundPiles, pileCount, searchBody, fieldReady } from "../sim/ground.js";
+import { bodiesNear, bodyBoxOf, pilesNear, pileCount, searchBody, fieldReady } from "../sim/ground.js";
 import { SEARCH } from "../sim/search.js";
 import { HAUL } from "../sim/raidloot.js";
 
@@ -65,31 +65,6 @@ function openBody(state, b, u, t, cui, act) {
   else cui.msg = `Nothing useful on ${t.side === "player" ? `${t.name}'s body` : `the body of ${t.name}`}.`;
 }
 
-// ---------- drawing ----------
-// A pile's look: a sack and a few bits, its count. Top-down (ui/combat.js drawRaid / the field overlay).
-export function drawGroundTop(ctx, b, ox, oy, cs, floor = 0) {
-  for (const p of groundPiles(b)) {
-    const n = pileCount(p);
-    if (!n || (p.f || 0) !== floor) continue;
-    const px = ox + p.x * cs, py = oy + p.y * cs;
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.beginPath(); ctx.ellipse(px + cs * 0.3, py + cs * 0.78, cs * 0.2, cs * 0.08, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#8a7350"; ctx.strokeStyle = "#2a2118"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.ellipse(px + cs * 0.3, py + cs * 0.68, cs * 0.16, cs * 0.12, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = "#5d6066"; ctx.fillRect(px + cs * 0.12, py + cs * 0.74, cs * 0.3, cs * 0.06);
-    ctx.fillStyle = "#e0a84f";
-    ctx.font = `700 ${Math.max(8, Math.round(cs * 0.24))}px Segoe UI, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.fillText(String(n), px + cs * 0.3, py + cs * 0.52);
-  }
-  // A body searched in a field battle with things still on it: a small orange tag.
-  if (!b.raid && b.fieldLoot) for (const c of b.fieldLoot.containers) {
-    if (c.kind !== "body" || !pileCount(c) || (c.f || 0) !== floor) continue;
-    const s = cs * 0.22, px = ox + c.x * cs, py = oy + c.y * cs;
-    ctx.fillStyle = "#e08a4f"; ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 1;
-    ctx.fillRect(px + cs - s - 2, py + 2, s, s); ctx.strokeRect(px + cs - s - 2, py + 2, s, s);
-  }
-}
 // The same in the iso view: project(x, y, z) → [X, Y] screen; zAt(x, y): the ground's height there (art px); S: zoom.
 // One pile, drawn in the painter's pass with the units of its diagonal (ui/isoview.js), so a car in front hides it.
 export function drawPileIso(ctx, p, project, zAt, S) {

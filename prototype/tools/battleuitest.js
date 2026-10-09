@@ -27,7 +27,6 @@ globalThis.document = { createElement: () => cvs(0, 0), getElementById: () => nu
 globalThis.window = globalThis.window || { addEventListener() {}, devicePixelRatio: 1 };
 ISO.setIsoCanvas(cvs);
 UI.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, getContext: () => silent() });
-UI.setBattleView("iso");
 const draw = (st) => { try { UI.drawCombat(st, 1e9); return ""; } catch (e) { return e.stack.split("\n").slice(0, 2).join(" "); } };
 const cui = UI.cui;
 const seenSet = (b) => new Set(b.units.filter((e) => e.side !== "player" && C.active(e) && C.playerSees(b, e)).map((e) => e.id));
@@ -191,7 +190,7 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     const far = band.findIndex((v, i) => v && Math.hypot((i % b.w) - u.x, ((i / b.w) | 0) - u.y) > Math.hypot(e.x - u.x, e.y - u.y) + 2.01);
     check(far < 0, "no farther than 2 tiles past the target");
     check(/<b>Suppress<\/b>/.test(UI.renderCombatPanel(st)), "the hover line counts who in the cone keeps their head down");
-    for (const v of ["top", "iso"]) { UI.setBattleView(v); const n0 = nan; const err = draw(st); check(!err && nan === n0, `the cone drawn in the ${v} view, no NaN${err ? ` (${err})` : ""}`); }
+    for (const v of ["iso"]) { const n0 = nan; const err = draw(st); check(!err && nan === n0, `the cone drawn in the ${v} view, no NaN${err ? ` (${err})` : ""}`); }
     UI.combatAction(st, "cb-act", { v: "suppress" });
     check(cui.mode === "move", "Suppress again: back to moving");
     // Throw spear (a spear: reach 2 on the roster agent's data).
@@ -205,7 +204,7 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     check(cui.mode === "throwspear", "Shift+G: the spear's targeting mode");
     const sb = UI.aimArea(b, u, vis, null, "throwspear");
     check(sb.some(Boolean) && sb.every((v, i) => !v || Math.hypot((i % b.w) - u.x, ((i / b.w) | 0) - u.y) <= 5.25), "its reach: seen cells within 5 tiles");
-    for (const v of ["top", "iso"]) { UI.setBattleView(v); const n0 = nan; const err = draw(st); check(!err && nan === n0, `the spear's reach drawn in the ${v} view`); }
+    for (const v of ["iso"]) { const n0 = nan; const err = draw(st); check(!err && nan === n0, `the spear's reach drawn in the ${v} view`); }
     cui.mode = "move";
     // A thrown spear on the ground (the roster's b.spears, u.spearOut): drawn in both views, Pick up spear next to it.
     const nx = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [u.x + dx, u.y + dy]).find(([x, y]) => x >= 0 && y >= 0 && x < b.w && y < b.h) || [u.x, u.y];
@@ -213,7 +212,7 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     b.spears = [{ id: 9999, x: nx[0], y: nx[1], f: u.f || 0, key: "pipespear", owner: u.id, side: "player", name: "Pipe spear" }];
     html = UI.renderCombatPanel(st);
     check(/data-v="pickspear"[^>]*>Pick up spear/.test(html) && !/data-v="pickspear"[^>]*disabled/.test(html), "a spear of theirs next to them: Pick up spear");
-    for (const v of ["top", "iso"]) { UI.setBattleView(v); const n0 = nan; const err = draw(st); check(!err && nan === n0, `the spear on the ground drawn in the ${v} view`); }
+    for (const v of ["iso"]) { const n0 = nan; const err = draw(st); check(!err && nan === n0, `the spear on the ground drawn in the ${v} view`); }
     delete u.spearOut; b.spears = [];
     if (W0 === undefined) delete C.WEAPONS.pipespear.reach; else C.WEAPONS.pipespear.reach = W0;
     [u.weapon, u.weaponName] = held;
@@ -262,7 +261,6 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     e.jam = { kind: "stovepipe", ap: 1 };
     check(/JAMMED/.test(UI.renderCombatPanel(st)), "a jammed enemy shows JAMMED");
     delete e.jam;
-    UI.setBattleView("iso");
   }
 }
 console.log(`\n${passed} passed, ${failed} failed. (${Math.round(performance.now() - t0)} ms)`);

@@ -1,5 +1,5 @@
-// The isometric battle view (pseudo-3D, the old X-COMs and Project Zomboid): the way a battle is drawn (the flat
-// top-down grid of ui/combat.js is kept only for the headless tests). A renderer only: every rule is in sim/combat.js; this module reads the battle and draws it.
+// The isometric battle view (pseudo-3D, the old X-COMs and Project Zomboid): the way a battle is drawn (the only
+// battle view: there is no top-down one). A renderer only: every rule is in sim/combat.js; this module reads the battle and draws it.
 //
 // Geometry: 2:1 diamonds. In art pixels a tile is 32 × 16 and one height level (a walkway, a flat roof, an upper
 // floor; a watchtower is two) LV px up. Everything is painted as pixel art at that size (procedural, in the State
@@ -1678,7 +1678,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const L = looks[c.y * b.w + c.x], top = (L ? L.top : 4) + liftAt(b, c.y * b.w + c.x);
       const [X, Y] = project(c.x + (c.w || 1) / 2, c.y + (c.h || 1) / 2, top + 4); // over the middle of a car's cells
       const s = Math.max(7, 3.2 * S);
-      // As the top-down view (ui/combat.js): rummaged through, more may be hidden (sim/search.js) is blue with "…".
+      // Rummaged through, more may be hidden (sim/search.js) is blue with "…"; things left orange; not yet ? yellow.
       ctx.fillStyle = c.searched ? "rgba(60,64,70,0.9)" : c.quick ? "#7fb8e6" : c.partial ? "#e08a4f" : "#ffd166";
       ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 1;
       rr(ctx, X - s, Y - s * 2, s * 2, s * 2, 3); ctx.fill(); ctx.stroke();

@@ -436,7 +436,7 @@ section("Sprites (ui/sprites.js paintArmoredDead, ui/downsprites.js): headless p
   const canv = b.units.filter((u) => u.dead || u.down).map((u) => D.unitDownCanvas(wst, b, u, 0));
   check(canv.length >= 13 && canv.every(Boolean) && made >= 8, `every fallen unit in a battle gets its own downed canvas (${canv.length} units, ${made} pictures painted)`);
   const src = readFileSync(new URL("../src/ui/combat.js", import.meta.url), "utf8") + readFileSync(new URL("../src/ui/isoview.js", import.meta.url), "utf8");
-  check((src.match(/unitDownCanvas\(/g) || []).length >= 3 && (src.match(/drawDowned\(/g) || []).length >= 3, "the top-down and isometric views draw the fallen with their downed pictures (drawDowned)");
+  check((src.match(/unitDownCanvas\(/g) || []).length >= 1 && (src.match(/drawDowned\(/g) || []).length >= 2, "the isometric view draws the fallen with their downed pictures (drawDowned)");
   wst.combat = null;
 }
 

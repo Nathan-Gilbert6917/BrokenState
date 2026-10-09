@@ -11,8 +11,8 @@
 //     whatever side): "down" (wounded or knocked out: curled on their side, no pool; eyes shut when out cold) and
 //     "dead" (sprawled on their back, a pool of blood, their weapon dropped beside the hand).
 // searched: a searched body has its pockets turned out (pale linings at the hips) and its weapon gone.
-// Drawn flat on the floor by the battle views: drawDowned (top-down) and the isometric view (isoview.js), which lays
-// the same picture onto the floor's two axes so it turns with the camera.
+// Drawn flat on the floor by the isometric battle view (isoview.js, drawDowned), which lays the picture onto the
+// floor's two axes so it turns with the camera.
 import { Rng } from "../sim/rng.js";
 import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
@@ -497,7 +497,7 @@ export function unitDownCanvas(state, b, t, salt = 0) {
 // Size of a fallen unit's picture against a tile (its length along the body): bosses and brutes are bigger.
 export const downScale = (t) => (t.boss ? 1.45 : t.ztype === "brute" || t.ztype === "boneback" || t.ztype === "sower" ? 1.2 : 1.05);
 // Draws it flat on the floor: (X, Y) the tile's middle on screen, ax / ay the screen vectors of one tile along the
-// world's x and y (top-down: [cs, 0] and [0, cs]; isometric: the projected floor axes). The body lies along x, head
+// world's x and y (the projected floor axes). The body lies along x, head
 // toward −x (facing −1: toward +x).
 export function drawDowned(ctx, cv, X, Y, ax, ay, { facing = 1, scale = 1.05, alpha = 1 } = {}) {
   if (!cv) return;

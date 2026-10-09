@@ -1717,15 +1717,13 @@ const cbCanvas = $("combatmap");
 const cbPos = (e) => { const r = cbCanvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 cbCanvas.addEventListener("mousemove", (e) => { if (state.combat) combatMouse(state, ...cbPos(e)); });
 cbCanvas.addEventListener("mouseleave", () => { if (state.combat) combatLeave(); });
-// The isometric view (ui/isoview.js): a press that moves pans the map, one that does not is the click (on release);
-// the top-down view clicks on the press, as it always did. Right click cancels the current action.
+// The isometric view (ui/isoview.js), the only battle view: a press that moves pans the map, one that does not is the
+// click (on release). Right click cancels the current action (on the release: a drag does not).
 const cancelAction = () => { if (state.combat) { cui.mode = "move"; cui.msg = ""; refresh(); } };
 cbCanvas.addEventListener("mousedown", (e) => {
   if (!state.combat) return;
   if (e.button === 1) e.preventDefault();
-  if (!combatPress(state, ...cbPos(e), e.button)) return;
-  combatClick(state, ...cbPos(e));
-  refresh();
+  combatPress(state, ...cbPos(e), e.button);
 });
 window.addEventListener("mouseup", (e) => {
   if (!state.combat) return;
@@ -1734,10 +1732,7 @@ window.addEventListener("mouseup", (e) => {
   else if (what === "cancel") cancelAction();
 });
 cbCanvas.addEventListener("wheel", (e) => { if (state.combat && combatWheel(state, ...cbPos(e), e.deltaY)) e.preventDefault(); }, { passive: false });
-cbCanvas.addEventListener("contextmenu", (e) => {
-  e.preventDefault();
-  if (state.combat && cui.view === "top") cancelAction(); // the isometric view cancels on the release (a drag does not)
-});
+cbCanvas.addEventListener("contextmenu", (e) => e.preventDefault()); // right click cancels on the release (combatRelease)
 
 // ---------- keyboard ----------
 // Esc closes one layer per press, the topmost first. Returns false when there was nothing of ours to close.
