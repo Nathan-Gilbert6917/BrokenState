@@ -9,7 +9,7 @@
 // off or stops, the base's gate as it leaves or comes home, and a quiet convoy hum for the team you are watching.
 // Pure functions until a voice plays: node tools import it. UI only: nothing here touches the sim's dice.
 //
-//   VEHICLE_SOUNDS / VEHICLE_LOOPS   the voices and the loops of this file (the mixer's "vehicles" group)
+//   VEHICLE_SOUNDS / VEHICLE_LOOPS   the voices and the loops of this file (the mixer: People → Vehicles, ui/soundgroups.js)
 //   ENGINES, engineOf(v)             the engine voices, and which one a vehicle record has
 //   bakeEngine(sr, E, seed)          an engine's firing pulses at idle, one seamless loop (sample array; ui/sfxdsp.js)
 //   vehicleCues(state, mem, fresh)   the battle's: doors and engines as people board and leave, the drive, found cars
@@ -29,9 +29,11 @@ import { panOfX } from "./sfx-out.js";
 import { surfaceAt, groundOf } from "./sfx-steps.js";
 import { camera, HEX } from "./render.js";
 import { selectedTeam } from "./teamsel.js";
+import { assignGroup, groupBus } from "./soundgroups.js"; // the mixer: People → Vehicles
 
 export const VEHICLE_SOUNDS = ["engineStart", "engineNoStart", "engineStop", "breakdown", "drive", "carDoor", "tailgate", "hotwire"];
 export const VEHICLE_LOOPS = ["engineIdle", "convoyHum"];
+export const VEHICLE_GROUP = assignGroup([...VEHICLE_SOUNDS, ...VEHICLE_LOOPS], "people.vehicles"); // the loops follow it live (groupBus)
 
 // ---------- the engines ----------
 // cyl: cylinders (four-stroke: the firing rate is rpm / 60 × cyl / 2); idle, rev: rpm; body: the exhaust's resonance
@@ -75,16 +77,10 @@ const firing = (E, rpm) => (rpm / 60) * (E.cyl / 2);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const clamp01 = (v) => clamp(v, 0, 1);
 
-// The vehicles of a team: sim/vehicles.js partyVehicles where team-form's fleets are in, else p.vehicleIds, else the
-// one vehicle (partyVehicle).
+// The vehicles of a team (up to 4: sim/vehicles.js partyVehicles).
 export function teamVehicles(state, p) {
   if (!state || !p) return [];
-  try {
-    if (typeof VEH.partyVehicles === "function") return VEH.partyVehicles(state, p) || [];
-    if (Array.isArray(p.vehicleIds) && p.vehicleIds.length) return p.vehicleIds.map((id) => VEH.vehicleById(state, id)).filter(Boolean);
-    const v = VEH.partyVehicle(state, p);
-    return v ? [v] : [];
-  } catch { return []; }
+  try { return VEH.partyVehicles(state, p) || []; } catch { return []; }
 }
 const motorsOf = (list) => list.filter((v) => v && !VEH.isBike(v) && !v.destroyed).sort((a, b) => ENGINES[engineOf(b)].size - ENGINES[engineOf(a)].size);
 
@@ -526,8 +522,9 @@ export function engineLoops(c, dests, wants, t = c.currentTime, L = null, K = KI
   const keep = new Set();
   const list = [...wants.filter((w) => w.battle).slice(0, MAX_BATTLE_LOOPS), ...wants.filter((w) => !w.battle).slice(0, MAX_MAP_LOOPS)];
   for (const w of list) {
-    const dest = w.battle ? dests && dests.battle : dests && dests.map;
-    if (!dest || !K) continue;
+    const bus = w.battle ? dests && dests.battle : dests && dests.map;
+    if (!bus || !K) continue;
+    const dest = groupBus(c, VEHICLE_GROUP, bus); // the mixer's Vehicles group, followed live
     keep.add(w.id);
     let lp = m.get(w.id);
     const sig = `${w.keys.join("+")}|${w.battle ? "b" : "m"}`;

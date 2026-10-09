@@ -308,7 +308,7 @@ console.log("Voices");
   const own = Object.keys(VOICES).filter((k) => VOICES[k].own);
   check(["melee", "meleeCrit", "whoosh", "step", "door", "bandage", "hearStepBrute", "hearBlade"].every((k) => own.includes(k)) && !VOICES.pistol.own && !VOICES.bite.own, `the new voices play through the output stage (${own.length}); the guns and the dead's are left as they are`);
   const SG = await import("../src/ui/soundgroups.js");
-  check(SG.groupOf("step") === "people.steps" && SG.groupOf("hearStepGrass") === "people.steps" && SG.groupOf("melee") === "weapons.melee" && SG.groupOf("door") === "people.gear", "footsteps answer to the mixer's Footsteps group, blows to Melee, the small sounds to Gear");
+  check(SG.groupOf("step") === "people.steps" && SG.groupOf("hearStepGrass") === "people.steps" && SG.groupOf("melee") === "weapons.melee" && SG.groupOf("rummage") === "people.gear" && SG.groupOf("door") === "people.doors" && SG.groupOf("engineStart") === "people.vehicles", "footsteps answer to the mixer's Footsteps group, blows to Melee, the small sounds to Gear, doors and engines to their own");
   const per = nodes / n;
   check(per < 40, `cheap: ${per.toFixed(1)} nodes a sound on average`);
   // The output stage: panned and muffled, or straight to the bus.

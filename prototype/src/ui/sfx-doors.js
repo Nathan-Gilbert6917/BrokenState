@@ -5,7 +5,7 @@
 // base's gate (ui/sfx-vehicles.js mapCues plays it) and a building's door on a city crawl.
 // Pure functions until a voice plays: node tools import it. UI only: nothing here touches the sim's dice.
 //
-//   DOOR_SOUNDS            the voices of this file (the mixer's "doors" group: ui/soundgroups.js can map them)
+//   DOOR_SOUNDS            the voices of this file (the mixer's People → Doors and gates: ui/soundgroups.js)
 //   doorKind(b, i)         wood | front | metal | cell | roller | barred | gate | vault (the cell at index i)
 //   doorCues(state, mem, fresh)  the battle's: doors opened and closed (by anyone: the sim's cells change), thresholds,
 //                          peeks, braces, a gate battered, doors broken. fresh: the frame's new fx (sfx-gear.js gearCues)
@@ -15,8 +15,10 @@
 import { BMAP } from "../sim/buildingmaps.js";
 import { playerSees } from "../sim/combat.js";
 import { panOfX } from "./sfx-out.js";
+import { assignGroup } from "./soundgroups.js"; // the mixer: People → Doors and gates
 
 export const DOOR_SOUNDS = ["door", "doorClose", "doorRattle", "lockPick", "doorForce", "doorBreak", "threshold", "doorPeek", "doorBrace", "gateBatter", "gateOpen"];
+export const DOOR_GROUP = assignGroup(DOOR_SOUNDS, "people.doors");
 export const DOOR_KINDS = ["wood", "front", "metal", "cell", "roller", "barred", "gate", "vault"];
 
 // ---------- what a door is ----------

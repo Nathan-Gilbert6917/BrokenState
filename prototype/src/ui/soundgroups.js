@@ -37,7 +37,9 @@ export const GROUPS = [
   { id: "people", label: "People", max: 1.5, tip: "Your people and others: voices, footsteps, gear, someone going down" },
   { id: "people.voices", label: "Voices", max: 1.5, tip: "People's voices: hurt, crying out, going down, dying, effort, panting, coughs, shouts and taunts in battle; the murmur of a base you select on the map; the chirp of an important combat bark" },
   { id: "people.steps", label: "Footsteps", max: 1.5, tip: "Everyone's footsteps in battle: yours, the enemy's, the dead's shuffle. By ground, gait and load" },
-  { id: "people.gear", label: "Gear and small sounds", max: 1.5, tip: "Searching, locks and keys, fuel, bandages, doors, your vehicle in battle, a team's engine on the map" },
+  { id: "people.gear", label: "Gear and small sounds", max: 1.5, tip: "Searching, locks and keys, fuel, bandages" },
+  { id: "people.vehicles", label: "Vehicles", max: 1.5, tip: "Engines starting, idling, driven and switched off, breakdowns, car doors and tailgates, hotwiring; a convoy's hum on the map (ui/sfx-vehicles.js)" },
+  { id: "people.doors", label: "Doors and gates", max: 1.5, tip: "Building doors opened, shut, tried, picked, forced and broken, the threshold of an open door; a base's gate on the map (ui/sfx-doors.js)" },
   { id: "people.downed", label: "Deaths and downed cues", max: 1.5, tip: "The fall and falling tone when one of your people goes down, the low chord when one dies" },
   { id: "world", label: "World", max: 1.5, tip: "The weather, wildlife and warnings around you. Under the Ambience volume" },
   { id: "world.weather", label: "Weather", max: 1.5, tip: "Wind, rain, thunder in storms, the low drone at night" },
@@ -82,7 +84,7 @@ assignGroup(["bark", "hDown", "hCry", "hDeath", "hShout", "hGasp", "hHurt", "hTa
   "hPant", "hWheeze", "hCough", "hMuffled", "murmur"], "people.voices"); // ui/humansfx.js HUMAN_CUES (and the base's murmur)
 assignGroup(["step", "hearStepGrass", "hearStepRoad", "hearStepWood", "hearStepGravel", "hearStepMud", "hearStepSnow", "hearStepLaden", "hearStepSneak",
   "hearStepWalker", "hearStepRunner", "hearStepBrute", "hearStepCrawler", "hearStepArmoured"], "people.steps");
-assignGroup(["rummage", "lockRattle", "unlock", "jingle", "glug", "bandage", "door", "drive", "engineStart", "engineStop"], "people.gear");
+assignGroup(["rummage", "lockRattle", "unlock", "jingle", "glug", "bandage"], "people.gear"); // the vehicles' and the doors' names: ui/sfx-vehicles.js, ui/sfx-doors.js
 assignGroup(["downed", "death"], "people.downed");
 assignGroup(["wind", "rain", "rainLow", "drone", "thunder"], "world.weather");
 assignGroup(["bird", "cricket"], "world.wildlife");
