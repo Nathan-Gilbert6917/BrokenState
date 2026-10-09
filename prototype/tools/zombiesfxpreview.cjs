@@ -47,7 +47,7 @@ app.whenReady().then(async () => {
     console.log(`spectral similarity, walker idle by 4 seeds: ${seeds.join(" ")}`);
     console.log(`spectral similarity, one walker's idle, 4 takes: ${takes.join(" ")}`);
     console.log(`spectral similarity, screamer shriek by 3 seeds: ${shrieks.join(" ")}`);
-    for (const [k, v] of Object.entries(res.gr || {})) console.log(`zombie bus limiter, ${k}: deepest ${v.deepestDb} dB, windows touched by more than 1 dB ${v.windowsOver1dB}`);
+    for (const [k, v] of Object.entries(res.gr || {})) console.log(`limiters (effects bus + zombie bus), ${k}: deepest ${v.deepestDb} dB, windows touched by more than 1 dB ${v.windowsOver1dB}`);
     console.log(`${res.files.length} WAVs in ${outDir}`);
   } catch (e) {
     console.error("preview failed:", e && e.stack || e);

@@ -123,12 +123,13 @@ console.log("Battle cues");
   check(has(cs, "zAggro", "walker"), `a walker notices you: ${names(cs).join(", ")}`);
   C.fx(b, { type: "melee", from: [walker.x, walker.y], to: [me.x, me.y], hit: false, side: "enemy" });
   cs = step();
-  check(names(cs).join() === "zAttack", `it lunges and misses: ${names(cs).join(", ")}`);
+  check(names(cs).join() === "zAttack,whoosh" && cs[1].cls === "claws", `it lunges and misses: its snarl and the claws' swipe (ui/sfx-melee.js): ${names(cs).join(", ")}`);
   C.fx(b, { type: "melee", from: [walker.x, walker.y], to: [me.x, me.y], hit: true, crit: false, dmg: 9, side: "enemy" });
   cs = step();
   const bite = cs.find((c) => c.name === "zBite");
   check(!!bite && bite.human === true && bite.kind === "walker" && !cs.some((c) => c.name === "bite"), "it bites one of yours: the tearing bite, the victim screams (human), the old bite not played too");
   check(bite && bite.seed === Z.unitSeed(b, walker) && Number.isFinite(bite.pan) && Number.isFinite(bite.dist), "the cue carries the unit's voice seed, its pan and distance");
+  check(bite && bite.sp && bite.sp.gain > 0 && bite.sp.lp > 0 && typeof bite.sp.room === "string" && Math.abs(bite.sp.dist - bite.dist) < 0.01 && Math.abs(bite.sp.pan - bite.pan) < 0.01, `and its placement by gun-sfx's spatial (level ${bite && bite.sp ? bite.sp.gain.toFixed(2) : "?"}, highs, the room ${bite && bite.sp ? bite.sp.room : "?"})`);
   walker.hp -= 6;
   check(has(step(), "zHurt", "walker"), "hit: a grunt");
   walker.dead = true;
@@ -407,6 +408,7 @@ console.log("Close breathing");
     const br = log.filter((c) => c.name === "zBreath");
     check(br.length >= 4 && br.every((c) => c.seed === Z.unitSeed(b, zs[0])) && br[0].fade === true && !br[1].fade, `one of the dead 2 tiles off: it breathes (${br.length} breaths in 20 s, the first fading in)`);
     check(br[0].t <= 1, `it starts within a second of coming close (${br[0].t} s)`);
+    check(br.every((c) => c.sp && Number.isFinite(c.sp.gain) && Number.isFinite(c.dist)), "each breath carries its place in the battle's sound space (sp, as the other cues)");
     const gaps = br.slice(1).map((c, i) => +(c.t - br[i].t).toFixed(1));
     check(new Set(gaps).size >= Math.min(4, gaps.length), `slow and irregular (${gaps.join(", ")} s between breaths)`);
     put(zs[0], me, 3, 0);
@@ -542,6 +544,32 @@ console.log("The map");
   zb.setVolume(1.5, 0, true);
   check(Math.abs(20 * Math.log10(Z.ZOMBIE_BUS_GAIN) - 4) < 0.05 && zb.comp && zb.comp.ratio.value >= 10 && !S3.bad.length, `the zombie bus: +${(20 * Math.log10(Z.ZOMBIE_BUS_GAIN)).toFixed(1)} dB, a soft limiter (ratio ${zb.comp.ratio.value}) and a soft clip at -1 dBFS`);
   check(/data-k="horde"/.test(AU.soundOptionsHtml({ sound: { horde: 0.4 } })) && /value="40"/.test(AU.soundOptionsHtml({ sound: { horde: 0.4 } })), "Options → Sound has the Map hordes slider at the saved level");
+}
+
+// ---------- 7b. routing (gun-sfx's spatial chain) ----------
+console.log("Routing");
+{
+  const G = await import("../src/ui/gunsfx.js");
+  const S = stub();
+  S.ctx.destination = S.ctx.createGain();
+  S.ctx.createConvolver = () => ({ ...S.ctx.createGain(), buffer: null }); // the room's reverb
+  G.installBus(S.ctx, S.ctx.destination);
+  const head = (o = {}) => Z.zRoute(S.ctx, null, 0, o).gain.value; // out null: on a context with a battle bus it is not used
+  const g1 = head({ dist: 0 });
+  G.setGunVolume(2.25);
+  const gGuns = head({ dist: 0 });
+  Z.setZombieVolume(1.5);
+  const gZ = head({ dist: 0 }), gun = G.GUNVOL.v;
+  Z.setZombieVolume(0);
+  const g0 = head({ dist: 0 });
+  Z.setZombieVolume(1); G.setGunVolume(1);
+  const far = head({ dist: 0, far: true }), d12 = head({ dist: 12 });
+  check(Math.abs(g1 - Z.ZOMBIE_BUS_GAIN) < 1e-9 && gGuns === g1 && Math.abs(gZ - Z.ZOMBIE_BUS_GAIN * 2.25) < 1e-9 && gun === 2.25 && g0 === 0 && !S.bad.length,
+    `a voice plays into the battle bus at the zombie gain (+4 dB × the Zombies slider: ${g1.toFixed(3)}, at 150% ${gZ.toFixed(3)}, at 0 silent); the Gunfire slider leaves it (${gGuns.toFixed(3)}) and it leaves the Gunfire (${gun})`);
+  check(Math.abs(far / g1 - Z.FAR_GAIN) < 1e-9 && d12 < g1 * 0.8, `a voice made to carry ×${Z.FAR_GAIN}; 12 tiles off it falls with gun-sfx's distance (${(d12 / g1).toFixed(2)})`);
+  const L = Z.zListener(null, { w: 20, h: 20, units: [{ id: 1, side: "player", x: 2, y: 10 }] }, null);
+  const near = Z.zPlace(L, 3, 10), away = Z.zPlace(L, 18, 10);
+  check(near.sp && away.sp && away.dist > near.dist && away.pan > 0 && away.sp.gain < near.sp.gain && away.sp.lp < near.sp.lp, `headless (no view): heard from your people (${near.dist} tiles: ${near.sp.gain.toFixed(2)}, ${away.dist} tiles to the right: ${away.sp.gain.toFixed(2)}, pan ${away.pan})`);
 }
 
 // ---------- 8. determinism ----------

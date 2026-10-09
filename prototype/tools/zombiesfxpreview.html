@@ -5,6 +5,8 @@
 <script type="module">
 import * as Z from "../src/ui/zombiesfx.js";
 import * as NEW from "../src/ui/audio.js";
+import * as G from "../src/ui/gunsfx.js";
+import { makeLimiter } from "../src/ui/sfxlab.js";
 
 const RATE = 44100;
 let OLD = null;
@@ -124,7 +126,8 @@ function windows(buf) {
   for (let i = 0; i + W <= L.length; i += W) { let s = 0; for (let k = 0; k < W; k++) { const v = (L[i + k] + R[i + k]) / 2; s += v * v; } out.push(10 * Math.log10(s / W + 1e-12)); }
   return out;
 }
-// What the zombie bus's limiter took off: the same mix with and without it, window by window (the deepest, and the
+// What the limiters took off (the effects bus's, which the voices share with the guns, and the zombie bus's on the
+// crowd bed): the same mix with and without them, window by window (the deepest, and the
 // share of the loud windows it touched by more than 1 dB).
 async function reduction(secs, mk) {
   const a = windows(await render(secs, mk(true))), b = windows(await render(secs, mk(false)));
@@ -132,22 +135,36 @@ async function reduction(secs, mk) {
   for (let i = 0; i < a.length; i++) if (b[i] > -45) { loud++; const d = a[i] - b[i]; deepest = Math.min(deepest, d); if (d < -1) touched++; }
   return { deepestDb: Math.round(deepest * 10) / 10, windowsOver1dB: `${touched}/${loud}` };
 }
-// The game's chain (ui/audio.js): the zombie bus (+4 dB, the Zombie volume, its soft limiter) into the effects bus, the
-// ambience bus, the master, the master compressor. Slider sets: LISTEN (unity, to listen to), DEFAULT and FULL.
+// The game's chain (ui/audio.js): the effects bus and its limiter (ui/sfxlab.js makeLimiter), gun-sfx's battle bus on
+// it (the voices: zRoute → spatialOut at the zombie gain, ZOMVOL the Zombie volume), the zombie bus (+4 dB, the Zombie
+// volume, its soft limiter: the crowd bed) into the battle bus, the ambience bus, the master, the master compressor.
+// Slider sets: LISTEN (unity, to listen to), DEFAULT and FULL.
 const LISTEN = { master: 1, sfx: 1 / Math.sqrt(0.8), amb: 1, zombie: 1, horde: 0.7 }, DEFAULT = { master: 0.7, sfx: 0.8, amb: 0.5, zombie: 1, horde: 0.7 }, FULL = { master: 1, sfx: 1, amb: 1, zombie: 1.5, horde: 1 };
 function chain(c, sl = LISTEN, limiter = true) {
   const comp = c.createDynamicsCompressor();
   comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.25;
   comp.connect(c.destination);
   const master = c.createGain(); master.gain.value = sl.master ** 2; master.connect(comp);
-  const sfx = c.createGain(); sfx.gain.value = sl.sfx ** 2 * 0.8; sfx.connect(master);
+  const sfx = c.createGain(); sfx.gain.value = sl.sfx ** 2 * 0.8;
+  const lim = limiter ? makeLimiter(c) : null;
+  if (lim) { sfx.connect(lim); lim.connect(master); } else sfx.connect(master);
   const amb = c.createGain(); amb.gain.value = sl.amb ** 2; amb.connect(master);
-  const zb = Z.makeZombieBus(c, sfx, { limiter });
+  const gb = G.installBus(c, sfx);
+  const zb = Z.makeZombieBus(c, gb.in, { limiter });
   zb.setVolume(sl.zombie, 0, true);
-  return { zom: zb.input, sfx, amb, vol: NEW.hordeVolume(sl.horde) * Z.zombieVolume(sl.zombie), comps: { zombieBus: zb.comp, master: comp } };
+  Z.setZombieVolume(sl.zombie); // the voices played after this (zRoute reads it as each one is played)
+  return { zom: zb.input, sfx, amb, vol: NEW.hordeVolume(sl.horde) * Z.zombieVolume(sl.zombie), comps: { zombieBus: zb.comp, effects: lim, master: comp } };
 }
-// A voice as the game plays it into the effects bus: through the zombie bus at the default Zombie volume.
-function zbus(c, out) { const zb = Z.makeZombieBus(c, out); zb.setVolume(1, 0, true); return zb.input; }
+// A voice alone: zRoute gives it the zombie gain at the default Zombie volume and, with no battle bus on a bare render,
+// plays it into out. A stateless soft clip at -1 dBFS keeps a shriek's raw peaks listenable (the game brings them down
+// with the effects gain and limiter: the mixes below); under 0.7 of the ceiling it changes nothing.
+function zbus(c, out) {
+  Z.setZombieVolume(1);
+  const sh = c.createWaveShaper(), pre = c.createGain(), K = 0.891, lin = 0.7 * K, cv = new Float32Array(2048);
+  for (let i = 0; i < 2048; i++) { const x = (i / 1023.5 - 1) * 4, v = Math.abs(x); cv[i] = Math.sign(x) * (v <= lin ? v : lin + (K - lin) * Math.tanh((v - lin) / (K - lin))); }
+  sh.curve = cv; pre.gain.value = 0.25; pre.connect(sh); sh.connect(out);
+  return pre;
+}
 
 window.renderAll = async (oldUrl) => {
   OLD = await import(oldUrl);
@@ -178,7 +195,7 @@ window.renderAll = async (oldUrl) => {
   for (let i = 1; i <= 4; i++) await keep(`walker_idle_seed${i}_new`, 3.4, (c, out) => { Z.playZombie("idle", c, zbus(c, out), 0.02, { kind: "walker", seed: Z.voiceSeed(100 + i * 13, 5), pitch: 1 }); });
   for (let i = 1; i <= 3; i++) await keep(`screamer_shriek_seed${i}_new`, 6.4, (c, out) => { Z.playZombie("shriek", c, zbus(c, out), 0.02, { kind: "screamer", seed: Z.voiceSeed(200 + i * 17, 5), pitch: 1 }); });
   for (let i = 1; i <= 4; i++) { Z.resetTakes(i * 10); const buf = await render(3.4, (c, out) => { Z.playZombie("idle", c, zbus(c, out), 0.02, { kind: "walker", seed: Z.voiceSeed(113, 5), pitch: 1 }); }); stats[`walker_idle_take${i}`] = measure(buf); }
-  // Far off: the same moan at 2, 8 and 16 tiles (zRoute's distance, muffling and tail).
+  // Far off: the same moan at 2, 8 and 16 tiles (gun-sfx's distance and muffling; the reverb needs the battle bus: the mixes).
   for (const d of [2, 8, 16]) await keep(`walker_idle_dist${d}_new`, 4, (c, out) => { Z.playZombie("idle", c, zbus(c, out), 0.02, { kind: "walker", seed: SEED("walker"), pitch: 1, dist: d }); });
   // The screamer's shriek straight out of the voice, before the zombie bus (does the voice itself clip?).
   await keep("screamer_shriek_raw", 6.4, (c, out) => { Z.playZombie("shriek", c, out, 0.02, { kind: "screamer", seed: SEED("screamer"), pitch: 1 }); }, false);

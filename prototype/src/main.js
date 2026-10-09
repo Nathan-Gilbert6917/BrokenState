@@ -43,6 +43,9 @@ import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, iron
 import { BG_ACTIONS, BG_CHANGE, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
+import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
+import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
+import { stackKey, stackInput, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the drop popover
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
@@ -103,7 +106,10 @@ import { initAudio, audioFrame } from "./ui/audio.js"; // sound: WebAudio, made 
 // Display options and their keys (M, `, Shift+P), the minimap, and the one confirmation box (ui/display.js, ui/minimap.js, ui/confirm.js).
 import { initDisplay, DISPLAY_ACTIONS, DISPLAY_CHANGE, displayKey } from "./ui/display.js";
 import { initMinimap, minimapFrame } from "./ui/minimap.js";
+import { initEdgeFx, edgeFrame } from "./ui/edgefx.js"; // red pulses at the screen edge for an attack off screen (map and battle)
 import { initConfirm, askHtml, askKey, ASK_ACTIONS, ask } from "./ui/confirm.js";
+import { selectedTeam } from "./ui/teamsel.js"; // the selected team (its panel open, or picked on the map)
+import { teamTileMenu, teamCtxHtml, runTeamAction } from "./ui/teamctx.js"; // its right-click menu: actions for the tile
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 // MAX_SPEED (ui/pacing.js): the fastest normal speed (5×); anything above is a dev fast-forward
@@ -186,6 +192,7 @@ initPanels({ layout, relayout: (fn) => relayout(fn), refresh: () => { dirtyNow =
 initRenderer(canvas);
 initCombatUI($("combatmap"));
 initMinimap($("mapwrap"), canvas, options); // ui/minimap.js: the map's corner
+initEdgeFx($("mapwrap"), $("cbmapwrap"), () => refresh(false)); // ui/edgefx.js: the screen-edge warnings
 // The map follows its box whatever changes it (a panel folded or dragged wider, the UI size).
 if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(() => {
@@ -260,6 +267,7 @@ function step(now) {
     drawCombat(state, now);
   } else if (!titleCovers(ui)) render(state); // the title screen hides the map (unless the map is its background)
   minimapFrame(state, ui, now); // ui/minimap.js (hidden over a battle, the title and the timelapse)
+  edgeFrame(state, ui, now, !ui.timelapse && !state.combat && !titleCovers(ui)); // ui/edgefx.js: attacks off screen
   if (ui.title) titleFrame(state, ui, now);
   audioFrame(state, ui, now); // battle and map cues, the ambience (ui/audio.js)
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
@@ -1027,6 +1035,8 @@ for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state
 for (const [k, fn] of Object.entries(BG_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Inventory and loot screens (ui/inventory.js).
 for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ev: Shift+click on a supply stack (raid search window)
+for (const [k, fn] of Object.entries(TEAMINV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ui/teaminv.js
+for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => { fn(state, ui, d, ev); hideCtx(); }; // ui/teamform.js
 // The gun builder (ui/gunbuilder.js): open, pick a slot, fit, remove; the Ammo list.
 for (const [k, fn] of Object.entries(GB_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Farming tab and illness (ui/farming.js, ui/health.js).
@@ -1130,7 +1140,8 @@ document.addEventListener("drop", (ev) => {
   ev.preventDefault();
   releaseHold();
   const from = ev.dataTransfer.getData("text/plain");
-  if (from) { invDrop(state, ui, from, el.dataset.drop, ev.shiftKey, ev.ctrlKey || ev.metaKey); refresh(); } // Shift: half a supply stack, Ctrl: one (raid search window)
+  if (from && ui.inv.form) { teamFormDrop(state, ui, from, el.dataset.drop); refresh(); return; } // ui/teamform.js: between a team and the armory
+  if (from) { invDrop(state, ui, from, el.dataset.drop, ev.shiftKey, ev.ctrlKey || ev.metaKey, dropPoint(ev)); refresh(); } // a supply stack: a popover asks how many (Shift: half, Ctrl: one)
 });
 
 const changeActions = {
@@ -1279,6 +1290,8 @@ for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn
 for (const [k, fn] of Object.entries(DEFENCE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // prisoners-tab: the rations and work selects (ui/prisoners.js)
 for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(TEAMINV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teaminv.js: how many of a picked supply
+for (const [k, fn] of Object.entries(TEAMFORM_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teamform.js: sort, supply amounts, days
 for (const [k, fn] of Object.entries(GB_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the gun builder's Ammo list // how many of a supply stack to move (ui/inventory.js)
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
@@ -1442,6 +1455,7 @@ document.addEventListener("mouseover", (ev) => {
   const el = ev.target.closest && ev.target.closest(".wcell");
   ui.workHover = el ? { ...el.dataset } : null;
 });
+document.addEventListener("input", (ev) => stackInput(ev.target)); // the stack mover's slider: the panel follows as it moves
 document.addEventListener("change", (ev) => {
   const el = ev.target.closest("[data-action]");
   if (!el) return;
@@ -1567,6 +1581,10 @@ canvas.addEventListener("wheel", (e) => {
   const r = canvas.getBoundingClientRect();
   zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.12 : 1 / 1.12);
 }, { passive: false });
+// Right-click on the map: the tile's menu. With a team selected (ui/teamsel.js) it leads with that team's actions for
+// the tile (ui/teamctx.js; Shift+right-click adds them to its queue), the other teams and the hub's missions folded
+// below; with none, the menu lists every team you are in touch with and the hub's missions.
+let ctxAt = null; // { tile, x, y }: where the menu was opened (its toggles redraw it in place)
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
   const r = canvas.getBoundingClientRect();
@@ -1574,6 +1592,13 @@ canvas.addEventListener("contextmenu", (e) => {
   if (id < 0 || ui.timelapse || !ui.started) return;
   ui.selected = id;
   view.selected = id;
+  ctxAt = { tile: id, x: e.clientX - r.left, y: e.clientY - r.top };
+  ui.tcAppend = !!e.shiftKey;
+  showCtx();
+});
+function showCtx() {
+  if (!ctxAt) return;
+  const id = ctxAt.tile;
   const t = state.tiles[id];
   const acts = tileActions(state, id);
   const waiting = state.parties.filter((p) => contactable(p) && commandable(state, p)); // radio rule (plans.js)
@@ -1581,15 +1606,61 @@ canvas.addEventListener("contextmenu", (e) => {
   const none = own ? "Your base" : t.terrain === "water" && !t.bridge ? "Open water: teams cross it by boat from a shore" : "Nothing to do here";
   const menu = $("ctxmenu");
   const loc = mapLoc(state, id); // a hidden site nobody has found (sim/discovery.js) is just a tile
-  menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` +
-    waiting.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
-    (t.terrain === "water" && !t.bridge ? "" : waiting.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
-    ctxBoats(waiting, id) + ctxLand(waiting, id) + ctxClaim(waiting, id) + ctxWatchlist(state, id) + // 📌 watch, map notes (ui/watchlist.js)
-    (acts.length ? acts.map(([m, l, pre]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}>${l} (from hub)</button>`).join("") : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
-  menu.style.left = `${e.clientX - r.left}px`;
-  menu.style.top = `${e.clientY - r.top}px`;
-  menu.classList.remove("hidden");
+  const hubHtml = acts.map(([m, l, pre]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}>${l} (from hub)</button>`).join("");
+  const sel = selectedTeam(state, ui);
+  if (!sel) {
+    menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` + ctxTeams(waiting, id) +
+      ctxWatchlist(state, id) + formTeamCtx(state, id) + // 📌 watch, map notes (ui/watchlist.js); Form a team at your base (ui/teamform.js)
+      (acts.length ? hubHtml : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
+  } else {
+    const rest = ctxTeams(waiting.filter((p) => p !== sel), id) + hubHtml;
+    menu.innerHTML = teamCtxHtml(state, ui, teamTileMenu(state, ui, sel, id, { append: !!ui.tcAppend })) +
+      (rest ? `<button class="tcfold" data-action="tc-more" data-tip="Other teams you are in touch with, and teams sent from the hub">${ui.ctxMore ? "▾" : "▸"} Other teams and the hub</button>${ui.ctxMore ? rest : ""}` : "") +
+      ctxWatchlist(state, id) + formTeamCtx(state, id);
+  }
+  placeCtx(menu, ctxAt.x, ctxAt.y);
   dirtyNow = true;
+}
+// Every team in touch: move here, survey, boats, food from the land, claims (the menu with no team selected, and the
+// folded part of a selected team's menu).
+function ctxTeams(teams, id) {
+  const t = state.tiles[id];
+  return teams.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
+    (t.terrain === "water" && !t.bridge ? "" : teams.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
+    ctxBoats(teams, id) + ctxLand(teams, id) + ctxClaim(teams, id);
+}
+// Keep the menu on the map: flipped left or up at the edges, never taller than the map (it scrolls); sizes follow the
+// interface scale (rem).
+function placeCtx(menu, x, y) {
+  const wrap = menu.parentElement;
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  menu.style.maxHeight = `${Math.max(120, H - 8)}px`;
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.classList.remove("hidden");
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  const left = x + w > W - 4 ? Math.max(4, x - w) : x;
+  const top = y + h > H - 4 ? (y - h >= 4 ? y - h : Math.max(4, H - 4 - h)) : y;
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+// A press anywhere outside the menu closes it (the map's own mousedown closes it too).
+document.addEventListener("mousedown", (e) => {
+  const menu = $("ctxmenu");
+  if (!menu.classList.contains("hidden") && !menu.contains(/** @type {Node} */ (e.target))) hideCtx();
+}, true);
+Object.assign(actions, {
+  // A selected team's item (ui/teamctx.js): replace its plan or queue; the confirmation box first when orders under way would go.
+  "tc-do": (d) => {
+    hideCtx();
+    const msg = runTeamAction(state, ui, d, actions);
+    if (msg === null) return; // asked first (ui/confirm.js): Yes runs it again
+    if (msg) log(state, msg, "info");
+    if (ui.expedition === Number(d.id)) ui.xpMsg = msg || "";
+    endMoveMode();
+  },
+  "tc-mode": () => { ui.tcAppend = !ui.tcAppend; showCtx(); }, // replace ⇄ add to the queue
+  "tc-more": () => { ui.ctxMore = !ui.ctxMore; showCtx(); },   // the other teams and the hub, folded
 });
 // Right-click on the land straight across one water tile from a team you are in touch with: build a boat.
 function ctxBoats(teams, id) {
@@ -1688,11 +1759,11 @@ actions.ctxmove = (d) => {
 };
 // Radio rule (sim/plans.js commandable): out of radio contact a team follows its plan; orders only through the
 // cards it raises (answering one opens contact for that hour) or once it is back in coverage.
-for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim"]) {
+for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim", "tc-do"]) {
   const fn = actions[k];
   actions[k] = (d) => {
     const p = partyById(d.id);
-    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
+    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim" || k === "tc-do") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
     return fn(d);
   };
 }
@@ -1801,6 +1872,7 @@ window.addEventListener("keydown", (e) => {
   // Menu → Controls waiting for a key (ui/controls.js): the next key press is the new binding.
   if (controlsKey(ui, e, settingsApi)) { e.preventDefault(); refresh(); return; }
   const t = e.target || {};
+  if (stackKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // the stack mover (ui/stackmove.js): Enter moves, Esc cancels, from its number box too
   if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "checkbox")) return;
   // A question before an order that cannot be undone (ui/confirm.js) takes the keyboard: Enter yes, Esc cancel.
   if (ui.ask) { e.preventDefault(); act(() => askKey(ui, e, actions)); refresh(); return; }
@@ -1815,6 +1887,7 @@ window.addEventListener("keydown", (e) => {
   // Esc with nothing of ours to close opens the menu (in a battle Esc cancels the current action; ⚙ Menu is in the panel).
   if (ui.title) { if (!ui.settings && !ui.zombieLook && titleKey(ui, e)) e.preventDefault(); return; } // the title screen (ui/title.js): only the menu's keys
   if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
+  if (ui.inv && ui.inv.form && !ui.gunb && !ui.settings && teamFormKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // ui/teamform.js: tabs, picking people, Enter
   if (ui.zombieLook || ui.bgEditor || ui.inv || ui.gunb || ui.settings) return; // these screens take the keyboard
   if (state.combat) {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }

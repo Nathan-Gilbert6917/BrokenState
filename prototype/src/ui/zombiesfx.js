@@ -20,8 +20,12 @@
 // The State Map (hordeAmbience, zombieMapAmbience): a horde you can see near a base or one of your teams is a distant,
 //   wind-blown moaning that swells now and then (louder by size and nearness, more present at night); a known hive near
 //   you is a low organic drone with a slow heartbeat (the Broodmother). hordeChorus: distant moans under the map sting.
-// zRoute is the one place a voice meets the speakers (pan and distance); see its note for the gun-sfx integration.
+// zRoute is the one place a voice meets the speakers: ui/gunsfx.js spatialOut (pan by the screen, level and highs by
+//   distance, muffled out of sight, the room's reverb, the battle bus with its ducking and the deafened muffle), at the
+//   zombie gain (ZOMBIE_BUS_GAIN × the Zombie volume). The crowd bed goes through the zombie bus; the map layer through
+//   the ambience bus (both unpositioned).
 import { MIDDEAD } from "../sim/hiveconst.js";
+import { spatial, spatialOut, isIndoor } from "./gunsfx.js"; // the battle's sound space (shared with the guns, the blows and the steps)
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const clamp01 = (v) => clamp(v, 0, 1);
@@ -925,14 +929,19 @@ export const ZOMBIE_VOICES = Object.fromEntries(Object.entries(EVENT_CUE).map(([
 }]));
 
 // ---------- the zombie bus ----------
-// Every voice and the crowd bed go through it on their way to the effects bus: a gain (ZOMBIE_BUS_GAIN, +4 dB, × the
+// The crowd bed goes through it on its way to the battle bus (ui/audio.js): a gain (ZOMBIE_BUS_GAIN, +4 dB, × the
 // Zombie volume), a soft limiter (a fast compressor, threshold -6 dB, ratio 12) and a soft clip whose ceiling is -1 dBFS,
-// so a horde never clips whatever the sliders say. zombieVolume: the slider (0–1.5, 1 the default) to a gain (squared,
+// so a horde never clips whatever the sliders say. The voices take the same gain in zRoute and go through gun-sfx's
+// spatial chain instead (its battle bus and the effects bus's limiter: ui/sfxlab.js makeLimiter). zombieVolume: the slider (0–1.5, 1 the default) to a gain (squared,
 // like the other sliders).
 export const ZOMBIE_BUS_GAIN = 1.585; // +4 dB over the level they were first made at (with the louder guns)
 export const ZOMBIE_CEIL = 0.891;     // -1 dBFS
 export const ZOMBIE_TRIM = 0.785;         // × after the limiter: undoes the make-up gain browsers add to a compressor (measured)
 export const zombieVolume = (v = 1) => clamp(Number.isFinite(Number(v)) ? Number(v) : 1, 0, 1.5) ** 2;
+// The Zombie volume as a gain, read by zRoute as each voice is played (ui/audio.js applyGains sets it from the slider).
+export const ZOMVOL = { v: 1 };
+export function setZombieVolume(v) { ZOMVOL.v = zombieVolume(v); }
+export const FAR_GAIN = 1.3; // a voice made to carry (the screamer's shriek, a smash): a little over the rest at any distance
 const CLIP = new Map();
 function softClip(k) { // linear to 0.7 of the ceiling, then a tanh knee up to it
   let cv = CLIP.get(k);
@@ -975,35 +984,16 @@ export function makeZombieBus(c, dest, o = {}) {
 }
 
 // ---------- where a voice is heard from ----------
-// INTEGRATION (gun-sfx): this is the one place a zombie voice meets the speakers. At integration replace its body with
-// gun-sfx's spatial chain (pan by screen x, distance attenuation and muffling, the battle layout's reverb send); every
-// voice renders into whatever node this returns. o: { pan (-1..1), dist (tiles from the listener), far (a voice made
-// to carry: the screamer's shriek, a smash) }. Until then: a gain by distance, a low-pass past a few tiles, a panner.
+// The one place a zombie voice meets the speakers: gun-sfx's spatial chain (ui/gunsfx.js spatialOut: level and highs
+// by distance, muffled out of sight, pan, the room's reverb send, into the battle bus with its ducking and the deafened
+// muffle, then the effects bus and its limiter). The voice's level is the zombie gain: ZOMBIE_BUS_GAIN (+4 dB) × the
+// Zombie volume (ZOMVOL; so the Gunfire slider never touches the dead, nor this one the guns or the blows), × FAR_GAIN
+// for a voice made to carry. o.sp: the placement soundcues gave the cue (gunsfx.js spatial); else { pan, dist, seen,
+// room } of its own (the sound test: near and in front). out: where it goes on a context with no battle bus (spatialOut
+// finds the bus on the context; a bare offline render or a test stub has none).
 export function zRoute(c, out, t, o = {}) {
-  const d = Math.max(0, Number(o.dist) || 0);
-  let next = out;
-  if (c.createStereoPanner && Number.isFinite(o.pan) && o.pan) {
-    const p = c.createStereoPanner();
-    p.pan.value = clamp(o.pan, -1, 1);
-    p.connect(next);
-    next = p;
-  }
-  const hz = muffleHz(d, o.far);
-  if (hz < 12000) next = biq(c, "lowpass", hz, 0.5, next);
-  const head = gainN(c, distGain(d, o.far), next);
-  const wet = d > 5 || (o.far && d > 3) ? clamp((d - 3) / 14, 0.1, 0.5) : 0;
-  if (wet && c.createDelay) { // far off: a long, dark tail (a stand-in for gun-sfx's reverb)
-    const dl = c.createDelay(1);
-    dl.delayTime.value = 0.11 + (d % 3) * 0.03;
-    const dark = biq(c, "lowpass", 1100, 0.5, next);
-    dl.connect(dark);
-    dl.connect(gainN(c, 0.55, dl)); // feedback: the tail dies away over a second or two
-    head.connect(gainN(c, wet, dl));
-  }
-  return head;
+  return spatialOut(c, o.sp || { pan: o.pan, dist: o.dist, seen: o.seen, room: o.room }, { gain: ZOMBIE_BUS_GAIN * ZOMVOL.v * (o.far ? FAR_GAIN : 1), dest: out });
 }
-export const distGain = (d, far) => Math.max(0.12, 1 / (1 + Math.max(0, d - 2) / (far ? 16 : 7)));
-export const muffleHz = (d, far) => (d <= 4 ? 20000 : Math.max(far ? 2200 : 900, 16000 / (1 + (d - 4) * (far ? 0.25 : 0.6))));
 
 // ---------- the battle's cues (soundcues.js battleCues; pure) ----------
 const CLIMB = new Set([...(MIDDEAD.CLIMBER.CLIMB || []), "gate"]);
@@ -1026,10 +1016,21 @@ export function listenerOf(b, selId = null) {
   if (!ps.length) return { x: (b.w || 20) / 2, y: (b.h || 20) / 2 };
   return { x: ps.reduce((s, u) => s + u.x, 0) / ps.length, y: ps.reduce((s, u) => s + u.y, 0) / ps.length };
 }
-// Pan and distance of a spot from the listener (battle tiles; gun-sfx pans by screen x at integration).
+// Where the dead are heard from: gun-sfx's listener for the frame (ui/battlesfx.js frameListener: the selected unit, the
+// view, the fog of war, the room) with x, y (the selected unit, else the middle of your people) for the nearest moaner
+// and the crowd's distance. With no view (a headless test) and no one selected, placements are heard from x, y.
+export function zListener(FL, b, selId = null) {
+  const c = listenerOf(b, selId);
+  const L = { ...(FL || {}), x: c.x, y: c.y, b };
+  if (L.lx == null && !L.cam) { L.lx = c.x; L.ly = c.y; }
+  if (!L.w) L.w = b.w || 0;
+  return L;
+}
+// A spot's placement (gunsfx.js spatial, as one of the enemy: muffled out of sight; indoors in a room's echo), carried
+// on the cue as sp; pan and dist are kept on it for the tests and the volley.
 export function zPlace(L, x, y) {
-  const dx = x - L.x, dy = y - L.y;
-  return { pan: r2(clamp(dx / 10, -0.85, 0.85)), dist: r2(Math.hypot(dx, dy)) };
+  const sp = spatial(L, x, y, { enemy: true, indoor: L && L.b ? isIndoor(L.b, x, y) : false });
+  return { sp, pan: r2(sp.pan), dist: r2(sp.dist) };
 }
 function cue(ev, u, b, L, extra = {}, p = null) {
   const pos = p || [u.x, u.y];
@@ -1152,7 +1153,6 @@ function markBusy(zm, list) {
   zm.busy = zm.busy || new Map();
   for (const c of list) if (c && VOCAL_CUES.has(c.name) && c.seed != null) zm.busy.set(c.seed, Math.max(zm.busy.get(c.seed) || 0, zm.now + (c.delay || 0) + EVENT_DUR[CUE_EVENT[c.name]]));
 }
-const isIndoor = (b) => !!(b.floors || (b.raid && b.raid.plan && b.raid.plan.building) || (b.setup && b.setup.layout === "interior"));
 export function breathers(b) {
   const ps = b.units.filter((o) => o.side === "player" && !o.dead && !o.down && !o.left && !o.off && o.x >= 0);
   if (!ps.length) return [];
@@ -1174,8 +1174,9 @@ function breathCues(b, zm, L, out) {
   zm.br = zm.br || new Map();
   const near = breathers(b), keep = new Set(near.map((u) => u.id));
   for (const id of [...zm.br.keys()]) if (!keep.has(id)) zm.br.delete(id); // moved off or died: it stops (and fades in again next time)
-  const lift = (b.night || b.dark ? 1.3 : 1) * (isIndoor(b) ? 1.25 : 1);
+  const night = b.night || b.dark ? 1.3 : 1;
   for (const u of near) {
+    const lift = night * (isIndoor(b, u.x, u.y) ? 1.25 : 1); // gunsfx.js: a room's walls bring it closer
     const seed = unitSeed(b, u), kind = voiceKind(u);
     let st = zm.br.get(u.id);
     if (!st) { const r = mulberry(seed ^ 0xb4ea7); st = { n: 0, next: now + BREATH_FIRST[0] + r() * (BREATH_FIRST[1] - BREATH_FIRST[0]) }; zm.br.set(u.id, st); }

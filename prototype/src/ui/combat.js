@@ -43,7 +43,9 @@ import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, ba
 import { herded, sensesOf } from "../sim/decoys.js";
 import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent, bodyAt as humanBodyAt, bodyName, unitBodyLoad, carRoom } from "../sim/carriers.js"; // the Carrier: bodies in danger, the risen, bodies carried, shot or burnt
 import { statusIcons } from "./status.js"; // the survivor behind a unit: low mood, starving, thirsty, infected, sick (its own hit points are the bar)
-import { iso, drawIso, project, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor } from "./isoview.js";
+import { barkFrame } from "./barks.js"; // combat barks: short speech bubbles over the units' heads
+import { ingestMarks } from "./battlemarks.js"; // blood, brass and scorch read off each action's fx before the short fx list drops them
+import { iso, drawIso, project, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor, ISO_ZOOMS, LV, liftOf } from "./isoview.js";
 import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
 import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
@@ -56,6 +58,9 @@ const ENEMY_STEP_MS = 420;
 
 export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false }; // autoPlay: the AI plays your side (cb-autoplay)
 LISTEN.sel = () => cui.sel; // ui/soundcues.js: whose ears the battle is heard through
+// ui/gunsfx.js: where on screen a sound is (pan, distance from the middle) and what your people see (out of sight: muffled).
+LISTEN.cam = () => { if (!iso.cw || cui.view === "top") return null; const [x0, y0] = project(0, 0, 0), [x1, y1] = project(1, 0, 0); return { cw: iso.cw, ch: iso.ch, S: Math.hypot(x1 - x0, y1 - y0) / Math.hypot(16, 8), project }; };
+LISTEN.vis = () => (cui.cache && cui.cache.vis) || null;
 let canvas = null, ctx = null;
 const geo = { cs: 40, ox: 0, oy: 0 };
 
@@ -313,6 +318,7 @@ function follow(b) {
 function act(state, a) {
   const b = state.combat;
   const err = combatAct(state, a);
+  if (b) ingestMarks(b, performance.now());
   cui.msg = err || "";
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
@@ -1158,6 +1164,7 @@ export function combatTick(state, now) {
     cui.endAsk = cui.retreatAsk = cui.fallAsk = null;
     cui.mode = "move";
     SIM.autoPlayerTurn(state);
+    ingestMarks(b, now);
     cui.sel = null;
     if (state.combat === b && b.phase === "player") autoSelect(b);
     return true;
@@ -1169,6 +1176,7 @@ export function combatTick(state, now) {
   for (let i = 0; i < 30 && b.phase === "enemy" && !b.over; i++) {
     const before = b.fxSeq;
     const u = enemyStep(state);
+    ingestMarks(b, now);
     if (!u) break;
     // Pause only when something happened that the player can see.
     if (b.fx.some((f) => f.seq > before && (f.type !== "move" || playerSees(b, u)))) break;
@@ -1969,6 +1977,7 @@ export function drawCombat(state, now) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (isIso()) {
     drawIsoView(state, b, now, cw, ch);
+    barkFrame(ctx, state, b, now, barkView(b, now, cw, ch, 0));
     drawBanner(b, cw, 40);
     return;
   }
@@ -2183,7 +2192,24 @@ export function drawCombat(state, now) {
   }
 
   drawFx(b, now, cs);
+  barkFrame(ctx, state, b, now, barkView(b, now, cw, ch, cs));
   drawBanner(b, cw, cs);
+}
+// What ui/barks.js needs to place the bubbles: who your people see (the drawing's fog), where a unit's head is (over its
+// labels, sliding with its move), the text size (the zoom and the UI size). cs: the top-down view's cell, 0 for iso.
+function barkView(b, now, cw, ch, cs) {
+  const v = view(b), S = ISO_ZOOMS[iso.zoom] || 2;
+  const ui = typeof document !== "undefined" && document.documentElement ? Number(document.documentElement.style.getPropertyValue("--ui-scale")) || 1 : 1;
+  const visible = (t) => t.side === "player" || (active(t) ? v.seen.has(t.id) : !!v.vis[t.y * b.w + t.x]);
+  const head = (t) => {
+    if (!onFloor(b, t) || t.left || t.fled || t.off) return null;
+    const [x, y] = animTile(b, t, now);
+    if (cs) return [geo.ox + (x + 0.5) * cs, geo.oy + y * cs - cs * 0.1];
+    const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, fs = Math.max(10, Math.round(3.4 * S));
+    const [X, Y] = project(x + 0.5, y + 0.5, heightAt(b, t.x, t.y) * LV + liftOf(b) + (t.down || t.dead ? 10 : 30 * big));
+    return [X, Y - 6 - fs - 6]; // over the health bar and the tags (ui/isoview.js drawLabels)
+  };
+  return { visible, head, w: cw, h: ch, sel: cui.sel, top: 40, font: Math.min(30, Math.max(16, (cs ? cs * 0.36 : 3.6 * S))) * ui };
 }
 
 // Throw mode (sim/stealth.js): the cells in range (k 0), and for the hovered spot in range where it would reach: a
