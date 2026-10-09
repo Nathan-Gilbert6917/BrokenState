@@ -205,8 +205,9 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   // a heat wave), food at each day's cold (×1.1 below 0°C, ×1.2 below −8°C, needs.js teamCold) except by a lit camp
   // fire (campWarm). Rations: more on the move under a load (load.js), at rest one a day.
   let drink = 0, eat = 0;
-  const eatDrink = (from, segs) => { drink += waterForHours(state, from, segs); eat += foodForHours(state, from, segs); };
-  const drinkMove = (from, t) => eatDrink(from, members.length ? [[t.rideHours, pace.eatMove], [t.hours - t.rideHours, pace.eatFoot]] : [[t.hours, n]]);
+  // fsegs: the same hours at the food rates (each one's appetite, a Glutton: traits.js); water at the plain rations.
+  const eatDrink = (from, segs, fsegs = segs) => { drink += waterForHours(state, from, segs); eat += foodForHours(state, from, fsegs); };
+  const drinkMove = (from, t) => eatDrink(from, members.length ? [[t.rideHours, pace.eatMove], [t.hours - t.rideHours, pace.eatFoot]] : [[t.hours, n]], members.length ? [[t.rideHours, pace.foodMove], [t.hours - t.rideHours, pace.foodFoot]] : [[t.hours, n]]);
   // Hours of a stay spent by a lit fire (needs.js teamCold, fieldheat.js teamFire): at the staging camp any job on the
   // spot sits by its fire; a camp step by the team's own, lit unless the team keeps it out (p.campFire, or the step's
   // fire), and on bare ground only while the firewood it carries lasts (woodcutting.js campFireHour: it pays an hour's
@@ -244,14 +245,15 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   const stay = (label, hours, kind = null, s = null) => {
     const warm = campWarm(kind, s, hours);
     legs.push({ label, hours, from: tile, to: tile, start: at, ...(warm ? { warm } : {}) });
-    eatDrink(at, [[warm, n, true], [hours - warm, n]]);
+    const rest = members.length ? pace.foodRest : n;
+    eatDrink(at, [[warm, n, true], [hours - warm, n]], [[warm, rest, true], [hours - warm, rest]]);
     at += hours;
   };
   // A survey (survey.js): its route is fixed when it starts, so its hours and fuel are known; it eats at the moving rate.
   const surveyLeg = (o) => {
     const sw = sweepEstimate(state, { ...sweepOpts(o || {}), center: tile, mode: veh, stance: p ? p.stance : stance, fuelMult: pace.fuelMult });
     legs.push({ label: `Survey ${sw.radius} tiles around ${tileLabel(state, tile)} (${sw.hours}h)`, hours: sw.hours, from: tile, to: tile, start: at, sweep: true, route: sw.route });
-    eatDrink(at, [[sw.hours, members.length ? (veh ? pace.eatMove : pace.eatFoot) : n]]);
+    eatDrink(at, [[sw.hours, members.length ? (veh ? pace.eatMove : pace.eatFoot) : n]], [[sw.hours, members.length ? (veh ? pace.foodMove : pace.foodFoot) : n]]);
     at += sw.hours;
     if (veh === true) { fuelUse += sw.fuel; f = Math.max(0, f - sw.fuel); }
   };
