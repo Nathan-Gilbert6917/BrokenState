@@ -98,6 +98,8 @@ import { rosterModal } from "./roster.js";
 import { codexModal, codexButton } from "./codex.js"; // the Codex window (C) and its top-bar button
 import { keyLabel } from "./keymap.js"; // a key as it is bound now (Menu → Controls)
 import { groupsDiploHeader, groupCardExtras, diplomacyModal, plannerJobNote, bandsSection } from "./diplomacy.js";
+import { volRequestModal, volPickModal, volAskButton, teamVolLine, plannerVolRow } from "./volunteers.js"; // volunteers (sim/volunteers.js)
+import { lentLine } from "../sim/volunteers.js";
 import { ALLIANCE, goalsProgress } from "../sim/alliance.js";
 import { claimText, wellText, CLAIM, WELL_SHORE, WELL_YIELD } from "../sim/claims.js"; // land claims and wells (the tile panel, the help)
 import { MIL_RADIO_RANGE, GROUP_REACH, GROUP_NET_RANGE } from "../sim/radio.js";
@@ -336,7 +338,7 @@ function personCard(state, s) {
     ${isSick(s) ? `<div class="row small" style="flex-wrap:wrap">${conditionChips(state, s)}</div>` : ""}
     ${gaugeRows(s, { mood: false })}
     <div class="row small"${moodTipAttr(state, s)}><span style="width:3.5rem" class="muted">Mood</span><div style="flex:1">${bar(s.mood, "var(--info)")}</div><span style="width:2rem">${n0(s.mood)}</span></div>${moodRiskChip(s) || relChip(state, s) || familyChip(state, s) ? `<div class="small">${moodRiskChip(s)}${relChip(state, s)}${familyChip(state, s)}</div>` : ""}` :
-    isCaptive(s) ? "" : s.location.kind === "errand" ? `<div class="small muted">Away on a personal errand: back around day ${s.location.until}.</div>` : `<div class="small muted"${tip("Teams report when they get home, wait for orders, or come into radio range of a radio station.")}>No contact: health and mood unknown until the team reports in.</div>`}
+    isCaptive(s) ? "" : s.location.kind === "errand" ? `<div class="small muted">Away on a personal errand: back around day ${s.location.until}.</div>` : s.location.kind === "lent" ? `<div class="small vol-text"${tip("Lent to another group (sim/volunteers.js): out of your orders, fighting their fights, back at the end of the span")}>${esc(lentLine(state, s))}</div>` : `<div class="small muted"${tip("Teams report when they get home, wait for orders, or come into radio range of a radio station.")}>No contact: health and mood unknown until the team reports in.</div>`}
     <div>${topSkills}${backgroundInfo(state, s.background) ? `<span class="chip"${tip(`Who they were before Calder fell${backgroundInfo(state, s.background).blurb ? `: ${backgroundInfo(state, s.background).blurb}` : ""}${backgroundInfo(state, s.background).custom ? " (a custom background)" : ""}`)}>${esc(backgroundInfo(state, s.background).name)}</span>` : ""}${traitChips(s)}</div>
   </div>`;
 }
@@ -420,6 +422,7 @@ function renderGroups(state) {
         ${f.alive ? `<div class="row" style="margin-top:0.35rem">
           <button data-action="center" data-tile="${f.bases[0]}"${tip("Center the map on their main base")}>Locate</button>
           ${canRadio(state, f) ? `<button data-action="rd-open" data-id="${f.id}"${tip("Radio panel: greet, ask for news, ask for a trade caravan, make a deal, call for help, pacts")}>Radio…</button>` : ""}${f.heard ? `<span class="small muted"${tip("You found them by scanning the airwaves")}>heard on the radio</span>` : ""}
+          ${volAskButton(state, f)}
           ${f.pact === "trade" && !route ? `<button data-action="routesetup" data-id="${f.id}"${tip("Recurring convoys with an escort you choose")}>Set up trade route</button>` : ""}
         </div>` : ""}`;
       return `<div class="card gc">${fold(`group:${f.id}`, summary, body, { cls: "pf-card", tipText: `${f.name}: click for the whole card (goodwill, wars and pacts, what they want and have spare, their arms, Locate and Radio)` })}</div>`;
@@ -466,7 +469,7 @@ function renderTeams(state, ui) {
     const showLive = waiting || p.radioLive || p.kind === "convoy" || p.phase === "task";
     return `<div class="card small ${waiting ? "attn" : ""}">
       <div class="spread"><b>${sjob ? `Supply run: ${esc(jobName(state, sjob))}` : `${MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team"} → ${esc(tileLabel(state, p.dest))}`}</b>${showLive ? `<button data-action="center" data-tile="${partyTile(p)}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>
-      <div class="tm-who">${members.map(first).join(", ")} <span class="muted">· ${v ? esc(isBike(v) ? `on ${vehicleLabel(v)}` : vehicleLabel(v)) : "on foot"} · ${STANCES[p.stance]?.name || ""}</span>${p.burden && p.burden.band >= 2 && p.vehicle !== true ? ` · <span class="warn"${tip("Its load slows it down and it eats and drinks more on the move (team panel)")}>${p.burden.band >= 3 ? "Overloaded" : "Heavy"}</span>` : ""}${p.walkers > 0 && p.vehicle ? ` · <span class="warn"${tip("A vehicle was lost and there are not enough seats: those without one walk, and the whole team goes at walking pace until a seat turns up (or leave them to follow on foot from the card). Its hours and the right-click estimates count walking pace.")}>${p.walkers} walking: foot pace</span>` : ""}</div>
+      <div class="tm-who">${members.filter((m) => !m.vol).map(first).join(", ")}${teamVolLine(state, p)} <span class="muted">· ${v ? esc(isBike(v) ? `on ${vehicleLabel(v)}` : vehicleLabel(v)) : "on foot"} · ${STANCES[p.stance]?.name || ""}</span>${p.burden && p.burden.band >= 2 && p.vehicle !== true ? ` · <span class="warn"${tip("Its load slows it down and it eats and drinks more on the move (team panel)")}>${p.burden.band >= 3 ? "Overloaded" : "Heavy"}</span>` : ""}${p.walkers > 0 && p.vehicle ? ` · <span class="warn"${tip("A vehicle was lost and there are not enough seats: those without one walk, and the whole team goes at walking pace until a seat turns up (or leave them to follow on foot from the card). Its hours and the right-click estimates count walking pace.")}>${p.walkers} walking: foot pace</span>` : ""}</div>
       ${showLive ? `<div class="tm-stats">${tmStat("Food", n0((p.supplies.food || 0) + (p.supplies.preserved || 0)))}${tmStat("Water", `${n0(waterIn(p.supplies))}${(p.supplies[RAW] || 0) >= 1 ? ` (${n0(p.supplies[RAW])} raw)` : ""}`)}${isCar(v) ? `${tmStat("Fuel", n0(partyFuel(state, p)))}${tmStat("Vehicle", `${Math.round(v.condition)}%`)}` : ""}${tmStat("Load", `${n0(Parties.poolLoad(p))}/${n0(partyCapacity(state, p))} kg`)}</div>` : ""}
       <div class="tm-status">${status}</div>
       ${canOrder && p.kind !== "convoy" && !commandable(state, p) ? `<div class="small muted"${tip(NO_RADIO)}>No radio contact: it follows its ${p.plan && p.plan.active ? "plan" : "orders"}; new orders through its cards</div>` : ""}
@@ -771,6 +774,8 @@ function pickModal(state, ui) {
   if (!state.autopilot && activeHiveCrawl(state)) return ["hivecrawl", () => hiveCrawlModal(state, ui)]; // a hive crawl's chamber (ui/hivecrawl.js)
   if (state.engagement && !state.autopilot) return ["search", () => engagementModal(state)]; // on autopilot the governor searches (sim/autopilot.js)
   if (state.trade && !state.autopilot) return ["trade", () => tradeWindow(state, ui)]; // ui/tradewindow.js
+  if (ui.volPick) return ["volpick", () => volPickModal(state, ui)]; // ui/volunteers.js: a group's ask of you, choose who goes
+  if (ui.volReq) return ["volreq", () => volRequestModal(state, ui)]; // ui/volunteers.js: ask a group for volunteers
   if (ui.diplo) return ["diplo", () => diplomacyModal(state, ui)]; // ui/diplomacy.js: jobs, market board, world affairs, coalition (over the radio panel)
   if (ui.radioWith != null) return ["radio", () => radioModal(state, ui)];
   if (ui.caravanPlan) return ["caravan", () => caravanPlanModal(state, ui)];
@@ -1116,6 +1121,7 @@ function plannerModal(state, ui) {
   return `<div class="box wide">
     <h1>Plan a trip to ${esc(tileLabel(state, pl.dest))}</h1>
     ${plannerTrips(state, ui) /* ui/trips.js: templates, retreat policy, undo */}
+    ${plannerVolRow(state, pl) /* ui/volunteers.js: ask an ally for volunteers to meet the team */}
     ${plannerJobNote(state, pl.dest) /* ui/diplomacy.js: a job of yours at this target */}
     ${pl.mission === "assault" ? assaultNote(state, pl.dest) : ""}
     ${pl.mission === "occupy" ? occupyNote(state, pl.dest, members) : ""}

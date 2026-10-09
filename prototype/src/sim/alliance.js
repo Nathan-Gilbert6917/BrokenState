@@ -56,6 +56,7 @@ import { jobsDoneFor, activeJobs, makeJob, offerCard as jobOfferCard, autoJobsDa
 import { eraProgress, ERAS, isLate } from "./eras.js";
 import { playerClaims, claimedLand } from "./claims.js";
 import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
+import { volunteerGroupsAt } from "./volunteers.js"; // volunteers with your team: no double count at a hive or an assault
 import { blocOf, blocById, blocMembers, blocTitle, blocJoinsCoalition, blocCarrier, blocVoteWait } from "./blocs.js"; // AI blocs vote on joining together
 
 export const ALLIANCE = {
@@ -243,6 +244,7 @@ export function hiveAllies(state, hive) {
   const out = { fighters: 0, names: [] };
   const groups = new Set(allianceMembers(state).filter((f) => f.bases.some((b) => g.distance(b, hive.tile) <= ALLIANCE.HIVE_RANGE)));
   for (const j of activeJobs(state)) if (j.type === "hive" && j.data.hiveId === hive.id) { const f = factionById(state, j.fid); if (f && f.alive) groups.add(f); }
+  for (const fid of volunteerGroupsAt(state, hive.tile, hive.id)) groups.delete(factionById(state, fid)); // volunteers.js: a group that sent people into the crawl fights there in person, not twice
   const extra = isLate(state) ? ERAS.ALLY_LATE : 0; // eras.js: one more each from the late game
   for (const f of groups) {
     const n = clamp(Math.round(f.pop / 10), 1, 3) + extra;
@@ -259,8 +261,10 @@ export function assaultAllies(state, target, tile) {
   const g = state.grid;
   const out = { fighters: 0, names: [] };
   const extra = isLate(state) ? ERAS.ALLY_LATE : 0;
+  const sent = volunteerGroupsAt(state, tile);
   for (const f of allianceMembers(state)) {
     if (f === target || !f.bases.some((b) => g.distance(b, tile) <= ALLIANCE.HIVE_RANGE)) continue;
+    if (sent.has(f.id)) continue; // volunteers.js: its volunteers are in the assault team itself
     if (relation(state, f, target) >= ALLIANCE.VOTE_REL) continue;
     const n = clamp(Math.round(f.pop / 10), 1, 3) + extra;
     out.fighters += n;

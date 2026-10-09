@@ -53,7 +53,7 @@ export function mixForCals(cals) {
   return Object.keys(out).length ? out : { a_9mm_fmj: 1, a_12ga_buck: 1 };
 }
 const peopleAt = (state, baseId) => (state.survivors || []).filter((s) => s.alive && s.location && s.location.kind === "base" && s.location.baseId === baseId);
-const membersOf = (state, p) => (p.members || []).map((id) => (state.survivors || []).find((s) => s.id === id)).filter((s) => s && s.alive);
+const membersOf = (state, p) => (p.members || []).map((id) => (state.survivors || []).find((s) => s.id === id) || (state.vols ? state.vols.people.find((s) => s.id === id) : null)).filter((s) => s && s.alive); // state.vols: volunteers with the team (volunteers.js)
 // The calibres a base's or a team's guns shoot (the people there and the guns in its armory or cargo).
 /** @param {any} state @param {any} base */
 export const baseCals = (state, base) => gunCals(peopleAt(state, base.id), base.armory || []);

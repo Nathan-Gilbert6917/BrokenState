@@ -185,7 +185,7 @@ export function createFactions(state, count) {
 // f.gear: the eras' better arms of an aggressive group (eras.js gangArms, set every day: 1 in the early game).
 // arsenal.js groupStrength: people × arms × what their arsenal is worth a head against their type's starting kit (1 on
 // day 0), the eras' arms in it (eraArms). A group with no arsenal yet (read before its first day) counts as at the start.
-export const strength = (f) => (f.arsenal ? groupStrength(f) : f.pop * FACTION_TYPES[f.type].arms * (f.gear || 1));
+export const strength = (f) => (f.arsenal ? groupStrength(f) : f.pop * FACTION_TYPES[f.type].arms * (f.gear || 1)) + Math.max(0, f.volAid || 0); // volunteers.js: people lent to them (yours or a friend's) while they are there
 export const isAggressiveType = (f) => FACTION_TYPES[f.type].attitude === "Aggressive";
 
 export function attitude(f) {
@@ -451,7 +451,7 @@ export function groupHiveTarget(state, f) {
   return best;
 }
 // The war party a group sends: its fighters and their strength (by the group's arms, eras.js gear).
-export const groupHiveParty = (f) => { const fighters = Math.max(GROUP_HIVE.MIN, Math.round(f.pop * GROUP_HIVE.SHARE)); return { fighters, power: fighters * FACTION_TYPES[f.type].arms * (f.arsenal ? kitFactor(f) : f.gear || 1) }; }; // arsenal.js: by their kit (the eras' arms in it)
+export const groupHiveParty = (f) => { const fighters = Math.max(GROUP_HIVE.MIN, Math.round(f.pop * GROUP_HIVE.SHARE)); return { fighters, power: fighters * FACTION_TYPES[f.type].arms * (f.arsenal ? kitFactor(f) : f.gear || 1) + Math.max(0, f.volAid || 0) }; }; // volAid: volunteers lent to them go on the crawl (volunteers.js) // arsenal.js: by their kit (the eras' arms in it)
 
 // One group's day against the hives: on its day (f.hiveDay; EVERY days apart), with a hive in reach and the people
 // for it, a war party goes ODDS of the time by type. Resolved by the numbers the same day (see GROUP_HIVE); the
