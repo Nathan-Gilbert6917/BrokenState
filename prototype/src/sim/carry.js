@@ -397,7 +397,9 @@ export function pickUpGround(state, p, i, qty = Infinity) {
       n = addMeat(state, p, Math.floor(want + EPS), worm);
       if (worm > 0) it.worm = Math.max(0, it.worm - worm * (n / Math.max(EPS, Math.floor(want + EPS))));
     } else {
-      n = Math.min(want, cargoRoom(state, p) / unitKg(k));
+      const fit = cargoRoom(state, p) / unitKg(k);
+      n = Math.min(want, Math.floor(fit + EPS)); // whole units, but a last part-unit (spoiled food) goes when it fits
+      if (want - n < 1 && want <= fit + EPS) n = want;
       if (n > EPS) {
         p.cargo = p.cargo || { supplies: {}, gear: [] };
         p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + n;

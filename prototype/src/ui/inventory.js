@@ -34,6 +34,7 @@ import { rigOf, pouchesOf, isCarrier, insertsOf } from "../sim/inventory.js"; //
 import { POUCH_NAMES, POUCH_ICON, MAGAZINES } from "../sim/data-kit.js";
 import { battleKg, bandFor } from "../sim/carrykit.js"; // the battle load band (R17)
 import { typeName } from "../sim/rounds.js";
+import { holdSection } from "./carry.js"; // the team's supplies this person carries (pockets, pack, arms), the ground
 import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -344,7 +345,7 @@ export function inventoryModal(state, ui) {
     ${ui.invMsg ? `<div class="result small">${esc(ui.invMsg)}</div>` : ""}
     ${readonly ? `<div class="small warn">${esc(s.name.split(" ")[0])} is out of reach: nothing can be changed.</div>` : ""}
     <div class="invcols">
-      <div class="invcol">${whoTabs(state, ui, people, s.id)}${body}</div>
+      <div class="invcol">${whoTabs(state, ui, people, s.id)}${body}${readonly ? "" : holdSection(state, ui, s)}</div>
       <div class="invcol">${readonly ? "" : storageBox(state, ui, place, s)}</div>
     </div>
     ${selBar(state, ui, place)}

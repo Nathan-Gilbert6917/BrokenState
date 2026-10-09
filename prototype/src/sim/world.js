@@ -23,6 +23,7 @@ import { ensureHives, hivesSecured } from "./hives.js";
 import { growthAt, growthInfo } from "./hivetech.js";
 import { mergeMix } from "./zombietypes.js";
 import { basesDaily, routesDaily, deathSitesDaily } from "./economy.js";
+import { groundDaily } from "./carry.js"; // food left on the ground spoils
 import { addBuilding, constructionHour, assignStations } from "./buildings.js";
 import { createVehicle, vehiclesDaily, garageHour, factionVehiclesDaily } from "./vehicles.js";
 import { updateLiveMarkers, mergeSpots } from "./markers.js";
@@ -826,6 +827,7 @@ export function tickHour(state) {
     routesDaily(state);
     supplyDaily(state);
     deathSitesDaily(state);
+    groundDaily(state); // carry.js: food on the ground (dropped cargo, the dead's rations) spoils
     walkingDaily(state); // carriers.js: the walking dead drift a tile; a body with the worm left unburied at a base gets up
     groupJailsDaily(state); // groupjails.js: the groups' prisoners work, escape, are ransomed, swapped, sold or turned
     captivesDaily(state);
