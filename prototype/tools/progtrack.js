@@ -87,6 +87,11 @@ export const CONTENT = [
   ["group fell", /has collapsed|is no more|has fallen$/],
   ["tier-2 growth rumour", /growing something new\. An? (brute pit|spitter sac|ossuary|sinew scaffold|worm pit|egg cistern|dread hollow)/],
   ["tier-3/4 growth rumour", /growing something new\. An? (screamer spire|crawler burrow|wallbreaker den|shepherd's fold|mutation vat)/i],
+  // The hive crawl (hivecrawl.js, since 2026-10-09): trips in, the core fights, a team lost inside, the AI groups' crawls.
+  ["hive crawl trip", / crawls into /],
+  ["hive core won (Hivemind killed)", /The Hivemind bursts/],
+  ["hive core lost", /fell back from the core|drove the team back from the core/],
+  ["crawl team lost inside", /^(Killed in the core\. )?The team died in /],
 ];
 
 const r1 = (x) => Math.round(x * 10) / 10;
@@ -99,6 +104,11 @@ export function progTracker(state, deathTotal = () => 0) {
   const grownTier = {}; // growth ids seen grown, by tier
   let lastYear = 0, lastDay = 0;
   const yourHiveKills = { n: 0 };
+  // The hive crawl (hivecrawl.js p.hiveCrawl): every crawl of your teams, by the hive's tier when it went in; the
+  // deepest chamber reached (and the den's depth), the core fights won and lost.
+  const crawl = { trips: 0, deepest: 0, depth: 0, coreWon: 0, coreLost: 0, lostInside: 0, byTier: {} };
+  const live = new Map(); // party id -> { tier, deepest, depth }
+  const tierRow = (t) => (crawl.byTier[t] = crawl.byTier[t] || { trips: 0, deepest: 0, coreWon: 0, coreLost: 0 });
 
   const snapshot = (d) => {
     const gp = goalsProgress(state);
@@ -163,6 +173,33 @@ export function progTracker(state, deathTotal = () => 0) {
 
   return {
     hour(fresh) {
+      // Crawls under way: noted when they start, their deepest chamber kept up to date.
+      let anyTier = null;
+      for (const p of state.parties) {
+        const c = p.owner === "player" && p.hiveCrawl;
+        if (!c) continue;
+        let e = live.get(p.id);
+        if (!e || e.hiveId !== c.hiveId || e.started !== c.started) {
+          const hv = (state.hives || []).find((h) => h.id === c.hiveId);
+          let tier = 0, depth = 0;
+          try { tier = hv ? hiveTier(state, hv) : 0; depth = hv && hv.den ? hv.den.depth || 0 : 0; } catch { /* the crawl module mid-change */ }
+          e = { hiveId: c.hiveId, started: c.started, tier, deepest: 0, depth };
+          live.set(p.id, e);
+          crawl.trips++; tierRow(tier).trips++;
+          if (first.crawl == null) first.crawl = day(state);
+        }
+        e.deepest = Math.max(e.deepest, c.deepest || 0);
+        crawl.deepest = Math.max(crawl.deepest, e.deepest);
+        crawl.depth = Math.max(crawl.depth, e.depth);
+        tierRow(e.tier).deepest = Math.max(tierRow(e.tier).deepest, e.deepest);
+        anyTier = e.tier;
+      }
+      for (const [id] of live) if (!state.parties.some((p) => p.id === id && p.hiveCrawl)) live.delete(id);
+      for (const l of fresh) {
+        if (/The Hivemind bursts/.test(l.text)) { crawl.coreWon++; tierRow(anyTier ?? 0).coreWon++; if (first.coreWon == null) first.coreWon = day(state); }
+        else if (/fell back from the core|drove the team back from the core/.test(l.text)) { crawl.coreLost++; tierRow(anyTier ?? 0).coreLost++; }
+        if (/^(Killed in the core\. )?The team died in /.test(l.text)) crawl.lostInside++;
+      }
       for (const l of fresh) {
         const t = l.text;
         for (const [k, re] of CONTENT) if (re.test(t)) content[k]++;
@@ -188,7 +225,7 @@ export function progTracker(state, deathTotal = () => 0) {
         for (const [t, ids] of Object.entries(grownTier)) counters[`growths.tier${t}`] = ids.size;
       } catch { /* a module mid-change */ }
       return {
-        offset: eraOffsetOf(state), years, first, markers: { mid: first.MID ?? null, end: first.END ?? null }, content, counters,
+        offset: eraOffsetOf(state), crawl, years, first, markers: { mid: first.MID ?? null, end: first.END ?? null }, content, counters,
         built: [...built].sort(), neverBuilt: Object.keys(BUILDINGS).filter((k) => !built.has(k)), yourHiveKills: yourHiveKills.n,
       };
     },

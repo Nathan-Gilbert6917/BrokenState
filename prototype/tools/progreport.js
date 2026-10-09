@@ -52,7 +52,7 @@ const MILESTONES = [
   ["midEra", "mid era begins"], ["secondBase", "second base"], ["outpost", "first outpost founded"], ["coalition", "coalition founded"], ["member", "first member"],
   ["yourHive", "first hive destroyed by you"], ["anyHiveDestroyed", "first hive destroyed (anyone)"], ["conquest", "first base taken"], ["secondVehicle", "a second vehicle"],
   ["land25", "land 25%"], ["land40", "land 40%"], ["land50", "land over 50%"], ["tier2growth", "first tier-2 growth"], ["tier3growth", "first tier-3 growth"], ["tier4growth", "first tier-4 growth"],
-  ["wallbreaker", "first Wallbreaker"], ["lateEra", "late era begins"], ["winOpen", "victories open"], ["accordClock", "Accord clock starts"], ["clearClock", "containment clock starts"], ["burnout", "outbreak burns out"],
+  ["wallbreaker", "first Wallbreaker"], ["crawl", "first hive crawl"], ["coreWon", "first Hivemind killed"], ["lateEra", "late era begins"], ["winOpen", "victories open"], ["accordClock", "Accord clock starts"], ["clearClock", "containment clock starts"], ["burnout", "outbreak burns out"],
   ["MID", "MID GAME (marker)"], ["END", "END GAME (marker)"],
 ];
 
@@ -113,6 +113,16 @@ function report(results, label) {
   const never = new Set();
   for (const r of ok) for (const b of r.prog.neverBuilt || []) if (!built[b]) never.add(b);
   console.log(`\nBuildings: never built in any game: ${[...never].join(", ") || "none"}; built in under 15% of games: ${Object.entries(built).filter(([, v]) => v / ok.length < 0.15).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}`);
+  // The hive crawl (progtrack.js crawl, since 2026-10-09).
+  const cr = ok.filter((r) => r.prog.crawl);
+  if (cr.length) {
+    const sum = (f) => cr.reduce((a, r) => a + f(r.prog.crawl), 0);
+    const tiers = {};
+    for (const r of cr) for (const [t, x] of Object.entries(r.prog.crawl.byTier || {})) { const o = (tiers[t] = tiers[t] || { games: 0, trips: 0, deepest: 0, coreWon: 0, coreLost: 0 }); o.games++; o.trips += x.trips; o.deepest = Math.max(o.deepest, x.deepest); o.coreWon += x.coreWon; o.coreLost += x.coreLost; }
+    console.log(`
+Hive crawl: ${cr.filter((r) => r.prog.crawl.trips).length}/${cr.length} games crawled; ${sum((c) => c.trips)} trips, cores won ${sum((c) => c.coreWon)} / lost ${sum((c) => c.coreLost)}, teams lost inside ${sum((c) => c.lostInside)}; deepest chamber reached (median of games that crawled) ${q(cr.filter((r) => r.prog.crawl.trips).map((r) => r.prog.crawl.deepest), 0.5) ?? "-"}, deepest den met ${Math.max(0, ...cr.map((r) => r.prog.crawl.depth || 0))}`);
+    for (const t of Object.keys(tiers).sort()) console.log(`  tier ${t}: ${tiers[t].games} games, ${tiers[t].trips} trips, deepest ${tiers[t].deepest}, cores won ${tiers[t].coreWon} / lost ${tiers[t].coreLost}`);
+  }
   // Crashes and the tracker's own errors.
   const crashes = results.filter((r) => r.outcome === "crash");
   if (crashes.length) { console.log(`\nCRASHES (${crashes.length}):`); for (const r of crashes) console.log(`  seed ${r.seed} ${r.mode}/${r.style} ${r.size} g${r.groups} day ${r.crashDay ?? r.day}: ${r.error}`); }
