@@ -35,7 +35,7 @@ import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty } from "./
 import { partyFuel, useFuel } from "./vehicles.js";
 import { registerBattleLayout, registerBattleSize, HIVE_W, HIVE_H } from "./combat.js";
 import { bossUnit, placeUnitRight } from "./defences.js";
-import { startHiveCrawl, denOf, crawlEstimate } from "./hivecrawl.js"; // the hive crawl: from the mouth to the Hivemind in the core
+import { startHiveCrawl, denOf, crawlEstimate, crawlRecText } from "./hivecrawl.js"; // the hive crawl: from the mouth to the Hivemind in the core
 export { assaultHive } from "./hivecrawl.js"; // the core fight (the old storm's entry point: the tools call it)
 import { HIVE, BOSS_NAMES, GROWTHS, ZTYPES } from "./hiveconst.js";
 import { broodGrowth, hiveCap, hordePaceOpen, noteHorde, rampDay, hiveStarve } from "./eras.js";
@@ -595,7 +595,7 @@ function hiveCard(state, p, hive) {
   const power = Math.round(partyMembers(state, p).reduce((a, m) => a + combatPower(m), 0));
   const gone = (st) => !st.hives.includes(hive);
   const moved = (st) => { awaitOrders(st, p, "The hive is already gone.", { failed: true }); return "Nothing is left to fight."; };
-  const been = hive.denMem && hive.denMem.visits ? ` Teams have been inside ${hive.denMem.visits} time${hive.denMem.visits === 1 ? "" : "s"}: the chambers cleared lately stay clear for a while.` : "";
+  const been = (hive.denMem && hive.denMem.visits ? ` Teams have been inside ${hive.denMem.visits} time${hive.denMem.visits === 1 ? "" : "s"}: the chambers cleared lately stay clear for a while.` : "") + (hive.crawlRec ? ` Your crawls so far: ${crawlRecText(state, hive)}.` : ""); // hivecrawl.js: the crawl's record
   return {
     title: `The hive: ${hive.name}`,
     where: tileLabel(state, hive.tile),
