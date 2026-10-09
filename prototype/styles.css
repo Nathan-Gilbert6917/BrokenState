@@ -359,42 +359,43 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 .islot.stack .iname { font-weight: 600; }
 .islot.still, .islot.still .itile { cursor: default; }
 .islot.still:hover { border-color: var(--line); }
-.smove { position: relative; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 32px rgba(0,0,0,0.55); padding: 0.6rem 0.8rem 0.65rem; display: grid; gap: 0.45rem 1rem; align-items: center; font-size: 0.85rem; }
-.smove.dock { position: sticky; bottom: 0; z-index: 3; margin-top: 0.7rem; grid-template-columns: minmax(11rem, 15rem) minmax(15rem, 1fr) minmax(13rem, 17rem); grid-template-areas: "head dests facts" "route body go" "hint hint hint"; }
-.smove.pop { position: fixed; z-index: 40; width: 19.5rem; grid-template-columns: 1fr; grid-template-areas: "head" "route" "body" "facts" "go" "hint"; }
-.smhead { grid-area: head; display: flex; gap: 0.55rem; align-items: center; min-width: 0; padding-right: 1.6rem; }
-.smico { flex: none; font-size: 1.45rem; width: 2.4rem; height: 2.4rem; display: grid; place-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+.smove { position: relative; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 32px rgba(0,0,0,0.55); padding: 0.55rem 0.75rem 0.6rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.85rem; }
+.smove.dock { position: sticky; bottom: 0; z-index: 3; margin-top: 0.7rem; }
+.smove.pop { position: fixed; z-index: 40; width: 20rem; }
+.smtop { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1.1rem; padding-right: 1.9rem; }
+.smhead { flex: none; display: flex; gap: 0.55rem; align-items: center; min-width: 0; max-width: 100%; }
+.smico { flex: none; font-size: 1.3rem; width: 2.2rem; height: 2.2rem; display: grid; place-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
 .smtitle { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .smtitle b { font-size: 1rem; }
 .smtitle span { font-size: 0.74rem; }
 .smx { position: absolute; top: 0.4rem; right: 0.45rem; padding: 0 0.4rem; line-height: 1.35; }
-.smroute { grid-area: route; display: flex; align-items: center; gap: 0.35rem; min-width: 0; font-size: 0.8rem; }
-.smfrom, .smto { padding: 0.12rem 0.55rem; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.smto { border-color: var(--accent); color: var(--accent); }
+.smroute { flex: 1 1 14rem; display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; min-width: 0; font-size: 0.8rem; }
+.smfrom, span.smto { padding: 0.15rem 0.6rem; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+span.smto { border-color: var(--accent); color: var(--accent); }
 .smarrow { color: var(--muted); flex: none; }
-.smdests { grid-area: dests; display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.smdest { display: flex; flex-direction: column; align-items: flex-start; padding: 0.18rem 0.6rem; font-size: 0.8rem; line-height: 1.15; }
+.smdests { display: contents; }
+.smdest { display: inline-flex; align-items: baseline; gap: 0.35rem; padding: 0.15rem 0.6rem; border-radius: 99px; font-size: 0.8rem; line-height: 1.2; }
 .smdest small { font-size: 0.68rem; color: var(--muted); }
-.smdest.active { background: #4a3816; border-color: var(--accent); }
+.smdest.active { background: #4a3816; border-color: var(--accent); color: var(--accent); }
 .smdest.active small { color: var(--text); }
-.smbody { grid-area: body; min-width: 0; }
-.smamt { display: flex; align-items: center; gap: 0.4rem; }
+.smbody { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; }
+.smamt { flex: 1 1 15rem; display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
 .smstep { width: 1.7rem; padding: 0.1rem 0; font-weight: 600; }
-.smnum { width: 4.4rem; text-align: right; font-weight: 600; }
-.smrange { flex: 1; min-width: 6rem; -webkit-appearance: none; appearance: none; height: 0.55rem; border-radius: 99px; border: none; padding: 0; outline: none; cursor: pointer; }
+.smnum { width: 4.2rem; text-align: right; font-weight: 600; }
+.smrange { flex: 1; min-width: 5rem; -webkit-appearance: none; appearance: none; height: 0.55rem; border-radius: 99px; border: none; padding: 0; outline: none; cursor: pointer; }
 .smrange::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--text); border: 2px solid var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,0.6); }
 .smrange::-moz-range-thumb { width: 1rem; height: 1rem; border-radius: 50%; background: var(--text); border: 2px solid var(--accent); }
 .smrange:focus-visible { box-shadow: 0 0 0 2px var(--info); }
-.smchips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.4rem; }
+.smchips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .smchip small { color: var(--muted); margin-left: 0.15rem; }
 .smchip.active small { color: var(--text); }
-.smfacts { grid-area: facts; display: flex; flex-direction: column; gap: 0.12rem; font-size: 0.8rem; }
+.smfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; border-top: 1px solid var(--line); padding-top: 0.45rem; }
+.smfacts { flex: 1 1 11rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.7rem; font-size: 0.8rem; }
 .smweight b { font-size: 1.05rem; }
-.smgo { grid-area: go; display: flex; align-items: center; gap: 0.5rem; }
-.smbtn { flex: 1; min-width: 0; font-weight: 600; padding: 0.45rem 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.smgo { flex: 1 1 15rem; display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.smbtn { flex: 1; min-width: 0; font-weight: 600; padding: 0.42rem 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .smkeys { flex: none; font-size: 0.7rem; }
-.smhint { grid-area: hint; border-top: 1px solid var(--line); padding-top: 0.3rem; }
-@media (max-width: 1000px) { .smove.dock { grid-template-columns: 1fr; grid-template-areas: "head" "route" "dests" "body" "facts" "go" "hint"; } }
+.smhint { margin-top: -0.15rem; font-size: 0.75rem; }
 
 /* Dev tools panel (ui/devtools.js) */
 #devpanel { position: absolute; right: 0.6rem; top: 0.6rem; width: min(26rem, calc(100% - 1.2rem)); max-height: 70%; overflow-y: auto; overflow-x: hidden; background: rgba(20,22,26,0.92); border: 1px solid #7a5cff; border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 0.8rem; z-index: 5; }

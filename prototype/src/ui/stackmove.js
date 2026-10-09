@@ -103,24 +103,22 @@ export function stackPanel(state, ui, ns) {
       <button class="mini smstep" data-action="sm-qty" data-v="inc" ${qty >= have ? "disabled" : ""}${tip("One more")}>+</button>
       <input type="number" class="smnum" min="1" max="${have}" step="1" value="${qty}" data-action="sm-qtyset"${tip(`Type how many (1 to ${have}); Enter moves them`)}>
     </div>` : "";
-  const dests = !pop && m.dests.length > 1 ? `<div class="smdests" role="radiogroup">${m.dests.map((d) => {
+  const dests = !pop && m.dests.length > 1 ? `<div class="smdests" role="radiogroup" aria-label="Where it goes">${m.dests.map((d) => {
     const f = Math.max(0, Math.min(have, Math.floor(d.fit || 0)));
-    return `<button class="smdest${d.id === dest.id ? " active" : ""}" data-action="sm-to" data-to="${esc(d.id)}" role="radio" aria-checked="${d.id === dest.id}"${tip(f ? `${f} of the ${have} fit in ${d.label} now` : d.err || `None fit in ${d.label} now`)}><span>${esc(d.label)}</span><small class="${f ? "" : "danger"}">${f ? (f >= have ? "all fit" : `${f} fit`) : "full"}</small></button>`;
+    return `<button class="smdest${d.id === dest.id ? " active smto" : ""}" data-action="sm-to" data-to="${esc(d.id)}" role="radio" aria-checked="${d.id === dest.id}"${tip(f ? `${f} of the ${have} fit in ${d.label} now` : d.err || `None fit in ${d.label} now`)}><span>${esc(d.label)}</span><small class="${f ? "" : "danger"}">${f ? (f >= have ? "all fit" : `${f} fit`) : "full"}</small></button>`;
   }).join("")}</div>` : "";
   const fl = fitLine(qty, fit, dest.label, unit);
-  const facts = `<div class="smfacts"><span class="smweight"${tip(`${unit} kg each`)}>⚖ <b class="smkg">${kg(qty * unit)}</b> kg</span><span class="smfit ${fit <= 0 ? "danger" : qty > fit ? "warn" : "good"}">${esc(fl || dest.err || `None fit in ${dest.label} now`)}</span></div>`;
-  const style = pop ? ` style="left:min(${Math.round(pop.x || 0)}px, calc(100vw - 20rem));top:min(${Math.round(pop.y || 0)}px, calc(100vh - 17rem))"` : "";
+  const facts = `<div class="smfacts"><span class="smweight"${tip(`What moves weighs (${unit} kg each)`)}><b class="smkg">${kg((fit > 0 ? n : qty) * unit)}</b> kg</span><span class="smfit ${fit <= 0 ? "danger" : qty > fit ? "warn" : "good"}">${esc(fl || dest.err || `None fit in ${dest.label} now`)}</span></div>`;
+  const style = pop ? ` style="left:clamp(0.5rem, ${Math.round(pop.x || 0)}px, calc(100vw - 20.5rem));top:clamp(0.5rem, ${Math.round(pop.y || 0)}px, calc(100vh - 16rem))"` : ""; // kept on screen
   return `<div class="smove ${pop ? "pop" : "dock"}" data-smove data-have="${have}" data-fit="${fit}" data-unit="${unit}" data-name="${esc(name)}" data-to="${to}" data-verb="${esc(verb)}" role="dialog" aria-label="How many to move"${style}>
-    <div class="smhead">
+    <div class="smtop"><div class="smhead">
       <span class="smico">${supplyIcon(m.key)}</span>
       <div class="smtitle"><b>${esc(r.title)}</b><span class="muted">${have} in the stack · ${unit} kg each</span></div>
-      <button class="mini smx" data-action="sm-cancel"${tip("Cancel (Esc)")}>✕</button>
     </div>
-    <div class="smroute"><span class="smfrom"${tip("Where the stack is now")}>${esc(m.from)}</span><span class="smarrow">→</span><span class="smto"${tip("Where it goes")}>${to}</span></div>
-    ${dests}
+    <div class="smroute"><span class="smfrom"${tip("Where the stack is now")}>${esc(m.from)}</span><span class="smarrow">→</span>${dests || `<span class="smto"${tip("Where it goes")}>${to}</span>`}</div></div>
+    <button class="mini smx" data-action="sm-cancel"${tip("Cancel (Esc)")}>✕</button>
     <div class="smbody">${amount}${chips}</div>
-    ${facts}
-    <div class="smgo"><button class="primary smbtn" data-action="sm-go" ${n > 0 ? "" : "disabled"}${tip(n > 0 ? "Enter" : dest.err || "Nothing fits there now")}>${esc(goLabel(verb, n, name, dest.label))}</button><span class="smkeys muted">Enter ↵ · Esc</span></div>
+    <div class="smfoot">${facts}<div class="smgo"><button class="primary smbtn" data-action="sm-go" ${n > 0 ? "" : "disabled"}${tip(n > 0 ? "Enter" : dest.err || "Nothing fits there now")}>${esc(goLabel(verb, n, name, dest.label))}</button><span class="smkeys muted">Enter ↵ · Esc</span></div></div>
     ${m.hint ? `<div class="smhint small muted">${m.hint}</div>` : ""}
   </div>`;
 }
@@ -180,7 +178,7 @@ export function stackInput(el) {
   const range = root.querySelector(".smrange");
   if (range) range.style.background = trackBg(q, fit, have);
   const k = root.querySelector(".smkg");
-  if (k) k.textContent = kg(q * unit);
+  if (k) k.textContent = kg((fit > 0 ? Math.min(q, fit) : q) * unit); // what moves
   const f = root.querySelector(".smfit");
   const fl = fitLine(q, fit, D.to, unit);
   if (f && fl) { f.textContent = fl; f.className = `smfit ${q > fit ? "warn" : "good"}`; }

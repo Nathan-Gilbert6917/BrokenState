@@ -39,7 +39,7 @@ console.log("The panel: amount, weight, what fits, destinations");
   openStack(ui, "t");
   const w = SUPPLIES.food.weight;
   let h = stackPanel(st, ui, "t");
-  check(/class="smove dock"/.test(h) && /The shelf/.test(h) && /class="smto"[^>]*>Cargo</.test(h), "docked, with the stack's place and its destination in words");
+  check(/class="smove dock"/.test(h) && /The shelf/.test(h) && /active smto"[^>]*><span>Cargo</.test(h), "docked, with the stack's place and its destination in words");
   check(chosenQty(st, ui, "t") === 14 && /value="14"/.test(h), `default: what fits (14 of 20): ${chosenQty(st, ui, "t")}`);
   check(h.includes(`<b class="smkg">${kg1(14 * w)}</b> kg`), `the weight of the amount: ${kg1(14 * w)} kg`);
   check(/14 fit in Cargo now/.test(h) && /class="smfit good"/.test(h), "how many fit at the destination");
@@ -65,7 +65,7 @@ console.log("The panel: amount, weight, what fits, destinations");
   check(chosenQty(st, ui, "t") === 14, "What fits: 14");
   STACK_ACTIONS["sm-to"](st, ui, { to: "b" });
   h = stackPanel(st, ui, "t");
-  check(/class="smto"[^>]*>Pack</.test(h) && /data-action="sm-go" disabled/.test(h) && /Nothing fits there/.test(h) && /The pack is full/.test(h), "picking a full destination: the button is off and says why");
+  check(/active smto"[^>]*><span>Pack</.test(h) && /data-action="sm-go" disabled/.test(h) && /Nothing fits there/.test(h) && /The pack is full/.test(h), "picking a full destination: the button is off and says why");
   STACK_ACTIONS["sm-to"](st, ui, { to: "a" });
   STACK_CHANGE["sm-qtyset"](st, ui, { value: "6" });
   check(stackKey(st, ui, key("Enter")) && moved.length === 1 && moved[0][0] === "a" && moved[0][1] === 6 && !ui.stack && cancelled === 1, `Enter moves the amount chosen to the destination (${JSON.stringify(moved[0])}), and the panel closes`);
@@ -80,7 +80,7 @@ console.log("The panel: amount, weight, what fits, destinations");
   check(!stackKey(st, ui, key("Enter")), "no stack open: Enter is not taken");
   openStack(ui, "t", { to: "a", pop: { x: 120, y: 80 } });
   h = stackPanel(st, ui, "t");
-  check(/class="smove pop"/.test(h) && /left:min\(120px/.test(h) && /top:min\(80px/.test(h) && !/data-action="sm-to"/.test(h), "a drop: a popover at the drop, with the one destination");
+  check(/class="smove pop"/.test(h) && /left:clamp\(0.5rem, 120px/.test(h) && /top:clamp\(0.5rem, 80px/.test(h) && !/data-action="sm-to"/.test(h), "a drop: a popover at the drop, with the one destination");
   check(stackPanel(st, ui, "other") === "", "another screen's panel stays shut");
   T.have = 1;
   h = stackPanel(st, ui, "t");
@@ -93,7 +93,7 @@ console.log("The panel: amount, weight, what fits, destinations");
   const other = node();
   const root = { dataset: { have: "20", fit: "14", unit: String(w), name: "food", to: "Cargo", verb: "Move" }, querySelector: (q) => els[q] || null, querySelectorAll: (q) => (q.includes("sm-qtyset") ? [other] : []) };
   const range = { dataset: { action: "sm-qtyset" }, value: "17", closest: () => root };
-  check(stackInput(range) && other.value === "17" && els[".smkg"].textContent === kg1(17 * w) && /Only 14 fit/.test(els[".smfit"].textContent) && els[".smbtn"].textContent === "Move 14 food → Cargo" && /linear-gradient/.test(els[".smrange"].style.background), "the slider dragged to 17: number box, weight, warning and button follow");
+  check(stackInput(range) && other.value === "17" && els[".smkg"].textContent === kg1(14 * w) && /Only 14 fit/.test(els[".smfit"].textContent) && els[".smbtn"].textContent === "Move 14 food → Cargo" && /linear-gradient/.test(els[".smrange"].style.background), "the slider dragged to 17: number box, weight, warning and button follow");
 }
 
 // ---------- a raid: crew of 3 on a town site, no enemies ----------
