@@ -43,7 +43,6 @@ const ISO = await import("../src/ui/isoview.js");
 const UI = await import("../src/ui/combat.js");
 ISO.setIsoCanvas(cvs);
 UI.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, getContext: () => silent() });
-UI.setBattleView("iso");
 
 const forced = (b, v, fn) => { const c = b.rng.chance; b.rng.chance = () => v; try { return fn(); } finally { b.rng.chance = c; } };
 const arm = (u, w = "pistol") => { u.weapon = w; u.weaponName = w; u.cd = 0; loadMag(u); };
