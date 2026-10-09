@@ -385,8 +385,9 @@ section("Long runs with the autopilot");
 {
   // Whether the groups rob a caravan in one world is luck (one seed went 3 robberies → 0 when an unrelated fight's dice
   // changed), so: 8 worlds (seed + 58 … seed + 65) of RUN_DAYS each, and the groups must rob caravans in at least
-  // ROB_BAR of them. Measured on seeds 100–107 at 120 days: 5 of 8 (at 200 days: 7 of 8).
-  const RUN_DAYS = 120, SEEDS = 8, ROB_BAR = 4;
+  // ROB_BAR of them. Measured on seeds 100–107 at 120 days: 5 of 8 on dev f6ce385, 3 of 8 with the balance batch in
+  // (a bar of 4 sat on the edge of the dice); at 200 days 7 of 8, so the runs are 200 days long.
+  const RUN_DAYS = 200, SEEDS = 8, ROB_BAR = 4;
   let robbing = 0, bad = false;
   for (let i = 0; i < SEEDS; i++) {
     const st = world(seed + 58 + i);
