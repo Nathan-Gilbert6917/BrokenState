@@ -44,7 +44,8 @@ import { survivorById } from "./world.js";
 import { partyMembers, cargoRoom, poolLoad, unitsThatFit } from "./parties.js";
 import { partyVehicle, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "./load.js";
-import { ensureInv, packOf, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES } from "./inventory.js";
+import { ensureInv, packOf, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried } from "./inventory.js";
+import { gunLeavesTeam, unloadInto } from "./gunload.js"; // the rounds in a gun go with it (call-time only: safe in the import cycle)
 
 const EPS = 1e-9;
 export const HAUL = { free: 8, per: 12 }; // kg a turn for free, then kg an action
@@ -405,6 +406,10 @@ function moveGear(state, b, u, from, to) {
     const o = ownerOf(b, loc), sv = survivorById(state, loc.id);
     if (o && sv) refit(state, b, o, sv);
   }
+  // gunload.js: a gun carried into the fight that leaves your people unfired goes out loaded (its rounds with it).
+  const team = (l) => l && (l.o === "s" || l.o === "haul");
+  if (team(from) && !team(to)) gunLeavesTeam(b, item);
+  if (cur && team(to) && curTo && !team(curTo)) gunLeavesTeam(b, cur);
   return cur ? `${item.name} → ${where(state, b, to)}; the ${cur.name} → ${where(state, b, curTo)}.` : `${item.name} → ${where(state, b, to)}.`;
 }
 
@@ -567,6 +572,9 @@ export function raidHome(state, b, homeUids) {
     for (const k of Object.keys(h.sup)) h.sup[k] = 0;
     h.gear.length = 0;
   }
+  // gunload.js: the guns that came home with rounds in them are unloaded into the team's cargo.
+  if (p) p.cargo = p.cargo || { supplies: {}, gear: [] };
+  if (p) unloadInto(null, [...b.units.filter((u) => u.side === "player" && homeUids.has(u.id)).flatMap((u) => { const s = survivorById(state, u.sid); return s && s.gear ? allCarried(s) : []; }), ...(p.cargo.gear || [])], p.cargo.supplies || (p.cargo.supplies = {}));
   // The piles nobody picked up stay behind: they were found, but nobody brought them home.
   for (const c of R.containers) {
     if (!c.drop || !c.contents) continue;

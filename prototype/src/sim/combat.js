@@ -98,7 +98,8 @@ import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear,
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
-import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js"; // bodies searched where they fell, things on the ground
+import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
+import { gunOut, gunIn, enemyGunLoaded } from "./gunload.js"; // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -2340,6 +2341,7 @@ export function playerUnit(b, s) {
     scouting: skill(s, "scouting"), armLoad: fielded.reduce((a, [slot, it]) => a + (slot !== "weapon" && GEAR[it.key] ? GEAR[it.key].power || 0 : 0), 0), // escape checks (soundRetreat)
     boxes: boxesOf(s), // ammo.js: the boxes of rounds they carry (pockets, pack): their gun draws on them first
     gearRisk: key === "fists" ? 0 : eff.damageChance, item: key === "fists" ? null : item,
+    startGuns: allCarried(s).filter((it) => WEAPONS[it.key] && calOf(it.key)), // gunload.js: every gun carried starts the fight loaded
     wormed: hasWorm(s), wornArmor: armorMult(s), // carriers.js: the worm in them gets them up if they die; the risen wear what they wore
     ap: 2, aware: true, x: 0, y: 0, f: 0,
   };
@@ -2368,15 +2370,18 @@ export function refitUnit(b, u, s) {
   u.medicine += f.medicine - (u.fit.medicine ?? f.medicine); // a med kit in the off hand (crafting.js medKitBonus)
   if (f.medKit !== u.medKit) { u.medKit = f.medKit; u.kitBonus = f.kitBonus; u.kitLeft = f.kitLeft; }
   u.fit = { aim: f.aim, dmgMult: f.dmgMult, armor: f.armor, medicine: f.medicine };
-  const held = u.weapon, rounds = magIn(u), heldLoad = u.load;
-  const keepMags = u.weapon === f.weapon && tracksMags(u);
+  const held = u.weapon, rounds = magIn(u), heldLoad = u.load, heldItem = u.item;
+  const swapped = (heldItem || null) !== (f.item || null); // another gun in the hands (gunload.js): what was in the old one goes with it
+  if (swapped && heldItem) gunOut(b, u, heldItem);
+  const keepMags = u.weapon === f.weapon && tracksMags(u) && !swapped;
   for (const k of ["weapon", "weaponName", "item", "gearRisk", "fielded", "armLoad", "gm", "gmWeapon", "load", "boxes", "loadBand", "dash"]) u[k] = f[k];
   if (!keepMags) for (const k of ["mags", "magsW", "clips", "magMode"]) u[k] = f[k]; // another gun: its own magazines (mags.js)
   if (u.mob0 == null && u.dragMob == null) u.mob = f.mob; // the load band's mob (not while carrying or dragging someone)
-  if (u.weapon === held && heldLoad) u.load = heldLoad; // the same gun keeps the rounds it has loaded
-  // The magazine: the same kind of gun keeps what was loaded (up to its capacity now, a magazine attachment may have
-  // changed); another gun is taken up empty (Reload, 1 action), so swapping guns never hands out a free full one.
-  loadMag(u, u.weapon === held ? rounds : 0);
+  if (u.weapon === held && heldLoad && !swapped) u.load = heldLoad; // the same gun keeps the rounds it has loaded
+  // The magazine: the same gun keeps what was loaded (up to its capacity now, a magazine attachment may have changed);
+  // another gun has what is in it (gunload.js gunIn: what it held when it was put down, loaded if it was carried into
+  // the fight, else empty: Reload), so swapping guns never hands out a free full one.
+  loadMag(u, swapped ? gunIn(b, u, u.item) : u.weapon === held ? rounds : 0);
   if (u.spearOut && u.weapon === u.spearOut.key) { delete u.spearOut; unarm(b, u, s); } // its spear still lies where it was thrown
   if (u.weapon !== held) u.jam = null; // another gun: the jammed one is put away
   fitArmour(u, s); // armour.js: the pieces worn now
@@ -2670,7 +2675,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     t.dead = true;
     t.killedBy = by ? by.side : null;
     if (by && by.sid != null) { const k = (b.killsBy || (b.killsBy = {}))[by.sid] || (b.killsBy[by.sid] = { z: 0, h: 0 }); k[t.kind === "zombie" ? "z" : "h"]++; } // service record (relations.js)
-    if (b.raid && t.kind === "human") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, f: t.f || 0, kind: "body", area: null, searched: false, kit: t.kit, weapon: t.weapon, label: `${t.name}'s body`, uid: t.id }); // uid: dragged along with the body (stealth.js)
+    if (b.raid && t.kind === "human" && !searchedInBattle(b, t)) b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, f: t.f || 0, kind: "body", area: null, searched: false, kit: t.kit, weapon: t.weapon, label: `${t.name}'s body`, uid: t.id }); // uid: dragged along with the body (stealth.js)
     else if (b.raid && t.bodyBox) dropBodyBox(b, t); // carriers.js: one of the risen, put down: the body it got up from (what was on it)
     // One of the dead: a body to search too (what the person had on them; a dead soldier's kit). The raid bot walks
     // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway). A worm
@@ -4448,7 +4453,7 @@ function endBattle(state, b, outcome) {
       if (e.turned && e.turned.sid != null) continue;
       b.bodies.push(e.turned ? turnedBody(rng, e) : launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || (e.kind === "zombie" ? null : KITS.raiders)))); // launchers.js: their launcher and rounds; a blast's wear (section 24)
     }
-    for (const e of captives) { const body = launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || KITS.raiders)); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
+    for (const e of captives) { if (searchedInBattle(b, e)) continue; const body = launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || KITS.raiders)); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
     b.bodies.push(...piles);
     b.bodies.push(...blastPiles(b, nlDropPiles(state, b))); // nonlethal.js: the weapons the surrendered threw down (launchers.js: worn by a blast that reached them)
     for (const u of b.units) {
@@ -5183,7 +5188,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       if (rng.chance(0.3)) {
         const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : rng.pick(kit.loot);
         const it = lootItem(key, kitSource(box.kit), spend(rng)); // itemcond.js: a soldier's rifle looked after, a raider's not
-        if (key === box.weapon && box.uid != null) carryMods(unitById(b, box.uid), it); // gunmods.js: their gun's attachments come with it
+        if (key === box.weapon && box.uid != null) { carryMods(unitById(b, box.uid), it); enemyGunLoaded(unitById(b, box.uid), it); } // gunmods.js: their gun's attachments come with it; gunload.js: the rounds left in it
         gear.push(it);
       }
       if (kit.finds && rng.chance(BODY_FINDS)) gear.push(lootItem(rng.pick(kit.finds), kitSource(box.kit), rng)); // what was in their pockets

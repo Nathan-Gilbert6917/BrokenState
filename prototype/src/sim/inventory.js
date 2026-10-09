@@ -34,6 +34,7 @@ import { MEDS } from "./medfinds.js"; // how rare meds are
 import { CLIPS, ADMIN_KG, POUCH_NAMES, KIT_LOOT } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
 import { bodyKit } from "./carrykit.js"; // an enemy's rig and magazines onto its body (call-time only: safe in the import cycle)
 import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
+import { enemyGunLoaded, unloadInto, stockFor } from "./gunload.js"; // the rounds left in a gun, kept on it (call-time only: safe in the import cycle)
 import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet and ear protection on its body
 
 export const POCKETS = 4;
@@ -665,6 +666,8 @@ function taken(state, loc, item) {
   if (b && b.result) b.result.loot.gear.push(item);
   const body = battleBodies(state)[loc.id];
   if (body && body.sid != null) unlistFromSites(state, item);
+  const st = storageFor(state, battlePlace(b));
+  unloadInto(st, [item, ...(Array.isArray(item.contents) ? item.contents : [])], stockFor(state, st)); // gunload.js: a gun's rounds into the stores
 }
 // (A site whose body got up and walked off, carriers.js, stays on the map with nothing on it: site.walked.)
 export function unlistFromSites(state, item) {
@@ -812,6 +815,7 @@ export function enemyBody(rng, u, kit) {
   for (const it of u.arsArmour || []) if (it !== worn && GEAR[it.key] && !body.gear[GEAR[it.key].slot]) body.gear[GEAR[it.key].slot] = it; else if (it !== worn && GEAR[it.key]) earsOnBody(body, it); // a helmet, arm or leg guards; ear protection (helmets.js issueEars)
   dropHeadgear(u, body, src); // helmets.js: a kit helmet at the wear it ended with, ear protection (own dice)
   if (body.gear.weapon) lootGun(u, body.gear.weapon); // gunfire.js: the quality and condition their gun fought (and jammed) in
+  if (body.gear.weapon) enemyGunLoaded(u, body.gear.weapon); // gunload.js: the rounds left in it
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = lootItem(kit.pack[0], src, spend(rng));
   if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
   if (kit && kit.finds && rng.chance(0.2)) stow(body, lootItem(rng.pick(kit.finds), src, rng), ""); // pockets: smokes, a ring (combat.js KITS finds)

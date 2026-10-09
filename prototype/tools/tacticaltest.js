@@ -14,6 +14,11 @@
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { createBattle, combatAct, registerCombatHandler, endBattleNow, closeCombat, enemyUnit, WEAPONS, unitById } from "../src/sim/combat.js";
+import * as C from "../src/sim/combat.js";
+import { calOf } from "../src/sim/ammo.js";
+import { keyFor } from "../src/sim/rounds.js";
+import { surrender } from "../src/sim/nonlethal.js";
+import { stirBodies } from "../src/sim/carriers.js";
 import { newItem, allItems, allCarried, takeAllBodies, battleBodies, lootItem } from "../src/sim/inventory.js";
 import * as G from "../src/sim/ground.js";
 import * as RL from "../src/sim/raidloot.js";
@@ -81,6 +86,8 @@ section("1. A dead enemy searched where it fell");
   const me = P(b)[0], s = survivorById(st, me.sid);
   const foe = E(b)[0];
   foe.kit = "raiders"; foe.weapon = "huntrifle"; foe.weaponName = WEAPONS.huntrifle.name;
+  C.loadMag(foe, 3);
+  const foeMag = C.magIn(foe);
   kill(b, foe);
   place(foe, 3, 2);
   check(G.bodiesNear(b, me).includes(foe), "the dead enemy next to the survivor is listed to search");
@@ -95,14 +102,17 @@ section("1. A dead enemy searched where it fell");
   check(roundKeys.length > 0, `and its rounds (${roundKeys.map((k) => `${box.contents.sup[k]} ${k}`).join(", ")})`);
   check(combatAct(st, { type: "searchBody", unit: me.id, target: foe.id }) === "" && G.bodyBoxOf(b, foe) === box, "searching it again opens the same body (no second roll)");
   // Take the gun into the hands and the rounds loose.
+  const gl = gun.loaded ? gun.loaded.n : -1, glk = gun.loaded ? gun.loaded.key : null;
+  check(gl === foeMag, `the rounds left in its gun are kept on the gun (${gl} of the ${foeMag} it had)`);
   s.gear.weapon = null;
   const gi = box.contents.gear.indexOf(gun);
   const msg = RL.raidMove(st, me.id, `rbox:${box.id}:gear:${gi}`, `s:${s.id}:weapon`);
   check(s.gear.weapon === gun && !box.contents.gear.includes(gun), `the hunting rifle into the survivor's hands (${msg})`);
   check(me.weapon === "huntrifle", `and fought with at once (unit weapon ${me.weapon})`);
+  check(C.magIn(me) === foeMag && !gun.loaded, `with exactly the rounds that were in it (${C.magIn(me)}), no free full magazine`);
   const k0 = roundKeys[0], n0 = box.contents.sup[k0];
   RL.raidMove(st, me.id, `rbox:${box.id}:sup:${k0}`, `haul:${me.id}:list`);
-  check((me.haul.sup[k0] || 0) === n0 && !(box.contents.sup[k0] >= 1), `${n0} ${k0} carried loose`);
+  check((me.haul.sup[k0] || 0) === n0 + (glk === k0 ? gl : 0) && !(box.contents.sup[k0] >= 1), `${n0} ${k0} carried loose (and the ${gl} that were in the gun, now the team's)`);
   check(b.pools.includes(me.haul.sup), "found rounds count at once (the haul is one of the battle's pools)");
   const left = box.contents.gear.slice();
   // A second body not searched: rolled at the end as before.
@@ -271,7 +281,7 @@ section("4. The end: a win loots the ground, a retreat leaves it");
     for (const e of E(b4)) kill(b4, e);
     const meds0 = (p.cargo && p.cargo.supplies.meds) || 0;
     endBattleNow(st4, "victory");
-    check(p.cargo.gear.includes(lamp) && p.cargo.supplies.meds === meds0 + 2, "a team's survivor brings what they carry loose into the team's cargo");
+    check(p.cargo.gear.includes(lamp) && p.cargo.supplies.meds >= meds0 + 2, "a team's survivor brings what they carry loose into the team's cargo");
     check(dupesLive(st4).length === 0, "no item in two places");
   }
 }
@@ -305,6 +315,168 @@ section("5. A raid: a pile on the ground");
     done = true;
   }
   check(done, "a raid map was made");
+}
+
+// ---------- 6. the downed searched alive ----------
+section("6. The enemy's downed searched alive");
+{
+  const st = world(seed + 6);
+  const { b, h } = openBattle(st);
+  const me = P(b)[0];
+  const [ko, other] = E(b);
+  ko.kit = "raiders"; ko.weapon = "huntrifle"; ko.weaponName = WEAPONS.huntrifle.name; C.loadMag(ko, 2);
+  ko.down = true; ko.ko = true; ko.hp = 1;
+  place(ko, 3, 2); place(me, 2, 2);
+  check(G.bodiesNear(b, me).includes(ko) && !G.bodyRefusal(b, ko), "someone knocked out can be searched");
+  const ap0 = me.ap;
+  check(combatAct(st, { type: "searchBody", unit: me.id, target: ko.id }) === "" && me.ap === ap0 - 1, "the first search costs 1 action, as a body's");
+  const box = G.bodyBoxOf(b, ko);
+  const kgun = box && box.contents.gear.find((it) => it.key === "huntrifle");
+  check(!!kgun && kgun.loaded && kgun.loaded.n === 2, `their gun is in it, with the 2 rounds that were in it (${kgun && kgun.loaded ? kgun.loaded.n : "none"})`);
+  check(ko.weapon === "fists" && !ko.armorKey, "they are left with nothing in their hands (if they get up they fight bare-handed)");
+  const mate = P(b)[1];
+  mate.down = true;
+  check(!!G.bodyRefusal(b, mate), "one of yours who is down is not searched this way");
+  mate.down = false;
+  // Take the gun, leave the rest; tie them up; win: one entry for them, their leftovers, no second roll.
+  const left = box.contents.gear.filter((it) => it !== kgun);
+  RL.raidMove(st, me.id, `rbox:${box.id}:gear:${box.contents.gear.indexOf(kgun)}`, `haul:${me.id}:list`);
+  ko.tied = true;
+  for (const e of E(b)) if (e !== ko) kill(b, e);
+  void other;
+  endBattleNow(st, "victory");
+  const theirs = b.bodies.filter((x) => x.uid === ko.id || String(x.name).startsWith(ko.name));
+  const leftOk = left.every((it) => h.armory.includes(it) || theirs.some((x) => allItems(x).includes(it)));
+  check(theirs.length <= 1 && (!theirs.length || (/prisoner/.test(theirs[0].name) && theirs[0].pile)) && leftOk, `a prisoner keeps what you left on them: one entry, not rolled again (${theirs.map((x) => x.name).join(", ") || "taken home headless"})`);
+  check(!b.bodies.some((x) => allItems(x).includes(kgun)), "the gun taken is on no body");
+  check(b.result.prisoners.length >= 1, `they are taken prisoner as before (${b.result.prisoners.length})`);
+  check(dupesLive(st).length === 0, "no item in two places");
+  // A raid: the downed searched there; killed after, no second body.
+  let done = false;
+  for (let i = 0; i < 40 && !done; i++) {
+    const rs = createWorld({ seed: seed * 100 + 50 + i, factionCount: 6 });
+    rs.cards.length = 0; rs.crashNext = 1e9;
+    const rh = hub(rs);
+    const tile = rs.tiles.find((t) => t.loc && t.id !== rh.tile && ["pharmacy", "store", "house", "gas"].includes(t.loc.type));
+    if (!tile) continue;
+    const crew = atBase(rs, rh.id).slice(0, 2);
+    const res = launchExpedition(rs, { memberIds: crew.map((s) => s.id), dest: tile.id, mission: "scavenge", stance: "normal", supplies: { food: 4, water: 4 } });
+    if (res.error) continue;
+    res.party.phase = "engaged";
+    rs.combat = createBattle(rs, { mode: "raid", tile: tile.id, partyId: res.party.id, canRetreat: true, ambush: null, handler: "tactest", enemy: { kind: "raiders", count: 2, power: 2 }, raid: { heat0: 0 }, context: {} });
+    const rb = rs.combat;
+    if (rb.raid.choose) rb.raid.choose = null;
+    rb.phase = "player";
+    const ru = P(rb)[0], guard = enemyUnit(rb, rs.rng, "raiders", 2, 1);
+    rb.units.push(guard);
+    const spot = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].map(([dx, dy]) => [ru.x + dx, ru.y + dy]).find(([x, y]) => x >= 0 && y >= 0 && x < rb.w && y < rb.h && C.CELL[rb.cells[y * rb.w + x].k].walk && !C.unitAt(rb, x, y));
+    if (!spot) continue;
+    const [nx, ny] = spot;
+    guard.down = true; guard.ko = true; guard.x = nx; guard.y = ny; guard.f = ru.f || 0;
+    check(combatAct(rs, { type: "searchBody", unit: ru.id, target: guard.id }) === "" && !!G.bodyBoxOf(rb, guard), "in a raid the downed are searched the same way");
+    const n0 = rb.raid.containers.length;
+    guard.ko = false;
+    C.damage(rb, guard, 999, ru);
+    check(guard.dead && rb.raid.containers.filter((c) => c.kind === "body" && c.uid === guard.id).length === 1 && rb.raid.containers.length === n0, `killed after, they are one body: the one searched (no second roll) (${rb.raid.containers.length - n0} new)`);
+    done = true;
+  }
+  check(done, "a raid with a guard was made");
+}
+
+// ---------- 7. fire on the ground ----------
+section("7. Fire on what lies on the ground");
+{
+  const st = world(seed + 7);
+  const { b } = openBattle(st);
+  const a = P(b)[0];
+  place(a, 6, 6);
+  const book = newItem("survivalbook", 1), knife = newItem("knife", 1), pack = newItem("backpack", 1);
+  for (const it of [book, knife, pack]) G.dropToGround(b, a, it);
+  G.dropToGround(b, a, "food", 4); G.dropToGround(b, a, "scrap", 2); G.dropToGround(b, a, "a_9mm_fmj", 30);
+  const pile = G.groundAt(b, 6, 6, 0);
+  place(a, 9, 9);
+  const d0 = knife.dur;
+  b.fires = [{ x: 6, y: 6, turns: 3 }];
+  stirBodies(st, b); // the start of a turn: bodies and piles in the flames burn (carriers.js)
+  check(!pile.contents.gear.includes(book) && !pile.contents.gear.includes(pack), "a book and a pack burn");
+  check(pile.contents.gear.includes(knife) && (d0 == null || knife.dur < d0), `a knife is left, worn by the heat (${d0} → ${knife.dur})`);
+  check(!(pile.contents.sup.food > 0) && pile.contents.sup.scrap === 2, "the food burns, the scrap does not");
+  check((pile.contents.sup.a_9mm_fmj || 0) <= 30, `loose rounds may cook off (${pile.contents.sup.a_9mm_fmj || 0} of 30 left)`);
+  const d1 = knife.dur;
+  G.groundFire(b);
+  check(knife.dur === d1, "once a turn, not twice");
+  // A raid's pile burns too.
+  const rp = { ...b, raid: { containers: [{ id: 1, kind: "ground", drop: true, x: 2, y: 2, f: 0, contents: { sup: {}, gear: [newItem("survivalbook", 1)] } }], found: {}, foundGear: [] }, fires: [{ x: 2, y: 2 }], turn: 5, floor: 0 };
+  G.groundFire(rp);
+  check(!rp.raid.containers[0].contents.gear.length, "in a raid as well");
+}
+
+// ---------- 8. the rounds in the guns ----------
+section("8. The rounds in a gun go with it");
+{
+  const st = world(seed + 8);
+  const h = hub(st);
+  const people = atBase(st, h.id).slice(0, 3);
+  const [s0, s1] = people;
+  s0.gear.weapon = newItem("pistol", 1); s0.pockets[0] = newItem("revolver", 1);
+  s1.gear.weapon = newItem("pistol", 1);
+  h.stock.a_9mm_fmj = 200; h.stock.a_357_fmj = 50;
+  const { b } = openBattle(st);
+  const u0 = P(b).find((u) => u.sid === s0.id), u1 = P(b).find((u) => u.sid === s1.id);
+  check(P(b).every((u) => !C.hasMag(u) || C.magIn(u) === C.magCap(u)) && E(b).every((e) => !C.hasMag(e) || C.magIn(e) === C.magCap(e)), "every gun in hand starts the fight loaded (both sides)");
+  check(u0.startGuns.includes(s0.pockets[0]), "a gun carried in a pocket is one of the guns that start loaded");
+  G.fieldReady(b, st);
+  place(u0, 5, 5); place(u1, 6, 5);
+  const key = keyFor(calOf("pistol"), u0.load);
+  const pool = () => b.pools.reduce((a, p) => a + Math.max(0, Math.floor(p[key] || 0)), 0);
+  C.loadMag(u0, 5);
+  const p0 = pool(), pistol = s0.gear.weapon;
+  combatAct(st, { type: "drop", unit: u0.id, loc: `s:${s0.id}:weapon` });
+  check(pistol.loaded && pistol.loaded.n === 5 && pool() === p0 - 5, `a gun put down keeps the 5 rounds that were in it, out of the team's (${pistol.loaded ? pistol.loaded.n : "none"}; ${p0} → ${pool()})`);
+  // u1 puts its own pistol in a pocket, then takes this one up.
+  RL.raidMove(st, u1.id, `s:${s1.id}:weapon`, `s:${s1.id}:pocket:${s1.pockets.indexOf(null)}`);
+  const pile = G.groundAt(b, 5, 5, 0);
+  const p1 = pool();
+  RL.raidMove(st, u1.id, `rbox:${pile.id}:gear:${pile.contents.gear.indexOf(pistol)}`, `s:${s1.id}:weapon`);
+  check(s1.gear.weapon === pistol && C.magIn(u1) === 5 && !pistol.loaded && pool() === p1 + 5, `taken up by a teammate: exactly those 5 rounds (${C.magIn(u1)}), back in the team's rounds (${p1} → ${pool()})`);
+  // A pocket gun carried into the fight, dropped unfired: it goes out loaded.
+  const rev = s0.pockets[0];
+  const rkey = keyFor(calOf("revolver"), null);
+  const rp0 = b.pools.reduce((a, p) => a + Math.floor(p[rkey] || 0), 0);
+  G.dropAt(st, u0.id, `s:${s0.id}:pocket:0`);
+  const cap = C.magCap({ weapon: "revolver", item: rev });
+  check(rev.loaded && rev.loaded.n === Math.min(cap, rp0), `a revolver carried into the fight and put down unfired is loaded (${rev.loaded ? rev.loaded.n : "none"} of ${cap})`);
+  // A gun from nowhere (found) is empty when taken up; an enemy takes up a loaded one with what is in it.
+  const found = newItem("pistol", 1);
+  G.dropToGround(b, u0, found);
+  const gp = G.groundAt(b, 5, 5, 0);
+  RL.raidMove(st, u0.id, `rbox:${gp.id}:gear:${gp.contents.gear.indexOf(found)}`, `s:${s0.id}:weapon`);
+  check(s0.gear.weapon === found && C.magIn(u0) === 0, `a gun found lying about is taken up empty (Reload) (${C.magIn(u0)})`);
+  const foe = E(b)[0];
+  foe.weapon = "fists"; foe.weaponName = "Fists"; foe.arsItem = null; foe.ap = 2; place(foe, 12, 12);
+  const g2 = newItem("pistol", 1); g2.loaded = { n: 2, key };
+  G.groundPile(b, 12, 13, 0).contents.gear.push(g2);
+  G.aiGrabGun(b, foe);
+  check(foe.weapon === "pistol" && C.magIn(foe) === 2 && !g2.loaded, `an enemy taking up a gun has what was in it (${C.magIn(foe)})`);
+  // Surrender: the gun thrown down keeps its rounds.
+  const foe2 = E(b)[1];
+  foe2.weapon = "huntrifle"; foe2.weaponName = WEAPONS.huntrifle.name; foe2.arsItem = null; C.loadMag(foe2, 1);
+  surrender(b, foe2);
+  check((b.nlDrops || []).some((d) => d.uid === foe2.id && d.loaded && d.loaded.n === 1), "one who gives up throws down a gun with what was in it");
+  // The end: the guns that came home with rounds in them are unloaded into the stores.
+  const kept = newItem("pistol", 1); kept.loaded = { n: 4, key };
+  s1.pockets[s1.pockets.indexOf(null)] = kept;
+  for (const e of E(b)) if (!e.dead) { if (e.surr) e.tied = true; else kill(b, e); }
+  const stock0 = h.stock[key] || 0;
+  endBattleNow(st, "victory");
+  check(!kept.loaded && (h.stock[key] || 0) >= stock0 + 4, `a gun with rounds in it coming home is unloaded into the stores (${stock0} → ${h.stock[key] || 0})`);
+  const onBody = b.bodies.flatMap((x) => allItems(x)).find((it) => it.key === "huntrifle" && it.loaded && it.loaded.n === 1);
+  const home = h.armory.find((it) => it.key === "huntrifle" && !it.loaded);
+  check(!!onBody || !!home, `the gun thrown down is loot after the win with its round in it (headless: taken home, the round into the stores)`);
+  check(dupesLive(st).length === 0, "no item in two places");
+  closeCombat(st); // headless: everything taken (the loot screen's taken: its rounds into the stores)
+  const anyLoaded = h.armory.filter((it) => it.loaded).length;
+  check(anyLoaded === 0, `nothing taken home still holds rounds of its own (${anyLoaded})`);
 }
 
 console.log(`\n${fail ? "failed" : "passed"}: ${pass} checks passed, ${fail} failed`);

@@ -49,6 +49,7 @@ import { ammoKey, CALIBERS } from "./data-ammo.js";
 import { hash01 } from "./skills.js";
 import { skill } from "./world.js";
 import { itemDur, itemDurMax } from "./crafting.js";
+import { burnShare } from "./woodcutting.js"; // what burns (fire on things lying on the ground: fireStuff)
 import { findCarried } from "./stealth.js";
 import { breakRam, isCrew } from "./siege.js";
 import { lootItem, packOf, allCarried, carriedSpots, insertsOf, isCarrier } from "./inventory.js"; // allCarried: worn, held, pockets, rig pouches, the pack, a carrier's plates
@@ -713,6 +714,28 @@ function blastStuff(b, gear, sup, share, at, where, salt, chain = true) {
   return keep;
 }
 const boxCells = (c) => { const out = []; for (let y = c.y; y < c.y + (c.h || 1); y++) for (let x = c.x; x < c.x + (c.w || 1); x++) out.push([x, y]); return out; };
+// Fire on what lies on the ground (ground.js groundFire: a pile on a burning cell, each turn it burns): what burns
+// (woodcutting.js burnShare half or more: wood, cloth, paper, a pack and what is in it) is gone, the rest is worn by
+// the heat like a blast's wear on the cell (GROUND.impact), boxed rounds and loose rounds cook off (cookBox,
+// cookRecord); food, meds, firewood, fuel, arrows, powder and primers burn. Returns { gear (what is left), lost }.
+export const GROUND_FIRE = { BURN_AT: 0.5, SUPPLIES: ["food", "preserved", "meds", "wood", "fuel", "arrows", "powder", "blackpowder", "primers", "matchprimers"] };
+export function fireStuff(gear, sup, ...salt) {
+  const keep = [];
+  let lost = 0;
+  (gear || []).forEach((it, i) => {
+    if (!it) return;
+    if (burnShare(it.key) >= GROUND_FIRE.BURN_AT || BOMBS.includes(it.key)) { lost++; return; } // a bomb in the flames: it burns (no chain here)
+    const share = GROUND.impact[0] + (GROUND.impact[1] - GROUND.impact[0]) * hash01("groundfire", ...salt, it.key, i);
+    for (const c of deepItems([it])) { wearShare(c, share); cookBox(c, ...salt, i); }
+    if (Array.isArray(it.contents)) it.contents.forEach((c, j) => { if (c && burnShare(c.key) >= GROUND_FIRE.BURN_AT) { it.contents[j] = null; lost++; } }); // a pouch's or a case's burnables
+    keep.push(it);
+  });
+  if (sup) {
+    cookRecord(sup, ...salt);
+    for (const k of GROUND_FIRE.SUPPLIES) if (sup[k] > 0) { lost += Math.floor(sup[k]); delete sup[k]; }
+  }
+  return { gear: keep, lost };
+}
 // A blast at (x, y) of radius r (heavy: a rocket) on what lies there. Returns how many things it reached.
 export function groundBlast(b, x, y, r, heavy = false) {
   let n = 0;

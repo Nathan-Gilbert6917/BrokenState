@@ -46,6 +46,9 @@ import { launcherBody } from "./launchers.js";
 import { SEARCH } from "./search.js";
 import { ARMORED } from "./deadsoldiers.js";
 import { KITS, WEAPONS, say, fx, unitById, loadMag, active, playerUnit } from "./combat.js";
+import { gunOut, gunLeavesTeam, gunIn, unloadInto, stockFor, teamGuns } from "./gunload.js"; // the rounds in a gun, kept on it
+import { fireStuff } from "./launchers.js"; // fire on what lies on the ground
+import { fireAt } from "./throwables.js";
 
 export const GROUND = { reach: 1 };
 const cheb = (a, x, y) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y));
@@ -136,10 +139,13 @@ export function fieldReady(b, state = null) {
 
 // ---------- bodies ----------
 export const bodyBoxOf = (b, t) => { const L = lootLayer(b); return t && L ? L.containers.find((c) => c.kind === "body" && c.uid === t.id) || null : null; };
-// Can this one's body be searched in a field battle ("" when it can)? Dead, on the map (not carried, risen, in the car,
-// burnt). People of any side; of the dead only those that carried something.
+// Can this one's body be searched ("" when it can)? Dead, on the map (not carried, risen, in the car, burnt): people of
+// any side; of the dead only those that carried something. Or living and down (knocked out, surrendered, tied, wounded)
+// and not one of yours: the enemy's or a third side's (the user's ask), in a field battle or a raid.
+export const downedFoe = (t) => !!t && !t.dead && !!t.down && t.side !== "player" && t.kind === "human" && !t.left && !t.fled;
 export function bodyRefusal(b, t) {
-  if (!t || !t.dead) return "Only the dead can be searched.";
+  if (downedFoe(t)) return t.off || t.carriedBy != null ? "They are not there." : "";
+  if (!t || !t.dead) return "Only the dead and the downed can be searched.";
   if (t.burnt) return "Burnt: nothing left on it.";
   if (t.off || t.inVehicle || t.carriedBy != null) return "That body is not there.";
   if (t.ztype === "swarm" || t.ztype === "sleeper") return "Nothing to search.";
@@ -149,10 +155,12 @@ export function bodyRefusal(b, t) {
   }
   return "";
 }
-// Dead on or next to the unit whose bodies can be searched (not yet, or something left on them).
+// Dead or downed on or next to the unit who can be searched (not yet, or something left on them). In a raid only the
+// living (its dead are containers already: combat.js damage).
 export function bodiesNear(b, u) {
-  if (!b || b.raid) return [];
-  return b.units.filter((t) => t !== u && !bodyRefusal(b, t) && (t.f || 0) === (u.f || 0) && cheb(u, t.x, t.y) <= GROUND.reach)
+  if (!b) return [];
+  syncBodies(b);
+  return b.units.filter((t) => t !== u && !bodyRefusal(b, t) && (!b.raid || downedFoe(t)) && (t.f || 0) === (u.f || 0) && cheb(u, t.x, t.y) <= GROUND.reach)
     .filter((t) => { const c = bodyBoxOf(b, t); return !c || pileCount(c); })
     .sort((a, c) => (bodyBoxOf(b, a) ? 1 : 0) - (bodyBoxOf(b, c) ? 1 : 0) || cheb(u, a.x, a.y) - cheb(u, c.x, c.y));
 }
@@ -164,7 +172,9 @@ export function deadBodyOf(state, b, t) {
   let body;
   if (t.side === "player") {
     const s = survivorById(state, t.sid);
+    const held = s && s.gear ? s.gear.weapon : null;
     body = { gear: s ? stripAll(ensureInv(s)) : [], sup: {} };
+    for (const it of body.gear) if (it === held) gunOut(b, t, it); else gunLeavesTeam(b, it); // gunload.js: what is in their guns goes with them
     if (t.haul) { // what they carried loose
       body.gear.push(...t.haul.gear.splice(0));
       for (const [k, v] of Object.entries(t.haul.sup)) if (v > 0) { body.sup[k] = v; t.haul.sup[k] = 0; }
@@ -191,33 +201,45 @@ function spill(c) {
 }
 
 // The first search of a body (SEARCH.ap) rolls what is on it; after that it opens for free. Returns "" or why not.
+// Someone alive and down is searched the same way: what was on them is in the container (theirs to take), and they are
+// left with nothing in their hands (stripped: if they get up again, they fight bare-handed).
 export function searchBody(state, b, u, t) {
-  if (!b || b.raid) return "In a raid a body is searched like any container.";
+  if (!b) return "Nothing to search.";
   const why = bodyRefusal(b, t);
   if (why) return why;
+  if (b.raid && !downedFoe(t)) return "In a raid the dead are searched like any container (Search).";
   if ((t.f || 0) !== (u.f || 0) || cheb(u, t.x, t.y) > GROUND.reach) return "Stand on or next to the body to search it.";
   fieldReady(b, state);
   if (bodyBoxOf(b, t)) return "";
   if ((u.ap || 0) < SEARCH.ap) return "No actions left this turn.";
   u.ap -= SEARCH.ap;
-  const box = { id: b.nextId++, x: t.x, y: t.y, f: t.f || 0, kind: "body", uid: t.id, area: null, searched: false, partial: false, label: `${t.name}'s body`, contents: deadBodyOf(state, b, t) };
+  const live = downedFoe(t);
+  const box = { id: b.nextId++, x: t.x, y: t.y, f: t.f || 0, kind: "body", uid: t.id, area: null, searched: false, partial: false, label: live ? `${t.name} (searched)` : `${t.name}'s body`, live, byHand: true, contents: deadBodyOf(state, b, t) };
   fieldLayer(b).containers.push(settle(box));
+  if (live) stripUnit(t);
   const n = pileCount(box);
-  say(b, `${u.name} searches ${t.side === "player" ? `${t.name}'s body` : `the body of ${t.name}`}: ${n ? `${n} thing${n === 1 ? "" : "s"} on it` : "nothing useful"}.`, n ? "good" : "info");
+  say(b, `${u.name} searches ${live ? t.name : t.side === "player" ? `${t.name}'s body` : `the body of ${t.name}`}: ${n ? `${n} thing${n === 1 ? "" : "s"} on ${live ? "them" : "it"}` : "nothing useful"}.`, n ? "good" : "info");
   if (!n) fx(b, { type: "loot", to: [t.x, t.y], text: "empty" });
   return "";
 }
-// Bodies searched in a field battle keep up with their bodies: dragged (stealth.js), carried and put down
-// (carriers.js), burnt (the things with it).
+// A downed foe searched: nothing left in their hands or on them that fights (their things are in the container).
+function stripUnit(t) {
+  t.weapon = "fists"; t.weaponName = "Fists"; t.arsItem = null; t.modItems = null; t.gmWeapon = "fists"; t.item = null;
+  t.mag = null; t.magW = null; t.mags = null; t.magsW = null;
+  if (t.armorKey) { t.armorKey = null; t.armor = 1; t.wornArmor = 1; }
+  t.throwables = {}; delete t.gl; t.medKit = null; t.isMedicKit = false; t.arsArmour = []; t.searchedLive = true;
+}
+// Bodies searched where they lie keep up with them: dragged (stealth.js), carried and put down (carriers.js), burnt
+// (the things with it). A raid's own body containers move by themselves; the downed searched there are ours.
 export function syncBodies(b) {
-  const L = b && !b.raid ? b.fieldLoot : null;
+  const L = lootLayer(b);
   if (!L) return;
   L.containers = L.containers.filter((c) => {
-    if (c.kind !== "body" || c.uid == null) return true;
+    if (c.kind !== "body" || c.uid == null || !(L.field || c.byHand)) return true;
     const t = unitById(b, c.uid);
     if (!t) return true;
     if (t.burnt) return false;
-    if (t.dead && !t.off) { c.x = t.x; c.y = t.y; c.f = t.f || 0; }
+    if ((t.dead || t.down) && !t.off) { c.x = t.x; c.y = t.y; c.f = t.f || 0; }
     return true;
   });
 }
@@ -236,8 +258,8 @@ export function aiGrabGun(b, u) {
     p.contents.gear.splice(p.contents.gear.indexOf(gun), 1);
     settle(p);
     u.weapon = gun.key; u.weaponName = gun.name; u.arsItem = gun; u.mag = null; u.magW = null;
-    u.modItems = null; u.gmWeapon = null;
-    loadMag(u);
+    u.modItems = null; u.gmWeapon = null; u.mags = null; u.magsW = null;
+    loadMag(u, gunIn(b, u, gun)); // gunload.js: what was in it, never a free full magazine (else empty: they Reload)
     u.ap -= 1;
     say(b, `${u.name} snatches up the ${gun.name} lying on the ground!`, "danger");
     return true;
@@ -278,6 +300,9 @@ export function groundEnd(state, b, outcome) {
     h.gear.length = 0;
     for (const k of Object.keys(h.sup)) h.sup[k] = 0;
   }
+  // gunload.js: the guns that came home with rounds in them (picked up, handed over) are unloaded into the stores.
+  const living = b.units.filter((u) => u.side === "player" && !u.dead && !u.lostBehind && !u.nlTaken).map((u) => survivorById(state, u.sid)).filter((s) => s && s.alive);
+  if (st) unloadInto(st, teamGuns(living, st.list), stockFor(state, st));
   if (!L) return;
   for (const c of L.containers.slice()) {
     if (c.kind !== "body" || c.uid == null) continue;
@@ -290,11 +315,35 @@ export function groundEnd(state, b, outcome) {
       else c.uid = null;
       continue;
     }
+    if (!t.dead) { // searched alive: a prisoner after a win keeps what you left on them (their loot, not rolled again); else it lies there
+      if (t.down && !t.off && outcome === "victory") c.label = `${t.name} (prisoner)`;
+      else { c.uid = null; c.kind = "ground"; c.label = "On the ground"; }
+      continue;
+    }
     if (t.off || t.inVehicle) c.uid = null; // carried off, in the car: what was left stays where it was searched
   }
 }
 // Has this one's body been searched in the battle (its loot is the container's, not rolled again)?
-export const searchedInBattle = (b, t) => !!(b && !b.raid && bodyBoxOf(b, t));
+export const searchedInBattle = (b, t) => !!(b && bodyBoxOf(b, t) && (!b.raid || bodyBoxOf(b, t).byHand));
+
+// ---------- fire ----------
+// A pile on a burning cell (throwables.js b.fires), once a turn while it burns (carriers.js burnUnderFire, at the start
+// of each side's turn): launchers.js fireStuff (what burns is gone, the rest worn by the heat, rounds cook off).
+// In a raid and a field battle alike. Returns how many piles it reached.
+export function groundFire(b) {
+  if (!b || !b.fires || !b.fires.length) return 0;
+  let n = 0;
+  for (const p of groundPiles(b)) {
+    if (!pileCount(p) || p.fireTurn === b.turn || !fireAt(b, p.x, p.y) || (p.f || 0) !== (b.floor || 0)) continue;
+    p.fireTurn = b.turn;
+    const r = fireStuff(p.contents.gear, p.contents.sup, b.dseed ?? 0, b.turn || 0, p.id);
+    p.contents.gear = r.gear;
+    settle(p);
+    if (r.lost) say(b, `The fire takes what lies on the ground (${r.lost} thing${r.lost === 1 ? "" : "s"} burnt).`, "info");
+    n++;
+  }
+  return n;
+}
 
 // After a win: every pile and searched body with something left, as a loot-screen body (its things loose). Else they
 // stay where they are: a death site on the tile. Returns the bodies (a win) or [].

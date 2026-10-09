@@ -1,7 +1,8 @@
 // The battle screen's side of sim/ground.js: Search a body where it fell (a field battle, Shift+S), Ground (Shift+X:
 // put things down, pick them up), the piles on the map (the iso view). The moving itself is the search window's
 // (ui/inventory.js raidModal: the survivor, the body or pile, the ground under them).
-import { bodiesNear, bodyBoxOf, pilesNear, pileCount, searchBody, fieldReady } from "../sim/ground.js";
+import { bodiesNear, bodyBoxOf, pilesNear, pileCount, searchBody, fieldReady, downedFoe } from "../sim/ground.js";
+import { searchableNear } from "../sim/combat.js";
 import { SEARCH } from "../sim/search.js";
 import { HAUL } from "../sim/raidloot.js";
 
@@ -11,13 +12,14 @@ const first = (u) => u.name.split(" ")[0];
 // Ground everywhere.
 export function groundButtons(state, b, u, btn) {
   let html = "";
-  if (!b.raid) {
-    const near = bodiesNear(b, u);
+  const near = bodiesNear(b, u);
+  if (!b.raid || near.length) { // a raid: only the downed (its dead are searched as containers: Search)
     const t = near[0];
     const fresh = t && !bodyBoxOf(b, t);
-    const tip = t ? `${fresh ? `${SEARCH.ap} action` : "Free (searched already)"}: go through ${t.side === "player" ? `${t.name}'s body` : `the body of ${t.name}`}: their gun, rounds, magazines, armour, what is in their rig and pack. Take what ${first(u)} can carry (the first ${HAUL.free} kg a turn are free to haul, then ${HAUL.per} kg an action); what is left stays on the body and is loot after a won fight.${near.length > 1 ? ` ${near.length} bodies within reach: click the one to search.` : ""}`
-      : "Stand on or next to a body to search it: the dead of any side, and of the walking dead only those that carried something (a soldier in their kit, one who walks in what they died in).";
-    html += btn("search", "Search body", tip, !!t && (!fresh || u.ap >= SEARCH.ap), "⇧S");
+    const who = (o) => (downedFoe(o) ? o.name : o.side === "player" ? `${o.name}'s body` : `the body of ${o.name}`);
+    const tip = t ? `${fresh ? `${SEARCH.ap} action` : "Free (searched already)"}: go through ${who(t)}${downedFoe(t) ? " (down, alive: what they carry is taken off them; if they get up again they fight bare-handed)" : ""}: their gun, rounds, magazines, armour, what is in their rig and pack. Take what ${first(u)} can carry (the first ${HAUL.free} kg a turn are free to haul, then ${HAUL.per} kg an action); what is left stays on the body and is loot after a won fight.${near.length > 1 ? ` ${near.length} bodies within reach: click the one to search.` : ""}`
+      : "Stand on or next to a body to search it: the dead of any side, the enemy's downed (knocked out, surrendered, tied, wounded), and of the walking dead only those that carried something (a soldier in their kit, one who walks in what they died in).";
+    html += btn(b.raid ? "searchBody" : "search", "Search body", tip, !!t && (!fresh || u.ap >= SEARCH.ap), b.raid ? "" : "⇧S");
   }
   const piles = pilesNear(b, u);
   const n = piles.reduce((a, p) => a + pileCount(p), 0);
@@ -33,7 +35,7 @@ export function groundCbAct(state, b, u, v, cui, act) {
     cui.lootReq = { uid: u.id, box: p ? p.id : null };
     return true;
   }
-  if (v === "search" && !b.raid) {
+  if ((v === "search" && (!b.raid || (!searchableNear(b, u).length && bodiesNear(b, u).length))) || v === "searchBody") {
     const near = bodiesNear(b, u);
     if (!near.length) { cui.msg = "Stand on or next to a body to search it."; return true; }
     if (near.length > 1 && cui.mode !== "searchBody") { cui.mode = "searchBody"; cui.msg = "Click the body to search (or Search again for the nearest)."; return true; }
@@ -62,7 +64,7 @@ function openBody(state, b, u, t, cui, act) {
   }
   const box = bodyBoxOf(b, t);
   if (box && pileCount(box)) cui.lootReq = { uid: u.id, box: box.id };
-  else cui.msg = `Nothing useful on ${t.side === "player" ? `${t.name}'s body` : `the body of ${t.name}`}.`;
+  else cui.msg = `Nothing useful on ${downedFoe(t) ? t.name : t.side === "player" ? `${t.name}'s body` : `the body of ${t.name}`}.`;
 }
 
 // The same in the iso view: project(x, y, z) → [X, Y] screen; zAt(x, y): the ground's height there (art px); S: zoom.
