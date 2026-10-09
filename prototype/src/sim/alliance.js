@@ -31,7 +31,7 @@
 //
 // Alliance victory (its own way to win, next to destroying every hive): the coalition (you and its members) has at
 // least one member and controls more than half of the state's land (LAND_NEEDED), and keeps that up for a year (the
-// Calder Accord, eras.js: not before year 8, and the coalition must have stood 12 seasons). Groups outside the
+// Calder Accord, eras.js: a year of the late game, from year 10, and the coalition must have stood 12 seasons). Groups outside the
 // coalition do not block it any more: conquest counts (break them, take their land, or leave them be).
 // Land: land tiles within reach of a base: your hub and every base you took from another group STRONGHOLD_RANGE (9),
 // an outpost CONTROL_RANGE (7, 8 with walls standing), a member's base CONTROL_RANGE; on other world sizes these scale

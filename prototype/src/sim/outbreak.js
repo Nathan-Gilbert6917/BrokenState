@@ -3,7 +3,7 @@
 // here: whenever fewer hives stand (or are being built) than the year's floor (2 up to year 7, 1 from year 8), a
 // mass of the dead gathers on open ground near the border 20–40 days later and starts building a new hive there at
 // once (a build site of hives.js with about 1,100 of the dead already gathered: about four weeks to the hive
-// standing, a window to strike it as with any other site). In a year between 9 and 12 (fixed per world, from its
+// standing, a window to strike it as with any other site). In a year between 11 and 14 (fixed per world, from its
 // seed) the outbreak beyond the border burns out: no more hives come over, and only then can the hive victory be won
 // (world.js checkGameOver, eras.js containReady). The Goals panel says whether the border is still burning.
 import { day, log } from "./world.js";

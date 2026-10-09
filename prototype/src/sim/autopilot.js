@@ -110,7 +110,7 @@ import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_
 // hiveFires = fires it may set around a mound first, hiveRest = days between hive missions.
 // conquer = which groups' bases it storms (conquestCandidate: "ready" any hostile group, "provoked" hostile groups
 // that raided it lately or when only hostile groups keep the coalition from winning, "last" only then), from day
-// conquerFrom, with at least conquerOdds to win (lateConquer: from the late game, eras.js year 8, it goes for any
+// conquerFrom, with at least conquerOdds to win (lateConquer: from the late game, eras.js year 10, it goes for any
 // hostile group, at these odds: the push to win); retreatBelow = the defence ratio under which it abandons an outpost
 // to a raid rather than be overrun (raidWarningChoice).
 // reserves = keeps every supply at a target (reserveStatus) and acts as soon as one drops below it: shortCooldown

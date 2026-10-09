@@ -3,41 +3,49 @@
 // Years are the game's calendar years (weather.js: four seasons of 28 days = 112 days; day 1 is day 15 of spring,
 // so year 1 is days 1–98, year 2 starts on day 99, year 5 on day 435, year 8 on 771, year 10 on 995, year 15 on 1555).
 //
-// The three eras
-// - Early game (years 1–2): the first winters. Medium hordes at the gates, small raids sized to your walls, a few
-//   outsider bands with clubs and old pistols. Nothing below grows yet.
-// - Mid game (years 3–7, centred on year 5): the long war. From year 3 the threats grow every year: roaming and
-//   attacking hordes and the hordes from beyond the border come bigger (+GROW.horde a year), the aggressive groups
-//   arm themselves better (their strength +GROW.gangArms a year) and grow larger (they recruit up to
-//   RECRUIT_UNTIL + GROW.recruit a year), new gangs from beyond the border arrive bigger (+GROW.gangPop people a
-//   year), outsider raider bands bring more people and better guns than their first-year ceiling.
-// - Late game (year 8 on, above all year 10+): the reckoning. The growth goes on to its caps (most reached around
-//   year 12–14), at least LATE_MIN_AGG hostile aggressive groups stay in the state (new gangs keep coming), and
-//   LATE_RAIDER_BANDS more outsider bands may roam at once. The coalition has grown into an army: every member sends
-//   ALLY_LATE more fighters to your hive and base assaults (alliance.js hiveAllies, assaultAllies). The hives
-//   multiplying (hives.js: a new site every 120–180 days) is the main growth of all: about 6 hives in year 1,
-//   9 in year 7, 12–15 by years 12–15 when nobody destroys them.
+// The three eras (retimed 2026-10-09 by the progression census, review/progression-census-2026-10-09.md: the mid game
+// from year 5 and the late game from year 10, so a campaign reaches the mid game in years 5–8 and its end in years
+// 10–15; before, a coalition that held half the land by year 3–5 won on the first day of year 8)
+// - Early game (years 1–4): the first winters and the first expansion. Medium hordes at the gates, small raids sized
+//   to your walls, a few outsider bands with clubs and old pistols. From year 3 (GROW_FROM) the threats begin to
+//   grow (below).
+// - Mid game (years 5–9): the long war, as the hives evolve (hivetech.js tier 2 from year 5: brutes, spitters and
+//   the mid game's special dead). The threats grow every year: roaming and attacking hordes and the hordes from
+//   beyond the border come bigger (+GROW.horde a year), the aggressive groups arm themselves better (their strength
+//   +GROW.gangArms a year) and grow larger (they recruit up to RECRUIT_UNTIL + GROW.recruit a year), new gangs from
+//   beyond the border arrive bigger (+GROW.gangPop people a year), outsider raider bands bring more people and
+//   better guns than their first-year ceiling.
+// - Late game (year 10 on): the reckoning, as the hives reach tier 3 (screamers, crawlers, the Wallbreaker den) and
+//   tier 4 (the mutation vat, years 13–17). The growth goes on to its caps (most reached around year 12–14), at least
+//   LATE_MIN_AGG hostile aggressive groups stay in the state (new gangs keep coming), and LATE_RAIDER_BANDS more
+//   outsider bands may roam at once. The coalition has grown into an army: every member sends ALLY_LATE more
+//   fighters to your hive and base assaults (alliance.js hiveAllies, assaultAllies). Both victories are won here.
+//   The hives multiplying (hives.js) is the main growth of all: about 6 hives in year 1, 9 in year 7, 12–15 by
+//   years 12–15 when nobody destroys them.
 //
 // Fewer, better prepared threats (RAIDS, HORDES): raids on your bases and the hordes a hive sends at them come at a
 // pace that rises over the years (about 3 raids a year early, 7 around year 5, up to 14 late at most; a hive horde
 // every ~19 days early, every ~4 days late), and a raid comes only when its group can take on the base with
 // everyone at a post (a bar that rises every few years) and is sized to it. The brood inside a hive fights harder
-// every year from year 4 (BROOD), and from year 8 no new hive site is picked past HIVE_CAP. Calibrated fights by the
+// every year from year 4 (BROOD), from year 8 no new hive site is picked past HIVE_CAP, and none at all once the
+// outbreak beyond the border has burned out. Calibrated fights by the
 // numbers (combat.js winOdds, breakoff.js) make every one of these as deadly as on the battle map.
 //
 // Winning (world.js checkGameOver)
-// - Neither victory comes before year WIN_FROM_YEAR (8, the start of the late game, day 771): the state is not won in
-//   the long war. Until then the outbreak still burns beyond the borders and nobody would sign anything. The Goals
+// - Neither victory comes before year WIN_FROM_YEAR (10, the start of the late game, day 995): the state is not won
+//   in the long war. Until then the outbreak still burns beyond the borders and nobody would sign anything. The Goals
 //   panel says so.
-// - Coalition victory = the Calder Accord: the coalition holds more than half the land with every group still
-//   standing a member (alliance.js), and it has to KEEP that for ACCORD.DAYS days (a year: four seasons). Each day
-//   the condition holds counts one; a day it does not takes ACCORD.DECAY back (a new gang settling, a member
-//   walking out or land lost sets the Accord back, it does not wipe it out). A gang that has just come over the border
-//   (or a raider band that dug in) does not count against it for ACCORD.GRACE days (two seasons): break it or win it
-//   over in that time. The Accord is also only signed once the coalition has stood ACCORD.SEASONS seasons since its
-//   founding (the council must have met that often).
+// - Coalition victory = the Calder Accord: the coalition (you and at least one member) holds more than half the land
+//   (alliance.js accordHolds; groups outside do not block it), and it has to KEEP that for ACCORD.DAYS days (a year:
+//   four seasons) in the late game: the Accord's clock only runs once the victories are open (year WIN_FROM_YEAR;
+//   before 2026-10-09 it ran from the first day the land was held, so a coalition that held it by year 3 won on the
+//   day the victories opened). Each day the condition holds counts one; a day it does not takes ACCORD.DECAY back (a
+//   new gang settling, a member walking out or land lost sets the Accord back, it does not wipe it out). A gang that
+//   has just come over the border (or a raider band that dug in) does not count against it for ACCORD.GRACE days (two
+//   seasons): break it or win it over in that time. The Accord is also only signed once the coalition has stood
+//   ACCORD.SEASONS seasons since its founding (the council must have met that often).
 // - Hive victory: every hive destroyed and none being built (hives.js hivesSecured), the outbreak beyond the border
-//   burned out (outbreak.js: in a year between 9 and 12, per world; until then new hives keep rising near the border
+//   burned out (outbreak.js: in a year between 11 and 14, per world; until then new hives keep rising near the border
 //   whenever fewer than 2 stand, 1 from year 8), and the state then kept clear for CONTAIN.DAYS days (a season): a
 //   hive that rises again in that time (from a build site the hordes start) sets the count back to zero.
 export const YEAR_DAYS = 112; // weather.js YEAR_DAYS (eras.js imports nothing: it is read at load time)
@@ -56,9 +64,9 @@ export const yearOf = (state) => yearOfDay(rampDay(state));
 
 export const ERAS = {
   LIST: [
-    { key: "early", name: "Early game", from: 1, desc: "The first winters: medium hordes at the gates, small raids sized to your walls, outsider bands with clubs and old pistols." },
-    { key: "mid", name: "Mid game", from: 3, desc: "The long war: every year the hordes come bigger, the gangs are better armed and larger, outsider bands bring more guns." },
-    { key: "late", name: "Late game", from: 8, desc: "The reckoning: the threats near their peak, more gangs and more outsider bands at once. A coalition or a hive war can be won now, with work." },
+    { key: "early", name: "Early game", from: 1, desc: "The first winters and the first expansion: medium hordes at the gates, small raids sized to your walls, outsider bands with clubs and old pistols. From year 3 the threats begin to grow." },
+    { key: "mid", name: "Mid game", from: 5, desc: "The long war: the hives evolve (brutes, spitters and stranger dead), every year the hordes come bigger, the gangs are better armed and larger, outsider bands bring more guns." },
+    { key: "late", name: "Late game", from: 10, desc: "The reckoning: the hives grow their worst (screamers, crawlers, Wallbreakers), the threats near their peak, more gangs and more outsider bands at once. A coalition or a hive war can be won now, with work: the Accord's year starts counting." },
   ],
   GROW_FROM: 3, // the first year the threats grow (year 3: one step, year 4: two ...)
   // Growth per year from GROW_FROM, and its cap.
@@ -74,11 +82,15 @@ export const ERAS = {
   LATE_RAIDER_BANDS: 0,   // more outsider raider bands on the map at a time from the late game (visitors.js caps)
   BANDWAGON: 0.25, BANDWAGON_CAP: 60, // a coalition holding over half the land: peaceful groups outside +0.25 goodwill a day, up to 60 (factions.js)
   ALLY_LATE: 2,           // from the late game every coalition member sends two more fighters to your hive and base assaults (alliance.js)
-  WIN_FROM_YEAR: 8,
+  WIN_FROM_YEAR: 10,
   // The hives late in the game (hives.js): the brood inside a hive (and its Broodmother's dead) fights BROOD more
   // a year from BROOD_FROM (at most BROOD_MAX: a hive stormed in year 12 is 30% tougher than in year 3), and no new
   // build site is picked while HIVE_CAP ([from year, hives standing + sites]) are already there (the state does not
-  // fill up with hives in the late game; the outbreak beyond the border still keeps its floor, outbreak.js).
+  // fill up with hives in the late game; the outbreak beyond the border still keeps its floor, outbreak.js). Once the
+  // outbreak beyond the border has burned out (OUTBREAK.BURNOUT) no new site is picked at all: the hives standing and
+  // the sites already being built are the last, and the hive victory is a war that can be finished (2026-10-09: the
+  // hives went on founding new ones after the burn-out, 5 standing in year 9 and 8 in year 16 on a Normal map, and no
+  // census game ever cleared them).
   BROOD: 0.035, BROOD_FROM: 4, BROOD_MAX: 0.3,
   HIVE_CAP: [[1, 99], [8, 11]],
   ACCORD: { DAYS: 112, DECAY: 2, SEASONS: 12, GRACE: 56 },
@@ -104,7 +116,7 @@ export const ERAS = {
   // after fewer than the year's FLOOR of hives stand or are being built ([from year, floor]); MASS of the dead
   // arrive with it; at least KEEP_CLEAR tiles from any base, within EDGE tiles of the map's edge. It burns out in a
   // year between BURNOUT[0] and BURNOUT[1] (per world, from its seed); only then can the hive victory be won.
-  OUTBREAK: { FLOOR: [[1, 2], [8, 1]], BURNOUT: [9, 12], DELAY: [20, 40], MASS: 1100, EDGE: 2, KEEP_CLEAR: 8 },
+  OUTBREAK: { FLOOR: [[1, 2], [8, 1]], BURNOUT: [11, 14], DELAY: [20, 40], MASS: 1100, EDGE: 2, KEEP_CLEAR: 8 },
 };
 
 export const eraOf = (state) => { const y = yearOf(state); let e = ERAS.LIST[0]; for (const x of ERAS.LIST) if (y >= x.from) e = x; return e; };
@@ -119,7 +131,7 @@ export const raiderSizeBonus = (state) => Math.round(grown(state, ERAS.GROW.raid
 export const raiderPowerBonus = (state) => grown(state, ERAS.GROW.raiderPower, ERAS.GROW.raiderPowerMax);
 export const isLate = (state) => eraOf(state).key === "late";
 export const broodGrowth = (state) => 1 + Math.min(ERAS.BROOD_MAX, ERAS.BROOD * Math.max(0, yearOf(state) - ERAS.BROOD_FROM + 1));
-export const hiveCap = (state) => { const y = yearOf(state); let v = 99; for (const [from, n] of ERAS.HIVE_CAP) if (y >= from) v = n; return v; };
+export const hiveCap = (state) => { if (burnedOut(state)) return 0; const y = yearOf(state); let v = 99; for (const [from, n] of ERAS.HIVE_CAP) if (y >= from) v = n; return v; };
 export const winOpen = (state) => yearOf(state) >= ERAS.WIN_FROM_YEAR;
 
 // ---------- raids on your bases (factions.js, diplomacy.js, radio.js, visitors.js) ----------
@@ -176,8 +188,10 @@ export function ensureEraState(state) {
 export function erasVictoryDaily(state, coalitionHolds, hivesClear) {
   const E = ensureEraState(state);
   const d = dayOf(state);
-  if (coalitionHolds) { E.accord += 1; if (E.accordFirst == null) E.accordFirst = d; }
-  else E.accord = Math.max(0, E.accord - ERAS.ACCORD.DECAY);
+  // The Accord's year counts in the late game only (winOpen); accordFirst: the first day the coalition held the land.
+  if (coalitionHolds && E.accordFirst == null) E.accordFirst = d;
+  if (coalitionHolds && winOpen(state)) E.accord += 1;
+  else if (!coalitionHolds) E.accord = Math.max(0, E.accord - ERAS.ACCORD.DECAY);
   E.accordBest = Math.max(E.accordBest, E.accord);
   if (hivesClear) { E.clear += 1; if (E.clearFirst == null) E.clearFirst = d; }
   else E.clear = 0;
