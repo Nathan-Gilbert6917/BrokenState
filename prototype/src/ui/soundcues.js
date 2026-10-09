@@ -12,6 +12,7 @@
 import { WEAPONS } from "../sim/combat.js";
 import { THROWABLES } from "../sim/stealth.js";
 import { partyTile } from "../sim/parties.js";
+import { meleeCue } from "./sfx-melee.js"; // a blow by weapon class, armour and kill (ui/sfx-melee.js)
 import { shotPlan, handCues, launched, isIndoor, OWN_VOICE } from "./gunsfx.js"; // the gun voices, the handling seen between frames
 import { THROW_BLAST, THROW_HAND, THROW_CLATTER, THROW_FLIGHT, FUSE, BIG, flight, launchBlast, mergeBlasts, glassNear } from "./blastsfx.js"; // blasts and grenades
 
@@ -142,8 +143,7 @@ export function battleCues(b, mem, now = 0) {
       if (f.text === "BACKBLAST") continue; // the launch is heard already
       const a = unitAt(b, f.from, f.side);
       if (a && a.kind === "zombie" && f.hit) out.push({ name: "bite", at: f.to });
-      else if (f.hit) out.push({ name: f.crit || (f.dmg || 0) >= 25 ? "meleeCrit" : "melee", at: f.to });
-      else out.push({ name: "whoosh", at: f.to });
+      else out.push(meleeCue(b, f, a, mem)); // ui/sfx-melee.js: by weapon class, armour, kill (at f.to)
     } else if (f.type === "throw") {
       const a = unitAt(b, f.from);
       const lk = a ? launched(mem, a) : null;
