@@ -90,7 +90,7 @@ export function startVehicleInfo(state) {
   const hard = isHardcore(state);
   let v = null;
   if (hard) { const id = state.hardcore && state.hardcore.start && state.hardcore.start.car; v = (state.vehicles || []).find((x) => x.id === id) || null; }
-  else v = (state.vehicles || []).find((x) => x.location && x.location.kind === "base") || null;
+  else v = (state.vehicles || []).find((x) => x.loc && x.loc.kind === "base") || null;
   if (!v || !VEHICLE_TYPES[v.type]) return null;
   const T = VEHICLE_TYPES[v.type];
   // Hardcore: the riders and what they wear ride in it too; a normal start: it is unloaded at the hub on day 1.
