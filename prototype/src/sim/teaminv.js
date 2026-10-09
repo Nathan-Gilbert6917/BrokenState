@@ -22,7 +22,7 @@
 import { SUPPLIES } from "./data.js";
 import { survivorById } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, poolLoad, weighTeam, onTheMove } from "./parties.js";
-import { partyVehicle, vehicleLabel } from "./vehicles.js";
+import { partyFleet as partyVehicle, vehicleLabel } from "./vehicles.js"; // every vehicle of the team's: the cargo is pooled across them
 import { ensureInv, EQUIP_SLOTS, packOf, rigPouches, isCarrier, insertsOf, INSERT_SIDES, itemLoad, stow, removeAt, parseLoc } from "./inventory.js";
 import { wornLoad, maxLoad } from "./load.js";
 import { meatIn, takeMeat, unloadGame, meatAt } from "./hunting.js";

@@ -40,7 +40,7 @@ import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, tierName,
   PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, BENCH, benchType,
 } from "../sim/buildings.js";
-import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, payloadOf, upgradeText, upgradeEffects, upgradeOptions, garageQueue, garageJobStatus, vehicleValue, costText, vehicleById, SHOP_TEXT, carPartsCost, carPartsText, stripYield } from "../sim/vehicles.js";
+import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, partyFleet, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, payloadOf, upgradeText, upgradeEffects, upgradeOptions, garageQueue, garageJobStatus, vehicleValue, costText, vehicleById, SHOP_TEXT, carPartsCost, carPartsText, stripYield } from "../sim/vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
 import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadview.js";
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
@@ -355,7 +355,7 @@ function renderTeams(state, ui) {
   if (!mine.length) return `${formTeamRow(state)}<div class="muted small">No teams out. Form one at a base, select a tile on the map and choose an action, or right-click a tile.</div>${teamsTrips(state, ui)}`;
   return formTeamRow(state) + mine.map((p) => {
     const members = partyMembers(state, p);
-    const v = partyVehicle(state, p);
+    const v = partyFleet(state, p); // one vehicle, or several together (sim/vehicles.js fleets)
     const back = Math.floor((p.departed + p.plannedHours) / 24) + 1;
     // A one-way trip (move, recon, outpost) arrives and stays; other trips come home.
     const oneWay = p.etaBack == null && p.etaOut != null ? (p.planStart ?? p.departed) + p.etaOut : null;
@@ -374,7 +374,7 @@ function renderTeams(state, ui) {
     const showLive = waiting || p.radioLive || p.kind === "convoy" || p.phase === "task";
     return `<div class="card small ${waiting ? "attn" : ""}">
       <div class="spread"><b>${sjob ? `Supply run: ${esc(jobName(state, sjob))}` : `${MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team"} → ${esc(tileLabel(state, p.dest))}`}</b>${showLive ? `<button data-action="center" data-tile="${partyTile(p)}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>
-      ${members.map(first).join(", ")} · ${v ? esc(isBike(v) ? `on ${vehicleLabel(v)}` : v.name) : "on foot"} · ${STANCES[p.stance]?.name || ""}${p.burden && p.burden.band >= 2 && p.vehicle !== true ? ` · <span class="warn"${tip("Its load slows it down and it eats and drinks more on the move (team panel)")}>${p.burden.band >= 3 ? "Overloaded" : "Heavy"}</span>` : ""}<br>
+      ${members.map(first).join(", ")} · ${v ? esc(isBike(v) ? `on ${vehicleLabel(v)}` : vehicleLabel(v)) : "on foot"} · ${STANCES[p.stance]?.name || ""}${p.burden && p.burden.band >= 2 && p.vehicle !== true ? ` · <span class="warn"${tip("Its load slows it down and it eats and drinks more on the move (team panel)")}>${p.burden.band >= 3 ? "Overloaded" : "Heavy"}</span>` : ""}<br>
       ${showLive ? `Food ${n0((p.supplies.food || 0) + (p.supplies.preserved || 0))} · Water ${n0(waterIn(p.supplies))}${(p.supplies[RAW] || 0) >= 1 ? ` (${n0(p.supplies[RAW])} raw)` : ""}${isCar(v) ? ` · Fuel ${n0(partyFuel(state, p))} · Vehicle ${Math.round(v.condition)}%` : ""} · Load ${n0(Parties.poolLoad(p))}/${n0(partyCapacity(state, p))} kg<br>` : ""}
       ${status}
       ${canOrder && p.kind !== "convoy" && !commandable(state, p) ? `<div class="small muted"${tip(NO_RADIO)}>No radio contact: it follows its ${p.plan && p.plan.active ? "plan" : "orders"}; new orders through its cards</div>` : ""}

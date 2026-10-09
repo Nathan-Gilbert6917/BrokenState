@@ -44,7 +44,7 @@ import { BG_ACTIONS, BG_CHANGE, customLibrary } from "./ui/backgrounds.js"; // c
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
-import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
+import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormEsc, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
@@ -1762,6 +1762,7 @@ function closeTopLayer() {
     else ui.gunb = null;
     return true;
   }
+  if (ui.inv && ui.inv.form && teamFormEsc(state, ui)) return true; // ui/teamform.js: asks before closing with gear moved
   if (ui.inv) { // drops the selection first, then closes
     if (ui.invSel) ui.invSel = null;
     else { ui.inv = null; ui.invMsg = ""; }

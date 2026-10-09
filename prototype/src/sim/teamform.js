@@ -294,3 +294,79 @@ export function setSupply(state, p, k, qty) {
   return r.text;
 }
 
+
+// ---------- keep or undo the gear changes made in the window ----------
+// A snapshot of everything the window can move (ui/teamform.js takes it when it opens): the base's armory, stores and
+// repair queue, every person at the base and on the team (worn, held, pockets), the team's packed and found supplies
+// and its cargo, and every item in any of them (its own fields: a pack's or rig's contents, a carrier's plates, a gun's
+// attachments, a magazine's load, wear). restoreGear puts it all back exactly as it was (the same item objects in the
+// same places); gearChanged says whether anything differs. People joining or leaving the team and its vehicles are not
+// part of it (they are not gear).
+const props = (o) => { const out = {}; for (const k of Object.keys(o)) { const v = o[k]; out[k] = Array.isArray(v) ? v.slice() : v && typeof v === "object" && !v.key ? { ...v } : v; } return out; };
+function holders(state, base, p) {
+  const people = [...new Set([...state.survivors.filter((s) => s.alive && s.location && s.location.kind === "base" && s.location.baseId === base.id), ...(p ? partyMembers(state, p) : [])])];
+  /** @type {any[]} */
+  const lists = [base.armory, base.gearRepairs || (base.gearRepairs = [])];
+  /** @type {any[]} */
+  const objs = [base.stock];
+  for (const s of people) { lists.push(s.pockets); objs.push(s.gear); }
+  if (p) { p.cargo = p.cargo || { supplies: {}, gear: [] }; lists.push(p.cargo.gear); objs.push(p.supplies, p.cargo.supplies); }
+  return { people, lists, objs };
+}
+function itemsIn(h) {
+  const seen = new Set();
+  const walk = (it) => {
+    if (!it || typeof it !== "object" || !it.key || seen.has(it)) return;
+    seen.add(it);
+    for (const c of it.contents || []) walk(c);
+    for (const c of Object.values(it.inserts || {})) walk(c);
+    for (const c of Object.values(it.mods || {})) walk(c);
+  };
+  for (const l of h.lists) for (const x of l) walk(x && x.item && !x.key ? x.item : x); // a repair job holds its item
+  for (const o of h.objs) for (const x of Object.values(o)) walk(x);
+  return [...seen];
+}
+/** @param {State} state @param {Base} base @param {Party | null} [p] */
+export function gearSnapshot(state, base, p = null) {
+  const h = holders(state, base, p);
+  return { baseId: base.id, partyId: p ? p.id : null, lists: h.lists.map((l) => [l, l.slice()]), objs: h.objs.map((o) => [o, { ...o }]), items: itemsIn(h).map((it) => [it, props(it)]) };
+}
+const sameVal = (a, b) => (typeof a === "number" && typeof b === "number" ? Math.abs(a - b) < 1e-9 : a === b);
+const sameArr = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => sameVal(x, b[i]));
+const sameObj = (a, b) => { const ks = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]); for (const k of ks) { const x = a ? a[k] : undefined, y = b ? b[k] : undefined; if (!(sameVal(x, y) || ((x == null || x === 0) && (y == null || y === 0)))) return false; } return true; };
+// True when anything in the snapshot is not as it was.
+export function gearChanged(state, snap) {
+  if (!snap) return false;
+  for (const [l, was] of snap.lists) if (!sameArr(l, was)) return true;
+  for (const [o, was] of snap.objs) if (!sameObj(o, was)) return true;
+  for (const [it, was] of snap.items) {
+    const now = props(it);
+    const ks = new Set([...Object.keys(now), ...Object.keys(was)]);
+    for (const k of ks) {
+      const a = now[k], b = was[k];
+      if (Array.isArray(a) || Array.isArray(b)) { if (!sameArr(a, b)) return true; }
+      else if (a && typeof a === "object" && !a.key) { if (!sameObj(a, b)) return true; }
+      else if (!sameVal(a, b)) return true;
+    }
+  }
+  return false;
+}
+// Everything back as it was. Returns a line for the window (with a warning when the team is now over what it can carry:
+// its people or vehicles changed since).
+export function restoreGear(state, snap) {
+  if (!snap) return "";
+  for (const [l, was] of snap.lists) l.splice(0, l.length, ...was);
+  for (const [o, was] of snap.objs) { for (const k of Object.keys(o)) if (!(k in was)) delete o[k]; Object.assign(o, was); }
+  for (const [it, was] of snap.items) {
+    for (const k of Object.keys(it)) if (!(k in was)) delete it[k];
+    for (const [k, v] of Object.entries(was)) {
+      if (Array.isArray(v) && Array.isArray(it[k])) it[k].splice(0, it[k].length, ...v);
+      else if (v && typeof v === "object" && !v.key && it[k] && typeof it[k] === "object") { for (const kk of Object.keys(it[k])) if (!(kk in v)) delete it[k][kk]; Object.assign(it[k], v); }
+      else it[k] = Array.isArray(v) ? v.slice() : v && typeof v === "object" && !v.key ? { ...v } : v;
+    }
+  }
+  const p = snap.partyId != null ? state.parties.find((x) => x.id === snap.partyId) : null;
+  if (p) weighTeam(state, p);
+  const over = p ? poolLoad(p) - carryCapacity(state, partyMembers(state, p), partyFleet(state, p)) : 0;
+  return `Gear and supplies are back as they were.${over > EPS ? ` The team is now ${Math.ceil(over)} kg over what it can carry (its people or vehicles changed since): drop something off or take a vehicle.` : ""}`;
+}
