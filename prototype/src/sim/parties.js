@@ -37,6 +37,8 @@ import { perceive, spot, mergeSpots, MARKER_TYPES, markAbandonedVehicle, markDea
 import { rescueArrive, captivesOf, contactAttack } from "./conflicts.js";
 import { handoverArrive } from "./ransom.js";
 import { assaultArrive } from "./conquest.js";
+import { occupyArrive, occupyProblem } from "./occupy.js"; // Occupy: move into an abandoned base
+import { abandonedAt } from "./groupworld.js"; // a base standing empty on a tile (Occupy instead of Build outpost there)
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
 import { growthAt, growthArrive } from "./hivetech.js";
@@ -77,11 +79,13 @@ import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
 import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
-import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
+import { canClaim, CLAIM, claimsTaken, takeGroupClaims, claimsTakenText } from "./claims.js"; // the orders card: Claim this tile where the land borders yours; a new outpost takes the groups' claims round it
 import { askBaseName } from "./basenames.js"; // the naming popup for a base you found
 import { enterTarget, enterCard, enterOption, joinBase } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
 import { shedSurplusVehicles, reseat, afterVehicleLoss } from "./walkers.js"; // one person to each vehicle; walkers after a vehicle is lost
 import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, takeStock, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
+import { partySaw } from "./groupworld.js"; // a group learns your bases its parties pass
+import { lyingFor, INTEL } from "./intel.js"; // a gang that overheard a group's caravan waits for it
 import { withLook, surveyErr, noteLook } from "./intelnotes.js"; // what a team sees of a group's base (the State Map's estimates, intelest.js)
 
 export const STANCES = {
@@ -96,6 +100,7 @@ export const MISSIONS = {
   scavenge:    { name: "Scavenge / raid",  desc: "Raid the site on its own map: search containers while Heat rises and more of the dead arrive, then leave by an extraction zone." },
   trade:       { name: "Trade visit",      desc: "Visit a group's base to barter, give gifts and sign pacts." },
   outpost:     { name: "Build outpost",    desc: "Found a satellite base here. Needs 15 scrap carried. The team stays as its first staff." },
+  occupy:      { name: "Occupy abandoned base", desc: "Move into a base that stands empty (a group's that died out, gave it up or lost it, or an outpost of yours that was lost): clear out the dead or squatters inside (a fight; the planner shows who is there), and it is your outpost with the buildings still standing, their wear and damage, and the stores left there. No scrap needed. The team stays as its first staff. The group whose base it was, and any group whose claims round it you take, will not like it." },
   recover:     { name: "Recover bodies",   desc: "Collect what is left at a death site before scavengers strip it." },
   cull:        { name: "Cull horde",       desc: "Thin out or lure away a horde on or next to this tile." },
   hive:        { name: "Destroy hive",     desc: "Storm an infestation hive: a hard tactical battle against its brood and the Broodmother inside. Win and the hive is destroyed. Bring five or six well-armed fighters." },
@@ -590,7 +595,9 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
 
 // ---------- launching player expeditions ----------
 // Missions after which the team waits at the destination (or stays for good): no way back is planned.
-export const STAY_MISSIONS = ["move", "recon", "outpost"];
+export const STAY_MISSIONS = ["move", "recon", "outpost", "occupy"];
+// Missions after which the team lives at the base it founded or moved into: no plan after them (the planner, trips.js).
+export const SETTLE_MISSIONS = ["outpost", "occupy"];
 // Scrap an outpost needs carried: 15, or 5 on the ruins of a burned base (the rest is salvage there).
 /** @param {State} state @param {number} tile */
 export const outpostScrap = (state, tile) => (state.tiles[tile] && state.tiles[tile].ruin ? 5 : 15);
@@ -610,6 +617,7 @@ export function missionProblem(state, tile, mission) {
   }
   if (mission === "scavenge" && t.terrain === "water" && !t.bridge) return "There is nothing to search on the water.";
   if (mission === "assault" && !state.factions.some((f) => f.alive && f.bases.includes(tile))) return "No group holds that place.";
+  if (mission === "occupy") return occupyProblem(state, tile) || null; // occupy.js
   return null;
 }
 
@@ -740,6 +748,7 @@ export function launchExpedition(state, opts) {
   const planHome = opts.plan && p.orders.some((o) => o.type === "home");
   const waits = opts.plan ? !planHome : stays;
   const after = mission === "outpost" ? ` The team stays there as its first staff${v ? `, and the ${v.name} stays at the outpost` : ""}.` :
+    mission === "occupy" ? ` It clears out whoever is inside and moves in as its first staff${v ? `, the ${v.name} with it` : ""}.` :
     opts.plan ? ` Plan: ${p.plan.name}${p.orders.length ? ` (${queueText(state, p)})` : ""}.${waits ? " Then it waits for orders." : ""}` : stays ? " The team waits there for orders." : "";
   if (lights.length) log(state, `${teamName(state, p)} takes lights from the armory: ${lights.join(", ")}.`, "info");
   if (siegeKit.length) log(state, `The assault team takes siege kit from the armory: ${siegeKit.join(", ")}.`, "info");
@@ -1190,16 +1199,21 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   if (fb && captivesOf(state, fb.id).length) add("rescue");
   if (fb) add("assault");
   const ownedByOther = state.factions.some((f) => f.bases.includes(tile)) || (typeof t.owner === "number");
+  // A base standing empty here (groupworld.js): Occupy it (occupy.js), with or without a base of your own.
+  const left = abandonedAt(state, tile);
+  if (left) add("occupy", occupyProblem(state, tile) || null);
   if (!state.bases.length) {
     // No base at all (hardcore's first hub, the exiles): Establish base, a staging camp built up into the hub (staging.js).
     const est = establishOption(state, p, tile);
     if (est) out.push(est);
     const strike = strikeOption(state, p, tile);
     if (strike) out.push(strike);
-  } else if (!state.bases.some((b) => b.tile === tile) && !ownedByOther && (t.terrain !== "water" || t.bridge)) { // a bridge: the outpost barricades it (bridgeClosedTo)
+  } else if (!left && !state.bases.some((b) => b.tile === tile) && !ownedByOther && (t.terrain !== "water" || t.bridge)) { // a bridge: the outpost barricades it (bridgeClosedTo)
     const scrap = (p.supplies.scrap || 0) + (p.cargo.supplies.scrap || 0);
     const need = outpostScrap(state, tile);
     add("outpost", scrap < need ? `Needs ${need} scrap carried${need < 15 ? " (on the ruins)" : ""} (have ${Math.floor(scrap)})` : null);
+    const taken = claimsTaken(state, tile); // claims.js: the groups' claims round it become yours
+    if (taken.length) out[out.length - 1].desc += ` Building here takes claims round it and angers ${claimsTakenText(taken)}.`;
   }
   const site = state.deathSites.find((d) => d.tile === tile);
   if (site && site.items.length) add("recover");
@@ -1449,6 +1463,9 @@ function arrive(state, p) {
     case "outpost": {
       // No base left (an order queued before every base was lost): the staging camp instead (staging.js).
       if (!state.bases.length) { p.mission = "establish"; return establishArrive(state, p); }
+      // A base standing empty here (it was left since the team set out, or the planner was not told): move in instead
+      // of building over it (occupy.js).
+      if (abandonedAt(state, p.dest)) { p.mission = "occupy"; return occupyArrive(state, p); }
       const mine = state.bases.some((b) => b.tile === p.dest);
       const blocked = mine || state.factions.some((f) => f.bases.includes(p.dest)) || (t.owner != null && t.owner !== "player");
       const scrap = carried(p, "scrap");
@@ -1470,7 +1487,8 @@ function arrive(state, p) {
       askBaseName(state, base);
       settleInto(state, p, base);
       recomputeOwnership(state);
-      log(state, `${base.name} founded with ${members.length} staff.`, "good");
+      const took = takeGroupClaims(state, base.tile); // claims.js: the groups' claims round it are yours (as a group's new base takes yours)
+      log(state, `${base.name} founded with ${members.length} staff.${took.length ? ` Its land takes claims of ${claimsTakenText(took)}.` : ""}`, "good");
       return `${base.name} founded.`;
     }
     case "recover": {
@@ -1537,6 +1555,8 @@ function arrive(state, p) {
       return handoverArrive(state, p); // ransom.js: the exchange at the meeting point (and its betrayal)
     case "assault":
       return assaultArrive(state, p); // conquest.js: the assault card and its battle
+    case "occupy":
+      return occupyArrive(state, p); // occupy.js: clear an abandoned base and move in
     case "help": {
       const siege = state.parties.find((q) => q.id === p.helpFor && q.phase === "siege");
       const f = factionById(state, p.helpFaction);
@@ -2054,7 +2074,9 @@ function aiPartyHour(state, p) {
   if (p.kind === "caravan" && p.phase !== "out") return caravanHour(state, p); // at your gates (caravans.js)
   if (p.kind === "scav" && p.phase === "search") return scavSearchHour(state, p); // scavenging a site (aiscav.js)
   const entered = stepAlong(state, p, p.vehicle ? 1 : 0.9);
+  const owner = entered.length && state.bases.length ? factionById(state, p.owner) : null;
   for (const tileId of entered) {
+    if (owner) partySaw(state, owner, tileId); // groupworld.js: what they see of your bases on the way
     // Hordes chew up whoever walks into them.
     const horde = state.hordes.find((h) => h.tile === tileId);
     if (horde) {
@@ -2068,7 +2090,9 @@ function aiPartyHour(state, p) {
         // Raider gangs (not a group they have a pact with), and aggressive groups at war with its group (caravanraids.js wouldRaid).
         if (!r.alive || r.id === p.owner || !isAggressiveType(r)) continue;
         if (!wouldRaid(state, r, { owner: p.owner, type: p.kind })) continue;
-        if (r.bases.some((b) => state.grid.distance(b, tileId) <= 2) && state.rng.chance(0.12)) {
+        const lying = lyingFor(state, r, p); // intel.js: they overheard this caravan on its group's channel
+        if (r.bases.some((b) => state.grid.distance(b, tileId) <= 2 + (lying ? INTEL.AMBUSH.AI_RANGE : 0)) && state.rng.chance(0.12 * (lying ? INTEL.AMBUSH.MULT : 1))) {
+          if (lying) r.lying = null; // the band has done what it came out for, either way
           const from = factionById(state, p.owner);
           // caravanraids.js gangAmbush: by the numbers; won, everything it carried goes into their stock and onto their shelf.
           if (!gangAmbush(state, r, p)) {

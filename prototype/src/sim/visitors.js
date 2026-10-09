@@ -1866,7 +1866,7 @@ function onOutsiderFight(state, result, setup) {
       if (p && state.parties.includes(p) && v.kind === "merchants") {
         // caravanraids.js: everything in the wagons, the guards' gear, their vehicle if it still runs; what the team
         // cannot carry stays in the vehicle or on the tile.
-        after = lootCaravan(state, p, { supplies: v.stock, gear: v.wares }, { tile: partyTile(p), name: v.name, kit: setup.enemy.kind, guards: result.enemiesKilled || setup.enemy.count, tactical: !!result.tactical, vehicle: v.escort && !v.vehicleLost ? v.escort.vehicle : null, key: c.key || `v${v.serial}`, result });
+        after = lootCaravan(state, p, { supplies: v.stock, gear: v.wares }, { tile: partyTile(p), name: v.name, kit: setup.enemy.kind, guards: result.enemiesKilled || setup.enemy.count, tactical: !!result.tactical, vehicle: v.escort && !v.vehicleLost && !result.humveeOut ? v.escort.vehicle : null, key: c.key || `v${v.serial}`, result });
       } else if (p && state.parties.includes(p)) {
         got = cargoAdd(state, p, v.stock);
         for (const g of [...v.wares]) { if (typeof Parties.addGearToCargo === "function") { Parties.addGearToCargo(state, p, g); if (p.cargo.gear.includes(g)) items.push(g.name); } }
@@ -1874,7 +1874,7 @@ function onOutsiderFight(state, result, setup) {
         for (const k of SUPPLY_KEYS) { const q = Math.floor(v.stock[k] || 0); if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got[k] = q; } }
         items = v.wares.map((g) => g.name);
         base.armory.push(...v.wares);
-        const V = v.escort && v.escort.vehicle && !v.vehicleLost ? ESCORT_VEHICLES[v.escort.vehicle] : null;
+        const V = v.escort && v.escort.vehicle && !v.vehicleLost && !result.humveeOut ? ESCORT_VEHICLES[v.escort.vehicle] : null; // humveeOut: it drove off (combat.js carTurn)
         if (V) { // their vehicle, into the base's motor pool (beaten up in the fight)
           const car = createVehicle(state, V.type, { kind: "base", baseId: base.id }, { fuel: 10, condition: 50, name: V.model === "humvee" ? "Humvee" : V.model === "mrap" ? "MRAP" : undefined });
           items.push(`their ${car.name.toLowerCase() === "humvee" || car.name === "MRAP" ? car.name : car.name.toLowerCase()} (in the motor pool)`);

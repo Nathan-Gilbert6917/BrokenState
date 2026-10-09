@@ -20,7 +20,7 @@ import { siteSource } from "./itemcond.js";
 import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
-import { truckSearchHour } from "./miltrucks.js";
+import { truckSearchHour, convoyHeat0, convoyThreat } from "./miltrucks.js"; // an Army convoy's guard: Heat from the start, a harder fight
 import { gunSearchHour } from "./locks.js"; // gun safes, drills and grinders (their own dice)
 import { siteDeadMix, bodyLoot, MILDEAD, maxMix } from "./deadsoldiers.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
@@ -101,7 +101,7 @@ export function startScavenge(state, p) {
     p.phase = "task";
     p.task = { type: "crewsearch", hours: null, done: 0 };
     p.crewSearch = {
-      partyId: p.id, tile: p.dest, heat: isNight(state) ? 0 : 5, hours: 0, approach: null, log: [], found: { supplies: {}, gear: [] }, done: false,
+      partyId: p.id, tile: p.dest, heat: (isNight(state) ? 0 : 5) + convoyHeat0(state, p.dest), hours: 0, approach: null, log: [], found: { supplies: {}, gear: [] }, done: false,
       guarded: owner && attitude(owner) === "Hostile" && owner.bases.includes(p.dest) ? owner.id : null,
     };
     return true;
@@ -125,7 +125,7 @@ export function startScavenge(state, p) {
   // The one search slot is never overwritten while another team is using it (the caller makes this team wait).
   if (searchBusy(state, p)) return false;
   state.engagement = {
-    partyId: p.id, tile: p.dest, heat: isNight(state) ? 0 : 5, hours: 0, approach: null,
+    partyId: p.id, tile: p.dest, heat: (isNight(state) ? 0 : 5) + convoyHeat0(state, p.dest), hours: 0, approach: null, // miltrucks.js: a guarded convoy starts hotter
     log: [`The team reaches ${tileLabel(state, p.dest)}. ${t.loc ? LOCATIONS[t.loc.type].name + "." : ""} Infection here: ${Math.round(t.infection * 100)}%.`],
     found: { supplies: {}, gear: [] }, done: false,
     guarded: owner && attitude(owner) === "Hostile" && owner.bases.includes(p.dest) ? owner.id : null,
@@ -211,7 +211,7 @@ export function searchHour(state) {
   const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
   if (gearList.length && rng.chance(0.07 * t.loot * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1))) {
     const g = rng.pick(gearList);
-    const found = lootItem(g, siteSource(t.loc.type), rng); // itemcond.js: a gun shop's stock new, a crash site's scorched
+    const found = lootItem(g, siteSource(t.loc.type), rng); // itemcond.js: a gun shop's stock used, a crash site's scorched
     e.found.gear.push(found, ...gunMags(found, siteSource(t.loc.type), e.tile, e.hours)); // carrykit.js: a gun's spare magazines (own dice)
     finds.push(GEAR[g].name);
   }
@@ -255,7 +255,7 @@ export function searchHour(state) {
   if (rng.chance((stage.fight + (e.guarded ? 0.15 : 0)) * (perk("sixthsense") ? 0.7 : 1))) { // Sixth Sense: 30% less trouble
     // The armoured dead (deadsoldiers.js) make a military site's fights harder, and their bodies pay for it.
     const mil = siteDeadMix(state, e.tile);
-    const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0) + specialThreat(state, e.tile);
+    const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0) + specialThreat(state, e.tile) + convoyThreat(state, e.tile); // miltrucks.js CONVOY_GUARD: the convoy's guard
     // The shots: a bow's in arrows, everyone else's in ammo (world.js spendShots); short of either, those count 60%.
     const shot = spendShots(p.supplies, members, e.approach === "loud" ? 6 : 2);
     const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, p.supplies, p.supplies.arrows || 0, { need: () => 1 });

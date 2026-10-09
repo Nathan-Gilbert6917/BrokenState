@@ -30,7 +30,7 @@ export const SEVERE_NO_BED = 0.4;        // healing speed for severe wounds with
 export const SURGERY_MULT = 1.5;         // treatment heal on a severe wound where surgery is available
 
 // Tier 0: no hospital (or nobody staffing it). People still heal slowly and meds still work, weakly.
-export const NO_HOSPITAL = { tier: 0, name: "No hospital", beds: 0, heal: 0, eff: 1, treat: 12, staff: 0, cures: false, guards: false, severe: SEVERE_NO_BED, surgery: false, craft: 0 };
+export const NO_HOSPITAL = { tier: 0, name: "No hospital", beds: 0, heal: 0, eff: 1, treat: 12, staff: 0, cures: false, guards: false, severe: SEVERE_NO_BED, surgery: false, craft: 0, train: 0, teach: 0, ward: 0 };
 
 export const BASE_HEAL_PER_DAY = 4;      // everyone at a base, before Medicine
 export const TREAT_MEDS = 1;             // meds per treatment
@@ -91,17 +91,30 @@ export function nextHospitalType(base) {
 // People on the Medic role at this base.
 export const medicStaff = (state, base) => atBase(state, base.id).filter((s) => s.role === "medic");
 const bestMed = (people) => Math.max(0, ...people.map((s) => skill(s, "medicine")));
+// Medic trainees (training.js) help on the ward: each counts as TRAINEE_STAFF of a medic toward the staff a tier needs,
+// up to the tier's trainee places (med.train) and only beside at least one full medic (a ward of trainees alone does
+// not run). A trainee in a hospital bed helps nobody.
+export const TRAINEE_STAFF = 0.5;
+export const traineesHere = (state, base) => atBase(state, base.id).filter((s) => s.role === "trainee").sort((a, b) => a.id - b.id);
+// The staff count a hospital runs on: medics, plus half a medic per trainee with a place (none without a medic).
+export function staffCount(state, base, def = hospitalDef(base), staff = medicStaff(state, base)) {
+  if (!staff.length || !def.train) return staff.length;
+  const helpers = Math.min(def.train || 0, traineesHere(state, base).filter((s) => !s.inBed).length);
+  return staff.length + helpers * TRAINEE_STAFF;
+}
 
 // What actually runs: buildings need people. With too few medics for the tier as built, the hospital runs as the
 // highest tier its medics can staff (a Clinic with one medic works as a Field hospital); with none, as no hospital.
+// Trainees count as half a medic each (staffCount): a clinic runs on one medic and two trainees.
 export function activeHospital(state, base) {
   const def = hospitalDef(base);
   const staff = medicStaff(state, base);
-  const staffed = def.tier > 0 && staff.length >= def.staff;
+  const count = def.tier > 0 ? staffCount(state, base, def, staff) : 0;
+  const staffed = def.tier > 0 && count >= def.staff - 1e-9;
   let run = NO_HOSPITAL;
   if (staffed) run = def;
   else if (def.tier > 0) {
-    const fit = hospitalTypes().filter((k) => BUILDINGS[k].tier < def.tier && staff.length >= BUILDINGS[k].med.staff).pop();
+    const fit = hospitalTypes().filter((k) => BUILDINGS[k].tier < def.tier && count >= BUILDINGS[k].med.staff - 1e-9).pop();
     if (fit) run = defOf(fit);
   }
   return {
@@ -110,6 +123,7 @@ export function activeHospital(state, base) {
     staffed,
     fallback: def.tier > 0 && !staffed && run.tier > 0, // running below the tier built
     staff,
+    staffCount: count,
     staffSkill: bestMed(staff),
     baseSkill: bestMed(atBase(state, base.id)),
   };
@@ -200,8 +214,9 @@ function understaffedCheck(state, base, hosp) {
   if (base.hospSeen === type) return;
   base.hospSeen = type;
   if (!type || hosp.staffed) return;
-  const n = hosp.staff.length;
-  log(state, `The ${hosp.built.name} at ${base.name} needs ${hosp.built.staff} medic${hosp.built.staff === 1 ? "" : "s"} and has ${n}: it runs as ${hosp.tier ? `a ${hosp.name}` : "no hospital"} until ${hosp.built.staff - n} more ${hosp.built.staff - n === 1 ? "person takes" : "people take"} the Medic role.`, "danger");
+  const n = hosp.staffCount || 0;
+  const more = Math.ceil(hosp.built.staff - n - 1e-9);
+  log(state, `The ${hosp.built.name} at ${base.name} needs ${hosp.built.staff} medic${hosp.built.staff === 1 ? "" : "s"} and has ${n}: it runs as ${hosp.tier ? `a ${hosp.name}` : "no hospital"} until ${more} more ${more === 1 ? "person takes" : "people take"} the Medic role (a Medic trainee counts as half).`, "danger");
 }
 
 // Daily: infections setting in or clearing. (Meds are used by automatic care, autoCare, run from health.js.)

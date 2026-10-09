@@ -4,7 +4,7 @@ import {
   MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, canSeeAt, coverSides, isRanged, adjacent, meleeReach, canFire, ammoLeft, arrowsLeft, medsLeft, combatAct, enemyStep, playerSees,
   hasMag, magLabel, magEmpty, magShown, reloadRefusal, fireRefusal, hasShots,
-  vehicleTurret, TURRET, turretRounds, los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, DRIVE, RAMMING, aboardCount, evacRefusal, areaHint, HEAT_NAMES,
+  vehicleTurret, TURRET, RIDE, turretRounds, los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
   playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
 import * as SIM from "../sim/combat.js";
@@ -45,9 +45,11 @@ import { barkFrame } from "./barks.js"; // combat barks: short speech bubbles ov
 import { ingestMarks } from "./battlemarks.js"; // blood, brass and scorch read off each action's fx before the short fx list drops them
 import { iso, drawIso, project, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor, ISO_ZOOMS, LV, liftOf } from "./isoview.js";
 import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
-import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC, selfKit, selfOdds, selfStabRefusal } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy
+import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC, vehicleOf, pullTargets, pullRefusal, layInStab, selfKit, selfOdds, selfStabRefusal } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy, pulling one out of a vehicle
 import { groundButtons, groundCbAct, groundClick } from "./ground.js"; // bodies searched where they fell, things on the ground (sim/ground.js)
-import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
+import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
+// Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
 
 // Battle size; raids use a bigger map. Set from the battle in sync().
 let W = MAP_W, H = MAP_H;
@@ -315,7 +317,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "suppress", "throwspear", "unjam", "launch", "glreload"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
   }
   autoSelect(b);
@@ -999,6 +1001,7 @@ export function combatAction(state, key, d) {
   if (v === "search" && b.raid) return void openSearch(state, b, u, null, { full: true });
   if (v === "quick" && b.raid) return void openSearch(state, b, u, null, { quick: true }); // sim/search.js: the rummage
   if (v === "evac" || v === "evacStop") return void act(state, { type: v }); // sim/combat.js evacTurn: everyone to the way out
+  if (v === "cab") return void act(state, { type: "cab", unit: u.id }); // sim/combat.js fireCab: their vehicle's cab and hull
   if (v === "board" || v === "disembark" || v === "turn" || v === "gunner") return void act(state, { type: v, unit: u.id }); // sim/combat.js boardVehicle / disembark / turnVehicle / manTurret
   if (v === "drive") { // sim/combat.js driveTo: pick where it goes
     if (!b.vehicle) { cui.msg = "You came on foot: there is no vehicle here."; return; }
@@ -1240,6 +1243,7 @@ export function renderCombatPanel(state) {
       ${btn("move", "Move", "Click a blue tile to move (1 action) or a yellow tile to dash (2 actions).", ap > 0)}
       ${b.evacOrder ? btn("evacStop", "Stop evac", "Call off the Evac: your people stay where they are and take orders again.", true) : btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).`, !evacRefusal(b))}
       ${btn("shoot", "Shoot", gun ? (ammo ? `Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance.${hasMag(u) ? ` ${esc(u.weaponName)}: ${magLabel(b, u)} loaded.` : ""}` : fireRefusal(b, u)) : "No usable gun.", ap > 0 && ammo, "F")}
+      ${gun && SIM.cabTarget(b, u) ? (() => { const tg = SIM.cabTarget(b, u), o = SIM.cabOdds(b, u, tg), who = SIM.cabSeat(b, tg.v); return btn("cab", "Shoot the cab", `Fire at their ${esc(tg.v.name || tg.v.kind)} (${o.chance}% a round): each hit wears it (heavy and armour-piercing rounds; ${SIM.HULL.PEN + 1}+ penetration) and half get in at the windscreen${tg.v.up && tg.v.up.plating ? " (less with the plate)" : ""}, at ${who ? "whoever is at the wheel" : "nobody: the cab is empty"}${tg.v.up && tg.v.up.glass ? " through bulletproof glass" : ""}. A driver down stops it. Ends this unit's turn.`, ap > 0 && ammo); })() : ""}
       ${gun && hasMag(u) ? btn("reload", magEmpty(b, u) && !reloadRefusal(b, u) ? '<span class="danger">Reload</span>' : "Reload", `${esc(u.weaponName)} (${magLabel(b, u)} now). ${reloadText(b, u)}${reloadRefusal(b, u) ? ` ${reloadRefusal(b, u)}` : ""}${u.gunner ? " The turret's belt: both actions." : ""}${ammoToHand(state, b, u).length > 1 ? ` More than one kind of round for it is to hand: Reload asks which (${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next).` : ""}`, ap >= (u.gunner ? TURRET.RELOAD_AP : 1) && (!reloadRefusal(b, u) || ammoToHand(state, b, u).length > 1), "I") : ""}
       ${gunButtons(state, b, u, btn)}
       ${plateButton(state, b, u, btn)}
@@ -1249,7 +1253,7 @@ export function renderCombatPanel(state) {
       ${b.vehicle ? btn("drive", "Drive", `Both actions, from inside or next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it, up to ${DRIVE.RANGE} cells. It drives through people (anyone in the way is hit for ${RAMMING.HIT[0]}–${RAMMING.HIT[1]}, the dead ${RAMMING.ZOMBIE_HIT[0]}–${RAMMING.ZOMBIE_HIT[1]}, and shoved aside) and light obstacles (fences, crates, sandbags, barricades, tank traps: broken, at a cost to the vehicle's condition); walls, trees, other cars, water, railings and trenches stop it. Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. Whoever is aboard rides along, the loot and the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && (u.aboard || atVehicle(b, u)), "V") : ""}
       ${b.vehicle && !u.aboard ? btn("board", "Get in", `1 action, from next to it: ride in the ${b.vehicle.kind} (${b.vehicle.seats || 4} seats, ${aboardCount(b)} aboard). Inside you are off the map (not a target, not drawn, no shooting) and can drive, turn, get out, or extract with it from a zone it stands at.`, ap > 0 && atVehicle(b, u) && aboardCount(b) < (b.vehicle.seats || 4)) : ""}
       ${u.aboard ? btn("disembark", "Get out", "1 action: out onto a free cell round the vehicle.", ap > 0) : ""}
-      ${u.aboard && vehicleTurret(b) ? btn("gunner", u.gunner ? "Get down" : "Man the turret", u.gunner ? "1 action: off the turret and back down inside (not a target any more)." : `1 action: up behind the ${vehicleTurret(b) === "m2hb" ? "M2" : "machine gun"} on the roof. Then Shoot (F) fires it: a 3-round burst from its belt (${b.vehicle.belt ?? "full"}, a new belt is both actions) out of the team's ammo (${Math.floor(turretRounds(b))}), a level up, aim +6, through cover, very loud (it wakes the whole map${b.raid ? `, Heat +${TURRET.HEAT} a burst` : ""}), and whoever it lands near shoots −${TURRET.PIN} next turn. Overwatch works from it. The gunner is the one rider they can shoot: half cover${b.vehicle.up && b.vehicle.up.plating >= 2 ? " (full: plate ×2)" : " (full behind plate ×2)"}. Downed, they drop back inside.`, ap > 0, "⇧T") : ""}
+      ${u.aboard && vehicleTurret(b) ? btn("gunner", u.gunner ? "Get down" : "Man the turret", u.gunner ? "1 action: off the turret and back down inside (not a target any more)." : `1 action: up behind the ${vehicleTurret(b) === "m2hb" ? "M2" : "machine gun"} on the roof. Then Shoot (F) fires it: a 3-round burst from its belt (${b.vehicle.belt ?? "full"}, a new belt is both actions) out of the team's ammo (${Math.floor(turretRounds(b))}), a level up, aim +6, through cover, very loud (it wakes the whole map${b.raid ? `, Heat +${TURRET.HEAT} a burst` : ""}), and whoever it lands near shoots −${TURRET.PIN} next turn. Overwatch works from it. After the vehicle drives or turns this turn the turret fires at −${RIDE.TURRET} (−${RIDE.DRIVER} for a gunner who turned it). The gunner is the one rider they can shoot: half cover${b.vehicle.up && b.vehicle.up.plating >= 2 ? " (full: plate ×2)" : " (full behind plate ×2)"}. Downed, they drop back inside.`, ap > 0, "⇧T") : ""}
       ${b.vehicle ? btn("turn", "Turn", "1 action, from inside or next to it: a quarter turn at the same corner (it needs open ground with nobody on it on the cells it turns onto).", ap > 0 && (u.aboard || atVehicle(b, u))) : ""}
       ${btn("meds", "Use meds", `1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive. With no meds left, someone down can still be stabilized by hand (${handsOdds(u)}%: pressure and a belt; it can be tried again).`, ap > 0 && (medsLeft(b) > 0 || players(b).some((o) => o.down && !o.dead && !o.left && !o.stab && adjacent(u, o))), "M")}
       ${medicButtons(state, b, u, btn)}
@@ -1467,7 +1471,12 @@ function medicButtons(state, b, u, btn) {
   const held = dragging(b, u);
   if (held) {
     html += btn("dragAlly", "Put down", `Free: lay ${held.name} down where they are, behind ${u.name.split(" ")[0]}. In cover, out of the line of fire, or on the evac strip (carried out with the last one to leave).`, true, keyLabel("battle.drag", 1) || "Shift+D");
-    if (b.vehicle) html += btn("dropVehicle", "Into vehicle", `Free, from next to the vehicle: lay ${held.name} in it (a seat). In the vehicle counts as carried out.`, !dropRefusal(b, u, "vehicle"));
+    if (b.vehicle) {
+      // sim/medics.js layInStab: a bleeding ally is stabilized on the way in (1 action) when there is an action left.
+      const stab = layInStab(b, u, held), bleeding = !held.stab && !held.ko && !held.surr;
+      const note = !bleeding ? "" : stab === "meds" ? ` ${held.name} is bleeding: stabilized on the way in (1 action, 1 meds).` : stab === "hands" ? ` ${held.name} is bleeding and there are no meds: ${u.name.split(" ")[0]} tries to stop it by hand on the way in (1 action, ${handsOdds(u)}%); if that fails they bleed on inside.` : ` Warning: ${held.name} is bleeding and ${u.name.split(" ")[0]} has no action left to stabilize them: inside they bleed out (${held.bleed || 0} turn${held.bleed === 1 ? "" : "s"} left) unless someone pulls them out (${keyLabel("battle.pullOut", 1) || "Shift+U"}) and treats them.`;
+      html += btn("dropVehicle", bleeding && stab !== "meds" ? "Into vehicle ⚠" : "Into vehicle", `${bleeding && stab ? "From" : "Free, from"} next to the vehicle: lay ${held.name} in it (a seat). In the vehicle counts as carried out.${note}`, !dropRefusal(b, u, "vehicle"));
+    }
   } else if (downNear.length) {
     const t = downNear.find((o) => o.draggedBy == null) || downNear[0];
     const why = liftRefusal(b, u, t);
@@ -1478,6 +1487,14 @@ function medicButtons(state, b, u, btn) {
     const ok = foes.filter((t) => !finishRefusal(b, u, t));
     const t = ok[0] || foes[0];
     html += btn("finish", "Finish", `1 action: kill a downed enemy for good (no revive, no prisoner): a blow from next to them, sure and silent, or one round (${MEDIC.FINISH.BASE}% out to ${MEDIC.FINISH.FROM} tiles, −${MEDIC.FINISH.PER} a tile past it; the noise of a shot). A plain click never does it. ${ok.length ? `${t.name}: ${finishOdds(u, t, b)}%.` : finishRefusal(b, u, t)}`, ap > 0 && ok.length > 0, keyLabel("battle.finish", 1) || "Shift+K");
+  }
+  // Pull out (sim/medics.js): someone down inside a vehicle (a rider of yours, one of theirs in their Humvee: driver, rider or gunner) is
+  // out of reach until someone standing next to it pulls them out.
+  const inCar = b.units.filter((o) => (o.side === "player" || playerSees(b, o)) && vehicleOf(b, o));
+  if (inCar.length) {
+    const t = pullTargets(b, u)[0] || inCar[0];
+    const why = pullRefusal(b, u, t);
+    html += btn("pullOut", "Pull out", `${MEDIC.PULL.AP} actions, standing next to the vehicle: pull ${t.name} (down inside${t.side === "player" ? "" : ", theirs"}) out onto a free cell next to you both, where they can be revived, stabilized, dragged${t.side === "player" ? "" : ", tied up or finished"} as anyone on the ground. Down in a vehicle nobody can treat them, and the bleeding bleed on.${why ? ` ${why}` : ""}`, !why, keyLabel("battle.pullOut", 1) || "Shift+U");
   }
   return html;
 }
@@ -1816,7 +1833,10 @@ function odds(b, u, t) {
   if (!canSee(b, u, t)) return { ok: false, label: "No line of sight" };
   const o = shotOdds(b, u, t);
   const cover = o.cover === 2 ? "in full cover" : o.cover === 1 ? "in half cover" : o.flanked ? "FLANKED" : t.kind === "zombie" || !t.aware || t.surprised ? "caught in the open" : "exposed";
-  return { ...o, ok: true, label: `${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT}), ${cover}${t.hunker ? ", hunkered" : ""}` };
+  // sim/combat.js shotOdds notes: a bipod rested on cover, firing from a vehicle that moved, a light round's drop at range,
+  // handloads, a helmet's visor, a headset's callout, dazed by a bang.
+  const notes = o.notes && o.notes.length ? `; ${o.notes.join(", ")}` : "";
+  return { ...o, ok: true, label: `${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT}), ${cover}${t.hunker ? ", hunkered" : ""}${notes}` };
 }
 
 

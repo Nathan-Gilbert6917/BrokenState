@@ -26,6 +26,7 @@ import { caravanSurplus } from "../src/sim/caravans.js";
 import * as D from "../src/sim/diplomacy.js";
 import * as J from "../src/sim/jobs.js";
 import * as A from "../src/sim/alliance.js";
+import { PAYOUT } from "../src/sim/upkeep.js"; // the pay-out reserve: a group's tribute keeps PAYOUT.days of food a head
 
 import { execFileSync, execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -417,8 +418,15 @@ section("Relations between groups, pacts and wars");
   const w2 = D.startWar(st, atk, b, "resources");
   clearCards(st);
   w2.score[atk.id] = 3; w2.score[b.id] = 0;
+  b.stock.food = b.pop * PAYOUT.days * 4; // well above the pay-out reserve
   const foodB = b.stock.food, foodA = atk.stock.food;
   check(D.makePeace(st, w2) === "tribute" && b.stock.food < foodB && atk.stock.food > foodA, "a small lead: the loser pays tribute (25% of food, ammo, meds, scrap)");
+  // Short of food the tribute stops at the pay-out reserve (upkeep.js PAYOUT: PAYOUT.days a head).
+  const wr = D.startWar(st, atk, b, "resources");
+  clearCards(st);
+  wr.score[atk.id] = 3; wr.score[b.id] = 0;
+  b.stock.food = b.pop * PAYOUT.days + 2;
+  check(D.makePeace(st, wr) === "tribute" && b.stock.food >= b.pop * PAYOUT.days, `short of food: the tribute leaves ${PAYOUT.days} days a head (${b.stock.food} for ${b.pop})`);
   const w3 = D.startWar(st, atk, b, "land");
   clearCards(st);
   check(D.makePeace(st, w3) === "white", "no lead: a white peace");

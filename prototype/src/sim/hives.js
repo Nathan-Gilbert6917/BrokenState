@@ -581,6 +581,7 @@ export function hiveArrive(state, p) {
   }
   p.seen.set(tile, snapshot(state, tile));
   p.phase = "engaged";
+  p.hiveVisit = tile; // conflicts.js contactOn: the hive's guard does not ambush the team on this tile after the card
   addCard(state, hiveCard(state, p, hive));
   return "";
 }

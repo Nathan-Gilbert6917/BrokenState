@@ -52,7 +52,7 @@ export function specOf(state, pl) {
     members: [...pl.crew].map((id) => survivorById(state, id)).filter(Boolean).map((s) => ({ id: s.id, name: s.name, role: s.role, wrole: (s.work && s.work.role) || null, top: topSkills(s) })),
     vehicleId: v ? v.id : null, vehicleType: v ? v.type : null, vehicleName: v ? v.name : null,
     supplies, tabs: !!pl.tabs, lights: pl.lights !== false,
-    plan: pl.mission === "outpost" ? null : clone(pl.plan) || null, sweep: clone(pl.sweep) || null,
+    plan: pl.mission === "outpost" || pl.mission === "occupy" ? null : clone(pl.plan) || null, sweep: clone(pl.sweep) || null,
   };
 }
 
@@ -178,7 +178,7 @@ export function applySpec(state, pl, spec) {
     } else notes.push(`No ${spec.vehicleType === "bike" ? "bikes" : spec.vehicleName || "vehicle"} at the hub: on foot.`);
   }
   // The plan: "Move to a site" steps belong to the target they were planned from.
-  if (spec.plan && pl.mission !== "outpost") {
+  if (spec.plan && pl.mission !== "outpost" && pl.mission !== "occupy") {
     const plan = clone(spec.plan);
     if (spec.dest !== pl.dest) {
       const moves = plan.steps.filter((s) => s.kind === "move").length;

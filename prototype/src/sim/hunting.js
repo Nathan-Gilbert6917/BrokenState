@@ -20,7 +20,8 @@
 //   team: the best three hunters count 1, ½ and ¼ (+0.08 a hand without a weapon, up to two, driving game):
 //     a hunter = their best hunting weapon (big / small game: hunting rifle 1 / 0.8, bows and crossbows 0.6 + 0.08 ×
 //     power for big game (scrap crossbow 0.8, compound bow 0.86, hunting crossbow 0.9) / 0.9,
-//     shotgun 0.45 / 1.2, automatic 0.7 / 0.6, pistol 0.3 / 0.6; melee: none) × the weapon's skill gap ×
+//     shotgun 0.45 / 1.2, automatic 0.7 / 0.6, pistol 0.3 / 0.6; melee: none; a scope fitted to the gun × 1.15 / 1.05,
+//     SCOPE_HUNT: the hunting rifle's own is in its numbers) × the weapon's skill gap ×
 //     skill (0.55 + 0.09 × (0.5 Shooting + 0.35 Scouting + 0.15 Stealth)) × 1.25 with the Hunter perk.
 //     Firearms need ammo carried (1 a shot); bows and crossbows are silent and need arrows (ARROW: each shot at game,
 //     a second one after a miss as for guns, loses its arrow half the time: about 0.6 arrows a kill). Nobody with a
@@ -86,7 +87,7 @@
 //   day turns toward it 25% of the time. Fish work / role: a base on a river or a lake shore, one rod or net a fisher
 //   (carried or in the armory), 3 hours a day. Expect a good hunter at a cabin in forest to bring in about 4–6 food a
 //   day once the land settles (a farmer about 2), less in spring and on farmland.
-import { gunMods, wearMuzzle } from "./gunmods.js"; // a suppressed gun is quieter on a hunt
+import { gunMods, wearMuzzle, hasScope } from "./gunmods.js"; // a suppressed gun is quieter on a hunt; a scoped one hunts better
 import { GEAR, SUPPLIES } from "./data.js";
 import { log, skill, gearEffect, atBase, newId, baseById, hub } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
@@ -129,6 +130,15 @@ export const HUNT_CAT = {
   rifle: { big: 1, small: 0.8 }, bow: { big: 0.85, small: 0.9 }, crossbow: { big: 0.85, small: 0.9 },
   shotgun: { big: 0.45, small: 1.2 }, automatic: { big: 0.7, small: 0.6 }, smg: { big: 0.5, small: 0.6 }, pistol: { big: 0.3, small: 0.6 },
 };
+// A scope on the hunter's gun (user request 2026-10-08): × these on its big and small game (a deer at 200 metres is a
+// shot a scope makes). Any magnifying sight counts (gunmods.js isScope: the 4× scope, ACOG, LPVO, the tactical, thermal
+// and scrap scopes; not a red dot or a holo sight) fitted to the gun. The hunting rifle's own scope is already in its
+// numbers (rifle 1 / 0.8; it has no sight slot: user pick G4, food from it as before), as is the sniper rifle's and the
+// .50's (their own hunt numbers). A scoped AR-15 hunts deer at 0.7 × 1.15 = 0.8; a scoped lever-action or carbine
+// 1.15, past the hunting rifle's 1. Everyone who hunts with a gun reads it here (the Hunt job, a team's hunt, crews,
+// the autopilot).
+export const SCOPE_HUNT = { big: 1.15, small: 1.05 };
+export const scopedForHunt = (item) => !!item && hasScope(item);
 // Arrows (data.js SUPPLIES.arrows): the chance a shot at game loses its arrow; how many a hunting team takes from home
 // when someone on it has a bow (plans.js applyPlan, packHuntArrows).
 export const ARROW = { lost: 0.5, pack: 12 };
@@ -212,7 +222,9 @@ export function huntWeaponInfo(item) {
   // quiet: × the shot's noise from the gun's attachments (gunmods.js: a suppressor 0.35–0.5, a brake 1.3): the hunt's
   // Heat, the base's hunting noise and the chance the wandering dead turn toward the shots all scale with it.
   const quiet = noise >= 1 ? gunMods(item).noise : 1;
-  return { key: item.key, name: d.name, big: h.big, small: h.small, loud: noise >= 1, noise: noise * quiet, quiet, ammo: noise >= 1, arrows: bow && noise < 1 };
+  const scoped = !d.hunt && noise >= 1 && scopedForHunt(item); // SCOPE_HUNT (an override has its scope in it)
+  if (scoped) h = { big: h.big * SCOPE_HUNT.big, small: h.small * SCOPE_HUNT.small };
+  return { key: item.key, name: d.name, big: h.big, small: h.small, loud: noise >= 1, noise: noise * quiet, quiet, ammo: noise >= 1, arrows: bow && noise < 1, scoped };
 }
 export const hunterSkill = (s) => 0.5 * skill(s, "shooting") + 0.35 * skill(s, "scouting") + 0.15 * skill(s, "stealth");
 export const hunterMult = (s) => (0.55 + 0.09 * hunterSkill(s)) * (hasPerk(s, "hunter") ? 1.25 : 1);

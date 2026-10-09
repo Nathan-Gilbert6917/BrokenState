@@ -6,7 +6,8 @@
 // matter:
 //   the cell   your captives, by the group's jail tier (JAIL; groupjails.js groupJailTier: makeshift cells (a chain-link
 //              cage), holding cells (barred cells) or a jailhouse block): its doors are locked (locks.js
-//              difficulty by the tier), its windows bars or chain-link. A guard with the keys (the jailer) stands by it.
+//              difficulty by the tier), its windows bars or chain-link. A guard with the keys (the jailer) stands by it,
+//              and the rest of the jail's guards (groupjails.js groupJailGuards) are posted round its door.
 //   the armory a rack of the group's weapons (their arsenal when the arsenal work is in, else a few of their kit's guns
 //              and armour, kept on the group: f.armory) and some of their ammo; its door is locked about two times in
 //              three (the jailer's keys open it too).
@@ -64,7 +65,7 @@ import { hasPerk, gainXp } from "./skills.js";
 import { Rng } from "./rng.js";
 import { removeFromArsenal } from "./arsenal.js";
 import * as Groupworks from "./groupworks.js"; // groupJailTier (the jailhouse work), when it is there
-import { groupJailTier } from "./groupjails.js"; // jailhouse: the group's jail tier (0 none, 1 makeshift, 2 holding cells, 3 jailhouse)
+import { groupJailTier, groupJailGuards } from "./groupjails.js"; // jailhouse: the group's jail tier (0 none, 1 makeshift, 2 holding cells, 3 jailhouse)
 import { JAIL as JAIL_TIER } from "./prisoners.js"; // the tiers' names and cell blocks, shared with your own jails
 
 export const RESCUE_RAID = {
@@ -249,6 +250,20 @@ function rescueUnits(b, ctx, c) {
     if (outside.length) { j.x = outside[0][0]; j.y = outside[0][1]; }
     j.post = "door"; j.cellKey = true; j.name = `${j.name} (the keys)`;
     R.jailer = j.id;
+    // The jail's guards (groupjails.js groupJailGuards: the jailer is one of them): the others nearest the cell,
+    // posted round its door (awake, never among the sleepers), not the sentries in the towers.
+    const fj = factionById(state, c.factionId);
+    const want = fj ? groupJailGuards(state, fj) - 1 : 0;
+    if (want > 0) {
+      const near = [];
+      for (let r = 1; r <= 3 && near.length < want * 2; r++) for (let y = dy - r; y <= dy + r; y++) for (let x = dx - r; x <= dx + r; x++) {
+        if (Math.max(Math.abs(x - dx), Math.abs(y - dy)) !== r || !ctx.standable(x, y) || unitAt(b, x, y) || R.cell.cells.some(([cx, cy]) => cx === x && cy === y)) continue;
+        near.push([x, y]);
+      }
+      const others = foes.filter((u) => u !== j && u.post !== "tower").sort((a, d) => Math.hypot(a.x - dx, a.y - dy) - Math.hypot(d.x - dx, d.y - dy)).slice(0, want);
+      for (const u of others) { const sp = near.find(([x, y]) => !unitAt(b, x, y)); if (sp) { u.x = sp[0]; u.y = sp[1]; } u.post = "door"; u.jailGuard = true; }
+      R.jailGuards = others.length + 1;
+    } else R.jailGuards = 1;
   }
   // Sneaking in: nobody knows you are here. By day the sentries look further; at night a third of them sleep indoors.
   if (R.mode === "sneak") {
@@ -261,7 +276,7 @@ function rescueUnits(b, ctx, c) {
   } else for (const u of foes) u.aware = true;
   addCaptives(state, b, c.captiveIds || [], R.cell ? R.cell.cells : []);
   const n = b.units.filter((u) => u.captive).length;
-  say(b, `${n} of your people ${n === 1 ? "is" : "are"} held in the ${R.cell ? `${R.cell.name} (${R.cell.building.toLowerCase()})` : "yard"}, tied up. ${R.jailer != null ? "A guard by the door has the keys. " : ""}${R.armory ? `Their weapons are in the ${R.armory.building.toLowerCase()}${R.armory.locked ? " (locked)" : ""}. ` : ""}Free them (Rescue actions), then get everyone out by the edge of the map.${R.mode === "sneak" ? ` Nobody has seen you yet${c.night ? `: it is night and ${R.asleep} of them are asleep` : ""}. Once one of them raises the alarm, they all come.` : ""}`, "info");
+  say(b, `${n} of your people ${n === 1 ? "is" : "are"} held in the ${R.cell ? `${R.cell.name} (${R.cell.building.toLowerCase()})` : "yard"}, tied up. ${R.jailer != null ? `A guard by the door has the keys${R.jailGuards > 1 ? `; ${R.jailGuards - 1} more guard the cell` : ""}. ` : ""}${R.armory ? `Their weapons are in the ${R.armory.building.toLowerCase()}${R.armory.locked ? " (locked)" : ""}. ` : ""}Free them (Rescue actions), then get everyone out by the edge of the map.${R.mode === "sneak" ? ` Nobody has seen you yet${c.night ? `: it is night and ${R.asleep} of them are asleep` : ""}. Once one of them raises the alarm, they all come.` : ""}`, "info");
 }
 
 // Your people held here, on the map: tied up, stripped, hurt.

@@ -22,13 +22,18 @@
 //   strength over your team's (0.35–2), 2–40%: they ambush the handover (a battle on the road, they have the drop on
 //   you, your people tied up behind their line: rescueraid.js "rescueRoad"). Win: the captives and the goods are
 //   yours; lose or run: they keep both.
-// The governor (autopilotRescue, autoRescuePlan): a ransom first when the hub can pay it out of what it can spare; a
-// rescue raid (the Rescue mission) when its best fighters would beat the guards (55%+) and the captive is worth it;
-// else it waits.
+// The value rule (VALUE, captiveValue, ransomVerdict): what the captive is worth to you (skills, a medic, a leader, a
+// master of anything, health, how few you are) against the price. The governor (autopilotRescue, autoRescuePlan) and,
+// for the cards, a hub leader with Trading (ransomDelegated): pay when they are worth it and the hub can pay out of
+// what it can spare (never out of its last days of food and water); else a prisoner exchange that covers it; else a
+// rescue raid (the Rescue mission) when its best fighters would beat the base and its jail guards (55%+) for someone
+// worth it; else decline. The offer card left in the tray lapses as Decline unless those decide (then the value
+// rule's answer). A team at their gates pays out of what it carries only by the same rule (teamPayOk). The groups
+// buying back their own people from each other weigh them the same way (groupMemberWorth, groupjails.js).
 import { SUPPLIES, FACTION_TYPES, GEAR } from "./data.js";
 import { log, addCard, day, hub, factionById, survivorById, skill, combatPower, atBase, newId } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
-import { captivesOf, allCaptives, freeCaptive, isCaptive } from "./conflicts.js";
+import { captivesOf, allCaptives, freeCaptive, isCaptive, payPlan } from "./conflicts.js";
 import { canRadioGroup } from "./radio.js";
 import { launchExpedition, partyMembers, partyTile, tileLabel, awaitOrders, planPath, wipeIfEmpty } from "./parties.js";
 import { prisonersOf, teamPace, handOver } from "./prisoners.js";
@@ -37,6 +42,8 @@ import { afterRescueBattle, tacticalPossible, groupArmory, kindOf } from "./resc
 import { assaultForce } from "./conquest.js";
 import { itemValue } from "./valuation.js";
 import { thirstAhead } from "./weather.js";
+import { groupJailGuards } from "./groupjails.js"; // the guards on the jail a raid would meet
+import { payoutFloor, payoutBreaks } from "./upkeep.js"; // the pay-out reserve: food and water are never paid below it
 
 export const RANSOM = {
   BASE: 40, PER_SKILL: 3, LEADER: 1.5, ZEALOT: 1.3,
@@ -55,6 +62,17 @@ export const RANSOM = {
   // Governor: what it keeps back (a head) and the odds it wants before it storms a base for someone.
   AUTO: { keepFood: 12, keepWater: 12, keepAmmo: 60, keepMeds: 3, keepFuel: 10, share: 0.5, raidOdds: 0.55, worth: 75, squad: 5 },
   BETRAY_OFF: false, BETRAY_FORCE: false, // tools/rescuetest.js switches
+  // What a captive is worth to you (captiveValue), against the price (ransomVerdict): base + perSkill a point of their
+  // three best skills; + medic (Medicine `rare`+), + lead (Leadership `rare`+), + rare for any skill at `top`+; × leader
+  // (the group's leader); × their health (health / 100, at least `weak`); × few when you are `small` people or fewer.
+  // The governor, a leader with Trading at the hub, or the card left in the tray when those decide: pay when the worth
+  // is at least `pay` × the price and the hub can pay out of what it can spare (AUTO keep: never out of its last 12
+  // days of food and water a head), else a rescue raid (AUTO raidOdds against the base and its jail guards, for
+  // someone worth AUTO.worth or a leader), else decline. teamDays: a team at their gates keeps this many days of food
+  // and water a head for the road home. groupBase / groupPerPower / groupBig / groupSmall: what one of a group's own
+  // people is worth to it (groupMemberWorth: × 0.9 for a group of groupBig+, × 1.3 under groupSmall).
+  VALUE: { base: 30, perSkill: 4, medic: 25, lead: 15, rare: 6, top: 9, rareBonus: 15, leader: 1.6, weak: 0.6, small: 6, few: 1.3, pay: 1, teamDays: 2,
+    groupBase: 12, groupPerPower: 6, groupBig: 25, groupSmall: 10, groupBigMult: 0.9, groupSmallMult: 1.3 },
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const first = (s) => s.name.split(" ")[0];
@@ -71,6 +89,66 @@ export const dealFor = (state, f) => dealsOf(state).find((d) => d.factionId === 
 const top3 = (s) => Object.keys(s.skills || {}).map((k) => skill(s, k)).sort((a, b) => b - a).slice(0, 3).reduce((a, v) => a + v, 0);
 export const captiveWorth = (s) => Math.round((RANSOM.BASE + RANSOM.PER_SKILL * top3(s)) * (s.leader ? RANSOM.LEADER : 1));
 export const wantsOf = (f) => RANSOM.WANTS[f.type] || ["food", "meds", "ammo"];
+
+// ---------- what they are worth to you (the value rule) ----------
+// A captive of yours (RANSOM.VALUE): skills, the rare ones (a medic, a leader, a master of anything), health, and how
+// few of you there are.
+export function captiveValue(state, s) {
+  const V = RANSOM.VALUE;
+  let v = V.base + V.perSkill * top3(s);
+  if (skill(s, "medicine") >= V.rare) v += V.medic;
+  if (skill(s, "leadership") >= V.rare) v += V.lead;
+  if (Object.keys(s.skills || {}).some((k) => skill(s, k) >= V.top)) v += V.rareBonus;
+  if (s.leader) v *= V.leader;
+  v *= clamp((s.health ?? 100) / 100, V.weak, 1);
+  const people = state.survivors.filter((x) => x.alive && !isCaptive(x)).length;
+  if (people <= V.small) v *= V.few;
+  return Math.round(v);
+}
+// One of a group's own people held by another (groupjails.js prisoner records: power 2–4): worth to their group.
+export function groupMemberWorth(f, power = 3) {
+  const V = RANSOM.VALUE;
+  const pop = (f && f.pop) || 0;
+  return (V.groupBase + V.groupPerPower * power) * (pop >= V.groupBig ? V.groupBigMult : pop < V.groupSmall ? V.groupSmallMult : 1);
+}
+// Ransom decisions handed over: the dev autopilot, or the hub's leader with Trading (steward.js).
+export function ransomDelegated(state) {
+  if (state.autopilot) return true;
+  const h = hub(state);
+  return !!(h && h.steward && h.steward.on && h.steward.areas && h.steward.areas.trade);
+}
+// Pay, raid or decline (the value rule): { kind: "pay" | "raid" | "decline", worth, price, why, odds? }.
+// price: the asking price (default: their offer); the hub pays (autoCanPay: its spare, its last days of food and water kept).
+export function ransomVerdict(state, f, captives, price = null) {
+  const offer = ransomOffer(state, f, captives);
+  const ask = price ?? (offer.refused ? offer.doubled : offer.value);
+  const worth = captives.reduce((a, s) => a + captiveValue(state, s), 0);
+  if (worth >= ask * RANSOM.VALUE.pay && autoCanPay(state, f, ask)) return { kind: "pay", worth, price: ask, why: `${names(captives)} worth about ${worth} to you, the price ${ask}` };
+  const raid = raidOdds(state, f, captives);
+  if (raid && raid.odds >= RANSOM.AUTO.raidOdds && (Math.max(...captives.map((s) => captiveValue(state, s))) >= RANSOM.AUTO.worth || captives.some((x) => x.leader))) return { kind: "raid", worth, price: ask, odds: raid.odds, why: `${pct(raid.odds)} against ${raid.count} at their base (${raid.jail} on the jail) for ${names(captives)}` };
+  return { kind: "decline", worth, price: ask, why: worth < ask ? `${names(captives)} worth about ${worth} to you, the price ${ask}` : `the hub cannot spare ${ask} without going short` };
+}
+// The hub's best squad against the base where they are held: { odds, count, jail } or null (fewer than 3 fit).
+function raidOdds(state, f, captives) {
+  const h = hub(state);
+  if (!h || !captives.length) return null;
+  const squad = atBase(state, h.id).filter((x) => x.health >= 50).sort((a, b) => combatPower(b) - combatPower(a)).slice(0, RANSOM.AUTO.squad);
+  if (squad.length < 3) return null;
+  const tile = f.bases.includes(captives[0].location.tile) ? captives[0].location.tile : f.bases[0];
+  const force = assaultForce(state, f, tile, null);
+  const odds = winOdds(squad.reduce((a, x) => a + combatPower(x), 0) / Math.max(0.1, force.count * force.power * force.fortified), { kind: force.kind, count: force.count, people: squad.length });
+  return { odds, count: force.count, jail: groupJailGuards(state, f) };
+}
+// A team at their gates paying from what it carries (conflicts.js rescue and trade-visit cards; the governor): worth
+// the price, and the team keeps VALUE.teamDays of food and water a head for the road home.
+export function teamPayOk(state, p, f, captives, value) {
+  const plan = payPlan(p, value);
+  if (!plan || !captives.length) return false;
+  const n = Math.max(1, partyMembers(state, p).length);
+  const left = (k) => (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) - (plan[k] || 0);
+  if (left("food") < n * RANSOM.VALUE.teamDays || left("water") + left("rawwater") < n * RANSOM.VALUE.teamDays) return false;
+  return captives.reduce((a, s) => a + captiveValue(state, s), 0) >= value * RANSOM.VALUE.pay;
+}
 export function ransomOffer(state, f, captives) {
   const att = attitude(f);
   const grudge = Math.min(RANSOM.GRUDGE.max, Math.max(0, (RANSOM.GRUDGE.from - f.goodwill) * RANSOM.GRUDGE.per));
@@ -182,6 +260,8 @@ export function negotiationCard(state, f, captiveIds, opts = {}) {
   const plan = h ? goodsPlan(f, h.stock, h.armory, value) : null;
   const ex = exchangeOffer(state, f, captives, value);
   const exPlan = ex && ex.covers ? (ex.rest > 0 && h ? goodsPlan(f, h.stock, h.armory, ex.rest) : { supplies: {}, gear: [], worth: 0 }) : null;
+  // The exchange by the value rule: it covers the price and your people are worth the goods it still takes.
+  const exOk = (st) => !!(ex && ex.covers && exPlan) && captives.reduce((a, x) => a + captiveValue(st, x), 0) >= ex.rest;
   const where = offer.meet ? "a meeting point on the road (you send a team with the goods)" : `your gates (they bring ${captives.length === 1 ? "them" : "everyone"} home)`;
   const talk = speaker(state, opts.channel);
   const dc = (RANSOM.HAGGLE.dc[offer.att] ?? 10) + (f.type === "zealot" ? RANSOM.HAGGLE.zealot : 0);
@@ -193,7 +273,9 @@ export function negotiationCard(state, f, captiveIds, opts = {}) {
       label: offer.refused ? `Agree to pay double (${value})` : `Agree: ${plan ? goodsText(plan) : `${value} worth`}`,
       hint: plan ? `Pay ${goodsText(plan)} for ${names(captives)}. Handed over at ${where}${offer.meet ? `. Raiders may betray a handover (${pct(RANSOM.BETRAY[f.type] ?? RANSOM.BETRAY.other)} with an even team; fewer against a strong one)` : ""}` : `The hub cannot spare that much of what they want (about ${value} worth in ${offer.wants.join(", ")})`,
       disabled: () => !(hub(state) && goodsPlan(f, hub(state).stock, hub(state).armory, value)),
-      ai: (st) => (autoCanPay(st, f, value) ? 6 : -5),
+      ai: (st) => (ransomVerdict(st, f, captives.filter(isCaptive), value).kind === "pay" ? 6 : -5), // the value rule: worth it and affordable
+      // Left in the tray: declined, unless ransom decisions are handed over (ransomDelegated): then the value rule.
+      get default() { return ransomDelegated(state) && ransomVerdict(state, f, captives.filter(isCaptive), value).kind === "pay" && !!(hub(state) && goodsPlan(f, hub(state).stock, hub(state).armory, value)); },
       resolve: (st) => {
         const hh = hub(st);
         const pl = hh ? goodsPlan(f, hh.stock, hh.armory, value) : null;
@@ -218,10 +300,17 @@ export function negotiationCard(state, f, captiveIds, opts = {}) {
     label: `Offer a prisoner exchange: ${ex.prisoners.map((p) => first(p)).join(", ")}`,
     hint: ex.covers ? `Your prisoner${ex.prisoners.length > 1 ? "s" : ""} (${ex.prisoners.map((p) => `${p.name}, ${p.group}`).join("; ")}) are worth about ${ex.worth} to them${ex.rest > 0 ? `; the rest in goods: ${exPlan ? goodsText(exPlan) : "the hub cannot spare it"}` : ""}` : `Your prisoners are worth only about ${ex.worth} to them: not enough`,
     disabled: () => !(ex.covers && exPlan),
-    ai: (st) => (ex.covers && exPlan ? 7 : -5),
+    ai: (st) => (exOk(st) ? 7 : -5),
+    get default() { return ransomDelegated(state) && exOk(state) && ransomVerdict(state, f, captives.filter(isCaptive), value).kind !== "pay"; },
     resolve: (st) => agree(st, f, captives.filter(isCaptive), exPlan || { supplies: {}, gear: [], worth: 0 }, ex.prisoners.map((p) => p.id), value),
   });
-  choices.push({ label: "Not now", hint: "Break off the talks", ai: () => 0, resolve: () => "" });
+  // Declined (the card left in the tray takes it unless ransom decisions are handed over): they stay where they are,
+  // as before the talks (raiders with no cell for them still count down: groupjails.js overflowDue).
+  choices.push({
+    label: "Decline", hint: "Break off the talks: they stay held. Left unanswered, the talks lapse this way (unless the governor or the hub's leader with Trading decides ransoms)", ai: () => 0,
+    get default() { if (!ransomDelegated(state)) return true; const v = ransomVerdict(state, f, captives.filter(isCaptive), value); return v.kind !== "pay" && !exOk(state); },
+    resolve: (st) => { const still = captives.filter(isCaptive); if (still.length) log(st, `You declined ${f.name}'s price for ${names(still)}. ${still.length === 1 ? "They stay" : "They all stay"} with ${f.name}.`, "info"); return ""; },
+  });
   return { title: `Ransom: ${f.name}`, text, factionId: f.id, offer, choices };
 }
 
@@ -285,6 +374,9 @@ export function sendHandover(state, deal, opts = {}) {
   if (!h || !f || !f.alive) return "Nobody to hand them over to.";
   if (state.parties.some((p) => p.dealId === deal.id)) return "The handover team is already on its way.";
   for (const [k, q] of Object.entries(deal.supplies)) if ((h.stock[k] || 0) < q) return `Not enough ${SUPPLIES[k].name.toLowerCase()} at the hub for the deal.`;
+  // The governor (opts.reserve) never pays food or water out of the hub's pay-out reserve (upkeep.js PAYOUT): the
+  // handover waits (until the deal runs out) while the stores are that low.
+  if (opts.reserve && payoutBreaks(state, h, deal.supplies)) return "The hub cannot spare the food or water the deal costs now.";
   if (deal.gear.some((it) => !(h.armory || []).includes(it))) return "A gun the deal names is no longer in the hub's armory.";
   const n = opts.crew ?? RANSOM.CREW;
   const crew = atBase(state, h.id).filter((s) => !s.inBed && s.health >= 40).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id).slice(0, n);
@@ -451,7 +543,8 @@ function autoKeep(state) {
   const h = hub(state);
   const n = h ? atBase(state, h.id).length : 0;
   const A = RANSOM.AUTO;
-  return { food: A.keepFood * n, water: A.keepWater * n, ammo: A.keepAmmo, meds: A.keepMeds, fuel: A.keepFuel, scrap: 20, parts: 2 };
+  // At least the pay-out reserve (upkeep.js PAYOUT: everyone fed there, prisoners and guests too).
+  return { food: Math.max(A.keepFood * n, Math.ceil(payoutFloor(state, h, "food"))), water: Math.max(A.keepWater * n, Math.ceil(payoutFloor(state, h, "water"))), ammo: A.keepAmmo, meds: A.keepMeds, fuel: A.keepFuel, scrap: 20, parts: 2 };
 }
 function spareValue(state) {
   const h = hub(state);
@@ -471,20 +564,14 @@ export function autoRescuePlan(state, s) {
   const f = factionById(state, s.location.factionId);
   if (!f || !f.alive || !hub(state)) return null;
   const held = captivesOf(state, f.id);
-  const offer = ransomOffer(state, f, held);
-  const price = offer.refused ? offer.doubled : offer.value;
-  if (autoCanPay(state, f, price)) return { kind: "ransom", why: `pay ${f.name} about ${price} for ${names(held)}` };
-  const ex = exchangeOffer(state, f, held, price);
-  if (ex && ex.covers && (ex.rest <= 0 || autoCanPay(state, f, ex.rest))) return { kind: "exchange", why: `trade ${ex.prisoners.length} prisoner${ex.prisoners.length > 1 ? "s" : ""} for ${names(held)}` };
-  const worth = Math.max(...held.map(captiveWorth));
-  const h = hub(state);
-  const squad = atBase(state, h.id).filter((x) => x.health >= 50).sort((a, b) => combatPower(b) - combatPower(a)).slice(0, RANSOM.AUTO.squad);
-  if (squad.length >= 3) {
-    const force = assaultForce(state, f, f.bases.includes(s.location.tile) ? s.location.tile : f.bases[0], null);
-    const odds = winOdds(squad.reduce((a, x) => a + combatPower(x), 0) / Math.max(0.1, force.count * force.power * force.fortified), { kind: force.kind, count: force.count, people: squad.length });
-    if (odds >= RANSOM.AUTO.raidOdds && (worth >= RANSOM.AUTO.worth || held.some((x) => x.leader))) return { kind: "raid", why: `${pct(odds)} against ${force.count} guards for ${names(held)}`, odds };
-  }
-  return { kind: "wait", why: "too dear to pay and too strong to storm" };
+  // The value rule (ransomVerdict): pay when they are worth the price and the hub can spare it; a prisoner exchange
+  // when it covers the price; else a raid when the squad would beat the base and its jail guards; else decline.
+  const v = ransomVerdict(state, f, held);
+  if (v.kind === "pay") return { kind: "ransom", why: `pay ${f.name} about ${v.price} for ${names(held)} (worth about ${v.worth} to you)` };
+  const ex = exchangeOffer(state, f, held, v.price);
+  if (ex && ex.covers && (ex.rest <= 0 || (autoCanPay(state, f, ex.rest) && v.worth >= ex.rest))) return { kind: "exchange", why: `trade ${ex.prisoners.length} prisoner${ex.prisoners.length > 1 ? "s" : ""} for ${names(held)}` };
+  if (v.kind === "raid") return { kind: "raid", why: v.why, odds: v.odds };
+  return { kind: "wait", why: `declined: ${v.why}` };
 }
 // The governor's day (autopilot.js): ransoms agreed and handover teams sent. Rescue raids go through its mission
 // planner (autopilot.js: the Rescue mission when autoRescuePlan says "raid"). Returns a line or "".
@@ -493,7 +580,7 @@ export function autopilotRescue(state) {
   const out = [];
   for (const d of [...dealsOf(state)]) {
     if (state.parties.some((p) => p.dealId === d.id)) continue;
-    const r = sendHandover(state, d);
+    const r = sendHandover(state, d, { reserve: true });
     out.push(typeof r === "string" ? `handover for ${factionById(state, d.factionId)?.name}: ${r}` : `the handover team set out for ${tileLabel(state, d.tile)}`);
   }
   const seen = new Set();
@@ -514,7 +601,7 @@ export function autopilotRescue(state) {
       // The deal card it just raised is the governor's to answer: send the team now.
       const i = state.cards.findIndex((c) => c.dealId === d.id);
       if (i >= 0) state.cards.splice(i, 1);
-      const r = sendHandover(state, d);
+      const r = sendHandover(state, d, { reserve: true });
       if (typeof r === "string") out.push(r);
     }
   }

@@ -14,10 +14,10 @@
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
 import { traitAim } from "./traits.js"; // Brave, Coward: to hit
 import { fitFromPool } from "./gunmods.js";
-import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants, queueRepair } from "./repair.js";
+import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants, spareGun, queueRepair } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { equipKit, governPlates } from "./carrykit.js"; // carry kit: rigs, plates in the carriers, spare magazines; spare plates kept // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
-import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
+import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, survivorById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
 import {
   launchExpedition, estimateTrip, startReturn, partyMembers, partyTile, tileLabel, teamName, orderOptions, orderMove,
   hoursLeft, planPath, partyCapacity, cargoLoad, cargoRoom, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards, giveOrder,
@@ -36,23 +36,24 @@ import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDe
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
 import { defaultRolePlan, plansOf } from "./defenceplan.js"; // the governor's defence plan (governorPlans, stewardSafety)
-import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort } from "./economy.js";
-import { mouthsAt, foodUse, HEAT } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
+import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort, supplyLine, WATER } from "./economy.js";
+import { mouthsAt, foodUse, HEAT, payoutSpare, payoutBreaks } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { waterIn, teamWaterIn, RAW, keyWord } from "./water.js"; // purified and un-purified water: the governor counts both
-import { brokenAt, jobFor } from "./breakdowns.js";
+import { brokenAt, jobFor, fixtures, isWaterFixture, repairPlan } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
+import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill } from "./crafting.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair, wreckSupplies, partyFuel } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun, linesText } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
-import { allCaptives, ransomValue } from "./conflicts.js";
-import { ensureInv, armorMult, itemLoad } from "./inventory.js";
+import { allCaptives, ransomValue, isCaptive } from "./conflicts.js";
+import { ensureInv, armorMult, itemLoad, salvageAt } from "./inventory.js";
 import { weather as wxNow, severeSoon, season as wxSeason, thirstAhead, thirstAt, THIRST, seasonOfDay, foodNeedFactor, coldAhead } from "./weather.js";
 import { teamCold } from "./needs.js"; // tune-winter: a team's food in the cold (×1.1 / ×1.2 without a lit camp fire)
 import { autoRecruitPick } from "./recruits.js";
@@ -81,8 +82,10 @@ import { gatheringCands } from "./hivebirth.js"; // hive birth you can see: cull
 import { GROWTHS, TECH } from "./hiveconst.js";
 import { typeStrength } from "./zombietypes.js";
 import { assaultForce, assaultOdds, teamAssaultOdds, lostBases, occupiedAt, squadValue, nearestOtherBase } from "./conquest.js";
-import { autopilotPrisoners, jailTier, cellCap, prisonersAt } from "./prisoners.js";
-import { autopilotRescue, autoRescuePlan } from "./ransom.js"; // your people held by other groups: ransom first, a raid when strong
+import { OCCUPY, occupyProblem, occupyOdds, teamOccupyOdds, standingAt, occupyGrievance, abandonProblem, abandonOutpost } from "./occupy.js"; // moving into an abandoned base instead of founding an outpost; giving up a doomed one
+import { abandonedThreat } from "./groupworld.js";
+import { autopilotPrisoners, jailTier, cellCap, prisonersAt, planJailGuards } from "./prisoners.js";
+import { autopilotRescue, autoRescuePlan, teamPayOk } from "./ransom.js"; // your people held by other groups: ransom first, a raid when strong
 import { isManaged, healthRest } from "./work.js";
 import { onWatchNow, inShift } from "./watch.js"; // the night watch (govWatch)
 import { tiredLevel } from "./sleep.js";
@@ -329,10 +332,37 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.production) equipFromArmory(state, base);
   if (areas.medical) planTreatment(state, base);
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
+  if (areas.building && hourOfDay(state) === WATER_WAIT.hour) waterSalvage(state, base);
   if (areas.building) planBuilds(state, base, areas);
   if (areas.production) { govOrders(state, base); autoReloadOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench; reloading.js: HP, slugs, AP to keep
   if (areas.building) { const up = autoReloadBench(state, base); if (up) say(state, up); } // reloading.js: an ammo bench upgraded once there are inputs to load with
 }
+// ---------- a broken well waiting for scrap ----------
+// A broken well or pump the repairs cannot start for want of scrap (breakdowns.js: a proper repair 3 scrap and a part,
+// a jury-rig 1 scrap, short scrap paid in parts; no scrap and no part left = nothing at all): the hour before the
+// repairs start (WATER_WAIT.hour; breakdowns.js starts them at 08:00) a spare gun (repair.js spareGun: one with a
+// twin here, the cheapest) is taken apart for its scrap and gun parts (inventory.js salvageAt: a scrap each), up to
+// WATER_WAIT.salvage a day, until the jury-rig can be paid. While it still waits, scrap is wanted hard at this base
+// and at the hub that supplies it (needs: WATER_WAIT.need, trips and trades go for it) until the repair is paid.
+const WATER_WAIT = { hour: PLAN_HOUR, salvage: 2, need: 2.4 };
+// Broken water fixtures at a base waiting for scrap: no repair started, someone here could do it, and neither a
+// repair nor a jury-rig can be paid.
+export function waterWaitsScrap(state, base) {
+  return brokenAt(base).filter((fx) => {
+    if (!isWaterFixture(fx) || jobFor(base, fx)) return false;
+    const rig = repairPlan(state, base, fx, "rig");
+    return !rig.ok && !!rig.who && /^Needs /.test(rig.why);
+  }).length;
+}
+function waterSalvage(state, base) {
+  for (let i = 0; i < WATER_WAIT.salvage && waterWaitsScrap(state, base); i++) {
+    const gun = spareGun(state, base);
+    if (!gun) return;
+    const msg = salvageAt(state, `armory:${base.id}:list:${base.armory.indexOf(gun)}`);
+    say(state, `${msg.replace(/\.$/, "")}: ${base.name}'s broken well waits for scrap.`);
+  }
+}
+
 // Roles at one base (after the day's trip is planned). Returns the number of role changes.
 export function governRoles(state, base, areas = ALL_AREAS) {
   return areas.roles ? planRoles(state, base, areas) : 0;
@@ -483,6 +513,7 @@ export function autopilotDaily(state) {
   idleDaily(state); // vehicletrade.js: how long each car has stood at a base
   winterReport(state);
   tidySupplyJobs(state);
+  abandonDoomed(state); // occupy.js: an outpost that cannot be fed through the winter is given up, its people home
   planCampaign(state); // the war on the hives: today's target (its ammo want feeds needs, trades and the stations)
   emergencyTrips(state); // water under a day, food under two: a haul goes out whatever the style's team limit
   wormCureRuns(state); // the worm where nothing can cure it: the sick walk to a base that can, or meds come to them
@@ -546,7 +577,8 @@ function dealCaravanPlan(state, deal) {
     if (q <= 0) continue;
     const kk = SUPPLIES[k] && SUPPLIES[k].round ? "ammo" : k; // rounds by calibre count as ammo here (ammo.js)
     if ((need[kk] ?? 0) > 0.8) return { why: `${base.name} is short of ${kk}` };
-    if ((kk === "food" || kk === "ammo") && q > spare[kk]) return { why: `${base.name} cannot spare ${q} ${keyWord(k)}` };
+    if ((kk === "food" || kk === "ammo" || kk === "water") && q > spare[kk]) return { why: `${base.name} cannot spare ${q} ${keyWord(k)}` };
+    if (payoutBreaks(state, base, { [k]: q })) return { why: `${base.name} cannot spare ${q} ${keyWord(k)} (its reserve)` }; // preserved, un-purified water
     if (supplyAmt(base.stock, k) < q) return { why: `${base.name} has only ${Math.floor(supplyAmt(base.stock, k))} ${keyWord(k)}` };
   }
   if (!matchGear(base.armory, deal.give.gear || [])) return { why: "the items are not in the armory" };
@@ -868,9 +900,39 @@ function roomAt(state, h, k) {
   const foodDays = (edibleFood(fh) - 5 * k) / Math.max(1, nf + k);
   const wo = waterOutlook(state, h);
   if (!(foodDays >= Math.max(10, foodTarget(state, fh)) && wo.dryNet - k * wo.need.rate >= -1.5 && waterIn(h.stock) / Math.max(1, n + k) >= 3 && droughtWater(state, h, n + k))) return false;
+  // A hub with no river or lake within a water run's reach grows only as far as its wells and rain carry it through a
+  // summer (GROWTH_WATER): filters clog and cost scrap, so they do not count towards newcomers.
+  if (isHub && !GROWTH_WATER.ok(state, h, k)) return false;
   // No newcomers while the winter stores would not feed them too (farming.js winterOutlook with k more mouths).
   return !winterActive(state, fh) || winterOutlook(state, fh, { extra: k + homeMouths(state, fh), also: winterPool(state, fh) }).short <= 0;
 }
+
+// For the headless tests (tools/autosafetytest.js): the pay-out reserve, a broken well waiting for scrap, the upkeep
+// hands and the newcomer rule, read-only but for salvage (it takes a spare gun apart).
+export const safetyAI = {
+  tradeSpare: (state, base) => tradeSpare(state, base), needs: (state, base) => needs(state, base), tributeSpared: (state, base) => tributeSpared(state, base),
+  waterWaitsScrap: (state, base) => waterWaitsScrap(state, base), salvage: (state, base) => waterSalvage(state, base), upkeepCrew: (state, base, n) => upkeepCrew(state, base, n),
+  roomAt: (state, base, k) => roomAt(state, base, k), planRoles: (state, base) => planRoles(state, base),
+};
+
+// ---------- growth and the wells ----------
+// A hub with no river or lake (no stream beside it and no shore within a water run's reach, shoreFor) takes no newcomer
+// past what its wells, its spring, the claimed wells hauled and its rain catchers give on an average summer day
+// (economy.js summerWater with no filters: everyone drinking 1.3, the crops in the ground their share), times
+// `margin` of headroom kept. (2026-10-08 thirst diagnosis: hubs of 40-50 on two wells lived on 15+ water filters; when
+// the scrap for new ones ran short or the wells broke, the water ran out within days.)
+export const GROWTH_WATER = {
+  margin: 1.1,
+  // Has the hub a river: a stream beside it, or a shore a water run can reach.
+  river: (state, base) => waterProduction(state, base).stream > 0 || shoreFor(state, base) != null,
+  // { river, heads }: the people its wells and rain can carry (Infinity by a river).
+  cap(state, base) {
+    if (GROWTH_WATER.river(state, base)) return { river: true, heads: Infinity };
+    const sw = summerWater(state, base, { people: 0, filterShare: 0 }); // need: the crops and any prisoners
+    return { river: false, heads: Math.max(0, Math.floor((sw.inflow / GROWTH_WATER.margin - sw.need) / (sw.rate * WATER.drink))) };
+  },
+  ok: (state, base, k) => residents(state, base.id).length + returning(state, base) + k <= GROWTH_WATER.cap(state, base).heads,
+};
 
 // ---------- housing ----------
 // For the headless tests (tools/plotstest.js): the housing plan below, read-only.
@@ -1046,9 +1108,13 @@ function winterActive(state, base) {
 // it their surplus and it feeds them when they run short).
 const winterPool = (state, base) => (base.type === "hub" ? state.bases.filter((b) => b.type === "outpost") : []);
 const homeMouths = (state, base) => winterPool(state, base).concat([base]).reduce((a, b) => a + returning(state, b), 0);
+// Without a governor (the work priorities read it too: farmCrewLimits) the day's plan is kept per world, and no
+// governor record is made for it.
+const PLAN_MEMO = new WeakMap();
 function winterPlan(state, base) {
-  const g = gov(state);
-  const memo = g.winter || (g.winter = {});
+  let memo;
+  if (state.governor) { const g = state.governor; memo = g.winter || (g.winter = {}); }
+  else { memo = PLAN_MEMO.get(state); if (!memo) PLAN_MEMO.set(state, (memo = {})); }
   const m = memo[base.id];
   if (m && m.day === day(state)) return m;
   return (memo[base.id] = { day: day(state), ...winterOutlook(state, base, { extra: homeMouths(state, base), also: winterPool(state, base) }) });
@@ -1086,12 +1152,23 @@ function carriedDays(state, p, extra = 0) {
 function bestByUtility(state, card, opts, P) {
   let best = null, bestU = -Infinity;
   for (const ch of opts) {
-    const u = utility(ch, P);
+    const u = PAY_RANSOM.test(ch.label) ? payUtility(state, card) : utility(ch, P);
     if (u > bestU) { best = ch; bestU = u; }
   }
   return best;
 }
 
+// A ransom paid from what the team carries (conflicts.js rescue, trade-visit and road cards): by the value rule
+// (ransom.js teamPayOk: your people worth the price, the team's food and water for the road home kept), not always.
+const PAY_RANSOM = /^Pay (a|the) ransom|^Pay for them/;
+function payUtility(state, card) {
+  const c = card.conflict || {};
+  const p = state.parties.find((x) => x.id === card.partyId);
+  const f = factionById(state, c.factionId);
+  const held = (c.held || []).map((id) => survivorById(state, id)).filter((s) => s && isCaptive(s));
+  if (!p || !f || !held.length) return 0.4; // strangers only: no better than leaving
+  return teamPayOk(state, p, f, held, ransomValue(f, held.length + (c.strangers || 0))) ? 5 : -1;
+}
 function utility(ch, P) {
   const L = ch.label, H = ch.hint || "";
   let c = pctIn(H);
@@ -1114,7 +1191,6 @@ function utility(ch, P) {
   if (/^Join in/.test(L)) return P.raidBias - 1;
   if (/^Draw the dead/.test(L)) return 5 * k - 6 * (1 - k);
   if (/^Sneak in/.test(L)) return 8 * k - 7 * (1 - k);
-  if (/^Pay (a|the) ransom|^Pay for them/.test(L)) return 5;
   if (/^Leave|^Not now/.test(L)) return 0.5;
   return 0;
 }
@@ -1125,6 +1201,12 @@ function utility(ch, P) {
 // Aggressive under 0.6× (and it fights in person first when the odds are poor).
 const TRIBUTE_LEAN = { Cautious: 1.4, Balanced: 1, Aggressive: 0.6 };
 const RAID_BREAK = 0.8; // factions.js RAIDS.BREAK: below it a raid overruns the base
+// Never out of the food reserve (upkeep.js PAYOUT): a group's tribute (factions.js tributeNow: 30% of the fresh food)
+// that would leave the base under PAYOUT.days of food is not paid.
+function tributeSpared(state, base) {
+  const food = Math.min(Math.floor(base.stock.food || 0), Math.ceil((base.stock.food || 0) * 0.3));
+  return !payoutBreaks(state, base, { food });
+}
 function raidWarningChoice(state, card, opts, P) {
   const find = (re) => opts.find((c) => re.test(c.label));
   const base = state.bases.find((b) => card.title === `Raiders heading for ${b.name}`);
@@ -1133,7 +1215,7 @@ function raidWarningChoice(state, card, opts, P) {
   planRoles(state, base);
   const stakes = raidStakes(state, base, raid);
   if (stakes.ratio >= P.holdRatio) return find(/^Prepare/);
-  const pay = stakes.tribute < stakes.fight * (P.tributeLean ?? TRIBUTE_LEAN[P.name] ?? 1) ? find(/^Pay tribute/) : null;
+  const pay = stakes.tribute < stakes.fight * (P.tributeLean ?? TRIBUTE_LEAN[P.name] ?? 1) && tributeSpared(state, base) ? find(/^Pay tribute/) : null;
   // Retreat (conquest.js) when the base would be overrun anyway and the tribute cannot be paid: an outpost below the
   // style's retreatBelow, the hub only when it is hopeless (a quarter of what it takes) and another base can take
   // everyone in; never the last base.
@@ -1201,7 +1283,8 @@ function teamAct(state, p) {
     }
   }
   // Fit, fed and with room to carry: try one more site nearby.
-  if ((p.apChain || 0) < P.chain && p.mission !== "outpost" && chainNext(state, p)) return;
+  // A hive or growth squad (fires set, or backed off) goes home: no searching on the hive's land on the way.
+  if ((p.apChain || 0) < P.chain && !["outpost", "hive", "growth"].includes(p.mission) && chainNext(state, p)) return;
   // Not food enough for the way home (held up on the road, food lost): food from the land first (landFoodAct).
   if (back && (p.apLandFood || 0) < LAND.tries && foodDaysOf(state, p) < (hoursHome / 24) * 1.1 + 0.25 && landFoodAct(state, p, { urgent: true })) { p.apLandFood = (p.apLandFood || 0) + 1; return; }
   startReturn(state, p);
@@ -1346,13 +1429,15 @@ function handleTrade(state) {
   }
   if (ctx.visitor) {
     // Merchants or travellers from outside (visitors.js): a manual nobody has studied, then what the hub is short of.
-    say(state, `Outsiders (${ctx.f.name}) at ${ctx.base ? ctx.base.name : "the roadside"}: ${autoVisitorTrade(state, needs(state), gov(state).personality, tradeSpare(state))}.`);
+    // The base they stopped at pays: its own needs and what it can spare (an outpost's, not the hub's).
+    const at = ctx.base || hub(state);
+    say(state, `Outsiders (${ctx.f.name}) at ${ctx.base ? ctx.base.name : "the roadside"}: ${autoVisitorTrade(state, needs(state, at), gov(state).personality, tradeSpare(state, at))}.`);
     return;
   }
   if (ctx.kind === "radio") { state.trade = null; return; } // a radio trade left open by hand (radiotrade.js): closed
   if (ctx.kind === "caravan") {
     // Their caravan at one of your bases (caravans.js): only the Aggressive style ever attacks one.
-    say(state, `Caravan from ${ctx.f.name} at ${ctx.base.name}: ${autoCaravanTrade(state, needs(state), gov(state).personality, tradeSpare(state)).replace(/\.$/, "")}.`);
+    say(state, `Caravan from ${ctx.f.name} at ${ctx.base.name}: ${autoCaravanTrade(state, needs(state, ctx.base), gov(state).personality, tradeSpare(state, ctx.base)).replace(/\.$/, "")}.`);
     return;
   }
   const { p, f, speech } = ctx;
@@ -1525,7 +1610,9 @@ function tradeSpare(state, h = hub(state)) {
   // A winter outlook that comes up short pays no food at all: foodTarget nets off crops that may only ripen in spring,
   // after the stores run out (seed 5062: short by the outlook, yet 66 food went to a caravan on day 72).
   const short = winterActive(state, h) && winterPlan(state, h).short > 0;
-  return { food: short ? 0 : Math.max(0, Math.floor(edibleFood(h) - foodTarget(state, h) * 1.5 * heads)), ammo: Math.max(0, Math.floor(baseAmmo(state, h) - Math.max(campaignAmmoTarget(state), n * 15))) };
+  // Water and food never below the pay-out reserve (upkeep.js payoutSpare: PAYOUT.days of everyone's need), whatever
+  // the needs table rates them (a hub whose wells keep up rates its water plenty and sold it all).
+  return { food: short ? 0 : Math.min(payoutSpare(state, h, "food"), Math.max(0, Math.floor(edibleFood(h) - foodTarget(state, h) * 1.5 * heads))), water: payoutSpare(state, h, "water"), ammo: Math.max(0, Math.floor(baseAmmo(state, h) - Math.max(campaignAmmoTarget(state), n * 15))) };
 }
 // Hub needs per supply, 0 (plenty) .. 3 (urgent). Drives trips, trades and some buildings.
 function needs(state, h = hub(state)) { // h: a base leader's own base (stewardSupplies); the hub otherwise
@@ -1563,6 +1650,10 @@ function needs(state, h = hub(state)) { // h: a base leader's own base (stewardS
     // Firewood (woodcutting.js): bought only when the cold is near or here and the store is low; never sold (0.9).
     wood: (() => { const w = woodNeed(state, h, returning(state, h)); return w.short && (w.cold || w.toCold <= 14 || w.boiler > 0) && w.have < w.need * 0.3 ? 1.6 : 0.9; })(), // the boiler (worm.js) burns it in every season
   };
+  // A broken well or pump here (or, at the hub, at an outpost it supplies) waiting for scrap (waterWaitsScrap): scrap
+  // is wanted hard until the repair can be paid.
+  const waits = waterWaitsScrap(state, h) + (h.type === "hub" ? state.bases.filter((o) => o.type === "outpost").reduce((a, o) => a + waterWaitsScrap(state, o), 0) : 0);
+  if (waits && (st.scrap || 0) < 3 * waits + 1) out.scrap = Math.max(out.scrap, WATER_WAIT.need);
   // Parts by kind (repair.js partNeeds): bought below their reorder levels, never sold; machine parts gain the urgency.
   const pn = partNeeds(state, h);
   for (const k of ["gunparts", "carparts", "electronics"]) out[k] = pn[k];
@@ -1719,7 +1810,23 @@ function threatAt(state, base) {
 // The area each role belongs to (a steward leaves roles in an area it was not handed alone); rest and scavenge
 // are plain Roles. Roles the governor does not plan (teaching, reading: skills.js) are always left as they are.
 // teach / read (skills.js planStudy) belong to "roles": without them every reader counted as pinned and kept reading for good.
-const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
+// The farm crew (planRoles): extra = the ideal crew's multiple put on the plots while food is short (it was every
+// day food was not plentiful); share = the most of the people here on the plots while the food is comfortable;
+// winterMargin = the winter outlook's safety margin (15% of the hungry gap's food) times this left over to count as
+// comfortable.
+export const FARM_AP = { extra: 1.6, share: 0.35, winterMargin: 2 };
+// The farm crew's limits by the food, one rule for the governor (planRoles, and so the base leaders' stewards) and the
+// work priorities (work.js Farm): hungry = the food below its target (at least 15 days) or the winter stores short:
+// the extra crew (FARM_AP.extra × the ideal) may go out; comfy = the food at its target and the winter outlook left
+// with FARM_AP.winterMargin × its safety margin: the crew is capped at FARM_AP.share of the people here (cap; Infinity
+// otherwise). foodDays: edible food a head here; heads: the people here.
+export function farmCrewLimits(state, base, foodDays, heads) {
+  const target = Math.max(15, foodTarget(state, base));
+  const wp = winterPlan(state, base);
+  const comfy = foodDays >= target && wp.short <= 0 && wp.end >= wp.margin * FARM_AP.winterMargin;
+  return { hungry: foodDays < target || winterShort(state, base) > 0, comfy, cap: comfy ? Math.max(1, Math.ceil(heads * FARM_AP.share)) : Infinity };
+}
+const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
   const people = atBase(state, base.id);
@@ -1728,7 +1835,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   const P = persona(state);
   const free = new Set(people);
   const want = new Map();
-  const give = (s, role, station = null) => { want.set(s.id, { role, station }); free.delete(s); };
+  const give = (s, role, station = null, upkeep = false) => { want.set(s.id, { role, station, upkeep }); free.delete(s); };
   // 0. Pinned people (s.pinned, the survivor screen and the base's people list) keep what they do, and so does
   // anyone in a role whose area this base's steward was not handed.
   // People on work priorities (work.js) run themselves: a steward leaves them alone (the dev autopilot only with
@@ -1791,8 +1898,18 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // 2. Farming (farming.js): crops take days to ripen, and more and better farmers per plot give a bigger
   // harvest. Enough farmers for the plots in use (the "ideal" crew when food is short).
   let farmers = people.filter((s) => byPriority(s) && s.role === "farm").length; // farmers by priorities count too (farmShort)
-  const farmTo = (target) => {
+  // While the food is comfortable the crew is capped at FARM_AP.share of the people here, however many plots there
+  // are: the plots' own "need" crew (0.6 a plot) took every hand once the farm plots had grown past the people
+  // (2026-10-08: 30 plots for 10-14 people, 85% of the colonist-days on Farm with 130+ days of food in store). A plot
+  // nobody tends still gives 55% (farming.js tendMult), so the plots are all sown anyway; short of food the cap is off
+  // and the crew grows as before. Comfortable: the food at its target and, in every season (spring too, while next
+  // winter's crops are still to be sown), the winter outlook (farming.js winterOutlook, its crops at today's care:
+  // fewer farmers, smaller harvests) left with FARM_AP.winterMargin times its safety margin at the first spring harvest.
+  const farmLim = farmCrewLimits(state, base, foodDays, people.length); // one rule with the work priorities (work.js Farm)
+  const farmCap = farmLim.cap;
+  const farmTo = (want) => {
     if (!areas.food) return;
+    const target = Math.min(want, farmCap);
     for (const s of ranked("farm", (x) => skill(x, "farming"), (x) => !x.inBed)) {
       if (farmers >= target) break;
       farmers++;
@@ -1831,6 +1948,11 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // but one hand stays free for a queued build (often the very farm plots and stores the winter needs: with every
   // hand on the plots they were never built).
   if (winterShort(state, base) > 0) farmTo(Math.min(fw.need, people.filter((s) => !s.inBed).length - (areas.building && base.construction.length ? 1 : 0)));
+
+  // 1d. The jail's guards (prisoners.js JAIL_GUARD): with anyone held here the roster is the governor's (a leader's
+  // with Defence): one per 4 held, enough to watch the work detail, at most a quarter of the people, the sharpest
+  // (Scouting) and the ones already on it first. They guard all day while anyone is held; an empty jail frees them.
+  if (areas.defence) for (const s of planJailGuards(state, base, [...free])) give(s, "guard");
 
   // 3. Guards for a raid that is on its way or a horde at the door.
   const threat = threatAt(state, base);
@@ -1892,6 +2014,23 @@ function planRoles(state, base, areas = ALL_AREAS) {
     const n = Math.min(3, Math.max(1, Math.ceil(left / 40)), Math.max(1, Math.floor(free.size / 2)));
     for (const s of ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed).slice(0, n)) give(s, "build");
   }
+  // 5a. Upkeep at a big hub (UPKEEP_CREW): one or two builders kept on upkeep, build queue or not, while anything is
+  // worn, so the wells and pumps are mended before they break (breakdowns.js: only builders with nothing to build did
+  // upkeep, and a big hub always has something queued: its wells broke over and over).
+  const mend = areas.building ? upkeepCrew(state, base, people.length) : 0;
+  if (mend) for (const s of ranked("build", (x) => skill(x, "mechanics") + (x.upkeep ? STICKY : 0), (x) => !x.inBed).slice(0, mend)) give(s, "build", null, true);
+
+  // 5b. A Medic trainee (training.js planTrainees) while the base has too few skilled medics for its hospital and food
+  // for TRAINING.foodDays days: ahead of the comfortable farm crew (at the step of the teachers and readers, the farm
+  // had every hand of a small base and nobody ever trained), as an investment: a trainee learns from the doctor every
+  // day and counts as half a medic.
+  // A graduate (Medicine 6) goes to Medic while the hospital is short of medics, and while anyone trains the doctor
+  // stays on Medic duty, quiet ward or not (training.js planDoctor: off duty the lessons are halved).
+  if (areas.medical) {
+    const onMedic = () => people.filter((s) => (want.get(s.id) || {}).role === "medic");
+    planTrainees(state, base, free, give, { foodDays, urgent: !!threat.urgent, medics: onMedic().length });
+    planDoctor(state, base, free, give, { trainees: people.filter((s) => (want.get(s.id) || {}).role === "trainee").length, medics: onMedic() });
+  }
 
   // 6. Farming to the comfortable level. More plots are wanted when every plot is in use and food runs low.
   farmTo(foodDays < Math.max(15, foodTarget(state)) ? fw.ideal : fw.need);
@@ -1944,7 +2083,12 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // are the limit) and take the hands the firewood leaves (below); before that one or two and a reader per 6, here.
   const plenty = foodDays >= Math.max(40, foodTarget(state) * 1.5);
   if (!plenty) planStudy(state, base, free, give, { foodDays, urgent: !!threat.urgent }); // skills.js: a teacher and readers when food is comfortable
-  if (!plenty) farmTo(Math.ceil(fw.ideal * 1.6));
+  // The extra hands on the plots (FARM_AP.extra × the ideal crew) only while the food is below its target or the
+  // winter stores fall short: past the ideal crew a farmer adds little (farming.js tendMult: 1.2 a plot 1.29, 1.9 a
+  // plot 1.39), and "until food is plentiful" kept two thirds of every colony on the plots with months of food in
+  // store (2026-10-08: 65-85% of the colonist-days at a base on Farm, 100+ days of food at the hub). The rest scavenge
+  // around the base, cut wood, study and teach: the other skills rise.
+  if (farmLim.hungry) farmTo(Math.ceil(fw.ideal * FARM_AP.extra));
   // ...and while food is short the hands left over forage instead of picking through the ruins (foraging.js).
   if (foraging) {
     const have = [...want.values()].filter((w) => w.role === "forage").length;
@@ -1962,6 +2106,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   for (const s of people) {
     const w = want.get(s.id) || { role: "scavenge", station: null };
     if (s.role !== w.role) { s.role = w.role; changed++; }
+    if (w.upkeep) s.upkeep = true; else if (s.upkeep) delete s.upkeep; // 5a: kept on upkeep (buildings.js onUpkeep)
     if (w.role === "operate") { if (s.station !== w.station) { s.station = w.station; changed++; } }
     else s.station = null;
   }
@@ -1970,6 +2115,15 @@ function planRoles(state, base, areas = ALL_AREAS) {
     assignStations(state, base);
   }
   return changed;
+}
+
+// Upkeep hands at a hub of UPKEEP_CREW.from people or more (two from UPKEEP_CREW.two), while any fixture there is worn
+// past UPKEEP_CREW.wear or broken (breakdowns.js; each hand takes WEAR.upkeep, 1.5 wear, off the most worn a day).
+export const UPKEEP_CREW = { from: 12, two: 24, wear: 20 };
+function upkeepCrew(state, base, n) {
+  if (base.type !== "hub" || n < UPKEEP_CREW.from) return 0;
+  if (!fixtures(base).some((fx) => fx.broken || (fx.wear || 0) >= UPKEEP_CREW.wear)) return 0;
+  return n >= UPKEEP_CREW.two ? 2 : 1;
 }
 
 // station: the building, when known. Its standing order (production.js; the governor's own from govOrders, or the
@@ -2155,6 +2309,9 @@ function buildWishes(state, base) {
   if (people + (isHub ? 1 : 0) > beds) out.push(...housingWishes(state, base, `${people} people for ${beds} beds`, true));
   // An outpost of a hub that has outgrown its plots gets its beds ahead of the people sent to it (planSupplyRuns).
   else if (!isHub && cramped && !isShelter(base) && people + HOUSING.ahead > beds) out.push(...housingWishes(state, base, "room for people from the crowded hub", true));
+  // A hub with no river near (GROWTH_WATER): its wells are what it can grow to, so both go up right after the first
+  // beds, from a bare start on (saved for once there is the part), and again whenever one is lost.
+  if (isHub && !isShelter(base) && !GROWTH_WATER.river(state, base) && countAll(base, "well") + queued("well") < BUILDINGS.well.max) add("well", "no river near: the hub grows only as far as its wells carry it", (st.parts || 0) >= (BUILDINGS.well.cost.parts || 0));
   // Water first when it runs short (economy.js): cheap rain catchers, then wells; cisterns once it overflows.
   const wo = waterOutlook(state, base);
   const wDays = wo.net >= 0 ? Infinity : wo.daysLeft;
@@ -2632,8 +2789,12 @@ function planTrip(state) {
   // A hub that has outgrown its plots (hubCramped) founds one more than its style would, once no outpost it founded has a
   // bed free (built or queued: they build ahead of the people sent to them; taken bases get nobody, planSupplyRuns).
   const cramped = hubCramped(state, h) && state.bases.filter((b) => b.type === "outpost" && !b.captured).every((o) => outpostBedsFree(state, o) <= 0);
-  if (outposts < P.outposts + (cramped ? 1 : 0) + (push ? (goalsProgress(state).alliance.allIn ? LAND_OUTPOSTS_ALL_IN : LAND_OUTPOSTS) : 0) && alive(state).length >= P.outpostPop && today - g.lastOutpost >= 15 && (h.stock.scrap || 0) >= (push ? 25 : 50) && // the land push makes do with what founding takes
-      (h.stock.food || 0) >= home.length * 10 && spareHands >= 2) {
+  const wantsOutpost = outposts < P.outposts + (cramped ? 1 : 0) + (push ? (goalsProgress(state).alliance.allIn ? LAND_OUTPOSTS_ALL_IN : LAND_OUTPOSTS) : 0) && alive(state).length >= P.outpostPop && today - g.lastOutpost >= 15 &&
+    (h.stock.food || 0) >= home.length * 10 && spareHands >= 2;
+  // occupy.js: a base standing empty nearby that the crew can clear comes first (no scrap, and it is built already).
+  const oc = wantsOutpost ? occupyCandidate(state, h, pool, spareHands) : null;
+  if (oc) cands.push(oc);
+  else if (wantsOutpost && (h.stock.scrap || 0) >= (push ? 25 : 50)) { // the land push makes do with what founding takes
     const land = push && outposts >= P.outposts ? landOutpostSite(state) : null;
     const site = land ? land.id : outpostSite(state);
     const crowded = cramped || alive(state).length > baseBeds(h) + 2;
@@ -2767,7 +2928,7 @@ function planTrip(state) {
     if (!res) continue;
     if (c.outer) g.stats.farTrips = (g.stats.farTrips || 0) + 1;
     g.lastLaunch = today;
-    if (c.mission === "outpost") g.lastOutpost = today;
+    if (c.mission === "outpost" || c.mission === "occupy") g.lastOutpost = today;
     if (c.mission === "rescue") g.lastRescue = today;
     if (c.findKey) (g.findTried = g.findTried || {})[c.findKey] = today; // FIND_COOLDOWN
     if (c.mission === "trade" && !c.envoy) g.lastTrade = today;
@@ -3322,6 +3483,17 @@ function exileAct(state, p) {
     say(state, `${teamName(state, p)}: no base left, so it goes to take ${lost.o.name} back (${Math.round(lost.odds * 100)}%).`);
     return;
   }
+  // occupy.js: a base standing empty within reach that the team can clear: a home already built (not while a staging
+  // camp is well under way).
+  const empty = going ? null : (state.abandoned || []).filter((r) => g.distance(here, r.tile) <= OCCUPY.GOV_RANGE && !occupyProblem(state, r.tile) && planPath(state, here, r.tile, p.vehicle))
+    .map((r) => ({ r, odds: teamOccupyOdds(state, p, abandonedThreat(state, r.tile)), d: g.distance(here, r.tile) })).filter((x) => x.odds >= OCCUPY.AI_ODDS).sort((a, b) => a.d - b.d || b.odds - a.odds)[0];
+  if (empty) {
+    if (here === empty.r.tile) { giveOrder(state, p, "occupy"); return; }
+    orderMove(state, p, empty.r.tile);
+    p.orders = [{ type: "mission", mission: "occupy" }];
+    say(state, `${teamName(state, p)}: no base left, so it goes to move into the empty base at ${tileLabel(state, empty.r.tile)} (${Math.round(empty.odds * 100)}%).`);
+    return;
+  }
   roadAct(state, p);
 }
 
@@ -3671,6 +3843,72 @@ function outpostSite(state) {
   return best ? best.id : null;
 }
 
+// ---------- giving up a doomed outpost (occupy.js abandonOutpost) ----------
+// Conservative (OCCUPY.DOOM_*): only in autumn or winter, an outpost whose own stores and fields run out within
+// DOOM_DAYS, whose supply line to the hub is weak or cut, while the hub's own winter plan (counting every outpost) is
+// short too, so nothing can be sent; its people must have a way home. One every DOOM_EVERY days. Its buildings stay
+// as an empty base (Reoccupy it in spring).
+export function doomedOutpost(state, o) {
+  const h = hub(state);
+  if (!h || o.type !== "outpost" || !atBase(state, o.id).length || abandonProblem(state, o)) return null;
+  if (!winterActive(state, h) || (wxSeason(state).key !== "autumn" && wxSeason(state).key !== "winter")) return null;
+  const own = winterOutlook(state, o);
+  const today = Math.floor(state.hour / 24);
+  if (own.runsOut == null || own.runsOut - today > OCCUPY.DOOM_DAYS) return null;
+  const line = supplyLine(state, o);
+  if (line.strength >= OCCUPY.DOOM_LINE) return null;
+  if (winterPlan(state, h).short <= 0) return null;
+  return { runsIn: Math.max(0, own.runsOut - today), line: line.strength };
+}
+function abandonDoomed(state) {
+  const g = gov(state);
+  if (day(state) - (g.lastAbandon ?? -999) < OCCUPY.DOOM_EVERY) return;
+  for (const o of state.bases.filter((b) => b.type === "outpost")) {
+    const d = doomedOutpost(state, o);
+    if (!d) continue;
+    const name = o.name;
+    const text = abandonOutpost(state, o, "it cannot be fed through the winter");
+    g.lastAbandon = day(state);
+    g.stats.abandoned = (g.stats.abandoned || 0) + 1;
+    say(state, `Gave up ${name}: its food runs out in about ${d.runsIn} day${d.runsIn === 1 ? "" : "s"}, its supply line is ${d.line > 0 ? `weak (${Math.round(d.line * 100)}%)` : "cut"} and the hub's winter stores are short too. ${text}`);
+    return;
+  }
+}
+
+// ---------- moving into an abandoned base (occupy.js) ----------
+// When the governor wants an outpost, a base standing empty within OCCUPY.GOV_RANGE tiles of the hub that the map shows
+// (live, or a report) and that the fittest of the pool can clear at OCCUPY.AI_ODDS (OCCUPY.GOV_CREW of them, up to
+// GOV_CREW_MAX when the dead or squatters inside ask for more) comes first: it costs no scrap and what stands there
+// is weeks of building. Not where moving in would anger a coalition member or a pact partner. More standing, nearer:
+// better.
+const OCC_FIT = (s) => (s.health >= 60 && !s.woundInfected ? combatPower(s) : -99);
+export function occupyCandidate(state, h, pool, spareHands) {
+  const g = state.grid;
+  const squad = [...pool].filter((s) => OCC_FIT(s) > -99).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id);
+  const most = Math.min(spareHands, OCCUPY.GOV_CREW_MAX, squad.length);
+  let best = null;
+  for (const rec of state.abandoned || []) {
+    const d = g.distance(rec.tile, h.tile);
+    if (d > OCCUPY.GOV_RANGE || occupyProblem(state, rec.tile)) continue;
+    const known = state.live.has(rec.tile) || !!(state.knowledge[rec.tile] && state.knowledge[rec.tile].abandoned);
+    if (!known || state.parties.some((p) => p.owner === "player" && p.dest === rec.tile)) continue;
+    if (occupyGrievance(state, rec.tile).some((x) => isMember(state, x.f) || x.f.pact)) continue;
+    const stand = standingAt(state, rec).filter((b) => !b.broken).length;
+    if (stand < OCCUPY.GOV_MIN_STANDING) continue; // a bare group base: no better than new ground
+    const threat = abandonedThreat(state, rec.tile);
+    let n = Math.min(OCCUPY.GOV_CREW, most), odds = 0;
+    for (; n <= most; n++) { odds = occupyOdds(squad.slice(0, n), threat); if (odds >= OCCUPY.AI_ODDS) break; }
+    if (n > most || n < 2 || odds < OCCUPY.AI_ODDS) continue;
+    const score = 3.6 + Math.min(1.5, stand * 0.2) - d * 0.05;
+    if (!best || score > best.score) best = { rec, n, odds, stand, score, threat };
+  }
+  if (!best) return null;
+  const { rec, n } = best;
+  return { mission: "occupy", tile: rec.tile, score: best.score, crew: n, squadMin: 2, fit: OCC_FIT,
+    why: `move into ${rec.from === "player" ? `${rec.fromName}, our old outpost` : `the base ${rec.fromName} left`} (${best.stand} building${best.stand === 1 ? "" : "s"} standing; ${best.threat.count ? `${Math.round(best.odds * 100)}% against ${best.threat.count} inside` : "nobody inside"}) instead of building an outpost`,
+    supplies: { ammo: 10 * n, meds: 1 } };
+}
+
 // Pick the crew, a vehicle if it pays, pack supplies and send the team. Returns the party or null.
 function launchTrip(state, c, pool, spareHands) {
   const P = persona(state);
@@ -3698,19 +3936,19 @@ function launchTrip(state, c, pool, spareHands) {
     return null;
   };
   const n = ids.length;
-  if (cand && (dist >= 3 || (c.wood && dist >= 1)) && c.mission !== "outpost" && c.mission !== "rescue" && c.mission !== "sweep") { // a survey goes on foot or bikes (a car sees little off the road)
+  if (cand && (dist >= 3 || (c.wood && dist >= 1)) && c.mission !== "outpost" && c.mission !== "occupy" && c.mission !== "rescue" && c.mission !== "sweep") { // a survey goes on foot or bikes (a car sees little off the road)
     if (cand.condition < 50 && (h.stock.parts || 0) >= 2 && canRepair(state, h).ok) repair(state, h, cand);
     const vEst = cand.condition >= 30 && estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: true, v: cand, stance: P.stance, homeBaseId: h.id, supplies: roughSupplies(n, 2) });
     if (vEst && vEst.fuel <= cand.fuel + Math.max(0, (h.stock.fuel || 0) - 4 - tripFuelHold(state, h, c))) v = cand; // needs-gauges: not the heating fuel, nor the campaign's fires
   }
   if (v) refuelKeeping(state, h, v, tripFuelHold(state, h, c)); // needs-gauges: the winter's heating fuel stays home (and the campaign's fires')
   // No car: bikes, one each, for anything past the next couple of tiles (no fuel, faster on roads, racks for the haul).
-  if (!v && dist >= 2 && c.mission !== "outpost" && c.mission !== "rescue" && bikesAtBase(state, h.id) >= n) {
+  if (!v && dist >= 2 && c.mission !== "outpost" && c.mission !== "occupy" && c.mission !== "rescue" && bikesAtBase(state, h.id) >= n) {
     const stack = parkBikes(state, h);
     if (stack && stack.condition >= 25) v = stack;
   }
   const plannedV = isBike(v) ? { ...v, count: n } : v;
-  let onSite = c.onSite != null ? c.onSite : c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "recon" ? P.searchHours + 8 : 4;
+  let onSite = c.onSite != null ? c.onSite : c.mission === "scavenge" ? P.searchHours + 4 + (P.reserves ? 2 : 0) : c.mission === "outpost" ? 0 : c.mission === "occupy" ? 2 : c.mission === "recon" ? P.searchHours + 8 : 4;
   let steps = c.steps;
   // The estimate with what the team would pack (its load sets its pace and rations, load.js).
   const tripOpts = (supplies) => ({ memberIds: ids, dest: c.tile, vehicle: travelMode(v), v: plannedV, stance: P.stance, homeBaseId: h.id, fuel: isCar(v) ? v.fuel + (h.stock.fuel || 0) : 0, supplies });
@@ -3773,8 +4011,9 @@ function launchTrip(state, c, pool, spareHands) {
   // Weighed twice: what the team packs changes its load, and so its pace and what it eats.
   for (let pass = 0; pass < 2; pass++) {
     const r = ration(est);
-    sup.food = Math.ceil(r * 1.25) + 1 + (c.mission === "outpost" ? 6 : 0);
-    sup.water = Math.ceil(r * 1.25 * thirstAhead(state, (est.hours + onSite) / 24)) + 1 + (c.mission === "outpost" ? 4 : 0); // summer, heat waves (weather.js)
+    const settles = c.mission === "outpost" || c.mission === "occupy"; // the team lives there after: a few days' stores
+    sup.food = Math.ceil(r * 1.25) + 1 + (settles ? 6 : 0);
+    sup.water = Math.ceil(r * 1.25 * thirstAhead(state, (est.hours + onSite) / 24)) + 1 + (settles ? 4 : 0); // summer, heat waves (weather.js)
     sup.fuel = isCar(v) ? Math.max(0, Math.min(stock("fuel") - tripFuelHold(state, h, c), Math.ceil(est.fuel * 1.25 - v.fuel))) : 0; // needs-gauges: not the heating fuel, nor the campaign's fires
     if (pass === 0) est = estimateTrip(state, tripOpts({ ...sup, ...(c.supplies || {}) })) || est;
   }
@@ -3842,6 +4081,7 @@ function launchTrip(state, c, pool, spareHands) {
   if (c.food) g.stats[c.food] = (g.stats[c.food] || 0) + 1; // huntTrips, fishTrips
   g.stats.launched++;
   if (c.mission === "outpost") g.stats.outposts++;
+  if (c.mission === "occupy") g.stats.occupyTrips = (g.stats.occupyTrips || 0) + 1;
   say(state, `Sent ${names(crew)} (${c.food === "huntTrips" ? "hunt" : c.food === "fishTrips" ? "fish" : c.food === "woodTrips" ? "cut wood" : c.mission === "scavenge" ? "scavenge" : c.mission}) to ${tileLabel(state, c.tile)}${isBike(v) ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}: ${c.why}. Back in about ${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"}.${stashed.length ? ` Heavy armor left home for the walk: ${stashed.map(([x, a]) => `${first(x)}'s ${a.name}`).join(", ")}.` : ""}`);
   return res.party;
 }
@@ -4436,11 +4676,12 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
     const fix = staff ? waterRepairLoad(state, h, o) : null; // scrap and parts for its broken well or pump
     if (moves && staff < 2 && !o.captured && home.length >= 7 && crewPool.length) { // a base taken from a group (conquest.js) is held by whoever took it
       const s = [...crewPool].sort((a, b) => skill(b, "farming") - skill(a, "farming"))[0];
-      form = { crew: [s.id], deliver: [{ key: "food", qty: 6 }, { key: "scrap", qty: Math.min(8, Math.max(0, Math.floor((h.stock.scrap || 0) - 30))) }], atDest: "disband" };
+      form = { crew: [s.id], deliver: [{ key: "food", qty: Math.min(6, payoutSpare(state, h, "food")) }, { key: "scrap", qty: Math.min(8, Math.max(0, Math.floor((h.stock.scrap || 0) - 30))) }].filter((l) => l.qty > 0), atDest: "disband" };
       why = `${first(s)} joins the outpost (only ${staff} there)`;
-    } else if (staff && outpostThirsty(state, o) && waterIn(h.stock) - home.length * 5 >= 12 && crewPool.length) {
-      // An outpost's spring gives 3 a day (less in a dry spell): water from the hub before anyone goes thirsty.
-      const qty = Math.min(30, Math.floor(waterIn(h.stock) - home.length * 5));
+    } else if (staff && outpostThirsty(state, o) && Math.min(waterIn(h.stock) - home.length * 5, payoutSpare(state, h, "water")) >= 12 && crewPool.length) {
+      // An outpost's spring gives 3 a day (less in a dry spell): water from the hub before anyone goes thirsty (never
+      // out of the hub's own pay-out reserve, upkeep.js PAYOUT).
+      const qty = Math.min(30, Math.floor(waterIn(h.stock) - home.length * 5), payoutSpare(state, h, "water"));
       const crew = [];
       const fixKg = fix ? fix.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0) : 0; // the repair's scrap and parts ride along
       for (const s of crewPool) if (carryCapacity(state, crew, null) < qty * SUPPLIES.water.weight + fixKg && crew.length < Math.min(spare, 2)) crew.push(s);
@@ -4464,7 +4705,7 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
       // Farmers first (an outpost has to feed itself); the hub's medics, builders and station hands last.
       const keepHome = (s) => (s.role === "medic" || s.role === "build" || s.role === "operate" ? 6 : 0);
       const crew = [...crewPool].sort((a, b) => skill(b, "farming") - keepHome(b) - (skill(a, "farming") - keepHome(a))).slice(0, n);
-      const food = Math.min(HOUSING.moveFood * n, Math.max(0, Math.floor((h.stock.food || 0) - home.length * 5)));
+      const food = Math.min(HOUSING.moveFood * n, Math.max(0, Math.floor((h.stock.food || 0) - home.length * 5)), payoutSpare(state, h, "food"));
       form = { crew: crew.map((s) => s.id), deliver: food > 0 ? [{ key: "food", qty: food }] : [], atDest: "disband" };
       why = `${names(crew)} move${crew.length === 1 ? "s" : ""} there: ${h.name} has outgrown its building plots (${residents(state, h.id).length} people for ${baseBeds(h)} beds), ${o.name} has ${outpostBedsFree(state, o)} free`;
     } else {
@@ -4478,7 +4719,7 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
       if (wish && (scrapShort ? (h.stock.scrap || 0) >= scrap + 25 : partsShort) && home.length >= 5 && crewPool.length >= 1) {
         const deliver = scrapShort ? [{ key: "scrap", qty: scrap + 2 }] : [];
         if (partsShort) deliver.push({ key: "parts", qty: parts - Math.floor(o.stock.parts || 0) });
-        if ((o.stock.food || 0) < staff * 3) deliver.push({ key: "food", qty: 8 });
+        if ((o.stock.food || 0) < staff * 3 && payoutSpare(state, h, "food") >= 8) deliver.push({ key: "food", qty: 8 });
         // Enough hands to carry it (people stay home: at most a third of the hub goes).
         const load = deliver.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0);
         const crew = [];

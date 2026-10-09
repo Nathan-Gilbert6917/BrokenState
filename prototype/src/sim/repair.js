@@ -415,7 +415,9 @@ export function repairCrafterWanted(state, base) {
   return null;
 }
 // A spare gun in the armory to take apart for gun parts: not the only one of its kind here, the cheapest first.
-function spareGun(state, base) {
+// A gun in the armory that has a twin (in the armory or carried by someone here), the cheapest: the one to take apart
+// for parts (an urgent gun repair here; the governor's broken well waiting for scrap, autopilot.js waterSalvage).
+export function spareGun(state, base) {
   const isGun = (it) => it && GEAR[it.key] && GEAR[it.key].slot === "weapon" && ["pistol", "shotgun", "rifle", "automatic"].includes(GEAR[it.key].cat);
   const guns = base.armory.filter((it) => isGun(it) && !repairQueue(base).some((j) => j.item === it));
   const n = (k) => base.armory.filter((g) => g && g.key === k).length + atBase(state, base.id).filter((s) => s.gear && s.gear.weapon && s.gear.weapon.key === k).length;

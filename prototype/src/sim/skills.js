@@ -15,7 +15,8 @@
 //   Mechanics   Build 11 (2 with nothing queued), Operate 11, Craft 11   repairs 6 (×2 at a base), cars 1-4
 //   Crafting    Craft role: each finished craft by kind, inputs and quality (crafting.js craftXp, about 0.5-3 a
 //               craft; CRAFT_XP.base 2 → 0.55 in this pass: a crafter kept in materials made 40+ a day)
-//   Medicine    Medic role 8                                             wound 5, surgery 10, illness 4, field 6, battle heal 4
+//   Medicine    Medic role 8; ward rounds by the patients (training.js,   wound 5, surgery 10, illness 4, field 6, battle heal 4
+//               own cap 4-10 by hospital tier); Trainee role 4 + lessons
 //   Shooting    Guard role 6 + 0.25 an hour on guard (the night watch)  battle: shot 1, hit 2, kill 2, melee 1;
 //                                                                         fight by the numbers 8 (+4 won); game shot 2/6
 //   Scavenging  Scavenge role 9; 4 an hour searching                     a container in a raid 3
@@ -54,6 +55,8 @@ export const SKILL_MAX = 20;
 export const CAP_USE = 20;        // use XP per skill per day
 export const CAP_STUDY = 25;      // teaching + reading XP per skill per day
 export const CAP_FIGHT = 30;      // fighting XP (battles on the map, fights by the numbers) per skill per day
+export const CAP_WARD = 10;       // ward rounds (training.js: Medicine for medics on duty, by the patients) per day; the
+                                  // hospital tier sets each day's own cap (BUILDINGS med.ward 4-10) below this one
 export const DECAY_AFTER = 14;    // days without use before a skill above DECAY_FLOOR slips
 export const DECAY_PER_DAY = 2;   // XP lost a day after that
 export const DECAY_FLOOR = 10;    // never slips below this (nor below the starting level)
@@ -97,7 +100,7 @@ export const PERK_TREE = {
     10: [P("deadeye", "Deadeye", "+15% critical-hit chance on every gun shot except overwatch reactions (a critical hit does 2× damage).", [1, 2, 3], "combat.js shotOdds"),
          P("suppressor", "Suppressor", "Overwatch reaction shots at full aim (no −15% penalty).", [3, 2, 1], "combat.js shotOdds")],
     15: [P("gunslinger", "Gunslinger", "+1.5 fighting strength: counts in fights resolved by the numbers, search encounters and base defence.", [2, 2, 2], "world.js combatPower"),
-         P("sniper", "Sniper", "No aim loss for shooting beyond the weapon's best range.", [2, 2, 2], "combat.js shotOdds")],
+         P("sniper", "Sniper", "No aim loss for shooting beyond the weapon's best range (a 5.56, 7.62×39 or .22 round still drops past its reach).", [2, 2, 2], "combat.js shotOdds")],
   },
   stealth: {
     5: [P("lightstep", "Light Step", "In battle, unaware enemies notice them 2 tiles later (detection range −2, never below 1).", [2, 2, 2], "combat.js detect"),
@@ -169,6 +172,12 @@ export const PERK_TREE = {
 export const PERKS = {};
 for (const [k, tiers] of Object.entries(PERK_TREE)) for (const [ms, list] of Object.entries(tiers)) for (const p of list) PERKS[p.id] = { ...p, skill: k, ms: Number(ms) };
 const STYLE_IDX = { cautious: 0, balanced: 1, aggressive: 2 };
+// Earned perks: not milestone choices (no perk point, not in PERK_TREE or PERKS), given by a career (training.js:
+// Professor of Medicine, for a doctor who has taught long enough). Kept in s.perks like the others (hasPerk).
+export const EARNED_PERKS = {
+  professor: { id: "professor", name: "Professor of Medicine", skill: "medicine", earned: true,
+    desc: "Earned by teaching: a doctor (Medicine 10+) who has taught trainees on 60 days. Their lessons teach 25% faster (on top of Mentor).", hook: "training.js lessonRate, doctorCareer" },
+};
 
 export const hasPerk = (s, id) => !!(s && s.perks && s.perks.includes(id));
 export const anyPerk = (list, id) => !!(list && list.some((s) => s && s.alive !== false && hasPerk(s, id)));
@@ -238,7 +247,7 @@ export function skillProgress(s, key) {
   const need = xpNeed(raw);
   const xp = Math.max(0, (s && s.xp && s.xp[key]) || 0);
   const t = s && s.xpDay ? s.xpDay : null;
-  const today = t ? (t.use[key] || 0) + (t.study[key] || 0) + ((t.fight && t.fight[key]) || 0) : 0;
+  const today = t ? (t.use[key] || 0) + (t.study[key] || 0) + ((t.fight && t.fight[key]) || 0) + ((t.ward && t.ward[key]) || 0) : 0;
   const maxed = raw >= SKILL_MAX;
   const nextMs = MILESTONES.find((m) => m > level) || null;
   return {
@@ -264,7 +273,7 @@ export function pendingPerks(s) {
 // every gainXp; onDecay(state, s, key, lost) when an unused skill slips.
 export const xpHooks = { onGain: null, onDecay: null };
 
-// Adds XP to one skill (src "use", "study" or "fight"; each has its own daily cap). Returns the XP actually added.
+// Adds XP to one skill (src "use", "study", "fight" or "ward"; each has its own daily cap). Returns the XP actually added.
 export function gainXp(state, s, key, amount, src = "use") {
   const added = gainXpRaw(state, s, key, amount, src);
   if (xpHooks.onGain && s && amount > 0) xpHooks.onGain(state, s, key, amount, added, src);
@@ -276,14 +285,15 @@ function gainXpRaw(state, s, key, amount, src) {
   const d = day(state);
   if (s.xpDay.d !== d) s.xpDay = { d, use: {}, study: {} };
   if (src === "fight" && !s.xpDay.fight) s.xpDay.fight = {}; // saves from before the fight bucket
+  if (src === "ward" && !s.xpDay.ward) s.xpDay.ward = {}; // made on first use (training.js ward rounds)
   let amt = amount;
   // Mentor: teammates on a trip with them learn more from what they do.
-  if (src !== "study" && s.location && s.location.kind === "party") {
+  if (src !== "study" && src !== "ward" && s.location && s.location.kind === "party") {
     const p = state.parties.find((x) => x.id === s.location.partyId);
     if (p && teamOf(state, p).some((o) => o !== s && hasPerk(o, "mentor"))) amt *= 1.25;
   }
-  const bucket = src === "study" ? s.xpDay.study : src === "fight" ? s.xpDay.fight : s.xpDay.use;
-  const cap = src === "study" ? CAP_STUDY : src === "fight" ? CAP_FIGHT : CAP_USE;
+  const bucket = src === "study" ? s.xpDay.study : src === "fight" ? s.xpDay.fight : src === "ward" ? s.xpDay.ward : s.xpDay.use;
+  const cap = src === "study" ? CAP_STUDY : src === "fight" ? CAP_FIGHT : src === "ward" ? CAP_WARD : CAP_USE;
   amt = Math.min(amt, cap - (bucket[key] || 0));
   if (amt <= 1e-9) return 0;
   bucket[key] = (bucket[key] || 0) + amt;

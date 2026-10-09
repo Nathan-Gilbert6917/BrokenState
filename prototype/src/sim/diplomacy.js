@@ -50,10 +50,11 @@
 //   from the groups' expansion for 60 days). After the peace the enemy settles at goodwill −35 (wary, not hostile).
 import { Rng } from "./rng.js";
 import { groupCapture, jailsOn } from "./groupjails.js"; // jailhouse: war captives into the raider's jail
-import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS, supplyFew } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, supplyFew } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
+import { groupPayoutSpare } from "./upkeep.js"; // the pay-out reserve (food)
 import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
-import { clashKit, raidCount } from "./arsenal.js"; // group arsenals: a war raid's dead lose their kit, the side holding the field picks some up
+import { clashKit, raidCount, smokeCover } from "./arsenal.js"; // group arsenals: a war raid's dead lose their kit, the side holding the field picks some up
 import { spawnAiParty, tileLabel } from "./parties.js";
 import { hasNetwork, canListen, canRadioGroup, radioSpeech } from "./radio.js";
 import { available, need, buyPrice, refreshMarkets, refreshMarket } from "./trade.js";
@@ -69,8 +70,10 @@ import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every r
 import { payAmmo } from "./ammo.js"; // rounds by calibre: the ones its guns need least go
 import { warCaptureMult } from "./nonlethal.js"; // groups that take people alive take more prisoners in a war
 import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES warlike: a group's temper for war
+import { noteStrife, SPLINTER } from "./splinters.js"; // a lost war stirs strife (splinter bands)
 import { sameBloc, blocSpare, blocWarJoin, blocsDaily, jointRaid } from "./blocs.js"; // AI blocs (alliances of groups)
 import { pwarsDaily } from "./playerwars.js"; // wars declared on you (and by you)
+import { knownBase } from "./groupworld.js"; // a war raid on your base goes only for one they know
 
 export const DIPLO = {
   DRIFT: 0.02, PACT_REL: 28, PACT_BREAK: 10, PACT_CHANCE: 0.05, WAR_REL: -42, WAR_BASE: 0.01, WAR_RANGE: 18,
@@ -103,15 +106,14 @@ export function diploRng(state) {
   return state.diploRng;
 }
 const key = (a, b) => (a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`);
-const agg = (t) => FACTION_TYPES[t].attitude === "Aggressive";
+// The two types' resting relation (groupcare.js GROUP_PRIORITIES relKin / relOut / relRank): with its own type a
+// group's relKin; with another, the relOut of the type with the higher relRank (the lower relOut on a tie).
+const TYPE_REL = 18; // an unknown type's (relKin and relOut)
 function typeRel(a, b) {
-  const A = a.type, B = b.type;
-  if (A === "raider" || B === "raider") return A === B ? -20 : -44;
-  if (A === "zealot" || B === "zealot") return A === B ? 20 : -34;
-  if (agg(A) && agg(B)) return -28;
-  if (agg(A) || agg(B)) return -24;
-  if (A === "traders" || B === "traders" || A === "commune" || B === "commune") return 30;
-  return 18;
+  if (a.type === b.type) return weightOf(a, "relKin", TYPE_REL);
+  const ra = weightOf(a, "relRank", 0), rb = weightOf(b, "relRank", 0);
+  const oa = weightOf(a, "relOut", TYPE_REL), ob = weightOf(b, "relOut", TYPE_REL);
+  return ra > rb ? oa : rb > ra ? ob : Math.min(oa, ob);
 }
 export function baseDistance(state, a, b) {
   let best = Infinity;
@@ -367,7 +369,7 @@ export function warRaid(state, w, f, o) {
   if (origin == null) return null;
   const targets = o.bases.map((t) => ({ kind: "faction", factionId: o.id, tile: t, w: 1 / (1 + g.distance(origin, t) / 8) }));
   // You fight beside one side: its enemy may come for your bases too.
-  if (w.playerSide === o.id && raidPaceOpen(state)) for (const b of state.bases) if (g.distance(origin, b.tile) <= 20) targets.push({ kind: "player", baseId: b.id, tile: b.tile, w: 0.6 / (1 + g.distance(origin, b.tile) / 8) });
+  if (w.playerSide === o.id && raidPaceOpen(state)) for (const b of state.bases) if (g.distance(origin, b.tile) <= 20 && knownBase(state, f, b.tile)) targets.push({ kind: "player", baseId: b.id, tile: b.tile, w: 0.6 / (1 + g.distance(origin, b.tile) / 8) });
   if (!targets.length) return null;
   const tgt = rng.weighted(targets, (t) => t.w);
   const mult = w.playerSide === f.id ? 1.25 : 1;
@@ -392,7 +394,8 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
   const report = state.live.has(party.target.tile) || (attacker && attacker.known && target.known);
   if (won) {
     d.stats.raidWins++;
-    const loss = Math.min(Math.max(1, Math.round(target.pop * rng.range(0.05, 0.1))), Math.max(0, target.pop - DIPLO.MIN_POP));
+    const hit = Math.min(Math.max(1, Math.round(target.pop * rng.range(0.05, 0.1))), Math.max(0, target.pop - DIPLO.MIN_POP));
+    const loss = hit - smokeCover(state, target, hit); // arsenal.js: smoke over their retreat spares a few
     target.pop -= loss;
     clashKit(state, attacker, attacker ? raidCount(attacker, att) : 0, 0, target, loss, "a", 0.1, true, "war"); // arsenal.js
     for (const k of ["food", "ammo", "meds", "scrap"]) {
@@ -425,7 +428,7 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
   }
   const tp = target.pop, ap = attacker ? attacker.pop : 0;
   target.pop = Math.max(Math.min(target.pop, DIPLO.MIN_POP), target.pop - rng.int(0, 1));
-  if (attacker) attacker.pop = Math.max(Math.min(attacker.pop, DIPLO.MIN_POP), attacker.pop - rng.int(1, 2));
+  if (attacker) { const hit = rng.int(1, 2); attacker.pop = Math.max(Math.min(attacker.pop, DIPLO.MIN_POP), attacker.pop - hit + smokeCover(state, attacker, hit)); } // arsenal.js: their smoke spares a few
   clashKit(state, attacker, attacker ? raidCount(attacker, att) : 0, attacker ? ap - attacker.pop : 0, target, tp - target.pop, "b", 0, true, "war"); // arsenal.js: the defenders hold the field
   if (w && attacker) {
     w.score[target.id] = (w.score[target.id] || 0) + 1;
@@ -473,7 +476,8 @@ export function makePeace(state, w, how = "terms") {
     terms = "tribute";
     const paid = {};
     for (const k of ["food", "ammo", "meds", "scrap"]) {
-      const q = Math.floor((lose.stock[k] || 0) * DIPLO.TRIBUTE);
+      // Food never out of the loser's pay-out reserve (upkeep.js PAYOUT, as your governor's).
+      const q = Math.min(Math.floor((lose.stock[k] || 0) * DIPLO.TRIBUTE), groupPayoutSpare(lose, k));
       lose.stock[k] -= q;
       const mine = youWon ? Math.floor(q / 2) : 0;
       win.stock[k] = (win.stock[k] || 0) + q - mine;
@@ -487,6 +491,7 @@ export function makePeace(state, w, how = "terms") {
     text = `${cap(knownAs(state, a))} and ${knownAs(state, b)} made peace. Neither side gained anything.`;
   }
   endWar(state, w, terms, text);
+  if (terms === "land" || terms === "tribute") noteStrife(lose, SPLINTER.WAR_LOST, "war"); // splinters.js: a lost war stirs strife
   if (w.playerSide != null) {
     const ally = factionById(state, w.playerSide);
     const foe = ally === a ? b : a;

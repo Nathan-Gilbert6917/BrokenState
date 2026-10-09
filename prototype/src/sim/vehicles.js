@@ -547,7 +547,8 @@ export const groupTurretPower = (f) => { const g = groupTurret(f); return g ? TU
 // A raid party (parties.js spawnAiParty) takes the group's working turreted vehicle along when it is not out with
 // another raid (p.humvee: its id); its turret adds TURRET_ODDS to the raid by the numbers (raidTurretPower) and it stands
 // on the defence map when you fight the raid in person (combat.js placeRaidHumvee). A raid that fails loses it
-// (loseRaidHumvee): beaten off by you, it is left at your base, damaged, turret, plate and glass as they were, and it
+// (loseRaidHumvee): beaten off by you, it is left at your base unless it drove off in the fight (combat.js raidCarTurn:
+// then they keep it, worn: wearRaidHumvee), damaged, turret, plate and glass as they were, and it
 // joins the base's vehicles; beaten off by another group, that group takes it into its own f.vehicles. A military group
 // gets a new one HUMVEE.REPLACE days after its last loss (60–90, its own dice) while it is still HUMVEE.MIN_POP strong
 // (factionVehiclesDaily); until then its raids and its home have no turret.
@@ -589,21 +590,19 @@ export const vehKey = (state, v) => (typeof v.id === "number" ? localId(state, v
   : String(v.id).replace(/^f(\d+)/, (_, n) => `f${localId(state, Number(n))}`).replace(/-v(\d+)/, (_, n) => `-v${localId(state, Number(n))}`));
 export function loseRaidHumvee(state, p, to) {
   const all = raidHumvees(state, p);
-  // Only a fleet (p.humvees) is split up: each one is then lost on its own with p.humvees cleared, so a save from before
-  // ids were numbered, with two vehicles under one id, loses them one at a time instead of recursing forever.
-  if (all.length > 1 && p.humvees && p.humvees.length > 1) {
-    const first = all.find((x) => x.id === p.humvee) || all[0];
-    for (const x of all.filter((y) => y !== first)) { p.humvee = x.id; p.humvees = null; loseRaidHumvee(state, p, to); }
-    p.humvee = first.id;
-    p.humvees = null;
-  }
-  const v = raidHumvee(state, p);
-  if (!v) return null;
-  const f = state.factions.find((x) => x.id === p.owner);
-  f.vehicles = f.vehicles.filter((x) => x !== v);
-  f.vehLost = state.hour;
+  const first = all.find((x) => x.id === p.humvee) || all[0] || null;
   p.humvee = null;
   p.humvees = null;
+  if (!first) return null;
+  const f = state.factions.find((x) => x.id === p.owner);
+  // Each vehicle by itself, the first last (its record is returned). By the object, not the id: a save from before
+  // the ids were made unique (below) may hold two with one id, and going by the id looped on them for ever.
+  for (const x of all.filter((y) => y !== first)) loseOneRaidCar(state, f, x, to);
+  return loseOneRaidCar(state, f, first, to);
+}
+function loseOneRaidCar(state, f, v, to) {
+  f.vehicles = f.vehicles.filter((x) => x !== v);
+  f.vehLost = state.hour;
   const roll = (k) => hash01(state.seed, "humvee", localId(state, f.id), vehKey(state, v) /* world-local: ids are process-wide */, state.hour, k);
   const ups = JSON.parse(JSON.stringify(upgradesOf(v)));
   if (to && to.base) {
@@ -616,15 +615,20 @@ export function loseRaidHumvee(state, p, to) {
   if (to && to.faction) {
     const g = to.faction;
     g.vehicles = factionVehicles(g);
-    // Two of a kind taken in the same hour (a fleet lost at once) would share an id: number the later ones.
-    const base = `f${g.id}-${v.type}-${state.hour}`;
-    let id = base;
-    for (let n = 2; g.vehicles.some((x) => x.id === id); n++) id = `${base}-${n}`;
-    const nv = { ...v, id, owner: g.id, condition: Math.max(20, Math.round(v.condition * 0.7)), upgrades: ups };
+    g.vehSeq = (g.vehSeq || 0) + 1; // a new id each (two taken in one hour were one id: f<group>-<type>-<hour>)
+    const nv = { ...v, id: `f${g.id}-t${g.vehSeq}`, owner: g.id, condition: Math.max(20, Math.round(v.condition * 0.7)), upgrades: ups };
     g.vehicles.push(nv);
     return nv;
   }
   return null;
+}
+// The raid's Humvee came back from the fight (combat.js raidCarTurn: it drove off, or the raid won): what it took on
+// the map (blasts, ramming: the same wear your vehicle takes, combat.js settleVehicle) comes off its condition.
+export function wearRaidHumvee(state, p, wear) {
+  const v = raidHumvee(state, p);
+  if (!v || !(wear > 0)) return null;
+  v.condition = Math.max(1, Math.round((v.condition - wear) * 10) / 10);
+  return v;
 }
 // The line for the raid report: "Their Humvee was left behind…".
 export const humveeLeftText = (f, v, base) => `${f && f.known ? f.name : "The raiders"} left their ${v.name} behind at ${base.name}: ${upgradeText(v).replace(/^./, (c) => c.toLowerCase())}, condition ${Math.round(v.condition)}%. It is in the base's motor pool now.`;

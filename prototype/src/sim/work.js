@@ -53,10 +53,11 @@ import { hospitalDef, isHurt, isSevere } from "./medical.js";
 import { tooIllToWork, isSick, isContagious } from "./health.js";
 import { CRAFTS, craftQueue, craftQuality, meetsNeeds, craftHeld, isFilterJob, benchQuality, canAttempt, craftSkill } from "./crafting.js";
 import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } from "./skills.js";
+import { doctorAt, TRAINING, lessonGap } from "./training.js"; // Medic trainees
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt, WEAR } from "./breakdowns.js";
 import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity } from "./economy.js";
-import { prisonersAt, prisonGuardsWanted } from "./prisoners.js";
+import { prisonersAt, prisonGuardsWanted, onJailRoster, jailName } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned, towerHordes } from "./defences.js";
 import { huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap, hunterMult, bestHuntWeapon, fisherMult } from "./hunting.js";
 import { forageWorkWhy, forageWorkCap, foragerMult, FORAGE_SHORT } from "./foraging.js";
@@ -65,7 +66,7 @@ import { woodWorkWhy, woodHandsWanted, woodNeed, woodcutterMult, bestChop } from
 import { waterIn, stockHas } from "./water.js"; // purified and un-purified water count together
 import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (Defence tab)
 import { sleepingIn } from "./sleep.js"; // off a watch: sleep until rested
-import { wormFilterUrgent, woodCritical } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
+import { wormFilterUrgent, woodCritical, farmCrewLimits, FARM_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 import { baseAmmo } from "./ammo.js"; // rounds by calibre: what fits the guns there
 
 export const PRIO_MAX = 5;
@@ -116,23 +117,41 @@ function foodGoal(state) {
 export const WORK_TYPES = {
   doctor: {
     name: "Doctor", ing: "On medic duty", short: "Doc", role: "medic", skill: "medicine",
-    desc: "Medic on duty: with an infirmary or hospital while anyone here is hurt or sick (it needs 1–3 by tier); without one only for the badly hurt, infected or ill. Treats wounds and illness; leaves when everyone is healed.",
+    desc: "Medic on duty: with an infirmary or hospital while anyone here is hurt or sick (it needs 1–3 by tier); without one only for the badly hurt, infected or ill. Treats wounds and illness; leaves when everyone is healed, unless trainees are learning here (then one stays: the doctor teaches them on duty).",
     open(ctx) {
       const { base, people } = ctx;
       const hosp = hospitalDef(base);
       const onDuty = people.some((s) => s.role === "medic");
       const line = hosp.tier > 0 ? (onDuty ? 100 : 95) : 50;
       const pts = people.filter((s) => s.woundInfected || isSick(s) || (isHurt(s) && s.health < line));
-      if (!pts.length) return { cap: 0, why: "nobody here needs care" };
+      // Trainees learning here keep the doctor on duty on a quiet ward (training.js: off duty the lessons are halved).
+      if (!pts.length) return hosp.tier > 0 && people.some((s) => s.role === "trainee") && docOf(ctx) ? { cap: 1, urg: 2 } : { cap: 0, why: "nobody here needs care" };
       const danger = pts.some((s) => isSevere(s) || s.woundInfected);
       return { cap: Math.max(1, hosp.tier > 0 ? hosp.staff : 1), urg: 4 + (danger ? 3 : 0) + Math.min(3, pts.length / 2), danger };
     },
     // A patient in danger and nobody on duty: the first person with Doctor set goes, whatever its priority.
     emergency(ctx) { const o = this.open(ctx); return o.danger && !ctx.people.some((s) => s.role === "medic" && !ctx.free.has(s)) ? { slots: 1, why: "a patient is in danger" } : null; },
   },
+  // Medic trainees (training.js): learn Medicine from the doctor on the ward; the hospital tier's places are the cap.
+  trainee: {
+    name: "Trainee", ing: "Training on the ward", short: "Trn", role: "trainee", skill: "medicine",
+    desc: "Medic trainee: works on the ward of the infirmary or hospital and learns Medicine from the doctor (the best medic here, Medicine 6+) every day, up to 1 below the doctor's (a trauma hospital: up to the doctor's own). Counts as half a medic toward the hospital's staff. Places: 1 (infirmary, field hospital), 2 (clinic), 3 (trauma hospital).",
+    open(ctx) {
+      const def = hospitalDef(ctx.base);
+      if (!def.tier || !def.train) return { cap: 0, why: "no infirmary or hospital" };
+      if (!docOf(ctx)) return { cap: 0, why: `no doctor here (Medicine ${TRAINING.docMin}+)` };
+      return { cap: def.train, urg: 1.5 };
+    },
+    can(ctx, s) {
+      const doc = docOf(ctx);
+      if (!doc || doc.s === s) return "they are the best medic here";
+      const cap = skill(doc.s, "medicine") - lessonGap(hospitalDef(ctx.base));
+      return skill(s, "medicine") < cap ? "" : `Medicine ${skill(s, "medicine")}: lessons go up to ${cap}`;
+    },
+  },
   guard: {
     name: "Guard", ing: "On guard", short: "Grd", role: "guard", skill: "shooting",
-    desc: "A lookout on the walls (one at a base of 4+, two at 12+, one more while a horde is in sight, one more for prisoners in the cells and one per 4 of them out at work). While a watchtower sees a horde near, Guard is priority 1 for everyone who has it set as a backup job, and the walls take as many more as it takes to hold that horde (at least one), before any other work. Raid and horde warnings send everyone with Guard set to the walls (an emergency).",
+    desc: "A lookout on the walls (one at a base of 4+, two at 12+, one more while a horde is in sight, one more for prisoners in the cells and one per 4 of them out at work: the jail's own guards, named on the Prisoners tab, fill those first and guard it in their Work hours). While a watchtower sees a horde near, Guard is priority 1 for everyone who has it set as a backup job, and the walls take as many more as it takes to hold that horde (at least one), before any other work. Raid and horde warnings send everyone with Guard set to the walls (an emergency).",
     open(ctx) {
       const n = ctx.people.length;
       const watch = ctx.threat.watch ? Math.max(1, ctx.watchNeed || 0) : 0; // the watchtower's alarm: the hands to hold the horde it sees
@@ -143,13 +162,20 @@ export const WORK_TYPES = {
   },
   farm: {
     name: "Farm", ing: "Farming", short: "Farm", role: "farm", skill: "farming",
-    desc: "Tends, sows and harvests the plots. Wants about 1.2 farmers a plot in use, up to 1.9 while food is short of the season's target (40 days or more; 80 in autumn).",
+    desc: "Tends, sows and harvests the plots. Wants about 1.2 farmers a plot in use, up to 1.9 while food is short of the season's target or of the winter stores. While food is comfortable (at its target, and the winter stores with twice their safety margin) the crew is capped at about a third of the people here, as the governor does: a plot nobody tends still gives half, and the freed hands go to the next work. Pinned and Manual farmers always stay.",
+    // The governor's rule (autopilot.js farmCrewLimits, planRoles step 2): the extra crew only while hungry, and the
+    // crew capped at FARM_AP.share of the people while comfortable. The cap counts Manual and pinned farmers (ctx.used:
+    // they are never moved) and only limits the hands priorities put on the plots; capNote is what those turned away read.
     open(ctx) {
       const fw = farmersWanted(ctx.state, ctx.base);
       if (fw.active + fw.toSow <= 0) return { cap: 0, why: "no crops to tend or sow" };
       const days = ctx.foodDays;
       const ripe = farmOf(ctx.state, ctx.base).plots.some((p) => p.stage === "ripe");
-      return { cap: Math.max(fw.need, days < foodGoal(ctx.state) ? Math.ceil(fw.ideal * 1.6) : fw.ideal), urg: (days < 7 ? 8 : days < 20 ? 5 : 3) + (ripe ? 1 : 0) };
+      const lim = farmCrewLimits(ctx.state, ctx.base, days, ctx.people.length);
+      const want = Math.max(fw.need, lim.hungry ? Math.ceil(fw.ideal * FARM_AP.extra) : fw.ideal);
+      const cap = Math.min(want, lim.cap);
+      const plots = fw.active + fw.toSow, tended = Math.min(plots, Math.floor((cap * plots) / Math.max(1, fw.ideal)));
+      return { cap, urg: (days < 7 ? 8 : days < 20 ? 5 : 3) + (ripe ? 1 : 0), capNote: cap < want ? `Farm crew capped: food is comfortable (${tended} of ${plots} plots tended)` : "" };
     },
   },
   cook: {
@@ -459,6 +485,12 @@ function takeStation(ctx, s, kindOk) {
   return { role: "operate", station: st.id, note: `the ${BUILDINGS[st.type].name.toLowerCase()}` };
 }
 
+// The doctor at this base for the Trainee type (training.js doctorAt), once per plan.
+function docOf(ctx) {
+  if (!ctx.memo.has("doc")) ctx.memo.set("doc", doctorAt(ctx.state, ctx.base));
+  return ctx.memo.get("doc");
+}
+
 // The best lesson T can give to learners nobody else teaches this hour (skills.js bestLesson's scoring).
 function lessonFor(ctx, T) {
   const key = `l${T.id}`;
@@ -489,7 +521,7 @@ export const DEFAULT_ROLES = () => [
   { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, forage: 3, wood: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
   { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, wood: 3, study: 4, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
-  { name: "Medic", pri: P({ doctor: 1, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
+  { name: "Medic", pri: P({ doctor: 1, trainee: 2, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
   { name: "Crafter", pri: P({ craft: 1, workshop: 1, cook: 2, repair: 3, build: 3, farm: 4, study: 4 }) },
   { name: "Night watch", pri: P({ guard: 2, build: 2, repair: 2, craft: 3, farm: 3 }), sched: SCHED_PRESETS.night.sched },
   { name: "Hunter", pri: P({ hunt: 1, fish: 1, forage: 2, wood: 2, guard: 3, farm: 3, repair: 4, build: 4, scavenge: 4 }) },
@@ -771,6 +803,7 @@ export function planBase(state, base) {
   const out = new Map();
   const put = (s, a) => out.set(s.id, a);
   const fit = managed.filter((s) => s.restUntil == null && !healthRest(s));
+  const held = prisonersAt(state, base.id).length; // the jail's guards stand it while anyone is held
   let walls = new Set();
   if (ctx.threat.urgent) {
     const cands = fit.filter((s) => prio(state, s, "guard") > 0);
@@ -793,6 +826,8 @@ export function planBase(state, base) {
     const block = schedAt(role, h);
     if (block === "g") { put(s, { role: "guard", t: "guard", kind: "sched", why: `Guard watch (${role.name}'s schedule)` }); continue; }
     if (block === "s" || block === "f") { put(s, { role: "rest", t: block === "s" ? "sleep" : "free", kind: "sched", why: `${SCHED[block].name} (${role.name}'s schedule)` }); continue; }
+    // prisoners.js JAIL_GUARD: on the jail's roster, their Work hours go to guarding it while anyone is held here.
+    if (held && onJailRoster(base, s)) { put(s, { role: "guard", t: "guard", kind: "sched", why: `Guarding the ${jailName(base).toLowerCase()} (${held} held; the jail's roster)` }); continue; }
     const glum = s.mood < MOOD_LOW || (s.task && s.task.kind === "mood" && s.mood < MOOD_BACK);
     if (glum) { put(s, { role: "rest", t: "free", kind: "mood", why: `Free time: mood ${Math.floor(s.mood)} (back to work at ${MOOD_BACK})` }); continue; }
     ctx.free.add(s);
@@ -836,7 +871,7 @@ export function planBase(state, base) {
         const T = WORK_TYPES[key];
         if (!minOk(state, s, key)) { note(s, key, `needs ${SKILL_NAMES[T.skill] || T.skill} ${roleOf(state, s).min[key]}`); continue; }
         const o = ctx.open(key);
-        if (o.cap - ctx.used[key] <= 0) { note(s, key, o.cap ? `full (${ctx.used[key]} of ${o.cap})` : o.why); continue; }
+        if (o.cap - ctx.used[key] <= 0) { note(s, key, o.cap ? o.capNote || `full (${ctx.used[key]} of ${o.cap})` : o.why); continue; }
         const why = T.can ? T.can(ctx, s) : "";
         if (why) { note(s, key, why); continue; }
         pairs.push({ s, key, urg: o.urg || 0, score: (o.urg || 0) + rankOf(ctx, s, key) / 4 + (s.task && s.task.t === key ? STICKY : 0) });
@@ -846,7 +881,7 @@ export function planBase(state, base) {
     for (const x of pairs) {
       if (!ctx.free.has(x.s)) continue;
       const o = ctx.open(x.key);
-      if (o.cap - ctx.used[x.key] <= 0) { note(x.s, x.key, `full (${ctx.used[x.key]} of ${o.cap})`); continue; }
+      if (o.cap - ctx.used[x.key] <= 0) { note(x.s, x.key, o.capNote || `full (${ctx.used[x.key]} of ${o.cap})`); continue; }
       const higher = (reasons.get(x.s.id) || []).filter((r) => prio(state, x.s, r.key) < p);
       const raised = x.key === "guard" && cellOf(state, x.s, "guard").watch; // moved up by the watchtower's alarm
       give(x.s, x.key, p, "work", `${WORK_TYPES[x.key].ing}: priority ${p}${raised ? ` (Guard ${raised}, moved up: the watchtower sees a horde of ${ctx.threat.watch ? ctx.threat.watch.size : "?"} near)` : ""}${higher.length ? ` (before it: ${higher.map((r) => `${WORK_TYPES[r.key].name}: ${r.why}`).join("; ")})` : ""}`);
