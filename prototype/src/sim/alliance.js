@@ -39,6 +39,15 @@
 // an outpost CONTROL_RANGE (7, 8 with walls standing), a member's base CONTROL_RANGE; on other world sizes these scale
 // with the square root of the area (Small 7 / 5, Large 11 / 9, Huge 14 / 11), so it takes about as many bases on any
 // map; plus every tile your teams claimed (claims.js: a marker post on a tile bordering land you hold).
+// A member's land counts (memberLand) only once it has been a member for LAND_AFTER days (a game year: the day it
+// joined is kept in alliance.joined) and while it is not at war: with you, or with any group at all (a war on a
+// member contests its land: help it end the war, or broker a peace). 2026-10-09 (the progression census): a
+// coalition held half the land by year 3-5 from the moment its members joined, and won the day the victories opened.
+// One definition everywhere the share is read: the victory and the Accord's clock, the Goals card, the Coalition map
+// layer, and on the AI side the bandwagon goodwill and the closed state (factions.js: no new gangs, visitors.js: no
+// band digs in), the blocs' fear of the coalition (blocs.js) and the rival war goal (playerwars.js). Only the
+// governor's land planner (autopilot.js landOutpostSite, aimAt, the war council) reads the land with the members that
+// will count by time alone (landCentres(state, true)): it does not found outposts over a new member's land.
 // world.js checkGameOver ends the run with the coalition's victory (hives standing or not).
 import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive, RADIO_RANGE } from "./world.js";
 import { attitude, changeGoodwill, strength, baseDefense } from "./factions.js";
@@ -58,11 +67,13 @@ import { playerClaims, claimedLand } from "./claims.js";
 import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
 import { volunteerGroupsAt, councilWar, councilVolCard } from "./volunteers.js"; // volunteers with your team: no double count at a hive or an assault
 import { blocOf, blocById, blocMembers, blocTitle, blocJoinsCoalition, blocCarrier, blocVoteWait } from "./blocs.js"; // AI blocs vote on joining together
+import { atWarWithYou } from "./playerwars.js";
 
 export const ALLIANCE = {
   NAME: "The Calder Coalition", GOODWILL: 50, LEAVE_GOODWILL: 20, VOTE_REL: 10, ASK_CHANCE: 0.03,
   SHARE_HORDES: 12, SHARE_HIVES: 15, SHARE_LAND: 3, RAID_RANGE: 20, RAID_SHARE: 0.15, HORDE_CUT: 0.15,
   HIVE_RANGE: 15, MEMBER_RELAY: 12, NEIGHBOUR: 8, CONTROL_RANGE: 7, STRONGHOLD_RANGE: 9, WALLED_RANGE: 1, LAND_NEEDED: 0.5, COUNCIL_EVERY: 28, COUNCIL_FIRST: 15,
+  LAND_AFTER: 112, // a member's land counts after a game year in the coalition (memberLand)
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
@@ -404,6 +415,25 @@ export function councilCard(state, kind, ms = allianceMembers(state)) {
 }
 
 // ---------- victory ----------
+// A member's land and the coalition's share (see the header): { counts, from (the day it counts from by time), since
+// (the day it joined), war (the group it is at war with, "you", or null), soon (it will count by time alone: not at
+// war) }. A member without a join day (a save from before it was kept, a test) joins the count from today.
+export function memberLand(state, f) {
+  const A = ensureAlliance(state);
+  if (!A.joined) A.joined = {};
+  if (A.joined[f.id] == null) A.joined[f.id] = day(state);
+  const since = A.joined[f.id], from = since + ALLIANCE.LAND_AFTER;
+  const war = memberWar(state, f);
+  return { counts: !war && day(state) >= from, from, since, war, soon: !war };
+}
+// The war that keeps a member's land from counting: "you", the group it fights, or null.
+function memberWar(state, f) {
+  if (atWarWithYou(state, f)) return "you";
+  for (const w of warsOf(state, f)) { const e = factionById(state, enemyIn(w, f)); if (e && e.alive) return e; }
+  return null;
+}
+// The members whose land counts today (soon: with those that only wait for their year).
+export const countedMembers = (state, soon = false) => allianceMembers(state).filter((f) => { const m = memberLand(state, f); return soon ? m.soon : m.counts; });
 // How far a base's land reaches (see the header), scaled by the world size.
 export function controlRadius(state, kind, walled = false) {
   const r = kind === "stronghold" ? ALLIANCE.STRONGHOLD_RANGE : ALLIANCE.CONTROL_RANGE + (walled ? ALLIANCE.WALLED_RANGE : 0);
@@ -413,32 +443,36 @@ export const baseRadius = (state, b) => controlRadius(state, b.type === "hub" ||
 // Every centre of coalition land with its radius: your bases and the members' bases.
 // The land the coalition holds, as a mask over the tiles (1 = held). Gangs from beyond the border and raider bands
 // do not dig in there (factions.js newGangs, visitors.js settleBands): the coalition's patrols see them off.
-export function coalitionMask(state) {
+// soon: with the members whose land only waits for their year (the governor's land planner).
+export function coalitionMask(state, soon = false) {
   const mark = new Uint8Array(state.tiles.length);
-  for (const c of landCentres(state)) for (const id of state.grid.within(c.tile, c.r)) mark[id] = 1;
+  for (const c of landCentres(state, soon)) for (const id of state.grid.within(c.tile, c.r)) mark[id] = 1;
   for (const id of playerClaims(state)) mark[id] = 1; // claims.js: tiles your teams claimed
   return mark;
 }
-export function landCentres(state) {
-  return [...state.bases.map((b) => ({ tile: b.tile, r: baseRadius(state, b) })), ...allianceMembers(state).flatMap((f) => f.bases.map((t) => ({ tile: t, r: controlRadius(state, "outpost") })))];
+export function landCentres(state, soon = false) {
+  return [...state.bases.map((b) => ({ tile: b.tile, r: baseRadius(state, b) })), ...countedMembers(state, soon).flatMap((f) => f.bases.map((t) => ({ tile: t, r: controlRadius(state, "outpost") })))];
 }
 // Land the coalition controls: land tiles within reach of your bases or a member's base, plus your claims
 // (claims.js). `claims`: how many land tiles the claims add that no base's reach covered; `claimed`: all of them.
-export function controlledLand(state) {
+// soon: with the members whose land only waits for their year (the Goals card's "once every member counts").
+export function controlledLand(state, soon = false) {
   // Cached for the day: checkGameOver asks every hour and the mark pass over every tile cost 9% of a huge map's
-  // hour. A new base, claim or member (or the next day) recomputes it.
-  const key = `${Math.floor(state.hour / 24)}|${state.bases.length}|${state.bases.reduce((a, b) => a + b.tile, 0)}|${playerClaims(state).length}|${allianceMembers(state).reduce((a, f) => a + f.bases.length * 7919 + f.id, 0)}`;
-  const c = state.landCache;
+  // hour. A new base, claim or member, a member's land starting to count or a war (or the next day) recomputes it.
+  const ms = countedMembers(state, soon);
+  const key = `${Math.floor(state.hour / 24)}|${state.bases.length}|${state.bases.reduce((a, b) => a + b.tile, 0)}|${playerClaims(state).length}|${ms.map((f) => `${f.id}:${f.bases.length}:${f.bases[0]}`).join(",")}`;
+  const prop = soon ? "landCacheSoon" : "landCache";
+  const c = state[prop];
   if (c && c.key === key) return c.res;
-  const res = controlledLandNow(state);
-  Object.defineProperty(state, "landCache", { value: { key, res }, writable: true, configurable: true, enumerable: false }); // not saved
+  const res = controlledLandNow(state, soon);
+  Object.defineProperty(state, prop, { value: { key, res }, writable: true, configurable: true, enumerable: false }); // not saved
   return res;
 }
-function controlledLandNow(state) {
+function controlledLandNow(state, soon) {
   const g = state.grid;
   let land = 0, held = 0, claims = 0;
   const mark = new Uint8Array(state.tiles.length);
-  for (const c of landCentres(state)) for (const id of g.within(c.tile, c.r)) mark[id] = 1;
+  for (const c of landCentres(state, soon)) for (const id of g.within(c.tile, c.r)) mark[id] = 1;
   for (const id of playerClaims(state)) if (!mark[id] && state.tiles[id] && state.tiles[id].terrain !== "water") { mark[id] = 1; claims++; }
   for (const t of state.tiles) {
     if (t.terrain === "water") continue;
@@ -458,6 +492,9 @@ export function goalsProgress(state) {
   const groups = state.factions.filter((f) => f.alive);
   const ms = allianceMembers(state);
   const land = controlledLand(state);
+  const landSoon = controlledLand(state, true); // with the members that wait only for their year
+  // Each member's land: counting, "counts from day N", or "not counted: at war" (memberLand).
+  const memberRows = ms.map((f) => { const m = memberLand(state, f); return { id: f.id, name: f.name, bases: f.bases.length, counts: m.counts, from: m.from, since: m.since, war: m.war === "you" ? "you" : m.war ? m.war.name : null }; });
   const hivesOk = hivesSecured(state);
   const landOk = land.pct > ALLIANCE.LAND_NEEDED;
   const allIn = groups.every((f) => isMember(state, f));
@@ -465,7 +502,7 @@ export function goalsProgress(state) {
   // What blocks the coalition's victory today (wintest's "what blocks the win", the Goals panel).
   const blocks = [];
   if (!membersOk) blocks.push("no member yet (invite a group)");
-  if (!landOk) blocks.push(`land ${Math.round(land.pct * 100)}% of the ${Math.round(ALLIANCE.LAND_NEEDED * 100)}%+ needed (bases, members, claims)`);
+  if (!landOk) blocks.push(`land ${Math.round(land.pct * 100)}% of the ${Math.round(ALLIANCE.LAND_NEEDED * 100)}%+ needed (bases, members a year in and at peace, claims)`);
   const outsiders = groups.filter((f) => !isMember(state, f)).map((f) => {
     const why = inviteProblem(state, f);
     const hostile = attitude(f) === "Hostile";
@@ -476,7 +513,7 @@ export function goalsProgress(state) {
   return {
     era: eraProgress(state), // eras.js: the year, the era, the Accord's and the containment's clocks
     hives: { destroyed: st.destroyed || 0, left: hivesLeft, building, sites, ok: hivesOk },
-    alliance: { land, landOk, members: ms.length, membersOk, groups: groups.length, outside: outsiders.map((o) => o.id), outsiders, allIn, hivesLeft, hivesOk, blocks,
+    alliance: { land, landSoon, memberLand: memberRows, landOk, members: ms.length, membersOk, groups: groups.length, outside: outsiders.map((o) => o.id), outsiders, allIn, hivesLeft, hivesOk, blocks,
       infamy: Math.round(infamy(state)), lost: lostBases(state).map((o) => ({ tile: o.tile, name: o.name, factionId: o.factionId, day: o.day })), ok: landOk && membersOk },
   };
 }
@@ -488,7 +525,8 @@ export function accordHolds(state) {
   return allianceVictory(state);
 }
 // The coalition's victory today: you are alive with a base, at least one group is a member, and the coalition holds
-// more than LAND_NEEDED of the land (bases' reach plus claims). Groups outside do not block it: conquest counts.
+// more than LAND_NEEDED of the land (bases' reach, the members whose land counts, and claims). Groups outside do not
+// block it: conquest counts.
 export function allianceVictory(state) {
   if (!alive(state).length || !state.bases.length) return false;
   // Nobody left to sign: when every group is gone (broken, conquered, collapsed), the state is yours alone.

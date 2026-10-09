@@ -34,14 +34,16 @@
 //   water and fields: their food from the land is × (FIELDS_MIN + (1 − FIELDS_MIN) × how provisioned they are);
 //   quarters: people sleeping rough slow the group's growth (CROWDED_GROWTH × the chance);
 //   bench: their workshops make WORKSHOP_MIN of the ammo, scrap, fuel and meds without one;
-//   storehouse: their stores hold STORE_CAP of the usual caps without one.
+//   storehouse: their stores hold STORE_CAP of the usual caps without one;
+//   animal pens (2026-10-09, your animal pen's parity): at a base with walls and fields, after the fields for
+//   everyone, PENS.max a base; each adds PENS.food food a day (penFood, factions.js), winter or not.
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
 import { day } from "./world.js";
 import { weightOf, medOf } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
 import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the groups' jails (abstract tiers)
 
-/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number }} Works */
+/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number }} Works */
 
 export const GROUP_WORKS = {
   WORKS: {
@@ -51,6 +53,7 @@ export const GROUP_WORKS = {
     walls: { name: "a wall", cost: { scrap: 6 }, work: 6 },
     bench: { name: "a workshop", cost: { scrap: 6, parts: 1 }, work: 4 },
     store: { name: "a storehouse", cost: { scrap: 7 }, work: 5 },
+    pens: { name: "an animal pen", cost: { scrap: 4 }, work: 3 },
   },
   CREW: 6, SALVAGE: 2,
   SERVES: { water: 10, farms: 8, beds: 8 }, // people one of each serves
@@ -70,6 +73,9 @@ export const GROUP_WORKS = {
     { name: "a trauma hospital", cost: { scrap: 18, parts: 3, meds: 4 }, work: 10, pop: 25, doc: 10 },
   ],
   SICKBAY_FIRST: 6,
+  // Animal pens (farming.js PEN, your animal pen: the same option, coarse): a base with walls and fields puts up one
+  // (after the fields for everyone); each brings PENS.food food a day on top of their fields, every season.
+  PENS: { max: 1, food: 2 },
 };
 const W = GROUP_WORKS;
 
@@ -115,6 +121,8 @@ export function provisioned(state, f) {
   const p = Math.max(1, f.pop);
   return (Math.min(1, served(f, "water") / p) + Math.min(1, served(f, "farms") / p)) / 2;
 }
+// Food a day from their animal pens (PENS): 0 where they do not build (old saves, the hardcore military).
+export const penFood = (state, f) => (groupsBuild(state, f) ? f.bases.reduce((a, t) => a + Math.min(W.PENS.max, n(f.works && f.works[t], "pens")), 0) * W.PENS.food : 0);
 export const fieldsFactor = (state, f) => W.FIELDS_MIN + (1 - W.FIELDS_MIN) * provisioned(state, f);
 export const sleepingRough = (state, f) => groupsBuild(state, f) && served(f, "beds") < f.pop;
 export const growthFactor = (state, f) => (sleepingRough(state, f) ? W.CROWDED_GROWTH : 1);
@@ -167,6 +175,7 @@ export function nextWork(state, f) {
     if (tile === mainOf(f)) { const sb = sickbayWork(state, f, false); if (sb) return sb; }
     if (n(w, "walls") < goal && threatened(state, f, tile)) return { tile, type: "walls", why: "threatened" };
     if (n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "fields for everyone" };
+    if (n(w, "walls") > 0 && n(w, "farms") > 0 && n(w, "pens") < W.PENS.max) return { tile, type: "pens", why: "food behind the walls" };
     if (tile === mainOf(f)) { const jail = jailWork(state, f, true); if (jail) return jail; } // communes: later
     if (tile === mainOf(f)) {
       if (!hasAny(f, "bench")) return { tile, type: "bench", why: "a workshop for their gear and ammo" };

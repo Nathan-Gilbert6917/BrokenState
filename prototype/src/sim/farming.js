@@ -84,6 +84,24 @@ export const PLANT_PER_FARMER = 2;       // plots one full-time farmer plants a 
 export const EXPECTED_GROWTH = 0.85;     // planning guess of the average daily growth factor
 const ALL_SEASONS = ["spring", "summer", "autumn", "winter"];
 
+// ---------- the animal pen (buildings.js animal_pen, the "livestock" station) ----------
+// Hens and a few goats behind a fence, kept by one operator (Farming): PEN.food fresh food a day (eggs and milk),
+// +PEN.skilled with Farming PEN.skillAt+, in every season (× PEN.winter in winter: stored hay, fewer eggs), and
+// × PEN.unwalled without walls standing at the base (the animals stray and the dead take some). Each pen grazes
+// PEN.pasture of the base's outdoor crop plots (plotLimit). A steady, winter-proof food for a guarded base against
+// the crops' bigger but seasonal harvests: two plots of potatoes tended by one farmer bring about 4 a day in the
+// growing seasons and nothing in winter, a pen 3-4 all year for one keeper, a building plot and a water a day.
+// AI groups get the same (groupworks.js: pens, at a walled base with fields). 2026-10-09 (the progression picks):
+// the Turtle style, a walled base that stays home, starved in its winters.
+export const PEN = { food: 3, skilled: 1, skillAt: 6, winter: 0.75, unwalled: 0.5, pasture: 2 };
+export function livestockYield(state, base, keeper = null, dayIdx = Math.floor(state.hour / 24)) {
+  const winter = (Weather.seasonOfDay ? Weather.seasonOfDay(dayIdx).key : "summer") === "winter";
+  const q = (PEN.food + (keeper && skill(keeper, "farming") >= PEN.skillAt ? PEN.skilled : 0)) * (winter ? PEN.winter : 1) * (count(base, "walls") > 0 ? 1 : PEN.unwalled);
+  return Math.round(q * 100) / 100;
+}
+// The pens at a base with a keeper on them (the winter outlook counts their food).
+export const keptPens = (state, base) => base.buildings.filter((b) => b.type === "animal_pen" && !b.broken && atBase(state, base.id).some((s) => s.role === "operate" && s.station === b.id && s.alive));
+
 // ---------- the numbers ----------
 // Tending: farmers per planted plot, with diminishing returns (0 → 0.55, 0.5 → 1.0, 1 → 1.23, 2 → 1.4, 3 → 1.44).
 export const tendMult = (perPlot) => 0.55 + 0.9 * (1 - Math.exp(-1.4 * Math.max(0, perPlot)));
@@ -97,7 +115,7 @@ export function siteFarm(state, base) {
   return loc === "farm" || t.terrain === "plains" ? 1.3 : t.terrain === "forest" ? 0.9 : t.terrain === "hills" ? 0.85 : 1;
 }
 
-export const plotLimit = (base) => (BASE_PLOTS[base.type] ?? 2) + count(base, "farm_plot") * PLOTS_PER_BUILDING;
+export const plotLimit = (base) => Math.max(0, (BASE_PLOTS[base.type] ?? 2) + count(base, "farm_plot") * PLOTS_PER_BUILDING - count(base, "animal_pen") * PEN.pasture);
 export const greenhouseLimit = (base) => count(base, "greenhouse") * GREENHOUSE_PLOTS;
 
 // Climate passed to weather.js. A greenhouse plot grows in every season and stands 10 °C more cold.
@@ -635,6 +653,13 @@ export function plannedCrop(gh, i) {
   return best;
 }
 export const WINTER_MARGIN = 0.15;
+// An outdoor crop the forecast has ripening inside the hungry gap (after the first day of winter: winter roots, kale,
+// a late sowing) counts GAP_RIPEN of its forecast: in the cold it hardly grows, frost and snow take more than the
+// usual weather says, and it is picked in the snow. 2026-10-09 (progression picks): from mid-autumn the outlook of a
+// big hub was mostly such crops, and in a sixth of the autumns its fields brought in under 70% of what it promised
+// (seeds 6005, 6012: 42-62%), so hubs of 30-40 went into the winter short and starved. Glass is not discounted.
+export const GAP_RIPEN = 0.75;
+const gapRipen = (gh, ripe, gap) => (!gh && ripe >= gap.start ? GAP_RIPEN : 1);
 export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
   const today = todayIdx(state);
   const gap = hungryGap(state, today);
@@ -648,7 +673,15 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
   const keyOf = (crop) => (CROPS[crop].store === "preserved" ? "preserved" : "food");
   for (const b of pool) {
   const f = farmOf(state, b);
-  const care = careToday(state, b).care;
+  const ct = careToday(state, b);
+  const care = ct.care;
+  // The crops still to be sown are tended by the crew there is now spread over every plot that will be in use (the
+  // plots sown one after the other), not today's crew over today's few planted plots: with two plots growing and ten
+  // farmers, today's care (×1.44 tending) was promised for all twenty plots, where the crew gives them ×1.0 (2026-10-09:
+  // big hubs went into the winter on hundreds of food "still to come" that never came).
+  const thumb = ct.tend * ct.skill > 0 ? ct.care / (ct.tend * ct.skill) : 1;
+  const sown = f.auto ? f.plots.length : f.plots.filter((p) => p.want || p.stage === "growing" || p.stage === "ripe").length;
+  const futureCare = Math.min(care, tendMult(ct.labour / Math.max(1, sown)) * ct.skill * thumb);
   const site = siteFarm(state, b);
   plots += f.plots.length;
   for (const p of f.plots) {
@@ -658,7 +691,7 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
       const fc = cropForecast(p.crop, p.gh, today, p.grown);
       if (!isFinite(fc.days)) continue; // it will not ripen (out of season for good): the plot is lost for now
       if (today + fc.days < gap.end) {
-        const food = expectedYield(state, b, p, care) * fc.survival;
+        const food = expectedYield(state, b, p, care) * fc.survival * gapRipen(p.gh, today + fc.days, gap);
         add(today + fc.days, food, keyOf(p.crop));
         crops += food;
       }
@@ -674,7 +707,7 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
       if (!isFinite(fc.days)) { next += 7; continue; }
       if (next + fc.days < gap.end) {
         const pc = CROPS[pick];
-        const food = (pc.yield * care * site * fc.survival - pc.seed) * FUTURE_SOWING;
+        const food = (pc.yield * futureCare * site * fc.survival * gapRipen(p.gh, next + fc.days, gap) - pc.seed) * FUTURE_SOWING;
         add(next + fc.days, food, keyOf(pick));
         crops += food;
       }
@@ -683,6 +716,8 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
     }
   }
   }
+  // The animal pens with a keeper: their eggs and milk every day until the first spring harvest (PEN).
+  for (const b of pool) for (let n = keptPens(state, b).length, i = today + 1; n > 0 && i < gap.end; i++) { const q = n * livestockYield(state, b, null, i); add(i, q, "food"); crops += q; }
   let fresh = pool.reduce((a, b) => a + Math.max(0, b.stock.food || 0), 0), pres = pool.reduce((a, b) => a + Math.max(0, b.stock.preserved || 0), 0);
   const have = fresh + pres;
   let need = 0, gapNeed = 0, spoil = 0, unmet = 0, runsOut = null, low = { food: have, day: today };

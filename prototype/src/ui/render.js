@@ -30,7 +30,7 @@ import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
 import { stagingStage, stagingPct, workCap, stagingTip, stagingMissing } from "../sim/staging.js";
 import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
-import { allianceMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
+import { countedMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
 import { claimText, wellText } from "../sim/claims.js"; // land claims: the Territory layer and the hover text
 import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas, emptyBaseSpriteCanvas } from "./mapsprites.js";
 import { occupyPreview } from "../sim/occupy.js"; // empty bases: the tooltip
@@ -434,7 +434,7 @@ function updateKnown(state) {
 // the outer border over rivers and lakes).
 let coalMemo = null;
 function coalitionCentres(state) {
-  const ms = allianceMembers(state);
+  const ms = countedMembers(state); // the members whose land counts (alliance.js memberLand: a year in, at peace)
   const out = state.bases.map((b) => ({ tile: b.tile, r: baseRadius(state, b), o: 1 }));
   ms.forEach((f, i) => { for (const t of f.bases) out.push({ tile: t, r: controlRadius(state, "outpost"), o: 2 + i }); });
   return { out, ms };

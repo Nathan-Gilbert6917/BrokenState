@@ -143,7 +143,8 @@ function forcedOutposts(state) {
 }
 function forcedCoalition(state) {
   const A = ensureAlliance(state);
-  for (const f of state.factions) if (f.alive) { f.known = true; f.pact = "trade"; f.goodwill = 80; if (!A.members.includes(f.id)) A.members.push(f.id); }
+  // Members a year in the coalition (alliance.js memberLand: a member's land counts after LAND_AFTER days at peace).
+  for (const f of state.factions) if (f.alive) { f.known = true; f.pact = "trade"; f.goodwill = 80; if (!A.members.includes(f.id)) A.members.push(f.id); A.joined[f.id] = Math.min(A.joined[f.id] ?? Infinity, day(state) - ALLIANCE.LAND_AFTER); }
   if (A.founded == null) A.founded = day(state);
   return forcedOutposts(state);
 }

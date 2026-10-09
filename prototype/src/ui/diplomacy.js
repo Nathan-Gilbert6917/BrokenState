@@ -21,7 +21,7 @@ import {
   ensureDiplo, relation, relWord, warsOf, enemyIn, brokerInfo, brokerCeasefire, joinWar, joinProblem, leaveWar, warById, pactsOf, knownAs,
 } from "../sim/diplomacy.js";
 import {
-  ensureAlliance, isMember, allianceMembers, inviteProblem, inviteToAlliance, inviteBloc, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE, controlRadius,
+  ensureAlliance, isMember, allianceMembers, memberLand, inviteProblem, inviteToAlliance, inviteBloc, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE, controlRadius,
 } from "../sim/alliance.js";
 import { bandsOf, knownBands, bandInfo, militaryStatus } from "../sim/hardcore-groups.js";
 import { ask } from "./confirm.js";
@@ -96,7 +96,13 @@ function goalsCard(state, g, compact) {
     return `<div><span class="${cls}">● ${esc(o.name)}: ${word}</span>${compact ? "" : ` <span class="muted">(${esc(why)})</span>`} ${act}</div>`;
   };
   const lost = a.lost || [];
-  return `<div class="card small"${tip(`Two ways to win, each its own path, neither before year ${e.winFrom}. Destroy every hive (none left standing or being built) and keep the state clear for a season. Or win with the coalition: it has at least one member and holds more than half the land (your bases' reach, your members' bases and the tiles your teams claimed; hives or not), and keeps that up for a year of the late game (the Calder Accord). Groups that will not join do not block it: break them (Assault their base), claim the land up to their gates, or leave them be.`)}>
+  // Each member's land (sim/alliance.js memberLand): it counts after a year in the coalition and while it is not at war.
+  const ml = a.memberLand || [];
+  const mlTip = `A member's land counts toward the ${pct(ALLIANCE.LAND_NEEDED)} only once it has been in the coalition for a year (${ALLIANCE.LAND_AFTER} days) and while it is not at war: with you or with any group (help it end the war, or broker a ceasefire in World affairs).`;
+  const memberLandLine = !ml.length ? "" : compact
+    ? `<div style="margin-left:0.8rem"${tip(mlTip)}>Members' land: ${[[ml.filter((m) => m.counts).length, "counting"], [ml.filter((m) => !m.counts && !m.war).length, "waiting for their year"], [ml.filter((m) => m.war).length, "at war (not counted)"]].filter(([n]) => n).map(([n, w]) => `${n} ${w}`).join(", ")}${a.landSoon && a.landSoon.pct > a.land.pct ? ` <span class="muted">(${pct(a.landSoon.pct)} once they have their year)</span>` : ""}</div>`
+    : `<div style="margin-left:0.8rem"${tip(mlTip)}>Members' land: ${ml.map((m) => memberLandText(m)).join(" · ")}${a.landSoon && a.landSoon.pct > a.land.pct ? ` <span class="muted">(${pct(a.landSoon.pct)} once every member at peace has its year)</span>` : ""}</div>`;
+  return `<div class="card small"${tip(`Two ways to win, each its own path, neither before year ${e.winFrom}. Destroy every hive (none left standing or being built) and keep the state clear for a season. Or win with the coalition: it has at least one member and holds more than half the land (your bases' reach, your members' bases once a member has been in the coalition a year and is not at war, and the tiles your teams claimed; hives or not), and keeps that up for a year of the late game (the Calder Accord). Groups that will not join do not block it: break them (Assault their base), claim the land up to their gates, or leave them be.`)}>
     <div class="spread"><b>🏁 Goals</b>${compact ? `<a class="link" data-action="dp-open" data-tab="coalition">details</a>` : ""}</div>
     ${firstHubGoal(state)}
     ${eraLine}
@@ -108,12 +114,20 @@ function goalsCard(state, g, compact) {
     <div style="margin-top:0.3rem"><b>${esc(ALLIANCE.NAME)}</b></div>
     <div class="row"><span style="width:12rem">${ok(a.landOk)} Land held: <b>${pct(a.land.pct)}</b> of ${pct(ALLIANCE.LAND_NEEDED)}+</span><div style="flex:1;min-width:5rem">${bar(a.land.pct * 100, a.landOk ? "var(--good)" : "var(--accent)")}</div></div>
     <div>${ok(a.membersOk)} Members: <b>${a.members}</b> of ${a.groups} group${a.groups === 1 ? "" : "s"} still standing <span class="muted">(one is enough; the rest need not join)</span>${a.outsiders.length ? `; outside:` : ""}</div>
+    ${memberLandLine}
     ${accordLine}
     ${a.outsiders.length ? `<div style="margin-left:0.8rem">${a.outsiders.slice(0, compact ? 4 : 20).map(outRow).join("")}${compact && a.outsiders.length > 4 ? `<div class="muted">and ${a.outsiders.length - 4} more</div>` : ""}</div>` : ""}
     ${lost.length ? `<div class="danger" style="margin-top:0.2rem">Retake: ${lost.map((o) => `${esc(o.name)} <span class="muted">(${esc(nameOf(state, o.factionId))}, since day ${o.day})</span> <button class="mini" data-action="job-locate" data-tile="${o.tile}">Locate</button>`).join(" · ")}</div>` : ""}
     ${a.infamy >= 10 ? `<div${tip("Rises with every base you take (2 from a hostile raider-type group, 15 from anyone else, 10 more for finishing them), fades 0.1 a day. Above 20 peaceful groups slowly lose goodwill toward you, and they want more goodwill before they join the coalition.")}>Infamy: <b class="${a.infamy > 20 ? "danger" : ""}">${a.infamy}</b>${a.infamy > 20 ? " (peaceful groups are wary of you)" : ""}</div>` : ""}
-    ${compact ? "" : `<div class="muted" style="margin-top:0.2rem">Land held: land tiles within ${controlRadius(state, "stronghold")} of your hub or a base you took from a group, ${controlRadius(state, "outpost")} of an outpost (${controlRadius(state, "outpost", true)} with walls) or a member's base, plus the tiles your teams claimed (Claim this tile) (${a.land.held} of ${a.land.land}${a.land.claimed ? `, ${a.land.claimed} claimed` : ""}).</div>`}
+    ${compact ? "" : `<div class="muted" style="margin-top:0.2rem">Land held: land tiles within ${controlRadius(state, "stronghold")} of your hub or a base you took from a group, ${controlRadius(state, "outpost")} of an outpost (${controlRadius(state, "outpost", true)} with walls) or a member's base (a year in the coalition, not at war), plus the tiles your teams claimed (Claim this tile) (${a.land.held} of ${a.land.land}${a.land.claimed ? `, ${a.land.claimed} claimed` : ""}).</div>`}
   </div>`;
+}
+
+// One member's land in the Goals card and the coalition table: counting, "counts from day N", or "not counted: at war".
+export function memberLandText(m) {
+  if (m.counts) return `<span class="good">${esc(m.name)}: counts</span>`;
+  if (m.war) return `<span class="danger">${esc(m.name)}: not counted: at war${m.war === "you" ? " with you" : ` with ${esc(m.war)}`}</span>`;
+  return `<span class="muted">${esc(m.name)}: counts from day ${m.from}</span>`;
 }
 
 // The jobs under way and offered. compact: the Groups tab (no finished jobs).
@@ -408,13 +422,14 @@ function affairsTab(state) {
     <h3>Heard on the radio</h3>${newsList(state, 10)}`;
 }
 
+const memberLandCell = (state, f) => { const m = memberLand(state, f); return m.counts ? `<span class="good">counts</span>` : m.war ? `<span class="danger">not counted: at war${m.war === "you" ? " with you" : ` with ${esc(m.war.name)}`}</span>` : `<span class="muted">counts from day ${m.from}</span>`; };
 function coalitionTab(state) {
   const A = ensureAlliance(state);
   const ms = allianceMembers(state);
   const others = state.factions.filter((f) => f.alive && f.known && !isMember(state, f));
   return `${goalsCard(state, goalsProgress(state), false)}
     <h3${tip(`Invite a group when it is in radio reach (its base within your radio coverage + 6 tiles: your stations and the linked relays at your bases; or a team at its gates, a base of yours within ${ALLIANCE.NEIGHBOUR} tiles, a member within ${ALLIANCE.MEMBER_RELAY}), its goodwill is ${ALLIANCE.GOODWILL}+, it has a pact with you and you did a job for it (or the council votes it in). Members share sightings, send fighters against raids and hordes coming for your bases, join your hive assaults and sit in the council each season.`)}>${esc(A.name)}</h3>
-    ${ms.length ? `<table class="t small"><tr><th>Member</th><th>Goodwill</th><th>Since</th><th>Bases</th><th></th></tr>${ms.map((f) => `<tr><td><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</td><td style="color:${attColor(attitude(f))}">${Math.round(f.goodwill)}</td><td>day ${A.joined[f.id] ?? "?"}</td><td>${f.bases.length}</td>
+    ${ms.length ? `<table class="t small"><tr><th>Member</th><th>Goodwill</th><th>Since</th><th>Bases</th><th${tip(`A member's land counts after a year in the coalition (${ALLIANCE.LAND_AFTER} days) and while it is not at war`)}>Land</th><th></th></tr>${ms.map((f) => `<tr><td><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</td><td style="color:${attColor(attitude(f))}">${Math.round(f.goodwill)}</td><td>day ${A.joined[f.id] ?? "?"}</td><td>${f.bases.length}</td><td>${memberLandCell(state, f)}</td>
       <td><button class="mini" data-action="job-locate" data-tile="${f.bases[0]}">Locate</button> <button class="mini" data-action="al-expel" data-id="${f.id}"${tip("Throw them out: −15 goodwill")}>Expel</button></td></tr>`).join("")}</table>
       <div class="small muted">Next council: day ${nextCouncilDay(state)} (every ${ALLIANCE.COUNCIL_EVERY} days, at the start of a season).</div>` : `<div class="muted small">No members yet.</div>`}
     <h3>Invite</h3>

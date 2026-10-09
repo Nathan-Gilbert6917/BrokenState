@@ -138,7 +138,7 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
   const st = createWorld({ seed: seeds[0], factionCount: 8 });
   const f = st.factions[0], t = f.bases[0];
   check(groupBaseDefence(st, f, t) === GROUP_WORKS.WALL_DEF / 2, `a bare base has half the old flat defence (${groupBaseDefence(st, f, t)})`);
-  Object.assign(worksAt(f, t), { water: 9, farms: 9, beds: 9, walls: 99, bench: 1, store: 1, sickbay: 4 });
+  Object.assign(worksAt(f, t), { water: 9, farms: 9, beds: 9, walls: 99, bench: 1, store: 1, sickbay: 4, pens: GROUP_WORKS.PENS.max }); // pens: an animal pen at a walled base with fields (groupworks.js PENS)
   const goal = CONQUEST.WALLED_TYPES.includes(f.type) ? CONQUEST.WALLS.typed : CONQUEST.WALLS.home;
   check(nativeWalls(f, t, st) === goal && groupBaseDefence(st, f, t) === GROUP_WORKS.WALL_DEF, `built up: the old walls (${nativeWalls(f, t, st)} of ${goal}) and the old defence`);
   check(nextWork(st, f) === null || nextWork(st, f).tile !== t, "nothing more to build there");

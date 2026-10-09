@@ -200,6 +200,13 @@ export function deserializeState(save) {
     for (const p of state.parties || []) if (!Array.isArray(p.vehicleIds) && p.vehicleId != null) p.vehicleIds = [p.vehicleId];
     state.fleetV = 1;
   }
+  // alliance.js memberLand: a member's land counts a year after it joined (alliance.joined); a member in a save without
+  // its join day is counted as joining on the day the save is loaded (its land counts a year later).
+  if (state.alliance && Array.isArray(state.alliance.members)) {
+    const A = state.alliance, d = Math.floor((state.hour || 0) / 24) + 1;
+    if (!A.joined || typeof A.joined !== "object") A.joined = {};
+    for (const id of A.members) if (A.joined[id] == null) A.joined[id] = d;
+  }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   // A raid in a building with storeys (combat.js setFloor): b.cells / b.reach / b.losCache alias the active floor's
   // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points
