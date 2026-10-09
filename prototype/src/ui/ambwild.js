@@ -6,6 +6,7 @@
 //   WILDLIFE_SOUNDS          every wildlife sound by name: { label, bed?, trim, pan } (a mixer maps them to "wildlife")
 //   WILD_LIMIT               calls ringing at once (at most)
 //   wildFrame(E, plan, t)    sets the insect beds and plays the calls due
+//   wildCall(E, plan, name, t)  one call now (previews)
 import { setBed, setDull, bakeBuffer, playShot, busy, clamp, expo, SHOT_SR, fmNote, noiseBurst, modes, formants,
   filterIn, verb, echoes, norm, buf1, buf2 } from "./ambkit.js";
 import { loopBed } from "./ambweather.js";
@@ -74,6 +75,11 @@ export function wildFrame(E, P, t) {
     if (busy(E, "wildlife", t) >= WILD_LIMIT) continue; // a full house: it waits (the accumulator keeps its place)
     if (callOne(E, P, name, t + E.rnd() * 0.25, M)) { M.acc[name] = 0; M.u[name] = expo(E.rnd); }
   }
+}
+// One call now, past the rates (the previews' showcase calls; a flushed alarm): false if it is still baking.
+export function wildCall(E, P, name, t) {
+  const M = E.mem.wild || (E.mem.wild = { acc: {}, u: {}, last: 0, lastCall: {}, lastVar: {} });
+  return callOne(E, P, name, t, M, true);
 }
 // One call: a baked variant (not the same one twice running), placed left or right and near or far, duller far off
 // and in fog; near a hive pitched down and cut short (the wildlife sounds wrong there).
