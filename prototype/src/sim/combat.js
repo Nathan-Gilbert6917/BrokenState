@@ -131,6 +131,12 @@ export function registerBossAI(kind, fn) {
 const bossAI = (u) => (u && u.boss && bossAIs ? bossAIs.get(u.boss) || null : null);
 // A boss with a weak spot (fn.throwAt(b, boss, thrower, have): { item, x, y } or null) asks the battle AI to throw at
 // it (stealth.js botAttackThrow, before a crowd): the Hivemind and its fire and bangs (hivecrawl.js).
+// A throw landed (throwables.js landEffect): bosses that react to it at once (fn.onLand(b, boss, { fx, x, y, side }):
+// the Broodmother dazed by a bang, the Hivemind counting what was spent on it: hivecrawl.js).
+export function bossOnLand(b, L) {
+  if (!bossAIs) return;
+  for (const o of b.units) { if (o.dead) continue; const ai = bossAI(o); if (ai && ai.onLand) ai.onLand(b, o, L); }
+}
 export function bossThrowTarget(b, u, have) {
   if (!bossAIs) return null;
   for (const o of b.units) {
@@ -4873,9 +4879,14 @@ export function fightOutlook(b) {
   const team = b.units.filter((u) => u.side === "player" && !(u.left && !u.carried));
   const people = theirs.filter((u) => u.kind === "human").length / Math.max(1, theirs.length);
   // A rooted boss (hivecrawl.js's Hivemind) reaches only those who come close: a quarter of its blows, half its flesh.
-  const fire = (list, vsPeople) => list.reduce((a, u) => a + firepower(b, u, vsPeople) * (u.rooted ? 0.25 : 1), 0);
-  const life = (list) => list.reduce((a, u) => a + (u.hp / Math.max(0.05, u.armor)) * (u.rooted ? 0.5 : 1), 0);
-  const ours = fire(mine, people >= 0.5) * life(mine), them = fire(theirs, true) * life(theirs);
+  // A boss with an outlook of its own (registerBossAI fn.outlook(b, u): { fire, life, ours }): the Hivemind burning
+  // or reeling counts for less, and fire and bangs still in hand count for your side (hivecrawl.js).
+  const adj = new Map();
+  for (const u of theirs) { const ai = bossAI(u); const j = ai && ai.outlook ? ai.outlook(b, u) : null; if (j) adj.set(u, j); }
+  const fire = (list, vsPeople) => list.reduce((a, u) => a + firepower(b, u, vsPeople) * (u.rooted ? 0.25 : 1) * (adj.get(u)?.fire ?? 1), 0);
+  const life = (list) => list.reduce((a, u) => a + (u.hp / Math.max(0.05, u.armor)) * (u.rooted ? 0.5 : 1) * (adj.get(u)?.life ?? 1), 0);
+  const edge = [...adj.values()].reduce((a, j) => a * (j.ours ?? 1), 1);
+  const ours = fire(mine, people >= 0.5) * life(mine) * edge, them = fire(theirs, true) * life(theirs);
   return {
     ratio: them > 0 ? ours / them : Infinity, mine: mine.length, theirs: theirs.length,
     down: team.filter((u) => u.down || u.dead).length / Math.max(1, team.length),
