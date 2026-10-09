@@ -12,6 +12,8 @@ import * as HC from "../src/sim/hivecrawl.js";
 const TRIALS = Number(process.argv[2] || 24);
 const LIGHTS = process.argv[3] == null ? 1 : Number(process.argv[3]);
 const TIERS = (process.argv[4] || "2,4").split(",").map(Number);
+if (process.env.HP_P2 === "0") HC.HIVEMIND.P2.on = false; // A/B: no second phase
+if (process.env.HP_DARK === "0") { HC.HCRAWL.LIGHT.dark = 99; HC.HCRAWL.LIGHT.lit = 99; } // A/B: no darkness on the sight
 const DAY = { 0: 0, 1: 400, 2: 900, 3: 1600, 4: 2100 };
 export function coreTrial(seed, tier, { lights = true, n = 6, weapon = "ar", armor = "plate", shoot = 10 } = {}) {
   const st = createWorld({ seed, factionCount: 3 });
@@ -35,10 +37,9 @@ export function coreTrial(seed, tier, { lights = true, n = 6, weapon = "ar", arm
   st.parties.push(p);
   const t = hiveTier(st, hv);
   const hp = HC.coreForce(st, hv).hp;
-  let phase2 = false;
-  const log0 = st.log.length;
+  const p20 = HC.HM_STATS.phase2;
   HC.assaultHive(st, p, hv);
-  phase2 = !!st.lastHivemindPhase2;
+  const phase2 = HC.HM_STATS.phase2 > p20;
   return { won: !st.hives.includes(hv), dead: people.filter((s) => !s.alive).length, tier: t, hp, phase2 };
 }
 if (process.argv[1] && process.argv[1].endsWith("hivecorecalib.js")) {
