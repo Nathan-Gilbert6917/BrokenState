@@ -5,16 +5,22 @@
 // Hivemind's second phase (its line, the quake, the sprite, the sound, the core still winnable: tools/hivecorecalib.js),
 // the crawl's record (deepest, mapped, the core; the State Map, the Goals card, save and load, old saves) and the
 // autopilot listening and throwing flares.
+// Then the next batch: the Hivemind's weak spots (fire burns it and keeps its brood in the walls, a bang stuns it; the
+// battle AI throws them; preparation beats headcount; by the numbers and the AI groups), no hive dies but by its
+// Hivemind (no fires on the card or the road, an old fire campaign loads), the autopilot's gate (the core's odds by the
+// numbers against the map) and its hive kit, the mouth on the crawl map.
 // Usage: node tools/hiveplustest.js [seed=7] [calibration trials=16]
 import { createWorld, makeSurvivor, hub, snapshot } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { ensureHives } from "../src/sim/hives.js";
 import { makeHorde } from "../src/sim/hordes.js";
-import { createBattle, endPlayerTurn, runEnemyPhase } from "../src/sim/combat.js";
+import { createBattle, endPlayerTurn, runEnemyPhase, autoPlayerTurn } from "../src/sim/combat.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { CRAFTS as RECIPES } from "../src/sim/crafting.js";
 import { condRolled } from "../src/sim/itemcond.js";
-import { LIGHTS } from "../src/sim/lights.js";
+import { LIGHTS, lightOf } from "../src/sim/lights.js";
+import { ensureArsenal } from "../src/sim/arsenal.js";
+import { allCarried } from "../src/sim/inventory.js";
 import * as HC from "../src/sim/hivecrawl.js";
 import { coreTrial } from "./hivecorecalib.js";
 
@@ -340,6 +346,159 @@ console.log("The window");
   check(HC.flaresOf(w.st, q).length < 4, `the autopilot without a listener throws flares (${4 - HC.flaresOf(w.st, q).length} used)`);
   const H = await import("../src/ui/help.js");
   check(H.helpTopics().some((t) => t.title === "The hive crawl" && /flare/.test(t.html) && /second phase/.test(t.html) && /hoard/.test(t.html)), "Help: lights, flares and listening, the hoard, the second phase, the record");
+}
+
+// ---------- 8. the Hivemind's weak spots ----------
+console.log("The Hivemind's weak spots");
+{
+  const core = (seed, opts = {}) => {
+    const { st, hv } = world(seed, 2100, 80);
+    const { p, people } = squad(st, hv);
+    for (const [i, s] of people.entries()) { if (i < (opts.fire || 0)) s.pockets[1] = item("molotov"); if (i >= 6 - (opts.stun || 0)) s.pockets[2] = item("flashbang"); }
+    globalThis.window = {};
+    let b;
+    try { b = createBattle(st, HC.coreSetup(st, p, hv)); } finally { delete globalThis.window; }
+    st.combat = b;
+    return { st, hv, p, b, hm: b.units.find((u) => u.boss === "hivemind") };
+  };
+  const enemyTurn = (st, b) => { if (b.phase === "player") endPlayerTurn(st); if (b.phase === "enemy") runEnemyPhase(st); };
+  // Fire next to it: it burns, and no brood comes out of the walls.
+  {
+    const { st, b, hm } = core(SEED);
+    const hp0 = hm.hp;
+    b.fires = b.fires || []; b.smoke = b.smoke || [];
+    b.fires.push({ x: hm.x - 1, y: hm.y, r: 0.5, turns: 3 });
+    const sp0 = (b.hivemind && b.hivemind.spawned) || 0;
+    enemyTurn(st, b);
+    check(b.hivemind.burned >= 1 && hm.hp < hp0 && b.log.some((l) => /burns \(\d+\)/.test(l.text)), `flames next to it burn it (${hp0} → ${hm.hp}): "${(b.log.find((l) => /burns \(/.test(l.text)) || {}).text}"`);
+    check(b.hivemind.spawned === sp0 && !b.log.some((l) => /walls split/.test(l.text)), "while it burns the walls give up no brood (its first turn would have called them)");
+    st.combat = null;
+  }
+  // A flashbang next to it: no pulse, no lash, no brood; its flesh open.
+  {
+    const { st, b, hm } = core(SEED + 1);
+    for (const u of b.units.filter((x) => x.side === "player")) { u.x = Math.max(0, hm.x - 2); } // all of them in its pulse
+    (b.landed || (b.landed = [])).push({ fx: "flash", x: hm.x, y: hm.y, side: "player" });
+    const n0 = b.log.length;
+    enemyTurn(st, b);
+    const turn = b.log.slice(n0).map((l) => l.text);
+    check(b.hivemind.stunned >= 1 && !turn.some((t) => /pulses|convulses|lashes|walls split/.test(t)) && turn.some((t) => /reels/.test(t)), `a flashbang stuns it: no pulse, no lash, no brood ("${turn.find((t) => /reels/.test(t))}")`);
+    check(hm.armor > (hm.armorBase || 0), `its flesh lies open until its next turn (takes ${Math.round(hm.armor * 100)}% of a hit instead of ${Math.round(hm.armorBase * 100)}%)`);
+    st.combat = null;
+  }
+  // The battle AI throws them at it.
+  let threw = 0, burned = 0, stunned = 0;
+  for (let s = 0; s < 4; s++) {
+    const { st, b } = core(SEED + 10 + s, { fire: 2, stun: 2 });
+    for (let i = 0; i < 60 && !b.over; i++) { if (b.phase === "player") autoPlayerTurn(st); else runEnemyPhase(st); }
+    if (b.log.some((l) => /throws a (Molotov|flashbang)/.test(l.text))) threw++;
+    if (b.hivemind && b.hivemind.burned) burned++;
+    if (b.hivemind && b.hivemind.stunned) stunned++;
+    st.combat = null;
+  }
+  check(threw >= 3 && burned >= 2 && stunned >= 2, `the battle AI steps into reach and throws Molotovs and flashbangs at it (${threw}/4 battles; burned in ${burned}, stunned in ${stunned})`);
+  // Preparation beats headcount: the rifle squad with headlamps at tier 4, with and without 2 Molotovs and 2 flashbangs.
+  const rate = (o) => { let w = 0; for (let i = 0; i < TRIALS; i++) w += coreTrial(100 + i, 4, { guard: 120, ...o }).won; return w / TRIALS; };
+  const bare = rate({ lights: true }), prep = rate({ lights: true, fire: 2, stun: 2 }), six = bare, five = rate({ lights: true, n: 5, fire: 2, stun: 2 });
+  console.log(`    the core at tier 4, guard 120 (${TRIALS} battles): six with headlamps ${Math.round(bare * 100)}%, with 2 Molotovs and 2 flashbangs ${Math.round(prep * 100)}%; five prepared ${Math.round(five * 100)}% against six bare ${Math.round(six * 100)}%`);
+  check(prep >= bare + 0.12 && five >= six, "a squad bringing fire and bangs clearly beats the same squad without, and five prepared beat six bare");
+  // By the numbers (and the AI groups): the bosses count less for what a team brings.
+  const { st, hv } = world(SEED, 900, 60);
+  const { p, people } = squad(st, hv, { lights: false });
+  const o0 = HC.coreGate(st, hv, people).win;
+  const o1 = HC.coreGate(st, hv, people, undefined, { lights: 6 }).win;
+  const o2 = HC.coreGate(st, hv, people, undefined, { lights: 6, fire: 2, stun: 2 }).win;
+  check(o0 < o1 && o1 < o2, `the core's odds by the numbers: ${Math.round(o0 * 100)}% in the dark, ${Math.round(o1 * 100)}% lit, ${Math.round(o2 * 100)}% lit with 2 Molotovs and 2 bangs`);
+  p.cargo.gear.push(item("molotov"), item("molotov"), item("flashbang"), item("flashbang"), item("flashbang"));
+  st.autoCombat = true;
+  HC.assaultHive(st, p, hv, { quick: true });
+  check(HC.teamKit(st, p, "molotov").length === 0 && HC.teamKit(st, p, "flashbang").length === 1, "a fight in the core by the numbers spends what it counted (2 Molotovs, 2 of the 3 flashbangs)");
+  const { st: s2, hv: h2 } = world(SEED + 2, 2100, 80);
+  const f = s2.factions.find((x) => x.alive);
+  ensureArsenal(s2, f);
+  const before = HC.groupHiveCrawl(world(SEED + 2, 2100, 80).st, world(SEED + 2, 2100, 80).hv, 99999).met;
+  for (let i = 0; i < 4; i++) f.arsenal.items.push(item(i < 2 ? "molotov" : "flashbang"));
+  const prepKeys = ["molotov", "flashbang", "frag", "pipebomb"];
+  const n0 = f.arsenal.items.filter((it) => prepKeys.includes(it.key)).length;
+  const r = HC.groupHiveCrawl(s2, h2, 99999, f.id);
+  const n1 = f.arsenal.items.filter((it) => prepKeys.includes(it.key)).length;
+  check(r.burned && r.met < before && n1 <= n0 - 4, `AI parity: a war party with Molotovs and flashbangs pays less at the core (${before} → ${r.met} in the guard's units) and uses them (${n0} → ${n1})`);
+}
+
+// ---------- 9. no hive dies from outside ----------
+console.log("Only the Hivemind's death kills a hive");
+{
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const dir = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "../src/sim");
+  const calls = [];
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith(".js")) continue;
+    const src = fs.readFileSync(path.join(dir, f), "utf8");
+    src.split("\n").forEach((line, i) => { if (/\bdestroyHive\(/.test(line) && !/^\s*\/\//.test(line) && !/export function destroyHive/.test(line)) calls.push(`${f}:${i + 1}`); });
+  }
+  check(calls.length === 2 && calls.some((c) => c.startsWith("hivecrawl.js")) && calls.some((c) => c.startsWith("factions.js")), `destroyHive is called only by the core (the Hivemind's death) and a war party that paid for the core: ${calls.join(", ")}`);
+  const fsrc = fs.readFileSync(path.join(dir, "factions.js"), "utf8");
+  check(/const burned = crawl\.burned;[\s\S]{0,200}if \(burned\)[\s\S]{0,400}destroyHive\(/.test(fsrc), "... the groups' only when their crawl reached and paid for the core (groupHiveCrawl burned)");
+  const { st, hv } = world(SEED, 500, 80);
+  const { p } = squad(st, hv);
+  const H = await import("../src/sim/hives.js");
+  H.hiveArrive(st, Object.assign(p, { dest: hv.tile }));
+  const card = st.cards[st.cards.length - 1];
+  check(card && card.choices.every((c) => !/fire|firebomb|burn/i.test(c.label)) && card.choices.some((c) => /Enter the hive/.test(c.label)), `the hive card: ${card ? card.choices.map((c) => c.label).join(" / ") : "?"}`);
+  check(card && /Molotovs and flashbangs/.test(card.text), "... and it says what to bring for the core");
+  check(!fs.readFileSync(path.join(dir, "events.js"), "utf8").includes("Set fires at its edge"), "the road event's hive has no Set fires");
+  // An old save with a fire campaign and a fire trip loads and plays on.
+  const A = await import("../src/sim/autopilot.js");
+  const w = createWorld({ seed: SEED, factionCount: 3 });
+  w.started = true;
+  A.setAutopilot(w, true, "balanced");
+  ensureHives(w);
+  w.governor.campaign = { hiveId: w.hives[0].id, tile: w.hives[0].tile, since: 0, fires: 2, trips: 1, waits: "fires" };
+  const q = squad(w, w.hives[0]).p;
+  q.apFireTrip = true; q.apFires = 1; q.apHiveAgain = true;
+  const w2 = loadFromString(saveToString(w, { dropCards: true }));
+  let ok = true;
+  try { for (let i = 0; i < 48; i++) (await import("../src/sim/world.js")).tickHour(w2); } catch (e) { ok = false; console.log(e); }
+  check(ok && /^Campaign on |^$/.test(A.campaignLine(w2)), `an old save with a fire campaign and a fire trip loads and plays two days ("${A.campaignLine(w2).slice(0, 90)}…")`);
+}
+
+// ---------- 10. the autopilot's gate and kit ----------
+console.log("The autopilot's gate to the core, and its kit");
+{
+  // The core's odds by the numbers against the map (the squads, tiers and guards of the fit, a few battles each).
+  const rows = [];
+  for (const [sq, cfg, tier, guard, lights, prep] of [["rifle", { weapon: "ar", armor: "plate", shoot: 10 }, 4, 80, true, 0], ["rifle", { weapon: "ar", armor: "plate", shoot: 10 }, 4, 80, false, 0], ["rifle", { weapon: "ar", armor: "plate", shoot: 10 }, 4, 120, true, 2], ["shotgun", { weapon: "shotgun", armor: "vest", shoot: 7 }, 2, 80, true, 0], ["shotgun", { weapon: "shotgun", armor: "vest", shoot: 7 }, 2, 80, false, 2]]) {
+    let w = 0, nb = 0;
+    for (let i = 0; i < TRIALS; i++) { const r = coreTrial(500 + i, tier, { ...cfg, lights, fire: prep, stun: prep, guard }); w += r.won; nb += r.numbers; }
+    rows.push({ sq, tier, guard, lights, prep, map: w / TRIALS, num: nb / TRIALS });
+  }
+  const err = rows.reduce((a, r) => a + Math.abs(r.map - r.num), 0) / rows.length;
+  for (const r of rows) console.log(`    ${r.sq} tier ${r.tier}, guard ${r.guard}, ${r.lights ? "lit" : "dark"}${r.prep ? ", 2 Molotovs + 2 flashbangs" : ""}: map ${Math.round(r.map * 100)}%, by the numbers ${Math.round(r.num * 100)}%`);
+  check(err <= 0.15, `the core's odds by the numbers follow the map's (mean error ${Math.round(err * 100)} points; tools/hivecorecalib.js --fit for the full fit)`);
+  check(rows[0].num > rows[1].num && rows[0].map > rows[1].map, "lights count by the numbers as on the map");
+  // The kit: lights, Molotovs, flashbangs, a grenade and flares from the armory for a hive trip.
+  const K = await import("../src/sim/kit.js");
+  const { st, hv } = world(SEED);
+  const { people } = squad(st, hv, { lights: false });
+  for (const s of people) s.gear.backpack = { key: "backpack", name: GEAR.backpack.name, quality: 1, contents: [] };
+  const base = { armory: [...["headlamp", "headlamp", "flashlight"].map(item), ...["molotov", "molotov", "molotov", "flashbang", "flashbang", "frag", "flare", "flare", "flare"].map(item)] };
+  const took = K.packTripKit(st, base, people, "hive", hv.tile);
+  const carried = (k) => people.reduce((a, s) => a + allCarried(s).filter((x) => x && x.key === k).length, 0);
+  check(people.filter((s) => !!lightOf(s)).length === 3, `a light each from the armory as far as it goes (3 for 6): ${took.join(", ")}`);
+  check(carried("molotov") >= 2 && carried("flashbang") >= 2 && carried("flare") >= 2 && carried("frag") >= 1, `the hive kit: ${carried("molotov")} Molotovs, ${carried("flashbang")} flashbangs, ${carried("frag")} frag grenade, ${carried("flare")} road flares`);
+}
+
+// ---------- 11. the mouth on the map ----------
+console.log("The crawl window's map");
+{
+  const { st, hv } = world(SEED + 9);
+  const { p } = squad(st, hv);
+  HC.startHiveCrawl(st, p, hv);
+  const UI = await import("../src/ui/hivecrawl.js");
+  const html = UI.hiveCrawlModal(st, { started: true });
+  const mouth = /<title>The mouth[^<]*<\/title><circle[^>]*\/><text[^>]*>([^<]*)<\/text>/.exec(html);
+  check(mouth && mouth[1] === "M", `the mouth's node reads ${mouth ? `"${mouth[1]}"` : "?"} (M, not T for "The mouth")`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed (${((performance.now() - t0) / 1000).toFixed(1)} s)`);

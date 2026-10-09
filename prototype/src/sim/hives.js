@@ -31,8 +31,7 @@
 // Everything here draws from state.rng only inside the daily tick, so a seed always plays out the same.
 import { log, day, addCard, snapshot, combatPower, checkGameOver, hurt } from "./world.js";
 import { makeHorde, hordeScore, HORDE_SIZES, reduceHorde } from "./hordes.js";
-import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty } from "./parties.js";
-import { partyFuel, useFuel } from "./vehicles.js";
+import { partyMembers, partyTile, tileLabel, awaitOrders } from "./parties.js";
 import { registerBattleLayout, registerBattleSize, HIVE_W, HIVE_H } from "./combat.js";
 import { bossUnit, placeUnitRight } from "./defences.js";
 import { startHiveCrawl, denOf, crawlEstimate, crawlRecText } from "./hivecrawl.js"; // the hive crawl: from the mouth to the Hivemind in the core
@@ -539,9 +538,9 @@ export function hivesLeftText(state) {
   const left = state.hives.length;
   return left ? `${left} hive${left === 1 ? "" : "s"} still stand${left === 1 ? "s" : ""} in the state.` : "No hive is left standing.";
 }
-// Your team fought this hive (fires, Molotovs, a storm): an AI group that fights it within GROUP_HIVE.PLAYER_DAYS
-// days warms to you (factions.js groupHiveWar).
-const notePlayerFight = (state, hive) => { hive.playerDay = day(state); };
+// Your team fought this hive (a crawl: hivecrawl.js sets hive.playerDay): an AI group that fights it within
+// GROUP_HIVE.PLAYER_DAYS days warms to you (factions.js groupHiveWar). Nothing from outside the hive kills it or burns
+// it down any more (the fires and the firebombing are gone, 2026-10): only the death of its Hivemind does.
 
 // Is every hive gone, with no new one being built? (world.js checkGameOver: the survivors win.)
 export function hivesSecured(state) {
@@ -601,7 +600,7 @@ function hiveCard(state, p, hive) {
     where: tileLabel(state, hive.tile),
     partyId: p.id,
     text: `A mound of fused bodies, pulsing and warm, and the dead packed around it${force.guard ? ` (about ${force.guard})` : ""}. The hive is a den of chambers: its core, where the ${BOSS_NAMES.hivemind} sits guarded by the ${BOSS_NAMES.hive}, lies ${den.depth} chamber${den.depth === 1 ? "" : "s"} in from the mouth by the shortest way (there are other ways, and dead ends). ` +
-      `Your squad's combat power is ${power}. Expect about ${est.fights} fight${est.fights === 1 ? "" : "s"} on the way in, each tougher than the last, then the core. Bring five or six well-armed fighters, armor, ammunition and meds, and Molotovs or fuel for the egg chambers.${been}` +
+      `Your squad's combat power is ${power}. Expect about ${est.fights} fight${est.fights === 1 ? "" : "s"} on the way in, each tougher than the last, then the core. Bring five or six well-armed fighters, armor, ammunition and meds, a light each, Molotovs and flashbangs for the core (fire burns the Hivemind and stops its brood, a bang stops its pulse), and fuel for the egg chambers. Nothing from outside kills a hive: only its Hivemind's death does.${been}` +
       alliesText(state, hive, force.count) + // alliance.js: fighters from coalition members and job givers
       growthsText(state, hive, force), // hivetech.js: what has grown around it, the special dead in its brood
     choices: [
@@ -614,62 +613,11 @@ function hiveCard(state, p, hive) {
           return "";
         },
       },
-      {
-        label: "Set fires around it (6 fuel)",
-        hint: "Burns away part of its guard and its stores; the team pulls back after. Stealth decides whether the brood notices",
-        get disabled() { return partyFuel(state, p) < 6; },
-        resolve: (st) => {
-          if (gone(st)) return moved(st);
-          if (partyFuel(st, p) < 6) { awaitOrders(st, p, "Not enough fuel for the fires.", { failed: true }); return "The team has less than 6 fuel."; }
-          useFuel(st, p, 6);
-          markThreat(st, hive); // hivetech.js: it builds for defence
-          notePlayerFight(st, hive);
-          const guard = guardOf(st, hive);
-          if (guard) reduceHorde(st, guard, Math.round(guard.size * 0.3));
-          hive.res = Math.max(0, hive.res - 15);
-          const best = Math.max(0, ...partyMembers(st, p).map((m) => m.skills.stealth || 0));
-          let text = "The fires take hold. Part of the brood burns and the hive's stores with it.";
-          if (!st.rng.chance(Math.min(0.9, 0.35 + best * 0.05))) {
-            const m = partyMembers(st, p);
-            const v = st.rng.pick(m);
-            if (v) { hurt(st, v, st.rng.int(15, 40), hive.tile, "setting fire to a hive"); text += v.alive ? ` The brood noticed: ${v.name.split(" ")[0]} was hurt getting away.` : ` The brood noticed: ${v.name} was killed getting away.`; }
-          }
-          if (!wipeIfEmpty(st, p)) awaitOrders(st, p, text);
-          return text;
-        },
-      },
-      {
-        // Molotovs (data.js, throwables.js) thrown from cover: more of it burns, and from farther away.
-        label: `Firebomb it (${FIREBOMB.molotovs} Molotovs)`,
-        hint: `Burns more of its guard and stores than the fuel fires, thrown from a distance (the brood is less likely to notice). The team carries ${molotovsOf(state, p).length}`,
-        get disabled() { return molotovsOf(state, p).length < FIREBOMB.molotovs; },
-        resolve: (st) => {
-          if (gone(st)) return moved(st);
-          const bombs = molotovsOf(st, p);
-          if (bombs.length < FIREBOMB.molotovs) { awaitOrders(st, p, "Not enough Molotovs.", { failed: true }); return `The team has fewer than ${FIREBOMB.molotovs} Molotovs.`; }
-          for (const b of bombs.slice(0, FIREBOMB.molotovs)) b.take();
-          markThreat(st, hive);
-          notePlayerFight(st, hive);
-          const guard = guardOf(st, hive);
-          if (guard) reduceHorde(st, guard, Math.round(guard.size * FIREBOMB.guard));
-          hive.res = Math.max(0, hive.res - FIREBOMB.res);
-          const best = Math.max(0, ...partyMembers(st, p).map((m) => m.skills.stealth || 0));
-          let text = "Bottles arc into the mound and burst. The flesh crackles; part of the brood burns and the hive's stores with it.";
-          if (!st.rng.chance(Math.min(0.95, 0.5 + best * 0.05))) {
-            const v = st.rng.pick(partyMembers(st, p));
-            if (v) { hurt(st, v, st.rng.int(10, 30), hive.tile, "firebombing a hive"); text += v.alive ? ` The brood came boiling out: ${v.name.split(" ")[0]} was hurt getting away.` : ` The brood came boiling out: ${v.name} was killed getting away.`; }
-          }
-          if (!wipeIfEmpty(st, p)) awaitOrders(st, p, text);
-          return text;
-        },
-      },
       { label: "Back off", hint: "No fight", resolve: (st) => { awaitOrders(st, p, "The team pulled back from the hive."); return "The team pulls back."; } },
     ],
   };
 }
 
-// Firebombing a hive: Molotovs instead of 6 fuel, a bigger fire (40% of its guard, 20 stores) from farther away.
-export const FIREBOMB = { molotovs: 3, guard: 0.4, res: 20 };
 // The Molotovs a team has: on its people (pockets, hands, packs) and in its cargo. [{ item, take() }]
 export function molotovsOf(state, p) {
   const out = [];

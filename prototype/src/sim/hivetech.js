@@ -16,7 +16,7 @@
 // game sees Carriers from the first months (the worm cyst is tier 0: the first special dead, after the hive's first
 // pit), runners in the first year, brutes and spitters in the second, screamers, crawlers and Wallbreakers
 // from about the third and elite dead late. Among those it weighs: income first while it is young or poor, the
-// brood chamber when it was attacked within TECH.THREAT_DAYS (fires, a storm, a growth burned), a kind of dead its
+// brood chamber when it was attacked within TECH.THREAT_DAYS (a crawl, a growth burned), a kind of dead its
 // cluster-mates do not breed yet over one they do, the den and the vat above the rest once open. Its guard comes
 // first; a growth it cannot afford yet it saves for (no new roaming hordes) for up to TECH.SAVE_DAYS.
 //
