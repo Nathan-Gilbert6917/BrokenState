@@ -7,6 +7,7 @@ import * as Z from "../src/ui/zombiesfx.js";
 import * as NEW from "../src/ui/audio.js";
 import * as G from "../src/ui/gunsfx.js";
 import { makeLimiter } from "../src/ui/sfxlab.js";
+import * as H from "../src/ui/humansfx.js";
 
 const RATE = 44100;
 let OLD = null;
@@ -313,6 +314,54 @@ window.renderAll = async (oldUrl) => {
     const ch = chain(c), out = ch.amb, layer = Z.makeMapLayer(c, out, 0);
     for (let t = 0; t <= 10; t += 0.25) layer.update({ horde: Z.hordeSizeLevel(40) * Z.hordeDistLevel(10) * 0.8, hive: 0, near: 10, size: 40, big: Z.hordeSizeLevel(40), night: 0, close: Z.hordeDistLevel(10) }, t);
   });
+  // ---------- the people (ui/humansfx.js) ----------
+  // Four people of your own (found by their seeded voices: low and high, young and older), each event 1.5 tiles off.
+  const find = (pred) => { for (let id = 1; id < 400; id++) { const v = H.humanVoice({ id, side: "player" }); if (pred(v)) return v; } return H.humanVoice({ id: 1, side: "player" }); };
+  const people = [["person_low_adult", find((v) => v.low && v.age === "adult" && !v.smoker)], ["person_high_young", find((v) => !v.low && v.age === "young")],
+    ["person_low_older_smoker", find((v) => v.low && v.age === "older" && v.smoker)], ["person_high_older", find((v) => !v.low && v.age === "older")]];
+  for (const [who, V] of people) for (const [n, ev] of [["hHurt", "hurt"], ["hCry", "cry"], ["hDown", "down"], ["hDeath", "death"], ["hGasp", "revive"], ["hEffort", "effort"], ["hPant", "panting"], ["hCough", "cough"]])
+    await keep(`${who}_${ev}`, 3, (c, out) => { H.playHuman(n, c, out, 0.05, { voice: V, sev: 0.4, dist: 1.5 }); });
+  for (const [kit, list] of [["raiders", [["hHurt", "hurt"], ["hCry", "cry"], ["hTaunt", "laugh_on_a_kill"], ["hEffort", "effort"]]], ["soldiers", [["hHurt", "hurt"], ["hCry", "cry"], ["hDown", "down"]]], ["zealots", [["hEcstatic", "ecstatic"], ["hCry", "cry"]]]]) {
+    const V = H.humanVoice({ id: 31 + kit.length, side: "enemy", kit });
+    for (const [n, ev] of list) await keep(`${kit}_${ev}`, 3, (c, out) => { H.playHuman(n, c, out, 0.05, { voice: V, sev: 0.4, dist: 2 }); });
+  }
+  for (const [tone, file] of [["urgent", "bark_shout_man_down"], ["strained", "bark_shout_going_down"]]) await keep(file, 2, (c, out) => { H.playHuman("hShout", c, out, 0.05, { voice: people[0][1], tone, dist: 2 }); });
+  for (const [n, file] of [["hScared", "state_pinned_down"], ["hMuffled", "state_tied_gagged"], ["hWheeze", "state_bleeding"], ["hPanic", "state_panic"], ["hPlea", "state_hands_up"], ["hDeaf", "state_deafened"]])
+    await keep(file, 3.5, (c, out) => { H.playHuman(n, c, out, 0.05, { voice: people[1][1], dist: 2 }); });
+  // The base's murmur, at the evening meal and at night (10 of them home), on the ambience bus at unity.
+  const baseState = (hour) => ({ hour, bases: [{ id: 1, tile: 5 }], survivors: Array.from({ length: 10 }, (_, i) => ({ id: 500 + i, alive: true, location: { kind: "base", baseId: 1 } })) });
+  for (const [hour, file] of [[19, "base_murmur_evening"], [2, "base_murmur_night"]]) await keep(file, 12, (c) => {
+    const ch = chain(c), st = baseState(hour);
+    for (let t = 0; t <= 12; t += 0.25) H.humanMapVoices(c, ch.amb, st, 5, t);
+    return ch;
+  });
+  // Levels: a pistol shot, a walker's moan, a person's hurt grunt and cry, all 2 tiles off, through the battle bus and
+  // the effects limiter at the default sliders (measured only).
+  const lvl = (fn) => (c) => { const ch = chain(c, DEFAULT); fn(c, ch); return ch; };
+  await keep("level_pistol_2_tiles", 2, lvl((c) => G.playGun(c, 0.05, G.labPlan("pistol"), G.place({ pan: 0, dist: 2 }))), false);
+  await keep("level_moan_2_tiles", 3, lvl((c, ch) => Z.playZombie("idle", c, ch.sfx, 0.05, { kind: "walker", seed: SEED("walker"), dist: 2 })), false);
+  await keep("level_hurt_2_tiles", 2, lvl((c, ch) => H.playHuman("hHurt", c, ch.sfx, 0.05, { voice: people[0][1], sev: 0.4, dist: 2 })), false);
+  await keep("level_cry_2_tiles", 2, lvl((c, ch) => H.playHuman("hCry", c, ch.sfx, 0.05, { voice: people[0][1], dist: 2 })), false);
+  // A 15 s fight: your people with guns against the dead closing in; the crowd bed, the dead's voices, the people's.
+  const mixed = (sl, lim = true) => (c) => {
+    const ch = chain(c, sl, lim), bed = Z.makeCrowdBed(c, ch.zom, 0);
+    for (let t = 0; t <= 15; t += 0.25) { const k = t / 15; bed.update(Z.crowdMix({ count: Math.round(6 + 16 * k), near: 9 - 7 * k, mean: 12 - 8 * k }), t); }
+    const sp = (pan, dist) => G.place({ pan, dist });
+    const gun = (t, key, mode, pan, dist) => G.playGun(c, t, G.labPlan(key, mode), sp(pan, dist));
+    const z = (t, ev, kind, sd, dist, pan, more = {}) => Z.playZombie(ev, c, ch.sfx, t, { kind, seed: Z.voiceSeed(sd, 9), pitch: 1, sp: sp(pan, dist), ...more });
+    const h = (t, n, V, dist, pan, more = {}) => H.playHuman(n, c, ch.sfx, t, { voice: V, sp: sp(pan, dist), ...more });
+    const [A1, A2, A3] = [people[0][1], people[1][1], people[2][1]];
+    z(0.3, "idle", "walker", 1, 10, -0.4); gun(1.0, "ar", "burst", 0.1, 0.5); z(1.4, "hurt", "walker", 2, 9, 0.3); z(2.2, "aggro", "walker", 3, 7, -0.3);
+    gun(2.6, "pistol", "single", -0.2, 0.8); h(3.1, "hEffort", A2, 1, -0.2); z(3.2, "death", "walker", 2, 8, 0.3); z(4.6, "shriek", "screamer", 4, 9, 0.5, { far: true });
+    gun(5.2, "ar", "burst", 0.1, 0.5); gun(6.0, "shotgun", "single", -0.3, 1); z(6.3, "death", "screamer", 4, 9, 0.5); z(7.3, "aggro", "brute", 5, 4, 0.2);
+    z(7.9, "bite", "walker", 6, 1, -0.1, { human: true, victim: A1 }); h(8.4, "hDown", A1, 1, -0.1); h(8.9, "hShout", A3, 1.5, 0.3, { tone: "urgent" });
+    gun(9.2, "ar", "auto", 0.1, 0.5); z(9.6, "hurt", "brute", 5, 3, 0.2); z(10.4, "snarl", "runner", 7, 2.5, -0.5); gun(10.8, "shotgun", "single", -0.3, 1);
+    z(11.3, "death", "brute", 5, 3, 0.2); h(11.9, "hPant", A2, 1, -0.2); h(12.6, "hCough", A3, 1.5, 0.3); h(13.6, "hGasp", A1, 1, -0.1); z(14.0, "idle", "walker", 8, 6, 0.6);
+    return ch;
+  };
+  await keep("mixed_battle_people_and_dead", 15, mixed(LISTEN));
+  await keep("mixed_battle_default_sliders", 15, mixed(DEFAULT), false);
+  gr.mixed_battle_default_sliders = await reduction(15, (lim) => mixed(DEFAULT, lim));
   for (const s of Object.values(stats)) s.specKey = s.spectrum; // kept for the comparison in the main process
   return { files, stats, gr };
 };

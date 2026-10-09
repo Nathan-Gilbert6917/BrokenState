@@ -141,7 +141,7 @@ export const HUMAN_RECIPES = {
     breaths(c, out, t, 5 + Math.floor(rnd() * 3), 0.26, 1100 * V.shift, 0.14 * o.gain, rnd);
   },
   wheeze(c, out, t, V, o, rnd) { // bleeding: wet, ragged breaths
-    breaths(c, out, t, 3, 0.6, 850 * V.shift, 0.13 * o.gain, rnd, 26);
+    breaths(c, out, t, 3, 0.6, 850 * V.shift, 0.22 * o.gain, rnd, 26);
     DSP.bubbles(c, out, t + 0.5, 1.2, 3, 0.05 * o.gain, rnd, 150, 420);
   },
   cough(c, out, t, V, o, rnd) { // sick: two or three coughs
@@ -188,6 +188,7 @@ HUMAN_HOOK.cry = (c, out, t, V, g) => HUMAN_RECIPES.cry(c, out, t, V, { gain: g 
 // INTEGRATION (sound mixer): the one place a positioned human voice meets the speakers, at HUMAN_GAIN (the "voices"
 // group). o.sp: gun-sfx's placement (soundcues spatial), else a place from o.pan / o.dist; dest: the bus it came in on.
 export function hRoute(c, out, t, o = {}) {
+  if (o.flat) return out; // on the map: already through hMapOut, onto the ambience bus (spatialOut would take it to the battle's bus)
   return spatialOut(c, o.sp || place({ pan: o.pan || 0, dist: o.dist || 0, seen: o.seen, room: o.room }), { gain: HUMAN_GAIN.v * (STYLE[o.voice && o.voice.style] || STYLE.survivor).gain, dest: out, dry: !!o.dry });
 }
 // INTEGRATION (sound mixer): the one place an unpositioned human voice (the base murmur, a scream at a base) meets the
@@ -406,12 +407,12 @@ export function humanMapVoices(c, out, state, tile, t = c.currentTime) {
     if (bm && level > 0.05 && t >= M.next) { // a laugh now and then, a cough in winter
       const V = humanVoice({ id: 1000 + Math.floor(M.r() * 50), side: "player" });
       const name = bm.winter && M.r() < 0.5 ? "hCough" : "hTaunt";
-      playHuman(name, c, hMapOut(c, out, 1), t, { voice: { ...V, style: "survivor" }, gain: 0.35 * level, dist: 10, dry: true });
+      playHuman(name, c, hMapOut(c, out, 1), t, { voice: { ...V, style: "survivor" }, gain: 0.35 * level, flat: true });
       M.next = t + (6 + M.r() * 14) / Math.max(0.3, level);
     }
     M.idle = level > 0 ? null : M.idle ?? t;
     if (M.idle != null && t - M.idle > 4) { try { M.s.stop(t + 0.05); } catch { /* stopped */ } MAPV.delete(c); }
   }
-  for (const s of deathsAtBases(state)) playHuman("hCry", c, hMapOut(c, out, 1), t + 0.1, { voice: humanVoice({ id: s.id, sid: s.id, side: "player" }, state), gain: 0.7, dist: 8, dry: true });
+  for (const s of deathsAtBases(state)) playHuman("hCry", c, hMapOut(c, out, 1), t + 0.1, { voice: humanVoice({ id: s.id, sid: s.id, side: "player" }, state), gain: 0.7, flat: true });
   return { level, people: bm ? bm.people : 0 };
 }
