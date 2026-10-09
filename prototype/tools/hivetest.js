@@ -292,8 +292,11 @@ const t0 = Date.now();
 {
   console.log("Determinism and a year");
   const sig = (st) => `${st.hour}|${st.hives.map((h) => `${h.tile}:${h.res}`).join(",")}|${st.hordes.map((h) => `${h.tile}:${h.size}:${h.bosses}:${JSON.stringify(h.mix)}`).join(",")}|${alive(st).length}|${(st.hiveGrowths || []).map((g) => `${g.tile}:${g.kind}:${g.ready}`).join(",")}`;
-  const a = world(21), b = world(21);
-  runDays(a, 120); runDays(b, 120);
+  // Each world made when the one before has played (world.js localId counts ids from a world's own start; two worlds
+  // made back to back and then played one after the other interleave their ids differently, and the dice that hash a
+  // party's or a caravan's id would roll differently: that is the test, not the game).
+  const a = world(21); runDays(a, 120);
+  const b = world(21); runDays(b, 120);
   check(sig(a) === sig(b), "the same seed plays out the same for 120 days");
   for (const seed of [1, 2]) {
     const st = world(seed);

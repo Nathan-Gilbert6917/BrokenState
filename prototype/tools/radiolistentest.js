@@ -23,6 +23,7 @@ import {
 } from "../src/sim/radio.js";
 import { LISTEN, ODDS, hearOdds, listenIn, listenProblem, listenDaily, channelTraffic, autoTune, tunedNetworks } from "../src/sim/radiolisten.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
+import { groupHides } from "../src/sim/hiding.js"; // a hidden outpost keeps off its group's network
 import { listenBlock, teamRadioLine, baseListenSection, LISTEN_ACTIONS } from "../src/ui/radiolisten.js";
 import { renderExpedition } from "../src/ui/expedition.js";
 import { groupsRadioHeader } from "../src/ui/tradewindow.js";
@@ -83,7 +84,8 @@ section("Networks: yours and one per group, ranges by type");
   const g = st.grid;
   const t = st.tiles.find((x) => land(st, x) && g.distance(x.id, f.bases[0]) > 40 && !netCovers(st, groupNetwork(st, f), x.id));
   f.bases.push(t.id);
-  check(netCovers(st, groupNetwork(st, f), t.id) && networksAt(st, t.id).some((n) => n.id === f.id), "a base taken: their network covers it");
+  if (groupHides(st, f, t.id)) check(!netCovers(st, groupNetwork(st, f), t.id), "a base taken and kept hidden (hiding.js): it keeps off their network");
+  else check(netCovers(st, groupNetwork(st, f), t.id) && networksAt(st, t.id).some((n) => n.id === f.id), "a base taken: their network covers it");
   f.bases.pop();
   check(!networksAt(st, t.id).some((n) => n.id === f.id), "lost again: it does not");
   for (const type of Object.keys(GROUP_NET_RANGE)) {

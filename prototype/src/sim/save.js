@@ -32,6 +32,7 @@ import { WOOD_UNITS, GEAR } from "./data.js"; // firewood was a 3 kg bundle: old
 import { makeLosCache, SparseLos } from "./combat.js";
 import { CRAFT_BOOKS, tech } from "./blueprints.js"; // craft books read before they unlocked anything // the line-of-sight cache of a loaded battle (sparse on a big yard)
 import { saveSummary, campaignKey } from "./savesummary.js"; // the save list's one-line summary and campaign groups
+import { noteLootAge } from "./itemcond.js"; // the years since the fall, for loot rolled after a load
 /** @import { State } from "./types" */
 /**
  * A save (serializeState; a save file is it as JSON): the world's encoded graph, the id counter and the save list's summary.
@@ -129,6 +130,7 @@ export function deserializeState(save) {
   // The world size (worldsize.js): a save from before sizes is a Normal 64 × 42 map (worked out from its grid).
   if (!WORLD_SIZES[state.worldSize]) state.worldSize = worldSizeOf(state); // a custom size stays "custom" (its grid says how big)
   if (state.mode !== "hardcore") state.mode = "normal"; // saves from before the modes (hardcore.js)
+  noteLootAge(state); // itemcond.js: loot rolled after the load is as old as this world (shops and homes, COND_AGE)
   // Starting people (hardcore.js START_PEOPLE): a hardcore save from before the choice started with three (its start's
   // backgrounds name them); a normal start has none.
   if (state.mode === "hardcore" && !Number.isFinite(state.startPeople)) {

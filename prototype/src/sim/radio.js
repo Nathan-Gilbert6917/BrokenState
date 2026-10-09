@@ -40,6 +40,8 @@
 // - Call for help (every 10 days, friendly or a pact): a raid on its way to you is harried (its strength × 0.7);
 //   with no raid and less than 3 days of food at the hub they send 20–30 food as aid; costs 4 goodwill either way.
 // - Pacts: the same rules as at their gates.
+// What the groups overhear of all this, radio discipline (fewer calls from them in scheduled windows), encryption and
+// decoys: intel.js.
 // Groups also call you: each day a group in reach that is not hostile may radio an offer (their surplus for what
 // they need) or a request (they need something, paying with their surplus): 15% a day for traders, 10% for a
 // commune, 6% for others, at most one every 6 days per group, never while one of their caravans is out. Mostly they
@@ -59,10 +61,13 @@ import { tradeSpeech, gainXp, USE } from "./skills.js";
 import { marketOf } from "./trade.js";
 import { diplomacyDaily, knownAs } from "./diplomacy.js";
 import { listenDaily } from "./radiolisten.js"; // listening in on a network's traffic (Listen in)
+import { intelDaily, discipline, INTEL } from "./intel.js"; // the groups listen in on you: radio discipline, decoys
+import { groupHides } from "./hiding.js"; // a group's hidden outposts keep off the air
 import { thirstFactor } from "./weather.js";
 import { rumourFromNews, RUMOUR } from "./survey.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
 import { supplyAmt } from "./rounds.js"; // "ammo": every round there, any calibre
+import { payoutSpare, payoutBreaks } from "./upkeep.js"; // food and water: never paid out of the base's reserve
 import { deliveryFee, deliveryRefusal, bookDeal, radioDealsDaily, pendingDeal, counterOk } from "./radiotrade.js"; // trades over the radio
 
 export const RELAY_RANGE = 6;
@@ -89,7 +94,8 @@ export function playerNetwork(state) {
 export function groupNetwork(state, f) {
   if (!f || !f.alive || !f.bases || !f.bases.length) return null;
   const range = GROUP_NET_RANGE[f.type] ?? 8;
-  return { id: f.id, name: f.known ? f.name : knownAs(state, f), color: f.color, kind: "group", faction: f, nodes: f.bases.map((tile) => ({ tile, range })) };
+  const on = f.bases.filter((tile) => !groupHides(state, f, tile)); // hiding.js: a hidden outpost keeps off the air
+  return { id: f.id, name: f.known ? f.name : knownAs(state, f), color: f.color, kind: "group", faction: f, nodes: (on.length ? on : f.bases).map((tile) => ({ tile, range })) };
 }
 export function radioNetworks(state) {
   const out = [];
@@ -453,11 +459,12 @@ export function radioDaily(state) {
   radioDealsDaily(state); // radiotrade.js: deals your caravan never came for lapse
   diplomacyDaily(state); // diplomacy.js: relations, pacts and wars between groups, market lists, jobs, the coalition
   listenDaily(state); // radiolisten.js: the groups' channel traffic, and what your tuned receivers pick up of it
+  intelDaily(state); // intel.js: what the groups overhear of yours and of each other's (hiding.js: hidden bases)
   if (!hasNetwork(state)) return;
   for (const f of state.factions) {
     if (!f.alive || !f.known || refusal(state, f, true) || caravanEnRoute(state, f)) continue;
     if (since(state, f, "offer") < COOLDOWN.offer || state.cards.some((c) => c.radioFrom === f.id) || pendingDeal(state, f)) continue;
-    const chance = f.type === "traders" ? 0.15 : f.type === "commune" ? 0.1 : 0.06;
+    const chance = (f.type === "traders" ? 0.15 : f.type === "commune" ? 0.1 : 0.06) * (discipline(state) === "windows" ? INTEL.OFFERS : 1); // intel.js: radio discipline, fewer windows to call in
     if (!rng.chance(chance)) continue;
     const card = offerCard(state, f);
     if (card) { addCard(state, card); mark(state, f, "offer"); }
@@ -482,7 +489,7 @@ function grudgeRaid(state, f) {
 function hubSpare(state, key, h = hub(state)) {
   const n = Math.max(1, atBase(state, h.id).length);
   const keep = { food: n * 6, water: n * 5, meds: 3, ammo: n * 10, fuel: 8, parts: 2, scrap: 20 }[key] || 0;
-  return Math.max(0, Math.floor(supplyAmt(h.stock, key) - keep));
+  return Math.min(payoutSpare(state, h, key), Math.max(0, Math.floor(supplyAmt(h.stock, key) - keep))); // upkeep.js PAYOUT: everyone fed there
 }
 
 // An offer or a request from a group, as a card. null when they have nothing sensible to say.
@@ -543,7 +550,7 @@ export function offerCard(state, f) {
     choices: [
       {
         label: `Agree: ${giveQty} ${giveKey} for ${getQty} ${getKey}`,
-        affordable: (st) => (hub(st).stock[giveKey] || 0) >= giveQty, // the autopilot agrees only then
+        affordable: (st) => (hub(st).stock[giveKey] || 0) >= giveQty && !payoutBreaks(st, hub(st), { [giveKey]: giveQty }), // the autopilot agrees only then (and never out of the food and water reserve)
         hint: `Have ${giveQty} ${giveKey} ready at ${base.name} when they arrive (the hub has ${Math.floor(hub(state).stock[giveKey] || 0)} now)`,
         resolve: (st) => {
           const why = refusal(st, f, true);

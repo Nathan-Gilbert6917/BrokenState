@@ -23,7 +23,7 @@ import { createWorld, tickHour, hub, atBase, makeSurvivor, day, alive } from "..
 import { addBuilding, stations, RECIPES } from "../src/sim/buildings.js";
 import { hospitalDef } from "../src/sim/medical.js";
 import { setSteward, stewardHour, setPinned } from "../src/sim/steward.js";
-import { setAutopilot, governRoles } from "../src/sim/autopilot.js";
+import { setAutopilot, governRoles, farmCrewLimits, FARM_AP } from "../src/sim/autopilot.js";
 import { productionHour, setStationOrder } from "../src/sim/production.js";
 import { craftQueue } from "../src/sim/crafting.js";
 import { econStats, farmersWanted } from "../src/sim/farming.js";
@@ -171,11 +171,11 @@ const at = (st, hour) => { st.hour = Math.floor(st.hour / 24) * 24 + hour; };
 // ---------- 2b. a craft queue keeps one hand ----------
 {
   section("A craft queue keeps one hand: from farmers beyond the governor's crew, not below it");
-  const { st, h, ppl } = quiet(42, 8);
+  const { st, h, ppl } = quiet(42, 12); // more people than the ideal crew, so the extra crew has hands to take
   const gen = st.work.roles.find((x) => x.name === "Generalist"); // Farm 2, Craft 4
   join(st, ppl, gen);
   const fw = farmersWanted(st, h);
-  h.stock.food = ppl.length * 30; h.stock.preserved = 0; // short of the season's goal: the farm takes up to 1.6 × 1.2 a plot
+  h.stock.food = ppl.length * 10; h.stock.preserved = 0; // short of food (under 15 days): the farm takes up to 1.6 × 1.2 a plot
   at(st, 10);
   planBase(st, h);
   const farmers0 = ppl.filter((s) => s.role === "farm").length;
@@ -184,18 +184,45 @@ const at = (st, hour) => { st.hour = Math.floor(st.hour / 24) * 24 + hour; };
   craftQueue(h).push({ id: 9e9, recipe: "spikedbat", progress: 0, hours: 6 });
   planBase(st, h);
   const crafting = ppl.filter((s) => s.role === "craft");
-  // 30 days of food in spring is comfortable for the governor (its target 15 or more): its crew is 0.6 a plot.
-  check(season(st).key === "spring" && farmers0 > fw.need, `the farm took more than the governor's crew (${farmers0} on the plots, crew ${fw.need})`);
+  // 10 days of food is short for the governor too (its target 15 or more): its crew is 1.2 a plot (the ideal), the
+  // extra hands over it are spare for a craft.
+  check(season(st).key === "spring" && farmers0 > fw.ideal, `the farm took more than the governor's crew (${farmers0} on the plots, crew ${fw.ideal})`);
   check(crafting.length === 1 && /one hand stays on the craft queue/.test(crafting[0].task.why) && ppl.filter((s) => s.role === "farm").length === farmers0 - 1,
     `a job queued: one Generalist (Craft 4) leaves the plots for it (${crafting.length}; ${crafting[0] ? crafting[0].task.why : "-"})`);
   planBase(st, h);
   check(ppl.filter((s) => s.role === "craft").length === 1, "the next hour it stays one crafter, not more");
   // The farm only at its crew: nobody is pulled.
-  const keep = Math.max(1, fw.need);
+  const keep = Math.max(1, fw.ideal);
   for (const s of ppl.slice(keep)) { setCell(st, s, "farm", 0); setCell(st, s, "craft", 0); }
   planBase(st, h);
   check(ppl.slice(0, keep).every((s) => s.role === "farm") && ppl.every((s) => s.role !== "craft"), `the farm only at its crew (${keep}): its farmers stay, the job waits`);
   craftQueue(h).length = 0;
+}
+
+// ---------- 2c. the farm crew capped while food is comfortable (the governor's rule: autopilot.js farmCrewLimits) ----------
+{
+  section("Comfortable food: the farm crew capped at a third of the people, as the governor's; pinned farmers stay");
+  const { st, h, ppl } = quiet(42, 9);
+  const farmer = st.work.roles.find((x) => x.name === "Farmer"); // Farm 1
+  join(st, ppl, farmer);
+  const fw = farmersWanted(st, h);
+  h.stock.food = ppl.length * 200; h.stock.preserved = 0; // far over any target, winter stores and all
+  at(st, 10);
+  const lim = farmCrewLimits(st, h, h.stock.food / ppl.length, ppl.length);
+  planBase(st, h);
+  const farming = ppl.filter((s) => s.role === "farm");
+  const off = ppl.filter((s) => s.role !== "farm");
+  check(lim.comfy && fw.ideal > lim.cap && farming.length === lim.cap, `${farming.length} of ${ppl.length} on the plots (cap ${lim.cap} = ${FARM_AP.share} of the people; the plots could use ${fw.ideal})`);
+  check(off.length > 0 && off.every((s) => /Farm crew capped: food is comfortable \(\d+ of \d+ plots tended\)/.test(s.task.why)), `the others are told why (${off[0] ? off[0].task.why : "-"})`);
+  // Pinned farmers are never trimmed: pin more than the cap to the plots and they all stay.
+  for (const s of ppl.slice(0, lim.cap + 2)) { s.role = "farm"; setPinned(st, s, true); }
+  planBase(st, h);
+  check(ppl.slice(0, lim.cap + 2).every((s) => s.role === "farm") && ppl.slice(lim.cap + 2).every((s) => s.role !== "farm"), `${lim.cap + 2} pinned farmers stay, over the cap; nobody more is put on the plots`);
+  for (const s of ppl) setPinned(st, s, false);
+  // Short of food the cap is off and the extra crew goes out.
+  h.stock.food = ppl.length * 5;
+  planBase(st, h);
+  check(ppl.filter((s) => s.role === "farm").length > lim.cap, `short of food (5 days): ${ppl.filter((s) => s.role === "farm").length} on the plots, the cap off`);
 }
 
 // ---------- 3. ties, overrides, minimums ----------
@@ -302,6 +329,7 @@ const at = (st, hour) => { st.hour = Math.floor(st.hour / 24) * 24 + hour; };
   join(st, [ppl[3]], grd);
   join(st, ppl.slice(4, 6), f);
   ppl[3].skills.shooting = 9; // the Guard role's lookout is the best shot
+  h.stock.food = ppl.length * 10; h.stock.preserved = 0; // short of food: no farm cap (2c), all with Farm first farm
   at(st, 10);
   const ring = (d) => st.grid.within(h.tile, d).find((id) => st.grid.distance(id, h.tile) === d && st.tiles[id].terrain !== "water");
   const hz = { id: 881, tile: ring(3), size: 60, bosses: 0, target: null, goal: null };
@@ -772,13 +800,17 @@ check(sum.pri.builds >= sum.gov.builds * 0.93, `priorities finish about as many 
   for (const seed of seeds) for (let dice = 0; dice < DICE; dice++) diffs.push(results.get(`${seed}|${dice}|true`).crafts - results.get(`${seed}|${dice}|false`).crafts);
   const m = diffs.reduce((a, v) => a + v, 0) / diffs.length;
   const se = diffs.length > 1 ? Math.sqrt(diffs.reduce((a, v) => a + (v - m) ** 2, 0) / (diffs.length - 1) / diffs.length) : 0;
-  // The margin those words set (a fifth fewer is fine, half as much is not), as an allowance: priorities may finish
-  // up to a quarter fewer than the governor a run, plus two standard errors. Without it the check sat on its edge:
-  // over the merges of 2026-10-07/08 the paired difference ran −1.1 to −3.1 a run (± 0.85-1.07) on 11-14 governor
-  // crafts a run, passing or failing by the commit (db6ef0b −1.1 passed; 989b997 normalbg −2.75, dev 348bdec −1.57,
-  // the weapons wave −3.0 failed), the same 15-25% fewer every time.
-  const govMean = sum.gov.crafts / Math.max(1, diffs.length), margin = 0.25 * govMean;
-  check(sum.pri.crafts >= sum.gov.crafts || m >= -margin - 2 * se, `priorities finish about as many crafts: at most a quarter fewer, inside the noise (${sum.pri.crafts} vs ${sum.gov.crafts}; a run ${m.toFixed(2)} ± ${se.toFixed(2)}, at least −${(margin + 2 * se).toFixed(2)})`);
+  // The baseline: the gap the two modes have by design, measured, plus two standard errors of the paired difference.
+  // The governor crafts more because its farm crew is capped while food is comfortable (autopilot.js FARM_AP) and its
+  // step 8 keeps a crafter; with the same farm cap in the work priorities (work.js Farm, farmCrewLimits) priorities
+  // finished 484 crafts to the governor's 642 over 10 seeds × 4 rolls (−3.95 a run; before that cap 344 vs 642,
+  // −7.45 ± 1.17, which no fixed allowance should cover) and 996 to 1295 over 10 × 8 (−3.74 ± 0.78 a run on 16.2:
+  // 23% fewer). CRAFT_GAP is that 23%: a mode that stopped crafting, or lost the cap, still fails.
+  // (Before: a quarter fewer allowed, from the 15-25% the merges of 2026-10-07/08 measured.)
+  const CRAFT_GAP = 0.23;
+  const govMean = sum.gov.crafts / Math.max(1, diffs.length), margin = CRAFT_GAP * govMean;
+  console.log(`  crafts, paired run by run: priorities ${m.toFixed(2)} ± ${se.toFixed(2)} a run against the governor's ${govMean.toFixed(2)} (${((100 * m) / Math.max(1e-9, govMean)).toFixed(0)}%)`);
+  check(sum.pri.crafts >= sum.gov.crafts || m >= -margin - 2 * se, `priorities finish about as many crafts: at most the measured ${Math.round(CRAFT_GAP * 100)}% fewer, inside the noise (${sum.pri.crafts} vs ${sum.gov.crafts}; a run ${m.toFixed(2)} ± ${se.toFixed(2)}, at least −${(margin + 2 * se).toFixed(2)})`);
 }
 
 // ---------- 12. determinism ----------

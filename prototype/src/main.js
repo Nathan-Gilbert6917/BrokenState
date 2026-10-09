@@ -4,6 +4,7 @@ import {
 } from "./sim/world.js";
 import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
+import { abandonProblem, abandonCard } from "./sim/occupy.js"; // Abandon outpost
 import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile } from "./sim/parties.js";
 import { stockHas } from "./sim/water.js"; // purified and un-purified water
 import { moveTeamOut, MOVE_OUT } from "./sim/moveout.js"; // a team moved out of a crowded base (the move-out planner)
@@ -22,6 +23,7 @@ import {
   saveSupplyRun, dispatchSupplyRun, supplyRunById, jobForm, releaseHeld, pauseSupplyRun, deleteSupplyRun,
 } from "./sim/supply.js";
 import { treatAtBase } from "./sim/medical.js";
+import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated trainee
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
@@ -97,6 +99,7 @@ import { loadOptions, saveOptions } from "./ui/saves.js";
 import { initTitle, showTitle, syncTitle, titleFrame, titleKey, titleCovers, TITLE_ACTIONS } from "./ui/title.js"; // the title screen the game opens on
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
 import { DEFENCE_ACTIONS, DEFENCE_CHANGE } from "./ui/defence.js";
+import { INTEL_ACTIONS, INTEL_CHANGE } from "./ui/intel.js"; // hidden bases (Run silent) and radio security (sim/hiding.js, sim/intel.js)
 import { toManual } from "./sim/work.js";
 import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
@@ -598,7 +601,7 @@ function autofill(pl) {
   const archers = archerCount(ids.map((id) => survivorById(state, id)).filter(Boolean));
   let est = null;
   for (let pass = 0; pass < 2; pass++) {
-    est = (pl.mission !== "outpost" && !out && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest ?? h.tile, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies, homeBaseId: h.id });
+    est = (!Parties.SETTLE_MISSIONS.includes(pl.mission) && !out && planAutofill(state, pl)) || estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: pl.dest ?? h.tile, vehicle: travelMode(v), v, stance: pl.stance, supplies: pl.supplies, homeBaseId: h.id });
     view.preview = est && pl.dest != null ? est.path : null;
     if (!est) return;
     const ahead = out ? n * MOVE_OUT.days : 0;
@@ -745,6 +748,7 @@ const actions = {
     if (!j || ask(ui, d, "sr-delete", { kind: "delrun", title: "Delete this supply run?", text: "Its schedule, crew, cargo lists and stops are gone for good (a convoy already on the road finishes its trip).", yes: "Delete it" })) return;
     baseSay(deleteSupplyRun(state, j));
   },
+  makemedic: (d) => { const s = survivorById(state, Number(d.id)); ui.baseMsg = makeMedic(state, s); if (s && s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId)); }, // a graduated trainee (sim/training.js)
   queuebuild: (d) => { ui.baseMsg = queueBuild(state, baseOf(d), d.type); },
   // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (asks first: ui/confirm.js) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
@@ -942,6 +946,14 @@ const actions = {
   // The move-out planner's destination: another of your bases, or "" (pick a tile on the map once they are out).
   "pl-dest": (d) => { ui.planner.dest = d.tile === "" || d.tile == null ? null : Number(d.tile); autofill(ui.planner); ui.plannerError = ""; },
   moveout: (d) => openMoveOut(Number(d.base)),
+  // sim/occupy.js: Abandon outpost, asked on a card first.
+  abandonbase: (d) => {
+    const b = baseById(state, Number(d.base));
+    const why = abandonProblem(state, b);
+    if (why) { ui.baseMsg = why; return; }
+    if (!state.cards.some((c) => c.abandonBase === b.id)) addCard(state, abandonCard(state, b));
+    ui.baseView = null;
+  },
   "pl-launch": () => {
     const pl = ui.planner;
     const c = plannerLoad(state, pl);
@@ -962,7 +974,7 @@ const actions = {
       }
       return;
     }
-    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, plan: pl.mission === "outpost" ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
+    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, plan: Parties.SETTLE_MISSIONS.includes(pl.mission) ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
     if (res.error) { ui.plannerError = res.error; return; }
     rememberLaunch(state, res.party, pl); // sim/trips.js: for Repeat trip when it gets home, and its retreat policy
     ui.planner = null;
@@ -1116,6 +1128,7 @@ for (const [k, fn] of Object.entries(PACE_ACTIONS)) actions[k] = (d) => fn(state
 for (const [k, fn] of Object.entries(MAPSEL_ACTIONS)) actions[k] = (d) => { fn(state, ui, d); mapClicked = true; }; // ui/mapselect.js: the "On this tile" row
 actions["tray-rules"] = () => openSettings(ui, "options");
 for (const [k, fn] of Object.entries(LISTEN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // xp-listen, bl-listen
+for (const [k, fn] of Object.entries(INTEL_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // hide-silent, intel-decoy
 // The Watching panel and map notes (ui/watchlist.js): pin, go, unpin, the note editor; going there uses center and xp-open.
 for (const [k, fn] of Object.entries(WATCHLIST_ACTIONS)) actions[k] = (d) => fn(state, ui, d, actions);
 // Display options and the minimap's button (ui/display.js); the confirmation box (ui/confirm.js): Yes runs the order again.
@@ -1205,6 +1218,15 @@ const changeActions = {
     s.station = null;
     if (s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId));
     ui.baseMsg = `${s.name} now works as a medic.`;
+  },
+  traineeop: (el) => {
+    if (!el.value) return;
+    const s = survivorById(state, Number(el.value));
+    toManual(state, s); // a job picked by hand: off work priorities
+    s.role = "trainee";
+    s.station = null;
+    if (s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId));
+    ui.baseMsg = `${s.name} now trains as a medic on the ward.`;
   },
   craftop: (el) => {
     if (!el.value) return;
@@ -1356,6 +1378,7 @@ for (const [k, fn] of Object.entries(CODEX_CHANGE)) changeActions[k] = (el) => f
 for (const [k, fn] of Object.entries(DISPLAY_CHANGE)) changeActions[k] = (el) => fn(ui, el); // ui/display.js
 for (const [k, fn] of Object.entries(WORK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(DEFENCE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(INTEL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // intel-discipline
 for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // prisoners-tab: the rations and work selects (ui/prisoners.js)
 for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(TEAMINV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teaminv.js: how many of a picked supply

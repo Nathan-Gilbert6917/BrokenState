@@ -621,6 +621,41 @@ export function enemyThrow(b, u) {
   return false;
 }
 
+// Smoke to cover a retreat (combat.js flee): the turn a side (the enemy, or one third-side group) starts to fall back,
+// the first of its fleeing people who carries a smoke grenade (u.throwables.smokegren: throwables.js FLASH_KIT by kit,
+// out of the group's arsenal when it keeps one) spends an action throwing it between the group and whoever chases
+// them: AHEAD tiles from the middle of the retreating group toward the middle of the NEAREST pursuers, so the cloud
+// (throwables.js SMOKE: 2 tiles, 3 rounds, shots into or out of it −30) covers the rear of the group and the ground
+// the pursuers must cross. Only with a pursuer within NEAR tiles, once per group per battle, and only on the turn the
+// retreat starts (a later fleer with smoke does not throw). The rest of the thrower's turn: running (one action less).
+// Your side under "AI plays my side" does the same before it sounds the retreat (stealth.js botRetreatSmoke).
+export const COVER_SMOKE = { AHEAD: 2, NEAREST: 3, NEAR: 12 };
+const groupKey = (u) => (u.side === "third" ? `third${u.tgroup}` : u.side);
+// foes: combat.js foesOf(b, u). Returns true when the unit threw.
+export function coverSmoke(b, u, foes) {
+  const key = groupKey(u);
+  const rec = (b.coverSmoke || (b.coverSmoke = {}))[key] || (b.coverSmoke[key] = { turn: b.turn, done: false });
+  if (rec.done || rec.turn !== b.turn || u.ap < 1 || !(u.throwables && u.throwables.smokegren > 0)) return false;
+  const f = u.f || 0;
+  const group = b.units.filter((o) => groupKey(o) === key && active(o) && (o.f || 0) === f);
+  const gx = group.reduce((a, o) => a + o.x, 0) / group.length, gy = group.reduce((a, o) => a + o.y, 0) / group.length;
+  const near = (foes || []).filter((o) => active(o) && (o.f || 0) === f && !o.dormant && dist(o.x, o.y, gx, gy) <= COVER_SMOKE.NEAR)
+    .sort((a, c) => dist(a.x, a.y, gx, gy) - dist(c.x, c.y, gx, gy)).slice(0, COVER_SMOKE.NEAREST);
+  if (!near.length) return false;
+  const px = near.reduce((a, o) => a + o.x, 0) / near.length, py = near.reduce((a, o) => a + o.y, 0) / near.length;
+  const d = dist(gx, gy, px, py);
+  const k = d > 0 ? Math.min(COVER_SMOKE.AHEAD, d / 2) / d : 0; // never past halfway to them
+  let x = clamp(Math.round(gx + (px - gx) * k), 0, b.w - 1), y = clamp(Math.round(gy + (py - gy) * k), 0, b.h - 1);
+  const range = THROWABLES.smokegren.range;
+  if (dist(u.x, u.y, x, y) > range) { const s = range / dist(u.x, u.y, x, y); x = Math.round(u.x + (x - u.x) * s); y = Math.round(u.y + (y - u.y) * s); }
+  rec.done = true;
+  u.throwables.smokegren -= 1;
+  u.ap -= 1;
+  say(b, `${u.name} pops smoke to cover the retreat.`, u.side === "enemy" ? "danger" : "info");
+  throwAt(b, u, "smokegren", x, y, throwBlindOf(b, u, x, y) === true);
+  return true;
+}
+
 // The enemy's people (combat.js aiUnit): the ram, a ladder, storming, a grenade. Returns true when the turn is used.
 export function siegeAI(b, u) {
   if (u.kind !== "human" || !active(u)) return false;

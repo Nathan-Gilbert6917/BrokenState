@@ -32,6 +32,7 @@
 // Humvee's or MRAP's M2 by the numbers: vehicles.js TURRET_ODDS). Won, it is yours if it still runs (caravanraids.js).
 import { SUPPLIES, SUPPLY_KEYS, GEAR, FACTION_TYPES } from "./data.js";
 import { lootItem } from "./inventory.js";
+import { kitSource } from "./itemcond.js"; // the condition of a guard's gun by their kit (a contractor's kept like a soldier's)
 import { itemValue, itemCat } from "./valuation.js";
 import { hash01 } from "./skills.js";
 import { factionVehicles } from "./vehicles.js";
@@ -168,23 +169,23 @@ export const escortShort = (e) => (!e ? "" : e.tier === "armoured" ? `armoured e
 
 // ---------- the guards' own gear ----------
 // What each guard fought with (a fight resolved by the numbers: there were no bodies to search on a map): their
-// gun and armour from their kit (combat.js KITS, by key here so this module needs nothing from combat.js), worn,
-// and a few rounds each. dice(i, k): a number in [0, 1).
+// gun and armour from their kit (combat.js KITS, by key here so this module needs nothing from combat.js), in the
+// condition their kit keeps it (itemcond.js kitSource), and a few rounds each. dice(i, k): a number in [0, 1).
 export const GUARD_KIT = {
   guards: { weapons: ["pistol", "pistol", "shotgun", "revolver"], armor: [null, null, "vest"] },
   escorts: { weapons: ["huntrifle", "huntrifle", "leverrifle", "shotgun", "carbine"], armor: [null, "vest", "vest"] },
   contractors: { weapons: ["ar", "ar", "carbine", "carbine", "huntrifle"], armor: ["vest", "plate", "plate"] },
 };
 export function guardGear(kit, n, dice) {
-  const K = GUARD_KIT[kit] || GUARD_KIT.guards;
+  const K = GUARD_KIT[kit] || GUARD_KIT.guards, src = kitSource(GUARD_KIT[kit] ? kit : "guards");
   const gear = [];
   let ammo = 0;
   for (let i = 0; i < n; i++) {
     const w = K.weapons[Math.floor(dice(i, "w") * K.weapons.length) % K.weapons.length];
-    if (GEAR[w]) gear.push(lootItem(w, "raider", ["escortgun", i, dice(i, "wq")])); // itemcond.js: worn, as any fighter's
+    if (GEAR[w]) gear.push(lootItem(w, src, ["escortgun", i, dice(i, "wq")])); // itemcond.js: by their kit, as their bodies on a battle map (a hired gun's rifle looked after)
     const a = K.armor[Math.floor(dice(i, "a") * K.armor.length) % K.armor.length];
     // Armour that was shot through is often ruined: half of it is worth taking.
-    if (a && GEAR[a] && dice(i, "ak") < 0.5) gear.push(lootItem(a, "raider", ["escortarmor", i, dice(i, "aq")]));
+    if (a && GEAR[a] && dice(i, "ak") < 0.5) gear.push(lootItem(a, src, ["escortarmor", i, dice(i, "aq")]));
     ammo += 6 + Math.floor(dice(i, "ammo") * 12);
   }
   return { gear, supplies: { ammo } };

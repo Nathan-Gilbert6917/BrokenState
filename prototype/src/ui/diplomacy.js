@@ -20,11 +20,11 @@ import {
   ensureDiplo, relation, relWord, warsOf, enemyIn, brokerInfo, brokerCeasefire, joinWar, joinProblem, leaveWar, warById, pactsOf, knownAs,
 } from "../sim/diplomacy.js";
 import {
-  ensureAlliance, isMember, allianceMembers, inviteProblem, inviteToAlliance, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE, controlRadius,
+  ensureAlliance, isMember, allianceMembers, inviteProblem, inviteToAlliance, inviteBloc, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE, controlRadius,
 } from "../sim/alliance.js";
 import { bandsOf, knownBands, bandInfo, militaryStatus } from "../sim/hardcore-groups.js";
 import { ask } from "./confirm.js"; // joining or leaving a war, expelling a member, giving up a job ask first
-import { ensureBlocs, blocOf, blocMembers, blocTitle, foeText, leaveBlocSide, BLOC } from "../sim/blocs.js"; // AI blocs
+import { ensureBlocs, blocOf, blocMembers, blocTitle, foeText, leaveBlocSide, BLOC, previewVote, voteText, blocCarrier } from "../sim/blocs.js"; // AI blocs
 import {
   ensurePwars, pwarOf, goalText, cbText, termOptions, offerTerms, talkWait, talkVia, declareByPlayer, playerDeclareProblem, ceasefireUntil, ceasefireWith, PW,
 } from "../sim/playerwars.js"; // wars with you
@@ -194,14 +194,36 @@ export function groupCardExtras(state, f) {
     ${marketLine(m)}
     ${jobs.length ? `<div>${jobs.map((j) => `${JOB_TYPES[j.type].icon} ${esc(JOB_TYPES[j.type].name)} (${j.status === "offered" ? "offered" : "under way"})`).join(" · ")}</div>` : ""}
   </div>
-  <div class="row" style="margin-top:0.25rem">${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inv || `Invite them into ${ALLIANCE.NAME}`)}>Invite to the coalition</button>`}${declareRow(state, f)}</div>`;
+  <div class="row" style="margin-top:0.25rem">${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inviteTip(state, f, inv))}>Invite to the coalition</button>`}${declareRow(state, f)}</div>`;
 }
 // Their bloc (sim/blocs.js): its colour, the members, its foe; leave it if you stand with it.
 function blocLine(state, f) {
   const b = blocOf(state, f);
   if (!b) return "";
   const others = blocMembers(state, b).filter((m) => m !== f);
-  return `<div${tip(`A bloc: its members defend each other (each sends what it can spare to a raid on another), raid together, share what they scout and trade with each other first. It breaks when they fall out, when one betrays another, or when the danger that brought them together is gone. Founded day ${b.founded}.`)}>${swatch(b.color)}🛡 ${esc(cap(blocTitle(b)))}${others.length ? ` with ${others.map((m) => esc(nameOf(state, m.id))).join(", ")}` : ""} <span class="muted">against ${esc(foeText(state, b.foe))}</span>${b.player ? ` <span class="good">· you stand with them</span> <button class="mini" data-action="bloc-leave" data-id="${b.id}"${tip(`Leave their side: ${BLOC.LEAVE_GW} goodwill with each member`)}>Leave their side</button>` : ""}</div>`;
+  return `<div${tip(`A bloc: its members defend each other (each sends what it can spare to a raid on another), raid together, share what they scout and trade with each other first. It breaks when they fall out, when one betrays another, or when the danger that brought them together is gone. Founded day ${b.founded}.`)}>${swatch(b.color)}🛡 ${esc(cap(blocTitle(b)))}${others.length ? ` with ${others.map((m) => esc(nameOf(state, m.id))).join(", ")}` : ""} <span class="muted">against ${esc(foeText(state, b.foe))}</span>${b.player ? ` <span class="good">· you stand with them</span> <button class="mini" data-action="bloc-leave" data-id="${b.id}"${tip(`Leave their side: ${BLOC.LEAVE_GW} goodwill with each member`)}>Leave their side</button>` : ""}${blocInviteButton(state, b)}</div>`;
+}
+// "Invite the whole bloc" (sim/alliance.js inviteBloc): sent through a member that meets your terms; the tip shows
+// how the bloc would vote today (sim/blocs.js previewVote).
+const VOTE_RULE = "Each member votes agree, decline or break off (by its goodwill to you, its type, its ties to the others and the wars). Most agrees: the bloc joins together, those that broke off leave it. Otherwise the invited group joins alone only if it agreed.";
+function blocVoteTip(state, b, carrier) {
+  const v = previewVote(state, b, carrier);
+  const outcome = v.carries ? "the bloc would join together" : v.votes.some((x) => x.f === carrier && x.vote === "agree") ? `the bloc would stay out; ${carrier.name} would join alone` : "the bloc would stay out";
+  return `If you asked today: ${voteText(state, v)}: ${outcome}. ${VOTE_RULE}`;
+}
+function blocInviteButton(state, b) {
+  if (state.noBlocs || (b.foe && b.foe.kind === "player")) return "";
+  const ms = blocMembers(state, b);
+  if (!ms.some((m) => m.known) || ms.every((m) => isMember(state, m))) return "";
+  const carrier = blocCarrier(state, b, inviteProblem);
+  const why = carrier ? "" : `No member can take your invitation yet. ${VOTE_RULE}`;
+  return ` <button class="mini" data-action="al-invite-bloc" data-id="${b.id}" ${carrier ? "" : "disabled"}${tip(why || `Through ${carrier.name}. ${blocVoteTip(state, b, carrier)}`)}>Invite the whole bloc</button>`;
+}
+// The invite button's tip for one group: its bloc votes on it.
+function inviteTip(state, f, inv) {
+  if (inv) return inv;
+  const b = state.noBlocs ? null : blocOf(state, f);
+  return b && blocMembers(state, b).length > 1 ? `Invite them into ${ALLIANCE.NAME}: ${blocTitle(b)} votes on it. ${blocVoteTip(state, b, f)}` : `Invite them into ${ALLIANCE.NAME}`;
 }
 // A war with you (sim/playerwars.js): the goal, the reason, the score, weariness, and the terms you can offer.
 function playerWarBlock(state, f) {
@@ -285,7 +307,7 @@ export function radioDiploBlock(state, f) {
   <div class="row" style="margin-top:0.3rem">
     <button class="mini" data-action="dp-open" data-tab="market"${tip("Every group in reach, best price first")}>Market board</button>
     <button class="mini" data-action="dp-open" data-tab="affairs"${tip("Wars and pacts between the groups")}>World affairs</button>
-    ${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inv || `Invite them into ${ALLIANCE.NAME}`)}>Invite to the coalition</button>`}
+    ${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inviteTip(state, f, inv))}>Invite to the coalition</button>`}
   </div>`;
 }
 
@@ -397,9 +419,18 @@ function coalitionTab(state) {
       const v = councilVote(state, f);
       return `<tr><td><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</td><td style="color:${attColor(attitude(f))}">${Math.round(f.goodwill)}</td><td>${f.pact ? "yes" : "no"}</td>
         <td>${ensureJobs(state).list.filter((j) => j.fid === f.id && j.status === "done").length}</td><td>${v.yes + v.no ? `${v.yes} of ${v.yes + v.no}` : "—"}</td>
-        <td><button class="mini" data-action="al-invite" data-id="${f.id}" ${why ? "disabled" : ""}${tip(why || "Invite them")}>Invite</button>${why ? ` <span class="muted">${esc(why)}</span>` : ""}</td></tr>`;
+        <td><button class="mini" data-action="al-invite" data-id="${f.id}" ${why ? "disabled" : ""}${tip(inviteTip(state, f, why))}>Invite</button>${why ? ` <span class="muted">${esc(why)}</span>` : ""}</td></tr>`;
     }).join("")}</table>` : `<div class="muted small">Every group you know is already in.</div>`}
+    ${blocsToInvite(state)}
     ${A.history.length ? `<h3>Coalition record</h3><div class="small">${A.history.slice(0, 10).map((h) => `<div><span class="muted">Day ${h.day}</span> ${esc(h.text)}</div>`).join("")}</div>` : ""}`;
+}
+
+// The blocs you could invite whole (sim/blocs.js): each with its members and the vote it would hold today.
+function blocsToInvite(state) {
+  if (state.noBlocs) return "";
+  const list = (ensureBlocs(state).blocs || []).filter((b) => blocInviteButton(state, b));
+  if (!list.length) return "";
+  return `<h4${tip(VOTE_RULE)}>Blocs</h4>${list.map((b) => `<div class="small">${swatch(b.color)}${esc(cap(blocTitle(b)))}: ${blocMembers(state, b).map((m) => esc(nameOf(state, m.id))).join(", ")}${blocInviteButton(state, b)}</div>`).join("")}`;
 }
 
 // ---------- handlers (main.js registers them) ----------
@@ -441,6 +472,7 @@ export const DIPLO_ACTIONS = {
     if (ask(ui, d, "bloc-leave", { kind: "war", title: "Leave their side?", text: `Their fighters stop coming to your bases, and each member thinks less of you (${BLOC.LEAVE_GW}).`, yes: "Leave" })) return;
     ui.diploMsg = leaveBlocSide(state, Number(d.id));
   },
+  "al-invite-bloc": (state, ui, d) => { ui.diploMsg = inviteBloc(state, Number(d.id)); },
   "al-invite": (state, ui, d) => { const f = factionById(state, Number(d.id)); const msg = f ? inviteToAlliance(state, f) : ""; if (ui.radioWith != null) ui.radioMsg = msg; else ui.diploMsg = msg; },
   "al-expel": (state, ui, d) => {
     const f = factionById(state, Number(d.id));

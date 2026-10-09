@@ -15,7 +15,9 @@
 // - Odds. Each line is caught or missed by the world's dice (skills.js hash01: no draw from state.rng), per
 //   listener and day: ODDS[kind] × (0.7 + 0.03 × the listener's best Scouting), at most 90%. A military group's
 //   channel is encrypted: × 0.6 unless the listener has a Military encrypted radio. The catch-up counts × 1.25.
-//   A line once heard (by any of your receivers) is not heard again.
+//   A line once heard (by any of your receivers) is not heard again. A group that keeps radio discipline says less in
+//   the clear: × silentMult (groupcare.js GROUP_PRIORITIES silent). The groups listen in on you and on each other by
+//   the same rule (intel.js).
 // - Heard lines go to the log ("📻 Heard on X's channel: …") and the listener's list (p.heard / base.heard, newest
 //   first, LISTEN.HEARD_MAX). A raid or war party heading for one of your bases is a warning card (Prepare
 //   defenses / Noted) before the lookouts see it.
@@ -31,6 +33,8 @@ import { hash01 } from "./skills.js";
 import { attitude, changeGoodwill, groupHiveTarget } from "./factions.js";
 import { rumourFromNews } from "./survey.js";
 import { warsOf } from "./diplomacy.js";
+import { weightOf } from "./groupcare.js"; // a group's radio discipline (silent)
+import { INTEL } from "./intel.js"; // what the groups overhear of yours, and their own discipline
 import { noteHeard } from "./intelnotes.js"; // what you hear of a group (the State Map's estimates of its bases)
 
 export const LISTEN = {
@@ -45,8 +49,14 @@ export const ODDS_LABEL = {
   raidYou: "a raid on your base", raid: "raids and war parties", caravan: "caravans and convoys", scav: "scavengers out", hive: "war parties against the hives",
   war: "their wars", stores: "their stores", rumour: "rumours of places", talk: "talk about you",
 };
-export const hearOdds = (kind, scouting = 0, encrypted = false, bonus = 1) =>
-  Math.min(LISTEN.CAP, (ODDS[kind] ?? 0.4) * (LISTEN.SKILL_BASE + LISTEN.SKILL_STEP * Math.max(0, scouting)) * (encrypted ? LISTEN.ENCRYPTED : 1) * bonus);
+// From a base chance (ODDS, or intel.js INTEL.ODDS for what the groups overhear of yours): the same Scouting, encryption
+// and bonus rule for every listener, yours or a group's.
+export const oddsFrom = (base, scouting = 0, encrypted = false, bonus = 1) =>
+  Math.min(LISTEN.CAP, base * (LISTEN.SKILL_BASE + LISTEN.SKILL_STEP * Math.max(0, scouting)) * (encrypted ? LISTEN.ENCRYPTED : 1) * bonus);
+export const hearOdds = (kind, scouting = 0, encrypted = false, bonus = 1) => oddsFrom(ODDS[kind] ?? 0.4, scouting, encrypted, bonus);
+// A group that keeps radio discipline (groupcare.js GROUP_PRIORITIES silent: its own "Run silent", AI parity) says
+// less in the clear: × (1 − INTEL.AI_SILENT × its weight) on every line of its channel, for you and for the groups.
+export const silentMult = (f) => Math.max(0, 1 - INTEL.AI_SILENT * weightOf(f, "silent", 0));
 
 function chan(state) {
   const c = state.radioChan || (state.radioChan = { traffic: {}, got: {}, memo: {} });
@@ -55,7 +65,7 @@ function chan(state) {
 }
 const fname = (f, unknown = "a group you have not met") => (f ? (f.known ? f.name : unknown) : "someone");
 // The day a party on the move gets where it is going (by its path from here, no weather).
-function arrivalDay(state, q) {
+export function arrivalDay(state, q) {
   const rest = q.path.slice(q.idx);
   const h = rest.length > 1 ? travelHours(state, rest, { vehicle: !!q.vehicle, speed: q.vehicle ? 1 : 0.9, progress: q.progress || 0, weather: false, maxHours: 24 * 20 }).hours : 0;
   return Math.floor((state.hour + h) / 24);
@@ -86,13 +96,13 @@ export function channelTraffic(state, today = day(state)) {
             text: `a war party (strength about ${Math.round(q.strength || 0)}) is on its way to your ${b.name}, there ${when}.` });
         } else {
           const o = state.factions.find((x) => x.id === q.target.factionId);
-          put({ key: `raid:${lid(q.id)}`, kind: "raid", strength: Math.round(q.strength || 0), text: `a war party is on its way to ${o ? `${fname(o)}'s base at ` : ""}${tileLabel(state, q.target.tile)}, there ${when}.` });
+          put({ key: `raid:${lid(q.id)}`, kind: "raid", partyId: q.id, targetFaction: q.target.factionId, arrive, strength: Math.round(q.strength || 0), text: `a war party is on its way to ${o ? `${fname(o)}'s base at ` : ""}${tileLabel(state, q.target.tile)}, there ${when}.` });
         }
       } else if ((q.kind === "convoy" || q.kind === "caravan") && q.phase === "out") {
         const mine = q.baseId != null ? baseById(state, q.baseId) : null;
         const to = mine ? null : state.factions.find((x) => x.id === (q.targetFaction ?? q.toFaction));
         const where = mine ? `your ${mine.name}` : to ? `${fname(to)} at ${tileLabel(state, dest)}` : tileLabel(state, dest);
-        put({ key: `cv:${lid(q.id)}`, kind: "caravan", text: `a ${q.kind === "convoy" ? "trade convoy" : "caravan"} set out from ${tileLabel(state, q.path[0])} for ${where}, there ${whenText(state, arrivalDay(state, q))}.` });
+        put({ key: `cv:${lid(q.id)}`, kind: "caravan", partyId: q.id, baseId: mine ? mine.id : null, dest, text: `a ${q.kind === "convoy" ? "trade convoy" : "caravan"} set out from ${tileLabel(state, q.path[0])} for ${where}, there ${whenText(state, arrivalDay(state, q))}.` });
       } else if (q.kind === "scav" && q.scav && q.phase === "out") {
         put({ key: `sc:${lid(q.id)}`, kind: "scav", text: `their scavengers are headed for ${tileLabel(state, q.scav.site)}.` });
       }
@@ -188,7 +198,7 @@ function hearChannel(state, L, f, since, salt, bonus = 1) {
   const enc = f.type === "military" && !L.mil;
   for (const item of [...(c.traffic[f.id] || [])]) {
     if (item.day < since || c.got[item.key] != null) continue;
-    if (hash01(state.seed, "listen", salt, L.key, item.key, day(state)) >= hearOdds(item.kind, L.scouting, enc, bonus)) continue;
+    if (hash01(state.seed, "listen", salt, L.key, item.key, day(state)) >= hearOdds(item.kind, L.scouting, enc, bonus) * silentMult(f)) continue;
     out.push(hear(state, L, f, item));
   }
   return out;

@@ -20,7 +20,7 @@
 // Guns: cal = calibre (data-ammo.js CALIBERS), cap = magazine, rel = jam % a shot for a new gun on factory rounds
 // (section 14), common: false = fires typed rounds only (the .50). Automatic weapons have fire modes (section 20, R12):
 // modes = { single, burst, auto }: { rounds a pull of the trigger, aim for each round }; ammo stays the default a shot.
-// heavy: { mob: −1 tile an action, brace: +aim when the shooter did not move this turn }; brace (a number): aim when
+// heavy: { mob: −1 tile an action, brace: +aim when the gun rests on half cover next to the shooter (its bipod) }; brace (a number): aim when
 // the shooter DID move this turn (a big rifle snapped up off the shoulder); pierce: cover counts that many steps less.
 // sniper: the enemy AI keeps its distance with it (section 22). launcher: fired by launchers.js ("launch"), never the
 // shoot code (dmg: a round inside its arming range, hitting as a slug); mount: the M2 on a vehicle's turret.
@@ -48,7 +48,7 @@ export const GUN_GEAR = {
   ak:          { name: "AK-pattern rifle",       slot: W, skill: SH, power: 7.5, req: 9,  value: 110, noise: 3, weight: 3.6, cat: "automatic",
                  desc: "A battered 7.62×39 rifle that never stops working: 30 rounds, single, burst or full auto, a heavy kick. Needs Shooting 9." },
   lmg:         { name: "Light machine gun",      slot: W, skill: SH, power: 9.5, req: 12, value: 240, noise: 4, weight: 8, cat: "automatic",
-                 desc: "An M249 with a 100-round box: a wall of 5.56. Heavy (a tile less a move); steady when it has not moved this turn (+8 aim). The best gun for overwatch. Needs Shooting 12." },
+                 desc: "An M249 with a 100-round box: a wall of 5.56. Heavy (a tile less a move); steady on its bipod when rested on half cover next to the gunner in the line of fire (+8 aim). The best gun for overwatch. Needs Shooting 12." },
   // ---------- shotguns ----------
   dbshotgun:   { name: "Double-barrel shotgun",  slot: W, skill: SH, power: 4.5, req: 3,  value: 32,  noise: 3, weight: 3.2, cat: "shotgun",
                  desc: "Two barrels, two shells, then break it open and reload. Brutal up close and nearly never fails. Saw it short for a sawn-off. Needs Shooting 3." },
@@ -240,7 +240,7 @@ export const ROSTER_HELP = `<b>Guns.</b> Pistols: the .22 target pistol (quiet, 
   long gun short of the .50, −15 if the shooter moved this turn) and the .50 anti-materiel rifle (through cover and
   through people, .50 rounds only, −20 if moved). Automatic weapons (the submachine gun, the AK, the assault rifle and the
   light machine gun) fire single shots, bursts or full auto. The machine gun is heavy (a tile less a move) and steady when
-  it has not moved (+8). Every gun fires its own calibre.
+  its bipod rests on half cover next to the gunner in the line of fire (+8; the .50's built-in bipod the same). Every gun fires its own calibre.
   <br><b>Melee.</b> Quick weapons (knives, the hatchet, the tomahawk, the hammer, the baton) strike for 1 action instead of the
   turn: strike, then step away (one strike a turn). Clubs and heavy weapons can stagger (the target loses an action next
   turn; not brutes or bosses); blades can make people bleed (5 a turn for two turns). Spears strike 2 tiles off in a

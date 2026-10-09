@@ -6,7 +6,7 @@ import { skill, survivorById, baseById, atBase } from "../sim/world.js";
 import { assignStations } from "../sim/buildings.js";
 import { toManual } from "../sim/work.js";
 import {
-  skillProgress, pendingPerks, PERK_TREE, MILESTONES, hasPerk, perkReason, choosePerk, CAP_USE, CAP_STUDY, CAP_FIGHT, xpNeed,
+  skillProgress, pendingPerks, PERK_TREE, EARNED_PERKS, MILESTONES, hasPerk, perkReason, choosePerk, CAP_USE, CAP_STUDY, CAP_FIGHT, xpNeed,
   lessonOf, bestLesson, learnersFor, learnReason, teachRate, TEACH_GAP, MAX_LEARNERS, bookDef, bookHours, readReason, READ_HOURS, BOOK_XP,
 } from "../sim/skills.js";
 
@@ -23,7 +23,7 @@ export function skillsBlock(state, s) {
   const pend = pendingPerks(s);
   const rows = SKILLS.map((k) => {
     const p = skillProgress(s, k);
-    const perks = (s.perks || []).filter((id) => Object.values(PERK_TREE[k] || {}).some((l) => l.some((x) => x.id === id)));
+    const perks = (s.perks || []).filter((id) => Object.values(PERK_TREE[k] || {}).some((l) => l.some((x) => x.id === id)) || (EARNED_PERKS[id] && EARNED_PERKS[id].skill === k)); // earned perks too (training.js Professor)
     const t = `${SKILL_NAMES[k]} ${p.level}${p.level !== p.raw ? ` (${p.raw} trained, traits ${p.level - p.raw >= 0 ? "+" : ""}${p.level - p.raw})` : ""}. ${p.maxed ? "At the top (20)." : `XP ${n1(p.xp)} of ${p.need} to ${p.raw + 1}.`} Today +${n1(p.today)}${p.capped ? " (daily use cap reached)" : ""}.${p.nextMs ? ` Next perk point at ${p.nextMs}.` : ""}${perks.length ? ` Perks: ${perks.map((id) => findPerk(id).name).join(", ")}.` : ""}`;
     return `<div class="skillrow"${tip(t)}>
       <span class="sk-name">${SKILL_NAMES[k]}</span>
@@ -38,7 +38,7 @@ export function skillsBlock(state, s) {
 
 const findPerk = (id) => {
   for (const tiers of Object.values(PERK_TREE)) for (const list of Object.values(tiers)) for (const p of list) if (p.id === id) return p;
-  return { name: id, desc: "" };
+  return EARNED_PERKS[id] || { name: id, desc: "" };
 };
 
 // The skill tree: a row per skill, a column per milestone, two perk nodes in each.

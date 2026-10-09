@@ -22,14 +22,17 @@
 //   it, so at most one well per CLAIM.WELL_PER_PEOPLE (4) people at the base counts, the best wells first.
 import { day, log, hub, atBase } from "./world.js";
 import { TERRAIN } from "./data.js";
-import { attitude } from "./factions.js";
+import { attitude, changeGoodwill as changeGoodwillLazy } from "./factions.js";
+import { changeRelation } from "./diplomacy.js"; // a group's claims taken by another group's base (overwriteClaims)
 import { tileLabel, partyTile, carried, takeSupply } from "./parties.js";
 import * as Weather from "./weather.js";
 
 // Hardcore bands on the road (hardcore-groups.js bandsOf, read here without the import: orders.js loads this module early).
 const bandsOf = (state) => (state.hardcore && state.hardcore.groups ? state.hardcore.groups.bands : []);
 
-export const CLAIM = { HOURS: 2, SCRAP: 3, WELL_HOURS: 24, WELL_SCRAP: 15, WELL_PARTS: 1, WELL_LOW: 0.2, WELL_PER_PEOPLE: 4, BASE_RADIUS: 2, HIVE_RADIUS: 2 };
+// TAKEN: what a claim taken from a group costs with it, a tile (goodwill toward you when your Occupy order takes it,
+// occupy.js; relations between two groups when one's base takes the other's, overwriteClaims).
+export const CLAIM = { HOURS: 2, SCRAP: 3, WELL_HOURS: 24, WELL_SCRAP: 15, WELL_PARTS: 1, WELL_LOW: 0.2, WELL_PER_PEOPLE: 4, BASE_RADIUS: 2, HIVE_RADIUS: 2, TAKEN: -2 };
 // Well yield a day by terrain; beside water (a river or lake next to the tile) WELL_SHORE instead.
 export const WELL_YIELD = { plains: 6, forest: 4, hills: 2, suburb: 2, city: 2, mountain: 0, water: 0 };
 export const WELL_SHORE = 10;
@@ -88,21 +91,50 @@ export function releaseClaim(state, tile, why = "") {
   return true;
 }
 // Every claim within `radius` of a tile goes to newOwner (a group's id), or is wiped (newOwner null). Returns how
-// many of yours were taken. why: for the log line.
+// many of yours were taken. why: for the log line. Another group's claims taken by a group: their relations fall
+// CLAIM.TAKEN a tile (AI parity: your Occupy order taking a group's claims costs goodwill with it the same way, occupy.js).
 export function overwriteClaims(state, tile, radius, newOwner, why = "") {
   if (!state.claims) return 0;
   let taken = 0;
   const lost = [];
+  const by = typeof newOwner === "number" ? state.factions.find((f) => f.id === newOwner) : null;
   for (const id of state.grid.within(tile, radius)) {
     const c = state.claims[id];
     if (!c || c.owner === newOwner) continue;
     if (c.owner === "player") { taken++; lost.push(id); }
+    else if (by && typeof c.owner === "number") { const o = state.factions.find((f) => f.id === c.owner && f.alive); if (o) changeRelation(state, by, o, CLAIM.TAKEN); }
     if (newOwner == null) delete state.claims[id];
     else state.claims[id] = { owner: newOwner, since: state.hour, ...(c.well ? { well: c.well } : {}) };
   }
   if (lost.length) log(state, `${lost.length === 1 ? `Your claim at ${tileLabel(state, lost[0])} is` : `${lost.length} of your claims near ${tileLabel(state, tile)} are`} lost${why ? `: ${why}` : "."}`, "danger");
   return taken;
 }
+// A new base of yours (Build outpost, parties.js; Occupy, occupy.js) takes every group's claim within
+// CLAIM.BASE_RADIUS tiles, as a group's new base takes yours and any other group's (factions.js expansion:
+// overwriteClaims with the same radius). claimsTaken: what it would take, by group ([{ f, n, gw }]: gw the goodwill it
+// costs with that group, CLAIM.TAKEN a tile). takeGroupClaims: takes them, and the goodwill falls ("your expansion near
+// their land": a growth grievance, playerwars.js). Returns the list.
+export function claimsTaken(state, tile) {
+  const by = new Map();
+  if (state.claims) for (const id of state.grid.within(tile, CLAIM.BASE_RADIUS)) {
+    const c = state.claims[id];
+    if (!c || typeof c.owner !== "number") continue;
+    const f = state.factions.find((o) => o.id === c.owner && o.alive);
+    if (f) by.set(f, (by.get(f) || 0) + 1);
+  }
+  return [...by].map(([f, n]) => ({ f, n, gw: CLAIM.TAKEN * n }));
+}
+export function takeGroupClaims(state, tile) {
+  const list = claimsTaken(state, tile);
+  if (state.claims) for (const id of state.grid.within(tile, CLAIM.BASE_RADIUS)) {
+    const c = state.claims[id];
+    if (c && typeof c.owner === "number") state.claims[id] = { owner: "player", since: state.hour, ...(c.well ? { well: c.well } : {}) };
+  }
+  for (const x of list) changeGoodwillLazy(state, x.f, x.gw, "your expansion near their land: you took their claims");
+  return list;
+}
+// "Long Haul Co. (2 claims: goodwill -4)" for the planner and the orders card.
+export const claimsTakenText = (list) => list.map((x) => `${x.f.known ? x.f.name : "a group"} (${x.n} claim${x.n === 1 ? "" : "s"}: goodwill ${x.gw})`).join(", ");
 export const playerClaims = (state) => (state.claims ? Object.keys(state.claims).filter((k) => state.claims[k].owner === "player").map(Number) : []);
 export const claimedLand = (state) => playerClaims(state).filter((id) => state.tiles[id] && state.tiles[id].terrain !== "water").length;
 
