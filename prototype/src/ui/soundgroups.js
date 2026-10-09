@@ -50,7 +50,8 @@ export const GROUPS = [
   { id: "ui.clicks", label: "Clicks and windows", max: 1.5, tip: "Button clicks, windows opening and closing, items picked up and put down" },
   { id: "ui.cards", label: "Card chimes", max: 1.5, tip: "The chime as a card comes up (routine, warning, crisis) and good news" },
   { id: "ui.stings", label: "Alerts and stings", max: 1.5, tip: "A new warning's bell, the raid alarm, the horde sting, a battle starting" },
-  { id: "music", label: "Music", max: 1, reserved: true, tip: "The music" }, // reserved: the music bus joins it at integration (drop `reserved` then)
+  { id: "music", label: "Music", max: 1, tip: "The music (ui/music.js): made on the spot, following what is going on. 100% is its usual level" },
+  { id: "music.stings", label: "Stings and phrases", max: 1.5, tip: "The music's short phrases over the score: a battle won or lost, the elegy when someone dies, a base lost" },
 ];
 export const GROUP_IDS = GROUPS.map((g) => g.id);
 const BY_ID = new Map(GROUPS.map((g) => [g.id, g]));

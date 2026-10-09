@@ -282,6 +282,12 @@ console.log("Menu and help");
 {
   const html = soundOptionsHtml({ sound: { master: 0.5, sfx: 0.8, amb: 0.3, mute: false, muteBlur: true } });
   check(/<h3>Sound<\/h3>/.test(html) && (html.match(/type="range"/g) || []).length === 9 && /value="50"/.test(html) && /value="30"/.test(html) && /max="150" step="5" value="100" data-action="snd-grp" data-g="weapons"/.test(html) && /data-g="zombies"/.test(html) && !/data-g="zombies.moans"/.test(html), "the Sound section: the Master, Effects and Ambience buses at the saved levels and the six top groups (0–150%, 100% by default; the parts only in the Advanced mixer)");
+  // The music (ui/music.js): its volume is the mixer's Music group, its on/off the group's switch; an early save's keys move there.
+  const mo = soundOptions({ sound: { music: 0.25, musicOn: false, musicFollow: false } }), md = soundOptions({ sound: {} });
+  check(mo.groups.music === 0.5 && mo.off.music === true && mo.musicFollow === false && !("music" in mo) && !("musicOn" in mo) && md.musicFollow === true && SOUND_DEFAULTS.musicFollow === true && !("music" in md.groups),
+    "Music: an early save's Music slider (25%) becomes the Music group at the same loudness (50%) and its off switch; intensity follows the action by default");
+  check(/data-action="snd-opt" data-k="music"/.test(html) && /data-action="snd-opt" data-k="musicFollow"/.test(html) && /Music intensity follows the action/.test(html) && /data-action="mus-pick"/.test(html) && /data-action="mus-test"/.test(html) && /data-g="music"/.test(html),
+    "Music on / off, Music intensity follows the action, the Music test, the Music group's slider");
   const g = soundOptions({ sound: { guns: 2 } }), g2 = soundOptions({ sound: { guns: 1.25 } }), g3 = soundOptions({ sound: {} });
   check(g.groups["weapons.guns"] === 1.5 && g.groups["weapons.blasts"] === 1.5 && g2.groups["weapons.handling"] === 1.25 && JSON.stringify(g3.groups) === "{}" && !("guns" in g) && !("steps" in g3), "an old Gunfire volume becomes the Gunfire, Explosions and Reloads groups (clamped at 150%); the old keys are dropped");
   check(/data-action="snd-opt" data-k="on"/.test(html) && /data-action="snd-opt" data-k="muteBlur"/.test(html) && /data-action="snd-test"/.test(html), "sound on / off, mute when not focused, Hear a sound");

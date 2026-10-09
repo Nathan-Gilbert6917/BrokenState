@@ -18,3 +18,6 @@ Desktop.ini
 sfx-preview/
 vd-preview/
 amb-preview/
+
+# Music previews (prototype/tools/musicpreview/main.cjs)
+music-preview/

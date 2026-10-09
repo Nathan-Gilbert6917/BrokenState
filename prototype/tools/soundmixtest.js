@@ -1,6 +1,6 @@
 // The sound mixer (ui/soundgroups.js, Settings → Sound in ui/audio.js): headless checks with no speakers.
 // - The registry: every group has a label, a slider top, a parent that exists; the hierarchy's maths (a child × its
-//   parent, squared sliders, off is 0, the reserved Music group).
+//   parent, squared sliders, off is 0, the Music group the music bus plays through (with its Stings part).
 // - Every sound is in a group: every name the modules register (ui/audio.js VOICES and its throttle LIMITS, the gun
 //   voices, handling and blasts of gunsfx/blastsfx, the dead's cues, the people's cues, the melee, step and gear kits,
 //   the edge heartbeat, the ambience's beds) maps to a group by name, not by a fallback.
@@ -47,6 +47,7 @@ function stub() {
 
 const SG = await import("../src/ui/soundgroups.js");
 const AU = await import("../src/ui/audio.js");
+const MU = await import("../src/ui/music.js"); // the music's names (its bus goes through the Music group)
 const G = await import("../src/ui/gunsfx.js");
 const B = await import("../src/ui/blastsfx.js");
 const Z = await import("../src/ui/zombiesfx.js");
@@ -63,10 +64,10 @@ console.log("Registry");
   check(JSON.stringify(SG.TOP_GROUPS) === JSON.stringify(["weapons", "zombies", "people", "world", "ui", "music"]), `the top groups: ${SG.TOP_GROUPS.join(", ")}`);
   const want = {
     weapons: ["guns", "blasts", "handling", "melee"], zombies: ["moans", "attacks", "shrieks", "special", "crowd", "hordes", "hive"],
-    people: ["voices", "steps", "gear", "vehicles", "doors", "downed"], world: ["weather", "wildlife", "base", "heartbeat"], ui: ["clicks", "cards", "stings"], music: [],
+    people: ["voices", "steps", "gear", "vehicles", "doors", "downed"], world: ["weather", "wildlife", "base", "heartbeat"], ui: ["clicks", "cards", "stings"], music: ["stings"],
   };
-  check(Object.entries(want).every(([p, kids]) => JSON.stringify(SG.childrenOf(p)) === JSON.stringify(kids.map((k) => `${p}.${k}`))), "each group's parts as asked (Weapons 4, Zombies 7, People 6 with Vehicles and Doors, World 4 with Base and camp, Interface 3, Music none)");
-  check(SG.groupDef("music").reserved && SG.groupDef("music").max === 1, "Music is reserved for the music bus (one slider, 0–100%)");
+  check(Object.entries(want).every(([p, kids]) => JSON.stringify(SG.childrenOf(p)) === JSON.stringify(kids.map((k) => `${p}.${k}`))), "each group's parts as asked (Weapons 4, Zombies 7, People 6 with Vehicles and Doors, World 4 with Base and camp, Interface 3, Music 1)");
+  check(!SG.groupDef("music").reserved && SG.groupDef("music").max === 1 && SG.groupDef("music.stings").max === 1.5, "Music: the music bus plays through it (no longer reserved; its slider 0–100%, 100% the usual level), with a Stings and phrases part");
   SG.useMix({ groups: {}, off: {} });
   check(ids.every((id) => SG.groupGain(id) === 1), "at the defaults every group's gain is 1");
   SG.setGroupVolume("zombies", 0.8); SG.setGroupVolume("zombies.shrieks", 0.5);
@@ -96,6 +97,7 @@ console.log("Every sound in a group");
     "ambience beds": [...Object.keys(AU.AMB_LEVELS), "crowd", "mapHorde", "hive", "murmur"],
     "edge heartbeat": ["heartbeat"],
     "ambience weather and wildlife": [...AM.AMB_SOUNDS.weather, ...AM.AMB_SOUNDS.wildlife],
+    "music.js names": MU.MUSIC_SOUND_NAMES,
   };
   for (const [what, names] of Object.entries(lists)) {
     const miss = [...new Set(names)].filter((n) => !explicit(n, AU.VOICES[n]) || !SG.groupDef(explicit(n, AU.VOICES[n])));
@@ -112,7 +114,7 @@ console.log("Every sound in a group");
   let threw = false; try { SG.assignGroup(["x"], "no.such"); } catch { threw = true; }
   check(SG.groupOf("zTestOnly") === "zombies.special" && threw && SG.groupOf("q", { group: "ui.cards" }) === "ui.cards", "assignGroup puts sounds in a group in one line (an unknown group throws); a voice's own group wins");
   delete SG.SOUND_GROUP.zTestOnly;
-  check(Object.keys(AU.GROUP_PREVIEW).length >= SG.GROUP_IDS.length - 1 && SG.GROUP_IDS.every((id) => id === "music" || AU.GROUP_PREVIEW[id]), "every group but the reserved Music has a ▶ preview");
+  check(SG.GROUP_IDS.every((id) => AU.GROUP_PREVIEW[id]), "every group has a ▶ preview (Music and its Stings: a short phrase over the music)");
 }
 
 // ---------- 3. migration: the same loudness ----------
@@ -277,7 +279,7 @@ console.log("Live, save and load");
   AU.SOUND_ACTIONS["snd-mix"]();
   const rows = (h) => (h.match(/class="sndrow/g) || []).length;
   check(rows(short) === 3 + SG.TOP_GROUPS.length && rows(adv) === 3 + SG.GROUP_IDS.length && /data-action="snd-preset"/.test(short) && /data-action="snd-reset"/.test(short) && /Advanced mixer/.test(short), `the panel: ${rows(short)} rows (Master, Effects, Ambience, the top groups), a Mix preset list, Reset; the Advanced mixer ${rows(adv)} rows`);
-  check((adv.match(/data-action="snd-gon"/g) || []).length === SG.GROUP_IDS.length && (adv.match(/data-action="snd-prev"/g) || []).length === SG.GROUP_IDS.length - 1 && /disabled aria-label="Music"|aria-label="Music" disabled/.test(adv), "the Advanced mixer: an On box on every group, ▶ on each but Music (reserved, its slider disabled)");
+  check((adv.match(/data-action="snd-gon"/g) || []).length === SG.GROUP_IDS.length && (adv.match(/data-action="snd-prev"/g) || []).length === SG.GROUP_IDS.length && !/aria-label="Music" disabled/.test(adv), "the Advanced mixer: an On box and ▶ on every group, the Music slider live");
   let errs = 0;
   const warn = console.warn; console.warn = () => { errs++; };
   for (const id of SG.GROUP_IDS) AU.SOUND_ACTIONS["snd-prev"](null, null, { g: id });
