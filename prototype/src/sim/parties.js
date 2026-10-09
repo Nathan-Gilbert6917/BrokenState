@@ -106,6 +106,7 @@ export const MISSIONS = {
   help:        { name: "Relief squad",     desc: "Help a group under attack.", hidden: true },
   route:       { name: "Convoy",           desc: "Trade-route convoy.", hidden: true },
   retreat:     { name: "Retreat",          desc: "People who left a base before it fell, on their way to another (conquest.js).", hidden: true },
+  formed:      { name: "Field",            desc: "A team formed at one of your bases (Form a team…): it waits on the base's tile for orders (teamform.js).", hidden: true },
   moveout:     { name: "Moving out",       desc: "People who left a crowded base, on their way to found an outpost or to another of your bases (moveout.js).", hidden: true },
   flee:        { name: "Refugee",          desc: "Hardcore mode: the survivors who fled when Calder fell, on the road until they found their first hub (hardcore-start.js).", hidden: true },
   // With no base at all (hardcore's first hub, the exiles): a staging camp built up into the hub (staging.js).
