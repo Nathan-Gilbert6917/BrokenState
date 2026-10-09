@@ -338,8 +338,15 @@ function syncEditor(state, ui, hooks) {
 // The Watching panel goes under the Running orders (or the paused banner) and stops above the Layers box.
 function placeWatchlist() {
   const el = document.getElementById("watchlist");
-  if (!el || el.classList.contains("hidden")) return;
-  const wrap = el.parentElement, orders = document.getElementById("orders"), legend = document.getElementById("legend"), banner = document.getElementById("banner");
+  if (!el || el.classList.contains("hidden") || el.classList.contains("ov-placed")) return; // moved by the player (ui/overlaydrag.js)
+  const wrap = el.parentElement, banner = document.getElementById("banner");
+  // The running orders (above) and the Layers box (below) count only while they are in its column, in their half of
+  // the map (either can be moved elsewhere).
+  const inColumn = (id, top) => {
+    const b = document.getElementById(id);
+    return b && b.offsetLeft < el.offsetLeft + el.offsetWidth && b.offsetLeft + b.offsetWidth > el.offsetLeft && (b.offsetTop + b.offsetHeight / 2 < wrap.clientHeight / 2) === top ? b : null;
+  };
+  const orders = inColumn("orders", true), legend = inColumn("legend", false);
   const gap = Math.round((parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) * 0.5);
   let top = gap;
   if (orders && !orders.classList.contains("hidden") && orders.offsetHeight) top = orders.offsetTop + orders.offsetHeight + gap;

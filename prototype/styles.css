@@ -919,3 +919,16 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 @keyframes fp-in { from { opacity: 0; transform: translateY(-0.35rem) scale(0.98); } }
 @keyframes fp-in-up { from { opacity: 0; transform: translateY(0.35rem) scale(0.98); } }
 @media (prefers-reduced-motion: reduce) { #left, #right, #log, .fp-anim { animation: none !important; } .gut, .gut-grip { transition: none; } }
+
+/* ---------- Moving the boxes over the map (ui/overlaydrag.js) ----------
+   Headers, folded tabs and the minimap's grip are the handles: a move cursor, no text selection and no browser
+   panning under a finger. Nothing eases while a box is dragged; the box being dragged stays on top. */
+#orders .fp-head, #watchlist .fp-head, #legend .fp-head, #orders > .fp-tab, #watchlist > .fp-tab, #legend > .fp-tab,
+#alerts .al-fold, #alerts .al-pill, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip, #mm-show { touch-action: none; user-select: none; -webkit-user-select: none; }
+#orders .fp-head, #watchlist .fp-head, #legend .fp-head, #alerts .gd-head, #devpanel > .ov-devhead, #minimap .ov-grip { cursor: move; }
+#minimap .ov-grip { position: absolute; top: 0.2rem; right: 0.2rem; padding: 0 0.35rem; font-size: 0.8rem; line-height: 1.2; background: rgba(20,22,26,0.85); opacity: 0.75; }
+#minimap .ov-grip:hover, #minimap .ov-grip:focus-visible { opacity: 1; color: var(--accent); }
+body.ov-dragging, body.ov-dragging * { cursor: grabbing !important; user-select: none !important; }
+body.ov-dragging #mapwrap > * { transition: none !important; animation: none !important; }
+#mapwrap > .ov-drag { z-index: 9 !important; box-shadow: 0 10px 28px rgba(0,0,0,0.6); outline: 1px dashed var(--accent); outline-offset: 2px; }
+#alerts.ov-drag { outline: none; box-shadow: none; }
