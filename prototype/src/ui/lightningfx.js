@@ -11,25 +11,29 @@
 // What: the land brightens (up in LIGHTNING.rise ms, gone over LIGHTNING.decay ms), most round the strike; the bolt (a
 // jagged line with forks, made once per strike, from the clouds or the top of the view down to the tile: big zoomed
 // in, small zoomed out with the glow round it regional) is gone in about LIGHTNING.bolt ms with a faint afterglow. At
-// night the flash lifts the night shade round the strike for a moment (a contrast-keeping lift, colour-dodge); the
-// storm's clouds brighten with it; a strike in a fog bank is a diffuse glow with no bolt. Drawn by ui/render.js right
-// after the night shade, before bases, teams, labels, icons and the selection (they are never flashed).
+// night the flash lifts the night shade for a moment, most round the strike (holes in the shade, as the lights make:
+// ui/nightfx.js nightFlash, so the land shows as it is, not washed out); the storm's clouds brighten with it; a strike
+// in a fog bank is a diffuse glow with no bolt. ui/render.js calls lightningFrame before the night shade and
+// drawLightning after it, before bases, teams, labels, icons and the selection (they are never flashed).
 // Comfort: never more than LIGHTNING.perSec flashes (flickers count) in any LIGHTNING.window ms; the whole map's
-// brightening is capped (LIGHTNING.global); Display → Lightning flashes: Full, Soft (no whole-map brightening and no
-// flickers: the bolt and a local glow) or Off (the thunder only); Reduce motion makes Full Soft.
-// Cost: nothing is drawn while no flash runs (one comparison a frame); a flash is a fill or two and a few strokes,
-// straight onto the map at the overlay point; the strikes are a small pool of preallocated slots. The hour is in no
-// cache key. Not in the timelapse (days fly by: it would strobe) or the minimap.
+// brightening is capped (LIGHTNING.screen.all, lift.all); Display → Lightning flashes: Full, Soft (no whole-map
+// brightening and no flickers: the bolt and a local glow) or Off (the thunder only); Reduce motion makes Full Soft.
+// Cost: nothing is drawn while no flash runs (one comparison a frame); a flash paints a small light map (a quarter of
+// the map's pixels each way, reused) and puts it on with one "screen" draw, then strokes the bolt; the night shade's
+// own small overlay takes the holes. The strikes are a small pool of preallocated slots. The hour is in no cache key.
+// Not in the timelapse (days fly by: it would strobe) or the minimap.
 // Pure UI: reads the state, never changes it, never touches the world's dice.
 //
-//   drawLightning(ctx, v)       ui/render.js, every drawn map frame: strikes due, then the flashes (v: below)
+//   lightningFrame(v)           ui/render.js, every drawn map frame before the night shade: strikes due, this frame's
+//                               flash, the shade's lift (v: below)
+//   drawLightning(ctx[, v])     ui/render.js after the night shade: the light and the bolts (with v: the frame first)
 //   lightningWants(now)         a flash is running or a strike is due: render.js draws the frame
 //   strikeNow(state, tile, o)   a strike now (dev tools, tests, screenshots); false when the cap says no
 //   setLightning(level, calm)   ui/display.js: the Display option; lightningLevel() the one in force
 //   seedLightning(n), resetLightning(), lightningStats, LIGHTNING
 import { visibleFronts, weatherAt } from "../sim/weather.js";
 import { ambLightning, mapSky } from "./ambweather.js";
-import { nightLevel, shadeAlpha, mapHour, nightShade } from "./nightfx.js";
+import { nightLevel, shadeAlpha, mapHour, nightShade, nightFlash } from "./nightfx.js";
 import { LIGHTNING_LEVELS } from "./displayopts.js";
 
 const SQ3 = Math.sqrt(3);
@@ -42,9 +46,11 @@ export const LIGHTNING = {
   rise: [60, 120], decay: [300, 500], // ms: the brightening up and down
   bolt: 200, after: 650,   // ms: the bolt gone, the afterglow gone
   flicker: { three: 0.08, two: 0.22, gap: [70, 150], dim: [0.65, 0.9] },
-  // Brightening (gain over the land: 1 + this): the whole map at most `global`, round the strike `local` more; by
-  // day (first) to full night (second): the night shade lifts.
-  global: [0.16, 0.42], local: [0.38, 1.3],
+  // The light (a "screen" over the land: s lifts a pixel d to d + s(1 - d)): the whole map at most `screen.all`, round
+  // the strike `screen.local`, by day (first) to full night (second). At night the shade itself lifts instead
+  // (ui/nightfx.js nightFlash): all over by up to `lift.all` of it (Full), round the strike by up to `lift.local`, so
+  // at full night the flash costs no extra pass over the map (the shade's own small overlay takes it).
+  screen: { all: [0.12, 0], local: [0.3, 0] }, lift: { all: 0.35, local: 0.85 },
   glowTiles: 3.2,          // the local glow's radius in tiles (at least glowMin device px)
   glowMin: 70,
   boltWorld: 230,          // the bolt's height in world px (5 tiles), at least boltMin device px
@@ -52,8 +58,6 @@ export const LIGHTNING = {
   wash: 0.16,              // the storm's clouds brighten (a screen pass, this strong at the peak)
 };
 const POOL = 4, MAIN = 17, BR = 3, BRP = 6;
-const DODGE = "153,158,168"; // colour-dodge source: gain 1 + α·c/(1-c), about 1 + 1.6α (bluer)
-const DODGE_K = 1.6;
 
 // ---------- the option ----------
 const opt = { level: "full", calm: false };
@@ -105,6 +109,7 @@ export function resetLightning() {
   live.length = 0;
   fogs = [];
   srcAt = -1e9; lastFrame = -1e9; nextDue = Infinity;
+  nightFlash.n = 0; nightFlash.all = 0; FR.on = false;
   for (const k of Object.keys(lightningStats)) lightningStats[k] = 0;
 }
 flashes.fill(-1e12);
@@ -151,7 +156,7 @@ function makeBolt(s) {
   const m = s.main;
   const u0 = (rnd() - 0.5) * 0.3;
   m[0] = u0; m[1] = 0; m[(MAIN - 1) * 2] = 0; m[(MAIN - 1) * 2 + 1] = 1;
-  for (let step = MAIN - 1, amp = 0.16; step > 1; step >>= 1, amp *= 0.55) {
+  for (let step = MAIN - 1, amp = 0.2; step > 1; step >>= 1, amp *= 0.62) {
     for (let i = step >> 1; i < MAIN - 1; i += step) {
       const a = i - (step >> 1), b = i + (step >> 1);
       m[i * 2] = (m[a * 2] + m[b * 2]) / 2 + (rnd() - 0.5) * amp;
@@ -162,10 +167,10 @@ function makeBolt(s) {
   for (let k = 0; k < s.brN; k++) {
     const at = 2 + Math.floor(rnd() * 9), side = rnd() < 0.5 ? -1 : 1;
     let u = m[at * 2], v = m[at * 2 + 1];
-    const len = 0.14 + rnd() * 0.22, o = k * BRP * 2;
+    const len = 0.18 + rnd() * 0.24, o = k * BRP * 2;
     for (let p = 0; p < BRP; p++) {
       s.br[o + p * 2] = u; s.br[o + p * 2 + 1] = v;
-      u += side * (0.2 + rnd() * 0.6) * len / BRP; v += (0.5 + rnd() * 0.7) * len / BRP;
+      u += side * (0.35 + rnd() * 0.7) * len / BRP; v += (0.45 + rnd() * 0.6) * len / BRP;
     }
   }
   lightningStats.paths++;
@@ -275,11 +280,18 @@ export function strikeNow(state, tile, o = {}) {
 export const lightningFreeAt = (now) => freeAt(now);
 
 // ---------- the frame ----------
+// This frame's flash, worked out by lightningFrame for drawLightning (and the night shade, nightfx.js nightFlash).
+const FR = { on: false, v: null, now: 0, level: "full", whole: 0, night: 0 };
+const pos = Array.from({ length: POOL }, () => new Float64Array(5)); // per slot: screen x, y, e, bolt e, glow radius (device px)
+
 // v: { state, cw, ch (device px), S (device px per world px), ox, oy (the camera in device px), hex (world px),
-// frac (the minutes of the coming hour), timelapse, now? }. Returns how many flashes were drawn.
-export function drawLightning(ctx, v) {
+// frac (the minutes of the coming hour), timelapse, now? }. Strikes due, then this frame's flash; returns the
+// flashes running. ui/render.js calls it before the night shade (which it lifts) and drawLightning after.
+export function lightningFrame(v) {
   const { state } = v;
   const now = v.now ?? performance.now();
+  FR.on = false;
+  nightFlash.n = 0; nightFlash.all = 0;
   if (v.timelapse || !state || !state.grid) { // the timelapse: nothing (and nothing left over for afterwards)
     if (active || sources.size) { for (const s of strikes) s.on = false; active = 0; sources.clear(); }
     nextDue = Infinity;
@@ -312,8 +324,43 @@ export function drawLightning(ctx, v) {
     for (const t of sources.values()) if (t < nextDue) nextDue = t;
   }
   if (!active) return 0;
+  const level = lightningLevel();
+  const diag = Math.hypot(v.cw, v.ch);
+  let whole = 0;
+  for (let i = 0; i < POOL; i++) {
+    const s = strikes[i];
+    if (!s.on) continue;
+    if (now >= s.end || level === "off") { s.on = false; active--; continue; }
+    const e = envelope(s, now, false), eb = s.fog ? 0 : envelope(s, now, true);
+    const [tx, ty] = tileXY(state, s.tile);
+    const wx = (tx + s.ox) * U, wy = (ty + s.oy) * U, gx = wx * S - v.ox, gy = wy * S - v.oy;
+    const R = Math.min(1.4 * diag, Math.max(LIGHTNING.glowMin, LIGHTNING.glowTiles * U * S)) * (s.fog ? 1.5 : 1) * (level === "soft" ? 0.75 : 1);
+    const P = pos[i];
+    P[0] = gx; P[1] = gy; P[2] = e; P[3] = eb; P[4] = R;
+    // The whole map: the strongest strike's light, less the further off screen it is.
+    const out = Math.hypot(Math.max(0, -gx, gx - v.cw), Math.max(0, -gy, gy - v.ch));
+    whole = Math.max(whole, e * clamp01(1 - out / (0.6 * diag)) * (s.fog ? 0.7 : 1));
+    // The night shade lifts round the strike (a hole in it, as a light makes: ui/nightfx.js).
+    if (e > 0.01) {
+      const H = nightFlash.holes[nightFlash.n++];
+      H[0] = wx; H[1] = wy; H[2] = (R / S) * 1.15; H[3] = Math.min(1, LIGHTNING.lift.local * e * (s.fog ? 0.8 : 1));
+    }
+  }
+  if (!active) return 0;
+  nightFlash.all = level === "full" ? LIGHTNING.lift.all * whole : 0;
+  let a = 0;
+  try { a = shadeAlpha(nightLevel(mapHour(state, v.frac || 0)), nightShade()); } catch { a = 0; }
+  FR.on = true; FR.v = v; FR.now = now; FR.level = level; FR.whole = whole; FR.night = clamp01(a / 0.62);
+  return active;
+}
+
+// Draws this frame's flash (after the night shade): the light over the land (a small light map, put on with one
+// "screen" draw), then the bolts. With v, works the frame out first (the tools).
+export function drawLightning(ctx, v = null) {
+  if (v) lightningFrame(v);
+  if (!FR.on || !active) return 0;
   const t0 = performance.now();
-  const n = drawFlashes(ctx, v, now, U);
+  const n = drawFlashes(ctx, FR.v, FR.now);
   const ms = performance.now() - t0;
   lightningStats.frames++; lightningStats.ms += ms; lightningStats.lastMs = ms;
   if (ms > lightningStats.maxMs) lightningStats.maxMs = ms;
@@ -335,65 +382,89 @@ function envelope(s, now, bolt) {
   return e;
 }
 
-function drawFlashes(ctx, v, now, U) {
-  const { state, S, cw, ch } = v;
-  const level = lightningLevel();
-  const diag = Math.hypot(cw, ch);
-  let a = 0;
-  try { a = shadeAlpha(nightLevel(mapHour(state, v.frac || 0)), nightShade()); } catch { a = 0; }
-  const night = clamp01(a / 0.62);
-  const gGlobal = LIGHTNING.global[0] + (LIGHTNING.global[1] - LIGHTNING.global[0]) * night;
-  const gLocal = LIGHTNING.local[0] + (LIGHTNING.local[1] - LIGHTNING.local[0]) * night;
-  let drawn = 0, whole = 0;
+// The light map: a quarter of the map's device pixels each way (at most LM_MAX wide), black where no light.
+let lm = null, lmx = null;
+const LM_MAX = 960;
+const makeCanvas = () => (typeof document !== "undefined" && document && typeof document.createElement === "function" ? document.createElement("canvas") : null);
+const mix = (a, k) => a[0] + (a[1] - a[0]) * k;
+
+const box = new Float64Array(4); // the lit part of the light map this frame: x0, y0, x1, y1
+function drawFlashes(ctx, v, now) {
+  const { S, cw, ch } = v;
+  const level = FR.level, U = v.hex * SQ3;
+  const sAll = level === "full" ? mix(LIGHTNING.screen.all, FR.night) * FR.whole : 0;
+  const sLocal = mix(LIGHTNING.screen.local, FR.night), sWash = level === "full" ? LIGHTNING.wash * (1 - FR.night) : 0;
+  if (!lm) { lm = makeCanvas(); lmx = lm ? lm.getContext("2d") : null; }
+  const q = lmx ? Math.max(4, Math.ceil(cw / LM_MAX)) : 1, w = Math.max(1, Math.ceil(cw / q)), h = Math.max(1, Math.ceil(ch / q));
+  const g = lmx || ctx; // no offscreen canvas (the headless tools): straight onto the map
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
-  for (const s of strikes) {
-    if (!s.on) continue;
-    if (now >= s.end || level === "off") { s.on = false; active--; continue; }
-    const e = envelope(s, now, false), eb = s.fog ? 0 : envelope(s, now, true);
-    const [tx, ty] = tileXY(state, s.tile);
-    const gx = (tx + s.ox) * U * S - v.ox, gy = (ty + s.oy) * U * S - v.oy;
-    // The whole map: the strongest strike's light, less the further off screen it is.
-    const out = Math.hypot(Math.max(0, -gx, gx - cw), Math.max(0, -gy, gy - ch));
-    whole = Math.max(whole, e * clamp01(1 - out / (0.6 * diag)) * (s.fog ? 0.7 : 1));
-    // The storm's clouds light up from inside.
-    if (level === "full" && s.wash && e > 0.02) {
-      const cx = s.wash.x * U * S - v.ox, cy = s.wash.y * U * S - v.oy, R = s.wash.r * 1.25 * U * S;
-      const gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
-      gr.addColorStop(0, `rgba(150,170,215,${(LIGHTNING.wash * e).toFixed(3)})`);
-      gr.addColorStop(1, "rgba(150,170,215,0)");
-      ctx.globalCompositeOperation = "screen";
-      ctx.fillStyle = gr;
-      ctx.fillRect(Math.max(0, cx - R), Math.max(0, cy - R), Math.min(cw, cx + R) - Math.max(0, cx - R), Math.min(ch, cy + R) - Math.max(0, cy - R));
-    }
-    // Round the strike: the land lit (the night lifted), a wider softer glow in fog, smaller with Soft.
-    if (e > 0.01) {
-      const R = Math.min(1.4 * diag, Math.max(LIGHTNING.glowMin, LIGHTNING.glowTiles * U * S)) * (s.fog ? 1.5 : 1) * (level === "soft" ? 0.75 : 1);
-      const al = Math.min(1, (gLocal * e * (s.fog ? 0.75 : 1)) / DODGE_K);
-      if (gx + R > 0 && gy + R > 0 && gx - R < cw && gy - R < ch) {
-        const gr = ctx.createRadialGradient(gx, gy, 0, gx, gy, R);
-        gr.addColorStop(0, `rgba(${DODGE},${al.toFixed(3)})`);
-        gr.addColorStop(s.fog ? 0.5 : 0.3, `rgba(${DODGE},${(al * 0.5).toFixed(3)})`);
-        gr.addColorStop(1, `rgba(${DODGE},0)`);
-        ctx.globalCompositeOperation = "color-dodge";
-        ctx.fillStyle = gr;
-        ctx.fillRect(Math.max(0, gx - R), Math.max(0, gy - R), Math.min(cw, gx + R) - Math.max(0, gx - R), Math.min(ch, gy + R) - Math.max(0, gy - R));
-      }
-    }
-    // The bolt (none in fog), and its afterglow.
-    if (!s.fog) drawBolt(ctx, s, gx, gy, S, ch, eb, now);
-    drawn++;
-  }
-  // The whole map brightens (Full only), capped.
-  if (level === "full" && whole > 0.01) {
-    ctx.globalCompositeOperation = "color-dodge";
-    ctx.fillStyle = `rgba(${DODGE},${Math.min(1, (gGlobal * whole) / DODGE_K).toFixed(3)})`;
+  // The whole map (Full), capped: one plain fill over it.
+  if (sAll > 0.005) {
+    ctx.globalCompositeOperation = "screen";
+    ctx.fillStyle = `rgba(${LIGHT_ALL},${sAll.toFixed(3)})`;
     ctx.fillRect(0, 0, cw, ch);
+  }
+  // The local light (round the strikes, the storm's clouds): on the light map, then put on over just the part it
+  // covers (none at full night: the shade's lift is the light there).
+  let lit = false;
+  for (let i = 0; i < POOL && !lit; i++) if (strikes[i].on && pos[i][2] * Math.max(sLocal, strikes[i].wash ? sWash : 0) > 0.004) lit = true;
+  let drawn = 0;
+  if (lit) {
+    if (lmx) {
+      if (lm.width !== w || lm.height !== h) { lm.width = w; lm.height = h; }
+      g.globalCompositeOperation = "copy";
+      g.fillStyle = "#000";
+      g.fillRect(0, 0, w, h);
+      g.globalCompositeOperation = "lighter";
+    } else g.globalCompositeOperation = "screen";
+    box[0] = w; box[1] = h; box[2] = 0; box[3] = 0;
+    for (let i = 0; i < POOL; i++) {
+      const s = strikes[i];
+      if (!s.on) continue;
+      const P = pos[i], e = P[2];
+      if (e <= 0.01) continue;
+      // The storm's clouds light up from inside (Full).
+      if (sWash > 0 && s.wash) {
+        const cx = (s.wash.x * U * S - v.ox) / q, cy = (s.wash.y * U * S - v.oy) / q, RW = (s.wash.r * 1.25 * U * S) / q;
+        glow(g, cx, cy, RW, LIGHT_WASH, sWash * e, 0.55, w, h);
+      }
+      // Round the strike: wider and softer in fog.
+      glow(g, P[0] / q, P[1] / q, P[4] / q, LIGHT_LOCAL, sLocal * e * (s.fog ? 0.8 : 1), s.fog ? 0.5 : 0.3, w, h);
+    }
+    if (lmx && box[2] > box[0] && box[3] > box[1]) { // one draw, over the lit part of the map
+      const x0 = Math.floor(box[0]), y0 = Math.floor(box[1]), x1 = Math.min(w, Math.ceil(box[2])), y1 = Math.min(h, Math.ceil(box[3]));
+      ctx.globalCompositeOperation = "screen";
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(lm, x0, y0, x1 - x0, y1 - y0, x0 * q, y0 * q, (x1 - x0) * q, (y1 - y0) * q);
+    }
+  }
+  for (let i = 0; i < POOL; i++) if (strikes[i].on) drawn++;
+  // The bolts (none in fog), and their afterglow.
+  for (let i = 0; i < POOL; i++) {
+    const s = strikes[i];
+    if (s.on && !s.fog) drawBolt(ctx, s, pos[i][0], pos[i][1], S, ch, pos[i][3], now);
   }
   ctx.globalCompositeOperation = "source-over";
   ctx.restore();
   return drawn;
+}
+const LIGHT_ALL = "190,205,240", LIGHT_LOCAL = "200,215,255", LIGHT_WASH = "150,170,215";
+// A soft round light (k at its heart, half of it at `knee`), clipped to the w × h canvas.
+function glow(g, x, y, R, rgb, k, knee, w, h) {
+  if (k <= 0.004 || R <= 0 || x + R < 0 || y + R < 0 || x - R > w || y - R > h) return;
+  const gr = g.createRadialGradient(x, y, 0, x, y, R);
+  gr.addColorStop(0, `rgba(${rgb},${Math.min(1, k).toFixed(3)})`);
+  gr.addColorStop(knee, `rgba(${rgb},${Math.min(1, k * 0.5).toFixed(3)})`);
+  gr.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = gr;
+  const x0 = Math.max(0, x - R), y0 = Math.max(0, y - R), x1 = Math.min(w, x + R), y1 = Math.min(h, y + R);
+  g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  if (x0 < box[0]) box[0] = x0;
+  if (y0 < box[1]) box[1] = y0;
+  if (x1 > box[2]) box[2] = x1;
+  if (y1 > box[3]) box[3] = y1;
 }
 
 function drawBolt(ctx, s, gx, gy, S, ch, eb, now) {
@@ -415,8 +486,8 @@ function drawBolt(ctx, s, gx, gy, S, ch, eb, now) {
     ctx.lineWidth = w * width;
     ctx.beginPath(); path(s.main, 0, MAIN); ctx.stroke();
     if (s.brN) {
-      ctx.strokeStyle = `rgba(${rgb},${(al * 0.6).toFixed(3)})`;
-      ctx.lineWidth = w * width * 0.55;
+      ctx.strokeStyle = `rgba(${rgb},${(al * 0.75).toFixed(3)})`;
+      ctx.lineWidth = w * width * 0.6;
       ctx.beginPath();
       for (let b = 0; b < s.brN; b++) path(s.br, b * BRP * 2, BRP);
       ctx.stroke();

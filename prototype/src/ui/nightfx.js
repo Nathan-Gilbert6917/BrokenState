@@ -51,6 +51,10 @@ export const setNightShade = (v) => { opt.level = NIGHT_LEVELS[v] ? v : "dark"; 
 export const nightShade = () => opt.level;
 
 export const nightStats = { draws: 0, builds: 0, buildMs: 0, lights: 0 };
+// A lightning flash this frame (ui/lightningfx.js lightningFrame fills it): the shade lifts all over by `all` (0–1)
+// and round each strike (holes[0..n): [x, y, radius, strength] in world px, cut like a light's, a cold white).
+export const nightFlash = { all: 0, n: 0, holes: Array.from({ length: 4 }, () => [0, 0, 0, 0]) };
+const FLASH = "205,218,255";
 
 // Warm (lamps, fires) and cold (floodlights) light, as rgb.
 const WARM = "255,168,82", FIRE = "255,140,60", COLD = "214,232,255";
@@ -124,13 +128,14 @@ export function drawNight(ctx, v) {
   if (!octx) {
     // No offscreen canvas (the headless tools): the plain shade, no lights.
     ctx.globalAlpha = 1;
-    ctx.fillStyle = `rgba(${NIGHT.rgb},${aq.toFixed(2)})`;
+    ctx.fillStyle = `rgba(${NIGHT.rgb},${(aq * (1 - nightFlash.all)).toFixed(2)})`;
     ctx.fillRect(0, 0, v.cw, v.ch);
     ctx.restore();
     return aq;
   }
   const q = Math.max(NIGHT.scale, Math.ceil(v.cw / NIGHT.maxW)), ow =Math.max(1, Math.ceil(v.cw / q)), oh = Math.max(1, Math.ceil(v.ch / q));
   const lights = mapLights(state, v.G, v.boost, v.frac);
+  for (let i = 0; i < nightFlash.n; i++) { const h = nightFlash.holes[i]; lights.push([h[0], h[1], h[2], h[3], FLASH]); } // lightning
   // Only the lights that reach the screen; their signature (rounded to an overlay pixel) decides a repaint.
   const vis = [];
   let sig = 0;
@@ -173,9 +178,10 @@ export function drawNight(ctx, v) {
     nightStats.builds++;
     nightStats.buildMs += performance.now() - t0;
   }
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = 1 - nightFlash.all; // a flash lifts it all over
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(ov, 0, 0, ow, oh, 0, 0, ow * q, oh * q);
+  ctx.globalAlpha = 1;
   ctx.restore();
   return aq;
 }

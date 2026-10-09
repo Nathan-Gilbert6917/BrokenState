@@ -24,7 +24,7 @@ import { ambiencePlan, makeScene } from "../src/ui/ambscene.js";
 import { AMB_OPTS, ambEngine } from "../src/ui/ambkit.js";
 import { ambTarget } from "../src/ui/ambience.js";
 import { readDisplayOptions, DISPLAY_DEFAULTS, LIGHTNING_LEVELS } from "../src/ui/displayopts.js";
-import { setNightShade } from "../src/ui/nightfx.js";
+import { setNightShade, nightFlash, drawNight } from "../src/ui/nightfx.js";
 import { readFileSync } from "node:fs";
 
 const seed = Number(process.argv[2] || 42);
@@ -287,13 +287,15 @@ console.log("Look and options");
     drawLightning(ctx, { state: W, cw: CW, ch: CH, S: cc.S, ox: cc.ox, oy: cc.oy, hex: HEX, frac: 0, timelapse: false, now: T + 90 });
     return { r, calls: ctx.calls };
   };
-  const whole = (calls) => calls.filter((x) => x[0] === "fill" && x[1] === "color-dodge" && x[3] === 0 && x[4] === 0 && x[5] === CW && x[6] === CH);
+  const whole = (calls) => calls.filter((x) => x[0] === "fill" && x[1] === "screen" && x[3] === 0 && x[4] === 0 && x[5] === CW && x[6] === CH && !(x[2] && x[2].stops));
+  const washed = (calls) => calls.some((x) => x[0] === "grad" && /150,170,215/.test(x[1].stops[0][1]));
   const full = peak("full");
   const wf = whole(full.calls);
-  check(wf.length === 1 && full.calls.some((x) => x[0] === "stroke") && full.calls.some((x) => x[0] === "fill" && x[1] === "screen"), "Full: the whole map brightens, the storm's clouds light up, a bolt");
-  check(wf.every((x) => alphaOf(x[2]) <= LIGHTNING.global[1] / 1.6 + 1e-3) && LIGHTNING.global[1] <= 0.45, `the whole-map brightening capped: gain at most ${(1 + LIGHTNING.global[1]).toFixed(2)} at full night, ${(1 + LIGHTNING.global[0]).toFixed(2)} by day`);
+  check(wf.length === 1 && full.calls.some((x) => x[0] === "stroke") && washed(full.calls), "Full: the whole map brightens, the storm's clouds light up, a bolt");
+  const capAll = Math.max(...LIGHTNING.screen.all);
+  check(wf.every((x) => alphaOf(x[2]) <= capAll + 1e-3) && capAll <= 0.15 && LIGHTNING.lift.all <= 0.4, `the whole-map brightening capped: a screen of at most ${capAll} (mid grey 0.5 to ${(0.5 + capAll * 0.5).toFixed(2)}), the night shade lifted all over by at most ${Math.round(LIGHTNING.lift.all * 100)}%`);
   const soft = peak("soft");
-  check(whole(soft.calls).length === 0 && !soft.calls.some((x) => x[1] === "screen") && soft.calls.some((x) => x[0] === "stroke") && soft.calls.some((x) => x[0] === "grad"), "Soft: no whole-map brightening, the bolt and a glow round it");
+  check(whole(soft.calls).length === 0 && !washed(soft.calls) && soft.calls.some((x) => x[0] === "stroke") && soft.calls.some((x) => x[0] === "grad") && nightFlash.all === 0, "Soft: no whole-map brightening (nor the night's), the bolt and a glow round it");
   setLightning("full", true);
   check(lightningLevel() === "soft", "Reduce motion makes Full Soft");
   setLightning("off", true);
@@ -328,9 +330,20 @@ console.log("Look and options");
   const farOut = span(peak("full", false, { S: 0.25 }).calls), closeIn = span(peak("full", false, { S: 3 }).calls);
   check(farOut < 80 && closeIn > 500, `zoom: the bolt ${farOut.toFixed(0)} px tall far out, ${closeIn.toFixed(0)} px close in`);
   // Night: the flash lifts the shade round the strike (a stronger lift than by day).
-  const localA = (calls) => Math.max(...calls.filter((x) => x[0] === "grad").map((x) => x[1]).filter((g) => /153,158,168/.test(g.stops[0][1])).map((g) => alphaOf(g.stops[0][1])));
-  const day = localA(peak("full", false, { hourOfDay: 13 }).calls), night = localA(peak("full", false, { hourOfDay: 1 }).calls);
-  check(night > day * 1.8, `at night the lift round the strike is stronger (${night.toFixed(2)} against ${day.toFixed(2)} by day)`);
+  const shadeAt = (hourOfDay, flash) => {
+    if (flash) peak("full", false, { hourOfDay }); else { fresh(); W.hour = Math.floor(W.hour / 24) * 24 + hourOfDay; }
+    const ctx = makeCtx();
+    drawNight(ctx, { state: W, cw: CW, ch: CH, S: 1, ox: C.ox, oy: C.oy, boost: 1, G: null, frac: 0, timelapse: false });
+    const f = ctx.calls.find((x) => x[0] === "fill");
+    return { a: f ? alphaOf(f[2]) : 0, holes: nightFlash.n, k: nightFlash.n ? nightFlash.holes[0][3] : 0, all: nightFlash.all };
+  };
+  const dark = shadeAt(1, false), lit = shadeAt(1, true);
+  check(dark.a > 0.5 && lit.a < dark.a * 0.8 && lit.holes === 1 && lit.k > 0.5, `at night a flash lifts the shade: all over ${dark.a} to ${lit.a}, and round the strike (a hole of ${lit.k.toFixed(2)} in it, as a light makes)`);
+  const nightPeak = peak("full", false, { hourOfDay: 1 }).calls;
+  check(nightPeak.some((x) => x[0] === "stroke") && !nightPeak.some((x) => x[0] === "fill"), "at full night the flash is the shade's lift and the bolt: no extra pass over the map");
+  const dayLift = shadeAt(13, true);
+  check(dayLift.a === 0, "by day there is no shade to lift (the light only)");
+  fresh();
   // Display options.
   const o = readDisplayOptions({});
   check(o.lightning === "full" && DISPLAY_DEFAULTS.lightning === "full" && Object.keys(LIGHTNING_LEVELS).join() === "full,soft,off", "default: Lightning flashes Full");
@@ -376,6 +389,7 @@ console.log("Cheap");
   // The render hook: after the night shade, before what stays bright.
   const R = src("src/ui/render.js");
   check(/if \(lightningWants\(now\)\) forceDraw = true;/.test(R) && R.indexOf("lightningWants(now)") < R.indexOf("unchanged(state, now)) { mapStats"), "render.js asks for the frame while a flash runs");
+  check(R.indexOf("lightningFrame({ state") < R.indexOf("drawNight(ctx") && R.indexOf("lightningFrame({ state") > R.indexOf("drawFronts(ctx"), "render.js works the strikes out after the fronts, before the night shade (which a flash lifts)");
   check(R.indexOf("drawLightning(ctx") > R.indexOf("drawNight(ctx") && R.indexOf("drawLightning(ctx") < R.indexOf("drawLabels(labels") && R.indexOf("drawLightning(ctx") < R.indexOf("const inView = (id)"), "render.js draws it right after the night shade, before bases, teams, labels and the selection");
   check(!/lightning/i.test(src("src/ui/minimap.js")), "the minimap has none");
 }

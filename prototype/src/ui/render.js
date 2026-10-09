@@ -40,7 +40,7 @@ import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, plac
 import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
 import { blocOf, blocColorOf } from "../sim/blocs.js"; // AI blocs: a ring in the bloc's colour round its members' bases
 import { drawNight } from "./nightfx.js"; // the time-of-day shade and the lights through it
-import { drawLightning, lightningWants } from "./lightningfx.js"; // lightning flashes in storms (after the night shade)
+import { lightningFrame, drawLightning, lightningWants } from "./lightningfx.js"; // lightning in storms: lifts the night shade, flashes after it
 
 export const HEX = 26;
 const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
@@ -1128,8 +1128,9 @@ export function render(state) {
   }
   // Night (ui/nightfx.js): the shade over the ground and the cached sites, the lights cutting through it; what is drawn
   // after it (bases, teams, hordes, labels, icons, selection) stays at full brightness.
+  lightningFrame({ state, cw, ch: chh, S, ox, oy, hex: HEX, frac: hourFrac(), timelapse: !!state.timelapse, now }); // ui/lightningfx.js: strikes due; a flash lifts the shade
   drawNight(ctx, { state, cw, ch: chh, S, ox, oy, boost: zoomBoost(), G, frac: hourFrac(), timelapse: !!state.timelapse });
-  drawLightning(ctx, { state, cw, ch: chh, S, ox, oy, hex: HEX, frac: hourFrac(), timelapse: !!state.timelapse, now }); // ui/lightningfx.js: storms' strikes (UI on top is not flashed)
+  drawLightning(ctx); // ui/lightningfx.js: the flash and the bolt (what is drawn after it is never flashed)
   const inView = (id) => { const px = G.x[id], py = G.y[id]; return !(px < minX || px > maxX || py < minY || py > maxY); };
   let animating = false;
   glidingNow = false;
