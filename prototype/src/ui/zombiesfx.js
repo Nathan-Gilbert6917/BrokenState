@@ -76,6 +76,8 @@ export function voiceParams(seed) {
 export const PROFILE = { // sub: a second, detuned pulse an octave down (diplophonia: a torn, inharmonic throat)
   walker:      { f0: 62, shift: 0.88, rasp: 0.85, drive: 3, wet: 0.6, fry: 0.45, sub: 0.35 },
   armoured:    { f0: 60, shift: 0.85, rasp: 0.8, drive: 3, wet: 0.3, fry: 0.45, sub: 0.3, muffle: 1400 },
+  riot:        { f0: 64, shift: 0.9, rasp: 0.75, drive: 2.8, wet: 0.3, fry: 0.4, sub: 0.3, muffle: 950 }, // behind a riot visor
+  turned:      { f0: 92, shift: 0.97, rasp: 0.55, drive: 2, wet: 0.5, fry: 0.3, sub: 0.2 }, // the newly risen: still half a human voice
   runner:      { f0: 150, shift: 1.1, rasp: 0.85, drive: 3.4, wet: 0.2, fry: 0.15, sub: 0.2 },
   brute:       { f0: 42, shift: 0.7, rasp: 0.9, drive: 4.5, wet: 0.4, fry: 0.65, sub: 0.45, slow: 1.2 },
   spitter:     { f0: 72, shift: 0.95, rasp: 0.7, drive: 2.6, wet: 1, fry: 0.4, sub: 0.3 },
@@ -94,12 +96,25 @@ export const PROFILE = { // sub: a second, detuned pulse an octave down (diploph
   broodmother: { f0: 30, shift: 0.56, rasp: 0.85, drive: 4.5, wet: 1, fry: 0.7, sub: 0.5, slow: 1.4, giant: true },
 };
 // The voice set a unit uses.
+// Every kind of the dead the simulation makes (tools/zombiesfxtest.js scans src/sim for them):
+//   ZTYPES (hiveconst.js): runner, brute, spitter, screamer, crawler, carrier, swarm, shepherd, boneback, climber,
+//     flinger, sower, nightmare, sleeper (each its own set); soldier → "armoured" (helmet and plates), riot → "riot"
+//     (a visor, hard plastic); the bosses (defences.js bossUnit) wallbreaker and broodmother;
+//   the risen (carriers.js turn: u.turned; a walking-loot body, u.walking) → "turned": still half a human voice;
+//   the plain dead → "walker", which is also the voice of every plain variant: a hive's guard, a horde, the dead a
+//     screamer calls in (u.called), the dead a Sleeper's or a Flinger's swarm leaves risen, a hardcore outbreak's dead
+//     (hardcore-outbreak.js makes plain units), a building's nest is its special dead (floorfolk.js: ZTYPES).
+//   Animals carrying the worm (worm.js, hunting.js) never fight on a battle map: no voice needed.
+export const FALLBACK_TO_WALKER = ["plain dead", "called in by a screamer", "hive guard", "horde", "hardcore outbreak dead", "turned without their person (no app)"];
 export function voiceKind(u) {
   if (!u) return "walker";
   if (u.boss) return u.boss === "broodmother" ? "broodmother" : "wallbreaker";
   const z = u.ztype;
-  if (z === "soldier" || z === "riot") return "armoured";
-  return z && PROFILE[z] ? z : "walker";
+  if (z === "soldier") return "armoured";
+  if (z === "riot") return "riot";
+  if (z && PROFILE[z]) return z;
+  if (u.turned || u.walking) return "turned";
+  return "walker";
 }
 
 // ---------- building blocks ----------
@@ -506,6 +521,16 @@ export const RECIPES = {
     const { rnd, P } = X, dur = 0.17 + rnd() * 0.1;
     say(X, out, { f0: P.f0 * X.p * 1.2, dur, contour: [[1, 0.72]], vowels: ["uh", "uh"], fry: 0.3, lp: 1800, a: 0.008, hold: dur * 0.25, rel: dur * 0.7, peak: 0.6, breath: 0.25, breathHz: 900 });
   },
+  gruntShell(X, out) { // riot gear: a grunt and the knock on hard plastic
+    RECIPES.grunt(X, out);
+    const { c, t, rnd, g } = X;
+    noise(c, "white", t, 0.06, biq(c, "bandpass", 1100 + rnd() * 400, 4, envG(c, out, t, 0.22 * g, 0.001, 0, 0.05)), rnd);
+    thud(c, out, t, 180, 0.15 * g, 0.06, rnd);
+  },
+  sigh(X, out) { // the turned: two broken syllables, the last of a person's voice
+    const { vp, P } = X, d = 0.45 * vp.drawl;
+    for (const i of [0, 1]) say(X, out, { at: i * (d + 0.15), f0: P.f0 * X.p * (i ? 0.84 : 1.05), dur: d, contour: [[1, 0.78]], vowels: i ? ["aa", "oh"] : ["uh", "aa"], lp: 1600, a: 0.06, hold: d * 0.3, rel: d * 0.6, peak: 0.5, breath: 0.35, breathHz: 900 });
+  },
   gruntClang(X, out) { // the armoured dead: a grunt and the round on the plate
     RECIPES.grunt(X, out);
     metal(X.c, out, X.t, 900 + X.rnd() * 500, 0.12 * X.g, 0.35, X.rnd);
@@ -853,6 +878,8 @@ const COMMON = {
 export const VOICE_SETS = {
   walker: COMMON,
   armoured: { ...COMMON, idle: ["moan", "gurgle", "wheeze"], hurt: "gruntClang", step: "clank" },
+  riot: { ...COMMON, idle: ["moan", "wheeze"], hurt: "gruntShell", step: "clank" },
+  turned: { ...COMMON, idle: ["moan", "sigh", "wheeze", "gurgle"], aggro: "spot" },
   runner: { ...COMMON, idle: ["pant", "pant", "moan"], aggro: "shriek", hurt: "yelp", step: "slap" },
   brute: { ...COMMON, idle: ["moan", "rumble"], aggro: "roar", attack: "roarShort", death: "roarDeath", step: "stomp" },
   spitter: { ...COMMON, idle: ["gurgle", "gurgle", "moan"] },
@@ -1560,7 +1587,7 @@ export function hordeChorus(c, out, t, o = {}) {
 
 // ---------- the Options tab: Zombie sounds ----------
 const KIND_LABEL = {
-  walker: "Walker", armoured: "Armoured dead", runner: "Runner", brute: "Brute", spitter: "Spitter", screamer: "Screamer", crawler: "Crawler",
+  walker: "Walker", armoured: "Armoured dead (soldier)", riot: "Dead riot cop", turned: "The turned", runner: "Runner", brute: "Brute", spitter: "Spitter", screamer: "Screamer", crawler: "Crawler",
   carrier: "Carrier", swarm: "Worm swarm", shepherd: "Shepherd", boneback: "Boneback", climber: "Climber", flinger: "Flinger", sower: "Sower",
   nightmare: "Nightmare", sleeper: "Sleeper", wallbreaker: "Wallbreaker", broodmother: "Broodmother",
 };
@@ -1572,7 +1599,7 @@ const EVENT_LABEL = {
 const EXTRA = { // each kind's own sounds in the list (besides the core events)
   screamer: ["shriek"], climber: ["climb"],
   flinger: ["heave", "fling"], nightmare: ["shriek"], sleeper: ["wake"], wallbreaker: ["smash", "breath"], walker: ["snarl", "breath", "wake", "bash"], runner: ["snarl", "breath"], brute: ["smash", "snarl", "breath"],
-  armoured: ["breath"], crawler: ["strike", "breath"], spitter: ["spit", "sizzle", "breath"], carrier: ["burst", "breath"], broodmother: ["breath"],
+  armoured: ["breath"], riot: ["breath"], turned: ["wake", "breath"], crawler: ["strike", "breath"], spitter: ["spit", "sizzle", "breath"], carrier: ["burst", "breath"], broodmother: ["breath"],
 };
 export const ZOMBIE_TESTS = [
   ...Object.keys(KIND_LABEL).map((k) => ({

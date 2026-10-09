@@ -58,8 +58,8 @@ console.log("Voice sets");
   const kinds = Object.keys(Z.PROFILE);
   const zk = Object.keys(ZTYPES).map((k) => Z.voiceKind({ kind: "zombie", ztype: k }));
   check(Object.keys(ZTYPES).every((k, i) => Z.VOICE_SETS[zk[i]]), `every ZTYPES kind has a voice set (${Object.keys(ZTYPES).map((k, i) => `${k}→${zk[i]}`).join(", ")})`);
-  check(Z.voiceKind({ kind: "zombie", ztype: "soldier" }) === "armoured" && Z.voiceKind({ kind: "zombie", ztype: "riot" }) === "armoured", "the armoured dead (soldiers, riot police) clank");
-  check(Z.voiceKind({ kind: "zombie" }) === "walker" && Z.voiceKind({ kind: "zombie", turned: true, name: "Dana (turned)" }) === "walker", "the common dead and the turned: walkers");
+  check(Z.voiceKind({ kind: "zombie", ztype: "soldier" }) === "armoured" && Z.voiceKind({ kind: "zombie", ztype: "riot" }) === "riot" && Z.VOICE_SETS.riot.step === "clank", "the armoured dead: soldiers clank, riot police behind a visor");
+  check(Z.voiceKind({ kind: "zombie" }) === "walker" && Z.voiceKind({ kind: "zombie", turned: true, name: "Dana (turned)" }) === "turned", "the common dead walk; the turned keep half a human voice");
   check(Z.voiceKind({ kind: "zombie", boss: "wallbreaker" }) === "wallbreaker" && Z.voiceKind({ kind: "zombie", boss: "broodmother" }) === "broodmother", "Wallbreakers and the Broodmother have their own");
   const missing = [];
   for (const k of kinds) for (const ev of Z.CORE_EVENTS) { const r = Z.recipeFor(k, ev, () => 0); if (!r || !Z.RECIPES[r]) missing.push(`${k}.${ev}`); }
@@ -74,6 +74,26 @@ console.log("Voice sets");
   check(Z.PROFILE.walker.f0 < 85 && Z.PROFILE.brute.f0 < 50 && Z.PROFILE.walker.sub > 0, `the dead sit low, below a human voice (walker ${Z.PROFILE.walker.f0} Hz, brute ${Z.PROFILE.brute.f0} Hz), a torn second pulse under them`);
   check(Z.ZOMBIE_STEPS.on === false && !Z.ZOMBIE_TESTS.some((g) => g.items.some(([v]) => v === "walker:step")) && Z.ZOMBIE_TESTS.some((g) => g.items.some(([v]) => v === "swarm:step")),
     "footsteps are off (the sfx-melee-steps branch has them); the swarm's squirm stays");
+}
+
+// Every kind of the dead the simulation makes: scan src/sim for ztype values, applyZType kinds and boss kinds.
+{
+  const fs = await import("node:fs");
+  const dir = new URL("../src/sim/", import.meta.url);
+  const found = new Set(Object.keys(ZTYPES)), bosses = new Set();
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith(".js")) continue;
+    const src = fs.readFileSync(new URL(f, dir), "utf8");
+    for (const m of src.matchAll(/ztype\s*(?:===|!==|=)\s*"([a-z]+)"/g)) found.add(m[1]);
+    for (const m of src.matchAll(/applyZType\([^,]+,\s*"([a-z]+)"/g)) found.add(m[1]);
+    for (const m of src.matchAll(/bossUnit\(b,\s*"([a-z]+)"/g)) bosses.add(m[1]);
+  }
+  const bad = [...found].filter((k) => { const v = Z.voiceKind({ kind: "zombie", ztype: k }); return !Z.VOICE_SETS[v] || v === "walker"; });
+  check(!bad.length && found.size >= 16, `every ztype in src/sim has its own voice set (${found.size}: ${[...found].map((k) => `${k}→${Z.voiceKind({ kind: "zombie", ztype: k })}`).join(", ")})${bad.length ? `; walker fallback: ${bad.join(", ")}` : ""}`);
+  check([...bosses].every((k) => Z.voiceKind({ kind: "zombie", boss: k }) === k) && bosses.size === 2, `the bosses: ${[...bosses].join(", ")}`);
+  check(Z.voiceKind({ kind: "zombie", turned: { sid: 3 } }) === "turned" && Z.voiceKind({ kind: "zombie", walking: { who: "Dana" } }) === "turned" && Z.voiceKind({ kind: "zombie", ztype: "riot" }) === "riot",
+    "the risen (turned, walking loot) and riot police have their own; soldiers the armoured dead's");
+  check(Z.voiceKind({ kind: "zombie", called: true }) === "walker" && Z.FALLBACK_TO_WALKER.length >= 4, `walker voice, by design: ${Z.FALLBACK_TO_WALKER.join(", ")}`);
 }
 
 // ---------- 2. voice seeds ----------
