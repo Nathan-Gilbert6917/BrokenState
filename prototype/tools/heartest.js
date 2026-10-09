@@ -652,7 +652,7 @@ section("14. The UI: the Visor button and its key, the Deaf chip, heard markers 
   b.ghosts = { [e0.id]: [12, 12, b.turn, 0, 1] };
   e0.x = 25; e0.y = 20;
   let err = "";
-  for (const view of ["iso", "2d"]) { try { UI.setBattleView(view); UI.drawCombat(st, 1e9); } catch (e) { err = e.stack.split("\n").slice(0, 2).join(" "); } }
+  for (const view of ["iso"]) { try { void view; UI.drawCombat(st, 1e9); } catch (e) { err = e.stack.split("\n").slice(0, 2).join(" "); } }
   check(!err, `a heard marker draws in both views${err ? `: ${err}` : ""}`);
   // The sound: muffled while the selected unit is deaf, a ring as it starts.
   const mem = {};

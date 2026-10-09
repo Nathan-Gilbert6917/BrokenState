@@ -27,7 +27,9 @@
 //   lost each time); empty and untouched for GONE days it is gone. A team that dies there leaves the camp standing
 //   for the next one.
 // - Done: the camp becomes your shelter (type "hub", tier 0: buildings.js SHELTER), bare (no buildings, no vehicle),
-//   the stores its stock, the teams there its people. A camp from a save made before the tiers (no camp.to) was
+//   the stores its stock, the teams there its people: every team on the camp's tile moves in and is disbanded
+//   (parties.js settleInto: its people residents, its vehicle parked, its cargo in the stores). Teams elsewhere stay
+//   teams with the shelter as their home (Return home, or Enter base once they stand on it). A camp from a save made before the tiers (no camp.to) was
 //   promised the full hub and becomes one. Later outposts keep the old Build outpost order (parties.js).
 // - A base you get back some other way (retaking one: conquest.js) makes the camp pointless: it is struck and what
 //   was in it is left as a cache (a "Cargo left behind" site) for a team to recover.
@@ -358,6 +360,9 @@ export function stagingHour(state) {
   if (state.factions.some((f) => f.alive && f.bases.includes(camp.tile))) { strike(state, `lost: ${state.factions.find((f) => f.alive && f.bases.includes(camp.tile)).name} built on it`); return; }
   const here = campTeams(state, camp);
   if (here.length) camp.lastPresent = state.hour;
+  // Built and stocked: everyone at the camp moves in, whatever they are doing there (a team that came back with a
+  // Move order, one camping or waiting); a finished camp with nobody there waits for its people.
+  if (here.some((p) => p.phase === "waiting" || p.phase === "task") && tryFinish(state, camp)) return;
   const workers = here.filter((p) => isWorking(state, p));
   camp.workers = workers.reduce((a, p) => a + partyMembers(state, p).length, 0);
   for (const p of workers) feed(state, p, camp);
@@ -448,10 +453,12 @@ function shelterDaily(state, base) {
 }
 
 // ---------- done: the camp becomes the shelter ----------
+// A team in the middle of a search or a battle on the camp's tile moves in after it (not from under the fight).
+const busyHere = (state, p) => p.phase === "engaged" || (state.engagement && state.engagement.partyId === p.id) || (state.combat && state.combat.setup && state.combat.setup.partyId === p.id);
 function tryFinish(state, camp) {
   if (!readyToFinish(camp) || !noBase(state)) return false;
   const t = state.tiles[camp.tile];
-  const here = campTeams(state, camp);
+  const here = campTeams(state, camp).filter((p) => !busyHere(state, p));
   if (!here.length) return false; // nobody to move in (a finished camp waits for its people)
   const shelter = camp.to === 0; // a camp from before the tiers (no `to`) was promised the full hub
   const base = {

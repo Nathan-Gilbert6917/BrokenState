@@ -92,7 +92,8 @@ export const KEYMAP = [
   { id: "battle.autoplay", label: "The AI plays your side (again: take back control)", group: "Battle", ctx: "battle", keys: ["Shift+KeyA"] },
   { id: "battle.retreatAll", label: "Sound the retreat (on a wall map: fall back to the yard)", group: "Battle", ctx: "battle", keys: ["Shift+KeyR"] },
   { id: "battle.clear", label: "The area is clear enough: end the fight", group: "Battle", ctx: "battle", keys: ["Shift+KeyC"] },
-  { id: "battle.search", label: "Search the container next to the unit", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyS"], v: "search" },
+  { id: "battle.search", label: "Search the container or body next to the unit", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyS"], v: "search" },
+  { id: "battle.ground", label: "Ground: put things down, pick them up", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyX"], v: "ground" },
   { id: "battle.quick", label: "Quick search (raid)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyQ"], v: "quick" },
   { id: "battle.drag", label: "Drag a body, or a downed teammate (again: put them down)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyD"], v: "drag" },
   // Medics (sim/medics.js): a med kit makes one; Finish kills a downed enemy for good (dragging a downed teammate is

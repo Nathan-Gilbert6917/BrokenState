@@ -1,7 +1,6 @@
 // Raid screen pieces for locks (sim/locks.js): the Open buttons with odds next to a locked container or door, the
-// key line in the raid header, the hover text, and the doors and padlocks drawn on the raid map. ui/combat.js calls
+// key line in the raid header and the hover text (the iso view draws the padlocks: ui/isoview.js). ui/combat.js calls
 // these; the "lk-open" handler is registered in main.js (LOCK_ACTIONS).
-import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { combatAct } from "../sim/combat.js";
 import { LOCKS, PICK, lockedNear, lockAt, openOdds, hasKey, keyName } from "../sim/locks.js";
 import { SAFE, safeLine, caseTargets, caseOdds } from "../sim/locks.js"; // gun safes and gun cases (sim/locks.js, sim/gunsafes.js)
@@ -68,35 +67,6 @@ export function lockPreview(b, u, x, y) {
   return `<b>🔒 ${esc(t.name)}</b> · difficulty ${def.diff}${t.door ? " · a locked room" : ""}${t.box && t.box.searched ? " · searched" : ""}<br><span class="muted">Locked things hold more: supplies, gear, keys and blueprints.</span>${odds}<br>${near ? "Open it from the panel: key, pick or force." : "Move next to it to open it."}`;
 }
 
-// Doors and padlocks on the raid map (ui/combat.js drawRaidOverlay).
-export function drawLocks(ctx, b, ox, oy, cs) {
-  if (!b.raid) return;
-  for (const d of b.raid.doors || []) {
-    const px = ox + d.x * cs, py = oy + d.y * cs;
-    if (d.lock.open) {
-      ctx.strokeStyle = d.lock.how === "force" || d.lock.how === "smash" ? "rgba(224,138,79,0.8)" : "rgba(200,170,120,0.6)";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(px + 3, py + 3, cs - 6, cs - 6);
-      continue;
-    }
-    ctx.fillStyle = d.lock.kind === "vault" ? "#5c636b" : "#6a4a2c";
-    ctx.fillRect(px + 2, py + 1, cs - 4, cs - 2);
-    ctx.strokeStyle = "#20160c";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(px + 2, py + 1, cs - 4, cs - 2);
-    ctx.fillStyle = d.lock.kind === "vault" ? "#8a939c" : "#8a643c";
-    ctx.fillRect(px + cs * 0.2, py + cs * 0.15, cs * 0.6, cs * 0.25);
-    ctx.fillRect(px + cs * 0.2, py + cs * 0.55, cs * 0.6, cs * 0.25);
-    padlock(ctx, px + cs * 0.72, py + cs * 0.5, cs * 0.16, "#ffd166");
-  }
-  for (const c of b.raid.containers) {
-    if (!c.lock || c.searched) continue;
-    const px = ox + Math.round(c.x + ((c.w || 1) - 1) / 2) * cs, py = oy + Math.round(c.y + ((c.h || 1) - 1) / 2) * cs; // over a car's middle cell
-    padlock(ctx, px + cs * 0.24, py + cs * 0.24, cs * 0.15, c.lock.open ? PAL.good : "#ff9f43");
-    if (c.lock.prog && !c.lock.open) progressBar(ctx, px, py, cs, c.lock.prog / (SAFE.drill.need[LOCKS[c.lock.kind].tier] || 1)); // a gun safe half drilled
-    if (c.lock.armed && !c.lock.open) { ctx.fillStyle = "#e05c4a"; ctx.beginPath(); ctx.arc(px + cs * 0.76, py + cs * 0.24, cs * 0.12, 0, Math.PI * 2); ctx.fill(); } // a charge set on it
-  }
-}
 function padlock(ctx, x, y, r, color) {
   ctx.strokeStyle = "#1a1a1a";
   ctx.lineWidth = Math.max(1, r * 0.35);
@@ -183,10 +153,4 @@ function casePanel(state, b, u) {
     return `<div class="small" style="margin-top:0.3rem">🧳 <b>${esc(c.item.name)}</b> <span class="muted">${esc(c.where)}${c.item.locked ? " · locked" : ""}</span>
       <div class="row" style="gap:0.25rem;margin-top:0.15rem"><button class="mini" data-action="lk-open" data-u="${u.id}" data-t="${c.ref}" data-m="case" ${ok ? "" : "disabled"} data-tip="${esc(ok ? `Inside: ${caseText(c.item)}. What is inside stays where the case is (in the container, or carried loose). At a base or a camp it opens for free.` : o.why)}">${label}</button></div></div>`;
   }).join("");
-}
-function progressBar(ctx, px, py, cs, f) {
-  ctx.fillStyle = "rgba(20,20,20,0.85)";
-  ctx.fillRect(px + cs * 0.1, py + cs * 0.82, cs * 0.8, cs * 0.12);
-  ctx.fillStyle = "#e0a040";
-  ctx.fillRect(px + cs * 0.1, py + cs * 0.82, cs * 0.8 * Math.max(0, Math.min(1, f)), cs * 0.12);
 }

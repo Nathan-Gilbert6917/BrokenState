@@ -22,9 +22,10 @@ export const ROADBLOCK = {
 };
 
 // The blockage a vehicle meets entering `tile` by road this hour, or null. { key, mins, text }
-export function rollRoadblock(state, p, tile) {
+// hour: the hour it enters in (the map's glide asks about the coming hour: parties.js glideAt).
+export function rollRoadblock(state, p, tile, hour = state.hour) {
   if (state.noRoadblocks) return null; // test switch (tools/loadtest.js: the exact bike-trip ETA)
-  const roll = (k) => hash01(state.seed, "roadblock", localId(state, p.id), tile, state.hour, k);
+  const roll = (k) => hash01(state.seed, "roadblock", localId(state, p.id), tile, hour, k);
   if (roll("hit") >= ROADBLOCK.CHANCE) return null;
   const total = ROADBLOCK.KINDS.reduce((a, k) => a + k.w, 0);
   let r = roll("kind") * total, kind = ROADBLOCK.KINDS[ROADBLOCK.KINDS.length - 1];

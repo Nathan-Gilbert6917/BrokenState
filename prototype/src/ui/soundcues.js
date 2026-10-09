@@ -162,6 +162,11 @@ export function battleCues(b, mem, now = 0) {
       if (THROW_CLATTER.has(f.item)) B.land = FUSE[kind] || 0; // the can clatters where it lands and rolls this long, then goes
       out.push({ name: throwSound(f.item), at: f.to, delay: THROW_FLIGHT + (FUSE[kind] || 0), blast: B });
       blastAt(f.to, kind);
+    } else if (f.type === "cookoff") { // something in the flames went off where it lay (sim/launchers.js fireCookOffs): no pin, no flight
+      const as = { a_40mm_he: "frag", a_rocket_heat: "pipebomb", a_40mm_smoke: "smokegren", a_40mm_illum: "flare" }[f.item] || f.item; // its throwable's sound
+      const kind = f.item === "a_40mm_he" ? "gl40" : f.item === "a_rocket_heat" ? "rocket" : THROW_BLAST[as] || "secondary";
+      out.push({ name: BIG.has(kind) ? "blast" : throwSound(as), at: f.to, delay: 0.05, blast: { kind, glass: glassNear(b, f.to[0], f.to[1]) } });
+      blastAt(f.to, kind);
     } else if (f.type === "scream") out.push({ name: "scream", at: f.from });
   }
   // A vehicle wrecked by this frame's blasts: a fireball (combat.js vehicleBlast marks its cells wrecked).

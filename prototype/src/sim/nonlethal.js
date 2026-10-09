@@ -33,6 +33,7 @@
 //     (raidPrisoners: fewer dead), into its jail (groupjails.js: as many as it holds, the rest sold on, let go or killed
 //     by type; there they work, are ransomed back, swapped, sold, turned or escape: groupJailsDaily); a decisive
 //     win of yours by the numbers takes a couple of the beaten side prisoner (numbersSurrenders).
+import { enemyGunLoaded } from "./gunload.js"; // the rounds left in a thrown-down gun
 import { GEAR } from "./data.js";
 import { AMMO_TYPES } from "./data-ammo.js";
 import {
@@ -322,10 +323,11 @@ export function surrender(b, u) {
   const w = u.weapon;
   let what = "";
   if (w && w !== "fists" && GEAR[w]) {
-    const drop = { x: u.x, y: u.y, f: u.f || 0, key: w, kit: u.kit || null, uid: u.id, name: u.name };
+    const drop = { x: u.x, y: u.y, f: u.f || 0, key: w, kit: u.kit || null, uid: u.id, name: u.name, loaded: enemyGunLoaded(u, { key: w }).loaded || null }; // gunload.js: the rounds left in it
     (b.nlDrops || (b.nlDrops = [])).push(drop);
     if (b.raid) {
       const item = lootItem(w, kitSource(u.kit), roll(b, "drop", u.id));
+      if (drop.loaded) item.loaded = { ...drop.loaded };
       drop.box = b.nextId++;
       b.raid.containers.push({ id: drop.box, x: u.x, y: u.y, f: u.f || 0, kind: "body", area: null, searched: false, label: `${u.name}'s dropped ${WEAPONS[w].name.toLowerCase()}`, uid: null, dropOf: u.id, contents: { sup: {}, gear: [item] } });
     }
@@ -722,7 +724,9 @@ export function nlDropPiles(state, b) {
   for (const d of b.nlDrops || []) {
     if (d.gone) continue;
     const pile = ensureInv({ name: `${d.name}'s dropped ${WEAPONS[d.key].name.toLowerCase()}`, kind: "human", uid: null, kit: d.kit, supplies: {} });
-    stow(pile, lootItem(d.key, kitSource(d.kit), roll(b, "pile", d.uid)), "");
+    const gun = lootItem(d.key, kitSource(d.kit), roll(b, "pile", d.uid));
+    if (d.loaded) gun.loaded = { ...d.loaded }; // gunload.js: the rounds that were left in it
+    stow(pile, gun, "");
     out.push(pile);
   }
   return out;
