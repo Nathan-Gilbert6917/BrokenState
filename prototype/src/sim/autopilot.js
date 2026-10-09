@@ -75,7 +75,8 @@ const CLAIM_ORDER = "claim", WELL_ORDER = "well";
 const claimsReady = () => typeof CL.canClaim === "function" && typeof CL.playerClaims === "function";
 import { jobTripCands, jobById, activeJobs } from "./jobs.js";
 import { hiveAt, hiveForce, hiveById, zombieToughness } from "./hives.js";
-import { crawlEstimate, hiveCrawlAutoStep } from "./hivecrawl.js"; // the hive crawl: the odds of the way to the core, a crawl step an hour
+import { crawlEstimate, hiveCrawlAutoStep, coreGate } from "./hivecrawl.js"; // the hive crawl: the odds of the way to the core and of the core, a crawl step an hour
+import { LIGHTS } from "./lights.js"; // the lights the armory would give a hive squad (the core's odds)
 import { isLate } from "./eras.js";
 import { BREAKOFF } from "./breakoff.js";
 import { growthAt, ensureGrowths, growthForce } from "./hivetech.js";
@@ -111,7 +112,7 @@ import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
 // lossFear / fightBias / raidBias weigh fights on conflict cards, chain = extra sites a team may hit on one trip.
 // hiveFrom = first day it storms hives, hiveOdds = squad power over the brood's strength it wants (hiveCandidate),
-// hiveFires = fires it may set around a mound first, hiveRest = days between hive missions.
+// hiveRest = days between hive missions.
 // conquer = which groups' bases it storms (conquestCandidate: "ready" any hostile group, "provoked" hostile groups
 // that raided it lately or when only hostile groups keep the coalition from winning, "last" only then), from day
 // conquerFrom, with at least conquerOdds to win (lateConquer: from the late game, eras.js year 10, it goes for any
@@ -128,7 +129,7 @@ export const PERSONALITIES = {
     curious: 0.5, baseGuards: 2, guardMargin: 1.4, restMood: 35, chain: 0, outposts: 1, outpostPop: 12, strangerDays: 8,
     holdRatio: 1.5, raid: false, rescue: false, tradeEvery: 14,
     reserves: true, shortCooldown: 2, shortReach: 2, homeHorde: 5,
-    hiveFrom: 150, hiveOdds: 1.35, hiveFires: 3, hiveRest: 10,
+    hiveFrom: 150, hiveOdds: 1.35, hiveRest: 10,
     conquer: "last", conquerFrom: 240, conquerOdds: 0.8, retreatBelow: 0.9,
   },
   balanced: {
@@ -137,7 +138,7 @@ export const PERSONALITIES = {
     searchHours: 5, searchHeat: 45, hurtStop: 45, risk: 0.65, riskAversion: 1, lossFear: 9, fightBias: 0, raidBias: -1,
     curious: 1, baseGuards: 1, guardMargin: 1.25, restMood: 28, chain: 1, outposts: 2, outpostPop: 9, strangerDays: 4,
     holdRatio: 1.25, raid: false, rescue: true, tradeEvery: 12,
-    hiveFrom: 90, hiveOdds: 1.2, hiveFires: 3, hiveRest: 6,
+    hiveFrom: 90, hiveOdds: 1.2, hiveRest: 6,
     conquer: "provoked", conquerFrom: 150, conquerOdds: 0.75, retreatBelow: 0.8, lateConquer: 0.7,
   },
   aggressive: {
@@ -146,7 +147,7 @@ export const PERSONALITIES = {
     searchHours: 7, searchHeat: 62, hurtStop: 35, risk: 0.5, riskAversion: 0.6, lossFear: 7, fightBias: 1, raidBias: 2,
     curious: 1.4, baseGuards: 1, guardMargin: 1.1, restMood: 22, chain: 2, outposts: 3, outpostPop: 8, strangerDays: 3,
     holdRatio: 1.2, raid: true, rescue: true, tradeEvery: 0,
-    hiveFrom: 30, hiveOdds: 1.05, hiveFires: 3, hiveRest: 4,
+    hiveFrom: 30, hiveOdds: 1.05, hiveRest: 4,
     conquer: "ready", conquerFrom: 60, conquerOdds: 0.65, retreatBelow: 0.6,
   },
   // The play styles below (2026-10-09, the progression census) lean on one of the three above: `base` is the style
@@ -162,7 +163,7 @@ export const PERSONALITIES = {
     searchHours: 4, searchHeat: 40, hurtStop: 50, risk: 0.7, riskAversion: 1.2, lossFear: 10, fightBias: -0.5, raidBias: -3,
     curious: 1, baseGuards: 1, guardMargin: 1.3, restMood: 30, chain: 1, outposts: 2, outpostPop: 9, strangerDays: 3,
     holdRatio: 1.3, raid: false, rescue: true, tradeEvery: 6,
-    hiveFrom: 120, hiveOdds: 1.25, hiveFires: 3, hiveRest: 8,
+    hiveFrom: 120, hiveOdds: 1.25, hiveRest: 8,
     conquer: "last", conquerFrom: 240, conquerOdds: 0.8, retreatBelow: 0.85,
     envoyEvery: 8, envoyReach: 3.5, envoyBare: true, landEarly: true, tributeLean: 1.8,
   },
@@ -172,7 +173,7 @@ export const PERSONALITIES = {
     searchHours: 5, searchHeat: 50, hurtStop: 40, risk: 0.6, riskAversion: 0.9, lossFear: 8, fightBias: 0.5, raidBias: 0,
     curious: 1.2, baseGuards: 1, guardMargin: 1.2, restMood: 25, chain: 1, outposts: 1, outpostPop: 10, strangerDays: 4,
     holdRatio: 1.25, raid: false, rescue: true, tradeEvery: 10,
-    hiveFrom: 20, hiveOdds: 1.0, hiveFires: 4, hiveRest: 3,
+    hiveFrom: 20, hiveOdds: 1.0, hiveRest: 3,
     conquer: "provoked", conquerFrom: 200, conquerOdds: 0.75, retreatBelow: 0.75, lateConquer: 0.75,
   },
   turtle: {
@@ -182,7 +183,7 @@ export const PERSONALITIES = {
     curious: 0.3, baseGuards: 3, guardMargin: 1.6, restMood: 38, chain: 0, outposts: 1, outpostPop: 20, strangerDays: 10,
     holdRatio: 1.6, raid: false, rescue: false, tradeEvery: 14,
     reserves: true, shortCooldown: 3, shortReach: 1.5, homeHorde: 6,
-    hiveFrom: 400, hiveOdds: 1.5, hiveFires: 3, hiveRest: 14,
+    hiveFrom: 400, hiveOdds: 1.5, hiveRest: 14,
     conquer: "last", conquerFrom: 400, conquerOdds: 0.85, retreatBelow: 0.95,
   },
   expander: {
@@ -191,7 +192,7 @@ export const PERSONALITIES = {
     searchHours: 6, searchHeat: 55, hurtStop: 40, risk: 0.55, riskAversion: 0.7, lossFear: 8, fightBias: 0.5, raidBias: 1,
     curious: 1.3, baseGuards: 1, guardMargin: 1.15, restMood: 24, chain: 2, outposts: 5, outpostPop: 6, strangerDays: 3,
     holdRatio: 1.2, raid: true, rescue: true, tradeEvery: 0,
-    hiveFrom: 60, hiveOdds: 1.15, hiveFires: 3, hiveRest: 6,
+    hiveFrom: 60, hiveOdds: 1.15, hiveRest: 6,
     conquer: "ready", conquerFrom: 90, conquerOdds: 0.7, retreatBelow: 0.65, lateConquer: 0.6,
     envoyEvery: 15, landEarly: true,
   },
@@ -3001,17 +3002,17 @@ function envoyCandidate(state, need) {
 // fighters coalition members and job givers send take their share, alliance.js hiveAllies). The ratio squad
 // value (stormValue) / (brood × its power / 5.2) it wants is the style's hiveOdds (calibrated against the battle
 // played by the AI on both sides: about 1.3 costs a fighter in three storms, 1.1 about one a storm, 0.9 two or
-// three and sometimes the squad). Fires around the mound (6 fuel each, up to hiveFires) burn
-// 30% of the guard first when that is what it takes. Targets: known hives, nearest first, ahead of them those
+// three and sometimes the squad). Nothing from outside burns a hive any more (2026-10): the storm is the crawl to the
+// core, and the gate for it is the core's odds by the numbers (hivecrawl.js coreGate, fitted to the map: the squad's
+// lights and the Molotovs and bangs it carries or the armory would give it, the wear of the way in), at least the
+// style's stormNeed. Targets: known hives, nearest first, ahead of them those
 // within 12 tiles of one of your bases (their hordes hit you first), those a group asked you to storm (their
 // fighters join) and those with a small guard.
 const HIVE_GUESS = 100;  // guard assumed at a hive never seen up close
 const HIVE_SQUAD = 6;    // a storm is six fighters
 const HIVE_KEEP = 3;     // people a hive mission leaves at the hub at least
 const HIVE_HEALTH = 80;  // fit to storm a hive
-const FIRE_FUEL = 6;     // hives.js "Set fires around it"
 const HIVE_AMMO = 12;    // ammo a fighter wants for a storm
-const FIRE_CUT = 0.7;    // the guard left after a fire
 const knownHive = (state, id) => (state.live.has(id) ? state.tiles[id].hive : !!(state.knowledge[id] && state.knowledge[id].hive));
 // A fighter's worth in a storm, as the tactical battle plays it (combat.js playerUnit): the hit chance times the
 // damage of the gun they can use (an assault rifle below its Shooting 10 misses a lot more than its combat
@@ -3042,26 +3043,31 @@ function knownGuard(state, id) {
   return k && k.hordeSize ? Math.max(HIVE_GUARD_MIN, k.hordeSize) : HIVE_GUESS;
 }
 const HIVE_GUARD_MIN = 40;
-// Squad power over the hive's strength after `fires` fires (hivecrawl.js crawlEstimate: the core's brood, the
-// Hivemind and the Broodmother as one strength, × the wear of the fights on the shortest way in; the allies' fighters
-// off), on the scale the old storm's brood had (count × power / 5.2).
-function stormRatio(state, hive, power, guard, fires) {
-  return power / crawlEstimate(state, hive, Math.round(guard * FIRE_CUT ** fires)).strength;
+// The core's odds the style wants before the squad goes straight for it (a storm trip): 0.5 + 0.25 × its hiveOdds,
+// 0.7–0.9 (Aggressive 0.75, Balanced 0.8, Cautious about 0.84): the crawl's own gate for the core is AUTO.coreOdds
+// (0.75) on the team as it stands when it gets there.
+const stormNeed = (P) => Math.max(0.7, Math.min(0.9, 0.5 + 0.25 * P.hiveOdds));
+// What the armory would give a hive squad on the way out (kit.js packTripKit, packHiveKit): a light each for those
+// without, the Molotovs and the bangs (flashbangs, frag grenades, pipe bombs) up to HIVE_KIT.
+const HIVE_PREP = { fire: ["molotov"], stun: ["flashbang", "frag", "pipebomb"], kit: 4 };
+function armoryPrep(base, squad) {
+  const arm = (base && base.armory) || [];
+  const count = (keys) => Math.min(HIVE_PREP.kit, arm.filter((it) => it && keys.includes(it.key)).length);
+  const lights = arm.filter((it) => it && LIGHTS[it.key]).length;
+  return { lights: Math.min(lights, squad.length), fire: count(HIVE_PREP.fire), stun: count(HIVE_PREP.stun) };
+}
+// The core's odds for this squad at a guard of `guard` (hivecrawl.js coreGate), with what the armory would give it.
+function stormOdds(state, hive, squad, guard, base = null) {
+  return coreGate(state, hive, squad, guard, base ? armoryPrep(base, squad) : {}).win;
 }
 // What a crawl takes: ammo and meds by the den's depth, hours inside (launchTrip's time on site).
 const crawlKit = (state, hive) => { const e = crawlEstimate(state, hive); return { ammo: 60 + 15 * e.depth, meds: 3 + Math.ceil(e.depth / 2), hours: e.hours }; };
-// Fewest fires that bring the odds up to the style's margin (null: not even with every fire it may set).
-function firesNeeded(state, hive, power, guard, maxFires) {
-  const P = persona(state);
-  for (let n = 0; n <= maxFires; n++) if (stormRatio(state, hive, power, guard, n) >= P.hiveOdds) return n;
-  return null;
-}
 // planTrip's hive candidate (null: none this morning; hiveRejects counts why). The target is the campaign's hive
-// (planCampaign: the nearest known, a group's job first). A storm goes when the squad, the ammo stockpile and the
-// odds (with the fires this trip can set) are there. When the odds are not there yet but fires over several trips
-// would bring them in reach (CAMPAIGN.fireTrips × hiveFires fires, each burning 30% of the guard), a fire trip goes
-// instead: the squad with fuel, sets its fires and comes home (hiveChoice), and the next trip finds a smaller guard
-// (the team's look updates what the hub knows of it). A fire trip needs no ammo stockpile.
+// (planCampaign: the nearest known, a group's job first). A storm trip goes when the squad, the ammo stockpile and the
+// core's odds (stormOdds at least stormNeed) are there. Else a crawl trip (hivecrawl.js): the squad crawls as deep as
+// it can, killing brood (each one thins the guard) and burning egg chambers, and comes home when hurt; the chambers it
+// cleared stay clear for a while and the next trip gets further: only when the squad is well over the worst chamber
+// on the way (crawlRatio). Else it waits for better odds.
 function hiveCandidate(state, home, pool) {
   const P = persona(state);
   const g = gov(state);
@@ -3079,69 +3085,41 @@ function hiveCandidate(state, home, pool) {
   const squad = hiveSquad(pool, size);
   if (squad.length < size) return waits("squad");
   const power = squadPower(squad);
-  const fuel = Math.max(0, Math.floor(((h.stock.fuel || 0) - 4) / FIRE_FUEL));
   const guard = knownGuard(state, hive.tile);
-  const fires = firesNeeded(state, hive, power, guard, Math.min(P.hiveFires, fuel));
-  const d = state.grid.distance(hive.tile, h.tile);
-  if (fires != null) {
+  const odds = stormOdds(state, hive, squad, guard, h);
+  const kit = crawlKit(state, hive); // deeper hives: more ammo and meds, longer inside
+  if (odds >= stormNeed(P)) {
     if (baseAmmo(state, h) < campaignAmmoTarget(state, h)) return waits("ammo");
     c.waits = "storm";
-    const ratio = stormRatio(state, hive, power, guard, fires);
-    const kit = crawlKit(state, hive); // deeper hives: more ammo and meds, longer inside
     return { mission: "hive", tile: hive.tile, score: 6, crew: size, hive: true, onSite: kit.hours,
-      why: `destroy ${hive.name} (squad ${power.toFixed(1)} against the hive's ${(power / ratio).toFixed(1)}${fires ? ` after ${fires} fire${fires > 1 ? "s" : ""}` : ""}, its core ${crawlEstimate(state, hive).depth} chambers in; the campaign's ${c.fires} fire${c.fires === 1 ? "" : "s"} so far)`,
-      supplies: { ammo: kit.ammo, meds: kit.meds, fuel: Math.max(fires * FIRE_FUEL, 3) }, min: { fuel: fires * FIRE_FUEL }, fires };
+      why: `destroy ${hive.name} (its core about ${Math.round(odds * 100)}% for the squad, ${crawlEstimate(state, hive).depth} chambers in)`,
+      supplies: { ammo: kit.ammo, meds: kit.meds, fuel: 3 }, min: {} };
   }
-  // Not this trip: a fire trip when the campaign's fires would get there (and there is fuel for one at least).
-  const canFire = Math.min(P.hiveFires, fuel);
-  // Else a crawl trip (hivecrawl.js): the squad crawls as deep as it can, killing brood (each one thins the guard) and
-  // burning egg chambers, and comes home when hurt; the chambers it cleared stay clear for a while and the next trip
-  // gets further. Once the campaign has set a trip's worth of fires, or when fires cannot get there, and only when the
-  // squad is well over the worst chamber on the way (crawlRatio).
-  const fireWay = canFire >= 1 && firesNeeded(state, hive, power, guard, P.hiveFires * CAMPAIGN.fireTrips) != null;
-  if ((!fireWay || c.fires >= P.hiveFires) && crawlRatio(state, hive, power, guard) >= P.hiveOdds * CAMPAIGN.crawlOdds) {
+  if (crawlRatio(state, hive, power, guard) >= P.hiveOdds * CAMPAIGN.crawlOdds) {
     if (baseAmmo(state, h) < campaignAmmoTarget(state, h)) return waits("ammo");
     c.waits = "crawl";
-    const kit = crawlKit(state, hive);
     return { mission: "hive", tile: hive.tile, score: 5, crew: size, hive: true, crawlTrip: true, onSite: kit.hours,
-      why: `crawl into ${hive.name} (its core ${crawlEstimate(state, hive).depth} chambers in): clear the way and thin its brood for the storm (squad ${power.toFixed(1)}, the core's odds not there yet)`,
-      supplies: { ammo: kit.ammo, meds: kit.meds, fuel: 3 }, min: {}, fires: 0 };
+      why: `crawl into ${hive.name} (its core ${crawlEstimate(state, hive).depth} chambers in): clear the way and thin its brood for the storm (the core about ${Math.round(odds * 100)}% for the squad, ${Math.round(stormNeed(P) * 100)}% wanted)`,
+      supplies: { ammo: kit.ammo, meds: kit.meds, fuel: 3 }, min: {} };
   }
-  if (!fireWay) return waits("odds");
-  c.waits = "fires";
-  return { mission: "hive", tile: hive.tile, score: 5, crew: size, hive: true, fireTrip: true,
-    why: `set fires around ${hive.name} (guard about ${guard}, ${d} tiles off): the campaign's odds are not there yet (squad ${power.toFixed(1)} against the brood's ${(power / stormRatio(state, hive, power, guard, 0)).toFixed(1)})`,
-    supplies: { ammo: Math.min(40, Math.max(0, baseAmmo(state, h) - 20)), meds: 2, fuel: canFire * FIRE_FUEL }, min: { fuel: FIRE_FUEL }, fires: canFire };
+  return waits("odds");
 }
-// The hive card (hives.js): storm when the odds are there, else set fires while that helps and the fuel lasts
-// (the team then storms on its next orders: teamAct), else back off.
+// The hive card (hives.js): in when the core's odds are there (or on a crawl trip), else back off.
 function hiveChoice(state, card, opts, p, find) {
   const P = persona(state);
   const hive = p ? hiveAt(state, partyTile(p)) : null;
   if (!hive) return find(/^Back off/);
   const fit = partyMembers(state, p).filter((s) => s.health >= 60);
-  const power = squadPower(fit);
   const guard = hiveForce(state, hive).guard; // the card says how many are packed around it
-  const fired = p.apFires || 0;
-  // Guns need ammo (an assault rifle 2 a shot): no storm with less than HIVE_AMMO a fighter (fires need none).
+  // Guns need ammo (an assault rifle 2 a shot): no storm with less than HIVE_AMMO a fighter.
   const ammo = teamAmmo(state, p); // ammo.js: rounds that fit their guns
   const armed = ammo >= fit.length * HIVE_AMMO;
-  if (armed && fit.length >= HIVE_SQUAD - 1 && stormRatio(state, hive, power, guard, 0) >= P.hiveOdds) return find(/^Enter the hive/); // hivecrawl.js: the crawl to the core (hiveCrawlAutoStep)
+  if (armed && fit.length >= HIVE_SQUAD - 1 && coreGate(state, hive, fit, guard).win >= stormNeed(P)) return find(/^Enter the hive/); // hivecrawl.js: the crawl to the core (hiveCrawlAutoStep)
   if (armed && p.apCrawlTrip && fit.length >= HIVE_SQUAD - 1) return find(/^Enter the hive/); // a crawl trip: as deep as it can, then home
-  const lit = (choice) => { p.apFires = fired + 1; p.apHiveAgain = true; campaignFire(state, hive); return choice; };
-  // Molotovs (hives.js FIREBOMB) before fuel: a bigger fire, and the fuel stays for the drive.
-  const bomb = find(/^Firebomb/);
-  if (bomb && !isDisabled(state, bomb) && fired < P.hiveFires && fit.length >= HIVE_SQUAD - 1 && guard >= HIVE_GUARD_MIN) return lit(bomb);
-  const fire = find(/^Set fires/);
-  const fuelHome = p.vehicle ? p.apFuelHome || 0 : 0;
-  const canFire = fire && !isDisabled(state, fire) && partyFuelOf(state, p) - FIRE_FUEL >= fuelHome && fired < P.hiveFires;
-  // Fires only when the storm comes within reach with the fires the team can still set, or on a campaign fire trip
-  // (hiveCandidate: the fires stack over several trips toward the storm).
-  const left = Math.min(P.hiveFires - fired, Math.floor((partyFuelOf(state, p) - fuelHome) / FIRE_FUEL));
-  if (canFire && fit.length >= HIVE_SQUAD - 1 && guard >= HIVE_GUARD_MIN && (p.apFireTrip || firesNeeded(state, hive, power, guard, left) != null)) return lit(fire);
   return find(/^Back off/);
 }
-// After the fires: the team storms (or sets the next fire) when it is still fit for it.
+// An old save's team told to storm again after its fires (p.apHiveAgain, before the fires were taken out): it does,
+// when it is still fit for it.
 function hiveAgain(state, p) {
   if (!p.apHiveAgain) return false;
   delete p.apHiveAgain;
@@ -3162,9 +3140,8 @@ function hiveJobOk(state, job) {
   if (squad.length < HIVE_SQUAD) return false;
   const f = factionById(state, job.fid);
   const extra = f ? Math.max(1, Math.min(3, Math.round(f.pop / 10))) : 0; // their fighters once the job is taken
-  const est = crawlEstimate(state, hive, Math.round(knownGuard(state, hive.tile) * FIRE_CUT ** Math.min(P.hiveFires, Math.floor(((h.stock.fuel || 0) - 4) / FIRE_FUEL))));
   const thin = 1 - Math.min(0.3, extra * 0.05); // their fighters thin the brood in every chamber (alliance.js)
-  return squadPower(squad) / (est.strength * thin) >= P.hiveOdds && state.grid.distance(h.tile, hive.tile) <= 40;
+  return stormOdds(state, hive, squad, Math.round(knownGuard(state, hive.tile) * thin), h) >= stormNeed(P) && state.grid.distance(h.tile, hive.tile) <= 40;
 }
 
 // ---------- the hive campaign ----------
@@ -3172,11 +3149,11 @@ function hiveJobOk(state, job) {
 // within CAMPAIGN.far of the hub, a hive a group asked it to storm (jobs.js) first, one within 12 tiles of a base
 // next; it sticks to its target while that stands. Toward it the hub stockpiles ammo to campaignAmmoTarget
 // (HIVE_SQUAD × HIVE_AMMO + CAMPAIGN.ammoExtra: needs() asks for ammo, so trips go to gun stores and the like,
-// radio deals and trade visits ask for it, the ammo bench runs to it, and no envoy gives ammo away), sets fires
-// over several trips when that brings the odds in reach (hiveCandidate fire trips), courts and invites the groups
+// radio deals and trade visits ask for it, the ammo bench runs to it, and no envoy gives ammo away), sends crawl trips
+// while the core is beyond the squad (hiveCandidate), courts and invites the groups
 // near the target first (aimAt: envoys, pacts; alliance.js hiveAllies counts a member's fighters at the mound) and
 // storms when the odds are there. campaignLine says what it waits for (the Goals panel / the morning log).
-const CAMPAIGN = { far: 60, ammoExtra: 20, fireTrips: 3, nearBase: 12, crawlOdds: 1.4 }; // crawlOdds: × hiveOdds over the worst chamber for a crawl trip
+const CAMPAIGN = { far: 60, ammoExtra: 20, nearBase: 12, crawlOdds: 1.4 }; // crawlOdds: × hiveOdds over the worst chamber for a crawl trip
 // The squad over the worst chamber on the shortest way in (its brood × power / 5.2, at a guard of `guard`).
 function crawlRatio(state, hive, power, guard) {
   const est = crawlEstimate(state, hive, guard);
@@ -3215,22 +3192,10 @@ function campaignAmmoWant(state) {
   const have = baseAmmo(state, h);
   return have < target * 0.5 ? 2.4 : have < target ? 1.9 : 0;
 }
-// Fuel for the campaign's fires (a trip's hiveFires × FIRE_FUEL, plus the 4 kept back) while the campaign waits for
-// fires or odds and the hub has less: 1.6 on the needs() scale (fuel trips, trades).
-function campaignFuelWant(state) {
-  const c = gov(state).campaign;
-  const h = hub(state);
-  if (!c || !h || !(c.waits === "fires" || c.waits === "odds")) return 0;
-  return (h.stock.fuel || 0) < 4 + persona(state).hiveFires * FIRE_FUEL ? 1.6 : 0;
-}
-// The fuel the campaign holds back from cars and the generator while it waits for fires or odds (tripFuelHold, fuelFloor).
-function campaignFuelHold(state, base = hub(state)) {
-  const c = gov(state).campaign;
-  if (!c || !base || base.type !== "hub" || !(c.waits === "fires" || c.waits === "odds")) return 0;
-  return Math.min(Math.max(0, base.stock.fuel || 0), 4 + persona(state).hiveFires * FIRE_FUEL);
-}
-// A fire set at the campaign's hive (hiveChoice).
-function campaignFire(state, hive) { const c = gov(state).campaign; if (c && c.hiveId === hive.id) c.fires++; }
+// The campaign's fuel: none held or asked for any more (the fires around the mound are gone, 2026-10); kept as the
+// hooks the trips and the needs read (0).
+const campaignFuelWant = () => 0;
+const campaignFuelHold = () => 0;
 // What the campaign waits for, one line ("" without a campaign). The Goals panel can show it; the governor logs it
 // each morning (campaignReport).
 export function campaignLine(state) {
@@ -3244,12 +3209,12 @@ export function campaignLine(state) {
   const near = state.factions.filter((f) => f.alive && f.known && !isMember(state, f) && f.bases.some((b) => state.grid.distance(b, hive.tile) <= ALLIANCE.HIVE_RANGE)).map((f) => f.name);
   const WAIT = {
     rest: "the squad to rest between hive missions", home: "enough people to keep the hub safe while the squad is out", squad: "six fit fighters", ammo: `the ammo stockpile (${baseAmmo(state, h)} of ${target})`,
-    odds: "better odds: a stronger squad, allies near the mound, or fuel for fires", fires: "the next fire trip", crawl: "the next crawl trip into the hive", storm: "nothing: the storm goes out", far: "a hive within reach", unknown: "a known hive",
+    odds: "better odds: a stronger squad, lights, Molotovs and flashbangs for the core, or allies near the mound", fires: "better odds", crawl: "the next crawl trip into the hive", storm: "nothing: the storm goes out", far: "a hive within reach", unknown: "a known hive",
   };
-  // A storm or fire trip picked this morning that could not get away (launchTrip: rations, a car, a way there) is not out.
+  // A storm or crawl trip picked this morning that could not get away (launchTrip: rations, a car, a way there) is not out.
   const out = state.parties.some((p) => p.owner === "player" && p.mission === "hive");
-  const wait = (c.waits === "storm" || c.waits === "fires" || c.waits === "crawl") && !out ? "the squad to get away (its rations, a car for the drive, or a way there over land)" : WAIT[c.waits] || "the morning's plan";
-  return `Campaign on ${hive.name} (${state.grid.distance(hive.tile, h.tile)} tiles, guard about ${knownGuard(state, hive.tile)}): ${baseAmmo(state, h)} of ${target} ammo, ${c.fires} fire${c.fires === 1 ? "" : "s"} set, allies: ${allies.length ? allies.join(", ") : "none yet"}${near.length ? ` (courting ${near.join(", ")})` : ""}. Waiting for ${wait}.`;
+  const wait = (c.waits === "storm" || c.waits === "crawl") && !out ? "the squad to get away (its rations, a car for the drive, or a way there over land)" : WAIT[c.waits] || "the morning's plan";
+  return `Campaign on ${hive.name} (${state.grid.distance(hive.tile, h.tile)} tiles, guard about ${knownGuard(state, hive.tile)}): ${baseAmmo(state, h)} of ${target} ammo, allies: ${allies.length ? allies.join(", ") : "none yet"}${near.length ? ` (courting ${near.join(", ")})` : ""}. Waiting for ${wait}.`;
 }
 function campaignReport(state) {
   const line = campaignLine(state);
@@ -4102,13 +4067,12 @@ function launchTrip(state, c, pool, spareHands) {
   if (c.survey) surveySent(state);
   if (haulBand != null) res.party.haulCap = Math.max(poolAtBand(crew, haulBand), supplyLoad(sup) + 6 * n);
   if (isCar(v)) res.party.apFuelHome = Math.ceil((est.fuel / 2) * 1.2); // hiveChoice: fires never burn the fuel for the drive home
-  if (c.fireTrip) res.party.apFireTrip = true; // the campaign's fire trip (hiveChoice fires, then home)
   if (c.crawlTrip) res.party.apCrawlTrip = true; // the campaign's crawl trip (hiveChoice: in, as deep as it can)
   if (c.emergency) res.party.apEmergency = true; // emergencyTrips: outside the style's team limit
   if (c.claim) res.party.apClaim = true; // claimCandidate: claims the tile on arrival (teamAct)
   if (c.well) res.party.apWell = true; // wellCandidate: digs a well on arrival (teamAct)
   if (c.haul || c.emergency) res.party.apHaulWatch = true; // trackHauls: what it brings home, for the Water / Food line
-  if (c.mission === "hive") { g.stats.hiveTrips = (g.stats.hiveTrips || 0) + 1; if (g.campaign && g.campaign.tile === c.tile) g.campaign.trips++; if (c.fireTrip) g.stats.fireTrips = (g.stats.fireTrips || 0) + 1; else if (c.crawlTrip) g.stats.crawlTrips = (g.stats.crawlTrips || 0) + 1; else g.stats.stormTrips = (g.stats.stormTrips || 0) + 1; }
+  if (c.mission === "hive") { g.stats.hiveTrips = (g.stats.hiveTrips || 0) + 1; if (g.campaign && g.campaign.tile === c.tile) g.campaign.trips++; if (c.crawlTrip) g.stats.crawlTrips = (g.stats.crawlTrips || 0) + 1; else g.stats.stormTrips = (g.stats.stormTrips || 0) + 1; }
   if (c.mission === "assault") g.stats.assaultTrips = (g.stats.assaultTrips || 0) + 1;
   if (c.food) g.stats[c.food] = (g.stats[c.food] || 0) + 1; // huntTrips, fishTrips
   g.stats.launched++;

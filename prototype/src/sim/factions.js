@@ -118,10 +118,10 @@ export const RAIDS = {
 // spends it crawling the hive's den as your teams do (hivecrawl.js groupHiveCrawl: the same chambers on the shortest
 // way, the same depth by the hive's tier, the brood each chamber holds in the guard's units, then the core: its brood,
 // the Hivemind and the Broodmother); what it clears stays clear for a while (for a later party, and for your teams),
-// it is driven off where its strength runs out, and it burns the hive out when it pays for the core. It burns STORES of
-// the hive's stores per kill. The group loses people to it: LOSS × all it ran into against its strength, at most
+// it is driven off where its strength runs out, and the hive dies only when it pays for the core and kills the
+// Hivemind (the one way a hive dies, for the groups as for you). It costs the hive STORES of its stores per kill. The group loses people to it: LOSS × all it ran into against its strength, at most
 // LOSS_MAX of the party. (SMALL: no longer used, kept for old tools.) A hive you fought
-// within PLAYER_DAYS days (fires, Molotovs, a storm: hives.js notePlayerFight): +GOODWILL with the group, you are
+// within PLAYER_DAYS days (a crawl of yours: hive.playerDay): +GOODWILL with the group, you are
 // fighting the same enemy. You hear of it when the group is in radio reach (radio.js canRadioGroup) or the hive is
 // in sight; a hive destroyed counts like any other (hives.js destroyHive: the hive victory, the records).
 export const GROUP_HIVE = {
@@ -129,9 +129,9 @@ export const GROUP_HIVE = {
   SHARE: 0.35, MIN: 3, FIGHT: 2.5, STORES: 0.3, SMALL: 20, LOSS: 0.1, LOSS_MAX: 0.3, GOODWILL: 3, PLAYER_DAYS: 30,
 };
 // With these a fortress of 30 (11 fighters at arms 1.2: strength 13) kills about 33 of a guard a party: a hive with a
-// guard of 100 and no brood chamber is burned out in 3–4 parties (a season) if it cannot rebuild its guard; one in a
-// cluster that rebuilds (a medium horde every time the guard falls under its minimum) holds out until the group has
-// grown to 40–50 or your fires have cut the guard first (then +GOODWILL). tools/grouphivetest.js measures it.
+// guard of 100 and no brood chamber has its Hivemind killed in 3–4 parties (a season) if it cannot rebuild its guard;
+// one in a cluster that rebuilds (a medium horde every time the guard falls under its minimum) holds out until the
+// group has grown to 40–50 or your crawls have thinned the guard first (then +GOODWILL). tools/grouphivetest.js measures it.
 // A group of GROUP_BREAK people or fewer is broken (collapseFaction): every floor that kept groups above 8 (war raids,
 // peace when a side is worn down) lets them be ground down this far.
 export const GROUP_BREAK = 3;
@@ -491,7 +491,7 @@ export function groupHiveWar(state, f, today = day(state)) {
     stats.groupKills = (stats.groupKills || 0) + 1;
     groupTakeHoard(state, f, hive); // hivecrawl.js: the hive's hoard in its core into their stores and arsenal (AI parity)
     destroyHive(state, hive, `by ${knownName(f, "another group")}'s fighters`, { quiet: true }); // the hive victory and the records as for any hive
-    if (heard) log(state, `${who}'s fighters crawled ${crawl.depth} chambers into ${hive.name}, killed its ${BOSS_NAMES.hivemind} and burned it out${dead ? `, losing ${dead} of their own` : ""}. ${hivesLeftText(state)}`, "good");
+    if (heard) log(state, `${who}'s fighters crawled ${crawl.depth} chambers into ${hive.name}, killed its ${BOSS_NAMES.hivemind} in the core: the hive is dead${dead ? `, losing ${dead} of their own` : ""}. ${hivesLeftText(state)}`, "good");
     return "burned";
   }
   if (heard) log(state, `${who}'s fighters crawled into ${hive.name} and were driven off ${crawl.reached >= crawl.depth ? "at its core" : crawl.reached ? `${crawl.reached} chamber${crawl.reached === 1 ? "" : "s"} in of ${crawl.depth}` : "at its mouth"}${cut ? `, after cutting down about ${cut} of its brood` : ""}${dead ? ` (${dead} of them killed)` : ""}.`, "info");

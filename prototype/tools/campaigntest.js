@@ -90,21 +90,21 @@ function campaignScenario(seed) {
   if (!count(h, "ammo_bench")) addBuilding(h, "ammo_bench");
   console.log(`  hive ${hive.name} at ${g.distance(hive.tile, h.tile)} tiles; ${f.name}'s base ${g.distance(f.bases[0], hive.tile)} tiles from it, ${g.distance(f.bases[0], h.tile)} from the hub`);
   const P = PERSONALITIES.balanced;
-  let lines = 0, maxAmmo = 0, fires = 0, stormDay = null, inviteDay = null, firstLine = "", ammoDay = null;
+  let lines = 0, maxAmmo = 0, stormDay = null, inviteDay = null, firstLine = "", ammoDay = null;
   const end = day(state) + 400;
   run(state, end, () => {
     if (state.hour % 24 !== 8) return;
     const c = state.governor.campaign;
     if (c && c.line) { lines++; if (!firstLine) firstLine = c.line; if (day(state) % 60 === 0) console.log(`  d${day(state)}: ${c.line}${hiveAt(state, hive.tile) ? "" : " [hive gone]"} (fuel ${Math.floor(h.stock.fuel || 0)})`); }
-    if (c) { maxAmmo = Math.max(maxAmmo, baseAmmo(state, h)); fires = Math.max(fires, c.fires); if (ammoDay == null && baseAmmo(state, h) >= 92) ammoDay = day(state); }
+    if (c) { maxAmmo = Math.max(maxAmmo, baseAmmo(state, h)); if (ammoDay == null && baseAmmo(state, h) >= 92) ammoDay = day(state); }
     if (stormDay == null && (autopilotStats(state).stormTrips || 0) > 0) stormDay = day(state);
     if (inviteDay == null && isMember(state, f)) inviteDay = day(state);
-    if (stormDay != null && inviteDay != null && fires > 0 && !hiveAt(state, hive.tile)) state.gameOver = true; // all seen: stop early
+    if (stormDay != null && inviteDay != null && !hiveAt(state, hive.tile)) state.gameOver = true; // all seen: stop early
   });
   state.gameOver = false;
   const st = autopilotStats(state);
   const rj = st.hiveRejects || {};
-  console.log(`  day ${day(state)}: ${lines} campaign lines, ammo peak ${maxAmmo} (92 reached ${ammoDay != null ? `day ${ammoDay}` : "never"}), ${fires} fires, fire trips ${st.fireTrips || 0}, crawl trips ${st.crawlTrips || 0}, storm trips ${st.stormTrips || 0}${stormDay != null ? ` (first day ${stormDay})` : ""}, ${f.name} ${inviteDay != null ? `joined day ${inviteDay}` : "not a member"}, hive ${hiveAt(state, hive.tile) ? "stands" : "destroyed"}, ${alive(state).length} alive`);
+  console.log(`  day ${day(state)}: ${lines} campaign lines, ammo peak ${maxAmmo} (92 reached ${ammoDay != null ? `day ${ammoDay}` : "never"}), crawl trips ${st.crawlTrips || 0}, storm trips ${st.stormTrips || 0}${stormDay != null ? ` (first day ${stormDay})` : ""}, ${f.name} ${inviteDay != null ? `joined day ${inviteDay}` : "not a member"}, hive ${hiveAt(state, hive.tile) ? "stands" : "destroyed"}, ${alive(state).length} alive`);
   console.log(`  rejects: ${REJECT_KEYS.map((k) => `${k} ${rj[k] ?? "-"}`).join(", ")}`);
   if (process.env.CTLOG) for (const l of state.log.filter((x) => /hive|Hive|brood|died/.test(x.text))) console.log(`    d${Math.floor((l.hour ?? 0) / 24)} ${l.text}`);
   console.log(`  first line: ${firstLine}`);
@@ -113,12 +113,13 @@ function campaignScenario(seed) {
   check(/ of 92 ammo/.test(firstLine), `the campaign's ammo target is HIVE_SQUAD × HIVE_AMMO + 20 = 92 (line: ${firstLine.slice(0, 80)})`);
   check(maxAmmo >= 92, `the campaign stockpiles ammo to its target (peak ${maxAmmo})`);
   check(inviteDay != null, `${f.name} invited into the coalition`);
-  // A group's war party (factions.js GROUP_HIVE) can burn the hive down before the governor's hiveFrom day: then there
-  // is nothing left to storm, and the fire and storm checks do not apply (the site is placed to make that rare).
+  // A group's war party (factions.js GROUP_HIVE) can kill the Hivemind before the governor's hiveFrom day: then there
+  // is nothing left to storm, and the storm checks do not apply (the site is placed to make that rare).
   const byGroup = !hiveAt(state, hive.tile) && (st.stormTrips || 0) === 0 && !logHas(state, /was destroyed by your team/);
-  if (byGroup) console.log(`  note: a group's war party destroyed the hive on its own (day ${day(state)}): the fire and storm checks do not apply`);
+  if (byGroup) console.log(`  note: a group's war party destroyed the hive on its own (day ${day(state)}): the storm checks do not apply`);
   else {
-    check(fires > 0 || logHas(state, /The hive: .*→ (Set fires|Firebomb)/) || (st.stormTrips || 0) + (st.crawlTrips || 0) > 0, `fires set at the mound (${fires}), or the storm (or a crawl trip, hivecrawl.js) went without needing them`);
+    check(!logHas(state, /Set fires|Firebomb it/) && (st.fireTrips || 0) === 0, "no fires at the mound: nothing burns a hive from outside any more");
+    check((st.stormTrips || 0) + (st.crawlTrips || 0) > 0, `the squad went in (storm trips ${st.stormTrips || 0}, crawl trips ${st.crawlTrips || 0})`);
     check((st.stormTrips || 0) > 0 || logHas(state, /The hive: .*→ Enter the hive/) || !hiveAt(state, hive.tile), "a storm launched");
     check(day(state) >= P.hiveFrom, "ran past the style's hiveFrom day");
   }

@@ -55,11 +55,11 @@ console.log("The hive's guard and a team on the mound after the card");
   check(!!hitP && hitP.horde === guard, "back on the mound on a plain move: the guard attacks");
 }
 
-// The governor's first fire trip to a hive on the Aggressive autopilot: the first of these seeds where one happens within
-// DAYS (seed 1 had it on days 36-38 when the fix went in; other branches' changes to the world move it, so the test
-// looks for the first trip rather than a fixed seed and day). The trip: from the squad leaving to it coming home.
+// The governor's first hive trip on the Aggressive autopilot (a crawl or a storm: the fire trips are gone, 2026-10):
+// the first of these seeds where one reaches the mound within DAYS. The trip: from the squad leaving to it coming home
+// (or the hive dying).
 const SQUAD = { SEEDS: [1, 4, 8, 2, 3], DAYS: 90 };
-console.log("The governor's hive squad goes home after the fires (Aggressive autopilot, the first fire trip)");
+console.log("The governor's hive squad comes home from its trip (Aggressive autopilot, the first hive trip)");
 {
   let found = null;
   for (const seed of SQUAD.SEEDS) {
@@ -73,8 +73,8 @@ console.log("The governor's hive squad goes home after the fires (Aggressive aut
       tickHour(st);
       for (let i = 0; i < st.log.length && st.log[i] !== top; i++) lines.push({ d: day(st), t: st.log[i].text });
       top = st.log[0];
-      if (fire < 0) { fire = lines.findIndex((l) => /The hive: .*Set fires around it/.test(l.t)); if (fire >= 0) until = lines[fire].d + 3; }
-      if (fire >= 0 && lines.slice(fire).some((l) => /^Destroy hive team .* is home/.test(l.t))) break;
+      if (fire < 0) { fire = lines.findIndex((l) => /The hive: .*→ (Enter the hive|Back off)/.test(l.t)); if (fire >= 0) until = lines[fire].d + 12; }
+      if (fire >= 0 && lines.slice(fire).some((l) => /^Destroy hive team .* is home|was destroyed by your team/.test(l.t))) break;
     }
     if (fire < 0) continue;
     let from = fire;
@@ -82,11 +82,11 @@ console.log("The governor's hive squad goes home after the fires (Aggressive aut
     found = { seed, day: lines[fire].d, trip: lines.slice(from).map((l) => l.t) };
     break;
   }
-  check(!!found, `the squad set fires around the hive${found ? ` (seed ${found.seed}, day ${found.day})` : ` (none on seeds ${SQUAD.SEEDS.join(", ")} within ${SQUAD.DAYS} days)`}`);
+  check(!!found, `the squad reached the hive${found ? ` (seed ${found.seed}, day ${found.day})` : ` (none on seeds ${SQUAD.SEEDS.join(", ")} within ${SQUAD.DAYS} days)`}`);
   const trip = found ? found.trip : [];
   check(!trip.some((t) => /^🤖 Destroy hive team .* moves on to .* to search it too/.test(t)), "and did not move on to search a site on the hive's land");
   check(!trip.some((t) => /whole team was lost fighting the hive's dead/.test(t)), "and was not wiped out by the hive's guard on the mound");
-  check(trip.some((t) => /^Destroy hive team .* is home/.test(t)), "it came home");
+  check(trip.some((t) => /^Destroy hive team .* is home|was destroyed by your team/.test(t)), "it came home (or the hive died)");
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
