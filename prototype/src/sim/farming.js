@@ -666,7 +666,15 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
   const keyOf = (crop) => (CROPS[crop].store === "preserved" ? "preserved" : "food");
   for (const b of pool) {
   const f = farmOf(state, b);
-  const care = careToday(state, b).care;
+  const ct = careToday(state, b);
+  const care = ct.care;
+  // The crops still to be sown are tended by the crew there is now spread over every plot that will be in use (the
+  // plots sown one after the other), not today's crew over today's few planted plots: with two plots growing and ten
+  // farmers, today's care (×1.44 tending) was promised for all twenty plots, where the crew gives them ×1.0 (2026-10-09:
+  // big hubs went into the winter on hundreds of food "still to come" that never came).
+  const thumb = ct.tend * ct.skill > 0 ? ct.care / (ct.tend * ct.skill) : 1;
+  const sown = f.auto ? f.plots.length : f.plots.filter((p) => p.want || p.stage === "growing" || p.stage === "ripe").length;
+  const futureCare = Math.min(care, tendMult(ct.labour / Math.max(1, sown)) * ct.skill * thumb);
   const site = siteFarm(state, b);
   plots += f.plots.length;
   for (const p of f.plots) {
@@ -692,7 +700,7 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
       if (!isFinite(fc.days)) { next += 7; continue; }
       if (next + fc.days < gap.end) {
         const pc = CROPS[pick];
-        const food = (pc.yield * care * site * fc.survival - pc.seed) * FUTURE_SOWING;
+        const food = (pc.yield * futureCare * site * fc.survival - pc.seed) * FUTURE_SOWING;
         add(next + fc.days, food, keyOf(pick));
         crops += food;
       }

@@ -2164,7 +2164,10 @@ function stationWorth(state, base, recipe, station = null) {
   if (recipe === "preserve") return preserveWorth(state, base);
   if (recipe === "still") return stillWorth(state, base);
   if (recipe === "power") return (st.fuel || 0) >= fuelFloor(state, base) + POWER.genFuel;
-  if (recipe === "livestock") return waterIn(st) >= RECIPES.livestock.in.water + 2 && !waterTight(state, base); // the animal pen: always, but for its water when the base is short
+  // The animal pen: always, but for the last days of water (its water is in the water plan, economy.js waterNeed, so
+  // the wells and catchers are built for it; 2026-10-09: pens left unkept for a fortnight of tight water starved a hub
+  // of 43 in its winter: three food for one water is worth it until the water is all but gone).
+  if (recipe === "livestock") { const wo = waterOutlook(state, base); return waterIn(st) >= RECIPES.livestock.in.water + 2 && !(wo.net < 0 && wo.daysLeft < 3); }
   return false;
 }
 // Fuel the governor keeps out of the generator: a decoy fire, the floodlights and the truck (Cautious: its reserve).

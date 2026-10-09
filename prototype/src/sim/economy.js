@@ -213,10 +213,13 @@ export function waterNeed(state, base) {
   const prisoners = nPris * rate; // drunk in prisoners.js, at the same rate
   const guests = (nGuests + nCrew) * rate; // drunk in visitors.js (shelter) and supply.js (a convoy holding here)
   const crops = cropWaterNeed(state, base);
+  // The animal pens standing here (farming.js PEN): their water a day (the livestock station's), so the water plan
+  // (wells, rain catchers, cisterns; the governor's waterPlan and waterTight) sees it before the pens run dry.
+  const animals = stations(base).filter((b) => b.type === "animal_pen" && !b.broken).length * ((RECIPES.livestock && RECIPES.livestock.in.water) || 0);
   const season = Weather.season ? Weather.season(state).key : "spring";
   const r1 = (v) => Math.round(v * 10) / 10;
   return {
-    people: r1(people), prisoners: r1(prisoners), guests: r1(guests), crops, total: r1(people + prisoners + guests + crops), hot, rate: Math.round(rate * 100) / 100, season,
+    people: r1(people), prisoners: r1(prisoners), guests: r1(guests), crops, animals, total: r1(people + prisoners + guests + crops + animals), hot, rate: Math.round(rate * 100) / 100, season,
     n: mouths.length, sick: r1(sick), nPrisoners: nPris, nGuests, nCrew, heads: mouths.length + nPris + nGuests + nCrew,
   };
 }
@@ -231,7 +234,7 @@ export function waterOutlook(state, base) {
   const inflow = prod.total + prod.filters;
   const net = inflow - need.total;
   // On a dry day: no rain in the catchers, and the crops need watering (for planning: is the supply enough?).
-  const dryNet = inflow - prod.rain - need.people - need.prisoners - need.guests - cropWaterNeed(state, base, { dry: true });
+  const dryNet = inflow - prod.rain - need.people - need.prisoners - need.guests - need.animals - cropWaterNeed(state, base, { dry: true });
   return { stock, pure: Math.max(0, base.stock.water || 0), raw: Math.max(0, base.stock[RAW] || 0), cap, prod, need, inflow: Math.round(inflow * 10) / 10, net: Math.round(net * 10) / 10, dryNet: Math.round(dryNet * 10) / 10, daysLeft: net >= 0 ? Infinity : stock / -net };
 }
 // Water running short now: more drunk than made, and it runs out within 6 days or is under 3 a head. The governor
