@@ -10,7 +10,7 @@
 // context is made (or resumed) on that first gesture. Muted, or with the window in the background and "Mute when
 // not focused" on, the context is suspended (no CPU). Nothing here runs at import time, so node tools can import it.
 import { battleCues, worldCues, ambienceMix, makeThrottle, LISTEN } from "./soundcues.js";
-import { installBus, spatial } from "./gunsfx.js"; // the gun voices, the battle's sound space (pan, distance, reverb, ducking, the deafened muffle)
+import { installBus, spatial, setGunVolume, playGun, labPlan, place } from "./gunsfx.js"; // the gun voices, the battle's sound space (pan, distance, reverb, ducking, the deafened muffle)
 import { frameListener, playCue, cueSpan, prewarmBattle } from "./battlesfx.js"; // guns, blasts and handling cues to their voices
 import { LAB, LAB_ACTIONS, LAB_CHANGE, labGunHtml, makeLimiter } from "./sfxlab.js"; // Settings → Sound: the gun and blast sound test
 import { weatherAt, season } from "../sim/weather.js";
@@ -21,14 +21,16 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 
 // ---------- options ----------
-// options.sound (ui/saves.js keeps it with the other options): volumes 0–1, mute, mute when the window is not focused.
-export const SOUND_DEFAULTS = { master: 0.7, sfx: 0.8, amb: 0.5, mute: false, muteBlur: true };
-const vol = (v, d) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(1, Number(v))) : d);
+// options.sound (ui/saves.js keeps it with the other options): volumes 0–1, mute, mute when the window is not focused;
+// guns: the Gunfire volume 0–1.5 (guns, their handling and blasts: ui/gunsfx.js GUNVOL).
+export const SOUND_DEFAULTS = { master: 0.7, sfx: 0.8, amb: 0.5, guns: 1, mute: false, muteBlur: true };
+export const VOL_MAX = { guns: 1.5 };
+const vol = (v, d, max = 1) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(max, Number(v))) : d);
 export function soundOptions(o) {
   const s = o && typeof o.sound === "object" && o.sound ? o.sound : {};
   const D = SOUND_DEFAULTS;
   const clean = {
-    master: vol(s.master, D.master), sfx: vol(s.sfx, D.sfx), amb: vol(s.amb, D.amb),
+    master: vol(s.master, D.master), sfx: vol(s.sfx, D.sfx), amb: vol(s.amb, D.amb), guns: vol(s.guns, D.guns, VOL_MAX.guns),
     mute: typeof s.mute === "boolean" ? s.mute : D.mute, muteBlur: typeof s.muteBlur === "boolean" ? s.muteBlur : D.muteBlur,
   };
   if (o) o.sound = clean;
@@ -90,6 +92,7 @@ function makeContext(test = null) {
 }
 // The volumes and the mute (also the window's focus): the buses follow the sliders, and a silent context is suspended.
 export function applyGains(now = false) {
+  if (OPT) setGunVolume(curve(OPT.sound.guns ?? SOUND_DEFAULTS.guns)); // the Gunfire volume: read as each gun, blast or reload is played
   if (!A || !OPT) return;
   const s = OPT.sound, t = A.ctx.currentTime, on = wantOn();
   const set = (p, v) => (now ? p.setValueAtTime(v, t) : p.setTargetAtTime(v, t, 0.08));
@@ -119,6 +122,7 @@ export function initAudio(options, save) {
   OPT = options;
   SAVE = save || (() => {});
   soundOptions(OPT);
+  applyGains();
   for (const ev of ["pointerdown", "keydown", "touchstart"]) window.addEventListener(ev, unlock, { capture: true, passive: true });
   window.addEventListener("blur", () => applyGains());
   window.addEventListener("focus", () => applyGains());
@@ -139,8 +143,8 @@ export function initAudio(options, save) {
   });
 }
 function setVolume(k, v) {
-  if (!OPT || !["master", "sfx", "amb"].includes(k)) return;
-  OPT.sound[k] = vol(v, SOUND_DEFAULTS[k]);
+  if (!OPT || !["master", "sfx", "amb", "guns"].includes(k)) return;
+  OPT.sound[k] = vol(v, SOUND_DEFAULTS[k], VOL_MAX[k] || 1);
   applyGains();
 }
 
@@ -632,7 +636,7 @@ const SOUND_LABELS = {
 let hearPick = "pistol";
 export function soundOptionsHtml(options) {
   const s = soundOptions(options);
-  const slider = (k, label, t) => `<label class="sndvol" style="margin-right:0.6rem"${tip(t)}>${label} <input type="range" min="0" max="100" step="5" value="${Math.round(s[k] * 100)}" data-action="snd-vol" data-k="${k}"> <span class="sndval">${Math.round(s[k] * 100)}%</span></label>`;
+  const slider = (k, label, t) => `<label class="sndvol" style="margin-right:0.6rem"${tip(t)}>${label} <input type="range" min="0" max="${Math.round((VOL_MAX[k] || 1) * 100)}" step="5" value="${Math.round(s[k] * 100)}" data-action="snd-vol" data-k="${k}"> <span class="sndval">${Math.round(s[k] * 100)}%</span></label>`;
   const box = (k, on, label, t) => `<button class="setopt ${on ? "active" : ""}" data-action="snd-opt" data-k="${k}"${tip(t)}>${on ? "✔" : "✗"} ${label}</button>`;
   const locked = A ? A.ctx.state === "suspended" && !offWanted && !A.unlocked : !A;
   return `<h3>Sound</h3><div class="setrow">
@@ -640,6 +644,7 @@ export function soundOptionsHtml(options) {
       ${slider("master", "Master", "Everything")}
       ${slider("sfx", "Effects", "Clicks, card chimes, battle sounds, the horde sting and the alarm")}
       ${slider("amb", "Ambience", "Wind and rain with the weather, thunder in storms, a low drone at night, birds by day, crickets on warm nights")}
+      ${slider("guns", "Gunfire", "Gunshots, reloads and explosions in battle, under Effects: 100% is the usual level, up to 150% for more punch (the limiter keeps it from clipping). Not the ambience, the interface or the dead.")}
       ${box("muteBlur", s.muteBlur, "Mute when the window is not focused", "Silence while you are in another window or tab")}
     </div><div class="setrow">
       <label${tip("Hear one sound, to set the volumes or to judge it")}>Hear <select data-action="snd-pick">${SOUND_NAMES.map((n) => `<option value="${n}" ${n === hearPick ? "selected" : ""}>${esc(SOUND_LABELS[n] || n)}</option>`).join("")}</select></label>
@@ -667,7 +672,8 @@ export const SOUND_CHANGE = {
   "snd-vol": (state, ui, el) => {
     setVolume(el.dataset.k, Number(el.value) / 100);
     SAVE();
-    if (el.dataset.k !== "amb") sfx("alert", { gain: 0.8 });
+    if (el.dataset.k === "guns") { if (A && live() && wantOn()) playGun(A.ctx, A.ctx.currentTime + 0.02, labPlan("pistol"), place({ dist: 2 })); } // a 9mm near you at the new level
+    else if (el.dataset.k !== "amb") sfx("alert", { gain: 0.8 });
     try { el.blur(); } catch { /* ignore */ } // Esc closes the menu again
   },
   "snd-pick": (state, ui, el) => { if (VOICES[el.value]) { hearPick = el.value; unlock(); sfx(hearPick, { pitch: 1 }); } },
@@ -676,5 +682,5 @@ export const SOUND_CHANGE = {
 
 // The Help tab's topic (ui/help.js).
 export function soundHelp() {
-  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each calibre has its own report (a .22's pop to a .50's thump, 12 gauge, the machine guns, launchers), bursts and full auto round by round, suppressed shots, reloads, jams and brass, placed left or right and near or far, muffled out of sight, in the echo of the place; grenades, rockets and explosions in layers, with hits, misses, melee blows, bites, groans of the dead, blasts and fire, and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: master, effects and ambience volumes, sound on / off, mute when the window is not focused, and <b>Hear</b> to play any one sound. Browsers start sound only after your first click or key press.`;
+  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each calibre has its own report (a .22's pop to a .50's thump, 12 gauge, the machine guns, launchers), bursts and full auto round by round, suppressed shots, reloads, jams and brass, placed left or right and near or far, muffled out of sight, in the echo of the place; grenades, rockets and explosions in layers, with hits, misses, melee blows, bites, groans of the dead, blasts and fire, and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: master, effects, ambience and gunfire volumes (Gunfire: guns, reloads and explosions, up to 150%), sound on / off, mute when the window is not focused, and <b>Hear</b> to play any one sound. Browsers start sound only after your first click or key press.`;
 }

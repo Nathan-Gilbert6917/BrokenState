@@ -279,7 +279,9 @@ console.log("Voices");
 console.log("Menu and help");
 {
   const html = soundOptionsHtml({ sound: { master: 0.5, sfx: 0.8, amb: 0.3, mute: false, muteBlur: true } });
-  check(/<h3>Sound<\/h3>/.test(html) && (html.match(/type="range"/g) || []).length === 3 && /value="50"/.test(html) && /value="30"/.test(html), "the Sound section: three sliders at the saved levels");
+  check(/<h3>Sound<\/h3>/.test(html) && (html.match(/type="range"/g) || []).length === 4 && /value="50"/.test(html) && /value="30"/.test(html) && /max="150" step="5" value="100" data-action="snd-vol" data-k="guns"/.test(html), "the Sound section: four sliders at the saved levels (Gunfire 0–150%, 100% by default)");
+  const g = soundOptions({ sound: { guns: 2 } }), g2 = soundOptions({ sound: { guns: 1.25 } }), g3 = soundOptions({ sound: {} });
+  check(g.guns === 1.5 && g2.guns === 1.25 && g3.guns === 1, "the Gunfire volume: kept up to 150%, clamped above, 100% when missing");
   check(/data-action="snd-opt" data-k="on"/.test(html) && /data-action="snd-opt" data-k="muteBlur"/.test(html) && /data-action="snd-test"/.test(html), "sound on / off, mute when not focused, Hear a sound");
   const { SETTINGS_ACTIONS, SETTINGS_CHANGE } = await import("../src/ui/settings.js");
   check(!!SETTINGS_ACTIONS["snd-opt"] && !!SETTINGS_CHANGE["snd-vol"] && !!SETTINGS_CHANGE["snd-pick"], "the menu knows the Sound actions");
