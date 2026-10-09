@@ -577,7 +577,7 @@ const LAYER_TIPS = { hordes: "Hordes, last sightings and hives", infection: "Red
 // coalitionLand, the same land the alliance victory counts).
 export function renderLegend(view, ui, state = null) {
   const on = Object.keys(LAYERS).filter((k) => view.layers.has(k)).length;
-  const box = { icon: "🗺", title: "Layers", count: on, action: "legendtoggle" };
+  const box = { icon: "🗺", title: "Layers", badges: [{ text: on, tip: `${on} of ${Object.keys(LAYERS).length} layers on` }], action: "legendtoggle" };
   if (ui.legendCollapsed) return panelTab({ ...box, tip: `Show the map layers (${on} on)` });
   const land = state && state.tiles && view.layers.has("coalition") ? coalitionLand(state) : null;
   const extra = (k) => (k === "coalition" && land ? ` <span class="muted"${tip(`${land.held} of ${land.land} land tiles; victory needs over ${Math.round(land.goal * 100)}%`)}>${Math.round(land.pct * 100)}%/${Math.round(land.goal * 100)}%</span>` : "");
