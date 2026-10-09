@@ -4,7 +4,10 @@
 //
 //   WEATHER_SOUNDS            every weather sound by name: { label, bed?, trim } (a mixer maps them to "weather")
 //   weatherFrame(E, plan, t)  sets the beds and plays the one-shots due
-//   ambLightning(near)        a flash drawn somewhere (the title's storm): its thunder follows after the light
+//   ambLightning(near, from)  a flash drawn somewhere (from "title": the title's storm; "map": ui/lightningfx.js):
+//                             its thunder follows after the light, later the further off (near 1 overhead, 0 far)
+//   mapSky()                  the map is drawn and its strikes are the thunder (ui/lightningfx.js, each frame): on
+//                             the map the ambience plays no near or rolling thunder of its own, only distant grumbles
 //   weatherCall(E, name, t)  one weather one-shot now (the mixer's ▶, previews)
 //   onLightning(fn)           fn({ at, near, km }) when a strike is played (for a flash on the map, should one come)
 import { noiseSource, loopSource, biquad, setBed, setDull, bakeBuffer, playShot, busy, clamp, expo, BED_SR,
@@ -81,11 +84,22 @@ export function loopBed(group, key, recipe, sr = BED_SR) {
 }
 
 // ---------- the frame ----------
-let FLASHES = []; // the title's lightning (ambLightning), waiting for its thunder
+let FLASHES = []; // lightning drawn (ambLightning), waiting for its thunder
 const LISTENERS = new Set();
-let LAST_FLASH = -1e9;
+let LAST_FLASH = -1e9, MAP_SKY = -1e9;
 const nowMs = () => (typeof performance !== "undefined" ? performance.now() : 0);
-export function ambLightning(near = 0.5) { LAST_FLASH = nowMs(); FLASHES.push({ near: clamp(Number(near) || 0.5, 0, 1), at: LAST_FLASH }); if (FLASHES.length > 4) FLASHES.shift(); }
+export function ambLightning(near = 0.5, from = "title") {
+  const at = nowMs();
+  if (from !== "map") LAST_FLASH = at; // (the title's rain follows its own storm only)
+  const n = Number(near);
+  FLASHES.push({ near: clamp(Number.isFinite(n) ? n : 0.5, 0, 1), at, from: from === "map" ? "map" : "title" });
+  if (FLASHES.length > 6) FLASHES.shift();
+}
+export const MAP_SKY_HOLD = 1500; // ms the map's sky counts as drawn after its last frame
+export function mapSky() { MAP_SKY = nowMs(); }
+export const mapSkyLive = () => nowMs() - MAP_SKY < MAP_SKY_HOLD;
+// The thunder for a map strike by how near (ui/lightningfx.js nearOf): null too far to hear.
+export const thunderFor = (near) => (near > 0.6 ? "thunderNear" : near >= 0.15 ? "thunderFar" : near >= 0.04 ? "thunderDistant" : null);
 export const flashAge = () => (nowMs() - LAST_FLASH) / 1000; // s since the last flash drawn
 export function onLightning(fn) { LISTENERS.add(fn); return () => LISTENERS.delete(fn); }
 export const takeFlashes = () => { const f = FLASHES; FLASHES = []; return f; };
@@ -117,8 +131,20 @@ export function weatherFrame(E, P, t) {
   setBed(E, "river", BEDS.river, B.river * tr("river"), t, 2);
   setBed(E, "lake", BEDS.lake, B.lake * (0.85 + 0.25 * g) * tr("lake"), t, 2);
   setDull(E, "weather", P.dull.weather, t);
-  // The title's lightning: its thunder a second or three after the flash.
-  if (P.mode === "title") for (const f of takeFlashes()) thunder(E, f.near > 0.6 ? "thunderNear" : "thunderFar", t + 1 + (1 - f.near) * 2.5, f.near);
+  // Lightning drawn: the title's, its thunder a second or three after the flash (on the title screen); the map's
+  // (ui/lightningfx.js), after the light by how far off (on the map; a voice still baking tries again next frame).
+  // Others are let go (a title flash heard on the map, or the map's in a battle).
+  const mapLit = P.mode === "map" && mapSkyLive();
+  if (FLASHES.length) {
+    let again = null;
+    for (const f of takeFlashes()) {
+      if (f.from === "title") { if (P.mode === "title") thunder(E, f.near > 0.6 ? "thunderNear" : "thunderFar", t + 1 + (1 - f.near) * 2.5, f.near); continue; }
+      const name = thunderFor(f.near), lag = Math.max(0, (nowMs() - f.at) / 1000);
+      if (P.mode !== "map" || !name || lag > 3) continue;
+      if (!thunder(E, name, t - Math.min(lag, 0.5), f.near)) (again || (again = [])).push(f);
+    }
+    if (again) FLASHES.push(...again);
+  }
   // One-shots: each rate (a minute) runs up an accumulator to a random threshold (mean 1); gust peaks hurry the
   // wind's loose things along. A full house (WEATHER_LIMIT) waits a frame; thunder always gets through.
   const R = P.weather || {};
@@ -131,6 +157,7 @@ export function weatherFrame(E, P, t) {
     if (GUSTY[name] && M.peak && E.rnd() < 0.35 * Math.min(1, R[name] / 2)) M.acc[name] = M.u[name]; // a gust peak sets it off
     if (M.acc[name] < M.u[name]) continue;
     const isThunder = name.startsWith("thunder");
+    if (mapLit && (name === "thunderNear" || name === "thunderFar")) { M.acc[name] = 0; continue; } // the map's strikes are these
     if (!isThunder && busy(E, "weather", t) >= WEATHER_LIMIT) continue;
     const at = t + E.rnd() * 0.25;
     const ok = isThunder ? thunder(E, name, at, name === "thunderNear" ? 0.65 + E.rnd() * 0.35 : name === "thunderFar" ? 0.25 + E.rnd() * 0.3 : 0.05) : playWeather(E, name, at, P);

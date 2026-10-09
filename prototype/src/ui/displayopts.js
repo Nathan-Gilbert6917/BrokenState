@@ -11,9 +11,11 @@
 //   nightShade   the State Map's night: off / light / dark (ui/nightfx.js)
 //   edgeWarn     red pulses at the screen's edge for an attack off screen (ui/edgefx.js), heartbeat: a soft heartbeat
 //                in the ambience while a base of yours is under attack (off by default)
+//   lightning    full / soft / off: lightning flashes on the State Map in storms (ui/lightningfx.js; calm makes Full Soft)
 export const NIGHT_SHADES = ["off", "light", "dark"];
+export const LIGHTNING_LEVELS = { full: "Full", soft: "Soft", off: "Off" };
 export const MINIMAP_SIZES = { s: { label: "Small", rem: 11 }, m: { label: "Medium", rem: 15 }, l: { label: "Large", rem: 21 } };
-export const DISPLAY_DEFAULTS = { cbPalette: false, bigText: false, calm: false, minimap: true, minimapSize: "m", devTools: false, battleMarks: "full", battleEdge: "full", nightShade: "dark", edgeWarn: true, heartbeat: false };
+export const DISPLAY_DEFAULTS = { cbPalette: false, bigText: false, calm: false, minimap: true, minimapSize: "m", devTools: false, battleMarks: "full", battleEdge: "full", nightShade: "dark", edgeWarn: true, heartbeat: false, lightning: "full" };
 export const BATTLE_LOOK_LEVELS = { full: "Full", low: "Light", off: "Off" }; // battleMarks, battleEdge
 const BOOLS = ["cbPalette", "bigText", "calm", "minimap", "devTools", "mapAnim", "edgeWarn", "heartbeat"];
 
@@ -27,6 +29,7 @@ export function readDisplayOptions(o, v = null) {
   if (MINIMAP_SIZES[v.minimapSize]) o.minimapSize = v.minimapSize;
   for (const k of ["battleMarks", "battleEdge"]) if (Object.hasOwn(BATTLE_LOOK_LEVELS, v[k])) o[k] = v[k];
   if (NIGHT_SHADES.includes(v.nightShade)) o.nightShade = v.nightShade;
+  if (Object.hasOwn(LIGHTNING_LEVELS, v.lightning)) o.lightning = v.lightning;
   if (v.noAsk && typeof v.noAsk === "object") {
     o.noAsk = {};
     for (const [k, on] of Object.entries(v.noAsk)) if (on === true && /^[a-z][a-z-]{0,30}$/.test(k)) o.noAsk[k] = true;
