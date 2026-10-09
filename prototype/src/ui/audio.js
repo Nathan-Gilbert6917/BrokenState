@@ -13,19 +13,23 @@ import { battleCues, worldCues, ambienceMix, makeThrottle } from "./soundcues.js
 import { weatherAt, season } from "../sim/weather.js";
 import { playerTile } from "../sim/hardcore-start.js";
 import { screenToTile, view } from "./render.js";
+import { meleeVoices, MELEE_LABELS } from "./sfx-melee.js"; // melee by weapon class, armour, kills (ui/sfx-melee.js)
+import { stepCues, stepVoices, STEP_LABELS } from "./sfx-steps.js"; // footsteps in battle (ui/sfx-steps.js)
+import { gearCues, uiCues, clickSound, gearVoices, GEAR_LABELS, GEAR_LIMITS } from "./sfx-gear.js"; // searching, doors, bandages, engines, windows, items
+import { voiceOut, placeOf } from "./sfx-out.js"; // the output stage of the voices above (pan, distance, out of sight)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 
 // ---------- options ----------
 // options.sound (ui/saves.js keeps it with the other options): volumes 0–1, mute, mute when the window is not focused.
-export const SOUND_DEFAULTS = { master: 0.7, sfx: 0.8, amb: 0.5, mute: false, muteBlur: true };
+export const SOUND_DEFAULTS = { master: 0.7, sfx: 0.8, amb: 0.5, steps: 0.7, mute: false, muteBlur: true }; // steps: the Footsteps slider (under Effects)
 const vol = (v, d) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(1, Number(v))) : d);
 export function soundOptions(o) {
   const s = o && typeof o.sound === "object" && o.sound ? o.sound : {};
   const D = SOUND_DEFAULTS;
   const clean = {
-    master: vol(s.master, D.master), sfx: vol(s.sfx, D.sfx), amb: vol(s.amb, D.amb),
+    master: vol(s.master, D.master), sfx: vol(s.sfx, D.sfx), amb: vol(s.amb, D.amb), steps: vol(s.steps, D.steps),
     mute: typeof s.mute === "boolean" ? s.mute : D.mute, muteBlur: typeof s.muteBlur === "boolean" ? s.muteBlur : D.muteBlur,
   };
   if (o) o.sound = clean;
@@ -50,6 +54,7 @@ const LIMITS = {
   groan: { gap: 0.8, max: 2 }, scream: { gap: 0.5, max: 1 }, blast: { gap: 0.15, max: 2 }, fire: { gap: 0.3, max: 2 },
   glass: { gap: 0.2, max: 2 }, hiss: { gap: 0.2, max: 2 }, flare: { gap: 0.2, max: 2 }, downed: { gap: 0.4, max: 2 }, death: { gap: 0.4, max: 2 },
   thunder: { gap: 4, max: 1 }, bird: { gap: 0.3, max: 2 }, cricket: { gap: 0.15, max: 2 },
+  step: { gap: 0.02, max: 12 }, ...GEAR_LIMITS,
 };
 const throttle = makeThrottle(LIMITS, 28);
 export const audioDebug = { played: [], dropped: 0, get ctx() { return A && A.ctx; } }; // for tests in the browser
@@ -119,7 +124,8 @@ export function initAudio(options, save) {
   document.addEventListener("click", (ev) => {
     const el = ev.target && ev.target.closest ? ev.target.closest("button, [data-action]") : null;
     if (!el || el.disabled || el.tagName === "SELECT" || el.tagName === "INPUT" || el.dataset.action === "snd-test") return;
-    sfx("click");
+    const snd = clickSound(el); // ui/sfx-gear.js: an inventory cell is heard as the item picked up or put down instead
+    if (snd) sfx(snd);
   });
   // A volume slider being dragged is heard at once (the change event saves it: SOUND_CHANGE).
   document.addEventListener("input", (ev) => {
@@ -131,7 +137,7 @@ export function initAudio(options, save) {
   });
 }
 function setVolume(k, v) {
-  if (!OPT || !["master", "sfx", "amb"].includes(k)) return;
+  if (!OPT || !["master", "sfx", "amb", "steps"].includes(k)) return;
   OPT.sound[k] = vol(v, SOUND_DEFAULTS[k]);
   applyGains();
 }
@@ -142,11 +148,17 @@ export const voiceOpts = (opts = {}) => ({ ...opts, gain: Number.isFinite(opts.g
 export function sfx(name, opts = {}) {
   const V = VOICES[name];
   if (!V || !live() || !wantOn()) return false;
+  if (V.steps) { // the Footsteps slider (off: not even built)
+    const k = curve(OPT ? OPT.sound.steps ?? SOUND_DEFAULTS.steps : SOUND_DEFAULTS.steps) / curve(SOUND_DEFAULTS.steps);
+    if (!(k > 0)) return false;
+    opts = { ...opts, gain: (Number.isFinite(opts.gain) ? opts.gain : 1) * k };
+  }
   const ctx = A.ctx;
   const t = ctx.currentTime + 0.01 + Math.max(0, opts.delay || 0);
   if (!throttle.allow(name, t, V.dur)) { audioDebug.dropped++; return false; }
   let out = V.amb ? A.amb : A.sfx;
-  if (opts.pan && ctx.createStereoPanner) {
+  if (V.own) out = voiceOut(ctx, placeOf(opts), out); // ui/sfx-out.js (the shape of gun-sfx's spatialOut)
+  else if (opts.pan && ctx.createStereoPanner) {
     const p = ctx.createStereoPanner();
     p.pan.value = Math.max(-1, Math.min(1, opts.pan));
     p.connect(out);
@@ -158,7 +170,7 @@ export function sfx(name, opts = {}) {
     console.warn(`Broken State: the ${name} sound failed`, e);
     return false;
   }
-  audioDebug.played.push(name);
+  audioDebug.played.push(opts.cls || opts.surf || opts.dk || opts.mat ? `${name}:${[opts.cls, opts.mat, opts.kill ? "kill" : "", opts.dk || opts.surf, opts.gait].filter(Boolean).join("/")}` : name);
   if (audioDebug.played.length > 60) audioDebug.played.shift();
   return true;
 }
@@ -166,6 +178,7 @@ export function sfx(name, opts = {}) {
 // ---------- every frame (main.js) ----------
 const battleMem = {};
 const worldMem = {};
+const stepMem = {}, gearMem = {}, uiMem = {}; // ui/sfx-steps.js, ui/sfx-gear.js
 let lastWorld = 0, lastAmb = 0;
 export function audioFrame(state, ui, nowMs = performance.now()) {
   if (!OPT || !state) return;
@@ -173,12 +186,14 @@ export function audioFrame(state, ui, nowMs = performance.now()) {
   const on = live();
   // The memories move on even while silent, so unmuting does not play what happened meanwhile.
   if (state.combat && !ui.timelapse) {
-    for (const c of battleCues(state.combat, battleMem, now)) if (on) sfx(c.name, { gain: c.gain, delay: c.delay, pan: (Math.random() - 0.5) * 0.5 });
+    for (const c of battleCues(state.combat, battleMem, now)) if (on) sfx(c.name, { ...c, pan: c.pan ?? (Math.random() - 0.5) * 0.5 });
+    for (const c of [...stepCues(state, stepMem, now), ...gearCues(state, gearMem)]) if (on) sfx(c.name, c);
   }
   if (nowMs - lastWorld >= 150 && ui.started && !ui.timelapse) {
     lastWorld = nowMs;
     for (const c of worldCues(state, ui, worldMem)) if (on) sfx(c.name, { gain: c.gain, delay: c.delay });
   }
+  if (!ui.timelapse) for (const c of uiCues(state, ui, uiMem)) if (on) sfx(c.name, c); // windows, the inventory, engines on the map
   if (nowMs - lastAmb >= 250) {
     lastAmb = nowMs;
     if (on) ambience(state, ui);
@@ -546,6 +561,10 @@ export const VOICES = {
     for (let i = 0; i < 3; i++) tone(c, "sine", f, 0, t + i * 0.045, 0.025, env(c, out, t + i * 0.045, 0.035 * o.gain, 0.02, 0.003));
   } },
 };
+// The voices of ui/sfx-melee.js (they replace melee, meleeCrit and whoosh), ui/sfx-steps.js and ui/sfx-gear.js, made
+// on these building blocks; they play through ui/sfx-out.js voiceOut (own).
+const KIT = { env, filt, noise, tone, thud, bell, crackle, shards, notes, lfo, R };
+for (const V of [meleeVoices(KIT), stepVoices(KIT), gearVoices(KIT)]) for (const [k, v] of Object.entries(V)) VOICES[k] = { ...v, own: true };
 export const SOUND_NAMES = Object.keys(VOICES);
 
 // Renders one sound offline (no speakers, no gesture needed) and measures it: for tests in the browser.
@@ -593,6 +612,7 @@ const SOUND_LABELS = {
   acid: "Acid spit", hit: "Bullet hit", whiz: "Miss (whiz)", ricochet: "Miss (ricochet)", melee: "Melee hit", meleeCrit: "Melee critical", whoosh: "Melee miss",
   bite: "Zombie bite", groan: "Zombie groan", scream: "Scream", blast: "Pipe bomb / grenade", fire: "Molotov", glass: "Bottle", hiss: "Smoke", flare: "Flare",
   downed: "Someone down", death: "Someone dies", battle: "Battle starts", horde: "Horde spotted", alarm: "Raid alarm", thunder: "Thunder", bird: "Birds", cricket: "Crickets",
+  ...MELEE_LABELS, ...STEP_LABELS, ...GEAR_LABELS,
 };
 let hearPick = "pistol";
 export function soundOptionsHtml(options) {
@@ -604,6 +624,7 @@ export function soundOptionsHtml(options) {
       ${box("on", !s.mute, "Sound", "All sound on or off. Sounds are made on the spot (no audio files): clicks, card chimes, gunfire and the dead in battle, wind, rain and night around you, a sting when a horde is seen near you, the alarm bell when a base is raided.")}
       ${slider("master", "Master", "Everything")}
       ${slider("sfx", "Effects", "Clicks, card chimes, battle sounds, the horde sting and the alarm")}
+      ${slider("steps", "Footsteps", "Footsteps in battle (everyone's: yours, the enemy's, the dead's shuffle), under Effects. 0 turns them off")}
       ${slider("amb", "Ambience", "Wind and rain with the weather, thunder in storms, a low drone at night, birds by day, crickets on warm nights")}
       ${box("muteBlur", s.muteBlur, "Mute when the window is not focused", "Silence while you are in another window or tab")}
     </div><div class="setrow">
@@ -628,7 +649,8 @@ export const SOUND_CHANGE = {
   "snd-vol": (state, ui, el) => {
     setVolume(el.dataset.k, Number(el.value) / 100);
     SAVE();
-    if (el.dataset.k !== "amb") sfx("alert", { gain: 0.8 });
+    if (el.dataset.k === "steps") sfx("hearStepGrass", { pitch: 1 });
+    else if (el.dataset.k !== "amb") sfx("alert", { gain: 0.8 });
     try { el.blur(); } catch { /* ignore */ } // Esc closes the menu again
   },
   "snd-pick": (state, ui, el) => { if (VOICES[el.value]) { hearPick = el.value; unlock(); sfx(hearPick, { pitch: 1 }); } },

@@ -12,6 +12,7 @@
 import { WEAPONS } from "../sim/combat.js";
 import { THROWABLES } from "../sim/stealth.js";
 import { partyTile } from "../sim/parties.js";
+import { meleeCue } from "./sfx-melee.js"; // a blow by weapon class, armour and kill (ui/sfx-melee.js)
 
 export const HORDE_NEAR_BASE = 6; // tiles: the same distance as the horde alert (ui/alerts.js HORDE_ALERT_TILES)
 export const HORDE_NEAR_TEAM = 3; // tiles from one of your teams on the map
@@ -106,8 +107,7 @@ export function battleCues(b, mem, now = 0) {
       if (f.text === "BURN" || f.text === "FIRE") continue; // fire's damage: the flames are heard from the throw
       const a = unitAt(b, f.from, f.side);
       if (a && a.kind === "zombie" && f.hit) out.push({ name: "bite" });
-      else if (f.hit) out.push({ name: f.crit || (f.dmg || 0) >= 25 ? "meleeCrit" : "melee" });
-      else out.push({ name: "whoosh" });
+      else out.push(meleeCue(b, f, a, mem));
     } else if (f.type === "throw") out.push({ name: throwSound(f.item), delay: 0.25 });
     else if (f.type === "scream") out.push({ name: "scream" });
   }

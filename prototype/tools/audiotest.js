@@ -279,7 +279,7 @@ console.log("Voices");
 console.log("Menu and help");
 {
   const html = soundOptionsHtml({ sound: { master: 0.5, sfx: 0.8, amb: 0.3, mute: false, muteBlur: true } });
-  check(/<h3>Sound<\/h3>/.test(html) && (html.match(/type="range"/g) || []).length === 3 && /value="50"/.test(html) && /value="30"/.test(html), "the Sound section: three sliders at the saved levels");
+  check(/<h3>Sound<\/h3>/.test(html) && (html.match(/type="range"/g) || []).length === 4 && /value="50"/.test(html) && /value="30"/.test(html) && /data-k="steps"/.test(html), "the Sound section: four sliders (master, effects, footsteps, ambience) at the saved levels");
   check(/data-action="snd-opt" data-k="on"/.test(html) && /data-action="snd-opt" data-k="muteBlur"/.test(html) && /data-action="snd-test"/.test(html), "sound on / off, mute when not focused, Hear a sound");
   const { SETTINGS_ACTIONS, SETTINGS_CHANGE } = await import("../src/ui/settings.js");
   check(!!SETTINGS_ACTIONS["snd-opt"] && !!SETTINGS_CHANGE["snd-vol"] && !!SETTINGS_CHANGE["snd-pick"], "the menu knows the Sound actions");
