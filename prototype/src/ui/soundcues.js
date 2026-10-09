@@ -12,6 +12,8 @@
 import { WEAPONS } from "../sim/combat.js";
 import { THROWABLES } from "../sim/stealth.js";
 import { partyTile } from "../sim/parties.js";
+import { shotPlan, handCues, launched, isIndoor, OWN_VOICE } from "./gunsfx.js"; // the gun voices, the handling seen between frames
+import { THROW_BLAST, THROW_HAND, THROW_CLATTER, THROW_FLIGHT, FUSE, BIG, flight, launchBlast, mergeBlasts, glassNear } from "./blastsfx.js"; // blasts and grenades
 
 export const HORDE_NEAR_BASE = 6; // tiles: the same distance as the horde alert (ui/alerts.js HORDE_ALERT_TILES)
 export const HORDE_NEAR_TEAM = 3; // tiles from one of your teams on the map
@@ -89,27 +91,91 @@ export function battleCues(b, mem, now = 0) {
     mem.units = new Map(b.units.map((u) => [u.id, u.dead ? "dead" : u.down ? "down" : "up"]));
     mem.nextGroan = now + 2 + rand(mem) * 3;
     mem.started = true;
+    mem.hand = null;
+    handCues(b, mem); // what each unit holds and has loaded now (later frames compare with it)
+    mem.wrecked = new Set(wreckedCells(b));
     out.push({ name: isBaseDefence(b) ? "alarm" : "battle" }); // a fight at one of your bases rings the alarm
     return out;
   }
   // Effects from the simulation (combat.js fx): shots, blows, throws, screams.
   const fresh = b.fx.filter((f) => f.seq > mem.seq);
   if (fresh.length) mem.seq = fresh[fresh.length - 1].seq;
+  // Where this frame's blasts land (a carried bomb going off elsewhere is a secondary blast; a car wrecked, a fireball).
+  const landed = [];
+  const blastAt = (to, kind) => { if (BIG.has(kind)) landed.push(to); };
   for (const f of fresh) {
     if (f.type === "shot") {
       const a = unitAt(b, f.from, f.side);
-      const name = f.acid ? "acid" : weaponSound(a ? a.weapon : "pistol", a);
-      out.push({ name, gain: f.side === "player" ? 1 : 0.85, mine: f.side === "player" });
-      if (f.hit) out.push({ name: "hit", gain: 0.7, delay: 0.05 });
-      else if (name !== "acid") out.push({ name: rand(mem) < 0.35 ? "ricochet" : "whiz", gain: 0.6, delay: 0.06 });
+      const mine = f.side === "player", enemy = !mine;
+      if (f.misfire) { out.push({ name: "dry", at: f.from, mine, unit: a ? a.id : null, hand: { kind: "dry" } }); continue; } // a dud: a click, no bang
+      if (f.overpen) { out.push({ name: "hit", gain: 0.7, delay: 0.05, at: f.to }); continue; } // the same round going on through: no second bang
+      const prevT = a && mem.hand && mem.hand.get(a.id);
+      if (a && prevT && prevT.taser != null && a.nlTaser != null && a.nlTaser < prevT.taser) { // a taser's darts (sim/nonlethal.js)
+        out.push({ name: "taser", at: f.from, mine, unit: a.id, hand: { kind: "taser" } });
+        if (!f.hit) out.push({ name: "whiz", gain: 0.4, delay: 0.06, at: f.to });
+        continue;
+      }
+      const lk = a && !f.rocket ? launched(mem, a) : null;
+      const own = f.acid || f.worm ? "acid" : a && OWN_VOICE[a.weapon];
+      const name = own || (f.rocket ? "rocket" : lk === "gl" ? "launcher" : weaponSound(a ? a.weapon : "pistol", a));
+      const cue = { name, gain: mine ? 1 : 0.85, mine, at: f.from, enemy, indoor: isIndoor(b, f.from[0], f.from[1]) };
+      if (!own) cue.gun = shotPlan(f, a, f.rocket ? "rocket" : lk);
+      out.push(cue);
+      if (f.rocket) { // the rocket in flight, then the warhead
+        const d = Math.hypot(f.to[0] - f.from[0], f.to[1] - f.from[1]);
+        out.push({ name: "blast", at: f.to, delay: flight("rocket", d), enemy, blast: { kind: "rocket", glass: glassNear(b, f.to[0], f.to[1]) } });
+        blastAt(f.to, "rocket");
+        continue;
+      }
+      const span = cue.gun ? cue.gun.span : 0;
+      if (f.hit) out.push({ name: "hit", gain: 0.7, delay: 0.05 + span * 0.5, at: f.to });
+      else if (name !== "acid") out.push({ name: rand(mem) < 0.35 ? "ricochet" : "whiz", gain: 0.6, delay: 0.06 + span * 0.5, at: f.to });
     } else if (f.type === "melee") {
       if (f.text === "BURN" || f.text === "FIRE") continue; // fire's damage: the flames are heard from the throw
+      if (f.text === "BOOM") { // a blast's hit: heard as the blast (one far from this frame's blasts is a carried bomb going off)
+        if (!landed.some((p) => Math.hypot(p[0] - f.to[0], p[1] - f.to[1]) <= 2.5)) {
+          out.push({ name: "blast", at: f.to, delay: THROW_FLIGHT + 0.6, blast: { kind: "secondary", glass: glassNear(b, f.to[0], f.to[1]) } });
+          landed.push(f.to);
+        }
+        continue;
+      }
+      if (f.text === "BACKBLAST") continue; // the launch is heard already
       const a = unitAt(b, f.from, f.side);
-      if (a && a.kind === "zombie" && f.hit) out.push({ name: "bite" });
-      else if (f.hit) out.push({ name: f.crit || (f.dmg || 0) >= 25 ? "meleeCrit" : "melee" });
-      else out.push({ name: "whoosh" });
-    } else if (f.type === "throw") out.push({ name: throwSound(f.item), delay: 0.25 });
-    else if (f.type === "scream") out.push({ name: "scream" });
+      if (a && a.kind === "zombie" && f.hit) out.push({ name: "bite", at: f.to });
+      else if (f.hit) out.push({ name: f.crit || (f.dmg || 0) >= 25 ? "meleeCrit" : "melee", at: f.to });
+      else out.push({ name: "whoosh", at: f.to });
+    } else if (f.type === "throw") {
+      const a = unitAt(b, f.from);
+      const lk = a ? launched(mem, a) : null;
+      const d = Math.hypot(f.to[0] - f.from[0], f.to[1] - f.from[1]);
+      const glass = glassNear(b, f.to[0], f.to[1]);
+      if (lk === "gl") { // a 40 mm round: the thoonk, then what it does where it lands
+        const kind = launchBlast(f.item, false);
+        out.push({ name: "launcher", gain: a.side === "player" ? 1 : 0.85, mine: a.side === "player", at: f.from, enemy: a.side !== "player", gun: shotPlan(f, a, "gl") });
+        out.push({ name: kind === "gl40" ? "blast" : throwSound(f.item), at: f.to, delay: flight("gl", d), blast: { kind, glass } });
+        blastAt(f.to, kind);
+        continue;
+      }
+      const kind = THROW_BLAST[f.item] || "clatter";
+      const B = { kind, glass };
+      if (THROW_HAND[f.item]) B.pre = { h: THROW_HAND[f.item], at: f.from }; // the pin and spoon, a fuse lit, a lighter, a flare struck
+      if (THROW_CLATTER.has(f.item)) B.land = FUSE[kind] || 0; // the can clatters where it lands and rolls this long, then goes
+      out.push({ name: throwSound(f.item), at: f.to, delay: THROW_FLIGHT + (FUSE[kind] || 0), blast: B });
+      blastAt(f.to, kind);
+    } else if (f.type === "scream") out.push({ name: "scream", at: f.from });
+  }
+  // A vehicle wrecked by this frame's blasts: a fireball (combat.js vehicleBlast marks its cells wrecked).
+  if (landed.length && mem.wrecked) {
+    const wrecked = wreckedCells(b);
+    const fresh2 = wrecked.filter((i) => !mem.wrecked.has(i));
+    if (fresh2.length) out.push({ name: "blast", at: [fresh2[0] % b.w, Math.floor(fresh2[0] / b.w)], delay: THROW_FLIGHT + 0.5, blast: { kind: "vehicle", glass: true } });
+    for (const j of wrecked) mem.wrecked.add(j);
+  }
+  // The handling seen in the units' state (a reload, a jam or its clearing, an empty magazine, a launcher reloaded);
+  // a jam and an empty click come after the unit's shot of this frame.
+  for (const h of handCues(b, mem)) {
+    if (h.after) { const s = out.find((c) => c.gun && c.gun.unit === h.unit); h.delay = s ? s.gun.span + 0.08 : 0.08; }
+    out.push(h);
   }
   // The selected unit deafened by a bang (sim/hearing.js): everything muffled, a ring as it starts.
   const selId = typeof LISTEN.sel === "function" ? LISTEN.sel() : null;
@@ -133,18 +199,38 @@ export function battleCues(b, mem, now = 0) {
     out.push({ name: "groan", gain: 0.55 + 0.45 * Math.min(1, dead / 12) });
     mem.nextGroan = now + (3 + rand(mem) * 6) / Math.min(3, 1 + dead / 8);
   }
-  return volley(out, mem);
+  return volley(mergeAll(out), mem);
+}
+// The cells of wrecked cars and trucks on the map (combat.js vehicleBlast: c.car.wrecked).
+function wreckedCells(b) {
+  const out = [];
+  if (!b.cells) return out;
+  for (let i = 0; i < b.cells.length; i++) { const c = b.cells[i]; if (c && c.car && c.car.wrecked) out.push(i); }
+  return out;
+}
+// One frame's blasts are one bigger sound (blastsfx.js mergeBlasts), and so are its fires, smokes and flares.
+function mergeAll(out) {
+  const groups = new Map();
+  const rest = [];
+  for (const c of out) {
+    if (!c.blast) { rest.push(c); continue; }
+    if (!groups.has(c.name)) groups.set(c.name, []);
+    groups.get(c.name).push(c);
+  }
+  if (![...groups.values()].some((g) => g.length > 1)) return out;
+  for (const g of groups.values()) rest.push(...mergeBlasts(g));
+  return rest;
 }
 
 // One frame's sounds, cut to MAX_BATTLE_SOUNDS (the loudest kinds first, your own shots before the enemy's) and
 // spread a little in time, so a volley sounds like a volley rather than one huge bang.
-const PRIORITY = { alarm: 0, battle: 0, downed: 1, death: 1, blast: 2, fire: 2, scream: 3, auto: 4, shotgun: 4, rifle: 4, revolver: 4, pistol: 5, bite: 5, meleeCrit: 5 };
+const PRIORITY = { alarm: 0, battle: 0, downed: 1, death: 1, blast: 2, fire: 2, rocket: 2, launcher: 3, scream: 3, auto: 4, shotgun: 4, rifle: 4, revolver: 4, pistol: 5, suppressed: 5, bite: 5, meleeCrit: 5, taser: 6, reload: 7, jam: 7, unjam: 7, dry: 7 };
 function volley(out, mem) {
   if (out.length <= 1) return out;
   const kept = out.map((c, i) => ({ c, i, p: (PRIORITY[c.name] ?? 8) - (c.mine ? 3 : 0) })).sort((a, b) => a.p - b.p || a.i - b.i).slice(0, MAX_BATTLE_SOUNDS).sort((a, b) => a.i - b.i);
   let shots = 0;
   return kept.map(({ c }) => {
-    const step = c.name === "hit" || c.name === "whiz" || c.name === "ricochet" ? Math.max(0, shots - 1) : shots++;
+    const step = c.name === "hit" || c.name === "whiz" || c.name === "ricochet" || c.blast || c.hand ? Math.max(0, shots - 1) : shots++; // a blast or a handling sound keeps to its own timing
     return { ...c, delay: (c.delay || 0) + step * VOLLEY_SPREAD + rand(mem) * 0.02 };
   });
 }
