@@ -103,8 +103,8 @@ export function holdSection(state, ui, s) {
   if (!me) return "";
   const pid = p.id;
   let html = `<div class="card small" style="margin-top:0.5rem"><div class="spread"><b>Supplies ${first(s)} carries</b><span class="muted">${kg(me.kg)} kg</span></div>
-    ${placeRow(ui, pid, s.id, "pocket", me.pocket, ` <span class="muted">(${me.pocketUsed}/${me.freePockets} free pockets)</span>`)}
-    ${placeRow(ui, pid, s.id, "pack", me.pack, me.freePack || me.packUsed ? ` <span class="muted">(${me.packUsed}/${me.freePack} free pack slots)</span>` : ` <span class="muted">(no pack, or it is full of items)</span>`)}
+    ${placeRow(ui, pid, s.id, "pocket", me.pocket, ` <span class="muted">(${me.pocketUsed} of ${me.freePockets} free pocket${me.freePockets === 1 ? "" : "s"} used)</span>`)}
+    ${placeRow(ui, pid, s.id, "pack", me.pack, me.freePack || me.packUsed ? ` <span class="muted">(${me.packUsed} of ${me.freePack} free pack slot${me.freePack === 1 ? "" : "s"} used)</span>` : ` <span class="muted">(no pack, or it is full of items)</span>`)}
     ${placeRow(ui, pid, s.id, "hands", me.hands, ` <span class="${me.handsKg > 0 ? "warn" : "muted"}">(${kg(me.handsKg)}/${HANDS_KG} kg${me.handsKg > 0 ? ": hands full, no weapon in a fight until it is set down" : ""})</span>`)}
     ${v.hasCar || v.rack ? placeRow(ui, pid, null, "car", v.car, v.rack ? ` <span class="muted">(${kg(v.carKg)}/${v.rack} kg on the racks)</span>` : "") : ""}`;
   const sel = ui.carrySel && ui.carrySel.pid === pid ? ui.carrySel : null;
