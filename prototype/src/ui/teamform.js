@@ -200,7 +200,7 @@ function peopleTab(state, ui, F, b, p, crew) {
   }).join("");
   const table = `<div style="max-height:22rem;overflow-y:auto"><table class="t">${th}${tr || `<tr><td colspan="8" class="muted">Nobody here matches.</td></tr>`}</table></div>`;
   const stance = editing(F) ? "" : `<h3>Stance</h3><div class="row">${Object.entries(STANCES).map(([k, x]) => `<button class="mini ${F.stance === k ? "active" : ""}" data-action="tf-stance" data-v="${k}"${tip(x.desc)}>${x.name}</button>`).join("")}</div>`;
-  return `${head}${table}<div class="grid2" style="margin-top:0.6rem"><div><h3>Vehicle</h3>${vehiclePick(state, F, b, p, crew)}</div><div>${stance}<h3>After forming</h3><div class="small muted">The team stands on ${esc(b.name)}'s tile waiting for orders: Move (click a tile), any order on its panel, the team inventory, or Enter ${esc(b.name)} to bring everyone back in. ${editing(F) ? "" : "It is shown in the Teams tab and on the map, and its panel opens."}</div></div></div>`;
+  return `${head}${table}<div class="grid2" style="margin-top:0.6rem"><div><h3>Vehicle</h3>${vehiclePick(state, F, b, p, crew)}</div><div>${stance}<h3>${editing(F) ? "On the map" : "After forming"}</h3><div class="small muted">The team stands on ${esc(b.name)}'s tile waiting for orders: Move (click a tile), any order on its panel, the team inventory, or Enter ${esc(b.name)} to bring everyone back in. ${editing(F) ? "" : "It is shown in the Teams tab and on the map, and its panel opens."}</div></div></div>`;
 }
 
 function vehiclePick(state, F, b, p, crew) {
@@ -211,13 +211,14 @@ function vehiclePick(state, F, b, p, crew) {
   const btn = (id, active, label, hint, sub, off = "") => `<button data-action="tf-vehicle" data-v="${id}" class="${active ? "active" : ""}" ${off ? "disabled" : ""}${tip(off || hint)}>${label}<span class="hint">${sub}</span></button>`;
   const opts = [btn("", !cur, "On foot", "Slow, silent, goes anywhere but water. The people carry everything: a heavy load slows them and makes them eat and drink more.", "no vehicle")];
   if (bikeStack && nBikes) opts.push(btn(bikeStack.id, isBike(cur), "Bicycles, one each", `Faster than walking on roads, walking pace off them. No fuel, quiet. Each rack carries ${VEHICLE_TYPES.bike.rack} kg; riding takes most of the load's slow-down away.`, `${nBikes} at the base · rack ${VEHICLE_TYPES.bike.rack} kg each · condition ${Math.round(bikeStack.condition)}%`, nBikes < Math.max(1, crew.length) ? `Only ${nBikes} bike${nBikes === 1 ? "" : "s"} for ${crew.length} people (one each)` : bikeStack.condition <= 0 ? "Needs repairs" : ""));
-  for (const v of [...(isCar(cur) ? [cur] : []), ...cars]) {
+  const ours = p && isCar(cur) ? [cur] : []; // editing: the team's own car is not parked at the base
+  for (const v of [...ours, ...cars]) {
     const seats = SEATS[v.type] || 4;
     const noFuel = v.fuel < 1 && !(p ? teamHas(p, "fuel") : F.supplies.fuel) ? `The ${v.name} has no fuel: refuel it at the base, or pack fuel cans (Supplies tab)` : "";
     opts.push(btn(v.id, cur && cur.id === v.id, esc(v.name), `Fast on roads, cannot cross mountains. Burns about 0.6 fuel a road tile, 1.5 off-road, more when loaded past 60%. Payload ${payloadOf(v)} kg, riders (80 kg each) included: they feel none of their load. ${seats} seats in a battle (who rides when the team fights on a map).${upgradeText(v) ? ` ${upgradeText(v)}.` : ""}`,
       `${seats} seats · ${payloadOf(v)} kg payload · fuel ${n0(v.fuel)}/${tank(v)} · condition ${Math.round(v.condition)}%${upgradeText(v) ? ` · ${esc(upgradeText(v))}` : ""}`, v.condition <= 0 ? "Needs repairs first" : noFuel));
   }
-  return `<div class="choices">${opts.join("")}</div><div class="small muted"${tip("A team has one vehicle: its fuel, wear, breakdowns and the battle map all go by that one. For a convoy of several cars, form a team for each and move them together.")}>One vehicle per team (or a bike each).${cars.length + (isCar(cur) ? 1 : 0) ? "" : ` No cars at ${esc(b.name)}.`}</div>`;
+  return `<div class="choices">${opts.join("")}</div><div class="small muted"${tip("A team has one vehicle: its fuel, wear, breakdowns and the battle map all go by that one. For a convoy of several cars, form a team for each and move them together.")}>One vehicle per team (or a bike each).${cars.length + ours.length ? "" : ` No cars at ${esc(b.name)}.`}</div>`;
 }
 
 // ---------- tab 2: gear ----------
@@ -350,7 +351,7 @@ export const TEAMFORM_ACTIONS = {
     open(ui, fresh(b.id, p.id), partyMembers(state, p)[0]?.id ?? null);
     ui.baseView = null;
   },
-  "tf-tab": (state, ui, d) => { const F = formOf(ui); if (F) { F.tab = d.tab; ui.invSel = null; } },
+  "tf-tab": (state, ui, d) => { const F = formOf(ui); if (F) { F.tab = d.tab; ui.invSel = null; ui.invMsg = ""; } },
   "tf-filter": (state, ui, d) => { const F = formOf(ui); if (F) { F.filter = d.v; F.cursor = 0; } },
   "tf-crew": (state, ui, d) => {
     const F = formOf(ui);
@@ -457,7 +458,7 @@ export function teamFormKey(state, ui, e) {
   const F = formOf(ui);
   if (!F) return false;
   const k = e.key;
-  if (k === "1" || k === "2" || k === "3") { F.tab = TABS[Number(k) - 1][0]; ui.invSel = null; return true; }
+  if (k === "1" || k === "2" || k === "3") { F.tab = TABS[Number(k) - 1][0]; ui.invSel = null; ui.invMsg = ""; return true; }
   if (k === "Enter") { TEAMFORM_ACTIONS["tf-go"](state, ui, {}); return true; }
   if (F.tab !== "people") return false;
   const rows = listed(state, F);
