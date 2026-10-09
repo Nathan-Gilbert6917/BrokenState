@@ -345,7 +345,7 @@ console.log("Deafened and ducking");
   const ev = B.muffle.frequency.events.at(-1);
   check(ev && ev[1] === G.MUFFLE_HZ, `deafened: the battle through a low-pass at ${G.MUFFLE_HZ} Hz`);
   B.setMuffle(false, 2);
-  check(B.muffle.frequency.events.at(-1)[1] === 20000, "and open again after");
+  check(B.muffle.frequency.events.at(-1)[1] === Math.min(20000, c.sampleRate * 0.45), "and open again after");
   BL.playBlast(c, 3, { kind: "frag" }, G.place({ dist: 2 }));
   const d = B.duck.gain.events.filter((e) => e[0] === "tgt");
   check(d.length >= 2 && d[0][1] < 0.5 && d[1][1] === 1 && near(d[0][2], 3, 0.02), `a close frag ducks the rest of the battle to ${d[0] && d[0][1].toFixed(2)} and back`);

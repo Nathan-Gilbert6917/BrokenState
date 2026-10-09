@@ -369,7 +369,8 @@ const BUS = new WeakMap(); // context -> the battle bus
 // The battle bus on context c into dest (the effects bus): in (ducked, muffled), raw (muffled only: the blasts
 // themselves), a reverb per room on demand. Returns it (also kept for spatialOut).
 export function installBus(c, dest) {
-  const muffle = c.createBiquadFilter(); muffle.type = "lowpass"; muffle.frequency.value = 20000; muffle.Q.value = 0.5;
+  const open = Math.min(20000, c.sampleRate * 0.45); // wide open (under the context's Nyquist)
+  const muffle = c.createBiquadFilter(); muffle.type = "lowpass"; muffle.frequency.value = open; muffle.Q.value = 0.5;
   muffle.connect(dest);
   const duck = c.createGain(); duck.gain.value = 1; duck.connect(muffle);
   const inp = c.createGain(); inp.connect(duck);
@@ -398,7 +399,7 @@ export function installBus(c, dest) {
     setMuffle(on, t = c.currentTime) {
       if (on === B.muffled) return;
       B.muffled = on;
-      muffle.frequency.setTargetAtTime(on ? MUFFLE_HZ : 20000, t, on ? 0.02 : 0.4);
+      muffle.frequency.setTargetAtTime(on ? MUFFLE_HZ : open, t, on ? 0.02 : 0.4);
     },
   };
   BUS.set(c, B);
@@ -450,7 +451,8 @@ export function spatialOut(c, sp = {}, o = {}) {
   const g = c.createGain();
   g.gain.value = Math.max(0, sp.gain * (o.gain ?? 1));
   let node = g;
-  if (sp.lp < 16000) { const f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = sp.lp; f.Q.value = 0.6; node.connect(f); node = f; }
+  const nyq = c.sampleRate * 0.45;
+  if (sp.lp < Math.min(16000, nyq)) { const f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = sp.lp; f.Q.value = 0.6; node.connect(f); node = f; }
   if (sp.pan && c.createStereoPanner) { const pn = c.createStereoPanner(); pn.pan.value = sp.pan; node.connect(pn); node = pn; }
   node.connect(B ? (o.raw ? B.raw : B.in) : c.destination);
   if (B && sp.send > 0 && o.dry !== true) { const s = c.createGain(); s.gain.value = sp.send * (o.send ?? 1); node.connect(s); s.connect(B.verb(sp.room)); }

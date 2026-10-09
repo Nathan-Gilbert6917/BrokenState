@@ -154,7 +154,7 @@ export function sfx(name, opts = {}) {
   const t = ctx.currentTime + 0.01 + Math.max(0, opts.delay || 0);
   if (!throttle.allow(name, t, V.dur)) { audioDebug.dropped++; return false; }
   let out = V.amb ? A.amb : opts.battle && A.gb ? A.gb.in : A.sfx;
-  if (opts.lp > 0 && opts.lp < 16000) { // far away or out of sight (ui/gunsfx.js spatial)
+  if (opts.lp > 0 && opts.lp < Math.min(16000, ctx.sampleRate * 0.45)) { // far away or out of sight (ui/gunsfx.js spatial)
     const f = ctx.createBiquadFilter();
     f.type = "lowpass"; f.frequency.value = opts.lp; f.Q.value = 0.6;
     f.connect(out);
@@ -676,5 +676,5 @@ export const SOUND_CHANGE = {
 
 // The Help tab's topic (ui/help.js).
 export function soundHelp() {
-  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each weapon class has its own report (pistol, revolver, rifle, shotgun, assault rifle burst, suppressed, bow, acid), with hits, misses, melee blows, bites, groans of the dead, blasts and fire, and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: master, effects and ambience volumes, sound on / off, mute when the window is not focused, and <b>Hear</b> to play any one sound. Browsers start sound only after your first click or key press.`;
+  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each calibre has its own report (a .22's pop to a .50's thump, 12 gauge, the machine guns, launchers), bursts and full auto round by round, suppressed shots, reloads, jams and brass, placed left or right and near or far, muffled out of sight, in the echo of the place; grenades, rockets and explosions in layers, with hits, misses, melee blows, bites, groans of the dead, blasts and fire, and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: master, effects and ambience volumes, sound on / off, mute when the window is not focused, and <b>Hear</b> to play any one sound. Browsers start sound only after your first click or key press.`;
 }
