@@ -11,7 +11,7 @@ import { bandChip, BANDS_HELP } from "./loadview.js";
 import { itemDur, itemDurMax, durUnit } from "../sim/crafting.js";
 import { worthTier } from "../sim/valuation.js";
 import {
-  EQUIP_SLOTS, SLOT_NAMES, POCKETS, ensureInv, packOf, packSize, ensurePack, armorPower, itemAt, parseLoc, moveItem, quickMove, toStorage,
+  EQUIP_SLOTS, SLOT_NAMES, POCKETS, ensureInv, packOf, packSize, ensurePack, isCarryable, armorPower, itemAt, parseLoc, moveItem, quickMove, toStorage,
   personPlace, battlePlace, storageFor, battleBodies, bodyHolder, bodyEmpty, takeSupply, takeAllBody, takeAllBodies, itemLoad, allItems,
   breakDownInfo, breakDownAt, setFireMark, modChoices, fitModAt, unfitModAt, salvageInfo, salvageAt, salvageYield, salvageText, placeOfLoc,
 } from "../sim/inventory.js";
@@ -37,6 +37,7 @@ import { POUCH_NAMES, POUCH_ICON, MAGAZINES } from "../sim/data-kit.js";
 import { battleKg, bandFor } from "../sim/carrykit.js"; // the battle load band (R17)
 import { typeName } from "../sim/rounds.js";
 import { holdSection } from "./carry.js"; // the team's supplies this person carries (pockets, pack, arms), the ground
+import { bagRefusal } from "../sim/carry.js"; // Carry in arms (the search window): a bag, a rig or a case into the arms
 import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -532,11 +533,15 @@ function raidModal(state, ui) {
   const found = [...Object.entries(R.found).filter(([, n]) => n >= 1).map(([k, n]) => `${Math.floor(n)} ${k}`), ...R.foundGear.map((g) => g.name)];
   const SL = ui.invSel ? parseRaidLoc(ui.invSel) : null;
   const sel = SL ? (SL.slot === "sup" ? SUPPLIES[SL.i]?.name : SL.o === "s" ? itemAt(state, ui.invSel)?.name : raidItemAt(state, b, ui.invSel)?.name) || "" : "";
+  // sim/carry.js: a bag, a rig or a case off the ground, a body or a container straight into the arms (hands full).
+  const selItem = SL && SL.slot !== "sup" && SL.o !== "s" ? raidItemAt(state, b, ui.invSel) : null;
+  const armsWhy = selItem && isCarryable(selItem) ? bagRefusal(state, b, u, selItem) : null;
+  const armsBtn = armsWhy == null ? "" : ` <button class="mini" data-action="rl-carry"${tip(armsWhy || `${first} carries the ${selItem.name} in their arms, whole, with what is in it (${Math.round(itemLoad(selItem) * 10) / 10} kg; hauling time). Hands full: no shooting, blows with a weapon, reloading, throwing or treating until it is set down (Drop carried: free).`)} ${armsWhy ? "disabled" : ""}>Carry in arms</button>`;
   return `<div class="box wide invbox${cols.length > 2 ? " loot" : ""}">
     <div class="spread"><h1>${box ? (box.kind === "ground" ? "On the ground" : "Search") : trunk ? "Vehicle" : "On the ground"}: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}</span></div>
     <div class="result small"${ui.invMsg ? "" : ' style="visibility:hidden"'}>${ui.invMsg ? esc(ui.invMsg) : "&nbsp;"}</div>
     <div class="invcols${cols.length > 2 ? " three" : ""}">${cols.join("")}</div>
-    ${SL && SL.slot === "sup" ? qtyBar(state, ui, b, u) : sel ? `<div class="invsel small">Selected: <b>${esc(sel)}</b>. Click where it should go: a slot, a pocket or pack cell, Carried${mates.length ? ", a teammate" : ""}${box ? ", the container" : ""}, the ground${trunk ? ", the vehicle" : ""}. <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}
+    ${SL && SL.slot === "sup" ? qtyBar(state, ui, b, u) : sel ? `<div class="invsel small">Selected: <b>${esc(sel)}</b>. Click where it should go: a slot, a pocket or pack cell, Carried${mates.length ? ", a teammate" : ""}${box ? ", the container" : ""}, the ground${trunk ? ", the vehicle" : ""}.${armsBtn} <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}
     <div class="small muted" style="margin-top:0.5rem">Drag things where they should go (or click one, then where). Click a thing twice to send it across. The first ${HAUL.free} kg a turn are free to haul, then ${HAUL.per} kg an action; handing things to a teammate next to you is free.${found.length ? ` Found so far: ${esc(found.join(", "))}.` : ""}</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close">Done</button></div>
   </div>`;
@@ -748,6 +753,16 @@ export const INV_ACTIONS = {
     const box = lootLayer(b) && lootLayer(b).containers.find((c) => c.id === ui.inv.box);
     const n = box && box.contents ? box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length : 0;
     ui.invMsg = err || `Searched in full: ${n ? `${n} thing${n === 1 ? "" : "s"} in it now` : "nothing more"}.`;
+    ui.invSel = null;
+  },
+  // Carry in arms (sim/carry.js): the selected bag, rig or case into the In arms slot (hands full until set down).
+  "rl-carry": (state, ui) => {
+    const b = state.combat;
+    if (!ui.inv || !ui.inv.raid || !ui.invSel || !b) return;
+    const u = b.units.find((x) => x.id === ui.inv.uid);
+    const it = raidItemAt(state, b, ui.invSel);
+    const why = u && it ? bagRefusal(state, b, u, it) : "Nothing selected.";
+    ui.invMsg = why || raidMove(state, u.id, ui.invSel, `s:${u.sid}:carry`);
     ui.invSel = null;
   },
   "rl-mate": (state, ui, d) => { if (ui.inv && ui.inv.raid) { ui.inv.mate = Number(d.id); ui.invSel = null; } },

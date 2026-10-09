@@ -53,8 +53,9 @@ export function gunOut(b, u, item) {
   return r;
 }
 // A gun one of your people carried into the fight (not in the hands) leaves them unfired: loaded, the rounds out of the
-// team's (a magazine's worth of its standard load).
+// team's (a magazine's worth of its standard load). A bag, a case or a rig leaving them: each gun in it the same.
 export function gunLeavesTeam(b, item) {
+  if (b && item && !isGun(item) && Array.isArray(item.contents)) { for (const g of bagGuns(item)) gunLeavesTeam(b, g); return null; }
   if (!b || !isGun(item) || item.loaded || !startGun(b, item)) return null;
   const probe = { weapon: item.key, load: null, side: "player", item, boxes: [] };
   const cap = magCap(probe);
@@ -100,8 +101,15 @@ export function unloadInto(st, items, stock) {
   }
   return n;
 }
-// The guns of these people and of a storage list, with what they hold (a pack's contents: allCarried).
-export const teamGuns = (people, list = []) => [...people.flatMap((s) => (s && s.gear ? allCarried(s) : [])), ...list].filter((it) => it && it.loaded);
+// Everything inside a container, at any depth (a bag's slots, a case, a pouch): the guns among them.
+const inside = (it, out = [], seen = new Set()) => { if (it && Array.isArray(it.contents) && !seen.has(it)) { seen.add(it); for (const c of it.contents) if (c) { out.push(c); inside(c, out, seen); } } return out; };
+export const bagGuns = (bag) => inside(bag).filter(isGun);
+// What a person carries with a bag in the arms opened up (carry.js s.gear.carry: its contents are carried too, and
+// every gun carried into a fight starts it loaded: combat.js playerUnit startGuns).
+export const carriedWithBag = (s) => (s && s.gear ? [...allCarried(s), ...inside(s.gear.carry)] : []);
+// The guns of these people and of a storage list, with what they hold (a pack's contents: allCarried; a bag carried in
+// the arms or lying in the list: its contents too).
+export const teamGuns = (people, list = []) => [...people.flatMap((s) => carriedWithBag(s)), ...list, ...list.flatMap((it) => inside(it))].filter((it) => it && it.loaded);
 // The supply record a storage place's rounds go to (inventory.js storageFor: a team's cargo, a base's stock).
 export function stockFor(state, st) {
   if (!st) return null;

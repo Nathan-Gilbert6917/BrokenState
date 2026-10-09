@@ -97,10 +97,10 @@ import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear,
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
-import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, autoDrop, settleCarried } from "./carry.js"; // supplies or a bag carried in the arms: no weapon until set down (Drop carried: free)
+import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, autoDrop, settleCarried, armsDropsEnd } from "./carry.js"; // supplies or a bag carried in the arms: no weapon until set down (Drop carried: free)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
-import { gunOut, gunIn, enemyGunLoaded } from "./gunload.js"; // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
+import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js"; // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -2345,7 +2345,7 @@ export function playerUnit(b, s) {
     scouting: skill(s, "scouting"), armLoad: fielded.reduce((a, [slot, it]) => a + (slot !== "weapon" && GEAR[it.key] ? GEAR[it.key].power || 0 : 0), 0), // escape checks (soundRetreat)
     boxes: boxesOf(s), // ammo.js: the boxes of rounds they carry (pockets, pack): their gun draws on them first
     gearRisk: key === "fists" ? 0 : eff.damageChance, item: key === "fists" ? null : item,
-    startGuns: allCarried(s).filter((it) => WEAPONS[it.key] && calOf(it.key)), // gunload.js: every gun carried starts the fight loaded
+    startGuns: carriedWithBag(s).filter((it) => WEAPONS[it.key] && calOf(it.key)), // gunload.js: every gun carried starts the fight loaded (one in a bag in the arms too)
     wormed: hasWorm(s), wornArmor: armorMult(s), // carriers.js: the worm in them gets them up if they die; the risen wear what they wore
     ap: 2, aware: true, x: 0, y: 0, f: 0,
   };
@@ -4434,6 +4434,7 @@ function endBattle(state, b, outcome) {
   }
   if (b.retreatOrder) lines.unshift(...b.retreatOrder.lines);
   wearFielded(state, b, true);
+  armsDropsEnd(state, b, outcome); // carry.js: won, the loads set down from the arms are picked up again (before the piles become loot)
   groundEnd(state, b, outcome); // ground.js: what your people carry loose comes home; a body searched in the battle keeps what is left on it
   // carriers.js: the risen still walking take their things into the walking loot; bodies in the car come home (the
   // team keeps its car unless it was beaten); the burnt leave nothing; the swarm's bites leave the worm in the living.

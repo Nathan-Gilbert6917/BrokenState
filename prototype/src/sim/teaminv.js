@@ -16,6 +16,11 @@
 // the cargo. Fresh game in the cargo (hunting.js) and forage with the worm's eggs (worm.js) go into the base's
 // stores as they do when a team comes home.
 //
+// Where the team's bulk supplies are held (carry.js p.hold: each member's pockets, pack and arms, the vehicle) is
+// shown per member (teamHoldings hold, cargo held); the pool stays one pool, so a drop off or a load is re-placed
+// (settleHold) at once, and dropHeldOff takes what one member holds (the arms first) into the base. A bag carried in
+// the arms (the In arms slot) and what is in it are spots like any other: picked, it goes in the armory whole.
+//
 // AI parity: the other groups' teams and caravans deliver their goods abstractly (a group's stock and lootedGear,
 // factions.js, caravans.js): they have no per-person inventories to sort, so nothing of theirs goes through here.
 /** @import { State, Party, Base, Item, Survivor, Stock } from "./types" */
@@ -28,6 +33,7 @@ import { wornLoad, maxLoad } from "./load.js";
 import { meatIn, takeMeat, unloadGame, meatAt } from "./hunting.js";
 import { wormMeatIn, wormMeatAt, wormForageIn, unloadWormForage } from "./worm.js";
 import { bodiesHome } from "./carriers.js";
+import { settleHold, holdView, HOLD_KEYS } from "./carry.js"; // who holds the supplies where (one pool, placed)
 
 const EPS = 1e-6;
 const num = (v) => (Number.isFinite(v) ? v : 0);
@@ -76,21 +82,29 @@ function spotsOf(s) {
   if (isCarrier(s.gear.armor)) { const ins = insertsOf(s.gear.armor); for (const side of INSERT_SIDES) add(ins, side, "insert", `${pre}:insert:${side}`); }
   const pk = packOf(s);
   if (pk) pk.forEach((_, i) => add(pk, i, "pack", `${pre}:pack:${i}`));
+  const bag = s.gear.carry; // carry.js: a bag carried in the arms, and what is in it
+  if (bag && Array.isArray(bag.contents)) bag.contents.forEach((_, i) => add(bag.contents, i, "bag", `${pre}:bag:${i}`));
   return out;
 }
 
 // The team's inventory for the windows and tests:
-//   members: [{ s, spots: [{ item, where, loc, kg }], worn, max }]
-//   cargo: { vehicle, name, gear: [{ item, loc, kg }], supplies: { key: { packed, found, all } }, bodies }
+//   members: [{ s, spots: [{ item, where, loc, kg }], worn, max, hold: { pocket, pack, hands, kg, handsKg } | null }]
+//   cargo: { vehicle, name, gear: [{ item, loc, kg }], supplies: { key: { packed, found, all } }, bodies, held }
+//   (hold, held: carry.js holdView: the supplies each member keeps in pockets, pack and arms, and the vehicle's)
 //   load, cap: the pool (supplies and cargo) against what the team can carry on top of what it wears.
 /** @param {State} state @param {Party} p */
 export function teamHoldings(state, p) {
-  const members = partyMembers(state, p).map((s) => ({
-    s,
-    spots: spotsOf(s).map(({ item, where, loc }) => ({ item, where, loc, kg: itemLoad(item) })),
-    worn: wornLoad(s),
-    max: maxLoad(s),
-  }));
+  const hv = holdView(state, p);
+  const members = partyMembers(state, p).map((s) => {
+    const h = hv ? hv.people.find((x) => x.s === s) : null;
+    return {
+      s,
+      spots: spotsOf(s).map(({ item, where, loc }) => ({ item, where, loc, kg: itemLoad(item) })),
+      worn: wornLoad(s),
+      max: maxLoad(s),
+      hold: h ? { pocket: h.pocket, pack: h.pack, hands: h.hands, kg: h.kg, handsKg: h.handsKg } : null,
+    };
+  });
   p.cargo = p.cargo || { supplies: {}, gear: [] };
   const v = partyVehicle(state, p);
   /** @type {Record<string, { packed: number, found: number, all: number }>} */
@@ -108,7 +122,7 @@ export function teamHoldings(state, p) {
   for (const k of Object.keys(supplies)) if (supplies[k].all < 0.05) delete supplies[k];
   return {
     members,
-    cargo: { vehicle: v, name: v ? `${vehicleLabel(v)} (team cargo)` : "Team cargo (carried by hand)", gear: p.cargo.gear.map((item, i) => ({ item, loc: `cargo:${p.id}:list:${i}`, kg: itemLoad(item) })), supplies, bodies: (p.cargo.bodies || []).length },
+    cargo: { vehicle: v, name: v ? `${vehicleLabel(v)} (team cargo)` : "Team cargo (carried by hand)", gear: p.cargo.gear.map((item, i) => ({ item, loc: `cargo:${p.id}:list:${i}`, kg: itemLoad(item) })), supplies, bodies: (p.cargo.bodies || []).length, held: hv ? hv.car : {} },
     load: poolLoad(p),
     cap: partyCapacity(state, p),
   };
@@ -208,8 +222,38 @@ export function dropOff(state, p, picks = {}) {
     const got = supplyToBase(p, base, k, want);
     if (got > 0) moved.push(`${qtyText(got)} ${supName(k)}`);
   }
-  if (moved.length) reweigh(state, p);
+  if (moved.length) { reweigh(state, p); settleHold(state, p); } // carry.js: what is left is placed again
   return result(moved, refused, `into ${base.name}`);
+}
+// The supplies one member holds (carry.js p.hold: arms, pack, pockets; all, or one place) into the base's stores. The
+// pool is one: those units leave it, and nobody else's are touched.
+/** @param {State} state @param {Party} p @param {number} sid @param {string | null} [place] */
+export function dropHeldOff(state, p, sid, place = null) {
+  const why = transferProblem(state, p);
+  if (why) return { moved: [], refused: [why], text: why };
+  const base = /** @type {Base} */ (teamBase(state, p));
+  p.cargo = p.cargo || { supplies: {}, gear: [] };
+  p.supplies = p.supplies || {};
+  const h = settleHold(state, p);
+  const r = h && h.by[sid];
+  const s = survivorById(state, sid);
+  if (!r || !s) return result([], ["That person is not on the team."], "");
+  const got = {};
+  for (const pl of ["hands", "pack", "pocket"]) {
+    if (place && pl !== place) continue;
+    for (const k of HOLD_KEYS) {
+      const q = num(r[pl] && r[pl][k]);
+      if (!(q > EPS)) continue;
+      const key = k === "meat" ? "food" : k; // fresh game: the cargo's food, as fresh game at the base
+      const n = supplyToBase(p, base, key, q);
+      r[pl][k] = q - n;
+      if (r[pl][k] <= EPS) delete r[pl][k];
+      if (n > 0) got[key] = (got[key] || 0) + n;
+    }
+  }
+  const moved = Object.entries(got).map(([k, q]) => `${qtyText(q)} ${supName(k)}`);
+  if (moved.length) { reweigh(state, p); settleHold(state, p); }
+  return result(moved, [], `from ${s.name.split(" ")[0]} into ${base.name}`);
 }
 // The cargo's whole contents (gear, found supplies, bodies in the car) into the base: what a team brings home.
 /** @param {State} state @param {Party} p */
@@ -225,6 +269,7 @@ export function dropAllCargo(state, p) {
   const bodies = (p.cargo.bodies || []).length;
   if (bodies) { bodiesHome(state, p, base); r.moved.push(`${bodies} bod${bodies === 1 ? "y" : "ies"}`); }
   reweigh(state, p);
+  settleHold(state, p);
   return result(r.moved, r.refused, `into ${base.name}`);
 }
 // Every supply the team has, packed and found, into the base's stores (the kit stays on the people).
@@ -292,7 +337,7 @@ export function loadFromBase(state, p, picks = {}, target = "cargo") {
     p.supplies[k] = num(p.supplies[k]) + fit;
     moved.push(`${qtyText(fit)} ${supName(k)}`);
   }
-  if (moved.length) reweigh(state, p);
+  if (moved.length) { reweigh(state, p); settleHold(state, p); } // carry.js: loaded supplies go in packs, pockets, the vehicle, then the arms
   return result(moved, refused, toCargo ? `onto the team${partyVehicle(state, p) ? ` (${vehicleLabel(/** @type {any} */ (partyVehicle(state, p)))})` : ""}` : `onto the team (items to ${first})`);
 }
 

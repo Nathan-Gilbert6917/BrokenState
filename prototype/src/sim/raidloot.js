@@ -45,7 +45,7 @@ import { partyMembers, cargoRoom, poolLoad, unitsThatFit } from "./parties.js";
 import { partyVehicle, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "./load.js";
 import { ensureInv, packOf, ensurePack, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried } from "./inventory.js";
-import { gunLeavesTeam, unloadInto } from "./gunload.js"; // the rounds in a gun go with it (call-time only: safe in the import cycle)
+import { gunLeavesTeam, unloadInto, teamGuns } from "./gunload.js"; // the rounds in a gun go with it (call-time only: safe in the import cycle)
 
 const EPS = 1e-9;
 export const HAUL = { free: 8, per: 12 }; // kg a turn for free, then kg an action
@@ -575,7 +575,7 @@ export function raidHome(state, b, homeUids) {
   }
   // gunload.js: the guns that came home with rounds in them are unloaded into the team's cargo.
   if (p) p.cargo = p.cargo || { supplies: {}, gear: [] };
-  if (p) unloadInto(null, [...b.units.filter((u) => u.side === "player" && homeUids.has(u.id)).flatMap((u) => { const s = survivorById(state, u.sid); return s && s.gear ? allCarried(s) : []; }), ...(p.cargo.gear || [])], p.cargo.supplies || (p.cargo.supplies = {}));
+  if (p) unloadInto(null, teamGuns(b.units.filter((u) => u.side === "player" && homeUids.has(u.id)).map((u) => survivorById(state, u.sid)), p.cargo.gear || []), p.cargo.supplies || (p.cargo.supplies = {})); // a bag in the arms and one in the cargo too
   // The piles nobody picked up stay behind: they were found, but nobody brought them home.
   for (const c of R.containers) {
     if (!c.drop || !c.contents) continue;

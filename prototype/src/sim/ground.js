@@ -32,8 +32,10 @@
 //
 // The API for other modules (the carrying model, ux-carry): dropToGround(b, u, item | supplyKey, count) puts a thing
 // (already taken off whoever had it) on the unit's cell; dropAt(state, uid, loc, qty) moves it there from an inventory
-// location; pickUpFromGround(state, b, u, cellOrPile, item?) takes one thing, or all that fits, from a pile on or next
-// to the unit. groundAt / pilesNear / pileCount read it.
+// location; pickUpFromGround(state, b, u, cellOrPile, item?, arms?) takes one thing, or all that fits, from a pile on
+// or next to the unit (arms: a bag, a rig or a case straight into the arms, carry.js; the In arms slot). groundAt /
+// pilesNear / pileCount read it. carry.js puts the loads set down from the arms here (groundDropCell) and takes them
+// back (Pick up load, the end of a won fight).
 //
 // AI parity: an enemy (or a third side's) fighter with no gun in hand standing on or next to a pile with a gun in it
 // takes it up (aiGrabGun, 1 action), the very item: if they fall it is on their body again.
@@ -49,6 +51,7 @@ import { KITS, WEAPONS, say, fx, unitById, loadMag, active, playerUnit } from ".
 import { gunOut, gunLeavesTeam, gunIn, unloadInto, stockFor, teamGuns } from "./gunload.js"; // the rounds in a gun, kept on it
 import { fireStuff } from "./launchers.js"; // fire on what lies on the ground
 import { fireAt } from "./throwables.js";
+import { bagRefusal } from "./carry.js"; // Carry in arms: the one check for a bag going into the arms
 
 export const GROUND = { reach: 1 };
 const cheb = (a, x, y) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y));
@@ -57,6 +60,7 @@ export const isPile = (c) => !!c && c.kind === "ground";
 // How many things (an item, a supply stack) a container holds.
 export const pileCount = (c) => (c && c.contents ? c.contents.gear.length + Object.values(c.contents.sup).filter((v) => v >= 1).length : 0);
 const settle = (c) => { const n = pileCount(c); c.searched = !n; c.partial = !!n; return c; };
+export const settlePile = settle; // carry.js: a pile a load was taken back from
 
 // ---------- piles ----------
 export const groundPiles = (b) => (lootLayer(b) ? lootLayer(b).containers.filter(isPile) : []);
@@ -100,8 +104,9 @@ export function dropAt(state, uid, loc, qty = Infinity) {
   settle(p);
   return msg;
 }
-// Takes one thing (item) or all that fits from a pile on or next to the unit: { got: [names], left, msg }.
-export function pickUpFromGround(state, b, u, where, item = null) {
+// Takes one thing (item) or all that fits from a pile on or next to the unit: { got: [names], left, msg }. arms: the
+// item (a bag, a rig, a case) goes into the unit's arms (carry.js: hands full until it is set down), not the pack.
+export function pickUpFromGround(state, b, u, where, item = null, arms = false) {
   const out = { got: [], left: 0, msg: "" };
   if (!b || !u) return out;
   fieldReady(b, state);
@@ -112,7 +117,8 @@ export function pickUpFromGround(state, b, u, where, item = null) {
     const i = pile.contents.gear.indexOf(item);
     if (i < 0) { out.msg = "That is not there any more."; return out; }
     const from = `rbox:${pile.id}:gear:${i}`;
-    out.msg = raidMove(state, u.id, from, quickTarget(state, b, u.id, from, pile.id));
+    if (arms) { const why = bagRefusal(state, b, u, item); if (why) { out.msg = why; return out; } }
+    out.msg = raidMove(state, u.id, from, arms ? `s:${u.sid}:carry` : quickTarget(state, b, u.id, from, pile.id));
     if (!pile.contents.gear.includes(item)) out.got.push(item.name);
   } else {
     const r = raidTakeAll(state, u.id, pile.id);
@@ -386,8 +392,8 @@ export function fieldFinds(b, loot) {
 
 // ---------- the battle's acts (combat.js combatAct) ----------
 // { type: "searchBody", unit, target }: search the dead one on or next to the unit (1 action the first time).
-// { type: "pickUp", unit, x?, y?, item? }: all that fits (or the item at that index) from the pile on that cell, else
-//   the nearest pile on or next to the unit. The hauling time it takes.
+// { type: "pickUp", unit, x?, y?, item?, arms? }: all that fits (or the item at that index) from the pile on that cell,
+//   else the nearest pile on or next to the unit. The hauling time it takes. arms: the item into the arms (a bag).
 // { type: "drop", unit, loc, qty? }: put what is at the inventory location on the unit's cell (free).
 // The search window moves things one by one without these (raidloot.js raidMove).
 export function groundAct(state, b, u, act) {
@@ -396,7 +402,7 @@ export function groundAct(state, b, u, act) {
     const where = act.x != null ? { x: act.x, y: act.y, f: u.f || 0 } : null;
     const pile = where ? groundAt(b, where.x, where.y, where.f) : pilesNear(b, u)[0];
     const item = pile && act.item != null ? pile.contents.gear[act.item] || null : null;
-    const r = pickUpFromGround(state, b, u, pile || where, item);
+    const r = pickUpFromGround(state, b, u, pile || where, item, !!act.arms);
     if (!r.got.length) return r.msg || "Nothing there fits.";
     say(b, `${u.name} picks up ${r.got.join(", ")}${r.left ? " (the rest stays on the ground)" : ""}.`, "info");
     return "";

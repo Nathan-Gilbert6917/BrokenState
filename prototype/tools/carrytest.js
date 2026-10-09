@@ -128,7 +128,8 @@ registerCombatHandler("carrytest", () => {});
   check(/Hands full/.test(errShoot) && /Hands full/.test(errMelee) && /Hands full/.test(errReload), "shoot, melee and reload are refused with hands full");
   const ap = u.ap;
   const err = combatAct(st, { type: "dropCarried", unit: u.id });
-  check(!err && !u.hands && u.ap === ap && (b.carried || []).length === 1, `Drop carried: free (${ap} actions left), the load is on the cell`);
+  const pile = b.fieldLoot && b.fieldLoot.containers.find((c) => c.kind === "ground" && c.x === u.x && c.y === u.y);
+  check(!err && !u.hands && u.ap === ap && (b.armsDrops || []).length === 1 && pile && Object.values(pile.contents.sup).some((v) => v > 0), `Drop carried: free (${ap} actions left), the load is a pile on the cell (ground.js)`);
   check(canFire(b, u), "after dropping it the gun works again");
   // Bodies: carrying one blocks a blow with a weapon too.
   u.carrying = 999;
@@ -308,7 +309,7 @@ const bagKgOf = (pk) => itemLoad(pk);
   check(u.bag === pk && !canFire(bt, u) && /the Hiking pack/.test(fireRefusal(bt, u)), `starts the fight with the bag in the arms: no shooting (${fireRefusal(bt, u)})`);
   check(/Hands full/.test(combatAct(st, { type: "melee", unit: u.id, target: foe.id })) && /Hands full/.test(combatAct(st, { type: "reload", unit: u.id })), "no melee, no reload");
   const ap = u.ap;
-  check(!combatAct(st, { type: "dropCarried", unit: u.id }) && !u.bag && u.ap === ap && !a.gear.carry && bt.carried.some((c) => c.item === pk), "Drop carried: free; the bag lies on the cell (contents inside), off the survivor");
+  check(!combatAct(st, { type: "dropCarried", unit: u.id }) && !u.bag && u.ap === ap && !a.gear.carry && (bt.armsDrops || []).some((c) => c.item === pk) && bt.fieldLoot.containers.some((c) => c.kind === "ground" && c.contents.gear.includes(pk)), "Drop carried: free; the bag lies in a pile on the cell (contents inside), off the survivor");
   check(canFire(bt, u), "hands free: the gun works");
   check(!combatAct(st, { type: "pickCarried", unit: u.id }) && u.bag === pk && a.gear.carry === pk, "Pick up load: the bag back in the arms");
   for (let i = 0; i < 60 && !bt.over; i++) { autoPlayerTurn(st); runEnemyPhase(st); }

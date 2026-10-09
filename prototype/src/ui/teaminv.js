@@ -9,7 +9,9 @@ import { SUPPLIES } from "../sim/data.js";
 import { survivorById } from "../sim/world.js";
 import { partyMembers, partyTile, tileLabel } from "../sim/parties.js";
 import { SLOT_NAMES, parseLoc, itemLoad } from "../sim/inventory.js";
-import { teamBase, transferProblem, teamsAtBase, teamHoldings, baseHoldings, dropOff, dropAllCargo, dropAllSupplies, loadFromBase, isPlayerTeam } from "../sim/teaminv.js";
+import { teamBase, transferProblem, teamsAtBase, teamHoldings, baseHoldings, dropOff, dropAllCargo, dropAllSupplies, loadFromBase, isPlayerTeam, dropHeldOff } from "../sim/teaminv.js";
+import { recText, HANDS_KG } from "../sim/carry.js"; // the supplies each member holds (pockets, pack, arms)
+import { holdSection } from "./carry.js"; // under each paper doll: the supplies they carry, moved about as in their own inventory
 import { doll, storageBox, selBar, tile, SUPPLY_ICON, INV_ACTIONS } from "./inventory.js";
 import { survivorURL, spriteImg } from "./sprites.js";
 import { shortName } from "./names.js";
@@ -31,6 +33,13 @@ export function teamInvBar(state, p, live = true) {
   const why = base ? transferProblem(state, p, base) : "";
   const b = (tab, label, hint, off = false) => `<button class="mini" data-action="ti-open" data-id="${p.id}" data-tab="${tab}" ${off ? "disabled" : ""}${tip(hint)}>${label}</button>`;
   return `<div class="row" style="margin-top:0.3rem;flex-wrap:wrap;gap:0.25rem">${b("team", "🎒 Team inventory", "Every member's kit (worn, held, pockets, rig, pack) and the team's cargo side by side: move things between them")}${base ? `${b("drop", `Drop off at ${esc(base.name)}…`, why || `Pick what goes from the team (its people's kit, the cargo, the supplies) into ${base.name}'s armory and stores`, !!why)}${b("load", `Load from ${esc(base.name)}…`, why || `Pick what the team takes from ${base.name}'s armory and stores: onto a member or into the cargo`, !!why)}` : ""}</div>`;
+}
+// The tile view's "Your teams here" card on one of your bases (ui/ui.js, next to Enter base): Drop off and Load, only
+// when they can be used now.
+export function transferButtons(state, p) {
+  const base = isPlayerTeam(p) ? teamBase(state, p) : null;
+  if (!base || transferProblem(state, p, base)) return "";
+  return `<button data-action="ti-open" data-id="${p.id}" data-tab="drop"${tip(`Pick what goes from the team into ${base.name}'s armory and stores (the team stays out here)`)}>Drop off…</button><button data-action="ti-open" data-id="${p.id}" data-tab="load"${tip(`Pick what the team takes from ${base.name}'s armory and stores`)}>Load…</button>`;
 }
 // The base screen's Armory tab (ui/ui.js): your teams standing on the base's tile, with Load and Drop off.
 export function teamsHereCard(state, base) {
@@ -72,7 +81,7 @@ export function teamInvModal(state, ui) {
 // Everyone's paper doll and the cargo; clicks and drags move things as in the one-person inventory.
 function teamTab(state, ui, p, members) {
   const user = survivorById(state, ui.inv.sid);
-  const cols = members.map((s) => `<div class="invcol" style="flex:0 0 17rem"><div class="spread"><b>${s.leader ? "★ " : ""}${first(s)}</b>${s.id === ui.inv.sid ? `<span class="small muted"${tip("A cargo item clicked twice goes to this person")}>receives</span>` : ""}</div>${doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 5), { user: s })}</div>`).join("");
+  const cols = members.map((s) => `<div class="invcol" style="flex:0 0 17rem"><div class="spread"><b>${s.leader ? "★ " : ""}${first(s)}</b>${s.id === ui.inv.sid ? `<span class="small muted"${tip("A cargo item clicked twice goes to this person")}>receives</span>` : ""}</div>${doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 5), { user: s })}${holdSection(state, ui, s)}</div>`).join("");
   const packed = Object.entries(p.supplies || {}).filter(([k, v]) => SUPPLIES[k] && v >= 1).map(([k, v]) => `${SUPPLY_ICON[k] || "▪"} ${Math.floor(v)} ${SUPPLIES[k].name.toLowerCase()}`).join(" · ");
   const cargo = `<div class="invcol" style="flex:1 0 17rem">${storageBox(state, ui, `party:${p.id}`, user)}${packed ? `<div class="small muted"${tip("Packed at the start: shared out among the people (or riding in the vehicle) and eaten first on the road")}>Packed: ${esc(packed)}</div>` : ""}</div>`;
   const html = `<div class="row" style="align-items:flex-start;gap:1rem;overflow-x:auto;padding-bottom:0.4rem">${cols}${cargo}</div>
@@ -95,6 +104,13 @@ function supTiles(ui, sup, pickable, side) {
 }
 const whereLabel = (loc) => { const L = parseLoc(loc); return L.slot === "rig" && L.i != null ? SLOT_NAMES.pouch : L.slot === "insert" ? `${L.i === "front" ? "Front" : "Back"} plate` : SLOT_NAMES[L.slot] || L.slot; };
 
+// The team's supplies a member holds (sim/carry.js: pockets, pack, arms), with Drop off for them alone.
+function heldLine(m, drop) {
+  const h = m.hold;
+  if (!h || !(h.kg > 0.05)) return "";
+  const parts = [["hands", "arms"], ["pack", "pack"], ["pocket", "pockets"]].filter(([pl]) => Object.keys(h[pl] || {}).length).map(([pl, w]) => `${w}: ${esc(recText(h[pl]))}`);
+  return `<div class="small ${h.handsKg > 0 ? "warn" : "muted"}" style="margin-top:0.2rem"${tip(`The team's supplies ${m.s.name.split(" ")[0]} holds (part of the totals in the cargo below)${h.handsKg > 0 ? `; ${kg(h.handsKg)}/${HANDS_KG} kg in the arms: no weapon in a fight until it is set down` : ""}`)}>Holds ${kg(h.kg)} kg: ${parts.join(" · ")}${drop ? ` <button class="mini" data-action="ti-dropheld" data-sid="${m.s.id}"${tip(`Put everything of the team's supplies ${m.s.name.split(" ")[0]} holds (arms, pack, pockets) in the stores`)}>Drop off what ${first(m.s)} holds</button>` : ""}</div>`;
+}
 // Drop off (team → base) and Load (base → team): the team on the left, the base on the right.
 function transferTab(state, ui, p, base, tab) {
   const drop = tab === "drop";
@@ -104,9 +120,10 @@ function transferTab(state, ui, p, base, tab) {
   const tgtBtn = (val, label, hint) => (drop ? "" : `<button class="mini ${String(target) === String(val) ? "active" : ""}" data-action="ti-target" data-v="${val}"${tip(hint)}>${String(target) === String(val) ? "✓ " : ""}${label}</button>`);
   // The team.
   const people = H.members.map((m) => `<div style="margin-top:0.5rem"><div class="spread"><b>${m.s.leader ? "★ " : ""}${first(m.s)}</b><span class="row" style="gap:0.3rem"><span class="small ${m.worn > m.max ? "danger" : "muted"}"${tip("Worn and carried on them (kg) against their max load (40, 28 with a Bad Back, + the pack, a rig and Packrat)")}>${kg(m.worn)}/${m.max} kg</span>${tgtBtn(m.s.id, `Onto ${first(m.s)}`, `Loaded items go onto ${m.s.name.split(" ")[0]}: their own slot if free, a rig pouch, a pocket or the pack (and the team must still carry its load)`)}</span></div>
-      <div class="istore" style="min-height:2.5rem">${pickTiles(ui, m.spots.map((x) => ({ ...x, label: whereLabel(x.loc) })), m.s, drop) || `<span class="small muted">Nothing on them.</span>`}</div></div>`).join("");
+      <div class="istore" style="min-height:2.5rem">${pickTiles(ui, m.spots.map((x) => ({ ...x, label: whereLabel(x.loc) })), m.s, drop) || `<span class="small muted">Nothing on them.</span>`}</div>${heldLine(m, drop)}</div>`).join("");
   const cargo = `<div style="margin-top:0.7rem"><div class="spread"><b${tip(H.cargo.vehicle ? "The team's cargo rides in its vehicle; the packed and found supplies with it" : "On foot the cargo and the supplies are shared out among the people")}>${esc(H.cargo.name)}</b><span class="row" style="gap:0.3rem"><span class="small ${H.load > H.cap ? "danger" : "muted"}"${tip("Supplies and cargo against what the team can carry on top of what it wears (and its vehicle)")}>load ${Math.round(H.load)}/${Math.round(H.cap)} kg</span>${tgtBtn("cargo", "Into the cargo", "Loaded items go into the team's cargo (as long as it can carry them)")}</span></div>${bar(H.load, H.cap)}
     <div class="istore" style="min-height:2.5rem">${pickTiles(ui, H.cargo.gear, survivorById(state, ui.inv.sid), drop)}${supTiles(ui, H.cargo.supplies, drop, "team") || ""}${!H.cargo.gear.length && !Object.keys(H.cargo.supplies).length ? `<span class="small muted">Empty.</span>` : ""}</div>
+    ${Object.keys(H.cargo.held || {}).length ? `<div class="small muted"${tip("The team's supplies riding in the vehicle (part of the totals above)")}>In the vehicle: ${esc(recText(H.cargo.held))}</div>` : ""}
     ${H.cargo.bodies ? `<div class="small muted">${H.cargo.bodies} bod${H.cargo.bodies === 1 ? "y" : "ies"} in the car (Drop off all cargo lays ${H.cargo.bodies === 1 ? "it" : "them"} out at the base)</div>` : ""}</div>`;
   // The base.
   const armory = `<div style="margin-top:0.5rem"><div class="spread"><b${tip("Gear stored at this base")}>Armory</b><span class="small muted">${B.armory.length} item${B.armory.length === 1 ? "" : "s"}</span></div>
@@ -195,6 +212,7 @@ export const TEAMINV_ACTIONS = {
     ui.invMsg = r.text;
     resetPick(ui);
   },
+  "ti-dropheld": (state, ui, d) => { const p = partyOf(state, ui); if (p) { ui.invMsg = dropHeldOff(state, p, Number(d.sid)).text; resetPick(ui); } },
   "ti-dropcargo": (state, ui) => { const p = partyOf(state, ui); if (p) { ui.invMsg = dropAllCargo(state, p).text; resetPick(ui); } },
   "ti-dropsup": (state, ui) => { const p = partyOf(state, ui); if (p) { ui.invMsg = dropAllSupplies(state, p).text; resetPick(ui); } },
 };

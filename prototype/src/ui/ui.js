@@ -69,7 +69,7 @@ import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButto
 import { canUpgradeAmmoBench, RELOAD } from "../sim/reloading.js"; // the reloading bench: an ammo bench upgraded where it stands
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../sim/inventory.js";
 import { inventoryModal, takeLootReq } from "./inventory.js";
-import { teamInvModal, teamsHereCard } from "./teaminv.js"; // the team inventory window; teams on a base's tile
+import { teamInvModal, teamsHereCard, transferButtons } from "./teaminv.js"; // the team inventory window; teams on a base's tile; Drop off / Load on its tile
 import { gunBuilderModal, GUNBUILDER_HELP } from "./gunbuilder.js"; // the gun builder (over the inventory or the base screen)
 import { isGunKey } from "./gunart.js";
 import { BATTLE_GUNS_HELP } from "./combat.js"; // fire modes, jams, suppressing fire, a thrown spear, the ammo a reload takes
@@ -519,7 +519,7 @@ export function renderRight(state, ui) {
     ${base ? ownBaseCard(state, base) : groupBaseCard(state, id, knownGroupBase(state, id, isLive, snap))}
     ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
       <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${n0(m.info.fuel)}, condition ${Math.round(m.info.condition || 0)}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
-    ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>${enterButton(state, p)}`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}
+    ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>${enterButton(state, p)}${transferButtons(state, p)}`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}
     ${actions.length ? `<h3>Send a team from the hub</h3><div class="row" style="flex-wrap:wrap">${actions.map(([m, l, pre, tp]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}${tip(tp || MISSIONS[m].desc)}>${l}</button>`).join("")}</div>` : ""}`;
 }
 
