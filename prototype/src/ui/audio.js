@@ -9,7 +9,8 @@
 // master gain and a gentle compressor. Browsers keep sound locked until the player clicks or presses a key: the
 // context is made (or resumed) on that first gesture. Muted, or with the window in the background and "Mute when
 // not focused" on, the context is suspended (no CPU). Nothing here runs at import time, so node tools can import it.
-import { battleCues, worldCues, ambienceMix, makeThrottle } from "./soundcues.js";
+import { battleCues, worldCues, ambienceMix, makeThrottle, battleCrowd } from "./soundcues.js";
+import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest } from "./zombiesfx.js"; // the dead's voices
 import { weatherAt, season } from "../sim/weather.js";
 import { playerTile } from "../sim/hardcore-start.js";
 import { screenToTile, view } from "./render.js";
@@ -50,6 +51,7 @@ const LIMITS = {
   groan: { gap: 0.8, max: 2 }, scream: { gap: 0.5, max: 1 }, blast: { gap: 0.15, max: 2 }, fire: { gap: 0.3, max: 2 },
   glass: { gap: 0.2, max: 2 }, hiss: { gap: 0.2, max: 2 }, flare: { gap: 0.2, max: 2 }, downed: { gap: 0.4, max: 2 }, death: { gap: 0.4, max: 2 },
   thunder: { gap: 4, max: 1 }, bird: { gap: 0.3, max: 2 }, cricket: { gap: 0.15, max: 2 },
+  ...ZOMBIE_LIMITS, // ui/zombiesfx.js: the dead's voices (zIdle, zBite, zShriek…)
 };
 const throttle = makeThrottle(LIMITS, 28);
 export const audioDebug = { played: [], dropped: 0, get ctx() { return A && A.ctx; } }; // for tests in the browser
@@ -118,7 +120,7 @@ export function initAudio(options, save) {
   // A soft click on every button the player presses.
   document.addEventListener("click", (ev) => {
     const el = ev.target && ev.target.closest ? ev.target.closest("button, [data-action]") : null;
-    if (!el || el.disabled || el.tagName === "SELECT" || el.tagName === "INPUT" || el.dataset.action === "snd-test") return;
+    if (!el || el.disabled || el.tagName === "SELECT" || el.tagName === "INPUT" || el.dataset.action === "snd-test" || el.dataset.action === "zsnd-test") return;
     sfx("click");
   });
   // A volume slider being dragged is heard at once (the change event saves it: SOUND_CHANGE).
@@ -146,7 +148,7 @@ export function sfx(name, opts = {}) {
   const t = ctx.currentTime + 0.01 + Math.max(0, opts.delay || 0);
   if (!throttle.allow(name, t, V.dur)) { audioDebug.dropped++; return false; }
   let out = V.amb ? A.amb : A.sfx;
-  if (opts.pan && ctx.createStereoPanner) {
+  if (opts.pan && ctx.createStereoPanner && !V.routes) { // the dead's voices pan themselves (zombiesfx.js zRoute)
     const p = ctx.createStereoPanner();
     p.pan.value = Math.max(-1, Math.min(1, opts.pan));
     p.connect(out);
@@ -173,7 +175,7 @@ export function audioFrame(state, ui, nowMs = performance.now()) {
   const on = live();
   // The memories move on even while silent, so unmuting does not play what happened meanwhile.
   if (state.combat && !ui.timelapse) {
-    for (const c of battleCues(state.combat, battleMem, now)) if (on) sfx(c.name, { gain: c.gain, delay: c.delay, pan: (Math.random() - 0.5) * 0.5 });
+    for (const c of battleCues(state.combat, battleMem, now)) if (on) sfx(c.name, { ...c, pan: c.pan ?? (Math.random() - 0.5) * 0.5 });
   }
   if (nowMs - lastWorld >= 150 && ui.started && !ui.timelapse) {
     lastWorld = nowMs;
@@ -262,6 +264,11 @@ function ambience(state, ui) {
   if (!m.thunder) N.thunder = 0;
   if (m.birds > 0.05 && t >= N.bird) { if (N.bird) sfx("bird", { gain: 0.5 + m.birds * 0.5 }); N.bird = t + (2 + Math.random() * 8) / m.birds; }
   if (m.crickets > 0.05 && t >= N.cricket) { if (N.cricket) sfx("cricket", { gain: m.crickets }); N.cricket = t + 0.6 + Math.random() * 1.6 / m.crickets; }
+  // The dead (ui/zombiesfx.js): the battle's crowd bed on the effects bus; on the map a horde near you on the wind and a
+  // hive's heartbeat on the ambience bus.
+  const fight = state.combat && !ui.timelapse ? state.combat : null;
+  zombieCrowd(c, A.sfx, fight ? battleCrowd(fight) : null, t);
+  zombieMapAmbience(c, A.amb, fight || ui.timelapse || ui.title || !ui.started ? null : hordeAmbience(state), t);
 }
 
 // ---------- building blocks ----------
@@ -446,31 +453,9 @@ export const VOICES = {
     f.frequency.exponentialRampToValueAtTime(400, t + 0.22);
     noise(c, "white", t, 0.24, f);
   } },
-  bite: { dur: 0.45, play(c, out, t, o) {
-    const crunch = env(c, out, t, 0.5 * o.gain, 0.16, 0.003);
-    const am = c.createGain(); am.gain.value = 0.5; am.connect(crunch);
-    lfo(c, 30, 0.5, am.gain).stop(t + 0.3);
-    noise(c, "white", t, 0.2, filt(c, "bandpass", 1400 * o.pitch, 1.2, am));
-    const growl = tone(c, "sawtooth", 85 * o.pitch, 70, t, 0.4, filt(c, "lowpass", 600, 1, env(c, out, t, 0.3 * o.gain, 0.3, 0.03, 0.05)));
-    lfo(c, 9, 6, growl.frequency).stop(t + 0.45);
-  } },
-  groan: { dur: 1.6, play(c, out, t, o) {
-    const f0 = R(70, 110) * o.pitch, d = R(1, 1.5);
-    const g = env(c, out, t, 0.32 * o.gain, d, 0.25, 0.15);
-    const voice = c.createOscillator();
-    voice.type = "sawtooth";
-    voice.frequency.setValueAtTime(f0, t);
-    voice.frequency.exponentialRampToValueAtTime(f0 * 0.8, t + d + 0.3);
-    voice.start(t);
-    voice.stop(t + d + 0.45);
-    for (const [a, b, q, k] of [[450, 600, 4, 1], [1000, 800, 5, 0.5]]) { // two formants gliding: a mouth that opens
-      const f = c.createBiquadFilter(); f.type = "bandpass"; f.Q.value = q;
-      f.frequency.setValueAtTime(a, t); f.frequency.linearRampToValueAtTime(b, t + d);
-      const fg = c.createGain(); fg.gain.value = k;
-      voice.connect(f); f.connect(fg); fg.connect(g);
-    }
-    lfo(c, R(4, 6), 3, voice.frequency).stop(t + d + 0.5);
-  } },
+  // The dead's bite and a walker's moan (ui/zombiesfx.js; the battle plays them per zombie as zBite and zIdle).
+  bite: { dur: 1.2, play(c, out, t, o) { ZOMBIE_VOICES.zBite.play(c, out, t, { human: true, ...o }); } },
+  groan: { dur: 2.4, play(c, out, t, o) { ZOMBIE_VOICES.zIdle.play(c, out, t, o); } },
   scream: { dur: 0.9, play(c, out, t, o) {
     const v = c.createOscillator(); v.type = "sawtooth";
     v.frequency.setValueAtTime(700 * o.pitch, t); v.frequency.linearRampToValueAtTime(950, t + 0.25); v.frequency.linearRampToValueAtTime(600, t + 0.85);
@@ -521,10 +506,12 @@ export const VOICES = {
     const lp = filt(c, "lowpass", 180, 1.2, env(c, out, t, 0.24 * o.gain, 1.9, 0.4, 0.2));
     lp.frequency.setValueAtTime(180, t); lp.frequency.linearRampToValueAtTime(1100, t + 1); lp.frequency.linearRampToValueAtTime(250, t + 2.4);
     for (const f of [73.4, 77.8, 110]) tone(c, "sawtooth", f, f * 0.98, t, 2.5, lp); // D, D# and A: a minor second's grind
+    hordeChorus(c, out, t, o); // and the dead themselves, far off (ui/zombiesfx.js)
   } },
   alarm: { dur: 1.3, play(c, out, t, o) { for (let i = 0; i < 6; i++) bell(c, out, t + i * 0.17, i % 2 ? 470 : 520, 0.22 * o.gain, 0.5); } },
 
   // Ambience one-shots (ambience bus).
+  ...ZOMBIE_VOICES, // ui/zombiesfx.js: zIdle, zAggro, zAttack, zBite, zHurt, zDeath, zShriek, zSmash, zSpit… by o.kind and o.seed
   thunder: { dur: 5, amb: true, play(c, out, t, o) {
     const near = o.near ?? 0.5;
     if (near > 0.6) noise(c, "white", t, 0.3, filt(c, "lowpass", 3500, 0.7, env(c, out, t, 0.5 * o.gain, 0.25, 0.002)));
@@ -547,6 +534,7 @@ export const VOICES = {
   } },
 };
 export const SOUND_NAMES = Object.keys(VOICES);
+const HEAR_NAMES = SOUND_NAMES.filter((n) => !ZOMBIE_VOICES[n]); // the dead have their own list (Zombie sounds)
 
 // Renders one sound offline (no speakers, no gesture needed) and measures it: for tests in the browser.
 audioDebug.renderOffline = async (name, opts = {}) => {
@@ -607,10 +595,10 @@ export function soundOptionsHtml(options) {
       ${slider("amb", "Ambience", "Wind and rain with the weather, thunder in storms, a low drone at night, birds by day, crickets on warm nights")}
       ${box("muteBlur", s.muteBlur, "Mute when the window is not focused", "Silence while you are in another window or tab")}
     </div><div class="setrow">
-      <label${tip("Hear one sound, to set the volumes or to judge it")}>Hear <select data-action="snd-pick">${SOUND_NAMES.map((n) => `<option value="${n}" ${n === hearPick ? "selected" : ""}>${esc(SOUND_LABELS[n] || n)}</option>`).join("")}</select></label>
+      <label${tip("Hear one sound, to set the volumes or to judge it")}>Hear <select data-action="snd-pick">${HEAR_NAMES.map((n) => `<option value="${n}" ${n === hearPick ? "selected" : ""}>${esc(SOUND_LABELS[n] || n)}</option>`).join("")}</select></label>
       <button data-action="snd-test"${tip("Play the sound picked")}>▶ Play</button>
       ${locked ? `<span class="small muted">The browser starts sound after your first click or key press.</span>` : ""}
-    </div>`;
+    </div>${zombieTestHtml(esc)}`;
 }
 // Registered with the menu's actions (ui/settings.js): fn(state, ui, data, api) and fn(state, ui, el, api).
 export const SOUND_ACTIONS = {
@@ -623,6 +611,7 @@ export const SOUND_ACTIONS = {
     SAVE();
   },
   "snd-test": () => { unlock(); sfx(hearPick, { pitch: 1 }); },
+  "zsnd-test": () => { unlock(); if (A) playZombieTest(null, sfx, A.ctx.currentTime); }, // ui/zombiesfx.js
 };
 export const SOUND_CHANGE = {
   "snd-vol": (state, ui, el) => {
@@ -632,9 +621,10 @@ export const SOUND_CHANGE = {
     try { el.blur(); } catch { /* ignore */ } // Esc closes the menu again
   },
   "snd-pick": (state, ui, el) => { if (VOICES[el.value]) { hearPick = el.value; unlock(); sfx(hearPick, { pitch: 1 }); } },
+  "zsnd-pick": (state, ui, el) => { zombiePick(el.value); unlock(); if (A) playZombieTest(null, sfx, A.ctx.currentTime); },
 };
 
 // The Help tab's topic (ui/help.js).
 export function soundHelp() {
-  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each weapon class has its own report (pistol, revolver, rifle, shotgun, assault rifle burst, suppressed, bow, acid), with hits, misses, melee blows, bites, groans of the dead, blasts and fire, and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: master, effects and ambience volumes, sound on / off, mute when the window is not focused, and <b>Hear</b> to play any one sound. Browsers start sound only after your first click or key press.`;
+  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each weapon class has its own report (pistol, revolver, rifle, shotgun, assault rifle burst, suppressed, bow, acid), with hits, misses, melee blows, blasts and fire; the dead each have a voice of their own (a walker's moan, a runner's shriek, a brute's roar, a spitter hawking, the screamer's shriek that calls more of them, a crawler's hiss as it strikes, a Carrier bursting into worms), and a crowd of them murmurs louder the more of them come and the nearer they get; and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. On the map a horde near you is heard as moaning on the wind (more at night), a hive near you as a low heartbeat. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: master, effects and ambience volumes, sound on / off, mute when the window is not focused, <b>Hear</b> to play any one sound, and <b>Zombie sounds</b> to hear each kind of the dead. Browsers start sound only after your first click or key press.`;
 }

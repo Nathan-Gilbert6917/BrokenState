@@ -1,7 +1,7 @@
 // Sound (ui/audio.js plays, ui/soundcues.js decides what): headless checks with no speakers.
 // - Options: the Sound defaults, bad values cleaned, kept by the options store (ui/saves.js) across a reload.
 // - Cards: routine / warning / crisis chimes by what the card is about; a raid on a base is the alarm.
-// - Battle: each gun class has its report (pistol, revolver, rifle, shotgun, burst, suppressed, bow, acid), hits and
+// - Battle (the dead's own voices: tools/zombiesfxtest.js): each gun class has its report (pistol, revolver, rifle, shotgun, burst, suppressed, bow, acid), hits and
 //   misses, blows, bites, throws, the downed; a new battle drums (a base defence rings the alarm); a 200-shot frame
 //   is cut to a handful; a battle already under way when first seen (a load) makes no sound for what was there.
 // - The map: a new card or alert chimes once, a horde newly seen near a base or a team stings once, a load is quiet.
@@ -137,7 +137,7 @@ console.log("Battle");
     for (let k = 0; k < 4; k++) for (const c of battleCues(b, mem, (t += 2))) heard.add(c.name);
   }
   check(!err, `six turns against the dead play out${err ? `: ${err}` : ""}`);
-  check(heard.has("groan"), `the dead groan (heard: ${[...heard].join(", ")})`);
+  check(heard.has("zIdle"), `the dead moan, each in its own voice (ui/zombiesfx.js; heard: ${[...heard].join(", ")})`);
   check([...heard].every((n) => VOICES[n]), "every cue is a known sound");
 }
 {

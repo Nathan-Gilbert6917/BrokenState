@@ -12,6 +12,7 @@
 import { WEAPONS } from "../sim/combat.js";
 import { THROWABLES } from "../sim/stealth.js";
 import { partyTile } from "../sim/parties.js";
+import { zombieMemory, zombieFxCue, zombieUnitCues, zombieIdleCue, listenerOf, crowdState, Z_PRIORITY } from "./zombiesfx.js"; // the dead's voices
 
 export const HORDE_NEAR_BASE = 6; // tiles: the same distance as the horde alert (ui/alerts.js HORDE_ALERT_TILES)
 export const HORDE_NEAR_TEAM = 3; // tiles from one of your teams on the map
@@ -88,6 +89,7 @@ export function battleCues(b, mem, now = 0) {
     mem.seq = b.fxSeq || 0;
     mem.units = new Map(b.units.map((u) => [u.id, u.dead ? "dead" : u.down ? "down" : "up"]));
     mem.nextGroan = now + 2 + rand(mem) * 3;
+    mem.zm = zombieMemory(b);
     mem.started = true;
     out.push({ name: isBaseDefence(b) ? "alarm" : "battle" }); // a fight at one of your bases rings the alarm
     return out;
@@ -95,7 +97,11 @@ export function battleCues(b, mem, now = 0) {
   // Effects from the simulation (combat.js fx): shots, blows, throws, screams.
   const fresh = b.fx.filter((f) => f.seq > mem.seq);
   if (fresh.length) mem.seq = fresh[fresh.length - 1].seq;
+  const selId = typeof LISTEN.sel === "function" ? LISTEN.sel() : null;
+  const L = listenerOf(b, selId); // where the dead are heard from (ui/zombiesfx.js)
+  if (!mem.zm) mem.zm = zombieMemory(b);
   for (const f of fresh) {
+    if (zombieFxCue(b, f, mem.zm, L, out)) continue; // the dead's own: bites, lunges, spit, shrieks, smashing, the worm
     if (f.type === "shot") {
       const a = unitAt(b, f.from, f.side);
       const name = f.acid ? "acid" : weaponSound(a ? a.weapon : "pistol", a);
@@ -111,8 +117,11 @@ export function battleCues(b, mem, now = 0) {
     } else if (f.type === "throw") out.push({ name: throwSound(f.item), delay: 0.25 });
     else if (f.type === "scream") out.push({ name: "scream" });
   }
+  // The dead noticing you, hurt, dying; now and then one of them moans (more often the more of them are up).
+  zombieUnitCues(b, mem.zm, L, out);
+  const idle = zombieIdleCue(b, mem, L, now, () => rand(mem));
+  if (idle) out.push(idle);
   // The selected unit deafened by a bang (sim/hearing.js): everything muffled, a ring as it starts.
-  const selId = typeof LISTEN.sel === "function" ? LISTEN.sel() : null;
   const lu = selId != null ? b.units.find((u) => u.id === selId && u.side === "player") : null;
   const deaf = !!(lu && lu.deaf > 0);
   if (deaf) for (const c of out) c.gain = (c.gain ?? 1) * DEAF_GAIN;
@@ -127,18 +136,14 @@ export function battleCues(b, mem, now = 0) {
     if (now2 === "down") out.push({ name: "downed", delay: 0.15 });
     else if (now2 === "dead") out.push({ name: "death", delay: 0.15 });
   }
-  // The dead on the field moan now and then: more often the more of them are up and about.
-  const dead = b.over ? 0 : b.units.reduce((n, u) => n + (u.kind === "zombie" && !u.dead && !u.left ? 1 : 0), 0);
-  if (dead && now >= mem.nextGroan) {
-    out.push({ name: "groan", gain: 0.55 + 0.45 * Math.min(1, dead / 12) });
-    mem.nextGroan = now + (3 + rand(mem) * 6) / Math.min(3, 1 + dead / 8);
-  }
   return volley(out, mem);
 }
+// The battle's crowd of the dead for the crowd bed (ui/zombiesfx.js crowdMix): how many are up, how near.
+export const battleCrowd = (b) => crowdState(b, listenerOf(b, typeof LISTEN.sel === "function" ? LISTEN.sel() : null));
 
 // One frame's sounds, cut to MAX_BATTLE_SOUNDS (the loudest kinds first, your own shots before the enemy's) and
 // spread a little in time, so a volley sounds like a volley rather than one huge bang.
-const PRIORITY = { alarm: 0, battle: 0, downed: 1, death: 1, blast: 2, fire: 2, scream: 3, auto: 4, shotgun: 4, rifle: 4, revolver: 4, pistol: 5, bite: 5, meleeCrit: 5 };
+const PRIORITY = { alarm: 0, battle: 0, downed: 1, death: 1, blast: 2, fire: 2, scream: 3, auto: 4, shotgun: 4, rifle: 4, revolver: 4, pistol: 5, bite: 5, meleeCrit: 5, ...Z_PRIORITY };
 function volley(out, mem) {
   if (out.length <= 1) return out;
   const kept = out.map((c, i) => ({ c, i, p: (PRIORITY[c.name] ?? 8) - (c.mine ? 3 : 0) })).sort((a, b) => a.p - b.p || a.i - b.i).slice(0, MAX_BATTLE_SOUNDS).sort((a, b) => a.i - b.i);
