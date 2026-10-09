@@ -1,7 +1,7 @@
 // Tactical combat screen: canvas battle map plus the side panel. Reads state.combat; all rules live in sim/combat.js.
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import {
-  volRefusal, MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
+  volRefusal, VOL_ORDERS, MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
   canSee, canSeeAt, coverSides, isRanged, adjacent, meleeReach, canFire, ammoLeft, arrowsLeft, medsLeft, combatAct, enemyStep, playerSees,
   hasMag, magLabel, magEmpty, magShown, reloadRefusal, fireRefusal, hasShots,
   vehicleTurret, TURRET, RIDE, turretRounds, los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
@@ -124,7 +124,7 @@ function sync(b) {
   cui.anim.clear();
   cui.salt = Math.floor(Math.random() * 9973); // varies zombie / enemy looks between battles
   cui.lastStep = performance.now();
-  cui.autoPlay = false; // a new battle starts in your hands
+  cui.autoPlay = !!(b.setup && b.setup.watch); // a new battle starts in your hands (a fight you only watch plays itself: sim/volunteers.js)
   for (const f of b.fx) cui.anim.set(f.seq, performance.now());
   autoSelect(b);
 }
@@ -920,6 +920,7 @@ export function combatAction(state, key, d) {
   sync(b);
   const u = selUnit(b);
   if (key === "cb-close") return void closeCombat(state, { take: d.take !== "0" });
+  if (key === "cb-volorder") { const err = combatAct(state, { type: "volOrder", unit: Number(d.id), order: d.v, target: u ? u.id : null }); cui.msg = err || ""; return; } // sim/combat.js volOrder: Free, Hold here, Follow the selected one
   // The view bar (ui/isoview.js).
   if (key === "cb-view") {
     if (d.v === "rotl" || d.v === "rotr") isoRotate(b, d.v === "rotr" ? 1 : -1);
@@ -1225,13 +1226,16 @@ export function renderCombatPanel(state) {
   // Volunteers from an allied group (sim/volunteers.js): on your side, not yours to order.
   const vols = allSide(b).filter((p) => p.vol != null);
   if (vols.length) {
-    html += `<h3 data-tip="${esc("Volunteers from an allied group: their own group's orders. They act on their own at the end of your turn, follow the Evac and the retreat, and leave with your people.")}">Volunteers <span class="muted small">(their own orders)</span></h3><div class="cbroster">`;
+    const watched = !!b.setup.watch;
+    html += watched ? `<h3 data-tip="${esc("Your people lent to another group: you watch their fight; the group's AI moves them (and the group's own fighters), nobody takes your orders.")}">Your people with ${esc(b.setup.watch.group)} <span class="muted small">(you watch)</span></h3><div class="cbroster">`
+      : `<h3 data-tip="${esc("Volunteers from an allied group: their own group's orders. They act on their own at the end of your turn, follow the Evac and the retreat, and leave with your people. Give one a simple order (Free, Hold here, Follow the one you have selected): they still act on their own within it.")}">Volunteers <span class="muted small">(their own orders)</span></h3><div class="cbroster">`;
     for (const p of vols) {
       const st = p.dead ? "Dead" : p.left ? "Got away" : p.down ? (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})`) : [p.ow ? "Overwatch" : "", p.hunker ? "Hunkered" : "", p.jam ? "JAMMED" : ""].filter(Boolean).join(", ");
       html += `<div class="cbunit vol ${!alive(p) ? "out" : ""}" data-tip="${esc(`Volunteer from ${p.volGroup || "an allied group"}: their own orders. ${p.name}. Weapon: ${p.weaponName}.`)}">
       <div class="spread"><span>${spriteImg(canvasURL(unitCanvas(state, b, p, cui.salt)), 1.5)}<span class="vol-tag">VOL</span> <b style="color:${VOL_COLOR}">${esc(p.name)}</b></span><span class="small muted">${esc(p.volGroup || "")}</span></div>
       <div class="bar"><i style="width:${pct(p) * 100}%;background:${hpColor(pct(p))}"></i></div>
       <div class="small muted">${gunText(b, p)} · ${Math.round(p.hp)} hp${st ? ` · <span class="${p.down || p.dead ? "danger" : ""}">${st}</span>` : ""}</div>
+      ${!watched && alive(p) && b.phase === "player" ? `<div class="row small volorders">${Object.entries(VOL_ORDERS).map(([k, l]) => `<button class="mini ${(p.volOrder || "free") === k ? "active" : ""}" data-action="cb-volorder" data-id="${p.id}" data-v="${k}" data-tip="${esc(k === "free" ? "Their own judgement (the default)" : k === "hold" ? "Stay where they are: shoot from there, else watch" : `Keep with the one you have selected${u && u.vol == null ? ` (${u.name})` : ""}: shoot from where they stand when there is a fair shot, else move up`)}"${k === "follow" && !(u && u.vol == null) ? " disabled" : ""}>${l}${k === "follow" && p.volOrder === "follow" && p.volLead != null ? ` ${esc(((unitById(b, p.volLead) || {}).name || "").split(" ")[0])}` : ""}</button>`).join("")}</div>` : ""}
     </div>`;
     }
     html += `</div>`;

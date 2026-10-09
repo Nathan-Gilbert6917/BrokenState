@@ -116,6 +116,8 @@ export function trayStale(state, card) {
   if (card.radioFrom != null && fGone(card.radioFrom)) return "the group is gone";
   if (card.allianceAsk != null && fGone(card.allianceAsk)) return "the group is gone";
   if (card.volAsk != null && !(state.vols && state.vols.asks.some((a) => a.id === card.volAsk))) return "they no longer ask"; // volunteers.js
+  if (card.volWatch != null && !(state.vols && state.vols.loans.some((l) => l.id === card.volWatch))) return "your people are home"; // volunteers.js: the fight you could watch
+  if (card.volVet != null && !(state.factions || []).some((f) => (f.volVets || []).some((v) => v.s && v.s.id === card.volVet && !v.out))) return "they are not there to ask"; // volunteers.js: an old hand asking to join
   if (card.visitorId != null && !(state.visitors || []).some((v) => v.id === card.visitorId)) return "they have gone";
   const bGone = (id) => !(state.bases || []).some((b) => b.id === id);
   if (card.outbreakBase != null && bGone(card.outbreakBase)) return "the base is gone";
