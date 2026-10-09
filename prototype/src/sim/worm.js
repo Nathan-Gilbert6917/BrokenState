@@ -139,6 +139,7 @@ import { addCondition } from "./health.js"; // an upset stomach from un-purified
 import { changeGoodwill } from "./factions.js";
 import { canRadioGroup } from "./radio.js";
 import { crawlTurned } from "./citycrawl.js"; // one of you turned on a city block
+import { hiveCrawlTurned } from "./hivecrawl.js"; // one of you turned inside a hive
 import { prisonersAt, inCell, taskOf, dropPrisoner } from "./prisoners.js";
 import { leaveMap } from "./visitors.js";
 import { fireLandOk, WOOD, boilerBurnables, burnOf, burnablesWood, itemsText } from "./woodcutting.js"; // what keeps a camp fire burning; what the boiler may burn
@@ -1268,6 +1269,7 @@ export function wormRise(state, s, tileId) {
     if (!mates.length) return false; // alone: they walk off with their things (carriers.js)
     done();
     if (p.crawl && crawlTurned(state, p, s)) return true;
+    if (p.hiveCrawl && hiveCrawlTurned(state, p, s)) return true;
     const tile = tileId ?? partyTile(p);
     const f = groupAt(state, tile);
     if (f) { groupBaseRise(state, f, s, { visit: true, party: p, tile }); return true; }

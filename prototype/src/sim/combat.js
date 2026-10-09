@@ -120,6 +120,15 @@ export function registerBattleLayout(key, fn) {
   (layouts = layouts || new Map()).set(key, fn);
 }
 
+// Bosses with a mind of their own on the battle map (u.boss): fn.turn(b, u) runs instead of the usual AI in the enemy
+// phase (an immobile organ that pulses and spawns, hivecrawl.js's Hivemind), fn.death(b, u) as it dies (its brood
+// collapses with it). Registered like the layouts (by the module that makes the boss).
+var bossAIs; // eslint-disable-line no-var
+export function registerBossAI(kind, fn) {
+  (bossAIs = bossAIs || new Map()).set(kind, fn);
+}
+const bossAI = (u) => (u && u.boss && bossAIs ? bossAIs.get(u.boss) || null : null);
+
 // People met inside a building (buildingmaps.js placeInterior, from wanderers.js interiorOccupants) by side. "hostile"
 // groups are placed as the raid's guards (enemy units). A side with no handler ("neutral" survivors, "military"
 // squads: TODO for the encounters work, which needs a side of their own that is neither yours nor the enemy's) is not
@@ -387,7 +396,7 @@ export function byNumbersOdds(state, setup, people = combatants(state, setup), a
   mine += vo.mineAdd; // the team's own turret (a Humvee's M2)
   if (setup.allyPower) mine += setup.allyPower; // thirdside.js: soldiers or survivors fighting the same enemy (wanderers.js)
   const ratio = mine / Math.max(0.1, theirs);
-  return { mine, theirs, ratio, win: winOdds(ratio, { ...setup.enemy, people: people.length, ambush: setup.ambush, hive: setup.layout === "hive" }) };
+  return { mine, theirs, ratio, win: winOdds(ratio, { ...setup.enemy, people: people.length, ambush: setup.ambush, hive: /^hive/.test(setup.layout || "") }) }; // hive, hivechamber, hivecore (hivecrawl.js)
 }
 // The keys of everything a fight's people carry, and their team's cargo (decoys.js lureEdge).
 function carriedKeys(state, setup, people) {
@@ -2768,6 +2777,8 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     if (t.ztype === "swarm") t.off = true; // no body: gone from the map
     if (t.ztype === "flinger") onDeath(b, t); // middead.js: the mass it was winding up to throw spills out
     if (t.ztype === "sleeper") sleeperDies(b, t, hit); // sleepers.js: it splits where it lies, or the fire cooks it
+    const own = bossAI(t);
+    if (own && own.death) own.death(b, t); // registerBossAI: the Hivemind's brood collapses with it (hivecrawl.js)
   }
   return eff;
 }
@@ -3647,6 +3658,7 @@ export function shotPriority(b, t) {
   else if (b.cells[t.y * b.w + t.x].k === "siegeladder") v *= SHOT_PRIORITY.climber;
   if (t.windup != null) v *= SHOT_PRIORITY.windup; // a Flinger about to throw (middead.js)
   if (t.treating != null) v *= MED.treatingMult(b, t); // medics.js: a medic seen treating someone (or dragging them)
+  if (t.shotPri) v *= t.shotPri; // a unit marked as the one to kill (hivecrawl.js: the Hivemind, its brood dies with it)
   return v;
 }
 function bestShot(b, u, foes, opts = {}) {
@@ -3722,6 +3734,8 @@ function aiUnit(b, u) {
   if (!active(u)) return;
   if (u.gunner) return gunnerAI(b, u); // a turret's gunner (either side): stays on the gun
   if (u.dormant) { u.ap = 0; return; } // a Sleeper lies where it is (sleepers.js)
+  const own = bossAI(u);
+  if (own && own.turn) { own.turn(b, u); u.ap = 0; return; } // registerBossAI: a boss that plays its own turn (hivecrawl.js's Hivemind)
   if (u.side === "third") { // thirdside.js: neutrals stay put, defend themselves or run; soldiers fight the dead
     const plan = thirdPlan(b, u);
     if (plan === "hold") { u.ap = 0; return; }
@@ -4351,8 +4365,9 @@ export function fightOutlook(b) {
   const theirs = b.units.filter((u) => u.side === "enemy" && active(u) && !u.fleeing);
   const team = b.units.filter((u) => u.side === "player" && !(u.left && !u.carried));
   const people = theirs.filter((u) => u.kind === "human").length / Math.max(1, theirs.length);
-  const fire = (list, vsPeople) => list.reduce((a, u) => a + firepower(b, u, vsPeople), 0);
-  const life = (list) => list.reduce((a, u) => a + u.hp / Math.max(0.05, u.armor), 0);
+  // A rooted boss (hivecrawl.js's Hivemind) reaches only those who come close: a quarter of its blows, half its flesh.
+  const fire = (list, vsPeople) => list.reduce((a, u) => a + firepower(b, u, vsPeople) * (u.rooted ? 0.25 : 1), 0);
+  const life = (list) => list.reduce((a, u) => a + (u.hp / Math.max(0.05, u.armor)) * (u.rooted ? 0.5 : 1), 0);
   const ours = fire(mine, people >= 0.5) * life(mine), them = fire(theirs, true) * life(theirs);
   return {
     ratio: them > 0 ? ours / them : Infinity, mine: mine.length, theirs: theirs.length,

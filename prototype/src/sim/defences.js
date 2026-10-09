@@ -582,16 +582,23 @@ export function fightNow(state, setup) {
 }
 
 // ---------- bosses on the battle map ----------
-const BOSSES = {
+// The Hivemind (hivecrawl.js): the organ at the heart of a hive, met in its core room. It never moves (mob 0, rooted);
+// its own turn (combat.js registerBossAI) pulses, lashes and calls brood out of the walls; its hp grows with the
+// hive's tier (hivecrawl.js HIVEMIND). shotPri: the battle AI (yours under Shift+A too) aims for it first.
+export const BOSSES = {
   wallbreaker: { who: "horde", short: "WB", hp: 190, armor: 0.7, meleeAim: 78, dmgMult: 1.7, mob: 2 },
   broodmother: { who: "hive", short: "BM", hp: 300, armor: 0.65, meleeAim: 82, dmgMult: 1.9, mob: 2 },
+  hivemind: { who: "hivemind", short: "HM", hp: 480, armor: 0.55, meleeAim: 85, dmgMult: 2, mob: 0, rooted: true, sight: 14, shotPri: 2.5, weaponName: "Lashing tendrils" },
 };
 export function bossUnit(b, kind) {
   const d = BOSSES[kind];
-  return {
-    id: b.nextId++, side: "enemy", kind: "zombie", boss: kind, name: BOSS_NAMES[d.who], short: d.short, weapon: "claws", weaponName: "Crushing blows",
-    aim: 0, meleeAim: d.meleeAim, dmgMult: d.dmgMult, armor: d.armor, hp: d.hp, maxHp: d.hp, mob: d.mob, sight: 9, ap: 2, aware: true, x: 0, y: 0,
+  const u = {
+    id: b.nextId++, side: "enemy", kind: "zombie", boss: kind, name: BOSS_NAMES[d.who], short: d.short, weapon: "claws", weaponName: d.weaponName || "Crushing blows",
+    aim: 0, meleeAim: d.meleeAim, dmgMult: d.dmgMult, armor: d.armor, hp: d.hp, maxHp: d.hp, mob: d.mob, sight: d.sight || 9, ap: 2, aware: true, x: 0, y: 0,
   };
+  if (d.rooted) u.rooted = true;
+  if (d.shotPri) u.shotPri = d.shotPri;
+  return u;
 }
 // Puts a unit on a free cell the player side can reach, as far right as possible (from column minX).
 export function placeUnitRight(b, ctx, u, minX, maxX = ctx.W) {
