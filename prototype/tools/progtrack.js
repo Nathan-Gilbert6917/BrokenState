@@ -108,6 +108,7 @@ export function progTracker(state, deathTotal = () => 0) {
   // deepest chamber reached (and the den's depth), the core fights won and lost.
   const crawl = { trips: 0, deepest: 0, depth: 0, coreWon: 0, coreLost: 0, lostInside: 0, byTier: {} };
   const live = new Map(); // party id -> { tier, deepest, depth }
+  const lastTier = { v: null }; // the tier of the crawl seen last
   const tierRow = (t) => (crawl.byTier[t] = crawl.byTier[t] || { trips: 0, deepest: 0, coreWon: 0, coreLost: 0 });
 
   const snapshot = (d) => {
@@ -174,7 +175,7 @@ export function progTracker(state, deathTotal = () => 0) {
   return {
     hour(fresh) {
       // Crawls under way: noted when they start, their deepest chamber kept up to date.
-      let anyTier = null;
+      let anyTier = lastTier.v; // a crawl that ended this hour (the core won) keeps the tier it went in at
       for (const p of state.parties) {
         const c = p.owner === "player" && p.hiveCrawl;
         if (!c) continue;
@@ -192,7 +193,7 @@ export function progTracker(state, deathTotal = () => 0) {
         crawl.deepest = Math.max(crawl.deepest, e.deepest);
         crawl.depth = Math.max(crawl.depth, e.depth);
         tierRow(e.tier).deepest = Math.max(tierRow(e.tier).deepest, e.deepest);
-        anyTier = e.tier;
+        anyTier = e.tier; lastTier.v = e.tier;
       }
       for (const [id] of live) if (!state.parties.some((p) => p.id === id && p.hiveCrawl)) live.delete(id);
       for (const l of fresh) {
