@@ -1056,9 +1056,13 @@ function winterActive(state, base) {
 // it their surplus and it feeds them when they run short).
 const winterPool = (state, base) => (base.type === "hub" ? state.bases.filter((b) => b.type === "outpost") : []);
 const homeMouths = (state, base) => winterPool(state, base).concat([base]).reduce((a, b) => a + returning(state, b), 0);
+// Without a governor (the work priorities read it too: farmCrewLimits) the day's plan is kept per world, and no
+// governor record is made for it.
+const PLAN_MEMO = new WeakMap();
 function winterPlan(state, base) {
-  const g = gov(state);
-  const memo = g.winter || (g.winter = {});
+  let memo;
+  if (state.governor) { const g = state.governor; memo = g.winter || (g.winter = {}); }
+  else { memo = PLAN_MEMO.get(state); if (!memo) PLAN_MEMO.set(state, (memo = {})); }
   const m = memo[base.id];
   if (m && m.day === day(state)) return m;
   return (memo[base.id] = { day: day(state), ...winterOutlook(state, base, { extra: homeMouths(state, base), also: winterPool(state, base) }) });
@@ -1759,6 +1763,17 @@ function threatAt(state, base) {
 // winterMargin = the winter outlook's safety margin (15% of the hungry gap's food) times this left over to count as
 // comfortable.
 export const FARM_AP = { extra: 1.6, share: 0.35, winterMargin: 2 };
+// The farm crew's limits by the food, one rule for the governor (planRoles, and so the base leaders' stewards) and the
+// work priorities (work.js Farm): hungry = the food below its target (at least 15 days) or the winter stores short:
+// the extra crew (FARM_AP.extra × the ideal) may go out; comfy = the food at its target and the winter outlook left
+// with FARM_AP.winterMargin × its safety margin: the crew is capped at FARM_AP.share of the people here (cap; Infinity
+// otherwise). foodDays: edible food a head here; heads: the people here.
+export function farmCrewLimits(state, base, foodDays, heads) {
+  const target = Math.max(15, foodTarget(state, base));
+  const wp = winterPlan(state, base);
+  const comfy = foodDays >= target && wp.short <= 0 && wp.end >= wp.margin * FARM_AP.winterMargin;
+  return { hungry: foodDays < target || winterShort(state, base) > 0, comfy, cap: comfy ? Math.max(1, Math.ceil(heads * FARM_AP.share)) : Infinity };
+}
 const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
@@ -1838,9 +1853,8 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // and the crew grows as before. Comfortable: the food at its target and, in every season (spring too, while next
   // winter's crops are still to be sown), the winter outlook (farming.js winterOutlook, its crops at today's care:
   // fewer farmers, smaller harvests) left with FARM_AP.winterMargin times its safety margin at the first spring harvest.
-  const wp = winterPlan(state, base);
-  const comfy = foodDays >= Math.max(15, foodTarget(state, base)) && wp.short <= 0 && wp.end >= wp.margin * FARM_AP.winterMargin;
-  const farmCap = comfy ? Math.max(1, Math.ceil(people.length * FARM_AP.share)) : Infinity;
+  const farmLim = farmCrewLimits(state, base, foodDays, people.length); // one rule with the work priorities (work.js Farm)
+  const farmCap = farmLim.cap;
   const farmTo = (want) => {
     if (!areas.food) return;
     const target = Math.min(want, farmCap);
@@ -2022,7 +2036,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // plot 1.39), and "until food is plentiful" kept two thirds of every colony on the plots with months of food in
   // store (2026-10-08: 65-85% of the colonist-days at a base on Farm, 100+ days of food at the hub). The rest scavenge
   // around the base, cut wood, study and teach: the other skills rise.
-  if (foodDays < Math.max(15, foodTarget(state, base)) || winterShort(state, base) > 0) farmTo(Math.ceil(fw.ideal * FARM_AP.extra));
+  if (farmLim.hungry) farmTo(Math.ceil(fw.ideal * FARM_AP.extra));
   // ...and while food is short the hands left over forage instead of picking through the ruins (foraging.js).
   if (foraging) {
     const have = [...want.values()].filter((w) => w.role === "forage").length;

@@ -66,7 +66,7 @@ import { woodWorkWhy, woodHandsWanted, woodNeed, woodcutterMult, bestChop } from
 import { waterIn, stockHas } from "./water.js"; // purified and un-purified water count together
 import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (Defence tab)
 import { sleepingIn } from "./sleep.js"; // off a watch: sleep until rested
-import { wormFilterUrgent, woodCritical } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
+import { wormFilterUrgent, woodCritical, farmCrewLimits, FARM_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 import { baseAmmo } from "./ammo.js"; // rounds by calibre: what fits the guns there
 
 export const PRIO_MAX = 5;
@@ -162,13 +162,20 @@ export const WORK_TYPES = {
   },
   farm: {
     name: "Farm", ing: "Farming", short: "Farm", role: "farm", skill: "farming",
-    desc: "Tends, sows and harvests the plots. Wants about 1.2 farmers a plot in use, up to 1.9 while food is short of the season's target (40 days or more; 80 in autumn).",
+    desc: "Tends, sows and harvests the plots. Wants about 1.2 farmers a plot in use, up to 1.9 while food is short of the season's target or of the winter stores. While food is comfortable (at its target, and the winter stores with twice their safety margin) the crew is capped at about a third of the people here, as the governor does: a plot nobody tends still gives half, and the freed hands go to the next work. Pinned and Manual farmers always stay.",
+    // The governor's rule (autopilot.js farmCrewLimits, planRoles step 2): the extra crew only while hungry, and the
+    // crew capped at FARM_AP.share of the people while comfortable. The cap counts Manual and pinned farmers (ctx.used:
+    // they are never moved) and only limits the hands priorities put on the plots; capNote is what those turned away read.
     open(ctx) {
       const fw = farmersWanted(ctx.state, ctx.base);
       if (fw.active + fw.toSow <= 0) return { cap: 0, why: "no crops to tend or sow" };
       const days = ctx.foodDays;
       const ripe = farmOf(ctx.state, ctx.base).plots.some((p) => p.stage === "ripe");
-      return { cap: Math.max(fw.need, days < foodGoal(ctx.state) ? Math.ceil(fw.ideal * 1.6) : fw.ideal), urg: (days < 7 ? 8 : days < 20 ? 5 : 3) + (ripe ? 1 : 0) };
+      const lim = farmCrewLimits(ctx.state, ctx.base, days, ctx.people.length);
+      const want = Math.max(fw.need, lim.hungry ? Math.ceil(fw.ideal * FARM_AP.extra) : fw.ideal);
+      const cap = Math.min(want, lim.cap);
+      const plots = fw.active + fw.toSow, tended = Math.min(plots, Math.floor((cap * plots) / Math.max(1, fw.ideal)));
+      return { cap, urg: (days < 7 ? 8 : days < 20 ? 5 : 3) + (ripe ? 1 : 0), capNote: cap < want ? `Farm crew capped: food is comfortable (${tended} of ${plots} plots tended)` : "" };
     },
   },
   cook: {
@@ -864,7 +871,7 @@ export function planBase(state, base) {
         const T = WORK_TYPES[key];
         if (!minOk(state, s, key)) { note(s, key, `needs ${SKILL_NAMES[T.skill] || T.skill} ${roleOf(state, s).min[key]}`); continue; }
         const o = ctx.open(key);
-        if (o.cap - ctx.used[key] <= 0) { note(s, key, o.cap ? `full (${ctx.used[key]} of ${o.cap})` : o.why); continue; }
+        if (o.cap - ctx.used[key] <= 0) { note(s, key, o.cap ? o.capNote || `full (${ctx.used[key]} of ${o.cap})` : o.why); continue; }
         const why = T.can ? T.can(ctx, s) : "";
         if (why) { note(s, key, why); continue; }
         pairs.push({ s, key, urg: o.urg || 0, score: (o.urg || 0) + rankOf(ctx, s, key) / 4 + (s.task && s.task.t === key ? STICKY : 0) });
@@ -874,7 +881,7 @@ export function planBase(state, base) {
     for (const x of pairs) {
       if (!ctx.free.has(x.s)) continue;
       const o = ctx.open(x.key);
-      if (o.cap - ctx.used[x.key] <= 0) { note(x.s, x.key, `full (${ctx.used[x.key]} of ${o.cap})`); continue; }
+      if (o.cap - ctx.used[x.key] <= 0) { note(x.s, x.key, o.capNote || `full (${ctx.used[x.key]} of ${o.cap})`); continue; }
       const higher = (reasons.get(x.s.id) || []).filter((r) => prio(state, x.s, r.key) < p);
       const raised = x.key === "guard" && cellOf(state, x.s, "guard").watch; // moved up by the watchtower's alarm
       give(x.s, x.key, p, "work", `${WORK_TYPES[x.key].ing}: priority ${p}${raised ? ` (Guard ${raised}, moved up: the watchtower sees a horde of ${ctx.threat.watch ? ctx.threat.watch.size : "?"} near)` : ""}${higher.length ? ` (before it: ${higher.map((r) => `${WORK_TYPES[r.key].name}: ${r.why}`).join("; ")})` : ""}`);
