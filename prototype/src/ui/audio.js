@@ -42,7 +42,7 @@ let A = null;            // { ctx, master, sfx, amb, comp, amb layers… } once 
 let offWanted = false;   // the context was suspended on purpose (muted, window in the background)
 const LIMITS = {
   click: { gap: 0.04, max: 3 }, cardRoutine: { gap: 1, max: 1 }, cardWarning: { gap: 1, max: 1 }, cardCrisis: { gap: 1, max: 1 },
-  alert: { gap: 2.5, max: 1 }, good: { gap: 3, max: 1 }, alarm: { gap: 12, max: 1 }, horde: { gap: 6, max: 1 }, battle: { gap: 3, max: 1 },
+  alert: { gap: 2.5, max: 1 }, good: { gap: 3, max: 1 }, bark: { gap: 0.5, max: 1 }, alarm: { gap: 12, max: 1 }, horde: { gap: 6, max: 1 }, battle: { gap: 3, max: 1 },
   pistol: { gap: 0.045, max: 4 }, revolver: { gap: 0.045, max: 4 }, rifle: { gap: 0.045, max: 4 }, shotgun: { gap: 0.06, max: 3 },
   suppressed: { gap: 0.045, max: 4 }, bow: { gap: 0.05, max: 3 }, auto: { gap: 0.2, max: 2 }, acid: { gap: 0.1, max: 2 },
   hit: { gap: 0.04, max: 3 }, whiz: { gap: 0.08, max: 2 }, ricochet: { gap: 0.08, max: 2 },
@@ -398,6 +398,8 @@ export const VOICES = {
   } },
   alert: { dur: 0.8, play(c, out, t, o) { bell(c, out, t, 1320, 0.12 * o.gain, 0.7); } },
   good: { dur: 0.45, play(c, out, t, o) { notes(c, out, t, "sine", [[1047, 0], [1568, 0.08]], 0.09 * o.gain, 0.3); } },
+  // An important combat bark (ui/barks.js: someone going down, the shout that they are): a short radio-like chirp.
+  bark: { dur: 0.16, play(c, out, t, o) { notes(c, out, t, "square", [[880 * o.pitch, 0], [660 * o.pitch, 0.06]], 0.035 * o.gain, 0.08, 2400); } },
 
   // Gunfire by weapon class (soundcues.js weaponSound).
   pistol: { dur: 0.35, play(c, out, t, o) { gun(c, out, t, o, PISTOL); } },
@@ -588,7 +590,7 @@ audioDebug.offline = (secs = 4) => {
 
 // ---------- the Options tab (ui/settings.js) ----------
 const SOUND_LABELS = {
-  click: "Button click", cardRoutine: "Card: routine", cardWarning: "Card: warning", cardCrisis: "Card: crisis", alert: "Alert", good: "Good news",
+  click: "Button click", cardRoutine: "Card: routine", cardWarning: "Card: warning", cardCrisis: "Card: crisis", alert: "Alert", good: "Good news", bark: "Combat bark",
   pistol: "Pistol", revolver: "Revolver", rifle: "Rifle", shotgun: "Shotgun", auto: "Assault rifle burst", suppressed: "Suppressed shot", bow: "Bow or crossbow",
   acid: "Acid spit", hit: "Bullet hit", whiz: "Miss (whiz)", ricochet: "Miss (ricochet)", melee: "Melee hit", meleeCrit: "Melee critical", whoosh: "Melee miss",
   bite: "Zombie bite", groan: "Zombie groan", scream: "Scream", blast: "Pipe bomb / grenade", fire: "Molotov", glass: "Bottle", hiss: "Smoke", flare: "Flare",
