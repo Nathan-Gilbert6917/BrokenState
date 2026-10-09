@@ -62,9 +62,9 @@ console.log("Registry");
   check(JSON.stringify(SG.TOP_GROUPS) === JSON.stringify(["weapons", "zombies", "people", "world", "ui", "music"]), `the top groups: ${SG.TOP_GROUPS.join(", ")}`);
   const want = {
     weapons: ["guns", "blasts", "handling", "melee"], zombies: ["moans", "attacks", "shrieks", "special", "crowd", "hordes", "hive"],
-    people: ["voices", "steps", "gear", "downed"], world: ["weather", "wildlife", "base", "heartbeat"], ui: ["clicks", "cards", "stings"], music: [],
+    people: ["voices", "steps", "gear", "vehicles", "doors", "downed"], world: ["weather", "wildlife", "base", "heartbeat"], ui: ["clicks", "cards", "stings"], music: [],
   };
-  check(Object.entries(want).every(([p, kids]) => JSON.stringify(SG.childrenOf(p)) === JSON.stringify(kids.map((k) => `${p}.${k}`))), "each group's parts as asked (Weapons 4, Zombies 7, People 4, World 4 with Base and camp, Interface 3, Music none)");
+  check(Object.entries(want).every(([p, kids]) => JSON.stringify(SG.childrenOf(p)) === JSON.stringify(kids.map((k) => `${p}.${k}`))), "each group's parts as asked (Weapons 4, Zombies 7, People 6 with Vehicles and Doors, World 4 with Base and camp, Interface 3, Music none)");
   check(SG.groupDef("music").reserved && SG.groupDef("music").max === 1, "Music is reserved for the music bus (one slider, 0–100%)");
   SG.useMix({ groups: {}, off: {} });
   check(ids.every((id) => SG.groupGain(id) === 1), "at the defaults every group's gain is 1");
