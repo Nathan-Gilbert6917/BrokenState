@@ -330,7 +330,7 @@ export function caravanEstimate(state, form) {
     fuel += v ? fuelForPath(state, r.path, pace.fuelMult) : 0;
     // Food and water hour by hour at each day's cold and thirst (weather.js: more in winter, in summer and a heat wave).
     const segs = members.length ? [[t.rideHours, pace.eatMove], [t.hours - t.rideHours, pace.eatFoot], [6, n]] : [[t.hours + 6, n]];
-    eat += foodForHours(state, at, segs);
+    eat += foodForHours(state, at, members.length ? [[t.rideHours, pace.foodMove], [t.hours - t.rideHours, pace.foodFoot], [6, pace.foodRest]] : segs); // food: each one's appetite (a Glutton)
     drink += waterForHours(state, at, segs);
     at += t.hours + 6;
     total += t.hours + 6;

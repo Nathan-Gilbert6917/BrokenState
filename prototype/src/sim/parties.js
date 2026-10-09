@@ -9,7 +9,7 @@
  * @typedef {{ vehicle?: boolean | "bike", speed?: number, footSpeed?: number | null, fuelMult?: number, progress?: number,
  *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, maxHours?: number, startHour?: number, weather?: boolean, known?: number }} TravelOpts
  */
-import { teamTraitFx } from "./traits.js"; // Keen Eye: the team's sight
+import { teamTraitFx, appetite } from "./traits.js"; // Keen Eye: the team's sight; Glutton: the food a trip takes
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
 import { findPath } from "./hex.js";
 import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
@@ -32,7 +32,7 @@ import {
 } from "./vehicles.js";
 import { convoysHour, truckEngineNoise } from "./miltrucks.js";
 import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome } from "./foundcars.js"; // vehicles found on a map: repair, drive home // Army trucks: the convoy event, a running Army truck's engine
-import { teamLoad, burdenRecord, rationRate, wornLoad } from "./load.js";
+import { teamLoad, burdenRecord, rationRate, personRation, wornLoad } from "./load.js";
 import { perceive, spot, mergeSpots, MARKER_TYPES, markAbandonedVehicle, markDeathSite, deathLabel } from "./markers.js";
 import { rescueArrive, captivesOf, contactAttack } from "./conflicts.js";
 import { handoverArrive } from "./ransom.js";
@@ -409,6 +409,10 @@ export function partyPace(state, p) {
   return {
     mode: p.vehicle || false, speed: partySpeed(p), footSpeed: footSpeed(p), rideSpeed: p.vehicle ? partySpeed(p) : null, fuelMult: fuelMultOf(p),
     eatMove: rationRate(p.burden, members, p.vehicle, true), eatFoot: rationRate(p.burden, members, false, true),
+    // Food is the rations × each one's appetite (a Glutton, traits.js), as needs.js teamNeedsHour eats it; water is not.
+    foodMove: members.reduce((a, s) => a + personRation(p.burden, s, p.vehicle, true) * appetite(s), 0),
+    foodFoot: members.reduce((a, s) => a + personRation(p.burden, s, false, true) * appetite(s), 0),
+    foodRest: members.reduce((a, s) => a + appetite(s), 0),
   };
 }
 
@@ -427,6 +431,10 @@ export function plannedPace(state, { members, supplies = {}, v = null, stance = 
     fuelMult: mode === true ? t.fuelMult : 1, offroad: mode === true ? typeOffroad(v) : 1, onroad: mode === true ? roadPace(v) : 1,
     eatMove: members.reduce((a, s) => a + ((mode ? t.ride.eat : t.foot.eat)[s.id] || 1), 0),
     eatFoot: members.reduce((a, s) => a + (t.foot.eat[s.id] || 1), 0),
+    // Food is the rations × each one's appetite (a Glutton, traits.js), as needs.js teamNeedsHour eats it; water is not.
+    foodMove: members.reduce((a, s) => a + ((mode ? t.ride.eat : t.foot.eat)[s.id] || 1) * appetite(s), 0),
+    foodFoot: members.reduce((a, s) => a + (t.foot.eat[s.id] || 1) * appetite(s), 0),
+    foodRest: members.reduce((a, s) => a + appetite(s), 0),
   };
 }
 
@@ -559,7 +567,8 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
   // first, then on foot if the tank runs dry; 6 hours on site), each at its day's cold (no camp fire on such a trip,
   // needs.js teamCold), as the team will eat it.
   const segs = members.length ? [[go.rideHours, pace.eatMove], [hoursOut - go.rideHours, pace.eatFoot], [6, n], [back.rideHours, pace.eatMove], [hoursBack - back.rideHours, pace.eatFoot]] : [[hours, n]];
-  const eat = foodForHours(state, state.hour, segs);
+  const fsegs = members.length ? [[go.rideHours, pace.foodMove], [hoursOut - go.rideHours, pace.foodFoot], [6, pace.foodRest], [back.rideHours, pace.foodMove], [hoursBack - back.rideHours, pace.foodFoot]] : segs;
+  const eat = foodForHours(state, state.hour, fsegs);
   // Water: the same rations hour by hour, each at its day's thirst (summer, a heat wave), as the team will drink it.
   const drink = waterForHours(state, state.hour, segs);
   return {
