@@ -3,8 +3,10 @@
 // this module plays it on its own bus (ui/audio.js makeMusicBus: a gentle compressor and the Music volume, into the
 // master, never through the effects' limiter).
 //
-//   makeMusicBus(ctx, dest)   audio.js makeContext: the music bus { in, gain, comp }
-//   musicGains(bus, s, t, now, on)  audio.js applyGains: the Music volume, Music on / off, the mute and the focus
+//   makeMusicBus(ctx, dest)   audio.js makeContext: the music bus { in, gain, comp } (dest: the mixer's Music group bus)
+//   musicGains(bus, s, t, now, on)  audio.js applyGains: on with the Music group, the Stings part's level, the mute and the focus
+//   migrateMusic(s, clean)    audio.js soundOptions: an early save's music volume and musicOn moved to the Music group
+//   musicSting(name)          a sting now (the mixer's ▶ for Music)
 //   musicFrame(A, state, ui, nowMs, heard, on)  audio.js audioFrame: the director every half second, the scheduler,
 //                             the ducking under big sounds (heard: this frame's cues)
 //   musicDuck(db, hold)       duck the music by db (4–6 for a big moment), back over about 1.5 s
@@ -23,6 +25,7 @@ import { makeBank, makeHiss, makeMusicIR, GAINED } from "./musicsynth.js";
 import { readSituation, direct, DIRECTOR } from "./musicdirector.js";
 import { rngOf } from "./sfxdsp.js";
 import { BIG } from "./blastsfx.js"; // the blasts big enough to duck the music
+import { assignGroup, groupGain, groupOn, groupVolume, volGain } from "./soundgroups.js"; // the mixer: the Music group and its Stings part
 
 export const MUSIC = {
   LOOKAHEAD: 0.12,        // s: notes are made this far ahead of when they sound
@@ -47,8 +50,8 @@ const RING = { guitar: 0.5, banjo: 0.4, epiano: 1.4, bell: 2.4, swell: 0 }; // s
 const RELEASE = { pad: 1.3, guitar: 0.3, banjo: 0.25, epiano: 0.5, bell: 0.8, swell: 0.02 };
 
 // ---------- the bus (ui/audio.js) ----------
-// The music bus: a gentle compressor of its own (the music never reaches the effects' limiter), then the Music volume,
-// into dest (the master). Two nodes.
+// The music bus: a gentle compressor of its own (the music never reaches the effects' limiter), then the music's level
+// (MUSIC.LEVEL, 0 while it is paused), into dest (the mixer's Music group bus, into the master). Two nodes.
 export function makeMusicBus(ctx, dest) {
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -12; comp.knee.value = 8; comp.ratio.value = 3; comp.attack.value = 0.005; comp.release.value = 0.25; // rounds off the drums' peaks; the music's own level sits under it
@@ -58,16 +61,34 @@ export function makeMusicBus(ctx, dest) {
   gain.connect(dest);
   return { in: comp, comp, gain };
 }
-// The Music slider (0–1) to a gain multiple of the default: squared under 50% (the low half usable), +6 dB at 100%.
-export const musicVolume = (v) => (v <= 0.5 ? (Math.max(0, v) / 0.5) ** 2 : 1 + (Math.min(1, v) - 0.5) * 2);
-let PAUSED = true;
+// The music's volume is the mixer's Music group (ui/soundgroups.js: its slider squared, 100% the usual level) and its
+// on/off the group's switch; the Stings part sets the stings' level. Muted, unfocused (with Mute when not focused) or
+// with the group off, the engine pauses: it schedules nothing and the bus fades out.
+let PAUSED = true, STING_K = 1;
 export function musicGains(bus, s, t, now = false, on = true) {
-  const play = !!(on && s && s.musicOn !== false);
-  const g = play ? musicVolume(s.music ?? 0.5) * MUSIC.LEVEL : 0;
+  const play = !!(on && groupGain("music") > 0);
+  const g = play ? MUSIC.LEVEL : 0;
   if (bus) { const p = bus.gain.gain; if (now) p.setValueAtTime(g, t); else p.setTargetAtTime(g, t, 0.25); }
   PAUSED = !play;
-  if (ENG) ENG.paused = PAUSED;
+  STING_K = groupOn("music.stings") ? volGain(groupVolume("music.stings")) : 0;
+  if (ENG) { ENG.paused = PAUSED; ENG.setStingLevel(STING_K, t); }
 }
+// An early save's Music slider (music 0–1, 50% the default) and musicOn: the group's volume at the same loudness, the
+// group's switch. clean: cleanMix's { groups, off } (changed and returned).
+export const oldMusicGain = (v) => (v <= 0.5 ? (Math.max(0, v) / 0.5) ** 2 : 1 + (Math.min(1, v) - 0.5) * 2);
+export function migrateMusic(s, clean) {
+  if (!s || !clean) return clean;
+  if (Number.isFinite(Number(s.music)) && !(s.groups && typeof s.groups === "object" && "music" in s.groups)) {
+    const v = Math.round(Math.min(1, Math.sqrt(oldMusicGain(Math.max(0, Math.min(1, Number(s.music)))))) * 100) / 100;
+    if (v !== 1) clean.groups.music = v;
+  }
+  if (s.musicOn === false && !(s.off && typeof s.off === "object" && "music" in s.off)) clean.off.music = true;
+  return clean;
+}
+// The music's names in the mixer (tools/soundmixtest.js: every sound in a group).
+export const MUSIC_SOUND_NAMES = ["music", ...STING_KEYS.map((k) => `music${k[0].toUpperCase()}${k.slice(1)}`)];
+assignGroup(["music"], "music");
+assignGroup(MUSIC_SOUND_NAMES.slice(1), "music.stings");
 
 // ---------- the engine ----------
 // A looped control buffer (an LFO without an oscillator and a gain: one node): fn(t) over secs at 3 kHz.
@@ -287,6 +308,8 @@ export function createEngine(ctx, dest, o = {}) {
     bed.gain.setTargetAtTime(baseBed(), t + S.secs - 1.2, 0.8);
     return true;
   };
+  // The Stings part's level (the mixer): the sting layer's gain.
+  E.setStingLevel = (k, t = ctx.currentTime) => { const v = LAYER_LEVEL.sting * k; gains.sting.gain.setTargetAtTime(v, t, 0.06); val.sting = v; };
   // Duck under a big sound: db down at once, back over about 1.5 s. A deeper duck wins over a shallower one.
   E.duck = (db, t = ctx.currentTime, hold = 0.2) => {
     const depth = Math.pow(10, -Math.abs(db) / 20);
@@ -349,6 +372,7 @@ function ensureEngine(A) {
     ENG = createEngine(A.ctx, A.mus.in);
     ENG.lookahead = () => (hidden() ? MUSIC.HIDDEN_LOOKAHEAD : MUSIC.LOOKAHEAD);
     ENG.paused = PAUSED;
+    ENG.setStingLevel(STING_K, A.ctx.currentTime);
     if (DIR.key) ENG.apply({ key: DIR.key, season: SIT.last ? SIT.last.season : "summer", stings: [] });
     startTimer();
   }
@@ -370,7 +394,7 @@ export function musicFrame(A, state, ui, nowMs, heard = [], on = true) {
     } catch (e) { console.warn("Broken State: the music director failed", e); }
     if (d) { nowState = d.key; if (ENG && !override) ENG.apply(d); else if (ENG && override && d.stings.length) for (const n of d.stings) ENG.sting(n); }
   }
-  if (s.musicOn === false || !ensureEngine(A)) return;
+  if (groupGain("music") <= 0 || !ensureEngine(A)) return;
   ENG.paused = PAUSED || !on;
   if (ENG.paused) return;
   // Ducks: the big moments among this frame's cues, each at the time it will be heard (a grenade after its fuse).
@@ -415,5 +439,11 @@ function audition(pick) {
   if (el) el.textContent = `Playing: ${TEST[pick] || pick}`;
 }
 export const MUSIC_ACTIONS = { "mus-test": () => audition(testPick) };
+// A sting now over whatever plays (the mixer's ▶ for Music and its Stings): false with no live context.
+export function musicSting(name = "victory") {
+  if (BIND) { BIND.unlock(); ensureEngine(BIND.bus()); }
+  if (!ENG || ENG.paused) return false;
+  return ENG.sting(name, ENG.ctx.currentTime + 0.05);
+}
 export const MUSIC_CHANGE = { "mus-pick": (state, ui, el) => { if (TEST[el.value]) audition(el.value); } };
 export const MUSIC_TEST_NAMES = Object.keys(TEST);

@@ -17,6 +17,7 @@ import { foodOutlook, waterOutlook, ROLES } from "../sim/economy.js";
 import { waterIn } from "../sim/water.js";
 import { roleOf, taskLabel } from "../sim/work.js";
 import { ageText, mapLoc } from "./render.js";
+import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -170,7 +171,8 @@ export function renderWatchlist(state, ui, opts = {}) {
   const notes = m && m.list ? m.list : [];
   if (!items.length && !notes.length) return "";
   const collapsed = (w && w.collapsed) || opts.folded;
-  if (collapsed) return `<button class="mini" data-action="wl-collapse" data-v="0"${tip("Show the Watching panel: what you pinned with 📌, and your map notes")}>👁 Watching (${items.length})${notes.length ? ` · 📝 ${notes.length}` : ""} ▸</button>`;
+  const box = { icon: "👁", title: "Watching", count: items.length, badges: notes.length ? [{ text: `📝 ${notes.length}`, tip: "Map notes" }] : [] };
+  if (collapsed) return panelTab({ ...box, action: "wl-collapse", data: { v: "0" }, tip: "Show the Watching panel: what you pinned with 📌, and your map notes" });
   const rows = items.map((it) => {
     const st = watchlistStatus(state, it);
     return `<div class="wl-row ${st.gone ? "gone" : ""}" ${st.go ? `data-action="wl-go" data-kind="${it.kind}" data-id="${it.id}"` : ""}${tip(`${st.tip ? `${st.tip} ` : ""}${st.go ? "Click to go there." : ""}`)}>
@@ -188,7 +190,7 @@ export function renderWatchlist(state, ui, opts = {}) {
       <button class="mini" data-action="mn-edit" data-id="${n.id}"${tip("Edit this note")}>✎</button><button class="mini ${arm ? "danger" : ""}" data-action="mn-del" data-id="${n.id}"${tip(arm ? "Click again to delete the note" : "Delete this note (click twice)")}>${arm ? "Delete?" : "✕"}</button>
     </div>`;
   }).join("") : "";
-  return `<div class="spread wl-head"><b${tip(`What you pinned with 📌 (up to ${WATCHLIST_MAX}): a person's screen, a team's panel, the Groups and Bases tabs, a horde in the tile panel, or right-click a tile.`)}>👁 Watching${items.length ? ` (${items.length})` : ""}</b><button class="mini" data-action="wl-collapse" data-v="1"${tip("Fold this panel")}>▾</button></div>
+  return `${panelHead({ ...box, badges: [], action: "wl-collapse", data: { v: "1" }, tip: `Fold this panel. It lists what you pinned with 📌 (up to ${WATCHLIST_MAX}): a person's screen, a team's panel, the Groups and Bases tabs, a horde in the tile panel, or right-click a tile.` })}
     ${rows || `<div class="small muted">Nothing pinned. 📌 on a person, team, horde, group or base adds it here.</div>`}
     ${notes.length ? `<div class="spread wl-head wl-sub"><b${tip("Your notes on the map. Right-click a tile → Add note.")}>📝 Notes (${notes.length})</b><span class="row"><button class="mini ${hidden ? "active" : ""}" data-action="mn-hide"${tip(hidden ? "Notes are hidden on the map: show them" : "Hide all notes on the map (they stay in this list)")}>${hidden ? "🚫 Hidden" : "👁 Shown"}</button><button class="mini" data-action="wl-notes"${tip(open ? "Fold the notes list" : "Show the notes list")}>${open ? "▾" : "▸"}</button></span></div>${noteRows}` : ""}`;
 }

@@ -31,7 +31,7 @@ console.log("Options");
 {
   const o = {};
   const s = soundOptions(o);
-  check(JSON.stringify(s) === JSON.stringify(SOUND_DEFAULTS) && o.sound === s, `defaults: master ${s.master}, effects ${s.sfx}, ambience ${s.amb}, mute off, mute when not focused on`);
+  check(JSON.stringify(s) === JSON.stringify({ ...SOUND_DEFAULTS, groups: {}, off: {} }) && o.sound === s, `defaults: master ${s.master}, effects ${s.sfx}, ambience ${s.amb}, mute off, mute when not focused on, every mixer group at 100% and on`);
   const bad = soundOptions({ sound: { master: 7, sfx: -1, amb: "x", mute: "yes", muteBlur: false } });
   check(bad.master === 1 && bad.sfx === 0 && bad.amb === SOUND_DEFAULTS.amb && bad.mute === false && bad.muteBlur === false, "bad values clamped or put back to the default; good ones kept");
   // The options store (ui/saves.js) keeps options.sound across a reload.
@@ -98,7 +98,9 @@ console.log("Battle");
   C.fx(b, { type: "melee", from: [me.x, me.y], to: [foe.x, foe.y], hit: false, side: "player" });
   C.fx(b, { type: "throw", from: [me.x, me.y], to: [foe.x, foe.y], item: "molotov" });
   cues = battleCues(b, mem, 0.4).map((c) => c.name);
-  check(cues.join() === "meleeCrit,whoosh,fire", `a critical blow, a miss, a Molotov: ${cues.join(", ")}`);
+  const voiced = cues.filter((n) => /^h[A-Z]/.test(n)); // the people's effort grunts (ui/humansfx.js: tools/humansfxtest.js)
+  cues = cues.filter((n) => !/^h[A-Z]/.test(n));
+  check(cues.join() === "meleeCrit,whoosh,fire" && voiced.every((n) => n === "hEffort"), `a critical blow, a miss, a Molotov: ${cues.join(", ")} (and the effort: ${voiced.join(", ") || "none"})`);
   // A 20-unit firefight: 200 shots in one frame are cut to a handful, spread in time.
   for (let i = 0; i < 200; i++) C.fx(b, { type: "shot", from: [foe.x, foe.y], to: [me.x, me.y], hit: i % 2 === 0, side: "enemy" });
   me.weapon = "ar";
@@ -279,12 +281,15 @@ console.log("Voices");
 console.log("Menu and help");
 {
   const html = soundOptionsHtml({ sound: { master: 0.5, sfx: 0.8, amb: 0.3, mute: false, muteBlur: true } });
-  check(/<h3>Sound<\/h3>/.test(html) && (html.match(/type="range"/g) || []).length === 8 && /value="50"/.test(html) && /value="30"/.test(html) && /data-k="steps"/.test(html) && /max="150" step="5" value="100" data-action="snd-vol" data-k="guns"/.test(html) && /max="100" step="5" value="50" data-action="snd-vol" data-k="music"/.test(html), "the Sound section: eight sliders (master, effects, gunfire, footsteps, zombies, ambience, map hordes, music) at the saved levels (Gunfire 0–150%, 100% by default; Music 0–100%, 50% by default)");
-  const m = soundOptions({ sound: { music: 3, musicOn: "no", musicFollow: false } });
-  check(m.music === 1 && m.musicOn === true && m.musicFollow === false && SOUND_DEFAULTS.music === 0.5 && SOUND_DEFAULTS.musicOn === true && SOUND_DEFAULTS.musicFollow === true, "the Music volume (50% by default, clamped), music on and its intensity following the action by default; bad values put back");
-  check(/data-action="snd-opt" data-k="musicOn"/.test(html) && /data-action="snd-opt" data-k="musicFollow"/.test(html) && /Music intensity follows the action/.test(html) && /data-action="mus-pick"/.test(html) && /data-action="mus-test"/.test(html), "Music on / off, Music intensity follows the action, the Music test");
+  check(/<h3>Sound<\/h3>/.test(html) && (html.match(/type="range"/g) || []).length === 9 && /value="50"/.test(html) && /value="30"/.test(html) && /max="150" step="5" value="100" data-action="snd-grp" data-g="weapons"/.test(html) && /data-g="zombies"/.test(html) && !/data-g="zombies.moans"/.test(html), "the Sound section: the Master, Effects and Ambience buses at the saved levels and the six top groups (0–150%, 100% by default; the parts only in the Advanced mixer)");
+  // The music (ui/music.js): its volume is the mixer's Music group, its on/off the group's switch; an early save's keys move there.
+  const mo = soundOptions({ sound: { music: 0.25, musicOn: false, musicFollow: false } }), md = soundOptions({ sound: {} });
+  check(mo.groups.music === 0.5 && mo.off.music === true && mo.musicFollow === false && !("music" in mo) && !("musicOn" in mo) && md.musicFollow === true && SOUND_DEFAULTS.musicFollow === true && !("music" in md.groups),
+    "Music: an early save's Music slider (25%) becomes the Music group at the same loudness (50%) and its off switch; intensity follows the action by default");
+  check(/data-action="snd-opt" data-k="music"/.test(html) && /data-action="snd-opt" data-k="musicFollow"/.test(html) && /Music intensity follows the action/.test(html) && /data-action="mus-pick"/.test(html) && /data-action="mus-test"/.test(html) && /data-g="music"/.test(html),
+    "Music on / off, Music intensity follows the action, the Music test, the Music group's slider");
   const g = soundOptions({ sound: { guns: 2 } }), g2 = soundOptions({ sound: { guns: 1.25 } }), g3 = soundOptions({ sound: {} });
-  check(g.guns === 1.5 && g2.guns === 1.25 && g3.guns === 1 && g3.steps === 0.7 && g3.zombie === 1 && g3.horde === 0.7 && g.zombie === 1, "the Gunfire volume: kept up to 150%, clamped above, 100% when missing (footsteps 70%, zombies 100%, map hordes 70%)");
+  check(g.groups["weapons.guns"] === 1.5 && g.groups["weapons.blasts"] === 1.5 && g2.groups["weapons.handling"] === 1.25 && JSON.stringify(g3.groups) === "{}" && !("guns" in g) && !("steps" in g3), "an old Gunfire volume becomes the Gunfire, Explosions and Reloads groups (clamped at 150%); the old keys are dropped");
   check(/data-action="snd-opt" data-k="on"/.test(html) && /data-action="snd-opt" data-k="muteBlur"/.test(html) && /data-action="snd-test"/.test(html), "sound on / off, mute when not focused, Hear a sound");
   const { SETTINGS_ACTIONS, SETTINGS_CHANGE } = await import("../src/ui/settings.js");
   check(!!SETTINGS_ACTIONS["snd-opt"] && !!SETTINGS_CHANGE["snd-vol"] && !!SETTINGS_CHANGE["snd-pick"], "the menu knows the Sound actions");

@@ -12,6 +12,7 @@
   --death: #ff4d4d;
   --info: #8fb4e0;
   --danger-soft: color-mix(in srgb, var(--danger) 28%, var(--panel-2)); /* the stack mover's "no room" track */
+  --sm-k0: var(--info); --sm-k1: #c39be0; --sm-k2: #6cc9bf; --sm-k3: var(--text); /* the stack mover's destinations (fit bars, chips) */
   font-size: calc(16px * var(--ui-scale));
 }
 * { box-sizing: border-box; }
@@ -23,6 +24,11 @@ button.primary { background: #4a3816; border-color: var(--accent); }
 button.active { background: #4a3816; border-color: var(--accent); }
 select, input { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.25rem 0.4rem; }
 input[type="number"] { width: 4.5rem; }
+/* A slider is not a text box: no padding, border or panel fill around it, or the track stops short of its end at 100%
+   (:where keeps it as weak as the input rule above, so a styled slider such as .smrange still wins) */
+input:where([type="range"]) { padding: 0; border: none; border-radius: 0; background: transparent; accent-color: var(--accent); vertical-align: middle; cursor: pointer; }
+/* A slider's readout keeps one width from 0% to 100%, so nothing beside it shifts when it gains a digit */
+.sndval { display: inline-block; min-width: 4.8ch; text-align: right; font-variant-numeric: tabular-nums; }
 h2 { font-size: 1.1rem; margin: 0.2rem 0 0.6rem; }
 h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
 .muted { color: var(--muted); }
@@ -408,6 +414,31 @@ span.smto { border-color: var(--accent); color: var(--accent); }
 .smbtn { flex: 1; min-width: 0; font-weight: 600; padding: 0.42rem 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .smkeys { flex: none; font-size: 0.7rem; }
 .smhint { margin-top: -0.15rem; font-size: 0.75rem; }
+/* The track: the slider, and on wide panels a fit bar per destination under it (ui/stackmove.js fitBars). */
+.smove.dock { container-type: inline-size; }
+.smtrack { flex: 1; min-width: 5rem; display: flex; flex-direction: column; justify-content: center; }
+.smtrack .smrange { flex: none; width: 100%; min-width: 0; margin: 0; }
+.smove .k0 { --c: var(--sm-k0); } .smove .k1 { --c: var(--sm-k1); } .smove .k2 { --c: var(--sm-k2); } .smove .k3 { --c: var(--sm-k3); }
+.smfits, .smsw { display: none; }
+.smfits { position: relative; margin: 0.3rem 0.55rem 0; } /* inset by half the thumb: a bar ends under the thumb at that amount */
+.smfitrow { position: relative; height: 0.95rem; }
+.smfitrow i { position: absolute; left: 0; bottom: 0.12rem; height: 0.22rem; min-width: 0.22rem; border-radius: 99px; background: var(--c); opacity: 0.35; }
+.smfitrow[data-fit="0"] i { display: none; }
+.smfitrow span { position: absolute; top: 0; font-size: 0.62rem; line-height: 0.7rem; white-space: nowrap; color: var(--c); opacity: 0.7; transform: translateX(-0.1rem); }
+.smfitrow span.end { transform: translateX(0.1rem); }
+.smfitrow.ok i, .smfitrow.ok span { opacity: 1; }
+.smqline { position: absolute; top: -0.15rem; bottom: 0; width: 1px; margin-left: -0.5px; background: var(--text); opacity: 0.5; }
+.smsw { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 2px; background: var(--c); align-self: center; }
+@container (min-width: 34rem) {
+  .smfits { display: block; }
+  .smsw { display: inline-block; }
+  .smamt.barred { align-items: flex-start; }
+  .smamt.barred > .smstep, .smamt.barred > .smnum { margin-top: -0.35rem; }
+}
+/* Split (✂): the stack cut in two where it lies; which part moves, Join. The tile shows "16 + 8". */
+.smparts { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; font-size: 0.8rem; }
+.smsplitbtn small { color: var(--muted); margin-left: 0.15rem; }
+.smsplit b { color: var(--accent); }
 
 /* Dev tools panel (ui/devtools.js) */
 #devpanel { position: absolute; right: 0.6rem; top: 0.6rem; width: min(26rem, calc(100% - 1.2rem)); max-height: 70%; overflow-y: auto; overflow-x: hidden; background: rgba(20,22,26,0.92); border: 1px solid #7a5cff; border-radius: 8px; padding: 0.45rem 0.6rem; font-size: 0.8rem; z-index: 5; }
@@ -589,6 +620,21 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
 .settings .btnlike.disabled { opacity: 0.4; pointer-events: none; }
 .settings .setkeys { border-collapse: collapse; font-size: 0.85rem; }
 .settings .setkeys td { padding: 0.15rem 0.6rem 0.15rem 0; vertical-align: top; }
+/* Settings → Sound: the mixer (ui/audio.js soundOptionsHtml, groups in ui/soundgroups.js). One grid: name, slider,
+   value, On, ▶; the parts of a group indented under it when the Advanced mixer is open. Sized in rem: follows UI size. */
+.settings .sndmix { display: grid; grid-template-columns: minmax(9rem, max-content) minmax(8rem, 20rem) 3.2rem max-content max-content; gap: 0.25rem 0.7rem; align-items: center; margin: 0.35rem 0 0.6rem; max-width: 46rem; }
+.settings .sndrow { display: contents; }
+.settings .sndname { white-space: nowrap; }
+.settings .sndbus .sndname { font-weight: 600; }
+.settings .sndtop .sndname { font-weight: 600; color: var(--accent); }
+.settings .sndmix.open .sndtop .sndname { padding-top: 0.45rem; }
+.settings .sndchild .sndname { padding-left: 1.2rem; color: var(--muted); font-size: 0.92em; }
+.settings .sndoff .sndname, .settings .sndoff .sndval { opacity: 0.5; text-decoration: line-through; }
+.settings .sndrange { width: 100%; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.settings .sndrange:disabled { opacity: 0.35; cursor: default; }
+.settings .sndval { font-variant-numeric: tabular-nums; text-align: right; min-width: 3.2rem; }
+.settings .sndon { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.88em; white-space: nowrap; cursor: pointer; }
+.settings .sndprev { min-width: 1.9rem; }
 #cbpanel .cbmenu { float: right; margin: 0 0 0.3rem 0.4rem; }
 #cbpanel .cbview { display: flex; flex-wrap: wrap; gap: 0.2rem; margin: 0 0 0.4rem; align-items: center; }
 #cbpanel .cbview button { min-width: 1.9rem; }
@@ -887,3 +933,233 @@ body.tl-on #minimap, body.tl-on #mm-show { display: none !important; }
 .stagesteps > b { color: var(--muted); font-weight: 400; margin: 0 0.2rem; }
 .suptable { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.8rem; margin-top: 0.35rem; }
 .suptable.three { grid-template-columns: auto 1fr auto; }
+
+/* ---------- The panel shell around the State Map (ui/windows.js, ui/layout.js panelHead / panelTab) ----------
+   One look for every panel that folds: the left and right panels and the log (a slim bar with a handle while open,
+   a rail with the panel's name, its key and a ✕ while folded; the left panel's rail has a button per tab), and the
+   boxes over the map (Running orders, Watching, Layers, alerts: a header with icon, title, count and chevron; folded,
+   a slim tab with the same). Sized in rem so the UI size (Options → Display) scales it for a TV across the room. */
+:root { --fp-bg: rgba(19, 21, 25, 0.95); --fp-head: #20242b; --focus: #ffd166; }
+#app { --gut: 0.75rem; --strip: 2.6rem; }
+body.fold-log #app { --bgut: 2.1rem; }
+/* Keyboard focus is always visible (mouse clicks do not show it). */
+:where(button, a, input, select, textarea, [role="button"], [tabindex]):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.gut:focus-visible { outline-offset: -2px; }
+#left, #right, #log, #orders, #watchlist, #legend, #alerts, #modal .box { scrollbar-width: thin; scrollbar-color: #444b56 transparent; }
+
+/* The bar between a panel and the map: a handle in the middle (click folds, drag resizes, Tab + arrows too). */
+.gut { transition: background-color 0.15s, color 0.15s; }
+.gut-open { display: flex; align-items: center; justify-content: center; gap: 0.35rem; width: 100%; height: 100%; flex-direction: column; }
+.gut-log .gut-open { flex-direction: row; }
+.gut-grip { display: block; width: 0.22rem; height: 2.6rem; border-radius: 99px; background: var(--line); transition: background-color 0.15s, height 0.15s, width 0.15s; }
+.gut-log .gut-grip { width: 2.6rem; height: 0.22rem; }
+.gut-open .gut-chev { font-size: 0.75rem; line-height: 1; opacity: 0.8; }
+.gut:hover .gut-grip, .gut:focus-visible .gut-grip { background: var(--accent); height: 3.4rem; }
+.gut-log:hover .gut-grip, .gut-log:focus-visible .gut-grip { height: 0.22rem; width: 3.4rem; }
+
+/* Folded: a rail. Left and right: a column (chevron, tabs or icon, the name written down the rail, key, ✕ at the
+   foot); the log: a row with its latest line. */
+.gut-left .gut-shut, .gut-right .gut-shut { writing-mode: horizontal-tb; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0.45rem; width: 100%; height: 100%; padding: 0.5rem 0 0.45rem; font-size: 0.9rem; }
+.gut-left .gut-label, .gut-right .gut-label { writing-mode: vertical-rl; white-space: nowrap; letter-spacing: 0.04em; color: var(--text); opacity: 0.85; overflow: hidden; min-height: 0; }
+.gut-shut .gut-chev { display: flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.6rem; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font-size: 0.85rem; flex: none; }
+.gut:hover .gut-shut .gut-chev, .gut:focus-visible .gut-shut .gut-chev { border-color: var(--accent); color: var(--accent); }
+.gut-icon { font-size: 1.05rem; line-height: 1; flex: none; }
+.gut-tabs { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.3rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); flex: none; }
+.gut-tab { position: relative; display: flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; padding: 0; font-size: 1.05rem; line-height: 1; background: transparent; border-color: transparent; border-radius: 6px; writing-mode: horizontal-tb; }
+.gut-tab:hover:not(:disabled) { background: var(--panel-2); border-color: var(--accent); }
+.gut-tab.on { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+.gut-badge { position: absolute; top: -0.25rem; right: -0.3rem; min-width: 1.05rem; height: 1.05rem; padding: 0 0.2rem; border-radius: 99px; background: #ffd166; color: #15171b; font: 700 0.68rem/1.05rem "Segoe UI", system-ui, sans-serif; text-align: center; box-shadow: 0 0 0 2px var(--panel); }
+.gut-shut kbd { flex: none; }
+.gut-left .gut-shut .gut-close, .gut-right .gut-shut .gut-close { margin-top: auto; flex: none; }
+.gut-close { padding: 0.1rem 0.35rem; font-size: 0.8rem; border-radius: 5px; }
+.gut-log .gut-shut { gap: 0.6rem; padding: 0 0.6rem; font-size: 0.92rem; }
+.gut-log .gut-shut .gut-chev { width: 1.7rem; height: 1.45rem; }
+.gut-log .gut-label { color: var(--text); font-weight: 600; }
+.gut-log .gut-line { opacity: 0.9; }
+
+/* A closed panel's tab at the map's edge: easier to see and hit. */
+.edgetab { flex-direction: column; gap: 0.35rem; font-size: 0.85rem; opacity: 0.85; color: var(--text); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.edgetab-left, .edgetab-right { width: 1.6rem; height: auto; min-height: 5rem; padding: 0.5rem 0; }
+.edgetab-log { flex-direction: row; width: auto; min-width: 5rem; height: 1.6rem; padding: 0 0.8rem; }
+.edgetab-label { writing-mode: vertical-rl; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.edgetab-log .edgetab-label { writing-mode: horizontal-tb; }
+.edgetab:hover .edgetab-label, .edgetab:focus-visible .edgetab-label { color: var(--accent); }
+
+/* The side panels: the left panel's tabs stay on top as one control while its list scrolls; the right panel's title
+   stays on top too. They ease in when they open. */
+#left > .tabs:first-child { position: sticky; top: -0.7rem; z-index: 2; margin: -0.7rem -0.9rem 0.6rem; padding: 0.55rem 0.9rem 0.5rem; background: var(--panel); border-bottom: 1px solid var(--line); gap: 0.2rem; }
+#left > .tabs:first-child button { flex: 1 1 auto; padding: 0.32rem 0.35rem; font-size: 0.92rem; background: transparent; border-color: transparent; color: var(--muted); white-space: nowrap; }
+#left > .tabs:first-child button:hover:not(:disabled) { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+#left > .tabs:first-child button.active { color: var(--text); background: #4a3816; border-color: var(--accent); font-weight: 600; }
+#right > h2:first-child, #right > .spread:first-child { position: sticky; top: -0.7rem; z-index: 2; margin: -0.7rem -0.9rem 0.35rem; padding: 0.6rem 0.9rem 0.45rem; background: var(--panel); border-bottom: 1px solid var(--line); }
+#right > .spread:first-child h2 { margin: 0; }
+#left h3, #right h3 { font-size: 0.85rem; margin: 0.9rem 0 0.35rem; padding-bottom: 0.2rem; border-bottom: 1px solid var(--line); }
+body:not(.fold-left) #left { animation: panel-in-l 0.18s ease-out; }
+body:not(.fold-right) #right { animation: panel-in-r 0.18s ease-out; }
+body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
+@keyframes panel-in-l { from { opacity: 0; transform: translateX(-0.8rem); } }
+@keyframes panel-in-r { from { opacity: 0; transform: translateX(0.8rem); } }
+@keyframes panel-in-b { from { opacity: 0; transform: translateY(0.6rem); } }
+
+/* The boxes over the map: one frame, a sticky header, compact rows, scrolling inside (never off the map). */
+#orders, #watchlist, #legend { background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.45); padding: 0 0.5rem 0.4rem; font-size: 0.88rem; color: var(--text); }
+#orders, #watchlist { width: 16rem; }
+#legend { max-width: 17rem; max-height: calc(100% - 1.2rem); overflow-y: auto; }
+#orders:has(> .fp-tab:only-child), #watchlist:has(> .fp-tab:only-child), #legend:has(> .fp-tab:only-child) { width: auto; padding: 0; border: none; background: none; box-shadow: none; overflow: visible; }
+.fp-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 0.25rem; margin: 0 -0.5rem 0.2rem; padding: 0.25rem 0.3rem; background: var(--fp-head); border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+.fp-toggle, .fp-tab, #alerts .al-pill, #alerts .al-fold { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; font-weight: 600; font-size: 0.92rem; line-height: 1.25; text-align: left; color: var(--text); }
+.fp-toggle { flex: 1; padding: 0.18rem 0.4rem; background: none; border: 1px solid transparent; border-radius: 6px; }
+.fp-toggle:hover:not(:disabled) { background: var(--panel-2); border-color: var(--line); }
+.fp-tab, #alerts .al-pill, #alerts .al-fold { max-width: 100%; padding: 0.32rem 0.6rem 0.32rem 0.45rem; background: var(--fp-bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.fp-tab:hover:not(:disabled), #alerts .al-pill:hover:not(:disabled), #alerts .al-fold:hover:not(:disabled) { border-color: var(--accent); }
+#alerts .al-pill.danger { border-color: var(--danger); color: #ffd0cc; }
+#alerts .al-fold { align-self: flex-end; font-size: 0.85rem; padding: 0.2rem 0.55rem 0.2rem 0.4rem; }
+.fp-ico { flex: none; width: 1.25em; text-align: center; font-weight: 400; }
+.fp-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fp-chev { flex: none; margin-left: auto; padding-left: 0.2rem; color: var(--muted); font-size: 0.78rem; }
+.fp-toggle:hover .fp-chev, .fp-tab:hover .fp-chev, .al-pill:hover .fp-chev, .al-fold:hover .fp-chev { color: var(--accent); }
+.fp-badge { flex: none; padding: 0.02rem 0.42rem; border-radius: 99px; background: #2f343d; color: var(--text); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fp-badge.warn { background: #4a3a14; color: #ffd166; }
+.fp-badge.danger { background: #4d2220; color: #ffb7b0; }
+.fp-extra { display: flex; gap: 0.2rem; flex: none; }
+.fp-extra button.mini { padding: 0.08rem 0.45rem; }
+#orders .ro { padding: 0.3rem 0.3rem; border-radius: 5px; }
+#orders .fp-head + .ro, #watchlist .fp-head + .wl-row { border-top: none; }
+#watchlist .wl-row { padding: 0.28rem 0.3rem; border-radius: 5px; }
+#watchlist .wl-sub { margin: 0.35rem -0.1rem 0.1rem; padding: 0.3rem 0.1rem 0.1rem; }
+#legend .fp-body { display: flex; flex-direction: column; gap: 0.05rem; padding-top: 0.1rem; }
+#legend .layer { padding: 0.08rem 0.25rem; border-radius: 5px; font-size: 0.86rem; line-height: 1.3; }
+#legend .layer:hover { background: var(--panel-2); }
+/* Folding or opening a box eases it in (ui/windows.js watchFolds). */
+#orders.fp-anim, #watchlist.fp-anim { animation: fp-in 0.16s ease-out; transform-origin: top left; }
+#alerts.fp-anim { animation: fp-in 0.16s ease-out; transform-origin: top right; }
+#legend.fp-anim { animation: fp-in-up 0.16s ease-out; transform-origin: bottom left; }
+@keyframes fp-in { from { opacity: 0; transform: translateY(-0.35rem) scale(0.98); } }
+@keyframes fp-in-up { from { opacity: 0; transform: translateY(0.35rem) scale(0.98); } }
+@media (prefers-reduced-motion: reduce) { #left, #right, #log, .fp-anim { animation: none !important; } .gut, .gut-grip { transition: none; } }
+
+/* ---------- Inside the side panels (ui/ui.js renderLeft / renderRight, ui/panelfold.js) ----------
+   A card's rows in small groups under a heading (.pk-sec: Status, Supplies, ...), one label column for the whole card
+   (a subgrid, so every group lines up), values that wrap, muted detail lines (.pk-sub), long breakdowns folded under
+   a short line (.pf), and long notes in boxes that scroll on their own (.pk-scroll). The panels scroll as a whole
+   (#left / #right overflow-y) and keep the wheel to themselves at the ends. Sized in rem: the UI size scales it all. */
+#left, #right { line-height: 1.4; overscroll-behavior: contain; }
+#left *, #right * { scrollbar-width: thin; scrollbar-color: #444b56 transparent; }
+#left .card, #right .card { padding: 0.6rem 0.75rem; margin-bottom: 0.6rem; }
+#left .card h2 { font-size: 1.05rem; line-height: 1.25; }
+.pk-head { align-items: baseline; }
+.pk { display: grid; grid-template-columns: fit-content(7.5rem) minmax(0, 1fr); column-gap: 0.75rem; margin-top: 0.3rem; }
+.pk > * { grid-column: 1 / -1; min-width: 0; }
+.pk > .kv { display: grid; grid-template-columns: subgrid; row-gap: 0.22rem; }
+.pk .kv > div { min-width: 0; overflow-wrap: break-word; }
+.pk .kv > div:nth-child(even):not(:has(.pf)) { max-height: 10.5em; overflow-y: auto; }
+/* (.kv div:nth-child(odd) mutes the labels; lines inside a value keep the value's colour) */
+.pk .kv > div:nth-child(even) div:not([class]) { color: inherit; }
+.pk .kv > div:nth-child(even) .danger, .pk .pk-wide .danger { color: var(--danger); }
+/* A row across the whole card under the one before it (a fold's breakdown): always the last of its group. */
+.pk .kv > .pk-wide { grid-column: 1 / -1; color: var(--text); }
+/* A label with a hover text says so (a dotted underline). */
+.pk .kv > div[data-tip]:nth-child(odd) { text-decoration: underline dotted rgba(154, 160, 168, 0.45); text-underline-offset: 0.2em; cursor: help; }
+.pk-sec { margin: 0.6rem 0 0.25rem; padding-bottom: 0.15rem; border-bottom: 1px solid var(--line); color: var(--accent); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.9; }
+.pk > .pk-sec:first-child { margin-top: 0.15rem; }
+.pk-num { font-variant-numeric: tabular-nums; }
+.pk-sub { display: block; color: var(--muted); font-size: 0.95em; }
+.pk-meter { display: block; max-width: 9rem; height: 0.28rem; margin: 0.22rem 0 0.08rem; background: #2c3139; border-radius: 99px; overflow: hidden; }
+.pk-meter > i { display: block; height: 100%; border-radius: inherit; }
+.pk-foot { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
+.pk-hint { margin: 0.1rem 0.1rem 0.6rem; }
+.pk-acts { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 0.35rem; }
+.pk-acts button { text-align: left; padding: 0.35rem 0.6rem; }
+/* A long note that scrolls inside its card instead of making the card tall. */
+.pk-scroll { max-height: 4.6em; overflow-y: auto; margin: 0.2rem 0; padding: 0.25rem 0.45rem; border-radius: 5px; background: rgba(0, 0, 0, 0.16); }
+.pk-scroll-tall { max-height: 12rem; }
+
+/* A fold (ui/panelfold.js): ▸ a short line; open, the breakdown under it with a rule down its side. */
+.pf { margin-top: 0.12rem; }
+.pf > summary { display: inline-flex; align-items: center; gap: 0.3rem; margin-left: -0.15rem; padding: 0 0.2rem; border-radius: 4px; color: var(--info); font-size: 0.92em; cursor: pointer; list-style: none; user-select: none; }
+.pf > summary::-webkit-details-marker { display: none; }
+.pf > summary::before { content: "▸"; color: var(--muted); font-size: 0.8em; transition: transform 0.12s; }
+.pf[open] > summary::before { transform: rotate(90deg); }
+.pf > summary:hover { color: var(--accent); background: rgba(255, 255, 255, 0.04); }
+.pf-body { margin-top: 0.2rem; padding: 0.3rem 0.5rem; max-height: 9rem; overflow-y: auto; border-left: 2px solid var(--line); border-radius: 0 4px 4px 0; background: rgba(0, 0, 0, 0.16); color: var(--muted); }
+.pf-body > div + div { margin-top: 0.2rem; }
+
+/* People tab: compact person cards with even gauges. */
+#left .surv { padding: 0.5rem 0.7rem; }
+#left .surv > .spread { margin-bottom: 0.2rem; flex-wrap: wrap; row-gap: 0.2rem; }
+#left .surv > .spread > b { flex: 1 1 8rem; min-width: 0; }
+#left .surv > .spread > select { flex: 0 1 auto; max-width: 9.5rem; padding: 0.15rem 0.35rem; font-size: 0.85rem; }
+#left .surv .row.small { gap: 0.45rem; margin: 0.1rem 0; }
+#left .surv .bar, #left .gc .bar { height: 0.42rem; border-radius: 99px; }
+#left .surv > div:last-child:not(.row) { margin-top: 0.3rem; }
+#left .chip { font-size: 0.76rem; }
+
+/* Groups tab: the attitude as a coloured chip; the long lines about a group scroll inside its card. */
+.gc-att { display: inline-flex; align-items: center; gap: 0.3rem; }
+.att-chip { padding: 0.02rem 0.45rem; border: 1px solid currentColor; border-radius: 99px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+.gc .row.small { margin: 0.25rem 0 0.1rem; }
+.gc-extra > .small { max-height: 9.5rem; overflow-y: auto; padding: 0.3rem 0.45rem; border-radius: 5px; background: rgba(0, 0, 0, 0.16); }
+.gc-extra > .small:not(:has(> div)) { display: none; }
+.gc-extra > .small > div + div { margin-top: 0.15rem; }
+
+/* Teams tab: who, the supplies as small figures, the status line; a team waiting for orders is marked on its edge. */
+.tm-who { margin-top: 0.2rem; }
+.tm-stats { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0.35rem 0 0.3rem; }
+.tm-stat { padding: 0.04rem 0.45rem; border-radius: 99px; background: #2c3139; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tm-status { margin-top: 0.15rem; }
+#left .card.attn { box-shadow: inset 3px 0 0 #ffd166; }
+
+/* A card that folds to one line (ui/panelfold.js fold with cls "pf-card": the Bases tab's base cards, the Groups tab's
+   group cards): the line is the whole summary, with a chevron at its end; open, the card's body as before. */
+.pf.pf-card { margin-top: 0.3rem; }
+.pf.pf-card > summary { display: flex; align-items: center; gap: 0.4rem; width: 100%; margin: 0; padding: 0.15rem 0.2rem; color: var(--text); font-size: 1em; }
+.pf.pf-card > summary::before { content: none; }
+.pf.pf-card > summary::after { content: "▸"; flex: none; margin-left: auto; color: var(--muted); font-size: 0.8em; transition: transform 0.12s; }
+.pf.pf-card[open] > summary::after { transform: rotate(90deg); }
+.pf.pf-card > summary:hover::after { color: var(--accent); }
+.pf.pf-card > .pf-body { max-height: none; overflow: visible; margin-top: 0.3rem; padding: 0; border: none; background: none; color: var(--text); }
+.gc .pf.pf-card { margin-top: 0; }
+.gc .pf.pf-card > .pf-body { padding-top: 0.35rem; border-top: 1px solid var(--line); border-radius: 0; }
+
+/* The Bases tab: a base at a glance (people, defence, heat, food, warnings). */
+.bs-strip { display: flex; flex-wrap: wrap; gap: 0.25rem; min-width: 0; }
+.bs-chip { padding: 0.06rem 0.45rem; border-radius: 99px; background: #2c3139; font-size: 0.82rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bs-chip.danger { background: #4d2220; }
+.bs-chip.good { background: #21402c; }
+
+/* The Groups tab: the folded line of a group. */
+.gc-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.45rem; min-width: 0; flex: 1; }
+.gc-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-sum > .att-chip { order: 2; }
+.gc-fig { order: 3; flex: 1 0 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The Bases tab's illness row: a headline, then the detail. */
+.ill-head, .ill-sub { display: block; }
+.ill-nomeds { margin: 0 0 0 0.25rem; font-weight: 600; }
+
+/* The People tab: the find box and view switch on top (they stay under the tabs while the list scrolls), and the
+   compact one-line rows. */
+.ppl-bar { position: sticky; top: 2.35rem; z-index: 1; display: flex; gap: 0.3rem; align-items: center; margin: -0.2rem -0.9rem 0.3rem; padding: 0.3rem 0.9rem; background: var(--panel); }
+.ppl-q { flex: 1; min-width: 0; padding: 0.25rem 0.5rem; font-size: 0.88rem; }
+.ppl-view { flex: none; white-space: nowrap; }
+.ppl-found { margin: 0 0 0.3rem; }
+#left .card.surv.prow { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.6rem; margin-bottom: 0.3rem; }
+.prow-name { flex: 1 1 auto; display: flex; align-items: center; min-width: 0; font-size: 0.9rem; }
+.prow-name > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow-name > .st-icons { flex: none; margin-left: 0.25rem; }
+.prow-hp { flex: none; display: flex; align-items: center; gap: 0.3rem; width: 3.8rem; font-size: 0.8rem; }
+.prow-hp .pk-meter { flex: 1; margin: 0; }
+.prow > select { flex: 0 1 auto; max-width: 6.4rem; padding: 0.1rem 0.25rem; font-size: 0.8rem; }
+.prow > .wtask { flex: 0 1 auto; min-width: 0; max-width: 4.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; }
+
+/* A box that scrolls fades out at the edge with more to see that way (ui/panelfold.js marks it only while it
+   overflows: no mask otherwise). */
+.sf-top, .sf-bot { --sf: 0.9rem; }
+.sf-top:not(.sf-bot) { mask-image: linear-gradient(to bottom, transparent, #000 var(--sf)); }
+.sf-bot:not(.sf-top) { mask-image: linear-gradient(to top, transparent, #000 var(--sf)); }
+.sf-top.sf-bot { mask-image: linear-gradient(to bottom, transparent, #000 var(--sf), #000 calc(100% - var(--sf)), transparent); }
+
+/* The naming window (ui/basename.js). */
+.namebox { max-width: 30rem; }
+.namebox .nameinput { width: 100%; font-size: 1.15rem; padding: 0.45rem 0.6rem; margin-top: 0.6rem; border-color: var(--accent); }
+.namebox .namechips { flex-wrap: wrap; gap: 0.3rem; }

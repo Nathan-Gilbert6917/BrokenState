@@ -5,7 +5,7 @@ import {
   partyMembers, bestSkill, partyTile, STANCES, tileLabel, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, partySpeed,
   carried, takeSupply, takeShots, addGearToCargo, leaveVehicle, startReturn, wipeIfEmpty, cardStale,
 } from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, breakdownChance, isBike, carPartsCost } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, partyVehicles, breakdownRoll, fleetProblem, isBike, carPartsCost } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { rollConflict } from "./conflicts.js";
 import { rollWanderer } from "./wanderers.js";
@@ -367,8 +367,9 @@ export function rollTravelEvent(state, p, tileId) {
   const horde = state.hordes.find((h) => h.tile === tileId);
   if (horde) return guarded(state, p, hordeCard(state, p, horde), tileId);
   // Worn vehicles break down more often.
-  const v = p.vehicle ? partyVehicle(state, p) : null;
-  if (v && state.rng.chance(breakdownChance(v, p.burden ? p.burden.fill : 0))) return guarded(state, p, breakdownCard(state, p, v), tileId);
+  // Several vehicles: one roll for any of them, then which (vehicles.js breakdownRoll); one vehicle: its own roll.
+  const v = p.vehicle ? breakdownRoll(state, p, p.burden ? p.burden.fill : 0) : null;
+  if (v) return guarded(state, p, breakdownCard(state, p, v), tileId);
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   let chance = 0.05 + t.infection * 0.1 + TERRAIN[t.terrain].traffic * 0.4 + (owner && attitude(owner) === "Hostile" ? 0.12 : 0) + (owner && attitude(owner) !== "Hostile" ? 0.06 : 0);
   chance *= STANCES[p.stance].events * (isNight(state) ? 1.2 : 1) * travelEffects(state, state.hour, tileId).events; // storms and blizzards where the team is: more trouble on the road (weather.js)
@@ -405,7 +406,10 @@ function guarded(state, p, card, tileId) {
 
 function breakdownCard(state, p, v) {
   // The card can be answered after the vehicle was left behind (a second breakdown card the same hour).
-  const here = (s) => p.vehicle && partyVehicle(s, p) === v;
+  const here = (s) => p.vehicle && partyVehicles(s, p).includes(v);
+  // With other vehicles: left behind alone when the rest still seat everyone (vehicles.js fleetProblem), else they all stay.
+  const others = () => partyVehicles(state, p).filter((x) => x !== v);
+  const alone = () => others().length > 0 && !fleetProblem(others(), p.members.length) && (others().length > 1 || !isBike(others()[0]) || (others()[0].count || 1) >= p.members.length);
   const gone = `The ${v.name} is no longer with the team.`;
   return {
     title: "Breakdown",
@@ -429,8 +433,11 @@ function breakdownCard(state, p, v) {
         },
       },
       {
-        label: "Abandon it", hint: "Leave it here (it is marked on the map) and continue on foot. Cargo the team cannot carry stays in it", resolve: (s) => {
+        label: "Abandon it",
+        get hint() { return alone() ? `Leave the ${v.name} here (it is marked on the map); the team goes on in its other vehicles. Cargo they cannot carry stays in it` : others().length ? "Leave it here (marked on the map). The other vehicles cannot seat everyone, so they are all left and the team continues on foot. Cargo the team cannot carry stays in them" : "Leave it here (it is marked on the map) and continue on foot. Cargo the team cannot carry stays in it"; },
+        resolve: (s) => {
           if (!here(s)) return gone;
+          if (alone()) { const left = leaveVehicle(s, p, partyTile(p), "broke down", v); return `The ${v.name} is left by the road. The team goes on without it.${left ? ` Left in it: ${left}.` : ""}`; }
           const left = leaveVehicle(s, p, partyTile(p), "broke down");
           return `The ${v.name} is left by the road. The team walks on.${left ? ` Left in it: ${left}.` : ""}`;
         },

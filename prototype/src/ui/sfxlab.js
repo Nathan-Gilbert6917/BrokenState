@@ -46,9 +46,9 @@ export function labHand(c, t, o = LAB) {
 function throwSeq(c, t, kind, o) {
   const near = labPlace({ ...o, dist: "near" }), sp = labPlace(o);
   const pre = { frag: "pin", flash: "pin", smoke: "pin", pipebomb: "fuse", molotov: "light", flare: "strike" }[kind];
-  if (pre) playHand(c, t, { kind: "throw", h: pre, gain: 1.4 }, near);
+  if (pre) playHand(c, t, { kind: "throw", h: pre, gain: 1.4, group: "weapons.blasts" }, near);
   const land = t + THROW_FLIGHT + (pre === "pin" ? 0.25 : 0), fuse = FUSE[kind] || 0;
-  if (["frag", "flash", "smoke", "pipebomb"].includes(kind)) playHand(c, land, { kind: "clatter", gain: 1.6 }, sp);
+  if (["frag", "flash", "smoke", "pipebomb"].includes(kind)) playHand(c, land, { kind: "clatter", gain: 1.6, group: "weapons.blasts" }, sp);
   return land - t + playBlast(c, land + fuse, { kind }, sp);
 }
 export function labBlast(c, t, o = LAB) {
@@ -70,7 +70,7 @@ export function grenadeFight(c, t, o = LAB) {
   const shots = [[0, "ar", "burst", 4, -0.4], [0.5, "ak", "auto", 14, 0.5], [1.2, "carbine", "single", 3, -0.2], [2.4, "lmg", "auto", 18, 0.7], [3.1, "pistol", "single", 2, -0.6], [4.2, "ak", "burst", 12, 0.4], [5.0, "ar", "auto", 5, -0.3]];
   for (const [at, k, m, d, pan] of shots) playGun(c, t + at, labPlan(k, m), P(d, pan, d < 15));
   throwSeq(c, t + 0.7, "frag", { ...o, dist: "mid", pan: "right" });
-  playHand(c, t + 1.8, { kind: "throw", h: "pin", gain: 1.4 }, P(2, -0.2));
+  playHand(c, t + 1.8, { kind: "throw", h: "pin", gain: 1.4, group: "weapons.blasts" }, P(2, -0.2));
   playBlast(c, t + 2.6, { kind: "frag" }, P(3, -0.5)); // one landing close: the ducking
   playGun(c, t + 3.3, labPlan("m79"), P(14, 0.6));
   playBlast(c, t + 3.3 + flight("gl", 10), { kind: "gl40" }, P(6, 0.1));
