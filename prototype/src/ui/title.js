@@ -8,6 +8,7 @@ import { latestSave, listSaves } from "./saves.js";
 import { openSettings } from "./settings.js";
 import { GAME_VERSION } from "../sim/save.js";
 import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
+import { ambLightning } from "./ambience.js"; // the storm scene's lightning: its thunder follows (ui/ambweather.js)
 
 const SCENES = ["skyline", "camp", "walls"];
 const HOLD_S = 45;  // how long each background stays before the next fades in
@@ -1446,6 +1447,7 @@ function wallsScene() {
       bolt.pts.push([x, y]);
       while (y < fieldTop - H * 0.02) { y += H * (0.02 + Math.random() * 0.04); x += (Math.random() - 0.5) * H * 0.06; bolt.pts.push([x, y]); }
       nextBolt = 7 + Math.random() * 12;
+      ambLightning(0.25 + Math.random() * 0.6); // its thunder, a second or three after the flash (ui/ambweather.js)
     }
     if (bolt) { bolt.age += dt; if (bolt.age > 1.4) bolt = null; }
     // The flash: two strikes close together, then the glow dying away.

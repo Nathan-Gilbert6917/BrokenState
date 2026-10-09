@@ -10,7 +10,7 @@ import { weaponSound } from "../../src/ui/soundcues.js";
 import { stats } from "../../src/ui/sfxdsp.js";
 import { WEAPONS } from "../../src/sim/combat.js";
 
-export const MAKEUP = 2.5; // +8 dB for listening, the same for old and new (stats.json: subtract it for the game's level)
+export const MAKEUP = 1.4; // +3 dB for listening, the same for old and new (stats.json: subtract it for the game's level)
 const near = (o = {}) => place({ dist: 2, pan: 0, room: "field", ...o });
 const old = (name, gain = 1) => ({ old: true, secs: Math.max(1.2, (VOICES[name].dur || 1) + 0.6), fn: (c, t, sfx) => VOICES[name].play(c, sfx, t, { gain, pitch: 1 }) });
 const gun = (key, mode = "single", o = {}, secs = 3) => ({ secs, fn: (c, t) => playGun(c, t, labPlan(key, mode, o.sup, o.sub), near(o.sp)) });
@@ -79,10 +79,15 @@ RENDERS.grenadefight_old = { old: true, secs: 6.5, fn: (c, t, sfx) => {
 
 // Both sliders at 100% and no makeup: what reaches the speakers at the loudest settings (the limiter's job).
 for (const k of ["firefight_new", "firefight_old", "grenadefight_new", "grenadefight_old"]) RENDERS[k.replace(/_(new|old)$/, "_max_$1")] = { ...RENDERS[k], max: true, makeup: 1 };
+// The game's own level (no makeup) at the default sliders, and with the Gunfire slider at 150% on top of full sliders,
+// metered: the limiter's gain reduction.
+for (const k of ["firefight_new", "grenadefight_new", "firefight_old", "grenadefight_old"]) RENDERS[k.replace(/_(new|old)$/, "_game_$1")] = { ...RENDERS[k], makeup: 1, meter: true };
+for (const k of ["firefight_new", "grenadefight_new"]) RENDERS[k.replace(/_new$/, "_max150_new")] = { ...RENDERS[k], max: true, makeup: 1, gunVol: 2.25, meter: true };
+for (const k of ["firefight_max_new", "grenadefight_max_new", "pistol9_new", "rifle556_new", "amr50_new", "m2_auto_new", "lmg556_auto_new", "frag_new", "rocket_warhead_new", "vehicle_new"]) RENDERS[k].meter = true;
 const b64 = (i16) => { const u8 = new Uint8Array(i16.buffer); let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
 export async function render(name) {
   const R = RENDERS[name];
-  const out = await labRender(R.fn, R.secs, { limiter: !R.old, makeup: R.makeup ?? MAKEUP, max: !!R.max });
+  const out = await labRender(R.fn, R.secs, { limiter: !R.old, makeup: R.makeup ?? MAKEUP, max: !!R.max, gunVol: R.gunVol, meter: !!R.meter });
   const n = out.L.length, i16 = new Int16Array(n * 2), mono = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const l = out.L[i], r = out.R[i];
@@ -90,7 +95,7 @@ export async function render(name) {
     i16[2 * i] = Math.max(-32768, Math.min(32767, Math.round(l * 32767)));
     i16[2 * i + 1] = Math.max(-32768, Math.min(32767, Math.round(r * 32767)));
   }
-  return { name, sr: out.sr, data: b64(i16), stats: stats(mono, out.sr) };
+  return { name, sr: out.sr, data: b64(i16), stats: { ...stats(mono, out.sr), ...(out.reduction ? { reduction: out.reduction } : {}) } };
 }
 // CPU: the nodes one shot and one full-auto burst build (counted on a counting context around a real one).
 export async function nodeCount() {

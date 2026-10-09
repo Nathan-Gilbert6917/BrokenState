@@ -15,6 +15,7 @@ import { saveBlocker, saveToString, SAVE_VERSION, GAME_VERSION, SaveError } from
 import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, stateSizeDef } from "../sim/worldsize.js";
 import { cui, setConfirmEnd, setAutoRedeploy } from "./combat.js";
+import { barkMode, setBarkMode, BARK_MODES } from "./barks.js"; // Combat barks: speech bubbles in battle
 import { helpTab } from "./help.js";
 import { controlsTab } from "./controls.js"; // the Controls tab: every key, rebindable (ui/keymap.js)
 import { modeLabel } from "./hardcore.js";
@@ -176,6 +177,7 @@ function optionsTab(state, ui, api) {
       ${box("pauseOnBlur", o.pauseOnBlur, "Pause when the window loses focus", "Switching to another window or tab pauses the clock")}
       ${box("confirmEnd", !!cui.confirmEnd, "Battles: ask before ending a turn with actions left", "Space or End turn asks once while units still have actions (Enter always ends at once)")}
       ${box("autoRedeploy", !!cui.autoRedeploy, "Base battles: skip the redeploy after falling back", "When your people fall back from the walls to the yard and the buildings, keep the default posts and fight on at once instead of placing them again")}
+      <label${tip("Short speech bubbles over heads in battle (Reloading!, I'm hit!, Man down!). Important only: just someone of yours going down and the shout that they are (with a short chirp). Enemies are heard only while your people see them.")}>Combat barks <select data-action="set-barks">${BARK_MODES.map(([v, l]) => `<option value="${v}" ${barkMode() === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
     </div>
     ${soundOptionsHtml(o)}
     ${pacingOptionsHTML()}
@@ -393,6 +395,7 @@ export const SETTINGS_ACTIONS = {
 
 export const SETTINGS_CHANGE = {
   ...SOUND_CHANGE, // ui/audio.js: the volume sliders, the sound to hear
+  "set-barks": (state, ui, el) => setBarkMode(String(el.value)), // ui/barks.js (remembered in this browser)
   "set-name": (state, ui, el) => { if (ui.settings) ui.settings.name = String(el.value ?? "").slice(0, 60); },
   "set-mapanim": (state, ui, el, api) => {
     api.options.mapAnim = el.value !== "off";

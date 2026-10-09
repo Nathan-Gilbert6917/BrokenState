@@ -7,7 +7,7 @@
 // Panel structure (rows of the Sound section, each a .setrow): "Gun sounds" (gun, mode, suppressed, subsonic, ▶ Fire,
 // ▶ Old then new), "Where" (distance, place, side), "Handling" (sound, ▶ Play, brass on/off), "Blasts and grenades"
 // (kind or sequence, ▶ Play). A zombie list (ui/zombiesfx.js) can sit beside it as another .setrow block.
-import { LAB_GUNS, labPlan, place, playGun, playHand, ROOMS, BRASS, gunVoice, installBus, roundGap } from "./gunsfx.js";
+import { LAB_GUNS, labPlan, place, playGun, playHand, ROOMS, BRASS, gunVoice, installBus, roundGap, GUNVOL, setGunVolume } from "./gunsfx.js";
 import { LAB_BLASTS, playBlast, flight, THROW_FLIGHT, FUSE } from "./blastsfx.js";
 import { weaponSound } from "./soundcues.js";
 import { WEAPONS } from "../sim/combat.js";
@@ -46,9 +46,9 @@ export function labHand(c, t, o = LAB) {
 function throwSeq(c, t, kind, o) {
   const near = labPlace({ ...o, dist: "near" }), sp = labPlace(o);
   const pre = { frag: "pin", flash: "pin", smoke: "pin", pipebomb: "fuse", molotov: "light", flare: "strike" }[kind];
-  if (pre) playHand(c, t, { kind: "throw", h: pre, gain: 1.4 }, near);
+  if (pre) playHand(c, t, { kind: "throw", h: pre, gain: 1.4, group: "weapons.blasts" }, near);
   const land = t + THROW_FLIGHT + (pre === "pin" ? 0.25 : 0), fuse = FUSE[kind] || 0;
-  if (["frag", "flash", "smoke", "pipebomb"].includes(kind)) playHand(c, land, { kind: "clatter", gain: 1.6 }, sp);
+  if (["frag", "flash", "smoke", "pipebomb"].includes(kind)) playHand(c, land, { kind: "clatter", gain: 1.6, group: "weapons.blasts" }, sp);
   return land - t + playBlast(c, land + fuse, { kind }, sp);
 }
 export function labBlast(c, t, o = LAB) {
@@ -70,7 +70,7 @@ export function grenadeFight(c, t, o = LAB) {
   const shots = [[0, "ar", "burst", 4, -0.4], [0.5, "ak", "auto", 14, 0.5], [1.2, "carbine", "single", 3, -0.2], [2.4, "lmg", "auto", 18, 0.7], [3.1, "pistol", "single", 2, -0.6], [4.2, "ak", "burst", 12, 0.4], [5.0, "ar", "auto", 5, -0.3]];
   for (const [at, k, m, d, pan] of shots) playGun(c, t + at, labPlan(k, m), P(d, pan, d < 15));
   throwSeq(c, t + 0.7, "frag", { ...o, dist: "mid", pan: "right" });
-  playHand(c, t + 1.8, { kind: "throw", h: "pin", gain: 1.4 }, P(2, -0.2));
+  playHand(c, t + 1.8, { kind: "throw", h: "pin", gain: 1.4, group: "weapons.blasts" }, P(2, -0.2));
   playBlast(c, t + 2.6, { kind: "frag" }, P(3, -0.5)); // one landing close: the ducking
   playGun(c, t + 3.3, labPlan("m79"), P(14, 0.6));
   playBlast(c, t + 3.3 + flight("gl", 10), { kind: "gl40" }, P(6, 0.1));
@@ -143,15 +143,30 @@ export function makeMasterComp(c) {
 export async function labRender(fn, secs, o = {}) {
   const OAC = typeof window !== "undefined" && (window.OfflineAudioContext || window.webkitOfflineAudioContext);
   if (!OAC) return null;
-  const sr = o.sr || 48000, c = new OAC(2, Math.ceil(sr * secs), sr);
+  // A compressor starts with its gain reduction wound right down (Chrome: about 20 dB, released over a second), which a
+  // running game never hears: PRE s of silence first let it settle, then they are cut off the result.
+  const PRE = o.pre ?? 1.5;
+  const sr = o.sr || 48000, c = new OAC(2, Math.ceil(sr * (secs + PRE)), sr);
   const lv = o.max ? MAX_LEVELS : GAME_LEVELS;
   const sfx = c.createGain(); sfx.gain.value = lv.sfx;
   const master = c.createGain(); master.gain.value = lv.master;
   const comp = makeMasterComp(c), mk = c.createGain(); mk.gain.value = o.makeup ?? 4;
-  if (o.limiter !== false) { const l = makeLimiter(c); sfx.connect(l); l.connect(master); } else sfx.connect(master);
+  let lim = null;
+  if (o.limiter !== false) { lim = makeLimiter(c); sfx.connect(lim); lim.connect(master); } else sfx.connect(master);
   master.connect(comp); comp.connect(mk); mk.connect(c.destination);
   installBus(c, sfx);
-  fn(c, 0.05, sfx);
+  const keep = GUNVOL.v;
+  if (o.gunVol != null) setGunVolume(o.gunVol); // the Gunfire slider (squared: 150% is 2.25)
+  try { fn(c, PRE + 0.05, sfx); } finally { setGunVolume(keep); }
+  // o.meter: the limiter's and the master compressor's gain reduction (dB), sampled every 10 ms while it renders
+  const meter = { lim: [], comp: [] };
+  if (o.meter && c.suspend) {
+    for (let t = PRE + 0.01; t < PRE + secs - 0.01; t += 0.01) {
+      c.suspend(t).then(() => { if (lim) meter.lim.push(-lim.reduction); meter.comp.push(-comp.reduction); c.resume(); });
+    }
+  }
   const buf = await c.startRendering();
-  return { L: buf.getChannelData(0), R: buf.getChannelData(1), sr };
+  const sum = (a) => { const act = a.filter((x) => x > 0.1); return { max: Math.round(Math.max(0, ...a) * 10) / 10, mean: a.length ? Math.round((a.reduce((s, x) => s + x, 0) / a.length) * 10) / 10 : 0, meanActive: act.length ? Math.round((act.reduce((s, x) => s + x, 0) / act.length) * 10) / 10 : 0, active: a.length ? Math.round((act.length / a.length) * 100) : 0 }; };
+  const cut = Math.round(PRE * sr);
+  return { L: buf.getChannelData(0).slice(cut), R: buf.getChannelData(1).slice(cut), sr, reduction: o.meter ? { limiter: sum(meter.lim), master: sum(meter.comp) } : null };
 }

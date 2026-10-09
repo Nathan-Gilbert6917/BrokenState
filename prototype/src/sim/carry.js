@@ -76,7 +76,7 @@ import { SUPPLIES, GEAR } from "./data.js";
 import { packOf, ensureInv, itemAt, removeAt, parseLoc, placeOfLoc, itemLoad, isCarryable } from "./inventory.js";
 import { partyMembers, cargoRoom, partyTile, addGearToCargo, poolLoad } from "./parties.js";
 import { meatIn, takeMeat, addMeat, fieldSpoilRate } from "./hunting.js";
-import { partyVehicle, isCar, isBike, VEHICLE_TYPES } from "./vehicles.js";
+import { partyVehicle, partyVehicles, isCar, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { combatPower, survivorById, day, newId, log, baseById } from "./world.js";
 import { markDeathSite } from "./markers.js";
 import { RATE } from "./storage.js";
@@ -188,9 +188,13 @@ function trimTo(rec, place, slots) {
     }
   }
 }
+// A team of several vehicles (vehicles.js fleets, up to MAX_VEHICLES; walkers.js): any car or truck among them takes
+// it all; with bikes only, every bike's rack.
 const carOf = (state, p) => {
-  const v = partyVehicle(state, p);
-  return { car: isCar(v), rack: isBike(v) ? (v.count || 1) * VEHICLE_TYPES.bike.rack : 0 };
+  const vs = partyVehicles(state, p);
+  if (!vs.length) { const v = partyVehicle(state, p); if (v) vs.push(v); }
+  const car = vs.some((v) => isCar(v));
+  return { car, rack: car ? 0 : vs.filter((v) => isBike(v)).reduce((a, v) => a + (v.count || 1) * VEHICLE_TYPES.bike.rack, 0) };
 };
 
 // ---------- settling ----------
@@ -611,7 +615,7 @@ export function stageAtStart(state, b) {
 // beaten). Everyone starts with free hands. Returns what was set down: { car: {key: qty}, ground: {key: qty}, bags }.
 export function stageLoads(state, b, p) {
   const h = settleHold(state, p);
-  const v = partyVehicle(state, p);
+  const v = partyVehicles(state, p).find((x) => isCar(x)) || partyVehicle(state, p); // a fleet: the bags go in a car or truck of it
   const out = { car: {}, ground: {}, bags: [], carBags: [] };
   for (const u of b.units) {
     if (u.side !== "player" || u.sid == null) continue;

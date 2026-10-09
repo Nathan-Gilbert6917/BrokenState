@@ -242,7 +242,7 @@ console.log("Entry points");
   const fs = await import("node:fs");
   const uiSrc = fs.readFileSync(new URL("../src/ui/ui.js", import.meta.url), "utf8");
   const mainSrc = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  check(/if \(ui\.gunb\) return \["gunb", \(\) => gunBuilderModal\(state, ui\)\];\s*\/\/[^\n]*\n(\s*if \(ui\.inv && ui\.inv\.team != null\)[^\n]*\n)?\s*if \(ui\.inv\) return/.test(uiSrc), "ui.js pickModal opens it just above the inventory (and the team inventory: ui/teaminv.js)");
+  check(/if \(ui\.gunb\) return \["gunb", \(\) => gunBuilderModal\(state, ui\)\];\s*\/\/[^\n]*\n(\s*if \(ui\.inv && ui\.inv\.(?:team != null|form)\)[^\n]*\n)*\s*if \(ui\.inv\) return/.test(uiSrc), "ui.js pickModal opens it just above the inventory (and the team inventory: ui/teaminv.js; the Form a team window: ui/teamform.js)");
   check(uiSrc.indexOf('if (ui.gunb) return ["gunb"') > uiSrc.indexOf("if (state.combat) return state.gameOver"), "after the battle's line: never over a battle");
   check(/Object\.entries\(GB_ACTIONS\)/.test(mainSrc) && /Object\.entries\(GB_CHANGE\)/.test(mainSrc) && /data-gbhover/.test(mainSrc) && /if \(ui\.gunb\) \{/.test(mainSrc) && /!!ui\.gunb/.test(mainSrc), "main.js: its actions, the Ammo list, the hover, Esc and the paused clock");
   check(/gb-open/.test(uiSrc) && /<b>Gun builder:<\/b>/.test(GB.GUNBUILDER_HELP), "the base's Armory tab has the ⚙; the Help topic");

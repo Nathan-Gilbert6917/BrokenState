@@ -121,6 +121,18 @@ body.fold-left #gut-left .gut-shut, body.fold-right #gut-right .gut-shut, body.f
 #ctxmenu .head { padding: 0.3rem 0.5rem; color: var(--accent); font-weight: 600; }
 #ctxmenu button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 0.35rem 0.5rem; }
 #ctxmenu button:hover:not(:disabled) { background: var(--panel-2); }
+/* A selected team's right-click menu (ui/teamctx.js): the team, its actions for the tile with their hours, then the rest folded. */
+#ctxmenu { overflow-y: auto; overscroll-behavior: contain; z-index: 9; } /* over the alerts, the guide and the banner */
+#ctxmenu .tchead { padding-bottom: 0.3rem; margin-bottom: 0.15rem; border-bottom: 1px solid var(--line); max-width: 26rem; }
+#ctxmenu .tchead .head { padding-bottom: 0; }
+#ctxmenu .tchead > .small { padding: 0 0.5rem; }
+#ctxmenu .tcgroup { padding: 0.3rem 0.5rem 0; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; }
+#ctxmenu button.tcitem { display: flex; justify-content: space-between; align-items: baseline; gap: 1.2rem; min-width: 19rem; padding: 0.22rem 0.5rem; }
+#ctxmenu .tch { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
+#ctxmenu button.tcmode { display: inline-block; width: auto; margin: 0.35rem 0.5rem 0; padding: 0.15rem 0.5rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.8rem; }
+#ctxmenu button.tcmode.active { border-color: var(--accent); color: var(--accent); }
+#ctxmenu div.tcmode { padding: 0.25rem 0.5rem 0; }
+#ctxmenu button.tcfold { margin-top: 0.2rem; border-top: 1px solid var(--line); border-radius: 0; color: var(--muted); font-size: 0.85rem; }
 #tooltip { position: absolute; pointer-events: none; background: rgba(20,22,26,0.95); border: 1px solid var(--line); border-radius: 6px; padding: 0.35rem 0.55rem; font-size: 0.85rem; max-width: 18rem; z-index: 4; }
 
 #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 10; }
@@ -608,6 +620,21 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
 .settings .btnlike.disabled { opacity: 0.4; pointer-events: none; }
 .settings .setkeys { border-collapse: collapse; font-size: 0.85rem; }
 .settings .setkeys td { padding: 0.15rem 0.6rem 0.15rem 0; vertical-align: top; }
+/* Settings → Sound: the mixer (ui/audio.js soundOptionsHtml, groups in ui/soundgroups.js). One grid: name, slider,
+   value, On, ▶; the parts of a group indented under it when the Advanced mixer is open. Sized in rem: follows UI size. */
+.settings .sndmix { display: grid; grid-template-columns: minmax(9rem, max-content) minmax(8rem, 20rem) 3.2rem max-content max-content; gap: 0.25rem 0.7rem; align-items: center; margin: 0.35rem 0 0.6rem; max-width: 46rem; }
+.settings .sndrow { display: contents; }
+.settings .sndname { white-space: nowrap; }
+.settings .sndbus .sndname { font-weight: 600; }
+.settings .sndtop .sndname { font-weight: 600; color: var(--accent); }
+.settings .sndmix.open .sndtop .sndname { padding-top: 0.45rem; }
+.settings .sndchild .sndname { padding-left: 1.2rem; color: var(--muted); font-size: 0.92em; }
+.settings .sndoff .sndname, .settings .sndoff .sndval { opacity: 0.5; text-decoration: line-through; }
+.settings .sndrange { width: 100%; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.settings .sndrange:disabled { opacity: 0.35; cursor: default; }
+.settings .sndval { font-variant-numeric: tabular-nums; text-align: right; min-width: 3.2rem; }
+.settings .sndon { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.88em; white-space: nowrap; cursor: pointer; }
+.settings .sndprev { min-width: 1.9rem; }
 #cbpanel .cbmenu { float: right; margin: 0 0 0.3rem 0.4rem; }
 #cbpanel .cbview { display: flex; flex-wrap: wrap; gap: 0.2rem; margin: 0 0 0.4rem; align-items: center; }
 #cbpanel .cbview button { min-width: 1.9rem; }

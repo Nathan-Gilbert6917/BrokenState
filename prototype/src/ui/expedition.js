@@ -5,7 +5,7 @@
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
 import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom } from "../sim/parties.js";
-import { partyVehicle, tank, isBike, vehicleLabel, upgradeText, upgradeEffects } from "../sim/vehicles.js";
+import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
 import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, describeOrder, CAMP_HOURS, REPAIR_HOURS, SURVEY_HOURS, besideWater, FETCH_WATER_HOURS } from "../sim/orders.js";
@@ -33,6 +33,7 @@ import { watchlistPin } from "./watchlist.js"; // 📌 pin the team to the Watch
 import { totalRounds, sumRecs } from "../sim/rounds.js"; // rounds by calibre
 import { roundsLine } from "../sim/ammo.js";
 import { teamInvBar } from "./teaminv.js"; // 🎒 Team inventory; Drop off / Load at a base
+import { editTeamButton } from "./teamform.js"; // Edit team… while it waits on one of your bases
 import { teamCarryCard } from "./carry.js"; // who carries what (pockets, packs, arms, vehicle), the ground here
 import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
 
@@ -128,7 +129,7 @@ export function renderExpedition(state, ui, p) {
   const ord = (type, extra, label, hint, disabled) => btn(`data-action="xp-order" data-id="${p.id}" data-type="${type}"${extra}`, label, hint, disabled);
 
   const head = `<div class="spread"><h2 style="margin:0">Team: ${members.map(first).join(", ")}</h2><span class="row">${watchlistPin(state, "team", p.id, `team (${members.map((m) => m.name.split(" ")[0]).join(", ")})`)}<button class="mini" data-action="xp-close"${tip("Back to the tile view (Esc)")}>✕</button></span></div>
-    <div class="small muted">${esc(MISSIONS[p.mission]?.name || "Team")} · ${v ? esc(v.name) : "on foot"} · ${STANCES[p.stance]?.name || ""} · home ${esc(home.name)}</div>${teamInvBar(state, p, live)}`;
+    <div class="small muted">${esc(MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team")} · ${v ? esc(vehicleLabel(partyFleet(state, p))) : "on foot"}${p.walkers > 0 && p.vehicle ? ` <span class="warn"${tip("Not enough seats after a vehicle was lost: they walk, and the team goes at walking pace (the cargo stays in the vehicles) until a seat turns up")}>(${p.walkers} walking: foot pace)</span>` : ""} · ${STANCES[p.stance]?.name || ""} · home ${esc(home.name)}</div>${teamInvBar(state, p, live)}${live ? editTeamButton(state, p) : ""}`;
 
   const status = `<div class="card small" style="margin-top:0.5rem">
       <div class="spread"><b>Now</b>${live ? `<button class="mini" data-action="center" data-tile="${tile}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>
@@ -384,6 +385,12 @@ function suppliesBlock(state, p) {
 }
 
 function vehicleBlock(state, p, v) {
+  // Several vehicles (sim/vehicles.js fleets): one card each, the lead (driven on a battle map) first.
+  const vs = partyVehicles(state, p);
+  if (vs.length > 1) {
+    const f = partyFleet(state, p);
+    return `<h3${tip(`Up to ${MAX_VEHICLES} vehicles: seats, payload and fuel add up, the slowest sets the pace. Every vehicle wears on the road; a breakdown hits one of them. The first is the one driven on a battle map.`)}>Vehicles (${vs.length}) · ${seatsOf(f)} seats</h3>${vs.map((x) => vehicleBlock(state, { ...p, vehicleIds: [x.id], vehicleId: x.id }, x).replace(/^<h3>Vehicle<\/h3>/, "")).join("")}`;
+  }
   if (!v) return `<h3>Vehicle</h3><div class="card small muted">On foot.</div>`;
   if (isBike(v)) return `<h3>Vehicle</h3><div class="card small">
     <b>${esc(vehicleLabel(v))}</b>
