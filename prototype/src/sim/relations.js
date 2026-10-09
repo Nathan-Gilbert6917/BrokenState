@@ -24,6 +24,7 @@
 // partner and rivals as above, and high spirits fade (-10% of the mood above 50 a day).
 // Breaks: below 12 mood, 10% + 2% per point below 12 a day (cooldown 5 days): sits out a day, binge eats, wanders
 // off, or picks a fight; mood +8 afterwards; a card for a fight or a second break within 10 days.
+import { TRAIT_FX, hasTrait, breakMult } from "./traits.js"; // Hothead, Glutton, Unlucky, Iron Will
 import { log, addCard, day, skill, atBase, residents, alive, baseById, hurt, combatPower } from "./world.js";
 import { count } from "./buildings.js";
 import { GEAR } from "./data.js";
@@ -137,8 +138,9 @@ export function compat(state, a, b) {
   const has = (t) => (a.traits.includes(t) ? 1 : 0) + (b.traits.includes(t) ? 1 : 0);
   let tr = 0;
   if ((a.traits.includes("brave") && b.traits.includes("coward")) || (a.traits.includes("coward") && b.traits.includes("brave"))) tr -= 30;
-  tr -= 10 * has("loud") + 10 * has("greedy");
-  tr += 10 * has("medic") + 5 * has("lucky");
+  if ((a.traits.includes("ironwill") && b.traits.includes("hothead")) || (a.traits.includes("hothead") && b.traits.includes("ironwill"))) tr -= 10; // the calm one and the short fuse
+  tr -= 10 * has("loud") + 10 * has("greedy") + TRAIT_FX.HOTHEAD_OPINION * has("hothead") + 5 * has("glutton"); // a Hothead flares up, a Glutton takes more than their share
+  tr += 10 * has("medic") + 5 * has("lucky") - 5 * has("unlucky");
   if (tr) parts.push(["Traits", tr]);
   const sp = 1.5 * (skill(a, "speech") + skill(b, "speech") - 10);
   if (Math.abs(sp) >= 1) parts.push(["Speech", sp]);
@@ -426,11 +428,11 @@ export function noteMeals(state, base) {
 function maybeBreak(state, base, s, rng) {
   const d = day(state);
   if (!s.alive || s.inBed || s.mood >= BREAK.at || (s.breakCd || 0) > d) return;
-  if (!rng.chance(BREAK.base + BREAK.per * (BREAK.at - s.mood))) return;
+  if (!rng.chance((BREAK.base + BREAK.per * (BREAK.at - s.mood)) * breakMult(s))) return; // Iron Will (traits.js): half as likely
   const others = atBase(state, base.id).filter((o) => o !== s && o.health > 20);
   const kinds = [["sit", 3], ["wander", 2]];
   if ((base.stock.food || 0) >= BREAK.binge * 2) kinds.push(["binge", 2]);
-  if (others.length) kinds.push(["fight", 2]);
+  if (others.length) kinds.push(["fight", 2 * (hasTrait(s, "hothead") ? TRAIT_FX.HOTHEAD_FIGHT : 1)]); // a Hothead lashes out (traits.js)
   const kind = rng.weighted(kinds, (k) => k[1])[0];
   const name = first(s);
   let text = "", card = false;

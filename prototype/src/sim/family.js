@@ -32,7 +32,8 @@
 // world's dice are untouched. birthsOn(state, day) / state.family.births: counts for the history (stats).
 import { log, day, hub, baseById, survivorById, residents, atBase, skill, makeSurvivor, rollTraits, newId } from "./world.js";
 import { getRel, makePartners, addMood, addMoment, relationsOf } from "./relations.js";
-import { FIRST_NAMES, SKILLS } from "./data.js";
+import { FIRST_NAMES, SKILLS, clashIn } from "./data.js";
+import { traitDice } from "./traits.js"; // a child's own trait: the newer traits' dice
 import { SKIN_TONES, HAIR_COLORS, LOOK_OPTIONS, randomAppearance } from "./appearance.js";
 import { Rng } from "./rng.js";
 import { count, baseBeds } from "./buildings.js";
@@ -268,15 +269,18 @@ function childName(state, a, b) {
   (state.namesGiven || (state.namesGiven = [])).push(name);
   return name;
 }
-// Traits from the parents: each of theirs 40%, at most two, never Brave with Coward; none taken: one of their own.
+// Traits from the parents: each of theirs 40%, at most two, never two that clash (data.js TRAIT_CLASH); none taken:
+// one of their own (the family's dice draw it as ever; the newer traits come in with dice of their own, keyed by the
+// family's dice: world.js rollTraits).
 function childTraits(rng, a, b) {
   const out = [];
   for (const t of [...(a ? a.traits : []), ...(b ? b.traits : [])]) {
     if (out.length >= 2 || out.includes(t) || !rng.chance(0.4)) continue;
-    if ((t === "brave" && out.includes("coward")) || (t === "coward" && out.includes("brave"))) continue;
+    if (clashIn(out, t)) continue;
     out.push(t);
   }
-  return out.length ? out : rollTraits(rng).slice(0, 1);
+  if (out.length) return out;
+  return rollTraits(rng, traitDice(rng.state >>> 0, 0x6b1d)).slice(0, 1); // keyed by where the family's dice stand (read, not drawn)
 }
 // A look between the parents': skin between their tones, one parent's hair color, a child's build and clothes.
 export function mixAppearance(rng, a, b) {

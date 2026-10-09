@@ -44,6 +44,7 @@
 // drink (wine, vodka, whiskey) only while the team rests (a hangover follows); valuables (candy, tobacco, wine, whiskey)
 // only below NEEDS.valuableMood (20). Kept comforts (cards, a harmonica, a guitar, photos) are never used up
 // (comforts.js comfortLines). The player can hand one out by hand (useTreat: the survivor screen and the team panel).
+import { appetite } from "./traits.js"; // Glutton
 import { log, hurt, hourOfDay, residents, baseById, hub } from "./world.js";
 import { partyMembers, partyTile, teamName, onTheMove } from "./parties.js";
 import { sweeping } from "./survey.js";
@@ -206,7 +207,7 @@ export function teamNeedsHour(state, p, members) {
   for (const s of members) {
     ensureNeeds(s);
     const r = personRation(p.burden, s, p.vehicle, moving);
-    s.hunger = clamp(s.hunger - (NEEDS.food / 24) * r * cold * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1));
+    s.hunger = clamp(s.hunger - (NEEDS.food / 24) * r * cold * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1) * appetite(s)); // a Glutton (traits.js)
     s.thirst = clamp(s.thirst - (NEEDS.water / 24) * r * tf);
     // health.js frailty: hours marched today and their load (the ration multiplier), not riding in a car; reset nightly.
     if (moving && !(p.vehicle && p.vehicle.type !== "bike")) { s.marchHours = (s.marchHours || 0) + 1; s.marchLoad = (s.marchLoad || 0) + r; }

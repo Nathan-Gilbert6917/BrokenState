@@ -1159,3 +1159,12 @@ body.ov-dragging #mapwrap > * { transition: none !important; animation: none !im
 .namebox { max-width: 30rem; }
 .namebox .nameinput { width: 100%; font-size: 1.15rem; padding: 0.45rem 0.6rem; margin-top: 0.6rem; border-color: var(--accent); }
 .namebox .namechips { flex-wrap: wrap; gap: 0.3rem; }
+
+/* ui/traitpick.js: the trait picker (Customize on the new-run screen, a custom background): good and bad traits in two
+   compact rows; a clashing one is off with why in its hover text */
+.tp { display: flex; flex-direction: column; gap: 0.15rem; }
+.tp-row { display: flex; flex-wrap: wrap; gap: 0.15rem; align-items: center; }
+.tp-label { width: 2.2rem; flex: none; }
+button.mini.tp-chip { padding: 0.05rem 0.35rem; font-size: 0.76rem; }
+button.mini.tp-chip.tp-bad:not(.active) { color: #e5a39a; }
+button.mini.tp-chip:disabled { opacity: 0.4; }

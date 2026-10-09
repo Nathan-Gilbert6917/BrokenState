@@ -35,7 +35,8 @@
 //   hub later is the normal game's exile (conquest.js): a new staging camp (a little cheaper), later outposts the
 //   usual 15 scrap.
 // Everything here runs only in a hardcore world (hardcore.js isHardcore).
-import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES } from "./data.js";
+import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES, clashIn } from "./data.js";
+import { bornTraits } from "./traits.js"; // what the world's dice rolled at birth, before the newer traits came in
 import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
 import { newItem, packOf, POCKETS, START_DUR, startKit } from "./inventory.js";
@@ -95,7 +96,7 @@ export const HC_START = {
     MAX_TRAITS: 2,
   },
   // Who they were. w: the draw's weight (no two of the three alike). skills: + a roll of [lo, hi] each. traits: fitting
-  // ones (weights), one pushed at TRAIT_ODDS when a slot allows (brave never beside coward). pack / packs / weapons /
+  // ones (weights), one pushed at TRAIT_ODDS when a slot allows (never beside one it clashes with: data.js TRAIT_CLASH). pack / packs / weapons /
   // stuff: over the common PACK / PACKS / WEAPONS / PACK_STUFF (stuff is merged in on top, so the common things still
   // turn up). armor: worn from the start. meds: carried on top of a bag's bottle. rounds: × the common ROUNDS.
   // food (2026-10-07): what they grabbed to eat, over the common FOOD ({ pack, pockets } rolls; max: their share of
@@ -303,8 +304,11 @@ export function pickArchetypes(state, n, picks) {
   return kinds;
 }
 // What a background makes of someone: the skill bumps, a fitting trait when a slot allows, the key on them. A custom
-// one (custombg.js) adds exactly its bumps and gives all its traits (they go first, a rolled trait that clashes,
-// Brave with Coward, goes; three in all), and draws no dice.
+// one (custombg.js) adds exactly its bumps and gives all its traits (they go first, a rolled trait that clashes with
+// one of them (data.js TRAIT_CLASH) goes; three in all), and draws no dice.
+// A preset's fitting trait: whether it is drawn (and which, by its weight) goes by what the world's dice rolled at birth
+// (traits.js bornTraits), so the newer traits, which come in with dice of their own, move none of the world's dice;
+// a pick they already have, or one that clashes with theirs, is drawn and not given.
 export function applyArchetype(state, s, key) {
   const rng = state.rng, A = archetypeOf(state, key);
   if (!A) return;
@@ -312,13 +316,16 @@ export function applyArchetype(state, s, key) {
   if (A.custom) {
     for (const [k, v] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + v);
     const mine = [...A.traits];
-    const clash = (t) => (t === "brave" && mine.includes("coward")) || (t === "coward" && mine.includes("brave"));
-    s.traits = [...mine, ...s.traits.filter((t) => !mine.includes(t) && !clash(t))].slice(0, Math.max(3, mine.length));
+    s.traits = [...mine, ...s.traits.filter((t) => !mine.includes(t) && !clashIn(mine, t))].slice(0, Math.max(3, mine.length));
     return;
   }
   for (const [k, [lo, hi]] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + rng.int(lo, hi));
-  const want = Object.keys(A.traits || {}).filter((t) => TRAITS[t] && !s.traits.includes(t) && !(t === "brave" && s.traits.includes("coward")) && !(t === "coward" && s.traits.includes("brave")));
-  if (want.length && s.traits.length < 2 && rng.chance(HC_START.TRAIT_ODDS)) s.traits.push(rng.weighted(want, (t) => A.traits[t]));
+  const born = bornTraits(s);
+  const want = Object.keys(A.traits || {}).filter((t) => TRAITS[t] && !born.includes(t) && !clashIn(born, t));
+  if (want.length && s.traits.length < 2 && rng.chance(HC_START.TRAIT_ODDS)) {
+    const t = rng.weighted(want, (x) => A.traits[x]);
+    if (!s.traits.includes(t) && !clashIn(s.traits, t)) s.traits.push(t);
+  }
 }
 
 // The most food the team's own grabs come to (a prepper's bag on top): TEAM_MAX a head, a background's food.max in

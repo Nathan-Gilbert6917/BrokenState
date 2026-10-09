@@ -510,21 +510,53 @@ export const SKILL_NAMES = {
   crafting: "Crafting", // crafting.js: the quality, speed and XP of everything made by hand (each recipe's own skill is only its minimum)
 };
 
+// Survivor traits. bad: a drawback (the new-run screen's trait picker shows the good ones and the bad ones apart).
+// The numbers of the newer ones (Quick Study on) are in traits.js TRAIT_FX, where their rules are; desc says them.
 export const TRAITS = {
   brave:     { name: "Brave",        desc: "Fights harder: +1 fighting strength, +5% to hit in battle" },
-  coward:    { name: "Coward",       desc: "Fights worse: -1 fighting strength, -5% to hit in battle; may lose their nerve on a trip" },
+  coward:    { name: "Coward",       bad: true, desc: "Fights worse: -1 fighting strength, -5% to hit in battle; may lose their nerve on a trip" },
   nightowl:  { name: "Night Owl",    desc: "At night their team is 15% more likely to spot others first" },
   medic:     { name: "Former Medic", desc: "+4 Medicine" },
   greedy:    { name: "Greedy",       desc: "Finds 15% more when scavenging around a base" },
   tough:     { name: "Tough",        desc: "Takes 25% less damage from wounds (not from hunger, thirst or infection)" },
   keeneye:   { name: "Keen Eye",     desc: "+1 sight radius for their team, and it notices hidden finds more often" },
-  loud:      { name: "Loud",         desc: "-3 Stealth" },
+  loud:      { name: "Loud",         bad: true, desc: "-3 Stealth" },
   lucky:     { name: "Lucky",        desc: "+1 to every skill" },
-  badback:   { name: "Bad Back",     desc: "Max load 28 kg instead of 40, and loads feel 20% heavier (a worse load band)" },
+  badback:   { name: "Bad Back",     bad: true, desc: "Max load 28 kg instead of 40, and loads feel 20% heavier (a worse load band)" },
+  // 2026-10-08 (user request: "more tags like Lucky, Tough"): rolled at birth with dice of their own (traits.js).
+  quicklearner: { name: "Quick Study",   desc: "Learns 25% faster: +25% XP from everything (use, study, fights)" },
+  ironstomach:  { name: "Iron Stomach",  desc: "Half the chance of an upset stomach from un-purified water or uncooked food, and shrugs off the worm's eggs 1 time in 3 (water, raw food, camping, searching)" },
+  quickheal:    { name: "Quick Healer",  desc: "Wounds heal 30% faster while resting (at a base, in a hospital bed, in camp, as a prisoner)" },
+  strongback:   { name: "Strong Back",   desc: "Max load 48 kg instead of 40, and loads feel 10% lighter (a better load band)" },
+  fleet:        { name: "Fleet-Footed",  desc: "+1 tile a move in battle, and +10% to break off and get away from a fight (a team on foot all Fleet-Footed: +1 to Run for it on the road)" },
+  farmraised:   { name: "Farm-Raised",   desc: "+3 Farming" },
+  persuasive:   { name: "Persuasive",    desc: "+3 Speech (better prices, talks, recruiting)" },
+  ironwill:     { name: "Iron Will",     desc: "Half as likely to break down (small breaks and mental breaks) or walk out when mood is low" },
+  unlucky:      { name: "Unlucky",       bad: true, desc: "-1 to every skill" },
+  frail:        { name: "Frail",         bad: true, desc: "Takes 25% more damage from wounds (not from hunger, thirst or infection)" },
+  clumsy:       { name: "Clumsy",        bad: true, desc: "-10% to hit in melee, and 50% more cuts and sprains at work and when searching" },
+  glutton:      { name: "Glutton",       bad: true, desc: "Eats 25% more: a quarter ration more a day at a base, and hunger falls 25% faster on the road" },
+  sickly:       { name: "Sickly",        bad: true, desc: "Falls ill 50% more often, and illnesses clear 1 point a day slower" },
+  hothead:      { name: "Hothead",       bad: true, desc: "Gets along worse with everyone (-10 opinion), and when they break they lash out: fights and attacks are far likelier" },
 };
+// The traits drawn with the world's dice at birth (world.js rollTraits), in this order: the ten there were before
+// 2026-10-08. The draw over them is exactly the old draw, so a seed keeps every roll it made; the newer traits come in
+// afterwards with dice of their own (traits.js swapNewTraits). Never add to this list.
+export const BIRTH_TRAITS = ["brave", "coward", "nightowl", "medic", "greedy", "tough", "keeneye", "loud", "lucky", "badback"];
+// The traits that come in with their own dice: every enumerable trait not in BIRTH_TRAITS.
+export const NEW_TRAITS = Object.keys(TRAITS).filter((t) => !BIRTH_TRAITS.includes(t));
+// Traits nobody has together (opposites). The one table: the birth roll, a child's traits, the new-run screen's
+// picker, custom backgrounds, the backgrounds of a start.
+export const TRAIT_CLASH = [["brave", "coward"], ["lucky", "unlucky"], ["tough", "frail"], ["strongback", "badback"], ["quickheal", "sickly"], ["ironwill", "hothead"]];
+// Do traits a and b clash?
+/** @param {string} a @param {string} b @returns {boolean} */
+export const traitsClash = (a, b) => TRAIT_CLASH.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
+// The trait in `list` that clashes with t (null: none).
+/** @param {readonly string[]} list @param {string} t @returns {string | null} */
+export const clashIn = (list, t) => (list || []).find((x) => traitsClash(x, t)) || null;
 // A background trait, given only by the hardcore start (hardcore-start.js: the one of the three who fled with a packed
-// duffle bag) and never rolled at birth: it is not enumerable, so world.js makeSurvivor's Object.keys(TRAITS) draw
-// does not see it (and no seed's rolls move), while TRAITS.prepper still resolves for the roster, the tooltips and
+// duffle bag) and never rolled at birth: it is not enumerable, so it is in neither BIRTH_TRAITS nor NEW_TRAITS, nor
+// in the new-run screen's picker or a custom background's (custombg.js customTraitKeys), while TRAITS.prepper still resolves for the roster, the tooltips and
 // the crew filter. It changes nothing in play: the kit it stands for is on the team's first day.
 Object.defineProperty(TRAITS, "prepper", { value: { name: "Prepper", desc: "Saw it coming: fled Calder with a duffle bag packed for five days (hardcore start). The kit is the trait." }, enumerable: false, writable: true, configurable: true });
 
