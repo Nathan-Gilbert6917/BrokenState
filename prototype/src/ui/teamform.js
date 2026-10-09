@@ -1,6 +1,6 @@
-// The Form a team window (sim/teamform.js): at one of your bases, pick people, a vehicle, their gear and the team's
+// The Form a team window (sim/teamform.js): at one of your bases, pick people, up to four vehicles, their gear and the team's
 // supplies and cargo, then Form team: they stand on the base's tile as a team waiting for orders. The same window edits
-// a team of yours that waits on one of your bases' tiles (add or send back people, swap the vehicle, gear, supplies),
+// a team of yours that waits on one of your bases' tiles (add or send back people, add or leave vehicles, gear, supplies),
 // every change at once.
 //
 // The window lives in ui.inv (ui.inv.form: its state) so the inventory's clicks, drags, selection bar, Esc and the
@@ -95,14 +95,14 @@ function listed(state, F) {
 export function formTeamButton(state, base, cls = "mini") {
   if (!base) return "";
   const n = atBase(state, base.id).length;
-  return n ? `<button class="${cls}" data-action="tf-open" data-base="${base.id}"${tip(`Pick people at ${base.name}, a vehicle, what each of them wears and carries from its armory, and the team's supplies and cargo from its stores. They then stand outside the base as a team, waiting for your orders (move, scavenge, any order; Enter base brings them back in).`)}>Form a team…</button>` : "";
+  return n ? `<button class="${cls}" data-action="tf-open" data-base="${base.id}"${tip(`Pick people at ${base.name}, up to four vehicles, what each of them wears and carries from its armory, and the team's supplies and cargo from its stores. They then stand outside the base as a team, waiting for your orders (move, scavenge, any order; Enter base brings them back in).`)}>Form a team…</button>` : "";
 }
 // The team panel, the tile panel and the Teams tab: Edit team… for a team that waits on one of your bases.
 export function editTeamButton(state, p, cls = "mini") {
   const b = p ? editBase(state, p) : null;
   if (!b) return "";
   const why = editProblem(state, p);
-  return `<button class="${cls}" data-action="tf-edit" data-id="${p.id}" ${why ? "disabled" : ""}${tip(why || `Change the team at ${b.name}: take on people from the base or send some back in, swap the vehicle for another parked there, change their gear and the supplies and cargo it carries`)}>Edit team…</button>`;
+  return `<button class="${cls}" data-action="tf-edit" data-id="${p.id}" ${why ? "disabled" : ""}${tip(why || `Change the team at ${b.name}: take on people from the base or send some back in, add or leave vehicles parked there (up to four), change their gear and the supplies and cargo it carries`)}>Edit team…</button>`;
 }
 // The right-click menu on one of your bases: Form a team here, and Edit for each team waiting on it.
 export function formTeamCtx(state, tile) {
@@ -111,7 +111,7 @@ export function formTeamCtx(state, tile) {
   const n = atBase(state, b.id).length;
   const edits = state.parties.filter((p) => editBase(state, p) === b && !editProblem(state, p));
   return (n ? `<button data-action="tf-open" data-base="${b.id}" data-tip="Pick people, a vehicle, gear and supplies at ${esc(b.name)}: they stand outside as a team waiting for orders">Form a team at ${esc(b.name)}…</button>` : "") +
-    edits.map((p) => `<button data-action="tf-edit" data-id="${p.id}" data-tip="Add or send back people, swap the vehicle, change gear and supplies">Edit ${esc(teamName(state, p))}…</button>`).join("");
+    edits.map((p) => `<button data-action="tf-edit" data-id="${p.id}" data-tip="Add or send back people, add or leave vehicles, change gear and supplies">Edit ${esc(teamName(state, p))}…</button>`).join("");
 }
 
 // ---------- the window ----------
