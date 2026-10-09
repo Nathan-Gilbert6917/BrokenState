@@ -21,6 +21,8 @@ import { meleeVoices, MELEE_LABELS } from "./sfx-melee.js"; // melee by weapon c
 import { stepCues, stepVoices, STEP_LABELS } from "./sfx-steps.js"; // footsteps in battle (ui/sfx-steps.js)
 import { gearCues, uiCues, clickSound, gearVoices, GEAR_LABELS, GEAR_LIMITS } from "./sfx-gear.js"; // searching, doors, bandages, engines, windows, items
 import { voiceOut, placeOf } from "./sfx-out.js"; // the output stage of the voices above (pan, distance, out of sight)
+import { vehicleVoices, VEHICLE_LABELS, VEHICLE_LIMITS, loopWants, engineLoops } from "./sfx-vehicles.js"; // engines, car doors, the idle loop and the map's convoy hum
+import { doorVoices, DOOR_LABELS, DOOR_LIMITS } from "./sfx-doors.js"; // building doors and gates
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -67,7 +69,7 @@ const LIMITS = {
   groan: { gap: 0.8, max: 2 }, scream: { gap: 0.5, max: 1 }, blast: { gap: 0.15, max: 2 }, fire: { gap: 0.3, max: 2 },
   glass: { gap: 0.2, max: 2 }, hiss: { gap: 0.2, max: 2 }, flare: { gap: 0.2, max: 2 }, downed: { gap: 0.4, max: 2 }, death: { gap: 0.4, max: 2 },
   thunder: { gap: 4, max: 1 }, bird: { gap: 0.3, max: 2 }, cricket: { gap: 0.15, max: 2 },
-  ...GEAR_LIMITS,
+  ...GEAR_LIMITS, ...VEHICLE_LIMITS, ...DOOR_LIMITS, // ui/sfx-gear.js, ui/sfx-vehicles.js, ui/sfx-doors.js
   ...ZOMBIE_LIMITS, // ui/zombiesfx.js: the dead's voices (zIdle, zBite, zShriek…)
 };
 const throttle = makeThrottle(LIMITS, 28);
@@ -210,7 +212,7 @@ export function sfx(name, opts = {}) {
 const battleMem = {};
 const worldMem = {};
 const stepMem = {}, gearMem = {}, uiMem = {}; // ui/sfx-steps.js, ui/sfx-gear.js
-let lastWorld = 0, lastAmb = 0;
+let lastWorld = 0, lastAmb = 0, lastLoops = 0;
 export function audioFrame(state, ui, nowMs = performance.now()) {
   if (!OPT || !state) return;
   const now = nowMs / 1000;
@@ -232,12 +234,21 @@ export function audioFrame(state, ui, nowMs = performance.now()) {
     for (const c of worldCues(state, ui, worldMem)) if (on) sfx(c.name, { gain: c.gain, delay: c.delay });
   }
   if (!ui.timelapse) for (const c of uiCues(state, ui, uiMem)) if (on) sfx(c.name, c); // windows, the inventory, engines on the map
+  if (on && nowMs - lastLoops >= 100) { lastLoops = nowMs; vehicleLoops(state, ui); } // ui/sfx-vehicles.js: your vehicle idling in battle, the convoy hum on the map
   if (nowMs - lastAmb >= 250) {
     lastAmb = nowMs;
     if (on) ambience(state, ui);
   }
 }
 
+// The engine loops (ui/sfx-vehicles.js): placed by the battle's listener, into the battle bus (in battle) or the
+// effects bus (the map); let go when nothing wants them.
+function vehicleLoops(state, ui) {
+  try {
+    const L = state.combat ? frameListener(state, state.combat, LISTEN) : null;
+    engineLoops(A.ctx, { battle: A.gb ? A.gb.in : A.sfx, map: A.sfx }, loopWants(state, ui), A.ctx.currentTime + 0.01, L, KIT);
+  } catch (e) { console.warn("Broken State: the engine loops failed", e); }
+}
 // A battle cue: a gun, a blast or a handling sound (ui/battlesfx.js), else one of the VOICES placed where it happens.
 function battleSound(c, L) {
   if (VOICES[c.name] && VOICES[c.name].routes) { // the dead (ui/zombiesfx.js): placed by soundcues (c.sp: gun-sfx's spatial), played into spatialOut by zRoute
@@ -248,6 +259,7 @@ function battleSound(c, L) {
     let sp = c.at && L ? spatial(L, c.at[0], c.at[1], { enemy: c.enemy }) : null;
     if (VOICES[c.name] && VOICES[c.name].own) { // ui/sfx-melee.js, sfx-steps.js, sfx-gear.js: played into spatialOut at the placement
       if (sp && c.seen === false && sp.seen) sp = place({ pan: sp.pan, dist: sp.dist, seen: false, room: sp.room }); // out of sight another way (another floor)
+      if (sp && c.room && c.room !== sp.room) sp = place({ pan: sp.pan, dist: sp.dist, seen: sp.seen, room: c.room }); // a door's own room (ui/sfx-doors.js: inside tight, outside the town's slapback)
       return sfx(c.name, { ...c, delay: (c.delay || 0) + (sp ? sp.delay : 0), sp: sp || placeOf(c), battle: true });
     }
     return sfx(c.name, { gain: (c.gain ?? 1) * (sp ? sp.gain : 1), delay: (c.delay || 0) + (sp ? sp.delay : 0), pan: sp ? sp.pan : (Math.random() - 0.5) * 0.5, lp: sp ? sp.lp : 0, battle: true });
@@ -613,7 +625,7 @@ export const VOICES = {
 // The voices of ui/sfx-melee.js (they replace melee, meleeCrit and whoosh), ui/sfx-steps.js and ui/sfx-gear.js, made
 // on these building blocks; they play through ui/sfx-out.js voiceOut (own).
 const KIT = { env, filt, noise, tone, thud, bell, crackle, shards, notes, lfo, R };
-for (const V of [meleeVoices(KIT), stepVoices(KIT), gearVoices(KIT)]) for (const [k, v] of Object.entries(V)) VOICES[k] = { ...v, own: true };
+for (const V of [meleeVoices(KIT), stepVoices(KIT), gearVoices(KIT), vehicleVoices(KIT), doorVoices(KIT)]) for (const [k, v] of Object.entries(V)) VOICES[k] = { ...v, own: true };
 export const SOUND_NAMES = Object.keys(VOICES);
 const HEAR_NAMES = SOUND_NAMES.filter((n) => !ZOMBIE_VOICES[n]); // the dead have their own list (Zombie sounds)
 
@@ -662,7 +674,7 @@ const SOUND_LABELS = {
   acid: "Acid spit", hit: "Bullet hit", whiz: "Miss (whiz)", ricochet: "Miss (ricochet)", melee: "Melee hit", meleeCrit: "Melee critical", whoosh: "Melee miss",
   bite: "Zombie bite", groan: "Zombie groan", scream: "Scream", blast: "Pipe bomb / grenade", fire: "Molotov", glass: "Bottle", hiss: "Smoke", flare: "Flare",
   downed: "Someone down", death: "Someone dies", battle: "Battle starts", horde: "Horde spotted", alarm: "Raid alarm", thunder: "Thunder", bird: "Birds", cricket: "Crickets",
-  ...MELEE_LABELS, ...STEP_LABELS, ...GEAR_LABELS,
+  ...MELEE_LABELS, ...STEP_LABELS, ...GEAR_LABELS, ...VEHICLE_LABELS, ...DOOR_LABELS,
 };
 let hearPick = "pistol";
 export function soundOptionsHtml(options) {

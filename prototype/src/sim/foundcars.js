@@ -229,8 +229,8 @@ export function carAct(state, b, u, act, H) {
         rec.open = true;
         const box = boxOf(b, rec);
         if (box && box.lock) { box.lock.open = true; box.lock.how = act.op === "pick" ? "pick" : o.crowbar ? "force" : "smash"; }
-        H.fx(b, { type: "loot", to: at, text: "open" });
-      } else H.fx(b, { type: "loot", to: at, text: "locked" });
+        H.fx(b, { type: "loot", to: at, text: "open", how: act.op === "pick" ? "pick" : o.glass ? "glass" : o.crowbar ? "pry" : "kick" }); // how: the sound of it (ui/sfx-vehicles.js carLoot)
+      } else H.fx(b, { type: "loot", to: at, text: "locked", how: act.op === "pick" ? "pick" : o.glass ? "glass" : o.crowbar ? "pry" : "kick" });
       break;
     }
     case "keys": {
@@ -307,7 +307,7 @@ export function claimCar(state, b, rec) {
     fuel: Math.min(VEHICLE_TYPES[type].tank, rec.cond.fuel), condition: fix ? Math.max(15, Math.round(rec.condition * 0.6)) : rec.condition,
     name: type === "miltruck" && rec.model === "mrap" ? "MRAP" : M.name,
   });
-  v.found = { model: rec.model, at: b.place, hour: state.hour, repair: fix };
+  v.found = { model: rec.model, at: b.place, hour: state.hour, repair: fix, ...(rec.hot && !rec.keys ? { hot: true } : {}) }; // hot: hotwired, started by its wires (ui/sfx-vehicles.js)
   if (rec.owned) { stolenFromGroup(state, b, rec, v); return v; } // arsenal.js: out of their motor pool
   if (rec.mil) fitMilitary(v, rec.mil.turret || null); // vehicles.js: an Army vehicle is plated and glassed (a motor pool's Humvee has its M2)
   rec.claimed = v.id;

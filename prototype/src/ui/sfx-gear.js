@@ -1,17 +1,19 @@
 // The rest of the battle's and the interface's small sounds (not guns, not the dead's voices): searching a container,
-// a lock, keys, fuel; a bandage; a door swinging open; your vehicle driving in battle; a team's engine starting or
-// stopping on the map; a window opening and closing; an item picked up and put down in the inventory.
+// a lock, keys, fuel; a bandage; a window opening and closing; an item picked up and put down in the inventory. The
+// doors and gates (ui/sfx-doors.js) and the vehicles (ui/sfx-vehicles.js) are cued from here too.
 // Pure functions until a voice plays: node tools import it.
 //
 //   lootSound(text)           the sound of a search or a lock by its effect's text (sim fx type "loot")
-//   gearCues(state, mem)      the battle's: loot, heal, doors opened by a move, the vehicle driven
-//   uiCues(state, ui, mem)    the interface's and the map's: windows, the inventory's held item, engines
+//   gearCues(state, mem)      the battle's: loot, heal; doors (sfx-doors.js doorCues) and vehicles (sfx-vehicles.js vehicleCues)
+//   uiCues(state, ui, mem)    the interface's and the map's: windows, the inventory's held item; the map's teams,
+//                             engines and gates (sfx-vehicles.js mapCues)
 //   clickSound(el)            the sound of a button press (null: none, another cue covers it)
 //   gearVoices(K)             the voices, built on audio.js's building blocks K
 import { itemAt } from "../sim/inventory.js";
 import { GEAR } from "../sim/data.js";
-import { partyVehicle, isBike } from "../sim/vehicles.js";
 import { panOfX } from "./sfx-out.js";
+import { doorCues, doorLoot } from "./sfx-doors.js"; // doors and gates in battle
+import { vehicleCues, carLoot, mapCues } from "./sfx-vehicles.js"; // engines, car doors, the map's teams and gates
 
 // ---------- battle ----------
 export function lootSound(text) {
@@ -24,54 +26,33 @@ export function lootSound(text) {
   if (/^(unlocked|open|case open|cut!|cut free|free|wired|claimed)$/.test(t)) return { name: "unlock" };
   return null; // DEAF, RISES, WORMS, SLEEPER, PANIC, WINDS UP…: not a search (their sounds are elsewhere)
 }
-const DOORS = new Set(["idoor", "bdoor"]);
 export function gearCues(state, mem) {
   const b = state && state.combat;
   const out = [];
   if (!b || !b.fx) return out;
+  mem.dc = mem.dc || {}; // ui/sfx-doors.js doorCues' memory
+  mem.vc = mem.vc || {}; // ui/sfx-vehicles.js vehicleCues'
   if (mem.battle !== b) {
     mem.battle = b;
     mem.seq = b.fxSeq || 0;
-    mem.doors = new Map(); // floor -> the cells that were closed doors when first seen
-    mem.veh = b.vehicle ? `${b.vehicle.x},${b.vehicle.y}` : null;
-    doorsOf(b, mem);
+    doorCues(state, mem.dc, []); // a battle first seen: quiet
+    vehicleCues(state, mem.vc, []);
     return out;
   }
   const fresh = b.fx.filter((f) => f.seq > mem.seq);
   if (fresh.length) mem.seq = fresh[fresh.length - 1].seq;
-  const doors = doorsOf(b, mem);
   for (const f of fresh) {
     if (f.type === "loot") {
+      const own = carLoot(b, f) || doorLoot(b, f, mem.dc); // a found car's lock or wires, a door's or a safe's lock (sfx-vehicles.js, sfx-doors.js)
+      if (own) { out.push(...own); continue; }
       const s = lootSound(f.text);
       if (s) out.push({ ...s, at: f.to, pan: panOfX(b, f.to && f.to[0]) });
     } else if (f.type === "heal") out.push({ name: "bandage", at: f.to, pan: panOfX(b, f.to && f.to[0]) });
-    else if (f.type === "move" && f.path && doors.size) {
-      // A closed door the mover walked through has swung open (buildingmaps.js openDoor): heard once a door.
-      for (let i = 0; i < f.path.length; i++) {
-        const [x, y] = f.path[i], k = y * b.w + x;
-        if (!doors.has(k) || DOORS.has((b.cells[k] || {}).k)) continue;
-        doors.delete(k);
-        out.push({ name: "door", delay: (i * 70) / 1000, at: [x, y], enemy: true, pan: panOfX(b, x) });
-      }
-    }
   }
-  // Your vehicle driven across the field (combat.js driveTo): the engine revs.
-  if (b.vehicle) {
-    const at = `${b.vehicle.x},${b.vehicle.y}`;
-    if (mem.veh && at !== mem.veh && !b.vehicle.blownUp) out.push({ name: "drive", big: !!b.vehicle.mil, at: [b.vehicle.x, b.vehicle.y], pan: panOfX(b, b.vehicle.x) });
-    mem.veh = at;
-  }
+  // Doors opened, closed, broken, crossed (sfx-doors.js); people getting in and out of the vehicle, its engine, the
+  // drive, found cars (sfx-vehicles.js).
+  out.push(...doorCues(state, mem.dc, fresh), ...vehicleCues(state, mem.vc, fresh));
   return out;
-}
-function doorsOf(b, mem) {
-  const fl = b.floor || 0;
-  let s = mem.doors.get(fl);
-  if (!s) {
-    s = new Set();
-    if (b.cells) for (let i = 0; i < b.cells.length; i++) if (DOORS.has(b.cells[i].k)) s.add(i);
-    mem.doors.set(fl, s);
-  }
-  return s;
 }
 
 // ---------- the interface and the map ----------
@@ -110,25 +91,9 @@ export function uiCues(state, ui, mem) {
     } else if (mem.sel) out.push({ name: "putdown", kind: mem.held || "item" });
   }
   mem.sel = sel;
-  // The map: one of your teams in a car or truck setting off, or arriving (sim/parties.js path, idx).
-  if (state && state.parties && !ui.timelapse && !state.combat) {
-    const moving = new Map();
-    for (const p of state.parties) {
-      if (p.owner !== "player" || !p.vehicleId) continue;
-      let v = null;
-      try { v = partyVehicle(state, p); } catch { v = null; }
-      if (!v || isBike(v) || v.destroyed) continue;
-      moving.set(p.id, !!(p.path && p.path.length > 1 && (p.idx || 0) < p.path.length - 1));
-    }
-    if (!first && mem.cars && ui.started) {
-      for (const [id, m] of moving) {
-        const was = mem.cars.get(id);
-        if (was === false && m) out.push({ name: "engineStart" });
-        else if (was === true && !m) out.push({ name: "engineStop" });
-      }
-    }
-    mem.cars = moving;
-  }
+  // The map: your teams setting off and stopping (doors, engines), leaving and coming home (the gate), breakdowns,
+  // repairs, a city crawl's doors, the tailgate (ui/sfx-vehicles.js mapCues).
+  if (state && state.parties) out.push(...mapCues(state, ui, mem.map || (mem.map = {})));
   return out;
 }
 // A button press: the soft click, except where the state's own cue says it (an inventory cell: pick up / put down).
@@ -140,7 +105,7 @@ export function clickSound(el) {
 
 // ---------- the voices ----------
 export function gearVoices(K) {
-  const { env, filt, noise, tone, crackle, R } = K;
+  const { env, filt, noise, tone, R } = K;
   const tick = (c, out, t, f, g, d = 0.012, q = 3) => noise(c, "white", t, d + 0.01, filt(c, "bandpass", f, q, env(c, out, t, g, d, 0.001)));
   // Hands in a box or a bag: a few rustles and knocks.
   function rummage(c, out, t, o) {
@@ -183,35 +148,6 @@ export function gearVoices(K) {
       noise(c, "white", t, 0.3, filt(c, "bandpass", 2600 * o.pitch, 0.9, am));
       noise(c, "brown", t + 0.38, 0.05, filt(c, "lowpass", 400, 0.7, env(c, out, t + 0.38, 0.25 * o.gain, 0.04, 0.003)));
     } },
-    // A door: the latch, a creaking hinge.
-    door: { dur: 0.6, play(c, out, t, o) {
-      tick(c, out, t, 1800 * o.pitch, 0.2 * o.gain, 0.015);
-      const v = tone(c, "sawtooth", R(95, 130) * o.pitch, R(140, 180), t + 0.04, 0.42, filt(c, "bandpass", 1100, 7, env(c, out, t + 0.04, 0.07 * o.gain, 0.3, 0.06, 0.05)));
-      K.lfo(c, R(14, 22), 25, v.frequency).stop(t + 0.5);
-    } },
-    // A car or truck across the battlefield: the revs climbing and dying, the tyres on the ground.
-    drive: { dur: 1.3, play(c, out, t, o) {
-      const f0 = (o.big ? 42 : 55) * o.pitch;
-      const lp = filt(c, "lowpass", 380, 1, env(c, out, t, 0.32 * o.gain, 0.6, 0.12, 0.4));
-      const e = tone(c, "sawtooth", f0, 0, t, 1.2, lp);
-      e.frequency.setValueAtTime(f0, t); e.frequency.linearRampToValueAtTime(f0 * 1.9, t + 0.4); e.frequency.linearRampToValueAtTime(f0 * 1.3, t + 1.1);
-      K.lfo(c, 22, 6, e.frequency).stop(t + 1.2);
-      noise(c, "brown", t + 0.1, 1, filt(c, "lowpass", 280, 0.7, env(c, out, t + 0.1, 0.25 * o.gain, 0.5, 0.2, 0.3)));
-      crackle(c, out, t + 0.2, 5, 0.7, 0.05 * o.gain);
-    } },
-    // A team's engine on the map: the starter cranking, the engine catching and settling; and switched off.
-    engineStart: { dur: 1.6, play(c, out, t, o) {
-      for (let i = 0; i < 3; i++) { const tt = t + i * 0.13; tone(c, "sawtooth", 38, 30, tt, 0.09, filt(c, "lowpass", 300, 1, env(c, out, tt, 0.18 * o.gain, 0.08, 0.01))); }
-      const tt = t + 0.42, lp = filt(c, "lowpass", 420, 1, env(c, out, tt, 0.25 * o.gain, 0.7, 0.05, 0.3));
-      const e = tone(c, "sawtooth", 50, 0, tt, 1.05, lp);
-      e.frequency.setValueAtTime(50, tt); e.frequency.linearRampToValueAtTime(95, tt + 0.25); e.frequency.linearRampToValueAtTime(60, tt + 0.9);
-      K.lfo(c, 18, 4, e.frequency).stop(tt + 1.05);
-    } },
-    engineStop: { dur: 0.8, play(c, out, t, o) {
-      const lp = filt(c, "lowpass", 380, 1, env(c, out, t, 0.2 * o.gain, 0.5, 0.03, 0.1));
-      tone(c, "sawtooth", 62, 28, t, 0.6, lp, 0.55);
-      tick(c, out, t + 0.66, 1400, 0.08 * o.gain, 0.015);
-    } },
     // The interface: a window opening (a soft swish up) and closing (down); an item in the hand and put down.
     uiOpen: { dur: 0.15, play(c, out, t, o) {
       const f = filt(c, "bandpass", 700, 1.2, env(c, out, t, 0.08 * o.gain, 0.08, 0.03));
@@ -240,12 +176,11 @@ export function gearVoices(K) {
 }
 export const GEAR_LABELS = {
   rummage: "Searching a container", lockRattle: "A lock that holds", unlock: "A lock opening", jingle: "Keys", glug: "Fuel siphoned", bandage: "Bandaging",
-  door: "A door opening", drive: "Your vehicle in battle", engineStart: "Engine starting (a team sets off)", engineStop: "Engine off (a team arrives)",
   uiOpen: "Window opens", uiClose: "Window closes", pickup: "Item picked up", putdown: "Item put down",
 };
 // The throttle's limits (ui/audio.js LIMITS): gap in seconds between two starts, how many at once.
 export const GEAR_LIMITS = {
   rummage: { gap: 0.3, max: 2 }, lockRattle: { gap: 0.3, max: 1 }, unlock: { gap: 0.2, max: 2 }, jingle: { gap: 0.4, max: 1 }, glug: { gap: 0.5, max: 1 },
-  bandage: { gap: 0.4, max: 2 }, door: { gap: 0.15, max: 3 }, drive: { gap: 1, max: 1 }, engineStart: { gap: 2, max: 1 }, engineStop: { gap: 2, max: 1 },
+  bandage: { gap: 0.4, max: 2 },
   uiOpen: { gap: 0.08, max: 1 }, uiClose: { gap: 0.08, max: 1 }, pickup: { gap: 0.05, max: 2 }, putdown: { gap: 0.05, max: 2 },
 };

@@ -8,7 +8,7 @@
 //   the load, the dead's kinds; paced along the move; yours, the enemy's (AI parity) and the unseen nearby (muffled);
 //   capped per frame; a battle first seen is quiet.
 // - The rest: searches and locks, bandages, a door opened by a move, your vehicle driven; windows, the inventory's held
-//   item, a team's engine on the map; the click.
+//   item, a team's engine (and its doors) on the map; the click. (tools/vehdoortest.js covers the doors and vehicles.)
 // - Every voice builds on a stub AudioContext with every variant, no NaN; the output stage; the Footsteps option.
 // Usage: node tools/sfxtest.js
 import * as C from "../src/sim/combat.js";
@@ -264,7 +264,8 @@ console.log("Searches, doors, vehicles, the interface");
   const eng = uiCues(ws, wui, wm).map((c) => c.name);
   ws.parties[ws.parties.length - 1].idx = 2;
   const off = uiCues(ws, wui, wm).map((c) => c.name);
-  check(eng.join() === "engineStart" && off.join() === "engineStop", `a team's car sets off and arrives: ${eng.join()}, ${off.join()}`);
+  const engine = (l) => l.filter((n) => n.startsWith("engine")).join(); // the doors are their own cues (ui/sfx-vehicles.js mapCues)
+  check(engine(eng) === "engineStart" && engine(off) === "engineStop" && eng.includes("carDoor") && off.includes("carDoor"), `a team's car sets off and arrives: ${eng.join()}, ${off.join()}`);
 }
 
 // ---------- voices ----------
