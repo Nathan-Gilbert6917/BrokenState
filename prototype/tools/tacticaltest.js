@@ -411,6 +411,50 @@ section("7. Fire on what lies on the ground");
   check(!rp.raid.containers[0].contents.gear.length, "in a raid as well");
 }
 
+// ---------- 7b. explosives in a fire go off ----------
+section("7b. Grenades in a fire go off (the user's call)");
+{
+  const st = world(seed + 17);
+  const { b } = openBattle(st);
+  const [a, c] = P(b);
+  place(a, 6, 6);
+  const frag = newItem("frag", 1);
+  G.dropToGround(b, a, frag);
+  const pile = G.groundAt(b, 6, 6, 0);
+  place(a, 12, 12); place(c, 7, 6); c.hp = 100; c.down = false; // right next to the pile
+  const hp0 = c.hp, log0 = b.log.length;
+  b.fires = [{ x: 6, y: 6, turns: 3 }];
+  stirBodies(st, b); // the start of a turn: the piles in the flames burn, what is in them goes off
+  check(!pile.contents.gear.includes(frag), "the frag grenade is gone from the burning pile");
+  check(c.hp < hp0 || c.down || c.dead, `it goes off and hurts the one next to it (${hp0} → ${c.hp}${c.down ? ", down" : ""})`);
+  check(b.log.slice(log0).some((l) => /sets off the frag grenade in the burning pile/.test(l.text)), "with a log line");
+  check(b.fx.some((f) => f.type === "cookoff" && f.item === "frag"), "and an effect on the map (heard as the blast)");
+  // Several: a bag of them set down in the fire, a box of 40 mm, a rocket; an enemy's body with grenades on it.
+  place(c, 15, 15);
+  const bag = newItem("backpack", 1);
+  const inBag = ["frag", "pipebomb", "molotov", "smokegren", "flashbang", "flare"].map((k) => newItem(k, 1));
+  bag.contents = inBag.slice();
+  place(a, 8, 9);
+  G.dropToGround(b, a, bag); G.dropToGround(b, a, "a_40mm_he", 3); G.dropToGround(b, a, "a_rocket_heat", 1); G.dropToGround(b, a, newItem("frag", 1));
+  const pile2 = G.groundAt(b, 8, 9, 0);
+  const foe = E(b)[0];
+  foe.dead = true; foe.hp = 0; foe.down = false; place(foe, 4, 12); foe.throwables = { frag: 2, smokegren: 1 };
+  place(a, 18, 2);
+  b.fires.push({ x: 8, y: 9, turns: 3 }, { x: 4, y: 12, turns: 3 });
+  b.turn = (b.turn || 0) + 1;
+  let crash = "";
+  try { for (let i = 0; i < 12; i++) { stirBodies(st, b); b.turn++; } } catch (e) { crash = e.stack || String(e); }
+  check(!crash, `no crash with several going off in turn${crash ? `: ${crash}` : ""}`);
+  const lines = b.log.map((l) => l.text).filter((t) => /The fire sets off/.test(t));
+  check(!(b.fireCook && b.fireCook.length), `they all went off over the turns (${lines.length} cook-offs)`);
+  check(!pile2.contents.gear.some((it) => it.key === "frag") && !inBag.some((it) => bag.contents.includes(it)) && !(pile2.contents.sup.a_40mm_he > 0) && !(pile2.contents.sup.a_rocket_heat > 0), "nothing explosive is left in the pile or the bag");
+  check(lines.some((t) => /40 mm grenade/.test(t)) && lines.some((t) => /rocket/.test(t)), "the 40 mm grenades and the rocket blast too");
+  check((b.smoke || []).length > 0 && (b.flares || []).length > 0, "the smoke grenade smokes, the flare lights up");
+  check(lines.some((t) => /molotov/i.test(t)) && b.fires.length > 2, "the Molotov goes up (a fire of its own)");
+  check(lines.some((t) => new RegExp(`on ${foe.name}'s burning body`).test(t)) && !foe.throwables.frag, "the grenades on a burning enemy body go off as well (AI parity)");
+  check(b.log.map((l) => l.text).filter((t) => /The fire sets off/.test(t)).length >= 10, "one log line each");
+}
+
 // ---------- 8. the rounds in the guns ----------
 section("8. The rounds in a gun go with it");
 {

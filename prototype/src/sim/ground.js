@@ -49,7 +49,7 @@ import { SEARCH } from "./search.js";
 import { ARMORED } from "./deadsoldiers.js";
 import { KITS, WEAPONS, say, fx, unitById, loadMag, active, playerUnit } from "./combat.js";
 import { gunOut, gunLeavesTeam, gunIn, unloadInto, stockFor, teamGuns } from "./gunload.js"; // the rounds in a gun, kept on it
-import { fireStuff } from "./launchers.js"; // fire on what lies on the ground
+import { fireStuff, cookFrom } from "./launchers.js"; // fire on what lies on the ground; the explosives in it go off
 import { fireAt } from "./throwables.js";
 import { bagRefusal } from "./carry.js"; // Carry in arms: the one check for a bag going into the arms
 
@@ -334,7 +334,8 @@ export const searchedInBattle = (b, t) => !!(b && bodyBoxOf(b, t) && (!b.raid ||
 
 // ---------- fire ----------
 // A pile on a burning cell (throwables.js b.fires), once a turn while it burns (carriers.js burnUnderFire, at the start
-// of each side's turn): launchers.js fireStuff (what burns is gone, the rest worn by the heat, rounds cook off).
+// of each side's turn): the explosives in it are set off (launchers.js cookFrom, fireCookOffs: a few each turn), then
+// launchers.js fireStuff (what burns is gone, the rest worn by the heat, rounds cook off).
 // In a raid and a field battle alike. Returns how many piles it reached.
 export function groundFire(b) {
   if (!b || !b.fires || !b.fires.length) return 0;
@@ -342,6 +343,7 @@ export function groundFire(b) {
   for (const p of groundPiles(b)) {
     if (!pileCount(p) || p.fireTurn === b.turn || !fireAt(b, p.x, p.y) || (p.f || 0) !== (b.floor || 0)) continue;
     p.fireTurn = b.turn;
+    cookFrom(b, p.contents.gear, p.contents.sup, p.x, p.y, "in the burning pile"); // launchers.js: grenades, bombs, launcher rounds (a bag's too) go off in turn
     const r = fireStuff(p.contents.gear, p.contents.sup, b.dseed ?? 0, b.turn || 0, p.id);
     p.contents.gear = r.gear;
     settle(p);
