@@ -105,6 +105,8 @@ import { initAudio, audioFrame } from "./ui/audio.js"; // sound: WebAudio, made 
 import { initDisplay, DISPLAY_ACTIONS, DISPLAY_CHANGE, displayKey } from "./ui/display.js";
 import { initMinimap, minimapFrame } from "./ui/minimap.js";
 import { initConfirm, askHtml, askKey, ASK_ACTIONS, ask } from "./ui/confirm.js";
+import { selectedTeam } from "./ui/teamsel.js"; // the selected team (its panel open, or picked on the map)
+import { teamTileMenu, teamCtxHtml, runTeamAction } from "./ui/teamctx.js"; // its right-click menu: actions for the tile
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 // MAX_SPEED (ui/pacing.js): the fastest normal speed (5×); anything above is a dev fast-forward
@@ -1570,6 +1572,10 @@ canvas.addEventListener("wheel", (e) => {
   const r = canvas.getBoundingClientRect();
   zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.12 : 1 / 1.12);
 }, { passive: false });
+// Right-click on the map: the tile's menu. With a team selected (ui/teamsel.js) it leads with that team's actions for
+// the tile (ui/teamctx.js; Shift+right-click adds them to its queue), the other teams and the hub's missions folded
+// below; with none, the menu lists every team you are in touch with and the hub's missions.
+let ctxAt = null; // { tile, x, y }: where the menu was opened (its toggles redraw it in place)
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
   const r = canvas.getBoundingClientRect();
@@ -1577,6 +1583,13 @@ canvas.addEventListener("contextmenu", (e) => {
   if (id < 0 || ui.timelapse || !ui.started) return;
   ui.selected = id;
   view.selected = id;
+  ctxAt = { tile: id, x: e.clientX - r.left, y: e.clientY - r.top };
+  ui.tcAppend = !!e.shiftKey;
+  showCtx();
+});
+function showCtx() {
+  if (!ctxAt) return;
+  const id = ctxAt.tile;
   const t = state.tiles[id];
   const acts = tileActions(state, id);
   const waiting = state.parties.filter((p) => contactable(p) && commandable(state, p)); // radio rule (plans.js)
@@ -1584,15 +1597,61 @@ canvas.addEventListener("contextmenu", (e) => {
   const none = own ? "Your base" : t.terrain === "water" && !t.bridge ? "Open water: teams cross it by boat from a shore" : "Nothing to do here";
   const menu = $("ctxmenu");
   const loc = mapLoc(state, id); // a hidden site nobody has found (sim/discovery.js) is just a tile
-  menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` +
-    waiting.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
-    (t.terrain === "water" && !t.bridge ? "" : waiting.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
-    ctxBoats(waiting, id) + ctxLand(waiting, id) + ctxClaim(waiting, id) + ctxWatchlist(state, id) + // 📌 watch, map notes (ui/watchlist.js)
-    (acts.length ? acts.map(([m, l, pre]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}>${l} (from hub)</button>`).join("") : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
-  menu.style.left = `${e.clientX - r.left}px`;
-  menu.style.top = `${e.clientY - r.top}px`;
-  menu.classList.remove("hidden");
+  const hubHtml = acts.map(([m, l, pre]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}>${l} (from hub)</button>`).join("");
+  const sel = selectedTeam(state, ui);
+  if (!sel) {
+    menu.innerHTML = `<div class="head">${esc(loc ? loc.name : `Tile ${t.x},${t.y}`)}</div>` + ctxTeams(waiting, id) +
+      ctxWatchlist(state, id) + // 📌 watch, map notes (ui/watchlist.js)
+      (acts.length ? hubHtml : `<div class="small muted" style="padding:0.3rem 0.5rem">${none}</div>`);
+  } else {
+    const rest = ctxTeams(waiting.filter((p) => p !== sel), id) + hubHtml;
+    menu.innerHTML = teamCtxHtml(state, ui, teamTileMenu(state, ui, sel, id, { append: !!ui.tcAppend })) +
+      (rest ? `<button class="tcfold" data-action="tc-more" data-tip="Other teams you are in touch with, and teams sent from the hub">${ui.ctxMore ? "▾" : "▸"} Other teams and the hub</button>${ui.ctxMore ? rest : ""}` : "") +
+      ctxWatchlist(state, id);
+  }
+  placeCtx(menu, ctxAt.x, ctxAt.y);
   dirtyNow = true;
+}
+// Every team in touch: move here, survey, boats, food from the land, claims (the menu with no team selected, and the
+// folded part of a selected team's menu).
+function ctxTeams(teams, id) {
+  const t = state.tiles[id];
+  return teams.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
+    (t.terrain === "water" && !t.bridge ? "" : teams.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
+    ctxBoats(teams, id) + ctxLand(teams, id) + ctxClaim(teams, id);
+}
+// Keep the menu on the map: flipped left or up at the edges, never taller than the map (it scrolls); sizes follow the
+// interface scale (rem).
+function placeCtx(menu, x, y) {
+  const wrap = menu.parentElement;
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  menu.style.maxHeight = `${Math.max(120, H - 8)}px`;
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.classList.remove("hidden");
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  const left = x + w > W - 4 ? Math.max(4, x - w) : x;
+  const top = y + h > H - 4 ? (y - h >= 4 ? y - h : Math.max(4, H - 4 - h)) : y;
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+// A press anywhere outside the menu closes it (the map's own mousedown closes it too).
+document.addEventListener("mousedown", (e) => {
+  const menu = $("ctxmenu");
+  if (!menu.classList.contains("hidden") && !menu.contains(/** @type {Node} */ (e.target))) hideCtx();
+}, true);
+Object.assign(actions, {
+  // A selected team's item (ui/teamctx.js): replace its plan or queue; the confirmation box first when orders under way would go.
+  "tc-do": (d) => {
+    hideCtx();
+    const msg = runTeamAction(state, ui, d, actions);
+    if (msg === null) return; // asked first (ui/confirm.js): Yes runs it again
+    if (msg) log(state, msg, "info");
+    if (ui.expedition === Number(d.id)) ui.xpMsg = msg || "";
+    endMoveMode();
+  },
+  "tc-mode": () => { ui.tcAppend = !ui.tcAppend; showCtx(); }, // replace ⇄ add to the queue
+  "tc-more": () => { ui.ctxMore = !ui.ctxMore; showCtx(); },   // the other teams and the hub, folded
 });
 // Right-click on the land straight across one water tile from a team you are in touch with: build a boat.
 function ctxBoats(teams, id) {
@@ -1691,11 +1750,11 @@ actions.ctxmove = (d) => {
 };
 // Radio rule (sim/plans.js commandable): out of radio contact a team follows its plan; orders only through the
 // cards it raises (answering one opens contact for that hour) or once it is back in coverage.
-for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim"]) {
+for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim", "tc-do"]) {
   const fn = actions[k];
   actions[k] = (d) => {
     const p = partyById(d.id);
-    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
+    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim" || k === "tc-do") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
     return fn(d);
   };
 }

@@ -193,6 +193,12 @@ node tools/basetiletest.js
 Teams that end on one of your bases (`src/sim/staging.js` tryFinish, `parties.js` settleInto / returnHome, `moveout.js` enterOption / joinBase; or `node tools/basetiletest.js [seed]`, a few seconds): establishing a base disbands the team into it (the staging camp is not a base: when it becomes the shelter every team on its tile moves in, its people residents, its vehicle parked, its cargo and finds in the stores and armory, nothing left pointing at the team, saves mid-camp and after); a finished camp takes in a team that comes back with a plain Move order; the *Enter …?* card for a Move that ends on the team's own home too (Yes: home and disbanded, the autopilot's answer; No: it waits there with Enter base still offered; a team that moved out with no destination waits outside unasked); **Enter base** (an order: the team panel, the orders card, the Teams tab and the base tile's team card) for a team standing on any of your bases, its home included (one waiting outside after moving out, one that said No on the Enter card, one that ended a recon there, a queued Enter after a move), its prisoners to the cells there, the log line ("is home" or "moved into"), save / load with the team on the tile and after; the governor's hardcore start founding its shelter with the team disbanded into it. A team that founds a base, moves in or takes a base by assault unloads the same way as one coming home (`parties.js` unloadAt).
 
 ```bash
+node tools/teamctxtest.js
+```
+
+A selected team's right-click menu (`src/ui/teamctx.js`, `src/ui/teamsel.js`; or `node tools/teamctxtest.js [seed]`, a few seconds): with a team selected (picked on the map, its panel open, or in move mode: `selectedTeam`), right-clicking a tile leads with that team (on foot or its vehicle, what it is doing, hours away) and its actions for that tile, grouped (Go, Base, Site, Land, Camp, Team), each with travel + job hours: move, look around, survey 3 tiles, boat across, scavenge or the city crawl, trade, rescue, assault, cull, hive, growth, find, vehicle, bodies, outpost or establish; forage, hunt, snares, fish, cut wood, fetch water; camp 8 h / 24 h / until told and a camp fire; field repair, listen in, claim, well; on your base enter, drop off, load, resupply; go home. Only what the tile and your knowledge offer (no fishing on dry land, no well on water); what cannot be done now is greyed with the reason in its tip (no rod, no route, no scrap, out of radio contact). A plain right-click replaces the team's plan (the confirmation box first when that drops orders under way); Shift+right-click or the menu's toggle adds to its queue (move there, then the job). Every item is ordinary team orders (`sim/orders.js`). The other teams and the hub's missions are folded below; with no team selected the menu is as before. The tool checks the selection, the lists on a forest, a river bank, open water, a town site, a known group's base, a horde and your base, the reasons, replace / append / asking first, and the HTML.
+
+```bash
 node tools/tripstest.js
 ```
 
@@ -578,6 +584,7 @@ The Survey mission, rumours and optics (`src/sim/survey.js`, `src/sim/optics.js`
 | --- | --- |
 | Left-click | Inspect a tile (a tile with one of your teams in contact opens its team panel) |
 | Right-click | Actions for a tile, or move a waiting team there; also 📌 Pin the base, group, hordes or teams on it, and 📝 Add note / Edit note |
+| Right-click with a team selected | That team's actions for the tile, with their hours (a plain pick replaces its plan); **Shift+right-click** adds them to the end of its queue. Other teams and the hub folded below |
 | 📌 (survivor screen, team panel, Groups and Bases tabs, tile panel) | Pin it to the Watching panel at the top left of the map (again to unpin); click a row there to go to it |
 | Note editor | Pick an icon, type the text; Enter saves, Esc closes |
 | Hover | Description of any button or option |
