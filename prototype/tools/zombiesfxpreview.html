@@ -223,6 +223,34 @@ window.renderAll = async (oldUrl) => {
     }
     return ch;
   });
+  // Close breathing: one of the dead 1.5 tiles off for 10 s, by kind (the game's breath plan, its jittered gaps).
+  for (const kind of ["walker", "brute", "runner"]) await keep(`close_breathing_${kind}`, 10, (c, out) => {
+    const dest = zbus(c, out), seed = Z.voiceSeed(kind.length * 11 + 5, 2);
+    for (let t = 0.2, n = 0; t < 9.5; n++) { Z.playZombie("breath", c, dest, t, { kind, seed, n, fade: n === 0, dist: 1.5, pan: 0.3 }); const pl = Z.breathPlan(kind, seed, n); t += pl.dur + pl.gap; }
+  });
+  // 20 s: 8 of the dead standing about in a silence; two creep up to within 2 tiles (their breathing comes in), then
+  // one of them snarls. The game's own schedulers (zombieUnitCues for the breathing, zombieIdleCue), the crowd bed.
+  await keep("quiet_horde_close_mix", 20, (c) => {
+    const ch = chain(c), out = ch.zom, bed = Z.makeCrowdBed(c, out, 0);
+    const b = { over: false, w: 24, h: 24, setup: { tile: 4259 }, units: [{ id: 1, side: "player", kind: "human", x: 12, y: 12 }] };
+    const spots = [[3, 4], [4, 20], [20, 3], [21, 21], [2, 12], [22, 12], [9, 6], [16, 18]];
+    spots.forEach(([x, y], i) => b.units.push({ id: 10 + i, side: "enemy", kind: "zombie", ztype: i === 7 ? "brute" : undefined, x, y, hp: 30, aware: true }));
+    const creep = [b.units[7], b.units[8]], from = creep.map((u) => [u.x, u.y]), to = [[11, 10], [14, 13]];
+    const zm = Z.zombieMemory(b), mem = { zm }, L = Z.listenerOf(b);
+    let snarled = false;
+    for (let t = 0; t <= 20; t += 0.1) {
+      const k = Math.min(1, t / 9);
+      creep.forEach((u, i) => { u.x = Math.round(from[i][0] + (to[i][0] - from[i][0]) * k); u.y = Math.round(from[i][1] + (to[i][1] - from[i][1]) * k); });
+      const cues = [];
+      Z.zombieUnitCues(b, zm, L, cues);
+      const q = Z.zombieIdleCue(b, mem, L, t);
+      if (q) cues.push(q);
+      if (!snarled && t >= 16.5) { snarled = true; cues.push({ name: "zSnarl", kind: "walker", seed: Z.unitSeed(b, creep[0]), ...Z.zPlace(L, creep[0].x, creep[0].y) }); }
+      for (const cu of cues) Z.playZombie(CUE_EV[cu.name], c, out, t + 0.02 + (cu.delay || 0), cu);
+      if (Math.abs(t * 4 - Math.round(t * 4)) < 1e-6) bed.update(Z.crowdMix(Z.crowdState(b, L)), t);
+    }
+    return ch;
+  });
   // The crowd bed alone sweeping from 3 to 40 (no voices on top).
   await keep("crowd_bed_sweep", 10, (c) => {
     const ch = chain(c), bed = Z.makeCrowdBed(c, ch.zom, 0);
