@@ -98,6 +98,7 @@ import { settingsModal } from "./settings.js";
 import { swatch } from "./help.js";
 import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
+import { pickBar, pickCard, ownBaseCard, groupBaseCard } from "./mapselect.js"; // teams, parties and bands selected on the map; a base's card
 import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
 import { huntInfo, gameWord, fishKit, expectFish, fishLevel, snareLine, expectSnare, bestHuntWeapon, hunterMult, HUNT, frozenAt, meatAt, gameAbundance, partyHuntMix, huntMixOf, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { herdAt, infestedShare, WORM, wormMeatAt, baseWater, searchRiskText, boilerUse, armoryTabs } from "../sim/worm.js";
@@ -441,7 +442,9 @@ export function tileActions(state, id) {
 
 export function renderRight(state, ui) {
   const xp = ui.expedition != null && state.parties.find((p) => p.id === ui.expedition);
-  if (xp) return renderExpedition(state, ui, xp);
+  if (xp) return pickBar(state, ui) + renderExpedition(state, ui, xp); // ui/mapselect.js: the other things on its tile
+  const picked = pickCard(state, ui); // a group's party, a band or outsiders selected on the map (ui/mapselect.js)
+  if (picked) return picked;
   const id = ui.selected;
   if (id < 0) {
     return `<h2>State of Calder</h2>
@@ -484,6 +487,7 @@ export function renderRight(state, ui) {
     <h2>${esc(loc ? loc.name : TERRAIN[t.terrain].name)}</h2>
     <div class="small muted">${loc ? LOCATIONS[loc.type].name + " · " : ""}${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}${t.bridge ? " · bridge" : ""}</div>
     ${loc ? `<div class="small muted"${tip("Danger: how many of the dead the site holds on top of its infection (city blocks and big sites are worse, the countryside is quiet). Likely: what searching here tends to turn up.")}>${SITE_ZONES[loc.zone || LOCATIONS[loc.type].cat]?.name || "Site"} · danger ${DANGER_NAMES[siteDanger(loc)].toLowerCase()} · likely ${Object.entries(LOCATIONS[loc.type].loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => SUPPLIES[k].name.toLowerCase()).join(", ")}${LOCATIONS[loc.type].gear.length ? ", maybe gear" : ""}</div>` : ""}
+    ${pickBar(state, ui)}
     ${ui.moveParty ? `<div class="card attn small" style="margin-top:0.5rem">Move mode: left-click this or another tile to send the team. Esc cancels.</div>` : ""}
     ${stagingTileCard(state, id)}
     <div class="card" style="margin-top:0.6rem">
@@ -511,6 +515,7 @@ export function renderRight(state, ui) {
     ${ruin && !base ? `<div class="card small"${tip(`A base burned to the ground in a raid. A little is left to scavenge, and an outpost here needs only ${ruin.scrap} scrap: the rest is salvage. Founding one replaces the ruins.`)}><b>${esc(ruin.title)}</b><div class="muted">Burned by ${esc(ruin.by)}${ruin.day != null ? ` on day ${ruin.day}` : ""}${ruin.from ? ` (${esc(ruin.from)}'s base)` : ruin.yours ? " (your base)" : ""}.</div>
       <div class="kv small"><div${tip("What is left to pick through, as you last saw it: rich, some, little, picked clean")}>Salvage</div><div>${esc(ruin.salvage)}${ruin.salvageLive ? "" : ` <span class="muted">(then)</span>`}</div><div${tip("The danger of the place, as the skulls under a site's name: at least very high on a hive's land")}>Danger</div><div class="${ruin.danger >= 2 ? "danger" : ""}">${esc(ruin.dangerName)}</div><div>New outpost</div><div>${ruin.scrap} scrap carried</div></div></div>` : ""}
     ${occupiedAt(state, id) ? `<div class="card attn small"${tip("A base of yours another group took. Send an Assault their base team (the button below) to take it back: its walls are weakest right after it fell, and the holders patch it up every day.")}><b>${esc(occupiedAt(state, id).name)}: held by others</b><div>${esc(occupiedText(state, occupiedAt(state, id)))}</div></div>` : ""}
+    ${base ? ownBaseCard(state, base) : groupBaseCard(state, id, knownGroupBase(state, id, isLive, snap))}
     ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
       <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${n0(m.info.fuel)}, condition ${Math.round(m.info.condition || 0)}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
     ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>${enterButton(state, p)}`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}

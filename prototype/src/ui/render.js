@@ -47,13 +47,14 @@ const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the he
 export const camera = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_LAYERS = ["pois", "territory", "teams", "hordes", "deaths", "vehicles", "finds", "weather"];
 // hourFrac: how much of the coming hour has gone by (main.js): your moving teams glide between tiles by it.
-export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0 };
+export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0, pick: null }; // pick: "kind:id" ringed in gold (ui/mapselect.js)
 const on = (k) => view.layers.has(k);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // A new world starts with the default view: nothing selected, the fog back on, the standard layers, zoom 1.
 export function resetView() {
   view.selected = -1;
+  view.pick = null;
   view.hover = -1;
   view.preview = null;
   view.devReveal = false;
@@ -1482,6 +1483,7 @@ export function render(state) {
       sprite(siegeCampCanvas(color), px - 25 * o, py + 17 * o, 26 * s);
       smokeWisps(p.id * 3 + 1, px - 25 * o, py + 17 * o - 8 * s, s, { n: 3, rise: 14 });
       groundRing(px + 24 * o, py + 12 * o, color, false, true);
+      if (view.pick === `group:${p.id}`) pickRing(px + 24 * o, py + 12 * o);
       sprite(cv, px + 24 * o, py + 12 * o - 3, w, { facing: -1 });
       sprite(iconCanvas("siege"), px, py - 30 * s, ICON_W * 1.2 * s);
       noteSprite(px + 24 * o, py + 12 * o - 3, w, spriteH(cv, w));
@@ -1490,6 +1492,7 @@ export function render(state) {
     // On a base's tile (passing through, or arriving) the party stands beside the base, not on top of it.
     const [x, y, k2] = besideBase(tile, px, py);
     groundRing(x, y, color, false, p.kind === "raid");
+    if (view.pick === `group:${p.id}`) pickRing(x, y); // selected on the map (ui/mapselect.js)
     const fo = facingOf(state, p), onWay = p.path && p.idx < p.path.length - 1;
     if (onWay && kind === "convoy") dustTrail(p.id, x, y + 4 * s, s, fo, w * k2);
     const dy = !onWay ? 0 : kind === "convoy" ? rumble(p.id, 0.35 * s) : stepBob(p.id, 1.1 * s, 380);
@@ -1507,6 +1510,7 @@ export function render(state) {
     const facing = next != null && next !== b.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
     const [x, y, k2] = besideBase(b.tile, px, py);
     groundRing(x, y, b.color, false, false);
+    if (view.pick === `band:${b.id}`) pickRing(x, y);
     const onWay = next != null && next !== b.tile;
     if (onWay && b.convoy) dustTrail(b.tile * 13 + 7, x, y + 4 * s, s, facing, w * k2);
     sprite(cv, x, y - 3 + (!onWay ? 0 : b.convoy ? rumble(b.tile * 13, 0.35 * s) : stepBob(b.tile * 13 + 1, 1.1 * s, 380)), w * k2, { facing });
@@ -1528,6 +1532,7 @@ export function render(state) {
     const facing = next != null && next !== v.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
     const [x, y, k2] = besideBase(v.tile, px, py);
     groundRing(x, y, color, heard, v.kind === "raiders");
+    if (view.pick === `visitor:${v.id}`) pickRing(x, y);
     const onWay = !heard && next != null && next !== v.tile;
     sprite(cv, x, y - 3 + (onWay ? stepBob((v.id || v.tile) * 17 + 3, 1.1 * s, v.kind === "merchants" ? 520 : 380) : 0), w * k2, { facing, alpha: heard ? 0.55 : 1 });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
@@ -1817,6 +1822,16 @@ function groundRing(x, y, color, dashed, raid = false) {
   ctx.setLineDash([]);
 }
 
+// The gold ring of a party selected on the map (ui/mapselect.js), around its ground ring: the selected tile's color.
+function pickRing(x, y) {
+  const s = zoomBoost();
+  ctx.beginPath();
+  ctx.ellipse(x, y + 7 * s, 17 * s, 7.5 * s, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = "#e0a84f";
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+}
+
 // Status icon at a sprite's top right: "alert" (waiting for orders), "work", "radio", "unknown" ("?" in color).
 function badge(x, y, kind, color) {
   const s = zoomBoost();
@@ -2009,6 +2024,7 @@ function drawPlayerParty(state, p) {
     }
     if (isNight(state)) lightGlow(state, p, px, py); // sim/lights.js: a team carrying lights glows in the dark
     groundRing(px, py, ring, false);
+    if (view.pick === `team:${p.id}` || view.pick === `convoy:${p.id}`) pickRing(px, py); // selected (ui/mapselect.js)
     const cvp = partySpriteCanvas(look.kind, look.color, look.count, look.ups), wp = spriteW(look.kind) * k2;
     // On the move: people bob in step, a cart a little slower; a vehicle rumbles and raises dust.
     const onWay = (p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1;
@@ -2065,6 +2081,7 @@ function drawPlayerParty(state, p) {
   }
   // Faded sprite on a dashed ring: where the team should be if the plan held.
   groundRing(ex, ey, color, true);
+  if (view.pick === `team:${p.id}` || view.pick === `convoy:${p.id}`) pickRing(ex, ey);
   const cve = partySpriteCanvas(look.kind, look.color, look.count, look.ups), we = spriteW(look.kind) * ke;
   sprite(cve, ex, ey - 3, we, { facing: lastFacing.get(p) || 1, alpha: 0.5 });
   noteSprite(ex, ey - 3, we, spriteH(cve, we));

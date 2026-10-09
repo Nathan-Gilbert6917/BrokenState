@@ -78,6 +78,7 @@ import { establishOption, establishArrive, strikeOption, strikeArrive } from "./
 import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
 import { enterTarget, enterCard, enterOption, joinBase } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
 import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, takeStock, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
+import { withLook, surveyErr, noteLook } from "./intelnotes.js"; // what a team sees of a group's base (the State Map's estimates, intelest.js)
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -995,7 +996,7 @@ function onEnterTile(state, p, tileId) {
   }
   // Sight and perception: what the team sees is held until they return (or reported live by radio).
   const around = state.grid.within(tileId, sightRadius(state, p));
-  for (const id of around) p.seen.set(id, snapshot(state, id));
+  for (const id of around) p.seen.set(id, withLook(state, snapshot(state, id), id)); // intelnotes.js: a group's base seen in passing
   if (p.spotted) perceive(state, p, members, around);
   if (p.kind === "convoy") {
     convoyLegEvent(state, p, tileId);
@@ -1298,7 +1299,8 @@ export function survey(state, p, bonus, debit = true) {
   const members = partyMembers(state, p);
   const opt = opticsFor(members, p.cargo, { still: true, night: state.hour % 24 < 6 || state.hour % 24 >= 20 }); // optics.js
   const around = state.grid.within(tile, sightRadius(state, p) + 1 + opt.reach);
-  for (const id of around) p.seen.set(id, snapshot(state, id));
+  // A group's base close by gets a good look (intelnotes.js: a survey's look, better with optics).
+  for (const id of around) p.seen.set(id, state.grid.distance(tile, id) <= 1 + opt.reach ? withLook(state, snapshot(state, id), id, "survey", surveyErr(state, opt)) : withLook(state, snapshot(state, id), id));
   const found = perceive(state, p, members, around, bonus + (opt.look - 1) * 0.3);
   noteLooked(state, p, around); // discovery.js: looked hard at (the map's Known area layer)
   gainXpAll(state, members, "scouting", USE.survey); // skills.js
@@ -1368,6 +1370,7 @@ function arrive(state, p) {
       } else {
         // trade.js: opens the trade screen (a ransom offer first if they hold your people), or queues the visit
         // behind one that is already open, so two teams arriving in the same hour both get their turn.
+        noteLook(state, p.dest, "visit"); // intelnotes.js: inside their gates, the trade screen shows their stores
         openTrade(state, p, f);
       }
       return "";
