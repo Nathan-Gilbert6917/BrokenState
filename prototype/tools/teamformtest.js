@@ -299,7 +299,7 @@ section("Fleets: 1 to 4 vehicles, a 5th refused; seats and cargo summed");
   const two = formPreview(state, { baseId: h.id, memberIds: people.slice(0, 2).map((s) => s.id), vehicleIds: [cars[0].id, cars[1].id] });
   check(two.cap > one.cap + 500, `two trucks carry more than one (${Math.round(one.cap)} → ${Math.round(two.cap)} kg)`);
   check(seatsOf(fleetOf([cars[0], cars[1]])) === 10 && payloadOf(fleetOf([cars[0], cars[1]])) === 2 * payloadOf(cars[0]), "seats and payload add up (5 + 5 seats, two payloads)");
-  check(/drivers/.test(formPreview(state, { baseId: h.id, memberIds: [people[0].id], vehicleIds: [cars[0].id, cars[1].id] }).problem), "two cars need two drivers");
+  check(/own person/.test(formPreview(state, { baseId: h.id, memberIds: [people[0].id], vehicleIds: [cars[0].id, cars[1].id] }).problem), "two cars need two drivers");
   const sedans = carsAt(state, h, 2, "sedan");
   const nine = atBase(state, h.id).slice(0, 9);
   if (nine.length === 9) check(/seats/.test(formPreview(state, { baseId: h.id, memberIds: nine.map((s) => s.id), vehicleIds: sedans.map((v) => v.id) }).problem), "nine people, two sedans (8 seats): refused");

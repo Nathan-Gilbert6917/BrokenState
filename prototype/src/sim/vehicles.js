@@ -115,13 +115,17 @@ const fleetParts = (v) => (v && v.fleet ? v.fleet : v ? [v] : []);
 // Seats in it or them: cars by model, a bike its rider.
 export const seatsOf = (v) => fleetParts(v).reduce((a, x) => a + (isBikeOne(x) ? x.count || 1 : SEATS[x.type] ?? 4), 0);
 export const fleetSize = (v) => fleetParts(v).length;
+// People it takes to move them: one at each car's wheel, one on each bike.
+export const driversFor = (vs) => (Array.isArray(vs) ? vs : fleetParts(vs)).reduce((a, x) => a + (isBikeOne(x) ? x.count || 1 : 1), 0);
 // Why these people cannot take these vehicles ("" when they can). n: how many people.
 export function fleetProblem(vs, n) {
   const list = (vs || []).filter(Boolean);
   if (list.length > MAX_VEHICLES) return `At most ${MAX_VEHICLES} vehicles to a team.`;
+  if (!list.length) return "";
+  // One person to each vehicle: a car its driver, a bike its rider (pick-list: "at least one person per vehicle").
+  const need = driversFor(list);
+  if (need > n) return `Each vehicle needs its own person (a driver for a car, a rider for a bike): ${need} for ${n} ${n === 1 ? "person" : "people"}.`;
   if (list.length < 2) return "";
-  const cars = list.filter(isCarOne).length;
-  if (cars > n) return `${cars} cars need ${cars} drivers: the team has ${n}.`;
   const seats = seatsOf(fleetOf(list));
   if (seats < n) return `Not enough seats: ${seats} for ${n} people.`;
   return "";
@@ -294,7 +298,7 @@ export function abandonVehicle(state, p, tile, reason, which = null) {
   p.vehicle = false;
   p.vehicleId = null;
 }
-function markLeft(state, p, v, tile, reason) {
+export function markLeft(state, p, v, tile, reason) {
   v.loc = { kind: "abandoned", tile, since: state.hour };
   if (p.spotted) p.spotted.set(`vehicle:${v.id}`, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: `${v.name} (${reason})`, info: { vehicleId: v.id, fuel: Math.round(v.fuel), condition: Math.round(v.condition) } });
 }
