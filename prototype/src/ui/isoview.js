@@ -20,7 +20,6 @@
 // center on the selected unit (V). Mouse picking runs the screen point back along its view ray to the frontmost
 // tile it hits (raised floors, walls and roofs included) or the unit sprite under it.
 import { PAL as COL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
-import { LIGHTS } from "../sim/lights.js";
 import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladders, rams, auras as data (sim/siege.js)
 import { CELL, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
@@ -30,9 +29,12 @@ import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprit
 import { thirdRing } from "../sim/thirdside.js";
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
 import { isMedic } from "../sim/medics.js"; // a med kit makes a medic: the cross tag
-import { nlTags } from "./nonlethal.js";
+import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (sim/nonlethal.js)
+import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas } from "./battleedge.js"; // the map's edge: ground fading into fog
+import { paintLights, drawGlow, drawDarkness, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness
+import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
 import { drawGroundIso, drawPileIso } from "./ground.js";
-import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js) // status tags of the non-lethal kit (sim/nonlethal.js)
+import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -45,7 +47,6 @@ const VEH_TOP = 28;
 const VEH_ROOF = { m35: 20, humvee: 19, mrap: 21, truck: 17, car: 15, one: 16, oneTruck: 23 };
 const vehZ = (roof) => VEH_TOP / roof;
 export const ISO_ZOOMS = [0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5]; // CSS px per art px
-const BG = "#0b0d10";
 
 // ---------- state ----------
 const ROOFS_KEY = "brokenstate.battleRoofs";
@@ -63,7 +64,7 @@ export function setRoofs(on) {
 
 // Canvas factory (the tools hand in a stub).
 let mkCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
-export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); }
+export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); setEdgeCanvas(fn); setLightsCanvas(fn); setMarksCanvas(fn); }
 const spriteCache = new Map();
 let groundCache = null, fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
 export function clearIsoCache() { spriteCache.clear(); groundCache = fogCache = sceneCache = fogMaskCache = flatGroundCache = null; for (const k of Object.keys(looksCache)) delete looksCache[k]; }
@@ -1288,7 +1289,8 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const scene = sceneFor(b);
   const [Wv, Hv] = viewDims(b);
   ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = BG;
+  const fog = fogColour(b, battleWeather(state, b)); // behind everything: the fog the map's edge fades into (ui/battleedge.js)
+  ctx.fillStyle = fogCss(fog);
   ctx.fillRect(0, 0, cw, ch);
 
   // Buildings cut away: one of your people inside, an enemy you see inside, the mouse inside, or roofs off.
@@ -1315,12 +1317,15 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // The ground and the fog.
   const lift = liftOf(b), F = floorsOf(b); // an upper floor of a building with storeys: the footprint raised `lift`
   const gx = (-Hv * HW - iso.cx) * S + cw / 2, gy = (0 - iso.cy) * S + ch / 2;
+  const gxf = groundXform(b, iso.rot, TEX, S, gx, gy, Hv);
+  const skirt = skirtFor(b, fog, floorColor, scene.groundKey); // the ground running on past the edges into the fog
+  if (skirt) { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.transform(...gxf); ctx.drawImage(skirt.cv, -skirt.K * TEX, -skirt.K * TEX); ctx.restore(); }
   let g = null;
   if (!lift) { // painted in map space, stretched onto the diamonds (flatGroundFor)
     const fg0 = flatGroundFor(b, scene);
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    ctx.transform(...groundXform(b, iso.rot, TEX, S, gx, gy, Hv));
+    ctx.transform(...gxf);
     ctx.drawImage(fg0.cv, 0, 0);
     ctx.restore();
   } else {
@@ -1328,6 +1333,20 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.drawImage(g.cv, gx, gy - (g.oy || 0) * S, g.gw * S, g.gh * S);
   }
   const vis = v.vis;
+  // Marks left on the ground (ui/battlemarks.js: blood, brass, scorch, glass), and the bodies lying on open ground
+  // (drawn here, under the fog and every living unit; the rest in the painter's pass).
+  ingestMarks(b, now);
+  revealMarks(b, vis);
+  const flatDead = new Set();
+  if (!lift) {
+    ctx.save(); ctx.imageSmoothingEnabled = false; ctx.transform(...gxf); drawMarks(ctx, b, now, floorNo(b)); ctx.restore();
+    for (const t of b.units) {
+      if (!t.dead || t.left || t.fled || t.off || t.x < 0 || t.ztype === "sleeper" || !onFloor(b, t) || looks[t.y * b.w + t.x] || standZ(b, t.x, t.y)) continue;
+      if (!knownBody(b, t, vis)) continue;
+      drawBody(ctx, state, b, { t, wx: t.x + 0.5, wy: t.y + 0.5, z: 0 }, H);
+      flatDead.add(t);
+    }
+  }
   if (!lift) { // one pixel a tile, stretched onto the diamonds (fogMaskFor)
     const m = fogMaskFor(b, vis);
     ctx.save();
@@ -1441,13 +1460,16 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   for (const m of OV.rams) if (m.x >= 0 && vis[m.y * b.w + m.x]) { const [uu, vv] = toView(m.x, m.y, r, b.w, b.h); const d = uu + vv + 1; const a = siegeOver.get(d); if (a) a.push(() => drawRamIso(ctx, b, m, S)); else siegeOver.set(d, [() => drawRamIso(ctx, b, m, S)]); }
   for (const f of OV.fires) if (vis[f.y * b.w + f.x]) atD(f.x, f.y, () => drawFlamesIso(ctx, b, f, S, ph));
 
+  // Night: the lights (ui/battlelights.js), a glow on the ground under the units.
+  if ((b.night || b.dark) && paintLights(b, v, groundXform(b, iso.rot, 1, S, gx, gy, Hv), cw, ch, now, (t) => H.animPos(t, now))) drawGlow(ctx, cw, ch);
+
   // ---------- the painter's pass: every cell from the back to the front ----------
   const items = [];
   // Units by where they stand (sliding along their last move).
   const shown = [];
   for (const t of b.units) {
     if (t.left || t.fled || t.off || !onFloor(b, t)) continue; // on another floor: a marker only (below)
-    if (t.side !== "player" && !(active(t) ? v.seen.has(t.id) : vis[t.y * b.w + t.x])) continue; // the enemy and the third side (sim/thirdside.js) under the fog
+    if (t.side !== "player" && !(active(t) ? v.seen.has(t.id) : knownBody(b, t, vis))) continue; // the enemy and the third side (sim/thirdside.js) under the fog; a body once seen stays
     const [wx, wy] = H.animPos(t, now);
     const [uu, vv] = ptView(wx, wy, r, b.w, b.h);
     const tx = Math.max(0, Math.min(b.w - 1, Math.floor(wx))), ty = Math.max(0, Math.min(b.h - 1, Math.floor(wy)));
@@ -1535,7 +1557,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const p of piles.get(d) || []) drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); // ui/ground.js
     for (const q of gh.get(d) || []) drawGhost(ctx, state, b, q, H);
     for (const f of siegeAt.get(d) || []) f();
-    for (const s of (sh.get(d) || []).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) drawUnitIso(ctx, state, b, s, H, now);
+    for (const s of (sh.get(d) || []).filter((q) => !flatDead.has(q.t)).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) drawUnitIso(ctx, state, b, s, H, now);
     for (const f of siegeOver.get(d) || []) f();
     for (const [L, , , sx, sy, fog, faded] of fronts) {
       const spr = sprOf(L, fog, true);
@@ -1605,30 +1627,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   for (const s of shown) if (s.t.side === "player" && active(s.t)) drawBody(ctx, state, b, s, H, true);
   ctx.globalAlpha = 1;
 
-  // Night: the whole scene darker, the lights brighter.
-  if (b.night || b.dark) {
-    ctx.fillStyle = b.night ? "rgba(6,10,30,0.34)" : "rgba(10,14,34,0.18)";
-    ctx.fillRect(0, 0, cw, ch);
-    ctx.globalCompositeOperation = "lighter";
-    for (const p of players) {
-      if (!p.light || !active(p)) continue;
-      const f = p.face && (p.face[0] || p.face[1]) ? p.face : [1, 0], a = Math.atan2(f[1], f[0]);
-      const L = LIGHTS[p.light] || LIGHTS.flashlight, R = L.cone; // sim/lights.js: a beam, or a lantern's or torch's glow all around
-      ctx.fillStyle = p.light === "torch" ? "rgba(255,170,80,0.12)" : "rgba(255,240,170,0.10)";
-      ctx.beginPath();
-      if (L.round) {
-        for (let k = 0; k <= 16; k++) { const aa = (Math.PI * 2 * k) / 16; ctx[k ? "lineTo" : "moveTo"](...project(p.x + 0.5 + Math.cos(aa) * R, p.y + 0.5 + Math.sin(aa) * R, standZ(b, p.x, p.y))); }
-      } else {
-        ctx.moveTo(...project(p.x + 0.5, p.y + 0.5, standZ(b, p.x, p.y)));
-        for (let k = 0; k <= 8; k++) { const aa = a - 0.45 + (0.9 * k) / 8; ctx.lineTo(...project(p.x + 0.5 + Math.cos(aa) * R, p.y + 0.5 + Math.sin(aa) * R, standZ(b, p.x, p.y))); }
-      }
-      ctx.closePath(); ctx.fill();
-    }
-    for (const c of b.fires || []) groundDisc(c, "rgba(255,140,40,0.18)");
-    for (const c of b.flares || []) groundDisc(c, "rgba(255,80,60,0.16)");
-    if (b.lit && b.floodAim) fillCells(ctx, b, (i) => b.lit[i], "rgba(255,236,150,0.07)");
-    ctx.globalCompositeOperation = "source-over";
-  }
+  // Night: the whole scene darker, the lights cut out of it (ui/battlelights.js); the fog's vignette on the edges.
+  drawDarkness(ctx, b, cw, ch);
+  drawVignette(ctx, cw, ch, fog);
   for (const c of OV.smoke) {
     if (c.thick) {
       // A fire's smoke: a dark column rising and drifting (it blocks sight through it).

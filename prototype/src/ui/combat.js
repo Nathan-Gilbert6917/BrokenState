@@ -41,7 +41,9 @@ import { herded, sensesOf } from "../sim/decoys.js";
 import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent, bodyAt as humanBodyAt, bodyName, unitBodyLoad, carRoom } from "../sim/carriers.js"; // the Carrier: bodies in danger, the risen, bodies carried, shot or burnt
 import { recText, handsKg, carriedNear, handsBusy, armsText } from "../sim/carry.js"; // supplies carried in the arms in a fight: Drop carried (free), Pick up load
 import { statusIcons } from "./status.js"; // the survivor behind a unit: low mood, starving, thirsty, infected, sick (its own hit points are the bar)
-import { iso, drawIso, project, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor } from "./isoview.js";
+import { barkFrame } from "./barks.js"; // combat barks: short speech bubbles over the units' heads
+import { ingestMarks } from "./battlemarks.js"; // blood, brass and scorch read off each action's fx before the short fx list drops them
+import { iso, drawIso, project, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor, ISO_ZOOMS, LV, liftOf } from "./isoview.js";
 import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
 import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC, selfKit, selfOdds, selfStabRefusal } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy
 import { groundButtons, groundCbAct, groundClick } from "./ground.js"; // bodies searched where they fell, things on the ground (sim/ground.js)
@@ -307,6 +309,7 @@ function follow(b) {
 function act(state, a) {
   const b = state.combat;
   const err = combatAct(state, a);
+  if (b) ingestMarks(b, performance.now());
   cui.msg = err || "";
   cui.pickedDown = null; // a downed one picked in the roster stays picked only until something is done
   if (!err && a.type !== "end") {
@@ -1154,6 +1157,7 @@ export function combatTick(state, now) {
     cui.endAsk = cui.retreatAsk = cui.fallAsk = null;
     cui.mode = "move";
     SIM.autoPlayerTurn(state);
+    ingestMarks(b, now);
     cui.sel = null;
     if (state.combat === b && b.phase === "player") autoSelect(b);
     return true;
@@ -1165,6 +1169,7 @@ export function combatTick(state, now) {
   for (let i = 0; i < 30 && b.phase === "enemy" && !b.over; i++) {
     const before = b.fxSeq;
     const u = enemyStep(state);
+    ingestMarks(b, now);
     if (!u) break;
     // Pause only when something happened that the player can see.
     if (b.fx.some((f) => f.seq > before && (f.type !== "move" || playerSees(b, u)))) break;
@@ -1958,7 +1963,23 @@ export function drawCombat(state, now) {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawIsoView(state, b, now, cw, ch); // the battle map is isometric only (ui/isoview.js)
+  barkFrame(ctx, state, b, now, barkView(b, now, cw, ch)); // combat barks over the units' heads (ui/barks.js)
   drawBanner(b, cw, 40);
+}
+// What ui/barks.js needs to place the bubbles: who your people see (the drawing's fog), where a unit's head is (over its
+// labels in the iso view, sliding with its move), the text size (the zoom and the UI size).
+function barkView(b, now, cw, ch) {
+  const v = view(b), S = ISO_ZOOMS[iso.zoom] || 2;
+  const ui = typeof document !== "undefined" && document.documentElement ? Number(document.documentElement.style.getPropertyValue("--ui-scale")) || 1 : 1;
+  const visible = (t) => t.side === "player" || (active(t) ? v.seen.has(t.id) : !!v.vis[t.y * b.w + t.x]);
+  const head = (t) => {
+    if (!onFloor(b, t) || t.left || t.fled || t.off) return null;
+    const [x, y] = animTile(b, t, now);
+    const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, fs = Math.max(10, Math.round(3.4 * S));
+    const [X, Y] = project(x + 0.5, y + 0.5, heightAt(b, t.x, t.y) * LV + liftOf(b) + (t.down || t.dead ? 10 : 30 * big));
+    return [X, Y - 6 - fs - 6]; // over the health bar and the tags (ui/isoview.js drawLabels)
+  };
+  return { visible, head, w: cw, h: ch, sel: cui.sel, top: 40, font: Math.min(30, Math.max(16, 3.6 * S)) * ui };
 }
 
 // Throw mode (sim/stealth.js): the cells in range (k 0), and for the hovered spot in range where it would reach: a

@@ -12,6 +12,10 @@
 //   rocket's; a frame's blasts merged into one; a carried bomb going off elsewhere; a car wrecked; glass near cars.
 // - Space: pan by the screen, distance (level, highs, delay), out of sight muffled, blasts darker and later far away;
 //   the room by place; the deafened muffle and ring; the ducking after a close blast.
+// - Levels: the louder guns (a 9mm about 4 dB over the old pistol), handling under them, blasts over them; the Gunfire
+//   volume scales guns, handling and blasts (not another module's sounds); with the WAV renders' numbers at hand
+//   (sfx-preview/stats.json from tools/sfxpreview/main.cjs) the old/new loudness, no clipping and peaks under −1 dBFS in
+//   the mixes at default and full sliders and at Gunfire 150%, and the limiter's reduction in a normal firefight.
 // - Determinism: the same battle played with and without the sound layer ends the same (no sim state, no dice).
 // Usage: node tools/gunsfxtest.js
 import * as C from "../src/sim/combat.js";
@@ -25,6 +29,7 @@ import * as BL from "../src/ui/blastsfx.js";
 import * as BS from "../src/ui/battlesfx.js";
 import { battleCues, LISTEN, MAX_BATTLE_SOUNDS, makeThrottle } from "../src/ui/soundcues.js";
 import { stats } from "../src/ui/sfxdsp.js";
+import { existsSync, readFileSync } from "node:fs";
 
 let passed = 0, failed = 0;
 const check = (ok, msg) => { if (ok) passed++; else failed++; console.log(`  ${ok ? "ok" : "FAIL"}: ${msg}`); };
@@ -381,6 +386,42 @@ console.log("Playing");
   check(!errs.length, `every gun in every mode, every blast and sequence, every handling sound plays${errs.length ? `: ${errs.slice(0, 3).join("; ")}` : ""}`);
   check(!c.bad.length, `no NaN, nothing connected to nothing, every source with its buffer${c.bad.length ? `: ${c.bad.slice(0, 4).join(", ")}` : ""}`);
   check(c.sources.every((s) => s.t >= 0), `${c.sources.length} sources, ${c.nodes.n} nodes, all started at a real time`);
+}
+
+// ---------- 9b. levels and the Gunfire volume ----------
+console.log("Levels and the Gunfire volume");
+{
+  const db = (x) => 20 * Math.log10(x);
+  check(near(db(G.GUN_TRIM / 0.31), 5, 0.3) && near(db((G.GUN_TRIM * G.HAND_LEVEL) / (0.31 * 0.32)), 2, 0.3) && near(db(BL.BLAST_TRIM / 0.5), 5, 0.3),
+    `louder: the guns +${db(G.GUN_TRIM / 0.31).toFixed(1)} dB over the first (matched) level, the handling +${db((G.GUN_TRIM * G.HAND_LEVEL) / (0.31 * 0.32)).toFixed(1)}, the blasts +${db(BL.BLAST_TRIM / 0.5).toFixed(1)}`);
+  const c = stubCtx();
+  G.installBus(c, c.destination);
+  const gainOf = (fn) => { const mk = c.createGain; let first = null; c.createGain = () => { const n = mk(); if (!first) first = n; return n; }; fn(); c.createGain = mk; return first ? first.gain.value : NaN; };
+  const sp = G.place({ dist: 0 });
+  G.setGunVolume(1);
+  const g1 = gainOf(() => G.playGun(c, 1, G.labPlan("pistol"), sp)), h1 = gainOf(() => G.playHand(c, 1, { kind: "dry" }, sp)), b1 = gainOf(() => BL.playBlast(c, 1, { kind: "frag" }, sp)), z1 = gainOf(() => G.spatialOut(c, sp));
+  G.setGunVolume(2.25);
+  const g2 = gainOf(() => G.playGun(c, 1, G.labPlan("pistol"), sp)), h2 = gainOf(() => G.playHand(c, 1, { kind: "dry" }, sp)), b2 = gainOf(() => BL.playBlast(c, 1, { kind: "frag" }, sp)), z2 = gainOf(() => G.spatialOut(c, sp));
+  G.setGunVolume(0);
+  const g0 = gainOf(() => G.playGun(c, 1, G.labPlan("pistol"), sp));
+  G.setGunVolume(1);
+  check(near(g2 / g1, 2.25) && near(h2 / h1, 2.25) && near(b2 / b1, 2.25) && near(z1, z2) && g0 === 0 && near(g1, G.GUN_TRIM), "the Gunfire volume (150% → ×2.25, 0 → silent) scales the guns, their handling and the blasts; another module's spatialOut is left alone");
+  const sr = 16000, loud = (d) => Math.pow(10, stats(d, sr).rms50Db / 20); // the loudest 50 ms
+  const shot = loud(G.bakedVoice(sr, G.labPlan("pistol")).body[0]) * G.GUN_TRIM, reload = Math.max(...[["magIn", 1], ["charge", 1], ["dry", 2.5], ["jam", 2], ["rack", 1.4], ["lockOpen", 1.6]].map(([n, k]) => loud(G.renderHandling(n, sr)) * k * G.HAND_LEVEL), loud(G.renderHandling("brassP", sr)) * G.BRASS.LEVEL) * G.GUN_TRIM; // each at its own level (handScript)
+  check(db(shot / reload) > 8, `handling stays under the shots: the loudest click (at its most) ${db(shot / reload).toFixed(1)} dB under a 9mm (loudest 50 ms)`);
+  const P = existsSync(new URL("../../sfx-preview/stats.json", import.meta.url)) ? JSON.parse(readFileSync(new URL("../../sfx-preview/stats.json", import.meta.url), "utf8")).renders : null;
+  if (!P) check(true, "(no sfx-preview/stats.json: run tools/sfxpreview/main.cjs to check the rendered levels)");
+  else {
+    const L = (k) => (P[k] ? P[k].rms50Db : NaN);
+    const d9 = L("pistol9_new") - L("pistol_old");
+    check(d9 > 3 && d9 < 6.5, `rendered: a 9mm ${L("pistol9_new")} dB, the old pistol ${L("pistol_old")} dB: ${d9.toFixed(1)} dB louder`);
+    check(L("amr50_new") > L("pistol9_new") + 4 && L("m2_auto_new") > L("pistol9_new") + 4 && L("frag_new") > L("rifle556_new") + 4 && L("reload_rifle_new") < L("pistol9_new") - 10,
+      `the .50 (${L("amr50_new")}) and the M2 (${L("m2_auto_new")}) keep their lead; a frag (${L("frag_new")}) over a rifle (${L("rifle556_new")}); a reload (${L("reload_rifle_new")}) well under`);
+    const mixes = ["firefight_game_new", "grenadefight_game_new", "firefight_max_new", "grenadefight_max_new", "firefight_max150_new", "grenadefight_max150_new"].filter((k) => P[k]);
+    check(mixes.length === 6 && mixes.every((k) => P[k].clip === 0 && P[k].peakDb < -1 && !P[k].nan), `the mixes at default and full sliders and at Gunfire 150%: no clipping, peaks ${mixes.map((k) => P[k].peakDb).join(" / ")} dBFS`);
+    const r = P.firefight_game_new.reduction, rm = P.firefight_max_new.reduction;
+    check(r && rm && r.limiter.mean < 1 && rm.limiter.mean < 1 && r.limiter.max < 3, `the limiter in a firefight: mean ${r && r.limiter.mean} dB (max ${r && r.limiter.max}) at the default sliders, mean ${rm && rm.limiter.mean} (max ${rm && rm.limiter.max}) at full`);
+  }
 }
 
 // ---------- 10. determinism ----------

@@ -8,7 +8,7 @@
 //   the load, the dead's kinds; paced along the move; yours, the enemy's (AI parity) and the unseen nearby (muffled);
 //   capped per frame; a battle first seen is quiet.
 // - The rest: searches and locks, bandages, a door opened by a move, your vehicle driven; windows, the inventory's held
-//   item, a team's engine on the map; the click.
+//   item, a team's engine (and its doors) on the map; the click. (tools/vehdoortest.js covers the doors and vehicles.)
 // - Every voice builds on a stub AudioContext with every variant, no NaN; the output stage; the Footsteps option.
 // Usage: node tools/sfxtest.js
 import * as C from "../src/sim/combat.js";
@@ -264,7 +264,8 @@ console.log("Searches, doors, vehicles, the interface");
   const eng = uiCues(ws, wui, wm).map((c) => c.name);
   ws.parties[ws.parties.length - 1].idx = 2;
   const off = uiCues(ws, wui, wm).map((c) => c.name);
-  check(eng.join() === "engineStart" && off.join() === "engineStop", `a team's car sets off and arrives: ${eng.join()}, ${off.join()}`);
+  const engine = (l) => l.filter((n) => n.startsWith("engine")).join(); // the doors are their own cues (ui/sfx-vehicles.js mapCues)
+  check(engine(eng) === "engineStart" && engine(off) === "engineStop" && eng.includes("carDoor") && off.includes("carDoor"), `a team's car sets off and arrives: ${eng.join()}, ${off.join()}`);
 }
 
 // ---------- voices ----------
@@ -306,7 +307,8 @@ console.log("Voices");
   check(!bad.length, `no NaN, no ramp to zero, nothing connected to nothing${bad.length ? `: ${bad.slice(0, 5).join(", ")}` : ""}`);
   const own = Object.keys(VOICES).filter((k) => VOICES[k].own);
   check(["melee", "meleeCrit", "whoosh", "step", "door", "bandage", "hearStepBrute", "hearBlade"].every((k) => own.includes(k)) && !VOICES.pistol.own && !VOICES.bite.own, `the new voices play through the output stage (${own.length}); the guns and the dead's are left as they are`);
-  check(VOICES.step.steps && VOICES.hearStepGrass.steps && !VOICES.melee.steps, "footsteps answer to the Footsteps slider");
+  const SG = await import("../src/ui/soundgroups.js");
+  check(SG.groupOf("step") === "people.steps" && SG.groupOf("hearStepGrass") === "people.steps" && SG.groupOf("melee") === "weapons.melee" && SG.groupOf("rummage") === "people.gear" && SG.groupOf("door") === "people.doors" && SG.groupOf("engineStart") === "people.vehicles", "footsteps answer to the mixer's Footsteps group, blows to Melee, the small sounds to Gear, doors and engines to their own");
   const per = nodes / n;
   check(per < 40, `cheap: ${per.toFixed(1)} nodes a sound on average`);
   // The output stage: panned and muffled, or straight to the bus.
@@ -395,9 +397,12 @@ console.log("Played");
 console.log("Options");
 {
   const s = AU.soundOptions({});
-  check(s.steps === AU.SOUND_DEFAULTS.steps && AU.soundOptions({ sound: { steps: 4 } }).steps === 1 && AU.soundOptions({ sound: { steps: 0 } }).steps === 0, "the Footsteps volume: a default, clamped, 0 kept (off)");
-  const html = AU.soundOptionsHtml({ sound: { ...s, steps: 0.4 } });
-  check(/data-k="steps"[^>]*>|value="40"[^>]*data-action="snd-vol" data-k="steps"/.test(html) && /Footsteps/.test(html), "the Footsteps slider in Options → Sound");
+  const o4 = AU.soundOptions({ sound: { steps: 4 } }), o0 = AU.soundOptions({ sound: { steps: 0 } }), o35 = AU.soundOptions({ sound: { steps: 0.35 } });
+  check(!s.groups["people.steps"] && Math.abs(o4.groups["people.steps"] - 1 / 0.7) < 1e-3 && o0.groups["people.steps"] === 0 && Math.abs(o35.groups["people.steps"] - 0.5) < 1e-9, "an old Footsteps volume becomes the Footsteps group (70% → 100%, clamped, 0 kept: off)");
+  AU.soundMixer.open = true;
+  const html = AU.soundOptionsHtml({ sound: { ...s, groups: { "people.steps": 0.4 } } });
+  AU.soundMixer.open = false;
+  check(/value="40" data-action="snd-grp" data-g="people.steps"/.test(html) && /Footsteps/.test(html), "the Footsteps group in the Advanced mixer");
   check(/Footsteps: a brute/.test(html) && /Melee: blade/.test(html) && /Searching a container/.test(html), "Hear lists the new sounds");
 }
 

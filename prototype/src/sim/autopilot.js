@@ -47,7 +47,7 @@ import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, ba
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill } from "./crafting.js";
-import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair, wreckSupplies } from "./vehicles.js";
+import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair, wreckSupplies, partyFuel } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun, linesText } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
@@ -1018,10 +1018,7 @@ function winterReport(state) {
   say(state, `Winter stores at ${h.name}: ${fresh + pres} food (${fresh} fresh, ${pres} preserved; cellar room ${st.cap}${st.outside >= 1 ? `, ${Math.floor(st.outside)} stored outside` : ""})${w.bases > 1 ? ` plus ${Math.max(0, w.have - fresh - pres)} at the outposts` : ""}, about ${w.crops} still to come from the fields. The ${w.people} people${w.bases > 1 ? " (outposts and teams too)" : ""} need about ${w.need + w.spoil + w.seed} (eating ${w.need}, spoilage ${w.spoil}, spring seed ${w.seed}) to reach the first spring harvest around day ${w.gap.end + 1}, plus ${w.margin} to spare for bad luck: ${verdict}.`, w.short > 0 ? "danger" : "info");
 }
 
-const partyFuelOf = (state, p) => {
-  const v = p.vehicleId ? state.vehicles.find((x) => x.id === p.vehicleId) : null;
-  return (v ? v.fuel : 0) + (p.supplies.fuel || 0);
-};
+const partyFuelOf = (state, p) => partyFuel(state, p); // every car's tank and the cans (vehicles.js fleets)
 // Rough hours until a team is home: the way left, plus (going out) the job and the same way back.
 const tripHoursLeft = (state, p) => (p.phase === "back" ? hoursLeft(state, p) : 2 * hoursLeft(state, p) + 10);
 // Days of food and water a team carries on the move (extra = more mouths; a loaded team eats more, load.js; food at

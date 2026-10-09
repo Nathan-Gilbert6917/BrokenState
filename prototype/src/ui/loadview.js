@@ -28,7 +28,7 @@ export function carLine(t, name = "the car") {
   if (!t || t.mode !== true) return "";
   const p = Math.round(t.fill * 100);
   const cls = t.fill > 1 ? "danger" : t.fill > FUEL_FULL.from ? "warn" : "";
-  return `<div class="small ${cls}"${tip(`Everything in ${name}: the riders (80 kg each), what they wear, the supplies and the cargo: ${kg(t.vehicleLoad)} of its ${t.payload} kg payload. Fuel per tile ×1 up to ${Math.round(FUEL_FULL.from * 100)}% full, ×${FUEL_FULL.atFull} at 100%, up to ×${FUEL_FULL.atMax} at ${Math.round(OVERLOAD_MAX * 100)}% (the most it takes). Past 100% it is overloaded: 15% slower, wears and breaks down 1.5× as much. The riders feel none of the load.`)}>Vehicle load ${p}% · fuel ×${t.fuelMult.toFixed(2)}${t.fill > 1 ? " · overloaded: slower, more wear" : ""}</div>`;
+  return `<div class="small ${cls}"${tip(`Everything in ${name}: the riders (80 kg each), what they wear, the supplies and the cargo: ${kg(t.vehicleLoad)} of its ${t.payload} kg payload. Fuel per tile ×1 up to ${Math.round(FUEL_FULL.from * 100)}% full, ×${FUEL_FULL.atFull} at 100%, up to ×${FUEL_FULL.atMax} at ${Math.round(OVERLOAD_MAX * 100)}% (the most it takes). Past 100% it is overloaded: 15% slower, wears and breaks down 1.5× as much. The riders feel none of the load.`)}>Vehicle load ${p}% · fuel ×${(t.fuelMult / (t.cars || 1)).toFixed(2)}${t.cars > 1 ? ` a car (${t.cars} cars)` : ""}${t.fill > 1 ? " · overloaded: slower, more wear" : ""}</div>`;
 }
 
 // The team's pace and rations from its load: on foot, bikes or a car.

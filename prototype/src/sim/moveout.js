@@ -28,7 +28,7 @@ import { log, addCard, baseById, residents } from "./world.js";
 import { baseBeds } from "./buildings.js";
 import { crowdInfo } from "./morale.js";
 import { launchExpedition, partyMembers, partyTile, awaitOrders, startReturn, teamName } from "./parties.js";
-import { partyVehicle } from "./vehicles.js";
+import { partyFleet as partyVehicle, vehicleLabel } from "./vehicles.js"; // all the team's vehicles (vehicles.js fleets)
 
 export const CROWD_CARD = { days: 5, worse: 2 };
 // What the move-out planner packs by default (main.js autofill): the trip there and back like any trip, plus
@@ -93,7 +93,7 @@ export function moveTeamOut(state, opts) {
   const dest = opts.dest != null && opts.dest !== base.tile ? opts.dest : null;
   const to = dest != null ? state.bases.find((b) => b.tile === dest) || null : null;
   const res = launchExpedition(state, {
-    memberIds: opts.memberIds, dest: dest ?? base.tile, mission: "move", stance: opts.stance || "normal", vehicleId: opts.vehicleId || null,
+    memberIds: opts.memberIds, dest: dest ?? base.tile, mission: "move", stance: opts.stance || "normal", vehicleId: opts.vehicleId || null, vehicleIds: opts.vehicleIds || [], // up to four (vehicles.js fleets)
     supplies: opts.supplies || {}, fromBaseId: base.id, lights: opts.lights !== false, tabs: !!opts.tabs, quiet: true,
   });
   if (res.error) return res;

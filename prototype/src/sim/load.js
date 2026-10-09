@@ -29,7 +29,7 @@ import { GEAR } from "./data.js";
 import { skill } from "./world.js";
 import { hasPerk } from "./skills.js";
 import { allItems, itemLoad, carryBonus } from "./inventory.js";
-import { VEHICLE_TYPES, RIDER_KG, OVERLOAD_MAX, OVERLOAD_SPEED, fuelMultFor, isBike, isCar, typeSpeed, typeFuel, typeOffroad, payloadOf } from "./vehicles.js";
+import { VEHICLE_TYPES, RIDER_KG, OVERLOAD_MAX, OVERLOAD_SPEED, fuelMultFor, isBike, isCar, typeSpeed, typeFuel, typeOffroad, payloadOf, roadPace } from "./vehicles.js";
 
 export const LOAD_BANDS = [
   { key: "light",  name: "Light",      upTo: 18,       slow: 0,    eat: 0 },
@@ -126,14 +126,35 @@ export function teamLoad(members, pool, v = null) {
     out.people = out.ride.people;
     out.mode = "bike";
   } else if (v) {
+    // Several vehicles (vehicles.js fleetOf): the cars' payloads together; bikes among them carry their racks first and
+    // their riders (one each) are not in the cars.
+    const bikes = v.fleet && v.count ? v.count : 0;
+    const rack = bikes * VEHICLE_TYPES.bike.rack;
+    const riders = Math.max(0, members.length - bikes);
+    const carShare = members.length ? riders / members.length : 0;
     const payload = payloadOf(v); // vehicles.js: the type's payload less the weight of its upgrades (glass, plating)
-    const load = pool + worn + members.length * RIDER_KG;
+    const load = bikes ? Math.max(0, pool - rack) + worn * carShare + riders * RIDER_KG : pool + worn + members.length * RIDER_KG;
+    if (bikes) {
+      out.fill = r4(load / payload);
+      out.fuelMult = Math.round(fuelMultFor(out.fill) * typeFuel(v) * 100) / 100;
+      const eat = {};
+      for (const s of members) eat[s.id] = 1;
+      out.ride = { speed: (out.fill > 1 + 1e-9 ? OVERLOAD_SPEED : 1) * typeSpeed(v), eat, people: [] };
+      out.payload = payload;
+      out.cars = v.fleet.filter(isCar).length;
+      out.vehicleLoad = r4(load);
+      out.rack = rack;
+      out.capacity = Math.max(footCap, OVERLOAD_MAX * payload - riders * RIDER_KG - worn * carShare + rack);
+      out.mode = true;
+      return out;
+    }
     out.fill = r4(load / payload);
     out.fuelMult = Math.round(fuelMultFor(out.fill) * typeFuel(v) * 100) / 100; // a thirsty type (vehicles.js: the Army truck ×2)
     const eat = {};
     for (const s of members) eat[s.id] = 1;
     out.ride = { speed: (out.fill > 1 + 1e-9 ? OVERLOAD_SPEED : 1) * typeSpeed(v), eat, people: [] }; // a slow type (the Army truck ×0.67)
     out.payload = payload;
+    out.cars = v.fleet ? v.fleet.filter(isCar).length : 1; // several cars: the fuel multiplier is all of them together
     out.vehicleLoad = r4(load);
     out.capacity = Math.max(footCap, OVERLOAD_MAX * payload - members.length * RIDER_KG - worn);
     out.mode = true;
@@ -156,6 +177,7 @@ export function poolAtBand(members, band) {
 export function burdenRecord(t, members, v) {
   return {
     total: t.total, ids: members.map((s) => s.id).sort((a, b) => a - b).join(","), vid: v ? v.id : null,
+    onroad: t.mode === true ? roadPace(v) : 1, // bikes among the cars: the convoy keeps to the bikes on roads (vehicles.js)
     foot: t.foot.speed, eatFoot: t.foot.eat,
     ride: t.ride ? t.ride.speed : null, eatRide: t.ride ? t.ride.eat : null,
     fuelMult: t.fuelMult, fill: t.fill, offroad: t.mode === true ? typeOffroad(v) : 1, // a slow type off-road (vehicles.js)

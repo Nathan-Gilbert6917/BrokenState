@@ -29,6 +29,7 @@ import { rngOf, hashStr, noiseLayer, toneLayer, metalLayer, nwave, shape, rollTa
 import { WEAPONS } from "../sim/combat.js";
 import { loadOf, calOf } from "../sim/ammo.js";
 import { indoors } from "../sim/hearing.js";
+import { groupGain, assignGroup } from "./soundgroups.js"; // the mixer (Settings → Sound): Gunfire, Reloads and handling
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -90,7 +91,13 @@ export const GUN_VOICES = {
            blast: { tau: 0.006, hp: 120, pop: 140, popAmp: 0.8, drive: 3.4 }, body: { f: 600, q: 0.5, tau: 0.16, amp: 1, sweep: [130, 50, 0.2, 0.7] },
            boom: { lp: 1800, tau: 0.35, amp: 0.9 }, tail: { amp: 0.55, len: 2.4, lp: 900, lpEnd: 350, rise: 0.12, echoes: [E(0.25, 0.35), E(0.8, 0.2)] } },
 };
-export const GUN_TRIM = 0.31; // all gun voices: a 9mm pistol near you about as loud as the old pistol (tools/sfxpreview.cjs measures it)
+assignGroup(Object.keys(GUN_VOICES).map((k) => `gun:${k}`), "weapons.guns"); // the mixer's names for these voices (tools/soundmixtest.js)
+export const GUN_TRIM = 0.55; // all gun voices: a 9mm pistol near you about 4 dB over the old pistol (the user: louder; tools/sfxpreview measures it)
+// The player's volumes are the mixer's groups (ui/soundgroups.js): playGun reads Gunfire (its brass and manual action
+// Reloads and handling), playHand Reloads and handling, ui/blastsfx.js Explosions and grenades. GUNVOL: one more gain on
+// all three (1; the sound previews and measuring tools set it).
+export const GUNVOL = { v: 1 };
+export function setGunVolume(g) { GUNVOL.v = Number.isFinite(Number(g)) ? Math.max(0, Math.min(3, Number(g))) : 1; }
 
 // ---------- which gun makes which voice ----------
 // v: the voice; act: the action slamming home a few ms after the shot (MECH); cycle: a manual action played after it
@@ -221,6 +228,7 @@ export const HANDLING = {
   rocketLoad:  [NZ(0, 0.5, 0.3, 0.12, 700, 0.8, "pink", 1100), MT(0.32, 1, [[800, 0.03, 1], [1300, 0.022, 0.6], [2200, 0.015, 0.4]], { tick: 0.7 }), MT(0.45, 0.6, [[2600, 0.008, 1], [4100, 0.006, 0.5]])],
   taser:       [NZ(0, 1, 0.5, 0.25, 3000, 0.7, "white"), TN(0, 0.6, 62, 60, 0.5, 0.25)],
 };
+assignGroup(Object.keys(HANDLING).map((k) => `hand:${k}`), "weapons.handling"); // (ui/blastsfx.js moves a grenade's to Explosions)
 const handLen = (ev) => Math.max(...ev.map((e) => e.start + (e.k === "metal" ? Math.min(0.6, Math.max(...e.modes.map((m) => m[1])) * 5) : e.dur))) + 0.02;
 function renderEvents(buf, sr, events, rnd, at = 0, amp = 1) {
   for (const e of events) {
@@ -229,7 +237,7 @@ function renderEvents(buf, sr, events, rnd, at = 0, amp = 1) {
     else toneLayer(buf, sr, { start: at + e.start, f0: e.f0, f1: e.f1, dur: e.dur, amp: e.amp * amp, a: 0.0015, tau: e.tau });
   }
 }
-export const HAND_LEVEL = 0.32; // handling under the shots (× the gun trim): heard, never in the way
+export const HAND_LEVEL = 0.227; // handling under the shots (× the gun trim: 2 dB up when the guns came up 5): heard, never in the way
 export function renderHandling(name, sr, seed = 1) {
   const ev = HANDLING[name];
   if (!ev) return null;
@@ -444,7 +452,7 @@ export function place(p) {
 }
 // The node a sound at a placement plays into: level → highs cut → pan → the battle bus (and the room's reverb).
 // sp: what spatial() or place() gave, or a bare { pan | x, dist, seen, room | layout }. o.raw: past the ducking (a
-// blast itself). Without a bus (a bare offline context) it goes straight to the destination.
+// blast itself). Without a bus (a bare offline context) it goes to o.dest, else straight to the destination.
 export function spatialOut(c, sp = {}, o = {}) {
   if (sp.gain == null) sp = place({ pan: sp.pan ?? sp.x ?? 0, dist: sp.dist ?? sp.d ?? 0, seen: sp.seen, room: sp.room || roomForLayout(sp.layout) });
   const B = busOf(c);
@@ -454,7 +462,7 @@ export function spatialOut(c, sp = {}, o = {}) {
   const nyq = c.sampleRate * 0.45;
   if (sp.lp < Math.min(16000, nyq)) { const f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = sp.lp; f.Q.value = 0.6; node.connect(f); node = f; }
   if (sp.pan && c.createStereoPanner) { const pn = c.createStereoPanner(); pn.pan.value = sp.pan; node.connect(pn); node = pn; }
-  node.connect(B ? (o.raw ? B.raw : B.in) : c.destination);
+  node.connect(B ? (o.raw ? B.raw : B.in) : o.dest || c.destination);
   if (B && sp.send > 0 && o.dry !== true) { const s = c.createGain(); s.gain.value = sp.send * (o.send ?? 1); node.connect(s); s.connect(B.verb(sp.room)); }
   return g;
 }
@@ -469,11 +477,13 @@ const src = (c, buf, t, dest, rate = 1, gain = null) => {
   s.start(Math.max(0, t));
   return s;
 };
-export const BRASS = { on: true, CHANCE: 0.55, NEAR: 8, LEVEL: 0.22 }; // brass tinkle: on/off (sound test), how often a near shot drops some
+export const BRASS = { on: true, CHANCE: 0.55, NEAR: 8, LEVEL: 0.156 }; // brass tinkle: on/off (sound test), how often a near shot drops some
 // A shot (or a burst) at t: plan p (shotPlan), placement sp (spatial). Returns the seconds it takes (for the throttle).
 export function playGun(c, t, p, sp = place({}), rnd = Math.random) {
   const vb = voiceBuffers(c, p);
-  const out = spatialOut(c, sp, { gain: GUN_TRIM * (p.gain ?? 1) });
+  const out = spatialOut(c, sp, { gain: GUN_TRIM * GUNVOL.v * groupGain("weapons.guns") * (p.gain ?? 1) });
+  let handOut = null; // the bolt worked and the brass: Reloads and handling, its own way out (made only when heard)
+  const hand = () => handOut || (handOut = spatialOut(c, sp, { gain: GUN_TRIM * GUNVOL.v * groupGain("weapons.handling") * (p.gain ?? 1) }));
   const n = p.rounds || 1, times = p.times || burstTimes(n, p.gap || 0, rnd);
   const lag = sp.dist > 4 && vb.crack ? Math.min(0.06, (sp.dist - 4) * 0.0025) : 0; // far away, the crack comes before the bang
   const t0 = t + sp.delay;
@@ -494,12 +504,12 @@ export function playGun(c, t, p, sp = place({}), rnd = Math.random) {
   let end = span + vb.V.tail.len * 0.4;
   if (p.cycle && sp.dist < 14) {
     const at = p.cycle === "bolt" ? 0.5 : p.cycle === "lever" ? 0.42 : 0.4;
-    src(c, handBuffer(c, p.cycle === "bolt" ? "bolt2" : p.cycle), t0 + span + at + rnd() * 0.08, out, 1, HAND_LEVEL * 1.6);
+    src(c, handBuffer(c, p.cycle === "bolt" ? "bolt2" : p.cycle), t0 + span + at + rnd() * 0.08, hand(), 1, HAND_LEVEL * 1.6);
     end = Math.max(end, span + at + 0.5);
   }
   if (BRASS.on && p.brass && !p.sup && sp.dist < BRASS.NEAR && rnd() < BRASS.CHANCE) {
     const drops = Math.min(3, n), cyc = p.cycle ? (p.cycle === "bolt" ? 0.85 : 0.6) : 0;
-    for (let i = 0; i < drops; i++) src(c, handBuffer(c, p.brass), t0 + cyc + (n > 1 ? (span * i) / drops : 0) + 0.35 + rnd() * 0.3, out, 0.92 + rnd() * 0.16, BRASS.LEVEL * (0.6 + rnd() * 0.4));
+    for (let i = 0; i < drops; i++) src(c, handBuffer(c, p.brass), t0 + cyc + (n > 1 ? (span * i) / drops : 0) + 0.35 + rnd() * 0.3, hand(), 0.92 + rnd() * 0.16, BRASS.LEVEL * (0.6 + rnd() * 0.4));
   }
   return end;
 }
@@ -540,8 +550,11 @@ export function handScript(h) {
     default: return [];
   }
 }
+// h.group: the mixer group it answers to (Reloads and handling; a throw's pin, fuse or lighter and the can landing:
+// Explosions and grenades).
 export function playHand(c, t, h, sp = place({})) {
-  const out = spatialOut(c, sp, { gain: GUN_TRIM * HAND_LEVEL * (h.gain ?? 1), send: 0.6 });
+  const group = h.group || (h.kind === "throw" || h.kind === "clatter" ? "weapons.blasts" : "weapons.handling");
+  const out = spatialOut(c, sp, { gain: GUN_TRIM * GUNVOL.v * groupGain(group) * HAND_LEVEL * (h.gain ?? 1), send: 0.6 });
   let end = 0;
   for (const ev of handScript(h)) {
     if (!ev) continue;

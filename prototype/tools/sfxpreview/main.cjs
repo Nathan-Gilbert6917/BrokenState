@@ -54,7 +54,7 @@ app.whenReady().then(async () => {
     fs.writeFileSync(path.join(OUT, `${name}.wav`), wav(new Int16Array(buf.buffer, buf.byteOffset, buf.length / 2), r.sr));
     all[name] = r.stats;
     const s = r.stats;
-    console.log(`${name.padEnd(28)} peak ${String(s.peakDb).padStart(6)} dB  loud(50ms) ${String(s.rms50Db).padStart(6)} dB  clip ${String(s.clip).padStart(4)}  centroid ${String(s.centroid).padStart(5)} Hz  len ${s.len}s${s.nan ? "  NaN!" : ""}`);
+    console.log(`${name.padEnd(28)} peak ${String(s.peakDb).padStart(6)} dB  loud(50ms) ${String(s.rms50Db).padStart(6)} dB  clip ${String(s.clip).padStart(4)}  centroid ${String(s.centroid).padStart(5)} Hz  len ${s.len}s${s.nan ? "  NaN!" : ""}${s.reduction ? `  limiter max ${s.reduction.limiter.max} mean ${s.reduction.limiter.mean} (active ${s.reduction.limiter.active}% at ${s.reduction.limiter.meanActive}) dB; master comp max ${s.reduction.master.max} mean ${s.reduction.master.mean} dB` : ""}`);
   }
   const nodes = await win.webContents.executeJavaScript("window.SFX.nodeCount()");
   console.log("nodes:", JSON.stringify(nodes));

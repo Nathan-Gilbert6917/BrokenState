@@ -42,7 +42,7 @@ import {
   partyMembers, partyTile, tileLabel, teamName, planPath, moveCost, leaveVehicle, fuelMultOf, sightRadius,
   awaitOrders, launchExpedition, orderMove,
 } from "./parties.js";
-import { partyVehicle, wear, useFuel, tileFuel } from "./vehicles.js";
+import { partyVehicle, partyVehicles, wear, useFuel, tileFuel } from "./vehicles.js";
 import { perceive, MARKER_TYPES } from "./markers.js";
 import { hiddenSites, siteKnown, siteKnownTo, noteLooked } from "./discovery.js";
 import { weather } from "./weather.js";
@@ -284,7 +284,7 @@ function enterTile(state, p, from, to) {
   if (p.vehicle) {
     const v = partyVehicle(state, p);
     const onRoad = state.tiles[from].roadLinks.includes(to);
-    if (v) wear(v, onRoad, p.burden ? p.burden.fill : 0);
+    for (const x of partyVehicles(state, p)) wear(x, onRoad, p.burden ? p.burden.fill : 0); // every vehicle (vehicles.js fleets)
     if (!useFuel(state, p, tileFuel(p.vehicle, onRoad, fuelMultOf(p)))) {
       log(state, `The ${v ? v.name : "vehicle"} ran out of fuel during the survey near ${tileLabel(state, to)}. The team left it there and goes on on foot.`, "danger");
       leaveVehicle(state, p, to, "out of fuel");

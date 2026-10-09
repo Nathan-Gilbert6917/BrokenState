@@ -8,7 +8,7 @@ import {
   survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom,
 } from "./parties.js";
 import { SUPPLIES } from "./data.js";
-import { partyVehicle, partyFuel } from "./vehicles.js";
+import { partyVehicle, partyVehicles, partyFuel } from "./vehicles.js";
 import { fieldTreat, fieldTreatInfo, FIELD_TREAT_HOURS, BASE_HEAL_PER_DAY, isHurt } from "./medical.js";
 import { boatPlan, launchBoat, landBoat, gatherMaterials, gatherProblem, GATHER_HOURS } from "./crossing.js";
 import { fieldCraftOptions, fieldCraft } from "./crafting.js";
@@ -551,7 +551,9 @@ const take = takeSupply; // found cargo first, then packed supplies (parties.js)
 // One part and a few hours: worth more with a good mechanic (+8% and +1.5% per Mechanics point; a base repairs
 // +25% per part with a garage, +12% without: vehicles.js repair).
 export function repairInfo(state, p) {
-  const v = partyVehicle(state, p);
+  // Several vehicles: the worst one that can still be mended (vehicles.js fleets).
+  const fixable = partyVehicles(state, p).filter((x) => !x.destroyed && x.condition < 100).sort((a, b) => a.condition - b.condition);
+  const v = fixable[0] || partyVehicle(state, p);
   const mech = bestSkill(state, p, "mechanics");
   const gain = Math.round(8 + mech * 1.5);
   let reason = "";

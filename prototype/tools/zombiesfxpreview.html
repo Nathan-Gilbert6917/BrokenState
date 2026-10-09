@@ -1,0 +1,369 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Zombie sound preview</title>
+<!-- Loaded hidden by tools/zombiesfxpreview.cjs (Electron): renders the dead's voices offline, measures them, returns WAVs. -->
+<script type="module">
+import * as Z from "../src/ui/zombiesfx.js";
+import * as NEW from "../src/ui/audio.js";
+import * as G from "../src/ui/gunsfx.js";
+import { makeLimiter } from "../src/ui/sfxlab.js";
+import * as H from "../src/ui/humansfx.js";
+
+const RATE = 44100;
+let OLD = null;
+
+// ---------- measuring ----------
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const a = -2 * Math.PI / len, wr = Math.cos(a), wi = Math.sin(a);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ur = re[i + k], ui = im[i + k], vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci, vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
+        re[i + k] = ur + vr; im[i + k] = ui + vi; re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
+        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+      }
+    }
+  }
+}
+function measure(buf) {
+  const L = buf.getChannelData(0), R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
+  const n = L.length, m = new Float32Array(n);
+  let peak = 0, sum = 0, clip = 0, nan = 0;
+  for (let i = 0; i < n; i++) {
+    const a = L[i], b = R[i];
+    if (Number.isNaN(a) || Number.isNaN(b)) { nan++; continue; }
+    peak = Math.max(peak, Math.abs(a), Math.abs(b));
+    if (Math.abs(a) >= 0.999 || Math.abs(b) >= 0.999) clip++;
+    m[i] = (a + b) / 2;
+    sum += m[i] * m[i];
+  }
+  // Active part: from the first to the last 10 ms window above -50 dBFS.
+  const W = Math.floor(RATE * 0.01), wins = [];
+  for (let i = 0; i + W <= n; i += W) { let s = 0; for (let k = 0; k < W; k++) s += m[i + k] * m[i + k]; wins.push(Math.sqrt(s / W)); }
+  const on = wins.map((v) => v > 0.00316);
+  const first = on.indexOf(true), last = on.lastIndexOf(true);
+  const act = first < 0 ? [] : wins.slice(first, last + 1);
+  const actRms = act.length ? Math.sqrt(act.reduce((s, v) => s + v * v, 0) / act.length) : 0;
+  // Loudness range: 50 ms windows of the active part, 10th to 95th percentile in dB.
+  const W5 = W * 5, l5 = [];
+  for (let i = Math.max(0, first) * W; i + W5 <= (last + 1) * W; i += W5) { let s = 0; for (let k = 0; k < W5; k++) s += m[i + k] * m[i + k]; const r = Math.sqrt(s / W5); if (r > 0.00316) l5.push(20 * Math.log10(r)); }
+  l5.sort((a, b) => a - b);
+  const pct = (p) => (l5.length ? l5[Math.min(l5.length - 1, Math.floor(p * l5.length))] : 0);
+  // Spectrum: 2048-point frames, energy-weighted centroid and flatness over 60 Hz–2 kHz, where the voices live
+// (noise-to-tone: 1 white noise, 0 a pure tone).
+  const N = 2048, avg = new Float64Array(N / 2);
+  let cw = 0, cs = 0, fs = 0;
+  for (let i = 0; i + N <= n; i += N / 2) {
+    const re = new Float64Array(N), im = new Float64Array(N);
+    let e = 0;
+    for (let k = 0; k < N; k++) { const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * k / (N - 1)); re[k] = m[i + k] * w; e += re[k] * re[k]; }
+    if (e < 1e-6) continue;
+    fft(re, im);
+    let num = 0, den = 0, lg = 0, ar = 0, cnt = 0;
+    for (let k = 1; k < N / 2; k++) {
+      const p = re[k] * re[k] + im[k] * im[k], f = k * RATE / N;
+      avg[k] += p; num += f * p; den += p;
+      if (f >= 60 && f <= 2000) { lg += Math.log(p + 1e-20); ar += p; cnt++; }
+    }
+    cs += (num / den) * e; fs += (Math.exp(lg / cnt) / (ar / cnt)) * e; cw += e;
+  }
+  // Periodicity (tone vs noise): the best normalised autocorrelation at a pitch lag (2.5–25 ms), 40 ms frames,
+  // energy-weighted. 1: a steady pitched tone; lower: rough, noisy, unpitched.
+  const F = Math.floor(RATE * 0.04), lo = Math.floor(RATE * 0.0025), hi = Math.floor(RATE * 0.025);
+  let pw = 0, ps = 0;
+  for (let i = 0; i + F + hi <= n; i += F) {
+    let e0 = 0;
+    for (let k = 0; k < F; k++) e0 += m[i + k] * m[i + k];
+    if (e0 < 1e-5) continue;
+    let best = 0;
+    for (let lag = lo; lag <= hi; lag += 2) {
+      let ab = 0, bb = 0;
+      for (let k = 0; k < F; k += 2) { ab += m[i + k] * m[i + k + lag]; bb += m[i + k + lag] * m[i + k + lag]; }
+      const r = ab / Math.sqrt((e0 / 2) * bb + 1e-12);
+      if (r > best) best = r;
+    }
+    ps += best * e0; pw += e0;
+  }
+  const db = (v) => (v > 0 ? Math.round(20 * Math.log10(v) * 10) / 10 : -120);
+  return {
+    secs: Math.round(n / RATE * 100) / 100, active: first < 0 ? 0 : Math.round((last - first + 1) * 0.01 * 100) / 100,
+    peak: Math.round(peak * 1000) / 1000, peakDb: db(peak), rmsDb: db(actRms), crestDb: Math.round((db(peak) - db(actRms)) * 10) / 10,
+    lra: Math.round((pct(0.95) - pct(0.1)) * 10) / 10, loudDb: Math.round(pct(0.95) * 10) / 10, clip, nan,
+    periodicity: pw ? Math.round(ps / pw * 1000) / 1000 : 0,
+    centroid: cw ? Math.round(cs / cw) : 0, flatness: cw ? Math.round(fs / cw * 1000) / 1000 : 0,
+    spectrum: Array.from(avg.slice(1, 256)), // to 5.5 kHz, for comparing voices
+  };
+}
+function wav(buf) {
+  const ch = buf.numberOfChannels, n = buf.length, data = new DataView(new ArrayBuffer(44 + n * ch * 2));
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) data.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); data.setUint32(4, 36 + n * ch * 2, true); str(8, "WAVE"); str(12, "fmt "); data.setUint32(16, 16, true);
+  data.setUint16(20, 1, true); data.setUint16(22, ch, true); data.setUint32(24, RATE, true); data.setUint32(28, RATE * ch * 2, true);
+  data.setUint16(32, ch * 2, true); data.setUint16(34, 16, true); str(36, "data"); data.setUint32(40, n * ch * 2, true);
+  const chans = Array.from({ length: ch }, (_, i) => buf.getChannelData(i));
+  let o = 44;
+  for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) { const v = Math.max(-1, Math.min(1, chans[c][i] || 0)); data.setInt16(o, v < 0 ? v * 32768 : v * 32767, true); o += 2; }
+  const bytes = new Uint8Array(data.buffer);
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+async function render(secs, fn) {
+  const c = new OfflineAudioContext(2, Math.ceil(RATE * secs), RATE);
+  fn(c, c.destination);
+  return c.startRendering();
+}
+// 50 ms RMS levels (dB) of a render.
+function windows(buf) {
+  const L = buf.getChannelData(0), R = buf.getChannelData(1), W = Math.floor(RATE * 0.05), out = [];
+  for (let i = 0; i + W <= L.length; i += W) { let s = 0; for (let k = 0; k < W; k++) { const v = (L[i + k] + R[i + k]) / 2; s += v * v; } out.push(10 * Math.log10(s / W + 1e-12)); }
+  return out;
+}
+// What the limiters took off (the effects bus's, which the voices share with the guns, and the zombie bus's on the
+// crowd bed): the same mix with and without them, window by window (the deepest, and the
+// share of the loud windows it touched by more than 1 dB).
+async function reduction(secs, mk) {
+  const a = windows(await render(secs, mk(true))), b = windows(await render(secs, mk(false)));
+  let deepest = 0, touched = 0, loud = 0;
+  for (let i = 0; i < a.length; i++) if (b[i] > -45) { loud++; const d = a[i] - b[i]; deepest = Math.min(deepest, d); if (d < -1) touched++; }
+  return { deepestDb: Math.round(deepest * 10) / 10, windowsOver1dB: `${touched}/${loud}` };
+}
+// The game's chain (ui/audio.js): the effects bus and its limiter (ui/sfxlab.js makeLimiter), gun-sfx's battle bus on
+// it (the voices: zRoute → spatialOut at the zombie gain, ZOMVOL the Zombie volume), the zombie bus (+4 dB, the Zombie
+// volume, its soft limiter: the crowd bed) into the battle bus, the ambience bus, the master, the master compressor.
+// Slider sets: LISTEN (unity, to listen to), DEFAULT and FULL.
+const LISTEN = { master: 1, sfx: 1 / Math.sqrt(0.8), amb: 1, zombie: 1, horde: 0.7 }, DEFAULT = { master: 0.7, sfx: 0.8, amb: 0.5, zombie: 1, horde: 0.7 }, FULL = { master: 1, sfx: 1, amb: 1, zombie: 1.5, horde: 1 };
+function chain(c, sl = LISTEN, limiter = true) {
+  const comp = c.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.25;
+  comp.connect(c.destination);
+  const master = c.createGain(); master.gain.value = sl.master ** 2; master.connect(comp);
+  const sfx = c.createGain(); sfx.gain.value = sl.sfx ** 2 * 0.8;
+  const lim = limiter ? makeLimiter(c) : null;
+  if (lim) { sfx.connect(lim); lim.connect(master); } else sfx.connect(master);
+  const amb = c.createGain(); amb.gain.value = sl.amb ** 2; amb.connect(master);
+  const gb = G.installBus(c, sfx);
+  const zb = Z.makeZombieBus(c, gb.in, { limiter });
+  zb.setVolume(sl.zombie, 0, true);
+  Z.setZombieVolume(sl.zombie); // the voices played after this (zRoute reads it as each one is played)
+  return { zom: zb.input, sfx, amb, vol: NEW.hordeVolume(sl.horde) * Z.zombieVolume(sl.zombie), comps: { zombieBus: zb.comp, effects: lim, master: comp } };
+}
+// A voice alone: zRoute gives it the zombie gain at the default Zombie volume and, with no battle bus on a bare render,
+// plays it into out. A stateless soft clip at -1 dBFS keeps a shriek's raw peaks listenable (the game brings them down
+// with the effects gain and limiter: the mixes below); under 0.7 of the ceiling it changes nothing.
+function zbus(c, out) {
+  Z.setZombieVolume(1);
+  const sh = c.createWaveShaper(), pre = c.createGain(), K = 0.891, lin = 0.7 * K, cv = new Float32Array(2048);
+  for (let i = 0; i < 2048; i++) { const x = (i / 1023.5 - 1) * 4, v = Math.abs(x); cv[i] = Math.sign(x) * (v <= lin ? v : lin + (K - lin) * Math.tanh((v - lin) / (K - lin))); }
+  sh.curve = cv; pre.gain.value = 0.25; pre.connect(sh); sh.connect(out);
+  return pre;
+}
+
+window.renderAll = async (oldUrl) => {
+  OLD = await import(oldUrl);
+  const files = [], stats = {};
+  const keep = async (name, secs, fn, write = true) => {
+    Z.resetTakes(0);
+    const buf = await render(secs, fn);
+    const m = measure(buf);
+    stats[name] = m;
+    if (write) files.push({ name: `${name}.wav`, wav: wav(buf) });
+  };
+  const SEED = (k) => Z.voiceSeed(k.length * 7 + 3, 1);
+  // The old sounds.
+  for (const [n, file] of [["groan", "groan_old"], ["bite", "bite_old"], ["scream", "scream_old"], ["acid", "spit_old"], ["horde", "horde_sting_old"]])
+    await keep(file, OLD.VOICES[n].dur + 0.5, (c, out) => OLD.VOICES[n].play(c, out, 0.02, { gain: 1, pitch: 1 }));
+  // Every kind's voices.
+  const own = { brute: ["smash"], spitter: ["spit", "sizzle"], screamer: ["shriek"], crawler: ["strike"], carrier: ["burst"], climber: ["climb"], flinger: ["heave", "fling"],
+    nightmare: ["shriek"], sleeper: ["wake"], wallbreaker: ["smash"], walker: ["wake", "bash", "snarl"], runner: ["snarl"], swarm: ["step"], broodmother: ["smash"] };
+  for (const kind of Object.keys(Z.PROFILE)) {
+    for (const ev of ["idle", "aggro", "attack", "bite", "hurt", "death", ...(own[kind] || [])]) {
+      if (Z.recipeFor(kind, ev, () => 0) === "silent") continue;
+      const opts = { kind, seed: SEED(kind), pitch: 1, human: true, mat: kind === "wallbreaker" ? "wall" : "wood", steps: 3 };
+      await keep(`${kind}_${ev}_new`, ev === "shriek" ? 6.4 : ev === "idle" || ev === "death" ? 3.4 : kind === "screamer" && ev === "aggro" ? 3.4 : 2.4, (c, out) => { Z.playZombie(ev, c, zbus(c, out), 0.02, opts); });
+    }
+  }
+  await keep("brute_smash_metal_new", 2, (c, out) => Z.playZombie("smash", c, zbus(c, out), 0.02, { kind: "brute", seed: SEED("brute"), pitch: 1, mat: "metal" }));
+  // The same voice by four zombies (seeds), and one zombie four times (takes).
+  for (let i = 1; i <= 4; i++) await keep(`walker_idle_seed${i}_new`, 3.4, (c, out) => { Z.playZombie("idle", c, zbus(c, out), 0.02, { kind: "walker", seed: Z.voiceSeed(100 + i * 13, 5), pitch: 1 }); });
+  for (let i = 1; i <= 3; i++) await keep(`screamer_shriek_seed${i}_new`, 6.4, (c, out) => { Z.playZombie("shriek", c, zbus(c, out), 0.02, { kind: "screamer", seed: Z.voiceSeed(200 + i * 17, 5), pitch: 1 }); });
+  for (let i = 1; i <= 4; i++) { Z.resetTakes(i * 10); const buf = await render(3.4, (c, out) => { Z.playZombie("idle", c, zbus(c, out), 0.02, { kind: "walker", seed: Z.voiceSeed(113, 5), pitch: 1 }); }); stats[`walker_idle_take${i}`] = measure(buf); }
+  // Far off: the same moan at 2, 8 and 16 tiles (gun-sfx's distance and muffling; the reverb needs the battle bus: the mixes).
+  for (const d of [2, 8, 16]) await keep(`walker_idle_dist${d}_new`, 4, (c, out) => { Z.playZombie("idle", c, zbus(c, out), 0.02, { kind: "walker", seed: SEED("walker"), pitch: 1, dist: d }); });
+  // The screamer's shriek straight out of the voice, before the zombie bus (does the voice itself clip?).
+  await keep("screamer_shriek_raw", 6.4, (c, out) => { Z.playZombie("shriek", c, out, 0.02, { kind: "screamer", seed: SEED("screamer"), pitch: 1 }); }, false);
+  await keep("screamer_shriek_dist16_new", 6.6, (c, out) => { Z.playZombie("shriek", c, zbus(c, out), 0.02, { kind: "screamer", seed: SEED("screamer"), pitch: 1, dist: 16, far: true }); });
+  // The map sting, old and new (the new one has the distant moans under it).
+  await keep("horde_sting_new", 3.2, (c, out) => NEW.VOICES.horde.play(c, out, 0.02, { gain: 1, pitch: 1, seed: 7 }));
+  // A horde closing in: the crowd bed rising from 4 to 36 of the dead, 14 tiles off to 1.5, voices popping out. Heard at
+  // unity (to listen to), and measured at the default and the full sliders.
+  const closing = (sl, lim = true) => (c) => {
+    const ch = chain(c, sl, lim), out = ch.zom;
+    const bed = Z.makeCrowdBed(c, out, 0);
+    for (let t = 0; t <= 10; t += 0.25) { const k = t / 10; bed.update(Z.crowdMix({ count: Math.round(4 + 32 * k), near: 14 - 12.5 * k, mean: 18 - 14 * k }), t); }
+    const say = (t, ev, kind, s, dist, pan, more = {}) => Z.playZombie(ev, c, out, t, { kind, seed: Z.voiceSeed(s, 9), pitch: 1, dist, pan, ...more });
+    say(0.3, "idle", "walker", 1, 12, -0.5); say(1.1, "idle", "walker", 2, 11, 0.45); say(1.9, "idle", "carrier", 3, 10, -0.2);
+    say(2.6, "idle", "runner", 4, 9, 0.6); say(3.2, "shriek", "screamer", 5, 10, 0.55, { far: true }); say(4.4, "aggro", "walker", 6, 7, -0.35);
+    say(5.0, "aggro", "brute", 7, 7, 0.2); say(5.9, "spit", "spitter", 8, 6, -0.6); say(6.45, "sizzle", "spitter", 8, 2, 0.1);
+    say(6.8, "smash", "brute", 7, 4, 0.2, { mat: "wood" }); say(7.3, "idle", "walker", 9, 3, -0.6); say(7.7, "idle", "walker", 10, 2.5, 0.5);
+    say(8.1, "strike", "crawler", 11, 1.5, -0.2); say(8.45, "bite", "walker", 12, 1, 0.1, { human: true }); say(9.1, "hurt", "walker", 12, 1, 0.1); say(9.35, "death", "walker", 12, 1.5, 0.1);
+    return ch;
+  };
+  const gr = {};
+  await keep("horde_closing_in_mix", 10, closing(LISTEN));
+  await keep("horde_closing_in_default_sliders", 10, closing(DEFAULT), false);
+  await keep("horde_closing_in_full_sliders", 10, closing(FULL), false);
+  gr.horde_closing_in_default_sliders = await reduction(10, (lim) => closing(DEFAULT, lim));
+  gr.horde_closing_in_full_sliders = await reduction(10, (lim) => closing(FULL, lim));
+  // 8 of the dead standing about for 30 s, no fighting: the game's own idle scheduler (clusters of moans, silences, a
+  // snarl now and then) and the crowd bed dipping through the silences. The battle tile 4259 is one whose seeded pattern
+  // has a snarl in these 30 s (about one battle in four does; the rate is one every 30–60 s).
+  const CUE_EV = Object.fromEntries(Object.entries(Z.EVENT_CUE).map(([ev, n]) => [n, ev]));
+  await keep("quiet_horde_silences_mix", 30, (c) => {
+    const ch = chain(c), out = ch.zom, bed = Z.makeCrowdBed(c, out, 0);
+    const kinds = [null, null, "runner", null, "brute", null, "spitter", null];
+    const b = { over: false, w: 24, h: 24, setup: { tile: 4259 }, units: [{ id: 1, side: "player", kind: "human", x: 12, y: 12 }, { id: 2, side: "player", kind: "human", x: 11, y: 13 }] };
+    const spots = [[5, 6], [7, 16], [9, 4], [17, 7], [19, 15], [15, 19], [6, 11], [20, 10]];
+    spots.forEach(([x, y], i) => b.units.push({ id: 10 + i, side: "enemy", kind: "zombie", ztype: kinds[i] || undefined, x, y, hp: 30, aware: false }));
+    const mem = {}, L = Z.listenerOf(b);
+    for (let t = 0; t <= 30; t += 0.1) {
+      const q = Z.zombieIdleCue(b, mem, L, t);
+      if (q) Z.playZombie(CUE_EV[q.name], c, out, t + 0.02, q);
+      if (Math.abs(t * 4 - Math.round(t * 4)) < 1e-6) bed.update(Z.crowdMix(Z.crowdState(b, L)), t);
+    }
+    return ch;
+  });
+  // Close breathing: one of the dead 1.5 tiles off for 10 s, by kind (the game's breath plan, its jittered gaps).
+  for (const kind of ["walker", "brute", "runner"]) await keep(`close_breathing_${kind}`, 10, (c, out) => {
+    const dest = zbus(c, out), seed = Z.voiceSeed(kind.length * 11 + 5, 2);
+    for (let t = 0.2, n = 0; t < 9.5; n++) { Z.playZombie("breath", c, dest, t, { kind, seed, n, fade: n === 0, dist: 1.5, pan: 0.3 }); const pl = Z.breathPlan(kind, seed, n); t += pl.dur + pl.gap; }
+  });
+  // 20 s: 8 of the dead standing about in a silence; two creep up to within 2 tiles (their breathing comes in), then
+  // one of them snarls. The game's own schedulers (zombieUnitCues for the breathing, zombieIdleCue), the crowd bed.
+  await keep("quiet_horde_close_mix", 20, (c) => {
+    const ch = chain(c), out = ch.zom, bed = Z.makeCrowdBed(c, out, 0);
+    const b = { over: false, w: 24, h: 24, setup: { tile: 4259 }, units: [{ id: 1, side: "player", kind: "human", x: 12, y: 12 }] };
+    const spots = [[3, 4], [4, 20], [20, 3], [21, 21], [2, 12], [22, 12], [9, 6], [16, 18]];
+    spots.forEach(([x, y], i) => b.units.push({ id: 10 + i, side: "enemy", kind: "zombie", ztype: i === 7 ? "brute" : undefined, x, y, hp: 30, aware: true }));
+    const creep = [b.units[7], b.units[8]], from = creep.map((u) => [u.x, u.y]), to = [[11, 10], [14, 13]];
+    const zm = Z.zombieMemory(b), mem = { zm }, L = Z.listenerOf(b);
+    let snarled = false;
+    for (let t = 0; t <= 20; t += 0.1) {
+      const k = Math.min(1, t / 9);
+      creep.forEach((u, i) => { u.x = Math.round(from[i][0] + (to[i][0] - from[i][0]) * k); u.y = Math.round(from[i][1] + (to[i][1] - from[i][1]) * k); });
+      const cues = [];
+      Z.zombieUnitCues(b, zm, L, cues);
+      const q = Z.zombieIdleCue(b, mem, L, t);
+      if (q) cues.push(q);
+      if (!snarled && t >= 16.5) { snarled = true; cues.push({ name: "zSnarl", kind: "walker", seed: Z.unitSeed(b, creep[0]), ...Z.zPlace(L, creep[0].x, creep[0].y) }); }
+      for (const cu of cues) Z.playZombie(CUE_EV[cu.name], c, out, t + 0.02 + (cu.delay || 0), cu);
+      if (Math.abs(t * 4 - Math.round(t * 4)) < 1e-6) bed.update(Z.crowdMix(Z.crowdState(b, L)), t);
+    }
+    return ch;
+  });
+  // The crowd bed alone sweeping from 3 to 40 (no voices on top).
+  await keep("crowd_bed_sweep", 10, (c) => {
+    const ch = chain(c), bed = Z.makeCrowdBed(c, ch.zom, 0);
+    for (let t = 0; t <= 10; t += 0.25) bed.update(Z.crowdMix({ count: Math.round(3 + 37 * t / 10), near: 10 - 8 * t / 10, mean: 12 - 8 * t / 10 }), t);
+    return ch;
+  });
+  // The map: a horde of 150 two tiles from a base at night, a hive near with the Broodmother (the ambience layer).
+  await keep("map_horde_ambience", 10, (c) => {
+    const ch = chain(c), out = ch.amb, layer = Z.makeMapLayer(c, out, 0);
+    for (let t = 0; t <= 10; t += 0.25) layer.update({ horde: Z.hordeSizeLevel(150) * 1.1, hive: 0.7, near: 2, size: 150, big: Z.hordeSizeLevel(150), night: 1, close: 1 }, t);
+  });
+  // For comparison: the game's wind layer at a moderate wind (ui/audio.js layers: brown noise, a band, gusts, 0.32 × 0.38).
+  await keep("wind_reference_moderate", 10, (c) => {
+    const ch = chain(c), out = ch.amb, w = c.createGain(); w.gain.value = 0.32 * 0.38; w.connect(out);
+    const gust = c.createGain(); gust.gain.value = 1; gust.connect(w);
+    const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 0.9; bp.frequency.value = 428; bp.connect(gust);
+    const o = c.createOscillator(); o.frequency.value = 0.09; const og = c.createGain(); og.gain.value = 0.45; o.connect(og); og.connect(gust.gain); o.start(0);
+    const s = c.createBufferSource(); s.buffer = Z.crowdBuffers(c) && (() => { const b = c.createBuffer(1, RATE * 3, RATE), d = b.getChannelData(0); let last = 0, r = Z.mulberry(5); for (let i = 0; i < d.length; i++) { last = (last + 0.02 * (r() * 2 - 1)) / 1.02; d[i] = last * 3.5; } return b; })();
+    s.loop = true; s.connect(bp); s.start(0);
+  });
+  // A horde of 60, 2 tiles from a base by day (no hive): the louder map horde next to the wind above.
+  await keep("map_horde_near_day", 10, (c) => {
+    const ch = chain(c), out = ch.amb, layer = Z.makeMapLayer(c, out, 0);
+    const h = Z.hordeSizeLevel(60) * Z.hordeDistLevel(2) * 0.8;
+    for (let t = 0; t <= 10; t += 0.25) layer.update({ horde: h, hive: 0, near: 2, size: 60, big: Z.hordeSizeLevel(60), night: 0, close: 1 }, t);
+  });
+  // Three hordes closing on a base at night (300, 150 and 60 of the dead, from 14, 12 and 10 tiles to 2, 2 and 3).
+  const three = (sl) => (c) => {
+    const ch = chain(c, sl), out = ch.amb, layer = Z.makeMapLayer(c, out, 0);
+    const H = [[300, 14, 2], [150, 12, 2], [60, 10, 3]];
+    for (let t = 0; t <= 12; t += 0.25) {
+      const k = Math.min(1, t / 10);
+      let quiet = 1, near = 99, best = 0, big = 0;
+      for (const [sz, d0, d1] of H) { const d = d0 + (d1 - d0) * k, v = Z.hordeSizeLevel(sz) * Z.hordeDistLevel(d) * 1.1; quiet *= 1 - Math.min(1, v); near = Math.min(near, d); if (v > best) { best = v; big = Z.hordeSizeLevel(sz); } }
+      layer.update({ horde: 1 - quiet, hive: 0, near, size: 510, big, night: 1, close: Z.hordeDistLevel(near) }, t, ch.vol);
+    }
+    return ch;
+  };
+  await keep("map_three_hordes_closing", 12, three(LISTEN));
+  await keep("map_three_hordes_default_sliders", 12, three(DEFAULT), false);
+  await keep("map_three_hordes_full_sliders", 12, three(FULL), false);
+  await keep("map_horde_ambience_day_far", 10, (c) => {
+    const ch = chain(c), out = ch.amb, layer = Z.makeMapLayer(c, out, 0);
+    for (let t = 0; t <= 10; t += 0.25) layer.update({ horde: Z.hordeSizeLevel(40) * Z.hordeDistLevel(10) * 0.8, hive: 0, near: 10, size: 40, big: Z.hordeSizeLevel(40), night: 0, close: Z.hordeDistLevel(10) }, t);
+  });
+  // ---------- the people (ui/humansfx.js) ----------
+  // Four people of your own (found by their seeded voices: low and high, young and older), each event 1.5 tiles off.
+  const find = (pred) => { for (let id = 1; id < 400; id++) { const v = H.humanVoice({ id, side: "player" }); if (pred(v)) return v; } return H.humanVoice({ id: 1, side: "player" }); };
+  const people = [["person_low_adult", find((v) => v.low && v.age === "adult" && !v.smoker)], ["person_high_young", find((v) => !v.low && v.age === "young")],
+    ["person_low_older_smoker", find((v) => v.low && v.age === "older" && v.smoker)], ["person_high_older", find((v) => !v.low && v.age === "older")]];
+  for (const [who, V] of people) for (const [n, ev] of [["hHurt", "hurt"], ["hCry", "cry"], ["hDown", "down"], ["hDeath", "death"], ["hGasp", "revive"], ["hEffort", "effort"], ["hPant", "panting"], ["hCough", "cough"]])
+    await keep(`${who}_${ev}`, 3, (c, out) => { H.playHuman(n, c, out, 0.05, { voice: V, sev: 0.4, dist: 1.5 }); });
+  for (const [kit, list] of [["raiders", [["hHurt", "hurt"], ["hCry", "cry"], ["hTaunt", "laugh_on_a_kill"], ["hEffort", "effort"]]], ["soldiers", [["hHurt", "hurt"], ["hCry", "cry"], ["hDown", "down"]]], ["zealots", [["hEcstatic", "ecstatic"], ["hCry", "cry"]]]]) {
+    const V = H.humanVoice({ id: 31 + kit.length, side: "enemy", kit });
+    for (const [n, ev] of list) await keep(`${kit}_${ev}`, 3, (c, out) => { H.playHuman(n, c, out, 0.05, { voice: V, sev: 0.4, dist: 2 }); });
+  }
+  for (const [tone, file] of [["urgent", "bark_shout_man_down"], ["strained", "bark_shout_going_down"]]) await keep(file, 2, (c, out) => { H.playHuman("hShout", c, out, 0.05, { voice: people[0][1], tone, dist: 2 }); });
+  for (const [n, file] of [["hScared", "state_pinned_down"], ["hMuffled", "state_tied_gagged"], ["hWheeze", "state_bleeding"], ["hPanic", "state_panic"], ["hPlea", "state_hands_up"], ["hDeaf", "state_deafened"]])
+    await keep(file, 3.5, (c, out) => { H.playHuman(n, c, out, 0.05, { voice: people[1][1], dist: 2 }); });
+  // The base's murmur, at the evening meal and at night (10 of them home), on the ambience bus at unity.
+  const baseState = (hour) => ({ hour, bases: [{ id: 1, tile: 5 }], survivors: Array.from({ length: 10 }, (_, i) => ({ id: 500 + i, alive: true, location: { kind: "base", baseId: 1 } })) });
+  for (const [hour, file] of [[19, "base_murmur_evening"], [2, "base_murmur_night"]]) await keep(file, 12, (c) => {
+    const ch = chain(c), st = baseState(hour);
+    for (let t = 0; t <= 12; t += 0.25) H.humanMapVoices(c, ch.amb, st, 5, t);
+    return ch;
+  });
+  // Levels: a pistol shot, a walker's moan, a person's hurt grunt and cry, all 2 tiles off, through the battle bus and
+  // the effects limiter at the default sliders (measured only).
+  const lvl = (fn) => (c) => { const ch = chain(c, DEFAULT); fn(c, ch); return ch; };
+  await keep("level_pistol_2_tiles", 2, lvl((c) => G.playGun(c, 0.05, G.labPlan("pistol"), G.place({ pan: 0, dist: 2 }))), false);
+  await keep("level_moan_2_tiles", 3, lvl((c, ch) => Z.playZombie("idle", c, ch.sfx, 0.05, { kind: "walker", seed: SEED("walker"), dist: 2 })), false);
+  await keep("level_hurt_2_tiles", 2, lvl((c, ch) => H.playHuman("hHurt", c, ch.sfx, 0.05, { voice: people[0][1], sev: 0.4, dist: 2 })), false);
+  await keep("level_cry_2_tiles", 2, lvl((c, ch) => H.playHuman("hCry", c, ch.sfx, 0.05, { voice: people[0][1], dist: 2 })), false);
+  // A 15 s fight: your people with guns against the dead closing in; the crowd bed, the dead's voices, the people's.
+  const mixed = (sl, lim = true) => (c) => {
+    const ch = chain(c, sl, lim), bed = Z.makeCrowdBed(c, ch.zom, 0);
+    for (let t = 0; t <= 15; t += 0.25) { const k = t / 15; bed.update(Z.crowdMix({ count: Math.round(6 + 16 * k), near: 9 - 7 * k, mean: 12 - 8 * k }), t); }
+    const sp = (pan, dist) => G.place({ pan, dist });
+    const gun = (t, key, mode, pan, dist) => G.playGun(c, t, G.labPlan(key, mode), sp(pan, dist));
+    const z = (t, ev, kind, sd, dist, pan, more = {}) => Z.playZombie(ev, c, ch.sfx, t, { kind, seed: Z.voiceSeed(sd, 9), pitch: 1, sp: sp(pan, dist), ...more });
+    const h = (t, n, V, dist, pan, more = {}) => H.playHuman(n, c, ch.sfx, t, { voice: V, sp: sp(pan, dist), ...more });
+    const [A1, A2, A3] = [people[0][1], people[1][1], people[2][1]];
+    z(0.3, "idle", "walker", 1, 10, -0.4); gun(1.0, "ar", "burst", 0.1, 0.5); z(1.4, "hurt", "walker", 2, 9, 0.3); z(2.2, "aggro", "walker", 3, 7, -0.3);
+    gun(2.6, "pistol", "single", -0.2, 0.8); h(3.1, "hEffort", A2, 1, -0.2); z(3.2, "death", "walker", 2, 8, 0.3); z(4.6, "shriek", "screamer", 4, 9, 0.5, { far: true });
+    gun(5.2, "ar", "burst", 0.1, 0.5); gun(6.0, "shotgun", "single", -0.3, 1); z(6.3, "death", "screamer", 4, 9, 0.5); z(7.3, "aggro", "brute", 5, 4, 0.2);
+    z(7.9, "bite", "walker", 6, 1, -0.1, { human: true, victim: A1 }); h(8.4, "hDown", A1, 1, -0.1); h(8.9, "hShout", A3, 1.5, 0.3, { tone: "urgent" });
+    gun(9.2, "ar", "auto", 0.1, 0.5); z(9.6, "hurt", "brute", 5, 3, 0.2); z(10.4, "snarl", "runner", 7, 2.5, -0.5); gun(10.8, "shotgun", "single", -0.3, 1);
+    z(11.3, "death", "brute", 5, 3, 0.2); h(11.9, "hPant", A2, 1, -0.2); h(12.6, "hCough", A3, 1.5, 0.3); h(13.6, "hGasp", A1, 1, -0.1); z(14.0, "idle", "walker", 8, 6, 0.6);
+    return ch;
+  };
+  await keep("mixed_battle_people_and_dead", 15, mixed(LISTEN));
+  await keep("mixed_battle_default_sliders", 15, mixed(DEFAULT), false);
+  gr.mixed_battle_default_sliders = await reduction(15, (lim) => mixed(DEFAULT, lim));
+  for (const s of Object.values(stats)) s.specKey = s.spectrum; // kept for the comparison in the main process
+  return { files, stats, gr };
+};
+window.ready = true;
+</script>
