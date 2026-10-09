@@ -22,7 +22,7 @@ import { survivorURL, spriteImg, canvasURL, unitCanvas } from "./sprites.js";
 import { cui } from "./combat.js";
 import { shortName } from "./names.js";
 import { useItemOn, useText } from "../sim/comforts.js";
-import { partyVehicle, vehicleLabel, isBike } from "../sim/vehicles.js";
+import { partyFleet, vehicleLabel, isBike } from "../sim/vehicles.js";
 import { raidMove, raidItemAt, parseRaidLoc, raidTakeAll, stashAll, personalLoad, trunkInfo, atVehicle, raidParty, quickTarget, matesOf, hauled, haulBudget, HAUL, supplyFit } from "../sim/raidloot.js";
 import { combatAct } from "../sim/combat.js";
 import { SEARCH } from "../sim/search.js";
@@ -179,7 +179,7 @@ export function storageBox(state, ui, place, user) {
   let head;
   if (st.o === "cargo") {
     const cap = partyCapacity(state, st.party), load = poolLoad(st.party);
-    const v = partyVehicle(state, st.party); // a car or bikes: the cargo rides in it (on a raid map its trunk is opened at the vehicle, sim/raidloot.js)
+    const v = partyFleet(state, st.party); // a car or bikes (or several: sim/vehicles.js fleets): the cargo rides in it (on a raid map its trunk is opened at the vehicle, sim/raidloot.js)
     head = `<div class="spread"><b${tip(v ? `The team's cargo rides in the ${vehicleLabel(v).toLowerCase()}${isBike(v) ? " (15 kg a rack; the rest is shared out among the people)" : ""}. Drag things from a survivor into it, or out of it onto them. On a raid map the vehicle waits in its zone: walk to it to load or unload.` : "Found cargo the team carries, by weight (a pack also weighs what is in it). It is shared out with the packed supplies among the team (sim/load.js). Moving things between the cargo and the people weighs nothing extra: it is the same team.")}>${v ? `${esc(vehicleLabel(v))} (team cargo)` : "Team cargo"}</b><span class="small ${load > cap ? "danger" : "muted"}"${tip("Supplies and cargo against what the team can carry on top of what it wears (and its vehicle)")}>load ${Math.round(load)}/${Math.round(cap)} kg</span></div>
       <div class="bar"><i style="width:${Math.min(100, (load / Math.max(1, cap)) * 100)}%;background:${load > cap * 0.9 ? "var(--danger)" : "var(--info)"}"></i></div>`;
   } else {

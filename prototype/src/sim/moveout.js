@@ -28,7 +28,7 @@ import { log, addCard, baseById, residents } from "./world.js";
 import { baseBeds } from "./buildings.js";
 import { crowdInfo } from "./morale.js";
 import { launchExpedition, partyMembers, partyTile, awaitOrders, startReturn, teamName } from "./parties.js";
-import { partyVehicle } from "./vehicles.js";
+import { partyFleet as partyVehicle, vehicleLabel } from "./vehicles.js"; // all the team's vehicles (vehicles.js fleets)
 
 export const CROWD_CARD = { days: 5, worse: 2 };
 // What the move-out planner packs by default (main.js autofill): the trip there and back like any trip, plus

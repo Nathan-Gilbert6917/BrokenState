@@ -32,7 +32,7 @@ import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect,
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
-import { partyVehicle, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
+import { partyVehicle, partyVehicles, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated, SEATS } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods, carriedThrowables } from "./inventory.js";
 import { areaSource, kitSource, spend } from "./itemcond.js";
@@ -873,6 +873,33 @@ export function placeVehicle(cells, W, H, zone, kind, ok) {
   for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) cells[yy * W + xx].f = "road";
   return { x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, ax, kind: mil ? "truck" : kind, ...(mil ? { mil: true } : {}) };
 }
+// The team's other vehicles on a field map (b.convoy: [{ vid, x, y, w, h, ax, kind, cond0, up, wear, blownUp }]): by the
+// west edge near the lead one, nearest rows first, never cutting anyone off from the map (b.reach).
+function placeConvoy(b, party, others, W, H, inside) {
+  b.convoy = [];
+  const lead = b.vehicle;
+  for (const x of others) {
+    const kind = vehicleBody(party, x);
+    const rows = [];
+    for (let y = 1; y < H - 2; y++) rows.push(y);
+    rows.sort((a, c) => Math.abs(a - lead.y) - Math.abs(c - lead.y));
+    for (const y of rows) {
+      let vr = null;
+      for (const x0 of [1, 4, 7]) {
+        vr = placeVehicle(b.cells, W, H, { x0, y0: y, side: "north" }, kind, (xx, yy) => inside(xx, yy) && b.cells[idx(xx, yy)].k === "open" && b.reach[idx(xx, yy)] && !unitAt(b, xx, yy));
+        if (vr) break;
+      }
+      if (!vr) continue;
+      const reach = flood(b.cells, 0, Math.floor(H / 2));
+      b.reach = reach;
+      const u = upgradesOf(x);
+      b.convoy.push({ ...vr, vid: x.id, name: x.name, cond0: x.condition, wear: 0, up: isBike(x) ? null : { glass: u.glass, mesh: u.mesh, plating: u.plating, scrapPlate: u.scrapPlate, turret: u.turret ? { gun: u.turret.gun } : null } });
+      const tag = isBike(x) ? null : carUpTag(u);
+      if (tag) for (let cy = vr.y; cy < vr.y + vr.h; cy++) for (let cx = vr.x; cx < vr.x + vr.w; cx++) { const c = b.cells[idx(cx, cy)]; if (c && c.car) c.car.up = tag; }
+      break;
+    }
+  }
+}
 // What stands for a team's vehicle on a map (placeVehicle): "bike", "miltruck", "truck" (a pickup) or "car".
 export const vehicleBody = (party, pv) => (party.vehicle === "bike" || (pv && isBike(pv)) ? "bike" : pv && pv.type === "miltruck" ? "miltruck" : pv && pv.type === "truck" ? "truck" : "car");
 export function syncVehicleZone(b) {
@@ -883,7 +910,7 @@ export function syncVehicleZone(b) {
   for (let i = 0; i < R.zones.length; i++) R.zones[i].vehicle = i === R.vehicleZone;
 }
 // Seats: who can ride in the team's vehicle (board / disembark), by its model (vehicles.js VEHICLE_TYPES).
-export const SEATS = { sedan: 4, suv: 5, hummer: 4, van: 7, truck: 5, bike: 1, miltruck: 12 }; // a bike or a motorcycle: its rider
+export { SEATS }; // vehicles.js (a fleet's seats on the road use them too)
 // Ramming (driveTo): the vehicle drives through people (any side, RAMMING.HIT damage, the dead ZOMBIE_HIT) and light
 // obstacles (WEAR: what each costs the vehicle's condition, settled when the battle ends: settleVehicle). Walls, trees,
 // other cars, water, railings and trenches stop it.
@@ -1085,8 +1112,9 @@ export function driveTo(b, u, x, y) {
 export function settleVehicle(state, b, outcome = null) {
   if (outcome === "victory") landAll(b); else leaveAboard(b); // won: they get out on the field; else the vehicle is their way out
   const v = b.vehicle;
-  if (!v || !v.wear) return;
   const party = b.setup && b.setup.partyId != null ? state.parties.find((x) => x.id === b.setup.partyId) : null;
+  settleConvoy(state, b, party);
+  if (!v || !v.wear) return;
   const pv = party ? partyVehicle(state, party) : null;
   if (!pv) return;
   pv.condition = Math.max(1, Math.round((pv.condition - v.wear) * 10) / 10);
@@ -1094,8 +1122,22 @@ export function settleVehicle(state, b, outcome = null) {
   log(state, v.blownUp ? `The ${pv.name} was blown up at ${b.place}: a burnt-out wreck now, past repair.` : `The ${pv.name} took a beating at ${b.place}: condition ${Math.round(pv.condition)}%.`, "danger");
   const blown = blownUpCargo(state, b, party); // launchers.js (section 24): blown up, its cargo went with it; shaken, worn
   if (blown) log(state, blown, "danger");
-  if (v.blownUp && party.vehicleId === pv.id) leaveVehicle(state, party, b.tileId ?? partyTile(party), "blown up"); // the team goes on on foot; what it cannot carry stays in the wreck
+  if (v.blownUp && party.vehicleId === pv.id) leaveVehicle(state, party, b.tileId ?? partyTile(party), "blown up", pv); // the team goes on on foot; what it cannot carry stays in the wreck
   v.wear = 0;
+}
+// The team's other vehicles after the fight (b.convoy): what blasts cost them; one blown up is a wreck, left where it
+// burns (the team goes on in the others: parties.js leaveVehicle with that one).
+function settleConvoy(state, b, party) {
+  for (const c of b.convoy || []) {
+    if (!c.wear) continue;
+    const x = state.vehicles.find((y) => y.id === c.vid);
+    if (!x) continue;
+    x.condition = Math.max(1, Math.round((x.condition - c.wear) * 10) / 10);
+    if (c.blownUp) { x.condition = 0; x.destroyed = true; }
+    log(state, c.blownUp ? `The ${x.name} was blown up at ${b.place}: a burnt-out wreck now, past repair.` : `The ${x.name} took a beating at ${b.place}: condition ${Math.round(x.condition)}%.`, "danger");
+    if (c.blownUp && party && partyVehicles(state, party).includes(x)) leaveVehicle(state, party, b.tileId ?? partyTile(party), "blown up", x);
+    c.wear = 0;
+  }
 }
 // ---------- the team's vehicle's upgrades on the map (vehicles.js: glass, mesh grilles, plating, a turret) ----------
 // b.vehicle.up: its upgrades; its cells' c.car.up { p: plating, s: scrap plating, g: glass, m: mesh, t: turret gun } for
@@ -1131,7 +1173,29 @@ export function riderHitMult(b, hit = {}) {
 // this fight reaches the condition it came in with (v.cond0) is blown up: its riders take the blast in full and after
 // the fight its cargo is mostly gone (launchers.js blownUpCargo, settleVehicle).
 export const BLAST_WEAR = { frag: 4, blast: 8, gl: 6, rocket: 70 };
-export function vehicleBlast(b, x, y, r, [lo, hi], kind = "blast") {
+export function vehicleBlast(b, x, y, r, range, kind = "blast") {
+  return leadBlast(b, x, y, r, range, kind) + convoyBlast(b, x, y, r, kind);
+}
+// The team's other vehicles (b.convoy, vehicles.js fleets): parked, nobody aboard; worn and blown up the same way.
+function convoyBlast(b, x, y, r, kind) {
+  let out = "";
+  for (const v of b.convoy || []) {
+    if (v.kind === "bike" || v.blownUp) continue;
+    let near = false;
+    for (let cy = v.y; cy < v.y + v.h && !near; cy++) for (let cx = v.x; cx < v.x + v.w && !near; cx++) if (Math.hypot(cx - x, cy - y) <= r + 0.5 + 1e-6) near = true;
+    if (!near) continue;
+    const wear = Math.round((BLAST_WEAR[kind] || BLAST_WEAR.blast) * mapWearMult(v) * 10) / 10;
+    v.wear = Math.round(((v.wear || 0) + wear) * 10) / 10;
+    v.blastWear = Math.round(((v.blastWear || 0) + wear) * 10) / 10;
+    if (v.cond0 != null && v.blastWear >= v.cond0) {
+      v.blownUp = true;
+      for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[cy * b.w + cx]; if (c && c.car) c.car = { ...c.car, wrecked: true }; }
+      out += ` The ${v.name || v.kind} is blown up.`;
+    } else out += ` The ${v.name || v.kind} takes the blast (condition −${wear}).`;
+  }
+  return out;
+}
+function leadBlast(b, x, y, r, [lo, hi], kind = "blast") {
   const v = b.vehicle;
   if (!v || v.kind === "bike") return "";
   let near = false;
@@ -2476,6 +2540,10 @@ export function createBattle(state, setup) {
       }
       if (b.vehicle) { b.vehicle.seats = SEATS[kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; b.reach = flood(b.cells, 0, Math.floor(H / 2)); fitMapVehicle(b, pv); }
     }
+    // The team's other vehicles (vehicles.js fleets): parked beside the lead one, the team's own (blue). Cover, and
+    // theirs to lose: a blast wears them and can blow them up (vehicleBlast), settled after the fight (settleVehicle).
+    // Only the lead one is driven.
+    if (b.vehicle) placeConvoy(b, party, partyVehicles(state, party).filter((x) => x !== pv), W, H, inside);
   }
   const occupied = (x, y) => !!unitAt(b, x, y);
   const spot = (x, y) => inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occupied(x, y);
