@@ -1704,7 +1704,7 @@ function buildBarOnMap(x, y, s, f, cap = f) {
   ctx.fillStyle = "rgba(13,15,18,0.85)";
   ctx.fillRect(bx - 1.5, y - 1.5, bw + 3, bh + 3);
   if (cap > f) { ctx.fillStyle = "rgba(224,168,79,0.35)"; ctx.fillRect(bx, y, bw * Math.min(1, cap), bh); }
-  ctx.fillStyle = f >= 1 ? "#6cc48a" : "#e0a84f";
+  ctx.fillStyle = f >= 1 ? PAL.good : "#e0a84f";
   ctx.fillRect(bx, y, bw * Math.max(0, Math.min(1, f)), bh);
   return y + bh;
 }

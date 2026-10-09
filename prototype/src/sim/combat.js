@@ -2653,6 +2653,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     const A = armourHit(b, t, raw, by, hit); // armour.js: location, penetration, wear, shatter, spall; a hollow or soft point's bonus on a bare location (roundOf soft)
     eff = raw * A.mult + A.extra;
     hit.loc = A.loc; hit.through = A.through;
+    if (A.piece) hit.piece = A.piece; // the piece that took it (ui/sfx-melee.js: a blow on a plate or a helmet is heard)
     for (const [text, k] of A.msgs) say(b, text, k);
   } else {
     eff = raw * hitMult(t, by, hit) * softMult(t, hit); // ammo.js: hollow and soft points on a target with no armour (people without pieces, the dead)
@@ -2936,6 +2937,9 @@ export function suppress(b, a, x, y) {
   if (trig.fired) gunfireAlert(b, a, w, noise, "The muffled shots still carry.", "The gunfire alerts everything nearby.", "The gunfire alerts everyone nearby.");
 }
 
+// Where a blow landed and what took it, for its sound (ui/sfx-melee.js): loc, the armour's material (armour.js mat:
+// soft, padding, hard, steel, ceramic) and whether the blow went through it.
+const blowFx = (h) => (h.piece ? { loc: h.loc, mat: (armourSpec(h.piece.key) || {}).mat || "hard", through: !!h.through } : h.loc ? { loc: h.loc } : {});
 function strike(b, a, t) {
   if (nlStrike(b, a, t)) return; // nonlethal.js: pulling the blows on a living person
   const o = meleeOdds(b, a, t);
@@ -2949,12 +2953,13 @@ function strike(b, a, t) {
   const line = sayFirst(b);
   if (hit) {
     const crit = rng.chance(o.crit / 100) || sure;
-    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1) * (a.meleeMult || 1) * amb, a, false, { how: WEAPONS[a.weapon].melee ? "melee" : "bash", crit, sneak: gap })); // meleeMult: Brawler
+    const h = { how: WEAPONS[a.weapon].melee ? "melee" : "bash", crit, sneak: gap };
+    const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1) * (a.meleeMult || 1) * amb, a, false, h)); // meleeMult: Brawler
     if (gap && t.dead) say(b, `${a.name} drives the blade in under ${t.name}'s helmet.`, "good");
     if (a.xpT) { a.xpT.melee++; if (t.dead) a.xpT.kills++; }
     line.text = `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.${meleeAfter(b, a, t, w, crit)}`; // stagger, bleeding (the melee section above)
     line.k = a.side === "player" ? "good" : "danger";
-    fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side });
+    fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side, ...blowFx(h) });
   } else {
     line.text = `${a.name} lunges at ${t.name} and misses.`;
     fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: false, side: a.side });
