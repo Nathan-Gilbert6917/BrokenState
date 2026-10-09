@@ -9,7 +9,7 @@
 // Usage: node tools/hivecrawltest.js [seed=7]
 import { createWorld, tickHour, day, makeSurvivor, hub } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
-import { ensureHives, hiveGuard, hiveAt } from "../src/sim/hives.js";
+import { ensureHives, hiveGuard, hiveAt, destroyHive } from "../src/sim/hives.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, damage, endPlayerTurn } from "../src/sim/combat.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -364,6 +364,72 @@ console.log("The hive deepens with a team inside");
   try { HC.roomActions(st, p); for (let i = 0; i < 40 && p.hiveCrawl; i++) HC.hiveCrawlAutoStep(st, p); } catch (e) { err = e.message; }
   check(deeper > den0.depth && !err, `a team in ${far.id} of a ${den0.depth}-deep den as the hive grows ${deeper} deep: no crash${err ? ` (${err})` : ""}`);
   check(!p.hiveCrawl ? HC.denOf(st, hv).depth === deeper : hv.den === den0, `the den keeps its shape while the team is inside and deepens once it is out (now ${hv.den.depth})`);
+}
+
+// ---------- 6c. the hive gone with a team inside ----------
+// depletetest 2026-10-09 (the autopilot's year, --curve 3 on 365): the hive was taken off the map in the hour's tick
+// while a team of yours walked to its next chamber, and the chamber crashed on a hive that was no more. Now the crawl
+// ends where the team stands: out on the map with what it carries, a line in the log, whatever asks next.
+console.log("The hive gone with a team inside");
+{
+  // A team past the mouth's brood (by the numbers), a rifle in its cargo.
+  const inside = () => {
+    const { st, hv } = world(SEED, 500, 100);
+    const { p } = squad(st, hv);
+    st.autoCombat = true;
+    HC.startHiveCrawl(st, p, hv);
+    HC.resolveHiveEnc(st, p, "numbers");
+    p.cargo.gear.push({ key: "ar", name: "Found rifle", quality: 1 });
+    return { st, hv, p, c: p.hiveCrawl };
+  };
+  const out = (st, p) => !p.hiveCrawl && st.parties.includes(p) && p.phase === "waiting" && p.cargo.gear.some((g) => g.name === "Found rifle")
+    && st.log.some((l) => /still flesh/.test(typeof l === "string" ? l : l.text));
+  // Mid-hour: the hive goes the first time anything looks for it after the next hour (as in the hour's tick).
+  {
+    const { st, hv, p, c } = inside();
+    check(!!c && !c.enc, "a team inside, its chamber clear");
+    const at = st.hour + 1;
+    let dying = false;
+    class Dying extends Array {
+      find(fn) { if (!dying && st.hour >= at && this.includes(hv)) { dying = true; destroyHive(st, hv, "", { quiet: true }); } return super.find(fn); }
+    }
+    st.hives = Dying.from(st.hives);
+    const to = HC.exitsOf(st, p)[0];
+    let err = null;
+    try { HC.moveTo(st, p, to.id); } catch (e) { err = e.message; }
+    check(dying && !err && out(st, p), `the hive gone while the team walks to ${to.id}: no crash${err ? ` (${err})` : ""}, the team out on the map, waiting, with what it carries`);
+    check(HC.activeHiveCrawl(st) === null && HC.exitsOf(st, p).length === 0, "no crawl window, no passages");
+  }
+  // Between hours: every way in (the window's buttons, the autopilot, what the window and the sound read).
+  const UI = await import("../src/ui/hivecrawl.js");
+  const SND = await import("../src/ui/hivecrawlsfx.js");
+  const ways = {
+    moveTo: (st, p) => HC.moveTo(st, p, "x"),
+    roomAct: (st, p) => HC.roomAct(st, p, "lie"),
+    resolveHiveEnc: (st, p) => HC.resolveHiveEnc(st, p, "numbers"),
+    leaveHive: (st, p) => HC.leaveHive(st, p),
+    stepOut: (st, p) => HC.stepOut(st, p),
+    listenAt: (st, p) => HC.listenAt(st, p, "x"),
+    throwFlare: (st, p) => HC.throwFlare(st, p, "x"),
+    setLights: (st, p) => HC.setLights(st, p, false),
+    hiveCrawlAutoStep: (st, p) => HC.hiveCrawlAutoStep(st, p),
+    "canMoveOn, crawlRoom": (st, p, c) => { if (HC.canMoveOn(st, c) || HC.crawlRoom(st, c)) throw new Error("a room in a dead hive"); },
+    "the window's Go": (st, p) => UI.HIVE_CRAWL_ACTIONS["hc-move"](st, {}, { id: p.id, room: "x" }),
+    "the window's Lie still": (st, p) => UI.HIVE_CRAWL_ACTIONS["hc-act"](st, {}, { id: p.id, act: "lie" }),
+    "the window's Leave": (st, p) => UI.HIVE_CRAWL_ACTIONS["hc-leave"](st, {}, { id: p.id }),
+    "the window": (st) => { if (UI.hiveCrawlModal(st, { started: true })) throw new Error("the window still open"); },
+    "the sound": (st) => { if (SND.hiveCrawlHeard(st, { started: true })) throw new Error("the pulse still heard"); },
+  };
+  const bad = [];
+  for (const [name, fn] of Object.entries(ways)) {
+    const { st, hv, p, c } = inside();
+    if (!c) { bad.push(`${name} (no crawl to start with)`); continue; }
+    destroyHive(st, hv, "", { quiet: true });
+    try { fn(st, p, c); HC.activeHiveCrawl(st); } catch (e) { bad.push(`${name}: ${e.message}`); continue; }
+    if (name.startsWith("canMoveOn")) HC.hiveCrawlOf(st, p);
+    if (!out(st, p)) bad.push(`${name} (the crawl did not end cleanly)`);
+  }
+  check(!bad.length, `the hive gone between hours: ${Object.keys(ways).length} ways in end the crawl cleanly${bad.length ? ` (${bad.join("; ")})` : ""}`);
 }
 
 // ---------- 7. the window and the sound ----------

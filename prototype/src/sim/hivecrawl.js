@@ -405,14 +405,17 @@ export function hiveCrawlOf(state, p) {
   if (!p || !p.hiveCrawl) return null;
   const c = p.hiveCrawl;
   if (!state.parties.includes(p) || !partyMembers(state, p).length || partyTile(p) !== c.tile) { delete p.hiveCrawl; return null; }
-  const hive = hiveById(state, c.hiveId);
-  if (!hive) {
-    delete p.hiveCrawl;
-    if (!(state.combat && state.combat.setup && state.combat.setup.partyId === p.id)) awaitOrders(state, p, "The hive is dead around the team: it walks out through still flesh.");
-    return null;
-  }
+  if (!hiveById(state, c.hiveId)) { crawlGone(state, p); return null; }
   if (p.phase !== "engaged") p.phase = "engaged";
   return c;
+}
+// The hive is gone with the team inside (its Hivemind killed by an AI group's war party, or taken off the map some
+// other way): the crawl ends where the team stands, back on the map with what it carries and a line in the log. Its
+// orders wait while its own battle is on (the battle's end gives them).
+const GONE_TEXT = "The hive died around the team: it walked out through still flesh.";
+function crawlGone(state, p) {
+  const fighting = !!(state.combat && state.combat.setup && state.combat.setup.partyId === p.id);
+  return finishHiveCrawl(state, p, GONE_TEXT, { orders: !fighting });
 }
 // The crawl the window shows: the first of your teams in one, not while its battle is on.
 export function activeHiveCrawl(state) {
@@ -458,6 +461,7 @@ const markSeen = (den, c, id) => { const r = roomById(den, id); if (r) for (cons
 // The team walks into a chamber: what waits there.
 function enterRoom(state, p, c, room, from) {
   const hive = crawlHive(state, c);
+  if (!hive) { crawlGone(state, p); return; }
   const den = denOf(state, hive);
   c.from = from;
   c.at = room.id;
@@ -491,7 +495,8 @@ function passHours(state, p, hours) {
   for (let i = 0; i < hours; i++) {
     tickHour(state);
     if (!state.parties.includes(p) || !partyMembers(state, p).length) return false;
-    if (!p.hiveCrawl) return true; // the hive died meanwhile (an AI group's war party): hiveCrawlOf ends it
+    if (!p.hiveCrawl) return true;
+    if (!crawlHive(state, c)) { crawlGone(state, p); return true; } // the hive died meanwhile (an AI group's war party): the callers see no crawl
     c.alert = Math.max(0, c.alert - HCRAWL.ALERT.decay);
     converge(state, p, c);
   }
@@ -559,6 +564,7 @@ export const draftWord = (w) => DRAFT_WORD[w] || w;
 export function canMoveOn(state, c) {
   if (c.enc) return false;
   const hive = crawlHive(state, c);
+  if (!hive) return false;
   const room = roomById(denOf(state, hive), c.at);
   return broodLeft(state, hive, room) === 0 || !!c.slipped[room.id];
 }
@@ -1004,6 +1010,7 @@ registerCombatHandler("hiveChamber", (state, result, setup, battle) => {
   say2(c, `Fight with ${setup.enemy.name}${result.odds != null ? ` (${Math.round(result.odds * 100)}% odds)` : ""}: ${won ? "won" : result.outcome === "retreat" ? "broke off" : "lost"} (${killed} killed).${dead.length ? ` Killed: ${dead.join(", ")}.` : ""}`, won ? "good" : "danger", state.hour);
   const e = c.enc || { kind: ctx.kind, room: ctx.room, back: c.from };
   c.enc = null;
+  if (!hive) { finishHiveCrawl(state, p, GONE_TEXT); return; } // gone while the team fought
   if (!passHours(state, p, HCRAWL.FIGHT_HOURS)) { goneText(state, p); return; }
   if (!p.hiveCrawl) return;
   if (won) return;
@@ -1207,7 +1214,8 @@ export function stepOut(state, p) {
   }
   return "";
 }
-export function finishHiveCrawl(state, p, extra = "") {
+// opts.orders false: the team's orders wait (crawlGone, while its battle is on).
+export function finishHiveCrawl(state, p, extra = "", opts = {}) {
   const c = p.hiveCrawl;
   if (!c) return "";
   const hive = crawlHive(state, c);
@@ -1217,7 +1225,7 @@ export function finishHiveCrawl(state, p, extra = "") {
   const den = hive ? denOf(state, hive) : null;
   const text = `${extra ? extra + " " : ""}Out of ${c.name} after ${state.hour - c.started} h, ${c.deepest ? `${c.deepest} chamber${c.deepest === 1 ? "" : "s"} deep${den ? ` of ${den.depth}` : ""}` : "no deeper than the mouth"}, ${c.kills} of the brood killed${got.length ? `, with ${got.join(", ")}` : ""}.${c.lost.length ? ` Lost: ${c.lost.join(", ")}.` : ""}`;
   log(state, `${teamName(state, p)}: ${text}`, c.lost.length ? "danger" : "info");
-  if (state.parties.includes(p)) { p.seen.set(c.tile, snapshot(state, c.tile)); awaitOrders(state, p, text); }
+  if (state.parties.includes(p)) { p.seen.set(c.tile, snapshot(state, c.tile)); if (opts.orders !== false) awaitOrders(state, p, text); }
   return text;
 }
 function crawlWiped(state, p, line) {
@@ -1347,6 +1355,7 @@ registerCombatHandler("hiveAssault", (state, result, setup, battle) => {
     for (const id of result.survivorsDead || []) { const s = survivorById(state, id); if (s) c.lost.push(s.name); }
     c.enc = null;
     if (won) { say2(c, text, "good", state.hour); if (hoard) say2(c, hoard, "good", state.hour); finishHiveCrawl(state, p, text); if (hoard) log(state, hoard, "good"); return; }
+    if (!hive) { finishHiveCrawl(state, p, GONE_TEXT); return; } // gone while the team fought
     addAlert(c, HCRAWL.ALERT.fight);
     say2(c, text, "danger", state.hour);
     const den = hive ? denOf(state, hive) : null;
