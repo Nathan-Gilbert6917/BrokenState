@@ -104,7 +104,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   const add = (group, key, label, seq, { why = "", hint = "", move = true, special = null, task, open = false } = {}) => {
     const needMove = move && !here && !special;
     const disabled = (!cmd ? NO_RADIO : "") || (needMove ? travel.why : "") || why || null;
-    const job = task !== undefined ? task : special ? 0 : taskHours(state, p, tile, seq);
+    const job = task !== undefined ? task : special ? 0 : taskHours(state, p, move ? tile : from, seq); // go home: from where the team is
     items.push({ group, key, label, seq, move: needMove, special, hint, disabled, travel: needMove ? travel.hours : 0, task: job, open, ahead });
   };
 
@@ -142,6 +142,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   }
 
   // What the site offers, as far as you know (not on your own base: that is the Base group above).
+  let theirs = false; // another group's base you know of: no camping, foraging or claiming on their doorstep
   if (!water && !base) {
     const opts = orderOptions(state, p, tile);
     const optOf = (m) => opts.find((o) => o.mission === m) || null;
@@ -152,7 +153,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
       const own = optOf(m);
       let label = label0;
       if (m === "scavenge") label = crawlTile(t) ? "City crawl: go in block by block" : t.loc ? "Scavenge / raid the site" : label0;
-      if (m === "trade") label = "Trade visit / talk";
+      if (m === "trade") { label = "Trade visit / talk"; theirs = true; }
       if (live && own && m === "getvehicle") label = own.label; // a found car to repair, or cargo to take
       listed.add(m);
       add("Site", `mission:${m}`, label, [{ type: "mission", mission: m }], { why: own && own.disabled ? own.disabled : "", hint: m === "scavenge" && crawlTile(t) ? "Go into the city block by block: each block a street of buildings to raid; noise raises the Alert, lying low lets it fade." : MISSIONS[m]?.desc });
@@ -166,7 +167,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   }
 
   // Food, firewood and water from the land
-  if (!water) {
+  if (!water && !theirs) {
     const job = (type, extra = {}) => [{ type, hours: LAND_HOURS, ...extra }];
     if (forageAbundance(state, tile) >= 0.05) add("Land", "forage", `Forage ${LAND_HOURS}h`, job("forage"), { why: cap(forageProblem(state, p, tile)), hint: "Wild food: berries, nuts, mushrooms, greens, roots. Quiet; best in forest, summer and autumn." });
     if (gameAbundance(state, tile) >= 0.08) add("Land", "hunt", `Hunt ${LAND_HOURS}h`, job("hunt"), { why: cap(huntProblem(state, p, tile)), hint: "A rifle or a bow is best; shots add Heat and can draw the dead. Fresh game is heavy and spoils fast." });
@@ -185,7 +186,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   }
 
   // Camp
-  if (!water && !base) {
+  if (!water && !base && !theirs) {
     const camping = p.phase === "task" && p.task && p.task.type === "camp" && partyTile(p) === tile;
     const lit = fireLit(p);
     const burn = fireLandOk(state, tile) || carried(p, "wood") >= 1;

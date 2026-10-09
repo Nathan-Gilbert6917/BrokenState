@@ -165,6 +165,9 @@ section("A known group's base: trade, assault; no rescue without captives; no cl
     check(/Trade visit/.test(item(m, "mission:trade").label), "trade visit / talk label");
     check(!has(m, "mission:rescue"), "no rescue without captives held there");
     check(!has(m, "claim") && !has(m, "mission:outpost"), "no claim and no outpost on another group's base");
+    check(!has(m, "forage") && !has(m, "hunt") && !has(m, "camp:8") && !has(m, "campfire"), "no foraging, hunting or camping on their doorstep");
+    const hereHome = item(teamTileMenu(state, {}, p, partyTile(p)), "home"), thereHome = item(m, "home");
+    check(hereHome && thereHome && hereHome.task === thereHome.task && !thereHome.move, `go home: the hours from where the team is, whichever tile was clicked (${hereHome && hereHome.task} / ${thereHome && thereHome.task})`);
   }
 }
 
