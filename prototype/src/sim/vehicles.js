@@ -130,7 +130,7 @@ export function fleetProblem(vs, n) {
 // with no vehicle can always take one.
 export function fleetJoinProblem(state, p, v) {
   const have = partyVehicles(state, p);
-  if (!have.length) return "";
+  if (!have.length) return p.vehicle ? "The team already has a vehicle." : ""; // (a vehicle record gone from under it: as before fleets)
   if (have.includes(v)) return "It is already the team's.";
   if (have.length >= MAX_VEHICLES) return `The team has ${MAX_VEHICLES} vehicles already.`;
   if (isBikeOne(v)) return "The team already has vehicles: bikes go to a team without one.";

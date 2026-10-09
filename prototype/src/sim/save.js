@@ -195,7 +195,7 @@ export function deserializeState(save) {
   // vehicles.js fleets: a team's vehicles as a list (p.vehicleIds) with the lead one in p.vehicleId; a save from before
   // has the one vehicleId, which becomes a list of one. Once: state.fleetV.
   if (!(state.fleetV >= 1)) {
-    for (const p of state.parties || []) if (!Array.isArray(p.vehicleIds)) p.vehicleIds = p.vehicleId != null ? [p.vehicleId] : [];
+    for (const p of state.parties || []) if (!Array.isArray(p.vehicleIds) && p.vehicleId != null) p.vehicleIds = [p.vehicleId];
     state.fleetV = 1;
   }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good

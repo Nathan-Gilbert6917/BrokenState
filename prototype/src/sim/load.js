@@ -173,7 +173,7 @@ export function poolAtBand(members, band) {
 // The compact record a team keeps (p.burden) once weighed: paces, rations by person, a car's fuel multiplier.
 export function burdenRecord(t, members, v) {
   return {
-    total: t.total, ids: members.map((s) => s.id).sort((a, b) => a - b).join(","), vid: v ? v.id : null, vids: v && v.fleet ? v.fleet.map((x) => x.id).join(",") : v ? String(v.id) : "",
+    total: t.total, ids: members.map((s) => s.id).sort((a, b) => a - b).join(","), vid: v ? v.id : null,
     onroad: t.mode === true ? roadPace(v) : 1, // bikes among the cars: the convoy keeps to the bikes on roads (vehicles.js)
     foot: t.foot.speed, eatFoot: t.foot.eat,
     ride: t.ride ? t.ride.speed : null, eatRide: t.ride ? t.ride.eat : null,

@@ -233,8 +233,7 @@ function reweigh(state, p) {
   const ids = members.map((s) => s.id).sort((a, x) => a - x).join(",");
   const total = poolLoad(p) + members.reduce((a, s) => a + wornLoad(s), 0);
   const vid = p.vehicleId || null;
-  const vids = partyVehicleIds(p).join(",");
-  if (!b || p.phase === "waiting" || b.ids !== ids || (vid != null && vid !== b.vid) || (b.vids != null && vids !== b.vids) || total > b.total + 0.5) {
+  if (!b || p.phase === "waiting" || b.ids !== ids || (vid != null && vid !== b.vid) || total > b.total + 0.5) {
     weighTeam(state, p);
     // On the move nothing makes the team faster until it stops (a newcomer to share the load, food eaten): only
     // what slows it counts at once. So the hours it was told when it set off are the most it takes.
