@@ -19,7 +19,7 @@ import { combatAct, runEnemyPhase, autoPlayerTurn, active, gunnerOf, damage, veh
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
-import { createVehicle, fitMilitary } from "../src/sim/vehicles.js";
+import { createVehicle, fitMilitary, loseRaidHumvee } from "../src/sim/vehicles.js";
 import { createBattle, registerCombatHandler, fire, fireCab, cabTarget, hullWear, fleeToCar, ramGate, breachOk, BREACH, BREACH_THROUGH, carSteps, syncGunner, driveTo } from "../src/sim/combat.js";
 
 const SEED = Number(process.argv[2] || 7);
@@ -466,6 +466,23 @@ section("Driven off, an escort is not yours to take (result.humveeOut)");
   for (const u of b.units) if (u.side === "enemy" && !u.dead && !u.fled) u.dead = true;
   enemyTurn(st);
   check(v.gone && b.over && b.result.outcome === "victory" && b.result.humveeOut && !b.result.enemyVehicle, "it got away: won, but no vehicle left on the field");
+}
+
+section("A raid's several vehicles lost at once (vehicles.js loseRaidHumvee)");
+{
+  // Two vehicles with one id (a save from before the ids were unique: two taken by a group in one hour) used to loop
+  // for ever; now each is lost by itself, and the ones a group takes get ids of their own.
+  const st = createWorld({ seed: 11, factionCount: 6 });
+  const f = st.factions.find((x) => x.alive && x.bases.length);
+  const g = st.factions.find((x) => x.alive && x.bases.length && x !== f);
+  const mk = () => fitMilitary({ id: `f${f.id}-dup`, type: "hummer", name: "Humvee", fuel: 10, condition: 80, owner: f.id }, "m2hb");
+  f.vehicles = [mk(), mk()];
+  const p = { owner: f.id, humvee: `f${f.id}-dup`, humvees: [`f${f.id}-dup`, `f${f.id}-dup`] };
+  let got = null, err = "";
+  try { got = loseRaidHumvee(st, p, { faction: g }); } catch (e) { err = e.message; }
+  const taken = (g.vehicles || []).filter((x) => x.owner === g.id && x.type === "hummer");
+  check(!err && !!got && !f.vehicles.length && p.humvee == null, `both lost, no loop (${err || "no error"})`);
+  check(taken.length >= 2 && new Set(taken.map((x) => x.id)).size === taken.length, `the group that took them has ${taken.length} with ids of their own (${taken.map((x) => x.id).join(", ")})`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

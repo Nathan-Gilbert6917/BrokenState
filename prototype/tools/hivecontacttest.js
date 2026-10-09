@@ -58,7 +58,7 @@ console.log("The hive's guard and a team on the mound after the card");
 // The governor's first fire trip to a hive on the Aggressive autopilot: the first of these seeds where one happens within
 // DAYS (seed 1 had it on days 36-38 when the fix went in; other branches' changes to the world move it, so the test
 // looks for the first trip rather than a fixed seed and day). The trip: from the squad leaving to it coming home.
-const SQUAD = { SEEDS: [1, 4, 2, 3], DAYS: 70 };
+const SQUAD = { SEEDS: [1, 4, 8, 2, 3], DAYS: 90 };
 console.log("The governor's hive squad goes home after the fires (Aggressive autopilot, the first fire trip)");
 {
   let found = null;

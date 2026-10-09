@@ -350,7 +350,9 @@ function medicSaves(rng, ms) {
   const med = Math.max(...medics.map((m) => m.medicine || 0));
   const p = Math.min(MEDIC.NUMBERS.MAX, MEDIC.NUMBERS.SAVE + MEDIC.NUMBERS.PER_MED * med);
   const at = Number.isFinite(rng.state) ? rng.state : 0;
-  for (const m of ms) if (m.down && hash01("medicsave", at, m.id) < p) m.saved = true;
+  // By the member's place in the fight, never its id: ids come from one counter for the whole process (world.js
+  // newId), so a second world of the same seed (or a loaded save) rolled other saves.
+  ms.forEach((m, i) => { if (m.down && hash01("medicsave", at, i) < p) m.saved = true; });
 }
 
 // ---------- the real fight ----------

@@ -585,20 +585,20 @@ export const raidTurretPower = (state, p) => raidHumvees(state, p).reduce((a, v)
 // { faction } (theirs). Returns the record the first became, or null.
 export function loseRaidHumvee(state, p, to) {
   const all = raidHumvees(state, p);
-  if (all.length > 1) {
-    const first = all.find((x) => x.id === p.humvee) || all[0];
-    for (const x of all.filter((y) => y !== first)) { p.humvee = x.id; p.humvees = null; loseRaidHumvee(state, p, to); }
-    p.humvee = first.id;
-    p.humvees = null;
-  }
-  const v = raidHumvee(state, p);
-  if (!v) return null;
-  const f = state.factions.find((x) => x.id === p.owner);
-  f.vehicles = f.vehicles.filter((x) => x !== v);
-  f.vehLost = state.hour;
+  const first = all.find((x) => x.id === p.humvee) || all[0] || null;
   p.humvee = null;
   p.humvees = null;
-  const roll = (k) => hash01(state.seed, "humvee", f.id, v.id, state.hour, k);
+  if (!first) return null;
+  const f = state.factions.find((x) => x.id === p.owner);
+  // Each vehicle by itself, the first last (its record is returned). By the object, not the id: a save from before
+  // the ids were made unique (below) may hold two with one id, and going by the id looped on them for ever.
+  for (const x of all.filter((y) => y !== first)) loseOneRaidCar(state, f, x, to);
+  return loseOneRaidCar(state, f, first, to);
+}
+function loseOneRaidCar(state, f, v, to) {
+  f.vehicles = f.vehicles.filter((x) => x !== v);
+  f.vehLost = state.hour;
+  const roll = (k) => hash01(state.seed, "humvee", f.name, v.type, state.hour, k); // never by ids (process-wide, world.js newId)
   const ups = JSON.parse(JSON.stringify(upgradesOf(v)));
   if (to && to.base) {
     const [c0, c1] = HUMVEE.LEFT_COND, [f0, f1] = HUMVEE.LEFT_FUEL;
@@ -610,7 +610,8 @@ export function loseRaidHumvee(state, p, to) {
   if (to && to.faction) {
     const g = to.faction;
     g.vehicles = factionVehicles(g);
-    const nv = { ...v, id: `f${g.id}-${v.type}-${state.hour}`, owner: g.id, condition: Math.max(20, Math.round(v.condition * 0.7)), upgrades: ups };
+    g.vehSeq = (g.vehSeq || 0) + 1; // a new id each (two taken in one hour were one id: f<group>-<type>-<hour>)
+    const nv = { ...v, id: `f${g.id}-t${g.vehSeq}`, owner: g.id, condition: Math.max(20, Math.round(v.condition * 0.7)), upgrades: ups };
     g.vehicles.push(nv);
     return nv;
   }
