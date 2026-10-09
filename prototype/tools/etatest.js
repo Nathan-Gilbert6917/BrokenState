@@ -8,9 +8,9 @@
 // re-estimates the remaining time every hour: arrival must match the last re-estimate exactly.
 // Usage: node tools/etatest.js [cases per seed] [seeds...]
 import { createWorld, tickHour, hub, atBase, survivorById } from "../src/sim/world.js";
-import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, plannedTile, STANCES, cargoLoad } from "../src/sim/parties.js";
+import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, plannedTile, STANCES, cargoLoad, travelHours, paceOpts } from "../src/sim/parties.js";
 import { queueOrder, queueEstimate } from "../src/sim/orders.js";
-import { vehiclesAtBase } from "../src/sim/vehicles.js";
+import { vehiclesAtBase, partyFuel } from "../src/sim/vehicles.js";
 import { crossingsFrom, boatPlan, boatOrder } from "../src/sim/crossing.js";
 
 const perSeed = Number(process.argv[2] || 12);
@@ -116,7 +116,10 @@ for (const seed of seeds) {
     const d2 = rng.pick(pool2).id;
     orderMove(state, p, d2);
     const est2 = hoursLeft(state, p);
-    const s2 = { cards: 0, delay: 0 };
+    // The same with every weather front known (the moving team meets them all; the estimate counts only those on the
+    // map now, weather.js): a front that forms on the way is a delay like a card's, not an estimate gone wrong.
+    const est2All = travelHours(state, p.path.slice(p.idx), { vehicle: p.vehicle, ...paceOpts(p), progress: p.progress, fuel: p.vehicle === true ? partyFuel(state, p) : 0, known: Infinity }).hours;
+    const s2 = { cards: 0, delay: est2All - est2 };
     const leg2 = runUntil(state, p, (q) => q.phase === "waiting", s2);
     rows.push({ seed: row.seed, how: `${p.vehicle ? "truck" : "foot"} (redirect)`, stance, tiles: planPath(state, here, d2, p.vehicle)?.path.length - 1, est: est2, old: null, actual: leg2.hours, cards: s2.cards, delay: s2.delay });
     if (s2.delay === 0 && !leg2.gone) check(leg2.hours === est2, `seed ${row.seed} redirect: estimate ${est2}h, took ${leg2.hours}h`);

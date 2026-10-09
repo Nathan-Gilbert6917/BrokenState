@@ -630,6 +630,7 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
     s.gear.backpack.contents = (s.gear.backpack.contents || new Array(10).fill(null)).map(() => null);
     s.gear.backpack.contents[0] = newItem("compbow");
     Object.assign(s.skills, { shooting: 6, scouting: 5, stealth: 3 }); s.role = "hunt";
+    s.traits = []; s.traitTier = {}; // no traits: an Unlucky hunter falls under the rifle's Shooting and takes the bow
   });
   for (const s of people.slice(3)) s.role = "farm";
   const autumn = dayIn(state, "autumn");
