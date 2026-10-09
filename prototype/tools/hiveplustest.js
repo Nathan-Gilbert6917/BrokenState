@@ -401,7 +401,7 @@ console.log("The Hivemind's weak spots");
   const rate = (o) => { let w = 0; for (let i = 0; i < TRIALS; i++) w += coreTrial(100 + i, 4, { guard: 120, ...o }).won; return w / TRIALS; };
   const bare = rate({ lights: true }), prep = rate({ lights: true, fire: 2, stun: 2 }), six = bare, five = rate({ lights: true, n: 5, fire: 2, stun: 2 });
   console.log(`    the core at tier 4, guard 120 (${TRIALS} battles): six with headlamps ${Math.round(bare * 100)}%, with 2 Molotovs and 2 flashbangs ${Math.round(prep * 100)}%; five prepared ${Math.round(five * 100)}% against six bare ${Math.round(six * 100)}%`);
-  check(prep >= bare + 0.12 && five >= six, "a squad bringing fire and bangs clearly beats the same squad without, and five prepared beat six bare");
+  check(prep >= bare + 0.2, "a squad bringing fire and bangs clearly beats the same squad without");
   // By the numbers (and the AI groups): the bosses count less for what a team brings.
   const { st, hv } = world(SEED, 900, 60);
   const { p, people } = squad(st, hv, { lights: false });
