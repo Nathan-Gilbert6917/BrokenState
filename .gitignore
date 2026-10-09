@@ -16,3 +16,6 @@ Desktop.ini
 
 # Sound previews (prototype/tools/sfxpreview/main.cjs, prototype/tools/zombiesfxpreview.cjs)
 sfx-preview/
+
+# Music previews (prototype/tools/musicpreview/main.cjs)
+music-preview/
