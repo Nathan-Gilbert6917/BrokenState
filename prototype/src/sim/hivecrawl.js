@@ -141,6 +141,10 @@ export function denDepth(state, hive) {
 export function denOf(state, hive) {
   const depth = denDepth(state, hive);
   if (hive.den && hive.den.v === 1 && hive.den.depth === depth) return hive.den;
+  // Not while a team is inside: its chamber, trail and the chambers it has seen are this den's (the progression census
+  // of 2026-10-09, seed 6002: a hive reached tier 1 with a team in a side pocket that the deeper den does not have,
+  // and the crawl crashed on the missing chamber). It deepens once the team is out.
+  if (hive.den && hive.den.v === 1 && state.parties.some((p) => p.hiveCrawl && p.hiveCrawl.hiveId === hive.id)) return hive.den;
   const grew = !!hive.den;
   hive.den = genDen(state, hive, depth, clamp(hiveTier(state, hive), 0, 4));
   if (grew) hive.den.grew = state.hour;
