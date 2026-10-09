@@ -42,7 +42,7 @@ function prisonWorld(s = seed, n = 2, cells = 1) {
   capturePrisoners(st, { baseId: h.id, tile: h.tile, enemy: fakeB.setup.enemy }, { outcome: "victory", tactical: true, prisoners: recs }, null);
   Object.assign(h.stock, { food: 300, water: 300, preserved: 0 });
   const list = prisonersAt(st, h.id);
-  for (const p of list) { p.s.health = 60; p.s.mood = 30; }
+  for (const p of list) { p.s.health = 60; p.s.mood = 30; p.s.traits = []; p.s.traitTier = {}; p.s.skills.stealth = 0; } // no escape kit of their own (Stealth, or a trait that lifts it): the guards are under test
   return { st, h, f, list };
 }
 const guardOn = (st, h) => { const g = atBase(st, h.id).find((s) => !s.leader) || atBase(st, h.id)[0]; g.role = "guard"; g.skills.scouting = 4; g.tired = 0; h.jailGuards = [g.id]; return g; }; // one average jail guard (JAIL_GUARD: Scouting 4 counts 1)

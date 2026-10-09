@@ -90,7 +90,7 @@ const noDice = (fn) => {
   const h = hub(st);
   Object.assign(h.stock, { scrap: 200, parts: 10 });
   const ppl = atBase(st, h.id);
-  for (const s of ppl) { s.role = "build"; s.skills.mechanics = 0; }
+  for (const s of ppl) { s.role = "build"; s.skills.mechanics = 0; s.traits = []; s.traitTier = {}; } // no traits: Unlucky would take the builder under Mechanics 2
   check(!canBuild(st, h, "cells").ok && /makeshift cells first/i.test(canBuild(st, h, "cells").reason), `holding cells need makeshift cells first ("${canBuild(st, h, "cells").reason}")`);
   check(!canBuild(st, h, "jailhouse").ok, "a jailhouse needs holding cells first");
   const finish = () => { for (let i = 0; i < 400 && h.construction.length; i++) constructionHour(st); };
