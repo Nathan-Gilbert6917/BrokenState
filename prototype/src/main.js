@@ -43,7 +43,7 @@ import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, iron
 import { BG_ACTIONS, BG_CHANGE, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
-import { stackKey, stackInput, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the drop popover
+import { stackKey, stackInput, stackWheel, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the wheel, the drop popover
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
@@ -1453,6 +1453,7 @@ document.addEventListener("mouseover", (ev) => {
   ui.workHover = el ? { ...el.dataset } : null;
 });
 document.addEventListener("input", (ev) => stackInput(ev.target)); // the stack mover's slider: the panel follows as it moves
+document.addEventListener("wheel", (ev) => { const w = stackWheel(state, ui, ev); if (w) ev.preventDefault(); if (w > 1) refresh(); }, { passive: false }); // the wheel over a stack, the slider or the box: how many (else it scrolls)
 document.addEventListener("change", (ev) => {
   const el = ev.target.closest("[data-action]");
   if (!el) return;
