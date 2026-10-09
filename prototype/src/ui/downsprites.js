@@ -468,7 +468,8 @@ function charred(p) {
 }
 
 // The body container of a unit in a raid (sim/combat.js: kind "body", uid), if any: searched shows on the sprite.
-const bodySearched = (b, t) => !!(b && b.raid && b.raid.containers.some((c) => c.kind === "body" && c.uid === t.id && c.searched));
+// A field battle's body searched where it fell (sim/ground.js b.fieldLoot) the same way.
+const bodySearched = (b, t) => { const L = b && (b.raid || b.fieldLoot); return !!(L && L.containers.some((c) => c.kind === "body" && c.uid === t.id && c.searched)); };
 // The picture of a fallen unit (dead, or down: wounded / knocked out), the same look as its standing sprite
 // (sprites.js unitCanvas). Every unit drawn by paintSurvivor (your people, anyone with an appearance) or
 // paintEnemyHuman (any hostile kit) gets one, whatever its side.

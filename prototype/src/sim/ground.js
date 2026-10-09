@@ -45,7 +45,7 @@ import { walkingBody, turnedBody } from "./carriers.js";
 import { launcherBody } from "./launchers.js";
 import { SEARCH } from "./search.js";
 import { ARMORED } from "./deadsoldiers.js";
-import { KITS, WEAPONS, say, fx, unitById, loadMag, active } from "./combat.js";
+import { KITS, WEAPONS, say, fx, unitById, loadMag, active, playerUnit } from "./combat.js";
 
 export const GROUND = { reach: 1 };
 const cheb = (a, x, y) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y));
@@ -91,7 +91,7 @@ export function dropAt(state, uid, loc, qty = Infinity) {
   const b = state.combat;
   const u = b && unitById(b, uid);
   if (!u || u.side !== "player" || b.over) return "";
-  fieldReady(b);
+  fieldReady(b, state);
   const p = groundPile(b, u.x, u.y, u.f || 0);
   const msg = raidMove(state, uid, loc, `rbox:${p.id}:list`, qty);
   settle(p);
@@ -101,7 +101,7 @@ export function dropAt(state, uid, loc, qty = Infinity) {
 export function pickUpFromGround(state, b, u, where, item = null) {
   const out = { got: [], left: 0, msg: "" };
   if (!b || !u) return out;
-  fieldReady(b);
+  fieldReady(b, state);
   const pile = isPile(where) ? where : where ? groundAt(b, where.x, where.y, where.f ?? (u.f || 0)) : pilesNear(b, u)[0];
   if (!pile || !pileCount(pile)) { out.msg = "Nothing on the ground there."; return out; }
   if (!near(u, pile)) { out.msg = `${u.name.split(" ")[0]} has to be on it or next to it.`; return out; }
@@ -121,14 +121,16 @@ export function pickUpFromGround(state, b, u, where, item = null) {
 }
 
 // A field battle: everyone of yours carries their finds loose (raidloot.js u.haul), and found ammo and meds count at
-// once (one of the battle's supply pools, as on a raid: raidCarrySetup).
-export function fieldReady(b) {
+// once (one of the battle's supply pools, as on a raid: raidCarrySetup); a weapon or armour put on from a body or the
+// ground counts at once (combat.js refitUnit, from u.fit: what playerUnit gives for what they wear now, as rescueraid.js).
+export function fieldReady(b, state = null) {
   if (!b || b.raid) return;
   fieldLayer(b);
   for (const u of b.units) {
-    if (u.side !== "player" || u.haul) continue;
-    haulOf(u);
-    b.pools.push(u.haul.sup);
+    if (u.side !== "player") continue;
+    if (!u.haul) { haulOf(u); b.pools.push(u.haul.sup); }
+    const s = state && !u.fit && u.sid != null ? survivorById(state, u.sid) : null;
+    if (s && s.alive) { const id = b.nextId; const f0 = playerUnit(b, s); b.nextId = id; u.fit = { aim: f0.aim, dmgMult: f0.dmgMult, armor: f0.armor, medicine: f0.medicine }; }
   }
 }
 
@@ -194,7 +196,7 @@ export function searchBody(state, b, u, t) {
   const why = bodyRefusal(b, t);
   if (why) return why;
   if ((t.f || 0) !== (u.f || 0) || cheb(u, t.x, t.y) > GROUND.reach) return "Stand on or next to the body to search it.";
-  fieldReady(b);
+  fieldReady(b, state);
   if (bodyBoxOf(b, t)) return "";
   if ((u.ap || 0) < SEARCH.ap) return "No actions left this turn.";
   u.ap -= SEARCH.ap;

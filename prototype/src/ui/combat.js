@@ -46,6 +46,7 @@ import { statusIcons } from "./status.js"; // the survivor behind a unit: low mo
 import { iso, drawIso, project, isoPick, isoRotate, isoZoom, isoPan, isoEdge, isoCenterOn, isoOnScreen, setRoofs, floorsOf, floorNo, onFloor } from "./isoview.js";
 import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // the key table (Menu → Controls)
 import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy
+import { groundButtons, groundCbAct, groundClick, drawGroundTop } from "./ground.js"; // bodies searched where they fell, things on the ground (sim/ground.js)
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
@@ -345,6 +346,7 @@ export function combatClick(state, px, py) {
   const v = view(b);
   const u = selUnit(b);
   const who = unitAt(b, c.x, c.y);
+  if (u && active(u) && groundClick(state, b, u, c, cui, act)) return; // ui/ground.js: the body picked to search
   // The team's vehicle (sim/combat.js driveTo): Drive, then click where it goes.
   if (u && active(u) && u.ap > 0 && cui.mode === "drive") return void act(state, { type: "drive", unit: u.id, x: c.x, y: c.y });
   // A tank trap next to the unit (sim/combat.js CELL.tanktrap, a bridge barricade's): a blow at it.
@@ -998,6 +1000,7 @@ export function combatAction(state, key, d) {
   if (key !== "cb-act" || !u) return;
   const v = d.v;
   if (typeof v === "string" && v.startsWith("rescue:")) return void act(state, { type: "rescue", unit: u.id, op: v.slice(7) }); // sim/rescueraid.js
+  if (groundCbAct(state, b, u, v, cui, act)) return; // ui/ground.js: Search a body (a field battle), Ground
   if (v === "search" && b.raid) return void openSearch(state, b, u, null, { full: true });
   if (v === "quick" && b.raid) return void openSearch(state, b, u, null, { quick: true }); // sim/search.js: the rummage
   if (v === "evac" || v === "evacStop") return void act(state, { type: v }); // sim/combat.js evacTurn: everyone to the way out
@@ -1252,6 +1255,7 @@ export function renderCombatPanel(state) {
       ${medicButtons(state, b, u, btn)}
       ${floorButtons(b, u, btn)}
       ${bodyButtons(state, b, u, btn)}
+      ${groundButtons(state, b, u, btn)}
       ${stealthButtons(state, b, u, btn)}
       ${nlButtons(state, b, u, btn, cui)}
       ${siegeButtons(b, u, btn)}
@@ -1344,7 +1348,7 @@ function raidHead(state, b, phase) {
   const me = sel && sel.side === "player" && party ? personalLoad(state, sel) : null;
   const trunk = party ? trunkInfo(state, b) : null;
   const stage = Math.min(3, Math.floor(R.heat / 25));
-  const left = R.containers.filter((c) => !c.searched && c.kind !== "body").length;
+  const left = R.containers.filter((c) => !c.searched && c.kind !== "body" && c.kind !== "ground").length;
   const found = [...Object.entries(R.found).map(([k, n]) => `${n} ${k}`), ...R.foundGear.map((g) => g.name)];
   // A building's own map (sim/buildingmaps.js): its name, its ways out, people inside who are not placed yet.
   const I = R.interior;
@@ -2028,6 +2032,7 @@ export function drawCombat(state, now) {
   }
 
   if (b.raid) drawRaidOverlay(b, cs);
+  drawGroundTop(ctx, b, ox, oy, cs, b.floor || 0); // ui/ground.js: things on the ground, bodies searched with things left
   drawBaseOverlay(b, cs); // the deploy step and floodlights (sim/deploy.js)
 
   // Fog: tiles none of your people can see (darker on a night raid).
@@ -2345,7 +2350,7 @@ function drawRaidOverlay(b, cs) {
     ctx.fillText(name, x, y);
   }
   for (const c of R.containers) {
-    if (!onFloor(b, c)) continue; // R.containers holds every floor's (floorsOf)
+    if (!onFloor(b, c) || c.kind === "ground") continue; // R.containers holds every floor's (floorsOf); piles on the ground: ui/ground.js
     const [bx, by] = boxCenter(c); // a car covers several cells: its marker over the middle one
     const px = ox + Math.round(bx) * cs, py = oy + Math.round(by) * cs;
     // A fallen unit's body (uid) is its own picture (ui/downsprites.js), drawn with the units: only its marker here.

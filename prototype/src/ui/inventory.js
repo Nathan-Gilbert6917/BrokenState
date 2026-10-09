@@ -25,6 +25,8 @@ import { useItemOn, useText } from "../sim/comforts.js";
 import { partyVehicle, vehicleLabel, isBike } from "../sim/vehicles.js";
 import { raidMove, raidItemAt, parseRaidLoc, raidTakeAll, stashAll, personalLoad, trunkInfo, atVehicle, raidParty, quickTarget, matesOf, hauled, haulBudget, HAUL, supplyFit } from "../sim/raidloot.js";
 import { combatAct } from "../sim/combat.js";
+import { lootLayer } from "../sim/raidloot.js";
+import { groundPile, fieldReady, pileCount } from "../sim/ground.js"; // bodies searched where they fell, things on the ground
 import { SEARCH } from "../sim/search.js";
 import { ask } from "./confirm.js"; // breaking down anything above junk asks first (one confirmation style)
 import { isGunKey } from "./gunart.js"; // a gun (not a bow or a blade): the gun builder opens on it
@@ -362,6 +364,12 @@ function bodyPortrait(state, b, body) {
   return u ? spriteImg(canvasURL(unitCanvas(state, b, u, cui.salt)), 7, "transform:rotate(-8deg)") : "";
 }
 
+// A pile (sim/ground.js groundLeftovers): what lay on the ground, or was left on a body searched in the battle.
+function pileGrid(state, ui, body, bi, s) {
+  const cells = (body.loose || []).map((it, i) => (it ? slotBox(state, ui, `body:${bi}:loose:${i}`, "", s, false) : "")).join("");
+  return `<div class="invlabel"${tip(body.uid == null ? "Things that lay on the ground when the fight ended." : "What was left on this body when it was searched in the fight.")}>${body.uid == null ? "On the ground" : "Left on the body"}</div><div class="invgrid">${cells || `<span class="small muted">Nothing.</span>`}</div>`;
+}
+
 function lootModal(state, ui) {
   const b = state.combat;
   if (!b || !b.over || !b.bodies) { ui.inv = null; return null; }
@@ -384,7 +392,7 @@ function lootModal(state, ui) {
     const sups = Object.entries(body.supplies).filter(([, v]) => v > 0);
     bodyHtml = `<div class="spread"><b>${esc(body.name)}</b><button class="mini" data-action="loot-takebody" data-i="${bi}"${tip("Take everything from this body that fits: supplies first, then items, most valuable first. Items go to the team's cargo (or the base armory).")}>Take all</button></div>
       ${body.sid != null ? `<div class="small muted">Your fallen. Whatever you leave stays at their death site.</div>` : ""}
-      ${h ? doll(state, ui, h, `body:${bi}`, bodyPortrait(state, b, body), { user: s }) : ""}
+      ${body.pile ? pileGrid(state, ui, body, bi, s) : h ? doll(state, ui, h, `body:${bi}`, bodyPortrait(state, b, body), { user: s }) : ""}
       <div class="invlabel"${tip("Supplies go straight to the team's found cargo (or the base stock). Click to take.")}>Supplies</div>
       <div class="invgrid">${sups.length ? sups.map(([k, v]) => {
         // Any part of the stack: click for all of it, or 1 / half (sim/inventory.js takeSupply want).
@@ -420,7 +428,9 @@ export function takeLootReq(state, ui) {
   if (!cui.lootReq) return;
   const r = cui.lootReq;
   cui.lootReq = null;
-  if (!state.combat || !state.combat.raid || state.combat.over) return;
+  if (!state.combat || state.combat.over) return;
+  fieldReady(state.combat, state); // sim/ground.js: a field battle's loot layer (bodies, the ground)
+  if (!lootLayer(state.combat)) return;
   ui.inv = { raid: true, uid: r.uid, box: r.box };
   ui.invSel = null;
   ui.invMsg = "";
@@ -443,12 +453,15 @@ const loadBar = (load, cap) => `<div class="bar"><i style="width:${Math.min(100,
 
 function raidModal(state, ui) {
   const b = state.combat;
-  if (!b || !b.raid || b.over) { ui.inv = null; return null; }
+  const R = lootLayer(b);
+  if (!b || !R || b.over) { ui.inv = null; return null; }
   const u = b.units.find((x) => x.id === ui.inv.uid && x.side === "player" && !x.dead && !x.left);
   const s = u && survivorById(state, u.sid);
   if (!u || !s) { ui.inv = null; return null; }
-  const R = b.raid;
   const box = ui.inv.box != null ? R.containers.find((c) => c.id === ui.inv.box && c.contents) : null;
+  // The ground under the survivor (sim/ground.js): put things down there (free), pick them up again (hauling).
+  const ground = groundPile(b, u.x, u.y, u.f || 0);
+  ui.inv.ground = ground.id;
   const p = raidParty(state, b);
   const trunk = p && atVehicle(b, u) ? trunkInfo(state, b) : null;
   const first = esc(s.name.split(" ")[0]);
@@ -476,10 +489,20 @@ function raidModal(state, ui) {
     const sups = Object.entries(box.contents.sup).filter(([, v]) => v >= 1);
     const n = box.contents.gear.length + sups.length;
     const w = sups.reduce((a, [k, v]) => a + SUPPLIES[k].weight * v, 0) + box.contents.gear.reduce((a, g) => a + itemLoad(g), 0);
-    mid = `<div><div class="spread"><b${tip(box.drop ? "What a fallen teammate carried. Take it home for them." : "")}>${esc(box.label)}</b><span class="small muted">${n} thing${n === 1 ? "" : "s"} · ${kg(w)} kg</span></div>
+    mid = `<div><div class="spread"><b${tip(box.kind === "ground" ? "Things on the ground here. Taking them is hauling (the first kg a turn free); putting things down is free." : box.drop ? "What a fallen teammate carried. Take it home for them." : "")}>${esc(box.label)}</b><span class="small muted">${n} thing${n === 1 ? "" : "s"} · ${kg(w)} kg</span></div>
       <div class="istore" data-action="inv-click" data-loc="${bl}:list" data-drop="${bl}:list"${tip("Drop here to leave it in the container")}>${sups.map(([k, v]) => supTile(ui, `${bl}:sup:${k}`, k, v)).join("")}${gearTiles(ui, box.contents.gear, bl, s) || (sups.length ? "" : `<span class="small muted">Empty.</span>`)}</div>
       ${box.quick ? `<div class="small warn" style="margin-top:0.3rem"${tip(`Rummaged through in a hurry (Quick search): only part of what is inside turned up. A full search turns up the rest, if there is more: ${SEARCH.ap} action, quiet.`)}>Rummaged in a hurry: a full search may turn up more.</div>` : ""}
       <div class="row" style="margin-top:0.4rem"><button class="mini" data-action="rl-takeall"${tip(`Everything that fits on ${first}: supplies carried, small things in pockets, the rest in the pack or carried.`)} ${n ? "" : "disabled"}>Take all</button>${box.quick ? `<button class="mini" data-action="rl-full"${tip(`${first} goes through it properly: ${SEARCH.ap} action, quiet. Whatever the rummage missed turns up here.`)} ${u.ap >= SEARCH.ap && !b.over && b.phase === "player" ? "" : "disabled"}>Search it in full (${SEARCH.ap} action)</button>` : ""}</div></div>`;
+  }
+  // The ground under them (unless that is what is open).
+  let gnd = "";
+  if (ground !== box) {
+    const gl = `rbox:${ground.id}`;
+    const sups = Object.entries(ground.contents.sup).filter(([, v]) => v >= 1);
+    const n = pileCount(ground);
+    gnd = `<div${mid ? ' style="margin-top:0.9rem"' : ""}><div class="spread"><b${tip(`Drop things here to put them on the ground where ${first} stands (free). They stay there for anyone to pick up (Ground, ${"Shift+X"}); after a won fight they are part of the loot.`)}>On the ground here</b><span class="small muted">${n} thing${n === 1 ? "" : "s"}</span></div>
+      <div class="istore" data-action="inv-click" data-loc="${gl}:list" data-drop="${gl}:list"${tip("Drop here to put it on the ground")}>${sups.map(([k, v]) => supTile(ui, `${gl}:sup:${k}`, k, v)).join("")}${gearTiles(ui, ground.contents.gear, gl, s) || (sups.length ? "" : `<span class="small muted">Nothing. Drag things here to put them down.</span>`)}</div>
+      ${n ? `<div class="row" style="margin-top:0.4rem"><button class="mini" data-action="rl-takeall" data-box="${ground.id}"${tip(`Pick up everything that fits on ${first} (hauling time).`)}>Pick up all</button></div>` : ""}</div>`;
   }
   // The vehicle.
   let right = "";
@@ -487,23 +510,23 @@ function raidModal(state, ui) {
     const tl = `trunk:${p.id}`;
     const keys = [...new Set([...Object.keys(p.cargo.supplies), ...Object.keys(p.supplies)])].filter((k) => SUPPLIES[k]);
     const sups = keys.map((k) => [k, Math.floor(Math.max(0, p.cargo.supplies[k] || 0)) + Math.floor(Math.max(0, p.supplies[k] || 0))]).filter(([, v]) => v >= 1);
-    right = `<div${mid ? ' style="margin-top:0.9rem"' : ""}><div class="spread"><b${tip(trunk.bike ? "The bikes' racks: 15 kg each. What does not fit on them is shared out among the people." : "The team's supplies and cargo ride in the car. It also has to take home everything your people carry, so their loads count against what it has left.")}>${esc(trunk.name)}</b><span class="small ${trunk.space < 2 ? "warn" : "muted"}">${kg(trunk.cap - Math.max(0, trunk.space))}/${kg(trunk.cap)} kg · ${kg(Math.max(0, trunk.space))} free</span></div>
+    right = `<div${mid || gnd ? ' style="margin-top:0.9rem"' : ""}><div class="spread"><b${tip(trunk.bike ? "The bikes' racks: 15 kg each. What does not fit on them is shared out among the people." : "The team's supplies and cargo ride in the car. It also has to take home everything your people carry, so their loads count against what it has left.")}>${esc(trunk.name)}</b><span class="small ${trunk.space < 2 ? "warn" : "muted"}">${kg(trunk.cap - Math.max(0, trunk.space))}/${kg(trunk.cap)} kg · ${kg(Math.max(0, trunk.space))} free</span></div>
       ${loadBar(trunk.cap - Math.max(0, trunk.space), trunk.cap)}
       <div class="istore" data-action="inv-click" data-loc="${tl}:list" data-drop="${tl}:list"${tip("Drop here to put it in the vehicle")}>${sups.map(([k, v]) => supTile(ui, `${tl}:sup:${k}`, k, v, " From the vehicle: the team's packed supplies and what it found.")).join("")}${gearTiles(ui, p.cargo.gear, tl, s) || (sups.length ? "" : `<span class="small muted">Empty.</span>`)}</div>
       <div class="row" style="margin-top:0.4rem"><button class="mini" data-action="rl-stash"${tip(`Everything ${first} carries loose goes in the vehicle (what fits). What is worn, held, in pockets and the pack stays on them.`)} ${hsup.length || (u.haul && u.haul.gear.length) ? "" : "disabled"}>Unload what ${first} carries</button></div></div>`;
   } else if (p && R.vehicleZone >= 0) {
     right = `<div${mid ? ' style="margin-top:0.9rem"' : ""}><b>Vehicle</b><div class="small muted" style="margin-top:0.3rem">Parked in the entry zone. Walk ${first} there (or next to it) and press N to load it.</div></div>`;
   }
-  const around = mid || right ? `<div class="invcol">${mid}${right}</div>` : "";
+  const around = mid || gnd || right ? `<div class="invcol">${mid}${gnd}${right}</div>` : "";
   const cols = [left, mateCol, around].filter(Boolean);
   const found = [...Object.entries(R.found).filter(([, n]) => n >= 1).map(([k, n]) => `${Math.floor(n)} ${k}`), ...R.foundGear.map((g) => g.name)];
   const SL = ui.invSel ? parseRaidLoc(ui.invSel) : null;
   const sel = SL ? (SL.slot === "sup" ? SUPPLIES[SL.i]?.name : SL.o === "s" ? itemAt(state, ui.invSel)?.name : raidItemAt(state, b, ui.invSel)?.name) || "" : "";
   return `<div class="box wide invbox${cols.length > 2 ? " loot" : ""}">
-    <div class="spread"><h1>${box ? "Search" : "Vehicle"}: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}</span></div>
+    <div class="spread"><h1>${box ? (box.kind === "ground" ? "On the ground" : "Search") : trunk ? "Vehicle" : "On the ground"}: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}</span></div>
     <div class="result small"${ui.invMsg ? "" : ' style="visibility:hidden"'}>${ui.invMsg ? esc(ui.invMsg) : "&nbsp;"}</div>
     <div class="invcols${cols.length > 2 ? " three" : ""}">${cols.join("")}</div>
-    ${SL && SL.slot === "sup" ? qtyBar(state, ui, b, u) : sel ? `<div class="invsel small">Selected: <b>${esc(sel)}</b>. Click where it should go: a slot, a pocket or pack cell, Carried${mates.length ? ", a teammate" : ""}${box ? ", the container" : ""}${trunk ? ", the vehicle" : ""}. <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}
+    ${SL && SL.slot === "sup" ? qtyBar(state, ui, b, u) : sel ? `<div class="invsel small">Selected: <b>${esc(sel)}</b>. Click where it should go: a slot, a pocket or pack cell, Carried${mates.length ? ", a teammate" : ""}${box ? ", the container" : ""}, the ground${trunk ? ", the vehicle" : ""}. <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}
     <div class="small muted" style="margin-top:0.5rem">Drag things where they should go (or click one, then where). Click a thing twice to send it across. The first ${HAUL.free} kg a turn are free to haul, then ${HAUL.per} kg an action; handing things to a teammate next to you is free.${found.length ? ` Found so far: ${esc(found.join(", "))}.` : ""}</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close">Done</button></div>
   </div>`;
@@ -518,7 +541,7 @@ function personCol(state, ui, b, u, s, isMe) {
   const dollHtml = doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), isMe ? 6 : 5), { user: s, weightLine });
   const hl = `haul:${u.id}`;
   const hsup = Object.entries(u.haul ? u.haul.sup : {}).filter(([, v]) => v >= 1);
-  return `${dollHtml}<div class="invlabel"${tip(`Finds ${first} carries loose (bags, arms). They count against ${first}'s max load and come home with ${first}; if ${first} bleeds out they drop where ${first} falls.${p && b.raid.vehicleZone >= 0 ? ` Put them in the vehicle to keep them safe and free ${first} up.` : ""}`)}>Carried (${kg(me.haul)} kg)</div>
+  return `${dollHtml}<div class="invlabel"${tip(`Finds ${first} carries loose (bags, arms). They count against ${first}'s max load and come home with ${first}; if ${first} bleeds out they drop where ${first} falls.${p && lootLayer(b).vehicleZone >= 0 ? ` Put them in the vehicle to keep them safe and free ${first} up.` : ""}`)}>Carried (${kg(me.haul)} kg)</div>
     <div class="istore" data-action="inv-click" data-loc="${hl}:list" data-drop="${hl}:list"${tip(`Drop here: ${first} carries it`)}>${hsup.map(([k, v]) => supTile(ui, `${hl}:sup:${k}`, k, v)).join("")}${gearTiles(ui, u.haul ? u.haul.gear : [], hl, s) || (hsup.length ? "" : `<span class="small muted">Nothing. Drop finds here.</span>`)}</div>`;
 }
 
@@ -531,7 +554,7 @@ function whereTo(state, b, u, to) {
   const T = parseRaidLoc(to), first = esc(u.name.split(" ")[0]);
   if (T.o === "haul") return T.id === u.id ? `on ${first} (carried)` : "on the teammate";
   if (T.o === "trunk") return "in the vehicle";
-  if (T.o === "rbox") return "back in the container";
+  if (T.o === "rbox") { const c = lootLayer(b) && lootLayer(b).containers.find((x) => x.id === T.id); return c && c.kind === "ground" ? "on the ground" : "back in the container"; }
   return "there";
 }
 function qtyBar(state, ui, b, u) {
@@ -540,7 +563,7 @@ function qtyBar(state, ui, b, u) {
   const have = stackOf(state, ui, b, sel);
   if (!have || !SUPPLIES[k]) return "";
   const q = pickedQty(ui, have);
-  const to = quickTarget(state, b, u.id, sel, ui.inv.box);
+  const to = quickTarget(state, b, u.id, sel, ui.inv.box ?? ui.inv.ground);
   const f = supplyFit(state, u.id, sel, to);
   const name = esc(SUPPLIES[k].name.toLowerCase());
   const b1 = (v, label, t, off = false) => `<button class="mini" data-action="rl-qty" data-v="${v}"${tip(t)} ${off ? "disabled" : ""}>${label}</button>`;
@@ -562,14 +585,14 @@ function raidClick(state, ui, loc, ev = null) {
   const has = (str) => { const x = parseRaidLoc(str); return x.slot === "sup" || (x.o === "s" ? !!itemAt(state, str) : !!raidItemAt(state, b, str)); };
   const qtyOf = (str) => (parseRaidLoc(str).slot === "sup" && str === sel ? pickedQty(ui, stackOf(state, ui, b, str)) : Infinity);
   if (ev && ev.shiftKey && L.slot === "sup" && sel !== loc) {
-    ui.invMsg = raidMove(state, uid, loc, quickTarget(state, b, uid, loc, ui.inv.box));
+    ui.invMsg = raidMove(state, uid, loc, quickTarget(state, b, uid, loc, ui.inv.box ?? ui.inv.ground));
     ui.invSel = null;
     return;
   }
   const pick = (str) => { ui.invSel = str; ui.invQty = null; }; // a new stack: all of it until changed
   if (!sel) { if (L.slot !== "list" && has(loc)) pick(loc); return; }
   if (sel === loc) {
-    ui.invMsg = raidMove(state, uid, loc, quickTarget(state, b, uid, loc, ui.inv.box), qtyOf(loc));
+    ui.invMsg = raidMove(state, uid, loc, quickTarget(state, b, uid, loc, ui.inv.box ?? ui.inv.ground), qtyOf(loc));
     ui.invSel = null;
     return;
   }
@@ -690,9 +713,10 @@ export const INV_ACTIONS = {
   },
   "loot-done": (state, ui) => { ui.inv = null; ui.invSel = null; ui.invMsg = ""; },
   // The search window (sim/raidloot.js).
-  "rl-takeall": (state, ui) => {
-    if (!ui.inv || !ui.inv.raid || ui.inv.box == null) return;
-    const r = raidTakeAll(state, ui.inv.uid, ui.inv.box);
+  "rl-takeall": (state, ui, d) => {
+    const boxId = d && d.box != null ? Number(d.box) : ui.inv && ui.inv.box;
+    if (!ui.inv || !ui.inv.raid || boxId == null) return;
+    const r = raidTakeAll(state, ui.inv.uid, boxId);
     ui.invMsg = `${r.got.length ? `Took ${r.got.join(", ")}.` : "Nothing taken."}${r.left ? (r.outOfTime ? " Out of time for the rest this turn: end the turn and come back." : ` ${r.left} thing${r.left === 1 ? "" : "s"} did not fit.`) : ""}`;
     ui.invSel = null;
   },
@@ -702,7 +726,7 @@ export const INV_ACTIONS = {
     const have = stackOf(state, ui, state.combat, ui.invSel);
     if (!have) return;
     const q = pickedQty(ui, have);
-    const fit = () => supplyFit(state, ui.inv.uid, ui.invSel, quickTarget(state, state.combat, ui.inv.uid, ui.invSel, ui.inv.box)).n || 1;
+    const fit = () => supplyFit(state, ui.inv.uid, ui.invSel, quickTarget(state, state.combat, ui.inv.uid, ui.invSel, ui.inv.box ?? ui.inv.ground)).n || 1;
     ui.invQty = { one: 1, dec: q - 1, inc: q + 1, half: Math.floor(have / 2), all: have, fit: d.v === "fit" ? fit() : q }[d.v] ?? q;
     ui.invQty = Math.max(1, Math.min(have, ui.invQty));
   },
@@ -711,7 +735,7 @@ export const INV_ACTIONS = {
     const b = state.combat;
     if (!ui.inv || !ui.inv.raid || ui.inv.box == null || !b) return;
     const err = combatAct(state, { type: "search", unit: ui.inv.uid, box: ui.inv.box, open: true });
-    const box = b.raid && b.raid.containers.find((c) => c.id === ui.inv.box);
+    const box = lootLayer(b) && lootLayer(b).containers.find((c) => c.id === ui.inv.box);
     const n = box && box.contents ? box.contents.gear.length + Object.values(box.contents.sup).filter((v) => v >= 1).length : 0;
     ui.invMsg = err || `Searched in full: ${n ? `${n} thing${n === 1 ? "" : "s"} in it now` : "nothing more"}.`;
     ui.invSel = null;
