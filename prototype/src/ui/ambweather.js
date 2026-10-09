@@ -17,10 +17,10 @@ export const WEATHER_SOUNDS = {
   windLow:        { label: "Wind: low rumble (and a storm's roar)", bed: true, trim: 0.2 },
   windMid:        { label: "Wind: whoosh", bed: true, trim: 0.26 },
   windHigh:       { label: "Wind: whistle", bed: true, trim: 0.05 },
-  rainWash:       { label: "Rain wash (the snow's hush)", bed: true, trim: 0.15 },
+  rainWash:       { label: "Rain wash (the snow's hush)", bed: true, trim: 0.24 },
   river:          { label: "River running", bed: true, trim: 0.11 },
-  lake:           { label: "Lake lapping", bed: true, trim: 0.13 },
-  drone:          { label: "Night drone", bed: true, trim: 0.13 },
+  lake:           { label: "Lake lapping", bed: true, trim: 0.16 },
+  drone:          { label: "Night drone", bed: true, trim: 0.18 },
   thunderNear:    { label: "Thunder: near crack", trim: 0.75 },
   thunderFar:     { label: "Thunder: rolling", trim: 0.5 },
   thunderDistant: { label: "Thunder: distant (a storm coming)", trim: 0.32 },
@@ -65,14 +65,14 @@ const BEDS = {
     s.connect(hp); hp.connect(lp); lp.connect(out);
     return { src: [s], nodes: 4, out, set(p, t) { hp.frequency.setTargetAtTime(p.hp, t, 2); lp.frequency.setTargetAtTime(p.lp, t, 2); } };
   } },
-  drone: loopBed("weather", "drone", droneLoop),
-  river: loopBed("weather", "river", riverLoop),
-  lake: loopBed("weather", "lake", lakeLoop),
+  drone: loopBed("weather", "drone", droneLoop, 8000),
+  river: loopBed("weather", "river", riverLoop, 16000),
+  lake: loopBed("weather", "lake", lakeLoop, 16000),
 };
 // A bed that loops a baked buffer: source → gain (2 nodes).
-export function loopBed(group, key, recipe) {
+export function loopBed(group, key, recipe, sr = BED_SR) {
   return { group, build(E, t) {
-    const b = bakeBuffer(E, `bed:${key}`, recipe, BED_SR);
+    const b = bakeBuffer(E, `bed:${key}`, recipe, sr);
     if (!b) return null;
     const s = loopSource(E, b, t), out = bedOut(E);
     s.connect(out);
@@ -326,7 +326,7 @@ function riverLoop(sr, r) {
   const len = 8, a = buf1(sr, len + 0.5);
   noiseBurst(a, sr, { at: 0, dur: len + 0.5, amp: 0.55, f: 450, q: 0.5, a: 0.001, r: 0.001, color: "brown", f2: 1400, rnd: r });
   noiseBurst(a, sr, { at: 0, dur: len + 0.5, amp: 0.12, f: 2200, q: 0.7, a: 0.001, r: 0.001, rnd: r });
-  const n = Math.round((len + 0.5) * 110);
+  const n = Math.round((len + 0.5) * 80);
   for (let i = 0; i < n; i++) bubble(a, sr, { at: r() * (len + 0.45), f: 300 + Math.pow(r(), 1.5) * 1400, up: 1.4 + r() * 1.2, tau: 0.004 + r() * 0.008, amp: 0.08 + Math.pow(r(), 3) * 0.5 });
   return norm(seamLoop(a, sr, len, 0.45), 0.8);
 }

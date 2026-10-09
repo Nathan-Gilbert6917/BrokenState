@@ -156,14 +156,15 @@ export async function render(name) {
   const L = out.buf.getChannelData(0), Rr = out.buf.getChannelData(1), n = L.length;
   const i16 = new Int16Array(n * 2), mono = new Float32Array(n);
   let sum = 0, wavPk = 0, clip = 0, nan = false;
-  const seg = [], segN = 5 * SR;
-  let sacc = 0;
+  const seg = [], segHi = [], segN = 5 * SR, kHp = Math.exp(-2 * Math.PI * 2000 / SR);
+  let sacc = 0, hacc = 0, lpS = 0;
   for (let i = 0; i < n; i++) {
     const l = L[i], r = Rr[i];
     if (!Number.isFinite(l) || !Number.isFinite(r)) { nan = true; continue; }
     mono[i] = Math.abs(l) > Math.abs(r) ? l : r;
     sum += (l * l + r * r) / 2; sacc += (l * l + r * r) / 2;
-    if ((i + 1) % segN === 0) { seg.push(db(Math.sqrt(sacc / segN))); sacc = 0; }
+    const m = (l + r) / 2; lpS = kHp * lpS + (1 - kHp) * m; const hi = m - lpS; hacc += hi * hi; // above about 2 kHz: birds, insects, drops
+    if ((i + 1) % segN === 0) { seg.push(db(Math.sqrt(sacc / segN))); segHi.push(db(Math.sqrt(hacc / segN))); sacc = 0; hacc = 0; }
     const wl = l * MAKEUP, wr = r * MAKEUP;
     wavPk = Math.max(wavPk, Math.abs(wl), Math.abs(wr));
     if (Math.abs(wl) >= 1 || Math.abs(wr) >= 1) clip++;
@@ -171,7 +172,7 @@ export async function render(name) {
     i16[2 * i + 1] = Math.max(-32768, Math.min(32767, Math.round(wr * 32767)));
   }
   const st = stats(mono, SR);
-  return { name, sr: SR, data: b64(i16), stats: { secs: R.S.secs, rmsDb: db(Math.sqrt(sum / n)), peakDb: st.peakDb, wavPeakDb: db(wavPk), wavClip: clip, seg, renderMs: out.renderMs, frameMs: out.frameMs, bakeMs: out.bakeMs, bedMax: out.bedMax, calls: out.calls, nan } };
+  return { name, sr: SR, data: b64(i16), stats: { secs: R.S.secs, rmsDb: db(Math.sqrt(sum / n)), segHi, centroid: st.centroid, peakDb: st.peakDb, wavPeakDb: db(wavPk), wavClip: clip, seg, renderMs: out.renderMs, frameMs: out.frameMs, bakeMs: out.bakeMs, bedMax: out.bedMax, calls: out.calls, nan } };
 }
 
 // The cost: nodes per one-shot (counted on a real context), the bake time of each voice (ms, mean of its variants at
@@ -195,9 +196,9 @@ export async function cost() {
   for (const [k, f] of Object.entries(CALLS)) { const sr = CALL_SR[k] || 32000, t0 = performance.now(); for (let v = 0; v < 3; v++) f(sr, rngOf(v + 1)); bake[k] = Math.round((performance.now() - t0) / 3 * 10) / 10; }
   for (const [k, f] of Object.entries(RECIPES)) { const sr = SOUND_SR[k] || 32000, t0 = performance.now(); for (let v = 0; v < 3; v++) f(sr, rngOf(v + 1)); bake[k] = Math.round((performance.now() - t0) / 3 * 10) / 10; }
   const loops = {};
-  const E2 = ambEngine(new OfflineAudioContext(2, SR, SR), c.destination);
+  const c2 = new OfflineAudioContext(2, SR, SR), E2 = ambEngine(c2, c2.destination);
   for (const k of ["drone", "river", "lake", "crickets", "frogs", "cicadas"]) { const t0 = performance.now(); const P2 = ambiencePlan(makeScene({})); for (const b of Object.keys(P2.beds)) P2.beds[b] = 0; P2.beds[k] = 0.5; ambPlay(E2, { ...P2, weather: {}, wild: {} }, 0); loops[k] = Math.round(performance.now() - t0); }
   const mem = [...E.bufs.values(), ...E2.bufs.values()].reduce((a, b) => a + b.length * b.numberOfChannels * 4, 0);
   return { nodesPerCall: perCall, nodesPerDullCall: perFarCall, bakeMs: bake, loopBakeMs: loops, bufferBytesSample: mem };
 }
-window.AMB = { render, names: Object.keys(RENDERS), cost, ready: true };
+window.AMB = { render, names: Object.keys(RENDERS), cost: async () => { try { return await cost(); } catch (e) { return { error: String(e && e.stack || e) }; } }, ready: true };

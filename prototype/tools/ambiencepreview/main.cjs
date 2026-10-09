@@ -56,7 +56,7 @@ app.whenReady().then(async () => {
     fs.writeFileSync(path.join(OUT, `${name}.wav`), wav(new Int16Array(buf.buffer, buf.byteOffset, buf.length / 2), r.sr));
     all[name] = r.stats;
     const s = r.stats;
-    console.log(`${name.padEnd(24)} ${String(s.secs).padStart(3)}s  RMS ${String(s.rmsDb).padStart(6)} dB  peak ${String(s.peakDb).padStart(6)} dB  wav peak ${String(s.wavPeakDb).padStart(6)} dB  clip ${s.wavClip}  per 5 s [${s.seg.join(" ")}]  render ${s.renderMs} ms  frames ${s.frameMs} ms  bed nodes max ${s.bedMax}  calls ${s.calls}${s.nan ? "  NaN!" : ""}`);
+    console.log(`${name.padEnd(24)} ${String(s.secs).padStart(3)}s  RMS ${String(s.rmsDb).padStart(6)} dB  peak ${String(s.peakDb).padStart(6)} dB  wav peak ${String(s.wavPeakDb).padStart(6)} dB  clip ${s.wavClip}  per 5 s [${s.seg.join(" ")}]  >2k [${s.segHi.join(" ")}]  render ${s.renderMs} ms  frames ${s.frameMs} ms  bed nodes max ${s.bedMax}  calls ${s.calls}${s.nan ? "  NaN!" : ""}`);
   }
   const cost = await win.webContents.executeJavaScript("window.AMB.cost()");
   console.log("cost:", JSON.stringify(cost));

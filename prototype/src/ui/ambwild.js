@@ -14,13 +14,13 @@ import { loopBed } from "./ambweather.js";
 // trim: the level at bed level 1 or a call's gain 1, under the ambience slider; pan: how far off to one side a call
 // may sit (0–1); far: how far away it tends to be (0 near, 1 far: quieter and duller).
 export const WILDLIFE_SOUNDS = {
-  crickets:    { label: "Crickets (a chorus)", bed: true, trim: 0.075 },
-  frogs:       { label: "Frogs (peepers and trillers)", bed: true, trim: 0.06 },
-  cicadas:     { label: "Cicadas", bed: true, trim: 0.05 },
-  songRobin:   { label: "Songbird: robin-like phrases", trim: 0.075, pan: 0.85, far: 0.5 },
-  songWarbler: { label: "Songbird: warbler trill", trim: 0.06, pan: 0.85, far: 0.55 },
-  songWhistle: { label: "Songbird: clear whistle", trim: 0.065, pan: 0.85, far: 0.5 },
-  songFinch:   { label: "Songbird: finch twitter", trim: 0.055, pan: 0.8, far: 0.45 },
+  crickets:    { label: "Crickets (a chorus)", bed: true, trim: 0.11 },
+  frogs:       { label: "Frogs (peepers and trillers)", bed: true, trim: 0.075 },
+  cicadas:     { label: "Cicadas", bed: true, trim: 0.07 },
+  songRobin:   { label: "Songbird: robin-like phrases", trim: 0.1, pan: 0.85, far: 0.5 },
+  songWarbler: { label: "Songbird: warbler trill", trim: 0.08, pan: 0.85, far: 0.55 },
+  songWhistle: { label: "Songbird: clear whistle", trim: 0.085, pan: 0.85, far: 0.5 },
+  songFinch:   { label: "Songbird: finch twitter", trim: 0.07, pan: 0.8, far: 0.45 },
   birdAlarm:   { label: "Bird alarm calls (flushed)", trim: 0.08, pan: 0.7, far: 0.3 },
   crow:        { label: "Crow", trim: 0.09, pan: 0.9, far: 0.5 },
   raven:       { label: "Raven", trim: 0.08, pan: 0.9, far: 0.6 },
