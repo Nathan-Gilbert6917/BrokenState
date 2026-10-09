@@ -26,6 +26,8 @@ import { gearCues, uiCues, clickSound, gearVoices, GEAR_LABELS, GEAR_LIMITS } fr
 import { voiceOut, placeOf } from "./sfx-out.js"; // the output stage of the voices above (pan, distance, out of sight)
 import { vehicleVoices, VEHICLE_LABELS, VEHICLE_LIMITS, loopWants, engineLoops } from "./sfx-vehicles.js"; // engines, car doors, the idle loop and the map's convoy hum
 import { doorVoices, DOOR_LABELS, DOOR_LIMITS } from "./sfx-doors.js"; // building doors and gates
+import { ambTarget, ambBeds, ambPlay, ambPreview } from "./ambience.js"; // the ambience: weather and wildlife where you listen (ui/ambscene.js, ambweather.js, ambwild.js)
+import { camera } from "./render.js"; // the zoom: zoomed far out the ambience is a soft general bed
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -297,50 +299,14 @@ function listenTile(state) {
   } catch { /* no map yet */ }
   return playerTile(state);
 }
+const AMB_MEM = {}; // what the ambience remembers between frames: gunfire, the silence, the wet (ui/ambscene.js)
 function ambienceTarget(state, ui) {
-  const off = { wind: 0, windTone: 400, rain: 0, rainLow: 0, thunder: 0, drone: 0, birds: 0, crickets: 0 };
-  if (ui.timelapse) return off;
-  if (ui.title || !ui.started) return { ...off, wind: 0.3, drone: 0.45 }; // the title and new-run screens: wind and the drone
-  let wx = null, sKey = "summer";
-  try {
-    wx = weatherAt(state, listenTile(state));
-    sKey = season(state).key;
-  } catch { /* a world with no weather yet */ }
-  const mix = ambienceMix(wx, (state.hour % 24) + (view.hourFrac || 0), sKey);
-  if (state.combat) mix.birds = 0; // the birds keep quiet in a firefight
-  return mix;
+  let tile = null;
+  if (state && ui.started && !ui.title && !ui.timelapse) try { tile = listenTile(state); } catch { /* no map yet */ }
+  return ambTarget(state, ui, AMB_MEM, A ? A.ctx.currentTime : 0, { tile, zoom: camera.zoom, hourFrac: view.hourFrac || 0 }); // ui/ambience.js
 }
 function layers() {
-  if (A.layers) return A.layers;
-  const c = A.ctx, L = {};
-  const white = loopNoise(c, "white"), brown = loopNoise(c, "brown");
-  // Wind: brown noise through a band that drifts, with slow gusts.
-  L.windBand = c.createBiquadFilter(); L.windBand.type = "bandpass"; L.windBand.Q.value = 0.9; L.windBand.frequency.value = 400;
-  L.gust = c.createGain(); L.gust.gain.value = 1;
-  L.wind = c.createGain(); L.wind.gain.value = 0;
-  brown.connect(L.windBand); L.windBand.connect(L.gust); L.gust.connect(L.wind); L.wind.connect(A.wx || A.amb);
-  lfo(c, 0.09, 0.45, L.gust.gain);
-  lfo(c, 0.05, 120, L.windBand.frequency);
-  // Rain: white noise, high and bright, over a low wash (a storm's roar).
-  const hp = c.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 1200;
-  const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 7000;
-  L.rain = c.createGain(); L.rain.gain.value = 0;
-  white.connect(hp); hp.connect(lp); lp.connect(L.rain); L.rain.connect(A.wx || A.amb);
-  const low = c.createBiquadFilter(); low.type = "lowpass"; low.frequency.value = 450;
-  L.rainLow = c.createGain(); L.rainLow.gain.value = 0;
-  brown.connect(low); low.connect(L.rainLow); L.rainLow.connect(A.wx || A.amb);
-  // The drone: two low sines a fifth apart, beating slowly, and an octave above, under a low-pass.
-  const dlp = c.createBiquadFilter(); dlp.type = "lowpass"; dlp.frequency.value = 300;
-  L.drone = c.createGain(); L.drone.gain.value = 0;
-  for (const [f, type, g] of [[55, "sine", 0.6], [82.8, "sine", 0.45], [110.4, "triangle", 0.15]]) {
-    const o = c.createOscillator(); o.type = type; o.frequency.value = f;
-    const og = c.createGain(); og.gain.value = g;
-    o.connect(og); og.connect(dlp); o.start();
-  }
-  dlp.connect(L.drone); L.drone.connect(A.wx || A.amb);
-  lfo(c, 0.04, 0.02, L.drone.gain);
-  A.layers = L;
-  return L;
+  return A.layers || (A.layers = ambBeds(A.ctx, { weather: A.wx || A.amb, wildlife: A.wild || A.amb })); // ui/ambience.js: the weather and wildlife buses and beds (built as they are first heard), into the mixer's Weather and Wildlife groups
 }
 // Layer levels: how loud each one is at mix 1 (under the ambience slider). Fades are slow (weather changes by the day,
 // night comes over two hours).
@@ -349,17 +315,7 @@ function ambience(state, ui) {
   const L = layers(), c = A.ctx, t = c.currentTime;
   const m = ambienceTarget(state, ui);
   A.mix = m;
-  L.wind.gain.setTargetAtTime(m.wind * AMB_LEVELS.wind, t, 1.5);
-  L.windBand.frequency.setTargetAtTime(m.windTone, t, 2);
-  L.rain.gain.setTargetAtTime(m.rain * AMB_LEVELS.rain, t, 1.5);
-  L.rainLow.gain.setTargetAtTime(m.rainLow * AMB_LEVELS.rainLow, t, 1.5);
-  L.drone.gain.setTargetAtTime(m.drone * AMB_LEVELS.drone, t, 3);
-  // The one-shots: thunder every 12–40 s in a storm, birds every few seconds (more at dawn), cricket trains.
-  const N = A.next;
-  if (m.thunder && t >= N.thunder) { if (N.thunder) sfx("thunder", { near: Math.random() }); N.thunder = t + 12 + Math.random() * 28; }
-  if (!m.thunder) N.thunder = 0;
-  if (m.birds > 0.05 && t >= N.bird) { if (N.bird) sfx("bird", { gain: 0.5 + m.birds * 0.5 }); N.bird = t + (2 + Math.random() * 8) / m.birds; }
-  if (m.crickets > 0.05 && t >= N.cricket) { if (N.cricket) sfx("cricket", { gain: m.crickets }); N.cricket = t + 0.6 + Math.random() * 1.6 / m.crickets; }
+  ambPlay(L, m, t); // ui/ambience.js: wind, rain, thunder, snow, water, ice, the drone; birds, insects, frogs, mammals (silent near danger)
   // The dead (ui/zombiesfx.js): the battle's crowd bed on the effects bus; on the map a horde near you on the wind and a
   // hive's heartbeat on the ambience bus.
   const fight = state.combat && !ui.timelapse ? state.combat : null;
@@ -714,8 +670,8 @@ export const GROUP_PREVIEW = {
   "people.vehicles": () => sfx("engineStart", { key: "pickup", pitch: 1 }), // ui/sfx-vehicles.js
   "people.doors": () => sfx("door", { dk: "front", pitch: 1 }), // ui/sfx-doors.js
   "people.downed": () => sfx("downed", { pitch: 1 }),
-  "world.weather": () => sfx("thunder", { near: 0.8, pitch: 1 }),
-  "world.wildlife": () => sfx("bird", { pitch: 1 }),
+  "world.weather": () => (A ? ambPreview(layers(), "weather", A.ctx.currentTime) : 0), // rolling thunder (ui/ambience.js)
+  "world.wildlife": () => (A ? ambPreview(layers(), "wildlife", A.ctx.currentTime) : 0), // a songbird, then a crow
   "world.base": () => (A ? demoMurmur(A.ctx, A.amb, A.ctx.currentTime, 4) : 0), // a base's murmur (4 s)
   "world.heartbeat": () => sfx("heartbeat", { gain: 0.9, pitch: 1 }),
   "ui.clicks": () => sfx("click", { pitch: 1 }),
@@ -833,5 +789,5 @@ export const soundMixer = { get open() { return mixOpen; }, set open(v) { mixOpe
 
 // The Help tab's topic (ui/help.js).
 export function soundHelp() {
-  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each calibre has its own report (a .22's pop to a .50's thump, 12 gauge, the machine guns, launchers), bursts and full auto round by round, suppressed shots, reloads, jams and brass, placed left or right and near or far, muffled out of sight, in the echo of the place; grenades, rockets and explosions in layers, with hits, misses, melee blows by weapon and by what took the blow, blasts and fire; footsteps by ground, gait and load; the dead each have a voice of their own (a walker's moan, a runner's shriek, a brute's roar, a spitter hawking, the screamer's shriek that calls more of them, a crawler's hiss as it strikes, a Carrier bursting into worms), and a crowd of them murmurs louder the more of them come and the nearer they get; and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. On the map a horde near you is heard as moaning on the wind (more at night), a hive near you as a low heartbeat. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: sound on / off, mute when the window is not focused, the <b>Master</b>, <b>Effects</b> and <b>Ambience</b> volumes, and a mixer of sound groups: <b>Weapons</b> (gunfire, explosions and grenades, reloads and handling, melee), <b>Zombies</b> (moans, attacks and bites, shrieks and roars, the special dead, the battle's crowd, hordes and hives on the map), <b>People</b> (voices, footsteps, gear, someone going down), <b>World</b> (weather, wildlife, the heartbeat) and <b>Interface</b> (clicks, card chimes, alerts and stings). Each group goes up to 150%; a part's level is its own × its group's. <b>Advanced mixer…</b> shows every part with an On switch and ▶ to hear it; <b>Mix</b> picks a ready mix (Default, Quieter zombies, Focus on combat, Atmosphere, Hush the interface); <b>Reset to defaults</b> puts every volume back. <b>Hear</b> plays any one sound, then the gun and blast sound test, and <b>Zombie sounds</b> to hear each kind of the dead. Browsers start sound only after your first click or key press.`;
+  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each calibre has its own report (a .22's pop to a .50's thump, 12 gauge, the machine guns, launchers), bursts and full auto round by round, suppressed shots, reloads, jams and brass, placed left or right and near or far, muffled out of sight, in the echo of the place; grenades, rockets and explosions in layers, with hits, misses, melee blows by weapon and by what took the blow, blasts and fire; footsteps by ground, gait and load; the dead each have a voice of their own (a walker's moan, a runner's shriek, a brute's roar, a spitter hawking, the screamer's shriek that calls more of them, a crawler's hiss as it strikes, a Carrier bursting into worms), and a crowd of them murmurs louder the more of them come and the nearer they get; and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. On the map a horde near you is heard as moaning on the wind (more at night), a hive near you as a low heartbeat. <b>Ambience</b> follows the weather, the season, the clock and the land where the map is looking (the battle's place in a battle): gusting wind that rattles loose metal in towns and stirs the trees, rain from drizzle to downpour pattering on leaves, tin roofs and puddles and dripping after, thunder near and far (and far off as a storm comes), the hush of snow, still fog, rivers running, lakes lapping and frozen rivers creaking, a low drone at night; songbirds and the dawn chorus, crows, owls at night, geese passing in spring and autumn, a woodpecker, crickets, frogs and cicadas, feral dogs, the odd wolf or coyote, an elk in the autumn rut. The wildlife falls silent when the dead are near, in a battle and for a minute after gunfire; near a hive it is sparse and wrong. Indoors the rain is heard on the roof through the walls; zoomed far out only a soft bed remains.<br><br>⚙ Menu → Options → Sound: sound on / off, mute when the window is not focused, the <b>Master</b>, <b>Effects</b> and <b>Ambience</b> volumes, and a mixer of sound groups: <b>Weapons</b> (gunfire, explosions and grenades, reloads and handling, melee), <b>Zombies</b> (moans, attacks and bites, shrieks and roars, the special dead, the battle's crowd, hordes and hives on the map), <b>People</b> (voices, footsteps, gear, someone going down), <b>World</b> (weather, wildlife, the heartbeat) and <b>Interface</b> (clicks, card chimes, alerts and stings). Each group goes up to 150%; a part's level is its own × its group's. <b>Advanced mixer…</b> shows every part with an On switch and ▶ to hear it; <b>Mix</b> picks a ready mix (Default, Quieter zombies, Focus on combat, Atmosphere, Hush the interface); <b>Reset to defaults</b> puts every volume back. <b>Hear</b> plays any one sound, then the gun and blast sound test, and <b>Zombie sounds</b> to hear each kind of the dead. Browsers start sound only after your first click or key press.`;
 }

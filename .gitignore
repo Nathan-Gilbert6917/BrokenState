@@ -14,6 +14,7 @@ Desktop.ini
 .claude/settings.local.json
 .claude/worktrees/
 
-# Sound previews (prototype/tools/sfxpreview/main.cjs, prototype/tools/zombiesfxpreview.cjs)
+# Sound previews (prototype/tools/sfxpreview/main.cjs, prototype/tools/zombiesfxpreview.cjs, prototype/tools/ambiencepreview/main.cjs)
 sfx-preview/
 vd-preview/
+amb-preview/

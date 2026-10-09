@@ -51,6 +51,7 @@ const G = await import("../src/ui/gunsfx.js");
 const B = await import("../src/ui/blastsfx.js");
 const Z = await import("../src/ui/zombiesfx.js");
 const H = await import("../src/ui/humansfx.js");
+const AM = await import("../src/ui/ambience.js"); // the ambience's weather and wildlife (ui/ambweather.js, ui/ambwild.js)
 let EDGE = null;
 try { EDGE = await import("../src/ui/edgefx.js"); } catch { EDGE = null; } // adds the heartbeat voice (needs the battle view: may not load in node)
 
@@ -94,6 +95,7 @@ console.log("Every sound in a group");
     "humansfx cues": [...H.HUMAN_SOUND_NAMES, ...Object.keys(H.HUMAN_LIMITS), ...Object.keys(H.H_PRIORITY)],
     "ambience beds": [...Object.keys(AU.AMB_LEVELS), "crowd", "mapHorde", "hive", "murmur"],
     "edge heartbeat": ["heartbeat"],
+    "ambience weather and wildlife": [...AM.AMB_SOUNDS.weather, ...AM.AMB_SOUNDS.wildlife],
   };
   for (const [what, names] of Object.entries(lists)) {
     const miss = [...new Set(names)].filter((n) => !explicit(n, AU.VOICES[n]) || !SG.groupDef(explicit(n, AU.VOICES[n])));
