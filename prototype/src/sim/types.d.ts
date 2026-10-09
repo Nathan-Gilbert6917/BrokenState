@@ -64,6 +64,8 @@ export interface TileSnapshot {
   deathSite: number;
   lootHour?: number; // radio news of a stripped site (aiscav.js)
   lootSrc?: any;
+  gb?: any; // intelnotes.js: what a team saw of a group's base here (it goes to state.intelLedger with the report)
+  via?: string; // a report, not your own eyes (alliance.js "ally", hivetech.js "rumour"…)
 }
 
 // ---------- people ----------

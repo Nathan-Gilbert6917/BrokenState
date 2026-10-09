@@ -54,6 +54,7 @@ import { crashSurvey } from "./crashes.js";
 import { opticsFor, OPTICS } from "./optics.js";
 import { carriedAll } from "./comforts.js";
 import { listeners } from "./radio.js";
+import { withLook, surveyErr } from "./intelnotes.js"; // a close look at a group's base (the State Map's estimates)
 
 export const SURVEY = {
   radius: { min: 2, max: 4, def: 3 },
@@ -266,6 +267,8 @@ export function sweepHour(state, p) {
   const opt = opticsFor(members, p.cargo, { still: true, night: isNightAt(state.hour) });
   const bonus = SURVEY.finds + (opt.look - 1) * 0.3;
   const looked = state.grid.within(here, 1 + opt.reach);
+  // A group's base in close reach: a good look at it (intelnotes.js; the State Map's estimates, intelest.js).
+  for (const id of looked) if (state.tiles[id] && state.factions.some((f) => f.alive && f.bases.includes(id))) p.seen.set(id, withLook(state, snapshot(state, id), id, "survey", surveyErr(state, opt)));
   const found = perceive(state, p, members, looked, bonus);
   for (const f of found) t.finds.push({ type: f.type, tile: f.tile });
   noteLooked(state, p, looked); // discovery.js: the spot is searched (the map's Known area layer)
@@ -293,7 +296,7 @@ function enterTile(state, p, from, to) {
   }
   const members = partyMembers(state, p);
   const around = state.grid.within(to, sightRadius(state, p));
-  for (const id of around) p.seen.set(id, snapshot(state, id));
+  for (const id of around) p.seen.set(id, withLook(state, snapshot(state, id), id)); // intelnotes.js: a group's base seen in passing
   perceive(state, p, members, around);
   crashSurvey(state, p); // crashes.js: a wreck in reach, or its circle narrowed
   // One card at a time; none on the last step back to the centre (a delay then would fall on the next leg instead of

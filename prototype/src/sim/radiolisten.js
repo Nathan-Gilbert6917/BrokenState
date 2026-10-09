@@ -31,6 +31,7 @@ import { hash01 } from "./skills.js";
 import { attitude, changeGoodwill, groupHiveTarget } from "./factions.js";
 import { rumourFromNews } from "./survey.js";
 import { warsOf } from "./diplomacy.js";
+import { noteHeard } from "./intelnotes.js"; // what you hear of a group (the State Map's estimates of its bases)
 
 export const LISTEN = {
   HOURS: 1, KEEP_DAYS: 4, CATCHUP_DAYS: 3, CATCHUP_BONUS: 1.25, HEARD_MAX: 6,
@@ -85,7 +86,7 @@ export function channelTraffic(state, today = day(state)) {
             text: `a war party (strength about ${Math.round(q.strength || 0)}) is on its way to your ${b.name}, there ${when}.` });
         } else {
           const o = state.factions.find((x) => x.id === q.target.factionId);
-          put({ key: `raid:${lid(q.id)}`, kind: "raid", text: `a war party is on its way to ${o ? `${fname(o)}'s base at ` : ""}${tileLabel(state, q.target.tile)}, there ${when}.` });
+          put({ key: `raid:${lid(q.id)}`, kind: "raid", strength: Math.round(q.strength || 0), text: `a war party is on its way to ${o ? `${fname(o)}'s base at ` : ""}${tileLabel(state, q.target.tile)}, there ${when}.` });
         }
       } else if ((q.kind === "convoy" || q.kind === "caravan") && q.phase === "out") {
         const mine = q.baseId != null ? baseById(state, q.baseId) : null;
@@ -116,7 +117,7 @@ export function channelTraffic(state, today = day(state)) {
     // Their stores (this week's market lists, trade.js; only once they are drawn up).
     if (f.market && (today + lid(f.id)) % LISTEN.STORES_EVERY === 0) {
       const wants = (f.market.wants || []).slice(0, 2).map((x) => x.key), spare = (f.market.surplus || []).slice(0, 2).map((x) => x.key);
-      if (wants.length || spare.length) put({ key: `st:${lid(f.id)}:${today}`, kind: "stores", text: `their stores: ${wants.length ? `short of ${wants.join(" and ")}` : "nothing short"}; ${spare.length ? `plenty of ${spare.join(" and ")}` : "nothing to spare"}.` });
+      if (wants.length || spare.length) put({ key: `st:${lid(f.id)}:${today}`, kind: "stores", wants, spare, text: `their stores: ${wants.length ? `short of ${wants.join(" and ")}` : "nothing short"}; ${spare.length ? `plenty of ${spare.join(" and ")}` : "nothing to spare"}.` });
     }
     if ((today + lid(f.id) * 7) % LISTEN.RUMOUR_EVERY === 0) put({ key: `ru:${lid(f.id)}:${today}`, kind: "rumour", text: "" }); // the place is named when it is heard
     if ((today + lid(f.id) * 3) % LISTEN.TALK_EVERY === 0) put({ key: `tk:${lid(f.id)}:${today}`, kind: "talk", text: talkText(f, today) });
@@ -161,6 +162,9 @@ function hear(state, L, f, item) {
   const line = { day: day(state), net: f.id, name: f.name, text };
   L.holder.heard = [line, ...(L.holder.heard || [])].slice(0, LISTEN.HEARD_MAX);
   log(state, `📻 Heard on ${f.name}'s channel: ${text}`, item.kind === "raidYou" ? "danger" : "info");
+  // intelnotes.js: what it tells of the group (the State Map's estimates of its bases, intelest.js).
+  if (item.kind === "stores") noteHeard(state, f.id, "stores", { wants: item.wants || [], spare: item.spare || [] });
+  if (item.strength) noteHeard(state, f.id, "force", { strength: item.strength });
   if (item.kind === "raidYou") raidHeardCard(state, f, item);
   return line;
 }
