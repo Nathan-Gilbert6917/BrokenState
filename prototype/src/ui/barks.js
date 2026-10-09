@@ -17,6 +17,7 @@
 import { active, hasMag, magIn, magEmpty, magShown, reloadRefusal } from "../sim/combat.js";
 import { ZTYPES } from "../sim/hiveconst.js";
 import { sfx } from "./audio.js";
+import { barkShout } from "./humansfx.js"; // the shout in the speaker's own voice
 
 export const BARK = {
   LIFE: 1800,          // ms a bubble shows
@@ -399,7 +400,7 @@ export function emitBarks(state, list, now, m = mode) {
     S.live.push(q);
     S.cool.set(e.unit.id, now);
     started.push(q);
-    if (imp) sfx("bark");
+    if (imp) { const [n, o] = barkShout(state, e.unit, e.trig); if (!sfx(n, o)) sfx("bark"); } // ui/humansfx.js: urgent for "man down", strained going down
   }
   return started;
 }

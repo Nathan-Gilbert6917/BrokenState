@@ -328,6 +328,11 @@ function vocal(c, out, t, s, rnd) {
   return o;
 }
 
+// The building blocks, for ui/humansfx.js (the survivors' voices are made the same way). HUMAN_HOOK.cry: set by
+// ui/humansfx.js, the bite's victim screaming in their own voice (no import back from here: no cycle).
+export const DSP = { vocal, noise, biq, envG, am, bubbles, clicks, osc, sweep, gainN, thud, lfo, VW };
+export const HUMAN_HOOK = { cry: null };
+
 // ---------- recipes ----------
 // X: { c, t, vp (voiceParams), rnd, P (PROFILE), g (gain), p (pitch: the call's × the seed's), o (the cue's options) }.
 function say(X, out, s) {
@@ -515,7 +520,9 @@ export const RECIPES = {
     noise(c, "brown", t + 0.06, 0.25, biq(c, "lowpass", 520, 1, envG(c, out, t + 0.06, 0.45 * g, 0.01, 0.04, 0.2)), rnd); // the squelch
     bubbles(c, out, t + 0.08, 0.3, 4 + Math.floor(rnd() * 3), 0.1 * g, rnd);
     say(X, out, { f0: X.P.f0 * X.p * 1.2, dur: 0.42, contour: [[1, 0.75]], vowels: ["uh", "aa"], fry: 0.5, drive: X.P.drive * 1.4, a: 0.02, hold: 0.1, rel: 0.3, peak: 0.35, breath: 0.2 });
-    if (X.o.human) humanScream(c, out, t + 0.07, rnd, g * 0.75);
+    if (X.o.human) { // the victim screams, in their own voice when ui/humansfx.js knows it
+      if (X.o.victim && HUMAN_HOOK.cry) HUMAN_HOOK.cry(c, out, t + 0.07, X.o.victim, g * 0.75); else humanScream(c, out, t + 0.07, rnd, g * 0.75);
+    }
   },
   grunt(X, out) {
     const { rnd, P } = X, dur = 0.17 + rnd() * 0.1;
@@ -1095,7 +1102,7 @@ export function zombieFxCue(b, f, zm, L, out) {
     if (!t) { out.push(f.hit ? cue("bash", a, b, L, { mat: matAt(b, f.to) }) : cue("attack", a, b, L)); return true; }
     const m = zm.z.get(a.id);
     if (m && m.low && a.ztype === "crawler") { out.push(cue("strike", a, b, L)); m.low = false; }
-    out.push(f.hit ? cue("bite", a, b, L, { human: t.kind === "human" }) : cue("attack", a, b, L));
+    out.push(f.hit ? cue("bite", a, b, L, { human: t.kind === "human", victimId: t.id }) : cue("attack", a, b, L));
     return true;
   }
   if (f.type === "scream") {
