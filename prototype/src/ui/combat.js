@@ -53,7 +53,7 @@ const ENEMY_STEP_MS = 420;
 export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false }; // autoPlay: the AI plays your side (cb-autoplay)
 LISTEN.sel = () => cui.sel; // ui/soundcues.js: whose ears the battle is heard through
 // ui/gunsfx.js: where on screen a sound is (pan, distance from the middle) and what your people see (out of sight: muffled).
-LISTEN.cam = () => { if (!iso.cw || cui.view === "top") return null; const [x0, y0] = project(0, 0, 0), [x1, y1] = project(1, 0, 0); return { cw: iso.cw, ch: iso.ch, S: Math.hypot(x1 - x0, y1 - y0) / Math.hypot(16, 8), project }; };
+LISTEN.cam = () => { if (!iso.cw) return null; const [x0, y0] = project(0, 0, 0), [x1, y1] = project(1, 0, 0); return { cw: iso.cw, ch: iso.ch, S: Math.hypot(x1 - x0, y1 - y0) / Math.hypot(16, 8), project }; };
 LISTEN.vis = () => (cui.cache && cui.cache.vis) || null;
 let canvas = null, ctx = null;
 
