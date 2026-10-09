@@ -153,7 +153,8 @@ export const PERSONALITIES = {
   // retreat policy, perks), while the governor's own decisions use every knob here. New knobs: envoyEvery /
   // envoyReach (days between envoys to a group, how far they go: × range), landEarly (founds land outposts for the
   // coalition as soon as it has a member, without waiting for the groups to settle: landPush), tributeLean (how
-  // readily it pays a tribute rather than fight: raidWarningChoice).
+  // readily it pays a tribute rather than fight: raidWarningChoice), envoyBare (an envoy goes to talk even when the hub
+// has no surplus to send as gifts: envoyCandidate).
   diplomat: {
     name: "Diplomat", base: "cautious", crowdSlack: 2, desc: "Builds the coalition: envoys with gifts to every group it knows, trade visits, land outposts as soon as it has a member; pays tribute, never starts a war, storms hives only at good odds.",
     maxTeams: 2, cooldown: 2, crew: 2, homeFrac: 0.5, minHealth: 70, range: 11, maxHoursOut: 30, stance: "normal",
@@ -162,7 +163,7 @@ export const PERSONALITIES = {
     holdRatio: 1.3, raid: false, rescue: true, tradeEvery: 6,
     hiveFrom: 120, hiveOdds: 1.25, hiveFires: 3, hiveRest: 8,
     conquer: "last", conquerFrom: 240, conquerOdds: 0.8, retreatBelow: 0.85,
-    envoyEvery: 8, envoyReach: 3.5, landEarly: true, tributeLean: 1.8,
+    envoyEvery: 8, envoyReach: 3.5, envoyBare: true, landEarly: true, tributeLean: 1.8,
   },
   hunter: {
     name: "Hive hunter", base: "aggressive", crowdSlack: 4, desc: "Hunts hives from the first month: a squad out to the nearest mound whenever it is fit, fires first, short rests between storms; fights groups only when they raid it.",
@@ -2987,9 +2988,9 @@ function envoyCandidate(state, need) {
   if (!f) return null;
   // Gifts while their goodwill is short; a group that trusts you already only needs the visit (the invitation).
   const courted = f.x.goodwill >= ALLIANCE.GOODWILL && f.x.pact;
-  if (!courted && !goods) return null;
+  if (!courted && !goods && !P.envoyBare) return null; // envoyBare (Diplomat): it goes to talk even with nothing to give
   return { mission: "trade", tile: f.x.bases.find((b) => state.grid.distance(b, h.tile) === f.d), score: courted ? 3 : 2.2, crew: 2, envoy: f.x.id, reach: P.envoyReach ?? ENVOY_REACH,
-    why: `an envoy to ${f.x.name} (goodwill ${Math.round(f.x.goodwill)}${f.x.pact ? "" : ", no pact"}): ${courted ? "the invitation to the coalition" : "gifts and talk for the coalition"}`, supplies: courted ? {} : goods };
+    why: `an envoy to ${f.x.name} (goodwill ${Math.round(f.x.goodwill)}${f.x.pact ? "" : ", no pact"}): ${courted ? "the invitation to the coalition" : "gifts and talk for the coalition"}`, supplies: courted ? {} : goods || {} };
 }
 
 // ---------- the war on the hives (hives.js) ----------
