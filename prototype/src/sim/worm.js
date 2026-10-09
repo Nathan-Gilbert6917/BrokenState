@@ -119,7 +119,7 @@
 // animal fewer in the herd (a herd hunted out is gone: a reason to hunt them).
 import { log, addCard, alive, residents, atBase, skill, hurt, day, baseById, survivorById, hub, factionById, combatPower, localId } from "./world.js";
 import { GEAR } from "./data.js";
-import { stomachShrugs, hasTrait, TRAIT_FX } from "./traits.js"; // Iron Stomach
+import { stomachShrugs, stomachMult } from "./traits.js"; // Iron Stomach, Weak Stomach
 import { Rng } from "./rng.js";
 import { count, isShelter } from "./buildings.js";
 import { partyMembers, partyTile, bestSkill, carried, takeSupply, wipeIfEmpty, cardStale, tileLabel, teamName } from "./parties.js";
@@ -571,7 +571,7 @@ export function eatRaw(state, people, rations, why, rate = WORM.RAW, how = "meat
 export function sickRoll(state, s, chance, why = "") {
   if (!s || !s.alive) return false;
   if ((s.conditions || []).some((c) => c.key === "stomach")) return false;
-  if (hasTrait(s, "ironstomach")) chance *= TRAIT_FX.STOMACH_SICK; // Iron Stomach (traits.js): the same one roll
+  chance *= stomachMult(s); // Iron Stomach, Weak Stomach by tier (traits.js): the same one roll
   if (!(chance > 0) || !wormRng(state).chance(Math.min(WORM.SICK_MAX, chance))) return false;
   return !!addCondition(state, s, "stomach", why, { cause: /water/.test(why) ? "water" : "food" });
 }

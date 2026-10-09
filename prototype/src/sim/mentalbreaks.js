@@ -28,7 +28,7 @@
 //     hours getting them walking again (events.js-style delay) and they do nothing that day.
 // Every outcome is one log line (kind "death" where someone dies), a moment on the record where it fits, and a count
 // in state.relStats.snaps[kind] for the tools. Only state.rng is drawn, only inside the daily tick (deterministic).
-import { TRAIT_FX, hasTrait, breakMult } from "./traits.js"; // Iron Will, Hothead
+import { hasTrait, traitFx, breakMult } from "./traits.js"; // Iron Will, Hothead
 import { log, addCard, day, atBase, hurt, killSurvivor, hub, skill } from "./world.js";
 import { BUILDINGS, count, assignStations } from "./buildings.js";
 import { GEAR } from "./data.js";
@@ -118,7 +118,7 @@ export function snap(state, pl, s, rng, force = null) {
   const stock = pl.base ? pl.base.stock : pl.party.supplies;
   const kinds = [];
   if (!s.leader) kinds.push(["runoff", 3]);
-  if (others.length) kinds.push(["attack", 3 * (rivalsOf(state, s).length ? 1.5 : 1) * (hasTrait(s, "hothead") ? TRAIT_FX.HOTHEAD_ATTACK : 1)]); // a Hothead (traits.js)
+  if (others.length) kinds.push(["attack", 3 * (rivalsOf(state, s).length ? 1.5 : 1) * (hasTrait(s, "hothead") ? traitFx(s, "hothead", "attack") : 1)]); // a Hothead (traits.js)
   kinds.push(["suicide", 1 + (s.grief ? 1 : 0) + (partnerOf(state, s) ? 0 : 0.3)]);
   if (pl.base && pl.base.buildings.some((b) => FIRE.burnable.includes(b.type))) kinds.push(["fire", 1.5]);
   if ((stock.food || 0) + (stock.water || 0) + (stock.rawwater || 0) >= (pl.base ? 20 : 6)) kinds.push(["stores", 1.5]);

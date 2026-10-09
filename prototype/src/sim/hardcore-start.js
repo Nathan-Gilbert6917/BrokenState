@@ -36,7 +36,7 @@
 //   usual 15 scrap.
 // Everything here runs only in a hardcore world (hardcore.js isHardcore).
 import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES, clashIn } from "./data.js";
-import { bornTraits } from "./traits.js"; // what the world's dice rolled at birth, before the newer traits came in
+import { bornTraits, tidyTiers } from "./traits.js"; // what the world's dice rolled at birth, before the newer traits came in
 import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
 import { newItem, packOf, POCKETS, START_DUR, startKit } from "./inventory.js";
@@ -317,6 +317,7 @@ export function applyArchetype(state, s, key) {
     for (const [k, v] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + v);
     const mine = [...A.traits];
     s.traits = [...mine, ...s.traits.filter((t) => !mine.includes(t) && !clashIn(mine, t))].slice(0, Math.max(3, mine.length));
+    tidyTiers(s, { ...(s.traitTier || {}), ...Object.fromEntries(mine.map((t) => [t, (A.traitTier && A.traitTier[t]) || 1])) }); // its tiers (traits.js)
     return;
   }
   for (const [k, [lo, hi]] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + rng.int(lo, hi));

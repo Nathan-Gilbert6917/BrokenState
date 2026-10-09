@@ -7,7 +7,7 @@ import { Rng } from "./rng.js";
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
-import { TRAIT_FX, traitDice, swapNewTraits, noteBornTraits, woundMult } from "./traits.js"; // the newer traits: own dice at birth, their rules
+import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
 import { sanitizeStartGear, hasPicks, normalStartGear } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { appearanceFor, craftingStart, CRAFT_START } from "./appearance.js";
@@ -255,6 +255,8 @@ export function makeSurvivor(state, quality = 1) {
     pockets: [null, null, null, null],
     location: null, role: "farm",
   };
+  // A tier for each trait (traits.js rollTiers): dice of its own, keyed like the swap, so the world's are untouched.
+  rollTiers(s, state.seed, (state.peopleMade || 0) + 1);
   // Own rng keyed by seed + how many people this world has made: same seed, same faces,
   // and the world's rng sequence is untouched.
   state.peopleMade = (state.peopleMade || 0) + 1;
@@ -323,6 +325,8 @@ export function applyCrew(state, crew) {
     if (c.skills) for (const k of SKILLS) if (c.skills[k] != null) s.skills[k] = Math.max(0, Math.min(20, Math.round(c.skills[k])));
     // Traits and the skill-point budget belong to the edited colonist, not to the seed.
     if (Array.isArray(c.traits)) s.traits = [...new Set(c.traits.filter((t) => TRAITS[t]))].filter((t, i, all) => !clashIn(all.slice(0, i), t)); // none that clash (data.js TRAIT_CLASH): the first stays
+    // Their tiers go with them (traits.js; a trait kept from the dice without one keeps the dice's tier).
+    if (Array.isArray(c.traits)) tidyTiers(s, c.traitTier && typeof c.traitTier === "object" ? Object.fromEntries(Object.entries(c.traitTier).map(([t, n]) => [t, cleanTier(t, n)])) : s.traitTier || {});
     if (Number.isFinite(c.budget)) s.skillBudget = c.budget;
     if (c.appearance) s.appearance = { ...c.appearance };
     // A normal start's weapon and armor (Randomize all hands the kit out again). Hardcore's come from what they grabbed.
@@ -415,12 +419,7 @@ export function fillCrafting(s) {
 export function skill(s, key) {
   let v = s.skills[key] || 0;
   if (key === "crafting" && s.skills.crafting == null) v = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0)); // people from before the skill (save.js fills it in)
-  if (key === "medicine" && s.traits.includes("medic")) v += 4;
-  if (key === "stealth" && s.traits.includes("loud")) v -= 3;
-  if (key === "farming" && s.traits.includes("farmraised")) v += TRAIT_FX.FARM;
-  if (key === "speech" && s.traits.includes("persuasive")) v += TRAIT_FX.SPEECH;
-  if (s.traits.includes("lucky")) v += 1;
-  if (s.traits.includes("unlucky")) v -= 1;
+  v += traitSkill(s, key); // Former Medic, Loud, Farm-Raised, Persuasive, Lucky, Unlucky, Nearsighted, Squeamish, by tier (traits.js)
   return Math.max(0, v);
 }
 
@@ -443,9 +442,8 @@ export function combatPower(s) {
   const eff = gearEffect(s, s.gear.weapon);
   let p = 1 + skill(s, "shooting") * 0.25 + (w && eff.usable ? w.power * eff.mult * (s.gear.weapon.quality || 1) : 0);
   p += armorPower(s) * 0.5; // every worn piece (body, head, arms, legs)
-  if (s.traits.includes("brave")) p += 1;
+  p += traitPower(s); // Brave +, Coward − by tier (traits.js)
   if (hasPerk(s, "gunslinger")) p += 1.5; // skills.js perk
-  if (s.traits.includes("coward")) p -= 1;
   return Math.max(0.5, p * (0.5 + s.health / 200));
 }
 

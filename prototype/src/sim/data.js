@@ -510,14 +510,16 @@ export const SKILL_NAMES = {
   crafting: "Crafting", // crafting.js: the quality, speed and XP of everything made by hand (each recipe's own skill is only its minimum)
 };
 
-// Survivor traits. bad: a drawback (the new-run screen's trait picker shows the good ones and the bad ones apart).
-// The numbers of the newer ones (Quick Study on) are in traits.js TRAIT_FX, where their rules are; desc says them.
+// Survivor traits. bad: a drawback; neutral: a real trade-off, good and bad at once (worth no points under Customize);
+// neither: a good one (traitKind). The trait picker, the chips' colours (green, red, grey) and the points go by it.
+// desc is tier I (the trait as it always was); the numbers of every tier, and the points, are traits.js TRAIT_TIERS,
+// where their rules are (traitDesc says them for a tier).
 export const TRAITS = {
   brave:     { name: "Brave",        desc: "Fights harder: +1 fighting strength, +5% to hit in battle" },
   coward:    { name: "Coward",       bad: true, desc: "Fights worse: -1 fighting strength, -5% to hit in battle; may lose their nerve on a trip" },
-  nightowl:  { name: "Night Owl",    desc: "At night their team is 15% more likely to spot others first" },
+  nightowl:  { name: "Night Owl",    neutral: true, desc: "At night their team is 15% more likely to spot others first; by day, drowsy, 5% less likely" },
   medic:     { name: "Former Medic", desc: "+4 Medicine" },
-  greedy:    { name: "Greedy",       desc: "Finds 15% more when scavenging around a base" },
+  greedy:    { name: "Greedy",       neutral: true, desc: "Finds 15% more when scavenging around a base, but others like them less (-10 opinion), a low mood hits them harder and they take twice as much if they walk out" },
   tough:     { name: "Tough",        desc: "Takes 25% less damage from wounds (not from hunger, thirst or infection)" },
   keeneye:   { name: "Keen Eye",     desc: "+1 sight radius for their team, and it notices hidden finds more often" },
   loud:      { name: "Loud",         bad: true, desc: "-3 Stealth" },
@@ -538,6 +540,15 @@ export const TRAITS = {
   glutton:      { name: "Glutton",       bad: true, desc: "Eats 25% more: a quarter ration more a day at a base, and hunger falls 25% faster on the road" },
   sickly:       { name: "Sickly",        bad: true, desc: "Falls ill 50% more often, and illnesses clear 1 point a day slower" },
   hothead:      { name: "Hothead",       bad: true, desc: "Gets along worse with everyone (-10 opinion), and when they break they lash out: fights and attacks are far likelier" },
+  // 2026-10-08 (user request: "add more bad traits if there are too few"): the opposites of good ones (TRAIT_CLASH),
+  // rolled at birth with the newer traits' own dice like the rest.
+  slow:         { name: "Slow",          bad: true, desc: "-1 tile a move in battle, and -10% to break off and get away from a fight (a team on foot with them: -1 to Run for it on the road)" },
+  slowlearner:  { name: "Slow Learner",  bad: true, desc: "Learns 20% slower: -20% XP from everything (use, study, fights)" },
+  weakstomach:  { name: "Weak Stomach",  bad: true, desc: "50% more likely to get an upset stomach from un-purified water or uncooked food" },
+  nearsighted:  { name: "Nearsighted",   bad: true, desc: "-2 Scouting and -1 Shooting" },
+  feeble:       { name: "Feeble",        bad: true, desc: "Max load 4 kg lower, and -5% to hit in melee" },
+  squeamish:    { name: "Squeamish",     bad: true, desc: "-2 Medicine, and a death in the group hits their mood 3 points harder (wherever they are)" },
+  pessimist:    { name: "Pessimist",     bad: true, desc: "Always expects the worst: mood -0.5 a day" },
 };
 // The traits drawn with the world's dice at birth (world.js rollTraits), in this order: the ten there were before
 // 2026-10-08. The draw over them is exactly the old draw, so a seed keeps every roll it made; the newer traits come in
@@ -547,10 +558,14 @@ export const BIRTH_TRAITS = ["brave", "coward", "nightowl", "medic", "greedy", "
 export const NEW_TRAITS = Object.keys(TRAITS).filter((t) => !BIRTH_TRAITS.includes(t));
 // Traits nobody has together (opposites). The one table: the birth roll, a child's traits, the new-run screen's
 // picker, custom backgrounds, the backgrounds of a start.
-export const TRAIT_CLASH = [["brave", "coward"], ["lucky", "unlucky"], ["tough", "frail"], ["strongback", "badback"], ["quickheal", "sickly"], ["ironwill", "hothead"]];
+export const TRAIT_CLASH = [["brave", "coward"], ["lucky", "unlucky"], ["tough", "frail"], ["strongback", "badback"], ["quickheal", "sickly"], ["ironwill", "hothead"],
+  ["fleet", "slow"], ["quicklearner", "slowlearner"], ["ironstomach", "weakstomach"], ["keeneye", "nearsighted"], ["strongback", "feeble"], ["medic", "squeamish"], ["ironwill", "pessimist"]];
 // Do traits a and b clash?
 /** @param {string} a @param {string} b @returns {boolean} */
 export const traitsClash = (a, b) => TRAIT_CLASH.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
+// "good", "bad" or "neutral" (TRAITS bad / neutral; the prepper's background trait is neutral: it changes nothing).
+/** @param {string} t @returns {"good" | "bad" | "neutral"} */
+export const traitKind = (t) => { const d = TRAITS[t]; return !d || t === "prepper" || d.neutral ? "neutral" : d.bad ? "bad" : "good"; };
 // The trait in `list` that clashes with t (null: none).
 /** @param {readonly string[]} list @param {string} t @returns {string | null} */
 export const clashIn = (list, t) => (list || []).find((x) => traitsClash(x, t)) || null;

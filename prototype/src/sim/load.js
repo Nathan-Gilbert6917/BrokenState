@@ -24,7 +24,7 @@
 // The team is weighed when it sets off and when it stops (parties.js weighTeam): eating on the way does not
 // lighten its band until it stops, but anything picked up on the move counts at once. That keeps the trip planner's
 // ETA, rations and fuel the same as the trip's.
-import { TRAIT_FX } from "./traits.js"; // Strong Back
+import { hasTrait, traitFx } from "./traits.js"; // Strong Back, Bad Back, Feeble (by tier)
 import { GEAR } from "./data.js";
 import { skill } from "./world.js";
 import { hasPerk } from "./skills.js";
@@ -51,12 +51,13 @@ const r4 = (x) => Math.round(x * 1e4) / 1e4;
 // ---------- one person ----------
 export const kgOf = (key) => GEAR[key]?.weight ?? 1;
 export const wornLoad = (s) => (s ? allItems(s).reduce((a, it) => a + itemLoad(it), 0) : 0);
-export const maxLoad = (s) => (s.traits.includes("badback") ? BADBACK_MAX : s.traits.includes("strongback") ? TRAIT_FX.STRONG_MAX : MAX_LOAD) + carryBonus(s) + (hasPerk(s, "packrat") ? PACKRAT_KG : 0);
+// Bad Back and Strong Back set the base (their tier's kg: traits.js; tier I is BADBACK_MAX, 48), Feeble takes kg off it.
+export const maxLoad = (s) => (hasTrait(s, "badback") ? traitFx(s, "badback", "max") : hasTrait(s, "strongback") ? traitFx(s, "strongback", "max") : MAX_LOAD) - traitFx(s, "feeble", "kg") + carryBonus(s) + (hasPerk(s, "packrat") ? PACKRAT_KG : 0);
 export const packEase = (s) => {
   const pk = s && s.gear && s.gear.backpack;
   return (pk && GEAR[pk.key] && GEAR[pk.key].ease) || 0;
 };
-export const feelFactor = (s) => (1 - packEase(s)) * (s.traits.includes("badback") ? BADBACK_FEEL : s.traits.includes("strongback") ? TRAIT_FX.STRONG_FEEL : 1);
+export const feelFactor = (s) => (1 - packEase(s)) * (hasTrait(s, "badback") ? traitFx(s, "badback", "feel") : hasTrait(s, "strongback") ? traitFx(s, "strongback", "feel") : 1);
 export const loadEase = (s) => Math.min(EASE_MAX, Math.max(0, skill(s, EASE_SKILL)) * EASE_PER_POINT);
 export const bandIndex = (felt) => {
   const i = LOAD_BANDS.findIndex((b) => felt <= b.upTo + 1e-9);

@@ -33,7 +33,7 @@
 import { log, day, hub, baseById, survivorById, residents, atBase, skill, makeSurvivor, rollTraits, newId } from "./world.js";
 import { getRel, makePartners, addMood, addMoment, relationsOf } from "./relations.js";
 import { FIRST_NAMES, SKILLS, clashIn } from "./data.js";
-import { traitDice } from "./traits.js"; // a child's own trait: the newer traits' dice
+import { traitDice, rollTiers } from "./traits.js"; // a child's own trait: the newer traits' dice
 import { SKIN_TONES, HAIR_COLORS, LOOK_OPTIONS, randomAppearance } from "./appearance.js";
 import { Rng } from "./rng.js";
 import { count, baseBeds } from "./buildings.js";
@@ -380,6 +380,7 @@ function comeOfAge(state, c) {
   s.name = c.name;
   s.skills = grownSkills(rng, c, parents);
   s.traits = c.traits.slice();
+  rollTiers(s, state.seed, c.id); // a tier for each, dice of their own (traits.js)
   s.appearance = { ...c.appearance, build: rng.weighted(["slim", "average", "heavy"], (x) => (x === "average" ? 3 : 1.5)), facial: rng.chance(0.3) ? rng.pick(["stubble", "beard", "stache"]) : "none" };
   s.health = 100;
   s.mood = 65;

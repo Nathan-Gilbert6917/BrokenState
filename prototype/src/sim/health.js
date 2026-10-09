@@ -47,7 +47,7 @@
 // the weather and work.
 // The worm is not a condition here: it has its own stages, spotting and cures (worm.js), and only its work factor
 // joins the rest (workFactor). The UI shows it beside these (ui/health.js wormChip, the Illness line, the alerts).
-import { hasTrait, accidentMult, TRAIT_FX } from "./traits.js"; // Sickly, Clumsy
+import { hasTrait, accidentMult, sicklyMult, sicklyDrift } from "./traits.js"; // Sickly, Clumsy (by tier)
 import { log, addCard, alive, atBase, residents, skill, hurt, day, baseById } from "./world.js";
 import { wormWork } from "./worm.js";
 import { fireWarmed } from "./upkeep.js"; // a shelter's fire warms only while lit and fed (woodcutting.js shelterFire)
@@ -458,7 +458,7 @@ export function frailty(state, s, ctx = null) {
   if (t < W.below) mul(1 + W.max * (W.below - t) / W.below, "thirsty");
   if (h >= SICK.fed && t >= SICK.fed) mul(SICK.fedMult, "well fed");
   if (s.health < SICK.frailHealth.below) mul(SICK.frailHealth.mult, "weak from wounds");
-  if (hasTrait(s, "sickly")) mul(TRAIT_FX.SICKLY, "sickly"); // traits.js
+  if (hasTrait(s, "sickly")) mul(sicklyMult(s), "sickly"); // traits.js, by tier
   const kind = ctx ? ctx.kind : s.location.kind === "party" ? "team" : "base";
   if (kind === "base" && s.location.kind === "base" && !s.inBed) mul(SICK.hardWork[s.role] || 1, "hard work");
   if (kind === "team") {
@@ -577,7 +577,7 @@ export function conditionDrift(state, s, c) {
   }
   if (c.treatedDay >= today - 1) drift = Math.min(drift, -2);
   if (c.mending) drift = Math.min(drift, 0) - SICK.mend;
-  if (d.kind === "illness" && hasTrait(s, "sickly")) drift += TRAIT_FX.SICKLY_DRIFT; // Sickly (traits.js): it clears slower
+  if (d.kind === "illness" && hasTrait(s, "sickly")) drift += sicklyDrift(s); // Sickly (traits.js): it clears slower
   return drift;
 }
 // Days until it is gone at today's rate, or null while it is getting worse (or holding).
