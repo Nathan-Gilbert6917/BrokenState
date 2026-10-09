@@ -24,7 +24,8 @@ import {
   ensureAlliance, isMember, allianceMembers, inviteProblem, inviteToAlliance, inviteBloc, expel, goalsProgress, councilVote, nextCouncilDay, ALLIANCE, controlRadius,
 } from "../sim/alliance.js";
 import { bandsOf, knownBands, bandInfo, militaryStatus } from "../sim/hardcore-groups.js";
-import { ask } from "./confirm.js"; // joining or leaving a war, expelling a member, giving up a job ask first
+import { ask } from "./confirm.js";
+import { volAskButton } from "./volunteers.js"; // ask a group for volunteers (sim/volunteers.js) // joining or leaving a war, expelling a member, giving up a job ask first
 import { ensureBlocs, blocOf, blocMembers, blocTitle, foeText, leaveBlocSide, BLOC, previewVote, voteText, blocCarrier } from "../sim/blocs.js"; // AI blocs
 import {
   ensurePwars, pwarOf, goalText, cbText, termOptions, offerTerms, talkWait, talkVia, declareByPlayer, playerDeclareProblem, ceasefireUntil, ceasefireWith, PW,
@@ -310,6 +311,7 @@ export function radioDiploBlock(state, f) {
     <button class="mini" data-action="dp-open" data-tab="market"${tip("Every group in reach, best price first")}>Market board</button>
     <button class="mini" data-action="dp-open" data-tab="affairs"${tip("Wars and pacts between the groups")}>World affairs</button>
     ${member ? "" : `<button class="mini" data-action="al-invite" data-id="${f.id}" ${inv ? "disabled" : ""}${tip(inviteTip(state, f, inv))}>Invite to the coalition</button>`}
+    ${volAskButton(state, f)}
   </div>`;
 }
 

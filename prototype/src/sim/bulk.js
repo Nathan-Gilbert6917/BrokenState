@@ -39,6 +39,7 @@ export function awayReason(state, s) {
   }
   if (l.kind === "route") return "escorts a trade route";
   if (l.kind === "errand") return "is away on an errand";
+  if (l.kind === "lent") { const f = factionById(state, l.fid); return `is with ${f ? f.name : "another group"} as a volunteer`; } // volunteers.js
   return "is away";
 }
 const baseOf = (state, s) => (s && s.alive && s.location && s.location.kind === "base" ? baseById(state, s.location.baseId) : null);

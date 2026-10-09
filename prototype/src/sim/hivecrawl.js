@@ -33,7 +33,7 @@
 import { Rng } from "./rng.js";
 import { hash01, gainXpAll, USE } from "./skills.js";
 import { SUPPLIES, GEAR } from "./data.js";
-import { log, hurt, tickHour, day, snapshot } from "./world.js";
+import { log, hurt, tickHour, day, snapshot, survivorById } from "./world.js";
 import { partyMembers, partyTile, bestSkill, awaitOrders, wipeParty, tileLabel, teamName, cargoRoom, unitsThatFit } from "./parties.js";
 import {
   registerCombatHandler, registerBattleLayout, registerBattleSize, registerBossAI, startCombat, autoResolveCombat, finishCombat, byNumbersOdds,
@@ -968,9 +968,9 @@ registerCombatHandler("hiveChamber", (state, result, setup, battle) => {
   const c = p.hiveCrawl;
   if (!c) { awaitOrders(state, p, "The team is out of the fight."); return; }
   c.kills += killed;
-  for (const id of result.survivorsDead || []) { const s = state.survivors.find((x) => x.id === id); if (s) c.lost.push(s.name); }
+  for (const id of result.survivorsDead || []) { const s = survivorById(state, id); if (s) c.lost.push(s.name); }
   addAlert(c, battle ? HCRAWL.ALERT.mapFight + (result.ammoUsed || battle.gunshots || 0) / 20 : HCRAWL.ALERT.fight);
-  const dead = (result.survivorsDead || []).map((id) => state.survivors.find((x) => x.id === id)?.name).filter(Boolean);
+  const dead = (result.survivorsDead || []).map((id) => survivorById(state, id)?.name).filter(Boolean);
   const won = result.outcome === "victory";
   say2(c, `Fight with ${setup.enemy.name}${result.odds != null ? ` (${Math.round(result.odds * 100)}% odds)` : ""}: ${won ? "won" : result.outcome === "retreat" ? "broke off" : "lost"} (${killed} killed).${dead.length ? ` Killed: ${dead.join(", ")}.` : ""}`, won ? "good" : "danger", state.hour);
   const e = c.enc || { kind: ctx.kind, room: ctx.room, back: c.from };
@@ -1275,7 +1275,7 @@ registerCombatHandler("hiveAssault", (state, result, setup, battle) => {
   if (!partyMembers(state, p).length) { if (c) crawlWiped(state, p, "Killed in the core."); else if (state.parties.includes(p)) { log(state, "The whole team was lost storming a hive.", "death"); wipeParty(state, p); } return; }
   if (c) {
     c.kills += killed;
-    for (const id of result.survivorsDead || []) { const s = state.survivors.find((x) => x.id === id); if (s) c.lost.push(s.name); }
+    for (const id of result.survivorsDead || []) { const s = survivorById(state, id); if (s) c.lost.push(s.name); }
     c.enc = null;
     if (won) { say2(c, text, "good", state.hour); if (hoard) say2(c, hoard, "good", state.hour); finishHiveCrawl(state, p, text); if (hoard) log(state, hoard, "good"); return; }
     addAlert(c, HCRAWL.ALERT.fight);
@@ -1342,7 +1342,7 @@ export function caveDark(state, b) {
   b.hiveDark = true;
   for (const u of b.units) {
     if (u.side !== "player" || u.sid == null) continue;
-    const s = state.survivors.find((x) => x.id === u.sid);
+    const s = survivorById(state, u.sid); // volunteers.js: an allied group's volunteers see by their own lights too
     if (!s) continue;
     const tool = s.gear && s.gear.tool;
     if (tool && (tool.key === "nvg" || tool.key === "thermal")) continue;

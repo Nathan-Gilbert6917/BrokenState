@@ -66,6 +66,7 @@ function where(state, s) {
   }
   if (l.kind === "route") return { key: "away", text: "Trade route escort", sort: "2" };
   if (l.kind === "errand") return { key: "away", text: `Errand (back ~day ${l.until})`, sort: "2" };
+  if (l.kind === "lent") { const f = factionById(state, l.fid); return { key: "away", text: `With ${f ? f.name : "another group"} (back ~day ${l.until})`, sort: "2" }; } // sim/volunteers.js
   if (l.kind === "captive") { const f = factionById(state, l.factionId); return { key: "away", text: `Held by ${f && f.known ? f.name : "captors"}`, sort: "3" }; }
   return { key: "away", text: "Away", sort: "4" };
 }
