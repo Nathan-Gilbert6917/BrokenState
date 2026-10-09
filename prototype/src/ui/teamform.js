@@ -1,12 +1,12 @@
-// The Form a team window (sim/teamform.js): at one of your bases, pick people, a vehicle, their gear and the team's
+// The Form a team window (sim/teamform.js): at one of your bases, pick people, up to four vehicles, their gear and the team's
 // supplies and cargo, then Form team: they stand on the base's tile as a team waiting for orders. The same window edits
-// a team of yours that waits on one of your bases' tiles (add or send back people, swap the vehicle, gear, supplies),
+// a team of yours that waits on one of your bases' tiles (add or send back people, add or leave vehicles, gear, supplies),
 // every change at once.
 //
 // The window lives in ui.inv (ui.inv.form: its state) so the inventory's clicks, drags, selection bar, Esc and the
 // paused clock all work in its Gear tab as in the base's own inventory screen:
 //   ui.inv = { sid (whose doll the Gear tab shows), form: { baseId, partyId (editing) | null, crew: Set (forming),
-//     vehicleId, supplies: { key: qty }, cargo: [armory items], tab: "people" | "gear" | "supplies", filter, sort, cursor,
+//     vehicleIds (up to MAX_VEHICLES), supplies: { key: qty }, cargo: [armory items], tab: "people" | "gear" | "supplies", filter, sort, cursor,
 //     stance, lights, days } }.
 // Forming: the people are still at the base, so the Gear tab moves things between them and the armory straight away
 // (sim/inventory.js moveItem: the same as the base's inventory screen); nothing else moves until Form team.
@@ -17,7 +17,7 @@
 import { SUPPLIES, SKILL_NAMES } from "../sim/data.js";
 import { survivorById, atBase, baseById, skill } from "../sim/world.js";
 import { partyMembers, teamName, poolLoad, partyCapacity, STANCES } from "../sim/parties.js";
-import { vehiclesAtBase, carsAtBase, bikesAtBase, isBike, isCar, partyVehicle, vehicleLabel, payloadOf, tank, upgradeText, vehicleById, VEHICLE_TYPES } from "../sim/vehicles.js";
+import { vehiclesAtBase, carsAtBase, bikesAtBase, isBike, isCar, partyVehicles, partyFleet, vehicleLabel, payloadOf, tank, upgradeText, vehicleById, VEHICLE_TYPES, MAX_VEHICLES, seatsOf, vehicleCapacity } from "../sim/vehicles.js";
 import { SEATS } from "../sim/combat.js";
 import { ROLES } from "../sim/economy.js";
 import { wornLoad, maxLoad, teamLoad } from "../sim/load.js";
@@ -28,7 +28,7 @@ import { parseLoc, itemAt, placeOfLoc, allCarried, quickMove, itemLoad } from ".
 import { packMags } from "../sim/carrykit.js";
 import { packLights, hasLight } from "../sim/lights.js";
 import { loadFromBase, dropOff } from "../sim/teaminv.js";
-import { formTeam, formPreview, editBase, editProblem, addMember, removeMember, setVehicle, setSupply, teamHas } from "../sim/teamform.js";
+import { formTeam, formPreview, editBase, editProblem, addMember, removeMember, setVehicles, toggleVehicle, setSupply, teamHas, gearSnapshot, gearChanged, restoreGear } from "../sim/teamform.js";
 import { doll, storageBox, selBar, tile, SUPPLY_ICON, INV_ACTIONS, invDrop } from "./inventory.js";
 import { loadWarnings, paceLine, carLine } from "./loadview.js";
 import { statusIcons } from "./status.js";
@@ -95,14 +95,14 @@ function listed(state, F) {
 export function formTeamButton(state, base, cls = "mini") {
   if (!base) return "";
   const n = atBase(state, base.id).length;
-  return n ? `<button class="${cls}" data-action="tf-open" data-base="${base.id}"${tip(`Pick people at ${base.name}, a vehicle, what each of them wears and carries from its armory, and the team's supplies and cargo from its stores. They then stand outside the base as a team, waiting for your orders (move, scavenge, any order; Enter base brings them back in).`)}>Form a team…</button>` : "";
+  return n ? `<button class="${cls}" data-action="tf-open" data-base="${base.id}"${tip(`Pick people at ${base.name}, up to four vehicles, what each of them wears and carries from its armory, and the team's supplies and cargo from its stores. They then stand outside the base as a team, waiting for your orders (move, scavenge, any order; Enter base brings them back in).`)}>Form a team…</button>` : "";
 }
 // The team panel, the tile panel and the Teams tab: Edit team… for a team that waits on one of your bases.
 export function editTeamButton(state, p, cls = "mini") {
   const b = p ? editBase(state, p) : null;
   if (!b) return "";
   const why = editProblem(state, p);
-  return `<button class="${cls}" data-action="tf-edit" data-id="${p.id}" ${why ? "disabled" : ""}${tip(why || `Change the team at ${b.name}: take on people from the base or send some back in, swap the vehicle for another parked there, change their gear and the supplies and cargo it carries`)}>Edit team…</button>`;
+  return `<button class="${cls}" data-action="tf-edit" data-id="${p.id}" ${why ? "disabled" : ""}${tip(why || `Change the team at ${b.name}: take on people from the base or send some back in, add or leave vehicles parked there (up to four), change their gear and the supplies and cargo it carries`)}>Edit team…</button>`;
 }
 // The right-click menu on one of your bases: Form a team here, and Edit for each team waiting on it.
 export function formTeamCtx(state, tile) {
@@ -111,7 +111,7 @@ export function formTeamCtx(state, tile) {
   const n = atBase(state, b.id).length;
   const edits = state.parties.filter((p) => editBase(state, p) === b && !editProblem(state, p));
   return (n ? `<button data-action="tf-open" data-base="${b.id}" data-tip="Pick people, a vehicle, gear and supplies at ${esc(b.name)}: they stand outside as a team waiting for orders">Form a team at ${esc(b.name)}…</button>` : "") +
-    edits.map((p) => `<button data-action="tf-edit" data-id="${p.id}" data-tip="Add or send back people, swap the vehicle, change gear and supplies">Edit ${esc(teamName(state, p))}…</button>`).join("");
+    edits.map((p) => `<button data-action="tf-edit" data-id="${p.id}" data-tip="Add or send back people, add or leave vehicles, change gear and supplies">Edit ${esc(teamName(state, p))}…</button>`).join("");
 }
 
 // ---------- the window ----------
@@ -121,7 +121,7 @@ export function teamFormModal(state, ui) {
   const b = baseOf(state, F);
   const p = partyOf(state, F);
   if (!b || (editing(F) && (!p || editBase(state, p) !== b))) {
-    return `<div class="box"><h1>${editing(F) ? "Edit team" : "Form a team"}</h1><div class="text">${editing(F) ? "The team is no longer waiting on one of your bases." : "That base is no longer yours."}</div><div class="row"><button class="primary" data-action="inv-close">Close</button></div></div>`;
+    return `<div class="box"><h1>${editing(F) ? "Edit team" : "Form a team"}</h1><div class="text">${editing(F) ? "The team is no longer waiting on one of your bases." : "That base is no longer yours."}</div><div class="row"><button class="primary" data-action="tf-keep">Close</button></div></div>`;
   }
   const crew = crewOf(state, F);
   if (!crew.some((s) => s.id === ui.inv.sid)) ui.inv.sid = crew[0] ? crew[0].id : null;
@@ -130,9 +130,13 @@ export function teamFormModal(state, ui) {
   const body = F.tab === "gear" ? gearTab(state, ui, F, b, p, crew) : F.tab === "supplies" ? suppliesTab(state, ui, F, b, p, crew) : peopleTab(state, ui, F, b, p, crew);
   const sum = summary(state, F, b, p, crew);
   const msg = ui.invMsg ? `<div class="result small">${esc(ui.invMsg)}</div>` : "";
+  const changed = gearChanged(state, F.snap);
+  const undo = `<button data-action="tf-undo" ${changed ? "" : "disabled"}${tip(changed ? "Put every item, magazine and supply moved since this window opened back exactly where it was (people joining or leaving and the vehicles stay as they are)" : "Nothing moved yet")}>Undo changes</button>`;
   const foot = editing(F)
-    ? `<div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close"${tip("Every change is already made (Enter or Esc)")}>Done</button></div>`
-    : `<div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button data-action="inv-close"${tip("Close without forming a team (Esc). Gear already moved between people and the armory stays where it is.")}>Cancel</button><button class="primary" data-action="tf-go" ${sum.problem ? "disabled" : ""}${tip(sum.problem || `They leave ${where}'s roster and stand outside as a team waiting for orders: its panel opens. (Enter)`)}>Form team (${crew.length})</button></div>`;
+    ? `<div class="row" style="margin-top:0.8rem;justify-content:flex-end">${undo}<button class="primary" data-action="tf-close"${tip(changed ? "Close: you are asked whether to keep the gear changes (Enter or Esc)" : "Every change is already made (Enter or Esc)")}>Done</button></div>`
+    : `<div class="row" style="margin-top:0.8rem;justify-content:flex-end">${undo}<button data-action="tf-close"${tip(changed ? "Close without forming a team: you are asked whether to keep the gear changes or put everything back (Esc)" : "Close without forming a team (Esc)")}>Cancel</button><button class="primary" data-action="tf-go" ${sum.problem ? "disabled" : ""}${tip(sum.problem || `They leave ${where}'s roster and stand outside as a team waiting for orders, with the gear they have on: its panel opens. (Enter)`)}>Form team (${crew.length})</button></div>`;
+  // Closing with gear moved: keep it, or put it all back (the game's confirmation box).
+  const asking = F.asking ? `<div class="askwrap"><div class="askbox" role="alertdialog"><div class="asktitle">Keep the gear changes?</div><div class="asktext">Items, magazines or supplies were moved while this window was open. Keep them where they are now, or put everything back exactly where it was?</div><div class="askbtns"><button class="primary" data-action="tf-keep" data-tip="Enter">Keep gear changes</button><button class="danger" data-action="tf-undoclose">Undo changes</button><button data-action="tf-back" data-tip="Esc">Back</button></div></div></div>` : "";
   return `<div class="box wide invbox loot">
     <div class="spread"><h1>${editing(F) ? `Edit ${esc(teamName(state, p))}` : `Form a team at ${esc(b.name)}`}</h1><span class="muted small">${editing(F) ? "changes apply at once" : `${atBase(state, b.id).length} people at ${esc(where)}`}</span></div>
     ${sum.html}
@@ -140,37 +144,38 @@ export function teamFormModal(state, ui) {
     ${msg}
     ${body}
     ${foot}
+    ${asking}
   </div>`;
 }
 
 // The line at the top on every tab: who, how they travel, the weight against what they can carry, the warnings.
 function summary(state, F, b, p, crew) {
-  const v = p ? partyVehicle(state, p) : F.vehicleId ? vehicleById(state, F.vehicleId) : null;
-  const pv = isBike(v) ? { ...v, count: Math.max(1, crew.length) } : v;
-  let load, cap, problem = "";
-  if (p) { load = poolLoad(p); cap = partyCapacity(state, p); }
+  let load, cap, problem = "", pv = null;
+  if (p) { load = poolLoad(p); cap = partyCapacity(state, p); pv = partyFleet(state, p); }
   else {
     const pre = formPreview(state, previewOpts(F));
-    load = pre.load; cap = pre.cap; problem = pre.problem;
+    load = pre.load; cap = pre.cap; problem = pre.problem; pv = pre.v;
   }
+  const v = pv; // one vehicle, or a fleet (sim/vehicles.js fleetOf: seats, payload and fuel together)
   const t = crew.length ? teamLoad(crew, load, pv || null) : null;
   const warn = [...loadWarnings(t)];
-  if (crew.length && isCar(v) && SEATS[v.type] && crew.length > SEATS[v.type]) warn.push(`${crew.length} people, ${SEATS[v.type]} seats in the ${v.name}: on a battle map only ${SEATS[v.type]} ride in it`);
-  if (isCar(v) && !p && n0(v.fuel) + n0(F.supplies.fuel) < 6) warn.push(`Fuel: ${n0(v.fuel)} in the tank${F.supplies.fuel ? ` + ${n0(F.supplies.fuel)} in cans` : ""}: about ${Math.floor((n0(v.fuel) + n0(F.supplies.fuel)) / 0.6)} road tiles`);
+  if (crew.length && isCar(v) && !v.fleet && SEATS[v.type] && crew.length > SEATS[v.type]) warn.push(`${crew.length} people, ${SEATS[v.type]} seats in the ${v.name}: on a battle map only ${SEATS[v.type]} ride in it`);
+  const cars = v ? (v.fleet ? v.fleet.filter(isCar) : isCar(v) ? [v] : []) : [];
+  if (cars.length && !p && n0(v.fuel) + n0(F.supplies.fuel) < 6 * cars.length) warn.push(`Fuel: ${n0(v.fuel)} in the tank${cars.length > 1 ? "s" : ""}${F.supplies.fuel ? ` + ${n0(F.supplies.fuel)} in cans` : ""}: about ${Math.floor((n0(v.fuel) + n0(F.supplies.fuel)) / (0.6 * cars.length))} road tiles${cars.length > 1 ? ` for ${cars.length} cars` : ""}`);
   if (crew.some((s) => s.health < 50)) warn.push(`Hurt: ${crew.filter((s) => s.health < 50).map((s) => shortName(s)).join(", ")} (under 50 health)`);
   if (crew.some((s) => tiredLevel(s) >= 2)) warn.push(`Exhausted: ${crew.filter((s) => tiredLevel(s) >= 2).map((s) => shortName(s)).join(", ")} (they rest on the way only when they stop)`);
-  const how = isBike(v) ? `on ${vehicleLabel(pv)}` : v ? `in the ${esc(v.name)}` : "on foot";
+  const how = isBike(v) ? `on ${vehicleLabel(pv)}` : v ? `in the ${esc(vehicleLabel(v))}${v.fleet ? ` (${seatsOf(v)} seats)` : ""}` : "on foot";
   const html = `<div class="card small" style="margin-top:0.3rem">
     <div class="spread"><span><b>${crew.length ? crew.map(first).join(", ") : "Nobody picked yet"}</b> · ${how}</span>
       <span class="${load > cap + 1e-6 ? "danger" : "muted"}"${tip("The team's supplies and cargo against what it can carry on top of what its people wear: everyone's max load (40 kg, 28 with a Bad Back, more with a pack, a rig and Packrat) less what they wear, plus the bikes' racks (15 kg each) or the car's payload up to 125% (riders 80 kg each). Over it, the team cannot set off.")}>Load ${n1(load)} / ${n0(cap)} kg</span></div>
     ${bar(load, cap)}
-    ${t ? `${paceLine(t)}${carLine(t, v && v.name)}` : ""}
+    ${t ? `${paceLine(t)}${carLine(t, v && (v.fleet ? "the cars" : v.name))}` : ""}
     ${warn.length ? `<div class="warn">${warn.map(esc).join("<br>")}</div>` : ""}
     ${problem && crew.length ? `<div class="danger">${esc(problem)}</div>` : ""}
   </div>`;
   return { html, problem: problem || (p ? "" : crew.length ? "" : "Pick at least one person") };
 }
-const previewOpts = (F) => ({ baseId: F.baseId, memberIds: [...F.crew], vehicleId: F.vehicleId, supplies: F.supplies, cargo: F.cargo });
+const previewOpts = (F) => ({ baseId: F.baseId, memberIds: [...F.crew], vehicleIds: F.vehicleIds, supplies: F.supplies, cargo: F.cargo });
 
 // ---------- tab 1: people and the vehicle ----------
 function peopleTab(state, ui, F, b, p, crew) {
@@ -203,22 +208,36 @@ function peopleTab(state, ui, F, b, p, crew) {
   return `${head}${table}<div class="grid2" style="margin-top:0.6rem"><div><h3>Vehicle</h3>${vehiclePick(state, F, b, p, crew)}</div><div>${stance}<h3>${editing(F) ? "On the map" : "After forming"}</h3><div class="small muted">The team stands on ${esc(b.name)}'s tile waiting for orders: Move (click a tile), any order on its panel, the team inventory, or Enter ${esc(b.name)} to bring everyone back in. ${editing(F) ? "" : "It is shown in the Teams tab and on the map, and its panel opens."}</div></div></div>`;
 }
 
+// Up to MAX_VEHICLES (sim/vehicles.js fleets): click a vehicle to take it or leave it; On foot leaves them all.
 function vehiclePick(state, F, b, p, crew) {
-  const cur = p ? partyVehicle(state, p) : F.vehicleId ? vehicleById(state, F.vehicleId) : null;
-  const cars = carsAtBase(state, b.id);
-  const nBikes = bikesAtBase(state, b.id) + (isBike(cur) && p ? cur.count || 1 : 0);
-  const bikeStack = vehiclesAtBase(state, b.id).find(isBike) || (isBike(cur) ? cur : null);
-  const btn = (id, active, label, hint, sub, off = "") => `<button data-action="tf-vehicle" data-v="${id}" class="${active ? "active" : ""}" ${off ? "disabled" : ""}${tip(off || hint)}>${label}<span class="hint">${sub}</span></button>`;
-  const opts = [btn("", !cur, "On foot", "Slow, silent, goes anywhere but water. The people carry everything: a heavy load slows them and makes them eat and drink more.", "no vehicle")];
-  if (bikeStack && nBikes) opts.push(btn(bikeStack.id, isBike(cur), "Bicycles, one each", `Faster than walking on roads, walking pace off them. No fuel, quiet. Each rack carries ${VEHICLE_TYPES.bike.rack} kg; riding takes most of the load's slow-down away.`, `${nBikes} at the base · rack ${VEHICLE_TYPES.bike.rack} kg each · condition ${Math.round(bikeStack.condition)}%`, nBikes < Math.max(1, crew.length) ? `Only ${nBikes} bike${nBikes === 1 ? "" : "s"} for ${crew.length} people (one each)` : bikeStack.condition <= 0 ? "Needs repairs" : ""));
-  const ours = p && isCar(cur) ? [cur] : []; // editing: the team's own car is not parked at the base
-  for (const v of [...ours, ...cars]) {
-    const seats = SEATS[v.type] || 4;
-    const noFuel = v.fuel < 1 && !(p ? teamHas(p, "fuel") : F.supplies.fuel) ? `The ${v.name} has no fuel: refuel it at the base, or pack fuel cans (Supplies tab)` : "";
-    opts.push(btn(v.id, cur && cur.id === v.id, esc(v.name), `Fast on roads, cannot cross mountains. Burns about 0.6 fuel a road tile, 1.5 off-road, more when loaded past 60%. Payload ${payloadOf(v)} kg, riders (80 kg each) included: they feel none of their load. ${seats} seats in a battle (who rides when the team fights on a map).${upgradeText(v) ? ` ${upgradeText(v)}.` : ""}`,
-      `${seats} seats · ${payloadOf(v)} kg payload · fuel ${n0(v.fuel)}/${tank(v)} · condition ${Math.round(v.condition)}%${upgradeText(v) ? ` · ${esc(upgradeText(v))}` : ""}`, v.condition <= 0 ? "Needs repairs first" : noFuel));
+  const own = p ? partyVehicles(state, p) : [];
+  const pickedIds = p ? own.map((x) => x.id) : F.vehicleIds;
+  const picked = pickedIds.map((id) => vehicleById(state, id)).filter(Boolean);
+  const isOn = (x) => picked.includes(x) || (isBike(x) && picked.some(isBike));
+  const full = picked.length >= MAX_VEHICLES;
+  const cars = [...own.filter(isCar), ...carsAtBase(state, b.id)];
+  const ownBikes = own.filter(isBike).reduce((a, x) => a + (x.count || 1), 0);
+  const nBikes = bikesAtBase(state, b.id) + ownBikes;
+  const bikeStack = vehiclesAtBase(state, b.id).find(isBike) || own.find(isBike) || null;
+  const nCars = picked.filter(isCar).length;
+  const bikeNeed = nCars ? Math.max(1, crew.length - nCars) : Math.max(1, crew.length);
+  const btn = (id, active, label, hint, sub, off = "") => `<button data-action="tf-vehicle" data-v="${id}" class="${active ? "active" : ""}" ${off ? "disabled" : ""}${tip(off || hint)}>${active ? "✓ " : ""}${label}<span class="hint">${sub}</span></button>`;
+  const opts = [btn("", !picked.length, "On foot", "Slow, silent, goes anywhere but water. The people carry everything: a heavy load slows them and makes them eat and drink more. Leaves every vehicle at the base.", "no vehicle")];
+  if (bikeStack && nBikes) {
+    const on = isOn(bikeStack);
+    opts.push(btn(bikeStack.id, on, "Bicycles", `Faster than walking on roads, walking pace off them. No fuel, quiet. Each rack carries ${VEHICLE_TYPES.bike.rack} kg; riding takes most of the load's slow-down away. A bike each, or with cars a bike for each person not driving one; with cars the convoy keeps to the bikes' pace on roads.`,
+      `${nBikes} at the base · ${bikeNeed} needed · rack ${VEHICLE_TYPES.bike.rack} kg each · condition ${Math.round(bikeStack.condition)}%`, !on && full ? `${MAX_VEHICLES} vehicles already` : !on && nBikes < bikeNeed ? `Only ${nBikes} bike${nBikes === 1 ? "" : "s"} for ${bikeNeed}` : bikeStack.condition <= 0 ? "Needs repairs" : ""));
   }
-  return `<div class="choices">${opts.join("")}</div><div class="small muted"${tip("A team has one vehicle: its fuel, wear, breakdowns and the battle map all go by that one. For a convoy of several cars, form a team for each and move them together.")}>One vehicle per team (or a bike each).${cars.length + ours.length ? "" : ` No cars at ${esc(b.name)}.`}</div>`;
+  for (const v of cars) {
+    const on = isOn(v);
+    const seats = SEATS[v.type] || 4;
+    const noFuel = !on && v.fuel < 1 && !(p ? teamHas(p, "fuel") : F.supplies.fuel) ? `The ${v.name} has no fuel: refuel it at the base, or pack fuel cans (Supplies tab)` : "";
+    opts.push(btn(v.id, on, esc(v.name), `Fast on roads, cannot cross mountains. Burns about 0.6 fuel a road tile, 1.5 off-road, more when loaded past 60%. Payload ${payloadOf(v)} kg, riders (80 kg each) included: they feel none of their load. ${seats} seats. Each car needs a driver; with two or more vehicles everyone needs a seat.${upgradeText(v) ? ` ${upgradeText(v)}.` : ""}`,
+      `${seats} seats · ${payloadOf(v)} kg payload · fuel ${n0(v.fuel)}/${tank(v)} · condition ${Math.round(v.condition)}%${upgradeText(v) ? ` · ${esc(upgradeText(v))}` : ""}`, v.condition <= 0 ? "Needs repairs first" : !on && full ? `${MAX_VEHICLES} vehicles already` : noFuel));
+  }
+  const fleet = picked.length ? (p ? partyFleet(state, p) : formPreview(state, previewOpts(F)).v) : null;
+  const sum = fleet ? `${picked.length}/${MAX_VEHICLES} vehicles · ${seatsOf(fleet)} seats · ${Math.round(vehicleCapacity(fleet))} kg payload and racks${isCar(fleet) ? ` · fuel ${n0(fleet.fuel)}/${tank(fleet)}` : ""}` : `0/${MAX_VEHICLES} vehicles`;
+  return `<div class="choices">${opts.join("")}</div><div class="small muted"${tip(`Up to ${MAX_VEHICLES} vehicles: seats, payload and fuel add up; the slowest sets the pace (bikes among cars: the bikes' pace on roads, the cars' off them). Each car needs a driver, and with two or more vehicles everyone needs a seat. Wear hits every vehicle, a breakdown one of them (it can be left behind if the others seat everyone). On a battle map the first car is the one you drive; the others stand beside it.`)}>${sum}${cars.length ? "" : ` · no cars at ${esc(b.name)}`}</div>`;
 }
 
 // ---------- tab 2: gear ----------
@@ -282,8 +301,8 @@ function autoFill(state, F) {
   const crew = [...F.crew].map((id) => survivorById(state, id)).filter(Boolean);
   if (!b || !crew.length) return;
   const n = crew.length, d = Math.max(1, F.days || 3);
-  const v = F.vehicleId ? vehicleById(state, F.vehicleId) : null;
-  const want = { food: n * d, water: Math.ceil(n * d * thirstAhead(state, d)), meds: Math.min(2, n), ammo: 15 * crew.filter((s) => s.gear && s.gear.weapon).length, fuel: isCar(v) ? Math.max(0, 10 - Math.floor(v.fuel / 3)) : 0 };
+  const v = formPreview(state, previewOpts(F)).v; // one vehicle or several (sim/vehicles.js fleets)
+  const want = { food: n * d, water: Math.ceil(n * d * thirstAhead(state, d)), meds: Math.min(2, n), ammo: 15 * crew.filter((s) => s.gear && s.gear.weapon).length, fuel: isCar(v) ? Math.max(0, 10 * (v.fleet ? v.fleet.filter(isCar).length : 1) - Math.floor(v.fuel / 3)) : 0 };
   for (const k of ["preserved", "arrows", "parts", "scrap"]) delete F.supplies[k];
   for (const [k, q] of Object.entries(want)) F.supplies[k] = Math.max(0, Math.min(Math.floor(stockHas(b.stock, k)), q));
   // Too heavy: less ammo, fewer meds, then less food and water, down to a day.
@@ -336,19 +355,29 @@ function kitFor(state, ui, people, what) {
 }
 
 // ---------- actions (wired in main.js) ----------
-const fresh = (baseId, partyId = null) => ({ baseId, partyId, crew: new Set(), vehicleId: null, supplies: {}, cargo: [], tab: "people", filter: "all", sort: "name", cursor: 0, stance: "normal", lights: true, days: 3 });
-function open(ui, F, sid = null) {
+const fresh = (baseId, partyId = null) => ({ baseId, partyId, crew: new Set(), vehicleIds: [], supplies: {}, cargo: [], tab: "people", filter: "all", sort: "name", cursor: 0, stance: "normal", lights: true, days: 3 });
+function open(state, ui, F, sid = null) {
+  const b = baseById(state, F.baseId);
+  const p = F.partyId != null ? state.parties.find((x) => x.id === F.partyId) || null : null;
+  F.snap = b ? gearSnapshot(state, b, p) : null; // keep or undo the gear changes made in here (sim/teamform.js)
+  F.asking = false;
   ui.inv = { sid, form: F, loot: false };
   ui.invSel = null;
   ui.invMsg = "";
 }
 export const TEAMFORM_ACTIONS = {
-  "tf-open": (state, ui, d) => { const b = baseById(state, Number(d.base)); if (b) { open(ui, fresh(b.id)); ui.baseView = null; } },
+  "tf-open": (state, ui, d) => { const b = baseById(state, Number(d.base)); if (b) { open(state, ui, fresh(b.id)); ui.baseView = null; } },
+  // Closing (Cancel, Done, Esc): with gear moved, asked first whether to keep it.
+  "tf-close": (state, ui) => { const F = formOf(ui); if (!F) return; if (gearChanged(state, F.snap)) { F.asking = true; return; } shut(ui); },
+  "tf-keep": (state, ui) => shut(ui),
+  "tf-undoclose": (state, ui) => { const F = formOf(ui); if (F) restoreGear(state, F.snap); shut(ui); },
+  "tf-back": (state, ui) => { const F = formOf(ui); if (F) F.asking = false; },
+  "tf-undo": (state, ui) => { const F = formOf(ui); if (!F) return; ui.invMsg = restoreGear(state, F.snap); ui.invSel = null; },
   "tf-edit": (state, ui, d) => {
     const p = state.parties.find((x) => x.id === Number(d.id));
     const b = p ? editBase(state, p) : null;
     if (!b) return;
-    open(ui, fresh(b.id, p.id), partyMembers(state, p)[0]?.id ?? null);
+    open(state, ui, fresh(b.id, p.id), partyMembers(state, p)[0]?.id ?? null);
     ui.baseView = null;
   },
   "tf-tab": (state, ui, d) => { const F = formOf(ui); if (F) { F.tab = d.tab; ui.invSel = null; ui.invMsg = ""; } },
@@ -373,8 +402,15 @@ export const TEAMFORM_ACTIONS = {
     if (!F) return;
     const id = d.v ? Number(d.v) : null;
     const p = partyOf(state, F);
-    if (p) { ui.invMsg = setVehicle(state, p, id); return; }
-    F.vehicleId = id;
+    if (p) { ui.invMsg = id == null ? setVehicles(state, p, []) : toggleVehicle(state, p, id); return; }
+    if (id == null) { F.vehicleIds = []; return; }
+    const v = vehicleById(state, id);
+    if (!v) return;
+    const has = F.vehicleIds.map((x) => vehicleById(state, x)).filter(Boolean);
+    const on = has.includes(v) || (isBike(v) && has.some(isBike));
+    if (on) F.vehicleIds = has.filter((x) => x !== v && !(isBike(v) && isBike(x))).map((x) => x.id);
+    else if (has.length < MAX_VEHICLES) F.vehicleIds = [...F.vehicleIds, id];
+    else ui.invMsg = `At most ${MAX_VEHICLES} vehicles to a team.`;
   },
   "tf-stance": (state, ui, d) => { const F = formOf(ui); if (F && STANCES[d.v]) F.stance = d.v; },
   "tf-who": (state, ui, d) => { if (ui.inv) { ui.inv.sid = Number(d.id); ui.invSel = null; } },
@@ -428,7 +464,7 @@ export const TEAMFORM_ACTIONS = {
   "tf-go": (state, ui) => {
     const F = formOf(ui);
     if (!F) return;
-    if (editing(F)) { ui.inv = null; ui.invSel = null; ui.invMsg = ""; return; }
+    if (editing(F)) { TEAMFORM_ACTIONS["tf-close"](state, ui, {}); return; }
     F.cargo = F.cargo.filter((it) => (baseOf(state, F) || { armory: [] }).armory.includes(it));
     const r = formTeam(state, { ...previewOpts(F), stance: F.stance, lights: F.lights });
     if (r.error) { ui.invMsg = r.error; return; }
@@ -459,6 +495,7 @@ export function teamFormKey(state, ui, e) {
   if (!F) return false;
   const k = e.key;
   if (k === "1" || k === "2" || k === "3") { F.tab = TABS[Number(k) - 1][0]; ui.invSel = null; ui.invMsg = ""; return true; }
+  if (F.asking) { if (k === "Enter") TEAMFORM_ACTIONS["tf-keep"](state, ui, {}); return true; } // the question takes the keys (Esc: teamFormEsc)
   if (k === "Enter") { TEAMFORM_ACTIONS["tf-go"](state, ui, {}); return true; }
   if (F.tab !== "people") return false;
   const rows = listed(state, F);
@@ -473,4 +510,16 @@ export function teamFormKey(state, ui, e) {
 export function formTeamRow(state) {
   const btns = state.bases.filter((b) => atBase(state, b.id).length).map((b) => formTeamButton(state, b).replace(">Form a team…<", `>Form a team at ${esc(b.name)}…<`));
   return btns.length ? `<div class="row" style="flex-wrap:wrap;gap:0.3rem;margin-bottom:0.5rem">${btns.join("")}</div>` : "";
+}
+
+const shut = (ui) => { ui.inv = null; ui.invSel = null; ui.invMsg = ""; };
+// Esc while the window is open (main.js closeTopLayer, before the inventory's own Esc): drops a selected item, backs out
+// of the question, or closes (asking first when gear was moved). Always true: the window took it.
+export function teamFormEsc(state, ui) {
+  const F = formOf(ui);
+  if (!F) return false;
+  if (ui.invSel) { ui.invSel = null; return true; }
+  if (F.asking) { F.asking = false; return true; }
+  TEAMFORM_ACTIONS["tf-close"](state, ui, {});
+  return true;
 }

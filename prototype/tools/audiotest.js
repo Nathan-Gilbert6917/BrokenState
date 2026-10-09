@@ -98,7 +98,9 @@ console.log("Battle");
   C.fx(b, { type: "melee", from: [me.x, me.y], to: [foe.x, foe.y], hit: false, side: "player" });
   C.fx(b, { type: "throw", from: [me.x, me.y], to: [foe.x, foe.y], item: "molotov" });
   cues = battleCues(b, mem, 0.4).map((c) => c.name);
-  check(cues.join() === "meleeCrit,whoosh,fire", `a critical blow, a miss, a Molotov: ${cues.join(", ")}`);
+  const voiced = cues.filter((n) => /^h[A-Z]/.test(n)); // the people's effort grunts (ui/humansfx.js: tools/humansfxtest.js)
+  cues = cues.filter((n) => !/^h[A-Z]/.test(n));
+  check(cues.join() === "meleeCrit,whoosh,fire" && voiced.every((n) => n === "hEffort"), `a critical blow, a miss, a Molotov: ${cues.join(", ")} (and the effort: ${voiced.join(", ") || "none"})`);
   // A 20-unit firefight: 200 shots in one frame are cut to a handful, spread in time.
   for (let i = 0; i < 200; i++) C.fx(b, { type: "shot", from: [foe.x, foe.y], to: [me.x, me.y], hit: i % 2 === 0, side: "enemy" });
   me.weapon = "ar";

@@ -19,6 +19,7 @@ import { GROUPS, TOP_GROUPS, childrenOf, groupDef, groupGain, groupOf, groupVolu
 import { weatherAt, season } from "../sim/weather.js";
 import { playerTile } from "../sim/hardcore-start.js";
 import { screenToTile, view } from "./render.js";
+import { HUMAN_VOICES, HUMAN_LIMITS, HUMAN_SOUND_NAMES, humanMapVoices } from "./humansfx.js"; // the people's voices
 import { meleeVoices, MELEE_LABELS } from "./sfx-melee.js"; // melee by weapon class, armour, kills (ui/sfx-melee.js)
 import { stepCues, stepVoices, STEP_LABELS } from "./sfx-steps.js"; // footsteps in battle (ui/sfx-steps.js)
 import { gearCues, uiCues, clickSound, gearVoices, GEAR_LABELS, GEAR_LIMITS } from "./sfx-gear.js"; // searching, doors, bandages, engines, windows, items
@@ -69,6 +70,7 @@ export const LIMITS = {
   thunder: { gap: 4, max: 1 }, bird: { gap: 0.3, max: 2 }, cricket: { gap: 0.15, max: 2 },
   ...GEAR_LIMITS,
   ...ZOMBIE_LIMITS, // ui/zombiesfx.js: the dead's voices (zIdle, zBite, zShriek…)
+  ...HUMAN_LIMITS, // ui/humansfx.js: the people's (hHurt, hCry, hDown, hDeath…; at most 2 at once in battle: humanCues)
 };
 const throttle = makeThrottle(LIMITS, 28);
 const stepThrottle = makeThrottle({ step: { gap: 0.02, max: 10 } }, 10); // footsteps: their own small budget (10 at once, 20 ms apart), never at the shots' cost
@@ -351,6 +353,7 @@ function ambience(state, ui) {
   const fight = state.combat && !ui.timelapse ? state.combat : null;
   zombieCrowd(c, A.zom.input, fight ? battleCrowd(fight) : null, t);
   zombieMapAmbience(c, A.amb, fight || ui.timelapse || ui.title || !ui.started ? null : hordeAmbience(state), t, groupGain("zombies.hordes"), groupGain("zombies.hive")); // the mixer's Map hordes and Hive drone
+  humanMapVoices(c, A.amb, fight || ui.timelapse || ui.title || !ui.started ? null : state, view.selected, t); // a selected base's murmur, a scream at a base (ui/humansfx.js)
 }
 
 // ---------- building blocks ----------
@@ -595,6 +598,7 @@ export const VOICES = {
   alarm: { dur: 1.3, play(c, out, t, o) { for (let i = 0; i < 6; i++) bell(c, out, t + i * 0.17, i % 2 ? 470 : 520, 0.22 * o.gain, 0.5); } },
 
   // Ambience one-shots (ambience bus).
+  ...HUMAN_VOICES, // ui/humansfx.js: hHurt, hCry, hDown, hDeath, hGasp, hEffort, hPant, hWheeze, hCough, … by o.voice
   ...ZOMBIE_VOICES, // ui/zombiesfx.js: zIdle, zAggro, zAttack, zBite, zHurt, zDeath, zShriek, zSmash, zSpit… by o.kind and o.seed
   thunder: { dur: 5, amb: true, play(c, out, t, o) {
     const near = o.near ?? 0.5;
@@ -664,6 +668,9 @@ audioDebug.offline = (secs = 4) => {
 
 // ---------- the Options tab (ui/settings.js) ----------
 const SOUND_LABELS = {
+  hHurt: "Voice: hurt", hCry: "Voice: cry (critical hit)", hDown: "Voice: going down", hDeath: "Voice: last breath", hGasp: "Voice: revived", hEffort: "Voice: effort",
+  hPant: "Voice: panting", hWheeze: "Voice: wheezing (bleeding)", hCough: "Voice: cough", hDeaf: "Voice: deafened", hScared: "Voice: pinned down", hPlea: "Voice: hands up",
+  hMuffled: "Voice: tied and gagged", hPanic: "Voice: panic", hTaunt: "Voice: raider's laugh", hEcstatic: "Voice: zealot", hShout: "Voice: bark shout",
   click: "Button click", cardRoutine: "Card: routine", cardWarning: "Card: warning", cardCrisis: "Card: crisis", alert: "Alert", good: "Good news", bark: "Combat bark",
   pistol: "Pistol", revolver: "Revolver", rifle: "Rifle", shotgun: "Shotgun", auto: "Assault rifle burst", suppressed: "Suppressed shot", bow: "Bow or crossbow",
   acid: "Acid spit", hit: "Bullet hit", whiz: "Miss (whiz)", ricochet: "Miss (ricochet)", melee: "Melee hit", meleeCrit: "Melee critical", whoosh: "Melee miss",

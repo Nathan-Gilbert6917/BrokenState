@@ -35,7 +35,7 @@ export const GROUPS = [
   { id: "zombies.hordes", label: "Map hordes", max: 1.5, tip: "Hordes near your bases and teams moaning on the State Map (more at night). Under the Ambience volume" },
   { id: "zombies.hive", label: "Hive drone", max: 1.5, tip: "A known hive near you on the map: its low drone and heartbeat. Under the Ambience volume" },
   { id: "people", label: "People", max: 1.5, tip: "Your people and others: voices, footsteps, gear, someone going down" },
-  { id: "people.voices", label: "Voices", max: 1.5, tip: "Shouts and cries in battle, and the chirp of an important combat bark" },
+  { id: "people.voices", label: "Voices", max: 1.5, tip: "People's voices: hurt, crying out, going down, dying, effort, panting, coughs, shouts and taunts in battle; the murmur of a base you select on the map; the chirp of an important combat bark" },
   { id: "people.steps", label: "Footsteps", max: 1.5, tip: "Everyone's footsteps in battle: yours, the enemy's, the dead's shuffle. By ground, gait and load" },
   { id: "people.gear", label: "Gear and small sounds", max: 1.5, tip: "Searching, locks and keys, fuel, bandages, doors, your vehicle in battle, a team's engine on the map" },
   { id: "people.downed", label: "Deaths and downed cues", max: 1.5, tip: "The fall and falling tone when one of your people goes down, the low chord when one dies" },
@@ -78,7 +78,8 @@ assignGroup(["zSpit", "zSizzle", "zStrike", "zBurst", "zWorms", "zHeave", "zFlin
 assignGroup(["crowd"], "zombies.crowd");
 assignGroup(["mapHorde"], "zombies.hordes");
 assignGroup(["hive", "hiveBeat"], "zombies.hive");
-assignGroup(["bark"], "people.voices");
+assignGroup(["bark", "hDown", "hCry", "hDeath", "hShout", "hGasp", "hHurt", "hTaunt", "hEcstatic", "hDeaf", "hPlea", "hPanic", "hEffort", "hScared",
+  "hPant", "hWheeze", "hCough", "hMuffled", "murmur"], "people.voices"); // ui/humansfx.js HUMAN_CUES (and the base's murmur)
 assignGroup(["step", "hearStepGrass", "hearStepRoad", "hearStepWood", "hearStepGravel", "hearStepMud", "hearStepSnow", "hearStepLaden", "hearStepSneak",
   "hearStepWalker", "hearStepRunner", "hearStepBrute", "hearStepCrawler", "hearStepArmoured"], "people.steps");
 assignGroup(["rummage", "lockRattle", "unlock", "jingle", "glug", "bandage", "door", "drive", "engineStart", "engineStop"], "people.gear");

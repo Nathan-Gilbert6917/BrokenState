@@ -17,9 +17,10 @@
 // gear and supplies (sim/teaminv.js loadFromBase / dropOff, the same weight rules). Every change applies at once and
 // is refused when it would leave the team over what it can carry.
 //
-// One vehicle per team: a party has one vehicleId, and its fuel, wear, breakdowns, a battle's vehicle, abandoning it
-// and recovering it all go through that one (sim/vehicles.js partyVehicle). Bikes are one stack with a count, one
-// each. Several cars together are several teams.
+// Vehicles: up to MAX_VEHICLES (4) to a team (sim/vehicles.js fleets): cars, and the base's bikes as one entry (a bike
+// each, or with cars a bike for each person not driving one). Each needs a driver, and with two or more everyone needs
+// a seat (fleetProblem); seats, payload and fuel add up, the slowest sets the pace. fleetPlan checks a set of vehicles
+// for some number of people; applyFleet hands them over (what the team gives up parks at the base).
 //
 // AI parity: the other groups do not form standing teams. Their raids, escorts, scavenging parties and caravans are
 // raised from their own people and arsenal when they set out (sim/arsenal.js, escorts.js, aiscav.js, caravans.js) and
@@ -28,7 +29,7 @@
 import { SUPPLIES } from "./data.js";
 import { log, baseById, survivorById } from "./world.js";
 import { launchExpedition, partyMembers, carryCapacity, supplyLoad, poolLoad, weighTeam, onTheMove } from "./parties.js";
-import { vehicleById, partyVehicle, isBike, isCar, travelMode, parkBikes, createVehicle, vehicleLabel } from "./vehicles.js";
+import { vehicleById, partyVehicles, partyFleet, isBike, isCar, parkBikes, createVehicle, vehicleLabel, fleetOf, fleetProblem, setPartyVehicles, MAX_VEHICLES } from "./vehicles.js";
 import { itemLoad, parseLoc } from "./inventory.js";
 import { teamBase, transferProblem, loadFromBase, dropOff, isPlayerTeam } from "./teaminv.js";
 import { stockHas } from "./water.js"; // water: purified and un-purified; "ammo": any calibre
@@ -56,14 +57,62 @@ export function armoryItems(base, picks) {
   return out;
 }
 
+// The vehicles a team (or a team to be) would have: ids (cars, and the base's bikes as one id) for n people at base;
+// p: a team that already has some (its own count as there). { list, cars, bike, bikeN, planned (the bikes as the
+// number it takes), fleet (fleetOf planned), problem }.
+/** @param {State} state @param {Base} base @param {Party | null} p @param {number[]} ids @param {number} n */
+export function fleetPlan(state, base, p, ids, n) {
+  const own = p ? partyVehicles(state, p) : [];
+  const uniq = [...new Set((ids || []).filter((x) => x != null).map(Number))];
+  const list = uniq.map((id) => vehicleById(state, id)).filter(Boolean);
+  /** @type {{ list: any[], cars: any[], bike: any, bikeN: number, planned: any[], fleet: any, problem: string }} */
+  const out = { list, cars: list.filter((x) => !isBike(x)), bike: list.find(isBike) || null, bikeN: 0, planned: [], fleet: null, problem: "" };
+  if (list.length !== uniq.length) { out.problem = "No such vehicle."; return out; }
+  if (list.length > MAX_VEHICLES) { out.problem = `At most ${MAX_VEHICLES} vehicles to a team.`; return out; }
+  for (const x of list) {
+    if (!own.includes(x) && (x.loc.kind !== "base" || x.loc.baseId !== base.id)) { out.problem = `The ${vehicleLabel(x)} is not at ${base.name}.`; return out; }
+    if (x.condition <= 0) { out.problem = `The ${vehicleLabel(x)} needs repairs first.`; return out; }
+  }
+  if (list.filter(isBike).length > 1) { out.problem = "One lot of bikes to a team."; return out; }
+  out.bikeN = !out.bike ? 0 : out.cars.length ? Math.max(1, n - out.cars.length) : n;
+  if (out.bike) {
+    const free = bikesHere(state, base) + own.filter(isBike).reduce((a, x) => a + (x.count || 1), 0);
+    if (free < out.bikeN) { out.problem = `Not enough bikes: ${out.bikeN} needed (one each${out.cars.length ? " for those not driving" : ""}), ${free} at ${base.name}.`; return out; }
+  }
+  out.planned = [...out.cars, ...(out.bike ? [{ ...out.bike, count: out.bikeN }] : [])];
+  out.fleet = fleetOf(out.planned);
+  out.problem = fleetProblem(out.planned, n);
+  return out;
+}
+// A car with an empty tank and no cans to pour in ("" when every car has fuel). cans: fuel cans packed or carried.
+const fuelProblem = (cars, cans) => { const dry = cars.find((x) => isCar(x) && num(x.fuel) < 1); return dry && num(cans) < 1 ? `The ${dry.name} has no fuel: refuel it at the base or pack fuel cans.` : ""; };
+// Hands the vehicles over (fleetPlan first): what the team gives up parks at the base, its bikes are parked and the
+// number it needs taken again, and the team's list is set (the lead first).
+function applyFleet(state, p, base, plan) {
+  for (const x of partyVehicles(state, p)) if (isBike(x) || !plan.cars.includes(x)) x.loc = { kind: "base", baseId: base.id };
+  parkBikes(state, base);
+  let bikes = null;
+  if (plan.bike) {
+    const stack = parkBikes(state, base);
+    if (stack && stack.count >= plan.bikeN) {
+      if (stack.count === plan.bikeN) bikes = stack;
+      else { stack.count -= plan.bikeN; bikes = createVehicle(state, "bike", { kind: "base", baseId: base.id }, { count: plan.bikeN, condition: stack.condition }); }
+    }
+  }
+  setPartyVehicles(state, p, [...plan.cars, ...(bikes ? [bikes] : [])]);
+  p.planVehicle = p.vehicle;
+  weighTeam(state, p);
+}
+
 // What the window shows and formTeam checks before anything moves: { members, v, cap, load, cargoKg, problem }.
-// opts: { baseId, memberIds, vehicleId, supplies, cargo }.
+// opts: { baseId, memberIds, vehicleIds (or vehicleId), supplies, cargo }.
 /** @param {State} state */
 export function formPreview(state, opts) {
   const base = baseById(state, opts.baseId);
   const members = [...new Set(opts.memberIds || [])].map((id) => survivorById(state, id)).filter(Boolean);
-  const raw = opts.vehicleId ? vehicleById(state, opts.vehicleId) : null;
-  const v = isBike(raw) ? { ...raw, count: Math.max(1, members.length) } : raw;
+  const ids = opts.vehicleIds && opts.vehicleIds.length ? opts.vehicleIds : opts.vehicleId ? [opts.vehicleId] : [];
+  const plan = base ? fleetPlan(state, base, null, ids, Math.max(1, members.length)) : null;
+  const v = plan ? plan.fleet : null;
   const cap = carryCapacity(state, members, v || null);
   /** @type {Stock} */
   const supplies = {};
@@ -71,9 +120,10 @@ export function formPreview(state, opts) {
   const cargo = base ? armoryItems(base, opts.cargo || []) : [];
   const cargoKg = cargo.reduce((a, it) => a + itemLoad(it), 0);
   const load = supplyLoad(supplies) + cargoKg;
-  return { base, members, v, cap, load, cargoKg, cargo, supplies, problem: formProblem(state, base, members, raw, supplies, load, cap) };
+  return { base, members, v, plan, cap, load, cargoKg, cargo, supplies, problem: formProblem(state, base, members, plan, supplies, load, cap) };
 }
-function formProblem(state, base, members, v, supplies, load, cap) {
+function formProblem(state, base, members, plan, supplies, load, cap) {
+  const v = plan ? plan.fleet : null;
   if (!base) return "That base is no longer yours.";
   if (state.combat) return "Not during a battle.";
   if (!members.length) return "Pick at least one person.";
@@ -81,15 +131,9 @@ function formProblem(state, base, members, v, supplies, load, cap) {
     if (!s.alive) return `${s.name} is ${s.left ? "gone" : "dead"}.`;
     if (!s.location || s.location.kind !== "base" || s.location.baseId !== base.id) return `${s.name} is not at ${base.name}.`;
   }
-  if (v) {
-    if (v.loc.kind !== "base" || v.loc.baseId !== base.id) return `The ${vehicleLabel(v)} is not at ${base.name}.`;
-    if (v.condition <= 0) return `The ${vehicleLabel(v)} needs repairs first.`;
-    if (isBike(v)) {
-      const have = bikesHere(state, base);
-      if (have < members.length) return `Not enough bikes: ${members.length} people, ${have} at ${base.name} (one each).`;
-    } else if (isCar(v) && num(v.fuel) + num(supplies.fuel) < 1) return `The ${v.name} has no fuel: refuel it at the base or pack fuel cans.`;
-  }
-  if (load > cap + EPS) return `Too much to carry: the supplies and cargo weigh ${Math.ceil(load)} kg, ${members.length === 1 ? "they" : "the team"}${v ? ` and the ${vehicleLabel(isBike(v) ? { ...v, count: members.length } : v)}` : ""} can carry ${Math.floor(cap)} kg on top of what they wear. Take less${v ? "" : ", more people, bikes or a vehicle"}.`;
+  if (plan && plan.problem) return plan.problem;
+  if (plan && fuelProblem(plan.cars, supplies.fuel)) return fuelProblem(plan.cars, supplies.fuel);
+  if (load > cap + EPS) return `Too much to carry: the supplies and cargo weigh ${Math.ceil(load)} kg, ${members.length === 1 ? "they" : "the team"}${v ? ` and the ${vehicleLabel(v)}` : ""} can carry ${Math.floor(cap)} kg on top of what they wear. Take less${v ? "" : ", more people, bikes or a vehicle"}.`;
   for (const [k, q] of Object.entries(supplies)) {
     const have = num(stockHas(base.stock, k));
     if (have + EPS < q) return `Not enough ${SUPPLIES[k].name.toLowerCase()} at ${base.name} (${Math.floor(have)}).`;
@@ -107,7 +151,8 @@ export function formTeam(state, opts) {
   if (pre.problem) return { error: pre.problem };
   const base = /** @type {Base} */ (pre.base);
   const res = launchExpedition(state, {
-    memberIds: pre.members.map((s) => s.id), dest: base.tile, mission: "move", stance: opts.stance || "normal", vehicleId: opts.vehicleId || null,
+    memberIds: pre.members.map((s) => s.id), dest: base.tile, mission: "move", stance: opts.stance || "normal",
+    vehicleId: pre.plan && pre.plan.list.length === 1 ? pre.plan.list[0].id : null, vehicleIds: pre.plan && pre.plan.list.length > 1 ? pre.plan.list.map((x) => x.id) : [],
     supplies: { ...pre.supplies }, fromBaseId: base.id, lights: !!opts.lights, tabs: !!opts.tabs, quiet: true,
   });
   if (res.error) return { error: res.error };
@@ -128,8 +173,8 @@ export function formTeam(state, opts) {
     notes.push(...r.refused);
   }
   weighTeam(state, p);
-  const v = partyVehicle(state, p);
-  log(state, `${list(partyMembers(state, p).map(firstName))} formed a team at ${base.name}${isBike(v) ? " on bikes" : v ? ` with the ${v.name}` : ""}. It waits outside for orders.`, "info");
+  const v = partyFleet(state, p);
+  log(state, `${list(partyMembers(state, p).map(firstName))} formed a team at ${base.name}${isBike(v) ? " on bikes" : v ? ` with the ${vehicleLabel(v)}` : ""}. It waits outside for orders.`, "info");
   return { party: p, notes };
 }
 
@@ -155,8 +200,6 @@ export function editProblem(state, p) {
 /** @param {State} state @param {Base} base */
 export const editableTeams = (state, base) => state.parties.filter((p) => editBase(state, p) === base && !editProblem(state, p));
 
-const over = (state, p) => poolLoad(p) - carryCapacity(state, partyMembers(state, p), partyVehicle(state, p));
-
 // One more person from the base. Bikes: one more bike from the base's stack.
 /** @param {State} state @param {Party} p @param {number} sid */
 export function addMember(state, p, sid) {
@@ -166,17 +209,12 @@ export function addMember(state, p, sid) {
   const s = survivorById(state, Number(sid));
   if (!s || !s.alive) return "Nobody by that name.";
   if (!s.location || s.location.kind !== "base" || s.location.baseId !== base.id) return `${s.name} is not at ${base.name}.`;
-  const v = partyVehicle(state, p);
-  if (isBike(v)) {
-    const stack = parkBikes(state, base);
-    if (!stack || (stack.count || 1) < 1) return `No bike for ${firstName(s)}: the team rides bikes, one each, and ${base.name} has none left.`;
-    stack.count = (stack.count || 1) - 1;
-    if (stack.count <= 0) state.vehicles.splice(state.vehicles.indexOf(stack), 1);
-    v.count = (v.count || 1) + 1;
-  }
+  // Its vehicles for one more: a bike more when it rides bikes, a seat when it has two or more vehicles.
+  const plan = fleetPlan(state, base, p, partyVehicles(state, p).map((x) => x.id), partyMembers(state, p).length + 1);
+  if (plan.problem) return plan.bike && /bikes/.test(plan.problem) ? `No bike for ${firstName(s)}: ${plan.problem}` : `No room for ${firstName(s)}: ${plan.problem}`;
   p.members.push(s.id);
   s.location = { kind: "party", partyId: p.id };
-  weighTeam(state, p);
+  applyFleet(state, p, base, plan);
   return `${firstName(s)} joins the team.`;
 }
 
@@ -191,59 +229,52 @@ export function removeMember(state, p, sid) {
   if (!s || !(p.members || []).includes(s.id)) return "That person is not on the team.";
   const left = partyMembers(state, p).filter((m) => m !== s);
   if (!left.length) return `${firstName(s)} is the last one on the team: use Enter ${base.name} to bring the whole team in.`;
-  const v = partyVehicle(state, p);
-  const after = isBike(v) ? { ...v, count: Math.max(1, (v.count || 1) - 1) } : v;
-  const cap = carryCapacity(state, left, after || null);
+  // Every car still needs a driver (vehicles.js fleetProblem); a bike fewer when it rides bikes.
+  const plan = fleetPlan(state, base, p, partyVehicles(state, p).map((x) => x.id), left.length);
+  if (plan.problem) return `Without ${firstName(s)}: ${plan.problem} Leave a vehicle at the base first.`;
+  const cap = carryCapacity(state, left, plan.fleet || null);
   if (poolLoad(p) > cap + EPS) return `Without ${firstName(s)} the team could not carry its load (${Math.round(poolLoad(p))} kg on ${Math.floor(cap)} kg). Drop off some supplies or cargo first.`;
   p.members = p.members.filter((id) => id !== s.id);
   s.location = { kind: "base", baseId: base.id };
-  if (isBike(v) && (v.count || 1) > 1) {
-    v.count = (v.count || 1) - 1;
-    createVehicle(state, "bike", { kind: "base", baseId: base.id }, { count: 1, condition: v.condition });
-    parkBikes(state, base);
-  }
-  weighTeam(state, p);
+  applyFleet(state, p, base, plan);
   return `${firstName(s)} goes back into ${base.name}.`;
 }
 
-// The team's vehicle: another one parked at the base (a car, or the base's bikes, one each), or null (on foot). The old
-// one parks at the base. Refused when the team could not carry its load after, or the car has no fuel (and none is
-// carried).
-/** @param {State} state @param {Party} p @param {number | null} vehicleId */
-export function setVehicle(state, p, vehicleId) {
+// The team's vehicles from now on: ids of vehicles it has or that are parked at the base (cars, and the base's bikes as
+// one), up to MAX_VEHICLES; [] goes on foot. What it gives up parks at the base. Refused when it would be left over what
+// it can carry, a car has no fuel (and none is carried), a car has no driver or someone no seat.
+/** @param {State} state @param {Party} p @param {number[]} ids */
+export function setVehicles(state, p, ids) {
   const why = editProblem(state, p);
   if (why) return why;
   const base = /** @type {Base} */ (teamBase(state, p));
   const members = partyMembers(state, p);
-  const old = partyVehicle(state, p);
-  const nv = vehicleId ? vehicleById(state, Number(vehicleId)) : null;
-  if (vehicleId && !nv) return "No such vehicle.";
-  if (nv && nv === old) return "";
-  if (nv && (nv.loc.kind !== "base" || nv.loc.baseId !== base.id)) return `The ${vehicleLabel(nv)} is not at ${base.name}.`;
-  if (nv && nv.condition <= 0) return `The ${vehicleLabel(nv)} needs repairs first.`;
-  if (isBike(nv) && bikesHere(state, base) < members.length) return `Not enough bikes at ${base.name}: ${members.length} people, ${bikesHere(state, base)} bikes.`;
-  if (isCar(nv) && num(nv.fuel) + num(p.supplies && p.supplies.fuel) < 1) return `The ${nv.name} has no fuel: refuel it at the base, or load fuel cans first.`;
-  const planned = isBike(nv) ? { ...nv, count: members.length } : nv;
-  const cap = carryCapacity(state, members, planned || null);
-  if (poolLoad(p) > cap + EPS) return `${nv ? `With the ${vehicleLabel(planned)}` : "On foot"} the team could not carry its load (${Math.round(poolLoad(p))} kg on ${Math.floor(cap)} kg). Drop off some supplies or cargo first.`;
-  // The old one parks.
-  if (old) {
-    old.loc = { kind: "base", baseId: base.id };
-    if (isBike(old)) parkBikes(state, base);
-  }
-  let v = nv;
-  if (isBike(nv)) {
-    const stack = parkBikes(state, base); // with the team's own bikes just parked: at least `members.length`
-    if (!stack || stack.count < members.length) return `Not enough bikes at ${base.name}.`; // never expected (checked above)
-    if (stack.count === members.length) v = stack;
-    else { stack.count -= members.length; v = createVehicle(state, "bike", { kind: "base", baseId: base.id }, { count: members.length, condition: stack.condition }); }
-  }
-  if (v) v.loc = { kind: "party", partyId: p.id };
-  p.vehicleId = v ? v.id : null;
-  p.vehicle = travelMode(v);
-  p.planVehicle = p.vehicle;
-  weighTeam(state, p);
-  return v ? `The team takes the ${vehicleLabel(v)}${old ? `; the ${vehicleLabel(old)} stays at ${base.name}` : ""}.` : `The team goes on foot; the ${old ? vehicleLabel(old) : "vehicle"} stays at ${base.name}.`;
+  const old = partyVehicles(state, p);
+  const plan = fleetPlan(state, base, p, ids, members.length);
+  if (plan.problem) return plan.problem;
+  const fresh = plan.cars.filter((x) => !old.includes(x));
+  const fp = fuelProblem(fresh, teamHas(p, "fuel"));
+  if (fp) return fp.replace("pack fuel cans", "load fuel cans first");
+  const cap = carryCapacity(state, members, plan.fleet || null);
+  if (poolLoad(p) > cap + EPS) return `${plan.fleet ? `With the ${vehicleLabel(plan.fleet)}` : "On foot"} the team could not carry its load (${Math.round(poolLoad(p))} kg on ${Math.floor(cap)} kg). Drop off some supplies or cargo first.`;
+  const before = old.length ? vehicleLabel(fleetOf(old)) : "";
+  applyFleet(state, p, base, plan);
+  const now = partyFleet(state, p);
+  return now ? `The team now has the ${vehicleLabel(now)}${before && before !== vehicleLabel(now) ? ` (was: ${before})` : ""}.` : `The team goes on foot; the ${before || "vehicle"} stay${old.length > 1 ? "" : "s"} at ${base.name}.`;
+}
+// One vehicle, or none: the same as setVehicles([id]).
+/** @param {State} state @param {Party} p @param {number | null} vehicleId */
+export const setVehicle = (state, p, vehicleId) => setVehicles(state, p, vehicleId ? [vehicleId] : []);
+// A vehicle on or off the team (the window's buttons): one more, or one fewer. Bikes: the team's own lot and the
+// base's lot are the same choice.
+/** @param {State} state @param {Party} p @param {number} vehicleId */
+export function toggleVehicle(state, p, vehicleId) {
+  const own = partyVehicles(state, p);
+  const v = vehicleById(state, Number(vehicleId));
+  if (!v) return "No such vehicle.";
+  const mine = own.includes(v) || (isBike(v) && own.some(isBike));
+  const next = mine ? own.filter((x) => x !== v && !(isBike(v) && isBike(x))).map((x) => x.id) : [...own.map((x) => x.id), v.id];
+  return setVehicles(state, p, next);
 }
 
 // What the team carries of a supply (packed and found).
@@ -263,3 +294,79 @@ export function setSupply(state, p, k, qty) {
   return r.text;
 }
 
+
+// ---------- keep or undo the gear changes made in the window ----------
+// A snapshot of everything the window can move (ui/teamform.js takes it when it opens): the base's armory, stores and
+// repair queue, every person at the base and on the team (worn, held, pockets), the team's packed and found supplies
+// and its cargo, and every item in any of them (its own fields: a pack's or rig's contents, a carrier's plates, a gun's
+// attachments, a magazine's load, wear). restoreGear puts it all back exactly as it was (the same item objects in the
+// same places); gearChanged says whether anything differs. People joining or leaving the team and its vehicles are not
+// part of it (they are not gear).
+const props = (o) => { const out = {}; for (const k of Object.keys(o)) { const v = o[k]; out[k] = Array.isArray(v) ? v.slice() : v && typeof v === "object" && !v.key ? { ...v } : v; } return out; };
+function holders(state, base, p) {
+  const people = [...new Set([...state.survivors.filter((s) => s.alive && s.location && s.location.kind === "base" && s.location.baseId === base.id), ...(p ? partyMembers(state, p) : [])])];
+  /** @type {any[]} */
+  const lists = [base.armory, base.gearRepairs || (base.gearRepairs = [])];
+  /** @type {any[]} */
+  const objs = [base.stock];
+  for (const s of people) { lists.push(s.pockets); objs.push(s.gear); }
+  if (p) { p.cargo = p.cargo || { supplies: {}, gear: [] }; lists.push(p.cargo.gear); objs.push(p.supplies, p.cargo.supplies); }
+  return { people, lists, objs };
+}
+function itemsIn(h) {
+  const seen = new Set();
+  const walk = (it) => {
+    if (!it || typeof it !== "object" || !it.key || seen.has(it)) return;
+    seen.add(it);
+    for (const c of it.contents || []) walk(c);
+    for (const c of Object.values(it.inserts || {})) walk(c);
+    for (const c of Object.values(it.mods || {})) walk(c);
+  };
+  for (const l of h.lists) for (const x of l) walk(x && x.item && !x.key ? x.item : x); // a repair job holds its item
+  for (const o of h.objs) for (const x of Object.values(o)) walk(x);
+  return [...seen];
+}
+/** @param {State} state @param {Base} base @param {Party | null} [p] */
+export function gearSnapshot(state, base, p = null) {
+  const h = holders(state, base, p);
+  return { baseId: base.id, partyId: p ? p.id : null, lists: h.lists.map((l) => [l, l.slice()]), objs: h.objs.map((o) => [o, { ...o }]), items: itemsIn(h).map((it) => [it, props(it)]) };
+}
+const sameVal = (a, b) => (typeof a === "number" && typeof b === "number" ? Math.abs(a - b) < 1e-9 : a === b);
+const sameArr = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => sameVal(x, b[i]));
+const sameObj = (a, b) => { const ks = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]); for (const k of ks) { const x = a ? a[k] : undefined, y = b ? b[k] : undefined; if (!(sameVal(x, y) || ((x == null || x === 0) && (y == null || y === 0)))) return false; } return true; };
+// True when anything in the snapshot is not as it was.
+export function gearChanged(state, snap) {
+  if (!snap) return false;
+  for (const [l, was] of snap.lists) if (!sameArr(l, was)) return true;
+  for (const [o, was] of snap.objs) if (!sameObj(o, was)) return true;
+  for (const [it, was] of snap.items) {
+    const now = props(it);
+    const ks = new Set([...Object.keys(now), ...Object.keys(was)]);
+    for (const k of ks) {
+      const a = now[k], b = was[k];
+      if (Array.isArray(a) || Array.isArray(b)) { if (!sameArr(a, b)) return true; }
+      else if (a && typeof a === "object" && !a.key) { if (!sameObj(a, b)) return true; }
+      else if (!sameVal(a, b)) return true;
+    }
+  }
+  return false;
+}
+// Everything back as it was. Returns a line for the window (with a warning when the team is now over what it can carry:
+// its people or vehicles changed since).
+export function restoreGear(state, snap) {
+  if (!snap) return "";
+  for (const [l, was] of snap.lists) l.splice(0, l.length, ...was);
+  for (const [o, was] of snap.objs) { for (const k of Object.keys(o)) if (!(k in was)) delete o[k]; Object.assign(o, was); }
+  for (const [it, was] of snap.items) {
+    for (const k of Object.keys(it)) if (!(k in was)) delete it[k];
+    for (const [k, v] of Object.entries(was)) {
+      if (Array.isArray(v) && Array.isArray(it[k])) it[k].splice(0, it[k].length, ...v);
+      else if (v && typeof v === "object" && !v.key && it[k] && typeof it[k] === "object") { for (const kk of Object.keys(it[k])) if (!(kk in v)) delete it[k][kk]; Object.assign(it[k], v); }
+      else it[k] = Array.isArray(v) ? v.slice() : v && typeof v === "object" && !v.key ? { ...v } : v;
+    }
+  }
+  const p = snap.partyId != null ? state.parties.find((x) => x.id === snap.partyId) : null;
+  if (p) weighTeam(state, p);
+  const over = p ? poolLoad(p) - carryCapacity(state, partyMembers(state, p), partyFleet(state, p)) : 0;
+  return `Gear and supplies are back as they were.${over > EPS ? ` The team is now ${Math.ceil(over)} kg over what it can carry (its people or vehicles changed since): drop something off or take a vehicle.` : ""}`;
+}

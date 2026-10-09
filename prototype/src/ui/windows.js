@@ -2,7 +2,7 @@
 // resizable windows, and the timelapse's floating boxes. The rules (what folds, sizes, clamping) are in
 // ui/layout.js; main.js owns the layout object and redraws the map when the space for it changes (relayout).
 import {
-  PANEL_SIZE, SHUT_KEYS, PANEL_NAMES, isShut, shutTip, setFolded, setPanelSize, saveLayout, loadWindows, saveWindows, dragRect, clampRect,
+  PANEL_SIZE, SHUT_KEYS, PANEL_NAMES, RAIL_TABS, isShut, shutTip, setFolded, setPanelSize, saveLayout, loadWindows, saveWindows, dragRect, clampRect,
 } from "./layout.js";
 
 const remPx = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
@@ -12,10 +12,13 @@ let drag = null; // a bar or window being dragged
 
 // ---------- panels ----------
 const GUTTERS = {
-  left: { id: "gut-left", open: "⟨", shut: "⟩", label: "Bases · People · Groups · Teams", key: "[" },
-  right: { id: "gut-right", open: "⟩", shut: "⟨", label: "Info", key: "]" },
-  log: { id: "gut-log", open: "▾", shut: "▴", label: "Log", key: "L" },
+  left: { id: "gut-left", open: "⟨", shut: "⟩", label: "Bases · People · Groups · Teams", key: "[", name: "left panel", short: "Lists" },
+  right: { id: "gut-right", open: "⟩", shut: "⟨", label: "Info", icon: "ℹ", key: "]", name: "right panel", short: "Info" },
+  log: { id: "gut-log", open: "▾", shut: "▴", label: "Log", icon: "📜", key: "L", name: "log", short: "Log" },
 };
+// The bar's own keys (it takes the focus with Tab): Enter or Space folds or shows the panel, the arrows make an open
+// panel narrower or wider (Shift: by more), Home its usual size.
+const GUT_GROW = { left: { ArrowRight: 1, ArrowLeft: -1 }, right: { ArrowLeft: 1, ArrowRight: -1 }, log: { ArrowUp: 1, ArrowDown: -1 } };
 
 // The body classes and sizes that set the page's grid (styles.css), the bars' hover text and the state of the
 // top-bar buttons that close a panel completely (lit while the panel is there, dark while it is closed).
@@ -32,7 +35,10 @@ export function applyLayout(L) {
     if (L.size[p] != null) root.style.setProperty(`--${p}-size`, `min(${L.size[p]}rem, ${p === "log" ? "45vh" : "35vw"})`);
     else root.style.removeProperty(`--${p}-size`);
     const g = document.getElementById(GUTTERS[p].id);
-    if (g) g.dataset.tip = L[p] ? `Show the ${p === "log" ? "log" : `${p} panel`} (${GUTTERS[p].key})` : `Click: fold the ${p === "log" ? "log" : `${p} panel`} away (${GUTTERS[p].key}). Drag: resize it`;
+    if (g) {
+      g.dataset.tip = L[p] ? `Show the ${p === "log" ? "log" : `${p} panel`} (${GUTTERS[p].key})` : `Click: fold the ${p === "log" ? "log" : `${p} panel`} away (${GUTTERS[p].key}). Drag: resize it`;
+      if (g.setAttribute) { g.setAttribute("aria-expanded", String(!L[p])); g.setAttribute("aria-label", L[p] ? `Show the ${GUTTERS[p].name}` : `Fold the ${GUTTERS[p].name} away; arrow keys resize it`); }
+    }
   }
   b.classList.toggle("map-only", !!L.all);
   const btn = document.getElementById("tb-maponly");
@@ -50,9 +56,18 @@ export function initPanels(api) {
     el.id = g.id;
     el.className = `gut gut-${p}`;
     el.dataset.p = p;
-    // The strip's ✕ closes the panel completely (main.js "panel-close"; onDown leaves it to the click).
-    el.innerHTML = `<span class="gut-open">${g.open}</span><span class="gut-shut">${g.shut}<span class="gut-label">${g.label}</span><span class="gut-line"></span><kbd>${g.key}</kbd>` +
-      `<button class="gut-close" data-action="panel-close" data-p="${p}" data-tip="Close the ${PANEL_NAMES[p].name} completely, strip and all (Alt+${g.key}). Back: the ${PANEL_NAMES[p].glyph} button in the top bar, the ${PANEL_NAMES[p].tab} tab at the map's edge, Alt+${g.key} or ${g.key}">✕</button></span>`;
+    el.tabIndex = 0;
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-controls", p);
+    // Open: a slim bar with a handle (click folds, drag resizes). Folded: a rail with the panel's name, its key and
+    // a ✕; the left panel's rail has a button per tab (main.js "panel-tab": opens the panel on it, with the count of
+    // teams waiting on Teams). The rail's buttons and its ✕ (main.js "panel-close") are left to the click (onDown).
+    const tabs = p === "left" ? `<span class="gut-tabs">${RAIL_TABS.map(([k, ic, name, key]) =>
+      `<button class="gut-tab" data-action="panel-tab" data-tab="${k}" aria-label="${name}" data-tip="${name} (${key})"><span aria-hidden="true">${ic}</span><b class="gut-badge hidden" data-rail="${k}"></b></button>`).join("")}</span>` : "";
+    el.innerHTML = `<span class="gut-open"><span class="gut-grip" aria-hidden="true"></span><span class="gut-chev" aria-hidden="true">${g.open}</span></span>` +
+      `<span class="gut-shut"><span class="gut-chev" aria-hidden="true">${g.shut}</span>${tabs}${g.icon ? `<span class="gut-icon" aria-hidden="true">${g.icon}</span>` : ""}<span class="gut-label">${g.label}</span><span class="gut-line"></span><kbd>${g.key}</kbd>` +
+      `<button class="gut-close" data-action="panel-close" data-p="${p}" aria-label="Close the ${PANEL_NAMES[p].name} completely" data-tip="Close the ${PANEL_NAMES[p].name} completely, strip and all (Alt+${g.key}). Back: the ${PANEL_NAMES[p].glyph} button in the top bar, the ${PANEL_NAMES[p].tab} tab at the map's edge, Alt+${g.key} or ${g.key}">✕</button></span>`;
+    el.addEventListener("keydown", (e) => onGutKey(e, p));
     app.appendChild(el);
   }
   // A closed panel's way back: a slim tab at that edge of the map (styles.css shows it only while the panel is closed).
@@ -64,7 +79,8 @@ export function initPanels(api) {
     t.className = `edgetab edgetab-${p}`;
     t.dataset.action = "panel-close";
     t.dataset.p = p;
-    t.textContent = PANEL_NAMES[p].tab;
+    t.setAttribute("aria-label", `Open the ${PANEL_NAMES[p].name}`);
+    t.innerHTML = `<span aria-hidden="true">${PANEL_NAMES[p].tab}</span><span class="edgetab-label">${GUTTERS[p].short}</span>`;
     wrap.appendChild(t);
   }
   // The top bar's panel buttons (◧ ◨ ⬓: close a panel completely, again to open it) and the map-only button
@@ -100,12 +116,71 @@ export function initPanels(api) {
   window.addEventListener("mouseup", onUp, true);
   document.addEventListener("dblclick", onDbl, true);
   window.addEventListener("resize", () => { fitWindows(); });
+  watchFolds();
 }
 
 // The folded log's strip shows the latest line.
 export function setLogLine(text) {
   const el = document.querySelector("#gut-log .gut-line");
   if (el && el.textContent !== text) el.textContent = text;
+}
+// The folded left panel's rail: the tab on show lit, and the count of teams waiting on Teams.
+export function setRailBadges({ teams = 0, tab = "" } = {}) {
+  if (typeof document === "undefined" || !document.querySelectorAll) return;
+  for (const b of document.querySelectorAll("#gut-left .gut-tab")) b.classList.toggle("on", b.dataset.tab === tab);
+  const el = document.querySelector('#gut-left .gut-badge[data-rail="teams"]');
+  if (!el) return;
+  const txt = teams > 0 ? String(teams) : "";
+  if (el.textContent !== txt) el.textContent = txt;
+  el.classList.toggle("hidden", !txt);
+}
+
+// A bar with the focus: Enter / Space folds or shows its panel, the arrows resize an open one, Home its usual size.
+function onGutKey(e, p) {
+  if (e.target !== e.currentTarget || e.altKey || e.ctrlKey || e.metaKey) return; // a button on the rail handles its own keys
+  const L = ctx.layout;
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault(); e.stopPropagation();
+    ctx.relayout(() => { setFolded(L, p); applyLayout(L); });
+    saveLayout(L);
+    ctx.refresh();
+    return;
+  }
+  const grow = GUT_GROW[p][e.key];
+  if ((grow || e.key === "Home") && !L[p]) {
+    e.preventDefault(); e.stopPropagation();
+    const panel = document.getElementById(p), rem = remPx();
+    const now = panel ? (p === "log" ? panel.getBoundingClientRect().height : panel.getBoundingClientRect().width) / rem : PANEL_SIZE[p].def;
+    const cap = (p === "log" ? window.innerHeight * 0.45 : window.innerWidth * 0.35) / rem;
+    const v = e.key === "Home" ? null : Math.max(PANEL_SIZE[p].min, Math.min(cap, Math.round(now + grow * (e.shiftKey ? 4 : 1))));
+    if (setPanelSize(L, p, v)) { ctx.relayout(() => applyLayout(L)); saveLayout(L); }
+  }
+}
+
+// The boxes over the map (running orders, Watching, Layers, alerts) are written by main.js; when one folds to its
+// tab or opens again, it eases in (styles.css .fp-anim; none with Reduce motion).
+const FOLD_BOXES = ["orders", "watchlist", "legend", "alerts"];
+function boxFolded(el) {
+  const kids = el.children;
+  if (el.id === "alerts") return !!el.querySelector(":scope > .al-pill");
+  return kids.length === 1 && kids[0].classList.contains("fp-tab");
+}
+function watchFolds() {
+  if (typeof MutationObserver === "undefined") return;
+  for (const id of FOLD_BOXES) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    new MutationObserver(() => {
+      const f = boxFolded(el) ? "1" : el.children.length ? "0" : "";
+      const was = el.dataset.fold;
+      el.dataset.fold = f;
+      if (!f || was === undefined || was === "" || was === f) return;
+      el.classList.remove("fp-anim");
+      void el.offsetWidth; // restart the animation
+      el.classList.add("fp-anim");
+    }).observe(el, { childList: true });
+    el.addEventListener("animationend", (e) => { if (e.target === el) el.classList.remove("fp-anim"); });
+  }
 }
 
 // ---------- windows ----------
@@ -154,7 +229,7 @@ function onDown(e) {
   if (e.button !== 0) return;
   const t = e.target;
   if (!t || !t.closest) return;
-  if (t.closest(".gut-close")) return; // the strip's ✕: main.js's click handler closes the panel
+  if (t.closest(".gut-close, .gut-tab")) return; // the strip's ✕ and the rail's tabs: main.js's click handler
   const gut = t.closest(".gut");
   if (gut) {
     e.preventDefault();

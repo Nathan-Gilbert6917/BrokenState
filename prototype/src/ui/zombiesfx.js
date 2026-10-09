@@ -25,8 +25,8 @@
 //   zombie voice gain (ZOMBIE_VOICE_GAIN with its trims × the event's mixer group, ui/soundgroups.js). The crowd bed
 //   goes through the zombie bus (the Crowd murmur group); the map layer through the ambience bus (Map hordes, Hive drone).
 import { MIDDEAD } from "../sim/hiveconst.js";
-import { spatial, spatialOut, isIndoor, place } from "./gunsfx.js";
-import { groupGain, groupOf } from "./soundgroups.js"; // the mixer: each event's group (Moans, Attacks, Shrieks, Special) as it is played // the battle's sound space (shared with the guns, the blows and the steps)
+import { spatial, spatialOut, isIndoor, place } from "./gunsfx.js"; // the battle's sound space (shared with the guns, the blows and the steps)
+import { groupGain, groupOf } from "./soundgroups.js"; // the mixer: each event's group (Moans, Attacks, Shrieks, Special) as it is played
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const clamp01 = (v) => clamp(v, 0, 1);
@@ -77,6 +77,8 @@ export function voiceParams(seed) {
 export const PROFILE = { // sub: a second, detuned pulse an octave down (diplophonia: a torn, inharmonic throat)
   walker:      { f0: 62, shift: 0.88, rasp: 0.85, drive: 3, wet: 0.6, fry: 0.45, sub: 0.35 },
   armoured:    { f0: 60, shift: 0.85, rasp: 0.8, drive: 3, wet: 0.3, fry: 0.45, sub: 0.3, muffle: 1400 },
+  riot:        { f0: 64, shift: 0.9, rasp: 0.75, drive: 2.8, wet: 0.3, fry: 0.4, sub: 0.3, muffle: 950 }, // behind a riot visor
+  turned:      { f0: 92, shift: 0.97, rasp: 0.55, drive: 2, wet: 0.5, fry: 0.3, sub: 0.2 }, // the newly risen: still half a human voice
   runner:      { f0: 150, shift: 1.1, rasp: 0.85, drive: 3.4, wet: 0.2, fry: 0.15, sub: 0.2 },
   brute:       { f0: 42, shift: 0.7, rasp: 0.9, drive: 4.5, wet: 0.4, fry: 0.65, sub: 0.45, slow: 1.2 },
   spitter:     { f0: 72, shift: 0.95, rasp: 0.7, drive: 2.6, wet: 1, fry: 0.4, sub: 0.3 },
@@ -95,12 +97,25 @@ export const PROFILE = { // sub: a second, detuned pulse an octave down (diploph
   broodmother: { f0: 30, shift: 0.56, rasp: 0.85, drive: 4.5, wet: 1, fry: 0.7, sub: 0.5, slow: 1.4, giant: true },
 };
 // The voice set a unit uses.
+// Every kind of the dead the simulation makes (tools/zombiesfxtest.js scans src/sim for them):
+//   ZTYPES (hiveconst.js): runner, brute, spitter, screamer, crawler, carrier, swarm, shepherd, boneback, climber,
+//     flinger, sower, nightmare, sleeper (each its own set); soldier → "armoured" (helmet and plates), riot → "riot"
+//     (a visor, hard plastic); the bosses (defences.js bossUnit) wallbreaker and broodmother;
+//   the risen (carriers.js turn: u.turned; a walking-loot body, u.walking) → "turned": still half a human voice;
+//   the plain dead → "walker", which is also the voice of every plain variant: a hive's guard, a horde, the dead a
+//     screamer calls in (u.called), the dead a Sleeper's or a Flinger's swarm leaves risen, a hardcore outbreak's dead
+//     (hardcore-outbreak.js makes plain units), a building's nest is its special dead (floorfolk.js: ZTYPES).
+//   Animals carrying the worm (worm.js, hunting.js) never fight on a battle map: no voice needed.
+export const FALLBACK_TO_WALKER = ["plain dead", "called in by a screamer", "hive guard", "horde", "hardcore outbreak dead", "turned without their person (no app)"];
 export function voiceKind(u) {
   if (!u) return "walker";
   if (u.boss) return u.boss === "broodmother" ? "broodmother" : "wallbreaker";
   const z = u.ztype;
-  if (z === "soldier" || z === "riot") return "armoured";
-  return z && PROFILE[z] ? z : "walker";
+  if (z === "soldier") return "armoured";
+  if (z === "riot") return "riot";
+  if (z && PROFILE[z]) return z;
+  if (u.turned || u.walking) return "turned";
+  return "walker";
 }
 
 // ---------- building blocks ----------
@@ -314,6 +329,11 @@ function vocal(c, out, t, s, rnd) {
   return o;
 }
 
+// The building blocks, for ui/humansfx.js (the survivors' voices are made the same way). HUMAN_HOOK.cry: set by
+// ui/humansfx.js, the bite's victim screaming in their own voice (no import back from here: no cycle).
+export const DSP = { vocal, noise, biq, envG, am, bubbles, clicks, osc, sweep, gainN, thud, lfo, VW };
+export const HUMAN_HOOK = { cry: null };
+
 // ---------- recipes ----------
 // X: { c, t, vp (voiceParams), rnd, P (PROFILE), g (gain), p (pitch: the call's × the seed's), o (the cue's options) }.
 function say(X, out, s) {
@@ -380,12 +400,55 @@ function screamCall(X, out, at, dur, f0, S, k, sob) {
   noise(c, "white", tail, SCREECH.TAIL, biq(c, "bandpass", 1300, 1.5, am(c, envG(c, out, tail, 0.12 * g * k, 0.02, 0.1, SCREECH.TAIL - 0.12), 12 + rnd() * 5, 1, tail, SCREECH.TAIL, "square")), rnd);
 }
 
+// Close breathing: one cue is one breath cycle (in, out; a runner pants two), timed by breathPlan so the scheduler and
+// the voice agree. Per kind: rate (× speed), band (Hz of the breath), wet (gurgle and phlegm), hiss (a wheeze),
+// pairs (breaths a cue). From the unit's seed: its own band and rattle; from the cycle number n: the jitter.
+export const BREATH = {
+  walker: { rate: 1, band: 900, wet: 0.6, hiss: 0.1, pairs: 1 }, armoured: { rate: 1, band: 800, wet: 0.4, hiss: 0.1, pairs: 1 },
+  runner: { rate: 1.9, band: 1250, wet: 0.3, hiss: 0.25, pairs: 2 }, brute: { rate: 0.65, band: 480, wet: 0.5, hiss: 0, pairs: 1 },
+  spitter: { rate: 0.9, band: 850, wet: 1, hiss: 0.1, pairs: 1 }, crawler: { rate: 1.2, band: 2600, wet: 0.3, hiss: 1, pairs: 1 },
+  carrier: { rate: 0.8, band: 600, wet: 1, hiss: 0, pairs: 1 }, wallbreaker: { rate: 0.55, band: 380, wet: 0.5, hiss: 0, pairs: 1 },
+  broodmother: { rate: 0.5, band: 340, wet: 1, hiss: 0, pairs: 1 }, nightmare: { rate: 0.8, band: 1500, wet: 0.2, hiss: 0.6, pairs: 1 },
+};
+export const BREATH_LEVEL = 0.32; // the breath's peak: about 10 dB under a moan's loud level (measured in the previews)
+export function breathPlan(kind, seed, n = 0) {
+  const B = BREATH[kind] || BREATH.walker, r = mulberry(hash32((seed >>> 0) ^ Math.imul((n | 0) + 1, 0x2c1b3c6d)));
+  const pair = (2.2 + r() * 1.1) / B.rate;                 // one in-and-out
+  const dur = pair * B.pairs;
+  const gap = (0.3 + r() * 1.4) / B.rate + (r() < 0.15 ? 1.5 + r() * 2 : 0); // ragged: now and then it holds its breath
+  return { dur, gap, pair, swallow: r() < 0.25, inFrac: 0.38 + r() * 0.12 };
+}
 // Peaks of the voices that are compared (a snarl out of a silence near the aggro, both well over a moan), and the beat
 // of silence before an aggro.
 export const LEVELS = { moan: 0.72, bark: 1.05, aggro: 1.1, aggroWait: 0.5 };
 
 export const RECIPES = {
   silent() {},
+  breathe(X, out) { // close by: slow, irregular, wet breaths, a phlegm rattle, now and then a wet click or a swallow
+    const { c, t, rnd, vp, P, kind } = X, B = BREATH[kind] || BREATH.walker, pl = breathPlan(kind, vp.seed, X.o.n || 0);
+    if (P.muffle) out = biq(c, "lowpass", P.muffle, 0.7, out);
+    const g = X.g * BREATH_LEVEL, band = B.band * (0.85 + vp.f1 * 0.3), rattle = 18 + vp.rasp * 20;
+    for (let k = 0; k < B.pairs; k++) {
+      const t0 = t + k * pl.pair, din = pl.pair * pl.inFrac, dout = pl.pair * (0.92 - pl.inFrac);
+      const fade = X.o.fade && k === 0 ? 0.9 : 0; // the first breath fades in (about a second)
+      // In: noise rising through the band, a rattle on part of it.
+      const fi = biq(c, "bandpass", band * 0.8, 2, am(c, envG(c, out, t0, 0.8 * g, Math.max(din * 0.45, fade), din * 0.2, din * 0.35), rattle, 0.5 + B.wet * 0.4, t0, din, "square"), t0);
+      fi.frequency.exponentialRampToValueAtTime(band * 1.3, t0 + din);
+      noise(c, "white", t0, din, fi, rnd);
+      // Out: longer, lower, wetter.
+      const to = t0 + din + 0.08 + rnd() * 0.12;
+      const fo = biq(c, "bandpass", band, 1.6, am(c, envG(c, out, to, g, dout * 0.25, dout * 0.25, dout * 0.5), rattle * 0.8, 0.6 + B.wet * 0.4, to, dout, "square"), to);
+      fo.frequency.exponentialRampToValueAtTime(band * 0.6, to + dout);
+      noise(c, "white", to, dout, fo, rnd);
+      if (B.wet > 0.2) bubbles(c, out, to + dout * 0.2, dout * 0.7, 1 + Math.floor(B.wet * 3 * rnd() + vp.gurgle * 2), 0.09 * X.g * (0.5 + B.wet), rnd, 120, 420);
+      if (B.hiss > 0.05) noise(c, "white", t0, din + dout, biq(c, "highpass", 3200, 0.7, envG(c, out, t0, 0.25 * g * B.hiss, din * 0.6, din, dout * 0.6)), rnd);
+    }
+    if (pl.swallow) { // a wet click, a gulp
+      const ts = t + pl.dur * 0.95;
+      clicks(c, out, ts, 1, 0.01, 0.5 * g, rnd, 1600, 2600, 6);
+      osc(c, "sine", 220, ts + 0.04, 0.12, envG(c, out, ts + 0.04, 0.5 * g, 0.01, 0.02, 0.08)).frequency.exponentialRampToValueAtTime(110, ts + 0.14);
+    }
+  },
   // Moans and gurgles: the dead at rest.
   moan(X, out) {
     const { vp, rnd, P } = X;
@@ -458,11 +521,23 @@ export const RECIPES = {
     noise(c, "brown", t + 0.06, 0.25, biq(c, "lowpass", 520, 1, envG(c, out, t + 0.06, 0.45 * g, 0.01, 0.04, 0.2)), rnd); // the squelch
     bubbles(c, out, t + 0.08, 0.3, 4 + Math.floor(rnd() * 3), 0.1 * g, rnd);
     say(X, out, { f0: X.P.f0 * X.p * 1.2, dur: 0.42, contour: [[1, 0.75]], vowels: ["uh", "aa"], fry: 0.5, drive: X.P.drive * 1.4, a: 0.02, hold: 0.1, rel: 0.3, peak: 0.35, breath: 0.2 });
-    if (X.o.human) humanScream(c, out, t + 0.07, rnd, g * 0.75);
+    if (X.o.human) { // the victim screams, in their own voice when ui/humansfx.js knows it
+      if (X.o.victim && HUMAN_HOOK.cry) HUMAN_HOOK.cry(c, out, t + 0.07, X.o.victim, g * 0.75); else humanScream(c, out, t + 0.07, rnd, g * 0.75);
+    }
   },
   grunt(X, out) {
     const { rnd, P } = X, dur = 0.17 + rnd() * 0.1;
     say(X, out, { f0: P.f0 * X.p * 1.2, dur, contour: [[1, 0.72]], vowels: ["uh", "uh"], fry: 0.3, lp: 1800, a: 0.008, hold: dur * 0.25, rel: dur * 0.7, peak: 0.6, breath: 0.25, breathHz: 900 });
+  },
+  gruntShell(X, out) { // riot gear: a grunt and the knock on hard plastic
+    RECIPES.grunt(X, out);
+    const { c, t, rnd, g } = X;
+    noise(c, "white", t, 0.06, biq(c, "bandpass", 1100 + rnd() * 400, 4, envG(c, out, t, 0.22 * g, 0.001, 0, 0.05)), rnd);
+    thud(c, out, t, 180, 0.15 * g, 0.06, rnd);
+  },
+  sigh(X, out) { // the turned: two broken syllables, the last of a person's voice
+    const { vp, P } = X, d = 0.45 * vp.drawl;
+    for (const i of [0, 1]) say(X, out, { at: i * (d + 0.15), f0: P.f0 * X.p * (i ? 0.84 : 1.05), dur: d, contour: [[1, 0.78]], vowels: i ? ["aa", "oh"] : ["uh", "aa"], lp: 1600, a: 0.06, hold: d * 0.3, rel: d * 0.6, peak: 0.5, breath: 0.35, breathHz: 900 });
   },
   gruntClang(X, out) { // the armoured dead: a grunt and the round on the plate
     RECIPES.grunt(X, out);
@@ -806,25 +881,27 @@ export const RECIPES = {
 const COMMON = {
   idle: ["moan", "moan", "gurgle", "wheeze"], aggro: "spot", attack: "snarl", bite: "bite", hurt: "grunt", death: "rattle", step: "shuffle",
   wake: "rise", bash: "bash", smash: "smash", sizzle: "sizzle", worms: "squirm", burst: "burst", shriek: "shriek", strike: "strike", spit: "spit",
-  heave: "heave", fling: "fling", climb: "climb", snarl: "bark",
+  heave: "heave", fling: "fling", climb: "climb", snarl: "bark", breath: "breathe",
 };
 export const VOICE_SETS = {
   walker: COMMON,
   armoured: { ...COMMON, idle: ["moan", "gurgle", "wheeze"], hurt: "gruntClang", step: "clank" },
+  riot: { ...COMMON, idle: ["moan", "wheeze"], hurt: "gruntShell", step: "clank" },
+  turned: { ...COMMON, idle: ["moan", "sigh", "wheeze", "gurgle"], aggro: "spot" },
   runner: { ...COMMON, idle: ["pant", "pant", "moan"], aggro: "shriek", hurt: "yelp", step: "slap" },
   brute: { ...COMMON, idle: ["moan", "rumble"], aggro: "roar", attack: "roarShort", death: "roarDeath", step: "stomp" },
   spitter: { ...COMMON, idle: ["gurgle", "gurgle", "moan"] },
   screamer: { ...COMMON, idle: "whimper", aggro: "screech", shriek: "screech" },
   crawler: { ...COMMON, idle: "lurk", aggro: "hiss", step: "crawl" },
   carrier: { ...COMMON, idle: ["bloat", "bloat", "gurgle"], death: "burst" },
-  swarm: { ...COMMON, idle: "squirm", aggro: "squirm", attack: "squelch", bite: "squelch", hurt: "splat", death: "splat", step: "squirm", wake: "squirm", snarl: "squelch" },
+  swarm: { ...COMMON, idle: "squirm", aggro: "squirm", attack: "squelch", bite: "squelch", hurt: "splat", death: "splat", step: "squirm", wake: "squirm", snarl: "squelch", breath: "silent" },
   shepherd: { ...COMMON, idle: "call", aggro: "ululate" },
   boneback: { ...COMMON, idle: ["moan", "creak"], hurt: "crack", step: "bonestep" },
   climber: { ...COMMON, idle: "chitter", step: "scrabble" },
   flinger: { ...COMMON, idle: ["gurgle", "moan"] },
   sower: { ...COMMON, idle: "spores" },
   nightmare: { ...COMMON, idle: "whisper", aggro: "laugh", hurt: "glitch", death: "wail", shriek: "nightmare" },
-  sleeper: { ...COMMON, idle: "silent", aggro: "gasp", wake: "wake", death: "splat", step: "silent", snarl: "silent" },
+  sleeper: { ...COMMON, idle: "silent", aggro: "gasp", wake: "wake", death: "splat", step: "silent", snarl: "silent", breath: "silent" },
   wallbreaker: { ...COMMON, idle: "rumble", aggro: "roar", attack: "roarShort", death: "roarDeath", step: "stomp", bash: "smash" },
   broodmother: { ...COMMON, idle: ["bellow", "bloat"], aggro: "roar", attack: "roarShort", death: "roarDeath", step: "stomp", bash: "smash" },
 };
@@ -838,21 +915,21 @@ const OWN_STEP = new Set(["swarm"]);
 export const EVENT_CUE = {
   idle: "zIdle", aggro: "zAggro", attack: "zAttack", bite: "zBite", hurt: "zHurt", death: "zDeath", step: "zStep", smash: "zSmash", bash: "zBash",
   spit: "zSpit", sizzle: "zSizzle", shriek: "zShriek", strike: "zStrike", burst: "zBurst", worms: "zWorms", heave: "zHeave", fling: "zFling",
-  climb: "zClimb", wake: "zWake", snarl: "zSnarl",
+  climb: "zClimb", wake: "zWake", snarl: "zSnarl", breath: "zBreath",
 };
-export const EVENT_DUR = { idle: 2.4, aggro: 2, attack: 0.7, bite: 1.2, hurt: 0.5, death: 2.2, step: 1.6, smash: 1.2, bash: 0.5, spit: 1, sizzle: 1.1, shriek: 5.9, strike: 0.7, burst: 1.6, worms: 1.3, heave: 1.2, fling: 1.4, climb: 1.2, wake: 1.4, snarl: 0.9 };
+export const EVENT_DUR = { idle: 2.4, aggro: 2, attack: 0.7, bite: 1.2, hurt: 0.5, death: 2.2, step: 1.6, smash: 1.2, bash: 0.5, spit: 1, sizzle: 1.1, shriek: 5.9, strike: 0.7, burst: 1.6, worms: 1.3, heave: 1.2, fling: 1.4, climb: 1.2, wake: 1.4, snarl: 0.9, breath: 3.4 };
 // Throttle limits (ui/audio.js LIMITS): gap (s) between two starts, max playing at once.
 export const ZOMBIE_LIMITS = {
   zIdle: { gap: 0.7, max: 2 }, zAggro: { gap: 0.45, max: 2 }, zAttack: { gap: 0.15, max: 2 }, zBite: { gap: 0.12, max: 2 }, zHurt: { gap: 0.1, max: 3 },
   zDeath: { gap: 0.25, max: 3 }, zStep: { gap: 0.1, max: 3 }, zSmash: { gap: 0.3, max: 2 }, zBash: { gap: 0.15, max: 2 }, zSpit: { gap: 0.3, max: 2 },
   zSizzle: { gap: 0.2, max: 2 }, zShriek: { gap: 1.5, max: 1 }, zStrike: { gap: 0.2, max: 2 }, zBurst: { gap: 0.3, max: 2 }, zWorms: { gap: 0.3, max: 2 },
   zHeave: { gap: 0.5, max: 1 }, zFling: { gap: 0.3, max: 2 }, zClimb: { gap: 0.25, max: 2 }, zWake: { gap: 0.4, max: 2 },
-  zSnarl: { gap: 1.5, max: 1 },
+  zSnarl: { gap: 1.5, max: 1 }, zBreath: { gap: 0.3, max: 2 },
 };
 // Their place in a frame's volley (soundcues.js PRIORITY: lower is heard first): the screamer's shriek near the top.
 export const Z_PRIORITY = {
   zShriek: 2, zBurst: 3, zBite: 4, zSmash: 4, zStrike: 4, zSpit: 5, zFling: 5, zWake: 5, zSnarl: 5, zDeath: 6, zAttack: 6, zHeave: 6,
-  zBash: 7, zAggro: 7, zHurt: 7, zSizzle: 7, zWorms: 7, zClimb: 8, zIdle: 9, zStep: 10,
+  zBash: 7, zAggro: 7, zHurt: 7, zSizzle: 7, zWorms: 7, zClimb: 8, zIdle: 9, zStep: 10, zBreath: 11,
 };
 export const ZOMBIE_SOUND_NAMES = Object.values(EVENT_CUE);
 
@@ -909,7 +986,7 @@ export function setZombieVolume(v) { ZOMVOL.v = zombieVolume(v); }
 // well over the old groan); a bite at arm's length 1 dB off; the loudest (a runner's shriek or a brute's roar as it
 // spots you) 2 dB more off, and a brute's roar 1.5 dB more again (it was louder than a screamer's shriek at arm's
 // length). So a horde charging does not pin the limiter, and the screamer's call is the one that carries.
-export const EVENT_TRIM = { idle: 1.259, aggro: 0.79, bite: 0.89 };
+export const EVENT_TRIM = { idle: 1.259, breath: 1.259, aggro: 0.79, bite: 0.89 }; // (close breathing keeps its place under the moans)
 export const RECIPE_TRIM = { roar: 0.84 };
 export const FAR_GAIN = 1.1; // a voice made to carry (the screamer's shriek, a smash): a little over the rest, and it falls off slower (CARRY)
 const CLIP = new Map();
@@ -1048,7 +1125,7 @@ export function zombieFxCue(b, f, zm, L, out) {
     if (!t) { out.push(f.hit ? cue("bash", a, b, L, { mat: matAt(b, f.to) }) : cue("attack", a, b, L)); return true; }
     const m = zm.z.get(a.id);
     if (m && m.low && a.ztype === "crawler") { out.push(cue("strike", a, b, L)); m.low = false; }
-    out.push(f.hit ? cue("bite", a, b, L, { human: t.kind === "human" }) : cue("attack", a, b, L));
+    out.push(f.hit ? cue("bite", a, b, L, { human: t.kind === "human", victimId: t.id }) : cue("attack", a, b, L));
     return true;
   }
   if (f.type === "scream") {
@@ -1106,6 +1183,8 @@ export function zombieUnitCues(b, zm, L, out) {
   }
   zm.flung = false;
   zm.anyZ = out.some((c) => /^z/.test(c.name)); // a zombie one-shot this frame (a snarl keeps its distance from it)
+  markBusy(zm, out);
+  breathCues(b, zm, L, out);
 }
 // One of the dead starting for your people: the silent-then-shriek, but not from every one of them: always the first of
 // the fight and any that come within AGGRO_NEAR tiles of your people, else about AGGRO_SHARE of them (by its seed).
@@ -1116,6 +1195,56 @@ function aggroCue(b, u, m, zm, L, out) {
   const near = b.units.some((o) => o.side === "player" && !o.dead && !o.left && o.x >= 0 && Math.max(Math.abs(o.x - u.x), Math.abs(o.y - u.y)) <= AGGRO_NEAR);
   if (!zm.firstAggro || near || (m.aggro !== "quiet" && aggroLucky(b, u))) { zm.firstAggro = true; m.aggro = true; out.push(cue("aggro", u, b, L)); }
   else m.aggro = "quiet";
+}
+// ---------- close breathing ----------
+// While one of the living dead is within BREATH_NEAR tiles of one of your people (and seen, or within 1 tile even
+// unseen: you would hear it), it breathes: a cue per breath cycle from the nearest two, quiet, from its own voice; the
+// first fades in, a new one starts BREATH_FIRST s after it comes close, it stops when it dies or moves off, and never
+// starts while that unit's own voice is sounding (zm.busy: seed -> until). Louder at night and indoors. Seen: not a
+// crawler hidden in the grass, on the floor being shown (the fog is the integrator's to add: gun-sfx LISTEN.vis).
+export const BREATH_NEAR = 2, BREATH_MAX = 2, BREATH_FIRST = [0.15, 0.7];
+const VOCAL_CUES = new Set(["zIdle", "zAggro", "zAttack", "zBite", "zHurt", "zDeath", "zShriek", "zStrike", "zSpit", "zHeave", "zFling", "zWake", "zSnarl", "zSmash"]);
+const CUE_EVENT = Object.fromEntries(Object.entries(EVENT_CUE).map(([ev, n]) => [n, ev]));
+function markBusy(zm, list) {
+  if (zm.now == null) return;
+  zm.busy = zm.busy || new Map();
+  for (const c of list) if (c && VOCAL_CUES.has(c.name) && c.seed != null) zm.busy.set(c.seed, Math.max(zm.busy.get(c.seed) || 0, zm.now + (c.delay || 0) + EVENT_DUR[CUE_EVENT[c.name]]));
+}
+export function breathers(b) {
+  const ps = b.units.filter((o) => o.side === "player" && !o.dead && !o.down && !o.left && !o.off && o.x >= 0);
+  if (!ps.length) return [];
+  const out = [];
+  for (const u of upDead(b)) {
+    if (recipeFor(voiceKind(u), "breath", () => 0) === "silent") continue;
+    if (b.floors && (u.f || 0) !== (b.floor || 0)) continue;
+    let d = 99;
+    for (const p of ps) d = Math.min(d, Math.max(Math.abs(p.x - u.x), Math.abs(p.y - u.y)));
+    if (d > BREATH_NEAR || (u.low && d > 1)) continue; // a hidden crawler only from right next to you
+    out.push({ u, d });
+  }
+  out.sort((a, c) => a.d - c.d || a.u.id - c.u.id);
+  return out.slice(0, BREATH_MAX).map((x) => x.u);
+}
+function breathCues(b, zm, L, out) {
+  const now = zm.now;
+  if (now == null || b.over) { zm.br = null; return; }
+  zm.br = zm.br || new Map();
+  const near = breathers(b), keep = new Set(near.map((u) => u.id));
+  for (const id of [...zm.br.keys()]) if (!keep.has(id)) zm.br.delete(id); // moved off or died: it stops (and fades in again next time)
+  const night = b.night || b.dark ? 1.3 : 1;
+  for (const u of near) {
+    const lift = night * (isIndoor(b, u.x, u.y) ? 1.25 : 1); // gunsfx.js: a room's walls bring it closer
+    const seed = unitSeed(b, u), kind = voiceKind(u);
+    let st = zm.br.get(u.id);
+    if (!st) { const r = mulberry(seed ^ 0xb4ea7); st = { n: 0, next: now + BREATH_FIRST[0] + r() * (BREATH_FIRST[1] - BREATH_FIRST[0]) }; zm.br.set(u.id, st); }
+    if (now < st.next) continue;
+    const busy = zm.busy && zm.busy.get(seed);
+    if (busy && now < busy) { st.next = busy + 0.2; continue; } // its own voice is sounding
+    const pl = breathPlan(kind, seed, st.n);
+    out.push(cue("breath", u, b, L, { gain: lift, n: st.n, fade: st.n === 0 }));
+    st.n++;
+    st.next = now + pl.dur + pl.gap;
+  }
 }
 // The living dead that can be heard (not a Sleeper lying still, not one gone off the map).
 const upDead = (b) => b.units.filter((u) => u.kind === "zombie" && !u.dead && !u.left && !u.off && !u.dormant && u.x >= 0);
@@ -1131,6 +1260,7 @@ const QUIET = new WeakMap(); // battle -> 1 while the dead are in a silence (the
 export const hushOf = (b) => QUIET.get(b) || 0;
 export function idleSeed(b) { return hash32(battleSalt(b) * 31 + b.units.reduce((s, u) => (s * 33 + (u.kind === "zombie" ? u.id | 0 : 0)) >>> 0, 7)); }
 export function zombieIdleCue(b, mem, L, now) {
+  if (mem.zm) mem.zm.now = now;
   if (b.over) { QUIET.delete(b); return null; }
   const up = upDead(b);
   if (!up.length) { QUIET.delete(b); return null; }
@@ -1176,6 +1306,7 @@ export function zombieIdleCue(b, mem, L, now) {
   }
   if (out) S.lastShot = now;
   QUIET.set(b, S.phase === "silence" ? 1 : 0);
+  if (mem.zm) { mem.zm.now = now; if (out) markBusy(mem.zm, [out]); } // the close breathing's clock (zombieUnitCues, next frame)
   return out;
 }
 // The crowd: how many of the dead are up, the nearest and their mean distance from the listener.
@@ -1488,18 +1619,19 @@ export function hordeChorus(c, out, t, o = {}) {
 
 // ---------- the Options tab: Zombie sounds ----------
 const KIND_LABEL = {
-  walker: "Walker", armoured: "Armoured dead", runner: "Runner", brute: "Brute", spitter: "Spitter", screamer: "Screamer", crawler: "Crawler",
+  walker: "Walker", armoured: "Armoured dead (soldier)", riot: "Dead riot cop", turned: "The turned", runner: "Runner", brute: "Brute", spitter: "Spitter", screamer: "Screamer", crawler: "Crawler",
   carrier: "Carrier", swarm: "Worm swarm", shepherd: "Shepherd", boneback: "Boneback", climber: "Climber", flinger: "Flinger", sower: "Sower",
   nightmare: "Nightmare", sleeper: "Sleeper", wallbreaker: "Wallbreaker", broodmother: "Broodmother",
 };
 const EVENT_LABEL = {
   idle: "at rest", aggro: "notices you", attack: "lunges", bite: "bites someone", hurt: "is hit", death: "dies", step: "walks",
   smash: "smashes a barricade", bash: "pounds on a door", spit: "spits acid", sizzle: "acid sizzling", shriek: "shrieks", strike: "strikes from hiding",
-  burst: "bursts", worms: "worms pour out", snarl: "snarls out of a silence", heave: "winds up", fling: "throws worms", climb: "climbs a wall", wake: "wakes",
+  burst: "bursts", worms: "worms pour out", snarl: "snarls out of a silence", breath: "breathing close by", heave: "winds up", fling: "throws worms", climb: "climbs a wall", wake: "wakes",
 };
 const EXTRA = { // each kind's own sounds in the list (besides the core events)
-  spitter: ["spit", "sizzle"], screamer: ["shriek"], crawler: ["strike"], carrier: ["burst"], climber: ["climb"],
-  flinger: ["heave", "fling"], nightmare: ["shriek"], sleeper: ["wake"], wallbreaker: ["smash"], walker: ["snarl", "wake", "bash"], runner: ["snarl"], brute: ["smash", "snarl"],
+  screamer: ["shriek"], climber: ["climb"],
+  flinger: ["heave", "fling"], nightmare: ["shriek"], sleeper: ["wake"], wallbreaker: ["smash", "breath"], walker: ["snarl", "breath", "wake", "bash"], runner: ["snarl", "breath"], brute: ["smash", "snarl", "breath"],
+  armoured: ["breath"], riot: ["breath"], turned: ["wake", "breath"], crawler: ["strike", "breath"], spitter: ["spit", "sizzle", "breath"], carrier: ["burst", "breath"], broodmother: ["breath"],
 };
 export const ZOMBIE_TESTS = [
   ...Object.keys(KIND_LABEL).map((k) => ({
