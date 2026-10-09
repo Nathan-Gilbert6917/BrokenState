@@ -46,6 +46,7 @@ function stub() {
     createWaveShaper: () => node({ curve: null, oversample: "none" }),
     createPeriodicWave: () => ({}),
     createDelay: () => node({ delayTime: param("delay", 0) }),
+    createDynamicsCompressor: () => node({ threshold: param("thr", -24), knee: param("knee", 30), ratio: param("ratio", 12), attack: param("att", 0.003), release: param("rel", 0.25) }),
   };
   return { ctx, bad, get nodes() { return nodes; }, get started() { return started; }, get stopped() { return stopped; }, reset() { nodes = 0; } };
 }
@@ -285,13 +286,26 @@ console.log("The map");
   const h = hub(st);
   check(Z.hordeAmbience(st).horde === 0 && Z.hordeAmbience(st).hive === 0, "no horde, no hive: silence");
   const at = (d) => st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === d && !st.bases.some((b) => b !== h && st.grid.distance(t.id, b.tile) < d));
-  const t2 = at(2), t6 = at(6), t12 = st.tiles.find((t) => !st.bases.some((b) => st.grid.distance(t.id, b.tile) <= 10));
+  const t2 = at(2), t6 = at(6), t12 = at(12), tFar = st.tiles.find((t) => !st.bases.some((b) => st.grid.distance(t.id, b.tile) <= Z.HORDE_HEAR));
   st.hour = 12;
   const lv = (tile, size) => { st.hordes = [{ id: 1, tile: tile.id, size }]; st.live.add(tile.id); return Z.hordeAmbience(st); };
   const n2 = lv(t2, 60), n6 = lv(t6, 60), big = lv(t6, 300), small = lv(t6, 12);
   check(n2.horde > n6.horde && n6.horde > 0, `a horde 2 tiles off is louder than one 6 off (${n2.horde} > ${n6.horde})`);
   check(big.horde > n6.horde && n6.horde > small.horde, `bigger is louder (12: ${small.horde}, 60: ${n6.horde}, 300: ${big.horde})`);
-  check(lv(t12, 300).horde === 0, "a horde far from your bases and teams: not heard");
+  const n12 = lv(t12, 60);
+  check(n12.horde > 0 && n12.horde < n6.horde, `the range is ${Z.HORDE_HEAR} tiles: a horde 12 tiles off is heard, faintly (${n12.horde})`);
+  const fall = [2, 3, 4, 6, 8, 10, 12, 14, 15, 16].map((d) => Z.hordeDistLevel(d));
+  check(fall.every((v, i) => !i || v <= fall[i - 1]) && fall[0] === 1 && fall[1] > 0.85 && fall[fall.length - 1] === 0 && fall.slice(1).every((v, i) => fall[i] - v < 0.2),
+    `a smooth fall-off with distance (${fall.map((v) => v.toFixed(2)).join(" ")})`);
+  check(lv(tFar, 300).horde === 0, "a horde beyond that from your bases and teams: not heard");
+  check(n2.horde >= 0.45 && lv(t2, 300).horde > 0.7 && lv(t2, 12).horde < 0.35, `within 2 tiles by day: 60 of the dead ${n2.horde}, 300 roar (${lv(t2, 300).horde}), 12 mutter (${lv(t2, 12).horde})`);
+  // Three hordes closing on a base: they add up, softly, and never pass 1.
+  st.hordes = [{ id: 1, tile: t2.id, size: 300 }, { id: 2, tile: at(3).id, size: 200 }, { id: 3, tile: t6.id, size: 150 }, { id: 4, tile: at(4).id, size: 400 }];
+  for (const h of st.hordes) st.live.add(h.tile);
+  const three = Z.hordeAmbience(st);
+  st.hordes = [st.hordes[0]];
+  const one = Z.hordeAmbience(st);
+  check(three.horde > one.horde && three.horde <= 1 && three.count === 4, `four big hordes at once: ${three.horde} (one of them alone ${one.horde}); never past 1`);
   st.live.delete(t2.id); st.hordes = [{ id: 1, tile: t2.id, size: 60 }];
   check(Z.hordeAmbience(st).horde === 0, "a horde out of sight: not heard");
   st.hour = 1;
@@ -317,7 +331,29 @@ console.log("The map");
   let gone = false;
   for (let t = 40; t < 50; t += 0.25) if (Z.zombieMapAmbience(S.ctx, out, null, t) === null) gone = true;
   check(gone && !S.bad.length, `quiet again: the layer is let go${S.bad.length ? ` (${S.bad.slice(0, 3).join(", ")})` : ""}`);
-  check(Z.MAP_LEVELS.horde <= 0.25 && Z.MAP_LEVELS.hive <= 0.15, `kept low under the ambience slider (horde ${Z.MAP_LEVELS.horde}, hive ${Z.MAP_LEVELS.hive}; wind is 0.32)`);
+  const up = 20 * Math.log10(Z.MAP_LEVELS.horde / Z.MAP_HORDE_OLD);
+  check(up >= 8 && Z.MAP_LEVELS.hive <= 0.15, `the hordes are louder than before (+${up.toFixed(1)} dB), the hive stays low (${Z.MAP_LEVELS.hive})`);
+  // The limiter on the horde bed, and the Map horde volume.
+  const S2 = stub();
+  const lay = Z.makeMapLayer(S2.ctx, S2.ctx.createGain(), 0);
+  lay.update({ horde: 1, hive: 0, near: 1, size: 900, big: 1, night: 1, close: 1 }, 1, 2);
+  check(lay.level <= Z.MAP_LEVELS.horde * 2 + 1e-9 && !S2.bad.length, `at full level and the slider at the top the bed is ${lay.level.toFixed(2)} into a soft limiter, then the ambience bus`);
+  const AU = await import("../src/ui/audio.js");
+  const so = AU.soundOptions({});
+  check(so.horde === 0.7 && AU.hordeVolume(so.horde) === 1 && AU.hordeVolume(0) === 0 && AU.hordeVolume(1) > 1.9 && AU.soundOptions({ sound: { horde: 5 } }).horde === 1,
+    "the Map horde volume: 70% by default (× 1), 0 is silent, 100% about +6 dB, bad values clamped");
+  // The Zombie volume: 0–150%, 100% the new louder level; the zombie bus +4 dB into a soft limiter.
+  const zo = AU.soundOptions({ sound: { zombie: 9 } }), zd = AU.soundOptions({});
+  check(zd.zombie === 1 && zo.zombie === 1.5 && AU.soundOptions({ sound: { zombie: -1 } }).zombie === 0 && Z.zombieVolume(1) === 1 && Z.zombieVolume(1.5) === 2.25 && Z.zombieVolume(0) === 0,
+    "the Zombie volume: 100% by default, up to 150% (× 2.25), clamped");
+  const zh = AU.soundOptionsHtml({ sound: { zombie: 1.2 } });
+  check(/data-k="zombie"/.test(zh) && /max="150"[^>]*value="120"|value="120"[^>]*max="150"|max="150" step="5" value="120"/.test(zh), "Options → Sound has the Zombies slider (0–150%) at the saved level");
+  const S3 = stub();
+  const busOut = S3.ctx.createGain();
+  const zb = Z.makeZombieBus(S3.ctx, busOut);
+  zb.setVolume(1.5, 0, true);
+  check(Math.abs(20 * Math.log10(Z.ZOMBIE_BUS_GAIN) - 4) < 0.05 && zb.comp && zb.comp.ratio.value >= 10 && !S3.bad.length, `the zombie bus: +${(20 * Math.log10(Z.ZOMBIE_BUS_GAIN)).toFixed(1)} dB, a soft limiter (ratio ${zb.comp.ratio.value}) and a soft clip at -1 dBFS`);
+  check(/data-k="horde"/.test(AU.soundOptionsHtml({ sound: { horde: 0.4 } })) && /value="40"/.test(AU.soundOptionsHtml({ sound: { horde: 0.4 } })), "Options → Sound has the Map hordes slider at the saved level");
 }
 
 // ---------- 8. determinism ----------

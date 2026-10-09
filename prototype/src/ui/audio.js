@@ -10,7 +10,7 @@
 // context is made (or resumed) on that first gesture. Muted, or with the window in the background and "Mute when
 // not focused" on, the context is suspended (no CPU). Nothing here runs at import time, so node tools can import it.
 import { battleCues, worldCues, ambienceMix, makeThrottle, battleCrowd } from "./soundcues.js";
-import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest } from "./zombiesfx.js"; // the dead's voices
+import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest, demoMapHorde, makeZombieBus, zombieVolume } from "./zombiesfx.js"; // the dead's voices
 import { weatherAt, season } from "../sim/weather.js";
 import { playerTile } from "../sim/hardcore-start.js";
 import { screenToTile, view } from "./render.js";
@@ -20,7 +20,9 @@ const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 
 // ---------- options ----------
 // options.sound (ui/saves.js keeps it with the other options): volumes 0–1, mute, mute when the window is not focused.
-export const SOUND_DEFAULTS = { master: 0.7, sfx: 0.8, amb: 0.5, mute: false, muteBlur: true };
+// zombie: the Zombie volume (0–1.5: the dead's voices, the battle's crowd and the map's hordes; 1 the default);
+// horde: the Map horde volume (the moaning of hordes near you on the State Map, under the ambience and zombie sliders).
+export const SOUND_DEFAULTS = { master: 0.7, sfx: 0.8, amb: 0.5, mute: false, muteBlur: true, horde: 0.7, zombie: 1 };
 const vol = (v, d) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(1, Number(v))) : d);
 export function soundOptions(o) {
   const s = o && typeof o.sound === "object" && o.sound ? o.sound : {};
@@ -28,6 +30,8 @@ export function soundOptions(o) {
   const clean = {
     master: vol(s.master, D.master), sfx: vol(s.sfx, D.sfx), amb: vol(s.amb, D.amb),
     mute: typeof s.mute === "boolean" ? s.mute : D.mute, muteBlur: typeof s.muteBlur === "boolean" ? s.muteBlur : D.muteBlur,
+    horde: vol(s.horde, D.horde),
+    zombie: Number.isFinite(Number(s.zombie)) ? Math.max(0, Math.min(1.5, Number(s.zombie))) : D.zombie,
   };
   if (o) o.sound = clean;
   return clean;
@@ -35,6 +39,8 @@ export function soundOptions(o) {
 // Slider position to gain: squared, so the low half of the slider is usable (loudness is not linear).
 const curve = (v) => v * v;
 const SFX_TRIM = 0.8, AMB_TRIM = 1; // the buses' fixed levels under their sliders
+// The Map horde volume as a multiplier of the hordes' level: 1 at the default (70%), 0 at 0, about +6 dB at 100%.
+export const hordeVolume = (v = SOUND_DEFAULTS.horde) => (v / SOUND_DEFAULTS.horde) ** 2;
 
 // ---------- the engine ----------
 let OPT = null;          // main.js's options object
@@ -78,7 +84,8 @@ function makeContext(test = null) {
   master.connect(comp);
   sfxBus.connect(master);
   ambBus.connect(master);
-  A = { ctx, comp, master, sfx: sfxBus, amb: ambBus, layers: null, next: { thunder: 0, bird: 0, cricket: 0 }, mix: null, test: !!test };
+  const zom = makeZombieBus(ctx, sfxBus); // the dead: +4 dB, the Zombie volume, a soft limiter (ui/zombiesfx.js)
+  A = { ctx, comp, master, sfx: sfxBus, amb: ambBus, zom, layers: null, next: { thunder: 0, bird: 0, cricket: 0 }, mix: null, test: !!test };
   applyGains(true);
   return A;
 }
@@ -90,6 +97,7 @@ export function applyGains(now = false) {
   set(A.master.gain, on ? curve(s.master) : 0);
   set(A.sfx.gain, curve(s.sfx) * SFX_TRIM);
   set(A.amb.gain, curve(s.amb) * AMB_TRIM);
+  A.zom.setVolume(s.zombie, t, now);
   if (A.test) return;
   if (!on && A.ctx.state === "running") {
     offWanted = true;
@@ -133,8 +141,8 @@ export function initAudio(options, save) {
   });
 }
 function setVolume(k, v) {
-  if (!OPT || !["master", "sfx", "amb"].includes(k)) return;
-  OPT.sound[k] = vol(v, SOUND_DEFAULTS[k]);
+  if (!OPT || !["master", "sfx", "amb", "horde", "zombie"].includes(k)) return;
+  OPT.sound[k] = k === "zombie" ? Math.max(0, Math.min(1.5, Number(v) || 0)) : vol(v, SOUND_DEFAULTS[k]);
   applyGains();
 }
 
@@ -147,7 +155,7 @@ export function sfx(name, opts = {}) {
   const ctx = A.ctx;
   const t = ctx.currentTime + 0.01 + Math.max(0, opts.delay || 0);
   if (!throttle.allow(name, t, V.dur)) { audioDebug.dropped++; return false; }
-  let out = V.amb ? A.amb : A.sfx;
+  let out = V.amb ? A.amb : V.routes ? A.zom.input : A.sfx; // the dead through their own bus
   if (opts.pan && ctx.createStereoPanner && !V.routes) { // the dead's voices pan themselves (zombiesfx.js zRoute)
     const p = ctx.createStereoPanner();
     p.pan.value = Math.max(-1, Math.min(1, opts.pan));
@@ -267,8 +275,9 @@ function ambience(state, ui) {
   // The dead (ui/zombiesfx.js): the battle's crowd bed on the effects bus; on the map a horde near you on the wind and a
   // hive's heartbeat on the ambience bus.
   const fight = state.combat && !ui.timelapse ? state.combat : null;
-  zombieCrowd(c, A.sfx, fight ? battleCrowd(fight) : null, t);
-  zombieMapAmbience(c, A.amb, fight || ui.timelapse || ui.title || !ui.started ? null : hordeAmbience(state), t);
+  zombieCrowd(c, A.zom.input, fight ? battleCrowd(fight) : null, t);
+  const s = OPT ? OPT.sound : SOUND_DEFAULTS;
+  zombieMapAmbience(c, A.amb, fight || ui.timelapse || ui.title || !ui.started ? null : hordeAmbience(state), t, hordeVolume(s.horde) * zombieVolume(s.zombie));
 }
 
 // ---------- building blocks ----------
@@ -454,8 +463,8 @@ export const VOICES = {
     noise(c, "white", t, 0.24, f);
   } },
   // The dead's bite and a walker's moan (ui/zombiesfx.js; the battle plays them per zombie as zBite and zIdle).
-  bite: { dur: 1.2, play(c, out, t, o) { ZOMBIE_VOICES.zBite.play(c, out, t, { human: true, ...o }); } },
-  groan: { dur: 2.4, play(c, out, t, o) { ZOMBIE_VOICES.zIdle.play(c, out, t, o); } },
+  bite: { dur: 1.2, routes: true, play(c, out, t, o) { ZOMBIE_VOICES.zBite.play(c, out, t, { human: true, ...o }); } },
+  groan: { dur: 2.4, routes: true, play(c, out, t, o) { ZOMBIE_VOICES.zIdle.play(c, out, t, o); } },
   scream: { dur: 0.9, play(c, out, t, o) {
     const v = c.createOscillator(); v.type = "sawtooth";
     v.frequency.setValueAtTime(700 * o.pitch, t); v.frequency.linearRampToValueAtTime(950, t + 0.25); v.frequency.linearRampToValueAtTime(600, t + 0.85);
@@ -502,7 +511,7 @@ export const VOICES = {
 
   // The map: a horde newly seen near you, a raid on a base.
   horde: { dur: 2.6, play(c, out, t, o) {
-    thud(c, out, t, 55, 1 * o.gain, 0.9);
+    thud(c, out, t, 55, 0.7 * o.gain, 0.9); // (it clipped at 1 before the bus)
     const lp = filt(c, "lowpass", 180, 1.2, env(c, out, t, 0.24 * o.gain, 1.9, 0.4, 0.2));
     lp.frequency.setValueAtTime(180, t); lp.frequency.linearRampToValueAtTime(1100, t + 1); lp.frequency.linearRampToValueAtTime(250, t + 2.4);
     for (const f of [73.4, 77.8, 110]) tone(c, "sawtooth", f, f * 0.98, t, 2.5, lp); // D, D# and A: a minor second's grind
@@ -585,7 +594,7 @@ const SOUND_LABELS = {
 let hearPick = "pistol";
 export function soundOptionsHtml(options) {
   const s = soundOptions(options);
-  const slider = (k, label, t) => `<label class="sndvol" style="margin-right:0.6rem"${tip(t)}>${label} <input type="range" min="0" max="100" step="5" value="${Math.round(s[k] * 100)}" data-action="snd-vol" data-k="${k}"> <span class="sndval">${Math.round(s[k] * 100)}%</span></label>`;
+  const slider = (k, label, t, max = 100) => `<label class="sndvol" style="margin-right:0.6rem"${tip(t)}>${label} <input type="range" min="0" max="${max}" step="5" value="${Math.round(s[k] * 100)}" data-action="snd-vol" data-k="${k}"> <span class="sndval">${Math.round(s[k] * 100)}%</span></label>`;
   const box = (k, on, label, t) => `<button class="setopt ${on ? "active" : ""}" data-action="snd-opt" data-k="${k}"${tip(t)}>${on ? "✔" : "✗"} ${label}</button>`;
   const locked = A ? A.ctx.state === "suspended" && !offWanted && !A.unlocked : !A;
   return `<h3>Sound</h3><div class="setrow">
@@ -593,6 +602,8 @@ export function soundOptionsHtml(options) {
       ${slider("master", "Master", "Everything")}
       ${slider("sfx", "Effects", "Clicks, card chimes, battle sounds, the horde sting and the alarm")}
       ${slider("amb", "Ambience", "Wind and rain with the weather, thunder in storms, a low drone at night, birds by day, crickets on warm nights")}
+      ${slider("zombie", "Zombies", "The dead: their voices in battle, the crowd of them, and the hordes on the map (up to 150%)", 150)}
+      ${slider("horde", "Map hordes", "How loud hordes near your bases and teams moan on the State Map (louder the bigger and nearer they are, more at night). Under the Ambience volume. Dragging it plays a near horde.")}
       ${box("muteBlur", s.muteBlur, "Mute when the window is not focused", "Silence while you are in another window or tab")}
     </div><div class="setrow">
       <label${tip("Hear one sound, to set the volumes or to judge it")}>Hear <select data-action="snd-pick">${HEAR_NAMES.map((n) => `<option value="${n}" ${n === hearPick ? "selected" : ""}>${esc(SOUND_LABELS[n] || n)}</option>`).join("")}</select></label>
@@ -617,7 +628,9 @@ export const SOUND_CHANGE = {
   "snd-vol": (state, ui, el) => {
     setVolume(el.dataset.k, Number(el.value) / 100);
     SAVE();
-    if (el.dataset.k !== "amb") sfx("alert", { gain: 0.8 });
+    if (el.dataset.k === "horde") { if (A) demoMapHorde(A.ctx.currentTime, 5); } // hear a near horde at the new level
+    else if (el.dataset.k === "zombie") sfx("zAggro", { kind: "walker", pitch: 1 }); // one of the dead at the new level
+    else if (el.dataset.k !== "amb") sfx("alert", { gain: 0.8 });
     try { el.blur(); } catch { /* ignore */ } // Esc closes the menu again
   },
   "snd-pick": (state, ui, el) => { if (VOICES[el.value]) { hearPick = el.value; unlock(); sfx(hearPick, { pitch: 1 }); } },

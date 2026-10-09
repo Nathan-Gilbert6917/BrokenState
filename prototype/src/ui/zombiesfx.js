@@ -245,7 +245,8 @@ function metal(c, out, t, base, peak, d, rnd) {
 }
 
 // One voice. s: { f0, dur, contour [[fraction, × f0]...], vowels [[F1, F2, F3]...], form [× F1, × F2, × F3], shift (× all
-// formants), q [Q1, Q2, Q3], nform (2 or 3), rasp, fry (0–1), fryHz, jitter (× f0), vib [Hz, × f0], drive, a, hold, rel
+// formants), q [Q1, Q2, Q3], fw [formant weights], lp (low-pass Hz), breathHz, sub (a detuned pulse an octave
+// down), nform (2 or 3), rasp, fry (0–1), fryHz, jitter (× f0), vib [Hz, × f0], drive, a, hold, rel
 // (the envelope), peak, breath (× peak), ring [carrier Hz, mix, carrier Hz at the end] }.
 function vocal(c, out, t, s, rnd) {
   const dur = Math.max(0.05, s.dur), f0 = clamp(s.f0, 25, 2000);
@@ -288,7 +289,8 @@ function vocal(c, out, t, s, rnd) {
     if (s.ring[2]) car.frequency.exponentialRampToValueAtTime(s.ring[2], t + dur);
   }
   const a = s.a ?? dur * 0.2, hold = s.hold ?? dur * 0.3, rel = s.rel ?? dur * 0.5;
-  const env = envG(c, post, t, s.peak, a, hold, rel);
+  const dark = s.lp ? biq(c, "lowpass", s.lp, 0.6, post) : post; // a dark throat: the highs rolled off
+  const env = envG(c, dark, t, s.peak, a, hold, rel);
   const bankIn = gainN(c, 1);
   sum.connect(shaper(c, s.drive || 0, bankIn));
   const V = s.vowels, F = s.form || [1, 1, 1], sh = s.shift || 1, Q = s.q || [4.5, 5.5, 6.5], W = s.fw || [1, 0.55, 0.3];
@@ -297,7 +299,7 @@ function vocal(c, out, t, s, rnd) {
     bankIn.connect(bp);
     for (let i = 1; i < V.length; i++) bp.frequency.linearRampToValueAtTime(clamp(V[i][k] * F[k] * sh, 60, 9000), t + dur * i / (V.length - 1));
   }
-  if (s.breath) noise(c, "white", t, dur, biq(c, "bandpass", 1600 * sh, 0.9, envG(c, post, t, s.peak * s.breath, a, hold, rel)), rnd);
+  if (s.breath) noise(c, "white", t, dur, biq(c, "bandpass", (s.breathHz || 1600) * sh, 0.9, envG(c, dark, t, s.peak * s.breath, a, hold, rel)), rnd);
   return o;
 }
 
@@ -316,7 +318,7 @@ function say(X, out, s) {
 const stepsOf = (X, max) => clamp(Math.round(X.o.steps || 2), 1, max);
 const pick = (X, list) => list[Math.floor(X.rnd() * list.length) % list.length];
 function slump(X, out, at) {
-  const { c, rnd, g, P } = X, big = P.giant ? 1.6 : 1;
+  const { c, rnd, g, P } = X, big = P.giant ? 1.3 : 1;
   thud(c, out, at, 75 / big, 0.5 * g * big, 0.22 * big, rnd);
   noise(c, "brown", at + 0.03, 0.2, biq(c, "lowpass", 900, 0.7, envG(c, out, at + 0.03, 0.22 * g, 0.01, 0.03, 0.15)), rnd);
 }
@@ -336,7 +338,7 @@ export const RECIPES = {
     // Broken up by a slow, irregular tremor (no steady pitch, no clean vowel): a throat that no longer works.
     const shake = am(X.c, out, 2.3 + rnd() * 2.6, 0.55, X.t, dur, rnd() < 0.5 ? "triangle" : "sine");
     say(X, shake, { f0: P.f0 * X.p * (0.9 + rnd() * 0.18), dur, contour: [[0.25, 1.04 + rnd() * 0.1], [0.6, 0.92 + rnd() * 0.1], [1, 0.66 + rnd() * 0.1]], vowels: path,
-      a: dur * 0.3, hold: dur * 0.2, rel: dur * 0.5, peak: 0.6, breath: 0.22 });
+      rasp: Math.min(1.3, P.rasp * 1.35), fw: [1, 0.3, 0.08], lp: 950, breathHz: 650, a: dur * 0.3, hold: dur * 0.2, rel: dur * 0.5, peak: 0.72, breath: 0.5 });
     if (rnd() < 0.2 + P.wet * vp.gurgle) bubbles(X.c, out, X.t + dur * 0.4, dur * 0.6, 2 + Math.floor(rnd() * 4), 0.07 * X.g, rnd);
   },
   wheeze(X, out) { // ragged breathing up close: rattling breaths in and out, never quite in time
@@ -344,7 +346,7 @@ export const RECIPES = {
     let at = t;
     for (let i = 0; i < n; i++) {
       const inb = i % 2 === 0, d = (inb ? 0.35 : 0.5) + rnd() * 0.3;
-      const f = biq(c, "bandpass", inb ? 1100 : 700, 2.5, am(c, envG(c, out, at, (inb ? 0.2 : 0.26) * g, d * 0.4, d * 0.2, d * 0.4), 22 + rnd() * 18, 0.9, at, d, "square"), at);
+      const f = biq(c, "bandpass", inb ? 1100 : 700, 2.5, am(c, envG(c, out, at, (inb ? 0.5 : 0.65) * g, d * 0.4, d * 0.2, d * 0.4), 22 + rnd() * 18, 0.9, at, d, "square"), at);
       f.frequency.exponentialRampToValueAtTime(inb ? 1600 : 450, at + d);
       noise(c, "white", at, d, f, rnd);
       if (!inb && rnd() < 0.5) bubbles(c, out, at + d * 0.3, d * 0.6, 3, 0.07 * g, rnd, 150, 400);
@@ -353,13 +355,13 @@ export const RECIPES = {
   },
   gurgle(X, out) {
     const { c, t, vp, rnd, P } = X, dur = (0.6 + rnd() * 0.4) * vp.drawl;
-    say(X, out, { f0: P.f0 * X.p * 0.9, dur, contour: [[1, 0.8]], vowels: ["oo", "uh"], fry: 0.6, fryHz: 9 + rnd() * 8, rasp: 1, a: 0.08, hold: dur * 0.3, rel: dur * 0.6, peak: 0.42, breath: 0.1 });
+    say(X, out, { f0: P.f0 * X.p * 0.9, dur, contour: [[1, 0.8]], vowels: ["oo", "uh"], fry: 0.6, fryHz: 9 + rnd() * 8, rasp: 1, fw: [1, 0.4, 0.12], lp: 1100, a: 0.08, hold: dur * 0.3, rel: dur * 0.6, peak: 0.5, breath: 0.1, breathHz: 700 });
     bubbles(c, out, t + 0.05, dur, 5 + Math.floor(rnd() * 6), 0.11 * X.g, rnd, 150, 520);
     noise(c, "brown", t, dur, biq(c, "lowpass", 380, 1, am(c, envG(c, out, t, 0.3 * X.g, 0.05, dur * 0.4, dur * 0.5), 6 + rnd() * 6, 0.8, t, dur)), rnd);
   },
   rumble(X, out) { // a big one breathing: a low growl through the chest
     const { c, t, rnd, P } = X, dur = (1.4 + rnd() * 0.6) * (P.slow || 1);
-    say(X, out, { f0: P.f0 * X.p * 0.95, dur, contour: [[0.5, 1.05], [1, 0.85]], vowels: ["oh", "uh", "oh"], fry: 0.85, rasp: 0.9, a: dur * 0.3, hold: dur * 0.3, rel: dur * 0.4, peak: 0.6, breath: 0.2 });
+    say(X, out, { f0: P.f0 * X.p * 0.95, dur, contour: [[0.5, 1.05], [1, 0.85]], vowels: ["oh", "uh", "oh"], fry: 0.85, rasp: 0.9, fw: [1, 0.4, 0.12], lp: 1000, a: dur * 0.3, hold: dur * 0.3, rel: dur * 0.4, peak: 0.7, breath: 0.2, breathHz: 600 });
     noise(c, "brown", t, dur, biq(c, "lowpass", 160, 0.8, envG(c, out, t, 0.3 * X.g, dur * 0.3, dur * 0.3, dur * 0.4)), rnd);
   },
   // Noticing someone, lunging, biting, hurting, dying.
@@ -373,7 +375,7 @@ export const RECIPES = {
   },
   growl(X, out) {
     const { rnd, P } = X, dur = (0.65 + rnd() * 0.3) * (P.slow || 1);
-    say(X, out, { f0: P.f0 * X.p * 1.1, dur, contour: [[0.25, 1.3], [1, 0.78]], vowels: ["uh", "aa", "aa"], fry: 0.7, rasp: Math.min(1.2, P.rasp * 1.4), drive: P.drive * 1.6,
+    say(X, out, { f0: P.f0 * X.p * 1.1, dur, contour: [[0.25, 1.3], [1, 0.78]], vowels: ["uh", "aa", "aa"], fry: 0.7, rasp: Math.min(1.2, P.rasp * 1.4), drive: P.drive * 1.6, lp: 2400,
       a: 0.05, hold: dur * 0.35, rel: dur * 0.6, peak: 0.62, breath: 0.25 });
   },
   snarl(X, out) {
@@ -393,7 +395,7 @@ export const RECIPES = {
   },
   grunt(X, out) {
     const { rnd, P } = X, dur = 0.17 + rnd() * 0.1;
-    say(X, out, { f0: P.f0 * X.p * 1.2, dur, contour: [[1, 0.72]], vowels: ["uh", "uh"], fry: 0.3, a: 0.008, hold: dur * 0.25, rel: dur * 0.7, peak: 0.55, breath: 0.25 });
+    say(X, out, { f0: P.f0 * X.p * 1.2, dur, contour: [[1, 0.72]], vowels: ["uh", "uh"], fry: 0.3, lp: 1800, a: 0.008, hold: dur * 0.25, rel: dur * 0.7, peak: 0.6, breath: 0.25, breathHz: 900 });
   },
   gruntClang(X, out) { // the armoured dead: a grunt and the round on the plate
     RECIPES.grunt(X, out);
@@ -401,7 +403,7 @@ export const RECIPES = {
   },
   rattle(X, out) { // the death rattle and the body slumping
     const { t, rnd, P } = X, dur = (0.9 + rnd() * 0.5) * (P.slow || 1);
-    say(X, out, { f0: P.f0 * X.p, dur, contour: [[0.2, 1.08], [1, 0.5]], vowels: ["aa", "uh", "oo"], fry: 0.9, fryHz: 18 + rnd() * 10, rasp: 1.2, a: 0.03, hold: dur * 0.2, rel: dur * 0.75, peak: 0.5, breath: 0.2 });
+    say(X, out, { f0: P.f0 * X.p, dur, contour: [[0.2, 1.08], [1, 0.5]], vowels: ["aa", "uh", "oo"], fry: 0.9, fryHz: 18 + rnd() * 10, rasp: 1.2, lp: 1400, a: 0.03, hold: dur * 0.2, rel: dur * 0.75, peak: 0.55, breath: 0.2, breathHz: 800 });
     slump(X, out, t + dur * 0.7);
     RECIPES.wheeze({ ...X, t: t + dur * 0.95, g: X.g * 0.5 }, out); // the last breaths
   },
@@ -529,7 +531,7 @@ export const RECIPES = {
   },
   smash(X, out) { // breaking through: wood splinters, metal crunches, a wall comes down
     const { c, t, rnd, g, P } = X, mat = X.o.mat || "wood";
-    thud(c, out, t, P.giant ? 48 : 65, 0.8 * g, 0.25, rnd);
+    thud(c, out, t, P.giant ? 48 : 65, 0.6 * g, 0.25, rnd);
     if (mat !== "metal") { // wood
       clicks(c, out, t + 0.01, 16, 0.35, 0.3 * g, rnd, 1200, 4500, 2);
       const cr = osc(c, "sawtooth", 170 + rnd() * 40, t + 0.02, 0.32, biq(c, "bandpass", 850, 6, envG(c, out, t + 0.02, 0.14 * g, 0.02, 0.05, 0.25)));
@@ -537,7 +539,7 @@ export const RECIPES = {
       noise(c, "white", t, 0.16, biq(c, "bandpass", 2200, 1, envG(c, out, t, 0.4 * g, 0.002, 0.01, 0.14)), rnd);
     }
     if (mat === "metal" || mat === "wall") {
-      metal(c, out, t, 300 + rnd() * 60, (mat === "metal" ? 0.22 : 0.1) * g, 0.8, rnd);
+      metal(c, out, t, 300 + rnd() * 60, (mat === "metal" ? 0.15 : 0.08) * g, 0.8, rnd);
       noise(c, "white", t, 0.16, biq(c, "bandpass", 3000, 1.2, envG(c, out, t, 0.3 * g, 0.002, 0.01, 0.15)), rnd);
       clicks(c, out, t + 0.03, 6, 0.4, 0.12 * g, rnd, 3000, 6000, 4);
     }
@@ -604,20 +606,20 @@ export const RECIPES = {
     const { c, t, rnd, g } = X;
     noise(c, "white", t, 0.25, biq(c, "bandpass", 3500, 1, envG(c, out, t, 0.45 * g, 0.03, 0.08, 0.1)), rnd);
     const at = t + 0.18;
-    noise(c, "white", at, 0.03, biq(c, "highpass", 1800, 0.7, envG(c, out, at, 0.7 * g, 0.001, 0, 0.015)), rnd);
-    osc(c, "sine", 170, at, 0.06, envG(c, out, at, 0.5 * g, 0.001, 0, 0.05)).frequency.exponentialRampToValueAtTime(60, at + 0.05);
+    noise(c, "white", at, 0.03, biq(c, "highpass", 1800, 0.7, envG(c, out, at, 0.4 * g, 0.001, 0, 0.015)), rnd);
+    osc(c, "sine", 170, at, 0.06, envG(c, out, at, 0.32 * g, 0.001, 0, 0.05)).frequency.exponentialRampToValueAtTime(60, at + 0.05);
     RECIPES.snarl({ ...X, t: at + 0.03 }, out);
   },
   // Carriers and the worm.
   bloat(X, out) { // a bloated gurgle
     const { c, t, rnd, P, g } = X, dur = 1.2 + rnd() * 0.5;
-    say(X, out, { f0: P.f0 * X.p * 0.95, dur, contour: [[0.5, 1.05], [1, 0.8]], vowels: ["oo", "oh", "uh"], rasp: 0.6, fry: 0.5, fryHz: 7 + rnd() * 5, a: dur * 0.3, hold: dur * 0.3, rel: dur * 0.4, peak: 0.42, breath: 0.08 });
+    say(X, out, { f0: P.f0 * X.p * 0.95, dur, contour: [[0.5, 1.05], [1, 0.8]], vowels: ["oo", "oh", "uh"], rasp: 0.6, fry: 0.5, fryHz: 7 + rnd() * 5, lp: 1000, fw: [1, 0.4, 0.12], a: dur * 0.3, hold: dur * 0.3, rel: dur * 0.4, peak: 0.42, breath: 0.08 });
     bubbles(c, out, t + 0.1, dur, 10 + Math.floor(rnd() * 5), 0.14 * g, rnd, 120, 450);
     noise(c, "brown", t, dur, biq(c, "lowpass", 350, 1, am(c, envG(c, out, t, 0.32 * g, 0.2, dur * 0.4, dur * 0.4), 7, 0.9, t, dur)), rnd);
   },
   burst(X, out) { // a wet pop, a splatter, and the swarm pouring out
     const { c, t, rnd, g } = X;
-    osc(c, "sine", 160, t, 0.25, envG(c, out, t, 0.9 * g, 0.002, 0, 0.2)).frequency.exponentialRampToValueAtTime(35, t + 0.2);
+    osc(c, "sine", 160, t, 0.25, envG(c, out, t, 0.65 * g, 0.002, 0, 0.2)).frequency.exponentialRampToValueAtTime(35, t + 0.2);
     noise(c, "brown", t, 0.15, biq(c, "lowpass", 1200, 0.8, envG(c, out, t, 0.8 * g, 0.001, 0.01, 0.12)), rnd);
     clicks(c, out, t + 0.02, 16, 0.5, 0.25 * g, rnd, 1000, 3000, 1.5); // splatter
     bubbles(c, out, t + 0.1, 0.8, 10, 0.12 * g, rnd);
@@ -676,7 +678,7 @@ export const RECIPES = {
   },
   spores(X, out) { // a Sower: a wet rattling exhale and a hiss of spores
     const { c, t, rnd, P, g } = X, dur = 1 + rnd() * 0.4;
-    say(X, out, { f0: P.f0 * X.p * 0.9, dur, contour: [[1, 0.75]], vowels: ["oh", "uh"], fry: 0.9, fryHz: 26 + rnd() * 8, rasp: 1.1, a: dur * 0.2, hold: dur * 0.3, rel: dur * 0.5, peak: 0.36 });
+    say(X, out, { f0: P.f0 * X.p * 0.9, dur, contour: [[1, 0.75]], vowels: ["oh", "uh"], fry: 0.9, fryHz: 26 + rnd() * 8, rasp: 1.1, lp: 1200, a: dur * 0.2, hold: dur * 0.3, rel: dur * 0.5, peak: 0.36 });
     noise(c, "white", t + 0.2, dur, biq(c, "highpass", 4200, 0.7, envG(c, out, t + 0.2, 0.08 * g, dur * 0.3, dur * 0.3, dur * 0.4)), rnd);
     bubbles(c, out, t, dur, 5, 0.08 * g, rnd);
   },
@@ -812,6 +814,56 @@ export function playZombie(ev, c, out, t, o = {}) {
 export const ZOMBIE_VOICES = Object.fromEntries(Object.entries(EVENT_CUE).map(([ev, cue]) => [cue, {
   dur: EVENT_DUR[ev], routes: true, play(c, out, t, o) { playZombie(ev, c, out, t, o); },
 }]));
+
+// ---------- the zombie bus ----------
+// Every voice and the crowd bed go through it on their way to the effects bus: a gain (ZOMBIE_BUS_GAIN, +4 dB, × the
+// Zombie volume), a soft limiter (a fast compressor, threshold -6 dB, ratio 12) and a soft clip whose ceiling is -1 dBFS,
+// so a horde never clips whatever the sliders say. zombieVolume: the slider (0–1.5, 1 the default) to a gain (squared,
+// like the other sliders).
+export const ZOMBIE_BUS_GAIN = 1.585; // +4 dB over the level they were first made at (with the louder guns)
+export const ZOMBIE_CEIL = 0.891;     // -1 dBFS
+export const ZOMBIE_TRIM = 0.785;         // × after the limiter: undoes the make-up gain browsers add to a compressor (measured)
+export const zombieVolume = (v = 1) => clamp(Number.isFinite(Number(v)) ? Number(v) : 1, 0, 1.5) ** 2;
+const CLIP = new Map();
+function softClip(k) { // linear to 0.7 of the ceiling, then a tanh knee up to it
+  let cv = CLIP.get(k);
+  if (!cv) {
+    cv = new Float32Array(2048);
+    const lin = 0.7 * k;
+    for (let i = 0; i < 2048; i++) {
+      const x = (i / 1023.5 - 1) * 4, a = Math.abs(x); // the shaper's input range is ±1: the gain before it is ÷4
+      cv[i] = Math.sign(x) * (a <= lin ? a : lin + (k - lin) * Math.tanh((a - lin) / (k - lin)));
+    }
+    CLIP.set(k, cv);
+  }
+  return cv;
+}
+// o.limiter false: the gain alone (for measuring what the limiter takes off).
+export function makeZombieBus(c, dest, o = {}) {
+  const input = gainN(c, ZOMBIE_BUS_GAIN);
+  let tail = input;
+  let comp = null;
+  if (o.limiter === false) { input.connect(dest); return { input, comp, setVolume(v, t = c.currentTime) { input.gain.setValueAtTime(ZOMBIE_BUS_GAIN * zombieVolume(v), t); } }; }
+  if (c.createDynamicsCompressor) {
+    comp = c.createDynamicsCompressor();
+    comp.threshold.value = -6; comp.knee.value = 4; comp.ratio.value = 12; comp.attack.value = 0.002; comp.release.value = 0.2;
+    input.connect(comp);
+    tail = gainN(c, ZOMBIE_TRIM); // the compressor's own make-up gain taken back off, so the bus is +4 dB below the limit
+    comp.connect(tail);
+  }
+  if (c.createWaveShaper) {
+    const pre = gainN(c, 0.25), sh = c.createWaveShaper(); // ÷4 in, the curve gives the level back (±4 → ±ceiling)
+    sh.curve = softClip(ZOMBIE_CEIL);
+    tail.connect(pre); pre.connect(sh); sh.connect(dest);
+  } else tail.connect(dest);
+  return {
+    input, comp,
+    setVolume(v, t = c.currentTime, now = false) {
+      const g = ZOMBIE_BUS_GAIN * zombieVolume(v);
+      if (now) input.gain.setValueAtTime(g, t); else input.gain.setTargetAtTime(g, t, 0.08);
+    },
+  };
+}
 
 // ---------- where a voice is heard from ----------
 // INTEGRATION (gun-sfx): this is the one place a zombie voice meets the speakers. At integration replace its body with
@@ -995,7 +1047,7 @@ export function crowdState(b, L) {
 // ---------- the crowd bed ----------
 // Levels of the bed's layers for a crowd (crowdState): a few moans from 3 of the dead, the dense murmur from about 6
 // and full at 30, the shuffling feet; the whole by count (log) and nearness, the low-pass opening as they come close.
-export const CROWD_LEVEL = 0.3;
+export const CROWD_LEVEL = 0.24;
 export function crowdMix(cs) {
   const n = cs ? Math.max(0, Math.floor(cs.count || 0)) : 0;
   if (n < 3) return { count: n, sparse: 0, dense: 0, feet: 0, gain: 0, cutoff: 600 };
@@ -1145,33 +1197,39 @@ export function zombieCrowd(c, out, cs, t = c.currentTime) {
 }
 
 // ---------- the State Map ----------
-export const HORDE_HEAR = 8; // tiles from a base or one of your teams: a horde you can see this close is heard
+export const HORDE_HEAR = 16; // tiles from a base or one of your teams: a horde you can see this close is heard (fading out)
 export const HIVE_HEAR = 5;  // tiles: a known hive this close is heard (its drone and heartbeat)
 const nightOf = (hour) => {
   const h = (((Number(hour) || 0) % 24) + 24) % 24;
   return h >= 21 || h < 5 ? 1 : h >= 19 ? (h - 19) / 2 : h < 7 ? 1 - (h - 5) / 2 : 0;
 };
-// Levels (0–1) of the map's zombie ambience: horde (moaning on the wind, by size and nearness to your bases and teams,
-// stronger at night), hive (a known hive's drone near you; a Broodmother ready: stronger), and near (tiles), size,
-// night, close (0–1) for the filter. Pure; reads only what you can see or know.
+// Levels (0–1) of the map's zombie ambience: horde (moaning on the wind: a big horde roars, a small one mutters; full
+// within 2 tiles of a base or one of your teams, fading smoothly to nothing at HORDE_HEAR; more present at night; several
+// hordes add up softly, 1 - the product of what each leaves quiet, so it never passes 1), hive (a known hive's drone
+// near you; a Broodmother ready: stronger), and near (tiles), size, big (0–1: the loudest horde's size), night,
+// close (0–1) for the filter. Pure; reads only what you can see or know.
+export const hordeSizeLevel = (size) => clamp01(0.2 + 0.8 * Math.log10(1 + Math.max(0, size || 0) / 10) / Math.log10(41));
+export const hordeDistLevel = (d) => (d <= 2 ? 1 : d >= HORDE_HEAR ? 0 : Math.pow(1 - (d - 2) / (HORDE_HEAR - 2), 1.5));
 export function hordeAmbience(state) {
-  const none = { horde: 0, hive: 0, near: 99, size: 0, night: 0, close: 0 };
+  const none = { horde: 0, hive: 0, near: 99, size: 0, big: 0, night: 0, close: 0, count: 0 };
   if (!state || !state.grid || !state.live) return none;
   const g = state.grid;
   const spots = (state.bases || []).map((b) => b.tile);
   for (const p of state.parties || []) if (p.owner === "player" && p.path && p.path.length && p.path[p.idx] != null) spots.push(p.path[p.idx]);
   if (!spots.length) return none;
   const dist = (tile) => spots.reduce((m, s) => Math.min(m, g.distance(tile, s)), 99);
-  let best = 0, sum = 0, near = 99, size = 0;
+  const night = r2(nightOf(state.hour));
+  let quiet = 1, best = 0, big = 0, near = 99, size = 0, count = 0;
   for (const h of state.hordes || []) {
     if (!h || !state.live.has(h.tile)) continue;
     const d = dist(h.tile);
-    if (d > HORDE_HEAR) continue;
+    if (d >= HORDE_HEAR) continue;
     const sz = Math.max(0, h.size || 0);
-    const v = clamp01(0.3 + 0.7 * Math.log10(1 + sz / 10) / Math.log10(41)) * (d <= 1 ? 1 : Math.pow(1 - (d - 1) / HORDE_HEAR, 1.6));
-    sum += v; best = Math.max(best, v); near = Math.min(near, d); size += sz;
+    const v = clamp01(hordeSizeLevel(sz) * hordeDistLevel(d) * (0.8 + 0.3 * night));
+    quiet *= 1 - v;
+    if (v > best) { best = v; big = hordeSizeLevel(sz); }
+    near = Math.min(near, d); size += sz; count++;
   }
-  const night = r2(nightOf(state.hour));
   let hive = 0;
   for (const hv of state.hives || []) {
     const known = state.live.has(hv.tile) ? !!(state.tiles[hv.tile] || {}).hive : !!(state.knowledge && state.knowledge[hv.tile] && state.knowledge[hv.tile].hive);
@@ -1180,16 +1238,25 @@ export function hordeAmbience(state) {
     if (d > HIVE_HEAR) continue;
     hive = Math.max(hive, (1 - d / (HIVE_HEAR + 1)) * (hv.bossReady ? 1 : 0.75));
   }
-  return { horde: r2(clamp01((best + 0.3 * (sum - best)) * (0.75 + 0.45 * night))), hive: r2(hive), near, size, night, close: near <= HORDE_HEAR ? r2(1 - near / (HORDE_HEAR + 1)) : 0 };
+  return { horde: r2(1 - quiet), hive: r2(hive), near, size, big: r2(big), night, close: near < HORDE_HEAR ? r2(hordeDistLevel(near)) : 0, count };
 }
-// How loud (under the ambience slider) at level 1: kept low, the map must not become a wall of moaning.
-export const MAP_LEVELS = { horde: 0.22, hive: 0.1, beat: 0.28 };
+// How loud (under the ambience slider, and the horde under its own Map horde volume) at level 1. The horde is meant to
+// be heard plainly over the wind when it is near; the hive stays a low presence.
+export const MAP_LEVELS = { horde: 1.75, hive: 0.1, beat: 0.28 };
+export const MAP_HORDE_OLD = 0.22; // the level before the hordes were made louder (for the comparison in the report)
 // The map layer: the dense murmur slowed and band-passed far off, gusting on the wind and panned by it, swelling now
-// and then; the hive's drone (two low sines beating, brown noise) and its heartbeat. About 16 nodes while heard; let go
-// after 5 s of silence.
-export function makeMapLayer(c, out, t = c.currentTime) {
+// and then, through a soft limiter (several hordes never clip); the hive's drone (two low sines beating, brown noise)
+// and its heartbeat. About 24 nodes while heard; let go after 5 s of silence.
+export const MAP_TRIM = 0.617; // × after the map's limiter: undoes the browser's make-up gain (measured)
+export function makeMapLayer(c, out, t = c.currentTime, o = {}) {
   const B = crowdBuffers(c);
-  const level = gainN(c, 0, out);
+  let lim = out;
+  if (c.createDynamicsCompressor && o.limiter !== false) {
+    lim = c.createDynamicsCompressor();
+    lim.threshold.value = -10; lim.knee.value = 6; lim.ratio.value = 10; lim.attack.value = 0.01; lim.release.value = 0.4;
+    lim.connect(gainN(c, MAP_TRIM, out));
+  }
+  const level = gainN(c, 0, lim);
   const swell = gainN(c, 0.15, level);
   const gust = gainN(c, 0.75, swell);
   lfo(c, 0.11, 0.3, gust.gain, t, 1e5);
@@ -1201,21 +1268,23 @@ export function makeMapLayer(c, out, t = c.currentTime) {
   s.buffer = B.dense; s.loop = true; s.playbackRate.value = 0.82;
   s.connect(bp); s.start(t, 1.3);
   const hiveG = gainN(c, 0, out);
-  const dlp = biq(c, "lowpass", 140, 0.7, hiveG);
+  const breathe = gainN(c, 0.7, hiveG); // the drone breathes (0.4–1 of its level)
+  const dlp = biq(c, "lowpass", 140, 0.7, breathe);
   const o1 = osc(c, "sine", 41, t, 1e5, gainN(c, 0.5, dlp)), o2 = osc(c, "sine", 43.7, t, 1e5, gainN(c, 0.4, dlp));
   const nz = c.createBufferSource();
   nz.buffer = noiseBufs(c).brown; nz.loop = true; nz.connect(gainN(c, 0.6, dlp)); nz.start(t);
-  lfo(c, 0.17, 0.3, hiveG.gain, t, 1e5);
+  lfo(c, 0.17, 0.3, breathe.gain, t, 1e5);
   const sources = [s, o1, o2, nz];
   const rnd = mulberry(0xbeef);
   return {
     nodes: 22, idleSince: null, nextSwell: t + 1 + rnd() * 2, swellEnd: 0, nextBeat: t + 0.5, lv: null, beats: 0, swells: 0,
-    update(lv, now) {
+    update(lv, now, vol = 1) {
       this.lv = lv;
-      level.gain.setTargetAtTime(lv.horde * MAP_LEVELS.horde, now, 1.5);
-      lp.frequency.setTargetAtTime(350 + 900 * lv.close + 500 * lv.night, now, 2);
+      this.level = lv.horde * MAP_LEVELS.horde * vol;
+      level.gain.setTargetAtTime(this.level, now, 1.5);
+      lp.frequency.setTargetAtTime(350 + 800 * lv.close + 500 * lv.night + 600 * (lv.big || 0), now, 2);
       hiveG.gain.setTargetAtTime(lv.hive * MAP_LEVELS.hive, now, 2);
-      const base = 0.12 + 0.3 * lv.night * lv.horde;
+      const base = 0.35 + 0.3 * lv.night * lv.horde; // between the swells it never quite goes away
       if (lv.horde > 0.02 && now >= this.nextSwell) { // a gust brings the moaning in, then it falls back
         const att = 1.5 + rnd() * 1.5, hold = 1 + rnd() * 2, rel = 3 + rnd() * 2;
         swell.gain.setTargetAtTime(1, now, att / 3);
@@ -1244,11 +1313,12 @@ function beat(c, out, t, f, peak, rnd) {
   noise(c, "brown", t, 0.2, biq(c, "lowpass", 160, 0.8, envG(c, out, t, peak * 0.5, 0.01, 0, 0.16)), rnd);
 }
 const MAPS = new WeakMap();
-// ui/audio.js every ambience tick on the map: lv from hordeAmbience (null: nothing, e.g. in a battle or on the title).
-export function zombieMapAmbience(c, out, lv, t = c.currentTime) {
-  let L = lv || { horde: 0, hive: 0, near: 99, size: 0, night: 0, close: 0 };
+// ui/audio.js every ambience tick on the map: lv from hordeAmbience (null: nothing, e.g. in a battle or on the title);
+// vol: the Map horde volume (× the horde's level; 1 at the default).
+export function zombieMapAmbience(c, out, lv, t = c.currentTime, vol = 1) {
+  let L = lv || { horde: 0, hive: 0, near: 99, size: 0, big: 0, night: 0, close: 0 };
   const d = DEMO.map;
-  if (d && t < d.until) L = { horde: 0.9, hive: 0.8, near: 2, size: 150, night: 1, close: 0.8 };
+  if (d && t < d.until) L = { horde: 0.9, hive: d.hive ? 0.8 : 0, near: 2, size: 150, big: 0.85, night: 1, close: 0.9 };
   else if (d) DEMO.map = null;
   let m = MAPS.get(c);
   if (!m) {
@@ -1256,7 +1326,7 @@ export function zombieMapAmbience(c, out, lv, t = c.currentTime) {
     m = makeMapLayer(c, out, t);
     MAPS.set(c, m);
   }
-  m.update(L, t);
+  m.update(L, t, vol);
   if (m.idleSince != null && t - m.idleSince > 5) { m.stop(t); MAPS.delete(c); return null; }
   return m;
 }
@@ -1267,7 +1337,7 @@ export function hordeChorus(c, out, t, o = {}) {
   for (let i = 0; i < 4; i++) {
     const at2 = t + 0.15 + i * 0.28 + rnd() * 0.15, f0 = 62 + rnd() * 40, d = 1.3 + rnd() * 0.6;
     vocal(c, lp, at2, { f0, dur: d, contour: [[0.3, 1.08], [1, 0.75]], vowels: [VW.uh, VW.aa, VW.oh], form: [0.9 + rnd() * 0.2, 0.9 + rnd() * 0.2, 1], shift: 0.95,
-      rasp: 0.6, drive: 2, jitter: 0.04, fry: 0.3, a: d * 0.35, hold: d * 0.2, rel: d * 0.45, peak: 0.16 * (Number.isFinite(o.gain) ? o.gain : 1), breath: 0.1 }, rnd);
+      rasp: 0.6, drive: 2, jitter: 0.04, fry: 0.3, a: d * 0.35, hold: d * 0.2, rel: d * 0.45, peak: 0.11 * (Number.isFinite(o.gain) ? o.gain : 1), breath: 0.1, lp: 900 }, rnd);
   }
 }
 
@@ -1299,12 +1369,14 @@ export function zombieTestHtml(esc = (s) => s) {
   return `<div class="setrow"><label data-tip="Hear one of the dead. Each play is a different zombie: every one has a voice of its own.">Zombie sounds <select data-action="zsnd-pick">${opts}</select></label>
       <button data-action="zsnd-test" data-tip="Play the zombie sound picked (a new voice each time)">▶ Play</button></div>`;
 }
+// A few seconds of a near horde on the map (the Map horde volume slider, as it is dragged).
+export const demoMapHorde = (t, secs = 5) => { DEMO.map = { from: t, until: t + secs, hive: false }; };
 export const zombiePick = (v) => { if (v != null && ZOMBIE_TESTS.some((g) => g.items.some(([x]) => x === v))) zPick = v; return zPick; };
 // Plays the picked test: play(name, opts) is ui/audio.js sfx; t: the context's time (for the demos).
 export function playZombieTest(value, play, t = 0) {
   const v = zombiePick(value);
   if (v === "demo:crowd") { DEMO.crowd = { from: t, until: t + 12 }; return true; }
-  if (v === "demo:map") { DEMO.map = { from: t, until: t + 12 }; return true; }
+  if (v === "demo:map") { DEMO.map = { from: t, until: t + 12, hive: true }; return true; }
   const [kind, ev, mat] = v.split(":");
   return play(EVENT_CUE[ev], { kind, seed: (Math.random() * 4294967296) >>> 0, pitch: 1, human: true, mat: mat || "wood", steps: 4, hidden: kind === "crawler" && ev === "idle" });
 }

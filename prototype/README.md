@@ -490,6 +490,12 @@ node tools/audiotest.js
 Sound (`src/ui/audio.js` plays, `src/ui/soundcues.js` decides what; or `node tools/audiotest.js`, about 1 s, no speakers): the Sound options and their store, card urgency, the gun classes, the battle cues (a 200-shot frame cut to a handful, your own shot kept, nothing replayed after a load), the map cues (cards, alerts, the horde sting, the alarm), the ambience mix by weather and hour, the throttle, and every sound built on a stub AudioContext with no NaN. In the browser, `(await import('/src/ui/audio.js')).audioDebug` renders one sound (`renderOffline(name)`) or a stretch of play (`offline(secs)` … `finish()`) without speakers or a click.
 
 ```bash
+node tools/zombiesfxtest.js
+```
+
+The dead's voices (`src/ui/zombiesfx.js`; or `node tools/zombiesfxtest.js`, about 1 s, no speakers): every kind of the dead has a voice set (formant synthesis: a torn glottal pulse, rasp, fry, throat distortion, sliding formants, gurgles), each unit a stable voice seed from its id; a scripted battle hears the aggro, lunge, bite, hurt, death, smash, spit and sizzle, the screamer's and the Nightmare's shriek, a crawler's strike, a Carrier bursting, a Flinger, a Sleeper; the crowd bed follows the count and nearness; the throttle and the volley cap hold for a horde; the map's horde moaning by distance, size and night (several hordes adding up softly), the hive's heartbeat, the Zombies and Map hordes sliders; every voice built on a stub context; a battle plays out the same with and without the sound layer. To listen: `..\..\..\..\desktop\node_modules\.bin\electron.cmd tools/zombiesfxpreview.cjs` (from `prototype/`, any Electron will do) renders every voice, old and new, and the mixes to WAV in `sfx-preview/` beside `prototype/` (not committed) with a measurement table (peak, RMS, loudness range, spectral centroid, flatness, periodicity, how alike the seeds are, what the zombie bus's limiter took off).
+
+```bash
 node tools/depletetest.js 42 365 1,2,3,4,5
 ```
 

@@ -13,3 +13,6 @@ Desktop.ini
 # Local, per-machine Claude Code settings
 .claude/settings.local.json
 .claude/worktrees/
+
+# Zombie sound previews (prototype/tools/zombiesfxpreview.cjs)
+sfx-preview/
