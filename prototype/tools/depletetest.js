@@ -416,8 +416,10 @@ for (const style of ["balanced", "cautious"]) {
     else if (d <= R + EMPTY_RING && t.owner == null) t.loot = Math.max(t.loot, siteFull(t));
     if (d <= R + EMPTY_RING) st.knowledge[t.id] = snapshot(st, t.id);
   }
+  // The first trip waits on the governor's other errands (land claims, caches, the scouts at the walls): within 16 days
+  // (with the balance batch and the new-run crew in, Balanced's went on day 13; it was within 12).
   let dest = null, h0 = 0;
-  while (!dest && h0++ < 24 * 12) {
+  while (!dest && h0++ < 24 * 16) {
     tickHour(st);
     const p = st.parties.find((x) => x.owner === "player" && x.ap && x.ap.mission === "scavenge");
     if (p) dest = p.ap.tile;

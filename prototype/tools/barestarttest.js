@@ -13,6 +13,8 @@ import { setAutopilot } from "../src/sim/autopilot.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { nativeWalls, CONQUEST } from "../src/sim/conquest.js";
 import { GROUP_WORKS, groupsBuild, groupWorksDaily, worksAt, nextWork, groupWalls, groupBaseDefence, wallGoal, provisioned, worksText } from "../src/sim/groupworks.js";
+// Days after a group fled its base (groupflight.js) during which its new base is not judged as a settled one.
+const BARE_FLED_DAYS = 20;
 
 const seeds = process.argv.length > 2 ? process.argv.slice(2).map(Number) : [1, 2, 3];
 let fails = 0, passes = 0;
@@ -119,7 +121,10 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
     check(s7.types.some((t) => ["well", "rain_catcher", "boiler", "water_barrel", "cistern"].includes(t)), `seed ${seed}: water by day 7`);
     check(s30.n > s7.n && (snaps[14] || s7).n >= s7.n, `seed ${seed}: still building after day 7 (${s7.n} → ${(snaps[14] || {}).n} → ${s30.n})`);
     check(!st.gameOver && alive(st).length >= 5, `seed ${seed}: the hub holds (${alive(st).length} alive)`);
-    const groups = st.factions.filter((f) => f.alive && groupsBuild(st, f));
+    // A group that fled the dead lately (groupflight.js: its base left standing, a new one to build) starts over
+    // there: not counted (seed 1: a commune of 18 fled a horde on day 30 and came to a bare site with 6).
+    const settled = (f) => f.fledDay == null || day(st) - f.fledDay > BARE_FLED_DAYS;
+    const groups = st.factions.filter((f) => f.alive && groupsBuild(st, f) && settled(f));
     check(groups.every((f) => built(f) >= 3), `seed ${seed}: every group has put something up by day 30 (${groups.map((f) => worksText(st, f)).join(" | ")})`);
     check(groups.every((f) => (f.works[f.bases[0]] || {}).water >= 1), `seed ${seed}: water at every group's main base`);
     check(groups.filter((f) => groupWalls(st, f, f.bases[0]) > 0).length >= groups.length / 2, `seed ${seed}: most groups have walls by day 30 (${groups.map((f) => `${groupWalls(st, f, f.bases[0])}/${wallGoal(f, f.bases[0])}`).join(" ")})`);
