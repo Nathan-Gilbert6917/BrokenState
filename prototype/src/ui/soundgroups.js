@@ -83,7 +83,7 @@ assignGroup(["bark", "hDown", "hCry", "hDeath", "hShout", "hGasp", "hHurt", "hTa
   "hPant", "hWheeze", "hCough", "hMuffled"], "people.voices"); // ui/humansfx.js HUMAN_CUES
 assignGroup(["step", "hearStepGrass", "hearStepRoad", "hearStepWood", "hearStepGravel", "hearStepMud", "hearStepSnow", "hearStepLaden", "hearStepSneak",
   "hearStepWalker", "hearStepRunner", "hearStepBrute", "hearStepCrawler", "hearStepArmoured"], "people.steps");
-assignGroup(["rummage", "lockRattle", "unlock", "jingle", "glug", "bandage", "door", "drive", "engineStart", "engineStop"], "people.gear");
+assignGroup(["rummage", "lockRattle", "unlock", "jingle", "glug", "bandage", "tourniquet", "door", "drive", "engineStart", "engineStop"], "people.gear");
 assignGroup(["downed", "death"], "people.downed");
 assignGroup(["wind", "rain", "rainLow", "drone", "thunder"], "world.weather");
 assignGroup(["bird", "cricket"], "world.wildlife");
