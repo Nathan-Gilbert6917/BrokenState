@@ -86,7 +86,9 @@ function run(seed, style) {
       // Stuck: halted with nothing that could move it on.
       for (const p of state.parties) {
         if (p.owner !== "player" || p.phase !== "engaged") { engagedSince.delete(p.id); continue; }
-        const pending = state.cards.some((c) => c.partyId === p.id) || (state.engagement && state.engagement.partyId === p.id) || (state.trade && state.trade.partyId === p.id);
+        // A hive crawl in progress (hivecrawl.js p.hiveCrawl) is engaged for days by design: stuck only once its own log stops for a day.
+        const crawl = p.hiveCrawl && p.hiveCrawl.log && p.hiveCrawl.log.length && state.hour - p.hiveCrawl.log[p.hiveCrawl.log.length - 1].hour <= 24;
+        const pending = crawl || state.cards.some((c) => c.partyId === p.id) || (state.engagement && state.engagement.partyId === p.id) || (state.trade && state.trade.partyId === p.id);
         if (pending) { engagedSince.delete(p.id); continue; }
         const since = engagedSince.get(p.id) ?? state.hour;
         engagedSince.set(p.id, since);
