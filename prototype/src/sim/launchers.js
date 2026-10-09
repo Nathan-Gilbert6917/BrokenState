@@ -718,7 +718,8 @@ export function groundBlast(b, x, y, r, heavy = false) {
   let n = 0;
   const salt0 = [b.dseed ?? 0, b.turn || 0, x, y];
   const floor = b.floor || 0;
-  for (const box of (b.raid && b.raid.containers) || []) {
+  const field = !b.raid && b.fieldLoot ? b.fieldLoot.containers : []; // ground.js: a field battle's piles on the ground and bodies searched there
+  for (const box of (b.raid ? b.raid.containers : field)) {
     if ((box.f || 0) !== floor || box.burnt) continue;
     let d = Infinity, on = false, at = [box.x, box.y];
     for (const [cx, cy] of boxCells(box)) { const dd = dist(cx, cy, x, y); if (dd < d) { d = dd; at = [cx, cy]; } if (cx === x && cy === y) on = true; }
@@ -731,6 +732,7 @@ export function groundBlast(b, x, y, r, heavy = false) {
   }
   for (const t of b.units) {
     if (b.raid || t.kind !== "human" || !t.dead || t.side === "player" || t.burnt || t.off || dist(t.x, t.y, x, y) > r + 1e-6) continue; // a raid's dead are its body containers (above)
+    if (field.some((c) => c.kind === "body" && c.uid === t.id)) continue; // searched in the battle: its container (above)
     t.groundWear = both(t.groundWear, groundShare(dist(t.x, t.y, x, y), r, t.x === x && t.y === y, ...salt0, "dead", t.id));
     const carried = t.throwables || {};
     for (const k of BOMBS) if (carried[k] > 0 && hash01("deadchain", ...salt0, t.id, k) < GROUND.CHAIN) { carried[k] -= 1; (b.cookQueue || (b.cookQueue = [])).push({ x: t.x, y: t.y, key: k, where: `on ${t.name}'s body` }); }

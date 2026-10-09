@@ -258,9 +258,11 @@ export function spriteArmorKey(s) {
 }
 
 // Every item a person has on them (worn, held, pockets; a pack counts as one item with its contents inside).
+// A pile body (ground.js groundBodies: what lay on the ground or was left on a body searched in the battle) holds its
+// things loose (s.loose, holes where something was taken): they count too.
 export function allItems(s) {
   ensureInv(s);
-  return [...EQUIP_SLOTS.map((k) => s.gear[k]), ...s.pockets].filter(Boolean);
+  return [...EQUIP_SLOTS.map((k) => s.gear[k]), ...s.pockets, ...(s.loose || [])].filter(Boolean);
 }
 // Everything a person carries, one item at a time: worn and held (a rig and a pack themselves too), pockets, the rig's
 // pouches, the pack's slots, a carrier's plates. The one iterator for "has X on them" (hunting, stealth, kit, combat's
@@ -294,6 +296,7 @@ export function stripAll(s) {
   const items = allItems(s);
   for (const k of EQUIP_SLOTS) s.gear[k] = null;
   s.pockets = s.pockets.map(() => null);
+  if (s.loose) s.loose = [];
   return items;
 }
 
@@ -416,7 +419,11 @@ function ref(state, loc) {
   const h = holderAt(state, loc);
   if (!h) return null;
   let arr, key, owner = null, pouch = null;
-  if (loc.slot === "pocket" || loc.slot === "pack" || (loc.slot === "rig" && loc.i != null)) {
+  if (loc.slot === "loose") { // a pile body's loose things (ground.js): "body:<i>:loose:<j>"
+    if (!Array.isArray(h.loose) || loc.i == null || loc.i < 0 || loc.i >= h.loose.length) return null;
+    arr = h.loose;
+    key = loc.i;
+  } else if (loc.slot === "pocket" || loc.slot === "pack" || (loc.slot === "rig" && loc.i != null)) {
     arr = loc.slot === "pocket" ? h.pockets : loc.slot === "pack" ? packOf(h) : rigPouches(h);
     owner = loc.slot === "pack" ? h.gear.backpack : loc.slot === "rig" ? rigOf(h) : null;
     key = loc.i;
@@ -911,7 +918,7 @@ export function takeAllBody(state, bi) {
   }
   const h = bodyHolder(state, body);
   if (!h) return out;
-  const locs = [...EQUIP_SLOTS.map((k) => `body:${bi}:${k}`), ...h.pockets.map((_, i) => `body:${bi}:pocket:${i}`)]
+  const locs = [...EQUIP_SLOTS.map((k) => `body:${bi}:${k}`), ...h.pockets.map((_, i) => `body:${bi}:pocket:${i}`), ...(h.loose || []).map((_, i) => `body:${bi}:loose:${i}`)]
     .filter((l) => itemAt(state, l))
     .sort((x, y) => worth(itemAt(state, y)) - worth(itemAt(state, x)));
   const st = storageFor(state, battlePlace(state.combat));

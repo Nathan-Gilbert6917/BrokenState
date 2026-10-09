@@ -98,6 +98,7 @@ import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear,
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
+import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js"; // bodies searched where they fell, things on the ground
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -3219,6 +3220,7 @@ export function combatAct(state, act) {
       searchBox(state, b, u, box, !!act.open);
       break;
     }
+    case "searchBody": case "pickUp": case "drop": { const why = groundAct(state, b, u, act); if (why) return why; break; } // ground.js
     case "stash": { // raidloot.js: everything carried loose into the vehicle (free; the window does it item by item)
       if (!b.raid || !atVehicle(b, u)) return "Move to the vehicle first.";
       const r = stashAll(state, u.id);
@@ -3664,6 +3666,7 @@ function aiUnit(b, u) {
   if (u.suppressed && u.kind === "human" && !u.post) return aiPinned(b, u); // pinned by suppressing fire: to cover
   if (u.post && holdPost(b, u)) return; // deploy.js: a defender posted at the gate or on a tower stays there
   if (u.ztype && zombieTurn(b, u)) return; // zombietypes.js: a screamer shrieks or hangs back, a brute smashes through
+  if (!canFire(b, u) && aiGrabGun(b, u) && u.ap < 1) return; // ground.js: a gun lying right there, taken up
   if (!canFire(b, u)) return aiMelee(b, u);
   for (let step = 0; step < 3 && u.ap > 0 && active(u); step++) {
     const foes = foesOf(b, u);
@@ -4416,6 +4419,7 @@ function endBattle(state, b, outcome) {
   }
   if (b.retreatOrder) lines.unshift(...b.retreatOrder.lines);
   wearFielded(state, b, true);
+  groundEnd(state, b, outcome); // ground.js: what your people carry loose comes home; a body searched in the battle keeps what is left on it
   // carriers.js: the risen still walking take their things into the walking loot; bodies in the car come home (the
   // team keeps its car unless it was beaten); the burnt leave nothing; the swarm's bites leave the worm in the living.
   endBodies(state, b, outcome, outcome !== "defeat");
@@ -4431,18 +4435,21 @@ function endBattle(state, b, outcome) {
   // result.loot fills up as things are taken (the loot screen, "Take all", or straight away when headless).
   const loot = { supplies: {}, gear: [] };
   b.bodies = [];
+  const piles = groundLeftovers(state, b, outcome); // ground.js: what lies on the ground or was left on a body searched in the battle (a win: to loot; else left there)
+  fieldFinds(b, loot);
   if (outcome === "victory") {
     // carriers.js: a body that got up is one body, the risen one's (with the person's kit); one of yours who got up is
     // their own body as below; a worm swarm leaves none.
     // A burnt body or one laid in the car is no body here (carriers.js); one of the walking dead put down has the
     // person's things on it (walkingBody).
     for (const e of enemies) {
-      if (!e.dead || e.roseAs != null || e.ztype === "swarm" || e.ztype === "sleeper" || e.burnt || e.inVehicle) continue;
+      if (!e.dead || e.roseAs != null || e.ztype === "swarm" || e.ztype === "sleeper" || e.burnt || e.inVehicle || searchedInBattle(b, e)) continue; // searched in the battle: its leftovers are in piles
       if (e.walking) { b.bodies.push(walkingBody(state, b, e)); continue; }
       if (e.turned && e.turned.sid != null) continue;
       b.bodies.push(e.turned ? turnedBody(rng, e) : launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || (e.kind === "zombie" ? null : KITS.raiders)))); // launchers.js: their launcher and rounds; a blast's wear (section 24)
     }
     for (const e of captives) { const body = launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || KITS.raiders)); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
+    b.bodies.push(...piles);
     b.bodies.push(...blastPiles(b, nlDropPiles(state, b))); // nonlethal.js: the weapons the surrendered threw down (launchers.js: worn by a blast that reached them)
     for (const u of b.units) {
       const s = u.side === "player" && deadIds.includes(u.sid) ? survivorById(state, u.sid) : null;
@@ -5338,7 +5345,7 @@ function endRaid(state, b) {
     third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)
     raid: {
       extractedIds, carriedIds, vehicleKept, hadVehicle, heat: Math.round(R.heat),
-      searched: R.containers.filter((c) => c.searched && c.kind !== "body").length, total: R.containers.filter((c) => c.kind !== "body").length,
+      searched: R.containers.filter((c) => c.searched && c.kind !== "body" && c.kind !== "ground").length, total: R.containers.filter((c) => c.kind !== "body" && c.kind !== "ground").length, // ground.js piles are not places to search
       hours: Math.max(1, Math.ceil(b.turn / 6)),
       alerted: original.some((u) => u.kind === "human" && (u.aware || u.dead)),
     },
