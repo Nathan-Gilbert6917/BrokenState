@@ -5,6 +5,7 @@
 //   WEATHER_SOUNDS            every weather sound by name: { label, bed?, trim } (a mixer maps them to "weather")
 //   weatherFrame(E, plan, t)  sets the beds and plays the one-shots due
 //   ambLightning(near)        a flash drawn somewhere (the title's storm): its thunder follows after the light
+//   weatherCall(E, name, t)  one weather one-shot now (the mixer's ▶, previews)
 //   onLightning(fn)           fn({ at, near, km }) when a strike is played (for a flash on the map, should one come)
 import { noiseSource, loopSource, biquad, setBed, setDull, bakeBuffer, playShot, busy, clamp, expo, BED_SR,
   fmNote, noiseBurst, modes, bubble, filterIn, verb, echoes, norm, seamLoop, buf1 } from "./ambkit.js";
@@ -136,16 +137,21 @@ export function weatherFrame(E, P, t) {
     if (ok) { M.acc[name] = 0; M.u[name] = expo(E.rnd); }
   }
 }
+// One weather sound now, past the rates (the mixer's ▶, previews): false while it bakes.
+export function weatherCall(E, name, t, P = { fog: false }) {
+  if (!RECIPES[name]) return false;
+  return name.startsWith("thunder") ? thunder(E, name, t, name === "thunderNear" ? 0.85 : 0.45, true) : playWeather(E, name, t, P);
+}
 const GUSTY = { rattle: 1, creak: 1, shutter: 1, leaves: 1, branch: 1 };
 
 // A strike: the flash now (for anyone drawing one), the thunder after the light by its distance (about 3 s a km,
 // shortened so a near one does not lag), sized by how near.
-function thunder(E, name, t, near) {
+function thunder(E, name, t, near, now = false) {
   const v = Math.floor(E.rnd() * VARIANTS);
   const buf = bakeBuffer(E, `${name}:${v}`, RECIPES[name], SOUND_SR[name]);
   if (!buf) return false;
   const km = name === "thunderNear" ? 0.4 + (1 - near) * 1.2 : name === "thunderFar" ? 2.5 + (1 - near) * 5 : 9 + E.rnd() * 8;
-  const delay = Math.min(name === "thunderNear" ? 2.5 : name === "thunderFar" ? 6 : 9, km * 0.9);
+  const delay = now ? 0 : Math.min(name === "thunderNear" ? 2.5 : name === "thunderFar" ? 6 : 9, km * 0.9);
   for (const fn of LISTENERS) try { fn({ at: t, near, km }); } catch { /* ignore */ }
   const pan = (E.rnd() - 0.5) * (name === "thunderNear" ? 0.6 : 1.3);
   playShot(E, "weather", buf, t + delay, { gain: WEATHER_SOUNDS[name].trim * (0.75 + 0.35 * near), pan, rate: 0.92 + E.rnd() * 0.16 });

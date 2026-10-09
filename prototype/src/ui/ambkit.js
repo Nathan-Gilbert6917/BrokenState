@@ -1,7 +1,8 @@
 // The ambience's engine room (ui/ambweather.js, ui/ambwild.js): two buses, lazily built continuous beds, baked
 // one-shot buffers and their playback, a node count. All UI: nothing here reads or changes the game.
 //
-//   ambEngine(c, dest)          the engine on context c (made once per context, into dest: the ambience bus)
+//   ambEngine(c, dest)          the engine on context c (made once per context, into dest: the ambience bus, or
+//                                { weather, wildlife }: the mixer's group buses, ui/soundgroups.js groupBus)
 //   E.bus.weather / .wildlife    { in (gain: the group's level, for a mixer), lp (dulling: snow cover, fog, walls) }
 //   bakeBuffer(E, key, recipe)  a baked AudioBuffer, or null while it waits for an idle moment (E.sync: at once)
 //   setBed(E, name, def, level, t, tau)   a continuous bed: built when it is first heard, let go after BED_IDLE s of
@@ -25,13 +26,14 @@ export const nyquist = (c) => Math.min(20000, c.sampleRate * 0.45);
 export function ambEngine(c, dest) {
   let E = ENGINES.get(c);
   if (E) return E;
+  const out = (name) => (dest && dest[name] && typeof dest[name].connect === "function" ? dest[name] : dest);
   const bus = (name) => {
     const lp = c.createBiquadFilter();
     lp.type = "lowpass"; lp.frequency.value = nyquist(c); lp.Q.value = 0.5;
     const g = c.createGain();
     g.gain.value = 1;
     g.connect(lp);
-    lp.connect(dest);
+    lp.connect(out(name));
     return { name, in: g, lp, open: true };
   };
   E = {

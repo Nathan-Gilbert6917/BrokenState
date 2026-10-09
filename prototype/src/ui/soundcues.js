@@ -15,7 +15,8 @@ import { partyTile } from "../sim/parties.js";
 import { meleeCue } from "./sfx-melee.js"; // a blow by weapon class, armour and kill (ui/sfx-melee.js)
 import { shotPlan, handCues, launched, isIndoor, OWN_VOICE } from "./gunsfx.js"; // the gun voices, the handling seen between frames
 import { THROW_BLAST, THROW_HAND, THROW_CLATTER, THROW_FLIGHT, FUSE, BIG, flight, launchBlast, mergeBlasts, glassNear } from "./blastsfx.js"; // blasts and grenades
-import { zombieMemory, zombieFxCue, zombieUnitCues, zombieIdleCue, listenerOf, zListener, crowdState, Z_PRIORITY } from "./zombiesfx.js"; // the dead's voices
+import { zombieMemory, zombieFxCue, zombieUnitCues, zombieIdleCue, listenerOf, zListener, crowdState, Z_PRIORITY, zPlace } from "./zombiesfx.js"; // the dead's voices
+import { humanCues, H_PRIORITY } from "./humansfx.js"; // the people's voices
 import { frameListener } from "./battlesfx.js"; // where the battle is heard from (gun-sfx's listener: the selected unit, the view, the fog)
 
 export const HORDE_NEAR_BASE = 6; // tiles: the same distance as the horde alert (ui/alerts.js HORDE_ALERT_TILES)
@@ -192,6 +193,7 @@ export function battleCues(b, mem, now = 0, state = null) {
   zombieUnitCues(b, mem.zm, L, out);
   const idle = zombieIdleCue(b, mem, L, now, () => rand(mem));
   if (idle) out.push(idle);
+  humanCues(b, mem, L, now, state, fresh, out, zPlace); // the people: hurt, down, dying, effort, panting, coughing… (ui/humansfx.js)
   // The selected unit deafened by a bang (sim/hearing.js): everything muffled, a ring as it starts.
   const lu = selId != null ? b.units.find((u) => u.id === selId && u.side === "player") : null;
   const deaf = !!(lu && lu.deaf > 0);
@@ -234,7 +236,7 @@ export const battleCrowd = (b) => crowdState(b, listenerOf(b, typeof LISTEN.sel 
 
 // One frame's sounds, cut to MAX_BATTLE_SOUNDS (the loudest kinds first, your own shots before the enemy's) and
 // spread a little in time, so a volley sounds like a volley rather than one huge bang.
-const PRIORITY = { alarm: 0, battle: 0, downed: 1, death: 1, blast: 2, fire: 2, rocket: 2, launcher: 3, scream: 3, auto: 4, shotgun: 4, rifle: 4, revolver: 4, pistol: 5, suppressed: 5, bite: 5, meleeCrit: 5, taser: 6, reload: 7, jam: 7, unjam: 7, dry: 7, ...Z_PRIORITY };
+const PRIORITY = { alarm: 0, battle: 0, downed: 1, death: 1, blast: 2, fire: 2, rocket: 2, launcher: 3, scream: 3, auto: 4, shotgun: 4, rifle: 4, revolver: 4, pistol: 5, suppressed: 5, bite: 5, meleeCrit: 5, taser: 6, reload: 7, jam: 7, unjam: 7, dry: 7, ...Z_PRIORITY, ...H_PRIORITY };
 function volley(out, mem) {
   if (out.length <= 1) return out;
   const kept = out.map((c, i) => ({ c, i, p: (PRIORITY[c.name] ?? 8) - (c.mine ? 3 : 0) })).sort((a, b) => a.p - b.p || a.i - b.i).slice(0, MAX_BATTLE_SOUNDS).sort((a, b) => a.i - b.i);

@@ -84,10 +84,12 @@ export const ARSENAL = {
   LAUNCH_ROUNDS: { m79: ["a_40mm_he", 4], m32: ["a_40mm_he", 6], rpg: ["a_rocket_heat", 2], m203: ["a_40mm_he", 3] },
   SEEN_DAYS: 30, // a fight or a look at their camp shows you their kit for this long
   // The rest of a kit's people's gear, a share a head: tasers and spray (nonlethal.js NL_KIT), flashbangs and smoke
-  // (throwables.js FLASH_KIT), medics' kits (medics.js MEDIC.ENEMY KITS: about one medic in sixteen people).
+  // (throwables.js FLASH_KIT), medics' kits (medics.js MEDIC.ENEMY KITS: about one medic in sixteen people),
+  // tourniquets (medics.js MEDIC.SELF.KIT, a little over: the ones used up in fights).
   NONLETHAL: {
-    guards: { taser: 0.4, pepper: 0.45, flashbang: 0.2, smokegren: 0.1, bandagekit: 0.06 }, soldiers: { taser: 0.12, pepper: 0.2, flashbang: 0.3, traumakit: 0.06 },
-    militia: { pepper: 0.25, bandagekit: 0.06 }, fighters: { pepper: 0.08, bandagekit: 0.06 }, raiders: { taser: 0.04 },
+    guards: { taser: 0.4, pepper: 0.45, flashbang: 0.2, smokegren: 0.1, bandagekit: 0.06, tourniquet: 0.35 }, soldiers: { taser: 0.12, pepper: 0.2, flashbang: 0.3, traumakit: 0.06, tourniquet: 0.7 },
+    militia: { pepper: 0.25, bandagekit: 0.06, tourniquet: 0.2 }, fighters: { pepper: 0.08, bandagekit: 0.06, tourniquet: 0.2 }, raiders: { taser: 0.04, tourniquet: 0.15 },
+    zealots: { tourniquet: 0.05 },
   },
 };
 // The kit of each group type (the same as conflicts.js KIND_OF).
@@ -112,7 +114,8 @@ export const isNonlethalKey = (k) => !!(GEAR[k] && (GEAR[k].nonlethal === "taser
 // The fighters' other kit: a medic's kit (medics.js enemy medics), a flashbang or a smoke grenade (throwables.js FLASH_KIT).
 export const isMedKitKey = (k) => !!(GEAR[k] && GEAR[k].medKit);
 export const isKitThrowKey = (k) => k === "flashbang" || k === "smokegren";
-export const arsenalWorthy = (it) => !!(it && GEAR[it.key] && (isWeaponKey(it.key) || isArmourKey(it.key) || isThrowKey(it.key) || isNonlethalKey(it.key) || isMedKitKey(it.key) || isKitThrowKey(it.key) || isEarKey(it.key))); // isEarKey: ear protection (helmets.js issueEars)
+export const isSelfAidKey = (k) => !!(GEAR[k] && GEAR[k].selfStab && !GEAR[k].medKit); // a tourniquet (medics.js MEDIC.SELF)
+export const arsenalWorthy = (it) => !!(it && GEAR[it.key] && (isWeaponKey(it.key) || isArmourKey(it.key) || isThrowKey(it.key) || isNonlethalKey(it.key) || isMedKitKey(it.key) || isKitThrowKey(it.key) || isEarKey(it.key) || isSelfAidKey(it.key))); // isEarKey: ear protection (helmets.js issueEars)
 export const weaponValue = (it) => (it && isWeaponKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) + ARSENAL.MOD * fittedMods(it).length : 0);
 export const armourValue = (it) => (it && isArmourKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) * ARSENAL.ARMOUR : 0);
 const usesRounds = (k) => !!(WEAPONS[k] && WEAPONS[k].ammo > 0);
@@ -419,6 +422,18 @@ function armExtras(state, b, f, u) {
       u.medKit = null; u.kitBonus = 0; u.isMedicKit = false; u.kitLeft = 0;
     }
   }
+  // medics.js kitSelfAid: their tourniquet, the group's own (none in the stores: they go without).
+  if (u.selfKits) {
+    u.selfKits = u.selfKits.filter((k) => {
+      if (k.item) return true;
+      const it = free((x) => x === k.key);
+      if (!it) return false;
+      used.add(it);
+      k.item = it; k.left = Math.max(1, itemDur(it) ?? k.left);
+      return true;
+    });
+    if (!u.selfKits.length) delete u.selfKits;
+  }
   if (u.throwables) {
     u.arsThrows = [];
     for (const k of Object.keys(u.throwables)) {
@@ -432,7 +447,7 @@ function armExtras(state, b, f, u) {
 }
 // What a unit carried besides its gun and armour (settleArsenal): its medic kit and the throwables it did not throw.
 function extrasOf(u) {
-  const out = [...(u.arsMedKit ? [u.arsMedKit] : []), ...(u.arsRig ? [u.arsRig] : []), ...(u.arsMags || [])]; // carrykit.js: a rig and spare magazines go where the fighter goes
+  const out = [...(u.arsMedKit ? [u.arsMedKit] : []), ...(u.arsRig ? [u.arsRig] : []), ...(u.arsMags || []), ...(u.selfKits || []).filter((k) => k.item).map((k) => k.item)]; // carrykit.js: a rig and spare magazines go where the fighter goes; medics.js: a tourniquet
   const left = { ...(u.throwables || {}) };
   for (const it of u.arsThrows || []) if ((left[it.key] || 0) > 0) { left[it.key]--; out.push(it); }
   return out;
@@ -475,6 +490,7 @@ export function settleArsenal(state, setup, result, battle = null) {
       const kept = new Set(extrasOf(u));
       for (const it of u.arsThrows || []) if (!kept.has(it)) removeFromArsenal(f, it, "thrown");
       if (u.arsMedKit && u.kitUses) { if (wear(u.arsMedKit, u.kitUses)) removeFromArsenal(f, u.arsMedKit, "used up"); }
+      for (const k of u.selfKits || []) if (k.item && k.used && k.item !== u.arsMedKit && wear(k.item, k.used)) removeFromArsenal(f, k.item, "used up"); // medics.js: a tourniquet used on themselves
       const kit = [u.arsItem, ...(u.arsArmour || []), ...[...kept].filter((it) => f.arsenal.items.includes(it))].filter(Boolean);
       const lost = raidMap ? !!u.dead : won ? !u.fled && !u.left : false;
       const L = settleArsenalLauncher(f, u, lost, (it, why) => removeFromArsenal(f, it, why)); // launchers.js: a fired rocket tube is gone, unfired rounds back in the stores

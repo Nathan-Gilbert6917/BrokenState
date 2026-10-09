@@ -18,7 +18,8 @@ import { SCENE, makeScene, ambiencePlan, ambienceScene, terrainAround, gunHush, 
 import { AMB_OPTS, ambEngine, bedNodes, busy, BED_IDLE } from "../src/ui/ambkit.js";
 import { WEATHER_SOUNDS, RECIPES, WEATHER_LIMIT, weatherFrame, ambLightning } from "../src/ui/ambweather.js";
 import { WILDLIFE_SOUNDS, CALLS, WILD_LIMIT, WILD_BEDS } from "../src/ui/ambwild.js";
-import { AMB_SOUNDS, ambGroupOf, ambTarget, ambPlay, ambStats, ambBus } from "../src/ui/ambience.js";
+import { AMB_SOUNDS, ambGroupOf, ambTarget, ambPlay, ambStats, ambBus, ambPreview } from "../src/ui/ambience.js";
+import { groupOf } from "../src/ui/soundgroups.js";
 
 let passed = 0, failed = 0;
 const check = (ok, msg) => { if (ok) passed++; else failed++; console.log(`  ${ok ? "ok" : "FAIL"}: ${msg}`); };
@@ -73,6 +74,16 @@ console.log("Sound tables");
   const unnamed = [...Object.keys(P.beds).filter((n) => !WEATHER_SOUNDS[n] && !WILDLIFE_SOUNDS[n]), ...Object.keys(P.weather).filter((n) => !WEATHER_SOUNDS[n]), ...Object.keys(P.wild).filter((n) => !WILDLIFE_SOUNDS[n])];
   check(!unnamed.length, `everything the plan can play is in the tables${unnamed.length ? `: ${unnamed}` : ""}`);
   check(Object.keys(WILD).every((n) => WILDLIFE_SOUNDS[n]) && Object.keys(P.weather).length >= 15, "the wildlife roster and the weather one-shots are all named");
+  check(W.every((n) => groupOf(n) === "world.weather") && L.every((n) => groupOf(n) === "world.wildlife"), "the mixer knows them: World → Weather and World → Wildlife (ui/soundgroups.js)");
+  const S = stub(8000), to = { weather: { n: 0, connect() {}, disconnect() {} }, wildlife: { n: 0, connect() {}, disconnect() {} } };
+  const E = ambEngine(S.ctx, to);
+  // where the buses go: a fresh engine whose filters report it
+  const S2 = stub(8000), seen = [];
+  const mk = S2.ctx.createBiquadFilter;
+  S2.ctx.createBiquadFilter = () => { const f = mk(); f.connect = (d) => { seen.push(d); return d; }; return f; };
+  ambEngine(S2.ctx, to);
+  check(seen.includes(to.weather) && seen.includes(to.wildlife), "the weather bus goes to the Weather group's node, the wildlife bus to Wildlife's (beds and one-shots alike)");
+  check(ambPreview(E, "weather", 0) === 1 && ambPreview(E, "wildlife", 0) === 1 && S.starts.length >= 3, "the mixer's ▶ plays thunder, and a songbird and a crow");
 }
 
 // ---------- 2. the mix by weather, hour, season, terrain ----------

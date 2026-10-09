@@ -61,7 +61,7 @@ export function teamRadioLine(state, p, full = false) {
 export function baseListenSection(state) {
   const bases = state.bases.filter((b) => baseReceives(state, b));
   if (!bases.length) return "";
-  return `<div style="margin-top:0.4rem"><div class="muted"${tip(LISTEN_TIP)}>Listening in: a base with a radio (a station, a Military encrypted radio, or a hand-crank radio there) can tune to any radio network whose coverage it stands in.</div>${bases.map((b) => {
+  return `<div class="pk-scroll pk-scroll-tall" style="margin-top:0.4rem"><div class="muted"${tip(LISTEN_TIP)}>Listening in: a base with a radio (a station, a Military encrypted radio, or a hand-crank radio there) can tune to any radio network whose coverage it stands in.</div>${bases.map((b) => {
     const nets = networksAt(state, b.tile);
     const busy = b.listenHour === state.hour;
     const btn = (n) => `<button class="mini" data-action="bl-listen" data-id="${b.id}" data-net="${esc(n.id)}" ${busy ? "disabled" : ""}${tip(busy ? "Someone is at the set already this hour" : `${n.kind === "player" ? "Your own network." : `${n.name}'s channel.`} ${LISTEN_TIP}`)}>${swatch(n.color)}${esc(n.name)}</button>`;

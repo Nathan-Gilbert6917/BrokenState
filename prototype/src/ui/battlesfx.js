@@ -20,8 +20,8 @@ export function playCue(ctx, base, t, c, L) {
   if (c.gun) return playGun(ctx, t, { ...c.gun, gain: g }, sp);
   if (c.blast) {
     const B = c.blast;
-    if (B.pre) playHand(ctx, base, { kind: "throw", h: B.pre.h, gain: g * 1.4 }, at(B.pre.at));
-    if (B.land != null) playHand(ctx, t - B.land, { kind: "clatter", gain: g * 1.6 }, sp);
+    if (B.pre) playHand(ctx, base, { kind: "throw", h: B.pre.h, gain: g * 1.4, group: "weapons.blasts" }, at(B.pre.at));
+    if (B.land != null) playHand(ctx, t - B.land, { kind: "clatter", gain: g * 1.6, group: "weapons.blasts" }, sp);
     return playBlast(ctx, t, { ...B, gain: g }, sp);
   }
   if (c.hand) return playHand(ctx, t, { ...c.hand, gain: g }, sp);

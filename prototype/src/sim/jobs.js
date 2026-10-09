@@ -55,6 +55,7 @@ import { guardsFor } from "./conflicts.js";
 import { gainXp, USE } from "./skills.js";
 import { diploRng, ensureDiplo, warsOf, enemyIn, warById, relation } from "./diplomacy.js";
 import { blueprintReward } from "./blueprints.js";
+import { askBaseName } from "./basenames.js"; // name an outpost handed to you
 import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
 
 export const JOBS = {
@@ -408,6 +409,7 @@ export function handOver(state, f, tile) {
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   };
   state.bases.push(base);
+  askBaseName(state, base);
   for (let i = 0; i < 2; i++) {
     const s = makeSurvivor(state, 0.9);
     s.location = { kind: "base", baseId: base.id };

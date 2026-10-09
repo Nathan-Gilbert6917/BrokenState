@@ -44,7 +44,7 @@ export function gearCues(state, mem) {
     if (f.type === "loot") {
       const s = lootSound(f.text);
       if (s) out.push({ ...s, at: f.to, pan: panOfX(b, f.to && f.to[0]) });
-    } else if (f.type === "heal") out.push({ name: "bandage", at: f.to, pan: panOfX(b, f.to && f.to[0]) });
+    } else if (f.type === "heal") out.push({ name: f.self ? "tourniquet" : "bandage", at: f.to, pan: panOfX(b, f.to && f.to[0]), ...(f.self ? { ok: f.ok !== false } : {}) }); // f.self: a downed one's own tourniquet or trauma kit (sim/medics.js selfStabilize)
     else if (f.type === "move" && f.path && doors.size) {
       // A closed door the mover walked through has swung open (buildingmaps.js openDoor): heard once a door.
       for (let i = 0; i < f.path.length; i++) {
@@ -183,6 +183,18 @@ export function gearVoices(K) {
       noise(c, "white", t, 0.3, filt(c, "bandpass", 2600 * o.pitch, 0.9, am));
       noise(c, "brown", t + 0.38, 0.05, filt(c, "lowpass", 400, 0.7, env(c, out, t + 0.38, 0.25 * o.gain, 0.04, 0.003)));
     } },
+    // A tourniquet cinched on oneself (sim/medics.js selfStabilize): the strap ripped off its hook-and-loop, the
+    // windlass rod cranked in quick clicks, a strained breath out; a failed try: fewer clicks and a slip.
+    tourniquet: { dur: 0.8, play(c, out, t, o) {
+      const g = env(c, out, t, 0.18 * o.gain, 0.14, 0.01);
+      const am = c.createGain(); am.gain.value = 0.5; am.connect(g);
+      K.lfo(c, R(90, 130), 0.5, am.gain).stop(t + 0.16);
+      noise(c, "white", t, 0.15, filt(c, "bandpass", 3200 * o.pitch, 0.8, am));
+      const n = o.ok === false ? 2 : 4;
+      for (let i = 0; i < n; i++) tick(c, out, t + 0.22 + i * (0.09 - i * 0.008), R(1300, 1600) * o.pitch, 0.13 * o.gain, 0.012);
+      if (o.ok === false) noise(c, "white", t + 0.45, 0.08, filt(c, "bandpass", 1800, 0.8, env(c, out, t + 0.45, 0.1 * o.gain, 0.07, 0.005)));
+      else noise(c, "brown", t + 0.6, 0.18, filt(c, "bandpass", 900, 0.7, env(c, out, t + 0.6, 0.06 * o.gain, 0.16, 0.04)));
+    } },
     // A door: the latch, a creaking hinge.
     door: { dur: 0.6, play(c, out, t, o) {
       tick(c, out, t, 1800 * o.pitch, 0.2 * o.gain, 0.015);
@@ -239,13 +251,13 @@ export function gearVoices(K) {
   };
 }
 export const GEAR_LABELS = {
-  rummage: "Searching a container", lockRattle: "A lock that holds", unlock: "A lock opening", jingle: "Keys", glug: "Fuel siphoned", bandage: "Bandaging",
+  rummage: "Searching a container", lockRattle: "A lock that holds", unlock: "A lock opening", jingle: "Keys", glug: "Fuel siphoned", bandage: "Bandaging", tourniquet: "A tourniquet cinched (stabilizing oneself)",
   door: "A door opening", drive: "Your vehicle in battle", engineStart: "Engine starting (a team sets off)", engineStop: "Engine off (a team arrives)",
   uiOpen: "Window opens", uiClose: "Window closes", pickup: "Item picked up", putdown: "Item put down",
 };
 // The throttle's limits (ui/audio.js LIMITS): gap in seconds between two starts, how many at once.
 export const GEAR_LIMITS = {
   rummage: { gap: 0.3, max: 2 }, lockRattle: { gap: 0.3, max: 1 }, unlock: { gap: 0.2, max: 2 }, jingle: { gap: 0.4, max: 1 }, glug: { gap: 0.5, max: 1 },
-  bandage: { gap: 0.4, max: 2 }, door: { gap: 0.15, max: 3 }, drive: { gap: 1, max: 1 }, engineStart: { gap: 2, max: 1 }, engineStop: { gap: 2, max: 1 },
+  bandage: { gap: 0.4, max: 2 }, tourniquet: { gap: 0.4, max: 1 }, door: { gap: 0.15, max: 3 }, drive: { gap: 1, max: 1 }, engineStart: { gap: 2, max: 1 }, engineStop: { gap: 2, max: 1 },
   uiOpen: { gap: 0.08, max: 1 }, uiClose: { gap: 0.08, max: 1 }, pickup: { gap: 0.05, max: 2 }, putdown: { gap: 0.05, max: 2 },
 };

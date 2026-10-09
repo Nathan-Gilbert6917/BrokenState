@@ -11,7 +11,7 @@ import {
   partyMembers, bestSkill, supplyLoad, cargoLoad, cargoRoom, carryCapacity, partyCapacity, unitsThatFit, tileLabel, leaveVehicle, sightRadius,
   carried, takeSupply, wipeIfEmpty,
 } from "./parties.js";
-import { partyVehicle } from "./vehicles.js";
+import { partyVehicle, partyVehicles } from "./vehicles.js";
 import { travelEffects } from "./weather.js";
 
 // Cost model. Scrap = frame + per person + 1 per `loadPerScrap` kg of load (+ raft); hours likewise.
@@ -116,6 +116,10 @@ export function launchBoat(state, p) {
     const v = partyVehicle(state, p);
     log(state, `The team left the ${v.name} on the shore at ${tileLabel(state, t.from)}.`, "info");
     leaveVehicle(state, p, t.from, "left on the shore"); // cargo the people cannot carry stays in it (logged)
+  } else if (partyVehicles(state, p).length > 1) {
+    // A raft takes one vehicle: the lead goes over, the others wait on the shore (vehicles.js fleets).
+    const lead = partyVehicle(state, p);
+    for (const x of partyVehicles(state, p).filter((y) => y !== lead)) { log(state, `The ${x.name} stays on the shore at ${tileLabel(state, t.from)}: the raft takes one vehicle.`, "info"); leaveVehicle(state, p, t.from, "left on the shore", x); }
   }
   t.afloat = true;
   return "";

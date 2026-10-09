@@ -43,7 +43,7 @@ import { heatMult } from "./skills.js";
 import { GEAR } from "./data.js";
 import { carriedAll } from "./comforts.js";
 import { log } from "./world.js";
-import { partyVehicle, isCar } from "./vehicles.js";
+import { partyVehicles, isCar } from "./vehicles.js";
 import * as Weather from "./weather.js";
 
 export const HEAT_MAX = 100;
@@ -153,10 +153,10 @@ export function campSite(state, p, activity = stationaryActivity(p), hour = stat
     teams.unshift(p); // p may be a planning copy (safeHours)
     const h = hour % 24;
     const working = (camp.workers || 0) > 0 && h >= 7 && h < 19 && camp.progress < camp.work - 1e-9;
-    return { kind: "staging", tile, teams, people: teams.reduce((a, q) => a + partyMembers(state, q).length, 0), vehicles: teams.map((q) => partyVehicle(state, q)).filter(isCar), fire: fireLit(camp), working, where: camp };
+    return { kind: "staging", tile, teams, people: teams.reduce((a, q) => a + partyMembers(state, q).length, 0), vehicles: teams.flatMap((q) => partyVehicles(state, q)).filter(isCar), fire: fireLit(camp), working, where: camp };
   }
   if (activity !== "camp") return null;
-  return { kind: "team", tile, teams: [p], people: partyMembers(state, p).length, vehicles: [partyVehicle(state, p)].filter(isCar), fire: fireLit(p), working: false, where: p };
+  return { kind: "team", tile, teams: [p], people: partyMembers(state, p).length, vehicles: partyVehicles(state, p).filter(isCar), fire: fireLit(p), working: false, where: p }; // every car of the team's
 }
 const r1 = (v) => Math.round(v * 10) / 10;
 const vehicleHeat = (v, C) => (v.type === "miltruck" ? C.miltruck : v.type === "truck" ? C.truck : C.car); // the Army truck (miltrucks.js): bigger, louder, smells of diesel
@@ -204,7 +204,7 @@ export function campDanger(state, at, hour = state.hour) {
 export function stagingDanger(state, camp = state.staging, hour = state.hour) {
   if (!camp) return null;
   const teams = state.parties.filter((q) => q.owner === "player" && q.kind !== "convoy" && partyTile(q) === camp.tile && partyMembers(state, q).length);
-  const site = { kind: "staging", tile: camp.tile, teams, people: teams.reduce((a, q) => a + partyMembers(state, q).length, 0), vehicles: teams.map((q) => partyVehicle(state, q)).filter(isCar), fire: fireLit(camp), working: (camp.workers || 0) > 0 && hour % 24 >= 7 && hour % 24 < 19, where: camp };
+  const site = { kind: "staging", tile: camp.tile, teams, people: teams.reduce((a, q) => a + partyMembers(state, q).length, 0), vehicles: teams.flatMap((q) => partyVehicles(state, q)).filter(isCar), fire: fireLit(camp), working: (camp.workers || 0) > 0 && hour % 24 >= 7 && hour % 24 < 19, where: camp };
   if (!teams.length) {
     const rows = campRows(state, site, hour);
     return { rows, gain: 0, heat: 0, settles: 0, text: `Nobody there. ${rowsText(rows)}` , empty: true };
