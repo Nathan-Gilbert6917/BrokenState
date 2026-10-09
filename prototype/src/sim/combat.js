@@ -2366,6 +2366,7 @@ export function refitUnit(b, u, s) {
   u.armor *= f.armor / (u.fit.armor || 1);
   u.medicine += f.medicine - (u.fit.medicine ?? f.medicine); // a med kit in the off hand (crafting.js medKitBonus)
   if (f.medKit !== u.medKit) { u.medKit = f.medKit; u.kitBonus = f.kitBonus; u.kitLeft = f.kitLeft; }
+  MED.refitSelfAid(u, s); // medics.js: a tourniquet or a trauma kit within reach now
   u.fit = { aim: f.aim, dmgMult: f.dmgMult, armor: f.armor, medicine: f.medicine };
   const held = u.weapon, rounds = magIn(u), heldLoad = u.load;
   const keepMags = u.weapon === f.weapon && tracksMags(u);
@@ -2417,6 +2418,7 @@ export function enemyUnit(b, rng, kind, power, n) {
   syncModes(u);
   kitHeadgear(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // helmets.js: a helmet and ear protection by kit (own dice)
   kitFlashbangs(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // throwables.js FLASH_KIT: a soldier's or a guard's flashbang (its own dice)
+  MED.kitSelfAid(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // medics.js SELF.KIT: a tourniquet to stabilize themselves (its own dice)
   kitLauncher(b, u, kind, p, n, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // launchers.js: an M203 on a soldier's rifle, now and then an RPG (its own dice)
   kitEnemy(b, u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // carrykit.js: a rig (a guard's tactical vest), spare magazines, the kit's weight → mob (own dice; after the helmet and the launcher: their kg)
   enemyPieces(b, u); // armour.js: their body armour as a piece that wears (the loot keeps what is left; after kitEnemy's tactical vest, with kitHeadgear's helmet)
@@ -3021,6 +3023,7 @@ export function combatAct(state, act) {
   // A captive still tied up or locked in (rescueraid.js): only the rescue actions (work the ropes, pick the lock...).
   const boundAct = u && isTied(u) && !u.dead && !u.down && act.type === "rescue";
   if (u && isTied(u) && !u.down && !boundAct && u.side === "player") return rescueRefusal(b, u);
+  if (u && u.side === "player" && act.type === "selfStab") { const why = MED.selfStabilize(b, u); if (why) return why; b.acted = true; bump(b); return ""; } // medics.js: a downed survivor's tourniquet or trauma kit
   if (!u || u.side !== "player" || !(active(u) || aboardAct || boundAct) || u.ap < 1) return "That unit cannot act.";
   // On the turret (manTurret): fire it, reload the belt, watch, drive, or get down.
   if (b.vehicle && b.vehicle.blownUp && ["board", "drive", "turn", "gunner"].includes(act.type)) return "The vehicle is a burnt-out wreck."; // launchers.js: blown up
@@ -3395,6 +3398,7 @@ export function endPlayerTurn(state) {
   const b = state.combat;
   bindDims(b);
   if (!b || b.over || b.phase !== "player") return;
+  MED.selfStabTurn(b, "player"); // medics.js: your downed who have a tourniquet or a trauma kit in reach and did not try yet
   for (const u of b.units) if (u.side === "player") { u.ap = 0; u.suppressed = 0; } // pinned (suppressing fire) until their own turn ends
   stunTurnEnd(b, ["player"]); // throwables.js: a flashbang's stun served this turn wears off
   b.phase = "enemy";
@@ -3445,6 +3449,7 @@ export function enemyStep(state) {
     if (b.floors && (b.floor || 0) !== view) setFloor(b, view);
   }
   checkEnd(state, b);
+  if (!b.over && !b.queue.length) MED.selfStabTurn(b, "enemy"); // medics.js: their downed with a tourniquet or a trauma kit, no ally coming
   if (!b.over && !b.queue.length) startPlayerTurn(state, b);
   bump(b);
   return u;
