@@ -151,6 +151,13 @@ console.log("Marks");
   C.fx(b, { type: "melee", from: [a.x, a.y], to: [dx, dy], hit: true, dmg: 3, side: "player", text: "DUD" });
   MK.ingestMarks(b, now);
   check(!of("scorch").some((m) => dist(m, dx, dy) < 0.01), "a dud leaves no scorch");
+  // ux-tactical's cook-offs (sim/launchers.js fireCookOffs): a grenade going off in the flames scorches like one thrown;
+  // a smoke grenade hissing does not.
+  const [kx, ky] = open[110], [hx, hy] = open[120];
+  C.fx(b, { type: "cookoff", from: [kx, ky], to: [kx, ky], item: "frag", hit: true, text: "BOOM" });
+  C.fx(b, { type: "cookoff", from: [hx, hy], to: [hx, hy], item: "smokegren", hit: true, text: "HISS" });
+  MK.ingestMarks(b, now);
+  check(of("scorch").some((m) => dist(m, kx, ky) < 0.01 && Math.abs(m.r - FRAG.r * 0.75) < 1e-9) && !of("scorch").some((m) => dist(m, hx, hy) < 0.01), "a cook-off: a frag's blast scorches, a smoke grenade's hiss does not");
   let win = -1;
   for (let i = 0; i < b.cells.length && win < 0; i++) if (b.cells[i].k === "window") win = i;
   if (win >= 0) {

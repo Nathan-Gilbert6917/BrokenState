@@ -189,6 +189,13 @@ function fromFx(st, f, now, full) {
     add(st, { k: f.acid ? "acid" : bloodKind(t), x: f.to[0] + 0.5 + Math.cos(ang) * 0.15, y: f.to[1] + 0.5 + Math.sin(ang) * 0.15, r: 0.16 + Math.min(40, f.dmg || 10) / 40 * 0.18, a: ang, n: 3, seed: f.seq * 5 + 2, f: fl, spray: true }, now);
     return;
   }
+  // Something in the flames that went off where it lay (sim/launchers.js fireCookOffs): a blast leaves its scorch
+  // (the fire under it already left its own).
+  if (f.type === "cookoff" && f.to && f.text === "BOOM") {
+    const r = { frag: FRAG.r, pipebomb: BLAST.r, a_40mm_he: GL_HE.r, a_rocket_heat: ROCKET.r }[f.item] || 0.6;
+    blast(st, f.to[0], f.to[1], r, f.seq, now, fl, 1);
+    return;
+  }
   if (f.type === "throw" && f.to) {
     const [x, y] = f.to;
     if (f.item === "frag") blast(st, x, y, Math.max(FRAG.r, GL_HE.r), f.seq, now, fl, 1);
