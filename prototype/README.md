@@ -185,6 +185,12 @@ node tools/moveouttest.js
 Moving people between bases (`src/sim/moveout.js`; or `node tools/moveouttest.js [seed]`, a few seconds): the Overcrowded card (none while everyone has a bed, within the hour of one person too many, not again the next day, again at once when 2 more are over the beds, again after 5 days, never two open for one base, none while the autopilot plays); a team moved out (from that base's people and stores, the hub with a bed to spare after, waiting outside with no card in the way of the map pick, named *Moving out team*; sent to a free tile it gets the orders card and founds an outpost with the scrap it carried; a crowded outpost sends one too, only its own people, from its own stock); the Enter card (a team sent to an outpost is asked *Enter …?* instead of the orders card: yes, its people live there and its supplies and cargo are in the outpost's stores, "moved into" in the log; a team from the outpost asked at the hub, no: still a team waiting at the hub's tile with its orders card; a team at its own base is not asked); the autopilot (the Overcrowded card: *Leave it for now*; the Enter card: no at a full outpost, yes once a bunkhouse gives them beds, yes for a team sent there to move in).
 
 ```bash
+node tools/basetiletest.js
+```
+
+Teams that end on one of your bases (`src/sim/staging.js` tryFinish, `parties.js` settleInto / returnHome, `moveout.js` enterOption / joinBase; or `node tools/basetiletest.js [seed]`, a few seconds): establishing a base disbands the team into it (the staging camp is not a base: when it becomes the shelter every team on its tile moves in, its people residents, its vehicle parked, its cargo and finds in the stores and armory, nothing left pointing at the team, saves mid-camp and after); a finished camp takes in a team that comes back with a plain Move order; **Enter base** (an order: the team panel, the orders card, the Teams tab and the base tile's team card) for a team standing on any of your bases, its home included (one waiting outside after moving out, one that said No on the Enter card, one that ended a recon there, a queued Enter after a move), its prisoners to the cells there, the log line ("is home" or "moved into"), save / load with the team on the tile and after; the governor's hardcore start founding its shelter with the team disbanded into it. A team that founds a base, moves in or takes a base by assault unloads the same way as one coming home (`parties.js` unloadAt).
+
+```bash
 node tools/tripstest.js
 ```
 

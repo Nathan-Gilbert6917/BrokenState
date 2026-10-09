@@ -4,7 +4,7 @@ import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger, SUPPLIES, SUP
 import {
   day, hourOfDay, isNight, hub, alive, atBase, skill, combatPower, factionById, survivorById, baseById, gearEffect, RADIO_RANGE, residents,
 } from "../sim/world.js";
-import { freeBeds, MOVE_OUT, CROWD_CARD } from "../sim/moveout.js"; // the move-out planner (moveOutModal) and the base screen's button
+import { freeBeds, MOVE_OUT, CROWD_CARD, enterOption } from "../sim/moveout.js"; // the move-out planner (moveOutModal) and the base screen's button; Enter base
 import { crowdLevel } from "../sim/morale.js";
 import * as Parties from "../sim/parties.js";
 import * as Medical from "../sim/medical.js";
@@ -382,6 +382,7 @@ function renderTeams(state, ui) {
         ${waiting ? `<button class="primary" data-action="orders" data-id="${p.id}"${tip("Choose what the team does here")}>Orders</button>` : ""}
         <button data-action="movemode" data-id="${p.id}"${tip("Then click any tile on the map. The team goes there and waits for orders.")}>${ui.moveParty === p.id ? "Click a tile…" : waiting ? "Move…" : "Redirect…"}</button>
         <button data-action="gohome" data-id="${p.id}"${tip("Head back home now. This drops the team's queue.")}>Return home</button>
+        ${enterButton(state, p)}
       </div>` : ""}
       ${p.kind !== "convoy" ? `<div class="row" style="margin-top:0.35rem">${ost && ost.left ? `<span class="muted" style="flex:1">${esc(ost.label)} · ${armed ? "starts when unpaused" : `${ost.left}h left`}${(p.orders || []).length ? ` · +${p.orders.length} queued` : ""}</span>` : `<span style="flex:1"></span>`}<button class="mini" data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and the order queue; camp, scavenge, repair and treat")}>Team panel</button></div>` : ""}
       ${sjob ? `<div class="row" style="margin-top:0.35rem">
@@ -512,8 +513,16 @@ export function renderRight(state, ui) {
     ${occupiedAt(state, id) ? `<div class="card attn small"${tip("A base of yours another group took. Send an Assault their base team (the button below) to take it back: its walls are weakest right after it fell, and the holders patch it up every day.")}><b>${esc(occupiedAt(state, id).name)}: held by others</b><div>${esc(occupiedText(state, occupiedAt(state, id)))}</div></div>` : ""}
     ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
       <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${n0(m.info.fuel)}, condition ${Math.round(m.info.condition || 0)}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
-    ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}
+    ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>${enterButton(state, p)}`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}
     ${actions.length ? `<h3>Send a team from the hub</h3><div class="row" style="flex-wrap:wrap">${actions.map(([m, l, pre, tp]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}${tip(tp || MISSIONS[m].desc)}>${l}</button>`).join("")}</div>` : ""}`;
+}
+
+// "Enter <base>" for a team standing on one of your bases, stopped there (sim/moveout.js enterOption): its people move
+// in, its cargo and vehicle with them, the team is disbanded. The team panel and the orders card list it as an order.
+function enterButton(state, p) {
+  const o = enterOption(state, p);
+  if (!o || o.disabled || !(p.phase === "waiting" || p.phase === "task")) return "";
+  return `<button data-action="xp-order" data-id="${p.id}" data-type="mission" data-mission="enter"${tip(o.desc)}>${esc(o.label)}</button>`;
 }
 
 // Game, fish and your snares on a tile (sim/hunting.js): what the land holds now and what a hunt would bring: the
