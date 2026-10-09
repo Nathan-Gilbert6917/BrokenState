@@ -659,7 +659,7 @@ export function unitCanvas(state, b, t, salt = 0) {
     const app = s ? ensureAppearance(s, state.seed) : ensureAppearance({ id: t.id }, salt);
     return survivorCanvas(app, t.weapon && t.weapon !== "fists" ? t.weapon : null, spriteArmorKey(s));
   }
-  if (t.boss) return bossBattleCanvas(t.boss); // the Wallbreaker and the Broodmother (ui/hivesprites.js)
+  if (t.boss) return bossBattleCanvas(t.boss === "hivemind" && t.phase2 ? "hivemind2" : t.boss); // the Wallbreaker and the Broodmother (ui/hivesprites.js); the Hivemind torn open in its second phase
   if (t.turned) return turnedCanvas(state, b, t); // one of the risen (sim/carriers.js)
   const seed = (t.id * 131 + salt) | 0;
   // A hive's special dead (sim/zombietypes.js): runners and brutes are the zombie variants, the rest their own.

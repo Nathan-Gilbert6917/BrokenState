@@ -4,11 +4,13 @@
 // louder and brighter (its low-pass opens), the beat louder and faster (HC_SOUND.period: from 1.7 s apart to 0.55 s).
 // Synthesized here with the dead's DSP kit (ui/zombiesfx.js DSP), no audio files; in the mixer's Zombies → Hive crawl
 // pulse group (ui/soundgroups.js), under the Ambience volume. UI only: no sim dice, nothing at import time.
+// The Hivemind's second phase (sim/hivecrawl.js HIVEMIND.P2, b.hivePhase2): the beat races and swells (HC_SOUND.p2:
+// × period, × beat) and, as it begins, the cave quakes: one deep rumble with a cracking of flesh, in the same group.
 import { DSP, mulberry } from "./zombiesfx.js";
 import { activeHiveCrawl, crawlHive, denOf, roomById, warmthOf } from "../sim/hivecrawl.js";
 
 // Levels at warmth 0 → 100: the drone's gain and low-pass, the beat's peak and period (s), the drone's pitch.
-export const HC_SOUND = { drone: [0.05, 0.24], lp: [90, 460], beat: [0.1, 0.45], period: [1.7, 0.55], f: [38, 52], idle: 3 };
+export const HC_SOUND = { drone: [0.05, 0.24], lp: [90, 460], beat: [0.1, 0.45], period: [1.7, 0.55], f: [38, 52], idle: 3, p2: { period: 0.62, beat: 1.4, quake: 0.6 } };
 export const HC_SOUND_NAMES = ["hiveCrawlDrone", "hiveCrawlBeat"]; // the bed's parts, for the mixer's tables (ui/soundgroups.js)
 const lerp = (a, t) => a[0] + (a[1] - a[0]) * Math.max(0, Math.min(1, t));
 
@@ -17,7 +19,7 @@ const lerp = (a, t) => a[0] + (a[1] - a[0]) * Math.max(0, Math.min(1, t));
 export function hiveCrawlHeard(state, ui) {
   if (!state || (ui && (ui.timelapse || ui.title || !ui.started))) return null;
   const b = state.combat;
-  if (b && !b.over && b.hiveWarmth != null) return { warmth: b.hiveWarmth, battle: true };
+  if (b && !b.over && b.hiveWarmth != null) return { warmth: b.hiveWarmth, battle: true, phase2: !!b.hivePhase2 };
   if (b || state.autopilot) return null;
   const p = activeHiveCrawl(state);
   if (!p) return null;
@@ -40,8 +42,11 @@ export function makeHiveCrawlLayer(c, out, t = c.currentTime) {
   lfo(c, 0.13, 0.25, breathe.gain, t, 1e5);
   const sources = [o1, o2, nb];
   return {
-    nodes: 14, idleSince: null, nextBeat: t + 0.3, beats: 0, warmth: 0,
+    nodes: 14, idleSince: null, nextBeat: t + 0.3, beats: 0, warmth: 0, phase2: false, quakes: 0,
     update(lv, now, vol = 1) {
+      const p2 = !!(lv && lv.phase2);
+      if (p2 && !this.phase2 && vol > 0) { quake(c, bus, now + 0.02, HC_SOUND.p2.quake, rnd); this.quakes++; }
+      this.phase2 = p2;
       const on = !!lv;
       const w = on ? lv.warmth / 100 : this.warmth / 100;
       if (on) this.warmth = lv.warmth;
@@ -53,17 +58,24 @@ export function makeHiveCrawlLayer(c, out, t = c.currentTime) {
       if (on && vol > 0) {
         if (this.nextBeat < now) this.nextBeat = now + 0.05;
         while (this.nextBeat < now + 0.6) {
-          const bt = this.nextBeat, pk = lerp(HC_SOUND.beat, w), f = 46 + 14 * w;
+          const bt = this.nextBeat, pk = lerp(HC_SOUND.beat, w) * (p2 ? HC_SOUND.p2.beat : 1), f = 46 + 14 * w + (p2 ? 8 : 0);
           throb(c, bus, bt, f, pk, rnd);
           throb(c, bus, bt + 0.2 + 0.08 * (1 - w), f * 0.85, pk * 0.65, rnd);
           this.beats++;
-          this.nextBeat += lerp(HC_SOUND.period, w);
+          this.nextBeat += lerp(HC_SOUND.period, w) * (p2 ? HC_SOUND.p2.period : 1);
         }
       }
       this.idleSince = on ? null : this.idleSince ?? now;
     },
     stop(now) { for (const x of sources) { try { x.stop(now + 0.05); } catch { /* already stopped */ } } },
   };
+  // The cave quaking as the second phase begins: a long falling sub rumble, brown noise swelling under a low-pass and
+  // a few wet cracks.
+  function quake(ctx, dest, at, peak, r) {
+    osc(ctx, "sine", 34, at, 2.4, envG(ctx, dest, at, peak, 0.08, 0.9, 1.4)).frequency.exponentialRampToValueAtTime(18, at + 2.3);
+    noise(ctx, "brown", at, 2.2, biq(ctx, "lowpass", 140, 0.7, envG(ctx, dest, at, peak * 0.9, 0.25, 0.8, 1.1)), r);
+    for (let i = 0; i < 4; i++) { const ct = at + 0.15 + i * 0.27 + r() * 0.1; noise(ctx, "white", ct, 0.09, biq(ctx, "bandpass", 900 + r() * 900, 1.2, envG(ctx, dest, ct, peak * 0.35, 0.004, 0, 0.08)), r); }
+  }
   // One thump: a falling sine and a puff of brown noise, low-passed (the pulse through flesh).
   function throb(ctx, dest, at, f, peak, r) {
     osc(ctx, "sine", f, at, 0.32, envG(ctx, dest, at, peak, 0.014, 0, 0.24)).frequency.exponentialRampToValueAtTime(f * 0.55, at + 0.22);

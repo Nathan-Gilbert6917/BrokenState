@@ -61,6 +61,9 @@ export const CRAFTS = {
   // The stealth kit (stealth.js).
   noisemaker:  { gear: "noisemaker",  in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 1, field: true },
   firecracker: { gear: "firecracker", in: { scrap: 1, ammo: 8 },  hours: 3,  skill: "mechanics", min: 2, field: true },
+  // A road flare (the hive crawl's: thrown down a passage, it lights the chamber beyond; in battle a light and a lure):
+  // powder pulled from a few rounds and fuel packed in a scrap tube.
+  flare:       { gear: "flare",       in: { scrap: 1, fuel: 1, ammo: 4 }, hours: 2, skill: "mechanics", min: 2, field: true },
   flashlight:  { gear: "flashlight",  in: { scrap: 2, parts: 1 }, hours: 6,  skill: "mechanics", min: 3 },
   // Lights (lights.js): a torch from firewood anywhere, a headlamp and a lantern at the bench, a spotlight in a workshop.
   torch:       { gear: "torch",       in: { wood: 1, scrap: 1 },  hours: 1,  skill: "mechanics", min: 0, field: true },
