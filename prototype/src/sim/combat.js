@@ -97,7 +97,7 @@ import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear,
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
-import { fitHands, handsRefusal, handsWord, carriedAct, pickCarried, autoDrop, settleCarried } from "./carry.js"; // supplies carried by hand: no weapon until set down (Drop carried: free)
+import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, autoDrop, settleCarried } from "./carry.js"; // supplies or a bag carried in the arms: no weapon until set down (Drop carried: free)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -2186,7 +2186,7 @@ const gunWord = (u) => { const n = u.weaponName || WEAPONS[u.weapon].name; retur
 export function reloadRefusal(b, u, type = null) {
   if (!isRanged(u)) return "No gun to reload.";
   if (!hasMag(u)) return `The ${gunWord(u)} needs no reloading.`;
-  if (u.hands) return handsWord(u); // carry.js
+  if (handsBusy(u)) return handsWord(u); // carry.js
   if (u.carrying != null) return "Hands full: put the body down first.";
   const cal = calOf(u.weapon);
   if (type && (!cal || typeFor(cal, type) !== type)) return `The ${gunWord(u)} takes no such rounds.`;
@@ -2242,7 +2242,7 @@ function spendRounds(b, u, w) {
 }
 // Can this unit fire its gun right now (ranged weapon, loaded and, for the player, the rounds of its calibre and
 // loaded type there; a bow or crossbow, arrows)? One that cannot fights in melee (a gun or a bow swung as a club: BASH).
-export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && u.dragging == null && !u.hands && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon], u)) && !magEmpty(b, u) && !u.jam; // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js) or dragging a downed ally (medics.js); a jammed gun (gunfire.js)
+export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && u.dragging == null && !handsBusy(u) && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon], u)) && !magEmpty(b, u) && !u.jam; // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js) or dragging a downed ally (medics.js); a jammed gun (gunfire.js)
 // A gun that can shoot now or after a reload (the AI's sense of a side's firepower, the threat preview): a reload of
 // its type, or of another type of its calibre when its own has run out.
 export const hasShots = (b, u) => canFire(b, u) || (isRanged(u) && (magEmpty(b, u) || (u.side === "player" && !!WEAPONS[u.weapon].ammo && !hasShot(b, WEAPONS[u.weapon], u))) && reloadType(b, u) != null && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)));
@@ -2251,7 +2251,7 @@ export function fireRefusal(b, u) {
   if (!isRanged(u)) return "No gun.";
   if (canFire(b, u)) return "";
   if (u.jam) return jamRefusal(u); // gunfire.js: "Jammed (stovepipe): Unjam (J), 1 action."
-  if (u.hands) return handsWord(u); // carry.js
+  if (handsBusy(u)) return handsWord(u); // carry.js
   if (u.carrying != null) return "Hands full: put the body down first.";
   if (u.dragging != null) return "Hands full: dragging someone (put them down first, Shift+D).";
   if (u.side === "player" && !hasShot(b, WEAPONS[u.weapon], u)) {
@@ -2375,6 +2375,7 @@ export function refitUnit(b, u, s) {
   const keepMags = u.weapon === f.weapon && tracksMags(u);
   for (const k of ["weapon", "weaponName", "item", "gearRisk", "fielded", "armLoad", "gm", "gmWeapon", "load", "boxes", "loadBand", "dash"]) u[k] = f[k];
   if (!keepMags) for (const k of ["mags", "magsW", "clips", "magMode"]) u[k] = f[k]; // another gun: its own magazines (mags.js)
+  u.bag = (s.gear && s.gear.carry) || null; // carry.js: a bag taken into the arms (or put down) in the search window
   if (u.mob0 == null && u.dragMob == null) u.mob = f.mob; // the load band's mob (not while carrying or dragging someone)
   if (u.weapon === held && heldLoad) u.load = heldLoad; // the same gun keeps the rounds it has loaded
   // The magazine: the same kind of gun keeps what was loaded (up to its capacity now, a magazine attachment may have
@@ -3030,7 +3031,7 @@ export function combatAct(state, act) {
   const t = act.target != null ? unitById(b, act.target) : null;
   { const why = handsRefusal(u, act.type); if (why) return why; } // carry.js: hands full of supplies (or a body): no weapon, no throw, no treating
   switch (act.type) {
-    case "pickCarried": { const err = pickCarried(b, u); if (err) return err; u.ap -= 1; u.hunker = false; break; } // carry.js: a load set down within reach, back in the arms (1 action)
+    case "pickCarried": { const err = pickCarried(state, b, u); if (err) return err; u.ap -= 1; u.hunker = false; break; } // carry.js: a load set down within reach, back in the arms (1 action)
     case "move": {
       if (!inside(act.x, act.y)) return "Cannot move there.";
       const r = reachable(b, u, dashRange(u), { manual: true, wary: !!act.wary }); // wary: the raid bot goes round acid (acid.js)
@@ -4327,7 +4328,7 @@ export function autoPlayerTurn(state, opts = {}) {
     botRetreatSmoke(state, b, inEvac); // stealth.js: a smoke grenade over the team first, if anyone has one
     return void soundRetreat(state, { by: "ai", why: giveUp.why });
   }
-  autoDrop(b); // carry.js: the AI sets down what it carries by hand before it fights (free)
+  autoDrop(state, b); // carry.js: the AI sets down what it carries by hand before it fights (free)
   if (b.rescue) rescueBot(state, b); // rescueraid.js: to the cell, the door, the ropes, the keys; captives escape; then the way out
   for (const u of b.units.filter((x) => x.side === "player")) {
     if (b.over) return;
@@ -4927,6 +4928,7 @@ export function createRaid(state, setup) {
   }
   for (const u of b.units) if (u.side === "player") u.fit = { aim: u.aim, dmgMult: u.dmgMult, armor: u.armor, medicine: u.medicine }; // refitUnit
   battlePerks(state, b); // skills.js: perks on the player's units
+  fitHands(state, b); // carry.js: a bag carried in the arms (the team's supplies start set down in a raid)
   raidCarrySetup(state, b); // raidloot.js: each survivor's share of the load, an empty pair of arms for finds
 
   // Enemies: guards around buildings, the dead scattered about. Nobody has seen you yet.

@@ -100,6 +100,8 @@ export interface Gear {
   arms: Item | null;
   legs: Item | null;
   backpack: Item | null;
+  /** carry.js: a bag carried in the arms instead of worn (a looted pack, a rig, a gun case): hands full */
+  carry?: Item | null;
 }
 
 export interface Survivor {

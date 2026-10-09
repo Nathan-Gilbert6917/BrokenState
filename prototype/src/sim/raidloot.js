@@ -44,7 +44,7 @@ import { survivorById } from "./world.js";
 import { partyMembers, cargoRoom, poolLoad, unitsThatFit } from "./parties.js";
 import { partyVehicle, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "./load.js";
-import { ensureInv, packOf, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES } from "./inventory.js";
+import { ensureInv, packOf, ensurePack, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES } from "./inventory.js";
 
 const EPS = 1e-9;
 export const HAUL = { free: 8, per: 12 }; // kg a turn for free, then kg an action
@@ -170,6 +170,7 @@ function place(state, b, loc) {
     ensureInv(s);
     if (loc.slot === "pocket") return loc.i != null && loc.i < s.pockets.length ? { arr: s.pockets, key: loc.i, s } : null;
     if (loc.slot === "pack") { const pk = packOf(s); return pk && loc.i != null && loc.i < pk.length ? { arr: pk, key: loc.i, s } : null; }
+    if (loc.slot === "bag") { const g = s.gear.carry; const pk = g && packSize(g) ? ensurePack(g) : null; return pk && loc.i != null && loc.i < pk.length ? { arr: pk, key: loc.i, s } : null; } // a bag carried in the arms (carry.js)
     if (EQUIP_SLOTS.includes(loc.slot)) return { arr: s.gear, key: loc.slot, s };
   }
   return null;

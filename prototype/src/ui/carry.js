@@ -7,7 +7,7 @@
 // main.js: CARRY_ACTIONS / CARRY_CHANGE are registered like the inventory's; askQty runs first in "xp-order";
 // carryHtml is drawn with the confirmation box; carryKey takes Enter / Esc while a box is up.
 import { partyMembers, partyTile, cargoRoom } from "../sim/parties.js";
-import { parseLoc, placeOfLoc, itemAt } from "../sim/inventory.js";
+import { parseLoc, placeOfLoc, itemAt, isCarryable, moveItem, itemLoad } from "../sim/inventory.js";
 import {
   COLLECT, HANDS_KG, PLACE_NAMES, holdView, unitKg, stackText, recText, qtyText, moveHeld, dropHeld, dropHands,
   dropItemToGround, pickUpGround, pickUpAll, groundAt, groundItemText, collectInfo, roomAt,
@@ -67,7 +67,8 @@ function pickBox(state, ui) {
     const fit = stack ? Math.min(it.qty, Math.floor(cargoRoom(state, p) / unitKg(k) + 1e-6)) : 1;
     return `<div class="spread small" style="margin:0.15rem 0"><span>${stack ? ICON[k] || "▪" : "🎒"} ${esc(groundItemText(it))}${stack ? ` <span class="muted">(${unitKg(k)} kg each)</span>` : ""}</span><span class="row" style="gap:0.25rem">
       ${stack ? `<input type="number" min="1" max="${Math.max(1, Math.ceil(it.qty))}" value="${Math.max(1, Math.floor(fit))}" data-action="carry-pickn" data-i="${i}" style="width:4rem">` : ""}
-      <button class="mini" data-action="carry-take" data-i="${i}"${tip(stack ? `Pick up that many (as far as the team has room: ${kg(cargoRoom(state, p))} kg free)` : `Pick up the ${it.name}`)}>Take</button></span></div>`;
+      <button class="mini" data-action="carry-take" data-i="${i}"${tip(stack ? `Pick up that many (as far as the team has room: ${kg(cargoRoom(state, p))} kg free)` : `Pick up the ${it.name}`)}>Take</button>
+      ${!stack && it.item && isCarryable(it.item) ? partyMembers(state, p).filter((m) => !m.gear.carry).map((m) => `<button class="mini" data-action="carry-take" data-i="${i}" data-arms="${m.id}"${tip(`${m.name.split(" ")[0]} carries the ${it.name} in their arms, with what is in it (${kg(itemLoad(it.item))} kg): no weapon until it is set down`)}>${first(m)} carries</button>`).join("") : ""}</span></div>`;
   }).join("") : `<div class="small muted">Nothing on the ground here.</div>`;
   return `<div class="askwrap"><div class="askbox" role="dialog" style="max-width:32rem">
     <div class="asktitle">Pick up from the ground</div>
@@ -124,9 +125,12 @@ export function holdSection(state, ui, s) {
         <button class="mini" data-action="carry-unsel">Cancel</button></div>`;
     }
   }
-  if (me.handsKg > 0) html += `<div style="margin-top:0.3rem"><button class="mini" data-action="carry-drophands" data-pid="${pid}" data-sid="${s.id}"${tip("Put everything carried in the arms on the ground of this tile (pick it up again from the team panel)")}>Set down what ${first(s)} carries</button></div>`;
+  if (me.bag) html += `<div class="small warn" style="margin-top:0.2rem">In arms: the ${esc(me.bag.name)} (${kg(me.bagKg)} kg with what is in it): hands full, no weapon in a fight until it is set down. Move it to Backpack to wear it.</div>`;
+  if (me.handsKg > 0 || me.bag) html += `<div style="margin-top:0.3rem"><button class="mini" data-action="carry-drophands" data-pid="${pid}" data-sid="${s.id}"${tip("Put everything carried in the arms on the ground of this tile (pick it up again from the team panel)")}>Set down what ${first(s)} carries</button></div>`;
   const loc = ui.invSel ? parseLoc(ui.invSel) : null;
   const place = loc && loc.o !== "body" ? placeOfLoc(state, loc) : null;
+  const selItem = ui.invSel && loc && loc.o !== "body" ? itemAt(state, ui.invSel) : null;
+  if (selItem && isCarryable(selItem) && ui.invSel !== `s:${s.id}:carry`) html += `<div style="margin-top:0.3rem"><button class="mini" data-action="carry-bag" data-sid="${s.id}" ${s.gear.carry ? "disabled" : ""}${tip(s.gear.carry ? `${s.name.split(" ")[0]} already carries the ${s.gear.carry.name}: set it down or put it on first` : `${s.name.split(" ")[0]} carries the ${selItem.name} in their arms with everything in it (${kg(itemLoad(selItem))} kg): no weapon until it is set down`)}>Carry the ${esc(selItem.name)} in arms</button></div>`;
   if (place === `party:${pid}` && itemAt(state, ui.invSel)) html += `<div style="margin-top:0.3rem"><button class="mini" data-action="carry-dropitem"${tip("Put the selected item on the ground of this tile: any team here can pick it up again")}>Put the ${esc(itemAt(state, ui.invSel).name)} on the ground</button></div>`;
   if (ui.carryMsg) html += `<div class="result small">${esc(ui.carryMsg)}</div>`;
   return html + `</div>`;
@@ -138,9 +142,10 @@ export function teamCarryCard(state, ui, p) {
   if (!v) return "";
   const lines = v.people.map((x) => {
     const parts = [["pocket", "pockets"], ["pack", "pack"], ["hands", "carried"]].filter(([pl]) => Object.keys(x[pl]).length).map(([pl, w]) => `${w}: ${esc(recText(x[pl]))}`);
-    return `<div${x.handsKg > 0 ? ' class="warn"' : ""}>${first(x.s)}: ${parts.join(" · ") || '<span class="muted">nothing</span>'}${x.handsKg > 0 ? ` <button class="mini" data-action="carry-drophands" data-pid="${p.id}" data-sid="${x.s.id}"${tip(`Set down what ${x.s.name.split(" ")[0]} carries in the arms (${kg(x.handsKg)} kg) on this tile's ground`)}>Set down</button>` : ""}</div>`;
+    if (x.bag) parts.push(`in arms: the ${esc(x.bag.name)} (${kg(x.bagKg)} kg)`);
+    return `<div${x.handsKg > 0 || x.bag ? ' class="warn"' : ""}>${first(x.s)}: ${parts.join(" · ") || '<span class="muted">nothing</span>'}${x.handsKg > 0 || x.bag ? ` <button class="mini" data-action="carry-drophands" data-pid="${p.id}" data-sid="${x.s.id}"${tip(`Set down what ${x.s.name.split(" ")[0]} carries in the arms (${kg(x.handsKg + x.bagKg)} kg) on this tile's ground`)}>Set down</button>` : ""}</div>`;
   }).join("");
-  const carriers = v.people.filter((x) => x.handsKg > 0).length;
+  const carriers = v.people.filter((x) => x.handsKg > 0 || x.bag).length;
   const site = groundAt(state, partyTile(p));
   return `<div class="card small"><div class="spread"><b${tip("Who keeps the team's food, water, firewood and the rest where: pockets, packs, carried in the arms (no weapon in a fight until set down), the vehicle. Open someone's inventory to move it about.")}>Carried</b>${carriers > 1 ? `<button class="mini" data-action="carry-drophands" data-pid="${p.id}">Everyone set down</button>` : ""}</div>
     ${lines}${Object.keys(v.car).length ? `<div>Vehicle: ${esc(recText(v.car))}</div>` : ""}
@@ -189,6 +194,12 @@ export const CARRY_ACTIONS = {
     ui.carryMsg = dropHands(state, p, d.sid ? Number(d.sid) : null);
     ui.xpMsg = ui.carryMsg;
   },
+  "carry-bag": (state, ui, d) => { // the selected bag (storage, cargo, a body, another's pack) into this person's arms
+    if (!ui.invSel) return;
+    const msg = moveItem(state, ui.invSel, `s:${Number(d.sid)}:carry`);
+    ui.carryMsg = msg;
+    if (!/^(Only|Items only|Too heavy|That slot|Nothing|Bodies|No room)/.test(msg)) ui.invSel = null;
+  },
   "carry-dropitem": (state, ui) => {
     if (!ui.invSel) return;
     ui.carryMsg = dropItemToGround(state, ui.invSel);
@@ -200,7 +211,7 @@ export const CARRY_ACTIONS = {
     if (!p) return;
     const i = Number(d.i);
     const n = ui.carryPick && ui.carryPick[i] != null ? ui.carryPick[i] : Infinity;
-    ui.carryMsg = pickUpGround(state, p, i, n);
+    ui.carryMsg = pickUpGround(state, p, i, n, d.arms ? Number(d.arms) : null);
     ui.carryPick = {};
   },
   "carry-takeall": (state, ui) => {

@@ -39,8 +39,10 @@ import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet an
 export const POCKETS = 4;
 export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to this (plate carrier alone is 4)
 export const ARMOR_SLOTS = ["head", "armor", "arms", "legs"];
-export const EQUIP_SLOTS = ["weapon", "tool", "head", "armor", "arms", "legs", "rig", "backpack"];
-export const SLOT_NAMES = { weapon: "Hands", tool: "Off hand", head: "Head", armor: "Body", arms: "Arms", legs: "Legs", rig: "Rig", backpack: "Backpack", pocket: "Pocket", pack: "Pack", cargo: "Cargo", pouch: "Rig pouch", insert: "Plate carrier" };
+// carry: a bag carried in the arms instead of worn (carry.js: a looted pack, a second pack, a rig, a gun case; the
+// whole bag with what is in it, its weight on them; hands full until it is set down). Its contents: "s:<id>:bag:<i>".
+export const EQUIP_SLOTS = ["weapon", "tool", "head", "armor", "arms", "legs", "rig", "backpack", "carry"];
+export const SLOT_NAMES = { weapon: "Hands", tool: "Off hand", head: "Head", armor: "Body", arms: "Arms", legs: "Legs", rig: "Rig", backpack: "Backpack", pocket: "Pocket", pack: "Pack", cargo: "Cargo", pouch: "Rig pouch", insert: "Plate carrier", carry: "In arms", bag: "Carried bag" };
 const INV_VERSION = 2; // 2: the rig slot, plate carriers with inserts (section 16)
 
 // Odd things the dead still carry in their pockets (a zombie body has one now and then).
@@ -98,6 +100,8 @@ export const isSmall = (key) => !!(GEAR[key] && GEAR[key].small);
 export const packSize = (item) => (item && GEAR[item.key] && GEAR[item.key].slots) || 0;
 export const carryOf = (item) => (item && GEAR[item.key] && GEAR[item.key].carry) || 0;
 export const isBulky = (key) => !!(GEAR[key] && GEAR[key].bulky);
+// A container that can be carried in the arms (EQUIP_SLOTS carry): a pack, a rig or a pouched vest, a gun case.
+export const isCarryable = (item) => { const d = item && GEAR[item.key]; return !!(d && (d.slot === "backpack" || d.slot === "rig" || d.slots || d.pouches || d.gunCase)); };
 // What an item weighs (kg): its own weight, and a pack also what is inside it.
 // A count stack (GEAR count: true, item.dur = how many are left: a box of rounds) weighs its share left.
 export const itemKg = (item) => {
@@ -338,6 +342,8 @@ export function fitReason(item, slot, h = null, kind = null) {
   if (slot === "pack") return packSize(item) ? "A pack does not fit inside a pack." : d.bulky ? `The ${item.name} is too big for a pack: it goes in the cargo.` : "";
   if (slot === "pouch") return kind ? pouchReason(item, kind) : "No pouch there.";
   if (slot === "insert") return isInsert(item) ? "" : `Only a plate goes in a plate carrier's plate pocket.`;
+  if (slot === "bag") return packSize(item) ? "A pack does not fit inside a pack." : d.bulky ? `The ${item.name} is too big for a pack.` : "";
+  if (slot === "carry") return isCarryable(item) ? "" : `Only a bag, a rig or a case is carried in the arms (not the ${item.name}).`;
   if (EQUIP_SLOTS.includes(slot)) {
     if (d.slot !== slot) return `The ${item.name} goes in ${SLOT_NAMES[d.slot] || d.slot}, not ${SLOT_NAMES[slot]}.`;
     const g = h && h.gear;
@@ -416,7 +422,12 @@ function ref(state, loc) {
   const h = holderAt(state, loc);
   if (!h) return null;
   let arr, key, owner = null, pouch = null;
-  if (loc.slot === "pocket" || loc.slot === "pack" || (loc.slot === "rig" && loc.i != null)) {
+  if (loc.slot === "bag") { // the contents of a pack carried in the arms (carry.js)
+    owner = h.gear.carry;
+    arr = owner && packSize(owner) ? ensurePack(owner) : null;
+    key = loc.i;
+    if (!arr || key == null || key < 0 || key >= arr.length) return null;
+  } else if (loc.slot === "pocket" || loc.slot === "pack" || (loc.slot === "rig" && loc.i != null)) {
     arr = loc.slot === "pocket" ? h.pockets : loc.slot === "pack" ? packOf(h) : rigPouches(h);
     owner = loc.slot === "pack" ? h.gear.backpack : loc.slot === "rig" ? rigOf(h) : null;
     key = loc.i;
@@ -683,7 +694,7 @@ export function moveItem(state, fromStr, toStr) {
   if (!item) return "Nothing there.";
   const store = storageFor(state, place);
   const fk = slotKind(from), tk = slotKind(to);
-  const equipped = (k) => EQUIP_SLOTS.includes(k); // a pack, a rig, a carrier: what it adds to the max load
+  const equipped = (k) => EQUIP_SLOTS.includes(k) && k !== "carry"; // a pack, a rig, a carrier: what it adds to the max load (one carried in the arms adds nothing)
   const lostFrom = equipped(fk) ? carryOf(item) : 0;
   // Taken from a body, it adds to what the team carries; between people and cargo it weighs the same.
   const gained = from.o === "body" ? itemLoad(item) : 0;

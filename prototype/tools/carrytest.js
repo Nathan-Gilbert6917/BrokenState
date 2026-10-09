@@ -5,8 +5,9 @@
 // Usage: node tools/carrytest.js [seed]   ("passed" / "failed" lines; exits 1 on a failure)
 import { createWorld, hub, atBase, tickHour, survivorById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
-import { newItem } from "../src/sim/inventory.js";
-import { launchExpedition, partyTile, cargoRoom, partyMembers, carried } from "../src/sim/parties.js";
+import { newItem, moveItem, itemLoad, isCarryable, fitReason } from "../src/sim/inventory.js";
+import { wornLoad } from "../src/sim/load.js";
+import { launchExpedition, partyTile, cargoRoom, partyMembers, carried, partyLoad, settleInto } from "../src/sim/parties.js";
 import * as C from "../src/sim/carry.js";
 import { createBattle, combatAct, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler, canFire, fireRefusal, finishCombat } from "../src/sim/combat.js";
 import { startOrder, describeOrder } from "../src/sim/orders.js";
@@ -270,7 +271,91 @@ console.log("Save and load");
   check(JSON.stringify(q.hold) === want, "and settles to the same");
 }
 
-// ---------- 7. the autopilot plays on ----------
+// ---------- 7. a bag carried in the arms ----------
+console.log("A bag carried in the arms: weight, hands full, set down whole, picked up again");
+const lootedPack = () => { const pk = newItem("hikingpack"); pk.contents[0] = newItem("flashlight"); pk.contents[1] = newItem("machete"); pk.contents[2] = newItem("knife"); return pk; };
+const bagKgOf = (pk) => itemLoad(pk);
+{
+  const st = world();
+  const { p, crew } = teamOut(st, 2, { food: 4, water: 4 });
+  const [a, b] = crew;
+  a.gear.backpack = newItem("backpack"); // already wears a pack
+  const pk = lootedPack();
+  p.cargo.gear.push(pk);
+  const kgBag = bagKgOf(pk);
+  const worn0 = wornLoad(a), total0 = partyLoad(st, p).total;
+  check(isCarryable(pk) && !isCarryable(newItem("machete")) && /Only a bag/.test(fitReason(newItem("machete"), "carry")), "packs, rigs and cases can be carried in the arms; a machete cannot");
+  const m = moveItem(st, `cargo:${p.id}:list:${p.cargo.gear.indexOf(pk)}`, `s:${a.id}:carry`);
+  check(a.gear.carry === pk && !p.cargo.gear.includes(pk), `from the team's cargo into ${a.name.split(" ")[0]}'s arms (${m})`);
+  check(near(wornLoad(a) - worn0, kgBag) && near(partyLoad(st, p).total, total0), `the bag and everything in it weigh on them: +${Math.round(kgBag * 10) / 10} kg (the team's total the same: it was in the cargo)`);
+  check(C.carriersOf(st, p).some((x) => x.s === a && x.bag === pk), "they count as carrying (hands full)");
+  // Supplies go to others' arms first; their arms have less room.
+  p.cargo.supplies.rawwater = 30;
+  const h = C.settleHold(st, p);
+  check(C.kgOf(h.by[a.id].hands) + kgBag <= C.HANDS_KG + 1e-6 || C.kgOf(h.by[b.id].hands) >= C.HANDS_KG - 1e-6, `supplies go to the free arms first (${C.recText(h.by[b.id].hands)} / ${C.recText(h.by[a.id].hands)})`);
+  // The API.
+  check(/already carries/.test(C.carryBag(st, p, a, newItem("slingbag"))) && /Only a bag/.test(C.carryBag(st, p, b, newItem("machete"))), "carryBag: one bag at a time, only containers");
+  // Take something out; it stays one bag.
+  const out = moveItem(st, `s:${a.id}:bag:0`, `cargo:${p.id}:list`);
+  check(!pk.contents[0] && p.cargo.gear.some((it) => it.key === "flashlight"), `things come out of the carried bag (${out})`);
+  // In a fight.
+  const setup = { tile: partyTile(p), partyId: p.id, enemy: { kind: "zombies", count: 2, power: 2 }, ambush: null, canRetreat: true, handler: "carrytest", context: {} };
+  for (const s of crew) s.gear.weapon = newItem("pistol");
+  p.supplies.a_9mm_fmj = 60;
+  const bt = (st.combat = createBattle(st, setup));
+  const u = bt.units.find((x) => x.sid === a.id);
+  const foe = bt.units.find((x) => x.side === "enemy");
+  check(u.bag === pk && !canFire(bt, u) && /the Hiking pack/.test(fireRefusal(bt, u)), `starts the fight with the bag in the arms: no shooting (${fireRefusal(bt, u)})`);
+  check(/Hands full/.test(combatAct(st, { type: "melee", unit: u.id, target: foe.id })) && /Hands full/.test(combatAct(st, { type: "reload", unit: u.id })), "no melee, no reload");
+  const ap = u.ap;
+  check(!combatAct(st, { type: "dropCarried", unit: u.id }) && !u.bag && u.ap === ap && !a.gear.carry && bt.carried.some((c) => c.item === pk), "Drop carried: free; the bag lies on the cell (contents inside), off the survivor");
+  check(canFire(bt, u), "hands free: the gun works");
+  check(!combatAct(st, { type: "pickCarried", unit: u.id }) && u.bag === pk && a.gear.carry === pk, "Pick up load: the bag back in the arms");
+  for (let i = 0; i < 60 && !bt.over; i++) { autoPlayerTurn(st); runEnemyPhase(st); }
+  closeCombat(st);
+  check(bt.result.outcome !== "victory" || (a.alive ? a.gear.carry === pk : true), `the AI set the bag down to fight; won, it is back in the arms (${bt.result.outcome})`);
+  // Retreat: the bag stays on the ground, whole.
+  if (a.alive && p.members.includes(a.id)) {
+    if (!a.gear.carry) { a.gear.carry = pk; }
+    const bt2 = (st.combat = createBattle(st, setup));
+    combatAct(st, { type: "dropAllCarried" });
+    bt2.over = true; bt2.result = { outcome: "retreat", loot: { supplies: {}, gear: [] }, survivorsHurt: [], survivorsDead: [] };
+    finishCombat(st, setup, bt2.result);
+    const site = C.groundAt(st, partyTile(p));
+    const it = site && site.items.find((x) => x.item === pk);
+    check(it && !a.gear.carry && pk.contents.filter(Boolean).length === 2, `retreated: the bag stays on the ground with its contents (${site ? C.groundText(site) : "none"})`);
+    // Another teammate picks it up into their arms.
+    const i = site.items.indexOf(it);
+    const r = C.pickUpGround(st, p, i, Infinity, b.id);
+    check(b.gear.carry === pk && !site.items.includes(it), `picked up into ${b.name.split(" ")[0]}'s arms from the ground (${r})`);
+    // By the numbers, broken off: dropped.
+    finishCombat(st, setup, { outcome: "retreat", loot: { supplies: {}, gear: [] }, survivorsHurt: [], survivorsDead: [] });
+    const site2 = C.groundAt(st, partyTile(p));
+    check(!b.gear.carry && site2 && site2.items.some((x) => x.item === pk), "by the numbers, broken off: the bag stays on the ground");
+    // Set down on the State Map and picked up into the arms; put on.
+    const j = site2.items.findIndex((x) => x.item === pk);
+    C.pickUpGround(st, p, j, Infinity, b.id);
+    const msg = C.dropHands(st, p, b.id);
+    check(/Hiking pack \(with what is in it\)/.test(msg) && !b.gear.carry, `Set down on the map: ${msg}`);
+    const k = C.groundAt(st, partyTile(p)).items.findIndex((x) => x.item === pk);
+    C.pickUpGround(st, p, k, Infinity, b.id);
+    b.gear.backpack = null;
+    const on = moveItem(st, `s:${b.id}:carry`, `s:${b.id}:backpack`);
+    check(b.gear.backpack === pk && !b.gear.carry && !C.carriersOf(st, p).some((x) => x.s === b && x.bag), `put on when the back is free (${on})`);
+    const off = moveItem(st, `s:${b.id}:backpack`, `s:${b.id}:carry`);
+    check(b.gear.carry === pk && !b.gear.backpack, `and off into the arms again (${off})`);
+    // Save and load.
+    const ld = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
+    const b2 = survivorById(ld, b.id);
+    check(b2.gear.carry && b2.gear.carry.key === "hikingpack" && b2.gear.carry.contents.filter(Boolean).length === 2, "a carried bag (and what is in it) survives a save and load");
+    // Home: the bag goes in the armory.
+    const home = hub(st);
+    settleInto(st, p, home);
+    check(!b.gear.carry && home.armory.includes(pk), "home again, a carried bag goes in the armory");
+  } else check(true, "(the carrier fell: skipped the rest)");
+}
+
+// ---------- 8. the autopilot plays on ----------
 console.log("The autopilot keeps working");
 {
   const st = world(seed + 1);

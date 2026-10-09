@@ -46,16 +46,26 @@
 //   - Afterwards (finishCombat → settleCarried): won, it is all picked back up (the pool never changed); retreated,
 //     broken off or beaten, what was set down (and what the downed and the dead held) stays on the tile's ground.
 //
+// BAGS IN THE ARMS. A whole container (a looted pack, a second pack, a rig, a gun case) can be carried in the arms
+// instead of worn: the survivor's EQUIP_SLOTS "carry" slot (s.gear.carry, inventory.js; its contents "s:<id>:bag:<i>").
+// It is an item on them, so its weight (the bag and everything in it, itemLoad) counts in their load, the team's pace
+// and their battle weight like anything worn; it fills the arms like a load of supplies (the same hands-full rule,
+// and HANDS_KG less its weight for supplies). Set down on the State Map it goes on the ground as one item (contents
+// intact); in a fight Drop carried sets it down with the rest (groundDropCell), and the end of the fight treats it as
+// the loads: won, back in its carrier's arms (or the team's cargo), else on the tile's ground. Put it on from the
+// inventory (Backpack / Rig) when the back is free, or take things out of it there. carryBag is the one call for
+// picking a bag up into someone's arms from anywhere (the tactical search window, a body, the ground).
+//
 // HOW MUCH (collectInfo): Fetch water, Hunt, Fish, Forage and Cut wood take a quantity (order o.qty): the task stops
 // collecting at that many units (orders.js startTask: task.capKg, parties.js cargoRoom). The team panel asks (a
 // slider, the team's room and the weight a unit, defaulting to the most that fits); the governor, the autopilot
 // and the AI give no quantity: the most that fits, as before.
 import { SUPPLIES, GEAR } from "./data.js";
-import { packOf, ensureInv, itemAt, removeAt, parseLoc, placeOfLoc, itemLoad } from "./inventory.js";
+import { packOf, ensureInv, itemAt, removeAt, parseLoc, placeOfLoc, itemLoad, isCarryable } from "./inventory.js";
 import { partyMembers, cargoRoom, partyTile, addGearToCargo, poolLoad } from "./parties.js";
 import { meatIn, takeMeat, addMeat, fieldSpoilRate } from "./hunting.js";
 import { partyVehicle, isCar, isBike, VEHICLE_TYPES } from "./vehicles.js";
-import { combatPower, survivorById, day, newId, log } from "./world.js";
+import { combatPower, survivorById, day, newId, log, baseById } from "./world.js";
 import { markDeathSite } from "./markers.js";
 import { RATE } from "./storage.js";
 import * as Weather from "./weather.js";
@@ -214,16 +224,17 @@ function placeLoose(h, members, loose, car, rack) {
     }
   }
   // The hands: the weakest fighters first, each up to HANDS_KG; past that, the one with the least in their arms.
-  const order = [...members].sort((a, b) => combatPower(a) - combatPower(b) || a.id - b.id);
+  const order = [...members].sort((a, b) => Number(bagKg(a) > 0) - Number(bagKg(b) > 0) || combatPower(a) - combatPower(b) || a.id - b.id); // a bag in the arms: last
+  const armsKg = (s) => kgOf(h.by[s.id].hands) + bagKg(s);
   for (const k of HOLD_KEYS) {
     for (const s of order) {
       if (!(loose[k] > EPS)) break;
       const rec = h.by[s.id].hands;
-      const n = Math.min(loose[k], Math.max(0, HANDS_KG - kgOf(rec)) / unitKg(k));
+      const n = Math.min(loose[k], Math.max(0, HANDS_KG - armsKg(s)) / unitKg(k));
       if (n > EPS) { add(rec, k, n); loose[k] -= n; }
     }
     if (loose[k] > EPS && order.length) {
-      const s = order.reduce((a, b) => (kgOf(h.by[b.id].hands) < kgOf(h.by[a.id].hands) ? b : a));
+      const s = order.reduce((a, b) => (armsKg(b) < armsKg(a) ? b : a));
       add(h.by[s.id].hands, k, loose[k]);
       loose[k] = 0;
     }
@@ -243,16 +254,47 @@ export function holdView(state, p) {
   if (!h) return null;
   const people = partyMembers(state, p).map((s) => {
     const r = h.by[s.id];
-    return { s, pocket: nonzero(r.pocket) || {}, pack: nonzero(r.pack) || {}, hands: nonzero(r.hands) || {}, kg: kgOf(r.pocket) + kgOf(r.pack) + kgOf(r.hands), handsKg: kgOf(r.hands), freePack: freePack(s), freePockets: freePockets(s), packUsed: slotsUsed(r.pack, "pack"), pocketUsed: slotsUsed(r.pocket, "pocket") };
+    return { s, bag: bagOf(s), bagKg: bagKg(s), pocket: nonzero(r.pocket) || {}, pack: nonzero(r.pack) || {}, hands: nonzero(r.hands) || {}, kg: kgOf(r.pocket) + kgOf(r.pack) + kgOf(r.hands), handsKg: kgOf(r.hands), freePack: freePack(s), freePockets: freePockets(s), packUsed: slotsUsed(r.pack, "pack"), pocketUsed: slotsUsed(r.pocket, "pocket") };
   });
   const { car, rack } = carOf(state, p);
   return { people, car: nonzero(h.car) || {}, hasCar: car, rack, carKg: kgOf(h.car) };
 }
-// The ones whose hands are full: [{ s, hands }].
+// The ones whose hands are full: [{ s, hands, bag }] (a load of supplies, a bag, or both).
 export function carriersOf(state, p) {
   const v = holdView(state, p);
-  return v ? v.people.filter((x) => Object.keys(x.hands).length).map((x) => ({ s: x.s, hands: x.hands })) : [];
+  return v ? v.people.filter((x) => Object.keys(x.hands).length || x.bag).map((x) => ({ s: x.s, hands: x.hands, bag: x.bag })) : [];
 }
+// The bag someone carries in the arms (inventory.js EQUIP_SLOTS carry), and what it weighs with its contents.
+export const bagOf = (s) => (s && s.gear && s.gear.carry) || null;
+export const bagKg = (s) => (bagOf(s) ? itemLoad(bagOf(s)) : 0);
+// Picks a bag up into someone's arms. where: a battle (state.combat; who: the unit or its id) or a team (who: a
+// survivor or a survivor id). The caller takes the item out of where it was (a container, a body, the ground) when
+// this returns "" (the tactical search window and ground items call this: one call, the hands-full rule follows).
+// Returns "" or why not.
+export function carryBag(state, where, who, item) {
+  if (!item || !isCarryable(item)) return `Only a bag, a rig or a case is carried in the arms${item ? ` (not the ${item.name})` : ""}.`;
+  const battle = where && where.units ? where : null;
+  const u = battle ? (typeof who === "object" ? who : battle.units.find((x) => x.id === who)) : null;
+  const s = u ? survivorById(state, u.sid) : typeof who === "object" ? who : survivorById(state, who);
+  if (!s || !s.alive) return "Nobody to carry it.";
+  ensureInv(s);
+  if (s.gear.carry) return `${s.name.split(" ")[0]} already carries the ${s.gear.carry.name} in their arms: set it down first.`;
+  if (u && (u.carrying != null || u.dragging != null)) return "Hands full: put the body down first.";
+  s.gear.carry = item;
+  if (u) u.bag = item;
+  return "";
+}
+// Sets the bag down on the ground of the team's tile (one item, contents and all). Returns its name ("" if none).
+export function dropBag(state, p, s) {
+  const bag = bagOf(s);
+  if (!bag) return "";
+  s.gear.carry = null;
+  const site = groundAt(state, partyTile(p), true);
+  site.items.push(groundGear(bag));
+  touched(state, site);
+  return bag.name;
+}
+const groundGear = (item) => ({ kind: "gear", key: item.key, name: item.name, qty: 1, value: Math.round((GEAR[item.key] ? GEAR[item.key].value || 0 : 0) * (item.quality || 1)), item });
 // Units of `k` the team can still take with nobody's hands full: the car or the racks, free pack slots, pockets.
 export function fitsStowed(state, p, k) {
   const h = settleHold(state, p);
@@ -276,7 +318,7 @@ export function roomAt(state, p, w, k) {
   const s = survivorById(state, w.sid);
   const rec = h.by[w.sid] && h.by[w.sid][w.place];
   if (!s || !rec) return 0;
-  if (w.place === "hands") return Math.max(0, HANDS_KG - kgOf(rec)) / unitKg(k);
+  if (w.place === "hands") return Math.max(0, HANDS_KG - kgOf(rec) - bagKg(s)) / unitKg(k);
   return roomFor(rec, k, w.place, slotsOf(s, w.place));
 }
 // Moves qty units of `k` from one place to another (as much as there is and as fits). Returns a message.
@@ -356,10 +398,11 @@ function groundPut(state, p, sup, from = null) {
 // Everything in someone's arms (sid) or everyone's (sid null) onto the ground. Returns a message.
 export function dropHands(state, p, sid = null) {
   const out = [];
-  for (const { s, hands } of carriersOf(state, p)) {
+  for (const { s, hands, bag } of carriersOf(state, p)) {
     if (sid != null && s.id !== sid) continue;
-    groundPut(state, p, hands, { sid: s.id, place: "hands" });
-    out.push(`${s.name.split(" ")[0]}: ${recText(hands)}`);
+    if (Object.keys(hands).length) groundPut(state, p, hands, { sid: s.id, place: "hands" });
+    if (bag) dropBag(state, p, s);
+    out.push(`${s.name.split(" ")[0]}: ${[recText(hands), bag ? `the ${bag.name}${bag.contents && bag.contents.some(Boolean) ? " (with what is in it)" : ""}` : ""].filter(Boolean).join(", ")}`);
   }
   return out.length ? `Put on the ground: ${out.join("; ")}. Any team on this tile can pick it up again.` : "Nobody is carrying anything by hand.";
 }
@@ -373,17 +416,25 @@ export function dropItemToGround(state, locStr) {
   if (!p || !item) return "Nothing there.";
   removeAt(state, locStr);
   const site = groundAt(state, partyTile(p), true);
-  site.items.push({ kind: "gear", key: item.key, name: item.name, qty: 1, value: Math.round((GEAR[item.key] ? GEAR[item.key].value || 0 : 0) * (item.quality || 1)), item });
+  site.items.push(groundGear(item));
   touched(state, site);
   return `Put the ${item.name} on the ground. Any team on this tile can pick it up again.`;
 }
 // Picks up qty of the site's item i (a stack: as much as asked and as fits; an item: if it fits). Returns a message.
-export function pickUpGround(state, p, i, qty = Infinity) {
+export function pickUpGround(state, p, i, qty = Infinity, arms = null) {
   const site = groundAt(state, partyTile(p));
   const it = site && site.items[i];
   if (!it) return "Nothing there any more.";
   let msg;
-  if (it.kind === "gear") {
+  if (it.kind === "gear" && arms != null) { // arms: a survivor id: the bag goes in their arms (carryBag), not the cargo
+    const item = it.item || { key: it.key, name: (GEAR[it.key] && GEAR[it.key].name) || it.name, quality: 1 };
+    const s = survivorById(state, arms);
+    if (!s || !partyMembers(state, p).includes(s)) return "Not on this team.";
+    const why = carryBag(state, p, s, item);
+    if (why) return why;
+    site.items.splice(i, 1);
+    msg = `${s.name.split(" ")[0]} picks up the ${it.name} and carries it in their arms (${r1(itemLoad(item))} kg; no weapon until it is set down).`;
+  } else if (it.kind === "gear") {
     const item = it.item || { key: it.key, name: (GEAR[it.key] && GEAR[it.key].name) || it.name, quality: 1 };
     if (!addGearToCargo(state, p, item)) return `No room to carry the ${it.name} (${r1(itemLoad(item))} kg; ${r1(cargoRoom(state, p))} kg free).`;
     site.items.splice(i, 1);
@@ -472,93 +523,145 @@ export function capTask(p, task) {
 // ---------- fights ----------
 // The acts that need free hands (combat.js combatAct). Carrying a body or dragging someone blocks the same.
 const HAND_ACTS = new Set(["shoot", "melee", "reload", "throw", "throwspear", "launch", "glreload", "suppress", "overwatch", "doubletap", "finish", "taser", "reloadTaser", "pepper", "unjam", "subdue", "tie", "pickup", "dragAlly", "meds", "heal", "revive", "plate", "turret", "gunner"]);
-export const handsKg = (u) => kgOf(u && u.hands);
-export const handsWord = (u) => `Hands full: ${u.name.split(" ")[0]} carries ${recText(u.hands)} (${r1(handsKg(u))} kg). Set it down first (Drop carried: free).`;
+export const handsKg = (u) => kgOf(u && u.hands) + (u && u.bag ? itemLoad(u.bag) : 0);
+// Arms full of supplies or a bag (combat.js canFire, fireRefusal, reloadRefusal).
+export const handsBusy = (u) => !!(u && (u.hands || u.bag));
+export const armsText = (u) => [recText(u.hands), u.bag ? `the ${u.bag.name}` : ""].filter(Boolean).join(" and ");
+export const handsWord = (u) => `Hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} (${r1(handsKg(u))} kg). Set it down first (Drop carried: free).`;
 // Why this act cannot be done with what the unit holds ("" when it can).
 export function handsRefusal(u, type) {
   if (!u || !HAND_ACTS.has(type)) return "";
-  if (u.hands) return handsWord(u);
+  if (handsBusy(u)) return handsWord(u);
   if ((u.carrying != null || u.dragging != null) && (type === "melee" || type === "throw" || type === "throwspear" || type === "launch" || type === "finish" || type === "subdue" || type === "taser" || type === "pepper")) return u.carrying != null ? "Hands full: put the body down first." : "Hands full: dragging someone (put them down first, Shift+D).";
   return "";
 }
-// A field battle of a team (combat.js createBattle): who starts with their hands full.
+// A battle starting (combat.js createBattle, createRaid): who starts with their arms full. A bag in the arms counts in
+// every battle; the team's supplies only in a team's field battle (a raid and a base start with them set down).
 export function fitHands(state, b) {
   const p = b && b.setup && b.setup.partyId != null && !b.raid && b.setup.mode !== "raid" ? state.parties.find((x) => x.id === b.setup.partyId) : null;
   const h = p ? settleHold(state, p) : null;
-  if (!h) return;
   const names = [];
   for (const u of b.units) {
-    if (u.side !== "player" || u.sid == null || !h.by[u.sid]) continue;
-    const hands = nonzero(h.by[u.sid].hands);
-    if (!hands) continue;
-    u.hands = hands;
-    names.push(u.name.split(" ")[0]);
+    if (u.side !== "player" || u.sid == null) continue;
+    const s = survivorById(state, u.sid);
+    const bag = bagOf(s);
+    const hands = h && h.by[u.sid] ? nonzero(h.by[u.sid].hands) : null;
+    if (bag) u.bag = bag;
+    if (hands) u.hands = hands;
+    if (bag || hands) names.push(u.name.split(" ")[0]);
   }
-  if (names.length) say(b, `${names.join(", ")} ${names.length === 1 ? "has their" : "have their"} hands full of supplies: no shooting or fighting with a weapon until it is set down (Drop carried: free).`, "warn");
+  if (names.length) say(b, `${names.join(", ")} ${names.length === 1 ? "has their" : "have their"} arms full: no shooting or fighting with a weapon until it is set down (Drop carried: free).`, "warn");
 }
 // The one place a load set down on the battle map lands. The tactical ground items (ux-tactical) replace this body:
-// the load goes on the unit's cell as ground items, and pickCarried below takes it back from there.
-export function groundDropCell(b, u, sup) {
-  (b.carried = b.carried || []).push({ x: u.x, y: u.y, f: u.f || 0, sup: { ...sup } });
+// the supplies and the bag go on the unit's cell as ground items, and pickCarried below takes them back from there.
+// sup: { key: qty } or null; item: a bag set down whole (its contents inside it), or null; sid: whose it was.
+export function groundDropCell(b, u, sup, item = null) {
+  (b.carried = b.carried || []).push({ x: u.x, y: u.y, f: u.f || 0, sup: sup ? { ...sup } : {}, item: item || null, sid: u.sid });
 }
-// Drop carried: free. Returns "" or an error.
-export function dropCarried(b, u, quiet = false) {
-  if (!u || !u.hands) return "Not carrying anything by hand.";
-  groundDropCell(b, u, u.hands);
-  if (!quiet) say(b, `${u.name} sets down ${recText(u.hands)}.`, "info");
+// Drop carried: free. Supplies and the bag in the arms go down on the unit's cell. Returns "" or an error.
+export function dropCarried(state, b, u, quiet = false) {
+  if (!u || !handsBusy(u)) return "Not carrying anything in the arms.";
+  const what = armsText(u);
+  const bag = u.bag || null;
+  if (bag) { const s = survivorById(state, u.sid); if (s && s.gear && s.gear.carry === bag) s.gear.carry = null; }
+  groundDropCell(b, u, u.hands, bag);
+  if (!quiet) say(b, `${u.name} sets down ${what}.`, "info");
   u.hands = null;
+  u.bag = null;
   return "";
 }
 // Loads set down within reach of the unit (its cell or next to it, the same floor).
 export const carriedNear = (b, u) => (b.carried || []).filter((c) => Math.max(Math.abs(c.x - u.x), Math.abs(c.y - u.y)) <= 1 && (c.f || 0) === (u.f || 0));
-// Pick up (1 action): the loads within reach go back in the unit's arms. Returns "" or an error.
-export function pickCarried(b, u) {
+// Pick up (1 action): the supplies within reach go back in the unit's arms, and one bag if its arms have none.
+export function pickCarried(state, b, u) {
   const near = carriedNear(b, u);
   if (!near.length) return "Nothing set down within reach.";
   if (u.carrying != null || u.dragging != null) return "Hands full: put the body down first.";
-  u.hands = u.hands || {};
-  for (const c of near) { for (const [k, q] of Object.entries(c.sup)) add(u.hands, k, q); b.carried.splice(b.carried.indexOf(c), 1); }
-  say(b, `${u.name} picks up ${recText(u.hands)}.`, "info");
+  const s = survivorById(state, u.sid);
+  let took = false;
+  for (const c of near) {
+    if (c.item) {
+      if (u.bag || !s || carryBag(state, b, u, c.item)) continue; // one bag in the arms at a time
+      c.item = null;
+      took = true;
+    }
+    if (Object.keys(c.sup || {}).length) { u.hands = u.hands || {}; for (const [k, q] of Object.entries(c.sup)) add(u.hands, k, q); c.sup = {}; took = true; }
+    if (!c.item && !Object.keys(c.sup || {}).length) b.carried.splice(b.carried.indexOf(c), 1);
+  }
+  if (!took) return "Already carrying a bag: set it down first.";
+  if (u.hands && !Object.keys(u.hands).length) u.hands = null;
+  say(b, `${u.name} picks up ${armsText(u)}.`, "info");
   return "";
 }
 // combatAct's free acts: "dropCarried" (one unit) and "dropAllCarried" (everyone of yours). Returns "" or an error.
 export function carriedAct(state, b, act) {
   if (b.phase !== "player") return "Wait for the enemy turn to finish.";
   if (act.type === "dropAllCarried") {
-    const list = b.units.filter((u) => u.side === "player" && u.hands && (active(u) || u.down));
-    if (!list.length) return "Nobody is carrying anything by hand.";
-    for (const u of list) dropCarried(b, u);
+    const list = b.units.filter((u) => u.side === "player" && handsBusy(u) && (active(u) || u.down));
+    if (!list.length) return "Nobody is carrying anything in the arms.";
+    for (const u of list) dropCarried(state, b, u);
     return "";
   }
   const u = b.units.find((x) => x.id === act.unit);
   if (!u || u.side !== "player" || u.dead) return "That unit cannot act.";
-  return dropCarried(b, u);
+  return dropCarried(state, b, u);
 }
 // The battle AI on your side sets everything down before it fights (autoPlayerTurn).
-export function autoDrop(b) {
-  for (const u of b.units) if (u.side === "player" && u.hands && active(u)) dropCarried(b, u);
+export function autoDrop(state, b) {
+  for (const u of b.units) if (u.side === "player" && handsBusy(u) && active(u)) dropCarried(state, b, u);
 }
 // After a fight (combat.js finishCombat, before its handler): won, everything is picked back up (the pool never
-// changed); otherwise what was set down, and what the downed and dead held, stays on the tile's ground. A fight by
-// the numbers: the carriers set it down when it started.
+// changed; a bag goes back in its carrier's arms, else the team's cargo, else the ground); otherwise what was set down,
+// and what the downed held, stays on the tile's ground (the dead's things are at their death site already). A fight
+// by the numbers: the carriers set it down when it started.
 export function settleCarried(state, setup, result, battle) {
-  const p = setup && setup.partyId != null && setup.mode !== "raid" ? state.parties.find((x) => x.id === setup.partyId) : null;
-  if (!holdsOwn(p)) return "";
+  const p = setup && setup.partyId != null ? state.parties.find((x) => x.id === setup.partyId) : null;
+  if (!holdsOwn(p)) { // a base's battle: a bag set down goes back to its carrier, else into the armory
+    const home = setup && setup.baseId != null ? baseById(state, setup.baseId) : null;
+    for (const c of (battle && battle.carried) || []) {
+      if (!c.item) continue;
+      const s = c.sid != null ? survivorById(state, c.sid) : null;
+      if (s && s.alive && !bagOf(s)) s.gear.carry = c.item; else if (home) home.armory.push(c.item);
+    }
+    if (battle) battle.carried = [];
+    return "";
+  }
   const won = result && result.outcome === "victory";
+  const raid = setup.mode === "raid" || (battle && battle.raid);
   let left = {};
+  const bags = [];
   if (battle) {
-    if (won) { battle.carried = []; return ""; }
-    for (const c of battle.carried || []) for (const [k, q] of Object.entries(c.sup)) add(left, k, q);
-    for (const u of battle.units) if (u.side === "player" && u.hands && !u.left && !u.aboard) for (const [k, q] of Object.entries(u.hands)) add(left, k, q);
+    for (const c of battle.carried || []) {
+      if (c.item) {
+        const s = c.sid != null ? survivorById(state, c.sid) : null;
+        const mine = s && s.alive && partyMembers(state, p).includes(s);
+        if (won && mine && !bagOf(s)) s.gear.carry = c.item;
+        else if (won && addGearToCargo(state, p, c.item)) { /* in the cargo */ }
+        else bags.push(c.item);
+      }
+      if (!won) for (const [k, q] of Object.entries(c.sup || {})) add(left, k, q);
+    }
+    if (!won) for (const u of battle.units) {
+      if (u.side !== "player" || u.left || u.aboard) continue;
+      const s = survivorById(state, u.sid);
+      if (!s || !s.alive) continue; // died holding it: at their death site with the rest of their things
+      if (!raid && u.hands) for (const [k, q] of Object.entries(u.hands)) add(left, k, q);
+      if (u.bag && bagOf(s) === u.bag) { s.gear.carry = null; bags.push(u.bag); }
+    }
     battle.carried = [];
   } else {
-    if (won) return "";
-    for (const { hands } of carriersOf(state, p)) for (const [k, q] of Object.entries(hands)) add(left, k, q);
+    if (won || raid) return "";
+    for (const { s, hands, bag } of carriersOf(state, p)) {
+      for (const [k, q] of Object.entries(hands)) add(left, k, q);
+      if (bag) { s.gear.carry = null; bags.push(bag); }
+    }
   }
   left = nonzero(left);
-  if (!left) return "";
-  groundPut(state, p, left);
-  const text = `${recText(left)} set down for the fight stayed on the ground at the fight (pick it up from there).`;
+  if (!left && !bags.length) return "";
+  if (left) groundPut(state, p, left);
+  if (bags.length) { const site = groundAt(state, partyTile(p), true); for (const it of bags) site.items.push(groundGear(it)); touched(state, site); }
+  const what = [left ? recText(left) : "", ...bags.map((it) => `the ${it.name}`)].filter(Boolean).join(", ");
+  const text = `${what} set down for the fight stayed on the ground there (pick it up from the team panel).`;
   log(state, `The team left ${text}`, "warn");
   return text;
 }

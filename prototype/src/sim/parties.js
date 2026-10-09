@@ -1745,6 +1745,7 @@ export function settleInto(state, p, base) {
   for (const m of members) {
     m.location = { kind: "base", baseId: base.id };
     m.role = "scavenge";
+    if (m.gear && m.gear.carry) { base.armory.push(m.gear.carry); m.gear.carry = null; } // carry.js: a bag carried home goes in the armory
   }
   mergeKnowledge(state, p.seen, p.spotted, p);
   removeParty(state, p);
