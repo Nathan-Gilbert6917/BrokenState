@@ -8,6 +8,7 @@ import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
 import { sanitizeLibrary } from "./custombg.js";
+import { sanitizeStartGear, hasPicks, normalStartGear } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { appearanceFor, craftingStart, CRAFT_START } from "./appearance.js";
 export { radioBasesInRange };
 
@@ -212,6 +213,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   normalStartBackgrounds(state, crew);
   if (crew) applyCrew(state, crew);
   normalStartKit(state, hubBase);
+  normalStartGear(state, hubBase); // startgear.js: the gear picked on the new-run screen (what it replaces to the armory)
   assignStartingRoles(state);
   settleAll(state); // ammo.js: the hub's 80 rounds by the calibres of the guns it starts with
   state.ammoCal = 1; // rounds by calibre from the start (save.js migrates older saves)
@@ -318,6 +320,10 @@ export function applyCrew(state, crew) {
     if (c.appearance) s.appearance = { ...c.appearance };
     // A normal start's weapon and armor (Randomize all hands the kit out again). Hardcore's come from what they grabbed.
     if (c.gear && state.mode !== "hardcore") for (const k of ["weapon", "armor"]) if (k in c.gear) s.gear[k] = c.gear[k] && GEAR[c.gear[k].key] ? { ...c.gear[k] } : null;
+    // Gear picked on the new-run screen (startgear.js: put on after the dice and any custom background's kit, both modes).
+    const sg = sanitizeStartGear(c.startGear);
+    if (sg) s.startGear = sg; else delete s.startGear;
+    if (hasPicks(sg)) s.startCustom = true;
     if (c.leader) s.leader = true;
     // Customized past the dice on the new-run screen (free skills, traits, a picked background: ui/newgame.js), which an
     // Ironman run may not start with.

@@ -47,6 +47,7 @@ import { Rng } from "./rng.js";
 import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { isCustomBg } from "./custombg.js";
+import { grabStartGear, addPickedSupplies } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
 import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./staging.js";
 
@@ -593,8 +594,9 @@ function grabLine(state, s, got) {
   const things = listOf(got.items);
   const A = archetypeOf(state, s.background);
   const who = A ? `${firstName(s)} (${A.name.toLowerCase()}${A.blurb ? `, ${A.blurb}` : ""})` : firstName(s);
-  const weapon = got.weapon ? `${/^[aeiou]/i.test(got.weapon.name) ? "an" : "a"} ${got.weapon.name.toLowerCase()}${got.ammo ? ` (${got.ammo} rounds)` : ""}` : "";
-  if (got.prepper) return `${who} had a ${got.bag.name.toLowerCase()} packed by the door: ${got.food} food, ${got.water} water${got.meds ? `, ${got.meds} meds` : ""}${things.length ? `, ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
+  const rounds = (got.ammo || 0) + (got.rounds || 0); // got.rounds: a gun picked on the new-run screen (startgear.js)
+  const weapon = got.weapon ? `${/^[aeiou]/i.test(got.weapon.name) ? "an" : "a"} ${got.weapon.name.toLowerCase()}${rounds ? ` (${rounds} rounds)` : ""}` : "";
+  if (got.prepper && got.bag) return `${who} had a ${got.bag.name.toLowerCase()} packed by the door: ${got.food} food, ${got.water} water${got.meds ? `, ${got.meds} meds` : ""}${things.length ? `, ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
   const worn = got.armor ? ` (in ${/^[aeiou]/i.test(got.armor.name) ? "an" : "a"} ${got.armor.name.toLowerCase()})` : "";
   if (got.bag) return `${who}${worn} grabbed a ${got.bag.name.toLowerCase()}${things.length ? ` with ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
   return `${who}${worn} ran with only the clothes on their back${things.length ? ` and ${things.join(", ")} in their pockets` : " and empty pockets"}${weapon ? `, and ${weapon}` : ""}.`;
@@ -633,10 +635,13 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   const lines = [];
   let prepper = null, prepGot = null;
   const extra = []; // custom backgrounds' own food, water... (on top, unclamped)
+  const pickedSup = []; // the rounds and arrows of picked guns and bows (startgear.js)
   for (let i = 0; i < people.length; i++) {
     const s = people[i];
     const A = archetypeOf(state, s.background);
     const got = s.background === "prepper" ? rollPrepper(state, s) : A && A.custom ? rollCustom(state, s, A) : rollGrab(state, s, A);
+    const picked = grabStartGear(state, s, got); // startgear.js: what was picked on the new-run screen, in place of the grab
+    if (picked) pickedSup.push(picked);
     if (got.prepper) { prepper = s; prepGot = got; continue; }
     if (got.custom) { extra.push(got); lines.push(grabLine(state, s, got)); continue; }
     sup.food += got.food;
@@ -654,6 +659,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   sup.food = Math.max(HC_START.TEAM_MIN * heads, Math.min(teamFoodCap(rolled), sup.food));
   sup.water = Math.max(HC_START.TEAM_MIN * heads, Math.min(HC_START.TEAM_MAX * heads, sup.water));
   for (const got of extra) for (const k of ["food", "water", "ammo", "meds", "arrows"]) sup[k] += got[k] || 0;
+  addPickedSupplies(sup, pickedSup);
   if (prepGot) {
     sup.food += prepGot.food;
     sup.water += prepGot.water;
@@ -682,7 +688,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   // Day 1's log says a small team's edge (HC_START.SMALL): the skills, and the seats loaded (the car line has what).
   if (smallSkills) log(state, `${people.length === 1 ? `${firstName(people[0])} got out alone` : `${firstName(people[0])} and ${firstName(people[1])} got out on their own`}: the kind who can look after ${people.length === 1 ? "themselves" : "each other"} (${andList(smallSkills.map((k) => SKILL_NAMES[k]))} up), and the car's empty ${people.length === 1 ? "seats were" : "seat was"} loaded too.`, "good");
   // Day 1's log names the prepper (the trait when a slot allowed it, else only this line says it).
-  if (prepper) log(state, `${firstName(prepper)} was a prepper${prepGot.trait ? "" : " (no room for the trait: the kit says it)"}: a ${prepGot.bag.name.toLowerCase()} packed for five days${prepGot.weapon ? `, ${/^[aeiou]/i.test(prepGot.weapon.name) ? "an" : "a"} ${prepGot.weapon.name.toLowerCase()}${prepGot.ammo ? ` (${prepGot.ammo} rounds)` : ""}` : ""}${prepGot.items.some((it) => it.key === "waterfilter") ? ", a water filter" : ""}${prepGot.items.some((it) => it.key === "handradio") ? ", a hand-crank radio" : ""}${prepGot.items.some((it) => it.key === "puritabs") ? " and purification tablets" : ""}.`, "good");
+  if (prepper) log(state, `${firstName(prepper)} was a prepper${prepGot.trait ? "" : " (no room for the trait: the kit says it)"}: a ${prepGot.bag ? prepGot.bag.name.toLowerCase() : "bag"} packed for five days${prepGot.weapon ? `, ${/^[aeiou]/i.test(prepGot.weapon.name) ? "an" : "a"} ${prepGot.weapon.name.toLowerCase()}${prepGot.ammo + (prepGot.rounds || 0) ? ` (${prepGot.ammo + (prepGot.rounds || 0)} rounds)` : ""}` : ""}${prepGot.items.some((it) => it.key === "waterfilter") ? ", a water filter" : ""}${prepGot.items.some((it) => it.key === "handradio") ? ", a hand-crank radio" : ""}${prepGot.items.some((it) => it.key === "puritabs") ? " and purification tablets" : ""}.`, "good");
   // The run opens on the team's orders card: what they grabbed, and what the first hub takes.
   weighTeam(state, p);
   const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${sup.ammo ? `, ${Math.floor(sup.ammo)} rounds` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;

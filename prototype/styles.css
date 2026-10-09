@@ -292,6 +292,16 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 .bgform { flex: 1; min-width: 18rem; }
 .bgform h3 { margin: 0.6rem 0 0.25rem; font-size: 0.92rem; }
 .bgform .nrskill input { width: 3.4rem; }
+/* starting gear window (ui/startgear.js): worn and held on the left, the load and what they carry on the right */
+.sgedit { display: flex; gap: 1.1rem; align-items: flex-start; flex-wrap: wrap; }
+.sgcol { flex: 1; min-width: 20rem; }
+.sgcol h3 { margin: 0.5rem 0 0.3rem; font-size: 0.92rem; }
+.sgslot { display: grid; grid-template-columns: 5rem 1fr auto; align-items: center; gap: 0.1rem 0.45rem; padding: 0.22rem 0; border-bottom: 1px solid var(--line); }
+.sgslot select { min-width: 0; width: 100%; }
+.sglabel { color: var(--muted); font-size: 0.85rem; }
+.sginfo { grid-column: 2 / -1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sgwhere { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.sgwhere .chip { margin: 0.05rem 0.1rem; }
 
 /* running orders (map overlay) and the team panel */
 #orders { position: absolute; left: 0.6rem; top: 0.6rem; width: 15rem; max-height: 45%; overflow-y: auto; background: rgba(20,22,26,0.88); border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.55rem; font-size: 0.82rem; z-index: 4; }

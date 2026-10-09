@@ -78,6 +78,7 @@ import { tradeWindow, radioModal, caravanPlanModal, groupsRadioHeader, caravanLi
 import { recruitModal, crowdingRow, moodRiskChip } from "./people.js";
 import { backgroundInfo } from "../sim/hardcore-start.js"; // who they were before Calder fell (a hardcore start; a preset or a custom one)
 import { backgroundEditor } from "./backgrounds.js"; // the new-run screen's custom backgrounds window
+import { startGearEditor } from "./startgear.js"; // the new-run screen's starting gear window (Customize)
 import { skillsBlock, skillTree, studyBlock } from "./skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
 import { whyModal, cardWhy } from "./causes.js"; // "Why?": the chain of causes of a death or a lost base
@@ -706,6 +707,7 @@ function pickModal(state, ui) {
   if (ui.timelapse) return null; // the timelapse viewer has its own overlay (ui/timelapse.js)
   if (ui.zombieLook) return ["zlook", () => zombieLookModal(ui)];
   if (ui.bgEditor && !ui.started) return ["bgedit", () => backgroundEditor(state, ui)]; // ui/backgrounds.js, over the new-run screen
+  if (ui.gearEdit && !ui.started) return ["gearedit", () => startGearEditor(state, ui)]; // ui/startgear.js, over the new-run screen
   if (ui.settings) return ["settings", () => settingsModal(state, ui)]; // ui/settings.js: over everything, a battle included
   if (ui.title) return null; // the title screen (ui/title.js) is up: the new-run screen waits for New game
   takeLootReq(state, ui); // a raid's search window asked for by the battle (ui/combat.js, sim/raidloot.js)

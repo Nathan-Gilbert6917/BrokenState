@@ -9,6 +9,8 @@ import { HC_START, backgroundInfo, countWord } from "../sim/hardcore-start.js"; 
 import { customLibrary } from "./backgrounds.js";
 import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/custombg.js), kept in this browser
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
+import { sanitizeStartGear, hasPicks } from "../sim/startgear.js"; // starting gear picked under Customize
+import { gearRow } from "./startgear.js"; // its Gear… button and load on the crew card
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, fitSkills, skillTotal, SKILL_MAX,
 } from "../sim/appearance.js";
@@ -111,6 +113,7 @@ function crewCard(state, ui, s) {
         <div class="small" style="margin-top:0.2rem">${bgChip(state, s)}${free ? "" : s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t].desc)}>${TRAITS[t].name}</span>`).join("")}</div>
         ${free ? `<div style="margin-top:0.25rem">${backgroundPicker(state, s)}</div>` : ""}
         ${free ? traitPicker(s) : ""}
+        ${free ? gearRow(state, s) : ""}
       </div>
     </div>
     <div class="spread small" style="margin-top:0.35rem"><span class="muted">Skills</span>${locked
@@ -123,7 +126,7 @@ function crewCard(state, ui, s) {
       <button class="mini" data-action="nr-name" data-id="${s.id}"${tip("New random name")}>Name</button>
       <button class="mini" data-action="nr-skills" data-id="${s.id}"${tip("Shuffle skills, same point total")}>Skills</button>
       <button class="mini" data-action="nr-look" data-id="${s.id}"${tip("New random look")}>Look</button>
-      <button class="mini" data-action="nr-all" data-id="${s.id}"${tip("Randomize name, skills and look")}>All</button>
+      <button class="mini" data-action="nr-all" data-id="${s.id}"${tip("Randomize name, skills and look (gear picked under Customize stays: its window's All as rolled puts the dice back)")}>All</button>
     </div>
   </div>`;
 }
@@ -214,7 +217,7 @@ export function newRunScreen(state, ui) {
       ${modeSelect(state)}
       ${startPeopleSelect(state, ui)}
       <label${tip("Ironman: the game saves itself (at dawn, when a battle starts and ends, when you leave it) to one slot of its own. No saving or loading by hand, no restarting a battle, no export: you live with every choice. The crew starts as rolled: no Customize, no custom backgrounds, no moving skill points (names, looks and the leader are yours). Works with Normal and Hardcore.")}><input type="checkbox" data-action="ironman"${ui.ironman ? " checked" : ""}> Ironman</label>
-      <label${tip(ui.ironman ? "Not with Ironman: an Ironman crew starts as rolled. Untick Ironman to customize." : "Customize: set any skill level (0–20, no point limit), pick traits, and pick who each one was, a preset or one of your own (Backgrounds…). Not with Ironman.")}${ui.ironman ? ` class="muted"` : ""}><input type="checkbox" data-action="nr-free"${freeEdit(ui) ? " checked" : ""}${ui.ironman ? " disabled" : ""}> Customize</label>
+      <label${tip(ui.ironman ? "Not with Ironman: an Ironman crew starts as rolled. Untick Ironman to customize." : "Customize: set any skill level (0–20, no point limit), pick traits, pick who each one was, a preset or one of your own (Backgrounds…), and pick their starting gear (Gear… on each card). Not with Ironman.")}${ui.ironman ? ` class="muted"` : ""}><input type="checkbox" data-action="nr-free"${freeEdit(ui) ? " checked" : ""}${ui.ironman ? " disabled" : ""}> Customize</label>
       <button data-action="bg-open"${ui.ironman ? " disabled" : ""}${tip(ui.ironman ? "Not with Ironman" : `Make your own backgrounds: skills, traits, gear, supplies and the car (${Object.keys(customLibrary()).length} made)`)}>Backgrounds…</button>
       <label${tip("First-week guide: a checklist under the alerts for the first days (check the stores, work priorities, a building, a team out and home, the first night), each step with a Show me that points at the button to press. It ticks off as you play and steps aside after day 7; the menu hides it or brings it back. On for your first campaign here.")}><input type="checkbox" data-action="nr-guide"${ui.guide ? " checked" : ""}> First-week guide</label>
       ${FAMILY.enabled ? `<label${tip("Children: couples at a base may have children, who grow up in a year into survivors (Help: Children and families). Untick for a run without couples forming on their own, pregnancies or children.")}><input type="checkbox" data-action="children"${ui.childrenOff ? "" : " checked"}> Children</label>` : ""}
@@ -223,7 +226,7 @@ export function newRunScreen(state, ui) {
       ${groupInput(state, ui)}
       ${hiveSelect(state, ui)}
       <button data-action="reroll"${tip("Generate a new map and new colonists")}>New map and colonists</button>
-      <button data-action="nr-allcrew"${tip(`Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
+      <button data-action="nr-allcrew"${tip(`Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same; gear picked under Customize is cleared)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>
     </div>
     ${customSizeRow(state, ui)}
@@ -246,10 +249,17 @@ function loadButtons() {
 
 // Overrides to carry the edited crew into a rebuilt world (seed or group count changed).
 // A normal start's weapon and armor go along (a Hardcore start's gear is what they grabbed, rolled with the world).
+// Gear picked under Customize (sim/startgear.js, both modes) goes as the picks, put on again after the dice; for a picked
+// weapon or armor the dice's item is carried (s.startDice), not the picked one, so clearing the pick gives it back.
 export function crewSnapshot(state) {
   // A custom background's kit comes with it again (sim/hardcore-start.js normalStartKit), not from here.
-  const kit = (s) => (isHardcore(state) || (s.bgPicked && isCustomBg(s.background)) ? null : { weapon: s.gear.weapon ? { ...s.gear.weapon } : null, armor: s.gear.armor ? { ...s.gear.armor } : null });
-  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, gear: kit(s), leader: !!s.leader, background: s.bgPicked ? s.background : null, custom: !!s.startCustom }));
+  const kit = (s) => {
+    if (isHardcore(state) || (s.bgPicked && isCustomBg(s.background))) return null;
+    const dice = s.startDice || {}, out = {};
+    for (const k of ["weapon", "armor"]) { const it = k in dice ? dice[k] : s.gear[k]; out[k] = it ? { ...it } : null; }
+    return out;
+  };
+  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, gear: kit(s), leader: !!s.leader, background: s.bgPicked ? s.background : null, custom: !!s.startCustom, startGear: sanitizeStartGear(s.startGear) }));
 }
 // An Ironman crew (main.js, the Ironman box): only what is yours in Ironman (names, looks, the leader); skills, traits,
 // who they were and the kit go back to the dice.
@@ -277,11 +287,16 @@ export function crewWithBackgrounds(state, changes) {
 export const crewWithBackground = (state, id, key) => crewWithBackgrounds(state, { [id]: key });
 
 // Randomize all: every colonist's name, skills (same total), traits, gear and look. Normal: in place, with the starting
-// weapons and the vest handed out again. Hardcore: the gear comes with who they were, what they grabbed and the car, so
+// weapons and the vest handed out again (gear picked under Customize is cleared first: the world is built again without
+// it, so the dice's kit is back to be shuffled). Hardcore: the gear comes with who they were, what they grabbed and the car, so
 // the world is built again on the same seed with a crew roll of its own: rebuild(crew, crewRoll) returns the new state,
 // whose background-shaped skills are then fitted to each colonist's old total. Returns the state to keep.
 export function randomizeAllCrew(state, ui, rebuild) {
   const rng = freshRng();
+  if (!isHardcore(state) && state.survivors.some((s) => hasPicks(sanitizeStartGear(s.startGear)))) {
+    const crew = crewSnapshot(state).map((c) => ({ ...c, startGear: null }));
+    state = rebuild(crew, ui.crewRoll ?? null);
+  }
   if (!isHardcore(state)) {
     const weapons = rng.shuffle(state.survivors.map((s) => s.gear.weapon));
     const armor = rng.shuffle(state.survivors.map((s) => s.gear.armor));

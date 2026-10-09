@@ -41,6 +41,8 @@ import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims a
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds } from "./ui/newgame.js";
 import { BG_ACTIONS, BG_CHANGE, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
+import { SG_ACTIONS, SG_CHANGE } from "./ui/startgear.js"; // starting gear picked under Customize (sim/startgear.js)
+import { clearStartGear } from "./sim/startgear.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
@@ -132,6 +134,7 @@ const freshUi = () => ({
   expedition: null, xpMsg: "", xpQueue: false, moveQueue: false, qSel: null, // team panel and order queue (qSel: the selected queued order)
   inv: null, invSel: null, invMsg: "", // inventory / loot screen (ui/inventory.js)
   lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null, bgEditor: null, // bgEditor: the custom backgrounds window (ui/backgrounds.js)
+  gearEdit: null, // the new-run screen's starting gear window (ui/startgear.js): { i: the colonist's place in the crew }
   dev: false, showFps: false, armed: newArmed(),
   radioWith: null, radioMsg: "", radioDeal: null, radioBase: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
@@ -1026,6 +1029,8 @@ const actions = {
     }
     if (ui.childrenOff) state.childrenOff = true; // the new-run screen's Children box (sim/family.js)
     if (crewCustomized(state)) state.customStart = true; // customized on the new-run screen (Customize, custom backgrounds)
+    clearStartGear(state); // sim/startgear.js: picked gear is ordinary gear from here on
+    ui.gearEdit = null;
     assignStartingRoles(state); // jobs by skill, after any edits made on this screen (world.js)
     centerOn(state, playerTile(state));
     const lead = state.survivors.find((s) => s.leader) || state.survivors[0];
@@ -1048,6 +1053,8 @@ for (const [k, fn] of Object.entries(PLAN_ACTIONS)) actions[k] = (d) => { if (!u
 // Look editor, new-run randomizers and zombie look settings (ui/newgame.js).
 for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Custom backgrounds window (ui/backgrounds.js); its Done is bg-close in the table above.
+// Starting gear window (ui/startgear.js): a change builds the world again on the same seed, the window kept open.
+for (const [k, fn] of Object.entries(SG_ACTIONS)) actions[k] = (d) => { if (fn(state, ui, d)) gearRebuild(); };
 for (const [k, fn] of Object.entries(BG_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Inventory and loot screens (ui/inventory.js).
 for (const [k, fn] of Object.entries(BN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/basename.js
@@ -1294,6 +1301,7 @@ const changeActions = {
 };
 for (const [k, fn] of Object.entries({ ...FARM_CHANGE, ...HEALTH_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(BG_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the custom backgrounds window (ui/backgrounds.js)
+for (const [k, fn] of Object.entries(SG_CHANGE)) changeActions[k] = (el) => { if (fn(state, ui, el)) gearRebuild(); }; // the starting gear window (ui/startgear.js)
 for (const [k, fn] of Object.entries(SKILL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PROD_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { if (!ui.planner) return; fn(state, ui, el); autofill(ui.planner); ui.plannerError = ""; };
@@ -1347,6 +1355,15 @@ function closeBackgrounds() {
   if (!hit.length) { if (changed.length) newWorld(state.seed, true); return; } // the new list goes into the world
   const crew = crewWithBackgrounds(state, Object.fromEntries(hit.map((s) => [s.id, customLibrary()[s.background] ? s.background : null])));
   newWorld(state.seed, true, pickRebuild(crew));
+}
+
+// Starting gear picked or cleared (ui/startgear.js): the world again on the same seed with the edited crew (the picks go
+// on after the dice, so nobody else's start changes), the gear window still open on the same colonist.
+function gearRebuild() {
+  const keep = ui.gearEdit;
+  ui.crewEdited = true;
+  newWorld(state.seed, true);
+  ui.gearEdit = keep;
 }
 
 // A loaded world (ui/settings.js): like a new world, but already started, paused, and remembering its save slot.
@@ -1782,6 +1799,7 @@ function closeTopLayer() {
   if (!$("ctxmenu").classList.contains("hidden")) { hideCtx(); return true; }
   if (ui.zombieLook) { ui.zombieLook = false; return true; }
   if (ui.bgEditor) { closeBackgrounds(); return true; }
+  if (ui.gearEdit) { ui.gearEdit = null; return true; } // the starting gear window (ui/startgear.js)
   if (ui.settings) { // a question first, then the menu itself (not while a save or load is running)
     if (ui.settings.confirm) ui.settings.confirm = null;
     else if (!ui.settings.busy) ui.settings = null;
@@ -1855,7 +1873,7 @@ window.addEventListener("keydown", (e) => {
   // Esc with nothing of ours to close opens the menu (in a battle Esc cancels the current action; ⚙ Menu is in the panel).
   if (ui.title) { if (!ui.settings && !ui.zombieLook && titleKey(ui, e)) e.preventDefault(); return; } // the title screen (ui/title.js): only the menu's keys
   if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
-  if (ui.zombieLook || ui.bgEditor || ui.inv || ui.gunb || ui.settings) return; // these screens take the keyboard
+  if (ui.zombieLook || ui.bgEditor || ui.gearEdit || ui.inv || ui.gunb || ui.settings) return; // these screens take the keyboard
   if (state.combat) {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;
