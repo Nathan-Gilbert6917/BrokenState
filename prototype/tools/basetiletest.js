@@ -140,6 +140,7 @@ section("Enter base: a team at its own base that waited outside (moved out with 
   const res = moveTeamOut(st, { baseId: h.id, memberIds: crew.map((s) => s.id), supplies: { food: 6, water: 6 } });
   const p = res.party;
   check(p && p.phase === "waiting" && partyTile(p) === h.tile, "a team waits outside the hub");
+  check(p && !st.cards.some((c) => c.partyId === p.id && c.enterBase != null), "moved out with no destination: not asked to enter (it waits outside)");
   const o = p && enterOpt(st, p);
   check(o && !o.disabled && o.label === `Enter ${h.name}`, `the orders offer "${o && o.label}"`);
   const card = p && ordersCard(st, p, "");
@@ -159,6 +160,45 @@ section("Enter base: a team at its own base that waited outside (moved out with 
   check(h.stock.food >= food0 && h.stock.scrap >= 109 && h.armory.some((g) => g.key === "crowbar"), "what it carried is in the stores and the armory");
   check(st.log.some((l) => /is home/.test(l.text)), "the log: the team is home (its own base)");
   check(dangling(st, p.id).length === 0, "nothing points at the gone team");
+}
+
+section("Enter card: a team that ends a Move on its own home tile is asked; No leaves it waiting with Enter base");
+{
+  // Ticks keeping only the team's own cards, until its Enter card or orders card is up.
+  const until = (st, p) => { for (let i = 0; i < 200 && !st.cards.some((c) => c.partyId === p.id && (c.enterBase != null || c.isOrders)); i++) { st.hordes.length = 0; tickHour(st); if (st.combat) st.combat = null; if (st.engagement) st.engagement = null; for (let j = st.cards.length - 1; j >= 0; j--) if (st.cards[j].partyId !== p.id) st.cards.splice(j, 1); } return st.cards.find((c) => c.partyId === p.id); };
+  for (const answer of ["No", "Yes"]) {
+    const st = mk();
+    const h = hub(st);
+    const crew = atBase(st, h.id).filter((s) => !s.leader).slice(0, 2);
+    const out = tileNear(st, h.tile, 2, 3);
+    const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: out, mission: "move", stance: "normal", supplies: { food: 6, water: 6 } });
+    const p = res.party;
+    const c0 = until(st, p);
+    check(c0 && c0.isOrders && partyTile(p) === out, `${answer}: a Move to an empty tile ends with the orders card, not the Enter card`);
+    st.cards.length = 0;
+    orderMove(st, p, h.tile);
+    const card = until(st, p);
+    check(card && card.enterBase === h.id && card.title === `Enter ${h.name}?` && !/instead of/.test(card.text), `${answer}: back on its home tile with a Move: "${card && card.title}"`);
+    check(card && !st.cards.some((c) => c.isOrders && c.partyId === p.id), `${answer}: instead of the orders card`);
+    if (!card) continue;
+    const yes = card.choices.find((c) => /^Yes/.test(c.label)), no = card.choices.find((c) => /^No/.test(c.label));
+    if (answer === "Yes") {
+      check(yes.ai(st) > no.ai(st), "the autopilot says yes at its own home");
+      st.cards.length = 0;
+      const text = yes.resolve(st);
+      check(!st.parties.includes(p) && crew.every((s) => s.location.kind === "base" && s.location.baseId === h.id), `Yes: the team is home and disbanded (${text})`);
+      check(dangling(st, p.id).length === 0, "nothing points at the gone team");
+    } else {
+      st.cards.length = 0;
+      no.resolve(st);
+      check(st.parties.includes(p) && p.phase === "waiting" && partyTile(p) === h.tile && crew.every((s) => s.location.kind === "party"), "No: still a team, waiting on the hub's tile");
+      check(st.cards.some((c) => c.isOrders && c.partyId === p.id) && enterOpt(st, p) && !enterOpt(st, p).disabled, "with its orders card, Enter base still offered");
+      check(/data-mission="enter"/.test(renderRight(st, { ...freshUi(), selected: h.tile })), "and the Enter button on the base tile's team card");
+      st.cards.length = 0;
+      startOrder(st, p, { type: "mission", mission: "enter" });
+      check(!st.parties.includes(p) && crew.every((s) => s.location.kind === "base" && s.location.baseId === h.id) && dangling(st, p.id).length === 0, "Enter base later: home and disbanded");
+    }
+  }
 }
 
 section("Enter base: another of your bases, after No on the Enter card; with a vehicle and a prisoner");

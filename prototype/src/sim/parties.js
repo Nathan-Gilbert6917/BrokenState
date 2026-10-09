@@ -1279,8 +1279,8 @@ function arrive(state, p) {
   const members = partyMembers(state, p);
   switch (p.mission) {
     case "move": {
-      // One of your other bases, with nothing queued after it: "Enter <base>?" instead of the orders card (moveout.js).
-      const into = !(p.orders && p.orders.length) ? enterTarget(state, p) : null;
+      // One of your bases (its home too), with nothing queued after it: "Enter <base>?" instead of the orders card (moveout.js).
+      const into = !(p.orders && p.orders.length) ? enterTarget(state, p, { home: true }) : null;
       if (into) { awaitOrders(state, p, "", { card: (st, q) => enterCard(st, q, into) }); return ""; }
       awaitOrders(state, p, `The team reached ${tileLabel(state, p.dest)}.`);
       offerCrawl(state, p); // a city you drive the team into: the City crawl card instead of the orders card
