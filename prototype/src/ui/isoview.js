@@ -31,7 +31,8 @@ import { thirdRing } from "../sim/thirdside.js";
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
 import { isMedic } from "../sim/medics.js"; // a med kit makes a medic: the cross tag
 import { nlTags } from "./nonlethal.js";
-import { drawGroundIso } from "./ground.js"; // things on the ground (sim/ground.js) // status tags of the non-lethal kit (sim/nonlethal.js)
+import { drawGroundIso, drawPileIso } from "./ground.js";
+import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js) // status tags of the non-lethal kit (sim/nonlethal.js)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -1475,6 +1476,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // Bodies on the ground (sim/sleepers.js), by the same depth as the units.
   const bodies = new Map();
   for (const c of b.corpses || []) { if (!onFloor(b, c)) continue; const [cu, cv] = toView(c.x, c.y, r, b.w, b.h); const d = cu + cv; const a = bodies.get(d); if (a) a.push(c); else bodies.set(d, [c]); }
+  // Things on the ground (sim/ground.js piles), by the same depth.
+  const piles = new Map();
+  for (const p of groundPiles(b)) { if (!pileCount(p) || !onFloor(b, p)) continue; const [cu, cv] = toView(p.x, p.y, r, b.w, b.h); const d = cu + cv; const a = piles.get(d); if (a) a.push(p); else piles.set(d, [p]); }
   // An upper floor: which sides of a footprint cell face the outside (the wall mass below is drawn there).
   const massFaces = (uu, vv) => {
     let faces = 0;
@@ -1528,6 +1532,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       }
     }
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
+    for (const p of piles.get(d) || []) drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); // ui/ground.js
     for (const q of gh.get(d) || []) drawGhost(ctx, state, b, q, H);
     for (const f of siegeAt.get(d) || []) f();
     for (const s of (sh.get(d) || []).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) drawUnitIso(ctx, state, b, s, H, now);

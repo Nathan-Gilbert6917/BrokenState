@@ -302,15 +302,24 @@ export function groundLeftovers(state, b, outcome) {
   const L = b && !b.raid ? b.fieldLoot : null;
   if (!L) return [];
   const out = [];
+  let ground = null; // every pile on the ground is one "On the ground" entry
   for (const c of L.containers) {
     if (!pileCount(c)) continue;
-    const pile = ensureInv({ name: isPile(c) ? "On the ground" : c.label, kind: "pile", pile: true, uid: c.uid ?? null, supplies: { ...c.contents.sup }, loose: c.contents.gear.slice() });
+    let pile;
+    if (isPile(c) && ground) {
+      pile = ground;
+      pile.loose.push(...c.contents.gear);
+      for (const [k, v] of Object.entries(c.contents.sup)) if (v > 0) pile.supplies[k] = (pile.supplies[k] || 0) + v;
+    } else {
+      pile = ensureInv({ name: isPile(c) ? "On the ground" : c.label, kind: "pile", pile: true, uid: isPile(c) ? null : c.uid ?? null, supplies: { ...c.contents.sup }, loose: c.contents.gear.slice() });
+      if (isPile(c)) ground = pile;
+    }
     // Left over, not found: it is not counted as found until it is taken (raidloot.js tally).
     for (const g of c.contents.gear) { const i = L.foundGear.indexOf(g); if (i >= 0) L.foundGear.splice(i, 1); }
     for (const [k, v] of Object.entries(c.contents.sup)) if (v > 0 && L.found[k]) { L.found[k] = Math.max(0, L.found[k] - v); if (!L.found[k]) delete L.found[k]; }
     c.contents.gear = []; c.contents.sup = {};
     settle(c);
-    out.push(pile);
+    if (!out.includes(pile)) out.push(pile);
   }
   if (outcome === "victory") return out;
   if (out.length) leaveBodies(state, { bodies: out, tileId: b.tileId, setup: b.setup });

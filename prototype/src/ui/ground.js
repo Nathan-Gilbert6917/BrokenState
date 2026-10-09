@@ -91,20 +91,22 @@ export function drawGroundTop(ctx, b, ox, oy, cs, floor = 0) {
   }
 }
 // The same in the iso view: project(x, y, z) → [X, Y] screen; zAt(x, y): the ground's height there (art px); S: zoom.
+// One pile, drawn in the painter's pass with the units of its diagonal (ui/isoview.js), so a car in front hides it.
+export function drawPileIso(ctx, p, project, zAt, S) {
+  const n = pileCount(p);
+  if (!n) return;
+  const [X, Y] = project(p.x + 0.35, p.y + 0.65, zAt(p.x, p.y));
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.beginPath(); ctx.ellipse(X, Y + 0.6 * S, 5.5 * S, 2.4 * S, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#8a7350"; ctx.strokeStyle = "#2a2118"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.ellipse(X, Y - 1.6 * S, 4 * S, 2.8 * S, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#5d6066"; ctx.fillRect(X - 4.5 * S, Y - 0.6 * S, 5 * S, 1.1 * S);
+  ctx.font = `700 ${Math.max(9, Math.round(3.4 * S))}px Segoe UI, sans-serif`;
+  ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)";
+  ctx.strokeText(String(n), X, Y - 6 * S); ctx.fillStyle = "#e0a84f"; ctx.fillText(String(n), X, Y - 6 * S);
+}
+// The bodies searched in a field battle with things still on them: a small orange tag over them (with the markers).
 export function drawGroundIso(ctx, b, project, zAt, S, floor = 0) {
-  for (const p of groundPiles(b)) {
-    const n = pileCount(p);
-    if (!n || (p.f || 0) !== floor) continue;
-    const [X, Y] = project(p.x + 0.35, p.y + 0.65, zAt(p.x, p.y));
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.beginPath(); ctx.ellipse(X, Y + 0.6 * S, 5.5 * S, 2.4 * S, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#8a7350"; ctx.strokeStyle = "#2a2118"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.ellipse(X, Y - 1.6 * S, 4 * S, 2.8 * S, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = "#5d6066"; ctx.fillRect(X - 4.5 * S, Y - 0.6 * S, 5 * S, 1.1 * S);
-    ctx.font = `700 ${Math.max(9, Math.round(3.4 * S))}px Segoe UI, sans-serif`;
-    ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)";
-    ctx.strokeText(String(n), X, Y - 6 * S); ctx.fillStyle = "#e0a84f"; ctx.fillText(String(n), X, Y - 6 * S);
-  }
   if (!b.raid && b.fieldLoot) for (const c of b.fieldLoot.containers) {
     if (c.kind !== "body" || !pileCount(c) || (c.f || 0) !== floor) continue;
     const [X, Y] = project(c.x + 0.5, c.y + 0.5, zAt(c.x, c.y) + 6);
