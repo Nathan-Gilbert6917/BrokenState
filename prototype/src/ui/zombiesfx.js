@@ -973,7 +973,8 @@ export const ZOMBIE_VOICES = Object.fromEntries(Object.entries(EVENT_CUE).map(([
 // slider value to a gain (squared, like the other sliders).
 // The levels came down for the mixer (the user: zombie voices down a touch so everything fits without the limiter
 // working as hard): in a firefight into a horde of 24 the effects limiter was pulling 1.3 dB on average, 5 dB at most,
-// 84% of the time; now about 0.1 dB, 2.5 at most, a third of the time (tools/zombiesfxpreview.cjs; the report).
+// 84% of the time; now about 0.1 dB, 2.5 at most, a third of the time (an offline render of the game's chain at the
+// default sliders, six dice seeds; the guns not touched).
 export const ZOMBIE_BUS_GAIN = 1.259; // the crowd bed: +2 dB over the level it was first made at (was +4)
 export const ZOMBIE_VOICE_GAIN = 0.944; // the voices: -0.5 dB (were +4), the moans at +1.5 (EVENT_TRIM)
 export const ZOMBIE_CEIL = 0.891;     // -1 dBFS
