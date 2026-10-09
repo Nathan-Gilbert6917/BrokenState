@@ -13,7 +13,7 @@
 // teamCtxHtml(state, ui, menu)                 → the menu's team section
 // runTeamAction(state, ui, d)                  → does it (d: { id, tile, key, mode, ok }); returns the message, null when it asked first
 import { baseById, hub } from "../sim/world.js";
-import { MISSIONS, partyTile, partyMembers, tileLabel, teamName, orderOptions, planPath, orderMove, carried, cargoRoom } from "../sim/parties.js";
+import { MISSIONS, partyTile, partyMembers, tileLabel, orderOptions, planPath, orderMove, carried, cargoRoom } from "../sim/parties.js";
 import { queueOrder, startOrder, queueEstimate, queueEndTile, orderStatus, orderLabel, queueText, cancelMove, besideWater, repairInfo, FETCH_WATER_HOURS, SURVEY_HOURS } from "../sim/orders.js";
 import { commandable, NO_RADIO } from "../sim/plans.js";
 import { partyVehicle } from "../sim/vehicles.js";
@@ -101,11 +101,11 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   /** @type {any[]} */
   const items = [];
   // An item: seq, the orders on the tile; move: go there first (the travel above); special: done at once in the UI.
-  const add = (group, key, label, seq, { why = "", hint = "", move = true, special = null, task } = {}) => {
+  const add = (group, key, label, seq, { why = "", hint = "", move = true, special = null, task, open = false } = {}) => {
     const needMove = move && !here && !special;
     const disabled = (!cmd ? NO_RADIO : "") || (needMove ? travel.why : "") || why || null;
     const job = task !== undefined ? task : special ? 0 : taskHours(state, p, tile, seq);
-    items.push({ group, key, label, seq, move: needMove, special, hint, disabled, travel: needMove ? travel.hours : 0, task: job, ahead });
+    items.push({ group, key, label, seq, move: needMove, special, hint, disabled, travel: needMove ? travel.hours : 0, task: job, open, ahead });
   };
 
   // Go
@@ -131,7 +131,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   // Your own base
   if (base) {
     const enter = orderOptions(state, p, tile).find((o) => o.mission === "enter");
-    if (enter) add("Base", "mission:enter", enter.label, [{ type: "mission", mission: "enter" }], { why: enter.disabled || "", hint: enter.desc });
+    if (enter) add("Base", "mission:enter", enter.label, [{ type: "mission", mission: "enter" }], { why: enter.disabled || "", hint: enter.desc, task: 0 });
     const at = partyTile(p) === tile;
     const notHere = at ? "" : `Only while the team stands on ${base.name}: move it here first.`;
     const why = notHere || transferProblem(state, p, base);
@@ -190,7 +190,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     const lit = fireLit(p);
     const burn = fireLandOk(state, tile) || carried(p, "wood") >= 1;
     const noFire = burn ? "" : "Nothing to burn on this bare ground and no firewood carried.";
-    for (const h of [8, 24, null]) add("Camp", `camp:${h ?? 0}`, h ? `Camp here ${h}h` : "Camp here until told", [{ type: "camp", hours: h }], { hint: `Stop and rest${h ? ` for ${h} hours` : " until you break camp"}: the hurt heal a little, nobody travels. ${lit ? "The camp fire is lit (it warms, boils water and cooks, but its light carries)." : "No camp fire (the team's fire is set out)."}` });
+    for (const h of [8, 24, null]) add("Camp", `camp:${h ?? 0}`, h ? `Camp here ${h}h` : "Camp here until told", [{ type: "camp", hours: h }], { open: !h, hint: `Stop and rest${h ? ` for ${h} hours` : " until you break camp"}: the hurt heal a little, nobody travels. ${lit ? "The camp fire is lit (it warms, boils water and cooks, but its light carries)." : "No camp fire (the team's fire is set out)."}` });
     if (camping) add("Camp", lit ? "fireout" : "fire", lit ? "Put the camp fire out" : "Light a camp fire", [], { special: lit ? "fireout" : "fire", why: lit ? "" : noFire, hint: lit ? "Darker and quieter, but cold food, unboiled water and cold nights." : "Warmth, hot food and boiled water, better spirits; its light and smoke carry, most at night." });
     else add("Camp", "campfire", "Make camp with a fire (8h)", [{ type: "camp", hours: 8, fire: true }], { why: noFire, hint: "Camp 8 hours with the fire lit: warmth, hot food and boiled water (the worm's eggs die), better spirits; its light and smoke carry, most at night." });
   }
@@ -217,7 +217,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
 
   const travelText = water ? "" : here ? (append ? "where its queue ends" : "here") : travel.hours == null ? "no route" : `~${hrsText(travel.hours)} away`;
   const head = {
-    name: teamName(state, p),
+    name: `Team: ${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")}`,
     situation: [v ? v.name : "on foot", cmd ? orderLabel(state, p) : "out of radio contact", travelText].filter(Boolean).join(" · "),
     tile: tileLabel(state, tile),
     water,
@@ -238,7 +238,7 @@ function resupplyWants(state, p, base) {
 // ---------- the menu ----------
 // The hours of an item: travel + the job ("on site" when the job has no fixed time), after the queue when queueing.
 export function itemHours(it) {
-  const job = it.task == null ? "on site" : it.task ? hrsText(it.task) : "";
+  const job = it.open ? "until told" : it.task == null ? "on site" : it.task ? hrsText(it.task) : "";
   const parts = [it.move && it.travel != null ? `${hrsText(it.travel)} travel` : "", job].filter(Boolean);
   if (!parts.length) return "";
   return `${it.ahead ? `after ${hrsText(it.ahead)}: ` : ""}${parts.join(" + ")}`;
@@ -332,7 +332,7 @@ export function runTeamAction(state, ui, d, acts = {}) {
   if (m.append) return appendOrders(state, p, tile, it);
   if (dropsPlan(state, p) && ask(ui, d, "tc-do", {
     kind: "replaceorders",
-    title: `Replace ${teamName(state, p)}'s orders?`,
+    title: `Replace the orders of ${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")}?`,
     text: `${it.label} instead of: ${[orderLabel(state, p), queueText(state, p)].filter(Boolean).join(" → ")}. Those are dropped. Shift+right-click (or the menu's toggle) adds to the end of the queue instead.`,
     yes: "Replace",
   })) return null;

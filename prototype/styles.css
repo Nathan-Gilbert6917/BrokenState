@@ -115,12 +115,12 @@ body.fold-left #gut-left .gut-shut, body.fold-right #gut-right .gut-shut, body.f
 #ctxmenu button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 0.35rem 0.5rem; }
 #ctxmenu button:hover:not(:disabled) { background: var(--panel-2); }
 /* A selected team's right-click menu (ui/teamctx.js): the team, its actions for the tile with their hours, then the rest folded. */
-#ctxmenu { overflow-y: auto; overscroll-behavior: contain; }
+#ctxmenu { overflow-y: auto; overscroll-behavior: contain; z-index: 9; } /* over the alerts, the guide and the banner */
 #ctxmenu .tchead { padding-bottom: 0.3rem; margin-bottom: 0.15rem; border-bottom: 1px solid var(--line); max-width: 26rem; }
 #ctxmenu .tchead .head { padding-bottom: 0; }
 #ctxmenu .tchead > .small { padding: 0 0.5rem; }
-#ctxmenu .tcgroup { padding: 0.35rem 0.5rem 0.05rem; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; }
-#ctxmenu button.tcitem { display: flex; justify-content: space-between; align-items: baseline; gap: 1.2rem; min-width: 19rem; }
+#ctxmenu .tcgroup { padding: 0.3rem 0.5rem 0; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; }
+#ctxmenu button.tcitem { display: flex; justify-content: space-between; align-items: baseline; gap: 1.2rem; min-width: 19rem; padding: 0.22rem 0.5rem; }
 #ctxmenu .tch { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
 #ctxmenu button.tcmode { display: inline-block; width: auto; margin: 0.35rem 0.5rem 0; padding: 0.15rem 0.5rem; border: 1px solid var(--line); border-radius: 6px; font-size: 0.8rem; }
 #ctxmenu button.tcmode.active { border-color: var(--accent); color: var(--accent); }
