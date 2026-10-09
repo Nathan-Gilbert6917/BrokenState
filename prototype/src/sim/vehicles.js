@@ -597,7 +597,7 @@ export function loseRaidHumvee(state, p, to) {
   f.vehLost = state.hour;
   p.humvee = null;
   p.humvees = null;
-  const roll = (k) => hash01(state.seed, "humvee", f.id, v.id, state.hour, k);
+  const roll = (k) => hash01(state.seed, "humvee", localId(state, f.id), localId(state, v.id) /* localId: ids are process-wide */, state.hour, k);
   const ups = JSON.parse(JSON.stringify(upgradesOf(v)));
   if (to && to.base) {
     const [c0, c1] = HUMVEE.LEFT_COND, [f0, f1] = HUMVEE.LEFT_FUEL;
