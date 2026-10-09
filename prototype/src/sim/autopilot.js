@@ -145,7 +145,56 @@ export const PERSONALITIES = {
     hiveFrom: 30, hiveOdds: 1.05, hiveFires: 3, hiveRest: 4,
     conquer: "ready", conquerFrom: 60, conquerOdds: 0.65, retreatBelow: 0.6,
   },
+  // The play styles below (2026-10-09, the progression census) lean on one of the three above: `base` is the style
+  // the rest of the game reads for them (state.governor.personality: diplomacy, road and war cards, prisoners, the
+  // retreat policy, perks), while the governor's own decisions use every knob here. New knobs: envoyEvery /
+  // envoyReach (days between envoys to a group, how far they go: × range), landEarly (founds land outposts for the
+  // coalition as soon as it has a member, without waiting for the groups to settle: landPush), tributeLean (how
+  // readily it pays a tribute rather than fight: raidWarningChoice).
+  diplomat: {
+    name: "Diplomat", base: "cautious", crowdSlack: 2, desc: "Builds the coalition: envoys with gifts to every group it knows, trade visits, land outposts as soon as it has a member; pays tribute, never starts a war, storms hives only at good odds.",
+    maxTeams: 2, cooldown: 2, crew: 2, homeFrac: 0.5, minHealth: 70, range: 11, maxHoursOut: 30, stance: "normal",
+    searchHours: 4, searchHeat: 40, hurtStop: 50, risk: 0.7, riskAversion: 1.2, lossFear: 10, fightBias: -0.5, raidBias: -3,
+    curious: 1, baseGuards: 1, guardMargin: 1.3, restMood: 30, chain: 1, outposts: 2, outpostPop: 9, strangerDays: 3,
+    holdRatio: 1.3, raid: false, rescue: true, tradeEvery: 6,
+    hiveFrom: 120, hiveOdds: 1.25, hiveFires: 3, hiveRest: 8,
+    conquer: "last", conquerFrom: 240, conquerOdds: 0.8, retreatBelow: 0.85,
+    envoyEvery: 8, envoyReach: 3.5, landEarly: true, tributeLean: 1.8,
+  },
+  hunter: {
+    name: "Hive hunter", base: "aggressive", crowdSlack: 4, desc: "Hunts hives from the first month: a squad out to the nearest mound whenever it is fit, fires first, short rests between storms; fights groups only when they raid it.",
+    maxTeams: 2, cooldown: 2, crew: 2, homeFrac: 0.45, minHealth: 65, range: 13, maxHoursOut: 34, stance: "normal",
+    searchHours: 5, searchHeat: 50, hurtStop: 40, risk: 0.6, riskAversion: 0.9, lossFear: 8, fightBias: 0.5, raidBias: 0,
+    curious: 1.2, baseGuards: 1, guardMargin: 1.2, restMood: 25, chain: 1, outposts: 1, outpostPop: 10, strangerDays: 4,
+    holdRatio: 1.25, raid: false, rescue: true, tradeEvery: 10,
+    hiveFrom: 20, hiveOdds: 1.0, hiveFires: 4, hiveRest: 3,
+    conquer: "provoked", conquerFrom: 200, conquerOdds: 0.75, retreatBelow: 0.75, lateConquer: 0.75,
+  },
+  turtle: {
+    name: "Turtle", base: "cautious", crowdSlack: 0, desc: "Fortifies and stays home: one short trip at a time, three guards on the walls, a single outpost only once the hub is big, keeps a reserve of everything, storms a hive only late and at great odds, never goes to war.",
+    maxTeams: 1, cooldown: 5, crew: 3, homeFrac: 0.7, minHealth: 85, range: 7, maxHoursOut: 16, stance: "stealthy",
+    searchHours: 3, searchHeat: 20, hurtStop: 65, risk: 0.85, riskAversion: 1.8, lossFear: 14, fightBias: -1.5, raidBias: -4,
+    curious: 0.3, baseGuards: 3, guardMargin: 1.6, restMood: 38, chain: 0, outposts: 1, outpostPop: 20, strangerDays: 10,
+    holdRatio: 1.6, raid: false, rescue: false, tradeEvery: 14,
+    reserves: true, shortCooldown: 3, shortReach: 1.5, homeHorde: 6,
+    hiveFrom: 400, hiveOdds: 1.5, hiveFires: 3, hiveRest: 14,
+    conquer: "last", conquerFrom: 400, conquerOdds: 0.85, retreatBelow: 0.95,
+  },
+  expander: {
+    name: "Expansionist", base: "aggressive", crowdSlack: 6, desc: "Spreads out: outposts early and many, land for the coalition from the first member, takes hostile groups' bases from the first months, ranges far.",
+    maxTeams: 3, cooldown: 1, crew: 3, homeFrac: 0.4, minHealth: 65, range: 16, maxHoursOut: 40, stance: "normal",
+    searchHours: 6, searchHeat: 55, hurtStop: 40, risk: 0.55, riskAversion: 0.7, lossFear: 8, fightBias: 0.5, raidBias: 1,
+    curious: 1.3, baseGuards: 1, guardMargin: 1.15, restMood: 24, chain: 2, outposts: 5, outpostPop: 6, strangerDays: 3,
+    holdRatio: 1.2, raid: true, rescue: true, tradeEvery: 0,
+    hiveFrom: 60, hiveOdds: 1.15, hiveFires: 3, hiveRest: 6,
+    conquer: "ready", conquerFrom: 90, conquerOdds: 0.7, retreatBelow: 0.65, lateConquer: 0.6,
+    envoyEvery: 15, landEarly: true,
+  },
 };
+// The style the rest of the game reads (state.governor.personality): a style's base, or the style itself.
+export const baseStyleOf = (key) => (PERSONALITIES[key] && PERSONALITIES[key].base) || (PERSONALITIES[key] ? key : "balanced");
+// The Cautious style's careful habits (sneaking, leaving a truck alone, treating a sprain, a bigger ammo reserve), shared by the styles based on it.
+const careful = (P) => P.name === "Cautious" || P.base === "cautious";
 
 const PLAN_HOUR = 7;      // daily planning: teams leave in the morning
 const STICKY = 2;         // bonus for keeping someone's current role (fewer flips)
@@ -169,13 +218,16 @@ function gov(state) {
   }
   return state.governor;
 }
-const persona = (state) => PERSONALITIES[(stewardCtx && stewardCtx.style) || gov(state).personality] || PERSONALITIES.balanced;
-export const autopilotPersonality = (state) => gov(state).personality;
+// g.personality: the base style the rest of the game reads; g.style: the full style when it is one of the newer ones.
+const styleKey = (g) => (g.style && PERSONALITIES[g.style] ? g.style : g.personality);
+const setStyle = (g, key) => { g.personality = baseStyleOf(key); g.style = PERSONALITIES[key].base ? key : null; };
+const persona = (state) => PERSONALITIES[(stewardCtx && stewardCtx.style) || styleKey(gov(state))] || PERSONALITIES.balanced;
+export const autopilotPersonality = (state) => styleKey(gov(state));
 
 // ---------- switching ----------
 export function setAutopilot(state, on, personality) {
   const g = gov(state);
-  if (personality && PERSONALITIES[personality]) g.personality = personality;
+  if (personality && PERSONALITIES[personality]) setStyle(g, personality);
   if (!!on === !!state.autopilot) return;
   state.autopilot = !!on;
   if (on) {
@@ -193,8 +245,8 @@ export function setAutopilot(state, on, personality) {
 export function setPersonality(state, key) {
   if (!PERSONALITIES[key]) return;
   const g = gov(state);
-  if (g.personality === key) return;
-  g.personality = key;
+  if (styleKey(g) === key) return;
+  setStyle(g, key);
   if (state.autopilot) say(state, `Governor style: ${PERSONALITIES[key].name}.`);
 }
 
@@ -732,7 +784,7 @@ function pickChoice(state, card, opts, p) {
     const ammo = baseAmmo(state, h); // ammo.js: the rounds that fit its guns
     const fighters = atBase(state, h.id).sort((a, b) => combatPower(b) - combatPower(a));
     if (P.raid && fighters.length >= 7 && fighters.slice(0, 3).reduce((a, s) => a + combatPower(s), 0) >= 14) return find(/^Send a squad/) || find(/^Ignore/);
-    const spare = P.reserves ? Math.max(200, reserveStatus(state, h).ammo.target + 40) : P.name === "Cautious" ? 200 : 110;
+    const spare = P.reserves ? Math.max(200, reserveStatus(state, h).ammo.target + 40) : careful(P) ? 200 : 110;
     return (ammo >= spare ? find(/^Send 40 ammo/) : null) || find(/^Ignore/);
   }
   if (/^A stranger at the gate/.test(t) || /^Refugees at the gate/.test(t)) {
@@ -756,7 +808,7 @@ function pickChoice(state, card, opts, p) {
   if (/^Blocked highway/.test(t)) return (p && partyFuelOf(state, p) >= 12 ? find(/^Detour/) : null) || (chance(/^Squeeze/) >= 0.6 ? find(/^Squeeze/) : null) || find(/^Clear a path/);
   if (/^Breakdown/.test(t)) return find(/spare part/) || find(/^Repair/);
   if (/^Storm/.test(t)) return find(/^Shelter/);
-  if (/^Bad footing/.test(t)) return ((p && (p.supplies.meds || 0) >= 2) || P.name === "Cautious" ? find(/^Treat it/) : null) || find(/^Keep moving/);
+  if (/^Bad footing/.test(t)) return ((p && (p.supplies.meds || 0) >= 2) || careful(P) ? find(/^Treat it/) : null) || find(/^Keep moving/);
   if (/^The dead ahead/.test(t)) {
     const n = Number((/About (\d+)/.exec(card.text || "") || [0, 8])[1]);
     const ms = p ? partyMembers(state, p) : [];
@@ -785,7 +837,7 @@ function pickChoice(state, card, opts, p) {
     return (p && carriedDays(state, p, 1) >= tripHoursLeft(state, p) / 24 + 0.5 ? find(/^Take them along/) : null) || find(/^Point them/);
   }
   if (/ patrol$/.test(t)) return find(/^Share news/);
-  if (/^Abandoned supply truck/.test(t)) return P.name === "Cautious" ? find(/^Leave it/) : find(/^Search it/);
+  if (/^Abandoned supply truck/.test(t)) return careful(P) ? find(/^Leave it/) : find(/^Search it/);
   if (/^Crashed military vehicle/.test(t)) return (chance(/^Search it/) >= P.risk ? find(/^Search it/) : null) || find(/^Leave it/);
   if (/^Tempers flare/.test(t)) return (chance(/^Step in/) >= 0.5 ? find(/^Step in/) : null) || find(/^Let them/);
   if (/^Cold feet/.test(t)) return find(/^Convince/);
@@ -1081,7 +1133,7 @@ function raidWarningChoice(state, card, opts, P) {
   planRoles(state, base);
   const stakes = raidStakes(state, base, raid);
   if (stakes.ratio >= P.holdRatio) return find(/^Prepare/);
-  const pay = stakes.tribute < stakes.fight * (TRIBUTE_LEAN[P.name] ?? 1) ? find(/^Pay tribute/) : null;
+  const pay = stakes.tribute < stakes.fight * (P.tributeLean ?? TRIBUTE_LEAN[P.name] ?? 1) ? find(/^Pay tribute/) : null;
   // Retreat (conquest.js) when the base would be overrun anyway and the tribute cannot be paid: an outpost below the
   // style's retreatBelow, the hub only when it is hopeless (a quarter of what it takes) and another base can take
   // everyone in; never the last base.
@@ -1265,7 +1317,7 @@ function chooseApproach(state, p, e) {
   const t = state.tiles[e.tile];
   const members = partyMembers(state, p);
   const power = members.reduce((a, s) => a + combatPower(s), 0);
-  if (P.name === "Cautious" || e.guarded || t.infection > 0.5) return P.raid && power >= 16 && !e.guarded ? "normal" : "sneak";
+  if (careful(P) || e.guarded || t.infection > 0.5) return P.raid && power >= 16 && !e.guarded ? "normal" : "sneak";
   if (P.raid && power >= 12 && teamAmmo(state, p, false) >= members.length * 18) return "loud";
   return t.infection > 0.35 ? "sneak" : "normal";
 }
@@ -2766,16 +2818,16 @@ function envoyCandidate(state, need) {
   const last = g.lastEnvoy || {};
   const f = state.factions
     .filter((x) => x.alive && x.known && x.bases.length && !isMember(state, x) && attitude(x) !== "Hostile" && !canRadioGroup(state, x) &&
-      today - (last[x.id] ?? -99) >= ENVOY_EVERY)
+      today - (last[x.id] ?? -99) >= (P.envoyEvery ?? ENVOY_EVERY))
     .map((x) => ({ x, d: Math.min(...x.bases.map((b) => state.grid.distance(b, h.tile))) }))
     // The war council aims the envoys: the groups nearest the campaign's hive and the coalition's land first (their
     // fighters join the storm, alliance.js hiveAllies, and their land counts), then the nearest to home.
-    .filter((o) => o.d <= P.range * ENVOY_REACH).sort((a, b) => aimAt(state, a.x) - aimAt(state, b.x) || a.d - b.d)[0];
+    .filter((o) => o.d <= P.range * (P.envoyReach ?? ENVOY_REACH)).sort((a, b) => aimAt(state, a.x) - aimAt(state, b.x) || a.d - b.d)[0];
   if (!f) return null;
   // Gifts while their goodwill is short; a group that trusts you already only needs the visit (the invitation).
   const courted = f.x.goodwill >= ALLIANCE.GOODWILL && f.x.pact;
   if (!courted && !goods) return null;
-  return { mission: "trade", tile: f.x.bases.find((b) => state.grid.distance(b, h.tile) === f.d), score: courted ? 3 : 2.2, crew: 2, envoy: f.x.id, reach: ENVOY_REACH,
+  return { mission: "trade", tile: f.x.bases.find((b) => state.grid.distance(b, h.tile) === f.d), score: courted ? 3 : 2.2, crew: 2, envoy: f.x.id, reach: P.envoyReach ?? ENVOY_REACH,
     why: `an envoy to ${f.x.name} (goodwill ${Math.round(f.x.goodwill)}${f.x.pact ? "" : ", no pact"}): ${courted ? "the invitation to the coalition" : "gifts and talk for the coalition"}`, supplies: courted ? {} : goods };
 }
 
@@ -3570,7 +3622,8 @@ function landPush(state) {
   // The coalition is its own way to win: once it has a member or a conquered base and the land is short.
   // Outposts out in the wild draw hordes: only once the groups are settled (every group left is in the coalition, or
   // the only ones outside are hostile and being broken) or the land is close (35%+).
-  const settled = gp.alliance.allIn || (gp.alliance.members > 0 && gp.alliance.outsiders.every((o) => o.hostile)) || gp.alliance.land.pct >= 0.35;
+  // landEarly (Diplomat, Expansionist): as soon as the coalition has a member.
+  const settled = gp.alliance.allIn || (gp.alliance.members > 0 && (persona(state).landEarly || gp.alliance.outsiders.every((o) => o.hostile))) || gp.alliance.land.pct >= 0.35;
   return settled && !gp.alliance.landOk && day(state) >= 150 && alive(state).length >= 12;
 }
 function landOutpostSite(state) {
