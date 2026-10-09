@@ -692,7 +692,7 @@ let hearPick = "pistol";
 let mixOpen = false; // the Advanced mixer shown (this session)
 // ---------- the mixer's previews ----------
 // ▶ beside each group (and the sound a slider makes as it is let go): a representative sound of the group, at the new
-// level. The top groups play their most typical child's. Music: none (its bus joins at integration).
+// level. The top groups play their most typical child's. Music and its Stings: a short phrase over the music (ui/music.js musicSting).
 const ZSEED = () => (Math.random() * 4294967296) >>> 0;
 export const GROUP_PREVIEW = {
   "weapons.guns": () => (A ? playGun(A.ctx, A.ctx.currentTime + 0.02, labPlan("pistol"), place({ dist: 2 })) : 0), // a 9mm near you
