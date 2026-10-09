@@ -149,7 +149,7 @@ export function renderExpedition(state, ui, p) {
 
   if (!cmd) {
     return head + camp + status + teamRadioLine(state, p, true) + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
-      `<h3>People</h3>${members.map((m) => memberCard(state, p, m, false)).join("")}`;
+      teamVolBlock(state, p) + `<h3>People</h3>${members.map((m) => memberCard(state, p, m, false)).join("")}`;
   }
 
   // Actions on the spot.
