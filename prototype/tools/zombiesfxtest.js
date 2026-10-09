@@ -24,6 +24,7 @@ const t0 = performance.now();
 function stub() {
   const bad = [];
   let nodes = 0, started = 0, stopped = 0;
+  const starts = [];
   const param = (name, v = 0) => {
     const p = { value: v };
     const fin = (x, what) => { if (!Number.isFinite(x)) bad.push(`${name}.${what}(${x})`); };
@@ -34,7 +35,7 @@ function stub() {
     return p;
   };
   const node = (extra = {}) => { nodes++; return { connect(d) { if (!d) bad.push("connect(null)"); return d; }, disconnect() {}, ...extra }; };
-  const src = (extra) => node({ start(t, off) { started++; if (!Number.isFinite(t ?? 0) || !Number.isFinite(off ?? 0)) bad.push("start"); }, stop(t) { stopped++; if (!Number.isFinite(t)) bad.push("stop"); }, ...extra });
+  const src = (extra) => node({ start(t, off) { started++; starts.push(t ?? 0); if (!Number.isFinite(t ?? 0) || !Number.isFinite(off ?? 0)) bad.push("start"); }, stop(t) { stopped++; if (!Number.isFinite(t)) bad.push("stop"); }, ...extra });
   const ctx = {
     sampleRate: 8000, currentTime: 0,
     createGain: () => node({ gain: param("gain", 1) }),
@@ -48,7 +49,7 @@ function stub() {
     createDelay: () => node({ delayTime: param("delay", 0) }),
     createDynamicsCompressor: () => node({ threshold: param("thr", -24), knee: param("knee", 30), ratio: param("ratio", 12), attack: param("att", 0.003), release: param("rel", 0.25) }),
   };
-  return { ctx, bad, get nodes() { return nodes; }, get started() { return started; }, get stopped() { return stopped; }, reset() { nodes = 0; } };
+  return { ctx, bad, starts, get nodes() { return nodes; }, get started() { return started; }, get stopped() { return stopped; }, reset() { nodes = 0; } };
 }
 
 // ---------- 1. voice sets ----------
@@ -170,9 +171,12 @@ console.log("Battle cues");
   C.fx(b, { type: "move", unit: swarm.id, from: [swarm.x - 1, swarm.y], path: [[swarm.x, swarm.y]] });
   cs = step();
   check(has(cs, "zStep", "swarm"), "the swarm moving: its squirm");
-  C.fx(b, { type: "move", unit: brute.id, from: [brute.x - 1, brute.y], path: [[brute.x, brute.y]] });
+  const bx = brute.x, by = brute.y;
+  brute.x = me.x + 1; brute.y = me.y; // it comes within 2 tiles: always heard
+  C.fx(b, { type: "move", unit: brute.id, from: [bx, by], path: [[brute.x, brute.y]] });
   cs = step();
-  check(!has(cs, "zStep") && has(cs, "zAggro", "brute"), "a brute's first move: its roar, and no footsteps (another branch has them)");
+  check(!has(cs, "zStep") && has(cs, "zAggro", "brute"), "a brute closing in: its roar, and no footsteps (another branch has them)");
+  brute.x = bx; brute.y = by;
   C.fx(b, { type: "melee", from: [brute.x, brute.y], to: [brute.x, brute.y - 1 < 0 ? 1 : brute.y - 1], hit: true, crit: false, dmg: 5, side: "enemy", text: "-5" });
   const bashed = step();
   check(has(bashed, "zBash", "brute") || has(bashed, "zBite"), `a blow at a structure: ${names(bashed).join(", ")}`);
@@ -277,6 +281,102 @@ console.log("Voices");
   Z.playZombieTest("demo:crowd", () => {}, 10);
   check(Z.DEMO.crowd && Z.DEMO.crowd.until === 22, "the crowd demo runs for 12 s");
   Z.DEMO.crowd = null;
+}
+
+// ---------- 6b. the screamer ----------
+console.log("Screamer");
+{
+  const S = Z.SCREECH, D = Z.EVENT_DUR.shriek;
+  const plans = Array.from({ length: 200 }, (_, i) => Z.screechPlan(Z.voiceSeed(i + 1, 3), () => 0.5));
+  check(plans.every((p) => p.dur >= 1.6 && p.dur <= 2.2), `the first call lasts 1.6–2.2 s (${Math.min(...plans.map((p) => p.dur)).toFixed(2)}–${Math.max(...plans.map((p) => p.dur)).toFixed(2)})`);
+  check(plans.every((p) => p.at >= 0.35 && p.pull > 0), "a gasping in-breath before it (two pulls, the call from 0.35 s on)");
+  check(plans.every((p) => p.gap >= 0.4 && p.gap <= 0.8 && p.at2 >= p.at + p.dur + p.gap), "a pause of 0.4–0.8 s after its tail, then the second call");
+  check(plans.every((p) => p.dur2 / p.dur >= 0.6 - 1e-9 && p.dur2 / p.dur <= 0.8 + 1e-9 && p.lower < 1), "the second call is lower and 60–80% as long");
+  const sobs = plans.filter((p) => p.sob).length;
+  check(sobs > 40 && sobs < 120, `some screamers break into a sob-shriek (${sobs} of 200)`);
+  const again = Z.screechPlan(Z.voiceSeed(7, 3), () => 0.9), first = Z.screechPlan(Z.voiceSeed(7, 3), () => 0.1);
+  check(again.sob === first.sob && again.base === first.base && again.f === first.f && again.dur !== first.dur, "a screamer always shrieks its own way (seed), each shriek a little different (take)");
+  check(new Set(plans.map((p) => [p.vow, Math.round(p.ring * 20), Math.round(p.f * 10), p.sob].join())).size > 60, "screamers differ: vowel path, ring, pitch, the sob");
+  const worst = Math.max(...plans.map((p) => Z.screechPlan(p ? Z.voiceSeed(plans.indexOf(p) + 1, 3) : 0, () => 1).total));
+  check(worst <= D && D < 6, `the whole shriek is done within ${D} s (the longest ${worst.toFixed(2)} s), the throttle's length for it`);
+  const th = makeThrottle(Z.ZOMBIE_LIMITS, 28);
+  check(th.allow("zShriek", 0, D) && !th.allow("zShriek", 3, D) && !th.allow("zShriek", 5.5, D) && th.allow("zShriek", 6, D), "one shriek at a time: a second screamer waits until the first has died away (no stacking)");
+  // Built on a stub: two calls (oscillators started after the pause), the noticing shriek only one.
+  const St = stub();
+  Z.resetTakes(0);
+  Z.playZombie("shriek", St.ctx, St.ctx.createGain(), 0.5, { kind: "screamer", seed: Z.voiceSeed(11, 3), pitch: 1, dist: 16 });
+  const pl = Z.screechPlan(Z.voiceSeed(11, 3), () => 0);
+  const late = St.starts.filter((x) => x >= 0.5 + pl.at + 1.6 + 0.2 + 0.39).length, lastShriek = Math.max(...St.starts);
+  St.starts.length = 0;
+  Z.playZombie("aggro", St.ctx, St.ctx.createGain(), 0.5, { kind: "screamer", seed: Z.voiceSeed(11, 3), pitch: 1 });
+  const lastAggro = Math.max(...St.starts);
+  check(late >= 10 && lastShriek > 0.5 + 3.4 && lastAggro < lastShriek - 1 && !St.bad.length, `the second call is there (${late} sources after the pause, the last at ${(lastShriek - 0.5).toFixed(2)} s); noticing you is one call (${(lastAggro - 0.5).toFixed(2)} s)`);
+  check(Z.Z_PRIORITY.zShriek <= 2 && Z.ZOMBIE_LIMITS.zShriek.max === 1, "it stays at the top of a frame's volley, one at a time");
+}
+
+// ---------- 6c. silences, snarls, aggro ----------
+console.log("Silences and snarls");
+{
+  // n of the dead standing about for secs seconds, the cues heard (battleCues at 10 frames a second).
+  const quiet = (n, secs = 120, seed = 27) => {
+    const [x] = battles(seed, ["field-forest"]);
+    const { b } = x;
+    const zs = b.units.filter((u) => u.kind === "zombie");
+    while (zs.length < n) { const z = C.enemyUnit(b, b.rng, "zombies", 3, zs.length + 1); const f = zs[zs.length % zs.length]; z.x = f.x; z.y = f.y; b.units.push(z); zs.push(z); }
+    zs.forEach((u, i) => { if (i >= n) u.dead = true; });
+    const mem = {}, log = [], hush = [];
+    battleCues(b, mem, 0);
+    for (let t = 0.1; t <= secs; t += 0.1) {
+      for (const c of battleCues(b, mem, t)) if (/^z/.test(c.name)) log.push({ t: Math.round(t * 10) / 10, name: c.name, gain: c.gain ?? 1 });
+      hush.push(battleCrowd(b).hush);
+    }
+    return { b, log, hush };
+  };
+  const q = quiet(8);
+  const times = q.log.map((c) => c.t);
+  const gaps = times.slice(1).map((t, i) => t - times[i]).filter((g) => g > 5);
+  const snarls = q.log.filter((c) => c.name === "zSnarl"), moans = q.log.filter((c) => c.name === "zIdle");
+  check(gaps.length >= 4, `8 of the dead for 120 s: moans in clusters with real gaps (${moans.length} moans, ${gaps.length} gaps over 5 s, the longest ${Math.max(...gaps).toFixed(1)} s)`);
+  const steps = moans.slice(1).map((c, i) => c.t - moans[i].t).filter((g) => g < 5);
+  check(new Set(steps.map((g) => g.toFixed(1))).size >= Math.min(6, steps.length - 1), `no metronome: the steps inside a cluster vary (${[...new Set(steps.map((g) => g.toFixed(1)))].slice(0, 8).join(", ")} s)`);
+  check(snarls.length >= 1 && snarls.length <= 8, `now and then a sudden snarl in the quiet (${snarls.length} in 120 s: about one every ${(120 / Math.max(1, snarls.length)).toFixed(0)} s)`);
+  check(snarls.every((s) => q.log.every((o) => o === s || Math.abs(o.t - s.t) >= Z.IDLE.SNARL_GAP - 1e-9)), "a snarl never lands within 1.5 s of another of their sounds");
+  check(snarls.every((s) => s.gain > Math.max(...moans.map((m) => m.gain))) && Z.LEVELS.bark > Z.LEVELS.moan * 1.1 && Z.LEVELS.aggro >= Z.LEVELS.bark,
+    `snarls are louder than moans (cue ${snarls[0] ? snarls[0].gain : "-"} vs ${Math.max(...moans.map((m) => m.gain)).toFixed(2)}; peak ${Z.LEVELS.bark} vs ${Z.LEVELS.moan}), the aggro louder still (${Z.LEVELS.aggro})`);
+  const hushed = q.hush.filter((h) => h === 1).length / q.hush.length;
+  check(hushed > 0.3 && hushed < 0.9, `the crowd bed dips through the silences (${Math.round(hushed * 100)}% of the time)`);
+  check(Z.crowdMix({ count: 8, near: 5, mean: 7, hush: 1 }).gain < Z.crowdMix({ count: 8, near: 5, mean: 7, hush: 0 }).gain, "a hushed crowd is quieter");
+  const big = quiet(40, 120, 27), bt = big.log.filter((c) => c.name === "zIdle").map((c) => c.t);
+  const bigGap = Math.max(...bt.slice(1).map((t, i) => t - bt[i]));
+  check(bigGap < Math.max(...gaps) && bigGap < 9 && bt.length > moans.length, `40 of the dead never go quiet for long (longest gap ${bigGap.toFixed(1)} s, ${bt.length} moans)`);
+  const again = quiet(8);
+  check(JSON.stringify(again.log) === JSON.stringify(q.log), "the same battle: the same pattern of moans, silences and snarls");
+  const other = quiet(8, 120, 31);
+  check(JSON.stringify(other.log.map((c) => c.t)) !== JSON.stringify(times), "another battle: another pattern");
+  // Aggro: the first of the fight always, any within 2 tiles always, else about half (by the unit's seed).
+  const [x] = battles(29, ["field-forest"]);
+  const { b } = x;
+  const share = Array.from({ length: 400 }, (_, i) => Z.aggroLucky(b, { id: 1000 + i })).filter(Boolean).length / 400;
+  check(share > 0.42 && share < 0.58, `about half of the dead starting for you snarl (${Math.round(share * 100)}% by their seeds)`);
+  const mem = {};
+  const me = b.units.find((u) => u.side === "player" && !u.dead);
+  const zs = b.units.filter((u) => u.kind === "zombie" && !u.dead);
+  for (const z of zs) z.aware = false;
+  battleCues(b, mem, 0);
+  const far = zs.filter((z) => Math.max(...b.units.filter((u) => u.side === "player").map((p) => -Math.max(Math.abs(p.x - z.x), Math.abs(p.y - z.y)))) < -2);
+  const heard = [];
+  let tt = 0;
+  for (const z of far) { z.aware = true; for (const c of battleCues(b, mem, (tt += 0.1))) if (c.name === "zAggro") heard.push(z.id); }
+  check(heard[0] === far[0].id, "the first of them to notice you always snarls");
+  const rest = far.slice(1), lucky = rest.filter((z) => Z.aggroLucky(b, z));
+  check(heard.length - 1 === lucky.length && rest.length > 4, `the rest by their seed: ${heard.length - 1} of ${rest.length} (the others stay quiet)`);
+  const quietOne = rest.find((z) => !Z.aggroLucky(b, z));
+  if (quietOne) {
+    const from = [quietOne.x, quietOne.y];
+    quietOne.x = me.x + 1; quietOne.y = me.y;
+    C.fx(b, { type: "move", unit: quietOne.id, from, path: [[quietOne.x, quietOne.y]] });
+    check(battleCues(b, mem, (tt += 0.1)).some((c) => c.name === "zAggro" && c.seed === Z.unitSeed(b, quietOne)), "a quiet one that comes within 2 tiles of your people: always heard then");
+  }
 }
 
 // ---------- 7. the map ----------
