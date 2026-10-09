@@ -9,6 +9,9 @@
 //                                [--styles balanced,aggressive,cautious] [--mode both|normal|hardcore] [--preset hardcore-cautious|normal-cautious|all]
 //                                [--out path.json] [--census] [--no-keep] [--log N] [--grep regex] [--fallen-grep] [--jsonl path]
 //                                [--start-people 1-4] (hardcore starts only: how many flee together, hardcore.js START_PEOPLE; 3 when left out)
+//                                [--workers N] (worker threads, default the CPUs less one, at most 12) [--groups-list 6,10,14,20] (cycle these group counts instead of a range)
+// Every game also carries `prog` (tools/progtrack.js: a snapshot a game year, milestone days, the mid / end game
+// markers and the content checklist); tools/progreport.js reads the JSON or JSONL and prints the progression report.
 // --jsonl path: every game is appended to that file as it finishes, and the games already in it are not run again
 // (they join the report): a long census killed half way picks up where it stopped when run again.
 // The testing items of docs/campaign-census-2026-10-06.md (2026-10-06):
@@ -38,6 +41,7 @@ import { clampGroups } from "../src/sim/worldsize.js";
 import { season, SEASONS } from "../src/sim/weather.js";
 import { deathCounter } from "./deathcount.js"; // your people's deaths, one per survivor
 import { clampStartPeople } from "../src/sim/hardcore.js";
+import { progTracker } from "./progtrack.js"; // per-year snapshots, milestones, the progression markers and the content checklist
 
 // ---------- arguments ----------
 const argv = process.argv.slice(2);
@@ -74,6 +78,8 @@ const TODAY = new Date().toISOString().slice(0, 10);
 const CENSUS_DIR = join(dirname(fileURLToPath(import.meta.url)), "census");
 const OUT = flag("--out", CENSUS ? join(CENSUS_DIR, `${TODAY}-${COMMIT}.json`) : null);
 const JSONL = flag("--jsonl", null);
+const WORKERS = Number(flag("--workers", 0)) || null;
+const GROUPS_LIST = flag("--groups-list", null) ? flag("--groups-list", null).split(",").map(Number).filter((n) => n > 0) : null;
 const STUCK_DAYS = 60; // a run with no log line of any kind for this long is reported as possibly stuck
 const MONTHS = [12, 24]; // coalition blockers are recorded at these months and at the end
 const SEASON_KEYS = SEASONS.map((s) => s.key);
@@ -115,6 +121,7 @@ function runOne(job) {
   setAutopilot(state, true, style);
   const samples = [], events = [], deaths = {};
   const newDeaths = deathCounter(state);
+  const prog = progTracker(state, () => Object.entries(deaths).reduce((a, [k, v]) => a + (k === "left" ? 0 : v), 0));
   // Thirst and hunger deaths by season (weather.js season): { thirst: { spring, summer, autumn, winter }, hunger: {...} }.
   const bySeason = { thirst: {}, hunger: {} };
   for (const k of SEASON_KEYS) { bySeason.thirst[k] = 0; bySeason.hunger[k] = 0; }
@@ -162,6 +169,7 @@ function runOne(job) {
         deaths[d.cause] = (deaths[d.cause] || 0) + 1;
         if (bySeason[d.cause]) { const sk = season(state, d.hour).key; bySeason[d.cause][sk] = (bySeason[d.cause][sk] || 0) + 1; }
       }
+      prog.hour(fresh);
       if (state.log[0] !== lastTop) lastLogDay = day(state);
       lastTop = state.log[0];
       longestQuiet = Math.max(longestQuiet, day(state) - lastEventDay);
@@ -183,6 +191,8 @@ function runOne(job) {
   } catch (e) { error = e.stack.split("\n").slice(0, 5).join(" | "); crashDay = day(state); }
   sample();
   recordBlockers("end");
+  let progOut = null;
+  try { progOut = prog.result(); } catch (e) { progOut = { error: String(e.stack || e).split("\n").slice(0, 3).join(" | ") }; }
   let gp, g, conquest, outside = [];
   try { gp = goalsProgress(state); g = autopilotStats(state); conquest = { ...ensureConquest(state).stats }; outside = state.factions.filter((f) => f.alive && !isMember(state, f)).map((f) => `${f.name}: ${inviteProblem(state, f) || "could join"}`); }
   catch (e) { gp = { hives: {}, alliance: { land: {} } }; g = {}; conquest = {}; if (!error) error = `end stats: ${e.stack.split("\n").slice(0, 3).join(" | ")}`; }
@@ -191,7 +201,7 @@ function runOne(job) {
   // { unknown, far, odds, ammo, squad, rest }), when it keeps one.
   const hiveRejects = g && g.hiveRejects && typeof g.hiveRejects === "object" ? { ...g.hiveRejects } : null;
   return {
-    ...job, outcome, day: day(state), crashDay, hiveWinDay, hubDay, error, ms: Date.now() - t0, samples, events, deaths, bySeason, blockers, hiveRejects, longestQuiet, longestSilent,
+    ...job, outcome, day: day(state), crashDay, hiveWinDay, hubDay, error, ms: Date.now() - t0, prog: progOut, samples, events, deaths, bySeason, blockers, hiveRejects, longestQuiet, longestSilent,
     end: {
       bands: (state.hardcore && state.hardcore.groups && state.hardcore.groups.bands ? state.hardcore.groups.bands.length : 0), // hardcore groups still on the road (not factions yet)
       pop: alive(state).length, bases: state.bases.length, hives: gp.hives.left, destroyed: gp.hives.destroyed, building: gp.hives.building,
@@ -219,7 +229,7 @@ if (!isMainThread) {
 function pool(jobs) {
   return new Promise((resolve) => {
     const out = [];
-    const n = Math.max(1, Math.min(jobs.length, cpus().length - 1, 12));
+    const n = Math.max(1, Math.min(jobs.length, WORKERS || Math.min(cpus().length - 1, 12)));
     let next = 0, live = n;
     for (let i = 0; i < n; i++) {
       const w = new Worker(fileURLToPath(import.meta.url));
@@ -247,11 +257,11 @@ async function main() {
     const mode = MODE === "both" ? (i < Math.ceil(GAMES / 2) ? "normal" : "hardcore") : MODE;
     const k = MODE !== "both" || mode === "normal" ? i : i - Math.ceil(GAMES / 2);
     const style = STYLES[k % STYLES.length];
-    const groups = clampGroups(size, GMIN + (k % (GMAX - GMIN + 1)));
+    const groups = clampGroups(size, GROUPS_LIST ? GROUPS_LIST[Math.floor(k / STYLES.length) % GROUPS_LIST.length] : GMIN + (k % (GMAX - GMIN + 1)));
     jobs.push({ seed: SEED0 + i, mode, style, groups, size, days: DAYS, keep: KEEP, logN: LOGN, grep: GREP, startPeople: START_PEOPLE_N });
   }
   const perSize = jobs.filter((j) => j.size === SIZE);
-  console.log(`${GAMES} games to day ${DAYS}${SIZES.length > 1 ? ` on each of ${SIZES.length} sizes (${SIZES.join(", ")})` : ""}: ${perSize.filter((j) => j.mode === "normal").length} normal + ${perSize.filter((j) => j.mode === "hardcore").length} hardcore starts, size ${SIZES.join("/")}, ${GMIN}-${GMAX} AI groups, styles ${STYLES.join("/")}, keep playing after a hive win: ${KEEP}${START_PEOPLE_N != null ? `, hardcore starting people ${START_PEOPLE_N}` : ""}${PRESET_NAME ? `, preset ${PRESET_NAME}` : ""}, commit ${COMMIT}`);
+  console.log(`${GAMES} games to day ${DAYS}${SIZES.length > 1 ? ` on each of ${SIZES.length} sizes (${SIZES.join(", ")})` : ""}: ${perSize.filter((j) => j.mode === "normal").length} normal + ${perSize.filter((j) => j.mode === "hardcore").length} hardcore starts, size ${SIZES.join("/")}, ${GROUPS_LIST ? GROUPS_LIST.join("/") : `${GMIN}-${GMAX}`} AI groups, styles ${STYLES.join("/")}, keep playing after a hive win: ${KEEP}${START_PEOPLE_N != null ? `, hardcore starting people ${START_PEOPLE_N}` : ""}${PRESET_NAME ? `, preset ${PRESET_NAME}` : ""}, commit ${COMMIT}`);
   console.log(`legend: h hive win, a coalition win, l loss, g still going at the cap, X crash`);
   const t0 = Date.now();
   // --jsonl: the games already done (the same seed, size, mode and days) are read back instead of run again.

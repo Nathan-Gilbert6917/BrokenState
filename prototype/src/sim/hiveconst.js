@@ -49,12 +49,12 @@ export const BOSS_NAMES = { horde: "Wallbreaker", hive: "Broodmother", hivemind:
 // breeds: CARRIER below) from the start, runners and feeding grounds from year 2 (the early game), brutes, spitters,
 // Bonebacks, Climbers, Flingers, Sowers and Nightmares from year 5–6 (the mid game: middead.js), screamers, crawlers
 // and the Wallbreaker den
-// from year 10–13 (the late game: no Wallbreakers before), the mutation vat (elite dead) from year 14. Every number
+// from year 10–13 (the late game: no Wallbreakers before), the mutation vat (elite dead) from year 13–17. Every number
 // the tree uses is here.
 export const TECH = {
   RANGE: 2,             // growths stand within this many tiles of their hive
   MAX: 10,              // growths a hive keeps at most (withered ones not counted; also limited by the free tiles)
-  TIER_DAY: [0, 120, 450, 1100, 1500], // game day each tier opens (tiers 0–4): game years 2, 5, 10, 14 (eras.js: 112-day years)
+  TIER_DAY: [0, 120, 450, 995, 1331], // game day each tier opens (tiers 0–4): game years 2, 5, 10, 13 (eras.js: 112-day years; tier 3 opens with the late game, eras.js; 1100 / 1500 before the progression census of 2026-10-09)
   TIER_AGE: [0, 20, 90, 200, 400],     // ... and the age in days a hive needs for it
   JITTER: 0.35,         // per hive: a tier opens up to 35% later than its day
   GAP: 12,              // days between a hive starting one growth and the next

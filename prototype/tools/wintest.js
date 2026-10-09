@@ -168,6 +168,9 @@ function forcedStorm(state) {
   h.stock.ammo = Math.max(h.stock.ammo || 0, 200); h.stock.food = Math.max(h.stock.food || 0, 100); h.stock.water = Math.max(h.stock.water || 0, 80);
   const res = launchExpedition(state, { memberIds: squad.map((p) => p.id), dest: last.tile, mission: "hive", stance: "normal", supplies: { food: 30, water: 30, ammo: 150, meds: 4 } });
   if (res.error) throw new Error(`forced storm: ${res.error}`);
+  // Into the hive at once (autopilot.js hiveChoice: a crawl trip), the core taken at the odds it wants: the planner's own
+  // gate for a storm (stormRatio, with the core's bosses by the numbers fitted to the map since 2026-10-09) is stricter.
+  res.party.apCrawlTrip = true;
   return last;
 }
 async function forceScenario(kind) {
