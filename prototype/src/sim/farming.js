@@ -653,6 +653,13 @@ export function plannedCrop(gh, i) {
   return best;
 }
 export const WINTER_MARGIN = 0.15;
+// An outdoor crop the forecast has ripening inside the hungry gap (after the first day of winter: winter roots, kale,
+// a late sowing) counts GAP_RIPEN of its forecast: in the cold it hardly grows, frost and snow take more than the
+// usual weather says, and it is picked in the snow. 2026-10-09 (progression picks): from mid-autumn the outlook of a
+// big hub was mostly such crops, and in a sixth of the autumns its fields brought in under 70% of what it promised
+// (seeds 6005, 6012: 42-62%), so hubs of 30-40 went into the winter short and starved. Glass is not discounted.
+export const GAP_RIPEN = 0.75;
+const gapRipen = (gh, ripe, gap) => (!gh && ripe >= gap.start ? GAP_RIPEN : 1);
 export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
   const today = todayIdx(state);
   const gap = hungryGap(state, today);
@@ -684,7 +691,7 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
       const fc = cropForecast(p.crop, p.gh, today, p.grown);
       if (!isFinite(fc.days)) continue; // it will not ripen (out of season for good): the plot is lost for now
       if (today + fc.days < gap.end) {
-        const food = expectedYield(state, b, p, care) * fc.survival;
+        const food = expectedYield(state, b, p, care) * fc.survival * gapRipen(p.gh, today + fc.days, gap);
         add(today + fc.days, food, keyOf(p.crop));
         crops += food;
       }
@@ -700,7 +707,7 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
       if (!isFinite(fc.days)) { next += 7; continue; }
       if (next + fc.days < gap.end) {
         const pc = CROPS[pick];
-        const food = (pc.yield * futureCare * site * fc.survival - pc.seed) * FUTURE_SOWING;
+        const food = (pc.yield * futureCare * site * fc.survival * gapRipen(p.gh, next + fc.days, gap) - pc.seed) * FUTURE_SOWING;
         add(next + fc.days, food, keyOf(pick));
         crops += food;
       }

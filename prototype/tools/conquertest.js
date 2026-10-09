@@ -677,8 +677,7 @@ section("The autopilot conquers (Aggressive, up to 400 days, seeds 3-6)");
     st.noNewGangs = false;
     setAutopilot(st, true, "aggressive");
     let err = "";
-    try { for (let i = 0; i < 24 * 400 && !st.gameOver && !(st.conquest && st.conquest.stats.taken > 0); i++) tickHour(st); } catch (e) { err = e.stack.split("
-").slice(0, 3).join(" | "); }
+    try { for (let i = 0; i < 24 * 400 && !st.gameOver && !(st.conquest && st.conquest.stats.taken > 0); i++) tickHour(st); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" | "); }
     if (err) { errs++; console.log(`  seed ${sd}: ${err}`); }
     const s = st.conquest ? st.conquest.stats : { assaults: 0, won: 0, taken: 0, retaken: 0, defeated: 0, basesLost: 0 };
     if (s.assaults > 0 && s.taken > 0) took++;
