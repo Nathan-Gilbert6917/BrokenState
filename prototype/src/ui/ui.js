@@ -69,6 +69,7 @@ import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButto
 import { canUpgradeAmmoBench, RELOAD } from "../sim/reloading.js"; // the reloading bench: an ammo bench upgraded where it stands
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../sim/inventory.js";
 import { inventoryModal, takeLootReq } from "./inventory.js";
+import { teamInvModal, teamsHereCard } from "./teaminv.js"; // the team inventory window; teams on a base's tile
 import { gunBuilderModal, GUNBUILDER_HELP } from "./gunbuilder.js"; // the gun builder (over the inventory or the base screen)
 import { isGunKey } from "./gunart.js";
 import { BATTLE_GUNS_HELP } from "./combat.js"; // fire modes, jams, suppressing fire, a thrown spear, the ammo a reload takes
@@ -627,6 +628,7 @@ function pickModal(state, ui) {
   if (ui.planner) return ["planner", () => plannerModal(state, ui)];
   if (ui.routeSetup) return ["route", () => routeModal(state, ui)];
   if (ui.gunb) return ["gunb", () => gunBuilderModal(state, ui)]; // ui/gunbuilder.js: over the inventory (never in a battle: above)
+  if (ui.inv && ui.inv.team != null) return ["teaminv", () => teamInvModal(state, ui)]; // ui/teaminv.js: a whole team; Drop off and Load at a base
   if (ui.inv) return [`inv:${ui.inv.sid}`, () => inventoryModal(state, ui)]; // closes back to the survivor / base screen under it
   if (ui.survivor) return [`survivor:${ui.survivor}`, () => survivorModal(state, ui)];
   if (ui.memorial) return ["memorial", () => memorialModal(state, ui)]; // ui/relations.js; a name opens the survivor screen over it
@@ -1543,7 +1545,7 @@ function baseArmory(state, b) {
   const people = atBase(state, b.id);
   const slots = ["weapon", "armor", "tool"];
   return `
-    ${bodiesCard(state, b)}
+    ${teamsHereCard(state, b)}${bodiesCard(state, b)}
     <h3>Stored here (${b.armory.length})</h3>
     <div class="small">${b.armory.length ? b.armory.map((g, i) => `<span class="chip"${tip(gearTip(g))}>${esc(g.name)}${g.quality < 1 ? ` (${Math.round(g.quality * 100)}%)` : ""}${durTag(g)}${gunCog(state, g, `armory:${b.id}:list:${i}`)}</span>`).join("") : "<span class='muted'>Empty. Gear your teams bring home (and crafted gear) lands here.</span>"}</div>
     <h3>Equipment</h3>
