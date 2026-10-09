@@ -327,6 +327,7 @@ export function combatants(state, setup) {
     const p = state.parties.find((x) => x.id === setup.partyId);
     list = p ? partyMembers(state, p) : [];
   } else if (setup.baseId) list = atBase(state, setup.baseId);
+  else if (setup.lentIds) list = setup.lentIds.map((id) => survivorById(state, id)).filter((s) => s && s.alive); // volunteers.js: your people lent out, in their group's fight you watch
   if (setup.fighterIds) list = list.filter((s) => setup.fighterIds.includes(s.id));
   return list;
 }
@@ -3019,7 +3020,7 @@ export function createBattle(state, setup) {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: placeName(tile),
     units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: 1,
-    pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [{}],
+    pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [setup.pool || {}], // setup.pool: the rounds and meds a group hands your people lent out (volunteers.js watchSetup)
     ammoUsed: 0, arrowsUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
     evacCols: setup.canRetreat ? 2 : 0, over: false, result: null, acted: false, queue: [],
     losCache: makeLosCache(W, H), rng, dark: isNight(state), // dark: escapes are easier (escapeOdds)
@@ -3179,6 +3180,9 @@ export function createBattle(state, setup) {
       if (shot) fire(b, u, shot.t, { volley: true });
     }
   }
+  // volunteers.js: a fight of your people lent out that you watch: theirs are the group's orders, so everyone on your
+  // side is moved by the AI (volunteerTurn) and you only watch.
+  if (setup.watch) { for (const u of b.units) if (u.side === "player") { u.vol = setup.watch.fid; u.volGroup = setup.watch.group; u.watched = true; } say(b, `You watch your people fight beside ${setup.watch.group}: their orders, not yours.`, "info"); }
   if (b.evacCols) say(b, `The green strip on the ${b.evacSide || "left"} edge is your way out. Units standing there can retreat, or sound the retreat to pull everyone out at once.`, "info");
   stageAtStart(state, b); // carry.js: a fight the team starts: the loads into the vehicle, the rest set down where they start
   checkEnd(state, b);
@@ -3602,6 +3606,7 @@ export function combatAct(state, act) {
   if (act.type === "evacStop") { b.evacOrder = false; say(b, "The evac is called off.", "info"); bump(b); return ""; }
   if (act.type === "dropCarried" || act.type === "dropAllCarried") { const err = carriedAct(state, b, act); if (!err) bump(b); return err; } // carry.js: free, even with no actions left
   const u = unitById(b, act.unit);
+  if (u && u.vol != null && u.side === "player" && act.type === "volOrder") return volOrder(b, u, act); // volunteers.js: a simple order they follow in their own way
   if (u && u.vol != null && u.side === "player" && !aiDrive) return volRefusal(u); // volunteers.js: their group's orders, not yours
   // A unit on another storey than the one being looked at (buildingmaps.js storeys): acting with it looks at its floor.
   if (u && u.side === "player" && b.floors && (u.f || 0) !== (b.floor || 0) && activeAny(u)) setFloor(b, u.f || 0);
@@ -4874,7 +4879,7 @@ function firepower(b, u, vsPeople) {
 }
 export function fightOutlook(b) {
   bindDims(b);
-  const mine = b.units.filter((u) => u.side === "player" && active(u));
+  const mine = b.units.filter((u) => (u.side === "player" || (b.setup.watch && u.side === "third")) && active(u)); // volunteers.js: a fight you watch: the group's own fighters stand with your people
   const theirs = b.units.filter((u) => u.side === "enemy" && active(u) && !u.fleeing);
   const team = b.units.filter((u) => u.side === "player" && !(u.left && !u.carried));
   const people = theirs.filter((u) => u.kind === "human").length / Math.max(1, theirs.length);
@@ -5006,7 +5011,11 @@ export function volunteerTurn(state, b) {
       if (b.floors && (u.f || 0) !== view) setFloor(b, u.f || 0);
       bindDims(b);
       const hot = b.units.some((e) => e.side === "enemy" && active(e) && e.aware && (u.f || 0) === (e.f || 0) && (!b.raid || dist(u.x, u.y, e.x, e.y) <= VOL_RAID));
-      if (hot) aiUnit(b, u);
+      const order = u.volOrder || "free";
+      const lead = order === "follow" ? unitById(b, u.volLead) : null;
+      if (order === "hold") volHold(b, u, hot);
+      else if (order === "follow" && lead && activeAny(lead)) { if (!(hot && volShotHere(b, u))) volFollow(b, u, lead); }
+      else if (hot) aiUnit(b, u);
       else volFollow(b, u);
       if (b.floors && (b.floor || 0) !== view) setFloor(b, view);
       bindDims(b);
@@ -5015,11 +5024,42 @@ export function volunteerTurn(state, b) {
   } finally { aiDrive--; }
   bump(b);
 }
-// Nobody to fight: stay within 2 tiles of the nearest of your own people (on their floor), else hold.
-function volFollow(b, u) {
+// The orders you can give a volunteer (combatAct "volOrder"): "free" (their own judgement, the default), "hold" (stay
+// where they are: shoot from there, reload, else watch), "follow" (keep with one of your people: shoot from where they
+// stand when there is a fair shot, else move up to them). Never in a fight you only watch.
+export const VOL_ORDERS = { free: "Free", hold: "Hold here", follow: "Follow" };
+function volOrder(b, u, act) {
+  if (u.watched) return volRefusal(u);
+  if (!VOL_ORDERS[act.order]) return "No such order.";
+  if (act.order === "follow") {
+    const t = unitById(b, act.target);
+    if (!t || t.side !== "player" || t.vol != null || !activeAny(t)) return "Pick one of your people for them to follow.";
+    u.volLead = t.id;
+  }
+  u.volOrder = act.order;
+  say(b, `${u.name}: ${act.order === "follow" ? `following ${unitById(b, u.volLead).name}` : VOL_ORDERS[act.order].toLowerCase()}.`, "info");
+  bump(b);
+  return "";
+}
+function volShotHere(b, u) {
+  if (aiReload(b, u) && u.ap < 1) return true;
+  if (!canFire(b, u)) return false;
+  const shot = bestShot(b, u, foesOf(b, u));
+  if (!shot || shot.o.chance < 40) return false;
+  fire(b, u, shot.t);
+  u.ap = 0;
+  return true;
+}
+function volHold(b, u, hot) {
+  if (hot && !volShotHere(b, u) && u.ap > 0) { const adj = foesOf(b, u).find((f) => meleeReach(b, u, f)); if (adj) { aiMelee(b, u); return; } u.ow = !u.stun; }
+  u.ap = 0;
+}
+// Nobody to fight: stay within 2 tiles of the nearest of your own people (on their floor), else hold. lead: the one
+// they were told to follow.
+function volFollow(b, u, lead = null) {
   const own = b.units.filter((o) => o.side === "player" && o.vol == null && activeAny(o) && (o.f || 0) === (u.f || 0));
-  if (!own.length) { u.ap = 0; return; }
-  const lead = own.sort((a, c) => dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, c.x, c.y))[0];
+  if (!own.length && !lead) { u.ap = 0; return; }
+  lead = lead || own.sort((a, c) => dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, c.x, c.y))[0];
   if (dist(u.x, u.y, lead.x, lead.y) <= 2.5) { u.ap = 0; return; }
   const r = reachable(b, u, u.mob * Math.min(2, u.ap));
   let best = -1, bd = dist(u.x, u.y, lead.x, lead.y);
@@ -5032,6 +5072,7 @@ function volFollow(b, u) {
   u.ap = 0;
 }
 function volunteersFollow(b) {
+  if (b.setup && b.setup.watch) return; // a fight you watch: there are none of yours to follow
   const vols = b.units.filter((u) => u.side === "player" && u.vol != null && activeAny(u));
   if (!vols.length) return;
   const own = b.units.filter((u) => u.side === "player" && u.vol == null);
@@ -5159,6 +5200,7 @@ function endBattle(state, b, outcome) {
   const arrowsBackN = pickUpArrows(b, outcome === "victory");
   lines.push(...pickUpBrass(state, b, outcome === "victory")); // reloading.js: the brass fired, picked up when the field is yours
   if (b.arrowsUsed) lines.push(arrowsBackN ? `Picked up ${arrowsBackN} of the ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot.` : `The ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot ${b.arrowsUsed === 1 ? "is" : "are"} lost.`);
+  if (setup.watch) b.bodies = []; // volunteers.js: a fight you watched: the field is the group's (your people get their share)
   b.result = {
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed - captives.length,
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, arrowsUsed: b.arrowsUsed || 0, arrowsBack: arrowsBackN, loot,

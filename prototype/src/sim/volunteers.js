@@ -40,15 +40,15 @@ import { attitude, changeGoodwill } from "./factions.js";
 import { warsOf, enemyIn, relation, changeRelation } from "./diplomacy.js";
 import { jobsDoneFor } from "./jobs.js";
 import { isMember, reachVia } from "./alliance.js";
-import { issueKit, removeFromArsenal, addToArsenal, takeArsenalRounds, unitPower, arsenalWorthy } from "./arsenal.js";
-import { allItems, newItem } from "./inventory.js";
+import { issueKit, removeFromArsenal, addToArsenal, takeArsenalRounds, unitPower, arsenalWorthy, kitOf } from "./arsenal.js";
+import { allItems, newItem, stripAll } from "./inventory.js";
 import { SUPPLIES, GEAR } from "./data.js";
 import { blocOf } from "./blocs.js";
 import { hiveAt } from "./hives.js";
 import { hiveTier } from "./hivetech.js";
 import { crawlEstimate } from "./hivecrawl.js";
 import { assaultForce, teamAssaultOdds } from "./conquest.js";
-import { battlePending } from "./combat.js";
+import { battlePending, startCombat, registerCombatHandler } from "./combat.js";
 import { calOf } from "./ammo.js";
 import { lightOf } from "./lights.js";
 import { baseKey } from "./rounds.js";
@@ -73,8 +73,19 @@ export const VOL = {
   // The groups' asks of you.
   AI: { chance: 0.05, favourChance: 0.15, gap: 25, favourGap: 10, gw: 25, n: [1, 3], days: [3, 7], expire: 48, decline: 3, accept: 2,
     fight: { hive: 0.35, war: 0.25, defence: 0.3 }, hurt: 0.35, dmg: [10, 40], share: { food: 4, ammo: 6, scrap: 2 }, back: 3, perFight: 1, mourn: 2, fit: 70 },
+  // Old hands: who may ask to join you for good (noteVet), and the cost.
+  VET: { trips: 3, days: 30, gw: 60, hp: 60, ask: 0.35, free: 80, cost: -5, keep: 6 },
+  // A loot share promised in the request (settleShare): the choices, points a share is worth (× SHARE.points), goodwill.
+  SHARE: { choices: [0, 0.1, 0.25], points: 6, gwPer: 60, gwMax: 3 },
+  // Their group pulls a hurt volunteer out (between fights, a hive crawl's chambers included): under PULL.hp health.
+  PULL: { hp: 50 },
+  // A fight of your people lent out that you may watch on the map (watchCard): the enemy by the need.
+  WATCH: { war: [4, 7], dead: [8, 14], deadPower: [2, 3], allies: [2, 5] },
+  // The coalition's council votes to send volunteers to a member at war (councilVolCard): each member that votes yes
+  // sends COUNCIL.n fighters for COUNCIL.days; voting no costs COUNCIL.no goodwill with the member at war.
+  COUNCIL: { n: [1, 2], days: [4, 7], no: -2, send: 2 },
   // Groups lending each other fighters.
-  LEND: { chance: 0.08, rel: 30, pop: 14, days: [3, 7], lose: 0.15, rel_up: 4 },
+  LEND: { chance: 0.08, rel: 30, pop: 14, days: [3, 7], lose: 0.15, rel_up: 4, stay: 0.1 },
 };
 // The governor's styles (autopilot.js PERSONALITIES keys): people kept at the hub before lending, the most it lends
 // to one ask, how readily it accepts (score), the squad-to-hive ratio (or assault odds) under which it asks allies.
@@ -188,6 +199,7 @@ export function askQuote(state, f, p, opts = {}) {
   if (fallen.length) add(`${fallen.length} of theirs died with your teams lately`, -fallen.reduce((a, x) => a + (x.how === "fight" ? P.fallen : P.fallenBad), 0));
   if (opts.offer && opts.offer.qty > 0 && SUPPLIES[opts.offer.key]) add(`your offer: ${opts.offer.qty} ${SUPPLIES[opts.offer.key].name.toLowerCase()}`, supplyValue(opts.offer.key, opts.offer.qty) / P.goodsPer);
   if (opts.favour) add("a favour owed (they will ask one of you)", P.favour);
+  if (opts.share > 0) add(`a ${Math.round(opts.share * 100)}% share of the haul`, opts.share * VOL.SHARE.points);
   out.points = Math.round(out.parts.reduce((a, x) => a + x.v, 0) * 100) / 100;
   out.yes = out.points >= 0;
   return out;
@@ -238,8 +250,10 @@ export function askVolunteers(state, f, p, opts = {}) {
     f.stock[offer.key] = (f.stock[offer.key] || 0) + offer.qty;
   }
   if (opts.favour) f.volFavour = { day: day(state) };
-  if (!offer && !opts.favour) changeGoodwill(state, f, -VOL.ASK_GW, "you asked them for people");
-  const req = { id: V.nextAsk++, fid: f.id, partyId: p.id, n: q.n, days: q.days, mission: m.kind, label: m.label, day: day(state) };
+  if (!offer && !opts.favour && !(opts.share > 0)) changeGoodwill(state, f, -VOL.ASK_GW, "you asked them for people"); // a share of the haul is something in return too
+  const share = VOL.SHARE.choices.includes(opts.share) ? opts.share : 0;
+  const req = { id: V.nextAsk++, fid: f.id, partyId: p.id, n: q.n, days: q.days, mission: m.kind, label: m.label, day: day(state), share, cargoStart: supplyOf(p), homeBaseId: p.homeBaseId };
+  (V.reqs || (V.reqs = [])).push(req);
   const eta = travelHours(state, f, p);
   const people = [];
   const kit = issueKit(state, f, q.n, "field");
@@ -259,9 +273,14 @@ export function makeVolunteer(state, f, req, lo, eta) {
   const V = ensureVols(state);
   const keep = state.rng;
   state.rng = volRng(state); // the world's dice untouched (makeSurvivor draws its name, skills and traits)
+  // One who came before goes again first (f.volVets: the same people come back, and may ask to stay one day).
+  const vet = (f.volVets || []).filter((v) => !v.out && v.s && v.s.alive).sort((a, b) => b.trips - a.trips || a.s.id - b.s.id)[0];
   let s;
-  try { s = makeSurvivor(state, VOL.QUALITY[f.type] || 1); } finally { state.rng = keep; }
-  s.skills.shooting = Math.min(20, (s.skills.shooting || 0) + (VOL.SHOOT[f.type] || 0));
+  if (vet) { state.rng = keep; s = vet.s; vet.out = true; s.health = Math.max(s.health, 80); }
+  else {
+    try { s = makeSurvivor(state, VOL.QUALITY[f.type] || 1); } finally { state.rng = keep; }
+    s.skills.shooting = Math.min(20, (s.skills.shooting || 0) + (VOL.SHOOT[f.type] || 0));
+  }
   s.role = "volunteer";
   const lent = [];
   if (lo) {
@@ -270,7 +289,7 @@ export function makeVolunteer(state, f, req, lo, eta) {
   }
   if (!s.gear.weapon && GEAR.knife) s.gear.weapon = newItem("knife");
   if (req.mission === "hive" && !s.gear.tool && !lightOf(s) && GEAR.flashlight) s.gear.tool = newItem("flashlight"); // a hive is dark (hivecrawl.js LIGHT): they bring a light of their own
-  s.vol = { fid: f.id, group: f.name, req: req.id, mission: req.mission, label: req.label, since: state.hour, until: state.hour + eta + req.days * 24, days: req.days, lent, fought: 0 };
+  s.vol = { fid: f.id, group: f.name, req: req.id, mission: req.mission, label: req.label, since: state.hour, until: state.hour + eta + req.days * 24, days: req.days, lent, fought: 0, vet: !!vet };
   s.location = { kind: "coming", partyId: req.partyId, eta: state.hour + eta };
   V.people.push(s);
   return s;
@@ -299,15 +318,19 @@ export function volunteersHour(state) {
     if (!ownMembers(state, p).length) { gone.push([s, "none of your people are left with them"]); continue; }
     if (attitude(f) === "Hostile" || f.goodwill < VOL.GW_LEAVE) { gone.push([s, `${f.name} called them home`]); continue; }
     if (state.hour >= s.vol.until && !busy(state, p)) gone.push([s, "their time is up"]);
+    else if (s.health < VOL.PULL.hp && !fighting(state, p)) { gone.push([s, `hurt (health ${Math.round(s.health)}): ${s.vol.group} pull them out`]); V.stats.pulled = (V.stats.pulled || 0) + 1; } // between fights, between a crawl's chambers too
   }
   if (gone.length) sendHomeAll(state, gone);
+  noteHaul(state);
   if (state.autopilot && state.hour % 3 === 0) autoAskVolunteers(state);
 }
+const fighting = (state, p) => battlePending(state, p.id) || !!(state.combat && state.combat.setup && state.combat.setup.partyId === p.id) || !!state.resolving;
 const busy = (state, p) => battlePending(state, p.id) || !!(p.hiveCrawl && !p.hiveCrawl.done) || !!(p.crawl && !p.crawl.done) || !!(state.combat && state.combat.setup && state.combat.setup.partyId === p.id);
 function join(state, s, p) {
   const V = ensureVols(state);
   if (!p.members.includes(s.id)) p.members.push(s.id);
   s.location = { kind: "party", partyId: p.id };
+  s.vol.joined = state.hour;
   V.stats.joined++;
   // What they bring: a day's food and water each day of the span (up to BRING.days), rounds for their gun.
   const days = Math.min(VOL.BRING.days, s.vol.days || VOL.SPAN.def);
@@ -341,24 +364,120 @@ function sendHomeAll(state, list) {
   const byKey = new Map();
   const teams = new Set();
   for (const [s, why] of list) {
-    const f = factionById(state, s.vol.fid);
+    const vol = s.vol; // noteVet takes it off
+    const f = factionById(state, vol.fid);
     const L = s.location;
     const p = L && L.partyId != null ? state.parties.find((x) => x.id === L.partyId) : null;
     if (p) { p.members = p.members.filter((id) => id !== s.id); teams.add(p); }
+    const joinedAt = vol.joined ?? state.hour;
     if (f && f.alive) {
-      for (const it of allItems(s)) if (arsenalWorthy(it)) addToArsenal(state, f, it, "back");
+      for (const it of stripAll(s)) if (arsenalWorthy(it)) addToArsenal(state, f, it, "back"); // the kit goes back; the rest was theirs
       f.pop += 1;
-      if (s.vol.fought) changeGoodwill(state, f, VOL.BACK, `${first(s)} came home safe after fighting beside you`);
+      if (vol.fought) changeGoodwill(state, f, VOL.BACK, `${first(s)} came home safe after fighting beside you`);
+      noteVet(state, f, s, Math.max(0, (state.hour - joinedAt) / 24), why);
     }
+    const reqId = vol.req;
     V.people = V.people.filter((x) => x !== s);
+    settleShare(state, reqId);
     V.stats.home++;
-    const k = `${s.vol.group}|${why}`;
-    if (!byKey.has(k)) byKey.set(k, { group: s.vol.group, why, names: [] });
+    const k = `${vol.group}|${why}`;
+    if (!byKey.has(k)) byKey.set(k, { group: vol.group, why, names: [] });
     byKey.get(k).names.push(first(s));
   }
   for (const g of byKey.values()) log(state, `${listNames(g.names)} (${g.group}) went home: ${g.why}.`, "info");
   for (const p of teams) { if (state.parties.includes(p)) { wipeIfEmpty(state, p); if (state.parties.includes(p)) try { weighTeam(state, p); } catch { /* */ } } }
 }
+// ---------- old hands (VOL.VET) ----------
+// A volunteer home alive is one of the group's old hands: they go first next time, and after VET.trips trips or
+// VET.days days with your teams (their group's goodwill VET.gw+, their health VET.hp+) they may ask to join you for
+// good (VET.ask a trip home): a card. Welcome them: they are yours from then on, at the hub; their group lets them go
+// for VET.cost goodwill (nothing when its goodwill is VET.free+, and then they bring a weapon from its arsenal, the
+// best it can spare); else they come with what is their own (a knife).
+function noteVet(state, f, s, days, why) {
+  const vets = f.volVets || (f.volVets = []);
+  let v = vets.find((x) => x.s === s);
+  if (!v) { v = { s, trips: 0, days: 0 }; vets.push(v); }
+  v.out = false;
+  v.trips++;
+  v.days += days;
+  delete s.vol;
+  s.location = { kind: "away", factionId: f.id };
+  while (vets.length > VOL.VET.keep) vets.splice(vets.findIndex((x) => !x.out), 1);
+  const rng = volRng(state);
+  if (/^hurt|called|goodwill/.test(why || "") || f.goodwill < VOL.VET.gw || s.health < VOL.VET.hp) return;
+  if (!(v.trips >= VOL.VET.trips || v.days >= VOL.VET.days) || !rng.chance(VOL.VET.ask) || !hub(state)) return;
+  addCard(state, vetCard(state, f, v));
+}
+export function vetCard(state, f, v) {
+  const s = v.s;
+  const free = f.goodwill >= VOL.VET.free;
+  return {
+    title: `${s.name} asks to join you`, volVet: s.id,
+    text: `${s.name} of ${f.name} has been out with your teams ${v.trips} time${v.trips === 1 ? "" : "s"} (${Math.round(v.days)} days) and asks to stay with your people for good.${free ? ` ${f.name} think well enough of you to let them go with their blessing and a weapon.` : ` ${f.name} would not like losing one of theirs.`}`,
+    choices: [
+      { label: "Welcome them", hint: free ? `They join your hub with a weapon from ${f.name}'s arsenal; no goodwill lost` : `They join your hub with a knife; ${-VOL.VET.cost} goodwill with ${f.name}`, ai: (st) => (hub(st) && atBase(st, hub(st).id).length < 30 ? 2 : 0), resolve: (st) => welcomeVet(st, f, v) },
+      { label: "Not now", default: true, hint: "They stay with their group (and may ask again)", ai: () => 1, resolve: () => `${first(s)} goes back to ${f.name}.` },
+    ],
+  };
+}
+export function welcomeVet(state, f, v) {
+  const s = v.s;
+  const h = hub(state);
+  if (!h || !f.volVets || !f.volVets.includes(v) || v.out || !s.alive) return `${first(s)} is not here to ask.`;
+  f.volVets = f.volVets.filter((x) => x !== v);
+  const free = f.goodwill >= VOL.VET.free;
+  if (!free) changeGoodwill(state, f, VOL.VET.cost, `${s.name} left them for you`);
+  f.pop = Math.max(0, f.pop - 1);
+  const lo = free ? issueKit(state, f, 1, "field")[0] : null;
+  if (lo && lo.weapon && removeFromArsenal(f, lo.weapon, "left with one of theirs")) s.gear.weapon = lo.weapon;
+  if (!s.gear.weapon && GEAR.knife) s.gear.weapon = newItem("knife");
+  s.location = { kind: "base", baseId: h.id };
+  s.role = "scavenge";
+  s.joinedFrom = f.name;
+  state.survivors.push(s);
+  ensureVols(state).stats.stayed = (ensureVols(state).stats.stayed || 0) + 1;
+  log(state, `${s.name} left ${f.name} to join your people at ${h.name}${s.gear.weapon ? ` (with a ${s.gear.weapon.name})` : ""}.`, "good");
+  return `${first(s)} is one of yours now.`;
+}
+
+// ---------- the loot share (VOL.SHARE) ----------
+// A request may promise the group a share of the team's haul: what its cargo gained while their volunteers were with
+// it (the last look, req.cargoLast, against the team's cargo when you asked) × the share, from the team's cargo (or
+// its home base when the team is home already), when the last of them leaves; goodwill for it.
+const supplyOf = (p) => { const out = {}; for (const [k, v] of Object.entries((p.cargo && p.cargo.supplies) || {})) if (Number.isFinite(v) && v > 0 && SUPPLIES[k]) out[k] = v; return out; };
+function settleShare(state, reqId) {
+  const V = ensureVols(state);
+  const req = (V.reqs || []).find((r) => r.id === reqId);
+  if (!req || V.people.some((s) => s.alive && s.vol && s.vol.req === reqId)) return;
+  V.reqs = V.reqs.filter((r) => r !== req);
+  const f = factionById(state, req.fid);
+  if (!req.share || !f || !f.alive) return;
+  const p = state.parties.find((x) => x.id === req.partyId);
+  if (p) req.cargoLast = supplyOf(p);
+  const from = p ? p.cargo.supplies : (baseById(state, req.homeBaseId) || hub(state) || {}).stock;
+  if (!from) return;
+  const got = [];
+  let value = 0;
+  for (const [k, q] of Object.entries(req.cargoLast || {})) {
+    const gain = Math.max(0, q - ((req.cargoStart || {})[k] || 0));
+    const give = Math.min(Math.floor(gain * req.share), Math.floor(from[k] || 0));
+    if (give < 1) continue;
+    from[k] -= give;
+    f.stock[k] = (f.stock[k] || 0) + give;
+    value += supplyValue(k, give);
+    got.push(`${give} ${k}`);
+  }
+  V.stats.shared = (V.stats.shared || 0) + value;
+  if (!got.length) return;
+  changeGoodwill(state, f, Math.min(VOL.SHARE.gwMax, 1 + value / VOL.SHARE.gwPer), "their share of the haul");
+  log(state, `${f.name}'s share of the haul (${Math.round(req.share * 100)}%): ${got.join(", ")}.`, "info");
+}
+// The hourly look at a team's cargo for the share.
+function noteHaul(state) {
+  const V = ensureVols(state);
+  for (const r of V.reqs || []) { const p = state.parties.find((x) => x.id === r.partyId); if (p) { r.cargoLast = supplyOf(p); r.homeBaseId = p.homeBaseId; } }
+}
+
 // world.js killSurvivor: a volunteer died. In a fight: they knew the risk; otherwise you let them die.
 export function volunteerFell(state, s, tileId, cause) {
   const V = ensureVols(state);
@@ -366,6 +485,8 @@ export function volunteerFell(state, s, tileId, cause) {
   const fight = !!(state.combat || state.resolving) || /fight|battle|shot|brood|hive|horde|scaveng|raid|crawl|core|ambush|killed|bled|left behind|attack|retreat|the dead/i.test(cause || "");
   V.stats.died++;
   s.diedDay = day(state);
+  if (f && f.volVets) f.volVets = f.volVets.filter((x) => x.s !== s);
+  settleShare(state, s.vol.req);
   if (!f || !f.alive) return;
   (f.volFallen || (f.volFallen = [])).push({ name: s.name, day: day(state), how: fight ? "fight" : "other" });
   changeGoodwill(state, f, fight ? VOL.DEATH.fight : VOL.DEATH.other, fight ? `${s.name} fell beside your people` : `${s.name} died in your care`);
@@ -505,22 +626,90 @@ export function loansDaily(state) {
     const people = loan.ids.map((id) => state.survivors.find((s) => s.id === id)).filter((s) => s && s.alive && lentWith(s) && lentWith(s).loanId === loan.id);
     if (!f || !f.alive) { endLoan(state, loan, people, `${f ? f.name : "the group"} is gone: they made their way home`); continue; }
     if (d < loan.until && rng.chance(VOL.AI.fight[loan.kind] || 0.2)) {
-      loan.fights++;
-      const hurtNames = [], deadNames = [];
-      for (const s of people) {
-        if (!rng.chance(VOL.AI.hurt)) continue;
-        hurt(state, s, rng.int(VOL.AI.dmg[0], VOL.AI.dmg[1]), null, `fighting beside ${f.name} (${loan.label})`);
-        if (s.alive) hurtNames.push(first(s)); else { deadNames.push(first(s)); loan.dead.push(s.name); V.stats.lentDied++; }
-      }
-      // The share of the fight: from the group's stores, by the people still with them.
-      const live = people.filter((s) => s.alive).length;
-      loan.share = loan.share || {};
-      for (const [k, q] of Object.entries(VOL.AI.share)) { const got = Math.min(Math.max(0, Math.floor(f.stock[k] || 0)), q * live); if (got > 0) { f.stock[k] -= got; loan.share[k] = (loan.share[k] || 0) + got; } }
-      log(state, `Your people with ${f.name} fought in ${loan.label}${hurtNames.length ? `: ${listNames(hurtNames)} hurt` : ""}${deadNames.length ? `${hurtNames.length ? ";" : ":"} ${listNames(deadNames)} killed` : ""}${!hurtNames.length && !deadNames.length ? ", unhurt" : ""}.`, deadNames.length ? "death" : "info");
+      // In the browser, not on autopilot: you may watch it on the map (watchCard); else by the numbers.
+      if (typeof window !== "undefined" && !state.autopilot && !state.autoCombat && !state.cards.some((c) => c.volWatch === loan.id)) { addCard(state, watchCard(state, loan)); continue; }
+      lentFightByNumbers(state, loan, f, people, rng);
     }
     if (d >= loan.until) endLoan(state, loan, people.filter((s) => s.alive), "");
   }
 }
+// A fight of your people lent out, by the numbers (each one VOL.AI.hurt to be hurt VOL.AI.dmg, which can kill).
+export function lentFightByNumbers(state, loan, f, people, rng = volRng(state)) {
+  const V = ensureVols(state);
+  loan.fights++;
+  const hurtNames = [], deadNames = [];
+  for (const s of people) {
+    if (!rng.chance(VOL.AI.hurt)) continue;
+    hurt(state, s, rng.int(VOL.AI.dmg[0], VOL.AI.dmg[1]), null, `fighting beside ${f.name} (${loan.label})`);
+    if (s.alive) hurtNames.push(first(s)); else { deadNames.push(first(s)); loan.dead.push(s.name); V.stats.lentDied++; }
+  }
+  fightShare(loan, f, people.filter((s) => s.alive).length); // the share of the fight from the group's stores
+  log(state, `Your people with ${f.name} fought in ${loan.label}${hurtNames.length ? `: ${listNames(hurtNames)} hurt` : ""}${deadNames.length ? `${hurtNames.length ? ";" : ":"} ${listNames(deadNames)} killed` : ""}${!hurtNames.length && !deadNames.length ? ", unhurt" : ""}.`, deadNames.length ? "death" : "info");
+}
+// The share of a fight from the group's stores, by your people still with them.
+function fightShare(loan, f, live) {
+  loan.share = loan.share || {};
+  for (const [k, q] of Object.entries(VOL.AI.share)) { const got = Math.min(Math.max(0, Math.floor(f.stock[k] || 0)), q * live); if (got > 0) { f.stock[k] -= got; loan.share[k] = (loan.share[k] || 0) + got; } }
+}
+const loanPeople = (state, loan) => loan.ids.map((id) => state.survivors.find((s) => s.id === id)).filter((s) => s && s.alive && lentWith(s) && lentWith(s).loanId === loan.id);
+// ---------- watching their fight (VOL.WATCH) ----------
+// The card: watch it on the battle map (your people and the group's fighters all moved by the AI, you only watch; the
+// group's fighters are its own side, thirdside.js "military": they fight the enemy, never you), or let it play out.
+export function watchCard(state, loan) {
+  const f = factionById(state, loan.fid);
+  const names = loanPeople(state, loan).map(first);
+  return {
+    title: `Your people with ${f ? f.name : "the group"} go into a fight`, volWatch: loan.id,
+    text: `${listNames(names)} ${names.length === 1 ? "is" : "are"} with ${f ? f.name : "the group"} for ${loan.label}, and a fight is coming. You can watch it on the battle map (their group's orders: nobody takes yours), or let it play out.`,
+    choices: [
+      { label: "Watch the fight", hint: "The battle map: everyone on your side moved by the AI; speed controls work", fight: true, ai: () => -1, resolve: (st) => startWatch(st, loan.id) },
+      { label: "Let it play out", default: true, hint: "Resolved by the numbers, as their group's fights are", ai: () => 1, resolve: (st) => { const L = ensureVols(st).loans.find((x) => x.id === loan.id); const g = L && factionById(st, L.fid); if (!L || !g || !g.alive) return "It is over."; lentFightByNumbers(st, L, g, loanPeople(st, L)); return "The fight is over."; } },
+    ],
+  };
+}
+// The setup of a watched fight: your lent people (setup.lentIds), the group's fighters as their own side, the enemy
+// by the need (a war: the enemy group's fighters; a hive or a horde: the dead).
+export function watchSetup(state, loan, rng = volRng(state)) {
+  const f = factionById(state, loan.fid);
+  const W = VOL.WATCH;
+  const war = loan.kind === "war";
+  const foe = war ? factionById(state, (warsOf(state, f)[0] && enemyIn(warsOf(state, f)[0], f))) : null;
+  const enemy = war
+    ? { kind: foe && foe.type === "military" ? "soldiers" : "raiders", count: rng.int(W.war[0], W.war[1]), power: Math.round((foe ? unitPower(foe) : 4) * 10) / 10, factionId: foe ? foe.id : null, name: foe ? `${foe.name}'s fighters` : "their enemies" }
+    : { kind: "zombies", count: rng.int(W.dead[0], W.dead[1]), power: rng.int(W.deadPower[0], W.deadPower[1]), name: "the dead" };
+  // Their group arms them for it: rounds for each one's gun from its stores, and a couple of meds.
+  const pool = { meds: Math.min(2, Math.max(0, Math.floor(f.stock.meds || 0))) };
+  for (const s of loanPeople(state, loan)) {
+    const cal = s.gear.weapon && calOf(s.gear.weapon.key);
+    if (!cal) continue;
+    const got = takeArsenalRounds(f, VOL.BRING.ammo);
+    if (got > 0) pool[baseKey(cal)] = (pool[baseKey(cal)] || 0) + got;
+  }
+  f.stock.meds = Math.max(0, (f.stock.meds || 0) - pool.meds);
+  return {
+    pool, tile: f.bases[0], lentIds: loan.ids.slice(), watch: { fid: f.id, group: f.name, loanId: loan.id }, enemy, ambush: null, canRetreat: true, handler: "lentFight", context: { loanId: loan.id },
+    third: [{ side: "military", kind: kitOf(f), count: clamp(Math.round(f.pop / 6), W.allies[0], W.allies[1]), power: unitPower(f), name: f.name, factionId: f.id }],
+  };
+}
+function startWatch(state, loanId) {
+  const L = ensureVols(state).loans.find((x) => x.id === loanId);
+  const f = L && factionById(state, L.fid);
+  if (!L || !f || !f.alive || !loanPeople(state, L).length) return "It is over.";
+  startCombat(state, watchSetup(state, L));
+  return "You watch.";
+}
+// The watched fight's end (combat.js finishCombat): a fight like any other of theirs, its share and the log.
+registerCombatHandler("lentFight", (state, result, setup) => {
+  const L = ensureVols(state).loans.find((x) => x.id === (setup.context && setup.context.loanId));
+  const f = L && factionById(state, L.fid);
+  if (!L || !f) return;
+  L.fights++;
+  const dead = (result.survivorsDead || []).map((id) => state.survivors.find((s) => s.id === id)).filter(Boolean);
+  for (const s of dead) { L.dead.push(s.name); ensureVols(state).stats.lentDied++; }
+  fightShare(L, f, loanPeople(state, L).length);
+  ensureVols(state).stats.watched = (ensureVols(state).stats.watched || 0) + 1;
+  log(state, `Your people with ${f.name} ${result.outcome === "victory" ? "won their fight" : result.outcome === "retreat" ? "pulled out of their fight" : "lost their fight"}${dead.length ? `: ${listNames(dead.map(first))} killed` : ""}.`, dead.length ? "death" : "info");
+});
 function endLoan(state, loan, people, why) {
   const V = ensureVols(state);
   const f = factionById(state, loan.fid);
@@ -552,7 +741,9 @@ export function aiLendDaily(state) {
     const to = factionById(state, L.to), from = factionById(state, L.from);
     if (to) to.volAid = Math.max(0, (to.volAid || 0) - L.power);
     const lost = Math.min(L.n, Math.round(L.n * VOL.LEND.lose * rng.range(0, 2)));
-    if (from && from.alive) from.pop += L.n - lost;
+    const stay = L.n - lost > 0 && to && to.alive && from && from.alive && rng.chance(VOL.LEND.stay) ? 1 : 0; // one of them stays with the group they helped (AI parity with your old hands)
+    if (from && from.alive) from.pop += L.n - lost - stay;
+    if (stay) { to.pop += 1; V.stats.aiStayed = (V.stats.aiStayed || 0) + 1; }
     if (to && from && to.alive && from.alive) changeRelation(state, to, from, VOL.LEND.rel_up);
   }
   for (const g of state.factions) {
@@ -607,13 +798,16 @@ export function autoAskVolunteers(state) {
     const cands = state.factions.filter((f) => f.alive && f.known && !groupProblem(state, f));
     let best = null;
     for (const n of [2, 1]) {
-      for (const f of cands) {
-        const q = askQuote(state, f, p, { n, days: VOL.SPAN.def, offer });
-        if (!q.refuse && q.yes && (!best || q.points > best.q.points)) best = { f, q, n };
+      for (const share of [0, 0.1]) { // a 10% share of the haul when nothing less will do
+        for (const f of cands) {
+          const q = askQuote(state, f, p, { n, days: VOL.SPAN.def, offer, share });
+          if (!q.refuse && q.yes && (!best || q.points > best.q.points)) best = { f, q, n, share };
+        }
+        if (best) break;
       }
       if (best) break;
     }
-    if (best) askVolunteers(state, best.f, p, { n: best.n, days: VOL.SPAN.def, offer });
+    if (best) askVolunteers(state, best.f, p, { n: best.n, days: VOL.SPAN.def, offer, share: best.share });
     else V.stats.autoNoAlly = (V.stats.autoNoAlly || 0) + 1; // nobody in reach would say yes
   }
 }
@@ -637,4 +831,85 @@ export const VOLUNTEERS_HELP = `<b>Asking for volunteers.</b> An allied group ca
 <b>With your team.</b> Volunteers are real people, armed and armoured from their group's arsenal. They walk from their base to the team and join it wherever it is, bringing a day's food and water a day of the span (up to ${VOL.BRING.days}) and rounds for their guns. They carry, eat the team's food, count in every fight by the numbers and go into a hive crawl with the team (volunteers for a hive bring a light of their own; the hoard in the core is yours, they keep what they carry; a coalition member that sent volunteers does not also thin the brood from outside). They go home when the span runs out (never in the middle of a fight or a crawl), when the team comes home or is disbanded, when none of your people is left with them, or when their group's goodwill falls below ${VOL.GW_LEAVE}. They keep what they carry; what came from their arsenal goes back.<br>
 <b>In a battle</b> they fight on your side in their own colour (a violet ring and a VOL tag) but take <b>no orders</b>: their group's AI moves them at the end of your turn. They keep near your people and hold their fire while nobody has noticed you, then take cover, shoot, reload, and tend and drag the downed. They follow the Evac and the retreat, and leave when your people are all out; with your people down and nobody out, they fight on.<br>
 <b>When they die.</b> One who falls in a fight costs ${-VOL.DEATH.fight} goodwill (they knew the risk; the group mourns), one who dies any other way (hunger, thirst, the worm) ${-VOL.DEATH.other}. Home safe after fighting beside you: +${VOL.BACK} each. The group remembers its dead when you ask again.<br>
-<b>When they ask you.</b> A group at war, with a horde near its base or a hive crawl coming may call on the radio for 1–3 of your people for a few days: send the fittest, choose who, or decline (−${VOL.AI.decline} goodwill, three times that if you owe them a favour). Your people are then <b>with them</b> (the roster says so) and out of your orders: their strength adds to the group's, each day their fight may come, and anyone may be hurt or killed. They come back at the end with a share of what was taken and the group's thanks. Groups lend each other fighters the same way.`;
+<b>When they ask you.</b> A group at war, with a horde near its base or a hive crawl coming may call on the radio for 1–3 of your people for a few days: send the fittest, choose who, or decline (−${VOL.AI.decline} goodwill, three times that if you owe them a favour). Your people are then <b>with them</b> (the roster says so) and out of your orders: their strength adds to the group's, each day their fight may come, and anyone may be hurt or killed. They come back at the end with a share of what was taken and the group's thanks. Groups lend each other fighters the same way, and the coalition's council may vote to send a member at war fighters from every member (you vote on its card, and may send some of yours).<br>
+<b>Watching their fight.</b> When a fight comes for your people lent out, a card lets you <b>watch it</b> on the battle map (everyone on your side and the group's own fighters moved by the AI; you only watch, the speed controls work) or let it play out by the numbers.<br>
+<b>Orders.</b> In a battle you can give a volunteer one simple order from the Volunteers list: <b>Free</b> (their own judgement), <b>Hold here</b> (they shoot from where they stand), <b>Follow</b> the one of yours you have selected (they keep with them and shoot when there is a fair shot). They still act on their own within it.<br>
+<b>A share of the haul.</b> The request can promise their group ${VOL.SHARE.choices.slice(1).map((v) => `${Math.round(v * 100)}%`).join(" or ")} of what the team's cargo gains while they are with it (the share × ${VOL.SHARE.points} in points), paid when the last of them leaves, for goodwill.<br>
+<b>Hurt volunteers</b> under ${VOL.PULL.hp} health are pulled out by their group (never in the middle of a fight; between a hive crawl's chambers, yes).<br>
+<b>Old hands.</b> Volunteers who came home alive go first the next time. After ${VOL.VET.trips} trips or ${VOL.VET.days} days with your teams, with their group's goodwill ${VOL.VET.gw}+, one may ask to join you for good: their group lets them go with a weapon when its goodwill is ${VOL.VET.free}+, else for ${-VOL.VET.cost} goodwill and with a knife. Groups' fighters sometimes stay with a group they helped.`;
+
+// ---------- the coalition's council: volunteers for a member's war (VOL.COUNCIL) ----------
+// alliance.js council: when a member is at war with a group outside the coalition, the council may vote on sending it
+// volunteers. Each other member votes yes when its relations with the member at war are ALLIANCE.VOTE_REL+ and with
+// its enemy below that; you vote on the card (yes and send some of yours, yes, or no). A majority of the votes (yours
+// counted) carries it: every member that voted yes sends COUNCIL.n fighters (coarse: aiLoans), and yours go as people
+// lent out (a war loan). Voting no costs COUNCIL.no goodwill with the member at war.
+export function councilWar(state, ms) {
+  for (const m of ms) for (const w of warsOf(state, m)) { const e = factionById(state, enemyIn(w, m)); if (e && e.alive && !isMember(state, e)) return { m, e }; }
+  return null;
+}
+export function councilVolVotes(state, ms, m, e, rel = 10) {
+  return ms.filter((x) => x !== m).map((x) => ({ f: x, yes: relation(state, x, m) >= rel && relation(state, x, e) < rel }));
+}
+export function councilVolCard(state, ms, rel = 10) {
+  const w = councilWar(state, ms);
+  if (!w) return null;
+  const { m, e } = w;
+  const votes = councilVolVotes(state, ms, m, e, rel);
+  const yesAI = votes.filter((v) => v.yes).length;
+  const total = votes.length + 1;
+  const pool = lendable(state);
+  const choices = [];
+  for (const k of [1, 2]) {
+    if (pool.length < k) continue;
+    choices.push({ label: `Vote yes and send ${k}: ${pool.slice(0, k).map(first).join(", ")}`, hint: `${yesAI} of ${votes.length} other members would vote yes; your people go if it carries`,
+      disabled: (st) => lendable(st).length < k,
+      ai: (st) => { const S = styleOf(st); const home = hub(st) ? atBase(st, hub(st).id).length : 0; return k <= S.lend && home - k >= S.keep ? S.accept + 0.5 - k * 0.2 : -1; },
+      resolve: (st) => councilVolVote(st, m, e, true, lendable(st).slice(0, k).map((s) => s.id), rel) });
+  }
+  choices.push({ label: "Vote yes", hint: "Send none of yours", ai: () => 1, resolve: (st) => councilVolVote(st, m, e, true, [], rel) });
+  choices.push({ label: "Vote no", hint: `${-VOL.COUNCIL.no} goodwill with ${m.name}`, default: true, ai: (st) => (styleOf(st).accept < 1 ? 1.5 : 0.2), resolve: (st) => councilVolVote(st, m, e, false, [], rel) });
+  return {
+    title: `The council: volunteers for ${m.name}'s war`, council: "volunteers",
+    text: `${m.name} is at war with ${e.known ? e.name : "another group"} and asks the coalition for fighters. The council votes: ${yesAI} of the ${votes.length} other member${votes.length === 1 ? "" : "s"} would send some. A majority of ${total} votes carries it.`,
+    choices,
+  };
+}
+export function councilVolVote(state, m, e, yes, ids, rel = 10) {
+  const V = ensureVols(state);
+  const ms = state.alliance ? state.alliance.members.map((id) => factionById(state, id)).filter((f) => f && f.alive) : [];
+  if (!m.alive || !ms.includes(m)) return "The member is gone.";
+  const votes = councilVolVotes(state, ms, m, e, rel);
+  const yesN = votes.filter((v) => v.yes).length + (yes ? 1 : 0);
+  const carries = yesN * 2 > votes.length + 1;
+  if (!yes) changeGoodwill(state, m, VOL.COUNCIL.no, "you voted against sending them fighters");
+  V.stats.councilVotes = (V.stats.councilVotes || 0) + 1;
+  if (state.alliance) state.alliance.history.unshift({ day: day(state), text: `The council voted on volunteers for ${m.name}'s war: ${carries ? "carried" : "lost"} (${yesN} of ${votes.length + 1}).` });
+  if (!carries) return `The vote fails (${yesN} of ${votes.length + 1}).`;
+  const rng = volRng(state);
+  const sent = [];
+  for (const v of votes) {
+    if (!v.yes || v.f.pop < VOL.LEND.pop) continue;
+    const n = rng.int(VOL.COUNCIL.n[0], VOL.COUNCIL.n[1]);
+    const power = n * unitPower(v.f);
+    v.f.pop -= n;
+    m.volAid = (m.volAid || 0) + power;
+    V.aiLoans.push({ from: v.f.id, to: m.id, n, power, until: day(state) + rng.int(VOL.COUNCIL.days[0], VOL.COUNCIL.days[1]), kind: "war", council: true });
+    sent.push(`${v.f.name} (${n})`);
+  }
+  let mine = "";
+  if (ids && ids.length) {
+    const ask = makeAskQuiet(state, m, { kind: "war", label: `the war with ${e.known ? e.name : "their enemy"} (the council's)` }, ids.length, rng.int(VOL.COUNCIL.days[0], VOL.COUNCIL.days[1]));
+    mine = ` ${answerAsk(state, ask.id, ids)}`;
+  }
+  changeGoodwill(state, m, VOL.COUNCIL.send, "the council sent them fighters");
+  log(state, `The council sends fighters to ${m.name}: ${sent.join(", ") || "none from the other members"}.${mine}`, "good");
+  return `The vote carries (${yesN} of ${votes.length + 1}).${mine}`;
+}
+// An ask with no card (the council's): answered at once by councilVolVote.
+function makeAskQuiet(state, f, need, n, days) {
+  const V = ensureVols(state);
+  const ask = { id: V.nextAsk++, fid: f.id, kind: need.kind, label: need.label, n, days, expires: state.hour + VOL.AI.expire, owed: false };
+  V.asks.push(ask);
+  return ask;
+}

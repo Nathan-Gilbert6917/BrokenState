@@ -57,14 +57,14 @@ export function volRequestModal(state, ui) {
   if (f) r.fid = f.id;
   if (p) r.partyId = p.id;
   const offer = r.offerQty > 0 ? { key: r.offerKey || "food", qty: r.offerQty } : null;
-  const q = f && p ? askQuote(state, f, p, { n: r.n, days: r.days, offer, favour: r.favour }) : null;
+  const q = f && p ? askQuote(state, f, p, { n: r.n, days: r.days, offer, favour: r.favour, share: r.share || 0 }) : null;
   const op = p ? offerProblem(state, p, offer) : "";
   const m = p ? missionOf(state, p) : null;
   const h = hub(state);
   const answer = !q ? `<div class="muted">Pick a group and a team.</div>`
     : q.refuse ? `<div class="danger">${esc(q.refuse)}</div>`
     : `<table class="t small"><tr><th>What weighs</th><th>Points</th></tr>${q.parts.map((x) => `<tr><td>${esc(x.label)}</td><td class="${x.v < 0 ? "danger" : "good"}">${sign(x.v)}</td></tr>`).join("")}<tr><td><b>Total</b></td><td><b>${sign(q.points)}</b></td></tr></table>
-       <div class="${q.yes ? "good" : "danger"}" style="margin-top:0.3rem">${q.yes ? `They would agree: ${q.n} of their people for ${q.days} days.${!offer && !r.favour ? ` Asking with nothing in return costs ${VOL.ASK_GW} goodwill.` : ""}` : "They would say no. Offer something, ask for fewer or for less time, or do them a job first."}</div>`;
+       <div class="${q.yes ? "good" : "danger"}" style="margin-top:0.3rem">${q.yes ? `They would agree: ${q.n} of their people for ${q.days} days.${!offer && !r.favour && !(r.share > 0) ? ` Asking with nothing in return costs ${VOL.ASK_GW} goodwill.` : ""}` : "They would say no. Offer something, ask for fewer or for less time, or do them a job first."}</div>`;
   return `<div class="box wide vol-req"><h1>🤝 Ask for volunteers</h1>
     <div class="small muted" style="margin-bottom:0.5rem">${esc(VOL_HELP)}</div>
     <div class="grid2">
@@ -85,6 +85,7 @@ export function volRequestModal(state, ui) {
         <div class="row"><select data-action="vol-offer-key">${VOL.OFFER_KEYS.map((k) => `<option value="${k}" ${(r.offerKey || "food") === k ? "selected" : ""}>${esc(SUPPLIES[k].name)}</option>`).join("")}</select>
           <input type="number" min="0" step="5" value="${r.offerQty || 0}" data-action="vol-offer-qty" style="width:5rem"${tip(h ? `${h.name} has ${Math.floor(h.stock[r.offerKey || "food"] || 0)}` : "")}></div>
         <label class="small"${tip(`+${VOL.P.favour} points. They will ask you for people one day soon; declining then costs three times the usual.`)}><input type="checkbox" data-action="vol-favour" ${r.favour ? "checked" : ""}> Owe them a favour</label>
+        <div class="row small" style="margin-top:0.3rem"${tip(`A share of what the team's cargo gains while they are with it, to their group's stores when the last of them leaves (+goodwill). Points: the share × ${VOL.SHARE.points}.`)}>Share of the haul: ${VOL.SHARE.choices.map((v) => `<button class="mini ${(r.share || 0) === v ? "active" : ""}" data-action="vol-share" data-v="${v}">${Math.round(v * 100)}%</button>`).join("")}</div>
         ${op ? `<div class="small danger">${esc(op)}</div>` : ""}
         <h3>Their answer</h3>
         ${answer}
@@ -134,18 +135,19 @@ export function plannerVolAsk(state, pl, party) {
 // ---------- handlers ----------
 const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
 export function openVolRequest(ui, d = {}) {
-  ui.volReq = { fid: d.fid != null && d.fid !== "" ? Number(d.fid) : null, partyId: d.party != null && d.party !== "" ? Number(d.party) : null, n: 1, days: VOL.SPAN.def, offerKey: "food", offerQty: 0, favour: false, msg: "" };
+  ui.volReq = { fid: d.fid != null && d.fid !== "" ? Number(d.fid) : null, partyId: d.party != null && d.party !== "" ? Number(d.party) : null, n: 1, days: VOL.SPAN.def, offerKey: "food", offerQty: 0, favour: false, share: 0, msg: "" };
 }
 export const VOL_ACTIONS = {
   "vol-open": (state, ui, d) => { openVolRequest(ui, d); ui.radioWith = null; ui.diplo = null; },
   "vol-close": (state, ui) => { ui.volReq = null; },
+  "vol-share": (state, ui, d) => { if (ui.volReq && VOL.SHARE.choices.includes(Number(d.v))) ui.volReq.share = Number(d.v); },
   "vol-n": (state, ui, d) => { if (ui.volReq) ui.volReq.n = Math.max(1, Math.min(VOL.MAX, num(d.v, 1))); },
   "vol-ask": (state, ui) => {
     const r = ui.volReq;
     if (!r) return;
     const f = factionById(state, r.fid), p = state.parties.find((x) => x.id === r.partyId);
     if (!f || !p) { r.msg = "Pick a group and a team."; return; }
-    const res = askVolunteers(state, f, p, { n: r.n, days: r.days, offer: r.offerQty > 0 ? { key: r.offerKey || "food", qty: r.offerQty } : null, favour: r.favour });
+    const res = askVolunteers(state, f, p, { n: r.n, days: r.days, offer: r.offerQty > 0 ? { key: r.offerKey || "food", qty: r.offerQty } : null, favour: r.favour, share: r.share || 0 });
     r.msg = res.text;
     if (res.ok) { r.offerQty = 0; r.favour = false; }
   },
