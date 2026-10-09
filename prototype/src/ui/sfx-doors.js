@@ -150,6 +150,13 @@ export function doorLoot(b, f, mem = null) {
 
 // ---------- the voices ----------
 export const DOOR_LEVEL = 1; // × every door voice (tools/vdpreview measures it against a 9 mm shot and a footstep)
+// Each kind's swing levelled (tools/vdpreview, the loudest 50 ms at the game's level): opening from about −31 dB (a
+// wooden inner door, level with a footstep) to −24 (a roller door's racket), shutting a few dB over that, a 9 mm
+// shot near you about −19.
+const SWING = {
+  open: { wood: 10.7, front: 6, metal: 1.9, cell: 0.6, roller: 1.4, barred: 0.93, gate: 5.5, vault: 1.4 },
+  close: { wood: 1, front: 0.6, metal: 0.65, cell: 0.62, roller: 0.69, barred: 0.49, gate: 0.38, vault: 0.4 },
+};
 export function doorVoices(K) {
   const { env, filt, noise, tone, thud, bell, crackle, shards, lfo, R } = K;
   const tick = (c, out, t, f, g, d = 0.012, q = 3) => noise(c, "white", t, d + 0.01, filt(c, "bandpass", f, q, env(c, out, t, g, d, 0.001)));
@@ -167,7 +174,7 @@ export function doorVoices(K) {
   };
   // The swing of each kind of door, open (o.close false) or shut.
   function swing(c, out, t, o, shut) {
-    const g = (o.gain ?? 1) * DOOR_LEVEL, p = o.pitch || 1, dk = o.dk || "wood";
+    const dk = SWING.open[o.dk] ? o.dk : "wood", g = (o.gain ?? 1) * DOOR_LEVEL * SWING[shut ? "close" : "open"][dk], p = o.pitch || 1;
     switch (dk) {
       case "front":
         if (!shut) { tick(c, out, t, 1500 * p, 0.3 * g, 0.02); tick(c, out, t + 0.08, 2100 * p, 0.22 * g); creak(c, out, t + 0.12, R(80, 100) * p, R(110, 140), 0.5, 850, 0.06 * g); air(c, out, t + 0.1, 0.45, 300, 0.06 * g); }
@@ -211,7 +218,7 @@ export function doorVoices(K) {
     doorClose: { dur: 0.6, play(c, out, t, o) { swing(c, out, t, o, true); } },
     // A locked door tried: the handle jiggled, the door knocking in its frame.
     doorRattle: { dur: 0.45, play(c, out, t, o) {
-      const g = (o.gain ?? 1) * DOOR_LEVEL;
+      const g = (o.gain ?? 1) * DOOR_LEVEL * 2;
       for (let i = 0; i < 4; i++) tick(c, out, t + i * 0.07 + R(0, 0.012), R(1800, 2600) * (o.pitch || 1), 0.2 * g);
       thud(c, out, t + 0.05, o.dk === "metal" || o.dk === "vault" ? 140 : 110, 0.15 * g, 0.05);
       thud(c, out, t + 0.2, o.dk === "metal" || o.dk === "vault" ? 140 : 110, 0.13 * g, 0.05);
@@ -219,7 +226,7 @@ export function doorVoices(K) {
     } },
     // Lockpicks: the pins, the tension wrench's scrape; a lock that gives, the click and the turn.
     lockPick: { dur: 1, play(c, out, t, o) {
-      const g = (o.gain ?? 1) * DOOR_LEVEL;
+      const g = (o.gain ?? 1) * DOOR_LEVEL * 2.5;
       noise(c, "white", t, 0.75, filt(c, "bandpass", 5200, 3, env(c, out, t, 0.02 * g, 0.5, 0.1, 0.1)));
       let tt = t + 0.05;
       for (let i = 0; i < 9; i++) { tick(c, out, tt, R(3600, 6200), R(0.06, 0.13) * g, 0.006, 6); tt += R(0.05, 0.11); }
@@ -228,7 +235,7 @@ export function doorVoices(K) {
     // Forcing it: o.how kick (two kicks, splinters if it gives), pry (the bar seated, the strain, the crunch; steel
     // shrieks), glass (a car's window shattered).
     doorForce: { dur: 1, play(c, out, t, o) {
-      const g = (o.gain ?? 1) * DOOR_LEVEL, steel = o.dk === "metal" || o.dk === "vault" || o.dk === "cell" || o.dk === "roller";
+      const g = (o.gain ?? 1) * DOOR_LEVEL * 0.8, steel = o.dk === "metal" || o.dk === "vault" || o.dk === "cell" || o.dk === "roller";
       if (o.how === "glass") {
         thud(c, out, t, 140, 0.3 * g, 0.06);
         if (o.ok) { shards(c, out, t + 0.02, 14, 0.12 * g); crackle(c, out, t + 0.05, 10, 0.35, 0.08 * g); } else { tick(c, out, t + 0.01, 2400, 0.2 * g, 0.03, 2); }
@@ -245,7 +252,7 @@ export function doorVoices(K) {
     // A door broken in (battered or shot down): splinters and the door going down; steel shrieks and clangs. o.layer:
     // the blow itself already played (ui/sfx-melee.js), only what follows.
     doorBreak: { dur: 1.2, play(c, out, t, o) {
-      const g = (o.gain ?? 1) * DOOR_LEVEL, dk = o.dk || "wood";
+      const g = (o.gain ?? 1) * DOOR_LEVEL * 0.8, dk = o.dk || "wood";
       const steel = dk === "metal" || dk === "vault" || dk === "cell" || dk === "roller";
       const t1 = o.layer ? t + 0.05 : t;
       if (!o.layer) { thud(c, out, t, steel ? 110 : 80, 0.55 * g, 0.18); noise(c, "white", t, 0.1, filt(c, "bandpass", 1200, 0.9, env(c, out, t, 0.18 * g, 0.08, 0.002))); }
@@ -257,26 +264,26 @@ export function doorVoices(K) {
     } },
     // Through a door already open (the first one through): a creak of the frame, a step on the sill. Soft.
     threshold: { dur: 0.3, play(c, out, t, o) {
-      const g = (o.gain ?? 1) * DOOR_LEVEL;
+      const g = (o.gain ?? 1) * DOOR_LEVEL * 1.6;
       if (o.dk === "metal" || o.dk === "vault" || o.dk === "roller" || o.dk === "cell") { tick(c, out, t, 900, 0.07 * g, 0.02, 2); bell(c, out, t, 360, 0.012 * g, 0.25); }
       else { creak(c, out, t, R(150, 190), R(200, 240), 0.16, 950, 0.025 * g, 25, 21); thud(c, out, t + 0.02, 160, 0.08 * g, 0.04); }
     } },
     // A door eased ajar to peek through: the latch held back, a slow, quiet creak.
     doorPeek: { dur: 0.6, play(c, out, t, o) {
-      const g = (o.gain ?? 1) * DOOR_LEVEL;
+      const g = (o.gain ?? 1) * DOOR_LEVEL * 5;
       tick(c, out, t, 1900, 0.06 * g, 0.012);
       creak(c, out, t + 0.06, R(70, 90), R(95, 115), 0.5, 950, 0.03 * g, 14, 9);
     } },
     // A shoulder against a door, bracing it: the thump, the door rattling in its frame.
     doorBrace: { dur: 0.35, play(c, out, t, o) {
-      const g = (o.gain ?? 1) * DOOR_LEVEL;
+      const g = (o.gain ?? 1) * DOOR_LEVEL * 0.75;
       thud(c, out, t, 100, 0.35 * g, 0.1);
       noise(c, "brown", t, 0.08, filt(c, "lowpass", 500, 0.7, env(c, out, t, 0.2 * g, 0.06, 0.002)));
       for (let i = 0; i < 3; i++) tick(c, out, t + 0.03 + i * 0.04, R(1500, 2200), 0.07 * g, 0.012);
     } },
     // The gate battered: its chains and hinges jumping under the blow (the blow itself: ui/sfx-melee.js).
     gateBatter: { dur: 0.6, play(c, out, t, o) {
-      const g = (o.gain ?? 1) * DOOR_LEVEL;
+      const g = (o.gain ?? 1) * DOOR_LEVEL * 0.6;
       chain(c, out, t + 0.01, 0.35, 10, 0.14 * g);
       thud(c, out, t, 58, 0.35 * g, 0.25);
       creak(c, out, t + 0.05, 48, 40, 0.3, 360, 0.05 * g, 10, 8, 5);

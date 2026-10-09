@@ -43,14 +43,14 @@ export const VEHICLE_LOOPS = ["engineIdle", "convoyHum"];
 // like; size: the biggest in a convoy leads the hum.
 const V8 = [1, 0.78, 1.08, 0.86, 0.96, 0.74, 1.12, 0.82], I6 = [1, 0.94, 1.02, 0.97, 1, 0.92];
 export const ENGINES = {
-  compact:   { name: "Compact car (three)", cyl: 3, idle: 850, rev: 4600, body: [210, 1.4], lp: [900, 3200], pop: [140, 0.0035], grit: 0.25, clatter: 0, pattern: [1, 0.88, 1.06], rough: 0.05, intake: [0.05, 1500], whine: [6.2, 0.012], crank: [5.8, 190, 0.5], flare: 2.4, gain: 0.9, door: "car", size: 1 },
-  sedan:     { name: "Sedan (four)", cyl: 4, idle: 780, rev: 4200, body: [165, 1.3], lp: [800, 3000], pop: [120, 0.004], grit: 0.2, clatter: 0, pattern: [1, 0.93, 1.04, 0.95], rough: 0.04, intake: [0.05, 1300], whine: [5.3, 0.01], crank: [5.2, 175, 0.55], flare: 2.3, gain: 0.9, door: "car", size: 2 },
-  suv:       { name: "SUV (six)", cyl: 6, idle: 700, rev: 3800, body: [130, 1.2], lp: [700, 2600], pop: [105, 0.0045], grit: 0.18, clatter: 0, pattern: I6, rough: 0.035, intake: [0.045, 1100], whine: [4.6, 0.01], crank: [4.8, 165, 0.6], flare: 2.1, gain: 0.95, door: "car", size: 3 },
-  van:       { name: "Work van (six)", cyl: 6, idle: 720, rev: 3600, body: [140, 1.6], lp: [650, 2400], pop: [110, 0.0045], grit: 0.2, clatter: 0, pattern: I6, rough: 0.04, intake: [0.05, 1000], whine: [4.2, 0.014], crank: [4.8, 160, 0.6], flare: 2, gain: 0.95, door: "van", size: 3.5 },
-  pickup:    { name: "Pickup truck (V8)", cyl: 8, idle: 640, rev: 3400, body: [100, 1.1], lp: [600, 2200], pop: [90, 0.005], grit: 0.22, clatter: 0, pattern: V8, rough: 0.05, intake: [0.05, 900], whine: [3.6, 0.008], crank: [4.4, 150, 0.65], flare: 2.2, gain: 1, door: "truck", size: 4 },
-  humvee:    { name: "Humvee (diesel V8)", cyl: 8, diesel: true, idle: 680, rev: 3000, body: [72, 1], lp: [520, 1900], pop: [75, 0.006], grit: 0.3, clatter: 0.35, pattern: [1, 0.85, 1.05, 0.9, 0.97, 0.82, 1.08, 0.88], rough: 0.06, intake: [0.06, 800], whine: [3.2, 0.012], crank: [3.8, 135, 1], flare: 1.6, gain: 1.05, door: "mil", size: 5 },
-  miltruck:  { name: "Army truck (diesel six)", cyl: 6, diesel: true, idle: 600, rev: 2500, body: [62, 1], lp: [480, 1700], pop: [65, 0.007], grit: 0.3, clatter: 0.55, pattern: I6, rough: 0.05, intake: [0.07, 700], whine: [7.5, 0.018], crank: [3.4, 120, 1.2], flare: 1.5, gain: 1.1, door: "mil", size: 6 },
-  motorbike: { name: "Motorbike (twin)", cyl: 2, idle: 1150, rev: 7500, body: [280, 1.5], lp: [1100, 4200], pop: [170, 0.003], grit: 0.3, clatter: 0, pattern: [1, 0.85], uneven: 0.25, rough: 0.08, intake: [0.05, 2000], whine: [9, 0.01], crank: [7, 230, 0.4], flare: 3, gain: 0.85, door: null, size: 0.5 },
+  compact:   { name: "Compact car (three)", cyl: 3, idle: 850, rev: 4600, body: [210, 1.4], lp: [900, 3200], pop: [140, 0.0035], grit: 0.25, clatter: 0, pattern: [1, 0.88, 1.06], rough: 0.05, intake: [0.05, 1500], whine: [6.2, 0.012], crank: [5.8, 190, 0.5], flare: 2.4, gain: 1.1, door: "car", size: 1 },
+  sedan:     { name: "Sedan (four)", cyl: 4, idle: 780, rev: 4200, body: [165, 1.3], lp: [800, 3000], pop: [120, 0.004], grit: 0.2, clatter: 0, pattern: [1, 0.93, 1.04, 0.95], rough: 0.04, intake: [0.05, 1300], whine: [5.3, 0.01], crank: [5.2, 175, 0.55], flare: 2.3, gain: 0.95, door: "car", size: 2 },
+  suv:       { name: "SUV (six)", cyl: 6, idle: 700, rev: 3800, body: [130, 1.2], lp: [700, 2600], pop: [105, 0.0045], grit: 0.18, clatter: 0, pattern: I6, rough: 0.035, intake: [0.045, 1100], whine: [4.6, 0.01], crank: [4.8, 165, 0.6], flare: 2.1, gain: 0.8, door: "car", size: 3 },
+  van:       { name: "Work van (six)", cyl: 6, idle: 720, rev: 3600, body: [140, 1.6], lp: [650, 2400], pop: [110, 0.0045], grit: 0.2, clatter: 0, pattern: I6, rough: 0.04, intake: [0.05, 1000], whine: [4.2, 0.014], crank: [4.8, 160, 0.6], flare: 2, gain: 0.9, door: "van", size: 3.5 },
+  pickup:    { name: "Pickup truck (V8)", cyl: 8, idle: 640, rev: 3400, body: [100, 1.1], lp: [600, 2200], pop: [90, 0.005], grit: 0.22, clatter: 0, pattern: V8, rough: 0.05, intake: [0.05, 900], whine: [3.6, 0.008], crank: [4.4, 150, 0.65], flare: 2.2, gain: 0.85, door: "truck", size: 4 },
+  humvee:    { name: "Humvee (diesel V8)", cyl: 8, diesel: true, idle: 680, rev: 3000, body: [72, 1], lp: [520, 1900], pop: [75, 0.006], grit: 0.3, clatter: 0.35, pattern: [1, 0.85, 1.05, 0.9, 0.97, 0.82, 1.08, 0.88], rough: 0.06, intake: [0.06, 800], whine: [3.2, 0.012], crank: [3.8, 135, 1], flare: 1.6, gain: 1.4, door: "mil", size: 5 },
+  miltruck:  { name: "Army truck (diesel six)", cyl: 6, diesel: true, idle: 600, rev: 2500, body: [62, 1], lp: [480, 1700], pop: [65, 0.007], grit: 0.3, clatter: 0.55, pattern: I6, rough: 0.05, intake: [0.07, 700], whine: [7.5, 0.018], crank: [3.4, 120, 1.2], flare: 1.5, gain: 1.6, door: "mil", size: 6 },
+  motorbike: { name: "Motorbike (twin)", cyl: 2, idle: 1150, rev: 7500, body: [280, 1.5], lp: [1100, 4200], pop: [170, 0.003], grit: 0.3, clatter: 0, pattern: [1, 0.85], uneven: 0.25, rough: 0.08, intake: [0.05, 2000], whine: [9, 0.01], crank: [7, 230, 0.4], flare: 3, gain: 1.3, door: null, size: 0.5 },
   bicycle:   { name: "Bicycle", bike: true, door: null, size: 0 },
 };
 export const ENGINE_KEYS = Object.keys(ENGINES);
@@ -142,7 +142,7 @@ export function engineBuffer(c, key) {
 // "tgt" target), h.stop lets it go. keys: one engine, or a convoy's (each its own loop, detuned a little, summed
 // before the filters: one sound, not four).
 export const VEH_LEVEL = 1;  // × every vehicle voice (tools/vdpreview measures it against a 9 mm shot and a footstep)
-export const ENGINE_TRIM = 0.36; // the engine's body under the doors and the starter
+export const ENGINE_TRIM = 0.15; // the engine's body under the doors and the starter
 function at(p, t, v, mode = "lin", tc = 0.15) {
   if (!p) return;
   if (mode === "set") p.setValueAtTime(v, t);
@@ -454,7 +454,7 @@ export function mapCues(state, ui, mem, cam = null) {
 
 // ---------- the loops ----------
 export const MAX_BATTLE_LOOPS = 2, MAX_MAP_LOOPS = 1;
-export const LOOP_LEVEL = { battle: 0.55, map: 0.42 }; // × the engine at idle (under the one-shots)
+export const LOOP_LEVEL = { battle: 0.9, map: 0.26 }; // × the engine at idle (under the one-shots)
 export const HUM = { zoomOff: 0.55, zoomFull: 1.5, road: 1.9, offroad: 2.3 };
 // The convoy hum's wish on the map: the team you selected, else the one nearest the middle of the view, moving with an
 // engine (another group's driving team you can see when none of yours is). Louder zoomed in, gone zoomed far out.
@@ -520,7 +520,7 @@ const LOOPS = new WeakMap(); // context -> Map(id -> loop)
 export const loopsOf = (c) => LOOPS.get(c) || new Map();
 // dests: { battle: the battle bus's input (ui/gunsfx.js), map: the effects bus }. L: the battle's listener (ui/
 // gunsfx.js listener) to place the loop by; without it, near and centred. K: audio.js's building blocks.
-export function engineLoops(c, dests, wants, t = c.currentTime, L = null, K = null) {
+export function engineLoops(c, dests, wants, t = c.currentTime, L = null, K = KIT0) {
   let m = LOOPS.get(c);
   if (!m) LOOPS.set(c, (m = new Map()));
   const keep = new Set();
@@ -609,7 +609,9 @@ function makeLoop(c, dest, w, t0, K) {
 }
 
 // ---------- the voices ----------
+let KIT0 = null; // audio.js's building blocks, kept for the loops (engineLoops' default)
 export function vehicleVoices(K) {
+  KIT0 = K;
   const { env, filt, noise, tone, thud, bell, crackle, lfo, R } = K;
   const tick = (c, out, t, f, g, d = 0.012, q = 3) => noise(c, "white", t, d + 0.01, filt(c, "bandpass", f, q, env(c, out, t, g, d, 0.001)));
   const gv = (o) => (o.gain ?? 1) * VEH_LEVEL;
@@ -653,15 +655,17 @@ export function vehicleVoices(K) {
     }
   }
   // Bicycles: the chain and the pedals; the freewheel's pawls ticking as it coasts; the bell; the brakes.
-  function chainRun(c, out, t, dur, g) {
+  function chainRun(c, out, t, dur, g0) {
+    const g = g0 * 4;
     const e = env(c, out, t, 0.035 * g, dur * 0.3, 0.2, dur * 0.5), am = c.createGain(); am.gain.value = 0.5; am.connect(e);
     const l = lfo(c, 1.6, 0.4, am.gain); l.frequency.linearRampToValueAtTime(2.6, t + dur); l.stop(t + dur + 0.1);
     noise(c, "white", t, dur, filt(c, "bandpass", 2600, 2, am));
     let tt = t + 0.1, gap = 0.16;
     while (tt < t + dur) { tick(c, out, tt, R(1700, 2200), 0.03 * g, 0.006, 5); tt += gap; gap = Math.max(0.07, gap * 0.92); }
   }
-  function freewheel(c, out, t, dur, g) { let tt = t, gap = 0.035; while (tt < t + dur) { tick(c, out, tt, R(3800, 4600), 0.04 * g, 0.004, 8); tt += gap; gap *= 1.07; } }
-  const bikeBell = (c, out, t, g) => { bell(c, out, t, 2650, 0.07 * g, 0.9); bell(c, out, t + 0.22, 2650, 0.06 * g, 1.1); };
+  function freewheel(c, out, t, dur, g0) {
+    const g = g0 * 1.5; let tt = t, gap = 0.035; while (tt < t + dur) { tick(c, out, tt, R(3800, 4600), 0.04 * g, 0.004, 8); tt += gap; gap *= 1.07; } }
+  const bikeBell = (c, out, t, g) => { bell(c, out, t, 2300, 0.07 * g, 0.9); bell(c, out, t + 0.22, 2300, 0.06 * g, 1.1); };
   function brakes(c, out, t, g) {
     const v = tone(c, "sine", R(2700, 3100), 0, t, 0.5, filt(c, "bandpass", 2900, 4, env(c, out, t, 0.04 * g, 0.35, 0.05, 0.1)));
     lfo(c, 7, 40, v.frequency).stop(t + 0.6);
@@ -670,21 +674,24 @@ export function vehicleVoices(K) {
   // A car door: the handle, the latch letting go and the seal (open); the slam, the latch, the panel (shut). heavy:
   // car, van (a sliding side door), truck, mil (steel: a clang).
   const SLAM = { car: [105, 0.42], van: [92, 0.45], truck: [86, 0.5], mil: [62, 0.55] };
-  function doorOpen(c, out, t, heavy, g) {
+  function doorOpen(c, out, t, heavy, g0) {
+    const g = g0 * 0.68;
     tick(c, out, t, 2300, 0.12 * g); tick(c, out, t + 0.03, 1500, 0.1 * g);
     thud(c, out, t + 0.05, heavy === "mil" ? 160 : 220, 0.08 * g, 0.05);
     noise(c, "brown", t + 0.06, 0.12, filt(c, "lowpass", 500, 0.7, env(c, out, t + 0.06, 0.08 * g, 0.1, 0.005)));
     if (heavy === "truck" || heavy === "mil") { const v = tone(c, "sawtooth", 140, 120, t + 0.1, 0.25, filt(c, "bandpass", 900, 6, env(c, out, t + 0.1, 0.03 * g, 0.18, 0.04))); lfo(c, 19, 12, v.frequency).stop(t + 0.4); }
     if (heavy === "mil") bell(c, out, t + 0.05, 640, 0.02 * g, 0.3);
   }
-  function doorSlam(c, out, t, heavy, g) {
+  function doorSlam(c, out, t, heavy, g0) {
+    const g = g0 * 0.68;
     const [f, p] = SLAM[heavy] || SLAM.car;
     thud(c, out, t, f, p * g, 0.12);
     tick(c, out, t + 0.005, 1100, 0.2 * g, 0.02, 2);
     noise(c, "white", t, 0.08, filt(c, "bandpass", 650, 1, env(c, out, t, 0.07 * g, 0.06, 0.002)));
     if (heavy === "mil") { bell(c, out, t, 380, 0.06 * g, 0.5); bell(c, out, t + 0.01, 910, 0.025 * g, 0.3); }
   }
-  function slide(c, out, t, g, shut) { // a van's side door rolling on its track
+  function slide(c, out, t, g0, shut) { // a van's side door rolling on its track
+    const g = g0 * 0.68;
     noise(c, "brown", t, 0.45, filt(c, "bandpass", 420, 1, env(c, out, t, 0.09 * g, 0.3, 0.05, 0.1)));
     for (let i = 0; i < 3; i++) tick(c, out, t + 0.05 + i * 0.12, 900, 0.04 * g, 0.015, 3);
     if (shut) { thud(c, out, t + 0.45, 88, 0.5 * g, 0.14); tick(c, out, t + 0.46, 1000, 0.2 * g, 0.02, 2); }
@@ -736,8 +743,8 @@ export function vehicleVoices(K) {
       const key = keyOf(o), E = ENGINES[key], g = gv(o);
       if (E.bike) return;
       keyTurn(c, out, t, g);
-      if (o.why === "wreck") { for (let i = 0; i < 6; i++) tick(c, out, t + 0.25 + i * 0.08, 1100, 0.12 * g, 0.012, 3); }
-      else crank(c, out, t + 0.2, E, 1.6, g, true);
+      if (o.why === "wreck") { for (let i = 0; i < 6; i++) tick(c, out, t + 0.25 + i * 0.08, 1100, 0.6 * g, 0.012, 3); thud(c, out, t + 0.25, 160, 0.08 * g, 0.04); }
+      else crank(c, out, t + 0.2, E, 1.6, g * 1.7, true);
     } },
     // Switched off: the key, the engine running down with a shudder, the hot metal ticking. A bicycle: the brakes and
     // the freewheel coasting to a stop.
@@ -760,7 +767,7 @@ export function vehicleVoices(K) {
       if (E.bike) {
         thud(c, out, t, 180, 0.3 * g, 0.06); noise(c, "white", t, 0.06, filt(c, "bandpass", 2500, 1, env(c, out, t, 0.18 * g, 0.05, 0.001)));
         noise(c, "white", t + 0.03, 0.9, filt(c, "highpass", 3000, 0.7, env(c, out, t + 0.03, 0.05 * g, 0.7, 0.01)));
-        bell(c, out, t + 0.5, 3200, 0.04 * g, 0.3);
+        bell(c, out, t + 0.5, 1900, 0.06 * g, 0.3);
         for (let i = 0; i < 6; i++) tick(c, out, t + 0.55 + R(0, 0.3), R(2500, 4000), 0.05 * g, 0.01, 4);
         freewheel(c, out, t + 0.9, 1.2, g);
         return;
@@ -830,7 +837,7 @@ export function vehicleVoices(K) {
       thud(c, out, t + 1.2, 90, 0.42 * g, 0.12); tick(c, out, t + 1.21, 1100, 0.2 * g, 0.02, 2);
     } },
     // Hotwiring a found car (sim/foundcars.js "hotwire"): the wires buzzing and sparking; o.ok: it takes.
-    hotwire: { dur: 0.6, play(c, out, t, o) { sparks(c, out, t, gv(o), o.ok !== false); } },
+    hotwire: { dur: 0.6, play(c, out, t, o) { sparks(c, out, t, gv(o) * 5, o.ok !== false); } },
   };
 }
 export const VEHICLE_LABELS = {
