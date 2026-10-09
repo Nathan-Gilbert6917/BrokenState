@@ -38,12 +38,12 @@ app.whenReady().then(async () => {
     const seeds = pairs(["walker_idle_seed1_new", "walker_idle_seed2_new", "walker_idle_seed3_new", "walker_idle_seed4_new"]);
     const takes = pairs(["walker_idle_take1", "walker_idle_take2", "walker_idle_take3", "walker_idle_take4"]);
     const shrieks = pairs(["screamer_shriek_seed1_new", "screamer_shriek_seed2_new", "screamer_shriek_seed3_new"]);
-    const table = Object.entries(S).map(([n, s]) => ({ name: n, secs: s.active, peak: s.peak, peakDb: s.peakDb, rmsDb: s.rmsDb, crestDb: s.crestDb, lra: s.lra, clip: s.clip, nan: s.nan, centroid: s.centroid, flatness: s.flatness, periodicity: s.periodicity }));
+    const table = Object.entries(S).map(([n, s]) => ({ name: n, secs: s.active, peak: s.peak, peakDb: s.peakDb, rmsDb: s.rmsDb, crestDb: s.crestDb, lra: s.lra, loudDb: s.loudDb, clip: s.clip, nan: s.nan, centroid: s.centroid, flatness: s.flatness, periodicity: s.periodicity }));
     const report = { base, table, similarity: { seeds, takes, shrieks }, gainReduction: res.gr };
     fs.writeFileSync(path.join(outDir, "analysis.json"), JSON.stringify(report, null, 1));
     const pad = (v, n) => String(v).padStart(n);
-    console.log(`${"name".padEnd(32)} ${pad("secs", 5)} ${pad("peak", 6)} ${pad("rmsDb", 6)} ${pad("crest", 6)} ${pad("lra", 5)} ${pad("clip", 4)} ${pad("cent", 5)} ${pad("flat", 6)} ${pad("period", 6)}`);
-    for (const r of table) console.log(`${r.name.padEnd(32)} ${pad(r.secs, 5)} ${pad(r.peak, 6)} ${pad(r.rmsDb, 6)} ${pad(r.crestDb, 6)} ${pad(r.lra, 5)} ${pad(r.clip, 4)} ${pad(r.centroid, 5)} ${pad(r.flatness, 6)} ${pad(r.periodicity, 6)}`);
+    console.log(`${"name".padEnd(32)} ${pad("secs", 5)} ${pad("peak", 6)} ${pad("rmsDb", 6)} ${pad("crest", 6)} ${pad("lra", 5)} ${pad("loud", 6)} ${pad("clip", 4)} ${pad("cent", 5)} ${pad("flat", 6)} ${pad("period", 6)}`);
+    for (const r of table) console.log(`${r.name.padEnd(32)} ${pad(r.secs, 5)} ${pad(r.peak, 6)} ${pad(r.rmsDb, 6)} ${pad(r.crestDb, 6)} ${pad(r.lra, 5)} ${pad(r.loudDb, 6)} ${pad(r.clip, 4)} ${pad(r.centroid, 5)} ${pad(r.flatness, 6)} ${pad(r.periodicity, 6)}`);
     console.log(`spectral similarity, walker idle by 4 seeds: ${seeds.join(" ")}`);
     console.log(`spectral similarity, one walker's idle, 4 takes: ${takes.join(" ")}`);
     console.log(`spectral similarity, screamer shriek by 3 seeds: ${shrieks.join(" ")}`);

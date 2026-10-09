@@ -247,7 +247,8 @@ function metal(c, out, t, base, peak, d, rnd) {
 // One voice. s: { f0, dur, contour [[fraction, × f0]...], vowels [[F1, F2, F3]...], form [× F1, × F2, × F3], shift (× all
 // formants), q [Q1, Q2, Q3], fw [formant weights], lp (low-pass Hz), breathHz, sub (a detuned pulse an octave
 // down), nform (2 or 3), rasp, fry (0–1), fryHz, jitter (× f0), vib [Hz, × f0], drive, a, hold, rel
-// (the envelope), peak, breath (× peak), ring [carrier Hz, mix, carrier Hz at the end] }.
+// (the envelope), peak, breath (× peak), ring [carrier Hz, mix, carrier Hz at the end],
+// ringWob [× a second carrier's detune, drift × the carrier] }.
 function vocal(c, out, t, s, rnd) {
   const dur = Math.max(0.05, s.dur), f0 = clamp(s.f0, 25, 2000);
   const o = osc(c, "glottal", f0, t, dur + 0.05);
@@ -287,6 +288,11 @@ function vocal(c, out, t, s, rnd) {
     post.connect(rm);
     const car = osc(c, "sine", s.ring[0], t, dur + 0.05, rm.gain);
     if (s.ring[2]) car.frequency.exponentialRampToValueAtTime(s.ring[2], t + dur);
+    if (s.ringWob) { // a less clean ring: the carrier drifts (low-passed noise) and a second one, detuned, beats against it
+      noise(c, "brown", t, dur + 0.05, gainN(c, s.ring[0] * s.ringWob[1], car.frequency), rnd, 0.6 + rnd() * 0.4);
+      const car2 = osc(c, "sine", s.ring[0] * s.ringWob[0], t, dur + 0.05, gainN(c, 0.6, rm.gain));
+      if (s.ring[2]) car2.frequency.exponentialRampToValueAtTime(s.ring[2] * s.ringWob[0], t + dur);
+    }
   }
   const a = s.a ?? dur * 0.2, hold = s.hold ?? dur * 0.3, rel = s.rel ?? dur * 0.5;
   const dark = s.lp ? biq(c, "lowpass", s.lp, 0.6, post) : post; // a dark throat: the highs rolled off
@@ -328,6 +334,51 @@ function humanScream(c, out, t, rnd, g) {
     rasp: 0.25, drive: 1.5, jitter: 0.01, vib: [5.5 + rnd(), 0.025], a: 0.04, hold: dur * 0.4, rel: dur * 0.55, peak: 0.5 * g, breath: 0.15 }, rnd);
 }
 
+// The screamer's shriek, per unit (its seed) and per take (rnd): the in-breath, the first call (1.6–2.2 s, cracking
+// partway, a ragged tail), a pause (0.4–0.8 s) and a second call (lower, cracked, 60–80% as long), which for some
+// screamers breaks into a stuttering sob-shriek. Times in s from the start; total: when the last sound has died away.
+export const SCREECH = { DUR: [1.6, 2.2], GAP: [0.4, 0.8], SECOND: [0.6, 0.8], SOB: 0.4, TAIL: 0.4 };
+export function screechPlan(seed, rnd = Math.random) {
+  const U = mulberry(hash32((seed >>> 0) ^ 0x5c4ea3)); // the unit's own: the same screamer always shrieks its way
+  const S = SCREECH;
+  const p = {
+    f: 0.85 + U() * 0.35, ring: 0.3 + U() * 0.18, crack: 0.35 + U() * 0.25, vow: Math.floor(U() * 3), sob: U() < S.SOB,
+    rise: 1.4 + U() * 0.45, lower: 0.82 + U() * 0.08, sobHz: 6 + U() * 3, gap: S.GAP[0] + U() * (S.GAP[1] - S.GAP[0]),
+    second: S.SECOND[0] + U() * (S.SECOND[1] - S.SECOND[0]), base: S.DUR[0] + U() * (S.DUR[1] - S.DUR[0]), pull: 0.18 + U() * 0.06,
+  };
+  p.dur = clamp(p.base * (0.95 + rnd() * 0.1), S.DUR[0], S.DUR[1]);
+  p.at = p.pull + 0.24;
+  p.at2 = p.at + p.dur + S.TAIL * 0.5 + p.gap; // after the first call's tail has frayed
+  p.dur2 = p.dur * p.second;
+  p.total = p.at2 + p.dur2 + S.TAIL;
+  return p;
+}
+const SCREECH_VOWELS = [["aa", "ae", "ee", "ae", "aa"], ["ae", "ee", "eh", "ee", "ah"], ["ah", "ae", "ee", "aa", "eh"]];
+// One call of the shriek at X.t + at: raw (a hard waveshaper, noise in the source, strained fry), a crack where the voice
+// breaks, an unstable detuned ring, a lower body, grit, and a ragged tail; sob: gated into a stuttering sob-shriek.
+function screamCall(X, out, at, dur, f0, S, k, sob) {
+  const { c, t, rnd, g } = X;
+  const T = t + at, cr = clamp(S.crack + (rnd() - 0.5) * 0.06, 0.3, 0.65), R = S.rise;
+  const dest = sob ? am(c, out, S.sobHz, 1, T, dur, "square") : out;
+  const contour = sob
+    ? [[0.1, R], [0.25, R * 0.8], [0.4, R * 1.05], [0.55, R * 0.75], [0.7, R], [1, 0.62]]
+    : [[0.1, R], [cr, R * 1.1], [cr + 0.035, R * 0.6], [cr + 0.12, R * 1.15], [0.8, R * 0.95], [1, 0.68]];
+  const vowels = SCREECH_VOWELS[S.vow];
+  say(X, dest, { at, f0, dur, contour, vowels, shift: 1.25, rasp: 1.7, drive: 11, jitter: 0.1, vib: [8 + rnd() * 3, 0.05], sub: 0.45,
+    fry: 0.45, fryHz: 70 + rnd() * 40, a: 0.03, hold: dur * 0.55, rel: dur * 0.42, peak: 0.52 * k, breath: 0.55,
+    ring: [f0 * S.ring + 97, 0.55, f0 * S.ring * 0.55 + 50], ringWob: [1.017 + rnd() * 0.01, 0.04] });
+  say(X, dest, { at, f0: f0 * 0.5, dur, contour, vowels: ["aa", "aa", "ah"], drive: 7, sub: 0.3, fry: 0.6, fryHz: 45, a: 0.05, hold: dur * 0.5, rel: dur * 0.45, peak: 0.27 * k });
+  noise(c, "white", T, dur, biq(c, "bandpass", 3200, 1.5, am(c, envG(c, dest, T, 0.17 * g * k, 0.06, dur * 0.45, dur * 0.45), 30 + rnd() * 20, 0.8, T, dur, "square")), rnd); // grit
+  if (!sob) noise(c, "white", T + dur * cr, 0.08, biq(c, "bandpass", 1900, 1.2, envG(c, out, T + dur * cr, 0.2 * g * k, 0.003, 0.02, 0.05)), rnd); // the voice breaking
+  const tail = T + dur * 0.92; // the ragged tail: breath rattling down
+  sweep(c, out, tail, SCREECH.TAIL, 2600, 800, 2, 0.16 * g * k, 0.03, 0.1, SCREECH.TAIL - 0.13, rnd);
+  noise(c, "white", tail, SCREECH.TAIL, biq(c, "bandpass", 1300, 1.5, am(c, envG(c, out, tail, 0.12 * g * k, 0.02, 0.1, SCREECH.TAIL - 0.12), 12 + rnd() * 5, 1, tail, SCREECH.TAIL, "square")), rnd);
+}
+
+// Peaks of the voices that are compared (a snarl out of a silence near the aggro, both well over a moan), and the beat
+// of silence before an aggro.
+export const LEVELS = { moan: 0.72, bark: 1.05, aggro: 1.1, aggroWait: 0.5 };
+
 export const RECIPES = {
   silent() {},
   // Moans and gurgles: the dead at rest.
@@ -338,7 +389,7 @@ export const RECIPES = {
     // Broken up by a slow, irregular tremor (no steady pitch, no clean vowel): a throat that no longer works.
     const shake = am(X.c, out, 2.3 + rnd() * 2.6, 0.55, X.t, dur, rnd() < 0.5 ? "triangle" : "sine");
     say(X, shake, { f0: P.f0 * X.p * (0.9 + rnd() * 0.18), dur, contour: [[0.25, 1.04 + rnd() * 0.1], [0.6, 0.92 + rnd() * 0.1], [1, 0.66 + rnd() * 0.1]], vowels: path,
-      rasp: Math.min(1.3, P.rasp * 1.35), fw: [1, 0.3, 0.08], lp: 950, breathHz: 650, a: dur * 0.3, hold: dur * 0.2, rel: dur * 0.5, peak: 0.72, breath: 0.5 });
+      rasp: Math.min(1.3, P.rasp * 1.35), fw: [1, 0.3, 0.08], lp: 950, breathHz: 650, a: dur * 0.3, hold: dur * 0.2, rel: dur * 0.5, peak: LEVELS.moan, breath: 0.5 });
     if (rnd() < 0.2 + P.wet * vp.gurgle) bubbles(X.c, out, X.t + dur * 0.4, dur * 0.6, 2 + Math.floor(rnd() * 4), 0.07 * X.g, rnd);
   },
   wheeze(X, out) { // ragged breathing up close: rattling breaths in and out, never quite in time
@@ -368,10 +419,21 @@ export const RECIPES = {
   spot(X, out) { // seeing someone: a quick breath in, a beat of silence, then a sudden snarling shriek
     const { c, t, rnd, P, g } = X;
     sweep(c, out, t, 0.14, 600, 1800, 2, 0.1 * g, 0.12, 0, 0.02, rnd);
-    const at = 0.36 + rnd() * 0.1, f0 = P.f0 * X.p * 2.6, dur = 0.5 + rnd() * 0.2;
-    say(X, out, { at, f0, dur, contour: [[0.08, 1.5], [0.4, 1.3], [1, 0.62]], vowels: ["ae", "aa", "uh"], fry: 0.5, rasp: 1.3, drive: P.drive * 2.2,
-      a: 0.005, hold: dur * 0.2, rel: dur * 0.75, peak: 0.75, breath: 0.5, ring: [f0 * 0.71 + 40, 0.25] });
-    say(X, out, { at, f0: f0 * 0.5, dur, contour: [[0.1, 1.4], [1, 0.6]], vowels: ["aa", "uh"], fry: 0.8, drive: P.drive * 2, a: 0.005, hold: dur * 0.2, rel: dur * 0.75, peak: 0.4 });
+    const at = LEVELS.aggroWait + rnd() * 0.15, f0 = P.f0 * X.p * 2.6, dur = 0.5 + rnd() * 0.2;
+    say(X, out, { at, f0, dur, contour: [[0.08, 1.5], [0.4, 1.3], [1, 0.62]], vowels: ["ae", "aa", "uh"], fry: 0.5, rasp: 1.3, drive: P.drive * 2.4,
+      a: 0.004, hold: dur * 0.2, rel: dur * 0.75, peak: LEVELS.aggro, breath: 0.5, ring: [f0 * 0.71 + 40, 0.25] });
+    say(X, out, { at, f0: f0 * 0.5, dur, contour: [[0.1, 1.4], [1, 0.6]], vowels: ["aa", "uh"], fry: 0.8, drive: P.drive * 2, a: 0.004, hold: dur * 0.2, rel: dur * 0.75, peak: 0.48 });
+    noise(c, "brown", t + at, 0.15, biq(c, "lowpass", 300, 0.8, envG(c, out, t + at, 0.45 * g, 0.002, 0.02, 0.12)), rnd); // the hit: a body lurching
+  },
+  bark(X, out) { // out of a silence: a sudden snarl, no build-up, a short wet tail
+    const { c, t, rnd, P, g } = X, dur = 0.28 + rnd() * 0.14, f0 = P.f0 * X.p * (2 + rnd() * 0.5);
+    say(X, out, { f0, dur, contour: [[0.12, 1.45], [1, 0.58]], vowels: [pick(X, ["ae", "aa"]), "aa", "uh"], fry: 0.6, rasp: 1.4, drive: P.drive * 2.4,
+      a: 0.003, hold: dur * 0.35, rel: dur * 0.6, peak: LEVELS.bark, breath: 0.5, ring: [f0 * 0.66 + 35, 0.2] });
+    say(X, out, { f0: f0 * 0.5, dur, contour: [[0.12, 1.4], [1, 0.6]], vowels: ["aa", "uh"], fry: 0.8, drive: P.drive * 2, a: 0.003, hold: dur * 0.35, rel: dur * 0.6, peak: 0.6 });
+    noise(c, "white", t, 0.14, biq(c, "bandpass", 1300, 1.2, envG(c, out, t, 0.45 * g, 0.002, 0.03, 0.1)), rnd); // the bark's hit
+    const wt = t + dur * 0.8; // the wet tail
+    bubbles(c, out, wt, 0.22, 4, 0.12 * g, rnd, 160, 500);
+    noise(c, "brown", wt, 0.2, biq(c, "lowpass", 480, 1, envG(c, out, wt, 0.3 * g, 0.01, 0.03, 0.15)), rnd);
   },
   growl(X, out) {
     const { rnd, P } = X, dur = (0.65 + rnd() * 0.3) * (P.slow || 1);
@@ -506,7 +568,7 @@ export const RECIPES = {
   roar(X, out) {
     if (X.ev === "aggro" && !X.held) { // the breath in and the beat of silence before it
       sweep(X.c, out, X.t, 0.2, 400, 1200, 2, 0.12 * X.g, 0.18, 0, 0.02, X.rnd);
-      return RECIPES.roar({ ...X, t: X.t + 0.45, held: true }, out);
+      return RECIPES.roar({ ...X, t: X.t + LEVELS.aggroWait + 0.1, g: X.g * 1.12, held: true }, out);
     }
     const { c, t, rnd, P, g } = X, dur = (1.2 + rnd() * 0.4) * (P.giant ? 1.3 : 1), f0 = P.f0 * X.p;
     say(X, out, { f0, dur, contour: [[0.25, 1.5], [0.6, 1.35], [1, 0.75]], vowels: ["uh", "aa", "aa", "oh"], fry: 0.85, rasp: 1.2, drive: P.drive * 1.4,
@@ -583,12 +645,15 @@ export const RECIPES = {
   },
   screech(X, out) {
     const { c, t, rnd, vp, P, g } = X;
-    sweep(c, out, t, 0.18, 800, 2600, 2, 0.16 * g, 0.15, 0, 0.03, rnd); // the sharp breath in
-    const at = 0.18, dur = clamp(1.5 * vp.drawl, 1.2, 1.9), f0 = clamp(P.f0 * X.p * 3.4, 400, 900);
-    say(X, out, { at, f0, dur, contour: [[0.12, 1.6], [0.5, 1.75], [0.8, 1.5], [1, 0.9]], vowels: ["aa", "ae", "ee", "ae"], shift: 1.25, rasp: 1.2, drive: 6, jitter: 0.06, vib: [9, 0.04],
-      fry: 0.1, a: 0.06, hold: dur * 0.5, rel: dur * 0.44, peak: 0.55, breath: 0.35, ring: [f0 * 0.37 + 97, 0.45, f0 * 0.21 + 60] });
-    say(X, out, { at, f0: f0 * 0.5, dur, contour: [[0.12, 1.55], [0.6, 1.6], [1, 0.85]], vowels: ["aa", "aa"], drive: 4, a: 0.08, hold: dur * 0.45, rel: dur * 0.45, peak: 0.28 });
-    noise(c, "white", t + at, dur, biq(c, "bandpass", 3200, 2, envG(c, out, t + at, 0.18 * g, 0.08, dur * 0.4, dur * 0.5)), rnd);
+    const S = screechPlan(vp.seed, rnd);
+    const single = X.ev === "aggro"; // noticing you: the first call alone, shorter
+    // The gasping in-breath: two ragged pulls.
+    sweep(c, out, t, 0.16, 700, 2200, 2.5, 0.13 * g, 0.12, 0, 0.03, rnd);
+    sweep(c, out, t + S.pull, 0.18, 900, 2800, 2.5, 0.2 * g, 0.15, 0, 0.03, rnd);
+    const f0 = clamp(P.f0 * X.p * 3.4 * S.f, 380, 950);
+    screamCall(X, out, S.at, single ? S.dur * 0.7 : S.dur, f0, S, 1, false);
+    if (single) return;
+    screamCall(X, out, S.at2 - 0, S.dur2, f0 * S.lower, S, 0.82, S.sob);
   },
   // Crawlers: barely there while hidden, then a hiss and a snap.
   lurk(X, out) {
@@ -736,7 +801,7 @@ export const RECIPES = {
 const COMMON = {
   idle: ["moan", "moan", "gurgle", "wheeze"], aggro: "spot", attack: "snarl", bite: "bite", hurt: "grunt", death: "rattle", step: "shuffle",
   wake: "rise", bash: "bash", smash: "smash", sizzle: "sizzle", worms: "squirm", burst: "burst", shriek: "shriek", strike: "strike", spit: "spit",
-  heave: "heave", fling: "fling", climb: "climb",
+  heave: "heave", fling: "fling", climb: "climb", snarl: "bark",
 };
 export const VOICE_SETS = {
   walker: COMMON,
@@ -747,14 +812,14 @@ export const VOICE_SETS = {
   screamer: { ...COMMON, idle: "whimper", aggro: "screech", shriek: "screech" },
   crawler: { ...COMMON, idle: "lurk", aggro: "hiss", step: "crawl" },
   carrier: { ...COMMON, idle: ["bloat", "bloat", "gurgle"], death: "burst" },
-  swarm: { ...COMMON, idle: "squirm", aggro: "squirm", attack: "squelch", bite: "squelch", hurt: "splat", death: "splat", step: "squirm", wake: "squirm" },
+  swarm: { ...COMMON, idle: "squirm", aggro: "squirm", attack: "squelch", bite: "squelch", hurt: "splat", death: "splat", step: "squirm", wake: "squirm", snarl: "squelch" },
   shepherd: { ...COMMON, idle: "call", aggro: "ululate" },
   boneback: { ...COMMON, idle: ["moan", "creak"], hurt: "crack", step: "bonestep" },
   climber: { ...COMMON, idle: "chitter", step: "scrabble" },
   flinger: { ...COMMON, idle: ["gurgle", "moan"] },
   sower: { ...COMMON, idle: "spores" },
   nightmare: { ...COMMON, idle: "whisper", aggro: "laugh", hurt: "glitch", death: "wail", shriek: "nightmare" },
-  sleeper: { ...COMMON, idle: "silent", aggro: "gasp", wake: "wake", death: "splat", step: "silent" },
+  sleeper: { ...COMMON, idle: "silent", aggro: "gasp", wake: "wake", death: "splat", step: "silent", snarl: "silent" },
   wallbreaker: { ...COMMON, idle: "rumble", aggro: "roar", attack: "roarShort", death: "roarDeath", step: "stomp", bash: "smash" },
   broodmother: { ...COMMON, idle: ["bellow", "bloat"], aggro: "roar", attack: "roarShort", death: "roarDeath", step: "stomp", bash: "smash" },
 };
@@ -768,19 +833,20 @@ const OWN_STEP = new Set(["swarm"]);
 export const EVENT_CUE = {
   idle: "zIdle", aggro: "zAggro", attack: "zAttack", bite: "zBite", hurt: "zHurt", death: "zDeath", step: "zStep", smash: "zSmash", bash: "zBash",
   spit: "zSpit", sizzle: "zSizzle", shriek: "zShriek", strike: "zStrike", burst: "zBurst", worms: "zWorms", heave: "zHeave", fling: "zFling",
-  climb: "zClimb", wake: "zWake",
+  climb: "zClimb", wake: "zWake", snarl: "zSnarl",
 };
-const EVENT_DUR = { idle: 2.4, aggro: 2, attack: 0.7, bite: 1.2, hurt: 0.5, death: 2.2, step: 1.6, smash: 1.2, bash: 0.5, spit: 1, sizzle: 1.1, shriek: 2.4, strike: 0.7, burst: 1.6, worms: 1.3, heave: 1.2, fling: 1.4, climb: 1.2, wake: 1.4 };
+export const EVENT_DUR = { idle: 2.4, aggro: 2, attack: 0.7, bite: 1.2, hurt: 0.5, death: 2.2, step: 1.6, smash: 1.2, bash: 0.5, spit: 1, sizzle: 1.1, shriek: 5.9, strike: 0.7, burst: 1.6, worms: 1.3, heave: 1.2, fling: 1.4, climb: 1.2, wake: 1.4, snarl: 0.9 };
 // Throttle limits (ui/audio.js LIMITS): gap (s) between two starts, max playing at once.
 export const ZOMBIE_LIMITS = {
   zIdle: { gap: 0.7, max: 2 }, zAggro: { gap: 0.45, max: 2 }, zAttack: { gap: 0.15, max: 2 }, zBite: { gap: 0.12, max: 2 }, zHurt: { gap: 0.1, max: 3 },
   zDeath: { gap: 0.25, max: 3 }, zStep: { gap: 0.1, max: 3 }, zSmash: { gap: 0.3, max: 2 }, zBash: { gap: 0.15, max: 2 }, zSpit: { gap: 0.3, max: 2 },
-  zSizzle: { gap: 0.2, max: 2 }, zShriek: { gap: 0.8, max: 1 }, zStrike: { gap: 0.2, max: 2 }, zBurst: { gap: 0.3, max: 2 }, zWorms: { gap: 0.3, max: 2 },
+  zSizzle: { gap: 0.2, max: 2 }, zShriek: { gap: 1.5, max: 1 }, zStrike: { gap: 0.2, max: 2 }, zBurst: { gap: 0.3, max: 2 }, zWorms: { gap: 0.3, max: 2 },
   zHeave: { gap: 0.5, max: 1 }, zFling: { gap: 0.3, max: 2 }, zClimb: { gap: 0.25, max: 2 }, zWake: { gap: 0.4, max: 2 },
+  zSnarl: { gap: 1.5, max: 1 },
 };
 // Their place in a frame's volley (soundcues.js PRIORITY: lower is heard first): the screamer's shriek near the top.
 export const Z_PRIORITY = {
-  zShriek: 2, zBurst: 3, zBite: 4, zSmash: 4, zStrike: 4, zSpit: 5, zFling: 5, zWake: 5, zDeath: 6, zAttack: 6, zHeave: 6,
+  zShriek: 2, zBurst: 3, zBite: 4, zSmash: 4, zStrike: 4, zSpit: 5, zFling: 5, zWake: 5, zSnarl: 5, zDeath: 6, zAttack: 6, zHeave: 6,
   zBash: 7, zAggro: 7, zHurt: 7, zSizzle: 7, zWorms: 7, zClimb: 8, zIdle: 9, zStep: 10,
 };
 export const ZOMBIE_SOUND_NAMES = Object.values(EVENT_CUE);
@@ -991,7 +1057,7 @@ export function zombieFxCue(b, f, zm, L, out) {
     const u = b.units.find((o) => o.id === f.unit);
     if (!u || u.kind !== "zombie") return false;
     const m = zm.z.get(u.id);
-    if (m && !m.aggro) { m.aggro = true; out.push(cue("aggro", u, b, L)); }
+    if (m && m.aggro !== true) aggroCue(b, u, m, zm, L, out);
     const path = f.path || [];
     if (u.ztype === "climber" && path.some((p) => CLIMB.has(cellK(b, p[0], p[1])))) out.push(cue("climb", u, b, L));
     else if (ZOMBIE_STEPS.on || OWN_STEP.has(voiceKind(u))) out.push(cue("step", u, b, L, { steps: Math.max(1, path.length), gain: 0.8 }));
@@ -1010,30 +1076,83 @@ export function zombieUnitCues(b, zm, L, out) {
       if (!u.sank) out.push(cue("death", u, b, L));
     } else if (!u.dead) {
       if (u.hp < m.hp) out.push(cue("hurt", u, b, L, { gain: 0.8 }));
-      if (u.aware && !m.aw && !m.aggro) { m.aggro = true; out.push(cue("aggro", u, b, L)); }
+      if (u.aware && !m.aw && m.aggro !== true) aggroCue(b, u, m, zm, L, out);
     }
     m.hp = u.hp; m.aw = !!u.aware; m.low = !!u.low;
   }
   zm.flung = false;
+  zm.anyZ = out.some((c) => /^z/.test(c.name)); // a zombie one-shot this frame (a snarl keeps its distance from it)
+}
+// One of the dead starting for your people: the silent-then-shriek, but not from every one of them: always the first of
+// the fight and any that come within AGGRO_NEAR tiles of your people, else about AGGRO_SHARE of them (by its seed).
+// The others stay quiet ("quiet") until they come that close.
+export const AGGRO_SHARE = 0.5, AGGRO_NEAR = 2;
+export const aggroLucky = (b, u) => hash32(unitSeed(b, u) ^ 0xa66) / 4294967296 < AGGRO_SHARE;
+function aggroCue(b, u, m, zm, L, out) {
+  const near = b.units.some((o) => o.side === "player" && !o.dead && !o.left && o.x >= 0 && Math.max(Math.abs(o.x - u.x), Math.abs(o.y - u.y)) <= AGGRO_NEAR);
+  if (!zm.firstAggro || near || (m.aggro !== "quiet" && aggroLucky(b, u))) { zm.firstAggro = true; m.aggro = true; out.push(cue("aggro", u, b, L)); }
+  else m.aggro = "quiet";
 }
 // The living dead that can be heard (not a Sleeper lying still, not one gone off the map).
 const upDead = (b) => b.units.filter((u) => u.kind === "zombie" && !u.dead && !u.left && !u.off && !u.dormant && u.x >= 0);
-// Now and then one of the dead on the field moans (or pants, or hisses): more often the more of them are up. Picks
-// one of three at random, the nearest of them, so the near ones are heard more. A crawler hidden in the grass is
-// barely there. mem: { nextGroan }, rand: () => 0–1 (soundcues' own).
-export function zombieIdleCue(b, mem, L, now, rand) {
-  if (b.over) return null;
+// The dead at rest: moans in irregular clusters (CLUSTER moans, STEP s apart), then a stretch of near-silence (SILENCE
+// s, shorter the more of them are up, so a big horde never goes quiet; the crowd bed dips through it). During or just
+// after a silence, now and then (about one every SNARL_EVERY s of quiet) one of the nearer dead snarls, sudden and
+// loud, never within SNARL_GAP s of another of their sounds. Every interval jittered by a generator seeded from the
+// battle (its tile and its units' ids): the same battle, the same pattern; no world dice. mem: soundcues' battle
+// memory (mem.zi: this scheduler; mem.zm.anyZ: a zombie sound this frame). The fifth argument is ignored (soundcues
+// passes its own dice; the pattern is the battle's).
+export const IDLE = { CLUSTER: [2, 5], STEP: [0.7, 3.2], SILENCE: [6, 15], SNARL_EVERY: 30, SNARL_GAP: 1.5, HUSH: 0.45, FIRST: [2, 5] };
+const QUIET = new WeakMap(); // battle -> 1 while the dead are in a silence (the crowd bed dips); the battle is not touched
+export const hushOf = (b) => QUIET.get(b) || 0;
+export function idleSeed(b) { return hash32(battleSalt(b) * 31 + b.units.reduce((s, u) => (s * 33 + (u.kind === "zombie" ? u.id | 0 : 0)) >>> 0, 7)); }
+export function zombieIdleCue(b, mem, L, now) {
+  if (b.over) { QUIET.delete(b); return null; }
   const up = upDead(b);
-  if (!up.length) return null;
-  if (mem.nextGroan == null) mem.nextGroan = now + 2 + rand() * 3;
-  if (now < mem.nextGroan) return null;
-  mem.nextGroan = now + (3 + rand() * 6) / Math.min(3, 1 + up.length / 8);
-  let u = null, best = Infinity;
-  for (let i = 0; i < Math.min(3, up.length); i++) {
-    const c = up[Math.floor(rand() * up.length) % up.length], d = Math.hypot(c.x - L.x, c.y - L.y);
-    if (d < best) { best = d; u = c; }
+  if (!up.length) { QUIET.delete(b); return null; }
+  let S = mem.zi;
+  if (!S || S.b !== b) {
+    const r = mulberry(idleSeed(b));
+    S = mem.zi = { b, r, phase: "silence", until: now + IDLE.FIRST[0] + r() * (IDLE.FIRST[1] - IDLE.FIRST[0]), next: 0, left: 0, snarlAt: null, lastShot: -99 };
   }
-  return cue("idle", u, b, L, { gain: (0.55 + 0.45 * Math.min(1, up.length / 12)) * (u.low ? 0.6 : 1), hidden: !!u.low });
+  const r = S.r, I = IDLE, scale = 1 / (1 + up.length / 20);
+  if (mem.zm && mem.zm.anyZ) S.lastShot = now;
+  if (S.phase === "silence" && now >= S.until) {
+    S.phase = "cluster";
+    S.left = I.CLUSTER[0] + Math.floor(r() * (I.CLUSTER[1] - I.CLUSTER[0] + 1)) + Math.floor(up.length / 15);
+    S.next = now;
+  }
+  let out = null;
+  if (S.phase === "cluster" && now >= S.next) {
+    let u = null, best = Infinity;
+    for (let i = 0; i < Math.min(3, up.length); i++) {
+      const c = up[Math.floor(r() * up.length) % up.length], d = Math.hypot(c.x - L.x, c.y - L.y);
+      if (d < best) { best = d; u = c; }
+    }
+    out = cue("idle", u, b, L, { gain: (0.55 + 0.45 * Math.min(1, up.length / 12)) * (u.low ? 0.6 : 1), hidden: !!u.low });
+    if (--S.left <= 0) {
+      S.phase = "silence";
+      const d = Math.max(2.5, (I.SILENCE[0] + r() * (I.SILENCE[1] - I.SILENCE[0])) * (0.35 + 0.65 * scale) * (0.85 + r() * 0.3));
+      S.until = now + d;
+      S.snarlAt = r() < clamp(d / I.SNARL_EVERY, 0.15, 0.6) ? now + 1.2 + r() * (d + 1.5 - 1.2) : null; // during it or just after
+    } else S.next = now + (I.STEP[0] + r() * (I.STEP[1] - I.STEP[0])) * (0.55 + 0.45 * scale) * (r() < 0.2 ? 1.8 : 1);
+  }
+  if (!out && S.snarlAt != null && now >= S.snarlAt) {
+    if (now - S.lastShot < I.SNARL_GAP) S.snarlAt = S.lastShot + I.SNARL_GAP + r() * 0.5;
+    else {
+      S.snarlAt = null;
+      const seen = up.filter((u) => !u.low && recipeFor(voiceKind(u), "snarl", () => 0) !== "silent");
+      if (seen.length) {
+        seen.sort((a, c) => Math.hypot(a.x - L.x, a.y - L.y) - Math.hypot(c.x - L.x, c.y - L.y) || a.id - c.id);
+        const u = seen[Math.floor(r() * Math.min(3, seen.length))];
+        out = cue("snarl", u, b, L, { gain: 1 });
+        S.next = Math.max(S.next, now + I.SNARL_GAP); S.until = Math.max(S.until, now + I.SNARL_GAP); // and room after it
+      }
+    }
+  }
+  if (out) S.lastShot = now;
+  QUIET.set(b, S.phase === "silence" ? 1 : 0);
+  return out;
 }
 // The crowd: how many of the dead are up, the nearest and their mean distance from the listener.
 export function crowdState(b, L) {
@@ -1041,7 +1160,7 @@ export function crowdState(b, L) {
   const up = upDead(b);
   if (!up.length) return { count: 0, near: 99, mean: 99 };
   const ds = up.map((u) => Math.hypot(u.x - L.x, u.y - L.y));
-  return { count: up.length, near: r2(Math.min(...ds)), mean: r2(ds.reduce((s, d) => s + d, 0) / ds.length) };
+  return { count: up.length, near: r2(Math.min(...ds)), mean: r2(ds.reduce((s, d) => s + d, 0) / ds.length), hush: hushOf(b) };
 }
 
 // ---------- the crowd bed ----------
@@ -1058,7 +1177,7 @@ export function crowdMix(cs) {
     sparse: r2(clamp01((n - 2) / 4)),
     dense: r2(clamp01((n - 5) / 25)),
     feet: r2(clamp01(n / 14) * 0.8),
-    gain: r2(clamp01((0.25 + 0.75 * Math.log2(1 + n) / Math.log2(41)) * (0.25 + 0.75 / (1 + Math.max(0, near - 2) / 6)))),
+    gain: r2(clamp01((0.25 + 0.75 * Math.log2(1 + n) / Math.log2(41)) * (0.25 + 0.75 / (1 + Math.max(0, near - 2) / 6))) * (1 - IDLE.HUSH * (cs.hush || 0))),
     cutoff: Math.round(500 + 2300 * close),
   };
 }
@@ -1350,11 +1469,11 @@ const KIND_LABEL = {
 const EVENT_LABEL = {
   idle: "at rest", aggro: "notices you", attack: "lunges", bite: "bites someone", hurt: "is hit", death: "dies", step: "walks",
   smash: "smashes a barricade", bash: "pounds on a door", spit: "spits acid", sizzle: "acid sizzling", shriek: "shrieks", strike: "strikes from hiding",
-  burst: "bursts", worms: "worms pour out", heave: "winds up", fling: "throws worms", climb: "climbs a wall", wake: "wakes",
+  burst: "bursts", worms: "worms pour out", snarl: "snarls out of a silence", heave: "winds up", fling: "throws worms", climb: "climbs a wall", wake: "wakes",
 };
 const EXTRA = { // each kind's own sounds in the list (besides the core events)
-  brute: ["smash"], spitter: ["spit", "sizzle"], screamer: ["shriek"], crawler: ["strike"], carrier: ["burst"], climber: ["climb"],
-  flinger: ["heave", "fling"], nightmare: ["shriek"], sleeper: ["wake"], wallbreaker: ["smash"], walker: ["wake", "bash"],
+  spitter: ["spit", "sizzle"], screamer: ["shriek"], crawler: ["strike"], carrier: ["burst"], climber: ["climb"],
+  flinger: ["heave", "fling"], nightmare: ["shriek"], sleeper: ["wake"], wallbreaker: ["smash"], walker: ["snarl", "wake", "bash"], runner: ["snarl"], brute: ["smash", "snarl"],
 };
 export const ZOMBIE_TESTS = [
   ...Object.keys(KIND_LABEL).map((k) => ({

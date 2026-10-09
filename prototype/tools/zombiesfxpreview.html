@@ -93,7 +93,7 @@ function measure(buf) {
   return {
     secs: Math.round(n / RATE * 100) / 100, active: first < 0 ? 0 : Math.round((last - first + 1) * 0.01 * 100) / 100,
     peak: Math.round(peak * 1000) / 1000, peakDb: db(peak), rmsDb: db(actRms), crestDb: Math.round((db(peak) - db(actRms)) * 10) / 10,
-    lra: Math.round((pct(0.95) - pct(0.1)) * 10) / 10, clip, nan,
+    lra: Math.round((pct(0.95) - pct(0.1)) * 10) / 10, loudDb: Math.round(pct(0.95) * 10) / 10, clip, nan,
     periodicity: pw ? Math.round(ps / pw * 1000) / 1000 : 0,
     centroid: cw ? Math.round(cs / cw) : 0, flatness: cw ? Math.round(fs / cw * 1000) / 1000 : 0,
     spectrum: Array.from(avg.slice(1, 256)), // to 5.5 kHz, for comparing voices
@@ -165,22 +165,24 @@ window.renderAll = async (oldUrl) => {
     await keep(file, OLD.VOICES[n].dur + 0.5, (c, out) => OLD.VOICES[n].play(c, out, 0.02, { gain: 1, pitch: 1 }));
   // Every kind's voices.
   const own = { brute: ["smash"], spitter: ["spit", "sizzle"], screamer: ["shriek"], crawler: ["strike"], carrier: ["burst"], climber: ["climb"], flinger: ["heave", "fling"],
-    nightmare: ["shriek"], sleeper: ["wake"], wallbreaker: ["smash"], walker: ["wake", "bash"], swarm: ["step"], broodmother: ["smash"] };
+    nightmare: ["shriek"], sleeper: ["wake"], wallbreaker: ["smash"], walker: ["wake", "bash", "snarl"], runner: ["snarl"], swarm: ["step"], broodmother: ["smash"] };
   for (const kind of Object.keys(Z.PROFILE)) {
     for (const ev of ["idle", "aggro", "attack", "bite", "hurt", "death", ...(own[kind] || [])]) {
       if (Z.recipeFor(kind, ev, () => 0) === "silent") continue;
       const opts = { kind, seed: SEED(kind), pitch: 1, human: true, mat: kind === "wallbreaker" ? "wall" : "wood", steps: 3 };
-      await keep(`${kind}_${ev}_new`, ev === "idle" || ev === "death" || ev === "shriek" ? 3.4 : 2.4, (c, out) => { Z.playZombie(ev, c, zbus(c, out), 0.02, opts); });
+      await keep(`${kind}_${ev}_new`, ev === "shriek" ? 6.4 : ev === "idle" || ev === "death" ? 3.4 : kind === "screamer" && ev === "aggro" ? 3.4 : 2.4, (c, out) => { Z.playZombie(ev, c, zbus(c, out), 0.02, opts); });
     }
   }
   await keep("brute_smash_metal_new", 2, (c, out) => Z.playZombie("smash", c, zbus(c, out), 0.02, { kind: "brute", seed: SEED("brute"), pitch: 1, mat: "metal" }));
   // The same voice by four zombies (seeds), and one zombie four times (takes).
   for (let i = 1; i <= 4; i++) await keep(`walker_idle_seed${i}_new`, 3.4, (c, out) => { Z.playZombie("idle", c, zbus(c, out), 0.02, { kind: "walker", seed: Z.voiceSeed(100 + i * 13, 5), pitch: 1 }); });
-  for (let i = 1; i <= 3; i++) await keep(`screamer_shriek_seed${i}_new`, 3, (c, out) => { Z.playZombie("shriek", c, zbus(c, out), 0.02, { kind: "screamer", seed: Z.voiceSeed(200 + i * 17, 5), pitch: 1 }); });
+  for (let i = 1; i <= 3; i++) await keep(`screamer_shriek_seed${i}_new`, 6.4, (c, out) => { Z.playZombie("shriek", c, zbus(c, out), 0.02, { kind: "screamer", seed: Z.voiceSeed(200 + i * 17, 5), pitch: 1 }); });
   for (let i = 1; i <= 4; i++) { Z.resetTakes(i * 10); const buf = await render(3.4, (c, out) => { Z.playZombie("idle", c, zbus(c, out), 0.02, { kind: "walker", seed: Z.voiceSeed(113, 5), pitch: 1 }); }); stats[`walker_idle_take${i}`] = measure(buf); }
   // Far off: the same moan at 2, 8 and 16 tiles (zRoute's distance, muffling and tail).
   for (const d of [2, 8, 16]) await keep(`walker_idle_dist${d}_new`, 4, (c, out) => { Z.playZombie("idle", c, zbus(c, out), 0.02, { kind: "walker", seed: SEED("walker"), pitch: 1, dist: d }); });
-  await keep("screamer_shriek_dist16_new", 4, (c, out) => { Z.playZombie("shriek", c, zbus(c, out), 0.02, { kind: "screamer", seed: SEED("screamer"), pitch: 1, dist: 16, far: true }); });
+  // The screamer's shriek straight out of the voice, before the zombie bus (does the voice itself clip?).
+  await keep("screamer_shriek_raw", 6.4, (c, out) => { Z.playZombie("shriek", c, out, 0.02, { kind: "screamer", seed: SEED("screamer"), pitch: 1 }); }, false);
+  await keep("screamer_shriek_dist16_new", 6.6, (c, out) => { Z.playZombie("shriek", c, zbus(c, out), 0.02, { kind: "screamer", seed: SEED("screamer"), pitch: 1, dist: 16, far: true }); });
   // The map sting, old and new (the new one has the distant moans under it).
   await keep("horde_sting_new", 3.2, (c, out) => NEW.VOICES.horde.play(c, out, 0.02, { gain: 1, pitch: 1, seed: 7 }));
   // A horde closing in: the crowd bed rising from 4 to 36 of the dead, 14 tiles off to 1.5, voices popping out. Heard at
@@ -203,6 +205,24 @@ window.renderAll = async (oldUrl) => {
   await keep("horde_closing_in_full_sliders", 10, closing(FULL), false);
   gr.horde_closing_in_default_sliders = await reduction(10, (lim) => closing(DEFAULT, lim));
   gr.horde_closing_in_full_sliders = await reduction(10, (lim) => closing(FULL, lim));
+  // 8 of the dead standing about for 30 s, no fighting: the game's own idle scheduler (clusters of moans, silences, a
+  // snarl now and then) and the crowd bed dipping through the silences. The battle tile 4259 is one whose seeded pattern
+  // has a snarl in these 30 s (about one battle in four does; the rate is one every 30–60 s).
+  const CUE_EV = Object.fromEntries(Object.entries(Z.EVENT_CUE).map(([ev, n]) => [n, ev]));
+  await keep("quiet_horde_silences_mix", 30, (c) => {
+    const ch = chain(c), out = ch.zom, bed = Z.makeCrowdBed(c, out, 0);
+    const kinds = [null, null, "runner", null, "brute", null, "spitter", null];
+    const b = { over: false, w: 24, h: 24, setup: { tile: 4259 }, units: [{ id: 1, side: "player", kind: "human", x: 12, y: 12 }, { id: 2, side: "player", kind: "human", x: 11, y: 13 }] };
+    const spots = [[5, 6], [7, 16], [9, 4], [17, 7], [19, 15], [15, 19], [6, 11], [20, 10]];
+    spots.forEach(([x, y], i) => b.units.push({ id: 10 + i, side: "enemy", kind: "zombie", ztype: kinds[i] || undefined, x, y, hp: 30, aware: false }));
+    const mem = {}, L = Z.listenerOf(b);
+    for (let t = 0; t <= 30; t += 0.1) {
+      const q = Z.zombieIdleCue(b, mem, L, t);
+      if (q) Z.playZombie(CUE_EV[q.name], c, out, t + 0.02, q);
+      if (Math.abs(t * 4 - Math.round(t * 4)) < 1e-6) bed.update(Z.crowdMix(Z.crowdState(b, L)), t);
+    }
+    return ch;
+  });
   // The crowd bed alone sweeping from 3 to 40 (no voices on top).
   await keep("crowd_bed_sweep", 10, (c) => {
     const ch = chain(c), bed = Z.makeCrowdBed(c, ch.zom, 0);
