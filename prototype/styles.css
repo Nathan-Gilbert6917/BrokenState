@@ -1100,3 +1100,8 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 .sf-top:not(.sf-bot) { mask-image: linear-gradient(to bottom, transparent, #000 var(--sf)); }
 .sf-bot:not(.sf-top) { mask-image: linear-gradient(to top, transparent, #000 var(--sf)); }
 .sf-top.sf-bot { mask-image: linear-gradient(to bottom, transparent, #000 var(--sf), #000 calc(100% - var(--sf)), transparent); }
+
+/* The naming window (ui/basename.js). */
+.namebox { max-width: 30rem; }
+.namebox .nameinput { width: 100%; font-size: 1.15rem; padding: 0.45rem 0.6rem; margin-top: 0.6rem; border-color: var(--accent); }
+.namebox .namechips { flex-wrap: wrap; gap: 0.3rem; }
