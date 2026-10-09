@@ -643,7 +643,7 @@ export function vehicleVoices(K) {
   function tyres(c, out, t, dur, surf, g) {
     const e = (peak) => env(c, out, t, peak * g, dur * 0.35, Math.min(0.25, dur * 0.2), dur * 0.45);
     switch (surf) {
-      case "gravel": noise(c, "brown", t, dur, filt(c, "lowpass", 500, 0.7, e(0.1))); crackle(c, out, t, Math.round(dur * 36), dur, 0.05 * g); break;
+      case "gravel": noise(c, "brown", t, dur, filt(c, "lowpass", 500, 0.7, e(0.1))); crackle(c, out, t, Math.round(dur * 20), dur, 0.065 * g); break;
       case "mud": { const m = e(0.14), am = c.createGain(); am.gain.value = 0.5; am.connect(m); lfo(c, R(4, 6), 0.45, am.gain).stop(t + dur + 0.1); noise(c, "brown", t, dur, filt(c, "lowpass", 300, 0.9, am)); noise(c, "white", t, dur, filt(c, "bandpass", 260, 3, am)); break; }
       case "snow": noise(c, "white", t, dur, filt(c, "bandpass", 1800, 1, e(0.03))); crackle(c, out, t, Math.round(dur * 20), dur, 0.025 * g); noise(c, "brown", t, dur, filt(c, "lowpass", 400, 0.7, e(0.06))); break;
       case "wet": noise(c, "brown", t, dur, filt(c, "lowpass", 650, 0.7, e(0.09))); noise(c, "white", t, dur, filt(c, "bandpass", 3200, 0.8, e(0.035))); break;
