@@ -205,7 +205,7 @@ function prisonWorld(s, n = 2, cells = 1) {
     for (let i = 0; i < 400; i++) {
       const w = prisonWorld(seed + 100 + i, 1, setup.cells);
       for (const s of atBase(w.st, w.h.id)) s.role = "farm";
-      if (setup.guard) atBase(w.st, w.h.id)[0].role = "guard";
+      if (setup.guard) { const gd = atBase(w.st, w.h.id)[0]; gd.role = "guard"; w.h.jailGuards = [gd.id]; } // named on the jail (prisoners.js jailGuards: a guard on the walls no longer watches the cells)
       for (let d = 0; d < 5 && w.st.prisoners.length; d++) { prisonersDaily(w.st); days++; }
       esc += 1 - w.st.prisoners.length;
     }
@@ -288,7 +288,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   console.log("Recruiting");
   const { st, h, list } = prisonWorld(seed + 6, 1);
   const p = list[0];
-  atBase(st, h.id)[0].role = "guard";
+  { const gd = atBase(st, h.id)[0]; gd.role = "guard"; h.jailGuards = [gd.id]; } // the jail's named guard (prisoners.js jailGuards)
   setMode(st, p.id, "recruit");
   const rate = recruitRate(st, p);
   let days = 0;

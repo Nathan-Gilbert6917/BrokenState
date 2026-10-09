@@ -20,7 +20,8 @@
 //               Defence, the hospital Medical, plots and stores Farming & food, stations Crafting & production);
 //   production  hands out armory gear (equipFromArmory), queues crafts (planCrafts) and sets the stations' standing
 //               orders (govOrders: the player's own orders stand);
-//   medical     treats the hurt and sick with base meds and sets the meds reserve (planTreatment);
+//   medical     treats the hurt and sick with base meds and sets the meds reserve (planTreatment); a Medic trainee
+//               while the base has too few skilled medics (training.js planTrainees, from planRoles);
 //   food        farmers and the food side of building (farm plots, stores, water);
 //   defence     guards and the defence buildings, the night watch roster (unless you set your own) and, each morning,
 //               a defence plan by role where you have saved none (stewardSafety);
@@ -46,7 +47,7 @@ export const STEWARD_AREAS = {
   roles:      { name: "Roles", desc: "Sets everyone's role every hour by what the base needs (pinned people and roles in areas switched off are left alone)." },
   building:   { name: "Building", desc: "Queues buildings: beds, water, storage and the rest. Defence, medical, food and workshop buildings also need their own area on." },
   production: { name: "Crafting & production orders", desc: "Hands out armory gear, queues crafts and sets the stations' standing orders (your own orders stand)." },
-  medical:    { name: "Medical", desc: "Treats the hurt and sick with this base's meds, staffs the hospital, sets the meds reserve." },
+  medical:    { name: "Medical", desc: "Treats the hurt and sick with this base's meds, staffs the hospital, puts a Medic trainee on the ward while the base has too few skilled medics (training.js), sets the meds reserve." },
   food:       { name: "Farming & food", desc: "Farmers for the plots, and the food and water buildings (plots, stores, wells, preserving)." },
   defence:    { name: "Defence", desc: "Guards when raiders or hordes are near, a lookout at the hub, walls, barricades and other defences, a night watch roster (unless you set your own), a defence plan by role (unless you saved one), and the raid and horde warnings about this base answered (prepare, a tribute cheaper than the fight, a decoy fire; never by leaving the base)." },
   supplies:   { name: "Emergency supplies", desc: "When the water would run out within a day or the food within two, a team from this base goes for it (the leader stays home)." },

@@ -9,6 +9,8 @@
 //              Watch, slip away, ambush, talk, or take a side.
 // Fights go through combat.js (startCombat + a registered handler), so they work the same whether
 // the battle resolves instantly or on the tactical battle screen.
+// A group that overheard a caravan of yours on the radio (intel.js g.lying) lies in wait for it: it is met
+// INTEL.AMBUSH.MULT × as often, INTEL.AMBUSH.RANGE tiles further from their bases, and sees the team first more often.
 //
 // Captured survivors get location { kind: "captive", factionId, tile, since }. They can be
 // rescued (Rescue mission: sneaked or stormed out on their base's map, rescueraid.js, or by the numbers here),
@@ -29,7 +31,7 @@ import {
   removeParty, startReturn, STANCES,
 } from "./parties.js";
 import * as Parties from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, partyVehicles, createVehicle, VEHICLE_TYPES, fitTechnical, ambushMult, raidTurret, loseRaidHumvee, humveeLeftText, TURRET_ODDS } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, partyVehicles, createVehicle, VEHICLE_TYPES, fitTechnical, ambushMult, raidTurret, loseRaidHumvee, humveeLeftText, TURRET_ODDS, wearRaidHumvee } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer, raidRepelled, groupBroken } from "./factions.js";
 import { raidDamage } from "./breakdowns.js";
 import { perceptionChance, markAbandonedVehicle } from "./markers.js";
@@ -45,6 +47,7 @@ import { warRaidOnPlayer } from "./diplomacy.js";
 import { pwarTeamMult, pwarTeamRange } from "./playerwars.js"; // wars with you: their patrols hunt your teams
 import { retreatFrom } from "./conquest.js";
 import { siteDeadMix, armoredOf, maxMix, bodyLoot } from "./deadsoldiers.js";
+import { convoyGuards } from "./miltrucks.js"; // an Army convoy's guard among the dead met there
 import { siteList } from "./zombietypes.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
 import { keyWord } from "./water.js"; // "un-purified water" in texts
@@ -52,8 +55,10 @@ import { totalIn, sumRecs, ROUND_KEYS, isRoundKey } from "./rounds.js"; // round
 import { addFindVia, kindTheme } from "./ammo.js";
 import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsiders on the same tile (contactAttack)
 import { unitPower, addToArsenal, arsenalWorthy, captureVehicle, arsenalText } from "./arsenal.js"; // group arsenals: their people's power by their kit; what they take goes into it
-import { captiveEscape, captiveDecline, captiveTurnMult } from "./groupjails.js"; // jailhouse: their jail's tier, the work they are put to
+import { captiveEscape, captiveDecline, captiveTurnMult, groupJailGuards } from "./groupjails.js"; // jailhouse: their jail's tier, the work they are put to
 import { startRescueRaid, tacticalPossible, jailTier, JAIL } from "./rescueraid.js"; // the rescue played out on their base's map
+import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: each type's numbers on the road (meetOdds, stop, talkDc, bribes, pacts, ransoms, captives)
+import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your caravan's route lies in wait
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -67,6 +72,8 @@ export const COOLDOWN_HOURS = 20; // a team sees at most one conflict per this m
 // Battle kit per group type (combat.js KITS). Every group fields humans only; "mixed" (humans plus the dead) is
 // for places where both are found, like scavenge sites.
 const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
+// How often a not-hostile group of an unknown type crosses your team's path (each type's: GROUP_PRIORITIES meetOdds).
+const MEET_ODDS = 0.12;
 const NOUN_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "guards", traders: "guards", commune: "militia" };
 
 export const CONFLICT_TYPES = {
@@ -167,6 +174,9 @@ function enemyGroup(state, p, f, scale = 1, horde = null) {
       for (const k of siteList(rng, mix, g.count)) if (k) g.types[k] = (g.types[k] || 0) + 1;
       if (!Object.keys(g.types).length) g.types = null;
     }
+    // At an Army convoy nobody has stripped: its guard of dead soldiers comes too (miltrucks.js convoyGuards; no dice).
+    const guard = horde ? 0 : convoyGuards(state, partyTile(p));
+    if (guard) { g.count += guard; g.types = { ...(g.types || {}), soldier: ((g.types && g.types.soldier) || 0) + guard }; }
     return g;
   }
   const def = FACTION_TYPES[f.type];
@@ -339,12 +349,13 @@ export function conflictChance(state, p, tileId) {
   for (const f of state.factions) {
     if (!f.alive || !f.bases.length) continue;
     const d = minBaseDist(state, f, tileId);
-    const reach = pwarTeamRange(state, f); // playerwars.js: a group at war with you hunts your teams further out
+    const lying = lyingFor(state, f, p); // intel.js: they heard this caravan's route on your radio and wait for it
+    const reach = pwarTeamRange(state, f) + (lying ? INTEL.AMBUSH.RANGE : 0); // playerwars.js: a group at war with you hunts your teams further out
     if (d > reach) continue;
     const att = attitude(f);
-    let w = att === "Hostile" ? 1 : isAggressiveType(f) ? 0.5 : (f.type === "military" || f.type === "fortress") ? 0.3 : 0.12;
+    let w = att === "Hostile" ? 1 : weightOf(f, "meetOdds", MEET_ODDS); // groupcare.js GROUP_PRIORITIES meetOdds
     if (f.pact) w *= 0.5;
-    w *= (1 - d / (reach + 1.5)) * pwarTeamMult(state, f);
+    w *= (1 - d / (reach + 1.5)) * pwarTeamMult(state, f) * (lying ? INTEL.AMBUSH.MULT : 1);
     if (t.owner === f.id) w *= 1.4;
     humans += w;
     sources.push({ f, w });
@@ -390,9 +401,11 @@ export function rollConflict(state, p, tileId) {
   const { chance, sources } = conflictChance(state, p, tileId);
   if (!sources.length || !state.rng.chance(chance)) return null;
   const src = state.rng.weighted(sources, (s) => s.w);
-  const spotted = state.rng.chance(spotFirstChance(state, p));
+  const lying = !src.zombies && !src.aiParty && lyingFor(state, src.f, p); // intel.js: waiting for this caravan, they see it first more often
+  const spotted = state.rng.chance(spotFirstChance(state, p) * (lying ? INTEL.AMBUSH.SPOT : 1));
   const card = src.zombies ? zombieEncounter(state, p, spotted) : factionEncounter(state, p, src.f, spotted, src.aiParty);
   if (!card) return null;
+  if (lying) ambushSprung(state, src.f, p); // "They knew we were coming"
   p.lastConflict = state.hour;
   p.conflictCount = (p.conflictCount || 0) + 1;
   return card;
@@ -445,7 +458,13 @@ export function contactOn(state, p, tile) {
   // A team sent to cull this horde, or to storm the hive or growth it guards, meets it on its own terms (parties.js
   // arrive: the cull card, the hive's battle), not as an ambush.
   const culling = (h) => ["cull", "hive", "growth"].includes(p.mission) && p.dest != null && state.grid.distance(h.tile, p.dest) <= 1;
-  const horde = state.hordes.find((h) => h.tile === tile && h.size >= CONTACT.HORDE_MIN && fresh(`h${h.id}`) && !culling(h));
+  // The same after the hive's card (hives.js hiveArrive sets p.hiveVisit): a team still standing on the mound's tile
+  // once it has set its fires, backed off or been given new orders (and has not walked off yet, say at night) is not
+  // ambushed by that hive's own guard every CONTACT.AGAIN hours: the card was its meeting with the guard. The red ring's
+  // own trouble (fieldheat.js) still finds it. Off the tile the mark is dropped.
+  if (p.hiveVisit != null && p.hiveVisit !== tile) delete p.hiveVisit;
+  const visited = (h) => p.hiveVisit === tile && h.tile === tile && h.role === "guard";
+  const horde = state.hordes.find((h) => h.tile === tile && h.size >= CONTACT.HORDE_MIN && fresh(`h${h.id}`) && !culling(h) && !visited(h));
   if (horde) return { horde, key: `h${horde.id}` };
   const v = hostileOutsiderOn(state, p, tile, fresh); // visitors.js: raiders from beyond the border, robbers on the road
   if (v) return { visitor: v, key: `v${v.id}` };
@@ -549,15 +568,17 @@ export function resume(state, p) {
   p.phase = was || "out";
 }
 
+// What stopping your team looks like (groupcare.js GROUP_PRIORITIES stop; none: by their attitude).
 function forcedTypeFor(state, p, f) {
   const att = attitude(f);
   const t = state.tiles[partyTile(p)];
-  if (f.type === "military" || f.type === "fortress") return att === "Allied" ? null : "checkpoint";
-  if (f.type === "zealot") return "zealotpatrol";
-  if (f.type === "raider" || f.type === "expansionist") {
+  const stop = weightOf(f, "stop", null);
+  if (stop === "checkpoint") return att === "Allied" ? null : "checkpoint";
+  if (stop === "roadblock") {
     if (att !== "Hostile") return "roadblock";
     return t.road && state.rng.chance(0.5) ? "roadblock" : "ambush";
   }
+  if (stop) return stop;
   if (att === "Hostile") return "ambush";
   if (att === "Neutral") return "challenge";
   return null;
@@ -737,7 +758,7 @@ function hideChoice(state, p, c) {
 
 function talkDc(f, c) {
   const att = attitude(f);
-  return ({ Hostile: 14, Neutral: 10, Friendly: 7, Allied: 4 }[att]) + (f.type === "zealot" ? 2 : 0) + (c.type === "ambush" ? 1 : 0);
+  return ({ Hostile: 14, Neutral: 10, Friendly: 7, Allied: 4 }[att]) + weightOf(f, "talkDc", 0) + (c.type === "ambush" ? 1 : 0); // GROUP_PRIORITIES talkDc
 }
 // Perks (skills.js): Peacemaker's Leadership counts in full; Smooth Talker +2.
 export function talkSkill(state, p) {
@@ -752,7 +773,7 @@ function talkChoice(state, p, c, f) {
   const team = partyMembers(state, p);
   const chance = Math.min(0.95, skillChance(talkSkill(state, p), talkDc(f, c)) + (anyPerk(team, "silvertongue") ? 0.15 : 0)); // Silver Tongue (skills.js)
   const again = anyPerk(team, "diplomat") && !c.retalk; // Diplomat: one more try after a failed talk
-  const deal = (f.type === "traders" || f.type === "military" || f.type === "fortress" || f.type === "commune");
+  const deal = weightOf(f, "sharesNews", 0) > 0; // GROUP_PRIORITIES sharesNews
   return {
     label: c.type === "checkpoint" ? "Talk your way through" : "Talk them down",
     hint: `Speech check, ${pct(chance)} (they are ${attitude(f).toLowerCase()}). Success: you pass and goodwill rises a little${deal ? "; they may share news of the area" : ""}. Failure: ${anyPerk(team, "peacemaker") ? "" : "goodwill drops and "}they get angrier (${again ? "Diplomat: you may talk once more" : "no second chance to talk"})`,
@@ -781,10 +802,10 @@ function talkChoice(state, p, c, f) {
 }
 
 function bribeValue(c, f) {
-  return Math.round((15 + c.enemy.count * 6) * (f.type === "zealot" ? 1.5 : 1) * (c.bribeMult || 1));
+  return Math.round((15 + c.enemy.count * 6) * weightOf(f, "bribeCost", 1) * (c.bribeMult || 1)); // GROUP_PRIORITIES bribeCost
 }
 function bribeChance(f) {
-  return { zealot: 0.55, raider: 0.85, expansionist: 0.85 }[f.type] ?? 0.95;
+  return weightOf(f, "bribeOdds", 0.95); // GROUP_PRIORITIES bribeOdds (an unknown type keeps its word 95% of the time)
 }
 
 function bribeChoice(state, p, c, f) {
@@ -817,7 +838,7 @@ function bribeChoice(state, p, c, f) {
 }
 
 function pactChoice(state, p, c, f) {
-  const chance = f.type === "zealot" ? 0.8 : 0.97;
+  const chance = weightOf(f, "pactOdds", 0.97); // GROUP_PRIORITIES pactOdds
   return {
     label: `Invoke your ${f.pact === "trade" ? "trade" : "non-aggression"} pact`,
     hint: `${pct(chance)}: they honour the pact and let you pass. Breaking faith would cost them`,
@@ -1331,6 +1352,12 @@ function victoryRewards(state, p, c, result) {
 
 // ---------- rescue missions ----------
 const jailWord = (f, tile, state = null) => (JAIL[jailTier(f, tile, state)] || JAIL.makeshift).name; // jailhouse: the group's own jail (groupjails.js)
+// The jail's own guards (groupjails.js groupJailGuards), for the rescue card: "2 of them guard the holding cells".
+function jailGuardsLine(state, f) {
+  const n = groupJailGuards(state, f);
+  const jail = jailWord(f, f.bases[0], state).toLowerCase();
+  return n ? `${n} of them ${n === 1 ? "guards" : "guard"} the ${jail} (on the map, posted at its door)` : `nobody guards the ${jail}`;
+}
 export function guardsFor(state, p, f) {
   const def = FACTION_TYPES[f.type];
   return {
@@ -1341,7 +1368,7 @@ export function guardsFor(state, p, f) {
 
 export function ransomValue(f, n) {
   const att = attitude(f);
-  return Math.round(n * (40 + (f.type === "zealot" ? 30 : 0)) * ({ Hostile: 1.5, Neutral: 1, Friendly: 0.7, Allied: 0.5 }[att]));
+  return Math.round(n * (40 + weightOf(f, "ransomHead", 0)) * ({ Hostile: 1.5, Neutral: 1, Friendly: 0.7, Allied: 0.5 }[att]));
 }
 
 export function rescueArrive(state, p) {
@@ -1362,7 +1389,7 @@ function rescueCard(state, p, f, held) {
   const stealthDc = 11 + Math.round(guards.count / 3) - (night ? 2 : 0);
   const sneak = skillChance(bestSkill(state, p, "stealth"), stealthDc);
   const assault = fightOdds(state, p, guards, null);
-  const talkDcV = ({ Hostile: 16, Neutral: 11, Friendly: 7, Allied: 4 }[attitude(f)]) + (f.type === "zealot" ? 3 : 0);
+  const talkDcV = ({ Hostile: 16, Neutral: 11, Friendly: 7, Allied: 4 }[attitude(f)]) + weightOf(f, "rescueDc", 0); // GROUP_PRIORITIES rescueDc
   const talk = skillChance(talkSkill(state, p), talkDcV);
   const value = ransomValue(f, held.length);
   const plan = payPlan(p, value);
@@ -1372,7 +1399,7 @@ function rescueCard(state, p, f, held) {
   return {
     kind: "conflict", conflict: c, partyId: p.id, where: tileLabel(state, partyTile(p)),
     title: `Rescue at ${tileLabel(state, p.dest)}`,
-    text: `${f.name} hold ${names(held)} here. About ${guards.count} guards are on the walls${night ? ", fewer awake at this hour" : ""}.`,
+    text: `${f.name} hold ${names(held)} here. About ${guards.count} guards are on the walls${night ? ", fewer awake at this hour" : ""}; ${jailGuardsLine(state, f)}.`,
     choices: [
       ...(tacticalPossible(state) ? [
         {
@@ -1511,7 +1538,7 @@ export function ransomOnTradeCard(state, p, f) {
   if (!held.length) return null;
   const value = Math.round(ransomValue(f, held.length) * 0.9);
   const plan = payPlan(p, value);
-  const talk = skillChance(talkSkill(state, p), ({ Hostile: 16, Neutral: 11, Friendly: 7, Allied: 4 }[attitude(f)]) + (f.type === "zealot" ? 3 : 0));
+  const talk = skillChance(talkSkill(state, p), ({ Hostile: 16, Neutral: 11, Friendly: 7, Allied: 4 }[attitude(f)]) + weightOf(f, "rescueDc", 0));
   return {
     kind: "conflict", partyId: p.id,
     conflict: { type: "ransom", mode: "rescue", partyId: p.id, factionId: f.id, enemy: guardsFor(state, p, f), exact: false, identified: true, held: held.map((s) => s.id) },
@@ -1582,10 +1609,10 @@ export function captivesDaily(state) {
     if ((att === "Friendly" || att === "Allied") && rng.chance(0.35)) {
       releaseHome(state, s);
       captiveEvent(state, "released", `${f.name} release ${first(s)}`, `Relations with ${f.name} are good enough that they let ${s.name} go. ${first(s)} is back at ${hub(state).name}.`, "good");
-    } else if (f.type === "zealot" && days > 2 && rng.chance(0.05)) {
+    } else if (weightOf(f, "killCaptive", 0) > 0 && days > 2 && rng.chance(weightOf(f, "killCaptive", 0))) { // GROUP_PRIORITIES killCaptive
       hurt(state, s, 999, null, `at the hands of ${f.name}`);
       captiveEvent(state, "killed", `${s.name} is dead`, `Word comes that ${f.name} "purified" ${s.name}.`, "death");
-    } else if (days > 10 && !s.leader && rng.chance((f.type === "zealot" ? 0.01 : 0.015) * captiveTurnMult(s))) { // broken by it: more likely
+    } else if (days > 10 && !s.leader && rng.chance(weightOf(f, "turnCaptive", 0.015) * captiveTurnMult(s))) { // GROUP_PRIORITIES turnCaptive; broken by it: more likely
       s.alive = false;
       s.left = true;
       s.recruitedBy = f.id;
@@ -1637,6 +1664,8 @@ function onRaidDefenseCombat(state, result, setup) {
   const f = factionById(state, c.factionId);
   const base = state.bases.find((b) => b.id === c.baseId);
   if (f) f.pop = Math.max(0, f.pop - Math.ceil((result.enemiesKilled || 0) * 0.7));
+  const humveeKept = !!raid && (result.outcome !== "victory" || !!result.humveeOut); // combat.js raidCarTurn: it drove off with them, or they won
+  if (humveeKept && result.humveeWear) wearRaidHumvee(state, raid, result.humveeWear); // vehicles.js: what it took on the map
   let text;
   if (result.outcome === "retreat" && base && state.bases.includes(base) && raid && f) {
     // Pulled out of the fight: the base is abandoned to them (conquest.js), its people walk to the nearest base.
@@ -1650,7 +1679,7 @@ function onRaidDefenseCombat(state, result, setup) {
   }
   if (result.outcome === "victory") {
     if (raid) warRaidOnPlayer(state, raid, true); // diplomacy.js: a war raid beaten off counts for the war, as one held by the numbers
-    const hv = raid && base && state.bases.includes(base) ? loseRaidHumvee(state, raid, { base }) : null; // vehicles.js: the Humvee they brought is left behind
+    const hv = raid && base && state.bases.includes(base) && !humveeKept ? loseRaidHumvee(state, raid, { base }) : null; // vehicles.js: the Humvee they brought is left behind (unless it drove off)
     if (raid) removeParty(state, raid);
     if (base) base.alert = false;
     state.stats.raidsRepelled += 1;
@@ -1658,6 +1687,7 @@ function onRaidDefenseCombat(state, result, setup) {
     text = `${base ? base.name : "The base"} beat off the ${f ? f.name : ""} raid in a stand-up fight.`;
     log(state, text, "good");
     if (hv) { text += ` ${humveeLeftText(f, hv, base)}`; log(state, humveeLeftText(f, hv, base), "good"); }
+    else if (result.humveeOut) text += " Their Humvee got away.";
     // A stand-up fight at the walls still costs a little: a turn of the battle counts as 20 minutes of siege.
     if (base && raid && state.bases.includes(base)) {
       const dmg = raidDamage(state, base, { strength: raid.strength, hours: (raid.siegeHours || 0) + clamp((result.turns || 6) / 3, 1, 8), outcome: "won", by: f ? f.name : "the raiders" });

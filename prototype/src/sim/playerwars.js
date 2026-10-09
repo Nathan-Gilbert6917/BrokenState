@@ -53,6 +53,7 @@ import { day, log, hub, factionById, addCard, alive, atBase, supplyValue, player
 import { SUPPLIES } from "./data.js";
 import { hash01 } from "./skills.js";
 import { attitude, changeGoodwill, strength, isAggressiveType, launchRaidOnBase, playerRaidWeight, nearestOwnBase, RAIDS } from "./factions.js";
+import { noteStrife, SPLINTER } from "./splinters.js"; // a war on you they lost stirs strife (splinter bands)
 import { ensureDiplo, knownAs, relation, DIPLO } from "./diplomacy.js";
 import { weightOf, fitPeople } from "./groupcare.js";
 import { knowsOf } from "./groupworld.js";
@@ -66,6 +67,7 @@ import { raidPrep } from "./eras.js";
 import { hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { tileLabel } from "./parties.js";
 import { keyWord } from "./water.js";
+import { payoutBreaks } from "./upkeep.js"; // the governor never pays food out of the hub's pay-out reserve
 
 export const PW = {
   FROM: 40, GAP: 80, MAX: 1, COOLDOWN: 120, RANGE: 30, GW: -40, PEACEFUL_GRIEV: 25, BASE: 0.015, MIN_FIT: 10,
@@ -145,9 +147,10 @@ export function grievanceOf(state, f) {
 
 // ---------- the war goal and its reason ----------
 const baseAt = (state, tile) => state.bases.find((b) => b.tile === tile) || null;
-// Your outpost nearest their land (not the hub), or null.
+// Your outpost nearest their land (not the hub) of those they know (groupworld.js: as far as they have scouted), or null.
 function outpostNearest(state, f) {
-  return state.bases.filter((b) => b.type !== "hub").sort((a, b) => nearest(state, f, a.tile) - nearest(state, f, b.tile) || a.id - b.id)[0] || null;
+  const K = knowsOf(state, f).bases;
+  return state.bases.filter((b) => b.type !== "hub" && K[b.tile] && K[b.tile].kind === "player").sort((a, b) => nearest(state, f, a.tile) - nearest(state, f, b.tile) || a.id - b.id)[0] || null;
 }
 // Their base nearest your hub that is not their last one (what they could cede), or null.
 function theirBaseNearest(state, f) {
@@ -168,8 +171,8 @@ export function warGoalFor(state, f) {
     revenge: g.raid + 1.5 * g.execution + g.prisoners + 0.5 * g.theft,
     loot: (richV >= PW.RICH ? 20 : richV >= PW.RICH / 2 ? 10 : 0) + (hungry ? 12 : 0) + 0.5 * g.theft + 8 * weightOf(f, "raid"),
     territory: near ? 15 + g.growth + 8 * weightOf(f, "expand") : 0,
-    conversion: f.type === "zealot" ? 30 : 0,
-    rival: f.type === "expansionist" || f.type === "military" ? 40 * land + (playerStrength(state) > strength(f) ? 10 : 0) : 0,
+    conversion: weightOf(f, "cbConversion", 0), // groupcare.js GROUP_PRIORITIES: zealots
+    rival: weightOf(f, "cbRival", 0) ? weightOf(f, "cbRival", 0) * land + (playerStrength(state) > strength(f) ? 10 : 0) : 0, // expansionists, the military
   };
   const goal = Object.keys(scores).reduce((a, b) => (scores[b] > scores[a] ? b : a));
   const top = GRIEVANCES.filter((k) => g[k] >= 8).sort((a, b) => g[b] - g[a])[0];
@@ -617,6 +620,9 @@ export function endPwar(state, w, how, text, terms = []) {
   if (d.pwarEnded.length > 20) d.pwarEnded.length = 20;
   d.pwarStats.peace++;
   if (how in d.pwarStats) d.pwarStats[how]++;
+  // splinters.js: a war on you they lost (worn out, or paying for the peace) stirs strife.
+  const main = factionById(state, w.fid);
+  if (main && (how === "weary" || (how === "terms" && terms.some((t) => t.payer === "them")))) noteStrife(main, SPLINTER.WAR_LOST, "war");
   for (const c of [...state.cards]) if (c.pwarId === w.id) state.cards.splice(state.cards.indexOf(c), 1);
   record(state, text, how === "gone" ? "info" : "good");
 }
@@ -627,6 +633,10 @@ function giveInScore(state, w, terms, offered = false) {
   const style = state.governor ? state.governor.personality : "balanced";
   if (termsProblem(state, w, terms)) return -9;
   const hb = hub(state);
+  // Never out of the pay-out reserve (upkeep.js PAYOUT): tribute or a tithe that leaves the hub under its days of food.
+  const paid = {};
+  for (const t of terms) if ((t.kind === "tribute" && t.payer === "you") || t.kind === "convert") for (const [k, q] of Object.entries(t.goods || {})) paid[k] = (paid[k] || 0) + q;
+  if (hb && payoutBreaks(state, hb, paid)) return -9;
   const worth = Math.max(200, hb ? supplyValue(hb.stock) : 200);
   const cost = termsCost(state, terms) / worth;
   const hurting = w.exh.you >= PW.TIRED || w.score.them - w.score.you >= PW.LEAD;
@@ -678,5 +688,5 @@ export function demandCard(state, w) {
 }
 
 // Help → Blocs and wars (ui/help.js).
-export const BLOCS_WARS_HELP = `<b>Blocs.</b> Groups that like each other and share a threat (a common enemy, you, a hive nearby, prey for raiders) ally into a bloc, by their type: traders, communes and fortresses readily, the military with order-keeping groups, expansionists with a few, raiders only in loose gangs of raiders, zealots only with zealots. Members send what they can spare to a raid on another (it shows in the news: "came to the aid of…"), raid together, share everything their scouts saw, buy food from each other first and grow closer every day. A bloc breaks when two members fall out, when one betrays another (a theft found out, a hungry raider turning on its gang), or when the danger that brought them together has passed; a member that joins your coalition leaves it. Each bloc has a colour: a dashed ring of it round its members' bases on the map. A bloc whose enemy is hostile to you may ask you to stand with it (its fighters then help defend your bases near them); a bloc can also form against you, or against your coalition when it holds a third of the state.<br><br>
+export const BLOCS_WARS_HELP = `<b>Blocs.</b> Groups that like each other and share a threat (a common enemy, you, a hive nearby, prey for raiders) ally into a bloc, by their type: traders, communes and fortresses readily, the military with order-keeping groups, expansionists with a few, raiders only in loose gangs of raiders, zealots only with zealots. Members send what they can spare to a raid on another (it shows in the news: "came to the aid of…"), raid together, share everything their scouts saw, buy food from each other first and grow closer every day. A bloc breaks when two members fall out, when one betrays another (a theft found out, a hungry raider turning on its gang), or when the danger that brought them together has passed. Invite a member into your coalition (or the whole bloc, from a member's card) and the bloc votes: each member agrees, declines or breaks off, by its goodwill to you, its kind, its ties to the others and the wars. Most agree, and the bloc comes in together (those that broke off leave it and stay out); otherwise the group you asked comes in alone only if it agreed. The invite button's tip shows how they would vote today. Blocs facing the same enemy may merge the same way. Each bloc has a colour: a dashed ring of it round its members' bases on the map. A bloc whose enemy is hostile to you may ask you to stand with it (its fighters then help defend your bases near them); a bloc can also form against you, or against your coalition when it holds a third of the state.<br><br>
 <b>Wars with you.</b> A hostile group may declare war on you (rarely: one war at a time, months apart). It has a goal, from what it knows and what you did: loot (its spies saw rich stores), one of your outposts near its land, revenge (your raids on it, executions, its people in your jails), conversion (zealots) or breaking you as a rival (when your coalition holds much of the state). While it lasts its raids come oftener (about every ${PW.RAID_GAP[0]}–${PW.RAID_GAP[1]} days, joined by its bloc), the base it wants is besieged (${PW.SIEGE_HOURS} hours at the walls), and your caravans and teams near its land are hunted. Every raid you hold and base of theirs you take counts for you; their losses, hunger and deserters wear them down, your dead and lost bases wear you down. Every ${PW.OFFER_GAP} days or so they send word by radio or envoy: worn out, they sue for peace (a ceasefire, your captives back, tribute when you are clearly ahead); ahead, they offer peace on their terms (tribute, the base they want, their prisoners back, a tithe and a convert). You can offer terms yourself from their card in the Groups tab (the % is the chance they agree: their type, weariness, the score and how well the terms answer their goal). A side worn out past ${PW.BROKEN} pulls back. After a peace: ${PW.CEASEFIRE} days of ceasefire (no raids from them), and no new war from them for ${PW.COOLDOWN} days. You can declare war on a group too (its card: for tribute, for land, or to break it): it turns hostile, its bloc joins it, its friends think less of you.`;

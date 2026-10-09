@@ -54,11 +54,12 @@ import { diaryRecord } from "./diary.js";
 import { onDeath } from "./relations.js";
 import { noteDeath, noteBaseLoss, lossHow, causesDaily } from "./causes.js"; // "Why?": the chain of causes of a death or a lost base
 import { skillsHour, skillsDaily, hasPerk, hash01 } from "./skills.js";
+import { trainingDaily } from "./training.js"; // the hospital trains medics
 import { diplomacyHour } from "./diplomacy.js";
 import { allianceVictory, accordHolds, controlledLand } from "./alliance.js";
 import { claimsDaily } from "./claims.js"; // land claims: lost under a base founded or taken, a hive, a hostile camp
 import { conquestDaily } from "./conquest.js";
-import { prisonersHour, prisonersDaily } from "./prisoners.js";
+import { prisonersHour, prisonersDaily, jailGuardHour } from "./prisoners.js";
 import { groupJailsDaily, groupJailsHour } from "./groupjails.js"; // jailhouse: the groups' jails, prisoner labour and trades
 import { ransomHour } from "./ransom.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
@@ -78,7 +79,8 @@ import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
 import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and moving people between your bases)
 import { familyDaily } from "./family.js"; // children and generations
-import { leavePlayerBase } from "./groupworld.js"; // a lost outpost stands empty for a group to move into
+import { leavePlayerBase, abandonedAt } from "./groupworld.js"; // a lost outpost stands empty for a group to move into (or for your Occupy order)
+import { noteLootAge } from "./itemcond.js"; // the years since the fall: shops and homes keep getting worse (COND_AGE)
 import { starterMags } from "./carrykit.js"; // a starting gun's spare magazines
 import { noteLook, keepLook } from "./intelnotes.js"; // what your people learned of the groups' bases (the State Map's estimates, intelest.js)
 
@@ -153,6 +155,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   // hardcore crew's picks resolve whatever the browser's list holds later. Not in a world without any.
   const bgs = customBackgrounds ? sanitizeLibrary(customBackgrounds) : {};
   if (Object.keys(bgs).length) state.customBackgrounds = bgs;
+  noteLootAge(state); // itemcond.js: the loot rolled from here on is as old as this world (a new world: year 1)
   if (state.mode === "hardcore") {
     hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
@@ -676,11 +679,12 @@ function coalitionWins(state) {
 // A base is lost (overrun by a horde, taken in a raid). One place for everything that has to follow: the
 // people still there flee to the hub, vehicles parked there are left on the tile (abandoned, with a map
 // marker), supply runs to or from it are paused, and the log says what was lost.
-/** @param {State} state @param {Base} base @param {string} [cause] @returns {boolean} */
-export function removeBase(state, base, cause = "was lost") {
+// opts.voluntary: you abandoned it (occupy.js abandonOutpost: its people already left as a team): no "why was it lost".
+/** @param {State} state @param {Base} base @param {string} [cause] @param {{ voluntary?: boolean }} [opts] @returns {boolean} */
+export function removeBase(state, base, cause = "was lost", opts = {}) {
   const i = state.bases.indexOf(base);
   if (i < 0 || base.type === "hub") return false;
-  noteBaseLoss(state, base, lossHow(cause)); // causes.js: why it was lost (before the people leave)
+  if (!opts.voluntary) noteBaseLoss(state, base, lossHow(cause)); // causes.js: why it was lost (before the people leave)
   const h = hub(state);
   const fled = [];
   for (const s of state.survivors) {
@@ -714,17 +718,19 @@ export function removeBase(state, base, cause = "was lost") {
   for (const p of state.parties) if (p.owner === "player" && p.homeBaseId === base.id) p.homeBaseId = h.id;
   state.bases.splice(i, 1);
   leavePlayerBase(state, base); // groupworld.js: it stands empty, its buildings there for a group to move into
+  state.knowledge[base.tile] = snapshot(state, base.tile); // the people who fled know it stands empty (the map's Occupy, occupy.js)
   assignStations(state, h);
   const stock = SUPPLY_KEYS.filter((k) => (base.stock[k] || 0) >= 1).map((k) => `${Math.floor(base.stock[k])} ${keyWord(k)}`); // water.js keyWord: "un-purified water", not the key
   const bits = [];
   if (base.buildings.length) bits.push(`${base.buildings.length} building${base.buildings.length === 1 ? "" : "s"}`);
   if (stock.length) bits.push(`its stock (${stock.join(", ")})`);
   if (base.armory.length) bits.push(`${base.armory.length} item${base.armory.length === 1 ? "" : "s"} in the armory`);
-  const parts = [`${base.name} ${cause}.`, bits.length ? `Lost with it: ${bits.join(", ")}.` : "Nothing of value was left there."];
+  const parts = [`${base.name} ${cause}.`, bits.length ? `${opts.voluntary ? "Left behind there" : "Lost with it"}: ${bits.join(", ")}.` : "Nothing of value was left there."];
+  if (abandonedAt(state, base.tile)) parts.push(opts.voluntary ? "Its buildings stand empty with half of the stores left: Reoccupy it later, before someone else moves in." : "Its buildings still stand there with some of its stores: send a team to Occupy it before someone else moves in.");
   if (left.length) parts.push(`${left.length === 1 ? `The ${left[0]} was` : `${left.join(" and ")} were`} left behind there (marked on the map).`);
   if (fled.length) parts.push(`${fled.map((s) => firstOf(s.name)).join(", ")} fled to ${h.name}.`);
   if (paused) parts.push(`${paused} supply run${paused === 1 ? "" : "s"} to or from it ${paused === 1 ? "is" : "are"} paused.`);
-  log(state, parts.join(" "), "death");
+  log(state, parts.join(" "), opts.voluntary ? "info" : "death");
   return true;
 }
 
@@ -749,7 +755,8 @@ export function snapshot(state, tileId) {
   const here = state.hordes.filter((h) => h.tile === tileId);
   const hordeSize = here.reduce((s, h) => s + h.size, 0);
   const site = state.hiveSites ? state.hiveSites.find((x) => x.tile === tileId) : null;
-  const factionBase = state.factions.find((f) => f.alive && f.bases.includes(tileId));
+  // hiding.js: a group's hidden outpost you have not found is bare ground on your map (state.intel.unseen).
+  const factionBase = state.intel && state.intel.unseen && state.intel.unseen[tileId] != null ? null : state.factions.find((f) => f.alive && f.bases.includes(tileId));
   return {
     hour: state.hour,
     owner: t.owner,
@@ -763,7 +770,16 @@ export function snapshot(state, tileId) {
     hive: !!t.hive,
     site: site ? { biomass: site.biomass, started: site.started != null } : null,
     deathSite: state.deathSites.find((d) => d.tile === tileId) ? state.deathSites.find((d) => d.tile === tileId).items.length : 0,
+    abandoned: abandonedSnap(state, tileId), // groupworld.js: a base standing empty here (occupy.js: the Occupy order)
   };
+}
+// What a look at an abandoned base tells you: whose it was, since when, and how much stands there.
+/** @param {State} state @param {number} tileId */
+function abandonedSnap(state, tileId) {
+  const rec = abandonedAt(state, tileId);
+  if (!rec) return null;
+  const standing = rec.buildings ? rec.buildings.filter((b) => !b.broken).length : Object.values(rec.works || {}).reduce((a, q) => a + Math.max(0, q), 0);
+  return { from: rec.from, fromName: rec.fromName, day: rec.day, standing };
 }
 
 /** @type {(state: State) => Base[]} */
@@ -817,6 +833,7 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
 export function tickHour(state) {
   if (state.gameOver) return;
   state.hour += 1;
+  noteLootAge(state); // itemcond.js: the years since the fall, for every piece of loot rolled this hour
   weatherHour(state); // weather.js: seasons and the day's weather (fixed ahead, so ETAs hold)
   riversHour(state); // rivers.js: rivers freezing over or thawing (before anyone moves this hour)
   skillsHour(state); // skills.js: travel XP, Pathfinder's pace
@@ -863,6 +880,7 @@ export function tickHour(state) {
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
     visitorsDaily(state); // visitors.js: outsiders crossing the border, guests sheltering at your bases
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
+    trainingDaily(state); // training.js: medics' ward rounds, the doctor's lessons to Medic trainees
     familyDaily(state); // family.js: couples, expecting, births, children eating, growing up and joining the work
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
@@ -888,6 +906,7 @@ export function tickHour(state) {
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
+  jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
   historyHour(state); // history.js: stock flows marked, a row a day for the Ledger and the run summary

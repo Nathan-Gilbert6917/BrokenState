@@ -1,4 +1,5 @@
-// The Defence tab (a base screen tab): the watch roster (sim/watch.js) and the defence plans (sim/defenceplan.js).
+// The Defence tab (a base screen tab): the watch roster (sim/watch.js), the defence plans (sim/defenceplan.js) and
+// concealment (sim/hiding.js: how well hidden the base is, Run silent; ui/intel.js).
 // The roster: the watches (preset or by hand), who stands each, and a 24-hour strip of how many are on watch each hour
 // (red: nobody). The plan: where each defender stands when the base is attacked, laid out in a drill on the base's
 // own battle map and taken up by itself at the deploy step of every attack (changed there for that fight if need be).
@@ -14,6 +15,7 @@ import { startDrill, clearPlan, planPeople, plansOf, planTags, deletePlan, PLAN,
 import { planChange } from "./combat.js"; // the drill's and the deploy step's plan picker, name and tags
 import { rosterStrain, tiredLevel, TIRED, TIRED_WORDS } from "../sim/sleep.js"; // the watch's toll (roster card)
 import { tiredChip } from "./needs.js";
+import { concealCard } from "./intel.js"; // how well hidden the base is, Run silent (sim/hiding.js)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -32,6 +34,7 @@ export function defenceTab(state, b, ui) {
     <div class="grid2">
       <div>${rosterCard(state, b, people)}</div>
       <div>${planCard(state, b, people)}
+        ${concealCard(state, b)}
         <h3>Holding the walls now</h3>
         <div class="card small"${tip("What this base's walls hold off before a horde breaks in (defences.js): the walls, everyone on guard (the watch counts here), the defence buildings and the armory's kit. A Wallbreaker cuts it.")}>
           <div class="kv"><div>Hold limit</div><div><b>${hold.limit}</b> of the dead (${hold.boss} with a Wallbreaker)</div>

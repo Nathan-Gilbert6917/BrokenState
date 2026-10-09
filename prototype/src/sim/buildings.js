@@ -1,12 +1,13 @@
 // @ts-check
 // Buildings, workshop stations and the construction queue for every base (hub and outposts).
-import { log, atBase, skill, newId } from "./world.js";
+import { log, atBase, skill, newId, day, localId } from "./world.js";
+import { SILENT } from "./hiding.js"; // a base running silent: its stations work in quiet spells
 import { SKILL_NAMES } from "./data.js";
 import { workFactor } from "./health.js";
 import { storeCapacity, storeSpaces } from "./storage.js";
 import { stationIO, orderHold } from "./production.js";
 import { refreshPower, generatorStatus, powerLine } from "./power.js";
-import { buildMult } from "./skills.js";
+import { buildMult, hash01 } from "./skills.js";
 import { buildLock } from "./blueprints.js";
 import { cabinProblem } from "./hunting.js";
 import { stockHas, useStock } from "./water.js"; // recipes: water counts both kinds, un-purified used first
@@ -76,6 +77,8 @@ export const BUILDINGS = {
   trench:       { name: "Trench and stakes", cost: { scrap: 12 },           hours: 30, max: 1, defence: true, desc: "A ditch around the base: the base holds back 25% more of a horde, and on the battle map the dead that reach the trench lose the rest of their turn." },
   gate:         { name: "Reinforced gate",  cost: { scrap: 14, parts: 1 },  hours: 20, max: 1, defence: true, desc: "Steel plate and a bar on the gate: the base holds back 20% more of a horde, the gate has 180 hit points instead of 100 on the battle map, plus two more barricades there. Needs walls to matter; a Wallbreaker smashes it when no barricade is left." },
   floodlights:  { name: "Floodlights",      cost: { scrap: 8, parts: 2 },   hours: 12, max: 1, defence: true, desc: "Work lights on the walls. Burns 2 fuel when a horde attacks: the base holds back 10% more, and defenders aim better on the battle map (+10 at night, +4 by day). No fuel, no lights." },
+  // Hiding a base (hiding.js): netting and brush over the roofs and the yard, the paths kept off. Concealment + HIDE.CAMO.
+  camo:         { name: "Camouflage netting", cost: { scrap: 10, parts: 1 }, hours: 16, max: 1, desc: "Netting, brush and dull paint over the roofs and the yard, and the paths kept off the open ground: the base is harder to find (concealment +25%: the groups' scouts and passing parties miss it more often, and a base they have not seen for a month may slip out of what they know). See the base's Defence tab." },
   watchtower:   { name: "Watchtower",     plot: "utility", cost: { scrap: 15 },            hours: 18, max: 1, desc: "+2 tiles of live vision around this base. Lookouts warn of raids sooner. On the battle maps it is two towers (height 2): full cover from anything not right next to them, +10 aim at anything lower and +4 sight, the widest view." },
   // Jails (family "jail", tiers 1–3, each upgrading the one below in place; prisoners.js JAIL has what each tier does):
   // a base keeps prisoners only in a jail (no jail, no room: the extras are released, executed, asked to join or walked
@@ -93,9 +96,9 @@ export const BUILDINGS = {
   //     ransom or recruits. Holds 8, escapes halved again (0.2% / 1.5%), one guard on the post watches every prisoner at
   //     work, the work detail runs half as often, and a rescue meets the base's defence ×1.25.
   // The AI groups build the same three tiers as abstract works (groupjails.js).
-  lockup:       { name: "Makeshift cells", plot: "utility", family: "jail", tier: 1, cost: { scrap: 6 }, hours: 6, max: 1, desc: "A cage of scrap and chain-link, or a locked shed: room for 2 prisoners (Prisoners tab). Each costs 1 food and 1 water a day. Poor: they slip out often (2% a day with someone on the Guard role, 6% unguarded), a smuggled pick or a loner's tricks count ×1.5, and they sour (mood −1 a day, slower to win over). Any base can put one up, a shelter too. Upgrade it into Holding cells." },
-  cells:        { name: "Holding cells",  plot: "building", family: "jail", tier: 2, upgrades: "lockup", cost: { scrap: 12, parts: 1 }, hours: 16, max: 1, desc: "Barred rooms for 3 prisoners (Prisoners tab). Each costs 1 food and 1 water a day. With someone on the Guard role here they rarely escape (0.4% a day; 3% unguarded). Upgrades the makeshift cells (a building plot). Upgrade it into a Jailhouse." },
-  jailhouse:    { name: "Jailhouse",      plot: "building", family: "jail", tier: 3, upgrades: "cells", cost: { scrap: 30, parts: 2 }, hours: 36, max: 1, req: { mechanics: 2 }, desc: "A cell block with a guard post: room for 8 prisoners. Escapes halved again (0.2% a day guarded, 1.5% unguarded); one Guard on the post watches every prisoner out at work, and the work detail runs half as often; a group come to free its people meets the base's defence ×1.25. Upgrades the holding cells on their plot. Needs a Mechanics 2+ survivor here to build." },
+  lockup:       { name: "Makeshift cells", plot: "utility", family: "jail", tier: 1, cost: { scrap: 6 }, hours: 6, max: 1, desc: "A cage of scrap and chain-link, or a locked shed: room for 2 prisoners (Prisoners tab). Each costs 1 food and 1 water a day. Poor: they slip out often (6% a day with no jail guard, 2% with one, about 1% with two: name them on the Prisoners tab), a smuggled pick or a loner's tricks count ×1.5, and they sour (mood −1 a day, slower to win over). Any base can put one up, a shelter too. Upgrade it into Holding cells." },
+  cells:        { name: "Holding cells",  plot: "building", family: "jail", tier: 2, upgrades: "lockup", cost: { scrap: 12, parts: 1 }, hours: 16, max: 1, desc: "Barred rooms for 3 prisoners (Prisoners tab). Each costs 1 food and 1 water a day. With a jail guard named (Prisoners tab) they rarely escape (3% a day with none, 0.4% with one, 0.12% with two). Upgrades the makeshift cells (a building plot). Upgrade it into a Jailhouse." },
+  jailhouse:    { name: "Jailhouse",      plot: "building", family: "jail", tier: 3, upgrades: "cells", cost: { scrap: 30, parts: 2 }, hours: 36, max: 1, req: { mechanics: 2 }, desc: "A cell block with a guard post: room for 8 prisoners. Escapes halved again (1.5% a day with no jail guard, 0.2% with one, 0.06% with two); one jail guard on the post watches every prisoner out at work, and the work detail runs half as often; a group come to free its people meets the base's defence ×1.25. Upgrades the holding cells on their plot. Needs a Mechanics 2+ survivor here to build." },
   radio:        { name: "Radio station",  plot: "building", cost: { scrap: 30, parts: 6 },  hours: 48, max: 1, req: { mechanics: 4 }, desc: "Live intel from teams in range, instant calls for help, radio diplomacy. Needs a Mechanics 4+ survivor here to build." },
   // radio.js: an unmanned repeater (no operator) that uses 1 part every 10 days; works only when linked to a station.
   // Any base, the hub too, but not where a radio station stands (canBuild: the station's 12 tiles cover its 6).
@@ -129,18 +132,22 @@ export const BUILDINGS = {
   // guards = beds stop wounds getting infected, cures = cleans infected wounds reliably,
   // severe = healing speed for wounds below 30 health in a bed (0.4 without a bed), surgery = operates on
   // severe wounds (full speed plus a bigger heal per treatment), craft = extra meds per day from each med station. See medical.js.
+  // Training (training.js): train = Medic trainee places (people on the Trainee role learning from the doctor),
+  // teach = how fast lessons and ward rounds teach here (×), ward = the most Medicine XP a medic on duty earns a day
+  // from the patients (ward rounds, on top of the Medic role's 8 and the treatments), gap = how far below the doctor's Medicine
+  // the lessons stop (1; 0 in a trauma hospital: a trainee can reach the doctor's own level).
   infirmary:    { name: "Makeshift infirmary", plot: "building", family: "hospital", tier: 1, cost: { scrap: 15, meds: 2 }, hours: 20, max: 1,
-                  med: { beds: 2, heal: 6, eff: 1.25, treat: 14, staff: 1, guards: false, cures: false, severe: 0.6, surgery: false, craft: 0 },
-                  desc: "Cots behind a curtain. 2 beds: +6 health/day for patients, meds 25% more effective, severe wounds (below 30) heal at 60% instead of 40%. Needs 1 survivor on the Medic role." },
+                  med: { beds: 2, heal: 6, eff: 1.25, treat: 14, staff: 1, guards: false, cures: false, severe: 0.6, surgery: false, craft: 0, train: 1, teach: 1, ward: 4, gap: 1 },
+                  desc: "Cots behind a curtain. 2 beds: +6 health/day for patients, meds 25% more effective, severe wounds (below 30) heal at 60% instead of 40%. Needs 1 survivor on the Medic role. Takes 1 Medic trainee: the doctor (the best medic, Medicine 6+) teaches them Medicine every day." },
   field_hosp:   { name: "Field hospital",      plot: "building", family: "hospital", tier: 2, upgrades: "infirmary", cost: { scrap: 30, parts: 2, meds: 4 }, hours: 36, max: 1,
-                  med: { beds: 4, heal: 10, eff: 1.5, treat: 16, staff: 1, guards: true, cures: false, severe: 0.8, surgery: false, craft: 0 },
-                  desc: "Army tents, clean water, real dressings. 4 beds: +10 health/day, meds 50% more effective, wounds in bed do not get infected, severe wounds heal at 80%. Upgrades the infirmary. Needs 1 Medic." },
+                  med: { beds: 4, heal: 10, eff: 1.5, treat: 16, staff: 1, guards: true, cures: false, severe: 0.8, surgery: false, craft: 0, train: 1, teach: 1.2, ward: 6, gap: 1 },
+                  desc: "Army tents, clean water, real dressings. 4 beds: +10 health/day, meds 50% more effective, wounds in bed do not get infected, severe wounds heal at 80%. Upgrades the infirmary. Needs 1 Medic. Takes 1 Medic trainee; lessons and ward rounds teach 20% faster than in the infirmary." },
   clinic:       { name: "Clinic",              plot: "building", family: "hospital", tier: 3, upgrades: "field_hosp", cost: { scrap: 45, parts: 4, meds: 8 }, hours: 60, max: 1, req: { medicine: 6 },
-                  med: { beds: 6, heal: 16, eff: 1.8, treat: 18, staff: 2, guards: true, cures: true, severe: 1, surgery: true, craft: 1 },
-                  desc: "A proper treatment room with sterilised tools. 6 beds: +16 health/day, meds 80% more effective, cleans infected wounds, surgery for severe wounds (full speed, bigger treatments), med stations make +1 meds a day. Upgrades the field hospital. Needs 2 Medics and a Medicine 6+ survivor here to build." },
+                  med: { beds: 6, heal: 16, eff: 1.8, treat: 18, staff: 2, guards: true, cures: true, severe: 1, surgery: true, craft: 1, train: 2, teach: 1.45, ward: 8, gap: 1 },
+                  desc: "A proper treatment room with sterilised tools. 6 beds: +16 health/day, meds 80% more effective, cleans infected wounds, surgery for severe wounds (full speed, bigger treatments), med stations make +1 meds a day. Upgrades the field hospital. Needs 2 Medics (a Medic trainee counts as half of one) and a Medicine 6+ survivor here to build. Takes 2 Medic trainees; lessons and ward rounds teach 45% faster than in the infirmary." },
   hospital:     { name: "Trauma hospital",     plot: "building", family: "hospital", tier: 4, upgrades: "clinic", cost: { scrap: 70, parts: 8, meds: 12 }, hours: 96, max: 1, req: { medicine: 10, mechanics: 4 },
-                  med: { beds: 10, heal: 24, eff: 2.2, treat: 22, staff: 3, guards: true, cures: true, severe: 1.2, surgery: true, craft: 1 },
-                  desc: "Operating theatre on generator power. 10 beds: +24 health/day, meds 120% more effective, cleans infected wounds, full surgery (severe wounds heal 20% faster), med stations make +1 meds a day. Upgrades the clinic. Needs 3 Medics, and Medicine 10+ and Mechanics 4+ survivors here to build." },
+                  med: { beds: 10, heal: 24, eff: 2.2, treat: 22, staff: 3, guards: true, cures: true, severe: 1.2, surgery: true, craft: 1, train: 3, teach: 1.75, ward: 10, gap: 0 },
+                  desc: "Operating theatre on generator power. 10 beds: +24 health/day, meds 120% more effective, cleans infected wounds, full surgery (severe wounds heal 20% faster), med stations make +1 meds a day. Upgrades the clinic. Needs 3 Medics (a Medic trainee counts as half of one), and Medicine 10+ and Mechanics 4+ survivors here to build. Takes 3 Medic trainees; lessons and ward rounds teach 75% faster than in the infirmary, and a trainee can learn up to the doctor's own Medicine." },
   // Water barrels (WATER_BARREL below): up to 4, each upgraded on its own and set to hold purified or un-purified water.
   water_barrel: { name: "Water barrel",   plot: "utility", cost: { scrap: 4 },  hours: 6,  max: 4, barrel: true, desc: "A drum on a stand: 25 more water room, kept for the kind you choose. Un-purified: room for the well, rain and river water. Purified: room only safe water may use (water filters' surplus, bottled water brought home), so the well's water never crowds it out and teams always find safe water to pack. Upgrade each barrel on its own: a barrel rack (50), then a water tank (100)." },
   // Storage crates (storage.js storeSpaces): a little dry room for food, outdoors.
@@ -448,6 +455,7 @@ export function runStations(state, base) {
   for (const st of stations(base)) {
     const status = stationStatus(state, base, st);
     if (!status.running || status.recipe === "power") continue;
+    if (base.silent && hash01(state.seed, "silentwork", localId(state, base.id), day(state), localId(state, st.id)) < SILENT.WORK_SKIP) continue; // hiding.js: running silent, the workshops work in quiet spells
     if (status.reload) { runReload(state, base, st, status); continue; } // reloading.js: brass, powder and primers into rounds
     const r = RECIPES[status.recipe];
     const inp = status.in || r.in;
@@ -523,8 +531,12 @@ export function cancelBuild(state, base, id) {
   return `Cancelled ${jobName(job)}. ${full ? "All" : "Half"} the materials were returned.`;
 }
 
+// A builder the governor (or a base leader with roles) keeps on upkeep (s.upkeep, autopilot.js UPKEEP_CREW): they mend
+// worn fixtures every day (breakdowns.js) and add nothing to the construction. The mark counts only while the base is
+// governed: one left behind when the autopilot or the leader is switched off is ignored.
+export const onUpkeep = (state, base, s) => !!s.upkeep && s.role === "build" && (!!state.autopilot || !!(base.steward && base.steward.on));
 export function buildRate(state, base) {
-  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed).reduce((a, s) => a + (1 + skill(s, "mechanics") * 0.03) * workFactor(s) * buildMult(s), 0) // buildMult: Handy / Master Builder (skills.js)
+  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed && !onUpkeep(state, base, s)).reduce((a, s) => a + (1 + skill(s, "mechanics") * 0.03) * workFactor(s) * buildMult(s), 0) // buildMult: Handy / Master Builder (skills.js)
     + prisonBuildRate(state, base); // prisoners-tab: prisoners set to Build (prisoners.js labour, 12 hours a day at 50–70%)
 }
 

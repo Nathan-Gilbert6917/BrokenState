@@ -16,7 +16,8 @@
 // By the numbers (groupStrength, kitFactor, unitPower): each person is worth 1 + their weapon's power × quality (+ MOD
 // a gun part) + ARMOUR × the power of each armour piece (world.js combatPower's sum for your people), best kit to
 // the first. The mean against REF (what the type's starting kit is worth a head: the same seeding averaged) is the
-// kit factor (KIT_MIN–KIT_MAX), × AMMO_SHORT–1 when the rounds are under AMMO_NEED a gun. strength = people × the
+// kit ratio (KIT_MIN–KIT_MAX), weighed by kitCurve (KIT_DOWN below the starting kit, KIT_UP's diminishing returns
+// above it) into the kit factor, × AMMO_SHORT–1 when the rounds are under AMMO_NEED a gun. strength = people × the
 // type's arms × kit factor (with the eras' arms in it, eraArms), so on day 0 a group is as strong as before (kit factor ≈ 1)
 // and it grows or wanes with what it gathers and loses. A battle unit's power (2.2 + arms × 1.6 before) is
 // base + arms × 1.6 × kit factor. Launchers (none yet: the overhaul's) add WALL_LAUNCHER each against walls.
@@ -30,12 +31,13 @@
 // time), or stays (recovered) when they do, and then they also pick up your dead's gear; survivors' kit wears a use;
 // ROUNDS a fighter are spent.
 // Inflows: their scavenging (aiscav.js: SCAV_ITEMS items per loot taken, from the site's gear list, condition by the
-// site), newcomers (RECRUIT_ARMED bring a weapon), their own crafting (makeshift weapons from scrap while short of
+// site), newcomers (newcomerKit: RECRUIT, random: some bring nothing), their own crafting (makeshift weapons from scrap while short of
 // weapons, explosives from scrap and fuel: CRAFT), trade (fighting gear you sell or give them goes in; surplus over
 // WANT a head goes on their shelf, trade.js), stealing (raids on your bases and other groups, robbing your teams,
 // captives stripped), the fields they hold after a fight, a broken group's arsenal (half to the group that takes it
-// over), your vehicles when a team is taken whole. Outflows: the dead's kit, wear (a use a fight; broken is gone),
-// rounds spent, explosives thrown at walls, what they sell, what others steal.
+// over), your vehicles when a team is taken whole, a smoke grenade now and then while short (SMOKE_RESTOCK). Outflows:
+// the dead's kit, wear (a use a fight; broken is gone), rounds spent, explosives thrown at walls, smoke thrown over a
+// retreat by the numbers (smokeCover), what they sell, what others steal.
 import { GEAR, FACTION_TYPES, LOCATIONS } from "./data.js";
 import { KITS, WEAPONS, loadMag, placeCar, floodReach } from "./combat.js";
 import { lootItem } from "./inventory.js";
@@ -63,11 +65,22 @@ export const ARSENAL = {
   HOME: 0.35, // the home guard's share of the people (and every third piece of kit from the second best)
   MOD: 0.2, ARMOUR: 0.5, // a gun part's worth; armour counts half its power (world.js combatPower)
   KIT_MIN: 0.15, KIT_MAX: 2.5,
-  KIT_WEIGHT: 0.4, // the kit's share of a group's fighting worth (the rest: its people, their numbers and training)
+  // How much the kit weighs in a group's fighting worth (kitFactor; user, 2026-10-08: "how much gear matters to their
+  // strength: balance this"). Below its type's starting kit it counts KIT_DOWN of the shortfall (a group that lost
+  // its guns is much weaker: bare-handed raiders 0.56, the military 0.49); above it, diminishing returns,
+  // 1 + KIT_UP × ln(kit), so the best kit there is (KIT_MAX) is worth at most 1.46 a head: a well-armed group does
+  // not beat one half again its size with the usual kit (before: 0.4 of the ratio either way, 0.71 to 1.6).
+  KIT_DOWN: 0.6, KIT_UP: 0.5,
   AMMO_NEED: 3, AMMO_SHORT: 0.7, // rounds a gun to count fully (your bases' 3 a head, world.js armedFactor); with none, the guns count 70%
   ROUNDS: 3, // rounds a fighter spends in a fight
   PICKUP_WEAR: [0.2, 0.5], // a piece picked up off a battlefield has lost this share of its uses
-  RECRUIT_ARMED: 0.9, // a newcomer is armed (from the group's kit list)
+  // What a newcomer brings (user, 2026-10-08: "how well newcomers are armed: random"), per head, hashed on the
+  // group's own day (the same seed gives the same arms): nothing at all NONE of the time, a makeshift weapon (CRAFT's
+  // clubs and spears) MAKESHIFT, else a gun or blade: OWN of those copy one the group already carries (what is about
+  // in its country: a random piece of its arsenal), the rest a draw from its kit's list, STRONG of those one of the
+  // kit's strong guns. Armour (a draw from the kit's armour list, whose empty entries mean none) ARMOUR of the time.
+  // Before: 90% armed from the kit's list, every one with a kit armour draw.
+  RECRUIT: { NONE: 0.3, MAKESHIFT: 0.2, OWN: 0.5, STRONG: 0.06, ARMOUR: 0.5 },
   SCAV_ITEMS: 6, // items a scavenging party finds per loot it takes (a full trip about 0.25 loot: 1.5 items)
   CRAFT: { every: 4, scrap: 3, weapons: ["pipespear", "spikedbat", "pipespear", "nailbat"], bombEvery: 6, bombScrap: 2, bombFuel: 1,
     // A group with a workshop (groupworks.js) rebuilds a gun of its kit from scrap and a part while it has fewer
@@ -75,6 +88,13 @@ export const ARSENAL = {
     gunEvery: 5, gunScrap: 8, gunParts: 1, guns: 1.1 },
   WANT: 1.3, // weapons a head they keep; more goes on the trade shelf
   SHELF: 2, // surplus pieces put on the shelf a refresh
+  // Smoke grenades (siege.js coverSmoke: over a retreat) come back coarsely, a day at a time: while a group holds fewer
+  // than its kit's share a head (NONLETHAL smokegren), it gets one a day at this chance from its scavenging and trade
+  // (military kit from Army sites and its own stores, traders' guards buy them, militia and raiders come across one).
+  SMOKE_RESTOCK: { soldiers: 0.15, guards: 0.1, militia: 0.05, fighters: 0.05, raiders: 0.03 },
+  // A beaten side by the numbers (factions.js AI raids) with smoke covers its retreat: each grenade it throws (at most
+  // MAX, out of its arsenal) spares PER of its people; at least one of the losses still falls.
+  SMOKE_COVER: { PER: 1, MAX: 2 },
   BYNUM_PICK: 0.3, // conflicts.js victoryRewards: by the numbers, one piece of their dead's kit for you this often
   WALL_LAUNCHER: 6, // power a launcher adds against walls
   // Launchers in a starting kit, a share a head (soldiers: the Army's own; launchers.js fires them), and the rounds kept
@@ -87,8 +107,8 @@ export const ARSENAL = {
   // (throwables.js FLASH_KIT), medics' kits (medics.js MEDIC.ENEMY KITS: about one medic in sixteen people),
   // tourniquets (medics.js MEDIC.SELF.KIT, a little over: the ones used up in fights).
   NONLETHAL: {
-    guards: { taser: 0.4, pepper: 0.45, flashbang: 0.2, smokegren: 0.1, bandagekit: 0.06, tourniquet: 0.35 }, soldiers: { taser: 0.12, pepper: 0.2, flashbang: 0.3, traumakit: 0.06, tourniquet: 0.7 },
-    militia: { pepper: 0.25, bandagekit: 0.06, tourniquet: 0.2 }, fighters: { pepper: 0.08, bandagekit: 0.06, tourniquet: 0.2 }, raiders: { taser: 0.04, tourniquet: 0.15 },
+    guards: { taser: 0.4, pepper: 0.45, flashbang: 0.2, smokegren: 0.1, bandagekit: 0.06, tourniquet: 0.35 }, soldiers: { taser: 0.12, pepper: 0.2, flashbang: 0.3, smokegren: 0.35, traumakit: 0.06, tourniquet: 0.7 },
+    militia: { pepper: 0.25, smokegren: 0.12, bandagekit: 0.06, tourniquet: 0.2 }, fighters: { pepper: 0.08, smokegren: 0.08, bandagekit: 0.06, tourniquet: 0.2 }, raiders: { taser: 0.04, smokegren: 0.04, tourniquet: 0.15 },
     zealots: { tourniquet: 0.05 },
   },
 };
@@ -191,13 +211,28 @@ export function seedArsenal(state, f) {
   A.headgear = true; // starterKit dealt helmets and ear protection (helmets.js)
   A.rounds = kitLaunchRounds(A.items); // launchers.js: their launchers' rounds, kept with the arsenal (not in f.stock: the world's dice read its keys)
   A.gear = f.gear || 1; // the eras' arms this kit was dealt with (eraArms: a later gang's strong guns already carry them)
+  A.smoke = true; // dealt with smoke grenades (topUpSmoke)
   return A;
+}
+// Smoke grenades came into most kits later (2026-10, siege.js coverSmoke: smoke over a retreat): an arsenal dealt
+// before then gets its share once, the same items a new world's would hold (A.smoke marks it done). One that already
+// holds smoke (guards had it before) is left as it is.
+function topUpSmoke(state, f, A) {
+  A.smoke = true;
+  const kind = kitOf(f), share = (ARSENAL.NONLETHAL[kind] || {}).smokegren || 0;
+  if (!share || A.items.some((it) => it && it.key === "smokegren")) return;
+  const src = kitSource(kind);
+  for (let i = 0; i < Math.round(Math.max(0, f.pop || 0) * share); i++) put(A, f, lootItem("smokegren", src, [state.seed, "ars", f.name, "nsmokegren", i]), null);
 }
 // The group's arsenal, made the first time it is read (an old save's groups: the same rule as a new world's).
 export function ensureArsenal(state, f) {
   if (!f || f.outsider || ARSENAL_SWITCH.off) return null;
-  if (f.arsenal && !f.arsenal.headgear && f.arsenal.seeded != null) headgearOnce(state, f); // a seeded arsenal from before helmets and ear protection
-  return f.arsenal || seedArsenal(state, f);
+  if (f.arsenal) {
+    if (!f.arsenal.smoke) topUpSmoke(state, f, f.arsenal);
+    if (!f.arsenal.headgear && f.arsenal.seeded != null) headgearOnce(state, f); // a seeded arsenal from before helmets and ear protection
+    return f.arsenal;
+  }
+  return seedArsenal(state, f);
 }
 // A group's helmets and ear protection (helmets.js HEAD_KIT), once: a new arsenal is seeded with them (starterKit); an
 // older save's arsenal gets the same deal for its people now (hashed, the world's dice untouched).
@@ -332,15 +367,17 @@ export function ammoFactor(f) {
 // its kit: the share not already in the arsenal it was dealt (A.gear: a gang from beyond the border later in the run
 // brings some of its kit's strong guns, starterKit), so it is never counted twice.
 export const eraArms = (f) => (f.gear || 1) / ((f.arsenal && f.arsenal.gear) || 1);
-// The kit factor: the arsenal a head against the type's starting kit (1 on day 0, KIT_MIN–KIT_MAX), weighted
-// KIT_WEIGHT against the people themselves, × the ammo factor, × the eras' arms (eraArms). It is what their battle
+// The kit factor: the arsenal a head against the type's starting kit (1 on day 0, KIT_MIN–KIT_MAX), through kitCurve
+// (the kit against the people themselves), × the ammo factor, × the eras' arms (eraArms). It is what their battle
 // units fight with (unitPower) as well as their strength by the numbers (groupStrength).
 export function kitFactor(f) {
   const A = f && f.arsenal;
   if (!A || !FACTION_TYPES[f.type]) return 1;
   const r = clamp(meanValue(A, Math.max(1, fitPeople(f))) / kitRef(f.type), ARSENAL.KIT_MIN, ARSENAL.KIT_MAX);
-  return (1 - ARSENAL.KIT_WEIGHT + ARSENAL.KIT_WEIGHT * r) * ammoFactor(f) * eraArms(f);
+  return kitCurve(r) * ammoFactor(f) * eraArms(f);
 }
+// The kit ratio (the arsenal a head over the type's starting kit) as a share of fighting worth (see KIT_DOWN, KIT_UP).
+export const kitCurve = (r) => (r <= 1 ? 1 - ARSENAL.KIT_DOWN * (1 - r) : 1 + ARSENAL.KIT_UP * Math.log(r));
 export const groupStrength = (f) => fitPeople(f) * FACTION_TYPES[f.type].arms * kitFactor(f); // groupcare.js: the wounded do not fight
 // A battle unit's power (combat.js enemyUnit: aim, hit points, damage): base + the type's arms × 1.6 × the kit factor.
 export const unitPower = (f, base = 2.2) => base + (FACTION_TYPES[f.type] ? FACTION_TYPES[f.type].arms : 1) * 1.6 * (f.arsenal ? kitFactor(f) : 1);
@@ -705,25 +742,38 @@ export function shelfSurplus(state, f) {
   for (const it of out) removeFromArsenal(f, it, "sold");
   return out;
 }
+// What one newcomer brings (see ARSENAL.RECRUIT): [items], maybe none. tag: the hash's salt (the group's day and the
+// newcomer's place in line).
+export function newcomerKit(state, f, tag) {
+  const R = ARSENAL.RECRUIT, kit = KITS[kitOf(f)] || KITS.survivors, src = kitSource(kitOf(f));
+  const pick = (list, k) => list[Math.floor(hash01(...tag, k) * list.length) % list.length];
+  const out = [];
+  const u = hash01(...tag, "arms");
+  let key = null;
+  if (u < R.NONE) key = null;
+  else if (u < R.NONE + R.MAKESHIFT) key = pick(ARSENAL.CRAFT.weapons, "mk");
+  else {
+    const carried = f.arsenal ? f.arsenal.items.filter((it) => isWeaponKey(it.key) && !isLauncherKey(it.key)) : [];
+    if (carried.length && hash01(...tag, "own") < R.OWN) key = pick(carried, "ok").key;
+    else if (kit.strong && kit.strong.length && hash01(...tag, "strong") < R.STRONG) key = pick(kit.strong, "sk");
+    else key = pick(kit.weapons, "wk");
+  }
+  if (key && GEAR[key]) out.push(lootItem(key, u < R.NONE + R.MAKESHIFT ? "militia" : src, [...tag, "w"]));
+  if (hash01(...tag, "arm") < R.ARMOUR) {
+    const ak = pick(kit.armor || [null], "ak");
+    if (ak && GEAR[ak]) out.push(lootItem(ak, src, [...tag, "a"]));
+  }
+  return out;
+}
 // Their daily upkeep (factions.js factionsDaily): newcomers' weapons, crafting from scrap, explosives.
 export function arsenalDaily(state, f) {
   const A = ensureArsenal(state, f);
   if (!A) return;
   const d = day(state);
   const salt = [state.seed, "arsday", f.name, tickOf(f)]; // groupcare.js tickOf: the group's own day count
-  if (f.pop > A.pop0) {
-    const W = (KITS[kitOf(f)] || KITS.survivors).weapons; // armed from the group's own kit (what its people carry)
-    for (let i = A.pop0; i < f.pop; i++) {
-      if (hash01(...salt, "rec", i) >= ARSENAL.RECRUIT_ARMED) continue;
-      const key = W[Math.floor(hash01(...salt, "rk", i) * W.length) % W.length];
-      addToArsenal(state, f, lootItem(key, kitSource(kitOf(f)), [...salt, "r", i]), "recruit");
-      // and armour from the kit's list (a share of them wear none: its null entries)
-      const AR = (KITS[kitOf(f)] || KITS.survivors).armor || [null];
-      const ak = AR[Math.floor(hash01(...salt, "ra", i) * AR.length) % AR.length];
-      if (ak && GEAR[ak]) addToArsenal(state, f, lootItem(ak, kitSource(kitOf(f)), [...salt, "ra", i]), "recruit");
-    }
-  }
+  if (f.pop > A.pop0) for (let i = A.pop0; i < f.pop; i++) for (const it of newcomerKit(state, f, [...salt, "n", i])) addToArsenal(state, f, it, "recruit");
   A.pop0 = f.pop;
+  restockSmoke(state, f, A, salt);
   groupReloadDaily(state, f, hasWorkshop(state, f)); // reloading.js: powder and primers bought, rounds loaded at their workshop
   const C = ARSENAL.CRAFT, phase = Math.floor(h(state.seed, f.name, "craft") * 12);
   if (hash01(...salt, "crafty") >= weightOf(f, "craft")) { A.pop0 = f.pop; return; } // groupcare.js GROUP_PRIORITIES: some types craft less
@@ -747,6 +797,23 @@ export function arsenalDaily(state, f) {
     f.stock.fuel -= C.bombFuel;
     addToArsenal(state, f, lootItem(bomb, "militia", [...salt, "b"]), "crafted");
   }
+}
+// The day's smoke grenade (SMOKE_RESTOCK): one, while they hold fewer than their kit's share a head. Own dice.
+function restockSmoke(state, f, A, salt) {
+  const kind = kitOf(f), p = ARSENAL.SMOKE_RESTOCK[kind] || 0;
+  const want = Math.round(Math.max(0, f.pop || 0) * ((ARSENAL.NONLETHAL[kind] || {}).smokegren || 0));
+  if (!p || A.items.filter((it) => it && it.key === "smokegren").length >= want || hash01(...salt, "smoke") >= p) return;
+  addToArsenal(state, f, lootItem("smokegren", kitSource(kind), [...salt, "sm"]), "scavenged");
+}
+// A side beaten by the numbers covers its retreat with smoke (SMOKE_COVER): the grenades thrown leave the arsenal.
+// loss: its people lost; returns how many of them the smoke spared (never all of them).
+export function smokeCover(state, f, loss) {
+  if (!f || f.outsider || loss <= 1 || !ensureArsenal(state, f)) return 0;
+  const S = ARSENAL.SMOKE_COVER;
+  const smoke = f.arsenal.items.filter((it) => it && it.key === "smokegren");
+  const n = Math.min(smoke.length, S.MAX, Math.ceil((loss - 1) / S.PER));
+  for (const it of smoke.slice(0, n)) removeFromArsenal(f, it, "thrown");
+  return Math.min(loss - 1, n * S.PER);
 }
 // A vehicle that falls to a group (your team taken whole: conflicts.js endIfEmpty; a broken group's motor pool).
 export function captureVehicle(f, v) {

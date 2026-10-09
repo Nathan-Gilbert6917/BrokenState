@@ -44,6 +44,7 @@ import { escortArrived, pickupArrived } from "./jobs.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { spendAmmo } from "./rounds.js"; // rounds by calibre
 import { baseCals } from "./ammo.js";
+import { payoutBreaks } from "./upkeep.js"; // the governor never pays food or water out of the base's reserve
 import { groupEscort, escortStrength, cargoValue } from "./escorts.js"; // a caravan's guards: the cargo's wish, what they can spare
 import { pendingDeal, dealCarried, completeRadioDeal, goodsText } from "./radiotrade.js"; // deals agreed over the radio
 
@@ -267,7 +268,10 @@ export function autoCaravanTrade(state, needs, style, spare = {}) {
   }
   let text = "nothing worth swapping";
   needs = roundNeeds(state, ctx, needs); // trade.js: ammo asked for and sold as rounds by calibre
-  if (ctx.t.deal && tradeVerdict(state).ok) text = executeTrade(state);
+  // A radio deal agreed days ago: paid only while the food or water it costs leaves the base its pay-out reserve
+  // (upkeep.js PAYOUT); otherwise the caravan goes home without it.
+  if (ctx.t.deal && payoutBreaks(state, base, ctx.t.offer)) text = `${base.name} cannot spare the food or water the deal costs now`;
+  else if (ctx.t.deal && tradeVerdict(state).ok) text = executeTrade(state);
   else {
     ctx.t.offer = {}; ctx.t.ask = {}; ctx.t.deal = null;
     const short = Object.keys(needs).filter((k) => needs[k] >= 1.2 && (ctx.theirHave[k] || 0) > 0).sort((a, b) => needs[b] - needs[a]);

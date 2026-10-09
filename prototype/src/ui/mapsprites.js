@@ -2369,6 +2369,40 @@ function paintRuin(yours) {
 }
 export const ruinSpriteCanvas = (yours = false) => cached(`ruin:${+!!yours}`, () => paintRuin(yours));
 
+// An empty base (render.js; sim/groupworld.js state.abandoned, sim/occupy.js): an outpost left standing, grey and
+// overgrown: a sagging fence with a gap, a house with a caved-in corner of its roof and dark windows, a lean-to,
+// weeds and creepers up the walls, no smoke. yours: a faded blue rag still on the pole (your old outpost).
+const WEED = "#5d7a3e", WEED_DK = "#435a2c", GREY_WALL = "#8a8780", GREY_ROOF = "#6b6966";
+function paintEmptyBase(yours) {
+  const p = painter(28, 18);
+  const yb = 16;
+  p.rect(1, 12, 26, yb, shade(YARD, -0.15));                     // the yard gone to seed
+  for (const [x, y] of [[2, 13], [6, 15], [10, 14], [15, 15], [19, 13], [23, 14], [25, 16], [12, 16]]) p.set(x, y, WEED);
+  // The house: grey walls, a dark doorway and windows, the roof caved in at its right end.
+  p.rect(5, 7, 16, 12, GREY_WALL);
+  p.rect(5, 12, 16, 12, shade(GREY_WALL, -0.25));
+  p.rect(7, 9, 8, 10, CHAR); p.rect(13, 9, 14, 10, CHAR); p.rect(10, 10, 11, 12, CHAR);
+  for (let x = 4; x <= 13; x++) p.rect(x, x <= 9 ? 5 : 6, x, 6, x % 2 ? GREY_ROOF : shade(GREY_ROOF, -0.15));
+  p.set(14, 6, shade(GREY_ROOF, -0.3)); p.set(16, 7, shade(GREY_ROOF, -0.35)); // the caved-in end
+  // Creepers up the walls.
+  for (const [x, y] of [[5, 8], [5, 9], [6, 11], [15, 9], [16, 10], [16, 11], [9, 7]]) p.set(x, y, WEED_DK);
+  // A lean-to, its tin sheet slipped.
+  p.rect(19, 9, 23, 12, shade(METAL, -0.3));
+  for (let i = 0; i < 6; i++) p.set(18 + i, 8 + (i >> 2), shade(METAL, -0.1));
+  // The fence: posts and rails, one stretch fallen.
+  for (const x of [1, 6, 11, 16, 21, 26]) p.rect(x, 13, x, yb, shade(BURNT_WOOD, 0.35));
+  for (let x = 1; x <= 26; x++) if (x < 9 || x > 14) p.set(x, 14, shade(BURNT_WOOD, 0.5));
+  for (const [x, y] of [[10, 16], [11, 16], [12, 15]]) p.set(x, y, shade(BURNT_WOOD, 0.3)); // the fallen rails
+  for (const [x, y] of [[1, 12], [6, 12], [21, 12], [26, 12]]) p.set(x, y, WEED);
+  if (yours) {                                                     // the pole with a faded blue rag
+    p.rect(25, 3, 25, 12, "#9a9a9a");
+    p.rect(22, 3, 24, 4, "#6f8fb4");
+    p.set(23, 5, "#6f8fb4");
+  }
+  return p;
+}
+export const emptyBaseSpriteCanvas = (yours = false) => cached(`emptybase:${+!!yours}`, () => paintEmptyBase(yours));
+
 // Map marker sprites: "death" | "cache" | "car" | "camp" | "vehicle" | "hive". opt: { emptied } for finds (stripped
 // wreck, emptied cache, picked-through camp), { empty } for a death site with nothing left, { vehicle: "truck" |
 // "sedan", needsFuel, damaged } for an abandoned vehicle (in `color`).

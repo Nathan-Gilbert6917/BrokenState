@@ -28,10 +28,12 @@ import { visitorTipLines } from "../sim/visitors.js";
 import { caravanTipLines } from "../sim/caravanraids.js"; // the groups' caravans and convoys you can see
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
 import { stagingStage, stagingPct, workCap, stagingTip, stagingMissing } from "../sim/staging.js";
+import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { allianceMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
 import { claimText, wellText } from "../sim/claims.js"; // land claims: the Territory layer and the hover text
-import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas } from "./mapsprites.js";
+import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas, emptyBaseSpriteCanvas } from "./mapsprites.js";
+import { occupyPreview } from "../sim/occupy.js"; // empty bases: the tooltip
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas, growthCanvas } from "./hivesprites.js";
 import {
   partySpriteCanvas, upsCode, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas, stagingSpriteCanvas,
@@ -292,7 +294,8 @@ function geometry(state) {
     // its coalition owner (0 none, 1 you, 2+ a member) and whether it is within the coalition's reach (water too).
     nb: new Int32Array(n * 6).fill(-1), srch: new Uint8Array(n), srchSig: null, nSrch: 0,
     coal: new Uint8Array(n), coalIn: new Uint8Array(n), coalSig: null, coalColors: [], nCoal: 0,
-    // Ruins you know of (shown 1, yours 2) and the list of them this frame.
+    // Ruins you know of (shown 1, yours 2) and empty bases you know of (a group's 3, your old outpost 4: sim/groupworld.js
+    // state.abandoned, as your live view or last report shows it), and the list of them this frame.
     ruin: new Uint8Array(n), ruinT: new Int32Array(n), nRuin: 0,
   };
   for (let i = 0; i < n; i++) {
@@ -409,7 +412,7 @@ export const KNOWN_RECENT = 30;
 export const overlayStats = { known: 0, coalition: 0 };
 // What the last drawn frame holds on the overlays, for the headless tools: ruins drawn (tile ids), tiles shaded as
 // searched (1 long ago, 2 lately) and coalition owners per tile.
-export const mapOverlay = () => (geo ? { ruins: Array.from(geo.ruinT.subarray(0, geo.nRuin)), srch: geo.srch, coal: geo.coal, nSrch: geo.nSrch, nCoal: geo.nCoal } : null);
+export const mapOverlay = () => (geo ? { ruins: Array.from(geo.ruinT.subarray(0, geo.nRuin)).filter((id) => geo.ruin[id] <= 2), empty: Array.from(geo.ruinT.subarray(0, geo.nRuin)).filter((id) => geo.ruin[id] >= 3), srch: geo.srch, coal: geo.coal, nSrch: geo.nSrch, nCoal: geo.nCoal } : null);
 function updateKnown(state) {
   const G = geo, s = state.searched || null, d = day(state);
   const sig = G.srchSig;
@@ -485,6 +488,16 @@ export function ruinKnown(state, id, live = liveSet(state)) {
   const snap = state.knowledge && state.knowledge[id];
   return !!snap && (t.ruin.day == null || snap.hour >= (t.ruin.day - 1) * 24);
 }
+// An empty base you know of (sim/groupworld.js state.abandoned): in view, the record itself; out of view, your last report
+// of the tile (it may have been taken or fallen in since). null: none known there.
+export function emptyKnown(state, id, live = liveSet(state)) {
+  if (state.bases.some((b) => b.tile === id)) return null;
+  if (live.has(id)) return (state.abandoned || []).find((r) => r.tile === id) || null;
+  const snap = state.knowledge && state.knowledge[id];
+  return (snap && snap.abandoned) || null;
+}
+// "Empty: Oak Hill Outpost" (your old one) or "Empty base (Long Haul Co.)".
+export const emptyTitle = (em) => (em.from === "player" ? `Empty: ${em.fromName}` : `Empty base (${em.fromName})`);
 // "Ruins of Oak Hill Outpost"; open ground keeps its name out of it ("Ruins of a burned base").
 export function ruinTitle(ruin) {
   const name = ruin && ruin.name ? String(ruin.name) : "";
@@ -515,11 +528,15 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
   ownerColor.clear();
   for (const f of state.factions) if (!ownerColor.has(f.id)) ownerColor.set(f.id, f.color);
   let nh = 0, nhz = 0, nbs = 0, nr = 0;
+  const emptyAt = new Map((state.abandoned || []).map((r) => [r.tile, r]));
   for (let i = 0; i < n; i++) {
     const t = tiles[i], isLive = live.has(i), snap = isLive ? null : k[i];
     let key = isLive ? 0 : snap ? 1 : 2, inf = -1;
     // A ruin you know of (ruinKnown, inlined): drawn with the sites (Locations layer) in place of whatever stood there.
-    const ru = F.poisOn && t.ruin && key < 2 && !ownBase.has(i) && (isLive || t.ruin.day == null || snap.hour >= (t.ruin.day - 1) * 24) ? (t.ruin.yours ? 2 : 1) : 0;
+    // Else an empty base as you know of it (emptyKnown, inlined): in view, or in your last report of the tile.
+    const em = !ownBase.has(i) && key < 2 ? (isLive ? emptyAt.get(i) : snap.abandoned) : null;
+    const ru = F.poisOn && t.ruin && key < 2 && !ownBase.has(i) && (isLive || t.ruin.day == null || snap.hour >= (t.ruin.day - 1) * 24) ? (t.ruin.yours ? 2 : 1)
+      : F.poisOn && em ? (em.from === "player" ? 4 : 3) : 0;
     if (ru) G.ruinT[nr++] = i;
     if (ru !== G.ruin[i]) {
       if (G.ruin[i]) markSite(G.x[i], G.y[i]);
@@ -576,7 +593,7 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
   fbAt.clear(); factionIdx.clear(); besiegedFb.clear();
   state.factions.forEach((f, i) => {
     factionIdx.set(f, i);
-    if (f.alive) for (const b of f.bases) if (!fbAt.has(b)) fbAt.set(b, f);
+    if (f.alive) for (const b of f.bases) if (!fbAt.has(b) && !unseenOutpost(state, b)) fbAt.set(b, f); // sim/hiding.js: a hidden outpost you have not found
   });
   for (const q of state.parties) if (q.phase === "siege" && q.target && q.target.kind === "faction") besiegedFb.add(q.target.tile);
   const rezoom = G.descZoom !== F.zoom;
@@ -678,19 +695,21 @@ function paintRuins(x0, y0, x1, y1, pad, draw) {
     const id = G.ruinT[a], px = G.x[id], py = G.y[id];
     if (px <= x0 - pad || px >= x1 + pad || py <= y0 - pad || py >= y1 + pad) continue;
     k++;
-    if (draw) paintRuin(px, py, G.ruin[id] === 2);
+    if (draw) paintRuin(px, py, G.ruin[id]);
   }
   return k;
 }
-// A ruin: the burned-out compound on a scorched plate with a smouldering rim (yours: a torn blue rag on a pole).
-const RUIN_W = 32, RUIN_RIM = "#a0603a", RUIN_LABEL = "#d2b39a";
-function paintRuin(px, py, yours) {
-  const s = zoomBoost(), cv = ruinSpriteCanvas(yours), w = RUIN_W * s, h = spriteH(cv, w), foot = py + 7 * s;
+// A ruin: the burned-out compound on a scorched plate with a smouldering rim (yours: a torn blue rag on a pole). An
+// empty base (code 3, yours 4): the grey, overgrown outpost on a plate with a moss-grey rim.
+const RUIN_W = 32, RUIN_RIM = "#a0603a", RUIN_LABEL = "#d2b39a", EMPTY_RIM = "#7f8a72", EMPTY_LABEL = "#b9c2ae";
+function paintRuin(px, py, code) {
+  const empty = code >= 3, yours = code === 2 || code === 4;
+  const s = zoomBoost(), cv = empty ? emptyBaseSpriteCanvas(yours) : ruinSpriteCanvas(yours), w = RUIN_W * s, h = spriteH(cv, w), foot = py + 7 * s;
   ctx.beginPath();
   ctx.ellipse(px, foot, Math.max(9 * s, w * 0.46), 4.5 * s, 0, 0, Math.PI * 2);
   ctx.fillStyle = "rgba(0,0,0,0.4)";
   ctx.fill();
-  ctx.strokeStyle = RUIN_RIM;
+  ctx.strokeStyle = empty ? EMPTY_RIM : RUIN_RIM;
   ctx.lineWidth = 1.6;
   ctx.stroke();
   sprite(cv, px, foot - h / 2 + 0.6 * s, w);
@@ -1180,7 +1199,9 @@ export function render(state) {
     const id = G.ruinT[a];
     if (!inView(id)) continue;
     const s = zoomBoost();
-    labels.push({ text: ruinTitle(state.tiles[id].ruin), x: G.x[id], y: G.y[id] + 7 * s + 4.5 * s + 6, pri: 1, screen: true, color: RUIN_LABEL, size: 9 });
+    const em = G.ruin[id] >= 3 ? emptyKnown(state, id) : null;
+    const text = em ? emptyTitle(em) : ruinTitle(state.tiles[id].ruin);
+    if (text) labels.push({ text, x: G.x[id], y: G.y[id] + 7 * s + 4.5 * s + 6, pri: 1, screen: true, color: em ? EMPTY_LABEL : RUIN_LABEL, size: 9 });
   }
   // Hives you know about: a festering mound, bigger and redder on badly infected ground; live ones pulse.
   const pulse = readable.still ? 0.5 : 0.5 + 0.5 * Math.sin(Date.now() / 420);
@@ -2153,6 +2174,12 @@ export function tileTooltip(state, id) {
   for (const line of caravanTipLines(state, id, liveSet(state))) lines.push(`<span style="color:#e0c070">${esc(line)}</span>`); // sim/caravanraids.js: the groups' caravans and convoys
   for (const o of bandTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/hardcore-groups.js
   if (hasKey(state, id)) lines.push(`<span class="good">🔑 You hold a key for this place: it opens its locks.</span>`); // sim/locks.js
+  // An empty base you know of (sim/occupy.js): what stands and, in view, who is inside (out of view: as last seen).
+  const em = ownHere ? null : emptyKnown(state, id);
+  if (em) {
+    const v = liveSet(state).has(id) ? occupyPreview(state, id) : null;
+    lines.push(`<span style="color:${EMPTY_LABEL}">🏚 ${esc(emptyTitle(em))}, empty since day ${em.day}: ${v ? `${esc(v.standing)} · inside: ${esc(v.threatText)}` : `${em.standing} building${em.standing === 1 ? "" : "s"} standing when last seen`}. Right-click: ${em.from === "player" ? "Reoccupy" : "Occupy"}.</span>`);
+  }
   const ru = ownHere ? null : ruinInfo(state, id);
   if (ru) lines.push(`<span style="color:${RUIN_LABEL}">${esc(ru.title)}: salvage ${ru.salvage.toLowerCase()}${ru.salvageLive ? "" : " (then)"} · danger ${ru.dangerName.toLowerCase()}</span>`);
   for (const line of weatherTipLines(state, id)) lines.push(`<span style="color:#b9d3ee">${esc(line)}</span>`); // ui/wxmap.js: a front over it, ice

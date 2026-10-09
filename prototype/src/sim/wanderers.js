@@ -31,6 +31,7 @@ import { Rng } from "./rng.js";
 import { isHardcore } from "./hardcore.js";
 import { zombieToughness } from "./hives.js";
 import { lootItem } from "./inventory.js";
+import { groupCapture } from "./groupjails.js"; // prisoners of a three-way fight into a group's jail
 import { kitSource, spend } from "./itemcond.js";
 import { halt, resume, afterFight, rob, talkSkill, talker, runBonus, addCargo, triggerConflict, spotFirstChance } from "./conflicts.js";
 import { bandsOf } from "./hardcore-groups.js";
@@ -67,8 +68,9 @@ export const WANDER = {
   // Three or more: as before. Only in hardcore, where the team on the road is all you have and the first weeks are
   // crowded (HC_EARLY).
   HC_SMALL: { 1: { share: 0.5, max: 1 }, 2: { share: 0.75, max: 2 } },
-  // Military squads: size, power per soldier; a share met fighting the dead; goodwill for news, help, an attack.
-  SQUAD_SIZE: [3, 5], SQUAD_POWER: 5, FIGHTING: 0.45, GW_NEWS: 2, GW_HELP: 8, GW_ATTACK: -30, GW_ASIDE: 2,
+  // Military squads: size, power per soldier; a share met fighting the dead; goodwill for news, help, an attack,
+  // freeing their soldiers who had given up (GW_FREED: thirdPrisoners).
+  SQUAD_SIZE: [3, 5], SQUAD_POWER: 5, FIGHTING: 0.45, GW_NEWS: 2, GW_HELP: 8, GW_ATTACK: -30, GW_ASIDE: 2, GW_FREED: 4,
   // The people you left (light simulation, once a day): at most MAX groups remembered; a chance a day to move a tile,
   // to lose one of them (DIE + infection × DIE_INF, + DIE_HORDE with a horde next to them), to join a band within 2
   // tiles (hardcore) or a group with a base within 3 (not raiders), to settle somewhere for good after SETTLE_AFTER
@@ -661,6 +663,7 @@ function onWandererCombat(state, result, setup) {
     if (r.team === "neutral" && g) {
       for (let i = 0; i < r.dead && g.people.length; i++) { const s = g.people.pop(); s.dead = true; bump(state, "died"); }
     }
+    lines.push(...thirdPrisoners(state, r, r.team === "military" ? f : null, r.team === "neutral" ? g : null, setup.enemy));
   }
   if (c.type === "attackSquad" && f && result.enemiesKilled) f.pop = Math.max(0, f.pop - Math.ceil(result.enemiesKilled * 0.6));
   const dead = (result.survivorsDead || []).length;
@@ -712,6 +715,33 @@ function onWandererCombat(state, result, setup) {
   afterFight(state, p, { ...c, resumePhase: c.resumePhase }, text); // conflicts.js: carry on, return home, or wait
 }
 
+// Prisoners in a three-way fight (thirdside.js thirdResult): the third side's people who gave up to the enemy are
+// led off by it (a group's soldiers: into the enemy group's jail, groupjails.js, or just gone from the squad; the
+// travellers: gone from their group) or freed (goodwill with the soldiers' group, W.GW_FREED); the enemy's people
+// who gave up to the soldiers go into their group's jail (to travellers: let go). f: the soldiers' group; g: the
+// travellers' group. Returns lines for the fight's report.
+export function thirdPrisoners(state, r, f, g, enemy) {
+  const out = [];
+  const ef = enemy && enemy.factionId != null ? factionById(state, enemy.factionId) : null;
+  if (r.taken) {
+    bump(state, "third-taken", r.taken);
+    if (f) { f.pop = Math.max(0, f.pop - r.taken); if (ef && ef.alive) groupCapture(state, ef, f, r.taken); }
+    if (g) for (let i = 0; i < r.taken && g.people.length; i++) g.people.pop();
+    out.push(`${r.taken} of ${r.name} gave up and were led off by ${enemy ? enemy.name : "the attackers"}.`);
+  }
+  if (r.freed) {
+    bump(state, "third-freed", r.freed);
+    if (f && !r.hostile) changeGoodwill(state, f, W.GW_FREED, "you freed their soldiers");
+    out.push(`${r.freed} of ${r.name} who had given up are free again.`);
+  }
+  if (r.held) {
+    bump(state, "third-held", r.held);
+    if (f && ef && ef.alive) { ef.pop = Math.max(0, ef.pop - r.held); groupCapture(state, f, ef, r.held); }
+    out.push(f ? `${cap(r.name)} took ${r.held} of ${enemy ? enemy.name : "them"} prisoner.` : `${cap(r.name)} disarmed ${r.held} of ${enemy ? enemy.name : "them"} and let them go.`);
+  }
+  return out;
+}
+
 // ---------- after a raid on the map (scavenge.js afterRaid) ----------
 // The neutrals you found (and did not fire on) can be talked to now; the soldiers remember how it went.
 export function wanderersAfterRaid(state, p, result, tileId = null) {
@@ -723,6 +753,7 @@ export function wanderersAfterRaid(state, p, result, tileId = null) {
       const f = factionById(state, r.factionId);
       if (!f) continue;
       if (r.dead) f.pop = Math.max(0, f.pop - r.dead);
+      thirdPrisoners(state, r, f, null, null); // a raid: the site's people have no group to lead them off to
       if (r.hostile) { changeGoodwill(state, f, W.GW_ATTACK, "you fired on their soldiers"); bump(state, "raid-squad-attacked"); }
       else if (r.met) { changeGoodwill(state, f, W.GW_ASIDE, "you kept out of their soldiers' way"); bump(state, "raid-squad-met"); }
       continue;
@@ -730,6 +761,7 @@ export function wanderersAfterRaid(state, p, result, tileId = null) {
     const g = groupById(state, r.wid);
     if (!g) continue;
     for (let i = 0; i < r.dead && g.people.length; i++) { const s = g.people.pop(); s.dead = true; bump(state, "died"); }
+    thirdPrisoners(state, r, null, g, null);
     if (r.hostile) {
       if (p && state.parties.includes(p)) for (const m of partyMembers(state, p)) m.mood = clamp(m.mood - 4, 0, 100);
       bump(state, "raid-neutral-attacked");

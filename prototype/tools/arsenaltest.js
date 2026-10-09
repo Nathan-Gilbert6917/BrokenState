@@ -18,6 +18,7 @@ import * as A from "../src/sim/arsenal.js";
 import * as C from "../src/sim/groupcare.js";
 import * as G from "../src/sim/groupworld.js";
 import * as V from "../src/sim/vehicletrade.js";
+import * as D from "../src/sim/diplomacy.js";
 import { groupCapacity } from "../src/sim/escorts.js";
 import { gangAmbush } from "../src/sim/caravanraids.js";
 import { NL_TAKE } from "../src/sim/nonlethal.js";
@@ -559,6 +560,114 @@ section("Vehicles in the trade window, the governor, their motor pool");
     check(v && factionVehicles(mil).length === pool0 - 1 && mil.goodwill <= gw0 - 20, `driven off: off their books, and goodwill falls (${Math.round(gw0)} -> ${Math.round(mil.goodwill)})`);
   }
   st.combat = null;
+}
+
+// ======================================================================================
+section("Gear's weight in strength: it matters, but numbers still win");
+{
+  // Before (2026-10-08): 0.6 + 0.4 × the kit ratio. Now kitCurve: KIT_DOWN of a shortfall, KIT_UP × ln above it.
+  const old = (r) => 0.6 + 0.4 * r;
+  const st = world();
+  const rows = [];
+  const sample = (label, type, pop, fill) => {
+    const f = st.factions[0];
+    f.type = type; f.pop = pop; f.wounded = 0; f.gear = 1; f.stock.ammo = 999;
+    f.arsenal.items.length = 0; f.arsenal.rev++;
+    for (const it of fill(f)) A.addToArsenal(st, f, it, "test");
+    f.arsenal.gear = 1;
+    rows.push({ label, now: strength(f), base: pop * FACTION_TYPES[type].arms, k: A.kitFactor(f) });
+  };
+  const kit = (f, n) => A.starterKit(st.seed, `${f.name}${n}`, f.type, n);
+  const best = (n) => Array.from({ length: n }, (_, i) => [lootItem("lmg", "military", [i, "b"]), lootItem("plate", "military", [i, "bp"]), lootItem("milhelmet", "military", [i, "bh"]), lootItem("riotarms", "military", [i, "ba"]), lootItem("riotlegs", "military", [i, "bl"])]).flat();
+  sample("raiders, 20, their kit", "raider", 20, (f) => kit(f, 20));
+  sample("raiders, 20, bare hands", "raider", 20, () => []);
+  sample("raiders, 10, the best kit there is", "raider", 10, () => best(10));
+  sample("raiders, 15, their kit", "raider", 15, (f) => kit(f, 15));
+  sample("military, 12, their kit", "military", 12, (f) => kit(f, 12));
+  sample("military, 8, the best kit there is", "military", 8, () => best(8));
+  sample("commune, 30, their kit", "commune", 30, (f) => kit(f, 30));
+  sample("commune, 30, half of them armed", "commune", 30, (f) => kit(f, 15));
+  sample("commune, 15, the best kit there is", "commune", 15, () => best(15));
+  for (const x of rows) {
+    const k = x.k, r = k <= 1 ? 1 - (1 - k) / A.ARSENAL.KIT_DOWN : Math.exp((k - 1) / A.ARSENAL.KIT_UP); // the ratio back from the curve
+    console.log(`  ${x.label.padEnd(38)} kit ratio ${r.toFixed(2)}: strength ${(x.base * old(Math.max(A.ARSENAL.KIT_MIN, Math.min(A.ARSENAL.KIT_MAX, r)))).toFixed(1)} before → ${x.now.toFixed(1)} now`);
+  }
+  const s = (label) => rows.find((x) => x.label === label).now;
+  check(s("raiders, 20, bare hands") <= 0.6 * s("raiders, 20, their kit"), "a gang that lost its guns is less than 60% of its strength");
+  check(s("raiders, 10, the best kit there is") < s("raiders, 15, their kit") && s("military, 8, the best kit there is") < s("military, 12, their kit") && s("commune, 15, the best kit there is") < s("commune, 30, their kit"),
+    "the best kit there is does not beat a group half again its size with its usual kit");
+  check(s("raiders, 10, the best kit there is") > 1.3 * 10 * FACTION_TYPES.raider.arms && s("commune, 30, half of them armed") < 0.85 * s("commune, 30, their kit"), "but gear matters: the best kit is worth 30%+ more a head, half the guns gone 15%+ less");
+  check(Math.abs(A.kitCurve(1) - 1) < 1e-9 && A.kitCurve(A.ARSENAL.KIT_MAX) < 1.5 && A.kitCurve(A.ARSENAL.KIT_MIN) > 0.45, `the curve: 1 at the starting kit, ${A.kitCurve(A.ARSENAL.KIT_MAX).toFixed(2)} at the best, ${A.kitCurve(A.ARSENAL.KIT_MIN).toFixed(2)} with nothing`);
+}
+
+// ======================================================================================
+section("Newcomers come as they are: some armed, some with nothing");
+{
+  const st = world();
+  const f = typed(st, "raider");
+  const tally = { none: 0, makeshift: 0, gun: 0, own: 0, armour: 0 };
+  const carried = new Set(f.arsenal.items.filter((it) => A.isWeaponKey(it.key)).map((it) => it.key));
+  const N = 400;
+  for (let i = 0; i < N; i++) {
+    const kit = A.newcomerKit(st, f, [st.seed, "t", i]);
+    const w = kit.find((it) => A.isWeaponKey(it.key));
+    if (!w) tally.none++;
+    else if (A.ARSENAL.CRAFT.weapons.includes(w.key)) tally.makeshift++;
+    else { tally.gun++; if (carried.has(w.key)) tally.own++; }
+    if (kit.some((it) => A.isArmourKey(it.key))) tally.armour++;
+  }
+  check(Math.abs(tally.none / N - A.ARSENAL.RECRUIT.NONE) < 0.07 && tally.makeshift > N * 0.12 && tally.gun > N * 0.4, `per head a random draw: ${tally.none} with nothing, ${tally.makeshift} a makeshift weapon, ${tally.gun} a gun or blade of ${N}`);
+  check(tally.armour > 0 && tally.armour < N * 0.5, `armour now and then (${tally.armour} of ${N}: the kit's list has empty entries)`);
+  check(JSON.stringify(A.newcomerKit(st, f, [st.seed, "t", 7]).map((x) => [x.key, x.quality])) === JSON.stringify(A.newcomerKit(st, f, [st.seed, "t", 7]).map((x) => [x.key, x.quality])), "the same seed and day: the same arms");
+  // Through the day's upkeep: a group grows by 20 and its arsenal by what they brought.
+  const g = typed(st, "commune", [f]);
+  const n0 = g.arsenal.items.length;
+  const w0 = g.arsenal.items.filter((it) => A.isWeaponKey(it.key)).length;
+  g.pop += 20;
+  A.arsenalDaily(st, g);
+  const w1 = g.arsenal.items.filter((it) => A.isWeaponKey(it.key)).length;
+  check(g.arsenal.items.length > n0 && w1 - w0 < 20 && w1 - w0 >= 8, `20 newcomers bring ${w1 - w0} weapons between them (not one each)`);
+}
+
+// ======================================================================================
+section("They know your bases as far as they have scouted");
+{
+  const st = world();
+  const h = hub(st);
+  const g = st.grid;
+  // A gang 18 tiles from your hub (outside its home ground) knows nothing of you on day one.
+  const f = typed(st, "raider");
+  const far = g.within(h.tile, 18).find((t) => g.distance(t, h.tile) === 18 && st.tiles[t].terrain !== "water" && !st.factions.some((o) => o.bases.includes(t)));
+  f.bases = [far]; f.knows = null;
+  check(!G.knownBase(st, f, h.tile) && G.reachOf(st, f) === G.KNOW.REACH0, `a group ${g.distance(far, h.tile)} tiles off does not know your hub at first (reach ${G.reachOf(st, f)})`);
+  const near = typed(st, "commune", [f]);
+  const close = g.within(h.tile, 6).find((t) => g.distance(t, h.tile) === 6 && st.tiles[t].terrain !== "water" && !st.factions.some((o) => o.bases.includes(t)));
+  near.bases = [close]; near.knows = null;
+  check(!!G.knownBase(st, near, h.tile), "one on its home ground next to you does");
+  // Scouting pushes the frontier out, ring by ring, until your hub is in it.
+  const S0 = G.KNOW.SCOUT;
+  G.KNOW.SCOUT = 99;
+  let trips = 0;
+  while (!G.knownBase(st, f, h.tile) && trips < 30) { C.tickGroup(f); G.scoutDaily(st, f, day(st)); st.cards.length = 0; trips++; }
+  G.KNOW.SCOUT = S0;
+  check(G.knownBase(st, f, h.tile) && G.reachOf(st, f) >= 18 && G.reachOf(st, f) <= G.KNOW.RANGE, `found after ${trips} scouting trips, the frontier at ${G.reachOf(st, f)} tiles`);
+  // A raid only goes for a base they know: a new outpost further out is unknown until a party passes it.
+  const t2 = g.within(h.tile, 3).find((t) => g.distance(t, h.tile) === 3 && st.tiles[t].terrain !== "water" && !st.factions.some((o) => o.bases.includes(t)));
+  const raider2 = typed(st, "raider", [f, near]);
+  raider2.knows = { bases: {}, reach: 0 };
+  check(G.partySaw(st, raider2, t2) === st.bases.filter((b) => g.distance(b.tile, t2) <= G.KNOW.PASS).length && !!G.knownBase(st, raider2, h.tile), "a party of theirs passing within sight learns your base");
+  // The radio: a friend tells them.
+  const friend = typed(st, "traders", [f, near, raider2]);
+  friend.knows = { bases: {}, reach: 0 };
+  friend.bases = [g.within(near.bases[0], 5).find((t) => g.distance(t, near.bases[0]) === 5 && st.tiles[t].terrain !== "water" && !st.factions.some((o) => o.bases.includes(t)) && g.distance(t, h.tile) > G.KNOW.PASS)];
+  D.ensureDiplo(st);
+  D.changeRelation(st, friend, near, 60 - D.relation(st, friend, near));
+  let heard = 0;
+  for (let d = 0; d < 40 && !heard; d++) { st.hour += 24; heard = G.radioGossip(st, friend, day(st)); }
+  check(heard > 0 && !!G.knownBase(st, friend, h.tile), `a friend on the radio tells them where you are (${heard})`);
+  // Saves keep each group's frontier.
+  const B2 = deserializeState(JSON.parse(JSON.stringify(serializeState(st, { dropCards: true }))));
+  check(B2.factions.find((x) => x.id === f.id).knows.reach === f.knows.reach, "the frontier survives a save");
 }
 
 // ======================================================================================

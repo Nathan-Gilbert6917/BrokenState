@@ -65,8 +65,8 @@ export const BASE_CAL = { pistol: "9mm", shotgun: "12ga", huntrifle: "308", ar: 
 const RIFLE_CALS = ["556", "762x39", "308", "3030"];
 // The new attachments' numbers (gunmods.js contract: aim, close, opt, fall, dmg, cap, capMult, noise ×; plus night:
 // aim at night, nightNear: aim at night within 6 tiles (a weapon light), peq: aim at night with night vision worn,
-// thermal: at night the shooter's shots ignore the dark, brace: aim when the shooter did not move this turn (a
-// bipod), moving: aim when it did (a sling), jam: × jam odds (combat.js, section 14), flashless: the muzzle flash no
+// thermal: at night the shooter's shots ignore the dark, brace: aim when the gun rests on half cover next to the shooter in the shot's
+// line (a bipod: combat.js restCell), moving: aim when it did (a sling), jam: × jam odds (combat.js, section 14), flashless: the muzzle flash no
 // longer shows the shooter at night, light: a weapon light (works as a flashlight at night), wt: kg fitted when it
 // differs from the loose part (a lighter handguard or stock replaces the factory one), aimBy: extra aim by platform,
 // launcher: an under-barrel launcher (section 13)). short: how it reads in the gun's name; look: the gun builder's art

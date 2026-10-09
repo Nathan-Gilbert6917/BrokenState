@@ -169,15 +169,26 @@ export function thirdSideHit(b, t, by) {
 
 // ---------- the result ----------
 // result.third (endBattle, endRaid): one line per group: { team, name, factionId, wid, start, alive, dead, fled,
-// hostile, met }.
+// hostile, met, gaveUp, taken, freed, held }.
+// Prisoners in a three-way fight (nonlethal.js surrenderCheck, thirdSurrenderCheck): whoever they gave up to keeps
+// them if it still holds the field at the end. gaveUp: this group's people who gave up to the enemy; taken: those of
+// them the enemy leads off (any of the enemy's people still standing at the end: you lost, pulled back or left them
+// there); freed: the rest (the enemy beaten or gone: your win frees them). held: the enemy's people who gave up to
+// this group and that you did not tie up first (tied, they are yours: stealth.js battleCaptives), kept by the group
+// while any of it stands; a group that is gone lets them walk off. wanderers.js settles all four.
 export function thirdResult(b) {
   if (!b.third || !b.third.length) return null;
+  const enemyStands = b.units.some((e) => e.side === "enemy" && e.kind === "human" && active(e));
   return b.third.map((g, i) => {
     const mine = b.units.filter((u) => u.tgroup === i);
+    const gaveUp = mine.filter((u) => u.side === "third" && u.surr && u.surrTo === "enemy" && !u.dead && !u.fled).length;
+    const stands = mine.some((u) => u.side === "third" && active(u));
+    const held = stands ? b.units.filter((e) => e.side === "enemy" && e.surr && e.surrTo === i && !e.tied && !e.dead && !e.fled).length : 0;
     return {
       team: g.team, name: g.name, factionId: g.factionId, wid: g.wid, start: g.start, hostile: g.hostile,
       met: g.met || mine.some((u) => !u.dead && b.units.some((p) => p.side === "player" && !p.dead && dist(p, u) <= THIRD.SEE)),
       alive: mine.filter((u) => !u.dead).length, dead: mine.filter((u) => u.dead).length, fled: mine.filter((u) => u.fled).length,
+      gaveUp, taken: enemyStands ? gaveUp : 0, freed: enemyStands ? 0 : gaveUp, held,
     };
   });
 }

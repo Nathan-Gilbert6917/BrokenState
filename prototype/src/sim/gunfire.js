@@ -352,16 +352,17 @@ export function overpenChance(cal, type) {
 }
 export const piercesCover = (cal, type) => cal === "50bmg" || type === "ap" || type === "api";
 // Heavy weapons' bracing (the roster agent's fields): brace = aim if the shooter moved this turn (a sniper rifle, the
-// .50); heavy.brace = aim if it did not (the machine gun).
-export function braceAim(b, a) {
+// .50); heavy.brace = aim when the gun is rested (the machine gun on its bipod: on half cover next to the shooter in
+// the shot's line, combat.js restCell; the bipod rule, user request 2026-10-08).
+export function braceAim(b, a, rested = false) {
   const w = WEAPONS[a.weapon];
   if (!w || !b) return 0;
   const moved = a.movedT != null && a.movedT === b.turn;
   let v = 0;
   if (typeof w.brace === "number" && moved) v += w.brace;
-  // A heavy gun braced (the machine gun's bipod): at least heavy.brace, not on top of a bipod's (gunmods.js
+  // A heavy gun rested (the machine gun's bipod): at least heavy.brace, not on top of a bipod's (gunmods.js
   // situationalAim adds the fitted or built-in bipod's brace, data-gunmods.js m249 builtin).
-  if (w.heavy && typeof w.heavy.brace === "number" && !moved) v += Math.max(0, w.heavy.brace - (unitMods(a).brace || 0));
+  if (w.heavy && typeof w.heavy.brace === "number" && rested) v += Math.max(0, w.heavy.brace - (unitMods(a).brace || 0));
   return v;
 }
 // The sniper's sense of a cell: far (10–15 tiles) from the nearest foe is good, close is bad.
