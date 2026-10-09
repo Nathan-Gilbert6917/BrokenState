@@ -14,5 +14,5 @@ Desktop.ini
 .claude/settings.local.json
 .claude/worktrees/
 
-# Gun and blast sound previews (prototype/tools/sfxpreview/main.cjs)
+# Sound previews (prototype/tools/sfxpreview/main.cjs, prototype/tools/zombiesfxpreview.cjs)
 sfx-preview/

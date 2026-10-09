@@ -1,7 +1,7 @@
 // Sound (ui/audio.js plays, ui/soundcues.js decides what): headless checks with no speakers.
 // - Options: the Sound defaults, bad values cleaned, kept by the options store (ui/saves.js) across a reload.
 // - Cards: routine / warning / crisis chimes by what the card is about; a raid on a base is the alarm.
-// - Battle: each gun class has its report (pistol, revolver, rifle, shotgun, burst, suppressed, bow, acid), hits and
+// - Battle (the dead's own voices: tools/zombiesfxtest.js): each gun class has its report (pistol, revolver, rifle, shotgun, burst, suppressed, bow, acid), hits and
 //   misses, blows, bites, throws, the downed; a new battle drums (a base defence rings the alarm); a 200-shot frame
 //   is cut to a handful; a battle already under way when first seen (a load) makes no sound for what was there.
 // - The map: a new card or alert chimes once, a horde newly seen near a base or a team stings once, a load is quiet.
@@ -137,7 +137,7 @@ console.log("Battle");
     for (let k = 0; k < 4; k++) for (const c of battleCues(b, mem, (t += 2))) heard.add(c.name);
   }
   check(!err, `six turns against the dead play out${err ? `: ${err}` : ""}`);
-  check(heard.has("groan"), `the dead groan (heard: ${[...heard].join(", ")})`);
+  check(heard.has("zIdle"), `the dead moan, each in its own voice (ui/zombiesfx.js; heard: ${[...heard].join(", ")})`);
   check([...heard].every((n) => VOICES[n]), "every cue is a known sound");
 }
 {
@@ -279,9 +279,9 @@ console.log("Voices");
 console.log("Menu and help");
 {
   const html = soundOptionsHtml({ sound: { master: 0.5, sfx: 0.8, amb: 0.3, mute: false, muteBlur: true } });
-  check(/<h3>Sound<\/h3>/.test(html) && (html.match(/type="range"/g) || []).length === 5 && /value="50"/.test(html) && /value="30"/.test(html) && /data-k="steps"/.test(html) && /max="150" step="5" value="100" data-action="snd-vol" data-k="guns"/.test(html), "the Sound section: five sliders (master, effects, gunfire, footsteps, ambience) at the saved levels (Gunfire 0–150%, 100% by default)");
+  check(/<h3>Sound<\/h3>/.test(html) && (html.match(/type="range"/g) || []).length === 7 && /value="50"/.test(html) && /value="30"/.test(html) && /data-k="steps"/.test(html) && /max="150" step="5" value="100" data-action="snd-vol" data-k="guns"/.test(html), "the Sound section: five sliders (master, effects, gunfire, footsteps, ambience) at the saved levels (Gunfire 0–150%, 100% by default)");
   const g = soundOptions({ sound: { guns: 2 } }), g2 = soundOptions({ sound: { guns: 1.25 } }), g3 = soundOptions({ sound: {} });
-  check(g.guns === 1.5 && g2.guns === 1.25 && g3.guns === 1 && g3.steps === 0.7, "the Gunfire volume: kept up to 150%, clamped above, 100% when missing (footsteps 70%)");
+  check(g.guns === 1.5 && g2.guns === 1.25 && g3.guns === 1 && g3.steps === 0.7 && g3.zombie === 1 && g3.horde === 0.7 && g.zombie === 1, "the Gunfire volume: kept up to 150%, clamped above, 100% when missing (footsteps 70%, zombies 100%, map hordes 70%)");
   check(/data-action="snd-opt" data-k="on"/.test(html) && /data-action="snd-opt" data-k="muteBlur"/.test(html) && /data-action="snd-test"/.test(html), "sound on / off, mute when not focused, Hear a sound");
   const { SETTINGS_ACTIONS, SETTINGS_CHANGE } = await import("../src/ui/settings.js");
   check(!!SETTINGS_ACTIONS["snd-opt"] && !!SETTINGS_CHANGE["snd-vol"] && !!SETTINGS_CHANGE["snd-pick"], "the menu knows the Sound actions");

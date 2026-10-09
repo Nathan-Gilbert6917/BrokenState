@@ -5,7 +5,7 @@
 //   cardUrgency(card)        routine | warning | crisis, by what the card is about
 //   isBaseAttack(card)       a raid on one of your bases (the alarm instead of a chime)
 //   weaponSound(key, unit)   the gunshot a weapon makes: pistol, revolver, rifle, shotgun, auto, bow, acid, suppressed
-//   battleCues(b, mem)       the new battle effects (b.fx), the downed and the dead, groans: a list of { name, gain, delay }
+//   battleCues(b, mem, now)  the new battle effects (b.fx), the downed, the dead's voices (ui/zombiesfx.js): { name, gain, delay, at }
 //   worldCues(state, ui, mem) new cards, new alerts, a horde newly seen near a base or a team, a raid at a base
 //   ambienceMix(...)         wind, rain, thunder, the night drone, birds and crickets for a weather and an hour
 //   makeThrottle(limits)     keeps a 20-unit firefight from stacking 200 shots in one frame
@@ -15,6 +15,7 @@ import { partyTile } from "../sim/parties.js";
 import { meleeCue } from "./sfx-melee.js"; // a blow by weapon class, armour and kill (ui/sfx-melee.js)
 import { shotPlan, handCues, launched, isIndoor, OWN_VOICE } from "./gunsfx.js"; // the gun voices, the handling seen between frames
 import { THROW_BLAST, THROW_HAND, THROW_CLATTER, THROW_FLIGHT, FUSE, BIG, flight, launchBlast, mergeBlasts, glassNear } from "./blastsfx.js"; // blasts and grenades
+import { zombieMemory, zombieFxCue, zombieUnitCues, zombieIdleCue, listenerOf, crowdState, Z_PRIORITY } from "./zombiesfx.js"; // the dead's voices
 
 export const HORDE_NEAR_BASE = 6; // tiles: the same distance as the horde alert (ui/alerts.js HORDE_ALERT_TILES)
 export const HORDE_NEAR_TEAM = 3; // tiles from one of your teams on the map
@@ -91,6 +92,7 @@ export function battleCues(b, mem, now = 0) {
     mem.seq = b.fxSeq || 0;
     mem.units = new Map(b.units.map((u) => [u.id, u.dead ? "dead" : u.down ? "down" : "up"]));
     mem.nextGroan = now + 2 + rand(mem) * 3;
+    mem.zm = zombieMemory(b);
     mem.started = true;
     mem.hand = null;
     handCues(b, mem); // what each unit holds and has loaded now (later frames compare with it)
@@ -104,7 +106,15 @@ export function battleCues(b, mem, now = 0) {
   // Where this frame's blasts land (a carried bomb going off elsewhere is a secondary blast; a car wrecked, a fireball).
   const landed = [];
   const blastAt = (to, kind) => { if (BIG.has(kind)) landed.push(to); };
+  const selId = typeof LISTEN.sel === "function" ? LISTEN.sel() : null;
+  const L = listenerOf(b, selId); // where the dead are heard from (ui/zombiesfx.js)
+  if (!mem.zm) mem.zm = zombieMemory(b);
   for (const f of fresh) {
+    const zn = out.length;
+    if (zombieFxCue(b, f, mem.zm, L, out)) { // the dead's own: bites, lunges, spit, shrieks, smashing, the worm
+      if (f.type === "melee" && !f.hit && out.length > zn && out[out.length - 1].name === "zAttack") out.push(meleeCue(b, f, unitAt(b, f.from, f.side), mem)); // under the snarl, the claws' swipe (ui/sfx-melee.js)
+      continue;
+    }
     if (f.type === "shot") {
       const a = unitAt(b, f.from, f.side);
       const mine = f.side === "player", enemy = !mine;
@@ -177,8 +187,11 @@ export function battleCues(b, mem, now = 0) {
     if (h.after) { const s = out.find((c) => c.gun && c.gun.unit === h.unit); h.delay = s ? s.gun.span + 0.08 : 0.08; }
     out.push(h);
   }
+  // The dead noticing you, hurt, dying; now and then one of them moans (more often the more of them are up).
+  zombieUnitCues(b, mem.zm, L, out);
+  const idle = zombieIdleCue(b, mem, L, now, () => rand(mem));
+  if (idle) out.push(idle);
   // The selected unit deafened by a bang (sim/hearing.js): everything muffled, a ring as it starts.
-  const selId = typeof LISTEN.sel === "function" ? LISTEN.sel() : null;
   const lu = selId != null ? b.units.find((u) => u.id === selId && u.side === "player") : null;
   const deaf = !!(lu && lu.deaf > 0);
   if (deaf) for (const c of out) c.gain = (c.gain ?? 1) * DEAF_GAIN;
@@ -192,12 +205,6 @@ export function battleCues(b, mem, now = 0) {
     if (was === undefined || was === now2 || u.side !== "player") continue;
     if (now2 === "down") out.push({ name: "downed", delay: 0.15 });
     else if (now2 === "dead") out.push({ name: "death", delay: 0.15 });
-  }
-  // The dead on the field moan now and then: more often the more of them are up and about.
-  const dead = b.over ? 0 : b.units.reduce((n, u) => n + (u.kind === "zombie" && !u.dead && !u.left ? 1 : 0), 0);
-  if (dead && now >= mem.nextGroan) {
-    out.push({ name: "groan", gain: 0.55 + 0.45 * Math.min(1, dead / 12) });
-    mem.nextGroan = now + (3 + rand(mem) * 6) / Math.min(3, 1 + dead / 8);
   }
   return volley(mergeAll(out), mem);
 }
@@ -221,10 +228,12 @@ function mergeAll(out) {
   for (const g of groups.values()) rest.push(...mergeBlasts(g));
   return rest;
 }
+// The battle's crowd of the dead for the crowd bed (ui/zombiesfx.js crowdMix): how many are up, how near.
+export const battleCrowd = (b) => crowdState(b, listenerOf(b, typeof LISTEN.sel === "function" ? LISTEN.sel() : null));
 
 // One frame's sounds, cut to MAX_BATTLE_SOUNDS (the loudest kinds first, your own shots before the enemy's) and
 // spread a little in time, so a volley sounds like a volley rather than one huge bang.
-const PRIORITY = { alarm: 0, battle: 0, downed: 1, death: 1, blast: 2, fire: 2, rocket: 2, launcher: 3, scream: 3, auto: 4, shotgun: 4, rifle: 4, revolver: 4, pistol: 5, suppressed: 5, bite: 5, meleeCrit: 5, taser: 6, reload: 7, jam: 7, unjam: 7, dry: 7 };
+const PRIORITY = { alarm: 0, battle: 0, downed: 1, death: 1, blast: 2, fire: 2, rocket: 2, launcher: 3, scream: 3, auto: 4, shotgun: 4, rifle: 4, revolver: 4, pistol: 5, suppressed: 5, bite: 5, meleeCrit: 5, taser: 6, reload: 7, jam: 7, unjam: 7, dry: 7, ...Z_PRIORITY };
 function volley(out, mem) {
   if (out.length <= 1) return out;
   const kept = out.map((c, i) => ({ c, i, p: (PRIORITY[c.name] ?? 8) - (c.mine ? 3 : 0) })).sort((a, b) => a.p - b.p || a.i - b.i).slice(0, MAX_BATTLE_SOUNDS).sort((a, b) => a.i - b.i);

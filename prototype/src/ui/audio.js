@@ -9,10 +9,11 @@
 // master gain and a gentle compressor. Browsers keep sound locked until the player clicks or presses a key: the
 // context is made (or resumed) on that first gesture. Muted, or with the window in the background and "Mute when
 // not focused" on, the context is suspended (no CPU). Nothing here runs at import time, so node tools can import it.
-import { battleCues, worldCues, ambienceMix, makeThrottle, LISTEN } from "./soundcues.js";
+import { battleCues, worldCues, ambienceMix, makeThrottle, LISTEN, battleCrowd } from "./soundcues.js";
 import { installBus, spatial, setGunVolume, playGun, labPlan, place } from "./gunsfx.js"; // the gun voices, the battle's sound space (pan, distance, reverb, ducking, the deafened muffle)
 import { frameListener, playCue, cueSpan, prewarmBattle } from "./battlesfx.js"; // guns, blasts and handling cues to their voices
 import { LAB, LAB_ACTIONS, LAB_CHANGE, labGunHtml, makeLimiter } from "./sfxlab.js"; // Settings → Sound: the gun and blast sound test
+import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest, demoMapHorde, makeZombieBus, zombieVolume } from "./zombiesfx.js"; // the dead's voices
 import { weatherAt, season } from "../sim/weather.js";
 import { playerTile } from "../sim/hardcore-start.js";
 import { screenToTile, view } from "./render.js";
@@ -26,9 +27,11 @@ const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 
 // ---------- options ----------
 // options.sound (ui/saves.js keeps it with the other options): volumes 0–1, mute, mute when the window is not focused;
-// steps: the Footsteps slider (under Effects); guns: the Gunfire volume 0–1.5 (guns, their handling and blasts: ui/gunsfx.js GUNVOL).
-export const SOUND_DEFAULTS = { master: 0.7, sfx: 0.8, amb: 0.5, steps: 0.7, guns: 1, mute: false, muteBlur: true };
-export const VOL_MAX = { guns: 1.5 };
+// steps: the Footsteps slider (under Effects); guns: the Gunfire volume 0–1.5 (guns, their handling and blasts: ui/gunsfx.js GUNVOL);
+// zombie: the Zombie volume (0–1.5: the dead's voices, the battle's crowd and the map's hordes; 1 the default; ui/zombiesfx.js);
+// horde: the Map horde volume (the moaning of hordes near you on the State Map, under the ambience and zombie sliders).
+export const SOUND_DEFAULTS = { master: 0.7, sfx: 0.8, amb: 0.5, steps: 0.7, guns: 1, mute: false, muteBlur: true, horde: 0.7, zombie: 1 };
+export const VOL_MAX = { guns: 1.5, zombie: 1.5 };
 const vol = (v, d, max = 1) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(max, Number(v))) : d);
 export function soundOptions(o) {
   const s = o && typeof o.sound === "object" && o.sound ? o.sound : {};
@@ -36,6 +39,7 @@ export function soundOptions(o) {
   const clean = {
     master: vol(s.master, D.master), sfx: vol(s.sfx, D.sfx), amb: vol(s.amb, D.amb), steps: vol(s.steps, D.steps), guns: vol(s.guns, D.guns, VOL_MAX.guns),
     mute: typeof s.mute === "boolean" ? s.mute : D.mute, muteBlur: typeof s.muteBlur === "boolean" ? s.muteBlur : D.muteBlur,
+    horde: vol(s.horde, D.horde), zombie: vol(s.zombie, D.zombie, VOL_MAX.zombie),
   };
   if (o) o.sound = clean;
   return clean;
@@ -43,6 +47,8 @@ export function soundOptions(o) {
 // Slider position to gain: squared, so the low half of the slider is usable (loudness is not linear).
 const curve = (v) => v * v;
 const SFX_TRIM = 0.8, AMB_TRIM = 1; // the buses' fixed levels under their sliders
+// The Map horde volume as a multiplier of the hordes' level: 1 at the default (70%), 0 at 0, about +6 dB at 100%.
+export const hordeVolume = (v = SOUND_DEFAULTS.horde) => (v / SOUND_DEFAULTS.horde) ** 2;
 
 // ---------- the engine ----------
 let OPT = null;          // main.js's options object
@@ -62,6 +68,7 @@ const LIMITS = {
   glass: { gap: 0.2, max: 2 }, hiss: { gap: 0.2, max: 2 }, flare: { gap: 0.2, max: 2 }, downed: { gap: 0.4, max: 2 }, death: { gap: 0.4, max: 2 },
   thunder: { gap: 4, max: 1 }, bird: { gap: 0.3, max: 2 }, cricket: { gap: 0.15, max: 2 },
   ...GEAR_LIMITS,
+  ...ZOMBIE_LIMITS, // ui/zombiesfx.js: the dead's voices (zIdle, zBite, zShriek…)
 };
 const throttle = makeThrottle(LIMITS, 28);
 const stepThrottle = makeThrottle({ step: { gap: 0.02, max: 10 } }, 10); // footsteps: their own small budget (10 at once, 20 ms apart), never at the shots' cost
@@ -92,7 +99,8 @@ function makeContext(test = null) {
   limit.connect(master);
   ambBus.connect(master);
   const gb = installBus(ctx, sfxBus); // the battle's sounds: ducked by a close blast, muffled while deafened, a reverb by place (ui/gunsfx.js)
-  A = { ctx, comp, limit, gb, master, sfx: sfxBus, amb: ambBus, layers: null, next: { thunder: 0, bird: 0, cricket: 0 }, mix: null, test: !!test };
+  const zom = makeZombieBus(ctx, sfxBus); // the dead: +4 dB, the Zombie volume, a soft limiter (ui/zombiesfx.js)
+  A = { ctx, comp, limit, gb, master, sfx: sfxBus, amb: ambBus, zom, layers: null, next: { thunder: 0, bird: 0, cricket: 0 }, mix: null, test: !!test };
   applyGains(true);
   return A;
 }
@@ -105,6 +113,7 @@ export function applyGains(now = false) {
   set(A.master.gain, on ? curve(s.master) : 0);
   set(A.sfx.gain, curve(s.sfx) * SFX_TRIM);
   set(A.amb.gain, curve(s.amb) * AMB_TRIM);
+  A.zom.setVolume(s.zombie, t, now);
   if (A.test) return;
   if (!on && A.ctx.state === "running") {
     offWanted = true;
@@ -136,7 +145,7 @@ export function initAudio(options, save) {
   // A soft click on every button the player presses.
   document.addEventListener("click", (ev) => {
     const el = ev.target && ev.target.closest ? ev.target.closest("button, [data-action]") : null;
-    if (!el || el.disabled || el.tagName === "SELECT" || el.tagName === "INPUT" || el.dataset.action === "snd-test" || el.dataset.action === "lab-play") return;
+    if (!el || el.disabled || el.tagName === "SELECT" || el.tagName === "INPUT" || el.dataset.action === "snd-test" || el.dataset.action === "lab-play" || el.dataset.action === "zsnd-test") return;
     const snd = clickSound(el); // ui/sfx-gear.js: an inventory cell is heard as the item picked up or put down instead
     if (snd) sfx(snd);
   });
@@ -150,7 +159,7 @@ export function initAudio(options, save) {
   });
 }
 function setVolume(k, v) {
-  if (!OPT || !["master", "sfx", "amb", "steps", "guns"].includes(k)) return;
+  if (!OPT || !["master", "sfx", "amb", "steps", "guns", "horde", "zombie"].includes(k)) return;
   OPT.sound[k] = vol(v, SOUND_DEFAULTS[k], VOL_MAX[k] || 1);
   applyGains();
 }
@@ -169,9 +178,9 @@ export function sfx(name, opts = {}) {
   const ctx = A.ctx;
   const t = ctx.currentTime + 0.01 + Math.max(0, opts.delay || 0);
   if (!(V.steps ? stepThrottle.allow("step", t, V.dur) : throttle.allow(name, t, V.dur))) { audioDebug.dropped++; return false; }
-  let out = V.amb ? A.amb : opts.battle && A.gb ? A.gb.in : A.sfx;
+  let out = V.amb ? A.amb : V.routes ? A.zom.input : opts.battle && A.gb ? A.gb.in : A.sfx; // the dead through their own bus
   if (V.own) out = voiceOut(ctx, opts.sp || placeOf(opts), out, !!(opts.battle && A.gb)); // ui/sfx-out.js: in battle ui/gunsfx.js spatialOut
-  else {
+  else if (!V.routes) { // the dead's voices pan themselves (ui/zombiesfx.js zRoute)
     if (opts.lp > 0 && opts.lp < Math.min(16000, ctx.sampleRate * 0.45)) { // far away or out of sight (ui/gunsfx.js spatial)
       const f = ctx.createBiquadFilter();
       f.type = "lowpass"; f.frequency.value = opts.lp; f.Q.value = 0.6;
@@ -230,6 +239,7 @@ export function audioFrame(state, ui, nowMs = performance.now()) {
 
 // A battle cue: a gun, a blast or a handling sound (ui/battlesfx.js), else one of the VOICES placed where it happens.
 function battleSound(c, L) {
+  if (VOICES[c.name] && VOICES[c.name].routes) return sfx(c.name, { ...c, pan: c.pan ?? (Math.random() - 0.5) * 0.5 }); // the dead (ui/zombiesfx.js): placed by their cue, through the zombie bus
   if (!(c.gun || c.blast || c.hand)) {
     let sp = c.at && L ? spatial(L, c.at[0], c.at[1], { enemy: c.enemy }) : null;
     if (VOICES[c.name] && VOICES[c.name].own) { // ui/sfx-melee.js, sfx-steps.js, sfx-gear.js: played into spatialOut at the placement
@@ -324,6 +334,12 @@ function ambience(state, ui) {
   if (!m.thunder) N.thunder = 0;
   if (m.birds > 0.05 && t >= N.bird) { if (N.bird) sfx("bird", { gain: 0.5 + m.birds * 0.5 }); N.bird = t + (2 + Math.random() * 8) / m.birds; }
   if (m.crickets > 0.05 && t >= N.cricket) { if (N.cricket) sfx("cricket", { gain: m.crickets }); N.cricket = t + 0.6 + Math.random() * 1.6 / m.crickets; }
+  // The dead (ui/zombiesfx.js): the battle's crowd bed on the effects bus; on the map a horde near you on the wind and a
+  // hive's heartbeat on the ambience bus.
+  const fight = state.combat && !ui.timelapse ? state.combat : null;
+  zombieCrowd(c, A.zom.input, fight ? battleCrowd(fight) : null, t);
+  const s = OPT ? OPT.sound : SOUND_DEFAULTS;
+  zombieMapAmbience(c, A.amb, fight || ui.timelapse || ui.title || !ui.started ? null : hordeAmbience(state), t, hordeVolume(s.horde) * zombieVolume(s.zombie));
 }
 
 // ---------- building blocks ----------
@@ -510,31 +526,9 @@ export const VOICES = {
     f.frequency.exponentialRampToValueAtTime(400, t + 0.22);
     noise(c, "white", t, 0.24, f);
   } },
-  bite: { dur: 0.45, play(c, out, t, o) {
-    const crunch = env(c, out, t, 0.5 * o.gain, 0.16, 0.003);
-    const am = c.createGain(); am.gain.value = 0.5; am.connect(crunch);
-    lfo(c, 30, 0.5, am.gain).stop(t + 0.3);
-    noise(c, "white", t, 0.2, filt(c, "bandpass", 1400 * o.pitch, 1.2, am));
-    const growl = tone(c, "sawtooth", 85 * o.pitch, 70, t, 0.4, filt(c, "lowpass", 600, 1, env(c, out, t, 0.3 * o.gain, 0.3, 0.03, 0.05)));
-    lfo(c, 9, 6, growl.frequency).stop(t + 0.45);
-  } },
-  groan: { dur: 1.6, play(c, out, t, o) {
-    const f0 = R(70, 110) * o.pitch, d = R(1, 1.5);
-    const g = env(c, out, t, 0.32 * o.gain, d, 0.25, 0.15);
-    const voice = c.createOscillator();
-    voice.type = "sawtooth";
-    voice.frequency.setValueAtTime(f0, t);
-    voice.frequency.exponentialRampToValueAtTime(f0 * 0.8, t + d + 0.3);
-    voice.start(t);
-    voice.stop(t + d + 0.45);
-    for (const [a, b, q, k] of [[450, 600, 4, 1], [1000, 800, 5, 0.5]]) { // two formants gliding: a mouth that opens
-      const f = c.createBiquadFilter(); f.type = "bandpass"; f.Q.value = q;
-      f.frequency.setValueAtTime(a, t); f.frequency.linearRampToValueAtTime(b, t + d);
-      const fg = c.createGain(); fg.gain.value = k;
-      voice.connect(f); f.connect(fg); fg.connect(g);
-    }
-    lfo(c, R(4, 6), 3, voice.frequency).stop(t + d + 0.5);
-  } },
+  // The dead's bite and a walker's moan (ui/zombiesfx.js; the battle plays them per zombie as zBite and zIdle).
+  bite: { dur: 1.2, routes: true, play(c, out, t, o) { ZOMBIE_VOICES.zBite.play(c, out, t, { human: true, ...o }); } },
+  groan: { dur: 2.4, routes: true, play(c, out, t, o) { ZOMBIE_VOICES.zIdle.play(c, out, t, o); } },
   scream: { dur: 0.9, play(c, out, t, o) {
     const v = c.createOscillator(); v.type = "sawtooth";
     v.frequency.setValueAtTime(700 * o.pitch, t); v.frequency.linearRampToValueAtTime(950, t + 0.25); v.frequency.linearRampToValueAtTime(600, t + 0.85);
@@ -581,14 +575,16 @@ export const VOICES = {
 
   // The map: a horde newly seen near you, a raid on a base.
   horde: { dur: 2.6, play(c, out, t, o) {
-    thud(c, out, t, 55, 1 * o.gain, 0.9);
+    thud(c, out, t, 55, 0.7 * o.gain, 0.9); // (it clipped at 1 before the bus)
     const lp = filt(c, "lowpass", 180, 1.2, env(c, out, t, 0.24 * o.gain, 1.9, 0.4, 0.2));
     lp.frequency.setValueAtTime(180, t); lp.frequency.linearRampToValueAtTime(1100, t + 1); lp.frequency.linearRampToValueAtTime(250, t + 2.4);
     for (const f of [73.4, 77.8, 110]) tone(c, "sawtooth", f, f * 0.98, t, 2.5, lp); // D, D# and A: a minor second's grind
+    hordeChorus(c, out, t, o); // and the dead themselves, far off (ui/zombiesfx.js)
   } },
   alarm: { dur: 1.3, play(c, out, t, o) { for (let i = 0; i < 6; i++) bell(c, out, t + i * 0.17, i % 2 ? 470 : 520, 0.22 * o.gain, 0.5); } },
 
   // Ambience one-shots (ambience bus).
+  ...ZOMBIE_VOICES, // ui/zombiesfx.js: zIdle, zAggro, zAttack, zBite, zHurt, zDeath, zShriek, zSmash, zSpit… by o.kind and o.seed
   thunder: { dur: 5, amb: true, play(c, out, t, o) {
     const near = o.near ?? 0.5;
     if (near > 0.6) noise(c, "white", t, 0.3, filt(c, "lowpass", 3500, 0.7, env(c, out, t, 0.5 * o.gain, 0.25, 0.002)));
@@ -615,6 +611,7 @@ export const VOICES = {
 const KIT = { env, filt, noise, tone, thud, bell, crackle, shards, notes, lfo, R };
 for (const V of [meleeVoices(KIT), stepVoices(KIT), gearVoices(KIT)]) for (const [k, v] of Object.entries(V)) VOICES[k] = { ...v, own: true };
 export const SOUND_NAMES = Object.keys(VOICES);
+const HEAR_NAMES = SOUND_NAMES.filter((n) => !ZOMBIE_VOICES[n]); // the dead have their own list (Zombie sounds)
 
 // Renders one sound offline (no speakers, no gesture needed) and measures it: for tests in the browser.
 audioDebug.renderOffline = async (name, opts = {}) => {
@@ -675,13 +672,15 @@ export function soundOptionsHtml(options) {
       ${slider("sfx", "Effects", "Clicks, card chimes, battle sounds, the horde sting and the alarm")}
       ${slider("guns", "Gunfire", "Gunshots, reloads and explosions in battle, under Effects: 100% is the usual level, up to 150% for more punch (the limiter keeps it from clipping). Not the ambience, the interface or the dead.")}
       ${slider("steps", "Footsteps", "Footsteps in battle (everyone's: yours, the enemy's, the dead's shuffle), under Effects. 0 turns them off")}
+      ${slider("zombie", "Zombies", "The dead: their voices in battle, the crowd of them, and the hordes on the map, under Effects (not the guns or their footsteps: Gunfire and Footsteps have their own). Up to 150%")}
       ${slider("amb", "Ambience", "Wind and rain with the weather, thunder in storms, a low drone at night, birds by day, crickets on warm nights")}
+      ${slider("horde", "Map hordes", "How loud hordes near your bases and teams moan on the State Map (louder the bigger and nearer they are, more at night). Under the Ambience volume. Dragging it plays a near horde.")}
       ${box("muteBlur", s.muteBlur, "Mute when the window is not focused", "Silence while you are in another window or tab")}
     </div><div class="setrow">
-      <label${tip("Hear one sound, to set the volumes or to judge it")}>Hear <select data-action="snd-pick">${SOUND_NAMES.map((n) => `<option value="${n}" ${n === hearPick ? "selected" : ""}>${esc(SOUND_LABELS[n] || n)}</option>`).join("")}</select></label>
+      <label${tip("Hear one sound, to set the volumes or to judge it")}>Hear <select data-action="snd-pick">${HEAR_NAMES.map((n) => `<option value="${n}" ${n === hearPick ? "selected" : ""}>${esc(SOUND_LABELS[n] || n)}</option>`).join("")}</select></label>
       <button data-action="snd-test"${tip("Play the sound picked")}>▶ Play</button>
       ${locked ? `<span class="small muted">The browser starts sound after your first click or key press.</span>` : ""}
-    </div>${labGunHtml()}`;
+    </div>${labGunHtml()}${zombieTestHtml(esc)}`;
 }
 // The sound test plays through the game's own context and battle bus (ui/sfxlab.js).
 LAB.ctx = () => { unlock(); return A && live() && wantOn() ? A.ctx : null; };
@@ -698,6 +697,7 @@ export const SOUND_ACTIONS = {
   },
   "snd-test": () => { unlock(); sfx(hearPick, { pitch: 1 }); },
   ...LAB_ACTIONS, // the gun and blast sound test (ui/sfxlab.js)
+  "zsnd-test": () => { unlock(); if (A) playZombieTest(null, sfx, A.ctx.currentTime); }, // ui/zombiesfx.js
 };
 export const SOUND_CHANGE = {
   "snd-vol": (state, ui, el) => {
@@ -705,14 +705,17 @@ export const SOUND_CHANGE = {
     SAVE();
     if (el.dataset.k === "guns") { if (A && live() && wantOn()) playGun(A.ctx, A.ctx.currentTime + 0.02, labPlan("pistol"), place({ dist: 2 })); } // a 9mm near you at the new level
     else if (el.dataset.k === "steps") sfx("hearStepGrass", { pitch: 1 });
+    else if (el.dataset.k === "horde") { if (A) demoMapHorde(A.ctx.currentTime, 5); } // hear a near horde at the new level
+    else if (el.dataset.k === "zombie") sfx("zAggro", { kind: "walker", pitch: 1 }); // one of the dead at the new level
     else if (el.dataset.k !== "amb") sfx("alert", { gain: 0.8 });
     try { el.blur(); } catch { /* ignore */ } // Esc closes the menu again
   },
   "snd-pick": (state, ui, el) => { if (VOICES[el.value]) { hearPick = el.value; unlock(); sfx(hearPick, { pitch: 1 }); } },
   ...LAB_CHANGE,
+  "zsnd-pick": (state, ui, el) => { zombiePick(el.value); unlock(); if (A) playZombieTest(null, sfx, A.ctx.currentTime); },
 };
 
 // The Help tab's topic (ui/help.js).
 export function soundHelp() {
-  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each calibre has its own report (a .22's pop to a .50's thump, 12 gauge, the machine guns, launchers), bursts and full auto round by round, suppressed shots, reloads, jams and brass, placed left or right and near or far, muffled out of sight, in the echo of the place; grenades, rockets and explosions in layers, with hits, misses, melee blows, bites, groans of the dead, blasts and fire, and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: master, effects, gunfire, footsteps and ambience volumes (Gunfire: guns, reloads and explosions, up to 150%; Footsteps: everyone's steps in battle), sound on / off, mute when the window is not focused, and <b>Hear</b> to play any one sound. Browsers start sound only after your first click or key press.`;
+  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each calibre has its own report (a .22's pop to a .50's thump, 12 gauge, the machine guns, launchers), bursts and full auto round by round, suppressed shots, reloads, jams and brass, placed left or right and near or far, muffled out of sight, in the echo of the place; grenades, rockets and explosions in layers, with hits, misses, melee blows by weapon and by what took the blow, blasts and fire; footsteps by ground, gait and load; the dead each have a voice of their own (a walker's moan, a runner's shriek, a brute's roar, a spitter hawking, the screamer's shriek that calls more of them, a crawler's hiss as it strikes, a Carrier bursting into worms), and a crowd of them murmurs louder the more of them come and the nearer they get; and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. On the map a horde near you is heard as moaning on the wind (more at night), a hive near you as a low heartbeat. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: master, effects, gunfire, footsteps, zombies, ambience and map hordes volumes (Gunfire: guns, reloads and explosions, up to 150%; Footsteps: everyone's steps in battle; Zombies: the dead's voices and crowd, up to 150%; Map hordes: hordes moaning near you on the map), sound on / off, mute when the window is not focused, <b>Hear</b> to play any one sound, the gun and blast sound test, and <b>Zombie sounds</b> to hear each kind of the dead. Browsers start sound only after your first click or key press.`;
 }
