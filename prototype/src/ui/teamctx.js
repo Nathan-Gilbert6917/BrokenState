@@ -255,7 +255,9 @@ const GROUP_TIP = {
 /** @param {State} state @param {any} ui @param {ReturnType<typeof teamTileMenu>} m */
 export function teamCtxHtml(state, ui, m) {
   const mode = m.append ? "append" : "replace";
-  const toggle = m.forced
+  const toggle = !m.cmd
+    ? `<div class="tcmode small warn"${tip(NO_RADIO)}>No radio contact: no new orders now</div>`
+    : m.forced
     ? `<div class="tcmode small muted"${tip("Busy on site (a raid, a city crawl, a boat on the water): new orders wait in its queue.")}>Busy on site: adds to the queue</div>`
     : `<button class="tcmode mini${m.append ? " active" : ""}" data-action="tc-mode"${tip("Replace: the team drops its plan and does this (it asks first when that drops orders under way). Add to queue: after what it is doing and its queue. Shift+right-click opens the menu in queue mode.")}>${m.append ? "Adding to the queue ⇄" : "Replacing its plan ⇄"}</button>`;
   let group = "";
