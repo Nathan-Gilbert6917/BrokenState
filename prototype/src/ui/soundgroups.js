@@ -35,13 +35,14 @@ export const GROUPS = [
   { id: "zombies.hordes", label: "Map hordes", max: 1.5, tip: "Hordes near your bases and teams moaning on the State Map (more at night). Under the Ambience volume" },
   { id: "zombies.hive", label: "Hive drone", max: 1.5, tip: "A known hive near you on the map: its low drone and heartbeat. Under the Ambience volume" },
   { id: "people", label: "People", max: 1.5, tip: "Your people and others: voices, footsteps, gear, someone going down" },
-  { id: "people.voices", label: "Voices", max: 1.5, tip: "People's voices: hurt, crying out, going down, dying, effort, panting, coughs, shouts and taunts in battle; the murmur of a base you select on the map; the chirp of an important combat bark" },
+  { id: "people.voices", label: "Voices", max: 1.5, tip: "People's voices: hurt, crying out, going down, dying, effort, panting, coughs, shouts and taunts in battle; the chirp of an important combat bark" },
   { id: "people.steps", label: "Footsteps", max: 1.5, tip: "Everyone's footsteps in battle: yours, the enemy's, the dead's shuffle. By ground, gait and load" },
   { id: "people.gear", label: "Gear and small sounds", max: 1.5, tip: "Searching, locks and keys, fuel, bandages, doors, your vehicle in battle, a team's engine on the map" },
   { id: "people.downed", label: "Deaths and downed cues", max: 1.5, tip: "The fall and falling tone when one of your people goes down, the low chord when one dies" },
   { id: "world", label: "World", max: 1.5, tip: "The weather, wildlife and warnings around you. Under the Ambience volume" },
   { id: "world.weather", label: "Weather", max: 1.5, tip: "Wind, rain, thunder in storms, the low drone at night" },
   { id: "world.wildlife", label: "Wildlife", max: 1.5, tip: "Birds by day, crickets on warm nights" },
+  { id: "world.base", label: "Base and camp", max: 1.5, tip: "The murmur of voices at a base you select on the map with people home (busiest at the evening meal, quiet at night), with a laugh now and then and a cough in winter" },
   { id: "world.heartbeat", label: "Heartbeat (edge warning)", max: 1.5, tip: "The soft heartbeat while a base of yours is attacked (Display → Heartbeat while a base is attacked)" },
   { id: "ui", label: "Interface", max: 1.5, tip: "Clicks, card chimes, alerts and stings" },
   { id: "ui.clicks", label: "Clicks and windows", max: 1.5, tip: "Button clicks, windows opening and closing, items picked up and put down" },
@@ -79,13 +80,14 @@ assignGroup(["crowd"], "zombies.crowd");
 assignGroup(["mapHorde"], "zombies.hordes");
 assignGroup(["hive", "hiveBeat"], "zombies.hive");
 assignGroup(["bark", "hDown", "hCry", "hDeath", "hShout", "hGasp", "hHurt", "hTaunt", "hEcstatic", "hDeaf", "hPlea", "hPanic", "hEffort", "hScared",
-  "hPant", "hWheeze", "hCough", "hMuffled", "murmur"], "people.voices"); // ui/humansfx.js HUMAN_CUES (and the base's murmur)
+  "hPant", "hWheeze", "hCough", "hMuffled"], "people.voices"); // ui/humansfx.js HUMAN_CUES
 assignGroup(["step", "hearStepGrass", "hearStepRoad", "hearStepWood", "hearStepGravel", "hearStepMud", "hearStepSnow", "hearStepLaden", "hearStepSneak",
   "hearStepWalker", "hearStepRunner", "hearStepBrute", "hearStepCrawler", "hearStepArmoured"], "people.steps");
 assignGroup(["rummage", "lockRattle", "unlock", "jingle", "glug", "bandage", "door", "drive", "engineStart", "engineStop"], "people.gear");
 assignGroup(["downed", "death"], "people.downed");
 assignGroup(["wind", "rain", "rainLow", "drone", "thunder"], "world.weather");
 assignGroup(["bird", "cricket"], "world.wildlife");
+assignGroup(["murmur"], "world.base"); // ui/humansfx.js: a selected base's murmur, its laughs and coughs
 assignGroup(["heartbeat"], "world.heartbeat");
 assignGroup(["click", "uiOpen", "uiClose", "pickup", "putdown"], "ui.clicks");
 assignGroup(["cardRoutine", "cardWarning", "cardCrisis", "good"], "ui.cards");

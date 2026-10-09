@@ -19,7 +19,7 @@ import { TOP_GROUPS, childrenOf, groupDef, groupGain, groupOf, groupVolume, grou
 import { weatherAt, season } from "../sim/weather.js";
 import { playerTile } from "../sim/hardcore-start.js";
 import { screenToTile, view } from "./render.js";
-import { HUMAN_VOICES, HUMAN_LIMITS, HUMAN_SOUND_NAMES, humanMapVoices } from "./humansfx.js"; // the people's voices
+import { HUMAN_VOICES, HUMAN_LIMITS, HUMAN_SOUND_NAMES, humanMapVoices, demoMurmur } from "./humansfx.js"; // the people's voices
 import { meleeVoices, MELEE_LABELS } from "./sfx-melee.js"; // melee by weapon class, armour, kills (ui/sfx-melee.js)
 import { stepCues, stepVoices, STEP_LABELS } from "./sfx-steps.js"; // footsteps in battle (ui/sfx-steps.js)
 import { gearCues, uiCues, clickSound, gearVoices, GEAR_LABELS, GEAR_LIMITS } from "./sfx-gear.js"; // searching, doors, bandages, engines, windows, items
@@ -702,6 +702,7 @@ export const GROUP_PREVIEW = {
   "people.downed": () => sfx("downed", { pitch: 1 }),
   "world.weather": () => sfx("thunder", { near: 0.8, pitch: 1 }),
   "world.wildlife": () => sfx("bird", { pitch: 1 }),
+  "world.base": () => (A ? demoMurmur(A.ctx, A.amb, A.ctx.currentTime, 4) : 0), // a base's murmur (4 s)
   "world.heartbeat": () => sfx("heartbeat", { gain: 0.9, pitch: 1 }),
   "ui.clicks": () => sfx("click", { pitch: 1 }),
   "ui.cards": () => sfx("cardWarning", { pitch: 1 }),

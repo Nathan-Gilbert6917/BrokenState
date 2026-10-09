@@ -62,9 +62,9 @@ console.log("Registry");
   check(JSON.stringify(SG.TOP_GROUPS) === JSON.stringify(["weapons", "zombies", "people", "world", "ui", "music"]), `the top groups: ${SG.TOP_GROUPS.join(", ")}`);
   const want = {
     weapons: ["guns", "blasts", "handling", "melee"], zombies: ["moans", "attacks", "shrieks", "special", "crowd", "hordes", "hive"],
-    people: ["voices", "steps", "gear", "downed"], world: ["weather", "wildlife", "heartbeat"], ui: ["clicks", "cards", "stings"], music: [],
+    people: ["voices", "steps", "gear", "downed"], world: ["weather", "wildlife", "base", "heartbeat"], ui: ["clicks", "cards", "stings"], music: [],
   };
-  check(Object.entries(want).every(([p, kids]) => JSON.stringify(SG.childrenOf(p)) === JSON.stringify(kids.map((k) => `${p}.${k}`))), "each group's parts as asked (Weapons 4, Zombies 7, People 4, World 3, Interface 3, Music none)");
+  check(Object.entries(want).every(([p, kids]) => JSON.stringify(SG.childrenOf(p)) === JSON.stringify(kids.map((k) => `${p}.${k}`))), "each group's parts as asked (Weapons 4, Zombies 7, People 4, World 4 with Base and camp, Interface 3, Music none)");
   check(SG.groupDef("music").reserved && SG.groupDef("music").max === 1, "Music is reserved for the music bus (one slider, 0–100%)");
   SG.useMix({ groups: {}, off: {} });
   check(ids.every((id) => SG.groupGain(id) === 1), "at the defaults every group's gain is 1");
@@ -105,6 +105,7 @@ console.log("Every sound in a group");
   for (const n of all) { const g = explicit(n, AU.VOICES[n]); counts[g] = (counts[g] || 0) + 1; }
   check(SG.GROUP_IDS.filter((id) => SG.parentOf(id)).every((id) => counts[id] > 0), `every part has sounds: ${SG.GROUP_IDS.filter((id) => SG.parentOf(id)).map((id) => `${id} ${counts[id] || 0}`).join(", ")}`);
   check(SG.groupOf("zSomethingNew") === "zombies" && SG.groupOf("hNewVoice") === "people.voices" && SG.groupOf("musicStinger") === "music" && SG.groupOf("whatever") === null, "a new zombie cue falls to Zombies, a new human voice to Voices, music's to Music (the table first)");
+  check(SG.groupOf("murmur") === "world.base" && SG.parentOf("world.base") === "world" && SG.groupOf("hCough") === "people.voices", "the base murmur has its own World → Base and camp slider; people's battle voices stay under Voices");
   SG.assignGroup(["zTestOnly"], "zombies.special");
   let threw = false; try { SG.assignGroup(["x"], "no.such"); } catch { threw = true; }
   check(SG.groupOf("zTestOnly") === "zombies.special" && threw && SG.groupOf("q", { group: "ui.cards" }) === "ui.cards", "assignGroup puts sounds in a group in one line (an unknown group throws); a voice's own group wins");

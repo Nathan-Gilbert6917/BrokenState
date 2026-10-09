@@ -192,10 +192,10 @@ export function hRoute(c, out, t, o = {}) {
 }
 // The one place an unpositioned human voice (the base murmur, a scream at a base) meets the speakers, at HUMAN_GAIN,
 // through the mixer's live Voices bus (the murmur follows a change at once).
-export function hMapOut(c, out, level = 1) {
+export function hMapOut(c, out, level = 1, group = "people.voices") {
   const g = c.createGain();
   g.gain.value = HUMAN_GAIN.v * level;
-  g.connect(groupBus(c, "people.voices", out));
+  g.connect(groupBus(c, group, out));
   return g;
 }
 let takes = 0;
@@ -203,7 +203,7 @@ let takes = 0;
 export function playHuman(name, c, out, t, o = {}) {
   const C = HUMAN_CUES[name];
   if (!C) return null;
-  if (!(groupGain("people.voices") > 0)) return C.ev; // the mixer's Voices off: nothing built
+  if (!(groupGain(o.group || "people.voices") > 0)) return C.ev; // the mixer's Voices (or the base's Base and camp) off: nothing built
   const V = o.voice || humanVoice({ id: o.id ?? Math.floor(Math.random() * 100000), side: o.side || "player", kit: o.kit }); // the Hear list: a new person each time
   const rnd = mulberry(hash32(V.seed ^ Math.imul(++takes, 0x27d4eb2d)));
   HUMAN_RECIPES[C.ev](c, hRoute(c, out, t, { ...o, voice: V }), t, V, { ...o, gain: Number.isFinite(o.gain) ? o.gain : 1 }, rnd);
@@ -391,12 +391,21 @@ const MAPV = new WeakMap();
 // ui/audio.js every ambience tick on the map: the selected base's murmur (tile: the selected tile; null in a battle, on
 // the title or in a time-lapse), its laughs and winter coughs, and a scream for someone who died at a base. 7 nodes for
 // the murmur while heard (let go after 4 s of silence); a laugh, a cough or a scream are short one-shots.
+// The Base and camp group's preview in the mixer: a few seconds of the murmur, faded in and out.
+export function demoMurmur(c, out, t = c.currentTime, secs = 4) {
+  const g = hMapOut(c, out, 1, "world.base"), lv = c.createGain(), top = MURMUR_LEVEL * 2.5;
+  lv.gain.setValueAtTime(0, t); lv.gain.linearRampToValueAtTime(top, t + 0.5);
+  lv.gain.setValueAtTime(top, t + secs - 0.6); lv.gain.linearRampToValueAtTime(0, t + secs);
+  const lp = DSP.biq(c, "lowpass", 1500, 0.6, lv); lv.connect(g);
+  const s = c.createBufferSource(); s.buffer = babbleBuffer(c); s.loop = true; s.connect(lp); s.start(t, 0.8); s.stop(t + secs + 0.1);
+  return secs;
+}
 export function humanMapVoices(c, out, state, tile, t = c.currentTime) {
   const bm = baseMurmur(state, tile);
   const level = bm ? bm.level : 0;
   let M = MAPV.get(c);
   if (!M && level > 0) {
-    const g = hMapOut(c, out, 1), lv = c.createGain(); lv.gain.value = 0;
+    const g = hMapOut(c, out, 1, "world.base"), lv = c.createGain(); lv.gain.value = 0; // the mixer's World → Base and camp
     const lp = DSP.biq(c, "lowpass", 1500, 0.6, lv); lv.connect(g);
     const s = c.createBufferSource(); s.buffer = babbleBuffer(c); s.loop = true; s.connect(lp); s.start(t, 0.8);
     M = { lv, s, idle: null, next: t + 4, r: mulberry(0x6a5e), base: null };
@@ -407,7 +416,7 @@ export function humanMapVoices(c, out, state, tile, t = c.currentTime) {
     if (bm && level > 0.05 && t >= M.next) { // a laugh now and then, a cough in winter
       const V = humanVoice({ id: 1000 + Math.floor(M.r() * 50), side: "player" });
       const name = bm.winter && M.r() < 0.5 ? "hCough" : "hTaunt";
-      playHuman(name, c, hMapOut(c, out, 1), t, { voice: { ...V, style: "survivor" }, gain: 0.35 * level, flat: true });
+      playHuman(name, c, hMapOut(c, out, 1, "world.base"), t, { voice: { ...V, style: "survivor" }, gain: 0.35 * level, flat: true, group: "world.base" });
       M.next = t + (6 + M.r() * 14) / Math.max(0.3, level);
     }
     M.idle = level > 0 ? null : M.idle ?? t;
