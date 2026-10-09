@@ -45,6 +45,7 @@ import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
 import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
+import { stackKey, stackInput, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the drop popover
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
@@ -1140,7 +1141,7 @@ document.addEventListener("drop", (ev) => {
   releaseHold();
   const from = ev.dataTransfer.getData("text/plain");
   if (from && ui.inv.form) { teamFormDrop(state, ui, from, el.dataset.drop); refresh(); return; } // ui/teamform.js: between a team and the armory
-  if (from) { invDrop(state, ui, from, el.dataset.drop, ev.shiftKey, ev.ctrlKey || ev.metaKey); refresh(); } // Shift: half a supply stack, Ctrl: one (raid search window)
+  if (from) { invDrop(state, ui, from, el.dataset.drop, ev.shiftKey, ev.ctrlKey || ev.metaKey, dropPoint(ev)); refresh(); } // a supply stack: a popover asks how many (Shift: half, Ctrl: one)
 });
 
 const changeActions = {
@@ -1454,6 +1455,7 @@ document.addEventListener("mouseover", (ev) => {
   const el = ev.target.closest && ev.target.closest(".wcell");
   ui.workHover = el ? { ...el.dataset } : null;
 });
+document.addEventListener("input", (ev) => stackInput(ev.target)); // the stack mover's slider: the panel follows as it moves
 document.addEventListener("change", (ev) => {
   const el = ev.target.closest("[data-action]");
   if (!el) return;
@@ -1870,6 +1872,7 @@ window.addEventListener("keydown", (e) => {
   // Menu → Controls waiting for a key (ui/controls.js): the next key press is the new binding.
   if (controlsKey(ui, e, settingsApi)) { e.preventDefault(); refresh(); return; }
   const t = e.target || {};
+  if (stackKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // the stack mover (ui/stackmove.js): Enter moves, Esc cancels, from its number box too
   if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "checkbox")) return;
   // A question before an order that cannot be undone (ui/confirm.js) takes the keyboard: Enter yes, Esc cancel.
   if (ui.ask) { e.preventDefault(); act(() => askKey(ui, e, actions)); refresh(); return; }
