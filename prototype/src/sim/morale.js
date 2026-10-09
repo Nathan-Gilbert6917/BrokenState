@@ -11,6 +11,7 @@
 //     day), below 20 "X is close to leaving" (log line and card); a warning is re-armed once mood is back to 40;
 //   - desertion: below 15 mood, only after the second warning was given on an earlier night, 8% a day (+0.6% per
 //     point below 15). Leaders never desert.
+import { breakMult } from "./traits.js"; // Iron Will
 import { log, addCard, day, skill, atBase, residents, checkGameOver } from "./world.js";
 import { baseBeds } from "./buildings.js";
 import { allItems } from "./inventory.js";
@@ -147,7 +148,7 @@ export function baseMoraleDaily(state, base, people, mouths) {
   for (const s of people) {
     if (!s.alive || s.leader || s.mood >= MOOD.desert) continue;
     if ((s.moodWarn || 0) < 2 || !((s.warnNights || 0) >= 1)) continue;
-    if (rng.chance(MOOD.chance + MOOD.perPoint * (MOOD.desert - s.mood))) desert(state, base, s);
+    if (rng.chance((MOOD.chance + MOOD.perPoint * (MOOD.desert - s.mood)) * breakMult(s))) desert(state, base, s); // Iron Will (traits.js): half as likely
   }
 }
 

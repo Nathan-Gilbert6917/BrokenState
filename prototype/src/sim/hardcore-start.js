@@ -35,7 +35,8 @@
 //   hub later is the normal game's exile (conquest.js): a new staging camp (a little cheaper), later outposts the
 //   usual 15 scrap.
 // Everything here runs only in a hardcore world (hardcore.js isHardcore).
-import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES } from "./data.js";
+import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES, clashIn } from "./data.js";
+import { bornTraits, tidyTiers } from "./traits.js"; // what the world's dice rolled at birth, before the newer traits came in
 import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
 import { newItem, packOf, POCKETS, START_DUR, startKit } from "./inventory.js";
@@ -47,6 +48,7 @@ import { Rng } from "./rng.js";
 import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { isCustomBg } from "./custombg.js";
+import { grabStartGear, addPickedSupplies, trunkFromPicks } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
 import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./staging.js";
 
@@ -94,7 +96,7 @@ export const HC_START = {
     MAX_TRAITS: 2,
   },
   // Who they were. w: the draw's weight (no two of the three alike). skills: + a roll of [lo, hi] each. traits: fitting
-  // ones (weights), one pushed at TRAIT_ODDS when a slot allows (brave never beside coward). pack / packs / weapons /
+  // ones (weights), one pushed at TRAIT_ODDS when a slot allows (never beside one it clashes with: data.js TRAIT_CLASH). pack / packs / weapons /
   // stuff: over the common PACK / PACKS / WEAPONS / PACK_STUFF (stuff is merged in on top, so the common things still
   // turn up). armor: worn from the start. meds: carried on top of a bag's bottle. rounds: × the common ROUNDS.
   // food (2026-10-07): what they grabbed to eat, over the common FOOD ({ pack, pockets } rolls; max: their share of
@@ -302,8 +304,11 @@ export function pickArchetypes(state, n, picks) {
   return kinds;
 }
 // What a background makes of someone: the skill bumps, a fitting trait when a slot allows, the key on them. A custom
-// one (custombg.js) adds exactly its bumps and gives all its traits (they go first, a rolled trait that clashes,
-// Brave with Coward, goes; three in all), and draws no dice.
+// one (custombg.js) adds exactly its bumps and gives all its traits (they go first, a rolled trait that clashes with
+// one of them (data.js TRAIT_CLASH) goes; three in all), and draws no dice.
+// A preset's fitting trait: whether it is drawn (and which, by its weight) goes by what the world's dice rolled at birth
+// (traits.js bornTraits), so the newer traits, which come in with dice of their own, move none of the world's dice;
+// a pick they already have, or one that clashes with theirs, is drawn and not given.
 export function applyArchetype(state, s, key) {
   const rng = state.rng, A = archetypeOf(state, key);
   if (!A) return;
@@ -311,13 +316,17 @@ export function applyArchetype(state, s, key) {
   if (A.custom) {
     for (const [k, v] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + v);
     const mine = [...A.traits];
-    const clash = (t) => (t === "brave" && mine.includes("coward")) || (t === "coward" && mine.includes("brave"));
-    s.traits = [...mine, ...s.traits.filter((t) => !mine.includes(t) && !clash(t))].slice(0, Math.max(3, mine.length));
+    s.traits = [...mine, ...s.traits.filter((t) => !mine.includes(t) && !clashIn(mine, t))].slice(0, Math.max(3, mine.length));
+    tidyTiers(s, { ...(s.traitTier || {}), ...Object.fromEntries(mine.map((t) => [t, (A.traitTier && A.traitTier[t]) || 1])) }); // its tiers (traits.js)
     return;
   }
   for (const [k, [lo, hi]] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + rng.int(lo, hi));
-  const want = Object.keys(A.traits || {}).filter((t) => TRAITS[t] && !s.traits.includes(t) && !(t === "brave" && s.traits.includes("coward")) && !(t === "coward" && s.traits.includes("brave")));
-  if (want.length && s.traits.length < 2 && rng.chance(HC_START.TRAIT_ODDS)) s.traits.push(rng.weighted(want, (t) => A.traits[t]));
+  const born = bornTraits(s);
+  const want = Object.keys(A.traits || {}).filter((t) => TRAITS[t] && !born.includes(t) && !clashIn(born, t));
+  if (want.length && s.traits.length < 2 && rng.chance(HC_START.TRAIT_ODDS)) {
+    const t = rng.weighted(want, (x) => A.traits[x]);
+    if (!s.traits.includes(t) && !clashIn(s.traits, t)) s.traits.push(t);
+  }
 }
 
 // The most food the team's own grabs come to (a prepper's bag on top): TEAM_MAX a head, a background's food.max in
@@ -514,13 +523,14 @@ export function normalStartKit(state, base) {
   for (const s of state.survivors) {
     const A = archetypeOf(state, s.background);
     if (!A || !A.custom) continue;
-    for (const slot of Object.keys(A.gear || {})) if (s.gear[slot]) { base.armory.push(s.gear[slot]); s.gear[slot] = null; }
+    for (const slot of Object.keys(A.gear || {})) if (s.gear[slot]) { if (!s.startPoints) base.armory.push(s.gear[slot]); s.gear[slot] = null; } // built on points: the dice's kit is not handed out on top
     const got = rollCustom(state, s, A);
     for (const k of ["food", "water", "ammo", "meds", "arrows"]) if (got[k]) base.stock[k] = (base.stock[k] || 0) + got[k];
     if (A.car.type && A.car.odds > 0) {
       const T = VEHICLE_TYPES[A.car.type];
       createVehicle(state, A.car.type, { kind: "base", baseId: base.id }, { fuel: Math.round(T.tank * 0.5 * 10) / 10, condition: 70 });
     }
+    if (s.startPoints) continue; // Customize: the pickup's back is what was picked (startgear.js normalStartVehicle)
     for (const [k, q] of Object.entries(A.car.trunk || {})) if (SUPPLY_KEYS.includes(k) && q > 0) base.stock[k] = (base.stock[k] || 0) + q;
     for (const key of A.car.items || []) if (GEAR[key]) base.armory.push(startKit(newItem(key, 1)));
   }
@@ -529,11 +539,17 @@ export function normalStartKit(state, base) {
 // ---------- the car ----------
 // Whose car it was (the three's carOdds), what it is (their CARS), its tank and condition (CAR), and what was in the
 // back (TRUNK: supplies and things). Makes the vehicle on the team and loads the cargo. Returns { owner, car, trunk }.
+// Customize (custompoints.js, startgear.js): whoever pays for the back on the new-run screen (s.startVehicle) owns the
+// car (the dice's pick is still drawn, so the dice after it are where they were), and with anyone built on points the
+// back is exactly what was picked (the dice's back is drawn and noted on the owner, s.diceTrunk, for "Start from the
+// dice", but not loaded). The seats a small team loaded stay as they are.
 export function rollCar(state, p, people) {
   const rng = state.rng, C = HC_START;
   // A custom background's odds may be 0 (never theirs); all 0: anyone's.
   const odds = (s) => { const a = archetypeOf(state, s.background) || {}; return a.custom ? a.car.odds : a.carOdds || 1; };
-  const owner = people.some((s) => odds(s) > 0) ? rng.weighted(people, odds) : rng.pick(people);
+  const drawn = people.some((s) => odds(s) > 0) ? rng.weighted(people, odds) : rng.pick(people);
+  const owner = people.find((s) => s.startVehicle) || drawn;
+  const picked = people.some((s) => s.startPoints);
   const A = archetypeOf(state, owner.background) || {};
   const type = A.custom && A.car.type ? A.car.type : pickW(rng, A.custom ? { sedan: 2, truck: 1 } : A.cars || { sedan: 2, truck: 1 });
   const T = VEHICLE_TYPES[type];
@@ -543,11 +559,11 @@ export function rollCar(state, p, people) {
   p.vehicleId = car.id;
   const trunk = { supplies: {}, gear: [] };
   if (A.custom) { // exactly what the player put in the back
-    for (const [k, q] of Object.entries(A.car.trunk)) if (SUPPLY_KEYS.includes(k) && q > 0) { trunk.supplies[k] = q; p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; }
-    for (const key of A.car.items) if (GEAR[key]) { const item = startKit(newItem(key, 1)); p.cargo.gear.push(item); trunk.gear.push(item); }
+    for (const [k, q] of Object.entries(A.car.trunk)) if (SUPPLY_KEYS.includes(k) && q > 0) trunk.supplies[k] = q;
+    for (const key of A.car.items) if (GEAR[key]) trunk.gear.push(startKit(newItem(key, 1)));
   }
   const TR = A.custom ? {} : A.trunk || {};
-  for (const k of SUPPLY_KEYS) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) { trunk.supplies[k] = q; p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; } }
+  for (const k of SUPPLY_KEYS) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) trunk.supplies[k] = q; }
   if (TR.gear) {
     const table = { ...TR.gear };
     for (let n = rng.int(TR.n[0], TR.n[1]); n > 0 && Object.keys(table).length; n--) {
@@ -555,10 +571,13 @@ export function rollCar(state, p, people) {
       delete table[key];
       if (!GEAR[key]) continue;
       const item = startItem(rng, key, Math.round(rng.range(0.6, 1) * 100) / 100);
-      p.cargo.gear.push(item);
       trunk.gear.push(item);
     }
   }
+  owner.diceTrunk = { items: trunk.gear.map((it) => it.key), supplies: { ...trunk.supplies } }; // the dice's back (until Start)
+  if (picked) { const mine = trunkFromPicks(owner.startVehicle); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
+  for (const [k, q] of Object.entries(trunk.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
+  p.cargo.gear.push(...trunk.gear);
   // A team of one or two loaded the empty seats too (HC_START.SMALL SEAT per seat short of three): trunk.seats.
   const seats = emptySeats(people.length);
   if (seats) {
@@ -593,8 +612,9 @@ function grabLine(state, s, got) {
   const things = listOf(got.items);
   const A = archetypeOf(state, s.background);
   const who = A ? `${firstName(s)} (${A.name.toLowerCase()}${A.blurb ? `, ${A.blurb}` : ""})` : firstName(s);
-  const weapon = got.weapon ? `${/^[aeiou]/i.test(got.weapon.name) ? "an" : "a"} ${got.weapon.name.toLowerCase()}${got.ammo ? ` (${got.ammo} rounds)` : ""}` : "";
-  if (got.prepper) return `${who} had a ${got.bag.name.toLowerCase()} packed by the door: ${got.food} food, ${got.water} water${got.meds ? `, ${got.meds} meds` : ""}${things.length ? `, ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
+  const rounds = (got.ammo || 0) + (got.rounds || 0); // got.rounds: a gun picked on the new-run screen (startgear.js)
+  const weapon = got.weapon ? `${/^[aeiou]/i.test(got.weapon.name) ? "an" : "a"} ${got.weapon.name.toLowerCase()}${rounds ? ` (${rounds} rounds)` : ""}` : "";
+  if (got.prepper && got.bag) return `${who} had a ${got.bag.name.toLowerCase()} packed by the door: ${got.food} food, ${got.water} water${got.meds ? `, ${got.meds} meds` : ""}${things.length ? `, ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
   const worn = got.armor ? ` (in ${/^[aeiou]/i.test(got.armor.name) ? "an" : "a"} ${got.armor.name.toLowerCase()})` : "";
   if (got.bag) return `${who}${worn} grabbed a ${got.bag.name.toLowerCase()}${things.length ? ` with ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
   return `${who}${worn} ran with only the clothes on their back${things.length ? ` and ${things.join(", ")} in their pockets` : " and empty pockets"}${weapon ? `, and ${weapon}` : ""}.`;
@@ -633,10 +653,13 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   const lines = [];
   let prepper = null, prepGot = null;
   const extra = []; // custom backgrounds' own food, water... (on top, unclamped)
+  const pickedSup = []; // the rounds and arrows of picked guns and bows (startgear.js)
   for (let i = 0; i < people.length; i++) {
     const s = people[i];
     const A = archetypeOf(state, s.background);
     const got = s.background === "prepper" ? rollPrepper(state, s) : A && A.custom ? rollCustom(state, s, A) : rollGrab(state, s, A);
+    const picked = grabStartGear(state, s, got); // startgear.js: what was picked on the new-run screen, in place of the grab
+    if (picked) pickedSup.push(picked);
     if (got.prepper) { prepper = s; prepGot = got; continue; }
     if (got.custom) { extra.push(got); lines.push(grabLine(state, s, got)); continue; }
     sup.food += got.food;
@@ -654,6 +677,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   sup.food = Math.max(HC_START.TEAM_MIN * heads, Math.min(teamFoodCap(rolled), sup.food));
   sup.water = Math.max(HC_START.TEAM_MIN * heads, Math.min(HC_START.TEAM_MAX * heads, sup.water));
   for (const got of extra) for (const k of ["food", "water", "ammo", "meds", "arrows"]) sup[k] += got[k] || 0;
+  addPickedSupplies(sup, pickedSup);
   if (prepGot) {
     sup.food += prepGot.food;
     sup.water += prepGot.water;
@@ -682,7 +706,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   // Day 1's log says a small team's edge (HC_START.SMALL): the skills, and the seats loaded (the car line has what).
   if (smallSkills) log(state, `${people.length === 1 ? `${firstName(people[0])} got out alone` : `${firstName(people[0])} and ${firstName(people[1])} got out on their own`}: the kind who can look after ${people.length === 1 ? "themselves" : "each other"} (${andList(smallSkills.map((k) => SKILL_NAMES[k]))} up), and the car's empty ${people.length === 1 ? "seats were" : "seat was"} loaded too.`, "good");
   // Day 1's log names the prepper (the trait when a slot allowed it, else only this line says it).
-  if (prepper) log(state, `${firstName(prepper)} was a prepper${prepGot.trait ? "" : " (no room for the trait: the kit says it)"}: a ${prepGot.bag.name.toLowerCase()} packed for five days${prepGot.weapon ? `, ${/^[aeiou]/i.test(prepGot.weapon.name) ? "an" : "a"} ${prepGot.weapon.name.toLowerCase()}${prepGot.ammo ? ` (${prepGot.ammo} rounds)` : ""}` : ""}${prepGot.items.some((it) => it.key === "waterfilter") ? ", a water filter" : ""}${prepGot.items.some((it) => it.key === "handradio") ? ", a hand-crank radio" : ""}${prepGot.items.some((it) => it.key === "puritabs") ? " and purification tablets" : ""}.`, "good");
+  if (prepper) log(state, `${firstName(prepper)} was a prepper${prepGot.trait ? "" : " (no room for the trait: the kit says it)"}: a ${prepGot.bag ? prepGot.bag.name.toLowerCase() : "bag"} packed for five days${prepGot.weapon ? `, ${/^[aeiou]/i.test(prepGot.weapon.name) ? "an" : "a"} ${prepGot.weapon.name.toLowerCase()}${prepGot.ammo + (prepGot.rounds || 0) ? ` (${prepGot.ammo + (prepGot.rounds || 0)} rounds)` : ""}` : ""}${prepGot.items.some((it) => it.key === "waterfilter") ? ", a water filter" : ""}${prepGot.items.some((it) => it.key === "handradio") ? ", a hand-crank radio" : ""}${prepGot.items.some((it) => it.key === "puritabs") ? " and purification tablets" : ""}.`, "good");
   // The run opens on the team's orders card: what they grabbed, and what the first hub takes.
   weighTeam(state, p);
   const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${sup.ammo ? `, ${Math.floor(sup.ammo)} rounds` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;

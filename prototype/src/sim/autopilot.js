@@ -12,6 +12,7 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
+import { traitAim } from "./traits.js"; // Brave, Coward: to hit
 import { fitFromPool } from "./gunmods.js";
 import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants, queueRepair } from "./repair.js";
 import { equipKit, governPlates } from "./carrykit.js"; // carry kit: rigs, plates in the carriers, spare magazines; spare plates kept // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
@@ -2807,7 +2808,7 @@ function stormValue(s) {
   const w = WEAPONS[key];
   const mult = key === "fists" ? 1 : eff.mult;
   const dmg = ((w.dmg[0] + w.dmg[1]) / 2) * (0.6 + 0.4 * mult) * (0.75 + 0.25 * (key === "fists" ? 1 : item.quality || 1));
-  const hit = w.melee ? 0.2 : Math.max(0.05, Math.min(0.95, (40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + (w.aim || 0) + (s.traits.includes("brave") ? 5 : 0) - (s.traits.includes("coward") ? 5 : 0)) / 100));
+  const hit = w.melee ? 0.2 : Math.max(0.05, Math.min(0.95, (40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + (w.aim || 0) + traitAim(s)) / 100)); // Brave, Coward (traits.js)
   return ((hit * dmg) / 10) * (0.5 + s.health / 200) * Math.sqrt(1 / Math.max(0.3, armorMult(s)));
 }
 const hiveSquad = (pool) => [...pool].filter((s) => s.health >= HIVE_HEALTH && !s.woundInfected).sort((a, b) => stormValue(b) - stormValue(a)).slice(0, HIVE_SQUAD);

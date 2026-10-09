@@ -3,6 +3,7 @@
 // (camp, scavenge, look around, repair, treat, move, go home). Timed actions go through the order queue
 // (sim/orders.js); buttons use data-action handlers in main.js.
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
+import { traitChips } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
 import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom } from "../sim/parties.js";
 import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES } from "../sim/vehicles.js";
@@ -356,7 +357,7 @@ function memberCard(state, p, m, live, queueing) {
     ${m.woundInfected ? `<div class="danger"${tip("Gets worse every hour away from a base. Treat with meds.")}>Infected wound</div>` : ""}
     ${isSick(m) ? `<div class="row" style="flex-wrap:wrap">${conditionChips(state, m)}</div>` : ""}
     ${heal ? `<div class="good">Resting: +${heal.toFixed(2)} health/h</div>` : ""}` : ""}
-    <div>${top}${m.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t]?.desc)}>${esc(TRAITS[t]?.name || t)}</span>`).join("")}</div>
+    <div>${top}${traitChips(m)}</div>
     <div>${gear}</div>
   </div>`;
 }

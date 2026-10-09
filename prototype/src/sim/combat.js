@@ -60,6 +60,7 @@ import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zomb
 import { ZTYPES, MIDDEAD } from "./hiveconst.js";
 import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
 import { armorVs, stabsGap, ARMORED, armoredOf, wearPlate } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
+import { traitAim, meleeTraitAim, woundMult, fleetEscape } from "./traits.js"; // Brave, Coward, Clumsy, Tough, Frail, Fleet-Footed
 import { armourHit, armourExpect, locatedHit, enemyPieces, fitArmour, wearByNumbers, absorbOffscreen, battleArmor, battleDice, roundOf, armourSpec, dropBroken } from "./armour.js"; // per-hit armour: pieces, locations, penetration, wear
 import { noteBrass, pickUpBrass } from "./reloading.js"; // the reloading bench: brass back after a won fight
 import { syncModes, modeOf, modeRounds, modeRolls, modeAim, modeRefusal, FIRE_MODES, rollTrigger, jamGun, jamRefusal, jamLabel, foul, unjam, unjamRefusal, jamReload, aiUnjam, aiMode, noteJamWeather, enemyGunQ, enemyGunCond, SUPPRESS, suppressRounds, suppressRefusal, coneTargets, bestCone, nextInLine, overpenChance, piercesCover, OVERPEN, braceAim, sniperCell, isSniper, gunModes } from "./gunfire.js"; // fire modes, jams, suppressing fire, over-penetration
@@ -2387,8 +2388,8 @@ export function playerUnit(b, s) {
   const key = item && eff.usable && WEAPONS[item.key] ? item.key : "fists";
   const mult = key === "fists" ? 1 : eff.mult;
   const q = item && key !== "fists" ? item.quality || 1 : 1;
-  const bravery = (s.traits.includes("brave") ? 5 : 0) - (s.traits.includes("coward") ? 5 : 0);
-  const armor = (s.traits.includes("tough") ? 0.75 : 1) * armorMult(s); // every worn piece (inventory.js)
+  const bravery = traitAim(s); // Brave +5, Coward −5 (traits.js)
+  const armor = woundMult(s) * armorMult(s); // Tough, Frail (traits.js); every worn piece (inventory.js)
   // What this unit takes the field with: exactly these item objects wear when the battle ends (wearFielded).
   const fielded = [];
   if (item && key !== "fists") fielded.push(["weapon", item]);
@@ -2403,7 +2404,7 @@ export function playerUnit(b, s) {
     gm: key === "fists" ? NO_MODS : gunMods(item), gmWeapon: key, // gunmods.js: what its attachments add (shotOdds, shotNoise)
     aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s) + needsAim(s) + illnessAim(s) + tiredAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js); hunger, thirst (needs.js); illness (health.js); tiredness (sleep.js)
     nerve: (s.traits.includes("brave") ? MIDDEAD.NIGHTMARE.BRAVE : 0) + (s.traits.includes("coward") ? MIDDEAD.NIGHTMARE.COWARD : 0), // middead.js: a Nightmare's scream
-    meleeAim: 75 + bravery, dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q),
+    meleeAim: 75 + bravery + meleeTraitAim(s), dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q),
     armor, hp: s.health, maxHp: 100, startHp: s.health, mob: MOVE, sight: SIGHT,
     stealth: skill(s, "stealth"), medicine: skill(s, "medicine") + battleKitBonus(s),
     scouting: skill(s, "scouting"), armLoad: fielded.reduce((a, [slot, it]) => a + (slot !== "weapon" && GEAR[it.key] ? GEAR[it.key].power || 0 : 0), 0), // escape checks (soundRetreat)
@@ -2412,6 +2413,7 @@ export function playerUnit(b, s) {
     startGuns: carriedWithBag(s).filter((it) => WEAPONS[it.key] && calOf(it.key)), // gunload.js: every gun carried starts the fight loaded (one in a bag in the arms too)
     wormed: hasWorm(s), wornArmor: armorMult(s), // carriers.js: the worm in them gets them up if they die; the risen wear what they wore
     ap: 2, aware: true, x: 0, y: 0, f: 0,
+    fleet: fleetEscape(s), // Fleet-Footed (traits.js): the escape check's bonus (its extra tile a move: carrykit.js weighPlayer)
   };
   u.load = chooseLoad(b, u, item && key !== "fists" ? item.load : null); // ammo.js: the gun's own load (item.load), else its common round
   MED.fitMedic(u, s); // medics.js: a med kit in a pocket or the pack counts too
@@ -4214,6 +4216,7 @@ export function escapeOdds(b, u, carrying = null, field = null) {
   add("wounds", -RETREAT.WOUNDS * Math.max(0, 1 - u.hp / u.maxHp));
   add("load carried", -loadPenalty(u.armLoad));
   add(`Scouting ${u.scouting || 0}`, RETREAT.SCOUTING * (u.scouting || 0));
+  add((u.fleet || 0) < 0 ? "Slow" : "Fleet-Footed", u.fleet || 0); // traits.js (Slow: below 0)
   add("night", b.night || b.dark ? RETREAT.NIGHT : 0);
   add("team headset", linkEscape(b, u)); // hearing.js: a linked teammate calls the way out
   add("smoke cover", b.smoke && b.smoke.length && smokeAt(b, u.x, u.y, SMOKE.near) ? SMOKE.retreat : 0); // a smoke grenade (throwables.js)

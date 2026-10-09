@@ -4,6 +4,7 @@
 // when they get home, or right away over the radio.
 import { skill, isNight } from "./world.js";
 import { anyPerk } from "./skills.js";
+import { teamTraitFx } from "./traits.js"; // Keen Eye
 import { spotTrucks, unopenedTrucks } from "./miltrucks.js";
 
 export const MARKER_TYPES = {
@@ -71,7 +72,7 @@ export function mergeSpots(state, spotted) {
 export function perceptionChance(state, members) {
   const scout = Math.max(0, ...members.map((m) => skill(m, "scouting")));
   let c = 0.12 + scout * 0.03;
-  if (members.some((m) => m.traits.includes("keeneye"))) c += 0.15;
+  c += teamTraitFx(members, "keeneye", "notice"); // Keen Eye, the team's best tier (traits.js)
   if (anyPerk(members, "spotter")) c += 0.15; // Spotter (skills.js)
   if (isNight(state)) c *= 0.6;
   return Math.min(0.9, c);

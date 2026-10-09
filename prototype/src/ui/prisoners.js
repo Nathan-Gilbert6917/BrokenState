@@ -3,6 +3,7 @@
 // what to do with each: rations, labour, question (or roughly), ask to join, win over, ransom, trade back, release,
 // execute. A summary on top: food a day at their rations, labour by task, guards and the day's escape risk.
 import { SKILL_NAMES, TRAITS, FACTION_TYPES } from "../sim/data.js";
+import { traitChips } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { day } from "../sim/world.js";
 import { CONQUEST } from "../sim/conquest.js";
 import { teamName } from "../sim/parties.js";
@@ -103,7 +104,7 @@ function prisonerCard(state, base, p, ui, watch) {
   const f = v.faction;
   const s = p.s;
   const top = Object.entries(s.skills).sort((a, c) => c[1] - a[1]).slice(0, 3).map(([k, n]) => `${SKILL_NAMES[k]} ${n}`).join(", ");
-  const traits = (s.traits || []).map((t) => (TRAITS[t] ? TRAITS[t].name : t)).join(", ");
+  const traits = traitChips(s);
   const kind = KIND[p.kit] || "Fighter";
   const where = v.awaiting ? "Tied up in the yard, waiting on your decision (the card)" : v.cell ? `In the ${v.hold.name.toLowerCase()}, ${v.guarded ? "guarded" : "unguarded"}` : "In a shed (no free cell)";
   const opinion = Math.max(0, Math.min(100, Math.round(p.opinion)));
@@ -125,7 +126,7 @@ function prisonerCard(state, base, p, ui, watch) {
   const cured = p.wormTreated && f ? WORM.OTHERS.RETURN_GOODWILL : 0; // treated for the worm: their group remembers it
   return `<div class="card" style="margin-top:0.5rem">
     <div class="spread"><b>${esc(p.name)}</b><span class="small muted">${esc(kind)} of ${esc(p.group)}${f ? ` (${esc(FACTION_TYPES[f.type].label)})` : ""} · held ${v.days} day${v.days === 1 ? "" : "s"}</span></div>
-    <div class="small">${esc(where)} · <span class="${hp < 30 ? "danger" : hp < 50 ? "warn" : ""}">health ${hp}</span> · <span class="${s.mood < L.lowMood ? "warn" : ""}"${tip(`Mood sets how well they work (×${n1(v.moodWork)} now: ${L.moodBase} + ${L.moodPer} × mood/100) and, under ${L.lowMood}, how often they run from the work detail and spoil things. Rations, labour, questioning, executions and the jail move it (makeshift cells and the shed: ${JAIL.lockup.mood} a day).`)}>mood ${Math.round(s.mood)}</span>${v.kit.length ? ` · <span class="warn"${tip(`Something to slip out with: each counts ×${v.hold ? v.hold.bonus : SHED.bonus} on their escapes here (a makeshift cage ×${JAIL.lockup.bonus}, a jailhouse ×${JAIL.jailhouse.bonus}).`)}>${esc(v.kit.join(", "))}</span>` : ""} · ${esc(top)}${traits ? ` · ${esc(traits)}` : ""}${p.unfed ? ` · <span class="danger">unfed ${p.unfed} day${p.unfed === 1 ? "" : "s"}</span>` : ""}</div>
+    <div class="small">${esc(where)} · <span class="${hp < 30 ? "danger" : hp < 50 ? "warn" : ""}">health ${hp}</span> · <span class="${s.mood < L.lowMood ? "warn" : ""}"${tip(`Mood sets how well they work (×${n1(v.moodWork)} now: ${L.moodBase} + ${L.moodPer} × mood/100) and, under ${L.lowMood}, how often they run from the work detail and spoil things. Rations, labour, questioning, executions and the jail move it (makeshift cells and the shed: ${JAIL.lockup.mood} a day).`)}>mood ${Math.round(s.mood)}</span>${v.kit.length ? ` · <span class="warn"${tip(`Something to slip out with: each counts ×${v.hold ? v.hold.bonus : SHED.bonus} on their escapes here (a makeshift cage ×${JAIL.lockup.bonus}, a jailhouse ×${JAIL.jailhouse.bonus}).`)}>${esc(v.kit.join(", "))}</span>` : ""} · ${esc(top)}${traits ? ` · ${traits}` : ""}${p.unfed ? ` · <span class="danger">unfed ${p.unfed} day${p.unfed === 1 ? "" : "s"}</span>` : ""}</div>
     ${worm}
     <div class="row small" style="margin-top:0.25rem;flex-wrap:wrap;gap:0.5rem;align-items:center">
       <label${tip(RATIONS_TIP)}>Rations <select data-action="pr-ration" data-id="${p.id}">${rationOptions(v.ration)}</select></label>
