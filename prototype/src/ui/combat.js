@@ -2202,7 +2202,7 @@ function barkView(b, now, cw, ch, cs) {
     const [X, Y] = project(x + 0.5, y + 0.5, heightAt(b, t.x, t.y) * LV + liftOf(b) + (t.down || t.dead ? 10 : 30 * big));
     return [X, Y - 6 - fs - 6]; // over the health bar and the tags (ui/isoview.js drawLabels)
   };
-  return { visible, head, w: cw, h: ch, sel: cui.sel, top: 40, font: Math.min(30, Math.max(13, (cs ? cs * 0.34 : 3.4 * S))) * ui };
+  return { visible, head, w: cw, h: ch, sel: cui.sel, top: 40, font: Math.min(30, Math.max(16, (cs ? cs * 0.36 : 3.6 * S))) * ui };
 }
 
 // Throw mode (sim/stealth.js): the cells in range (k 0), and for the hovered spot in range where it would reach: a
