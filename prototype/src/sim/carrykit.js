@@ -12,6 +12,7 @@
 //   found gun; rollSiteKit / rollAreaKit / kitWares: magazines, rigs, plates by place, their own dice), the autopilot's
 //   kit (equipKit: the best rig and carrier, plates in the carrier, magazines into pouches; spare plates kept),
 //   and old saves (migrateKit: carriers get their plates, guns their spare magazines).
+import { fleetMob } from "./traits.js"; // Fleet-Footed
 import { GEAR } from "./data.js";
 import { MAGAZINES, CLIPS, KIT_LOOT } from "./data-kit.js";
 import { WEAPONS, KITS } from "./combat.js";
@@ -79,7 +80,7 @@ export function weighPlayer(u, s) {
   const kg = battleKg(s);
   const B = bandFor(kg * feelFactor(s));
   u.armLoad = r2(kg);
-  u.mob = B.mob;
+  u.mob = B.mob + fleetMob(s); // Fleet-Footed (traits.js): a tile more a move at any load
   u.dash = B.dash;
   u.loadBand = B.band;
 }

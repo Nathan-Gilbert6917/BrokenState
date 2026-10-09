@@ -22,6 +22,7 @@ import { conditionsOf, CONDITIONS, workFactor, tooIllToWork, conditionInfoCtx, a
 import { hasPerk, gainXp, USE } from "./skills.js";
 import { noteTreated } from "./relations.js";
 import { FIELD_CARE } from "./medfinds.js";
+import { healMult } from "./traits.js"; // Quick Healer
 import { wormHealMult } from "./worm.js"; // the worm: half the healing while it is in them (full in a hospital bed with meds)
 
 export const SEVERE_BELOW = 30;          // severe wounds: health below this
@@ -176,7 +177,7 @@ export function healRatePerHour(state, base, s, hosp = activeHospital(state, bas
   if (s.woundInfected) perDay = perDay * 0.5 - 2;
   // Nobody recovers on an empty stomach: no healing while the base is out of food (wounds can still worsen).
   if ((base.hungerDays > 0 || base.thirstDays > 0) && perDay > 0) perDay = 0; // nor without water (economy.js)
-  if (perDay > 0) perDay *= wormHealMult(s, { bed: bed && hosp.tier > 0, meds: medsToday(state, s) }); // worm.js: half while it is in them, full in a hospital bed with meds today
+  if (perDay > 0) perDay *= wormHealMult(s, { bed: bed && hosp.tier > 0, meds: medsToday(state, s) }) * healMult(s); // worm.js: half while it is in them, full in a hospital bed with meds today; Quick Healer (traits.js)
   return perDay / 24;
 }
 

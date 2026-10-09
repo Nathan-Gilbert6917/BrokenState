@@ -108,7 +108,7 @@ section("Grief on a death, and the memorial wall");
   const st = W();
   const h = hub(st);
   const [dead, friend, partner, known, rival] = atBase(st, h.id).filter((s) => !s.leader).concat(atBase(st, h.id).filter((s) => s.leader));
-  for (const s of [friend, partner, known, rival]) s.mood = 70;
+  for (const s of [friend, partner, known, rival]) { s.mood = 70; s.traits = s.traits.filter((t) => t !== "squeamish"); } // (Squeamish takes any death harder: traitstest)
   setO(st, dead, friend, 80);
   makePartners(st, dead, partner);
   setO(st, dead, known, 20);

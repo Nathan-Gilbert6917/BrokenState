@@ -5,6 +5,7 @@
 // (ui/rosterbulk.js): equip the best the armory has, send to the hospital, move to another base.
 import { alive, skill, baseById, factionById } from "../sim/world.js";
 import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
+import { traitChips, traitWords } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { ROLES } from "../sim/economy.js";
 import * as Buildings from "../sim/buildings.js";
 import { conditionsOf } from "../sim/health.js";
@@ -100,7 +101,7 @@ export function rosterRows(state, ui) {
     if (k === "cond") return r.k ? conditionsOf(s).reduce((a, c) => a + 100 + (c.sev || 0), 0) : -1;
     if (k === "weapon") return s.gear && s.gear.weapon ? s.gear.weapon.name : "~";
     if (k === "armor") return armorPower(s);
-    if (k === "traits") return s.traits.map((t) => (TRAITS[t] ? TRAITS[t].name : t)).join(", ");
+    if (k === "traits") return traitWords(s);
     if (k.startsWith("sk:")) return skill(s, k.slice(3)) + (progressOf(s, k.slice(3)) || 0) / 2;
     return 0;
   };
@@ -142,7 +143,7 @@ export function rosterModal(state, ui) {
       ${skills}
       <td>${esc(weapon) || `<span class="muted">none</span>`}</td>
       <td${tip(`Armor ${ap} from worn pieces`)}>${body2 ? esc(body2) : `<span class="muted">none</span>`}${ap ? ` <span class="muted">(${ap})</span>` : ""}</td>
-      <td>${s.traits.map((t) => `<span class="chip trait"${tip(TRAITS[t] ? TRAITS[t].desc : "")}>${esc(TRAITS[t] ? TRAITS[t].name : t)}</span>`).join("")}</td>
+      <td>${traitChips(s)}</td>
     </tr>`;
   }).join("");
   const baseOpts = [["all", "All places"], ...state.bases.map((b) => [`b${b.id}`, b.name]), ["team", "On teams"], ["away", "Away (errands, routes, captives)"]];

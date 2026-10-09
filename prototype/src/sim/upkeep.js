@@ -29,6 +29,7 @@ import { partyMembers } from "./parties.js";
 import { PRISON, prisonFoodAt } from "./prisoners.js";
 import { DOG } from "./hubevents.js";
 import { eatMult } from "./skills.js";
+import { appetite } from "./traits.js"; // Glutton
 import * as Weather from "./weather.js";
 import { childRations, childrenAt } from "./family.js"; // children (family.js): fed here, eaten in familyDaily
 import { edibleFood } from "./storage.js";
@@ -64,9 +65,11 @@ export function foodUse(state, base, dayIdx) {
   const m = mouthsAt(state, base);
   const cold = coldFactor(state, dayIdx);
   const rate = UPKEEP.food * cold * (m.residents ? eatMult(state, base) : 1);
+  // A Glutton eats a quarter ration more (traits.js): the residents' each is their average.
+  const gluttons = m.residents ? residents(state, base.id).reduce((a, s) => a + appetite(s) - 1, 0) : 0;
   const groups = [];
   const add = (key, label, n, each) => { if (n > 0) groups.push({ key, label, n, each: r2(each), total: n * each }); };
-  add("residents", m.residents === 1 ? "person" : "people", m.residents, rate);
+  add("residents", m.residents === 1 ? "person" : "people", m.residents, rate * (1 + gluttons / Math.max(1, m.residents)));
   // prisoners-tab: each prisoner eats by their rations (prisoners.js RATIONS: Short 60% by default), so `each` is the average.
   add("prisoners", m.prisoners === 1 ? "prisoner" : "prisoners", m.prisoners, (m.prisoners ? prisonFoodAt(state, base) / m.prisoners : PRISON.FOOD) * cold);
   add("guests", m.guests === 1 ? "guest" : "guests", m.guests, UPKEEP.guest * cold);
@@ -75,7 +78,7 @@ export function foodUse(state, base, dayIdx) {
   if (m.children) add("children", m.children === 1 ? "child" : "children", m.children, (rate * childRations(state, base)) / m.children);
   add("dog", "the dog", m.dog, DOG.food);
   const total = groups.reduce((a, g) => a + g.total, 0);
-  return { rate: r2(rate), cold, groups, residents: m.residents * rate, total, heads: m.heads, mouths: m };
+  return { rate: r2(rate), cold, groups, residents: (m.residents + gluttons) * rate, total, heads: m.heads, mouths: m };
 }
 
 // ---------- the pay-out reserve ----------

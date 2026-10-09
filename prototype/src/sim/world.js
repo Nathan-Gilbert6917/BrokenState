@@ -6,8 +6,10 @@ import { keyWord } from "./water.js"; // supply names in log lines (call-time on
 import { Rng } from "./rng.js";
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
-import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
+import { sanitizeStartGear, hasPicks, normalStartGear, sanitizeStartVehicle } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { appearanceFor, craftingStart, CRAFT_START } from "./appearance.js";
 export { radioBasesInRange };
 
@@ -205,8 +207,11 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol"];
   state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
   state.survivors.forEach((s, i) => randomStarterMods(state.rng, s.gear.weapon, i)); // gunmods.js: a cheap part or two on some guns
-  state.survivors.forEach((s, i) => { const box = starterLoad(state.rng, s.gear.weapon, i); if (box && !pocketBox(s, box)) state.bases[0].stock[box.key] = (state.bases[0].stock[box.key] || 0) + box.dur; }); // ammo.js: now and then a typed load and a box of it
-  state.survivors.forEach((s) => starterMags(s, state.bases[0].armory)); // carrykit.js: two spare magazines with a starting gun (section 15)
+  // Built on Customize's points (crew[i].points): what the dice hand them is theirs only as picks, so none of it
+  // overflows to the hub (the dice are drawn all the same).
+  const onPoints = (i) => !!(crew && crew[i] && crew[i].points);
+  state.survivors.forEach((s, i) => { const box = starterLoad(state.rng, s.gear.weapon, i); if (box && !pocketBox(s, box) && !onPoints(i)) state.bases[0].stock[box.key] = (state.bases[0].stock[box.key] || 0) + box.dur; }); // ammo.js: now and then a typed load and a box of it
+  state.survivors.forEach((s, i) => starterMags(s, onPoints(i) ? null : state.bases[0].armory)); // carrykit.js: two spare magazines with a starting gun (section 15)
   state.kitV = 2; // carry kit: rigs, magazines as items, carriers with plates (carrykit.js migrateKit for older saves)
   state.survivors[0].gear.armor = newItem("vest", 1, hash01(state.seed, "startdur", "vest"), START_DUR);
   state.survivors.forEach((s) => (s.location = { kind: "base", baseId: state.bases[0].id }));
@@ -216,6 +221,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   normalStartBackgrounds(state, crew);
   if (crew) applyCrew(state, crew);
   normalStartKit(state, hubBase);
+  normalStartGear(state, hubBase); // startgear.js: the gear picked on the new-run screen (what it replaces to the armory)
   assignStartingRoles(state);
   settleAll(state); // ammo.js: the hub's 80 rounds by the calibres of the guns it starts with
   state.ammoCal = 1; // rounds by calibre from the start (save.js migrates older saves)
@@ -238,7 +244,10 @@ export function makeSurvivor(state, quality = 1) {
   for (let i = 0; i < 2; i++) skills[rng.pick(ROLLED_SKILLS)] += rng.int(3, 7);
   for (const k of ROLLED_SKILLS) skills[k] = Math.min(20, skills[k]);
   skills.crafting = craftingStart(state.seed, (state.peopleMade || 0) + 1, skills.mechanics, quality); // its own dice (appearance.js)
-  const traits = rollTraits(rng);
+  // The world's dice draw the traits as ever; the newer ones come in with dice of their own (traits.js), keyed like the
+  // looks below by the seed and how many people this world has made.
+  const born = rollTraits(rng, null);
+  const traits = swapNewTraits([...born], traitDice(state.seed, (state.peopleMade || 0) + 1));
   /** @type {Survivor} */
   const s = {
     id: newId(),
@@ -252,24 +261,28 @@ export function makeSurvivor(state, quality = 1) {
     pockets: [null, null, null, null],
     location: null, role: "farm",
   };
+  // A tier for each trait (traits.js rollTiers): dice of its own, keyed like the swap, so the world's are untouched.
+  rollTiers(s, state.seed, (state.peopleMade || 0) + 1);
   // Own rng keyed by seed + how many people this world has made: same seed, same faces,
   // and the world's rng sequence is untouched.
   state.peopleMade = (state.peopleMade || 0) + 1;
   s.appearance = appearanceFor(state.seed, state.peopleMade);
+  noteBornTraits(s, born); // what the world's dice rolled (a start's backgrounds weigh their trait by it)
   return s;
 }
 
-// One or two traits, never Brave with Coward (makeSurvivor; the new-run screen's Randomize all).
-/** @param {import("./rng.js").Rng} rng @returns {string[]} */
-export function rollTraits(rng) {
-  const traitKeys = Object.keys(TRAITS);
+// One or two traits, never two that clash (data.js TRAIT_CLASH) (makeSurvivor; the new-run screen's Randomize all; a
+// child's own). Drawn from BIRTH_TRAITS with rng, as they always were; then the newer traits come in with `dice`
+// (traits.js swapNewTraits; null: not here, the caller does it with dice of its own).
+/** @param {import("./rng.js").Rng} rng @param {{ next: () => number } | null} [dice] @returns {string[]} */
+export function rollTraits(rng, dice = rng) {
   const traits = [];
   const count = rng.chance(0.6) ? 1 : 2;
   while (traits.length < count) {
-    const t = rng.pick(traitKeys);
-    if (!traits.includes(t) && !(t === "brave" && traits.includes("coward")) && !(t === "coward" && traits.includes("brave"))) traits.push(t);
+    const t = rng.pick(BIRTH_TRAITS);
+    if (!traits.includes(t) && !clashIn(traits, t)) traits.push(t);
   }
-  return traits;
+  return dice ? swapNewTraits(traits, dice) : traits;
 }
 
 // A name nobody in this world has had: no first name twice while one is free (messages use first names), and
@@ -314,18 +327,32 @@ export function applyCrew(state, crew) {
   state.survivors.forEach((s, i) => {
     const c = crew[i];
     if (!c) return;
+    // What the dice made of them, before any edit (the new-run screen's "Start from the dice" loads it; not saved:
+    // startgear.js clearStartGear takes it off at Start).
+    s.diceRoll = { skills: { ...s.skills }, traits: [...s.traits], traitTier: { ...(s.traitTier || {}) } };
     if (c.name && String(c.name).trim()) s.name = String(c.name).trim();
     if (c.skills) for (const k of SKILLS) if (c.skills[k] != null) s.skills[k] = Math.max(0, Math.min(20, Math.round(c.skills[k])));
     // Traits and the skill-point budget belong to the edited colonist, not to the seed.
-    if (Array.isArray(c.traits)) s.traits = [...new Set(c.traits.filter((t) => TRAITS[t]))];
+    if (Array.isArray(c.traits)) s.traits = [...new Set(c.traits.filter((t) => TRAITS[t]))].filter((t, i, all) => !clashIn(all.slice(0, i), t)); // none that clash (data.js TRAIT_CLASH): the first stays
+    // Their tiers go with them (traits.js; a trait kept from the dice without one keeps the dice's tier).
+    if (Array.isArray(c.traits)) tidyTiers(s, c.traitTier && typeof c.traitTier === "object" ? Object.fromEntries(Object.entries(c.traitTier).map(([t, n]) => [t, cleanTier(t, n)])) : s.traitTier || {});
     if (Number.isFinite(c.budget)) s.skillBudget = c.budget;
     if (c.appearance) s.appearance = { ...c.appearance };
     // A normal start's weapon and armor (Randomize all hands the kit out again). Hardcore's come from what they grabbed.
     if (c.gear && state.mode !== "hardcore") for (const k of ["weapon", "armor"]) if (k in c.gear) s.gear[k] = c.gear[k] && GEAR[c.gear[k].key] ? { ...c.gear[k] } : null;
+    // Gear picked on the new-run screen (startgear.js: put on after the dice and any custom background's kit, both modes).
+    const sg = sanitizeStartGear(c.startGear);
+    if (sg) s.startGear = sg; else delete s.startGear;
+    if (hasPicks(sg)) s.startCustom = true;
     if (c.leader) s.leader = true;
     // Customized past the dice on the new-run screen (free skills, traits, a picked background: ui/newgame.js), which an
     // Ironman run may not start with.
     if (c.custom) s.startCustom = true;
+    // Built on customization points (custompoints.js): their picks are what they have, the dice's kit is not handed out
+    // on top (startgear.js); and the vehicle's back if they pay for it.
+    if (c.points) { s.startPoints = true; s.startCustom = true; }
+    const sv = sanitizeStartVehicle(c.startVehicle);
+    if (sv) s.startVehicle = sv; else delete s.startVehicle;
   });
 }
 
@@ -406,9 +433,7 @@ export function fillCrafting(s) {
 export function skill(s, key) {
   let v = s.skills[key] || 0;
   if (key === "crafting" && s.skills.crafting == null) v = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0)); // people from before the skill (save.js fills it in)
-  if (key === "medicine" && s.traits.includes("medic")) v += 4;
-  if (key === "stealth" && s.traits.includes("loud")) v -= 3;
-  if (s.traits.includes("lucky")) v += 1;
+  v += traitSkill(s, key); // Former Medic, Loud, Farm-Raised, Persuasive, Lucky, Unlucky, Nearsighted, Squeamish, by tier (traits.js)
   return Math.max(0, v);
 }
 
@@ -431,9 +456,8 @@ export function combatPower(s) {
   const eff = gearEffect(s, s.gear.weapon);
   let p = 1 + skill(s, "shooting") * 0.25 + (w && eff.usable ? w.power * eff.mult * (s.gear.weapon.quality || 1) : 0);
   p += armorPower(s) * 0.5; // every worn piece (body, head, arms, legs)
-  if (s.traits.includes("brave")) p += 1;
+  p += traitPower(s); // Brave +, Coward − by tier (traits.js)
   if (hasPerk(s, "gunslinger")) p += 1.5; // skills.js perk
-  if (s.traits.includes("coward")) p -= 1;
   return Math.max(0.5, p * (0.5 + s.health / 200));
 }
 
@@ -497,11 +521,11 @@ export function playerStrength(state) {
   return alive(state).reduce((sum, s) => sum + combatPower(s), 0);
 }
 
-// opts.raw: damage that armor and toughness do nothing against (hunger, thirst, infection).
+// opts.raw: damage that armor and toughness (Tough, Frail) do nothing against (hunger, thirst, infection).
 /** @param {State} state @param {Survivor} s @param {number} amount @param {number | null} tileId @param {string} cause @param {{ raw?: boolean }} [opts] */
 export function hurt(state, s, amount, tileId, cause, opts = {}) {
   if (!opts || !opts.raw) {
-    if (s.traits.includes("tough")) amount *= 0.75;
+    amount *= woundMult(s); // Tough × 0.75, Frail × 1.25 (traits.js)
     amount *= armorMult(s);
   }
   s.health -= amount;

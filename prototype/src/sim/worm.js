@@ -42,6 +42,8 @@
 //     land at CROP_MIN+ infection carries eggs: CROP per ration of crops eaten, FORAGE per ration of forage (base.wormCrop,
 //     base.wormForage, cargo.wormForage: like the meat, eaten last; dry crops threshed into the preserved stock are
 //     safe). A cook fire or a kitchen cooks them (boiling greens counts); a team's camp fire too.
+//   - Iron Stomach (traits.js): whoever has it shrugs off the eggs caught from water, raw food, camping and searching
+//     a third of the time (catchWorm: own dice, nothing drawn from the worm's), and an upset stomach is half as likely.
 // The water boiler burns BOILER_WOOD_HEAD firewood's worth a head at the base a day (everyone fed there), on every day
 // un-purified water would be drunk (the purified water in store and the filters' share do not cover the day): any
 // burnable, firewood first, then the armory's burnable gear the base allows (woodcutting.js boilerBurnables: items
@@ -117,6 +119,7 @@
 // animal fewer in the herd (a herd hunted out is gone: a reason to hunt them).
 import { log, addCard, alive, residents, atBase, skill, hurt, day, baseById, survivorById, hub, factionById, combatPower, localId } from "./world.js";
 import { GEAR } from "./data.js";
+import { stomachShrugs, stomachMult } from "./traits.js"; // Iron Stomach, Weak Stomach
 import { Rng } from "./rng.js";
 import { count, isShelter } from "./buildings.js";
 import { partyMembers, partyTile, bestSkill, carried, takeSupply, wipeIfEmpty, cardStale, tileLabel, teamName } from "./parties.js";
@@ -250,6 +253,7 @@ export function wormWork(s) {
 // Carrier's worm swarm in battle, carriers.js); how: water, meat or camp (for the stats). Returns true if new.
 export function catchWorm(state, s, why = "", how = "") {
   if (!s || !s.alive || s.worm) return false;
+  if (stomachShrugs(state, s, how)) return false; // Iron Stomach (traits.js): swallowed eggs shrugged off now and then, own dice
   const from = why;
   if (why === "swarm") { why = "from a worm swarm in a fight"; how = how || "swarm"; }
   s.worm = { v: 2, stage: "gut", day: 0, len: WORM.COURSE, since: day(state), why, how, from, seen: null, treatedDay: -99, carded: "", paid: 0 };
@@ -567,6 +571,7 @@ export function eatRaw(state, people, rations, why, rate = WORM.RAW, how = "meat
 export function sickRoll(state, s, chance, why = "") {
   if (!s || !s.alive) return false;
   if ((s.conditions || []).some((c) => c.key === "stomach")) return false;
+  chance *= stomachMult(s); // Iron Stomach, Weak Stomach by tier (traits.js): the same one roll
   if (!(chance > 0) || !wormRng(state).chance(Math.min(WORM.SICK_MAX, chance))) return false;
   return !!addCondition(state, s, "stomach", why, { cause: /water/.test(why) ? "water" : "food" });
 }

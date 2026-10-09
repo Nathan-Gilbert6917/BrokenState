@@ -127,6 +127,10 @@ export interface Survivor {
   inBed?: boolean; // in a hospital bed (medical.js)
   appearance?: any;
   skillBudget?: number;
+  // Gear picked under Customize on the new-run screen (startgear.js): only until the run starts (main.js begin takes it
+  // off; the picks are ordinary gear by then).
+  startGear?: { slots: Record<string, string>; items?: string[]; rolled?: Record<string, string>; left?: string[]; rig?: string } | null;
+  startDice?: { weapon?: Item | null; armor?: Item | null }; // the dice's weapon and vest a pick replaced (until Start)
   [key: string]: any;
 }
 

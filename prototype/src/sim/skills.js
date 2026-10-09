@@ -41,6 +41,7 @@
 // Perks: reaching 5, 10 and 15 in a skill (as shown) gives a perk point for that milestone; each milestone offers two
 // perks (PERKS below), Fallout: New Vegas style. A card lets the player pick (or decide later from the survivor
 // screen); the autopilot picks by its style. Every perk's effect is coded where it applies (see `hook` in PERKS).
+import { learnMult } from "./traits.js"; // Quick Study
 import { SKILLS, SKILL_NAMES, GEAR } from "./data.js";
 import { day, log, addCard, atBase, alive, skill, survivorById, fillCrafting } from "./world.js";
 import { workFactor } from "./health.js";
@@ -297,8 +298,11 @@ function gainXpRaw(state, s, key, amount, src) {
   if (amt <= 1e-9) return 0;
   bucket[key] = (bucket[key] || 0) + amt;
   s.xpLast[key] = d;
-  addXp(state, s, key, amt);
-  return amt;
+  // Quick Study (traits.js): more from the same XP. The day's caps count what was earned before it, so they learn
+  // faster under the caps too.
+  const got = amt * learnMult(s);
+  addXp(state, s, key, got);
+  return got;
 }
 
 // Raw XP into the level track (no caps): level-ups and milestones.

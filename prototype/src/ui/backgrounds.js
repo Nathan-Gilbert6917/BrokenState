@@ -4,13 +4,16 @@
 // browser (localStorage BG_KEY); a world built with them keeps its own copy. Not in an Ironman run: the button is off
 // while Ironman is ticked. HTML builders plus their action handlers; main.js registers them (bg-close there: closing
 // the window rebuilds the world when a colonist's background was changed in it).
-import { GEAR, SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
+import { GEAR, SKILLS, SKILL_NAMES } from "../sim/data.js";
 import { VEHICLE_TYPES } from "../sim/vehicles.js";
 import { HC_START } from "../sim/hardcore-start.js";
+import { traitPickerHtml, traitBlock } from "./traitpick.js"; // the traits, good and bad, none that clash
 import {
   CUSTOM_BG, blankBackground, sanitizeBackground, sanitizeLibrary, newBackgroundId, slotOptions, carryOptions, trunkOptions, carTypes, customTraitKeys, backgroundSummary,
 } from "../sim/custombg.js";
 import { POCKETS } from "../sim/inventory.js";
+import { itemPoints, suppliesPoints } from "../sim/custompoints.js"; // what it comes to under Customize
+import { traitPoints, cleanTier, tierCount } from "../sim/traits.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -132,11 +135,13 @@ export function backgroundEditor(state, ui) {
 function form(d, ui) {
   const C = CUSTOM_BG;
   const skills = SKILLS.map((k) => `<label class="nrskill"><span>${SKILL_NAMES[k]}</span> +${num("bg-skill", d.skills[k], C.SKILL, ` data-k="${k}"`, `Added to their own ${SKILL_NAMES[k]} (0–${C.SKILL}; a skill tops out at 20)`)}</label>`).join("");
-  const traits = customTraitKeys().map((t) => {
-    const on = d.traits.includes(t);
-    const off = !on && (d.traits.length >= C.TRAITS || (t === "brave" && d.traits.includes("coward")) || (t === "coward" && d.traits.includes("brave")));
-    return `<button class="mini ${on ? "active" : ""}" data-action="bg-trait" data-k="${t}" ${off ? "disabled" : ""}${tip(`${TRAITS[t].desc}${off && !on ? (d.traits.length >= C.TRAITS ? `. At most ${C.TRAITS}` : ". Not with Brave or Coward both") : ""}`)}>${TRAITS[t].name}</button>`;
-  }).join("");
+  const traits = traitPickerHtml(customTraitKeys(), d.traits, C.TRAITS, `data-action="bg-trait"`, { tiers: d.traitTier || {}, tierAttrs: `data-action="bg-tier"`, points: true });
+  // Under Customize a colonist with this background pays for what it gives (sim/custompoints.js): its traits by tier,
+  // its kit, the supplies on them; its skill bumps add to the levels they pay for.
+  const tPts = d.traits.reduce((a, t) => a + traitPoints(t, (d.traitTier || {})[t] || 1), 0);
+  const kPts = [...Object.values(d.gear), ...d.items].reduce((a, k) => a + itemPoints(k), 0);
+  const sPts = suppliesPoints(d.supplies), cPts = suppliesPoints(d.car.trunk) + d.car.items.reduce((a, k) => a + itemPoints(k), 0);
+  const costLine = `<div class="small muted"${tip("With Customize ticked, a colonist with this background pays points for what it gives, like anything else: its skill bumps on top of what they pay for their skills, its traits by tier (bad ones give points back), its kit, the supplies on them; the car's back is paid by whoever pays for the vehicle's back (normal start: a car of its own at the hub costs its price too)")}>Under Customize: traits ${tPts >= 0 ? "+" : "−"}${Math.abs(tPts)}, kit ${kPts}, supplies on them ${sPts}, the car's back ${cPts} points</div>`;
   const gear = C.SLOTS.map((slot) => `<label class="lookopt">${SLOT_LABELS[slot]}${select("bg-gear", d.gear[slot], byName(slotOptions(slot)), "None", ` data-slot="${slot}"`)}</label>`).join("");
   const fit = fitCheck(d);
   const items = d.items.map((k, i) => `<span class="chip ${fit.left.includes(k) ? "off" : ""}">${esc(gearName(k))} <button class="mini" data-action="bg-item-del" data-i="${i}"${tip("Take it out")}>×</button></span>`).join("");
@@ -147,7 +152,8 @@ function form(d, ui) {
   return `<div class="row"><label class="lookopt" style="flex:1">Name<input data-action="bg-name" value="${esc(d.name)}" maxlength="${C.NAME}"></label>
       <label class="lookopt" style="flex:2">Who they were (a few words)<input data-action="bg-blurb" value="${esc(d.blurb)}" maxlength="${C.BLURB}" placeholder="came off a double shift"></label></div>
     <h3>Skills <span class="small muted">(added to what they rolled)</span></h3><div class="nrskills">${skills}</div>
-    <h3>Traits <span class="small muted">(up to ${C.TRAITS}, always given; they go first)</span></h3><div class="row" style="gap:0.25rem">${traits}</div>
+    <h3>Traits <span class="small muted">(up to ${C.TRAITS}, always given; they go first; − and + set the tier)</span></h3>${traits}
+    ${costLine}
     <h3>Worn and held</h3><div class="lookopts">${gear}</div>
     <h3>Carried <span class="small muted">(${d.items.length}/${C.ITEMS}: a tool to the off hand, small things to the ${POCKETS} pockets, the rest to the bag; about ${fit.kg} kg with the gear)</span></h3>
     <div>${items || `<span class="small muted">Nothing.</span>`}</div>
@@ -199,7 +205,12 @@ export const BG_ACTIONS = {
     ui.bgEditor.confirmDel = false;
     store();
   },
-  "bg-trait": (state, ui, d) => edit(ui, (b) => { b.traits = b.traits.includes(d.k) ? b.traits.filter((t) => t !== d.k) : [...b.traits, d.k]; }),
+  "bg-trait": (state, ui, d) => edit(ui, (b) => { b.traits = b.traits.includes(d.k) ? b.traits.filter((t) => t !== d.k) : traitBlock(b.traits, d.k, CUSTOM_BG.TRAITS) ? b.traits : [...b.traits, d.k]; }),
+  // A trait's tier up or down (traits.js TRAIT_TIERS).
+  "bg-tier": (state, ui, d) => edit(ui, (b) => {
+    if (!b.traits.includes(d.k) || tierCount(d.k) < 2) return;
+    b.traitTier = { ...(b.traitTier || {}), [d.k]: cleanTier(d.k, ((b.traitTier || {})[d.k] || 1) + (Number(d.d) > 0 ? 1 : -1)) };
+  }),
   "bg-item-del": (state, ui, d) => edit(ui, (b) => { b.items.splice(Number(d.i), 1); }),
   "bg-trunk-del": (state, ui, d) => edit(ui, (b) => { b.car.items.splice(Number(d.i), 1); }),
 };

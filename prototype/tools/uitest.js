@@ -614,6 +614,9 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
   const { BG_ACTIONS, BG_CHANGE, backgroundEditor, setCustomLibrary, presetToCustom } = await import("../src/ui/backgrounds.js"); // custom backgrounds window
   Object.assign(CLICK, BG_ACTIONS);
   Object.assign(CHANGE, BG_CHANGE);
+  const { SG_ACTIONS, SG_CHANGE, startGearEditor } = await import("../src/ui/startgear.js"); // the starting gear window (Customize)
+  Object.assign(CLICK, SG_ACTIONS);
+  Object.assign(CHANGE, SG_CHANGE);
   const { WORLD_SIZES, SIZE_KEYS, clampGroups } = await import("../src/sim/worldsize.js");
   for (const k of SIZE_KEYS) {
     const d = WORLD_SIZES[k];
@@ -661,9 +664,16 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
       const ui = { started: false, ironman: false };
       BG_ACTIONS["bg-open"](w, ui);
       htmlOk(backgroundEditor(w, ui), `backgrounds window (${mode})`);
+      const g = createWorld({ seed: seed + 9, factionCount: 7, mode, crew: [{ points: true, startGear: { slots: { weapon: "ar", backpack: "" }, carry: { pocket: ["frag"], pack: ["laptop"] } } }] });
+      const gu = { started: false, ironman: false, freeEdit: true };
+      SG_ACTIONS["sg-open"](g, gu, { id: g.survivors[0].id });
+      htmlOk(startGearEditor(g, gu), `starting gear window (${mode}, picks)`);
+      gu.gearEdit = { i: 1 };
+      htmlOk(startGearEditor(g, gu), `starting gear window (${mode}, another colonist)`);
     }
     setCustomLibrary([]);
     check(inMain("nr-free") && inMain("nr-bg") && inMain("bg-close") && mainSrc.includes("customBackgrounds: ui.ironman ? null : customLibrary()"), "main.js handles Customize, the background select and Done, and passes the list (not in Ironman)");
+    check(mainSrc.includes("Object.entries(SG_ACTIONS)") && mainSrc.includes("Object.entries(SG_CHANGE)") && mainSrc.includes("clearStartGear(state)"), "main.js registers the starting gear window (a change builds the world again) and Start clears the picks");
   }
   check(inMain("startpeople") && mainSrc.includes("startPeople: ui.startPeople"), "main.js handles Starting people and passes it to createWorld");
   check(inMain("customw") && inMain("customh") && inMain("hivecount"), "main.js handles the custom size and hive count");
