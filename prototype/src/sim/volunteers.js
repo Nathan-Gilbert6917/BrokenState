@@ -49,6 +49,8 @@ import { hiveTier } from "./hivetech.js";
 import { crawlEstimate } from "./hivecrawl.js";
 import { assaultForce, teamAssaultOdds } from "./conquest.js";
 import { battlePending } from "./combat.js";
+import { calOf } from "./ammo.js";
+import { baseKey } from "./rounds.js";
 
 
 export const VOL = {
@@ -56,7 +58,7 @@ export const VOL = {
   SPAN: { min: 2, max: 30, def: 7 },         // days
   GW_MIN: 30, GW_LEAVE: 20, HOME_MIN: 8,     // goodwill to be asked at all, below which they are called home; people a group keeps at home
   TRAVEL: 1.2, TRAVEL_MIN: 2, TRAVEL_MAX: 72, // hours a tile from their nearest base to the team
-  BRING: { days: 8, ammo: 15 },              // a day's food and water each for up to `days` of the span; rounds a gun
+  BRING: { days: 8, ammo: 30 },              // a day's food and water each for up to `days` of the span; rounds a gun
   QUALITY: { military: 1.15, fortress: 1.1, raider: 1, expansionist: 1, zealot: 1, traders: 0.95, commune: 0.9 },
   SHOOT: { military: 4, fortress: 3, raider: 2, expansionist: 2, zealot: 1, traders: 1, commune: 0 },
   // The points of a request (askQuote); >= 0 is a yes.
@@ -312,7 +314,9 @@ function join(state, s, p) {
   const f = factionById(state, s.vol.fid);
   if (f && s.gear.weapon && GEAR[s.gear.weapon.key] && GEAR[s.gear.weapon.key].ammo) {
     const got = takeArsenalRounds(f, VOL.BRING.ammo);
-    if (got > 0) p.supplies.ammo = (p.supplies.ammo || 0) + got;
+    const cal = calOf(s.gear.weapon.key);
+    const key = cal ? baseKey(cal) : "ammo"; // rounds of their own gun's calibre
+    if (got > 0) p.supplies[key] = (p.supplies[key] || 0) + got;
   }
   try { weighTeam(state, p); } catch { /* the load is weighed again on the next move */ }
   log(state, `${s.name}, a volunteer from ${s.vol.group}, joined the team at ${tileLabel(state, partyTile(p))} (${days} days' food and water, their own ${s.gear.weapon ? s.gear.weapon.name : "fists"}). Their group's orders, not yours, in a fight.`, "good");
