@@ -590,14 +590,17 @@ export function autoAskVolunteers(state) {
       const hv = hiveAt(state, p.hiveCrawl ? p.hiveCrawl.tile : p.dest);
       if (!hv) continue;
       const est = crawlEstimate(state, hv);
-      marginal = power / Math.max(0.1, est.strength) < S.hive;
+      marginal = !!p.apCrawlTrip || power / Math.max(0.1, est.strength) < S.hive; // a crawl trip goes because the core's odds are not there yet (autopilot.js hiveCandidate)
     } else {
       const f = state.factions.find((x) => x.alive && x.bases.includes(p.dest));
       if (!f) continue;
       marginal = teamAssaultOdds(state, p, assaultForce(state, f, p.dest, p)) < S.assault;
     }
     p.volAsked = day(state);
+    const V = ensureVols(state);
+    V.stats.autoChecked = (V.stats.autoChecked || 0) + 1;
     if (!marginal) continue;
+    V.stats.autoMarginal = (V.stats.autoMarginal || 0) + 1;
     const offer = S.offer && h && (h.stock.food || 0) >= 80 ? { key: "food", qty: 20 } : null;
     const cands = state.factions.filter((f) => f.alive && f.known && !groupProblem(state, f));
     let best = null;
@@ -609,6 +612,7 @@ export function autoAskVolunteers(state) {
       if (best) break;
     }
     if (best) askVolunteers(state, best.f, p, { n: best.n, days: VOL.SPAN.def, offer });
+    else V.stats.autoNoAlly = (V.stats.autoNoAlly || 0) + 1; // nobody in reach would say yes
   }
 }
 
