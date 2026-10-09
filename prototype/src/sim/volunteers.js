@@ -312,7 +312,7 @@ function join(state, s, p) {
   p.supplies.food = (p.supplies.food || 0) + days;
   p.supplies.water = (p.supplies.water || 0) + days;
   const f = factionById(state, s.vol.fid);
-  if (f && s.gear.weapon && GEAR[s.gear.weapon.key] && GEAR[s.gear.weapon.key].ammo) {
+  if (f && s.gear.weapon && calOf(s.gear.weapon.key)) { // a gun: rounds of its calibre
     const got = takeArsenalRounds(f, VOL.BRING.ammo);
     const cal = calOf(s.gear.weapon.key);
     const key = cal ? baseKey(cal) : "ammo"; // rounds of their own gun's calibre
@@ -446,7 +446,7 @@ export function askCard(state, ask) {
     });
   }
   choices.push({ label: "Choose who…", hint: "Pick the people yourself", uiAction: { type: "volpick", askId: ask.id }, ai: () => -5, resolve: () => "Pick who goes." });
-  choices.push({ label: "Decline", hint: `−${declineCost(f, ask)} goodwill with ${f.name}${ask.owed ? " (you owe them a favour)" : ""}`, ai: () => (st.accept < 1 ? 1.5 : 0.5), resolve: (s2) => answerAsk(s2, ask.id, null) });
+  choices.push({ label: "Decline", default: true, hint: `−${declineCost(f, ask)} goodwill with ${f.name}${ask.owed ? " (you owe them a favour)" : ""}`, ai: () => (st.accept < 1 ? 1.5 : 0.5), resolve: (s2) => answerAsk(s2, ask.id, null) });
   return {
     title: `${f.name} ask for volunteers`, volAsk: ask.id,
     text: `${f.name} call on the radio: they need people for ${ask.label}. They ask for ${ask.n === 1 ? "one fighter" : `up to ${ask.n} fighters`} for about ${ask.days} days${ask.owed ? ", and remind you of the favour you owe them" : ""}. Whoever goes is with them, out of your orders, fights their fights and comes back with a share of what is taken, hurt, or not at all.`,

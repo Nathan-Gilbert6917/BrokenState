@@ -19,6 +19,8 @@ import { hiveAllies, ensureAlliance } from "../src/sim/alliance.js";
 import { changeRelation } from "../src/sim/diplomacy.js";
 import * as HC from "../src/sim/hivecrawl.js";
 import * as V from "../src/sim/volunteers.js";
+import { calOf } from "../src/sim/ammo.js";
+import { baseKey } from "../src/sim/rounds.js";
 
 const SEED = Number(process.argv[2] || 7);
 let passed = 0, failed = 0;
@@ -107,6 +109,8 @@ console.log("Joining the team");
   check(survivorById(st, joined[0].id) === joined[0] && !st.survivors.includes(joined[0]), "they are found by id, but are not your people (not in the roster)");
   check(partyCapacity(st, p) > cap0 && rationsPerHour(st, p) > eat0, `they carry (${Math.round(cap0)} → ${Math.round(partyCapacity(st, p))} kg) and eat (${eat0.toFixed(3)} → ${rationsPerHour(st, p).toFixed(3)} rations an hour)`);
   check(p.supplies.food > food0 - 5, `they brought their food (${food0} → ${Math.round(p.supplies.food)} after the walk)`);
+  const keys = joined.map((s) => (calOf(s.gear.weapon.key) ? baseKey(calOf(s.gear.weapon.key)) : null)).filter(Boolean);
+  check(keys.length && keys.every((k) => (p.supplies[k] || 0) > 0), `and rounds for their own guns (${[...new Set(keys)].map((k) => `${k} ${p.supplies[k]}`).join(", ")})`);
   const foodAt = p.supplies.food;
   ticks(st, 24);
   check(p.supplies.food < foodAt, `a day with the team: the food goes down (${Math.round(foodAt)} → ${Math.round(p.supplies.food)})`);
