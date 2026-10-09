@@ -1,5 +1,5 @@
-// The isometric battle view (pseudo-3D, the old X-COMs and Project Zomboid): the way a battle is drawn (the flat
-// top-down grid of ui/combat.js is kept only for the headless tests). A renderer only: every rule is in sim/combat.js; this module reads the battle and draws it.
+// The isometric battle view (pseudo-3D, the old X-COMs and Project Zomboid): the way a battle is drawn (the only
+// battle view: there is no top-down one). A renderer only: every rule is in sim/combat.js; this module reads the battle and draws it.
 //
 // Geometry: 2:1 diamonds. In art pixels a tile is 32 × 16 and one height level (a walkway, a flat roof, an upper
 // floor; a watchtower is two) LV px up. Everything is painted as pixel art at that size (procedural, in the State
@@ -33,12 +33,19 @@ import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (s
 import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas } from "./battleedge.js"; // the map's edge: ground fading into fog
 import { paintLights, drawGlow, drawDarkness, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
+import { drawGroundIso, drawPileIso } from "./ground.js";
+import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
 export const LV = 20;           // art px per height level
 const WALL1 = 34, WALL2 = 2 * LV + 14, STUB = 7, PALISADE = LV + 9;
 const UNIT_H = 30;              // a standing unit in art px
+// Cars and trucks stand about head high on a survivor (the user's ask): their roofs at VEH_TOP art px. The bodies are
+// drawn in their old proportions (roof at VEH_ROOF of the kind) and stretched up by VEH_TOP / roof, wheels from the ground.
+const VEH_TOP = 28;
+const VEH_ROOF = { m35: 20, humvee: 19, mrap: 21, truck: 17, car: 15, one: 16, oneTruck: 23 };
+const vehZ = (roof) => VEH_TOP / roof;
 export const ISO_ZOOMS = [0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5]; // CSS px per art px
 
 // ---------- state ----------
@@ -382,6 +389,9 @@ function carPieces(car, r) {
     for (const a of [0.6, L - 0.6]) { wheel(a, 0.2); wheel(a, 1.8); }
   }
   if (car.up) carUpParts(car, L, parts); // its upgrades (sim/vehicles.js): plating, grilles, the gun on its roof
+  // Head high (VEH_TOP): every piece stretched up from the ground by the kind's factor (a bike stays as it is).
+  const zk = car.body === "bike" ? 1 : vehZ(mil ? VEH_ROOF[car.body] : big ? VEH_ROOF.truck : VEH_ROOF.car);
+  if (zk !== 1) for (const q of parts) { q[4] *= zk; q[5] *= zk; }
   // Clip to this cell, to local 0..1 along the world axes, then into the view's frame.
   const loc = (fx, fy) => (r & 3) === 0 ? [fx, fy] : (r & 3) === 1 ? [1 - fy, fx] : (r & 3) === 2 ? [1 - fx, 1 - fy] : [fy, 1 - fx];
   const out = [];
@@ -524,7 +534,8 @@ function prims(k, o) {
       const paint = (f, s, t, X, Y) => { const q = n2(X, Y, 13); return big && q < 0.35 ? mul(PAL.tire, 1.4) : q > 0.93 ? mul(PAL.rust, 1.1) : mul(body, f === "top" ? 1 : 0.95); };
       const glass = (f, s, t, X, Y, sw, sh) => (f === "top" ? mul(body, 0.8) : t > 1 && t < sh - 1 && s > 1 && s < sw - 1 ? (big ? PAL.tire : PAL.glass) : mul(body, 0.8));
       const wheel = { m: flatM(PAL.tire) };
-      const L = (a0, a1, c0, c1, z0, z1, m) => run(ax, c0, c1, z0, z1, m, a0, a1);
+      const zk = vehZ(big ? VEH_ROOF.oneTruck : VEH_ROOF.one); // head high, as the multi-cell cars (carPieces)
+      const L = (a0, a1, c0, c1, z0, z1, m) => run(ax, c0, c1, z0 * zk, z1 * zk, m, a0, a1);
       const out = [];
       for (const [a, c] of [[0.2, 0.2], [0.8, 0.2]]) out.push({ ...L(a - 0.08, a + 0.08, c, c + 0.08, 0, 5, wheel.m) });
       out.push(L(0.06, 0.94, big ? 0.14 : 0.22, big ? 0.86 : 0.78, 3, big ? 16 : 10, paint));
@@ -986,9 +997,10 @@ function blockTop0(k, o) {
     case "ladder": return LV;
     case "tree": return o.v === 3 && o.alt ? 30 : 40;
     case "hivewall": return 30;
-    case "truck": return o.car ? (MIL_TOPS[o.car.body] ? 19 : 17) : 23;
-    case "car": return o.car ? (o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16; // a multi-cell car: its cabin cells stand taller than the hood and the trunk
-    case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" || MIL_TOPS[o.car.body] ? 19 : o.car.i > 0 && o.car.i < o.car.L - 1 ? 15 : 9) : 16;
+    // Head high (VEH_TOP, carPieces): a car's cabin cells at the roof, its hood and trunk lower.
+    case "truck": return VEH_TOP;
+    case "car": return o.car ? (o.car.i > 0 && o.car.i < o.car.L - 1 ? VEH_TOP : Math.round(9 * vehZ(VEH_ROOF.car))) : VEH_TOP; // a multi-cell car: its cabin cells stand taller than the hood and the trunk
+    case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" || MIL_TOPS[o.car.body] ? VEH_TOP : o.car.i > 0 && o.car.i < o.car.L - 1 ? VEH_TOP : Math.round(9 * vehZ(VEH_ROOF.car))) : VEH_TOP;
     case "locker": return 26; case "shelf": return 24; case "pump": return 22; case "gunsafe": return 22;
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
@@ -1486,6 +1498,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // Bodies on the ground (sim/sleepers.js), by the same depth as the units.
   const bodies = new Map();
   for (const c of b.corpses || []) { if (!onFloor(b, c)) continue; const [cu, cv] = toView(c.x, c.y, r, b.w, b.h); const d = cu + cv; const a = bodies.get(d); if (a) a.push(c); else bodies.set(d, [c]); }
+  // Things on the ground (sim/ground.js piles), by the same depth.
+  const piles = new Map();
+  for (const p of groundPiles(b)) { if (!pileCount(p) || !onFloor(b, p)) continue; const [cu, cv] = toView(p.x, p.y, r, b.w, b.h); const d = cu + cv; const a = piles.get(d); if (a) a.push(p); else piles.set(d, [p]); }
   // An upper floor: which sides of a footprint cell face the outside (the wall mass below is drawn there).
   const massFaces = (uu, vv) => {
     let faces = 0;
@@ -1539,6 +1554,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       }
     }
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
+    for (const p of piles.get(d) || []) drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); // ui/ground.js
     for (const q of gh.get(d) || []) drawGhost(ctx, state, b, q, H);
     for (const f of siegeAt.get(d) || []) f();
     for (const s of (sh.get(d) || []).filter((q) => !flatDead.has(q.t)).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) drawUnitIso(ctx, state, b, s, H, now);
@@ -1644,6 +1660,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.strokeStyle = "#7a5a3a"; ctx.lineWidth = 2 * S; ctx.beginPath(); ctx.moveTo(X0, Y0); ctx.lineTo(X1, Y1); ctx.stroke();
     ctx.fillStyle = "#d6dde2"; ctx.beginPath(); ctx.arc(X1, Y1, 1.8 * S, 0, Math.PI * 2); ctx.fill();
   }
+  drawGroundIso(ctx, b, project, (x, y) => standZ(b, x, y), S, floorNo(b)); // ui/ground.js: things on the ground, bodies searched with things left
 
   // A raid: names on the areas, a marker on every container.
   if (b.raid) {
@@ -1658,11 +1675,11 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       tag(ctx, a.locked && !(b.raid.doors || []).some((d) => d.area === a.id && d.lock.open) ? `🔒 ${a.name}` : a.name, X, Y, low ? "#c9bfa6" : "#e6d8b8", Math.max(10, (low ? 3.4 : 4.2) * S));
     }
     for (const c of b.raid.containers) {
-      if (!onFloor(b, c)) continue; // b.raid.containers holds every floor's
+      if (!onFloor(b, c) || c.kind === "ground") continue; // b.raid.containers holds every floor's; piles on the ground: ui/ground.js
       const L = looks[c.y * b.w + c.x], top = (L ? L.top : 4) + liftAt(b, c.y * b.w + c.x);
       const [X, Y] = project(c.x + (c.w || 1) / 2, c.y + (c.h || 1) / 2, top + 4); // over the middle of a car's cells
       const s = Math.max(7, 3.2 * S);
-      // As the top-down view (ui/combat.js): rummaged through, more may be hidden (sim/search.js) is blue with "…".
+      // Rummaged through, more may be hidden (sim/search.js) is blue with "…"; things left orange; not yet ? yellow.
       ctx.fillStyle = c.searched ? "rgba(60,64,70,0.9)" : c.quick ? "#7fb8e6" : c.partial ? "#e08a4f" : "#ffd166";
       ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 1;
       rr(ctx, X - s, Y - s * 2, s * 2, s * 2, 3); ctx.fill(); ctx.stroke();

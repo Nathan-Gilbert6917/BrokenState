@@ -65,6 +65,8 @@ import { GEAR, SUPPLIES } from "./data.js";
 import { partyMembers, cargoRoom, bodyLoad } from "./parties.js";
 import { partyVehicle, isCar } from "./vehicles.js";
 import { atVehicle, raidVehicle } from "./raidloot.js";
+import { groundFire } from "./ground.js"; // the things lying on a burning cell burn too
+import { cookBody, fireCookOffs } from "./launchers.js"; // grenades and launcher rounds in the flames go off
 import { hasWorm, catchWorm, clearWorm, wormRise, wormOf, dayHp } from "./worm.js";
 
 const cheb = (a, x, y) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y));
@@ -112,13 +114,17 @@ export function swarmArmor(hit, by = null) {
 export function burnBody(b, c) {
   if (!isBody(c) || c.burnt) return false;
   c.burnt = true;
+  cookBody(b, c); // launchers.js: the grenades, bombs and launcher rounds on it go off in turn (fireCookOffs)
   if (b.raid) { const i = b.raid.containers.findIndex((k) => k.kind === "body" && k.uid === c.id); if (i >= 0) b.raid.containers.splice(i, 1); }
   say(b, `The fire takes ${bodyName(c)}: the worms in it cook, and whatever was on it burns with it.`, c.side === "player" ? "death" : "good");
   return true;
 }
 function burnUnderFire(b) {
-  if (!b.fires || !b.fires.length) return;
-  for (const c of b.units) if (isBody(c) && !c.burnt && fireAt(b, c.x, c.y)) burnBody(b, c);
+  if (b.fires && b.fires.length) {
+    for (const c of b.units) if (isBody(c) && !c.burnt && fireAt(b, c.x, c.y)) burnBody(b, c);
+    groundFire(b); // ground.js: the piles on the ground
+  }
+  fireCookOffs(b); // launchers.js: what the flames set off goes off, a few at a time (even after the fire is out)
 }
 // A carrier who is down, dead or gone puts the body down where they are.
 function dropIfDown(b) {

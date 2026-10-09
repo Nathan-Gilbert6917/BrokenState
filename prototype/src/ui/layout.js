@@ -15,6 +15,8 @@
 // corners and moved by its title. Sizes are kept in rem (they grow with the UI size), places in pixels, both clamped
 // to the screen. Remembered per kind of window in the browser (localStorage, failures ignored).
 
+import { OVERLAYS_HELP } from "./overlaydrag.js"; // the boxes over the map move (Help line)
+
 export const LAYOUT_KEY = "brokenstate.layout";
 export const WINDOWS_KEY = "brokenstate.windows";
 
@@ -260,5 +262,6 @@ export function windowsHelp() {
     <b>Closing a panel completely:</b> <b>Alt+[</b>, <b>Alt+]</b> or <b>Alt+L</b>, the ✕ on a folded strip, or the panel's button in the top bar (◧ the left panel, ◨ the right panel, ⬓ the log), closes it with nothing left over, strip and all, and the map takes the room. A closed panel comes back open with the same Alt key or top-bar button (dark while the panel is closed), the slim tab at that edge of the map (⟩ ⟨ ▴), its plain key (<b>[</b> <b>]</b> <b>L</b>), or by itself when you pick something it shows (below). Folded and closed panels are remembered in this browser.<br><br>
     <b>Map only:</b> <b>\\</b> (backslash) or the ▣ button in the top bar folds every panel and box at once; press it again to put them back the way they were. A closed panel stays closed through both.<br><br>
     <b>Opening by themselves:</b> when you pick something a folded or closed panel shows, it opens: a tile, site, base or team clicked on the map, a team opened from a list, an alert or a log link: the right panel; a tab key (B P G T): the left panel; a new urgent alert (red) opens folded alerts, except in map-only mode. The log never opens for a new line. Switch this off in the menu: Options → <i>Auto-open panels on select</i>.<br><br>
-    <b>Windows:</b> drag a window's edges or corners to resize it, and its title to move it; double-click the title for its usual size and place. The content scrolls inside. Each kind of window (base, survivor, trade, inventory, planner, menu, diary, roster…) remembers its size and place in this browser; Options → <i>Reset window sizes</i> puts every window and panel back. Sizes follow the UI size.`;
+    <b>Windows:</b> drag a window's edges or corners to resize it, and its title to move it; double-click the title for its usual size and place. The content scrolls inside. Each kind of window (base, survivor, trade, inventory, planner, menu, diary, roster…) remembers its size and place in this browser; Options → <i>Reset window sizes</i> puts every window and panel back. Sizes follow the UI size.<br><br>
+    ${OVERLAYS_HELP}`;
 }

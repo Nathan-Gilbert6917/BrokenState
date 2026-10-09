@@ -97,7 +97,10 @@ import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear,
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
+import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies or a bag carried in the arms: no weapon until set down (Drop carried: free)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
+import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
+import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js"; // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -347,6 +350,7 @@ export function finishCombat(state, setup, result) {
   battleRecord(state, setup, result, battle, combatants(state, setup)); // relations.js: kills, downed, rescues, shared hardship
   capturePrisoners(state, setup, result, battle); // prisoners.js: the knocked out go with the team or into the cells
   if (battle) settleClaims(state, battle, result); // foundcars.js: the cars claimed on the map join the team or stay parked there
+  settleCarried(state, setup, result, battle); // carry.js: won, the loads set down are picked up again; else they stay on the ground
   settleArsenal(state, setup, result, battle); // arsenal.js: a group's dead lose their kit (or it is picked up), the rest wears, rounds spent
   const fn = handlers && handlers.get(setup.handler);
   // While the handler runs, the team is between a battle and its aftermath (conflicts.js releaseStranded skips it).
@@ -2248,6 +2252,7 @@ const gunWord = (u) => { const n = u.weaponName || WEAPONS[u.weapon].name; retur
 export function reloadRefusal(b, u, type = null) {
   if (!isRanged(u)) return "No gun to reload.";
   if (!hasMag(u)) return `The ${gunWord(u)} needs no reloading.`;
+  if (handsBusy(u)) return handsWord(u); // carry.js
   if (u.carrying != null) return "Hands full: put the body down first.";
   const cal = calOf(u.weapon);
   if (type && (!cal || typeFor(cal, type) !== type)) return `The ${gunWord(u)} takes no such rounds.`;
@@ -2303,7 +2308,7 @@ function spendRounds(b, u, w) {
 }
 // Can this unit fire its gun right now (ranged weapon, loaded and, for the player, the rounds of its calibre and
 // loaded type there; a bow or crossbow, arrows)? One that cannot fights in melee (a gun or a bow swung as a club: BASH).
-export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && u.dragging == null && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon], u)) && !magEmpty(b, u) && !u.jam; // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js) or dragging a downed ally (medics.js); a jammed gun (gunfire.js)
+export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && u.dragging == null && !handsBusy(u) && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon], u)) && !magEmpty(b, u) && !u.jam; // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js) or dragging a downed ally (medics.js); a jammed gun (gunfire.js)
 // A gun that can shoot now or after a reload (the AI's sense of a side's firepower, the threat preview): a reload of
 // its type, or of another type of its calibre when its own has run out.
 export const hasShots = (b, u) => canFire(b, u) || (isRanged(u) && (magEmpty(b, u) || (u.side === "player" && !!WEAPONS[u.weapon].ammo && !hasShot(b, WEAPONS[u.weapon], u))) && reloadType(b, u) != null && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)));
@@ -2312,6 +2317,7 @@ export function fireRefusal(b, u) {
   if (!isRanged(u)) return "No gun.";
   if (canFire(b, u)) return "";
   if (u.jam) return jamRefusal(u); // gunfire.js: "Jammed (stovepipe): Unjam (J), 1 action."
+  if (handsBusy(u)) return handsWord(u); // carry.js
   if (u.carrying != null) return "Hands full: put the body down first.";
   if (u.dragging != null) return "Hands full: dragging someone (put them down first, Shift+D).";
   if (u.side === "player" && !hasShot(b, WEAPONS[u.weapon], u)) {
@@ -2403,6 +2409,7 @@ export function playerUnit(b, s) {
     scouting: skill(s, "scouting"), armLoad: fielded.reduce((a, [slot, it]) => a + (slot !== "weapon" && GEAR[it.key] ? GEAR[it.key].power || 0 : 0), 0), // escape checks (soundRetreat)
     boxes: boxesOf(s), // ammo.js: the boxes of rounds they carry (pockets, pack): their gun draws on them first
     gearRisk: key === "fists" ? 0 : eff.damageChance, item: key === "fists" ? null : item,
+    startGuns: carriedWithBag(s).filter((it) => WEAPONS[it.key] && calOf(it.key)), // gunload.js: every gun carried starts the fight loaded (one in a bag in the arms too)
     wormed: hasWorm(s), wornArmor: armorMult(s), // carriers.js: the worm in them gets them up if they die; the risen wear what they wore
     ap: 2, aware: true, x: 0, y: 0, f: 0,
   };
@@ -2432,15 +2439,19 @@ export function refitUnit(b, u, s) {
   if (f.medKit !== u.medKit) { u.medKit = f.medKit; u.kitBonus = f.kitBonus; u.kitLeft = f.kitLeft; }
   MED.refitSelfAid(u, s); // medics.js: a tourniquet or a trauma kit within reach now
   u.fit = { aim: f.aim, dmgMult: f.dmgMult, armor: f.armor, medicine: f.medicine };
-  const held = u.weapon, rounds = magIn(u), heldLoad = u.load;
-  const keepMags = u.weapon === f.weapon && tracksMags(u);
+  const held = u.weapon, rounds = magIn(u), heldLoad = u.load, heldItem = u.item;
+  const swapped = (heldItem || null) !== (f.item || null); // another gun in the hands (gunload.js): what was in the old one goes with it
+  if (swapped && heldItem) gunOut(b, u, heldItem);
+  const keepMags = u.weapon === f.weapon && tracksMags(u) && !swapped;
   for (const k of ["weapon", "weaponName", "item", "gearRisk", "fielded", "armLoad", "gm", "gmWeapon", "load", "boxes", "loadBand", "dash"]) u[k] = f[k];
   if (!keepMags) for (const k of ["mags", "magsW", "clips", "magMode"]) u[k] = f[k]; // another gun: its own magazines (mags.js)
+  u.bag = (s.gear && s.gear.carry) || null; // carry.js: a bag taken into the arms (or put down) in the search window
   if (u.mob0 == null && u.dragMob == null) u.mob = f.mob; // the load band's mob (not while carrying or dragging someone)
-  if (u.weapon === held && heldLoad) u.load = heldLoad; // the same gun keeps the rounds it has loaded
-  // The magazine: the same kind of gun keeps what was loaded (up to its capacity now, a magazine attachment may have
-  // changed); another gun is taken up empty (Reload, 1 action), so swapping guns never hands out a free full one.
-  loadMag(u, u.weapon === held ? rounds : 0);
+  if (u.weapon === held && heldLoad && !swapped) u.load = heldLoad; // the same gun keeps the rounds it has loaded
+  // The magazine: the same gun keeps what was loaded (up to its capacity now, a magazine attachment may have changed);
+  // another gun has what is in it (gunload.js gunIn: what it held when it was put down, loaded if it was carried into
+  // the fight, else empty: Reload), so swapping guns never hands out a free full one.
+  loadMag(u, swapped ? gunIn(b, u, u.item) : u.weapon === held ? rounds : 0);
   if (u.spearOut && u.weapon === u.spearOut.key) { delete u.spearOut; unarm(b, u, s); } // its spear still lies where it was thrown
   if (u.weapon !== held) u.jam = null; // another gun: the jammed one is put away
   fitArmour(u, s); // armour.js: the pieces worn now
@@ -2571,6 +2582,7 @@ export function createBattle(state, setup) {
     b.units.push(u);
   });
   battlePerks(state, b); // skills.js: perks on the player's units (aim, crits, stealth, Rally, Commander...)
+  fitHands(state, b); // carry.js: who starts with their hands full of the team's supplies
 
   // Enemy side.
   const e = setup.enemy;
@@ -2668,6 +2680,7 @@ export function createBattle(state, setup) {
     }
   }
   if (b.evacCols) say(b, `The green strip on the ${b.evacSide || "left"} edge is your way out. Units standing there can retreat, or sound the retreat to pull everyone out at once.`, "info");
+  stageAtStart(state, b); // carry.js: a fight the team starts: the loads into the vehicle, the rest set down where they start
   checkEnd(state, b);
   return b;
 }
@@ -2740,7 +2753,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     t.dead = true;
     t.killedBy = by ? by.side : null;
     if (by && by.sid != null) { const k = (b.killsBy || (b.killsBy = {}))[by.sid] || (b.killsBy[by.sid] = { z: 0, h: 0 }); k[t.kind === "zombie" ? "z" : "h"]++; } // service record (relations.js)
-    if (b.raid && t.kind === "human") b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, f: t.f || 0, kind: "body", area: null, searched: false, kit: t.kit, weapon: t.weapon, label: `${t.name}'s body`, uid: t.id }); // uid: dragged along with the body (stealth.js)
+    if (b.raid && t.kind === "human" && !searchedInBattle(b, t)) b.raid.containers.push({ id: b.nextId++, x: t.x, y: t.y, f: t.f || 0, kind: "body", area: null, searched: false, kit: t.kit, weapon: t.weapon, label: `${t.name}'s body`, uid: t.id }); // uid: dragged along with the body (stealth.js)
     else if (b.raid && t.bodyBox) dropBodyBox(b, t); // carriers.js: one of the risen, put down: the body it got up from (what was on it)
     // One of the dead: a body to search too (what the person had on them; a dead soldier's kit). The raid bot walks
     // over only for the armoured ones (botSkip: it searches an ordinary one when it is next to it anyway). A worm
@@ -3083,6 +3096,7 @@ export function combatAct(state, act) {
   if (act.type === "takeAlive") { setTakeAlive(b, act.on); bump(b); return ""; } // nonlethal.js: the AI playing your side prefers non-lethal
   if (act.type === "evac") { const why = evacRefusal(b); if (why) return why; b.evacOrder = true; say(b, "Evac! Everyone heads for the way out.", "danger"); evacTurn(state, b); return ""; } // evacTurn: everyone to the exits or the vehicle
   if (act.type === "evacStop") { b.evacOrder = false; say(b, "The evac is called off.", "info"); bump(b); return ""; }
+  if (act.type === "dropCarried" || act.type === "dropAllCarried") { const err = carriedAct(state, b, act); if (!err) bump(b); return err; } // carry.js: free, even with no actions left
   const u = unitById(b, act.unit);
   // A unit on another storey than the one being looked at (buildingmaps.js storeys): acting with it looks at its floor.
   if (u && u.side === "player" && b.floors && (u.f || 0) !== (b.floor || 0) && activeAny(u)) setFloor(b, u.f || 0);
@@ -3098,7 +3112,9 @@ export function combatAct(state, act) {
   if (u.gunner && !GUNNER_ACTS.has(act.type)) return "On the turret: fire, reload the belt, overwatch, drive, or get down (Man the turret again).";
   if (act.type === "turret") { if (!u.gunner) return vehicleTurret(b) ? "Man the turret first." : "No turret here."; act = { ...act, type: "shoot" }; }
   const t = act.target != null ? unitById(b, act.target) : null;
+  { const why = handsRefusal(u, act.type); if (why) return why; } // carry.js: hands full of supplies (or a body): no weapon, no throw, no treating
   switch (act.type) {
+    case "pickCarried": { const err = pickCarried(state, b, u); if (err) return err; u.ap -= 1; u.hunker = false; break; } // carry.js: a load set down within reach, back in the arms (1 action)
     case "move": {
       if (!inside(act.x, act.y)) return "Cannot move there.";
       const r = reachable(b, u, dashRange(u), { manual: true, wary: !!act.wary }); // wary: the raid bot goes round acid (acid.js)
@@ -3295,6 +3311,7 @@ export function combatAct(state, act) {
       searchBox(state, b, u, box, !!act.open);
       break;
     }
+    case "searchBody": case "pickUp": case "drop": { const why = groundAct(state, b, u, act); if (why) return why; break; } // ground.js
     case "stash": { // raidloot.js: everything carried loose into the vehicle (free; the window does it item by item)
       if (!b.raid || !atVehicle(b, u)) return "Move to the vehicle first.";
       const r = stashAll(state, u.id);
@@ -3742,6 +3759,7 @@ function aiUnit(b, u) {
   if (u.suppressed && u.kind === "human" && !u.post) return aiPinned(b, u); // pinned by suppressing fire: to cover
   if (u.post && holdPost(b, u)) return; // deploy.js: a defender posted at the gate or on a tower stays there
   if (u.ztype && zombieTurn(b, u)) return; // zombietypes.js: a screamer shrieks or hangs back, a brute smashes through
+  if (!canFire(b, u) && aiGrabGun(b, u) && u.ap < 1) return; // ground.js: a gun lying right there, taken up
   if (!canFire(b, u)) return aiMelee(b, u);
   for (let step = 0; step < 3 && u.ap > 0 && active(u); step++) {
     const foes = foesOf(b, u);
@@ -4397,6 +4415,7 @@ export function autoPlayerTurn(state, opts = {}) {
     botRetreatSmoke(state, b, inEvac); // stealth.js: a smoke grenade over the team first, if anyone has one
     return void soundRetreat(state, { by: "ai", why: giveUp.why });
   }
+  autoDrop(state, b); // carry.js: the AI sets down what it carries by hand before it fights (free)
   if (b.rescue) rescueBot(state, b); // rescueraid.js: to the cell, the door, the ropes, the keys; captives escape; then the way out
   for (const u of b.units.filter((x) => x.side === "player")) {
     if (b.over) return;
@@ -4494,6 +4513,8 @@ function endBattle(state, b, outcome) {
   }
   if (b.retreatOrder) lines.unshift(...b.retreatOrder.lines);
   wearFielded(state, b, true);
+  armsDropsEnd(state, b, outcome); // carry.js: won, the loads set down from the arms are picked up again (before the piles become loot)
+  groundEnd(state, b, outcome); // ground.js: what your people carry loose comes home; a body searched in the battle keeps what is left on it
   // carriers.js: the risen still walking take their things into the walking loot; bodies in the car come home (the
   // team keeps its car unless it was beaten); the burnt leave nothing; the swarm's bites leave the worm in the living.
   endBodies(state, b, outcome, outcome !== "defeat");
@@ -4509,18 +4530,21 @@ function endBattle(state, b, outcome) {
   // result.loot fills up as things are taken (the loot screen, "Take all", or straight away when headless).
   const loot = { supplies: {}, gear: [] };
   b.bodies = [];
+  const piles = groundLeftovers(state, b, outcome); // ground.js: what lies on the ground or was left on a body searched in the battle (a win: to loot; else left there)
+  fieldFinds(b, loot);
   if (outcome === "victory") {
     // carriers.js: a body that got up is one body, the risen one's (with the person's kit); one of yours who got up is
     // their own body as below; a worm swarm leaves none.
     // A burnt body or one laid in the car is no body here (carriers.js); one of the walking dead put down has the
     // person's things on it (walkingBody).
     for (const e of enemies) {
-      if (!e.dead || e.roseAs != null || e.ztype === "swarm" || e.ztype === "sleeper" || e.burnt || e.inVehicle) continue;
+      if (!e.dead || e.roseAs != null || e.ztype === "swarm" || e.ztype === "sleeper" || e.burnt || e.inVehicle || searchedInBattle(b, e)) continue; // searched in the battle: its leftovers are in piles
       if (e.walking) { b.bodies.push(walkingBody(state, b, e)); continue; }
       if (e.turned && e.turned.sid != null) continue;
       b.bodies.push(e.turned ? turnedBody(rng, e) : launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || (e.kind === "zombie" ? null : KITS.raiders)))); // launchers.js: their launcher and rounds; a blast's wear (section 24)
     }
-    for (const e of captives) { const body = launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || KITS.raiders)); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
+    for (const e of captives) { if (searchedInBattle(b, e)) continue; const body = launcherBody(b, e, enemyBody(rng, e, KITS[e.kit] || KITS.raiders)); body.name = `${e.name} (prisoner)`; b.bodies.push(body); }
+    b.bodies.push(...piles);
     b.bodies.push(...blastPiles(b, nlDropPiles(state, b))); // nonlethal.js: the weapons the surrendered threw down (launchers.js: worn by a blast that reached them)
     for (const u of b.units) {
       const s = u.side === "player" && deadIds.includes(u.sid) ? survivorById(state, u.sid) : null;
@@ -4996,6 +5020,7 @@ export function createRaid(state, setup) {
   }
   for (const u of b.units) if (u.side === "player") u.fit = { aim: u.aim, dmgMult: u.dmgMult, armor: u.armor, medicine: u.medicine }; // refitUnit
   battlePerks(state, b); // skills.js: perks on the player's units
+  fitHands(state, b); // carry.js: a bag carried in the arms (the team's supplies start set down in a raid)
   raidCarrySetup(state, b); // raidloot.js: each survivor's share of the load, an empty pair of arms for finds
 
   // Enemies: guards around buildings, the dead scattered about. Nobody has seen you yet.
@@ -5055,6 +5080,7 @@ export function createRaid(state, setup) {
   if (b.raid.choose) say(b, `Several buildings stand here: pick one to explore from the panel (${b.raid.choose.filter((o) => o.id !== "street").map((o) => o.name).join(", ")}), or search the street.`, "good");
   say(b, "Search next to a container (S). Heat rises every turn and with gunfire; more of the dead arrive as it climbs. Reach a green zone and Extract (X).", "info");
   if (withVehicle) say(b, "Your vehicle waits in the entry zone. Extract there to keep it; leave from another zone and it stays behind.", "info");
+  stageAtStart(state, b); // carry.js: the loads into the vehicle, the rest set down in the entry zone
   return b;
 }
 
@@ -5254,7 +5280,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       if (rng.chance(0.3)) {
         const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : rng.pick(kit.loot);
         const it = lootItem(key, kitSource(box.kit), spend(rng)); // itemcond.js: a soldier's rifle looked after, a raider's not
-        if (key === box.weapon && box.uid != null) carryMods(unitById(b, box.uid), it); // gunmods.js: their gun's attachments come with it
+        if (key === box.weapon && box.uid != null) { carryMods(unitById(b, box.uid), it); enemyGunLoaded(unitById(b, box.uid), it); } // gunmods.js: their gun's attachments come with it; gunload.js: the rounds left in it
         gear.push(it);
       }
       if (kit.finds && rng.chance(BODY_FINDS)) gear.push(lootItem(rng.pick(kit.finds), kitSource(box.kit), rng)); // what was in their pockets
@@ -5416,7 +5442,7 @@ function endRaid(state, b) {
     third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)
     raid: {
       extractedIds, carriedIds, vehicleKept, hadVehicle, heat: Math.round(R.heat),
-      searched: R.containers.filter((c) => c.searched && c.kind !== "body").length, total: R.containers.filter((c) => c.kind !== "body").length,
+      searched: R.containers.filter((c) => c.searched && c.kind !== "body" && c.kind !== "ground").length, total: R.containers.filter((c) => c.kind !== "body" && c.kind !== "ground").length, // ground.js piles are not places to search
       hours: Math.max(1, Math.ceil(b.turn / 6)),
       alerted: original.some((u) => u.kind === "human" && (u.aware || u.dead)),
     },

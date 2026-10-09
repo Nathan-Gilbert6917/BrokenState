@@ -472,6 +472,20 @@ section("Keep or undo the gear changes");
   check(gearChanged(state, s2) && !h.armory.includes(rifle), "a load from the base is a change");
   restoreGear(state, s2);
   check(h.armory.includes(rifle) && near(teamHas(p, "food"), 4) && !gearChanged(state, s2), "undone: the rifle back in the armory, the food back in the stores");
+  // ux-carry: where the team holds its supplies (p.hold) and a bag in someone's arms (s.gear.carry) undo exactly too.
+  {
+    const CA = await import("../src/sim/carry.js");
+    const s3 = gearSnapshot(state, h, p);
+    const h0 = JSON.stringify(CA.settleHold(state, p));
+    check(!gearChanged(state, s3), "a fresh snapshot with the team's loads settled: no change");
+    const from = Object.entries(p.hold.by).flatMap(([sid, r]) => ["pack", "pocket"].filter((pl) => (r[pl].food || 0) > 0).map((place) => ({ sid: Number(sid), place })))[0];
+    const msg = from ? CA.moveHeld(state, p, "food", 1, from, { sid: from.sid, place: "hands" }) : "";
+    const bag = newItem("backpack");
+    const why = CA.carryBag(state, null, b, bag);
+    check((from ? /→/.test(msg) : true) && !why && b.gear.carry === bag && gearChanged(state, s3), `food moved into the arms and a bag carried count as changes${from ? "" : " (no food in a pack: the bag only)"}`);
+    restoreGear(state, s3);
+    check(JSON.stringify(CA.settleHold(state, p)) === h0 && !b.gear.carry && !gearChanged(state, s3), "undone: every load back where it was held, the bag out of the arms");
+  }
   // The window: closing with changes asks; Keep keeps, Undo undoes.
   const ui = await import("../src/ui/teamform.js");
   const u = { inv: null };

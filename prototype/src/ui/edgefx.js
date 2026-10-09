@@ -7,7 +7,6 @@
 // Pure UI: reads the state, never changes it.
 import { camera, centerOn, view, HEX } from "./render.js";
 import { project, isoCenterOn } from "./isoview.js";
-import { cui } from "./combat.js";
 import { displayOptions } from "./display.js";
 import { VOICES, sfx } from "./audio.js";
 import { edgePoint, makePulseTracker, makeEdgeLayer } from "./edgepulse.js";
@@ -80,9 +79,9 @@ export function edgeFrame(state, ui, now, mapShown) {
     mapLayer.update(shown);
     edgeStats.map = shown.length;
   } else if (mapLayer.count()) { mapLayer.hide(); edgeStats.map = 0; }
-  // The battle: the isometric view only (the top view shows the whole field).
+  // The battle (isometric, the only battle view: ui/isoview.js).
   const b = state.combat;
-  const hits = on && b && cui.view !== "top" ? battleHitSources(b, cbMem, now) : null;
+  const hits = on && b ? battleHitSources(b, cbMem, now) : null;
   if (hits && (hits.length || cbTrack.size)) {
     const [w, h] = sizeOf("combatmap");
     const rect = { x0: MARGIN, y0: MARGIN, x1: w - MARGIN, y1: h - MARGIN };

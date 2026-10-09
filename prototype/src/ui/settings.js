@@ -161,6 +161,7 @@ const MOUSE = [
   ["The bar beside a panel", "Click to fold or show the panel, drag to make it wider or narrower"],
   ["✕ on a folded strip, or ◧ ◨ ⬓ in the top bar", "Close the left panel / right panel / log completely (no strip), again to bring it back; the slim tab at the map's edge opens it again too"],
   ["Window edges, title", "Drag to resize or move a window; double-click the title for its usual size"],
+  ["Header of a box over the map", "Drag to move it anywhere over the map (a folded box by its tab, the minimap by its ✥ grip); with the header focused, Alt+arrow keys nudge it, Alt+Home puts it back"],
 ];
 
 function optionsTab(state, ui, api) {
@@ -191,6 +192,7 @@ function optionsTab(state, ui, api) {
     <h3>Windows and panels</h3><div class="setrow">
       ${box("autoOpen", o.autoOpen !== false, "Auto-open panels on select", "A folded panel opens when you pick something it shows: a tile, site or team on the map (right panel), a tab key (left panel), a new urgent alert")}
       <button data-action="win-reset"${tip("Every window back to its usual size and place; the side panels and the log shown again at their usual width")}>Reset window sizes</button>
+      <button data-action="ov-reset"${tip("The boxes over the map (Running orders, Watching, Layers, alerts, minimap) back where they start. Drag a box's header to move it; Alt+arrow keys on a focused header nudge it")}>Reset overlay positions</button>
       <button class="mini" data-action="help-open" data-sec="windows-and-panels"${tip("Help: windows and panels")}>?</button>
     </div>
     <h3>Keys and mouse</h3><div class="setrow"><button data-action="set-tab" data-tab="controls"${tip("Every key, by group: change any of them")}>Controls…</button><button data-action="help-open" data-sec="keys"${tip("Every key as it is set now, ready to print")}>Key sheet…</button></div>

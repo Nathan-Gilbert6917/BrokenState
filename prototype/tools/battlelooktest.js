@@ -37,7 +37,6 @@ globalThis.document = { createElement: () => cvs(0, 0), getElementById: () => nu
 globalThis.window = globalThis.window || { addEventListener() {}, devicePixelRatio: 1 };
 ISO.setIsoCanvas(cvs);
 UI.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, getContext: () => silent({}) });
-UI.setBattleView("iso");
 let clock = 1e6;
 const draw = (st) => { try { clock += 50; UI.drawCombat(st, clock); return ""; } catch (e) { return e.stack.split("\n").slice(0, 3).join(" "); } };
 const W = (b, x, y) => b.cells[y * b.w + x];

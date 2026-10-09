@@ -327,8 +327,7 @@ console.log("Drawn in the battle view");
   ISO.setIsoCanvas(cvs);
   UI.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, getContext: () => silent() });
   BK.setBarkMode("on");
-  for (const view of ["iso", "top"]) {
-    UI.setBattleView(view);
+  for (const view of ["iso"]) { // the battle map is isometric only (no top-down view)
     const { st, b } = battles(37, ["field-town"])[0];
     b.phase = "player";
     resetBarks();
@@ -345,7 +344,6 @@ console.log("Drawn in the battle view");
     draw(1100 + BARK.LIFE + 10);
     check(!barkState.live.length, `${view}: gone after about ${BARK.LIFE / 1000} s`);
   }
-  UI.setBattleView("iso");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

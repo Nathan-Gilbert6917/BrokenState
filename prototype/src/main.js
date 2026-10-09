@@ -46,6 +46,7 @@ import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
 import { toggleFleetIds, leadId } from "./ui/fleetpick.js"; // the planners' vehicle picker (up to four)
 import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormEsc, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
+import { CARRY_ACTIONS, CARRY_CHANGE, carryHtml, askQty, carryKey } from "./ui/carry.js"; // supplies in pockets, packs and arms; the ground; how much to collect
 import { renameBase } from "./sim/basenames.js";
 import { BN_ACTIONS, BN_INPUT, bnKey, nameModalUp } from "./ui/basename.js"; // naming a base you found, renaming any base
 import { stackKey, stackInput, stackWheel, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the wheel, the drop popover
@@ -98,6 +99,7 @@ import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initOverlays, syncOverlays, resetOverlays } from "./ui/overlaydrag.js"; // the boxes over the map move (drag a header, Alt+arrows)
 import { keepFocusBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
 import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
 import { CONTROLS_ACTIONS, controlsKey } from "./ui/controls.js";
@@ -114,6 +116,7 @@ import { initEdgeFx, edgeFrame } from "./ui/edgefx.js"; // red pulses at the scr
 import { initConfirm, askHtml, askKey, ASK_ACTIONS, ask } from "./ui/confirm.js";
 import { selectedTeam } from "./ui/teamsel.js"; // the selected team (its panel open, or picked on the map)
 import { teamTileMenu, teamCtxHtml, runTeamAction } from "./ui/teamctx.js"; // its right-click menu: actions for the tile
+import { clickPick, syncPick, MAPSEL_ACTIONS } from "./ui/mapselect.js"; // selecting teams, parties and bands on the map like tiles
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 // MAX_SPEED (ui/pacing.js): the fastest normal speed (5×); anything above is a dev fast-forward
@@ -140,6 +143,7 @@ const freshUi = () => ({
   codex: null, paletteRecent: [], palFocus: null, // ui/codex.js window; ui/cmdpalette.js recent picks and a build button to light up
   ledger: null, // ui/ledger.js: the Ledger window is open
   ask: null, // ui/confirm.js: the question up before an order that cannot be undone
+  mapSel: null, selParty: null, // ui/mapselect.js: a party, band or outsiders selected on the map; selParty: your selected team's id
 });
 const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: START_PEOPLE.DEF, ironman: false, freeEdit: false, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: Hardcore's starting team, 1–4
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
@@ -197,6 +201,7 @@ initRenderer(canvas);
 initCombatUI($("combatmap"));
 initMinimap($("mapwrap"), canvas, options); // ui/minimap.js: the map's corner
 initEdgeFx($("mapwrap"), $("cbmapwrap"), () => refresh(false)); // ui/edgefx.js: the screen-edge warnings
+initOverlays({ refresh: () => { dirtyNow = true; } }); // ui/overlaydrag.js: the boxes over the map keep where the player put them
 // The map follows its box whatever changes it (a panel folded or dragged wider, the UI size).
 if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(() => {
@@ -216,7 +221,7 @@ function blocked() {
   // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
   const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex || nameModalUp(state, ui);
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex || !!ui.carry || nameModalUp(state, ui);
 }
 
 // An exception in a frame (a sim tick, the autopilot, drawing) stops the clock and opens the error screen (ui/crash.js),
@@ -413,6 +418,7 @@ function refresh(user = true) {
   dirtyNow = false;
   lastRefresh = last;
   tidyUi();
+  syncPick(state, ui); // ui/mapselect.js: a selected party followed as it moves, the gold ring on the map
   noteNames(state);
   codexScan(state, ui); // ui/codex.js: open the entries for what the player now sees (before the alerts: it may flash)
   guideCheck(state, ui); // the first-week guide ticks off what is done (ui/guide.js), before the alerts show its toast
@@ -444,7 +450,8 @@ function refresh(user = true) {
   renderCombat(user);
   setPanel("banner", bannerHTML(), user);
   syncWatchlist(state, ui, { act: actions, refresh }); // places the Watching panel; the map-note editor
-  setPanel("ask", askHtml(ui), user); // ui/confirm.js
+  syncOverlays(); // ui/overlaydrag.js: moved boxes in their place, every box kept on the map
+  setPanel("ask", askHtml(ui) + carryHtml(state, ui), user); // ui/confirm.js; ui/carry.js: how much to collect, picking up from the ground
   syncTitle(state, ui); // ui/title.js
   $("banner").classList.toggle("dev", !!ui.dev);
   const fps = $("fps");
@@ -675,6 +682,10 @@ const actions = {
     saveLayout(layout);
     if (ui.settings) { ui.settings.msg = "Windows and panels are back to their usual size and place."; ui.settings.err = false; }
   },
+  "ov-reset": () => { // ui/overlaydrag.js: the boxes over the map back where they start
+    resetOverlays();
+    if (ui.settings) { ui.settings.msg = "The boxes over the map are back where they start."; ui.settings.err = false; }
+  },
   // Base management.
   openbase: (d) => {
     if (!baseById(state, Number(d.id))) { log(state, "That base is gone.", "info"); return; }
@@ -804,7 +815,9 @@ const actions = {
   "xp-order": (d) => {
     const p = partyById(d.id);
     if (!p || !(contactable(p) || commandable(state, p))) return; // the radio rule is checked for every team order below
+    if (askQty(state, ui, d)) return; // ui/carry.js: how much water, firewood, food or game (the box gives d.qty)
     const o = { type: d.type };
+    if (d.qty != null && d.qty !== "") o.qty = Number(d.qty);
     if (d.mission) o.mission = d.mission;
     if (d.type === "camp") o.hours = d.hours ? Number(d.hours) : null;
     if (d.sid) o.survivorId = Number(d.sid);
@@ -1055,6 +1068,7 @@ for (const [k, fn] of Object.entries(BN_ACTIONS)) actions[k] = (d) => fn(state, 
 for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ev: Shift+click on a supply stack (raid search window)
 for (const [k, fn] of Object.entries(TEAMINV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ui/teaminv.js
 for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => { fn(state, ui, d, ev); hideCtx(); }; // ui/teamform.js
+for (const [k, fn] of Object.entries(CARRY_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev, actions); // ui/carry.js
 // The gun builder (ui/gunbuilder.js): open, pick a slot, fit, remove; the Ammo list.
 for (const [k, fn] of Object.entries(GB_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Farming tab and illness (ui/farming.js, ui/health.js).
@@ -1088,6 +1102,7 @@ for (const [k, fn] of Object.entries(CRAWL_ACTIONS)) actions[k] = (d) => fn(stat
 // Needs (ui/needs.js): a team's rations and who eats first, a treat used by hand.
 for (const [k, fn] of Object.entries(NEEDS_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 for (const [k, fn] of Object.entries(PACE_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the card tray, Options → Pause for… (ui/pacing.js)
+for (const [k, fn] of Object.entries(MAPSEL_ACTIONS)) actions[k] = (d) => { fn(state, ui, d); mapClicked = true; }; // ui/mapselect.js: the "On this tile" row
 actions["tray-rules"] = () => openSettings(ui, "options");
 for (const [k, fn] of Object.entries(LISTEN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // xp-listen, bl-listen
 // The Watching panel and map notes (ui/watchlist.js): pin, go, unpin, the note editor; going there uses center and xp-open.
@@ -1309,6 +1324,7 @@ for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => 
 for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(TEAMINV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teaminv.js: how many of a picked supply
 for (const [k, fn] of Object.entries(TEAMFORM_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teamform.js: sort, supply amounts, days
+for (const [k, fn] of Object.entries(CARRY_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/carry.js
 for (const [k, fn] of Object.entries(GB_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the gun builder's Ammo list // how many of a supply stack to move (ui/inventory.js)
 
 // A new world: new campaign, new map and colonists, or the same colonists on another seed or group count.
@@ -1574,10 +1590,9 @@ window.addEventListener("mouseup", (e) => {
     const p = ui.moveParty != null && id >= 0 ? partyById(ui.moveParty) : null;
     if (p) act(() => pickMove(p, id));
     else if (id >= 0 && ui.moveParty == null) {
-      // Clicking a team you are in touch with opens its panel; any other tile goes back to the tile view.
-      const team = state.parties.find((q) => contactable(q) && partyTile(q) === id);
-      ui.expedition = team ? team.id : null;
-      ui.xpMsg = "";
+      // A team, another group's party, a band or outsiders on the tile are selected first (a team opens its panel),
+      // the same tile again goes on to the next and then the tile; Shift+click picks the tile (ui/mapselect.js).
+      clickPick(state, ui, id, e.shiftKey);
       mapClicked = true; // its info is in the right panel: a folded one opens (autoShow)
     }
     ui.selected = id;
@@ -1818,15 +1833,13 @@ const cbCanvas = $("combatmap");
 const cbPos = (e) => { const r = cbCanvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 cbCanvas.addEventListener("mousemove", (e) => { if (state.combat) combatMouse(state, ...cbPos(e)); });
 cbCanvas.addEventListener("mouseleave", () => { if (state.combat) combatLeave(); });
-// The isometric view (ui/isoview.js): a press that moves pans the map, one that does not is the click (on release);
-// the top-down view clicks on the press, as it always did. Right click cancels the current action.
+// The isometric view (ui/isoview.js), the only battle view: a press that moves pans the map, one that does not is the
+// click (on release). Right click cancels the current action (on the release: a drag does not).
 const cancelAction = () => { if (state.combat) { cui.mode = "move"; cui.msg = ""; refresh(); } };
 cbCanvas.addEventListener("mousedown", (e) => {
   if (!state.combat) return;
   if (e.button === 1) e.preventDefault();
-  if (!combatPress(state, ...cbPos(e), e.button)) return;
-  combatClick(state, ...cbPos(e));
-  refresh();
+  combatPress(state, ...cbPos(e), e.button);
 });
 window.addEventListener("mouseup", (e) => {
   if (!state.combat) return;
@@ -1835,10 +1848,7 @@ window.addEventListener("mouseup", (e) => {
   else if (what === "cancel") cancelAction();
 });
 cbCanvas.addEventListener("wheel", (e) => { if (state.combat && combatWheel(state, ...cbPos(e), e.deltaY)) e.preventDefault(); }, { passive: false });
-cbCanvas.addEventListener("contextmenu", (e) => {
-  e.preventDefault();
-  if (state.combat && cui.view === "top") cancelAction(); // the isometric view cancels on the release (a drag does not)
-});
+cbCanvas.addEventListener("contextmenu", (e) => e.preventDefault()); // right click cancels on the release (combatRelease)
 
 // ---------- keyboard ----------
 // Esc closes one layer per press, the topmost first. Returns false when there was nothing of ours to close.
@@ -1908,6 +1918,7 @@ window.addEventListener("keydown", (e) => {
   if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "checkbox")) return;
   // A question before an order that cannot be undone (ui/confirm.js) takes the keyboard: Enter yes, Esc cancel.
   if (ui.ask) { e.preventDefault(); act(() => askKey(ui, e, actions)); refresh(); return; }
+  if (ui.carry) { e.preventDefault(); act(() => carryKey(state, ui, e, actions)); refresh(); return; } // ui/carry.js: Enter collects, Esc cancels
   // The timelapse viewer takes the keyboard (play, step, speed, pan, Esc closes).
   if (ui.timelapse) {
     if (tlKey(state, ui, e)) { e.preventDefault(); refresh(); }

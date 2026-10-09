@@ -33,6 +33,7 @@ import { vehicleById, partyVehicles, partyFleet, isBike, isCar, parkBikes, creat
 import { itemLoad, parseLoc } from "./inventory.js";
 import { teamBase, transferProblem, loadFromBase, dropOff, isPlayerTeam } from "./teaminv.js";
 import { reseat } from "./walkers.js";
+import { settleHold } from "./carry.js"; // who holds the team's supplies where (kept by the gear snapshot)
 import { stockHas } from "./water.js"; // water: purified and un-purified; "ammo": any calibre
 
 const EPS = 1e-6;
@@ -303,7 +304,8 @@ export function setSupply(state, p, k, qty) {
 // and its cargo, and every item in any of them (its own fields: a pack's or rig's contents, a carrier's plates, a gun's
 // attachments, a magazine's load, wear). restoreGear puts it all back exactly as it was (the same item objects in the
 // same places); gearChanged says whether anything differs. People joining or leaving the team and its vehicles are not
-// part of it (they are not gear).
+// part of it (they are not gear). What is in someone's arms as a whole bag (s.gear.carry, sim/carry.js) is in their
+// gear; where each unit of the team's supplies is held (p.hold: pockets, packs, arms, the vehicle) is kept as it was too.
 const props = (o) => { const out = {}; for (const k of Object.keys(o)) { const v = o[k]; out[k] = Array.isArray(v) ? v.slice() : v && typeof v === "object" && !v.key ? { ...v } : v; } return out; };
 function holders(state, base, p) {
   const people = [...new Set([...state.survivors.filter((s) => s.alive && s.location && s.location.kind === "base" && s.location.baseId === base.id), ...(p ? partyMembers(state, p) : [])])];
@@ -331,14 +333,23 @@ function itemsIn(h) {
 /** @param {State} state @param {Base} base @param {Party | null} [p] */
 export function gearSnapshot(state, base, p = null) {
   const h = holders(state, base, p);
-  return { baseId: base.id, partyId: p ? p.id : null, lists: h.lists.map((l) => [l, l.slice()]), objs: h.objs.map((o) => [o, { ...o }]), items: itemsIn(h).map((it) => [it, props(it)]) };
+  if (p) settleHold(state, p); // settled first, so a reader settling it later is not taken for a change
+  return { baseId: base.id, partyId: p ? p.id : null, hold: p ? holdCopy(p.hold) : null, lists: h.lists.map((l) => [l, l.slice()]), objs: h.objs.map((o) => [o, { ...o }]), items: itemsIn(h).map((it) => [it, props(it)]) };
 }
+// p.hold (sim/carry.js) is plain numbers in nested records: a deep copy, and a key-order-free form to compare.
+const holdCopy = (h) => (h && typeof h === "object" ? JSON.parse(JSON.stringify(h)) : null);
+const holdKey = (h) => {
+  const canon = (o) => (o && typeof o === "object" ? Object.keys(o).sort().map((k) => { const v = canon(o[k]); return v === "" || v === "{}" ? "" : `${k}:${v}`; }).filter(Boolean).join(",").replace(/^(.*)$/, "{$1}") : typeof o === "number" ? (Math.abs(o) < 1e-9 ? "" : String(Math.round(o * 1e6) / 1e6)) : String(o ?? ""));
+  return canon(h || {});
+};
 const sameVal = (a, b) => (typeof a === "number" && typeof b === "number" ? Math.abs(a - b) < 1e-9 : a === b);
 const sameArr = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => sameVal(x, b[i]));
 const sameObj = (a, b) => { const ks = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]); for (const k of ks) { const x = a ? a[k] : undefined, y = b ? b[k] : undefined; if (!(sameVal(x, y) || ((x == null || x === 0) && (y == null || y === 0)))) return false; } return true; };
 // True when anything in the snapshot is not as it was.
 export function gearChanged(state, snap) {
   if (!snap) return false;
+  const tp = snap.partyId != null ? state.parties.find((x) => x.id === snap.partyId) : null;
+  if (tp && holdKey(tp.hold) !== holdKey(snap.hold)) return true; // a load moved between pockets, packs, arms and the vehicle
   for (const [l, was] of snap.lists) if (!sameArr(l, was)) return true;
   for (const [o, was] of snap.objs) if (!sameObj(o, was)) return true;
   for (const [it, was] of snap.items) {
@@ -368,6 +379,7 @@ export function restoreGear(state, snap) {
     }
   }
   const p = snap.partyId != null ? state.parties.find((x) => x.id === snap.partyId) : null;
+  if (p) { if (snap.hold) p.hold = holdCopy(snap.hold); else delete p.hold; } // who held what, as it was (sim/carry.js)
   if (p) weighTeam(state, p);
   const over = p ? poolLoad(p) - carryCapacity(state, partyMembers(state, p), partyFleet(state, p)) : 0;
   return `Gear and supplies are back as they were.${over > EPS ? ` The team is now ${Math.ceil(over)} kg over what it can carry (its people or vehicles changed since): drop something off or take a vehicle.` : ""}`;
