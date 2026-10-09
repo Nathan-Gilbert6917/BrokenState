@@ -919,3 +919,74 @@ body:not(.fold-log) #log { animation: panel-in-b 0.18s ease-out; }
 @keyframes fp-in { from { opacity: 0; transform: translateY(-0.35rem) scale(0.98); } }
 @keyframes fp-in-up { from { opacity: 0; transform: translateY(0.35rem) scale(0.98); } }
 @media (prefers-reduced-motion: reduce) { #left, #right, #log, .fp-anim { animation: none !important; } .gut, .gut-grip { transition: none; } }
+
+/* ---------- Inside the side panels (ui/ui.js renderLeft / renderRight, ui/panelfold.js) ----------
+   A card's rows in small groups under a heading (.pk-sec: Status, Supplies, ...), one label column for the whole card
+   (a subgrid, so every group lines up), values that wrap, muted detail lines (.pk-sub), long breakdowns folded under
+   a short line (.pf), and long notes in boxes that scroll on their own (.pk-scroll). The panels scroll as a whole
+   (#left / #right overflow-y) and keep the wheel to themselves at the ends. Sized in rem: the UI size scales it all. */
+#left, #right { line-height: 1.4; overscroll-behavior: contain; }
+#left *, #right * { scrollbar-width: thin; scrollbar-color: #444b56 transparent; }
+#left .card, #right .card { padding: 0.6rem 0.75rem; margin-bottom: 0.6rem; }
+#left .card h2 { font-size: 1.05rem; line-height: 1.25; }
+.pk-head { align-items: baseline; }
+.pk { display: grid; grid-template-columns: fit-content(7.5rem) minmax(0, 1fr); column-gap: 0.75rem; margin-top: 0.3rem; }
+.pk > * { grid-column: 1 / -1; min-width: 0; }
+.pk > .kv { display: grid; grid-template-columns: subgrid; row-gap: 0.22rem; }
+.pk .kv > div { min-width: 0; overflow-wrap: break-word; }
+.pk .kv > div:nth-child(even):not(:has(.pf)) { max-height: 10.5em; overflow-y: auto; }
+/* (.kv div:nth-child(odd) mutes the labels; lines inside a value keep the value's colour) */
+.pk .kv > div:nth-child(even) div:not([class]) { color: inherit; }
+.pk .kv > div:nth-child(even) .danger, .pk .pk-wide .danger { color: var(--danger); }
+/* A row across the whole card under the one before it (a fold's breakdown): always the last of its group. */
+.pk .kv > .pk-wide { grid-column: 1 / -1; color: var(--text); }
+/* A label with a hover text says so (a dotted underline). */
+.pk .kv > div[data-tip]:nth-child(odd) { text-decoration: underline dotted rgba(154, 160, 168, 0.45); text-underline-offset: 0.2em; cursor: help; }
+.pk-sec { margin: 0.6rem 0 0.25rem; padding-bottom: 0.15rem; border-bottom: 1px solid var(--line); color: var(--accent); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.9; }
+.pk > .pk-sec:first-child { margin-top: 0.15rem; }
+.pk-num { font-variant-numeric: tabular-nums; }
+.pk-sub { display: block; color: var(--muted); font-size: 0.95em; }
+.pk-meter { display: block; max-width: 9rem; height: 0.28rem; margin: 0.22rem 0 0.08rem; background: #2c3139; border-radius: 99px; overflow: hidden; }
+.pk-meter > i { display: block; height: 100%; border-radius: inherit; }
+.pk-foot { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
+.pk-hint { margin: 0.1rem 0.1rem 0.6rem; }
+.pk-acts { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 0.35rem; }
+.pk-acts button { text-align: left; padding: 0.35rem 0.6rem; }
+/* A long note that scrolls inside its card instead of making the card tall. */
+.pk-scroll { max-height: 4.6em; overflow-y: auto; margin: 0.2rem 0; padding: 0.25rem 0.45rem; border-radius: 5px; background: rgba(0, 0, 0, 0.16); }
+.pk-scroll-tall { max-height: 12rem; }
+
+/* A fold (ui/panelfold.js): ▸ a short line; open, the breakdown under it with a rule down its side. */
+.pf { margin-top: 0.12rem; }
+.pf > summary { display: inline-flex; align-items: center; gap: 0.3rem; margin-left: -0.15rem; padding: 0 0.2rem; border-radius: 4px; color: var(--info); font-size: 0.92em; cursor: pointer; list-style: none; user-select: none; }
+.pf > summary::-webkit-details-marker { display: none; }
+.pf > summary::before { content: "▸"; color: var(--muted); font-size: 0.8em; transition: transform 0.12s; }
+.pf[open] > summary::before { transform: rotate(90deg); }
+.pf > summary:hover { color: var(--accent); background: rgba(255, 255, 255, 0.04); }
+.pf-body { margin-top: 0.2rem; padding: 0.3rem 0.5rem; max-height: 9rem; overflow-y: auto; border-left: 2px solid var(--line); border-radius: 0 4px 4px 0; background: rgba(0, 0, 0, 0.16); color: var(--muted); }
+.pf-body > div + div { margin-top: 0.2rem; }
+
+/* People tab: compact person cards with even gauges. */
+#left .surv { padding: 0.5rem 0.7rem; }
+#left .surv > .spread { margin-bottom: 0.2rem; flex-wrap: wrap; row-gap: 0.2rem; }
+#left .surv > .spread > b { flex: 1 1 8rem; min-width: 0; }
+#left .surv > .spread > select { flex: 0 1 auto; max-width: 9.5rem; padding: 0.15rem 0.35rem; font-size: 0.85rem; }
+#left .surv .row.small { gap: 0.45rem; margin: 0.1rem 0; }
+#left .surv .bar, #left .gc .bar { height: 0.42rem; border-radius: 99px; }
+#left .surv > div:last-child:not(.row) { margin-top: 0.3rem; }
+#left .chip { font-size: 0.76rem; }
+
+/* Groups tab: the attitude as a coloured chip; the long lines about a group scroll inside its card. */
+.gc-att { display: inline-flex; align-items: center; gap: 0.3rem; }
+.att-chip { padding: 0.02rem 0.45rem; border: 1px solid currentColor; border-radius: 99px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+.gc .row.small { margin: 0.25rem 0 0.1rem; }
+.gc-extra > .small { max-height: 9.5rem; overflow-y: auto; padding: 0.3rem 0.45rem; border-radius: 5px; background: rgba(0, 0, 0, 0.16); }
+.gc-extra > .small:not(:has(> div)) { display: none; }
+.gc-extra > .small > div + div { margin-top: 0.15rem; }
+
+/* Teams tab: who, the supplies as small figures, the status line; a team waiting for orders is marked on its edge. */
+.tm-who { margin-top: 0.2rem; }
+.tm-stats { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0.35rem 0 0.3rem; }
+.tm-stat { padding: 0.04rem 0.45rem; border-radius: 99px; background: #2c3139; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tm-status { margin-top: 0.15rem; }
+#left .card.attn { box-shadow: inset 3px 0 0 #ffd166; }
