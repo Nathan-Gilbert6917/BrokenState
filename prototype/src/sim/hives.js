@@ -8,7 +8,8 @@
 // with 5. A hive spends them on hordes (small 10–25 of the dead for 3, medium 50–80 for 8, large 100–200 for 15:
 // hordes.js HORDE_SIZES) and, for 40, on a Wallbreaker (only with a Wallbreaker den grown, from day 200, then at
 // most one every 90 days per hive): a hive boss that joins a horde and smashes defences when it attacks a base
-// (defences.js). Inside every hive waits the Broodmother, the boss a team fights when it storms the hive.
+// (defences.js). Inside every hive is a den of chambers (hivecrawl.js): a team crawls it from the mouth to the core room,
+// where the Broodmother guards the Hivemind; killing the Hivemind destroys the hive.
 // Hives also spend on growths around them (hivetech.js, the tech tree): more income, a bigger guard, and the
 // special dead their hordes carry (runners, brutes, spitters, screamers, crawlers: zombietypes.js).
 //
@@ -32,9 +33,10 @@ import { log, day, addCard, snapshot, combatPower, checkGameOver, hurt } from ".
 import { makeHorde, hordeScore, HORDE_SIZES, reduceHorde } from "./hordes.js";
 import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty } from "./parties.js";
 import { partyFuel, useFuel } from "./vehicles.js";
-import { registerCombatHandler, registerBattleLayout, registerBattleSize, HIVE_W, HIVE_H } from "./combat.js";
-import { fightNow, bossUnit, placeUnitRight } from "./defences.js";
-import { tacticalStyleFor } from "./breakoff.js";
+import { registerBattleLayout, registerBattleSize, HIVE_W, HIVE_H } from "./combat.js";
+import { bossUnit, placeUnitRight } from "./defences.js";
+import { startHiveCrawl, denOf, crawlEstimate } from "./hivecrawl.js"; // the hive crawl: from the mouth to the Hivemind in the core
+export { assaultHive } from "./hivecrawl.js"; // the core fight (the old storm's entry point: the tools call it)
 import { HIVE, BOSS_NAMES, GROWTHS, ZTYPES } from "./hiveconst.js";
 import { broodGrowth, hiveCap, hordePaceOpen, noteHorde, rampDay } from "./eras.js";
 import { worldScale } from "./worldsize.js";
@@ -588,24 +590,27 @@ export function hiveArrive(state, p) {
 
 function hiveCard(state, p, hive) {
   const force = hiveForce(state, hive);
+  const den = denOf(state, hive);
+  const est = crawlEstimate(state, hive);
   const power = Math.round(partyMembers(state, p).reduce((a, m) => a + combatPower(m), 0));
   const gone = (st) => !st.hives.includes(hive);
   const moved = (st) => { awaitOrders(st, p, "The hive is already gone.", { failed: true }); return "Nothing is left to fight."; };
+  const been = hive.denMem && hive.denMem.visits ? ` Teams have been inside ${hive.denMem.visits} time${hive.denMem.visits === 1 ? "" : "s"}: the chambers cleared lately stay clear for a while.` : "";
   return {
     title: `The hive: ${hive.name}`,
     where: tileLabel(state, hive.tile),
     partyId: p.id,
-    text: `A mound of fused bodies, pulsing and warm, and the dead packed around it${force.guard ? ` (about ${force.guard})` : ""}. Deep inside waits the ${BOSS_NAMES.hive}. ` +
-      `Your squad's combat power is ${power}. Storming it means fighting about ${force.count} of the hive's brood, tougher than any dead outside, and the ${BOSS_NAMES.hive} herself. Bring five or six well-armed fighters, armor and meds.` +
+    text: `A mound of fused bodies, pulsing and warm, and the dead packed around it${force.guard ? ` (about ${force.guard})` : ""}. The hive is a den of chambers: its core, where the ${BOSS_NAMES.hivemind} sits guarded by the ${BOSS_NAMES.hive}, lies ${den.depth} chamber${den.depth === 1 ? "" : "s"} in from the mouth by the shortest way (there are other ways, and dead ends). ` +
+      `Your squad's combat power is ${power}. Expect about ${est.fights} fight${est.fights === 1 ? "" : "s"} on the way in, each tougher than the last, then the core. Bring five or six well-armed fighters, armor, ammunition and meds, and Molotovs or fuel for the egg chambers.${been}` +
       alliesText(state, hive, force.count) + // alliance.js: fighters from coalition members and job givers
       growthsText(state, hive, force), // hivetech.js: what has grown around it, the special dead in its brood
     choices: [
       {
-        label: "Storm the hive (tactical battle)",
-        hint: `About ${force.count} of the brood and the ${BOSS_NAMES.hive}. Win and the hive is destroyed; you can fall back from the left edge, or sound the retreat to pull everyone out at once`,
+        label: "Enter the hive (crawl to the core)",
+        hint: `Crawl it chamber by chamber: follow the warmth to the core (${den.depth} chambers deep) and kill the ${BOSS_NAMES.hivemind}. You can fall back and leave the way you came at any time`,
         resolve: (st) => {
           if (gone(st)) return moved(st);
-          assaultHive(st, p, hive);
+          startHiveCrawl(st, p, hive);
           return "";
         },
       },
@@ -692,20 +697,6 @@ function alliesText(state, hive, count) {
   return a.fighters ? ` Fighters from ${a.names.join(", ")} will storm it with you: about ${count - broodAfterAllies(count, a.fighters)} of the brood fewer reach your squad.` : "";
 }
 
-export function assaultHive(state, p, hive) {
-  const force = hiveForce(state, hive);
-  const allies = hiveAllies(state, hive);
-  const count = broodAfterAllies(force.count, allies.fighters);
-  if (allies.fighters) log(state, `Fighters from ${allies.names.join(", ")} storm ${hive.name} beside your squad.`, "good");
-  return fightNow(state, {
-    tile: hive.tile, partyId: p.id,
-    enemy: { kind: "zombies", count, power: force.power, types: assaultTypes(state, hive, count, force.mix, count).types, elite: !!force.elite, name: `the brood of ${hive.name}` },
-    ambush: null, canRetreat: true, handler: "hiveAssault", layout: "hive",
-    aiStyle: tacticalStyleFor(state, p), // played headless: the team's retreat policy as the AI's style (breakoff.js)
-    context: { hiveId: hive.id, partyId: p.id },
-  });
-}
-
 // A hive assault is fought on a Large map (combat.js HIVE_W × HIVE_H, battlesize.js SIZES.HIVE).
 registerBattleSize("hive", () => [HIVE_W, HIVE_H]);
 // The mound: its middle at most HIVE_REACH columns in from the west edge (on a Large map the fight is not a walk:
@@ -733,23 +724,5 @@ registerBattleLayout("hive", (b, ctx) => {
   if (placeUnitRight(b, ctx, boss, Math.min(ctx.W - 5, cx - 1), cx + half + 2)) b.units.push(boss);
 });
 
-registerCombatHandler("hiveAssault", (state, result, setup) => {
-  const c = setup.context;
-  const hive = hiveById(state, c.hiveId);
-  const p = state.parties.find((x) => x.id === c.partyId);
-  const guard = hive ? guardOf(state, hive) : null;
-  if (guard && result.enemiesKilled) reduceHorde(state, guard, Math.round((guard.size * result.enemiesKilled) / Math.max(1, setup.enemy.count + 1)));
-  if (hive) notePlayerFight(state, hive);
-  let text;
-  if (result.outcome === "victory" && hive) {
-    destroyHive(state, hive, "by your team");
-    text = `The ${BOSS_NAMES.hive} is dead and the hive burns. The infection around it will fade over the coming weeks.`;
-    if (p && state.parties.includes(p)) p.seen.set(hive.tile, snapshot(state, hive.tile));
-  } else if (result.outcome === "retreat") text = "The team fell back from the hive. The brood is still there.";
-  else text = "The hive's brood drove the team off.";
-  if (result.outcome !== "victory") markThreat(state, hive); // hivetech.js: it builds for defence
-  if (!p || !state.parties.includes(p)) return;
-  if (wipeIfEmpty(state, p)) { log(state, "The whole team was lost storming a hive.", "death"); return; }
-  if (result.outcome !== "victory") log(state, `${text} (${tileLabel(state, partyTile(p))})`, "danger");
-  awaitOrders(state, p, text);
-});
+// The core fight's handler ("hiveAssault": the old storm's key, kept for the autosave, the service records and old
+// saves made mid-storm) is in hivecrawl.js.

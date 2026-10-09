@@ -372,6 +372,14 @@ export function paintDownedZType(kind, seed = 0, look = zombieLook(), searched =
 // collapsed, her egg sacs burst, the crown of bone).
 export function paintDownedBoss(kind) {
   const p = downPainter();
+  if (kind === "hivemind") { // burst open and sagging into its pool, grey and cold (sim/hivecrawl.js)
+    p.disc(13, CY, 12.5, 7, "#2a1018c0");
+    p.disc(13, CY, 10, 5.8, "#7a6066"); p.disc(12, CY - 1, 6.5, 3.4, "#9a8086");
+    for (const [x, y] of [[6, CY - 2], [16, CY + 2], [11, CY + 3], [19, CY - 1]]) { p.set(x, y, "#3a1412"); p.set(x + 1, y, "#3a1412"); }
+    p.rect(9, CY - 1, 15, CY, "#3a1412"); // split down the middle
+    for (const [x, y] of [[3, 3], [23, 12], [4, 12]]) { p.disc(x, y, 1.4, 1.2, "#8a6a3a"); }
+    return p;
+  }
   if (kind === "broodmother") {
     const SKIN = "#9a7a86", DARK = "#5e3a48", LIT = "#c4a2ae";
     p.disc(13, CY, 12.5, 6.8, "#2a1018c0");

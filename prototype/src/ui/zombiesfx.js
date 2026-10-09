@@ -109,7 +109,7 @@ export const PROFILE = { // sub: a second, detuned pulse an octave down (diploph
 export const FALLBACK_TO_WALKER = ["plain dead", "called in by a screamer", "hive guard", "horde", "hardcore outbreak dead", "turned without their person (no app)"];
 export function voiceKind(u) {
   if (!u) return "walker";
-  if (u.boss) return u.boss === "broodmother" ? "broodmother" : "wallbreaker";
+  if (u.boss) return u.boss === "broodmother" || u.boss === "hivemind" ? "broodmother" : "wallbreaker"; // the Hivemind: the Broodmother's wet bellow (sim/hivecrawl.js)
   const z = u.ztype;
   if (z === "soldier") return "armoured";
   if (z === "riot") return "riot";
