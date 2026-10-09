@@ -45,7 +45,9 @@ import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
 import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
-import { stackKey, stackInput, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the drop popover
+import { renameBase } from "./sim/basenames.js";
+import { BN_ACTIONS, BN_INPUT, bnKey, nameModalUp } from "./ui/basename.js"; // naming a base you found, renaming any base
+import { stackKey, stackInput, stackWheel, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the wheel, the drop popover
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
@@ -94,7 +96,8 @@ import { toManual } from "./sim/work.js";
 import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
-import { initPanels, applyLayout, setLogLine, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { keepFocusBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
 import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
 import { CONTROLS_ACTIONS, controlsKey } from "./ui/controls.js";
 import { initPalette, openPalette, paletteIndex } from "./ui/cmdpalette.js"; // the search box (Ctrl+K or /)
@@ -212,7 +215,7 @@ function blocked() {
   // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
   const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex;
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex || nameModalUp(state, ui);
 }
 
 // An exception in a frame (a sim tick, the autopilot, drawing) stops the clock and opens the error screen (ui/crash.js),
@@ -304,8 +307,10 @@ function setHTML(id, html, user) {
     heldBack = true;
     return false;
   }
+  const keep = keepFocusBefore(el); // a text box being typed in keeps its focus and caret (ui/panelfold.js)
   el.innerHTML = html;
   shown.set(id, html);
+  afterPanelWrite(el, keep); // and the boxes that scroll fade at the edges with more to see
   return true;
 }
 function setPanel(id, html, user) {
@@ -399,7 +404,7 @@ function autoShow() {
 // The alerts stack, or its folded button (ui/layout.js alertsPill).
 function alertsHTML(html) {
   if (layout.alerts) return alertsPill(ui.alertList, (/<div class="al-flash">[\s\S]*?<\/div>/.exec(html) || [""])[0]);
-  return html.includes('class="al ') ? alertsFoldButton() + html : html;
+  return html.includes('class="al ') ? alertsFoldButton((ui.alertList || []).length, (ui.alertList || []).some((a) => a && a.tone === "danger")) + html : html;
 }
 
 function refresh(user = true) {
@@ -427,6 +432,7 @@ function refresh(user = true) {
   }
   if (!layout.log) setHTML("log", renderLogPanel(state, ui), user); // filters and links (ui/diary.js)
   else setLogLine(state.log && state.log[0] ? String(state.log[0].text || "") : "");
+  if (layout.left) setRailBadges({ teams: ui.started ? state.parties.filter((p) => p.owner === "player" && p.phase === "waiting").length : 0, tab: ui.tab }); // the folded left panel's rail
   refreshModal(user);
   setHTML("legend", renderLegend(view, ui, ui.started ? state : null), user);
   if (ui.started) devSample(state);
@@ -473,6 +479,7 @@ function refreshModal(user) {
       const elog = $("elog");
       if (elog) elog.scrollTop = elog.scrollHeight;
       modal.classList.remove("hidden"); // shown before the charts measure themselves
+      if (!same) { const af = modal.querySelector("input[autofocus]"); if (af) { af.focus({ preventScroll: true }); af.select(); } } // a new window with a box to type in (ui/basename.js): ready to type
       drawCharts(modal); // the Ledger's and the run summary's charts (ui/ledger.js)
     }
   }
@@ -658,6 +665,8 @@ const actions = {
   // they first were).
   "panel-toggle": (d) => foldPanel(d.p, d.v === undefined ? undefined : d.v === "1"),
   "panel-close": (d) => shutPanel(d.p, d.v === undefined ? undefined : d.v === "1"),
+  // The folded left panel's rail (ui/windows.js): a tab's button opens the panel on that tab.
+  "panel-tab": (d) => { ui.tab = d.tab; foldPanel("left", false); },
   "panel-all": () => { relayout(() => { toggleAll(layout); applyLayout(layout); }); saveLayout(layout); },
   "win-reset": () => {
     resetWindows();
@@ -1034,6 +1043,7 @@ for (const [k, fn] of Object.entries(LOOK_ACTIONS)) actions[k] = (d) => fn(state
 // Custom backgrounds window (ui/backgrounds.js); its Done is bg-close in the table above.
 for (const [k, fn] of Object.entries(BG_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Inventory and loot screens (ui/inventory.js).
+for (const [k, fn] of Object.entries(BN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/basename.js
 for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ev: Shift+click on a supply stack (raid search window)
 for (const [k, fn] of Object.entries(TEAMINV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ui/teaminv.js
 for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => { fn(state, ui, d, ev); hideCtx(); }; // ui/teamform.js
@@ -1269,11 +1279,10 @@ const changeActions = {
   // Any base can be renamed from its screen (the name shows on the map, in the log and in the timelapse).
   baserename: (el) => {
     const b = baseOf(el.dataset);
-    const name = String(el.value ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
-    if (!b || !name || name === b.name) return;
-    if (state.bases.some((x) => x !== b && x.name.toLowerCase() === name.toLowerCase())) { ui.baseMsg = `Another base is already called ${name}.`; return; }
-    ui.baseMsg = `${b.name} is now called ${name}.`;
-    b.name = name;
+    if (!b) return;
+    const before = b.name, why = renameBase(state, b, el.value); // sim/basenames.js: cleaned, no two bases alike
+    if (why) { ui.baseMsg = why; el.value = b.name; return; }
+    if (b.name !== before) ui.baseMsg = `${before} is now called ${b.name}.`;
   },
 };
 for (const [k, fn] of Object.entries({ ...FARM_CHANGE, ...HEALTH_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
@@ -1398,6 +1407,10 @@ initTitle({ desktop: settingsApi.desktop, quit: settingsApi.quit });
 for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Order templates and Repeat trip (ui/trips.js), the undo button and the build queue's ▲ ▼ (ui/undo.js); then every
 // planner, build-queue and Work tab action is wrapped so its edits can be undone (installUndo, last).
+// The People tab's view switch and find box (ui/panelfold.js; the box also filters as you type: the input listener).
+Object.assign(actions, { "ppl-view": (d) => PANEL_ACTIONS["ppl-view"](d), "ppl-clear": (d) => PANEL_ACTIONS["ppl-clear"](d) });
+Object.assign(changeActions, { "ppl-q": (el) => PANEL_INPUT["ppl-q"](el) });
+for (const [k, fn] of Object.entries(BN_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the naming window's box: the draft as you type
 const tripApi = { plan: (d) => actions.plan(d), autofill: (pl) => autofill(pl) };
 const tripAct = (fn) => (d) => fn(state, ui, d, tripApi), tripChange = (fn) => (el) => fn(state, ui, el);
 Object.assign(actions, {
@@ -1456,6 +1469,7 @@ document.addEventListener("mouseover", (ev) => {
   ui.workHover = el ? { ...el.dataset } : null;
 });
 document.addEventListener("input", (ev) => stackInput(ev.target)); // the stack mover's slider: the panel follows as it moves
+document.addEventListener("wheel", (ev) => { const w = stackWheel(state, ui, ev); if (w) ev.preventDefault(); if (w > 1) refresh(); }, { passive: false }); // the wheel over a stack, the slider or the box: how many (else it scrolls)
 document.addEventListener("change", (ev) => {
   const el = ev.target.closest("[data-action]");
   if (!el) return;
@@ -1464,6 +1478,14 @@ document.addEventListener("change", (ev) => {
   fn(el);
   if (el.tagName === "SELECT" || el.type === "checkbox") { releaseHold(); dropFocus(); }
   refresh(); // a panel with the mouse button down on it waits (so the click on a button after typing lands)
+});
+// Typing that filters as you go (the People tab's find box, ui/panelfold.js): every key press redraws.
+document.addEventListener("input", (ev) => {
+  const el = ev.target.closest && ev.target.closest("[data-action]");
+  const fn = el && PANEL_INPUT[el.dataset.action];
+  if (!fn) return;
+  fn(el);
+  refresh();
 });
 
 // ---------- hover descriptions ----------
@@ -1873,6 +1895,7 @@ window.addEventListener("keydown", (e) => {
   if (controlsKey(ui, e, settingsApi)) { e.preventDefault(); refresh(); return; }
   const t = e.target || {};
   if (stackKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // the stack mover (ui/stackmove.js): Enter moves, Esc cancels, from its number box too
+  if (bnKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // the naming window (ui/basename.js): Enter names it, Esc keeps the name
   if (t.tagName === "SELECT" || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && t.type !== "checkbox")) return;
   // A question before an order that cannot be undone (ui/confirm.js) takes the keyboard: Enter yes, Esc cancel.
   if (ui.ask) { e.preventDefault(); act(() => askKey(ui, e, actions)); refresh(); return; }

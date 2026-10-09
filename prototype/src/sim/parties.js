@@ -76,6 +76,7 @@ import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
 import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
 import { canClaim, CLAIM } from "./claims.js"; // the orders card: Claim this tile where the land borders yours
+import { askBaseName } from "./basenames.js"; // the naming popup for a base you found
 import { enterTarget, enterCard, enterOption, joinBase } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
 import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, takeStock, RAW, keyWord } from "./water.js"; // purified and un-purified water: packing takes purified first
 
@@ -1354,6 +1355,7 @@ function arrive(state, p) {
       takeSupply(p, "scrap", need);
       if (t.ruin) { log(state, `The team built on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }
       state.bases.push(base);
+      askBaseName(state, base);
       settleInto(state, p, base);
       recomputeOwnership(state);
       log(state, `${base.name} founded with ${members.length} staff.`, "good");

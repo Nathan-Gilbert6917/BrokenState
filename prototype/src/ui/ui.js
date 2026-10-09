@@ -29,9 +29,9 @@ import { snapshot } from "../sim/world.js";
 const specialTip = (mix) => Object.keys(mix || {}).filter((k) => ZTYPES[k]).map((k) => `${ZTYPES[k].name}: ${ZTYPES[k].special} Counter: ${ZTYPES[k].counter}`).join(" · ");
 import { ERAS } from "../sim/eras.js";
 import { ROLES, ESCORTS, supplyLine, farmOutput, scavengeOutput, foodForecast } from "../sim/economy.js";
-import { baseFarming, foodCellHtml, waterCellHtml, foodLine, waterLine, woodLine, storeCellHtml, upkeepCellHtml } from "./farming.js";
+import { baseFarming, foodCellHtml, waterCellHtml, foodLine, waterLine, woodLine, storeCellHtml, upkeepCellHtml, upkeepLine } from "./farming.js";
 import { HEAT } from "../sim/upkeep.js"; // the boiler's fuel a head in the help (firewood × HEAT.wood)
-import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPerDayText, nextTreatLine, illnessRowHtml, othersWormHtml } from "./health.js";
+import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPerDayText, nextTreatLine, illnessRowHtml, illnessSummary, othersWormHtml } from "./health.js";
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
 import { activeCrawl } from "../sim/citycrawl.js";
 import { crawlModal } from "./citycrawl.js";
@@ -107,6 +107,7 @@ import { waterIn, waterText, RAW } from "../sim/water.js"; // purified and un-pu
 import { forageInfo, foragerMult, FORAGE } from "../sim/foraging.js";
 import { woodInfo, WOOD, boilerJunkOn, boilerBurnables, burnablesWood } from "../sim/woodcutting.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
+import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
 import { roadStock, firstHubCard, fromTeamRow, stagingTileCard, stageRows, fireButton } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView } from "../sim/staging.js";
 import { gaugeRows, treatsRow, needsEffectText } from "./needs.js";
@@ -119,6 +120,8 @@ import { cardUp, trayCardFrame, MAX_SPEED } from "./pacing.js"; // pause rules a
 import { devButton } from "./display.js"; // the top bar's Dev button (Menu → Options → Display → Show dev tools)
 import { totalRounds, sumRecs } from "../sim/rounds.js"; // rounds by calibre
 import { roundsLine, baseAmmo } from "../sim/ammo.js";
+import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
+import { fold, peopleQuery, peopleIsCompact } from "./panelfold.js"; // side-panel folds; the People tab's find box and view
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -226,25 +229,69 @@ function renderBases(state) {
     const job = b.construction[0];
     const rate = buildRate(state, b);
     const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
+    const beds = baseBeds(b);
+    // The card in four groups (styles.css .pk): how the base stands, its supplies, what threatens it, what it is
+    // building and who it talks to. Every row is a label and a value; long values wrap or fold.
+    // On top a strip of chips (people, defence, heat, food and any warning) that opens the full card under it.
+    const detail = `<div class="pk small">
+        ${pkSec("Status")}
+        <div class="kv">
+          <div>People</div><div><span class="${people.length > beds ? "warn" : ""}"${people.length > beds ? tip("More people than beds: crowding lowers mood and raises the chance of illness") : ""}>${people.length} / ${beds} beds</span>${meter(beds ? people.length / beds : 1, people.length > beds ? "var(--danger)" : "var(--info)")}</div>
+          <div${tip("Walls, guards and everyone else at the base. Ammo shortages cut it by 30%.")}>Defense</div><div class="pk-num">${Math.round(baseDefense(state, b))}</div>
+          <div${tip("Noise and light that draw hordes. Workshop operators add 3 each.")}>Heat</div><div class="pk-num">${baseHeat(state, b)}</div>
+        </div>
+        ${pkSec("Supplies")}
+        <div class="kv">
+          <div${tip("Days of food left at today's rate without harvests, and the next harvest (crops ripen in batches)")}>Food</div>${foodCellHtml(state, b)}
+          <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
+          ${supplySummary(state, b)}
+          ${line ? `<div${tip("Share of outpost surplus that reaches the hub, and how long backup takes")}>Supply line</div><div class="${line.strength < 0.6 ? "danger" : "good"}">${Math.round(line.strength * 100)}% · ETA ${isFinite(line.hours) ? line.hours + "h" : "cut off"}</div>` : ""}
+          <div${tip("Food and water used up a day: a rate per person × everyone fed here (hover for the breakdown)")}>Upkeep</div>${upkeepFold(state, b)}
+        </div>
+        ${pkSec("Risks")}
+        <div class="kv">
+          ${holdRow(state, b)}
+          ${illnessRowHtml(state, b)}
+        </div>
+        ${pkSec("Infrastructure")}
+        <div class="kv">
+          <div>Building</div><div>${job ? `${buildJobName(job)}: ${rate > 0 ? `${Math.ceil((job.hours - job.progress) / rate)}h left` : "paused, no builders"}` : "<span class='muted'>Nothing queued</span>"}</div>
+          ${caravanLines(state, b)}
+        </div>
+      </div>`;
     return `<div class="card">
-      <div class="spread"><h2 style="margin:0">${esc(b.name)}</h2><span class="muted small">${tierName(b)} ${watchlistPin(state, "base", b.id, b.name)}</span></div>
-      <div class="kv small" style="margin-top:0.4rem">
-        <div>People</div><div>${people.length} / ${baseBeds(b)} beds</div>
-        <div${tip("Walls, guards and everyone else at the base. Ammo shortages cut it by 30%.")}>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
-        ${holdRow(state, b)}
-        <div${tip("Noise and light that draw hordes. Workshop operators add 3 each.")}>Heat</div><div>${baseHeat(state, b)}</div>
-        <div${tip("Days of food left at today's rate without harvests, and the next harvest (crops ripen in batches)")}>Food</div>${foodCellHtml(state, b)}
-        <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
-        <div${tip("Food and water used up a day: a rate per person × everyone fed here (hover for the breakdown)")}>Upkeep</div>${upkeepCellHtml(state, b)}
-        ${illnessRowHtml(state, b)}
-        <div>Building</div><div>${job ? `${buildJobName(job)}: ${rate > 0 ? `${Math.ceil((job.hours - job.progress) / rate)}h left` : "paused, no builders"}` : "<span class='muted'>Nothing queued</span>"}</div>
-        ${supplySummary(state, b)}
-        ${caravanLines(state, b)}
-        ${line ? `<div${tip("Share of outpost surplus that reaches the hub, and how long backup takes")}>Supply line</div><div class="${line.strength < 0.6 ? "danger" : "good"}">${Math.round(line.strength * 100)}% · ETA ${isFinite(line.hours) ? line.hours + "h" : "cut off"}</div>` : ""}
-      </div>
-      <div class="row" style="margin-top:0.5rem"><button class="primary" data-action="openbase" data-id="${b.id}"${tip("Workshops, buildings, construction, armory and vehicles")}>Manage</button><button data-action="center" data-tile="${b.tile}"${tip("Center the map here")}>Locate</button></div>
+      <div class="spread pk-head"><h2 style="margin:0">${esc(b.name)}</h2><span class="muted small">${tierName(b)} ${watchlistPin(state, "base", b.id, b.name)}</span></div>
+      ${fold(`base:${b.id}`, baseStrip(state, b, people.length, beds), detail, { cls: "pf-card", tipText: "Show or hide the details: status, supplies, risks, building and radio" })}
+      <div class="row pk-foot"><button class="primary" data-action="openbase" data-id="${b.id}"${tip("Workshops, buildings, construction, armory and vehicles")}>Manage</button><button data-action="center" data-tile="${b.tile}"${tip("Center the map here")}>Locate</button>${renameButton(b, "✎ Rename")}</div>
     </div>`;
-  }).join("") + (!stagingView(state) ? `<div class="small muted">Found outposts by sending a team with 15 scrap and choosing Build outpost.</div>` : "");
+  }).join("") + (!stagingView(state) ? `<div class="small muted pk-hint">Found outposts by sending a team with 15 scrap and choosing Build outpost.</div>` : "");
+}
+// A base at a glance (the Bases tab card's fold line): people and beds, defence, heat, days of food, and the red
+// warnings (crowded, cold, the boiler unlit, ill with no meds) so they show with the card folded.
+function baseStrip(state, b, n, beds) {
+  const f = foodLine(state, b);
+  const u = upkeepLine(state, b);
+  const sick = illnessSummary(state, b);
+  const chip = (cls, text, t) => `<span class="bs-chip${cls ? ` ${cls}` : ""}"${tip(t)}>${text}</span>`;
+  return `<span class="bs-strip">${chip(n > beds ? "danger" : "", `👥 ${n}/${beds}`, `People ${n}, beds ${beds}${n > beds ? ". More people than beds: crowding lowers mood and raises the chance of illness" : ""}`)}` +
+    chip("", `🛡 ${Math.round(baseDefense(state, b))}`, "Defense: walls, guards and everyone else at the base. Ammo shortages cut it by 30%.") +
+    chip("", `🔥 ${baseHeat(state, b)}`, "Heat: noise and light that draw hordes. Workshop operators add 3 each.") +
+    chip(f.cls, `🥫 ${esc(f.short.split(" · ")[0])}`, `Food: ${f.short}. ${f.tip}`) +
+    (u.cold ? chip("danger", "❄ Cold", "Out of firewood and fuel: everyone here is cold") : "") +
+    (u.boilerCold ? chip("danger", "💧 Boiler cold", "The water boiler is cold today: nothing to burn, the water is unboiled") : "") +
+    (sick.noMeds ? chip("danger", "💊 No meds", "People here are ill and there are no meds at this base to treat them") : "") + `</span>`;
+}
+// A section heading inside a side-panel card (Status, Supplies, ...), and a thin bar under a value (share 0..1).
+const pkSec = (name, tipText = "") => `<div class="pk-sec"${tip(tipText)}>${name}</div>`;
+const meter = (share, color) => `<span class="pk-meter" aria-hidden="true"><i style="width:${Math.round(Math.max(0, Math.min(1, share)) * 100)}%;background:${color}"></i></span>`;
+// The Upkeep row in the Bases tab: the one-line total and a warning when the base is cold, then the breakdown folded
+// in a row of its own across the card (the same lines as farming.js upkeepCellHtml, which the base window shows open).
+// The last row of its group: the full-width row would otherwise shift the label / value pairs after it.
+function upkeepFold(state, b) {
+  const u = upkeepLine(state, b);
+  const warn = `${u.cold ? `<div class="small danger">Cold: out of firewood and fuel</div>` : ""}${u.boilerCold ? `<div class="small danger">The water boiler is cold today: nothing to burn</div>` : ""}`;
+  const body = `<div>${esc(`Food: ${u.food}`)}</div><div>${esc(`Water: ${u.water}`)}</div>${u.heating ? `<div class="${u.cold ? "danger" : ""}">${esc(u.heating)}${u.cold ? " · cold: out of firewood and fuel" : ""}</div>` : ""}${u.boiler ? `<div class="${u.boilerCold ? "danger" : ""}">${esc(u.boiler)}</div>` : ""}`;
+  return `<div${tip(u.tip)}><div>${esc(u.short)}</div>${warn}</div><div class="pk-wide">${fold(`upkeep:${b.id}`, "Upkeep breakdown", body, { tipText: "A rate per person × the people fed here: food, water, heating and the water boiler" })}</div>`;
 }
 
 // "Can this base hold against a horde of N?" (sim/defences.js): the biggest horde its walls, guards and defence
@@ -310,7 +357,35 @@ function renderPeople(state) {
   if (errands.length) groups.push(["Away on personal errands", errands]);
   const held = alive(state).filter(isCaptive);
   if (held.length) groups.push(["Held captive", held]);
-  return groups.map(([name, ppl]) => `<h3>${esc(name)} (${ppl.length})</h3>${ppl.map((s) => personCard(state, s)).join("")}`).join("") + childrenPeople(state); // ui/family.js
+  // The find box and the view switch on top (ui/panelfold.js); a group with nobody matching is left out.
+  const q = peopleQuery().trim().toLowerCase();
+  const compact = peopleIsCompact();
+  const hit = (s) => !q || personWords(state, s).includes(q);
+  const shownGroups = groups.map(([name, ppl]) => [name, ppl, ppl.filter(hit)]).filter(([, , f]) => f.length);
+  const found = shownGroups.reduce((a, [, , f]) => a + f.length, 0);
+  const total = groups.reduce((a, [, p]) => a + p.length, 0);
+  const head = `<div class="ppl-bar"><input type="search" class="ppl-q" data-action="ppl-q" data-keep="ppl-q" maxlength="40" placeholder="Find: name, job or skill" value="${esc(peopleQuery())}" aria-label="Find people by name, job or skill"${tip("Type to show only the people whose name, job, skill, background or trait has this in it")}>${q ? `<button class="mini" data-action="ppl-clear"${tip("Show everyone again")}>✕</button>` : ""}<button class="mini ppl-view" data-action="ppl-view" aria-pressed="${compact}"${tip(compact ? "Show everyone as full cards (health, hunger, thirst, mood, skills, traits)" : "Show everyone as one line each (name, job, health): more people on the screen")}>${compact ? "▤ Cards" : "☰ Compact"}</button></div>${q ? `<div class="small muted ppl-found">${found} of ${total} match “${esc(peopleQuery())}”</div>` : ""}`;
+  const row = (s) => (compact && !isCaptive(s) ? personRow(state, s) : personCard(state, s));
+  return head + shownGroups.map(([name, ppl, f]) => `<h3>${esc(name)} (${q ? `${f.length} of ${ppl.length}` : ppl.length})</h3>${f.map(row).join("")}`).join("") +
+    childrenPeople(state, q ? (c) => String(c.name || "").toLowerCase().includes(q) : null); // ui/family.js
+}
+// What the People tab's find box looks through for one person: name, job (role), skills, background, traits.
+function personWords(state, s) {
+  const role = roleOf(state, s);
+  const bg = backgroundInfo(state, s.background);
+  return [s.name, role ? role.name : "", ROLES[s.role] ? ROLES[s.role].name : "", ...Object.keys(s.skills || {}).filter((k) => skill(s, k) >= 5).map((k) => SKILL_NAMES[k]), bg ? bg.name : "", ...(s.traits || []).map((t) => (TRAITS[t] ? TRAITS[t].name : t))].join(" ").toLowerCase();
+}
+// The compact People tab: one line a person (name and status icons, job, health), the full card a click away
+// (the survivor screen) or a switch back (Cards). Hover: health, mood and top skills.
+function personRow(state, s) {
+  const known = inContact(state, s);
+  const top = Object.entries(s.skills).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => `${SKILL_NAMES[k]} ${skill(s, k)}`).join(", ");
+  const hover = `${known ? `Health ${n0(s.health)} · mood ${n0(s.mood)}` : s.location.kind === "errand" ? `Away on a personal errand: back around day ${s.location.until}` : "No contact: health and mood unknown until the team reports in"} · ${top}. Click for skills, traits and gear.`;
+  return `<div class="card surv prow" data-action="survivor" data-id="${s.id}"${tip(hover)}>
+    <span class="prow-name"><b>${s.leader ? "★ " : ""}${esc(s.name)}</b>${stIcons(state, s)}</span>
+    ${known ? `<span class="prow-hp${s.health < 40 ? " danger" : ""}">${meter(s.health / 100, s.health < 40 ? "var(--danger)" : "var(--good)")}<span class="pk-num">${n0(s.health)}</span></span>` : `<span class="small muted prow-hp">${s.location.kind === "errand" ? "errand" : "no contact"}</span>`}
+    ${s.location.kind === "base" ? roleSelect(state, s) : ""}
+  </div>`;
 }
 
 function renderGroups(state) {
@@ -321,18 +396,19 @@ function renderGroups(state) {
     ${known.length ? known.map((f) => {
       const a = attitude(f);
       const route = routes.find((r) => r.factionId === f.id);
-      return `<div class="card">
-        <div class="spread"><b><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</b><span>${f.alive ? `<span style="color:${attColor(a)}">${a}</span> ${watchlistPin(state, "group", f.id, f.name)}` : `<span class="muted">Collapsed</span>`}</span></div>
-        <div class="small muted">${FACTION_TYPES[f.type].label} · about ${f.alive ? Math.round(f.pop / 5) * 5 || f.pop : 0} people · ${f.bases.length} base${f.bases.length === 1 ? "" : "s"}${f.pact ? ` · ${f.pact === "trade" ? "Trade pact" : "Non-aggression pact"}` : ""}</div>
+      // Folded to one line (name, about how many, goodwill, attitude); the whole card opens under it.
+      const pop = f.alive ? Math.round(f.pop / 5) * 5 || f.pop : 0;
+      const summary = `<span class="gc-sum"><b class="gc-name"><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</b><span class="gc-fig small muted">${f.alive ? `~${pop} people · goodwill <span style="color:${attColor(a)}">${Math.round(f.goodwill)}</span>${f.pact ? " · pact" : ""}${f.atWar ? ` · <span class="danger">⚔</span>` : ""}` : ""}</span>${f.alive ? `<span class="att-chip" style="color:${attColor(a)}">${a}</span>` : `<span class="muted small">Collapsed</span>`}</span>`;
+      const body = `<div class="spread small"><span class="muted">${FACTION_TYPES[f.type].label} · about ${pop} people · ${f.bases.length} base${f.bases.length === 1 ? "" : "s"}${f.pact ? ` · ${f.pact === "trade" ? "Trade pact" : "Non-aggression pact"}` : ""}</span>${f.alive ? watchlistPin(state, "group", f.id, f.name) : ""}</div>
         <div class="row small"><span class="muted" style="width:4.5rem"${tip("-100 to 100. Hostile at -40 or below, friendly at 20+, allied at 70+.")}>Goodwill</span><div style="flex:1">${bar((f.goodwill + 100) / 2, attColor(a))}</div><span>${Math.round(f.goodwill)}</span></div>
         ${f.lootedGear.length ? `<div class="small danger">Seen carrying: ${f.lootedGear.slice(-3).map(esc).join(", ")}</div>` : ""}
-        ${groupCardExtras(state, f)}
+        <div class="gc-extra">${groupCardExtras(state, f)}</div>
         ${f.alive ? `<div class="row" style="margin-top:0.35rem">
           <button data-action="center" data-tile="${f.bases[0]}"${tip("Center the map on their main base")}>Locate</button>
           ${canRadio(state, f) ? `<button data-action="rd-open" data-id="${f.id}"${tip("Radio panel: greet, ask for news, ask for a trade caravan, make a deal, call for help, pacts")}>Radio…</button>` : ""}${f.heard ? `<span class="small muted"${tip("You found them by scanning the airwaves")}>heard on the radio</span>` : ""}
           ${f.pact === "trade" && !route ? `<button data-action="routesetup" data-id="${f.id}"${tip("Recurring convoys with an escort you choose")}>Set up trade route</button>` : ""}
-        </div>` : ""}
-      </div>`;
+        </div>` : ""}`;
+      return `<div class="card gc">${fold(`group:${f.id}`, summary, body, { cls: "pf-card", tipText: `${f.name}: click for the whole card (goodwill, wars and pacts, what they want and have spare, their arms, Locate and Radio)` })}</div>`;
     }).join("") : `<div class="muted small">You have not found any other groups yet. Send recon teams out.</div>`}
     ${unknown ? `<div class="muted small" style="margin-top:0.5rem">${unknown} group${unknown === 1 ? " is" : "s are"} still out there, unknown.</div>` : ""}
     ${bandsSection(state)}
@@ -350,6 +426,8 @@ function renderGroups(state) {
     }).join("") : `<div class="muted small">Sign a trade pact during a trade visit, then set up a route here.</div>`}`;
 }
 
+// One figure on a team card's supplies line (styles.css .tm-stat).
+const tmStat = (k, v) => `<span class="tm-stat"><span class="muted">${k}</span> ${v}</span>`;
 function renderTeams(state, ui) {
   const mine = state.parties.filter((p) => p.owner === "player");
   if (!mine.length) return `${formTeamRow(state)}<div class="muted small">No teams out. Form one at a base, select a tile on the map and choose an action, or right-click a tile.</div>${teamsTrips(state, ui)}`;
@@ -374,9 +452,9 @@ function renderTeams(state, ui) {
     const showLive = waiting || p.radioLive || p.kind === "convoy" || p.phase === "task";
     return `<div class="card small ${waiting ? "attn" : ""}">
       <div class="spread"><b>${sjob ? `Supply run: ${esc(jobName(state, sjob))}` : `${MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team"} → ${esc(tileLabel(state, p.dest))}`}</b>${showLive ? `<button data-action="center" data-tile="${partyTile(p)}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>
-      ${members.map(first).join(", ")} · ${v ? esc(isBike(v) ? `on ${vehicleLabel(v)}` : v.name) : "on foot"} · ${STANCES[p.stance]?.name || ""}${p.burden && p.burden.band >= 2 && p.vehicle !== true ? ` · <span class="warn"${tip("Its load slows it down and it eats and drinks more on the move (team panel)")}>${p.burden.band >= 3 ? "Overloaded" : "Heavy"}</span>` : ""}<br>
-      ${showLive ? `Food ${n0((p.supplies.food || 0) + (p.supplies.preserved || 0))} · Water ${n0(waterIn(p.supplies))}${(p.supplies[RAW] || 0) >= 1 ? ` (${n0(p.supplies[RAW])} raw)` : ""}${isCar(v) ? ` · Fuel ${n0(partyFuel(state, p))} · Vehicle ${Math.round(v.condition)}%` : ""} · Load ${n0(Parties.poolLoad(p))}/${n0(partyCapacity(state, p))} kg<br>` : ""}
-      ${status}
+      <div class="tm-who">${members.map(first).join(", ")} <span class="muted">· ${v ? esc(isBike(v) ? `on ${vehicleLabel(v)}` : v.name) : "on foot"} · ${STANCES[p.stance]?.name || ""}</span>${p.burden && p.burden.band >= 2 && p.vehicle !== true ? ` · <span class="warn"${tip("Its load slows it down and it eats and drinks more on the move (team panel)")}>${p.burden.band >= 3 ? "Overloaded" : "Heavy"}</span>` : ""}</div>
+      ${showLive ? `<div class="tm-stats">${tmStat("Food", n0((p.supplies.food || 0) + (p.supplies.preserved || 0)))}${tmStat("Water", `${n0(waterIn(p.supplies))}${(p.supplies[RAW] || 0) >= 1 ? ` (${n0(p.supplies[RAW])} raw)` : ""}`)}${isCar(v) ? `${tmStat("Fuel", n0(partyFuel(state, p)))}${tmStat("Vehicle", `${Math.round(v.condition)}%`)}` : ""}${tmStat("Load", `${n0(Parties.poolLoad(p))}/${n0(partyCapacity(state, p))} kg`)}</div>` : ""}
+      <div class="tm-status">${status}</div>
       ${canOrder && p.kind !== "convoy" && !commandable(state, p) ? `<div class="small muted"${tip(NO_RADIO)}>No radio contact: it follows its ${p.plan && p.plan.active ? "plan" : "orders"}; new orders through its cards</div>` : ""}
       ${teamRadioLine(state, p)}
       ${canOrder && p.kind !== "convoy" && commandable(state, p) ? `<div class="row" style="margin-top:0.35rem">
@@ -490,6 +568,8 @@ export function renderRight(state, ui) {
   const markers = state.markers.filter((m) => m.tile === id);
   const teamsHere = state.parties.filter((p) => p.owner === "player" && contactable(p) && partyTile(p) === id);
   const loc = mapLoc(state, id); // a hidden site nobody has found is bare ground (sim/discovery.js)
+  const land = landRows(state, id, teamsHere);
+  // The tile in four groups (styles.css .pk): what you know of it, its dangers, what the land gives, the way there.
   return `
     <h2>${esc(loc ? loc.name : TERRAIN[t.terrain].name)}</h2>
     <div class="small muted">${loc ? LOCATIONS[loc.type].name + " · " : ""}${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}${t.bridge ? " · bridge" : ""}</div>
@@ -497,14 +577,19 @@ export function renderRight(state, ui) {
     ${ui.moveParty ? `<div class="card attn small" style="margin-top:0.5rem">Move mode: left-click this or another tile to send the team. Esc cancels.</div>` : ""}
     ${stagingTileCard(state, id)}
     <div class="card" style="margin-top:0.6rem">
-      <div class="kv small">
+      <div class="pk small">
+      ${pkSec("Intel")}
+      <div class="kv">
         <div>Intel</div><div>${isLive ? `<span class="good">Live</span>` : snap ? `Last seen ${ageText(state, snap)} (day ${Math.floor(snap.hour / 24) + 1})` : `<span class="muted">None</span>`}</div>
         ${searched ? `<div${tip("Your people looked hard here (a survey, a Look around or a search): the Known area layer hatches it. Hidden places and finds nearby are likelier found already.")}>Searched</div><div>day ${searched}</div>` : ""}
         ${info ? `
         <div>Held by</div><div>${info.owner === "player" ? "You" : ownerF ? `<span style="color:${ownerF.color}">${esc(ownerF.name)}</span> (${attitude(ownerF).toLowerCase()})` : "Nobody"}</div>
-        ${claimText(state, id) ? `<div${tip("A marker post (sim/claims.js): the tile counts as land the coalition holds. Lost if a group founds or takes a base on or beside it, a hive rises there, or a hostile band camps on it over a day.")}>Claim</div><div>${esc(claimText(state, id))}${wellText(state, id) ? ` · ${esc(wellText(state, id))}` : ""}</div>` : ""}
-        <div${tip("How thick the worm’s eggs lie in the ground and the water here (Help: The dead and the worm). Higher infection means more of the dead, more events, faster Heat")}>Infection</div><div>${Math.round(info.infection * 100)}%</div>
-        <div${tip("How much is left to scavenge here, against what it held untouched: rich, some, little, picked clean. Nothing grows back, and other groups strip sites too: what you have not seen lately may be gone.")}>Loot</div><div>${lootCell(info.loot)}</div>
+        ${claimText(state, id) ? `<div${tip("A marker post (sim/claims.js): the tile counts as land the coalition holds. Lost if a group founds or takes a base on or beside it, a hive rises there, or a hostile band camps on it over a day.")}>Claim</div><div>${esc(claimText(state, id))}${wellText(state, id) ? ` · ${esc(wellText(state, id))}` : ""}</div>` : ""}` : ""}
+      </div>
+      ${info || (hz.territory && !info?.hive) ? `${pkSec("Dangers")}
+      <div class="kv">
+        ${info ? `
+        <div${tip("How thick the worm’s eggs lie in the ground and the water here (Help: The dead and the worm). Higher infection means more of the dead, more events, faster Heat")}>Infection</div><div>${Math.round(info.infection * 100)}%${meter(info.infection, "var(--danger)")}</div>
         <div>Horde</div><div>${isLive ? here.map((h) => watchlistPin(state, "horde", h.id, `horde of ${h.size}`)).join("") + " " : ""}${info.hordeSize ? `<span class="danger"${tip("Score from its size: how tough it is in a fight and how much it adds to a new hive (small about 3, medium 8, large 16)")}>${Math.round(info.hordeSize)}${isLive ? "" : " (then)"} · score ${hordeScore(info.hordeSize)}${info.hordeBoss ? ` · ${BOSS_NAMES.horde}` : ""}</span>` : "None seen"}</div>
         ${info.hordeSize && info.hordeMix ? `<div${tip(specialTip(info.hordeMix))}>Special dead</div><div class="danger">${esc(mixText(info.hordeMix, info.hordeSize))}</div>` : ""}
         ${info.hive ? `<div${tip(`An infestation hive: it grows hordes, radiates infection over its land and holds the ${BOSS_NAMES.hive}. Destroy every hive to win (Destroy hive mission; see Help → Eras and winning).`)}>Hive</div><div class="danger">Yes${liveHive ? ` · tier ${hiveTier(state, liveHive)}` : ""}</div>` : ""}
@@ -512,19 +597,27 @@ export function renderRight(state, ui) {
         ${info.growth ? `<div${tip(`${GROWTHS[info.growth.kind] ? GROWTHS[info.growth.kind].desc : ""} Burn it (Burn the growth: fight its guard, or 4 fuel / 2 Molotovs a fire) and its hive loses that. It regrows its flesh a little every day.`)}>Hive growth</div><div class="danger">${esc(info.growth.name)}${info.growth.withered ? " · withered (its hive is gone)" : info.growth.growing ? " · still growing" : ` · flesh ${info.growth.hp}%`}${isLive ? "" : " (then)"}</div>` : ""}
         ${info.site ? `<div${tip(`The dead gather here to build a new hive: it stands once ${HIVE.SITE_BIOMASS} of them have gone into it. Send a Cull horde team and Break up the gathering: before the mound is begun the site is given up, after that the hive loses a big part of what has gone in and starts over (Help: Hives being born).`)}>Hive being built</div><div class="danger">${info.site.started ? "under way" : "gathering"} · ${Math.round(info.site.biomass)}/${HIVE.SITE_BIOMASS} dead${siteText(state, id) ? `<div class="small">${esc(siteText(state, id))}</div>` : ""}</div>` : ""}` : ""}
         ${hz.territory && !info?.hive ? `<div${tip("Land a hive holds: at least 3 danger skulls. On the red-skull ring right around a hive every one of the dead is much tougher (+3 power; +1 elsewhere in its land).")}>Hive land</div><div class="danger">${hz.red ? "Red-skull ground: much tougher dead" : "Yes: tougher dead"}</div>` : ""}
-        ${landRows(state, id, teamsHere)}
+      </div>` : ""}
+      ${info || land ? `${pkSec("Land")}
+      <div class="kv">
+        ${info ? `<div${tip("How much is left to scavenge here, against what it held untouched: rich, some, little, picked clean. Nothing grows back, and other groups strip sites too: what you have not seen lately may be gone.")}>Loot</div><div>${lootCell(info.loot)}</div>` : ""}
+        ${land}
+      </div>` : ""}
+      ${pkSec("Travel")}
+      <div class="kv">
         ${fromTeamRow(state, id) || `<div>From hub</div><div>${walk ? `${walk.tiles} tiles · ~${Math.ceil(walk.hoursOut)}h on foot` : "No route over land"}</div>`}
+      </div>
       </div>
       ${walk || base || stagingView(state) ? "" : `<div class="small muted" style="margin-top:0.3rem">${t.terrain === "water" && !t.bridge ? "Open water. Teams cross one tile of it by boat, from a shore (team panel: Boat crossing)." : "Water is in the way. Send a team to the nearest shore, then build a boat there (team panel: Boat crossing, or right-click the far shore)."}</div>`}
     </div>
-    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><span class="row">${watchlistPin(state, "base", base.id, base.name)}${formTeamButton(state, base)}<button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></span></div><div class="small">Your ${tierName(base).toLowerCase()}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}</div></div>` : ""}
+    ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><span class="row">${watchlistPin(state, "base", base.id, base.name)}${renameButton(base)}${formTeamButton(state, base)}<button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></span></div><div class="small">Your ${tierName(base).toLowerCase()}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}</div></div>` : ""}
     ${ruin && !base ? `<div class="card small"${tip(`A base burned to the ground in a raid. A little is left to scavenge, and an outpost here needs only ${ruin.scrap} scrap: the rest is salvage. Founding one replaces the ruins.`)}><b>${esc(ruin.title)}</b><div class="muted">Burned by ${esc(ruin.by)}${ruin.day != null ? ` on day ${ruin.day}` : ""}${ruin.from ? ` (${esc(ruin.from)}'s base)` : ruin.yours ? " (your base)" : ""}.</div>
       <div class="kv small"><div${tip("What is left to pick through, as you last saw it: rich, some, little, picked clean")}>Salvage</div><div>${esc(ruin.salvage)}${ruin.salvageLive ? "" : ` <span class="muted">(then)</span>`}</div><div${tip("The danger of the place, as the skulls under a site's name: at least very high on a hive's land")}>Danger</div><div class="${ruin.danger >= 2 ? "danger" : ""}">${esc(ruin.dangerName)}</div><div>New outpost</div><div>${ruin.scrap} scrap carried</div></div></div>` : ""}
     ${occupiedAt(state, id) ? `<div class="card attn small"${tip("A base of yours another group took. Send an Assault their base team (the button below) to take it back: its walls are weakest right after it fell, and the holders patch it up every day.")}><b>${esc(occupiedAt(state, id).name)}: held by others</b><div>${esc(occupiedText(state, occupiedAt(state, id)))}</div></div>` : ""}
     ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
       <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${n0(m.info.fuel)}, condition ${Math.round(m.info.condition || 0)}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
     ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>${enterButton(state, p)}${editTeamButton(state, p, "")}`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}
-    ${actions.length ? `<h3>Send a team from the hub</h3><div class="row" style="flex-wrap:wrap">${actions.map(([m, l, pre, tp]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}${tip(tp || MISSIONS[m].desc)}>${l}</button>`).join("")}</div>` : ""}`;
+    ${actions.length ? `<h3>Send a team from the hub</h3><div class="row pk-acts">${actions.map(([m, l, pre, tp]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}${tip(tp || MISSIONS[m].desc)}>${l}</button>`).join("")}</div>` : ""}`;
 }
 
 // "Enter <base>" for a team standing on one of your bases, stopped there (sim/moveout.js enterOption): its people move
@@ -552,7 +645,8 @@ function landRows(state, id, teamsHere) {
   const info = huntInfo(state, id, { members: people, ammo, arrows, mix, hours: HUNT.defHours, room });
   const who = p ? "this team" : people.length ? people.map((s) => esc(shortName(s))).join(" and ") : "";
   const quiet = info.est && info.est.shots < 0.5 ? ", silent" : info.est ? `, ~${Math.round(info.est.shots)} shots` : "";
-  const yieldText = info.est ? ` · ~${Math.round(info.est.rations)} food in an ${HUNT.defHours}h hunt (${who}${quiet})` : people.length || p ? "" : ` · <span class="muted">nobody at the hub has a hunting weapon</span>`;
+  // The estimate goes on a muted second line under the rating (styles.css .pk-sub).
+  const yieldText = info.est ? `<span class="pk-sub">~${Math.round(info.est.rations)} food in an ${HUNT.defHours}h hunt (${who}${quiet})</span>` : people.length || p ? "" : `<span class="pk-sub">nobody at the hub has a hunting weapon</span>`;
   const gameTip = `Game here: ${info.word}. The land: ${Math.round(info.abundance * 100)}% (forest and hills best, farmland fair, towns and hive land almost nothing), hunted down to ${Math.round(info.level * 100)}% (it grows back over weeks). The estimate is an average for ${HUNT.defHours} hours from now (season, time of day, the hunters' weapons and skill, and the hunting mix of ${p ? "the team's home" : "the hub"}: ${HUNT_METHODS.filter((k) => mix[k]).map((k) => `${METHOD_NAMES[k].toLowerCase()} ${mix[k]}%`).join(", ")}); luck decides the rest. Gunshots raise Heat and can draw the dead; bows are silent but lose arrows; traps are silent and catch less.`;
   let out = `<div${tip(gameTip)}>Game</div><div>${info.word === "plenty" ? `<span class="good">plenty</span>` : info.word}${yieldText}</div>`;
   // Infested animals (sim/worm.js): the share of the game that carries the worm here, and a herd you can see.
@@ -564,20 +658,20 @@ function landRows(state, id, teamsHere) {
     const kitPeople = p ? Parties.partyMembers(state, p) : h ? atBase(state, h.id).slice(0, 2) : [];
     const kit = fishKit(kitPeople, p ? p.cargo.gear : (h && h.armory) || [], { frozen: frozenAt(state) });
     const fe = kit.power ? expectFish(state, kit, id, HUNT.defHours).rations : null;
-    out += `<div${tip(`Fish in ${info.fishSpot.name}: ${Math.round(fishLevel(state, id) * 100)}% left (a fished-out spot comes back in a week or two). Needs a fishing rod, a net or a spear (spears work in daylight, not through ice); ice fishing in a freeze needs a rod or net and a crowbar, machete or axe.`)}>Fish</div><div>${gameWord(info.fishSpot.mult * info.fishLevel)} (${info.fishSpot.name})${fe != null ? ` · ~${Math.round(fe)} food in ${HUNT.defHours}h${frozenAt(state) ? " (through the ice)" : ""}` : ` · <span class="muted">no rod, net or spear ${p ? "with the team" : "at the hub"}</span>`}</div>`;
+    out += `<div${tip(`Fish in ${info.fishSpot.name}: ${Math.round(fishLevel(state, id) * 100)}% left (a fished-out spot comes back in a week or two). Needs a fishing rod, a net or a spear (spears work in daylight, not through ice); ice fishing in a freeze needs a rod or net and a crowbar, machete or axe.`)}>Fish</div><div>${gameWord(info.fishSpot.mult * info.fishLevel)} (${info.fishSpot.name})${fe != null ? `<span class="pk-sub">~${Math.round(fe)} food in ${HUNT.defHours}h${frozenAt(state) ? " (through the ice)" : ""}</span>` : `<span class="pk-sub">no rod, net or spear ${p ? "with the team" : "at the hub"}</span>`}</div>`;
   }
   // Wild food (sim/foraging.js): what the land holds this season and what 8 hours of foraging would bring.
   const fPeople = p ? Parties.partyMembers(state, p) : h ? [...atBase(state, h.id)].sort((a, b) => foragerMult(b) - foragerMult(a) || a.id - b.id).slice(0, 3) : [];
   const fi = forageInfo(state, id, { members: fPeople, hours: FORAGE.defHours, room: p ? Parties.cargoRoom(state, p) : Infinity });
   if (fi.abundance >= 0.02) {
     const fWho = p ? "this team" : fPeople.length ? fPeople.map((s) => esc(shortName(s))).join(", ") : "";
-    out += `<div${tip(`Wild food here: ${fi.word} (${fi.seasonKey}). The land: ${Math.round(fi.abundance * 100)}% (forest best, farmland and old orchards good, hills some, towns little: overgrown gardens), picked down to ${Math.round(fi.level * 100)}% (it grows back over a season). Summer and autumn are plentiful, spring gives greens, winter almost nothing. Farming and Scouting help. Foraging is time on one spot: it builds Heat like any work there.`)}>Forage</div><div>${fi.word === "plenty" ? `<span class="good">plenty</span>` : fi.word}${fi.est ? ` · ~${Math.round(fi.est.rations * 10) / 10} food in ${FORAGE.defHours}h (${fWho})` : ""}</div>`;
+    out += `<div${tip(`Wild food here: ${fi.word} (${fi.seasonKey}). The land: ${Math.round(fi.abundance * 100)}% (forest best, farmland and old orchards good, hills some, towns little: overgrown gardens), picked down to ${Math.round(fi.level * 100)}% (it grows back over a season). Summer and autumn are plentiful, spring gives greens, winter almost nothing. Farming and Scouting help. Foraging is time on one spot: it builds Heat like any work there.`)}>Forage</div><div>${fi.word === "plenty" ? `<span class="good">plenty</span>` : fi.word}${fi.est ? `<span class="pk-sub">~${Math.round(fi.est.rations * 10) / 10} food in ${FORAGE.defHours}h (${fWho})</span>` : ""}</div>`;
   }
   // Firewood (sim/woodcutting.js): what the land holds and what 8 hours of cutting would bring.
   const wi = woodInfo(state, id, { members: fPeople, spare: p ? p.cargo.gear : (h && h.armory) || [], hours: WOOD.defHours, room: p ? Parties.cargoRoom(state, p) : Infinity });
   if (wi.abundance >= 0.02) {
     const fWho = p ? "this team" : fPeople.length ? fPeople.map((s) => esc(shortName(s))).join(", ") : "";
-    out += `<div${tip(`Firewood here: ${wi.word}. The land: ${Math.round(wi.abundance * 100)}% (forest best, hills fair, mountain scrub some, farmland hedgerows and suburbs' fences and fallen trees little, a city next to nothing), cut down to ${Math.round(wi.level * 100)}% (trees grow back slowly: a quarter within a season). An axe (a fire axe best), a sledgehammer or a machete cuts much faster than bare hands; Farming and Mechanics help. The winter's heating: a base burns firewood before fuel. Chopping is loud: it builds Heat.`)}>Wood</div><div>${wi.word === "plenty" ? `<span class="good">plenty</span>` : wi.word}${wi.est ? ` · ~${Math.round(wi.est.wood)} firewood (${Math.round(wi.est.wood * SUPPLIES.wood.weight)} kg) in ${WOOD.defHours}h (${fWho}${wi.tools ? `, ${wi.tools} axe${wi.tools === 1 ? "" : "s"}` : ", no axe"})` : ""}</div>`;
+    out += `<div${tip(`Firewood here: ${wi.word}. The land: ${Math.round(wi.abundance * 100)}% (forest best, hills fair, mountain scrub some, farmland hedgerows and suburbs' fences and fallen trees little, a city next to nothing), cut down to ${Math.round(wi.level * 100)}% (trees grow back slowly: a quarter within a season). An axe (a fire axe best), a sledgehammer or a machete cuts much faster than bare hands; Farming and Mechanics help. The winter's heating: a base burns firewood before fuel. Chopping is loud: it builds Heat.`)}>Wood</div><div>${wi.word === "plenty" ? `<span class="good">plenty</span>` : wi.word}${wi.est ? `<span class="pk-sub">~${Math.round(wi.est.wood)} firewood (${Math.round(wi.est.wood * SUPPLIES.wood.weight)} kg) in ${WOOD.defHours}h (${fWho}${wi.tools ? `, ${wi.tools} axe${wi.tools === 1 ? "" : "s"}` : ", no axe"})</span>` : ""}</div>`;
   }
   const line = snareLine(state, id);
   if (line) {
@@ -595,11 +689,13 @@ const LAYER_TIPS = { hordes: "Hordes, last sightings and hives", infection: "Red
 // state: the Coalition land line shows the share held against the goal while that layer is on (ui/render.js
 // coalitionLand, the same land the alliance victory counts).
 export function renderLegend(view, ui, state = null) {
-  if (ui.legendCollapsed) return `<button data-action="legendtoggle"${tip("Show the map layers")}>Layers ▸</button>`;
+  const on = Object.keys(LAYERS).filter((k) => view.layers.has(k)).length;
+  const box = { icon: "🗺", title: "Layers", badges: [{ text: on, tip: `${on} of ${Object.keys(LAYERS).length} layers on` }], action: "legendtoggle" };
+  if (ui.legendCollapsed) return panelTab({ ...box, tip: `Show the map layers (${on} on)` });
   const land = state && state.tiles && view.layers.has("coalition") ? coalitionLand(state) : null;
   const extra = (k) => (k === "coalition" && land ? ` <span class="muted"${tip(`${land.held} of ${land.land} land tiles; victory needs over ${Math.round(land.goal * 100)}%`)}>${Math.round(land.pct * 100)}%/${Math.round(land.goal * 100)}%</span>` : "");
-  return `<div class="spread"><b>Layers</b><span class="lgbtns"><button data-action="help-open" data-sec="map-layers" class="mini"${tip("What the layers and map symbols mean (Help)")}>?</button><button data-action="legendtoggle" class="mini"${tip("Fold this box away")}>▾</button></span></div>
-    ${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(LAYER_TIPS[k] || l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}>${swatch(k)}${esc(l.name)}${extra(k)}</label>`).join("")}`;
+  return `${panelHead({ ...box, tip: "Fold this box away", extra: `<button data-action="help-open" data-sec="map-layers" class="mini"${tip("What the layers and map symbols mean (Help)")}>?</button>` })}
+    <div class="fp-body">${Object.entries(LAYERS).map(([k, l]) => `<label class="layer"${tip(LAYER_TIPS[k] || l.desc)}><input type="checkbox" data-action="layer" data-k="${k}" ${view.layers.has(k) ? "checked" : ""}>${swatch(k)}${esc(l.name)}${extra(k)}</label>`).join("")}</div>`;
 }
 
 // ---------- log ----------
@@ -628,6 +724,7 @@ function pickModal(state, ui) {
   if (ui.cardResult) return ["result", () => `<div class="box"><h1>${esc(ui.cardResult.title)}</h1><div class="result">${esc(ui.cardResult.text || "Done.")}</div><button class="primary" data-action="cardok">Continue</button></div>`];
   if (state.gameOver) return ui.ledger ? ["ledger", () => ledgerModal(state, ui)] : ["over", () => gameOverScreen(state)]; // the Ledger opens over the end screen
   // A card that stops the clock by the pause rules, or one opened from the tray (ui/pacing.js puts it first).
+  if (nameModalUp(state, ui)) return ["namebase", () => nameBaseModal(state, ui)]; // ui/basename.js: a base just founded, or ✎ Rename (before its founding card)
   if (cardUp(state, ui)) return ["card", () => trayCardFrame(state, ui, cardModal(state, state.cards[0]))];
   if (!state.autopilot && activeCrawl(state)) return ["crawl", () => crawlModal(state, ui)]; // a city crawl's block card (ui/citycrawl.js)
   if (state.engagement && !state.autopilot) return ["search", () => engagementModal(state)]; // on autopilot the governor searches (sim/autopilot.js)
@@ -1271,7 +1368,7 @@ function baseModal(state, ui) {
   const tab = ui.baseView.tab;
   const body = { overview: baseOverview, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
-    <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}><span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
+    <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}>${renameButton(b, "✎ Rename")}<span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${BASE_TABS.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
     ${ui.baseMsg ? `<div class="result small">${esc(ui.baseMsg)}</div>` : ""}
     <div class="basebody">${body}</div>
