@@ -159,6 +159,7 @@ async function main() {
     check(E.hiveFloor(s3) === 0 && E.burnedOut(s3), `year ${E.burnoutYear(s3)}: it has burned out (this world's year, ${E.ERAS.OUTBREAK.BURNOUT.join("–")})`);
     const capAfter = E.hiveCap(s3), capBefore = E.hiveCap(at(world(5), E.yearStartDay(E.burnoutYear(s3)) - 1));
     check(capAfter === 0 && capBefore > 0, `and from then no new hive site is picked (hiveCap ${capAfter}; the year before, ${capBefore})`);
+    check(E.hiveStarve(s3) === E.ERAS.OUTBREAK.STARVE && E.ERAS.OUTBREAK.STARVE < 1 && E.hiveStarve(at(world(5), E.yearStartDay(E.burnoutYear(s3)) - 1)) === 1, `and the hives left starve: their resources × ${E.ERAS.OUTBREAK.STARVE} (× 1 the year before)`);
     E.ensureEraState(s3).clear = E.ERAS.CONTAIN.DAYS - 1;
     check(!checkGameOver(s3), "a day short of a season clear: no victory");
     s3.era.clear = E.ERAS.CONTAIN.DAYS;

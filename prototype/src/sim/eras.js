@@ -116,7 +116,10 @@ export const ERAS = {
   // after fewer than the year's FLOOR of hives stand or are being built ([from year, floor]); MASS of the dead
   // arrive with it; at least KEEP_CLEAR tiles from any base, within EDGE tiles of the map's edge. It burns out in a
   // year between BURNOUT[0] and BURNOUT[1] (per world, from its seed); only then can the hive victory be won.
-  OUTBREAK: { FLOOR: [[1, 2], [8, 1]], BURNOUT: [11, 14], DELAY: [20, 40], MASS: 1100, EDGE: 2, KEEP_CLEAR: 8 },
+  // STARVE: once it has burned out, the hives left are cut off from it and starve: their daily resources × STARVE
+  // (fewer hordes, a guard slower to rebuild, slower growths), so the last hives can be crawled and their cores taken
+  // (2026-10-09: with the hive crawl the autopilot's best campaigns still left 2–9 hives standing in year 16).
+  OUTBREAK: { FLOOR: [[1, 2], [8, 1]], BURNOUT: [11, 14], DELAY: [20, 40], MASS: 1100, EDGE: 2, KEEP_CLEAR: 8, STARVE: 0.4 },
 };
 
 export const eraOf = (state) => { const y = yearOf(state); let e = ERAS.LIST[0]; for (const x of ERAS.LIST) if (y >= x.from) e = x; return e; };
@@ -172,6 +175,8 @@ export function burnoutYear(state) {
   return a + (hash(state.seed || 1) % (b - a + 1));
 }
 export const burnedOut = (state) => yearOf(state) >= burnoutYear(state);
+// The hives' daily resources × this (hives.js): 1 while the outbreak beyond the border burns, OUTBREAK.STARVE after.
+export const hiveStarve = (state) => (burnedOut(state) ? ERAS.OUTBREAK.STARVE : 1);
 // The fewest hives (standing or being built) the outbreak beyond the border keeps in the state this year.
 export function hiveFloor(state) {
   if (burnedOut(state) || beforeFall(state)) return 0; // hardcore: the border floor starts with the normal start
