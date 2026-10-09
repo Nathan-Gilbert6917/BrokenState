@@ -8,9 +8,16 @@
 //   2. Retreated: the loads set down stay on the tile's ground (the team panel's Pick up…).
 //   3. The team inventory: who holds what (pockets, pack, arms, vehicle); Drop off what one member holds; loaded
 //      supplies placed again; the bag in the arms dropped off whole.
+//   4. The team's loads taken off a pile with the Ground window fill the taker's arms (hands full), as Pick up load.
+//   5. A fight the team starts (an assault, a rescue, a raid): the loads go into the vehicle as far as it has room, the
+//      rest is set down where each one starts; everyone starts with free hands; it comes back after unless beaten.
+//   6. Fresh game set down stays fresh game: on the pile, picked up again (Pick up load, the Ground window, a win) and
+//      left on the tile's ground after a retreat (still spoiling there).
 // Usage: node tools/uxinttest.js [seed]   ("passed" / "failed" lines; exits 1 on a failure)
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import { newItem, ensurePack } from "../src/sim/inventory.js";
+import { addMeat, meatIn } from "../src/sim/hunting.js";
+import { createVehicle } from "../src/sim/vehicles.js";
 import { launchExpedition, partyTile, partyMembers } from "../src/sim/parties.js";
 import * as C from "../src/sim/carry.js";
 import * as G from "../src/sim/ground.js";
@@ -199,6 +206,176 @@ section("3. The team inventory: who holds what; Drop off what one member holds; 
   check(r2.moved.length && near(C.placedOf(hh, "food"), C.holdTotals(p).food), `loaded supplies are placed (${r2.text}; ${Math.round(C.placedOf(hh, "food"))} food held of ${Math.round(C.holdTotals(p).food)})`);
   const r3 = dropOff(st, p, { items: [`s:${crew[0].id}:carry`] });
   check(!crew[0].gear.carry && h.armory.includes(pack), `the bag in the arms is dropped off whole (${r3.text})`);
+}
+
+// ---------- 4. the Ground window: the team's loads into the arms ----------
+section("4. The team's loads taken off a pile with the Ground window fill the arms");
+{
+  const st = world();
+  const { p } = teamOut(st, 2);
+  p.cargo.supplies.rawwater = 40;
+  const { b } = openBattle(st, p);
+  const carrier = b.units.find((u) => u.side === "player" && u.hands);
+  const other = b.units.find((u) => u.side === "player" && u !== carrier);
+  const w0 = C.holdTotals(p).rawwater;
+  const held = carrier.hands.rawwater || 0;
+  combatAct(st, { type: "dropCarried", unit: carrier.id });
+  if (other.hands || other.bag) combatAct(st, { type: "dropCarried", unit: other.id });
+  const w1 = C.holdTotals(p).rawwater;
+  other.x = carrier.x + 1; other.y = carrier.y; other.ap = 2;
+  G.fieldReady(b, st);
+  const pile = G.groundAt(b, carrier.x, carrier.y, 0);
+  const before = pile.contents.sup.rawwater || 0;
+  const msg = RL.raidMove(st, other.id, `rbox:${pile.id}:sup:rawwater`, `haul:${other.id}:list`);
+  const took = before - (pile.contents.sup.rawwater || 0);
+  check(held > 0 && took > 0 && near((other.hands && other.hands.rawwater) || 0, took) && !(other.haul.sup.rawwater > 0), `taken through the window, it is in ${other.name.split(" ")[0]}'s arms, not loose (${msg})`);
+  check(!canFire(b, other), "hands full: no shooting until it is set down");
+  check(near(C.holdTotals(p).rawwater, w1 + took) && w1 < w0, "and back in the team's pool");
+  closeCombat(st);
+}
+
+// ---------- 5. a fight the team starts: set down first, the vehicle first ----------
+section("5. A fight the team starts: the loads into the vehicle as far as there is room, the rest set down at the start");
+registerCombatHandler("uxstaged", () => {});
+C.STAGED_HANDLERS.add("uxstaged");
+const stagedSetup = (p, extra = {}) => ({ tile: partyTile(p), partyId: p.id, enemy: { kind: "raiders", count: 2, power: 2 }, ambush: null, canRetreat: true, handler: "uxstaged", context: {}, ...extra });
+const armsOf = (h) => Object.values(h.by).reduce((a, r) => a + (r.hands.rawwater || 0), 0);
+{
+  // On foot: everything in the arms is set down where each one starts.
+  const st = world();
+  const { p, crew } = teamOut(st, 2);
+  p.cargo.supplies.rawwater = 40;
+  const pack = newItem("hikingpack");
+  crew[0].gear.carry = pack;
+  const inArms = armsOf(C.settleHold(st, p));
+  const w0 = C.holdTotals(p).rawwater;
+  const setup = stagedSetup(p);
+  const b = (st.combat = createBattle(st, setup));
+  check(b.units.filter((u) => u.side === "player").every((u) => !u.hands && !u.bag) && !crew[0].gear.carry, "everyone starts with free hands");
+  const piles = G.groundPiles(b).filter((c) => G.pileCount(c));
+  const onGround = piles.reduce((a, c) => a + (c.contents.sup.rawwater || 0), 0);
+  check(inArms > 0 && near(onGround, inArms) && piles.some((c) => c.contents.gear.includes(pack)) && b.armsDrops.every((d) => d.staged), `on foot: set down where they start (${Math.round(onGround)} un-purified water and the bag)`);
+  check(near(C.holdTotals(p).rawwater, w0 - inArms), "out of the pool while it lies there");
+  endBattleNow(st, "retreat");
+  finishCombat(st, setup, b.result);
+  closeCombat(st);
+  check(near(C.holdTotals(p).rawwater, w0) && crew[0].gear.carry === pack, "retreated (not beaten): picked up again, the bag back in the arms");
+}
+{
+  // With a car: the bag rides in it (the supplies were in it already: a car takes them all).
+  const st = world();
+  const { p, crew } = teamOut(st, 2);
+  const car = createVehicle(st, "sedan", { kind: "party", partyId: p.id }, { fuel: 20 });
+  p.vehicleId = car.id;
+  p.cargo.supplies.rawwater = 40;
+  const pack = newItem("hikingpack");
+  crew[0].gear.carry = pack;
+  const b = (st.combat = createBattle(st, stagedSetup(p)));
+  check(p.cargo.gear.includes(pack) && !crew[0].gear.carry && !G.groundPiles(b).some((c) => c.contents.gear.includes(pack)), `with room in the ${car.name || "car"}: the bag goes in it, not on the ground`);
+  check(b.units.filter((u) => u.side === "player").every((u) => !u.hands && !u.bag) && !G.groundPiles(b).some((c) => c.contents.sup.rawwater > 0), "nothing set down, everyone starts with free hands");
+  closeCombat(st);
+}
+{
+  // Beaten: what was set down at the start stays on the tile.
+  const st = world();
+  const { p } = teamOut(st, 2);
+  p.cargo.supplies.rawwater = 40;
+  C.settleHold(st, p);
+  const w0 = C.holdTotals(p).rawwater;
+  const setup = stagedSetup(p);
+  const b = (st.combat = createBattle(st, setup));
+  const down = G.groundPiles(b).reduce((a, c) => a + (c.contents.sup.rawwater || 0), 0);
+  b.over = true; b.result = { outcome: "defeat", loot: { supplies: {}, gear: [] }, survivorsHurt: [], survivorsDead: [] };
+  finishCombat(st, setup, b.result);
+  const site = C.groundAt(st, partyTile(p));
+  const left = site ? site.items.filter((it) => it.key === "rawwater").reduce((a, it) => a + it.qty, 0) : 0;
+  check(down > 0 && near(left, down) && near(C.holdTotals(p).rawwater, w0 - down), `beaten: what was set down stays on the tile's ground (${Math.round(left)})`);
+}
+{
+  // A raid: the same before going in.
+  let done = false;
+  for (let i = 0; i < 40 && !done; i++) {
+    const st = world(seed * 100 + i);
+    const h = hub(st);
+    const tile = st.tiles.find((t) => t.loc && t.id !== h.tile && ["pharmacy", "store", "gunstore", "police", "warehouse", "house", "gas"].includes(t.loc.type));
+    if (!tile) continue;
+    const { p, crew } = teamOut(st, 2, { food: 4, water: 4 }, tile.id);
+    p.cargo.supplies.rawwater = 40;
+    const pack = newItem("hikingpack");
+    crew[1].gear.carry = pack;
+    const inArms = armsOf(C.settleHold(st, p));
+    const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "uxstaged", enemy: { kind: "zombies", count: 0, power: 2, groups: [] }, raid: { heat0: 0 }, context: {} };
+    const b = (st.combat = createBattle(st, setup));
+    if (!b || !b.raid) { closeCombat(st); continue; }
+    done = true;
+    const piles = b.raid.containers.filter((c) => c.kind === "ground" && G.pileCount(c));
+    check(inArms > 0 && near(piles.reduce((a, c) => a + (c.contents.sup.rawwater || 0), 0), inArms) && piles.some((c) => c.contents.gear.includes(pack)) && b.units.every((u) => !u.bag && !u.hands), "a raid: the loads and the bag are set down where the team comes in, hands free");
+    closeCombat(st);
+  }
+  check(done, "(a raid map was found)");
+}
+
+// ---------- 6. fresh game stays fresh ----------
+section("6. Fresh game set down in a fight stays fresh game");
+{
+  const st = world();
+  const { p } = teamOut(st, 2);
+  p.cargo.supplies.rawwater = 30;
+  addMeat(st, p, 8);
+  const h = C.settleHold(st, p);
+  const meat0 = meatIn(p.cargo), food0 = (p.cargo.supplies.food || 0) + (p.supplies.food || 0); // found and packed: set down and picked up, the food comes back to the cargo
+  const hold = Object.values(h.by).find((r) => (r.hands.meat || 0) > 0);
+  check(!!hold, `fresh game is carried in the arms (${hold ? C.recText(hold.hands) : "none"})`);
+  const { b, setup } = openBattle(st, p);
+  const carrier = b.units.find((u) => u.side === "player" && u.hands && u.hands.meat > 0);
+  const m = carrier.hands.meat;
+  combatAct(st, { type: "dropCarried", unit: carrier.id });
+  const pile = G.groundAt(b, carrier.x, carrier.y, 0);
+  check(near(C.pileMeat(pile), m) && near(meatIn(p.cargo), meat0 - m), `on the pile it is fresh game (${C.pileMeat(pile)} of its ${pile.contents.sup.food} food), out of the cargo's fresh game`);
+  combatAct(st, { type: "pickCarried", unit: carrier.id });
+  check(near(carrier.hands.meat || 0, m) && near(meatIn(p.cargo), meat0) && near(p.cargo.supplies.food + (p.supplies.food || 0), food0), "Pick up load: fresh game again, in the arms and the cargo");
+  // The Ground window.
+  combatAct(st, { type: "dropCarried", unit: carrier.id });
+  const other = b.units.find((u) => u.side === "player" && u !== carrier);
+  if (other.hands || other.bag) combatAct(st, { type: "dropCarried", unit: other.id });
+  other.x = carrier.x + 1; other.y = carrier.y; other.ap = 2;
+  G.fieldReady(b, st);
+  const pf = pile.contents.sup.food;
+  RL.raidMove(st, other.id, `rbox:${pile.id}:sup:food`, `haul:${other.id}:list`);
+  const tookF = pf - (pile.contents.sup.food || 0);
+  check(tookF >= m && near((other.hands && other.hands.meat) || 0, m) && near(meatIn(p.cargo), meat0) && !C.pileMeat(pile), `the Ground window: fresh game into the arms, fresh in the cargo (${C.recText(other.hands || {})})`);
+  // A win: set down again, picked up after as fresh game.
+  combatAct(st, { type: "dropCarried", unit: other.id });
+  for (const u of b.units) if (u.side === "enemy") { u.left = true; u.fled = true; u.x = -1; }
+  endBattleNow(st, "victory");
+  finishCombat(st, setup, b.result);
+  closeCombat(st);
+  check(near(meatIn(p.cargo), meat0), `won: back as fresh game (${meatIn(p.cargo)} of ${meat0})`);
+}
+{
+  // A retreat: on the tile's ground as fresh game, spoiling at the field rate.
+  const st = world();
+  const { p } = teamOut(st, 2);
+  p.cargo.supplies.rawwater = 30;
+  addMeat(st, p, 8);
+  C.settleHold(st, p);
+  const meat0 = meatIn(p.cargo);
+  const { b, setup } = openBattle(st, p);
+  const m = b.units.filter((u) => u.side === "player" && u.hands).reduce((a, u) => a + (u.hands.meat || 0), 0);
+  combatAct(st, { type: "dropAllCarried" });
+  endBattleNow(st, "retreat");
+  finishCombat(st, setup, b.result);
+  closeCombat(st);
+  const site = C.groundAt(st, partyTile(p));
+  const it = site && site.items.find((x) => x.kind === "supply" && x.fresh);
+  check(m > 0 && !!it && near(it.qty, m) && near(meatIn(p.cargo), meat0 - m), `retreated: fresh game on the tile's ground (${site ? C.groundText(site) : "nothing"})`);
+  if (it) {
+    const q0 = it.qty;
+    C.groundDaily(st);
+    check(it.qty < q0, `it spoils there at the field rate (${q0} → ${Math.round(it.qty * 10) / 10})`);
+    C.pickUpGround(st, p, site.items.indexOf(it));
+    check(meatIn(p.cargo) > meat0 - m + 0.5, `picked up from the team panel: fresh game in the cargo again (${meatIn(p.cargo)})`);
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

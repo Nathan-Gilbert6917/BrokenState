@@ -324,7 +324,7 @@ console.log("Someone who bleeds out drops what they carried");
   lost.down = true; lost.bleed = 1; lost.stab = false;
   combatAct(st, { type: "end" });
   for (let i = 0; i < 10 && b.phase !== "player" && !b.over; i++) runEnemyPhase(st);
-  const pile = b.raid.containers.find((c) => c.drop);
+  const pile = b.raid.containers.find((c) => c.drop && c.kind !== "ground"); // not the loads the team set down coming in (carry.js stageLoads)
   check(lost.dead && pile && pile.x === lost.x && pile.y === lost.y && pile.contents.sup.food === 3, `bleeding out leaves a pile of what they carried where they fell (${pile ? pile.label : "none"})`);
   check(RL.haulLoad(lost) === 0, "and they carry nothing any more");
   if (pile) {

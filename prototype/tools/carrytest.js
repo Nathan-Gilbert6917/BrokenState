@@ -373,5 +373,27 @@ console.log("The autopilot keeps working");
   check(st.survivors.some((s) => s.alive), "people still alive");
 }
 
+// ---------- 9. the fights a team starts ----------
+console.log("The fights a team starts set their loads down first (the vehicle first); the others catch them full-handed");
+{
+  const S = (setup, raid = false) => C.stagedStart({ setup, raid: raid ? {} : undefined });
+  check(["baseAssault", "hiveAssault", "growthAssault", "rescueRaid", "rescue", "jobRescue"].every((h) => S({ handler: h })) && S({ mode: "raid", handler: "scavenge" }) && S({ handler: "crawl" }, true), "an assault on a base, a hive or a growth, a rescue, a raid: loads set down at the start");
+  check(!["conflict", "wanderer", "roadCaravan", "outsiderFight", "crawlfight", "handoverAmbush"].some((h) => S({ handler: h })), "a fight on the road (an ambush, a band, outsiders): arms full as they were");
+  const st = world();
+  const { p } = teamOut(st, 2, { food: 4, water: 4 });
+  p.cargo.supplies.rawwater = 40;
+  registerCombatHandler("baseAssault9", () => {});
+  C.STAGED_HANDLERS.add("baseAssault9");
+  const setup = { tile: partyTile(p), partyId: p.id, enemy: { kind: "raiders", count: 2, power: 2 }, ambush: null, canRetreat: true, handler: "baseAssault9", context: {} };
+  const kg0 = C.kgOf(C.holdTotals(p));
+  const b = (st.combat = createBattle(st, setup));
+  const down = (b.armsDrops || []).reduce((a, d) => a + C.kgOf(d.sup), 0);
+  check(b.units.every((u) => !u.hands) && down > 0 && (b.armsDrops || []).every((d) => d.staged), `an assault starts with free hands, ${Math.round(down)} kg set down where they start`);
+  b.over = true; b.result = { outcome: "retreat", loot: { supplies: {}, gear: [] }, survivorsHurt: [], survivorsDead: [] };
+  finishCombat(st, setup, b.result);
+  closeCombat(st);
+  check(near(C.kgOf(C.holdTotals(p)), kg0, 0.05), "pulled out (not beaten): it is picked up again on the way");
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

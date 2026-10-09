@@ -45,7 +45,8 @@ import { partyMembers, cargoRoom, poolLoad, unitsThatFit } from "./parties.js";
 import { partyVehicle, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "./load.js";
 import { ensureInv, packOf, ensurePack, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried } from "./inventory.js";
-import { gunLeavesTeam, unloadInto, teamGuns } from "./gunload.js"; // the rounds in a gun go with it (call-time only: safe in the import cycle)
+import { gunLeavesTeam, unloadInto, teamGuns } from "./gunload.js";
+import { pileToArms } from "./carry.js"; // the team's loads off the ground: into the arms (call-time only: safe in the import cycle) // the rounds in a gun go with it (call-time only: safe in the import cycle)
 
 const EPS = 1e-9;
 export const HAUL = { free: 8, per: 12 }; // kg a turn for free, then kg an action
@@ -75,6 +76,15 @@ export function raidCarrySetup(state, b) {
   for (const u of mine) { u.haul = { sup: {}, gear: [] }; u.share = 0; }
   if (!p) return;
   b.pools.push(...mine.map((u) => u.haul.sup)); // found ammo and meds count at once (combat.js pool)
+  raidShares(state, b);
+}
+// Each survivor's share of the team's packed supplies and cargo (on foot or bikes; a car keeps them). Again after the
+// loads were set down at the start (carry.js stageAtStart: out of the pool).
+export function raidShares(state, b) {
+  const p = raidParty(state, b);
+  if (!p || !b.raid) return;
+  const mine = b.units.filter((u) => u.side === "player");
+  for (const u of mine) u.share = 0;
   const v = raidVehicle(state, b);
   if (v && !isBike(v)) return; // a car: the team's things stay in it
   const members = partyMembers(state, p);
@@ -348,7 +358,8 @@ function moveSupply(state, b, u, from, to, qty) {
   if (timed) payHaul(b, u, n * w);
   tally(b, from, to, { sup: k, n });
   afterBox(b, A.box || B.box);
-  return `${n} ${name} → ${where(state, b, to)}${n < have ? ` (${have - n} left)` : ""}.`;
+  const arms = to.o === "haul" && A.box ? pileToArms(state, b, A.box, to.id, k, n) : ""; // carry.js: the team's loads off the ground go into the arms
+  return `${n} ${name} → ${where(state, b, to)}${n < have ? ` (${have - n} left)` : ""}.${arms}`;
 }
 
 function moveGear(state, b, u, from, to) {

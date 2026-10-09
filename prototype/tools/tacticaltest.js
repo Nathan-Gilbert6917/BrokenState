@@ -305,7 +305,7 @@ section("5. A raid: a pile on the ground");
     if (b.raid.choose) b.raid.choose = null;
     b.phase = "player";
     const u = P(b)[0], s = survivorById(st, u.sid);
-    const boxes0 = b.raid.containers.filter((c) => c.kind !== "body").length;
+    const boxes0 = b.raid.containers.filter((c) => c.kind !== "body" && c.kind !== "ground").length; // the loads set down coming in are ground piles too (carry.js stageLoads)
     s.pockets[1] = newItem("knife", 1);
     check(combatAct(st, { type: "drop", unit: u.id, loc: `s:${s.id}:pocket:1` }) === "", "put down in a raid");
     const pile = G.groundAt(b, u.x, u.y, u.f || 0);
