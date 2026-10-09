@@ -32,6 +32,7 @@ import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low h
 import { watchlistPin } from "./watchlist.js"; // 📌 pin the team to the Watching panel
 import { totalRounds, sumRecs } from "../sim/rounds.js"; // rounds by calibre
 import { roundsLine } from "../sim/ammo.js";
+import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -91,8 +92,11 @@ function statusLine(state, ui, p) {
 export function renderRunningOrders(state, ui) {
   const mine = state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy");
   if (!mine.length) return "";
-  if (ui.ordersCollapsed) return `<button class="mini" data-action="xp-orderstoggle"${tip("Show the running orders of your teams")}>Orders (${mine.length}) ▸</button>`;
-  return `<div class="spread"><b>Running orders</b><button class="mini" data-action="xp-orderstoggle"${tip("Hide this list")}>▾</button></div>
+  const waiting = mine.filter((p) => p.phase === "waiting").length;
+  const box = { icon: "🚶", title: ui.ordersCollapsed ? "Orders" : "Running orders", count: mine.length, action: "xp-orderstoggle",
+    badges: waiting ? [{ text: `${waiting} waiting`, tone: "warn", tip: "Teams waiting for orders (Tab or N jumps to the next)" }] : [] };
+  if (ui.ordersCollapsed) return panelTab({ ...box, tip: "Show the running orders of your teams (Shift+[)" });
+  return `${panelHead({ ...box, tip: "Fold this list away (Shift+[)" })}
     ${mine.map((p) => {
       const s = statusLine(state, ui, p);
       const q = (p.orders || []).length;

@@ -125,7 +125,8 @@ export function conditionTreatRow(state, b, s) {
 }
 
 // The base's illness line (Bases tab and Overview): who is ill, meds spent on illness this week, today's risk.
-export function illnessRowHtml(state, b) {
+// The numbers behind it: { ill, worm, week, avg, causes, noMeds } (noMeds: people ill or with the worm, no meds left).
+export function illnessSummary(state, b) {
   const people = residents(state, b.id);
   const ill = people.filter(isIll);
   const week = sickMedsWeek(state, b);
@@ -141,8 +142,14 @@ export function illnessRowHtml(state, b) {
   }
   const causes = Object.entries(why).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([k, v]) => `${CAUSE_NAMES[k] || k} ${pct(v)}`).join(", ");
   const worm = people.filter(wormSeen).length; // the worm (sim/worm.js), once spotted: its own stages and cures
-  const noMeds = (b.stock.meds || 0) < 1 && (ill.length || worm);
-  return `<div${tip(`Illness here: the ill (and anyone known to carry the worm), the meds spent on illness and injuries over the last 7 days (1 meds a dose, a course of 1-3 doses an illness), and today's chance a person falls ill${causes ? ` (${causes})` : ""}. Warmth, clean water, full stomachs, room to sleep and a hospital lower it.`)}>Illness</div><div class="${noMeds ? "danger" : ill.length || worm ? "warn" : ""}">${ill.length ? `${ill.length} ill` : "nobody ill"}${worm ? ` · ${worm} with the worm` : ""} · ${week} meds this week · risk ${pct(avg)}/day${noMeds ? " · no meds!" : ""}</div>`;
+  const noMeds = !!((b.stock.meds || 0) < 1 && (ill.length || worm));
+  return { ill: ill.length, worm, week, avg, causes, noMeds };
+}
+// A headline (who is ill), a red "no meds!" chip when they need meds there are none of, and the detail muted on a
+// second line (spans, not divs: a .kv grid mutes its odd-numbered divs).
+export function illnessRowHtml(state, b) {
+  const { ill, worm, week, avg, causes, noMeds } = illnessSummary(state, b);
+  return `<div${tip(`Illness here: the ill (and anyone known to carry the worm), the meds spent on illness and injuries over the last 7 days (1 meds a dose, a course of 1-3 doses an illness), and today's chance a person falls ill${causes ? ` (${causes})` : ""}. Warmth, clean water, full stomachs, room to sleep and a hospital lower it.`)}>Illness</div><div class="${noMeds ? "danger" : ill || worm ? "warn" : ""}"><span class="ill-head">${ill ? `${ill} ill` : "nobody ill"}${worm ? ` · ${worm} with the worm` : ""}${noMeds ? ` <span class="chip off ill-nomeds"${tip("People here are ill and there are no meds at this base to treat them")}>no meds!</span>` : ""}</span><span class="ill-sub small muted">${week} meds this week · risk ${pct(avg)}/day</span></div>`;
 }
 export const CAUSE_NAMES = { weather: "weather", common: "colds going round", hunger: "hunger and thirst", water: "dirty water", food: "spoiled food", crowding: "crowding", contagion: "contagion", camp: "no camp fire", work: "work", search: "searching", wound: "wounds", worsened: "worsened", mushroom: "mushrooms" };
 
