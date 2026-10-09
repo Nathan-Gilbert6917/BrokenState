@@ -90,7 +90,11 @@ export const GUN_VOICES = {
            blast: { tau: 0.006, hp: 120, pop: 140, popAmp: 0.8, drive: 3.4 }, body: { f: 600, q: 0.5, tau: 0.16, amp: 1, sweep: [130, 50, 0.2, 0.7] },
            boom: { lp: 1800, tau: 0.35, amp: 0.9 }, tail: { amp: 0.55, len: 2.4, lp: 900, lpEnd: 350, rise: 0.12, echoes: [E(0.25, 0.35), E(0.8, 0.2)] } },
 };
-export const GUN_TRIM = 0.31; // all gun voices: a 9mm pistol near you about as loud as the old pistol (tools/sfxpreview.cjs measures it)
+export const GUN_TRIM = 0.55; // all gun voices: a 9mm pistol near you about 4 dB over the old pistol (the user: louder; tools/sfxpreview measures it)
+// The Gunfire volume slider (Options → Sound, ui/audio.js: 0–150%, squared like the others): guns, their handling and the
+// blasts, never the ambience, the interface or the dead.
+export const GUNVOL = { v: 1 };
+export function setGunVolume(g) { GUNVOL.v = Number.isFinite(Number(g)) ? Math.max(0, Math.min(3, Number(g))) : 1; }
 
 // ---------- which gun makes which voice ----------
 // v: the voice; act: the action slamming home a few ms after the shot (MECH); cycle: a manual action played after it
@@ -229,7 +233,7 @@ function renderEvents(buf, sr, events, rnd, at = 0, amp = 1) {
     else toneLayer(buf, sr, { start: at + e.start, f0: e.f0, f1: e.f1, dur: e.dur, amp: e.amp * amp, a: 0.0015, tau: e.tau });
   }
 }
-export const HAND_LEVEL = 0.32; // handling under the shots (× the gun trim): heard, never in the way
+export const HAND_LEVEL = 0.227; // handling under the shots (× the gun trim: 2 dB up when the guns came up 5): heard, never in the way
 export function renderHandling(name, sr, seed = 1) {
   const ev = HANDLING[name];
   if (!ev) return null;
@@ -469,11 +473,11 @@ const src = (c, buf, t, dest, rate = 1, gain = null) => {
   s.start(Math.max(0, t));
   return s;
 };
-export const BRASS = { on: true, CHANCE: 0.55, NEAR: 8, LEVEL: 0.22 }; // brass tinkle: on/off (sound test), how often a near shot drops some
+export const BRASS = { on: true, CHANCE: 0.55, NEAR: 8, LEVEL: 0.156 }; // brass tinkle: on/off (sound test), how often a near shot drops some
 // A shot (or a burst) at t: plan p (shotPlan), placement sp (spatial). Returns the seconds it takes (for the throttle).
 export function playGun(c, t, p, sp = place({}), rnd = Math.random) {
   const vb = voiceBuffers(c, p);
-  const out = spatialOut(c, sp, { gain: GUN_TRIM * (p.gain ?? 1) });
+  const out = spatialOut(c, sp, { gain: GUN_TRIM * GUNVOL.v * (p.gain ?? 1) });
   const n = p.rounds || 1, times = p.times || burstTimes(n, p.gap || 0, rnd);
   const lag = sp.dist > 4 && vb.crack ? Math.min(0.06, (sp.dist - 4) * 0.0025) : 0; // far away, the crack comes before the bang
   const t0 = t + sp.delay;
@@ -541,7 +545,7 @@ export function handScript(h) {
   }
 }
 export function playHand(c, t, h, sp = place({})) {
-  const out = spatialOut(c, sp, { gain: GUN_TRIM * HAND_LEVEL * (h.gain ?? 1), send: 0.6 });
+  const out = spatialOut(c, sp, { gain: GUN_TRIM * GUNVOL.v * HAND_LEVEL * (h.gain ?? 1), send: 0.6 });
   let end = 0;
   for (const ev of handScript(h)) {
     if (!ev) continue;

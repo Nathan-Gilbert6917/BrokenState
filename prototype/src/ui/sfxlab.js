@@ -7,7 +7,7 @@
 // Panel structure (rows of the Sound section, each a .setrow): "Gun sounds" (gun, mode, suppressed, subsonic, ▶ Fire,
 // ▶ Old then new), "Where" (distance, place, side), "Handling" (sound, ▶ Play, brass on/off), "Blasts and grenades"
 // (kind or sequence, ▶ Play). A zombie list (ui/zombiesfx.js) can sit beside it as another .setrow block.
-import { LAB_GUNS, labPlan, place, playGun, playHand, ROOMS, BRASS, gunVoice, installBus, roundGap } from "./gunsfx.js";
+import { LAB_GUNS, labPlan, place, playGun, playHand, ROOMS, BRASS, gunVoice, installBus, roundGap, GUNVOL, setGunVolume } from "./gunsfx.js";
 import { LAB_BLASTS, playBlast, flight, THROW_FLIGHT, FUSE } from "./blastsfx.js";
 import { weaponSound } from "./soundcues.js";
 import { WEAPONS } from "../sim/combat.js";
@@ -143,15 +143,30 @@ export function makeMasterComp(c) {
 export async function labRender(fn, secs, o = {}) {
   const OAC = typeof window !== "undefined" && (window.OfflineAudioContext || window.webkitOfflineAudioContext);
   if (!OAC) return null;
-  const sr = o.sr || 48000, c = new OAC(2, Math.ceil(sr * secs), sr);
+  // A compressor starts with its gain reduction wound right down (Chrome: about 20 dB, released over a second), which a
+  // running game never hears: PRE s of silence first let it settle, then they are cut off the result.
+  const PRE = o.pre ?? 1.5;
+  const sr = o.sr || 48000, c = new OAC(2, Math.ceil(sr * (secs + PRE)), sr);
   const lv = o.max ? MAX_LEVELS : GAME_LEVELS;
   const sfx = c.createGain(); sfx.gain.value = lv.sfx;
   const master = c.createGain(); master.gain.value = lv.master;
   const comp = makeMasterComp(c), mk = c.createGain(); mk.gain.value = o.makeup ?? 4;
-  if (o.limiter !== false) { const l = makeLimiter(c); sfx.connect(l); l.connect(master); } else sfx.connect(master);
+  let lim = null;
+  if (o.limiter !== false) { lim = makeLimiter(c); sfx.connect(lim); lim.connect(master); } else sfx.connect(master);
   master.connect(comp); comp.connect(mk); mk.connect(c.destination);
   installBus(c, sfx);
-  fn(c, 0.05, sfx);
+  const keep = GUNVOL.v;
+  if (o.gunVol != null) setGunVolume(o.gunVol); // the Gunfire slider (squared: 150% is 2.25)
+  try { fn(c, PRE + 0.05, sfx); } finally { setGunVolume(keep); }
+  // o.meter: the limiter's and the master compressor's gain reduction (dB), sampled every 10 ms while it renders
+  const meter = { lim: [], comp: [] };
+  if (o.meter && c.suspend) {
+    for (let t = PRE + 0.01; t < PRE + secs - 0.01; t += 0.01) {
+      c.suspend(t).then(() => { if (lim) meter.lim.push(-lim.reduction); meter.comp.push(-comp.reduction); c.resume(); });
+    }
+  }
   const buf = await c.startRendering();
-  return { L: buf.getChannelData(0), R: buf.getChannelData(1), sr };
+  const sum = (a) => { const act = a.filter((x) => x > 0.1); return { max: Math.round(Math.max(0, ...a) * 10) / 10, mean: a.length ? Math.round((a.reduce((s, x) => s + x, 0) / a.length) * 10) / 10 : 0, meanActive: act.length ? Math.round((act.reduce((s, x) => s + x, 0) / act.length) * 10) / 10 : 0, active: a.length ? Math.round((act.length / a.length) * 100) : 0 }; };
+  const cut = Math.round(PRE * sr);
+  return { L: buf.getChannelData(0).slice(cut), R: buf.getChannelData(1).slice(cut), sr, reduction: o.meter ? { limiter: sum(meter.lim), master: sum(meter.comp) } : null };
 }
