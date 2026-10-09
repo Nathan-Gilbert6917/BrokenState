@@ -4,6 +4,7 @@ import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
 import { partyTile, plannedTile, outpostScrap, glideAt, partyMembers } from "../sim/parties.js";
 import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
+import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card does not glide
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById } from "../sim/vehicles.js";
@@ -1918,7 +1919,8 @@ function drawPlayerParty(state, p) {
   if (p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task") {
     let [px, py] = g.toPixel(partyTile(p), HEX);
     // On the move: part of the way to the next tile, by the minutes gone of the hour (sim/parties.js glideAt).
-    const gl = state.timelapse ? null : glideAt(state, p, hourFrac());
+    // A team holding for a card in the tray (ui/pacing.js) stays put: it does not move on when the hour ticks.
+    const gl = state.timelapse ? null : glideAt(state, p, hourFrac(), holdsNextHour(state, p));
     const glide = gl && gl.to !== gl.from && gl.t > 0 ? gl : null;
     const from = glide ? p.path.indexOf(glide.to, p.idx) : p.idx;
     let gx = px, gy = py;
