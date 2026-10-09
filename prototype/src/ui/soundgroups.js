@@ -150,7 +150,7 @@ export function cleanMix(s = {}) {
   const groups = {}, off = {};
   for (const g of GROUPS) {
     const v = num(src[g.id], 1, g.max);
-    if (v !== 1) groups[g.id] = Math.round(v * 10000) / 10000;
+    if (v !== 1) groups[g.id] = v;
   }
   if (s.off && typeof s.off === "object") for (const id of Object.keys(s.off)) if (BY_ID.has(id) && s.off[id]) off[id] = true;
   return { groups, off };

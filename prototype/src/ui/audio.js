@@ -15,7 +15,7 @@ import { frameListener, playCue, cueSpan, prewarmBattle } from "./battlesfx.js";
 import { LAB, LAB_ACTIONS, LAB_CHANGE, labGunHtml, makeLimiter } from "./sfxlab.js"; // Settings → Sound: the gun and blast sound test
 import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest, demoMapHorde, demoMapHive, demoCrowd, makeZombieBus } from "./zombiesfx.js"; // the dead's voices
 import { playBlast } from "./blastsfx.js"; // the mixer's Explosions preview
-import { GROUPS, TOP_GROUPS, childrenOf, groupDef, groupGain, groupOf, groupVolume, groupOn, setGroupVolume, setGroupOn, groupBus, applyGroups, cleanMix, useMix, PRESETS, applyPreset, presetOf, resetMix } from "./soundgroups.js"; // the mixer: every sound's group
+import { TOP_GROUPS, childrenOf, groupDef, groupGain, groupOf, groupVolume, groupOn, setGroupVolume, setGroupOn, groupBus, applyGroups, cleanMix, useMix, PRESETS, applyPreset, presetOf, resetMix } from "./soundgroups.js"; // the mixer: every sound's group
 import { weatherAt, season } from "../sim/weather.js";
 import { playerTile } from "../sim/hardcore-start.js";
 import { screenToTile, view } from "./render.js";
