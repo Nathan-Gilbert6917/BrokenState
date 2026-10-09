@@ -9,7 +9,10 @@
 // master gain and a gentle compressor. Browsers keep sound locked until the player clicks or presses a key: the
 // context is made (or resumed) on that first gesture. Muted, or with the window in the background and "Mute when
 // not focused" on, the context is suspended (no CPU). Nothing here runs at import time, so node tools can import it.
-import { battleCues, worldCues, ambienceMix, makeThrottle } from "./soundcues.js";
+import { battleCues, worldCues, ambienceMix, makeThrottle, LISTEN } from "./soundcues.js";
+import { installBus, spatial, place } from "./gunsfx.js"; // the gun voices, the battle's sound space (pan, distance, reverb, ducking, the deafened muffle)
+import { frameListener, playCue, cueSpan, prewarmBattle } from "./battlesfx.js"; // guns, blasts and handling cues to their voices
+import { LAB, LAB_ACTIONS, LAB_CHANGE, labGunHtml, makeLimiter } from "./sfxlab.js"; // Settings → Sound: the gun and blast sound test
 import { weatherAt, season } from "../sim/weather.js";
 import { playerTile } from "../sim/hardcore-start.js";
 import { screenToTile, view } from "./render.js";
@@ -48,15 +51,18 @@ const LIMITS = {
   click: { gap: 0.04, max: 3 }, cardRoutine: { gap: 1, max: 1 }, cardWarning: { gap: 1, max: 1 }, cardCrisis: { gap: 1, max: 1 },
   alert: { gap: 2.5, max: 1 }, good: { gap: 3, max: 1 }, alarm: { gap: 12, max: 1 }, horde: { gap: 6, max: 1 }, battle: { gap: 3, max: 1 },
   pistol: { gap: 0.045, max: 4 }, revolver: { gap: 0.045, max: 4 }, rifle: { gap: 0.045, max: 4 }, shotgun: { gap: 0.06, max: 3 },
-  suppressed: { gap: 0.045, max: 4 }, bow: { gap: 0.05, max: 3 }, auto: { gap: 0.2, max: 2 }, acid: { gap: 0.1, max: 2 },
+  suppressed: { gap: 0.045, max: 4 }, bow: { gap: 0.05, max: 3 }, auto: { gap: 0.1, max: 3 }, acid: { gap: 0.1, max: 2 },
+  launcher: { gap: 0.1, max: 2 }, rocket: { gap: 0.2, max: 2 }, reload: { gap: 0.1, max: 3 }, jam: { gap: 0.1, max: 2 }, unjam: { gap: 0.1, max: 2 },
+  dry: { gap: 0.06, max: 2 }, empty: { gap: 0.06, max: 2 }, taser: { gap: 0.1, max: 2 },
   hit: { gap: 0.04, max: 3 }, whiz: { gap: 0.08, max: 2 }, ricochet: { gap: 0.08, max: 2 },
   melee: { gap: 0.06, max: 3 }, meleeCrit: { gap: 0.06, max: 3 }, whoosh: { gap: 0.06, max: 3 }, bite: { gap: 0.06, max: 3 },
   groan: { gap: 0.8, max: 2 }, scream: { gap: 0.5, max: 1 }, blast: { gap: 0.15, max: 2 }, fire: { gap: 0.3, max: 2 },
   glass: { gap: 0.2, max: 2 }, hiss: { gap: 0.2, max: 2 }, flare: { gap: 0.2, max: 2 }, downed: { gap: 0.4, max: 2 }, death: { gap: 0.4, max: 2 },
   thunder: { gap: 4, max: 1 }, bird: { gap: 0.3, max: 2 }, cricket: { gap: 0.15, max: 2 },
-  step: { gap: 0.02, max: 12 }, ...GEAR_LIMITS,
+  ...GEAR_LIMITS,
 };
 const throttle = makeThrottle(LIMITS, 28);
+const stepThrottle = makeThrottle({ step: { gap: 0.02, max: 10 } }, 10); // footsteps: their own small budget (10 at once, 20 ms apart), never at the shots' cost
 export const audioDebug = { played: [], dropped: 0, get ctx() { return A && A.ctx; } }; // for tests in the browser
 
 const live = () => !!A && (A.test || A.ctx.state === "running");
@@ -79,9 +85,12 @@ function makeContext(test = null) {
   const master = ctx.createGain(), sfxBus = ctx.createGain(), ambBus = ctx.createGain();
   master.gain.value = 0;
   master.connect(comp);
-  sfxBus.connect(master);
+  const limit = makeLimiter(ctx); // full auto and blasts on top of each other never clip (ui/sfxlab.js makeLimiter)
+  sfxBus.connect(limit);
+  limit.connect(master);
   ambBus.connect(master);
-  A = { ctx, comp, master, sfx: sfxBus, amb: ambBus, layers: null, next: { thunder: 0, bird: 0, cricket: 0 }, mix: null, test: !!test };
+  const gb = installBus(ctx, sfxBus); // the battle's sounds: ducked by a close blast, muffled while deafened, a reverb by place (ui/gunsfx.js)
+  A = { ctx, comp, limit, gb, master, sfx: sfxBus, amb: ambBus, layers: null, next: { thunder: 0, bird: 0, cricket: 0 }, mix: null, test: !!test };
   applyGains(true);
   return A;
 }
@@ -123,7 +132,7 @@ export function initAudio(options, save) {
   // A soft click on every button the player presses.
   document.addEventListener("click", (ev) => {
     const el = ev.target && ev.target.closest ? ev.target.closest("button, [data-action]") : null;
-    if (!el || el.disabled || el.tagName === "SELECT" || el.tagName === "INPUT" || el.dataset.action === "snd-test") return;
+    if (!el || el.disabled || el.tagName === "SELECT" || el.tagName === "INPUT" || el.dataset.action === "snd-test" || el.dataset.action === "lab-play") return;
     const snd = clickSound(el); // ui/sfx-gear.js: an inventory cell is heard as the item picked up or put down instead
     if (snd) sfx(snd);
   });
@@ -155,14 +164,22 @@ export function sfx(name, opts = {}) {
   }
   const ctx = A.ctx;
   const t = ctx.currentTime + 0.01 + Math.max(0, opts.delay || 0);
-  if (!throttle.allow(name, t, V.dur)) { audioDebug.dropped++; return false; }
-  let out = V.amb ? A.amb : A.sfx;
-  if (V.own) out = voiceOut(ctx, placeOf(opts), out); // ui/sfx-out.js (the shape of gun-sfx's spatialOut)
-  else if (opts.pan && ctx.createStereoPanner) {
-    const p = ctx.createStereoPanner();
-    p.pan.value = Math.max(-1, Math.min(1, opts.pan));
-    p.connect(out);
-    out = p;
+  if (!(V.steps ? stepThrottle.allow("step", t, V.dur) : throttle.allow(name, t, V.dur))) { audioDebug.dropped++; return false; }
+  let out = V.amb ? A.amb : opts.battle && A.gb ? A.gb.in : A.sfx;
+  if (V.own) out = voiceOut(ctx, opts.sp || placeOf(opts), out, !!(opts.battle && A.gb)); // ui/sfx-out.js: in battle ui/gunsfx.js spatialOut
+  else {
+    if (opts.lp > 0 && opts.lp < Math.min(16000, ctx.sampleRate * 0.45)) { // far away or out of sight (ui/gunsfx.js spatial)
+      const f = ctx.createBiquadFilter();
+      f.type = "lowpass"; f.frequency.value = opts.lp; f.Q.value = 0.6;
+      f.connect(out);
+      out = f;
+    }
+    if (opts.pan && ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, opts.pan));
+      p.connect(out);
+      out = p;
+    }
   }
   try {
     V.play(ctx, out, t, voiceOpts(opts));
@@ -186,8 +203,15 @@ export function audioFrame(state, ui, nowMs = performance.now()) {
   const on = live();
   // The memories move on even while silent, so unmuting does not play what happened meanwhile.
   if (state.combat && !ui.timelapse) {
-    for (const c of battleCues(state.combat, battleMem, now)) if (on) sfx(c.name, { ...c, pan: c.pan ?? (Math.random() - 0.5) * 0.5 });
-    for (const c of [...stepCues(state, stepMem, now), ...gearCues(state, gearMem)]) if (on) sfx(c.name, c);
+    const cues = battleCues(state.combat, battleMem, now);
+    const more = [...stepCues(state, stepMem, now), ...gearCues(state, gearMem)]; // footsteps, searches, doors, the vehicle (ui/sfx-steps.js, ui/sfx-gear.js)
+    if (on && A.warm !== state.combat) { A.warm = state.combat; prewarmBattle(A.ctx, state, state.combat); } // bake its guns, blasts and reverb while it opens
+    if (on && (cues.length || more.length)) {
+      const L = frameListener(state, state.combat, LISTEN); // where you are listening from: the selected unit, the view, the fog
+      for (const c of cues) battleSound(c, L);
+      for (const c of more) battleSound(c, L);
+    }
+    if (on && A.gb) A.gb.setMuffle(!!battleMem.deaf); // deafened: everything through a low-pass
   }
   if (nowMs - lastWorld >= 150 && ui.started && !ui.timelapse) {
     lastWorld = nowMs;
@@ -198,6 +222,25 @@ export function audioFrame(state, ui, nowMs = performance.now()) {
     lastAmb = nowMs;
     if (on) ambience(state, ui);
   }
+}
+
+// A battle cue: a gun, a blast or a handling sound (ui/battlesfx.js), else one of the VOICES placed where it happens.
+function battleSound(c, L) {
+  if (!(c.gun || c.blast || c.hand)) {
+    let sp = c.at && L ? spatial(L, c.at[0], c.at[1], { enemy: c.enemy }) : null;
+    if (VOICES[c.name] && VOICES[c.name].own) { // ui/sfx-melee.js, sfx-steps.js, sfx-gear.js: played into spatialOut at the placement
+      if (sp && c.seen === false && sp.seen) sp = place({ pan: sp.pan, dist: sp.dist, seen: false, room: sp.room }); // out of sight another way (another floor)
+      return sfx(c.name, { ...c, delay: (c.delay || 0) + (sp ? sp.delay : 0), sp: sp || placeOf(c), battle: true });
+    }
+    return sfx(c.name, { gain: (c.gain ?? 1) * (sp ? sp.gain : 1), delay: (c.delay || 0) + (sp ? sp.delay : 0), pan: sp ? sp.pan : (Math.random() - 0.5) * 0.5, lp: sp ? sp.lp : 0, battle: true });
+  }
+  if (!live() || !wantOn()) return false;
+  const ctx = A.ctx, base = ctx.currentTime + 0.01, t = base + Math.max(0, c.delay || 0);
+  if (!throttle.allow(c.name, t, cueSpan(c))) { audioDebug.dropped++; return false; }
+  try { playCue(ctx, base, t, c, L); } catch (e) { console.warn(`Broken State: the ${c.name} sound failed`, e); return false; }
+  audioDebug.played.push(c.name);
+  if (audioDebug.played.length > 60) audioDebug.played.shift();
+  return true;
 }
 
 // ---------- ambience ----------
@@ -631,8 +674,11 @@ export function soundOptionsHtml(options) {
       <label${tip("Hear one sound, to set the volumes or to judge it")}>Hear <select data-action="snd-pick">${SOUND_NAMES.map((n) => `<option value="${n}" ${n === hearPick ? "selected" : ""}>${esc(SOUND_LABELS[n] || n)}</option>`).join("")}</select></label>
       <button data-action="snd-test"${tip("Play the sound picked")}>▶ Play</button>
       ${locked ? `<span class="small muted">The browser starts sound after your first click or key press.</span>` : ""}
-    </div>`;
+    </div>${labGunHtml()}`;
 }
+// The sound test plays through the game's own context and battle bus (ui/sfxlab.js).
+LAB.ctx = () => { unlock(); return A && live() && wantOn() ? A.ctx : null; };
+LAB.old = (name) => sfx(name, { pitch: 1 });
 // Registered with the menu's actions (ui/settings.js): fn(state, ui, data, api) and fn(state, ui, el, api).
 export const SOUND_ACTIONS = {
   "snd-opt": (state, ui, d) => {
@@ -644,6 +690,7 @@ export const SOUND_ACTIONS = {
     SAVE();
   },
   "snd-test": () => { unlock(); sfx(hearPick, { pitch: 1 }); },
+  ...LAB_ACTIONS, // the gun and blast sound test (ui/sfxlab.js)
 };
 export const SOUND_CHANGE = {
   "snd-vol": (state, ui, el) => {
@@ -654,9 +701,10 @@ export const SOUND_CHANGE = {
     try { el.blur(); } catch { /* ignore */ } // Esc closes the menu again
   },
   "snd-pick": (state, ui, el) => { if (VOICES[el.value]) { hearPick = el.value; unlock(); sfx(hearPick, { pitch: 1 }); } },
+  ...LAB_CHANGE,
 };
 
 // The Help tab's topic (ui/help.js).
 export function soundHelp() {
-  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each weapon class has its own report (pistol, revolver, rifle, shotgun, assault rifle burst, suppressed, bow, acid), with hits, misses, melee blows, bites, groans of the dead, blasts and fire, and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: master, effects and ambience volumes, sound on / off, mute when the window is not focused, and <b>Hear</b> to play any one sound. Browsers start sound only after your first click or key press.`;
+  return `Every sound is made by the game on the spot (no audio files). <b>Effects</b>: a soft click on buttons; a chime when a card comes up (a light two-note one for routine news, a falling one for trouble that wants a decision, a low tense chord for a crisis); a bell for a new warning in the alerts; in battle each calibre has its own report (a .22's pop to a .50's thump, 12 gauge, the machine guns, launchers), bursts and full auto round by round, suppressed shots, reloads, jams and brass, placed left or right and near or far, muffled out of sight, in the echo of the place; grenades, rockets and explosions in layers, with hits, misses, melee blows, bites, groans of the dead, blasts and fire, and a falling tone when one of your people goes down. A low grinding sting means a horde has been seen near a base or one of your teams; a hammered alarm bell means a base is being raided. <b>Ambience</b> follows the weather and the clock where the map is looking: wind, rain, thunder in storms, a low drone at night, birds on fair days, crickets on warm nights.<br><br>⚙ Menu → Options → Sound: master, effects and ambience volumes, sound on / off, mute when the window is not focused, and <b>Hear</b> to play any one sound. Browsers start sound only after your first click or key press.`;
 }

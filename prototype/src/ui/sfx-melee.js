@@ -51,7 +51,7 @@ function struckAt(b, to) {
 // One blow as a cue. a: the striker (soundcues.js unitAt; null for effects with no striker). Effects that are not a
 // plain blow (a knock-out, a stun, a ram, a burst of acid: f.text) keep the old plain thud with no class.
 export function meleeCue(b, f, a, mem = {}) {
-  return { ...blowCue(b, f, a, mem), pan: panOfX(b, f.to && f.to[0]) };
+  return { ...blowCue(b, f, a, mem), at: f.to, enemy: f.side !== "player", pan: panOfX(b, f.to && f.to[0]) }; // at: placed by ui/gunsfx.js spatial (pan: with no listener)
 }
 function blowCue(b, f, a, mem) {
   if (!f.hit) return { name: "whoosh", ...(a ? clsOf(a) : {}) };

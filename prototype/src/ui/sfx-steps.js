@@ -6,7 +6,7 @@
 //   surfaceAt(b, x, y, ground)  grass, dirt, gravel, hard, wood, carpet, mud, wet, snow (ground: the weather's mud/snow)
 //   gaitOf(b, u, len)           walk, run (a dash: further than one action's move), sneak (your people while the enemy is unaware)
 //   deadKind(u)                 the dead's steps: shuffle, runner, brute, crawler, armoured (null: a person)
-//   stepCues(state, mem, now)   the steps to play this frame: { name: "step", delay, gain, pan, dist, seen, surf, gait, load, dk, foot }
+//   stepCues(state, mem, now)   the steps to play this frame: { name: "step", delay, gain, at, enemy, pan, dist, seen, surf, gait, load, dk, foot }
 //   stepVoices(K)               the voice, built on audio.js's building blocks K
 //
 // Heard: your people, anyone you can see, and those you cannot see within HEAR_TILES of one of yours (muffled and
@@ -121,7 +121,7 @@ export function stepCues(state, mem, now = 0) {
       const k = Math.min(len - 1, Math.floor((i * len) / n));
       const [x, y] = f.path[k];
       out.push({
-        name: "step", delay: (i * span) / n + rng() * 0.012, gain, pan: panOfX(b, x), dist, seen, surf: surfaceAt(b, x, y, mem.ground),
+        name: "step", delay: (i * span) / n + rng() * 0.012, gain, at: [x, y], enemy: u.side !== "player", pan: panOfX(b, x), dist, seen, surf: surfaceAt(b, x, y, mem.ground),
         gait, load, dk, foot: (mem.foot = 1 - mem.foot),
       });
     }

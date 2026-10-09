@@ -43,22 +43,22 @@ export function gearCues(state, mem) {
   for (const f of fresh) {
     if (f.type === "loot") {
       const s = lootSound(f.text);
-      if (s) out.push({ ...s, pan: panOfX(b, f.to && f.to[0]) });
-    } else if (f.type === "heal") out.push({ name: "bandage", pan: panOfX(b, f.to && f.to[0]) });
+      if (s) out.push({ ...s, at: f.to, pan: panOfX(b, f.to && f.to[0]) });
+    } else if (f.type === "heal") out.push({ name: "bandage", at: f.to, pan: panOfX(b, f.to && f.to[0]) });
     else if (f.type === "move" && f.path && doors.size) {
       // A closed door the mover walked through has swung open (buildingmaps.js openDoor): heard once a door.
       for (let i = 0; i < f.path.length; i++) {
         const [x, y] = f.path[i], k = y * b.w + x;
         if (!doors.has(k) || DOORS.has((b.cells[k] || {}).k)) continue;
         doors.delete(k);
-        out.push({ name: "door", delay: (i * 70) / 1000, pan: panOfX(b, x) });
+        out.push({ name: "door", delay: (i * 70) / 1000, at: [x, y], enemy: true, pan: panOfX(b, x) });
       }
     }
   }
   // Your vehicle driven across the field (combat.js driveTo): the engine revs.
   if (b.vehicle) {
     const at = `${b.vehicle.x},${b.vehicle.y}`;
-    if (mem.veh && at !== mem.veh && !b.vehicle.blownUp) out.push({ name: "drive", big: !!b.vehicle.mil, pan: panOfX(b, b.vehicle.x) });
+    if (mem.veh && at !== mem.veh && !b.vehicle.blownUp) out.push({ name: "drive", big: !!b.vehicle.mil, at: [b.vehicle.x, b.vehicle.y], pan: panOfX(b, b.vehicle.x) });
     mem.veh = at;
   }
   return out;

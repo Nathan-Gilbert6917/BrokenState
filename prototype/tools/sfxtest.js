@@ -312,7 +312,10 @@ console.log("Voices");
   // The output stage: panned and muffled, or straight to the bus.
   nodes = 0;
   const bus = node();
-  check(O.voiceOut(ctx, O.placeOf({}), bus) === bus && O.voiceOut(ctx, O.placeOf({ pan: 0.5, seen: false, dist: 8 }), bus) !== bus && nodes === 4, "the output stage (spatialOut's shape: ctx, { x, dist, seen }): straight through, or a panner, a low-pass and a level");
+  check(O.voiceOut(ctx, O.placeOf({}), bus) === bus && O.voiceOut(ctx, O.placeOf({ pan: 0.5, seen: false, dist: 8 }), bus) !== bus && nodes === 3, "outside battle the output stage is straight through, or a panner and a low-pass");
+  nodes = 0;
+  const sp = O.voiceOut({ ...ctx, destination: node() }, O.placeOf({ pan: 0.5, seen: false, dist: 8 }), bus, true);
+  check(sp !== bus && nodes >= 3, `in battle it is ui/gunsfx.js spatialOut (${nodes} nodes: level, highs cut, pan)`);
   check(O.panOfX({ w: 20 }, 0) < -0.5 && O.panOfX({ w: 20 }, 19) > 0.5 && O.panOfX({ w: 20 }, 9.5) === 0 && O.panOfX(null, 3) === 0, "panned left to right across the field");
 }
 
@@ -333,6 +336,7 @@ console.log("Played");
     createBuffer(ch, len, rate) { return { duration: len / rate, getChannelData: () => new Float32Array(len) }; }
     createStereoPanner() { return N({ pan: P() }); }
     createDynamicsCompressor() { return N({ threshold: P(), knee: P(), ratio: P(), attack: P(), release: P() }); }
+    createConvolver() { return N({ buffer: null, normalize: true }); }
     async startRendering() { return { getChannelData: () => new Float32Array(16) }; }
   }
   const hadW = globalThis.window, hadD = globalThis.document;
@@ -341,6 +345,7 @@ console.log("Played");
   let err = "";
   const played = [];
   let perSound = 0;
+  const fight = [];
   try {
     AU.initAudio({ sound: { master: 0.7, sfx: 0.8, amb: 0.5, steps: 0.7, mute: false, muteBlur: false } }, () => {});
     const [forest] = battles(37, ["field-forest"]);
@@ -359,6 +364,19 @@ console.log("Played");
     }
     perSound = made.nodes / Math.max(1, played.length);
     await off.finish();
+    // A firefight with raiders: the shots are still heard with everyone moving (footsteps have their own budget).
+    const [town] = battles(38, ["field-town"]);
+    const off2 = AU.audioDebug.offline(60);
+    off2.ctx.currentTime = 100; // the throttle remembers the first context's clock
+    AU.audioFrame(town.st, ui, (ms += 200));
+    for (let turn = 0; turn < 6 && !town.b.over; turn++) {
+      C.autoPlayerTurn(town.st);
+      for (let k = 0; k < 3; k++) { off2.ctx.currentTime += 0.2; AU.audioFrame(town.st, ui, (ms += 200)); fight.push(...AU.audioDebug.played.splice(0)); }
+      if (town.b.phase === "player") C.combatAct(town.st, { type: "end" });
+      if (town.b.phase === "enemy") C.runEnemyPhase(town.st);
+      for (let k = 0; k < 3; k++) { off2.ctx.currentTime += 0.2; AU.audioFrame(town.st, ui, (ms += 200)); fight.push(...AU.audioDebug.played.splice(0)); }
+    }
+    await off2.finish();
   } catch (e) { err = e.stack; }
   globalThis.window = hadW; globalThis.document = hadD;
   if (hadW === undefined) delete globalThis.window;
@@ -368,6 +386,8 @@ console.log("Played");
   check(played.some((n) => n.startsWith("step:")), `footsteps play (${played.filter((n) => n.startsWith("step:")).length}: ${[...new Set(played.filter((n) => n.startsWith("step:")))].slice(0, 6).join(", ")})`);
   check(played.some((n) => /^step:.*(shuffle|runner|brute|crawler)/.test(n)), "the dead's steps too (AI parity)");
   check(played.some((n) => /^(melee|meleeCrit|whoosh):(wood|blade|chop|punch)/.test(n)), `your blows by weapon class (${[...new Set(played.filter((n) => /^(melee|whoosh)/.test(n)))].slice(0, 6).join(", ")})`);
+  const guns = fight.filter((n) => /^(pistol|revolver|rifle|shotgun|auto|suppressed|bow|launcher|rocket)/.test(n));
+  check(guns.length > 0 && fight.some((n) => n.startsWith("step:")), `a firefight: ${guns.length} shots heard with ${fight.filter((n) => n.startsWith("step:")).length} footsteps (${[...new Set(fight.map((n) => n.split(":")[0]))].join(", ")})`);
   check(perSound < 40, `about ${perSound.toFixed(1)} nodes a sound (${played.length} sounds: ${kinds.join(", ")})`);
 }
 
