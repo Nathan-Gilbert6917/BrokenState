@@ -54,7 +54,7 @@ export function cardKind(state, card) {
   const t = String(card.title || "");
   if (card.battle) return "always"; // raised over a fight (floorfolk.js): it shows during the battle
   if (!defaultChoice(state, card)) return "always"; // every answer needs the map, is greyed out or is a fight
-  if (card.isOrders || card.planCard) return "orders";
+  if (card.isOrders || card.planCard) return card.quietArrival ? "other" : "orders"; // a plain move's arrival out of contact waits in the tray (parties.js quietArrival)
   if (DEATH_RE.test(t) || (/^The fight with /.test(t) && /whole team was lost/.test(card.text || ""))) return "death";
   if (card.raidReport || card.lostBase != null || card.radioRaid != null || RAID_RE.test(t)) return "raid";
   if (HORDE_RE.test(t) || card.hiveSite != null) return "horde"; // hivebirth.js: "The dead are massing near …"

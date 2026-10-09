@@ -131,10 +131,17 @@ export function pacingFrame(state, ui) {
 
 // A tray card's time is up: it takes its default answer, or, with nothing it can take by itself any more (its safe
 // answers greyed out), it stops the clock instead.
+// A plain move's arrival card (parties.js quietArrival) opens instead: "Hold here" would leave a team out of contact
+// with no way to reach it.
 function expire(state, c) {
-  if (!defaultChoice(state, c)) c.tray.kind = "always";
+  if (!defaultChoice(state, c) || c.quietArrival) c.tray.kind = "always";
   else autoAnswer(state, c);
 }
+
+// Will this team hold when the coming hour runs (beforeHour: a card of its waits in the tray and is not past its time)?
+// The map does not glide a held team towards its next tile (ui/render.js, sim/parties.js glideAt): it would only jump
+// back when the hour ticks.
+export const holdsNextHour = (state, p) => !!p && trayCards(state).some((c) => c.partyId === p.id && state.hour - c.tray.at < TRAY_HOURS);
 
 // Before each in-game hour: tray cards past their time take their default answer; teams with a card waiting hold.
 // Returns true if anything changed.

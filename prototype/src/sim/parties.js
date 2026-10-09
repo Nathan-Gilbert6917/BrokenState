@@ -11,7 +11,7 @@
  */
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
 import { findPath } from "./hex.js";
-import { roadblockOnEnter } from "./roadblocks.js";
+import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
@@ -23,7 +23,7 @@ import {
 } from "./factions.js";
 import { rollTravelEvent, convoyLegEvent } from "./events.js";
 import { startScavenge } from "./scavenge.js";
-import { offerCrawl } from "./citycrawl.js"; // a team moved onto a city asks whether to go in
+import { offerCrawl, crawlOffered } from "./citycrawl.js"; // a team moved onto a city asks whether to go in
 import {
   vehicleById, partyVehicle, partyFuel, useFuel, wear, abandonVehicle, tank, createVehicle, travelMode, tileFuel, isBike, isCar,
   takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee, wreckCost, carPartsText, WRECK, stripYield,
@@ -789,9 +789,7 @@ function stepAlong(state, p, speed, hour = state.hour, known = Infinity) {
   const entered = [];
   while (p.idx < p.path.length - 1) {
     const from = p.path[p.idx], to = p.path[p.idx + 1];
-    // A bridge barricaded since the way was planned stops the team at its foot (bridgeClosedTo); the last tile of the
-    // way is the destination itself and is never closed.
-    const cost = moveCost(state, from, to, p.vehicle, p.idx + 1 === p.path.length - 1 ? undefined : p.owner, hour ?? state.hour) * (hour == null ? 1 : travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour, known })) * offroadStep(state, p, from, to);
+    const cost = stepCost(state, p, p.idx, hour, known);
     if (!isFinite(cost)) {
       p.path = p.path.slice(0, p.idx + 1);
       if (p.owner === "player" && p.phase === "out" && state.tiles[to].bridge) p.bridgeStop = to; // told on arrival (arrive)
@@ -805,27 +803,50 @@ function stepAlong(state, p, speed, hour = state.hour, known = Infinity) {
   return entered;
 }
 
+// The cost of the step from p.path[i] to the next tile, in the hour it is taken (stepAlong). A bridge barricaded
+// since the way was planned stops the team at its foot (bridgeClosedTo); the last tile of the way is the destination
+// itself and is never closed.
+/** @param {State} state @param {Pick<Party, "path" | "vehicle"> & Partial<Party>} p @param {number} i @param {number | null} [hour] @param {number} [known] */
+function stepCost(state, p, i, hour = state.hour, known = Infinity) {
+  const from = p.path[i], to = p.path[i + 1];
+  return moveCost(state, from, to, p.vehicle, i + 1 === p.path.length - 1 ? undefined : p.owner, hour ?? state.hour) * (hour == null ? 1 : travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour, known })) * offroadStep(state, p, from, to);
+}
+
+// A road blockage met entering p.path[i + 1] (roadblocks.js): the progress it costs, or 0. The same roll as
+// onEnterTile's (a vehicle on a road), so the map's glide holds the team up where the hour will.
+/** @param {State} state @param {Party} p @param {number} i @param {number} hour */
+function blockDelay(state, p, i, hour) {
+  if (!p.vehicle || !state.tiles[p.path[i]].roadLinks.includes(p.path[i + 1])) return 0;
+  const b = rollRoadblock(state, p, p.path[i + 1], hour);
+  return b ? (b.mins / 60) * partySpeed(p) : 0;
+}
+
 /** @param {Party} p */
 export const partyTile = (p) => p.path[p.idx];
 
 // Where a moving team is part-way through the coming hour, frac (0–1) of it gone: the map draws it gliding between
 // tiles as the minutes pass (main.js). The same stepping as stepAlong (the hour's weather, a delay paid off first),
 // on a copy: nothing in the sim changes. Returns { from, to, t }: t of the way from tile `from` to `to`.
-/** @param {State} state @param {Party} p @param {number} frac */
-export function glideAt(state, p, frac) {
+// A team that gets where it is going (or to a closed bridge) before the hour is out stays there for the rest of the
+// hour: { from: the tile before, to: that tile, t: 1 }, never a fall back to the tile the sim still has it on (the
+// sim moves it when the hour ticks). held: the team holds this hour (a card of its waits in the tray, ui/pacing.js
+// holdsNextHour): it does not move on, so it does not glide either.
+/** @param {State} state @param {Party} p @param {number} frac @param {boolean} [held] */
+export function glideAt(state, p, frac, held = false) {
   const at = partyTile(p);
   if (!onTheMove(p)) return { from: at, to: at, t: 0 };
-  let prog = (p.progress || 0) + partySpeed(p) * Math.max(0, Math.min(1, frac));
+  let prog = (p.progress || 0) + (held ? 0 : partySpeed(p) * Math.max(0, Math.min(1, frac)));
   const hour = state.hour + 1; // the hour being travelled (tickHour moves the clock on, then the teams)
+  // Where it stops: the tile reached, held there (t 1 on the step into it) or not moved off the start at all.
+  const stop = (i) => (i > p.idx ? { from: p.path[i - 1], to: p.path[i], t: 1 } : { from: at, to: at, t: 0 });
   for (let i = p.idx; i < p.path.length - 1; i++) {
     const from = p.path[i], to = p.path[i + 1];
-    const cost = moveCost(state, from, to, p.vehicle, i + 1 === p.path.length - 1 ? undefined : p.owner, hour) * travelFactor(state, { vehicle: p.vehicle, tileId: to, from, hour }) * offroadStep(state, p, from, to);
-    if (!(cost > 0) || !isFinite(cost)) return { from, to: from, t: 0 };
-    if (prog < cost) return { from, to, t: Math.max(0, prog / cost) };
-    prog -= cost;
+    const cost = stepCost(state, p, i, hour);
+    if (!(cost > 0) || !isFinite(cost)) return stop(i);
+    if (prog < cost) return prog > 0 || i === p.idx ? { from, to, t: Math.max(0, prog / cost) } : stop(i);
+    prog -= cost + blockDelay(state, p, i, hour); // a road blockage holds it up on the tile (playerPartyHour)
   }
-  const end = p.path[p.path.length - 1];
-  return { from: end, to: end, t: 0 };
+  return stop(p.path.length - 1);
 }
 
 /** @param {State} state @param {Party} p */
@@ -901,11 +922,22 @@ function playerPartyHour(state, p) {
     if (state.parties.includes(p)) updateRadio(state, p);
     return;
   }
-  const entered = stepAlong(state, p, partySpeed(p));
-  for (const tileId of entered) {
+  let entered = stepAlong(state, p, partySpeed(p));
+  for (let k = 0; k < entered.length; k++) {
+    const tileId = entered[k], block = p.roadblock;
     thinIceStep(state, p, tileId); // rivers.js: thin ice may give way under a team on foot
     onEnterTile(state, p, tileId);
     if (!state.parties.includes(p) || p.phase === "engaged") return;
+    // A road blockage (roadblocks.js) holds the team up where it met it: the tiles it would have gone on to this hour
+    // are given back and stepped again on what the delay leaves of the hour (none if it takes all of it), so the
+    // team never drives past the blockage and back (glideAt draws the same: blockDelay).
+    if (p.roadblock !== block && k < entered.length - 1) {
+      const at = p.path.lastIndexOf(tileId, p.idx);
+      if (at < 0) continue;
+      for (let i = at; i < p.idx; i++) p.progress += stepCost(state, p, i);
+      p.idx = at;
+      entered = [...entered.slice(0, k + 1), ...stepAlong(state, p, 0)];
+    }
   }
   // Storms and blizzards: a small chance each hour on the road that someone is hurt (weather.js).
   if (p.kind !== "convoy" && p.idx < p.path.length - 1 && travelHazard(state, p, partyMembers(state, p)) && wipeIfEmpty(state, p)) return;
@@ -1168,9 +1200,21 @@ export function ordersCard(state, p, text, doneLabel, title) {
   };
 }
 
+// A plain move that got there pops up no card. "log": you can give the team its next order without one (in radio
+// contact or at one of your bases): a log line instead. "tray": out of contact the card is the only way to reach it
+// (plans.js commandable), so it comes, but waits in the card tray without stopping the clock (cardrules.js cardKind;
+// left there it opens by itself instead of taking "Hold here", ui/pacing.js expire). null: the card as before (the
+// autopilot and crews answer it themselves: autopilot.js teamAct, crews.js).
+/** @param {State} state @param {Party} p @returns {"log" | "tray" | null} */
+function quietArrival(state, p) {
+  if (p.owner !== "player" || state.autopilot || p.crewRole != null || p.kind === "convoy") return null;
+  return p.radioLive || state.bases.some((b) => b.tile === partyTile(p)) ? "log" : "tray";
+}
+
 // The team stops and reports in. opts.failed: the order could not be done (the card is not titled "Done: …");
 // opts.hold: queued orders stay on hold instead of carrying on; opts.title: a title for the card; opts.card: a card
-// to ask instead of the orders card (moveout.js: "Enter <base>?"), made as card(state, p).
+// to ask instead of the orders card (moveout.js: "Enter <base>?"), made as card(state, p); opts.quiet: no card, a log
+// line ("log") or the card in the tray ("tray"): a plain move that got there (arrive, quietArrival).
 /** @param {State} state @param {Party} p @param {string} text */
 export function awaitOrders(state, p, text, opts = {}) {
   if (!state.parties.includes(p)) return;
@@ -1192,7 +1236,10 @@ export function awaitOrders(state, p, text, opts = {}) {
   // When it checks in for orders, the team reports what it has spotted (the full map update waits for its return).
   mergeSpots(state, p.spotted);
   if (finished && !opts.hold && continueQueue(state, p, text)) return;
-  addCard(state, opts.card ? opts.card(state, p) : ordersCard(state, p, text, doneLabel, opts.title));
+  if (opts.quiet === "log") { log(state, `${teamName(state, p)} reached ${tileLabel(state, tile)} and waits for orders.`, "info"); return; }
+  const card = opts.card ? opts.card(state, p) : ordersCard(state, p, text, doneLabel, opts.title);
+  if (opts.quiet === "tray") card.quietArrival = true;
+  addCard(state, card);
 }
 
 // A team stopped on the way while orders are queued behind the trip: the unfinished trip (and the mission it
@@ -1279,8 +1326,10 @@ function arrive(state, p) {
       // One of your other bases, with nothing queued after it: "Enter <base>?" instead of the orders card (moveout.js).
       const into = !(p.orders && p.orders.length) ? enterTarget(state, p) : null;
       if (into) { awaitOrders(state, p, "", { card: (st, q) => enterCard(st, q, into) }); return ""; }
-      awaitOrders(state, p, `The team reached ${tileLabel(state, p.dest)}.`);
-      offerCrawl(state, p); // a city you drive the team into: the City crawl card instead of the orders card
+      // Nothing to tell (no city to go into): no card popping up (quietArrival); the team waits ("Waiting for orders").
+      const quiet = crawlOffered(state, p) ? null : quietArrival(state, p);
+      awaitOrders(state, p, `The team reached ${tileLabel(state, p.dest)}.`, { quiet });
+      if (!quiet) offerCrawl(state, p); // a city you drive the team into: the City crawl card instead of the orders card
       return "";
     }
     case "recon":
