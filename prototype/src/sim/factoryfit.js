@@ -13,6 +13,7 @@ import { FACTORY_FIT, TRUCK_GEAR } from "./data-guns.js";
 import { lootItem } from "./inventory.js"; // call time only (inventory.js imports this module)
 import { hash01 } from "./skills.js";
 import { setFinish } from "./data-finish.js"; // its finish (black, tan, wood...) on the same dice
+import { swapGun } from "./gundist.js"; // the gun distribution (call-time only)
 
 // The parts of a row that can go on this gun now (gunmods.js modFits: by platform and calibre, data-gunmods.js).
 const usable = (gunKey, keys) => keys.filter((k) => GEAR[k] && ATTACH[k] && modFits(gunKey, k));
@@ -58,6 +59,6 @@ export function rosterTruckGear(rng, ctx, out) {
   const m = (TRUCK_COND_ITEMS[ctx.cond] ?? 1) * (ctx.rich ?? 1);
   rows.forEach(([k, p], i) => {
     if (!GEAR[k] || hash01(seed, "trkgear", ctx.kind, k, i) >= Math.min(0.95, p * m)) return;
-    out.gear.push(lootItem(k, ctx.cond === "intact" ? "military" : "wreck", hash01(seed, "trkdur", k, i))); // itemcond.js: the condition by the truck's state
+    out.gear.push(lootItem(swapGun(`truck:${ctx.kind}`, k, [seed, "trkgun", k, i]), ctx.cond === "intact" ? "military" : "wreck", hash01(seed, "trkdur", k, i))); // gundist.js: which gun // itemcond.js: the condition by the truck's state
   });
 }

@@ -23,6 +23,7 @@ import { spend } from "./itemcond.js"; // the condition of what is found
 import { teamPolicy, wantsOut, breakOff, RETREAT_POLICIES } from "./breakoff.js";
 import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre
 import { calRounds, partyCals, roundsText } from "./ammo.js"; // a find of rounds named by calibre
+import { swapGun } from "./gundist.js"; // the gun distribution: a crashed Humvee's gun
 
 // Things a road card can turn up (tools/loottest.js counts them as sources).
 export const HUMVEE_GEAR = ["ar", "plate", "nvg", "milradio", "rucksack", "carbine", "smokegren", "frag"];
@@ -264,7 +265,7 @@ const EVENTS = [
         {
           label: "Search it", hint: hint(st, p, "stealth", 11), resolve: (s) => {
             const ok = check(s, p, "stealth", 11).ok;
-            const g = s.rng.pick(HUMVEE_GEAR);
+            const g = swapGun("truck:humvee", s.rng.pick(HUMVEE_GEAR), s.rng); // gundist.js: which gun (a hash of the draw)
             // The find needs carry space like anything else; with none it stays in the wreck.
             const fits = addGearToCargo(s, p, lootItem(g, "wreck", s.rng)); // itemcond.js: a wreck's kit, knocked about
             const found = fits ? GEAR[g].name : `${GEAR[g].name} (no room to carry it: left there)`;

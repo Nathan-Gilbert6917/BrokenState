@@ -59,6 +59,7 @@ import { captiveEscape, captiveDecline, captiveTurnMult, groupJailGuards } from 
 import { startRescueRaid, tacticalPossible, jailTier, JAIL } from "./rescueraid.js"; // the rescue played out on their base's map
 import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: each type's numbers on the road (meetOdds, stop, talkDc, bribes, pacts, ransoms, captives)
 import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your caravan's route lies in wait
+import { swapGun, bodyGunSource } from "./gundist.js"; // the gun distribution: a gun off their dead
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1307,7 +1308,7 @@ function victoryRewards(state, p, c, result) {
       // Resolved by the numbers: there were no bodies to search, so the haul is rolled here.
       out.push(`Taken from the bodies: ${addCargoRounds(state, p, rng.int(15, 45), f ? kindTheme(f.type) : "raider", "bodies", partyTile(p), state.hour)}, ${addCargo(state, p, "food", rng.int(2, 8))} food.`); // rounds by calibre
       if (rng.chance(0.3)) {
-        const key = rng.pick(["pistol", "shotgun", "huntrifle", "vest"]);
+        const key = swapGun(bodyGunSource(c.enemy && c.enemy.kind || (f && KIND_OF[f.type]) || "raiders"), rng.pick(["pistol", "shotgun", "huntrifle", "vest"]), rng); // gundist.js: a gun of their kind
         const dropped = (result && result.arsDropped) || []; // arsenal.js settleArsenal: what their dead carried (a group's people)
         const item = dropped.length ? (spend(rng), dropped[0]) : lootItem(key, kitSource(c.enemy && c.enemy.kind || (f && KIND_OF[f.type])), spend(rng)); // itemcond.js: by who they were
         out.push(stowGear(state, p, item) ? `Also a ${item.name}.` : `No room to carry the ${item.name} they had; it was left behind.`);

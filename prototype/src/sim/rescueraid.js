@@ -67,6 +67,7 @@ import { removeFromArsenal } from "./arsenal.js";
 import * as Groupworks from "./groupworks.js"; // groupJailTier (the jailhouse work), when it is there
 import { groupJailTier, groupJailGuards } from "./groupjails.js"; // jailhouse: the group's jail tier (0 none, 1 makeshift, 2 holding cells, 3 jailhouse)
 import { JAIL as JAIL_TIER } from "./prisoners.js"; // the tiers' names and cell blocks, shared with your own jails
+import { swapGun, kitGunSource } from "./gundist.js"; // the gun distribution: an old armoury's guns
 
 export const RESCUE_RAID = {
   ROPES: { base: 0.1, stealth: 0.03, min: 0.05, max: 0.75, beat: [5, 10] },
@@ -112,7 +113,7 @@ export function groupArmory(state, f) {
     const S = RESCUE_RAID.ARMORY_SEED;
     const n = clamp(Math.round(S.min + f.pop / 6), S.min, S.max);
     f.armory = [];
-    for (let i = 0; i < n; i++) { const k = rng.pick(i === 0 && kit.strong ? kit.strong : kit.weapons); if (GEAR[k]) f.armory.push(lootItem(k, kitSource(kindOf(f)), spend(rng))); }
+    for (let i = 0; i < n; i++) { const k = swapGun(kitGunSource(kindOf(f)), rng.pick(i === 0 && kit.strong ? kit.strong : kit.weapons), rng); if (GEAR[k]) f.armory.push(lootItem(k, kitSource(kindOf(f)), spend(rng))); }
     const arm = (kit.armor || []).filter(Boolean);
     for (let i = 0; i < S.armour && arm.length; i++) { const k = rng.pick(arm); if (GEAR[k]) f.armory.push(lootItem(k, kitSource(kindOf(f)), spend(rng))); }
   }

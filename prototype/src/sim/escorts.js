@@ -38,6 +38,7 @@ import { hash01 } from "./skills.js";
 import { factionVehicles } from "./vehicles.js";
 import { issueKit, unitPower } from "./arsenal.js"; // a group's guards armed from its arsenal (home guard kept)
 import { weightOf, fitPeople } from "./groupcare.js";
+import { swapGun, kitGunSource } from "./gundist.js"; // the gun distribution: which gun each guard carried
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -181,7 +182,7 @@ export function guardGear(kit, n, dice) {
   const gear = [];
   let ammo = 0;
   for (let i = 0; i < n; i++) {
-    const w = K.weapons[Math.floor(dice(i, "w") * K.weapons.length) % K.weapons.length];
+    const w = swapGun(kitGunSource(GUARD_KIT[kit] ? kit : "guards"), K.weapons[Math.floor(dice(i, "w") * K.weapons.length) % K.weapons.length], [dice(i, "wg")]); // gundist.js: a gun of their kind in their list's band
     if (GEAR[w]) gear.push(lootItem(w, src, ["escortgun", i, dice(i, "wq")])); // itemcond.js: by their kit, as their bodies on a battle map (a hired gun's rifle looked after)
     const a = K.armor[Math.floor(dice(i, "a") * K.armor.length) % K.armor.length];
     // Armour that was shot through is often ruined: half of it is worth taking.

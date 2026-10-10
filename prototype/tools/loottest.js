@@ -33,7 +33,7 @@ import { GUN_FINDS, SEARCH_TOOLS, GUN_STASH } from "../src/sim/gunsafes.js"; // 
 import { SITE_KIT, AREA_KIT, WARE_KIT } from "../src/sim/carrykit.js"; // carry kit: magazines, rigs, plates (their own dice)
 import { BLADE_FINDS, AREA_BLADES, WARE_BLADES } from "../src/sim/blades.js"; // knives and swords (their own dice)
 import { ARSENAL_FINDS } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10 (gunfinds.js: their own dice)
-import { gunPool } from "../src/sim/gunfinds.js";
+import { gunsFrom } from "../src/sim/gundist.js";
 
 const quiet = process.argv.includes("--quiet");
 let pass = 0, fail = 0;
@@ -102,10 +102,11 @@ for (const [t, f] of Object.entries(WARE_KIT)) addAll(Object.keys(f.items), `sol
 for (const [t, f] of Object.entries(BLADE_FINDS)) addAll(Object.keys(f.items), `bladefind:${t}`); // blades.js: knives and swords
 for (const [a, f] of Object.entries(AREA_BLADES)) addAll(Object.keys(f.items), `raid:${a}`);
 for (const [t, f] of Object.entries(WARE_BLADES)) addAll(Object.keys(f.items), `sold:${t}`);
-// The arsenal of 2026-10-10 (gunfinds.js): the guns whose tags meet a site's, a raid area's or a group's shelf's.
-for (const [t, p] of Object.entries(ARSENAL_FINDS.site)) if (p > 0) addAll(Object.keys(gunPool(SITE_TAGS[t] || [])), `gunfind:${t}`);
-for (const [a, p] of Object.entries(ARSENAL_FINDS.area)) if (p > 0) addAll(Object.keys(gunPool(AREA_TAGS[a] || [])), `raid:${a}`);
-for (const [t, p] of Object.entries(ARSENAL_FINDS.wares)) if (p > 0) addAll(Object.keys(gunPool(ARSENAL_FINDS.WARE_TAGS[t] || [])), `sold:${t}`);
+// The extra guns (gunfinds.js) and the gun distribution (gundist.js): any gun a site's, a raid area's or a group's
+// shelf's source draws (a place's only those whose tags meet its own).
+for (const [t, p] of Object.entries(ARSENAL_FINDS.site)) if (p > 0) addAll(Object.keys(gunsFrom(`site:${t}`)), `gunfind:${t}`);
+for (const [a, p] of Object.entries(ARSENAL_FINDS.area)) if (p > 0) addAll(Object.keys(gunsFrom(`area:${a}`)), `raid:${a}`);
+for (const [t, p] of Object.entries(ARSENAL_FINDS.wares)) if (p > 0) addAll(Object.keys(gunsFrom(`trader:${t}`)), `sold:${t}`);
 
 console.log("Sources");
 check(!unknown.length, `every listed item exists in GEAR${unknown.length ? ` (unknown: ${unknown.join(", ")})` : ""}`);

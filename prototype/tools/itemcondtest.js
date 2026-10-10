@@ -50,6 +50,7 @@ import { enemyGunQ, enemyGunCond } from "../src/sim/gunfire.js";
 import { itemDurMax } from "../src/sim/crafting.js";
 import { guardGear } from "../src/sim/escorts.js";
 import { starterKit } from "../src/sim/arsenal.js";
+import { gunsFrom, bodyGunSource } from "../src/sim/gundist.js"; // the gun distribution: which gun a source yields
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -189,7 +190,7 @@ for (const kit of Object.keys(KITS)) {
   const rng = new Rng(kit.length * 7);
   const items = [];
   for (let i = 0; i < 1500; i++) items.push(...allItems(enemyBody(rng, { kind: "human", name: "x", id: i, kit, weapon: K.weapons[i % K.weapons.length], armorKey: K.armor[i % K.armor.length] }, K)));
-  within(`a ${K.label.toLowerCase()}'s body`, items, new Set([...K.weapons, ...K.armor.filter(Boolean), ...K.loot, ...(K.finds || []), ...(K.pack ? [K.pack[0]] : [])]));
+  within(`a ${K.label.toLowerCase()}'s body`, items, new Set([...K.weapons, ...K.armor.filter(Boolean), ...K.loot, ...(K.finds || []), ...(K.pack ? [K.pack[0]] : []), ...Object.keys(gunsFrom(bodyGunSource(kit)))])); // gundist.js: a spare gun is any gun of their kind
 }
 {
   const rng = new Rng(8);
@@ -200,10 +201,10 @@ for (const kit of Object.keys(KITS)) {
     const B = MILDEAD.BODY[z];
     const its = [];
     for (let i = 0; i < 2000; i++) its.push(...deadBodyFinds(rng, z).gear);
-    within(`an armoured ${z}'s body`, its, new Set([...B.armor, ...B.items, ...(MILDEAD.BODY_EXTRA[z] || [])].map((x) => x[0]))); // BODY_EXTRA: a flashbang now and then
+    within(`an armoured ${z}'s body`, its, new Set([...[...B.armor, ...B.items, ...(MILDEAD.BODY_EXTRA[z] || [])].map((x) => x[0]), ...Object.keys(gunsFrom("body:deadsoldier"))])); // BODY_EXTRA: a flashbang now and then; gundist.js: an Army rifle like the listed one
   }
 }
-for (const kind of Object.keys(TRUCK_LOOT)) { const rng = new Rng(3); const its = []; for (let i = 0; i < 300; i++) its.push(...truckLoot(rng, kind, "intact").gear); within(`a ${kind} truck`, its, new Set([...TRUCK_LOOT[kind].gear.map((x) => x[0]), ...(TRUCK_GEAR[kind] || TRUCK_GEAR.cargo).map((x) => x[0]), ...(TRUCK_FLASH[kind] ? ["flashbang"] : [])])); } // TRUCK_GEAR: the roster's guns; TRUCK_FLASH: the hook's flashbangs
+for (const kind of Object.keys(TRUCK_LOOT)) { const rng = new Rng(3); const its = []; for (let i = 0; i < 300; i++) its.push(...truckLoot(rng, kind, "intact").gear); within(`a ${kind} truck`, its, new Set([...TRUCK_LOOT[kind].gear.map((x) => x[0]), ...(TRUCK_GEAR[kind] || TRUCK_GEAR.cargo).map((x) => x[0]), ...(TRUCK_FLASH[kind] ? ["flashbang"] : []), ...Object.keys(gunsFrom(`truck:${kind}`))])); } // gundist.js: an Army gun of the listed one's kind; TRUCK_GEAR: the roster's guns; TRUCK_FLASH: the hook's flashbangs
 for (const a of Object.keys(AREA_FINDS)) { const rng = new Rng(a.length); const its = []; for (let i = 0; i < 400; i++) { const it = rollAreaFind(rng, a, 1, 20); if (it) its.push(it); } if (its.length) within(`small finds in a ${a}`, its, new Set(Object.keys(AREA_FINDS[a].items))); }
 check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])), "every raid area's gear list is real gear");
 {
@@ -214,7 +215,7 @@ check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])
     const its = [];
     for (let w = 0; w < 25; w++) { st.hour = w * 168; its.push(...ensureWares(st, f, true)); }
     f.type = was;
-    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type)]));
+    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type), ...Object.keys(gunsFrom(`trader:${type}`))])); // gundist.js: any gun the group stocks
   }
   st.hour = 0;
   const com = [];
@@ -393,7 +394,7 @@ section("5. Merchants' specialities");
   const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items), ...Object.keys(WARE_HEAD.merchants.items), ...Object.keys(WARE_KIT.merchants.items)]);
   for (const [k, S] of Object.entries(V.MERCHANT_SPECS)) {
     const vs = by[k] || [];
-    const allowed = new Set([...S.gear, ...S.books, ...V.MERCHANT_VALUABLES, ...blue, ...(k === "arms" || k === "general" ? mods : [])]);
+    const allowed = new Set([...S.gear, ...S.books, ...V.MERCHANT_VALUABLES, ...blue, ...(k === "arms" || k === "general" ? mods : []), ...Object.keys(gunsFrom("trader:merchants"))]); // gundist.js: a merchant's gun
     within(`${S.name.toLowerCase()}' wares`, vs.flatMap((v) => v.wares), allowed);
     check(vs.every((v) => v.wares.filter((it) => S.gear.includes(it.key)).length >= 2), `${S.name.toLowerCase()} carry 2–4 things of their trade each`);
     const mean = (sup) => vs.reduce((a, v) => a + (v.stock[sup] || 0), 0) / Math.max(1, vs.length);
