@@ -938,16 +938,23 @@ export function planBase(state, base) {
   // all season on many maps (the summer's water filters, dressings for short meds, a weapon for the unarmed): over
   // worktest's 10 seeds × 8 rolls priorities finished a fifth fewer crafts than the governor (373 vs 462; with this
   // 451, food and buildings unchanged).
+  // While food is comfortable (the governor's comfort rule, farmCrewLimits) from any food job (farm, forage, hunt, fish):
+  // the kitchen's saving made food comfortable more often and the governor then crafted more (worktest, 2026-10-10).
   // Never from a build, a station, a lesson, a repair or the walls.
   const co = ctx.open("craft");
   if (co.cap > 0 && ctx.used.craft === 0) {
     const fw = farmersWanted(state, base);
     const farmSpare = ctx.used.farm - (ctx.foodDays >= Math.max(15, foodGoal(state) / 1.5) ? fw.need : fw.ideal);
+    // Food comfortable by the governor's own rule (autopilot.js farmCrewLimits comfy: the food at its target and the
+    // winter stores with their margin): the food jobs have hands to spare, as the governor's capped farm crew frees
+    // them for its crafter (planRoles step 8), so any of them may give one.
+    const comfy = farmCrewLimits(state, base, ctx.foodDays, ctx.people.length).comfy;
+    const FOOD_JOBS = ["farm", "forage", "hunt", "fish"];
     const cands = managed.filter((s) => {
       if (prio(state, s, "craft") <= 0 || !minOk(state, s, "craft") || WORK_TYPES.craft.can(ctx, s)) return false;
       if (ctx.free.has(s)) return true;
       const a = out.get(s.id);
-      return !!a && a.kind === "work" && (a.t === "scavenge" || (a.t === "farm" && farmSpare > 0));
+      return !!a && a.kind === "work" && (a.t === "scavenge" || (a.t === "farm" && farmSpare > 0) || (comfy && FOOD_JOBS.includes(a.t)));
     }).sort((a, b) => prio(state, a, "craft") - prio(state, b, "craft") || rankOf(ctx, b, "craft") - rankOf(ctx, a, "craft") || a.id - b.id);
     const s = cands[0];
     if (s) {
