@@ -38,7 +38,8 @@ const check = (ok, msg) => { if (ok) { pass++; if (VERBOSE) console.log(`  ok ${
 const section = (t) => console.log(`\n== ${t}`);
 const t0 = Date.now();
 const ROLL = 9091;
-const world = (seed, extra = {}) => { const st = createWorld({ seed, factionCount: 5, crewRoll: ROLL, ...extra }); st.pointsMax = extra.max ?? CUSTOM_POINTS.DEF; return st; };
+const MAX = 80; // Points each in these worlds (fixed: the default went 80 → 85 with the Melee skill)
+const world = (seed, extra = {}) => { const st = createWorld({ seed, factionCount: 5, crewRoll: ROLL, ...extra }); st.pointsMax = extra.max ?? MAX; return st; }; // MAX: the numbers below are worked out at 80 each (the default is CUSTOM_POINTS.DEF)
 const blankWorld = (seed, extra = {}) => world(seed, { ...extra, crew: blankCrew(createWorld({ seed, factionCount: 5, crewRoll: ROLL, ...extra })) });
 const again = (st, extra = {}) => { const w = createWorld({ seed: st.seed, factionCount: 5, crewRoll: ROLL, mode: st.mode, ...extra, crew: crewSnapshot(st) }); w.pointsMax = st.pointsMax; return w; };
 const UI = () => ({ started: false, freeEdit: true, ironman: false, worldSize: "normal", factionCount: 5, nrMsg: "" });
