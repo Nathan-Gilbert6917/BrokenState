@@ -281,6 +281,7 @@ export async function collect(root = PROTO) {
     imp(root, "inventory.js"), imp(root, "valuation.js"),
   ]);
   const AM = await imp(root, "ammo.js");
+  const GD = await imp(root, "gundist.js"); // the gun distribution: which gun each source yields (data-guns.js GUN_CLASS, GUN_SOURCES)
   const { CALIBERS, AMMO_TYPES, CAL_DMG, LADDER, RARITY, RARITY_NAME, RARITY_FIND, ROUND_ECON, THEME_CALS, THEME_TYPES, ROUND_SUPPLIES, LAUNCH_VALUE, LOAD_CLASS, HAND_SUPPLIES, ammoKey } = A;
   const { GUN_RARITY, ARSENAL_FINDS, ARSENAL_GEAR, FACTORY_FIT, TRUCK_GEAR } = DG;
   const { MAGAZINES, INTERNAL, CLIPS } = DK;
@@ -335,14 +336,14 @@ export async function collect(root = PROTO) {
     return out.join("; ");
   };
   const trucksOf = (k) => Object.entries(TRUCK_GEAR).flatMap(([t, l]) => l.filter(([x]) => x === k).map(([, p]) => `${t} ${(p * 100).toFixed(1)}%`)).join("; ");
-  // The arsenal's finds: each place's chance × the gun's share of its pool.
-  const PLACE_KINDS = { site: SITE_TAGS, area: AREA_TAGS, wares: ARSENAL_FINDS.WARE_TAGS, stash: ARSENAL_FINDS.STASH_TAGS };
-  const STASH_KINDS = { pistolcase: ["pistol"], riflecase: ["rifle", "shotgun"] };
+  // The extra-gun rolls (gunfinds.js): each place's chance × the gun's share of its source's pool (gundist.js:
+  // site:<type>, area:<type>, trader:<type>, stash:<table>).
+  const PLACE_SRC = { site: (x) => `site:${x}`, area: (x) => `area:${x}`, wares: (x) => `trader:${x}`, stash: (x) => `stash:${x}` };
   const placeRows = [];
   const gunPlaces = {};
-  for (const [kind, tagsBy] of Object.entries(PLACE_KINDS)) {
+  for (const [kind, srcOf] of Object.entries(PLACE_SRC)) {
     for (const [place, p] of Object.entries(ARSENAL_FINDS[kind])) {
-      const pool = GF.gunPool(tagsBy[place] || [], kind === "stash" ? STASH_KINDS[place] || null : null);
+      const pool = GD.gunsFrom(srcOf(place));
       const tot = Object.values(pool).reduce((a, b) => a + b, 0);
       const top = Object.entries(pool).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([g, w]) => `${g} ${tot ? Math.round((w / tot) * 100) : 0}%`).join(", ");
       placeRows.push({ key: `${kind}:${place}`, v: { kind, place, chance: p, pool: Object.keys(pool).length, top } });
@@ -374,7 +375,7 @@ export async function collect(root = PROTO) {
     const places = (gunPlaces[k] || []).filter((x) => x.p > 0).sort((a, b) => b.p - a.p);
     const v = {
       name: (d && d.name) || w.name, cat: (d && d.cat) || (w.mount || w.mounted ? "mounted" : "-"), platform: WEAPON_PLATFORM[k] || "",
-      cal: cal || (w.arrows ? "arrows" : ""), rarity: GUN_RARITY[k] ?? null,
+      cal: cal || (w.arrows ? "arrows" : ""), rarity: GUN_RARITY[k] ?? null, gunClass: (DG.GUN_CLASS && DG.GUN_CLASS[k] ? DG.GUN_CLASS[k] : []).join(" "),
       dmgLo: w.dmg[0], dmgHi: w.dmg[1], opt: w.opt ?? null, fall: w.fall ?? null, aim: w.aim ?? null, close: w.close ?? null,
       ammo: w.ammo ?? null, noise: w.noise ?? null, cap: w.cap ?? null, rel: w.rel ?? null, pierce: w.pierce ?? null,
       brace: typeof w.brace === "number" ? w.brace : null, heavyMob: w.heavy ? w.heavy.mob : null, heavyBrace: w.heavy ? w.heavy.brace : null,
@@ -396,7 +397,8 @@ export async function collect(root = PROTO) {
   }
   table("guns", "Guns", [
     C("name", "Name", "text"), C("cat", "Category", "text"), C("platform", "Platform", "text"), C("cal", "Calibre", "text"),
-    C("rarity", "Rarity", "tier", { desc: "data-guns.js GUN_RARITY" }), C("findW", "Find weight", "num", { ...live, desc: "ARSENAL_FINDS.FIND_W of its tier (the arsenal's own finds)" }),
+    C("rarity", "Rarity", "tier", { desc: "data-guns.js GUN_RARITY" }), C("findW", "Find weight", "num", { ...live, desc: "ARSENAL_FINDS.FIND_W of its tier (every gun source's rarity weight: gundist.js)" }),
+    C("gunClass", "Class", "text", { hide: true, desc: "data-guns.js GUN_CLASS: its uses (who keeps one) and era; the gun distribution's sources draw by them" }),
     C("dmgLo", "Dmg lo"), C("dmgHi", "Dmg hi"), C("dmgAvg", "Dmg avg", "num", live), C("calRef", "Calibre ref", "num", { ...live, desc: "data-ammo.js CAL_DMG average" }),
     C("band", "Band", "pct", { ...live, desc: "Gun avg ÷ calibre ref (LADDER.BAND keeps it 85–115%)" }),
     C("hitBare", "Hit: none", "num", { ...live, desc: "Mean hit with the calibre's base round, no armour (ladder.js gunHit)" }),
@@ -415,14 +417,14 @@ export async function collect(root = PROTO) {
     C("pointsKit", "Points + rounds", "num", { ...live, desc: "Picked in the hands: the gun and 3 loads of its base round (slotPoints)" }),
     C("slots", "Attachment slots", "text", hide), C("builtin", "Built in", "text", hide), C("factory", "Factory parts", "text", hide),
     C("tags", "Loot tags", "text", hide), C("kits", "AI kits (w/s/l)", "text", hide), C("trucks", "Army trucks", "text", hide),
-    C("bestPlace", "Best find place", "text", { ...after, hide: true, desc: "The arsenal's own finds: place chance × the gun's share of its pool" }), C("places", "Find places", "num", { ...after, hide: true }),
+    C("bestPlace", "Best find place", "text", { ...after, hide: true, desc: "The extra-gun rolls (gunfinds.js): place chance × the gun's share of its source's pool (gundist.js)" }), C("places", "Find places", "num", { ...after, hide: true }),
   ], gunRows, { note: "Every ranged weapon in combat.js WEAPONS (with data-guns.js, data-nonlethal.js and the turrets). Hits use the calibre's base round." });
 
   // ---- arsenal find places ----
-  table("places", "Where the arsenal's guns are found", [
+  table("places", "Where an extra gun is found", [
     C("kind", "Kind", "text"), C("place", "Place", "text"), C("chance", "Chance", "num", { desc: "ARSENAL_FINDS: a search hour (site), a raid container (area), a shelf a week (wares), a safe (stash)" }),
     C("pool", "Guns in pool"), C("top", "Top of pool (share)", "text", after),
-  ], placeRows, { note: "data-guns.js ARSENAL_FINDS: the chance a roll finds one of the 2026-10-10 arsenal's guns, weighted by rarity (FIND_W) among those whose tags fit." });
+  ], placeRows, { note: "data-guns.js ARSENAL_FINDS: the chance a roll finds an extra gun; which: the place's draws in the gun distribution (gundist.js; data-guns.js GUN_CLASS, GUN_SOURCES / PLACE_DRAWS), weighted by rarity (FIND_W)." });
 
   // ---- melee ----
   const meleeRows = [];

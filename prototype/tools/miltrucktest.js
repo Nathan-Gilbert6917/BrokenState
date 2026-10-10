@@ -49,6 +49,7 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { setAutopilot, autopilotResolve } from "../src/sim/autopilot.js";
 import { taskHour } from "../src/sim/orders.js";
 import { roundsInItem, isBulk } from "../src/sim/itemstack.js"; // a truck's rounds boxed or in bulk (2026-10-10)
+import { gunsFrom } from "../src/sim/gundist.js"; // the gun distribution: a truck's gun is one of the Army's (truck:<kind>)
 
 const SEED = Number(process.argv[2] || 7);
 let pass = 0, fail = 0;
@@ -125,8 +126,8 @@ let truckValue = 0;
     avg[`${kind}/${cond}`] = { v: v / N, items: items / N, ammo: ammo / N };
   }
   for (const [k, a] of Object.entries(avg)) console.log(`    ${k.padEnd(16)} value ${Math.round(a.v)}, ${r2(a.items)} items, ${Math.round(a.ammo)} ammo`);
-  const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k)), ...(Object.keys(TRUCK_FLASH).length ? ["flashbang"] : [])]); // TRUCK_GEAR: the weapons overhaul's hook; TRUCK_FLASH: the flashbang hook (TRUCK_LOOT_HOOKS)
-  check([...keys].every((k) => allowed.has(k)), "everything in a truck comes from its loot table (and the roster's and the flashbang hooks)");
+  const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k)), ...(Object.keys(TRUCK_FLASH).length ? ["flashbang"] : []), ...Object.keys(TRUCK_KINDS).flatMap((kind) => Object.keys(gunsFrom(`truck:${kind}`)))]); // TRUCK_GEAR: the weapons overhaul's hook; TRUCK_FLASH: the flashbang hook (TRUCK_LOOT_HOOKS); gundist.js: a listed gun's Army kin (truck:<kind>)
+  check([...keys].every((k) => allowed.has(k)), `everything in a truck comes from its loot table (and the roster's and the flashbang hooks; a gun of the Army's kinds: gundist.js) (stray: ${[...keys].filter((k) => !allowed.has(k)).join(", ") || "none"})`);
   check(["ar", "carbine", "ammo", "plate", "vest", "milhelmet", "nvg", "milradio", "frag", "smokegren", "food", "meds", "assaultpack", "rucksack"].every((k) => keys.has(k)), "military guns, bulk ammo, armour, helmets, night vision, radios, grenades, rations, meds and packs all turn up");
   check(avg["cargo/intact"].v > avg["cargo/wrecked"].v && avg["cargo/wrecked"].v > avg["cargo/burnt"].v * 1.5, "a wrecked truck holds less, a burned-out one much less");
   check(avg["cargo/intact"].ammo >= 50, `an intact cargo truck: ammunition by the crate (${Math.round(avg["cargo/intact"].ammo)} rounds on average)`);

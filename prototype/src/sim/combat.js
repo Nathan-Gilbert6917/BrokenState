@@ -105,6 +105,7 @@ import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, 
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
 import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js"; // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
+import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a kit, a body or a room yields
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -3050,7 +3051,8 @@ export function enemyUnit(b, rng, kind, power, n) {
     };
   }
   const kit = KITS[kind] || KITS.raiders;
-  const weapon = p >= 7 && rng.chance(0.5) ? rng.pick(kit.strong) : rng.pick(kit.weapons);
+  const kitPick = p >= 7 && rng.chance(0.5) ? rng.pick(kit.strong) : rng.pick(kit.weapons);
+  const weapon = swapGun(kitGunSource(KITS[kind] ? kind : "raiders"), kitPick, rng); // gundist.js: a gun of their kind in the power band of their list's (a hash of the draw)
   const armorKey = rng.pick(kit.armor);
   const hp = Math.round(55 + p * 5 + kit.hp);
   // gunmods.js ENEMY_MODS: the attachments on their gun by their kit (dice of their own: the battle's are not used up).
@@ -3063,6 +3065,7 @@ export function enemyUnit(b, rng, kind, power, n) {
     load: enemyLoad(kind, weapon, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id), // ammo.js: their round by kit (KIT_AMMO, own dice); never shown (R10)
     aim: 39 + p * 4 + kit.aim, meleeAim: 65 + p * 2, dmgMult: 0.7 + p * 0.05, armor: armorKey ? 1 - GEAR[armorKey].power * 0.06 : 1, armorKey,
     hp, maxHp: hp, mob: MOVE, sight: SIGHT, ap: 2, aware: true, x: 0, y: 0, f: b.floor || 0, fearless: !!kit.fearless, kit: kind,
+    kitPick, // the gun their kit's list gave (floorfolk.js reads the list's, so its dice stay put)
   };
   MED.enemyMedic(b, rng, u, kind); // medics.js: about one group in five of soldiers, guards, militia, fighters has a medic
   loadMag(u); // loaded; their reserve ammo is endless (only the magazine stops them)
@@ -6024,7 +6027,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       if (rng.chance(MEDS.BODY_HUMAN)) sup.meds = 1; // medfinds.js
       const kit = KITS[box.kit] || KITS.raiders;
       if (rng.chance(0.3)) {
-        const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : rng.pick(kit.loot);
+        const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : swapGun(bodyGunSource(box.kit), rng.pick(kit.loot), rng); // gundist.js: a spare gun of their kind
         const it = lootItem(key, kitSource(box.kit), spend(rng)); // itemcond.js: a soldier's rifle looked after, a raider's not
         if (key === box.weapon && box.uid != null) { carryMods(unitById(b, box.uid), it); enemyGunLoaded(unitById(b, box.uid), it); } // gunmods.js: their gun's attachments come with it; gunload.js: the rounds left in it
         gear.push(it);
@@ -6056,7 +6059,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
       splitParts(state, sup, R.areas[box.area].type, `box${box.id}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
-      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(lootItem(key, src, rng));
+      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(lootItem(swapGun(areaSourceName(R.areas[box.area].type, site), key, rng), src, rng)); // gundist.js: which gun, by the room's draws
       const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav, site); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).

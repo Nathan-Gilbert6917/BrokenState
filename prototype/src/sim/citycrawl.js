@@ -46,6 +46,8 @@ import { noteSearch } from "./relations.js";
 import { factionById } from "./world.js";
 import { changeGoodwill } from "./factions.js";
 import { sortFind } from "./ammo.js"; // rounds by calibre
+import { swapGun, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a room or a sentry yields
+import { crawlGuns } from "./gunfinds.js"; // a gun counter's or an armoury's extra gun (its own dice)
 
 // ---------- tuning ----------
 export const CRAWL = {
@@ -429,7 +431,9 @@ function give(state, p, c, sup = {}, gear = []) {
   return `${got.length ? got.join(", ") : "nothing useful"}${left.length ? ` (no room for ${left.join(", ")})` : ""}`;
 }
 // One container's worth from an area's loot table (as combat.js searchBox rolls it, without locks and books).
-function rollArea(rng, type, rich, scav) {
+// site: the building or place it is in (a police station's armoury holds police guns, an Army checkpoint's the Army's:
+// gundist.js areaSourceName).
+export function rollArea(rng, type, rich, scav, site = "city") {
   const def = AREAS[type];
   const sup = {}, gear = [];
   if (!def) return { sup, gear };
@@ -437,7 +441,8 @@ function rollArea(rng, type, rich, scav) {
     if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
     sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25)));
   }
-  for (const [key, p] of def.gear) if (GEAR[key] && rng.chance(p * (0.5 + rich) * (1 + scav / 30))) gear.push(lootItem(key, areaSource(type, "city"), rng)); // itemcond.js
+  for (const [key, p] of def.gear) if (GEAR[key] && rng.chance(p * (0.5 + rich) * (1 + scav / 30))) gear.push(lootItem(swapGun(areaSourceName(type, site), key, rng), areaSource(type, "city"), rng)); // itemcond.js; gundist.js: which gun (a hash of the draw)
+  gear.push(...crawlGuns(type, site, rng)); // gunfinds.js: a gun counter's, an armoury's extra gun now and then (its own dice)
   const small = rollAreaFind(rng, type, rich, scav, "city");
   if (small) gear.push(small);
   return { sup, gear };
@@ -672,7 +677,7 @@ export function quickSearch(state, p, place) {
   const holds = buildingHint(place.key).holds.filter((x) => AREAS[x]);
   const sup = {}, gear = [];
   const rolls = Math.max(1, Math.round(Q.rolls * (1 - 0.6 * (place.looted || 0))));
-  for (let i = 0; i < rolls && holds.length; i++) { const r = rollArea(rng, rng.pick(holds), rich, scav); addSup(sup, r.sup); gear.push(...r.gear); }
+  for (let i = 0; i < rolls && holds.length; i++) { const r = rollArea(rng, rng.pick(holds), rich, scav, place.key); addSup(sup, r.sup); gear.push(...r.gear); }
   const text = give(state, p, c, sup, gear);
   place.quick = true;
   place.looted = 1 - (1 - (place.looted || 0)) * (1 - Q.looted);
@@ -1155,7 +1160,7 @@ export function resolveEvent(state, p, eventId, choice, opts = {}) {
       gainXpAll(state, members, "stealth", USE.sneakSearch);
       if (choice === "sneak") return done("You slip past below his line of sight.", "good");
       for (const pl of blk.places) pl.raiders = false;
-      const gear = [lootItem(rng.pick(["huntrifle", "pistol", "shotgun"]), "raider", spend(rng))];
+      const gear = [lootItem(swapGun("city:sentry", rng.pick(["huntrifle", "pistol", "shotgun"]), rng), "raider", spend(rng))]; // gundist.js: which gun
       return done(`You take him down without a sound: ${give(state, p, c, sortFind({ ammo: rng.int(8, 20) }, "raider", "crawlguard", c.tile, state.hour), gear)}. The raiders on this block are blind now: nobody holed up in its places.`, "good");
     }
     case "truck": {
@@ -1220,7 +1225,7 @@ function eventGrab(state, p, c, ev, mil, done, fightNow) {
     say2(c, `Something strapped in the back gets its teeth into ${v.name.split(" ")[0]}.`, "danger", state.hour);
   }
   const sup = {}, gear = [];
-  for (let i = 0; i < 2; i++) { const r = rollArea(rng, mil ? (i ? "barracks" : "armory") : "medwreck", rich, scav); addSup(sup, r.sup); gear.push(...r.gear); }
+  for (let i = 0; i < 2; i++) { const r = rollArea(rng, mil ? (i ? "barracks" : "armory") : "medwreck", rich, scav, mil ? "military" : "city"); addSup(sup, r.sup); gear.push(...r.gear); }
   if (mil) addSup(sup, { ammo: rng.int(8, 25) });
   sortFind(sup, mil ? "military" : "home", "crawlwreck", c.tile, state.hour); // ammo.js: rounds by calibre
   return done(`You grab ${give(state, p, c, sup, gear)}.`, "good");

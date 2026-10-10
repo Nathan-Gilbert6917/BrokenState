@@ -45,6 +45,7 @@ import { isRoundKey, totalRounds, ROUND_KEYS, roundOf, spendAmmo, baseKey } from
 import { kindShare, kindTheme, kindMix, expandAmmo, partyCals, baseCals, wantedKey, dealRounds, holderCals } from "./ammo.js";
 import { radioTradeContext, radioTradeProblem, bookRadioTrade, matchGear, sameGear } from "./radiotrade.js"; // the trade window over the radio
 import { intoArsenalFromShelf, shelfSurplus } from "./arsenal.js"; // group arsenals: the guns you sell them they use; their surplus is for sale
+import { swapGun } from "./gundist.js"; // the gun distribution: which gun a group's shelf holds
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -398,8 +399,9 @@ export function ensureWares(state, f, refresh = false) {
   const keep = (f.wares || []).slice(-Math.max(0, WARES_MAX - n));
   const src = traderSource(f.type);
   for (let i = 0; i < n; i++) {
-    const key = rng.pick(pool);
-    spend(rng, GEAR[key] && GEAR[key].dur ? 2 : 1); // the old quality and wear draws, still taken (the world's dice stay put)
+    const listed = rng.pick(pool);
+    const key = swapGun(`trader:${f.type}`, listed, rng); // gundist.js: which gun, by what the group stocks (a hash of the draw)
+    spend(rng, GEAR[listed] && GEAR[listed].dur ? 2 : 1); // the old quality and wear draws, still taken (the world's dice stay put)
     keep.push(lootItem(key, src, rng));
   }
   const ex = WARE_EXTRAS[f.type];

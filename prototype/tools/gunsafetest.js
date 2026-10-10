@@ -20,7 +20,9 @@ import { ITEM_TAGS, AREA_TAGS, SITE_TAGS, fitsTags } from "../src/sim/loot.js";
 import { packTripKit } from "../src/sim/kit.js";
 import * as L from "../src/sim/locks.js";
 import * as G from "../src/sim/gunsafes.js";
-import { ARSENAL_GEAR, ARSENAL_FINDS } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10: one of its guns now and then (gunfinds.js stashGun, counted apart)
+import { ARSENAL_FINDS } from "../src/sim/data-guns.js"; // an extra gun now and then (gunfinds.js stashGun, counted apart)
+import { stashGun } from "../src/sim/gunfinds.js";
+import { gunClass, sourceDef } from "../src/sim/gundist.js"; // the gun distribution: which gun a safe's list gives (stash:<table>)
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -378,7 +380,6 @@ console.log("Contents by tier (rollGunStash)");
     for (let i = 0; i < N; i++) {
       const out = G.rollGunStash((...k) => hash01(seed, "gstest", tier, site, i, ...k), tier, site);
       for (const it of out.gear) {
-        if (ARSENAL_GEAR[it.key]) { ars++; continue; } // the arsenal's extra (its own rolls)
         if (roundsInItem(it)) { ammo += roundsInItem(it); continue; } // itemstack.js: a safe's rounds in their boxes count as its ammo
         if (GEAR[it.key].slot === "weapon" && standardMag(it.key) && !usesInternal(it.key, it)) magGuns++;
         if (GEAR[it.key].slot === "weapon") { guns++; keys[it.key] = (keys[it.key] || 0) + 1; minQ = Math.min(minQ, it.quality); maxQ = Math.max(maxQ, it.quality); } else if (it.key === "flashbang" || it.key === "smokegren") gren++; // the flashbang branch's extra (gunsafes.js STASH_GRENADES)
@@ -389,16 +390,29 @@ console.log("Contents by tier (rollGunStash)");
     }
     return { guns: guns / N, ammo: ammo / N, items: items / N, minQ, maxQ, keys, gren: gren / N, mags: mags / N, magGuns: magGuns / N, ars: ars / N };
   };
+  // The tables themselves: the extra gun (gunfinds.js stashGun) off meanwhile, counted on its own below.
+  const extraP = { ...ARSENAL_FINDS.stash };
+  for (const k of Object.keys(ARSENAL_FINDS.stash)) ARSENAL_FINDS.stash[k] = 0;
   const ch = stats("cheap", "farm"), md = stats("mid", "gunstore"), hp = stats("high", "police"), hm = stats("high", "military"), pc = stats("pistolcase", "town"), rc = stats("riflecase", "town"), rcm = stats("riflecase", "military");
+  Object.assign(ARSENAL_FINDS.stash, extraP);
+  for (const [s, table, site] of [[ch, "cheap", "farm"], [md, "mid", "gunstore"], [hm, "highMil", "military"], [pc, "pistolcase", "town"]]) {
+    let n = 0;
+    for (let i = 0; i < N; i++) { const out = { gear: [] }; stashGun({ roll: (...k) => hash01(seed, "gsx", table, i, ...k), tier: table, table, siteType: site, source: "gunsafe" }, out); n += out.gear.length; }
+    s.ars = n / N;
+  }
+  // gundist.js: a table's gun is one of its kind the safe draws (stash:<table>: a farmer's hunting guns, a police
+  // armoury's service guns, the Army's rifles), the table's own list when nothing of the kind fits.
+  const drawsOf = (t) => (sourceDef(`stash:${t}`) || {}).draws || {};
+  const fits = (s, t, list) => Object.keys(s.keys).every((k) => list.includes(k) || gunClass(k).uses.some((u) => drawsOf(t)[u] > 0));
   console.log(`  cheap ${ch.guns.toFixed(2)} guns ${ch.ammo.toFixed(0)} ammo · mid ${md.guns.toFixed(2)} / ${md.ammo.toFixed(0)} · high (police) ${hp.guns.toFixed(2)} / ${hp.ammo.toFixed(0)} · high (military) ${hm.guns.toFixed(2)} / ${hm.ammo.toFixed(0)}`);
-  check(near(ch.guns, 1.35, 0.05) && ch.minQ >= 0.6 && ch.maxQ <= 0.9 && near(ch.ammo, 20, 1.5) && Object.keys(ch.keys).every((k) => ["huntrifle", "shotgun", "leverrifle", "revolver"].includes(k)), `cheap: 1 gun, 35% a second (${ch.guns.toFixed(2)}), condition 0.6–0.9, ammo 10–30, hunting guns only`);
+  check(near(ch.guns, 1.35, 0.05) && ch.minQ >= 0.6 && ch.maxQ <= 0.9 && near(ch.ammo, 20, 1.5) && fits(ch, "cheap", ["huntrifle", "shotgun", "leverrifle", "revolver"]), `cheap: 1 gun, 35% a second (${ch.guns.toFixed(2)}), condition 0.6–0.9, ammo 10–30, hunting and household guns only (${Object.keys(ch.keys).join(", ")})`);
   check(near(md.guns, 3.08, 0.1) && md.minQ >= 0.75 && md.maxQ <= 1 && near(md.ammo, 55, 3) && near(md.items, 0.5, 0.05), `mid: 2–4 guns + the rare 8% (${md.guns.toFixed(2)}), condition 0.75–1, ammo 30–80 (${md.ammo.toFixed(0)}), valuables 50% (${md.items.toFixed(2)})`);
-  check(near(hp.guns, 3.5, 0.1) && near(hp.ammo, 140, 6) && Object.keys(hp.keys).every((k) => ["pistol", "carbine", "shotgun"].includes(k)) && near(hp.items, 0.2, 0.04), `high (police, prison): 2–5 service guns (${hp.guns.toFixed(2)}), ammo 80–200, a riot helmet 20% (${hp.items.toFixed(2)})`);
+  check(near(hp.guns, 3.5, 0.1) && near(hp.ammo, 140, 6) && fits(hp, "high", ["pistol", "carbine", "shotgun"]) && near(hp.items, 0.2, 0.04), `high (police, prison): 2–5 service guns (${hp.guns.toFixed(2)}), ammo 80–200, a riot helmet 20% (${hp.items.toFixed(2)})`);
   check(md.magGuns > 0.3 && Math.abs(md.mags / md.magGuns - 0.85) < 0.08, `the guns that take magazines come with spare ones (${md.mags.toFixed(2)} a safe for ${md.magGuns.toFixed(2)} such guns; carrykit.js GUN_MAGS: 0.85 a gun)`);
-  check(near(hm.guns, 3, 0.1) && near(hm.ammo, 175, 7) && Object.keys(hm.keys).every((k) => ["ar", "carbine"].includes(k)) && near(hm.items, 0.2, 0.04), `high (military): 2–4 rifles (${hm.guns.toFixed(2)}), ammo 100–250, a frag 20% (${hm.items.toFixed(2)})`);
+  check(near(hm.guns, 3, 0.1) && near(hm.ammo, 175, 7) && fits(hm, "highMil", ["ar", "carbine"]) && Object.keys(hm.keys).every((k) => ["rifle", "automatic"].includes(GEAR[k].cat)) && near(hm.items, 0.2, 0.04), `high (military): 2–4 rifles (${hm.guns.toFixed(2)}), ammo 100–250, a frag 20% (${hm.items.toFixed(2)})`);
   check(near(hp.gren, 1, 0.08) && near(hm.gren, 1, 0.08) && !ch.gren && !md.gren && !pc.gren, `an armoury safe (high) keeps 0–2 flashbangs or smoke grenades (police ${hp.gren.toFixed(2)}, military ${hm.gren.toFixed(2)}); nothing in the others`);
-  check(pc.guns === 1 && Object.keys(pc.keys).every((k) => ["pistol", "revolver"].includes(k)) && near(pc.ammo, 10.5, 0.6), "a pistol case: one handgun, 6–15 rounds");
-  check(rc.guns === 1 && !rc.keys.carbine && rcm.keys.carbine > 0 && near(rc.ammo, 12.5, 0.8), "a rifle case: one long gun, 5–20 rounds; a police carbine only at police or military sites");
+  check(pc.guns === 1 && Object.keys(pc.keys).every((k) => GEAR[k].cat === "pistol") && near(pc.ammo, 10.5, 0.6), `a pistol case: one handgun, 6–15 rounds (${Object.keys(pc.keys).join(", ")})`);
+  check(rc.guns === 1 && Object.keys(rc.keys).every((k) => ["rifle", "shotgun"].includes(GEAR[k].cat)) && !rc.keys.carbine && rcm.keys.carbine > 0 && near(rc.ammo, 12.5, 0.8), "a rifle case: one long gun, 5–20 rounds; a police carbine only at police or military sites");
   check(near(ch.ars, ARSENAL_FINDS.stash.cheap, 0.03) && near(md.ars, ARSENAL_FINDS.stash.mid, 0.03) && near(hm.ars, ARSENAL_FINDS.stash.highMil, 0.03) && near(pc.ars, ARSENAL_FINDS.stash.pistolcase, 0.03), `one of the newer guns besides (gunfinds.js: cheap ${ch.ars.toFixed(2)}, mid ${md.ars.toFixed(2)}, military ${hm.ars.toFixed(2)}, pistol case ${pc.ars.toFixed(2)})`);
   // A registered extra (a later stage: magazines, attachments) is applied.
   const off = G.registerStashExtra((ctx, out) => { if (ctx.tier === "mid") { out.gear.push(newItem("suppressor", 1)); out.sup.extra = 1; } });

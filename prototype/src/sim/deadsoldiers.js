@@ -23,6 +23,7 @@ import { truckDeadShare } from "./miltrucks.js";
 import { ammoPen, CALIBERS } from "./data-ammo.js";
 import { roundOf, AR } from "./armour.js";
 import { WEAPONS } from "./combat.js";
+import { swapGun } from "./gundist.js"; // the gun distribution: the armoured dead's rifle
 
 export const MILDEAD = {
   // × damage by weapon key (combat.js WEAPONS); other: anything not listed of that kind (shot / melee).
@@ -225,7 +226,7 @@ export function bodyLoot(rng, kind, newItem, plateDur = null) {
   const q = ([lo, hi]) => Math.round((lo + rng.next() * (hi - lo)) * 100) / 100;
   const worn = (it) => { if (plateDur != null && it.dur != null) it.dur = Math.max(1, Math.round(it.dur * Math.max(0, Math.min(1, plateDur)))); if (plateDur != null && it.inserts) for (const p of Object.values(it.inserts)) if (p && p.dur != null) p.dur = Math.max(1, Math.round(p.dur * Math.max(0, Math.min(1, plateDur)))); return it; }; // a carrier's plates as worn (section 16)
   for (const [k, p, range] of B.armor) if (rng.chance(p)) { gear.push(worn(newItem(k, q(range), rng))); break; }
-  for (const [k, p, range] of B.items) if (rng.chance(p)) gear.push(newItem(k, q(range), rng));
+  for (const [k, p, range] of B.items) if (rng.chance(p)) { const g = swapGun("body:deadsoldier", k, rng); gear.push(newItem(g, q(range), rng)); } // gundist.js: which rifle (a hash of the draw)
   for (const [k, p, lo, hi] of B.sup) if (rng.chance(p)) sup[k] = (sup[k] || 0) + rng.int(lo, hi);
   bodyExtras(rng && Number.isFinite(rng.state) ? rng.state : 0, kind, newItem, gear);
   return { sup, gear };

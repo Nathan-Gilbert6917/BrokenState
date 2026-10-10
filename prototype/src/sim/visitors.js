@@ -122,6 +122,7 @@ import { expandAmmo, baseCals } from "./ammo.js"; // rounds by calibre
 import { merchantReload } from "./reloading.js"; // an arms dealer's powder and primers
 import { merchantEscort, escortFighters, escortValue, escortWords, escortShort, ESCORT_VEHICLES } from "./escorts.js";
 import { escortEnemy, lootCaravan, witnessesOf, consequences } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
+import { swapGun } from "./gundist.js"; // the gun distribution: which gun a merchant carries
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -358,7 +359,7 @@ function merchantGoods(state, v, rng) {
   for (const k of old) spend(rng, GEAR[k].dur ? 2 : 1);
   // escorts.js reads what they carry for the escort: an arms dealer's wagons hold more of their trade (S.extra, its own dice).
   const extra = S.extra ? local.int(S.extra[0], S.extra[1]) : 0;
-  local.shuffle(S.gear.filter((k) => GEAR[k])).slice(0, old.length + extra).forEach((k, i) => v.wares.push(lootItem(k, "merchant", roll(i))));
+  local.shuffle(S.gear.filter((k) => GEAR[k])).slice(0, old.length + extra).forEach((k, i) => v.wares.push(lootItem(swapGun("trader:merchants", k, [...roll(i), "gun"]), "merchant", roll(i)))); // gundist.js: which gun
   // loot.js: a sight or a suppressor (its own dice; by the serial, never the id: ids are process-wide). Only the arms
   // dealers and the general traders carry them.
   if (v.spec === "arms" || v.spec === "general") v.wares.push(...gunmodWares(state, "merchants", `${v.name}:${v.serial}`, state.hour));

@@ -37,6 +37,7 @@ import { thirdSideHit } from "./thirdside.js";
 import { offerRecruits } from "./recruits.js";
 import { talker } from "./conflicts.js";
 import { sortFind } from "./ammo.js"; // rounds by calibre
+import { swapGun } from "./gundist.js"; // the gun distribution: which gun a raider holds or stashes
 
 export const FOLK = {
   SURVIVORS: {
@@ -241,7 +242,8 @@ function holeUpRaiders(state, b, n, up) {
   if (!raiders.length) return null;
   if (n >= K.strongFrom) {
     const p = Math.min(K.strongMax, K.strongPer * (n - K.strongFrom + 1));
-    for (const u of raiders) if (!KITS.raiders.strong.includes(u.weapon) && rng.chance(p)) { u.weapon = rng.pick(KITS.raiders.strong); u.weaponName = WEAPONS[u.weapon].name; }
+    // (the list's pick, kitPick, decides who is upgraded: the gun they hold may be another of its band, gundist.js)
+    for (const u of raiders) if (!KITS.raiders.strong.includes(u.kitPick || u.weapon) && rng.chance(p)) { u.kitPick = rng.pick(KITS.raiders.strong); u.weapon = swapGun("kit:raiders", u.kitPick, rng); u.weaponName = WEAPONS[u.weapon].name; }
   }
   if (n >= K.armorFrom) {
     const p = Math.min(K.armorMax, K.armorPer * (n - K.armorFrom + 1));
@@ -315,7 +317,7 @@ function makeStash(state, b, room, n) {
   sortFind(sup, "raider", "stash", room.id, f, spot[0], spot[1]); // ammo.js: the raiders' rounds, by calibre
   const gear = [];
   const g = rng.int(K.gear[0], K.gear[1]) + Math.floor(n / K.perBlocks);
-  for (let i = 0; i < g; i++) gear.push(lootItem(rng.pick(kit.loot), "raider", spend(rng))); // itemcond.js: raiders' kit
+  for (let i = 0; i < g; i++) gear.push(lootItem(swapGun("body:raiders", rng.pick(kit.loot), rng), "raider", spend(rng))); // itemcond.js: raiders' kit; gundist.js: which gun
   if (rng.chance(K.finds)) gear.push(lootItem(rng.pick(kit.finds), "raider", rng));
   const id = Math.max(0, ...R.containers.map((x) => x.id || 0)) + 1;
   const box = { id, x: spot[0], y: spot[1], f, area: room.id, kind: "crate", searched: false, label: `${room.name}: raiders' stash`, stash: true, contents: { sup, gear } };
