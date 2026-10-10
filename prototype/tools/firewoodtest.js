@@ -178,7 +178,7 @@ section("A stack like any supply: the raid window, the cargo, the stores, the lo
   check(/In the stores \(/.test(baseHtml) && /🪵<\/span><span class="iname">300 Firewood<\/span><span class="ikg">30<\/span>/.test(baseHtml), "the armory screen lists the base's firewood (300, 30 kg)");
   const { topbarParts } = await import("../src/ui/ui.js");
   const top = topbarParts(st, { speed: 1 }).stock;
-  check(/Firewood<\/b>300/.test(top) && /Weight 0\.1 each/.test(top), "the top bar counts it (Firewood 300, 0.1 kg each)");
+  check(/Firewood<\/span><span class="nb-amt">300</.test(top) && /Weight 0\.1 each/.test(top), "the top bar counts it (Firewood 300, 0.1 kg each)");
   // The loot: a cabin's woodpile is a stack of 60–180 (6–18 kg).
   const fake = { seed: SEED, hour: 0, tiles: [{ loc: { type: "cabin" }, loot: 1 }] };
   const finds = [];
