@@ -1370,3 +1370,10 @@ button.ppl-idle.on { background: #45380f; color: #ffd166; }
 .idle-why { overflow: hidden; text-overflow: ellipsis; }
 .wn-spark { display: inline-block; vertical-align: middle; margin-right: 0.35rem; color: var(--good); }
 .wn-spark svg { display: block; }
+.idle-bases { border-color: color-mix(in srgb, #ffd166 45%, transparent); }
+.idle-bases .idle-fold { margin-top: 0.25rem; }
+.idle-sum { display: inline-flex; align-items: center; gap: 0.35rem; min-width: 0; }
+.idle-foot { justify-content: flex-end; margin-top: 0.25rem; }
+.idle-bases .idle-row { flex-wrap: wrap; }
+.idle-bases .idle-who { flex: 1 1 100%; flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 0.4rem; }
+.idle-bases .idle-row > select { margin-left: auto; max-width: 100%; }

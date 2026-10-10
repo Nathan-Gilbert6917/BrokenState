@@ -43,7 +43,9 @@ import { autopilotHour } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
 import { workHour, workDayRoles } from "./work.js";
-import { stallDaily } from "./activity.js"; // the day each job at a base was first found unable to work (the stalled-job alert)
+import { stallDaily } from "./activity.js";
+import { leaderIdleHour } from "./idlework.js";
+import { isMealHour } from "./meals.js"; // the leader and the governor move people off stalled jobs once a day // the day each job at a base was first found unable to work (the stalled-job alert)
 import { watchHour, watchDayRoles } from "./watch.js";
 import { tiredHour } from "./sleep.js";
 import { crewHour } from "./crews.js";
@@ -884,10 +886,11 @@ export function tickHour(state) {
   caravanRaidsHour(state); // caravanraids.js: caravans met on the road, chased, robbed (by you or by the groups)
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
-  constructionHour(state);
-  repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
+  const meal = isMealHour(state.hour); // meals.js: breakfast and dinner, the builders, crafters and the bench stop for them
+  if (!meal) constructionHour(state);
+  if (!meal) repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
   rezeroHour(state); // repair.js: budget sights re-zeroed at a workbench every morning (gunmods.js driftOf)
-  craftingHour(state);
+  if (!meal) craftingHour(state);
   garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating)
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);
@@ -946,6 +949,7 @@ export function tickHour(state) {
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
+  leaderIdleHour(state); // idlework.js: at 07:00, people on a job stalled since a day moved to what the base needs
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)

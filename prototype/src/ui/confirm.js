@@ -19,6 +19,7 @@ export const ASK_KINDS = {
   stripv: "stripping a vehicle for parts", salvage: "taking gear apart for parts",
   replaceorders: "replacing a team's orders from the map's right-click menu",
   strikecamp: "striking a camp",
+  assignidle: "putting the idle to work (Assign all idle)",
 };
 
 let OPT = null, SAVE = null; // the options and their save (main.js initConfirm); without them (headless tools) every kind asks
