@@ -85,6 +85,7 @@ import { LEDGER_ACTIONS, ledgerKey, drawCharts, sparkNode } from "./ui/ledger.js
 import { WATCHLIST_ACTIONS, renderWatchlist, syncWatchlist, ctxWatchlist } from "./ui/watchlist.js"; // the Watching panel (📌) and map notes
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
+import { installSelectSearch, searchOpenIn } from "./ui/selectsearch.js"; // long drop-downs you can type in to filter
 import { CAR_ACTIONS } from "./ui/carpanel.js"; // cars found on a battle map (sim/foundcars.js)
 import { CRAWL_ACTIONS } from "./ui/citycrawl.js";
 import { HIVE_CRAWL_ACTIONS } from "./ui/hivecrawl.js";
@@ -313,6 +314,7 @@ function panelOf(target) {
   return null;
 }
 function selectOpenIn(el) {
+  if (searchOpenIn(el)) return true; // a long drop-down's filter box (ui/selectsearch.js) is open over it
   const a = document.activeElement;
   return !!a && a.tagName === "SELECT" && el.contains(a) && performance.now() - selectFocusAt < 20000;
 }
@@ -2105,6 +2107,7 @@ window.addEventListener("keyup", (e) => {
 });
 
 initPalette({ getState: () => state, ui, actions, options, refresh: () => refresh() }); // the search box (ui/cmdpalette.js)
+installSelectSearch(); // long drop-downs open a box you can type in to filter (ui/selectsearch.js)
 
 // Expose for debugging in the console.
 window.game = {
