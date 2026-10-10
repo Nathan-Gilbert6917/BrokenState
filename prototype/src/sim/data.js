@@ -555,6 +555,11 @@ export const TRAITS = {
   feeble:       { name: "Feeble",        bad: true, desc: "Max load 4 kg lower, and -5% to hit in melee" },
   squeamish:    { name: "Squeamish",     bad: true, desc: "-2 Medicine, and a death in the group hits their mood 3 points harder (wherever they are)" },
   pessimist:    { name: "Pessimist",     bad: true, desc: "Always expects the worst: mood -0.5 a day" },
+  // 2026-10-09 (user request: "Tactical as a trait? / Strategic as a trait? / Diplomatic as a trait"): the battle, the
+  // State Map and the other groups. Rolled at birth with dice of their own after the others (LATE_TRAITS, traits.js).
+  tactical:     { name: "Tactical",      desc: "+10% to hit a flanked target, -5% to be hit while in cover, +3% to hit for allies within 2 tiles; +0.5 fighting strength by the numbers" },
+  strategic:    { name: "Strategic",     desc: "Their team meets 10% less trouble on the road, and while they are at a base your estimates of other groups are 15% sharper" },
+  diplomatic:   { name: "Diplomatic",    desc: "Goodwill with groups rises 10% faster and falls 10% slower; their team's bribes and tolls cost 10% less; radio deals from their base: delivery fees go 10% lower" },
 };
 // The traits drawn with the world's dice at birth (world.js rollTraits), in this order: the ten there were before
 // 2026-10-08. The draw over them is exactly the old draw, so a seed keeps every roll it made; the newer traits come in
@@ -562,10 +567,17 @@ export const TRAITS = {
 export const BIRTH_TRAITS = ["brave", "coward", "nightowl", "medic", "greedy", "tough", "keeneye", "loud", "lucky", "badback"];
 // The traits that come in with their own dice: every enumerable trait not in BIRTH_TRAITS.
 export const NEW_TRAITS = Object.keys(TRAITS).filter((t) => !BIRTH_TRAITS.includes(t));
+// The traits added 2026-10-09 (Tactical, Strategic, Diplomatic): they come in after the swap below with dice of their
+// own (traits.js lateTraits), so the swap's pool stays what it was and a seed's people keep the traits they had,
+// but for the few a later trait now takes the place of one. Never add to this list: a later wave gets its own.
+export const LATE_TRAITS = ["tactical", "strategic", "diplomatic"];
+// The swap's pool (traits.js swapNewTraits): the 21 newer traits of 2026-10-08, in their order. Never add to it.
+export const SWAP_TRAITS = NEW_TRAITS.filter((t) => !LATE_TRAITS.includes(t));
 // Traits nobody has together (opposites). The one table: the birth roll, a child's traits, the new-run screen's
 // picker, custom backgrounds, the backgrounds of a start.
 export const TRAIT_CLASH = [["brave", "coward"], ["lucky", "unlucky"], ["tough", "frail"], ["strongback", "badback"], ["quickheal", "sickly"], ["ironwill", "hothead"],
-  ["fleet", "slow"], ["quicklearner", "slowlearner"], ["ironstomach", "weakstomach"], ["keeneye", "nearsighted"], ["strongback", "feeble"], ["medic", "squeamish"], ["ironwill", "pessimist"]];
+  ["fleet", "slow"], ["quicklearner", "slowlearner"], ["ironstomach", "weakstomach"], ["keeneye", "nearsighted"], ["strongback", "feeble"], ["medic", "squeamish"], ["ironwill", "pessimist"],
+  ["diplomatic", "hothead"]]; // 2026-10-09: a Hothead talks no one round
 // Do traits a and b clash?
 /** @param {string} a @param {string} b @returns {boolean} */
 export const traitsClash = (a, b) => TRAIT_CLASH.some(([x, y]) => (x === a && y === b) || (x === b && y === a));

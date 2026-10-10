@@ -21,7 +21,7 @@ import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { zombieToughness } from "./hives.js";
 import { stripAll, itemLoad, lootItem, armouredItem } from "./inventory.js";
 import { kitSource, spend } from "./itemcond.js";
-import { hasTrait, teamTraitFx } from "./traits.js"; // Fleet-Footed, Slow: a team on foot that runs from trouble; Night Owl
+import { hasTrait, teamTraitFx, encounterMult, bribeMult } from "./traits.js"; // Fleet-Footed, Slow: a team on foot that runs from trouble; Night Owl; Strategic: fewer encounters; Diplomatic: cheaper bribes
 import {
   log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
   armedFactor, usesArrows,
@@ -376,6 +376,7 @@ export function conflictChance(state, p, tileId) {
   let chance = 0.1 * humans + 0.06 * z + traffic * 0.08;
   if (isNight(state)) chance *= 1.25;
   chance *= { stealthy: 0.75, normal: 1, rushed: 1.2 }[p.stance] || 1;
+  chance *= encounterMult(partyMembers(state, p)); // Strategic (traits.js): the team's best tier picks its routes and hours
   return { chance: Math.min(0.35, chance), sources };
 }
 
@@ -809,7 +810,7 @@ function bribeChance(f) {
 }
 
 function bribeChoice(state, p, c, f) {
-  const value = Math.round(bribeValue(c, f) * (anyPerk(partyMembers(state, p), "negotiator") ? 0.75 : 1)); // Negotiator (skills.js)
+  const value = Math.round(bribeValue(c, f) * (anyPerk(partyMembers(state, p), "negotiator") ? 0.75 : 1) * bribeMult(partyMembers(state, p))); // Negotiator (skills.js); Diplomatic, the team's best (traits.js)
   const plan = payPlan(p, value);
   const chance = bribeChance(f);
   const toll = c.type === "roadblock";

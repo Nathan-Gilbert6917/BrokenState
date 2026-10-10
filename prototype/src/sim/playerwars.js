@@ -260,7 +260,7 @@ function newWar(state, f, by, goal, cb, target = null, richTile = null) {
   d.pwars.push(w);
   return w;
 }
-const toHostile = (state, f, to, why) => { if (f.goodwill > to) changeGoodwill(state, f, to - f.goodwill, why); if (f.pact) f.pact = null; };
+const toHostile = (state, f, to, why) => { if (f.goodwill > to) changeGoodwill(state, f, to - f.goodwill, why, true); if (f.pact) f.pact = null; };
 // Its bloc members who share the war come in with it.
 function callAllies(state, w, f) {
   const out = [];
@@ -612,7 +612,7 @@ export function endPwar(state, w, how, text, terms = []) {
   for (const x of belligerents(state, w)) {
     d.pwarPeace[x.id] = today;
     if (cf) d.ceasefire[x.id] = today + cf.days;
-    if (x.goodwill < PW.PEACE_GW) changeGoodwill(state, x, PW.PEACE_GW - x.goodwill, "the peace");
+    if (x.goodwill < PW.PEACE_GW) changeGoodwill(state, x, PW.PEACE_GW - x.goodwill, "the peace", true);
     if (isAggressiveType(x)) x.boughtGw = Math.max(x.boughtGw || 0, x.goodwill - PW.HOSTILE_GW); // drifts back toward hostility (factions.js), held off by the ceasefire
     if (x.griev) for (const k of Object.keys(x.griev)) x.griev[k] *= 1 - PW.SETTLE;
   }

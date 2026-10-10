@@ -195,7 +195,7 @@ export function caravanLeave(state, p, why) {
 
 // ---------- attacking a caravan ----------
 export function turnHostile(state, f, why) {
-  changeGoodwill(state, f, -(f.goodwill + 70), why);
+  changeGoodwill(state, f, -(f.goodwill + 70), why, true);
   f.grudgeUntil = day(state) + 60;
   f.raidCooldown = Math.min(f.raidCooldown ?? 99, 2);
   f.lastDiplomacy = day(state);

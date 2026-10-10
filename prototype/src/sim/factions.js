@@ -46,6 +46,7 @@ import {
 import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
 import { baseWalls, count } from "./buildings.js";
 import { radioBasesInRange, removeBase, localId } from "./world.js";
+import { goodwillMult } from "./traits.js"; // Diplomatic: goodwill gains and losses
 import { playerTile } from "./hardcore-start.js";
 import { defendInPerson, raidForce } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
@@ -195,7 +196,10 @@ export function attitude(f) {
   return "Allied";
 }
 
-export function changeGoodwill(state, f, amount, reason) {
+// Diplomatic (traits.js goodwillMult): your best Diplomatic among the free makes gains bigger and losses smaller. exact:
+// the change sets goodwill to a value (the peace's floor, a war's hostility, the tribute fading as it was bought), left as it is.
+export function changeGoodwill(state, f, amount, reason, exact = false) {
+  if (!exact && amount) amount *= goodwillMult(state, amount);
   const before = attitude(f);
   f.goodwill = Math.max(-100, Math.min(100, f.goodwill + amount));
   if (amount < 0 && reason && reason !== "the tribute is spent") f.lastProvoked = day(state); // a peaceful group cools off 30 days after the last offence
@@ -399,7 +403,7 @@ export function factionsDaily(state) {
     if (f.boughtGw > 0) {
       const x = Math.min(RAIDS.TRIBUTE_FADE, f.boughtGw);
       f.boughtGw -= x;
-      changeGoodwill(state, f, -x, "the tribute is spent");
+      changeGoodwill(state, f, -x, "the tribute is spent", true);
     }
     if (f.grudge > 0) f.grudge = Math.max(0, f.grudge * (1 - RAIDS.GRUDGE_FADE) - 0.001);
 

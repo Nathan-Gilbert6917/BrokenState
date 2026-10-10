@@ -31,6 +31,7 @@ import { arsenalKnown, arsenalText } from "./arsenal.js";
 import { raidForce } from "./conflicts.js";
 import { guardPower } from "./caravans.js";
 import { ledger, baseLook } from "./intelnotes.js";
+import { intelMult } from "./traits.js"; // Strategic: sharper estimates while one of yours is at a base
 
 export const INTEL = {
   STALE: 0.03, MAX_ERR: 1.2, ALLY_ERR: 0.1, CAPTIVE_ERR: 0.15, WALL_SPAN: 4,
@@ -50,8 +51,8 @@ const ARMS_WORDS = ["Poorly armed", "Lightly armed", "Armed", "Well armed", "Hea
 
 const hoursAgo = (state, h) => Math.max(0, state.hour - h);
 const ageDays = (state, h) => hoursAgo(state, h) / 24;
-// The error of a look by now.
-export const staleErr = (state, err, hour) => Math.min(INTEL.MAX_ERR, err + INTEL.STALE * ageDays(state, hour));
+// The error of a look by now (× a Strategic planner at one of your bases: traits.js intelMult, 1 without).
+export const staleErr = (state, err, hour) => Math.min(INTEL.MAX_ERR, (err + INTEL.STALE * ageDays(state, hour)) * intelMult(state));
 // A count as a range around what was seen: the middle moved by up to half the error (the world's dice), the range
 // ± the error around it, so what was there lies inside it and is never shown on its own.
 export function rangeOf(state, v, err, salt, min = 0) {
@@ -215,7 +216,7 @@ export function partyIntel(state, p, live = state.live) {
   const f = typeof p.owner === "number" ? factionById(state, p.owner) : null;
   const known = !!(f && f.known);
   const night = isNight(state);
-  const err = night ? INTEL.PARTY_NIGHT : INTEL.PARTY_ERR;
+  const err = (night ? INTEL.PARTY_NIGHT : INTEL.PARTY_ERR) * intelMult(state); // Strategic (traits.js)
   const n = headCount(state, p, f);
   const next = p.path && p.idx < p.path.length - 1 ? p.path[p.idx + 1] : null;
   const moving = next != null && next !== tile && p.phase !== "siege";

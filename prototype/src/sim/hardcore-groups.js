@@ -1170,7 +1170,7 @@ export function turnRaider(state, f) {
   for (const o of state.factions) if (o.alive && o !== f) changeRelation(state, f, o, -25);
   log(state, `${f.known ? f.name : "A group out in the state"} ${f.known ? "have" : "has"} turned to raiding.`, "danger");
   chronicleNote(state, `${f.name} turned to raiding.`, "danger", f.bases[0] ?? -1);
-  if (f.goodwill > -50) changeGoodwill(state, f, -50 - f.goodwill, "they have turned to raiding");
+  if (f.goodwill > -50) changeGoodwill(state, f, -50 - f.goodwill, "they have turned to raiding", true);
 }
 
 // ---------- what the map and the tile panel show ----------
