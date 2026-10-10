@@ -504,7 +504,10 @@ export const filterRecipe = (base) => ((base.spentFilters || 0) >= CRAFTS.repack
 // queued → 154 (of them 70 re-packed), buildings 399 → 412.
 export function filtersInUse(state, base, n) {
   if (!n) return 0;
-  const room = Math.max(0, waterCapacity(base) - waterIn(base.stock) - waterProduction(state, base).total);
+  // Under the autopilot, up to the governor's fill level (autopilot.js filterFill: a few days of drinking, the summer
+  // store), not the whole room its summer store built.
+  const fillTo = state.autopilot && Number.isFinite(base.filterFill) ? Math.min(waterCapacity(base), base.filterFill) : waterCapacity(base);
+  const room = Math.max(0, fillTo - waterIn(base.stock) - waterProduction(state, base).total);
   let use = Math.ceil(room / WATER.filter - 1e-9);
   if (rawWaterEggs(state, base).eggs > 0) {
     const cap = purifyCap(state, base);
