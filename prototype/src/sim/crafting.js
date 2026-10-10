@@ -24,6 +24,7 @@ import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre ("amm
 const carriedRounds = (p) => totalRounds(p.supplies) + totalRounds(p.cargo && p.cargo.supplies);
 import { WORM, rawWaterEggs, purifyCap } from "./worm.js"; // TABS_WATER: what one purification tablet treats (the recipe text); the filters in use
 import { WATER, waterCapacity, waterProduction } from "./economy.js"; // the filters in use: the tanks' room after the day's water (filtersInUse)
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -366,9 +367,12 @@ export function craftingHour(state) {
     const q = craftQueue(base);
     const job = q.find((j) => !craftJobStatus(state, base, j));
     if (!job) continue;
-    job.progress += craftRate(state, base, job.recipe);
+    const rate = craftRate(state, base, job.recipe);
+    job.progress += rate;
+    noteOutput(state, base, "craft", rate, "workh");
     if (job.progress < job.hours) continue;
     q.splice(q.indexOf(job), 1);
+    noteOutput(state, base, "craft", 1, "items");
     const r = CRAFTS[job.recipe];
     const team = crafters(state, base);
     const able = qualified(state, base, r);

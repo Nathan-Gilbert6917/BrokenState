@@ -21,6 +21,7 @@ import { hasPerk, seedCost } from "./skills.js";
 import { prisonersAt } from "./upkeep.js";
 import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Farm (careToday)
 import { addWormCrop } from "./worm.js"; // the worm: fresh crops from infected ground carry its eggs
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 // days = growing days at a growth factor of 1 (a cold or dry spell makes it longer); yield = food per plot at
 // care 1; seed = food to plant one plot; water = water per plot per dry day; spoil = days a ripe crop keeps in the
@@ -455,6 +456,7 @@ function takeHarvest(state, base, p) {
   const got = Math.round(p.yieldLeft * 10) / 10;
   const key = CROPS[p.crop] && CROPS[p.crop].store === "preserved" ? "preserved" : "food";
   base.stock[key] = (base.stock[key] || 0) + got;
+  noteOutput(state, base, "farm", got, key);
   if (key === "food") addWormCrop(state, base, base.tile, got, "crop"); // worm.js: grown on land at CROP_MIN+ infection (dry goods are threshed and cooked: safe)
   Object.assign(p, { stage: "empty", crop: null, grown: 0, care: 0, careDays: 0, ripeDays: 0, yieldLeft: 0, note: `Last harvest ${got} food` });
   return got;

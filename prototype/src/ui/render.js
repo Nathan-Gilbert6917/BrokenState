@@ -44,6 +44,7 @@ import {
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
 import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
 import { blocOf, blocColorOf } from "../sim/blocs.js"; // AI blocs: a ring in the bloc's colour round its members' bases
+import { drawWorkers } from "./workermap.js"; // your bases' people out on job trips (sim/jobtrips.js), the groups' walkers
 import { drawNight } from "./nightfx.js"; // the time-of-day shade and the lights through it
 import { lightningFrame, drawLightning, lightningWants } from "./lightningfx.js"; // lightning in storms: lifts the night shade, flashes after it
 
@@ -51,7 +52,7 @@ export const HEX = 26;
 const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
 
 export const camera = { x: 0, y: 0, zoom: 1 };
-const DEFAULT_LAYERS = ["pois", "territory", "teams", "hordes", "deaths", "vehicles", "finds", "weather"];
+const DEFAULT_LAYERS = ["pois", "territory", "teams", "workers", "hordes", "deaths", "vehicles", "finds", "weather"];
 // hourFrac: how much of the coming hour has gone by (main.js): your moving teams glide between tiles by it.
 export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0, clockSpeed: 1, pick: null }; // pick: "kind:id" ringed in gold (ui/mapselect.js)
 const on = (k) => view.layers.has(k);
@@ -1620,6 +1621,16 @@ export function render(state) {
     else sprite(cv, x, y - 3 + (onWay ? stepBob((v.id || v.tile) * 17 + 3, 1.1 * s, v.kind === "merchants" ? 520 : 380) : 0), w * k2, { facing, alpha: heard ? 0.55 : 1 });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
     if (v.phase === "siege") sprite(iconCanvas("siege"), x, y - 26 * s, ICON_W * s);
+  }
+  // Your bases' people out on job trips (ui/workermap.js, sim/jobtrips.js): walking out over the base's land, at work
+  // with a ring filling over them, home with the load and a "+18 meat" over the base; the groups' walkers in view.
+  if (on("workers") && !state.timelapse) {
+    const t = state.hour + hourFrac();
+    const walking = drawWorkers(ctx, state, {
+      HEX, toPixel: (id) => [G.x[id], G.y[id]], sprite, walkFrame, stepBob, zoom: zoomBoost(), baseHalf: (PLACE_W.hub * zoomBoost()) / 2, t, color: PLAYER_COLOR, live, groups: true,
+      near: (x, y) => !(x < minX - HEX * 3 || x > maxX + HEX * 3 || y < minY - HEX * 3 || y > maxY + HEX * 3),
+    });
+    if (walking && !readable.still) glidingNow = true; // drawn again as the minutes go by
   }
   // Your parties: actual position with radio contact, otherwise only the plan.
   for (const p of state.parties) {

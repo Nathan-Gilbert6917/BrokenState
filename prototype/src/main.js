@@ -26,6 +26,7 @@ import { treatAtBase } from "./sim/medical.js";
 import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated trainee
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
+import { workerAt } from "./ui/workermap.js"; // the base workers on the map: their tooltip, a click opens the person
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
 import { needsSkeleton, initNeedsBar } from "./ui/needsbar.js"; // the top bar's Needs button and its list of every supply
 import { isCar, travelMode } from "./sim/vehicles.js";
@@ -1733,7 +1734,8 @@ window.addEventListener("mousemove", (e) => {
     }
     view.hover = id;
     if (id >= 0) {
-      tip.innerHTML = tileTooltip(state, id);
+      const wk = workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y); // ui/workermap.js: a base worker out on a job trip
+      tip.innerHTML = wk ? `${wk.html}<hr style="border:0;border-top:1px solid #ffffff22;margin:4px 0">${tileTooltip(state, id)}` : tileTooltip(state, id);
       tip.style.left = `${e.clientX - r.left + 16}px`;
       tip.style.top = `${e.clientY - r.top + 16}px`;
       tip.classList.remove("hidden");
@@ -1749,7 +1751,9 @@ window.addEventListener("mouseup", (e) => {
     const r = canvas.getBoundingClientRect();
     const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
     const p = ui.moveParty != null && id >= 0 ? partyById(ui.moveParty) : null;
+    const wk = !p && ui.moveParty == null && !e.shiftKey ? workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y) : null;
     if (p) act(() => pickMove(p, id));
+    else if (wk && wk.sid != null) { ui.survivor = wk.sid; mapClicked = true; } // a base worker out on the map: their survivor screen (ui/workermap.js)
     else if (id >= 0 && ui.moveParty == null) {
       // A team, another group's party, a band or outsiders on the tile are selected first (a team opens its panel),
       // the same tile again goes on to the next and then the tile; Shift+click picks the tile (ui/mapselect.js).

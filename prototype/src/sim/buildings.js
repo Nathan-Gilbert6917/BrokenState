@@ -16,6 +16,7 @@ import { prisonBuildRate } from "./prisoners.js"; // prisoners-tab: prisoner lab
 import { benchRounds } from "./ammo.js"; // the ammo bench makes rounds by calibre
 import { reloadStatus, runReload } from "./reloading.js"; // the reloading bench: an ammo bench upgraded in place
 import { livestockYield, PEN } from "./farming.js"; // the animal pen (station "livestock")
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 rounds per day, the common rounds of the guns at the base (+4% per Mechanics point)" },
@@ -120,7 +121,7 @@ export const BUILDINGS = {
   coldstore:    { name: "Cold store",     plot: "building", cost: { scrap: 20 },            hours: 24, max: 1, desc: "An ice house packed with ice and snow: +150 food storage room, the best there is in winter (0.1–0.2% a day), still good in spring and autumn (0.5%), poor in summer once the ice is gone (1.2%)." },
   kitchen:      { name: "Preserving kitchen", plot: "building", cost: { scrap: 18, parts: 1 }, hours: 24, max: 2, station: "preserve", desc: "Workshop station. One operator jars fresh food: 9 food + 3 water + 1 scrap + 4 empty jars → 8 preserved food a day (9 with Farming 8+). Jars are found in kitchens, shops and farms; most come back when the food is eaten here." },
   // Hunting (hunting.js): the land around the base, hunted by the people on the Hunt job.
-  huntcabin:    { name: "Hunting cabin",  plot: "building", cost: { scrap: 12 },            hours: 16, max: 1, desc: "A skinning shed, a smoke house and game trails around it. Up to 2 people on the Hunt job hunt the land within 2 tiles 3 hours a day (dawn and dusk) with their own weapons and this base's ammo; without a weapon they tend snares. The land runs out of game if hunted hard (it grows back over weeks). Smokes up to 6 fresh game a day into 5 preserved food, and fresh game here spoils slower. Needs game land within 2 tiles (forest, hills, farmland)." },
+  huntcabin:    { name: "Hunting cabin",  plot: "building", cost: { scrap: 12 },            hours: 16, max: 1, desc: "A skinning shed, a smoke house and game trails around it. Any base can put people on the Hunt job (they hunt its own tile and the tiles next to it, where game is shy of the walls); the cabin widens the hunting grounds to the land within 2 tiles. The land runs out of game if hunted hard (it grows back over weeks). Smokes up to 6 fresh game a day into 5 preserved food, and fresh game here spoils slower. Needs game land within 2 tiles (forest, hills, farmland)." },
   cookhouse:    { name: "Cook fire",      plot: "utility", cost: { scrap: 6 },             hours: 6,  max: 1, desc: "A stone-lined fire pit with spits and a big pot: all the game and fish eaten here is cooked through, and the greens, roots and crops from infected ground are boiled, which kills the worm's eggs in meat from infected land and infested animals and in food grown or gathered on land at 40%+ infection. Without it (or a preserving kitchen) that food waits in the stores and is eaten raw, last, when the clean food is gone." },
   smoker:       { name: "Drying rack",    plot: "utility", cost: { scrap: 6 },             hours: 8,  max: 3, desc: "Racks and a smoke pit, no operator: dries 4 surplus fresh food into 3 preserved food a day (half on wet days). Takes food stored outside first, else only food above 15 days of eating." },
   // Power (power.js): generators need an operator and fuel; the still turns food into that fuel.
@@ -555,6 +556,7 @@ export function runStations(state, base) {
     if (status.mash) base.mash = Math.max(0, (base.mash || 0) - status.mash); // the still's spoiled food (storage.js)
     if (r.minSkill && skill(status.op, r.skill) < r.minSkill && state.rng.chance(0.5)) continue;
     for (const [k, v] of Object.entries(status.out)) { if (k === "ammo") benchRounds(state, base, v); else base.stock[k] = (base.stock[k] || 0) + v; } // ammo.js: the calibres the guns here shoot
+    for (const [k, v] of Object.entries(status.out)) noteOutput(state, base, "operate", v, k);
     if (inp.jars) base.jarsInUse = (base.jarsInUse || 0) + inp.jars; // filled jars (storage.js)
   }
 }
@@ -701,10 +703,13 @@ export function constructionHour(state) {
     if (campMaterialsHour(state, base)) continue; // a camp's builders make the building materials its step up waits for
     const job = base.construction.find((c) => !gatherStalled(c));
     if (!job) continue;
+    const was = job.progress;
     job.progress += buildRate(state, base);
     if (job.paid) job.progress = Math.min(job.progress, job.hours * gatherCap(job)); // never ahead of the materials
+    noteOutput(state, base, "build", Math.max(0, job.progress - was), "workh");
     if (job.progress >= job.hours - 1e-9) {
       base.construction.splice(base.construction.indexOf(job), 1);
+      noteOutput(state, base, "build", 1, "done");
       if (BUILDINGS[job.type].tierUp) { upgradeShelter(state, base); continue; } // the shelter becomes a base
       if (job.target && job.type === "barracks") { // a bunkhouse expanded (BARRACKS_UP); nothing if it was lost meanwhile
         const b = base.buildings.find((x) => x.id === job.target && x.type === "bunkhouse");

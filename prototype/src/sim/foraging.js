@@ -44,6 +44,8 @@ import { edibleFood } from "./storage.js";
 import { huntInfo, huntProblem, fishProblem, fishKit, expectFish, fishSpot, partyHuntMix } from "./hunting.js";
 import { addWormCrop, addWormForage } from "./worm.js"; // the worm: forage from infected ground carries its eggs
 import { sumRecs } from "./rounds.js"; // rounds by calibre
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
+import { workLand, distFactor } from "./tripland.js"; // the Forage job in trips: the land and its walking (jobtrips.js)
 
 // ---------- numbers ----------
 export const FORAGE = {
@@ -271,15 +273,28 @@ export function baseForageTiles(state, base, hour = state.hour) {
     .map((id) => ({ id, v: forageAbundance(state, id) * forageLevel(state, id, hour) }))
     .sort((a, b) => b.v - a.v || a.id - b.id);
 }
-// Expected food a forager brings in a day at this base now (for the job's "worth it", the panels, the autopilot).
+// The tile the base's foragers go to (jobtrips.js): the best of its land by what a day there gives, walking included
+// (tripland.js distFactor): { id, v, d, f } or null.
+export function forageTripTile(state, base, hour = state.hour) {
+  let best = null;
+  for (const id of workLand(state, base.tile)) {
+    const a = forageAbundance(state, id);
+    if (a < 0.05) continue;
+    const d = state.grid.distance(base.tile, id), f = distFactor("forage", d), v = a * forageLevel(state, id, hour);
+    if (!best || v * f > best.v * best.f + 1e-12 || (Math.abs(v * f - best.v * best.f) <= 1e-12 && id < best.id)) best = { id, v, d, f };
+  }
+  return best;
+}
+// Expected food a forager brings in a day at this base now (for the job's "worth it", the panels, the autopilot), from
+// the tile they would go to, its walk counted.
 export function baseForageDay(state, base, s = null, hour = state.hour) {
-  const tiles = baseForageTiles(state, base, hour);
-  if (!tiles.length) return 0;
+  const t = forageTripTile(state, base, hour);
+  if (!t) return 0;
   const m = s ? foragerMult(s) : 0.8;
   const dayStart = hour - (hour % 24);
   let r = 0;
-  for (let i = 0; i < FORAGE.base.hours; i++) r += forageRate(state, tiles[0].id, dayStart + 9 + i * 2, m);
-  return r;
+  for (let i = 0; i < FORAGE.base.hours; i++) r += forageRate(state, t.id, dayStart + 9 + i * 2, m);
+  return r * t.f;
 }
 export const FORAGE_WORTH = 0.3; // a forager must be expected to bring in this much a day for the job to be open
 export const FORAGE_SHORT = 25;  // the Forage job (work.js) opens while the base has less food than this many days
@@ -305,43 +320,41 @@ export function landFoodHands(state, base, goalDays, each, max = 40) {
 }
 // The Forage job's room: foragers to close the land food gap (no fixed cap; the land thins as they pick it).
 export const forageWorkCap = (state, base, goalDays = FORAGE_SHORT) => landFoodHands(state, base, goalDays, baseForageDay(state, base));
-// Daily (hunting.js huntingDaily, from economy.js baseDaily): the people on the Forage role bring in their day's
-// gathering from the best tiles around (each forager the best tile left, the land depleting as they go).
+// One forager's trip (jobtrips.js): `hours` of the old job's hours (the walk already out of them) on `tile`, read at
+// `hour`. The land thins by what they pick; now and then herbs (meds) or honey; a bad mushroom eaten out there.
+// Returns { food, herbs, honey, sick } (the food and finds come home with them).
+export function forageTrip(state, base, s, tile, hours, hour) {
+  const m = foragerMult(s) * Math.min(1, workFactor(s));
+  const amount = Math.round(forageRate(state, tile, hour, m) * hours * (0.6 + 0.8 * state.rng.next()) * 100) / 100;
+  takeForage(state, tile, amount);
+  const got = { food: amount, herbs: 0, honey: 0, sick: false };
+  const key = seasonKey(state, hour);
+  const terr = state.tiles[tile].terrain;
+  if (key !== "winter" && state.rng.chance(FORAGE.herbs * hours)) got.herbs++;
+  if ((key === "summer" || key === "autumn") && (terr === "forest" || terr === "plains") && state.rng.chance(FORAGE.honey * hours)) got.honey++;
+  if ((key === "summer" || key === "autumn") && state.rng.chance(FORAGE.mushroom * hours * Math.max(0.2, 1 - foragerSkill(s) / 20))) {
+    addCondition(state, s, "dysentery", "after eating a mushroom picked in the wild", { sev: state.rng.int(FORAGE.mushroomSev[0], FORAGE.mushroomSev[1]) });
+    got.sick = true;
+  }
+  const share = hours / FORAGE.base.hours;
+  gainXp(state, s, "farming", USE.forage * share); // skills.js
+  gainXp(state, s, "scouting", USE.forageScout * share);
+  return got;
+}
+// Daily (hunting.js huntingDaily, from economy.js baseDaily): the Forage job's day is in (its trips brought the food
+// home through the day, jobtrips.js): the day's total for the panels and the log. Returns { rations, herbs, honey, sick }
+// or null with nobody on the job.
 export function foragingDaily(state, base) {
   const people = atBase(state, base.id).filter((s) => s.role === "forage" && !s.inBed && workFactor(s) >= 0.35);
-  if (!people.length) return null;
-  const dayStart = state.hour - 24;
-  const got = { rations: 0, left: 0, herbs: 0, honey: 0, sick: [] };
-  for (const s of people) {
-    const tile = (baseForageTiles(state, base, dayStart + 12)[0] || {}).id;
-    if (tile == null) break;
-    const m = foragerMult(s) * Math.min(1, workFactor(s));
-    let r = 0;
-    for (let i = 0; i < FORAGE.base.hours; i++) r += forageRate(state, tile, dayStart + 9 + i * 2, m);
-    const amount = Math.round(r * (0.6 + 0.8 * state.rng.next()) * 100) / 100;
-    got.rations += amount;
-    addWormCrop(state, base, tile, amount, "forage"); // worm.js: gathered on land at CROP_MIN+ infection (eaten last, raw, without a cook fire)
-    takeForage(state, tile, amount);
-    const key = seasonKey(state, dayStart + 12);
-    const terr = state.tiles[tile].terrain;
-    if (key !== "winter" && state.rng.chance(FORAGE.herbs * FORAGE.base.hours)) got.herbs++;
-    if ((key === "summer" || key === "autumn") && (terr === "forest" || terr === "plains") && state.rng.chance(FORAGE.honey * FORAGE.base.hours)) got.honey++;
-    if ((key === "summer" || key === "autumn") && state.rng.chance(FORAGE.mushroom * FORAGE.base.hours * Math.max(0.2, 1 - foragerSkill(s) / 20))) {
-      addCondition(state, s, "dysentery", "after eating a mushroom picked in the wild", { sev: state.rng.int(FORAGE.mushroomSev[0], FORAGE.mushroomSev[1]) });
-      got.sick.push(s.id);
-    }
-    gainXp(state, s, "farming", USE.forage); // skills.js
-    gainXp(state, s, "scouting", USE.forageScout);
-  }
-  base.stock.food = (base.stock.food || 0) + got.rations;
-  if (got.herbs) base.stock.meds = (base.stock.meds || 0) + got.herbs;
-  if (got.honey) base.stock.preserved = (base.stock.preserved || 0) + got.honey * FORAGE.honeyFood;
-  const es = econStats(state);
-  es.foraged = (es.foraged || 0) + got.rations + got.honey * FORAGE.honeyFood;
+  const day = (base.tripTally && base.tripTally.day === Math.floor((state.hour - 1) / 24) && base.tripTally.forage) || null;
+  if (!people.length && !day) return null;
+  const got = { rations: day ? r1(day.food || 0) : 0, left: 0, herbs: day ? day.herbs || 0 : 0, honey: day ? day.honey || 0 : 0, sick: day ? day.sick || [] : [] };
   base.foragedToday = r1(got.rations);
+  if (!day) noteOutput(state, base, "forage", 0, "food");
+  const who = day ? day.who.map((id) => people.find((x) => x.id === id) || null).filter(Boolean) : people;
   if (got.rations >= 1 || got.herbs || got.honey) {
     const finds = findsText(got);
-    log(state, `${people.map(first).join(" and ")} foraged around ${base.name}: ${r1(got.rations)} food (${forageWhat(state, dayStart + 12)})${finds ? `, and ${finds}` : ""}.`, "good");
+    log(state, `${(who.length ? who : people).map(first).join(" and ")} foraged around ${base.name}: ${r1(got.rations)} food (${forageWhat(state, state.hour - 12)})${finds ? `, and ${finds}` : ""}.`, "good");
   }
   return got;
 }
