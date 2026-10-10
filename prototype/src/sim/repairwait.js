@@ -17,7 +17,8 @@ import { partyVehicles, isBike } from "./vehicles.js";
 
 export const REPAIR_NEWS_HOURS = 24; // the alert stays up this long (or until clicked or dismissed)
 
-// owed: the progress the repair costs (its hours × the pace), the team's progress before it was taken off.
+// A repair answered on a breakdown card (events.js repairDelay, after its delay was taken): hours, what it costs;
+// before, the team's progress before that (below zero: delays already owed).
 /** @param {any} state @param {any} p @param {any} v @param {number} hours @param {number} before */
 export function markRepair(state, p, v, hours, before) {
   if (!p || p.owner !== "player" || !v) return;
