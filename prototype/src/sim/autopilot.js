@@ -37,7 +37,7 @@ import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDe
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
 import { defaultRolePlan, plansOf } from "./defenceplan.js"; // the governor's defence plan (governorPlans, stewardSafety)
-import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort, supplyLine, WATER } from "./economy.js";
+import { siteBonus, waterOutlook, foodOutlook, waterCapacity, waterProduction, waterNeed, summerWater, waterRunningShort, supplyLine, WATER, fetchWaterWhy, fetchWaterDay } from "./economy.js";
 import { mouthsAt, foodUse, HEAT, payoutSpare, payoutBreaks } from "./upkeep.js"; // upkeep-per-head: the governor's days of food and water count everyone fed at a base
 import { waterIn, teamWaterIn, RAW, keyWord } from "./water.js"; // purified and un-purified water: the governor counts both
 import { brokenAt, jobFor, fixtures, isWaterFixture, repairPlan } from "./breakdowns.js";
@@ -1921,7 +1921,7 @@ export function farmCrewLimits(state, base, foodDays, heads) {
   const comfy = foodDays >= target && wp.short <= 0 && wp.end >= wp.margin * FARM_AP.winterMargin * (P && P.homeFood ? 1.5 : 1);
   return { hungry: foodDays < target || winterShort(state, base) > 0, comfy, cap: comfy ? Math.max(1, Math.ceil(heads * FARM_AP.share)) : Infinity };
 }
-const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
+const ROLE_AREA = { water: "food", hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
   const people = atBase(state, base.id);
@@ -1973,6 +1973,15 @@ function planRoles(state, base, areas = ALL_AREAS) {
       const c = ranked("craft", (x) => craftSkill(x), (x) => !x.inBed && canAttempt(x, CRAFTS.waterfilter))[0];
       if (c) give(c, "craft");
     }
+  }
+
+  // 1b'. Fetch water (economy.js, jobtrips.js): the water running short, a river or lake tile in the base's own land and a
+  // water boiler or a water filter here to make it safe: water carriers bring it in by the bucket (un-purified) until the
+  // wells and catchers catch up, as many as close the day's shortfall (at most a quarter of the people, one at a small base).
+  if (areas.food && waterRunningShort(state, base) && !fetchWaterWhy(state, base) && (count(base, "boiler") > 0 || base.armory.some((it) => it && it.key === "waterfilter"))) {
+    const wo = waterOutlook(state, base), each = Math.max(0.5, fetchWaterDay(state, base));
+    const n = Math.min(Math.max(1, Math.floor(people.length / 4)), Math.max(1, Math.ceil(Math.max(0, -wo.net) / each)));
+    for (const s of ranked("water", (x) => (x.health ?? 100) / 10, (x) => !x.inBed && !x.leader).slice(0, n)) give(s, "water");
   }
 
   // 1c. The worm (worm.js): a water boiler queued at a base drinking un-purified water, or a cook fire at one eating

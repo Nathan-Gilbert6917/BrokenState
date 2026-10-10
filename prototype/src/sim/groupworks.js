@@ -44,6 +44,7 @@
 //   everyone, PENS.max a base; each adds PENS.food food a day (penFood, factions.js), winter or not.
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
+import { groupFetchedWater } from "./grouptrips.js"; // water carried in from the water a base holds (as your Fetch water)
 import { day } from "./world.js";
 import { season, THIRST } from "./weather.js"; // summer water: the season and its thirst
 import { weightOf, medOf } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
@@ -145,7 +146,7 @@ function served(f, k) {
 export function provisioned(state, f) {
   if (!groupsBuild(state, f)) return 1;
   const p = Math.max(1, f.pop);
-  return (Math.min(1, served(f, "water") / (p * summerThirst(state, false))) + Math.min(1, served(f, "farms") / p)) / 2;
+  return (Math.min(1, (served(f, "water") + groupFetchedWater(state, f)) / (p * summerThirst(state, false))) + Math.min(1, served(f, "farms") / p)) / 2; // grouptrips.js: water carried from the water their bases hold
 }
 // Food a day from their animal pens (PENS): 0 where they do not build (old saves, the hardcore military).
 export const penFood = (state, f) => (groupsBuild(state, f) ? f.bases.reduce((a, t) => a + Math.min(W.PENS.max, n(f.works && f.works[t], "pens")), 0) * W.PENS.food : 0);

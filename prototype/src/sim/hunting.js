@@ -104,6 +104,7 @@ import { wormKill, wormMeatIn, wormMeatAt, smokeWormMeat, shrinkWormMeat, huntYi
 import { totalRounds, sumRecs } from "./rounds.js"; // rounds by calibre
 import { huntRounds, huntLoad, takeHuntShots, baseAmmo } from "./ammo.js"; // a gun hunts with its own calibre and load (R9)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
+import { workLand, distFactor, waterSources, shoreOf, NO_WATER } from "./tripland.js"; // the Hunt and Fish jobs in trips: the land, the water and the walking (jobtrips.js)
 
 // ---------- numbers ----------
 export const HUNT = {
@@ -873,7 +874,7 @@ export function fishTools(state, base, people = atBase(state, base.id), opts = {
   return fishKit(people, base.armory || [], opts);
 }
 export function fishWorkWhy(state, base) {
-  if (!fishSpot(state, base.tile)) return "not by a river or lake";
+  if (!fishWater(state, base)) return NO_WATER; // a water tile of the base's own (tripland.js waterSources)
   const k = fishTools(state, base);
   if (!k.rods && !k.nets && !k.spears) return "no fishing rod, net or spear here";
   return "";
@@ -891,8 +892,9 @@ export const fishCrowdShare = (n) => {
 // mix's bow hours, the snare lines for its trap hours: the job's sizing), from the best tile around, CABIN.hours at
 // dawn and dusk.
 export function baseHuntDay(state, base, hour = state.hour) {
-  const tile = cabinTiles(state, base)[0];
-  if (tile == null) return 0;
+  const t = huntTripTile(state, base, hour);
+  if (!t) return 0;
+  const tile = t.id;
   const sh = mixShares(huntMixOf(base));
   const m = 0.82, rifle = { big: m * HUNT_CAT.rifle.big, small: m * HUNT_CAT.rifle.small }, bow = { big: m * 0.86, small: m * 0.9 };
   const dayStart = hour - (hour % 24);
@@ -903,25 +905,45 @@ export function baseHuntDay(state, base, hour = state.hour) {
     if (sh.bows > 0) { const b = huntOdds(state, bow, tile, dayStart + hh); r += sh.bows * (b.big * bigAvg(b.deer) + b.small * ANIMALS.small.rations); }
   }
   if (sh.traps > 0) r += sh.traps * snareDayRate(state, tile, dayStart + 12) * CABIN.snareLines * ANIMALS.small.rations;
-  return r;
+  return r * t.f;
 }
 // Expected food a day for one fisher with a rod at this base now (an average one: the job's sizing).
 export function baseFishDay(state, base, hour = state.hour) {
   const kit = { rods: 1, nets: 0, ice: true, power: FISH.rod * 0.85, used: 1 };
+  const w = fishWater(state, base);
+  if (!w) return 0;
   const dayStart = hour - (hour % 24);
   let r = 0;
-  for (const hh of DAWN_DUSK.slice(0, CABIN.hours)) r += fishRate(state, kit, base.tile, dayStart + hh);
-  return r;
+  for (const hh of DAWN_DUSK.slice(0, CABIN.hours)) r += fishRate(state, kit, w.shore, dayStart + hh);
+  return r * distFactor("fish", w.d);
 }
 // The Hunt job's room (no fixed cap): hunters to close the land food gap to goalDays (foraging.js landFoodHands).
 export const huntWorkCap = (state, base, goalDays) => landFoodHands(state, base, goalDays, baseHuntDay(state, base));
 // The Fish job's room: fishers to close it, at most one a rod (two a net).
 export const fishWorkHands = (state, base, goalDays) => Math.min(fishWorkCap(state, base), landFoodHands(state, base, goalDays, baseFishDay(state, base)));
-// The best hunting tiles around a base, by what they hold now.
-function cabinTiles(state, base) {
-  return state.grid.within(base.tile, CABIN.radius).filter((id) => gameAbundance(state, id) > 0.02)
-    .sort((a, b) => gameAbundance(state, b) * gameLevel(state, b) - gameAbundance(state, a) * gameLevel(state, a) || a - b);
+// The tile the base's hunters go to (jobtrips.js): the best of its land within CABIN.radius by the game it holds now,
+// walking included (tripland.js distFactor: two tiles out 1, one 1.5): { id, v, d, f }.
+export function huntTripTile(state, base, hour = state.hour) {
+  let best = null;
+  for (const id of workLand(state, base.tile)) {
+    const a = gameAbundance(state, id);
+    if (a <= 0.02 || state.grid.distance(base.tile, id) > CABIN.radius) continue;
+    const d = state.grid.distance(base.tile, id), f = distFactor("hunt", d), v = a * gameLevel(state, id, hour);
+    if (!best || v * f > best.v * best.f + 1e-12 || (Math.abs(v * f - best.v * best.f) <= 1e-12 && id < best.id)) best = { id, v, d, f };
+  }
+  return best;
 }
+// Where the base's fishers go: its nearest water tile with a fishing spot (tripland.js waterSources: the water it owns,
+// or what sim/fieldworks adds), fished from the shore tile beside it: { id, d, shore, spot } or null.
+export function fishWater(state, base) {
+  for (const w of waterSources(state, base)) {
+    const shore = shoreOf(state, base.tile, w.id);
+    const spot = fishSpot(state, shore);
+    if (spot) return { id: w.id, d: w.d, shore, spot };
+  }
+  return null;
+}
+
 export const ammoKeep = (state, base) => atBase(state, base.id).length * 3 + 10; // ammo the cabin's hunters leave for the walls
 const DAWN_DUSK = [6, 17, 7, 18, 5, 19]; // the hours a base's hunters and fishers are out (dawn and dusk first)
 // The day's hours of the base's hunters by its hunting mix: [{ s, hours, guns, bows, traps }] in the hunters' order.
@@ -946,115 +968,137 @@ export function cabinPlan(state, base, hunters, ammo = Infinity, arrows = Infini
   for (const r of rows) r.traps = r.hours - r.guns - r.bows;
   return rows;
 }
-// Daily (economy.js baseDaily): the people on the Hunt and Fish roles bring in their day's catch, and the people on
-// the Forage role their day's gathering (foraging.js).
+// A hunter's plan for the day (cabinPlan, once a day for the base's hunters: base.huntPlan): their hours with guns,
+// bows and on the snares. Someone who joins the hunt later in the day gets their own (the mix's carry left alone).
+export function hunterDayPlan(state, base, s) {
+  const dayIdx = Math.floor(state.hour / 24);
+  const spare = Math.max(0, totalRounds(base.stock) - ammoKeep(state, base)), quiver = Math.max(0, base.stock.arrows || 0);
+  let P = base.huntPlan;
+  if (!P || P.day !== dayIdx) {
+    const hunters = atBase(state, base.id).filter((x) => x.role === "hunt" && !x.inBed && workFactor(x) >= 0.35);
+    P = base.huntPlan = { day: dayIdx, rows: {} };
+    for (const r of cabinPlan(state, base, hunters, spare, quiver)) P.rows[r.s.id] = { guns: r.guns, bows: r.bows, traps: r.traps, hours: r.hours };
+  }
+  if (!P.rows[s.id]) {
+    const keep = base.huntCarry;
+    const r = cabinPlan(state, base, [s], spare, quiver)[0];
+    if (keep) base.huntCarry = keep; else delete base.huntCarry;
+    P.rows[s.id] = { guns: r.guns, bows: r.bows, traps: r.traps, hours: r.hours };
+  }
+  return P.rows[s.id];
+}
+// One hunter's trip (jobtrips.js): `hours` of the old job's hours (the walk already out of them: the day's CABIN.hours
+// one tile out) on `tile`, read at `hour` (dawn or dusk). Their share of the day's plan by method (hunterDayPlan); each
+// hour's weapon chosen again (the ammo or arrows may run out), whole hours rolled as the old job did and the last
+// part-hour at its share of the odds. The walls' ammo is never taken (ammoKeep). Returns the catch (rations, deer,
+// hog, small, shots, arrows, trapped, hrs, noise, gunfire { tile: quiet }, worm, infested): it comes home with them.
+export function huntTrip(state, base, s, tile, hours, hour) {
+  const row = hunterDayPlan(state, base, s);
+  const frac = hours / CABIN.hours;
+  const got = { rations: 0, shots: 0, hrs: { traps: 0, bows: 0, guns: 0 }, noise: 0, gunfire: {} };
+  const spare = () => Math.max(0, totalRounds(base.stock) - ammoKeep(state, base));
+  const spareFor = () => (spare() > 0 ? base.stock : 0); // ammo.js: a gun needs rounds of its own calibre (and the walls' keep left)
+  const quiver = () => Math.max(0, base.stock.arrows || 0);
+  const parts = (a) => { const out = []; let x = a; while (x > 1e-9) { out.push(Math.min(1, x)); x -= 1; } return out; };
+  let trapHours = row.traps * frac, shot = false;
+  for (const [m, a] of [["guns", row.guns * frac], ["bows", row.bows * frac]]) for (const w of parts(a)) {
+    const b = bestHuntWeapon(s, spareFor(), quiver(), m === "bows" ? "bow" : null);
+    if (!b) { trapHours += w; continue; }
+    shot = true;
+    got.hrs[b.w.arrows ? "bows" : "guns"] += w;
+    const mult = hunterMult(s) * b.eff;
+    const team = { big: mult * b.w.big, small: mult * b.w.small };
+    const o = huntOdds(state, team, tile, hour);
+    const kills = [];
+    if (state.rng.chance(o.big * w)) kills.push(state.rng.chance(o.deer) ? "deer" : "hog");
+    if (state.rng.chance(o.small * w)) kills.push("small");
+    for (const k of kills) {
+      if (b.w.ammo) {
+        const shots = 1 + (state.rng.chance(ANIMALS[k].big ? HUNT.missChance : HUNT.missSmall) ? 1 : 0);
+        const used = takeHuntShots([base.stock], b.item, Math.min(shots, Math.floor(spare()))); // ammo.js: its calibre, its load first
+        got.shots += used;
+        got.noise += b.w.noise / 3;
+        got.gunfire[tile] = Math.max(got.gunfire[tile] || 0, b.w.quiet ?? 1); // the loudest gun on that ground counts
+        wearMuzzle(b.item, Math.max(1, used)); // an oil filter wears a shot at a time (gunmods.js)
+      } else if (b.w.arrows) {
+        // Silent, but a shot at game is often an arrow lost (ARROW.lost a shot; a miss first now and then).
+        const shots = 1 + (state.rng.chance(ANIMALS[k].big ? HUNT.missChance : HUNT.missSmall) ? 1 : 0);
+        let lost = 0;
+        for (let j = 0; j < shots; j++) if (state.rng.chance(ARROW.lost)) lost++;
+        lost = Math.min(lost, Math.floor(quiver()));
+        base.stock.arrows = (base.stock.arrows || 0) - lost;
+        got.arrowShots = (got.arrowShots || 0) + shots;
+        got.arrows = (got.arrows || 0) + lost;
+      }
+      bagged(got, k);
+      cabinKill(state, got, tile, ANIMALS[k].rations);
+      takeGame(state, tile, ANIMALS[k].rations, ANIMALS[k].big ? HUNT.bigDeplete : HUNT.smallDeplete);
+      gainXp(state, s, "shooting", ANIMALS[k].big ? 6 : 2);
+    }
+  }
+  if (trapHours > 1e-9) {
+    // Trap hours (and a hunter without a weapon): the cabin's snare lines (two lines; a full day's work is
+    // CABIN.hours on them).
+    got.hrs.traps += trapHours;
+    const rate = snareDayRate(state, tile, hour) * CABIN.snareLines * (trapHours / CABIN.hours);
+    let n = 0;
+    for (let i = 0; i < SNARE.count * CABIN.snareLines; i++) if (state.rng.chance(Math.min(0.9, rate / (SNARE.count * CABIN.snareLines)))) n++;
+    if (n) {
+      got.small = (got.small || 0) + n;
+      got.trapped = (got.trapped || 0) + n;
+      for (let i = 0; i < n; i++) cabinKill(state, got, tile, ANIMALS.small.rations);
+      takeGame(state, tile, n * ANIMALS.small.rations, SNARE.deplete);
+    }
+  }
+  gainXp(state, s, "scouting", (shot || !row.hours ? 4 : 3) * frac);
+  return got;
+}
+// One fisher's trip (jobtrips.js): `hours` of the old job's hours on the bank at `shore` (fishWater), read at `hour`.
+// The base's fishing tools are shared out over its fishers (fishTools; each one past the first catches a little less:
+// fishCrowdShare), so their trips together catch what the old day's fishing did. Returns { rations, fish, worm, infested }.
+export function fishTrip(state, base, s, shore, hours, hour) {
+  const fishers = atBase(state, base.id).filter((x) => x.role === "fish" && !x.inBed && workFactor(x) >= 0.35);
+  if (!fishers.includes(s)) fishers.push(s);
+  const k0 = fishTools(state, base, fishers, { frozen: frozenAt(state, hour) });
+  const share = fishCrowdShare(k0.used) / fishers.length;
+  const kit = { ...k0, power: k0.power * share, spear: (k0.spear || 0) * share };
+  const want = fishRate(state, kit, shore, hour) * hours;
+  const got = { rations: 0, fish: 0 };
+  const rolls = Math.max(3, Math.ceil(want * 2)); // three rolls a trip at least (more for a big catch)
+  let n = 0;
+  for (let i = 0; i < rolls; i++) if (state.rng.chance(Math.min(1, want / rolls))) n++;
+  if (n) { got.fish = n; cabinKill(state, got, shore, n, true); lower(state, "fish", shore, n / FISH.deplete); }
+  return got;
+}
+// Daily (economy.js baseDaily): the Hunt and Fish jobs' day is in (their trips brought the catch home through the day,
+// jobtrips.js), and the Forage job's (foraging.js). Here what the day leaves behind: the gunshots' noise for the
+// base's Heat and the hordes they drew, the fishing tools' wear, the summary (base.huntLast) and the log. Returns the
+// day's catch (rations, shots, hrs, deer, hog, small, fish, arrows, trapped, drawn …).
 export function huntingDaily(state, base) {
   foragingDaily(state, base);
   const people = atBase(state, base.id).filter((s) => !s.inBed && workFactor(s) >= 0.35);
   const hunters = people.filter((s) => s.role === "hunt");
   const fishers = people.filter((s) => s.role === "fish");
-  const dayStart = state.hour - 24;
+  const T = base.tripTally && base.tripTally.day === Math.floor((state.hour - 1) / 24) ? base.tripTally : null;
+  const h = (T && T.hunt) || null, fi = (T && T.fish) || null;
   const got = { rations: 0, shots: 0 };
-  let noise = 0;
-  const gunfire = new Map(); // hunting grounds with shots today: the dead nearby may come to look
-  if (hunters.length && !huntWorkWhy(state, base)) {
-    // The walls come first: the hunters leave the base's last ammo (3 a head + 10) for them.
-    const spare = () => Math.max(0, totalRounds(base.stock) - ammoKeep(state, base));
-    const spareFor = () => (spare() > 0 ? base.stock : 0); // ammo.js: a gun needs rounds of its own calibre (and the walls' keep left)
-    const quiver = () => Math.max(0, base.stock.arrows || 0);
-    const plan = cabinPlan(state, base, hunters, spare(), quiver());
-    got.hrs = { traps: 0, bows: 0, guns: 0 };
-    for (const x of plan) {
-      const s = x.s;
-      const tiles = cabinTiles(state, base);
-      const tile = tiles[0];
-      if (tile == null) break;
-      // The shooting hours first (dawn and dusk), by the plan; each hour's weapon is chosen again (the ammo or the
-      // arrows may run out): a gun hour without a gun or ammo takes the bow, a bow hour without arrows the snares.
-      let trapHours = x.traps, shot = false;
-      const shoot = [...new Array(x.guns).fill("guns"), ...new Array(x.bows).fill("bows")];
-      shoot.forEach((m, i) => {
-        const b = bestHuntWeapon(s, spareFor(), quiver(), m === "bows" ? "bow" : null);
-        if (!b) { trapHours++; return; }
-        shot = true;
-        got.hrs[b.w.arrows ? "bows" : "guns"]++;
-        const mult = hunterMult(s) * b.eff;
-        const team = { big: mult * b.w.big, small: mult * b.w.small };
-        const o = huntOdds(state, team, tile, dayStart + DAWN_DUSK[i]);
-        const kills = [];
-        if (state.rng.chance(o.big)) kills.push(state.rng.chance(o.deer) ? "deer" : "hog");
-        if (state.rng.chance(o.small)) kills.push("small");
-        for (const k of kills) {
-          if (b.w.ammo) {
-            const shots = 1 + (state.rng.chance(ANIMALS[k].big ? HUNT.missChance : HUNT.missSmall) ? 1 : 0);
-            const used = takeHuntShots([base.stock], b.item, Math.min(shots, Math.floor(spare()))); // ammo.js: its calibre, its load first
-            got.shots += used;
-            noise += b.w.noise / 3;
-            gunfire.set(tile, Math.max(gunfire.get(tile) || 0, b.w.quiet ?? 1)); // the loudest gun on that ground counts
-            wearMuzzle(b.item, Math.max(1, used)); // an oil filter wears a shot at a time (gunmods.js)
-          } else if (b.w.arrows) {
-            // Silent, but a shot at game is often an arrow lost (ARROW.lost a shot; a miss first now and then).
-            const shots = 1 + (state.rng.chance(ANIMALS[k].big ? HUNT.missChance : HUNT.missSmall) ? 1 : 0);
-            let lost = 0;
-            for (let j = 0; j < shots; j++) if (state.rng.chance(ARROW.lost)) lost++;
-            lost = Math.min(lost, Math.floor(quiver()));
-            base.stock.arrows = (base.stock.arrows || 0) - lost;
-            got.arrowShots = (got.arrowShots || 0) + shots;
-            got.arrows = (got.arrows || 0) + lost;
-          }
-          bagged(got, k);
-          cabinKill(state, got, tile, ANIMALS[k].rations);
-          takeGame(state, tile, ANIMALS[k].rations, ANIMALS[k].big ? HUNT.bigDeplete : HUNT.smallDeplete);
-          gainXp(state, s, "shooting", ANIMALS[k].big ? 6 : 2);
-        }
-      });
-      if (trapHours > 0) {
-        // Trap hours (and a hunter without a weapon): the cabin's snare lines (two lines, checked every day; a full
-        // day's work is CABIN.hours on them).
-        got.hrs.traps += trapHours;
-        const rate = snareDayRate(state, tile, dayStart + 12) * CABIN.snareLines * (trapHours / CABIN.hours);
-        let n = 0;
-        for (let i = 0; i < SNARE.count * CABIN.snareLines; i++) if (state.rng.chance(Math.min(0.9, rate / (SNARE.count * CABIN.snareLines)))) n++;
-        if (n) {
-          bagged(got, "small"); got.small += n - 1;
-          got.trapped = (got.trapped || 0) + n;
-          for (let i = 0; i < n; i++) cabinKill(state, got, tile, ANIMALS.small.rations);
-          takeGame(state, tile, n * ANIMALS.small.rations, SNARE.deplete);
-        }
-      }
-      gainXp(state, s, "scouting", shot || !x.hours ? 4 : 3);
-    }
-  }
-  base.huntNoise = Math.round(noise * 10) / 10; // hordes.js baseHeat: gunshots around the base
+  for (const x of [h, fi]) if (x) for (const k of ["rations", "shots", "deer", "hog", "small", "fish", "arrows", "arrowShots", "trapped", "worm", "infested"]) if (x[k]) got[k] = Math.round(((got[k] || 0) + x[k]) * 100) / 100;
+  if (h && h.hrs) got.hrs = { traps: r1(h.hrs.traps || 0), bows: r1(h.hrs.bows || 0), guns: r1(h.hrs.guns || 0) };
+  base.huntNoise = Math.round(((h && h.noise) || 0) * 10) / 10; // hordes.js baseHeat: gunshots around the base
   // Gunfire carries: each wandering horde within 3 tiles of a hunting ground with shots today may turn toward it.
-  for (const [tile, quiet] of gunfire) got.drawn = (got.drawn || 0) + drawHordes(state, tile, quiet);
-  if (got.hrs) base.huntLast = { day: Math.floor(state.hour / 24), mix: huntMixOf(base), hrs: got.hrs, rations: Math.round(got.rations * 10) / 10, shots: got.shots, arrows: got.arrows || 0, trapped: got.trapped || 0, drawn: got.drawn || 0, noise: base.huntNoise };
-  if (hunters.length) noteOutput(state, base, "hunt", got.rations, "food");
-  const huntFood = got.rations;
+  for (const [tile, quiet] of Object.entries((h && h.gunfire) || {})) got.drawn = (got.drawn || 0) + drawHordes(state, Number(tile), quiet);
+  if (got.hrs) base.huntLast = { day: Math.floor(state.hour / 24), mix: huntMixOf(base), hrs: got.hrs, rations: Math.round(((h && h.rations) || 0) * 10) / 10, shots: got.shots, arrows: got.arrows || 0, trapped: got.trapped || 0, drawn: got.drawn || 0, noise: base.huntNoise };
+  if (hunters.length && !h) noteOutput(state, base, "hunt", 0, "food");
   if (fishers.length && !fishWorkWhy(state, base)) {
     const k0 = fishTools(state, base, fishers, { frozen: frozenAt(state) });
-    const share = fishCrowdShare(k0.used);
-    const kit = { ...k0, power: k0.power * share, spear: k0.spear * share }; // one spot: each fisher past the first a little less
-    const hours = CABIN.hours;
-    for (const hh of DAWN_DUSK.slice(0, hours)) {
-      const rate = fishRate(state, kit, base.tile, dayStart + hh);
-      const rolls = Math.max(3, Math.ceil(rate)); // three rolls an hour (more for a big crew, no fixed ceiling)
-      let n = 0;
-      for (let i = 0; i < rolls; i++) if (state.rng.chance(Math.min(1, rate / rolls))) n++;
-      if (n) { got.fish = (got.fish || 0) + n; cabinKill(state, got, base.tile, n, true); lower(state, "fish", base.tile, n / FISH.deplete); }
-    }
     for (const s of fishers) gainXp(state, s, "scouting", 3);
     wearFishTools(state, k0, fishers, [base.armory]); // a day of fishing on the rods, nets and spears
   }
-  if (fishers.length) noteOutput(state, base, "fish", got.rations - huntFood, "food");
+  if (fishers.length && !fi) noteOutput(state, base, "fish", 0, "food");
   if (got.rations > 0) {
-    if (got.worm > 0) base.wormMeat = wormMeatAt(base) + got.worm; // worm.js: before the meat (it is capped by it)
-    base.stock.food = (base.stock.food || 0) + got.rations;
-    base.meat = meatAt(base) + got.rations;
-    const es = state.econStats;
-    if (es) es.hunted = (es.hunted || 0) + got.rations;
+    const who = [...new Set([...((h && h.who) || []), ...((fi && fi.who) || [])])].map((id) => state.survivors.find((x) => x.id === id)).filter(Boolean);
     const worm = got.infested ? ` ${got.infested} of them infested: a quarter of the meat, with the worm's eggs.` : got.worm > 0 ? " Some of it is from infected land and needs cooking through." : "";
-    log(state, `${[...hunters, ...fishers].map(first).join(" and ")} brought in ${countText(got)} at ${base.name} (${Math.floor(got.rations)} food of fresh game).${worm}`, "good");
+    log(state, `${(who.length ? who : [...hunters, ...fishers]).map(first).join(" and ")} brought in ${countText(got)} at ${base.name} (${Math.floor(got.rations)} food of fresh game).${worm}`, "good");
   }
   return got;
 }

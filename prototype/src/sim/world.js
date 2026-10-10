@@ -84,6 +84,7 @@ import { noteLootAge } from "./itemcond.js"; // the years since the fall: shops 
 import { starterMags } from "./carrykit.js"; // a starting gun's spare magazines
 import { volunteersHour, volunteerFell } from "./volunteers.js"; // people lent between groups, both ways
 import { noteLook, keepLook } from "./intelnotes.js"; // what your people learned of the groups' bases (the State Map's estimates, intelest.js)
+import { jobTripsHour } from "./jobtrips.js"; // the outdoor jobs in trips: out to the base's land and home with the load
 
 export const HUB_VISION = 3;
 // A normal start's hub is bare (barestart): no buildings, every construction plot free. Its stores carry the first
@@ -415,6 +416,14 @@ export const survivorById = (state, id) => state.survivors.find((s) => s.id === 
 export const alive = (state) => state.survivors.filter((s) => s.alive);
 /** @type {(state: State, baseId: number) => Survivor[]} */
 export const atBase = (state, baseId) => alive(state).filter((s) => s.location.kind === "base" && s.location.baseId === baseId);
+// Out of the walls on a job trip (jobtrips.js s.trip: from leaving the gate to coming back in) at time t (hours): not
+// at hand for a fight at the base. THE "who is home" check: battles at the base (combat.js combatants), the defence by
+// the numbers (factions.js baseDefense, defences.js), outsiders' raids (visitors.js) all read it. Other things that
+// take people away from the walls (sim/fieldworks: a watch tower, a stockpile) can mark s.away = { until } for the same.
+export const outOnTrip = (state, s, t = state.hour) => !!(s && ((s.trip && s.trip.leave <= t && t < s.trip.home) || (s.away && s.away.until > t)));
+export const isHome = (state, s, t = state.hour) => !!s && s.alive && s.location.kind === "base" && !outOnTrip(state, s, t);
+// The people at a base who are inside the walls now (atBase less those out on a trip).
+export const homeAt = (state, baseId, t = state.hour) => atBase(state, baseId).filter((s) => !outOnTrip(state, s, t));
 /** @type {(state: State, id: any) => import("./types").Faction | undefined} */
 export const factionById = (state, id) => state.factions.find((f) => f.id === id);
 // Everyone who lives at a base: the people there, plus (at the hub) trade-route escorts waiting between trips.
@@ -946,6 +955,7 @@ export function tickHour(state) {
   else stewardHour(state); // steward.js: bases handed to a steward
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
+  jobTripsHour(state); // jobtrips.js: the outdoor jobs' trips (out to the base's land, the work, home with the load)
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
   settleAll(state); // ammo.js: again, for what the work, the crews and the governor moved after the first settle (no generic ammo is left in a holder of yours between hours)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)

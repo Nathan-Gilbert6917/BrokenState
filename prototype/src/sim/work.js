@@ -56,7 +56,7 @@ import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } fro
 import { doctorAt, TRAINING, lessonGap } from "./training.js"; // Medic trainees
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt, WEAR } from "./breakdowns.js";
-import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity } from "./economy.js";
+import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity, fetchWaterWhy, fetchWaterDay } from "./economy.js";
 import { prisonersAt, prisonGuardsWanted, onJailRoster, jailName } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned, towerHordes } from "./defences.js";
 import { huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap, hunterMult, bestHuntWeapon, fisherMult } from "./hunting.js";
@@ -72,7 +72,7 @@ import { baseAmmo } from "./ammo.js"; // rounds by calibre: what fits the guns t
 export const PRIO_MAX = 5;
 const WATER_BUILDS = ["well", "rain_catcher", "cistern"]; // water first (autopilot.js waterPlan)
 // Assignments a queued build may take one hand from (no station, lesson, book or repair job to give back).
-const LOOSE = ["farm", "scavenge", "hunt", "fish", "forage", "wood"];
+const LOOSE = ["farm", "scavenge", "hunt", "fish", "forage", "wood", "water"];
 export const SCRAP_KEEP = { ammo: 50, meds: 40, parts: 60 }; // stations on a steward's or the governor's order stop below this
 export const MOOD_LOW = 25, MOOD_BACK = 40;   // free time below 25 mood, back to work at 40
 export const OFF_MOOD = 0.25;                 // mood an hour of sleep or free time gives (the Rest role's 6 a day)
@@ -379,6 +379,20 @@ export const WORK_TYPES = {
     emergencyCan: (ctx, s) => (s.health ?? 100) >= 50 && !s.woundInfected && (ctx.people.length <= 3 || !s.leader),
     rank: (s) => woodcutterMult(s) * 10 * bestChop(s).mult,
   },
+  // Water carried in from the base's own river or lake tile (economy.js fetchWaterWhy, jobtrips.js trips): two buckets
+  // a trip, a few trips a day (fewer the further the water), into the un-purified barrels.
+  water: {
+    name: "Fetch water", ing: "Fetching water", short: "Watr", role: "water", skill: null,
+    desc: "Carries water in buckets from the nearest river or lake tile in the base's own land while the water runs short: a few trips a day (fewer the further the water is), two buckets a trip (fetchWaterDay). River and lake water is un-purified (the worm's eggs): it goes into the un-purified barrels, for the water boiler or the filters, up to their room.",
+    open(ctx) {
+      const why = fetchWaterWhy(ctx.state, ctx.base);
+      if (why) return { cap: 0, why };
+      if (!waterRunningShort(ctx.state, ctx.base)) return { cap: 0, why: "the water holds" };
+      const wo = waterOutlook(ctx.state, ctx.base), each = Math.max(0.5, fetchWaterDay(ctx.state, ctx.base));
+      return { cap: Math.max(1, Math.min(4, Math.ceil(Math.max(0, -wo.net) / each))), urg: wo.daysLeft < 3 ? 7.5 : 5 };
+    },
+    rank: (s) => (s.health ?? 100) / 10 + skill(s, "scouting") * 0.2,
+  },
 };
 export const WORK_KEYS = Object.keys(WORK_TYPES);
 
@@ -517,14 +531,14 @@ function studyFor(ctx, s) {
 // ---------- roles ----------
 const P = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v > 0));
 export const DEFAULT_ROLES = () => [
-  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, wood: 3, teach: 4, study: 4, scavenge: 4 }) },
-  { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, forage: 3, wood: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
+  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, wood: 3, water: 2, teach: 4, study: 4, scavenge: 4 }) },
+  { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, forage: 3, wood: 3, water: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
   { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, wood: 3, study: 4, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
   { name: "Medic", pri: P({ doctor: 1, trainee: 2, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
   { name: "Crafter", pri: P({ craft: 1, workshop: 1, cook: 2, repair: 3, build: 3, farm: 4, study: 4 }) },
   { name: "Night watch", pri: P({ guard: 2, build: 2, repair: 2, craft: 3, farm: 3 }), sched: SCHED_PRESETS.night.sched },
-  { name: "Hunter", pri: P({ hunt: 1, fish: 1, forage: 2, wood: 2, guard: 3, farm: 3, repair: 4, build: 4, scavenge: 4 }) },
+  { name: "Hunter", pri: P({ hunt: 1, fish: 1, forage: 2, wood: 2, water: 2, guard: 3, farm: 3, repair: 4, build: 4, scavenge: 4 }) },
   { name: "Scavengers", kind: "crew", pri: P({ farm: 2, build: 3, repair: 3, wood: 3, scavenge: 4 }) },
   { name: "Hunting party", kind: "crew", pri: P({ hunt: 2, fish: 2, farm: 3, build: 4 }), crew: { field: { hunt: 1, fish: 2, recover: 3 }, size: 2, rules: { hurt: 45, food: 1, cargo: true } } },
 ];

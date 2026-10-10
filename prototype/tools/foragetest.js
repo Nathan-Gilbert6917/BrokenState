@@ -18,6 +18,8 @@ import { startOrder, queueOrder, queueEstimate, taskHour } from "../src/sim/orde
 import { estimatePlan, stepsToOrders, STEP_KINDS } from "../src/sim/plans.js";
 import * as F from "../src/sim/foraging.js";
 import * as H from "../src/sim/hunting.js";
+import { tripDay } from "../src/sim/jobtrips.js"; // the outdoor jobs in trips (a day of them, then the midnight tally)
+const huntDay = (state, base) => { tripDay(state, base); return H.huntingDaily(state, base); };
 import * as Weather from "../src/sim/weather.js";
 import { WORK_TYPES, WORK_KEYS, workState } from "../src/sim/work.js";
 import { ROLES } from "../src/sim/economy.js";
@@ -314,7 +316,7 @@ section("The Forage job at a base: work type, role, the daily gathering, the lan
     for (let d = 0; d < days; d++) {
       state.hour = (d0 + d) * 24 + 24;
       const before = base.stock.food;
-      H.huntingDaily(state, base);
+      huntDay(state, base);
       food += base.stock.food - before;
       daily.push(base.stock.food - before);
     }

@@ -30,7 +30,10 @@ import {
 } from "../src/sim/parties.js";
 import { startOrder, queueOrder, queueEstimate } from "../src/sim/orders.js";
 import { estimatePlan, PRESETS } from "../src/sim/plans.js";
+import { recomputeOwnership } from "../src/sim/factions.js";
 import * as H from "../src/sim/hunting.js";
+import { tripDay } from "../src/sim/jobtrips.js"; // the outdoor jobs in trips (a day of them, then the midnight tally)
+const huntDay = (state, base) => { tripDay(state, base); return H.huntingDaily(state, base); };
 import { newItem } from "../src/sim/inventory.js";
 import { teamLoad, LOAD_BANDS } from "../src/sim/load.js";
 import { makeHorde } from "../src/sim/hordes.js";
@@ -514,7 +517,7 @@ section("The hunting cabin, the Hunt and Fish jobs");
   const daily = [];
   for (let d = 0; d < 28; d++) {
     state.hour = (autumn + d) * 24 + 24;
-    const got = H.huntingDaily(state, base);
+    const got = huntDay(state, base);
     food += got.rations;
     daily.push(got.rations);
   }
@@ -528,6 +531,7 @@ section("The hunting cabin, the Hunt and Fish jobs");
   const river = state.tiles.find((t) => t.terrain !== "water" && !t.loc && !state.bases.some((b) => b.tile === t.id) && H.fishSpot(state, t.id));
   const out = { id: newId(), tile: river.id, type: "outpost", name: "Test Landing", stock: { food: 20, water: 20, ammo: 0, scrap: 0, preserved: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
   state.bases.push(out);
+  recomputeOwnership(state); // factions.js: the ground round the new outpost is yours (the Fish job needs water in the base's own land)
   const f = people[2];
   f.location = { kind: "base", baseId: out.id };
   f.role = "fish";
@@ -535,7 +539,7 @@ section("The hunting cabin, the Hunt and Fish jobs");
   out.armory.push(newItem("fishrod"));
   check(H.fishWorkWhy(state, out) === "" && H.fishWorkCap(state, out) === 1, "a rod in the armory: Fish work for one");
   let fish = 0;
-  for (let d = 0; d < 14; d++) { state.hour = (dayIn(state, "summer") + d) * 24 + 24; fish += H.huntingDaily(state, out).rations; }
+  for (let d = 0; d < 14; d++) { state.hour = (dayIn(state, "summer") + d) * 24 + 24; fish += huntDay(state, out).rations; }
   note(`one fisher with a rod on a river through two summer weeks: ${fish} food`);
   check(fish > 0 && H.meatAt(out) > 0, "the fisher brings in fresh fish");
 }
@@ -648,7 +652,7 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
       setAmmo(base.stock, 300); base.stock.arrows = 100;
       for (let d = 0; d < 20; d++) {
         state.hour = (autumn + d) * 24 + 24;
-        const got = H.huntingDaily(state, base);
+        const got = huntDay(state, base);
         r.food += got.rations / RUNS; r.noise += base.huntNoise / RUNS;
         for (const m of H.HUNT_METHODS) r.hrs[m] += got.hrs[m] / RUNS;
       }
@@ -664,27 +668,31 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   check(rows.mixed.noise > 0 && rows.mixed.noise < rows.guns.noise * 0.75 && rows.mixed.ammo < rows.guns.ammo * 0.75, `bows and guns half and half: about half the shots (${r1(rows.mixed.ammo)} ammo vs ${r1(rows.guns.ammo)})`);
   check(rows.bows.arrows > 0 && rows.traps.arrows === 0 && rows.guns.arrows === 0, "bows use arrows; guns and traps none");
   const hr = (k, m) => Math.round(rows[k].hrs[m]);
-  check(hr("traps", "traps") === 180 && hr("bows", "bows") === 180 && hr("guns", "guns") === 180 && hr("mixed", "guns") === 90 && hr("mixed", "bows") === 90, "the hours by the mix (180 hunter-hours in 20 days)");
-  check(hr("quiet", "guns") === 0 && hr("quiet", "traps") === 72 && hr("quiet", "bows") === 108, `quiet (40% traps, 60% bows): ${hr("quiet", "traps")} trap and ${hr("quiet", "bows")} bow hours, no gun`);
+  // Job trips (jobtrips.js): a hunter's hours on the ground are 3 a day two tiles out (the walk out and back eats into
+  // the dawn and dusk; a closer ground gives more), so 180 hunter-hours in 20 days, give or take where they went.
+  const tot = (k) => H.HUNT_METHODS.reduce((a, m) => a + rows[k].hrs[m], 0);
+  const share = (k, m) => rows[k].hrs[m] / Math.max(1e-9, tot(k));
+  check(["traps", "bows", "guns"].every((k) => tot(k) > 150 && tot(k) < 280 && share(k, k) > 0.999) && Math.abs(share("mixed", "guns") - 0.5) < 0.02 && Math.abs(share("mixed", "bows") - 0.5) < 0.02, `the hours by the mix (${["traps", "bows", "guns", "mixed"].map((k) => Math.round(tot(k))).join(", ")} hunter-hours in 20 days)`);
+  check(hr("quiet", "guns") === 0 && Math.abs(share("quiet", "traps") - 0.4) < 0.02 && Math.abs(share("quiet", "bows") - 0.6) < 0.02, `quiet (40% traps, 60% bows): ${hr("quiet", "traps")} trap and ${hr("quiet", "bows")} bow hours, no gun`);
   // Bows with no arrows go to the traps.
   H.setHuntMix(base, { traps: 0, bows: 100, guns: 0 });
   base.stock.arrows = 0;
   state.hour += 24;
-  const dry = H.huntingDaily(state, base);
-  check(dry.hrs.traps === 9 && !dry.shots && !dry.arrows, "bow hours with no arrows: the snare lines");
+  const dry = huntDay(state, base);
+  check(dry.hrs.traps > 0 && !dry.hrs.bows && !dry.hrs.guns && !dry.shots && !dry.arrows, "bow hours with no arrows: the snare lines");
   // Guns with no ammo above the walls' keep: the bows (never louder than the mix).
   H.setHuntMix(base, H.DEFAULT_MIX);
   base.stock.arrows = 50; setAmmo(base.stock, H.ammoKeep(state, base));
   state.hour += 24;
-  const noAmmo = H.huntingDaily(state, base);
-  check(noAmmo.hrs.bows === 9 && !noAmmo.shots && totalRounds(base.stock) === H.ammoKeep(state, base), "gun hours with the ammo down to the walls' keep: the bows");
+  const noAmmo = huntDay(state, base);
+  check(noAmmo.hrs.bows > 0 && !noAmmo.hrs.guns && !noAmmo.hrs.traps && !noAmmo.shots && totalRounds(base.stock) === H.ammoKeep(state, base), "gun hours with the ammo down to the walls' keep: the bows");
   // A hunter with only a rifle at 100% bows: the snare lines.
   hunters.forEach((s) => { s.gear.backpack.contents[0] = null; });
   H.setHuntMix(base, { traps: 0, bows: 100, guns: 0 });
   setAmmo(base.stock, 300);
   state.hour += 24;
-  const rifles = H.huntingDaily(state, base);
-  check(rifles.hrs.traps === 9 && !rifles.shots, "100% bows with only rifles: the snare lines, not a shot");
+  const rifles = huntDay(state, base);
+  check(rifles.hrs.traps > 0 && !rifles.hrs.bows && !rifles.hrs.guns && !rifles.shots, "100% bows with only rifles: the snare lines, not a shot");
   hunters[2].gear.weapon = newItem("compbow");
   // The day's hours: one hunter at 50% guns shoots 1 or 2 of 3 in turn (the fraction carries over).
   const one = [hunters[0]];
@@ -708,7 +716,7 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
       state.game = {};
       setAmmo(base.stock, 300); base.stock.arrows = 100;
       state.hour = (autumn + d % 20) * 24 + 24;
-      const got = H.huntingDaily(state, base);
+      const got = huntDay(state, base);
       if (got.shots || mix.guns === 0) days++;
       if (hz.target != null && hz.target !== ring) n++;
     }
