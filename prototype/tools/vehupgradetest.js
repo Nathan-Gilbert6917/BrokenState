@@ -548,6 +548,9 @@ section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
       const ox = me.x, oy = me.y; me.x = x; me.y = y;
       if (canSee(b, eg, me)) put = true; else { me.x = ox; me.y = oy; }
     }
+    // Tough enough to stay up for the six turns: the rest of the raid shoots at them too (after the dev merge of
+    // 2026-10-10 the first enemy phase put them down before the gunner's turn), and a gunner holds fire on the downed.
+    me.hp = me.maxHp = 2000;
     let shots = 0, turns = 0, moved = false;
     const at = [eg.x, eg.y];
     for (; turns < 6 && st.combat === b && !b.over; turns++) {
