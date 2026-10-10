@@ -165,7 +165,7 @@ export function snap(state, pl, s, rng, force = null) {
     const lost = {};
     for (const k of ["food", "water", "rawwater"]) { const n = Math.min(SNAP.STORES.max, Math.floor((stock[k] || 0) * SNAP.STORES.share)); if (n > 0) { stock[k] -= n; lost[k] = n; } }
     s.onBreak = true;
-    const what = Object.entries(lost).map(([k, n]) => `${n} ${k}`).join(" and ") || "nothing much";
+    const what = Object.entries(lost).map(([k, n]) => `${n} ${keyWord(k)}`).join(" and ") || "nothing much";
     log(state, pl.base ? `${s.name} tore through the stores at ${where} in the night, smashing and spilling what they could (mood ${mood}): ${what} lost.` : `${s.name} tore through the team's packs in the night at ${where}, flinging what they could into the dark (mood ${mood}): ${what} lost.`, "danger");
     uneasy(state, pl, s, `${name} wrecked the ${pl.base ? "stores" : "packs"}`);
     aftermath(state, pl, s, null, `${s.name} wrecked the ${pl.base ? "stores" : "team's packs"}.`);

@@ -598,12 +598,12 @@ export function packWater(state, p, base) {
   p.wormEggs = teamRawIn(p) > 0 ? r2(rawWaterEggs(state, base).eggs) : 0;
 }
 // A camp fire that boils the water: lit, and with something to keep it going this hour (deadfall on the land, or
-// firewood carried: woodcutting.js campFireHour; the staging camp's fire burns what lies about it). A camp whose fire
+// firewood carried: woodcutting.js campFireHour; a camp's or shelter's fire burns what lies about it). A camp whose fire
 // is out or has nothing left to burn does not boil: the team uses its tablets.
 export function campFireFed(state, p) {
   if (teamFire(state, p) !== true) return false;
-  const camp = state.staging;
-  if (camp && p.owner === "player" && partyTile(p) === camp.tile) return true;
+  const camp = p.owner === "player" ? state.bases.find((b) => b.tier === 0 && b.tile === partyTile(p)) : null;
+  if (camp) return true; // a camp's or shelter's fire burns what lies about it
   return fireLandOk(state, partyTile(p)) || carried(p, "wood") >= WOOD.fire.camp / 24 - 1e-9;
 }
 // How a team drinks its un-purified water now: "filter" (a water filter carried), "fire" (a lit, fed camp fire boils

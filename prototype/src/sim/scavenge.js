@@ -1,4 +1,5 @@
 // Abstract extraction raid: search hour by hour while Heat rises, then extract.
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger } from "./data.js";
 import { log, hurt, isNight, combatPower, gearEffect, factionById, spendShots, armedFactor, arrowsBack } from "./world.js";
 import {
@@ -29,7 +30,7 @@ import { searchMeds } from "./medfinds.js";
 import { ZTYPES } from "./hiveconst.js";
 import { siteWanderers, siteEncounter, wanderersAfterRaid } from "./wanderers.js";
 import { crawlTile, startCrawl } from "./citycrawl.js";
-import { addFind } from "./ammo.js"; // rounds by calibre
+import { addFind, roundsText } from "./ammo.js"; // rounds by calibre
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -146,7 +147,7 @@ export function afterRaid(state, result, setup) {
     const f = factionById(state, id);
     if (f) changeGoodwill(state, f, -10, "you raided their land");
   }
-  const loot = [...Object.entries(result.loot.supplies).map(([k, v]) => `${v} ${k}`), ...result.loot.gear.map((g) => g.name)];
+  const loot = [...Object.entries(result.loot.supplies).map(([k, v]) => `${v} ${keyWord(k)}`), ...result.loot.gear.map((g) => g.name)];
   log(state, `Raid at ${tileLabel(state, setup.tile)}: ${result.outcome === "extracted" ? `got out with ${loot.join(", ") || "nothing"}` : "nobody made it out"} (${r.searched}/${r.total} searched, ${r.hours}h).`, result.outcome === "extracted" ? "good" : "death");
   if (!p || !state.parties.includes(p)) return;
   if (!partyMembers(state, p).length) {
@@ -200,12 +201,11 @@ export function searchHour(state) {
     let qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
     if (key === "meds" && qty > 0) qty = searchMeds(t, qty); // medfinds.js: a box of them only at a pharmacy, clinic, hospital or medevac wreck
     if (qty > 0 && key === "ammo") {
-      addFind(e.found.supplies, t.loc ? t.loc.type : "", qty, false, e.tile, e.hours, i); // ammo.js: the rounds a place like this holds, by calibre
-      finds.push(`${qty} ammo`);
+      finds.push(roundsText(addFind(e.found.supplies, t.loc ? t.loc.type : "", qty, false, e.tile, e.hours, i))); // ammo.js: the rounds a place like this holds, by calibre, named
     } else if (qty > 0) {
       // Parts by kind (loot.js sortParts: an auto shop's are mostly car parts; their own dice).
       const got = key === "parts" && t.loc ? sortParts(state, t.loc.type, qty, `h${e.hours}:${i}`) : { [key]: qty };
-      for (const [k, q] of Object.entries(got)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; finds.push(`${q} ${k}`); }
+      for (const [k, q] of Object.entries(got)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; finds.push(`${q} ${keyWord(k)}`); }
     }
   }
   const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
@@ -269,7 +269,7 @@ export function searchHour(state) {
       if (kind && rng.chance(Math.min(0.8, mil[kind] * MILDEAD.SEARCH_BODY))) { // one of them was a soldier: his kit
         const loot = bodyLoot(rng, kind, armouredItem);
         const got = [];
-        for (const [k, v] of Object.entries(loot.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + v; got.push(`${v} ${k}`); }
+        for (const [k, v] of Object.entries(loot.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + v; got.push(`${v} ${keyWord(k)}`); }
         for (const g of loot.gear) { e.found.gear.push(g); got.push(g.name); }
         if (got.length) line += ` Off a ${ZTYPES[kind].name.toLowerCase()}'s body: ${got.join(", ")}.`;
       }
@@ -360,7 +360,7 @@ export function extract(state) {
     const take = Math.min(unitsThatFit(room, k), e.found.supplies[k]);
     p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take;
     room -= take * SUPPLIES[k].weight;
-    if (take < e.found.supplies[k]) left.push(`${e.found.supplies[k] - take} ${k}`);
+    if (take < e.found.supplies[k]) left.push(`${e.found.supplies[k] - take} ${keyWord(k)}`);
   }
   for (const g of gear) if (perKg(g) < 2 && !addGearToCargo(state, p, g)) left.push(g.name);
   if (left.length) log(state, `No room to carry ${left.join(", ")}. It was left behind.`, "info");

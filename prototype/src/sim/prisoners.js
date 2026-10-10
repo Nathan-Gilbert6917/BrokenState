@@ -76,10 +76,11 @@
 // prisoner trades are groupjails.js (the same JAIL tiers).
 import { SUPPLIES } from "./data.js";
 import {
-  log, addCard, day, baseById, atBase, factionById, makeSurvivor, skill, snapshot, mergeKnowledge, hurt, newId, survivorById,
+  log, addCard, day, baseById, atBase, factionById, makeSurvivor, skill, snapshot, mergeKnowledge, hurt, newId, survivorById, localId,
 } from "./world.js";
 import { partyMembers, carried, takeSupply, carriedAny, takeAny, tileLabel } from "./parties.js";
-import { waterIn, drawWater } from "./water.js"; // purified and un-purified water (purified drunk first)
+import { waterIn, drawWater, keyWord } from "./water.js";
+import { findRounds, kindTheme, roundsText } from "./ammo.js"; // a ransom paid in rounds, by calibre // purified and un-purified water (purified drunk first)
 import { changeGoodwill, attitude, strength, isAggressiveType, baseDefense } from "./factions.js";
 import { raidTier } from "./defences.js";
 import { surpriseAt } from "./watch.js"; // a rescue that comes on an unwatched night
@@ -853,7 +854,7 @@ export function gatherIntel(state, p, full = true) {
       for (const t of f.bases) tiles.add(t);
       f.known = true;
       f.intel = { day: day(state), pop: f.pop, food: Math.round(f.stock.food || 0), ammo: Math.round(f.stock.ammo || 0), scrap: Math.round(f.stock.scrap || 0), fuel: Math.round(f.stock.fuel || 0), meds: Math.round(f.stock.meds || 0) };
-      lines.push(`${f.name} hold ${f.bases.map((t) => tileLabel(state, t)).join(", ")}: about ${f.pop} people, ${f.intel.food} food, ${f.intel.ammo} ammo, ${f.intel.meds} meds, ${f.intel.fuel} fuel.`);
+      lines.push(`${f.name} hold ${f.bases.map((t) => tileLabel(state, t)).join(", ")}: about ${f.pop} people, ${f.intel.food} food, ${f.intel.ammo} rounds, ${f.intel.meds} meds, ${f.intel.fuel} fuel.`);
       const jt = jailText(state, f); // groupjails.js: their jail and who is in it (now known)
       if (jt) lines.push(`Their jail: ${jt}.`);
       foundAllOf(state, f); // hiding.js: their hidden outposts too
@@ -897,7 +898,7 @@ export function askRansom(state, id) {
   if (!terms) return `${p.group} are gone: nobody to pay for ${first(p.name)}.`;
   const [lo, hi] = PRISON.RANSOM.days;
   p.ransom = { asked: day(state), due: day(state) + state.rng.int(lo, hi), key: terms.key, qty: terms.qty };
-  return `Word goes to ${p.group}: ${terms.qty} ${terms.key} for ${p.name}. An answer in a few days.`;
+  return `Word goes to ${p.group}: ${terms.qty} ${keyWord(terms.key)} for ${p.name}. An answer in a few days.`;
 }
 function ransomAnswer(state, p) {
   const f = factionById(state, p.factionId);
@@ -912,9 +913,10 @@ function ransomAnswer(state, p) {
   const worth = groupMemberWorth(f, p.power || 3) >= R.value + R.perPower * (p.power || 3);
   if (worth && can >= Math.ceil(r.qty * 0.5) && state.rng.chance(chance)) {
     f.stock[r.key] = Math.max(0, (f.stock[r.key] || 0) - can);
-    base.stock[r.key] = (base.stock[r.key] || 0) + can;
+    const got = r.key === "ammo" ? findRounds(kindTheme(f.type), can, "ransom", localId(state, p.id)) : { [r.key]: can }; // their one ammo count paid as the rounds their kind keeps (ammo.js)
+    for (const [k, q] of Object.entries(got)) base.stock[k] = (base.stock[k] || 0) + q;
     goHome(state, p, R.goodwillPaid, "you ransomed their people");
-    const text = `${f.name} paid ${can} ${r.key} for ${p.name}, who walks home.`;
+    const text = `${f.name} paid ${r.key === "ammo" ? roundsText(got) : `${can} ${keyWord(r.key)}`} for ${p.name}, who walks home.`;
     log(state, text, "good");
     addCard(state, { title: "Ransom paid", text, choices: [{ label: "OK", resolve: () => "" }] });
   } else {

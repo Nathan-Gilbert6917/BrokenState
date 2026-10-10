@@ -22,17 +22,19 @@
 //   { $: "T", t: "Uint16Array", b: base64 } typed array · { $: "Rng", s } · { $: "Grid", w, h } · { $: "O", v }
 //   { $: "u" } undefined · { $: "N", v: "NaN" | "Infinity" | "-Infinity" | "-0" }
 import { migrateAllMods } from "./gunmods.js"; // old saves: gun parts onto the attachment slots
-import { migrateAmmo } from "./ammo.js"; // old saves: generic ammo into rounds by calibre
+import { migrateAmmo, findRounds, kindTheme } from "./ammo.js"; // old saves: generic ammo into rounds by calibre
+import { sanitizeLibrary } from "./custombg.js"; // a save's custom backgrounds: their old generic ammo as rounds
 import { migrateKit } from "./carrykit.js"; // old saves: carriers' plates, spare magazines
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
-import { peekNextId, setNextId, day, hub, alive, fillCrafting } from "./world.js";
+import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, localId } from "./world.js";
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS, GEAR } from "./data.js"; // firewood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js";
 import { CRAFT_BOOKS, tech } from "./blueprints.js"; // craft books read before they unlocked anything // the line-of-sight cache of a loaded battle (sparse on a big yard)
 import { saveSummary, campaignKey } from "./savesummary.js"; // the save list's one-line summary and campaign groups
 import { noteLootAge } from "./itemcond.js"; // the years since the fall, for loot rolled after a load
+import { migrateStaging } from "./staging.js"; // the old staging camp becomes a camp base
 /** @import { State } from "./types" */
 /**
  * A save (serializeState; a save file is it as JSON): the world's encoded graph, the id counter and the save list's summary.
@@ -143,6 +145,9 @@ export function deserializeState(save) {
   // (appearance.js CRAFT_START.oldSave), their skill floor too; anyone else carrying skills (prisoners, visitors,
   // children grown later) is filled the same way the first time world.js skill() or skills.js ensureSkills sees them.
   for (const sv of state.survivors || []) fillCrafting(sv); // only where it is missing: a newer save loads unchanged
+  // Melee (data.js SKILLS, world.js fillMelee): the same for people from before it: half their Shooting plus 0-6 by a
+  // hash of their name (appearance.js meleeOldSave), their floor too, and no perk point for milestones already passed.
+  for (const sv of state.survivors || []) fillMelee(sv);
   // Craft books (blueprints.js CRAFT_BOOKS): one someone had already read to the end before they unlocked anything
   // (Small Engine Repair) counts as read.
   for (const sv of state.survivors || []) for (const [k, h] of Object.entries(sv.books || {})) {
@@ -183,6 +188,26 @@ export function deserializeState(save) {
   // Rounds by calibre (ammo.js, the weapons overhaul): a save from before (no state.ammoCal) has every generic ammo
   // stock of yours split across the calibres of the guns that holder owns (9mm and 12 gauge with none), the same total.
   if (!state.ammoCal) { migrateAmmo(state); state.ammoCal = 1; }
+  // All ammo by calibre (2026-10-09, user request: "All ammo should be based on caliber"): a save from before has its
+  // generic ammo settled again in every holder of yours, its custom backgrounds' generic ammo as the rounds of their
+  // guns, and the rewards of the jobs on offer or under way as the rounds the group's kind keeps.
+  if (state.ammoCal < 2) {
+    migrateAmmo(state);
+    if (state.customBackgrounds) state.customBackgrounds = sanitizeLibrary(state.customBackgrounds);
+    for (const j of (state.jobs && state.jobs.list) || []) {
+      const r = j.reward;
+      if (!r || !r.supplies || !(r.supplies.ammo >= 1) || j.status === "done") continue;
+      const f = (state.factions || []).find((x) => x.id === j.fid);
+      const n = Math.floor(r.supplies.ammo);
+      delete r.supplies.ammo;
+      for (const [k, q] of Object.entries(findRounds(kindTheme(f ? f.type : null), n, "jobreward", localId(state, j.id)))) r.supplies[k] = (r.supplies[k] || 0) + q;
+    }
+    state.ammoCal = 2;
+  }
+  // staging.js (2026-10-09, camps are bases): the old staging camp (state.staging) becomes the camp base that is your
+  // hub, the teams working on it its residents; outpost camps (tier-0 outposts) are camps. After the ammo steps above,
+  // so the old camp's stores come in as rounds by calibre.
+  migrateStaging(state);
   // A stock amount that is NaN is 0: before 7212b81 a team packing a supply its base had no key for (firewood on a
   // hardcore hub) made the base's stock NaN, and saves of that time carry it (tools/savecorpustest.js found it).
   const unNaN = (o) => { if (o) for (const k of Object.keys(o)) if (Number.isNaN(o[k])) o[k] = 0; };

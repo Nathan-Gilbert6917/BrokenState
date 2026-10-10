@@ -1,6 +1,7 @@
 // Hidden bases and radio intel (sim/hiding.js, sim/intel.js): the Defence tab's Concealment card (how well hidden the
 // base is, why, and Run silent) and the Groups tab radio header's Radio security block (discipline, encryption,
 // decoys). Handlers: INTEL_ACTIONS (registered by main.js).
+import { keyWord } from "../sim/water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { baseById } from "../sim/world.js";
 import { BUILDINGS, count } from "../sim/buildings.js";
 import { concealOf, concealWord, setSilent, HIDE, SILENT } from "../sim/hiding.js";
@@ -18,7 +19,7 @@ export const SILENT_TIP = `Run silent: nothing about this base or its teams goes
 // The Defence tab's card.
 export function concealCard(state, b) {
   const c = concealOf(state, b);
-  const camo = count(b, "camo") ? "" : ` Camouflage netting (Construction: ${Object.entries(BUILDINGS.camo.cost).map(([k, q]) => `${q} ${k}`).join(", ")}) adds ${pct(HIDE.CAMO)}.`;
+  const camo = count(b, "camo") ? "" : ` Camouflage netting (Construction: ${Object.entries(BUILDINGS.camo.cost).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ")}) adds ${pct(HIDE.CAMO)}.`;
   return `<h3${tip(CONCEAL_TIP)}>Concealment</h3>
     <div class="card small">
       <div class="spread"><span${tip(CONCEAL_TIP)}><b>${pct(c.value)}</b> · ${esc(concealWord(c.value))}</span>

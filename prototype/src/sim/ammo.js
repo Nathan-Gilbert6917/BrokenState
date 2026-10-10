@@ -13,7 +13,7 @@
 // settled into the rounds that fit the guns there (settleRec, every hour and when a fight starts); generic ammo taken
 // from one (negative) comes out of the rounds the guns there need least. totalRounds counts both, so a figure read in
 // between is right.
-import { CALIBERS, AMMO_TYPES, ammoKey, AMMO_MIX, KIND_MIX, KIT_AMMO, STARTER_AMMO, ROUND_SUPPLIES, RELOAD_SUPPLIES } from "./data-ammo.js";
+import { CALIBERS, AMMO_TYPES, ammoKey, AMMO_MIX, KIND_MIX, KIT_AMMO, STARTER_AMMO, ROUND_SUPPLIES, RELOAD_SUPPLIES, HAND_SUPPLIES } from "./data-ammo.js";
 import { SUPPLIES, GEAR } from "./data.js";
 import { WEAPONS } from "./combat.js";
 import { hash01 } from "./skills.js";
@@ -21,7 +21,7 @@ import { SITE_TAGS, AREA_TAGS } from "./loot.js";
 
 // ---------- keys and stock records (rounds.js) ----------
 export * from "./rounds.js";
-import { foldRounds, sumRecs, ROUND_KEYS, GENERIC_KEYS, addAmmo, addRounds, baseKey, baseType, calName, hasGeneric, isRoundKey, keyFor, roundName, roundOf, roundsIn, settleRec, spendAmmo, splitByMix, takeRounds, totalIn, totalRounds, typeFor, typeFx, typeName, typesOf, withHand } from "./rounds.js";
+import { factoryKey, foldRounds, sumRecs, ROUND_KEYS, GENERIC_KEYS, addAmmo, addRounds, baseKey, baseType, calName, hasGeneric, isRoundKey, keyFor, roundName, roundOf, roundsIn, settleRec, spendAmmo, splitByMix, takeRounds, totalIn, totalRounds, typeFor, typeFx, typeName, typesOf, withHand } from "./rounds.js";
 const num = (v) => (Number.isFinite(v) ? v : 0);
 
 // The calibre a weapon shoots (null: melee, bows, acid, anything that takes no rounds; a launcher too: its rounds are
@@ -144,6 +144,15 @@ export function unbox(list, rec) {
 // n rounds paid out of a base's stock (a gift, a tribute, a council's request): the ones its guns need least first.
 /** @param {any} state @param {any} base @param {number} n */
 export const payAmmo = (state, base, n) => spendAmmo(base.stock, n, baseCals(state, base)).n;
+// The same, returning the rounds by key that went ({ key: q }; roundsText names them).
+/** @param {any} state @param {any} base @param {number} n */
+export const payAmmoKeys = (state, base, n) => { const g = spendAmmo(base.stock, n, baseCals(state, base)).keys; delete g.ammo; return g; };
+// "40 rounds (30 9mm FMJ and 10 .22 LR FMJ)": n rounds a base would pay (the ones its guns need least), for a card.
+/** @param {any} state @param {any} base @param {number} n */
+export function payWord(state, base, n) {
+  const g = base ? payRoundsOf(state, base, n) : {};
+  return Object.keys(g).length ? `${n} rounds (${roundsText(g)})` : `${n} rounds`;
+}
 // A base's generic ammo and armory boxes into rounds (the guns there say which).
 /** @param {any} state @param {any} base */
 export function settleBase(state, base) {
@@ -170,7 +179,7 @@ export function settleParty(state, p) {
 export function settleAll(state) {
   for (const b of state.bases || []) settleBase(state, b);
   for (const p of state.parties || []) if (p.owner === "player" || p.owner == null) settleParty(state, p);
-  if (state.staging && hasGeneric(state.staging.stores)) settleRec(state.staging.stores, mixForCals({}), null);
+  if (state.staging && state.staging.stores && hasGeneric(state.staging.stores)) settleRec(state.staging.stores, mixForCals({}), null); // an old save's staging camp (before staging.js migrateStaging)
   for (const f of state.factions || []) if (f.stock) foldRounds(f.stock); // an AI group keeps one ammo count
   for (const p of state.parties || []) if (p.owner !== "player" && p.owner != null && p.supplies) { foldRounds(p.supplies); if (p.cargo && p.cargo.supplies && !(p.kind === "caravan" && p.phase === "trading")) foldRounds(p.cargo.supplies); } // their teams too (a caravan at your gates keeps its rounds for the deal)
 }
@@ -748,4 +757,173 @@ export function roundsLine(rec) {
   const g = Math.floor(num(rec && rec.ammo));
   if (g > 0) parts.push(`${g} unsorted`);
   return parts.join(", ") || "none";
+}
+
+// ---------- every round together (2026-10-09, user request: "The ammo shown at the top should be a combined number of
+// ammo and when hovering shows the breakdown of how much per caliber including arrows") ----------
+// Records (a base's stock, a team's supplies and cargo) and loose box items (pockets, packs) as one breakdown: every
+// calibre (launcher rounds too) with its types (a handload counted with its factory round), arrows and bolts, and any
+// generic ammo not yet sorted. Returns { total, rows: [{ key, name, n, types: [{ type, name, n }] }] }, most first.
+/** @param {(Record<string, number> | null | undefined)[]} recs @param {any[]} [boxes] box items */
+export function ammoBreakdown(recs, boxes = []) {
+  /** @type {Record<string, number>} */
+  const byKey = {};
+  let arrows = 0, loose = 0;
+  const add = (k, q) => { const f = factoryKey(k); if (ROUND_SUPPLIES[f]) byKey[f] = (byKey[f] || 0) + q; };
+  for (const r of recs || []) {
+    if (!r) continue;
+    for (const k of Object.keys(r)) {
+      const q = Math.floor(num(r[k]));
+      if (!(q > 0)) continue;
+      if (k === "arrows") arrows += q;
+      else if (k === "ammo") loose += q;
+      else if (ROUND_SUPPLIES[k] || HAND_SUPPLIES[k]) add(k, q);
+    }
+  }
+  for (const it of boxes || []) { if (!it || !ROUND_SUPPLIES[it.key]) continue; const q = Math.max(0, Math.floor(num(it.dur))); if (q > 0) add(it.key, q); }
+  /** @type {Record<string, any>} */
+  const cals = {};
+  for (const [k, q] of Object.entries(byKey)) {
+    const r = roundOf(k);
+    if (!r) continue;
+    const row = cals[r.cal] || (cals[r.cal] = { key: r.cal, name: calName(r.cal), n: 0, types: [] });
+    row.n += q;
+    row.types.push({ type: r.type, name: typeName(r.type), n: q });
+  }
+  const rows = Object.values(cals);
+  for (const row of rows) row.types.sort((a, b) => b.n - a.n || (a.type < b.type ? -1 : 1));
+  if (arrows > 0) rows.push({ key: "arrows", name: "Arrows and bolts", n: arrows, types: [] });
+  if (loose > 0) rows.push({ key: "ammo", name: "Unsorted rounds", n: loose, types: [] });
+  rows.sort((a, b) => b.n - a.n || (a.key < b.key ? -1 : 1));
+  return { total: rows.reduce((a, r) => a + r.n, 0), rows };
+}
+// The breakdown as a tooltip's text, one calibre a line: "9mm 120 (FMJ 100, hollow point 20)", "Arrows and bolts 40".
+/** @param {{ rows: any[] }} bd @param {string} [sep] */
+export function breakdownText(bd, sep = " · ") {
+  if (!bd || !bd.rows.length) return "none";
+  return bd.rows.map((r) => `${r.name} ${r.n}${r.types.length > 1 ? ` (${r.types.map((t) => `${t.name} ${t.n}`).join(", ")})` : r.types.length ? ` (${r.types[0].name})` : ""}`).join(sep);
+}
+// A base's ammo as the top bar shows it: its stock (rounds, arrows) and the boxes its people carry. Cached per hour
+// and stock figure (the bar is drawn often).
+const BAR_CACHE = new WeakMap();
+/** @param {any} state @param {any} base */
+export function baseAmmoBreakdown(state, base) {
+  if (!base || !base.stock) return { total: 0, rows: [] };
+  const people = peopleAt(state, base.id);
+  let sig = `${state.hour}|${people.length}`;
+  for (const k of Object.keys(base.stock)) if (ROUND_SUPPLIES[k] || HAND_SUPPLIES[k] || k === "arrows" || k === "ammo") sig += `|${k}:${Math.floor(num(base.stock[k]))}`;
+  const c = BAR_CACHE.get(base);
+  if (c && c.sig === sig) return c.bd;
+  const bd = ammoBreakdown([base.stock], people.flatMap(boxesOf));
+  BAR_CACHE.set(base, { sig, bd });
+  return bd;
+}
+// A team's (its packed supplies, its cargo, the boxes its people carry).
+/** @param {any} state @param {any} p */
+export const teamAmmoBreakdown = (state, p) => (p ? ammoBreakdown([p.supplies, p.cargo && p.cargo.supplies], membersOf(state, p).flatMap(boxesOf)) : { total: 0, rows: [] });
+
+// ---------- generic counts turned into rounds for your side (2026-10-09, user request: "All ammo should be based on
+// caliber") ----------
+// Rounds in a record as words for a card or a log line: "20 9mm FMJ and 10 12 gauge 00 buckshot" (generic ammo:
+// "N rounds"). Arrows are not rounds (their own key).
+/** @param {Record<string, number> | null | undefined} rec */
+export function roundsText(rec) {
+  const parts = [];
+  for (const [k, q] of Object.entries(rec || {})) {
+    if (!(q >= 1)) continue;
+    if (k === "ammo") parts.push(`${Math.floor(q)} rounds`);
+    else if (ROUND_SUPPLIES[k] || HAND_SUPPLIES[k]) parts.push(`${Math.floor(q)} ${(ROUND_SUPPLIES[k] || HAND_SUPPLIES[k]).name}`);
+  }
+  return parts.length <= 1 ? parts.join("") || "no rounds" : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+// A supply record as words with the rounds named by calibre ("12 food, 20 9mm FMJ"), for cards and log lines.
+/** @param {Record<string, number> | null | undefined} rec */
+export function suppliesText(rec) {
+  const parts = [];
+  for (const [k, q] of Object.entries(rec || {})) {
+    if (!(q >= 1)) continue;
+    if (k === "ammo" || ROUND_SUPPLIES[k] || HAND_SUPPLIES[k]) parts.push(roundsText({ [k]: q }));
+    else parts.push(`${Math.floor(q)} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k}`);
+  }
+  return parts.join(", ") || "nothing";
+}
+// n generic rounds as common rounds of these calibres ({ key: q }; no guns: 9mm and 12 gauge, half each).
+/** @param {number} n @param {Record<string, number>} [cals] */
+export const calRounds = (n, cals = {}) => splitByMix(Math.floor(n), mixForCals(cals));
+// A record's generic ammo turned into common rounds of these calibres, in place (a reward, a deal's side, a background
+// saved before rounds went by calibre). Returns the rounds added.
+/** @param {Record<string, number>} rec @param {Record<string, number>} [cals] */
+export function calibrate(rec, cals = {}) {
+  if (!rec || typeof rec !== "object" || !("ammo" in rec)) return {};
+  const n = Math.floor(num(rec.ammo));
+  delete rec.ammo;
+  if (!(n >= 1)) return {};
+  const parts = calRounds(n, cals);
+  for (const [k, q] of Object.entries(parts)) addRounds(rec, k, q);
+  return parts;
+}
+// The calibres of a holder of yours (a base or a team; anything else: none known, the fallback 9mm / 12 gauge).
+/** @param {any} state @param {any} holder a base ({ stock }) or a team ({ supplies, members }) */
+export const holderCals = (state, holder) => (!holder ? {} : holder.stock && holder.id != null && !holder.members ? baseCals(state, holder) : holder.members ? partyCals(state, holder) : {});
+// n generic rounds given to a holder of yours, at once as the rounds for its guns (a reward, a gift, a deal's goods):
+// into rec (default its stock / supplies). Returns { key: q } (roundsText says what).
+/** @param {any} state @param {any} holder @param {number} n @param {Record<string, number> | null} [rec] */
+export function giveRoundsTo(state, holder, n, rec = null) {
+  const to = rec || (holder && (holder.stock || holder.supplies));
+  if (!to || !(n >= 1)) return {};
+  const parts = calRounds(n, holderCals(state, holder));
+  for (const [k, q] of Object.entries(parts)) addRounds(to, k, q);
+  return parts;
+}
+// n generic rounds a holder of yours would pay (a deal's "N ammo"): the rounds its guns need least, chosen without
+// taking them ({ key: q }; short: what there is).
+/** @param {any} state @param {any} holder @param {number} n */
+export function payRoundsOf(state, holder, n) {
+  const recs = holder ? (holder.stock && !holder.members ? [holder.stock] : [holder.cargo && holder.cargo.supplies, holder.supplies]) : [];
+  /** @type {Record<string, number>} */
+  const out = {};
+  let left = Math.floor(n);
+  const cals = holderCals(state, holder);
+  for (const r of recs) {
+    if (!r || left <= 0) continue;
+    const g = spendAmmo({ ...r, ammo: 0 }, left, cals).keys;
+    for (const [k, q] of Object.entries(g)) if (k !== "ammo" && q > 0) { out[k] = (out[k] || 0) + q; left -= q; }
+  }
+  return out;
+}
+// A deal's sides with generic ammo named by calibre for your side, in place: what you get, the rounds for your guns;
+// what you give, the rounds your guns need least (short: the rest asked as the common rounds of your guns). give / get
+// are the deal's records as seen from your side. Returns the deal.
+/** @param {any} state @param {any} holder @param {{ give?: Record<string, number> | null, get?: Record<string, number> | null }} deal */
+export function calibrateDeal(state, holder, deal) {
+  if (!deal) return deal;
+  const cals = holderCals(state, holder);
+  if (deal.get && num(deal.get.ammo) >= 1) calibrate(deal.get, cals);
+  if (deal.give && num(deal.give.ammo) >= 1) {
+    const n = Math.floor(deal.give.ammo);
+    const keys = payRoundsOf(state, holder, n);
+    const got = Object.values(keys).reduce((a, q) => a + q, 0);
+    delete deal.give.ammo;
+    for (const [k, q] of Object.entries(keys)) deal.give[k] = (deal.give[k] || 0) + q;
+    if (got < n) for (const [k, q] of Object.entries(calRounds(n - got, cals))) deal.give[k] = (deal.give[k] || 0) + q;
+  }
+  return deal;
+}
+// Rounds by key in a record clamped to `cap` rounds in all (the editors' caps); generic ammo first turned into common
+// rounds of `cals`. Returns a new record of the round keys only (launcher rounds too).
+/** @param {Record<string, number> | null | undefined} src @param {number} cap @param {Record<string, number>} [cals] */
+export function capRounds(src, cap, cals = {}) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  if (!src || typeof src !== "object") return out;
+  /** @type {Record<string, number>} */
+  const rec = {};
+  for (const [k, v] of Object.entries(src)) { const q = Math.round(Number(v)); if (q > 0 && (ROUND_SUPPLIES[k] || k === "ammo")) rec[k] = q; }
+  calibrate(rec, cals);
+  let left = Math.max(0, Math.floor(cap));
+  for (const k of Object.keys(rec).filter((x) => ROUND_SUPPLIES[x]).sort()) {
+    const q = Math.min(left, rec[k]);
+    if (q > 0) { out[k] = q; left -= q; }
+  }
+  return out;
 }

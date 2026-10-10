@@ -43,7 +43,7 @@ import { partDeficit, kitWants } from "./repair.js"; // the parts and kits the g
 import { escortArrived, pickupArrived } from "./jobs.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { spendAmmo } from "./rounds.js"; // rounds by calibre
-import { baseCals } from "./ammo.js";
+import { baseCals, expandAmmo, kindTheme } from "./ammo.js";
 import { payoutBreaks } from "./upkeep.js"; // the governor never pays food or water out of the base's reserve
 import { groupEscort, escortStrength, cargoValue } from "./escorts.js"; // a caravan's guards: the cargo's wish, what they can spare
 import { pendingDeal, dealCarried, completeRadioDeal, goodsText } from "./radiotrade.js"; // deals agreed over the radio
@@ -99,6 +99,7 @@ export function sendCaravan(state, f, base, { goods = null, deal = null, gift = 
     f.stock[sk] -= take;
     g.supplies[k] = take;
   }
+  if (!deal) expandAmmo(g.supplies, kindTheme(f.type)); // ammo.js: their "ammo" on the road as rounds by calibre (what their kind keeps), named wherever the load is shown; a deal's goods are keyed already
   for (const item of (goods && goods.gear) || []) {
     const i = (f.wares || []).indexOf(item);
     if (i < 0) continue;
@@ -236,7 +237,7 @@ function onCaravanCombat(state, result, setup) {
       for (const [k, q] of sup) base.stock[k] = (base.stock[k] || 0) + Math.floor(q);
       base.armory.push(...p.goods.gear);
     }
-    const what = [...sup.map(([k, q]) => `${Math.floor(q)} ${k}`), ...p.goods.gear.map((g) => g.name)];
+    const what = [...sup.map(([k, q]) => `${Math.floor(q)} ${keyWord(k)}`), ...p.goods.gear.map((g) => g.name)];
     removeParty(state, p);
     text = `The ${f ? f.name : ""} caravan is yours: ${what.join(", ") || "it carried nothing of use"}${base ? `, all in ${base.name}'s stores` : ""}. ${f ? `${f.name} will not forget it.` : ""}`;
     log(state, text, "danger");
@@ -423,7 +424,7 @@ export function caravanCard(state, p, text = "") {
   const next = c.stops[c.idx + 1];
   const home = baseById(state, p.homeBaseId) || hub(state);
   const eta = (to) => { const hrs = legHours(state, p, tile, to); return hrs == null ? "no route" : `about ${hrs}h`; };
-  const cargo = Object.entries(p.cargo.supplies).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${k}`).concat(p.cargo.gear.map((g) => g.name));
+  const cargo = Object.entries(p.cargo.supplies).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${keyWord(k)}`).concat(p.cargo.gear.map((g) => g.name));
   const route = c.stops.map((t, i) => `${i <= c.idx ? "✓ " : ""}${destName(state, t)}`).join(" → ");
   const choices = [];
   const deal = f ? pendingDeal(state, f) : null;

@@ -40,8 +40,8 @@ import { tradeSpeech, bookWares, gainXp, USE, hash01 } from "./skills.js";
 import { armsSold } from "./diplomacy.js";
 import { visitorTradeContext, resumeVisitorTrade } from "./visitors.js";
 import { RAW, keyWord } from "./water.js";
-import { isRoundKey, totalRounds, ROUND_KEYS, roundOf, spendAmmo } from "./rounds.js"; // rounds by calibre
-import { kindShare, kindTheme, expandAmmo, partyCals, baseCals, wantedKey, dealRounds } from "./ammo.js";
+import { isRoundKey, totalRounds, ROUND_KEYS, roundOf, spendAmmo, baseKey } from "./rounds.js"; // rounds by calibre
+import { kindShare, kindTheme, kindMix, expandAmmo, partyCals, baseCals, wantedKey, dealRounds, holderCals } from "./ammo.js";
 import { radioTradeContext, radioTradeProblem, bookRadioTrade, matchGear, sameGear } from "./radiotrade.js"; // the trade window over the radio
 import { intoArsenalFromShelf, shelfSurplus } from "./arsenal.js"; // group arsenals: the guns you sell them they use; their surplus is for sale
 
@@ -125,6 +125,35 @@ export function spread(f, speech = 0) {
 export const WAR_PREMIUM = { ammo: 1.35, meds: 1.35 };
 export const WAR_GEAR_PREMIUM = 1.3;
 const WAR_RESERVE = { food: 2, ammo: 2, meds: 2, fuel: 2 };
+// A deal's generic "ammo" between a group and a holder of yours made one round key (2026-10-09, user request: "All
+// ammo should be based on caliber"): what they give (theirs), the round your guns want most of what they can spare
+// (else their kind's commonest round they can spare); what you give, the round your guns need least that you have
+// qty of (else the one you have most of; none: the common round of your guns). The AI keeps one ammo count: a round
+// key is priced and spared out of it (stockOf, available).
+/** @param {any} state @param {any} f @param {any} holder a base or a team of yours @param {number} qty @param {boolean} theirs */
+export function dealRoundKey(state, f, holder, qty, theirs) {
+  const cals = holderCals(state, holder);
+  const keys = ROUND_KEYS.filter((k) => SUPPLIES[k] && SUPPLIES[k].round && SUPPLIES[k].common !== false && !SUPPLIES[k].round.hand);
+  if (theirs) {
+    /** @type {Record<string, number>} */
+    const avail = {};
+    for (const k of keys) { const a = f ? available(f, k) : 0; if (a >= 1) avail[k] = a; }
+    const want = wantedKey(cals, avail);
+    if (want) return want;
+    const mix = kindMix(f && f.type);
+    const best = Object.keys(avail).sort((a, b) => (mix[b] || 0) - (mix[a] || 0) || avail[b] - avail[a] || (a < b ? -1 : 1))[0];
+    return best || Object.keys(mix).sort((a, b) => mix[b] - mix[a])[0] || "a_9mm_fmj";
+  }
+  const rec = holder ? (holder.stock && !holder.members ? holder.stock : { ...(holder.supplies || {}), ...Object.fromEntries(Object.entries((holder.cargo && holder.cargo.supplies) || {}).map(([k, q]) => [k, q + ((holder.supplies && holder.supplies[k]) || 0)])) }) : {};
+  const have = keys.filter((k) => Math.floor(rec[k] || 0) >= 1);
+  const needLeast = (k) => (cals[SUPPLIES[k].round.cal] ? 1 : 0);
+  const enough = have.filter((k) => rec[k] >= qty).sort((a, b) => needLeast(a) - needLeast(b) || SUPPLIES[a].value - SUPPLIES[b].value || rec[b] - rec[a] || (a < b ? -1 : 1));
+  if (enough.length) return enough[0];
+  const most = have.sort((a, b) => needLeast(a) - needLeast(b) || rec[b] - rec[a] || (a < b ? -1 : 1))[0];
+  if (most) return most;
+  const c = Object.keys(cals).sort((a, b) => cals[b] - cals[a])[0];
+  return c ? baseKey(c) : "a_9mm_fmj";
+}
 // Their kind and state for a supply key or an item (valuation.js priceInfo: mult, refused, the "why" notes).
 export const supplyInfo = (state, f, key) => priceInfo(state, f, catOf(key), false);
 export const gearInfo = (state, f, item) => priceInfo(state, f, itemCat(item.key), true);
@@ -623,8 +652,8 @@ export function tradeVerdict(state) {
   for (const k of [...Object.keys(t.offer).filter((x) => t.offer[x] > 0), ...Object.keys(t.ask).filter((x) => t.ask[x] > 0), ...offerGear.map((g) => g.key), ...askGear.map((g) => g.key)]) {
     if (refuses(f, k)) return out(false, `${f.name} will not touch ${catName(catOf(k))}.`);
   }
-  for (const [k, q] of Object.entries(t.offer)) if (q > (ctx.have[k] || 0)) return out(false, `You only have ${ctx.have[k] || 0} ${k}.`);
-  for (const [k, q] of Object.entries(t.ask)) if (q > (ctx.theirHave[k] || 0)) return out(false, `They can spare only ${ctx.theirHave[k] || 0} ${k}.`);
+  for (const [k, q] of Object.entries(t.offer)) if (q > (ctx.have[k] || 0)) return out(false, `You only have ${ctx.have[k] || 0} ${keyWord(k)}.`);
+  for (const [k, q] of Object.entries(t.ask)) if (q > (ctx.theirHave[k] || 0)) return out(false, `They can spare only ${ctx.theirHave[k] || 0} ${keyWord(k)}.`);
   // Carry space: a team carries what it gets; their caravan carries what it takes.
   if (ctx.kind === "radio") {
     const why = radioTradeProblem(state, ctx, offerGear, askGear); // radiotrade.js: a deal waiting, their caravan's load
@@ -701,7 +730,7 @@ export function balanceWith(state, key) {
     const want = minSellable(state, f, key, speech, curV + (tot.ask - tot.offer), ctx.have[key] || 0);
     if (!Number.isFinite(want)) return `You do not have enough ${key} to balance it (${ctx.have[key] || 0}).`;
     setQty(state, "mine", key, want);
-    return `Added ${want - cur} ${key} to your side.`;
+    return `Added ${want - cur} ${keyWord(key)} to your side.`;
   }
   if (t.offer[key]) return `You are offering ${key}: take it off your side first.`;
   const cur = t.ask[key] || 0;
@@ -744,13 +773,13 @@ export function executeTrade(state) {
     if (!(q > 0)) continue;
     if (ctx.kind === "visit") takeFromParty(ctx.p, k, q);
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) - q;
-    const tk = ctx.kind === "caravan" ? k : groupStockKey(k, f); // a group's own stores: one water pool, one count of parts
+    const tk = ctx.kind === "caravan" || (isRoundKey(k) && !pooled(f)) ? k : groupStockKey(k, f); // a group's own stores: one water pool, one count of parts (an outsider's rounds stay by key)
     theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" ? 0 : stockOf(f, k))) + q; // a group with no figure yet (water, firewood) starts from its comfortable stock
     gave.push(`${q} ${keyWord(k)}`);
   }
   for (const [k, q] of Object.entries(t.ask)) {
     if (!(q > 0)) continue;
-    const tk = ctx.kind === "caravan" ? k : groupStockKey(k, f); // a group's own stores: one ammo count, one count of parts
+    const tk = ctx.kind === "caravan" || (isRoundKey(k) && !pooled(f)) ? k : groupStockKey(k, f); // a group's own stores: one ammo count, one count of parts; an outsider (visitors.js) keeps its rounds by key, so a team buying them takes them from that key, never from a generic count it no longer has
     theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" ? 0 : stockOf(f, tk))) - q;
     if (ctx.kind === "visit") ctx.p.cargo.supplies[k] = (ctx.p.cargo.supplies[k] || 0) + q;
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) + q;

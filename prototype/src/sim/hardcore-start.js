@@ -35,17 +35,27 @@
 //   hub later is the normal game's exile (conquest.js): a new staging camp (a little cheaper), later outposts the
 //   usual 15 scrap.
 // Everything here runs only in a hardcore world (hardcore.js isHardcore).
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES, clashIn } from "./data.js";
 import { bornTraits, tidyTiers } from "./traits.js"; // what the world's dice rolled at birth, before the newer traits came in
 import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
 import { newItem, packOf, POCKETS, START_DUR, startKit } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
-import { starterLoad, pocketBox, settleParty } from "./ammo.js"; // rounds by calibre
+import { starterLoad, pocketBox, settleParty, calOf, gunCals, calibrate, addRecord, roundsText } from "./ammo.js"; // rounds by calibre
+import { baseKey, ROUND_KEYS } from "./rounds.js";
+import { ROUND_SUPPLIES } from "./data-ammo.js";
+// The rounds a grab brought, by key (got.roundKeys): n of the common round of this gun's calibre (2026-10-09, user
+// request: "All ammo should be based on caliber": a grab's rounds are for the gun they actually got). got.ammo: how
+// many, for the day-1 lines.
+const gunRounds = (got, wkey, n) => { const c = calOf(wkey); if (!c || !(n > 0)) return; got.roundKeys[baseKey(c)] = (got.roundKeys[baseKey(c)] || 0) + n; got.ammo += n; };
+// Only the rounds of a record ({ key: n }).
+const roundsOnly = (rec) => Object.fromEntries(Object.entries(rec || {}).filter(([k, q]) => ROUND_SUPPLIES[k] && q > 0));
 // What someone has with them at the start, looked after but worn (inventory.js START_DUR).
 const startItem = (rng, key, q) => newItem(key, q, rng, START_DUR);
 import { Rng } from "./rng.js";
-import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
+import { meleeBump } from "./appearance.js"; // a background's Melee bump: its own die
+import { sightRadius, partyMembers, partyTile, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { isCustomBg } from "./custombg.js";
 import { grabStartGear, addPickedSupplies, trunkFromPicks, loadGun, pickOf } from "./startgear.js"; // gear picked on the new-run screen (Customize)
@@ -67,7 +77,7 @@ export const HC_START = {
   POCKET_ITEMS: [0, 4],
   // A weapon from the house: the chance with a bag / with only pockets, and which (weights). A gun comes with a few rounds.
   WEAPON: { pack: 0.65, pockets: 0.4 },
-  WEAPONS: { knife: 6, bat: 3, prybar: 1.5, pistol: 1.2, machete: 0.8, revolver: 0.5, huntrifle: 0.3 },
+  WEAPONS: { knife: 6, bat: 3, prybar: 1.5, pistol: 1.2, machete: 0.8, revolver: 0.5, huntrifle: 0.3, pocketknife: 2, lockback: 0.6, flipknife: 0.3 }, // knives (data-blades.js)
   ROUNDS: { pistol: [3, 12], revolver: [2, 6], huntrifle: [2, 5] },
   // Small things in pockets (weights; all GEAR keys with small: true) and more in a bag (any non-bulky item).
   POCKET_STUFF: { phone: 4, lighters: 3, flashlight: 2, photos: 3, chocolate: 2, candy: 2, smokes: 1.5, batteries: 1.5, bandagekit: 1, goldring: 0.8, watch: 0.6, tobacco: 0.5, tea: 0.4, cards: 0.6, harmonica: 0.3, monocular: 0.2, coins: 0.3 },
@@ -107,28 +117,30 @@ export const HC_START = {
   // Balance (2026-10-07): the skill bumps average 6–8.5 points a background, and the ones that bring the most kit
   // (the veteran's vest and rifle, the cop's vest and pistol, the prepper's bag) get the fewest or turn up less; the
   // ones with little kit (office worker, teacher, trucker, blue-collar worker) more skills and a useful thing or two.
+  // Melee (2026-10-09): the hands-on ones bump it (blue-collar, veteran, cop most; prepper, farmer, mechanic, trucker a
+  // little), on a die of its own (appearance.js meleeBump), so the other bumps and everything after draw what they did.
   TRAIT_ODDS: 0.6,
   ARCHETYPES: {
-    prepper:    { name: "Prepper",            w: 0.9, skills: { scavenging: [2, 4], scouting: [1, 3], shooting: [1, 3] }, traits: {}, carOdds: 1.3,
+    prepper:    { name: "Prepper",            w: 0.9, skills: { scavenging: [2, 4], scouting: [1, 3], shooting: [1, 3], melee: [1, 2] }, traits: {}, carOdds: 1.3,
                   cars: { truck: 4, hummer: 2, suv: 2 }, trunk: { food: [6, 12], water: [6, 12], fuel: [4, 10], ammo: [10, 30], n: [2, 4], gear: { stove: 1, snarewire: 1, fishrod: 1, camonet: 0.8, tripwire: 0.6, flare: 1, survivalbook: 0.6, beartrap: 0.5, waterfilter: 0.5 } },
                   blurb: "saw it coming" },
-    veteran:    { name: "Veteran",            w: 1, skills: { shooting: [3, 5], leadership: [1, 2], scouting: [1, 2] }, traits: { brave: 3, tough: 2 }, carOdds: 1.2, food: { pack: [1, 2], pockets: [0, 1] },
-                  pack: 0.8, packs: { assaultpack: 3, rucksack: 2, backpack: 1 }, weapons: { pistol: 3, huntrifle: 1, machete: 1.5, knife: 1.5 }, weaponOdds: 0.8, rounds: 1.5, armor: { vest: 0.35 },
+    veteran:    { name: "Veteran",            w: 1, skills: { shooting: [3, 5], leadership: [1, 2], scouting: [1, 2], melee: [2, 3] }, traits: { brave: 3, tough: 2 }, carOdds: 1.2, food: { pack: [1, 2], pockets: [0, 1] },
+                  pack: 0.8, packs: { assaultpack: 3, rucksack: 2, backpack: 1 }, weapons: { pistol: 3, huntrifle: 1, machete: 1.5, knife: 1.5, bayonet: 0.6, survivalknife: 0.5 }, weaponOdds: 0.8, rounds: 1.5, armor: { vest: 0.35 },
                   stuff: { binoculars: 2, bandagekit: 2, tourniquet: 2, flare: 1.5, milradio: 0.3, smokegren: 0.5 },
                   cars: { truck: 3, hummer: 2, suv: 1 }, trunk: { food: [2, 5], water: [2, 5], ammo: [8, 18], n: [1, 3], gear: { milradio: 0.5, binoculars: 1, flare: 1, smokegren: 0.5, bandagekit: 1, assaultpack: 0.5, vest: 0.4, nvg: 0.1 } },
                   blurb: "two tours and a bad knee" },
     student:    { name: "College student",    w: 1, skills: { stealth: [1, 3], scavenging: [1, 3], speech: [1, 2], scouting: [1, 2] }, traits: { lucky: 1, nightowl: 2 }, carOdds: 0.7,
-                  pack: 0.9, packs: { backpack: 6, slingbag: 2 }, weapons: { bat: 3, knife: 2 }, weaponOdds: 0.5,
+                  pack: 0.9, packs: { backpack: 6, slingbag: 2 }, weapons: { bat: 3, knife: 2, pocketknife: 1, balisong: 0.4 }, weaponOdds: 0.5,
                   stuff: { laptop: 2, novel: 1.5, candy: 2, chocolate: 1, phone: 2, instcoffee: 1, cards: 1, magazines: 1 },
                   cars: { sedan: 4, suv: 1.5 }, trunk: { food: [2, 4], water: [1, 3], n: [1, 2], gear: { laptop: 1, novel: 1, magazines: 1, console: 0.5, guitar: 0.4, backpack: 0.6, bicycle: 0.3 } },
                   blurb: "halfway through a degree" },
     office:     { name: "Office worker",      w: 1, skills: { speech: [2, 4], leadership: [2, 3], scavenging: [1, 2] }, traits: { keeneye: 2, badback: 1 }, carOdds: 0.9, meds: [0, 1],
-                  pack: 0.5, packs: { slingbag: 4, backpack: 2 }, weapons: { knife: 3, bat: 1 }, weaponOdds: 0.5,
+                  pack: 0.5, packs: { slingbag: 4, backpack: 2 }, weapons: { knife: 3, bat: 1, pocketknife: 2, boxcutter: 1 }, weaponOdds: 0.5,
                   stuff: { laptop: 2, instcoffee: 2, phone: 2, bandagekit: 1.5, flashlight: 1, watch: 0.8, cards: 0.6, coins: 0.5 },
                   cars: { sedan: 4, suv: 2 }, trunk: { food: [1, 2], water: [2, 4], n: [1, 2], gear: { laptop: 1, instcoffee: 1, coffee: 0.5, bandagekit: 0.8, cards: 0.6, phone: 0.8, watch: 0.3 } },
                   blurb: "a lunch bag and a laptop" },
-    bluecollar: { name: "Blue-collar worker", w: 1.2, skills: { mechanics: [3, 5], scavenging: [2, 3] }, traits: { tough: 2, loud: 1 }, carOdds: 1.4,
-                  pack: 0.5, packs: { backpack: 4, slingbag: 1 }, weapons: { prybar: 3, fireaxe: 1, bat: 2, knife: 1 }, weaponOdds: 0.7,
+    bluecollar: { name: "Blue-collar worker", w: 1.2, skills: { mechanics: [3, 5], scavenging: [2, 3], melee: [2, 4] }, traits: { tough: 2, loud: 1 }, carOdds: 1.4,
+                  pack: 0.5, packs: { backpack: 4, slingbag: 1 }, weapons: { prybar: 3, fireaxe: 1, bat: 2, knife: 1, boxcutter: 1, multitool: 0.5 }, weaponOdds: 0.7,
                   stuff: { lighters: 2, smokes: 1.5, flashlight: 2, batteries: 1.5 },
                   cars: { truck: 5, van: 3 }, trunk: { food: [1, 3], water: [2, 4], scrap: [6, 14], parts: [0, 2], n: [1, 3], gear: { sledge: 1, prybar: 1, fireaxe: 0.6, crowbar: 1, sandbags: 0.5, barbedwire: 0.3, tirevest: 0.4 } },
                   blurb: "tools and lumber in the back" },
@@ -137,33 +149,33 @@ export const HC_START = {
                   stuff: { bandagekit: 3, surgkit: 0.8, soap: 1, razors: 0.5 },
                   cars: { sedan: 3, suv: 2 }, trunk: { meds: [2, 5], food: [1, 2], water: [1, 2], n: [1, 2], gear: { bandagekit: 3, surgkit: 1, medbook: 0.5, dewormer: 0.5 } },
                   blurb: "came off a double shift" },
-    farmer:     { name: "Farmer",             w: 1, skills: { farming: [4, 7], mechanics: [1, 2], shooting: [0, 2] }, traits: { tough: 2 }, carOdds: 1.2, food: { pack: [2, 5], pockets: [1, 2], max: 5 },
-                  pack: 0.5, packs: { backpack: 3, hikingpack: 1 }, weapons: { huntrifle: 2, machete: 2, knife: 1, leverrifle: 0.5 }, weaponOdds: 0.6, rounds: 1.5,
+    farmer:     { name: "Farmer",             w: 1, skills: { farming: [4, 7], mechanics: [1, 2], shooting: [0, 2], melee: [1, 2] }, traits: { tough: 2 }, carOdds: 1.2, food: { pack: [2, 5], pockets: [1, 2], max: 5 },
+                  pack: 0.5, packs: { backpack: 3, hikingpack: 1 }, weapons: { huntrifle: 2, machete: 2, knife: 1, leverrifle: 0.5, huntknife: 0.6, pocketknife: 0.6 }, weaponOdds: 0.6, rounds: 1.5,
                   stuff: { gardenbook: 1.5, snarewire: 1, honey: 0.8, tobacco: 0.6 },
                   cars: { truck: 5, suv: 1 }, trunk: { food: [6, 12], preserved: [2, 6], jars: [2, 6], water: [2, 4], n: [1, 2], gear: { gardenbook: 1, snarewire: 1, fishrod: 0.8, barbedwire: 0.5, huntrifle: 0.3, beartrap: 0.4 } },
                   blurb: "a truck full of the harvest" },
     hunter:     { name: "Hunter",             w: 0.9, skills: { shooting: [3, 5], scouting: [1, 3], stealth: [1, 2] }, traits: { keeneye: 3 }, carOdds: 1.1, food: { pack: [2, 4], pockets: [1, 2], max: 4 },
-                  pack: 0.7, packs: { hikingpack: 3, backpack: 2 }, weapons: { huntrifle: 3, compbow: 1.5, xbow: 1, knife: 1 }, weaponOdds: 0.8, rounds: 1.5,
+                  pack: 0.7, packs: { hikingpack: 3, backpack: 2 }, weapons: { huntrifle: 3, compbow: 1.5, xbow: 1, knife: 1, huntknife: 1.5, bowie: 0.5 }, weaponOdds: 0.8, rounds: 1.5,
                   stuff: { binoculars: 2, camonet: 1, gamecall: 1, snarewire: 1, fishrod: 0.8 },
                   cars: { truck: 4, suv: 2 }, trunk: { food: [2, 5], ammo: [8, 20], n: [1, 3], gear: { camonet: 1, binoculars: 1, gamecall: 1, snarewire: 1, beartrap: 0.8, ghillie: 0.4, stove: 0.8, monocular: 0.5 } },
                   blurb: "knows every deer trail" },
-    mechanic:   { name: "Mechanic",           w: 0.9, skills: { mechanics: [4, 7], scavenging: [1, 3] }, traits: { tough: 1, loud: 1 }, carOdds: 1.3, food: { pack: [0, 2], pockets: [0, 1] },
-                  pack: 0.5, packs: { backpack: 3, slingbag: 1 }, weapons: { prybar: 3, bat: 1, knife: 1 },
+    mechanic:   { name: "Mechanic",           w: 0.9, skills: { mechanics: [4, 7], scavenging: [1, 3], melee: [1, 2] }, traits: { tough: 1, loud: 1 }, carOdds: 1.3, food: { pack: [0, 2], pockets: [0, 1] },
+                  pack: 0.5, packs: { backpack: 3, slingbag: 1 }, weapons: { prybar: 3, bat: 1, knife: 1, multitool: 1 },
                   stuff: { crowbar: 1.5, flashlight: 2, batteries: 1.5, lighters: 1 },
                   cars: { truck: 3, van: 2, sedan: 1 }, trunk: { parts: [2, 5], scrap: [4, 10], fuel: [3, 8], n: [1, 2], gear: { crowbar: 1, flashlight: 1, enginebook: 0.5, batteries: 1 } },
                   blurb: "grease under the nails" },
-    cop:        { name: "Police officer",     w: 0.8, skills: { shooting: [2, 4], speech: [1, 3], leadership: [1, 2] }, traits: { brave: 2 }, carOdds: 1, food: { pack: [0, 2], pockets: [0, 1] },
+    cop:        { name: "Police officer",     w: 0.8, skills: { shooting: [2, 4], speech: [1, 3], leadership: [1, 2], melee: [2, 3] }, traits: { brave: 2 }, carOdds: 1, food: { pack: [0, 2], pockets: [0, 1] },
                   pack: 0.4, packs: { slingbag: 2, backpack: 2 }, weapons: { pistol: 5, baton: 1 }, weaponOdds: 0.9, rounds: 1.5, armor: { vest: 0.5 },
                   stuff: { cuffs: 1.5, flashlight: 2, flare: 1 },
                   cars: { suv: 3, sedan: 2 }, trunk: { ammo: [10, 24], n: [1, 3], gear: { cuffs: 1, baton: 0.5, riothelmet: 0.5, riotarms: 0.5, flare: 1, flashlight: 1, shotgun: 0.4 } },
                   blurb: "still in half a uniform" },
-    trucker:    { name: "Trucker",            w: 0.8, skills: { mechanics: [2, 3], scouting: [3, 5], shooting: [0, 2] }, traits: { nightowl: 2, badback: 1 }, carOdds: 1.5, food: { pack: [1, 4], pockets: [1, 1], max: 4 },
-                  pack: 0.4, packs: { slingbag: 3, backpack: 1 }, weapons: { bat: 2, revolver: 1.5, knife: 1 },
+    trucker:    { name: "Trucker",            w: 0.8, skills: { mechanics: [2, 3], scouting: [3, 5], shooting: [0, 2], melee: [1, 2] }, traits: { nightowl: 2, badback: 1 }, carOdds: 1.5, food: { pack: [1, 4], pockets: [1, 1], max: 4 },
+                  pack: 0.4, packs: { slingbag: 3, backpack: 1 }, weapons: { bat: 2, revolver: 1.5, knife: 1, lockback: 1 },
                   stuff: { pocketradio: 1.5, smokes: 1.5, instcoffee: 1.5, cards: 1, harmonica: 0.5 },
                   cars: { van: 3, truck: 3 }, trunk: { food: [8, 16], water: [4, 8], fuel: [4, 8], n: [1, 2], gear: { pocketradio: 1, cards: 0.8, smokes: 0.8, instcoffee: 1, tirevest: 0.3 } },
                   blurb: "a cab full of coffee cups" },
     teacher:    { name: "Teacher",            w: 0.8, skills: { speech: [3, 5], leadership: [2, 4], medicine: [1, 2] }, traits: { keeneye: 1 }, carOdds: 0.8, meds: [0, 1],
-                  pack: 0.7, packs: { slingbag: 3, backpack: 2 }, weapons: { knife: 3, bat: 1 }, weaponOdds: 0.5,
+                  pack: 0.7, packs: { slingbag: 3, backpack: 2 }, weapons: { knife: 3, bat: 1, pocketknife: 1 }, weaponOdds: 0.5,
                   stuff: { novel: 2, puzzlebook: 1, cards: 1, instcoffee: 1, bandagekit: 1.5, flashlight: 1 },
                   cars: { sedan: 3, suv: 1.5 }, trunk: { food: [1, 3], water: [1, 2], n: [1, 3], gear: { novel: 2, puzzlebook: 1, cards: 1, survivalbook: 0.3, medbook: 0.3, talkbook: 0.5, leadbook: 0.3 } },
                   blurb: "a car boot full of books" },
@@ -231,13 +243,13 @@ export function hubFounded(state, base, when = "") {
   hc.foundedDay = day(state);
   hc.foundedHour = state.hour;
   hc.hubTile = base.tile;
-  base.name = base.name.replace(/ Outpost( \d+)?$/, " Holdout");
+  base.name = base.name.replace(/ (Outpost|Camp)( \d+)?$/, " Holdout");
   if (state.bases.some((b) => b !== base && b.name === base.name)) base.name = `${base.name} ${base.id}`;
   base.hcFirst = true;
   assignStartingRoles(state); // jobs by skill, as a normal start does (world.js)
   const text = base.tier === 0
-    ? `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first shelter${when ? `, ${when}` : ""}. ${shelterText()} Build it up before the cold.`
-    : `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
+    ? `Day ${day(state)}: the camp is a shelter now. ${base.name} is founded, your first shelter${when ? `, ${when}` : ""}. ${shelterText()} Build it up before the cold.`
+    : `Day ${day(state)}: the camp is built up. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
   log(state, text, "good");
   addCard(state, { title: "A place of your own", text, choices: [{ label: "OK", resolve: () => "" }] });
 }
@@ -320,7 +332,7 @@ export function applyArchetype(state, s, key) {
     tidyTiers(s, { ...(s.traitTier || {}), ...Object.fromEntries(mine.map((t) => [t, (A.traitTier && A.traitTier[t]) || 1])) }); // its tiers (traits.js)
     return;
   }
-  for (const [k, [lo, hi]] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + rng.int(lo, hi));
+  for (const [k, [lo, hi]] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + (k === "melee" ? meleeBump(state.seed, s.name, lo, hi, key) : rng.int(lo, hi))); // Melee: its own die
   const born = bornTraits(s);
   const want = Object.keys(A.traits || {}).filter((t) => TRAITS[t] && !born.includes(t) && !clashIn(born, t));
   if (want.length && s.traits.length < 2 && rng.chance(HC_START.TRAIT_ODDS)) {
@@ -353,7 +365,7 @@ export function smallTeamSkills(state, people) {
 export function rollGrab(state, s, A = null) {
   const rng = state.rng, C = HC_START;
   const bag = rng.chance(A && A.pack != null ? A.pack : C.PACK);
-  const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, meds: 0 };
+  const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, roundKeys: {}, meds: 0 };
   if (bag) {
     const pk = startItem(rng, pickW(rng, (A && A.packs) || C.PACKS), Math.round(rng.range(0.7, 1) * 100) / 100);
     s.gear.backpack = pk;
@@ -368,7 +380,7 @@ export function rollGrab(state, s, A = null) {
     randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
     { const bx = starterLoad(rng, s.gear.weapon, "hc"); if (bx) pocketBox(s, bx); } // ammo.js: now and then a typed load and a box of it
     const rr = C.ROUNDS[w];
-    if (rr) got.ammo += Math.round(rng.int(rr[0], rr[1]) * ((A && A.rounds) || 1));
+    if (rr) gunRounds(got, w, Math.round(rng.int(rr[0], rr[1]) * ((A && A.rounds) || 1))); // the gun's own calibre
     if (GEAR[w].cat === "bow") got.arrows = (got.arrows || 0) + 12; // a quiver with the bow (hunting.js: bows hunt with arrows)
   }
   // Worn from the start (a cop's vest, a veteran's).
@@ -413,7 +425,7 @@ export function rollGrab(state, s, A = null) {
 // five days of food and water for three, and the trait when a slot allows (got.trait). Deterministic by the state's rng.
 export function rollPrepper(state, s) {
   const rng = state.rng, P = HC_START.PREPPER;
-  const got = { bag: null, weapon: null, items: [], food: P.FOOD, water: P.WATER, ammo: 0, meds: P.MEDS, prepper: true, trait: false };
+  const got = { bag: null, weapon: null, items: [], food: P.FOOD, water: P.WATER, ammo: 0, roundKeys: {}, meds: P.MEDS, prepper: true, trait: false };
   s.gear.backpack = startItem(rng, P.BAG, Math.round(rng.range(0.85, 1) * 100) / 100);
   got.bag = s.gear.backpack;
   const gun = rng.chance(P.GUN);
@@ -422,7 +434,7 @@ export function rollPrepper(state, s) {
   got.weapon = s.gear.weapon;
   randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
   { const bx = starterLoad(rng, s.gear.weapon, "hc"); if (bx) pocketBox(s, bx); } // ammo.js: now and then a typed load and a box of it
-  if (gun) got.ammo += P.AMMO;
+  if (gun) gunRounds(got, w, P.AMMO);
   const place = (key) => {
     const item = startItem(rng, key, 1);
     if (GEAR[key].slot === "tool" && !s.gear.tool) s.gear.tool = item; // the water filter, in hand
@@ -449,7 +461,7 @@ export function rollPrepper(state, s) {
 // things: a tool to the off hand if it is free, a small thing to a pocket, the rest to the bag (what does not fit is
 // left behind, got.left: the editor warns). Supplies on them as set.
 export function rollCustom(state, s, A) {
-  const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, meds: 0, arrows: 0, custom: true, left: [] };
+  const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, roundKeys: {}, meds: 0, arrows: 0, custom: true, left: [] };
   for (const [slot, key] of Object.entries(A.gear || {})) {
     if (!GEAR[key]) continue;
     s.gear[slot] = startKit(newItem(key, 1)); // inventory.js: a starting carrier's plates are steel
@@ -468,7 +480,9 @@ export function rollCustom(state, s, A) {
     else { got.left.push(key); continue; }
     got.items.push(item);
   }
-  for (const k of ["food", "water", "ammo", "meds", "arrows"]) got[k] = (A.supplies && A.supplies[k]) || 0;
+  for (const k of ["food", "water", "meds", "arrows"]) got[k] = (A.supplies && A.supplies[k]) || 0;
+  got.roundKeys = roundsOnly(A.supplies); // rounds by calibre and type, as set (custombg.js)
+  got.ammo = Object.values(got.roundKeys).reduce((a, q) => a + q, 0);
   return got;
 }
 
@@ -484,12 +498,14 @@ export function rollCustom(state, s, A) {
 export const NORMAL_BG = { SALT: 0x6b67, ON: true };
 // Points back off the other skills until the total is what it was (bumped: the skills the background raised, taken
 // from last). Deterministic by the rng given.
+// None comes off Melee (a background's Melee bump stays; the points come off the other skills, on the start's own dice).
 export function keepSkillTotal(rng, s, total, bumped = []) {
   const sum = () => Object.values(s.skills).reduce((a, v) => a + v, 0);
+  const keys = () => Object.keys(s.skills).filter((k) => k !== "melee");
   let guard = 400;
   while (sum() > total && guard-- > 0) {
-    let pool = Object.keys(s.skills).filter((k) => s.skills[k] > 0 && !bumped.includes(k));
-    if (!pool.length) pool = Object.keys(s.skills).filter((k) => s.skills[k] > 0);
+    let pool = keys().filter((k) => s.skills[k] > 0 && !bumped.includes(k));
+    if (!pool.length) pool = keys().filter((k) => s.skills[k] > 0);
     if (!pool.length) break;
     s.skills[rng.weighted(pool, (k) => s.skills[k])]--;
   }
@@ -525,7 +541,8 @@ export function normalStartKit(state, base) {
     if (!A || !A.custom) continue;
     for (const slot of Object.keys(A.gear || {})) if (s.gear[slot]) { if (!s.startPoints) base.armory.push(s.gear[slot]); s.gear[slot] = null; } // built on points: the dice's kit is not handed out on top
     const got = rollCustom(state, s, A);
-    for (const k of ["food", "water", "ammo", "meds", "arrows"]) if (got[k]) base.stock[k] = (base.stock[k] || 0) + got[k];
+    for (const k of ["food", "water", "meds", "arrows"]) if (got[k]) base.stock[k] = (base.stock[k] || 0) + got[k];
+    addRecord(base.stock, got.roundKeys); // rounds by calibre
     if (A.car.type && A.car.odds > 0) {
       const T = VEHICLE_TYPES[A.car.type];
       createVehicle(state, A.car.type, { kind: "base", baseId: base.id }, { fuel: Math.round(T.tank * 0.5 * 10) / 10, condition: 70 });
@@ -563,7 +580,7 @@ export function rollCar(state, p, people) {
     for (const key of A.car.items) if (GEAR[key]) trunk.gear.push(startKit(newItem(key, 1)));
   }
   const TR = A.custom ? {} : A.trunk || {};
-  for (const k of SUPPLY_KEYS) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) trunk.supplies[k] = q; }
+  for (const k of SUPPLY_KEYS) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) trunk.supplies[k] = q; } // ammo: a count, made rounds below
   if (TR.gear) {
     const table = { ...TR.gear };
     for (let n = rng.int(TR.n[0], TR.n[1]); n > 0 && Object.keys(table).length; n--) {
@@ -574,7 +591,8 @@ export function rollCar(state, p, people) {
       trunk.gear.push(item);
     }
   }
-  owner.diceTrunk = { items: trunk.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...trunk.supplies } }; // a gun with the parts it came with // the dice's back (until Start)
+  calibrate(trunk.supplies, gunCals(people, trunk.gear)); // ammo.js: the back's rounds are for the guns they have (theirs, and any in the back); none: 9mm and 12 gauge
+  owner.diceTrunk = { items: trunk.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...trunk.supplies } }; // the dice's back (until Start); a gun with the parts it came with
   if (picked) { const mine = trunkFromPicks(owner.startVehicle); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
   for (const [k, q] of Object.entries(trunk.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
   p.cargo.gear.push(...trunk.gear);
@@ -591,9 +609,10 @@ export function rollCar(state, p, people) {
   return { owner, car, trunk };
 }
 export function carLine(owner, car, trunk, people = HC_START.CREW) {
-  const back = [...Object.entries(trunk.supplies).map(([k, q]) => `${q} ${k}`), ...wordsOf(trunk.gear)];
+  const rounds = roundsOnly(trunk.supplies);
+  const back = [...Object.entries(trunk.supplies).filter(([k]) => !rounds[k]).map(([k, q]) => `${q} ${k}`), ...(Object.keys(rounds).length ? [roundsText(rounds)] : []), ...wordsOf(trunk.gear)];
   const fill = Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100);
-  const seat = trunk.seats ? Object.entries(trunk.seats).map(([k, q]) => `${q} ${k}`) : [];
+  const seat = trunk.seats ? Object.entries(trunk.seats).map(([k, q]) => `${q} ${keyWord(k)}`) : [];
   return `${firstName(owner)} got ${people === 1 ? "into" : "everyone into"} their ${car.name.toLowerCase()} (tank ${fill}% full, ${Math.round(car.condition)}% condition)${back.length ? `; in the back: ${andList(back)}` : ""}${seat.length ? `; on the empty ${people === 1 ? "seats" : "seat"}, what else they could grab: ${andList(seat)}` : ""}.`;
 }
 
@@ -664,7 +683,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
     if (got.custom) { extra.push(got); lines.push(grabLine(state, s, got)); continue; }
     sup.food += got.food;
     sup.water += got.water;
-    sup.ammo += got.ammo;
+    addRecord(sup, got.roundKeys); // rounds by calibre: for the gun each of them got
     sup.arrows += got.arrows || 0;
     sup.meds += got.meds;
     lines.push(grabLine(state, s, got));
@@ -676,12 +695,12 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   const heads = rolled.length;
   sup.food = Math.max(HC_START.TEAM_MIN * heads, Math.min(teamFoodCap(rolled), sup.food));
   sup.water = Math.max(HC_START.TEAM_MIN * heads, Math.min(HC_START.TEAM_MAX * heads, sup.water));
-  for (const got of extra) for (const k of ["food", "water", "ammo", "meds", "arrows"]) sup[k] += got[k] || 0;
+  for (const got of extra) { for (const k of ["food", "water", "meds", "arrows"]) sup[k] += got[k] || 0; addRecord(sup, got.roundKeys); }
   addPickedSupplies(sup, pickedSup);
   if (prepGot) {
     sup.food += prepGot.food;
     sup.water += prepGot.water;
-    sup.ammo += prepGot.ammo;
+    addRecord(sup, prepGot.roundKeys);
     sup.meds += prepGot.meds;
     lines.unshift(grabLine(state, prepper, prepGot));
   }
@@ -707,11 +726,20 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   if (smallSkills) log(state, `${people.length === 1 ? `${firstName(people[0])} got out alone` : `${firstName(people[0])} and ${firstName(people[1])} got out on their own`}: the kind who can look after ${people.length === 1 ? "themselves" : "each other"} (${andList(smallSkills.map((k) => SKILL_NAMES[k]))} up), and the car's empty ${people.length === 1 ? "seats were" : "seat was"} loaded too.`, "good");
   // Day 1's log names the prepper (the trait when a slot allowed it, else only this line says it).
   if (prepper) log(state, `${firstName(prepper)} was a prepper${prepGot.trait ? "" : " (no room for the trait: the kit says it)"}: a ${prepGot.bag ? prepGot.bag.name.toLowerCase() : "bag"} packed for five days${prepGot.weapon ? `, ${/^[aeiou]/i.test(prepGot.weapon.name) ? "an" : "a"} ${prepGot.weapon.name.toLowerCase()}${prepGot.ammo + (prepGot.rounds || 0) ? ` (${prepGot.ammo + (prepGot.rounds || 0)} rounds)` : ""}` : ""}${prepGot.items.some((it) => it.key === "waterfilter") ? ", a water filter" : ""}${prepGot.items.some((it) => it.key === "handradio") ? ", a hand-crank radio" : ""}${prepGot.items.some((it) => it.key === "puritabs") ? " and purification tablets" : ""}.`, "good");
-  // The run opens on the team's orders card: what they grabbed, and what the first hub takes.
+  // The run opens on a plain blurb (introCard): what they grabbed, and what the first hub takes. No orders card: the
+  // team stands waiting for orders (phase "waiting", the alerts' "Waiting for orders" row) and they are given from its
+  // panel as usual; the game starts paused (main.js begin) and an order never unpauses it (ui/expedition.js).
   weighTeam(state, p);
-  const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${sup.ammo ? `, ${Math.floor(sup.ammo)} rounds` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;
-  awaitOrders(state, p, intro, { title: "The day Calder fell" });
+  const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${Object.keys(roundsOnly(sup)).length ? `, ${roundsText(roundsOnly(sup))}` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: you set up camp there (an hour, nothing carried), bring in ${needText(STAGING.HARDCORE.needs)} and its builders build it up into a shelter (${STAGING.HARDCORE.work} work-hours), later into your hub.`;
+  addCard(state, introCard(INTRO_TITLE, intro, "The team waits for orders: open its panel (click it on the map, or the Teams tab) and give the first one. The clock is stopped until you press Space."));
   return p;
+}
+
+// The run's opening popup: the blurb and one button, nothing to decide (cardrules.js cardKind: intro cards always
+// show, whatever the pause rules; the autopilot reads it and goes on: autopilot.js resolveCard).
+export const INTRO_TITLE = "The day Calder fell";
+export function introCard(title, text, hint = "") {
+  return { title, text, intro: true, choices: [{ label: "Begin", default: true, ...(hint ? { hint } : {}), resolve: () => "" }] };
 }
 
 // Once a day (hardcore.js hardcoreDaily): where the team is, for playerTile once nobody is left on the road.

@@ -33,6 +33,7 @@
 // The governor (autopilot) asks allies when a hive crawl or a base assault looks marginal (autoAskVolunteers, by its
 // style's STYLES row) and answers the groups' asks by its style (the card's ai scores: Diplomat generous, Turtle stingy).
 // Dice: state.volRng (its own, saved), never the world's.
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
 import { log, addCard, day, hub, atBase, factionById, combatPower, hurt, makeSurvivor, baseById, skill } from "./world.js";
 import { partyMembers, partyTile, wipeIfEmpty, weighTeam, tileLabel, MISSIONS } from "./parties.js";
@@ -49,9 +50,9 @@ import { hiveTier } from "./hivetech.js";
 import { crawlEstimate } from "./hivecrawl.js";
 import { assaultForce, teamAssaultOdds } from "./conquest.js";
 import { battlePending, startCombat, registerCombatHandler } from "./combat.js";
-import { calOf } from "./ammo.js";
+import { calOf, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // an offer in rounds: by calibre, the ones the guns need least
 import { lightOf } from "./lights.js";
-import { baseKey } from "./rounds.js";
+import { baseKey, supplyAmt } from "./rounds.js";
 
 
 export const VOL = {
@@ -62,6 +63,7 @@ export const VOL = {
   BRING: { days: 8, ammo: 30 },              // a day's food and water each for up to `days` of the span; rounds a gun
   QUALITY: { military: 1.15, fortress: 1.1, raider: 1, expansionist: 1, zealot: 1, traders: 0.95, commune: 0.9 },
   SHOOT: { military: 4, fortress: 3, raider: 2, expansionist: 2, zealot: 1, traders: 1, commune: 0 },
+  MELEE: { military: 2, fortress: 2, raider: 3, expansionist: 1, zealot: 4, traders: 0, commune: 1 }, // the Melee skill by the group's ways (zealots fight with spears)
   // The points of a request (askQuote); >= 0 is a yes.
   P: { gwDiv: 10, member: 2, trade: 1, nonaggression: 0.5, job: 0.5, jobMax: 1.5, head: 0.75, longFrom: 7, perDay: 0.1,
     war: 1.5, horde: 2, hordeSize: 30, hordeRange: 6, short: 1.5, shortPop: 14, favour: 1.5, goodsPer: 40, fallen: 1, fallenBad: 2, fallenDays: 60 },
@@ -197,7 +199,7 @@ export function askQuote(state, f, p, opts = {}) {
   const d = day(state);
   const fallen = (f.volFallen || []).filter((x) => d - x.day <= P.fallenDays);
   if (fallen.length) add(`${fallen.length} of theirs died with your teams lately`, -fallen.reduce((a, x) => a + (x.how === "fight" ? P.fallen : P.fallenBad), 0));
-  if (opts.offer && opts.offer.qty > 0 && SUPPLIES[opts.offer.key]) add(`your offer: ${opts.offer.qty} ${SUPPLIES[opts.offer.key].name.toLowerCase()}`, supplyValue(opts.offer.key, opts.offer.qty) / P.goodsPer);
+  if (opts.offer && opts.offer.qty > 0 && SUPPLIES[opts.offer.key]) add(`your offer: ${opts.offer.key === "ammo" ? payWord(state, payBase(state, p), opts.offer.qty) : `${opts.offer.qty} ${SUPPLIES[opts.offer.key].name.toLowerCase()}`}`, supplyValue(opts.offer.key, opts.offer.qty) / P.goodsPer);
   if (opts.favour) add("a favour owed (they will ask one of you)", P.favour);
   if (opts.share > 0) add(`a ${Math.round(opts.share * 100)}% share of the haul`, opts.share * VOL.SHARE.points);
   out.points = Math.round(out.parts.reduce((a, x) => a + x.v, 0) * 100) / 100;
@@ -220,7 +222,7 @@ export function offerProblem(state, p, offer) {
   if (!offer || !offer.qty) return "";
   const b = payBase(state, p);
   if (!b) return "No base to pay from.";
-  if ((b.stock[offer.key] || 0) < offer.qty) return `${b.name} has only ${Math.floor(b.stock[offer.key] || 0)} ${offer.key}.`;
+  if (supplyAmt(b.stock, offer.key) < offer.qty) return `${b.name} has only ${Math.floor(supplyAmt(b.stock, offer.key))} ${offer.key === "ammo" ? "rounds" : offer.key}.`; // "ammo": every round there
   return "";
 }
 
@@ -246,7 +248,8 @@ export function askVolunteers(state, f, p, opts = {}) {
   delete V.refused[f.id];
   if (offer) {
     const b = payBase(state, p);
-    b.stock[offer.key] -= offer.qty;
+    if (offer.key === "ammo") { const sent = payAmmoKeys(state, b, offer.qty); offer.paid = roundsText(sent); } // rounds by calibre: the ones the guns there need least (their store keeps one count)
+    else b.stock[offer.key] -= offer.qty;
     f.stock[offer.key] = (f.stock[offer.key] || 0) + offer.qty;
   }
   if (opts.favour) f.volFavour = { day: day(state) };
@@ -280,6 +283,7 @@ export function makeVolunteer(state, f, req, lo, eta) {
   else {
     try { s = makeSurvivor(state, VOL.QUALITY[f.type] || 1); } finally { state.rng = keep; }
     s.skills.shooting = Math.min(20, (s.skills.shooting || 0) + (VOL.SHOOT[f.type] || 0));
+    s.skills.melee = Math.min(20, (s.skills.melee || 0) + (VOL.MELEE[f.type] || 0));
   }
   s.role = "volunteer";
   const lent = [];
@@ -465,7 +469,7 @@ function settleShare(state, reqId) {
     from[k] -= give;
     f.stock[k] = (f.stock[k] || 0) + give;
     value += supplyValue(k, give);
-    got.push(`${give} ${k}`);
+    got.push(`${give} ${keyWord(k)}`);
   }
   V.stats.shared = (V.stats.shared || 0) + value;
   if (!got.length) return;
@@ -723,7 +727,7 @@ function endLoan(state, loan, people, why) {
     V.stats.lentHome++;
   }
   const got = [];
-  if (base && loan.share) for (const [k, q] of Object.entries(loan.share)) if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${k}`); }
+  if (base && loan.share) for (const [k, q] of Object.entries(loan.share)) if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${keyWord(k)}`); }
   if (f && f.alive && !why) {
     changeGoodwill(state, f, VOL.AI.back + VOL.AI.perFight * loan.fights + (loan.dead.length ? VOL.AI.mourn : 0), loan.dead.length ? "your people fought and died beside them" : "your people fought beside them");
   }

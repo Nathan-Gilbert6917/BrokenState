@@ -44,7 +44,7 @@ import {
   factionById, baseById, survivorById, makeSurvivor, RADIO_RANGE, supplyValue, armedFactor, spendShots, arrowsBack,
 } from "./world.js";
 import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
-import { baseWalls, count } from "./buildings.js";
+import { baseWalls, count, isCamp } from "./buildings.js"; // a camp (staging.js): only its own tile, a light raid target
 import { radioBasesInRange, removeBase, localId } from "./world.js";
 import { goodwillMult } from "./traits.js"; // Diplomatic: goodwill gains and losses
 import { playerTile } from "./hardcore-start.js";
@@ -74,7 +74,7 @@ import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
-import { payAmmo } from "./ammo.js";
+import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
 import { groupWorksDaily, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
@@ -92,6 +92,7 @@ import { flightDaily } from "./groupflight.js"; // groups leaving a base they ca
 import { splinterDaily } from "./splinters.js"; // splinter bands
 
 export const RAIDS = {
+  CAMP_W: 0.35, // a camp of yours (staging.js) draws a raid this much as often as a base with the same stores
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
   PLAYER_W: 2.5, GREED: 1500, LAND: 0.2, GRUDGE: 0.5, GRUDGE_MAX: 4, GRUDGE_FADE: 0.01, SIZE_REF: 35, DIST: 12,
   HOLD: 1.2, BREAK: 0.8, SIEGE_HOURS: 8, PACE: 1.2, PACE_MAX: 4, TRIBUTE_GW: 6, TRIBUTE_FADE: 0.5,
@@ -243,7 +244,7 @@ export function recomputeOwnership(state) {
       if (t.owner == null || g.distance(id, b) === 0) t.owner = f.id;
     }
   }
-  for (const b of state.bases) for (const id of g.within(b.tile, b.type === "hub" ? 2 : 1)) {
+  for (const b of state.bases) for (const id of g.within(b.tile, isCamp(b) ? 0 : b.type === "hub" ? 2 : 1)) { // a camp holds only its own tile (buildings.js CAMP)
     const t = state.tiles[id];
     if (!state.factions.some((f) => f.bases.includes(id))) t.owner = "player";
   }
@@ -643,10 +644,11 @@ export function launchRaidOnBase(state, f, base, opts = {}) {
 // How much a group wants to hit one of your bases (see the header): greed, your land, their grudge, their size, distance.
 export function playerRaidWeight(state, f, b, d) {
   const greed = clamp(supplyValue(b.stock) / RAIDS.GREED, 0.4, 3);
-  const land = 1 + RAIDS.LAND * Math.max(0, state.bases.filter((x) => !x.captured).length - 1); // bases you took from groups (conquest.js) do not count: the spoils of war, not your sprawl
+  const land = 1 + RAIDS.LAND * Math.max(0, state.bases.filter((x) => !x.captured && !isCamp(x)).length - 1); // camps (staging.js) are not sprawl either // bases you took from groups (conquest.js) do not count: the spoils of war, not your sprawl
   const grudge = 1 + RAIDS.GRUDGE * Math.min(RAIDS.GRUDGE_MAX, f.grudge || 0);
   const size = clamp(strength(f) / RAIDS.SIZE_REF, 0.6, 2);
-  return RAIDS.PLAYER_W * greed * land * grudge * size * heardPull(state, f, b) / (1 + d / RAIDS.DIST); // intel.js: stores they heard of on your radio
+  const camp = isCamp(b) ? RAIDS.CAMP_W : 1; // a camp (staging.js): tarps and a fire, little worth a raid
+  return RAIDS.PLAYER_W * greed * land * grudge * size * camp * heardPull(state, f, b) / (1 + d / RAIDS.DIST); // intel.js: stores they heard of on your radio
 }
 
 // The base's defence with everyone at a post ("Prepare defenses"): what a group's scouts size a raid to.
@@ -792,7 +794,8 @@ function resolveRaidOnPlayerNow(state, party, opts = {}) {
     settleKit();
     // They may keep it (conquest.js: the people there walk to your nearest base; the hub's job moves there), or burn
     // it to the ground (aggressive types: razeChance).
-    const fate = baseFate(state, f, base.tile, supplyValue(base.stock), base.type === "hub" ? RAIDS.KEEP_HUB : 1,
+    // A camp (staging.js) is never kept or burned: looted, and lost if it was an outpost camp (the hub's camp stands).
+    const fate = isCamp(base) ? "leave" : baseFate(state, f, base.tile, supplyValue(base.stock), base.type === "hub" ? RAIDS.KEEP_HUB : 1,
       (base.type === "hub" ? RAIDS.RAZE_HUB : 1) * (people.length || beaten ? 1 : RAIDS.RAZE_EMPTY));
     keep = fate === "keep";
     raze = fate === "raze";
@@ -1058,18 +1061,18 @@ export function deliverHelpCall(state, party) {
         resolve: (st) => sendHelpSquad(st, party, target),
       },
       {
-        label: "Send 40 ammo",
+        label: `Send ${payWord(state, h, 40)}`, // the rounds its guns need least, named (ammo.js)
         hint: "Strengthens their defense, small goodwill gain",
         disabled: () => totalRounds(h.stock) < 40,
         resolve: (st) => {
           // Checked against what the hub holds now, not when the message came in.
-          if (totalRounds(h.stock) < 40) return `${h.name} no longer has 40 ammo to spare.`;
+          if (totalRounds(h.stock) < 40) return `${h.name} no longer has 40 rounds to spare.`;
           if (!st.parties.includes(party)) return `Too late: the fight at ${target.name} is already over.`;
-          payAmmo(st, h, 40); // ammo.js: the rounds its guns need least
+          const sent = payAmmoKeys(st, h, 40); // ammo.js: the rounds its guns need least
           party.strength *= 0.8;
           changeGoodwill(st, target, 6, "you sent ammo");
           target.lastDiplomacy = day(st);
-          return `Ammo sent to ${target.name}.`;
+          return `${roundsText(sent)} sent to ${target.name}.`;
         },
       },
       {
@@ -1106,20 +1109,20 @@ export function raidWarning(state, party) {
     choices: [
       { label: "Prepare defenses", hint: `Everyone at the base takes a post: non-guards count 1.3× their combat power instead of 0.8× (guards stay at 1.5×). Defense ${Math.round(def)} → ${Math.round(prepared)}. Building and repairs stop here until the raid is over`, resolve: (st) => { base.alert = true; return `${base.name} prepares for the attack.`; } },
       {
-        label: "Pay tribute (30% of the food, 30 ammo)",
+        label: `Pay tribute (30% of the food, ${payWord(state, base, 30)})`, // rounds by calibre: the ones its guns need least
         hint: `About ${tributeNow().food} food right now. They turn back and goodwill rises by ${RAIDS.TRIBUTE_GW}${isAggressiveType(f) ? `, but it fades again (${RAIDS.TRIBUTE_FADE} a day): they will be back` : ""}`,
         disabled: (st) => totalRounds(base.stock) < 30 || !st.parties.includes(party),
         resolve: (st) => {
           if (!st.parties.includes(party)) return "The raiders are already gone.";
-          if (totalRounds(base.stock) < 30) return `${base.name} no longer has 30 ammo to offer. The raiders keep coming.`;
+          if (totalRounds(base.stock) < 30) return `${base.name} no longer has 30 rounds to offer. The raiders keep coming.`;
           const t = tributeNow();
           base.stock.food = Math.max(0, (base.stock.food || 0) - t.food);
-          payAmmo(st, base, t.ammo); // ammo.js: the rounds its guns need least
+          const paid = payAmmoKeys(st, base, t.ammo); // ammo.js: the rounds its guns need least
           changeGoodwill(st, f, RAIDS.TRIBUTE_GW, "tribute");
           if (isAggressiveType(f)) f.boughtGw = (f.boughtGw || 0) + RAIDS.TRIBUTE_GW; // fades again (factionsDaily)
           party.returning = true;
           base.alert = false; // the raid is off: the base stands down
-          return `${f.name} took the tribute (${t.food} food, ${t.ammo} ammo) and turned back.`;
+          return `${f.name} took the tribute (${t.food} food, ${roundsText(paid)}) and turned back.`;
         },
       },
       {

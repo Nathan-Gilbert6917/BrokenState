@@ -45,8 +45,8 @@ const first = (s) => esc(shortName(s));
 const bar = (load, cap) => `<div class="bar"><i style="width:${Math.min(100, (load / Math.max(1, cap)) * 100)}%;background:${load > cap + 1e-6 ? "var(--danger)" : load > cap * 0.9 ? "var(--accent)" : "var(--info)"}"></i></div>`;
 
 // ---------- the window's state ----------
-const SKILLS = ["shooting", "scouting", "stealth", "medicine", "mechanics", "scavenging", "speech"];
-const SKILL_SHORT = { shooting: "Sho", scouting: "Sco", stealth: "Ste", medicine: "Med", mechanics: "Mec", scavenging: "Scv", speech: "Spe" };
+const SKILLS = ["shooting", "melee", "scouting", "stealth", "medicine", "mechanics", "scavenging", "speech"];
+const SKILL_SHORT = { shooting: "Sho", melee: "Mel", scouting: "Sco", stealth: "Ste", medicine: "Med", mechanics: "Mec", scavenging: "Scv", speech: "Spe" };
 export const FILTERS = {
   all:     { name: "Everyone",   tip: "Everyone at the base", test: () => true },
   fit:     { name: "Fit",        tip: "Health 70 or more and not exhausted", test: (s) => s.health >= 70 && tiredLevel(s) < 2 },

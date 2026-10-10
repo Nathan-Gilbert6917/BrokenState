@@ -48,7 +48,7 @@ section("A custom background is made safe");
   check(d.traits.join() === "brave,tough,lucky", `traits: at most ${CUSTOM_BG.TRAITS}, Brave not with Coward, no unknown or background-only trait (${d.traits.join()})`);
   check(!d.gear.weapon && d.gear.armor === "vest" && d.gear.backpack === "duffle" && d.gear.tool === "flashlight" && !d.gear.head, `gear only in its own slot (${JSON.stringify(d.gear)})`);
   check(!d.items.includes("bicycle") && !d.items.includes("sandbags") && !d.items.includes("duffle") && d.items.length === CUSTOM_BG.ITEMS, `carried: no bikes, nothing bulky, no packs, at most ${CUSTOM_BG.ITEMS}`);
-  check(d.supplies.food === CUSTOM_BG.SUPPLY.food && !("water" in d.supplies) && d.supplies.ammo === 50 && !("fuel" in d.supplies), `supplies clamped (${JSON.stringify(d.supplies)})`);
+  check(d.supplies.food === CUSTOM_BG.SUPPLY.food && !("water" in d.supplies) && !("ammo" in d.supplies) && totalRounds(d.supplies) === 50 && !("fuel" in d.supplies), `supplies clamped, the old generic ammo as rounds by calibre (${JSON.stringify(d.supplies)})`);
   check(d.car.odds === CUSTOM_BG.CAR_ODDS && d.car.type === null && d.car.trunk.scrap === CUSTOM_BG.TRUNK.scrap && d.car.trunk.food === 5 && !("gold" in d.car.trunk) && d.car.items.join() === "bicycle,sandbags", `the car clamped (${JSON.stringify(d.car)})`);
   const lib = sanitizeLibrary([{ id: "c_1", name: "A" }, { id: "nurse", name: "B" }, { id: "c_1", name: "dupe" }, null, ...Array.from({ length: 40 }, (_, i) => ({ id: `c_${i + 2}` }))]);
   check(Object.keys(lib).length === CUSTOM_BG.MAX && lib.c_1.name === "A" && !lib.nurse && Object.keys(lib).every(isCustomBg), `the list: prefixed ids, no repeats, at most ${CUSTOM_BG.MAX}`);
@@ -99,7 +99,7 @@ const lib = { c_1: MEDIC, c_2: { ...blankBackground("c_2"), name: "Walker", car:
   check(mine > 0 && exact, "and then the kind and the back they set (a Hummer, 12 fuel, 3 meds, 5 scrap, sandbags and a rod)");
   check(p.supplies.food >= MEDIC.supplies.food + HC_START.TEAM_MIN * 2 && p.supplies.food <= MEDIC.supplies.food + HC_START.TEAM_MAX * 2 + 2 + 15, `food: theirs on top of the others' clamped days (${p.supplies.food})`);
   check(totalRounds(p.supplies) >= MEDIC.supplies.ammo && p.supplies.meds >= MEDIC.supplies.meds, `ammo and meds on top (${totalRounds(p.supplies)}, ${p.supplies.meds})`); // ammo.js: their rounds by calibre
-  check(a.hardcore.start.grabbed.some((l) => /field medic, patched up a platoon/.test(l)) && a.cards[0].text.includes("field medic"), "the orders card names the background");
+  check(a.hardcore.start.grabbed.some((l) => /field medic, patched up a platoon/.test(l)) && a.cards[0].text.includes("field medic"), "the opening blurb names the background");
   check(partyTile(p) === partyTile(pb), "same seed, same spawn");
   // Odds 0: never theirs.
   let never = true;

@@ -22,6 +22,7 @@ import { lootItem } from "./inventory.js";
 import { spend } from "./itemcond.js"; // the condition of what is found
 import { teamPolicy, wantsOut, breakOff, RETREAT_POLICIES } from "./breakoff.js";
 import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre
+import { calRounds, partyCals, roundsText } from "./ammo.js"; // a find of rounds named by calibre
 
 // Things a road card can turn up (tools/loottest.js counts them as sources).
 export const HUMVEE_GEAR = ["ar", "plate", "nvg", "milradio", "rucksack", "carbine", "smokegren", "frag"];
@@ -59,6 +60,13 @@ function repairDelay(state, p, v, hours) {
   markRepair(state, p, v, hours, before);
 }
 function addCargo(state, p, key, qty) {
+  if (key === "ammo") { // rounds: the common rounds of the team's guns, named by calibre (ammo.js)
+    /** @type {Record<string, number>} */
+    const got = {};
+    let short = false;
+    for (const [k, q] of Object.entries(calRounds(qty, partyCals(state, p)))) { const t = Math.min(unitsThatFit(cargoRoom(state, p), k), q); if (t < q) short = true; if (t > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + t; got[k] = t; } }
+    return `${roundsText(got)}${short ? " (no room for the rest)" : ""}`;
+  }
   const room = cargoRoom(state, p);
   const take = Math.min(unitsThatFit(room, key), qty);
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + take;
@@ -157,7 +165,7 @@ const EVENTS = [
               if (power <= n * 0.6) return `A messy fight. ${injureRandom(s, p, 15, 40, "fighting the dead")}`;
               const back = arrowsBack(shot.arrows); // cleared: about half the arrows are picked up again
               if (back) p.supplies.arrows = (p.supplies.arrows || 0) + back;
-              return shot.arrows ? `Cleared, using ${shot.ammo} ammo and ${shot.arrows} arrows (${back} picked up again).` : `Cleared, using ${shot.ammo} ammo.`;
+              return shot.arrows ? `Cleared, using ${roundsText(shot.used)} and ${shot.arrows} arrows (${back} picked up again).` : `Cleared, using ${roundsText(shot.used)}.`;
             },
           },
           { label: "Go the long way (3 hours)", resolve: () => { delay(p, 3); return "A safe but slow detour."; } },

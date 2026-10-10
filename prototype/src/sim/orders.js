@@ -2,6 +2,7 @@
 // move, look around, camp, field repairs, treating someone, a mission on the spot, or going home.
 // When an order finishes and nothing else is queued, the team reports in with an orders card
 // (parties.js awaitOrders), which doubles as the "done, what next?" notice.
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { log, survivorById, baseById, hub } from "./world.js";
 import {
   MISSIONS, partyMembers, partyTile, tileLabel, teamName, bestSkill, orderMove, giveOrder, startReturn, awaitOrders,
@@ -30,7 +31,8 @@ import { capTask, holdName, COLLECT } from "./carry.js"; // a quantity to collec
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
 export const SURVEY_HOURS = 2;   // Look around
-export const CAMP_HOURS = [8, 24, null]; // camp choices offered in the team panel (null: until you break it)
+// (The timed Camp order left the panels on 2026-10-09: Set up camp makes a camp, a base, staging.js. "camp" stays an
+// internal rest task for the governor's night stops, caravans, conflicts and plans' rest steps.)
 
 // What a queued or running order is called in the panels and the log.
 export function describeOrder(state, o) {
@@ -59,7 +61,7 @@ export function describeOrder(state, o) {
     case "wood": return `Cut wood ${huntHours(o)}h${qtyNote(o)}`; // woodcutting.js
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
-    case "pitch": return o.mission === "outpost" ? "Pitch the outpost camp" : "Pitch the staging camp"; // parties.js PITCH_HOURS, staging.js STAGING.PITCH; then the camp stands (pitchDone)
+    case "pitch": return o.mission === "outpost" ? "Set up the outpost camp" : "Set up camp"; // staging.js pitchArrive (buildings.js CAMP.setupHours); then the camp stands (pitchDone)
     case "well": return "Dig a well"; // claims.js: on a claim next to one of your bases
     case "listen": { const n = o.net != null ? networkById(state, o.net) : null; return `Listen in${n ? ` on ${n.name}` : ""}`; } // radiolisten.js
   }
@@ -428,7 +430,7 @@ export function startOrder(state, p, o) {
       const same = !o.mode || o.mode === plan.mode;
       const mats = (same && o.mats) || plan.mats;
       const short = Object.entries(mats).filter(([k, q]) => plan.have[k] < q);
-      if (short.length) return fail(`Boat: needs ${short.map(([k, q]) => `${q} ${k} (have ${plan.have[k]})`).join(", ")}. Gather materials on the shore or bring scrap.`);
+      if (short.length) return fail(`Boat: needs ${short.map(([k, q]) => `${q} ${keyWord(k)} (have ${plan.have[k]})`).join(", ")}. Gather materials on the shore or bring scrap.`);
       if (!plan.ok && !Object.keys(plan.missing).length) return fail(`Boat: ${plan.reason}`);
       const build = (same ? o.build : null) ?? plan.build, cross = (same ? o.cross : null) ?? plan.cross;
       startTask(state, p, { type: "cross", tile: o.tile, from, mode: plan.mode, mats, build, cross, hours: build + cross, risk: plan.risk });

@@ -26,6 +26,7 @@ import { networksAt, teamReceives } from "../sim/radio.js";
 import { crossingsFrom, boatPlan, boatOrder } from "../sim/crossing.js";
 import { setFire, fireLit } from "../sim/fieldheat.js";
 import { sweepOpts } from "../sim/survey.js";
+import { campProblem } from "../sim/staging.js"; // Set up camp: where a camp may stand
 import { crawlTile } from "../sim/citycrawl.js";
 import { transferProblem, loadFromBase } from "../sim/teaminv.js";
 import { siteMissions } from "./ui.js";
@@ -191,9 +192,10 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     const lit = fireLit(p);
     const burn = fireLandOk(state, tile) || carried(p, "wood") >= 1;
     const noFire = burn ? "" : "Nothing to burn on this bare ground and no firewood carried.";
-    for (const h of [8, 24, null]) add("Camp", `camp:${h ?? 0}`, h ? `Camp here ${h}h` : "Camp here until told", [{ type: "camp", hours: h }], { open: !h, hint: `Stop and rest${h ? ` for ${h} hours` : " until you break camp"}: the hurt heal a little, nobody travels. ${lit ? "The camp fire is lit (it warms, boils water and cooks, but its light carries)." : "No camp fire (the team's fire is set out)."}` });
+    // Set up camp (sim/staging.js): a camp is the barest base; its base window opens when it stands (Strike camp there).
+    if (p.owner === "player" && p.kind === "expedition" && !p.caravan && p.crewRole == null) add("Camp", "setcamp", "Set up camp here", [{ type: "mission", mission: "camp" }], { why: cap(campProblem(state, tile) || ""), hint: "Make camp (1 hour, no materials): the team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there. Manage it in its base window; Strike camp packs everyone up again." });
     if (camping) add("Camp", lit ? "fireout" : "fire", lit ? "Put the camp fire out" : "Light a camp fire", [], { special: lit ? "fireout" : "fire", why: lit ? "" : noFire, hint: lit ? "Darker and quieter, but cold food, unboiled water and cold nights." : "Warmth, hot food and boiled water, better spirits; its light and smoke carry, most at night." });
-    else add("Camp", "campfire", "Make camp with a fire (8h)", [{ type: "camp", hours: 8, fire: true }], { why: noFire, hint: "Camp 8 hours with the fire lit: warmth, hot food and boiled water (the worm's eggs die), better spirits; its light and smoke carry, most at night." });
+
   }
 
   // The team's own gear and land you hold

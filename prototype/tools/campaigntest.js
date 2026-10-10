@@ -110,7 +110,7 @@ function campaignScenario(seed) {
   console.log(`  first line: ${firstLine}`);
   check(lines > 0 && /^Campaign on /.test(firstLine), "the campaign line is logged each morning (campaignLine)");
   check(REJECT_KEYS.every((k) => Number.isFinite(rj[k])) && REJECT_KEYS.reduce((a, k) => a + rj[k], 0) > 0, "hiveRejects counters populated");
-  check(/ of 92 ammo/.test(firstLine), `the campaign's ammo target is HIVE_SQUAD × HIVE_AMMO + 20 = 92 (line: ${firstLine.slice(0, 80)})`);
+  check(/ of 92 (ammo|rounds)/.test(firstLine), `the campaign's ammo target is HIVE_SQUAD × HIVE_AMMO + 20 = 92 (line: ${firstLine.slice(0, 80)})`);
   check(maxAmmo >= 92, `the campaign stockpiles ammo to its target (peak ${maxAmmo})`);
   check(inviteDay != null, `${f.name} invited into the coalition`);
   // A group's war party (factions.js GROUP_HIVE) can kill the Hivemind before the governor's hiveFrom day: then there

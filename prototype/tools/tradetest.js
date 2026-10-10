@@ -671,8 +671,12 @@ const signature = (state) => JSON.stringify({
 });
 {
   console.log("Determinism");
-  const a = world(seed + 5), b = world(seed + 5);
+  // b is made after a has played (as tools/sameseedtest.js does): ids come from one process-wide counter, and a world
+  // made before the other one plays would hand out other world-local ids (world.js localId) than the same world made
+  // after it, which the dice keyed by them (intel.js hearing) would read differently.
+  const a = world(seed + 5);
   autoplay(a, { days: 60 });
+  const b = world(seed + 5);
   autoplay(b, { days: 60 });
   check(signature(a) === signature(b), "the same seed plays out the same (60 days with radio, deals and caravans)");
 }

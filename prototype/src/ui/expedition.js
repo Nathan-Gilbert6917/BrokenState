@@ -9,7 +9,7 @@ import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bo
 import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
-import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, describeOrder, CAMP_HOURS, REPAIR_HOURS, SURVEY_HOURS, besideWater, FETCH_WATER_HOURS } from "../sim/orders.js";
+import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, describeOrder, REPAIR_HOURS, SURVEY_HOURS, besideWater, FETCH_WATER_HOURS } from "../sim/orders.js";
 import { crossingsFrom, boatPlan, boatTip, gatherInfo, matsText } from "../sim/crossing.js";
 import { fieldCraftOptions, craftQueue, craftName } from "../sim/crafting.js";
 import { BUILDINGS } from "../sim/buildings.js";
@@ -24,7 +24,7 @@ import { heatInfo, rowsText } from "../sim/fieldheat.js";
 import { fireButton, campStatusCard } from "./hardcore.js"; // the staging camp while you have no base
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE, partyHuntMix, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { teamWormText, teamWaterHow, teamTabCount, WORM } from "../sim/worm.js";
-import { teamWaterIn, teamRawIn } from "../sim/water.js"; // purified and un-purified water
+import { teamWaterIn, teamRawIn, keyWord } from "../sim/water.js"; // purified and un-purified water
 import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
@@ -177,7 +177,6 @@ export function renderExpedition(state, ui, p) {
         ${ord("mission", ` data-mission="scavenge"`, "Scavenge here", loot || queueing ? MISSIONS.scavenge.desc : "Nothing left worth searching on this tile.", !loot && !queueing)}
         ${ord("mission", ` data-mission="survey"`, `Look around (${SURVEY_HOURS}h)`, MISSIONS.survey.desc)}
         ${[[2, 12], [3, 24], [4, 48]].map(([r, h]) => ord("sweep", ` data-radius="${r}" data-hours="${h}"`, `Survey ${r} tiles, ${h}h`, `${MISSIONS.sweep.desc} From here: ${r} tiles around for ${h} hours, back here at the end.`)).join("")}
-        ${CAMP_HOURS.map((h) => ord("camp", ` data-hours="${h ?? ""}"`, h ? `Camp ${h}h` : "Camp (until broken)", `Stop and rest${h ? ` for ${h} hours` : " until you break camp"}. The hurt heal a little each hour (infected wounds need meds); nobody travels, so no road events. Supplies keep draining.`)).join("")}
         ${besideWater(state, queueing ? queueEndTile(state, p) : tile) ? ord("water", "", `Fetch water (${FETCH_WATER_HOURS}h)`, `Fill every free container from the river or lake and carry it home (room for about ${Math.floor(cargoRoom(state, p) / SUPPLIES.water.weight)} water now; 1 kg each). Un-purified water for a base that runs short in summer: the base purifies it; on the way a filter, a lit camp fire or purification tablets make it safe to drink.`) : ""}
         ${ord("repair", "", `Repair vehicle (${REPAIR_HOURS}h)`, rep.ok ? `${REPAIR_HOURS} hours, 1 part: about +${rep.gain}% condition (best Mechanics ${rep.mech}).` : rep.reason, !rep.ok && !queueing)}
         ${ord("claim", "", `Claim this tile (${CLAIM.HOURS}h)`, claimWhy && !queueing ? `Claim this tile: ${claimWhy}` : `Raise a marker post here (${CLAIM.SCRAP} scrap carried): the tile counts as land the coalition holds, toward the 50% the alliance victory needs. Lost if a group founds or takes a base on or beside it, a hive rises there, or a hostile band camps on it over a day.`, !!claimWhy && !queueing)}
@@ -264,7 +263,7 @@ function lowFoodBlock(state, p, at, queueing) {
 function craftBlock(state, p, queueing) {
   const opts = fieldCraftOptions(state, p);
   if (!opts.length) return "";
-  const inText = (o) => o.inText || Object.entries(o.in).map(([k, q]) => `${q} ${k}`).join(" + ");
+  const inText = (o) => o.inText || Object.entries(o.in).map(([k, q]) => `${q} ${keyWord(k)}`).join(" + ");
   return `<div style="margin-top:0.5rem"><b${tip("Make simple things on the road from the supplies the team carries. Takes time on the spot; the team does not travel meanwhile.")}>Craft</b></div>
     <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${opts.map((o) =>
       btn(`data-action="xp-order" data-id="${p.id}" data-type="craft" data-recipe="${o.key}"`, `${esc(o.name)} (${o.hours}h)`,

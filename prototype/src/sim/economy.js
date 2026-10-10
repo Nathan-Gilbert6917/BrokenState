@@ -10,7 +10,7 @@ import {
 } from "./world.js";
 import { planPath, dispatchConvoy } from "./parties.js";
 import { attitude } from "./factions.js";
-import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS, isShelter, SHELTER, barrelRoom } from "./buildings.js";
+import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS, isShelter, SHELTER, barrelRoom, isCamp, tierUpJob } from "./buildings.js";
 import { supplyReserve } from "./supply.js";
 import { medicalDaily, fieldInfectionDaily } from "./medical.js";
 import { toolBonus } from "./crafting.js";
@@ -124,7 +124,7 @@ function baseScavenging(state, base, people) {
     const got = k === "parts" && t && t.loc ? sortParts(state, t.loc.type, q, `scav${localId(state, s.id)}`) : { [k]: q }; // loot.js: parts by kind (their own dice; a world-local id: same seed, same game)
     if (k === "ammo") addFind(base.stock, (t && t.loc && t.loc.type) || "", q, false, "basescav", base.tile, state.hour, s.name); // ammo.js: rounds by calibre, as the place around it holds them
     else for (const [key, n] of Object.entries(got)) base.stock[key] = (base.stock[key] || 0) + n;
-    const bm = rollBuildmat(state, base.tile, 0.5, `bscav${localId(state, s.id)}`); // building materials around the base too (half a search hour's chance)
+    const bm = rollBuildmat(state, base.tile, 0.5, `bscav${localId(state, s.id)}`); // (the world-local id: tools/sameseedtest.js) building materials around the base too (half a search hour's chance)
     if (bm > 0) { base.stock.buildmat = (base.stock.buildmat || 0) + bm; got.buildmat = bm; }
     econStats(state).scavFinds++;
     log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(got).map(([key, n]) => `${n} ${key === "buildmat" ? "building materials" : key}`).join(", ")} around ${base.name}.`, "good");
@@ -549,6 +549,7 @@ function shipFromOutposts(state) {
   const h = hub(state);
   for (const base of state.bases) {
     if (base.type !== "outpost") continue;
+    if (isCamp(base) && !tierUpJob(base)) continue; // a plain camp (staging.js) is off the supply network: it lives on what it holds
     const staff = atBase(state, base.id);
     const line = supplyLine(state, base);
     base.supplyLine = { hours: line.hours, strength: line.strength, hostile: line.hostile, horde: line.horde };

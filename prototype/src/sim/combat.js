@@ -28,7 +28,7 @@
 //   loot: { supplies: {}, gear: [] },  // dropped by dead enemies, already added to the party cargo / base stock
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
-import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack } from "./world.js";
+import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
@@ -81,6 +81,7 @@ import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, qu
 import { GUN_WEAPONS, KIT_PATCH, WEAPON_PATCH } from "./data-guns.js"; // the weapons overhaul's guns, melee and launchers (merged below)
 import { withFactory } from "./factoryfit.js"; // a sniper rifle carried with its scope and bipod (section 22)
 import { throwLanding } from "./throwables.js"; // a thrown spear lands like any throw
+import { BLADE_WEAPONS, BLADE_KIT_PATCH } from "./data-blades.js"; // knives and swords (merged below)
 import { NL_WEAPONS, NL_KIT_PATCH } from "./data-nonlethal.js"; // the stun baton; tasers and spray on guards (merged below)
 import { nlHit, nlDown, nlAfterHit, nlAimPen, nlNoOw, nlStrike, nlAct, nlSetup, nlEnemyPhase, nlTurnStart, nlAI, nlBreak, nlBattleEnd, nlRaidEnd, nlDropPiles, nlSpared, blinded, setTakeAlive } from "./nonlethal.js"; // non-lethal weapons, taking people alive, surrender
 import { ammoPen } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult)
@@ -752,6 +753,9 @@ for (const [k, p] of Object.entries(WEAPON_PATCH)) if (WEAPONS[k]) Object.assign
 // Non-lethal weapons (data-nonlethal.js): the stun baton, and the lists of the kits that carry it and tasers and spray.
 Object.assign(WEAPONS, NL_WEAPONS);
 for (const [kind, patch] of Object.entries(NL_KIT_PATCH)) for (const [k, list] of Object.entries(patch)) if (KITS[kind]) KITS[kind][k] = [...(KITS[kind][k] || []), ...list];
+// Knives and swords (data-blades.js): their battle numbers, and the kits whose bodies carry them (loot lists only).
+Object.assign(WEAPONS, BLADE_WEAPONS);
+for (const [kind, patch] of Object.entries(BLADE_KIT_PATCH)) for (const [k, list] of Object.entries(patch)) if (KITS[kind]) KITS[kind][k] = [...(KITS[kind][k] || []), ...list];
 
 const idx = (x, y) => y * W + x;
 const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -2418,8 +2422,14 @@ export function rideAim(b, a) {
   if (v.movedK !== k) return 0;
   return -(a.droveK === k ? RIDE.DRIVER : a.gunner ? RIDE.TURRET : RIDE.RIDER);
 }
+// opts.parts (the battle HUD's hit breakdown, ui/battlehud.js): also returns parts, [[label, aim]] in the order they are
+// added up, every step of the aim below that changed it; they sum to the aim before the 5–95 clamp. The numbers are
+// the same with or without it (each step is the same addition, only noted).
 export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   bindDims(b);
+  const P = opts.parts ? [] : null;
+  let last = 0;
+  const mark = P ? (label) => { const v = aim - last; if (v) P.push([label, v]); last = aim; } : null; // called only with P
   const w = WEAPONS[a.weapon];
   const d = dist(ax, ay, t.x, t.y);
   const gm = unitMods(a); // gunmods.js: the gun's sight, muzzle, magazine and grip (neutral without any)
@@ -2427,58 +2437,86 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const af = calOf(a.weapon) ? typeFx(typeFor(calOf(a.weapon), a.load)) : {}; // ammo.js: the loaded type (match, slugs, birdshot…; a common round: nothing)
   const opt = rg.opt + (af.opt || 0), fall = rg.fall * (af.fallMult ?? 1);
   const notes = []; // what the moment adds or takes (the UI's odds line): a bipod rested, a moving vehicle, a light round's drop
-  let aim = a.aim + (w.aim || 0) + gm.aim + (af.aim || 0) - nlAimPen(a) - (a.loadAim || 0); // nonlethal.js: a taser's daze, pepper spray; reloading.js: handloads loaded below Mechanics 8
+  let aim = a.aim; // (step by step, as one sum: a.aim + w.aim + gm.aim + af.aim - nlAimPen - loadAim)
+  P && mark("Aim (skill, traits, wounds)");
+  aim += (w.aim || 0); P && mark("The weapon");
+  aim += gm.aim; P && mark("Its attachments");
+  aim += (af.aim || 0); P && mark("The round loaded");
+  aim -= nlAimPen(a); P && mark("Tasered or pepper-sprayed"); // nonlethal.js: a taser's daze, pepper spray
+  aim -= (a.loadAim || 0); P && mark("Handloads"); // reloading.js: handloads loaded below Mechanics 8
   if (a.loadAim) notes.push(`handloads −${Math.round(a.loadAim)}`); // reloading.js
   if (d > opt && !a.noFall) aim -= (d - opt) * fall; // noFall: the Sniper perk (skills.js)
+  P && mark(`Range (${Math.round(d)} tiles, best within ${Math.round(opt)})`);
   // An intermediate or rimfire round past its reach (gunmods.js ROUND_REACH): it drops, scope or not.
   const rr = roundReach(w), reach = rr ? rr.reach + (af.opt || 0) : Infinity;
   const slow = d > reach ? rr.dmg ?? 1 : 1; // and a hit there does less (it has slowed)
   if (d > reach) { const drop = (d - reach) * rr.drop; aim -= drop; notes.push(`round drops past ${reach} tiles −${Math.round(drop)}${slow !== 1 ? `, damage ×${slow}` : ""}`); }
+  P && mark("The round drops at this range");
   if (d <= 2.5 && (w.close || gm.close || af.close)) aim += (w.close || 0) + gm.close + (af.close || 0);
+  P && mark("Up close");
   // A bipod (fitted, or built into the machine gun and the .50) counts only rested on half cover next to the shooter in
   // the shot's line (restCell); the AI's posts (scoreCell) score it the same way, so a bipod gunner seeks sandbags.
   const rest = (gm.brace || (w.heavy && w.heavy.brace)) && restCell(b, ax, ay, t.x, t.y) ? 1 : 0;
   if (rest) notes.push(`bipod rested +${Math.max(gm.brace || 0, (w.heavy && w.heavy.brace) || 0)}`);
   if (gm !== NO_MODS) aim += situationalAim(b, a, d, gm, !!rest); // gunmods.js: a bipod rested, a sling on the move, night sights and lights
+  P && mark(rest ? "Bipod rested (attachments now)" : "Attachments now (moved, night)");
   const flat = t.surprised || (!t.aware && t.side === "enemy");
   const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : t.gunner ? gunnerCover(b, t) : coverAgainst(b, t.x, t.y, ax, ay); // a turret's gunner: half cover (full behind plate x2)
   aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0) - (opts.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js); opts.pierce: an over-penetrating round through light cover (gunfire.js)
+  P && mark(cov.level === 2 ? "Target in full cover" : "Target in half cover");
   if (t.hunker && cov.level) aim -= HUNKER_DEF;
+  P && mark("Target hunkered down");
   if (b.tact) aim += tactAim(b, a, t, ax, ay, cov, notes); // Tactical (traits.js): a flank, cover used well, an ally's eye
+  P && mark("Tactical (a flank, cover used well, an ally near)");
   if (flat) aim += 15;
+  P && mark("Target unaware or surprised");
   if (opts.reaction && !a.owSure) aim -= 15; // owSure: the Suppressor perk (skills.js)
+  P && mark("Reaction shot");
   if (opts.volley) aim += 15; // caught before they could take cover
+  P && mark("Volley");
   if (a.pinT === b.turn) aim -= TURRET.PIN; // pinned by a machine-gun burst (the turret)
+  P && mark("Pinned by a machine gun");
   // gunfire.js: the fire mode (round k of a burst or a stream: opts.modeAim; else the first round of the unit's mode),
   // pinned by suppressing fire, a heavy weapon braced or fired on the move.
   if (!w.melee) aim += opts.modeAim ?? modeAim(modeOf(a), 0, w);
+  P && mark(`Fire mode (${a.mode || "single"})`);
   if (a.suppressed) aim -= SUPPRESS.AIM;
+  P && mark("Suppressed");
   aim += braceAim(b, a, !!rest);
+  P && mark("Heavy weapon (braced or moved)");
   // Firing from a vehicle that moved this turn (rideAim): the driver, the turret's gunner, a rider.
   const ride = rideAim(b, a);
   if (ride) { aim += ride; notes.push(`vehicle moving ${ride}`); }
+  P && mark("Firing from a moving vehicle");
   // A break-in map (deploy.js): the floodlit area, and shooting from a watchtower.
   if (b.lit && b.floodAim && inside(t.x, t.y) && b.lit[idx(t.x, t.y)]) aim += b.floodAim;
+  P && mark("Target floodlit");
   // Smoke and flares (throwables.js): a shot into or out of a cloud, your people at a target in a flare's light at night.
   if (b.smoke && b.smoke.length && (smokeAt(b, t.x, t.y) || smokeAt(b, ax, ay))) aim -= SMOKE.aim;
+  P && mark("Smoke");
   if (b.flares && b.flares.length && a.side === "player" && (b.night || b.dark) && flareLit(b, t.x, t.y)) aim += FLARE.aim;
+  P && mark("Target lit by a flare");
   if (a.stun) aim -= a.stun.aim; // still seeing spots from a flashbang (throwables.js FLASH)
+  P && mark("Stunned");
   // helmets.js: a visor down (fogged, cracked); hearing.js: a team headset's callout, dazed by a bang (each on the odds line)
   const visor = visorAim(a, b), link = linkAim(b, a, t), dazed = dazedAim(a);
   aim += visor + link - dazed;
+  P && mark("Visor, headset, dazed");
   if (visor) notes.push(`visor ${visor > 0 ? "+" : ""}${Math.round(visor)}`);
   if (link) notes.push(`headset callout ${link > 0 ? "+" : ""}${Math.round(link)}`);
   if (dazed) notes.push(`dazed by a bang −${Math.round(dazed)}`);
   // Shooting down from higher ground (a walkway, a roof, a watchtower: verticality).
   const up = inside(ax, ay) ? hAt(b, ax, ay) - hAt(b, t.x, t.y) : 0;
   if (up > 0) aim += Math.min(HEIGHT.MAX_AIM, up * HEIGHT.AIM);
+  P && mark("Higher ground");
   // Clinging to a siege ladder, or hauling a ram (siege.js): easy to hit.
   if (inside(t.x, t.y) && b.cells[idx(t.x, t.y)].k === "siegeladder") aim += CLIMB_AIM;
   else if (t.ram != null && b.rams && isCrew(b, t)) aim += CREW_AIM;
+  P && mark("Target on a ladder or a ram");
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
   const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? CRIT.DEAD : CRIT.EXPOSED) : CRIT.COVER) + (a.critBonus || 0); // critBonus: Deadeye
   const ad = (af.dmg ?? 1) * slow; // the loaded type's damage, a light round's past its reach (ROUND_REACH dmg) (hollow points' soft-target bonus: damage, ammo.js softMult)
-  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up, notes };
+  return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up, notes, ...(P ? { parts: P, aim } : {}) };
 }
 
 // Tactical (traits.js, u.tact from playerUnit): a Tactical shooter's bonus on a flanked target, a Tactical target in
@@ -2503,14 +2541,23 @@ export function tactAura(b, a, x = a.x, y = a.y) {
   return best;
 }
 
-export function meleeOdds(b, a, t) {
+// opts.parts: also the breakdown (as shotOdds), [[label, aim]] summing to the aim before the 10–95 clamp.
+export function meleeOdds(b, a, t, opts = {}) {
   bindDims(b);
   const w = WEAPONS[a.weapon];
   const up = hAt(b, t.x, t.y) > hAt(b, a.x, a.y) ? HEIGHT.MELEE_UP : 0; // striking up at someone on higher ground
-  const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) + tactAura(b, a) - (t.hunker ? 10 : 0) - up - (a.stun ? a.stun.aim / 2 : 0) - nlAimPen(a) / 2))); // tactAura: a Tactical ally near (traits.js); a stun (a flashbang, a taser: throwables.js) and pepper spray (nonlethal.js): half their aim penalty up close
+  // a.meleeSk: the Melee skill's part of a.meleeAim (world.js MELEE_SKILL, playerUnit), its own step; tactAura: a Tactical ally
+  // near (traits.js); a stun (a flashbang, a taser: throwables.js) and pepper spray (nonlethal.js): half their aim penalty
+  // up close; Parry (skills.js)
+  const steps = [["Base, nerve and traits", a.meleeAim - (a.meleeSk || 0)], ["Melee skill", a.meleeSk || 0], ["The weapon", w.meleeAim || 0], ["A Tactical ally near", tactAura(b, a)], ["Target hunkered down", -(t.hunker ? 10 : 0)], ["Striking up at higher ground", -up], ["Stunned", -(a.stun ? a.stun.aim / 2 : 0)], ["Tasered or pepper-sprayed", -nlAimPen(a) / 2], ["Target parries", -(t.parry || 0)]];
+  let aim = 0;
+  for (const [, v] of steps) aim += v; // the same sum, left to right
+  const chance = Math.max(10, Math.min(95, Math.round(aim)));
+  const parts = opts.parts ? steps.filter(([, v]) => v) : null;
   const base = w.melee ? w.dmg : BASH;
-  const mult = w.melee ? a.dmgMult : 1;
-  return { chance, crit: CRIT.MELEE, dmg: [Math.round(base[0] * mult), Math.round(base[1] * mult)], cover: 0, flanked: false, dist: 1 };
+  // a.meleeDmg: the Melee skill (world.js MELEE_SKILL; your people and volunteers, playerUnit); Butcher on the dead (skills.js)
+  const mult = (w.melee ? a.dmgMult : 1) * (a.meleeDmg || 1) * (a.butcher && t.kind === "zombie" ? a.butcher : 1);
+  return { chance, crit: CRIT.MELEE + (a.bonebreaker ? 10 : 0), dmg: [Math.round(base[0] * mult), Math.round(base[1] * mult)], cover: 0, flanked: false, dist: 1, ...(parts ? { parts, aim } : {}) }; // Bonebreaker: +10 crit
 }
 
 export const isRanged = (u) => !WEAPONS[u.weapon].melee;
@@ -2569,7 +2616,8 @@ function meleeAfter(b, a, t, w, crit) {
   let out = "";
   const seed = b.rng.state;
   const immune = t.boss || STAGGER_IMMUNE.has(t.ztype) || STAGGER_IMMUNE.has(t.variant) || STAGGER_IMMUNE.has(t.zkind);
-  if (w.stagger && !immune && hash01(seed, "stagger", a.id, t.id) < Math.min(1, w.stagger * (crit ? 2 : 1))) { t.staggered = 1; out += " Staggered."; }
+  const stag = (w.stagger || 0) + (a.heavyHands || 0); // Heavy Hands (skills.js): a chance with any weapon
+  if (!immune && ((crit && a.bonebreaker) || (stag > 0 && hash01(seed, "stagger", a.id, t.id) < Math.min(1, stag * (crit ? 2 : 1))))) { t.staggered = 1; out += " Staggered."; } // Bonebreaker: a critical always staggers
   if (w.bleed && t.kind === "human" && hash01(seed, "bleed", a.id, t.id) < w.bleed) { t.bleeding = MELEE.BLEED_TURNS; out += " Bleeding."; }
   return out;
 }
@@ -2670,7 +2718,7 @@ export function throwSpear(b, u, x, y, s = null) {
     const o = meleeOdds(b, u, t);
     const crit = rng.chance(o.crit / 100);
     const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1) * (u.meleeMult || 1), u, false, { how: "melee", crit, thrown: true, mclass: w.mclass || "pierce" }));
-    if (u.xpT) { u.xpT.melee++; if (t.dead) u.xpT.kills++; }
+    if (u.xpT) { u.xpT.melee++; if (t.dead) u.xpT.mkills++; } // skills.js: Melee XP when the battle ends
     line.text = `${u.name} throws the ${w.name.toLowerCase()}${off ? " (it flies wide)" : ""}: ${crit ? "critical hit on" : "it hits"} ${t.name} for ${eff}.${meleeAfter(b, u, t, w, crit)}`;
     line.k = u.side === "player" ? (t.side === "player" ? "danger" : "good") : "danger";
     fx(b, { type: "melee", from: [u.x, u.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: u.side });
@@ -2924,7 +2972,8 @@ export function playerUnit(b, s) {
     gm: key === "fists" ? NO_MODS : gunMods(item), gmWeapon: key, // gunmods.js: what its attachments add (shotOdds, shotNoise)
     aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s) + needsAim(s) + illnessAim(s) + tiredAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js); hunger, thirst (needs.js); illness (health.js); tiredness (sleep.js)
     nerve: (s.traits.includes("brave") ? MIDDEAD.NIGHTMARE.BRAVE : 0) + (s.traits.includes("coward") ? MIDDEAD.NIGHTMARE.COWARD : 0), // middead.js: a Nightmare's scream
-    meleeAim: 75 + bravery + meleeTraitAim(s), dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q),
+    meleeAim: 75 + meleeAimBonus(s) + bravery + meleeTraitAim(s), dmgMult: (0.6 + 0.4 * mult) * (0.75 + 0.25 * q), // Melee (world.js MELEE_SKILL): 75 at Melee 5, ±2 a point
+    meleeDmg: meleeDmgMult(s), melee: skill(s, "melee"), meleeSk: meleeAimBonus(s), // meleeSk: Melee's own step in meleeOdds' breakdown; melee damage × 1 at Melee 5, ±3% a point; takedowns (stealth.js subdueOdds)
     armor, hp: s.health, maxHp: 100, startHp: s.health, mob: MOVE, sight: SIGHT,
     stealth: skill(s, "stealth"), medicine: skill(s, "medicine") + battleKitBonus(s),
     scouting: skill(s, "scouting"), armLoad: fielded.reduce((a, [slot, it]) => a + (slot !== "weapon" && GEAR[it.key] ? GEAR[it.key].power || 0 : 0), 0), // escape checks (soundRetreat)
@@ -3555,12 +3604,13 @@ function strike(b, a, t) {
   const gap = t.ztype ? stabsGap(a, t) || (!!w.stab && stabsGap({ x: a.x, y: a.y, weapon: "knife" }, t)) : false; // a blade from behind or on the unaware finds a dead soldier's gap (deadsoldiers.js; w.stab: a combat knife)
   const hit = rng.chance(o.chance / 100) || sure;
   const line = sayFirst(b);
+  if (a.xpT) a.xpT.swings++; // skills.js: Melee XP when the battle ends (a swing, a blow landed, a kill)
   if (hit) {
     const crit = rng.chance(o.crit / 100) || sure;
     const h = { how: WEAPONS[a.weapon].melee ? "melee" : "bash", crit, sneak: gap };
     const eff = Math.round(damage(b, t, rng.int(o.dmg[0], o.dmg[1]) * (crit ? CRIT_MULT : 1) * (a.meleeMult || 1) * amb, a, false, h)); // meleeMult: Brawler
     if (gap && t.dead) say(b, `${a.name} drives the blade in under ${t.name}'s helmet.`, "good");
-    if (a.xpT) { a.xpT.melee++; if (t.dead) a.xpT.kills++; }
+    if (a.xpT) { a.xpT.melee++; if (t.dead) a.xpT.mkills++; }
     line.text = `${a.name} ${a.kind === "zombie" ? "tears into" : "strikes"} ${t.name} for ${eff}.${meleeAfter(b, a, t, w, crit)}`; // stagger, bleeding (the melee section above)
     line.k = a.side === "player" ? "good" : "danger";
     fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: a.side, ...blowFx(h) });
@@ -4919,7 +4969,7 @@ function firepower(b, u, vsPeople) {
     return (ch / 100) * ((w.dmg[0] + w.dmg[1]) / 2) * u.dmgMult;
   }
   const d = w.melee ? w.dmg : BASH;
-  return (Math.max(10, Math.min(95, u.meleeAim)) / 100) * ((d[0] + d[1]) / 2) * (w.melee ? u.dmgMult : 1) * 0.4;
+  return (Math.max(10, Math.min(95, u.meleeAim)) / 100) * ((d[0] + d[1]) / 2) * (w.melee ? u.dmgMult : 1) * (u.meleeDmg || 1) * 0.4;
 }
 export function fightOutlook(b) {
   bindDims(b);

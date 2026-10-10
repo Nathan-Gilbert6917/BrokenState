@@ -93,6 +93,7 @@ export const KEYMAP = [
   { id: "battle.autoplay", label: "The AI plays your side (again: take back control)", group: "Battle", ctx: "battle", keys: ["Shift+KeyA"] },
   { id: "battle.retreatAll", label: "Sound the retreat (on a wall map: fall back to the yard)", group: "Battle", ctx: "battle", keys: ["Shift+KeyR"] },
   { id: "battle.clear", label: "The area is clear enough: end the fight", group: "Battle", ctx: "battle", keys: ["Shift+KeyC"] },
+  { id: "bview.hud", label: "Fold or open the squad strip and the weapon panel", group: "Battle view", ctx: "battle", keys: ["Backquote"] }, // ui/battlehud.js
   { id: "battle.search", label: "Search the container or body next to the unit", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyS"], v: "search" },
   { id: "battle.ground", label: "Ground: put things down, pick them up", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyX"], v: "ground" },
   { id: "battle.quick", label: "Quick search (raid)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyQ"], v: "quick" },

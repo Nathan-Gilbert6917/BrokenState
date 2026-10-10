@@ -86,7 +86,7 @@ import {
   awaitOrders, travelHours,
 } from "./parties.js";
 import * as Parties from "./parties.js";
-import { waterIn, drawWater } from "./water.js"; // purified and un-purified water
+import { waterIn, drawWater, keyWord } from "./water.js"; // purified and un-purified water; "9mm FMJ"
 import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoodwill, attitude, siegePace, stolenText, makeGang } from "./factions.js";
 import { raidTier } from "./defences.js";
 import { lookoutsSpot, surpriseAt, watchSawText, SURPRISE } from "./watch.js"; // the lookouts' warning; an unwatched night
@@ -117,7 +117,7 @@ import { UPKEEP, coldFactor } from "./upkeep.js";
 import { eatFromStore } from "./storage.js";
 import { gunmodWares } from "./loot.js"; // a sight or a suppressor among a merchant's goods
 import { supplyAmt, spendAmmo } from "./rounds.js"; // "ammo": every round there, any calibre
-import { expandAmmo } from "./ammo.js"; // rounds by calibre
+import { expandAmmo, baseCals } from "./ammo.js"; // rounds by calibre
 import { merchantReload } from "./reloading.js"; // an arms dealer's powder and primers
 import { merchantEscort, escortFighters, escortValue, escortWords, escortShort, ESCORT_VEHICLES } from "./escorts.js";
 import { escortEnemy, lootCaravan, witnessesOf, consequences } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
@@ -769,8 +769,10 @@ export function outsiderRaidOn(state, baseId) {
 }
 export const tributeValue = (v) => Math.round(vStrength(v) * O.raiders.tribute);
 const PAY_ORDER = ["ammo", "food", "preserved", "meds", "fuel", "scrap", "parts"];
-// Goods worth `value` from a stock, in PAY_ORDER (null when the stock does not hold that much).
-export function stockPlan(stock, value) {
+// Goods worth `value` from a stock, in PAY_ORDER (null when the stock does not hold that much). Rounds by calibre
+// (2026-10-09, user request): "ammo" is paid as the rounds by key that the guns there need least (keep: their calibres;
+// none: the cheapest), so the price names them.
+export function stockPlan(stock, value, keep = null) {
   const plan = {};
   let left = value;
   for (const k of PAY_ORDER) {
@@ -778,12 +780,13 @@ export function stockPlan(stock, value) {
     const have = Math.floor(supplyAmt(stock, k));
     if (have <= 0) continue;
     const q = Math.min(have, Math.ceil(left / SUPPLIES[k].value));
+    if (k === "ammo") { for (const [kk, qq] of Object.entries(spendAmmo({ ...stock }, q, keep).keys)) if (qq > 0) { plan[kk] = (plan[kk] || 0) + qq; left -= qq * SUPPLIES[kk].value; } continue; }
     plan[k] = q;
     left -= q * SUPPLIES[k].value;
   }
   return left > 0 ? null : plan;
 }
-const planText = (plan) => Object.entries(plan).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ");
+const planText = (plan) => Object.entries(plan).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`).join(", "); // rounds named by calibre
 function payFromStock(stock, plan, to) {
   for (const [k, q] of Object.entries(plan)) {
     if (k === "ammo") spendAmmo(stock, q); // rounds.js: any calibre, the cheapest first
@@ -808,8 +811,8 @@ function raidWarning(state, v) {
   const S = vStrength(v);
   const speech = tradeSpeech(atBase(state, base.id));
   const tc = talkChance(speech);
-  const price = () => stockPlan(base.stock, tributeValue(v));
-  const half = () => stockPlan(base.stock, Math.ceil(tributeValue(v) / 2));
+  const price = () => stockPlan(base.stock, tributeValue(v), baseCals(state, base));
+  const half = () => stockPlan(base.stock, Math.ceil(tributeValue(v) / 2), baseCals(state, base));
   const there = (st) => st.visitors.includes(v) && st.bases.includes(base);
   const dist = state.grid.distance(v.tile, base.tile);
   const ratio = def / Math.max(1, S), ratioP = prepared / Math.max(1, S);
@@ -1223,7 +1226,7 @@ export function tradeWithGroup(state, v, f) {
     v.stock[k] -= q;
     f.stock[groupStockKey(k, f)] = (f.stock[groupStockKey(k, f)] || 0) + q; // part kinds into the group's one count of parts
     for (const [w, n] of Object.entries(pay)) { f.stock[w] -= n; v.stock[w] = (v.stock[w] || 0) + n; got.push(`${n} ${w}`); }
-    gave.push(`${q} ${k}`);
+    gave.push(`${q} ${keyWord(k)}`);
   }
   // A piece of gear changes hands now and then (the group's wares, trade.js).
   if (v.wares.length && f.wares && vrng(state).chance(0.35)) f.wares.push(v.wares.splice(vrng(state).int(0, v.wares.length - 1), 1)[0]);
@@ -1262,7 +1265,7 @@ function merchantCall(state, v) {
 // What a merchant caravan deals in, for the UI ("arms dealers"), or "".
 export const specName = (v) => (v && v.kind === "merchants" && MERCHANT_SPECS[v.spec] ? MERCHANT_SPECS[v.spec].name.toLowerCase() : "");
 export function goodsText(v) {
-  const sup = SUPPLY_KEYS.filter((k) => (v.stock[k] || 0) >= supplyFew(k, 5)).sort((a, b) => (v.stock[b] || 0) * SUPPLIES[b].value - (v.stock[a] || 0) * SUPPLIES[a].value).slice(0, 4).map((k) => SUPPLIES[k].name.toLowerCase());
+  const sup = SUPPLY_KEYS.filter((k) => (v.stock[k] || 0) >= supplyFew(k, 5)).sort((a, b) => (v.stock[b] || 0) * SUPPLIES[b].value - (v.stock[a] || 0) * SUPPLIES[a].value).slice(0, 4).map((k) => (k === "ammo" ? "rounds of several calibres" : keyWord(k) === k ? SUPPLIES[k].name.toLowerCase() : keyWord(k)));
   const items = v.wares.slice(0, 4).map((g) => g.name);
   return [...sup, ...items].join(", ") + (v.wares.length > 4 ? ` and ${v.wares.length - 4} more item${v.wares.length - 4 === 1 ? "" : "s"}` : "") || "very little";
 }
@@ -1489,7 +1492,7 @@ function gateCard(state, v, base, lead) {
     });
   }
   if (v.sub === "scouts" && !v.done.maps) {
-    const price = () => stockPlan(base.stock, scoutPrice(v));
+    const price = () => stockPlan(base.stock, scoutPrice(v), baseCals(state, base));
     choices.push({
       label: `Buy their maps (${price() ? planText(price()) : `${scoutPrice(v)} worth of goods`})`, hint: "Everything within 2 tiles of the way they came, on your map as it was when they passed",
       disabled: (st) => !here(st) || !price(),
@@ -1576,7 +1579,7 @@ function endShelter(state, v) {
   v.phase = "travel";
   if (base && v.hostile) {
     const took = {};
-    for (const k of ["food", "meds", "ammo"]) { const q = Math.floor(supplyAmt(base.stock, k) * 0.12); if (q > 0) { if (k === "ammo") spendAmmo(base.stock, q); else base.stock[k] -= q; took[k] = q; } } // ammo: any calibre (rounds.js)
+    for (const k of ["food", "meds", "ammo"]) { const q = Math.floor(supplyAmt(base.stock, k) * 0.12); if (q > 0) { if (k === "ammo") Object.assign(took, spendAmmo(base.stock, q).keys); else { base.stock[k] -= q; took[k] = q; } } } // ammo: any calibre, by key (rounds.js)
     addToStock(v, took);
     v.hostile = false;
     log(state, `The guests at ${base.name} were thieves: ${cap1(v.name)} slipped away in the night with ${planText(took) || "what they could carry"}.`, "danger");
@@ -1930,7 +1933,7 @@ function onOutsiderRaid(state, result, setup) {
     if (base) base.alert = false;
     state.stats.raidsRepelled += 1;
     const got = [];
-    if (v && base) for (const k of SUPPLY_KEYS) { const q = Math.floor(v.stock[k] || 0); if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${k}`); } }
+    if (v && base) for (const k of SUPPLY_KEYS) { const q = Math.floor(v.stock[k] || 0); if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${keyWord(k)}`); } }
     if (v) leaveMap(state, v, "broken");
     text = `${base ? base.name : "The base"} broke ${v ? v.name : "the raiders"} in a stand-up fight.${got.length ? ` What they carried is yours: ${got.join(", ")}.` : ""}`;
     log(state, text, "good");
@@ -1993,7 +1996,7 @@ export function visitorView(state, v) {
     act: live || heard ? v.act : "last seen " + (v.act || "on the road"), attitude: attitudeOf(v), where: at != null ? placeOf(state, at) : "unknown",
     gear: v.kind === "raiders" ? gearText(v.power) : null,
     canPay: v.kind === "raiders" && !v.paid && (live || heard) && hasNetwork(state) && inCoverage(state, v.tile),
-    payPlan: v.kind === "raiders" && hub(state) ? stockPlan(hub(state).stock, radioPayValue(state, v)) : null,
+    payPlan: v.kind === "raiders" && hub(state) ? stockPlan(hub(state).stock, radioPayValue(state, v), baseCals(state, hub(state))) : null,
     canInvite: v.kind === "merchants" && (live || heard) && hasNetwork(state) && inCoverage(state, v.tile) && attitude(v) !== "Hostile" && !(v.goal && v.goal.kind === "base"),
     tradeHere: v.kind !== "raiders" && v.phase === "stop" && v.goal && v.goal.kind === "base" ? baseById(state, v.goal.baseId) : null,
     gate: v.kind === "explorers" && v.phase === "gate" && !state.cards.some((c) => c.visitorId === v.id) ? baseById(state, v.gateBase) : null,
@@ -2013,7 +2016,7 @@ export function radioPayRaiders(state, v) {
   if (v.paid) return `${cap1(v.name)} are already leaving.`;
   if (!hasNetwork(state) || !inCoverage(state, v.tile)) return "They are out of radio reach.";
   const h = hub(state);
-  const plan = stockPlan(h.stock, radioPayValue(state, v));
+  const plan = stockPlan(h.stock, radioPayValue(state, v), baseCals(state, h));
   if (!plan) return `${h.name} does not have ${radioPayValue(state, v)} worth of goods to offer.`;
   payFromStock(h.stock, plan, v.stock);
   paidOff(state, v, null);

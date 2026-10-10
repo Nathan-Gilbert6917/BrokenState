@@ -36,6 +36,7 @@
 //     a site at most every AISCAV.newsGap days); the radio line also updates the loot you know there (only the loot,
 //     knowledge.lootHour / lootSrc "radio"; the rest of what you know keeps its age).
 // Decisions use hash01 (skills.js), never the world's random numbers, so the rest of a run draws the same dice.
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, FACTION_TYPES } from "./data.js";
 import { log, factionById } from "./world.js";
 import { spawnAiParty, planPath, partyTile, partyMembers, tileLabel, removeParty } from "./parties.js";
@@ -316,7 +317,7 @@ export function driveOff(state, team, scavPartyId, addCargo) {
     const qty = Math.floor(n);
     if (qty < 1) continue;
     const took = addCargo(state, team, k, qty);
-    if (took > 0) got.push(`${took} ${k}`);
+    if (took > 0) got.push(`${took} ${keyWord(k)}`);
   }
   removeParty(state, q);
   return `Their scavengers left ${tileLabel(state, q.scav.site)}${got.length ? `, dropping what they had found: ${got.join(", ")}` : ""}.`;

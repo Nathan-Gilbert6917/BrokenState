@@ -46,6 +46,7 @@
 // - A group that overheard your convoy's route on the radio (intel.js g.lying) hunts it INTEL.AMBUSH.RANGE tiles further
 //   out and INTEL.AMBUSH.MULT × as often until it has passed.
 import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES } from "./data.js";
+import { keyWord } from "./water.js"; // "9mm FMJ"
 import { log, addCard, day, factionById, hurt, newId, combatPower } from "./world.js";
 import {
   partyTile, partyMembers, tileLabel, removeParty, planPath, cargoRoom, unitsThatFit, addGearToCargo, wipeParty, awaitOrders, orderMove,
@@ -74,7 +75,7 @@ import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that over
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const pct = (c) => `${Math.round(c * 100)}%`;
 const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-const planText = (sup) => Object.entries(sup).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${k}`).join(", ");
+const planText = (sup) => Object.entries(sup).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${keyWord(k)}`).join(", "); // rounds named by calibre
 
 export const INTERCEPT = { RANGE: 6, HOURS: 48 };
 export const MEET = { COOLDOWN: 48 };

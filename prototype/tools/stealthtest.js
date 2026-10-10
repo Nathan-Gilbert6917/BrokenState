@@ -67,6 +67,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   const u = b.units.find((x) => x.side === "player"), t = b.units.find((x) => x.side === "enemy");
   t.x = 9; t.y = 6; t.face = [-1, 0]; t.aware = false; t.kit = "raiders";
   u.stealth = 0; u.weapon = "fists"; u.str = 0; u.assassin = false; u.x = 8; u.y = 6; // in front, no cover
+  u.melee = TAKEDOWN.meleeMid; // the Melee skill at its middle: no bonus either way (stealth.js TAKEDOWN.melee)
   const front = subdueOdds(b, u, t);
   check(front.takedown && front.chance === TAKEDOWN.base + 5, `unaware, from the front, Stealth 0, fists, no cover: ${front.chance}% (30 + 5 for a chokehold)`);
   u.x = 10; u.stealth = 8; u.weapon = "spikedbat";

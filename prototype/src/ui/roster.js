@@ -26,7 +26,7 @@ import { bulkBar, bulkReport, BULK_ACTIONS, BULK_CHANGE } from "./rosterbulk.js"
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const n0 = (v) => Math.floor((v || 0) + 1e-9);
-const SHORT = { shooting: "Shoot", stealth: "Stealth", scavenging: "Scav", scouting: "Scout", medicine: "Med", mechanics: "Mech", farming: "Farm", speech: "Speech", leadership: "Lead", crafting: "Craft" };
+const SHORT = { shooting: "Shoot", stealth: "Stealth", scavenging: "Scav", scouting: "Scout", medicine: "Med", mechanics: "Mech", farming: "Farm", speech: "Speech", leadership: "Lead", crafting: "Craft", melee: "Melee" };
 
 // Skill progress from skills.js (XP to the next point), when it offers skillProgress(s, key).
 let skillProgress = typeof Skills.skillProgress === "function" ? Skills.skillProgress : null;

@@ -18,8 +18,9 @@
 // die, settle and join bands (× 1 + HC_EARLY × e^(−day / HC_FADE)).
 // Every roll here uses hash01 or a generator seeded from it, never the world's random numbers, so a normal game where
 // nobody is met plays exactly as before; the cards' own choices use the world's dice like any card.
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, FACTION_TYPES, GEAR } from "./data.js";
-import { log, addCard, day, hub, skill, isNight, factionById, combatPower, snapshot, armedFactor } from "./world.js";
+import { log, addCard, day, hub, skill, isNight, factionById, combatPower, snapshot, armedFactor, localId } from "./world.js";
 import {
   partyMembers, partyTile, bestSkill, tileLabel, carried, takeSupply, wipeParty, partySpeed, addGearToCargo,
 } from "./parties.js";
@@ -33,7 +34,7 @@ import { zombieToughness } from "./hives.js";
 import { lootItem } from "./inventory.js";
 import { groupCapture } from "./groupjails.js"; // prisoners of a three-way fight into a group's jail
 import { kitSource, spend } from "./itemcond.js";
-import { halt, resume, afterFight, rob, talkSkill, talker, runBonus, addCargo, triggerConflict, spotFirstChance } from "./conflicts.js";
+import { halt, resume, afterFight, rob, talkSkill, talker, runBonus, addCargo, addCargoRounds, triggerConflict, spotFirstChance } from "./conflicts.js";
 import { bandsOf } from "./hardcore-groups.js";
 import { sumRecs } from "./rounds.js"; // rounds by key: each gun judged by its own calibre
 import { wandererJoinChance, wandererJoins } from "./groupcare.js"; // AI parity: groups recruit wanderers by type, food and beds
@@ -386,7 +387,7 @@ export function neutralCard(state, p, g, opts = {}) {
   const text = `${lead} ${g.people.map(personLine).join(", ")}. ${moodText[g.mood] || ""}`;
   const talk = talkChance(state, p, g), gift = talkChance(state, p, g, true);
   const cost = Object.fromEntries(Object.entries(W.GIFT).map(([k, q]) => [k, q * n]));
-  const costText = Object.entries(cost).map(([k, q]) => `${q} ${k}`).join(" and ");
+  const costText = Object.entries(cost).map(([k, q]) => `${q} ${keyWord(k)}`).join(" and ");
   const short = (st) => Object.entries(cost).some(([k, q]) => carried(p, k) < q);
   const win = (st, gifted) => {
     gainXp(st, talker(st, p), "speech", USE.talk + USE.talkWon);
@@ -676,7 +677,7 @@ function onWandererCombat(state, result, setup) {
   if (result.outcome === "victory") {
     lines.push(`You won. ${result.enemiesKilled || "Several"} of ${c.enemy.name} are down.`);
     if (!result.tactical && c.enemy.kind !== "zombies") {
-      lines.push(`Taken from them: ${addCargo(state, p, "ammo", rng.int(c.type === "attackSquad" ? 20 : 3, c.type === "attackSquad" ? 50 : 12))} ammo, ${addCargo(state, p, "food", rng.int(1, 4))} food.`);
+      lines.push(`Taken from them: ${addCargoRounds(state, p, rng.int(c.type === "attackSquad" ? 20 : 3, c.type === "attackSquad" ? 50 : 12), c.type === "attackSquad" ? "military" : "raider", "wanderer", c.id ? localId(state, c.id) : 0, state.hour)}, ${addCargo(state, p, "food", rng.int(1, 4))} food.`); // rounds by calibre: what such people shoot (ammo.js)
       if (rng.chance(c.type === "attackSquad" ? 0.35 : 0.2)) {
         const key = rng.pick(c.type === "attackSquad" ? ["ar", "vest", "carbine"] : ["pistol", "knife", "bat", "revolver"]);
         const item = lootItem(key, kitSource(c.enemy.kind), spend(rng)); // itemcond.js: by who they were
@@ -695,7 +696,7 @@ function onWandererCombat(state, result, setup) {
         changeGoodwill(state, f, W.GW_HELP, "you fought beside their soldiers");
         f.lastDiplomacy = day(state);
         for (const b of f.bases) p.seen.set(b, snapshot(state, b));
-        lines.push(`The sergeant shakes your hand: ${addCargo(state, p, "ammo", rng.int(15, 30))} ammo from their packs, and their base marked on your map.`);
+        lines.push(`The sergeant shakes your hand: ${addCargoRounds(state, p, rng.int(15, 30), "military", "sergeant", state.hour)} from their packs, and their base marked on your map.`);
         bump(state, "squad-helped");
       }
     }

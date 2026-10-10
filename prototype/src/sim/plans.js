@@ -212,11 +212,12 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   // spot sits by its fire; a camp step by the team's own, lit unless the team keeps it out (p.campFire, or the step's
   // fire), and on bare ground only while the firewood it carries lasts (woodcutting.js campFireHour: it pays an hour's
   // after each hour, so the fire is there for one hour more than it can pay; out, it stays out).
-  const camp0 = state.staging;
+  const campOn = (t) => state.bases.find((b) => b.tier === 0 && b.tile === t) || null; // a camp or shelter of yours: its fire (fieldheat.js teamFire)
   let woodBurnt = 0; // firewood the camp fires burn on bare ground
   let lit = p ? fireLit(p) : true; // the team's fire habit; a camp step's own fire setting carries on (orders.js)
   const campWarm = (kind, s, hours) => {
-    if (camp0 && camp0.tile === tile && kind !== "scavenge") return fireLit(camp0) ? hours : 0;
+    const camp0 = campOn(tile);
+    if (camp0 && kind !== "scavenge") return fireLit(camp0) ? hours : 0;
     if (kind !== "camp") return 0;
     if (s && s.fire != null) lit = !!s.fire;
     if (!lit) return 0;

@@ -15,7 +15,7 @@
 // infected wound, or too ill to work take beds, worst off first; everyone else keeps working and heals slowly.
 // A hospital without enough medics for its tier runs as the highest tier its medics can staff.
 import { log, atBase, alive, skill, survivorById, baseById, hurt, hub, residents, day } from "./world.js";
-import { BUILDINGS } from "./buildings.js";
+import { BUILDINGS, isCamp } from "./buildings.js";
 import { partyTile, partyMembers, wipeParty } from "./parties.js";
 import { medKitBonus, useMedKit } from "./crafting.js";
 import { conditionsOf, CONDITIONS, workFactor, tooIllToWork, conditionInfoCtx, applyCondition, autoWantsCondition, conditionDanger } from "./health.js";
@@ -171,6 +171,7 @@ export function healRatePerHour(state, base, s, hosp = activeHospital(state, bas
   if (!isHurt(s)) return 0;
   const bed = inBed != null ? inBed : patients(state, base).includes(s);
   let perDay = BASE_HEAL_PER_DAY + hosp.baseSkill * 0.4;
+  if (isCamp(base)) perDay += BASE_HEAL_PER_DAY; // resting in camp: twice a base without a hospital (as orders.js campHealPerHour)
   if (bed && hosp.tier > 0) perDay += hosp.heal + hosp.staffSkill * 0.5 + ((hosp.staff || []).some((m) => hasPerk(m, "chiefmedic")) ? 6 : 0); // Chief of Medicine (skills.js)
   // Severe wounds heal slowly without a bed; the hospital tier sets the speed in a bed.
   if (isSevere(s)) perDay *= bed && hosp.tier > 0 ? hosp.severe : SEVERE_NO_BED;

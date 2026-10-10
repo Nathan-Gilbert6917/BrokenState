@@ -16,6 +16,7 @@
 import { Rng } from "../sim/rng.js";
 import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
+import { BLADE_LOOK } from "../sim/data-blades.js"; // knives and swords: their looks
 import { zombieLookOf, enemyLookOf, armoredLookOf, zombieVariant, zombieLook, CAMO } from "./sprites.js";
 
 export const DW = 26, DH = 14; // the grid
@@ -165,7 +166,7 @@ function droppedWeapon(p, key) {
     case "huntrifle": case "leverrifle": p.rect(12, y, 22, y, wood); p.rect(18, y, 22, y, gun); break;
     case "ar": case "carbine": p.rect(12, y, 21, y, gun); p.set(16, y - 1, gun); p.set(13, y - 1, gun); break;
     case "crossbow": case "compbow": case "xbow": case "pulleybow": p.rect(13, y, 20, y, wood); p.rect(20, y - 2, 20, y, metal); break;
-    default: break;
+    default: { const L = BLADE_LOOK[key]; if (L) { const n = Math.max(2, Math.min(8, L.len)); p.set(14, y, L.handle); p.rect(15, y, 14 + n, y, L.blade); if (L.guard) p.set(15, y - 1, L.guard); } break; } // knives and swords (sim/data-blades.js)
   }
 }
 

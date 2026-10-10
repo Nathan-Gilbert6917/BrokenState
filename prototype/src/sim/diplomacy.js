@@ -67,7 +67,7 @@ import { hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { raidTurretPower } from "./vehicles.js"; // the Humvee a raid brought (its M2)
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
-import { payAmmo } from "./ammo.js"; // rounds by calibre: the ones its guns need least go
+import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre: the ones its guns need least go
 import { warCaptureMult } from "./nonlethal.js"; // groups that take people alive take more prisoners in a war
 import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES warlike: a group's temper for war
 import { noteStrife, SPLINTER } from "./splinters.js"; // a lost war stirs strife (splinter bands)
@@ -544,12 +544,12 @@ export function warCard(state, w, f, foe) {
     choices: [
       { label: `Join the war beside ${f.name}`, hint: joinProblem(state, w, f) || `${foe.name}: goodwill −60 at most, pact torn up. ${f.name}: +10 goodwill, their raids 25% stronger`, disabled: (st) => !!joinProblem(st, w, f),
         ai: (st) => warJoinScore(st, w, f, foe), resolve: (st) => joinWar(st, w.id, f.id) },
-      { label: "Send 40 ammo", hint: `+5 goodwill with ${f.name}; ${foe.name} hears of it (−2)`, disabled: (st) => totalRounds(hub(st).stock) < 40 || !warById(st, w.id),
+      { label: `Send ${payWord(state, h, 40)}`, hint: `+5 goodwill with ${f.name}; ${foe.name} hears of it (−2). The rounds your hub's guns need least`, disabled: (st) => totalRounds(hub(st).stock) < 40 || !warById(st, w.id),
         ai: (st) => (totalRounds(hub(st).stock) >= 160 && !(st.governor && st.governor.personality === "cautious") ? 1 : -1), resolve: (st) => {
           if (totalRounds(hub(st).stock) < 40 || !warById(st, w.id)) return "It is too late for that.";
-          payAmmo(st, hub(st), 40); f.stock.ammo = (f.stock.ammo || 0) + 40;
+          const sent = payAmmoKeys(st, hub(st), 40); f.stock.ammo = (f.stock.ammo || 0) + 40; // their store keeps one count
           changeGoodwill(st, f, 5, "you sent ammo for their war"); changeGoodwill(st, foe, -2, "you armed their enemy");
-          return `40 ammo sent to ${f.name}.`;
+          return `${roundsText(sent)} sent to ${f.name}.`;
         } },
       { label: "Stay out of it", hint: `−2 goodwill with ${f.name}`, ai: () => 0, resolve: (st) => { changeGoodwill(st, f, -2, "you stayed out of their war"); return `You stay out of the war between ${f.name} and ${foe.known ? foe.name : "their enemy"}.`; } },
     ],
@@ -652,7 +652,7 @@ export function brokerCeasefire(state, warId) {
     const q = Math.max(1, Math.min(available(f, k), Math.round(40 / (SUPPLIES[k].value * Math.max(0.5, need(f, k))))));
     f.stock[k] -= q;
     h.stock[k] = (h.stock[k] || 0) + q;
-    gifts.push(`${q} ${k} from ${f.name}`);
+    gifts.push(`${q} ${keyWord(k)} from ${f.name}`);
   }
   log(state, `You brokered a ceasefire between ${a.name} and ${b.name}.${gifts.length ? ` Thanks: ${gifts.join(", ")}.` : ""}`, "good");
   return `Ceasefire! ${a.name} and ${b.name} lay down their arms (${Math.round(info.chance * 100)}% chance).${gifts.length ? ` They thank you: ${gifts.join(", ")} (at the hub).` : ""}`;
@@ -748,7 +748,7 @@ export function payRansom(state, f, s = null, opts = {}) {
   f.prisonersHeld = Math.max(0, f.prisonersHeld - 1);
   f.pop += 1;
   changeGoodwill(state, f, 3, "you returned their person for a ransom");
-  return `${f.name} paid ${Object.entries(q.offer).map(([k, n]) => `${n} ${k}`).join(", ")} to ${base.name} and took their person home.`;
+  return `${f.name} paid ${Object.entries(q.offer).map(([k, n]) => `${n} ${keyWord(k)}`).join(", ")} to ${base.name} and took their person home.`;
 }
 // Let a prisoner go for nothing: +8 goodwill (+4 if hostile).
 export function releasePrisoner(state, f, s = null) {
