@@ -30,7 +30,8 @@ import { capTask, holdName, COLLECT } from "./carry.js"; // a quantity to collec
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
 export const SURVEY_HOURS = 2;   // Look around
-export const CAMP_HOURS = [8, 24, null]; // camp choices offered in the team panel (null: until you break it)
+// (The timed Camp order left the panels on 2026-10-09: Set up camp makes a camp, a base, staging.js. "camp" stays an
+// internal rest task for the governor's night stops, caravans, conflicts and plans' rest steps.)
 
 // What a queued or running order is called in the panels and the log.
 export function describeOrder(state, o) {

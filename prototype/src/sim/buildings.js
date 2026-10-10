@@ -557,7 +557,7 @@ export function canBuild(state, base, type) {
   if (def.campOnly && !isCamp(base)) return { ok: false, reason: isShelter(base) ? "Camps only (this is a shelter already)" : "Camps only (this is a base already)" };
   if (isCamp(base)) {
     const cap = CAMP.build[type];
-    if (!cap) return { ok: false, reason: type === "hub_up" ? "Build the camp up into a shelter first" : `Not at a camp: build it up into ${base.type === "outpost" ? "an outpost" : "a shelter"} first` };
+    if (!cap) return { ok: false, camp: true, reason: type === "hub_up" ? "Build the camp up into a shelter first" : base.type === "outpost" ? "Available once the camp is an outpost (Establish the outpost)" : SHELTER.build[type] ? "Available once the shelter stands (build the camp up first)" : "Available once it is a base (camp → shelter → base)" };
     if (countAll(base, type) + queued >= cap) return { ok: false, reason: `A camp has room for ${cap}` };
   } else if (isShelter(base)) {
     const cap = SHELTER.build[type];

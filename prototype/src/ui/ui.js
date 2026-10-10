@@ -42,7 +42,7 @@ import { activeHiveCrawl, crawlRecText } from "../sim/hivecrawl.js";
 import { hiveCrawlModal } from "./hivecrawl.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
-  BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, tierName, tierUpType, tierUpJob, gatherRows, gatherCap, gatherStalled, gatherShort, matName,
+  BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, isCamp, CAMP, SHELTER, tierName, tierUpType, tierUpJob, gatherRows, gatherCap, gatherStalled, gatherShort, matName,
   PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, BENCH, benchType,
 } from "../sim/buildings.js";
 import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, partyFleet, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, payloadOf, upgradeText, upgradeEffects, upgradeOptions, garageQueue, garageJobStatus, vehicleValue, costText, vehicleById, SHOP_TEXT, carPartsCost, carPartsText, stripYield } from "../sim/vehicles.js";
@@ -124,8 +124,8 @@ import { forageInfo, foragerMult, FORAGE } from "../sim/foraging.js";
 import { woodInfo, WOOD, boilerJunkOn, boilerBurnables, burnablesWood } from "../sim/woodcutting.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
 import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
-import { roadStock, firstHubCard, fromTeamRow, stagingTileCard, fireButton } from "./hardcore.js";
-import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView } from "../sim/staging.js";
+import { roadStock, firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
+import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
 import { gaugeRows, treatsRow, needsEffectText } from "./needs.js";
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick (sim/status.js)
 import { STATUS, STATUS_ICONS } from "../sim/status.js";
@@ -1408,6 +1408,7 @@ function gearControls(state, base, s, slot) {
 
 // ---------- base management ----------
 const BASE_TABS = [
+  ["camp", "Camp", "The camp at a glance: its stage and what it can become, who is there, the teams at the camp, its stores and vehicles; set up teams, build it up, or strike it"],
   ["overview", "Overview", "Stock, people and roles"],
   ["work", "Work", "Work priorities (like RimWorld's work tab): roles with a 1–5 priority per kind of work, a schedule, and crews that run trips by themselves"],
   ["defence", "Defence", "The watch roster (who stands guard at which hours) and the defence plan (where everyone stands when the base is attacked)"],
@@ -1427,14 +1428,79 @@ const BASE_TABS = [
 function baseModal(state, ui) {
   const b = baseById(state, ui.baseView.id);
   if (!b) return null;
-  const tab = ui.baseView.tab;
-  const body = { overview: baseOverview, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
+  // A camp (sim/staging.js, the barest base): its own Camp tab first, and only the tabs a camp has use for.
+  const tabs = isCamp(b) ? BASE_TABS.filter(([k]) => CAMP_TABS.includes(k)) : BASE_TABS.filter(([k]) => k !== "camp");
+  const tab = tabs.some(([k]) => k === ui.baseView.tab) ? ui.baseView.tab : tabs[0][0];
+  const body = { camp: campTab, overview: baseOverview, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
     <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}>${renameButton(b, "✎ Rename")}<span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
-    <div class="tabs">${BASE_TABS.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
+    <div class="tabs">${tabs.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
     ${ui.baseMsg ? `<div class="result small">${esc(ui.baseMsg)}</div>` : ""}
     <div class="basebody">${body}</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="closebase">Close</button></div>
+  </div>`;
+}
+
+// The tabs a camp shows (BASE_TABS keys).
+const CAMP_TABS = ["camp", "overview", "construction", "armory", "vehicles", "crafting", "work", "medical"];
+
+// ---------- the camp (sim/staging.js) ----------
+// The Camp tab: the stage ladder and the step up (tierUpRows), what each stage opens up, the people at the camp, the
+// teams standing at it (Edit team, Enter), Form a team, the stores and vehicles at a glance, its water, fire and Heat,
+// and Strike camp. Everything acts through the base's own systems: teams are formed and edited here as at any base
+// (ui/teamform.js: people, vehicles, gear, supplies and cargo by weight and seats), stores and items are the base's
+// stock and armory (Armory tab, the team inventory), vehicles and their cargo the Vehicles tab.
+function campTab(state, b) {
+  const v = shelterView(state, b);
+  const people = v.people || [];
+  const teams = v.teams || [];
+  const out = b.type === "outpost";
+  const parked = state.vehicles.filter((x) => x.loc.kind === "base" && x.loc.baseId === b.id);
+  const stock = STOCK_KEYS.filter((k) => k !== "jars" && n0(k === "ammo" ? totalRounds(b.stock) : b.stock[k]) >= 1).map((k) => [k, b.stock[k]]);
+  const nameList = (keys) => keys.map((k) => BUILDINGS[k] ? BUILDINGS[k].name : k).join(", ");
+  const atShelter = Object.keys(SHELTER.build).filter((k) => !BUILDINGS[k].tierUp && !CAMP.build[k]);
+  const ladder = out
+    ? `<div>Next</div><div class="small">An outpost: a dug spring (3 water a day), a fence (wall 1), 6 building plots and 6 utility plots, room for every building an outpost takes.</div>`
+    : `<div>At the shelter</div><div class="small">A roof and beds for ${SHELTER.beds}, two utility plots and a garden patch: ${esc(nameList(atShelter))}, and its own step up (${esc(BUILDINGS.hub_up.name)}: ${esc(needText(BUILDINGS.hub_up.cost))}).</div>
+      <div>At the base</div><div class="small muted">A main house, a dug well, walls, 16 building and 14 utility plots: every building (workshops, the hospital, bunkhouses, the radio station…). Construction lists them with what each needs.</div>`;
+  const away = v.away >= 1 && !people.length ? `<div${tip(`Nobody at the camp. After ${STAGING.ABANDON} days alone it may be looted (part of its stores and its step up); empty and bare for ${STAGING.GONE} days it is gone.`)}>Alone</div><div class="${v.away >= STAGING.ABANDON ? "danger" : "warn"}">${Math.floor(v.away)} day${Math.floor(v.away) === 1 ? "" : "s"}</div>` : "";
+  return `<div class="grid2">
+    <div>
+      <h3>Camp ${stageSteps(0)}</h3>
+      <div class="card small"${tip("A camp is the barest base: tarps, bedrolls and a fire. Its people live there (base healing, twice as fast at rest as at a base without a hospital; meals and water from its stores), but it has no well, no wall strength, one utility plot and no crop plots. Build it up with time and materials, or strike it and move on.")}>
+        <div class="kv small">
+          ${tierUpRows(state, b)}
+          ${ladder}
+        </div>
+      </div>
+      <h3>People here (${people.length}/${baseBeds(b)} bedrolls)</h3>
+      <div class="card small">${people.length ? people.map((s) => `<div class="spread"><a class="link" data-action="survivor" data-id="${s.id}">${first(s)}</a><span class="muted">${esc(ROLES[s.role] ? ROLES[s.role].name : s.role || "")} · health ${n0(s.health)}</span></div>`).join("") : `<span class="muted">Nobody lives at the camp now.</span>`}
+        <div class="row" style="margin-top:0.4rem">${formTeamButton(state, b)}</div>
+        <div class="muted" style="margin-top:0.3rem">Form a team: pick people, vehicles, gear and supplies from the camp\'s stores; they stand outside as a team (split as many teams as you like). A team at the camp is edited here (people in or out, vehicles, loading and dropping off by weight) or moves back in with Enter.</div>
+      </div>
+      <h3>Teams at the camp (${teams.length})</h3>
+      <div class="card small">${teams.length ? teams.map((p) => `<div class="spread"><a class="link" data-action="xp-open" data-id="${p.id}">${esc(teamName(state, p))}</a><span class="row">${editTeamButton(state, p)}<button class="mini" data-action="xp-order" data-id="${p.id}" data-type="mission" data-mission="enter"${tip(`Move this team into ${b.name}: its people live at the camp, what it carries goes into the stores and armory, its vehicles park here`)}>Enter</button></span></div>`).join("") : `<span class="muted">No team stands at the camp.</span>`}</div>
+    </div>
+    <div>
+      <h3>Stores</h3>
+      <div class="card small">${stock.length ? stock.map(([k, q]) => `<span class="chip">${esc(SUPPLIES[k].name)} ${n0(k === "ammo" ? totalRounds(b.stock) : q)}</span>`).join(" ") : `<span class="muted">Nothing in the stores.</span>`}
+        <div class="muted" style="margin-top:0.3rem">${b.armory.length} item${b.armory.length === 1 ? "" : "s"} in the camp\'s armory (Armory tab). Teams set down what they carry when they enter, and take supplies and gear when they are formed or edited here.</div>
+        <div class="row" style="margin-top:0.3rem"><button class="mini" data-action="basetab" data-tab="armory">Armory</button><button class="mini" data-action="basetab" data-tab="construction">Construction</button></div>
+      </div>
+      <h3>Vehicles (${parked.length})</h3>
+      <div class="card small">${parked.length ? parked.map((x) => `<div class="spread"><span>${esc(x.name)}${x.count > 1 ? ` ×${x.count}` : ""}</span><span class="muted">condition ${n0(x.condition)}%${x.fuel != null && !/bike/.test(x.type) ? ` · fuel ${n0(x.fuel)}` : ""}</span></div>`).join("") : `<span class="muted">No vehicle parked here.</span>`}
+        <div class="row" style="margin-top:0.3rem"><button class="mini" data-action="basetab" data-tab="vehicles"${tip("Fuel, repairs and each vehicle's cargo")}>Vehicles tab</button></div>
+      </div>
+      <h3>Around the camp</h3>
+      <div class="card small"><div class="kv small">
+        <div${tip("A camp has no well: beside a river or lake its people haul water into the stores; anywhere else only what is carried in.")}>Water</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
+        <div${tip("The camp's Heat (what draws the dead and raiders): its fire (most at night), vehicles parked here and shooting nearby lately; its people count as at any base.")}>Heat from</div><div>${esc(v.heat.text || "nothing but its people")}</div>
+        <div${tip("The camp fire: warmth, hot food and boiled water, better spirits. Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)}</div>
+        ${away}
+        ${v.looted ? `<div>Looted</div><div class="warn">${v.looted} time${v.looted === 1 ? "" : "s"}</div>` : ""}
+      </div></div>
+      <div class="row" style="margin-top:0.6rem;justify-content:flex-end"><button class="danger" data-action="strikecamp" data-base="${b.id}" ${v.strike ? "disabled" : ""}${tip(v.strike || `${STRIKE_LABEL}: everyone here forms one team with the vehicles that run (as far as drivers and seats allow) and what they can carry of the stores and armory (water and food first). What is left stays here as a cache to recover, and the camp is gone.`)}>${STRIKE_LABEL}</button></div>
+    </div>
   </div>`;
 }
 
@@ -1549,11 +1615,11 @@ function trainingCard(state, b) {
 // lighter part: what the materials delivered allow), each material taken against what it needs, and what holds it up.
 function tierUpRows(state, b) {
   const type = tierUpType(b), def = BUILDINGS[type], out = b.type === "outpost";
-  const stage = out ? "Outpost camp → <b>Outpost</b>" : "Shelter → <b>Base</b>";
+  const stage = out ? "Outpost camp → <b>Outpost</b>" : isCamp(b) ? "Camp → <b>Shelter</b> → Base" : "Shelter → <b>Base</b>";
   const job = tierUpJob(b);
   if (!job) {
     const chk = canBuild(state, b, type);
-    return `<div>Stage</div><div>${stage}</div><div></div><div><button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${type}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? `${def.desc} Needs ${gatherShort({ type, paid: {} })} brought in, and ${def.hours} work-hours.` : chk.reason)}>${esc(def.name)}</button></div>`;
+    return `<div>Stage</div><div>${stage}</div><div></div><div><button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${type}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? `${def.desc} Needs ${gatherShort({ type, paid: {}, cost: b.ruinSalvage && def.cost.scrap ? { ...def.cost, scrap: Math.max(0, def.cost.scrap - CAMP.ruinScrap) } : undefined })} brought in, and ${def.hours} work-hours.` : chk.reason)}>${esc(def.name)}</button></div>${isCamp(b) ? `<div></div><div class="small muted">A plain camp: nothing is building. Queue the step up to start; the materials are taken from the stores as they come in.</div>` : ""}`;
   }
   const f = job.hours ? job.progress / job.hours : 0, cap = job.paid ? gatherCap(job) : 1;
   const rate = buildRate(state, b);

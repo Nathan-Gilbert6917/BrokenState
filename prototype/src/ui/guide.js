@@ -18,7 +18,8 @@
 import { day, hub, alive } from "../sim/world.js";
 import { partyTile, partyMembers } from "../sim/parties.js";
 import { teamWaterIn, waterIn } from "../sim/water.js";
-import { stagingMissing, waterSource, storeOf, ESTABLISH_LABEL } from "../sim/staging.js";
+import { waterSource, ESTABLISH_LABEL } from "../sim/staging.js";
+import { isCamp, tierUpJob, gatherShort } from "../sim/buildings.js";
 import { roadTeam } from "../sim/hardcore-start.js";
 import { tileActions } from "./ui.js";
 import { listSaves } from "./saves.js";
@@ -38,11 +39,10 @@ export const GUIDE = {
 // ---------- what counts ----------
 const mine = (state) => state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy" && partyMembers(state, p).length);
 const buildingCount = (state) => state.bases.reduce((a, b) => a + (b.buildings || []).length, 0);
-// Water the player holds anywhere: every team, the staging camp's stores, the bases.
+// Water the player holds anywhere: every team, the bases (camps too).
 function waterHeld(state) {
   let w = 0;
   for (const p of mine(state)) w += teamWaterIn(p);
-  if (state.staging) w += storeOf(state.staging, "water");
   for (const b of state.bases) w += waterIn(b.stock);
   return w;
 }
@@ -84,7 +84,7 @@ const STEPS = {
     done: (state, g) => state.hour >= firstDawn(g),
     show: (state, ui, act) => {
       const p = state.bases.length ? null : openTeam(state, ui, act);
-      if (p) return ['[data-action="xp-order"][data-type="camp"]', '[data-action="campfire"]'];
+      if (p) return ['[data-action="xp-order"][data-mission="camp"]', '[data-action="campfire"]'];
       closeWindows(ui);
       ui.tab = "bases";
       act["panel-toggle"]({ p: "left", v: "0" });
@@ -126,18 +126,18 @@ const STEPS = {
     },
   },
   camp: {
-    title: `Pitch a staging camp (${ESTABLISH_LABEL})`, why: "Your hub starts as a camp: pick a spot beside a river or lake, with sites around and few of the dead, and give the team the order there.",
-    done: (state) => !!state.staging || state.bases.length > 0,
+    title: `Set up your camp (${ESTABLISH_LABEL})`, why: "Your hub starts as a camp, the barest base: pick a spot beside a river or lake, with sites around and few of the dead, and give the team the order there. Your people live there from the start.",
+    done: (state) => state.bases.length > 0,
     show: (state, ui, act) => (openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]', '[data-action="xp-move"]'] : []),
   },
   needs: {
-    title: "Bring in what the camp needs", why: "The camp lists the scrap, parts, food and water the shelter takes. Scavenge sites around it and unload at the camp, as many trips as it takes.",
-    done: (state) => state.bases.length > 0 || (!!state.staging && !stagingMissing(state.staging).length),
-    show: (state, ui, act) => (openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="scavenge"]', '[data-action="xp-order"][data-mission="establish"]'] : []),
+    title: "Bring in what the camp needs", why: "Building the camp up into a shelter takes scrap and building materials (its Construction tab lists them). Send teams out from the camp to scavenge sites around it; what they bring home goes into its stores and the step up takes it as it comes in.",
+    done: (state) => { const h = hub(state); if (!h) return false; const job = isCamp(h) ? tierUpJob(h) : null; return !isCamp(h) || (!!job && !gatherShort(job)); },
+    show: (state, ui, act) => { const h = hub(state); if (h && isCamp(h)) { ui.baseView = { id: h.id, tab: "construction" }; return ['[data-action="tf-open"]', ".basebody"]; } return openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]'] : []; },
   },
   found: {
-    title: "Found your shelter", why: "With everything in, the team works on the camp in daylight (more hands go faster). Done, it becomes your hub: a shelter you can live at and build up.",
-    done: (state) => state.bases.length > 0,
+    title: "Found your shelter", why: "With everything in, the camp's builders build it up (more hands and Mechanics go faster). Done, it becomes a shelter you can live at and build up.",
+    done: (state) => state.bases.some((b) => b.type === "hub" && !isCamp(b)),
     show: (state, ui, act) => (openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]'] : []),
   },
 };
