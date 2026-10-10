@@ -231,13 +231,13 @@ export function hubFounded(state, base, when = "") {
   hc.foundedDay = day(state);
   hc.foundedHour = state.hour;
   hc.hubTile = base.tile;
-  base.name = base.name.replace(/ Outpost( \d+)?$/, " Holdout");
+  base.name = base.name.replace(/ (Outpost|Camp)( \d+)?$/, " Holdout");
   if (state.bases.some((b) => b !== base && b.name === base.name)) base.name = `${base.name} ${base.id}`;
   base.hcFirst = true;
   assignStartingRoles(state); // jobs by skill, as a normal start does (world.js)
   const text = base.tier === 0
-    ? `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first shelter${when ? `, ${when}` : ""}. ${shelterText()} Build it up before the cold.`
-    : `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
+    ? `Day ${day(state)}: the camp is a shelter now. ${base.name} is founded, your first shelter${when ? `, ${when}` : ""}. ${shelterText()} Build it up before the cold.`
+    : `Day ${day(state)}: the camp is built up. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
   log(state, text, "good");
   addCard(state, { title: "A place of your own", text, choices: [{ label: "OK", resolve: () => "" }] });
 }

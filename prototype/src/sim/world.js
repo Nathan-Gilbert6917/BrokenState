@@ -74,7 +74,7 @@ import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
 import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
 import { countWord, normalStartBackgrounds, normalStartKit } from "./hardcore-start.js";
-import { stagingHour } from "./staging.js";
+import { campsHour } from "./staging.js";
 import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
 import { crowdCardsHour } from "./moveout.js"; // the Overcrowded card (and moving people between your bases)
@@ -842,7 +842,7 @@ export function tickHour(state) {
   riversHour(state); // rivers.js: rivers freezing over or thawing (before anyone moves this hour)
   skillsHour(state); // skills.js: travel XP, Pathfinder's pace
   movePartiesHour(state);
-  stagingHour(state); // staging.js: the staging camp with no base (work, stores, looters; done: the hub)
+  campsHour(state); // staging.js: camps (neglect, the hub among them) and the shelters' fires
   needsHour(state); // needs.js: hunger and thirst at bases and on errands (teams eat in movePartiesHour), teams' treats
   releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);

@@ -44,7 +44,7 @@ import {
   factionById, baseById, survivorById, makeSurvivor, RADIO_RANGE, supplyValue, armedFactor, spendShots, arrowsBack,
 } from "./world.js";
 import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
-import { baseWalls, count } from "./buildings.js";
+import { baseWalls, count, isCamp } from "./buildings.js";
 import { radioBasesInRange, removeBase, localId } from "./world.js";
 import { playerTile } from "./hardcore-start.js";
 import { defendInPerson, raidForce } from "./conflicts.js";
@@ -239,7 +239,7 @@ export function recomputeOwnership(state) {
       if (t.owner == null || g.distance(id, b) === 0) t.owner = f.id;
     }
   }
-  for (const b of state.bases) for (const id of g.within(b.tile, b.type === "hub" ? 2 : 1)) {
+  for (const b of state.bases) for (const id of g.within(b.tile, isCamp(b) ? 0 : b.type === "hub" ? 2 : 1)) { // a camp holds only its own tile (buildings.js CAMP)
     const t = state.tiles[id];
     if (!state.factions.some((f) => f.bases.includes(id))) t.owner = "player";
   }

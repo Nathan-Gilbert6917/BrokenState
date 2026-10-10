@@ -29,8 +29,7 @@
 // A quiet countryside camp for a night (10 hours) reaches Heat ~25 and has about a 1–2% chance of trouble;
 // three days camped in a city near a group or a hive reaches 100 within a day and sees trouble every day or so.
 //
-// Camps are different (camp danger, CAMP_HEAT below): a team's camp (the Camp order), the staging camp (staging.js)
-// and anyone at the staging camp whatever they do gain Heat from what the camp does instead of the activity table:
+// Camps are different (camp danger, CAMP_HEAT below): a team resting in the field (the rest task "camp") gains Heat from what the camp does instead of the activity table:
 // its fire (lit or out: a toggle), the people there, the vehicles parked there, shooting at or next to it lately
 // (state.gunfire, fading over a day or two) and building work. A camp's Heat settles (CAMP_HEAT.settle an hour) rather
 // than climbing to 100, so a small dark camp stays quiet and a big one with a bonfire, trucks and gunfights does not.
@@ -142,19 +141,13 @@ export const SHELTER_HEAT = { fireDay: 1, fireNight: 3, car: 1.5, truck: 2, milt
 export const FIRE = { warm: 0.35, raw: 0.015, campMood: 0.3, campMoodOut: 0.1, shelterMood: 0.5, coldMood: -1, coldAt: 4 };
 
 export const fireLit = (x) => !!x && (x.campFire ?? x.fire) !== false;
-// Where a team's Heat is a camp's: at the staging camp (any activity on the spot), or camping. null: neither.
+// Where a team's Heat is a camp's: resting in the field (the internal rest task "camp": the governor's night stops,
+// plans' rest steps). null: not camping. A camp you set up is a base (staging.js): its Heat is base Heat
+// (shelterHeat), and a team on its tile is at home (no Heat of its own).
 // { kind, tile, teams, people, vehicles, fire, working, where }
 export function campSite(state, p, activity = stationaryActivity(p), hour = state.hour) {
   if (!p || !activity) return null;
   const tile = partyTile(p);
-  const camp = state.staging;
-  if (camp && camp.tile === tile && p.owner === "player") {
-    const teams = state.parties.filter((q) => q.id !== p.id && q.owner === "player" && q.kind !== "convoy" && partyTile(q) === tile && partyMembers(state, q).length);
-    teams.unshift(p); // p may be a planning copy (safeHours)
-    const h = hour % 24;
-    const working = (camp.workers || 0) > 0 && h >= 7 && h < 19 && camp.progress < camp.work - 1e-9;
-    return { kind: "staging", tile, teams, people: teams.reduce((a, q) => a + partyMembers(state, q).length, 0), vehicles: teams.flatMap((q) => partyVehicles(state, q)).filter(isCar), fire: fireLit(camp), working, where: camp };
-  }
   if (activity !== "camp") return null;
   return { kind: "team", tile, teams: [p], people: partyMembers(state, p).length, vehicles: partyVehicles(state, p).filter(isCar), fire: fireLit(p), working: false, where: p }; // every car of the team's
 }
@@ -200,17 +193,6 @@ export function campDanger(state, at, hour = state.hour) {
   const heat = Math.max(0, ...at.teams.map((q) => q.heat || 0));
   return { ...g, heat, settles: Math.min(HEAT_MAX, g.gain / CAMP_HEAT.settle), text: `${rowsText(g.rows)}${g.parts.length > 1 ? ` (${g.parts.slice(1).join(", ")})` : ""}` };
 }
-// The staging camp's danger without asking for a team (null when nobody is there: the panel shows what it would be).
-export function stagingDanger(state, camp = state.staging, hour = state.hour) {
-  if (!camp) return null;
-  const teams = state.parties.filter((q) => q.owner === "player" && q.kind !== "convoy" && partyTile(q) === camp.tile && partyMembers(state, q).length);
-  const site = { kind: "staging", tile: camp.tile, teams, people: teams.reduce((a, q) => a + partyMembers(state, q).length, 0), vehicles: teams.flatMap((q) => partyVehicles(state, q)).filter(isCar), fire: fireLit(camp), working: (camp.workers || 0) > 0 && hour % 24 >= 7 && hour % 24 < 19, where: camp };
-  if (!teams.length) {
-    const rows = campRows(state, site, hour);
-    return { rows, gain: 0, heat: 0, settles: 0, text: `Nobody there. ${rowsText(rows)}` , empty: true };
-  }
-  return campDanger(state, site, hour);
-}
 
 // ---------- gunfire (every fight's shots, combat.js finishCombat) ----------
 // state.gunfire: [{ tile, hour, n }], kept CAMP_HEAT.shotKeep hours.
@@ -248,16 +230,17 @@ export function shelterHeat(state, base, hour = state.hour) {
 }
 
 // ---------- the fire toggle ----------
-// x: the staging camp, a shelter (a base with tier 0) or a team (its camp). Returns the message.
+// x: a camp or shelter (a base with tier 0) or a team (its camp). Returns the message.
 export function setFire(state, x, lit) {
   if (!x) return "";
   if (x.members) x.campFire = !!lit; else x.fire = !!lit;
   return lit ? "The fire is lit: warmth, hot food and boiled water, better spirits; its light and smoke carry, most at night." : "The fire is out: darker and quieter, but cold food, unboiled water and cold nights.";
 }
-// The fire a team sits by, for its comforts: the staging camp's at the camp, its own while it camps; null: no camp.
+// The fire a team sits by, for its comforts: a camp's or shelter's where it waits on one (staging.js), its own while
+// it rests in the field; null: no camp.
 export function teamFire(state, p) {
-  const camp = state.staging;
-  if (camp && p.owner === "player" && partyTile(p) === camp.tile && (p.phase === "task" || p.phase === "waiting")) return fireLit(camp);
+  const camp = p.owner === "player" && (p.phase === "task" || p.phase === "waiting") ? state.bases.find((b) => b.tier === 0 && b.tile === partyTile(p)) : null;
+  if (camp) return fireLit(camp);
   if (p.phase === "task" && p.task && p.task.type === "camp") return fireLit(p);
   return null;
 }
@@ -389,9 +372,6 @@ export function fieldHeatHour(state, p, addCard) {
   useScentMask(state, p); // a gore scent mask goes on when the team starts to gain Heat
   p.heat = nextHeat(state, p, activity, p.heat || 0, state.hour);
   p.heatTile = tile;
-  // The staging camp rolls for trouble once an hour, whoever is there (not once a team).
-  const camp = state.staging;
-  if (camp && camp.tile === tile) { if (camp.rollHour === state.hour) return null; camp.rollHour = state.hour; }
   // One thing at a time: no trouble while the team has a card open, or right after the last trouble.
   if (state.cards.some((c) => c.partyId === p.id) || state.combat || (p.heatTrouble != null && state.hour - p.heatTrouble < HEAT_COOLDOWN)) return null;
   // The road's rule too: at most one conflict per team every 20 hours (conflicts.js COOLDOWN_HOURS).

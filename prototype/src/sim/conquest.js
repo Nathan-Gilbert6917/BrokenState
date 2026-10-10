@@ -71,7 +71,7 @@ import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { surrenderPrisoners, prisonersOf } from "./prisoners.js";
-import { addBuilding, baseWalls, assignStations } from "./buildings.js";
+import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob } from "./buildings.js";
 import { pactsOf, relation } from "./diplomacy.js";
 import { isMember, allianceMembers, ensureAlliance, assaultAllies } from "./alliance.js";
 import { fixtures, fixtureName } from "./breakdowns.js";
@@ -563,7 +563,7 @@ export function evacuate(state, base, f = null, why = "") {
     const tile = fallbackTile(state, base, f);
     if (tile !== base.tile) orderMove(state, p, tile);
     else awaitOrders(state, p, "There is no base left to go to.");
-    log(state, `${names(people)} took to the road from ${base.name}${why ? ` (${why})` : ""}: you have no base left. Found a new one (Establish base: a staging camp you build up into your hub) or take ${base.name} back.`, "death"); // staging.js
+    log(state, `${names(people)} took to the road from ${base.name}${why ? ` (${why})` : ""}: you have no base left. Found a new one (Establish base: a camp you build up into your hub) or take ${base.name} back.`, "death"); // staging.js
   }
   return p;
 }
@@ -633,8 +633,9 @@ export function promoteHub(state, nearTile) {
   if (hub(state)) return hub(state);
   if (!state.bases.length) return null;
   const g = state.grid;
-  const b = [...state.bases].sort((x, y) => g.distance(x.tile, nearTile) - g.distance(y.tile, nearTile) || x.id - y.id)[0];
+  const b = [...state.bases].sort((x, y) => isCamp(x) - isCamp(y) || g.distance(x.tile, nearTile) - g.distance(y.tile, nearTile) || x.id - y.id)[0]; // a camp only when nothing else is left
   b.type = "hub";
+  if (isCamp(b)) retypeCampJob(b);
   assignStations(state, b);
   log(state, `${b.name} is your hub now.`, "info");
   return b;

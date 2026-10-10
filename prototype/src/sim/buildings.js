@@ -1,5 +1,6 @@
 // @ts-check
 // Buildings, workshop stations and the construction queue for every base (hub and outposts).
+import { campBecameShelter } from "./staging.js"; // a camp built up into a shelter (the founding)
 import { log, atBase, skill, newId, day, localId } from "./world.js";
 import { SILENT } from "./hiding.js"; // a base running silent: its stations work in quiet spells
 import { SKILL_NAMES, SUPPLIES } from "./data.js";
@@ -169,6 +170,12 @@ export const BUILDINGS = {
   // stores as they come in (teams, supply runs), and the work never runs ahead of the share delivered (gatherHour).
   // Done: an outpost as before (its spring, wall 1, 6 + 6 plots). Not queued by hand: a camp has it from the start.
   // User numbers 2026-10-09: "Upgrading to Outpost 20 hours 20 scrap 2 building materials".
+  // A camp (2026-10-09, user request: "Make camps a pseudo temp base that can be upgraded to bases with time and
+  // supplies but is the most barebones"; any team, anywhere: Set up camp, staging.js) built up into a shelter: the camp
+  // that is your hub (your first home, the exiles' new one). The old staging camp's numbers (user numbers 2026-10-09,
+  // "upgrading to shelter 20 hours 20 scrap 2 building materials"); 10 scrap less on ruins (job.cost, tierUpJobFor).
+  camp_up:      { name: "Build up into a shelter", cost: { scrap: 20, buildmat: 2 }, hours: 20, max: 1, campOnly: true, hubOnly: true, tierUp: true, gather: true,
+                  desc: "Turn the camp into a shelter: a shack with a roof behind a scrap barricade, beds for four, two utility plots and a garden patch; later the shelter is built up into a base. The materials are taken from the camp's stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
   outpost_up:   { name: "Establish the outpost", cost: { scrap: 20, buildmat: 2 }, hours: 20, max: 1, shelterOnly: true, outpostOnly: true, tierUp: true, gather: true,
                   desc: "Turn the outpost camp into a real outpost: a shack with a roof, a dug spring (3 water a day), a fence (wall 1), 6 building plots and 6 utility plots. The materials are taken from the camp's stores as they come in (bring them with a team or a supply run); the builders here do the work, never more of it than the materials delivered allow." },
 };
@@ -180,12 +187,13 @@ export const BUILDINGS = {
 // no plot. A hospital takes one building plot whatever its tier (an upgrade replaces it in place), and a water
 // barrel's upgrades stay on its plot. Demolishing frees the plot (demolish below).
 export const PLOTS = {
+  camp:    { building: 0, utility: 1 },
   shelter: { building: 0, utility: 2 },
   outpost: { building: 6, utility: 6 },
   hub:     { building: 16, utility: 14 },
 };
 export const PLOT_NAMES = { building: "Building plot", utility: "Utility plot" };
-export const plotSize = (base) => (isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost");
+export const plotSize = (base) => (isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost");
 export const plotCap = (base, kind) => PLOTS[plotSize(base)][kind] || 0;
 // Plots in use: buildings standing (broken ones too) and new buildings in the queue. A hospital upgrade or a barrel
 // upgrade in the queue takes no new plot.
@@ -337,13 +345,54 @@ export const SHELTER = {
 };
 export const isShelter = (base) => !!base && base.tier === 0;
 export const baseTier = (base) => (isShelter(base) ? 0 : 1);
+// ---------- the camp: the lowest tier ----------
+// A camp (staging.js: Set up camp, any team anywhere; Establish base; Build outpost) is a tier-0 base with camp: true:
+// everything a shelter is (isShelter: no well, no wall strength, a shelter's Heat and fire, base healing and needs),
+// only barer. isCamp is the one test (keep camp checks to it). What it changes from a shelter:
+//   beds       CAMP.beds (bedrolls round the fire)
+//   plots      PLOTS.camp: no building plot, one utility plot; no crop plots (CAMP.plots)
+//   build      CAMP.build: a barricade, a rain catcher, crates or a barrel on its one plot, and the step up
+//   step up    camp_up (the camp that is your hub → a shelter) or outpost_up (a camp beside a hub → an outpost);
+//              queued by Establish base / Build outpost, by hand from Construction for a plain camp
+//   rest       the hurt heal as in the old Camp order (medical.js: twice a base's rate without a hospital)
+//   land       it holds only its own tile (factions.js recomputeOwnership) and counts for no victory
+//   neglect    nobody there for STAGING.ABANDON days and it may be looted; empty and bare for STAGING.GONE days, gone
+//   strike     Strike camp: its people form a team with what they can carry, the rest is left as a cache (staging.js)
+export const CAMP = {
+  name: "Camp",
+  beds: 6, plots: 0, vision: 1,
+  setupHours: 1,     // Set up camp: an hour of work, no materials (the materials come with the step up)
+  build: { barricades: 1, rain_catcher: 1, crates: 1, water_barrel: 1, camp_up: 1, outpost_up: 1 },
+  ruinScrap: 10,     // on the ruins of a burned base: 10 scrap less for the step up (salvage)
+};
+export const isCamp = (base) => !!base && base.tier === 0 && base.camp === true;
 // What the base is called in the panels.
-export const tierName = (base) => (isShelter(base) ? (base.type === "outpost" ? "Outpost camp" : "Shelter") : base.type === "hub" ? "Main hub" : "Outpost");
-// The job that takes a tier-0 base up a tier: the shelter's hub_up, the outpost camp's outpost_up.
-export const tierUpType = (base) => (base && base.type === "outpost" ? "outpost_up" : "hub_up");
+export const tierName = (base) => (isShelter(base) ? (base.type === "outpost" ? "Outpost camp" : isCamp(base) ? "Camp" : "Shelter") : base.type === "hub" ? "Main hub" : "Outpost");
+// The job that takes a tier-0 base up a tier: the camp's camp_up (your hub's) or outpost_up, the shelter's hub_up.
+export const tierUpType = (base) => (base && base.type === "outpost" ? "outpost_up" : isCamp(base) ? "camp_up" : "hub_up");
 export const tierUpJob = (base) => (isShelter(base) ? base.construction.find((c) => BUILDINGS[c.type] && BUILDINGS[c.type].tierUp) || null : null);
-// The shelter becomes a full hub (the hub_up job is done).
+// The step-up job for a base: a camp on ruins pays less scrap (job.cost overrides the building's cost).
+export function tierUpJobFor(base, type = tierUpType(base)) {
+  const job = gatherJob(type);
+  if (base.ruinSalvage && BUILDINGS[type].cost.scrap) job.cost = { ...BUILDINGS[type].cost, scrap: Math.max(0, BUILDINGS[type].cost.scrap - CAMP.ruinScrap) };
+  return job;
+}
+// A camp's hub or outpost role changed (staging.js settleHub): its step up follows (camp_up <-> outpost_up, the same
+// costs: what was taken and done carries over).
+export function retypeCampJob(base) {
+  const want = tierUpType(base);
+  for (const job of base.construction) if ((job.type === "camp_up" || job.type === "outpost_up") && job.type !== want) job.type = want;
+}
+// The shelter becomes a full hub (the hub_up job is done); a camp becomes a shelter (camp_up) or an outpost (outpost_up).
 export function upgradeShelter(state, base) {
+  if (isCamp(base) && base.type === "hub") {
+    delete base.camp;
+    base.shelterDay = Math.floor(state.hour / 24) + 1;
+    log(state, `${base.name} is a shelter now: a shack with a roof behind a scrap barricade where the camp stood.`, "good");
+    campBecameShelter(state, base); // staging.js: hardcore's founding, or the new home's card
+    return;
+  }
+  delete base.camp;
   delete base.tier;
   base.fire = undefined;
   base.upgradedDay = Math.floor(state.hour / 24) + 1;
@@ -365,12 +414,12 @@ export const underAttack = (state, base) => !!base.alert ||
 // sleeps nobody until it is repaired).
 export const BEDS = { bunkhouse: 6, barracks: 12 };
 // Beds for the adults: less the beds children take (family.js updateKidBeds: two to a bed; babies sleep with a parent).
-export const baseBeds = (base) => (isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0) - (base.kidBeds || 0);
+export const baseBeds = (base) => (isCamp(base) ? CAMP.beds : isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0) - (base.kidBeds || 0);
 // Beds the construction queue adds when it is done: new bunkhouses and barracks, and a bunkhouse expanded into a
 // barracks (the difference). The autopilot counts them as beds to come (autopilot.js buildWishes, roomFor).
 export const queuedBeds = (base) => base.construction.reduce((a, c) => a + (!BEDS[c.type] ? 0 : c.target ? BEDS[c.type] - BEDS[BUILDINGS[c.type].from] : BEDS[c.type]), 0);
 // Crop plots (farming.js plotLimit): hub 6, outpost and shelter 2, +2 per Farm plot building.
-export const farmSlots = (base) => Math.max(0, (isShelter(base) ? SHELTER.plots : base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2 - count(base, "animal_pen") * PEN.pasture); // the pens' pasture (farming.js)
+export const farmSlots = (base) => Math.max(0, (isCamp(base) ? CAMP.plots : isShelter(base) ? SHELTER.plots : base.type === "hub" ? 6 : 2) + count(base, "farm_plot") * 2 - count(base, "animal_pen") * PEN.pasture); // the pens' pasture (farming.js)
 export const stations = (base) => base.buildings.filter((b) => BUILDINGS[b.type].station);
 // The crafting bench here (BENCH): the highest tier standing, 0 for none. Broken ones count only with any (a build
 // gate: it is repaired); benchOf is what the crafters get from the working one (null: none, so no bonus; old saves).
@@ -505,7 +554,12 @@ export function canBuild(state, base, type) {
   if (type === "relay" && (base.radio || countAll(base, "radio") || base.construction.some((c) => c.type === "radio"))) return { ok: false, reason: "A radio station here already covers more than a relay would" };
   // A shelter (tier 0) builds only a few survival buildings, and the step up into a base; a base never the step.
   if (def.shelterOnly && !isShelter(base)) return { ok: false, reason: "Shelters only (this is a base already)" };
-  if (isShelter(base)) {
+  if (def.campOnly && !isCamp(base)) return { ok: false, reason: isShelter(base) ? "Camps only (this is a shelter already)" : "Camps only (this is a base already)" };
+  if (isCamp(base)) {
+    const cap = CAMP.build[type];
+    if (!cap) return { ok: false, reason: type === "hub_up" ? "Build the camp up into a shelter first" : `Not at a camp: build it up into ${base.type === "outpost" ? "an outpost" : "a shelter"} first` };
+    if (countAll(base, type) + queued >= cap) return { ok: false, reason: `A camp has room for ${cap}` };
+  } else if (isShelter(base)) {
     const cap = SHELTER.build[type];
     if (!cap) return { ok: false, reason: "Not at a shelter: build it up into a base first" };
     if (countAll(base, type) + queued >= cap) return { ok: false, reason: `A shelter has room for ${cap}` };
@@ -535,7 +589,7 @@ export function canBuild(state, base, type) {
 export function queueBuild(state, base, type) {
   const chk = canBuild(state, base, type);
   if (!chk.ok) return chk.reason;
-  if (BUILDINGS[type].gather) { base.construction.push(gatherJob(type)); return `${BUILDINGS[type].name} queued at ${base.name}: the materials are taken from the stores as they come in.`; }
+  if (BUILDINGS[type].gather) { base.construction.push(BUILDINGS[type].tierUp ? tierUpJobFor(base, type) : gatherJob(type)); return `${BUILDINGS[type].name} queued at ${base.name}: the materials are taken from the stores as they come in.`; }
   for (const [k, v] of Object.entries(BUILDINGS[type].cost)) base.stock[k] -= v;
   base.construction.push({ id: newId(), type, progress: 0, hours: BUILDINGS[type].hours });
   return `${BUILDINGS[type].name} queued at ${base.name}.`;
@@ -565,7 +619,7 @@ export function buildRate(state, base) {
 // The job: nothing paid yet (paid: { key: n } taken from the stores so far).
 export const gatherJob = (type) => ({ id: newId(), type, progress: 0, hours: BUILDINGS[type].hours, paid: {} });
 // Each material: { key, need, have (taken), ok }.
-export const gatherRows = (job) => Object.entries(BUILDINGS[job.type].cost).map(([key, need]) => { const have = Math.min(need, (job.paid && job.paid[key]) || 0); return { key, need, have, ok: have >= need - 1e-9 }; });
+export const gatherRows = (job) => Object.entries(job.cost || BUILDINGS[job.type].cost).map(([key, need]) => { const have = Math.min(need, (job.paid && job.paid[key]) || 0); return { key, need, have, ok: have >= need - 1e-9 }; });
 // The share of the work the materials taken so far allow (the least delivered of them).
 export const gatherCap = (job) => Math.min(1, ...gatherRows(job).map((r) => (r.need > 0 ? r.have / r.need : 1)));
 // Waiting for materials: the work has caught up with what was delivered.
@@ -633,8 +687,8 @@ export function buildingSummary(state, base) {
     ["Crop plots", `${farmSlots(base)}${count(base, "greenhouse") ? ` + ${count(base, "greenhouse") * 2} under glass` : ""}`],
     ["Workshop stations", `${stations(base).length}`],
     ["Crafting", benchOf(base) ? `${BUILDINGS[benchType(base)].name}: crafters ${Math.round((benchOf(base).rate - 1) * 100)}% faster, +${Math.round(benchOf(base).quality * 100)}% condition${benchOf(base).workshop ? ", workshop recipes" : ""}` : "No crafting bench: only the simple (Field) recipes"],
-    ...(isShelter(base) ? [["Tier", "Shelter (tier 0): tarps, a shack and a barricade. Build it up into a base (Construction) for walls, a well and every building"]] : []),
-    ["Vision", `${(isShelter(base) ? SHELTER.vision : base.type === "hub" ? 3 : 2) + (base.watchtower ? 2 : 0)} tiles`],
+    ...(isCamp(base) ? [["Tier", "Camp: tarps, bedrolls and a fire. Build it up (Construction) into a shelter or an outpost for a roof and room to build"]] : isShelter(base) ? [["Tier", "Shelter (tier 0): tarps, a shack and a barricade. Build it up into a base (Construction) for walls, a well and every building"]] : []),
+    ["Vision", `${(isCamp(base) ? CAMP.vision : isShelter(base) ? SHELTER.vision : base.type === "hub" ? 3 : 2) + (base.watchtower ? 2 : 0)} tiles`],
     ["Radio", base.radio ? "Station" : count(base, "relay") ? (base.relayOffline ? "Relay (offline: needs 1 part)" : "Relay") : "No"],
     ["Vehicle repairs", count(base, "garage") ? "Garage (+25 per part)" : "Field repair (+12 per part, Mechanics 4+)"],
     ["Raid losses", count(base, "storehouse") ? "Halved by storehouse" : "Normal"],

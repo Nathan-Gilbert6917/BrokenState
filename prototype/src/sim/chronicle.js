@@ -227,9 +227,10 @@ function record(state, c) {
   const sites = (state.hiveSites || []).map((x) => [x.tile, Math.floor(x.biomass / 50) * 50, x.started != null ? 1 : 0]);
   const siteSig = sites.map((x) => x.join(":")).join(",");
   if (siteSig !== c.siteSig) { c.siteSig = siteSig; c.sites = sites; }
-  // Your staging camp (staging.js): [tile, work done in steps of 5%], or null.
-  const cs = state.staging;
-  const stage = cs ? [cs.tile, Math.floor((cs.work > 0 ? Math.min(1, cs.progress / cs.work) : 1) * 20) * 5] : null;
+  // Your hub while it is still a camp (staging.js): [tile, its step up done in steps of 5%], or null.
+  const cs = state.bases.find((b) => b.type === "hub" && b.camp === true && b.tier === 0);
+  const csJob = cs ? cs.construction.find((j) => j.type === "camp_up") : null;
+  const stage = cs ? [cs.tile, Math.floor((csJob && csJob.hours > 0 ? Math.min(1, csJob.progress / csJob.hours) : 0) * 20) * 5] : null;
   const stageSig = stage ? stage.join(":") : "";
   if (stageSig !== c.stageSig) { c.stageSig = stageSig; c.stage = stage; }
 

@@ -59,7 +59,7 @@ export function describeOrder(state, o) {
     case "wood": return `Cut wood ${huntHours(o)}h${qtyNote(o)}`; // woodcutting.js
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
-    case "pitch": return o.mission === "outpost" ? "Pitch the outpost camp" : "Pitch the staging camp"; // parties.js PITCH_HOURS, staging.js STAGING.PITCH; then the camp stands (pitchDone)
+    case "pitch": return o.mission === "outpost" ? "Set up the outpost camp" : "Set up camp"; // staging.js pitchArrive (buildings.js CAMP.setupHours); then the camp stands (pitchDone)
     case "well": return "Dig a well"; // claims.js: on a claim next to one of your bases
     case "listen": { const n = o.net != null ? networkById(state, o.net) : null; return `Listen in${n ? ` on ${n.name}` : ""}`; } // radiolisten.js
   }

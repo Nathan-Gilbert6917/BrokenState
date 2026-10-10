@@ -39,7 +39,7 @@ import { handoverArrive } from "./ransom.js";
 import { assaultArrive } from "./conquest.js";
 import { occupyArrive, occupyProblem } from "./occupy.js"; // Occupy: move into an abandoned base
 import { abandonedAt } from "./groupworld.js"; // a base standing empty on a tile (Occupy instead of Build outpost there)
-import { BUILDINGS, gatherJob } from "./buildings.js"; // a new outpost is a camp first, its step up queued (outpost_up)
+import { BUILDINGS, CAMP } from "./buildings.js"; // a new outpost is a camp first, its step up queued (outpost_up)
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
 import { growthAt, growthArrive } from "./hivetech.js";
@@ -79,7 +79,7 @@ import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
-import { establishOption, establishArrive, strikeOption, strikeArrive, STAGING } from "./staging.js";
+import { establishOption, campOption, pitchArrive } from "./staging.js"; // camps: Set up camp, Establish base, Build outpost (a camp with its step up)
 import { canClaim, CLAIM, claimsTaken, takeGroupClaims, claimsTakenText } from "./claims.js"; // the orders card: Claim this tile where the land borders yours; a new outpost takes the groups' claims round it
 import { askBaseName } from "./basenames.js"; // the naming popup for a base you found
 import { enterTarget, enterCard, enterOption, joinBase } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
@@ -100,7 +100,8 @@ export const MISSIONS = {
   move:        { name: "Move here",        desc: "Travel there and wait for orders." },
   scavenge:    { name: "Scavenge / raid",  desc: "Raid the site on its own map: search containers while Heat rises and more of the dead arrive, then leave by an extraction zone." },
   trade:       { name: "Trade visit",      desc: "Visit a group's base to barter, give gifts and sign pacts." },
-  outpost:     { name: "Build outpost",    desc: "Pitch an outpost camp here: a satellite base that starts as a camp (tarps behind a barricade, a shelter's rules) and becomes an outpost once it is established (Establish the outpost: 20 scrap and 2 building materials brought in, then 20 work-hours by its builders). Needs 12 scrap carried and 6 hours to pitch it; what else the team carries goes into the camp's stores. The team stays as its first staff, on building." },
+  outpost:     { name: "Build outpost",    desc: "Set up camp here and start establishing it as an outpost: a camp (the barest base: tarps, bedrolls and a fire, staging.js) that becomes an outpost once it is established (Establish the outpost: 20 scrap and 2 building materials brought in, then 20 work-hours by its builders). An hour to set up, no materials; what the team carries goes into the camp's stores, and so straight into the step up. The team stays as its first staff, on building." },
+  camp:        { name: "Set up camp",      desc: "Stop and make camp here: the barest base (staging.js). The team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there; Strike camp packs everyone up again." },
   occupy:      { name: "Occupy abandoned base", desc: "Move into a base that stands empty (a group's that died out, gave it up or lost it, or an outpost of yours that was lost): clear out the dead or squatters inside (a fight; the planner shows who is there), and it is your outpost with the buildings still standing, their wear and damage, and the stores left there. No scrap needed. The team stays as its first staff. The group whose base it was, and any group whose claims round it you take, will not like it." },
   recover:     { name: "Recover bodies",   desc: "Collect what is left at a death site before scavengers strip it." },
   cull:        { name: "Cull horde",       desc: "Thin out or lure away a horde on or next to this tile." },
@@ -121,9 +122,9 @@ export const MISSIONS = {
   moveout:     { name: "Moving out",       desc: "People who left a crowded base, on their way to found an outpost or to another of your bases (moveout.js).", hidden: true },
   flee:        { name: "Refugee",          desc: "Hardcore mode: the survivors who fled when Calder fell, on the road until they found their first hub (hardcore-start.js).", hidden: true },
   // With no base at all (hardcore's first hub, the exiles): a staging camp built up into the hub (staging.js).
-  establish:   { name: "Establish base",   desc: "Pitch a staging camp here and build it up into a shelter (then, later, a base): bring in the materials it lists, then work on it for a few days (staging.js).", hidden: true },
+  establish:   { name: "Establish base",   desc: "Set up camp here and build it up into a shelter (then, later, a base): its builders work on it as the materials it lists come in (staging.js).", hidden: true },
   enter:       { name: "Enter base",       desc: "Move into the base of yours the team stands on: its people live there from now on, what it carries goes into the stores and armory, its vehicle parks there, and the team is disbanded (moveout.js enterOption).", hidden: true },
-  strikecamp:  { name: "Strike the camp",  desc: "Give up on the staging camp: take what you can carry of its stores, leave the rest as a cache (staging.js).", hidden: true },
+  strikecamp:  { name: "Strike the camp",  desc: "Old saves' order: a camp is struck from its base window now (staging.js strikeCamp).", hidden: true },
   hunt:        { name: "Hunting",          desc: "A hunting trip (hunting.js): the team's name while its plan hunts.", hidden: true },
   fish:        { name: "Fishing",          desc: "A fishing trip (hunting.js): the team's name while its plan fishes.", hidden: true },
   wood:        { name: "Woodcutting",      desc: "A woodcutting trip (woodcutting.js): the team's name while its plan cuts firewood.", hidden: true },
@@ -602,13 +603,15 @@ export const SETTLE_MISSIONS = ["outpost", "occupy"];
 // Scrap an outpost camp needs carried to pitch it: 5, or 2 on the ruins of a burned base (salvage there). The rest of
 // the old 15 and more is the camp's step up (buildings.js outpost_up), brought in as it goes.
 /** @param {State} state @param {number} tile */
-export const outpostScrap = (state, tile) => (state.tiles[tile] && state.tiles[tile].ruin ? 5 : 12); // user numbers 2026-10-09: 12 scrap (5 on the ruins)
+// Since camps are bases (2026-10-09, "setting up a plain camp should be quick and cheap"): nothing; the step up takes the
+// materials (outpost_up, 10 scrap less on ruins: buildings.js tierUpJobFor).
+export const outpostScrap = (state, tile) => 0;
 // What a team should carry to pitch a camp and have it established without another trip: { scrap, parts }.
 /** @param {State} state @param {number} tile */
-export const outpostKit = (state, tile) => ({ ...BUILDINGS.outpost_up.cost, scrap: outpostScrap(state, tile) + (BUILDINGS.outpost_up.cost.scrap || 0) });
+export const outpostKit = (state, tile) => ({ ...BUILDINGS.outpost_up.cost, scrap: Math.max(0, (BUILDINGS.outpost_up.cost.scrap || 0) - (state.tiles[tile] && state.tiles[tile].ruin ? CAMP.ruinScrap : 0)) });
 // Hours of work to pitch an outpost camp once the team is there (user numbers 2026-10-09: "Outpost camp 6 hours 12
 // scrap"): the team works on it (orders.js task "pitch"), then the camp stands. The staging camp's: staging.js STAGING.PITCH.
-export const PITCH_HOURS = 6;
+export const PITCH_HOURS = 1; // = buildings.js CAMP.setupHours (a literal: the modules import each other)
 
 // Why a mission cannot be sent to a tile, from what is fixed or known about it (null = fine). The planner offers
 // every mission for any tile, so the sim checks too; what can change on the way is checked again on arrival.
@@ -1211,18 +1214,17 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   const left = abandonedAt(state, tile);
   if (left) add("occupy", occupyProblem(state, tile) || null);
   if (!state.bases.length) {
-    // No base at all (hardcore's first hub, the exiles): Establish base, a staging camp built up into the hub (staging.js).
+    // No base at all (hardcore's first hub, the exiles): Establish base, a camp built up into the hub (staging.js).
     const est = establishOption(state, p, tile);
     if (est) out.push(est);
-    const strike = strikeOption(state, p, tile);
-    if (strike) out.push(strike);
   } else if (!left && !state.bases.some((b) => b.tile === tile) && !ownedByOther && (t.terrain !== "water" || t.bridge)) { // a bridge: the outpost barricades it (bridgeClosedTo)
-    const scrap = (p.supplies.scrap || 0) + (p.cargo.supplies.scrap || 0);
-    const need = outpostScrap(state, tile);
-    add("outpost", scrap < need ? `Needs ${need} scrap carried${t.ruin ? " (on the ruins)" : ""} (have ${Math.floor(scrap)})` : null);
+    add("outpost", null);
     const taken = claimsTaken(state, tile); // claims.js: the groups' claims round it become yours
     if (taken.length) out[out.length - 1].desc += ` Building here takes claims round it and angers ${claimsTakenText(taken)}.`;
   }
+  // Set up camp: any team of yours, anywhere it may stand (staging.js campOption).
+  const camp = campOption(state, p, tile);
+  if (camp) out.push(camp);
   const site = state.deathSites.find((d) => d.tile === tile);
   if (site && site.items.length) add("recover");
   if (state.hordes.some((h) => state.grid.distance(h.tile, tile) <= 1)) add("cull");
@@ -1277,7 +1279,6 @@ export function ordersCard(state, p, text, doneLabel, title) {
           return st.combat || (st.engagement && st.engagement.partyId === p.id) ? "" : res;
         },
       })),
-      { label: "Set up camp (8h)", hint: "Stop and rest here for 8 hours: the hurt recover a little, nobody travels. Break camp early from the team panel.", order: true, resolve: (st) => startOrder(st, p, { type: "camp", hours: 8 }) },
       ...(state.bases.length && !canClaim(state, tile) ? [{ label: `Claim this tile (${CLAIM.HOURS}h, ${CLAIM.SCRAP} scrap)`, hint: "Raise a marker post: the tile counts as land the coalition holds (toward the 50% the alliance victory needs). Lost if a group or a hive settles on it or a hostile band camps there.", order: true, disabled: carried(p, "scrap") < CLAIM.SCRAP, resolve: (st) => startOrder(st, p, { type: "claim" }) }] : []),
       ...(crossingsFrom(state, tile).length ? [{ label: "Build a boat and cross…", hint: "This team stands on a shore with land straight across the water. The team panel shows each crossing with its cost (scrap, hours) and lets you gather materials.", uiAction: { type: "expedition", partyId: p.id }, resolve: () => "" }] : []),
       { label: "Move to another tile…", hint: "Pick any tile on the map. The team travels there and waits for orders again.", uiAction: { type: "move", partyId: p.id }, resolve: () => "Pick a destination on the map (Esc to cancel)." },
@@ -1403,7 +1404,7 @@ export function pitchDone(state, p) {
 }
 // Hours of pitching an order takes on arrival (the planner's and the queue's estimates).
 /** @param {State} state @param {string} mission */
-export const pitchHoursFor = (state, mission) => (mission === "outpost" && state.bases.some((b) => b.type === "hub") ? PITCH_HOURS : mission === "establish" && !state.staging && !state.bases.length ? STAGING.PITCH.hours : 0);
+export const pitchHoursFor = (state, mission) => (mission === "outpost" || mission === "establish" || mission === "camp" ? CAMP.setupHours : 0);
 
 // ---------- arriving and acting ----------
 /** @param {State} state @param {Party} p */
@@ -1470,57 +1471,39 @@ function arrive(state, p) {
       }
       return "";
     }
-    case "establish": // no base at all: pitch or work on the staging camp (staging.js)
-      return establishArrive(state, p);
-    case "strikecamp":
-      return strikeArrive(state, p);
+    case "establish": // no base at all: a camp with its step up (staging.js)
+    case "camp": // Set up camp (staging.js)
+      return pitchArrive(state, p, p.mission);
+    case "strikecamp": // an old save's order: a camp is struck from its base window now
+      awaitOrders(state, p, "A camp is struck from its base window now (Strike camp).", { failed: true });
+      return "";
     case "enter": { // move into the base of yours the team stands on (moveout.js joinBase)
       const b = state.bases.find((x) => x.tile === partyTile(p));
       if (!b) { awaitOrders(state, p, "There is no base of yours here to enter.", { failed: true }); return ""; }
       return joinBase(state, p, b);
     }
     case "outpost": {
-      // No base left (an order queued before every base was lost): the staging camp instead (staging.js).
-      if (!state.bases.length) { p.mission = "establish"; return establishArrive(state, p); }
+      // No base left (an order queued before every base was lost): Establish base instead (staging.js).
+      if (!state.bases.length) { p.mission = "establish"; return pitchArrive(state, p, "establish"); }
       // A base standing empty here (it was left since the team set out, or the planner was not told): move in instead
       // of building over it (occupy.js).
       if (abandonedAt(state, p.dest)) { p.mission = "occupy"; return occupyArrive(state, p); }
       const mine = state.bases.some((b) => b.tile === p.dest);
       const blocked = mine || state.factions.some((f) => f.bases.includes(p.dest)) || (t.owner != null && t.owner !== "player");
-      const scrap = carried(p, "scrap");
-      const need = outpostScrap(state, p.dest);
-      const short = scrap < need ? `The team does not have the ${need} scrap needed to build (it carries ${Math.floor(scrap)}).` : null;
-      if ((t.terrain === "water" && !t.bridge) || blocked || short) {
-        awaitOrders(state, p, t.terrain === "water" && !t.bridge ? "An outpost cannot be built on open water." : mine ? "You already have a base here." :
-          blocked ? `Someone else holds ${tileLabel(state, p.dest)}.` : short, { failed: true });
+      if ((t.terrain === "water" && !t.bridge) || blocked) {
+        awaitOrders(state, p, t.terrain === "water" && !t.bridge ? "An outpost cannot be built on open water." : mine ? "You already have a base here." : `Someone else holds ${tileLabel(state, p.dest)}.`, { failed: true });
         return "";
       }
-      // An outpost camp (2026-10-09, user request): tier 0 (a shelter's rules, buildings.js SHELTER) with its step up
-      // queued (outpost_up: the materials taken from its stores as they come in, a bar on the map and the base panel).
-      // What the team carries beyond the pitching scrap goes into the stores, and so straight into the step up.
-      const camp = !!hub(state);
-      // First the pitching (PITCH_HOURS of work, the task "pitch": orders.js), then the camp stands (pitchDone).
-      if (camp && !p.pitched) { startTask(state, p, { type: "pitch", hours: PITCH_HOURS, mission: "outpost" }); return `Pitching the outpost camp (${PITCH_HOURS} hours).`; }
-      delete p.pitched;
-      const base = {
-        id: newId(), tile: p.dest, type: camp ? "outpost" : "hub", name: outpostName(state, p.dest),
-        stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0, buildmat: 0 },
-        radio: false, watchtower: false, buildings: [], construction: camp ? [gatherJob("outpost_up")] : [], armory: [],
-        ...(camp ? { tier: 0, campDay: Math.floor(state.hour / 24) + 1 } : {}),
-      };
-      takeSupply(p, "scrap", need);
-      if (t.ruin) { log(state, `The team built on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }
-      state.bases.push(base);
-      askBaseName(state, base);
-      settleInto(state, p, base);
-      if (camp) for (const m of members) m.role = "build"; // the camp's first job is its own step up
-      recomputeOwnership(state);
-      const took = takeGroupClaims(state, base.tile); // claims.js: the groups' claims round it are yours (as a group's new base takes yours)
-      const up = BUILDINGS.outpost_up;
-      log(state, camp
-        ? `${base.name}: an outpost camp pitched with ${members.length} staff. To establish it: ${Object.entries(up.cost).map(([k, v]) => `${v} ${k}`).join(" and ")} brought in, then ${up.hours} work-hours by its builders (Construction).${took.length ? ` Its land takes claims of ${claimsTakenText(took)}.` : ""}`
-        : `${base.name} founded with ${members.length} staff.${took.length ? ` Its land takes claims of ${claimsTakenText(took)}.` : ""}`, "good");
-      return camp ? `${base.name}: outpost camp pitched.` : `${base.name} founded.`;
+      // A camp with Establish the outpost queued (staging.js makeCamp; 2026-10-09: the camp is the barest base tier, an
+      // hour to set up, the materials taken by the step up as they come in). The team moves in as its first staff.
+      const pitching = !!p.pitched;
+      const text = pitchArrive(state, p, "outpost");
+      const base = pitching ? state.bases.find((b) => b.tile === p.dest) : null;
+      if (base) {
+        const took = takeGroupClaims(state, base.tile); // claims.js: the groups' claims round it are yours (as a group's new base takes yours)
+        if (took.length) log(state, `${base.name}: its land takes claims of ${claimsTakenText(took)}.`, "info");
+      }
+      return text;
     }
     case "recover": {
       const site = state.deathSites.find((d) => d.tile === p.dest);
