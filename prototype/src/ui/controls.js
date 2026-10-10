@@ -4,7 +4,7 @@
 // the table wins until it is fixed). The bindings are a machine option (options.keys, saved with saveOptions).
 // Help → Keys (ui/help.js) shows the same table as a printable key sheet (keysSheet; the print button prints only it).
 import {
-  KEYMAP, KEY_GROUPS, KEY_CTX, KEY_BY_ID, keysOf, isCustom, chordName, conflicts, capturing, startCapture, stopCapture, captureKey,
+  KEYMAP, KEY_GROUPS, KEY_CTX, KEY_BY_ID, keysOf, isCustom, steppedAside, chordName, conflicts, capturing, startCapture, stopCapture, captureKey,
   removeBinding, resetBinding, resetAll,
 } from "./keymap.js";
 import { saveOptions } from "./saves.js";
@@ -42,7 +42,9 @@ export function controlsTab(ui) {
     const adding = cap && cap.id === k.id && cap.i == null;
     const add = k.fixed ? "" : `<button class="keychip add${adding ? " capture" : ""}" data-action="key-capture" data-id="${k.id}"${tip("Add another key for this")}>${adding ? "press a key…" : "+"}</button>`;
     const reset = isCustom(k.id) ? `<button class="mini" data-action="key-reset" data-id="${k.id}"${tip("Back to the default key")}>Reset</button>` : "";
-    return `<tr class="${clashIds.has(k.id) ? "clash" : ""}"><td>${esc(k.label)}</td><td class="keychips">${chips || `<span class="muted small">no key</span>`}${add}</td><td>${reset}</td></tr>`;
+    // A new default key (keymap.js NEW_DEFAULTS) left to the player's own binding of another action.
+    const aside = steppedAside(k.id).map((a) => `<span class="muted small"${tip(`${chordName(a.chord)} is this one's default now, but your own key for ${labelOf(a.by)} is ${chordName(a.chord)}: yours is kept.`)}>${esc(chordName(a.chord))}: kept by yours</span>`).join(" ");
+    return `<tr class="${clashIds.has(k.id) ? "clash" : ""}"><td>${esc(k.label)}</td><td class="keychips">${chips || `<span class="muted small">no key</span>`}${add}${aside ? ` ${aside}` : ""}</td><td>${reset}</td></tr>`;
   };
   const changed = KEYMAP.some((k) => isCustom(k.id));
   return `<div class="setrow"><span class="small">Click a key and press the new one (Esc cancels); <b>+</b> adds another key, ✕ takes one off. A key works only where its group does (the map, a battle, the timelapse…), and two things on the same key there are flagged.</span>

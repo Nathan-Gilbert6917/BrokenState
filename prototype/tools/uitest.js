@@ -1505,7 +1505,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     const sh = settingsModal(ft.st, u5, { options: { ...DEFAULT_OPTIONS }, desktop: false, autosaveInfo: () => ({}) });
     check(!/set-battleview/.test(sh) && !SETTINGS_CHANGE["set-battleview"], "Options has no Battle view choice (always isometric)");
     const topic = (await import("../src/ui/help.js")).helpTopics().find((t) => t.id === "battle-view");
-    check(topic && ["isometric", "<b>B</b>", "<b>,</b>", "<b>V</b>", "<b>W</b>", "cut away"].every((s) => topic.html.includes(s)), "Help → Battle view explains the view, the cutaway and the keys");
+    check(topic && ["isometric", "<b>B</b>", "<b>Q</b>", "<b>E</b>", "<b>Home</b>", "<b>W</b>", "cut away"].every((s) => topic.html.includes(s)), "Help → Battle view explains the view, the cutaway and the keys");
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
     check(/Battle view/.test(readme) && /isoview\.js/.test(readme), "the README describes the battle view");
     // The fallen (ui/downsprites.js): bodies of every kind lie flat in both views (their own pictures, not the

@@ -199,6 +199,12 @@ export const keysOf = (id) => {
   return yielded.size ? keys.filter((c) => !yielded.has(`${id}|${c}`)) : keys;
 };
 export const isCustom = (id) => !!custom[id];
+// The new default keys of an action that stepped aside for the player's own binding of another: [{ chord, by }].
+export function steppedAside(id) {
+  if (!index) buildIndex();
+  const def = KEY_BY_ID.get(id);
+  return (NEW_DEFAULTS[id] || []).filter((c) => yielded.has(`${id}|${c}`)).map((c) => ({ chord: c, by: (KEYMAP.find((k) => k.id !== id && k.ctx === def.ctx && custom[k.id] && custom[k.id].includes(c)) || {}).id }));
+}
 
 function buildIndex() {
   findYielded();

@@ -65,6 +65,9 @@ K.initKeymap({});
 {
   K.initKeymap({ keys: { "battle.throw": ["KeyQ"] } });
   check(K.keyAction(ev("KeyQ"), "battle") === "battle.throw" && K.keysOf("bview.rotLeft").join() === "Comma" && !K.conflicts().some((c) => c.ctx === "battle"), "a saved Throw on Q keeps Q; Turn left keeps , (no clash)");
+  const { controlsTab } = await import("../src/ui/controls.js");
+  const ct = controlsTab({ settings: { tab: "controls" } });
+  check(/Q: kept by yours/.test(ct) && K.steppedAside("bview.rotLeft")[0].by === "battle.throw" && !/class="setmsg danger keyclash"/.test(ct), "Menu → Controls says Turn left's Q is kept by the player's own key, no clash warning");
   K.initKeymap({ keys: { "battle.melee": ["KeyE"] } });
   check(K.keyAction(ev("KeyE"), "battle") === "battle.melee" && K.keysOf("bview.rotRight").join() === "Period" && K.keyAction(ev("KeyV"), "battle") === null, "a saved Melee on E keeps E; Turn right keeps .; V is free");
   K.initKeymap({ keys: { "battle.close": ["KeyQ"], "battle.peek": ["Home"] } });
