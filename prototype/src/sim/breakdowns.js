@@ -1,6 +1,6 @@
 // Things break (suggestions-2 #20, hub tasks): buildings and equipment at your bases wear out and break, and a
 // broken one stops (or weakens) until a named survivor repairs it. Fixtures: the hub's own well pump, wells, the
-// generator, the still, the machine shop, the ammo bench, the med station, the preserving kitchen, the radio
+// generator, the still, the machine shop, the ammo bench, the med station, the preserving room, the radio
 // station, walls and the reinforced gate (damaged by attacks), and the storehouse roof (storms). Parked vehicles
 // lose condition on frost days (repaired as before, from the Vehicles tab or the Repairs list).
 //
@@ -84,6 +84,7 @@ export const FIXTURES = {
   smoker:      { raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no drying" },
   rain_catcher:{ raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no rain water from it" },
   relay:       { raidOnly: true, repair: { hours: 6, cost: { scrap: 4, parts: 1 }, min: 2 }, rig: { hours: 2, cost: { scrap: 2 }, min: 1 }, what: "the relay is off the air" },
+  canteen:     { raidOnly: true, repair: { hours: 5, cost: { scrap: 4 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "no hot meals: the food is eaten as before" }, // kitchen.js
   animal_pen:  { raidOnly: true, repair: { hours: 4, cost: { scrap: 3 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a broken fence: the animals scattered, no food from the pen" },
 };
 FIXTURES.walls.outer = true;

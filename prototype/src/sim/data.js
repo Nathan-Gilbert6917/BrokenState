@@ -52,7 +52,7 @@ export const SUPPLIES = {
   scrap: { name: "Scrap", value: 1,   weight: 2, cat: "scrap" },
   // Food storage (storage.js): preserved food is jarred, dried or smoked food (and dry grain and beans) that barely
   // spoils and needs no cellar space; eaten like food (fresh first), and lighter to carry on a trip. Jars (and lids)
-  // are what the preserving kitchen fills: found in kitchens, shops and farms, and most come back when the food
+  // are what the preserving room fills: found in kitchens, shops and farms, and most come back when the food
   // in them is eaten at a base.
   preserved: { name: "Preserved food", value: 4, weight: 0.35, cat: "food" },
   jars:  { name: "Jars",  value: 0.5, weight: 0.4, cat: "containers" },

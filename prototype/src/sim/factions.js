@@ -76,7 +76,7 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
-import { groupWorksDaily, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
+import { groupWorksDaily, groupEatMult, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
 import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
 import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
@@ -318,7 +318,7 @@ export function factionsDaily(state) {
     const off = !!state.aiScavOff; // test switch (tools/depletetest.js): the old economy, no scavenging groups
     // groupworks.js: a group short of wells and fields gets a little less from the land, and one sleeping rough grows
     // slower (CROWDED_GROWTH; both 1 once it has built them; old saves are built up).
-    f.stock.food += f.pop * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) + penFood(state, f) - f.pop; // + their animal pens (groupworks.js PENS)
+    f.stock.food += f.pop * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) + penFood(state, f) - f.pop * groupEatMult(state, f); // + their animal pens (groupworks.js PENS); their kitchens' hot meals stretch it (groupworks.js KITCHEN)
     // Growth: newcomers by the type's pull (groupcare.js GROUP_PRIORITIES recruit: 0.7 + 0.3 x it, so about as before);
     // wanderers and deserters join through their own systems (wanderers.js, groupcare.js).
     if (f.stock.food > f.pop * 4 && f.pop < 50 && !f.hcNoGrow && rng.chance(0.25 * growthFactor(state, f) * (0.7 + 0.3 * prio(f, "recruit")))) f.pop += 1; // hcNoGrow: hardcore's besieged military

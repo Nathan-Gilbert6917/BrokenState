@@ -40,6 +40,10 @@
 //   nothing (factions.js expansion; not one it moves into, groupworld.js occupyAbandoned) starts as a camp
 //   (f.works[tile].camp): its defence × CAMP.DEF and nothing else built there until CAMP (its materials and work) is done,
 //   the first job at that base;
+//   a kitchen (2026-10-10, your Kitchen's parity, kitchen.js): at a base of KITCHEN.size+ people (the main base once its
+//   workshop is up, the others after their fields and pens), one a base; the people it serves (peopleAt) eat
+//   KITCHEN.save less a day (groupEatMult, factions.js: their food a day), as your cooks' hot meals do. Coarse: no
+//   cooks to staff, no mood (their morale is not tracked), no boiled water (they keep no water stock).
 //   animal pens (2026-10-09, your animal pen's parity): at a base with walls and fields, after the fields for
 //   everyone, PENS.max a base; each adds PENS.food food a day (penFood, factions.js), winter or not.
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
@@ -49,7 +53,7 @@ import { season, THIRST } from "./weather.js"; // summer water: the season and i
 import { weightOf, medOf } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
 import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the groups' jails (abstract tiers)
 
-/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number }} Works */
+/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, kitchen?: number }} Works */
 
 export const GROUP_WORKS = {
   WORKS: {
@@ -60,6 +64,7 @@ export const GROUP_WORKS = {
     bench: { name: "a workshop", cost: { scrap: 6, parts: 1 }, work: 4 },
     store: { name: "a storehouse", cost: { scrap: 7 }, work: 5 },
     pens: { name: "an animal pen", cost: { scrap: 4 }, work: 3 },
+    kitchen: { name: "a kitchen", cost: { scrap: 5, parts: 1 }, work: 4 }, // yours: 20 scrap, a part, 24 work-hours (scaled as the rest)
   },
   CREW: 6, SALVAGE: 2,
   SERVES: { water: 10, farms: 8, beds: 8 }, // people one of each serves
@@ -82,6 +87,9 @@ export const GROUP_WORKS = {
   // Animal pens (farming.js PEN, your animal pen: the same option, coarse): a base with walls and fields puts up one
   // (after the fields for everyone); each brings PENS.food food a day on top of their fields, every season.
   PENS: { max: 1, food: 2 },
+  // A kitchen (your Kitchen, kitchen.js KITCHEN: −10% food for the people its cooks feed, one cook per 12): at a base of
+  // KITCHEN.size+ people (your governor's KITCHEN.govFrom), the people living there eat KITCHEN.save less.
+  KITCHEN: { size: 8, save: 0.1 },
   // An outpost camp's step up (yours: 12 scrap, a part, 36 work-hours; scaled as the rest of WORKS) and the camp's
   // defence share until then.
   CAMP: { name: "the outpost camp established", cost: { scrap: 10, buildmat: 1 }, work: 3, DEF: 0.5 }, // yours: 20 scrap, 2 building materials, 20 work-hours
@@ -149,6 +157,12 @@ export function provisioned(state, f) {
 }
 // Food a day from their animal pens (PENS): 0 where they do not build (old saves, the hardcore military).
 export const penFood = (state, f) => (groupsBuild(state, f) ? f.bases.reduce((a, t) => a + Math.min(W.PENS.max, n(f.works && f.works[t], "pens")), 0) * W.PENS.food : 0);
+// What the group eats a day × this (factions.js): its kitchens' people eat KITCHEN.save less. 1 where they do not build.
+export function groupEatMult(state, f) {
+  if (!groupsBuild(state, f) || !(f.pop > 0)) return 1;
+  const fed = f.bases.reduce((a, t) => a + (n(f.works && f.works[t], "kitchen") > 0 ? peopleAt(f, t) : 0), 0);
+  return 1 - W.KITCHEN.save * Math.min(1, fed / f.pop);
+}
 export const fieldsFactor = (state, f) => W.FIELDS_MIN + (1 - W.FIELDS_MIN) * provisioned(state, f);
 export const sleepingRough = (state, f) => groupsBuild(state, f) && served(f, "beds") < f.pop;
 export const growthFactor = (state, f) => (sleepingRough(state, f) ? W.CROWDED_GROWTH : 1);
@@ -210,6 +224,7 @@ export function nextWork(state, f) {
       const sb = sickbayWork(state, f, true);
       if (sb) return sb;
     }
+    if (peopleAt(f, tile) >= W.KITCHEN.size && !n(w, "kitchen") && hasAny(f, "bench")) return { tile, type: "kitchen", why: "hot meals for the people there" };
   }
   for (const tile of f.bases) if (n(worksAt(f, tile), "walls") < wallGoal(f, tile)) return { tile, type: "walls", why: "walls" };
   return null;
@@ -244,7 +259,7 @@ const jailStepName = (f) => { const t = (f.jails && f.jails[f.job.tile]) || 0; r
 // "water, 2 fields, quarters for 16, walls 2/4 · building a wall" (the Groups tab).
 export function worksText(state, f) {
   if (!groupsBuild(state, f) || !f.bases.length) return "";
-  const t = { water: 0, farms: 0, beds: 0, bench: 0, store: 0 };
+  const t = { water: 0, farms: 0, beds: 0, bench: 0, store: 0, kitchen: 0 };
   for (const b of f.bases) for (const k of Object.keys(t)) t[k] += n(f.works && f.works[b], k);
   const main = mainOf(f);
   const bits = [];
@@ -254,6 +269,7 @@ export function worksText(state, f) {
   bits.push(`walls ${groupWalls(state, f, main)}/${wallGoal(f, main)}`);
   if (t.bench) bits.push("a workshop");
   if (t.store) bits.push("a storehouse");
+  if (t.kitchen) bits.push(t.kitchen > 1 ? `${t.kitchen} kitchens` : "a kitchen");
   const bay = sickbayTier(f);
   if (bay) bits.push(W.SICKBAY[Math.min(W.SICKBAY.length, bay) - 1].name);
   const camps = f.bases.filter((b) => isCamp(f, b)).length;

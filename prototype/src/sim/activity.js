@@ -53,9 +53,10 @@ import { MISSIONS, tileLabel, partyTile } from "./parties.js";
 import { orderStatus } from "./orders.js";
 import { fixtures, fixtureName } from "./breakdowns.js";
 import { outputDays } from "./output.js";
+import { hasKitchen, kitchenService, eatsAtKitchen, cookActivity } from "./kitchen.js"; // the Kitchen's cooks and its hot meals
 
 // Icons by job, and by kind for everything that is not a job.
-export const JOB_ICONS = { wood: "🪓", farm: "🌱", forage: "🍄", hunt: "🏹", fish: "🎣", build: "🔨", craft: "🧰", operate: "⚙️", medic: "✚", trainee: "✚", teach: "🎓", read: "📚", scavenge: "🔍", guard: "🛡️", rest: "☕" };
+export const JOB_ICONS = { wood: "🪓", farm: "🌱", forage: "🍄", hunt: "🏹", fish: "🎣", build: "🔨", craft: "🧰", operate: "⚙️", medic: "✚", trainee: "✚", teach: "🎓", read: "📚", scavenge: "🔍", guard: "🛡️", rest: "☕", cook: "🍳" };
 export const KIND_ICONS = { sleep: "💤", guard: "🛡️", hurt: "🩹", free: "☕", idle: "⏸", stalled: "⚠️", off: "🕓", away: "🚶", captive: "⛓️", eat: "🍲" };
 // Mealtimes (the hour each starts; an hour each). Hunters and fishers are out at dawn (05–07), so they eat after.
 export const MEALS = { breakfast: 6, lateBreakfast: 8, dinner: 20 };
@@ -90,9 +91,15 @@ export function describeActivity(state, s, h = hourOfDay(state)) {
   if (!t && s.role === "guard" && underAttack(state, base)) return act("guard", "Manning the walls", "The base is on alert: the guards are on the walls.", "guard");
   const ws = onWatchNow(state, base, s, h);
   if (ws) return act("guard", `On watch (${ws.name})`, "Their shift on the base's watch roster (Defence tab).", "guard");
+  // The Kitchen's cooks (kitchen.js): up at 05:00 for breakfast, serving at the meals, until 22:00.
+  const ck = (t ? t.t === "meals" : s.role === "cook") && hasKitchen(base) && !(t && t.t === "sleep") ? cookActivity(h) : null;
+  if (ck) return act("work", ck.text, ck.why, "cook");
   const meal = mealAt(s.role, h);
   if (meal && s.role !== "guard" && !(t && (t.t === "sleep" || t.t === "guard")) && !sleepHour(state, s, h) && !sleepingIn(state, base, s, h)) {
-    if (edibleFood(base) > 0 || (base.stock.food || 0) > 0) return act("eat", `Eating ${meal}`, `${meal === "breakfast" ? "Breakfast" : "Dinner"} at ${base.name}. The day's food comes out of the store once a day; a meal takes no time from the day's work.`, s.role);
+    if (edibleFood(base) > 0 || (base.stock.food || 0) > 0) {
+      if (eatsAtKitchen(state, base, s)) return act("eat", `Eating ${meal} at the kitchen`, `A hot ${meal} at ${base.name}'s kitchen: hot meals stretch the food and lift spirits. The day's food comes out of the store once a day; a meal takes no time from the day's work.`, s.role);
+      return act("eat", `Eating ${meal}`, `${meal === "breakfast" ? "Breakfast" : "Dinner"} at ${base.name}. The day's food comes out of the store once a day; a meal takes no time from the day's work.`, s.role);
+    }
     return act("eat", "Mealtime – nothing to eat", `${base.name} is out of food.`, s.role, "🍽️");
   }
   if (t) {
@@ -179,6 +186,11 @@ function jobActivity(state, base, s, job, h) {
       return act("work", pts ? `On medic duty (${pts} in bed)` : hurt ? `On medic duty (${hurt} to look after)` : "On medic duty (quiet ward)", hospitalDef(base).tier ? "" : "No infirmary: only the badly hurt get much from a medic.", job);
     }
     case "trainee": return act("work", "Training on the ward", "", job);
+    case "cook": {
+      if (!hasKitchen(base)) return act("stalled", "Cook – no kitchen", `Nothing to cook on: build a Kitchen at ${base.name} (Construction, a building plot) or give them another job.`, job);
+      const ck = cookActivity(h);
+      return ck ? act("work", ck.text, ck.why, job) : act("off", "Cook – off until 05:00", "The cooks are up before the others for breakfast.", job);
+    }
     case "guard": return act("guard", "On guard", "A lookout on the walls (counts 1.5× in a fight).", job);
     case "rest": return act("free", "Resting", "Their job is Rest: recovers mood.", job);
     case "teach": {
@@ -238,6 +250,8 @@ export function amountText(unit, n) {
   if (unit === "xp") return `${r1(v)} XP`;
   if (unit === "readh") return `${r1(v)} hours read`;
   if (unit === "heal") return `${r1(v)} health healed`;
+  if (unit === "meals") return `${n0(v)} hot meal${n0(v) === 1 ? "" : "s"}`;
+  if (unit === "foodsaved") return `${r1(v)} food saved`;
   return `${v} ${SUPPLIES[unit] ? SUPPLIES[unit].name.toLowerCase() : unit}`;
 }
 const outText = (out) => Object.entries(out || {}).filter(([, v]) => v > 0).map(([k, v]) => amountText(k, v)).join(", ");
@@ -254,7 +268,7 @@ export function lastOutput(state, base, job) {
 }
 
 // The main measure of a job's day (for the sparklines): the unit and how it sums a day's record.
-const MAIN_UNIT = { wood: "wood", forage: "food", hunt: "food", fish: "food", farm: "food", build: "workh", craft: "workh", teach: "xp", read: "readh", medic: "heal", trainee: "xp" };
+const MAIN_UNIT = { cook: "meals", wood: "wood", forage: "food", hunt: "food", fish: "food", farm: "food", build: "workh", craft: "workh", teach: "xp", read: "readh", medic: "heal", trainee: "xp" };
 // The last `days` work days of a job, oldest first (0 for a day with nothing recorded): { unit, days: [{ day, n }] }.
 // The day being worked now is left out until it is in (the daily jobs' output comes at midnight).
 export function outputSeries(state, base, job, days = 7) {
@@ -390,6 +404,10 @@ function jobProgress(state, base, job, list, h) {
   } else if (job === "trainee") {
     const sp = list.map((s) => ({ s, p: skillProgress(s, "medicine") }));
     out.progress = { frac: sp.reduce((a, x) => a + x.p.frac, 0) / sp.length, text: sp.map((x) => `${first(x.s)} Medicine ${x.p.level}→${x.p.level + 1} ${x.p.pct}%`).join(" · ") };
+  } else if (job === "cook" && hasKitchen(base)) {
+    const ks = kitchenService(state, base);
+    const short = ks.wanted > ks.cooks.length ? ` · ${ks.wanted} cook${ks.wanted === 1 ? "" : "s"} wanted for ${ks.fed}` : "";
+    out.progress = { frac: ks.cover, text: ks.cooks.length ? `Hot meals for ${ks.served} of ${ks.fed} · −${Math.round(ks.save * 1000) / 10}% food a day, +${r1(ks.mood)} mood${short}` : `No cook able to work${short}` };
   } else if (job === "scavenge" && scavLeft(base) > SCAV_FLOOR + 0.02) {
     const exp = Object.values(scavengeOutput(state, base)).reduce((a, v) => a + v, 0);
     out.progress = { frac: dayShare(awakeHour, h), text: `≈ ${r1(exp)} supplies a day on average (most days nothing) · area ${Math.round(scavLeft(base) * 100)}% left` };

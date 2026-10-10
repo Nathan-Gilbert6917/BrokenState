@@ -22,7 +22,7 @@ import { workFactor } from "./health.js";
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 // sites: where it turns up on the shelves (location types). unlocks.buildings / unlocks.crafts: what it opens;
-// unlocks.from: a building type free up to this many (the first preserving kitchen needs no manual).
+// unlocks.from: a building type free up to this many (the first preserving room needs no manual).
 export const BLUEPRINTS = {
   fieldsurgery: { name: "Field Surgery Manual", skill: "medicine", min: 4, hours: 24, value: 60, unlocks: { buildings: ["clinic"] },
     sites: ["hospital", "univ", "clinic", "military", "firestation"], desc: "Army field surgery: sterile fields, sutures, chest drains." },
@@ -39,7 +39,7 @@ export const BLUEPRINTS = {
   refrig: { name: "Refrigeration Schematics", skill: "mechanics", min: 3, hours: 20, value: 45, unlocks: { buildings: ["coldstore"] },
     sites: ["supermarket", "warehouse", "factory", "truckstop", "univ", "grocery"], desc: "Insulated cold rooms, ice packing and compressor loops." },
   canning: { name: "Commercial Canning Guide", skill: "farming", min: 3, hours: 16, value: 40, unlocks: { buildings: ["kitchen"], from: { kitchen: 1 } },
-    sites: ["farm", "feedstore", "school", "grocery", "supermarket", "church", "ranch"], desc: "Pressure canning in batches: a second preserving kitchen." },
+    sites: ["farm", "feedstore", "school", "grocery", "supermarket", "church", "ranch"], desc: "Pressure canning in batches: a second preserving room." },
   radioeng: { name: "Radio Engineering Handbook", skill: "mechanics", min: 3, hours: 24, value: 60, unlocks: { buildings: ["relay"] },
     sites: ["radiotower", "airport", "police", "military", "univ"], desc: "Antennas, repeaters and line-of-sight links." },
   weaponplans: { name: "Improvised Weapons Plans", skill: "mechanics", min: 4, hours: 20, value: 55, unlocks: { crafts: ["crossbow", "pipegun"] },
@@ -129,7 +129,7 @@ for (const [key, d] of Object.entries(CRAFT_BOOKS)) {
 function unlockName(k) {
   const names = {
     clinic: "the Clinic", hospital: "the Trauma hospital", machine_shop: "the machine shop", generator: "the generator", gate: "the reinforced gate",
-    trench: "the trench", cistern: "the cistern", coldstore: "the cold store", kitchen: "a second preserving kitchen", relay: "the radio relay",
+    trench: "the trench", cistern: "the cistern", coldstore: "the cold store", kitchen: "a second preserving room", relay: "the radio relay",
     crossbow: "the scrap crossbow", pipegun: "the pipe shotgun", scrapvest: "the scrap plate vest",
   };
   if (names[k]) return names[k];

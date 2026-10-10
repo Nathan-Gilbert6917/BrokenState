@@ -43,6 +43,7 @@ import { waterIn, teamWaterIn, RAW, keyWord } from "./water.js"; // purified and
 import { brokenAt, jobFor, fixtures, isWaterFixture, repairPlan } from "./breakdowns.js";
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
+import { KITCHEN, hasKitchen, cooksWanted } from "./kitchen.js"; // the Kitchen: built at 8+ people, its cooks staffed (planRoles 5c)
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
@@ -1113,7 +1114,7 @@ function filterFill(state, base) {
   return Math.max(waterPlan(state, base).store, Math.ceil(waterNeed(state, base).total * SUMMER_STORE.days));
 }
 // Water is tight at a base: it runs out within 8 days at today's rate. The governor rations then: no water into
-// the still or the preserving kitchen (visitors.js: no guests sheltered on a low stock either).
+// the still or the preserving room (visitors.js: no guests sheltered on a low stock either).
 function waterTight(state, base) {
   const wo = waterOutlook(state, base);
   return wo.net < 0 && wo.daysLeft < 8;
@@ -1735,7 +1736,7 @@ function needs(state, h = hub(state)) { // h: a base leader's own base (stewardS
     // The hive campaign's stockpile (campaignAmmoWant: up to 2.4, under water's and food's 2.5+ when those are short).
     ammo: Math.max(pick(baseAmmo(state, h), [[n * 6, 2], [n * 15, 0.9], [n * 40, 0.35], [Infinity, 0.1]]), campaignAmmoWant(state)),
     fuel: Math.max(vehicle ? pick(st.fuel || 0, [[12, 1.6], [35, 0.8], [Infinity, 0.2]]) : 0.15, heatFuelWant(state, h).want, campaignFuelWant(state)), // needs-gauges: winter heating; the campaign's fires
-    // Empty jars for the preserving kitchen (storage.js), once there is one.
+    // Empty jars for the preserving room (storage.js), once there is one.
     jars: count(h, "kitchen") ? pick(st.jars || 0, [[4, 1.3], [12, 0.7], [Infinity, 0.1]]) : 0,
     // Building materials (data.js buildmat): wanted hard while a camp or shelter waits for them, else hardly (picked up
     // along the way; a standing want took teams off the winter's wood trips: woodtest).
@@ -1921,7 +1922,7 @@ export function farmCrewLimits(state, base, foodDays, heads) {
   const comfy = foodDays >= target && wp.short <= 0 && wp.end >= wp.margin * FARM_AP.winterMargin * (P && P.homeFood ? 1.5 : 1);
   return { hungry: foodDays < target || winterShort(state, base) > 0, comfy, cap: comfy ? Math.max(1, Math.ceil(heads * FARM_AP.share)) : Infinity };
 }
-const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
+const ROLE_AREA = { cook: "food", hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
   const people = atBase(state, base.id);
@@ -2134,6 +2135,14 @@ function planRoles(state, base, areas = ALL_AREAS) {
     planDoctor(state, base, free, give, { trainees: people.filter((s) => (want.get(s.id) || {}).role === "trainee").length, medics: onMedic() });
   }
 
+  // 5c. The Kitchen's cooks (kitchen.js): one per KITCHEN.perCook people living here, the best at Farming (the cooking
+  // skill), ahead of the comfortable farm crew and the stations: a cook feeding twelve saves about a ration and a quarter
+  // a day (−10% of what they eat) and lifts everyone's mood.
+  if (areas.food && hasKitchen(base)) {
+    const have = people.filter((s) => (want.get(s.id) || {}).role === "cook").length;
+    for (const s of ranked("cook", (x) => skill(x, KITCHEN.skill), (x) => !x.inBed).slice(0, Math.max(0, cooksWanted(state, base) - have))) give(s, "cook");
+  }
+
   // 6. Farming to the comfortable level. More plots are wanted when every plot is in use and food runs low.
   farmTo(foodDays < Math.max(15, foodTarget(state)) ? fw.ideal : fw.need);
   // Before winter (no outdoor harvests for four weeks) a month's stock is the aim.
@@ -2287,7 +2296,7 @@ function govOrders(state, base) {
     g.stats.orders = (g.stats.orders || 0) + 1;
   }
 }
-// The preserving kitchen (storage.js): jars fresh food that would otherwise spoil (stored outside, or the summer
+// The preserving room (storage.js): jars fresh food that would otherwise spoil (stored outside, or the summer
 // and autumn surplus going into the winter store), never the food eaten in the next two weeks, and only with
 // jars, water and a little scrap to spare.
 function preserveWorth(state, base) {
@@ -2321,7 +2330,7 @@ const BUILD_AREA = {
   walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
   huntcabin: "food", farm_plot: "food", greenhouse: "food", animal_pen: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
-  boiler: "food", cookhouse: "food",
+  boiler: "food", cookhouse: "food", canteen: "food",
   ammo_bench: "production", machine_shop: "production", still: "production", generator: "production",
   craftbench: "production", workbench: "production", toolbench: "production",
 };
@@ -2519,11 +2528,20 @@ function buildWishes(state, base) {
   else if (bw >= 2 && benchTier(base, true) === 1 && best("mechanics") >= BUILDINGS.workbench.req.mechanics) add("workbench", "a workbench to mend the fighters' guns and armour", true);
   if (!benchTier(base, true) && !benchQueued && (here.some((s) => s.role === "craft") || craftQueue(base).length > 0)) add("craftbench", "a bench for the crafters (faster, better gear; most recipes need one)");
   for (const w of jailWishes(state, base, best)) out.push(w);
-  if (!isHub) return out;
+  // The Kitchen (kitchen.js): hot meals at a base of KITCHEN.govFrom+ people (a hub keeps a building plot free after it
+  // for the next beds), saved up for from 12; supersedes the cook fire. Its cooks: planRoles 5c. At the hub it comes
+  // after the first infirmary (below).
+  // eaters: the people who live here, teams out included (at the hub everyone not living at an outpost).
+  const eaters = isHub ? Math.max(people, alive(state).filter((s) => s.location.kind !== "base" || s.location.baseId === base.id).length) : people;
+  const kitchenWish = () => {
+    if (BUILDINGS.canteen && !countAll(base, "canteen") && !queued("canteen") && eaters >= KITCHEN.govFrom && plotsFree(base, "building") >= (isHub ? 2 : 1)) add("canteen", `hot meals for ${eaters} people (−10% food a day, mood)`, eaters >= KITCHEN.govFrom + 4);
+  };
+  if (!isHub) { kitchenWish(); return out; }
   const hostileNear = state.factions.some((f) => f.alive && f.known && attitude(f) === "Hostile" && f.bases.some((b) => state.grid.distance(b, base.tile) <= 20));
   if (!base.watchtower && (hostileNear || state.hordes.some((h) => state.live.has(h.tile)))) add("watchtower", "earlier warning of raids and hordes");
   const next = nextHospitalType(base);
   if (next === "infirmary" && pop >= 5) add("infirmary", "somewhere to treat the injured");
+  kitchenWish(); // after the first infirmary, before the hospital's upgrades and the workshops
   if (next === "field_hosp" && pop >= 8 && (st.parts || 0) >= 3 && (st.meds || 0) >= 8) add("field_hosp", "more beds and no infected wounds");
   if (next === "clinic" && pop >= 11 && (st.parts || 0) >= 6 && (st.meds || 0) >= 12) add("clinic", "surgery and cleaned wounds");
   if (next === "hospital" && pop >= 16 && (st.parts || 0) >= 10 && (st.meds || 0) >= 16) add("hospital", "a proper trauma hospital");
@@ -2653,7 +2671,7 @@ function boilerWoodShort(state, base) {
 
 // Food storage and preserving (storage.js), before it is needed: room for the winter stock (the fresh food now
 // and what the fields still bring in, from mid-summer), a cold store before winter, a drying rack and a
-// preserving kitchen for the summer surplus. Food already stored outside makes the next store urgent.
+// preserving room for the summer surplus. Food already stored outside makes the next store urgent.
 function foodStoreWishes(state, base, people, queued) {
   const out = [];
   if (base.type !== "hub") return out;

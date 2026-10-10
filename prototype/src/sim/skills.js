@@ -55,6 +55,7 @@ import { BUILDINGS, RECIPES } from "./buildings.js";
 import { CRAFTS, craftQueue } from "./crafting.js";
 import { studyBlueprint, blueprintWares, bookUnlocksPending, learnBook } from "./blueprints.js";
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
+import { hasKitchen } from "./kitchen.js"; // the Kitchen's cooks learn Farming (the cooking skill here)
 
 export const MILESTONES = [5, 10, 15];
 export const SKILL_MAX = 20;
@@ -677,6 +678,7 @@ function roleXp(state, base, s) {
   switch (s.role) {
     case "farm": gainXp(state, s, "farming", USE.farm * wf); break;
     case "medic": gainXp(state, s, "medicine", USE.medicRole * wf); break;
+    case "cook": gainXp(state, s, "farming", (hasKitchen(base) ? USE.operate : USE.idle) * wf); break; // kitchen.js: Farming is the cooking skill
     case "guard": gainXp(state, s, "shooting", USE.guard * wf); break; // + the hours on guard (skillsHour)
     case "scavenge": gainXp(state, s, "scavenging", USE.scavRole * wf); gainXp(state, s, "stealth", USE.scavStealth * wf); break;
     case "build": gainXp(state, s, "mechanics", (base.construction && base.construction.length ? USE.build : USE.idle) * wf); break;

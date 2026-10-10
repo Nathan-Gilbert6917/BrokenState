@@ -35,11 +35,12 @@ import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purifie
 import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (marks between the day's steps)
 import { addFind, chooseRounds, baseCals } from "./ammo.js"; // rounds by calibre
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
+import { kitchenDaily } from "./kitchen.js"; // the Kitchen's day: meals served, food saved
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
   scavenge: { name: "Scavenge", desc: "Picks through the ruins right around this base. Usually finds nothing: a small chance a day of a small find (better with Scavenging, worse as the area is picked over). Expeditions to real sites are where supplies come from." },
-  operate:  { name: "Operate",  desc: "Runs a workshop station (ammo, meds, parts or the preserving kitchen). Loud: raises Heat." },
+  operate:  { name: "Operate",  desc: "Runs a workshop station (ammo, meds, parts or the preserving room). Loud: raises Heat." },
   build:    { name: "Build",    desc: "Works on the construction queue. More builders finish faster; Mechanics helps." },
   guard:    { name: "Guard",    desc: "Defends the base. Guards count 1.5× in fights." },
   rest:     { name: "Rest",     desc: "Recovers mood, and the sick get better faster. Injured people heal either way." },
@@ -51,6 +52,8 @@ export const ROLES = {
   fish:     { name: "Fish",     desc: "Fishes the river or lake by a base 3 hours a day, with a fishing rod, a net or a spear (carried, or in the armory: one each, a net for two). Brings in fresh fish, which spoils fast. The tools wear a use a day." },
   forage:   { name: "Forage",   desc: "Gathers wild food within 2 tiles of the base 6 hours a day (foraging.js): berries, nuts, mushrooms, greens, roots, apples, now and then herbs (meds) or honey. About a ration a day each in summer, more in autumn, little in spring, next to nothing in winter; Farming and Scouting help. The land picked hard grows back over weeks." },
   wood:     { name: "Cut wood", desc: "Cuts firewood within 2 tiles of the base 6 hours a day (woodcutting.js): the winter's heating (a base burns firewood before fuel: 15, 1.5 kg, a head a day below freezing). Forest gives most (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
+  // kitchen.js: the Kitchen's cooks (one per 12 people living here).
+  cook:     { name: "Cook",     desc: "Cooks the base's meals in the Kitchen (Construction: a building plot), one cook for every 12 people living here: up before the others for breakfast (06:00), dinner from 16:00 (20:00). Hot meals stretch the food (everyone fed at the kitchen eats 10% less a day, up to 13% with a good cook: Farming 5+), lift spirits (+1 mood a day, +1.5 with Farming 6+) and boil a quarter of the day's drinking water. Without a kitchen there is nothing to cook." },
   read:     { name: "Read",     desc: "Reads a book from this base's armory 6 hours a day (pick it on their survivor screen, or leave it to them): skill books give 4 XP an hour up to the book's level, comics and novels give mood. One reader per copy at a time; a reader does no other work." },
 };
 
@@ -369,7 +372,7 @@ export const eatPerDay = (state, base) => foodUse(state, base).residents;
 
 // Food outlook for the base panel: stock (fresh + preserved), expected farm food (next 30 days), eaten (everyone fed
 // from these stores, per head × heads: upkeep.js foodUse, in `use`), spoiled and used per day (workshops; the
-// preserving kitchen and drying racks turn fresh food into preserved, so only what they lose counts), days of food
+// preserving room and drying racks turn fresh food into preserved, so only what they lose counts), days of food
 // left without harvests, the next harvests and the storage.
 /** @param {State} state @param {Base} base */
 export function foodOutlook(state, base) {
@@ -495,6 +498,7 @@ function baseDaily(state, base) {
   const missing = eatFromStore(base, eaten);
   if (missing > 0) st.food = (st.food || 0) - missing; // below zero: the hub starves, an outpost asks the hub
   if (mouths.length) noteMeals(state, base); // relations.js: weeks of nothing but preserved food are grim
+  kitchenDaily(state, base, eaten - missing); // kitchen.js: the hot meals served and the food they saved
   econStats(state).eaten += eaten - missing;
   if (st.food < 0 && base.type === "hub") {
     st.food = 0;

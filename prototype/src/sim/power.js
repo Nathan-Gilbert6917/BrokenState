@@ -12,7 +12,7 @@
 //   Users (POWER_USERS, need in power units, served in this order while the supply lasts):
 //     cold store 1 (a freezer: keeps food as in winter all year, storage.js), radio station 1 (+2 tiles of
 //     coverage, radio.js), floodlights 1 (no fuel burned per attack, defences.js), machine shop 2 (2 parts a day
-//     from 9 scrap instead of 1 from 6), preserving kitchen 1 (half as much again a day).
+//     from 9 scrap instead of 1 from 6), preserving room 1 (half as much again a day).
 //     Workshop stations draw only while their operator is at work (an order that holds them, or no operator, draws
 //     nothing). Each building can be switched off by hand (base.powerOff[id]).
 // The result is cached on the base (base.power: supply, demand, served building ids, running generators) every hour

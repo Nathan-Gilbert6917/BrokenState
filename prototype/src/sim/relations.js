@@ -17,7 +17,8 @@
 //
 // Daily mood factors added here (the rest stay where they were: beds and the leader in morale.js; food, rationing,
 // rest, hunger and thirst in economy.js; the dog in hubevents.js), all listed with numbers by moodFactors():
-// preserved food only for 7+ days -1 (21+ days -2), hot meals from a kitchen +1, a common room +1.5 (15 people a
+// preserved food only for 7+ days -1 (21+ days -2), hot meals from the Kitchen's cooks +1 (+1.5 with a good cook; a
+// preserving room's stove +1, not both), a common room +1.5 (15 people a
 // room), a chapel +1 (grief weighs half), comfort items (books; the shelf shared, MOODF.shelfShare people a copy;
 // not blueprints) +0.5 each up to +1, the Inspiring perk +0.5 per inspiring person here (up to +1), cabin fever after 14 days of
 // winter -0.5 (21: -1), 3+ gloomy days -0.5, after a rough trip +3 a day resting (else -1) for 4 days, friends,
@@ -39,6 +40,7 @@ import { comfortLines, buzzLine, buzzDaily, groomDaily } from "./comforts.js";
 import { starveMood, NEEDS } from "./needs.js"; // starving and parched days (needs.js starvingDaily)
 import { festivalGlow } from "./festival.js";
 import { familyMood } from "./family.js"; // children and expecting (family.js)
+import { kitchenService } from "./kitchen.js"; // the Kitchen's hot meals
 
 export const REL = { friend: 40, close: 70, rival: -30, split: 15, partnerFloor: 70, drift: 0.05, baseRate: 1, teamRate: 2.5, jobRate: 0.6, histFade: 0.99, leader: 0.6, jitter: 1.2 };
 export const MOODF = {
@@ -329,7 +331,14 @@ export function moodFactors(state, s) {
     const pres = base.relPreserved || 0;
     if (pres >= 21) add(`Nothing but preserved food for ${pres} days`, MOODF.preserved21, true);
     else if (pres >= 7) add(`Nothing but preserved food for ${pres} days`, MOODF.preserved7, true);
-    if (count(base, "kitchen") && !(base.hungerDays > 0)) add("Hot meals from the kitchen", MOODF.hotMeals, true);
+    // Hot meals: the Kitchen's (kitchen.js: +1, +1.5 with a Farming 6+ cook, × the share its cooks feed), at least the
+    // Preserving room's stove's +1 (never both).
+    if (!(base.hungerDays > 0)) {
+      const ks = kitchenService(state, base);
+      const pres = count(base, "kitchen") ? MOODF.hotMeals : 0;
+      if (ks.mood > 0 && ks.mood >= pres) add(`Hot meals from the kitchen (${ks.cooks.length} cook${ks.cooks.length === 1 ? "" : "s"}${ks.served < ks.fed ? `, ${ks.served} of ${ks.fed} fed` : ""})`, ks.mood, true);
+      else if (pres) add("Hot meals from the preserving room's stove", pres, true);
+    }
     const rooms = count(base, "common_room");
     if (rooms) {
       const n = Math.max(1, residents(state, base.id).length);

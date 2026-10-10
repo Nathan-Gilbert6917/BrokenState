@@ -68,6 +68,7 @@ import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (
 import { sleepingIn } from "./sleep.js"; // off a watch: sleep until rested
 import { wormFilterUrgent, woodCritical, farmCrewLimits, FARM_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 import { baseAmmo } from "./ammo.js"; // rounds by calibre: what fits the guns there
+import { KITCHEN, hasKitchen, cooksWanted } from "./kitchen.js"; // the Kitchen's cooks (work type "meals")
 
 export const PRIO_MAX = 5;
 const WATER_BUILDS = ["well", "rain_catcher", "cistern"]; // water first (autopilot.js waterPlan)
@@ -179,11 +180,21 @@ export const WORK_TYPES = {
     },
   },
   cook: {
-    name: "Preserve", ing: "Preserving", short: "Cook", role: "operate", skill: "farming",
-    desc: "Runs the preserving kitchen: jars fresh food that would spoil. By its standing order, or without one while food is spoiling outside or piling up for winter.",
-    open: (ctx) => stationOpen(ctx, (k) => k === "preserve", "no preserving kitchen"),
+    name: "Preserve", ing: "Preserving", short: "Jar", role: "operate", skill: "farming",
+    desc: "Runs the preserving room: jars fresh food that would spoil. By its standing order, or without one while food is spoiling outside or piling up for winter.",
+    open: (ctx) => stationOpen(ctx, (k) => k === "preserve", "no preserving room"),
     take: (ctx, s) => takeStation(ctx, s, (k) => k === "preserve"),
     holds: (ctx, s, role, st) => role === "operate" && stationKindById(ctx, st) === "preserve",
+  },
+  // The Kitchen's cooks (kitchen.js): one per KITCHEN.perCook people living here, while a kitchen stands. (The key
+  // "cook" above is the Preserving room's operator, kept for saved roles.) Urgency 2.5: after a queued craft at the same priority, before scavenging.
+  meals: {
+    name: "Cook", ing: "Cooking", short: "Cook", role: "cook", skill: "farming",
+    desc: `Cooks the base's meals in the Kitchen: one cook for every ${KITCHEN.perCook} people living here (breakfast, dinner, the bread and washing up between). Hot meals stretch the food (−10% eaten a day, a little more with a Farming 5+ cook), lift spirits and boil a quarter of the day's drinking water. No kitchen, no cooking.`,
+    open(ctx) {
+      if (!hasKitchen(ctx.base)) return { cap: 0, why: "no kitchen (Construction: a building plot)" };
+      return { cap: cooksWanted(ctx.state, ctx.base), urg: 2.5 }; // after a queued craft at the same priority (worktest: the craft queue keeps its hand)
+    },
   },
   workshop: {
     name: "Workshop", ing: "At the workshop", short: "Shop", role: "operate", skill: "mechanics",
@@ -517,8 +528,8 @@ function studyFor(ctx, s) {
 // ---------- roles ----------
 const P = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v > 0));
 export const DEFAULT_ROLES = () => [
-  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, wood: 3, teach: 4, study: 4, scavenge: 4 }) },
-  { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, forage: 3, wood: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
+  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, meals: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, wood: 3, teach: 4, study: 4, scavenge: 4 }) },
+  { name: "Farmer", pri: P({ farm: 1, cook: 2, meals: 2, hunt: 3, fish: 3, forage: 3, wood: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
   { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, wood: 3, study: 4, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
   { name: "Medic", pri: P({ doctor: 1, trainee: 2, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
@@ -756,10 +767,22 @@ export function workHour(state) {
   watchPromotions(state, planned);
   if (!planned) return;
   const w = state.work;
+  mealsDefaults(w);
   if (w.newcomers != null && roleById(state, w.newcomers)) {
     for (const s of state.survivors) if (s.alive && !s.work && s.location.kind === "base") assignRole(state, s, w.newcomers);
   }
   for (const base of state.bases) planBase(state, base);
+}
+
+// The Cook work type (meals, kitchen.js) came after the roles of older saves: the default roles of that name get its
+// default priority once (a role that set it, to anything, keeps its own).
+function mealsDefaults(w) {
+  if (w.mealsV) return;
+  w.mealsV = 1;
+  for (const d of DEFAULT_ROLES()) {
+    if (!d.pri.meals) continue;
+    for (const r of w.roles) if (r.name === d.name && r.pri && r.pri.meals == null) r.pri.meals = d.pri.meals;
+  }
 }
 
 // The watchtower's alarm (defences.js towerWatch, base.towerWatch): everyone on priorities at that base with Guard
