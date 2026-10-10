@@ -384,6 +384,9 @@ button.sgcell .sgname { white-space: nowrap; overflow: hidden; text-overflow: el
 .itile { display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem; font-size: 0.74rem; line-height: 1.1; cursor: grab; position: relative; }
 .itile.bad .iname { color: var(--danger); }
 .iico { font-size: 0.95rem; width: 1.1rem; text-align: center; }
+.iico.igunrow { flex-basis: 100%; width: auto; text-align: left; line-height: 0; }
+.igun { image-rendering: pixelated; max-width: 100%; object-fit: contain; object-position: left center; }
+.igun.inl { vertical-align: middle; margin-right: 0.3rem; }
 .iname { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .icount { font-size: 0.66rem; color: var(--muted); }
 .ikg { font-size: 0.62rem; color: var(--muted); }

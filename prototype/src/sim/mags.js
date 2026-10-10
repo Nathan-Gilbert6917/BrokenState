@@ -26,11 +26,11 @@
 // action and fills the magazine.
 import { GEAR } from "./data.js";
 import { MAGAZINES, INTERNAL, CLIPS } from "./data-kit.js";
-import { CALIBERS, ROUND_SUPPLIES } from "./data-ammo.js";
+import { CALIBERS, ROUND_SUPPLIES, CAL_ACCEPTS } from "./data-ammo.js";
 import { WEAPONS } from "./combat.js";
-import { modFits, platformOf, magCapOf, gunMods } from "./gunmods.js";
-import { roundsOf, calOf } from "./ammo.js";
-import { typeFor, roundName, typeName, withHand, keyFor } from "./rounds.js";
+import { modFits, platformOf, magCapOf, gunMods, unitMods } from "./gunmods.js";
+import { roundsOf, calOf, loadRefusal } from "./ammo.js";
+import { typeFor, roundName, typeName, withHand, keyFor, rebaseLoad, loadCal } from "./rounds.js";
 import { hash01 } from "./skills.js";
 
 export const MAGS = {
@@ -44,8 +44,14 @@ const num = (v) => (Number.isFinite(v) ? v : 0);
 export const isMag = (it) => !!(it && MAGAZINES[it.key]);
 export const isClip = (it) => !!(it && CLIPS[it.key]);
 export const magSpec = (key) => MAGAZINES[key] || null;
-// Does this magazine fit this gun (its platform)?
+// Does this magazine fit this gun (its platform, and some calibre the gun takes: gunmods.js modFits)?
 export const magFitsGun = (gunKey, magKey) => !!(MAGAZINES[magKey] && gunKey && WEAPONS[gunKey] && modFits(gunKey, magKey));
+// The calibres a magazine holds (data-kit.js MAGAZINES cals; else data-ammo.js CAL_ACCEPTS of its calibre): a STANAG
+// magazine 5.56, .223 and .300 BLK.
+/** @param {string} magKey @returns {string[]} */
+export const magCalsOf = (magKey) => { const m = MAGAZINES[magKey]; return !m ? [] : m.cals || CAL_ACCEPTS[m.cal] || [m.cal]; };
+/** @param {string} magKey @param {string | null | undefined} cal */
+export const magTakes = (magKey, cal) => !!cal && magCalsOf(magKey).includes(cal);
 // An internal magazine (rounds put in one at a time): the gun has one and no magazine item is fitted to it.
 export const internalOf = (gunKey) => INTERNAL[gunKey] || 0;
 export const fittedMag = (gun) => (gun && gun.mods && gun.mods.mag && MAGAZINES[gun.mods.mag.key] ? gun.mods.mag : null);
@@ -70,13 +76,30 @@ export function standardMag(gunKey) {
   STD.set(gunKey, out);
   return out;
 }
-// The kind of round a magazine item holds for this gun's calibre (its own load, else the given default).
-export function magLoad(it, cal, dflt = null) {
-  const t = it && it.load;
-  return cal && t && CALIBERS[cal] && CALIBERS[cal].types.includes(t) ? t : typeFor(cal, dflt);
+// The kind of round a magazine item holds for a gun of calibre `cal` (its own load, else the given default). A magazine
+// item's load is written against the magazine's own calibre (rounds.js loads: a STANAG with .223 in it "223:fmj"), a
+// gun's against the gun's: it is moved over (rebaseLoad). gunKey: a load the gun refuses (.300 BLK in a 5.56 gun) or
+// the magazine cannot hold is not used (out of a fight a spare is filled with what the gun takes: the default).
+export function magLoad(it, cal, dflt = null, gunKey = null) {
+  const t = it && it.load, m = it && MAGAZINES[it.key];
+  const home = m ? m.cal : cal;
+  if (cal && t && CALIBERS[home] && typeFor(home, t) === t) {
+    const l = typeFor(cal, rebaseLoad(home, t, cal));
+    if (!(gunKey && loadRefusal(gunKey, l)) && !(m && !magTakes(it.key, loadCal(cal, l)))) return l;
+  }
+  return typeFor(cal, dflt);
 }
-// A magazine's text: "5.56 magazine (30), FMJ" / "(empty: AP)".
-export const magText = (it) => (isMag(it) ? `${it.name}${it.load ? `, ${typeName(it.load)}` : ""}` : "");
+// The load a magazine item of `magKey` gets from a gun's load (a gun of calibre `cal`): written against the magazine's
+// calibre; null for its common round, or one it cannot hold.
+/** @param {string} magKey @param {string | null} cal @param {string | null | undefined} load */
+export function magItemLoad(magKey, cal, load) {
+  const m = MAGAZINES[magKey];
+  if (!m || !cal || !load || load === "auto") return null;
+  const l = rebaseLoad(cal, load, m.cal);
+  return magTakes(magKey, loadCal(m.cal, l)) ? (l === typeFor(m.cal, null) ? null : l) : null;
+}
+// A magazine's text: "5.56 magazine (30), FMJ" / "5.56 magazine (30), .223 Rem soft point".
+export const magText = (it) => (isMag(it) ? `${it.name}${it.load ? `, ${String(it.load).includes(":") && MAGAZINES[it.key] ? roundName(MAGAZINES[it.key].cal, it.load) : typeName(it.load)}` : ""}` : "");
 
 // ---------- a battle unit's magazines ----------
 export const tracksMags = (u) => !!(u && Array.isArray(u.mags) && u.magsW === u.weapon);
@@ -125,7 +148,8 @@ export function fitMags(b, u, spots, staticCap) {
   u.mags = [{ key: fit ? fit.key : standardMag(key), cap: staticCap, load: gunLoad, n: staticCap, where: "gun" }];
   for (const x of spots) {
     if (!isMag(x.item) || !["rig", "pocket", "pack"].includes(x.where) || !magFitsGun(key, x.item.key)) continue;
-    const load = magLoad(x.item, cal, u.load);
+    const load = magLoad(x.item, cal, u.load, key);
+    if (!magTakes(x.item.key, loadCal(cal, load))) continue; // (the gun's load is a calibre this magazine cannot hold)
     const cap = magCapOf(x.item.key) || MAGAZINES[x.item.key].cap;
     u.mags.push({ key: x.item.key, cap, load, n: cap, where: x.where });
   }
@@ -147,7 +171,7 @@ export function enemyMags(u, staticCap, count, hasRig, items = null) {
   const list = items ? items.filter((it) => magFitsGun(key, it.key)) : Array.from({ length: Math.max(0, count) }, () => ({ key: standardMag(key) })).filter((it) => it.key);
   list.forEach((it, i) => {
     const cap = magCapOf(it.key) || MAGAZINES[it.key].cap;
-    u.mags.push({ key: it.key, cap, load: items ? magLoad(it, cal, u.load) : load, n: cap, where: hasRig ? "rig" : i < 2 ? "pocket" : "pack" });
+    u.mags.push({ key: it.key, cap, load: items ? magLoad(it, cal, u.load, key) : load, n: cap, where: hasRig ? "rig" : i < 2 ? "pocket" : "pack" });
   });
 }
 // How many spare magazines an enemy of this kit carries (own dice).
@@ -255,8 +279,9 @@ export function shellPlan(b, u, type = null, roll = 0) {
   const room = Math.max(0, (u.magMax ?? 0) - m);
   const s = shellsAt(b, u, want, m);
   const steady = num(u.aim) >= SHELLS.STEADY_AIM, shaken = isShaken(u);
-  const n = kind === "break" ? SHELLS.BREAK : kind === "single" ? 1 : Math.max(SHELLS.MIN, Math.min(SHELLS.MAX, SHELLS.BASE[roll ? 1 : 0] + (steady ? 1 : 0) - (shaken ? 1 : 0)));
-  return { n: Math.max(0, Math.min(n, room, s.at)), at: s.at, pack: s.pack, steady, shaken, room };
+  const saddle = kind === "tube" ? Math.max(0, num(unitMods(u).reload)) : 0; // a side-saddle on the receiver (gunmods.js reload)
+  const n = kind === "break" ? SHELLS.BREAK : kind === "single" ? 1 : Math.max(SHELLS.MIN, Math.min(SHELLS.MAX + saddle, SHELLS.BASE[roll ? 1 : 0] + (steady ? 1 : 0) - (shaken ? 1 : 0) + saddle));
+  return { n: Math.max(0, Math.min(n, room, s.at)), at: s.at, pack: s.pack, steady, shaken, saddle, room };
 }
 // The shells a Reload of this shotgun puts in, as a range for the Reload button: { lo, hi, at, pack, steady, shaken }.
 export function shellRange(b, u, type = null) {
@@ -425,7 +450,7 @@ export function magsLine(b, u) {
   const full = sp.filter((m) => loaded(b, u, m) > 0);
   if (!sp.length) return "no spare mags";
   const types = [...new Set(full.map((m) => m.load))].filter((t) => t !== typeFor(calOf(u.weapon), null));
-  return `+${full.length} mag${full.length === 1 ? "" : "s"}${sp.length > full.length ? ` (${sp.length - full.length} empty)` : ""}${types.length ? `, ${types.map(typeName).join("/")}` : ""}`;
+  return `+${full.length} mag${full.length === 1 ? "" : "s"}${sp.length > full.length ? ` (${sp.length - full.length} empty)` : ""}${types.length ? `, ${types.map((t) => (String(t).includes(":") ? roundName(calOf(u.weapon), t) : typeName(t))).join("/")}` : ""}`; // (another calibre: ".223 Rem FMJ")
 }
 // Rounds the unit's spare magazines hold loaded (the battle screen's tooltip).
 export const spareRounds = (b, u) => spares(u).reduce((a, m) => a + loaded(b, u, m), 0);
@@ -441,7 +466,7 @@ export function reloadText(b, u) {
     const r = shellRange(b, u), kind = shellKind(u);
     if (!(r.hi > 0)) return `${n}: ${shellsLine(b, u)}.`;
     const k = r.lo === r.hi ? `${r.lo}` : `${r.lo}–${r.hi}`;
-    const mods = kind === "tube" ? [r.steady ? "steady hands +1" : "", r.shaken ? "shaken −1" : ""].filter(Boolean) : [];
+    const mods = kind === "tube" ? [r.steady ? "steady hands +1" : "", r.shaken ? "shaken −1" : "", r.saddle ? `side-saddle +${r.saddle}` : ""].filter(Boolean) : [];
     const what = kind === "break" ? `both barrels (${k} ${r.hi === 1 ? "shell" : "shells"})` : kind === "single" ? "its one shell" : `${k} ${r.hi === 1 ? "shell" : "shells"} thumbed into the tube${mods.length ? ` (${mods.join(", ")})` : ""}`;
     return `${n}: ${what}, from the shells at hand. ${shellsLine(b, u)}. Shells in a pocket or the rig load straight in; the pack's need Get shells (1 action) first.`;
   }

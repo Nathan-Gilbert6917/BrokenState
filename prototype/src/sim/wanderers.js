@@ -38,6 +38,7 @@ import { halt, resume, afterFight, rob, talkSkill, talker, runBonus, addCargo, a
 import { bandsOf } from "./hardcore-groups.js";
 import { sumRecs } from "./rounds.js"; // rounds by key: each gun judged by its own calibre
 import { wandererJoinChance, wandererJoins } from "./groupcare.js"; // AI parity: groups recruit wanderers by type, food and beds
+import { swapGun, kitGunSource, bodyGunSource } from "./gundist.js"; // the gun distribution: wanderers' guns
 
 export const WANDER = {
   // The road: per tile a team enters, ROAD × the tile's density × the mode's factor (× NIGHT at night), at most ROAD_MAX;
@@ -319,7 +320,7 @@ export function interiorOccupants(state, tile, plan) {
     const kit = KITS[g.kind] || KITS.survivors;
     const rng = rngFor(state, "wander-inside", tileId, state.hour, i);
     const people = g.people ? g.people.map((x) => ({ kit: g.kind, weapon: WEAPONS[x.weapon] ? x.weapon : "fists", power: g.power, name: x.name, hp: x.hp }))
-      : Array.from({ length: g.count }, () => ({ kit: g.kind, weapon: rng.pick(kit.weapons), power: g.power }));
+      : Array.from({ length: g.count }, () => ({ kit: g.kind, weapon: swapGun(kitGunSource(g.kind), rng.pick(kit.weapons), rng), power: g.power })); // gundist.js: a gun of their kind in the band
     const pool = !g.side || g.side === "hostile" ? (upstairs.length ? upstairs : rooms) : rooms; // the armed squatters (no side: the raid's guards)
     const room = pool.length ? pool[Math.floor(hash01(state.seed, "wander-room", tileId, state.hour, i) * pool.length)] : null;
     return { ...g, side: g.side || "hostile", people, aware: false, room: room ? room.id : undefined };
@@ -679,7 +680,7 @@ function onWandererCombat(state, result, setup) {
     if (!result.tactical && c.enemy.kind !== "zombies") {
       lines.push(`Taken from them: ${addCargoRounds(state, p, rng.int(c.type === "attackSquad" ? 20 : 3, c.type === "attackSquad" ? 50 : 12), c.type === "attackSquad" ? "military" : "raider", "wanderer", c.id ? localId(state, c.id) : 0, state.hour)}, ${addCargo(state, p, "food", rng.int(1, 4))} food.`); // rounds by calibre: what such people shoot (ammo.js)
       if (rng.chance(c.type === "attackSquad" ? 0.35 : 0.2)) {
-        const key = rng.pick(c.type === "attackSquad" ? ["ar", "vest", "carbine"] : ["pistol", "knife", "bat", "revolver"]);
+        const key = swapGun(bodyGunSource(c.enemy.kind), rng.pick(c.type === "attackSquad" ? ["ar", "vest", "carbine"] : ["pistol", "knife", "bat", "revolver"]), rng); // gundist.js: a gun of their kind
         const item = lootItem(key, kitSource(c.enemy.kind), spend(rng)); // itemcond.js: by who they were
         lines.push(addGearToCargo(state, p, item) !== false && p.cargo.gear.includes(item) ? `Also a ${item.name}.` : `No room for the ${item.name} they had.`);
       }

@@ -21,6 +21,7 @@
 // is a dud and the action is lost, no jam.
 import { itemDur, itemDurMax } from "./crafting.js";
 import { AMMO_TYPES, RELOAD_FX } from "./data-ammo.js";
+import { bareType } from "./rounds.js";
 import { noteHandLoad, noteHandQ } from "./reloading.js"; // the bench's handloads: the round fired next and its make
 import { WEAPON_PLATFORM } from "./data-gunmods.js";
 import { unitMods, gunMods, modRange, NO_MODS } from "./gunmods.js";
@@ -155,7 +156,7 @@ export function ammoJam(u) {
   const c = u.loadCond || "factory";
   let f = c === "hand" ? JAM.HAND[0] - JAM.HAND[1] * Math.max(0, Math.min(1, u.loadHq ?? 0.5)) : JAM.AMMO[c] ?? 1;
   if (c === "hand") f *= (1 + (RELOAD_FX.BLACK_JAM - 1) * (u.loadBp || 0)) * (1 + (RELOAD_FX.MATCH_JAM - 1) * (u.loadMp || 0)); // reloading.js: black powder, match-head primers (their share)
-  const t = u.load && AMMO_TYPES[u.load];
+  const t = u.load && AMMO_TYPES[bareType(u.load)]; // (a load of another calibre: "223:fmj", rounds.js)
   return f * ((t && t.jam) || 1);
 }
 export function modJam(u) {

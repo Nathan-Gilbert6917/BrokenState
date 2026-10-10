@@ -18,6 +18,7 @@
 //   "armory:<baseId>:list[:<i>]"  "cargo:<partyId>:list[:<i>]"       storage (a base armory, a team's cargo)
 //   "body:<bodyIndex>:<slot>[:<i>]"  "body:<bodyIndex>:sup:<key>"     bodies of the battle that just ended
 // Items only move between people, storage and bodies at the same place (one base, or one team).
+import { unitFinish } from "./data-finish.js";
 import { factoryFit, seedOf } from "./factoryfit.js";
 import { FACTORY_FIT } from "./data-guns.js"; // guns found already fitted (section 22)
 import { fitMod, stripMod, modFitReason, fitsSlot, isGunmod, takesMods, fittedKg, ATTACH } from "./gunmods.js";
@@ -38,6 +39,7 @@ import { enemyGunLoaded, unloadInto, stockFor } from "./gunload.js"; // the roun
 import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet and ear protection on its body
 import { AMMO_STACK } from "./data-stacks.js";
 import { stackKg, canStack, mergeInto, isSpent, splitHalf, useOne, openRounds, takeOut, fillBulk, isBulk, isRoundItem, amountOf, stackLabel, countOf } from "./itemstack.js"; // stacks in a slot (consumables, rounds loose or boxed, bulk containers)
+import { swapGun, bodyGunSource } from "./gundist.js"; // the gun distribution: a body's spare gun
 
 export const POCKETS = 4;
 export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to this (plate carrier alone is 4)
@@ -922,7 +924,7 @@ export function enemyBody(rng, u, kit) {
   if (body.gear.weapon) lootGun(u, body.gear.weapon); // gunfire.js: the quality and condition their gun fought (and jammed) in
   if (body.gear.weapon) enemyGunLoaded(u, body.gear.weapon); // gunload.js: the rounds left in it
   if (kit && kit.pack && rng.chance(kit.pack[1])) body.gear.backpack = lootItem(kit.pack[0], src, spend(rng));
-  if (kit && rng.chance(0.12)) stow(body, lootItem(rng.pick(kit.loot), src, spend(rng)), "");
+  if (kit && rng.chance(0.12)) stow(body, lootItem(swapGun(bodyGunSource(u.kit || "raiders"), rng.pick(kit.loot), rng), src, spend(rng)), ""); // gundist.js: a spare gun of their kind
   if (kit && kit.finds && rng.chance(0.2)) stow(body, lootItem(rng.pick(kit.finds), src, rng), ""); // pockets: smokes, a ring (combat.js KITS finds)
   bodyKit(body, u, src); // carrykit.js: their rig and spare magazines (loaded with their type)
   for (const it of carriedThrowables(u, src)) stow(body, it, ""); // a flashbang or a smoke grenade they never threw
@@ -958,6 +960,7 @@ export function carriedThrowables(u, src) {
 // item looted from it. Only while the unit still holds that gun (u.gmWeapon), and each part only where it fits.
 export function carryMods(u, gun) {
   if (u && u.gmWeapon === gun.key && !u.modsLooted && FACTORY_FIT[gun.key]) delete gun.mods; // exactly the parts it carried (its factory ones among them: combat.js enemyUnit), not newItem's own roll
+  if (u && u.gmWeapon === gun.key && !u.modsLooted && !u.item && !u.arsItem) { const f = unitFinish(u); if (f) gun.finish = f; } // the finish it was seen in (data-finish.js)
   if (u && u.gmWeapon === gun.key) u.modsLooted = true;
   if (!u || !u.modItems || u.gmWeapon !== gun.key) return;
   for (const m of Object.values(u.modItems)) if (m) fitMod(gun, m);

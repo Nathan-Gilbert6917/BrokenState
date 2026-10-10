@@ -11,9 +11,11 @@
 // The sim calls go through a thin adapter: the economy agent's gunmods.js fitAt / stripAt / slotsOf / fitsSlot (slots
 // with nesting: a mount adds a sight, a rail a grip, a light and a bipod) when they are there, else today's gunmods.js
 // (ATTACH mounts: sight, muzzle, magazine, under the barrel) through sim/inventory.js fitModAt / unfitModAt.
+import { finishOf, FINISH_NAME, GUN_FINISH } from "../sim/data-finish.js"; // its finish (black, tan, wood...)
 import { GEAR } from "../sim/data.js";
 import { rigPouches } from "../sim/inventory.js"; // magazines in rig pouches (section 16)
-import { typeName } from "../sim/rounds.js"; // a magazine's load
+import { typeName, roundName } from "../sim/rounds.js";
+import { gunLoads, loadRefusal } from "../sim/ammo.js"; // calibre compatibility: the loads a gun takes // a magazine's load
 import { WEAPONS } from "../sim/combat.js";
 import * as GM from "../sim/gunmods.js";
 import * as DGM from "../sim/data-gunmods.js";
@@ -33,7 +35,7 @@ const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
 const sgn = (v, d = 1) => { const n = d === 1 ? r1(v) : r2(v); return `${n > 0 ? "+" : n < 0 ? "−" : "±"}${Math.abs(n)}`; };
 
-export const SLOT_NAMES = { optic: "Sight", mount: "Mount", muzzle: "Muzzle", mag: "Magazine", under: "Under the barrel", stock: "Stock", grip: "Grip", rail: "Rail", tactical: "Light / laser", bipod: "Bipod", sling: "Sling" };
+export const SLOT_NAMES = { optic: "Sight", mount: "Mount", muzzle: "Muzzle", mag: "Magazine", under: "Under the barrel", stock: "Stock", grip: "Foregrip", pgrip: "Pistol grip", rail: "Rail", tactical: "Light / laser", bipod: "Bipod", sling: "Sling", receiver: "Receiver" };
 const TOP = new Set(["optic", "mount", "tactical", "rail"]); // the top lane; the rest below the gun
 // Platforms whose failures are misfires (the round is lost, no jam to clear: section 14).
 const MISFIRE = new Set(["revolver", "dbl", "bolt", "lever", "pump"]);
@@ -143,13 +145,12 @@ export function statsOf(gun) {
   const s = gunStats(gun) || { aim: 0, close: 0, opt: 0, fall: 0, dmg: [0, 0], cap: 0, noise: 0, jam: 0, pen: 0 };
   const w = WEAPONS[gun.key] || {};
   const cal = s.cal || w.cal || null;
-  const load = gun.load && gun.load !== "auto" ? gun.load : null;
-  const type = load || (CALIBERS[cal] ? CALIBERS[cal].base : null);
+  const type = s.type || (CALIBERS[cal] ? CALIBERS[cal].base : null); // gunStats: the loaded round's type (its calibre: s.loadCal)
   return {
     ...s, cal, load: gun.load ?? null, type,
     kg: itemLoad(gun), worth: worthTier(gun),
     earshot: w.noise ? (9 + 2 * w.noise) * ((s.noise || 0) / w.noise) : 0, // stealth.js: a raid's alert radius
-    pen: s.pen || (cal ? ammoPen(cal, type) : 0),
+    pen: s.pen || (cal ? ammoPen(s.loadCal || cal, type) : 0),
     jam: Number(s.jam) || 0,
   };
 }
@@ -175,6 +176,7 @@ function rows(s) {
     ["fall", "Fall-off", `−${r2(s.fall)} a tile`, s.fall, -1, "Aim lost each tile beyond the best range."],
     ...(s.reach ? [["reach", "Round's reach", `${r1(s.reach)} tiles, then −${r2(s.drop)} more a tile`, s.reach, 1, "A light round (5.56, 7.62×39, .22) drops past this, whatever the sight; no part pushes the best range past it."]] : []),
     ["dmg", "Damage", `${s.dmg[0]}–${s.dmg[1]}`, avg(s.dmg), 1, "A hit's damage before armour and cover."],
+    ...(s.spread ? [["spread", "Shot spread", `full to ${r1(s.spread.full)} tiles, then −${Math.round(s.spread.drop * 100)}% a tile (≥${Math.round(s.spread.min * 100)}%)`, s.spread.full, 1, "Buckshot and birdshot spread with range: past this a hit does less, down to the floor. A slug keeps its damage."]] : []),
     ["cap", "Magazine", s.cap ? `${s.cap} rounds` : "—", s.cap, 1, "Rounds loaded; Reload (I) fills it in battle."],
     ["noise", "Noise", s.noise ? `${r2(s.noise)} · heard ~${Math.round(s.earshot)} tiles` : "silent", s.noise, -1, "A shot's noise (the dead and the unaware hear it; Heat in a raid)."],
     ["kg", "Weight", `${r1(s.kg)} kg`, s.kg, -1, "With the parts on it."],
@@ -203,12 +205,14 @@ export function deltaText(a, b, max = 9) {
   return bits.slice(0, max).join(" · ");
 }
 
-// The load choices for a gun's calibre: [value, label] ("" = the standard round, "auto" = whatever is to hand).
+// The load choices for a gun: [value, label] ("" = the standard round, "auto" = whatever is to hand): every type of
+// every calibre it takes (a 5.56 gun's .223 too: "223:sp"; data-ammo.js CAL_ACCEPTS). A calibre it refuses is never
+// offered (a 5.56 gun no .300 BLK), and refused if set (GB_CHANGE).
 export function loadChoices(gun) {
   const cal = (WEAPONS[gun.key] || {}).cal;
   const c = CALIBERS[cal];
   if (!c) return [];
-  return [["", `${c.name} ${AMMO_TYPES[c.base] ? AMMO_TYPES[c.base].name : c.base} (standard)`], ...c.types.filter((t) => t !== c.base && AMMO_TYPES[t]).map((t) => [t, `${c.name} ${AMMO_TYPES[t].name}`]), ["auto", "Best to hand"]];
+  return [["", `${c.name} ${AMMO_TYPES[c.base] ? AMMO_TYPES[c.base].name : c.base} (standard)`], ...gunLoads(gun.key).filter((t) => t !== c.base).map((t) => [t, roundName(cal, t)]), ["auto", "Best to hand"]];
 }
 
 // ---------- the drawing and its slot boxes ----------
@@ -345,7 +349,7 @@ export function gunBuilderModal(state, ui) {
   const plat = platformOf(gun.key);
   const platName = DGM.PLATFORMS && DGM.PLATFORMS[plat] && DGM.PLATFORMS[plat].name;
   return `<div class="box wide gbbox">
-    <div class="spread"><h1>Gun builder: ${esc(gun.name)}</h1><span class="muted">${esc(whereText(state, g.loc))}${platName ? ` · ${esc(platName)}` : ""}</span></div>
+    <div class="spread"><h1>Gun builder: ${esc(gun.name)}</h1><span class="muted">${esc(whereText(state, g.loc))}${platName ? ` · ${esc(platName)}` : ""}${finishText(gun)}</span></div>
     ${repairRow(state, g)}
     ${g.msg ? `<div class="result small">${esc(g.msg)}</div>` : ""}
     <div class="gbwrap">${img}<svg viewBox="0 0 ${V.W} ${V.H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${lines}</svg>${boxes}</div>
@@ -361,7 +365,7 @@ export function gunTipText(gun) {
   const s = statsOf(gun);
   const bits = [];
   if (slots.length) bits.push(`slots: ${slots.map((x) => `${(SLOT_NAMES[x] || x).toLowerCase()} (${gun.mods && gun.mods[x] ? gun.mods[x].name : "empty"})`).join(", ")}; Modify (⚙) to change them`);
-  if (s.cal && CALIBERS[s.cal]) bits.push(`loaded with ${s.load === "auto" ? "the best to hand" : `${CALIBERS[s.cal].name} ${AMMO_TYPES[s.type] ? AMMO_TYPES[s.type].name : s.type}`}`);
+  if (s.cal && CALIBERS[s.cal]) bits.push(`loaded with ${s.load === "auto" ? "the best to hand" : `${CALIBERS[s.loadCal || s.cal].name} ${AMMO_TYPES[s.type] ? AMMO_TYPES[s.type].name : s.type}`}`);
   bits.push(reliabilityText(gun, s));
   return bits.join(". ");
 }
@@ -435,7 +439,7 @@ export const GB_CHANGE = {
     if (!gun) return;
     const v = String(el.value || "");
     const ok = v === "" || v === "auto" || loadChoices(gun).some(([x]) => x === v);
-    if (!ok) return;
+    if (!ok) { const why = loadRefusal(gun.key, v); if (why) ui.gunb.msg = why; return; } // (a calibre its chamber refuses: .300 BLK in a 5.56 gun)
     if (v === "") delete gun.load; else gun.load = v;
     ui.gunb.msg = `The ${gun.name} is loaded with ${(loadChoices(gun).find(([x]) => x === v) || ["", "the standard round"])[1].replace(/ \(standard\)$/, "")}${v === "auto" ? "" : " rounds"} when there are any.`;
   },
@@ -452,3 +456,9 @@ export const GUNBUILDER_HELP = `<b>Gun builder:</b> select a gun in the inventor
   line once it is on). Hover a part to see the stats change, before → after: aim, aim up close, best range and fall-off,
   damage, magazine, noise (and how far a shot is heard), weight, worth, the loaded round's penetration, and reliability
   (how often it jams or misfires). The Ammo list picks the round it is loaded with. Not during a battle.`;
+
+// The gun's finish (sim/data-finish.js), for a gun that comes in more than one: " · finish: tan (FDE)".
+function finishText(gun) {
+  const f = finishOf(gun);
+  return f && (GUN_FINISH[gun.key] || []).length > 1 ? ` · finish: ${esc(FINISH_NAME[f] || f)}` : "";
+}

@@ -8,10 +8,12 @@
 // Dice: chance-1 rows need none. Rows below 1 roll on a seed (the source's rng position, read and never moved, so no
 // other roll changes); with no seed at all (a gun made from nothing, e.g. a trader's stock) they are left off.
 import { GEAR } from "./data.js";
-import { ATTACH, makeMod, modFits } from "./gunmods.js";
+import { ATTACH, makeMod, modFits, fitsSlot } from "./gunmods.js";
 import { FACTORY_FIT, TRUCK_GEAR } from "./data-guns.js";
 import { lootItem } from "./inventory.js"; // call time only (inventory.js imports this module)
 import { hash01 } from "./skills.js";
+import { setFinish } from "./data-finish.js"; // its finish (black, tan, wood...) on the same dice
+import { swapGun } from "./gundist.js"; // the gun distribution (call-time only)
 
 // The parts of a row that can go on this gun now (gunmods.js modFits: by platform and calibre, data-gunmods.js).
 const usable = (gunKey, keys) => keys.filter((k) => GEAR[k] && ATTACH[k] && modFits(gunKey, k));
@@ -19,6 +21,7 @@ const usable = (gunKey, keys) => keys.filter((k) => GEAR[k] && ATTACH[k] && modF
 /** Fits the factory parts to a gun item (in place) and returns it. seed: a number (or anything) to roll the chance rows on.
  * @param {any} item @param {any} [seed] */
 export function factoryFit(item, seed = null) {
+  setFinish(item, seed);
   const plan = item && FACTORY_FIT[item.key];
   if (!plan) return item;
   plan.forEach(([chance, keys], i) => {
@@ -28,7 +31,9 @@ export function factoryFit(item, seed = null) {
     const key = cands.length === 1 ? cands[0] : cands[Math.floor(hash01(seed ?? 0, item.key, i, "ffpick") * cands.length) % cands.length];
     const mount = ATTACH[key].mount;
     if (item.mods && item.mods[mount]) return;
-    (item.mods || (item.mods = {}))[mount] = makeMod(key, 1);
+    const part = makeMod(key, 1);
+    if (fitsSlot(item, part)) return; // its slot not open on this gun (gunmods.js: the slot rules)
+    (item.mods || (item.mods = {}))[mount] = part;
   });
   return item;
 }
@@ -39,7 +44,7 @@ export function factoryFit(item, seed = null) {
 export function withFactory(weapon, mods, seed, salt) {
   if (!FACTORY_FIT[weapon]) return mods;
   const gun = factoryFit({ key: weapon }, `${seed}:${salt}`);
-  for (const [mount, m] of Object.entries(mods || {})) if (m && !(gun.mods && gun.mods[mount])) (gun.mods || (gun.mods = {}))[mount] = m;
+  for (const [mount, m] of Object.entries(mods || {})) if (m && !(gun.mods && gun.mods[mount]) && !fitsSlot(gun, m, mount)) (gun.mods || (gun.mods = {}))[mount] = m;
   return gun.mods && Object.keys(gun.mods).length ? gun.mods : null;
 }
 
@@ -56,6 +61,6 @@ export function rosterTruckGear(rng, ctx, out) {
   const m = (TRUCK_COND_ITEMS[ctx.cond] ?? 1) * (ctx.rich ?? 1);
   rows.forEach(([k, p], i) => {
     if (!GEAR[k] || hash01(seed, "trkgear", ctx.kind, k, i) >= Math.min(0.95, p * m)) return;
-    out.gear.push(lootItem(k, ctx.cond === "intact" ? "military" : "wreck", hash01(seed, "trkdur", k, i))); // itemcond.js: the condition by the truck's state
+    out.gear.push(lootItem(swapGun(`truck:${ctx.kind}`, k, [seed, "trkgun", k, i]), ctx.cond === "intact" ? "military" : "wreck", hash01(seed, "trkdur", k, i))); // gundist.js: which gun // itemcond.js: the condition by the truck's state
   });
 }

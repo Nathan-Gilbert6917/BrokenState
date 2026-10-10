@@ -59,6 +59,7 @@ import { groupBrass, groupReloadDaily } from "./reloading.js"; // the reloading 
 import { fitPeople, noteFight, weightOf, woundsFor, wearGroupVehicles, tickOf } from "./groupcare.js"; // AI parity: the wounded do not fight; a fight's dead and wounded
 import { armLauncher, settleArsenalLauncher } from "./launchers.js"; // a launcher issued beside the gun (section 13), its rounds from the stores
 import { armKit, seedKit, kitWorthy } from "./carrykit.js"; // carry kit (sections 15-16): their rigs, spare magazines and plates
+import { swapGun, kitGunSource } from "./gundist.js"; // the gun distribution: which gun a kit, a newcomer, a scavenger or their gunsmith brings
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -166,7 +167,8 @@ export function starterKit(seed, salt, type, pop, gear = 1) {
   const strong = clamp((gear - 1) * 1.2, 0, 0.6);
   const off = Math.floor(h(seed, salt, "woff") * W.length);
   for (let i = 0; i < nW; i++) {
-    const key = strong > 0 && h(seed, salt, "strong", i) < strong ? kit.strong[Math.floor(h(seed, salt, "sk", i) * kit.strong.length) % kit.strong.length] : W[(off + i) % W.length];
+    const listed = strong > 0 && h(seed, salt, "strong", i) < strong ? kit.strong[Math.floor(h(seed, salt, "sk", i) * kit.strong.length) % kit.strong.length] : W[(off + i) % W.length];
+    const key = swapGun(kitGunSource(kind), listed, [seed, "arsgun", salt, i]); // gundist.js: a gun of their kind in the band of the list's (hashed)
     const it = make(key, "w", i);
     if (it) out.push(it);
   }
@@ -716,7 +718,7 @@ export function scavFinds(state, f, p) {
   const n = Math.floor((p.scav.taken || 0) * ARSENAL.SCAV_ITEMS + hash01(...tag, "n"));
   const got = [];
   for (let i = 0; i < n; i++) {
-    const key = table[Math.floor(hash01(...tag, "k", i) * table.length) % table.length];
+    const key = swapGun(`site:${t.loc.type}`, table[Math.floor(hash01(...tag, "k", i) * table.length) % table.length], [...tag, "g", i]); // gundist.js: the same draws as your searches there (AI parity)
     const it = lootItem(key, siteSource(t.loc.type), [...tag, i]);
     if (addToArsenal(state, f, it, "scavenged")) got.push(it);
   }
@@ -763,8 +765,8 @@ export function newcomerKit(state, f, tag) {
   else {
     const carried = f.arsenal ? f.arsenal.items.filter((it) => isWeaponKey(it.key) && !isLauncherKey(it.key)) : [];
     if (carried.length && hash01(...tag, "own") < R.OWN) key = pick(carried, "ok").key;
-    else if (kit.strong && kit.strong.length && hash01(...tag, "strong") < R.STRONG) key = pick(kit.strong, "sk");
-    else key = pick(kit.weapons, "wk");
+    else if (kit.strong && kit.strong.length && hash01(...tag, "strong") < R.STRONG) key = swapGun(kitGunSource(kitOf(f)), pick(kit.strong, "sk"), [...tag, "wg"]); // gundist.js: a gun of their kind in the band of the list's
+    else key = swapGun(kitGunSource(kitOf(f)), pick(kit.weapons, "wk"), [...tag, "wg"]);
   }
   if (key && GEAR[key]) out.push(lootItem(key, u < R.NONE + R.MAKESHIFT ? "militia" : src, [...tag, "w"]));
   if (hash01(...tag, "arm") < R.ARMOUR) {
@@ -793,7 +795,7 @@ export function arsenalDaily(state, f) {
   }
   if ((d + phase) % C.gunEvery === 0 && hasWorkshop(state, f) && sortedKit(A).W.filter((it) => usesRounds(it.key)).length < f.pop * C.guns && (f.stock.scrap || 0) >= C.gunScrap + 2 && (f.stock.parts || 0) >= C.gunParts) {
     const list = KITS[kitOf(f)].weapons.filter((k) => usesRounds(k));
-    const key = list[Math.floor(hash01(...salt, "gw") * list.length) % list.length];
+    const key = swapGun(kitGunSource(kitOf(f)), list[Math.floor(hash01(...salt, "gw") * list.length) % list.length], [...salt, "gwg"]); // gundist.js
     f.stock.scrap -= C.gunScrap;
     f.stock.parts -= C.gunParts;
     if (key) addToArsenal(state, f, lootItem(key, "militia", [...salt, "g"]), "crafted");

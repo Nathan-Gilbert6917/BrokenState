@@ -20,6 +20,8 @@ import { BLADE_TAGS } from "./data-blades.js"; // knives and swords
 import { rollBladeFind, rollAreaBlade, bladeWares } from "./blades.js"; // their own tables and dice, last
 import { KIT_TAGS } from "./data-kit.js"; // carry kit: magazines, rigs, plates (wave 2)
 import { rollSiteKit, rollAreaKit, kitWares } from "./carrykit.js"; // their own tables and dice, after the attachments
+import { rollPartFind, rollAreaPart, partWares } from "./partfinds.js"; // the parts catalogue (2026-10-10): by tags and rarity, its own dice, last
+import { PART_INFO } from "./data-gunmods.js"; // the catalogue's parts: where each is kept
 
 // ---------- theme tags ----------
 export const SITE_TAGS = {
@@ -155,6 +157,7 @@ Object.assign(ITEM_TAGS, {
 // The launchers' rounds (data-ammo.js boxes; launchers.js): army stock.
 Object.assign(ITEM_TAGS, { a_40mm_he: ["military", "crash"], a_40mm_buck: ["military"], a_40mm_smoke: ["military", "crash"], a_40mm_illum: ["military", "crash"], a_rocket_heat: ["military", "crime"] });
 Object.assign(ITEM_TAGS, KIT_TAGS); // the carry kit (data-kit.js)
+for (const [k, i] of Object.entries(PART_INFO)) ITEM_TAGS[k] = [...i.tags]; // the parts catalogue (data-gunmods.js; budget clones at home, brands at the armoury)
 Object.assign(ITEM_TAGS, BLADE_TAGS); // knives and swords (data-blades.js)
 
 // ---------- small finds per site type (the hour-by-hour search) ----------
@@ -241,7 +244,7 @@ export function rollGunmodFind(state, tileId, mult = 1, salt = "") {
   return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "moddur", tileId, state.hour, salt)) : null;
 }
 // rollGunmodFind, or when it found nothing the overhaul's table (SITE_MODS; its own dice). scavenge.js searchHour.
-export const rollAnyModFind = (state, tileId, mult = 1, salt = "") => rollGunmodFind(state, tileId, mult, salt) || rollSiteMod(state, tileId, mult, salt) || rollHeadFind(state, tileId, mult, salt) || rollSiteKit(state, tileId, mult, salt) || rollBladeFind(state, tileId, mult, salt); // helmets.js HEAD_FINDS, then carrykit.js SITE_KIT (magazines, rigs, plates), then blades.js BLADE_FINDS, each on its own dice
+export const rollAnyModFind = (state, tileId, mult = 1, salt = "") => rollGunmodFind(state, tileId, mult, salt) || rollSiteMod(state, tileId, mult, salt) || rollHeadFind(state, tileId, mult, salt) || rollSiteKit(state, tileId, mult, salt) || rollBladeFind(state, tileId, mult, salt) || rollPartFind(state, tileId, mult, salt); // helmets.js HEAD_FINDS, then carrykit.js SITE_KIT (magazines, rigs, plates), then blades.js BLADE_FINDS, each on its own dice
 export const AREA_GUNMODS = {
   armory: { p: 0.12, items: { reddot: 2, laser: 2, extmag: 2, holo: 1, foregrip: 1, tubeext: 1, scope4x: 0.5, riflecan: 0.3 } },
   gunshop: { p: 0.12, items: { reddot: 2, scope4x: 2, laser: 1.5, comp: 1.5, choke: 1.5, extmag: 1.5, bipod: 1, brake: 1, holo: 0.7, pistolcan: 0.3 } },
@@ -268,7 +271,7 @@ export const WARE_GUNMODS = {
 };
 export function gunmodWares(state, type, name, salt = "") {
   const w = WARE_GUNMODS[type];
-  const more = [...modWares(state, type, name, salt), ...headWares(state, type, name, salt), ...bladeWares(state, type, name, salt)]; // blades.js WARE_BLADES too // the overhaul's parts (WARE_MODS), helmets and ear protection (helmets.js WARE_HEAD); their own dice
+  const more = [...modWares(state, type, name, salt), ...headWares(state, type, name, salt), ...bladeWares(state, type, name, salt), ...partWares(state, type, name, salt)]; // partfinds.js: the parts catalogue // blades.js WARE_BLADES too // the overhaul's parts (WARE_MODS), helmets and ear protection (helmets.js WARE_HEAD); their own dice
   if (!w || hash01(state.seed, "modware", name, salt) >= w.p) return more;
   const key = pickWeighted(w.items, hash01(state.seed, "modwarepick", name, salt));
   return key ? [lootItem(key, traderSource(type), hash01(state.seed, "modwareq", name, salt)), ...more] : more;
@@ -319,7 +322,7 @@ export function rollSiteMod(state, tileId, mult = 1, salt = "") {
 }
 export function rollAreaMod(state, tileId, areaType, salt = "") {
   const a = AREA_MODS[areaType];
-  if (!a || hash01(state.seed, "newareamod", tileId, salt) >= a.p) return rollAreaHead(state, tileId, areaType, salt) || rollAreaKit(state, tileId, areaType, salt) || rollAreaBlade(state, tileId, areaType, salt); // helmets.js AREA_HEAD, then carrykit.js AREA_KIT, then blades.js AREA_BLADES (each on its own dice)
+  if (!a || hash01(state.seed, "newareamod", tileId, salt) >= a.p) return rollAreaHead(state, tileId, areaType, salt) || rollAreaKit(state, tileId, areaType, salt) || rollAreaBlade(state, tileId, areaType, salt) || rollAreaPart(state, tileId, areaType, salt); // helmets.js AREA_HEAD, then carrykit.js AREA_KIT, then blades.js AREA_BLADES (each on its own dice)
   const key = pickWeighted(a.items, hash01(state.seed, "newareamodpick", tileId, salt));
   const t = state.tiles[tileId];
   return key ? lootItem(key, areaSource(areaType, t && t.loc ? t.loc.type : null), hash01(state.seed, "newareamoddur", tileId, salt)) : null; // itemcond.js: by the area

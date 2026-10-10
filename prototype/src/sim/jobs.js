@@ -58,6 +58,7 @@ import { blueprintReward } from "./blueprints.js";
 import { askBaseName } from "./basenames.js"; // name an outpost handed to you
 import { supplyAmt, useSupply, spendAmmo } from "./rounds.js"; // "ammo": every round there, any calibre
 import { findRounds, kindTheme, suppliesText, baseCals } from "./ammo.js"; // rewards and hand-overs named by calibre
+import { swapGun } from "./gundist.js"; // the gun distribution: a job's pay in a gun
 
 export const JOBS = {
   RADIO_CHANCE: 0.06, FRIENDLY_CHANCE: 0.08, GATE_CHANCE: 0.6, OFFER_DAYS: 4, OFFER_GAP: 4, GATE_GAP: 3,
@@ -217,7 +218,7 @@ export function makeReward(state, f, type, size) {
       r.supplies[key] = Math.max(1, Math.round((40 * size) / SUPPLIES[key].value));
     } else if (k === "gear") {
       const pool = rareGear(f);
-      if (pool.length) r.gear.push(rng.pick(pool));
+      if (pool.length) r.gear.push(swapGun(`trader:${f.type}`, rng.pick(pool), rng)); // gundist.js: which gun (a hash of the draw)
       else r.supplies.ammo = (r.supplies.ammo || 0) + 30 * size;
     } else if (k === "blueprint") r.blueprint = true; // which one is picked when it is paid (blueprints.js blueprintReward)
     else if (k === "recruits") r.recruits = size >= 2 ? rng.int(1, 2) : 1;
@@ -379,7 +380,7 @@ export function completeJob(state, job, how = "") {
       // blueprints.js: one you neither know nor hold, fitting the group; none left: ammo instead.
       const bp = blueprintReward(state, f, `job${job.id}`);
       if (bp) { h.armory.push(bp); got.push(bp.name); }
-      else { const rr = findRounds(kindTheme(f.type), 40, "jobbp", job.id); for (const [k, q] of Object.entries(rr)) h.stock[k] = (h.stock[k] || 0) + q; got.push(`${suppliesText(rr)} (they had no manual you lack)`); } // rounds by calibre: what their kind keeps
+      else { const rr = findRounds(kindTheme(f.type), 40, "jobbp", job.id); for (const [k, q] of Object.entries(rr)) h.stock[k] = (h.stock[k] || 0) + q; got.push(`${suppliesText(rr)} (they had no manual you lack)`); } // rounds by calibre: what their kind keeps (job.id: the world's own job counter, J.seq, world-local already: localId took the process id base off it, so the same seed gave other rounds, tools/sameseedtest.js)
     }
     if (r.intel) { got.push(`a map (${intelFrom(state, f)} tiles)`); }
     if (r.outpost != null && f.bases.includes(r.outpost) && f.bases.length >= 2) {

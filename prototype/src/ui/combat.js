@@ -11,7 +11,7 @@ import {
 import * as SIM from "../sim/combat.js";
 import { magsLine, spareRounds, reloadText, isShellGun, shellsInPack, getShellsRefusal, shellsLine, SHELLS } from "../sim/mags.js"; // magazines as items (section 15): spares, what a Reload does
 import { plateSwapPlan, PLATE_AP } from "../sim/carrykit.js"; // a broken plate swapped from the pack (2 actions)
-import { loadsFor } from "../sim/ammo.js"; // the reload chooser: the types of the gun's calibre to hand // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
+import { loadsFor, roundName } from "../sim/ammo.js"; // the reload chooser: the types of the gun's calibre to hand // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions } from "../sim/buildingmaps.js";
 import { INTERIOR } from "../sim/interior.js";
@@ -203,7 +203,7 @@ function gunFlag(b, u) {
 // Your own gun: the round it is loaded with (a kind other than the standard) and its fire mode.
 function ownGunTag(u) {
   const c = CALIBERS[WEAPONS[u.weapon] && WEAPONS[u.weapon].cal];
-  const load = u.load && c && u.load !== c.base && AMMO_TYPES[u.load] ? ` <span class="muted">${esc(AMMO_TYPES[u.load].name)}</span>` : "";
+  const load = u.load && c && u.load !== c.base && (AMMO_TYPES[u.load] || String(u.load).includes(":")) ? ` <span class="muted">${esc(AMMO_TYPES[u.load] ? AMMO_TYPES[u.load].name : roundName(WEAPONS[u.weapon].cal, u.load))}</span>` : ""; // (another calibre: ".223 Rem FMJ")
   const modes = unitModes(u);
   return `${load}${modes.length > 1 ? ` <span class="muted">[${esc(MODE_NAME[curMode(u)] || curMode(u))}]</span>` : ""}`;
 }
@@ -528,7 +528,7 @@ export const OVERWATCH_TIP = "Ends the turn. Reacts to every enemy that moves in
 export function ammoToHand(state, b, u) {
   const c = CALIBERS[WEAPONS[u.weapon] && WEAPONS[u.weapon].cal];
   if (!c || u.side !== "player" || !isRanged(u)) return [];
-  return loadsFor(b, u).filter((x) => x.n > 0).map((x) => ({ type: x.type, n: Math.floor(x.n), name: `${c.name} ${x.name}` }));
+  return loadsFor(b, u).filter((x) => x.n > 0).map((x) => ({ type: x.type, n: Math.floor(x.n), name: x.full || `${c.name} ${x.name}`, short: x.name })); // (another calibre the gun takes: ".223 Rem FMJ")
 }
 const loadOf = (u) => { const c = CALIBERS[WEAPONS[u.weapon] && WEAPONS[u.weapon].cal]; return u.load || (c ? c.base : null); };
 cui.ammoAsk = null; // the unit whose Reload chooser is open
@@ -593,7 +593,7 @@ function ammoChooser(state, b, u) {
   const list = ammoToHand(state, b, u);
   if (list.length < 2) return "";
   const pick = cui.ammoPick[u.id] || loadOf(u);
-  return `<div class="small cbmsg cbammo" data-tip="${esc(`Reload with which round? ${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next, I (or Reload) loads the picked one.`)}">Reload with: ${list.map((x) => `<button class="mini${x.type === pick ? " active" : ""}" data-action="cb-act" data-v="reload" data-k="${x.type}" data-tip="${esc(`${x.name}: ${x.n} to hand${x.type === loadOf(u) ? " (loaded now)" : ""}. 1 action.`)}">${esc(AMMO_TYPES[x.type] ? AMMO_TYPES[x.type].name : x.type)} <span class="muted">${x.n}</span></button>`).join(" ")} <button class="mini" data-action="cb-act" data-v="ammoclose" data-tip="Close">✕</button></div>`;
+  return `<div class="small cbmsg cbammo" data-tip="${esc(`Reload with which round? ${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next, I (or Reload) loads the picked one.`)}">Reload with: ${list.map((x) => `<button class="mini${x.type === pick ? " active" : ""}" data-action="cb-act" data-v="reload" data-k="${x.type}" data-tip="${esc(`${x.name}: ${x.n} to hand${x.type === loadOf(u) ? " (loaded now)" : ""}. 1 action.`)}">${esc(x.short || (AMMO_TYPES[x.type] ? AMMO_TYPES[x.type].name : x.type))} <span class="muted">${x.n}</span></button>`).join(" ")} <button class="mini" data-action="cb-act" data-v="ammoclose" data-tip="Close">✕</button></div>`;
 }
 // The panel orders of this section (combatAction "cb-act"); true when handled.
 function gunOrder(state, b, u, v, d) {

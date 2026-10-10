@@ -1379,15 +1379,20 @@ weight a round) is the parallel `ammo-stacks` branch; this one changes damage, r
 |---|---|---|---|---|
 | 1 | .22 LR (FMJ) | 11–17 | 14.0 / 6.5 / 4.4 | pistol22 10–16, rifle22 11–17 (was 12–18) |
 | 2 | 9mm (FMJ) | 15–22 | 18.5 / 10.4 / 5.9 | pistol 15–22, compact9 14–21, smg 15–22 |
-| 3 | .45 ACP (FMJ) | 18–26 | 22.0 / 11.9 / 7.0 | pistol45 18–26, ump45 18–26, usp45 18–26 |
-| 4 | .357 Magnum (FMJ) | 19–29 | 24.0 / 16.2 / 7.6 | revolver 20–30, lever357 21–31, snub357 19–28, magnum 21–31 |
-| 5 | 20 gauge (00 buckshot) | 20–30 | 25.0 / 11.6 / 7.9 | pump20 20–30, ou20 21–31 |
-| 6 | 5.56 NATO (FMJ) | 22–30 | 26.0 / 23.0 / 8.2 | ar 22–32, carbine 21–30 (was 20–29), lmg 22–32, m4 21–31, hk416 22–32, scarl 22–32, aug 22–32, turret_lmg 22–32 |
-| 7 | 7.62×39 (FMJ) | 24–34 | 29.0 / 25.7 / 10.3 | ak 24–34 |
-| 8 | 12 gauge (00 buckshot) | 24–36 | 30.0 / 13.9 / 9.5 | shotgun 24–36, pipegun 20–32, dbshotgun 26–38, sawnoff 26–38, semishotgun 24–36, ou12 25–37, single12 24–36, tacpump 24–36 |
-| 9 | .30-30 (soft point) | 25–35 | 33.6 / 23.6 / 9.5 | leverrifle 25–35 (was 20–30) |
-| 10 | .308 / 7.62 NATO (FMJ) | 34–46 | 40.0 / 35.5 / 20.8 | huntrifle 31–43 (was 24–34), dmr 33–45 (was 27–37), sniper 35–49 (was 30–40), singlerifle 34–46, scarh 33–45, fal 33–45, m1a 34–46, m240 32–44 |
-| 11 | .50 BMG (ball) | 62–84 | 73.0 / 64.7 / 60.8 | amr 62–84, m2hb 46–64 (was 40–58), turret_m2 46–64 |
+| 3 | **5.7×28 (FMJ)** | 16–22 | 19.0 / 15.0 / 6.0 | fiveseven 15–22, p90 16–23 (new, branch `calibres-more`) |
+| 4 | .38 Special (FMJ; ar-platform) | 16–23 | 19.5 / 9.7 / 6.2 | snub38 15–22, service38 16–24 (and any .357 gun loaded with .38: × 0.81) |
+| 5 | .45 ACP (FMJ) | 18–26 | 22.0 / 11.9 / 7.0 | pistol45 18–26, ump45 18–26, usp45 18–26, vector 18–26 (new) |
+| 6 | .357 Magnum (FMJ) | 19–29 | 24.0 / 16.2 / 7.6 | revolver 20–30, lever357 21–31, snub357 19–28, magnum 21–31 |
+| 7 | .223 Rem (FMJ; ar-platform) | 21–28 | 24.5 / 19.8 / 7.8 | ar223 21–28, ranch223 20–28, varmint223 21–29, single223 21–29 (and any 5.56 gun loaded with .223: × 0.94, +3 aim) |
+| 8 | 20 gauge (00 buckshot) | 20–30 | 25.0 / 11.6 / 7.9 | pump20 20–30, ou20 21–31 |
+| 9 | 5.56 NATO (FMJ) | 22–30 | 26.0 / 23.0 / 8.2 | ar 22–32, carbine 21–30 (was 20–29), lmg 22–32, m4 21–31, hk416 22–32, scarl 22–32, aug 22–32, turret_lmg 22–32, famas 22–32 (new) |
+| 10 | .300 Blackout (FMJ, supersonic; ar-platform) | 23–32 | 27.5 / 23.5 / 8.7 | ar300 23–32, sbr300 22–31, single300 23–33; subsonic × 0.9 (24.8) |
+| 11 | 7.62×39 (FMJ) | 24–34 | 29.0 / 25.7 / 10.3 | ak 24–34 |
+| 12 | 12 gauge (00 buckshot) | 24–36 | 30.0 / 13.9 / 9.5 | shotgun 24–36, pipegun 20–32, dbshotgun 26–38, sawnoff 26–38, semishotgun 24–36, ou12 25–37, single12 24–36, tacpump 24–36 |
+| 13 | **.44 Magnum (FMJ)** | 26–36 | 31.0 / 22.3 / 9.8 | revolver44 27–37, lever44 28–38, single44 28–38 (new) |
+| 14 | .30-30 (soft point) | 25–35 | 33.6 / 23.6 / 9.5 | leverrifle 25–35 (was 20–30) |
+| 15 | .308 / 7.62 NATO (FMJ) | 34–46 | 40.0 / 35.5 / 20.8 | huntrifle 31–43 (was 24–34), dmr 33–45 (was 27–37), sniper 35–49 (was 30–40), singlerifle 34–46, scarh 33–45, fal 33–45, m1a 34–46, m240 32–44, g3 33–45 (new) |
+| 16 | .50 BMG (ball) | 62–84 | 73.0 / 64.7 / 60.8 | amr 62–84, m2hb 46–64 (was 40–58), turret_m2 46–64 |
 | – | 12 gauge slug (variant) | (12 ga × 1.55) | 46.5 / 33.5 / 14.7 | every 12 ga gun |
 
 Before (dev 54e022a), by the mean of each calibre's guns: .22 14.0, 9mm 18.2, .45 22.0, .357 25.0, 5.56 26.2, 7.62×39
@@ -1493,7 +1498,7 @@ ever for AP, API or match.
 ### The new guns (`data-guns.js ARSENAL_GEAR` / `ARSENAL_WEAPONS`)
 
 Generic names, as the game names guns; each description names the real gun it is like. No rare Russian guns; the P90
-(5.7×28), the Vector, the G3 and the FAMAS are not in (see the pick-list in the report).
+(5.7×28), the Vector, the G3 and the FAMAS were not in (added since: "More calibres and buckshot at range" below).
 
 | key | name | cal | dmg | opt / fall | aim / close | rounds a shot | cap | modes | noise | jam % | kg | value | Shooting | power | dur | rarity | platform, feeding | AI kits |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -1555,3 +1560,187 @@ Generic names, as the game names guns; each description names the real gun it is
 rarity, rounds by tier, own dice); `rostertest` (pistols 5–15, automatics 20+ for .308 and .45, single-shot rifles 1, the
 arsenal's tables as sources), `loottest` (the arsenal's tables as sources), `gunsafetest` (the safe's extra gun counted
 apart), `reloadbenchtest` (20 ga handloads) updated.
+
+### Calibre compatibility, .223, .300 Blackout, .38 Special and the AR platform (2026-10-10, branch `ar-platform`)
+
+The user: *"Add AR15 and other AR platform guns that use STANAG mags shooting 556, 223 or 300 blackout"*; *".223 that
+works in 556 guns and magazine, deals less damage but is more accurate"*; *"Add 300 blackout guns; cannot be used in 223
+or 556 guns"*; *"Add 223 guns that only take 223 and not 556"*; *".223 is a very common round like 5.56"*; *"Single shot
+rifles for .308, 5.56, .223, .44 mag, 300 blackout"*; *"Add .38 Special as its own revolver calibre"*; *"Give the AUG and
+FAL their own magazines"*; *"AUG and FAL mags do not fit in AR platforms"*.
+
+**The model.** A gun is chambered for one calibre (`WEAPONS cal`) and takes `data-ammo.js CAL_ACCEPTS[cal]` (its own
+first; a gun's own `cals` overrides it): 5.56 → 5.56 and .223; .357 → .357 and .38 Special (the gas-operated Magnum
+pistol: `cals: ["357"]`); every other calibre only itself (a .223 gun refuses 5.56, a .300 BLK gun 5.56 and .223, a .38
+revolver .357). A magazine holds `MAGAZINES cals` (else `CAL_ACCEPTS` of its cal): every STANAG (20, 30, 40, the drums)
+holds 5.56, .223 and .300 BLK, so the chamber decides; a magazine that holds nothing the gun takes never fits it (`gunmods.js
+modFits`: a .308 bolt magazine in the .223 varmint rifle). `MAGAZINES guns` limits a magazine to some guns of its platform.
+Refusals (`CAL_REFUSE`): .300 BLK in a 5.56 or .223 gun *"fits the magazine but not the barrel ... can blow the gun apart"*,
+5.56 in a .223 gun *"runs too hot"*, .357 in a .38 cylinder *"too long"*.
+
+**Loads.** A load (a gun's `item.load`, a unit's `u.load`, a magazine's `it.load`, a Reload's `act.ammo`) is a type of its
+holder's calibre (`"fmj"`) or `"<cal>:<type>"` for another calibre it takes (`"223:sp"` in a 5.56 gun). `rounds.js typeFor`
+normalises against the holder (`loadParts`, `loadId`, `rebaseLoad`, `bareType`), `keyFor` / `roundName` name the round, so
+every existing path that draws, counts, keeps or names rounds by `keyFor(cal, u.load)` carries the calibre along. A magazine
+item's load is written against the magazine's calibre (`mags.js magLoad` / `magItemLoad` move it over). Acceptance is checked
+where a load is chosen: `ammo.js chooseLoad` (a refused preference falls back to the common round), `loadsFor` / `gunLoads`
+(the reload chooser and the gun builder list only what the gun takes), `combat.js reloadRefusal` (the refusal words),
+`mags.js fitMags` (a spare loaded with a refused round is filled with the gun's load out of a fight), `gunload.js gunIn`.
+
+**A shot.** `ammo.js loadFx / roundFx`: the type's effects, damage × `CAL_DMG[loaded] / CAL_DMG[gun's]` (.223 from a 5.56
+gun × 0.94, .38 from a .357 × 0.81) and `CALIBERS aim` (.223 +3). `shotHit` carries the loaded calibre (armour, pen,
+over-penetration read .223 as .223). The battle HUD shows the loaded calibre (amber when it is not the gun's own).
+
+**Rounds at hand.** `gunCals` lists the other calibres a gun takes at weight 0: usable (`usableIn`, `teamAmmo`), kept
+(`spendAmmo` keep), chosen last in deals, never what generic ammo becomes (`mixForCals`). By the numbers (`takeGun`:
+`drawShots`, `packRounds`, hunting) a 5.56 gunner draws .223 after 5.56; `gunsArmed` counts both.
+
+**AI parity.** `KIT_ALT_CAL`: raiders, militia, survivors, zealots, fighters and guards carry .223 in a 5.56 rifle and .38 in a
+.357 now and then (`enemyLoad`, own dice); soldiers keep 5.56. Their magazines, bodies and dropped guns carry it.
+
+**Magazines (user: their own for the AUG and FAL).** STANAG: `ar15` and `m249` only (no longer the bullpup). AUG 30 / 42
+(`bullpup`), FAL 20 / 30, M14 10 / 20, SCAR-H 10 / 20 (the old `mag_battle_*` keys, now SCAR-H only), ranch rifle 20 / 30.
+An old save's gun with a magazine that no longer fits gets its own of the nearest size (`carrykit.js migrateMagFits`).
+
+**New calibres** (rarity, value a round): .223 FMJ common 0.6, SP uncommon 0.8, match scarce 1.25 (civilian places hold more
+.223, an armoury little); .300 BLK FMJ scarce 1.0, subsonic rare 1.4, HP rare 1.3; .38 Special FMJ common 0.45, HP
+uncommon 0.7, +P scarce 0.65 (boxes: 50, hollow points 20).
+
+**New guns** (`data-guns.js AR_GEAR / AR_WEAPONS`; placeholder art and voices):
+
+| key | name | calibre (takes) | dmg | feed | rarity | value |
+|---|---|---|---|---|---|---|
+| ar15rifle | AR-15 rifle | 5.56 (+ .223) | 22–30 | STANAG 30 | uncommon | 105 |
+| ar223 | AR-15 rifle (.223) | .223 only | 21–28 | STANAG 20 | uncommon | 85 |
+| arpistol | AR pistol | 5.56 (+ .223) | 20–28 | STANAG 30 | scarce | 85 |
+| ar300 | .300 Blackout carbine | .300 BLK | 23–32 | STANAG 30 | scarce | 130 |
+| sbr300 | Suppressed .300 BLK carbine (select fire, comes with a can) | .300 BLK | 22–31 | STANAG 30 | rare | 230 |
+| ardmr | AR marksman rifle (.223 Wylde) | 5.56 (+ .223) | 24–33 | STANAG 20 | scarce | 165 |
+| single556 | 5.56 single-shot rifle | 5.56 (+ .223) | 22–31 | 1 | uncommon | 32 |
+| single223 | .223 single-shot rifle | .223 only | 21–29 | 1 | common | 28 |
+| single300 | .300 BLK single-shot rifle | .300 BLK | 23–33 | 1 | scarce | 36 |
+| varmint223 | .223 varmint rifle (bolt) | .223 only | 21–29 | internal 5 | uncommon | 70 |
+| ranch223 | Ranch rifle (Mini-14-style) | .223 only | 20–28 | own 20 / 30 | uncommon | 75 |
+| snub38 | .38 snub-nose revolver | .38 only | 15–22 | cylinder 5 | common | 20 |
+| service38 | .38 service revolver | .38 only | 16–24 | cylinder 6, speedloader | common | 26 |
+
+Tests: `tools/calcompattest.js` (the model end to end, the AUG / FAL / STANAG magazine fits, battle, HUD, AI, an old save).
+## More calibres and buckshot at range 2026-10-10 (user requests; branch `calibres-more`)
+
+The user: *"Add a 5.7×28 calibre with a P90, plus a Vector, G3 and FAMAS"*; *"Make buckshot lose damage at range. Today
+range only lowers the hit chance."*; *"Add .44 mag ammo, revolvers, lever actions, single shot rifles"*; *"Single shot
+rifles for .308, 5.56, .223, .44 mag, 300 blackout"* (this branch: the .44 one; the `.308` one was there, `ar-platform`
+adds 5.56 / .223 / 300 BLK). Built on dev 3090d82. Each gun takes one calibre (the multi-calibre model is
+`ar-platform`'s).
+
+### Two new calibres (`data-ammo.js CALIBERS`, `CAL_DMG`, `LADDER.ORDER`, `ROUND_ECON`, `THEME_CALS`)
+
+| round | tier | value | pen | unarmoured | soft vest AC2 | steel plate AC4 | past reach | box |
+|---|---|---|---|---|---|---|---|---|
+| 5.7×28 FMJ (base: an SS190-style steel-tipped round) | uncommon | 0.6 | 25 | 19.0 | 15.0 | 6.0 | 16.2 | 50 |
+| 5.7×28 hollow point (varmint) | scarce | 0.8 | 12 | 22.8 | 9.4 | 6.0 | 19.4 | 50 |
+| .44 Magnum FMJ / JSP (base) | uncommon | 0.9 | 22 | 31.0 | 22.3 | 9.8 | 26.4 | 50 |
+| .44 Magnum hollow point | scarce | 1.3 | 14 | 37.2 | 16.7 | 9.8 | 31.6 | 20 |
+
+- **5.7×28**: rung 3, between the 9mm (18.5) and the .38 Special (19.5), under the .45 (22.0) and well under the 5.56 (26.0); small (6 g a round) and
+  light; pen 25 (9mm 15, 5.56 30): on a soft vest its FMJ hits 15.0 against the 9mm's 10.4 and the .45's 11.9 (the point
+  of the round). Reach 9 tiles (`gunmods.js ROUND_REACH`: a tile flatter than a pistol round). Found at police (4),
+  military (3) and gun stores (3), a little with raiders and in homes (`THEME_CALS`): 0.6% of all rounds found.
+- **.44 Magnum**: rung 13, over 12 ga buckshot (30.0) and under the .30-30 (33.6) and the .308 (40.0); its hollow point
+  (37.2) stays under the .308's FMJ (the "no leap" rule holds). Pen 22 (.357 20, .308 38). Reach 9. Found at gun stores
+  (5), hunting places (4), homes (3), farms and raiders (2), police (1): 0.8% of all rounds.
+- Both reloadable (pistol class: `LOAD_CLASS`, `reloading.js CAL_ORDER`), pistol loads for the AI (`ammo.js enemyLoad`),
+  starting colonists 15% hollow points (`STARTER_AMMO`), retail boxes `RETAIL_BOX` ("57x28": 50, "44mag": 50,
+  "44mag_hp": 20), dead soldiers' armour by calibre (`deadsoldiers.js CAL`), voices (`ui/gunsfx.js BY_CAL`), the
+  pistol-calibre suppressor fits 5.7 and the compensator both (`can9`, `comp`).
+
+### The new guns (`data-guns.js CALIBRE_GEAR` / `CALIBRE_WEAPONS`, merged into the arsenal's tables)
+
+| key | name (like) | cal | dmg | opt / fall | aim / close | rounds a shot | cap | modes | noise | jam % | kg | value | Shooting | power | dur | rarity | platform, feeding | AI kits |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| fiveseven | 5.7 pistol (FN Five-seveN) | 5.7×28 | 15–22 | 6 / 4 | +4 / – | 1 | 20 | – | 2 | 0.3 | 0.75 | 70 | 3 | 3.4 | 65 | scarce | fn57, mag_fn57_20 | guards |
+| p90 | 5.7 PDW (FN P90) | 5.7×28 | 16–23 | 7 / 3.2 | +7 / +5 | 2 | 50 | burst 3 (−5), auto 12 (−13) | 2 | 0.3 | 2.6 | 165 | 8 | 6.8 | 70 | rare | p90, mag_p90_50 (top) | guards (strong) |
+| vector | Low-recoil .45 SMG (KRISS Vector) | .45 ACP | 18–26 | 6 / 3.5 | +6 / +5 | 2 | 25 | burst 2 (−3), auto 12 (−10) | 2 | 0.45 | 2.7 | 190 | 7 | 6.6 | 60 | rare | vector, mag_vector_25 (and 13) | guards (strong) |
+| g3 | Roller-delayed battle rifle (HK G3) | .308 | 33–45 | 11 / 2 | +5 / −2 | 1 | 20 | burst 2 (−12), auto 10 (−26) | 4 | 0.2 | 4.4 | 200 | 11 | 8.5 | 85 | rare | g3, mag_g3_20 | raiders, militia, fighters (strong) |
+| famas | High-rate bullpup rifle (FAMAS) | 5.56 | 22–32 | 9 / 3 | +8 / +3 | 2 | 25 | burst 3 (−7), auto 12 (−20) | 3 | 0.45 | 3.6 | 140 | 9 | 7.9 | 65 | rare | famas, mag_famas_25 | fighters (strong) |
+| revolver44 | .44 Magnum revolver (S&W Model 29) | .44 Mag | 27–37 | 5 / 5 | −4 / – | 1 | 6 | – | 4 | 0.05 | 1.4 | 60 | 5 | 4.0 | 85 | uncommon | revolver, internal 2 a Reload | raiders, fighters; survivors' loot |
+| lever44 | Lever-action .44 carbine (Marlin 1894) | .44 Mag | 28–38 | 9 / 2.8 | +5 / – | 1 | 10 | – | 3 | 0.25 | 2.9 | 60 | 4 | 4.8 | 80 | uncommon | lever, internal 4 a Reload (tube) | militia, fighters |
+| single44 | .44 single-shot rifle (H&R Handi-Rifle) | .44 Mag | 28–38 | 9 / 2.5 | +6 / −4 | 1 | 1 | – | 3 | 0.05 | 3.0 | 32 | 2 | 3.8 | 85 | uncommon | single, internal 1 a Reload | militia, survivors |
+
+- Mean hits with the base round (unarmoured / vest): 5.7 pistol 18.5 / 14.6, PDW 19.5 / 15.4, Vector 22.0 / 11.9, G3
+  39.0 / 34.6, FAMAS 27.0 / 23.9, .44 revolver 32.0 / 23.0, .44 lever and single-shot 33.0 / 23.8. All within the band.
+- **Low recoil**: the Vector's burst −3 and auto −10 (the UMP-style .45: −6 / −16), the PDW's auto −13 (the 9mm SMG −18).
+  The FAMAS: three-round bursts and 12-round streams (the AUG: 2 / 10), fussy magazines (jam 0.45). The G3: the most
+  reliable battle rifle (jam 0.2; FAL 0.35, SCAR-H 0.4).
+- **Magazines** (`data-kit.js CALIBRE_MAGS`, merged into `MAGAZINES`): `PDW top magazine (50)`, `5.7 pistol magazine
+  (20)`, `.45 double-stack magazine (13)` and `.45 extended magazine (25)` (the Vector's Glock-pattern ones),
+  `G3-pattern magazine (20)`, `FAMAS-pattern magazine (25)`; each fits only its own platform (no STANAG in the FAMAS).
+  Internal feeds (`CALIBRE_INTERNAL`): the .44 revolver 2 a Reload, the lever 4, the single-shot 1.
+- **Platforms** (`data-gunmods.js`, added with `Object.assign`): `p90` (sight, muzzle, magazine, light, sling: no stock),
+  `fn57` (as the polymer pistol), `vector` (sight, muzzle, magazine, stock, light, sling), `g3` (as the battle rifles),
+  `famas` (sight, muzzle, magazine, light, bipod, sling: no stock, no M203). Their parts and drawings come from a
+  look-alike (`PLATFORM_LIKE`: the PDW and Vector the MP5, the 5.7 pistol the Glock, the G3 the AR-10, the FAMAS the
+  AR-15 less stocks, the M203 and the drum); the .44s use the revolver, lever and single-shot platforms. For
+  `gun-attach` to review.
+- **Art and sound** (placeholders for `gun-art`): battle sprites `GUN_SPRITE` (pistol, SMG, SMG, marksman rifle,
+  carbine, revolver, lever-action, hunting rifle), voices `VOICE_OF` (pitched 9mm, SMG, .308, 5.56, .357), rates of fire
+  `RPM` (PDW 900, Vector 1200, FAMAS 1000, G3 600).
+- **Where found**: the arsenal's own finds and dice (`gunfinds.js`, `CALIBRE_TAGS`: the PDW military and police, the
+  G3 military, gun stores and gangs, the FAMAS military and gun stores, the Vector and 5.7 pistol police, gun stores
+  and the military, the .44s hunting places, gun stores, homes, farms), the AI's people (`CALIBRE_KITS`), the
+  single-shot .44 30% with a scope mount (`FACTORY_FIT`). Every one is in a kit (AI parity) and in some place's pool.
+
+### Buckshot loses damage at range (`data-ammo.js AMMO_TYPES` spreadFull / spreadDrop / spreadMin, `spreadMult`)
+
+Before, range only cost a shotgun aim (its fall-off: −7 a tile past 4 for a pump). Now a buckshot or birdshot hit
+also does less past `spreadFull` tiles: × (1 − `spreadDrop` a tile), never under `spreadMin`. A slug is one ball and
+keeps its damage (as do bullets).
+
+| tiles | 2 | 4 | 6 | 8 | 10+ |
+|---|---|---|---|---|---|
+| 00 buckshot (12 and 20 ga): full to 4, −10% a tile, floor 40% | 1 | 1 | 0.8 | 0.6 | 0.4 |
+| birdshot: full to 3, −12% a tile, floor 30% | 1 | 0.88 | 0.64 | 0.4 | 0.3 |
+| a pump's 00 buckshot, damage | 24–36 | 24–36 | 19–29 | 14–22 | 10–14 |
+| 12 ga mean hit unarmoured (ladder) | 30.0 | 30.0 | 24.0 | 18.0 | 12.0 |
+
+One function, two users: `combat.js shotOdds` (every gun shot's damage roll, the HUD's damage label and the odds line,
+"shot spreads past 4 tiles, damage ×0.6") and `ladder.js hitDamage` (`o.dist`; `ladderRows` `far` = 8 tiles, `gunHit(w,
+type, dist)`), so the balance sheet and the battle agree (`tools/buckfallofftest.js` checks both at 2 / 4 / 6 / 8 / 10
+tiles on a real battle map). The sheet: Ammo types `Spread: full to / lost a tile / floor` (editable), Rounds and Guns
+`Hit at 8 tiles`. The gun builder shows a "Shot spread" row (`gunStats` spread). The player's auto-load (`pickLoad`)
+scores buckshot by what it keeps at each foe's range. The AI's shotguns follow the same rule (it is in the shot).
+
+**The AI** (both sides, `combat.js scoreCell`): a shotgunner's spot is scored by its hit chance × what its shot keeps
+there (spreadMult), and past `spreadFull` tiles it is pulled toward the foes (`SPREAD_CLOSE` 1.5 a tile), so shotguns
+close in instead of plinking from afar. Without that pull the first try lost a lot more and stalled (a sawn-off's
+fights against 4 raiders: 16 of 300 ran out of turns, 3 before).
+
+**The effect in a fight** (`combattest` weapons matchups, three people with Shooting 5–11 all carrying the gun, 300
+battles each, seed 7; win % before → after, battles that ran out of turns in brackets; the raiders' own shotguns
+follow the same rule):
+
+| gun | 3 vs 4 raiders (power 5) | 3 vs 3 raiders, they ambush | 3 vs 12 of the dead | 3 vs 4 soldiers |
+|---|---|---|---|---|
+| pump shotgun | 62 → 51 (1 → 2) | 81 → 78 | 100 → 100 | 1 → 0 |
+| double-barrel | 55 → 48 (1 → 1) | 80 → 76 | 100 → 100 | 0 → 0 |
+| single-shot 12 ga | 34 → 21 (0 → 3) | 59 → 57 | 89 → 87 | 0 → 0 |
+| police pump | 59 → 55 (3 → 0) | 83 → 83 | 100 → 100 | 0 → 1 |
+| 20 ga pump | 45 → 45 (7 → 3) | 76 → 75 | 96 → 98 | 1 → 0 |
+| sawn-off | 38 → 36 (3 → 6) | 61 → 63 | 97 → 96 | 0 → 0 |
+
+Shotguns lose ground in open fights against gunmen (5–13 points), hardly any in an ambush (up close) and none against
+the dead, who walk into the full-damage range. (The last two columns were measured with the spot scoring but before
+the pull was added; the dead and the soldiers come to the gun either way.)
+
+The usual `combattest` matchups (mixed teams, a quarter of them with a pump; 300 battles each, seed 7): every one
+within noise of before, but for 3 vs 4 raiders (power 5) 70% → 61%, and that is the raiders' new guns (the .44
+revolver among their sidearms, the G3 among their strong picks): the same branch with the fall-off switched off
+also gives 62%.
+
+### Tests
+
+`tools/buckfallofftest.js` (new: the curve, slugs untouched, ladder = shotOdds for a pump, a double, a 20 ga, an O/U and
+a rifle, the HUD's target card); `arsenalbalancetest` (5.7 between 9mm and 5.56 and through a vest better than 9mm and
+.45, .44 over .357 and under .308, the new guns' calibres, magazines, feeds, low recoil, G3 reliability, rarity, tags,
+box sizes; every calibre has a gun); `balancesheettest` (the spread columns equal the game's, editable, an edit moves
+only the hit at range; the new tables editable); `rostertest` (the 5.7 pistol's 20, the FAMAS's 25).

@@ -34,6 +34,7 @@ import { landEffect } from "./throwables.js";
 import { toolSource } from "./gunsafes.js";
 import { rollGunStash, TIER_STASH, blastContents, rollAreaGunFinds, CAR_CASE, rollGunCase, SEARCH_TOOLS, isGunCase, openCase, CASE } from "./gunsafes.js";
 import { haulOf } from "./raidloot.js";
+import { swapGun } from "./gundist.js"; // the gun distribution: which gun a locked container holds
 // What rounds a locked thing holds (ammo.js themes), by its loot kind.
 const LOCK_AMMO = { guns: "guns", evidence: "police", miltruck: "military", crash: "military", safe: "home", cash: "home", gear: "home", car: "home" };
 
@@ -385,7 +386,7 @@ export function lockedLoot(state, b, u, box, sup, gear) {
       if (!SUPPLIES[k] || roll("s", i) >= p) return;
       sup[k] = (sup[k] || 0) + lo + Math.floor(roll("q", i) * (hi - lo + 1));
     });
-    L.gear.forEach(([k, p], i) => { if (GEAR[k] && roll("g", i) < p) gear.push(lootItem(k, lockSource(lk.loot, siteTypeAt(state, b.tileId)), roll("gd", i))); }); // itemcond.js: a gun cage keeps its guns well (a gun store's as the Army's)
+    L.gear.forEach(([k, p], i) => { if (GEAR[k] && roll("g", i) < p) gear.push(lootItem(swapGun(`lock:${lk.loot}`, k, [roll("gs", i)]), lockSource(lk.loot, siteTypeAt(state, b.tileId)), roll("gd", i))); }); // itemcond.js: a gun cage keeps its guns well (a gun store's as the Army's)
     giveKey(L.key, "lock");
   } else giveKey(0.03, "plain");
   const bp = rollBlueprint(state, b.tileId, (lk ? BP_MULT.lock : box.room ? BP_MULT.room : BP_MULT.plain) * (u.scavBonus ? 2 : 1), `box${box.id}`);
@@ -496,7 +497,7 @@ export function lockedSearchHour(state, e, p, members) {
     else e.found.supplies[k] = (e.found.supplies[k] || 0) + q;
     bits.push(`${q} ${keyWord(k)}`);
   });
-  L.gear.forEach(([k, pp], i) => { if (GEAR[k] && roll("g", i) < pp) { const it = lootItem(k, lockSource(def.loot, siteTypeAt(state, e.tile)), roll("gd", i)); e.found.gear.push(it); bits.push(it.name); } });
+  L.gear.forEach(([k, pp], i) => { if (GEAR[k] && roll("g", i) < pp) { const it = lootItem(swapGun(`lock:${def.loot}`, k, [roll("gs", i)]), lockSource(def.loot, siteTypeAt(state, e.tile)), roll("gd", i)); e.found.gear.push(it); bits.push(it.name); } });
   const bp2 = rollBlueprint(state, e.tile, BP_MULT.lock, `shl${e.hours}`);
   if (bp2) { e.found.gear.push(bp2); bits.push(bp2.name); }
   if (L.key && roll("lkey") < L.key) {

@@ -48,7 +48,7 @@ import { CALIBERS } from "./data-ammo.js";
 import { ATTACH, SLOTS as GUN_SLOTS, fitMod, fitsSlot, stripMod, makeMod, takesMods } from "./gunmods.js";
 import { KIT_LOOT } from "./data-kit.js";
 import { newItem, startKit, ensureInv, packOf, rigOf, rigPouches, pouchesOf, pouchKindOf, pouchReason, packSize, isBulky, isSmall, fitReason, POCKETS } from "./inventory.js";
-import { calOf, addRecord, capRounds } from "./ammo.js";
+import { calOf, addRecord, capRounds, gunCalsOf, gunTakes } from "./ammo.js";
 import { ROUND_SUPPLIES } from "./data-ammo.js";
 import { keyFor } from "./rounds.js";
 import { starterMags } from "./carrykit.js";
@@ -176,9 +176,18 @@ const makeItem = (key) => startKit(newItem(key, 1));
 // factoryfit.js). Put on in gunmods.js SLOTS order (a mount or rail before what goes on it); a part that does not fit
 // (gunmods.js fitsSlot: by platform, calibre and the slots open) is dropped. The parts are worth what they are worth
 // (valuation.js itemValue counts a gun's fitted parts), so the gun's points go up with them (custompoints.js gunPoints).
+// Picks keyed by an old slot name (a revolver's grips were on "grip" before the pistol-grip slot, 2026-10-10) move to
+// the part's own slot.
+/** @param {any} raw @returns {any} */
+const ownSlots = (raw) => {
+  const o = { ...raw };
+  for (const [s, k] of Object.entries(raw)) if (typeof k === "string" && k && ATTACH[k] && ATTACH[k].slot !== s && !(ATTACH[k].slot in o)) { o[ATTACH[k].slot] = k; delete o[s]; }
+  return o;
+};
 /** @param {any} gun @param {any} mods */
 export function applyGunMods(gun, mods) {
   if (!gun || !mods) return gun;
+  mods = ownSlots(mods);
   for (const slot of GUN_SLOTS) if (mods[slot] === "") stripMod(gun, slot);
   for (const slot of GUN_SLOTS) {
     const k = mods[slot];
@@ -195,6 +204,7 @@ export const gunWith = (key, mods = null) => applyGunMods(makeItem(key), mods);
 /** @param {string} key @param {any} raw @returns {Record<string, string> | null} */
 export function sanitizeGunMods(key, raw) {
   if (!raw || typeof raw !== "object" || !key || !WEAPONS[key] || !GEAR[key] || !takesMods(key)) return null;
+  raw = ownSlots(raw);
   const gun = makeItem(key);
   /** @type {Record<string, string>} */
   const out = {};
@@ -228,7 +238,8 @@ export function gunInfo(key, item = null) {
   if (cal && CALIBERS[cal]) {
     const cap = gunCap(it), mag = fittedMag(it), internal = usesInternal(key, it), std = standardMag(key);
     const how = internal ? "loaded a few at a time (an internal magazine, tube or cylinder)" : mag ? `in its ${mag.name}` : std ? `a magazine (${GEAR[std].name})` : "a magazine";
-    return { cal, calName: CALIBERS[cal].name, cap, text: `${CALIBERS[cal].name} · ${cap} rds`, long: `Takes ${CALIBERS[cal].name}: ${cap} round${cap === 1 ? "" : "s"} ${how}.` };
+    const also = gunCalsOf(key).filter((c) => c !== cal).map((c) => CALIBERS[c].name); // another calibre it takes (.223 in a 5.56 gun)
+    return { cal, calName: CALIBERS[cal].name, cap, text: `${CALIBERS[cal].name}${also.length ? ` / ${also.join(" / ")}` : ""} · ${cap} rds`, long: `Takes ${CALIBERS[cal].name}${also.length ? ` (and ${also.join(", ")})` : ""}: ${cap} round${cap === 1 ? "" : "s"} ${how}.` };
   }
   if (w.launcher) {
     const sup = SUPPLIES[keyFor(w.launcher, null)];
@@ -353,7 +364,7 @@ function wentWithOldGun(it, gun) {
   const d = GEAR[it.key];
   if (!d) return false;
   if (d.mag) return !(gun && magFitsGun(gun.key, it.key));
-  if (d.rounds && d.count) return !(gun && calOf(gun.key) === d.rounds.cal);
+  if (d.rounds && d.count) return !(gun && gunTakes(gun.key, d.rounds.cal)); // (a box of .223 goes with a 5.56 gun too)
   return false;
 }
 // What the dice gave them, as picks (every slot, and where each thing they carry was; a gun's parts as the dice fitted

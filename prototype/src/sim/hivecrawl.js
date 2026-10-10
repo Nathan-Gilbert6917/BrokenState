@@ -64,6 +64,8 @@ import { leaveCache } from "./caravanraids.js"; // the core's hoard: what the te
 import { addToArsenal, addArsenalRounds, removeFromArsenal } from "./arsenal.js"; // AI parity: a war party's share of the hoard, its fire and bangs for the core
 import { THROWABLES } from "./stealth.js"; // the throws' reach (the Hivemind's weak spots)
 import { throwBlind } from "./throwables.js";
+import { swapGun, drawGun } from "./gundist.js"; // the gun distribution: the bones' guns, the hoard's, the deep rooms' rare ones
+import { HIVE_GUNS } from "./data-guns.js";
 
 // ---------- tuning ----------
 export const HCRAWL = {
@@ -733,6 +735,14 @@ function noteGroupCrawl(hive, fid, reached) {
   g[fid] = Math.max(g[fid] || 0, reached);
 }
 
+// A rare gun from the hive's deep (data-guns.js HIVE_GUNS, GUN_SOURCES hive:deep) at chance p, on dice of its own (tag:
+// the parts of a hash). Returns a key or null.
+/** @param {number} p @param {any[]} tag */
+export function hiveDeepGun(p, tag) {
+  if (!(p > 0) || hash01(...tag, "deep") >= p) return null;
+  return drawGun("hive:deep", hash01(...tag, "deeppick"));
+}
+
 // ---------- the core's hoard ----------
 // What the hive dragged into its core from the dead (HCRAWL.HOARD), from the world's seed and the hive (its own dice:
 // the world's untouched): richer with the tier and the hive's stores. { gear: [items], supplies: { key: qty } }.
@@ -746,8 +756,11 @@ export function hiveHoard(state, hive) {
   const nGuns = Math.floor(H.guns.base + H.guns.perTier * tier + res / H.guns.perRes);
   for (let k = 0; k < nGuns; k++) {
     const pool = tier >= 3 && rng.chance(0.3) ? H.guns3 : tier >= 1 && rng.chance(0.35 + 0.15 * tier) ? H.guns2 : H.guns1;
-    add(rng.pick(pool));
+    add(swapGun(pool === H.guns3 ? "hive:hoard3" : pool === H.guns2 ? "hive:hoard2" : "hive:hoard1", rng.pick(pool), rng)); // gundist.js: any gun of the pool's power, by rarity (a hash of the draw)
   }
+  // A rare gun the hive dragged in (data-guns.js HIVE_GUNS: hive:deep), more often the older the hive; its own dice.
+  const deep = hiveDeepGun(Math.min(0.9, HIVE_GUNS.hoard + HIVE_GUNS.hoardTier * tier), [state.seed, "hoardgun", hive.id, hive.tile]);
+  if (deep) add(deep);
   const nArm = Math.floor(H.armour.base + H.armour.perTier * tier + res / H.armour.perRes);
   for (let k = 0; k < nArm; k++) add(rng.pick(H.armourKeys));
   const rare = Math.min(0.9, H.rare[0] + H.rare[1] * tier);
@@ -1118,13 +1131,16 @@ function searchRoom(state, p, c) {
     mem.searched[room.id] = true;
     const gear = [];
     const n = rng.int(B.items[0], B.items[1]) + (room.layer >= 4 ? 1 : 0);
-    for (let i = 0; i < n; i++) gear.push(lootItem(rng.pick(B.keys), "survivor", spend(rng))); // itemcond.js: worn, as the dead left it
+    for (let i = 0; i < n; i++) gear.push(lootItem(swapGun("hive:bones", rng.pick(B.keys), rng), "survivor", spend(rng))); // itemcond.js: worn, as the dead left it; gundist.js: which gun
+    // Deeper in, now and then a rare gun among the bones (data-guns.js HIVE_GUNS: hive:deep; its own dice).
+    const L = room.layer || 0, deep = L >= HIVE_GUNS.from ? hiveDeepGun(Math.min(HIVE_GUNS.max, HIVE_GUNS.p + HIVE_GUNS.perLayer * (L - HIVE_GUNS.from)), [state.seed, "hivedeep", hive.id, room.id]) : null;
+    if (deep) gear.push(lootItem(deep, "soldier", [state.seed, "hivedeepq", hive.id, room.id]));
     const sup = sortFind({ ammo: rng.int(B.ammo[0], B.ammo[1]), meds: rng.int(B.meds[0], B.meds[1]) }, "home", "hivebones", c.tile, state.hour); // ammo.js: rounds by calibre
     text = `Among the bones: ${give(state, p, c, sup, gear)}.`;
   } else {
     mem.searched[`${room.id}:${c.visit}`] = true;
     wormSearch(state, p, c.tile, HCRAWL.POOL_WORM * 2); // worm.js: hands in the black water
-    text = rng.chance(0.4) ? `Something under the water: ${give(state, p, c, {}, [lootItem(rng.pick(B.keys), "survivor", spend(rng))])}.` : "Nothing but slime and worms.";
+    text = rng.chance(0.4) ? `Something under the water: ${give(state, p, c, {}, [lootItem(swapGun("hive:bones", rng.pick(B.keys), rng), "survivor", spend(rng))])}.` : "Nothing but slime and worms.";
   }
   addAlert(c, HCRAWL.ALERT.search);
   gainXpAll(state, partyMembers(state, p), "scavenging", USE.searchHour);

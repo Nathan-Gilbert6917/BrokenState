@@ -1,37 +1,33 @@
 // Gun art for the gun builder (ui/gunbuilder.js; docs/weapons-overhaul-plan.md section 9): a big side view of each gun
-// platform in the sprites' style (ui/sprites.js painter / toCanvas: flat colors, a dark outline), 64 × 24 grid pixels
-// drawn 8× (512 × 192), muzzle to the right.
-//   PLAT_ART[art] = { paint(p), anchors: { slot: [x, y] }, def: { slot: look } }
-//     paint: the gun's core (receiver, barrel, fore-end, grip); def: the parts it has of its own (its stock, its
-//     magazine, a built-in bipod), drawn where nothing is fitted in that slot; anchors: where each slot's part sits
-//     (and where the builder's leader line starts).
+// in the sprites' style (ui/sprites.js painter / toCanvas: flat colors, a dark outline), 64 × 24 grid pixels drawn 8×
+// (512 × 192), muzzle to the right.
+//   Every gun has its own drawing from its art spec (ui/gunspecs.js GUN_ART, painted by ui/gunpaint.js), compiled here
+//   into PLAT_ART[weapon key]; the platforms' drawings below stay for a gun with a platform and no spec.
+//   PLAT_ART[art] = { paint(p, fitted), anchors: { slot: [x, y] }, def: { slot: look } }
+//     paint: the gun's core (receiver, barrel, fore-end, grip; fitted: the looks in its slots, e.g. a sight on the
+//     AUG's rail in place of its scope-handle); def: the parts it has of its own (its stock, its magazine, a built-in
+//     bipod), drawn where nothing is fitted in that slot; anchors: where each slot's part sits (and where the
+//     builder's leader line starts).
 //   PART_ART[look](p, [x, y], ctx): a part drawn at its slot's anchor. Optics draw up from the anchor, muzzle devices
 //     right, magazines, grips and bipods down, stocks left.
-// A gun's art: its platform (data-gunmods.js WEAPON_PLATFORM, the economy agent's table; LOCAL_PLATFORM here until it
-// is filled), or its own look (the sniper rifle's long barrel, the sawn-off), else a generic rifle or pistol.
+// A gun's art: its own spec's, else its platform (data-gunmods.js WEAPON_PLATFORM, LOCAL_PLATFORM), else a look-alike
+// by what it is (gunpaint.js fallbackKey, when its name says: a revolver, an over-under...), else a generic rifle or
+// pistol.
 // A part's look: its GEAR entry's look, else MOD_LOOK by key, else one by its slot.
 import { painter, toCanvas, canvasURL } from "./sprites.js";
 import { GEAR } from "../sim/data.js";
 import { WEAPONS } from "../sim/combat.js";
 import * as DGM from "../sim/data-gunmods.js";
+import { C, R, H, V, dots, grip, guard, stockShape, STOCKS, MAGS, norm, ownKey, isGunKey as isGun } from "./gunpaint.js";
+import { GUN_ART, FALLBACK_LIKE } from "./gunspecs.js";
+import { PART_ART as PARTS, MOD_LOOK, SLOT_LOOK, lookOf, looksOf } from "./gunparts.js"; // the part looks' registry (the data-driven ones: ui/gunparts.js)
+import { finishOf } from "../sim/data-finish.js";
+export { MOD_LOOK, lookOf, looksOf };
 
 export const ART_W = 64, ART_H = 24, ART_UP = 8;
 
-const C = {
-  metal: "#9aa3ab", steel: "#7d858c", gun: "#2b2e33", dark: "#1a1c20", hi: "#454a52", hg: "#33373d",
-  wood: "#7a5230", woodD: "#5e3e22", woodL: "#94683e", olive: "#4b5236", oliveL: "#5d6644", tan: "#9c8862", tanD: "#7d6c4a",
-  glass: "#7fb8e6", red: "#e04848", glow: "#9cff6a", sling: "#8a7350", pipe: "#5b5f63", board: "#4a3a2a", blue: "#2f5d8a", bottle: "#3d7a4a",
-};
-const R = (p, x0, y0, x1, y1, c) => p.rect(Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1), c);
-const H = (p, x0, x1, y, c) => R(p, x0, y, x1, y, c);
-// Every other pixel of a row (rail teeth, serrations, vents).
-const dots = (p, x0, x1, y, c, step = 2) => { for (let x = x0; x <= x1; x += step) p.set(x, y, c); };
-// A pistol grip: n rows from (x, y) down, w wide, sloping back a pixel every `every` rows.
-function grip(p, x, y, n, w, c, every = 2) { for (let i = 0; i < n; i++) { const s = x - Math.floor(i / every); H(p, s, s + w - 1, y + i, c); } }
 // A magazine: n rows from (x, y) down, w wide, sloping forward a pixel every `curve` rows (0: straight).
 function mag(p, x, y, n, w, c, curve = 0) { for (let i = 0; i < n; i++) { const s = x + (curve ? Math.floor(i / curve) : 0); H(p, s, s + w - 1, y + i, c); } }
-// A trigger guard under the receiver from x0 to x1 (y: the receiver's bottom row), the trigger inside.
-function guard(p, x0, x1, y, c = C.dark) { H(p, x0, x1, y + 2, c); p.set(x1, y + 1, c); p.set(x0 + 1, y + 1, C.metal); }
 
 // ---------- the cores ----------
 // The AR family (AR-15, AR-10, M249): stock and magazine come from def; o: receiver x0..x1, fore-end end, barrel end.
@@ -275,7 +271,7 @@ export const PLAT_ART = {
 for (const [plat, like] of Object.entries(DGM.PLATFORM_LIKE || {})) if (!PLAT_ART[plat] && PLAT_ART[like]) PLAT_ART[plat] = PLAT_ART[like];
 
 // Which slot's anchor stands in for a slot the art has none for.
-const ALIAS = { under: ["grip", "tactical", "bipod"], grip: ["under", "tactical"], tactical: ["under", "rail", "grip"], bipod: ["under", "grip"], rail: ["tactical", "under", "optic"], mount: ["optic"], optic: ["mount"], sling: ["stock"], stock: ["sling"], mag: ["under"], muzzle: [] };
+const ALIAS = { under: ["grip", "tactical", "bipod"], grip: ["under", "tactical"], tactical: ["under", "rail", "grip"], bipod: ["under", "grip"], rail: ["tactical", "under", "optic"], mount: ["optic"], optic: ["mount"], sling: ["stock"], stock: ["sling"], mag: ["under"], muzzle: [], pgrip: ["mag", "grip", "stock"], receiver: ["mount", "optic", "mag"] }; // (pgrip, receiver: the slots of 2026-10-10, no anchors of their own yet)
 
 // ---------- the parts ----------
 // p: the painter, a: [x, y] the anchor, ctx: { art (PLAT_ART entry), key (art key) }.
@@ -288,17 +284,7 @@ const scope = (p, [x, y], len, bell, col = C.gun) => {
 };
 const can = (p, [x, y], len, col = C.gun) => { R(p, x + 1, y - 1, x + len, y + 2, col); H(p, x + 2, x + len - 1, y - 1, C.hi); };
 const stick = (p, [x, y], n, w = 4, curve = 3, col = C.gun) => { mag(p, x, y, n, w, col, curve); H(p, x + (curve ? Math.floor((n - 1) / curve) : 0), x + (curve ? Math.floor((n - 1) / curve) : 0) + w - 1, y + n - 1, C.dark); };
-// A stock reaching back from the anchor (x, y: where it meets the receiver).
-function stockShape(p, x, y, len, top, bot, col, opts = {}) {
-  for (let i = 0; i < len; i++) {
-    const t = len > 1 ? i / (len - 1) : 0; // 0 at the receiver, 1 at the butt
-    const yt = Math.round(y - 1 + (top - (y - 1)) * t), yb = Math.round(y + 1 + (bot - (y + 1)) * t);
-    H(p, x - i, x - i, yt, col); R(p, x - i, yt, x - i, yb, col);
-    if (opts.grain && i % 3 === 0) p.set(x - i, Math.round((yt + yb) / 2), opts.grain);
-  }
-  if (opts.pad) R(p, x - len, top, x - len, bot, opts.pad);
-}
-export const PART_ART = {
+export const PART_ART = Object.assign(PARTS, {
   // sights (up from the anchor: the top of the receiver or slide)
   irons: (p, [x, y]) => { R(p, x - 1, y - 2, x + 1, y - 1, C.gun); p.clear(x, y - 2); },
   tritium: (p, [x, y]) => { p.set(x - 3, y - 1, C.glow); p.set(x + 3, y - 1, C.glow); p.set(x + 4, y - 1, C.gun); },
@@ -381,27 +367,15 @@ export const PART_ART = {
   sling: (p, [x, y]) => { for (let i = 0; i <= 12; i++) p.set(x - i, y + 2 + Math.round(3 * Math.sin((Math.PI * i) / 12)), C.sling); p.set(x, y + 1, C.metal); },
   revgrip: (p, [x, y]) => { grip(p, x + 1, y - 1, 9, 4, C.dark, 3); },
   grip_wood: (p, [x, y]) => { grip(p, x + 1, y - 1, 9, 4, C.wood, 3); dots(p, x, x + 2, y + 3, C.woodD); },
-};
+  // the gun specs' (ui/gunspecs.js): a revolver's rubber grip and a snub's round butt; the FAL's and the M14's flash hiders
+  grip_rubber: (p, [x, y]) => { grip(p, x + 1, y - 1, 8, 4, C.rubber, 3); for (let i = 1; i < 7; i += 2) p.set(x + 1 - Math.floor(i / 3), y - 1 + i, C.polyL); },
+  grip_snub: (p, [x, y]) => { grip(p, x + 1, y - 1, 6, 4, C.wood, 2); p.clear(x - 1, y + 4); dots(p, x, x + 2, y + 2, C.woodD); },
+  fh_long: (p, [x, y]) => { R(p, x + 1, y - 1, x + 5, y + 1, C.gun); for (const dx of [3, 5]) p.clear(x + dx, y - 1); p.set(x + 1, y + 1, C.dark); },
+  fh_m14: (p, [x, y]) => { R(p, x + 1, y - 1, x + 4, y + 1, C.gun); p.clear(x + 4, y - 1); p.set(x + 3, y, C.dark); p.set(x + 1, y + 2, C.gun); },
+});
 
-// A part's look by its key (GEAR look first; the attachments of today, gunmods.js ATTACH, and of the plan's table).
-export const MOD_LOOK = {
-  reddot: "reddot", holo: "holo", scope4x: "scope4", laser: "laser", foregrip: "vgrip", bipod: "bipod", pistolcan: "can_s",
-  riflecan: "can_l", suppressor: "oilfilter", brake: "brake", comp: "comp", choke: "choke", extmag: "extmag", drum: "drum", tubeext: "tube_ext",
-  tritium: "tritium", rmr: "rmr", acog: "acog", lpvo: "lpvo", tacscope: "scope25", thermalscope: "thermal", scrapscope: "scrapscope",
-  scopemount: "mount", sidemount: "mount", quadrail: "rail", mlok: "rail", can22: "can_s", can9: "can_s", can556: "can_l", can308: "can_l",
-  can12: "can_l", bottlecan: "bottle", solventcan: "can_l", flashhider: "fh", recoilpad: "pad", collapsible: "collapsible", precision: "precision",
-  foldstock: "fold", vertgrip: "vgrip", anglegrip: "agrip", revgrip: "revgrip", weaponlight: "light", peq: "peq", sling: "sling", m203: "m203",
-  huntscope: "scope9", scope9x: "scope9",
-};
-const SLOT_LOOK = { optic: "reddot", mount: "mount", muzzle: "can_s", mag: "stick30", stock: "collapsible", grip: "vgrip", under: "vgrip", tactical: "light", bipod: "bipod", rail: "rail", sling: "sling" };
-export function lookOf(part, slot) {
-  const key = typeof part === "string" ? part : part && part.key;
-  const g = key && GEAR[key];
-  if (g && g.look && PART_ART[g.look]) return g.look;
-  if (MOD_LOOK[key]) return MOD_LOOK[key];
-  if (/^mag/.test(String(key))) { const n = Number((/(\d+)/.exec(key) || [])[1]); if (n) return n >= 50 ? "drum" : n > 30 ? "stick40" : n > 20 ? "stick30" : n > 10 ? "stick20" : "stick10"; } // magazine items (section 15)
-  return SLOT_LOOK[slot] || "reddot";
-}
+// A part's look by its key: ui/gunparts.js lookOf (its GEAR look, MOD_LOOK, else a data-driven one; SLOT_LOOK by slot).
+void SLOT_LOOK;
 
 // ---------- which art a weapon gets ----------
 // Section 5's platform table (the economy agent's data-gunmods.js WEAPON_PLATFORM takes over once it is filled).
@@ -414,18 +388,68 @@ export const LOCAL_PLATFORM = {
 const WEAPON_ART = { sniper: "sniper", sawnoff: "sawnoff", compact9: "compact" };
 // The parts a weapon has of its own where its platform has no slot for them (the hunting rifle's scope is in its stats).
 const WEAPON_DEF = { huntrifle: { optic: "scope9" }, sniper: { optic: "scope25", bipod: "bipod" } };
-export const isGunKey = (k) => { const w = WEAPONS[k]; return !!w && !w.melee && !w.arrows && !w.acid; }; // a gun (not a bow, a blade or acid)
+export const isGunKey = isGun; // a gun (not a bow, a blade or acid)
 const smallGun = (k) => !!(GEAR[k] && GEAR[k].small) || ["9mm", "45acp", "357", "22lr"].includes(WEAPONS[k] && WEAPONS[k].cal) && !((WEAPONS[k].cap || 0) > 20);
 export function platformOf(k) {
   return (DGM.WEAPON_PLATFORM && DGM.WEAPON_PLATFORM[k]) || LOCAL_PLATFORM[k] || (smallGun(k) ? "generic_pistol" : "generic_rifle");
 }
 export function artKeyOf(k) {
+  if (WEAPONS[k] && ownKey(k)) return ensureArt(k);
   const own = (WEAPONS[k] && WEAPONS[k].look) || (GEAR[k] && GEAR[k].look);
   if (own && PLAT_ART[own]) return own;
   if (WEAPON_ART[k]) return WEAPON_ART[k];
   const pl = platformOf(k);
-  return PLAT_ART[pl] ? pl : smallGun(k) ? "generic_pistol" : "generic_rifle";
+  if (PLAT_ART[pl] && !/^generic_/.test(pl)) return pl;
+  const like = WEAPONS[k] && likeByWords(k); // no platform: a look-alike when its name or description says what it is
+  if (like) return ensureArt(like);
+  return smallGun(k) ? "generic_pistol" : "generic_rifle";
 }
+function likeByWords(k) {
+  const g = GEAR[k] || {}, text = `${WEAPONS[k].name || ""} ${g.name || ""} ${g.desc || ""}`.toLowerCase();
+  const hit = FALLBACK_LIKE.words.find(([re]) => re.test(text));
+  return hit && GUN_ART[hit[1]] ? hit[1] : null;
+}
+
+// ---------- the gun specs' drawings (ui/gunspecs.js, ui/gunpaint.js) ----------
+// compileArt(spec key): a PLAT_ART entry from a spec: its family's paint (then the spec's extra), its anchors (the
+// spec's over them) and its own parts as looks (a stock or magazine given as { t, ... } becomes a PART_ART look of its
+// own, "own_<key>_stock" / "own_<key>_mag", so a fitted stock or magazine replaces it like any other).
+export function compileArt(key, finish = null) {
+  const s = norm(key, finish);
+  const tag = s.finish ? `${key}~${s.finish}` : key;
+  const def = {};
+  if (s.stock) {
+    if (typeof s.stock === "string") def.stock = s.stock;
+    else { const st = s.stock, S = STOCKS[st.t] || STOCKS.ar, c = st.c || s.cn.furn; def.stock = `own_${tag}_stock`; PART_ART[def.stock] = (p, a) => S.draw(p, a, c); }
+  }
+  if (s.mag) {
+    if (typeof s.mag === "string") def.mag = s.mag;
+    else { const mg = s.mag, M = MAGS[mg.t] || MAGS.stick; def.mag = `own_${tag}_mag`; PART_ART[def.mag] = (p, a) => M.draw(p, a, mg); }
+  }
+  if (s.muzzle) def.muzzle = s.muzzle;
+  if (s.bipod) def.bipod = s.bipod;
+  if (s.grips) def.grip = s.grips;
+  const anchors = { ...s.fam.anchors(s), ...(s.anchors || {}) };
+  const paint = (p, fitted = {}) => { s.fam.paint(p, s, fitted); if (s.extra) s.extra(p, s, fitted, { R, H, V, dots, grip, guard, stockShape, C }); };
+  return { paint, anchors, def, own: s.own || {}, spec: key, finish: s.finish };
+}
+// A gun's compiled drawing, made once and kept in PLAT_ART under the gun's key (a turret's under its own key too).
+function ensureArt(k) {
+  const o = ownKey(k) || k;
+  if (!PLAT_ART[k] || PLAT_ART[k].spec !== o) PLAT_ART[k] = compileArt(o);
+  return k;
+}
+// The same in a finish (sim/data-finish.js): under "key~finish" (the gun's first finish is its own drawing).
+export function finishArt(k, finish) {
+  const base = artKeyOf(k);
+  if (!finish || !WEAPONS[k] || !ownKey(k)) return base;
+  const o = ownKey(k), probe = norm(o, finish);
+  if (!probe.finish) return base;
+  const ak = `${k}~${probe.finish}`;
+  if (!PLAT_ART[ak]) PLAT_ART[ak] = compileArt(o, finish);
+  return ak;
+}
+for (const k of Object.keys(WEAPONS)) if (isGun(k) && ownKey(k)) ensureArt(k);
 export const artOf = (k) => PLAT_ART[artKeyOf(k)];
 
 // The anchor of a slot on a weapon's art ([x, y] grid pixels). fitted: the slots with a part in them (a mount lifts the
@@ -442,9 +466,10 @@ function artAnchor(art, slot, fitted = {}) {
 // Paints a weapon (WEAPONS key) with the parts in looks ({ slot: look }); slots: the slots it takes (its own parts
 // in WEAPON_DEF are drawn only where it has no such slot). Parts are drawn back to front: stock, magazine, under the
 // barrel, muzzle, mounts, then sights.
-const ORDER = ["sling", "stock", "grip", "mag", "under", "bipod", "rail", "tactical", "muzzle", "mount", "optic"];
-export function paintGun(k, looks = {}, slots = null) {
-  return paintArt(artKeyOf(k), looks, WEAPON_DEF[k] || {}, slots);
+const ORDER = ["sling", "stock", "grip", "pgrip", "mag", "under", "bipod", "rail", "receiver", "tactical", "muzzle", "mount", "optic"];
+export function paintGun(k, looks = {}, slots = null, finish = null) {
+  const ak = finish ? finishArt(k, finish) : artKeyOf(k);
+  return paintArt(ak, looks, WEAPON_DEF[k] || (PLAT_ART[ak] && PLAT_ART[ak].own) || {}, slots);
 }
 // The same by art key (PLAT_ART), with a weapon's own parts (own) where it has no such slot.
 export function paintArt(artKey, looks = {}, own = {}, slots = null) {
@@ -457,28 +482,21 @@ export function paintArt(artKey, looks = {}, own = {}, slots = null) {
   for (const [s, l] of Object.entries(own)) if (!slots || !slots.includes(s)) all[s] = l;
   for (const [s, l] of Object.entries(looks)) if (l) all[s] = l;
   for (const s of ["sling", "stock"]) if (all[s]) draw(s, all[s]);
-  art.paint(p);
+  art.paint(p, looks);
   for (const s of ORDER) if (s !== "sling" && s !== "stock" && all[s]) draw(s, all[s]);
   for (const [s, l] of Object.entries(all)) if (!ORDER.includes(s)) draw(s, l);
   return p;
 }
 
-// The parts on an item as looks ({ slot: look }): any slot of item.mods, nested ones included.
-export function looksOf(item) {
-  const out = {};
-  if (item && item.mods) for (const [slot, m] of Object.entries(item.mods)) if (m && m.key) out[slot] = lookOf(m, slot);
-  return out;
-}
-
 // The canvas of a weapon item as fitted (cached by art and looks), and its data URL for an <img>.
 const cache = new Map();
 export function gunCanvas(item, slots = null) {
-  const looks = looksOf(item);
-  const key = `${item.key}|${slots ? slots.join(",") : "-"}|${Object.entries(looks).sort().map(([s, l]) => `${s}:${l}`).join(",")}`;
+  const looks = looksOf(item), finish = finishOf(item);
+  const key = `${item.key}|${finish || ""}|${slots ? slots.join(",") : "-"}|${Object.entries(looks).sort().map(([s, l]) => `${s}:${l}`).join(",")}`;
   let cv = cache.get(key);
   if (cv === undefined) {
     if (cache.size > 200) cache.clear();
-    cv = toCanvas(paintGun(item.key, looks, slots), ART_UP);
+    cv = toCanvas(paintGun(item.key, looks, slots, finish), ART_UP);
     cache.set(key, cv);
   }
   return cv;
@@ -495,4 +513,34 @@ export function gunURL(item, slots = null) {
     urls.set(cv, u);
   }
   return u;
+}
+
+// ---------- thumbnails (the item tiles: inventory, armory, loot, trade, the start-gear picker) ----------
+// The gun as fitted and in its finish, cropped to what is drawn, 2 canvas pixels a grid pixel (CSS scales it with the
+// UI: ui/inventory.js gunIcon). Cached by the same key as the sprites (gunparts.js weaponLook).
+const thumbs = new Map();
+export function gunThumb(item) {
+  if (!item || !isGun(item.key)) return null;
+  const looks = looksOf(item), finish = finishOf(item);
+  const key = `${item.key}|${finish || ""}|${Object.entries(looks).sort().map(([s, l]) => `${s}:${l}`).join(",")}`;
+  let t = thumbs.get(key);
+  if (t === undefined) {
+    if (thumbs.size > 300) thumbs.clear();
+    const p = paintGun(item.key, looks, null, finish);
+    let x0 = ART_W, y0 = ART_H, x1 = -1, y1 = -1;
+    for (let y = 0; y < ART_H; y++) for (let x = 0; x < ART_W; x++) if (p.get(x, y)) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) { thumbs.set(key, null); return null; }
+    const w = x1 - x0 + 3, h = y1 - y0 + 3, q = painter(w, h); // a pixel of room for the outline all round
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const c = p.get(x, y); if (c) q.set(x - x0 + 1, y - y0 + 1, c); }
+    const cv = toCanvas(q, 2);
+    t = { w, h, url: cv && typeof cv.toDataURL === "function" ? cv.toDataURL("image/png") : "" };
+    thumbs.set(key, t);
+  }
+  return t;
+}
+// The thumbnail as an <img> for HTML (h: its height in rem, so it scales with the UI scale); "" when not a gun.
+export function gunIconHtml(item, h = 1.1, cls = "igun") {
+  const t = gunThumb(item);
+  if (!t || !t.url) return "";
+  return `<img class="${cls}" src="${t.url}" alt="" style="height:${h}rem;width:${Math.round((t.w / t.h) * h * 100) / 100}rem">`;
 }

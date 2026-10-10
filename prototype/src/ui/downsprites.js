@@ -18,6 +18,8 @@ import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
 import { BLADE_LOOK } from "../sim/data-blades.js"; // knives and swords: their looks
 import { zombieLookOf, enemyLookOf, armoredLookOf, zombieVariant, zombieLook, CAMO } from "./sprites.js";
+import { isGunKey } from "./gunpaint.js"; // every gun's own small drawing (ui/gunspecs.js)
+import { held, weaponLook, unitGun } from "./gunparts.js"; // ... in its finish, with its parts (a weapon look: gunparts.js weaponLook)
 
 export const DW = 26, DH = 14; // the grid
 const UP = 4;
@@ -150,21 +152,19 @@ function armour(p, d, t0, t1) {
   if (a.kind === "vest") p.rect(10, t0 + 1, 10, t1 - 1, shade(base, -0.2));
 }
 
-// The weapon dropped beside the hand (a dead person's, until the body is searched).
+// The weapon dropped beside the hand (a dead person's, until the body is searched). A gun: its art spec's small
+// drawing lying under the hand (ui/gunpaint.js paintMini).
 function droppedWeapon(p, key) {
   if (!key) return;
+  if (isGunKey(String(key).split("|")[0]) && held(p, key, "dropped")) return;
   const metal = "#9aa3ab", gun = "#2b2e33", wood = "#7a5230";
   const y = 13;
   switch (key) {
-    case "pistol": case "revolver": p.rect(15, y, 17, y, gun); p.set(15, y - 1, gun); break;
     case "knife": case "baton": p.rect(15, y, 18, y, key === "baton" ? "#2b2e33" : metal); p.set(14, y, wood); break;
     case "machete": case "sawmachete": case "springmachete": p.rect(15, y, 20, y, metal); p.set(14, y, "#3a2a1c"); break;
     case "bat": case "spikedbat": case "nailbat": p.rect(14, y, 20, y, "#a07a48"); p.set(21, y, "#8a6638"); break;
     case "prybar": case "crowbar": case "pipespear": case "spear": p.rect(14, y, 21, y, "#6d7378"); break;
     case "fireaxe": case "sledge": p.rect(14, y, 20, y, wood); p.rect(21, y - 1, 21, y, key === "sledge" ? "#5b5f63" : "#a83a2a"); break;
-    case "shotgun": case "pipegun": p.rect(12, y, 21, y, gun); p.rect(12, y - 1, 14, y - 1, wood); break;
-    case "huntrifle": case "leverrifle": p.rect(12, y, 22, y, wood); p.rect(18, y, 22, y, gun); break;
-    case "ar": case "carbine": p.rect(12, y, 21, y, gun); p.set(16, y - 1, gun); p.set(13, y - 1, gun); break;
     case "crossbow": case "compbow": case "xbow": case "pulleybow": p.rect(13, y, 20, y, wood); p.rect(20, y - 2, 20, y, metal); break;
     default: { const L = BLADE_LOOK[key]; if (L) { const n = Math.max(2, Math.min(8, L.len)); p.set(14, y, L.handle); p.rect(15, y, 14 + n, y, L.blade); if (L.guard) p.set(15, y - 1, L.guard); } break; } // knives and swords (sim/data-blades.js)
   }
@@ -496,11 +496,11 @@ export function unitDownCanvas(state, b, t, salt = 0) {
   if (t.side === "player" || t.app) {
     const s = t.sid != null ? state.survivors.find((x) => x.id === t.sid) : null;
     const app = t.app || (s ? ensureAppearance(s, state.seed) : ensureAppearance({ id: t.id }, salt));
-    return downedSurvivorCanvas(app, t.weapon && t.weapon !== "fists" ? t.weapon : null, s ? spriteArmorKey(s) : t.armorKey || null, pose, opts);
+    return downedSurvivorCanvas(app, t.weapon && t.weapon !== "fists" ? weaponLook(unitGun(t)) : null, s ? spriteArmorKey(s) : t.armorKey || null, pose, opts);
   }
   const seed = (t.id * 131 + salt) | 0;
   const f = b && b.setup && b.setup.enemy && b.setup.enemy.factionId != null ? (state.factions || []).find((x) => x.id === b.setup.enemy.factionId) : null;
-  return downedEnemyCanvas(t.kit || "raiders", f ? f.color : null, t.weapon, t.armorKey, seed, pose, opts);
+  return downedEnemyCanvas(t.kit || "raiders", f ? f.color : null, t.weapon && t.weapon !== "fists" ? weaponLook(unitGun(t)) : t.weapon, t.armorKey, seed, pose, opts);
 }
 
 // Size of a fallen unit's picture against a tile (its length along the body): bosses and brutes are bigger.
