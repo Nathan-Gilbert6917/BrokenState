@@ -400,9 +400,8 @@ function personRow(state, s) {
   const top = Object.entries(s.skills).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => `${SKILL_NAMES[k]} ${skill(s, k)}`).join(", ");
   const hover = `${known ? `Health ${n0(s.health)} · mood ${n0(s.mood)}` : s.location.kind === "errand" ? `Away on a personal errand: back around day ${s.location.until}` : "No contact: health and mood unknown until the team reports in"} · ${top}. Click for skills, traits and gear.`;
   return `<div class="card surv prow" data-action="survivor" data-id="${s.id}"${tip(hover)}>
-    <span class="prow-name"><b>${s.leader ? "★ " : ""}${esc(s.name)}</b>${stIcons(state, s)}</span>
+    <span class="prow-stack"><span class="prow-name"><b>${s.leader ? "★ " : ""}${esc(s.name)}</b>${stIcons(state, s)}</span>${activityChip(state, s, { short: true })}</span>
     ${known ? `<span class="prow-hp${s.health < 40 ? " danger" : ""}">${meter(s.health / 100, s.health < 40 ? "var(--danger)" : "var(--good)")}<span class="pk-num">${n0(s.health)}</span></span>` : `<span class="small muted prow-hp">${s.location.kind === "errand" ? "errand" : "no contact"}</span>`}
-    ${activityChip(state, s, { short: true })}
     ${s.location.kind === "base" ? workRoleSelect(state, s) : ""}
   </div>`;
 }

@@ -11,7 +11,7 @@ const first = (s) => s.name.split(" ")[0];
 // The chip: icon and a few words, coloured by kind (work, off, sleep, guard, hurt, free, idle, stalled, away).
 export function activityChip(state, s, { short = false } = {}) {
   const a = describeActivity(state, s);
-  return `<span class="act act-${a.kind}${short ? " act-short" : ""}"${tip(a.why ? `${a.text}. ${a.why}` : a.text)}><i class="act-ico" aria-hidden="true">${a.icon}</i><span class="act-txt">${esc(a.text)}</span></span>`;
+  return `<span class="act act-${a.kind}${short ? " act-short" : ""}"${tip(a.why ? `${a.text}. ${a.why}` : a.text)}><i class="act-ico" aria-hidden="true">${a.icon}</i><span class="act-txt">${esc(short ? a.text.replace(/ \([^)]*\)$/, "") : a.text)}</span></span>`;
 }
 
 // A thin bar with its text: frac 0..1.
@@ -37,7 +37,7 @@ function wnRow(state, row) {
     ${row.why ? `<div class="wn-why small warn">⚠️ ${esc(row.why)}</div>` : ""}
     ${row.progress ? wnBar(row.progress) : ""}
     ${row.goal ? wnBar(row.goal, "wn-goal") : ""}
-    ${row.job === "rest" || row.job === "guard" || row.job === "medic" || row.job === "teach" || row.job === "read" || row.job === "trainee" ? "" : wnLast(row)}
+    ${row.why && !row.last.length || ["rest", "guard", "medic", "teach", "read", "trainee"].includes(row.job) ? "" : wnLast(row)}
   </div>`;
 }
 

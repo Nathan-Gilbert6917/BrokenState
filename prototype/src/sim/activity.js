@@ -177,14 +177,15 @@ function awayActivity(state, s) {
     const p = state.parties.find((x) => x.id === l.partyId);
     if (!p) return act("away", "Away on a team");
     if (p.kind === "convoy") return act("away", "Away: on the road with a convoy");
-    const team = `${(MISSIONS[p.teamMission || p.mission] || {}).name || "Team"} team`;
+    const m = p.teamMission || p.mission;
+    const team = !MISSIONS[m] || m === "move" || m === "formed" ? "team" : `${MISSIONS[m].name.toLowerCase()} team`;
     let what = "on the way";
     if (p.phase === "waiting") what = "waiting for orders";
     else if (p.phase === "back") what = "heading home";
     else if (p.phase === "task") { const o = orderStatus(state, p); what = `${lower(o.label)}${o.left != null ? `, ${o.left}h left` : ""}`; }
     else if (p.phase === "engaged" || p.phase === "siege") what = "in a fight";
     else if (p.dest != null) what = `going to ${tileLabel(state, p.dest)}`;
-    return act("away", `Away: ${team}, ${what}`, `Out with the team at ${tileLabel(state, partyTile(p))}.`);
+    return act("away", `${team === "team" ? "Away with a team" : `Away: ${team}`}, ${what}`, `Out with the team at ${tileLabel(state, partyTile(p))}.`);
   }
   if (l.kind === "route") return act("away", "Away: escorting a trade route");
   if (l.kind === "errand") return act("away", `Away on an errand (back ~day ${l.until})`);
@@ -270,7 +271,8 @@ function jobProgress(state, base, job, list, h) {
     const expect = tile ? crew.reduce((a, c, k) => a + WOOD.rate * tile.v * seasonWood(state) * c.mult * Math.min(1, workFactor(c.s)) * woodCrowd(k) * WOOD.base.hours, 0) : 0;
     out.progress = daily(dayShare(woodTime, h), expect, "wood", ` · ${crew.filter((c) => c.tool).length} of ${crew.length} with a cutting tool`);
     const w = woodNeed(state, base);
-    if (w.need > 0) out.goal = { frac: Math.min(1, w.have / w.need), text: `Winter store: ${amountText("wood", w.have)} of ${amountText("wood", w.need)} needed for the cold ahead${w.short && expect > 0 ? ` · ~${Math.ceil((w.need - w.have) / expect)} more days at this pace` : ""}` };
+    const kg = (v) => n0(v * SUPPLIES.wood.weight);
+    if (w.need > 0) out.goal = { frac: Math.min(1, w.have / w.need), text: `Winter store: ${n0(w.have)} of ${n0(w.need)} firewood (${kg(w.have)} of ${kg(w.need)} kg)${w.short ? (expect > 0 ? ` · ~${Math.ceil((w.need - w.have) / expect)} more days at this pace` : "") : " · enough for the cold ahead"}` };
   } else if (job === "forage" && !forageWorkWhy(state, base)) {
     out.progress = daily(dayShare(inList(FORAGE_HOURS), h), able(list).reduce((a, s) => a + baseForageDay(state, base, s), 0), "food");
   } else if (job === "hunt" && !huntWorkWhy(state, base)) {

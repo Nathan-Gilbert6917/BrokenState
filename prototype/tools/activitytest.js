@@ -127,7 +127,7 @@ section("Health, the walls, away on a team, work priorities");
   b.alert = false;
   const p = launchExpedition(st, { memberIds: [p3.id], dest: st.grid.neighbors(b.tile)[0], mission: "move", stance: "normal", supplies: { food: 4, water: 4 } });
   const ax = describeActivity(st, p3);
-  check(p && ax.kind === "away" && /^Away: .*team/.test(ax.text), `on a team: "${ax.text}"`);
+  check(p && ax.kind === "away" && /^Away(:| with) .*team/.test(ax.text), `on a team: "${ax.text}"`);
   // Work priorities: a Generalist; the hour's plan decides.
   workState(st);
   const gen = st.work.roles.find((r) => r.name === "Generalist");
@@ -151,7 +151,7 @@ section("The People tab and the base Overview");
   setPeopleCompact(true);
   const compact = renderLeft(state, freshUi());
   setPeopleCompact(false);
-  check(/prow/.test(compact) && /act act-[a-z]+ act-short/.test(compact), "the compact People tab carries the short chip");
+  check(/prow-stack/.test(compact) && /act act-[a-z]+ act-short/.test(compact), "the compact People tab carries the short chip");
   const chip = activityChip(state, cutter, { short: true });
   check(/act-short/.test(chip) && /data-tip=/.test(chip), "the compact chip has its tooltip");
   const ov = renderModal(state, freshUi({ baseView: { id: base.id, tab: "overview" } }));
