@@ -313,6 +313,15 @@ export function valuesHTML(s, info) {
     <tr class="tl-you"><td><span class="dot" style="background:${PLAYER_COLOR}"></span>You</td><td>${info.fallen ? "fallen" : info.pop}</td><td>${info.fallen ? 0 : info.land}</td><td>${info.fallen ? 0 : info.bases}</td></tr>${rows}</table>`;
 }
 
+// A lost game with no base left at the end (chronicle.js lastBase): where the last one stood, marked on the map as
+// your empty base. "" otherwise.
+export function lastBaseHTML(info) {
+  const lb = info && info.lastBase;
+  if (!lb) return "";
+  const names = lb.names.length === 1 ? lb.names[0] : `${lb.names.slice(0, -1).join(", ")} and ${lb.names[lb.names.length - 1]}`;
+  return `<span class="muted">No base left:</span> ${esc(names)}, your last base${lb.names.length === 1 ? "" : "s"}, lost on day ${lb.day}, is marked where it stood.`;
+}
+
 // The last few captions up to the time shown, newest first; older ones fade.
 export function captionsHTML(s) {
   const ev = s.reader.events, out = [];
@@ -343,7 +352,7 @@ function updateOverlay(s, fs) {
     let hot = 0;
     for (let i = 0; i < inf.length; i++) if (inf[i] >= HOT) hot++;
     $("tl-people").innerHTML = info.fallen ? `<span class="danger">fallen</span>` : `${info.pop} alive · ${info.bases} base${info.bases === 1 ? "" : "s"}`;
-    $("tl-stock").innerHTML = info.fallen ? "" : `<span class="muted">Hub:</span> food ${info.stock.food} · water ${info.stock.water} · ammo ${info.stock.ammo} · meds ${info.stock.meds}`;
+    $("tl-stock").innerHTML = info.fallen ? lastBaseHTML(info) : `<span class="muted">Hub:</span> food ${info.stock.food} · water ${info.stock.water} · ammo ${info.stock.ammo} · meds ${info.stock.meds}`;
     $("tl-vals").innerHTML = valuesHTML(s, info);
     $("tl-world").textContent = `Hordes ${info.hordes} (${info.zombies} dead) · hives ${info.hives}${info.sites ? ` (+${info.sites} being built)` : ""} · hotzone tiles ${hot}`;
   }

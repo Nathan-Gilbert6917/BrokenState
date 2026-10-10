@@ -44,7 +44,7 @@ import { brokenAt, jobFor, fixtures, isWaterFixture, repairPlan } from "./breakd
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
-import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows } from "./buildings.js";
+import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
@@ -304,6 +304,7 @@ export function autopilotHour(state) {
     guardArrivals(state);
     idleTeams(state);
     trackHauls(state); // the water and food the haul teams bring home (the daily Water / Food line)
+    for (const b of state.bases) if (b.owner == null || b.owner === "player") b.filterFill = filterFill(state, b); // crafting.js filtersInUse
     for (const b of [...state.bases]) governBase(state, b);
     if (hourOfDay(state) === PLAN_HOUR) autopilotDaily(state);
     else if (hourOfDay(state) === EMERGENCY.hour) emergencyTrips(state); // a second look in the afternoon: thirst does not wait for the morning
@@ -991,9 +992,10 @@ function nextHousing(state, base) {
   return bunk ? { type: "barracks", upgrade: bunk.id, beds: BEDS.barracks - BEDS.bunkhouse } : null;
 }
 // A wish's check and cost: a new building (canBuild) or a bunkhouse expanded (canExpandBunkhouse).
-const wishCheck = (state, base, w) => (w.upgrade != null ? canExpandBunkhouse(state, base, w.upgrade) : canBuild(state, base, w.type));
-const wishCost = (w) => (w.upgrade != null ? BARRACKS_UP.cost : BUILDINGS[w.type].cost);
-const wishQueue = (state, base, w) => (w.upgrade != null ? queueBunkhouseExpand(state, base, w.upgrade) : queueBuild(state, base, w.type));
+// A water barrel upgraded (w.barrel: its id; buildings.js WATER_BARREL tiers): the summer store's room (waterPlan).
+const wishCheck = (state, base, w) => (w.barrel != null ? canUpgradeBarrel(state, base, w.barrel) : w.upgrade != null ? canExpandBunkhouse(state, base, w.upgrade) : canBuild(state, base, w.type));
+const wishCost = (w) => (w.barrel != null ? w.cost : w.upgrade != null ? BARRACKS_UP.cost : BUILDINGS[w.type].cost);
+const wishQueue = (state, base, w) => (w.barrel != null ? queueBarrelUpgrade(state, base, w.barrel) : w.upgrade != null ? queueBunkhouseExpand(state, base, w.upgrade) : queueBuild(state, base, w.type));
 // The housing wish (nextHousing) for buildWishes, and a bunkhouse after a barracks while a plot is free and the
 // barracks waits on scrap or parts (planBuilds takes the first it can build). Empty when nothing more fits.
 function housingWishes(state, base, why, save) {
@@ -1052,6 +1054,22 @@ export function droughtWater(state, base, n) {
 // water (`hold`: repairing a broken well or pump comes before any other repair, building or crafting; and the
 // filters still wanted). planBuilds, planCrafts, the reserves, the newcomer rule and the water runs read it.
 const AP_FILTER_SHARE = 0.75, SUMMER_HEADROOM = 2, SUMMER_LEAD = 21, FILTER_CAP = 18;
+// The summer store (summer-water, 2026-10-10). The wells, rain and filters only fill a base up to its water room
+// (economy.js baseDaily, crafting.js filtersInUse), so a crowd at a hub with the bare 80 of room started each summer
+// day with at most ~80 and a hot day's drinking (40 people at 1.6, the crops half again) took nearly all of it: a
+// day without water whenever a heat wave came on the wrong day (farmtest: 1 dry day on 2-3 of 8 seeds, the stock
+// hovering 30-60 all summer). From SUMMER_STORE.lead days before summer (the last three weeks of the 4-week
+// spring, as the filters) and through it, the governor wants `days` average summer days of drinking and the crops'
+// dry-day watering in store, for everyone it plans water for (residents, teams out, the hub's headroom:
+// summerWater's n), and room for it at `fill` of the capacity (buildWishes: a cistern, else water barrels, else
+// barrels upgraded; saved up for, and ahead of a full build queue). Under `runBelow` of that store, water is wanted
+// (needs: trades and trips go for it at `want`), a water run goes out (waterRunWanted) and an outpost is topped up
+// (outpostThirsty). Shelters and camps (no plots, a step up first) are left out.
+// Over 32 seeds of farmtest's 35-person hub (its summer-plan setup, 40 days from 18 days before summer; dev at
+// 3d71cdf vs this): 6 dry days on 6 seeds before, none after; the lowest summer stock median 53 → 136; dead or
+// walked away 207 → 227 (collapses 8 → 7). Over 8 Balanced and 8 Cautious 365-day games: thirst days 3 → 0,
+// harvests and builds level.
+export const SUMMER_STORE = { lead: 21, days: 3, fill: 0.9, runBelow: 0.6, want: 1.6 };
 let waterMemo = { state: null, hour: -1, map: new Map() };
 export function waterPlan(state, base) {
   if (waterMemo.state !== state || waterMemo.hour !== state.hour) waterMemo = { state, hour: state.hour, map: new Map() };
@@ -1067,7 +1085,14 @@ export function waterPlan(state, base) {
   // The summer's filters only from three weeks before it (a filter clogs in about 20 days).
   const forSummer = near ? sw.fix.filter((f) => f.type === "waterfilter").reduce((a, f) => a + f.count, 0) + Math.floor(p.filters / 3) : 0;
   const filters = Math.max(0, Math.min(FILTER_CAP, Math.max(forSummer, Math.ceil(dryGap / 3))));
-  const reserve = Math.min(Math.floor(sw.cap * 0.9), Math.max(sw.reserve, n * (near ? 10 : 7)));
+  // The summer store and the room it takes (SUMMER_STORE): the cisterns and barrels queued count as room.
+  const lead = !isShelter(base) && (s.key === "summer" || (s.key === "spring" && s.daysLeft < SUMMER_STORE.lead));
+  const store = lead ? Math.ceil((sw.n * sw.rate * WATER.drink + sw.crops) * SUMMER_STORE.days) : 0;
+  const tierCap = (t) => (WATER_BARREL.tiers[t] ? WATER_BARREL.tiers[t].cap : 0);
+  const queuedRoom = base.construction.reduce((a, c) => a + (c.type === "cistern" && !c.target ? WATER.cistern : c.type === "water_barrel" ? (c.target ? tierCap(c.tier) - tierCap(c.tier - 1) : tierCap(1)) : 0), 0);
+  const roomShort = Math.max(0, Math.ceil(store / SUMMER_STORE.fill) - sw.cap - queuedRoom);
+  const reserve = Math.min(Math.floor(sw.cap * 0.9), Math.max(sw.reserve, n * (near ? 10 : 7), store));
+  const low = lead && waterIn(base.stock) < Math.min(store, reserve) * SUMMER_STORE.runBelow;
   // Broken water fixtures: a proper repair each (3 scrap, 1 part); filters still to make: 4 scrap each, two at a time.
   const brokenWater = brokenAt(base).filter((fx) => (fx.type === "well" || fx.type === "pump") && !jobFor(base, fx)).length;
   const have = [...base.armory, ...atBase(state, base.id).map((x) => x.gear.tool)].filter((it) => it && it.key === "waterfilter").length;
@@ -1076,9 +1101,16 @@ export function waterPlan(state, base) {
   const urgent = (near && (sw.net < 0 || sw.reserve > sw.cap)) || dryGap > 0;
   // The water boiler (worm.js) burns firewood, not scrap: its wood is planned with the heating (woodcutting.js woodNeed).
   const hold = { scrap: brokenWater * 3 + (crafter && urgent ? Math.min(2, Math.max(0, filters - have)) * CRAFTS.waterfilter.in.scrap : 0), parts: brokenWater };
-  const out = { sw, near, filters, reserve, hold, brokenWater, short: sw.net < 0 || sw.reserve > sw.cap };
+  const out = { sw, near, filters, reserve, hold, brokenWater, short: sw.net < 0 || sw.reserve > sw.cap, lead, store, roomShort, low };
   waterMemo.map.set(base.id, out);
   return out;
+}
+// How full the water filters keep a base's tanks under the governor (crafting.js filtersInUse, base.filterFill):
+// SUMMER_STORE.days of today's drinking and watering, or the summer store when that is more, never past the room.
+// The room built for the summer store is not filled to the brim by filters that clog as they run (the re-pack
+// crafts it cost: worktest's craft check); the wells, rain and hauls still fill it.
+function filterFill(state, base) {
+  return Math.max(waterPlan(state, base).store, Math.ceil(waterNeed(state, base).total * SUMMER_STORE.days));
 }
 // Water is tight at a base: it runs out within 8 days at today's rate. The governor rations then: no water into
 // the still or the preserving kitchen (visitors.js: no guests sheltered on a low stock either).
@@ -1087,10 +1119,10 @@ function waterTight(state, base) {
   return wo.net < 0 && wo.daysLeft < 8;
 }
 // A water run is worth it: water is tight, or summer is near (or here), falls short and the stock is under half
-// the summer reserve.
+// the summer reserve, or the stock is under the summer store's floor (SUMMER_STORE.runBelow: waterPlan low).
 function waterRunWanted(state, base) {
   const wp = waterPlan(state, base);
-  return waterTight(state, base) || (wp.near && wp.short && waterIn(base.stock) < wp.reserve * 0.5);
+  return waterTight(state, base) || (wp.near && wp.short && waterIn(base.stock) < wp.reserve * 0.5) || wp.low;
 }
 // Scrap (or parts) held back for water at a base: other builds, repairs and crafts leave it alone.
 const WATER_BUILDS = ["well", "rain_catcher", "cistern", "boiler", "water_barrel"]; // the boiler: safe water (worm.js)
@@ -1694,7 +1726,7 @@ function needs(state, h = hub(state)) { // h: a base leader's own base (stewardS
       const d = wo.net >= 0 ? waterIn(st) / n + 10 : wo.daysLeft;
       const steadyNet = wo.net - wo.prod.filters;
       const dSteady = steadyNet >= 0 ? Infinity : waterIn(st) / -steadyNet;
-      return Math.max(pick(Math.min(d, dSteady), [[4, 2.5], [8, 1.6], [15, 0.8], [Infinity, 0.2]]), baseWater(state, h).safe ? 0 : 1.4, wp.near && wp.short && waterIn(st) < wp.reserve ? 1.4 : 0);
+      return Math.max(pick(Math.min(d, dSteady), [[4, 2.5], [8, 1.6], [15, 0.8], [Infinity, 0.2]]), baseWater(state, h).safe ? 0 : 1.4, wp.near && wp.short && waterIn(st) < wp.reserve ? 1.4 : 0, wp.low ? SUMMER_STORE.want : 0);
     })(),
     // Meds: by stock per head, and wanted hard while the sick here need more doses than there are (health.js courses).
     meds: Math.max(pick(st.meds || 0, [[2, 2.5], [n * 0.6, 1.8], [n * 1.5, 1], [Infinity, 0.3]]), medsToTreatAll(state, h) > (st.meds || 0) ? 2.2 : 0),
@@ -2293,10 +2325,17 @@ const BUILD_AREA = {
   ammo_bench: "production", machine_shop: "production", still: "production", generator: "production",
   craftbench: "production", workbench: "production", toolbench: "production",
 };
+// A full queue still takes the summer store's room (buildWishes `room`: the last weeks of spring and summer) as one
+// more job, put at its front (the builders work on the first job: buildings.js constructionHour); a hub whose beds
+// were behind kept its queue full of bunkhouses and a barracks for two weeks and met the first heat wave with 80
+// of room (farmtest seeds 54 and 60).
 function planBuilds(state, base, areas = ALL_AREAS) {
-  if (base.construction.length >= (base.type === "hub" ? 2 : 1)) return;
+  const slots = base.type === "hub" ? 2 : 1;
+  if (base.construction.length >= slots + 1) return;
+  const full = base.construction.length >= slots;
   const g = gov(state);
   for (const w of buildWishes(state, base)) {
+    if (full && !w.room) continue;
     const def = BUILDINGS[w.type];
     if (!def || !areas[BUILD_AREA[w.type] || "building"]) continue;
     const chk = wishCheck(state, base, w); // a new building, or a bunkhouse expanded into a barracks
@@ -2318,7 +2357,9 @@ function planBuilds(state, base, areas = ALL_AREAS) {
     if (rs && ["meds", "parts", "fuel"].some((k) => cost[k] && (base.stock[k] || 0) - cost[k] < rs[k].target)) continue;
     if (!w.save && cost.meds && (base.stock.meds || 0) - cost.meds < 2) continue;
     if (!w.save && cost.parts && (base.stock.parts || 0) - cost.parts < 1) continue;
+    const n0 = base.construction.length;
     const msg = wishQueue(state, base, w);
+    if (w.room && full && base.construction.length > n0) base.construction.unshift(base.construction.pop()); // ahead of the queue
     g.stats.builds++;
     say(state, `${msg.replace(/\.$/, "")}: ${w.why}.`);
     return;
@@ -2406,6 +2447,26 @@ function buildWishes(state, base) {
     if (f.type === "waterfilter" || !BUILDINGS[f.type] || out.some((w) => w.type === f.type)) continue;
     if (BUILDINGS[f.type].max <= countAll(base, f.type) + queued(f.type)) continue;
     add(f.type, `water for the summer (${wp.sw.short > 0 ? `${wp.sw.short} a day short` : `${wp.sw.reserve} to store for the heat waves`})`, wp.near && (f.type !== "well" || (st.parts || 0) >= 1));
+  }
+  // The summer store (waterPlan, SUMMER_STORE): room for it ahead of summer, saved up for: a cistern (150, a building
+  // plot, the Water Treatment Schematics), else a water barrel (25, a utility plot; never the plot a well still
+  // wanted here needs), else a barrel upgraded (a rack 50, a tank 100; the tank's part only with one to spare).
+  // `room`: in the last weeks of spring and in summer it may take a place in a full queue, at its front (planBuilds),
+  // unless the beds are short: then a quick water barrel (6 hours, not a cistern's 30) waits its turn behind the beds
+  // (farmtest's 36-person hub with 22 beds: the cisterns ahead of the bunkhouses tipped more hubs into walk-aways).
+  if (wp.roomShort > 0 && !out.some((w) => w.type === "cistern" || w.type === "water_barrel")) {
+    const why = `room for the summer's water (${wp.store} to keep in store, room for ${waterCapacity(base)})`;
+    const can = (t) => { const c = canBuild(state, base, t); return c.ok || (/^Needs \d+ scrap/.test(c.reason || "") && !buildLock(state, base, t)); };
+    const wellsLeft = Math.max(0, BUILDINGS.well.max - countAll(base, "well") - queued("well"));
+    const bar = barrels(base).filter((b) => !b.broken && barrelTier(b) + 1 < WATER_BARREL.tiers.length && !base.construction.some((c) => c.target === b.id)).sort((a, b) => barrelTier(a) - barrelTier(b) || a.id - b.id)[0];
+    const next = bar ? WATER_BARREL.tiers[barrelTier(bar) + 1] : null;
+    const bedsShort = people + (isHub ? 1 : 0) > baseBeds(base); // beds built: queued ones are not slept in yet
+    const room = (w) => out.push({ ...w, why: w.why || why, save: true, room: wp.near && !bedsShort });
+    const barrelOk = countAll(base, "water_barrel") + queued("water_barrel") < BUILDINGS.water_barrel.max && plotsFree(base, "utility") > wellsLeft && can("water_barrel");
+    if (bedsShort && barrelOk) room({ type: "water_barrel" });
+    else if (countAll(base, "cistern") + queued("cistern") < BUILDINGS.cistern.max && can("cistern")) room({ type: "cistern" });
+    else if (barrelOk) room({ type: "water_barrel" });
+    else if (next && (st.parts || 0) - (next.cost.parts || 0) >= 1) room({ type: "water_barrel", barrel: bar.id, cost: next.cost, why: `${why}: a ${barrelName(bar).toLowerCase()} upgraded to a ${next.name.toLowerCase()}` });
   }
   if (waterIn(st) >= waterCapacity(base) * 0.85 && waterCapacity(base) < people * 10 && count(base, "cistern") + queued("cistern") < BUILDINGS.cistern.max) add("cistern", "room to store more water");
   // No building plot for a cistern (buildings.js PLOTS): a water barrel on a utility plot instead.
@@ -4672,12 +4733,12 @@ function tidySupplyJobs(state) {
 
 // An outpost about to run dry: under 5 days of water at today's rate, or under 3 a head with the spring not keeping up.
 // Late spring and summer too: an outpost whose spring will not carry the summer (waterPlan) is topped up to its
-// summer reserve before it runs short.
+// summer reserve before it runs short, and kept above the floor of its summer store (waterPlan low).
 function outpostThirsty(state, o) {
   const wo = waterOutlook(state, o);
   const staff = atBase(state, o.id).length;
   const wp = waterPlan(state, o);
-  return (wo.net < 0.5 && (wo.daysLeft < 5 || waterIn(o.stock) < staff * 3)) || (staff > 0 && wp.near && wp.short && waterIn(o.stock) < wp.reserve * 0.6);
+  return (wo.net < 0.5 && (wo.daysLeft < 5 || waterIn(o.stock) < staff * 3)) || (staff > 0 && ((wp.near && wp.short && waterIn(o.stock) < wp.reserve * 0.6) || wp.low));
 }
 // Water runs from a river or lake (orders.js Fetch water): while the hub's water is short (waterRunWanted) and a shore
 // is within WATER_RUN_HOURS on foot, two to four people walk there, fill every container (up to a Heavy load each)

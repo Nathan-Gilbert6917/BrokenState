@@ -171,7 +171,7 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
   const people = partyMembers(state, p);
   const base = {
     id: newId(), tile, type: hubNow ? "outpost" : "hub", name: campName(state, tile),
-    stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0, buildmat: 0, [RAW]: 0 },
+    stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, preserved: 0, jars: 0, wood: 0, buildmat: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
     tier: 0, camp: true, fire: true, campDay: day(state), lastPresent: state.hour, first: firstHubPending(state) && !hubNow,
   };
@@ -448,7 +448,7 @@ export function migrateStaging(state) {
   const hubNow = hub(state);
   const base = {
     id: old.id || newId(), tile: old.tile, type: hubNow ? "outpost" : "hub", name: campName(state, old.tile),
-    stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0, buildmat: 0, [RAW]: 0 },
+    stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, preserved: 0, jars: 0, wood: 0, buildmat: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
     tier: 0, camp: true, fire: old.fire !== false, campDay: old.started || day(state), lastPresent: old.lastPresent ?? state.hour, first: !!old.first,
   };

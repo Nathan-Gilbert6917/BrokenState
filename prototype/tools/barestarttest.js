@@ -12,6 +12,7 @@ import { BUILDINGS, PLOTS, plotsUsed, plotsFree, plotCap, canBuild, queueBuild, 
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { nativeWalls, CONQUEST } from "../src/sim/conquest.js";
+import * as W from "../src/sim/weather.js";
 import { GROUP_WORKS, groupsBuild, groupWorksDaily, worksAt, nextWork, groupWalls, groupBaseDefence, wallGoal, provisioned, worksText } from "../src/sim/groupworks.js";
 // Days after a group fled its base (groupflight.js) during which its new base is not judged as a settled one.
 const BARE_FLED_DAYS = 20;
@@ -147,6 +148,29 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
   g.stock.scrap = 0; g.stock.parts = 0;
   for (let i = 0; i < 20 && !built(g); i++) { g.stock.scrap = 0; groupWorksDaily(st, g); }
   check(built(g) === 1, "a group with no scrap salvages and still builds");
+  // Summer water (groupworks.js SUMMER_LEAD, parity with the governor's summer store): wells enough for everyone in
+  // early spring want one more in the last weeks of spring (summer's thirst), and in summer serve fewer people.
+  {
+    const S = createWorld({ seed: seeds[0], factionCount: 8 });
+    const q = S.factions.find((x) => x.alive && x.bases.length === 1) || S.factions[0], qt = q.bases[0];
+    const seasonAt = (d) => { S.hour = d * 24 + 12; return W.season(S); };
+    let early = null, late = null, summer = null;
+    for (let d = 0; d < 120 && (early == null || late == null || summer == null); d++) {
+      const s = seasonAt(d);
+      if (s.key === "spring" && s.daysLeft > GROUP_WORKS.SUMMER_LEAD + 2 && early == null) early = d;
+      if (s.key === "spring" && s.daysLeft < GROUP_WORKS.SUMMER_LEAD - 2 && late == null) late = d;
+      if (s.key === "summer" && summer == null) summer = d;
+    }
+    q.pop = 20;
+    Object.assign(worksAt(q, qt), { water: Math.ceil(20 / GROUP_WORKS.SERVES.water), farms: 9, beds: 9, walls: 99, bench: 1, store: 1, sickbay: 4, pens: GROUP_WORKS.PENS.max });
+    seasonAt(early);
+    const w0 = nextWork(S, q), p0 = provisioned(S, q);
+    seasonAt(late);
+    const w1 = nextWork(S, q);
+    seasonAt(summer);
+    const p1 = provisioned(S, q);
+    check(early != null && late != null && summer != null && !(w0 && w0.type === "water") && w1 && w1.type === "water" && /summer/.test(w1.why) && p1 < p0, `a group of 20 with 2 wells: enough in early spring (${w0 ? w0.type : "nothing"} next), one more for the summer late in spring (${w1 ? `${w1.type}: ${w1.why}` : "nothing"}), served less in summer (${p0.toFixed(2)} → ${p1.toFixed(2)})`);
+  }
   // An old save: no state.groupWorks, everything as it was.
   delete st.groupWorks;
   const o = st.factions[2];

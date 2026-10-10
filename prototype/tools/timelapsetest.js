@@ -3,7 +3,8 @@
 // hourly tick, like a lost battle). Checks: a frame for every day, frame hours, memory (estimate and measured heap,
 // scaled to 365 days), captions, decoding (sequential vs random access, and against the live world sampled during
 // the run), the recorder leaving the simulation untouched (same seed without recording), a frame state for every
-// day and every frame drawn by the real map renderer on a stub canvas, and the viewer's overlay HTML.
+// day and every frame drawn by the real map renderer on a stub canvas, the viewer's overlay HTML, and a Retreat that
+// lost every base before the last death (the last frame marks where the last base stood, and says so).
 // Usage: node tools/timelapsetest.js [days] [seed] [factions] [size=small|normal|large|huge]
 // The memory budget (2 MB on a Normal map) scales with the map's tile count.
 import v8 from "node:v8";
@@ -14,6 +15,7 @@ import { searchHour, extract } from "../src/sim/scavenge.js";
 import { executeTrade, endTrade } from "../src/sim/trade.js";
 import { chronicleReader, chronicleSize, finishChronicle, INF_Q } from "../src/sim/chronicle.js";
 import { sizeDef, areaScale } from "../src/sim/worldsize.js";
+import { retreatFrom, occupyPlayerBase } from "../src/sim/conquest.js";
 import { takeSize } from "./sizearg.js";
 
 const mapSize = takeSize();
@@ -260,6 +262,39 @@ console.log(`  ${built} frame states built and rendered (${lastDay} mid-day + ${
   const fs10 = rd.frameState(9 * 24 + 12);
   R.render(fs10);
   check(drawn6 && !R.mapOverlay().ruins.includes(rt), "the renderer draws the ruins in the frames that have them, and not after the outpost was founded");
+}
+
+// A Retreat that lost every base before the last death (conquest.js retreatFrom, then the raid moving in): the last
+// frame marks where the last base stood (your empty base, "Empty: <name> (your last base, lost day N)", drawn by the
+// renderer), the overlay and the game-over caption say so, and no frame before the end has the marker.
+{
+  const w = createWorld({ seed: seed + 2, factionCount: 4, size: mapSize });
+  const h = hub(w), name = h.name, tile = h.tile;
+  const step = (n) => { for (let i = 0; i < n && !w.gameOver; i++) tickHour(w); };
+  step(5 * 24);
+  const f = w.factions.find((x) => x.alive) || w.factions[0];
+  retreatFrom(w, h, null);
+  occupyPlayerBase(w, h, f, { retreated: true });
+  const lostDay = day(w);
+  step(3 * 24);
+  for (const s of alive(w).sort((a, b) => a.id - b.id)) killSurvivor(w, s, tile, "in the test's forced decline");
+  finishChronicle(w);
+  const rd = chronicleReader(w);
+  const end = rd.frameState(rd.h1), early = rd.frameState(3 * 24 + 12);
+  const lb = end.lastBase;
+  check(w.gameOver && !w.bases.length && end.info.fallen, `the retreat left no base and everyone died (game over ${!!w.gameOver}, bases ${w.bases.length})`);
+  check(!!lb && lb.tile === tile && lb.name === name && Math.abs(lb.day - lostDay) <= 1 && end.abandoned.some((a) => a.tile === tile && a.from === "player"), `the last frame marks where the last base stood (${lb ? `${lb.name} @${lb.tile}, lost day ${lb.day}` : "no marker"}; ${name} @${tile}, lost day ${lostDay})`);
+  check(!early.lastBase && !early.abandoned.length, "no last-base marker before the end");
+  const cap = rd.events[rd.events.length - 1];
+  check(cap && cap.tile === tile && cap.text.includes(name) && /marks where it stood/.test(cap.text) && /on the road for \d+ day/.test(cap.text), `the game-over caption says where the last base stood ("${cap ? cap.text : ""}")`);
+  R.view.layers = new Set(["pois", "territory", "teams", "hordes"]);
+  R.camera.zoom = 1;
+  R.centerOn(end, tile);
+  R.render(end);
+  check(R.mapOverlay().empty.includes(tile), "the renderer draws your empty last base at that tile");
+  const TLv = await import("../src/ui/timelapse.js");
+  check(TLv.lastBaseHTML(end.info).includes(name) && TLv.lastBaseHTML(early.info) === "", "the overlay says where the last base stood (only at the end)");
+  console.log(`  retreat with no base left: ${name} lost on day ${lostDay}, last death on day ${day(w)}; "${TLv.lastBaseHTML(end.info).replace(/<[^>]+>/g, "")}"`);
 }
 
 // Terrain detail (ui/terraindeco.js) in the timelapse: zoomed in, every 10th day with decals and rippled water, the
