@@ -13,6 +13,7 @@
 //                                 slot of that container (a key, or null for an empty one): the 4 pockets, the pouches
 //                                 of the rig (or of a vest or carrier with pouches of its own) in order, the pack's
 //                                 slots. Undefined: as rolled; all empty: nothing carried.
+//   mods: { [gun slot]: key | "" } | undefined   the gun in the hands' parts (applyGunMods below).
 //   rolled, left, rig             written when the picks are put on (applyStartGear) for the editor: what the dice gave
 //                                 in each picked slot, the picked things there was no room for, a rig that would not go
 //                                 over the vest. Never carried into a rebuild (sanitizeStartGear drops them).
@@ -39,13 +40,15 @@
 // magazines where it takes them (carrykit.js starterMags); under Customize the magazines are things you place.
 // Player only: the AI groups do not pick gear (a new-run option).
 import { GEAR, SUPPLIES } from "./data.js";
-import { WEAPONS } from "./combat.js";
+import { WEAPONS, magCap } from "./combat.js";
+import { CALIBERS } from "./data-ammo.js";
+import { ATTACH, SLOTS as GUN_SLOTS, fitMod, fitsSlot, stripMod, makeMod, takesMods } from "./gunmods.js";
 import { KIT_LOOT } from "./data-kit.js";
 import { newItem, startKit, ensureInv, packOf, rigOf, rigPouches, pouchesOf, pouchKindOf, pouchReason, packSize, isBulky, isSmall, fitReason, POCKETS } from "./inventory.js";
 import { calOf, addRecord } from "./ammo.js";
 import { keyFor } from "./rounds.js";
 import { starterMags } from "./carrykit.js";
-import { standardMag, magFitsGun } from "./mags.js";
+import { standardMag, magFitsGun, fittedMag, usesInternal } from "./mags.js";
 import { wornLoad, maxLoad, feelFactor, bandIndex, LOAD_BANDS } from "./load.js";
 
 export const START_GEAR = {
@@ -72,7 +75,7 @@ const limitOf = (where) => (where === "pocket" ? POCKETS : where === "pouch" ? S
 // Anything kept on the colonist or carried in a crew snapshot, made safe: unknown keys and slots dropped, an item only
 // in its own slot, each carried list a list of keys or nulls no longer than its container can be. null when nothing
 // is picked.
-/** @param {any} raw @returns {{ slots: Record<string, string>, carry?: Record<string, (string | null)[]> } | null} */
+/** @param {any} raw @returns {{ slots: Record<string, string>, carry?: Record<string, (string | null)[]>, mods?: Record<string, string> } | null} */
 export function sanitizeStartGear(raw) {
   if (!raw || typeof raw !== "object") return null;
   /** @type {Record<string, string>} */
@@ -95,7 +98,11 @@ export function sanitizeStartGear(raw) {
     carry = c;
   }
   if (!Object.keys(slots).length && !carry) return null;
-  return carry ? { slots, carry } : { slots };
+  const mods = slots.weapon ? sanitizeGunMods(slots.weapon, raw.mods) : null; // the gun in the hands' parts
+  /** @type {{ slots: Record<string, string>, carry?: Record<string, (string | null)[]>, mods?: Record<string, string> }} */
+  const out = carry ? { slots, carry } : { slots };
+  if (mods) out.mods = mods;
+  return out;
 }
 /** @param {any} sg */
 export const hasPicks = (sg) => !!(sg && ((sg.slots && Object.keys(sg.slots).length) || sg.carry));
@@ -106,6 +113,96 @@ export const carryList = (P) => (P && P.carry ? CARRY_PLACES.flatMap((where) => 
 // A picked item: new (no wear), its factory parts, a carrier's plates steel (inventory.js startKit).
 /** @param {string} key */
 const makeItem = (key) => startKit(newItem(key, 1));
+
+// ---------- a picked gun: its calibre and capacity, its parts, its loaded magazine ----------
+// (2026-10-09, user request: "For choosing guns for character customization provide how much capacity and what ammo
+// caliber it takes as well as allow for gun customization with those customizations adding to the gun value for
+// customization points. All guns chosen start with a loaded magazine.")
+// P.mods (the gun in the hands): { [gun slot]: part key | "" }: a part fitted in that slot (in place of any factory
+// part there), or "" for the factory part taken off. A slot not named is as the gun comes (its factory parts:
+// factoryfit.js). Put on in gunmods.js SLOTS order (a mount or rail before what goes on it); a part that does not fit
+// (gunmods.js fitsSlot: by platform, calibre and the slots open) is dropped. The parts are worth what they are worth
+// (valuation.js itemValue counts a gun's fitted parts), so the gun's points go up with them (custompoints.js gunPoints).
+/** @param {any} gun @param {any} mods */
+export function applyGunMods(gun, mods) {
+  if (!gun || !mods) return gun;
+  for (const slot of GUN_SLOTS) if (mods[slot] === "") stripMod(gun, slot);
+  for (const slot of GUN_SLOTS) {
+    const k = mods[slot];
+    if (typeof k !== "string" || !k || !ATTACH[k] || ATTACH[k].slot !== slot) continue;
+    const m = makeMod(k, 1);
+    if (!fitsSlot(gun, m)) fitMod(gun, m);
+  }
+  return gun;
+}
+// A picked gun as it will be: new, its factory parts, then the picked ones.
+/** @param {string} key @param {any} [mods] */
+export const gunWith = (key, mods = null) => applyGunMods(makeItem(key), mods);
+// The picked parts made safe for this gun: only what fits, in turn (null: none, or not a gun that takes parts).
+/** @param {string} key @param {any} raw @returns {Record<string, string> | null} */
+export function sanitizeGunMods(key, raw) {
+  if (!raw || typeof raw !== "object" || !key || !WEAPONS[key] || !GEAR[key] || !takesMods(key)) return null;
+  const gun = makeItem(key);
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const slot of GUN_SLOTS) if (raw[slot] === "" && gun.mods && gun.mods[slot]) { stripMod(gun, slot); out[slot] = ""; }
+  for (const slot of GUN_SLOTS) {
+    const k = raw[slot];
+    if (typeof k !== "string" || !k || !ATTACH[k] || ATTACH[k].slot !== slot) continue;
+    const m = makeMod(k, 1);
+    if (fitsSlot(gun, m)) continue;
+    fitMod(gun, m);
+    out[slot] = k;
+  }
+  for (const slot of Object.keys(out)) if (out[slot] && !(gun.mods && gun.mods[slot] && gun.mods[slot].key === out[slot])) delete out[slot]; // knocked off by a later one
+  return Object.keys(out).length ? out : null;
+}
+// Rounds a gun holds loaded (its fitted magazine's, else its own: an internal magazine, a tube, a cylinder): combat.js
+// magCap on the item. 0: no magazine (a bow, melee).
+/** @param {any} item */
+export const gunCap = (item) => (item && WEAPONS[item.key] && WEAPONS[item.key].cap > 0 ? magCap({ weapon: item.key, item }) : 0);
+const probeGuns = new Map();
+/** @param {string} key */
+const stockGun = (key) => { if (!probeGuns.has(key)) probeGuns.set(key, makeItem(key)); return probeGuns.get(key); };
+// What a gun takes, for the pickers: { cal (or null), calName, cap, text ("9mm · 17 rds"), long (a sentence) }, or null
+// for what is not a gun (melee, a tool). item: a gun as fitted (its magazine), else the gun as it comes.
+/** @param {string} key @param {any} [item] */
+export function gunInfo(key, item = null) {
+  const w = WEAPONS[key], d = GEAR[key];
+  if (!w || !d) return null;
+  const it = item || stockGun(key);
+  const cal = calOf(key);
+  if (cal && CALIBERS[cal]) {
+    const cap = gunCap(it), mag = fittedMag(it), internal = usesInternal(key, it), std = standardMag(key);
+    const how = internal ? "loaded a few at a time (an internal magazine, tube or cylinder)" : mag ? `in its ${mag.name}` : std ? `a magazine (${GEAR[std].name})` : "a magazine";
+    return { cal, calName: CALIBERS[cal].name, cap, text: `${CALIBERS[cal].name} · ${cap} rds`, long: `Takes ${CALIBERS[cal].name}: ${cap} round${cap === 1 ? "" : "s"} ${how}.` };
+  }
+  if (w.launcher) {
+    const sup = SUPPLIES[keyFor(w.launcher, null)];
+    const name = sup ? sup.name : `${w.launcher} rounds`;
+    return { cal: null, calName: name, cap: w.cap || 1, text: `${name} · ${w.cap || 1}`, long: `Fires ${name}${w.oneShot ? " (one shot: the tube comes loaded, then it is spent)" : `, ${w.cap || 1} loaded at a time`}.` };
+  }
+  if (d.cat === "bow") return { cal: null, calName: "arrows", cap: 1, text: "arrows", long: "Shoots arrows (a quiver comes with one held)." };
+  return null;
+}
+// A gun's own magazine, full, on the item (gunload.js it.loaded: { n, key }; the common round of its calibre). Every
+// gun picked is loaded so (one carried or in the vehicle's back too: they are real rounds, in its price: custompoints.js
+// loosePoints). The gun in the hands is loaded from the team's rounds at the start of every fight (combat.js
+// playerUnit), and its first full load is the first of its START_GEAR.LOADS (in the price), so it gets no record: one
+// would sit idle while it is held. Launchers keep their own loading (launchers.js) and bows have none. Returns the item.
+/** @param {any} item */
+export function loadGun(item) {
+  const w = item && WEAPONS[item.key], cal = item && calOf(item.key);
+  if (!w || !(w.cap > 0) || w.launcher || !cal || !CALIBERS[cal]) return item;
+  item.loaded = { n: gunCap(item), key: keyFor(cal, null) };
+  return item;
+}
+// The rounds a picked gun carried or in the back comes loaded with, as supplies { key: n } ({} for anything else).
+/** @param {string} key */
+export function gunLoad(key) {
+  const it = GEAR[key] ? loadGun({ ...stockGun(key) }) : null;
+  return it && it.loaded ? { [it.loaded.key]: it.loaded.n } : {};
+}
 
 // ---------- the containers ----------
 // What they can carry with these picks (the slots picked, else what they wear now): { pocket: { n }, pouch: { kinds,
@@ -240,7 +337,7 @@ export function applyStartGear(s) {
     rolled[slot] = old ? old.name : "";
     if (slot === "weapon" || slot === "armor") s.startDice = { ...(s.startDice || {}), [slot]: old || null };
     if (old) out.replaced.push(old);
-    s.gear[slot] = P.slots[slot] ? makeItem(P.slots[slot]) : null;
+    s.gear[slot] = P.slots[slot] ? (slot === "weapon" ? gunWith(P.slots[slot], P.mods) : makeItem(P.slots[slot])) : null;
   }
   // A chest rig does not go over a vest with pouches of its own (inventory.js fitReason): the body armour stays.
   let rigOff = "";
@@ -251,7 +348,7 @@ export function applyStartGear(s) {
   }
   if (P.carry) { // placed by hand: each where it was put (or wherever it fits, if the containers changed since)
     out.replaced.push(...loose);
-    for (const { key, where, i } of carryList(P)) { const it = makeItem(key); if (!placeAt(s, it, where, i)) out.left.push(it); }
+    for (const { key, where, i } of carryList(P)) { const it = loadGun(makeItem(key)); if (!placeAt(s, it, where, i)) out.left.push(it); }
   } else {
     let things = loose;
     if (out.gun) { // as rolled, but what only went with the replaced gun goes with it
@@ -266,7 +363,7 @@ export function applyStartGear(s) {
   if (gun && w) {
     if (standardMag(gun.key) && !s.startPoints) starterMags(s, out.mags);
     const cal = calOf(gun.key);
-    if (cal) out.rounds[keyFor(cal, null)] = Math.max(1, w.cap || 1) * START_GEAR.LOADS;
+    if (cal) out.rounds[keyFor(cal, null)] = Math.max(1, gunCap(gun) || w.cap || 1) * START_GEAR.LOADS; // its capacity as fitted (a bigger magazine picked: more)
     else if (w.launcher && !w.oneShot) out.rounds[keyFor(w.launcher, null)] = START_GEAR.LAUNCH;
     if (GEAR[gun.key].cat === "bow") out.arrows = START_GEAR.ARROWS;
   }
@@ -324,14 +421,14 @@ export function normalStartVehicle(state, base) {
   const o = vehicleOwner(state);
   const v = o && sanitizeStartVehicle(o.startVehicle);
   if (!v) return;
-  for (const key of v.items) base.armory.push(makeItem(key));
+  for (const key of v.items) base.armory.push(loadGun(makeItem(key)));
   for (const [k, n] of Object.entries(v.supplies)) base.stock[k] = (base.stock[k] || 0) + n;
 }
 // Hardcore (hardcore-start.js rollCar): the picked back in place of the dice's. Returns { gear: items, supplies }.
 /** @param {any} v */
 export function trunkFromPicks(v) {
   const P = sanitizeStartVehicle(v);
-  return { gear: P ? P.items.map(makeItem) : [], supplies: P ? { ...P.supplies } : {} };
+  return { gear: P ? P.items.map((k) => loadGun(makeItem(k))) : [], supplies: P ? { ...P.supplies } : {} };
 }
 
 // Hardcore (hardcore-start.js setupHardcoreStart, right after one survivor's grab is rolled): their picks on them in
@@ -372,6 +469,6 @@ export function kitLoad(s) {
 /** @param {any} state */
 export function clearStartGear(state) {
   for (const s of state.survivors) {
-    for (const k of ["startGear", "startDice", "diceKit", "diceRoll", "diceTrunk", "startVehicle", "startPoints"]) delete s[k];
+    for (const k of ["startGear", "startDice", "diceKit", "diceRoll", "diceTrunk", "startVehicle", "startPoints", "carPool"]) delete s[k];
   }
 }
