@@ -125,7 +125,7 @@ function tripWhy(state, base, job) {
   switch (job) {
     case "wood": { const why = woodWorkWhy(state, base); return why ? act("stalled", `Can't cut wood: ${why}`, `Nothing worth cutting around ${base.name}: ${why}. Send a team to cut wood on a forest tile, or trade for firewood.`, job) : null; }
     case "forage": { const why = forageWorkWhy(state, base); return why ? act("stalled", `Can't forage: ${why}`, `Nothing worth gathering around ${base.name}: ${why}.`, job) : null; }
-    case "hunt": { const why = huntWorkWhy(state, base); return why ? act("stalled", `Can't hunt: ${why}`, `The Hunt job needs a Hunting cabin and game land within 2 tiles: ${why}.`, job) : null; }
+    case "hunt": { const why = huntWorkWhy(state, base); return why ? act("stalled", `Can't hunt: ${why}`, `The Hunt job needs game on the base's hunting grounds (the tiles next to it; with a Hunting cabin the land within 2 tiles): ${why}.`, job) : null; }
     case "fish": { const why = fishWorkWhy(state, base); return why ? act("stalled", `Can't fish: ${why}`, `The Fish job needs a river or lake tile in the base's own land and a rod, net or spear: ${why}.`, job) : null; }
     case "scavenge": return scavLeft(base) <= SCAV_FLOOR + 0.02 ? act("stalled", "Scavenger – area picked clean", "The ruins around the base are picked over: send a team on a trip instead.", job) : null;
     case "water": { const why = fetchWaterWhy(state, base); return why ? act("stalled", `Can't fetch water: ${why}`, `Fetch water needs a river or lake tile in the base's own land, and room in the un-purified barrels: ${why}.`, job) : null; }

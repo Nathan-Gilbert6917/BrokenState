@@ -4,7 +4,7 @@
 // - Someone put on Cut wood (Manual) at the hub: "Chopping wood" by day, "Done chopping" after dark, "Asleep" at
 //   night; a day ticks and the job's output counter shows the firewood that came in (and matches the store).
 // - The Work now panel: the row, its progress bar toward midnight, the winter target, the last output line.
-// - Why a job brings in nothing: the land cut bare, no hunting cabin, nothing to build.
+// - Why a job brings in nothing: the land cut bare, nothing to build (hunting needs no cabin: the tiles next to the base).
 // - Health, the walls, away on a team; people on work priorities (sleep, idle).
 // - The People tab (cards and compact rows) and the base Overview show it; the find box finds "chopping".
 // - Saves: base.output survives a save and load; an older save without it reads as nothing recorded.
@@ -104,7 +104,7 @@ section("Why a job brings in nothing");
   check(r && r.why && /cut bare/.test(r.why) && !r.progress, `the panel says why (${r && r.why})`);
   s.role = "hunt";
   const hx = describeActivity(st, s);
-  check(hx.kind === "stalled" && /hunting cabin/.test(hx.text), `no hunting cabin: "${hx.text}"`);
+  check(!/no hunting cabin/.test(hx.text) && (hx.kind !== "stalled" || /game land/.test(hx.text)), `no cabin needed to hunt (the tiles next to the base): "${hx.text}"`); // the rule changed 2026-10-10: it was "no hunting cabin"
   s.role = "build"; b.construction = []; b.repairs = [];
   const bx = describeActivity(st, s);
   check(bx.kind === "stalled" && /nothing to build/.test(bx.text), `nothing queued: "${bx.text}"`);

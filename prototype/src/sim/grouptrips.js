@@ -2,7 +2,8 @@
 // one number for food and one for firewood (factions.js factionsDaily), so the trips are a factor on those, read from
 // the land each of their bases holds (tile.owner = the group: factions.js recomputeOwnership).
 //   - food from the land (groupFoodLand): their hunters and foragers on the best ground of each base's land, the walk
-//     counted (tripland.js distFactor, the same as yours): 0.9–1.1 × the land share of their food, 1 for a base with
+//     counted (tripland.js distFactor, the same as yours); a camp's hunters only on the tiles next to it (no cabin's
+//     reach, as yours: hunting.js huntRadius): 0.9–1.1 × the land share of their food, 1 for a base with
 //     usual land (GROUP_TRIPS.foodRef); +fish where the base holds a water tile (no fishing without one, as yours).
 //   - firewood (groupWoodLand): × the best wood land's yield against GROUP_TRIPS.woodRef (0.5–1.5).
 //   - water: a base holding a water tile carries water from it (groupFetchedWater: GROUP_TRIPS.fetchServes people's
@@ -18,20 +19,24 @@ import { woodAbundance, woodLevel } from "./woodcutting.js";
 
 // foodRef / woodRef: a usual base's land score (measured over 60 worlds' group bases: the median), so the median base
 // keeps its food and firewood as before.
-export const GROUP_TRIPS = { foodRef: 1.05, woodRef: 0.59, foodSpread: 0.1, fish: 0.02, fetchServes: 4, outShare: 0.15, hours: [7, 19] };
+export const GROUP_TRIPS = { foodRef: 1.08, woodRef: 0.67, foodSpread: 0.1, fish: 0.02, fetchServes: 4, outShare: 0.15, hours: [7, 19] };
 const besieged = (state, f, tile) => state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "faction" && q.target.factionId === f.id && q.target.tile === tile);
 // The best of a base's land for a job: max over its tiles of what a tile holds × its walk.
-function bestLand(state, f, tile, job, value) {
+function bestLand(state, f, tile, job, value, radius = 2) {
   let best = 0;
   for (const id of workLand(state, tile, f.id)) {
+    if (radius < 2 && state.grid.distance(tile, id) > radius) continue;
     const v = value(id);
     if (v <= 0) continue;
     best = Math.max(best, v * distFactor(job, state.grid.distance(tile, id)));
   }
   return best;
 }
+// Their hunting grounds as yours (hunting.js huntRadius): a camp (founded from nothing, groupworks.js) hunts the tiles
+// next to it, an established base (their hunting trails and smoke shed: a cabin's worth) the land within 2.
+const campOf = (f, tile) => !!(f.works && f.works[tile] && f.works[tile].camp);
 export const groupFoodScore = (state, f, tile) => Math.max(
-  bestLand(state, f, tile, "hunt", (id) => gameAbundance(state, id) * gameLevel(state, id)),
+  bestLand(state, f, tile, "hunt", (id) => gameAbundance(state, id) * gameLevel(state, id), campOf(f, tile) ? 1 : 2),
   bestLand(state, f, tile, "forage", (id) => forageAbundance(state, id) * forageLevel(state, id)));
 export const groupWoodScore = (state, f, tile) => bestLand(state, f, tile, "wood", (id) => woodAbundance(state, id) * woodLevel(state, id));
 const ownsWater = (state, f, tile) => ownedWater(state, tile, f.id).length > 0;

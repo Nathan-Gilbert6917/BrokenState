@@ -488,8 +488,12 @@ section("The hunting cabin, the Hunt and Fish jobs");
   const city = { ...base, id: -1, tile: state.tiles.find((t) => t.terrain === "city").id, type: "outpost", buildings: [], construction: [], stock: { scrap: 50 }, armory: [] };
   check(!canBuild(state, city, "huntcabin").ok && /game land/.test(canBuild(state, city, "huntcabin").reason), "no hunting cabin in a city");
   check(canBuild(state, base, "huntcabin").ok, "a hunting cabin where the land has game");
-  check(/no hunting cabin/.test(H.huntWorkWhy(state, base)) && WORK_TYPES.hunt.open({ state, base, people: [], foodDays: 10 }).cap === 0, "no cabin: no Hunt work");
+  // The rule changed (user 2026-10-10): any base hunts without a cabin, on the tiles next to it; the cabin widens the
+  // grounds to 2 tiles (it was: no cabin, no Hunt job).
+  check(H.huntWorkWhy(state, base) === "" && H.huntRadius(base) === 1 && H.huntGrounds(state, base).every((id) => state.grid.distance(base.tile, id) <= 1) && WORK_TYPES.hunt.open({ state, base, people: [], foodDays: 10 }).cap > 0, "no cabin: the Hunt job on the tiles next to the base");
+  const bare = H.baseHuntDay(state, base);
   addBuilding(base, "huntcabin");
+  check(H.huntRadius(base) === 2 && H.huntGrounds(state, base).some((id) => state.grid.distance(base.tile, id) === 2) && H.baseHuntDay(state, base) >= bare, `a cabin widens the grounds to 2 tiles (an average hunter ${r1(bare)} → ${r1(H.baseHuntDay(state, base))} food a day)`);
   {
     // tune-jobcaps: no fixed cap (it was 2): the hunters it takes to bring in the food the land must (foraging.js
     // landFoodGap), at least one while the job is open; more with the stores empty.
@@ -748,7 +752,13 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   [base.stock.food, base.stock.preserved] = food0;
   const cabin = base.buildings.find((x) => x.type === "huntcabin");
   base.buildings.splice(base.buildings.indexOf(cabin), 1);
-  check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.DEFAULT_MIX), "governor: no hunting cabin (only teams hunt, away from the walls): the dead near change nothing");
+  // The rule changed (2026-10-10): without a cabin the Hunt job still hunts the tiles next to the base, so with
+  // hunters on it the dead near quiet it too; with nobody on it only teams hunt, away from the walls.
+  const onHunt = atBase(state, base.id).filter((x) => x.role === "hunt"), roles0 = onHunt.map((x) => x.role);
+  check(!onHunt.length || JSON.stringify(H.autoHuntMix(state, base)) !== JSON.stringify(H.DEFAULT_MIX), "governor: no cabin, hunters on the job by the walls: the dead near still quiet it");
+  onHunt.forEach((x) => { x.role = "rest"; });
+  check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.DEFAULT_MIX), "governor: no hunting cabin and nobody on the Hunt job (only teams hunt, away from the walls): the dead near change nothing");
+  onHunt.forEach((x, i) => { x.role = roles0[i]; });
   base.buildings.push(cabin);
   state.hordes.length = 0;
   // Saved with the base.

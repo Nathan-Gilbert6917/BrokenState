@@ -859,16 +859,28 @@ export function snaresDaily(state) {
 }
 
 // ---------- the hunting cabin and the base's hunters and fishers ----------
+// The game land within a hunting cabin's reach (CABIN.radius): whether a cabin can be built here and is worth it.
 export const gameLand = (state, base) => state.grid.within(base.tile, CABIN.radius).reduce((a, id) => a + gameAbundance(state, id), 0);
 export function cabinProblem(state, base) {
   if (gameLand(state, base) < CABIN.land) return "too little game land around it (it needs forest, hills or farmland within 2 tiles).";
   return "";
 }
-const baseHasHunting = (base) => count(base, "huntcabin") > 0;
-// Why nobody here can hunt / fish as work ("" = they can). Used by work.js.
+// The base's hunting grounds (user rule 2026-10-10: any base, outpost or camp hunts and snares without a cabin): its
+// own tile and the tiles next to it (HUNT_GROUND.bare); a Hunting cabin widens them to CABIN.radius (2) and keeps its
+// smoke house and slower spoiling. Only the base's land (tripland.js workLand: no other group's ground); the hunters
+// walk to the tile they pick (jobtrips.js), so the far ground costs hours. Game shies from the walls (gameAbundance:
+// the base's own tile × 0.3, the tiles next to it × 0.6), so a base without a cabin brings in less.
+export const HUNT_GROUND = { bare: 1, full: 19 }; // bare: the radius without a cabin; full: the tiles within 2 (CABIN.land is for those)
+export const huntRadius = (base) => (count(base, "huntcabin") > 0 ? CABIN.radius : HUNT_GROUND.bare);
+export const huntGrounds = (state, base) => workLand(state, base.tile).filter((id) => state.grid.distance(base.tile, id) <= huntRadius(base));
+const baseHasHunting = (base) => count(base, "huntcabin") > 0; // the cabin: its smoke house, slower spoiling, the wider grounds
+// Why nobody here can hunt as work ("" = they can). Used by work.js: the grounds hold too little game (CABIN.land for
+// the full 19 tiles of a cabin's reach, its share for fewer).
 export function huntWorkWhy(state, base) {
-  if (!baseHasHunting(base)) return "no hunting cabin";
-  return cabinProblem(state, base) ? "no game land around" : "";
+  const g = huntGrounds(state, base);
+  const land = g.reduce((a, id) => a + gameAbundance(state, id), 0);
+  if (land < CABIN.land * (g.length / HUNT_GROUND.full) || !huntTripTile(state, base)) return count(base, "huntcabin") > 0 ? "no game land around" : "no game land next to the base (a hunting cabin reaches 2 tiles out)";
+  return "";
 }
 export function fishTools(state, base, people = atBase(state, base.id), opts = {}) {
   return fishKit(people, base.armory || [], opts);
@@ -921,13 +933,13 @@ export function baseFishDay(state, base, hour = state.hour) {
 export const huntWorkCap = (state, base, goalDays) => landFoodHands(state, base, goalDays, baseHuntDay(state, base));
 // The Fish job's room: fishers to close it, at most one a rod (two a net).
 export const fishWorkHands = (state, base, goalDays) => Math.min(fishWorkCap(state, base), landFoodHands(state, base, goalDays, baseFishDay(state, base)));
-// The tile the base's hunters go to (jobtrips.js): the best of its land within CABIN.radius by the game it holds now,
+// The tile the base's hunters go to (jobtrips.js): the best of its hunting grounds (huntRadius) by the game it holds now,
 // walking included (tripland.js distFactor: two tiles out 1, one 1.5): { id, v, d, f }.
 export function huntTripTile(state, base, hour = state.hour) {
   let best = null;
   for (const id of workLand(state, base.tile)) {
     const a = gameAbundance(state, id);
-    if (a <= 0.02 || state.grid.distance(base.tile, id) > CABIN.radius) continue;
+    if (a <= 0.02 || state.grid.distance(base.tile, id) > huntRadius(base)) continue;
     const d = state.grid.distance(base.tile, id), f = distFactor("hunt", d), v = a * gameLevel(state, id, hour);
     if (!best || v * f > best.v * best.f + 1e-12 || (Math.abs(v * f - best.v * best.f) <= 1e-12 && id < best.id)) best = { id, v, d, f };
   }
@@ -1195,10 +1207,10 @@ export function packHuntArrows(state, home, p) {
   p.supplies.arrows = (p.supplies.arrows || 0) + n;
   return n;
 }
-// The governor's hunting mix for a base (autopilot.js planRoles). With a hunting cabin (its hunters shoot within 2
-// tiles of the base) and wandering dead within HUNT.drawRange of the base, or the dead at its gates: quiet (bows and
+// The governor's hunting mix for a base (autopilot.js planRoles). With a hunting cabin or people on the Hunt job (they
+// shoot on the base's hunting grounds, huntGrounds) and wandering dead within HUNT.drawRange of the base, or the dead at its gates: quiet (bows and
 // traps; without a bow and arrows half traps, half guns: half the shots), unless the stores are down to AUTO_MIX.hungry
-// days of food (food first then). A base without a cabin hunts only with its teams, away from its walls: the dead near
+// days of food (food first then). A base with neither hunts only with its teams, away from its walls: the dead near
 // it leave their mix alone. Bows only while the ammo above the walls' keep is short (under AUTO_MIX.ammo) and there are
 // bows and arrows; bows and guns half and half with bows and arrows; else every hunter's best weapon (all guns).
 export const AUTO_MIX = { ammo: 30, arrows: 4, hungry: 5, quietNoBows: { traps: 50, bows: 0, guns: 50 } };
@@ -1206,7 +1218,7 @@ export function autoHuntMix(state, base) {
   const people = atBase(state, base.id);
   const bows = hasBow(people) && (base.stock.arrows || 0) >= AUTO_MIX.arrows;
   const food = ((base.stock.food || 0) + (base.stock.preserved || 0)) / Math.max(1, people.length);
-  const near = baseHasHunting(base) && food >= AUTO_MIX.hungry && state.hordes.some((h) => (["roam", "border", undefined, null].includes(h.role) && state.grid.distance(h.tile, base.tile) <= HUNT.drawRange) ||
+  const near = (baseHasHunting(base) || people.some((s) => s.role === "hunt")) && food >= AUTO_MIX.hungry && state.hordes.some((h) => (["roam", "border", undefined, null].includes(h.role) && state.grid.distance(h.tile, base.tile) <= HUNT.drawRange) ||
     (h.role === "attack" && h.goal && h.goal.baseId === base.id));
   if (near) return bows ? { ...MIX_PRESETS.quiet.mix } : { ...AUTO_MIX.quietNoBows };
   const spare = baseAmmo(state, base) - ammoKeep(state, base); // ammo.js: the rounds that fit the guns here

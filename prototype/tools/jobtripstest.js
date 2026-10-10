@@ -5,7 +5,8 @@
 // - A woodcutter's day at the hub: home outside the job's hours, out by day on a route over the base's land, the load
 //   credited when they get home (not at midnight), the day's deposits = the output counter = the midnight total.
 // - Tile yields: the trip goes to the best ground (forest over farmland), trading the walk against what a tile holds.
-// - Hunters out at dawn and dusk, home between; their catch comes in as they arrive.
+// - Hunters out at dawn and dusk, home between; their catch comes in as they arrive. No cabin needed: the tiles next
+//   to the base; a hunting cabin widens the grounds to 2 tiles out.
 // - Fishing and fetching water need a water tile the base owns ("no water in the base's land"); with one the fisher
 //   walks to its shore and the water carrier brings un-purified water by the bucket, into the barrels' room.
 // - A base on alert: outdoor work on hold ("On hold: base under siege"), those out cut short and walk home.
@@ -162,6 +163,25 @@ section("Hunters: out at dawn and dusk, the catch in as they arrive");
   for (let d = 0; d < 10; d++) { tickTo(state, 0); tickTo(state, 21); got += (base.tripTally && base.tripTally.hunt && base.tripTally.hunt.rations) || 0; }
   note(`a hunter with a hunting rifle, 10 more days: ${r1(got)} food (≈ ${r1(H.baseHuntDay(state, base) * 10)} for an average hunter)`);
   check(got > 0, "the hunter brings in game");
+}
+
+// ======================================================================
+section("Hunting without a cabin: the tiles next to the base; a cabin widens the grounds");
+{
+  const state = seedWith((st, b) => !H.huntWorkWhy(st, b) && !b.buildings.some((x) => x.type === "huntcabin"));
+  const base = hub(state);
+  check(H.huntRadius(base) === 1 && H.huntWorkWhy(state, base) === "", `no cabin: the Hunt job works (${H.huntGrounds(state, base).length} tiles of hunting grounds)`);
+  const hunter = onJob(state, base, atBase(state, base.id)[1], "hunt");
+  hunter.gear.weapon = newItem("huntrifle");
+  tickTo(state, 7);
+  check(hunter.trip && hunter.trip.d <= 1, `the hunter goes no farther than the tiles next to the base (${hunter.trip && hunter.trip.d} out)`);
+  const bare = H.baseHuntDay(state, base);
+  addBuilding(base, "huntcabin");
+  const t2 = H.huntTripTile(state, base);
+  check(H.huntRadius(base) === 2 && H.huntGrounds(state, base).some((id) => state.grid.distance(base.tile, id) === 2) && H.baseHuntDay(state, base) >= bare - 1e-9, `a hunting cabin: grounds 2 tiles out (the best ${t2 && t2.d} out; an average hunter ${r1(bare)} → ${r1(H.baseHuntDay(state, base))} food a day)`);
+  const city = state.tiles.find((t) => t.terrain === "city");
+  const cb = { ...base, id: -7, tile: city.id, type: "outpost", buildings: [], construction: [], armory: [], stock: {} };
+  check(/no game land/.test(H.huntWorkWhy(state, cb)), `a base in a city: "${H.huntWorkWhy(state, cb)}"`);
 }
 
 // ======================================================================
