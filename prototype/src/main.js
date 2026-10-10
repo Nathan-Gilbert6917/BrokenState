@@ -26,6 +26,7 @@ import { treatAtBase } from "./sim/medical.js";
 import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated trainee
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
+import { fieldworksActions, fieldworksChange, fwPlaceTiles, fwPlaceBanner, fwPlaceClick, fwPlaceCancel } from "./ui/fieldworks.js"; // field works: the base tab, the tile picker
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
@@ -261,7 +262,7 @@ function step(now) {
   let ticks = 0;
   if (state.autopilot && ui.started && !ui.settings && autopilotResolve(state)) dirty = true; // cards and battles never wait for a click (the menu holds everything)
   pacingFrame(state, ui); // ui/pacing.js: new cards get their kind, cards out of date leave the tray
-  if (!blocked() && ui.speed > 0 && !ui.moveParty) {
+  if (!blocked() && ui.speed > 0 && !ui.moveParty && !ui.fwPlace) { // ui/fieldworks.js: the clock waits for a field work's tile
     acc += dt * ui.speed * HOURS_PER_SECOND;
     while (acc >= 1 && ticks < 12) {
       if (beforeHour(state, ui)) dirty = true; // tray cards past their time answer themselves; their teams hold
@@ -385,6 +386,8 @@ function tidyUi() {
   if (ui.expedition != null && !partyById(ui.expedition)) { ui.expedition = null; ui.xpMsg = ""; ui.xpQueue = false; ui.qSel = null; }
   if (ui.qSel != null && (ui.expedition == null || ui.qSel >= (partyById(ui.expedition).orders || []).length)) ui.qSel = null; // the queue got shorter
   if (ui.moveParty != null && !partyById(ui.moveParty)) endMoveMode();
+  if (ui.fwPlace && !baseById(state, ui.fwPlace.baseId)) { ui.fwPlace = null; ui.fwMsg = ""; }
+  view.fwPlace = ui.fwPlace ? fwPlaceTiles(state, ui) : null; // ui/fieldworks.js: the tile picker's highlight
   if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid) { ui.inv = null; ui.invSel = null; } // only the loot screen and a raid's search window go over a battle
   if (state.combat && ui.gunb) ui.gunb = null; // the gun builder: never during a battle
   // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
@@ -546,6 +549,7 @@ function bannerHTML() {
       `<button class="mini" data-action="help-open" data-sec="time" data-tip="Help: time, pausing and speeds">?</button>` +
       (n ? `<span class="armed" data-tip="${esc(waiting.join(" · "))}">${n} order${n === 1 ? "" : "s"} will start when you unpause</span>` : "") + `</div>`;
   }
+  html += fwPlaceBanner(state, ui); // ui/fieldworks.js: placing a field work
   if (ui.moveParty) {
     html += `<div class="movemode" data-tip="The clock waits until you pick a tile.">Move: <b>click a tile</b> to ${ui.moveQueue ? "queue a move" : "send the team"} · <b>Esc</b> cancels` +
       (ui.moveMsg ? `<br><span class="danger">${esc(ui.moveMsg)}</span>` : "") + `</div>`;
@@ -1402,6 +1406,7 @@ for (const [k, fn] of Object.entries({ ...FARM_CHANGE, ...HEALTH_CHANGE })) chan
 for (const [k, fn] of Object.entries(BG_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the custom backgrounds window (ui/backgrounds.js)
 for (const [k, fn] of Object.entries(SG_CHANGE)) changeActions[k] = (el) => { if (fn(state, ui, el)) gearRebuild(); }; // the starting gear window (ui/startgear.js)
 for (const [k, fn] of Object.entries(SKILL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+Object.assign(changeActions, fieldworksChange(() => state, ui)); // ui/fieldworks.js: post a lookout
 for (const [k, fn] of Object.entries(PROD_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { if (!ui.planner) return; fn(state, ui, el); autofill(ui.planner); ui.plannerError = ""; };
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
@@ -1565,6 +1570,7 @@ Object.assign(actions, {
   "undo-step": tripAct(UNDO_ACTIONS["undo-step"]), "bq-move": tripAct(UNDO_ACTIONS["bq-move"]),
 });
 Object.assign(changeActions, { "tpl-name": tripChange(TRIP_CHANGE["tpl-name"]), "tpl-rename": tripChange(TRIP_CHANGE["tpl-rename"]), "pl-policy": tripChange(TRIP_CHANGE["pl-policy"]) });
+Object.assign(actions, fieldworksActions(() => state, ui, { centerOn: (tile) => centerOn(state, tile) })); // ui/fieldworks.js: the Field works tab
 installUndo(actions, changeActions, () => state, ui);
 if (!/[?&]notitle\b/.test(location.search)) showTitle(ui); // ?notitle: straight to the new-run screen (tests)
 
@@ -1712,7 +1718,8 @@ window.addEventListener("mouseup", (e) => {
     const r = canvas.getBoundingClientRect();
     const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
     const p = ui.moveParty != null && id >= 0 ? partyById(ui.moveParty) : null;
-    if (p) act(() => pickMove(p, id));
+    if (ui.fwPlace && id >= 0) act(() => fwPlaceClick(state, ui, id)); // ui/fieldworks.js: a field work placed here (or why not)
+    else if (p) act(() => pickMove(p, id));
     else if (id >= 0 && ui.moveParty == null) {
       // A team, another group's party, a band or outsiders on the tile are selected first (a team opens its panel),
       // the same tile again goes on to the next and then the tile; Shift+click picks the tile (ui/mapselect.js).
@@ -2032,6 +2039,7 @@ function closeTopLayer() {
   if (ui.diary) { ui.diary = null; return true; }
   if (ui.codex) { ui.codex = null; return true; } // ui/codex.js
   if (ui.moveParty != null) { endMoveMode(); return true; }
+  if (fwPlaceCancel(ui)) return true; // ui/fieldworks.js: placing a field work: back to the base's tab
   if (ui.expedition != null && ui.qSel != null) { ui.qSel = null; return true; } // a selected queued order: unselect first
   if (ui.expedition != null) { ui.expedition = null; ui.xpMsg = ""; return true; }
   return false;

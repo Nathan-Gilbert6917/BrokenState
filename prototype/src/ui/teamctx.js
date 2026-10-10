@@ -21,6 +21,7 @@ import { HUNT, SNARE, gameAbundance, fishSpot, huntProblem, fishProblem, snareLi
 import { forageAbundance, forageProblem } from "../sim/foraging.js";
 import { woodAbundance, woodProblem, fireLandOk } from "../sim/woodcutting.js";
 import { CLAIM, canClaim, wellProblem, claimOwner } from "../sim/claims.js";
+import { teamFieldItems } from "./fieldworks.js"; // field works: load, unload, wreck, take
 import { LISTEN } from "../sim/radiolisten.js";
 import { networksAt, teamReceives } from "../sim/radio.js";
 import { crossingsFrom, boatPlan, boatOrder } from "../sim/crossing.js";
@@ -215,6 +216,8 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
       if (mine) add("Team", "well", `Dig a well (${CLAIM.WELL_HOURS}h)`, [{ type: "well" }], { why: wellProblem(state, p, tile), hint: `Dig a well on this claim (${CLAIM.WELL_SCRAP} scrap, ${CLAIM.WELL_PARTS} part carried): the people at your base next to it haul its water.` });
     }
   }
+  // Field works on this tile (sim/fieldworks.js): your stockpile (load, unload), a group's structure (wreck, take, loot).
+  if (!water) for (const it of teamFieldItems(state, p, tile)) add("Field work", it.key, it.label, [it.order], { why: it.why, hint: it.hint });
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (home) add("Team", "home", `Go home (${home.name})`, [{ type: "home" }], { move: false, why: partyTile(p) === home.tile && p.phase !== "out" && !append ? "The team is at home." : "", hint: `Head back to ${home.name} with everything carried.` });
 
@@ -253,6 +256,7 @@ const GROUP_TIP = {
   Land: "Food, firewood and water from the land",
   Camp: "Rest on the spot",
   Team: "The team's own gear and the land you hold",
+  "Field work": "A field work here: your stockpile (load, leave finds), or a group's structure (wreck, take, loot)",
 };
 /** @param {State} state @param {any} ui @param {ReturnType<typeof teamTileMenu>} m */
 export function teamCtxHtml(state, ui, m) {

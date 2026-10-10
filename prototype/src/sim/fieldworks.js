@@ -48,7 +48,7 @@ import { RELAY_RANGE, RELAY_UPKEEP_DAYS } from "./radio.js";
 export const FIELD = {
   KINDS: {
     roadblock: { name: "Roadblock", icon: "🚧", cost: { scrap: 10, wood: 150 }, hours: 10, hp: 60, road: true,
-      desc: "Wrecked cars, logs and wire across the road. A hostile party or a horde entering the tile is held while it batters through (up to 10 hours for a party, 12 for a horde; the stronger they are, the sooner), and the roadblock takes the damage. Your teams pass. Road tiles only." },
+      desc: "Wrecked cars, logs and wire across the road. A hostile party or a horde entering the tile is held while it forces a lane through (up to 10 hours for a party, 12 for a horde; the stronger they are, the sooner), and the roadblock takes the damage (a fresh one is left at about 40%). Your teams and friends pass. Road tiles only." },
     well: { name: "Field well", icon: "🪣", cost: { scrap: 12, parts: 1 }, hours: 20, hp: 50,
       desc: "A dug well on the base's land: water a day by the ground (beside a river or lake 10, farmland 6, forest 4, hills, suburbs and city 2; not in the mountains), hauled home by the base's people (one well per 4 people there). Deep ground water: half the worm's eggs of the ground, but still un-purified: boil it." },
     tower: { name: "Watch tower", icon: "🗼", cost: { scrap: 15, wood: 120 }, hours: 18, hp: 70, garrison: 2,
@@ -63,7 +63,7 @@ export const FIELD = {
   MAX: { hub: 6, outpost: 4, shelter: 2, camp: 0 },
   WALK: { pace: 0.5, shift: 8 },              // hours a tile each way; a trip out per `shift` work-hours
   TOWER: { day: 3, night: 1, soloFrom: 6, soloTo: 22, warnBase: 4, perch: 1.5 },
-  ROADBLOCK: { partyHold: 10, hordeHold: 12, partyRate: 4, partyPer: 0.4, hordeRate: 3, hordePer: 0.05, teamHostile: 3, teamCheck: 1, teamDamage: 10 },
+  ROADBLOCK: { gap: 0.6, partyHold: 10, hordeHold: 12, partyRate: 4, partyPer: 0.4, hordeRate: 3, hordePer: 0.05, teamHostile: 3, teamCheck: 1, teamDamage: 10 },
   HORDE: { base: 10, per: 5, siteLoss: 0.5, shot: 2, hurt: 0.5, killed: 0.1 },
   RAID: { range: 10, chance: 0.02, perKg: 1 / 2500, max: 0.08, minPop: 6, str: [4, 12], capture: 0.5, near: 4, every: 10 },
   REPAIR: { share: 0.6, hoursShare: 0.5, minHours: 2 },
@@ -566,9 +566,10 @@ function scatter(state, fw, killed = FIELD.HORDE.killed) {
 }
 
 // ---------- hordes (hordes.js) ----------
-// The roadblock's hold: hours a crowd at `rate` hp an hour takes to break through (at most `most`), and the damage.
+// The roadblock's hold: hours a crowd at `rate` hp an hour takes to force a lane through it (ROADBLOCK.gap of its
+// condition; at most `most` hours), and that damage: a fresh roadblock stands a lane forced through it, at 40%.
 function holdOf(fw, rate, most) {
-  const hours = Math.min(most, fw.hp / Math.max(0.5, rate));
+  const hours = Math.min(most, (fw.hp * FIELD.ROADBLOCK.gap) / Math.max(0.5, rate)); // a lane forced through it: GAP of what stands
   return { hours: r1(hours), dmg: r1(hours * rate) };
 }
 // A horde entered a tile (hordes.js onHordeEnter, before a base there): a roadblock holds it (h.move goes back), any

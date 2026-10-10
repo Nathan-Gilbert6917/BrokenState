@@ -34,7 +34,8 @@ import { gatheringAlerts } from "../sim/hivebirth.js";
 import { weatherAlerts } from "../sim/rivers.js"; // a frozen river by a base, a storm heading for the hub
 import { tripAlerts } from "./trips.js"; // a team sent from the planner is home: repeat the trip?
 import { pileCount } from "./pacing.js";
-import { recentRepairs } from "../sim/repairwait.js"; // a breakdown repaired on the road: the team drives on
+import { recentRepairs } from "../sim/repairwait.js";
+import { fieldworkAlerts } from "./fieldworks.js"; // field works out on the bases' land // a breakdown repaired on the road: the team drives on
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -256,7 +257,8 @@ const SECTIONS = {
       out.push({ key: `crash:${c.id}:${c.found ? 1 : 0}`, kind: "crash", icon: def.icon, tone: left < 2 ? "warn" : "info", text: `${name}: ${c.found ? "found" : `search ${c.radius} tiles around ${knownLoc(state, c.center) ? state.tiles[c.center].loc.name : "the circle"}`}, ${left.toFixed(1)} days left`, tip: `${c.found ? "The wreck is on the map: raid it before other groups strip it." : "It came down somewhere in the circle on the map. Send a team to look around there (the planner's “Search the area” step)."} It burns out in about ${left.toFixed(1)} days. Click to see it.`, go: { tile: c.found ? c.tile : c.center } });
     }
   },
-  gatherings(state, out) { out.push(...gatheringAlerts(state)); }, // sim/hivebirth.js: the dead massing for a hive you marked
+  gatherings(state, out) { out.push(...gatheringAlerts(state)); },
+  fieldworks: fieldworkAlerts, // ui/fieldworks.js: a field work attacked, taken or destroyed; one that needs repair // sim/hivebirth.js: the dead massing for a hive you marked
   weather(state, out) { // a frozen river by a base (the dead can cross), a storm or blizzard front heading for the hub
     out.push(...weatherAlerts(state));
   },

@@ -137,7 +137,8 @@ import { devButton } from "./display.js"; // the top bar's Dev button (Menu → 
 import { totalRounds, sumRecs, supplyAmt, ROUND_KEYS } from "../sim/rounds.js"; // rounds by calibre
 import { roundsLine, baseAmmo, baseAmmoBreakdown, teamAmmoBreakdown, breakdownText } from "../sim/ammo.js";
 import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
-import { fold, peopleQuery, peopleIsCompact } from "./panelfold.js"; // side-panel folds; the People tab's find box and view
+import { fold, peopleQuery, peopleIsCompact } from "./panelfold.js"; // side-panel folds; the People tab's find box
+import { fieldWorksTab, survivorPostText } from "./fieldworks.js"; // the base window's Field works tab and view
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -338,7 +339,7 @@ function personCard(state, s) {
     ${isSick(s) ? `<div class="row small" style="flex-wrap:wrap">${conditionChips(state, s)}</div>` : ""}
     ${gaugeRows(s, { mood: false })}
     <div class="row small"${moodTipAttr(state, s)}><span style="width:3.5rem" class="muted">Mood</span><div style="flex:1">${bar(s.mood, "var(--info)")}</div><span style="width:2rem">${n0(s.mood)}</span></div>${moodRiskChip(s) || relChip(state, s) || familyChip(state, s) ? `<div class="small">${moodRiskChip(s)}${relChip(state, s)}${familyChip(state, s)}</div>` : ""}` :
-    isCaptive(s) ? "" : s.location.kind === "errand" ? `<div class="small muted">Away on a personal errand: back around day ${s.location.until}.</div>` : s.location.kind === "lent" ? `<div class="small vol-text"${tip("Lent to another group (sim/volunteers.js): out of your orders, fighting their fights, back at the end of the span")}>${esc(lentLine(state, s))}</div>` : `<div class="small muted"${tip("Teams report when they get home, wait for orders, or come into radio range of a radio station.")}>No contact: health and mood unknown until the team reports in.</div>`}
+    isCaptive(s) ? "" : s.location.kind === "post" ? `<div class="small muted"${tip("Recall them from the base's Field works tab")}>${esc(survivorPostText(state, s))}.</div>` : s.location.kind === "errand" ? `<div class="small muted">Away on a personal errand: back around day ${s.location.until}.</div>` : s.location.kind === "lent" ? `<div class="small vol-text"${tip("Lent to another group (sim/volunteers.js): out of your orders, fighting their fights, back at the end of the span")}>${esc(lentLine(state, s))}</div>` : `<div class="small muted"${tip("Teams report when they get home, wait for orders, or come into radio range of a radio station.")}>No contact: health and mood unknown until the team reports in.</div>`}
     <div>${topSkills}${backgroundInfo(state, s.background) ? `<span class="chip"${tip(`Who they were before Calder fell${backgroundInfo(state, s.background).blurb ? `: ${backgroundInfo(state, s.background).blurb}` : ""}${backgroundInfo(state, s.background).custom ? " (a custom background)" : ""}`)}>${esc(backgroundInfo(state, s.background).name)}</span>` : ""}${traitChips(s)}</div>
   </div>`;
 }
@@ -369,6 +370,8 @@ function renderPeople(state) {
   if (away.length) groups.push(["Away on teams", away]);
   const routes = alive(state).filter((s) => s.location.kind === "route");
   if (routes.length) groups.push(["Convoy escorts", routes]);
+  const posts = alive(state).filter((s) => s.location.kind === "post"); // sim/fieldworks.js: lookouts at the field works
+  if (posts.length) groups.push(["Lookouts at field works", posts]);
   const errands = alive(state).filter((s) => s.location.kind === "errand"); // hubevents.js: away a few days
   if (errands.length) groups.push(["Away on personal errands", errands]);
   const held = alive(state).filter(isCaptive);
@@ -1419,6 +1422,7 @@ const BASE_TABS = [
   ["workshops", "Workshops", "Base scavenging and workshop stations: who works where and what they produce"],
   ["buildings", "Buildings", "What is built here and the bonuses it gives"],
   ["construction", "Construction", "Build queue with timers, and what you can build"],
+  ["fieldworks", "Field works", "Roadblocks, wells, watch towers, relay masts and stockpiles out on the base's land: plan them on the map, post lookouts, repair them"],
   ["armory", "Armory", "Stored gear and everyone's equipment at this base"],
   ["crafting", "Crafting", "Hand-made makeshift gear and supplies: craft queue, crafters and recipes (no station needed)"],
   ["vehicles", "Vehicles", "Fuel, condition, refuel and repair"],
@@ -1434,7 +1438,7 @@ function baseModal(state, ui) {
   // A camp (sim/staging.js, the barest base): its own Camp tab first, and only the tabs a camp has use for.
   const tabs = isCamp(b) ? BASE_TABS.filter(([k]) => CAMP_TABS.includes(k)) : BASE_TABS.filter(([k]) => k !== "camp");
   const tab = tabs.some(([k]) => k === ui.baseView.tab) ? ui.baseView.tab : tabs[0][0];
-  const body = { camp: campTab, overview: baseOverview, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
+  const body = { camp: campTab, overview: baseOverview, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, fieldworks: fieldWorksTab, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
     <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}>${renameButton(b, "✎ Rename")}<span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${tabs.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
