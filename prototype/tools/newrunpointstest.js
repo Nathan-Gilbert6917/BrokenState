@@ -13,16 +13,18 @@
 //   - a follow-up the same day ("For choosing guns ... provide how much capacity and what ammo caliber it takes as well
 //     as allow for gun customization ... All guns chosen start with a loaded magazine"): every gun in the pickers shows
 //     its calibre and rounds, the gun in the hands takes parts that fit it (each adding its worth to the gun's points; a
-//     bigger magazine more rounds too), kept through rebuilds, and a gun carried or in the vehicle's back comes loaded.
+//     bigger magazine more rounds too), kept through rebuilds, and a gun carried or in the vehicle's back comes loaded;
+//   - a fix: at a normal start a custom background's car's back (to the hub with its car) is on the vehicle's back's
+//     bill (the car pool first, then its payer), as the backgrounds editor says.
 // Usage: node tools/newrunpointstest.js [-v]
 import { createWorld } from "../src/sim/world.js";
 import { GEAR, SKILLS } from "../src/sim/data.js";
-import { CUSTOM_POINTS, itemPoints, suppliesPoints, skillCost, pricePerson, overBudget, overText, carPool, poolText, backgroundPoints, ownPoints, slotPoints, gunPoints, gunExtras, loosePoints } from "../src/sim/custompoints.js";
+import { CUSTOM_POINTS, itemPoints, suppliesPoints, skillCost, pricePerson, overBudget, overText, carPool, poolText, backgroundPoints, ownPoints, slotPoints, gunPoints, gunExtras, loosePoints, bgBacks, bgCarBack } from "../src/sim/custompoints.js";
 import { carryList, clearStartGear, trunkKg, START_TRUNK, START_GEAR, gunInfo, gunWith, gunCap, sanitizeStartGear, sanitizeGunMods } from "../src/sim/startgear.js";
 import { allCarried } from "../src/sim/inventory.js";
 import { trunkBudget } from "../src/sim/randomkit.js";
-import { newRunScreen, crewSnapshot, blankCrew, randomizeAllCrew } from "../src/ui/newgame.js";
-import { startGearEditor, SG_ACTIONS, SG_CHANGE, startVehicleInfo, poolRow } from "../src/ui/startgear.js";
+import { newRunScreen, crewSnapshot, blankCrew, randomizeAllCrew, crewWithBackground } from "../src/ui/newgame.js";
+import { startGearEditor, SG_ACTIONS, SG_CHANGE, startVehicleInfo, poolRow, loadDice } from "../src/ui/startgear.js";
 import { setCustomLibrary, customLibrary, presetToCustom, backgroundEditor, BG_ACTIONS, BG_CHANGE } from "../src/ui/backgrounds.js";
 import { blankBackground } from "../src/sim/custombg.js";
 
@@ -131,7 +133,7 @@ section("A custom background's total");
   BG_ACTIONS["bg-open"](st, ui);
   ui.bgEditor.sel = "c_9";
   const html = backgroundEditor(st, ui);
-  check(new RegExp(`Total ${N.total} points`).test(html) && /skill bumps 13\+/.test(html) && /of 80 each/.test(html) && /the car's back \d+ more, not in the total/.test(html), `the editor's line: "${(html.match(/Under Customize:[^<]*/) || [""])[0]}… Total ${N.total}"`);
+  check(new RegExp(`Total ${N.total} points`).test(html) && /skill bumps 13\+/.test(html) && /of 80 each/.test(html) && /the car's back \d+ more, paid with the vehicle's back/.test(html), `the editor's line: "${(html.match(/Under Customize:[^<]*/) || [""])[0]}… Total ${N.total}"`);
   BG_CHANGE["bg-skill"](st, ui, { value: "10", dataset: { k: "medicine" } });
   const N2 = backgroundPoints(customLibrary().c_9, "normal");
   check(N2.total === N.total + skillCost(10) - skillCost(5) && new RegExp(`Total ${N2.total} points`).test(backgroundEditor(st, ui)), `live: Medicine +10 makes it ${N2.total}`);
@@ -335,6 +337,65 @@ section("Guns: calibre and capacity, parts, a loaded magazine");
   check(rv && rv.loaded && rv.loaded.n === 6 && rv.loaded.key === "a_357_fmj", "Hardcore: the revolver in the car's back loaded (6)");
   const hg = h2.survivors[0].gear.weapon;
   check(hg.key === "ar" && hg.mods.mag.key === "mag_stanag_40" && (h2.parties[0].supplies.a_556_fmj || 0) >= 40 * START_GEAR.LOADS, `Hardcore: the rifle in the hands with its 40-round magazine and its rounds (${h2.parties[0].supplies.a_556_fmj})`);
+}
+
+section("A custom background's car's back at a normal start: on the vehicle's back's bill");
+{
+  const lib = [{ ...presetToCustom("veteran", "c_5"), car: { odds: 1, type: "sedan", trunk: { fuel: 20, food: 10 }, items: ["crowbar", "pistol"] } }];
+  setCustomLibrary(lib);
+  const A0 = customLibrary().c_5;
+  const mk = (mode, crew) => { const w = createWorld({ seed: 42, factionCount: 5, crewRoll: ROLL, mode, crew, customBackgrounds: lib }); w.pointsMax = 80; return w; };
+  const blank = (mode) => mk(mode, blankCrew(createWorld({ seed: 42, factionCount: 5, crewRoll: ROLL, mode })));
+  const st0 = blank("normal");
+  const a = mk("normal", crewWithBackground(st0, st0.survivors[1].id, "c_5"));
+  loadDice(a, a.survivors[1]); // main.js pointsLoad
+  const st = mk("normal", crewSnapshot(a));
+  const bgS = st.survivors[1], lead = st.survivors.find((s) => s.leader);
+  const n = bgCarBack(A0);
+  check(n === suppliesPoints({ fuel: 20, food: 10 }) + itemPoints("crowbar") + loosePoints("pistol") && backgroundPoints(A0, "normal").trunk === n, `the car's back priced: ${n} (a gun in it loaded)`);
+  check(bgBacks(st).length === 1 && bgBacks(st)[0].s === bgS && bgBacks(st)[0].n === n, "on the bill: their background's car's back");
+  let K = carPool(st);
+  check(K.owner === lead && K.cost === n && K.extra === n && pricePerson(st, lead).vehicle === n && pricePerson(st, bgS).vehicle === 0, `nothing picked for the back: its payer (the leader) pays the ${n}`);
+  check(/background cars' backs/.test(pricePerson(st, lead).lines.join(" · ")), "the leader's bill says so");
+  const ui = UI();
+  ui.gearEdit = { i: 0, sel: null, msg: "" };
+  check(/Also on this bill, to the hub with their cars: [^<]* background car's back \d+ pts/.test(startGearEditor(st, ui)), "the gear window's vehicle's back shows it");
+  // Paid by someone else: it moves with the back.
+  SG_CHANGE["sg-trunk-sup"](st, ui, { value: "10", dataset: { k: "water" } });
+  const other = st.survivors.find((s) => !s.leader && s !== bgS);
+  SG_CHANGE["sg-trunk-owner"](st, ui, { value: String(other.id) });
+  K = carPool(st);
+  check(K.owner === other && K.cost === n + suppliesPoints({ water: 10 }) && pricePerson(st, lead).vehicle === 0, "Paid by: the background car's back goes with the rest of the back");
+  // The car pool first.
+  pool(st, lead);
+  K = carPool(st);
+  check(K.used === Math.min(K.total, K.cost) && pricePerson(st, other).vehicle === K.cost - K.used, `the car pool pays it first (${K.used} of ${K.cost})`);
+  // Random back: what the picks may cost leaves room for it.
+  const tb = trunkBudget(st, other);
+  check(tb === Math.max(0, Math.max(0, 80 - ownPoints(st, other)) + K.offers.filter((o) => o.s !== other).reduce((x, o) => x + o.n, 0) - n), `Random back's budget less the background car's back (${tb})`);
+  // Over: the refusal names it.
+  for (const k of SKILLS) other.skills[k] = 15;
+  pool(st, lead, false);
+  check(overBudget(st).some((x) => x.s === other) && /with the background cars' backs, \d+/.test(overText(st)), `Start refused, the back named with it: "${overText(st)}"`);
+  for (const k of SKILLS) other.skills[k] = 0;
+  // Built: it goes to the hub (it used to be dropped under Customize), the gun in it loaded.
+  const plain = mk("normal", crewSnapshot(st0));
+  const b = mk("normal", crewSnapshot(st));
+  check(b.bases[0].stock.fuel === plain.bases[0].stock.fuel + 20 && b.bases[0].stock.food >= plain.bases[0].stock.food + 10, "built: its fuel and food in the hub's stores");
+  const pz = b.bases[0].armory.find((it) => it.key === "pistol" && it.loaded);
+  check(b.bases[0].armory.some((it) => it.key === "crowbar") && !!pz, "and its crowbar and pistol in the armory");
+  // Hardcore: the car's back is the dice's back (As rolled, priced as picks): nothing extra on the bill.
+  const h0 = blank("hardcore");
+  const ha = mk("hardcore", crewWithBackground(h0, h0.survivors[1].id, "c_5"));
+  loadDice(ha, ha.survivors[1]);
+  const h = mk("hardcore", crewSnapshot(ha));
+  check(!bgBacks(h).length && carPool(h).extra === 0, "Hardcore: nothing extra (the car's back loads with As rolled)");
+  // The editor says where it goes.
+  const eui = { started: false, ironman: false };
+  BG_ACTIONS["bg-open"](st, eui);
+  eui.bgEditor.sel = "c_5";
+  check(/paid with the vehicle's back/.test(backgroundEditor(st, eui)) && /goes to the hub with the car, paid by whoever pays for the vehicle's back/.test(backgroundEditor(st, eui)), "the editor: the car's back is paid with the vehicle's back");
+  setCustomLibrary([]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

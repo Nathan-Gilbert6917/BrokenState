@@ -185,7 +185,7 @@ export function pricePerson(state, s, max = pointsMax(state)) {
   const vehicleCost = mine ? K.cost : s.startVehicle && !K.crew.includes(s) ? vehiclePoints(s.startVehicle) : 0; // (someone off the crew: their own back)
   const poolPaid = mine ? K.used : 0;
   const vehicle = vehicleCost - poolPaid;
-  if (vehicleCost) lines.push(`In the vehicle ${vehicleCost}${poolPaid ? ` (the car pool pays ${poolPaid}, they pay ${vehicle})` : ""}`);
+  if (vehicleCost) lines.push(`In the vehicle${mine && K.extra ? ` and the background cars' backs (${K.extra})` : ""} ${vehicleCost}${poolPaid ? ` (the car pool pays ${poolPaid}, they pay ${vehicle})` : ""}`);
   const gift = K.offers.find((o) => o.s === s);
   const offer = gift ? gift.n : 0, pool = gift ? gift.share : 0;
   if (gift) lines.push(`To the car pool ${pool} (of ${offer} left over${offer > pool ? `: ${offer - pool} not needed, still theirs` : ""})`);
@@ -209,8 +209,12 @@ export function pricePerson(state, s, max = pointsMax(state)) {
 /** @param {any} state @param {number} [max] @param {any} [sub] */
 export function carPool(state, max = pointsMax(state), sub = null) {
   const crew = ((state && state.survivors) || []).map((x) => (sub && x.id === sub.id ? sub : x));
-  const owner = crew.find((x) => x.startVehicle) || null;
-  const cost = owner ? vehiclePoints(owner.startVehicle) : 0;
+  // A normal start's custom backgrounds' car backs (to the hub with their cars) are on the vehicle's back's bill too:
+  // with nothing picked for the back, its payer is whoever would pay for it (ui/startgear.js editTrunk: the leader).
+  const backs = bgBacks(state, crew);
+  const extra = backs.reduce((a, b) => a + b.n, 0);
+  const owner = crew.find((x) => x.startVehicle) || (extra > 0 ? backPayer(state, crew) : null);
+  const cost = (owner && owner.startVehicle ? vehiclePoints(owner.startVehicle) : 0) + (owner ? extra : 0);
   const offers = crew.filter((x) => x.carPool && x.startPoints && x !== owner).map((x) => ({ s: x, n: Math.max(0, max - ownBill(state, x, max).own), share: 0 }));
   const total = offers.reduce((a, o) => a + o.n, 0);
   const used = Math.min(total, cost);
@@ -225,7 +229,32 @@ export function carPool(state, max = pointsMax(state), sub = null) {
       for (const i of order) { if (rest <= 0) break; if (offers[i].share < offers[i].n) { offers[i].share++; rest--; } }
     }
   }
-  return { crew, owner, cost, offers, total, used, ownerPays: cost - used };
+  return { crew, owner, cost, offers, total, used, ownerPays: cost - used, backs, extra };
+}
+// Who pays for the vehicle's back with nothing picked for it yet (as ui/startgear.js editTrunk picks the payer):
+// Hardcore, the car's owner; else the leader, else the first.
+/** @param {any} state @param {any[]} [crew] */
+export function backPayer(state, crew = (state && state.survivors) || []) {
+  const id = state && state.hardcore && state.hardcore.start ? state.hardcore.start.carOwner : null;
+  return crew.find((x) => id != null && x.id === id) || crew.find((x) => x.leader) || crew[0] || null;
+}
+// A custom background's car's back, in points: its supplies and things (each thing as loosePoints: a gun loaded).
+/** @param {any} A */
+export const bgCarBack = (A) => (A && A.car ? suppliesPoints(A.car.trunk || {}) + (A.car.items || []).reduce((a, k) => a + (GEAR[k] ? loosePoints(k) : 0), 0) : 0);
+// The custom backgrounds' car backs on the vehicle's back's bill (2026-10-09 fix: the backgrounds editor says the car's
+// back is paid by whoever pays for the vehicle's back). At a normal start each one goes to the hub with its car
+// (hardcore-start.js normalStartKit), for the colonists built on points: [{ s, n (points) }]. In Hardcore the car's
+// back is the dice's back, loaded as picks with "As rolled" and priced as any other (none here).
+/** @param {any} state @param {any[]} [crew] */
+export function bgBacks(state, crew = (state && state.survivors) || []) {
+  if (!state || state.mode === "hardcore" || !state.customBackgrounds) return [];
+  const out = [];
+  for (const s of crew) {
+    const A = s && s.startPoints && s.background ? state.customBackgrounds[s.background] : null;
+    const n = A ? bgCarBack(A) : 0;
+    if (n > 0) out.push({ s, n });
+  }
+  return out;
 }
 // The car pool in words (the vehicle's back): "Car pool: 34 points from Ana 12, Ben 22" ("" with nobody giving).
 /** @param {ReturnType<typeof carPool>} K */
@@ -258,7 +287,7 @@ export const bgCarPoints = (A, mode) => (mode !== "hardcore" && A && A.car && A.
 // creating a custom background show a total amount of points it provides"): { skills (its bumps priced from level 0:
 // on top of a colonist's own levels they cost at least this, more past level 10), traits (by tier; bad ones give
 // back), kit (worn, held and carried), supplies (on them), car (bgCarPoints), total (all of those), trunk (the car's
-// back: not in the total, it is not on the colonist's bill) }.
+// back: not in the total, it is on the bill of whoever pays for the vehicle's back: bgBacks) }.
 /** @param {any} A @param {string} [mode] */
 export function backgroundPoints(A, mode) {
   if (!A) return { skills: 0, traits: 0, kit: 0, supplies: 0, car: 0, trunk: 0, total: 0 };
@@ -267,7 +296,7 @@ export function backgroundPoints(A, mode) {
   const kit = [...Object.values(A.gear || {}), ...(A.items || [])].reduce((a, k) => a + itemPoints(k), 0);
   const supplies = suppliesPoints(A.supplies || {});
   const car = bgCarPoints(A, mode);
-  const trunk = A.car ? suppliesPoints(A.car.trunk || {}) + (A.car.items || []).reduce((a, k) => a + itemPoints(k), 0) : 0;
+  const trunk = bgCarBack(A);
   return { skills, traits, kit, supplies, car, trunk, total: skills + traits + kit + supplies + car };
 }
 // The crew's max (the new-run screen's box: main.js keeps it in ui.pointsMax and the world as state.pointsMax).
@@ -290,7 +319,7 @@ export function overText(state) {
   let back = "";
   if (K.owner && K.cost > 0 && list.some((x) => x.s === K.owner)) {
     const spare = Math.max(0, max - ownPoints(state, K.owner, max));
-    back = ` The vehicle's back costs ${K.cost}: ${K.offers.length ? `the car pool (${K.total}) and ` : ""}${firstName(K.owner)} (${spare} to spare) cannot pay it.`;
+    back = ` The vehicle's back${K.extra ? ` (with the background cars' backs, ${K.extra})` : ""} costs ${K.cost}: ${K.offers.length ? `the car pool (${K.total}) and ` : ""}${firstName(K.owner)} (${spare} to spare) cannot pay it.`;
   }
   return `Over the points: ${list.map(({ s, over }) => `${firstName(s)} by ${over}`).join(", ")}.${back} Take something off (or raise Points each) to start.`;
 }

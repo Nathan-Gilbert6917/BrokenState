@@ -31,12 +31,14 @@ const noLauncher = (k) => !GEAR[k].launcher;
 // giver to the car pool keeps what the back takes of their offer for it: custompoints.js carPool).
 /** @param {any} state @param {any} s */
 export const kitBudget = (state, s) => Math.max(0, pricePerson(state, { ...s, startGear: null }).left);
-// What the back can cost: what its payer has left with the back empty, and the car pool (everyone else's offers).
+// What the back's picks can cost: what its payer has left with the back empty, and the car pool (everyone else's
+// offers), less a normal start's background car backs (on the same bill: custompoints.js bgBacks).
 /** @param {any} state @param {any} payer */
 export function trunkBudget(state, payer) {
   const max = pointsMax(state);
-  const pool = carPool(state, max).offers.filter((o) => o.s.id !== payer.id).reduce((a, o) => a + o.n, 0);
-  return Math.max(0, max - ownPoints(state, payer, max)) + pool;
+  const K = carPool(state, max);
+  const pool = K.offers.filter((o) => o.s.id !== payer.id).reduce((a, o) => a + o.n, 0);
+  return Math.max(0, Math.max(0, max - ownPoints(state, payer, max)) + pool - K.extra);
 }
 
 // A random kit as picks (every slot named, things placed where they fit) costing at most budget. opts.fill: then spend

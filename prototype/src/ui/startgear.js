@@ -140,8 +140,10 @@ function vehicleSection(state, ui) {
   const K = carPool(state);
   const cost = vehiclePoints(V);
   const used = Math.min(cost, K.total);
+  const bill = cost + (K.owner === payer ? K.extra : 0), took = Math.min(bill, K.total);
+  const bgLine = K.extra && K.owner === payer ? `<div class="small muted"${tip("A normal start: a custom background's car comes to the hub with its own back, paid for with the vehicle's back (the car pool first, then its payer)")}>Also on this bill, to the hub with their cars: ${K.backs.map((b) => `${esc(b.s.name.split(" ")[0])}'s background car's back ${b.n}`).join(", ")} pts</div>` : "";
   const pool = K.offers.length
-    ? `${esc(poolText(K))}${cost ? ` · the back takes ${used} of it; ${esc(payer.name.split(" ")[0])} pays ${cost - used}` : ""}`
+    ? `${esc(poolText(K))}${bill ? ` · the back takes ${took} of it; ${esc(payer.name.split(" ")[0])} pays ${bill - took}` : ""}`
     : `Car pool: empty (tick "Give leftover to the car pool" on a crew card to put someone's points left towards the back).`;
   const poolTip = `The car pool pays for the vehicle's back before ${payer.name.split(" ")[0]} does: everyone who ticked "Give leftover to the car pool" gives the points they have left. Only what the back needs is taken, shared by what each gives; the rest stays theirs. Start is refused while the back costs more than the pool and its payer can pay.`;
   const tFree = Math.max(0, START_TRUNK.ITEMS - V.items.length);
@@ -154,6 +156,7 @@ function vehicleSection(state, ui) {
   return `<div class="sgtrunk">
     <h3>The vehicle's back <span class="small muted">${cost} pts · ${r1(load)} / ${info.room} kg</span></h3>
     <div class="small muted">${what}</div>
+    ${bgLine}
     <div class="small sgpool"${tip(poolTip)}>${pool}</div>
     <div class="row" style="gap:0.3rem;margin:0.25rem 0"><label class="small"${tip("Whose points pay for what is in the back (in Hardcore they own the car)")}>Paid by <select data-action="sg-trunk-owner">${who}</select></label>
       <button class="mini" data-action="sg-trunk-rand"${tip(`Empty the back, then fill it with new random things and supplies for what ${payer.name.split(" ")[0]} has left${K.offers.some((o) => o.s !== payer) ? " and the car pool" : ""} (${trunkBudget(state, payer)} points) in the room there is. Each click is a new draw`)}>🎲 Random back</button>
