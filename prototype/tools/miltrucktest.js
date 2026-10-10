@@ -387,11 +387,12 @@ section("The convoy's guard (miltrucks.js CONVOY_GUARD: more dead soldiers and m
     // AI parity: the trucks' cargo goes home with it (convoyHaul: truckLoot, its condition by itemcond.js; into the
     // group's stock and arsenal through caravanraids.js takeInto / arsenal.js addToArsenal).
     const plan = convoyHaul(st, c), ars0 = f.arsenal ? f.arsenal.items.length : 0, ammo0 = f.stock.ammo || 0;
+    const outs = () => (f.arsenal && f.arsenal.stats ? Object.values(f.arsenal.stats.out).reduce((a, n) => a + n, 0) : 0), out0 = outs(); // the fallen's kit leaves it (arsenal.js partyLost)
     const worthy = plan.gear.filter((it) => arsenalWorthy(it)).length, rich0 = unopenedTrucks(st, c.tile).map((x) => x.rich);
     convoysHour(st);
     check(f.pop === pop0 - lost && (c.aiLost || 0) === lost && c.stripped === 1, `it reaches the convoy: ${lost} of its people fall (group ${pop0} → ${f.pop}), then it strips it`);
     check(plan.value > 0 && c.aiHaul === plan.value && plan.gear.every((it) => condRolled(it)), `it takes the trucks' cargo home (worth ${plan.value}: ${plan.gear.map((it) => it.name).join(", ") || "no gear"}; every piece rolled by itemcond.js)`);
-    check((f.arsenal ? f.arsenal.items.length : 0) - ars0 === worthy && (f.stock.ammo || 0) - ammo0 === (plan.supplies.ammo || 0), `${worthy} guns, armour and grenades into its arsenal, ${plan.supplies.ammo || 0} rounds into its stock`);
+    check((f.arsenal ? f.arsenal.items.length : 0) - ars0 + (outs() - out0) === worthy && (f.stock.ammo || 0) - ammo0 === (plan.supplies.ammo || 0), `${worthy} guns, armour and grenades into its arsenal, ${plan.supplies.ammo || 0} rounds into its stock`);
     check(unopenedTrucks(st, c.tile).every((x, i) => Math.abs(x.rich - rich0[i] * CONVOY.stripKeep) < 1e-9), `the trucks keep ${CONVOY.stripKeep * 100}% of their cargo for whoever comes next`);
     check(!guardedTrucks(st, c.tile).length && convoyGuards(st, c.tile) === 0 && convoyHeat0(st, c.tile) === 0, "a stripped convoy has no guard left (the first group there put them down)");
     const back = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
