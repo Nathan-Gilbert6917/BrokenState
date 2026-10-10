@@ -74,7 +74,7 @@ export const AR = {
   // butt, teeth and nails.
   PEN: { arrow: 12, blade: 12, pierce: 20, chop: 16, blunt: 4, heavy: 10, bash: 4, claws: 6, fists: 0 },
   MELEE_CLASS: { knife: "blade", machete: "blade", sawmachete: "blade", springmachete: "blade", pipespear: "pierce", spear: "pierce", fireaxe: "chop", bat: "blunt", spikedbat: "blunt", nailbat: "blunt", prybar: "blunt", baton: "blunt", sledge: "heavy", fists: "fists", claws: "claws" },
-  RIFLE: ["556", "762x39", "308", "3030", "50bmg"], // calibres whose stopped round spalls off steel
+  RIFLE: ["556", "762x39", "308", "3030", "50bmg", "223", "300blk"], // calibres whose stopped round spalls off steel
   TOUGH: TRAIT_FX.TOUGH, // the Tough trait (traits.js)
   // By the numbers: a wound wears what is worn by dmg × OFFSCREEN × the enemy kind's typical round ad, by location.
   OFFSCREEN: 0.6,

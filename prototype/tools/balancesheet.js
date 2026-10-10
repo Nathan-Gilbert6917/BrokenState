@@ -375,7 +375,8 @@ export async function collect(root = PROTO) {
     const places = (gunPlaces[k] || []).filter((x) => x.p > 0).sort((a, b) => b.p - a.p);
     const v = {
       name: (d && d.name) || w.name, cat: (d && d.cat) || (w.mount || w.mounted ? "mounted" : "-"), platform: WEAPON_PLATFORM[k] || "",
-      cal: cal || (w.arrows ? "arrows" : ""), rarity: GUN_RARITY[k] ?? null, gunClass: (DG.GUN_CLASS && DG.GUN_CLASS[k] ? DG.GUN_CLASS[k] : []).join(" "),
+      cal: cal || (w.arrows ? "arrows" : ""), alsoTakes: (AM.gunCalsOf ? AM.gunCalsOf(k) : []).filter((c) => c !== cal).join(", "), rarity: GUN_RARITY[k] ?? null,
+      gunClass: (DG.GUN_CLASS && DG.GUN_CLASS[k] ? DG.GUN_CLASS[k] : []).join(" "),
       dmgLo: w.dmg[0], dmgHi: w.dmg[1], opt: w.opt ?? null, fall: w.fall ?? null, aim: w.aim ?? null, close: w.close ?? null,
       ammo: w.ammo ?? null, noise: w.noise ?? null, cap: w.cap ?? null, rel: w.rel ?? null, pierce: w.pierce ?? null,
       brace: typeof w.brace === "number" ? w.brace : null, heavyMob: w.heavy ? w.heavy.mob : null, heavyBrace: w.heavy ? w.heavy.brace : null,
@@ -397,6 +398,7 @@ export async function collect(root = PROTO) {
   }
   table("guns", "Guns", [
     C("name", "Name", "text"), C("cat", "Category", "text"), C("platform", "Platform", "text"), C("cal", "Calibre", "text"),
+    C("alsoTakes", "Also takes", "text", { desc: "Other calibres its chamber takes (data-ammo.js CAL_ACCEPTS, a gun's own cals): a 5.56 gun .223, a .357 .38 Special" }),
     C("rarity", "Rarity", "tier", { desc: "data-guns.js GUN_RARITY" }), C("findW", "Find weight", "num", { ...live, desc: "ARSENAL_FINDS.FIND_W of its tier (every gun source's rarity weight: gundist.js)" }),
     C("gunClass", "Class", "text", { hide: true, desc: "data-guns.js GUN_CLASS: its uses (who keeps one) and era; the gun distribution's sources draw by them" }),
     C("dmgLo", "Dmg lo"), C("dmgHi", "Dmg hi"), C("dmgAvg", "Dmg avg", "num", live), C("calRef", "Calibre ref", "num", { ...live, desc: "data-ammo.js CAL_DMG average" }),
@@ -451,11 +453,12 @@ export async function collect(root = PROTO) {
   const magRows = Object.entries(MAGAZINES).map(([k, m]) => {
     S.magCal[k] = m.cal;
     const fits = gunKeys.filter((g) => magFitsGun(g, k));
-    return { key: k, v: { name: m.name, cal: m.cal, plat: list(m.plat), cap: m.cap, kg: m.kg, value: m.value, aim: m.aim ?? null, jam: m.jam ?? null, pouch: m.pouch,
+    return { key: k, v: { name: m.name, cal: m.cal, holds: (m.cals || [m.cal]).join(", "), onlyGuns: (m.guns || []).join(", "), plat: list(m.plat), cap: m.cap, kg: m.kg, value: m.value, aim: m.aim ?? null, jam: m.jam ?? null, pouch: m.pouch,
       guns: fits.join(", "), gunCount: fits.length, stdFor: fits.filter((g) => standardMag(g) === k).join(", ") } };
   });
   table("mags", "Magazines", [
-    C("name", "Name", "text"), C("cal", "Calibre", "text"), C("plat", "Platforms", "text"), C("cap", "Capacity"), C("kg", "Empty kg"), C("value", "Value"),
+    C("name", "Name", "text"), C("cal", "Calibre", "text"), C("holds", "Holds", "text", { desc: "MAGAZINES cals: the calibres it holds (STANAG: 5.56, .223, .300 BLK)" }), C("plat", "Platforms", "text"),
+    C("onlyGuns", "Only for", "text", { desc: "MAGAZINES guns: only these guns of its platforms" }), C("cap", "Capacity"), C("kg", "Empty kg"), C("value", "Value"),
     C("aim", "Aim"), C("jam", "Jam ×"), C("pouch", "Pouch", "text"), C("loadedKg", "Loaded kg", "num", live), C("valuePerRound", "Value/round", "num", live),
     C("gunCount", "Guns fit"), C("guns", "Guns that take it", "text"), C("stdFor", "Standard for", "text"),
   ], magRows, { note: "data-kit.js MAGAZINES (one item per platform and size). A gun's own capacity is its WEAPONS cap (Guns tab)." });

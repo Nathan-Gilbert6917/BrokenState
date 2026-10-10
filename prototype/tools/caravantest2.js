@@ -96,7 +96,7 @@ section("Escorts: the cargo's wish, capped by the sender's means");
     const S = V.MERCHANT_SPECS[sp];
     check(m.spec === sp && m.wares.filter((it) => S.gear.includes(it.key)).length >= 2 + (S.extra ? S.extra[0] : 0), `${sp}: ${S.name} (${V.goodsText(m)})`);
     const e = m.escort;
-    check(e && e.company && e.guards <= e.company.guards && e.guards === Math.max(1, Math.min(e.company.guards, Math.round(e.company.guards * e.want))) && m.guards === Math.max(1, e.guards) && m.size === m.guards + 2, `${sp}: worth ${e.value}, wish ${Math.round(e.want * 100)}% of ${e.company.guards} → ${E.escortWords(e)}`);
+    check(e && e.company && e.guards <= e.company.guards && e.guards === Math.max(1, Math.min(e.company.guards, Math.round(e.company.guards * E.escortWant(e.value)))) /* the raw wish: e.want is rounded to 0.01 (0.7453 shows 0.75, 2 × it rounds to 1, not 2) */ && m.guards === Math.max(1, e.guards) && m.size === m.guards + 2, `${sp}: worth ${e.value}, wish ${Math.round(e.want * 100)}% of ${e.company.guards} → ${E.escortWords(e)}`);
     st.visitors.splice(st.visitors.indexOf(m), 1);
   }
   const big = { guards: 8, power: 4.6, kit: "contractors", vehicles: ["truck", "hummer"] };

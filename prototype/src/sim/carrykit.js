@@ -22,7 +22,7 @@ import { fittedKg, gunMods } from "./gunmods.js";
 import { calOf, roundsOf } from "./ammo.js";
 import { CALIBERS } from "./data-ammo.js";
 import { typeFor } from "./rounds.js";
-import { standardMag, magFitsGun, isMag, enemyMags, enemyMagCount, magLoad, takesMagItems, usesInternal } from "./mags.js";
+import { standardMag, magFitsGun, isMag, enemyMags, enemyMagCount, magLoad, takesMagItems, usesInternal, magItemLoad } from "./mags.js";
 import { feelFactor, bandIndex, LOAD_BANDS } from "./load.js";
 import { kitSource, siteSource, areaSource, traderSource } from "./itemcond.js";
 import { armourSpec, armourBroken } from "./armour.js";
@@ -198,7 +198,7 @@ export function unitMagItems(u, src) {
   const cal = calOf(u.weapon);
   return (u.mags || []).filter((m) => m.where !== "gun" && m.key && MAGAZINES[m.key]).map((m, i) => {
     const it = lootItem(m.key, src, [u.id, "mag", i]);
-    if (cal && m.load && m.load !== typeFor(cal, null)) it.load = m.load;
+    if (cal && m.load && m.load !== typeFor(cal, null)) { const l = magItemLoad(m.key, cal, m.load); if (l) it.load = l; } // (written against the magazine's calibre: mags.js)
     return it;
   });
 }
@@ -222,7 +222,7 @@ export function packMags(list, crew) {
       if (n >= want) break;
       if (!stow(s, it)) break;
       list.splice(list.indexOf(it), 1);
-      if (it.load == null && gun.load) it.load = gun.load;
+      if (it.load == null && gun.load) { const l = magItemLoad(it.key, calOf(gun.key), gun.load); if (l) it.load = l; }
       n++;
     }
     if (n) out.push(`${n} magazine${n > 1 ? "s" : ""} (${s.name.split(" ")[0]})`);
@@ -238,7 +238,7 @@ export function starterMags(s, armory = null) {
   let n = 0;
   for (let i = 0; i < CARRY.START; i++) {
     const it = newItem(key); // starting gear (not loot): a magazine has no wear
-    if (gun.load) it.load = gun.load;
+    if (gun.load) { const l = magItemLoad(key, calOf(gun.key), gun.load); if (l) it.load = l; }
     ensureInv(s);
     const rp = rigPouches(s), kinds = rp ? pouchesOf(rigOf(s)) : [];
     const ri = rp ? kinds.findIndex((k, j) => !rp[j] && !pouchReason(it, k) && k !== "admin") : -1;
@@ -293,6 +293,12 @@ export const WARE_KIT = {
   raider: { p: 0.15, items: { mag_glock_15: 1, mag_ak_30: 1, mag_ak_45: 0.4, makeshiftrig: 1.5, steelplate: 0.5 } },
   merchants: { p: 0.35, items: { mag_stanag_30: 2, mag_stanag_40: 0.6, mag_ak_30: 1, mag_ak_75: 0.3, mag_glock_17: 1, chestrig: 1, tacvest: 0.6, ceramicplate: 1, steelplate: 1, mag_battle_20: 0.5, mag_m240_100: 0.1, mag_deagle_9: 0.1 } },
 };
+// 2026-10-10 (the ar-platform branch): the AUG's, the FAL's, the M14's and the ranch rifle's own magazines.
+Object.assign(SITE_KIT.gunstore.items, { mag_fal_20: 0.3, mag_m14_20: 0.3, mag_aug_30: 0.2, mag_mini14_20: 0.8, mag_mini14_30: 0.3 });
+Object.assign(SITE_KIT.military.items, { mag_fal_20: 0.2, mag_aug_30: 0.3 });
+Object.assign(AREA_KIT.armory.items, { mag_aug_30: 0.2, mag_m14_10: 0.2 });
+Object.assign(WARE_KIT.merchants.items, { mag_fal_30: 0.15, mag_aug_42: 0.1, mag_m14_10: 0.2 });
+Object.assign(WARE_KIT.traders.items, { mag_mini14_30: 0.3 });
 function pickW(items, r) {
   const keys = Object.keys(items).filter((k) => GEAR[k]).sort();
   const tot = keys.reduce((a, k) => a + items[k], 0);
@@ -399,6 +405,32 @@ export function migrateKit(state) {
     const st = storageFor(state, personPlace(s));
     starterMags(s, st ? st.list : null);
   }
+}
+
+// An old save (before 2026-10-10: the AUG took STANAG magazines, the three .308 battle rifles one kind): a gun whose
+// fitted magazine no longer fits it gets one of its own of the nearest size (the same item, its key and name changed:
+// its wear and load go with it). Loose magazines stay what they are (a STANAG still fits every AR).
+export function migrateMagFits(state) {
+  if (state.magFitV >= 1) return;
+  const seen = new Set();
+  const fix = (gun) => {
+    const m = gun.mods && gun.mods.mag;
+    if (!m || !MAGAZINES[m.key] || magFitsGun(gun.key, m.key)) return;
+    const own = Object.keys(MAGAZINES).filter((k) => magFitsGun(gun.key, k)).sort((a, b) => Math.abs(MAGAZINES[a].cap - MAGAZINES[m.key].cap) - Math.abs(MAGAZINES[b].cap - MAGAZINES[m.key].cap) || MAGAZINES[a].cap - MAGAZINES[b].cap);
+    if (!own.length) { delete gun.mods.mag; return; }
+    m.key = own[0];
+    if (GEAR[own[0]]) m.name = GEAR[own[0]].name;
+  };
+  const walk = (o) => {
+    if (!o || typeof o !== "object" || seen.has(o) || ArrayBuffer.isView(o)) return;
+    seen.add(o);
+    if (o instanceof Map) { for (const v of o.values()) walk(v); return; }
+    if (o instanceof Set || Array.isArray(o)) { for (const v of o) walk(v); return; }
+    if (typeof o.key === "string" && WEAPONS[o.key] && o.mods) fix(o);
+    for (const k of Object.keys(o)) { const v = o[k]; if (v && typeof v === "object") walk(v); }
+  };
+  walk(state);
+  state.magFitV = 1;
 }
 
 // ---------- the governor's plates (autopilot.js governBase, hourly at a base it runs) ----------
