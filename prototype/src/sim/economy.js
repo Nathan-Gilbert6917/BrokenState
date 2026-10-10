@@ -29,6 +29,7 @@ import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { heatDaily, starvingDaily } from "./needs.js";
 import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
+import { fieldWellWater, drawFieldWells } from "./fieldworks.js"; // field wells on the base's land (waterProduction field)
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
 import { cookAtBase, wormDaily, boilerUse, purifyDaily } from "./worm.js";
 import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
@@ -199,8 +200,11 @@ export function waterProduction(state, base) {
   // (claims.js hauledWells: at most one well per 4 people at the base; claimWells lists them for the base card).
   const cw = hauledWells(state, base);
   const hauled = prisonWater(state, base) + cw.total;
-  const total = own + stream + wells + rain + hauled;
-  return { own, stream, wells, rain, filters, hauled, claimWells: cw.wells, claimWellCap: cw.cap, factor, total: Math.round(total * 10) / 10 };
+  // field: the field wells planned from the base (fieldworks.js), hauled by the people left after the claim wells.
+  const fw = fieldWellWater(state, base);
+  const field = fw.total;
+  const total = own + stream + wells + rain + hauled + field;
+  return { own, stream, wells, rain, filters, hauled, field, fieldWells: fw.wells, claimWells: cw.wells, claimWellCap: cw.cap, factor, total: Math.round(total * 10) / 10 };
 }
 
 /** @param {State} state @param {Base} base */
@@ -441,6 +445,7 @@ function baseDaily(state, base) {
   const room = rawRoom(base); // the un-purified barrels and the tanks (the purified barrels stay for safe water)
   st[RAW] = Math.max(0, st[RAW] || 0) + Math.min(room, prod.total);
   drawWells(state, base); // claims.js: the wells hauled from today lose what was drawn; one at 0 is dry
+  drawFieldWells(state, base); // fieldworks.js: the field wells likewise
   // Summer: some of the water kept outside the tanks and cisterns (above the capacity) evaporates (un-purified first).
   const over = waterLayout(base).outside;
   if (over > 0 && Weather.season && Weather.season(state).key === "summer") drawWater(st, Math.round(over * WATER.evaporate * 10) / 10, { rawFirst: true });

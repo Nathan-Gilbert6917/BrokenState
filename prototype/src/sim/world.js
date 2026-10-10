@@ -19,6 +19,7 @@ function radioBasesInRange(state, tileId, extra = 0) {
   return coverNodes(state, tileId, extra).map((n) => n.base);
 }
 import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js";
+import { fieldSight, fieldworksHour, fieldworksDaily } from "./fieldworks.js"; // field works outside the bases
 import { movePartiesHour } from "./parties.js";
 import { hordesHour, hordesDaily } from "./hordes.js";
 import { ensureHives, hivesSecured } from "./hives.js";
@@ -417,13 +418,14 @@ export const alive = (state) => state.survivors.filter((s) => s.alive);
 export const atBase = (state, baseId) => alive(state).filter((s) => s.location.kind === "base" && s.location.baseId === baseId);
 /** @type {(state: State, id: any) => import("./types").Faction | undefined} */
 export const factionById = (state, id) => state.factions.find((f) => f.id === id);
-// Everyone who lives at a base: the people there, plus (at the hub) trade-route escorts waiting between trips.
-// Waiting escorts eat, heal and can be treated at the hub; they do no base work (atBase leaves them out).
+// Everyone who lives at a base: the people there, plus (at the hub) trade-route escorts waiting between trips, and the
+// lookouts posted at the base's field works (fieldworks.js). They eat, heal and can be treated there; they do no base
+// work and are not in a base battle (atBase leaves them out).
 /** @param {State} state @param {number} baseId @returns {Survivor[]} */
 export function residents(state, baseId) {
   const h = hub(state);
   const hubId = h ? h.id : null;
-  return alive(state).filter((s) => (s.location.kind === "base" && s.location.baseId === baseId) || (s.location.kind === "route" && baseId === hubId));
+  return alive(state).filter((s) => (s.location.kind === "base" && s.location.baseId === baseId) || (s.location.kind === "route" && baseId === hubId) || (s.location.kind === "post" && s.location.baseId === baseId)); // fieldworks.js: lookouts posted at a field work, fed from their base
 }
 /** @param {Survivor} s */
 const isFree = (s) => s.alive && !(s.location && s.location.kind === "captive");
@@ -826,6 +828,7 @@ export const radioBases = (state) => state.bases.filter((b) => b.radio);
 export function liveTiles(state) {
   const set = new Set();
   for (const b of state.bases) for (const id of state.grid.within(b.tile, baseVision(b, state))) set.add(id);
+  for (const id of fieldSight(state)) set.add(id); // fieldworks.js: your manned watch towers
   // Radio: parties in range report what they see right now.
   for (const p of state.parties) {
     if (p.owner === "player" && p.radioLive) for (const id of p.sightNow || []) set.add(id);
@@ -883,6 +886,7 @@ export function tickHour(state) {
   caravanRaidsHour(state); // caravanraids.js: caravans met on the road, chased, robbed (by you or by the groups)
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
+  fieldworksHour(state); // fieldworks.js: the lookouts posted at field works (gone, moved, enemies there)
   constructionHour(state);
   repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
   rezeroHour(state); // repair.js: budget sights re-zeroed at a workbench every morning (gunmods.js driftOf)
@@ -925,6 +929,7 @@ export function tickHour(state) {
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
     recomputeOwnership(state);
     claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost
+    fieldworksDaily(state); // fieldworks.js: relay masts' parts, raids on your field works, the groups' own, towers drawing the dead
     // eras.js: the Accord's and the containment's clocks (the victories need them to have run: checkGameOver).
     if (!state.gameOver) erasVictoryDaily(state, !state.allianceWon && accordHolds(state), hivesSecured(state));
     causesDaily(state); // causes.js: the day each base's water, food, scrap, meds, ammo or firewood ran out

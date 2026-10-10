@@ -23,6 +23,7 @@ import { manned, armoryDefence } from "./defences.js";
 import { isManaged, healthRest } from "./work.js";
 import { hash01 } from "./skills.js";
 import { tiredLevel, TIRED } from "./sleep.js";
+import { towerSees, towerSawText } from "./fieldworks.js"; // a manned watch tower out on the base's land
 
 export const WATCH_PRESETS = {
   two:   { name: "Two 12-hour watches", shifts: [["Day", 6, 18], ["Night", 18, 6]] },
@@ -249,6 +250,7 @@ export const WATCH_WARN = { tiles: 2, day: 1, night: 2 };
 export function lookoutsSpot(state, base, tile, range, seen = state.live.has(tile)) {
   if (!base) return false;
   const d = state.grid.distance(tile, base.tile);
+  if (d <= range + WATCH_WARN.tiles + 2 && towerSees(state, base, tile)) return true; // fieldworks.js: lookouts on a manned watch tower of this base saw it
   const r = readiness(state, base);
   if (r.manned || r.alert >= 1) return d <= range + WATCH_WARN.tiles && (seen || d <= baseVision(base, state) + (r.night ? WATCH_WARN.night : WATCH_WARN.day));
   if (d > range || !seen) return false;
@@ -257,6 +259,8 @@ export function lookoutsSpot(state, base, tile, range, seen = state.live.has(til
 // The watch's early warning, for the warning cards: a line when only the watch saw it (out of sight, or out of the
 // usual range), else "".
 export function watchSawText(state, base, tile, range, seen = state.live.has(tile)) {
+  const tower = base ? towerSawText(state, base, tile) : ""; // fieldworks.js
+  if (tower) return tower;
   if (!base || (seen && state.grid.distance(tile, base.tile) <= range)) return "";
   const r = readiness(state, base);
   return r.manned || r.alert >= 1 ? " The watch on the walls saw them early." : "";

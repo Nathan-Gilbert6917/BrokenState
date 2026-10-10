@@ -477,7 +477,7 @@ export function illnessRisk(state, s, ctx = null) {
   if (!s || !s.alive) return out;
   if (!ctx) {
     const p = partyOf(state, s);
-    const b = !p && (s.location.kind === "base" || s.location.kind === "route") ? (s.location.kind === "base" ? baseById(state, s.location.baseId) : state.bases.find((x) => residents(state, x.id).includes(s))) : null;
+    const b = !p && (s.location.kind === "base" || s.location.kind === "route" || s.location.kind === "post") ? (s.location.kind !== "route" ? baseById(state, s.location.baseId) : state.bases.find((x) => residents(state, x.id).includes(s))) : null;
     ctx = p ? teamRiskCtx(state, p) : b ? baseRiskCtx(state, b) : null;
     if (!ctx) return out;
   }

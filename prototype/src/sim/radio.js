@@ -50,6 +50,7 @@
 import { RADIO_RANGE, day, log, hub, baseById, addCard, atBase, skill, snapshot } from "./world.js";
 import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew } from "./data.js";
 import { count } from "./buildings.js";
+import { fieldRelayNodes, groupRelayTiles } from "./fieldworks.js"; // relay masts out on the land
 import { radioBoost } from "./power.js";
 import { attitude, changeGoodwill, isAggressiveType, strength } from "./factions.js";
 import { planPath, spawnAiParty, partyTile, tileLabel } from "./parties.js";
@@ -96,7 +97,7 @@ export function groupNetwork(state, f) {
   if (!f || !f.alive || !f.bases || !f.bases.length) return null;
   const range = GROUP_NET_RANGE[f.type] ?? 8;
   const on = f.bases.filter((tile) => !groupHides(state, f, tile)); // hiding.js: a hidden outpost keeps off the air
-  return { id: f.id, name: f.known ? f.name : knownAs(state, f), color: f.color, kind: "group", faction: f, nodes: (on.length ? on : f.bases).map((tile) => ({ tile, range })) };
+  return { id: f.id, name: f.known ? f.name : knownAs(state, f), color: f.color, kind: "group", faction: f, nodes: [...(on.length ? on : f.bases), ...groupRelayTiles(state, f)].map((tile) => ({ tile, range })) }; // fieldworks.js: their relay masts
 }
 export function radioNetworks(state) {
   const out = [];
@@ -169,6 +170,7 @@ export function radioNodes(state, plus = null) {
     if (hasStation(b)) nodes.push({ base: b, tile: b.tile, range: (hasMilRadio(b) ? MIL_RADIO_RANGE : RADIO_RANGE) + radioBoost(b), kind: "station", linked: true, offline: false, military: hasMilRadio(b) }); // +2 on generator power (power.js)
     else if (count(b, "relay") || b === plus) nodes.push({ base: b, tile: b.tile, range: RELAY_RANGE, kind: "relay", linked: false, offline: b === plus ? false : !!b.relayOffline });
   }
+  nodes.push(...fieldRelayNodes(state)); // fieldworks.js: relay masts on the land outside the bases (node.field: the mast's id)
   const g = state.grid;
   for (let grew = true; grew;) {
     grew = false;
@@ -226,7 +228,7 @@ function relaySpotNow(state, f) {
 
 // One line for the base screen.
 export function radioSummary(state, base) {
-  const n = radioNodes(state).find((x) => x.base === base);
+  const n = radioNodes(state).find((x) => x.base === base && !x.field);
   const tuned = base.tuned != null ? networkById(state, base.tuned) : null; // radiolisten.js Listen in
   const ear = tuned ? `. Tuned to ${tuned.name}${netCovers(state, tuned, base.tile) ? "" : " (out of range)"}` : "";
   if (n && n.kind === "station") return `Radio station: ${n.range} tiles of coverage${n.military ? " (a Military encrypted radio in the armory)" : ""}${count(base, "relay") ? ". The relay here stands idle (the station covers more)" : ""}${ear}`;

@@ -14,6 +14,7 @@ import { repairPaid, repairWaitHour } from "./repairwait.js"; // a breakdown rep
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
 import { findPath } from "./hex.js";
 import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
+import { partyEnter as fieldPartyEnter, teamEnter as fieldTeamEnter, fieldRaidArrive } from "./fieldworks.js"; // field works: roadblocks, raids on them
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
@@ -1079,6 +1080,7 @@ function onEnterTile(state, p, tileId) {
       if (onRoad) roadblockOnEnter(state, p, tileId, partySpeed(p), p.kind === "convoy" ? "the convoy" : teamName(state, p), tileLabel(state, tileId)); // roadblocks.js: stalled cars, a fallen tree
     }
   }
+  if (p.owner === "player") fieldTeamEnter(state, p, tileId, p.vehicle ? partySpeed(p) : 1); // fieldworks.js: a group's roadblock or checkpoint
   // Sight and perception: what the team sees is held until they return (or reported live by radio).
   const around = state.grid.within(tileId, sightRadius(state, p));
   for (const id of around) p.seen.set(id, withLook(state, snapshot(state, id), id)); // intelnotes.js: a group's base seen in passing
@@ -2099,6 +2101,7 @@ function aiPartyHour(state, p) {
   const owner = entered.length && state.bases.length ? factionById(state, p.owner) : null;
   for (const tileId of entered) {
     if (owner) partySaw(state, owner, tileId); // groupworld.js: what they see of your bases on the way
+    fieldPartyEnter(state, p, tileId); // fieldworks.js: a hostile roadblock holds them; a raid on you empties your stockpile in passing
     // Hordes chew up whoever walks into them.
     const horde = state.hordes.find((h) => h.tile === tileId);
     if (horde) {
@@ -2169,6 +2172,8 @@ function aiPartyHour(state, p) {
       caravanArrive(state, p); // caravans.js: trade at your base, or home again
     } else if (p.kind === "scav") {
       scavArrived(state, p); // aiscav.js: at the site (search) or home (the haul into their stock)
+    } else if (p.kind === "fwraid") {
+      fieldRaidArrive(state, p); // fieldworks.js: a raid on a field work of yours (it fights the lookouts, takes or wrecks it)
     } else if (p.kind === "raid") {
       const stillThere = p.target.kind === "player" ? baseById(state, p.target.baseId) :
         factionById(state, p.target.factionId)?.bases.includes(p.target.tile);

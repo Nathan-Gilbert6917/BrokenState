@@ -154,7 +154,7 @@ const bedTag = (s) => (s.inBed ? ` <span class="muted"${tip("In a hospital bed: 
 // (waiting, working on the spot, or in radio range); captives no.
 function inContact(state, s) {
   const k = s.location && s.location.kind;
-  if (k === "base" || k === "route") return true;
+  if (k === "base" || k === "route" || k === "post") return true; // post: a lookout at a field work (sim/fieldworks.js)
   if (k !== "party") return false;
   const p = state.parties.find((x) => x.id === s.location.partyId);
   return !!p && (p.kind === "convoy" || contactable(p));
@@ -1511,7 +1511,7 @@ function campTab(state, b) {
 // A Treat button for anyone: at a base it uses the base's meds, on a team it uses the team's carried meds.
 function treatButton(state, s) {
   if (!isHurt(s)) return "";
-  if (s.location.kind === "base") {
+  if (s.location.kind === "base" || s.location.kind === "post") { // post: a lookout at a field work, treated by its base (sim/fieldworks.js)
     const b = baseById(state, s.location.baseId);
     const info = treatAtBaseInfo(state, b, s);
     return `<button class="mini" data-action="treat" data-base="${b.id}" data-id="${s.id}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `Use ${info.cost} of ${b.name}'s meds: +${info.heal} health${info.surgery ? ` (surgery on a severe wound: most of ${info.medic ? info.medic.name.split(" ")[0] + "'s" : "a medic's"} day)` : info.medic ? `, one of ${info.medic.name.split(" ")[0]}'s treatments for today` : ""}${info.noSurgeryTime ? "; no medic has time for surgery today" : ""}${s.woundInfected ? `, ${Math.round(info.cureChance * 100)}% to clean the infected wound` : ""}. Once a day. Better with a hospital and Medicine.` : info.reason)}>Treat (${info.cost} meds)</button>`;

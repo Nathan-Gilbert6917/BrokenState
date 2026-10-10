@@ -561,7 +561,7 @@ export function fieldTreat(state, party, survivorId) {
 export function treatAnywhere(state, survivorId) {
   const s = survivorById(state, survivorId);
   if (!s || !s.alive) return "Nobody to treat.";
-  if (s.location.kind === "base") return treatAtBase(state, baseById(state, s.location.baseId), s.id);
+  if (s.location.kind === "base" || s.location.kind === "post") return treatAtBase(state, baseById(state, s.location.baseId), s.id); // post: fieldworks.js
   if (s.location.kind === "route") return treatAtBase(state, hub(state), s.id); // an escort waiting at the hub between trips
   if (s.location.kind === "party") {
     const p = state.parties.find((x) => x.id === s.location.partyId);
