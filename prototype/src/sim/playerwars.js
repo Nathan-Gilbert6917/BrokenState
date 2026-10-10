@@ -448,7 +448,7 @@ function share(stock, frac, f = null) {
     if (k === "ammo" && !f) { const n = Math.floor(totalRounds(stock) * frac); if (n > 0) for (const [kk, q] of Object.entries(spendAmmo({ ...stock }, n).keys)) if (kk !== "ammo") out[kk] = q; continue; }
     const q = Math.floor((stock[k] || 0) * frac);
     if (!(q > 0)) continue;
-    if (k === "ammo") Object.assign(out, findRounds(kindTheme(f.type), q, "pwtribute", f.id));
+    if (k === "ammo") Object.assign(out, findRounds(kindTheme(f.type), q, "pwtribute", f.name)); // f.name: a world-local salt (an id is not: tools/sameseedtest.js)
     else out[k] = q;
   }
   return out;

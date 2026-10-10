@@ -17,7 +17,7 @@ import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
-  factionById, snapshot, mergeKnowledge, gearEffect, radioBasesInRange, isNight, archerCount, usesArrows, armedFactor, arrowsBack, ARROWS,
+  factionById, snapshot, mergeKnowledge, gearEffect, radioBasesInRange, isNight, archerCount, usesArrows, armedFactor, arrowsBack, ARROWS, localId,
 } from "./world.js";
 import {
   resolveRaidOnPlayer, resolveRaidOnFaction, raidWarning, maybeCallForHelp, deliverHelpCall, changeGoodwill,
@@ -2206,7 +2206,7 @@ function finishSiege(state, p) {
         changeGoodwill(state, f, held ? 20 : 8, held ? "you helped them hold" : "you fought beside them");
         if (held) {
           const reward = state.rng.chance(0.5) ? { key: "meds", qty: 6 } : { key: "ammo", qty: 60 };
-          const gift = reward.key === "ammo" ? findRounds(kindTheme(f.type), reward.qty, "heldthanks", f.id, state.hour) : { [reward.key]: reward.qty }; // rounds by calibre: what their kind shoots (ammo.js)
+          const gift = reward.key === "ammo" ? findRounds(kindTheme(f.type), reward.qty, "heldthanks", localId(state, f.id), state.hour) : { [reward.key]: reward.qty }; // rounds by calibre: what their kind shoots (ammo.js)
           for (const [k, q] of Object.entries(gift)) h.cargo.supplies[k] = (h.cargo.supplies[k] || 0) + q;
           log(state, `${f.name} thanks your squad with ${reward.key === "ammo" ? roundsText(gift) : `${reward.qty} ${reward.key}`}.`, "good");
         }

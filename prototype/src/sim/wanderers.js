@@ -20,7 +20,7 @@
 // nobody is met plays exactly as before; the cards' own choices use the world's dice like any card.
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, FACTION_TYPES, GEAR } from "./data.js";
-import { log, addCard, day, hub, skill, isNight, factionById, combatPower, snapshot, armedFactor } from "./world.js";
+import { log, addCard, day, hub, skill, isNight, factionById, combatPower, snapshot, armedFactor, localId } from "./world.js";
 import {
   partyMembers, partyTile, bestSkill, tileLabel, carried, takeSupply, wipeParty, partySpeed, addGearToCargo,
 } from "./parties.js";
@@ -677,7 +677,7 @@ function onWandererCombat(state, result, setup) {
   if (result.outcome === "victory") {
     lines.push(`You won. ${result.enemiesKilled || "Several"} of ${c.enemy.name} are down.`);
     if (!result.tactical && c.enemy.kind !== "zombies") {
-      lines.push(`Taken from them: ${addCargoRounds(state, p, rng.int(c.type === "attackSquad" ? 20 : 3, c.type === "attackSquad" ? 50 : 12), c.type === "attackSquad" ? "military" : "raider", "wanderer", c.id || 0, state.hour)}, ${addCargo(state, p, "food", rng.int(1, 4))} food.`); // rounds by calibre: what such people shoot (ammo.js)
+      lines.push(`Taken from them: ${addCargoRounds(state, p, rng.int(c.type === "attackSquad" ? 20 : 3, c.type === "attackSquad" ? 50 : 12), c.type === "attackSquad" ? "military" : "raider", "wanderer", c.id ? localId(state, c.id) : 0, state.hour)}, ${addCargo(state, p, "food", rng.int(1, 4))} food.`); // rounds by calibre: what such people shoot (ammo.js)
       if (rng.chance(c.type === "attackSquad" ? 0.35 : 0.2)) {
         const key = rng.pick(c.type === "attackSquad" ? ["ar", "vest", "carbine"] : ["pistol", "knife", "bat", "revolver"]);
         const item = lootItem(key, kitSource(c.enemy.kind), spend(rng)); // itemcond.js: by who they were

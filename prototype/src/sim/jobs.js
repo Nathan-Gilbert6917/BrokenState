@@ -38,7 +38,7 @@
 // recruit card), intel (their region and the hives and hordes near them), or, for a big job from a group with two
 // or more bases, one of their outposts handed over to you with two of their people as its staff.
 import { GEAR, SUPPLIES, SUPPLY_KEYS, LOCATIONS } from "./data.js";
-import { day, log, hub, factionById, addCard, atBase, snapshot, skill, combatPower, makeSurvivor, newId } from "./world.js";
+import { day, log, hub, factionById, addCard, atBase, snapshot, skill, combatPower, makeSurvivor, newId, localId } from "./world.js";
 import { siteKnown } from "./discovery.js";
 import { attitude, changeGoodwill, isAggressiveType, recomputeOwnership } from "./factions.js";
 import { partyMembers, partyTile, tileLabel, carried, takeSupply, planPath, spawnAiParty, awaitOrders, outpostName } from "./parties.js";
@@ -226,7 +226,7 @@ export function makeReward(state, f, type, size) {
   }
   // Rounds by calibre (2026-10-09, user request): a reward's ammo is the rounds their kind keeps (ammo.js findRounds),
   // named on the card and paid by key.
-  if (r.supplies.ammo >= 1) { const n = r.supplies.ammo; delete r.supplies.ammo; for (const [k, q] of Object.entries(findRounds(kindTheme(f.type), n, "jobreward", f.id, type, size))) r.supplies[k] = (r.supplies[k] || 0) + q; }
+  if (r.supplies.ammo >= 1) { const n = r.supplies.ammo; delete r.supplies.ammo; for (const [k, q] of Object.entries(findRounds(kindTheme(f.type), n, "jobreward", localId(state, f.id), type, size))) r.supplies[k] = (r.supplies[k] || 0) + q; }
   return r;
 }
 export function rewardText(state, r) {
@@ -379,7 +379,7 @@ export function completeJob(state, job, how = "") {
       // blueprints.js: one you neither know nor hold, fitting the group; none left: ammo instead.
       const bp = blueprintReward(state, f, `job${job.id}`);
       if (bp) { h.armory.push(bp); got.push(bp.name); }
-      else { const rr = findRounds(kindTheme(f.type), 40, "jobbp", job.id); for (const [k, q] of Object.entries(rr)) h.stock[k] = (h.stock[k] || 0) + q; got.push(`${suppliesText(rr)} (they had no manual you lack)`); } // rounds by calibre: what their kind keeps
+      else { const rr = findRounds(kindTheme(f.type), 40, "jobbp", localId(state, job.id)); for (const [k, q] of Object.entries(rr)) h.stock[k] = (h.stock[k] || 0) + q; got.push(`${suppliesText(rr)} (they had no manual you lack)`); } // rounds by calibre: what their kind keeps
     }
     if (r.intel) { got.push(`a map (${intelFrom(state, f)} tiles)`); }
     if (r.outpost != null && f.bases.includes(r.outpost) && f.bases.length >= 2) {

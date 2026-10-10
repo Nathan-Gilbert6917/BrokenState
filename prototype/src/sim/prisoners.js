@@ -76,7 +76,7 @@
 // prisoner trades are groupjails.js (the same JAIL tiers).
 import { SUPPLIES } from "./data.js";
 import {
-  log, addCard, day, baseById, atBase, factionById, makeSurvivor, skill, snapshot, mergeKnowledge, hurt, newId, survivorById,
+  log, addCard, day, baseById, atBase, factionById, makeSurvivor, skill, snapshot, mergeKnowledge, hurt, newId, survivorById, localId,
 } from "./world.js";
 import { partyMembers, carried, takeSupply, carriedAny, takeAny, tileLabel } from "./parties.js";
 import { waterIn, drawWater, keyWord } from "./water.js";
@@ -913,7 +913,7 @@ function ransomAnswer(state, p) {
   const worth = groupMemberWorth(f, p.power || 3) >= R.value + R.perPower * (p.power || 3);
   if (worth && can >= Math.ceil(r.qty * 0.5) && state.rng.chance(chance)) {
     f.stock[r.key] = Math.max(0, (f.stock[r.key] || 0) - can);
-    const got = r.key === "ammo" ? findRounds(kindTheme(f.type), can, "ransom", p.id) : { [r.key]: can }; // their one ammo count paid as the rounds their kind keeps (ammo.js)
+    const got = r.key === "ammo" ? findRounds(kindTheme(f.type), can, "ransom", localId(state, p.id)) : { [r.key]: can }; // their one ammo count paid as the rounds their kind keeps (ammo.js)
     for (const [k, q] of Object.entries(got)) base.stock[k] = (base.stock[k] || 0) + q;
     goHome(state, p, R.goodwillPaid, "you ransomed their people");
     const text = `${f.name} paid ${r.key === "ammo" ? roundsText(got) : `${can} ${keyWord(r.key)}`} for ${p.name}, who walks home.`;
