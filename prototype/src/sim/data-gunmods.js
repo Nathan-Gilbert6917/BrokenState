@@ -456,7 +456,7 @@ export const PART_INFO = {
   slingpro:     { name: "Padded two-point sling", value: 25, weight: 0.15, tier: "brand", rarity: "uncommon", tags: ["military", "police", "guns"],
                   desc: "A quick-adjust padded sling modelled on a Blue Force Gear Vickers: +2 aim when the shooter moved this turn." },
 };
-for (const [k, i] of Object.entries(PART_INFO)) MOD_GEAR[k] = MOD(i.name, i.value, i.weight, i.desc, { look: MOD_ATTACH[k] && MOD_ATTACH[k].look, tier: i.tier, ...(i.dur ? { dur: i.dur, budget: true } : {}) });
+for (const [k, i] of Object.entries(PART_INFO)) MOD_GEAR[k] = MOD(i.name, i.value, i.weight, i.desc, { tier: i.tier, ...(i.dur ? { dur: i.dur, budget: true } : {}) });
 // The parts from before the catalogue, by tier and rarity (their places: loot.js ITEM_TAGS, GUNMOD_FINDS, SITE_MODS).
 /** @type {Record<string, [string, string]>} key -> [tier, rarity] */
 export const OLD_PART_CLASS = {

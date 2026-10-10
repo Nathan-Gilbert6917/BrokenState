@@ -12,7 +12,8 @@ import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
 import { BLADE_LOOK } from "../sim/data-blades.js"; // knives and swords: their looks
 import { GUN_SPRITE } from "../sim/data-guns.js"; // a gun with no art spec: an existing gun's sprite
-import { paintMini, ownKey, isGunKey } from "./gunpaint.js"; // every gun's own small drawing (ui/gunspecs.js)
+import { ownKey, isGunKey } from "./gunpaint.js"; // every gun's own small drawing (ui/gunspecs.js)
+import { held, weaponLook, unitGun } from "./gunparts.js"; // ... in its finish, with its fitted parts
 import { bossBattleCanvas, ztypeBattleCanvas } from "./hivesprites.js";
 
 const GW = 22, GH = 26;   // pixel grid
@@ -247,10 +248,13 @@ function drawArmor(p, key, L, R) {
 
 // Weapon in the right hand (sprites face right; flipped at draw time). Every WEAPONS key has a look but bare hands, a
 // zombie's teeth and a spitter's acid (WEAPON_UNDRAWN; tools/rostertest.js checks it). Guns: their art spec's small
-// drawing (ui/gunpaint.js paintMini); a gun with none: its look-alike's (GUN_SPRITE, else by what it is).
+// drawing (ui/gunpaint.js paintMini), in its finish and with the parts fitted to it when key is a weapon look
+// (ui/gunparts.js weaponLook: "key|finish|slot=look,..."); a gun with none: its look-alike's (GUN_SPRITE, else by what
+// it is). Returns the muzzle's grid pixel { mx, my } for a gun (the shot's tracer and flash start there).
 export const WEAPON_UNDRAWN = ["fists", "claws", "acid"];
-function drawWeapon(p, key, R) {
-  if (key && isGunKey(key) && (ownKey(key) || !GUN_SPRITE[key]) && paintMini(p, key, "held", R)) return;
+function drawWeapon(p, look, R) {
+  const key = look && String(look).split("|")[0];
+  if (key && isGunKey(key) && (ownKey(key) || !GUN_SPRITE[key])) { const mz = held(p, look, "held", R); if (mz) return mz; }
   const metal = "#9aa3ab", gun = "#2b2e33", wood = "#7a5230";
   const hx = R + 2, hy = 15;
   switch (key) {
@@ -313,7 +317,7 @@ export function paintSurvivor(app, weaponKey = null, armorKey = null) {
   drawFacial(p, app.facial, app.hair, app.skin);
   drawHair(p, app.hairStyle, app.hair);
   drawAccessory(p, app.accessory, app.accent, L, R);
-  drawWeapon(p, weaponKey, R);
+  p.muzzle = drawWeapon(p, weaponKey, R) || null;
   return p;
 }
 
@@ -464,7 +468,7 @@ export function paintEnemyHuman(kit, factionColor, weaponKey, armorKey, seed) {
     drawAccessory(p, k.acc, fc, 6, 14);
     if (k.studs) { p.set(7, 13, "#b8b0a0"); p.set(13, 12, "#b8b0a0"); } // studs / patches
   }
-  drawWeapon(p, weaponKey, 14);
+  p.muzzle = drawWeapon(p, weaponKey, 14) || null;
   return p;
 }
 
@@ -539,11 +543,16 @@ export function paintArmoredDead(kind, seed, look = zlook) {
 
 // ---------- cache and public API ----------
 const cache = new Map();
+// The muzzle (grid pixel) of the gun in each cached sprite's hand (isoview.js: where a shot starts).
+const MUZZLE = new WeakMap();
+export const muzzleOf = (cv) => (cv && MUZZLE.get(cv)) || null;
 function cached(key, paint) {
   let cv = cache.get(key);
   if (cv === undefined) {
     if (cache.size > 600) cache.clear();
-    cv = toCanvas(paint());
+    const p = paint();
+    cv = toCanvas(p);
+    if (cv && p.muzzle) MUZZLE.set(cv, p.muzzle);
     cache.set(key, cv);
   }
   return cv;
@@ -587,7 +596,7 @@ export function canvasURL(cv) {
 }
 export function survivorURL(s, seed = 0, withGear = true) {
   const app = ensureAppearance(s, seed);
-  return canvasURL(survivorCanvas(app, withGear && s.gear && s.gear.weapon ? s.gear.weapon.key : null, withGear ? spriteArmorKey(s) : null));
+  return canvasURL(survivorCanvas(app, withGear && s.gear && s.gear.weapon ? weaponLook(s.gear.weapon) : null, withGear ? spriteArmorKey(s) : null));
 }
 export const appearanceURL = (app, weaponKey = null, armorKey = null) => canvasURL(survivorCanvas(app, weaponKey, armorKey));
 export const zombieURL = (variant, seed, look = zlook) => canvasURL(zombieCanvas(variant, seed, look));
@@ -643,7 +652,7 @@ export function unitCanvas(state, b, t, salt = 0) {
   if (t.side === "player" && t.kind !== "zombie") {
     const s = state.survivors.find((x) => x.id === t.sid);
     const app = s ? ensureAppearance(s, state.seed) : ensureAppearance({ id: t.id }, salt);
-    return survivorCanvas(app, t.weapon && t.weapon !== "fists" ? t.weapon : null, spriteArmorKey(s));
+    return survivorCanvas(app, t.weapon && t.weapon !== "fists" ? weaponLook(unitGun(t)) : null, spriteArmorKey(s));
   }
   if (t.boss) return bossBattleCanvas(t.boss === "hivemind" && t.phase2 ? "hivemind2" : t.boss); // the Wallbreaker and the Broodmother (ui/hivesprites.js); the Hivemind torn open in its second phase
   if (t.turned) return turnedCanvas(state, b, t); // one of the risen (sim/carriers.js)
@@ -659,6 +668,6 @@ export function unitCanvas(state, b, t, salt = 0) {
     return zombieCanvas(v.variant, seed);
   }
   const f = b.setup && b.setup.enemy && b.setup.enemy.factionId != null ? state.factions.find((x) => x.id === b.setup.enemy.factionId) : null;
-  return enemyCanvas(t.kit || "raiders", f ? f.color : null, t.weapon, t.armorKey, seed);
+  return enemyCanvas(t.kit || "raiders", f ? f.color : null, t.weapon && t.weapon !== "fists" ? weaponLook(unitGun(t)) : t.weapon, t.armorKey, seed);
 }
 

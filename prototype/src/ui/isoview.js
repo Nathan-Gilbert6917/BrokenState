@@ -24,7 +24,7 @@ import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladder
 import { CELL, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
-import { unitCanvas, unitFacing } from "./sprites.js";
+import { unitCanvas, unitFacing, muzzleOf } from "./sprites.js";
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
@@ -1823,7 +1823,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   }
 
   // Effects: shots, blows, numbers, throws.
-  drawFxIso(ctx, b, now, H);
+  drawFxIso(ctx, b, now, H, state, shown);
   // Labels over the units: health, actions, status, the hit chance against each enemy in sight.
   for (const s of shown) drawLabels(ctx, b, s, H);
   // The retreat confirm: each one's odds of getting out over their head.
@@ -2007,10 +2007,8 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   }
   const cv = unitCanvas(state, b, t, H.salt);
   if (!cv) return;
-  let facing = unitFacing(b, t);
-  if (FR.r === 1 || FR.r === 2) facing = -facing;
-  const big = t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1;
-  const hgt = UNIT_H * big * S, w = hgt * (22 / 26);
+  const facing = viewFacing(unitFacing(b, t), FR.r);
+  const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.translate(X, Y);
@@ -2019,6 +2017,18 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   if (!silhouette && spent) ctx.globalAlpha *= 0.65;
   ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
   ctx.restore();
+}
+// The sprite's facing on screen: the view turned a half (rotation 1 or 2) shows the world mirrored.
+const viewFacing = (facing, r) => (r === 1 || r === 2 ? -facing : facing);
+const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1);
+// Where a unit's gun muzzle is on screen, from its feet, in view rotation r at zoom S: the muzzle pixel of the gun
+// in its sprite's hand (ui/sprites.js muzzleOf; ui/gunpaint.js paintMini: past a fitted suppressor), the sprite drawn
+// as drawBody draws it (mirrored when it faces left). null: no gun drawn (a zombie, bare hands).
+export function muzzlePoint(state, b, t, salt, r, S = 1) {
+  const mz = muzzleOf(unitCanvas(state, b, t, salt));
+  if (!mz) return null;
+  const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26), f = viewFacing(unitFacing(b, t), r);
+  return [f * ((mz.mx + 0.5) / 22 - 0.5) * w, -hgt * 0.94 + ((mz.my + 0.5) / 26) * hgt];
 }
 // A body on the ground (sim/sleepers.js), laid flat like the fallen.
 function drawCorpseIso(ctx, b, c, fog) {
@@ -2154,7 +2164,7 @@ function drawLabels(ctx, b, s, H) {
 }
 
 // ---------- effects ----------
-function drawFxIso(ctx, b, now, H) {
+function drawFxIso(ctx, b, now, H, state = null, shown = []) {
   const S = FR.S;
   for (const f of b.fx) {
     if (f.type === "move" || f.seq < b.fxSeq - 8 || !onFloor(b, f)) continue;
@@ -2164,7 +2174,11 @@ function drawFxIso(ctx, b, now, H) {
     const [tx, ty] = f.to ? project(f.to[0] + 0.5, f.to[1] + 0.5, zTo + UNIT_H * 0.55) : [0, 0];
     if (f.type === "shot" && el < 600 && f.from) {
       const a = 1 - el / 600;
-      const [fx, fy] = project(f.from[0] + 0.5, f.from[1] + 0.5, zFrom + UNIT_H * 0.6);
+      let [fx, fy] = project(f.from[0] + 0.5, f.from[1] + 0.5, zFrom + UNIT_H * 0.6);
+      // From the shooter's own muzzle (their gun's barrel end, or a fitted suppressor's), when they stand there still.
+      const q = state && !f.overpen ? shown.find((o) => o.t.x === f.from[0] && o.t.y === f.from[1] && !o.t.down && !o.t.dead) : null;
+      const mp = q ? muzzlePoint(state, b, q.t, H.salt, FR.r, S) : null;
+      if (mp) { const [X, Y] = feet(q); fx = X + mp[0]; fy = Y + mp[1]; }
       ctx.strokeStyle = f.acid ? `rgba(154,214,58,${a})` : f.hit ? `rgba(255,180,80,${a})` : `rgba(200,200,200,${a * 0.7})`;
       ctx.lineWidth = f.hit ? 3 : 1.5;
       ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(tx + (f.hit ? 0 : 8 * S), ty + (f.hit ? 0 : -6 * S)); ctx.stroke();

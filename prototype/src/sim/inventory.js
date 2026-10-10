@@ -18,6 +18,7 @@
 //   "armory:<baseId>:list[:<i>]"  "cargo:<partyId>:list[:<i>]"       storage (a base armory, a team's cargo)
 //   "body:<bodyIndex>:<slot>[:<i>]"  "body:<bodyIndex>:sup:<key>"     bodies of the battle that just ended
 // Items only move between people, storage and bodies at the same place (one base, or one team).
+import { unitFinish } from "./data-finish.js";
 import { factoryFit, seedOf } from "./factoryfit.js";
 import { FACTORY_FIT } from "./data-guns.js"; // guns found already fitted (section 22)
 import { fitMod, stripMod, modFitReason, fitsSlot, isGunmod, takesMods, fittedKg, ATTACH } from "./gunmods.js";
@@ -958,6 +959,7 @@ export function carriedThrowables(u, src) {
 // item looted from it. Only while the unit still holds that gun (u.gmWeapon), and each part only where it fits.
 export function carryMods(u, gun) {
   if (u && u.gmWeapon === gun.key && !u.modsLooted && FACTORY_FIT[gun.key]) delete gun.mods; // exactly the parts it carried (its factory ones among them: combat.js enemyUnit), not newItem's own roll
+  if (u && u.gmWeapon === gun.key && !u.modsLooted && !u.item && !u.arsItem) { const f = unitFinish(u); if (f) gun.finish = f; } // the finish it was seen in (data-finish.js)
   if (u && u.gmWeapon === gun.key) u.modsLooted = true;
   if (!u || !u.modItems || u.gmWeapon !== gun.key) return;
   for (const m of Object.values(u.modItems)) if (m) fitMod(gun, m);

@@ -25,6 +25,7 @@ import { ROUND_SUPPLIES, HAND_SUPPLIES, CALIBERS } from "../sim/data-ammo.js"; /
 import { gunCals } from "../sim/ammo.js";
 import { randomKit, randomTrunk, randomBuild, kitBudget, trunkBudget } from "../sim/randomkit.js"; // the dice under Customize: a new draw each time, within the points
 import { freshRng, randomName, randomAppearance } from "../sim/appearance.js";
+import { gunIconHtml } from "./gunart.js"; // the picked gun as it comes (its picture by its line)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -261,7 +262,7 @@ export function startGearEditor(state, ui) {
     const cur = s.gear[slot];
     const value = slot in P.slots ? P.slots[slot] : cur ? cur.key : "";
     const gi = cur && slot === "weapon" ? gunInfo(cur.key, cur) : null;
-    const info = cur ? `<span${tip((GEAR[cur.key] ? GEAR[cur.key].desc : "") + (gi ? ` ${gi.long}` : ""))}>${gi ? `${esc(gi.text)} · ` : ""}${r1(itemLoad(cur))} kg · ${slotPoints(slot, cur.key, slot === "weapon" && cur.key === P.slots.weapon ? P.mods : null)} pts${GEAR[cur.key] && GEAR[cur.key].desc ? ` — ${esc(shortDesc(cur.key))}` : ""}</span>` : `<span>—</span>`;
+    const info = cur ? `${gi ? gunIconHtml(cur, 1.1, "igun inl") : ""}<span${tip((GEAR[cur.key] ? GEAR[cur.key].desc : "") + (gi ? ` ${gi.long}` : ""))}>${gi ? `${esc(gi.text)} · ` : ""}${r1(itemLoad(cur))} kg · ${slotPoints(slot, cur.key, slot === "weapon" && cur.key === P.slots.weapon ? P.mods : null)} pts${GEAR[cur.key] && GEAR[cur.key].desc ? ` — ${esc(shortDesc(cur.key))}` : ""}</span>` : `<span>—</span>`;
     return `<div class="sgslot">
       <span class="sglabel"${tip(SLOT_TIPS[slot])}>${SLOT_LABELS[slot]}</span>
       <select data-action="sg-slot" data-slot="${slot}">
