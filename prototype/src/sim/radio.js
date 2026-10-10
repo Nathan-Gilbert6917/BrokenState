@@ -520,12 +520,12 @@ export function offerCard(state, f) {
   if (wants.length && rng.chance(0.5)) {
     // A request: they need something, paying with their surplus.
     const k = wants[0] === "ammo" ? dealRoundKey(state, f, base, REF_QTY.ammo, false) : wants[0]; // rounds by calibre: the ones your guns need least
-    const qty = Math.max(3, Math.min(hubSpare(state, k), Math.ceil((REF_QTY[k] || 10) * rng.range(0.6, 1.2))));
+    const qty = Math.max(3, Math.min(hubSpare(state, k), Math.ceil((refQty(k) || 10) * rng.range(0.6, 1.2))));
     const value = qty * sellPrice(state, f, k, speech, qty);
     let pay = maxBuyable(state, f, payKey, speech, value);
     // A cheap, bulky surplus (firewood, scrap) pays for little: the caravan brings at most two lots of it and asks for
     // what that is worth, not hundreds of units for a few jars.
-    const cap = (REF_QTY[payKey] || 10) * 2;
+    const cap = (refQty(payKey) || 10) * 2;
     let want = qty;
     if (pay > cap) { pay = cap; want = Math.min(qty, Math.floor((pay * buyPrice(state, f, payKey, speech, pay)) / sellPrice(state, f, k, speech, qty))); }
     if (pay < 1 || want < 1) return null;
@@ -533,7 +533,7 @@ export function offerCard(state, f) {
     text = `"We need ${want} ${keyWord(k)}. We can pay ${pay} ${keyWord(payKey)}, delivered to ${base.name}."`;
   } else {
     // An offer: their surplus for something you have.
-    const qty = Math.max(5, Math.min(available(f, payKey), Math.ceil((REF_QTY[payKey] || 10) * rng.range(0.8, 1.5))));
+    const qty = Math.max(5, Math.min(available(f, payKey), Math.ceil((refQty(payKey) || 10) * rng.range(0.8, 1.5))));
     const cost = qty * buyPrice(state, f, payKey, speech, qty);
     const k0 = keys.filter((x) => x !== payKey && !(x === "ammo" && SUPPLIES[payKey] && SUPPLIES[payKey].round) && hubSpare(state, x) > 0).sort((a, b) => need(f, b) - need(f, a))[0];
     if (!k0) return null;
@@ -620,6 +620,7 @@ function bringCard(state, f, base, b, said) {
   };
 }
 const REF_QTY = { food: 25, water: 25, fuel: 12, meds: 8, ammo: 60, parts: 3, scrap: 20, wood: 600 }; // wood: woodcutting.js (60 kg)
+const refQty = (k) => REF_QTY[SUPPLIES[k] && SUPPLIES[k].round ? "ammo" : k]; // a round key: a lot of rounds, as "ammo" was
 
 // ---------- autopilot: radio trade when the hub runs short ----------
 // needs: the governor's needs table (0 plenty … 3 urgent). Picks the most urgent good, a group in reach that has
@@ -650,7 +651,7 @@ export function radioTradeIfShort(state, needs, { base = null, keys = null, cap 
         if (pay === want) continue;
         const budgetUnits = hubSpare(state, pay, at);
         const value = budgetUnits * sellPrice(state, f, pay, speech, budgetUnits);
-        const qty = Math.min((cap && cap[want]) || REF_QTY[want] || 10, maxBuyable(state, f, want, speech, Math.max(0, value - fee), Infinity, true));
+        const qty = Math.min((cap && cap[want]) || refQty(want) || 10, maxBuyable(state, f, want, speech, Math.max(0, value - fee), Infinity, true));
         if (qty < 2) continue;
         const cost = qty * buyPrice(state, f, want, speech, qty) + fee;
         const payQty = minSellable(state, f, pay, speech, cost, budgetUnits);
