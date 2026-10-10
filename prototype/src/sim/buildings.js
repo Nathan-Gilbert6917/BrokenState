@@ -16,6 +16,7 @@ import { prisonBuildRate } from "./prisoners.js"; // prisoners-tab: prisoner lab
 import { benchRounds } from "./ammo.js"; // the ammo bench makes rounds by calibre
 import { reloadStatus, runReload } from "./reloading.js"; // the reloading bench: an ammo bench upgraded in place
 import { livestockYield, PEN } from "./farming.js"; // the animal pen (station "livestock")
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 rounds per day, the common rounds of the guns at the base (+4% per Mechanics point)" },
@@ -533,6 +534,7 @@ export function runStations(state, base) {
     if (status.mash) base.mash = Math.max(0, (base.mash || 0) - status.mash); // the still's spoiled food (storage.js)
     if (r.minSkill && skill(status.op, r.skill) < r.minSkill && state.rng.chance(0.5)) continue;
     for (const [k, v] of Object.entries(status.out)) { if (k === "ammo") benchRounds(state, base, v); else base.stock[k] = (base.stock[k] || 0) + v; } // ammo.js: the calibres the guns here shoot
+    for (const [k, v] of Object.entries(status.out)) noteOutput(state, base, "operate", v, k);
     if (inp.jars) base.jarsInUse = (base.jarsInUse || 0) + inp.jars; // filled jars (storage.js)
   }
 }
@@ -679,10 +681,13 @@ export function constructionHour(state) {
     if (campMaterialsHour(state, base)) continue; // a camp's builders make the building materials its step up waits for
     const job = base.construction.find((c) => !gatherStalled(c));
     if (!job) continue;
+    const was = job.progress;
     job.progress += buildRate(state, base);
     if (job.paid) job.progress = Math.min(job.progress, job.hours * gatherCap(job)); // never ahead of the materials
+    noteOutput(state, base, "build", Math.max(0, job.progress - was), "workh");
     if (job.progress >= job.hours - 1e-9) {
       base.construction.splice(base.construction.indexOf(job), 1);
+      noteOutput(state, base, "build", 1, "done");
       if (BUILDINGS[job.type].tierUp) { upgradeShelter(state, base); continue; } // the shelter becomes a base
       if (job.target && job.type === "barracks") { // a bunkhouse expanded (BARRACKS_UP); nothing if it was lost meanwhile
         const b = base.buildings.find((x) => x.id === job.target && x.type === "bunkhouse");

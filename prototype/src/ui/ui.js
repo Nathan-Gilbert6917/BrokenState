@@ -114,6 +114,8 @@ import { settingsModal } from "./settings.js";
 import { swatch } from "./help.js";
 import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
+import { activityChip, workNowPanel } from "./activity.js";
+import { describeActivity } from "../sim/activity.js"; // the find box also looks through what they are doing ("asleep", "chopping") // what each person is doing now; the base's Work now panel (sim/activity.js)
 import { pickBar, pickCard, ownBaseCard, groupBaseCard } from "./mapselect.js"; // teams, parties and bands selected on the map; a base's card
 import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
 import { huntInfo, gameWord, fishKit, expectFish, fishLevel, snareLine, expectSnare, bestHuntWeapon, hunterMult, HUNT, frozenAt, meatAt, gameAbundance, partyHuntMix, huntMixOf, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
@@ -331,8 +333,8 @@ function personCard(state, s) {
   // Health and mood are only shown for people you are in touch with (the team panel follows the same rule).
   const known = inContact(state, s);
   return `<div class="card surv" data-action="survivor" data-id="${s.id}"${tip("Click for skills, traits and gear")}>
-    <div class="spread"><b>${spriteImg(survivorURL(s, state.seed), 1.6)}${s.leader ? "★ " : ""}${esc(s.name)}${stIcons(state, s)}</b>${atB ? roleSelect(state, s) : ""}</div>
-    ${isCaptive(s) ? captiveLine(state, s) : ""}
+    <div class="spread"><b>${spriteImg(survivorURL(s, state.seed), 1.6)}${s.leader ? "★ " : ""}${esc(s.name)}${stIcons(state, s)}</b>${atB ? workRoleSelect(state, s) : ""}</div>
+    ${isCaptive(s) ? captiveLine(state, s) : `<div class="act-line">${activityChip(state, s)}</div>`}
     ${known ? `<div class="row small"><span style="width:3.5rem" class="muted">Health</span><div style="flex:1">${bar(s.health, s.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2rem">${n0(s.health)}</span></div>
     ${isHurt(s) && (s.woundInfected || treatButton(state, s)) ? `<div class="row small">${s.woundInfected ? `<span class="chip off"${tip("Heals at half speed at a base and gets worse on the road. Treat with meds.")}>Infected wound</span>` : ""}${treatButton(state, s)}</div>` : ""}
     ${isSick(s) ? `<div class="row small" style="flex-wrap:wrap">${conditionChips(state, s)}</div>` : ""}
@@ -389,7 +391,7 @@ function renderPeople(state) {
 function personWords(state, s) {
   const role = roleOf(state, s);
   const bg = backgroundInfo(state, s.background);
-  return [s.name, role ? role.name : "", ROLES[s.role] ? ROLES[s.role].name : "", ...Object.keys(s.skills || {}).filter((k) => skill(s, k) >= 5).map((k) => SKILL_NAMES[k]), bg ? bg.name : "", traitWords(s)].join(" ").toLowerCase();
+  return [s.name, role ? role.name : "", ROLES[s.role] ? ROLES[s.role].name : "", describeActivity(state, s).text, ...Object.keys(s.skills || {}).filter((k) => skill(s, k) >= 5).map((k) => SKILL_NAMES[k]), bg ? bg.name : "", traitWords(s)].join(" ").toLowerCase();
 }
 // The compact People tab: one line a person (name and status icons, job, health), the full card a click away
 // (the survivor screen) or a switch back (Cards). Hover: health, mood and top skills.
@@ -400,7 +402,8 @@ function personRow(state, s) {
   return `<div class="card surv prow" data-action="survivor" data-id="${s.id}"${tip(hover)}>
     <span class="prow-name"><b>${s.leader ? "★ " : ""}${esc(s.name)}</b>${stIcons(state, s)}</span>
     ${known ? `<span class="prow-hp${s.health < 40 ? " danger" : ""}">${meter(s.health / 100, s.health < 40 ? "var(--danger)" : "var(--good)")}<span class="pk-num">${n0(s.health)}</span></span>` : `<span class="small muted prow-hp">${s.location.kind === "errand" ? "errand" : "no contact"}</span>`}
-    ${s.location.kind === "base" ? roleSelect(state, s) : ""}
+    ${activityChip(state, s, { short: true })}
+    ${s.location.kind === "base" ? workRoleSelect(state, s) : ""}
   </div>`;
 }
 
@@ -1683,6 +1686,7 @@ function baseOverview(state, b) {
       <div class="spread"><h3>People and roles</h3>${memorialButton(state, b)}</div>
       ${people.length ? `<table class="t">${people.map((s) => `<tr><td><a data-action="survivor" data-id="${s.id}" class="link">${s.leader ? "★ " : ""}${esc(s.name)}</a>${stIcons(state, s)}</td><td>${roleSelect(state, s)}</td><td class="small">${n0(s.health)} HP</td><td>${pinButton(s)}</td></tr>`).join("")}</table>` : `<div class="muted small">Nobody is here.</div>`}
       <div class="small muted" style="margin-top:0.4rem">${Object.entries(ROLES).map(([k, r]) => `<b>${r.name}</b> ${people.filter((s) => s.role === k).length}`).join(" · ")}</div>
+      ${workNowPanel(state, b)}
       ${priorityCount(state, b) ? `<div class="small muted" style="margin-top:0.4rem">${priorityCount(state, b)} here work by priorities (Work tab); a base leader only moves the people on Manual.</div>` : ""}
       ${stewardCard(state, b)}
     </div>

@@ -44,6 +44,7 @@ import { edibleFood } from "./storage.js";
 import { huntInfo, huntProblem, fishProblem, fishKit, expectFish, fishSpot, partyHuntMix } from "./hunting.js";
 import { addWormCrop, addWormForage } from "./worm.js"; // the worm: forage from infected ground carries its eggs
 import { sumRecs } from "./rounds.js"; // rounds by calibre
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 // ---------- numbers ----------
 export const FORAGE = {
@@ -339,6 +340,8 @@ export function foragingDaily(state, base) {
   const es = econStats(state);
   es.foraged = (es.foraged || 0) + got.rations + got.honey * FORAGE.honeyFood;
   base.foragedToday = r1(got.rations);
+  noteOutput(state, base, "forage", got.rations + got.honey * FORAGE.honeyFood, "food");
+  if (got.herbs) noteOutput(state, base, "forage", got.herbs, "meds");
   if (got.rations >= 1 || got.herbs || got.honey) {
     const finds = findsText(got);
     log(state, `${people.map(first).join(" and ")} foraged around ${base.name}: ${r1(got.rations)} food (${forageWhat(state, dayStart + 12)})${finds ? `, and ${finds}` : ""}.`, "good");

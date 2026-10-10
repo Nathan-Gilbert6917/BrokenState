@@ -1330,3 +1330,30 @@ button.mini.tp-chip.active.t-neutral { background: var(--t-neutral-bg); border-c
 .ptsbar .bar { height: 0.5rem; }
 .ptsbar.over b, .ptsbar.over .ptsleft { color: var(--danger); }
 button.mini.tp-chip:disabled { opacity: 0.4; }
+
+/* What people are doing now (ui/activity.js, sim/activity.js): the People tab's chip and the base's Work now panel */
+.act { display: inline-flex; align-items: center; gap: 0.25rem; max-width: 100%; padding: 0.05rem 0.45rem; border-radius: 99px; font-size: 0.78rem; background: #2c3139; color: var(--text); border-left: 3px solid var(--act, var(--muted)); }
+.act .act-ico { font-style: normal; flex: none; }
+.act .act-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-line { margin: 0.15rem 0 0.1rem; }
+.prow > .act.act-short { flex: 0 1 auto; min-width: 0; max-width: 9rem; font-size: 0.72rem; }
+.act-work { --act: var(--good); }
+.act-guard { --act: var(--accent); }
+.act-sleep { --act: var(--info); }
+.act-off, .act-free { --act: var(--muted); }
+.act-hurt, .act-stalled { --act: var(--danger); }
+.act-idle { --act: #ffd166; }
+.act-away { --act: #b98fe0; }
+.worknow { margin-top: 0.6rem; }
+.wn-row { padding: 0.35rem 0.5rem; margin-bottom: 0.35rem; border-radius: 6px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line); }
+.wn-head { display: flex; align-items: center; gap: 0.35rem; }
+.wn-head .wn-name { flex: 1 1 auto; }
+.wn-people { display: flex; flex-wrap: wrap; gap: 0.2rem; margin: 0.2rem 0; }
+.wn-who { display: inline-flex; align-items: center; gap: 0.2rem; font-size: 0.75rem; padding: 0 0.35rem; border-radius: 99px; background: #2c3139; border-left: 3px solid var(--act, var(--muted)); cursor: pointer; }
+.wn-who i { font-style: normal; }
+.wn-prog { margin-top: 0.15rem; }
+.wn-bar { height: 0.35rem; border-radius: 99px; background: #2c3139; overflow: hidden; }
+.wn-bar > i { display: block; height: 100%; background: var(--good); }
+.wn-goal .wn-bar > i { background: var(--accent); }
+.wn-ptxt { display: block; color: var(--muted); }
+.wn-last, .wn-why { margin-top: 0.15rem; }

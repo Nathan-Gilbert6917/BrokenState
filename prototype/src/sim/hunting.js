@@ -103,6 +103,7 @@ import { foragingDaily, landFoodHands } from "./foraging.js";
 import { wormKill, wormMeatIn, wormMeatAt, smokeWormMeat, shrinkWormMeat, huntYieldMult, WORM } from "./worm.js";
 import { totalRounds, sumRecs } from "./rounds.js"; // rounds by calibre
 import { huntRounds, huntLoad, takeHuntShots, baseAmmo } from "./ammo.js"; // a gun hunts with its own calibre and load (R9)
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 // ---------- numbers ----------
 export const HUNT = {
@@ -1028,6 +1029,8 @@ export function huntingDaily(state, base) {
   // Gunfire carries: each wandering horde within 3 tiles of a hunting ground with shots today may turn toward it.
   for (const [tile, quiet] of gunfire) got.drawn = (got.drawn || 0) + drawHordes(state, tile, quiet);
   if (got.hrs) base.huntLast = { day: Math.floor(state.hour / 24), mix: huntMixOf(base), hrs: got.hrs, rations: Math.round(got.rations * 10) / 10, shots: got.shots, arrows: got.arrows || 0, trapped: got.trapped || 0, drawn: got.drawn || 0, noise: base.huntNoise };
+  if (hunters.length) noteOutput(state, base, "hunt", got.rations, "food");
+  const huntFood = got.rations;
   if (fishers.length && !fishWorkWhy(state, base)) {
     const k0 = fishTools(state, base, fishers, { frozen: frozenAt(state) });
     const share = fishCrowdShare(k0.used);
@@ -1043,6 +1046,7 @@ export function huntingDaily(state, base) {
     for (const s of fishers) gainXp(state, s, "scouting", 3);
     wearFishTools(state, k0, fishers, [base.armory]); // a day of fishing on the rods, nets and spears
   }
+  if (fishers.length) noteOutput(state, base, "fish", got.rations - huntFood, "food");
   if (got.rations > 0) {
     if (got.worm > 0) base.wormMeat = wormMeatAt(base) + got.worm; // worm.js: before the meat (it is capped by it)
     base.stock.food = (base.stock.food || 0) + got.rations;

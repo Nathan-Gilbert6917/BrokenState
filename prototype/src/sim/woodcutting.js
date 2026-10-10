@@ -47,6 +47,7 @@ import { econStats } from "./farming.js";
 import { carriedItems } from "./hunting.js";
 import { mouthsAt, HEAT, woodFor } from "./upkeep.js";
 import { boilerUse, WORM } from "./worm.js"; // the water boiler burns firewood a head every day its water needs boiling
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 // ---------- numbers ----------
 export const WOOD = {
@@ -310,6 +311,7 @@ export function woodDaily(state, base) {
   const es = econStats(state);
   es.woodCut = (es.woodCut || 0) + got.wood;
   base.woodToday = r1(got.wood);
+  noteOutput(state, base, "wood", got.wood, "wood");
   if (got.wood >= 30) log(state, `${crew.map((c) => first(c.s)).join(" and ")} cut ${Math.round(got.wood)} firewood around ${base.name}${got.tools < crew.length ? ` (${crew.length - got.tools === crew.length ? "no axe: deadfall by hand" : `${crew.length - got.tools} without an axe`})` : ""}.`, "good");
   return got;
 }

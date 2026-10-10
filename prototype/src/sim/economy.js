@@ -34,6 +34,7 @@ import { cookAtBase, wormDaily, boilerUse, purifyDaily } from "./worm.js";
 import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
 import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (marks between the day's steps)
 import { addFind, chooseRounds, baseCals } from "./ammo.js"; // rounds by calibre
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -116,6 +117,7 @@ function baseScavenging(state, base, people) {
   const scav = people.filter((s) => s.role === "scavenge" && !s.inBed);
   const table = scavTable(state, base);
   const keys = Object.keys(table);
+  let finds = 0;
   for (const s of scav) {
     if (!rng.chance(scavChance(state, base, s))) continue;
     const k = rng.weighted(keys, (x) => table[x]);
@@ -127,8 +129,11 @@ function baseScavenging(state, base, people) {
     const bm = rollBuildmat(state, base.tile, 0.5, `bscav${localId(state, s.id)}`); // (the world-local id: tools/sameseedtest.js) building materials around the base too (half a search hour's chance)
     if (bm > 0) { base.stock.buildmat = (base.stock.buildmat || 0) + bm; got.buildmat = bm; }
     econStats(state).scavFinds++;
+    finds++;
+    for (const [key, n] of Object.entries(got)) noteOutput(state, base, "scavenge", n, key);
     log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(got).map(([key, n]) => `${n} ${key === "buildmat" ? "building materials" : key}`).join(", ")} around ${base.name}.`, "good");
   }
+  if (scav.length) noteOutput(state, base, "scavenge", finds, "finds");
   if (scav.length) base.scavLeft = Math.max(SCAV_FLOOR, scavLeft(base) - SCAV_DEPLETE * scav.length); // no recovery when nobody scavenges
 }
 
