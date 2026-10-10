@@ -13,6 +13,7 @@
 // settled into the rounds that fit the guns there (settleRec, every hour and when a fight starts); generic ammo taken
 // from one (negative) comes out of the rounds the guns there need least. totalRounds counts both, so a figure read in
 // between is right.
+import { ROUND_ECON, RARITY_FIND, roundTier } from "./data-ammo.js"; // a round's rarity tier (commonness)
 import { CALIBERS, AMMO_TYPES, ammoKey, AMMO_MIX, KIND_MIX, KIT_AMMO, STARTER_AMMO, ROUND_SUPPLIES, RELOAD_SUPPLIES, HAND_SUPPLIES } from "./data-ammo.js";
 import { SUPPLIES, GEAR } from "./data.js";
 import { WEAPONS } from "./combat.js";
@@ -337,8 +338,8 @@ export function bodyRounds(u, n) {
 
 // ---------- loose, boxed and bulk finds (2026-10-10, user request: "find loose and boxed ammo") ----------
 // How common a round is where rounds turn up, 0–1 (1: the most common round): a load's own rarity when the data gives
-// one (AMMO_TYPES rarity, 0 common – 1 rare), else its share of the finds in every place (data-ammo.js AMMO_MIX), so
-// the finds' numbers drive it. Launcher rounds: 0 (never in bulk).
+// one (AMMO_TYPES rarity, 0 common – 1 rare), else the round's own tier (data-ammo.js ROUND_ECON → RARITY_FIND), else
+// its share of the finds in every place (data-ammo.js AMMO_MIX), so the finds' numbers drive it. Launcher rounds: 0 (never in bulk).
 const COMMON = new Map();
 /** @param {string} key @returns {number} */
 export function commonness(key) {
@@ -348,6 +349,7 @@ export function commonness(key) {
   if (r && CALIBERS[r.cal] && CALIBERS[r.cal].common !== false) {
     const own = AMMO_TYPES[r.type] && AMMO_TYPES[r.type].rarity;
     if (Number.isFinite(own)) c = Math.max(0, Math.min(1, 1 - own));
+    else if (ROUND_ECON[`${r.cal}_${r.type}`]) c = RARITY_FIND[roundTier(r.cal, r.type)] ?? 0; // the round's own tier (data-ammo.js ROUND_ECON, 2026-10-10): common 1, uncommon 0.45, scarce 0.18, rare 0.06, very rare 0.02
     else {
       const share = (k) => Object.values(AMMO_MIX).reduce((a, mix) => { const tot = Object.values(mix).reduce((x, y) => x + y, 0) || 1; return a + (mix[k.slice(2)] || 0) / tot; }, 0);
       const top = Math.max(...Object.keys(ROUND_SUPPLIES).map(share));
@@ -542,7 +544,7 @@ export function enemyLoad(kind, weapon, ...salt) {
   const cal = calOf(weapon);
   if (!cal) return null;
   const k = KIT_AMMO[kind] || KIT_AMMO.raiders;
-  const cls = cal === "12ga" ? "shotgun" : ["9mm", "45acp", "357", "22lr"].includes(cal) ? "pistol" : "rifle";
+  const cls = cal === "12ga" || cal === "20ga" ? "shotgun" : ["9mm", "45acp", "357", "22lr"].includes(cal) ? "pistol" : "rifle";
   const w = k[cls] || {};
   /** @type {Record<string, number>} */
   const mix = {};
@@ -557,7 +559,7 @@ export function typeScore(type, armoured) {
   const t = typeFx(type);
   const dmg = t.dmg || 1;
   if (armoured) return dmg * (type === "ap" || type === "api" ? 1.12 : type === "slug" || type === "match" ? 1.05 : (t.soft || 1) > 1 ? 0.92 : 1);
-  return dmg * (t.soft || 1);
+  return t.soft || dmg; // on the unarmoured a hit is the gun's dmg × soft (the type's dmg is inside soft: ammo.js softMult), not dmg × soft
 }
 // Is this unit armoured (people in body armour, the armoured dead, a Boneback, a Brute)?
 /** @param {any} t */

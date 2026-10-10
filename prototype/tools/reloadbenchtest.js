@@ -65,7 +65,7 @@ const finishAll = (st, b) => { for (let i = 0; i < 50 && b.construction.length; 
   check(d && d.from === "ammo_bench" && d.upgradeOnly && d.station === "ammo" && d.heat === RELOAD.HEAT && d.req.mechanics === 3, "the reloading bench: an ammo station, upgraded from an ammo bench only, Mechanics 3, quiet");
   check(d.cost.parts === 1 && d.cost.gunparts === 3 && d.cost.scrap === 20 && d.hours === 24 && RELOAD.UP.hours === 24 && RELOAD.UP.cost.gunparts === 3, "it costs a machine part, 3 gun parts, 20 scrap and 24 work-hours");
   const hk = Object.keys(HAND_SUPPLIES);
-  check(hk.length === 25 && hk.every((k) => SUPPLIES[k] && GEAR[k] && GEAR[k].count && SUPPLIES[k].round.hand && isHandKey(k)), `every loadable round has a handload supply and box (${hk.length})`);
+  check(hk.length === 28 && hk.every((k) => SUPPLIES[k] && GEAR[k] && GEAR[k].count && SUPPLIES[k].round.hand && isHandKey(k)), `every loadable round has a handload supply and box (${hk.length}: 25, and 20 gauge buckshot, birdshot and slugs since 2026-10-10)`);
   check(!hk.some((k) => /50bmg|22lr|tracer|rubber|beanbag|plusp/.test(k)), "no .50 BMG, no rimfire, no tracers, +P or less-lethal handloads");
   check(SUPPLIES.a_9mm_hp_hand.value < SUPPLIES.a_9mm_hp.value && SUPPLIES.a_9mm_hp_hand.weight === SUPPLIES.a_9mm_hp.weight, "a handload is worth less than a factory round and weighs the same");
   check(withHand("a_9mm_hp").join() === "a_9mm_hp,a_9mm_hp_hand" && withHand("a_50bmg_ball").length === 1 && factoryKey("a_308_ap_hand") === "a_308_ap", "a factory key and its handload key go together");
@@ -73,7 +73,7 @@ const finishAll = (st, b) => { for (let i = 0; i < 50 && b.construction.length; 
   check(["brass", "powder", "primers"].every((k) => GEAR[k] && GEAR[k].count && GEAR[k].dur === 100 && ITEM_TAGS[k]), "a bag of brass, a can of powder, a box of primers: count stacks of 100 with theme tags");
   check(Math.abs(GEAR.powder.value - SUPPLIES.powder.value * 100) < 1e-9 && Math.abs(GEAR.brass.value - SUPPLIES.brass.value * 100) < 1e-9, "a can or a bag is worth its contents");
   const list = recipeList();
-  check(list.map((g) => g.cal).join() === "9mm,45acp,357,12ga,556,762x39,308,3030", `recipes by calibre (${list.map((g) => g.cal).join(", ")})`);
+  check(list.map((g) => g.cal).join() === "9mm,45acp,357,12ga,20ga,556,762x39,308,3030", `recipes by calibre (20 gauge since 2026-10-10) (${list.map((g) => g.cal).join(", ")})`);
   check(loadRecipe("9mm", "fmj")[0] === 2 && loadRecipe("9mm", "fmj")[1] === 40 && loadRecipe("308", "sp")[1] === 25 && loadRecipe("12ga", "slug")[1] === 15 && loadRecipe("12ga", "bird")[0] === 1
     && loadRecipe("9mm", "hp")[0] === 5 && loadRecipe("308", "subsonic")[0] === 6 && loadRecipe("556", "match")[0] === 9 && loadRecipe("556", "ap")[0] === 10 && loadRecipe("556", "ap")[1] === 10 && !loadRecipe("50bmg", "ball"), "the section 12 table: rates and Mechanics");
   const i9 = inputsPer10("9mm", "hp"), i3 = inputsPer10("308", "ap"), i12 = inputsPer10("12ga", "slug");

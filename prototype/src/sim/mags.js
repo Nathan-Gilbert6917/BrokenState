@@ -179,7 +179,7 @@ export function enemyMagCount(kind, ...salt) {
 // from anywhere.
 export const SHELLS = {
   on: true,
-  GUNS: { shotgun: "tube", semishotgun: "tube", dbshotgun: "break", sawnoff: "break", pipegun: "single" }, // a box-magazine shotgun (none yet) would swap magazines
+  GUNS: { shotgun: "tube", semishotgun: "tube", dbshotgun: "break", sawnoff: "break", pipegun: "single", tacpump: "tube", pump20: "tube", ou12: "break", ou20: "break", single12: "single" }, // a box-magazine shotgun (none yet) would swap magazines
   BREAK: 2, // a break action: both barrels at once
   BASE: [2, 3],
   MIN: 1,

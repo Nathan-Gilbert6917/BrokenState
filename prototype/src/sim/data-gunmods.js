@@ -43,7 +43,21 @@ export const PLATFORMS = {
   dbl:       { name: "Double-barrel shotgun", slots: ["muzzle", "stock", "sling"] },
   amr:       { name: "Anti-materiel rifle",   slots: ["optic", "muzzle", "mag", "sling"], builtin: { bipod: "bipod" } },
   zip:       { name: "Zip gun",               slots: ["sling"] },
+  // The arsenal of 2026-10-10 (data-guns.js ARSENAL_GEAR): a break-open single barrel (shotgun or rifle: a scope mount
+  // for a sight), the .308 battle rifles, a bullpup (no stock to swap), a .45 SMG and pistol, the hand cannon, the
+  // belt-fed .308 machine gun (its bipod built in).
+  single:    { name: "Single-shot break action", slots: ["mount", "muzzle", "stock", "sling"] },
+  battle:    { name: "Battle rifle",          slots: ["optic", "muzzle", "mag", "stock", "rail", "bipod", "sling"] },
+  bullpup:   { name: "Bullpup rifle",         slots: ["optic", "muzzle", "mag", "rail", "tactical", "sling"] },
+  ump:       { name: ".45 submachine gun",    slots: ["optic", "muzzle", "mag", "stock", "tactical", "sling"] },
+  poly45:    { name: "Polymer .45 pistol",    slots: ["optic", "muzzle", "mag", "tactical"] },
+  deagle:    { name: "Magnum pistol",         slots: ["optic", "mag", "tactical"] },
+  m240:      { name: "General-purpose machine gun", slots: ["optic", "muzzle", "mag", "stock", "tactical"], builtin: { bipod: "bipod" } },
 };
+// A new platform takes the parts its look-alike takes (gunmods.js widens each part's fits.plat at load), less SKIP:
+// magazines never (they are by platform: data-kit.js MAGAZINES), a bullpup no stock and no M203.
+export const PLATFORM_LIKE = { single: "dbl", battle: "ar10", bullpup: "ar15", ump: "mp5", poly45: "glock", deagle: "p1911", m240: "m249" };
+export const PLATFORM_LIKE_SKIP = { bullpup: ["collapsible", "precision", "foldstock", "m203", "drum"], poly45: ["extmag"] };
 // Weapon key -> platform. Keys the roster agent (B) adds (compact9, pistol45, smg, dmr, lmg, ak, sniper...) are listed
 // ahead of time; a key with no WEAPONS entry is simply never met.
 /** @type {Record<string, string>} weapon key -> platform key */
@@ -52,6 +66,10 @@ export const WEAPON_PLATFORM = {
   carbine: "ar15", ar: "ar15", dmr: "ar10", lmg: "m249", ak: "ak", huntrifle: "bolt", sniper: "bolt",
   leverrifle: "lever", rifle22: "rimrifle", shotgun: "pump", semishotgun: "semi12", dbshotgun: "dbl", sawnoff: "dbl",
   amr: "amr", pipegun: "zip",
+  // the arsenal of 2026-10-10 (data-guns.js ARSENAL_GEAR)
+  ou12: "dbl", ou20: "dbl", single12: "single", singlerifle: "single", pump20: "pump", tacpump: "pump", lever357: "lever",
+  m4: "ar15", hk416: "ar15", scarl: "ar15", aug: "bullpup", scarh: "battle", fal: "battle", m1a: "battle", m240: "m240",
+  ump45: "ump", usp45: "poly45", snub357: "revolver", magnum: "deagle",
 };
 // Slots a weapon lacks that its platform has: the compact 9mm has no threaded barrel, the sawn-off nothing at all, the
 // hunting rifle's scope is part of its own numbers (combat.js WEAPONS huntrifle: opt 12).
@@ -80,7 +98,7 @@ export const MOD_ATTACH = {
   tacscope:     { slot: "optic",    short: "tactical scope", look: "scope25", fits: { plat: ["ar10", "bolt", "amr"] }, aim: 7, opt: 6, fall: -0.8, close: -14 },
   thermalscope: { slot: "optic",    short: "thermal scope",  look: "thermal", fits: { any: true }, aim: 4, opt: 2, thermal: true },
   scrapscope:   { slot: "optic",    short: "scrap scope",    look: "scope4",  fits: { any: true }, aim: 2, opt: 2, close: -6 },
-  scopemount:   { slot: "mount",    short: "scope mount",    look: "mount",   fits: { plat: ["bolt", "lever", "pump", "rimrifle", "revolver", "mp5"] }, adds: ["optic"] },
+  scopemount:   { slot: "mount",    short: "scope mount",    look: "mount",   fits: { plat: ["bolt", "lever", "pump", "rimrifle", "revolver", "mp5", "single"] }, adds: ["optic"] },
   sidemount:    { slot: "mount",    short: "side mount",     look: "mount",   fits: { plat: ["ak"] }, adds: ["optic"] },
   quadrail:     { slot: "rail",     short: "quad rail",      look: "rail",    fits: { plat: ["ar15", "ar10", "ak"] }, adds: ["grip", "tactical", "bipod"] },
   mlok:         { slot: "rail",     short: "M-LOK handguard", look: "rail",   fits: { plat: ["ar15", "ar10"] }, adds: ["grip", "tactical"], aim: 1, wt: -0.2 },
@@ -88,8 +106,8 @@ export const MOD_ATTACH = {
   can9:         { slot: "muzzle",   short: "suppressor",     look: "can_s",   fits: { cal: ["9mm", "45acp"] }, can: true, noise: 0.5, jam: 1.2 },
   can556:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["556"] }, can: true, noise: 0.55, aim: 1, jam: 1.3 },
   can308:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["308", "762x39"] }, can: true, noise: 0.6, jam: 1.3 },
-  can12:        { slot: "muzzle",   short: "shotgun suppressor", look: "can_l", fits: { cal: ["12ga"], plat: ["pump", "semi12"] }, can: true, noise: 0.7, close: -2 },
-  bottlecan:    { slot: "muzzle",   short: "bottle suppressor", look: "bottle", fits: { any: true, notCal: ["12ga", "50bmg"] }, can: true, noise: 0.6, aim: -3 },
+  can12:        { slot: "muzzle",   short: "shotgun suppressor", look: "can_l", fits: { cal: ["12ga", "20ga"], plat: ["pump", "semi12"] }, can: true, noise: 0.7, close: -2 },
+  bottlecan:    { slot: "muzzle",   short: "bottle suppressor", look: "bottle", fits: { any: true, notCal: ["12ga", "20ga", "50bmg"] }, can: true, noise: 0.6, aim: -3 },
   solventcan:   { slot: "muzzle",   short: "solvent-trap suppressor", look: "oilfilter", fits: { cal: ["22lr", "9mm", "556"] }, can: true, noise: 0.6, jam: 1.4 },
   flashhider:   { slot: "muzzle",   short: "flash hider",    look: "brake",   fits: { cal: RIFLE_CALS }, aim: 1, flashless: true },
   recoilpad:    { slot: "stock",    short: "recoil pad",     look: "stock_pad", fits: { plat: ["pump", "dbl", "semi12", "bolt", "lever", "amr"] }, aim: 2, aimBy: { pump: 1, dbl: 1, semi12: 1, amr: 1 } },

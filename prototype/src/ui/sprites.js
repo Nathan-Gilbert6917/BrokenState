@@ -11,6 +11,7 @@ import { Rng } from "../sim/rng.js";
 import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
 import { BLADE_LOOK } from "../sim/data-blades.js"; // knives and swords: their looks
+import { GUN_SPRITE } from "../sim/data-guns.js"; // the arsenal of 2026-10-10: an existing gun's sprite each
 import { bossBattleCanvas, ztypeBattleCanvas } from "./hivesprites.js";
 
 const GW = 22, GH = 26;   // pixel grid
@@ -307,7 +308,7 @@ function drawWeapon(p, key, R) {
     case "sledge": p.rect(hx + 1, hy - 6, hx + 1, hy + 2, wood); p.rect(hx - 1, hy - 9, hx + 3, hy - 7, "#55595e"); break;
     case "baton": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#1a1c20"); p.set(hx + 1, hy - 6, "#3a3d40"); break;
     case "stunbaton": drawWeapon(p, "baton", R); p.set(hx + 1, hy - 6, "#ffd23f"); p.set(hx + 1, hy - 5, "#c9a227"); break; // data-nonlethal.js: the contacts at its tip
-    default: if (BLADE_LOOK[key]) drawBlade(p, BLADE_LOOK[key], hx, hy); break; // knives and swords (sim/data-blades.js)
+    default: if (BLADE_LOOK[key]) drawBlade(p, BLADE_LOOK[key], hx, hy); else if (GUN_SPRITE[key]) drawWeapon(p, GUN_SPRITE[key], R); break; // knives and swords (sim/data-blades.js); the newer guns as a look-alike
   }
 }
 // A knife or a sword held upright in the hand: the blade above the fist (a sabre's curving back), a guard, the hilt.

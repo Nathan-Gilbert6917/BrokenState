@@ -271,9 +271,9 @@ export function withMags(gear, source, ...salt) {
 }
 // Loose magazines, rigs and plates by place (their own tables and dice; loot.js calls these after its own rolls).
 export const SITE_KIT = {
-  gunstore: { p: 0.1, items: { mag_glock_15: 3, mag_glock_17: 2, mag_glock_33: 0.5, mag_stanag_30: 2, mag_stanag_20: 1, mag_ak_30: 1, mag_22_10: 2, mag_22_25: 1, mag_1911_7: 1.5, mag_bolt_5: 1, mag_bolt_10: 0.5, mag_ar10_10: 0.5, mag_ak_45: 0.4, mag_glock_8: 1, speedloader: 2, stripper308: 1.5, chestrig: 0.6, steelplate: 0.4 } },
-  police: { p: 0.06, items: { mag_glock_15: 3, mag_glock_17: 2, mag_glock_8: 1, mag_stanag_30: 2, mag_mp5_30: 1, speedloader: 1, tacvest: 0.8, softinsert: 1 } },
-  military: { p: 0.08, items: { mag_stanag_30: 5, mag_stanag_40: 1, mag_stanag_100: 0.2, mag_m249_100: 0.8, mag_ar10_20: 1, mag_glock_17: 1, mag_mp5_30: 0.5, mag_50_10: 0.2, chestrig: 1.5, ceramicplate: 1.5, softinsert: 0.6 } },
+  gunstore: { p: 0.1, items: { mag_glock_15: 3, mag_glock_17: 2, mag_glock_33: 0.5, mag_stanag_30: 2, mag_stanag_20: 1, mag_ak_30: 1, mag_22_10: 2, mag_22_25: 1, mag_1911_7: 1.5, mag_bolt_5: 1, mag_bolt_10: 0.5, mag_ar10_10: 0.5, mag_ak_45: 0.4, mag_glock_8: 1, speedloader: 2, stripper308: 1.5, chestrig: 0.6, steelplate: 0.4, mag_battle_20: 0.4, mag_battle_10: 0.3, mag_poly45_12: 0.8, mag_ump_25: 0.2, mag_deagle_9: 0.15 } }, // (the battle rifles' to the hand cannon's: the arsenal of 2026-10-10)
+  police: { p: 0.06, items: { mag_glock_15: 3, mag_glock_17: 2, mag_glock_8: 1, mag_stanag_30: 2, mag_mp5_30: 1, speedloader: 1, tacvest: 0.8, softinsert: 1, mag_poly45_12: 0.8, mag_ump_25: 0.4 } },
+  military: { p: 0.08, items: { mag_stanag_30: 5, mag_stanag_40: 1, mag_stanag_100: 0.2, mag_m249_100: 0.8, mag_ar10_20: 1, mag_glock_17: 1, mag_mp5_30: 0.5, mag_50_10: 0.2, chestrig: 1.5, ceramicplate: 1.5, softinsert: 0.6, mag_battle_20: 0.6, mag_m240_100: 0.15 } },
   crash_mil: { p: 0.06, items: { mag_stanag_30: 3, chestrig: 1, ceramicplate: 1 } },
   convoy: { p: 0.05, items: { mag_stanag_30: 3, mag_m249_100: 0.6, chestrig: 1, ceramicplate: 0.8 } },
   prison: { p: 0.03, items: { mag_glock_15: 2, softinsert: 1, tacvest: 0.4 } },
@@ -282,16 +282,16 @@ export const SITE_KIT = {
   town: { p: 0.008, items: { mag_glock_15: 1, mag_22_10: 1 } },
 };
 export const AREA_KIT = {
-  armory: { p: 0.1, items: { mag_glock_15: 2, mag_stanag_30: 2, speedloader: 1, tacvest: 0.5, softinsert: 1, chestrig: 0.5 } },
+  armory: { p: 0.1, items: { mag_glock_15: 2, mag_stanag_30: 2, speedloader: 1, tacvest: 0.5, softinsert: 1, chestrig: 0.5, mag_battle_20: 0.3, mag_ump_25: 0.3, mag_poly45_12: 0.5 } },
   gunshop: { p: 0.1, items: { mag_glock_15: 2, mag_glock_17: 1, mag_stanag_30: 1.5, mag_22_10: 1.5, mag_1911_7: 1, speedloader: 1.5, stripper308: 1, steelplate: 0.4 } },
   barracks: { p: 0.08, items: { mag_stanag_30: 3, chestrig: 1, ceramicplate: 0.8, mag_m249_100: 0.3 } },
   milwreck: { p: 0.06, items: { mag_stanag_30: 2, chestrig: 0.6, ceramicplate: 0.6 } },
 };
 export const WARE_KIT = {
-  traders: { p: 0.25, items: { mag_glock_15: 2, mag_stanag_30: 2, mag_22_10: 1, speedloader: 1, makeshiftrig: 1, steelplate: 0.5 } },
+  traders: { p: 0.25, items: { mag_glock_15: 2, mag_stanag_30: 2, mag_22_10: 1, speedloader: 1, makeshiftrig: 1, steelplate: 0.5, mag_poly45_12: 0.5 } },
   military: { p: 0.3, items: { mag_stanag_30: 3, chestrig: 1.5, ceramicplate: 1.5, softinsert: 1 } },
   raider: { p: 0.15, items: { mag_glock_15: 1, mag_ak_30: 1, mag_ak_45: 0.4, makeshiftrig: 1.5, steelplate: 0.5 } },
-  merchants: { p: 0.35, items: { mag_stanag_30: 2, mag_stanag_40: 0.6, mag_ak_30: 1, mag_ak_75: 0.3, mag_glock_17: 1, chestrig: 1, tacvest: 0.6, ceramicplate: 1, steelplate: 1 } },
+  merchants: { p: 0.35, items: { mag_stanag_30: 2, mag_stanag_40: 0.6, mag_ak_30: 1, mag_ak_75: 0.3, mag_glock_17: 1, chestrig: 1, tacvest: 0.6, ceramicplate: 1, steelplate: 1, mag_battle_20: 0.5, mag_m240_100: 0.1, mag_deagle_9: 0.1 } },
 };
 function pickW(items, r) {
   const keys = Object.keys(items).filter((k) => GEAR[k]).sort();

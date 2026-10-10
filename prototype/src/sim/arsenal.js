@@ -42,6 +42,7 @@ import { GEAR, FACTION_TYPES, LOCATIONS } from "./data.js";
 import { KITS, WEAPONS, loadMag, placeCar, floodReach } from "./combat.js";
 import { lootItem } from "./inventory.js";
 import { scavBlade } from "./blades.js"; // knives and swords their scavengers find
+import { scavGun } from "./gunfinds.js"; // the newer guns their scavengers find (the same table as your searches)
 import { kitSource, siteSource } from "./itemcond.js";
 import { enemyMods, fitMod, gunMods, modLabel, fittedSuppressor, takesMods, fittedMods } from "./gunmods.js";
 import { hash01 } from "./skills.js";
@@ -722,6 +723,9 @@ export function scavFinds(state, f, p) {
   // Knives and swords (blades.js): the same site table your searches roll, on their dice (AI parity).
   const bk = (p.scav.taken || 0) > 0 ? scavBlade(t.loc.type, [...tag, "bl"]) : null;
   if (bk && GEAR[bk]) { const it = lootItem(bk, siteSource(t.loc.type), [...tag, "bl"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
+  // The newer guns (gunfinds.js GUN_FINDS.site, scav): the same site table your searches roll, on their dice.
+  const gk = scavGun(t.loc.type, p.scav.taken || 0, [...tag, "ars"]);
+  if (gk && GEAR[gk]) { const it = lootItem(gk, siteSource(t.loc.type), [...tag, "ars"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
   return got;
 }
 // Gear you sold or gave them (trade.js): fighting gear goes into the arsenal while they want it (WANT weapons a head).

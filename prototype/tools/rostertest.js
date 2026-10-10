@@ -7,12 +7,14 @@
 // Usage: node tools/rostertest.js
 import { GEAR, LOCATIONS } from "../src/sim/data.js";
 import { WEAPONS, KITS, AREAS, enemyUnit } from "../src/sim/combat.js";
-import { GUN_GEAR, GUN_WEAPONS, KIT_PATCH, WEAPON_PATCH, FACTORY_FIT, LATER_GEAR, ROSTER_TAGS, TRUCK_GEAR } from "../src/sim/data-guns.js";
+import { GUN_GEAR, GUN_WEAPONS, KIT_PATCH, WEAPON_PATCH, FACTORY_FIT, LATER_GEAR, ROSTER_TAGS, TRUCK_GEAR, ARSENAL_FINDS } from "../src/sim/data-guns.js";
+import { gunPool } from "../src/sim/gunfinds.js";
+import { INTERNAL } from "../src/sim/data-kit.js";
 import { CALIBERS } from "../src/sim/data-ammo.js";
 import { ATTACH } from "../src/sim/gunmods.js";
 import { factoryFit, withFactory } from "../src/sim/factoryfit.js";
 import { newItem, enemyBody, carryMods } from "../src/sim/inventory.js";
-import { ITEM_TAGS } from "../src/sim/loot.js";
+import { ITEM_TAGS, SITE_TAGS, AREA_TAGS } from "../src/sim/loot.js";
 import { WEAPON_UNDRAWN, weaponPixels } from "../src/ui/sprites.js";
 import { Rng } from "../src/sim/rng.js";
 import { truckLoot } from "../src/sim/miltrucks.js";
@@ -49,10 +51,10 @@ console.log("Magazines");
 const cap = (k) => WEAPONS[k].cap;
 check(cap("leverrifle") === 6, "the lever-action holds 6 (section 3)");
 const byCat = (cat) => guns.filter((k) => GEAR[k] && GEAR[k].cat === cat);
-check(byCat("pistol").every((k) => cap(k) >= 6 && cap(k) <= 15), `pistols hold 6–15 (${byCat("pistol").map((k) => `${k} ${cap(k)}`).join(", ")})`);
+check(byCat("pistol").every((k) => cap(k) >= 5 && cap(k) <= 15), `pistols hold 5–15 (a snub-nose five) (${byCat("pistol").map((k) => `${k} ${cap(k)}`).join(", ")})`);
 check(byCat("shotgun").every((k) => cap(k) >= 1 && cap(k) <= 8), `shotguns hold 1–8 (${byCat("shotgun").map((k) => `${k} ${cap(k)}`).join(", ")})`);
-check(byCat("automatic").every((k) => cap(k) >= 30), `automatic weapons hold 30 or more (${byCat("automatic").map((k) => `${k} ${cap(k)}`).join(", ")})`);
-check(byCat("rifle").every((k) => cap(k) >= 5 && cap(k) <= 30), `rifles hold 5–30 (${byCat("rifle").map((k) => `${k} ${cap(k)}`).join(", ")})`);
+check(byCat("automatic").every((k) => cap(k) >= (WEAPONS[k].cal === "308" || WEAPONS[k].cal === "45acp" ? 20 : 30)), `automatic weapons hold 30 or more (the .308 battle rifles 20, the .45 SMG 25) (${byCat("automatic").map((k) => `${k} ${cap(k)}`).join(", ")})`);
+check(byCat("rifle").every((k) => cap(k) >= (INTERNAL[k] === 1 ? 1 : 5) && cap(k) <= 30), `rifles hold 5–30 (a single-shot one) (${byCat("rifle").map((k) => `${k} ${cap(k)}`).join(", ")})`);
 check(guns.filter((k) => WEAPONS[k].ammo > 0 && !WEAPONS[k].mounted).every((k) => cap(k) % WEAPONS[k].ammo === 0 || WEAPONS[k].modes), "a magazine is a whole number of shots (or the gun has fire modes; a turret's belt aside)");
 check(cap("dbshotgun") === 2 && cap("sawnoff") === 2 && cap("lmg") === 100 && cap("sniper") === 5 && cap("dmr") === 20 && cap("amr") === 10, "two barrels, a 100-round box, 5 in the sniper, 20 in the marksman rifle, 10 in the .50");
 
@@ -95,6 +97,9 @@ for (const d of Object.values(LOCATIONS)) for (const k of d.gear) src.add(k);
 for (const a of Object.values(AREAS)) for (const [k] of a.gear) src.add(k);
 for (const kit of Object.values(KITS)) for (const k of [...kit.weapons, ...kit.strong, ...kit.loot]) src.add(k);
 for (const rows of Object.values(TRUCK_GEAR)) for (const [k] of rows) src.add(k);
+// the arsenal of 2026-10-10: its own tables (gunfinds.js: the guns whose tags meet a site's or an area's with a chance)
+for (const [type, p] of Object.entries(ARSENAL_FINDS.site)) if (p > 0) for (const k of Object.keys(gunPool(SITE_TAGS[type] || []))) src.add(k);
+for (const [area, p] of Object.entries(ARSENAL_FINDS.area)) if (p > 0) for (const k of Object.keys(gunPool(AREA_TAGS[area] || []))) src.add(k);
 const orphans = Object.keys(GUN_GEAR).filter((k) => !src.has(k));
 check(!orphans.length, `every new item is found somewhere (none for: ${list(orphans)})`);
 check(Object.keys(ROSTER_TAGS).every((k) => ITEM_TAGS[k] && GEAR[k]) && Object.keys(GUN_GEAR).every((k) => ITEM_TAGS[k]), "every new item has loot theme tags");
