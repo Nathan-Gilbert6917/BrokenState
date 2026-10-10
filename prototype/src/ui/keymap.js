@@ -75,11 +75,12 @@ export const KEYMAP = [
   { id: "bview.panDown", label: "Pan down (held)", group: "Battle view", ctx: "battle", keys: ["KeyS", "ArrowDown"] },
   { id: "bview.panLeft", label: "Pan left (held)", group: "Battle view", ctx: "battle", keys: ["KeyA", "ArrowLeft"] },
   { id: "bview.panRight", label: "Pan right (held)", group: "Battle view", ctx: "battle", keys: ["KeyD", "ArrowRight"] },
-  { id: "bview.rotLeft", label: "Turn the view left", group: "Battle view", ctx: "battle", keys: ["Comma"] },
-  { id: "bview.rotRight", label: "Turn the view right", group: "Battle view", ctx: "battle", keys: ["Period"] },
+  // Q / E turn the view (as in most games that turn a camera); , and . (the keys before) still do too.
+  { id: "bview.rotLeft", label: "Turn the view left", group: "Battle view", ctx: "battle", keys: ["KeyQ", "Comma"] },
+  { id: "bview.rotRight", label: "Turn the view right", group: "Battle view", ctx: "battle", keys: ["KeyE", "Period"] },
   { id: "bview.zoomIn", label: "Zoom in", group: "Battle view", ctx: "battle", keys: ["Equal", "NumpadAdd"] },
   { id: "bview.zoomOut", label: "Zoom out", group: "Battle view", ctx: "battle", keys: ["Minus", "NumpadSubtract"] },
-  { id: "bview.center", label: "Center on the selected unit", group: "Battle view", ctx: "battle", keys: ["KeyV"] },
+  { id: "bview.center", label: "Center on the selected unit", group: "Battle view", ctx: "battle", keys: ["Home"] }, // V before (V is Melee now)
   { id: "bview.roofs", label: "Roofs on / off", group: "Battle view", ctx: "battle", keys: ["KeyB"] },
   { id: "bview.floorUp", label: "Show the floor above", group: "Battle view", ctx: "battle", keys: ["PageUp"] },
   { id: "bview.floorDown", label: "Show the floor below", group: "Battle view", ctx: "battle", keys: ["PageDown"] },
@@ -103,10 +104,11 @@ export const KEYMAP = [
   { id: "battle.finish", label: "Finish a downed enemy", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyK"], v: "finish" },
   { id: "battle.gunner", label: "Man the vehicle's turret (again: get down)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyT"], v: "gunner" },
   { id: "battle.pullOut", label: "Pull someone downed out of a vehicle (from next to it)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyU"], v: "pullOut" },
-  // The unit orders (combatAction "cb-act" with v).
-  ...[["shoot", "Shoot", "KeyF"], ["melee", "Melee", "KeyE"], ["meds", "Meds", "KeyM"], ["overwatch", "Overwatch", "KeyO"], ["hunker", "Hunker down", "KeyH"], ["reload", "Reload the gun", "KeyI"],
+  // The unit orders (combatAction "cb-act" with v). Melee is V and Close a door Shift+E since Q / E turn the view
+  // (they were E and Q; Center, V before, went to Home).
+  ...[["shoot", "Shoot", "KeyF"], ["melee", "Melee", "KeyV"], ["meds", "Meds", "KeyM"], ["overwatch", "Overwatch", "KeyO"], ["hunker", "Hunker down", "KeyH"], ["reload", "Reload the gun", "KeyI"],
     ["retreat", "Retreat (from the evac strip)", "KeyR"], ["vehicle", "Open the vehicle", "KeyN"], ["extract", "Extract (raid)", "KeyX"], ["subdue", "Subdue", "KeyC"],
-    ["tie", "Tie up", "KeyT"], ["throw", "Throw", "KeyG"], ["climb", "Climb", "KeyL"], ["peek", "Peek", "KeyK"], ["close", "Close a door", "KeyQ"], ["brace", "Brace a door", "KeyY"],
+    ["tie", "Tie up", "KeyT"], ["throw", "Throw", "KeyG"], ["climb", "Climb", "KeyL"], ["peek", "Peek", "KeyK"], ["close", "Close a door", "Shift+KeyE"], ["brace", "Brace a door", "KeyY"],
     ["crush", "Crush the skull of a body", "KeyU"], ["doubletap", "Double tap a body", "KeyJ"], ["pickup", "Pick up / put down a body", "KeyP"], ["stowbody", "Stow a body in the vehicle", "KeyZ"]]
     .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
   // The weapons overhaul's gun orders (ui/combat.js gunButtons): every letter is taken, so they sit on Shift.
@@ -175,11 +177,31 @@ let custom = {};    // actionId -> [chords]: the player's (options.keys)
 let options = null; // the machine options object it lives in (saved by the caller)
 let index = null;   // ctx -> Map(chord -> [actionIds]), rebuilt after every change
 
+// Default keys an action was given in a later build: Q / E turn the battle view, Melee V, Close a door Shift+E, Center
+// Home (they were , . E Q V). A player whose own bindings (options.keys) already put another action of the same context
+// on one of these keeps theirs: the new default steps aside for them (the action keeps its other keys, or has none
+// until they pick one in Menu → Controls). Saved bindings are never rewritten; Reset gives the defaults back.
+export const NEW_DEFAULTS = { "bview.rotLeft": ["KeyQ"], "bview.rotRight": ["KeyE"], "bview.center": ["Home"], "battle.melee": ["KeyV"], "battle.close": ["Shift+KeyE"] };
+let yielded = new Set(); // "id|chord": a new default key the player's own binding of another action holds
+function findYielded() {
+  yielded = new Set();
+  for (const [id, list] of Object.entries(NEW_DEFAULTS)) {
+    const def = KEY_BY_ID.get(id);
+    if (!def || custom[id]) continue;
+    for (const c of list) if (KEYMAP.some((k) => k.id !== id && k.ctx === def.ctx && custom[k.id] && custom[k.id].includes(c))) yielded.add(`${id}|${c}`);
+  }
+}
+
 // The keys of an action now (the player's, else the defaults).
-export const keysOf = (id) => custom[id] || (KEY_BY_ID.get(id) || {}).keys || [];
+export const keysOf = (id) => {
+  if (custom[id]) return custom[id];
+  const keys = (KEY_BY_ID.get(id) || {}).keys || [];
+  return yielded.size ? keys.filter((c) => !yielded.has(`${id}|${c}`)) : keys;
+};
 export const isCustom = (id) => !!custom[id];
 
 function buildIndex() {
+  findYielded();
   index = {};
   for (const k of KEYMAP) {
     if (k.fixed) continue;
