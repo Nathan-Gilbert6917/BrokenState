@@ -43,8 +43,8 @@
 //   retreat (conflicts.js raidDefense).
 // - The hub: if it falls and you hold another base, the nearest one becomes the hub (its type changes; the
 //   buildings stay where they are). With no other base the survivors take to the road as one team (exiles): they
-//   can found a new base (Establish base: a staging camp built up into the hub, staging.js) or retake the old one
-//   (Assault their base; a staging camp still standing is then struck, its stores left as a cache); the run
+//   can found a new base (Establish base: a camp built up into the hub, staging.js) or retake the old one
+//   (Assault their base; a camp that is your hub then gives way to it and becomes an outpost camp); the run
 //   ends only when nobody is left.
 // - The occupier patches the base up: each broken building has a 5% chance a day to be repaired (wear back to
 //   40) and the wear on the rest falls by 1 a day; the garrison grows back by 0.2 a day toward its full size.

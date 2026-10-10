@@ -173,8 +173,8 @@ export function settleParty(state, p) {
   settleRec(p.supplies, mix, cals);
   if (p.cargo && !goods) settleRec(p.cargo.supplies, mix, cals);
 }
-// Every holder of yours: the bases, your teams (the AI groups' teams keep generic ammo), the staging camp, route
-// convoys. Called every hour (world.js tickHour), when a world is made and when an old save loads (migrateAmmo).
+// Every holder of yours: the bases (camps too), your teams (the AI groups' teams keep generic ammo), an old save's
+// staging camp, route convoys. Called every hour (world.js tickHour), when a world is made and when an old save loads (migrateAmmo).
 /** @param {any} state */
 export function settleAll(state) {
   for (const b of state.bases || []) settleBase(state, b);

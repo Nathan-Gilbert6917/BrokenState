@@ -165,7 +165,7 @@ export const BUILDINGS = {
   hub_up:       { name: "Build up into a base", cost: { scrap: 100, buildmat: 5 }, hours: 60, max: 1, shelterOnly: true, hubOnly: true, tierUp: true, gather: true,
                   desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, a fence with a gate, beds for four, 16 building plots and 14 utility plots. Shelters only. The materials are taken from the stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
   // An outpost camp (2026-10-09, user request: "When starting a base it should start as a camp with a progress bar with
-  // needed items to upgrade to a more permanent base established"): Build outpost pitches a camp (tier 0, a shelter's
+  // needed items to upgrade to a more permanent base established"): Build outpost sets up a camp (tier 0, a shelter's
   // rules) and queues this at once. gather: the materials are not paid up front; the job takes them from the camp's
   // stores as they come in (teams, supply runs), and the work never runs ahead of the share delivered (gatherHour).
   // Done: an outpost as before (its spring, wall 1, 6 + 6 plots). Not queued by hand: a camp has it from the start.
@@ -327,7 +327,7 @@ export function demolish(state, base, id) {
 }
 
 // ---------- base tiers ----------
-// Your bases grow in three stages: a staging camp (staging.js, not a base yet) → a shelter (tier 0) → a base (tier 1,
+// Your bases grow in three stages: a camp (tier 0 with camp: true, below) → a shelter (tier 0) → a base (tier 1,
 // the hub as it always was; outposts are tier 1 too). A shelter is a base you can live at (stores, rest and healing,
 // the armory, people with jobs), but small: tarps and a shack behind a scrap barricade, no wall strength, beds for
 // four under the tarps, an outpost's two crop plots, one tile of vision, no well of its own (water from a river or lake beside it, rain catchers,
@@ -649,8 +649,8 @@ function gatherHour(base) {
 }
 
 // A camp (isCamp) whose step up waits for building materials while its stores hold the scrap: its builders make them
-// there (the field recipe, crafting.js buildmat: CAMP.matScrap scrap and CAMP.matHours work-hours each), as the old
-// staging camp's team did on the road. The hour goes on that instead of the building. True when they worked on it.
+// there (the field recipe, crafting.js buildmat: CAMP.matScrap scrap and CAMP.matHours work-hours each), as a team
+// does on the road. The hour goes on that instead of the building. True when they worked on it.
 function campMaterialsHour(state, base) {
   if (!isCamp(base)) return false;
   const job = tierUpJob(base);

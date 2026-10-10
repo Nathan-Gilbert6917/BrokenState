@@ -1,5 +1,6 @@
 // No base in the panels: hardcore before the first hub (sim/hardcore-start.js) and the exiles after losing every base
-// (sim/conquest.js). The survivors are teams on the road building a staging camp (sim/staging.js), so the top bar, the
+// (sim/conquest.js). The survivors are teams on the road until they set up the camp that becomes their hub (Establish
+// base, sim/staging.js), so the top bar, the
 // Bases tab, the Goals card, the alerts and the tile panel show the team and the camp (what it still needs, how far
 // the work is) instead of a base.
 import { SUPPLIES } from "../sim/data.js";
@@ -80,7 +81,7 @@ export function roadStock(state) {
 export function stageRows(t) {
   if (!t) return "";
   const q = t.queued, f = q && q.hours ? q.progress / q.hours : 0;
-  return `<div${tip("Your home grows in three stages: a staging camp, a shelter you can live at (tier 0), then a base (the hub). Each step takes materials and work.")}>Stage</div><div>${stageSteps(t.stage)}</div>${t.next ? `<div>Next: ${esc(t.next)}</div><div class="muted">${q ? buildBar(f, { text: `${t.next} ${pct(f)} built` }) : esc(t.needs)}</div>` : ""}`;
+  return `<div${tip("Your home grows in three stages: a camp (the barest base: your people live there from the start), a shelter (tier 0), then a base (the hub). Each step up takes materials and work.")}>Stage</div><div>${stageSteps(t.stage)}</div>${t.next ? `<div>Next: ${esc(t.next)}</div><div class="muted">${q ? buildBar(f, { text: `${t.next} ${pct(f)} built` }) : esc(t.needs)}</div>` : ""}`;
 }
 
 // The team panel's card while you have no base (ui/expedition.js): is there a camp yet, how far it is built, what it
@@ -109,7 +110,7 @@ export function dangerRows(d, lit, attrs) {
 }
 export const fireButton = (lit, attrs) => `<button class="mini" data-action="campfire" ${attrs} data-lit="${lit ? 0 : 1}"${tip(lit ? "Put the fire out: darker and quieter (less danger, most at night), but cold, raw food and unboiled water, lower spirits." : "Light the fire: warmth, hot food, boiled water and better spirits, but its light and smoke draw attention, most at night.")}>${lit ? "Put it out" : "Light it"}</button>`;
 
-// The Bases tab with no base: the staging camp's card (or how to start one, and the best spots near the team).
+// The Bases tab with no base: how to set up the camp that becomes your hub (Establish base), and the best spots near the team.
 export function firstHubCard(state) {
   const v = view(state);
   if (!v) return "";
@@ -191,7 +192,7 @@ export function stagingTileCard(state, id) {
   const f = job && job.hours ? job.progress / job.hours : 0;
   const people = atBase(state, b.id);
   const why = strikeProblem(state, b);
-  return `<div class="card attn small campcard"${tip("A camp: the barest base (sim/staging.js). Its people live there; manage its stores, teams and vehicles in its base window, build it up from Construction, or strike it.")}>
+  return `<div class="card attn small campcard"${tip("A camp: the barest base. Its people live there; manage its stores, teams and vehicles in its base window, build it up from Construction, or strike it.")}>
     <div class="spread"><b>${esc(b.name)}</b>${stageSteps(0)}</div>
     ${job ? buildBar(f, { cap: job.paid ? gatherCap(job) : null, text: `${BUILDINGS[job.type].name}: ${pct(f)}` }) : `<div class="muted">A plain camp: nothing building (Construction: ${esc(BUILDINGS[tierUpType(b)].name)}).</div>`}
     <div class="muted" style="margin-top:0.2rem">${people.length} there${people.length ? `: ${esc(people.map((s) => s.name.split(" ")[0]).join(", "))}` : ""} · fire ${fireLit(b) ? "lit" : "out"} · water: ${esc(waterText(state, b.tile))}</div>

@@ -281,7 +281,7 @@ export function autopilotHour(state) {
   if (!state.autopilot || state.gameOver) return;
   const g = gov(state);
   if (g.busy) return; // a tick inside the governor's own work (a raid's hours, for example)
-  if (!state.bases.length) { // no base (hardcore's first hub, conquest.js exiles): the teams on the road build a staging camp (roadAct) or retake a base
+  if (!state.bases.length) { // no base (hardcore's first hub, conquest.js exiles): the teams on the road set up the camp that becomes the hub (roadAct) or retake a base
     g.busy = true;
     try {
       state.autoCombat = true;
@@ -1278,7 +1278,7 @@ function teamAct(state, p) {
   if (!state.parties.includes(p) || p.phase !== "waiting") return;
   const P = persona(state);
   const home = state.bases.find((b) => b.id === p.homeBaseId) || hub(state);
-  if (!home) return firstHubPending(state) ? roadAct(state, p) : exileAct(state, p); // no base: the staging camp (staging.js)
+  if (!home) return firstHubPending(state) ? roadAct(state, p) : exileAct(state, p); // no base: Establish base (staging.js)
   if (p.apCutOff && !planPath(state, partyTile(p), home.tile, false)) return; // across water: waits for you
   // Waiting at a site another team was searching (only one search runs at a time).
   if (p.apResume === "scavenge") {
@@ -3599,8 +3599,8 @@ function assaultChoice(state, card, opts, p, find) {
   if (fit.length >= (exile || oldHub ? 1 : ASSAULT_MIN - 1) && ammo >= fit.length * 4 && odds >= need) return find(/^Storm the base/);
   return find(/^Back off/);
 }
-// No base left (conquest.js exiles): take back the nearest base of yours they hold if the odds are fair (and no
-// staging camp is well under way), else the staging camp like hardcore's first hub (roadAct).
+// No base left (conquest.js exiles): take back the nearest base of yours they hold if the odds are fair, else set up
+// the camp that becomes the hub like hardcore's first (roadAct).
 function exileAct(state, p) {
   const g = state.grid;
   const here = partyTile(p);
@@ -3615,8 +3615,7 @@ function exileAct(state, p) {
     say(state, `${teamName(state, p)}: no base left, so it goes to take ${lost.o.name} back (${Math.round(lost.odds * 100)}%).`);
     return;
   }
-  // occupy.js: a base standing empty within reach that the team can clear: a home already built (not while a staging
-  // camp is well under way).
+  // occupy.js: a base standing empty within reach that the team can clear: a home already built.
   const empty = going ? null : (state.abandoned || []).filter((r) => g.distance(here, r.tile) <= OCCUPY.GOV_RANGE && !occupyProblem(state, r.tile) && planPath(state, here, r.tile, p.vehicle))
     .map((r) => ({ r, odds: teamOccupyOdds(state, p, abandonedThreat(state, r.tile)), d: g.distance(here, r.tile) })).filter((x) => x.odds >= OCCUPY.AI_ODDS).sort((a, b) => a.d - b.d || b.odds - a.odds)[0];
   if (empty) {
@@ -3629,11 +3628,11 @@ function exileAct(state, p) {
   roadAct(state, p);
 }
 
-// ---------- the road with no base: the staging camp (staging.js) ----------
-// Hardcore's first hub and the exiles' new one. The team pitches a staging camp at the best spot near it (hubSites:
+// ---------- the road with no base: the camp that becomes the hub (staging.js) ----------
+// Hardcore's first hub and the exiles' new one. The team sets up camp (Establish base) at the best spot near it (hubSites:
 // water, sites around, few of the dead) once it carries a share of the scrap or after a few days, then ferries
-// what the camp lacks (searching nearby, pulled toward the camp), works on it while the materials allow, and
-// rests, fetches water or eats on the way like any team on the road. It fetches water at a river when short and
+// what the camp lacks (searching nearby, pulled toward the camp), and from then on the camp is a base the governor
+// runs like any other; on the road the team rests, fetches water or eats like any team. It fetches water at a river when short and
 // one is close, rests when someone is badly hurt.
 // ROAD: reach = tiles it looks for sites in (wider when nothing is near); low = days of food or water that make
 // them urgent; heal = health under which it camps; fetchExtra = water it fills beyond what it lacks; huntHours /
@@ -3642,7 +3641,7 @@ function exileAct(state, p) {
 // of the missing scrap and parts carried that sends it back to the camp within ferryReach tiles; pull = how much
 // farther sites from the camp count against them; workDays = days of work it brings food and water for; range =
 // tiles from the camp it searches first. Short of food or water it goes back to the camp when the stores can spare
-// some (staging.js provisionable).
+// some.
 const ROAD = { reach: 6, wide: 11, low: 2, heal: 40, foundReach: 4, fetchExtra: 4, campHours: 8, huntHours: 8, huntMin: 4, forageLow: 1 }; // forageLow: foraging.js (landFoodAct)
 const CAMP = { pitchShare: 0.3, pitchDay: 3, ferryShare: 0.5, ferryReach: 6, pull: 0.15, workDays: 3, range: 7, waterReach: 9 }; // waterReach: camp sites by water (staging.js)
 const roadDays = (state, p, k) => {
@@ -3658,8 +3657,8 @@ function roadMissing(state, p) {
   const n = Math.max(1, partyMembers(state, p).length);
   const days = CAMP.workDays + 1;
   const out = {};
-  // Building materials the camp still lacks are made from scrap (crafting.js buildmat): that much more scrap; and the
-  // pitching's own scrap (staging.js STAGING.PITCH) before the camp stands.
+  // Building materials the camp still lacks are made from scrap (crafting.js buildmat): that much more scrap (setting
+  // up camp itself takes none: staging.js STAGING.PITCH).
   const bmLack = Math.max(0, (needs.buildmat || 0) - carried(p, "buildmat") - 0);
   for (const k of ["scrap", "parts", "food", "water"]) {
     const have = (k === "water" ? teamWaterIn(p) : carried(p, k)) + (k === "food" ? carried(p, "preserved") : 0) + 0;
@@ -3740,7 +3739,7 @@ function roadAct(state, p) {
     campAt(state, p, ROAD.campHours);
     return;
   }
-  // Out of food (under half a day) and nothing at the staging camp to spare: food from the land before the camp's
+  // Out of food (under half a day) and no camp's stores to spare: food from the land before the camp's
   // business (landFoodAct, foraging.js).
   const campSpare = 0; // (no camp yet: a camp is a base)
   if (fDays < LAND.critical && campSpare < members.length && landFoodAct(state, p, { urgent: true })) return;
@@ -4617,8 +4616,8 @@ function woodTripCands(state, h, pool, P) {
 // a walk). urgent (under a day or two of food): it looks two tiles out, else one. ok(rations, kind): the caller's own test.
 // LAND.tries: food stops a team on its way home makes at most.
 // urgentMin: with food down to a day or two any real gain will do: 1.5 × what the team eats meanwhile (at least 1.5).
-// critical: days of food under which the road team (no base) goes for food from the land before the staging camp's
-// business, unless the camp has food to spare.
+// critical: days of food under which the road team (no base) goes for food from the land before the camp's
+// business (Establish base).
 const LAND = { hours: 8, min: 4, urgentMin: 1.5, walkMore: 1.3, tries: 4, critical: 0.5 };
 const foodDaysOf = (state, p) => {
   const n = partyMembers(state, p).length;

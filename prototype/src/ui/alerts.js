@@ -47,7 +47,7 @@ const EVENT_HOURS = 24;             // "building finished" and the like stay up 
 // Each alert: { key, kind, icon, text, tip, tone (danger | warn | good | info), go: { team | base+tab | tile | surv } }.
 const teamLabel = (state, p) => `${MISSIONS[p.teamMission || p.mission]?.name || "Team"} (${partyMembers(state, p).map((s) => firstName(s.name)).join(", ")})`;
 const SECTIONS = {
-  road: roadAlerts, // no base (hardcore's first hub, the exiles): the team's food and water, the staging camp's needs and dangers (ui/hardcore.js)
+  road: roadAlerts, // no base (hardcore's first hub, the exiles): the team's food and water, a home to set up (Establish base); camps left alone (ui/hardcore.js)
   teams(state, out) {
     for (const p of state.parties) {
       if (p.owner !== "player" || p.kind === "convoy" || p.phase !== "waiting") continue;

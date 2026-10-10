@@ -30,10 +30,10 @@
 //   at the first hub when the camp is founded (staging.js settleInto). state.hardcore.start.car is its id.
 // - The team is on the road (a state.parties entry, like the exiles in conquest.js): no base, no home to return to.
 //   You are with them, so they always report and take orders (radio contact without a radio).
-// - The first hub: Build outpost becomes Establish base, a staging camp the team brings materials to and then builds
-//   up over a few days (staging.js STAGING.HARDCORE). It becomes the hub, empty: no buildings, no truck. Losing that
-//   hub later is the normal game's exile (conquest.js): a new staging camp (a little cheaper), later outposts the
-//   usual 15 scrap.
+// - The first hub: Build outpost becomes Establish base, a camp (the barest base: the team moves in) with its step up
+//   into a shelter queued; the team brings the materials in and its builders build it up over a few days (staging.js
+//   STAGING.HARDCORE). The shelter is the hub, empty: no buildings, no truck. Losing every base later is the normal
+//   game's exile (conquest.js): Establish base again; later outposts are camps too (Build outpost).
 // Everything here runs only in a hardcore world (hardcore.js isHardcore).
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES, clashIn } from "./data.js";
@@ -189,7 +189,7 @@ export const HC_START = {
   // 6–12 food, 6–12 water, 2 meds; a pair (one seat): +1–2, 3–6 food, 3–6 water, 1 meds. Three or four: nothing (no
   // dice drawn, so a default start is the same start).
   SMALL: { SKILLS: ["scouting", "stealth", "medicine"], SKILL: [1, 2], SEAT: { food: [3, 6], water: [3, 6], meds: [1, 1] } },
-  // The first hub: a staging camp (staging.js STAGING.HARDCORE: what it takes and the days of work).
+  // The first hub: a camp built up into a shelter (staging.js STAGING.HARDCORE: what it takes and the work).
 };
 // For the UI (the People tab's background chip) and the tools: { key: { name, blurb } }.
 export const BACKGROUNDS = Object.fromEntries(Object.entries(HC_START.ARCHETYPES).map(([k, a]) => [k, { name: a.name, blurb: a.blurb }]));
@@ -235,8 +235,8 @@ export function roadTeam(state) {
 export const withYou = (state, p) => firstHubPending(state) && !!p && p.owner === "player" && p.kind !== "convoy";
 
 // ---------- founding the first hub ----------
-// The first hub is a staging camp built up over days (staging.js: Establish base, the materials, the work). When it
-// is done, staging.js has made the base (type "hub": there is none) and moved the people in; this marks the day.
+// The first hub is a camp built up into a shelter over days (staging.js: Establish base, the materials, the work).
+// When the shelter stands (buildings.js upgradeShelter, staging.js campBecameShelter) this marks the day.
 // when: how long the camp took ("4 days after the camp went up").
 export function hubFounded(state, base, when = "") {
   const hc = state.hardcore.start;

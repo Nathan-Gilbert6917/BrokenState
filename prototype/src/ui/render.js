@@ -1273,7 +1273,7 @@ export function render(state) {
     buildBarOnMap(px, cy - h / 2 - 7 * s, s, f, f);
     labels.push({ text: `Camp ${Math.round(f * 100)}%`, x: px, y: cy + h / 2 + 9 * s, pri: -1, screen: true, color: "#cfe2f7", size: 9 });
   }
-  // A team on its way to pitch the camp (Establish base): a dashed ring where it will stand.
+  // A team on its way to set up camp (Establish base): a dashed ring where it will stand.
   if (!camp && !state.bases.length) for (const p of state.parties) {
     if (p.owner !== "player" || p.mission !== "establish" || !(p.phase === "out" || p.phase === "back") || !p.path || !p.path.length) continue;
     const dest = p.path[p.path.length - 1];
@@ -1636,7 +1636,7 @@ const lastFacing = new WeakMap();   // UI only: keeps a team facing the way it l
 
 const PLACE_W = { hub: 46, outpost: 34, shelter: 38, faction: 40 }; // base sprite widths in world pixels (before zoomBoost)
 const placeW = (b) => (isCamp(b) ? STAGING_W : b.tier === 0 ? PLACE_W.shelter : b.type === "hub" ? PLACE_W.hub : PLACE_W.outpost);
-const STAGING_W = 34; // the staging camp's sprite width (sim/staging.js), an outpost's
+const STAGING_W = 34; // a camp's sprite width (sim/staging.js), an outpost's
 const MARKER_W = { death: 13, cache: 15, car: 19, camp: 16, vehicle: 20 };
 const LAYER_COLOR = { vehicles: "#7fb0e6", deaths: "#d8cfb8", finds: "#c9b98a" }; // marker rings and far-out dots
 const ICON_W = 11;                 // status icons (alert, work, radio, siege, "?")

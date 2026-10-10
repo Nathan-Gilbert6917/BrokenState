@@ -1,5 +1,5 @@
 // @ts-check
-// Naming your bases. A base you found (the staging camp becoming your shelter, Build outpost, one you take in an
+// Naming your bases. A base you found (Establish base or Set up camp, Build outpost, one you take in an
 // assault, one a group hands over) gets a name from parties.js outpostName and is queued here: the UI asks for a
 // name (ui/basename.js), the suggestion filled in. Any base can be renamed later. On autopilot nobody is asked: the
 // suggested name stays. Other groups' bases are named by their own code (factions.js) and never asked about.

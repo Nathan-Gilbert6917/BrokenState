@@ -5,7 +5,7 @@
 // - Purified water (`water`) is safe to drink: boiled, filtered, treated with tablets, or bottled water found in shops,
 //   houses and crates. Un-purified water (`rawwater`) comes from the land: a base's well or spring, wells, a stream,
 //   rain catchers, the wells on its claims, prisoners hauling it (economy.js waterProduction), a team filling its
-//   containers at a river or lake (orders.js fetchWater), a staging camp beside one (staging.js). It weighs the same.
+//   containers at a river or lake (orders.js fetchWater), a camp or shelter beside one (staging.js). It weighs the same.
 // - A base (economy.js baseDaily, worm.js purifyDaily): each day before drinking a lit water boiler purifies the day's
 //   drinking for everyone fed there, each water filter WORM.PURIFY_FILTER a day, a shelter's lit fire like the boiler.
 //   People drink purified water first, then un-purified water (rather than go thirsty: the share drunk un-purified

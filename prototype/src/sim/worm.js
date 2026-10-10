@@ -96,7 +96,7 @@
 //     the nearest people: one hurt by TURN_HURT (a second one TURN_SECOND of the time), each killed TURN_KILL of the
 //     time (half that with a guard on duty), and everyone there loses TURN_MOOD mood; locked away (the brain-stage
 //     card, a prisoner idle in a cell) nobody is hurt. The body is put down; its things go to the armory.
-//   - on the road (a team on the move, camping or working, a convoy on its way, the staging camp): the card
+//   - on the road (a team on the move, resting or working, a convoy on its way): the card
 //     "<name> rose": put them down (the team's fighters against one of the dead by the numbers: someone may be hurt;
 //     their things are kept), leave them (a death site with their things), or, when someone noticed the last breath
 //     (RISE.NOTICE + RISE.NOTICE_SKILL × the best of Medicine and Scouting), crush the skull before they rise. Alone,
