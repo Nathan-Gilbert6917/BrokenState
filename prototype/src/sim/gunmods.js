@@ -67,7 +67,7 @@ export { SLOTS, SLOT_NAMES, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAPON_SLOTS
 
 export const NO_MODS = Object.freeze({
   aim: 0, close: 0, opt: 0, fall: 0, dmg: 1, cap: 0, capMult: 1, noise: 1, weight: 0, value: 0,
-  night: 0, nightNear: 0, peq: 0, brace: 0, moving: 0, jam: 1, thermal: false, light: false, flashless: false, launcher: null,
+  night: 0, nightNear: 0, peq: 0, brace: 0, moving: 0, jam: 1, spread: 0, thermal: false, light: false, flashless: false, launcher: null,
   reload: 0, // + shells a tube Reload puts in (a side-saddle: mags.js)
 });
 export const MOUNTS = SLOTS; // every slot (the old name: there were four mounts)
@@ -90,7 +90,7 @@ const LEGACY = {
   suppressor:{ slot: "muzzle",   short: "oil-filter suppressor", look: "oilfilter", fits: { cal: ["9mm", "556", "308", "3030"] }, can: true, noise: 0.5, jam: 1.5 }, // makeshift: GEAR dur = shots
   brake:     { slot: "muzzle",   short: "muzzle brake", look: "brake",    fits: { cal: RIFLE_CALS }, aim: 3, noise: 1.3 },
   comp:      { slot: "muzzle",   short: "compensator",  look: "comp",     fits: { cal: ["9mm", "45acp", "357", "38spl", "57x28", "44mag"] }, aim: 2, noise: 1.15 },
-  choke:     { slot: "muzzle",   short: "choke",        look: "choke",    fits: { cal: ["12ga", "20ga"] }, opt: 2, fall: -2, close: -4 },
+  choke:     { slot: "muzzle",   short: "choke",        look: "choke",    fits: { cal: ["12ga", "20ga"] }, opt: 2, fall: -2, close: -4, spread: 2 }, // spread: + tiles of buckshot's full damage (data-ammo.js spreadMult)
   extmag:    { slot: "mag",      short: "extended mag", look: "stick20",  fits: { plat: ["glock"] }, cap: 9 },
   drum:      { slot: "mag",      short: "drum mag",     look: "drum",     fits: { plat: ["ar15"] }, capMult: 2, aim: -2, jam: 1.5 },
   tubeext:   { slot: "mag",      short: "tube extension", look: "tube_ext", fits: { plat: ["pump", "semi12"] }, cap: 2 },
@@ -456,6 +456,7 @@ export function gunMods(item) {
     out.dmg *= a.dmg ?? 1; out.cap += a.cap || 0; out.capMult *= a.capMult ?? 1; out.noise *= a.noise ?? 1;
     out.night += a.night || 0; out.nightNear += a.nightNear || 0; out.peq = Math.max(out.peq, a.peq || 0);
     out.brace += a.brace || 0; out.moving += a.moving || 0; out.jam *= a.jam ?? 1; out.reload += a.reload || 0;
+    out.spread += a.spread || 0; // a choke: + tiles of buckshot's full damage (data-ammo.js spreadMult)
     if (a.thermal) out.thermal = true;
     if (a.light) out.light = true;
     if (a.flashless) out.flashless = true;

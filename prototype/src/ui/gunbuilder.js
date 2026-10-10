@@ -176,7 +176,7 @@ function rows(s) {
     ["fall", "Fall-off", `−${r2(s.fall)} a tile`, s.fall, -1, "Aim lost each tile beyond the best range."],
     ...(s.reach ? [["reach", "Round's reach", `${r1(s.reach)} tiles, then −${r2(s.drop)} more a tile`, s.reach, 1, "A light round (5.56, 7.62×39, .22) drops past this, whatever the sight; no part pushes the best range past it."]] : []),
     ["dmg", "Damage", `${s.dmg[0]}–${s.dmg[1]}`, avg(s.dmg), 1, "A hit's damage before armour and cover."],
-    ...(s.spread ? [["spread", "Shot spread", `full to ${r1(s.spread.full)} tiles, then −${Math.round(s.spread.drop * 100)}% a tile (≥${Math.round(s.spread.min * 100)}%)`, s.spread.full, 1, "Buckshot and birdshot spread with range: past this a hit does less, down to the floor. A slug keeps its damage."]] : []),
+    ...(s.spread ? [["spread", "Shot spread", `full to ${r1(s.spread.full)} tiles${s.spread.choke ? ` (choke +${s.spread.choke})` : ""}, then −${Math.round(s.spread.drop * 100)}% a tile (≥${Math.round(s.spread.min * 100)}%)`, s.spread.full, 1, "Buckshot and birdshot spread with range: past this a hit does less, down to the floor (never under a .22's hit). A choke keeps the pattern tight a few tiles further. A slug keeps its damage."]] : []),
     ["cap", "Magazine", s.cap ? `${s.cap} rounds` : "—", s.cap, 1, "Rounds loaded; Reload (I) fills it in battle."],
     ["noise", "Noise", s.noise ? `${r2(s.noise)} · heard ~${Math.round(s.earshot)} tiles` : "silent", s.noise, -1, "A shot's noise (the dead and the unaware hear it; Heat in a raid)."],
     ["kg", "Weight", `${r1(s.kg)} kg`, s.kg, -1, "With the parts on it."],

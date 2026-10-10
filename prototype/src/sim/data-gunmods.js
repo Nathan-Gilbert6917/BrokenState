@@ -167,8 +167,10 @@ Object.assign(PLATFORMS, {
   p90:    { name: "Bullpup PDW",          cat: "pdw",     slots: ["optic", "muzzle", "mag", "tactical", "sling"] },
   fn57:   { name: "5.7 pistol",           cat: "pistol",  slots: ["optic", "muzzle", "mag", "tactical"] },
   vector: { name: "Low-recoil SMG",       cat: "smg",     slots: ["optic", "muzzle", "mag", "stock", "grip", "tactical", "sling"] }, // (gun-attach: the rail under it takes a foregrip, as the .45 SMG's)
-  g3:     { name: "Roller-delayed rifle", cat: "rifle",   slots: ["optic", "muzzle", "mag", "stock", "rail", "bipod", "sling"] },
-  famas:  { name: "Bullpup rifle (FAMAS)", cat: "bullpup", slots: ["optic", "muzzle", "mag", "tactical", "bipod", "sling"] },
+  // The G3: no top rail; a sight goes on its claw mount (2026-10-10, user: "the G3 gets a claw scope mount"). The FAMAS:
+  // its folding bipod legs are part of the gun (built in, as the machine guns': rested on half cover, +8).
+  g3:     { name: "Roller-delayed rifle", cat: "rifle",   slots: ["mount", "muzzle", "mag", "stock", "rail", "bipod", "sling"], parts: { mount: ["clawmount"] } },
+  famas:  { name: "Bullpup rifle (FAMAS)", cat: "bullpup", slots: ["optic", "muzzle", "mag", "tactical", "sling"], builtin: { bipod: "bipod" } },
 });
 Object.assign(PLATFORM_LIKE, { p90: "mp5", fn57: "glock", vector: "mp5", g3: "ar10", famas: "ar15" });
 Object.assign(PLATFORM_LIKE_SKIP, { p90: ["collapsible", "foldstock"], fn57: ["extmag"], famas: ["collapsible", "precision", "foldstock", "m203", "drum"] });
@@ -291,8 +293,8 @@ export const MOD_ATTACH = {
   cheapbrake:   { slot: "muzzle",   short: "cheap brake",    look: "brake",   fits: { cal: RIFLE_CALS }, aim: 2, noise: 1.35 },
   flashpro:     { slot: "muzzle",   short: "Warcomp",        look: "fh",      fits: { cal: RIFLE_CALS }, aim: 2, flashless: true },
   cheapcomp:    { slot: "muzzle",   short: "cheap compensator", look: "comp", fits: { cal: ["9mm", "45acp", "357", "38spl", "57x28", "44mag"] }, aim: 1, noise: 1.2 },
-  turkeychoke:  { slot: "muzzle",   short: "turkey choke",   look: "choke",   fits: { cal: ["12ga", "20ga"] }, opt: 3, fall: -2.5, close: -6 },
-  icchoke:      { slot: "muzzle",   short: "IC choke",       look: "choke",   fits: { cal: ["12ga", "20ga"] }, opt: 1, fall: -1, close: -1 },
+  turkeychoke:  { slot: "muzzle",   short: "turkey choke",   look: "choke",   fits: { cal: ["12ga", "20ga"] }, opt: 3, fall: -2.5, close: -6, spread: 3 },
+  icchoke:      { slot: "muzzle",   short: "IC choke",       look: "choke",   fits: { cal: ["12ga", "20ga"] }, opt: 1, fall: -1, close: -1, spread: 1 },
   // stocks and grips
   ctrstock:     { slot: "stock",    short: "CTR stock",      look: "collapsible", fits: { plat: ["ar15", "ar10"] }, aim: 3, close: 3 },
   fixedstock:   { slot: "stock",    short: "A2 stock",       look: "stock_fixed", fits: { plat: ["ar15", "ar10"] }, aim: 3, close: -1 },
@@ -471,6 +473,12 @@ export const PART_INFO = {
   slingpro:     { name: "Padded two-point sling", value: 25, weight: 0.15, tier: "brand", rarity: "uncommon", tags: ["military", "police", "guns"],
                   desc: "A quick-adjust padded sling modelled on a Blue Force Gear Vickers: +2 aim when the shooter moved this turn." },
 };
+// More calibres of 2026-10-10: the G3's claw mount (HK-style: clamps onto the receiver's dimples, carries any rifle sight).
+Object.assign(MOD_ATTACH, { clawmount: { slot: "mount", short: "claw mount", look: "mount", fits: { plat: ["g3"] }, adds: ["optic"] } });
+Object.assign(PART_INFO, {
+  clawmount: { name: "Claw scope mount (HK-style)", value: 35, weight: 0.3, tier: "brand", rarity: "scarce", tags: ["military", "guns"],
+               desc: "A steel claw mount that clamps onto the G3's receiver and holds a sight rock-steady: it carries a scope, a red dot or a holo sight (the G3 has no top rail). Fits the roller-delayed battle rifle only." },
+});
 for (const [k, i] of Object.entries(PART_INFO)) MOD_GEAR[k] = MOD(i.name, i.value, i.weight, i.desc, { tier: i.tier, ...(i.dur ? { dur: i.dur, budget: true } : {}) });
 // The parts from before the catalogue, by tier and rarity (their places: loot.js ITEM_TAGS, GUNMOD_FINDS, SITE_MODS).
 /** @type {Record<string, [string, string]>} key -> [tier, rarity] */

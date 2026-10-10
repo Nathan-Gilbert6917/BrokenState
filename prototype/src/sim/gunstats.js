@@ -7,7 +7,7 @@ import { WEAPONS } from "./combat.js";
 import { GEAR } from "./data.js";
 import { gunMods, modRange, roundReach } from "./gunmods.js";
 import { jamChance } from "./gunfire.js"; // jam: the battle's own per-round jam chance (call time only)
-import { ammoPen } from "./data-ammo.js";
+import { ammoPen, spreadFloor } from "./data-ammo.js";
 import { calOf, typeFor, roundFx, loadRefusal } from "./ammo.js"; // the loaded type (ammo.js): aim, range, damage, noise, penetration
 import { loadParts } from "./rounds.js"; // a load of another calibre the gun takes (.223 in a 5.56 gun)
 
@@ -41,6 +41,7 @@ export function gunStats(itemOrKey, opts = {}) {
     // An intermediate or rimfire round's reach (gunmods.js ROUND_REACH): past it, drop aim a tile more, scope or not.
     reach: roundReach(w) ? roundReach(w).reach + (t.opt || 0) : null, drop: roundReach(w) ? roundReach(w).drop : 0,
     // Shot that spreads (buckshot, birdshot: data-ammo.js spreadMult): full damage out to full tiles, then −drop a tile, min.
-    spread: t.spreadFull != null && t.spreadDrop > 0 ? { full: t.spreadFull, drop: t.spreadDrop, min: t.spreadMin ?? 0 } : null,
+    // A choke adds its tiles (m.spread); the floor is never under a .22's hit (spreadFloor).
+    spread: t.spreadFull != null && t.spreadDrop > 0 && lp ? { full: t.spreadFull + (m.spread || 0), drop: t.spreadDrop, min: spreadFloor(lp.type, lp.cal), choke: m.spread || 0 } : null,
   };
 }

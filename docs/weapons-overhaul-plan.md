@@ -1659,10 +1659,10 @@ adds 5.56 / .223 / 300 BLK). Built on dev 3090d82. Each gun takes one calibre (t
 | key | name (like) | cal | dmg | opt / fall | aim / close | rounds a shot | cap | modes | noise | jam % | kg | value | Shooting | power | dur | rarity | platform, feeding | AI kits |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | fiveseven | 5.7 pistol (FN Five-seveN) | 5.7×28 | 15–22 | 6 / 4 | +4 / – | 1 | 20 | – | 2 | 0.3 | 0.75 | 70 | 3 | 3.4 | 65 | scarce | fn57, mag_fn57_20 | guards |
-| p90 | 5.7 PDW (FN P90) | 5.7×28 | 16–23 | 7 / 3.2 | +7 / +5 | 2 | 50 | burst 3 (−5), auto 12 (−13) | 2 | 0.3 | 2.6 | 165 | 8 | 6.8 | 70 | rare | p90, mag_p90_50 (top) | guards (strong) |
+| p90 | 5.7 PDW (FN P90) | 5.7×28 | 16–23 | 7 / 3.2 | +2 / +3 (was +7 / +5) | 2 | 50 | burst 3 (−8), auto 12 (−17) (was −5 / −13) | 2 | 0.3 | 2.6 | 165 | 8 | 6.8 | 70 | rare | p90, mag_p90_50 (top) | guards (strong) |
 | vector | Low-recoil .45 SMG (KRISS Vector) | .45 ACP | 18–26 | 6 / 3.5 | +6 / +5 | 2 | 25 | burst 2 (−3), auto 12 (−10) | 2 | 0.45 | 2.7 | 190 | 7 | 6.6 | 60 | rare | vector, mag_vector_25 (and 13) | guards (strong) |
 | g3 | Roller-delayed battle rifle (HK G3) | .308 | 33–45 | 11 / 2 | +5 / −2 | 1 | 20 | burst 2 (−12), auto 10 (−26) | 4 | 0.2 | 4.4 | 200 | 11 | 8.5 | 85 | rare | g3, mag_g3_20 | raiders, militia, fighters (strong) |
-| famas | High-rate bullpup rifle (FAMAS) | 5.56 | 22–32 | 9 / 3 | +8 / +3 | 2 | 25 | burst 3 (−7), auto 12 (−20) | 3 | 0.45 | 3.6 | 140 | 9 | 7.9 | 65 | rare | famas, mag_famas_25 | fighters (strong) |
+| famas | High-rate bullpup rifle (FAMAS) | 5.56 | 22–32 | 9 / 3 | +7 / +3 (was +8) | 2 | 25 | burst 2 (−8), auto 12 (−24) (was burst 3 (−7), auto −20) | 3 | 0.45 | 3.6 | 140 | 9 | 7.9 | 65 | rare | famas, mag_famas_25 | fighters (strong) |
 | revolver44 | .44 Magnum revolver (S&W Model 29) | .44 Mag | 27–37 | 5 / 5 | −4 / – | 1 | 6 | – | 4 | 0.05 | 1.4 | 60 | 5 | 4.0 | 85 | uncommon | revolver, internal 2 a Reload | raiders, fighters; survivors' loot |
 | lever44 | Lever-action .44 carbine (Marlin 1894) | .44 Mag | 28–38 | 9 / 2.8 | +5 / – | 1 | 10 | – | 3 | 0.25 | 2.9 | 60 | 4 | 4.8 | 80 | uncommon | lever, internal 4 a Reload (tube) | militia, fighters |
 | single44 | .44 single-shot rifle (H&R Handi-Rifle) | .44 Mag | 28–38 | 9 / 2.5 | +6 / −4 | 1 | 1 | – | 3 | 0.05 | 3.0 | 32 | 2 | 3.8 | 85 | uncommon | single, internal 1 a Reload | militia, survivors |
@@ -1744,3 +1744,44 @@ a rifle, the HUD's target card); `arsenalbalancetest` (5.7 between 9mm and 5.56 
 .45, .44 over .357 and under .308, the new guns' calibres, magazines, feeds, low recoil, G3 reliability, rarity, tags,
 box sizes; every calibre has a gun); `balancesheettest` (the spread columns equal the game's, editable, an edit moves
 only the hit at range; the new tables editable); `rostertest` (the 5.7 pistol's 20, the FAMAS's 25).
+
+### The user's answers (2026-10-10, branch `calibres-tune`)
+
+- **P90 and FAMAS toned down** (3 vs 4 raiders, 300 battles, seed 7, win % before → after): the PDW 89 → 83 (aim +7 → +2,
+  up close +5 → +3, burst −5 → −8, auto −13 → −17; the UMP-style .45 77, the Vector 80); the FAMAS 95 → 93 (seed 8,
+  400 battles: 92, the AUG 92) (aim +8 → +7, bursts of 3 at −7 → 2 at −8, auto −20 → −24; it gained a built-in bipod).
+- **Buckshot at range**: full damage to **6** tiles (was 4), then −10% a tile, down to the higher of 40% and a .22 FMJ's
+  hit over the load's own (`data-ammo.js SPREAD_FLOOR`, `spreadFloor`): 12 ga buckshot 1 / 1 / 1 / 0.8 / 0.6 / 0.47 at
+  2 / 4 / 6 / 8 / 10 / 12 tiles (a .22's 14 of its 30), 20 ga to 0.56. **Birdshot** (my choice, the same shape): full to
+  **5** tiles, −12% a tile, its floor a .22's hit too: 12 ga 0.78, 20 ga 0.93 (birdshot itself hits barely over a .22,
+  so it hardly falls off). No buck or bird hit at any range is under a .22's (tested). `spreadMult(type, d, { cal, base,
+  extra })` stays the one rule for the game (`combat.js` shotOdds and the AI's spots, `launchers.js`, `ammo.js`
+  pickLoad) and the sheet (`ladder.js`; the sheet's own copy is checked against it); the sheet's "Hit at" columns are at
+  10 tiles now (`ladder.js FAR`).
+- **Chokes** (`ATTACH` spread, editable on the sheet's Attachments tab, "Shot full to +"): improved cylinder +1 tile,
+  the full choke +2, the turkey choke +3. The shot's full-damage range, the HUD's odds line ("shot spreads past 8
+  tiles") and the gun builder's "Shot spread" row (`gunStats` spread, "choke +2") count it.
+- **40 mm canister** (`launchers.js` buckShot): the same rule, its floor a .22's hit over its own mean (34): 1 to 6 tiles,
+  0.8 at 8 (its longest shot); the log line says "spread ×0.8".
+- **.44 extras**: a `.44 speedloader` (`data-kit.js CALIBRE_CLIPS`: six rounds into the .44 revolver at once; gun stores,
+  gun counters, traders) and a **.44 soft point** hunting load (`AMMO_TYPES` sp: pen 18, × 1.12 on the unarmoured: 34.7,
+  under the .30-30's soft point; uncommon, 1.1 a round, boxes of 20; hunting places ×3 as every soft point; 20% of
+  starting .44s).
+- **FAMAS**: its bipod is built in (`PLATFORMS.famas.builtin`: no bipod slot, +8 rested on half cover, as the machine
+  guns). **G3**: no top rail; a `Claw scope mount (HK-style)` (`clawmount`: the G3's mount slot, carries any rifle sight;
+  scarce, military and gun stores; 30% of found G3s have one).
+- No separate 5.7 AP; .44 stays a touch over 12 ga buckshot.
+
+Shotgun fights with the new fall-off (300 battles each, seed 7; dev dc64c51 → now; ±3 points of noise):
+
+| gun | 3 vs 4 raiders | 3 vs 3 raiders, they ambush | 3 vs 12 of the dead |
+|---|---|---|---|
+| pump shotgun | 60 → 61 | 82 → 86 | 100 → 100 |
+| double-barrel | 48 → 56 | 78 → 78 | 100 → 99 |
+| single-shot 12 ga | 23 → 26 | 52 → 51 | 88 → 86 |
+| police pump | 61 → 65 | 84 → 84 | 100 → 100 |
+| 20 ga pump | 44 → 40 | 69 → 79 | 97 → 97 |
+| sawn-off | 38 → 31 | 64 → 64 | 98 → 98 |
+
+(Before any fall-off, dev 3090d82: pump 62, double 55, single-shot 34, police pump 59, 20 ga 45, sawn-off 38 against 4
+raiders.)

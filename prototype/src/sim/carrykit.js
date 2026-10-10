@@ -303,13 +303,14 @@ Object.assign(WARE_KIT.traders.items, { mag_mini14_30: 0.3 });
 // guns (the 5.7 pistol's at gun stores and police, the PDW's police and military only, the G3's and FAMAS's military, gun
 // stores and arms dealers).
 const CALIBRE_KIT = [
-  [SITE_KIT.gunstore, { mag_fn57_20: 0.4, mag_vector_13: 0.2, mag_vector_25: 0.15, mag_g3_20: 0.2, mag_famas_25: 0.1 }],
+  [SITE_KIT.gunstore, { speedloader44: 0.8, mag_fn57_20: 0.4, mag_vector_13: 0.2, mag_vector_25: 0.15, mag_g3_20: 0.2, mag_famas_25: 0.1 }],
   [SITE_KIT.police, { mag_fn57_20: 0.4, mag_p90_50: 0.2, mag_vector_25: 0.15 }],
   [SITE_KIT.military, { mag_g3_20: 0.2, mag_famas_25: 0.2, mag_p90_50: 0.2 }],
   [AREA_KIT.armory, { mag_p90_50: 0.15, mag_fn57_20: 0.2, mag_vector_25: 0.1 }],
   [AREA_KIT.gunshop, { mag_fn57_20: 0.3, mag_g3_20: 0.15, mag_vector_13: 0.15 }],
   [WARE_KIT.merchants, { mag_g3_20: 0.3, mag_famas_25: 0.2, mag_p90_50: 0.1 }],
-  [WARE_KIT.traders, { mag_fn57_20: 0.3 }],
+  [WARE_KIT.traders, { mag_fn57_20: 0.3, speedloader44: 0.4 }],
+  [AREA_KIT.gunshop, { speedloader44: 0.6 }],
 ];
 for (const [row, add] of CALIBRE_KIT) Object.assign(row.items, add);
 function pickW(items, r) {

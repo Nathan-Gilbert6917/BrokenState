@@ -202,7 +202,7 @@ export const REG = {
   // parts catalogue included); magazines are MAGAZINES
   ATTACH: [S("gunmods.js", /const LEGACY = /), S("data-gunmods.js", /export const MOD_ATTACH = /)],
   INTERNAL: [...one("data-kit.js", "INTERNAL"), ...one("data-kit.js", "CALIBRE_INTERNAL")],
-  CLIPS: one("data-kit.js", "CLIPS"),
+  CLIPS: [...one("data-kit.js", "CLIPS"), ...one("data-kit.js", "CALIBRE_CLIPS")],
   RETAIL_BOX: one("data-stacks.js", "RETAIL_BOX"),
   AMMO_STACK: one("data-stacks.js", "AMMO_STACK"),
   BULK: one("data-stacks.js", "BULK"),
