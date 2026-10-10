@@ -344,7 +344,7 @@ console.log("The hive crawl");
   check(vols.every((s) => lightOf(s)), `for a dark hive they bring lights of their own (${vols.map((s) => lightOf(s)).join(", ")})`);
   const vu = b.units.find((u) => u.vol != null), vs = survivorById(st, vu.sid);
   const lit = vu.sight;
-  const keepTool = vs.gear.tool; vs.gear.tool = null; vu.sight = 99; HC.caveDark(st, b); const darkSight = vu.sight; vs.gear.tool = keepTool;
+  const keepTool = vs.gear.tool, wm = vs.gear.weapon && vs.gear.weapon.mods, keepTac = wm && wm.tactical; vs.gear.tool = null; if (keepTac) delete wm.tactical; vu.sight = 99; HC.caveDark(st, b); const darkSight = vu.sight; vs.gear.tool = keepTool; if (keepTac) wm.tactical = keepTac; // (and no weapon light: a soldier's military carbine may carry one)
   check(b.dark && lit === LIGHTS[lightOf(vs)].sight + HC.HCRAWL.LIGHT.lit && darkSight === HC.HCRAWL.LIGHT.dark, `in the cave's dark a volunteer sees by their light (${lit} tiles), without one ${darkSight}`);
   st.combat = null;
   st.autoCombat = true;
