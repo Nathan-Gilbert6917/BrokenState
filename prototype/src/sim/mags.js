@@ -137,7 +137,7 @@ export function fitMags(b, u, spots, staticCap) {
     u.magMode = "internal";
     u.mags = [];
     u.clips = clipsFor(u, spots);
-    if (isShellGun(u)) startHand(b, u); // SHELLS: a handful of loose shells out of the team's bags
+    if (isShellGun(u)) startHand(b, u, staticCap); // SHELLS: a handful of loose shells out of the team's bags
     return;
   }
   u.magMode = "box";
@@ -192,10 +192,14 @@ export function enemyMagCount(kind, ...salt) {
 //     packed rounds (b.pools) have no place on anyone, so a shotgunner takes the field with a handful of them loose
 //     (START_HAND, topped up to that with what their pockets and rig hold), every other side the same (AI parity:
 //     their reserve is endless, their handful the same).
+//   - a side-saddle (or an elastic shell holder) on a tube's receiver holds SADDLE shells of its own on the gun: the
+//     handful at the start and the most kept loose (HAND_MAX) are that many more (and a Reload puts a shell more in);
 //   - pack: the rest (a box in the shooter's own pack, a teammate's, the team's bags; every other side: endless). Not
 //     loaded from directly: Get shells (1 action: getShells) takes GRAB of them out, up to HAND_MAX loose; a Reload with
 //     none at hand is refused ("Shells are in the pack: take some out first"). The AI (reload(): doReload's "fetch"
 //     plan) spends that action itself.
+// A team packed for a trip (parties.js launchExpedition: carrykit.js packShells) carries CARRY shells a shotgunner in a
+// pocket or a rig pouch, out of what it packs, so it takes the field with more than the handful at hand.
 // Shells a Reload (1 action) puts in: a tube BASE (2 or 3, the battle's dice) + 1 steady hands (aim STEADY_AIM+: a
 // colonist with Shooting 6, a power-4 enemy) - 1 shaken (hurt below half, pinned by suppressing fire, dazed by a
 // flashbang), MIN..MAX; a break action both barrels (2), the pipe gun its one; never more than the room in the gun and
@@ -213,7 +217,13 @@ export const SHELLS = {
   START_HAND: 8, // loose shells on a shotgunner at the start of a fight, out of the team's bags (or the AI's)
   GRAB: 8, // shells one Get shells takes out of the pack
   HAND_MAX: 16, // loose shells out of the pack a person keeps at hand (pockets, belt)
+  SADDLE: 6, // shells a side-saddle (an elastic shell holder) holds on the gun: the handful and HAND_MAX that many more
+  CARRY: 30, // shells a shotgunner packed for a trip carries in a pocket or a rig pouch (carrykit.js packShells): the gun's load and the rest at hand
 };
+// Shells a side-saddle on this unit's tube holds (0: none, or not a tube).
+export const saddleHold = (u) => (isTubeShotgun(u) && num(unitMods(u).reload) > 0 ? SHELLS.SADDLE : 0);
+// The most loose shells this unit keeps at hand.
+export const handMax = (u) => SHELLS.HAND_MAX + saddleHold(u);
 const isBox = (x) => x && x.item && ROUND_SUPPLIES[x.item.key];
 // Puts the boxes of rounds in rig pouches into u.boxes right after the pockets' (ammo.js boxesOf has pockets, then the
 // pack) and counts the boxes at hand (u.handBoxes: pockets and rig).
@@ -258,14 +268,15 @@ export function shellsAt(b, u, type = null, mag = null) {
   return { box, hand, pack: rest - hand, at: box + hand };
 }
 // The handful a shotgunner takes the field with (fitMags, enemyMags): loose shells of the loaded type out of the team's
-// bags, up to START_HAND with what the pockets and rig hold.
-function startHand(b, u) {
+// bags, up to START_HAND with what the pockets and rig hold beyond the gun's load (cap: the gun loads out of them first).
+function startHand(b, u, cap = 0) {
   u.hand = {};
   const cal = calOf(u.weapon), t = typeFor(cal, u.load);
-  if (u.side !== "player") { u.hand[t] = SHELLS.START_HAND; return; }
+  const hold = saddleHold(u); // a side-saddle's shells on top of the handful
+  if (u.side !== "player") { u.hand[t] = SHELLS.START_HAND + hold; return; }
   const keys = withHand(keyFor(cal, t));
   const box = shellsIn((u.boxes || []).slice(0, Math.max(0, u.handBoxes || 0)), keys);
-  u.hand[t] = Math.max(0, Math.min(SHELLS.START_HAND - box, poolShells(b, keys)));
+  u.hand[t] = Math.max(0, Math.min(Math.max(0, SHELLS.START_HAND - Math.max(0, box - Math.max(0, cap || 0))) + hold, poolShells(b, keys)));
 }
 export const isShaken = (u) => !!((u.maxHp > 0 && u.hp < u.maxHp * SHELLS.HURT) || u.suppressed || u.stun);
 // The shells a Reload puts in now with the dice at roll (0: BASE[0], 1: BASE[1]): { n, at, pack, steady, shaken, room }.
@@ -294,14 +305,14 @@ export function getShellsRefusal(b, u, type = null) {
   const cal = calOf(u.weapon), t = typeFor(cal, type || u.load);
   const s = shellsAt(b, u, t);
   if (!(s.pack > 0)) return s.at > 0 ? `No more ${roundName(cal, t)} in the pack: ${s.at} at hand.` : `No ${roundName(cal, t)} in the pack.`;
-  if (s.hand >= SHELLS.HAND_MAX) return `${s.hand} loose shells at hand already: room for no more.`;
+  if (s.hand >= handMax(u)) return `${s.hand} loose shells at hand already: room for no more.`;
   return "";
 }
 // Get shells (1 action; the caller takes it): GRAB shells of the type out of the pack, loose at hand. Returns the log line.
 export function getShells(b, u, type = null) {
   const cal = calOf(u.weapon), t = typeFor(cal, type || u.load);
   const s = shellsAt(b, u, t);
-  const n = Math.max(0, Math.min(SHELLS.GRAB, s.pack, SHELLS.HAND_MAX - s.hand));
+  const n = Math.max(0, Math.min(SHELLS.GRAB, s.pack, handMax(u) - s.hand));
   if (!u.hand) u.hand = {};
   u.hand[t] = s.hand + n;
   const at = shellsAt(b, u, t).at;

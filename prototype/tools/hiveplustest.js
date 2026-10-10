@@ -475,7 +475,21 @@ console.log("The autopilot's gate to the core, and its kit");
   }
   const err = rows.reduce((a, r) => a + Math.abs(r.map - r.num), 0) / rows.length;
   for (const r of rows) console.log(`    ${r.sq} tier ${r.tier}, guard ${r.guard}, ${r.lights ? "lit" : "dark"}${r.prep ? ", 2 Molotovs + 2 flashbangs" : ""}: map ${Math.round(r.map * 100)}%, by the numbers ${Math.round(r.num * 100)}%`);
-  check(err <= 0.2, `the core's odds by the numbers follow the map's within 20 points on average (${Math.round(err * 100)}; the full fit, tools/hivecorecalib.js --fit: RMS 0.19 over 96 configurations)`);
+  check(err <= 0.2, `the core's odds by the numbers follow the map's within 20 points on average (${Math.round(err * 100)}; the full fit, tools/hivecorecalib.js --fit: 144 configurations of six squads, see hivecrawl.js HIVEMIND.numbersK)`);
+  // The team's fire at the core by the numbers (hivecrawl.js coreFire): range and reloads.
+  {
+    const { st: fst } = world(SEED + 21);
+    const one = (weapon, shoot, extra = {}) => { const s = makeSurvivor(fst, 1); s.traits = []; s.skills.shooting = shoot; s.gear.weapon = item(weapon); s.pockets = [null, null, null, null]; Object.assign(s.skills, extra); return s; };
+    const fa = (s, packed = false) => HC.fireAt(HC.fireOf(s, packed));
+    const ar = one("ar", 10), hr = one("huntrifle", 7), pump = one("shotgun", 7), axe = one("fireaxe", 3, { melee: 8 });
+    check(fa(ar) > 0.95 && fa(hr) > fa(pump) + 0.15 && Math.abs(fa(axe) - HC.HIVEMIND.REACH.melee) < 1e-9, `at the core an assault rifle counts ${fa(ar).toFixed(2)}, a hunting rifle ${fa(hr).toFixed(2)}, a pump ${fa(pump).toFixed(2)} (buckshot and its aim fall off at ${HC.HIVEMIND.REACH.range} tiles, a Reload 2–4 shells), an axe ${fa(axe).toFixed(2)}`);
+    const shots0 = HC.HIVEMIND.REACH.shots; HC.HIVEMIND.REACH.shots = 30; // a fight longer than the gun and the handful
+    const sus = [HC.fireOf(pump, false).sustain, HC.fireOf(pump, true).sustain];
+    HC.HIVEMIND.REACH.shots = shots0;
+    check(sus[1] > sus[0], `the gate counts the shells a trip packs at hand (a pump's sustained fire over 30 shots ${sus[0].toFixed(2)} → ${sus[1].toFixed(2)}: no Get shells)`);
+    const shotTeam = [0, 1, 2, 3, 4, 5].map(() => one("shotgun", 7)), rifleTeam = [0, 1, 2, 3, 4, 5].map(() => one("huntrifle", 7));
+    check(HC.coreFire(shotTeam, true).mult < HC.coreFire(rifleTeam, true).mult, `by the numbers six pumps count for less at the core than six hunting rifles of the same power (× ${HC.coreFire(shotTeam, true).mult.toFixed(2)} against × ${HC.coreFire(rifleTeam, true).mult.toFixed(2)})`);
+  }
   check(rows[0].num > rows[1].num && rows[0].map > rows[1].map, "lights count by the numbers as on the map");
   // The kit: lights, Molotovs, flashbangs, a grenade and flares from the armory for a hive trip.
   const K = await import("../src/sim/kit.js");
