@@ -74,24 +74,21 @@ export function pickGunToBuy(state, base, list, price, budget, room = Infinity) 
   if (!best) T.why[(list || []).some((it) => it && isGun(it.key)) ? "dear" : "none"]++;
   return best;
 }
-// The tally (the 2-year autopilot report, tools/gunloottest.js): guns bought, what they cost, by where.
-/** @param {any} state @param {any} item @param {number} cost @param {string} where */
+// The tally (state.govGuns: the 2-year autopilot report, tools/gunloottest.js): guns bought, what they cost, by
+// where; looks: deals where a gun was wanted, why: why none was bought then (no budget, too dear, none on offer).
+/** @param {any} state */
 const tally = (state) => {
   const T = (state.govGuns = state.govGuns || { bought: 0, spend: 0, by: {}, day: null });
   if (T.looks == null) { T.looks = 0; T.why = { budget: 0, dear: 0, none: 0 }; }
   return T;
 };
+/** @param {any} state @param {any} item @param {number} cost @param {string} where */
 export function noteGunBought(state, item, cost, where) {
   const T = tally(state);
   T.bought++;
   T.spend += Math.round(cost || 0);
   T.by[where] = (T.by[where] || 0) + 1;
   T.day = day(state);
-}
-// After a deal: the guns among what was asked for that changed hands (the asked items now on our side).
-/** @param {any} state @param {any[]} asked @param {any[]} ours @param {(it: any) => number} price @param {string} where */
-export function tallyBought(state, asked, ours, price, where) {
-  for (const it of asked || []) if (it && isGun(it.key) && (ours || []).includes(it)) noteGunBought(state, it, price(it), where);
 }
 // A radio gun deal for this base (autopilot.js stewardTrade): with a group whose caravan comes here, its gun on the
 // shelf, paid with what the base has plenty of; deals are booked by trade.js executeTrade (radiotrade.js). deps: the
