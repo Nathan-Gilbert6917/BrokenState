@@ -753,6 +753,14 @@ export function BATTLE_GUNS_HELP() {
   return `<b>Fire modes, jams and suppressing fire:</b> automatic guns have fire modes, switched with <i>Fire</i> (${k("battle.firemode", "Shift+F")}, free): single (1 round, the best aim), burst (2–3 rounds, each its own roll) and auto (10–15 rounds, worse aim). A gun can jam: its line says JAMMED and <i>Unjam</i> (${k("battle.unjam", "Shift+J")}) clears it (1 or 2 actions; a Reload clears a double feed); revolvers and bolt, lever, pump and double guns misfire instead (the round is lost). <i>Suppress</i> (${k("battle.suppress", "Shift+O")}) fires a stream at an enemy or a spot: everyone living in the cone shown on the map keeps their head down until their turn ends (−20 aim, no overwatch); the dead do not care. A spear can be thrown (${k("battle.throwspear", "Shift+G")}, 4–5 tiles); walk onto it or <i>Pick up spear</i> from next to it (${k("battle.pickspear", "Shift+P")}, 1 action), and after a won fight it comes back anyway. <i>Overwatch</i> reacts to every enemy that moves in range until your next turn or the magazine runs dry. When more than one kind of round for a gun is to hand, Reload asks which (${k("battle.ammocycle", "Shift+I")} picks the next). You see an enemy's gun and its parts, never what it is loaded with: you learn that from what it does.`;
 }
 
+// An order button in the panel. key: its default hint; an order in the key table (battle.<v>) shows the key it is
+// bound to now (Menu → Controls), Shift as ⇧.
+const keyHint = (v, key) => (key && KEY_BY_ID.has(`battle.${v}`) ? keyLabel(`battle.${v}`, 1).replace(/Shift\+/g, "⇧") : key);
+function actBtn(v, label, tip, ok, key) {
+  const k = keyHint(v, key);
+  return `<button class="${cui.mode === v ? "active" : ""}" data-action="cb-act" data-v="${v}" ${ok ? "" : "disabled"} data-tip="${esc(tip)}">${label}${k ? ` <span class="key">${esc(k)}</span>` : ""}</button>`;
+}
+
 // ---------- ending the turn (review U-18) ----------
 // Space is pause on the State Map, so a habitual Space must not throw away a turn: while units still have
 // actions, the first Space (or End turn click) asks in the panel and a second Space, a second click or Enter
@@ -843,7 +851,7 @@ export function retreatConfirmHtml(b, plan) {
 }
 
 // The view's keys (by the key table, ui/keymap.js "battle"; these are the defaults): PageUp / PageDown change the
-// floor in a building with storeys; , and . turn the view, + and − zoom, V centers on the selected unit, B shows or
+// floor in a building with storeys; Q and E (or , and .) turn the view, + and − zoom, Home centers on the selected unit, B shows or
 // hides the roofs, W A S D or the arrow keys pan (held: iso.keys holds the direction, ui/isoview.js).
 const PAN_DIR = { "bview.panUp": "ArrowUp", "bview.panDown": "ArrowDown", "bview.panLeft": "ArrowLeft", "bview.panRight": "ArrowRight" };
 function viewKey(state, b, e, k) {
@@ -1252,7 +1260,7 @@ export function renderCombatPanel(state) {
   }
 
   if (u && u.tied && !u.dead && b.phase === "player") { // a captive still tied up on a rescue raid (sim/rescueraid.js)
-    const btn = (v, label, tip, ok, key) => `<button class="${cui.mode === v ? "active" : ""}" data-action="cb-act" data-v="${v}" ${ok ? "" : "disabled"} data-tip="${esc(tip)}">${label}${key ? ` <span class="key">${key}</span>` : ""}</button>`;
+    const btn = actBtn;
     html += `<h3>${esc(u.name)} · tied up · ${u.ap} action${u.ap === 1 ? "" : "s"}</h3><div class="cbactions">${rescueButtons(state, b, u, btn)}</div>`;
   } else if (u && u.side === "player" && u.down && !u.dead && !u.left && b.phase === "player") { // sim/medics.js: down, a tourniquet or a trauma kit in reach
     html += selfStabHtml(b, u);
@@ -1260,7 +1268,7 @@ export function renderCombatPanel(state) {
     const ap = u.ap;
     const gun = isRanged(u), ammo = canFire(b, u);
     const foesAdj = b.units.some((t) => t.side === "enemy" && active(t) && meleeReach(b, u, t)); // not across a wall's corner
-    const btn = (v, label, tip, ok, key) => `<button class="${cui.mode === v ? "active" : ""}" data-action="cb-act" data-v="${v}" ${ok ? "" : "disabled"} data-tip="${esc(tip)}">${label}${key ? ` <span class="key">${key}</span>` : ""}</button>`;
+    const btn = actBtn;
     html += `<h3>${esc(u.name)} · ${ap} action${ap === 1 ? "" : "s"}</h3><div class="cbactions">
       ${btn("move", "Move", "Click a blue tile to move (1 action) or a yellow tile to dash (2 actions).", ap > 0)}
       ${b.evacOrder ? btn("evacStop", "Stop evac", "Call off the Evac: your people stay where they are and take orders again.", true) : btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).`, !evacRefusal(b))}
@@ -1273,7 +1281,7 @@ export function renderCombatPanel(state) {
       ${btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E")}
       ${btn("overwatch", "Overwatch", OVERWATCH_TIP, ap > 0 && ammo, "O")}
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
-      ${b.vehicle ? btn("drive", "Drive", `Both actions, from inside or next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it, up to ${DRIVE.RANGE} cells. It drives through people (anyone in the way is hit for ${RAMMING.HIT[0]}–${RAMMING.HIT[1]}, the dead ${RAMMING.ZOMBIE_HIT[0]}–${RAMMING.ZOMBIE_HIT[1]}, and shoved aside) and light obstacles (fences, crates, sandbags, barricades, tank traps: broken, at a cost to the vehicle's condition); walls, trees, other cars, water, railings and trenches stop it. Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. Whoever is aboard rides along, the loot and the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && (u.aboard || atVehicle(b, u)), "V") : ""}
+      ${b.vehicle ? btn("drive", "Drive", `Both actions, from inside or next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it, up to ${DRIVE.RANGE} cells. It drives through people (anyone in the way is hit for ${RAMMING.HIT[0]}–${RAMMING.HIT[1]}, the dead ${RAMMING.ZOMBIE_HIT[0]}–${RAMMING.ZOMBIE_HIT[1]}, and shoved aside) and light obstacles (fences, crates, sandbags, barricades, tank traps: broken, at a cost to the vehicle's condition); walls, trees, other cars, water, railings and trenches stop it. Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. Whoever is aboard rides along, the loot and the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && (u.aboard || atVehicle(b, u))) : ""}
       ${b.vehicle && !u.aboard ? btn("board", "Get in", `1 action, from next to it: ride in the ${b.vehicle.kind} (${b.vehicle.seats || 4} seats, ${aboardCount(b)} aboard). Inside you are off the map (not a target, not drawn, no shooting) and can drive, turn, get out, or extract with it from a zone it stands at.`, ap > 0 && atVehicle(b, u) && aboardCount(b) < (b.vehicle.seats || 4)) : ""}
       ${u.aboard ? btn("disembark", "Get out", "1 action: out onto a free cell round the vehicle.", ap > 0) : ""}
       ${u.aboard && vehicleTurret(b) ? btn("gunner", u.gunner ? "Get down" : "Man the turret", u.gunner ? "1 action: off the turret and back down inside (not a target any more)." : `1 action: up behind the ${vehicleTurret(b) === "m2hb" ? "M2" : "machine gun"} on the roof. Then Shoot (F) fires it: a 3-round burst from its belt (${b.vehicle.belt ?? "full"}, a new belt is both actions) out of the team's ammo (${Math.floor(turretRounds(b))}), a level up, aim +6, through cover, very loud (it wakes the whole map${b.raid ? `, Heat +${TURRET.HEAT} a burst` : ""}), and whoever it lands near shoots −${TURRET.PIN} next turn. Overwatch works from it. After the vehicle drives or turns this turn the turret fires at −${RIDE.TURRET} (−${RIDE.DRIVER} for a gunner who turned it). The gunner is the one rider they can shoot: half cover${b.vehicle.up && b.vehicle.up.plating >= 2 ? " (full: plate ×2)" : " (full behind plate ×2)"}. Downed, they drop back inside.`, ap > 0, "⇧T") : ""}
@@ -1337,10 +1345,11 @@ export function renderCombatPanel(state) {
 export function viewBar(b = cui.battle) {
   const btn = (v, label, tip, active = false) => `<button class="mini${active ? " active" : ""}" data-action="cb-view" data-v="${v}" data-tip="${esc(tip)}">${label}</button>`;
   let html = `<div class="cbview">`;
-  html += btn("rotl", "⟲", "Turn the view a quarter to the left (,)") + btn("rotr", "⟳", "Turn the view a quarter to the right (.)");
-  html += btn("zout", "−", "Zoom out (− or the mouse wheel)") + btn("zin", "+", "Zoom in (+ or the mouse wheel)");
-  html += btn("center", "◎", "Center on the selected unit (V). Drag the map, hold W A S D or the arrow keys, or push the mouse to the edge to pan.");
-  html += btn("roofs", iso.roofs ? "Roofs ✔" : "Roofs ✗", "Roofs on the buildings (B). A building with one of your people, an enemy you see or the mouse inside is always shown cut away; off shows every one that way.", iso.roofs);
+  const kl = (id, def) => keyLabel(id) || def; // as bound now (Menu → Controls)
+  html += btn("rotl", "⟲", `Turn the view a quarter to the left (${kl("bview.rotLeft", "Q")})`) + btn("rotr", "⟳", `Turn the view a quarter to the right (${kl("bview.rotRight", "E")})`);
+  html += btn("zout", "−", `Zoom out (${kl("bview.zoomOut", "−")} or the mouse wheel)`) + btn("zin", "+", `Zoom in (${kl("bview.zoomIn", "+")} or the mouse wheel)`);
+  html += btn("center", "◎", `Center on the selected unit (${kl("bview.center", "Home")}). Drag the map, hold W A S D or the arrow keys, or push the mouse to the edge to pan.`);
+  html += btn("roofs", iso.roofs ? "Roofs ✔" : "Roofs ✗", `Roofs on the buildings (${kl("bview.roofs", "B")}). A building with one of your people, an enemy you see or the mouse inside is always shown cut away; off shows every one that way.`, iso.roofs);
   const F = b && floorsOf(b);
   if (F) {
     const f = floorNo(b), name = F[f] && F[f].name ? ` (${F[f].name})` : "";
@@ -1965,7 +1974,7 @@ function previewHtml(b, state = null) {
     const hp = cobj.mhp ? ` · <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "muted"}">${Math.round(cobj.hp)}/${cobj.mhp}</span>` : "";
     return shut
       ? `<b>${cobj.roll ? "Roller door (closed)" : "Closed door"}</b>${hp}${held ? ` · <span class="good">braced by ${esc(held.name)}</span>` : ""}<br><span class="muted">Blocks sight. Your people open it by walking through${cobj.roll ? " (loud: Heat +" + BMAP.ROLLER.heat + ")" : " (quiet)"}; other people stop to open it; the dead must batter it down. Peek (K) through it from next to it.</span>`
-      : `<b>${cobj.roll ? "Roller door (open)" : "Open door"}</b>${hp}<br><span class="muted">Close door (Q) from next to it: 1 action, quiet${cobj.roll ? " (a roller door: loud)" : ""}. A shut door stops sight and slows the dead.</span>`;
+      : `<b>${cobj.roll ? "Roller door (open)" : "Open door"}</b>${hp}<br><span class="muted">Close door (${esc(keyLabel("battle.close", 1) || "Shift+E")}) from next to it: 1 action, quiet${cobj.roll ? " (a roller door: loud)" : ""}. A shut door stops sight and slows the dead.</span>`;
   }
   // Something the attackers batter (sim/combat.js bash): a wall section, the gate, a barred door, a window.
   const struct = cobj.mhp ? ` <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "warn"}">${Math.round(cobj.hp)}/${cobj.mhp} hit points</span>${barredCell(cobj) ? " · barred to the attackers (your people pass)" : ""}.` : "";

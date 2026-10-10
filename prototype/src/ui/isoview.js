@@ -54,6 +54,7 @@ export const iso = {
   rot: 0, zoom: 4, cx: 0, cy: 0, battle: null, roofs: true,
   edge: null, edgeSince: 0, keys: new Set(), target: null, lastT: 0,
   rects: [], frameMs: 0, frames: 0, cw: 0, ch: 0,
+  lastHover: null, // the hovered cell in the last frame: { x, y, hidden (behind a tree or other cover), cover, dash } (tools)
   builds: { scene: 0, ground: 0, fog: 0, looks: 0, sprites: 0 }, // how often each cache was (re)built (tools, the dev fps view)
 };
 try { iso.roofs = typeof localStorage === "undefined" || localStorage.getItem(ROOFS_KEY) !== "0"; } catch { iso.roofs = true; }
@@ -1182,6 +1183,13 @@ function stepCamera(b, now) {
 // ---------- picking ----------
 // The cell under a screen point (CSS px): the unit sprite under it, else the frontmost cell its view ray hits (a
 // raised floor or a block standing in front of the ground behind it). null off the map.
+// Trees do not stop the ray (PICK_THROUGH): a crown hides the ground behind it, and that ground is what a click there
+// means, so the pick is the ground under the point (the tree's own cell at the foot of its trunk). The tile behind
+// is drawn with a dashed outline on top of the tree (drawIso, coverOf). Roofs and the walls of buildings never stopped
+// the ray (below). Everything else that stands up stays a target in itself: cars, trucks and the team's vehicle (searched,
+// loaded, driven to), lockers and shelves (searched), the base's walls, palisades and gates (battered, held).
+// opts.solid: trees stop the ray too (the old pick; the tests).
+export const PICK_THROUGH = new Set(["tree"]);
 export function isoPick(b, px, py, opts = {}) {
   if (!b || !FR.S) return null;
   if (!opts.noUnits) for (let i = iso.rects.length - 1; i >= 0; i--) {
@@ -1200,7 +1208,7 @@ export function isoPick(b, px, py, opts = {}) {
     if (opts.ground) return liftAt(b, i); // ground: the cell under the point as if nothing stood on it (the view's checks, tools/uitest.js)
     if (cdef(c).walk && !SOLIDWALK.has(c.k)) return standZ(b, x, y);
     const L = looks[i];
-    if (!L) return liftAt(b, i);
+    if (!L || (!opts.solid && PICK_THROUGH.has(L.k))) return liftAt(b, i);
     return (scene.comp[i] >= 0 && WALLISH.has(L.k) ? STUB : L.top) + liftAt(b, i);
   };
   // March along the ray from the front (high z) to the back (the ground).
@@ -1221,6 +1229,53 @@ export function isoPick(b, px, py, opts = {}) {
 }
 const SOLIDWALK = new Set(["walkway", "tower", "loft", "roof", "stairs"]);
 const NOCUT = new Set();
+
+// ---------- what hides a cell ----------
+// The cells standing in front of a cell's floor on the screen, nearest first: the line from the middle of its floor
+// (at its standing height) toward the camera runs straight up the screen through the cells in front of it on the
+// diagonal, and each one whose block (or uncut roof) reaches that line hides the floor there. Only blocks at least
+// COVER_MIN taller than the floor count (a tree, a car, a wall, a locker, a roof; not a rock, a fence or sandbags).
+// Its tile is then drawn with a dashed outline on top (HIDDEN_DASH): behind something.
+const COVER_MIN = 20;
+export const HIDDEN_DASH = [4, 3]; // CSS px at zoom 2 (scaled with the zoom)
+function coverOf(b, x, y, looks, scene, cut, roofs) {
+  const out = [];
+  if (x < 0 || y < 0 || x >= b.w || y >= b.h) return out;
+  const z0 = standZ(b, x, y), k = 1 / (2 * HH);
+  const [uc, vc] = ptView(x + 0.5, y + 0.5, iso.rot, b.w, b.h);
+  const [Wv, Hv] = viewDims(b);
+  const zMax = WALL2 + 8 + liftOf(b);
+  let last = y * b.w + x;
+  // From the floor toward the camera z rises, so a cell is reached at its lowest point: one test on the way in.
+  for (let z = z0 + 1; z <= zMax; z++) {
+    const u = uc + (z - z0) * k, v = vc + (z - z0) * k;
+    if (u >= Wv || v >= Hv) break;
+    const [cx, cy] = fromView(Math.floor(u), Math.floor(v), iso.rot, b.w, b.h), i = cy * b.w + cx;
+    if (i === last) continue;
+    last = i;
+    const L = looks[i], bid = scene.comp[i];
+    const top = Math.max(L ? L.top : 0, roofs && bid >= 0 && !cut.has(bid) ? scene.blds[bid].top : 0) + liftAt(b, i);
+    if (top - z0 >= COVER_MIN && z <= top) out.push(i);
+  }
+  return out;
+}
+// The same for the tools and the panel: what hides cell x, y in the last frame drawn (its cutaway), or with no
+// cutaway before one. [] when nothing does.
+let lastCover = null; // { b, looks, scene, cut, roofs } of the last frame
+export function isoCoverOf(b, x, y) {
+  if (lastCover && lastCover.b === b && lastCover.rot === iso.rot) return coverOf(b, x, y, lastCover.looks, lastCover.scene, lastCover.cut, lastCover.roofs);
+  const scene = sceneFor(b);
+  return coverOf(b, x, y, looksFor(b, scene, NOCUT, "pick"), scene, NOCUT, !floorsOf(b));
+}
+// A dashed outline round a cell's floor, on top of whatever hides it (a dark edge under it, to read on leaves).
+function dashedCell(ctx, b, x, y, z, col, width, inset = 0.5) {
+  const S = FR.S, k = Math.max(1, S / 2);
+  ctx.setLineDash(HIDDEN_DASH.map((d) => d * k));
+  ctx.beginPath(); diamond(ctx, x, y, z, inset);
+  ctx.strokeStyle = "rgba(10,12,16,0.7)"; ctx.lineWidth = width + 1.5; ctx.stroke();
+  ctx.strokeStyle = col; ctx.lineWidth = width; ctx.stroke();
+  ctx.setLineDash([]);
+}
 
 // ---------- drawing ----------
 const tileTop = (b, x, y) => standZ(b, x, y);
@@ -1492,6 +1547,13 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       if (top - pz > (du + dv) * HH - 6) fade.add(y * b.w + x);
     }
   }
+  // The hovered cell behind a tree (or anything else standing in front of it): its cursor is dashed, on top (below),
+  // and the trees in the way are faded like those in front of your people.
+  const roofsOn = !F;
+  lastCover = { b, looks, scene, cut, roofs: roofsOn, rot: r };
+  const hv = H.hover && H.hover.x >= 0 && H.hover.y >= 0 && H.hover.x < b.w && H.hover.y < b.h ? H.hover : null;
+  const hoverCover = hv ? coverOf(b, hv.x, hv.y, looks, scene, cut, roofsOn) : [];
+  for (const i of hoverCover) if (looks[i] && PICK_THROUGH.has(looks[i].k)) fade.add(i);
   const margin = 80 * S;
   const sh = new Map(); for (const s of shown) { const a = sh.get(s.d); if (a) a.push(s); else sh.set(s.d, [s]); }
   const gh = new Map(); for (const q of ghosts) { const [gu, gv] = toView(q.x, q.y, r, b.w, b.h); const d = gu + gv; const a = gh.get(d); if (a) a.push(q); else gh.set(d, [q]); }
@@ -1626,6 +1688,17 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   ctx.globalAlpha = 0.3;
   for (const s of shown) if (s.t.side === "player" && active(s.t)) drawBody(ctx, state, b, s, H, true);
   ctx.globalAlpha = 1;
+  // Anyone standing behind a tree (or a car, a wall, a roof: coverOf), and things lying there: their tile dashed on
+  // top in their ring's colour (the selected one bolder), so they read as behind it.
+  for (const s of shown) {
+    if (!active(s.t)) continue;
+    const tx = Math.max(0, Math.min(b.w - 1, Math.floor(s.wx))), ty = Math.max(0, Math.min(b.h - 1, Math.floor(s.wy)));
+    if (coverOf(b, tx, ty, looks, scene, cut, roofsOn).length) dashedCell(ctx, b, tx, ty, s.z, ringOf(s.t), H.sel === s.t.id ? 2.5 : 1.5, 1.5);
+  }
+  for (const list of piles.values()) for (const p of list) {
+    if (!vis[p.y * b.w + p.x] || H.unitAt(p.x, p.y)) continue;
+    if (coverOf(b, p.x, p.y, looks, scene, cut, roofsOn).length) dashedCell(ctx, b, p.x, p.y, standZ(b, p.x, p.y), "rgba(230,216,184,0.85)", 1.2, 4);
+  }
 
   // Night: the whole scene darker, the lights cut out of it (ui/battlelights.js); the fog's vignette on the edges.
   drawDarkness(ctx, b, cw, ch);
@@ -1764,11 +1837,20 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   }
 
   // The hovered cell: a cursor on top of everything, the cover around it, the line of fire to an enemy.
+  iso.lastHover = null;
   if (h && h.x >= 0 && h.y >= 0 && h.x < b.w && h.y < b.h) {
     const hi = h.y * b.w + h.x, L = looks[hi];
     const zt = cdef(b.cells[hi]).walk ? tileTop(b, h.x, h.y) : (L ? L.top : 0) + liftAt(b, hi);
-    ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.lineWidth = 1.5;
-    ctx.beginPath(); diamond(ctx, h.x, h.y, zt, 0.5); ctx.stroke();
+    // Behind a tree (or anything else standing in front of it): a faint fill and a dashed outline over it.
+    const hidden = hoverCover.length > 0;
+    iso.lastHover = { x: h.x, y: h.y, hidden, cover: hoverCover, dash: hidden ? HIDDEN_DASH.slice() : [] };
+    if (hidden) {
+      ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.beginPath(); diamond(ctx, h.x, h.y, zt, 0.5); ctx.fill();
+      dashedCell(ctx, b, h.x, h.y, zt, "rgba(255,255,255,0.95)", 1.5);
+    } else {
+      ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); diamond(ctx, h.x, h.y, zt, 0.5); ctx.stroke();
+    }
     if (cdef(b.cells[hi]).walk) {
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         const x = h.x + dx, y = h.y + dy;

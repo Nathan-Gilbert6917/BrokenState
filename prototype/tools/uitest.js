@@ -1451,7 +1451,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     check(ISO.iso.frames > isoFrames && UI.setBattleView === undefined && UI.cui.view === undefined, "the battle map is drawn isometric, the only view (no top-down, no toggle)");
     const key = (code, extra = {}) => UI.combatKey(ft.st, { code, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...extra });
     const r0 = ISO.iso.rot, z0 = ISO.iso.zoom, roofs0 = ISO.iso.roofs;
-    check(key("Period") && ISO.iso.rot === (r0 + 1) % 4 && key("Comma") && ISO.iso.rot === r0 && key("Equal") && ISO.iso.zoom === Math.min(ISO.ISO_ZOOMS.length - 1, z0 + 1) && key("Minus") && key("KeyB") && ISO.iso.roofs === !roofs0 && key("KeyB") && ISO.iso.roofs === roofs0 && key("KeyV"), ", . turn the view, + − zoom, B roofs, V centers on the selected unit");
+    check(key("Period") && ISO.iso.rot === (r0 + 1) % 4 && key("Comma") && ISO.iso.rot === r0 && key("Equal") && ISO.iso.zoom === Math.min(ISO.ISO_ZOOMS.length - 1, z0 + 1) && key("Minus") && key("KeyB") && ISO.iso.roofs === !roofs0 && key("KeyB") && ISO.iso.roofs === roofs0 && key("Home"), ", . turn the view, + − zoom, B roofs, Home centers on the selected unit");
     check(key("ArrowLeft") && ISO.iso.keys.has("ArrowLeft") && (UI.combatKeyUp(ft.st, { code: "ArrowLeft" }), !ISO.iso.keys.has("ArrowLeft")), "the arrow keys pan while held");
     check([["KeyW", "ArrowUp"], ["KeyA", "ArrowLeft"], ["KeyS", "ArrowDown"], ["KeyD", "ArrowRight"]].every(([k, a]) => key(k) && ISO.iso.keys.has(a) && (UI.combatKeyUp(ft.st, { code: k }), !ISO.iso.keys.has(a))), "W A S D pan while held");
     const bar = UI.viewBar();
@@ -1506,7 +1506,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     const sh = settingsModal(ft.st, u5, { options: { ...DEFAULT_OPTIONS }, desktop: false, autosaveInfo: () => ({}) });
     check(!/set-battleview/.test(sh) && !SETTINGS_CHANGE["set-battleview"], "Options has no Battle view choice (always isometric)");
     const topic = (await import("../src/ui/help.js")).helpTopics().find((t) => t.id === "battle-view");
-    check(topic && ["isometric", "<b>B</b>", "<b>,</b>", "<b>V</b>", "<b>W</b>", "cut away"].every((s) => topic.html.includes(s)), "Help → Battle view explains the view, the cutaway and the keys");
+    check(topic && ["isometric", "<b>B</b>", "<b>Q</b>", "<b>E</b>", "<b>Home</b>", "<b>W</b>", "cut away"].every((s) => topic.html.includes(s)), "Help → Battle view explains the view, the cutaway and the keys");
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
     check(/Battle view/.test(readme) && /isoview\.js/.test(readme), "the README describes the battle view");
     // The fallen (ui/downsprites.js): bodies of every kind lie flat in both views (their own pictures, not the

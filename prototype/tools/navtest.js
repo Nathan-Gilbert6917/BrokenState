@@ -63,13 +63,13 @@ section("Keys: the defaults are the keys of before");
     ["BracketLeft", "map", "panel.left"], ["BracketRight", "map", "panel.right"], ["KeyL", "map", "panel.log"], ["Shift+BracketLeft", "map", "panel.orders"], ["Shift+BracketRight", "map", "panel.alerts"],
     ["Alt+BracketLeft", "map", "panel.closeLeft"], ["Alt+BracketRight", "map", "panel.closeRight"], ["Alt+KeyL", "map", "panel.closeLog"], ["Backslash", "map", "panel.all"], ["IntlBackslash", "map", "panel.all"],
     ["ArrowUp", "queue", "queue.up"], ["ArrowDown", "queue", "queue.down"], ["Delete", "queue", "queue.remove"], ["Backspace", "queue", "queue.remove"],
-    ["KeyW", "battle", "bview.panUp"], ["ArrowRight", "battle", "bview.panRight"], ["Comma", "battle", "bview.rotLeft"], ["Period", "battle", "bview.rotRight"], ["Equal", "battle", "bview.zoomIn"],
-    ["NumpadSubtract", "battle", "bview.zoomOut"], ["KeyV", "battle", "bview.center"], ["KeyB", "battle", "bview.roofs"], ["PageUp", "battle", "bview.floorUp"], ["PageDown", "battle", "bview.floorDown"],
+    ["KeyW", "battle", "bview.panUp"], ["ArrowRight", "battle", "bview.panRight"], ["KeyQ", "battle", "bview.rotLeft"], ["KeyE", "battle", "bview.rotRight"], ["Comma", "battle", "bview.rotLeft"], ["Period", "battle", "bview.rotRight"], ["Equal", "battle", "bview.zoomIn"],
+    ["NumpadSubtract", "battle", "bview.zoomOut"], ["Home", "battle", "bview.center"], ["KeyB", "battle", "bview.roofs"], ["PageUp", "battle", "bview.floorUp"], ["PageDown", "battle", "bview.floorDown"],
     ["Space", "battle", "battle.endTurn"], ["Enter", "battle", "battle.confirm"], ["NumpadEnter", "battle", "battle.confirm"], ["Tab", "battle", "battle.next"], ["Shift+Tab", "battle", "battle.prev"], ["Digit3", "battle", "battle.unit3"],
     ["Shift+KeyA", "battle", "battle.autoplay"], ["Shift+KeyR", "battle", "battle.retreatAll"], ["Shift+KeyC", "battle", "battle.clear"], ["Shift+KeyS", "battle", "battle.search"], ["Shift+KeyQ", "battle", "battle.quick"], ["Shift+KeyD", "battle", "battle.drag"],
-    ["KeyF", "battle", "battle.shoot"], ["KeyE", "battle", "battle.melee"], ["KeyM", "battle", "battle.meds"], ["KeyO", "battle", "battle.overwatch"], ["KeyH", "battle", "battle.hunker"], ["KeyR", "battle", "battle.retreat"],
+    ["KeyF", "battle", "battle.shoot"], ["KeyV", "battle", "battle.melee"], ["KeyM", "battle", "battle.meds"], ["KeyO", "battle", "battle.overwatch"], ["KeyH", "battle", "battle.hunker"], ["KeyR", "battle", "battle.retreat"],
     ["KeyN", "battle", "battle.vehicle"], ["KeyX", "battle", "battle.extract"], ["KeyC", "battle", "battle.subdue"], ["KeyT", "battle", "battle.tie"], ["KeyG", "battle", "battle.throw"], ["KeyL", "battle", "battle.climb"],
-    ["KeyK", "battle", "battle.peek"], ["KeyQ", "battle", "battle.close"], ["KeyY", "battle", "battle.brace"], ["KeyU", "battle", "battle.crush"], ["KeyJ", "battle", "battle.doubletap"], ["KeyP", "battle", "battle.pickup"], ["KeyZ", "battle", "battle.stowbody"],
+    ["KeyK", "battle", "battle.peek"], ["Shift+KeyE", "battle", "battle.close"], ["KeyY", "battle", "battle.brace"], ["KeyU", "battle", "battle.crush"], ["KeyJ", "battle", "battle.doubletap"], ["KeyP", "battle", "battle.pickup"], ["KeyZ", "battle", "battle.stowbody"],
     ["Space", "timelapse", "tl.play"], ["ArrowLeft", "timelapse", "tl.back"], ["End", "timelapse", "tl.end"], ["Digit2", "timelapse", "tl.speed2"], ["KeyF", "timelapse", "tl.fit"], ["KeyT", "timelapse", "tl.territory"], ["KeyA", "timelapse", "tl.panLeft"],
     ["ArrowUp", "title", "title.up"], ["ArrowDown", "title", "title.down"],
     // New with this table: the codex and the search box.
@@ -105,7 +105,7 @@ section("Keys: the defaults are the keys of before");
   check(ledgerKey(w, ui, ev("KeyE"), "codex") && ui.ledger && !ui.codex, "E from the codex switches to the Ledger");
   check(ledgerKey(w, ui, ev("KeyE"), "ledger") && !ui.ledger, "E again closes it");
   check(!ledgerKey(w, ui, ev("KeyE", { shiftKey: true }), null) && !ui.ledger, "Shift+E is not E");
-  check(K.keyAction(ev("KeyE"), "battle") === "battle.melee" && K.keyAction(ev("KeyZ", { ctrlKey: true }), "battle") === null, "in battle E is still melee and Ctrl+Z nothing");
+  check(K.keyAction(ev("KeyE"), "battle") === "bview.rotRight" && K.keyAction(ev("KeyZ", { ctrlKey: true }), "battle") === null, "in battle E turns the view and Ctrl+Z does nothing");
   // Undo (ui/undo.js undoKey) only on a screen with an undo list.
   check(!undoKey(w, { ...freshUi() }, ev("KeyZ", { ctrlKey: true })), "Ctrl+Z on the bare map does nothing");
   const uw = { ...freshUi(), baseView: { id: hub(w).id, tab: "work" } };

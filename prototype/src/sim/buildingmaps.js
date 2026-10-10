@@ -1803,5 +1803,5 @@ export function interiorIntro(b) {
   const lockedEx = (R.plan.exits || []).filter((e) => e.locked).length;
   const names = ["the front", ...ex.map((e) => e.name.toLowerCase())];
   const st = R.storeys > 1 ? ` ${R.storeys} storeys: ${R.stairs.length === 1 ? "a stairwell" : `${R.stairs.length} stairwells`} on every floor; the ways out are on the ground floor.` : "";
-  return `Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight: peek through a door (K) before you go in, shut doors behind you (Q): the dead have to batter them down. Windows can be climbed (loud).`;
+  return `Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight: peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows can be climbed (loud).`;
 }
