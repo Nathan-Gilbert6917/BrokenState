@@ -22,7 +22,8 @@
 //   { $: "T", t: "Uint16Array", b: base64 } typed array · { $: "Rng", s } · { $: "Grid", w, h } · { $: "O", v }
 //   { $: "u" } undefined · { $: "N", v: "NaN" | "Infinity" | "-Infinity" | "-0" }
 import { migrateAllMods } from "./gunmods.js"; // old saves: gun parts onto the attachment slots
-import { migrateAmmo } from "./ammo.js"; // old saves: generic ammo into rounds by calibre
+import { migrateAmmo, findRounds, kindTheme } from "./ammo.js"; // old saves: generic ammo into rounds by calibre
+import { sanitizeLibrary } from "./custombg.js"; // a save's custom backgrounds: their old generic ammo as rounds
 import { migrateKit } from "./carrykit.js"; // old saves: carriers' plates, spare magazines
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
@@ -183,6 +184,22 @@ export function deserializeState(save) {
   // Rounds by calibre (ammo.js, the weapons overhaul): a save from before (no state.ammoCal) has every generic ammo
   // stock of yours split across the calibres of the guns that holder owns (9mm and 12 gauge with none), the same total.
   if (!state.ammoCal) { migrateAmmo(state); state.ammoCal = 1; }
+  // All ammo by calibre (2026-10-09, user request: "All ammo should be based on caliber"): a save from before has its
+  // generic ammo settled again in every holder of yours, its custom backgrounds' generic ammo as the rounds of their
+  // guns, and the rewards of the jobs on offer or under way as the rounds the group's kind keeps.
+  if (state.ammoCal < 2) {
+    migrateAmmo(state);
+    if (state.customBackgrounds) state.customBackgrounds = sanitizeLibrary(state.customBackgrounds);
+    for (const j of (state.jobs && state.jobs.list) || []) {
+      const r = j.reward;
+      if (!r || !r.supplies || !(r.supplies.ammo >= 1) || j.status === "done") continue;
+      const f = (state.factions || []).find((x) => x.id === j.fid);
+      const n = Math.floor(r.supplies.ammo);
+      delete r.supplies.ammo;
+      for (const [k, q] of Object.entries(findRounds(kindTheme(f ? f.type : null), n, "jobreward", j.id))) r.supplies[k] = (r.supplies[k] || 0) + q;
+    }
+    state.ammoCal = 2;
+  }
   // A stock amount that is NaN is 0: before 7212b81 a team packing a supply its base had no key for (firewood on a
   // hardcore hub) made the base's stock NaN, and saves of that time carry it (tools/savecorpustest.js found it).
   const unNaN = (o) => { if (o) for (const k of Object.keys(o)) if (Number.isNaN(o[k])) o[k] = 0; };

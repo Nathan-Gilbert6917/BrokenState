@@ -186,7 +186,7 @@ export function tradeWindow(state, ui) {
       <div class="spread small"><span${tip("What your side is worth to them")}>Your side: <b>${p1(tot.offer)}</b></span><span${tip(ctx.fee ? "What their side costs at their prices, with the delivery fee" : "What their side costs at their prices")}>Their side: <b>${p1(tot.ask)}</b>${ctx.fee ? ` <span class="muted">(${p1(ctx.fee)} of it the delivery fee)</span>` : ""}</span></div>
       <div class="tw-balance"${tip("Left: what you give. Right: what you take. The deal is fair for them when your side is at least as big.")}><i style="width:${pct}%"></i><b style="left:50%"></b></div>
       <div class="small ${v.ok ? "good" : "danger"}">${esc(v.reason)}</div>
-      <div class="row small" style="margin-top:0.3rem">Balance with ${["ammo", "scrap", "food"].map((k) => `<button class="mini" data-action="tw-balance" data-k="${k}"${tip(`Short: adds ${k} to your side until it is fair. Overpaying: asks for ${k} until the sides meet.`)}>${SUPPLIES[k].name}</button>`).join("")}</div>
+      <div class="row small" style="margin-top:0.3rem">Balance with ${["ammo", "scrap", "food"].map((k) => `<button class="mini" data-action="tw-balance" data-k="${k}"${tip(k === "ammo" ? "Short: adds rounds of the calibre your guns need least to your side until it is fair. Overpaying: asks for rounds of the calibre your guns want most until the sides meet." : `Short: adds ${k} to your side until it is fair. Overpaying: asks for ${k} until the sides meet.`)}>${k === "ammo" ? "Rounds" : SUPPLIES[k].name}</button>`).join("")}</div>
     </div>
     ${ui.tradeMsg ? `<div class="result">${esc(ui.tradeMsg)}</div>` : ""}
     <div class="row" style="margin-top:0.7rem;flex-wrap:wrap">

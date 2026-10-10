@@ -161,7 +161,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
     hardcoreAfterHives(state);
-    state.ammoCal = 1; // rounds by calibre from the start (save.js migrates older saves)
+    state.ammoCal = 2; // rounds by calibre from the start (save.js migrates older saves)
     updateVision(state);
     log(state, `Day 1. Calder is falling. ${state.startPeople === 1 ? "You got out alone" : `${countWord(state.startPeople).replace(/^./, (c) => c.toUpperCase())} of you got out`} with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
     startChronicle(state);
@@ -225,7 +225,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   normalStartGear(state, hubBase); // startgear.js: the gear picked on the new-run screen (what it replaces to the armory)
   assignStartingRoles(state);
   settleAll(state); // ammo.js: the hub's 80 rounds by the calibres of the guns it starts with
-  state.ammoCal = 1; // rounds by calibre from the start (save.js migrates older saves)
+  state.ammoCal = 2; // rounds by calibre from the start (save.js migrates older saves)
 
   ensureHives(state); // the hives mapgen.js placed, with their starting resources (hives.js)
   // Pre-war maps: geography is known, current conditions are not.
@@ -913,6 +913,7 @@ export function tickHour(state) {
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
+  settleAll(state); // ammo.js: again, for what the work, the crews and the governor moved after the first settle (no generic ammo is left in a holder of yours between hours)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
   historyHour(state); // history.js: stock flows marked, a row a day for the Ledger and the run summary
 }
