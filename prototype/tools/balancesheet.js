@@ -67,6 +67,10 @@ export const FIELDS = {
     stagger: W("stagger"), reach: W("reach"), throw: W("throw"), takedown: W("takedown"), stab: W("stab"),
     chop: G("chop"), pry: G("pry"), value: G("value"), weight: G("weight"), power: G("power"), req: G("req"), dur: G("dur"),
   },
+  parts: {
+    ...Object.fromEntries(["aim", "close", "opt", "fall", "noise", "jam", "night", "nightNear", "peq", "brace", "moving", "reload", "wt"].map((f) => [f, at("ATTACH", f)])),
+    value: G("value"), weight: G("weight"), dur: G("dur"),
+  },
   mags: { cap: at("MAGAZINES", "cap"), kg: at("MAGAZINES", "kg"), value: at("MAGAZINES", "value"), aim: at("MAGAZINES", "aim"), jam: at("MAGAZINES", "jam") },
   feeds: { perReload: at("INTERNAL") },
   clips: { n: at("CLIPS", "n") },
@@ -93,6 +97,7 @@ const INSERTABLE = {
   guns: ["rarity", "close", "aim", "pierce", "brace"],
   melee: ["meleeAim", "bleed", "stagger", "takedown", "quick", "stab", "reach", "throw"],
   mags: ["aim", "jam"],
+  parts: ["aim", "close", "opt", "fall", "noise", "jam", "nightNear", "brace", "moving"],
   themeCals: THEMES, themeTypes: THEMES,
   places: ["chance"],
 };
@@ -295,7 +300,7 @@ export async function collect(root = PROTO) {
   const { GUN_RARITY, ARSENAL_FINDS, ARSENAL_GEAR, FACTORY_FIT, TRUCK_GEAR } = DG;
   const { MAGAZINES, INTERNAL, CLIPS } = DK;
   const { RETAIL_BOX, BULK, BULK_FINDS } = DS;
-  const { WEAPON_PLATFORM, PLATFORMS } = DM;
+  const { PLATFORMS } = DM;
   const { SHELLS, standardMag, magFitsGun } = MG;
   const { SITE_TAGS, AREA_TAGS, ITEM_TAGS } = LT;
   const { ROUND_REACH } = GM;
@@ -384,7 +389,7 @@ export async function collect(root = PROTO) {
     const feed = w.mount || w.mounted ? "belt (mounted)" : w.launcher ? (w.oneShot ? "one shot" : w.cap > 1 ? "cylinder" : "single") : shell ? `shells: ${shell}` : internal ? "internal" : mags.length ? "box magazine" : w.arrows ? "arrows" : "-";
     const places = (gunPlaces[k] || []).filter((x) => x.p > 0).sort((a, b) => b.p - a.p);
     const v = {
-      name: (d && d.name) || w.name, cat: (d && d.cat) || (w.mount || w.mounted ? "mounted" : "-"), platform: WEAPON_PLATFORM[k] || "",
+      name: (d && d.name) || w.name, cat: (d && d.cat) || (w.mount || w.mounted ? "mounted" : "-"), platform: GM.platformOf(k) || "", kind: GM.gunCategory ? GM.gunCategory(k) || "" : "",
       cal: cal || (w.arrows ? "arrows" : ""), alsoTakes: (AM.gunCalsOf ? AM.gunCalsOf(k) : []).filter((c) => c !== cal).join(", "), rarity: GUN_RARITY[k] ?? null,
       gunClass: (DG.GUN_CLASS && DG.GUN_CLASS[k] ? DG.GUN_CLASS[k] : []).join(" "),
       dmgLo: w.dmg[0], dmgHi: w.dmg[1], opt: w.opt ?? null, fall: w.fall ?? null, aim: w.aim ?? null, close: w.close ?? null,
@@ -398,7 +403,10 @@ export async function collect(root = PROTO) {
       value: d ? d.value : null, weight: d ? d.weight ?? null : null, power: d ? d.power ?? null : null, req: d ? d.req ?? null : null,
       gearNoise: d ? d.noise ?? null : null, dur: d ? d.dur ?? null : null,
       slots: (() => { try { return GM.baseSlots(k).join(", "); } catch { return ""; } })(),
-      builtin: PLATFORMS[WEAPON_PLATFORM[k]] && PLATFORMS[WEAPON_PLATFORM[k]].builtin ? Object.values(PLATFORMS[WEAPON_PLATFORM[k]].builtin).join(", ") : "",
+      allSlots: (() => { try { return GM.reachableSlots ? GM.reachableSlots(k).join(", ") : ""; } catch { return ""; } })(),
+      slotParts: (() => { try { const by = GM.partsBySlot ? GM.partsBySlot(k) : {}; return Object.entries(by).map(([s, ps]) => `${s}: ${ps.filter((x) => !MAGAZINES[x]).join("/") || "magazines"}`).join("; "); } catch { return ""; } })(),
+      slotRule: DM.WEAPON_SLOTS && DM.WEAPON_SLOTS[k] ? Object.entries(DM.WEAPON_SLOTS[k]).map(([f, v]) => `${f}: ${Array.isArray(v) ? v.join("/") : Object.entries(v).map(([s, l]) => `${s}=${l.join("/")}`).join(" ")}`).join("; ") : "",
+      builtin: PLATFORMS[GM.platformOf(k)] && PLATFORMS[GM.platformOf(k)].builtin ? Object.values(PLATFORMS[GM.platformOf(k)].builtin).join(", ") : "",
       factory: (FACTORY_FIT[k] || []).map(([p, parts]) => `${Math.round(p * 100)}% ${parts.join("/")}`).join("; "),
       sniper: !!w.sniper, launcher: w.launcher || "",
       tags: list(ITEM_TAGS[k]), kits: kitsOf(k), trucks: trucksOf(k), arsenal: !!ARSENAL_GEAR[k],
@@ -407,7 +415,7 @@ export async function collect(root = PROTO) {
     gunRows.push({ key: k, v, ...(d ? {} : { noInsert: true }) });
   }
   table("guns", "Guns", [
-    C("name", "Name", "text"), C("cat", "Category", "text"), C("platform", "Platform", "text"), C("cal", "Calibre", "text"),
+    C("name", "Name", "text"), C("cat", "Category", "text"), C("platform", "Platform", "text"), C("kind", "Kind", "text", { hide: true, desc: "data-gunmods.js PLATFORMS cat: its CATEGORIES row (the slots that kind never has)" }), C("cal", "Calibre", "text"),
     C("alsoTakes", "Also takes", "text", { desc: "Other calibres its chamber takes (data-ammo.js CAL_ACCEPTS, a gun's own cals): a 5.56 gun .223, a .357 .38 Special" }),
     C("rarity", "Rarity", "tier", { desc: "data-guns.js GUN_RARITY" }), C("findW", "Find weight", "num", { ...live, desc: "ARSENAL_FINDS.FIND_W of its tier (every gun source's rarity weight: gundist.js)" }),
     C("gunClass", "Class", "text", { hide: true, desc: "data-guns.js GUN_CLASS: its uses (who keeps one) and era; the gun distribution's sources draw by them" }),
@@ -428,7 +436,10 @@ export async function collect(root = PROTO) {
     C("dmgPerKg", "Dmg/kg", "num", live), C("valuePerDmg", "Value/dmg", "num", { ...live, hide: true }),
     C("points", "Points", "num", { ...live, desc: "Customize points (custompoints.js itemPoints: worth with factory parts ÷ 6 + power × 0.5)" }),
     C("pointsKit", "Points + rounds", "num", { ...live, desc: "Picked in the hands: the gun and 3 loads of its base round (slotPoints)" }),
-    C("slots", "Attachment slots", "text", hide), C("builtin", "Built in", "text", hide), C("factory", "Factory parts", "text", hide),
+    C("slots", "Attachment slots", "text", { hide: true, desc: "Open on the bare gun (data-gunmods.js PLATFORMS slots, CATEGORIES never, WEAPON_SLOTS)" }),
+    C("allSlots", "All slots", "text", { hide: true, desc: "With the mounts and rails that fit it (a scope mount's sight, a rail's foregrip, light and bipod)" }),
+    C("slotParts", "Parts by slot", "text", { hide: true, desc: "Every part that fits, by slot (magazines: the Magazines tab)" }),
+    C("slotRule", "Own slot rule", "text", { hide: true, desc: "data-gunmods.js WEAPON_SLOTS: off / on / parts for this gun" }), C("builtin", "Built in", "text", hide), C("factory", "Factory parts", "text", hide),
     C("tags", "Loot tags", "text", hide), C("kits", "AI kits (w/s/l)", "text", hide), C("trucks", "Army trucks", "text", hide),
     C("bestPlace", "Best find place", "text", { ...after, hide: true, desc: "The extra-gun rolls (gunfinds.js): place chance × the gun's share of its source's pool (gundist.js)" }), C("places", "Find places", "num", { ...after, hide: true }),
   ], gunRows, { note: "Every ranged weapon in combat.js WEAPONS (with data-guns.js, data-nonlethal.js and the turrets). Hits use the calibre's base round." });
@@ -459,6 +470,33 @@ export async function collect(root = PROTO) {
     C("chop", "Chop"), C("pry", "Pry", "bool"), C("value", "Value"), C("weight", "Weight kg"), C("power", "Power"), C("req", "Needs Melee"), C("dur", "Durability"),
     C("dmgPerKg", "Dmg/kg", "num", live), C("points", "Points", "num", live), C("tags", "Loot tags", "text", hide), C("kits", "AI kits (w/s/l)", "text", hide),
   ], meleeRows, { note: "combat.js WEAPONS melee entries (with data-guns.js WEAPON_PATCH and data-blades.js) and their GEAR items." });
+
+  // ---- gun attachments (the Attachments tab): every part but the magazines (Magazines tab) ----
+  const partRows = Object.keys(GM.ATTACH).filter((k) => !GM.ATTACH[k].magCap && GEAR[k]).map((k) => {
+    const a = GM.ATTACH[k], d = GEAR[k], pc = GM.partClass ? GM.partClass(k) : null;
+    const fitGuns = gunKeys.filter((g) => GM.modFits(g, k));
+    const brandOf = pc && pc.brandOf;
+    return { key: k, v: {
+      name: d.name, slot: a.slot, tier: pc ? pc.tier : "", rarity: pc ? pc.rarity : null, brandOf: brandOf || "",
+      value: d.value ?? null, weight: d.weight ?? null, dur: d.dur ?? null,
+      aim: a.aim ?? null, close: a.close ?? null, opt: a.opt ?? null, fall: a.fall ?? null, noise: a.noise ?? null, jam: a.jam ?? null,
+      night: a.night ?? null, nightNear: a.nightNear ?? null, peq: a.peq ?? null, brace: a.brace ?? null, moving: a.moving ?? null, reload: a.reload ?? null, wt: a.wt ?? null,
+      flags: [a.can ? "suppressor" : "", a.light ? "light" : "", a.flashless ? "flashless" : "", a.thermal ? "thermal" : "", a.launcher ? "launcher" : "", a.adds ? `adds ${a.adds.join("/")}` : ""].filter(Boolean).join(", "),
+      brandValue: brandOf && GEAR[brandOf] ? GEAR[brandOf].value : null,
+      fits: GM.fitsText ? GM.fitsText(k) : "", gunCount: fitGuns.length, guns: fitGuns.join(", "), tags: list(ITEM_TAGS[k]),
+      look: a.look || "",
+    } };
+  });
+  table("parts", "Attachments", [
+    C("name", "Name", "text"), C("slot", "Slot", "text"), C("tier", "Tier", "text", { desc: "brand (a US / European maker's), civil, budget (a Chinese clone: cheaper, worse, wears out), makeshift" }),
+    C("rarity", "Rarity", "tier", { desc: "data-gunmods.js PART_INFO / OLD_PART_CLASS: the catalogue's find weight (PART_FINDS.FIND_W)" }),
+    C("value", "Value"), C("weight", "Weight kg"), C("dur", "Wears out in", "num", { desc: "A budget or makeshift part: fights (a muzzle device: shots)" }),
+    C("aim", "Aim"), C("close", "Close"), C("opt", "Best range +"), C("fall", "Fall-off +"), C("noise", "Noise ×"), C("jam", "Jam ×"),
+    C("nightNear", "Night aim ≤6"), C("night", "Night aim", "num", hide), C("peq", "IR aim (NVG)", "num", hide), C("brace", "Rested aim"), C("moving", "Moving aim"),
+    C("reload", "Shells/reload +", "num", hide), C("wt", "Fitted kg", "num", hide), C("flags", "Does", "text"),
+    C("brandOf", "Copies", "text", { desc: "A budget clone: the part it copies (tools/gunslottest.js: never better, always cheaper)" }), C("brandValue", "Its value", "num", hide),
+    C("gunCount", "Guns fit"), C("fits", "Fits", "text", hide), C("guns", "Guns it fits", "text", hide), C("tags", "Loot tags", "text", hide), C("look", "Drawn as", "text", hide),
+  ], partRows, { note: "Gun attachments: gunmods.js LEGACY and data-gunmods.js MOD_ATTACH (numbers), MOD_GEAR / PART_INFO (items). Magazines: the Magazines tab." });
 
   // ---- magazines, internal feeds, clips ----
   const magRows = Object.entries(MAGAZINES).map(([k, m]) => {
@@ -576,6 +614,7 @@ export async function collect(root = PROTO) {
     tabs: [
       { id: "guns", title: "Guns", tables: ["guns", "places"] },
       { id: "mags", title: "Magazines", tables: ["mags", "feeds", "clips"] },
+      { id: "parts", title: "Attachments", tables: ["parts"] },
       { id: "ammo", title: "Calibres & rounds", tables: ["rounds", "calibres", "types", "themeCals", "themeTypes"] },
       { id: "cont", title: "Containers & boxes", tables: ["boxes", "bulk", "bulkFinds", "globals"] },
       { id: "melee", title: "Melee", tables: ["melee"] },

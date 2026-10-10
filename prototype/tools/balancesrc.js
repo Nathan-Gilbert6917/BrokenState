@@ -164,6 +164,7 @@ export const REG = {
     S("data-guns.js", /export const LATER_GEAR = /),
     S("data-ammo.js", /export const RELOAD_GEAR = /),
     S("data-gunmods.js", /export const MOD_GEAR = /),
+    S("data-gunmods.js", /export const PART_INFO = /), // the parts catalogue (2026-10-10): name, value, weight, dur
     S("data-kit.js", /export const KIT_GEAR = /),
     S("data-stacks.js", /export const BULK_GEAR = /),
     S("data-guns.js", /export const GEAR_PATCH = /, "patch"),
@@ -187,6 +188,9 @@ export const REG = {
   HAND_VALUE: one("data-ammo.js", "HAND_VALUE"),
   LAUNCH_VALUE: one("data-ammo.js", "LAUNCH_VALUE"),
   MAGAZINES: [...one("data-kit.js", "MAGAZINES"), ...one("data-kit.js", "CALIBRE_MAGS")],
+  // gun attachments' numbers: gunmods.js LEGACY (the first fifteen) and data-gunmods.js MOD_ATTACH (the rest, the
+  // parts catalogue included); magazines are MAGAZINES
+  ATTACH: [S("gunmods.js", /const LEGACY = /), S("data-gunmods.js", /export const MOD_ATTACH = /)],
   INTERNAL: [...one("data-kit.js", "INTERNAL"), ...one("data-kit.js", "CALIBRE_INTERNAL")],
   CLIPS: one("data-kit.js", "CLIPS"),
   RETAIL_BOX: one("data-stacks.js", "RETAIL_BOX"),

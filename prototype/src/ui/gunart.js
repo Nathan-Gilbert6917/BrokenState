@@ -271,7 +271,7 @@ export const PLAT_ART = {
 for (const [plat, like] of Object.entries(DGM.PLATFORM_LIKE || {})) if (!PLAT_ART[plat] && PLAT_ART[like]) PLAT_ART[plat] = PLAT_ART[like];
 
 // Which slot's anchor stands in for a slot the art has none for.
-const ALIAS = { under: ["grip", "tactical", "bipod"], grip: ["under", "tactical"], tactical: ["under", "rail", "grip"], bipod: ["under", "grip"], rail: ["tactical", "under", "optic"], mount: ["optic"], optic: ["mount"], sling: ["stock"], stock: ["sling"], mag: ["under"], muzzle: [] };
+const ALIAS = { under: ["grip", "tactical", "bipod"], grip: ["under", "tactical"], tactical: ["under", "rail", "grip"], bipod: ["under", "grip"], rail: ["tactical", "under", "optic"], mount: ["optic"], optic: ["mount"], sling: ["stock"], stock: ["sling"], mag: ["under"], muzzle: [], pgrip: ["mag", "grip", "stock"], receiver: ["mount", "optic", "mag"] }; // (pgrip, receiver: the slots of 2026-10-10, no anchors of their own yet)
 
 // ---------- the parts ----------
 // p: the painter, a: [x, y] the anchor, ctx: { art (PLAT_ART entry), key (art key) }.
@@ -466,7 +466,7 @@ function artAnchor(art, slot, fitted = {}) {
 // Paints a weapon (WEAPONS key) with the parts in looks ({ slot: look }); slots: the slots it takes (its own parts
 // in WEAPON_DEF are drawn only where it has no such slot). Parts are drawn back to front: stock, magazine, under the
 // barrel, muzzle, mounts, then sights.
-const ORDER = ["sling", "stock", "grip", "mag", "under", "bipod", "rail", "tactical", "muzzle", "mount", "optic"];
+const ORDER = ["sling", "stock", "grip", "pgrip", "mag", "under", "bipod", "rail", "receiver", "tactical", "muzzle", "mount", "optic"];
 export function paintGun(k, looks = {}, slots = null, finish = null) {
   const ak = finish ? finishArt(k, finish) : artKeyOf(k);
   return paintArt(ak, looks, WEAPON_DEF[k] || (PLAT_ART[ak] && PLAT_ART[ak].own) || {}, slots);

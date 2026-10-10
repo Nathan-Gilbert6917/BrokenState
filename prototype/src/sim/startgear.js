@@ -176,9 +176,18 @@ const makeItem = (key) => startKit(newItem(key, 1));
 // factoryfit.js). Put on in gunmods.js SLOTS order (a mount or rail before what goes on it); a part that does not fit
 // (gunmods.js fitsSlot: by platform, calibre and the slots open) is dropped. The parts are worth what they are worth
 // (valuation.js itemValue counts a gun's fitted parts), so the gun's points go up with them (custompoints.js gunPoints).
+// Picks keyed by an old slot name (a revolver's grips were on "grip" before the pistol-grip slot, 2026-10-10) move to
+// the part's own slot.
+/** @param {any} raw @returns {any} */
+const ownSlots = (raw) => {
+  const o = { ...raw };
+  for (const [s, k] of Object.entries(raw)) if (typeof k === "string" && k && ATTACH[k] && ATTACH[k].slot !== s && !(ATTACH[k].slot in o)) { o[ATTACH[k].slot] = k; delete o[s]; }
+  return o;
+};
 /** @param {any} gun @param {any} mods */
 export function applyGunMods(gun, mods) {
   if (!gun || !mods) return gun;
+  mods = ownSlots(mods);
   for (const slot of GUN_SLOTS) if (mods[slot] === "") stripMod(gun, slot);
   for (const slot of GUN_SLOTS) {
     const k = mods[slot];
@@ -195,6 +204,7 @@ export const gunWith = (key, mods = null) => applyGunMods(makeItem(key), mods);
 /** @param {string} key @param {any} raw @returns {Record<string, string> | null} */
 export function sanitizeGunMods(key, raw) {
   if (!raw || typeof raw !== "object" || !key || !WEAPONS[key] || !GEAR[key] || !takesMods(key)) return null;
+  raw = ownSlots(raw);
   const gun = makeItem(key);
   /** @type {Record<string, string>} */
   const out = {};

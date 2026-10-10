@@ -28,7 +28,7 @@ import { GEAR } from "./data.js";
 import { MAGAZINES, INTERNAL, CLIPS } from "./data-kit.js";
 import { CALIBERS, ROUND_SUPPLIES, CAL_ACCEPTS } from "./data-ammo.js";
 import { WEAPONS } from "./combat.js";
-import { modFits, platformOf, magCapOf, gunMods } from "./gunmods.js";
+import { modFits, platformOf, magCapOf, gunMods, unitMods } from "./gunmods.js";
 import { roundsOf, calOf, loadRefusal } from "./ammo.js";
 import { typeFor, roundName, typeName, withHand, keyFor, rebaseLoad, loadCal } from "./rounds.js";
 import { hash01 } from "./skills.js";
@@ -279,8 +279,9 @@ export function shellPlan(b, u, type = null, roll = 0) {
   const room = Math.max(0, (u.magMax ?? 0) - m);
   const s = shellsAt(b, u, want, m);
   const steady = num(u.aim) >= SHELLS.STEADY_AIM, shaken = isShaken(u);
-  const n = kind === "break" ? SHELLS.BREAK : kind === "single" ? 1 : Math.max(SHELLS.MIN, Math.min(SHELLS.MAX, SHELLS.BASE[roll ? 1 : 0] + (steady ? 1 : 0) - (shaken ? 1 : 0)));
-  return { n: Math.max(0, Math.min(n, room, s.at)), at: s.at, pack: s.pack, steady, shaken, room };
+  const saddle = kind === "tube" ? Math.max(0, num(unitMods(u).reload)) : 0; // a side-saddle on the receiver (gunmods.js reload)
+  const n = kind === "break" ? SHELLS.BREAK : kind === "single" ? 1 : Math.max(SHELLS.MIN, Math.min(SHELLS.MAX + saddle, SHELLS.BASE[roll ? 1 : 0] + (steady ? 1 : 0) - (shaken ? 1 : 0) + saddle));
+  return { n: Math.max(0, Math.min(n, room, s.at)), at: s.at, pack: s.pack, steady, shaken, saddle, room };
 }
 // The shells a Reload of this shotgun puts in, as a range for the Reload button: { lo, hi, at, pack, steady, shaken }.
 export function shellRange(b, u, type = null) {
@@ -465,7 +466,7 @@ export function reloadText(b, u) {
     const r = shellRange(b, u), kind = shellKind(u);
     if (!(r.hi > 0)) return `${n}: ${shellsLine(b, u)}.`;
     const k = r.lo === r.hi ? `${r.lo}` : `${r.lo}–${r.hi}`;
-    const mods = kind === "tube" ? [r.steady ? "steady hands +1" : "", r.shaken ? "shaken −1" : ""].filter(Boolean) : [];
+    const mods = kind === "tube" ? [r.steady ? "steady hands +1" : "", r.shaken ? "shaken −1" : "", r.saddle ? `side-saddle +${r.saddle}` : ""].filter(Boolean) : [];
     const what = kind === "break" ? `both barrels (${k} ${r.hi === 1 ? "shell" : "shells"})` : kind === "single" ? "its one shell" : `${k} ${r.hi === 1 ? "shell" : "shells"} thumbed into the tube${mods.length ? ` (${mods.join(", ")})` : ""}`;
     return `${n}: ${what}, from the shells at hand. ${shellsLine(b, u)}. Shells in a pocket or the rig load straight in; the pack's need Get shells (1 action) first.`;
   }

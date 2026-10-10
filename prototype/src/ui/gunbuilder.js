@@ -35,7 +35,7 @@ const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
 const sgn = (v, d = 1) => { const n = d === 1 ? r1(v) : r2(v); return `${n > 0 ? "+" : n < 0 ? "−" : "±"}${Math.abs(n)}`; };
 
-export const SLOT_NAMES = { optic: "Sight", mount: "Mount", muzzle: "Muzzle", mag: "Magazine", under: "Under the barrel", stock: "Stock", grip: "Grip", rail: "Rail", tactical: "Light / laser", bipod: "Bipod", sling: "Sling" };
+export const SLOT_NAMES = { optic: "Sight", mount: "Mount", muzzle: "Muzzle", mag: "Magazine", under: "Under the barrel", stock: "Stock", grip: "Foregrip", pgrip: "Pistol grip", rail: "Rail", tactical: "Light / laser", bipod: "Bipod", sling: "Sling", receiver: "Receiver" };
 const TOP = new Set(["optic", "mount", "tactical", "rail"]); // the top lane; the rest below the gun
 // Platforms whose failures are misfires (the round is lost, no jam to clear: section 14).
 const MISFIRE = new Set(["revolver", "dbl", "bolt", "lever", "pump"]);

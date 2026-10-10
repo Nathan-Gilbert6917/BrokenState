@@ -174,4 +174,27 @@ export const FALLBACK_LIKE = {
 // gunpaint.js STOCKS kind, col); mag (t: a MAGS kind, n, w, curve, col); grips (col, n). Colours: gunpaint.js C names
 // or "#hex". Each also has its small drawing on the gun held in battle.
 /** @type {Record<string, any>} */
-export const PART_SPEC = {};
+export const PART_SPEC = {
+  // the parts catalogue of 2026-10-10 (sim/data-gunmods.js PART_INFO): where the words guess wrong, and the budget
+  // Chinese clones in a cheap grey
+  aimpoint: { kind: "dot", len: 3 }, holosun: { kind: "dot", len: 2 }, holopistol: { kind: "mini" },
+  cheapdot: { kind: "dot", col: "grey" }, cheapholo: { kind: "holo", col: "grey" }, cheaprmr: { kind: "mini", col: "grey" },
+  holomag: { kind: "holo", len: 4 }, cheapmag: { kind: "holo", len: 3, col: "grey" }, // a holo sight with its 3× magnifier: one part, drawn as the sight
+  cheapscope: { kind: "scope", len: 6, bell: 1, col: "grey" }, cheapacog: { kind: "prism", col: "grey" }, cheaplpvo: { kind: "scope", len: 6, bell: 1, col: "grey" },
+  cheapmount: { kind: "mount", len: 3 },
+  mlokpro: { kind: "rail", len: 8 }, cheaprail: { kind: "rail", len: 6 },
+  can9pro: { kind: "can", len: 6, rows: 4 }, can556pro: { kind: "can", len: 8, rows: 4 }, can308pro: { kind: "can", len: 9, rows: 4 }, can22pro: { kind: "can", len: 5, rows: 3 },
+  cheapcan: { kind: "can", len: 7, rows: 4, bands: true, col: "blue" }, // a fuel filter
+  brakepro: { kind: "brake", len: 4 }, cheapbrake: { kind: "brake", len: 3, col: "grey" }, flashpro: { kind: "fh", len: 3 }, cheapcomp: { kind: "comp", col: "grey" },
+  turkeychoke: { kind: "choke", len: 3 }, icchoke: { kind: "choke", len: 1 },
+  ctrstock: { kind: "stock", t: "tele" }, fixedstock: { kind: "stock", t: "a2" }, cheapstock: { kind: "stock", t: "tele", col: "grey" }, pistolbrace: { kind: "stock", t: "brace" },
+  vgrippro: { kind: "vgrip", len: 4 }, handstop: { kind: "stop" }, cheapgrip: { kind: "vgrip", col: "grey" },
+  pgrip: { kind: "grips", col: "poly", n: 7 }, cheappgrip: { kind: "grips", col: "grey", n: 7 }, cheaprevgrip: { kind: "grips", col: "rubber" }, // the pistol-grip slot
+  chandle: { kind: "mount", len: 1 }, cheapchandle: { kind: "mount", len: 1 }, // a charging handle at the receiver's back
+  sidesaddle: { kind: "saddle", n: 4 }, cheapsaddle: { kind: "saddle", n: 3 }, // shells on the receiver's side
+  surefire: { kind: "light", len: 3 }, pistollight: { kind: "light", len: 2 }, cheaplight: { kind: "light", len: 2, col: "grey" },
+  lightlaser: { kind: "combo" }, cheappeq: { kind: "combo", col: "grey" },
+  lasergrip: { kind: "laser", col: "rubber" }, cheaplaser: { kind: "laser", col: "grey" }, // (laser grips: the laser at the frame)
+  harris: { kind: "bipod", len: 7 }, cheapbipod: { kind: "bipod", len: 5, col: "grey" },
+  slingpro: { kind: "sling", col: "olive" },
+};

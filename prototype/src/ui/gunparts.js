@@ -149,7 +149,7 @@ export const MOD_LOOK = {
   foldstock: "fold", vertgrip: "vgrip", anglegrip: "agrip", revgrip: "revgrip", weaponlight: "light", peq: "peq", sling: "sling", m203: "m203",
   huntscope: "scope9", scope9x: "scope9",
 };
-export const SLOT_LOOK = { optic: "reddot", mount: "mount", muzzle: "can_s", mag: "stick30", stock: "collapsible", grip: "vgrip", under: "vgrip", tactical: "light", bipod: "bipod", rail: "rail", sling: "sling" };
+export const SLOT_LOOK = { optic: "reddot", mount: "mount", muzzle: "can_s", mag: "stick30", stock: "collapsible", grip: "vgrip", under: "vgrip", tactical: "light", bipod: "bipod", rail: "rail", sling: "sling", pgrip: "revgrip", receiver: "mount" };
 // The small drawing of each hand-drawn look (gunpaint.js paintMini): { kind } a part's, { stock } / { mag } a stock or
 // magazine kind (gunpaint.js STOCKS / MAGS minis). Looks not listed draw nothing small (irons, a mount, a sling).
 /** @type {Record<string, any>} */

@@ -14,10 +14,12 @@
 // cals: the calibres it holds (else data-ammo.js CAL_ACCEPTS of its cal: mags.js magCalsOf); guns: only these guns of its
 // platforms (the .308 battle rifles share a platform but each takes its own magazine).
 /** @type {Record<string, { plat: string[], cal: string, cap: number, kg: number, value: number, name: string, aim?: number, jam?: number, pouch: string, desc?: string, cals?: string[], guns?: string[] }>} */
-export const MAGAZINES = {
+export const MAGAZINES = { // (a "c" key: a budget Chinese clone of the one above it, data-gunmods.js BUDGET_MAGS)
   mag_glock_8:     { plat: ["glock"], cal: "9mm", cap: 8, kg: 0.06, value: 3, pouch: "pistol", name: "Compact 9mm magazine (8)" },
   mag_glock_15:    { plat: ["glock"], cal: "9mm", cap: 15, kg: 0.07, value: 4, pouch: "pistol", name: "9mm pistol magazine (15)" },
   mag_glock_17:    { plat: ["glock"], cal: "9mm", cap: 17, kg: 0.08, value: 5, pouch: "pistol", name: "9mm pistol magazine (17)" },
+  mag_glock_17c:   { plat: ["glock"], cal: "9mm", cap: 17, kg: 0.08, value: 2, pouch: "pistol", name: "Budget 9mm magazine (Chinese clone) (17)", jam: 1.3,
+                     desc: "A copy of a 17-round polymer pistol magazine that does not always lock or feed (jams ×1.3). Fits the polymer 9mm pistols." },
   extmag:          { plat: ["glock"], cal: "9mm", cap: 24, kg: 0.15, value: 14, pouch: "pistol", name: "Extended 9mm magazine (24)" },
   mag_glock_33:    { plat: ["glock"], cal: "9mm", cap: 33, kg: 0.18, value: 12, pouch: "pistol", name: "9mm stick magazine (33)", aim: -1 },
   mag_1911_7:      { plat: ["p1911"], cal: "45acp", cap: 7, kg: 0.08, value: 4, pouch: "pistol", name: ".45 pistol magazine (7)" },
@@ -28,6 +30,8 @@ export const MAGAZINES = {
   // ammo.js gunTakes). The bullpup (AUG) has its own since 2026-10-10 (user: "give the AUG its own magazines").
   mag_stanag_20:   { plat: ["ar15", "m249"], cal: "556", cals: ["556", "223", "300blk"], cap: 20, kg: 0.1, value: 4, pouch: "rifle", name: "STANAG magazine (20)" },
   mag_stanag_30:   { plat: ["ar15", "m249"], cal: "556", cals: ["556", "223", "300blk"], cap: 30, kg: 0.12, value: 6, pouch: "rifle", name: "STANAG magazine (30)" },
+  mag_stanag_30c:  { plat: ["ar15", "m249"], cal: "556", cals: ["556", "223", "300blk"], cap: 30, kg: 0.13, value: 2, pouch: "rifle", name: "Budget STANAG magazine (Chinese clone) (30)", jam: 1.3,
+                     desc: "A cheap copy of a 30-round STANAG magazine with a weak spring and a sticky follower: it feeds badly (jams ×1.3). Fits the AR-15 family and the machine gun." },
   mag_stanag_40:   { plat: ["ar15", "m249"], cal: "556", cals: ["556", "223", "300blk"], cap: 40, kg: 0.15, value: 10, pouch: "rifle", name: "STANAG magazine (40)" },
   drum:            { plat: ["ar15"], cal: "556", cals: ["556", "223", "300blk"], cap: 60, kg: 1.1, value: 38, pouch: "rifle", name: "Drum magazine (60)", aim: -2, jam: 1.5 },
   mag_stanag_100:  { plat: ["ar15", "m249"], cal: "556", cals: ["556", "223", "300blk"], cap: 100, kg: 1.2, value: 70, pouch: "rifle", name: "STANAG double drum (100)", aim: -2, jam: 1.3 },
@@ -153,6 +157,8 @@ for (const [k, m] of Object.entries(MAGAZINES)) {
     : p.includes("g3") ? ["military", "guns", "crime"] : p.includes("p90") ? ["military", "police"]
     : (m.guns || []).some((g) => g === "fal" || g === "m1a") ? ["military", "guns", "hunt"] : ["military", "guns", "police", "crash"];
 }
+// The budget clones: where cheap things are (homes, malls, pawn shelves), not armouries.
+for (const k of ["mag_stanag_30c", "mag_glock_17c"]) KIT_TAGS[k] = ["home", "mall", "shop", "crime", "sport"];
 // Magazines as gun parts (gunmods.js ATTACH: the gun builder's magazine slot lists them by platform).
 /** @type {Record<string, any>} */
 export const KIT_ATTACH = {};

@@ -55,7 +55,7 @@ console.log("Platforms and drawings");
     if (q.px.filter(Boolean).length === base && r.px.filter(Boolean).length === base && q.px.join() === p.px.join() && r.px.join() === p.px.join()) empty.push(look);
   }
   check(!empty.length, `every part look paints something (${Object.keys(GA.PART_ART).length} looks${empty.length ? `; nothing from ${empty.join(", ")}` : ""})`);
-  const mods = Object.keys(GM.ATTACH).filter((k) => !GA.MOD_LOOK[k] && !(GEAR[k] && GEAR[k].look));
+  const mods = Object.keys(GM.ATTACH).filter((k) => !GA.MOD_LOOK[k] && !(GEAR[k] && GEAR[k].look) && !GA.PART_ART[GA.lookOf({ key: k }, GM.ATTACH[k].slot)]); // (hand-drawn, or drawn by its kind: ui/gunparts.js, PART_SPEC)
   check(!mods.length, `every attachment has a look${mods.length ? ` (not: ${mods.join(", ")})` : ""}`);
   check(GA.lookOf({ key: "scope4x" }, "optic") === "scope4" && GA.lookOf({ key: "unknownpart" }, "muzzle") === "can_s", "a part's look by its key, else by its slot");
   const wp = GA.paintGun("pistol", { optic: "reddot", muzzle: "can_s" });

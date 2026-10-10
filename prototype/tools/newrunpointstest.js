@@ -44,6 +44,7 @@ const blankWorld = (seed, extra = {}) => world(seed, { ...extra, crew: blankCrew
 const again = (st, extra = {}) => { const w = createWorld({ seed: st.seed, factionCount: 5, crewRoll: ROLL, mode: st.mode, ...extra, crew: crewSnapshot(st) }); w.pointsMax = st.pointsMax; return w; };
 const UI = () => ({ started: false, freeEdit: true, ironman: false, worldSize: "normal", factionCount: 5, nrMsg: "" });
 const count = (s, key) => carryList(s.startGear).filter((x) => x.key === key).length;
+const things = (s, key) => carryList(s.startGear).filter((x) => x.key === key).reduce((a, x) => a + ((x.entry && x.entry.n) || 1), 0); // (boxes stack: .223 at 2 points goes in two to a stack)
 const qty = (st, ui, k, n) => SG_CHANGE["sg-qty"](st, ui, { value: String(n), dataset: { k } });
 const add = (st, ui, key) => SG_CHANGE["sg-item-add"](st, ui, { value: key, dataset: {} });
 const tadd = (st, ui, key) => SG_CHANGE["sg-trunk-add"](st, ui, { value: key, dataset: {} });
@@ -82,10 +83,10 @@ section("N of a thing at once: what they carry");
   const left = pricePerson(p, p.survivors[0]).left, each = itemPoints(AMMO);
   qty(p, u2, "qty", 9);
   add(p, u2, AMMO);
-  check(count(p.survivors[0], AMMO) === Math.max(1, Math.floor(left / each)) && pricePerson(p, p.survivors[0]).over === 0 && /points left pay for/.test(u2.gearEdit.msg), `points: ${left} left at ${each} each, ${count(p.survivors[0], AMMO)} put in, nobody over ("${u2.gearEdit.msg}")`);
+  check(things(p.survivors[0], AMMO) === Math.max(1, Math.floor(left / each)) && pricePerson(p, p.survivors[0]).over === 0 && /points left pay for/.test(u2.gearEdit.msg), `points: ${left} left at ${each} each, ${things(p.survivors[0], AMMO)} put in, nobody over ("${u2.gearEdit.msg}")`);
   qty(p, u2, "qty", 3);
   add(p, u2, AMMO);
-  check(count(p.survivors[0], AMMO) === Math.max(1, Math.floor(left / each)) + 1, "out of points: one still goes in (as a single thing always did; Start refuses it)");
+  check(things(p.survivors[0], AMMO) === Math.max(1, Math.floor(left / each)) + 1, "out of points: one still goes in (as a single thing always did; Start refuses it)");
   // The window shows the boxes.
   const html = startGearEditor(st, ui);
   check(/data-action="sg-qty" data-k="qty"/.test(html) && /data-action="sg-qty" data-k="tqty"/.test(html), "the window: a × box by Add a thing and by Put a thing in the back");
@@ -280,7 +281,7 @@ section("Guns: calibre and capacity, parts, a loaded magazine");
   ui.gearEdit = { i: 0, sel: null, msg: "" };
   const s = st.survivors[0];
   let html = startGearEditor(st, ui);
-  check(/>Assault rifle · 5\.56 NATO · 30 rds · /.test(html) && />9mm pistol · 9mm · 15 rds · /.test(html) && /Takes 5\.56 NATO: 30 rounds/.test(html), "every gun in the pickers: its calibre and rounds (and a sentence on hover)");
+  check(/>Assault rifle · 5\.56 NATO( \/ \.223 Rem)? · 30 rds · /.test(html) && />9mm pistol · 9mm · 15 rds · /.test(html) && /Takes 5\.56 NATO( \(and \.223 Rem\))?: 30 rounds/.test(html), "every gun in the pickers: its calibre and rounds (and a sentence on hover)");
   SG_CHANGE["sg-slot"](st, ui, { value: "ar", dataset: { slot: "weapon" } });
   const p0 = pricePerson(st, s).gear;
   html = startGearEditor(st, ui);
@@ -292,7 +293,7 @@ section("Guns: calibre and capacity, parts, a loaded magazine");
   SG_CHANGE["sg-gunmod"](st, ui, { value: "mag_stanag_40", dataset: { gs: "mag" } });
   const cap = gunCap(gunWith("ar", s.startGear.mods));
   check(cap === 40 && Object.values(gunExtras("ar", s.startGear.mods))[0] === 40 * START_GEAR.LOADS, `a 40-round magazine: 40 rds, its rounds ${40 * START_GEAR.LOADS} (a full load and two more)`);
-  check(/5\.56 NATO · 40 rds/.test(startGearEditor(st, ui)), "the window says 40 rds now");
+  check(/5\.56 NATO( \/ \.223 Rem)? · 40 rds/.test(startGearEditor(st, ui)), "the window says 40 rds now");
   const b = again(st);
   const g = b.survivors[0].gear.weapon;
   check(g.key === "ar" && g.mods && g.mods.optic && g.mods.optic.key === "reddot" && g.mods.mag && g.mods.mag.key === "mag_stanag_40", "rebuilt: the rifle has its red dot and 40-round magazine");
