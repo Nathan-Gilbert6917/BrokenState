@@ -10,26 +10,36 @@
 //   Ethanol still (station "still", buildings.js RECIPES.still): an operator turns 8 food + 2 water into 3 fuel a
 //     day; up to STILL.mash (4) of the food can be yesterday's spoiled food (storage.js keeps it as mash).
 //   Users (POWER_USERS, need in power units, served in this order while the supply lasts):
-//     cold store 1 (a freezer: keeps food as in winter all year, storage.js), radio station 1 (+2 tiles of
+//     walk-in freezer 2 (freezer-parts: food in it keeps ~20× longer, storage.js; base.freezerOn below), cold store 1 (a freezer: keeps food as in winter all year, storage.js), radio station 1 (+2 tiles of
 //     coverage, radio.js), floodlights 1 (no fuel burned per attack, defences.js), machine shop 2 (2 parts a day
-//     from 9 scrap instead of 1 from 6), preserving kitchen 1 (half as much again a day).
+//     from 9 scrap instead of 1 from 6), preserving kitchen 1 (half as much again a day), vacuum sealer 1 (hasSealer:
+//     the hook for the packaged survival meals of a later cooking wave).
+//     A broken building (breakdowns.js) draws nothing and gets nothing.
+// The walk-in freezer (freezer-parts): refreshPower sets base.freezerOn (true while at least one freezer here is
+// served: built, not broken, not switched off, power enough from a running, fuelled, staffed generator) and
+// base.freezersOn (how many), every hour and before the stations run each day. That flag is the contract with
+// storage.js (the food-types branch ages the food in the freezer at ~0.05× while it is true). When a freezer goes off
+// the log says why (no generator, no operator, no fuel, not enough power, broken, switched off), at most once a day,
+// and again when it is cold once more.
 //     Workshop stations draw only while their operator is at work (an order that holds them, or no operator, draws
 //     nothing). Each building can be switched off by hand (base.powerOff[id]).
 // The result is cached on the base (base.power: supply, demand, served building ids, running generators) every hour
 // (production.js productionHour) and before the stations run each day, so storage, radio and defences read it
 // cheaply. A base that never refreshed has no power.
 import { BUILDINGS, RECIPES, stationOperator } from "./buildings.js";
-import { day } from "./world.js";
+import { day, log } from "./world.js";
 import { orderHold } from "./production.js";
 
 export const POWER = { genOut: 6, genFuel: 2, genHeat: 4 };
 export const STILL = { mash: 4 };
 export const POWER_USERS = {
+  freezer:      { need: 2, what: "a walk-in freezer: food in it keeps about 20 times longer than in a cellar (300 room)" },
   coldstore:    { need: 1, what: "a freezer: food keeps as in winter (0.2% a day) in every season" },
   radio:        { need: 1, what: "+2 tiles of radio coverage" },
   floodlights:  { need: 1, what: "no fuel burned when a horde attacks" },
   machine_shop: { need: 2, what: "power tools: 2 parts a day from 9 scrap (1 from 6 without)" },
   kitchen:      { need: 1, what: "an electric stove: half as much again a day (14 food → 12 preserved)" },
+  sealer:       { need: 1, what: "a vacuum sealer: packs cooked food into long-keeping survival meals" },
 };
 // Powered stations: inputs and outputs multiplied (rounded) while they are served.
 export const POWER_BOOST = { machine_shop: { in: 1.5, out: 2 }, kitchen: { in: 1.5, out: 1.5 } };
@@ -58,7 +68,7 @@ export function powerStatus(state, base) {
     for (const b of base.buildings) {
       if (b.type !== type) continue;
       const off = switchedOff(base, b);
-      const wants = !off && (BUILDINGS[type].station ? stationWants(state, base, b) : true);
+      const wants = !off && !b.broken && (BUILDINGS[type].station ? stationWants(state, base, b) : true); // a broken one draws nothing (breakdowns.js)
       users.push({ b, need: POWER_USERS[type].need, wants, served: false, off });
     }
   }
@@ -97,7 +107,7 @@ export function powerStatus(state, base) {
 
 // Burns the fuel of generators that start now and caches the result on the base (base.power).
 export function refreshPower(state, base) {
-  if (!base.buildings.some((b) => isGen(b) || POWER_USERS[b.type])) { base.power = null; return null; }
+  if (!base.buildings.some((b) => isGen(b) || POWER_USERS[b.type])) { base.power = null; if (base.freezerOn) base.freezerOn = false; return null; }
   const ps = powerStatus(state, base);
   const today = day(state);
   for (const g of ps.gens) {
@@ -111,8 +121,52 @@ export function refreshPower(state, base) {
     gens: ps.gens.filter((g) => g.running).map((g) => g.b.id),
     served: ps.users.filter((u) => u.served).map((u) => u.b.id),
   };
+  freezerSwitch(state, base, ps);
   return ps;
 }
+
+// ---------- the walk-in freezer (freezer-parts) ----------
+export const freezers = (base) => base.buildings.filter((b) => b.type === "freezer");
+// Why a freezer is off, from a powerStatus (ps): "" when it is on.
+export function freezerOffWhy(base, b, ps) {
+  if (b.broken) return "it is broken (Repairs tab)";
+  if (switchedOff(base, b)) return "its power is switched off";
+  const u = ps.users.find((x) => x.b === b);
+  if (u && u.served) return "";
+  const gens = ps.gens;
+  if (!gens.length) return "there is no generator";
+  if (gens.every((g) => g.b.broken)) return "the generator is broken";
+  if (!gens.some((g) => g.op)) return "no one operates the generator";
+  if (gens.every((g) => !g.running) && gens.some((g) => /fuel/i.test(g.reason))) return `the generator has no fuel (${POWER.genFuel} a day)`;
+  return `there is not enough power (${ps.supply} supply for ${ps.demand} wanted)`;
+}
+// base.freezerOn / base.freezersOn and the log when it goes off or on again.
+function freezerSwitch(state, base, ps) {
+  const list = freezers(base);
+  if (!list.length) { if (base.freezerOn != null) { delete base.freezerOn; delete base.freezersOn; } return; }
+  const on = list.filter((b) => isPowered(base, b) && !b.broken).length;
+  const was = base.freezerOn;
+  base.freezerOn = on > 0;
+  base.freezersOn = on;
+  const today = day(state);
+  if (!on && was !== false && base.freezerLogDay !== today) {
+    base.freezerLogDay = today;
+    log(state, `❄ The freezer at ${base.name} is off: ${freezerOffWhy(base, list[0], ps)}. The food in it is thawing (it keeps only as in a pantry until the power is back).`, "danger");
+  } else if (on && was === false) log(state, `❄ The freezer at ${base.name} is cold again.`, "good");
+}
+// One line for the base's buildings view: "On: 2 power, 300 room" / "Off: no fuel for the generator (thawing)".
+export function freezerLine(state, base) {
+  const list = freezers(base);
+  if (!list.length) return "";
+  const ps = powerStatus(state, base);
+  const on = list.filter((b) => isPowered(base, b) && !b.broken).length;
+  const room = list.length * 300;
+  if (on === list.length) return `On: ${on * POWER_USERS.freezer.need} power, ${room} room keeping cold`;
+  const why = freezerOffWhy(base, list.find((b) => !(isPowered(base, b) && !b.broken)), ps);
+  return `${on ? `${on} of ${list.length} on` : "Off"}: ${why} (the food in it keeps only as in a pantry)`;
+}
+// The vacuum sealer hook (freezer-parts; the cooking wave's packaged survival meals): built, powered, not broken.
+export const hasSealer = (state, base) => !!base && base.buildings.some((b) => b.type === "sealer" && !b.broken && isPowered(base, b));
 
 // Readers (cheap, from the cache): is this building powered, is any building of a type powered?
 export const isPowered = (base, b) => !!(base && base.power && b && base.power.served.includes(b.id));

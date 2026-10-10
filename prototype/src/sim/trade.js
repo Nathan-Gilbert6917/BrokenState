@@ -45,7 +45,8 @@ import { isRoundKey, totalRounds, ROUND_KEYS, roundOf, spendAmmo, baseKey } from
 import { kindShare, kindTheme, kindMix, expandAmmo, partyCals, baseCals, wantedKey, dealRounds, holderCals } from "./ammo.js";
 import { radioTradeContext, radioTradeProblem, bookRadioTrade, matchGear, sameGear } from "./radiotrade.js"; // the trade window over the radio
 import { intoArsenalFromShelf, shelfSurplus } from "./arsenal.js"; // group arsenals: the guns you sell them they use; their surplus is for sale
-import { swapGun } from "./gundist.js"; // the gun distribution: which gun a group's shelf holds
+import { swapGun } from "./gundist.js";
+import { groupMachineCount } from "./groupworks.js"; // freezer-parts: their machines want spare parts // the gun distribution: which gun a group's shelf holds
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -99,7 +100,8 @@ const stockOf = (f, key) => {
 const priceStock = (f, key) => stockOf(f, isRoundKey(key) ? "ammo" : key);
 // A group's reorder level for parts (merchants sell it parts below it: visitors.js tradeWithGroup): 4 + 1 per 5
 // people, half again for the builders and fighters (fortress, expansionist, military).
-export const groupPartsTarget = (f) => Math.round((4 + Math.floor((f.pop || 0) / 5)) * (["fortress", "expansionist", "military"].includes(f.type) ? 1.5 : 1));
+// freezer-parts: +1 for each machine they keep running (groupworks.js: still, generator, freezer, sealer).
+export const groupPartsTarget = (f) => Math.round((4 + Math.floor((f.pop || 0) / 5)) * (["fortress", "expansionist", "military"].includes(f.type) ? 1.5 : 1)) + groupMachineCount(f);
 export const groupPartsLow = (f) => pooled(f) && Math.max(0, f.stock.parts || 0) < groupPartsTarget(f);
 // Part kinds left in a group's stores by the code that adds supplies by key (a delivery, a gift, a caravan's load) go
 // into its one count of parts (refreshMarkets, each day, and after a trade).

@@ -2320,9 +2320,9 @@ function roleSummaries(state) {
 const BUILD_AREA = {
   walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
-  huntcabin: "food", farm_plot: "food", greenhouse: "food", animal_pen: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
+  huntcabin: "food", farm_plot: "food", greenhouse: "food", animal_pen: "food", cellar: "food", coldstore: "food", freezer: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
   boiler: "food", cookhouse: "food",
-  ammo_bench: "production", machine_shop: "production", still: "production", generator: "production",
+  ammo_bench: "production", machine_shop: "production", still: "production", generator: "production", sealer: "production",
   craftbench: "production", workbench: "production", toolbench: "production",
 };
 // A full queue still takes the summer store's room (buildWishes `room`: the last weeks of spring and summer) as one
@@ -2570,7 +2570,7 @@ function buildWishes(state, base) {
   }
   // Power (power.js): a still for the surplus once the hub is big enough, then a generator for what it powers.
   if (!count(base, "still") && !queued("still") && pop >= 9 && (st.parts || 0) >= 4 && stillWorth(state, base)) add("still", "turn the surplus food into fuel");
-  if (count(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || count(base, "coldstore")) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop and the cold store");
+  if (count(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || count(base, "coldstore") || countAll(base, "freezer") + queued("freezer")) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop, the cold store and the freezer");
   if (!base.radio && pop >= 8 && (st.parts || 0) >= 9 && best("mechanics") >= 4) add("radio", "live contact with teams out in the field");
   // The coalition is made on the radio (greetings, pacts, invitations: alliance.js): from a dozen people with a
   // Mechanics 4 builder, the station is built once the parts are there (not saved up for: scrap goes to walls first).
@@ -2651,6 +2651,7 @@ function boilerWoodShort(state, base) {
   return need > 0 && baseWoodDay(state, base) < need && woodNeed(state, base).short;
 }
 
+const FREEZER_SPARE = 4; // the freezer's parts kept back for its spares and first repair (foodStoreWishes)
 // Food storage and preserving (storage.js), before it is needed: room for the winter stock (the fresh food now
 // and what the fields still bring in, from mid-summer), a cold store before winter, a drying rack and a
 // preserving kitchen for the summer surplus. Food already stored outside makes the next store urgent.
@@ -2680,6 +2681,12 @@ function foodStoreWishes(state, base, people, queued) {
     else if (outside && !count(base, "crates") && !queued("crates")) add("crates", "a quick stopgap for the food spoiling outside");
   }
   if (can("smoker") && !count(base, "smoker") && people >= 4 && (outside || ((s.key === "summer" || s.key === "autumn") && fresh >= people * 20))) add("smoker", "dry the surplus for the winter");
+  // The walk-in freezer (freezer-parts; buildings.js freezer): once a generator stands and there is fuel to keep it
+  // running (a still, or 30 fuel), at 10+ people with a big fresh stock (15 days of eating, or food outside), and its
+  // parts (5) with FREEZER_SPARE more for its spares and repairs, and its 2 electronics. One at the hub: the second
+  // freezer is left to the player. The vacuum sealer waits for the cooking wave (it has no work yet).
+  if (!countAll(base, "freezer") && !queued("freezer") && count(base, "generator") && people >= 10 && (count(base, "still") || (st.fuel || 0) >= 30) &&
+      (outside || fresh >= people * 15) && (st.parts || 0) >= BUILDINGS.freezer.cost.parts + FREEZER_SPARE && (st.electronics || 0) >= BUILDINGS.freezer.cost.electronics) add("freezer", "a walk-in freezer: the fresh food keeps twenty times longer");
   if (can("kitchen") && !count(base, "kitchen") && people >= 5 && (st.jars || 0) >= 8 && (st.parts || 0) >= 2 && (outside || (winterActive(state, base) && fresh >= people * 20))) add("kitchen", "jar the surplus for the winter");
   return out;
 }
