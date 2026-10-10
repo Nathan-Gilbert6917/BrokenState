@@ -26,17 +26,17 @@
 //   base with nothing to do (a work role with no work, or a job that cannot be done here), not counting anyone
 //   resting (the Rest job, free time), in bed, ill or hurt, on watch or away. workCount(state, base) → { total,
 //   working, idle, hurt, resting }.
-// Mealtimes (MEALS): breakfast at 06:00 (08:00 for hunters and fishers, after the dawn hunt) and dinner at 20:00, an
-//   hour each, show as "Eating". They are a picture of the day's eating only: the food and water still come out of the
-//   store once a day (economy.js baseDaily), and no hour of any job's work is taken (the daily jobs' hours are outside
-//   them; construction and crafting run by the hour as before), so nothing a base makes or eats changes.
+// Mealtimes (meals.js MEALS): breakfast at 06:00 (08:00 for hunters and fishers, after the dawn hunt) and dinner at
+//   20:00, an hour each, show as "Eating". The food and water still come out of the store once a day (economy.js
+//   baseDaily); the jobs that work every hour (construction, crafting, gear repairs) stop for them (meals.js), the
+//   jobs with set hours have no meal in them.
 // stallDaily(state) (world.js, after the bases' day): base.stall[job] = the day a job here was first found with nobody
 //   on it able to work (row.why), cleared when it can work again; the alert (ui/activity.js stallAlerts) comes at 2 days.
 import { atBase, baseById, factionById, hourOfDay, survivorById, day, skill } from "./world.js";
 import { SUPPLIES, GEAR, SKILL_NAMES } from "./data.js";
 import { ROLES, scavLeft, SCAV_FLOOR, scavengeOutput } from "./economy.js";
 import { WORK_TYPES, isManaged, healthRest } from "./work.js";
-import { BUILDINGS, stations, stationStatus, buildRate, gatherStalled, underAttack } from "./buildings.js";
+import { BUILDINGS, stations, stationStatus, buildRate, gatherStalled, underAttack, onUpkeep } from "./buildings.js";
 import { CRAFTS, craftQueue, craftJobStatus, craftName, craftRate } from "./crafting.js";
 import { CROPS, farmOf, farmersWanted, nextHarvests } from "./farming.js";
 import { WOOD, woodWorkWhy, woodTime, chopCrew, isChopTool, baseWoodTiles, seasonWood, woodCrowd, woodNeed } from "./woodcutting.js";
@@ -53,17 +53,19 @@ import { MISSIONS, tileLabel, partyTile } from "./parties.js";
 import { orderStatus } from "./orders.js";
 import { fixtures, fixtureName } from "./breakdowns.js";
 import { outputDays } from "./output.js";
+import { MEALS, MEAL_WORK_SHARE } from "./meals.js";
 
 // Icons by job, and by kind for everything that is not a job.
 export const JOB_ICONS = { wood: "🪓", farm: "🌱", forage: "🍄", hunt: "🏹", fish: "🎣", build: "🔨", craft: "🧰", operate: "⚙️", medic: "✚", trainee: "✚", teach: "🎓", read: "📚", scavenge: "🔍", guard: "🛡️", rest: "☕" };
 export const KIND_ICONS = { sleep: "💤", guard: "🛡️", hurt: "🩹", free: "☕", idle: "⏸", stalled: "⚠️", off: "🕓", away: "🚶", captive: "⛓️", eat: "🍲" };
-// Mealtimes (the hour each starts; an hour each). Hunters and fishers are out at dawn (05–07), so they eat after.
-export const MEALS = { breakfast: 6, lateBreakfast: 8, dinner: 20 };
+// Mealtimes (meals.js: the hour each starts; an hour each). Hunters and fishers are out at dawn (05–07), so they eat after.
+export { MEALS };
 export function mealAt(job, h) {
   const b = job === "hunt" || job === "fish" ? MEALS.lateBreakfast : MEALS.breakfast;
   return h === b ? "breakfast" : h === MEALS.dinner ? "dinner" : null;
 }
 export const STALL_ALERT_DAYS = 2;
+const UPKEEP_WORTH = 20; // wear on a building that makes a builder's upkeep worth a day (breakdowns.js: they mend any wear)
 const MIN_WORK = 0.35; // the daily jobs skip anyone below this work factor (woodDaily, foragingDaily, huntingDaily)
 const r1 = (v) => Math.round((v || 0) * 10) / 10;
 const n0 = (v) => Math.round(v || 0);
@@ -92,7 +94,7 @@ export function describeActivity(state, s, h = hourOfDay(state)) {
   if (ws) return act("guard", `On watch (${ws.name})`, "Their shift on the base's watch roster (Defence tab).", "guard");
   const meal = mealAt(s.role, h);
   if (meal && s.role !== "guard" && !(t && (t.t === "sleep" || t.t === "guard")) && !sleepHour(state, s, h) && !sleepingIn(state, base, s, h)) {
-    if (edibleFood(base) > 0 || (base.stock.food || 0) > 0) return act("eat", `Eating ${meal}`, `${meal === "breakfast" ? "Breakfast" : "Dinner"} at ${base.name}. The day's food comes out of the store once a day; a meal takes no time from the day's work.`, s.role);
+    if (edibleFood(base) > 0 || (base.stock.food || 0) > 0) return act("eat", `Eating ${meal}`, `${meal === "breakfast" ? "Breakfast" : "Dinner"} at ${base.name}. The day's food comes out of the store once a day; building and crafting stop for the hour.`, s.role);
     return act("eat", "Mealtime – nothing to eat", `${base.name} is out of food.`, s.role, "🍽️");
   }
   if (t) {
@@ -152,7 +154,10 @@ function jobActivity(state, base, s, job, h) {
         const fx = fixtures(base).find((f) => String(f.id) === String(rep.fx));
         return act("work", `Repairing the ${fx ? fixtureName(fx).toLowerCase() : "building"} (${pct(rep.done / Math.max(1, rep.hours))})`, "", job, "🔧");
       }
-      if (!base.construction.length) return act("stalled", "Builder – nothing to build", "The construction queue is empty: queue a building (Construction tab) or give them another job.", job);
+      // Builders with nothing to build mend the worn buildings (breakdowns.js upkeep); kept on upkeep, always.
+      const worn = fixtures(base).filter((f) => !f.broken && (f.wear || 0) >= UPKEEP_WORTH).length;
+      if (worn && (!base.construction.length || (s.upkeep && onUpkeep(state, base, s)))) return act("work", `Upkeep on worn buildings (${worn})`, "Mending wear before things break (Repairs tab).", job, "🔧");
+      if (!base.construction.length) return act("stalled", "Builder – nothing to build", "The construction queue is empty and nothing is worn: queue a building (Construction tab) or give them another job.", job);
       if (underAttack(state, base)) return act("stalled", "Building stopped – on alert", "Nobody builds while the base is on alert or under siege.", job);
       const j = base.construction.find((c) => !gatherStalled(c));
       if (!j) return act("stalled", "Builder – waiting for materials", "The queued builds wait for their materials to be gathered or brought in.", job);
@@ -344,7 +349,7 @@ function jobProgress(state, base, job, list, h) {
     if (j && !underAttack(state, base)) {
       const rate = buildRate(state, base);
       const left = Math.max(0, j.hours - j.progress);
-      out.progress = { frac: j.progress / Math.max(1, j.hours), text: `${BUILDINGS[j.type] ? BUILDINGS[j.type].name : j.type}: ${n0(j.progress)} of ${n0(j.hours)} work-hours${rate > 0 ? ` · ~${Math.ceil(left / rate)} h left` : ""}${base.construction.length > 1 ? ` · ${base.construction.length - 1} more queued` : ""}` };
+      out.progress = { frac: j.progress / Math.max(1, j.hours), text: `${BUILDINGS[j.type] ? BUILDINGS[j.type].name : j.type}: ${n0(j.progress)} of ${n0(j.hours)} work-hours${rate > 0 ? ` · ~${Math.ceil(left / (rate * MEAL_WORK_SHARE))} h left` : ""}${base.construction.length > 1 ? ` · ${base.construction.length - 1} more queued` : ""}` };
     } else if (rep) {
       const fx = fixtures(base).find((f) => String(f.id) === String(rep.fx));
       out.progress = { frac: rep.done / Math.max(1, rep.hours), text: `Repairing the ${fx ? fixtureName(fx).toLowerCase() : "building"}: ${n0(rep.done)} of ${rep.hours} work-hours` };
@@ -353,7 +358,7 @@ function jobProgress(state, base, job, list, h) {
     const j = craftQueue(base).find((x) => !craftJobStatus(state, base, x));
     if (j && CRAFTS[j.recipe]) {
       const rate = craftRate(state, base, j.recipe);
-      out.progress = { frac: j.progress / Math.max(0.1, j.hours), text: `${craftName(j.recipe)}: ${pct(j.progress / Math.max(0.1, j.hours))}${rate > 0 ? ` · ~${Math.ceil(Math.max(0, j.hours - j.progress) / rate)} h left` : ""}${craftQueue(base).length > 1 ? ` · ${craftQueue(base).length - 1} more queued` : ""}` };
+      out.progress = { frac: j.progress / Math.max(0.1, j.hours), text: `${craftName(j.recipe)}: ${pct(j.progress / Math.max(0.1, j.hours))}${rate > 0 ? ` · ~${Math.ceil(Math.max(0, j.hours - j.progress) / (rate * MEAL_WORK_SHARE))} h left` : ""}${craftQueue(base).length > 1 ? ` · ${craftQueue(base).length - 1} more queued` : ""}` };
     }
   } else if (job === "operate") {
     const sts = stations(base).map((st) => ({ st, status: stationStatus(state, base, st) })).filter((x) => x.status.op && list.includes(x.status.op));
@@ -460,4 +465,12 @@ export function stalledJobs(state) {
     for (const r of baseWork(state, b)) if (r.why && r.stalledDays >= STALL_ALERT_DAYS) out.push({ base: b, job: r.job, name: r.name, days: r.stalledDays, why: r.why, people: r.people.map((x) => x.s) });
   }
   return out;
+}
+// Could this person do this job here (at its working hour)? The job's activity: kind "stalled" when it cannot run.
+// station: for "operate", the station to try. Nothing is changed (the role is put back).
+export function jobCheck(state, base, s, job, station = null) {
+  const was = [s.role, s.station];
+  s.role = job;
+  if (job === "operate") s.station = station;
+  try { return jobActivity(state, base, s, job, WORK_HOUR[job] ?? 12); } finally { [s.role, s.station] = was; }
 }

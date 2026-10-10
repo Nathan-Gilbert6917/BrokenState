@@ -8,15 +8,20 @@
 // - Health, the walls, away on a team; people on work priorities (sleep, idle).
 // - The People tab (cards and compact rows) and the base Overview show it; the find box finds "chopping".
 // - Saves: base.output survives a save and load; an older save without it reads as nothing recorded; 7 days kept.
-// - Mealtimes: breakfast 06:00 (hunters 08:00) and dinner 20:00 show as Eating, outside the jobs' hours; nothing eaten
-//   or made changes (a day's output with and without looking is the same).
+// - Mealtimes: breakfast 06:00 (hunters 08:00) and dinner 20:00 show as Eating, outside the daily jobs' hours; asking
+//   what everyone does changes nothing (a day's output with and without looking is the same).
 // - The Idle list (by the job, not the clock), the People tab's Idle filter and badge, the Bases card's N of M
 //   working, the stalled-job alert after 2 days (gone when the job can work again).
 // - Teaching, reading and the medic's healing are counted a day; their rows get bars; the 7-day sparkline.
+// - Assign all idle (idlework.js planIdle: what the base needs, a job they can do there; the preview, the jobs), the
+//   Bases tab's Idle drop-downs; the governor and a base leader move people off a job stalled since a day (07:00, a
+//   log line, held for the day against the hourly plan).
+// - Meals cost the all-day jobs an hour each: construction and crafting work 22 of 24 hours.
 import { createWorld, tickHour, hub, atBase, hourOfDay, day } from "../src/sim/world.js";
 import { describeActivity, baseWork, lastOutput, amountText, idlePeople, workCount, stalledJobs, outputSeries, workingActivity, mealAt, STALL_ALERT_DAYS } from "../src/sim/activity.js";
 import { noteOutput, outputDays, workDay } from "../src/sim/output.js";
 import * as Wd from "../src/sim/woodcutting.js";
+import * as JC from "../src/sim/activity.js";
 import { newItem } from "../src/sim/inventory.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { workState, assignRole } from "../src/sim/work.js";
@@ -24,6 +29,13 @@ import { saveToString, loadFromString } from "../src/sim/save.js";
 import { renderLeft, renderModal } from "../src/ui/ui.js";
 import { workNowPanel, activityChip, togglePeopleIdle, peopleIdleOn, workChip } from "../src/ui/activity.js";
 import { computeAlerts } from "../src/ui/alerts.js";
+import { planIdle, applyIdlePlan, leaderIdleHour, baseNeeds, IDLE_HOUR } from "../src/sim/idlework.js";
+import { assignIdlePreview } from "../src/ui/activity.js";
+import { setAutopilot } from "../src/sim/autopilot.js";
+import { setSteward } from "../src/sim/steward.js";
+import { buildRate } from "../src/sim/buildings.js";
+import { MEAL_WORK_SHARE, isMealHour } from "../src/sim/meals.js";
+import { SCAV_FLOOR } from "../src/sim/economy.js";
 import { setPeopleCompact } from "../src/ui/panelfold.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -49,6 +61,7 @@ function woodWorld() {
   }
   throw new Error("no seed with trees around the hub");
 }
+const jobCheckOk = (st, b, p) => describeActivity.length >= 0 && JC.jobCheck(st, b, p.s, p.job, p.station).kind !== "stalled";
 const tickTo = (state, h) => { let n = 0; while (hourOfDay(state) !== h && n++ < 48) tickHour(state); };
 const freshUi = (extra = {}) => ({ started: true, speed: 0, tab: "people", selected: -1, survivor: null, baseView: null, expedition: null, diary: null, roster: null, help: false, ...extra });
 
@@ -194,7 +207,7 @@ section("Saves: the output counter survives; an old save has none");
 }
 
 // ======================================================================
-section("Meals change nothing a base makes or eats");
+section("Asking what everyone does changes nothing");
 {
   const run = (look) => {
     const st = woodWorld();
@@ -282,6 +295,90 @@ section("Teaching, reading and the medic's healing: counted a day, with bars");
   check(rr && rr.progress && /of \d+ h/.test(rr.progress.text), `read: ${rr && rr.progress && rr.progress.text}`);
   const html = workNowPanel(st, b);
   check(/wn-spark/.test(html) && /<polyline/.test(html) && !BAD.test(html), "the sparklines are drawn");
+}
+
+// ======================================================================
+section("Assign all idle: what the base needs, a job they can do there");
+{
+  const st = woodWorld();
+  const b = hub(st);
+  const ppl = atBase(st, b.id);
+  for (const s of ppl) { s.pinned = true; s.role = "farm"; s.inBed = false; s.conditions = []; s.health = 100; }
+  const [x, y] = ppl;
+  x.role = "hunt"; x.pinned = false; // no hunting cabin: stalled
+  y.role = "build"; y.pinned = false; b.construction = []; b.repairs = [];
+  for (const f of (b.buildings || [])) if (f.wear) f.wear = 0;
+  tickTo(st, 10);
+  b.construction = [{ id: 777001, type: "bunkhouse", hours: 40, progress: 0 }];
+  const needs = baseNeeds(st, b);
+  check(needs.some((n) => n.job === "build"), `the base's needs: ${needs.map((n) => `${n.job} ${n.score}`).join(", ")}`);
+  const plan = planIdle(st, b);
+  note(`plan: ${plan.map((p) => `${p.s.name}: ${p.from} → ${p.job} (${p.why})`).join("; ")}`);
+  check(plan.some((p) => p.s === x) && plan.every((p) => p.job !== p.from && p.why), "the stalled hunter gets a job the base needs, with why");
+  check(plan.every((p) => jobCheckOk(st, b, p)), "every job in the plan can run for them");
+  const pv = assignIdlePreview(st, b);
+  check(/→/.test(pv.text) && pv.plan.length === plan.length, `the preview: ${pv.text}`);
+  const ov = renderModal(st, freshUi({ baseView: { id: b.id, tab: "overview" } }));
+  check(/data-action="idle-assign"/.test(ov), "the Work now panel has Assign all idle");
+  const bases = renderLeft(st, freshUi({ tab: "bases" }));
+  check(/Idle colonists/.test(bases) && /data-fold="idle:/.test(bases) && /data-action="idle-assign"/.test(bases) && new RegExp(`data-action="role" data-id="${x.id}"`).test(bases), "the Bases tab: a drop-down per base with its idle, a role picker and Assign all");
+  const msg = applyIdlePlan(st, b, plan);
+  check(x.role === plan.find((p) => p.s === x).job && !idlePeople(st, b).some((q) => q.s === x), `assigned (${msg})`);
+}
+
+// ======================================================================
+section("The governor and a base leader move people off a stalled job once a day");
+for (const mode of ["governor", "leader"]) {
+  const st = woodWorld();
+  const b = hub(st);
+  const ppl = atBase(st, b.id);
+  for (const s of ppl) { s.inBed = false; s.conditions = []; s.health = 100; }
+  if (mode === "governor") setAutopilot(st, true); else setSteward(st, b, true);
+  const leaderId = b.steward && b.steward.leaderId;
+  const x = ppl.find((s) => s.id !== leaderId);
+  x.pinned = false; x.role = "scavenge"; x.station = null;
+  b.scavLeft = SCAV_FLOOR; // the ruins around are picked clean: stalled
+  b.construction = [{ id: 777002, type: "bunkhouse", hours: 400, progress: 0 }];
+  const d = day(st);
+  b.stall = { scavenge: d - 1 };
+  st.hour = (d - 1) * 24 + IDLE_HOUR;
+  leaderIdleHour(st);
+  const lines = st.log.map((l) => l.text || l.msg || String(l)).filter((t) => /moved .* from Scavenge/.test(t));
+  check(x.role !== "scavenge" && x.govIdle && lines.length === 1, `${mode}: moved off the stalled job: "${lines[0] || "none"}"`);
+  const role = x.role;
+  for (let i = 0; i < 6; i++) tickHour(st);
+  check(x.role === role, `${mode}: held there against the hourly plan (${x.role})`);
+  st.hour = (d) * 24 + IDLE_HOUR - 1;
+  delete x.govIdle;
+  leaderIdleHour(st);
+  check(st.log.map((l) => l.text || l.msg || String(l)).filter((t) => /moved .* from Scavenge/.test(t)).length === 1, `${mode}: nothing at other hours`);
+}
+{
+  const st = woodWorld();
+  const b = hub(st);
+  const x = atBase(st, b.id)[0];
+  x.role = "scavenge"; b.scavLeft = SCAV_FLOOR; b.stall = { scavenge: day(st) - 1 };
+  st.hour = (day(st) - 1) * 24 + IDLE_HOUR;
+  leaderIdleHour(st);
+  check(x.role === "scavenge" && !x.govIdle, "a base you run yourself: nobody is moved");
+}
+
+// ======================================================================
+section("Meals cost the all-day jobs an hour each");
+{
+  const st = woodWorld();
+  const b = hub(st);
+  const ppl = atBase(st, b.id);
+  for (const s of ppl) { s.pinned = true; s.role = "farm"; s.inBed = false; s.conditions = []; s.health = 100; }
+  ppl[0].role = "build"; ppl[1].role = "build";
+  b.construction = [{ id: 777003, type: "bunkhouse", hours: 1e6, progress: 0 }];
+  const rate = buildRate(st, b);
+  let expect = 0;
+  for (let i = 0; i < 24; i++) { tickHour(st); }
+  const got = b.construction[0].progress;
+  check(isMealHour(6) && isMealHour(20) && !isMealHour(12) && Math.abs(MEAL_WORK_SHARE - 22 / 24) < 1e-9, "the meal hours: 06:00 and 20:00");
+  check(Math.abs(got - rate * 22) < rate * 0.6, `a day of building: ${Math.round(got * 10) / 10} work-hours, 22 hours at ${Math.round(rate * 100) / 100} (${Math.round(rate * 24 * 10) / 10} without the meals)`);
+  void expect;
 }
 
 console.log(`\n${passed} passed, ${fails} failed`);

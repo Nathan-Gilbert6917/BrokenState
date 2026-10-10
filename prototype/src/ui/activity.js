@@ -5,6 +5,8 @@
 // Small functions with their own classes (act-*, wn-*, idle-*) so the base window's look can change around them.
 import { describeActivity, workingActivity, baseWork, idlePeople, workCount, stalledJobs, outputSeries, amountText, STALL_ALERT_DAYS } from "../sim/activity.js";
 import { roleSelect } from "./work.js"; // the role drop-down (work roles and fixed jobs): put someone idle to work
+import { planIdle, planText } from "../sim/idlework.js"; // "Assign all idle": each to what the base needs most
+import { fold } from "./panelfold.js"; // the Bases tab's per-base Idle drop-downs (open state kept)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -73,20 +75,41 @@ function wnRow(state, base, row) {
     ${(row.why && !row.last.length) || ["rest", "guard"].includes(row.job) ? "" : wnLast(state, base, row)}
   </div>`;
 }
-// The Idle list: who has nothing to do here, why, and a role drop-down to put them to work.
+// The Idle list: who has nothing to do here, why, and a role drop-down to put them to work; "Assign all idle".
+function idleRows(state, list) {
+  return list.map((x) => `<div class="idle-row"><span class="idle-who"><a class="link" data-action="survivor" data-id="${x.s.id}">${esc(x.s.name)}</a><span class="small warn idle-why"${tip(x.act.why)}>${esc(x.why)}</span></span>${roleSelect(state, x.s)}</div>`).join("");
+}
+export function assignIdleButton(state, base) {
+  const plan = planIdle(state, base);
+  return `<button class="mini primary idle-assign" data-action="idle-assign" data-base="${base.id}"${plan.length ? "" : " disabled"}${tip(plan.length ? `Each to the job ${base.name} needs most (asks first): ${planText(plan)}` : "Nothing here has room for them now: pick their jobs by hand.")}>Assign all idle</button>`;
+}
 export function idleList(state, base) {
   const list = idlePeople(state, base);
   if (!list.length) return "";
-  return `<div class="idle-list"><div class="idle-head"><b>⏸ Idle</b> <span class="idle-badge">${list.length}</span> <span class="small muted">nothing to do: pick them a job</span></div>
-    ${list.map((x) => `<div class="idle-row"><span class="idle-who"><a class="link" data-action="survivor" data-id="${x.s.id}">${esc(x.s.name)}</a><span class="small warn idle-why"${tip(x.act.why)}>${esc(x.why)}</span></span>${roleSelect(state, x.s)}</div>`).join("")}
+  return `<div class="idle-list"><div class="idle-head spread"><span><b>⏸ Idle</b> <span class="idle-badge">${list.length}</span> <span class="small muted">nothing to do: pick them a job</span></span>${assignIdleButton(state, base)}</div>
+    ${idleRows(state, list)}
   </div>`;
+}
+// The Bases tab: every base's idle colonists, one drop-down a base with its count.
+export function idleBasesSection(state) {
+  const by = state.bases.map((b) => [b, idlePeople(state, b)]).filter(([, l]) => l.length);
+  if (!by.length) return "";
+  const n = by.reduce((a, [, l]) => a + l.length, 0);
+  return `<div class="card idle-bases"><div class="idle-head"><b>⏸ Idle colonists</b> <span class="idle-badge">${n}</span> <span class="small muted">no work at their base: pick them a job</span></div>
+    ${by.map(([b, l]) => fold(`idle:${b.id}`, `<span class="idle-sum"><b>${esc(b.name)}</b> <span class="idle-badge">${l.length}</span> <span class="small muted">${esc(l.map((x) => first(x.s)).join(", "))}</span></span>`, `${idleRows(state, l)}<div class="row idle-foot">${assignIdleButton(state, b)}</div>`, { cls: "idle-fold", tipText: `Show or hide ${b.name}'s idle colonists` })).join("")}
+  </div>`;
+}
+// The confirmation's text: who goes where and why.
+export function assignIdlePreview(state, base) {
+  const plan = planIdle(state, base);
+  return { plan, text: plan.map((p) => `${p.s.name} → ${p.job === "operate" ? "Operate" : planText([p]).split(" → ")[1]} (${p.why})`).join("; ") };
 }
 
 // The base's "Work now" panel (Overview tab).
 export function workNowPanel(state, base) {
   const rows = baseWork(state, base);
   if (!rows.length) return "";
-  return `<div class="worknow"><h3${tip("Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days (hover the sparkline for 7 days). Daily jobs (wood, foraging, hunting, fishing, the workshops, scavenging, teaching, reading) bring their goods in at midnight. Breakfast (06:00, hunters and fishers 08:00) and dinner (20:00) take no time from the work.")}>Work now</h3>${idleList(state, base)}${rows.map((r) => wnRow(state, base, r)).join("")}</div>`;
+  return `<div class="worknow"><h3${tip("Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days (hover the sparkline for 7 days). Daily jobs (wood, foraging, hunting, fishing, the workshops, scavenging, teaching, reading) bring their goods in at midnight. Breakfast (06:00, hunters and fishers 08:00) and dinner (20:00): building and crafting stop for them; the jobs with set hours have no meal in them.")}>Work now</h3>${idleList(state, base)}${rows.map((r) => wnRow(state, base, r)).join("")}</div>`;
 }
 
 // ---------- the Bases card and the alerts ----------

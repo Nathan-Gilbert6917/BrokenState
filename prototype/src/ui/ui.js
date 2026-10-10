@@ -114,7 +114,7 @@ import { settingsModal } from "./settings.js";
 import { swatch } from "./help.js";
 import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
-import { activityChip, workNowPanel, idleNote, workChip, peopleIdleOn, peopleIdleButton, idleSet } from "./activity.js";
+import { activityChip, workNowPanel, idleNote, workChip, peopleIdleOn, peopleIdleButton, idleSet, idleBasesSection } from "./activity.js";
 import { describeActivity } from "../sim/activity.js"; // the find box also looks through what they are doing ("asleep", "chopping") // what each person is doing now; the base's Work now panel (sim/activity.js)
 import { pickBar, pickCard, ownBaseCard, groupBaseCard } from "./mapselect.js"; // teams, parties and bands selected on the map; a base's card
 import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
@@ -241,7 +241,7 @@ function foodPerDay(state, b) {
 const foodCell = (f) => `<div class="${f.total < 0 ? "danger" : "good"}"${tip(f.text)}>${f.total >= 0 ? "+" : ""}${n1(f.total)}</div>`;
 
 function renderBases(state) {
-  return firstHubCard(state) + state.bases.map((b) => {
+  return idleBasesSection(state) + firstHubCard(state) + state.bases.map((b) => {
     const people = atBase(state, b.id);
     const fc = foodPerDay(state, b);
     const job = b.construction[0];

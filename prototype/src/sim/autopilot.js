@@ -1921,7 +1921,7 @@ export function farmCrewLimits(state, base, foodDays, heads) {
   const comfy = foodDays >= target && wp.short <= 0 && wp.end >= wp.margin * FARM_AP.winterMargin * (P && P.homeFood ? 1.5 : 1);
   return { hungry: foodDays < target || winterShort(state, base) > 0, comfy, cap: comfy ? Math.max(1, Math.ceil(heads * FARM_AP.share)) : Infinity };
 }
-const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
+export const ROLE_AREA = { hunt: "food", fish: "food", forage: "food", farm: "food", wood: "production", medic: "medical", trainee: "medical", guard: "defence", operate: "production", craft: "production", build: "building", rest: "roles", scavenge: "roles", teach: "roles", read: "roles" };
 
 function planRoles(state, base, areas = ALL_AREAS) {
   const people = atBase(state, base.id);
@@ -1937,6 +1937,8 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // its test switch governor.priorityRoles; otherwise it sets every role, as before).
   const byPriority = (s) => (!state.autopilot || g.priorityRoles) && isManaged(state, s);
   for (const s of people) if (s.pinned || !areas[ROLE_AREA[s.role]] || byPriority(s)) give(s, s.role, s.role === "operate" ? s.station : null);
+  // ...and anyone the leader or the governor moved off a stalled job this morning (idlework.js leaderIdleHour), for the day.
+  for (const s of [...free]) if (s.govIdle && state.hour < s.govIdle.until && !s.inBed && areas[ROLE_AREA[s.govIdle.role]]) give(s, s.govIdle.role, s.govIdle.station);
   const ranked = (role, score, filter = () => true) => [...free].filter(filter)
     .sort((a, b) => score(b) + (b.role === role ? STICKY : 0) - (score(a) + (a.role === role ? STICKY : 0)));
   const st = base.stock;
