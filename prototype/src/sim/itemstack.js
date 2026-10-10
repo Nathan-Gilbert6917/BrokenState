@@ -27,7 +27,7 @@ export function stackMax(key) {
 }
 export const isStackable = (key) => stackMax(key) > 1;
 /** @param {any} it how many there are in it (consumables; 1 for anything else) */
-export const countOf = (it) => (it && num(it.n) > 1 ? Math.floor(it.n) : 1);
+export const countOf = (it) => (it && num(it.n) > 1 ? Math.floor(it.n) : it && "n" in it && !(num(it.n) > 0) ? 0 : 1); // n 0: all of it merged away (spent)
 /** @param {any} it an item of a round key (a box, a stack of boxes, loose rounds) */
 export const isRoundItem = (it) => !!(it && ROUND_SUPPLIES[it.key] && GEAR[it.key] && GEAR[it.key].count);
 /** @param {any} it a bulk ammo container */

@@ -797,7 +797,7 @@ export function moveItem(state, fromStr, toStr) {
     const err = roomCheck(store, item, gained, lostFrom);
     if (err) return err;
     // A stack of the same thing there takes it (itemstack.js), what is left goes in as it is.
-    for (const it of B.list) if (it && canStack(it, item)) mergeInto(it, item);
+    for (const it of B.list) { if (isSpent(item)) break; if (it && canStack(it, item)) mergeInto(it, item); }
     A.remove(item);
     if (!isSpent(item)) B.put(item);
     taken(state, from, item);
