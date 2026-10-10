@@ -53,7 +53,7 @@ import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive, RA
 import { attitude, changeGoodwill, strength, baseDefense } from "./factions.js";
 import { tileLabel, partyTile } from "./parties.js";
 import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork, canListen, relaySpotFor, GROUP_REACH, RELAY_RANGE } from "./radio.js";
-import { available, need } from "./trade.js";
+import { available, need, dealRoundKey } from "./trade.js";
 import { hivesSecured, hiveStats } from "./hives.js";
 import { count } from "./buildings.js";
 import { worldScale } from "./worldsize.js";
@@ -65,6 +65,7 @@ import { jobsDoneFor, activeJobs, makeJob, offerCard as jobOfferCard, autoJobsDa
 import { eraProgress, ERAS, isLate } from "./eras.js";
 import { playerClaims, claimedLand } from "./claims.js";
 import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
+import { payRoundsOf, suppliesText } from "./ammo.js"; // the council's "ammo" sent as rounds by calibre
 import { volunteerGroupsAt, councilWar, councilVolCard } from "./volunteers.js"; // volunteers with your team: no double count at a hive or an assault
 import { blocOf, blocById, blocMembers, blocTitle, blocJoinsCoalition, blocCarrier, blocVoteWait } from "./blocs.js"; // AI blocs vote on joining together
 import { atWarWithYou } from "./playerwars.js";
@@ -341,17 +342,21 @@ export function councilCard(state, kind, ms = allianceMembers(state)) {
     const { f, k } = rng.pick(opts);
     const qty = { food: 30, meds: 8, ammo: 60, fuel: 10 }[k];
     const others = ms.filter((m) => m !== f);
+    // Rounds go by calibre (2026-10-09, user request): the rounds your guns need least (ammo.js payRoundsOf), named.
+    const sendOf = (st) => (k === "ammo" ? payRoundsOf(st, hub(st), qty) : { [k]: qty });
+    const pre = sendOf(state), what = k === "ammo" ? (Object.keys(pre).length ? suppliesText(pre) : `${qty} rounds`) : `${qty} ${k}`;
     return {
-      title: `The council: ${f.name} needs ${k}`, council: "supplies",
-      text: `${A.name} meets for the season. ${f.name} is short of ${k} and the council asks you to send ${qty} ${k} from ${h.name}.`,
+      title: `The council: ${f.name} needs ${k === "ammo" ? "rounds" : k}`, council: "supplies",
+      text: `${A.name} meets for the season. ${f.name} is short of ${k === "ammo" ? "ammunition" : k} and the council asks you to send ${what} from ${h.name}.`,
       choices: [
-        { label: `Send ${qty} ${k}`, hint: `${h.name} has ${Math.floor(supplyAmt(h.stock, k))}. +6 goodwill with ${f.name}, +3 with the other members`, disabled: (st) => supplyAmt(hub(st).stock, k) < qty,
+        { label: `Send ${what}`, hint: `${h.name} has ${Math.floor(supplyAmt(h.stock, k))}. +6 goodwill with ${f.name}, +3 with the other members`, disabled: (st) => supplyAmt(hub(st).stock, k) < qty,
           ai: (st) => (supplyAmt(hub(st).stock, k) >= qty * 3 ? 4 : -1), resolve: (st) => {
             if (supplyAmt(hub(st).stock, k) < qty) return `${h.name} no longer has ${qty} ${k}.`;
-            useSupply(hub(st).stock, k, qty); f.stock[k] = (f.stock[k] || 0) + qty; // rounds.js: "ammo" as any rounds
+            const sent = sendOf(st); // rounds: by calibre, out of the stock by key (their store keeps one ammo count: settleAll folds them)
+            for (const [kk, q] of Object.entries(sent)) { useSupply(hub(st).stock, kk, q); f.stock[kk] = (f.stock[kk] || 0) + q; }
             changeGoodwill(st, f, 6, "the council's request"); everyone(st, others, 3, "the council's request");
-            A.stats.granted++; A.history.unshift({ day: day(st), text: `You sent ${qty} ${k} to ${f.name}.` });
-            return `${qty} ${k} sent to ${f.name}.`;
+            A.stats.granted++; A.history.unshift({ day: day(st), text: `You sent ${suppliesText(sent)} to ${f.name}.` });
+            return `${suppliesText(sent)} sent to ${f.name}.`;
           } },
         { label: "Refuse", hint: "−4 goodwill with every member", ai: () => 0, resolve: (st) => { everyone(st, ms, -4, "you refused the council"); A.stats.refused++; A.history.unshift({ day: day(st), text: `You refused to send ${k} to ${f.name}.` }); return "You refuse. The council is not pleased."; } },
       ],
@@ -557,11 +562,12 @@ export function autoDiplomacyDaily(state, style) {
   if (picked) out.push(picked);
   for (const f of state.factions) if (f.alive && !isMember(state, f) && !inviteProblem(state, f)) out.push(inviteToAlliance(state, f));
   const sold = autoWarTrade(state, style, (st, f, want, payQty) => {
-    const q = dealQuote(st, f, { wantKey: want, wantQty: 1, payKey: "ammo", payQty });
+    const pk = dealRoundKey(st, f, hub(st), payQty, false); // rounds by calibre: the ones the hub's guns need least
+    const q = dealQuote(st, f, { wantKey: want, wantQty: 1, payKey: pk, payQty });
     const wantQty = Math.min(q.maxWant || 0, 20);
     if (wantQty < 2) return "";
-    const r = radioDeal(st, f, { wantKey: want, wantQty, payKey: "ammo", payQty });
-    return r.ok ? `Sold ${payQty} ammo to ${f.name} (at war) for ${wantQty} ${want}.` : "";
+    const r = radioDeal(st, f, { wantKey: want, wantQty, payKey: pk, payQty });
+    return r.ok ? `Sold ${suppliesText({ [pk]: payQty })} to ${f.name} (at war) for ${wantQty} ${want}.` : "";
   });
   if (sold) out.push(sold);
   return out.join(" ");

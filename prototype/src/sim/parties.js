@@ -64,7 +64,7 @@ import { thinIceStep } from "./rivers.js"; // frozen rivers: thin ice early and 
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
 import { totalRounds, spendAmmo, ROUND_KEYS, GENERIC_KEYS } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
-import { packRounds, addRecord, drawTeamShots, sortFind } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
+import { packRounds, addRecord, drawTeamShots, sortFind, suppliesText, findRounds, kindTheme, roundsText } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
 import { packLauncherRounds } from "./launchers.js"; // the rounds for the launchers the crew carries (section 13)
 import { packMags } from "./carrykit.js"; // magazines as items (section 15): the spares go along
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
@@ -1631,7 +1631,7 @@ function investigate(state, p) {
     sortFind(loot, h.type === "cache" ? "guns" : "raider", key); // ammo.js: the rounds by calibre
     for (const [k, q] of Object.entries(loot)) {
       const took = addCargo(state, p, k, q);
-      if (took) got.push(`${took} ${k}`);
+      if (took) got.push(suppliesText({ [k]: took })); // rounds named by calibre
     }
     let extra = "";
     if (h.type === "camp") {
@@ -2215,8 +2215,9 @@ function finishSiege(state, p) {
         changeGoodwill(state, f, held ? 20 : 8, held ? "you helped them hold" : "you fought beside them");
         if (held) {
           const reward = state.rng.chance(0.5) ? { key: "meds", qty: 6 } : { key: "ammo", qty: 60 };
-          h.cargo.supplies[reward.key] = (h.cargo.supplies[reward.key] || 0) + reward.qty;
-          log(state, `${f.name} thanks your squad with ${reward.qty} ${reward.key}.`, "good");
+          const gift = reward.key === "ammo" ? findRounds(kindTheme(f.type), reward.qty, "heldthanks", f.id, state.hour) : { [reward.key]: reward.qty }; // rounds by calibre: what their kind shoots (ammo.js)
+          for (const [k, q] of Object.entries(gift)) h.cargo.supplies[k] = (h.cargo.supplies[k] || 0) + q;
+          log(state, `${f.name} thanks your squad with ${reward.key === "ammo" ? roundsText(gift) : `${reward.qty} ${reward.key}`}.`, "good");
         }
       }
       if (state.parties.includes(h)) startReturn(state, h);

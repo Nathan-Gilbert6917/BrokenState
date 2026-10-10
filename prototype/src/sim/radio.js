@@ -58,7 +58,8 @@ import { teamKit } from "./fieldheat.js";
 import { sellPrice, buyPrice, available, need, maxBuyable, minSellable, proposePact, ensureWares } from "./trade.js";
 import { sendCaravan, caravanEnRoute, caravanSurplus } from "./caravans.js";
 import { tradeSpeech, gainXp, USE } from "./skills.js";
-import { marketOf } from "./trade.js";
+import { marketOf, dealRoundKey } from "./trade.js"; // a deal's rounds by calibre
+import { keyWord } from "./water.js"; // "9mm FMJ", "rounds"
 import { diplomacyDaily, knownAs } from "./diplomacy.js";
 import { listenDaily } from "./radiolisten.js"; // listening in on a network's traffic (Listen in)
 import { intelDaily, discipline, INTEL } from "./intel.js"; // the groups listen in on you: radio discipline, decoys
@@ -368,7 +369,15 @@ export function radioRequestCaravan(state, f) {
 }
 
 // What a deal { wantKey, wantQty, payKey, payQty } looks like to them (no random numbers; the UI shows it).
+// A deal's generic "ammo" made one round key (trade.js dealRoundKey): what you want, the round your guns want most of
+// what they can spare; what you pay, the round your hub's guns need least (2026-10-09, user request: rounds by calibre).
+function calQuote(state, f, d) {
+  if (!d || (d.wantKey !== "ammo" && d.payKey !== "ammo")) return d;
+  const h = hub(state), at = tradeBase(state, f) || h;
+  return { ...d, wantKey: d.wantKey === "ammo" ? dealRoundKey(state, f, at, Math.floor(Number(d.wantQty)) || 1, true) : d.wantKey, payKey: d.payKey === "ammo" ? dealRoundKey(state, f, h, Math.floor(Number(d.payQty)) || 1, false) : d.payKey };
+}
 export function dealQuote(state, f, d) {
+  d = calQuote(state, f, d);
   const out = { ok: false, reason: "", minPay: null, maxWant: null };
   const wantQty = Math.floor(Number(d.wantQty)), payQty = Math.floor(Number(d.payQty));
   if (!SUPPLIES[d.wantKey] || !SUPPLIES[d.payKey]) return { ...out, reason: "Pick what you want and what you pay with." };
@@ -382,10 +391,10 @@ export function dealQuote(state, f, d) {
   out.maxWant = maxBuyable(state, f, d.wantKey, speech, Math.max(0, pay - fee));
   const min = minSellable(state, f, d.payKey, speech, cost);
   out.minPay = Number.isFinite(min) ? min : null;
-  if (have < wantQty) return { ...out, reason: `They can spare only ${have} ${d.wantKey}.` };
-  if (pay + 1e-9 < cost) return { ...out, reason: `Not enough for them: they would want at least ${out.minPay ?? "more"} ${d.payKey}, or give at most ${out.maxWant} ${d.wantKey}.` };
+  if (have < wantQty) return { ...out, reason: `They can spare only ${have} ${keyWord(d.wantKey)}.` };
+  if (pay + 1e-9 < cost) return { ...out, reason: `Not enough for them: they would want at least ${out.minPay ?? "more"} ${keyWord(d.payKey)}, or give at most ${out.maxWant} ${keyWord(d.wantKey)}.` };
   const h = hub(state);
-  const short = supplyAmt(h.stock, d.payKey) < payQty ? ` The hub has only ${Math.floor(supplyAmt(h.stock, d.payKey))} ${d.payKey} right now: have it ready when they arrive.` : "";
+  const short = supplyAmt(h.stock, d.payKey) < payQty ? ` The hub has only ${Math.floor(supplyAmt(h.stock, d.payKey))} ${keyWord(d.payKey)} right now: have it ready when they arrive.` : "";
   return { ...out, ok: true, reason: `Fair for them.${short}` };
 }
 
@@ -393,6 +402,7 @@ export function radioDeal(state, f, d) {
   const why = refusal(state, f, true);
   if (why) return { ok: false, text: note(state, f, why) };
   if (caravanEnRoute(state, f)) return { ok: false, text: "Their caravan is already on its way or at your gates." };
+  d = calQuote(state, f, d);
   const q = dealQuote(state, f, d);
   if (!q.ok) return { ok: false, text: note(state, f, `${f.name}: no deal. ${q.reason}`) };
   const base = tradeBase(state, f);
@@ -405,7 +415,7 @@ export function radioDeal(state, f, d) {
   mark(state, f, "caravan");
   const h = hub(state);
   if (h) gainXp(state, atBase(state, h.id).sort((a, b) => skill(b, "speech") - skill(a, "speech") || a.id - b.id)[0], "speech", USE.radio); // skills.js
-  return { ok: true, caravan: c, text: note(state, f, `Deal: ${wantQty} ${d.wantKey} for ${payQty} ${d.payKey}. Their caravan sets out for ${base.name} (about ${c.eta}h).`) };
+  return { ok: true, caravan: c, text: note(state, f, `Deal: ${wantQty} ${keyWord(d.wantKey)} for ${payQty} ${keyWord(d.payKey)}. Their caravan sets out for ${base.name} (about ${c.eta}h).`) };
 }
 
 export function radioHelp(state, f) {
@@ -505,11 +515,11 @@ export function offerCard(state, f) {
   const spare = m.surplus.map((x) => x.key).filter((k) => available(f, k) >= supplyFew(k, 5));
   if (!spare.length) return null;
   const rng = state.rng;
-  const payKey = spare[0];
+  const payKey = spare[0] === "ammo" ? dealRoundKey(state, f, base, REF_QTY.ammo, true) : spare[0]; // rounds by calibre: the ones your guns want of what they can spare
   let deal, text;
   if (wants.length && rng.chance(0.5)) {
     // A request: they need something, paying with their surplus.
-    const k = wants[0];
+    const k = wants[0] === "ammo" ? dealRoundKey(state, f, base, REF_QTY.ammo, false) : wants[0]; // rounds by calibre: the ones your guns need least
     const qty = Math.max(3, Math.min(hubSpare(state, k), Math.ceil((REF_QTY[k] || 10) * rng.range(0.6, 1.2))));
     const value = qty * sellPrice(state, f, k, speech, qty);
     let pay = maxBuyable(state, f, payKey, speech, value);
@@ -520,17 +530,18 @@ export function offerCard(state, f) {
     if (pay > cap) { pay = cap; want = Math.min(qty, Math.floor((pay * buyPrice(state, f, payKey, speech, pay)) / sellPrice(state, f, k, speech, qty))); }
     if (pay < 1 || want < 1) return null;
     deal = { offer: { [k]: want }, ask: { [payKey]: pay } };
-    text = `"We need ${want} ${k}. We can pay ${pay} ${payKey}, delivered to ${base.name}."`;
+    text = `"We need ${want} ${keyWord(k)}. We can pay ${pay} ${keyWord(payKey)}, delivered to ${base.name}."`;
   } else {
     // An offer: their surplus for something you have.
     const qty = Math.max(5, Math.min(available(f, payKey), Math.ceil((REF_QTY[payKey] || 10) * rng.range(0.8, 1.5))));
     const cost = qty * buyPrice(state, f, payKey, speech, qty);
-    const k = keys.filter((x) => x !== payKey && hubSpare(state, x) > 0).sort((a, b) => need(f, b) - need(f, a))[0];
-    if (!k) return null;
+    const k0 = keys.filter((x) => x !== payKey && !(x === "ammo" && SUPPLIES[payKey] && SUPPLIES[payKey].round) && hubSpare(state, x) > 0).sort((a, b) => need(f, b) - need(f, a))[0];
+    if (!k0) return null;
+    const k = k0 === "ammo" ? dealRoundKey(state, f, base, REF_QTY.ammo, false) : k0; // rounds by calibre
     const want = minSellable(state, f, k, speech, cost);
     if (!Number.isFinite(want) || want < 1) return null;
     deal = { offer: { [k]: want }, ask: { [payKey]: qty } };
-    text = `"We have ${qty} ${payKey} to spare. We would take ${want} ${k} for it, delivered to ${base.name}."`;
+    text = `"We have ${qty} ${keyWord(payKey)} to spare. We would take ${want} ${keyWord(k)} for it, delivered to ${base.name}."`;
   }
   const [giveKey, giveQty] = Object.entries(deal.offer)[0];
   const [getKey, getQty] = Object.entries(deal.ask)[0];
@@ -546,19 +557,19 @@ export function offerCard(state, f) {
   return {
     title: `On the radio: ${f.name}`,
     radioFrom: f.id,
-    text: `${f.name} (${attitude(f).toLowerCase()}) call you. ${text} If you agree, their caravan brings the ${getKey} and the trade window opens when it arrives; it waits a day.`,
+    text: `${f.name} (${attitude(f).toLowerCase()}) call you. ${text} If you agree, their caravan brings the ${keyWord(getKey)} and the trade window opens when it arrives; it waits a day.`,
     choices: [
       {
-        label: `Agree: ${giveQty} ${giveKey} for ${getQty} ${getKey}`,
+        label: `Agree: ${giveQty} ${keyWord(giveKey)} for ${getQty} ${keyWord(getKey)}`,
         affordable: (st) => (hub(st).stock[giveKey] || 0) >= giveQty && !payoutBreaks(st, hub(st), { [giveKey]: giveQty }), // the autopilot agrees only then (and never out of the food and water reserve)
-        hint: `Have ${giveQty} ${giveKey} ready at ${base.name} when they arrive (the hub has ${Math.floor(hub(state).stock[giveKey] || 0)} now)`,
+        hint: `Have ${giveQty} ${keyWord(giveKey)} ready at ${base.name} when they arrive (the hub has ${Math.floor(hub(state).stock[giveKey] || 0)} now)`,
         resolve: (st) => {
           const why = refusal(st, f, true);
           if (why) return why;
           if (caravanEnRoute(st, f)) return "Their caravan is already on its way.";
           const c = sendCaravan(st, f, base, { goods: { supplies: { [getKey]: getQty }, gear: [] }, deal });
           if (!c) return `${f.name} cannot reach ${base.name} after all.`;
-          return note(st, f, `Deal: ${giveQty} ${giveKey} for ${getQty} ${getKey}. Their caravan sets out for ${base.name} (about ${c.eta}h).`);
+          return note(st, f, `Deal: ${giveQty} ${keyWord(giveKey)} for ${getQty} ${keyWord(getKey)}. Their caravan sets out for ${base.name} (about ${c.eta}h).`);
         },
       },
       { label: "No, thank you", hint: "Nothing changes", resolve: (st) => note(st, f, `You turned down ${f.name}'s offer.`) },
@@ -581,21 +592,21 @@ function bringCard(state, f, base, b, said) {
       if (why) return why;
       if (pendingDeal(st, f)) return `A radio deal with ${f.name} is already waiting.`;
       const d = bookDeal(st, f, base, { supplies: { [giveKey]: giveQty }, gear: [] }, { supplies: { [getKey]: qty }, gear: [] }, "them");
-      return note(st, f, `Agreed: your caravan brings ${giveQty} ${giveKey} to ${f.name} by day ${d.due} and comes back with ${qty} ${getKey}.`);
+      return note(st, f, `Agreed: your caravan brings ${giveQty} ${keyWord(giveKey)} to ${f.name} by day ${d.due} and comes back with ${qty} ${keyWord(getKey)}.`);
     },
   });
-  const choices = [agree(getQty, `Agree and send a caravan: ${giveQty} ${giveKey} for ${getQty} ${getKey}…`, `Their fee: ${extra} ${getKey}. Opens the trade caravan planner from ${base.name} with the ${giveKey} loaded (it has ${Math.floor(base.stock[giveKey] || 0)} now)`)];
+  const choices = [agree(getQty, `Agree and send a caravan: ${giveQty} ${keyWord(giveKey)} for ${getQty} ${keyWord(getKey)}…`, `Their fee: ${extra} ${keyWord(getKey)}. Opens the trade caravan planner from ${base.name} with the ${keyWord(giveKey)} loaded (it has ${Math.floor(base.stock[giveKey] || 0)} now)`)];
   if (more > 0) {
     // Set your own fee: ask for more for the trip. Yes: the deal at your fee and the planner; no: the call again, at their fee.
     const yes = agree(getQty + more, "", "");
     choices.push({
-      label: `Ask more for the trip: ${getQty + more} ${getKey} (fee ${extra + more})…`,
-      hint: `They may agree (they like you, or they need the ${giveKey}); if not, their offer stands`,
+      label: `Ask more for the trip: ${getQty + more} ${keyWord(getKey)} (fee ${extra + more})…`,
+      hint: `They may agree (they like you, or they need the ${keyWord(giveKey)}); if not, their offer stands`,
       uiAction: { type: "radioCaravan", factionId: f.id }, affordable: () => false,
       resolve: (st) => {
         if (counterOk(st, f, giveKey) && available(f, getKey) >= getQty + more) return `${f.name}: "Fair enough." ${yes.resolve(st)}`;
         addCard(st, bringCard(st, f, base, { ...b, more: 0 }, said));
-        return note(st, f, `${f.name}: "We cannot pay more than ${extra} ${getKey} for the trip."`);
+        return note(st, f, `${f.name}: "We cannot pay more than ${extra} ${keyWord(getKey)} for the trip."`);
       },
     });
   }
@@ -604,7 +615,7 @@ function bringCard(state, f, base, b, said) {
     title: `On the radio: ${f.name}`,
     radioFrom: f.id,
     bring: { factionId: f.id, baseId: base.id, give: { supplies: { [giveKey]: giveQty }, gear: [] }, get: { supplies: { [getKey]: getQty }, gear: [] } },
-    text: `${f.name} (${attitude(f).toLowerCase()}) call you. ${text} "Could you bring it to us at ${where}? We will add ${extra} ${getKey} for the trip." If you agree, they set the ${getKey} aside for you and your caravan takes the ${giveKey} to them; the deal waits about ten days.`,
+    text: `${f.name} (${attitude(f).toLowerCase()}) call you. ${text} "Could you bring it to us at ${where}? We will add ${extra} ${keyWord(getKey)} for the trip." If you agree, they set the ${keyWord(getKey)} aside for you and your caravan takes the ${keyWord(giveKey)} to them; the deal waits about ten days.`,
     choices,
   };
 }
@@ -652,7 +663,7 @@ export function radioTradeIfShort(state, needs, { base = null, keys = null, cap 
       const res = radioDeal(state, d.f, { wantKey: want, wantQty: d.qty, payKey: d.pay, payQty: d.payQty });
       if (res.ok) {
         if (!base) state.radioAutoDay = day(state);
-        return `radio deal with ${d.f.name}: ${d.qty} ${want} for ${d.payQty} ${d.pay}`;
+        return `radio deal with ${d.f.name}: ${d.qty} ${keyWord(want)} for ${d.payQty} ${keyWord(d.pay)}`;
       }
     }
   }

@@ -21,7 +21,8 @@ import { allItems } from "./inventory.js";
 import { breakCard, fixtures, breakdownsDaily } from "./breakdowns.js";
 import { packErrand, unpackErrand } from "./needs.js";
 import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
-import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
+import { supplyAmt, useSupply, roundsIn } from "./rounds.js"; // "ammo": every round there, any calibre
+import { calibrateDeal, suppliesText, baseAmmo } from "./ammo.js"; // a deal's rounds named by calibre
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const firstName = (s) => s.name.split(" ")[0];
@@ -181,12 +182,15 @@ export const HUB_EVENTS = {
       ];
       const can = (dl) => Object.entries(dl.give).every(([k, q]) => supplyAmt(c.base.stock, k) >= q);
       const pool = DEALS.filter(can).length >= 2 ? DEALS.filter(can) : DEALS;
-      const one = st.rng.pick(pool);
-      const two = st.rng.pick(pool.filter((x) => x !== one));
-      const txt = (o) => Object.entries(o).map(([k, q]) => `${q} ${k}`).join(", ");
+      // Rounds by calibre (2026-10-09, user request): what you give is the rounds your guns need least, what you get the
+      // common rounds of your guns (ammo.js calibrateDeal).
+      const cal = (dl) => calibrateDeal(st, c.base, { give: { ...dl.give }, get: { ...dl.get } });
+      const raw1 = st.rng.pick(pool);
+      const one = cal(raw1), two = cal(st.rng.pick(pool.filter((x) => x !== raw1)));
+      const txt = (o) => suppliesText(o);
       // How much the hub wants a supply: short of its target (by head count) = worth more.
       const target = { food: 15 * Math.max(1, c.n), ammo: 60, meds: 8, parts: 4, fuel: 15, scrap: 40, water: 30 };
-      const want = (k) => clamp((target[k] || 20) / (supplyAmt(c.base.stock, k) + 1), 0.2, 3) * ((SUPPLIES[k] && SUPPLIES[k].value) || 1);
+      const want = (k) => (SUPPLIES[k] && SUPPLIES[k].round ? clamp(target.ammo / (baseAmmo(st, c.base) + 1), 0.2, 3) * SUPPLIES[k].value : clamp((target[k] || 20) / (supplyAmt(c.base.stock, k) + 1), 0.2, 3) * ((SUPPLIES[k] && SUPPLIES[k].value) || 1)); // rounds: by the rounds that fit the guns here
       const deal = (dl) => ({
         label: `Trade ${txt(dl.give)} for ${txt(dl.get)}`, hint: "A fair swap, done at the gate",
         disabled: () => !can(dl),
