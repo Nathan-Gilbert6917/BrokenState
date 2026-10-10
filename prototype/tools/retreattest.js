@@ -11,7 +11,7 @@ import { createWorld, makeSurvivor, hub, survivorById } from "../src/sim/world.j
 import { GEAR } from "../src/sim/data.js";
 import {
   active, createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler, combatAct, endPlayerTurn,
-  soundRetreat, retreatPlan, retreatRefusal, escapeOdds, retreatAdvice, fightOutlook, evacAt, inEvac, RETREAT, RETREAT_AI, unitAt, loadPenalty,
+  soundRetreat, retreatPlan, retreatRefusal, escapeOdds, retreatAdvice, fightOutlook, evacAt, inEvac, RETREAT, RETREAT_AI, unitAt, loadPenalty, loadMag,
 } from "../src/sim/combat.js";
 import { newItem } from "../src/sim/inventory.js";
 import "../src/sim/hives.js"; // the "hive" battle layout
@@ -243,6 +243,8 @@ const park = (b, u) => { u.dead = true; u.x = -20; u.y = -20; }; // takes an ene
   // A middling fight: Cautious goes, Aggressive stays.
   const b3 = openBattle(st, [fighter(st), fighter(st), fighter(st)], { kind: "raiders", count: 4, power: 4 });
   b3.units.filter((u) => u.side === "enemy").forEach((e, i) => place(b3, e, 15, 2 + i * 2));
+  // Their arms pinned (the kit's roll moves whenever the raiders' list grows): two machetes, a hunting rifle and a pistol.
+  b3.units.filter((u) => u.side === "enemy").forEach((e, i) => { e.weapon = e.gmWeapon = ["machete", "huntrifle", "machete", "pistol"][i]; e.load = null; loadMag(e); });
   b3.units.filter((u) => u.side === "player").forEach((u, i) => place(b3, u, 3, 3 + i * 2));
   const ps = b3.units.filter((u) => u.side === "player");
   ps[0].down = true; ps[0].hp = 0; ps[0].bleed = 3;
