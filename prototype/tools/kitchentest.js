@@ -28,6 +28,7 @@ import { saveToString, loadFromString } from "../src/sim/save.js";
 import { renderModal } from "../src/ui/ui.js";
 import { workNowPanel } from "../src/ui/activity.js";
 import { kitchenNote } from "../src/ui/kitchen.js";
+import { baseNeeds, planIdle } from "../src/sim/idlework.js";
 
 const SEED = Number(process.argv[2] || 42);
 let fails = 0, passed = 0;
@@ -189,6 +190,20 @@ section("Work priorities: the Cook type");
   delete gen.pri.meals;
   workHour(st);
   check(gen.pri.meals == null, "only once (a role cleared after that stays cleared)");
+}
+
+// ======================================================================
+section("Assign all idle: the kitchen short of cooks");
+{
+  const { st, h, ppl } = mk(13);
+  check(!baseNeeds(st, h).some((n) => n.job === "cook"), "no kitchen: no Cook need");
+  addBuilding(h, "canteen");
+  const need = baseNeeds(st, h).find((n) => n.job === "cook");
+  check(need && need.cap === 2 && /2 cooks/.test(need.why), `a kitchen for 13: two cooks wanted (${need && need.why})`);
+  for (const s of ppl) s.role = "build"; // nothing to build: all idle
+  h.construction = [];
+  const plan = planIdle(st, h);
+  check(plan.filter((p) => p.job === "cook").length === 2, `the idle: two to the kitchen (${plan.map((p) => p.job).join(", ")})`);
 }
 
 // ======================================================================
