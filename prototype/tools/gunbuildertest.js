@@ -195,7 +195,7 @@ console.log("Fit, remove and the stats");
   html = GB.gunBuilderModal(st, ui);
   check(/data-stat="cap" data-v="60"/.test(html) && gunStats(gun).cap === 60, "a drum: the magazine shown is 60, as gunStats says");
   // The Ammo list.
-  check(/<select data-action="gb-load">/.test(html) && /5\.56 NATO armour-piercing/.test(html), "the Ammo list offers the calibre's rounds");
+  check(/<select data-action="gb-load"[^>]*>/.test(html) && /5\.56 NATO armour-piercing/.test(html), "the Ammo list offers the calibre's rounds");
   GB.GB_CHANGE["gb-load"](st, ui, { value: "ap" });
   check(gun.load === "ap" && /<option value="ap" selected>/.test(GB.gunBuilderModal(st, ui)), `the Ammo list sets item.load (${ui.gunb.msg})`);
   GB.GB_CHANGE["gb-load"](st, ui, { value: "bogus" });
