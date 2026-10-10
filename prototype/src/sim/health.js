@@ -310,7 +310,7 @@ export function medsToTreatAll(state, base) {
 
 // Base setting: automatic care each night (medical.autoCare: wounds and illnesses, worst off first, keeping the
 // base's meds reserve, base.medsReserve, and within the medics' time).
-export const autoTreatOn = autoCareOn;
+export const autoTreatOn = (...a) => autoCareOn(...a); // a call, not the binding: medical.js may not be initialized yet when this module runs (an import cycle through buildings.js)
 
 // Illnesses automatic care doses: a course once started is finished; a new one for anything that costs real health
 // or can kill, any deep cut (it can get infected), the rest from severity 30.
