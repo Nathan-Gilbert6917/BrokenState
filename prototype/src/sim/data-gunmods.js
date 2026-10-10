@@ -71,6 +71,20 @@ export const WEAPON_PLATFORM = {
   m4: "ar15", hk416: "ar15", scarl: "ar15", aug: "bullpup", scarh: "battle", fal: "battle", m1a: "battle", m240: "m240",
   ump45: "ump", usp45: "poly45", snub357: "revolver", magnum: "deagle",
 };
+// More calibres of 2026-10-10 (data-guns.js CALIBRE_GEAR): their own platforms where they take their own magazines.
+// The 5.7 PDW (a P90: a sight rail on top, no stock to swap), the 5.7 pistol, the low-recoil .45 SMG (a Vector), the G3
+// (its own magazines; a battle rifle's parts) and the FAMAS (a bullpup: no stock, a bipod). The .44s use the revolver,
+// lever and single-shot platforms. PLATFORM_LIKE: the parts and the drawing of a look-alike (gun-attach reviews).
+Object.assign(PLATFORMS, {
+  p90:    { name: "Bullpup PDW",          slots: ["optic", "muzzle", "mag", "tactical", "sling"] },
+  fn57:   { name: "5.7 pistol",           slots: ["optic", "muzzle", "mag", "tactical"] },
+  vector: { name: "Low-recoil SMG",       slots: ["optic", "muzzle", "mag", "stock", "tactical", "sling"] },
+  g3:     { name: "Roller-delayed rifle", slots: ["optic", "muzzle", "mag", "stock", "rail", "bipod", "sling"] },
+  famas:  { name: "Bullpup rifle (FAMAS)", slots: ["optic", "muzzle", "mag", "tactical", "bipod", "sling"] },
+});
+Object.assign(PLATFORM_LIKE, { p90: "mp5", fn57: "glock", vector: "mp5", g3: "ar10", famas: "ar15" });
+Object.assign(PLATFORM_LIKE_SKIP, { p90: ["collapsible", "foldstock"], fn57: ["extmag"], famas: ["collapsible", "precision", "foldstock", "m203", "drum"] });
+Object.assign(WEAPON_PLATFORM, { fiveseven: "fn57", p90: "p90", vector: "vector", g3: "g3", famas: "famas", revolver44: "revolver", lever44: "lever", single44: "single" });
 // Slots a weapon lacks that its platform has: the compact 9mm has no threaded barrel, the sawn-off nothing at all, the
 // hunting rifle's scope is part of its own numbers (combat.js WEAPONS huntrifle: opt 12).
 /** @type {Record<string, string[]>} */
@@ -103,7 +117,7 @@ export const MOD_ATTACH = {
   quadrail:     { slot: "rail",     short: "quad rail",      look: "rail",    fits: { plat: ["ar15", "ar10", "ak"] }, adds: ["grip", "tactical", "bipod"] },
   mlok:         { slot: "rail",     short: "M-LOK handguard", look: "rail",   fits: { plat: ["ar15", "ar10"] }, adds: ["grip", "tactical"], aim: 1, wt: -0.2 },
   can22:        { slot: "muzzle",   short: "suppressor",     look: "can_s",   fits: { cal: ["22lr"] }, can: true, noise: 0.35 },
-  can9:         { slot: "muzzle",   short: "suppressor",     look: "can_s",   fits: { cal: ["9mm", "45acp"] }, can: true, noise: 0.5, jam: 1.2 },
+  can9:         { slot: "muzzle",   short: "suppressor",     look: "can_s",   fits: { cal: ["9mm", "45acp", "57x28"] }, can: true, noise: 0.5, jam: 1.2 },
   can556:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["556"] }, can: true, noise: 0.55, aim: 1, jam: 1.3 },
   can308:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["308", "762x39"] }, can: true, noise: 0.6, jam: 1.3 },
   can12:        { slot: "muzzle",   short: "shotgun suppressor", look: "can_l", fits: { cal: ["12ga", "20ga"], plat: ["pump", "semi12"] }, can: true, noise: 0.7, close: -2 },
@@ -139,7 +153,7 @@ export const MOD_GEAR = {
   quadrail:     MOD("Quad rail handguard", 25, 0.3, "Rails on all four sides of the handguard: room for a foregrip, a light or laser, and a bipod. Fits the AR-15 family, the AR-10 and a Kalashnikov."),
   mlok:         MOD("M-LOK handguard", 35, 0.2, "A slim modern handguard, lighter than the factory one (−0.2 kg fitted): room for a foregrip and a light or laser, +1 aim. Fits the AR-15 family and the AR-10."),
   can22:        MOD(".22 suppressor", 40, 0.2, "A rimfire can: a .22's shots barely a third as loud. Fits .22 guns."),
-  can9:         MOD("Pistol-calibre suppressor", 60, 0.3, "A 9mm / .45 can: shots half as loud, but it fouls the action (jams ×1.2). Fits 9mm and .45 guns with a threaded barrel."),
+  can9:         MOD("Pistol-calibre suppressor", 60, 0.3, "A 9mm / .45 / 5.7 can: shots half as loud, but it fouls the action (jams ×1.2). Fits 9mm, .45 and 5.7 guns with a threaded barrel."),
   can556:       MOD("5.56 suppressor", 90, 0.5, "A military rifle can: shots 55% as loud, +1 aim (less kick), but more fouling (jams ×1.3). Fits 5.56 rifles."),
   can308:       MOD(".308 suppressor", 110, 0.6, "A big rifle can: shots 60% as loud, but more fouling (jams ×1.3). Fits .308 and 7.62×39 rifles."),
   can12:        MOD("Shotgun suppressor", 80, 0.7, "A fat can for a 12 gauge: shots 70% as loud, −2 up close. Fits the pump and semi-auto shotguns. Very rare."),

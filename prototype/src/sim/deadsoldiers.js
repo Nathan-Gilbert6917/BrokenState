@@ -48,8 +48,8 @@ export const MILDEAD = {
   },
   // Weapons not in the tables above (the overhaul's guns and melee weapons): by calibre, by melee class (w.mclass).
   CAL: {
-    soldier: { "22lr": 0.35, "9mm": 0.5, "45acp": 0.5, "357": 0.6, "12ga": 0.6, "20ga": 0.55, "556": 0.75, "762x39": 0.75, "308": 0.8, "3030": 0.7, "50bmg": 1 },
-    riot: { "22lr": 0.5, "9mm": 0.7, "45acp": 0.7, "357": 0.7, "12ga": 0.75, "20ga": 0.7, "556": 1, "762x39": 1, "308": 1, "3030": 1, "50bmg": 1 },
+    soldier: { "22lr": 0.35, "9mm": 0.5, "57x28": 0.6, "45acp": 0.5, "357": 0.6, "44mag": 0.65, "12ga": 0.6, "20ga": 0.55, "556": 0.75, "762x39": 0.75, "308": 0.8, "3030": 0.7, "50bmg": 1 },
+    riot: { "22lr": 0.5, "9mm": 0.7, "57x28": 0.85, "45acp": 0.7, "357": 0.7, "44mag": 0.8, "12ga": 0.75, "20ga": 0.7, "556": 1, "762x39": 1, "308": 1, "3030": 1, "50bmg": 1 },
   },
   MCLASS: {
     soldier: { blade: 0.45, pierce: 0.85, chop: 0.7, blunt: 0.85, heavy: 1 },

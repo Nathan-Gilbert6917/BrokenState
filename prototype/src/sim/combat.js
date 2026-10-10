@@ -85,7 +85,7 @@ import { throwLanding } from "./throwables.js"; // a thrown spear lands like any
 import { BLADE_WEAPONS, BLADE_KIT_PATCH } from "./data-blades.js"; // knives and swords (merged below)
 import { NL_WEAPONS, NL_KIT_PATCH } from "./data-nonlethal.js"; // the stun baton; tasers and spray on guards (merged below)
 import { nlHit, nlDown, nlAfterHit, nlAimPen, nlNoOw, nlStrike, nlAct, nlSetup, nlEnemyPhase, nlTurnStart, nlAI, nlBreak, nlBattleEnd, nlRaidEnd, nlDropPiles, nlSpared, blinded, setTakeAlive } from "./nonlethal.js"; // non-lethal weapons, taking people alive, surrender
-import { ammoPen } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult)
+import { ammoPen, spreadMult } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult); shot spreading with range
 import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
 import { calOf, calName, roundsOf, takeBattleRounds, sideRounds, chooseLoad, enemyLoad, pickLoad, boxesOf, sweepBoxes, formFinds, typeFx, typeFor, roundName, settleBase, settleParty, drawTeamShots, ammoEdge, refundShots, softMult, bodyRounds, sortFind, raidTheme } from "./ammo.js"; // rounds by calibre and type
 import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK, CONVOY_GUARD, guardedTrucks } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews (a convoy's guard)
@@ -2438,7 +2438,8 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const d = dist(ax, ay, t.x, t.y);
   const gm = unitMods(a); // gunmods.js: the gun's sight, muzzle, magazine and grip (neutral without any)
   const rg = gm === NO_MODS ? w : modRange(w, gm);
-  const af = calOf(a.weapon) ? typeFx(typeFor(calOf(a.weapon), a.load)) : {}; // ammo.js: the loaded type (match, slugs, birdshot…; a common round: nothing)
+  const aty = calOf(a.weapon) ? typeFor(calOf(a.weapon), a.load) : null;
+  const af = aty ? typeFx(aty) : {}; // ammo.js: the loaded type (match, slugs, birdshot…; a common round: nothing)
   const opt = rg.opt + (af.opt || 0), fall = rg.fall * (af.fallMult ?? 1);
   const notes = []; // what the moment adds or takes (the UI's odds line): a bipod rested, a moving vehicle, a light round's drop
   let aim = a.aim; // (step by step, as one sum: a.aim + w.aim + gm.aim + af.aim - nlAimPen - loadAim)
@@ -2455,6 +2456,10 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const rr = roundReach(w), reach = rr ? rr.reach + (af.opt || 0) : Infinity;
   const slow = d > reach ? rr.dmg ?? 1 : 1; // and a hit there does less (it has slowed)
   if (d > reach) { const drop = (d - reach) * rr.drop; aim -= drop; notes.push(`round drops past ${reach} tiles −${Math.round(drop)}${slow !== 1 ? `, damage ×${slow}` : ""}`); }
+  // Buckshot and birdshot spread with range (data-ammo.js spreadMult, user 2026-10-10): past spreadFull tiles a hit does
+  // less, down to spreadMin; a slug keeps its damage. The same rule as ladder.js hitDamage (the balance sheet).
+  const spread = spreadMult(aty, d);
+  if (spread < 1) notes.push(`shot spreads past ${af.spreadFull} tiles, damage ×${Math.round(spread * 100) / 100}`);
   P && mark("The round drops at this range");
   if (d <= 2.5 && (w.close || gm.close || af.close)) aim += (w.close || 0) + gm.close + (af.close || 0);
   P && mark("Up close");
@@ -2519,7 +2524,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   P && mark("Target on a ladder or a ram");
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
   const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? CRIT.DEAD : CRIT.EXPOSED) : CRIT.COVER) + (a.critBonus || 0); // critBonus: Deadeye
-  const ad = (af.dmg ?? 1) * slow; // the loaded type's damage, a light round's past its reach (ROUND_REACH dmg) (hollow points' soft-target bonus: damage, ammo.js softMult)
+  const ad = (af.dmg ?? 1) * slow * spread; // the loaded type's damage, buckshot's spread at range, a light round's past its reach (ROUND_REACH dmg) (hollow points' soft-target bonus: damage, ammo.js softMult)
   return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up, notes, ...(P ? { parts: P, aim } : {}) };
 }
 

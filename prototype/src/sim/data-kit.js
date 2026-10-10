@@ -45,6 +45,19 @@ export const MAGAZINES = {
   mag_deagle_9:    { plat: ["deagle"], cal: "357", cap: 9, kg: 0.12, value: 8, pouch: "pistol", name: "Magnum pistol magazine (9)" },
   mag_m240_100:    { plat: ["m240"], cal: "308", cap: 100, kg: 0.5, value: 18, pouch: "rifle", name: ".308 belt box (100)" },
 };
+// More calibres of 2026-10-10 (data-guns.js CALIBRE_GEAR), merged into MAGAZINES: the PDW's 50-round top magazine and
+// the 5.7 pistol's 20, the low-recoil .45 SMG's (Glock-pattern .45 magazines, 13 and an extended 25), the G3's 20 and
+// the FAMAS's 25 (neither takes another rifle's).
+/** @type {Record<string, { plat: string[], cal: string, cap: number, kg: number, value: number, name: string, aim?: number, jam?: number, pouch: string, desc?: string }>} */
+export const CALIBRE_MAGS = {
+  mag_p90_50:      { plat: ["p90"], cal: "57x28", cap: 50, kg: 0.12, value: 12, pouch: "rifle", name: "PDW top magazine (50)" },
+  mag_fn57_20:     { plat: ["fn57"], cal: "57x28", cap: 20, kg: 0.07, value: 6, pouch: "pistol", name: "5.7 pistol magazine (20)" },
+  mag_vector_13:   { plat: ["vector"], cal: "45acp", cap: 13, kg: 0.09, value: 5, pouch: "pistol", name: ".45 double-stack magazine (13)" },
+  mag_vector_25:   { plat: ["vector"], cal: "45acp", cap: 25, kg: 0.16, value: 10, pouch: "rifle", name: ".45 extended magazine (25)" },
+  mag_g3_20:       { plat: ["g3"], cal: "308", cap: 20, kg: 0.25, value: 8, pouch: "rifle", name: "G3-pattern magazine (20)" },
+  mag_famas_25:    { plat: ["famas"], cal: "556", cap: 25, kg: 0.15, value: 7, pouch: "rifle", name: "FAMAS-pattern magazine (25)" },
+};
+Object.assign(MAGAZINES, CALIBRE_MAGS);
 
 // Internal magazines (a tube, a cylinder, a fixed box): Reload (1 action) adds this many rounds. A clip item (a
 // speedloader, a stripper clip) carried fills it in one action instead (CLIPS). A gun with a magazine item fitted (a
@@ -52,6 +65,9 @@ export const MAGAZINES = {
 export const INTERNAL = { shotgun: 4, semishotgun: 4, leverrifle: 4, huntrifle: 3, revolver: 2, dbshotgun: 2, sawnoff: 2, pipegun: 1,
   // the arsenal of 2026-10-10: break actions load both barrels (or the one) a Reload, tubes and a cylinder as before
   ou12: 2, ou20: 2, single12: 1, singlerifle: 1, pump20: 4, tacpump: 4, lever357: 4, snub357: 2 };
+// More calibres of 2026-10-10: the .44 revolver's cylinder, the .44 lever's tube, the .44 single-shot (one a Reload).
+export const CALIBRE_INTERNAL = { revolver44: 2, lever44: 4, single44: 1 };
+Object.assign(INTERNAL, CALIBRE_INTERNAL);
 // Clip items: the guns they feed and how many rounds a clip puts in at once. Used once a fight (refilled free after it).
 export const CLIPS = {
   speedloader: { weapons: ["revolver"], n: 6, pouch: "pistol" }, // (the snub-nose's five-shot cylinder takes none: a speed strip at most)
@@ -115,7 +131,8 @@ for (const [k, m] of Object.entries(MAGAZINES)) {
   KIT_TAGS[k] = p.includes("glock") || p.includes("p1911") ? ["guns", "police", "crime", "home"] : p.includes("rimpistol") ? ["guns", "hunt", "farm", "home"]
     : p.includes("ak") ? ["guns", "crime", "military"] : p.includes("bolt") ? ["hunt", "guns", "military"] : p.includes("mp5") ? ["police", "military", "guns"]
     : p.includes("amr") || p.includes("m240") || (p.includes("m249") && !p.includes("ar15")) ? ["military"] : p.includes("deagle") ? ["guns", "crime", "home"]
-    : p.includes("poly45") || p.includes("ump") ? ["police", "military", "guns"] : ["military", "guns", "police", "crash"];
+    : p.includes("poly45") || p.includes("ump") || p.includes("vector") || p.includes("fn57") ? ["police", "military", "guns"]
+    : p.includes("g3") ? ["military", "guns", "crime"] : p.includes("p90") ? ["military", "police"] : ["military", "guns", "police", "crash"];
 }
 // Magazines as gun parts (gunmods.js ATTACH: the gun builder's magazine slot lists them by platform).
 /** @type {Record<string, any>} */

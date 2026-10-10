@@ -86,7 +86,7 @@ const LEGACY = {
   riflecan:  { slot: "muzzle",   short: "suppressor",   look: "can_l",    fits: { cal: RIFLE_CALS }, can: true, opt: -1, dmg: 0.95, noise: 0.4, jam: 1.3 },
   suppressor:{ slot: "muzzle",   short: "oil-filter suppressor", look: "oilfilter", fits: { cal: ["9mm", "556", "308", "3030"] }, can: true, noise: 0.5, jam: 1.5 }, // makeshift: GEAR dur = shots
   brake:     { slot: "muzzle",   short: "muzzle brake", look: "brake",    fits: { cal: RIFLE_CALS }, aim: 3, noise: 1.3 },
-  comp:      { slot: "muzzle",   short: "compensator",  look: "comp",     fits: { cal: ["9mm", "45acp", "357"] }, aim: 2, noise: 1.15 },
+  comp:      { slot: "muzzle",   short: "compensator",  look: "comp",     fits: { cal: ["9mm", "45acp", "357", "57x28", "44mag"] }, aim: 2, noise: 1.15 },
   choke:     { slot: "muzzle",   short: "choke",        look: "choke",    fits: { cal: ["12ga", "20ga"] }, opt: 2, fall: -2, close: -4 },
   extmag:    { slot: "mag",      short: "extended mag", look: "stick20",  fits: { plat: ["glock"] }, cap: 9 },
   drum:      { slot: "mag",      short: "drum mag",     look: "drum",     fits: { plat: ["ar15"] }, capMult: 2, aim: -2, jam: 1.5 },
@@ -351,6 +351,9 @@ export const unitMods = (u) => (u && u.gm && u.gmWeapon === u.weapon ? u.gm : NO
 export const ROUND_REACH = {
   "556": { reach: 10, drop: 2, dmg: 0.85 }, "762x39": { reach: 9, drop: 2, dmg: 0.85 }, "22lr": { reach: 9, drop: 2, dmg: 0.85 },
   "9mm": { reach: 8, drop: 2, dmg: 0.85 }, "45acp": { reach: 8, drop: 2, dmg: 0.85 }, "357": { reach: 8, drop: 2, dmg: 0.85 },
+  // 2026-10-10: the 5.7×28 (small and fast: a tile flatter than a 9mm) and the .44 Magnum (a heavy magnum: a tile more
+  // from a carbine's barrel), both still past their reach at a rifle's range
+  "57x28": { reach: 9, drop: 2, dmg: 0.85 }, "44mag": { reach: 9, drop: 2, dmg: 0.85 },
 };
 export const roundReach = (w) => (w && w.cal && ROUND_REACH[w.cal]) || null;
 // The effective best range and fall-off of a weapon with its attachments (combat.js shotOdds), the range capped at
