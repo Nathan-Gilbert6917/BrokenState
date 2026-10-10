@@ -75,7 +75,7 @@ const STEPS = {
     show: (state, ui, act) => showSite(state, ui, act),
   },
   clock: {
-    title: "Start the clock", why: "A new game waits paused while you look around and give orders. Space (or ▶ Run on the banner) runs it; 1–4 pick the speed.",
+    title: "Start the clock", why: "A new game waits paused while you look around and give orders. Space (or ▶ Run on the banner) runs it; 0–5 pick the speed.",
     done: (state, g) => state.hour > g.h0,
     show: (state, ui) => { closeWindows(ui); return ['#tb-speed [data-action="speed"][data-speed="1"]', '#banner [data-action="speed"]']; },
   },

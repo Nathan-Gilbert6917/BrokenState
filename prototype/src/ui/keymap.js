@@ -29,6 +29,7 @@ export const KEYMAP = [
   // ---------- the State Map (main.js keydown, ui/alerts.js mapHotkey) ----------
   { id: "ui.close", label: "Close the top window (the menu's question, a card opened from the tray goes back to it, the Why? panel, the Ledger…); with nothing open, the menu", group: "Windows", ctx: "map", keys: ["Escape"], fixed: true },
   { id: "time.pause", label: "Pause / run", group: "Time", ctx: "map", keys: ["Space"] },
+  { id: "time.speed0", label: "Speed 0.25×", group: "Time", ctx: "map", keys: ["Digit0", "Numpad0"] }, // ui/pacing.js SLOWEST_SPEED
   ...[0.5, 1, 2, 3, 5].map((v, i) => ({ id: `time.speed${i + 1}`, label: `Speed ${v}×`, group: "Time", ctx: "map", keys: [`Digit${i + 1}`, `Numpad${i + 1}`] })), // ui/pacing.js SPEEDS
   { id: "map.panUp", label: "Pan up", group: "Map", ctx: "map", keys: ["KeyW", "ArrowUp"] },
   { id: "map.panDown", label: "Pan down", group: "Map", ctx: "map", keys: ["KeyS", "ArrowDown"] },

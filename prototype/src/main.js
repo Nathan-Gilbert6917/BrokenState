@@ -5,7 +5,7 @@ import {
 import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
 import { abandonProblem, abandonCard } from "./sim/occupy.js"; // Abandon outpost
-import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile } from "./sim/parties.js";
+import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile, setClockFrac, arrivalsDue } from "./sim/parties.js";
 import { stockHas } from "./sim/water.js"; // purified and un-purified water
 import { moveTeamOut, MOVE_OUT } from "./sim/moveout.js"; // a team moved out of a crowded base (the move-out planner)
 import { thirstAhead } from "./sim/weather.js";
@@ -94,7 +94,7 @@ import { NEEDS_ACTIONS } from "./ui/needs.js";
 import { LISTEN_ACTIONS } from "./ui/radiolisten.js"; // Listen in on radio traffic: a team order, a base's set (sim/radiolisten.js)
 import { activeCrawl } from "./sim/citycrawl.js";
 import { activeHiveCrawl } from "./sim/hivecrawl.js";
-import { MAX_SPEED, SPEEDS, initPacing, cardUp, trayEsc, pacingFrame, beforeHour, afterHour, afterRefresh, trayHTML, pauseWhyHTML, PACE_ACTIONS } from "./ui/pacing.js"; // pause rules, the card tray, the speeds
+import { MAX_SPEED, SPEEDS, SLOWEST_SPEED, initPacing, cardUp, trayEsc, pacingFrame, beforeHour, afterHour, holdsNextHour, afterRefresh, trayHTML, pauseWhyHTML, PACE_ACTIONS } from "./ui/pacing.js"; // pause rules, the card tray, the speeds
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp, ironUnload, ironHidden } from "./ui/settings.js";
 // An Ironman game saves when the window is hidden (another tab, minimized) as well as when the page closes.
 document.addEventListener("visibilitychange", () => { if (document.hidden && !crashUp()) ironHidden(state, ui); }); // not a world that just crashed (ui/crash.js)
@@ -264,6 +264,7 @@ function step(now) {
   if (!blocked() && ui.speed > 0 && !ui.moveParty) {
     acc += dt * ui.speed * HOURS_PER_SECOND;
     while (acc >= 1 && ticks < 12) {
+      setClockFrac(0); // the hour's end: what the tick and its tray rules start, starts on the hour (sim/parties.js)
       if (beforeHour(state, ui)) dirty = true; // tray cards past their time answer themselves; their teams hold
       if (blocked()) { acc = 0; break; }       // a default answer that opened a battle
       tickHour(state);
@@ -278,9 +279,19 @@ function step(now) {
     }
     if (ticks >= 12) acc = Math.min(acc, 1); // too slow to keep up: drop the backlog instead of running on after a speed change
     if (ticks) ui.armed = newArmed();        // time moved: nothing is waiting for the unpause any more
+    // Teams that get where they are going at this minute arrive now, as the glide reaches the centre of the tile
+    // (sim/parties.js arrivalsDue; a team held by a card in the tray does not move); their new cards follow the pause
+    // rules as a tick's do.
+    setClockFrac(Math.min(0.999, acc));
+    if (!blocked() && arrivalsDue(state, Math.min(0.999, acc), (p) => holdsNextHour(state, p))) {
+      afterHour(state, ui);
+      dirty = true;
+    }
   }
   // The minutes of the coming hour tick by on the clock, and your moving teams glide towards their next tile by them.
   view.hourFrac = Math.max(0, Math.min(0.999, acc));
+  view.clockSpeed = ui.speed; // the map draws a glide often enough at slow speeds too (ui/render.js)
+  setClockFrac(view.hourFrac); // orders given from now on start this far into the hour (sim/parties.js wayOn)
   const mins = $("tb-min"), mm = String(Math.floor(view.hourFrac * 60)).padStart(2, "0");
   if (mins && mins.textContent !== mm) mins.textContent = mm;
   autosaveCheck(state, ui, settingsApi, now); // dawn, a hive assault, the end of the run (ui/settings.js)
@@ -2102,6 +2113,9 @@ window.addEventListener("keydown", (e) => {
   if (k === "time.pause") {
     e.preventDefault();
     if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; } else ui.speed = ui.lastSpeed || 1;
+  } else if (k === "time.speed0") { // 0: 0.25× (ui/pacing.js SLOWEST_SPEED)
+    ui.speed = SLOWEST_SPEED;
+    ui.lastSpeed = ui.speed;
   } else if (speed) { // 1–5: 0.5× 1× 2× 3× 5× (ui/pacing.js SPEEDS; the keys by the key table)
     ui.speed = SPEEDS[Number(speed[1]) - 1];
     ui.lastSpeed = ui.speed;
