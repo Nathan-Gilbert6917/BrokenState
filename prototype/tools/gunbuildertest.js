@@ -61,7 +61,8 @@ console.log("Platforms and drawings");
   const wp = GA.paintGun("pistol", { optic: "reddot", muzzle: "can_s" });
   check(wp.w === GA.ART_W && wp.h === GA.ART_H && wp.px.length === GA.ART_W * GA.ART_H, `the drawing is ${GA.ART_W} × ${GA.ART_H} (the sprites' painter, sized)`);
   check(GA.paintGun("ar", { stock: "precision" }).px.join() !== GA.paintGun("ar", {}).px.join(), "a fitted stock replaces the gun's own");
-  check(GA.paintGun("huntrifle", {}, ["muzzle", "under"]).px.join() !== GA.paintGun("huntrifle", {}, ["optic", "muzzle"]).px.join(), "the hunting rifle's own scope is drawn only while it has no sight slot");
+  check(GA.paintGun("sniper", {}, ["muzzle", "under"]).px.join() !== GA.paintGun("sniper", {}, ["optic", "muzzle"]).px.join(), "a gun's own scope (the sniper rifle's) is drawn only while it has no sight slot");
+  check(GA.paintGun("huntrifle", { optic: GA.lookOf({ key: "huntrifscope" }, "optic") }).px.join() !== GA.paintGun("huntrifle", {}).px.join(), "the hunting rifle's scope is a part (user pick 2026-10-10): drawn when fitted, gone when taken off");
 }
 
 // ---------- 2. anchors on the drawing ----------

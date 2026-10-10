@@ -57,6 +57,8 @@ export const PART_KINDS = {
   rail:      { slot: "rail", mini: null, d: { len: 6 }, draw: (p, [x, y], o) => { R(p, x - o.len, y - 1, x + o.len, y + 1, C.dark); dots(p, x - o.len, x + o.len, y - 1, C.hi); dots(p, x - o.len + 1, x + o.len - 1, y + 1, C.hi); } },
   // shells on the receiver's side (a pump's side saddle): from the receiver's sight anchor down
   saddle:    { slot: "rail", mini: "saddle", d: { n: 4 }, draw: (p, [x, y], o, ctx) => { const a = (ctx && ctx.art && (ctx.art.anchors.mount || ctx.art.anchors.optic)) || [x, y]; const x0 = a[0] - o.n, y0 = a[1] + 2; R(p, x0, y0, x0 + o.n * 2 - 1, y0 + 2, C.dark); for (let i = 0; i < o.n; i++) { p.set(x0 + i * 2, y0, C.shell); p.set(x0 + i * 2, y0 + 1, C.shell); p.set(x0 + i * 2, y0 + 2, C.brass); } } },
+  // a buttstock carrier: a band of shells (or cartridges) round the stock, behind its anchor
+  cuff:      { slot: "cuff", mini: null, d: { n: 4, col: "sling", round: "shell" }, draw: (p, [x, y], o) => { const x0 = x - 2 - o.n * 2; R(p, x0, y - 1, x - 2, y + 1, col(o.col)); for (let i = 0; i < o.n; i++) { p.set(x0 + 1 + i * 2, y - 1, col(o.round)); p.set(x0 + 1 + i * 2, y, col(o.round)); } } },
   sling:     { slot: "sling", mini: null, d: { col: "sling" }, draw: (p, [x, y], o) => { for (let i = 0; i <= 12; i++) p.set(x - i, y + 2 + Math.round(3 * Math.sin((Math.PI * i) / 12)), col(o.col)); p.set(x, y + 1, C.metal); } },
   // stocks and magazines: gunpaint.js STOCKS / MAGS by o.t
   stock:     { slot: "stock", mini: "stock", d: { t: "tele" }, draw: (p, a, o) => (STOCKS[o.t] || STOCKS.tele).draw(p, a, o.col || o.c || "gun") },
@@ -149,7 +151,7 @@ export const MOD_LOOK = {
   foldstock: "fold", vertgrip: "vgrip", anglegrip: "agrip", revgrip: "revgrip", weaponlight: "light", peq: "peq", sling: "sling", m203: "m203",
   huntscope: "scope9", scope9x: "scope9",
 };
-export const SLOT_LOOK = { optic: "reddot", mount: "mount", muzzle: "can_s", mag: "stick30", stock: "collapsible", grip: "vgrip", under: "vgrip", tactical: "light", bipod: "bipod", rail: "rail", sling: "sling", pgrip: "revgrip", receiver: "mount" };
+export const SLOT_LOOK = { optic: "reddot", mount: "mount", muzzle: "can_s", mag: "stick30", stock: "collapsible", grip: "vgrip", under: "vgrip", tactical: "light", bipod: "bipod", rail: "rail", sling: "sling", pgrip: "revgrip", receiver: "mount", magnifier: "holo", cuff: "pad" };
 // The small drawing of each hand-drawn look (gunpaint.js paintMini): { kind } a part's, { stock } / { mag } a stock or
 // magazine kind (gunpaint.js STOCKS / MAGS minis). Looks not listed draw nothing small (irons, a mount, a sling).
 /** @type {Record<string, any>} */

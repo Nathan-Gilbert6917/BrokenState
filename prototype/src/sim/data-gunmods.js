@@ -6,7 +6,9 @@
 // Slots (where a part goes on a gun): optic (a sight), mount (rings or a side rail that carries an optic), muzzle
 // (a suppressor, a brake, a choke), mag (a bigger magazine), under (under the barrel: a grenade launcher), stock,
 // grip (a foregrip), pgrip (the pistol grip: a rifle's, a revolver's grips), rail (a rail handguard that carries
-// more parts), tactical (a light, a laser), bipod, sling, receiver (a charging handle, a side-saddle shell carrier).
+// more parts), tactical (a light, a laser), bipod, sling, receiver (a charging handle, a side-saddle shell carrier),
+// magnifier (a 3× magnifier behind a red dot or holo sight: the sight opens it, user pick 2026-10-10), cuff (a buttstock
+// shell or cartridge carrier: break actions, pumps, semi-autos and lever-actions, user pick 2026-10-10).
 // Nesting: a part can carry `adds` (slots it opens): a mount adds an optic, a quad rail a grip, a tactical and a bipod.
 // under and grip share the space under the handguard: fitting one blocks the other.
 // Fit: muzzle devices fit by calibre (fits.cal) on a platform with a muzzle slot; everything else by platform
@@ -48,9 +50,9 @@
 //   amr       sight, magazine, sling; its bipod and muzzle brake built in
 //   zip       a sling
 /** @type {string[]} */
-export const SLOTS = ["mount", "rail", "optic", "muzzle", "mag", "under", "stock", "grip", "pgrip", "tactical", "bipod", "sling", "receiver"];
+export const SLOTS = ["mount", "rail", "optic", "magnifier", "muzzle", "mag", "under", "stock", "cuff", "grip", "pgrip", "tactical", "bipod", "sling", "receiver"];
 /** @type {Record<string, string>} */
-export const SLOT_NAMES = { optic: "Sight", mount: "Mount", muzzle: "Muzzle", mag: "Magazine", under: "Under the barrel", stock: "Stock", grip: "Foregrip", pgrip: "Pistol grip", rail: "Rail", tactical: "Light / laser", bipod: "Bipod", sling: "Sling", receiver: "Receiver" };
+export const SLOT_NAMES = { optic: "Sight", mount: "Mount", muzzle: "Muzzle", mag: "Magazine", under: "Under the barrel", stock: "Stock", grip: "Foregrip", pgrip: "Pistol grip", rail: "Rail", tactical: "Light / laser", bipod: "Bipod", sling: "Sling", receiver: "Receiver", magnifier: "Magnifier", cuff: "Buttstock carrier" };
 // Slots that share one space (fitting one blocks the others).
 /** @type {string[][]} */
 export const SHARED = [["under", "grip"]];
@@ -58,21 +60,21 @@ export const SHARED = [["under", "grip"]];
 // Kinds of gun: the slots none of them has (see above). A per-gun `on` (WEAPON_SLOTS) overrides it.
 /** @type {Record<string, { name: string, never: string[] }>} */
 export const CATEGORIES = {
-  pistol:   { name: "Pistol",              never: ["mount", "rail", "under", "stock", "grip", "pgrip", "bipod", "sling", "receiver"] },
-  revolver: { name: "Revolver",            never: ["rail", "under", "stock", "grip", "mag", "bipod", "sling", "receiver"] },
-  smg:      { name: "Submachine gun",      never: ["under", "bipod", "receiver"] },
-  pdw:      { name: "Personal defence weapon", never: ["under", "stock", "grip", "pgrip", "bipod", "receiver"] },
-  arpistol: { name: "AR pistol",           never: ["under", "bipod"] },
-  rifle:    { name: "Rifle",               never: [] },
-  bullpup:  { name: "Bullpup rifle",       never: ["stock", "under", "pgrip", "receiver"] },
-  bolt:     { name: "Bolt-action rifle",   never: ["rail", "under", "grip", "pgrip", "receiver"] },
-  lever:    { name: "Lever-action rifle",  never: ["rail", "under", "grip", "pgrip", "mag", "receiver"] },
-  break:    { name: "Break action",        never: ["rail", "under", "grip", "pgrip", "mag", "tactical", "bipod", "receiver"] },
+  pistol:   { name: "Pistol",              never: ["mount", "rail", "under", "stock", "grip", "pgrip", "bipod", "sling", "receiver", "magnifier", "cuff"] },
+  revolver: { name: "Revolver",            never: ["rail", "under", "stock", "grip", "mag", "bipod", "sling", "receiver", "magnifier", "cuff"] },
+  smg:      { name: "Submachine gun",      never: ["under", "bipod", "receiver", "cuff"] },
+  pdw:      { name: "Personal defence weapon", never: ["under", "stock", "grip", "pgrip", "bipod", "receiver", "cuff"] },
+  arpistol: { name: "AR pistol",           never: ["under", "bipod", "cuff"] },
+  rifle:    { name: "Rifle",               never: ["cuff"] },
+  bullpup:  { name: "Bullpup rifle",       never: ["stock", "under", "pgrip", "receiver", "cuff"] },
+  bolt:     { name: "Bolt-action rifle",   never: ["rail", "under", "grip", "pgrip", "receiver", "magnifier", "cuff"] },
+  lever:    { name: "Lever-action rifle",  never: ["rail", "under", "grip", "pgrip", "mag", "receiver", "magnifier"] },
+  break:    { name: "Break action",        never: ["rail", "under", "grip", "pgrip", "mag", "tactical", "bipod", "receiver", "magnifier"] },
   pump:     { name: "Pump shotgun",        never: ["rail", "under", "grip", "pgrip", "bipod"] },
   semi12:   { name: "Semi-auto shotgun",   never: ["rail", "under", "pgrip", "bipod"] },
-  mg:       { name: "Machine gun",         never: ["under", "stock", "pgrip", "receiver"] },
-  amr:      { name: "Anti-materiel rifle", never: ["under", "grip", "pgrip", "muzzle", "tactical", "receiver"] },
-  zip:      { name: "Zip gun",             never: ["mount", "rail", "optic", "muzzle", "mag", "under", "stock", "grip", "pgrip", "tactical", "bipod", "receiver"] },
+  mg:       { name: "Machine gun",         never: ["under", "stock", "pgrip", "receiver", "cuff"] },
+  amr:      { name: "Anti-materiel rifle", never: ["under", "grip", "pgrip", "muzzle", "tactical", "receiver", "magnifier", "cuff"] },
+  zip:      { name: "Zip gun",             never: ["mount", "rail", "optic", "muzzle", "mag", "under", "stock", "grip", "pgrip", "tactical", "bipod", "receiver", "magnifier", "cuff"] },
 };
 
 // Gun platforms. cat: its kind (CATEGORIES). slots: open on a bare gun. parts: { slot: [part keys] } the only parts
@@ -91,17 +93,17 @@ export const PLATFORMS = {
   m249:      { name: "Light machine gun",     cat: "mg",       slots: ["optic", "muzzle", "mag", "tactical"], builtin: { bipod: "bipod" } },
   ak:        { name: "Kalashnikov",           cat: "rifle",    slots: ["mount", "muzzle", "mag", "stock", "rail", "pgrip", "sling"] },
   bolt:      { name: "Bolt-action rifle",     cat: "bolt",     slots: ["optic", "muzzle", "mag", "stock", "bipod", "sling"] },
-  lever:     { name: "Lever-action rifle",    cat: "lever",    slots: ["mount", "muzzle", "stock", "bipod", "sling"] },
+  lever:     { name: "Lever-action rifle",    cat: "lever",    slots: ["mount", "muzzle", "stock", "bipod", "sling", "cuff"] },
   rimrifle:  { name: ".22 rifle",             cat: "bolt",     slots: ["optic", "muzzle", "mag", "stock", "bipod", "sling"] },
-  pump:      { name: "Pump shotgun",          cat: "pump",     slots: ["mount", "muzzle", "mag", "stock", "tactical", "sling", "receiver"] },
-  semi12:    { name: "Semi-auto shotgun",     cat: "semi12",   slots: ["optic", "muzzle", "mag", "stock", "tactical", "sling", "receiver"] },
-  dbl:       { name: "Double-barrel shotgun", cat: "break",    slots: ["mount", "muzzle", "stock", "sling"] },
+  pump:      { name: "Pump shotgun",          cat: "pump",     slots: ["mount", "muzzle", "mag", "stock", "tactical", "sling", "receiver", "cuff"] },
+  semi12:    { name: "Semi-auto shotgun",     cat: "semi12",   slots: ["optic", "muzzle", "mag", "stock", "tactical", "sling", "receiver", "cuff"] },
+  dbl:       { name: "Double-barrel shotgun", cat: "break",    slots: ["mount", "muzzle", "stock", "sling", "cuff"] },
   amr:       { name: "Anti-materiel rifle",   cat: "amr",      slots: ["optic", "mag", "sling"], builtin: { bipod: "bipod" } },
   zip:       { name: "Zip gun",               cat: "zip",      slots: ["sling"] },
   // The arsenal of 2026-10-10 (data-guns.js ARSENAL_GEAR): a break-open single barrel (shotgun or rifle: a scope mount
   // for a sight), the .308 battle rifles, a bullpup (no stock to swap), a .45 SMG (a rail under it) and pistol, the
   // hand cannon (a rail under it, no threaded barrel), the belt-fed .308 machine gun (its bipod built in).
-  single:    { name: "Single-shot break action", cat: "break", slots: ["mount", "muzzle", "stock", "sling"] },
+  single:    { name: "Single-shot break action", cat: "break", slots: ["mount", "muzzle", "stock", "sling", "cuff"] },
   battle:    { name: "Battle rifle",          cat: "rifle",    slots: ["optic", "muzzle", "mag", "stock", "rail", "bipod", "sling"] },
   bullpup:   { name: "Bullpup rifle",         cat: "bullpup",  slots: ["optic", "muzzle", "mag", "rail", "tactical", "sling"] },
   ump:       { name: ".45 submachine gun",    cat: "smg",      slots: ["optic", "muzzle", "mag", "stock", "grip", "tactical", "sling"] },
@@ -148,8 +150,8 @@ export const WEAPON_PLATFORM = {
 /** @type {Record<string, { off?: string[], on?: string[], parts?: Record<string, string[]> }>} */
 export const WEAPON_SLOTS = {
   compact9:  { off: ["muzzle"] },
-  sawnoff:   { off: ["muzzle", "stock", "mount"] },
-  huntrifle: { off: ["optic", "mount"] },
+  sawnoff:   { off: ["muzzle", "stock", "mount", "cuff"] },
+  // (the hunting rifle's scope is a factory part since 2026-10-10: data-guns.js FACTORY_FIT, its sight slot open)
   snub357:   { off: ["mount"] },
   tacpump:   { on: ["grip"] },
   // the AR platform of 2026-10-10 (data-guns.js AR_GEAR): the AR pistol is an AR-15 (its magazines and parts) with no
@@ -157,6 +159,8 @@ export const WEAPON_SLOTS = {
   arpistol:  { off: ["under", "bipod"], parts: { stock: ["pistolbrace"] } },
   snub38:    { off: ["mount"] },
   varmint223: { off: ["mag"] }, // an internal box magazine (data-kit.js INTERNAL), no detachable one
+  // the single-shot rifles: a buttstock cuff only for shells (a single-shot rifle loads one round a Reload whatever it carries)
+  singlerifle: { off: ["cuff"] }, single556: { off: ["cuff"] }, single223: { off: ["cuff"] }, single300: { off: ["cuff"] }, single44: { off: ["cuff"] },
 };
 // More calibres of 2026-10-10 (data-guns.js CALIBRE_GEAR): their own platforms where they take their own magazines.
 // The 5.7 PDW (a P90: a sight rail on top, no stock to swap), the 5.7 pistol, the low-recoil .45 SMG (a Vector), the G3
@@ -267,15 +271,14 @@ export const MOD_ATTACH = {
   // cheap traders). A budget part's brandOf is the part it copies (tools/gunslottest.js: never better, always cheaper).
   // reload: + shells a Reload puts in a tube (a side-saddle; mags.js).
   // sights
-  aimpoint:     { slot: "optic",    short: "Aimpoint dot",   look: "reddot",  fits: { plat: ["pump", "semi12", "lever", "ar15", "ak", "mp5", "dbl", "ranch", "ar10", "m249"] }, aim: 5, close: 1 },
-  holosun:      { slot: "optic",    short: "Holosun dot",    look: "reddot",  fits: { plat: ["pump", "semi12", "lever", "ar15", "ak", "mp5", "dbl", "ranch", "ar10", "revolver"] }, aim: 4, close: 1 },
-  cheapdot:     { slot: "optic",    short: "cheap red dot",  look: "reddot",  fits: { plat: ["glock", "p1911", "revolver", "pump", "semi12", "lever", "ar15", "ak", "mp5", "dbl", "ranch", "ar10"] }, aim: 2 },
-  cheapholo:    { slot: "optic",    short: "cheap holo",     look: "holo",    fits: { plat: ["pump", "semi12", "ar15", "ak", "mp5", "m249"] }, aim: 3, close: 1 },
-  holomag:      { slot: "optic",    short: "holo + 3× magnifier", look: "holo", fits: { plat: ["ar15", "ar10", "ak", "m249"] }, aim: 5, close: 1, opt: 2, fall: -0.3 },
-  cheapmag:     { slot: "optic",    short: "cheap dot + magnifier", look: "holo", fits: { plat: ["ar15", "ar10", "ak", "m249"] }, aim: 2, opt: 1, fall: -0.1, close: -1 },
+  aimpoint:     { slot: "optic",    short: "Aimpoint dot",   look: "reddot",  fits: { plat: ["pump", "semi12", "lever", "ar15", "ak", "mp5", "dbl", "ranch", "ar10", "m249"] }, adds: ["magnifier"], aim: 5, close: 1 },
+  holosun:      { slot: "optic",    short: "Holosun dot",    look: "reddot",  fits: { plat: ["pump", "semi12", "lever", "ar15", "ak", "mp5", "dbl", "ranch", "ar10", "revolver"] }, adds: ["magnifier"], aim: 4, close: 1 },
+  cheapdot:     { slot: "optic",    short: "cheap red dot",  look: "reddot",  fits: { plat: ["glock", "p1911", "revolver", "pump", "semi12", "lever", "ar15", "ak", "mp5", "dbl", "ranch", "ar10"] }, adds: ["magnifier"], aim: 2 },
+  cheapholo:    { slot: "optic",    short: "cheap holo",     look: "holo",    fits: { plat: ["pump", "semi12", "ar15", "ak", "mp5", "m249"] }, adds: ["magnifier"], aim: 3, close: 1 },
   holopistol:   { slot: "optic",    short: "pistol dot",     look: "rmr",     fits: { plat: ["glock", "p1911", "rimpistol"] }, aim: 3, close: 2 },
   cheaprmr:     { slot: "optic",    short: "cheap pistol dot", look: "rmr",   fits: { plat: ["glock", "p1911", "rimpistol"] }, aim: 2, close: 1 },
-  huntscope:    { slot: "optic",    short: "3–9× scope",     look: "scope9",  fits: { plat: ["lever", "rimrifle", "single", "bolt", "ranch"] }, aim: 1, opt: 4, fall: -0.6, close: -7 },
+  huntscope:    { slot: "optic",    short: "3–9× scope",     look: "scope9",  fits: { plat: ["lever", "rimrifle", "single", "bolt", "ranch"] }, aim: 2, opt: 4, fall: -0.7, close: -6 },
+  huntrifscope: { slot: "optic",    short: "3–9× scope",     look: "scope9",  fits: { plat: ["lever", "rimrifle", "single", "bolt", "ranch"] }, aim: 1, opt: 4, fall: -0.6, close: -7 },
   cheapscope:   { slot: "optic",    short: "cheap 3–9× scope", look: "scope4", fits: { plat: ["lever", "rimrifle", "single", "bolt", "ranch"] }, opt: 2, fall: -0.3, close: -9 },
   cheapacog:    { slot: "optic",    short: "cheap 4× prism", look: "acog",    fits: { plat: ["ar15", "ar10", "m249", "ak"] }, aim: 3, opt: 2, fall: -0.3, close: -5 },
   cheaplpvo:    { slot: "optic",    short: "cheap 1–6× scope", look: "lpvo",  fits: { plat: ["ar15", "ar10"] }, aim: 3, opt: 1, fall: -0.2, close: -2 },
@@ -323,6 +326,16 @@ export const MOD_ATTACH = {
   harris:       { slot: "bipod",    short: "Harris bipod",   look: "bipod",   fits: { any: true }, brace: 10 },
   cheapbipod:   { slot: "bipod",    short: "cheap bipod",    look: "bipod",   fits: { any: true }, brace: 5 },
   slingpro:     { slot: "sling",    short: "padded sling",   look: "sling",   fits: { any: true }, moving: 2 },
+  // the user's picks of 2026-10-10: a magnifier of its own (behind a red dot or holo sight), more clones, buttstock cuffs.
+  // hand: + loose shells at hand at a fight's start (mags.js SHELLS.START_HAND).
+  magnifier:    { slot: "magnifier", short: "3× magnifier",  look: "holo",    fits: { any: true }, opt: 2, fall: -0.3, close: -2 },
+  cheapmagnifier: { slot: "magnifier", short: "cheap magnifier", look: "holo", fits: { any: true }, opt: 1, fall: -0.1, close: -3 },
+  cheapcan308:  { slot: "muzzle",   short: ".308 fuel-filter can", look: "oilfilter", fits: { cal: ["308", "762x39", "300blk"] }, can: true, noise: 0.72, jam: 1.5 },
+  cheapcan12:   { slot: "muzzle",   short: "cheap shotgun can", look: "can_l", fits: { cal: ["12ga", "20ga"], plat: ["pump", "semi12"] }, can: true, noise: 0.82, close: -3 },
+  cheapsling:   { slot: "sling",    short: "cheap sling",    look: "sling",   fits: { any: true }, moving: 1 },
+  buttcuff:     { slot: "cuff",     short: "butt cuff",      look: "pad",     fits: { cal: ["12ga", "20ga"] }, hand: 5 },
+  cheapcuff:    { slot: "cuff",     short: "elastic butt cuff", look: "pad",  fits: { cal: ["12ga", "20ga"] }, hand: 3 },
+  riflecuff:    { slot: "cuff",     short: "cartridge cuff", look: "pad",     fits: { plat: ["lever"] }, reload: 1 },
 };
 
 // The parts as items (data.js merges this into GEAR). small: carried in a pocket. makeshift ones wear (dur): a muzzle
@@ -380,16 +393,14 @@ export const PART_INFO = {
                   desc: "A no-name red dot off a marketplace, a copy of the real thing: +2 aim, a dim smeary dot, and it loses its zero and dies within about 25 fights. Fits most guns with a sight slot or rings." },
   cheapholo:    { name: "Budget holo sight (Chinese EOTech clone)", value: 8, weight: 0.4, tier: "budget", rarity: "common", tags: ["mall", "shop", "crime", "sport"], brandOf: "holo", dur: 25,
                   desc: "A reflex sight dressed up to look like an EOTech holographic: +3 aim, +1 up close; the window fogs and the zero drifts, about 25 fights. Fits rifles, shotguns, the SMG and the machine gun." },
-  holomag:      { name: "Holo sight and 3× magnifier", value: 150, weight: 0.65, tier: "brand", rarity: "rare", tags: ["military"],
-                  desc: "A holographic sight with a flip-to-side 3× magnifier behind it, modelled on an EOTech EXPS3 and G33: +5 aim, +1 up close, and +2 tiles of best range with less aim lost beyond it. Fits the AR-15 family, the AR-10, a Kalashnikov (side mount) and the machine gun." },
-  cheapmag:     { name: "Budget dot and 3× magnifier set (Chinese clone)", value: 20, weight: 0.7, tier: "budget", rarity: "uncommon", tags: ["mall", "sport", "crime", "shop"], brandOf: "holomag", dur: 25,
-                  desc: "An airsoft-shop dot and magnifier combo: +2 aim, +1 tile of best range, −1 up close; blurry glass and a wandering zero, about 25 fights." },
   holopistol:   { name: "Pistol red dot (Holosun-style)", value: 22, weight: 0.04, tier: "civil", rarity: "uncommon", tags: ["guns", "police", "sport"],
                   desc: "A slide-mounted pistol dot modelled on a Holosun 507: +3 aim, +2 more up close. Fits the 9mm and .45 pistols and the .22 target pistol." },
   cheaprmr:     { name: "Budget pistol dot (Chinese RMR clone)", value: 7, weight: 0.06, tier: "budget", rarity: "common", tags: ["home", "mall", "shop", "crime", "sport"], brandOf: "rmr", dur: 25,
                   desc: "A copy of a Trijicon RMR that does not hold up to a slide's slam: +2 aim, +1 up close, about 25 fights. Fits the pistols." },
   huntscope:    { name: "Hunting scope 3–9×", value: 75, weight: 0.45, tier: "brand", rarity: "uncommon", tags: ["hunt", "guns", "farm"],
-                  desc: "A clear variable hunting scope modelled on a Leupold VX: +1 aim, +4 tiles of best range, much less aim lost beyond it, −7 up close. Fits bolt-action, lever-action, .22 and single-shot rifles (on rings where they need them)." },
+                  desc: "A clear variable hunting scope modelled on a Leupold VX: +2 aim, +4 tiles of best range, much less aim lost beyond it, −6 up close (better than the hunting rifle's own). Fits bolt-action, lever-action, .22 and single-shot rifles (on rings where they need them)." },
+  huntrifscope: { name: "Rifle scope 3–9×", value: 25, weight: 0.4, tier: "civil", rarity: "common", tags: ["hunt", "guns", "farm", "home"],
+                  desc: "A plain variable deer-rifle scope, the kind the hunting rifle comes with: +1 aim, +4 tiles of best range, much less aim lost beyond it, −7 up close. Fits bolt-action, lever-action, .22 and single-shot rifles (on rings where they need them)." },
   cheapscope:   { name: "Budget 3–9× scope (Chinese clone)", value: 9, weight: 0.5, tier: "budget", rarity: "common", tags: ["home", "farm", "mall", "shop"], brandOf: "huntscope", dur: 30,
                   desc: "A big-box-store scope of no known make: +2 tiles of best range, a little less aim lost beyond it, −9 up close; dim, and it loses its zero in about 30 fights." },
   cheapacog:    { name: "Budget 4× prism (Chinese ACOG clone)", value: 18, weight: 0.5, tier: "budget", rarity: "uncommon", tags: ["crime", "mall", "sport", "shop"], brandOf: "acog", dur: 30,
@@ -470,6 +481,22 @@ export const PART_INFO = {
                   desc: "A spring-legged bipod modelled on a Harris: +10 aim when the gun rests on half cover next to the shooter in the line of fire. Fits any gun with a bipod slot." },
   cheapbipod:   { name: "Budget bipod (Chinese clone)", value: 6, weight: 0.45, tier: "budget", rarity: "common", tags: ["home", "farm", "mall", "shop", "hunt"], brandOf: "harris",
                   desc: "A wobbly copy of a hunting bipod: +5 aim rested on half cover." },
+  magnifier:    { name: "3× magnifier (EOTech G33-style)", value: 90, weight: 0.35, tier: "brand", rarity: "rare", tags: ["military", "police"],
+                  desc: "A flip-to-side 3× magnifier behind a red dot or holo sight, modelled on an EOTech G33: +2 tiles of best range, less aim lost beyond it, −2 up close. Goes behind a rifle's or a shotgun's red dot or holo sight (fit the sight first)." },
+  cheapmagnifier: { name: "Budget 3× magnifier (Chinese clone)", value: 10, weight: 0.4, tier: "budget", rarity: "uncommon", tags: ["mall", "sport", "crime", "shop"], brandOf: "magnifier", dur: 25,
+                  desc: "A copy of a flip-to-side magnifier with blurry glass: +1 tile of best range, −3 up close, and it drifts off zero; about 25 fights. Goes behind a red dot or holo sight." },
+  cheapcan308:  { name: "Budget .308 fuel-filter can (Chinese import)", value: 16, weight: 0.5, tier: "budget", rarity: "uncommon", tags: ["crime", "garage", "mall", "shop"], brandOf: "can308", dur: 50,
+                  desc: "A big 'solvent trap' kit sold as a fuel filter, bored out for a rifle: shots 72% as loud, it fouls the action (jams ×1.5), shot loose in about 50 shots. Fits .308, 7.62×39 and .300 Blackout rifles." },
+  cheapcan12:   { name: "Budget shotgun suppressor (Chinese import)", value: 14, weight: 0.8, tier: "budget", rarity: "uncommon", tags: ["crime", "mall", "shop", "farm"], brandOf: "can12", dur: 40,
+                  desc: "A thin-walled shotgun can from an online seller: shots 82% as loud, −3 up close, battered loose in about 40 shots. Fits the pump and semi-auto shotguns." },
+  cheapsling:   { name: "Budget sling (Chinese clone)", value: 2, weight: 0.15, tier: "budget", rarity: "common", tags: ["home", "mall", "shop", "crime", "sport", "farm"], brandOf: "sling", dur: 30,
+                  desc: "A thin nylon two-point sling with plastic swivels: +1 aim when the shooter moved this turn, until a swivel snaps (about 30 fights)." },
+  buttcuff:     { name: "Buttstock shell holder", value: 18, weight: 0.15, tier: "civil", rarity: "common", tags: ["hunt", "guns", "farm", "home"],
+                  desc: "A leather cuff of five shells on the stock, modelled on a Butler Creek shell holder: five more loose shells at hand at a fight's start (fewer trips to the pack). Fits 12 and 20 gauge guns with a stock." },
+  cheapcuff:    { name: "Elastic buttstock shell holder (Chinese import)", value: 4, weight: 0.08, tier: "budget", rarity: "common", tags: ["home", "mall", "shop", "farm", "sport"], brandOf: "buttcuff", dur: 30,
+                  desc: "An elastic sleeve of shell loops pulled over the stock: three more loose shells at hand at a fight's start, until the elastic gives (about 30 fights)." },
+  riflecuff:    { name: "Buttstock cartridge cuff", value: 15, weight: 0.12, tier: "civil", rarity: "uncommon", tags: ["hunt", "guns", "farm"],
+                  desc: "A leather cuff of cartridges on a lever-action's stock: a Reload thumbs one more round into the tube. Fits lever-action rifles." },
   slingpro:     { name: "Padded two-point sling", value: 25, weight: 0.15, tier: "brand", rarity: "uncommon", tags: ["military", "police", "guns"],
                   desc: "A quick-adjust padded sling modelled on a Blue Force Gear Vickers: +2 aim when the shooter moved this turn." },
 };
@@ -515,4 +542,5 @@ export const PART_FINDS = {
 export const BUDGET_MAGS = {
   mag_stanag_30c: { tier: "budget", rarity: "common", tags: ["home", "mall", "shop", "crime", "sport"], brandOf: "mag_stanag_30" },
   mag_glock_17c:  { tier: "budget", rarity: "common", tags: ["home", "mall", "shop", "crime", "sport"], brandOf: "mag_glock_17" },
+  mag_ak_75c:     { tier: "budget", rarity: "uncommon", tags: ["home", "mall", "shop", "crime"], brandOf: "mag_ak_75" },
 };
