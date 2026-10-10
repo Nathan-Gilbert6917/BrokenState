@@ -15,12 +15,14 @@
 //     from 9 scrap instead of 1 from 6), preserving kitchen 1 (half as much again a day), vacuum sealer 1 (hasSealer:
 //     the hook for the packaged survival meals of a later cooking wave).
 //     A broken building (breakdowns.js) draws nothing and gets nothing.
+// A generator its operator started today runs the day's fuel out even while they sleep, eat or stand a watch (b.opDay):
+// it stops within the day only for a breakdown, an order holding it or the switch; the next day it needs them again.
 // The walk-in freezer (freezer-parts): refreshPower sets base.freezerOn (true while at least one freezer here is
 // served: built, not broken, not switched off, power enough from a running, fuelled, staffed generator) and
 // base.freezersOn (how many), every hour and before the stations run each day. That flag is the contract with
 // storage.js (the food-types branch ages the food in the freezer at ~0.05× while it is true). When a freezer goes off
 // the log says why (no generator, no operator, no fuel, not enough power, broken, switched off), at most once a day,
-// and again when it is cold once more.
+// and again when it is cold once more (freezerSwitch: one line each per outage, none for a blip of under two hours).
 //     Workshop stations draw only while their operator is at work (an order that holds them, or no operator, draws
 //     nothing). Each building can be switched off by hand (base.powerOff[id]).
 // The result is cached on the base (base.power: supply, demand, served building ids, running generators) every hour
@@ -78,8 +80,11 @@ export function powerStatus(state, base) {
     const op = stationOperator(state, base, b);
     const hold = orderHold(state, base, b);
     const fueled = b.fueled === today;
-    const reason = !op ? "No operator" : hold || "";
-    return { b, op, fueled, ok: !!op && !hold, running: false, reason };
+    // Started today by its operator (b.opDay): it runs the day's fuel out while they sleep, eat or step away; a breakdown,
+    // an order holding it or the switch stop it at once (freezer-parts: a steady freezer).
+    const started = fueled && b.opDay === today && !b.broken;
+    const reason = !op && !started ? "No operator" : hold || "";
+    return { b, op, fueled, hold, ok: (!!op || started) && !hold, running: false, reason };
   });
   // Generators already fuelled today go first; the rest start only if the fuel is there.
   let needed = Math.ceil(demand / POWER.genOut);
@@ -111,6 +116,7 @@ export function refreshPower(state, base) {
   const ps = powerStatus(state, base);
   const today = day(state);
   for (const g of ps.gens) {
+    if (g.running && g.op) g.b.opDay = today; // its operator was at it today (a day's grace: powerStatus started)
     if (!g.running || g.fueled) continue;
     base.stock.fuel = Math.max(0, (base.stock.fuel || 0) - POWER.genFuel);
     g.b.fueled = today;
@@ -135,24 +141,35 @@ export function freezerOffWhy(base, b, ps) {
   if (u && u.served) return "";
   const gens = ps.gens;
   if (!gens.length) return "there is no generator";
-  if (gens.every((g) => g.b.broken)) return "the generator is broken";
-  if (!gens.some((g) => g.op)) return "no one operates the generator";
+  const live = gens.filter((g) => !g.b.broken);
+  if (!live.length) return "the generator is broken";
+  if (live.every((g) => g.hold)) return `an order holds the generator (${live[0].hold})`;
+  if (!live.some((g) => g.ok)) return "no one operates the generator";
   if (gens.every((g) => !g.running) && gens.some((g) => /fuel/i.test(g.reason))) return `the generator has no fuel (${POWER.genFuel} a day)`;
   return `there is not enough power (${ps.supply} supply for ${ps.demand} wanted)`;
 }
 // base.freezerOn / base.freezersOn and the log when it goes off or on again.
 function freezerSwitch(state, base, ps) {
   const list = freezers(base);
-  if (!list.length) { if (base.freezerOn != null) { delete base.freezerOn; delete base.freezersOn; } return; }
+  if (!list.length) { if (base.freezerOn != null) { delete base.freezerOn; delete base.freezersOn; delete base.freezerOffSince; delete base.freezerOffLogged; } return; }
   const on = list.filter((b) => isPowered(base, b) && !b.broken).length;
   const was = base.freezerOn;
   base.freezerOn = on > 0;
   base.freezersOn = on;
   const today = day(state);
-  if (!on && was !== false && base.freezerLogDay !== today) {
+  // One line when an outage starts and one when it ends: the off line once it has lasted into a second hour (a new
+  // freezer before its generator's keeper is on it, an operator handing over, say nothing), at most one a day; the
+  // back-on line only after an off line.
+  if (on) delete base.freezerOffSince;
+  else if (base.freezerOffSince == null) base.freezerOffSince = state.hour;
+  if (!on && !base.freezerOffLogged && state.hour - base.freezerOffSince >= 1 && base.freezerLogDay !== today) {
     base.freezerLogDay = today;
+    base.freezerOffLogged = true;
     log(state, `❄ The freezer at ${base.name} is off: ${freezerOffWhy(base, list[0], ps)}. The food in it is thawing (it keeps only as in a pantry until the power is back).`, "danger");
-  } else if (on && was === false) log(state, `❄ The freezer at ${base.name} is cold again.`, "good");
+  } else if (on && was === false && base.freezerOffLogged) {
+    delete base.freezerOffLogged;
+    log(state, `❄ The freezer at ${base.name} is cold again.`, "good");
+  }
 }
 // One line for the base's buildings view: "On: 2 power, 300 room" / "Off: no fuel for the generator (thawing)".
 export function freezerLine(state, base) {

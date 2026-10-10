@@ -183,7 +183,7 @@ export function craftOutputText(key) {
   else if (d.slot === "insert") bits.push(`plate for a plate carrier's front or back pocket, armor ${d.power} (${/steel/.test(r.gear) ? "steel: it can spall, and can be patched" : "ceramic: it can shatter, and cannot be patched"})`); // section 16
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
-  else if (r.gear === "beartrap") bits.push("a bear trap for the base armory: set on the approach when a horde attacks, it catches about 3 of the dead (up to 4 traps; a quarter break each time)");
+  else if (r.gear === "beartrap") bits.push("a bear trap kept in a base's stores: set on the approach when a horde attacks, it catches about 3 of the dead (up to 4 traps; a quarter break each time)");
   else if (r.gear === "canner") bits.push("a pressure canner for the base armory: every preserving kitchen at that base jars 1 more preserved food a day");
   else if (r.gear === "repairkit") bits.push("a field repair kit: mends a gun, an attachment, armour or a makeshift tool anywhere, one use a repair (half a workbench's restore, twice the lost maximum; repair.js)");
   else if (r.gear === "dewormer") bits.push("medicine: cures the worm while it is still in the gut, no medic needed, one use"); // worm.js

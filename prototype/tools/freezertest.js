@@ -4,7 +4,9 @@
 // base.freezerOn and says why in the log; a broken freezer is off and a proper repair takes parts; the spares upkeep
 // (a part every 12 days it runs, wear faster with none); storage room on and off; the sealer hook; the crafting
 // recipes with a mechanism take parts and the pressure canner adds to the preserving kitchen; an AI group builds a
-// still, a generator and a freezer, runs it on fuel, breaks it and repairs it with parts; and a 120-day governor run
+// still, a generator and a freezer, runs it on fuel, breaks it and repairs it with parts; a steady freezer (the day's
+// grace of a generator its operator started, one log line per outage) and 10-day governor runs keeping it on with one
+// steady keeper off the night watch; and a 120-day governor run
 // with nothing NaN or negative.
 // Usage: node tools/freezertest.js [days for the governor run] [seeds...]
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
@@ -29,7 +31,8 @@ function quietHub(st) {
   delete h.tier; delete h.camp; // a full base (building plots)
   return h;
 }
-const lastLog = (st, re) => st.log.slice(-12).some((e) => re.test(e.text));
+const lastLog = (st, re) => [...st.log.slice(0, 12), ...st.log.slice(-12)].some((e) => re.test(e.text)); // newest first (either way)
+const logCount = (st, re) => st.log.filter((e) => re.test(e.text)).length;
 
 // ---------- 1. build gates ----------
 {
@@ -74,7 +77,9 @@ const lastLog = (st, re) => st.log.slice(-12).some((e) => re.test(e.text));
   const fz = addBuilding(h, "freezer");
   refreshPower(st, h);
   check(h.freezerOn === false && !isPowered(h, fz), "no generator: off");
-  check(lastLog(st, /freezer at .* is off: there is no generator/), "the log says why (no generator)");
+  check(!logCount(st, /freezer at .* is off/), "no off line in its first hour (a blip says nothing)");
+  st.hour++; refreshPower(st, h);
+  check(lastLog(st, /freezer at .* is off: there is no generator/), "the log says why once it lasts (no generator)");
   check(/no generator/.test(freezerLine(st, h)), `the buildings line says why (${freezerLine(st, h)})`);
   const room = storeSpaces(h).filter((s) => /freezer/.test(s.key));
   check(room.length === 1 && room[0].kind === "dry" && room[0].cap === STORE.freezer, "off: its 300 room keeps like a pantry");
@@ -101,7 +106,10 @@ const lastLog = (st, re) => st.log.slice(-12).some((e) => re.test(e.text));
   h.stock.fuel = 0;
   refreshPower(st, h);
   check(h.freezerOn === false && /fuel/.test(freezerLine(st, h)), `no fuel: off (${freezerLine(st, h)})`);
-  check(lastLog(st, /thawing/), "the log: the food is thawing");
+  st.hour++; refreshPower(st, h);
+  check(lastLog(st, /thawing/) && logCount(st, /freezer at .* is off/) === 2, "the log: the food is thawing (one line for this outage)");
+  st.hour++; refreshPower(st, h);
+  check(logCount(st, /freezer at .* is off/) === 2, "and no more while it stays off");
   h.stock.fuel = 40;
   refreshPower(st, h);
   check(h.freezerOn === true, "fuel back: on");
@@ -288,7 +296,54 @@ const lastLog = (st, re) => st.log.slice(-12).some((e) => re.test(e.text));
   check(w.sealer && groupSealer(f), "and a vacuum sealer (the groupSealer hook)");
 }
 
-// ---------- 7. a governor run ----------
+// ---------- 7. a steady freezer: the day's grace and the governor's keeper ----------
+{
+  console.log("A steady freezer");
+  const st = W();
+  const h = quietHub(st);
+  addBuilding(h, "freezer");
+  const gen = addBuilding(h, "generator");
+  const [a] = atBase(st, h.id);
+  a.role = "operate"; a.station = gen.id;
+  st.hour = Math.ceil(st.hour / 24) * 24 + 1;
+  refreshPower(st, h);
+  check(h.freezerOn && gen.opDay === day(st), "started today by its operator");
+  a.role = "guard"; a.station = null; // a watch, a meal, sleep: they step away
+  st.hour += 3; refreshPower(st, h);
+  check(h.freezerOn === true, "it runs the day's fuel out while the operator steps away");
+  breakFixture(st, h, gen, "worn out", { card: false, quiet: true });
+  st.hour++; refreshPower(st, h);
+  check(h.freezerOn === false, "a breakdown stops it at once");
+  gen.broken = null; gen.wear = 8;
+  st.hour++; refreshPower(st, h);
+  check(h.freezerOn === true, "repaired the same day: on again (it was started today)");
+  st.hour = Math.ceil(st.hour / 24) * 24 + 1;
+  refreshPower(st, h);
+  check(h.freezerOn === false, "the next day with nobody on it: off (machines need their operators)");
+}
+for (const seed of [42, 7]) {
+  const st = W(seed);
+  const h = hub(st);
+  delete h.tier; delete h.camp;
+  addBuilding(h, "generator"); addBuilding(h, "freezer");
+  Object.assign(h.stock, { fuel: 80, parts: 20 });
+  setAutopilot(st, true, "balanced");
+  let hours = 0, onHours = 0, keepers = new Set();
+  const days = 10;
+  while (day(st) <= days && !st.gameOver) {
+    autopilotResolve(st);
+    tickHour(st);
+    if (day(st) >= 2) { hours++; if (h.freezerOn) onHours++; if (h.genKeeper != null) keepers.add(h.genKeeper); }
+  }
+  const offs = logCount(st, /freezer at .* is off/), ons = logCount(st, /freezer at .* is cold again/);
+  console.log(`  governor seed ${seed}: freezer on ${onHours}/${hours} hours from day 2, ${offs} off / ${ons} back-on lines, ${keepers.size} keeper(s)`);
+  check(onHours >= hours * 0.95, `governor (seed ${seed}): the freezer on ${onHours} of ${hours} hours from day 2`);
+  check(offs <= 2 && ons <= 2, `governor (seed ${seed}): ${offs} off and ${ons} back-on lines in ${days} days`);
+  check(keepers.size <= 2, `governor (seed ${seed}): a steady keeper (${keepers.size} over ${days} days)`);
+  check(!(h.watch && h.watch.shifts.some((sh) => sh.ids.includes(h.genKeeper))), `governor (seed ${seed}): the keeper stands no watch`);
+}
+
+// ---------- 8. a governor run ----------
 for (const seed of seeds) {
   console.log(`Governor run (seed ${seed}, ${govDays} days)`);
   const st = W(seed);

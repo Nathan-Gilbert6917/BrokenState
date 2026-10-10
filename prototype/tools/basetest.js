@@ -456,7 +456,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (d.slot === "cargo") check(!/power|armor/.test(text) && /bike/.test(text), `${key}: a bicycle says it is a bike for the base (${text})`); // sim/vehicles.js
     // Camp kit against Heat (fieldheat.js) and a base's defence kit (defences.js): carried or kept, not worn.
     else if (d.heat) check(!/power|armor/.test(text) && /Heat ×/.test(text), `${key}: camp kit says how much less Heat (${text})`);
-    else if (d.defence) check(!/power|armor/.test(text) && /alarm/.test(text), `${key}: an alarm says what it does (${text})`);
+    else if (d.defence) check(!/power|armor/.test(text) && (d.defence.alarm ? /alarm/ : /horde/).test(text), `${key}: an alarm or a trap says what it does (${text})`); // freezer-parts: the bear trap
     else if (r.gear === "dewormer") check(!/power|armor/.test(text) && /worm/.test(text) && /one use/.test(text), `${key}: the dewormer says what it cures (${text})`); // sim/worm.js
     else if (LIGHTS[r.gear]) check(!/power|armor/.test(text) && /at night sees \d+ tiles/.test(text), `${key}: a light says how far it sees at night (${text})`); // sim/lights.js (a headlamp is carried, not held)
     else if (r.gear === "repairkit") check(!/power|armor /.test(text) && /repair kit/.test(text) && /repairs/.test(text), `${key}: the field repair kit says what it mends and how many repairs (${text})`); // sim/repair.js

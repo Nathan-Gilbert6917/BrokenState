@@ -1972,6 +1972,22 @@ function planRoles(state, base, areas = ALL_AREAS) {
   }
   for (const s of people) if (s.govWatch && (!base.watch || !onWatchNow(state, base, s))) delete s.govWatch;
 
+  // 1d. The generator that keeps a walk-in freezer or a vacuum sealer going (freezer-parts; machineKeeper): one steady
+  // operator, staffed before the plots from the first planning hour and kept (base.genKeeper: the same person every
+  // day while they are here and fit; govWatch leaves them off the night watch, so the generator never stands with
+  // nobody on it at night). Nobody is taken when the freezer and the sealer are broken or switched off, the generator
+  // is broken or held by an order, or the fuel is short (to start: the fuel floor and a day's fuel; to keep going: a
+  // day's fuel above the winter's heating). Real absences (a trip, a hospital bed, illness) hand it to someone else.
+  if (areas.production) {
+    const gen = machineKeeper(state, base);
+    if (gen) {
+      const fit = (x) => !x.inBed && x.alive;
+      const k = [...free].find((x) => x.id === base.genKeeper && fit(x)) || [...free].find((x) => x.role === "operate" && x.station === gen.id && fit(x)) ||
+        ranked("operate", (x) => skill(x, "mechanics"), fit)[0];
+      if (k) { give(k, "operate", gen.id); base.genKeeper = k.id; }
+    } else if (base.genKeeper != null) delete base.genKeeper;
+  }
+
   // 1b. Water before food: a queued water filter gets its crafter first while the water is running short
   // (thirst kills in days; a hungry base still has its stock), or while the water carries the worm's eggs and
   // nothing boils it (worm.js: a filter makes it safe while it lasts).
@@ -2264,6 +2280,19 @@ function stationWorth(state, base, recipe, station = null) {
   // of 43 in its winter: three food for one water is worth it until the water is all but gone).
   if (recipe === "livestock") { const wo = waterOutlook(state, base); return waterIn(st) >= RECIPES.livestock.in.water + 2 && !(wo.net < 0 && wo.daysLeft < 3); }
   return false;
+}
+// The generator a standing freezer or vacuum sealer needs kept running (planRoles 1d), or null. With a keeper already
+// on it the fuel may run down to a day's fuel above the winter's heating; a new keeper waits for the fuel floor.
+function machineKeeper(state, base) {
+  const wants = base.buildings.some((b) => (b.type === "freezer" || b.type === "sealer") && !b.broken && !(base.powerOff && base.powerOff[b.id]));
+  if (!wants) return null;
+  const gen = base.buildings.find((b) => BUILDINGS[b.type] && BUILDINGS[b.type].station === "power" && !b.broken && !orderHold(state, base, b));
+  if (!gen) return null;
+  const fuel = base.stock.fuel || 0;
+  const kept = base.genKeeper != null && atBase(state, base.id).some((s) => s.id === base.genKeeper && s.role === "operate" && s.station === gen.id);
+  const heat = heatFuelWant(state, base);
+  const floor = kept ? POWER.genFuel + (heat.want ? heat.need : 0) : fuelFloor(state, base) + POWER.genFuel;
+  return fuel >= floor || gen.fueled === day(state) ? gen : null;
 }
 // Fuel the governor keeps out of the generator: a decoy fire, the floodlights and the truck (Cautious: its reserve).
 const fuelFloor = (state, base) => (persona(state).reserves ? reserveStatus(state, base).fuel.target : 10 + (heatFuelWant(state, base).want ? heatFuelWant(state, base).need : 0)) + campaignFuelHold(state, base); // needs-gauges: winter heating first, and the campaign's fires
@@ -5047,7 +5076,8 @@ function govWatch(state, base) {
   if (W && !W.gov) return; // the player's own roster
   const people = atBase(state, base.id);
   if (people.length < GOV_WATCH.min) { if (W) delete base.watch; return; }
-  const fit = (s) => s.alive && !s.pinned && !s.inBed && !healthRest(s, state); // the ill rest (sickrest.js)
+  const fit = (s) => s.alive && !s.pinned && !s.inBed && !healthRest(s, state) && s.id !== base.genKeeper; // the ill rest (sickrest.js); the freezer's generator keeper stays on it (planRoles 1d)
+  if (W && base.genKeeper != null) for (const sh of W.shifts) sh.ids = sh.ids.filter((id) => id !== base.genKeeper);
   const h = hourOfDay(state);
   const rank = (list, last) => list.slice().sort((a, b) => (last.has(a.id) - last.has(b.id)) || (tiredLevel(a) - tiredLevel(b)) || (skill(b, "shooting") - skill(a, "shooting")) || (a.id - b.id));
   if (W && h !== GOV_WATCH.hour) {
