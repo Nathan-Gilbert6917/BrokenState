@@ -68,7 +68,7 @@ export const FIELDS = {
     chop: G("chop"), pry: G("pry"), value: G("value"), weight: G("weight"), power: G("power"), req: G("req"), dur: G("dur"),
   },
   parts: {
-    ...Object.fromEntries(["aim", "close", "opt", "fall", "noise", "jam", "night", "nightNear", "peq", "brace", "moving", "reload", "wt"].map((f) => [f, at("ATTACH", f)])),
+    ...Object.fromEntries(["aim", "close", "opt", "fall", "noise", "jam", "night", "nightNear", "peq", "brace", "moving", "reload", "wt", "spread"].map((f) => [f, at("ATTACH", f)])),
     value: G("value"), weight: G("weight"), dur: G("dur"),
   },
   mags: { cap: at("MAGAZINES", "cap"), kg: at("MAGAZINES", "kg"), value: at("MAGAZINES", "value"), aim: at("MAGAZINES", "aim"), jam: at("MAGAZINES", "jam") },
@@ -127,11 +127,17 @@ function ammoPen(cal, type) {
   return num(get("calibres", cal, "pen")) + num(get("types", type, "penAdd"));
 }
 const calRef = (cal) => avg(get("calibres", cal, "refLo"), get("calibres", cal, "refHi"));
-// data-ammo.js spreadMult: buckshot and birdshot lose damage past spreadFull tiles (spreadDrop a tile, down to spreadMin).
-function spreadMult(type, dist) {
-  const full = get("types", type, "spreadFull"), drop = get("types", type, "spreadDrop"), min = get("types", type, "spreadMin");
+// data-ammo.js spreadFloor / spreadMult: buckshot and birdshot lose damage past spreadFull tiles (spreadDrop a tile), down
+// to spreadMin or a .22's hit over the load's own (SPREAD_FLOOR), the higher.
+const refHit = (cal, type) => calRef(cal) * tval(type, "soft");
+function spreadFloor(type, cal) {
+  const min = get("types", type, "spreadMin"), own = cal ? refHit(cal, type) : 0, low = refHit(S.spreadFloor.cal, S.spreadFloor.type);
+  return Math.min(1, Math.max(has(min) ? min : 0, own > 0 ? low / own : 0));
+}
+function spreadMult(type, dist, cal) {
+  const full = get("types", type, "spreadFull"), drop = get("types", type, "spreadDrop");
   if (!has(full) || !(has(drop) && drop > 0) || !(dist > full)) return 1;
-  return Math.max(has(min) ? min : 0, Math.min(1, 1 - (dist - full) * drop));
+  return Math.max(spreadFloor(type, cal), Math.min(1, 1 - (dist - full) * drop));
 }
 // ladder.js hitDamage: ac null = no armour (× soft / dmg), else the piece's expected multiplier (new: condition 1);
 // dist: at that range (shot that spreads).
@@ -139,7 +145,7 @@ function hitDamage(cal, type, ac, base, past, dist) {
   const d = tval(type, "dmg"), soft = tval(type, "soft");
   const b = base == null ? calRef(cal) : base;
   const rr = S.reach[cal];
-  const raw = b * d * (past && rr ? rr.dmg : 1) * (dist != null ? spreadMult(type, dist) : 1);
+  const raw = b * d * (past && rr ? rr.dmg : 1) * (dist != null ? spreadMult(type, dist, cal) : 1);
   if (ac == null) return raw * (soft / d);
   return raw * pieceMult(ammoPen(cal, type), ac, 1);
 }
@@ -199,7 +205,7 @@ const CALC = {
     hitVest: (k) => { const v = gunHit(k, 2, false); return v == null ? null : r1(v); },
     hitPlate: (k) => { const v = gunHit(k, 4, false); return v == null ? null : r1(v); },
     hitPast: (k) => (S.reach[S.gunCal[k]] ? r1(gunHit(k, null, true)) : null),
-    hitFar: (k) => { const cal = S.gunCal[k], t = cal && S.calBase[cal]; return t && S.ladder[cal] != null && spreadMult(t, S.far) < 1 ? r1(hitDamage(cal, t, null, gunAvg(k), false, S.far)) : null; },
+    hitFar: (k) => { const cal = S.gunCal[k], t = cal && S.calBase[cal]; return t && S.ladder[cal] != null && spreadMult(t, S.far, cal) < 1 ? r1(hitDamage(cal, t, null, gunAvg(k), false, S.far)) : null; },
     shotsPerMag: (k) => { const c = get("guns", k, "cap"), a = get("guns", k, "ammo"); return has(c) && c > 0 ? Math.floor(c / Math.max(1, num(a))) : null; },
     perReload: (k) => { const n = get("feeds", k, "perReload"); return has(n) ? n : null; },
     fillReloads: (k) => { const n = get("feeds", k, "perReload"), c = get("guns", k, "cap"); return has(n) && n > 0 && has(c) ? Math.ceil(c / n) : null; },
@@ -234,7 +240,7 @@ const CALC = {
     vest: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null ? r1(hitDamage(c, t, 2)) : null; },
     plate: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null ? r1(hitDamage(c, t, 4)) : null; },
     past: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null && S.reach[c] ? r1(hitDamage(c, t, null, null, true)) : null; },
-    far: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null && spreadMult(t, S.far) < 1 ? r1(hitDamage(c, t, null, null, false, S.far)) : null; },
+    far: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null && spreadMult(t, S.far, c) < 1 ? r1(hitDamage(c, t, null, null, false, S.far)) : null; },
     boxN: (k) => { const [c, t] = S.split[k]; return box(c, t).n; },
     boxKg: (k) => { const [c, t] = S.split[k]; return box(c, t).kg; },
     boxValue: (k) => { const [c, t] = S.split[k]; return box(c, t).value; },
@@ -315,6 +321,7 @@ export async function collect(root = PROTO) {
     calBase: Object.fromEntries(Object.entries(CALIBERS).map(([c, d]) => [c, d.base])),
     ladder: Object.fromEntries(LADDER.ORDER.map((c, i) => [c, i + 1])),
     far: LD.FAR, // ladder.js: the range of the "at range" columns (shot that spreads)
+    spreadFloor: { ...A.SPREAD_FLOOR }, // data-ammo.js: shot never hits for less than this round
     gunCal: {}, kitCal: {}, magCal: {}, fitValue: {}, extrasValue: {}, item: {}, themes: THEMES,
   };
   const tree = new SourceTree(root);
@@ -480,7 +487,7 @@ export async function collect(root = PROTO) {
       name: d.name, slot: a.slot, tier: pc ? pc.tier : "", rarity: pc ? pc.rarity : null, brandOf: brandOf || "",
       value: d.value ?? null, weight: d.weight ?? null, dur: d.dur ?? null,
       aim: a.aim ?? null, close: a.close ?? null, opt: a.opt ?? null, fall: a.fall ?? null, noise: a.noise ?? null, jam: a.jam ?? null,
-      night: a.night ?? null, nightNear: a.nightNear ?? null, peq: a.peq ?? null, brace: a.brace ?? null, moving: a.moving ?? null, reload: a.reload ?? null, wt: a.wt ?? null,
+      night: a.night ?? null, nightNear: a.nightNear ?? null, peq: a.peq ?? null, brace: a.brace ?? null, moving: a.moving ?? null, reload: a.reload ?? null, wt: a.wt ?? null, spread: a.spread ?? null,
       flags: [a.can ? "suppressor" : "", a.light ? "light" : "", a.flashless ? "flashless" : "", a.thermal ? "thermal" : "", a.launcher ? "launcher" : "", a.adds ? `adds ${a.adds.join("/")}` : ""].filter(Boolean).join(", "),
       brandValue: brandOf && GEAR[brandOf] ? GEAR[brandOf].value : null,
       fits: GM.fitsText ? GM.fitsText(k) : "", gunCount: fitGuns.length, guns: fitGuns.join(", "), tags: list(ITEM_TAGS[k]),
@@ -493,7 +500,7 @@ export async function collect(root = PROTO) {
     C("value", "Value"), C("weight", "Weight kg"), C("dur", "Wears out in", "num", { desc: "A budget or makeshift part: fights (a muzzle device: shots)" }),
     C("aim", "Aim"), C("close", "Close"), C("opt", "Best range +"), C("fall", "Fall-off +"), C("noise", "Noise ×"), C("jam", "Jam ×"),
     C("nightNear", "Night aim ≤6"), C("night", "Night aim", "num", hide), C("peq", "IR aim (NVG)", "num", hide), C("brace", "Rested aim"), C("moving", "Moving aim"),
-    C("reload", "Shells/reload +", "num", hide), C("wt", "Fitted kg", "num", hide), C("flags", "Does", "text"),
+    C("reload", "Shells/reload +", "num", hide), C("wt", "Fitted kg", "num", hide), C("spread", "Shot full to +", "num", { desc: "A choke: + tiles of buckshot's full damage (data-ammo.js spreadMult)" }), C("flags", "Does", "text"),
     C("brandOf", "Copies", "text", { desc: "A budget clone: the part it copies (tools/gunslottest.js: never better, always cheaper)" }), C("brandValue", "Its value", "num", hide),
     C("gunCount", "Guns fit"), C("fits", "Fits", "text", hide), C("guns", "Guns it fits", "text", hide), C("tags", "Loot tags", "text", hide), C("look", "Drawn as", "text", hide),
   ], partRows, { note: "Gun attachments: gunmods.js LEGACY and data-gunmods.js MOD_ATTACH (numbers), MOD_GEAR / PART_INFO (items). Magazines: the Magazines tab." });
@@ -537,7 +544,7 @@ export async function collect(root = PROTO) {
   const typeCols = ["dmg", "soft", "penAdd", "value", "aim", "opt", "fallMult", "close", "noise", "jam", "ad", "spreadFull", "spreadDrop", "spreadMin"];
   table("types", "Ammo types", [
     C("name", "Name", "text"), ...typeCols.map((f) => C(f, { dmg: "Dmg ×", soft: "Soft ×", penAdd: "Pen +", value: "Value ×", aim: "Aim", opt: "Range", fallMult: "Fall-off ×", close: "Close", noise: "Noise ×", jam: "Jam ×", ad: "Armour wear",
-      spreadFull: "Spread: full to (tiles)", spreadDrop: "Spread: lost a tile", spreadMin: "Spread: floor" }[f], "num", f.startsWith("spread") ? { desc: "Shot that spreads (data-ammo.js spreadMult): full damage out to this many tiles, then − this share a tile, never under the floor" } : {})),
+      spreadFull: "Spread: full to (tiles)", spreadDrop: "Spread: lost a tile", spreadMin: "Spread: floor" }[f], "num", f.startsWith("spread") ? { desc: "Shot that spreads (data-ammo.js spreadMult): full damage out to this many tiles, then − this share a tile, never under the floor nor under a .22's hit (SPREAD_FLOOR)" } : {})),
     C("penBy", "Pen by calibre", "text"), C("flags", "Flags", "text"),
   ], Object.entries(AMMO_TYPES).map(([t, d]) => ({ key: t, v: {
     name: d.name, ...Object.fromEntries(typeCols.map((f) => [f, isNum(d[f]) ? d[f] : null])),

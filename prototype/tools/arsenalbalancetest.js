@@ -120,10 +120,15 @@ check(MAGAZINES.mag_vector_13 && MAGAZINES.mag_vector_13.cap === 13 && Object.va
 check(!Object.values(MAGAZINES).some((m) => m.plat.includes(platformOf("famas")) && m.cap !== 25) && !Object.values(MAGAZINES).some((m) => m.plat.includes(platformOf("g3")) && m.cal !== "308"), "no STANAG in the FAMAS, no other .308 magazine in the G3");
 check(INTERNAL.revolver44 === 2 && INTERNAL.lever44 === 4 && INTERNAL.single44 === 1 && platformOf("single44") === "single" && platformOf("lever44") === "lever" && platformOf("revolver44") === "revolver", ".44 revolver (cylinder), lever (tube of 10, 4 a Reload), single-shot (1 a Reload)");
 check(WEAPONS.vector.modes.auto.aim > WEAPONS.ump45.modes.auto.aim && WEAPONS.vector.modes.burst.aim > WEAPONS.ump45.modes.burst.aim && WEAPONS.p90.modes.auto.aim > WEAPONS.smg.modes.auto.aim, "low recoil: the Vector's bursts and full auto lose less aim than the UMP-style .45's, the PDW's than the 9mm SMG's");
-check(WEAPONS.famas.modes.auto.rounds > WEAPONS.aug.modes.auto.rounds && WEAPONS.famas.modes.burst.rounds === 3, "the FAMAS: a high rate (longer streams), three-round bursts");
+check(WEAPONS.famas.modes.auto.rounds > WEAPONS.aug.modes.auto.rounds, "the FAMAS: a high rate (longer streams on full auto)");
 check(WEAPONS.g3.rel < WEAPONS.fal.rel && WEAPONS.g3.rel < WEAPONS.scarh.rel, "the G3 jams less than the other battle rifles (roller-delayed)");
 check(GUN_RARITY.p90 === "rare" && GUN_RARITY.famas === "rare" && GUN_RARITY.g3 === "rare" && ["revolver44", "lever44", "single44"].every((k) => GUN_RARITY[k] === "uncommon") && ["military", "police"].some((t) => ARSENAL_TAGS.p90.includes(t)), "the PDW, FAMAS and G3 rare, military and police; the .44s uncommon");
 check(["hunt", "guns", "home"].every((t) => ["revolver44", "lever44", "single44"].some((k) => ARSENAL_TAGS[k].includes(t))), ".44s in hunting places, gun stores and homes");
+check(CALIBERS["44mag"].types.includes("sp") && AMMO_GEAR.a_44mag_sp && AMMO_GEAR.a_44mag_sp.dur === 20 && bare("44mag", "sp") > rung("44mag") && bare("44mag", "sp") < rung("308"), `.44 soft point (hunting): over the .44 FMJ and under the .308 (${f1(bare("44mag", "sp"))}), boxes of 20`);
+{ const C = (await import("../src/sim/data-kit.js")).CLIPS; const PL = (await import("../src/sim/data-gunmods.js")).PLATFORMS; const GMx = await import("../src/sim/gunmods.js");
+  check(C.speedloader44 && C.speedloader44.weapons.includes("revolver44") && C.speedloader44.n === 6 && GEAR.speedloader44 && !C.speedloader.weapons.includes("revolver44"), "a .44 speedloader (six rounds) for the .44 revolver; the .357's does not take them");
+  check(PL.famas.builtin && PL.famas.builtin.bipod && !GMx.baseSlots("famas").includes("bipod"), "the FAMAS: its bipod built in");
+  check(!GMx.baseSlots("g3").includes("optic") && GMx.baseSlots("g3").includes("mount") && GMx.modFits("g3", "clawmount") && !GMx.modFits("g3", "scopemount") && GMx.modFits("g3", "acog"), "the G3: no top rail, a claw mount that carries a sight"); }
 check(AMMO_GEAR.a_44mag_fmj.dur === 50 && AMMO_GEAR.a_44mag_hp.dur === 20 && AMMO_GEAR.a_57x28_fmj.dur === 50 && AMMO_GEAR.a_57x28_hp.dur === 50, ".44 boxes of 50 (hollow points 20), 5.7 boxes of 50");
 
 // ---------- every gun is found somewhere, with its numbers ----------

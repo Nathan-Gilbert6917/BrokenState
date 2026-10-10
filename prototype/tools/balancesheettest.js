@@ -108,7 +108,7 @@ for (const k of ranged) {
     cmp("gun hit, no armour (gunHit)", CALC.guns.hitBare(k), g.bare);
     cmp("gun hit, vest (gunHit)", CALC.guns.hitVest(k), g.vest);
     cmp("gun hit, plate", CALC.guns.hitPlate(k), r1(hitDamage(w.cal, CALIBERS[w.cal].base, TARGETS.plate, { base: (w.dmg[0] + w.dmg[1]) / 2 })));
-    cmp("gun hit at range (buckshot's spread, gunHit)", CALC.guns.hitFar(k), spreadMult(CALIBERS[w.cal].base, FAR) < 1 ? gunHit(w, null, FAR).bare : null);
+    cmp("gun hit at range (buckshot's spread, gunHit)", CALC.guns.hitFar(k), spreadMult(CALIBERS[w.cal].base, FAR, { cal: w.cal }) < 1 ? gunHit(w, null, FAR).bare : null);
   }
   if (GEAR[k]) {
     cmp("gun points (itemPoints)", CALC.guns.points(k), itemPoints(k));

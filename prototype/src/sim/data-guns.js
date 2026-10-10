@@ -343,7 +343,7 @@ export const CALIBRE_GEAR = {
   g3:         { name: "Roller-delayed battle rifle", slot: W, skill: SH, power: 8.5, req: 11, value: 200, noise: 4, weight: 4.4, cat: "automatic",
                 desc: "A steel 7.62 NATO battle rifle with a roller-delayed action (an HK G3): .308 hits from a 20-round magazine, single, burst or a hard-to-hold full auto; runs dirty and keeps running. Needs Shooting 11." },
   famas:      { name: "High-rate bullpup rifle", slot: W, skill: SH, power: 7.9, req: 9, value: 140, noise: 3, weight: 3.6, cat: "automatic",
-                desc: "A French bullpup 5.56 rifle with a carry handle (a FAMAS): short and quick, a very fast rate of fire (three-round bursts, long streams), its own 25-round magazines, fussy about them. Needs Shooting 9." },
+                desc: "A French bullpup 5.56 rifle with a carry handle (a FAMAS): short and quick, a very fast rate of fire (long streams on full auto), folding bipod legs built in (+8 rested on half cover), its own 25-round magazines, fussy about them. Needs Shooting 9." },
   revolver44: { name: ".44 Magnum revolver",    slot: W, skill: SH, power: 4.0, req: 5,  value: 60,  noise: 4, weight: 1.4, cat: "pistol",
                 desc: "A big six-shot .44 Magnum revolver (a Smith & Wesson Model 29): a heavy gun with a brutal kick and a huge bang, hitting harder than any other handgun. No suppressor fits it. Needs Shooting 5." },
   lever44:    { name: "Lever-action .44 carbine", slot: W, skill: SH, power: 4.8, req: 4, value: 60, noise: 3, weight: 2.9, cat: "rifle", hunt: { big: 1.0, small: 0.4 },
@@ -356,13 +356,13 @@ for (const [k, v] of Object.entries(CALIBRE_DUR)) CALIBRE_GEAR[k].dur = v;
 /** @type {Record<string, any>} */
 export const CALIBRE_WEAPONS = {
   fiveseven:  { name: "5.7 pistol",           dmg: [15, 22], opt: 6,  fall: 4,   aim: 4,  ammo: 1, noise: 2, cap: 20, cal: "57x28", rel: 0.3 },
-  p90:        { name: "5.7 PDW",              dmg: [16, 23], opt: 7,  fall: 3.2, aim: 7,  ammo: 2, noise: 2, close: 5, cap: 50, cal: "57x28", rel: 0.3,
-                modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 3, aim: -5 }, auto: { rounds: 12, aim: -13 } } }, // little kick: auto steadier than the 9mm SMG's
+  p90:        { name: "5.7 PDW",              dmg: [16, 23], opt: 7,  fall: 3.2, aim: 2,  ammo: 2, noise: 2, close: 3, cap: 50, cal: "57x28", rel: 0.3,
+                modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 3, aim: -8 }, auto: { rounds: 12, aim: -17 } } }, // little kick: auto steadier than the 9mm SMG's (toned down 2026-10-10, user: toward the UMP / Vector: aim 7 → 2, close 5 → 3, burst −5 → −8, auto −13 → −17)
   vector:     { name: "Low-recoil .45 SMG",   dmg: [18, 26], opt: 6,  fall: 3.5, aim: 6,  ammo: 2, noise: 2, close: 5, cap: 25, cal: "45acp", rel: 0.45,
                 modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 2, aim: -3 }, auto: { rounds: 12, aim: -10 } } }, // the recoil-soaking action: -10 on auto (the UMP-style .45 -16)
   g3:         { name: "Roller-delayed battle rifle", dmg: [33, 45], opt: 11, fall: 2, aim: 5, ammo: 1, noise: 4, close: -2, cap: 20, cal: "308", rel: 0.2, modes: AUTO_308 },
-  famas:      { name: "High-rate bullpup rifle", dmg: [22, 32], opt: 9, fall: 3,  aim: 8,  ammo: 2, noise: 3, close: 3, cap: 25, cal: "556", rel: 0.45,
-                modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 3, aim: -7 }, auto: { rounds: 12, aim: -20 } } },
+  famas:      { name: "High-rate bullpup rifle", dmg: [22, 32], opt: 9, fall: 3,  aim: 7,  ammo: 2, noise: 3, close: 3, cap: 25, cal: "556", rel: 0.45,
+                modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 2, aim: -8 }, auto: { rounds: 12, aim: -24 } } }, // (toned down 2026-10-10, user: at or under the AUG: aim 8 → 7, bursts of 3 at −7 → 2 at −8, auto −20 → −24; its bipod built in)
   revolver44: { name: ".44 Magnum revolver",  dmg: [27, 37], opt: 5,  fall: 5,   aim: -4, ammo: 1, noise: 4, cap: 6,  cal: "44mag", rel: 0.05 },
   lever44:    { name: "Lever-action .44 carbine", dmg: [28, 38], opt: 9, fall: 2.8, aim: 5, ammo: 1, noise: 3, cap: 10, cal: "44mag", rel: 0.25 },
   single44:   { name: ".44 single-shot rifle", dmg: [28, 38], opt: 9, fall: 2.5, aim: 6, ammo: 1, noise: 3, close: -4, cap: 1, cal: "44mag", rel: 0.05 },
@@ -413,7 +413,7 @@ TRUCK_GEAR.cargo.push(["m4", 0.08], ["hk416", 0.02], ["scarh", 0.015], ["m240", 
 TRUCK_GEAR.humvee.push(["m4", 0.08], ["scarl", 0.015], ["m240", 0.006]);
 TRUCK_GEAR.mrap.push(["m4", 0.08], ["hk416", 0.02], ["scarh", 0.01]);
 Object.assign(FACTORY_FIT, { m1a: [[0.35, ["acog", "tacscope"]]], scarh: [[0.3, ["acog", "lpvo"]]], singlerifle: [[0.3, ["scopemount"]]] });
-Object.assign(FACTORY_FIT, { single44: [[0.3, ["scopemount"]]] });
+Object.assign(FACTORY_FIT, { single44: [[0.3, ["scopemount"]]], g3: [[0.3, ["clawmount"]]] });
 
 // How common each gun is (user, 2026-10-10: "rarity and where it's found"), every gun the player can hold: common,
 // uncommon, scarce, rare, veryrare (data-ammo.js RARITY). ARSENAL_FINDS weighs the arsenal's own finds by it.
@@ -715,8 +715,8 @@ export const ROSTER_HELP = `<b>Guns.</b> Pistols: the .22 target pistol (quiet, 
   SCAR-H each take their own magazines.
   <br><b>How hard rounds hit.</b> From weakest to strongest: .22, 9mm, 5.7×28, .38 Special, .45, .357, .223, 20 gauge
   buckshot, 5.56, .300 Blackout, 7.62×39, 12 gauge buckshot, .44 Magnum, .30-30, .308, a 12 gauge slug, .50 BMG.
-  Buckshot spreads: full damage out to 4 tiles, then less each tile (60% at 8, 40% from 10; birdshot sooner); a slug
-  keeps its damage. Hollow and soft points hit harder on the unarmoured, AP
+  Buckshot spreads: full damage out to 6 tiles, then 10% less each tile (80% at 8, 60% at 10), but never less than a
+  .22's hit; birdshot from 5 tiles; a choke keeps it tight 1–3 tiles further; a slug keeps its damage. Hollow and soft points hit harder on the unarmoured, AP
   goes through armour; a slug hits harder than a .308 but goes through less. 5.56, .308, .22, 9mm and 12 gauge are the
   rounds found most; the stronger and the special rounds are rarer and dearer.
   <br><b>Melee.</b> Quick weapons (knives, the hatchet, the tomahawk, the hammer, the baton) strike for 1 action instead of the

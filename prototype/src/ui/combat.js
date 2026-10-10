@@ -573,7 +573,7 @@ function launchButtons(b, u, btn, key) {
     const tip = g.cal === "rocket"
       ? `Ends the turn: fire the ${esc(name)} straight at a tile it sees, up to ${range} away (click it): ${ROCKET.impact.join("–")} on the spot, ${ROCKET.dmg.join("–")} within 2; breaks gates, doors, wall sections, a ram, vehicles. Nothing arms inside ${LAUNCH.ARM} tiles (the red ring). The backblast (orange) hurts anyone 2 tiles behind; fired from inside a room it hurts the shooter too.${g.oneShot ? " A rocket tube fires once." : ""}`
       : g.load === "he" ? `Ends the turn: lob a 40 mm HE grenade up to ${range} tiles (click a tile you or a teammate sees, over walls too): ${GL_HE.impact.join("–")} on the spot, ${GL_HE.dmg.join("–")} within a tile and a half. It does not arm inside ${LAUNCH.ARM} tiles (the red ring).`
-      : g.load === "buck" ? `Ends the turn: buckshot at an enemy up to ${range} tiles off (click them): ${LAUNCH.BUCK.dmg.join("–")}, best within ${LAUNCH.BUCK.opt}.`
+      : g.load === "buck" ? `Ends the turn: buckshot at an enemy up to ${range} tiles off (click them): ${LAUNCH.BUCK.dmg.join("–")}, best within ${LAUNCH.BUCK.opt}; the shot spreads past ${AMMO_TYPES.buck.spreadFull} tiles (less damage each tile further).`
       : g.load === "smoke" ? `Ends the turn: lob a 40 mm smoke round up to ${range} tiles: a cloud there for a few turns.` : `Ends the turn: lob a 40 mm flare up to ${range} tiles: it lights everything within 7 tiles.`;
     html += btn("launch", `Launch: ${esc(glLabel(b, u))}`, tip, u.ap > 0, k);
   }

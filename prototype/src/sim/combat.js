@@ -2461,8 +2461,8 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (d > reach) { const drop = (d - reach) * rr.drop; aim -= drop; notes.push(`round drops past ${reach} tiles −${Math.round(drop)}${slow !== 1 ? `, damage ×${slow}` : ""}`); }
   // Buckshot and birdshot spread with range (data-ammo.js spreadMult, user 2026-10-10): past spreadFull tiles a hit does
   // less, down to spreadMin; a slug keeps its damage. The same rule as ladder.js hitDamage (the balance sheet).
-  const spread = spreadMult(aty, d);
-  if (spread < 1) notes.push(`shot spreads past ${af.spreadFull} tiles, damage ×${Math.round(spread * 100) / 100}`);
+  const spread = spreadMult(aty, d, { cal: calOf(a.weapon), extra: gm.spread || 0 }); // gm.spread: a choke's tiles
+  if (spread < 1) notes.push(`shot spreads past ${af.spreadFull + (gm.spread || 0)} tiles, damage ×${Math.round(spread * 100) / 100}`);
   P && mark("The round drops at this range");
   if (d <= 2.5 && (w.close || gm.close || af.close)) aim += (w.close || 0) + gm.close + (af.close || 0);
   P && mark("Up close");
@@ -4307,16 +4307,17 @@ function scoreCell(b, u, x, y, foes, cost, field) {
   if (canFire(b, u)) {
     // Buckshot and birdshot do less the further off (data-ammo.js spreadMult): a shotgunner's spot is worth what its
     // shot keeps there, so both sides' shotguns close in rather than plink from afar (1 for any other round).
-    const sty = calOf(u.weapon) ? typeFor(calOf(u.weapon), u.load) : null;
+    const sty = calOf(u.weapon) ? typeFor(calOf(u.weapon), u.load) : null, sgm = unitMods(u);
     for (const f of foes) {
       if (dist(x, y, f.x, f.y) > sightRange(b, u, x, y) || !los(b, x, y, f.x, f.y)) continue;
       const o = shotOdds(b, u, f, x, y);
-      best = Math.max(best, (o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)) * spreadMult(sty, dist(x, y, f.x, f.y))); // a target with no cover
+      best = Math.max(best, (o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)) * spreadMult(sty, dist(x, y, f.x, f.y), { cal: calOf(u.weapon), extra: sgm.spread || 0 })); // a target with no cover
     }
   }
   s += best * 0.3;
   // A shotgunner with buckshot loaded also wants to close to where it hits full (spreadFull): a slope toward the foes.
-  const sfull = canFire(b, u) && calOf(u.weapon) ? typeFx(typeFor(calOf(u.weapon), u.load)).spreadFull : null;
+  const sf0 = canFire(b, u) && calOf(u.weapon) ? typeFx(typeFor(calOf(u.weapon), u.load)).spreadFull : null;
+  const sfull = sf0 != null ? sf0 + (unitMods(u).spread || 0) : null; // a choke: more tiles at full damage
   if (sfull != null && nearest > sfull) s -= (Math.min(nearest, 16) - sfull) * SPREAD_CLOSE;
   if (isSniper(u)) s += sniperCell(nearest); // gunfire.js: a sniper keeps its distance (10–15 tiles)
   // Nothing to shoot: closer to the foes is better, the walking distance up to 40 tiles. A unit standing farther off than

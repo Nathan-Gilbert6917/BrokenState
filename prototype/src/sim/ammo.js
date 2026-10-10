@@ -647,7 +647,7 @@ export function pickLoad(b, u, foes = []) {
   if (!opts.length) return cur;
   const seen = (foes || []).filter((f) => f && !f.dead);
   if (!seen.length) return opts.includes(cur) ? cur : opts.includes(baseType(cal)) ? baseType(cal) : opts[0];
-  const far = (t, f) => (Number.isFinite(f.x) && Number.isFinite(u.x) ? spreadMult(t, Math.hypot(f.x - u.x, f.y - u.y)) : 1);
+  const far = (t, f) => (Number.isFinite(f.x) && Number.isFinite(u.x) ? spreadMult(t, Math.hypot(f.x - u.x, f.y - u.y), { cal, extra: (u.gm && u.gm.spread) || 0 }) : 1);
   const score = (t) => (seen.reduce((a, f) => a + typeScore(t, armoured(f)) * far(t, f), 0) / seen.length) * calDmgRatio(loadCal(cal, t), cal); // (a lighter calibre it takes: its damage; buckshot: what it keeps at each foe's range)
   let best = opts.includes(cur) ? cur : opts[0], bs = score(best) + 1e-6;
   for (const t of opts) { const s = score(t) + (t === baseType(cal) ? 1e-7 : 0); if (s > bs + 0.01) { best = t; bs = s; } }
