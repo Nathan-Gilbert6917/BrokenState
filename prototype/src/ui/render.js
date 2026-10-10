@@ -38,6 +38,7 @@ import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas, growthCanvas } 
 import {
   partySpriteCanvas, upsCode, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas, stagingSpriteCanvas,
   groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, herdSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
+  soloSpriteCanvas, cyclistSpriteCanvas, groupSoloCanvas, soloKind,
 } from "./mapsprites.js";
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
 import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
@@ -214,6 +215,22 @@ function sway(k, amp, periodMs) {
   if (!animOn()) return 0;
   wantFrames();
   return Math.sin((animNow / periodMs + phaseOf(k)) * Math.PI * 2) * amp;
+}
+// A lone walker's frame (mapsprites.js paintSolo), in step with stepBob over the same period: standing still 0; on the
+// way the two strides (1, 3) at the low points of the bob and the passing step (2) at its top. Animations off: a stride, held.
+function walkFrame(k, moving, periodMs = 380) {
+  if (!moving) return 0;
+  if (!animOn()) return 1;
+  wantFrames();
+  const u = animNow / periodMs + phaseOf(k), t = u % 1;
+  return t >= 0.25 && t < 0.75 ? 2 : Math.floor(u + 0.25) % 2 ? 3 : 1;
+}
+// A lone cyclist's pedalling frame (mapsprites.js paintCyclist): 0 stopped, then 1 and 2 by turns.
+function pedalFrame(k, moving, periodMs = 240) {
+  if (!moving) return 0;
+  if (!animOn()) return 1;
+  wantFrames();
+  return Math.floor(animNow / periodMs + phaseOf(k) * 2) % 2 ? 2 : 1;
 }
 // An engine's rumble: a fraction of a pixel of jitter, a few times a second.
 function rumble(k, amp) {
@@ -1522,8 +1539,10 @@ export function render(state) {
     const color = f ? f.color : "#cccccc", type = f ? f.type : "fortress";
     const kind = p.vehicle || p.kind === "caravan" ? "convoy" : p.kind === "raid" ? "raid" : p.kind === "scav" ? "scav" : "walk"; // a caravan: their wagon or truck; scavengers with their sack
     const n = p.members ? p.members.length + (p.kind === "raid" ? 1 : 0) : p.strength >= 15 ? 4 : p.strength >= 7 ? 3 : 2;
-    const cv = groupPartyCanvas(type, kind, color, n), s = zoomBoost();
-    const w = gridW(cv) * (kind === "convoy" ? 1.2 : 1.1) * s;
+    const fo = facingOf(state, p), onWay = p.path && p.idx < p.path.length - 1;
+    const solo = kind !== "convoy" && n === 1 && p.phase !== "siege"; // a party of one on foot: one figure, walking (as your teams of one)
+    const cv = solo ? groupSoloCanvas(type, kind, color, walkFrame(p.id, onWay)) : groupPartyCanvas(type, kind, color, n), s = zoomBoost();
+    const w = gridW(cv) * (solo ? SOLO_PX : kind === "convoy" ? 1.2 : 1.1) * s;
     if (p.phase === "siege") {
       const o = Math.min(s, BESIDE_MAX);
       sprite(siegeCampCanvas(color), px - 25 * o, py + 17 * o, 26 * s);
@@ -1539,7 +1558,6 @@ export function render(state) {
     const [x, y, k2] = besideBase(tile, px, py);
     groundRing(x, y, color, false, p.kind === "raid");
     if (view.pick === `group:${p.id}`) pickRing(x, y); // selected on the map (ui/mapselect.js)
-    const fo = facingOf(state, p), onWay = p.path && p.idx < p.path.length - 1;
     if (onWay && kind === "convoy") dustTrail(p.id, x, y + 4 * s, s, fo, w * k2);
     const dy = !onWay ? 0 : kind === "convoy" ? rumble(p.id, 0.35 * s) : stepBob(p.id, 1.1 * s, 380);
     sprite(cv, x, y - 3 + dy, w * k2, { facing: fo });
@@ -1834,6 +1852,9 @@ const zoomBoost = () => Math.max(1, Math.sqrt(0.9 / camera.zoom));
 // Sprite width in world pixels.
 const PARTY_W = { walkers: 22, raid: 22, scouts: 18, relief: 26, cart: 26, supplycart: 26, boat: 30, raft: 30, convoy: 30, supply: 30 };
 const spriteW = (kind) => (PARTY_W[kind] || 28) * zoomBoost();
+// A team of one (mapsprites.js soloSpriteCanvas, cyclistSpriteCanvas, groupSoloCanvas): map px per sprite pixel, a little
+// bigger than a group's figures so one person reads at a glance.
+const SOLO_PX = 1.3;
 
 // 1 = right, -1 = left: toward the next tile on the path (or the far shore while crossing).
 function facingOf(state, p) {
@@ -1858,7 +1879,19 @@ function partyLook(state, p) {
   const supply = p.routeKind === "supply";
   const kind = p.kind === "convoy" ? (p.vehicle ? (supply ? "supply" : "convoy") : supply ? "supplycart" : "cart")
     : p.vehicle === true ? (v && v.type === "sedan" ? "sedan" : v && v.type === "miltruck" ? "miltruck" : "truck") : p.mission === "recon" ? "scouts" : p.mission === "help" ? "relief" : "walkers";
-  return { color, kind, count: (p.members || []).length, ups: v && p.kind !== "convoy" ? upsCode(v.upgrades) : "" }; // ups: its upgrades (mapsprites.js upsCode)
+  const count = (p.members || []).length;
+  // A team of one: a lone walker, or a rider on a bike (a car keeps its vehicle sprite).
+  const solo = p.kind === "convoy" || count !== 1 ? "" : p.vehicle === "bike" ? "cyclist" : !p.vehicle && soloKind(kind) ? "walker" : "";
+  return { color, kind, count, solo, ups: v && p.kind !== "convoy" ? upsCode(v.upgrades) : "" }; // ups: its upgrades (mapsprites.js upsCode)
+}
+
+// The sprite for one of your teams this frame: a team of one gets its own figure (walking or standing, a rider pedalling
+// or stopped; at night the light it carries is lit); the rest the cached party sprite. Returns [canvas, width in map px].
+function teamCanvas(state, p, look, moving, night = false) {
+  if (!look.solo) return [partySpriteCanvas(look.kind, look.color, look.count, look.ups), spriteW(look.kind)];
+  const s = partyMembers(state, p)[0], light = night && s ? lightOf(s) || "" : "";
+  const cv = look.solo === "cyclist" ? cyclistSpriteCanvas(look.color, pedalFrame(p.id, moving)) : soloSpriteCanvas(look.kind, look.color, walkFrame(p.id, moving), light);
+  return [cv, gridW(cv) * SOLO_PX * zoomBoost()];
 }
 
 // Oval "shadow" under a sprite: phase color for your teams, owner color for others. dashed: position is a guess;
@@ -2079,12 +2112,12 @@ function drawPlayerParty(state, p) {
     if (isNight(state)) lightGlow(state, p, px, py); // sim/lights.js: a team carrying lights glows in the dark
     groundRing(px, py, ring, false);
     if (view.pick === `team:${p.id}` || view.pick === `convoy:${p.id}`) pickRing(px, py); // selected (ui/mapselect.js)
-    const cvp = partySpriteCanvas(look.kind, look.color, look.count, look.ups), wp = spriteW(look.kind) * k2;
     // On the move: people bob in step, a cart a little slower; a vehicle rumbles and raises dust.
     const onWay = (p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1;
+    const [cvp, w1] = teamCanvas(state, p, look, onWay, isNight(state)), wp = w1 * k2;
     const motor = ["truck", "sedan", "convoy", "supply"].includes(look.kind), sz = zoomBoost();
     if (onWay && motor) dustTrail(p.id, px, py + 4 * sz, sz, facing, wp);
-    const dy = !onWay ? 0 : motor ? rumble(p.id, 0.35 * sz) : stepBob(p.id, (look.kind.includes("cart") ? 0.8 : 1.1) * sz, look.kind.includes("cart") ? 520 : 380);
+    const dy = !onWay ? 0 : motor ? rumble(p.id, 0.35 * sz) : look.solo === "cyclist" ? stepBob(p.id, 0.4 * sz, 480) : stepBob(p.id, (look.kind.includes("cart") ? 0.8 : 1.1) * sz, look.kind.includes("cart") ? 520 : 380);
     sprite(cvp, px, py - 3 + dy, wp, { facing });
     noteSprite(px, py - 3, wp, spriteH(cvp, wp));
     if (p.kind !== "convoy" && (p.heat || 0) >= 5 && !state.timelapse) heatBar(px, py, p.heat); // fieldheat.js: standing still draws attention
@@ -2136,7 +2169,8 @@ function drawPlayerParty(state, p) {
   // Faded sprite on a dashed ring: where the team should be if the plan held.
   groundRing(ex, ey, color, true);
   if (view.pick === `team:${p.id}` || view.pick === `convoy:${p.id}`) pickRing(ex, ey);
-  const cve = partySpriteCanvas(look.kind, look.color, look.count, look.ups), we = spriteW(look.kind) * ke;
+  const cve = look.solo === "walker" ? soloSpriteCanvas(look.kind, look.color, 1) : look.solo ? cyclistSpriteCanvas(look.color, 1) : partySpriteCanvas(look.kind, look.color, look.count, look.ups); // a team of one: mid-stride, held (a guess, not seen)
+  const we = (look.solo ? gridW(cve) * SOLO_PX * zoomBoost() : spriteW(look.kind)) * ke;
   sprite(cve, ex, ey - 3, we, { facing: lastFacing.get(p) || 1, alpha: 0.5 });
   noteSprite(ex, ey - 3, we, spriteH(cve, we));
   badge(ex, ey, "unknown", color);
