@@ -166,12 +166,21 @@ export const VOICE_OF = {
   ranch223:   { v: "r556", act: "bolt", brass: "brassR", rel: "rifle", pitch: 1.05 },
   snub38:     { v: "r357", rel: "revolver", pitch: 1.1 },
   service38:  { v: "r357", rel: "revolver", pitch: 1.05 },
+  // more calibres of 2026-10-10 (sim/data-guns.js CALIBRE_GEAR): the nearest voice, nudged
+  fiveseven:  { v: "p9", act: "slide", brass: "brassP", rel: "pistol", pitch: 1.08 },
+  p90:        { v: "smg9", act: "openBolt", brass: "brassP", rel: "smg", pitch: 1.1 },
+  vector:     { v: "smg9", act: "openBolt", brass: "brassP", rel: "smg", pitch: 0.9 },
+  g3:         { v: "r308", act: "clank", brass: "brassR", rel: "rifle", pitch: 0.97 },
+  famas:      { v: "r556", act: "bolt", brass: "brassR", rel: "rifle", pitch: 1.05 },
+  revolver44: { v: "r357", rel: "revolver", pitch: 0.86 },
+  lever44:    { v: "r357", cycle: "lever", brass: "brassP", rel: "lever", pitch: 0.88 },
+  single44:   { v: "r357", rel: "single", pitch: 0.88 },
 };
 // Weapons that keep a sound of their own on purpose (ui/audio.js VOICES): bows and crossbows twang, a spitter spits.
 export const OWN_VOICE = { crossbow: "bow", compbow: "bow", xbow: "bow", pulleybow: "bow", acid: "acid" };
 // A gun no table knows (a later addition): a voice by its calibre, then by its class. GENERIC_OK lists none: every
 // gun in data-guns.js and combat.js has its row (tools/gunsfxtest.js checks).
-const BY_CAL = { "22lr": "p22", "9mm": "p9", "45acp": "p45", "357": "r357", "38spl": "r357", "223": "r556", "300blk": "r762", "556": "r556", "762x39": "r762", "308": "r308", "3030": "r3030", "50bmg": "r50", "12ga": "sg12", "20ga": "sg12", "40mm": "gl40", rocket: "rocket" };
+const BY_CAL = { "22lr": "p22", "9mm": "p9", "45acp": "p45", "357": "r357", "38spl": "r357", "223": "r556", "300blk": "r762", "556": "r556", "762x39": "r762", "308": "r308", "3030": "r3030", "50bmg": "r50", "12ga": "sg12", "20ga": "sg12", "40mm": "gl40", rocket: "rocket", "57x28": "p9", "44mag": "r357" };
 export function gunVoice(key) {
   const row = VOICE_OF[key];
   if (row) return { ...row, generic: false };
@@ -181,11 +190,11 @@ export function gunVoice(key) {
 }
 // Supersonic rounds crack; the .45 and subsonic loads do not. A .22 LR and 9mm crack faintly (barely past the speed of
 // sound), buckshot hardly, a slug a little more.
-const SUPERSONIC = { "22lr": 1, "9mm": 1, "45acp": 0, "357": 1, "38spl": 0, "223": 1, "300blk": 1, "556": 1, "762x39": 1, "308": 1, "3030": 1, "50bmg": 1, "12ga": 1, "20ga": 1, "40mm": 0, rocket: 0 };
+const SUPERSONIC = { "22lr": 1, "9mm": 1, "45acp": 0, "357": 1, "38spl": 0, "223": 1, "300blk": 1, "556": 1, "762x39": 1, "308": 1, "3030": 1, "50bmg": 1, "12ga": 1, "20ga": 1, "40mm": 0, rocket: 0, "57x28": 1, "44mag": 1 };
 export const supersonic = (cal, type) => !!SUPERSONIC[cal] && type !== "subsonic";
 
 // The cyclic rate of a gun firing more than one round a pull (rounds a minute), and the gap between rounds.
-export const RPM = { smg: 1000, ar: 800, carbine: 800, ak: 650, lmg: 650, turret_lmg: 650, turret_m2: 500, m2hb: 500 };
+export const RPM = { smg: 1000, ar: 800, carbine: 800, ak: 650, lmg: 650, turret_lmg: 650, turret_m2: 500, m2hb: 500, p90: 900, vector: 1200, famas: 1000, g3: 600 };
 export const roundGap = (key) => 60 / (RPM[key] || GUN_VOICES[gunVoice(key).v].rpm || 400);
 
 // The plan of one shot effect (b.fx type "shot") by unit a: what the sound layer needs, read from the unit and its gun

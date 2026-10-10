@@ -553,6 +553,7 @@ export function autopilotDaily(state) {
   if (persona(state).reserves && reserveRadio(state)) return;
   // Short of something and a group in radio reach has it: a radio deal (radio.js), their caravan brings it. Water and
   // food come first when the hub is short of them (needs: 2.5+), the campaign's ammo next (campaignAmmoWant).
+  if (!hub(state)) return; // no base left (conquest.js: the exiles): no hub to stock (needs read its stores)
   const deal = radioTradeIfShort(state, needs(state));
   if (deal) { noteTrade(state, deal); say(state, `Radio: ${deal}.`); }
 }

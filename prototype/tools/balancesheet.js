@@ -74,7 +74,7 @@ export const FIELDS = {
     kg: at("CALIBERS", "kg"), pen: at("CALIBERS", "pen"), ad: at("CALIBERS", "ad"), value: at("CALIBERS", "value"),
     refLo: at("CAL_DMG", 0), refHi: at("CAL_DMG", 1),
   },
-  types: Object.fromEntries(["dmg", "soft", "penAdd", "value", "aim", "opt", "fallMult", "close", "noise", "jam", "ad"].map((f) => [f, at("AMMO_TYPES", f)])),
+  types: Object.fromEntries(["dmg", "soft", "penAdd", "value", "aim", "opt", "fallMult", "close", "noise", "jam", "ad", "spreadFull", "spreadDrop", "spreadMin"].map((f) => [f, at("AMMO_TYPES", f)])),
   rounds: {
     tier: at("ROUND_ECON", 0), value: at("ROUND_ECON", 1),
     penSet: { reg: "AMMO_TYPES", path: (k) => { const [cal, type] = splitRound(k); return [type, "pen", cal]; } },
@@ -122,12 +122,19 @@ function ammoPen(cal, type) {
   return num(get("calibres", cal, "pen")) + num(get("types", type, "penAdd"));
 }
 const calRef = (cal) => avg(get("calibres", cal, "refLo"), get("calibres", cal, "refHi"));
-// ladder.js hitDamage: ac null = no armour (× soft / dmg), else the piece's expected multiplier (new: condition 1).
-function hitDamage(cal, type, ac, base, past) {
+// data-ammo.js spreadMult: buckshot and birdshot lose damage past spreadFull tiles (spreadDrop a tile, down to spreadMin).
+function spreadMult(type, dist) {
+  const full = get("types", type, "spreadFull"), drop = get("types", type, "spreadDrop"), min = get("types", type, "spreadMin");
+  if (!has(full) || !(has(drop) && drop > 0) || !(dist > full)) return 1;
+  return Math.max(has(min) ? min : 0, Math.min(1, 1 - (dist - full) * drop));
+}
+// ladder.js hitDamage: ac null = no armour (× soft / dmg), else the piece's expected multiplier (new: condition 1);
+// dist: at that range (shot that spreads).
+function hitDamage(cal, type, ac, base, past, dist) {
   const d = tval(type, "dmg"), soft = tval(type, "soft");
   const b = base == null ? calRef(cal) : base;
   const rr = S.reach[cal];
-  const raw = b * d * (past && rr ? rr.dmg : 1);
+  const raw = b * d * (past && rr ? rr.dmg : 1) * (dist != null ? spreadMult(type, dist) : 1);
   if (ac == null) return raw * (soft / d);
   return raw * pieceMult(ammoPen(cal, type), ac, 1);
 }
@@ -187,6 +194,7 @@ const CALC = {
     hitVest: (k) => { const v = gunHit(k, 2, false); return v == null ? null : r1(v); },
     hitPlate: (k) => { const v = gunHit(k, 4, false); return v == null ? null : r1(v); },
     hitPast: (k) => (S.reach[S.gunCal[k]] ? r1(gunHit(k, null, true)) : null),
+    hitFar: (k) => { const cal = S.gunCal[k], t = cal && S.calBase[cal]; return t && S.ladder[cal] != null && spreadMult(t, S.far) < 1 ? r1(hitDamage(cal, t, null, gunAvg(k), false, S.far)) : null; },
     shotsPerMag: (k) => { const c = get("guns", k, "cap"), a = get("guns", k, "ammo"); return has(c) && c > 0 ? Math.floor(c / Math.max(1, num(a))) : null; },
     perReload: (k) => { const n = get("feeds", k, "perReload"); return has(n) ? n : null; },
     fillReloads: (k) => { const n = get("feeds", k, "perReload"), c = get("guns", k, "cap"); return has(n) && n > 0 && has(c) ? Math.ceil(c / n) : null; },
@@ -221,6 +229,7 @@ const CALC = {
     vest: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null ? r1(hitDamage(c, t, 2)) : null; },
     plate: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null ? r1(hitDamage(c, t, 4)) : null; },
     past: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null && S.reach[c] ? r1(hitDamage(c, t, null, null, true)) : null; },
+    far: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null && spreadMult(t, S.far) < 1 ? r1(hitDamage(c, t, null, null, false, S.far)) : null; },
     boxN: (k) => { const [c, t] = S.split[k]; return box(c, t).n; },
     boxKg: (k) => { const [c, t] = S.split[k]; return box(c, t).kg; },
     boxValue: (k) => { const [c, t] = S.split[k]; return box(c, t).value; },
@@ -300,6 +309,7 @@ export async function collect(root = PROTO) {
     calBox: Object.fromEntries(Object.entries(CALIBERS).map(([c, d]) => [c, d.box])),
     calBase: Object.fromEntries(Object.entries(CALIBERS).map(([c, d]) => [c, d.base])),
     ladder: Object.fromEntries(LADDER.ORDER.map((c, i) => [c, i + 1])),
+    far: LD.FAR, // ladder.js: the range of the "at range" columns (shot that spreads)
     gunCal: {}, kitCal: {}, magCal: {}, fitValue: {}, extrasValue: {}, item: {}, themes: THEMES,
   };
   const tree = new SourceTree(root);
@@ -406,6 +416,7 @@ export async function collect(root = PROTO) {
     C("hitBare", "Hit: none", "num", { ...live, desc: "Mean hit with the calibre's base round, no armour (ladder.js gunHit)" }),
     C("hitVest", "Hit: vest AC2", "num", live), C("hitPlate", "Hit: plate AC4", "num", live),
     C("hitPast", "Hit past reach", "num", { ...live, desc: "Light rounds beyond ROUND_REACH (× 0.85)", hide: true }), C("reach", "Round reach", "num", hide),
+    C("hitFar", `Hit at ${LD.FAR} tiles`, "num", { ...live, desc: "Shot that spreads (buckshot, birdshot): the base round's hit at this range (data-ammo.js spreadMult)", hide: true }),
     C("opt", "Best range"), C("fall", "Fall-off"), C("aim", "Aim"), C("close", "Close"), C("ammo", "Rounds/shot"), C("noise", "Noise"),
     C("cap", "Capacity"), C("rel", "Jam %/shot"), C("shotsPerMag", "Shots/load", "num", live),
     C("feed", "Feed", "text"), C("perReload", "Rounds/reload", "num", { ...live, desc: "data-kit.js INTERNAL: rounds a Reload puts in (internal magazines; edit on the Magazines tab)" }),
@@ -485,9 +496,10 @@ export async function collect(root = PROTO) {
     name: d.name, ladder: S.ladder[c] ?? null, base: d.base, types: list(d.types), refLo: CAL_DMG[c] ? CAL_DMG[c][0] : null, refHi: CAL_DMG[c] ? CAL_DMG[c][1] : null,
     kg: d.kg, pen: d.pen, ad: d.ad, value: d.value, reach: ROUND_REACH[c] ? ROUND_REACH[c].reach : null, gunCount: (gunsBy[c] || []).length, guns: (gunsBy[c] || []).join(", "),
   } })), { note: "data-ammo.js CALIBERS and CAL_DMG (the damage ladder: LADDER.ORDER)." });
-  const typeCols = ["dmg", "soft", "penAdd", "value", "aim", "opt", "fallMult", "close", "noise", "jam", "ad"];
+  const typeCols = ["dmg", "soft", "penAdd", "value", "aim", "opt", "fallMult", "close", "noise", "jam", "ad", "spreadFull", "spreadDrop", "spreadMin"];
   table("types", "Ammo types", [
-    C("name", "Name", "text"), ...typeCols.map((f) => C(f, { dmg: "Dmg ×", soft: "Soft ×", penAdd: "Pen +", value: "Value ×", aim: "Aim", opt: "Range", fallMult: "Fall-off ×", close: "Close", noise: "Noise ×", jam: "Jam ×", ad: "Armour wear" }[f])),
+    C("name", "Name", "text"), ...typeCols.map((f) => C(f, { dmg: "Dmg ×", soft: "Soft ×", penAdd: "Pen +", value: "Value ×", aim: "Aim", opt: "Range", fallMult: "Fall-off ×", close: "Close", noise: "Noise ×", jam: "Jam ×", ad: "Armour wear",
+      spreadFull: "Spread: full to (tiles)", spreadDrop: "Spread: lost a tile", spreadMin: "Spread: floor" }[f], "num", f.startsWith("spread") ? { desc: "Shot that spreads (data-ammo.js spreadMult): full damage out to this many tiles, then − this share a tile, never under the floor" } : {})),
     C("penBy", "Pen by calibre", "text"), C("flags", "Flags", "text"),
   ], Object.entries(AMMO_TYPES).map(([t, d]) => ({ key: t, v: {
     name: d.name, ...Object.fromEntries(typeCols.map((f) => [f, isNum(d[f]) ? d[f] : null])),
@@ -512,7 +524,8 @@ export async function collect(root = PROTO) {
     C("value", "Value/round", "num", { desc: "ROUND_ECON value per round" }), C("supplyValue", "Supply value", "num", { ...live, hide: true }),
     C("penSet", "Pen (set)", "num", { desc: "AMMO_TYPES pen for this calibre (blank: calibre pen + type pen +)" }), C("pen", "Pen", "num", live),
     C("bare", "Hit: none", "num", { ...live, desc: "ladder.js hitDamage, the calibre's reference gun" }), C("vest", "Hit: vest AC2", "num", live), C("plate", "Hit: plate AC4", "num", live),
-    C("past", "Hit past reach", "num", { ...live, hide: true }), C("valuePerDmg", "Value per 100 dmg", "num", live),
+    C("past", "Hit past reach", "num", { ...live, hide: true }), C("far", `Hit at ${LD.FAR} tiles`, "num", { ...live, desc: "Shot that spreads: unarmoured at this range (ladder.js far)" }),
+    C("valuePerDmg", "Value per 100 dmg", "num", live),
     C("boxN", "Box rounds", "num", { ...live, desc: "data-stacks.js retailBox (Containers tab)" }), C("boxKg", "Box kg", "num", live), C("boxValue", "Box value", "num", live),
     C("handValue", "Handload value", "num", { ...live, hide: true }), C("mixAll", "Find mix: all places", "num", { ...live, desc: "Sum of AMMO_MIX weights over the 8 place themes" }),
     ...THEMES.map((th) => C(`mix_${th}`, `Mix: ${th}`, "num", { ...live, hide: true })),

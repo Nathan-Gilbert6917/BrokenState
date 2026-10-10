@@ -14,7 +14,11 @@
 // - every round has a tier and a value; finds follow the tiers (in all the places together a rarer round of a calibre
 //   turns up less than a commoner one); 5.56, .308, .22 and 12 ga among the most found calibres, .50 the least;
 // - the arsenal's finds roll on their own dice (the world's random numbers untouched; the same roll twice the same);
-// - break actions load both barrels a Reload, single-shots one.
+// - break actions load both barrels a Reload, single-shots one;
+// - the more calibres of 2026-10-10: 5.7×28 between 9mm and 5.56 a hit (over the 9mm, under the .45) with more pen
+//   than a 9mm (through a soft vest better); .44 Magnum over the .357 and under the .308 a shot; their guns (5.7 pistol
+//   and PDW, the low-recoil .45, the G3, the FAMAS, the .44 revolver, lever and single-shot) fed by their own
+//   magazines or tubes; the Vector's full auto steadier than the other .45 SMG's; their boxes by retail size.
 // Usage: node tools/arsenalbalancetest.js
 import { WEAPONS, KITS, AREAS } from "../src/sim/combat.js";
 import { GEAR, LOCATIONS } from "../src/sim/data.js";
@@ -22,6 +26,7 @@ import { CALIBERS, AMMO_TYPES, CAL_DMG, LADDER, ROUND_ECON, RARITY, AMMO_MIX, TH
 import { SUPPLIES } from "../src/sim/data.js";
 import { ARSENAL_GEAR, GUN_RARITY, ARSENAL_FINDS, TRUCK_GEAR, ARSENAL_TAGS } from "../src/sim/data-guns.js";
 import { MAGAZINES, INTERNAL } from "../src/sim/data-kit.js";
+import { AMMO_GEAR, ammoPen } from "../src/sim/data-ammo.js";
 import { SHELLS, standardMag } from "../src/sim/mags.js";
 import { hitDamage, rung, ladderRows, gunHit, TARGETS } from "../src/sim/ladder.js";
 import { gunPool, rollSiteGuns, rollAreaGuns, gunWares, scavGun, stashGun } from "../src/sim/gunfinds.js";
@@ -101,6 +106,25 @@ check(["pump20", "ou20"].every((k) => WEAPONS[k] && WEAPONS[k].cal === "20ga"), 
 check(["ou12", "ou20", "dbshotgun", "sawnoff"].every((k) => SHELLS.GUNS[k] === "break" && INTERNAL[k] === 2 && WEAPONS[k].cap === 2), "over-unders and doubles: break actions, 2 shells, both barrels a Reload");
 check(["single12"].every((k) => SHELLS.GUNS[k] === "single" && INTERNAL[k] === 1 && WEAPONS[k].cap === 1) && INTERNAL.singlerifle === 1 && WEAPONS.singlerifle.cap === 1, "single-shots: one round a Reload");
 check(SHELLS.BREAK === 2, "a break action loads both barrels at once");
+
+// ---------- more calibres (2026-10-10): 5.7×28 and .44 Magnum, the P90, Vector, G3, FAMAS and the .44s ----------
+console.log("More calibres: 5.7×28 and .44 Magnum");
+check(rung("57x28") > rung("9mm") && rung("57x28") < rung("45acp") && rung("57x28") < rung("556"), `5.7×28 between 9mm and 5.56 a hit, under the .45 (${f1(rung("9mm"))} < ${f1(rung("57x28"))} < ${f1(rung("45acp"))})`);
+check(ammoPen("57x28", "fmj") > ammoPen("9mm", "fmj") && ammoPen("57x28", "fmj") < ammoPen("556", "fmj") && hitDamage("57x28", "fmj", TARGETS.vest) > hitDamage("9mm", "fmj", TARGETS.vest) && hitDamage("57x28", "fmj", TARGETS.vest) > hitDamage("45acp", "fmj", TARGETS.vest), `5.7 goes through more than a 9mm: pen ${ammoPen("57x28", "fmj")} (9mm ${ammoPen("9mm", "fmj")}); on a vest ${f1(hitDamage("57x28", "fmj", TARGETS.vest))} over the 9mm's ${f1(hitDamage("9mm", "fmj", TARGETS.vest))} and the .45's ${f1(hitDamage("45acp", "fmj", TARGETS.vest))}`);
+check(rung("44mag") > rung("357") && rung("44mag") < rung("308") && lethal("44mag").every((t) => bare("44mag", t) < rung("308")), `.44 Magnum over the .357 and under the .308 a shot (${f1(rung("357"))} < ${f1(rung("44mag"))} < ${f1(rung("308"))}; its hollow point ${f1(bare("44mag", "hp"))})`);
+check(ammoPen("44mag", "fmj") > ammoPen("357", "fmj") && ammoPen("44mag", "fmj") < ammoPen("308", "fmj"), ".44 pen between the .357's and the .308's");
+const NEW = { fiveseven: ["57x28", 20], p90: ["57x28", 50], vector: ["45acp", 25], g3: ["308", 20], famas: ["556", 25], revolver44: ["44mag", 6], lever44: ["44mag", 10], single44: ["44mag", 1] };
+check(Object.entries(NEW).every(([k, [cal, cap]]) => WEAPONS[k] && GEAR[k] && WEAPONS[k].cal === cal && WEAPONS[k].cap === cap && ARSENAL_GEAR[k] && fed(k)), "the new guns: their calibre and capacity, each fed (the arsenal's)");
+check(standardMag("p90") === "mag_p90_50" && standardMag("fiveseven") === "mag_fn57_20" && standardMag("vector") === "mag_vector_25" && standardMag("g3") === "mag_g3_20" && standardMag("famas") === "mag_famas_25", "own magazines: the PDW's 50, the 5.7 pistol's 20, the Vector's 25 (and 13), the G3's 20, the FAMAS's 25");
+check(MAGAZINES.mag_vector_13 && MAGAZINES.mag_vector_13.cap === 13 && Object.values(MAGAZINES).filter((m) => m.plat.includes("famas") || m.plat.includes("g3") || m.plat.includes("p90")).every((m) => m.plat.length === 1), "the Vector takes a 13 too; the FAMAS, G3 and PDW magazines fit only their own gun");
+check(!Object.values(MAGAZINES).some((m) => m.plat.includes(platformOf("famas")) && m.cap !== 25) && !Object.values(MAGAZINES).some((m) => m.plat.includes(platformOf("g3")) && m.cal !== "308"), "no STANAG in the FAMAS, no other .308 magazine in the G3");
+check(INTERNAL.revolver44 === 2 && INTERNAL.lever44 === 4 && INTERNAL.single44 === 1 && platformOf("single44") === "single" && platformOf("lever44") === "lever" && platformOf("revolver44") === "revolver", ".44 revolver (cylinder), lever (tube of 10, 4 a Reload), single-shot (1 a Reload)");
+check(WEAPONS.vector.modes.auto.aim > WEAPONS.ump45.modes.auto.aim && WEAPONS.vector.modes.burst.aim > WEAPONS.ump45.modes.burst.aim && WEAPONS.p90.modes.auto.aim > WEAPONS.smg.modes.auto.aim, "low recoil: the Vector's bursts and full auto lose less aim than the UMP-style .45's, the PDW's than the 9mm SMG's");
+check(WEAPONS.famas.modes.auto.rounds > WEAPONS.aug.modes.auto.rounds && WEAPONS.famas.modes.burst.rounds === 3, "the FAMAS: a high rate (longer streams), three-round bursts");
+check(WEAPONS.g3.rel < WEAPONS.fal.rel && WEAPONS.g3.rel < WEAPONS.scarh.rel, "the G3 jams less than the other battle rifles (roller-delayed)");
+check(GUN_RARITY.p90 === "rare" && GUN_RARITY.famas === "rare" && GUN_RARITY.g3 === "rare" && ["revolver44", "lever44", "single44"].every((k) => GUN_RARITY[k] === "uncommon") && ["military", "police"].some((t) => ARSENAL_TAGS.p90.includes(t)), "the PDW, FAMAS and G3 rare, military and police; the .44s uncommon");
+check(["hunt", "guns", "home"].every((t) => ["revolver44", "lever44", "single44"].some((k) => ARSENAL_TAGS[k].includes(t))), ".44s in hunting places, gun stores and homes");
+check(AMMO_GEAR.a_44mag_fmj.dur === 50 && AMMO_GEAR.a_44mag_hp.dur === 20 && AMMO_GEAR.a_57x28_fmj.dur === 50 && AMMO_GEAR.a_57x28_hp.dur === 50, ".44 boxes of 50 (hollow points 20), 5.7 boxes of 50");
 
 // ---------- every gun is found somewhere, with its numbers ----------
 console.log("Finds, value, weight, durability, rarity");

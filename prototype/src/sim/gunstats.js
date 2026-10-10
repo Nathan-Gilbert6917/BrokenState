@@ -40,5 +40,7 @@ export function gunStats(itemOrKey, opts = {}) {
     pen: lp ? ammoPen(lp.cal, lp.type) : 0, soft: t.soft || 1, jam, reloadAp: 1, load, loadCal: lp ? lp.cal : null, type: lp ? lp.type : null,
     // An intermediate or rimfire round's reach (gunmods.js ROUND_REACH): past it, drop aim a tile more, scope or not.
     reach: roundReach(w) ? roundReach(w).reach + (t.opt || 0) : null, drop: roundReach(w) ? roundReach(w).drop : 0,
+    // Shot that spreads (buckshot, birdshot: data-ammo.js spreadMult): full damage out to full tiles, then −drop a tile, min.
+    spread: t.spreadFull != null && t.spreadDrop > 0 ? { full: t.spreadFull, drop: t.spreadDrop, min: t.spreadMin ?? 0 } : null,
   };
 }
