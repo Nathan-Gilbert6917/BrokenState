@@ -102,7 +102,7 @@ import { spend } from "./itemcond.js"; // the condition of what they carry
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
 import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
 import { travelFactor, thirstAt, thirstAhead } from "./weather.js";
-import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear, groupPartsLow, groupStockKey, roundNeeds } from "./trade.js";
+import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear, groupPartsLow, groupStockKey, roundNeeds, gearBuyPrice, sellPrice } from "./trade.js";
 import { partDeficit, kitWants } from "./repair.js"; // the parts and kits the governor keeps (it buys below them)
 const PART_KEYS = ["parts", "carparts", "gunparts", "electronics"];
 import { count } from "./buildings.js";
@@ -123,6 +123,7 @@ import { merchantReload } from "./reloading.js"; // an arms dealer's powder and 
 import { merchantEscort, escortFighters, escortValue, escortWords, escortShort, ESCORT_VEHICLES } from "./escorts.js";
 import { escortEnemy, lootCaravan, witnessesOf, consequences } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a merchant carries
+import { pickGunToBuy, noteGunBought } from "./govguns.js"; // the governor buys a gun for the unarmed
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -1376,6 +1377,13 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
   // A Kevlar kit, a field repair kit while the base is short of one (repair.js kitWants), one of each.
   const home = ctx.base || hub(state);
   if (home && plenty.length) for (const k of kitWants(state, home)) { const it = ctx.theirGear.find((g) => g && g.key === k); if (it) { t.askGear = [it]; tryDeal(); } }
+  // govguns.js: a gun for the unarmed at home (its guards and scavengers with only a club too): an arms dealer's best.
+  if (home && plenty.length && tradeContext(state)) {
+    const price = (it) => gearBuyPrice(state, ctx.f, it, ctx.speech);
+    const budget = plenty.reduce((a, k) => { const q = spare[k] != null ? spare[k] : ctx.have[k] || 0; return a + (q > 0 ? q * sellPrice(state, ctx.f, k, ctx.speech, q) : 0); }, 0);
+    const gun = pickGunToBuy(state, home, ctx.theirGear, price, budget);
+    if (gun) { const cost = price(gun); t.askGear = [gun]; if (tryDeal()) noteGunBought(state, gun, cost, ctx.f.spec === "arms" ? "arms dealer" : "merchants"); }
+  }
   for (const k of short.slice(0, 2)) setQty(state, "theirs", k, Math.min(ctx.theirHave[k], k === "ammo" || (SUPPLIES[k] && SUPPLIES[k].round) ? 80 : SUPPLIES[k] && SUPPLIES[k].reload ? 200 : PART_KEYS.includes(k) && home ? Math.max(1, partDeficit(state, home, k)) : 20));
   if (short.length) tryDeal();
   // At a base: valuables and spare weapons they pay well for (trade.js autoSellGear).

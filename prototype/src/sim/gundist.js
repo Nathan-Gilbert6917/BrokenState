@@ -24,7 +24,7 @@ import { GEAR } from "./data.js";
 import { WEAPONS } from "./combat.js"; // call time only (combat.js imports this module)
 import { hash01 } from "./skills.js";
 import { ITEM_TAGS, SITE_TAGS, AREA_TAGS } from "./loot.js";
-import { GUN_CLASS, GUN_USES, GUN_ERAS, GUN_RARITY, GUN_SOURCES, PLACE_DRAWS, THEME_DRAWS, ARSENAL_FINDS } from "./data-guns.js";
+import { GUN_CLASS, GUN_USES, GUN_ERAS, GUN_RARITY, GUN_SOURCES, PLACE_DRAWS, THEME_DRAWS, ARSENAL_FINDS, GUN_ADDED, GUN_NEWNESS, GUN_DRAWS } from "./data-guns.js";
 
 // Off switch (tools/gunloottest.js: with it off every source yields what its own list says, on the same dice).
 export const GUN_DIST = { off: false };
@@ -64,17 +64,21 @@ function themeDraws(tags) {
   for (const t of tags || []) for (const [u, w] of Object.entries(THEME_DRAWS[t] || {})) out[u] = Math.max(out[u] || 0, w);
   return out;
 }
+// A draws entry: { use: weight }, or a GUN_DRAWS profile's name.
+/** @param {any} d */
+const drawsOf = (d) => (typeof d === "string" ? GUN_DRAWS[d] || null : d || null);
 // A source's definition by name: GUN_SOURCES, or a place ("site:<type>", "area:<type>", "area:<type>@<site type>").
 /** @param {string} name @returns {any} */
 export function sourceDef(name) {
-  if (GUN_SOURCES[name]) return GUN_SOURCES[name];
+  const S = GUN_SOURCES[name];
+  if (S) return typeof S.draws === "string" ? { ...S, draws: drawsOf(S.draws) || {} } : S;
   const m = /^(site|area):([^@]+)(?:@(.+))?$/.exec(name || "");
   if (!m) return null;
   const [, kind, type, site] = m;
   const theme = (kind === "site" ? SITE_TAGS : AREA_TAGS)[type];
   if (!theme) return null;
   const at = site ? SITE_THEME[site] || site : null;
-  const draws = (at && PLACE_DRAWS[`${kind}:${type}@${at}`]) || PLACE_DRAWS[`${kind}:${type}`] || themeDraws(theme);
+  const draws = drawsOf((at && PLACE_DRAWS[`${kind}:${type}@${at}`]) || PLACE_DRAWS[`${kind}:${type}`]) || themeDraws(theme);
   return { draws, theme };
 }
 // The source name of a raid container (combat.js searchBox, citycrawl.js): its area at a site.
@@ -112,22 +116,26 @@ function tilt(pool, p0) {
   const l = (lo + hi) / 2;
   return Object.fromEntries(ks.map((k) => [k, pool[k] * Math.exp(l * ((GEAR[k].power || 0) - p0))]));
 }
+// A gun new enough for the extra-gun rolls' newness factor (data-guns.js GUN_ADDED on or after GUN_NEWNESS.from).
+/** @param {string} k */
+export const isNewGun = (k) => !!(GUN_ADDED[k] && GUN_NEWNESS.from && GUN_ADDED[k] >= GUN_NEWNESS.from);
 const CACHE = new Map();
 // Clears the cache (tools: after changing GUN_CLASS, GUN_SOURCES or GEAR).
 export function resetGunDist() { CACHE.clear(); GUNS = null; }
 // A source's guns: { key: weight }. opts.near: the gun a list gave (swapGun): only guns of its kind (GEAR cat) when the
 // source has any, and for a source with a band only those within ± band of its power (of its kind when any is, else
-// any kind in the band). opts.def: a definition of the caller's (cached under `name`).
-/** @param {string} name @param {{ near?: string | null, def?: any }} [opts] @returns {Record<string, number>} */
+// any kind in the band). opts.def: a definition of the caller's (cached under `name`). opts.fresh: the extra-gun rolls' newness factor
+// (gunfinds.js: a new gun × GUN_NEWNESS.mult).
+/** @param {string} name @param {{ near?: string | null, def?: any, fresh?: boolean }} [opts] @returns {Record<string, number>} */
 export function gunsFrom(name, opts = {}) {
   const near = opts.near && isGun(opts.near) ? opts.near : null;
-  const id = `${name}|${near || ""}`;
+  const id = `${name}|${near || ""}|${opts.fresh ? "fresh" : ""}`;
   if (CACHE.has(id)) return CACHE.get(id);
   const def = opts.def || sourceDef(name);
   /** @type {Record<string, number>} */
   let out = {};
   if (def) {
-    for (const k of allGuns()) { const w = weightIn(def, k); if (w > 0) out[k] = w; }
+    for (const k of allGuns()) { const w = weightIn(def, k) * (opts.fresh && isNewGun(k) ? GUN_NEWNESS.mult : 1); if (w > 0) out[k] = w; }
     if (near) {
       const p0 = GEAR[near].power || 0;
       const h0 = hitOf(near);
@@ -152,7 +160,7 @@ export function pickFrom(pool, u) {
   return list[list.length - 1];
 }
 // One gun from a source with u in [0, 1) (the source's own dice), or null.
-/** @param {string} name @param {number} u @param {{ near?: string | null }} [opts] */
+/** @param {string} name @param {number} u @param {{ near?: string | null, fresh?: boolean }} [opts] */
 export const drawGun = (name, u, opts = {}) => pickFrom(gunsFrom(name, opts), u);
 
 // The dice of a roll: an Rng (its position: no draw), a number, a string or a list of parts (as itemcond.js).

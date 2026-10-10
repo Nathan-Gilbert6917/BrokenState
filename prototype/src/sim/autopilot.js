@@ -28,12 +28,12 @@ import { startOrder, resumeQueue, besideWater, FETCH_WATER_HOURS } from "./order
 import { estimatePlan } from "./plans.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
 import { crawlAutoStep } from "./citycrawl.js";
-import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand, gearBuyPrice } from "./trade.js";
-import { autoCaravanTrade, launchCaravan, caravanEstimate } from "./caravans.js";
+import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand, gearBuyPrice, balanceWith, tradeVerdict, ensureWares } from "./trade.js";
+import { autoCaravanTrade, launchCaravan, caravanEstimate, caravanEnRoute } from "./caravans.js";
 import { governorVehicles, idleDaily } from "./vehicletrade.js"; // buying and selling vehicles
-import { radioDeals, pendingDeal, dealCaravanForm, matchGear, goodsWeight, cancelRadioDeal } from "./radiotrade.js"; // radio deals your caravan fetches
+import { radioDeals, pendingDeal, dealCaravanForm, matchGear, goodsWeight, cancelRadioDeal, deliveryRefusal, openRadioTrade } from "./radiotrade.js"; // radio deals your caravan fetches
 import { autoVisitorTrade } from "./visitors.js";
-import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, relayReach, RELAY_RANGE, GROUP_REACH } from "./radio.js";
+import { radioTradeIfShort, hasNetwork, canListen, radioScan, dealQuote, radioDeal, refusal, inCoverage, canRadioGroup, relayReach, RELAY_RANGE, GROUP_REACH, tradeBase, hubSpare, radioSpeech } from "./radio.js";
 import { attitude, baseDefense, strength, isAggressiveType, raidStakes } from "./factions.js";
 import { holdCheck, defenceWishes, hordeThreat, DECOY_FUEL, towerHordes } from "./defences.js";
 import { defaultRolePlan, plansOf } from "./defenceplan.js"; // the governor's defence plan (governorPlans, stewardSafety)
@@ -108,6 +108,7 @@ import { firstHubPending, hubSites } from "./hardcore-start.js";
 import { stagingNeeds, establishProblem, STAGING } from "./staging.js"; // no base: Establish base (a camp with its step up)
 import { isHardcore } from "./hardcore.js";
 import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad, baseDewormers, wormOf } from "./worm.js";
+import { gunWant, pickGunToBuy, noteGunBought, radioGunDeal } from "./govguns.js"; // the governor buys guns for the unarmed
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -556,7 +557,13 @@ export function autopilotDaily(state) {
   if (!hub(state)) return; // no base left (conquest.js: the exiles): no hub to stock (needs read its stores)
   const deal = radioTradeIfShort(state, needs(state));
   if (deal) { noteTrade(state, deal); say(state, `Radio: ${deal}.`); }
+  // govguns.js: a gun by radio when people at the hub go unarmed (every RADIO_EVERY days at most).
+  const gunDeal = radioGunDeal(state, hub(state), needs(state), radioGunDeps(state));
+  if (gunDeal) say(state, `Radio: ${gunDeal}.`);
 }
+// What govguns.js radioGunDeal trades with (radio.js and trade.js: passed in, they import much of the game).
+const radioGunDeps = (state) => ({ hasNetwork, refusal, caravanEnRoute, tradeBase, deliveryRefusal, openRadioTrade, tradeContext, balanceWith, tradeVerdict, executeTrade, endTrade, gearBuyPrice, pendingDeal, ensureWares,
+  spareValue: (f, k) => { const q = hubSpare(state, k); return q > 0 ? q * sellPrice(state, f, k, radioSpeech(state), q) : 0; } });
 
 // ---------- radio deals your caravan fetches (radiotrade.js) ----------
 // The governor agrees to bring its side to a group that asks (radio.js bringCard, at their fee), and sends the
@@ -1518,6 +1525,10 @@ function handleTrade(state) {
     if (cost > budget || (GEAR[k].weight || 1) > room) continue;
     askGear.push(it); askValue += cost; budget -= cost; room -= GEAR[k].weight || 1;
   }
+  // A gun for the unarmed at home (govguns.js: its guards and scavengers with only a club too), from their shelf.
+  const gun = pickGunToBuy(state, home, (f.wares || []).filter((x) => !askGear.includes(x)), (it) => gearBuyPrice(state, f, it, speech), budget, room);
+  const gunCost = gun ? gearBuyPrice(state, f, gun, speech) : 0;
+  if (gun) { askGear.push(gun); askValue += gunCost; budget -= gunCost; room -= GEAR[gun.key].weight || 1; }
   for (const k of Object.keys(need).sort((a, b) => need[b] - need[a])) {
     if (need[k] < 1.2 || budget <= 0 || !SUPPLIES[k]) continue;
     const kk = k === "ammo" ? wantedKey(partyCals(state, p), ctx.theirHave) : k; // ammo.js: generic ammo asked for as the rounds that fit the team's guns
@@ -1549,6 +1560,7 @@ function handleTrade(state) {
     const list = (o) => Object.entries(o).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
     if (/^Traded/.test(res)) {
       g.stats.trades++;
+      if (gun) noteGunBought(state, gun, gunCost, "visit"); // govguns.js: the tally
       text = `traded ${list(offer)} for ${[list(ask), ...askGear.map((x) => x.name)].filter(Boolean).join(", ")}`;
     } else text = `no deal (${res})`; // e.g. more than the team can carry
   }

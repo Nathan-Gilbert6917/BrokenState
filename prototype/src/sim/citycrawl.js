@@ -484,7 +484,7 @@ export function enterPlace(state, p, placeId, opts = {}) {
   const setup = {
     mode: "raid", tile: c.tile, partyId: p.id, canRetreat: true, ambush: null, handler: "crawl",
     enemy: { kind: groups.length > 1 ? "mixed" : groups[0]?.kind || "zombies", count: total, power: 3, name: groups.map((g) => g.name).join(" and ") || "nobody", groups },
-    raid: { heat0, place: placeOption(c, place, n) },
+    raid: { heat0, place: placeOption(c, place, n), gunSite: place.key }, // gundist.js: a police station's armoury draws police guns (as the quick search's)
     context: { factionIds: groups.filter((g) => g.factionId).map((g) => g.factionId), crawl: { kind: "place", place: place.id, block: n, heat0 } },
   };
   // The vehicle waits at the city's edge: not on the building's map.
@@ -510,7 +510,8 @@ export function enterPlace(state, p, placeId, opts = {}) {
   return "";
 }
 // A street event's small map (a crashed ambulance, a checkpoint): the street raid with these areas.
-function enterStreet(state, p, ev, areas, groups) {
+// gunSite: the place its rooms' guns come from (gundist.js areaSourceName: "military" for an Army checkpoint's).
+function enterStreet(state, p, ev, areas, groups, gunSite = "city") {
   const c = p.crawl;
   const n = c.block;
   const total = groups.reduce((a, g) => a + g.count, 0);
@@ -519,7 +520,7 @@ function enterStreet(state, p, ev, areas, groups) {
   const setup = {
     mode: "raid", tile: c.tile, partyId: p.id, canRetreat: true, ambush: null, handler: "crawl",
     enemy: { kind: groups.length > 1 ? "mixed" : groups[0]?.kind || "zombies", count: total, power: 3, name: groups.map((g) => g.name).join(" and ") || "nobody", groups },
-    raid: { heat0, building: "street", areas },
+    raid: { heat0, building: "street", areas, gunSite },
     context: { factionIds: [], crawl: { kind: "street", event: ev.id, block: n, heat0 } },
   };
   const veh = p.vehicle;
@@ -1107,7 +1108,7 @@ export function resolveEvent(state, p, eventId, choice, opts = {}) {
         const inf = state.tiles[c.tile].infection || 0;
         const dead = { kind: "zombies", count: Math.round((mil ? 4 : 3) + n * 0.8 + inf * 3), power: 2 + inf * 3 + CRAWL.DEAD.powerPerBlock * (n - 1) + (mil ? 1 : 0), name: mil ? "the dead in uniform" : "the dead" };
         if (mil) dead.mix = { soldier: MILDEAD.CHECKPOINT }; // the soldiers who held it, still in their armour (deadsoldiers.js)
-        const err = enterStreet(state, p, ev, mil ? ["barracks", "armory", "wreck", "campsite"] : ["medwreck", "wreck", "wreck"], [dead]);
+        const err = enterStreet(state, p, ev, mil ? ["barracks", "armory", "wreck", "campsite"] : ["medwreck", "wreck", "wreck"], [dead], mil ? "military" : "city");
         return err;
       }
       return eventGrab(state, p, c, ev, mil, done, fightNow);
