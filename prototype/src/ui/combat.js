@@ -1404,7 +1404,7 @@ function raidButtons(state, b, u, btn) {
   const zone = z >= 0 ? b.raid.zones[z] : null;
   // sim/search.js: the full search (1 action, everything shows) and the quick rummage (no action, part of it, loud).
   const sb = near.find((c) => !c.contents || c.quick) || near[0];
-  const searchTip = sb ? `Search ${sb.label.toLowerCase()} (${!sb.contents || sb.quick ? `${SEARCH.ap} action` : "already searched: free"}${sb.quick ? ": it was only rummaged through, a full search turns up the rest" : ""}). Everything inside shows, quietly; pick what to take. ${sb.kind === "body" ? "" : areaHint(b.raid.areas[sb.area].type)}` : "Stand next to an unsearched container (yellow box marker) to search it.";
+  const searchTip = sb ? `Search ${sb.label.toLowerCase()} (${!sb.contents || sb.quick ? `${SEARCH.ap} action` : "already searched: free"}${sb.quick ? ": it was only rummaged through, a full search turns up the rest" : ""}). Everything inside shows, quietly; pick what to take. ${sb.kind === "body" || !b.raid.areas[sb.area] ? "" : areaHint(b.raid.areas[sb.area].type)}` : "Stand next to an unsearched container (yellow box marker) to search it.";
   const qb = quickable(near)[0];
   const Q = SEARCH.quick;
   const qWhy = quickRefusal(b, u, qb || near[0]);
@@ -1927,7 +1927,8 @@ function previewHtml(b, state = null) {
     if (lockText) return lockText;
     const box = boxAt(b, h.x, h.y);
     if (box) {
-      const hint = box.kind !== "body" ? areaHint(b.raid.areas[box.area].type) + "."
+      const hint = box.kind === "ground" ? "Put down or dropped here." // ground.js: a pile, in no room
+        : box.kind !== "body" ? (b.raid.areas[box.area] ? areaHint(b.raid.areas[box.area].type) + "." : "")
         : !box.zombie ? "Ammo, maybe food, meds or their gear."
         : box.ztype === "soldier" ? "A dead soldier: worn body armour, a helmet, rounds, now and then a rifle or a radio."
         : box.ztype === "riot" ? "A dead riot cop: the riot helmet and guards, a baton, cuffs, a few rounds."
