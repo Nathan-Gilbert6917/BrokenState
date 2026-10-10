@@ -288,14 +288,16 @@ let OPTS = null;
 export function initAlerts(options) { OPTS = options || null; } // main.js: the options object (ui/saves.js)
 export const goodNewsOn = () => !OPTS || OPTS.goodNews !== false;
 
-export function computeAlerts(state) {
+export const isGoodNews = (a) => !!a && GOOD_NEWS.has(a.kind) && a.tone === "good";
+// all: the good news too, whatever the switch says (renderAlerts: what is hidden still counts as seen).
+export function computeAlerts(state, { all = false } = {}) {
   let out = [];
   for (const [name, fn] of Object.entries(SECTIONS)) {
     try { fn(state, out); } catch (err) { // one broken kind must not take the stack down
       if (!computeAlerts.warned) { computeAlerts.warned = true; console.warn(`Broken State: the ${name} alerts failed`, err); }
     }
   }
-  if (!goodNewsOn()) out = out.filter((a) => !(GOOD_NEWS.has(a.kind) && a.tone === "good"));
+  if (!all && !goodNewsOn()) out = out.filter((a) => !isGoodNews(a));
   return out.sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
 }
 
@@ -309,15 +311,21 @@ export function renderAlerts(state, ui) {
   if (!ui.started || state.gameOver || ui.timelapse) return "";
   diarySync(state);
   const m = mute(state, ui);
-  const list = computeAlerts(state);
-  const keys = new Set(list.map((a) => a.key));
+  // Good news hidden by Options → Good news alerts (off) is still seen here: told (no flash) and handed to the sounds as
+  // heard (ui.alertHidden: ui/soundcues.js remembers it without a chime), so switching it back on shows what is still up
+  // without flashing or chiming old news.
+  const every = computeAlerts(state, { all: true });
+  const on = goodNewsOn();
+  const list = on ? every : every.filter((a) => !isGoodNews(a));
+  ui.alertHidden = on ? [] : every.filter(isGoodNews);
+  const keys = new Set(every.map((a) => a.key));
   for (const k of [...m.dismissed]) if (!keys.has(k)) m.dismissed.delete(k); // cleared: it may come back later
   for (const [k, until] of [...m.snooze]) if (state.hour >= until || !keys.has(k)) m.snooze.delete(k);
   // News that pops up as it happens (a repaired vehicle moving on): flashed once over the stack; what was already up when
-  // the run was started or loaded is not.
-  const pops = list.filter((a) => a.kind === "fixed");
+  // the run was started or loaded is not, nor what came while good news was switched off.
+  const pops = every.filter((a) => a.kind === "fixed");
   if (!m.told) m.told = new Set(pops.map((a) => a.key));
-  for (const a of pops) if (!m.told.has(a.key)) { m.told.add(a.key); ui.flash = { text: `🔧 ${a.tip.replace(/ Click to .*$/, "")}`, at: performance.now() }; }
+  for (const a of pops) if (!m.told.has(a.key)) { m.told.add(a.key); if (on) ui.flash = { text: `🔧 ${a.tip.replace(/ Click to .*$/, "")}`, at: performance.now() }; }
   const shown = list.filter((a) => !m.dismissed.has(a.key) && !m.snooze.has(a.key));
   const hidden = list.length - shown.length;
   ui.alertList = shown; // for the hotkeys and tests

@@ -455,9 +455,26 @@ section("Options → Good news alerts off: no row, flash or chime; the log keeps
     renderAlerts(r.state, ui2);
     const cues = worldCues(r.state, ui2, mem2);
     check(!cues.some((x) => x.name === "repaired"), "no chime");
-    opts.goodNews = true; // the control: switched on, the same alert is heard
+    // Switched back on: the news that came while it was off shows (still live) but as already seen: no flash, no chime.
+    ui2.flash = null;
+    opts.goodNews = true;
     renderAlerts(r.state, ui2);
-    check(worldCues(r.state, ui2, mem2).some((x) => x.name === "repaired"), "(on: the same alert chimes)");
+    const back = worldCues(r.state, ui2, mem2).concat(worldCues(r.state, ui2, mem2));
+    check((ui2.alertList || []).some((a) => a.kind === "fixed"), "on again: the live row is back");
+    check(!ui2.flash && !back.some((x) => x.name === "repaired" || x.name === "good"), `on again: no flash, no chime for the old news (${back.map((x) => x.name).join(", ") || "silent"})`);
+    // A fresh repair after it is back on is heard and flashed as ever.
+    const p3 = r.p, car3 = r.state.vehicles.find((v) => v.id === p3.vehicleId);
+    car3.condition = 5;
+    const c3 = breakdown(r.state, p3);
+    if (check(!!c3, "test setup: another Breakdown card")) {
+      dropEvents(r.state);
+      p3.progress = Math.max(0, p3.progress || 0);
+      answer(r.state, c3, /Repair it on the spot/, true);
+      const heard = [];
+      let flashed = false;
+      for (let i = 0; i < 3; i++) { tick(r.state, p3); renderAlerts(r.state, ui2); if (ui2.flash && /running again/.test(ui2.flash.text)) flashed = true; heard.push(...worldCues(r.state, ui2, mem2).map((x) => x.name)); }
+      check(flashed && heard.filter((n) => n === "repaired").length === 1, `a new repair once it is on: flashed and chimed once (${heard.join(", ") || "none"})`);
+    }
   } finally { initAlerts(null); }
 }
 

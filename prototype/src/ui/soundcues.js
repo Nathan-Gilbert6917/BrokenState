@@ -281,10 +281,14 @@ export function worldCues(state, ui, mem) {
   const list = (ui && ui.alertList) || [];
   const hour = state.hour || 0;
   let tone = null, repaired = false;
+  // A repair done is news of its own (its key has the hour: each repair is heard, once).
+  const alertId = (a) => (a.kind === "fixed" ? String(a.key) : `${String(a.key).split(":").slice(0, 2).join(":")}|${a.tone}`);
+  // Good news hidden by Options → Good news alerts (ui/alerts.js ui.alertHidden): remembered as heard, never played, so
+  // switching it back on does not chime old news.
+  for (const a of (ui && ui.alertHidden) || []) if (a && a.key) mem.alerts.set(alertId(a), hour);
   for (const a of list) {
     if (!a || !a.key) continue;
-    // A repair done is news of its own (its key has the hour: each repair is heard, once).
-    const id = a.kind === "fixed" ? String(a.key) : `${String(a.key).split(":").slice(0, 2).join(":")}|${a.tone}`;
+    const id = alertId(a);
     const seen = mem.alerts.get(id);
     mem.alerts.set(id, hour);
     if (fresh || (seen != null && hour - seen <= ALERT_QUIET_HOURS)) continue;
