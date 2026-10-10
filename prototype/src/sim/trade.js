@@ -773,13 +773,13 @@ export function executeTrade(state) {
     if (!(q > 0)) continue;
     if (ctx.kind === "visit") takeFromParty(ctx.p, k, q);
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) - q;
-    const tk = ctx.kind === "caravan" ? k : groupStockKey(k, f); // a group's own stores: one water pool, one count of parts
+    const tk = ctx.kind === "caravan" || (isRoundKey(k) && !pooled(f)) ? k : groupStockKey(k, f); // a group's own stores: one water pool, one count of parts (an outsider's rounds stay by key)
     theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" ? 0 : stockOf(f, k))) + q; // a group with no figure yet (water, firewood) starts from its comfortable stock
     gave.push(`${q} ${keyWord(k)}`);
   }
   for (const [k, q] of Object.entries(t.ask)) {
     if (!(q > 0)) continue;
-    const tk = ctx.kind === "caravan" ? k : groupStockKey(k, f); // a group's own stores: one ammo count, one count of parts
+    const tk = ctx.kind === "caravan" || (isRoundKey(k) && !pooled(f)) ? k : groupStockKey(k, f); // a group's own stores: one ammo count, one count of parts; an outsider (visitors.js) keeps its rounds by key, so a team buying them takes them from that key, never from a generic count it no longer has
     theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" ? 0 : stockOf(f, tk))) - q;
     if (ctx.kind === "visit") ctx.p.cargo.supplies[k] = (ctx.p.cargo.supplies[k] || 0) + q;
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) + q;
