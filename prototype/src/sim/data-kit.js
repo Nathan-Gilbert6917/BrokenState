@@ -22,11 +22,11 @@ export const MAGAZINES = {
   mag_22_10:       { plat: ["rimpistol", "rimrifle"], cal: "22lr", cap: 10, kg: 0.05, value: 3, pouch: "pistol", name: ".22 magazine (10)" },
   mag_22_25:       { plat: ["rimpistol", "rimrifle"], cal: "22lr", cap: 25, kg: 0.09, value: 6, pouch: "pistol", name: ".22 magazine (25)" },
   mag_mp5_30:      { plat: ["mp5"], cal: "9mm", cap: 30, kg: 0.12, value: 6, pouch: "rifle", name: "SMG magazine (30)" },
-  mag_stanag_20:   { plat: ["ar15", "m249"], cal: "556", cap: 20, kg: 0.1, value: 4, pouch: "rifle", name: "5.56 magazine (20)" },
-  mag_stanag_30:   { plat: ["ar15", "m249"], cal: "556", cap: 30, kg: 0.12, value: 6, pouch: "rifle", name: "5.56 magazine (30)" },
-  mag_stanag_40:   { plat: ["ar15", "m249"], cal: "556", cap: 40, kg: 0.15, value: 10, pouch: "rifle", name: "5.56 magazine (40)" },
+  mag_stanag_20:   { plat: ["ar15", "m249", "bullpup"], cal: "556", cap: 20, kg: 0.1, value: 4, pouch: "rifle", name: "5.56 magazine (20)" },
+  mag_stanag_30:   { plat: ["ar15", "m249", "bullpup"], cal: "556", cap: 30, kg: 0.12, value: 6, pouch: "rifle", name: "5.56 magazine (30)" },
+  mag_stanag_40:   { plat: ["ar15", "m249", "bullpup"], cal: "556", cap: 40, kg: 0.15, value: 10, pouch: "rifle", name: "5.56 magazine (40)" },
   drum:            { plat: ["ar15"], cal: "556", cap: 60, kg: 1.1, value: 38, pouch: "rifle", name: "Drum magazine (60)", aim: -2, jam: 1.5 },
-  mag_stanag_100:  { plat: ["ar15", "m249"], cal: "556", cap: 100, kg: 1.2, value: 70, pouch: "rifle", name: "5.56 double drum (100)", aim: -2, jam: 1.3 },
+  mag_stanag_100:  { plat: ["ar15", "m249", "bullpup"], cal: "556", cap: 100, kg: 1.2, value: 70, pouch: "rifle", name: "5.56 double drum (100)", aim: -2, jam: 1.3 },
   mag_ak_30:       { plat: ["ak"], cal: "762x39", cap: 30, kg: 0.33, value: 6, pouch: "rifle", name: "AK magazine (30)" },
   mag_ak_45:       { plat: ["ak"], cal: "762x39", cap: 45, kg: 0.4, value: 12, pouch: "rifle", name: "AK magazine (45)" },
   mag_ak_75:       { plat: ["ak"], cal: "762x39", cap: 75, kg: 1.3, value: 40, pouch: "rifle", name: "AK drum (75)", aim: -2, jam: 1.3 },
@@ -36,15 +36,25 @@ export const MAGAZINES = {
   mag_bolt_10:     { plat: ["bolt"], cal: "308", cap: 10, kg: 0.15, value: 10, pouch: "rifle", name: "Bolt-action magazine (10)" },
   mag_50_10:       { plat: ["amr"], cal: "50bmg", cap: 10, kg: 0.5, value: 20, pouch: "rifle", name: ".50 magazine (10)" },
   mag_m249_100:    { plat: ["m249"], cal: "556", cap: 100, kg: 0.4, value: 15, pouch: "rifle", name: "Belt box (100)" },
+  // The arsenal of 2026-10-10 (data-guns.js ARSENAL_GEAR): .308 battle rifle magazines (the FAL's, the M14's and the
+  // SCAR-H's, one kind here), the .45 SMG's and pistol's, the hand cannon's, the .308 machine gun's belt.
+  mag_battle_10:   { plat: ["battle"], cal: "308", cap: 10, kg: 0.15, value: 6, pouch: "rifle", name: ".308 battle rifle magazine (10)" },
+  mag_battle_20:   { plat: ["battle"], cal: "308", cap: 20, kg: 0.25, value: 9, pouch: "rifle", name: ".308 battle rifle magazine (20)" },
+  mag_ump_25:      { plat: ["ump"], cal: "45acp", cap: 25, kg: 0.15, value: 7, pouch: "rifle", name: ".45 SMG magazine (25)" },
+  mag_poly45_12:   { plat: ["poly45"], cal: "45acp", cap: 12, kg: 0.09, value: 5, pouch: "pistol", name: ".45 pistol magazine (12)" },
+  mag_deagle_9:    { plat: ["deagle"], cal: "357", cap: 9, kg: 0.12, value: 8, pouch: "pistol", name: "Magnum pistol magazine (9)" },
+  mag_m240_100:    { plat: ["m240"], cal: "308", cap: 100, kg: 0.5, value: 18, pouch: "rifle", name: ".308 belt box (100)" },
 };
 
 // Internal magazines (a tube, a cylinder, a fixed box): Reload (1 action) adds this many rounds. A clip item (a
 // speedloader, a stripper clip) carried fills it in one action instead (CLIPS). A gun with a magazine item fitted (a
 // bolt rifle with a detachable box) reloads by magazine instead.
-export const INTERNAL = { shotgun: 4, semishotgun: 4, leverrifle: 4, huntrifle: 3, revolver: 2, dbshotgun: 2, sawnoff: 2, pipegun: 1 };
+export const INTERNAL = { shotgun: 4, semishotgun: 4, leverrifle: 4, huntrifle: 3, revolver: 2, dbshotgun: 2, sawnoff: 2, pipegun: 1,
+  // the arsenal of 2026-10-10: break actions load both barrels (or the one) a Reload, tubes and a cylinder as before
+  ou12: 2, ou20: 2, single12: 1, singlerifle: 1, pump20: 4, tacpump: 4, lever357: 4, snub357: 2 };
 // Clip items: the guns they feed and how many rounds a clip puts in at once. Used once a fight (refilled free after it).
 export const CLIPS = {
-  speedloader: { weapons: ["revolver"], n: 6, pouch: "pistol" },
+  speedloader: { weapons: ["revolver"], n: 6, pouch: "pistol" }, // (the snub-nose's five-shot cylinder takes none: a speed strip at most)
   stripper308: { weapons: ["huntrifle"], n: 5, pouch: "rifle" },
 };
 

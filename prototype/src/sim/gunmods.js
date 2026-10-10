@@ -57,7 +57,7 @@
 import { GEAR } from "./data.js";
 import { GUN_WEAPONS } from "./data-guns.js";
 import { CALIBERS } from "./data-ammo.js";
-import { SLOTS, SLOT_NAMES, SHARED, PLATFORMS, WEAPON_PLATFORM, WEAPON_SLOTS_OFF, BASE_CAL, MOD_ATTACH } from "./data-gunmods.js";
+import { SLOTS, SLOT_NAMES, SHARED, PLATFORMS, WEAPON_PLATFORM, WEAPON_SLOTS_OFF, BASE_CAL, MOD_ATTACH, PLATFORM_LIKE, PLATFORM_LIKE_SKIP } from "./data-gunmods.js";
 import { KIT_ATTACH } from "./data-kit.js"; // magazines as items (section 15): the extended mag and the drum are magazine items now
 // The gun builder's sim calls on inventory locations (they live with the inventory's location handling).
 export { fitAt, stripAt } from "./inventory.js";
@@ -78,7 +78,7 @@ const RIFLE_CALS = ["556", "762x39", "308", "3030"];
 const LEGACY = {
   reddot:    { slot: "optic",    short: "red dot",      look: "reddot",   fits: { plat: ["glock", "p1911", "revolver", "pump", "semi12", "lever", "ar15", "ak", "mp5"] }, aim: 4 },
   holo:      { slot: "optic",    short: "holo sight",   look: "holo",     fits: { plat: ["pump", "semi12", "ar15", "ak", "mp5", "m249"] }, aim: 5, close: 3 },
-  scope4x:   { slot: "optic",    short: "4× scope",     look: "scope4",   fits: { plat: ["lever", "ar15", "ak", "rimrifle"] }, opt: 3, fall: -0.5, close: -8 },
+  scope4x:   { slot: "optic",    short: "4× scope",     look: "scope4",   fits: { plat: ["lever", "ar15", "ak", "rimrifle", "single"] }, opt: 3, fall: -0.5, close: -8 },
   laser:     { slot: "tactical", short: "laser",        look: "laser",    fits: { any: true }, aim: 1, close: 6 },
   foregrip:  { slot: "grip",     short: "foregrip",     look: "vgrip",    fits: { any: true, notPlat: ["revolver"] }, aim: 2, close: 2 },
   bipod:     { slot: "bipod",    short: "bipod",        look: "bipod",    fits: { any: true }, brace: 8 },
@@ -87,13 +87,21 @@ const LEGACY = {
   suppressor:{ slot: "muzzle",   short: "oil-filter suppressor", look: "oilfilter", fits: { cal: ["9mm", "556", "308", "3030"] }, can: true, noise: 0.5, jam: 1.5 }, // makeshift: GEAR dur = shots
   brake:     { slot: "muzzle",   short: "muzzle brake", look: "brake",    fits: { cal: RIFLE_CALS }, aim: 3, noise: 1.3 },
   comp:      { slot: "muzzle",   short: "compensator",  look: "comp",     fits: { cal: ["9mm", "45acp", "357"] }, aim: 2, noise: 1.15 },
-  choke:     { slot: "muzzle",   short: "choke",        look: "choke",    fits: { cal: ["12ga"] }, opt: 2, fall: -2, close: -4 },
+  choke:     { slot: "muzzle",   short: "choke",        look: "choke",    fits: { cal: ["12ga", "20ga"] }, opt: 2, fall: -2, close: -4 },
   extmag:    { slot: "mag",      short: "extended mag", look: "stick20",  fits: { plat: ["glock"] }, cap: 9 },
   drum:      { slot: "mag",      short: "drum mag",     look: "drum",     fits: { plat: ["ar15"] }, capMult: 2, aim: -2, jam: 1.5 },
   tubeext:   { slot: "mag",      short: "tube extension", look: "tube_ext", fits: { plat: ["pump"] }, cap: 2 },
 };
 export const ATTACH = {};
 for (const [k, a] of Object.entries({ ...LEGACY, ...MOD_ATTACH, ...KIT_ATTACH })) ATTACH[k] = { ...a, mount: a.slot };
+// The new platforms (data-gunmods.js PLATFORM_LIKE) take what their look-alike takes, magazines aside.
+for (const [plat, like] of Object.entries(PLATFORM_LIKE)) {
+  for (const [k, a] of Object.entries(ATTACH)) {
+    const f = a.fits;
+    if (!f || !f.plat || !f.plat.includes(like) || f.plat.includes(plat) || a.magCap || (PLATFORM_LIKE_SKIP[plat] || []).includes(k)) continue;
+    ATTACH[k] = { ...a, fits: { ...f, plat: [...f.plat, plat] } };
+  }
+}
 // A magazine item (data-kit.js MAGAZINES): its rounds (null: not a magazine).
 export const magCapOf = (key) => (ATTACH[key] && ATTACH[key].magCap) || null;
 export const isGunmod = (key) => !!ATTACH[key];

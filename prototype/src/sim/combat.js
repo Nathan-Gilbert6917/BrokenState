@@ -36,6 +36,7 @@ import { partyVehicle, partyVehicles, isBike, upgradesOf, armourOf, riderMult, v
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods, carriedThrowables } from "./inventory.js";
 import { areaSource, kitSource, spend } from "./itemcond.js";
+import { rollAreaGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 in a raid container (its own dice)
 import { rollAreaFind, rollAreaWood, rollAreaArrows, rollAreaGunmod, splitParts, rollAreaGrenades, rollAreaLaunchers, rollAreaReload } from "./loot.js";
 import { buzzAim } from "./comforts.js";
 import { needsAim } from "./needs.js";
@@ -683,9 +684,12 @@ export const WEAPONS = {
   // carry pistols too (KITS), so every gun's odds against them move with it: at 14–21 +0 three pistols beat 4 raiders
   // 24% to the revolver's 40%; at 15–22 +4 about 30% to its 35% (3000–4000 battles a matchup, crits 25 / 10 / 5 / 8);
   // 16–24 +4 overtook the revolver (33% to 32%).
+  // Every gun's dmg keeps within 15% of its calibre's reference (data-ammo.js CAL_DMG, the balance ladder of 2026-10-10:
+  // .22 < 9mm < .45 < .357 < 20 ga < 5.56 < 7.62×39 < 12 ga < .30-30 < .308 < 12 ga slug < .50): the hunting rifle went
+  // 24–34 to 31–43, the lever-action 20–30 to 25–35, the police carbine 20–29 to 21–30 (tools/arsenalbalancetest.js).
   pistol:    { name: "9mm pistol",     dmg: [15, 22], opt: 6,  fall: 4, aim: 4,  ammo: 1, noise: 2, cap: 15, cal: "9mm", rel: 0.35 }, // a double-stack 9mm magazine
   shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10, cap: 6, cal: "12ga", rel: 0.3 }, // a pump: five in the tube and one in the chamber
-  huntrifle: { name: "Hunting rifle",  dmg: [24, 34], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10, cap: 5, cal: "308", rel: 0.15 }, // a bolt-action's internal magazine
+  huntrifle: { name: "Hunting rifle",  dmg: [31, 43], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10, cap: 5, cal: "308", rel: 0.15 }, // a bolt-action's internal magazine
   ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3, cap: 30, cal: "556", rel: 0.5, modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 2, aim: -10 }, auto: { rounds: 10, aim: -20 } } }, // a 30-round magazine: 15 bursts of 2 (its burst mode; gunfire.js fire modes)
   // Makeshift weapons (crafting.js). The crossbow is silent and shoots bolts (arrows: 1 a shot, data.js SUPPLIES.arrows).
   spikedbat:  { name: "Spiked bat",        melee: true, dmg: [16, 25] },
@@ -708,8 +712,8 @@ export const WEAPONS = {
   compbow:    { name: "Compound bow",      dmg: [17, 26], opt: 7, fall: 5, aim: -2, ammo: 0, arrows: 1, noise: 0, close: -5 },
   xbow:       { name: "Hunting crossbow",  dmg: [20, 29], opt: 6, fall: 5, aim: 0, ammo: 0, arrows: 1, noise: 0, close: -5 },
   revolver:   { name: ".357 revolver",     dmg: [20, 30], opt: 5, fall: 5, aim: -2, ammo: 1, noise: 3, cap: 6, cal: "357", rel: 0.05 }, // a six-shot cylinder
-  leverrifle: { name: "Lever-action rifle", dmg: [20, 30], opt: 10, fall: 2.5, aim: 4, ammo: 1, noise: 3, cap: 8, cal: "3030", rel: 0.3 }, // a tube under the barrel
-  carbine:    { name: "Police carbine",    dmg: [20, 29], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3, cap: 30, cal: "556", rel: 0.5 }, // a patrol carbine's 30-round magazine (semi-automatic: single only, no modes: data-guns.js)
+  leverrifle: { name: "Lever-action rifle", dmg: [25, 35], opt: 10, fall: 2.5, aim: 4, ammo: 1, noise: 3, cap: 8, cal: "3030", rel: 0.3 }, // a tube under the barrel
+  carbine:    { name: "Police carbine",    dmg: [21, 30], opt: 9, fall: 3, aim: 7, ammo: 1, noise: 3, cap: 30, cal: "556", rel: 0.5 }, // a patrol carbine's 30-round magazine (semi-automatic: single only, no modes: data-guns.js)
   // A spitter's acid (zombietypes.js): silent, every `cooldown` turns, cover counts `pierce` steps less against it.
   acid:       { name: "Acid spit",         dmg: [16, 22], opt: 4, fall: 8, aim: 0, ammo: 0, noise: 0, acid: true, cooldown: ZTYPES.spitter.cooldown, pierce: ZTYPES.spitter.pierce },
 };
@@ -6067,6 +6071,8 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       gear.push(...rollAreaGrenades(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
       // A grenade launcher, a rocket tube, a crate of 40 mm in army stock (loot.js AREA_LAUNCHERS; its own dice too).
       gear.push(...rollAreaLaunchers(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
+      // One of the newer guns (gunfinds.js GUN_FINDS.area; its own dice too).
+      gear.push(...rollAreaGuns(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
       // Firewood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
       const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;

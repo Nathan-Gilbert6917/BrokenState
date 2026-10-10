@@ -18,6 +18,7 @@ import { noteSearch } from "./relations.js";
 import { itemLoad, lootItem, armouredItem } from "./inventory.js";
 import { gunMags } from "./carrykit.js"; // a found gun's spare magazines
 import { siteSource } from "./itemcond.js";
+import { rollSiteGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 (its own dice)
 import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollBuildmat, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
@@ -233,6 +234,8 @@ export function searchHour(state) {
   if (gren.length) { e.found.gear.push(...gren); finds.push(gren.length > 1 ? `${gren.length} ${gren[0].key === "flashbang" ? "flashbangs" : "smoke grenades"}` : gren[0].name); }
   const gl = rollSiteLaunchers(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // grenade launchers, rocket tubes, 40 mm (loot.js SITE_LAUNCHERS; its own dice)
   if (gl.length) { e.found.gear.push(...gl); finds.push(gl.length > 1 ? `${gl.length} × ${gl[0].name}` : gl[0].name); }
+  const ag = rollSiteGuns(state, e.tile, (perk("treasure") ? 2 : 1) * ap.loot, `h${e.hours}`); // an over-under, a battle rifle (gunfinds.js GUN_FINDS; its own dice)
+  if (ag.length) { e.found.gear.push(...ag); finds.push(ag[0].name); }
   const wood = rollSiteWood(state, e.tile, ap.loot, `h${e.hours}`); // a woodpile, a log basket (loot.js SITE_WOOD; its own dice)
   if (wood > 0) { e.found.supplies.wood = (e.found.supplies.wood || 0) + wood; finds.push(`${wood} wood`); }
   const bm = rollBuildmat(state, e.tile, ap.loot * (1 + scav / 30), `h${e.hours}`); // lumber, blocks, sheet metal (loot.js BUILDMAT_FINDS; its own dice)

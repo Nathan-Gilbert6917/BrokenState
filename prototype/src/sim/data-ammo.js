@@ -11,13 +11,14 @@
 // common: false = launcher rounds (40 mm grenades, rockets: section 13): their own supply keys and boxes, but never
 // "ammo" in the abstract (rounds.js GENERIC_KEYS: no generic ammo settles into them, no plan or deal pays in them,
 // no ammo bench makes them, an AI group's count never folds them in).
-/** @type {Record<string, { name: string, kg: number, box: number, pen: number, ad: number, value: number, base: string, types: string[], common?: boolean }>} */
+/** @type {Record<string, { name: string, kg: number, box: number, pen: number, ad: number, value: number, base: string, types: string[], common?: boolean, dmg?: [number, number] }>} */
 export const CALIBERS = {
   "22lr":   { name: ".22 LR",           kg: 0.0035, box: 100, pen: 5,  ad: 0.3, value: 0.2,  base: "fmj",  types: ["fmj", "hp", "subsonic"] },
   "9mm":    { name: "9mm",              kg: 0.012,  box: 50,  pen: 15, ad: 0.4, value: 0.5,  base: "fmj",  types: ["fmj", "hp", "ap", "plusp", "subsonic", "rubber"] },
   "45acp":  { name: ".45 ACP",          kg: 0.021,  box: 50,  pen: 14, ad: 0.45, value: 0.6, base: "fmj",  types: ["fmj", "hp", "subsonic"] },
-  "357":    { name: ".357 Magnum",      kg: 0.015,  box: 50,  pen: 20, ad: 0.45, value: 0.6, base: "fmj",  types: ["fmj", "hp", "plusp"] },
+  "357":    { name: ".357 Magnum",      kg: 0.015,  box: 50,  pen: 20, ad: 0.45, value: 0.65, base: "fmj",  types: ["fmj", "hp", "plusp"] },
   "12ga":   { name: "12 gauge",         kg: 0.04,   box: 25,  pen: 8,  ad: 0.3, value: 0.8,  base: "buck", types: ["buck", "slug", "bird", "beanbag"] },
+  "20ga":   { name: "20 gauge",         kg: 0.032,  box: 25,  pen: 6,  ad: 0.25, value: 0.6, base: "buck", types: ["buck", "slug", "bird"] },
   "556":    { name: "5.56 NATO",        kg: 0.012,  box: 30,  pen: 30, ad: 0.8, value: 0.7,  base: "fmj",  types: ["fmj", "ap", "match", "tracer", "rubber"] },
   "762x39": { name: "7.62×39",          kg: 0.016,  box: 30,  pen: 32, ad: 0.8, value: 0.7,  base: "fmj",  types: ["fmj", "sp", "ap", "tracer"] },
   "308":    { name: ".308 / 7.62 NATO", kg: 0.025,  box: 20,  pen: 38, ad: 0.9, value: 1.0,  base: "fmj",  types: ["fmj", "sp", "ap", "match", "subsonic", "rubber"] },
@@ -26,6 +27,23 @@ export const CALIBERS = {
   // Launcher rounds (section 13; launchers.js fires them): a box of six 40 mm grenades, one rocket a "box".
   "40mm":   { name: "40 mm",            kg: 0.23,   box: 6,   pen: 20, ad: 2,   value: 15,   base: "he",   types: ["he", "buck", "smoke", "illum"], common: false },
   "rocket": { name: "Rocket",           kg: 2.6,    box: 1,   pen: 90, ad: 5,   value: 60,   base: "heat", types: ["heat"], common: false },
+};
+// The damage ladder (docs/weapons-overhaul-plan.md "Balance ladder 2026-10-10"; user, 2026-10-10: ".22 is not
+// outclassing any other ammo and .50 does the most damage; 5.56 is closer to .22 than .308; 12ga is the middle but
+// slugs are better than .308"). A calibre's reference damage a hit, [lo, hi], its base round from a typical gun: every
+// gun of that calibre has its WEAPONS dmg within LADDER.BAND of it (a long barrel a little more, a snub or a zip gun a
+// little less), and a type's dmg / soft (AMMO_TYPES) move it from there. tools/arsenalbalancetest.js checks the order.
+/** @type {Record<string, [number, number]>} */
+export const CAL_DMG = {
+  "22lr": [11, 17], "9mm": [15, 22], "45acp": [18, 26], "357": [19, 29], "20ga": [20, 30], "556": [22, 30],
+  "762x39": [24, 34], "12ga": [24, 36], "3030": [25, 35], "308": [34, 46], "50bmg": [62, 84],
+};
+for (const [cal, d] of Object.entries(CAL_DMG)) CALIBERS[cal].dmg = d;
+// The ladder's order (lowest first, by the base round's damage on an unarmoured target) and the band a gun's own
+// damage keeps to around its calibre's (mounted guns aside: the M2's belt is a turret's number).
+export const LADDER = {
+  ORDER: ["22lr", "9mm", "45acp", "357", "20ga", "556", "762x39", "12ga", "3030", "308", "50bmg"],
+  BAND: [0.85, 1.15],
 };
 
 // Effects of a type on its calibre's FMJ. dmg: × damage; soft: × damage on a hit location with no armour (hollow and
@@ -47,8 +65,10 @@ export const AMMO_TYPES = {
   subsonic: { name: "subsonic",       dmg: 0.9,  soft: 0.9,  penAdd: -2, opt: -1, noise: 0.75, noiseSuppressed: 0.6, jam: 1.1, ad: 0.35, value: 1.4 },
   match:    { name: "match",          dmg: 1,    soft: 1,    penAdd: 2,  aim: 6, opt: 1, fallMult: 0.85, jam: 0.8, ad: 0.8, value: 2 },
   tracer:   { name: "tracer",         dmg: 1,    soft: 1,    penAdd: -2, aim: 4, revealsShooter: true, ad: 0.8, value: 1.4 },
-  slug:     { name: "slug",           dmg: 1.15, soft: 1.15, pen: { "12ga": 22 }, opt: 4, fallMult: 0.55, close: -8, ad: 0.9, value: 1.4 },
-  bird:     { name: "birdshot",       dmg: 0.55, soft: 0.55, pen: { "12ga": 2 }, aim: 8, opt: -1, close: 6, ad: 0.15, value: 0.6, spread: true, swarm: 1.3 },
+  // A slug: one heavy lead ball (the ladder: a 12 gauge slug outhits any .308 round on an unarmoured target, but its
+  // soft lead goes through less armour: pen 22 against the .308's 38).
+  slug:     { name: "slug",           dmg: 1.55, soft: 1.55, pen: { "12ga": 22, "20ga": 16 }, opt: 4, fallMult: 0.55, close: -8, ad: 0.9, value: 1.4 },
+  bird:     { name: "birdshot",       dmg: 0.6,  soft: 0.6,  pen: { "12ga": 2, "20ga": 1 }, aim: 8, opt: -1, close: 6, ad: 0.15, value: 0.6, spread: true, swarm: 1.3 },
   // Less-lethal (the non-lethal branch reads hit.nonLethal: a knock-out, not a kill): police and prison stock only,
   // never a starting load, never common.
   beanbag:  { name: "beanbag",        dmg: 0.5,  soft: 0.5,  pen: { "12ga": 2 }, opt: -1, close: 4, ad: 0.1, value: 1.3, nonlethal: true },
@@ -72,6 +92,33 @@ export function ammoPen(cal, type) {
 }
 export const ammoKey = (cal, type) => `a_${cal}_${type}`;
 
+// What each round is worth and how common it is (user, 2026-10-10: "make ammo rarity and value based on the round";
+// "5.56, .308, .22, 12ga are some of the most common rounds found; rounds that deal more damage and the rarer variants
+// of each calibre are also rarer"). "cal_type": [rarity tier, value a round]. The value prices the boxes, the supply
+// (trade, Customize points: custompoints.js through SUPPLIES); the tier weighs where rounds turn up (AMMO_MIX below:
+// RARITY_FIND × a place's calibres × what it stocks). Handloads are HAND_VALUE of their factory round.
+export const RARITY = ["common", "uncommon", "scarce", "rare", "veryrare"];
+export const RARITY_NAME = { common: "common", uncommon: "uncommon", scarce: "scarce", rare: "rare", veryrare: "very rare" };
+export const RARITY_FIND = { common: 1, uncommon: 0.45, scarce: 0.18, rare: 0.06, veryrare: 0.02 };
+/** @type {Record<string, [string, number]>} */
+export const ROUND_ECON = {
+  "22lr_fmj": ["common", 0.2], "22lr_hp": ["uncommon", 0.3], "22lr_subsonic": ["uncommon", 0.28],
+  "9mm_fmj": ["common", 0.5], "9mm_hp": ["uncommon", 0.75], "9mm_plusp": ["scarce", 0.7], "9mm_subsonic": ["scarce", 0.7], "9mm_rubber": ["scarce", 0.55], "9mm_ap": ["rare", 1.4],
+  "45acp_fmj": ["uncommon", 0.6], "45acp_hp": ["scarce", 0.95], "45acp_subsonic": ["scarce", 0.85],
+  "357_fmj": ["uncommon", 0.65], "357_hp": ["scarce", 1.0], "357_plusp": ["rare", 1.0],
+  "20ga_buck": ["uncommon", 0.6], "20ga_bird": ["uncommon", 0.35], "20ga_slug": ["scarce", 1.0],
+  "556_fmj": ["common", 0.7], "556_tracer": ["uncommon", 0.95], "556_match": ["scarce", 1.4], "556_rubber": ["rare", 0.85], "556_ap": ["rare", 1.95],
+  "762x39_fmj": ["uncommon", 0.7], "762x39_sp": ["scarce", 1.0], "762x39_tracer": ["scarce", 0.95], "762x39_ap": ["rare", 1.95],
+  "12ga_buck": ["common", 0.8], "12ga_bird": ["common", 0.45], "12ga_slug": ["uncommon", 1.4], "12ga_beanbag": ["rare", 1.05],
+  "3030_sp": ["uncommon", 0.8], "3030_fmj": ["scarce", 0.8],
+  "308_fmj": ["common", 1.0], "308_sp": ["common", 1.3], "308_match": ["scarce", 2.0], "308_subsonic": ["rare", 1.5], "308_rubber": ["veryrare", 1.2], "308_ap": ["veryrare", 2.8],
+  "50bmg_ball": ["rare", 6], "50bmg_api": ["veryrare", 10],
+  "40mm_he": ["veryrare", 15], "40mm_buck": ["veryrare", 8], "40mm_smoke": ["veryrare", 10], "40mm_illum": ["veryrare", 6], "rocket_heat": ["veryrare", 60],
+};
+// A round's tier and value (a calibre or type missing from the table: the old rule, calibre × type value).
+export const roundTier = (cal, type) => (ROUND_ECON[`${cal}_${type}`] || [])[0] || (AMMO_TYPES[type] && AMMO_TYPES[type].launch ? "veryrare" : "scarce");
+export const roundValue = (cal, type) => { const e = ROUND_ECON[`${cal}_${type}`]; return e ? e[1] : CALIBERS[cal].value * ((AMMO_TYPES[type] && AMMO_TYPES[type].value) || 1); };
+
 // The boxes: one GEAR entry per calibre and type, built from the two tables above so they always agree. A box is the
 // portable form of a supply of the same key (ROUND_SUPPLIES below): a box in a survivor's pockets or pack is theirs
 // (a fight draws on it first: ammo.js roundsOf); one put in a base's armory or a team's cargo is opened into the
@@ -86,7 +133,7 @@ export function ammoBoxes() {
       const t = AMMO_TYPES[type];
       out[ammoKey(cal, type)] = {
       name: `${c.name} ${t.name}`, slot: "pack", skill: null, power: 0, req: 0, noise: 0, small: true, count: true,
-      dur: c.box, weight: Math.round((c.kg * c.box + 0.05) * 100) / 100, value: Math.max(1, Math.round(c.value * t.value * c.box)),
+      dur: c.box, weight: Math.round((c.kg * c.box + 0.05) * 100) / 100, value: Math.max(1, Math.round(roundValue(cal, type) * c.box)),
       cat: "ammo", rounds: { cal, type },
       desc: `A box of ${c.box} ${c.name} ${t.name} rounds.`,
       ...(c.common === false ? { common: false } : {}),
@@ -120,30 +167,55 @@ for (const [k, v] of Object.entries(LAUNCH_VALUE)) {
 // rounds by key ({ a_9mm_fmj: 120, a_12ga_buck: 30 }). value and weight are per round. The old generic "ammo" key
 // stays only as an abstract count: the AI groups' stores (f.stock.ammo), what a plan or a deal asks for ("40 ammo":
 // packed or paid as the rounds that fit, ammo.js) and the by-the-numbers figures. data.js merges these into SUPPLIES.
-/** @type {Record<string, { name: string, value: number, weight: number, cat: string, round: { cal: string, type: string }, common?: boolean }>} */
+/** @type {Record<string, { name: string, value: number, weight: number, cat: string, round: { cal: string, type: string, hand?: boolean }, common?: boolean, tier?: string }>} */
 export const ROUND_SUPPLIES = {};
 for (const [cal, c] of Object.entries(CALIBERS)) {
   for (const type of c.types) {
     const t = AMMO_TYPES[type];
-    ROUND_SUPPLIES[ammoKey(cal, type)] = { name: `${c.name} ${t.name}`, value: LAUNCH_VALUE[ammoKey(cal, type)] ?? Math.round(c.value * t.value * 1000) / 1000, weight: c.kg, cat: "ammo", round: { cal, type }, ...(c.common === false ? { common: false } : {}) };
+    ROUND_SUPPLIES[ammoKey(cal, type)] = { name: `${c.name} ${t.name}`, value: LAUNCH_VALUE[ammoKey(cal, type)] ?? Math.round(roundValue(cal, type) * 1000) / 1000, tier: roundTier(cal, type), weight: c.kg, cat: "ammo", round: { cal, type }, ...(c.common === false ? { common: false } : {}) };
   }
 }
 
 // Where rounds of which kind turn up (weights by "cal_type"). A site type or raid area uses the first theme it has
 // (ammo.js mixFor: military, police, prison, guns, hunt, farm, raider, else home); an AI group's stores (f.stock.ammo,
-// abstract) are offered in trade by its kind's theme (KIND_MIX). Calibres with no gun yet still turn up (trade goods).
+// abstract) are offered in trade by its kind's theme (KIND_MIX). Each weight is the place's share of a calibre
+// (THEME_CALS) × the round's rarity (ROUND_ECON tier, RARITY_FIND) × what the place stocks of that type (THEME_TYPES:
+// a police armoury its hollow points and beanbags, a hunting lodge its soft points and birdshot; 0: never there).
 /** @type {Record<string, Record<string, number>>} */
-export const AMMO_MIX = {
-  military: { "556_fmj": 44, "556_ap": 8, "556_tracer": 4, "556_match": 2, "308_fmj": 12, "308_ap": 3, "308_match": 2, "9mm_fmj": 12, "12ga_buck": 6, "762x39_fmj": 3, "45acp_fmj": 2, "50bmg_ball": 1 },
-  police:   { "9mm_fmj": 30, "9mm_hp": 14, "12ga_buck": 18, "12ga_slug": 8, "556_fmj": 14, "357_fmj": 5, "45acp_fmj": 4, "45acp_hp": 2, "9mm_ap": 1, "12ga_beanbag": 4, "9mm_rubber": 2, "556_rubber": 1 },
-  prison:   { "12ga_buck": 20, "9mm_fmj": 16, "556_fmj": 8, "12ga_slug": 4, "357_fmj": 2, "12ga_beanbag": 6, "9mm_rubber": 3, "308_rubber": 1 },
-  guns:     { "9mm_fmj": 14, "9mm_hp": 6, "9mm_plusp": 2, "9mm_subsonic": 1, "45acp_fmj": 5, "45acp_hp": 2, "357_fmj": 6, "357_hp": 2, "12ga_buck": 10, "12ga_slug": 4, "12ga_bird": 5,
-              "22lr_fmj": 8, "22lr_hp": 2, "308_fmj": 6, "308_sp": 5, "308_subsonic": 1, "3030_sp": 6, "556_fmj": 6, "762x39_fmj": 3, "762x39_sp": 1 },
-  hunt:     { "308_sp": 14, "308_fmj": 6, "3030_sp": 14, "12ga_bird": 10, "12ga_slug": 8, "12ga_buck": 6, "22lr_fmj": 10, "357_fmj": 3 },
-  farm:     { "12ga_buck": 14, "12ga_bird": 14, "12ga_slug": 5, "22lr_fmj": 14, "3030_sp": 8, "308_sp": 4, "357_fmj": 3 },
-  raider:   { "9mm_fmj": 22, "9mm_hp": 6, "12ga_buck": 16, "12ga_bird": 4, "556_fmj": 10, "762x39_fmj": 8, "357_fmj": 6, "45acp_fmj": 4, "308_fmj": 3, "3030_sp": 3 },
-  home:     { "9mm_fmj": 20, "12ga_buck": 14, "22lr_fmj": 10, "357_fmj": 8, "45acp_fmj": 5, "9mm_hp": 3, "308_sp": 4, "3030_sp": 3, "12ga_bird": 4, "556_fmj": 3 },
+export const THEME_CALS = {
+  military: { "556": 50, "308": 16, "9mm": 12, "12ga": 6, "762x39": 3, "45acp": 3, "50bmg": 14 },
+  police:   { "9mm": 34, "12ga": 26, "556": 14, "357": 8, "45acp": 9, "308": 2 },
+  prison:   { "12ga": 30, "9mm": 18, "556": 8, "357": 3, "308": 2 },
+  guns:     { "9mm": 16, "12ga": 18, "22lr": 14, "308": 14, "556": 10, "45acp": 7, "357": 8, "3030": 7, "762x39": 4, "20ga": 6 },
+  hunt:     { "308": 26, "3030": 16, "12ga": 18, "22lr": 14, "20ga": 6, "357": 3, "762x39": 1 },
+  farm:     { "12ga": 30, "22lr": 22, "20ga": 8, "3030": 10, "308": 6, "357": 3 },
+  raider:   { "9mm": 26, "12ga": 18, "556": 12, "762x39": 9, "357": 6, "45acp": 5, "308": 4, "22lr": 4, "3030": 3 },
+  home:     { "9mm": 20, "12ga": 16, "22lr": 14, "357": 8, "308": 6, "45acp": 5, "556": 4, "3030": 3, "20ga": 3 },
 };
+/** @type {Record<string, Record<string, number>>} */
+export const THEME_TYPES = {
+  military: { hp: 0, sp: 0, bird: 0, beanbag: 0, rubber: 0, plusp: 0, ap: 1.5, tracer: 0.5, match: 1, subsonic: 0.3, slug: 0.6 },
+  police:   { hp: 2.5, beanbag: 8, rubber: 3, ap: 0.5, bird: 0.2, slug: 0.8, sp: 0.5, match: 0.5, tracer: 0, subsonic: 0.3, plusp: 0.5 },
+  prison:   { beanbag: 10, rubber: 4, bird: 0.2, ap: 0.2, sp: 0.3, tracer: 0, match: 0, subsonic: 0, plusp: 0 },
+  guns:     { tracer: 0.3, rubber: 0, beanbag: 0, ap: 0.3 },
+  hunt:     { sp: 3, bird: 1.5, slug: 1.5, fmj: 0.5, hp: 1.5, tracer: 0, ap: 0, rubber: 0, beanbag: 0, match: 0.5, subsonic: 0.5, plusp: 0.5 },
+  farm:     { bird: 1.5, sp: 2, fmj: 0.8, ap: 0, tracer: 0, match: 0, rubber: 0, beanbag: 0, subsonic: 0.3, plusp: 0 },
+  raider:   { ap: 0.3, beanbag: 0, rubber: 0, match: 0.3, subsonic: 0.5 },
+  home:     { ap: 0, tracer: 0, match: 0.2, rubber: 0, beanbag: 0, subsonic: 0.5, plusp: 0.5 },
+};
+/** @param {string} theme @param {string} cal @param {string} type */
+export const mixWeight = (theme, cal, type) => {
+  const tt = THEME_TYPES[theme] || {};
+  return Math.round((THEME_CALS[theme][cal] || 0) * RARITY_FIND[roundTier(cal, type)] * (tt[type] ?? 1) * 100) / 100;
+};
+/** @type {Record<string, Record<string, number>>} */
+export const AMMO_MIX = {};
+for (const theme of Object.keys(THEME_CALS)) {
+  /** @type {Record<string, number>} */
+  const m = {};
+  for (const cal of Object.keys(THEME_CALS[theme])) for (const type of CALIBERS[cal].types) { const w = mixWeight(theme, cal, type); if (w > 0) m[`${cal}_${type}`] = w; }
+  AMMO_MIX[theme] = m;
+}
 // The AI groups by kind (data.js FACTION_TYPES): which theme their stores look like.
 export const KIND_MIX = { military: "military", fortress: "police", expansionist: "police", raider: "raider", traders: "guns", commune: "farm", zealot: "home" };
 
@@ -153,7 +225,8 @@ export const STARTER_AMMO = {
   "9mm":   [[0.2, "hp", 20]],
   "45acp": [[0.2, "hp", 20]],
   "357":   [[0.15, "hp", 12]],
-  "12ga":  [[0.15, "bird", 10], [0.15, "slug", 5]],
+  "12ga":  [[0.15, "bird", 10], [0.1, "slug", 5]],
+  "20ga":  [[0.15, "bird", 10], [0.1, "slug", 5]],
   "308":   [[0.4, "sp", 10]],
   "762x39": [[0.3, "sp", 10]],
   "22lr":  [[0.3, "hp", 50]],
@@ -163,7 +236,7 @@ export const STARTER_AMMO = {
 // What a reloading bench can load, by calibre class: [Mechanics needed, rounds per operator-day] (+4% a day per
 // Mechanics point). .22 LR is rimfire (no primer to replace) and .50 BMG is not craftable; neither are tracers,
 // +P or the less-lethal rounds. AP needs a machine shop at the base and a machine part per 20 (steel cores).
-export const LOAD_CLASS = { "9mm": "pistol", "45acp": "pistol", "357": "pistol", "12ga": "shotgun", "556": "rifle", "762x39": "rifle", "308": "rifle", "3030": "rifle" };
+export const LOAD_CLASS = { "9mm": "pistol", "45acp": "pistol", "357": "pistol", "12ga": "shotgun", "20ga": "shotgun", "556": "rifle", "762x39": "rifle", "308": "rifle", "3030": "rifle" };
 /** @type {Record<string, Record<string, [number, number]>>} */
 export const LOADS = {
   pistol:  { fmj: [2, 40], hp: [5, 30], subsonic: [6, 25], ap: [10, 10] },
@@ -196,10 +269,10 @@ for (const [cal, c] of Object.entries(CALIBERS)) {
   for (const type of c.types) {
     if (!loadRecipe(cal, type)) continue;
     const t = AMMO_TYPES[type], k = handKey(cal, type);
-    HAND_SUPPLIES[k] = { name: `${c.name} ${t.name} (handload)`, value: Math.round(c.value * t.value * HAND_VALUE * 1000) / 1000, weight: c.kg, cat: "ammo", round: { cal, type, hand: true } };
+    HAND_SUPPLIES[k] = { name: `${c.name} ${t.name} (handload)`, value: Math.round(roundValue(cal, type) * HAND_VALUE * 1000) / 1000, weight: c.kg, cat: "ammo", round: { cal, type, hand: true } };
     HAND_GEAR[k] = {
       name: `${c.name} ${t.name} handloads`, slot: "pack", skill: null, power: 0, req: 0, noise: 0, small: true, count: true,
-      dur: c.box, weight: Math.round((c.kg * c.box + 0.05) * 100) / 100, value: Math.max(1, Math.round(c.value * t.value * HAND_VALUE * c.box)),
+      dur: c.box, weight: Math.round((c.kg * c.box + 0.05) * 100) / 100, value: Math.max(1, Math.round(roundValue(cal, type) * HAND_VALUE * c.box)),
       cat: "ammo", rounds: { cal, type, hand: true },
       desc: `A box of ${c.box} ${c.name} ${t.name} rounds loaded at a reloading bench: they jam more than factory rounds, less the better the loader.`,
     };
@@ -230,14 +303,15 @@ export const RELOAD_GEAR = {
              desc: "A box of 100 primers: a reloading bench needs one for every round it loads. Rare now. Opened into the stock at a base." },
 };
 
-// Enemy loads by kit and calibre class (section 6): weights per type. A type the calibre does not have falls back to
+// Enemy loads by kit and calibre class (section 6): weights per type (2026-10-10: AP and slugs trimmed to their rarity:
+// soldiers 35% AP to 15%, militia slugs 50% to 25%; a body drops the load it fought with). A type the calibre does not have falls back to
 // the calibre's base. Never shown to the player (section 20, R10).
 /** @type {Record<string, { pistol: Record<string, number>, rifle: Record<string, number>, shotgun: Record<string, number> }>} */
 export const KIT_AMMO = {
-  soldiers:  { pistol: { fmj: 0.8, hp: 0.2 },             rifle: { fmj: 0.6, ap: 0.35, tracer: 0.05 },          shotgun: { buck: 0.7, slug: 0.3 } },
+  soldiers:  { pistol: { fmj: 0.8, hp: 0.2 },             rifle: { fmj: 0.75, ap: 0.15, tracer: 0.1 },          shotgun: { buck: 0.75, slug: 0.25 } },
   raiders:   { pistol: { fmj: 0.55, hp: 0.35, plusp: 0.1 }, rifle: { fmj: 0.75, sp: 0.15, ap: 0.05, tracer: 0.05 }, shotgun: { buck: 0.7, slug: 0.1, bird: 0.2 } },
-  guards:    { pistol: { hp: 0.8, fmj: 0.2 },             rifle: { fmj: 0.7, ap: 0.1, sp: 0.2 },                shotgun: { buck: 0.45, slug: 0.25, beanbag: 0.3 } },
-  militia:   { pistol: { fmj: 0.7, hp: 0.3 },             rifle: { sp: 0.7, fmj: 0.3 },                          shotgun: { slug: 0.5, buck: 0.4, bird: 0.1 } },
+  guards:    { pistol: { hp: 0.8, fmj: 0.2 },             rifle: { fmj: 0.75, ap: 0.05, sp: 0.2 },               shotgun: { buck: 0.5, slug: 0.2, beanbag: 0.3 } },
+  militia:   { pistol: { fmj: 0.7, hp: 0.3 },             rifle: { sp: 0.7, fmj: 0.3 },                          shotgun: { slug: 0.25, buck: 0.6, bird: 0.15 } },
   survivors: { pistol: { fmj: 0.8, hp: 0.2 },             rifle: { sp: 0.5, fmj: 0.5 },                          shotgun: { buck: 0.6, bird: 0.3, slug: 0.1 } },
   zealots:   { pistol: { fmj: 0.6, hp: 0.4 },             rifle: { fmj: 0.8, sp: 0.2 },                          shotgun: { buck: 0.8, bird: 0.2 } },
   fighters:  { pistol: { fmj: 0.6, hp: 0.4 },             rifle: { fmj: 0.8, sp: 0.2 },                          shotgun: { buck: 0.7, slug: 0.2, bird: 0.1 } },

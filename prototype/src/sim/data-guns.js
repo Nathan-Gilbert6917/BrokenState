@@ -112,12 +112,13 @@ export const GUN_WEAPONS = {
   sawnoff:     { name: "Sawn-off shotgun",   dmg: [26, 38], opt: 2, fall: 10,  aim: 2,  ammo: 1, noise: 4, close: 18, cap: 2, cal: "12ga", rel: 0.1 },
   semishotgun: { name: "Semi-auto shotgun",  dmg: [24, 36], opt: 4, fall: 6.5, aim: 11, ammo: 1, noise: 3, close: 10, cap: 8, cal: "12ga", rel: 0.7 },
   // ---------- rifles ----------
-  rifle22:     { name: ".22 rifle",          dmg: [12, 18], opt: 9,  fall: 2.5, aim: 8,  ammo: 1, noise: 1, cap: 10, cal: "22lr", rel: 1.0 },
-  dmr:         { name: "Marksman rifle",     dmg: [27, 37], opt: 13, fall: 1.8, aim: 8,  ammo: 1, noise: 3, close: -8, cap: 20, cal: "308", rel: 0.6 },
-  sniper:      { name: "Bolt-action sniper rifle", dmg: [30, 40], opt: 15, fall: 1.2, aim: 9, ammo: 1, noise: 3, close: -14, cap: 5, cal: "308", rel: 0.1, brace: -15, sniper: true },
+  rifle22:     { name: ".22 rifle",          dmg: [11, 17], opt: 9,  fall: 2.5, aim: 8,  ammo: 1, noise: 1, cap: 10, cal: "22lr", rel: 1.0 },
+  dmr:         { name: "Marksman rifle",     dmg: [33, 45], opt: 13, fall: 1.8, aim: 8,  ammo: 1, noise: 3, close: -8, cap: 20, cal: "308", rel: 0.6 },
+  sniper:      { name: "Bolt-action sniper rifle", dmg: [35, 49], opt: 15, fall: 1.2, aim: 9, ammo: 1, noise: 3, close: -14, cap: 5, cal: "308", rel: 0.1, brace: -15, sniper: true },
   amr:         { name: ".50 anti-materiel rifle", dmg: [62, 84], opt: 16, fall: 1.2, aim: -2, ammo: 1, noise: 6, close: -20, cap: 10, cal: "50bmg", rel: 0.6, brace: -20, pierce: 1, common: false },
   // Mounted only, never an item (a military vehicle's turret, section 11: fired as combat.js turret_m2).
-  m2hb:        { name: "M2 heavy machine gun", dmg: [40, 58], opt: 14, fall: 1.5, aim: 6, ammo: 3, noise: 6, cap: 100, cal: "50bmg", rel: 0.5, common: false, mount: true, pierce: 1, // no item: bolted to a military vehicle, it fires as combat.js turret_m2
+  m2hb:        { name: "M2 heavy machine gun", dmg: [46, 64], // (40–58 before 2026-10-10: a .50 outhits a 12 ga slug, the balance ladder)
+                 opt: 14, fall: 1.5, aim: 6, ammo: 3, noise: 6, cap: 100, cal: "50bmg", rel: 0.5, common: false, mount: true, pierce: 1, // no item: bolted to a military vehicle, it fires as combat.js turret_m2
                  modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 3, aim: -4 }, auto: { rounds: 12, aim: -12 } } },
   // ---------- launchers (section 13): data only; the launcher agent (wave 2) fires them ("launch") ----------
   // dmg: a 40 mm HE round or a rocket hitting as a slug inside its arming range. range: tiles a round is sent.
@@ -229,6 +230,160 @@ export const ROSTER_TAGS = {
   golfclub: ["home", "sport", "garage", "mall", "shop"],
   // the launchers and the M2 (wave 2): army stock; a rocket launcher in a gang's armoury now and then
   m79: ["military", "crash"], m32: ["military"], at4: ["military", "crash"], rpg: ["military", "crime"],
+};
+
+// ---------- the arsenal of 2026-10-10 (user: over-unders, single-shots, 20 gauge, a gun for every calibre, the
+// NATO / European / American guns of games like Tarkov) ----------
+// Generic names (the game's style: "AK-pattern rifle", "1911 .45"); the description names the real gun it is like.
+// Each one's numbers keep to its calibre's band on the damage ladder (data-ammo.js CAL_DMG, LADDER.BAND). Platforms,
+// magazines and slots: data-gunmods.js WEAPON_PLATFORM / PLATFORMS, data-kit.js MAGAZINES / INTERNAL, mags.js SHELLS
+// (break actions load both barrels at once, a single-shot its one). Art: an existing platform's drawing
+// (data-gunmods.js PLATFORM_LIKE, ui/gunart.js) and battle sprite (GUN_SPRITE, ui/sprites.js). Where they turn up:
+// GUN_FINDS (gunfinds.js, its own dice), KIT_PATCH (the AI's people), TRUCK_GEAR.
+/** @type {Record<string, any>} */
+export const ARSENAL_GEAR = {
+  // ---------- shotguns ----------
+  ou12:        { name: "Over-under shotgun",     slot: W, skill: SH, power: 4.7, req: 3,  value: 70,  noise: 3, weight: 3.4, cat: "shotgun",
+                 desc: "A sporting over-under 12 gauge (a Beretta or Browning-style clay gun): two barrels stacked, two shells, then break it open and load both. Better made and better balanced than a side-by-side, a touch more reach. Needs Shooting 3." },
+  single12:    { name: "Single-shot shotgun",    slot: W, skill: SH, power: 3.3, req: 1,  value: 16,  noise: 3, weight: 2.6, cat: "shotgun",
+                 desc: "A cheap break-open single-barrel 12 gauge (an H&R-style farm gun): one shell, then break it and load another. Light, simple, all but never fails. Needs Shooting 1." },
+  pump20:      { name: "20-gauge pump shotgun",  slot: W, skill: SH, power: 4.2, req: 4,  value: 40,  noise: 3, weight: 3.0, cat: "shotgun",
+                 desc: "A lighter pump-action 20 gauge (a youth or upland Remington 870 / Mossberg 500-style gun): five shells, less kick and less punch than a 12 gauge. Fires 20 gauge only. Needs Shooting 4." },
+  ou20:        { name: "20-gauge over-under",    slot: W, skill: SH, power: 3.8, req: 2,  value: 55,  noise: 3, weight: 2.8, cat: "shotgun",
+                 desc: "A light 20 gauge over-under for birds: two shells, break it open and load both, an easy kick. Fires 20 gauge only. Needs Shooting 2." },
+  tacpump:     { name: "Police pump shotgun",    slot: W, skill: SH, power: 5.4, req: 6,  value: 70,  noise: 3, weight: 3.7, cat: "shotgun",
+                 desc: "A police and military pump 12 gauge (a Mossberg 590-style gun): an extended tube of seven and one in the chamber, a heat shield and a rail for a light. Needs Shooting 6." },
+  // ---------- rifles ----------
+  singlerifle: { name: ".308 single-shot rifle", slot: W, skill: SH, power: 4.3, req: 3,  value: 38,  noise: 3, weight: 3.2, cat: "rifle", hunt: { big: 1.1, small: 0.4 },
+                 desc: "A break-open single-shot hunting rifle in .308 (an H&R Handi-Rifle-style gun): one round, then open it and load the next. Accurate and hard-hitting, slow to fire; takes a scope mount. Needs Shooting 3." },
+  lever357:    { name: "Lever-action .357 carbine", slot: W, skill: SH, power: 4.3, req: 3, value: 50,  noise: 3, weight: 2.8, cat: "rifle",
+                 desc: "A short lever-action carbine in .357 Magnum (a Marlin 1894-style ranch gun): ten in the tube, light and handy, the same rounds as a .357 revolver. Needs Shooting 3." },
+  m4:          { name: "Military carbine",       slot: W, skill: SH, power: 7.8, req: 9,  value: 130, noise: 3, weight: 3.4, cat: "automatic",
+                 desc: "A short military 5.56 carbine (an M4): single shots, three-round bursts or full auto from a 30-round magazine; handier up close than the assault rifle, a little less reach. Needs Shooting 9." },
+  hk416:       { name: "Piston carbine",         slot: W, skill: SH, power: 8.3, req: 10, value: 170, noise: 3, weight: 3.6, cat: "automatic",
+                 desc: "A gas-piston 5.56 carbine (an HK416-style rifle): built like an AR but runs cleaner and jams far less. Single, burst or full auto, 30 rounds. Needs Shooting 10." },
+  scarl:       { name: "Modular combat rifle",   slot: W, skill: SH, power: 8.2, req: 10, value: 175, noise: 3, weight: 3.5, cat: "automatic",
+                 desc: "A special-forces 5.56 rifle (a SCAR-L-style gun): a long top rail, a folding stock, AR magazines; single, burst or full auto. Needs Shooting 10." },
+  aug:         { name: "Bullpup rifle",          slot: W, skill: SH, power: 8.0, req: 9,  value: 150, noise: 3, weight: 3.6, cat: "automatic",
+                 desc: "A bullpup 5.56 rifle (a Steyr AUG-style gun): the action behind the grip makes it short and quick to swing with a full-length barrel. Takes AR magazines; single, burst or full auto. Needs Shooting 9." },
+  scarh:       { name: "Battle rifle",           slot: W, skill: SH, power: 8.9, req: 12, value: 270, noise: 4, weight: 4.2, cat: "automatic",
+                 desc: "A modular 7.62 NATO battle rifle (a SCAR-H-style gun): .308 hits from a 20-round magazine, single, burst or a hard-to-hold full auto. Needs Shooting 12." },
+  fal:         { name: "FAL battle rifle",       slot: W, skill: SH, power: 8.5, req: 11, value: 210, noise: 4, weight: 4.4, cat: "automatic",
+                 desc: "The free world's old battle rifle (an FN FAL): .308 from a 20-round magazine, long and heavy; single, burst or full auto. Needs Shooting 11." },
+  m1a:         { name: "M14-pattern rifle",      slot: W, skill: SH, power: 8.1, req: 10, value: 185, noise: 3, weight: 4.6, cat: "rifle", hunt: { big: 1.15, small: 0.4 },
+                 desc: "A semi-automatic .308 in a wooden stock (an M1A / M14): 20 rounds, long reach, a soldier's rifle sold to hunters and collectors. Sometimes found with a scope. Needs Shooting 10." },
+  m240:        { name: "General-purpose machine gun", slot: W, skill: SH, power: 10, req: 13, value: 400, noise: 5, weight: 12.3, cat: "automatic",
+                 desc: "A belt-fed 7.62 NATO machine gun (an M240): a 100-round belt of .308, heavy (a tile less a move), steady on its bipod when rested on half cover next to the gunner in the line of fire (+8 aim). Very rare. Needs Shooting 13." },
+  // ---------- submachine guns and pistols ----------
+  ump45:       { name: ".45 submachine gun",     slot: W, skill: SH, power: 6.1, req: 7,  value: 115, noise: 2, weight: 2.3, cat: "automatic", hunt: { big: 0.5, small: 0.6 },
+                 desc: "A polymer .45 submachine gun (a UMP-style gun): 25 big slow rounds, single, burst or full auto; hits harder than the 9mm one and kicks more. Needs Shooting 7." },
+  usp45:       { name: "Polymer .45 pistol",     slot: W, skill: SH, power: 3.4, req: 3,  value: 42,  noise: 2, small: true, weight: 0.9, cat: "pistol",
+                 desc: "A polymer-framed .45 service pistol (an HK USP-style gun): twelve rounds of .45, a light rail, takes a suppressor. Needs Shooting 3." },
+  snub357:     { name: ".357 snub-nose revolver", slot: W, skill: SH, power: 3.0, req: 2, value: 28,  noise: 3, small: true, weight: 0.65, cat: "pistol",
+                 desc: "A five-shot snub-nose .357 from a nightstand or an ankle holster: easy to carry, a hard kick, poor past a few tiles. Needs Shooting 2." },
+  magnum:      { name: "Magnum hand cannon",     slot: W, skill: SH, power: 3.9, req: 6,  value: 95,  noise: 3, small: true, weight: 2.0, cat: "pistol",
+                 desc: "A huge gas-operated .357 Magnum pistol (a Desert Eagle-style showpiece): nine heavy rounds, a brutal kick, finicky. Rare. Needs Shooting 6." },
+};
+const ARSENAL_DUR = {
+  ou12: 85, single12: 80, pump20: 70, ou20: 85, tacpump: 75, singlerifle: 85, lever357: 75, m4: 60, hk416: 75, scarl: 70, aug: 70,
+  scarh: 70, fal: 80, m1a: 75, m240: 65, ump45: 65, usp45: 70, snub357: 80, magnum: 55,
+};
+for (const [k, v] of Object.entries(ARSENAL_DUR)) ARSENAL_GEAR[k].dur = v;
+const AUTO_556 = { single: { rounds: 1, aim: 0 }, burst: { rounds: 2, aim: -8 }, auto: { rounds: 10, aim: -18 } };
+const AUTO_308 = { single: { rounds: 1, aim: 0 }, burst: { rounds: 2, aim: -12 }, auto: { rounds: 10, aim: -26 } };
+/** @type {Record<string, any>} */
+export const ARSENAL_WEAPONS = {
+  ou12:        { name: "Over-under shotgun",   dmg: [25, 37], opt: 5,  fall: 6.5, aim: 10, ammo: 1, noise: 3, close: 12, cap: 2,  cal: "12ga",  rel: 0.08 },
+  single12:    { name: "Single-shot shotgun",  dmg: [24, 36], opt: 4,  fall: 7,   aim: 8,  ammo: 1, noise: 3, close: 10, cap: 1,  cal: "12ga",  rel: 0.05 },
+  pump20:      { name: "20-gauge pump shotgun", dmg: [20, 30], opt: 4, fall: 7,   aim: 12, ammo: 1, noise: 3, close: 10, cap: 5,  cal: "20ga",  rel: 0.3 },
+  ou20:        { name: "20-gauge over-under",  dmg: [21, 31], opt: 5,  fall: 6.5, aim: 12, ammo: 1, noise: 3, close: 12, cap: 2,  cal: "20ga",  rel: 0.08 },
+  tacpump:     { name: "Police pump shotgun",  dmg: [24, 36], opt: 4,  fall: 7,   aim: 10, ammo: 1, noise: 3, close: 10, cap: 8,  cal: "12ga",  rel: 0.25 },
+  singlerifle: { name: ".308 single-shot rifle", dmg: [34, 46], opt: 12, fall: 2, aim: 6,  ammo: 1, noise: 3, close: -8, cap: 1,  cal: "308",   rel: 0.05 },
+  lever357:    { name: "Lever-action .357 carbine", dmg: [21, 31], opt: 8, fall: 3, aim: 6, ammo: 1, noise: 3, cap: 10, cal: "357", rel: 0.25 },
+  m4:          { name: "Military carbine",     dmg: [21, 31], opt: 8,  fall: 3,   aim: 8,  ammo: 2, noise: 3, close: 3, cap: 30, cal: "556", rel: 0.5,
+                 modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 3, aim: -6 }, auto: { rounds: 10, aim: -18 } } },
+  hk416:       { name: "Piston carbine",       dmg: [22, 32], opt: 9,  fall: 3,   aim: 8,  ammo: 2, noise: 3, close: 2, cap: 30, cal: "556", rel: 0.25, modes: AUTO_556 },
+  scarl:       { name: "Modular combat rifle", dmg: [22, 32], opt: 9,  fall: 3,   aim: 8,  ammo: 2, noise: 3, close: 2, cap: 30, cal: "556", rel: 0.35, modes: AUTO_556 },
+  aug:         { name: "Bullpup rifle",        dmg: [22, 32], opt: 9,  fall: 3,   aim: 9,  ammo: 2, noise: 3, close: 3, cap: 30, cal: "556", rel: 0.4, modes: AUTO_556 },
+  scarh:       { name: "Battle rifle",         dmg: [33, 45], opt: 11, fall: 2,   aim: 6,  ammo: 1, noise: 4, close: -2, cap: 20, cal: "308", rel: 0.4, modes: AUTO_308 },
+  fal:         { name: "FAL battle rifle",     dmg: [33, 45], opt: 11, fall: 2,   aim: 5,  ammo: 1, noise: 4, close: -2, cap: 20, cal: "308", rel: 0.35, modes: AUTO_308 },
+  m1a:         { name: "M14-pattern rifle",    dmg: [34, 46], opt: 12, fall: 1.8, aim: 7,  ammo: 1, noise: 3, close: -6, cap: 20, cal: "308", rel: 0.45 },
+  m240:        { name: "General-purpose machine gun", dmg: [32, 44], opt: 10, fall: 2.5, aim: -2, ammo: 3, noise: 5, cap: 100, cal: "308", rel: 0.7, heavy: { mob: -1, brace: 8 },
+                 modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 3, aim: -5 }, auto: { rounds: 15, aim: -16 } } },
+  ump45:       { name: ".45 submachine gun",   dmg: [18, 26], opt: 6,  fall: 3.5, aim: 6,  ammo: 2, noise: 2, close: 4, cap: 25, cal: "45acp", rel: 0.4,
+                 modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 2, aim: -6 }, auto: { rounds: 10, aim: -16 } } },
+  usp45:       { name: "Polymer .45 pistol",   dmg: [18, 26], opt: 5,  fall: 4.5, aim: 3,  ammo: 1, noise: 2, cap: 12, cal: "45acp", rel: 0.3 },
+  snub357:     { name: ".357 snub-nose revolver", dmg: [19, 28], opt: 4, fall: 6, aim: -3, ammo: 1, noise: 3, close: 4, cap: 5, cal: "357", rel: 0.05 },
+  magnum:      { name: "Magnum hand cannon",   dmg: [21, 31], opt: 6,  fall: 4.5, aim: -4, ammo: 1, noise: 3, cap: 9,  cal: "357",   rel: 0.8 },
+};
+// Where each is normally kept (loot.js ITEM_TAGS, merged with ROSTER_TAGS).
+/** @type {Record<string, string[]>} */
+export const ARSENAL_TAGS = {
+  ou12: ["guns", "hunt", "farm", "home", "sport"], single12: ["farm", "hunt", "home", "guns", "outdoor"], pump20: ["farm", "hunt", "guns", "home"],
+  ou20: ["hunt", "guns", "farm", "home", "sport"], tacpump: ["police", "prison", "military", "guns"], singlerifle: ["hunt", "farm", "guns", "outdoor", "home"],
+  lever357: ["farm", "hunt", "guns", "home", "outdoor"], m4: ["military", "crash", "guns"], hk416: ["military", "crash"], scarl: ["military", "crash"],
+  aug: ["military", "police", "guns"], scarh: ["military", "crash"], fal: ["military", "guns", "crime"], m1a: ["guns", "military", "hunt"], m240: ["military"],
+  ump45: ["police", "military", "guns"], usp45: ["police", "guns", "military", "home"], snub357: ["home", "police", "crime", "guns", "travel"], magnum: ["guns", "crime", "home"],
+};
+Object.assign(GUN_GEAR, ARSENAL_GEAR);
+Object.assign(GUN_WEAPONS, ARSENAL_WEAPONS);
+Object.assign(ROSTER_TAGS, ARSENAL_TAGS);
+// The AI's people carry them too (AI parity; appended to KIT_PATCH's lists, then to combat.js KITS). Soldiers' strong
+// picks keep the machine gun at about 1 in 6 and the sniper rifle 1 in 10 (tools/rostertest.js).
+/** @type {Record<string, Record<string, string[]>>} */
+export const ARSENAL_KITS = {
+  raiders:   { weapons: ["single12", "snub357"], strong: ["fal"], loot: ["single12", "snub357"] },
+  soldiers:  { weapons: ["m4", "m4", "m4"], strong: ["m4", "hk416", "scarl", "lmg", "lmg", "lmg", "scarh", "m240", "sniper", "sniper"], loot: ["m4", "tacpump"] },
+  guards:    { weapons: ["tacpump", "usp45"], strong: ["aug", "ump45"], loot: ["usp45", "tacpump"] },
+  militia:   { weapons: ["single12", "lever357", "pump20", "singlerifle"], strong: ["m1a"], loot: ["single12", "lever357"] },
+  survivors: { weapons: ["single12", "pump20", "snub357"], loot: ["single12", "snub357", "ou20"] },
+  zealots:   { weapons: ["single12"], loot: ["single12"] },
+  fighters:  { weapons: ["ou12", "lever357"], strong: ["fal", "m1a"], loot: ["ou12"] },
+};
+for (const [kind, add] of Object.entries(ARSENAL_KITS)) {
+  const k = (KIT_PATCH[kind] = KIT_PATCH[kind] || {});
+  for (const [f, list] of Object.entries(add)) k[f] = [...(k[f] || []), ...list];
+}
+TRUCK_GEAR.cargo.push(["m4", 0.08], ["hk416", 0.02], ["scarh", 0.015], ["m240", 0.008], ["tacpump", 0.03]);
+TRUCK_GEAR.humvee.push(["m4", 0.08], ["scarl", 0.015], ["m240", 0.006]);
+TRUCK_GEAR.mrap.push(["m4", 0.08], ["hk416", 0.02], ["scarh", 0.01]);
+Object.assign(FACTORY_FIT, { m1a: [[0.35, ["acog", "tacscope"]]], scarh: [[0.3, ["acog", "lpvo"]]], singlerifle: [[0.3, ["scopemount"]]] });
+
+// How common each gun is (user, 2026-10-10: "rarity and where it's found"), every gun the player can hold: common,
+// uncommon, scarce, rare, veryrare (data-ammo.js RARITY). GUN_FINDS weighs the arsenal's own finds by it.
+/** @type {Record<string, string>} */
+export const GUN_RARITY = {
+  pistol: "common", compact9: "common", revolver: "common", pistol22: "uncommon", pistol45: "uncommon", snub357: "uncommon", usp45: "uncommon", magnum: "veryrare",
+  shotgun: "common", dbshotgun: "common", single12: "common", pipegun: "common", sawnoff: "uncommon", pump20: "uncommon", ou20: "uncommon", ou12: "uncommon",
+  tacpump: "uncommon", semishotgun: "scarce",
+  rifle22: "common", huntrifle: "common", leverrifle: "common", singlerifle: "common", lever357: "uncommon", carbine: "uncommon", m1a: "rare",
+  ar: "scarce", m4: "scarce", smg: "scarce", ak: "scarce", ump45: "rare", aug: "rare", hk416: "rare", scarl: "rare", fal: "rare", dmr: "rare", sniper: "rare",
+  scarh: "veryrare", lmg: "rare", m240: "veryrare", amr: "veryrare",
+  m79: "rare", at4: "rare", m32: "veryrare", rpg: "veryrare",
+};
+// The arsenal's own finds (gunfinds.js, every roll on its own dice: nothing else found changes): the guns of
+// ARSENAL_GEAR whose tags (ARSENAL_TAGS) meet the place's (loot.js SITE_TAGS / AREA_TAGS), weighted by FIND_W of their
+// rarity. site: the chance a search hour by site type; area: a raid container by area type; wares: a group's shelf a
+// week by its type (WARE_TAGS: what it stocks); scav: an AI scavenging trip's chance a loot taken (arsenal.js
+// scavenge); stash: a gun safe's or a gun case's extra gun by its table (gunsafes.js; STASH_TAGS: what it keeps).
+export const GUN_FINDS = {
+  FIND_W: { common: 1, uncommon: 0.5, scarce: 0.22, rare: 0.08, veryrare: 0.025 },
+  site: { gunstore: 0.06, police: 0.03, prison: 0.02, military: 0.03, crash_mil: 0.02, convoy: 0.02, airdrop: 0.01, farm: 0.02, ranch: 0.025,
+          barn: 0.01, feedstore: 0.008, cabin: 0.025, lodge: 0.02, town: 0.006, city: 0.006, motel: 0.005, apartments: 0.005, truckstop: 0.004 },
+  area: { gunshop: 0.08, armory: 0.07, barracks: 0.03, milwreck: 0.04, motorpool: 0.015, cabin: 0.04, farmhouse: 0.03, barn: 0.015, house: 0.006,
+          cellblock: 0.008, roadcars: 0.005 },
+  wares: { traders: 0.45, military: 0.35, fortress: 0.25, expansionist: 0.3, raider: 0.2, commune: 0.2, zealot: 0.08, merchants: 0.5 },
+  WARE_TAGS: { traders: ["guns", "hunt", "home", "farm", "police"], military: ["military"], fortress: ["police", "prison", "military"], merchants: ["guns", "hunt", "police", "military"],
+               expansionist: ["police", "guns", "military"], raider: ["crime", "guns", "home"], commune: ["farm", "hunt"], zealot: ["farm", "home"] },
+  scav: 0.25,
+  stash: { cheap: 0.15, mid: 0.35, high: 0.35, highMil: 0.4, pistolcase: 0.12, riflecase: 0.15 },
+  STASH_TAGS: { cheap: ["hunt", "farm", "home"], mid: ["guns", "hunt", "home"], high: ["police", "prison"], highMil: ["military"], pistolcase: ["guns", "home", "police"], riflecase: ["guns", "hunt", "farm"] },
+};
+// The battle sprite (ui/sprites.js drawWeapon) of each new gun: an existing gun's.
+export const GUN_SPRITE = {
+  ou12: "dbshotgun", single12: "pipegun", pump20: "shotgun", ou20: "dbshotgun", tacpump: "semishotgun", singlerifle: "huntrifle", lever357: "leverrifle",
+  m4: "carbine", hk416: "ar", scarl: "ar", aug: "carbine", scarh: "dmr", fal: "dmr", m1a: "huntrifle", m240: "lmg", ump45: "smg", usp45: "pistol",
+  snub357: "revolver", magnum: "pistol45",
 };
 
 // The Help topic (ui/help.js, after "Gun attachments").

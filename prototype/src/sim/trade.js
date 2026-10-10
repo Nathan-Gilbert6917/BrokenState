@@ -33,6 +33,7 @@ import { ransomOnTradeCard } from "./conflicts.js";
 import { itemLoad, lootItem } from "./inventory.js";
 import { traderSource, spend } from "./itemcond.js"; // the condition of what they sell, by the kind of group
 import { gunmodWares, pickWeighted } from "./loot.js"; // a gun attachment on the table now and then
+import { gunWares } from "./gunfinds.js"; // one of the newer guns now and then (its own dice)
 import { itemValue, itemCat, catOf, catName, priceInfo, starveBoost, gearNeed, heldLike, margin, refuses } from "./valuation.js";
 import { canRadioGroup, radioGreet } from "./radio.js";
 import { caravanCard } from "./caravans.js";
@@ -407,6 +408,7 @@ export function ensureWares(state, f, refresh = false) {
     if (key) keep.push(lootItem(key, src, [state.seed, "wareexd", f.name, day(state)]));
   }
   keep.push(...gunmodWares(state, f.type, f.name, day(state))); // loot.js: a gun attachment now and then (its own dice)
+  keep.push(...gunWares(state, f.type, f.name, day(state))); // gunfinds.js: an over-under, a carbine, a battle rifle now and then (its own dice)
   keep.push(...bookWares(state, f)); // skills.js: now and then a book (its own dice: the rest of the stock is unchanged)
   keep.push(...shelfSurplus(state, f)); // arsenal.js: weapons beyond what their people need (no dice)
   f.wares = keep.slice(-WARES_MAX);

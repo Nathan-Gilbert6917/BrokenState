@@ -116,6 +116,7 @@ import { hcNoRaiders } from "./hardcore-groups.js";
 import { UPKEEP, coldFactor } from "./upkeep.js";
 import { eatFromStore } from "./storage.js";
 import { gunmodWares } from "./loot.js"; // a sight or a suppressor among a merchant's goods
+import { gunWares } from "./gunfinds.js"; // one of the newer guns among an arms dealer's goods (its own dice)
 import { supplyAmt, spendAmmo } from "./rounds.js"; // "ammo": every round there, any calibre
 import { expandAmmo, baseCals } from "./ammo.js"; // rounds by calibre
 import { merchantReload } from "./reloading.js"; // an arms dealer's powder and primers
@@ -361,6 +362,7 @@ function merchantGoods(state, v, rng) {
   // loot.js: a sight or a suppressor (its own dice; by the serial, never the id: ids are process-wide). Only the arms
   // dealers and the general traders carry them.
   if (v.spec === "arms" || v.spec === "general") v.wares.push(...gunmodWares(state, "merchants", `${v.name}:${v.serial}`, state.hour));
+  if (v.spec === "arms") v.wares.push(...gunWares(state, "merchants", `${v.name}:${v.serial}`, state.hour));
   // A few valuables to sell on (they also buy them: TRADE_PREFS merchants).
   rng.shuffle([...MERCHANT_VALUABLES]).slice(0, rng.int(1, 2)).forEach((k, i) => v.wares.push(lootItem(k, "merchant", roll(`v${i}`))));
 }

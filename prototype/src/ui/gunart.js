@@ -270,6 +270,9 @@ export const PLAT_ART = {
     anchors: { optic: [31, 4], mount: [31, 4], muzzle: [43, 6], mag: [21, 20], under: [35, 11], tactical: [35, 11], grip: [22, 15] },
   },
 };
+// The platforms of 2026-10-10 (sim/data-gunmods.js PLATFORM_LIKE): drawn as their look-alike (the battle rifles as the
+// AR-10, the bullpup as the AR-15, the single barrel as the double, the .45 SMG as the MP5...).
+for (const [plat, like] of Object.entries(DGM.PLATFORM_LIKE || {})) if (!PLAT_ART[plat] && PLAT_ART[like]) PLAT_ART[plat] = PLAT_ART[like];
 
 // Which slot's anchor stands in for a slot the art has none for.
 const ALIAS = { under: ["grip", "tactical", "bipod"], grip: ["under", "tactical"], tactical: ["under", "rail", "grip"], bipod: ["under", "grip"], rail: ["tactical", "under", "optic"], mount: ["optic"], optic: ["mount"], sling: ["stock"], stock: ["sling"], mag: ["under"], muzzle: [] };

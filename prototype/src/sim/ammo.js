@@ -455,7 +455,7 @@ export function enemyLoad(kind, weapon, ...salt) {
   const cal = calOf(weapon);
   if (!cal) return null;
   const k = KIT_AMMO[kind] || KIT_AMMO.raiders;
-  const cls = cal === "12ga" ? "shotgun" : ["9mm", "45acp", "357", "22lr"].includes(cal) ? "pistol" : "rifle";
+  const cls = cal === "12ga" || cal === "20ga" ? "shotgun" : ["9mm", "45acp", "357", "22lr"].includes(cal) ? "pistol" : "rifle";
   const w = k[cls] || {};
   /** @type {Record<string, number>} */
   const mix = {};
