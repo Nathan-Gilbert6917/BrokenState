@@ -17,6 +17,7 @@ import { LEADER_LIFT } from "../sim/morale.js";
 import { PERSONALITIES } from "../sim/autopilot.js";
 import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js";
 import { RELOAD, recipeList, inputsPer10, dayRate, handHq, reloadOrders, reloadRows, reloadBenches, setReloadOrder, removeReloadOrder, toggleReloadOrder, handMake, pullRows, pullOrders, pullYield, setPullOrder, removePullOrder } from "../sim/reloading.js";
+import { sectionHead, infoTip, pbar } from "./uikit.js"; // game-like panel pieces (the base window)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -158,11 +159,11 @@ export function craftOrdersCard(state, b) {
     return `<div class="card small prodctl">
       <div class="spread"><b>${esc(craftName(o.recipe))}</b><span><button class="mini" data-action="co-toggle" ${data}${tip(o.on ? "Pause this order (queued jobs stay)" : "Resume this order")}>${o.on ? "Pause" : "Resume"}</button><button class="mini" data-action="co-del" ${data}${tip("Remove this order (queued jobs stay in the queue)")}>Remove</button></span></div>
       <div class="row">Keep <input type="number" min="0" max="99" step="1" class="po-n" data-action="co-n" ${data} value="${o.n}"${tip(r.gear ? "Items of this kind to keep in the armory" : "Stock to keep")}> ${qSel}</div>
-      <div class="${cs.ready || /^Stocked|queue/.test(cs.reason) ? "muted" : "danger"}">Have ${cs.have} of ${o.n}${cs.reason ? ` · ${esc(cs.reason)}` : cs.ready ? " · queues a job within the hour" : ""}</div>
+      ${pbar(o.n ? Math.min(100, (cs.have / o.n) * 100) : 100, cs.have >= o.n ? "good" : cs.ready || /^Stocked|queue/.test(cs.reason) ? "info" : "bad", `Have ${cs.have} of ${o.n}`)}
+      <div class="${cs.ready || /^Stocked|queue/.test(cs.reason) ? "muted" : "danger"}">${cs.reason ? esc(cs.reason) : cs.ready ? "Queues a job within the hour" : ""}</div>
     </div>`;
   }).join("");
-  return `<h3>Standing orders</h3>
-    <div class="small muted" style="margin-bottom:0.3rem">Keep N of an item in the armory: whenever there are fewer (at the quality you ask), one job is queued (materials paid then). Takes from the queue's ${MAX_CRAFT_QUEUE}-job limit.</div>
+  return `${sectionHead(`Standing orders${infoTip(`Keep N of an item in the armory: whenever there are fewer (at the quality you ask), one job is queued (materials paid then). Takes from the queue's ${MAX_CRAFT_QUEUE}-job limit.`)}`, "", list.length)}
     ${rows || `<div class="muted small">No standing craft orders.</div>`}
     ${free.length ? `<div class="prodctl" style="margin-top:0.3rem"><select data-action="co-add" data-base="${b.id}"${tip("Add a repeating order: keep a number of this item in the armory")}><option value="">Add a standing order…</option>${free.map((k) => `<option value="${k}">${esc(craftName(k))} (${SKILL_NAMES[CRAFTS[k].skill]} ${CRAFTS[k].min}+)</option>`).join("")}</select></div>` : ""}`;
 }

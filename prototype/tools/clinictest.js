@@ -398,7 +398,7 @@ console.log("Save, load, short run");
   const med = html.split("@@SPLIT@@")[0];
   check(/<h3[^>]*>Training<\/h3>/.test(med) && med.includes("Doctor: <b>") && med.includes(ppl[1].name) && med.includes('data-action="traineeop"'), "the Medical tab shows the doctor, the trainee and the trainee picker");
   check(/places? used · a trainee counts as half a medic/.test(med) && /Ward rounds:/.test(med), "…the places and the ward rounds");
-  check(/<b>Trainee<\/b> 1/.test(html.split("@@SPLIT@@")[1] || ""), "the Overview counts the trainee");
+  check(/Trainee 1/.test((html.split("@@SPLIT@@")[1] || "").replace(/<[^>]+>/g, "")), "the Overview counts the trainee");
   check(skill(ppl[1], "medicine") < T.TRAINING.graduate || med.includes('data-action="makemedic"'), `a trainee at Medicine ${skill(ppl[1], "medicine")} has the Make medic button`);
   check(/to Professor|Professor<\/span>/.test(med), "the doctor's road to Professor is shown");
   check(helpTopics().some((t) => /Training medics/.test(t.title) && /Medic trainees/.test(t.html || t.body || "")), "Help has a Training medics topic");
