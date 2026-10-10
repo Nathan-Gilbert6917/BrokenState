@@ -470,7 +470,7 @@ export function typeScore(type, armoured) {
   const t = typeFx(type);
   const dmg = t.dmg || 1;
   if (armoured) return dmg * (type === "ap" || type === "api" ? 1.12 : type === "slug" || type === "match" ? 1.05 : (t.soft || 1) > 1 ? 0.92 : 1);
-  return dmg * (t.soft || 1);
+  return t.soft || dmg; // on the unarmoured a hit is the gun's dmg × soft (the type's dmg is inside soft: ammo.js softMult), not dmg × soft
 }
 // Is this unit armoured (people in body armour, the armoured dead, a Boneback, a Brute)?
 /** @param {any} t */
