@@ -14,7 +14,6 @@ import { GEAR } from "../sim/data.js";
 import { WEAPONS } from "../sim/combat.js";
 import { MAGAZINES, CLIPS, CALIBRE_CLIPS } from "../sim/data-kit.js";
 import { LIGHTS } from "../sim/lights.js";
-import { fittedMag } from "../sim/mags.js";
 import { itemDur, itemDurMax } from "../sim/crafting.js";
 import { itemLoad, SLOT_NAMES } from "../sim/inventory.js";
 import { stackLabel, countOf, isRoundItem, amountOf } from "../sim/itemstack.js";
@@ -23,6 +22,8 @@ import { isGunKey, gunIconHtml, PART_ART } from "./gunart.js";
 import { lookOf } from "./gunparts.js";
 import { painter, toCanvas } from "./sprites.js";
 import { slotOfPart } from "./gunbuilder.js";
+import { gunRoundsLabel } from "./itemlabels.js"; // the rounds in a gun or a magazine (gun-mags: the real count)
+import { rowName } from "../sim/itemnames.js"; // row names: "… magazine", rounds "— loose"
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -86,17 +87,10 @@ export function itemGroup(item) {
 }
 
 // ---------- the stat line ----------
-// The rounds in a gun against its magazine ("7/10"; "0/10" unloaded: a gun put in storage is unloaded into the stores,
-// sim/gunload.js). One helper, so the gun-mags work can swap in its own count at the merge.
-export function gunRoundsLabel(item) {
-  if (!item || !isGunKey(item.key)) return "";
-  const w = WEAPONS[item.key];
-  if (!w || !w.cap) return "";
-  const fm = fittedMag(item);
-  const cap = fm && MAGAZINES[fm.key] && MAGAZINES[fm.key].cap ? MAGAZINES[fm.key].cap : w.cap;
-  const n = item.loaded && item.loaded.n > 0 ? Math.min(cap, Math.floor(item.loaded.n)) : 0;
-  return `${n}/${cap}`;
-}
+// The rounds in a gun or a magazine against what it holds ("7/10"): gun-mags' count (ui/itemlabels.js
+// gunRoundsLabel, sim/gunrounds.js), which finds the rounds to hand where the item is (a base's stores for the
+// armory), so a stored gun shows what it will hold in a fight, not "0/15". Re-exported for the callers and tests.
+export { gunRoundsLabel };
 // How worn it is, 0..1 (the tiles' bar: durability left, else quality).
 export function itemFrac(item) {
   const dur = itemDur(item);
@@ -104,12 +98,13 @@ export function itemFrac(item) {
   if (dur != null && !d.count && !d.tabs && !isRoundItem(item)) return Math.max(0, Math.min(1, dur / Math.max(1, itemDurMax(item))));
   return Math.max(0, Math.min(1, item.quality == null ? 1 : item.quality));
 }
-// The short facts under the name: [text, tip] pairs.
-export function statBits(item) {
+// The short facts under the name: [text, tip, cls?] triples. loc: where it is (the rounds to hand there), state: null
+// for the live game.
+export function statBits(item, loc = null, state = null) {
   const d = GEAR[item.key] || {};
   const out = [];
-  const r = gunRoundsLabel(item);
-  if (r) out.push([r, "Rounds in the gun / its magazine"]);
+  const r = gunRoundsLabel(item, loc, state);
+  if (r) out.push([r.text, r.tip, `irounds ${r.cls}`]);
   if (isRoundItem(item)) out.push([`${amountOf(item)} rds`, "Rounds in this stack"]);
   else if (item.contents) out.push([`${item.contents.filter(Boolean).length}/${item.contents.length} in`, "What it holds"]);
   else if (countOf(item) > 1) out.push([`×${countOf(item)}`, "How many in the stack"]);
@@ -213,7 +208,7 @@ export function resetArmoryView() { compact = null; for (const o of [queries, ty
 function findText(e) {
   const { g, sub } = itemGroup(e.item);
   const d = GEAR[e.item.key] || {}, w = WEAPONS[e.item.key] || {};
-  return `${stackLabel(e.item)} ${d.name || ""} ${GROUP[g].name} ${sub ? SUB_NAME[sub] : ""} ${w.cal || ""} ${d.cat || ""} ${e.who || ""}`.toLowerCase();
+  return `${rowName(e.item)} ${stackLabel(e.item)} ${d.name || ""} ${GROUP[g].name} ${sub ? SUB_NAME[sub] : ""} ${w.cal || ""} ${d.cat || ""} ${e.who || ""}`.toLowerCase();
 }
 const matches = (e, q) => !q || q.split(/\s+/).filter(Boolean).every((t) => e.find.includes(t));
 const sortKey = (a, b) => (a.sub == null ? 0 : SUB_I[a.sub]) - (b.sub == null ? 0 : SUB_I[b.sub]) || a.name.localeCompare(b.name) || b.frac - a.frac || (a.who || "").localeCompare(b.who || "");
@@ -227,6 +222,7 @@ const sortKey = (a, b) => (a.sub == null ? 0 : SUB_I[a.sub]) - (b.sub == null ? 
 //   empty     the text when there is nothing at all
 //   scopeBar  extra HTML for the tool bar (the base tab's Stored / Everything here)
 //   wrap(html)  the HTML around the groups (the inventory's drop box); default a div
+//   state     the game, for the rounds in guns and magazines (the stores to hand); default the live one
 export function armoryView(entries, opts = {}) {
   const ns = opts.ns || "base";
   const isCompact = armoryCompact();
@@ -234,7 +230,7 @@ export function armoryView(entries, opts = {}) {
   const only = armoryType(ns);
   const all = entries.map((e) => {
     const { g, sub } = itemGroup(e.item);
-    return { ...e, g, sub, name: stackLabel(e.item), frac: itemFrac(e.item), find: findText(e) };
+    return { ...e, g, sub, name: rowName(e.item), frac: itemFrac(e.item), find: findText(e) };
   });
   const found = all.filter((e) => matches(e, q));
   const byGroup = new Map();
@@ -256,8 +252,8 @@ export function armoryView(entries, opts = {}) {
   ${groupsHere.length > 1 || only ? `<div class="armchips">${chip("", "All", found.length)}${groupsHere.map(([id, name, icon]) => chip(id, `${icon} ${esc(name.split(/,| and /)[0])}`, counts.get(id))).join("")}</div>` : ""}`;
   // The groups.
   const itemHtml = (e) => {
-    const bits = statBits(e.item);
-    const stat = bits.map(([t]) => `<span>${esc(t)}</span>`).join(" · ");
+    const bits = statBits(e.item, e.loc, opts.state || null);
+    const stat = bits.map(([t, tt, cls]) => `<span${cls ? ` class="${cls}"` : ""}${tip(tt)}>${esc(t)}</span>`).join(" · ");
     const col = e.frac > 0.6 ? "var(--good)" : e.frac > 0.3 ? "var(--accent)" : "var(--danger)";
     const who = e.who ? `<span class="awho"${tip(e.whoTip || "")}>${esc(e.who)}</span>` : "";
     if (isCompact) {

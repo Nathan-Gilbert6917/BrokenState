@@ -507,6 +507,13 @@ button.sgcell .sgname { white-space: nowrap; overflow: hidden; text-overflow: el
 .iname { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .icount { font-size: 0.66rem; color: var(--muted); }
 .ikg { font-size: 0.62rem; color: var(--muted); }
+.irounds { font-size: 0.62rem; font-weight: 600; padding: 0 0.2rem; border-radius: 3px; background: #2c3139; color: var(--text); font-variant-numeric: tabular-nums; }
+.irounds.part { color: var(--accent); }
+.irounds.empty { background: var(--danger); color: #fff; }
+.invdetails { margin-top: 0.35rem; line-height: 1.35; }
+.igunrow ~ .irounds { position: absolute; top: 0.3rem; right: 0; } /* a gun's badge over the right end of its picture */
+.itile:not(:has(.igunrow)):has(.icount, .irounds) .iname { flex: 1 1 calc(100% - 1.4rem); } /* a counted row: the name a line of its own, the count and kg under it */
+.itile:not(:has(.igunrow)):has(.icount, .irounds) .iname + * { margin-left: 1.25rem; }
 .ikg::after { content: " kg"; }
 .loadt td { padding: 0.05rem 0.3rem; }
 .idur { display: block; width: 100%; height: 0.2rem; background: #2c3139; border-radius: 2px; overflow: hidden; }

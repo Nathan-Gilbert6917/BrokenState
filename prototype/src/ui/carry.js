@@ -9,9 +9,11 @@
 import { partyMembers, partyTile, cargoRoom } from "../sim/parties.js";
 import { parseLoc, placeOfLoc, itemAt, isCarryable, moveItem, itemLoad } from "../sim/inventory.js";
 import {
-  COLLECT, HANDS_KG, PLACE_NAMES, holdView, unitKg, stackText, recText, qtyText, moveHeld, dropHeld, dropHands,
+  COLLECT, HANDS_KG, PLACE_NAMES, holdView, unitKg, stackText, recText, qtyText, holdName, moveHeld, dropHeld, dropHands,
   dropItemToGround, pickUpGround, pickUpAll, groundAt, groundItemText, collectInfo, roomAt,
 } from "../sim/carry.js";
+import { supplyName } from "../sim/itemnames.js";
+import { isRoundKey } from "../sim/rounds.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -90,9 +92,11 @@ export function carryKey(state, ui, e, actions) {
 }
 
 // ---------- in a person's inventory ----------
+// A chip's name, its count on the right (sim/itemnames.js: rounds are "… FMJ — loose", never "23 .308 …").
+const chipName = (k) => (isRoundKey(k) ? supplyName(k) : holdName(k));
 const chip = (ui, pid, sid, place, k, q) => {
   const sel = ui.carrySel && ui.carrySel.pid === pid && ui.carrySel.sid === sid && ui.carrySel.place === place && ui.carrySel.key === k;
-  return `<button class="mini${sel ? " active" : ""}" data-action="carry-sel" data-pid="${pid}" data-sid="${sid ?? ""}" data-place="${place}" data-key="${k}"${tip(`${stackText(k, q)}, ${kg(q * unitKg(k))} kg. Click to choose it, then where it goes.`)}>${ICON[k] || "▪"} ${esc(stackText(k, q))}</button>`;
+  return `<button class="mini${sel ? " active" : ""}" data-action="carry-sel" data-pid="${pid}" data-sid="${sid ?? ""}" data-place="${place}" data-key="${k}"${tip(`${stackText(k, q)}, ${kg(q * unitKg(k))} kg. Click to choose it, then where it goes.`)}>${ICON[k] || "▪"} ${esc(chipName(k))} <span class="icount">×${qtyText(q)}</span></button>`;
 };
 const placeRow = (ui, pid, sid, place, rec, extra = "") => `<div class="small" style="margin:0.15rem 0"><b>${PLACE_NAMES[place]}</b>${extra} ${Object.keys(rec).length ? Object.entries(rec).map(([k, q]) => chip(ui, pid, sid, place, k, q)).join(" ") : `<span class="muted">nothing</span>`}</div>`;
 // The "Supplies carried" box under a team member's paper doll (ui/inventory.js inventoryModal).

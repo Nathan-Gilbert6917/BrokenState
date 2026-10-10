@@ -28,6 +28,7 @@ import { worthTier } from "../sim/valuation.js";
 import { itemDur, itemDurMax } from "../sim/crafting.js"; // condition: item.dur of item.durMax (plan section 25)
 import { repairInfoAt, repairAt } from "../sim/repair.js"; // the Repair button: the base's bench queue, or a field kit on the road
 import { gunURL, anchorOf, platformOf, isGunKey, ART_W, ART_H } from "./gunart.js";
+import { magazineText } from "../sim/gunrounds.js"; // the magazine slot with none fitted: the gun's own standard magazine, never "empty"
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -299,8 +300,8 @@ export function gunBuilderModal(state, ui) {
   const boxes = lay.map((b) => {
     const part = gun.mods && gun.mods[b.slot];
     const dl = part ? deltaText(statsOf(withPart(gun, b.slot, null)), now, 2) : "";
-    const t = part ? `${SLOT_NAMES[b.slot] || b.slot}: ${part.name}${dl ? ` (${dl})` : ""}. Click to swap it or take it off.` : `${SLOT_NAMES[b.slot] || b.slot}: empty. Click for the parts within reach that fit.`;
-    return `<button class="gbslot${part ? "" : " empty"}${g.slot === b.slot ? " on" : ""}" data-action="gb-slot" data-slot="${b.slot}" style="left:${pc(b.x, V.W)};top:${pc(b.y, V.H)};width:${pc(b.w, V.W)};height:${pc(b.h, V.H)}"${tip(t)}><span class="gbsn">${esc(SLOT_NAMES[b.slot] || b.slot)}</span><span class="gbpn">${part ? esc(part.name) : "empty socket"}</span>${dl ? `<span class="gbdl">${esc(dl)}</span>` : ""}</button>`;
+    const t = part ? `${SLOT_NAMES[b.slot] || b.slot}: ${part.name}${dl ? ` (${dl})` : ""}. Click to swap it or take it off.` : b.slot === "mag" ? `${SLOT_NAMES[b.slot] || b.slot}: ${magazineText(gun)} (its own, not a separate part). Click for the magazines within reach that fit.` : `${SLOT_NAMES[b.slot] || b.slot}: empty. Click for the parts within reach that fit.`;
+    return `<button class="gbslot${part ? "" : " empty"}${g.slot === b.slot ? " on" : ""}" data-action="gb-slot" data-slot="${b.slot}" style="left:${pc(b.x, V.W)};top:${pc(b.y, V.H)};width:${pc(b.w, V.W)};height:${pc(b.h, V.H)}"${tip(t)}><span class="gbsn">${esc(SLOT_NAMES[b.slot] || b.slot)}</span><span class="gbpn">${part ? esc(part.name) : b.slot === "mag" ? esc(magazineText(gun)) : "empty socket"}</span>${dl ? `<span class="gbdl">${esc(dl)}</span>` : ""}</button>`;
   }).join("");
   const lines = lay.map((b) => {
     const par = b.parent && lay.find((x) => x.slot === b.parent);
@@ -364,7 +365,7 @@ export function gunTipText(gun) {
   const slots = slotsOf(gun);
   const s = statsOf(gun);
   const bits = [];
-  if (slots.length) bits.push(`slots: ${slots.map((x) => `${(SLOT_NAMES[x] || x).toLowerCase()} (${gun.mods && gun.mods[x] ? gun.mods[x].name : "empty"})`).join(", ")}; Modify (⚙) to change them`);
+  if (slots.length) bits.push(`slots: ${slots.map((x) => `${(SLOT_NAMES[x] || x).toLowerCase()} (${gun.mods && gun.mods[x] ? gun.mods[x].name : x === "mag" ? magazineText(gun) : "empty"})`).join(", ")}; Modify (⚙) to change them`);
   if (s.cal && CALIBERS[s.cal]) bits.push(`loaded with ${s.load === "auto" ? "the best to hand" : `${CALIBERS[s.loadCal || s.cal].name} ${AMMO_TYPES[s.type] ? AMMO_TYPES[s.type].name : s.type}`}`);
   bits.push(reliabilityText(gun, s));
   return bits.join(". ");

@@ -1674,6 +1674,7 @@ document.addEventListener("mouseover", (e) => {
   const el = e.target.closest("[data-tip]");
   if (!el || !el.dataset.tip) return hideTip();
   tipTarget = el;
+  if (showTipText(el, e.shiftKey)) { tipEl.classList.remove("hidden"); placeTip(e); return; } // an item row: short, Shift the whole (ui/itemlabels.js)
   tipEl.textContent = el.dataset.tip;
   tipEl.classList.toggle("pre", el.hasAttribute("data-tip-pre")); // multi-line tips (the weather report)
   if (el.dataset.tipSpark) tipEl.appendChild(sparkNode(el.dataset.tipSpark)); // a stock's last 14 days (ui/ledger.js)
@@ -1684,6 +1685,15 @@ document.addEventListener("mousemove", (e) => {
   if (held && e.buttons === 0) releaseHold(); // the button was let go where we did not see it (a drop-down, another window)
   if (tipTarget) placeTip(e);
 });
+// An item row's tip (data-tip-full: ui/itemlabels.js tipAttrs): the short one, the whole one while Shift is held.
+// Returns false for any other tip.
+function showTipText(el, full) {
+  if (!el || !el.dataset.tipFull) return false;
+  tipEl.textContent = full ? el.dataset.tipFull : el.dataset.tip;
+  tipEl.classList.toggle("pre", !full);
+  return true;
+}
+for (const ev of ["keydown", "keyup"]) document.addEventListener(ev, (e) => { if (e.key === "Shift" && tipTarget && document.contains(tipTarget)) showTipText(tipTarget, ev === "keydown"); });
 function placeTip(e) {
   const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
   let x = e.clientX + 14, y = e.clientY + 16;

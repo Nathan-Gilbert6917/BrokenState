@@ -77,6 +77,7 @@ import { canUpgradeAmmoBench, RELOAD } from "../sim/reloading.js"; // the reload
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower, carriedSpots } from "../sim/inventory.js";
 import { inventoryModal, takeLootReq } from "./inventory.js";
 import { armoryView, armoryScope } from "./armoryview.js"; // the Armory tab's stored gear: grouped, cards or compact rows
+import { itemShortTip, tipAttrs } from "./itemlabels.js"; // the armory cards' short hover tip (Shift: the whole one)
 import { teamInvModal, teamsHereCard, transferButtons } from "./teaminv.js"; // the team inventory window; teams on a base's tile; Drop off / Load on its tile
 import { fleetPicker } from "./fleetpick.js"; // the vehicle picker the planners share (up to four)
 import { plannedFleet, pickProblem } from "../sim/teamform.js";
@@ -1899,9 +1900,14 @@ function armoryStored(state, b, people) {
   if (all) for (const s of people) for (const x of carriedSpots(s)) entries.push({ item: x.item, loc: x.loc, sid: s.id, who: `${shortName(s)} · ${(SLOT_NAMES[x.where] || x.where).toLowerCase()}`, whoTip: `${s.name} has it (${(SLOT_NAMES[x.where] || x.where).toLowerCase()})` });
   const carried = entries.length - b.armory.length;
   const scopeBar = people.length ? `<span class="armscope">${[["stored", "Stored"], ["all", "Everything here"]].map(([k, l]) => `<button class="mini${armoryScope(ns) === k ? " active" : ""}" data-action="armv-scope" data-ns="${ns}" data-scope="${k}"${tip(k === "all" ? "The armory and what everyone at the base wears and carries, with who has it" : "Only what is stored in the armory")}>${l}</button>`).join("")}</span>` : "";
-  const cell = (e, inner, cls) => `<div class="${cls}${e.sid != null ? " apick" : ""}"${e.sid != null ? ` data-action="armv-pick" data-loc="${e.loc}" data-sid="${e.sid}"` : ""}${tip(`${gearTip(e.item)}${e.sid != null ? ` Click: open it in ${e.who ? "their" : "the"} inventory${e.who ? "" : " to equip it on someone here"}.` : ""}`)}>${inner}${gunCog(state, e.item, e.loc)}</div>`;
+  const cell = (e, inner, cls) => `<div class="${cls}${e.sid != null ? " apick" : ""}"${e.sid != null ? ` data-action="armv-pick" data-loc="${e.loc}" data-sid="${e.sid}"` : ""}${armTip(e)}>${inner}${gunCog(state, e.item, e.loc)}</div>`;
+  // The short hover tip (ui/itemlabels.js; Shift: the whole description), then what a click does.
+  const armTip = (e) => {
+    const click = e.sid != null ? `Click: open it in ${e.who ? "their" : "the"} inventory${e.who ? "" : " to equip it on someone here"}.` : "";
+    return tipAttrs([itemShortTip(e.item, e.loc, null, state), click].filter(Boolean).join("\n"), `${gearTip(e.item)}${click ? ` ${click}` : ""}`);
+  };
   return `<h3>Stored here (${b.armory.length})${all && carried ? ` <span class="small muted">+ ${carried} carried</span>` : ""}</h3>
-    ${armoryView(entries, { ns, cell, scopeBar, empty: "Empty. Gear your teams bring home (and crafted gear) lands here." })}`;
+    ${armoryView(entries, { ns, cell, scopeBar, state, empty: "Empty. Gear your teams bring home (and crafted gear) lands here." })}`;
 }
 
 // Bodies brought home in a team's car (sim/carriers.js): bury (their things to the armory) or burn (nothing kept).

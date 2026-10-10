@@ -279,7 +279,7 @@ console.log("The inventory window");
   const ui = { inv: { sid: s.id }, invSel: null, invMsg: "" };
   let html = render(st, ui);
   const loc = `armory:${h.id}:sup:food`;
-  check(/In the stores \(/.test(html) && html.includes('<span class="iname">120 Food</span>') && /islot store stack[^"]*still/.test(html) && !html.includes(`data-loc="${loc}"`), "the base's stores are stack tiles (nowhere to move them on their own: shown, not clickable)");
+  check(/In the stores \(/.test(html) && html.includes('<span class="iname">Food</span><span class="icount">×120</span>') && /islot store stack[^"]*still/.test(html) && !html.includes(`data-loc="${loc}"`), "the base's stores are stack tiles (nowhere to move them on their own: shown, not clickable)");
   INV_ACTIONS["inv-click"](st, ui, { loc });
   check(!ui.stack || !render(st, ui).includes("smove"), "clicked anyway: no mover with nowhere to go");
   // A destination hook (as ux-carry's held supplies would add): the tile turns movable and the mover uses it.
@@ -488,7 +488,7 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   STACK_CHANGE["sm-qtyset"](st, ui, { value: "8" });
   STACK_ACTIONS["sm-split"](st, ui);
   h = render(st, ui);
-  check(/16 \+ <b>8<\/b><\/span> Food/.test(h) && box.contents.sup.food === 24, "split: the tile says 16 + 8, the container still holds 24");
+  check(/<span class="iname">Food<\/span><span class="icount"><span class="smsplit"[^>]*>16 \+ <b>8<\/b><\/span>/.test(h) && box.contents.sup.food === 24, "split: the tile says 16 + 8, the container still holds 24");
   INV_ACTIONS["sm-go"](st, ui);
   check(box.contents.sup.food === 16 && u.haul.sup.food === 8 && total() === 24 && !(ui.inv.splits || {})[src], `Move: the 8 go, 16 stay, one stack again (${ui.invMsg})`);
   // Split again, the other part picked, the fast path (click Carried).
@@ -508,7 +508,7 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   INV_ACTIONS["inv-cancel"](st, ui);
   invDrop(st, ui, `haul:${u.id}:sup:food`, `rbox:${box.id}:list`, true);
   h = render(st, ui);
-  check(u.haul.sup.food === 9 && box.contents.sup.food === 15 && total() === 24 && /<b>5<\/b> \+ 4<\/span> Food/.test(h), "14 + 4 carried (the 14 picked), a Shift-drop sends half (9) back: 9 carried, taken from the 14: 5 + 4");
+  check(u.haul.sup.food === 9 && box.contents.sup.food === 15 && total() === 24 && /<span class="iname">Food<\/span><span class="icount"><span class="smsplit"[^>]*><b>5<\/b> \+ 4<\/span>/.test(h), "14 + 4 carried (the 14 picked), a Shift-drop sends half (9) back: 9 carried, taken from the 14: 5 + 4");
   RL.HAUL.free = 8;
 
   // Loot the bodies.
@@ -526,7 +526,7 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   STACK_CHANGE["sm-qtyset"](w, lui, { value: "8" });
   STACK_ACTIONS["sm-split"](w, lui);
   const lh = render(w, lui);
-  check(/12 \+ <b>8<\/b><\/span> Food/.test(lh) && /Take 8 food → Team cargo/.test(lh), "a body's 20 food: split 12 + 8, \"Take 8 food\"");
+  check(/<span class="iname">Food<\/span><span class="icount"><span class="smsplit"[^>]*>12 \+ <b>8<\/b><\/span>/.test(lh) && /Take 8 food → Team cargo/.test(lh), "a body's 20 food: split 12 + 8, \"Take 8 food\"");
   INV_ACTIONS["sm-go"](w, lui);
   check(body.supplies.food === 12 && p.cargo.supplies.food === f0 + 8, `8 taken, 12 left on the body (${lui.invMsg})`);
   w.combat = null;
@@ -547,10 +547,10 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   STACK_ACTIONS["sm-part"](v, iui, { part: "a" });
   INV_ACTIONS["sm-go"](v, iui);
   const ih = render(v, iui);
-  check(packed === 8 && hv.stock.food === 112 && /<b>107<\/b> \+ 5<\/span> Food/.test(ih), `the stores' 120 split 115 + 5, the 115 picked, room for 8: 8 packed, 107 + 5 stay (${iui.invMsg})`);
+  check(packed === 8 && hv.stock.food === 112 && /<span class="iname">Food<\/span><span class="icount"><span class="smsplit"[^>]*><b>107<\/b> \+ 5<\/span>/.test(ih), `the stores' 120 split 115 + 5, the 115 picked, room for 8: 8 packed, 107 + 5 stay (${iui.invMsg})`);
   INV_ACTIONS["inv-click"](v, iui, { loc });
   STACK_ACTIONS["sm-join"](v, iui);
-  check(/>112 Food</.test(render(v, iui)) && hv.stock.food + packed === 120, "Join: 112 again, none lost");
+  check(/>Food<\/span><span class="icount">×112</.test(render(v, iui)) && hv.stock.food + packed === 120, "Join: 112 again, none lost");
   INV_ACTIONS["inv-close"](v, iui);
   INV_STACK_DESTS.length = 0;
 }

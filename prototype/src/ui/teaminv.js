@@ -15,6 +15,7 @@ import { holdSection } from "./carry.js"; // under each paper doll: the supplies
 import { doll, storageBox, selBar, tile, SUPPLY_ICON, INV_ACTIONS } from "./inventory.js";
 import { survivorURL, spriteImg } from "./sprites.js";
 import { shortName } from "./names.js";
+import { supplyName } from "../sim/itemnames.js"; // rounds in the stores: "… FMJ — loose", the count on the right
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -99,7 +100,7 @@ function supTiles(ui, sup, pickable, side) {
     const amt = typeof n === "number" ? n : n.all;
     const extra = typeof n === "number" ? "" : n.packed >= 0.05 && n.found >= 0.05 ? ` (${qty(n.packed)} packed, ${qty(n.found)} found)` : n.found >= 0.05 ? " (found)" : " (packed)";
     const picked = ui.tiPick.sup[k] != null;
-    return `<div class="islot store${picked ? " sel" : ""}"${pickable ? ` data-action="ti-sup" data-key="${k}" data-side="${side}"` : ""}${tip(`${qty(amt)} ${SUPPLIES[k].name.toLowerCase()}${extra}, ${kg(SUPPLIES[k].weight * amt)} kg (${SUPPLIES[k].weight} kg each)${pickable ? ". Click to pick it; set how many below." : ""}`)}><div class="itile"><span class="iico">${SUPPLY_ICON[k] || "▪"}</span><span class="iname">${qty(amt)} ${esc(SUPPLIES[k].name)}</span><span class="ikg">${kg(SUPPLIES[k].weight * amt)}</span></div></div>`;
+    return `<div class="islot store${picked ? " sel" : ""}"${pickable ? ` data-action="ti-sup" data-key="${k}" data-side="${side}"` : ""}${tip(`${qty(amt)} ${SUPPLIES[k].name.toLowerCase()}${extra}, ${kg(SUPPLIES[k].weight * amt)} kg (${SUPPLIES[k].weight} kg each)${pickable ? ". Click to pick it; set how many below." : ""}`)}><div class="itile"><span class="iico">${SUPPLY_ICON[k] || "▪"}</span><span class="iname">${esc(supplyName(k))}</span><span class="icount">×${qty(amt)}</span><span class="ikg">${kg(SUPPLIES[k].weight * amt)}</span></div></div>`;
   }).join("");
 }
 const whereLabel = (loc) => { const L = parseLoc(loc); return L.slot === "rig" && L.i != null ? SLOT_NAMES.pouch : L.slot === "insert" ? `${L.i === "front" ? "Front" : "Back"} plate` : SLOT_NAMES[L.slot] || L.slot; };

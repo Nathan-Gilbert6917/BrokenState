@@ -42,10 +42,11 @@ section("Groups");
 section("Stat line");
 {
   const gun = makeItem("pistol");
-  check(/^0\/\d+$/.test(AV.gunRoundsLabel(gun)), `an unloaded pistol: ${AV.gunRoundsLabel(gun)}`);
+  // gun-mags' count (ui/itemlabels.js): { text, cls, tip, n, cap }; an item nowhere holds what is in it.
+  check(/^0\/\d+$/.test(AV.gunRoundsLabel(gun).text), `an unloaded pistol: ${AV.gunRoundsLabel(gun).text}`);
   gun.loaded = { n: 7, key: "a_9mm_fmj" };
-  check(AV.gunRoundsLabel(gun).startsWith("7/"), `loaded: ${AV.gunRoundsLabel(gun)}`);
-  check(AV.gunRoundsLabel(makeItem("knife")) === "", "a knife has no rounds");
+  check(AV.gunRoundsLabel(gun).text.startsWith("7/"), `loaded: ${AV.gunRoundsLabel(gun).text}`);
+  check(AV.gunRoundsLabel(makeItem("knife")) == null, "a knife has no rounds");
   const worn = makeItem("milhelmet");
   worn.dur = Math.round(worn.dur / 2);
   check(AV.statBits(worn).some(([t]) => /%$/.test(t)), `a worn helmet shows its condition (${AV.statBits(worn).map(([t]) => t).join(", ")})`);
@@ -72,6 +73,13 @@ section("The base Armory tab");
   check(/data-action="armv-type"[^>]*data-g="guns"/.test(html), "type chips");
   const sg = h.armory.findIndex((x) => x.key === "shotgun");
   check(new RegExp(`data-action="gb-open" data-loc="armory:${h.id}:list:${sg}"`).test(html), "the gun's ⚙ stays");
+  // The cards' rounds are gun-mags' real count (the base's 9mm stores fill the stored pistol), its names and short tips.
+  h.stock.a_9mm_fmj = 40;
+  html = renderModal(st, ui) || "";
+  const rds = [...html.matchAll(/class="irounds (\w+)"[^>]*>(\d+)\/(\d+)</g)].map((m) => m.slice(1));
+  check(rds.some(([c, n, cap]) => c === "full" && n === cap && Number(n) > 0), `a stored pistol with 9mm in the stores shows real rounds, not 0/N (${rds.map((r) => `${r[1]}/${r[2]}`).join(" ")})`);
+  check(/class="aname">9mm pistol magazine \(\d+\)</.test(html) || /class="aname">[^<]*magazine/.test(html), "a magazine card says magazine (itemnames.js rowName)");
+  check(/data-tip-full="/.test(html) && /Shift: full details/.test(html), "cards carry the short tip, the full one behind Shift");
   check(people.length ? new RegExp(`data-action="armv-pick" data-loc="armory:${h.id}:list:\\d" data-sid="${people[0].id}"`).test(html) : true, "a click opens it in the inventory");
   // Compact.
   act("armv-view");
