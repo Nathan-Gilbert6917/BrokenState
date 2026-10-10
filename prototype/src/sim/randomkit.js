@@ -13,6 +13,7 @@ import { START_GEAR, START_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunk
 import { CUSTOM_POINTS, pricePerson, pointsMax, itemPoints, slotPoints, vehiclePoints, skillsCost, nextLevelCost } from "./custompoints.js";
 import { tierCount, traitPoints, tidyTiers } from "./traits.js";
 import { standardMag } from "./mags.js";
+import { baseKey } from "./rounds.js";
 import { randomSkills, fitSkills, skillTotal, SKILL_MAX } from "./appearance.js";
 
 // Worn and held slots after the weapon: [slot, chance it is filled]. Shuffled each draw.
@@ -89,8 +90,10 @@ export function randomKit(budget, rng, opts = {}) {
 }
 
 // A random back for the vehicle: { items, supplies } costing at most budget, weighing at most room kg.
-/** @param {number} budget @param {number} room @param {import("./rng.js").Rng} rng */
-export function randomTrunk(budget, room, rng) {
+// cals: the crew's guns' calibres ({ cal: guns }): rounds in the back are the common rounds of one of them (none: 9mm
+// or 12 gauge).
+/** @param {number} budget @param {number} room @param {import("./rng.js").Rng} rng @param {Record<string, number>} [cals] */
+export function randomTrunk(budget, room, rng, cals = {}) {
   const V = { items: /** @type {string[]} */ ([]), supplies: /** @type {Record<string, number>} */ ({}) };
   const fits = (W) => vehiclePoints(W) <= budget && trunkKg(W) <= room + 1e-9;
   const pool = trunkChoices().filter((k) => TRUNK_CATS.has(GEAR[k].cat) && noLauncher(k));
@@ -101,9 +104,11 @@ export function randomTrunk(budget, room, rng) {
     const k = rng.pick(list);
     if (fits({ ...V, items: [...V.items, k] })) V.items.push(k);
   }
-  const kinds = rng.shuffle(Object.keys(START_TRUNK.SUPPLIES).filter((k) => SUPPLIES[k]));
-  for (const k of kinds.slice(0, rng.int(1, 4))) {
-    const cap = START_TRUNK.SUPPLIES[k];
+  const kinds = rng.shuffle([...Object.keys(START_TRUNK.SUPPLIES).filter((k) => SUPPLIES[k]), "rounds"]);
+  for (const kind of kinds.slice(0, rng.int(1, 4))) {
+    const cl = Object.keys(cals || {}).sort();
+    const k = kind === "rounds" ? baseKey(cl.length ? rng.pick(cl) : rng.pick(["9mm", "12ga"])) : kind;
+    const cap = kind === "rounds" ? START_TRUNK.ROUNDS : START_TRUNK.SUPPLIES[k];
     let n = Math.max(1, Math.round((rng.range(0.15, 0.7) * cap) / 5) * 5);
     while (n > 0 && !fits({ ...V, supplies: { ...V.supplies, [k]: n } })) n = n > 5 ? n - 5 : n - 1;
     if (n >= Math.max(1, cap * 0.05)) V.supplies[k] = n; // not a token handful

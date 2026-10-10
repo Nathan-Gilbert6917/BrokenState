@@ -20,6 +20,8 @@ import {
 import { itemPoints, slotPoints, pricePerson, pointsMax, vehiclePoints, suppliesPoints } from "../sim/custompoints.js";
 import { tidyTiers } from "../sim/traits.js";
 import { standardMag } from "../sim/mags.js";
+import { ROUND_SUPPLIES, HAND_SUPPLIES, CALIBERS } from "../sim/data-ammo.js"; // the back's rounds, by calibre and type
+import { gunCals } from "../sim/ammo.js";
 import { randomKit, randomTrunk, randomBuild, kitBudget, trunkBudget } from "../sim/randomkit.js"; // the dice under Customize: a new draw each time, within the points
 import { freshRng, randomName, randomAppearance } from "../sim/appearance.js";
 
@@ -130,7 +132,18 @@ function vehicleSection(state, ui) {
     <div>${items}</div>
     <div class="row" style="margin-top:0.25rem"><select data-action="sg-trunk-add"${V.items.length >= START_TRUNK.ITEMS ? " disabled" : ""}><option value="">Put a thing in the back…</option>${optionsHtml(trunkChoices(), null)}</select></div>
     <div class="lookopts" style="margin-top:0.25rem">${sups}</div>
+    ${trunkRoundsHtml(state, V)}
   </div>`;
+}
+// The back's rounds by calibre and type (sim/startgear.js START_TRUNK.ROUNDS in all): a row each and a pick to add a
+// box of one, the crew's guns' calibres first.
+const trunkRounds = (V) => Object.entries(V.supplies || {}).reduce((a, [k, q]) => a + (ROUND_SUPPLIES[k] ? q : 0), 0);
+function trunkRoundsHtml(state, V) {
+  const cap = START_TRUNK.ROUNDS, total = trunkRounds(V), cals = gunCals(state.survivors);
+  const rows = Object.keys(V.supplies).filter((k) => ROUND_SUPPLIES[k]).sort().map((k) => `<label class="lookopt">${esc(ROUND_SUPPLIES[k].name)}<input type="number" min="0" max="${cap}" step="1" style="width:4.2rem" data-action="sg-trunk-sup" data-k="${k}" value="${V.supplies[k] || 0}"${tip(`${ROUND_SUPPLIES[k].name} in the back (every round together at most ${cap}; ${ROUND_SUPPLIES[k].weight} kg each; ${suppliesPoints({ [k]: 10 })} points for 10). 0 takes them out`)}></label>`).join("");
+  const opts = Object.keys(ROUND_SUPPLIES).filter((k) => !HAND_SUPPLIES[k] && !V.supplies[k]).sort((a, b) => (cals[ROUND_SUPPLIES[b].round.cal] ? 1 : 0) - (cals[ROUND_SUPPLIES[a].round.cal] ? 1 : 0) || ROUND_SUPPLIES[a].name.localeCompare(ROUND_SUPPLIES[b].name));
+  return `<div class="small muted" style="margin-top:0.25rem">Rounds in the back, by calibre and type: ${total}/${cap}</div><div class="lookopts">${rows}</div>
+    <div class="row" style="margin-top:0.2rem"><select data-action="sg-trunk-round"${total >= cap ? " disabled" : ""}${tip("Add rounds of a calibre and type (a box of them; change how many after). The crew's guns' calibres first")}><option value="">Add rounds…</option>${opts.map((k) => `<option value="${k}">${esc(ROUND_SUPPLIES[k].name)}${cals[ROUND_SUPPLIES[k].round.cal] ? " (a gun of yours)" : ""}</option>`).join("")}</select></div>`;
 }
 
 // ---------- the containers ----------
@@ -404,7 +417,7 @@ export const SG_ACTIONS = {
   "sg-trunk-clear": (state, ui) => editTrunk(state, ui, (V) => { V.items = []; V.supplies = {}; }),
   // Empty, then a new random back for what its payer has left.
   "sg-trunk-rand": (state, ui) => editTrunk(state, ui, (V, o) => {
-    const R = randomTrunk(trunkBudget(state, o), room(state), freshRng());
+    const R = randomTrunk(trunkBudget(state, o), room(state), freshRng(), gunCals(state.survivors)); // rounds for the crew's guns
     if (!R.items.length && !Object.keys(R.supplies).length && ui.gearEdit) ui.gearEdit.msg = `${o.name.split(" ")[0]} has no points left for the back: take something off them, or raise Points each.`;
     V.items = R.items;
     V.supplies = R.supplies;
@@ -439,13 +452,23 @@ export const SG_CHANGE = {
     V.items.push(k);
   }),
   "sg-trunk-sup": (state, ui, el) => editTrunk(state, ui, (V) => {
-    const k = el.dataset.k, cap = START_TRUNK.SUPPLIES[k];
-    if (!cap) return false;
+    const k = el.dataset.k, cap = ROUND_SUPPLIES[k] ? Math.max(0, START_TRUNK.ROUNDS - trunkRounds(V) + (V.supplies[k] || 0)) : START_TRUNK.SUPPLIES[k]; // rounds: every calibre together under ROUNDS
+    if (!cap && !ROUND_SUPPLIES[k]) return false;
     let n = Math.max(0, Math.min(cap, Math.round(Number(el.value) || 0)));
     const w = SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0;
     const other = trunkKg({ ...V, supplies: { ...V.supplies, [k]: 0 } });
-    if (w > 0 && other + n * w > room(state)) { n = Math.max(0, Math.floor((room(state) - other) / w)); if (ui.gearEdit) ui.gearEdit.msg = `Only room for ${n} ${SUP_LABELS[k].toLowerCase()} in the back.`; }
+    if (w > 0 && other + n * w > room(state)) { n = Math.max(0, Math.floor((room(state) - other) / w)); if (ui.gearEdit) ui.gearEdit.msg = `Only room for ${n} ${(SUP_LABELS[k] || (SUPPLIES[k] && SUPPLIES[k].name) || k).toLowerCase()} in the back.`; }
     if (n) V.supplies[k] = n; else delete V.supplies[k];
+  }),
+  // A box of rounds of a calibre and type into the back (what the room and START_TRUNK.ROUNDS leave).
+  "sg-trunk-round": (state, ui, el) => editTrunk(state, ui, (V) => {
+    const k = el.value;
+    if (!k || !ROUND_SUPPLIES[k]) return false;
+    const left = START_TRUNK.ROUNDS - trunkRounds(V), w = ROUND_SUPPLIES[k].weight || 0;
+    let n = Math.min(left, (CALIBERS[ROUND_SUPPLIES[k].round.cal] || { box: 20 }).box);
+    if (w > 0) n = Math.min(n, Math.floor((room(state) - trunkKg(V)) / w));
+    if (!(n > 0)) { if (ui.gearEdit) ui.gearEdit.msg = left > 0 ? "No room in the back for more rounds." : `At most ${START_TRUNK.ROUNDS} rounds in the back.`; return false; }
+    V.supplies[k] = (V.supplies[k] || 0) + n;
   }),
   // Who pays: the back moves to them (in Hardcore they own the car).
   "sg-trunk-owner": (state, ui, el) => {

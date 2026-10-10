@@ -10,7 +10,9 @@ import { HC_START } from "../sim/hardcore-start.js";
 import { traitPickerHtml, traitBlock } from "./traitpick.js"; // the traits, good and bad, none that clash
 import {
   CUSTOM_BG, blankBackground, sanitizeBackground, sanitizeLibrary, newBackgroundId, slotOptions, carryOptions, trunkOptions, carTypes, customTraitKeys, backgroundSummary,
+  roundOptions, bgCals, roundsOf,
 } from "../sim/custombg.js";
+import { ROUND_SUPPLIES, CALIBERS } from "../sim/data-ammo.js"; // rounds by calibre and type
 import { POCKETS } from "../sim/inventory.js";
 import { itemPoints, suppliesPoints } from "../sim/custompoints.js"; // what it comes to under Customize
 import { traitPoints, cleanTier, tierCount } from "../sim/traits.js";
@@ -22,10 +24,13 @@ const SUP_LABELS = { food: "Food", water: "Water", ammo: "Ammo", arrows: "Arrows
 
 // ---------- the list, kept in this browser ----------
 const BG_KEY = "brokenstate.customBackgrounds";
+let migrated = false;
 let lib = load();
+if (migrated) store(); // a list saved before rounds went by calibre: kept as rounds now (sim/custombg.js)
 function load() {
   try {
     const raw = typeof localStorage !== "undefined" ? localStorage.getItem(BG_KEY) : null;
+    migrated = !!raw && /"ammo":/.test(raw);
     return sanitizeLibrary(raw ? JSON.parse(raw) : []);
   } catch {
     return {};
@@ -71,7 +76,7 @@ export function presetToCustom(key, id) {
   }
   const T = A.trunk || {};
   def.car = { odds: A.carOdds ?? 1, type: top(A.cars)[0] || null, trunk: {}, items: top(T.gear, T.n ? T.n[1] : 0) };
-  for (const k of Object.keys(CUSTOM_BG.TRUNK)) if (T[k]) def.car.trunk[k] = mid(T[k]);
+  for (const k of [...Object.keys(CUSTOM_BG.TRUNK), "ammo"]) if (T[k]) def.car.trunk[k] = mid(T[k]); // ammo: sanitized into the rounds of its guns
   return sanitizeBackground(def, id);
 }
 
@@ -147,6 +152,7 @@ function form(d, ui) {
   const items = d.items.map((k, i) => `<span class="chip ${fit.left.includes(k) ? "off" : ""}">${esc(gearName(k))} <button class="mini" data-action="bg-item-del" data-i="${i}"${tip("Take it out")}>×</button></span>`).join("");
   const sups = Object.entries(C.SUPPLY).map(([k, cap]) => `<label class="lookopt">${SUP_LABELS[k]}${num("bg-sup", d.supplies[k], cap, ` data-k="${k}"`, `${SUP_LABELS[k]} on them, 0–${cap}, pooled with the team's (a day's ration is 1 food and 1 water)`)}</label>`).join("");
   const trunk = Object.entries(C.TRUNK).map(([k, cap]) => `<label class="lookopt">${SUP_LABELS[k]}${num("bg-trunk", d.car.trunk[k], cap, ` data-k="${k}"`, `${SUP_LABELS[k]} in the back of the car, 0–${cap}`)}</label>`).join("");
+  const supRounds = roundRows(d, "sup"), trunkRounds = roundRows(d, "trunk");
   const trunkItems = d.car.items.map((k, i) => `<span class="chip">${esc(gearName(k))} <button class="mini" data-action="bg-trunk-del" data-i="${i}"${tip("Take it out")}>×</button></span>`).join("");
   const cars = carTypes().map((k) => `<option value="${k}" ${d.car.type === k ? "selected" : ""}>${esc(VEHICLE_TYPES[k].name)}</option>`).join("");
   return `<div class="row"><label class="lookopt" style="flex:1">Name<input data-action="bg-name" value="${esc(d.name)}" maxlength="${C.NAME}"></label>
@@ -160,14 +166,38 @@ function form(d, ui) {
     ${fit.left.length ? `<div class="small danger">No room for ${esc(fit.left.map(gearName).join(", "))}: pick a bigger bag, or it is left behind.</div>` : ""}
     <div class="row" style="margin-top:0.3rem">${select("bg-item-add", "", byName(carryOptions()), "Add a thing…", d.items.length >= C.ITEMS ? " disabled" : "")}</div>
     <h3>Supplies on them <span class="small muted">(on top of the team's 1–3 days)</span></h3><div class="lookopts">${sups}</div>
+    ${supRounds}
     <h3>The car</h3>
     <div class="lookopts">
       <label class="lookopt"${tip(`How likely the car the team fled in is theirs, 0–${C.CAR_ODDS}, against the others' (the presets are 0.7–1.6; 0: never theirs, ${C.CAR_ODDS}: almost always). The car, its kind and its back are the owner's.`)}>Theirs (odds)<input type="number" min="0" max="${C.CAR_ODDS}" step="0.1" style="width:4.2rem" data-action="bg-carodds" value="${d.car.odds}"></label>
       <label class="lookopt">Kind<select data-action="bg-cartype"><option value="">Any (sedan or truck)</option>${cars}</select></label>
       ${trunk}
     </div>
+    ${trunkRounds}
     <div style="margin-top:0.3rem">${trunkItems || `<span class="small muted">Nothing else in the back.</span>`}</div>
     <div class="row" style="margin-top:0.3rem">${select("bg-trunk-add", "", byName(trunkOptions()), "Put a thing in the back…", d.car.items.length >= C.TRUNK_ITEMS ? " disabled" : "")}</div>`;
+}
+
+// Rounds by calibre and type (sim/custombg.js ROUNDS, TRUNK_ROUNDS): a row each (how many, ×), and a pick to add a
+// calibre and type (a box of it), the calibres of the background's own guns first.
+function roundRows(d, where) {
+  const C = CUSTOM_BG, rec = where === "sup" ? d.supplies : d.car.trunk, cap = where === "sup" ? C.ROUNDS : C.TRUNK_ROUNDS;
+  const act = where === "sup" ? "bg-sup" : "bg-trunk";
+  const keys = Object.keys(rec).filter((k) => ROUND_SUPPLIES[k]).sort();
+  const total = roundsOf(rec);
+  const rows = keys.map((k) => `<label class="lookopt">${esc(ROUND_SUPPLIES[k].name)}${num(act, rec[k], cap, ` data-k="${k}"`, `${ROUND_SUPPLIES[k].name} ${where === "sup" ? "on them" : "in the back of the car"} (all the rounds together at most ${cap}; a gun fires only its own calibre)`)} <button class="mini" data-action="bg-round-del" data-w="${where}" data-k="${k}"${tip("Take them out")}>×</button></label>`).join("");
+  const cals = bgCals(d, where !== "sup");
+  const opts = roundOptions().filter((k) => !rec[k]).sort((a, b) => (cals[ROUND_SUPPLIES[b].round.cal] ? 1 : 0) - (cals[ROUND_SUPPLIES[a].round.cal] ? 1 : 0) || ROUND_SUPPLIES[a].name.localeCompare(ROUND_SUPPLIES[b].name));
+  const add = `<select data-action="bg-round-add" data-w="${where}"${total >= cap ? " disabled" : ""}${tip(`Add rounds of a calibre and type (a box of them; change how many after). Their guns' calibres first`)}><option value="">Add rounds…</option>${opts.map((k) => `<option value="${k}">${esc(ROUND_SUPPLIES[k].name)}${cals[ROUND_SUPPLIES[k].round.cal] ? " (their gun)" : ""}</option>`).join("")}</select>`;
+  return `<div class="small muted" style="margin-top:0.25rem">Rounds ${where === "sup" ? "on them" : "in the back"}, by calibre and type: ${total}/${cap}</div><div class="lookopts">${rows}</div><div class="row" style="margin-top:0.2rem">${add}</div>`;
+}
+// A box of a round key added (at most what the cap leaves).
+function addRounds(b, where, k) {
+  if (!ROUND_SUPPLIES[k]) return;
+  const rec = where === "sup" ? b.supplies : b.car.trunk, cap = where === "sup" ? CUSTOM_BG.ROUNDS : CUSTOM_BG.TRUNK_ROUNDS;
+  const left = cap - roundsOf(rec);
+  const box = (CALIBERS[ROUND_SUPPLIES[k].round.cal] || { box: 20 }).box;
+  if (left > 0) rec[k] = (rec[k] || 0) + Math.min(box, left);
 }
 
 // ---------- actions ----------
@@ -213,6 +243,7 @@ export const BG_ACTIONS = {
   }),
   "bg-item-del": (state, ui, d) => edit(ui, (b) => { b.items.splice(Number(d.i), 1); }),
   "bg-trunk-del": (state, ui, d) => edit(ui, (b) => { b.car.items.splice(Number(d.i), 1); }),
+  "bg-round-del": (state, ui, d) => edit(ui, (b) => { delete (d.w === "sup" ? b.supplies : b.car.trunk)[d.k]; }),
 };
 
 export const BG_CHANGE = {
@@ -227,4 +258,5 @@ export const BG_CHANGE = {
   "bg-cartype": (state, ui, el) => edit(ui, (b) => { b.car.type = el.value || null; }),
   "bg-trunk": (state, ui, el) => edit(ui, (b) => { b.car.trunk[el.dataset.k] = Number(el.value); }),
   "bg-trunk-add": (state, ui, el) => edit(ui, (b) => { if (el.value) b.car.items.push(el.value); }),
+  "bg-round-add": (state, ui, el) => edit(ui, (b) => { if (el.value) addRounds(b, el.dataset.w, el.value); }),
 };

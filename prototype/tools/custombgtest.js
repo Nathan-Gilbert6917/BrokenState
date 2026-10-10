@@ -48,7 +48,7 @@ section("A custom background is made safe");
   check(d.traits.join() === "brave,tough,lucky", `traits: at most ${CUSTOM_BG.TRAITS}, Brave not with Coward, no unknown or background-only trait (${d.traits.join()})`);
   check(!d.gear.weapon && d.gear.armor === "vest" && d.gear.backpack === "duffle" && d.gear.tool === "flashlight" && !d.gear.head, `gear only in its own slot (${JSON.stringify(d.gear)})`);
   check(!d.items.includes("bicycle") && !d.items.includes("sandbags") && !d.items.includes("duffle") && d.items.length === CUSTOM_BG.ITEMS, `carried: no bikes, nothing bulky, no packs, at most ${CUSTOM_BG.ITEMS}`);
-  check(d.supplies.food === CUSTOM_BG.SUPPLY.food && !("water" in d.supplies) && d.supplies.ammo === 50 && !("fuel" in d.supplies), `supplies clamped (${JSON.stringify(d.supplies)})`);
+  check(d.supplies.food === CUSTOM_BG.SUPPLY.food && !("water" in d.supplies) && !("ammo" in d.supplies) && totalRounds(d.supplies) === 50 && !("fuel" in d.supplies), `supplies clamped, the old generic ammo as rounds by calibre (${JSON.stringify(d.supplies)})`);
   check(d.car.odds === CUSTOM_BG.CAR_ODDS && d.car.type === null && d.car.trunk.scrap === CUSTOM_BG.TRUNK.scrap && d.car.trunk.food === 5 && !("gold" in d.car.trunk) && d.car.items.join() === "bicycle,sandbags", `the car clamped (${JSON.stringify(d.car)})`);
   const lib = sanitizeLibrary([{ id: "c_1", name: "A" }, { id: "nurse", name: "B" }, { id: "c_1", name: "dupe" }, null, ...Array.from({ length: 40 }, (_, i) => ({ id: `c_${i + 2}` }))]);
   check(Object.keys(lib).length === CUSTOM_BG.MAX && lib.c_1.name === "A" && !lib.nurse && Object.keys(lib).every(isCustomBg), `the list: prefixed ids, no repeats, at most ${CUSTOM_BG.MAX}`);
