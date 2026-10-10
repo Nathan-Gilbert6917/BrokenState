@@ -48,6 +48,7 @@ import { makeHorde } from "../src/sim/hordes.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { setAutopilot, autopilotResolve } from "../src/sim/autopilot.js";
 import { taskHour } from "../src/sim/orders.js";
+import { roundsInItem, isBulk } from "../src/sim/itemstack.js"; // a truck's rounds boxed or in bulk (2026-10-10)
 
 const SEED = Number(process.argv[2] || 7);
 let pass = 0, fail = 0;
@@ -117,8 +118,8 @@ let truckValue = 0;
     let v = 0, items = 0, ammo = 0;
     for (let i = 0; i < N; i++) {
       const got = truckLoot(rng, kind, cond);
-      v += valueOf(got); items += got.gear.length; ammo += totalRounds(got.sup);
-      for (const it of got.gear) keys.add(it.key);
+      v += valueOf(got); items += got.gear.filter((it) => !roundsInItem(it)).length; ammo += totalRounds(got.sup) + got.gear.reduce((a, it) => a + roundsInItem(it), 0); // itemstack.js: boxed and bulk rounds are its ammo (2026-10-10)
+      for (const it of got.gear) keys.add(roundsInItem(it) || isBulk(it) ? "ammo" : it.key);
       for (const k of Object.keys(got.sup)) keys.add(isRoundKey(k) ? "ammo" : k); // rounds by calibre (ammo.js): the table's "ammo"
     }
     avg[`${kind}/${cond}`] = { v: v / N, items: items / N, ammo: ammo / N };

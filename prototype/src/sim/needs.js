@@ -54,7 +54,7 @@ import { meatIn, takeMeat } from "./hunting.js";
 import { GEAR } from "./data.js";
 import { COMFORT, applyUse } from "./comforts.js";
 import { addMood } from "./relations.js"; // the starving days show in the mood breakdown
-import { packOf, removeAt, personPlace, placeOfLoc } from "./inventory.js";
+import { packOf, removeAt, useOneAt, personPlace, placeOfLoc } from "./inventory.js";
 import { teamFire } from "./fieldheat.js";
 import { heatUse, HEAT } from "./upkeep.js";
 import { shelterFire } from "./woodcutting.js";
@@ -385,7 +385,7 @@ export function useTreat(state, s, loc) {
   const t = treatsFor(state, s).find((x) => x.loc === loc);
   if (!t || !s.alive) return "";
   if (placeOfLoc(state, loc) !== personPlace(s)) return "";
-  removeAt(state, loc);
+  useOneAt(state, loc); // one of a stack (itemstack.js), else the item
   return applyUse(state, s, t.key);
 }
 // A team's evening: everyone below COMFORT.lowMood (glummest first) uses one treat. Returns the lines.

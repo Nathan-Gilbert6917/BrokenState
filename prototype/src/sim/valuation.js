@@ -25,6 +25,7 @@ import { day } from "./world.js";
 import { season } from "./weather.js";
 import { hash01 } from "./skills.js";
 import { itemDur, itemDurMax } from "./crafting.js";
+import { isRoundItem, isBulk, loadsOf, countOf } from "./itemstack.js"; // stacks: n of a consumable, rounds past one box, a bulk container's rounds
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -59,8 +60,10 @@ export function itemValue(item) {
   const q = clamp(Number.isFinite(item.quality) ? item.quality : 1, 0, 1.5);
   const dur = itemDur(item);
   // A count stack (GEAR count: true: a box of rounds, primers...) is worth its share left; wear costs at most 70%.
-  const durF = dur == null ? 1 : d.count ? clamp(dur / d.dur, 0, 1) : 0.3 + 0.7 * clamp(dur / itemDurMax(item), 0, 1);
-  let v = d.value * (0.2 + 0.8 * q) * durF;
+  // A stack of boxes or loose rounds (itemstack.js) is worth its rounds: no cap at one box.
+  const durF = dur == null ? 1 : d.count ? (isRoundItem(item) ? Math.max(0, dur / d.dur) : clamp(dur / d.dur, 0, 1)) : 0.3 + 0.7 * clamp(dur / itemDurMax(item), 0, 1);
+  let v = d.value * (0.2 + 0.8 * q) * durF * countOf(item); // a stack of a consumable: n of it
+  if (isBulk(item)) for (const l of loadsOf(item)) if (l) v += itemValue(l); // a bulk ammo container: its rounds
   // A maximum lowered by repairs (repair.js: item.durBase, the maximum before the first) sells low: × 0.4 at none left.
   if (item.durBase > 0 && dur != null) v *= 0.4 + 0.6 * clamp(itemDurMax(item) / item.durBase, 0, 1);
   if (Array.isArray(item.contents)) for (const c of item.contents) if (c) v += itemValue(c);

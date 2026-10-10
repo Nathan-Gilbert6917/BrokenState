@@ -18,7 +18,8 @@
 //   health; cheap vodka +10, then a day "Hungover": work ×0.85, aim −10, −2 mood.
 import { GEAR } from "./data.js";
 import { log, survivorById, atBase } from "./world.js";
-import { allItems, packOf, itemAt, parseLoc, removeAt, personPlace, placeOfLoc } from "./inventory.js";
+import { allItems, packOf, itemAt, parseLoc, removeAt, useOneAt, personPlace, placeOfLoc } from "./inventory.js";
+import { takeOneAt } from "./itemstack.js"; // one off a stack (itemstack.js)
 import { partyMembers, teamName } from "./parties.js";
 import { addMood } from "./relations.js";
 
@@ -157,7 +158,7 @@ export function useItemOn(state, sid, loc) {
   const L = parseLoc(loc);
   if (L.o === "body") return "Take it first.";
   if (placeOfLoc(state, L) !== personPlace(s)) return `${first(s)} cannot reach it.`;
-  removeAt(state, loc);
+  useOneAt(state, loc); // one of a stack (itemstack.js), else the item
   const line = applyUse(state, s, it.key);
   log(state, line, "info");
   return line;
@@ -186,7 +187,7 @@ export function autoTreats(state, base) {
     const key = TREAT_ORDER.find((k) => base.armory.some((it) => it.key === k) && (k !== "vodka" || s.role === "rest") && (k !== "smokes" || s.health > 40));
     if (!key) continue;
     const i = base.armory.findIndex((it) => it.key === key);
-    base.armory.splice(i, 1);
+    takeOneAt(base.armory, i); // one off a stack, else the item
     out.push(applyUse(state, s, key));
   }
   return out;

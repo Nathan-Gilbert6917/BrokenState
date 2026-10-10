@@ -34,7 +34,7 @@ import { tileLabel, planPath, spawnAiParty, partyMembers, partyTile, teamName, l
 import { triggerConflict } from "./conflicts.js";
 import { searchCrew } from "./crashes.js";
 import { stockHas, keyWord } from "./water.js";
-import { sortFind } from "./ammo.js"; // rounds by calibre
+import { sortFind, formFinds } from "./ammo.js"; // rounds by calibre; boxed and bulk forms
 import { unitPower, partyLost } from "./arsenal.js"; // an AI salvage party's fighters (their kit) and the kit of its dead
 
 export const MILTRUCK = {
@@ -94,6 +94,7 @@ const BURNT_KEEP = new Set(["ammo", "parts", "ar", "carbine", "plate", "milhelme
 export const TRUCK_LOOT_HOOKS = [rosterTruckGear]; // factoryfit.js: the weapons overhaul's military guns in the load
 // ammo.js: an Army truck's rounds by calibre (5.56 and .308, now and then armour-piercing; its own dice).
 TRUCK_LOOT_HOOKS.push((rng, ctx, out) => sortFind(out.sup, "military", "truck", ctx.kind, ctx.cond, ctx.src, out.sup.ammo || 0));
+TRUCK_LOOT_HOOKS.push((rng, ctx, out) => { if (Array.isArray(out.gear)) formFinds(out.sup, out.gear, "military", "truck", ctx.kind, ctx.cond, ctx.src); }); // ammo.js: boxed and bulk rounds
 // Flashbangs (throwables.js FLASH) in the crates now and then: [chance, lo, hi] by kind, x the truck's richness; none
 // left in a burned-out one. Dice of their own (a hash of the truck's dice position: no draw, the rest of the truck is
 // as it was).

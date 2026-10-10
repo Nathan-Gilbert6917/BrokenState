@@ -36,6 +36,8 @@ import { bodyKit } from "./carrykit.js"; // an enemy's rig and magazines onto it
 import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
 import { enemyGunLoaded, unloadInto, stockFor } from "./gunload.js"; // the rounds left in a gun, kept on it (call-time only: safe in the import cycle)
 import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet and ear protection on its body
+import { AMMO_STACK } from "./data-stacks.js";
+import { stackKg, canStack, mergeInto, isSpent, splitHalf, useOne, openRounds, takeOut, fillBulk, isBulk, isRoundItem, amountOf, stackLabel, countOf } from "./itemstack.js"; // stacks in a slot (consumables, rounds loose or boxed, bulk containers)
 
 export const POCKETS = 4;
 export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to this (plate carrier alone is 4)
@@ -104,11 +106,13 @@ export const isBulky = (key) => !!(GEAR[key] && GEAR[key].bulky);
 // A container that can be carried in the arms (EQUIP_SLOTS carry): a pack, a rig or a pouched vest, a gun case.
 export const isCarryable = (item) => { const d = item && GEAR[item.key]; return !!(d && (d.slot === "backpack" || d.slot === "rig" || d.slots || d.pouches || d.gunCase)); };
 // What an item weighs (kg): its own weight, and a pack also what is inside it.
-// A count stack (GEAR count: true, item.dur = how many are left: a box of rounds) weighs its share left.
+// A count stack (GEAR count: true, item.dur = how many are left: a box of rounds, a stack of boxes) weighs its share
+// left; loose rounds by the round, a bulk container empty and its rounds, a stack of a consumable n of it
+// (itemstack.js stackKg).
 export const itemKg = (item) => {
   const d = item && GEAR[item.key];
   if (!d || !Number.isFinite(d.weight)) return 1;
-  return d.count && d.dur && Number.isFinite(item.dur) ? d.weight * Math.max(0, item.dur) / d.dur : d.weight;
+  return stackKg(item, d.count && d.dur && Number.isFinite(item.dur) ? d.weight * Math.max(0, item.dur) / d.dur : d.weight);
 };
 // A gun also weighs its fitted attachments (gunmods.js: item.mods).
 export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item) + insertsKg(item);
@@ -309,6 +313,9 @@ export function stripAll(s) {
 // Returns the location string, or "" when nothing is free.
 export function stow(s, item, prefix = `s:${s.id}`) {
   ensureInv(s);
+  // A stack of the same thing on them takes it first (itemstack.js: a consumable, rounds in the same form).
+  const at = mergeOnto(s, item, prefix);
+  if (at) return at;
   const slot = GEAR[item.key].slot;
   if (EQUIP_SLOTS.includes(slot) && !s.gear[slot] && !fitReason(item, slot, s)) { s.gear[slot] = item; return `${prefix}:${slot}`; } // books (slot "pack") are never worn
   const pi = pouchFor(s, item); // a magazine, a grenade, a radio, meds: a rig pouch of its kind first
@@ -325,6 +332,21 @@ export function stow(s, item, prefix = `s:${s.id}`) {
   return "";
 }
 
+// Merges an item into the stacks of the same thing a person carries (pockets, rig pouches, the pack). Returns the
+// location of the last stack it went into when all of it went, else "" (what is left is still the item).
+function mergeOnto(s, item, prefix) {
+  if (!item || (!isRoundItem(item) && countOf(item) < 1)) return "";
+  let at = "";
+  const lists = [["pocket", s.pockets], ["rig", rigPouches(s)], ["pack", packOf(s)]];
+  for (const [where, list] of lists) {
+    (list || []).forEach((it, i) => {
+      if (at || !it || !canStack(it, item)) return;
+      if (mergeInto(it, item) > 0 && isSpent(item)) at = `${prefix}:${where}:${i}`;
+    });
+    if (at) return at;
+  }
+  return "";
+}
 // The free rig pouch an item would go in when stowed (its own kind; meds and tablets an admin pouch), or -1.
 function pouchFor(s, item) {
   const r = KIT_LOOT.on ? rigOf(s) : null;
@@ -468,6 +490,67 @@ export function removeAt(state, str) {
   return it;
 }
 export const placeOfLoc = (state, loc) => placeOf(state, typeof loc === "string" ? parseLoc(loc) : loc);
+// Uses one of the item at a location (a treat eaten, a dewormer taken): one off a stack (itemstack.js), else the item
+// taken away. Returns the one used (a single), or null.
+export function useOneAt(state, str) {
+  const r = ref(state, parseLoc(str));
+  const it = r ? r.get() : null;
+  if (!it) return null;
+  if (useOne(it)) { const one = { ...it }; delete one.n; return one; }
+  r.remove(it);
+  return it;
+}
+// A piece split off an item at loc put somewhere near it: a free spot of the same container (pockets, pouches, the
+// pack, a bag in the arms, a pile), else on the same person where it fits (stow), else the place's storage. Returns the
+// new location's words, or "" (nowhere: the caller puts it back).
+function putNear(state, str, piece) {
+  const loc = parseLoc(str);
+  const r = ref(state, loc);
+  if (!r) return "";
+  if (r.list) { r.put(piece); return r.st.name; }
+  const h = r.h;
+  const arr = loc.slot === "pocket" ? h.pockets : loc.slot === "pack" ? packOf(h) : loc.slot === "rig" ? rigPouches(h) : loc.slot === "bag" ? (h.gear && h.gear.carry ? ensurePack(h.gear.carry) : null) : loc.slot === "loose" ? h.loose : null;
+  if (Array.isArray(arr)) {
+    const kinds = loc.slot === "rig" ? pouchesOf(rigOf(h)) || [] : [];
+    const i = arr.findIndex((x, j) => !x && !(loc.slot === "pocket" ? fitReason(piece, "pocket") : loc.slot === "rig" ? pouchReason(piece, kinds[j]) : loc.slot === "loose" ? "" : fitReason(piece, "pack")));
+    if (i >= 0) { arr[i] = piece; return loc.slot === "pocket" ? "a pocket" : loc.slot === "rig" ? "a pouch" : loc.slot === "loose" ? "the pile" : "the pack"; }
+  }
+  if (loc.o === "s" && h.id != null && stow(h, piece)) return `${h.name.split(" ")[0]}'s kit`;
+  const st = storageFor(state, placeOf(state, loc));
+  if (st && loc.o !== "body") { st.list.push(piece); return st.name; }
+  return "";
+}
+// Split (the inventory's button): half a stack (rounds or things) into a spot of its own. Returns the message.
+export function splitAt(state, str) {
+  const it = itemAt(state, str);
+  if (!it) return "Nothing there.";
+  const label = stackLabel(it);
+  const half = splitHalf(it);
+  if (!half) return `The ${it.name} is not a stack to split.`;
+  const where = putNear(state, str, half);
+  if (!where) { mergeInto(it, half); if (isRoundItem(it)) it.dur = amountOf(it); return `No free spot for half the ${label}.`; }
+  return `${label} split: ${stackLabel(half)} to ${where}.`;
+}
+// Open (the inventory's button): a stack of boxes into loose rounds (all of it when up to a loose handful, else a
+// handful of LOOSE beside it); a bulk container: a loose handful out of it. Returns the message.
+export function openAt(state, str) {
+  const it = itemAt(state, str);
+  if (!it) return "Nothing there.";
+  if (isBulk(it)) {
+    const piece = takeOut(it);
+    if (!piece) return `The ${it.name} is empty.`;
+    const where = putNear(state, str, piece);
+    if (!where) { fillBulk(it, piece.key, piece.dur); return `No free spot for a handful out of the ${it.name}.`; }
+    return `${stackLabel(piece)} out of the ${it.name} to ${where}.`;
+  }
+  if (!isRoundItem(it) || it.loose) return `The ${it.name} has nothing to open.`;
+  if (amountOf(it) <= AMMO_STACK.LOOSE) { it.loose = true; return `Opened: ${stackLabel(it)}.`; }
+  const piece = openRounds(it);
+  if (!piece) return "Nothing in it.";
+  const where = putNear(state, str, piece);
+  if (!where) { it.dur = amountOf(it) + piece.dur; return `No free spot for a loose handful of the ${it.name}.`; }
+  return `Opened ${stackLabel(piece)} to ${where} (${stackLabel(it)} left).`;
+}
 
 // ---------- gun attachments (gunmods.js) ----------
 // Who and what storage can reach a gun at a location: { holder (a survivor or null), st (storageFor or null) }. A body's
@@ -713,8 +796,10 @@ export function moveItem(state, fromStr, toStr) {
     if (A.list) return "";
     const err = roomCheck(store, item, gained, lostFrom);
     if (err) return err;
+    // A stack of the same thing there takes it (itemstack.js), what is left goes in as it is.
+    for (const it of B.list) { if (isSpent(item)) break; if (it && canStack(it, item)) mergeInto(it, item); }
     A.remove(item);
-    B.put(item);
+    if (!isSpent(item)) B.put(item);
     taken(state, from, item);
     return `${item.name} → ${store.name}.`;
   }
@@ -723,6 +808,15 @@ export function moveItem(state, fromStr, toStr) {
   if (why) return why;
   if (to.slot === "pack" && from.o === to.o && from.id === to.id && from.slot === "backpack") return "A pack does not fit inside itself.";
   const cur = B.get();
+  if (cur && canStack(cur, item)) {
+    // Onto a stack of the same thing (itemstack.js): as much as fits goes on it, the rest stays where it was.
+    const err = gained ? roomCheck(store, item, gained, lostFrom) : "";
+    if (err) return err;
+    const q = mergeInto(cur, item);
+    if (!q) return `The ${stackLabel(cur)} is full.`;
+    if (isSpent(item)) { A.remove(item); taken(state, from, item); return `${item.name} onto the stack: ${stackLabel(cur)}.`; }
+    return `${q} onto the stack (${stackLabel(cur)}); ${amountOf(item)} left where ${amountOf(item) === 1 ? "it was" : "they were"}.`;
+  }
   if (gained || lostFrom) {
     // Onto a person from a body (the team gets heavier), or a worn pack moved (its wearer's max load drops).
     const gain = equipped(tk) ? (cur ? carryOf(cur) : 0) - carryOf(item) : 0;

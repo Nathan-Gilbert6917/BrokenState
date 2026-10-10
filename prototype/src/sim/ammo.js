@@ -18,6 +18,8 @@ import { SUPPLIES, GEAR } from "./data.js";
 import { WEAPONS } from "./combat.js";
 import { hash01 } from "./skills.js";
 import { SITE_TAGS, AREA_TAGS } from "./loot.js";
+import { BULK, BULK_FINDS } from "./data-stacks.js"; // bulk ammo containers, a find's boxed share (2026-10-10)
+import { isBulk, loadsOf, sweepLoads, bulkRecord, roundItems, newBulk, fillBulk, boxSize } from "./itemstack.js"; // rounds loose, boxed, in bulk
 
 // ---------- keys and stock records (rounds.js) ----------
 export * from "./rounds.js";
@@ -134,7 +136,8 @@ export function unbox(list, rec) {
   let n = 0;
   for (let i = list.length - 1; i >= 0; i--) {
     const it = list[i];
-    if (!it || !(ROUND_SUPPLIES[it.key] || RELOAD_SUPPLIES[it.key])) continue; // boxes of rounds; bags of brass, cans of powder, boxes of primers (reloading.js)
+    if (isBulk(it)) { for (const [k, q] of Object.entries(bulkRecord(it))) { addRounds(rec, k, q); n += q; } list.splice(i, 1); continue; } // a bulk ammo container: its rounds into the stock (the empty can is not kept)
+    if (!it || !(ROUND_SUPPLIES[it.key] || RELOAD_SUPPLIES[it.key])) continue; // boxes of rounds (stacks, loose); bags of brass, cans of powder, boxes of primers (reloading.js)
     const q = Math.max(0, Math.floor(num(it.dur ?? (GEAR[it.key] ? GEAR[it.key].dur : 0))));
     if (RELOAD_SUPPLIES[it.key]) rec[it.key] = num(rec[it.key]) + q; else { addRounds(rec, it.key, q); n += q; }
     list.splice(i, 1);
@@ -332,6 +335,88 @@ export function bodyRounds(u, n) {
   return findRounds(u && u.kit ? KIT_THEME[u.kit] || "home" : "home", n, "body", u ? u.id : 0, u ? u.name : "");
 }
 
+// ---------- loose, boxed and bulk finds (2026-10-10, user request: "find loose and boxed ammo") ----------
+// How common a round is where rounds turn up, 0–1 (1: the most common round): a load's own rarity when the data gives
+// one (AMMO_TYPES rarity, 0 common – 1 rare), else its share of the finds in every place (data-ammo.js AMMO_MIX), so
+// the finds' numbers drive it. Launcher rounds: 0 (never in bulk).
+const COMMON = new Map();
+/** @param {string} key @returns {number} */
+export function commonness(key) {
+  if (COMMON.has(key)) return COMMON.get(key);
+  const r = roundOf(factoryKey(key));
+  let c = 0;
+  if (r && CALIBERS[r.cal] && CALIBERS[r.cal].common !== false) {
+    const own = AMMO_TYPES[r.type] && AMMO_TYPES[r.type].rarity;
+    if (Number.isFinite(own)) c = Math.max(0, Math.min(1, 1 - own));
+    else {
+      const share = (k) => Object.values(AMMO_MIX).reduce((a, mix) => { const tot = Object.values(mix).reduce((x, y) => x + y, 0) || 1; return a + (mix[k.slice(2)] || 0) / tot; }, 0);
+      const top = Math.max(...Object.keys(ROUND_SUPPLIES).map(share));
+      c = top > 0 ? share(factoryKey(key)) / top : 0;
+    }
+  }
+  COMMON.set(key, c);
+  return c;
+}
+// A find's rounds in their forms, in place (sup: the find's supplies; gear: its items): of each kind, whole boxes of a
+// share of it (BULK_FINDS.BOXED by theme, own dice) go into gear as stacks of boxes (up to five a slot), the rest stays
+// loose in sup; now and then (BULK_FINDS.CHANCE by theme × commonness) a bulk container of the theme's rounds as well,
+// part filled at times. Returns the items added. Own dice (hash01): the world's random numbers are not touched.
+/** @param {Record<string, number>} sup @param {any[]} gear @param {string} theme @param {...any} salt */
+export function formFinds(sup, gear, theme, ...salt) {
+  const out = boxFinds(sup, gear, theme, ...salt);
+  const bulk = Array.isArray(gear) ? bulkFind(theme, ...salt) : null;
+  if (bulk) { gear.push(bulk); out.push(bulk); }
+  return out;
+}
+// The same without the bulk container (a gun safe: its rounds in their boxes).
+/** @param {Record<string, number>} sup @param {any[]} gear @param {string} theme @param {...any} salt */
+export function boxFinds(sup, gear, theme, ...salt) {
+  const out = [];
+  if (!sup || !Array.isArray(gear)) return out;
+  const share = BULK_FINDS.BOXED[theme] ?? BULK_FINDS.BOXED.home;
+  for (const k of Object.keys(sup).sort()) {
+    const q = Math.floor(num(sup[k]));
+    if (!(q > 0) || !ROUND_SUPPLIES[k] || !GEAR[k] || ROUND_SUPPLIES[k].common === false) continue;
+    const box = boxSize(k);
+    const roll = hash01("boxed", theme, k, q, ...salt);
+    const boxes = roll < share ? Math.floor((q * (0.5 + roll / Math.max(0.01, share) * 0.5)) / box) : 0;
+    if (!(boxes > 0)) continue;
+    const items = roundItems(k, boxes * box, false);
+    sup[k] = q - boxes * box;
+    if (!(sup[k] > 0)) delete sup[k];
+    gear.push(...items);
+    out.push(...items);
+  }
+  return out;
+}
+// A bulk container a place of this theme may hold (null: none): which round by the theme's mix, its odds × the round's
+// commonness, the kind by BULK_FINDS.KIND (a can one kind, a carton that calibre, a bag that and one or two more of the
+// mix), filled FULL of its cap (PARTIAL of them part used).
+/** @param {string} theme @param {...any} salt */
+export function bulkFind(theme, ...salt) {
+  const mix = themeMix(theme);
+  if (!Object.keys(mix).length) return null;
+  const key = pickBy(mix, hash01("bulkkey", theme, ...salt));
+  const odds = (BULK_FINDS.CHANCE[theme] ?? BULK_FINDS.CHANCE.home) * commonness(key);
+  if (!(hash01("bulk", theme, ...salt) < odds)) return null;
+  const kind = pickBy(BULK_FINDS.KIND, hash01("bulkkind", theme, ...salt));
+  const cap = BULK[kind].cap;
+  const [lo, hi] = BULK_FINDS.FULL;
+  const full = hash01("bulkpart", theme, ...salt) < BULK_FINDS.PARTIAL ? lo + (hi - lo) * hash01("bulkfill", theme, ...salt) : 1;
+  const n = Math.max(1, Math.floor(cap * full));
+  const it = newBulk(kind);
+  if (!it) return null;
+  if (kind === "ammobag") {
+    const keys = [key, pickBy(mix, hash01("bulkkey2", theme, ...salt)), pickBy(mix, hash01("bulkkey3", theme, ...salt))].filter((k, i, a) => a.indexOf(k) === i && commonness(k) > 0);
+    keys.forEach((k, i) => fillBulk(it, k, i === keys.length - 1 ? n : Math.floor(n / keys.length)));
+  } else if (kind === "ammocarton") {
+    const cal = roundOf(key).cal, alt = keyFor(cal, null);
+    fillBulk(it, key, Math.ceil(n * 0.8));
+    fillBulk(it, alt !== key ? alt : key, n);
+  } else fillBulk(it, key, n);
+  return it;
+}
+
 // ---------- boxes ----------
 // A box item of a round key holding n rounds (a count stack: item.dur).
 /** @param {string} key @param {number} n */
@@ -348,6 +433,7 @@ export function boxesOf(s) {
   for (const it of s.pockets || []) if (it && ROUND_SUPPLIES[it.key]) out.push(it);
   const pack = s.gear && s.gear.backpack;
   for (const it of (pack && pack.contents) || []) if (it && ROUND_SUPPLIES[it.key]) out.push(it);
+  for (const it of (pack && pack.contents) || []) if (isBulk(it)) out.push(...loadsOf(it)); // an ammo can in the pack: its rounds are the pack's (a fight draws on them after the boxes)
   return out;
 }
 // Empty boxes thrown away (after a fight).
@@ -357,7 +443,8 @@ export function sweepBoxes(s) {
   const empty = (it) => it && ROUND_SUPPLIES[it.key] && !(num(it.dur) >= 1);
   if (Array.isArray(s.pockets)) for (let i = 0; i < s.pockets.length; i++) if (empty(s.pockets[i])) s.pockets[i] = null;
   const pack = s.gear && s.gear.backpack;
-  if (pack && Array.isArray(pack.contents)) for (let i = 0; i < pack.contents.length; i++) if (empty(pack.contents[i])) pack.contents[i] = null;
+  if (pack && Array.isArray(pack.contents)) for (let i = 0; i < pack.contents.length; i++) { if (empty(pack.contents[i])) pack.contents[i] = null; else if (isBulk(pack.contents[i])) sweepLoads(pack.contents[i]); }
+  for (const holder of [s.gear && s.gear.rig, s.gear && s.gear.armor]) { const rp = holder && Array.isArray(holder.contents) ? holder.contents : null; if (rp) for (let i = 0; i < rp.length; i++) if (empty(rp[i])) rp[i] = null; } // loose rounds or a box spent in a rig's (or a vest's) pouch
 }
 
 // ---------- the battle ----------

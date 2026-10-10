@@ -48,6 +48,7 @@ import { teamLoad, wornLoad, maxLoad } from "./load.js";
 import { ensureInv, packOf, ensurePack, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried } from "./inventory.js";
 import { gunLeavesTeam, unloadInto, teamGuns } from "./gunload.js";
 import { pileToArms } from "./carry.js"; // the team's loads off the ground: into the arms (call-time only: safe in the import cycle) // the rounds in a gun go with it (call-time only: safe in the import cycle)
+import { canStack, mergeInto, isSpent, stackLabel } from "./itemstack.js"; // stacks merge in a slot (2026-10-10)
 
 const EPS = 1e-9;
 export const HAUL = { free: 8, per: 12 }; // kg a turn for free, then kg an action
@@ -392,6 +393,25 @@ function moveGear(state, b, u, from, to) {
     if (P.arr) { const old = P.arr[P.key]; P.arr[P.key] = it; undo.push(() => (P.arr[P.key] = old)); }
     else { P.gear.push(it); undo.push(() => P.gear.splice(P.gear.lastIndexOf(it), 1)); }
   };
+  // Onto a stack of the same thing (itemstack.js): as much as fits merges into it, the rest stays where it was.
+  if (cur && canStack(cur, item)) {
+    const was = [cur.dur, cur.n, item.dur, item.n];
+    const q = mergeInto(cur, item);
+    if (!q) return `The ${stackLabel(cur)} is full.`;
+    const spent = isSpent(item);
+    if (spent) take(A, from, item);
+    const which = broke(before, rooms(state, b, people));
+    if (which) {
+      for (let i = undo.length - 1; i >= 0; i--) undo[i]();
+      const set = (it, k, v) => { if (v === undefined) delete it[k]; else it[k] = v; };
+      set(cur, "dur", was[0]); set(cur, "n", was[1]); set(item, "dur", was[2]); set(item, "n", was[3]);
+      return tooHeavy(state, b, which, item.name);
+    }
+    if (timed) payHaul(b, u, kgMoved);
+    tally(b, from, to, { item: cur });
+    afterBox(b, A.box || B.box);
+    return spent ? `${item.name} onto the stack: ${stackLabel(cur)}.` : `${q} onto the stack (${stackLabel(cur)}); the rest stays.`;
+  }
   take(A, from, item);
   let curTo = null;
   if (cur) {

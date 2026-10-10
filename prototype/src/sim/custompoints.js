@@ -21,7 +21,7 @@ import { itemValue } from "./valuation.js";
 import { calOf } from "./ammo.js";
 import { keyFor } from "./rounds.js";
 import { traitPoints, traitTier, traitLabel } from "./traits.js";
-import { START_GEAR, sanitizeStartGear, CARRY_PLACES, gunWith, gunCap, gunLoad, pickKey, pickMods } from "./startgear.js";
+import { START_GEAR, sanitizeStartGear, CARRY_PLACES, gunWith, gunCap, gunLoad, pickKey, pickMods, pickN } from "./startgear.js";
 
 // ---------- the price table (tune here) ----------
 export const CUSTOM_POINTS = {
@@ -144,7 +144,7 @@ export function loosePoints(key) {
 export function pickPoints(e) {
   const key = pickKey(e), mods = pickMods(e);
   if (!key || !GEAR[key]) return 0;
-  return mods ? gunPoints(key, mods) + suppliesPoints(gunLoad(key, mods)) : loosePoints(key);
+  return mods ? gunPoints(key, mods) + suppliesPoints(gunLoad(key, mods)) : loosePoints(key) * pickN(e); // a stack: n of it (n boxes of rounds)
 }
 
 // ---------- a colonist's bill ----------

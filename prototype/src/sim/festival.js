@@ -24,6 +24,7 @@ import { underAttack } from "./buildings.js";
 import { foodOutlook } from "./economy.js";
 import { childrenAt } from "./family.js"; // children eat at the festival
 import { addMood, bumpPair, getRel, relKind, relRng, partnerOf, makePartners, rivalPairs, addMoment } from "./relations.js";
+import { countOf, takeOneAt } from "./itemstack.js"; // bottles stack (three a slot)
 
 export const FEST = {
   SEASON: "autumn", DAY: 22, HOUR: 7, // the morning of autumn day 22: the harvest is in, the hard frosts not yet
@@ -46,7 +47,8 @@ function eat(b, n) {
 // but they eat at the festival, KID_SHARE of a head).
 const heads = (state, b) => residents(state, b.id).length + FEST.KID_SHARE * childrenAt(state, b.id).length;
 const costOf = (n, k) => Math.ceil(n * FEST[k].food);
-const liquor = (b) => (b.armory || []).filter((it) => it && GEAR[it.key] && GEAR[it.key].cat === "liquor");
+// Every bottle in the armory, one entry a bottle (a stack of three is three: itemstack.js).
+const liquor = (b) => (b.armory || []).flatMap((it) => (it && GEAR[it.key] && GEAR[it.key].cat === "liquor" ? Array.from({ length: countOf(it) }, () => it) : []));
 
 // Why the hub cannot hold it today ("" when it can).
 export function festivalBlocker(state, b) {
@@ -144,7 +146,7 @@ export function holdFestival(state, b, kind) {
   const extras = [];
   if (full && (b.stock.firewood || 0) >= K.wood) { b.stock.firewood -= K.wood; lift += K.fire; extras.push("a bonfire"); }
   const bottles = full ? liquor(b).slice(0, Math.ceil(people.length / FEST.DRINK_PER)) : [];
-  if (bottles.length) { for (const it of bottles) b.armory.splice(b.armory.indexOf(it), 1); lift += K.drink; extras.push(`${bottles.length} bottle${bottles.length === 1 ? "" : "s"}`); }
+  if (bottles.length) { for (const it of bottles) takeOneAt(b.armory, b.armory.indexOf(it)); lift += K.drink; extras.push(`${bottles.length} bottle${bottles.length === 1 ? "" : "s"}`); }
   // The day off: the Rest role until midnight (morale.js gives the old role back), but for the guards and the medics.
   if (full) for (const s of atBase(state, b.id)) {
     if (s.role === "guard" || s.role === "medic" || s.inBed || s.restUntil != null) continue;

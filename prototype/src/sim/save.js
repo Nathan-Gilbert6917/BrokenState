@@ -35,6 +35,7 @@ import { CRAFT_BOOKS, tech } from "./blueprints.js"; // craft books read before 
 import { saveSummary, campaignKey } from "./savesummary.js"; // the save list's one-line summary and campaign groups
 import { noteLootAge } from "./itemcond.js"; // the years since the fall, for loot rolled after a load
 import { migrateStaging } from "./staging.js"; // the old staging camp becomes a camp base
+import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
 /** @import { State } from "./types" */
 /**
  * A save (serializeState; a save file is it as JSON): the world's encoded graph, the id counter and the save list's summary.
@@ -188,6 +189,9 @@ export function deserializeState(save) {
   // Rounds by calibre (ammo.js, the weapons overhaul): a save from before (no state.ammoCal) has every generic ammo
   // stock of yours split across the calibres of the guns that holder owns (9mm and 12 gauge with none), the same total.
   if (!state.ammoCal) { migrateAmmo(state); state.ammoCal = 1; }
+  // Stacks in a slot (2026-10-10: consumables ×n, rounds loose or in stacks of boxes, bulk ammo containers): an old save
+  // needs nothing but a tidy (itemstack.js migrateStacks).
+  if (!state.stacks) { migrateStacks(state); state.stacks = 1; }
   // All ammo by calibre (2026-10-09, user request: "All ammo should be based on caliber"): a save from before has its
   // generic ammo settled again in every holder of yours, its custom backgrounds' generic ammo as the rounds of their
   // guns, and the rewards of the jobs on offer or under way as the rounds the group's kind keeps.
