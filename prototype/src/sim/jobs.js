@@ -379,7 +379,7 @@ export function completeJob(state, job, how = "") {
       // blueprints.js: one you neither know nor hold, fitting the group; none left: ammo instead.
       const bp = blueprintReward(state, f, `job${job.id}`);
       if (bp) { h.armory.push(bp); got.push(bp.name); }
-      else { const rr = findRounds(kindTheme(f.type), 40, "jobbp", localId(state, job.id)); for (const [k, q] of Object.entries(rr)) h.stock[k] = (h.stock[k] || 0) + q; got.push(`${suppliesText(rr)} (they had no manual you lack)`); } // rounds by calibre: what their kind keeps
+      else { const rr = findRounds(kindTheme(f.type), 40, "jobbp", job.id); for (const [k, q] of Object.entries(rr)) h.stock[k] = (h.stock[k] || 0) + q; got.push(`${suppliesText(rr)} (they had no manual you lack)`); } // rounds by calibre: what their kind keeps (job.id: the world's own job counter, J.seq, world-local already: localId took the process id base off it, so the same seed gave other rounds, tools/sameseedtest.js)
     }
     if (r.intel) { got.push(`a map (${intelFrom(state, f)} tiles)`); }
     if (r.outpost != null && f.bases.includes(r.outpost) && f.bases.length >= 2) {

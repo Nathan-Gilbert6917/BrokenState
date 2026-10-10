@@ -293,6 +293,19 @@ export const WARE_KIT = {
   raider: { p: 0.15, items: { mag_glock_15: 1, mag_ak_30: 1, mag_ak_45: 0.4, makeshiftrig: 1.5, steelplate: 0.5 } },
   merchants: { p: 0.35, items: { mag_stanag_30: 2, mag_stanag_40: 0.6, mag_ak_30: 1, mag_ak_75: 0.3, mag_glock_17: 1, chestrig: 1, tacvest: 0.6, ceramicplate: 1, steelplate: 1, mag_battle_20: 0.5, mag_m240_100: 0.1, mag_deagle_9: 0.1 } },
 };
+// More calibres of 2026-10-10 (data-kit.js CALIBRE_MAGS): their loose magazines in the same tables, rare like their
+// guns (the 5.7 pistol's at gun stores and police, the PDW's police and military only, the G3's and FAMAS's military, gun
+// stores and arms dealers).
+const CALIBRE_KIT = [
+  [SITE_KIT.gunstore, { mag_fn57_20: 0.4, mag_vector_13: 0.2, mag_vector_25: 0.15, mag_g3_20: 0.2, mag_famas_25: 0.1 }],
+  [SITE_KIT.police, { mag_fn57_20: 0.4, mag_p90_50: 0.2, mag_vector_25: 0.15 }],
+  [SITE_KIT.military, { mag_g3_20: 0.2, mag_famas_25: 0.2, mag_p90_50: 0.2 }],
+  [AREA_KIT.armory, { mag_p90_50: 0.15, mag_fn57_20: 0.2, mag_vector_25: 0.1 }],
+  [AREA_KIT.gunshop, { mag_fn57_20: 0.3, mag_g3_20: 0.15, mag_vector_13: 0.15 }],
+  [WARE_KIT.merchants, { mag_g3_20: 0.3, mag_famas_25: 0.2, mag_p90_50: 0.1 }],
+  [WARE_KIT.traders, { mag_fn57_20: 0.3 }],
+];
+for (const [row, add] of CALIBRE_KIT) Object.assign(row.items, add);
 function pickW(items, r) {
   const keys = Object.keys(items).filter((k) => GEAR[k]).sort();
   const tot = keys.reduce((a, k) => a + items[k], 0);
