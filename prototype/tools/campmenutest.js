@@ -25,6 +25,7 @@ import { dropOff, loadFromBase, transferProblem } from "../src/sim/teaminv.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { GEAR } from "../src/sim/data.js";
 import { renderModal, renderRight } from "../src/ui/ui.js";
+const plain = (h) => String(h).replace(/<[^>]+>/g, ""); // the text without markup (cost chips split name and count into spans)
 
 const SEED = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -122,7 +123,7 @@ check(!!transferProblem(st, lp.party), "a team away from the camp loads and sets
 // ---------- construction ----------
 section("Construction: the step up's materials and work; the rest greyed with when it opens; a barricade now");
 html = modal(st, { id: camp.id, tab: "construction" });
-check(/Build up into a shelter/.test(html) && /20 scrap/.test(html) && /2 building materials|2 buildmat/.test(html) && /20 work-hours/.test(html), "the next stage: Build up into a shelter, 20 scrap, 2 building materials, 20 work-hours");
+check(/Build up into a shelter/.test(html) && /20 scrap|Scrap (\d+\/)?20\b/.test(plain(html)) && /2 building materials|2 buildmat|Building materials (\d+\/)?2\b/.test(plain(html)) && /20 work-hours/.test(html), "the next stage: Build up into a shelter, 20 scrap, 2 building materials, 20 work-hours");
 check(/Available once the shelter stands/.test(html) && /Available once it is a base/.test(html), "the later buildings, greyed with when they open (the shelter, the base)");
 check(canBuild(st, camp, "camp_up").ok && !canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "outpost_up").ok, "the camp's step up is buildable; the shelter's and an outpost's are not");
 camp.stock.scrap = (camp.stock.scrap || 0) + 30;
