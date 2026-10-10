@@ -124,9 +124,10 @@ import { forageInfo, foragerMult, FORAGE } from "../sim/foraging.js";
 import { woodInfo, WOOD, boilerJunkOn, boilerBurnables, burnablesWood } from "../sim/woodcutting.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
 import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
-import { roadStock, firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
+import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
 import { gaugeRows, treatsRow, needsEffectText } from "./needs.js";
+import { needsBar } from "./needsbar.js"; // the top bar's Needs button and its drop-down of every supply
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick (sim/status.js)
 import { STATUS, STATUS_ICONS } from "../sim/status.js";
 import { NEEDS, STARVE } from "../sim/needs.js";
@@ -173,15 +174,16 @@ const etaOut = (state, est) => Parties.clockText(Math.max(0, (est.exactOut ?? es
 // when you press them, so each piece is redrawn only when its own text changes (main.js).
 export function topbarParts(state, ui) {
   const h = hub(state);
+  const nb = needsBar(state, h);
   const speeds = [[0, "⏸", "Pause (Space). Orders you give while paused start when you unpause."], [0.25, "0.25×", "Slowest: an hour takes 80 seconds, a day 32 minutes (0)"], [0.5, "0.5×", "Slow: an hour takes 40 seconds, a day 16 minutes (1)"], [1, "1×", "Normal: an hour takes 20 seconds, a day 8 minutes (2)"], [2, "2×", "Fast: an hour takes 10 seconds, a day 4 minutes (3)"], [3, "3×", "Very fast: an hour takes about 7 seconds, a day 2 minutes 40 seconds (4)"], [5, "5×", "Fastest, for quiet stretches: an hour takes 4 seconds, a day about 1 minute 36 seconds (5). At 3× and 5× the clock drops back to 1× when a card or a red alert arrives (Options)"]];
-  return {
+  const parts = {
     // The minutes are a slot of their own (main.js fills it every frame as the hour goes by).
     clock: `Day ${day(state)} · ${String(hourOfDay(state)).padStart(2, "0")}:<span id="tb-min">00</span> ${isNight(state) ? "🌙" : "☀"}${weatherChip(state)}`,
     speed: speeds.map(([s, l, t]) => `<button data-action="speed" data-speed="${s}" class="${ui.speed === s ? "active" : ""}"${tip(t)}>${l}</button>`).join("") +
       (ui.speed > MAX_SPEED ? `<button data-action="speed" data-speed="1" class="active"${tip("Dev fast forward is running. Click to go back to 1×.")}>${ui.speed}× dev</button>` : ""),
-    // Food and water also show days left (economy.js outlook; the tooltip has the details).
-    // Jars go in the preserved food's tooltip (storage.js), not a slot of their own.
-    stock: !h && roadStock(state) ? roadStock(state) : !h ? `<span class="danger"${tip("You have no base left: your people are a team on the road. Establish base (a camp you build up into your hub) or take a base back (Assault their base).")}>No base: on the road</span>` : STOCK_KEYS.filter((k) => k !== "jars" && k !== RAW && k !== "arrows").map((k) => { const ln = k === "food" ? foodLine(state, h) : k === "water" ? waterLine(state, h) : k === "wood" ? woodLine(state, h) : null; const extra = k === "preserved" ? ` Jarred, dried and canned food and dry grain: barely spoils, needs no cellar room, eaten once the fresh food is gone. Empty jars: ${n0(h.stock.jars)}.` : ""; const raw = k === "water" ? Math.floor(Math.max(0, h.stock[RAW] || 0)) : 0; const abd = k === "ammo" ? baseAmmoBreakdown(state, h) : null; const aTip = abd ? `Ammo at ${h.name}: every round of every calibre and every arrow and bolt, in the stores and in your people's pockets and packs there (a gun fires only its own calibre, a bow or crossbow only arrows). By calibre, most first: ${breakdownText(abd, "; ")}. ${n0(baseAmmo(state, h))} rounds fit the guns here.` : ""; const wTip = k === "water" ? `Water at ${h.name}: ${n0(h.stock.water)} purified (safe to drink) and ${raw} un-purified (from the wells, rivers and rain: safe only once the boiler, the filters or a shelter's fire purify it). People drink purified water first. Weight 1 each.` : ""; const tr = stockChipTrend(state, h, k); return `<span${tip(`${aTip || wTip || `${SUPPLIES[k].name} at ${h.name}. Weight ${SUPPLIES[k].weight} each; what it fetches depends on who you trade with.`}${extra}${ln ? ` ${ln.tip}` : ""}${tr.tip}`)}${tr.attr}><b>${k === "preserved" ? "Preserved" : k === "water" ? "Water" : SUPPLIES[k].name}</b>${n0(abd ? abd.total : h.stock[k])}${tr.arrow}${raw > 0 ? `<span class="small muted"> +${raw} raw</span>` : ""}${ln && ln.short ? ` <span class="small ${ln.cls}">${k === "food" ? esc(ln.short.split(" · ")[0]) : esc(ln.short.split(" · ")[0])}</span>` : ""}</span>`; }).join(""),
+    // The stores as one Needs button with a drop-down list (ui/needsbar.js): main.js writes its button, head and list
+    // as slots of their own (needs), the whole of it is the stock slot (tools and tests).
+    stock: nb.html,
     people: `<span${tip("Survivors alive across all bases and teams")}>👥 ${alive(state).length}</span>`,
     // UI size and the zombie look are in Menu → Options → Display; the Dev button only with Show dev tools on (ui/display.js).
     tools: `${devButton(ui)}
@@ -193,6 +195,8 @@ export function topbarParts(state, ui) {
       <button data-action="help"${tip("How the game works, and the keys")}>Help</button>
       <button data-action="set-open"${tip("Menu: save, load, save and exit, new campaign, options (Esc)")}>⚙ Menu</button>`,
   };
+  Object.defineProperty(parts, "needs", { value: nb }); // { btn, head, list }: not one of the slot strings
+  return parts;
 }
 // The planner's weather note: hours the weather adds to the trip compared with fair weather.
 function weatherEta(est) {

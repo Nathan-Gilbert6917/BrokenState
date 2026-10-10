@@ -27,6 +27,7 @@ import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated t
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
+import { needsSkeleton, initNeedsBar } from "./ui/needsbar.js"; // the top bar's Needs button and its list of every supply
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, reorderQueued, cancelMove, contactable, queueEndTile } from "./sim/orders.js";
@@ -312,7 +313,7 @@ function step(now) {
 // Each panel keeps the HTML it shows; a refresh that produces the same string leaves the DOM alone, so buttons
 // stay clickable and hover descriptions stay up while the clock runs. A panel is not rebuilt while the mouse
 // button is down on it (the click would be lost), nor under an open drop-down when only a tick asked for it.
-const PANELS = ["tb-clock", "tb-speed", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts", "watchlist", "ask"];
+const PANELS = ["tb-clock", "tb-speed", "nb-btn", "nb-head", "nb-list", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts", "watchlist", "ask"];
 const shown = new Map(); // element id -> the HTML last written
 let held = null;         // panel the mouse button went down in
 let heldBack = false;    // a rebuild was skipped because of it
@@ -330,6 +331,18 @@ function selectOpenIn(el) {
   if (searchOpenIn(el)) return true; // a long drop-down's filter box (ui/selectsearch.js) is open over it
   const a = document.activeElement;
   return !!a && a.tagName === "SELECT" && el.contains(a) && performance.now() - selectFocusAt < 20000;
+}
+// The top bar's Needs button and drop-down (ui/needsbar.js): the frame once, then its button, head and list each as a
+// slot of its own, so an open panel keeps the mouse, the focus and the list's scroll position while the stock changes.
+function writeNeeds(nb, user) {
+  const root = $("tb-stock");
+  if (!root) return;
+  if (!$("nb-list")) { root.innerHTML = needsSkeleton(); shown.delete("nb-btn"); shown.delete("nb-head"); shown.delete("nb-list"); }
+  initNeedsBar(root);
+  setHTML("nb-btn", nb.btn, user);
+  setHTML("nb-head", nb.head, user);
+  const list = $("nb-list"), top = list.scrollTop;
+  if (setHTML("nb-list", nb.list, user) && top) list.scrollTop = top;
 }
 // Writes a panel's HTML if it changed. Returns true when the DOM was touched.
 function setHTML(id, html, user) {
@@ -461,7 +474,7 @@ function refresh(user = true) {
   const tb = topbarParts(state, ui);
   setHTML("tb-clock", tb.clock, user);
   setHTML("tb-speed", tb.speed, user);
-  setHTML("tb-stock", tb.stock, user);
+  writeNeeds(tb.needs, user);
   setHTML("tb-people", tb.people, user);
   setHTML("tb-tools", tb.tools, user);
   // A folded panel is not drawn (it is drawn again when it opens).
