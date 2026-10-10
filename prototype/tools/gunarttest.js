@@ -158,10 +158,11 @@ const REP = { optic: "reddot", mount: "mount", muzzle: "can_s", mag: "extmag", s
   check(!undrawn.length, `a part fitted in each of a gun's slots shows${undrawn.length ? ` (nothing from: ${list(undrawn)})` : ""}`);
   check(!far.length, `and draws at its anchor${far.length ? ` (away from it: ${list(far)})` : ""}`);
   // A fitted stock or magazine replaces the gun's own (drawn as a part, not into the gun's core).
-  const own = guns.filter((k) => GA.PLAT_ART[k].def.stock);
+  const artOf = (k) => GA.PLAT_ART[GA.artKeyOf(k)] || { def: {} }; // (a gun without a spec: its platform's or look-alike's)
+  const own = guns.filter((k) => artOf(k).def.stock);
   const keep = own.filter((k) => { const a = GA.paintGun(k, {}).px.join(), b = GA.paintGun(k, { stock: "precision" }).px.join(), c = GA.paintGun(k, { stock: "fold" }).px.join(); return b === c || (a === b && a === c); });
   check(own.length > 25 && !keep.length, `a fitted stock replaces the gun's own (${own.length} guns with one${keep.length ? `; not on ${list(keep)}` : ""})`);
-  const mags = guns.filter((k) => GA.PLAT_ART[k].def.mag && GA.PLAT_ART[k].def.mag !== "belt" && !/beltbox|top/.test(String((GS.GUN_ART[GP.ownKey(k)].mag || {}).t)));
+  const mags = guns.filter((k) => artOf(k).def.mag && artOf(k).def.mag !== "belt" && !/beltbox|top/.test(String(((GS.GUN_ART[GP.ownKey(k)] || {}).mag || {}).t)));
   const magKeep = mags.filter((k) => GA.paintGun(k, { mag: "drum" }).px.join() === GA.paintGun(k, { mag: "stick10" }).px.join());
   check(mags.length > 15 && !magKeep.length, `a fitted magazine replaces the gun's own (${mags.length}${magKeep.length ? `; not on ${list(magKeep)}` : ""})`);
   // The AUG's scope-handle gives way to a rail when a sight is fitted.

@@ -103,15 +103,17 @@ export const GUN_ART = {
   rpg:  { body: "tube", v: "rpg", r: [4, 56], c: { body: "#4b5340" } },
 
   // ---------- pre-written for guns other branches are adding (skipped while no such gun exists) ----------
-  // ar-platform: AR-15 variants, an AR pistol, 300 BLK carbine and SBR, an AR DMR, a .223 varmint rifle, a Mini-14,
+  // ar-platform (landed 2026-10-10 under these keys): AR-15 variants, an AR pistol, 300 BLK carbine and SBR, an AR DMR, a .223 varmint rifle, a Mini-14,
   // single-shots in 5.56 / .223 / 300 BLK, .38 snub and service revolvers.
-  ar15:    { ...AR_BASE, r: [17, 29], hg: 43, bar: 51, hgT: "mlok", fs: "flip", stock: { t: "tele", c: "fde" }, mag: { t: "stick", col: "fde" }, c: { furn: "fde" } }, // a civilian AR: M-LOK, tan furniture
+  ar15rifle: { ...AR_BASE, r: [17, 29], hg: 43, bar: 51, hgT: "mlok", fs: "flip", stock: { t: "tele", c: "fde" }, mag: { t: "stick", col: "fde" }, c: { furn: "fde" } }, // a civilian AR: M-LOK, tan furniture
+  ar223:   { ...AR_BASE, r: [17, 29], hg: 44, bar: 54, hgT: "slim", fs: "gas", stock: "stock_ar", mag: { t: "stick", n: 6, w: 4, curve: 4 }, c: { hg: "grey" } }, // a .223 sporting AR: fixed stock, long free-float, a 20-round magazine
   arpistol: { ...AR_BASE, r: [19, 31], hg: 41, bar: 44, hgT: "mlok", fs: "gas", stock: { t: "brace" }, mag: { t: "stick" } },
   ar300:   { ...AR_BASE, r: [17, 29], hg: 42, bar: 48, hgT: "slim", fs: "flip", stock: { t: "crane", c: "od" }, mag: { t: "stick", col: "od" }, muzzle: "brake", c: { hg: "od" } }, // a 300 BLK carbine
   sbr300:  { ...AR_BASE, r: [19, 31], hg: 40, bar: 43, hgT: "quad", fs: "flip", stock: { t: "tele" }, mag: { t: "stick", n: 6, curve: 3 }, muzzle: "brake" }, // a 300 BLK SBR
   ardmr:   { ...AR_BASE, r: [16, 28], hg: 47, bar: 56, hgT: "slim", fs: "gas", stock: "precision", mag: { t: "stick", n: 6, curve: 4 }, muzzle: "brake", c: { hg: "fde" } }, // a .223 AR DMR: long free-float, precision stock
-  varmint: { body: "bolt", r: [19, 32], bar: 56, barRows: 2, taper: false, bead: false, fe: 41, floor: true, stock: { t: "thumb", c: "#6d5f52" }, c: { bar: "steel", fe: "#6d5f52" } }, // a .223 varmint rifle: stainless bull barrel, laminate thumbhole
-  mini14:  { body: "m14", r: [20, 31], hg: 42, bar: 50, gx: 22, lug: false, stock: { t: "m14", c: "wood" }, mag: { t: "stick", n: 6, w: 4, curve: 4 }, muzzle: "crown", c: { body: "steel", hg: "wood" } }, // a Mini-14 ranch rifle
+  varmint223: { body: "bolt", r: [19, 32], bar: 56, barRows: 2, taper: false, bead: false, fe: 41, floor: true, stock: { t: "thumb", c: "#6d5f52" }, c: { bar: "steel", fe: "#6d5f52" } }, // a .223 varmint rifle: stainless bull barrel, laminate thumbhole
+  ranch223: { body: "m14", r: [20, 31], hg: 42, bar: 50, gx: 22, lug: false, stock: { t: "m14", c: "wood" }, mag: { t: "stick", n: 6, w: 4, curve: 4 }, muzzle: "crown", c: { body: "steel", hg: "wood" } }, // a Mini-14 ranch rifle
+  single556: { body: "brk", kind: "rifle", n: 1, r: [19, 25], bar: 53, fe: 33, taper: true, base: true, bead: false, stock: { t: "wood", c: "woodL" }, c: { body: "blued", bar: "gun", fe: "woodL", furn: "woodL" } }, // blued, light wood
   single223: { body: "brk", kind: "rifle", n: 1, r: [19, 25], bar: 52, fe: 33, taper: true, base: true, bead: false, stock: { t: "poly", c: "poly" }, c: { body: "nickel", bar: "steel", fe: "poly", furn: "poly" } },
   single300: { body: "brk", kind: "rifle", n: 1, r: [19, 25], bar: 46, fe: 32, base: true, bead: false, stock: { t: "poly", c: "od" }, c: { body: "gun", bar: "gun", fe: "od", furn: "od" } },
   snub38:  { body: "revolver", fr: [20, 31], cyl: [22, 29], bar: 35, grips: "grip_snub", c: { frame: "blued", bar: "blued", grip: "wood", cyl: "gun" } },
@@ -132,10 +134,10 @@ export const GUN_ART = {
 export const ART_ALIAS = { turret_m2: "m2hb", turret_lmg: "lmg" };
 // Other names a branch may give the pre-written guns (one spec each until the gun lands under its own key).
 export const SPEC_ALT = {
-  ar15rifle: "ar15", civar: "ar15", sporterar: "ar15", arp: "arpistol", ar15pistol: "arpistol",
+  ar15: "ar15rifle", civar: "ar15rifle", sporterar: "ar15rifle", arp: "arpistol", ar15pistol: "arpistol",
   blk300: "ar300", ar300blk: "ar300", carbine300: "ar300", blkcarbine: "ar300", blksbr: "sbr300", sbr: "sbr300",
-  ar10dmr: "ardmr", dmr223: "ardmr", spr: "ardmr", varmint223: "varmint", bolt223: "varmint", ranchrifle: "mini14", mini14rifle: "mini14",
-  single556: "single223", singlerifle223: "single223", single300blk: "single300", snub38spl: "snub38", rev38: "service38", revolver38: "service38", police38: "service38",
+  ar10dmr: "ardmr", dmr223: "ardmr", spr: "ardmr", varmint: "varmint223", bolt223: "varmint223", mini14: "ranch223", ranchrifle: "ranch223",
+  singlerifle223: "single223", single300blk: "single300", snub38spl: "snub38", rev38: "service38", revolver38: "service38", police38: "service38",
   fn57: "pistol57", fiveseven: "pistol57", p57: "pistol57", vector45: "vector", kriss: "vector", g3a3: "g3", hkg3: "g3",
   magnum44: "revolver44", rev44: "revolver44", m29: "revolver44", leverrifle44: "lever44", lever44mag: "lever44", single44mag: "single44",
 };
