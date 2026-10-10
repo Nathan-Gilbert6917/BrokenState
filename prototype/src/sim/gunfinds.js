@@ -16,6 +16,8 @@ import { ARSENAL_FINDS, THEME_DRAWS } from "./data-guns.js";
 import { gunsFrom, drawGun, areaSourceName } from "./gundist.js";
 import { gunMags } from "./carrykit.js";
 
+const FRESH = { fresh: true }; // the extra rolls: new guns × GUN_NEWNESS.mult (data-guns.js; the lists' swaps and kits keep their weights)
+
 // The guns that fit these loot.js theme tags: { key: weight } (the draws of the tags, data-guns.js THEME_DRAWS, by
 // rarity: gundist.js). kinds: only these GEAR cats (a pistol case: pistols). For the tools; the rolls below name
 // their source.
@@ -47,7 +49,7 @@ export function rollSiteGuns(state, tileId, mult = 1, salt = "") {
   if (!p) return [];
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "arsfind", tileId, state.hour, salt) >= p * loot * mult) return [];
-  const key = drawGun(`site:${type}`, hash01(state.seed, "arspick", tileId, state.hour, salt));
+  const key = drawGun(`site:${type}`, hash01(state.seed, "arspick", tileId, state.hour, salt), FRESH);
   return key ? found(key, siteSource(type), [state.seed, "arsf", tileId, state.hour, salt]) : [];
 }
 // A raid container's find (combat.js searchBox), by its area type.
@@ -55,7 +57,7 @@ export function rollSiteGuns(state, tileId, mult = 1, salt = "") {
 export function rollAreaGuns(state, tileId, areaType, site = null, salt = "") {
   const p = ARSENAL_FINDS.area[areaType];
   if (!p || hash01(state.seed, "arsarea", tileId, salt) >= p) return [];
-  const key = drawGun(areaSourceName(areaType, site), hash01(state.seed, "arsareapick", tileId, salt));
+  const key = drawGun(areaSourceName(areaType, site), hash01(state.seed, "arsareapick", tileId, salt), FRESH);
   return key ? found(key, areaSource(areaType, site), [state.seed, "arsa", tileId, areaType, salt]) : [];
 }
 // A city crawl's container (citycrawl.js rollArea, by the numbers): the same chance by its area as a raid container's,
@@ -66,7 +68,7 @@ export function crawlGuns(areaType, site, rng) {
   const p = ARSENAL_FINDS.area[areaType];
   const seed = rng && Number.isFinite(rng.state) ? rng.state : 0;
   if (!p || hash01(seed, "crawlgun", areaType) >= p) return [];
-  const key = drawGun(areaSourceName(areaType, site), hash01(seed, "crawlgunpick", areaType));
+  const key = drawGun(areaSourceName(areaType, site), hash01(seed, "crawlgunpick", areaType), FRESH);
   return key ? found(key, areaSource(areaType, site || "city"), [seed, "crawlg", areaType]) : [];
 }
 // A group's shelf a week (trade.js ensureWares): now and then one of the arsenal's guns, by what the group stocks.
@@ -74,7 +76,7 @@ export function crawlGuns(areaType, site, rng) {
 export function gunWares(state, type, name, salt = "") {
   const p = ARSENAL_FINDS.wares[type];
   if (!p || hash01(state.seed, "arsware", name, salt) >= p) return [];
-  const key = drawGun(`trader:${type}`, hash01(state.seed, "arswarepick", name, salt));
+  const key = drawGun(`trader:${type}`, hash01(state.seed, "arswarepick", name, salt), FRESH);
   return key ? found(key, traderSource(type), [state.seed, "arsw", name, salt]) : [];
 }
 // An AI group's scavenging trip (arsenal.js): the same site table your searches roll, on its dice (AI parity).
@@ -83,7 +85,7 @@ export function gunWares(state, type, name, salt = "") {
 export function scavGun(siteType, taken, tag) {
   const p = ARSENAL_FINDS.site[siteType];
   if (!p || !(taken > 0) || hash01(...tag, "arsscav") >= Math.min(1, p * ARSENAL_FINDS.scav * taken * 40)) return null;
-  return drawGun(`site:${siteType}`, hash01(...tag, "arsscavpick"));
+  return drawGun(`site:${siteType}`, hash01(...tag, "arsscavpick"), FRESH);
 }
 // A gun safe's or a gun case's extra gun (gunsafes.js registers it): ctx { roll, tier, table, siteType }.
 /** @param {any} ctx @param {any} out */
@@ -91,6 +93,6 @@ export function stashGun(ctx, out) {
   const name = ctx && (ctx.table || ctx.tier);
   const p = ARSENAL_FINDS.stash[name];
   if (!p || !out || !Array.isArray(out.gear) || ctx.roll("arsgun") >= p) return;
-  const key = drawGun(`stash:${name}`, ctx.roll("arsgunpick"));
+  const key = drawGun(`stash:${name}`, ctx.roll("arsgunpick"), FRESH);
   if (key) out.gear.push(lootItem(key, ctx.source || "gunsafe", ctx.roll("arsgunq"))); // (no spare magazines: the safe's own rolls gave them out)
 }

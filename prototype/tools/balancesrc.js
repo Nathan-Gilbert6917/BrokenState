@@ -109,6 +109,8 @@ export function literalValue(src) {
   if (s === "null") return { ok: true, value: null };
   if (/^"([^"\\]|\\.)*"$/.test(s)) return { ok: true, value: JSON.parse(s) };
   if (/^'([^'\\]|\\.)*'$/.test(s)) return { ok: true, value: s.slice(1, -1).replace(/\\'/g, "'") };
+  // A list of words (data-guns.js GUN_CLASS: ["hunting", "civilian", "coldwar"]): read and written as "hunting civilian coldwar".
+  if (/^\[\s*("[^"\\]*"\s*(,\s*"[^"\\]*"\s*)*,?)?\]$/.test(s)) return { ok: true, value: JSON.parse(s.replace(/,\s*\]$/, "]")).join(" "), words: true };
   return { ok: false, value: undefined };
 }
 /** Walks `path` from the value at `start`: { start, end } of the value there; or { missing, parentOpen, key } when the
@@ -176,6 +178,14 @@ export const REG = {
   // (CALIBRE_RARITY first: its keys are its own, and a gun with no rarity yet is added to GUN_RARITY, the last scope)
   GUN_RARITY: [...one("data-guns.js", "CALIBRE_RARITY"), ...one("data-guns.js", "GUN_RARITY")],
   ARSENAL_FINDS: one("data-guns.js", "ARSENAL_FINDS"),
+  // the gun distribution (gundist.js): each gun's class and date, the draws (profiles, theme tags, places, sources)
+  GUN_CLASS: one("data-guns.js", "GUN_CLASS"),
+  GUN_ADDED: one("data-guns.js", "GUN_ADDED"),
+  GUN_NEWNESS: one("data-guns.js", "GUN_NEWNESS"),
+  GUN_DRAWS: one("data-guns.js", "GUN_DRAWS"),
+  THEME_DRAWS: one("data-guns.js", "THEME_DRAWS"),
+  PLACE_DRAWS: one("data-guns.js", "PLACE_DRAWS"),
+  GUN_SOURCES: one("data-guns.js", "GUN_SOURCES"),
   CALIBERS: one("data-ammo.js", "CALIBERS"),
   CAL_DMG: one("data-ammo.js", "CAL_DMG"),
   LADDER: one("data-ammo.js", "LADDER"),
@@ -270,6 +280,7 @@ const IDENT = /^[A-Za-z_$][\w$]*$/;
 /** Replaces (or inserts) one value: returns the new text of its file. */
 export function editAt(tree, loc, to) {
   const t = tree.text(loc.file);
+  if (!loc.insert && /^\s*\[/.test(loc.text) && typeof to === "string") return t.slice(0, loc.start) + JSON.stringify(to.trim().split(/\s+/).filter(Boolean)).replace(/","/g, '", "') + t.slice(loc.end); // a list of words
   if (!loc.insert) return t.slice(0, loc.start) + literal(to) + t.slice(loc.end);
   const { props, close } = objectProps(t, loc.parentOpen);
   const k = IDENT.test(loc.key) ? loc.key : JSON.stringify(loc.key);

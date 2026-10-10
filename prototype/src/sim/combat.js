@@ -6071,12 +6071,13 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       const def = AREAS[R.areas[box.area].type];
       const site = state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null;
       const src = areaSource(R.areas[box.area].type, site); // itemcond.js: a house's things used, a shop's picked over, a wreck's scorched
+      const gunSite = (b.setup && b.setup.raid && b.setup.raid.gunSite) || site; // gundist.js: the building a city crawl's map is (a police station, an Army checkpoint), else the site
       for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
         if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
       splitParts(state, sup, R.areas[box.area].type, `box${box.id}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
-      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(lootItem(swapGun(areaSourceName(R.areas[box.area].type, site), key, rng), src, rng)); // gundist.js: which gun, by the room's draws
+      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(lootItem(swapGun(areaSourceName(R.areas[box.area].type, gunSite), key, rng), src, rng)); // gundist.js: which gun, by the room's draws
       const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav, site); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
@@ -6092,7 +6093,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       // A grenade launcher, a rocket tube, a crate of 40 mm in army stock (loot.js AREA_LAUNCHERS; its own dice too).
       gear.push(...rollAreaLaunchers(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
       // One of the newer guns (gunfinds.js GUN_FINDS.area; its own dice too).
-      gear.push(...rollAreaGuns(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
+      gear.push(...rollAreaGuns(state, b.tileId, R.areas[box.area].type, gunSite, `box${box.id}`));
       // Firewood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
       const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;
