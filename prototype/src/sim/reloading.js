@@ -83,7 +83,7 @@ const mech = (s) => (s ? skill(s, "mechanics") : 0);
 /** @param {string} cal */
 export const loadClass = (cal) => LOAD_CLASS[cal] || null;
 // Every (calibre, type) the bench can load, grouped by calibre in CALIBERS order: [{ cal, types: [{ type, key, min, rate }] }].
-export const CAL_ORDER = ["9mm", "57x28", "45acp", "357", "44mag", "12ga", "20ga", "556", "762x39", "308", "3030"]; // pistols, the shotgun, rifles (Object.keys puts "308" first)
+export const CAL_ORDER = ["9mm", "57x28", "38spl", "45acp", "357", "44mag", "12ga", "20ga", "556", "223", "300blk", "762x39", "308", "3030"]; // pistols, the shotgun, rifles (Object.keys puts "308" first); every LOAD_CLASS calibre (ar-platform's .38, .223 and .300 BLK too)
 export function recipeList() {
   const out = [];
   for (const cal of CAL_ORDER) {
