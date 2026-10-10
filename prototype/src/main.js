@@ -43,7 +43,7 @@ import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims a
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup } from "./ui/newgame.js";
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
-import { BG_ACTIONS, BG_CHANGE, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
+import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { SG_ACTIONS, SG_CHANGE, loadDice } from "./ui/startgear.js"; // starting gear picked under Customize (sim/startgear.js)
 import { clearStartGear } from "./sim/startgear.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
@@ -1595,7 +1595,9 @@ document.addEventListener("mouseover", (ev) => {
   const el = ev.target.closest && ev.target.closest(".wcell");
   ui.workHover = el ? { ...el.dataset } : null;
 });
-document.addEventListener("input", (ev) => stackInput(ev.target)); // the stack mover's slider: the panel follows as it moves
+document.addEventListener("input", (ev) => stackInput(ev.target));
+// The custom backgrounds window: a number typed redraws its Total line in place (ui/backgrounds.js BG_INPUT; no refresh, so the box keeps its focus and caret).
+document.addEventListener("input", (ev) => { const el = ev.target.closest && ev.target.closest("[data-action]"); const fn = el && BG_INPUT[el.dataset.action]; if (fn) fn(state, ui, el); }); // the stack mover's slider: the panel follows as it moves
 document.addEventListener("wheel", (ev) => { const w = stackWheel(state, ui, ev); if (w) ev.preventDefault(); if (w > 1) refresh(); }, { passive: false }); // the wheel over a stack, the slider or the box: how many (else it scrolls)
 document.addEventListener("change", (ev) => {
   const el = ev.target.closest("[data-action]");

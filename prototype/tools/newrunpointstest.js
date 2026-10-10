@@ -17,8 +17,10 @@
 //   - a fix: at a normal start a custom background's car's back (to the hub with its car) is on the vehicle's back's
 //     bill (the car pool first, then its payer), as the backgrounds editor says;
 //   - parts on a carried gun and on a gun in the vehicle's back (kept as { key, mods }), loaded to a fitted magazine;
-//   - The dice's gear (and Start from the dice, Hardcore's As rolled back) keeps the parts the dice put on a gun.
+//   - The dice's gear (and Start from the dice, Hardcore's As rolled back) keeps the parts the dice put on a gun;
+//   - the background's Total follows every key press (only its line redrawn, so the box keeps its focus).
 // Usage: node tools/newrunpointstest.js [-v]
+import { readFileSync } from "node:fs";
 import { createWorld } from "../src/sim/world.js";
 import { GEAR, SKILLS } from "../src/sim/data.js";
 import { CUSTOM_POINTS, itemPoints, suppliesPoints, skillCost, pricePerson, overBudget, overText, carPool, poolText, backgroundPoints, ownPoints, slotPoints, gunPoints, gunExtras, loosePoints, bgBacks, bgCarBack, pickPoints } from "../src/sim/custompoints.js";
@@ -27,7 +29,7 @@ import { allCarried } from "../src/sim/inventory.js";
 import { trunkBudget } from "../src/sim/randomkit.js";
 import { newRunScreen, crewSnapshot, blankCrew, randomizeAllCrew, crewWithBackground } from "../src/ui/newgame.js";
 import { startGearEditor, SG_ACTIONS, SG_CHANGE, startVehicleInfo, poolRow, loadDice } from "../src/ui/startgear.js";
-import { setCustomLibrary, customLibrary, presetToCustom, backgroundEditor, BG_ACTIONS, BG_CHANGE } from "../src/ui/backgrounds.js";
+import { setCustomLibrary, customLibrary, presetToCustom, backgroundEditor, BG_ACTIONS, BG_CHANGE, BG_INPUT } from "../src/ui/backgrounds.js";
 import { blankBackground } from "../src/sim/custombg.js";
 
 let pass = 0, fail = 0;
@@ -498,6 +500,34 @@ section("The dice's gear keeps the parts the dice put on a gun");
     check(payer.startVehicle.items.some((x) => typeof x === "object" && x.key === e.key && JSON.stringify(x.mods) === JSON.stringify(e.mods)), `Hardcore As rolled: the ${GEAR[e.key].name} in the back with its parts (seed ${seed})`);
   }
   if (!found) console.log("  (no Hardcore seed under 80 rolled a gun with parts into the car's back: not checked)");
+}
+
+section("The background's Total follows every key press");
+{
+  const d = { ...blankBackground("c_7"), name: "Typing", skills: { medicine: 5 }, supplies: { food: 10 }, car: { odds: 1, type: "sedan", trunk: {}, items: [] } };
+  setCustomLibrary([d]);
+  const st = world(5);
+  const ui = { started: false, ironman: false };
+  BG_ACTIONS["bg-open"](st, ui);
+  ui.bgEditor.sel = "c_7";
+  const before = backgroundPoints(customLibrary().c_7, "normal").total;
+  const line = { outerHTML: "<div class=\"small bgtotal\">old</div>" };
+  const doc = { querySelector: (q) => (q === ".bgtotal" ? line : null) };
+  const el = (action, value, k) => ({ value: String(value), dataset: k ? { k } : {}, ownerDocument: doc });
+  const draft = BG_INPUT["bg-skill"](st, ui, el("bg-skill", 9, "medicine"));
+  const want = before + skillCost(9) - skillCost(5);
+  check(draft && draft.skills.medicine === 9 && new RegExp(`Total ${want} points`).test(line.outerHTML) && /class="small bgtotal"/.test(line.outerHTML), `Medicine typed 9: the line alone redrawn, Total ${before} → ${want}`);
+  check(customLibrary().c_7.skills.medicine === 5, "nothing kept until the box's change");
+  BG_INPUT["bg-sup"](st, ui, el("bg-sup", 30, "food"));
+  check(new RegExp(`Total ${before + suppliesPoints({ food: 30 }) - suppliesPoints({ food: 10 })} points`).test(line.outerHTML), "supplies typed: the Total follows");
+  BG_INPUT["bg-carodds"](st, ui, el("bg-carodds", 0));
+  check(new RegExp(`Total ${before - CUSTOM_POINTS.VEHICLE.sedan} points`).test(line.outerHTML), "the car's odds typed 0: no car, no car price");
+  BG_INPUT["bg-trunk"](st, ui, el("bg-trunk", 20, "fuel"));
+  check(/the car's back \d+ more/.test(line.outerHTML), "the car's back typed: shown");
+  check(BG_INPUT["bg-skill"](st, { started: false }, el("bg-skill", 3, "medicine")) === null, "no window open: nothing");
+  const mainSrc = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+  check(/addEventListener\("input", \(ev\) => \{ const el = [^\n]*BG_INPUT\[el\.dataset\.action\][^\n]*fn\(state, ui, el\); \}\);/.test(mainSrc) && !/BG_INPUT[^\n]*refresh\(\)/.test(mainSrc), "main.js: typing redraws the line with no refresh (the box keeps its focus and caret)");
+  setCustomLibrary([]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

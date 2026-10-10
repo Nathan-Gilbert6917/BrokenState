@@ -132,10 +132,9 @@ export function backgroundEditor(state, ui) {
     </div></div>`;
 }
 
-function form(d, ui, state) {
-  const C = CUSTOM_BG;
-  const skills = SKILLS.map((k) => `<label class="nrskill"><span>${SKILL_NAMES[k]}</span> +${num("bg-skill", d.skills[k], C.SKILL, ` data-k="${k}"`, `Added to their own ${SKILL_NAMES[k]} (0–${C.SKILL}; a skill tops out at 20)`)}</label>`).join("");
-  const traits = traitPickerHtml(customTraitKeys(), d.traits, C.TRAITS, `data-action="bg-trait"`, { tiers: d.traitTier || {}, tierAttrs: `data-action="bg-tier"`, points: true });
+// What the background comes to under Customize: the line with its Total (form; BG_INPUT redraws only this line while
+// a number is typed, so the box keeps its focus and caret).
+export function costLineHtml(d, state) {
   // Under Customize a colonist with this background pays for what it gives (sim/custompoints.js backgroundPoints): its
   // skill bumps (priced from 0: on their own levels at least that), its traits by tier, its kit, the supplies on them
   // and, at a normal start, its car; the line adds them up (2026-10-09, user request) against Points each, and
@@ -146,7 +145,14 @@ function form(d, ui, state) {
   const sign = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v)}`;
   const parts = [`skill bumps ${T.skills}${T.skills ? "+" : ""}`, `traits ${sign(T.traits)}`, `kit ${T.kit}`, `supplies on them ${T.supplies}`, `${hard ? "the car free (Hardcore)" : `the car ${T.car}`}`];
   const costTip = `With Customize ticked, a colonist with this background pays points for what it gives, like anything else: its skill bumps on top of what they pay for their skills (from level 0 they cost ${T.skills}; on higher levels more, 2 a level past 10 and 3 past 15), its traits by tier (bad ones give points back), its kit, the supplies on them and, at a normal start, its car (a vehicle more at the hub; in Hardcore the car they flee in is free). Total: ${T.total} of the ${max} points each colonist has (Points each)${T.total > max ? ": more than one colonist can pay, so they would start over" : ""}. Not in the total: the car's back (${T.trunk}), which ${hard ? "is paid by whoever pays for the vehicle's back when it is loaded there (As rolled)" : "goes to the hub with the car, paid by whoever pays for the vehicle's back (the car pool first)"}.`;
-  const costLine = `<div class="small bgtotal"${tip(costTip)}><span class="muted">Under Customize: ${parts.join(", ")}</span> · <b class="${T.total > max ? "danger" : ""}">Total ${T.total} points</b> <span class="muted">of ${max} each${T.trunk ? ` · the car's back ${T.trunk} more, paid with the vehicle's back` : ""}</span></div>`;
+  return `<div class="small bgtotal"${tip(costTip)}><span class="muted">Under Customize: ${parts.join(", ")}</span> · <b class="${T.total > max ? "danger" : ""}">Total ${T.total} points</b> <span class="muted">of ${max} each${T.trunk ? ` · the car's back ${T.trunk} more, paid with the vehicle's back` : ""}</span></div>`;
+}
+
+function form(d, ui, state) {
+  const C = CUSTOM_BG;
+  const skills = SKILLS.map((k) => `<label class="nrskill"><span>${SKILL_NAMES[k]}</span> +${num("bg-skill", d.skills[k], C.SKILL, ` data-k="${k}"`, `Added to their own ${SKILL_NAMES[k]} (0–${C.SKILL}; a skill tops out at 20)`)}</label>`).join("");
+  const traits = traitPickerHtml(customTraitKeys(), d.traits, C.TRAITS, `data-action="bg-trait"`, { tiers: d.traitTier || {}, tierAttrs: `data-action="bg-tier"`, points: true });
+  const costLine = costLineHtml(d, state);
   const gear = C.SLOTS.map((slot) => `<label class="lookopt">${SLOT_LABELS[slot]}${select("bg-gear", d.gear[slot], byName(slotOptions(slot)), "None", ` data-slot="${slot}"`)}</label>`).join("");
   const fit = fitCheck(d);
   const items = d.items.map((k, i) => `<span class="chip ${fit.left.includes(k) ? "off" : ""}">${esc(gearName(k))} <button class="mini" data-action="bg-item-del" data-i="${i}"${tip("Take it out")}>×</button></span>`).join("");
@@ -219,6 +225,22 @@ export const BG_ACTIONS = {
   "bg-item-del": (state, ui, d) => edit(ui, (b) => { b.items.splice(Number(d.i), 1); }),
   "bg-trunk-del": (state, ui, d) => edit(ui, (b) => { b.car.items.splice(Number(d.i), 1); }),
 };
+
+// Typing in a number that changes the Total (2026-10-09, user pick: the Total follows every key press): the line is
+// worked out on a copy (made safe as when it is kept) and only it is redrawn, in place; nothing is kept or rebuilt
+// until the box's change (BG_CHANGE). Returns the copy (the tools read it).
+const BG_FIELD = { "bg-skill": (b, el) => { b.skills[el.dataset.k] = Number(el.value); }, "bg-sup": (b, el) => { b.supplies[el.dataset.k] = Number(el.value); }, "bg-trunk": (b, el) => { b.car.trunk[el.dataset.k] = Number(el.value); }, "bg-carodds": (b, el) => { b.car.odds = Number(el.value); } };
+export const BG_INPUT = Object.fromEntries(Object.entries(BG_FIELD).map(([k, set]) => [k, (state, ui, el) => {
+  const d = ui.bgEditor && lib[ui.bgEditor.sel];
+  if (!d) return null;
+  const draft = JSON.parse(JSON.stringify(d));
+  set(draft, el);
+  const safe = sanitizeBackground(draft, d.id);
+  const doc = el && el.ownerDocument;
+  const line = doc && doc.querySelector ? doc.querySelector(".bgtotal") : null;
+  if (line) line.outerHTML = costLineHtml(safe, state);
+  return safe;
+}]));
 
 export const BG_CHANGE = {
   "bg-copy": (state, ui, el) => { if (el.value) add(ui, presetToCustom(el.value, newBackgroundId(lib))); },
