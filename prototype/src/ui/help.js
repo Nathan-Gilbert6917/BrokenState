@@ -33,6 +33,7 @@ import { NL_HELP } from "../sim/nonlethal.js"; // tasers, pepper spray, pulled b
 import { CARAVAN_HELP } from "../sim/caravanraids.js"; // caravans on the road: escorts, robbing them, witnesses
 import { RESCUE_HELP } from "../sim/rescueraid.js"; // getting captives back: the rescue raid, ransoms
 import { BLOCS_WARS_HELP } from "../sim/playerwars.js"; // blocs between groups, wars with you
+import { traitsHelp } from "./traitpick.js"; // every trait, its tiers and points
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -152,6 +153,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "hives-and-hordes") { add("The hive crawl", HIVE_CRAWL_HELP); add("Hives being born", HIVE_BIRTH_HELP); } // sim/hivecrawl.js, sim/hivebirth.js
     if (out[out.length - 1].id === "food-and-the-winter") add("The harvest festival", FESTIVAL_HELP); // sim/festival.js
     if (out[out.length - 1].id === "sending-a-team") add("Templates, Repeat trip and Undo", tripsHelp()); // ui/trips.js
+    if (out[out.length - 1].id === "moving-people-between-bases") add("Traits", traitsHelp()); // ui/traitpick.js
     if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP); // ui/causes.js
     if (out[out.length - 1].id === "saving") add("Autosaves and crashes", savesHelpHtml()); // ui/savelist.js
     if (out[out.length - 1].id === "time") add("Pause rules and the card tray", pacingHelp()); // ui/pacing.js
@@ -185,6 +187,7 @@ export function helpTopics() {
   if (!seen.has("caravans-on-the-road")) add("Caravans on the road", CARAVAN_HELP);
   if (!seen.has("blocs-and-wars")) add("Blocs and wars", BLOCS_WARS_HELP);
   if (!seen.has("getting-captives-back")) add("Getting captives back", RESCUE_HELP);
+  if (!seen.has("traits")) add("Traits", traitsHelp());
   add("Keys", keysSheet()); // ui/controls.js
   add("Codex and search", codexHelp());
   return out;

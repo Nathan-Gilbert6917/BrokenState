@@ -33,6 +33,21 @@ export const traitChips = (s) => ((s && s.traits) || []).map((t) => traitChip(s,
 /** @param {any} s */
 export const traitWords = (s) => ((s && s.traits) || []).map((t) => (TRAITS[t] ? traitLabel(t, traitTier(s, t) || 1) : t)).join(", ");
 
+// Help → Traits (ui/help.js): what traits are, tiers and points, and every trait at tier I (the chip says a higher
+// tier's numbers) with what each tier costs.
+export function traitsHelp() {
+  const ROM = ["I", "II", "III"];
+  const row = (t) => {
+    const n = tierCount(t);
+    const pts = n > 1 ? ` <span class="muted">(${Array.from({ length: n }, (_, i) => `${ROM[i]} ${traitPoints(t, i + 1)}`).join(", ")} points)</span>` : "";
+    return `<li><span class="chip trait ${traitClass(t)}">${esc(TRAITS[t].name)}</span> ${esc(traitDesc(t, 1))}${pts}</li>`;
+  };
+  const list = (kind) => `<ul>${Object.keys(TRAITS).filter((t) => traitKind(t) === kind).map(row).join("")}</ul>`;
+  return `Everyone has one or two traits from birth (a recruit, a wanderer, a prisoner, a child grown up, the autopilot's people too). A good or bad trait comes as I, II or III (Lucky and Unlucky I–II): the higher, the stronger (II about 30% of people with it, III 10%). Under <i>Customize</i> a good trait costs points by its tier, a bad one gives points back (at most a third of the max), a neutral one is free; never two that clash (Brave and Coward, Diplomatic and Hothead…). Below, each at tier I; a trait's chip says what it does at that person's tier.<br>
+    <b>Good</b>${list("good")}<b>Neutral</b>${list("neutral")}<b>Bad</b>${list("bad")}
+    Other groups' people are numbers (their strength), not survivors, so their traits do not show until they join you; a Diplomatic or Strategic one of yours works for the whole group (the best one counts: anyone free for goodwill, anyone at a base for the estimates), a Tactical one for those near them in a fight.`;
+}
+
 // Why trait t cannot be added to `picked` now ("" when it can).
 /** @param {string[]} picked @param {string} t @param {number} max @returns {string} */
 export function traitBlock(picked, t, max) {

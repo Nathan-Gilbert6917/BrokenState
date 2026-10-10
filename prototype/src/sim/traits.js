@@ -30,10 +30,19 @@
 //                    the team's best (teamTraitFx)
 //   Night Owl        conflicts.js spotting others first (+ night by night, − day by day)
 //   Squeamish        relations.js onDeath (a death in the group: − grief mood); Pessimist relations.js moodFactors
+//   Tactical (2026-10-09)  combat.js playerUnit (u.tact) and shotOdds: + to hit a flanked target, − to be hit in cover,
+//                    + to hit for allies near them (the best one near, not stacked; melee too: meleeOdds); world.js
+//                    combatPower (traitPower: + fighting strength by the numbers: autopilot, conflicts, breakoff)
+//   Strategic        conflicts.js conflictChance (the team's road encounters × encounterMult, its best tier);
+//                    intelest.js (estimates of other groups' bases and parties: error × intelMult, your best at a base)
+//   Diplomatic       factions.js changeGoodwill (gains × and losses × goodwillMult: your best among the free; a change
+//                    that sets goodwill to a value passes exact and is left alone); conflicts.js bribeChoice (a toll or
+//                    bribe × bribeMult, the team's best); radiotrade.js minFee (the lowest delivery fee, − feeCut of
+//                    their fee, the best at the calling base)
 // Everyone with traits plays by these: your people, the autopilot's, recruits, wanderers, prisoners, children grown
 // up, and anyone of yours in a fight by the numbers. Other groups' people are numbers (factions.js strength), not
 // survivors, so no trait touches them until they join you or are taken prisoner.
-import { TRAITS, BIRTH_TRAITS, NEW_TRAITS, clashIn, traitKind } from "./data.js";
+import { TRAITS, BIRTH_TRAITS, SWAP_TRAITS, LATE_TRAITS, clashIn, traitKind } from "./data.js";
 import { Rng } from "./rng.js";
 
 // ---------- the tiers: points and numbers (tune here) ----------
@@ -58,6 +67,10 @@ export const TRAIT_TIERS = {
   farmraised:   { pts: [3, 5, 7],    fx: { skill: [3, 5, 7] }, say: (f) => `+${f.skill} Farming` },
   persuasive:   { pts: [3, 5, 7],    fx: { skill: [3, 5, 7] }, say: (f) => `+${f.skill} Speech (better prices, talks, recruiting)` },
   ironwill:     { pts: [3, 5, 7],    fx: { mult: [0.5, 0.35, 0.2] }, say: (f) => `${pc(1 - f.mult)} less likely to break down (small breaks and mental breaks) or walk out when mood is low` },
+  // 2026-10-09 (user request): Tactical (the battle), Strategic (the State Map), Diplomatic (the other groups).
+  tactical:     { pts: [4, 6, 9],    fx: { flank: [10, 15, 20], cover: [5, 8, 12], aura: [3, 4, 5], power: [0.5, 1, 1.5] }, say: (f) => `Reads a fight: +${f.flank}% to hit a flanked target (in cover, none facing them), −${f.cover}% to be hit while in cover, and allies within 2 tiles get +${f.aura}% to hit (shots and blows; the best one near counts); +${f.power} fighting strength in a fight by the numbers` },
+  strategic:    { pts: [3, 5, 7],    fx: { enc: [0.1, 0.15, 0.2], intel: [0.15, 0.25, 0.35] }, say: (f) => `Plans ahead: their team meets ${pc(f.enc)} less trouble on the road (routes and hours picked), and while they are at one of your bases your estimates of other groups' bases and parties are ${pc(f.intel)} sharper (narrower ranges)` },
+  diplomatic:   { pts: [3, 5, 7],    fx: { gw: [0.1, 0.15, 0.2], bribe: [0.1, 0.15, 0.2], fee: [0.1, 0.15, 0.2] }, say: (f) => `Knows how to deal: goodwill with groups rises ${pc(f.gw)} faster and falls ${pc(f.gw)} slower (while they are free), their team's bribes and tolls cost ${pc(f.bribe)} less, and in radio deals from their base groups take a delivery fee ${pc(f.fee)} lower` },
   // neutral: a real trade-off, free, one tier
   nightowl:     { pts: [0],          fx: { night: [0.15], day: [0.05] }, say: (f) => `At night their team is ${pc(f.night)} more likely to spot others first; by day, drowsy, ${pc(f.day)} less likely` },
   greedy:       { pts: [0],          fx: {}, say: () => TRAITS.greedy.desc },
@@ -174,9 +187,9 @@ export const woundMult = (s) => (hasTrait(s, "tough") ? traitFx(s, "tough", "mul
 // To hit in battle, shots and blows (Brave, Coward).
 /** @param {any} s @returns {number} */
 export const traitAim = (s) => traitFx(s, "brave", "aim") - traitFx(s, "coward", "aim");
-// Fighting strength by the numbers (world.js combatPower: Brave +, Coward −).
+// Fighting strength by the numbers (world.js combatPower: Brave +, Coward −, Tactical +).
 /** @param {any} s @returns {number} */
-export const traitPower = (s) => traitFx(s, "brave", "power") - traitFx(s, "coward", "power");
+export const traitPower = (s) => traitFx(s, "brave", "power") - traitFx(s, "coward", "power") + traitFx(s, "tactical", "power");
 // To hit with blows on top (Clumsy, Feeble).
 /** @param {any} s @returns {number} */
 export const meleeTraitAim = (s) => -traitFx(s, "clumsy", "melee") - traitFx(s, "feeble", "melee");
@@ -208,6 +221,42 @@ export const stomachMult = (s) => (hasTrait(s, "ironstomach") ? traitFx(s, "iron
 export const sicklyMult = (s) => (hasTrait(s, "sickly") ? traitFx(s, "sickly", "sick") : 1);
 /** @param {any} s @returns {number} */
 export const sicklyDrift = (s) => traitFx(s, "sickly", "drift");
+// Tactical on the battle map (combat.js playerUnit keeps it on the unit: shotOdds and meleeOdds read it): to hit a
+// flanked target, off the odds of a shot at them in cover, and to hit for allies within TACT_RANGE tiles. null: none.
+export const TACT_RANGE = 2;
+/** @param {any} s @returns {{ flank: number, cover: number, aura: number } | null} */
+export const tactOf = (s) => (hasTrait(s, "tactical") ? { flank: traitFx(s, "tactical", "flank"), cover: traitFx(s, "tactical", "cover"), aura: traitFx(s, "tactical", "aura") } : null);
+// Strategic: a team's road encounters × (conflicts.js conflictChance: the team's best tier).
+/** @param {any[]} members @returns {number} */
+export const encounterMult = (members) => 1 - teamTraitFx(members, "strategic", "enc");
+// The best of a trait's number among your living people who are at one of your bases (Strategic's intel) or free (not
+// held by another group: Diplomatic's goodwill). Coarse on purpose: the group's planner or envoy, wherever they are.
+/** @param {any} state @param {string} t @param {string} k @param {boolean} [atBase] @returns {number} */
+function bestOfYours(state, t, k, atBase = false) {
+  let v = 0;
+  for (const s of (state && state.survivors) || []) {
+    if (!s.alive || !s.location || !hasTrait(s, t)) continue;
+    if (atBase ? s.location.kind !== "base" : s.location.kind === "captive") continue;
+    v = Math.max(v, traitFx(s, t, k));
+  }
+  return v;
+}
+// Strategic: the error of every estimate of another group (intelest.js) × this.
+/** @param {any} state @returns {number} */
+export const intelMult = (state) => 1 - bestOfYours(state, "strategic", "intel", true);
+// Diplomatic: a change of goodwill with a group (factions.js changeGoodwill), gains × (1 + gw), losses × (1 − gw).
+/** @param {any} state @param {number} amount @returns {number} */
+export function goodwillMult(state, amount) {
+  if (!amount) return 1;
+  const g = bestOfYours(state, "diplomatic", "gw");
+  return amount > 0 ? 1 + g : 1 - g;
+}
+// Diplomatic: a team's bribe or toll × (conflicts.js bribeChoice); the lowest delivery fee a group takes over the
+// radio, − this share of their fee (radiotrade.js minFee: the best at the base making the call).
+/** @param {any[]} members @returns {number} */
+export const bribeMult = (members) => 1 - teamTraitFx(members, "diplomatic", "bribe");
+/** @param {any[]} people @returns {number} */
+export const feeCut = (people) => teamTraitFx(people, "diplomatic", "fee");
 // The skill levels traits add or take for skill k (world.js skill: every use of the skill).
 /** @param {any} s @param {string} k @returns {number} */
 export function traitSkill(s, k) {
@@ -242,11 +291,14 @@ export function traitHash(...n) {
 // ---------- rolling at birth ----------
 // world.js rollTraits draws one or two traits from BIRTH_TRAITS with the world's dice, exactly as it always did (so
 // every seed keeps its map, its people and every later roll). Then each of them is, NEW_SHARE of the time, swapped for
-// one of the newer traits (NEW_TRAITS, none twice, none that clashes with the other), with dice of their own: keyed by
+// one of the newer traits (SWAP_TRAITS, none twice, none that clashes with the other), with dice of their own: keyed by
 // the seed and how many people the world has made (like their looks and their Crafting: appearance.js), so the world's
 // dice never see it. NEW_SHARE is the newer traits' share of all of them, so every trait is about as common as any
 // other. How many traits someone has stays the world's draw. ON false: the old roll (tools/traitstest.js compares).
-export const TRAIT_ROLL = { SALT: 0x7a17, NEW_SHARE: NEW_TRAITS.length / (NEW_TRAITS.length + BIRTH_TRAITS.length), ON: true };
+// LATE_TRAITS (2026-10-09: Tactical, Strategic, Diplomatic) come in after the swap (lateTraits): each trait then is,
+// LATE_SHARE of the time, one of them, with numbers hashed from where the swap's dice stand (read, not drawn), so the
+// swap and everything else are as they were. LATE_SHARE is their share of all the traits.
+export const TRAIT_ROLL = { SALT: 0x7a17, NEW_SHARE: SWAP_TRAITS.length / (SWAP_TRAITS.length + BIRTH_TRAITS.length), LATE_SALT: 0x1a7e, LATE_SHARE: LATE_TRAITS.length / Object.keys(TRAITS).length, ON: true };
 // The dice for the n-th person a world makes.
 /** @param {number} seed @param {number} n @returns {Rng} */
 export const traitDice = (seed, n) => new Rng(((Math.imul((seed | 0) ^ TRAIT_ROLL.SALT, 2654435761) ^ Math.imul((n | 0) + 0x3c6e, 1597334677)) >>> 0) || 1);
@@ -258,8 +310,22 @@ export function swapNewTraits(traits, dice) {
     const u = dice.next(), v = dice.next(); // two each, whatever comes of them
     if (u >= TRAIT_ROLL.NEW_SHARE) continue;
     const others = traits.filter((_, j) => j !== i);
-    const pool = NEW_TRAITS.filter((t) => !others.includes(t) && !clashIn(others, t));
+    const pool = SWAP_TRAITS.filter((t) => !others.includes(t) && !clashIn(others, t));
     if (pool.length) traits[i] = pool[Math.floor(v * pool.length)];
+  }
+  return lateTraits(traits, dice);
+}
+// The 2026-10-09 traits: each of someone's traits, LATE_SHARE of the time, becomes one of LATE_TRAITS (none twice,
+// none that clashes with the other). Hashed from the dice's state after the swap: nothing is drawn.
+/** @param {string[]} traits @param {any} dice @returns {string[]} */
+export function lateTraits(traits, dice) {
+  if (!TRAIT_ROLL.ON || !dice) return traits;
+  const key = Number.isFinite(dice.state) ? dice.state % 4294967296 : 0;
+  for (let i = 0; i < traits.length; i++) {
+    if (traitHash(key, TRAIT_ROLL.LATE_SALT, i, 0) >= TRAIT_ROLL.LATE_SHARE) continue;
+    const others = traits.filter((_, j) => j !== i);
+    const pool = LATE_TRAITS.filter((t) => !others.includes(t) && !clashIn(others, t));
+    if (pool.length) traits[i] = pool[Math.floor(traitHash(key, TRAIT_ROLL.LATE_SALT, i, 1) * pool.length)];
   }
   return traits;
 }

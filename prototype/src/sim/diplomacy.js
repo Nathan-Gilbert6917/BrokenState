@@ -496,7 +496,7 @@ export function makePeace(state, w, how = "terms") {
     const ally = factionById(state, w.playerSide);
     const foe = ally === a ? b : a;
     if (ally && ally.alive && youWon) changeGoodwill(state, ally, 10, "victory together");
-    if (foe && foe.alive && foe.goodwill < -35) changeGoodwill(state, foe, -35 - foe.goodwill, "the peace");
+    if (foe && foe.alive && foe.goodwill < -35) changeGoodwill(state, foe, -35 - foe.goodwill, "the peace", true);
   }
   return terms;
 }
@@ -590,7 +590,7 @@ export function joinWar(state, warId, sideId) {
   f.lastDiplomacy = day(state);
   if (foe) {
     foe.known = true;
-    if (foe.goodwill > -60) changeGoodwill(state, foe, -60 - foe.goodwill, "you joined the war against them");
+    if (foe.goodwill > -60) changeGoodwill(state, foe, -60 - foe.goodwill, "you joined the war against them", true);
     else changeGoodwill(state, foe, 0);
     if (foe.pact) { foe.pact = null; log(state, `${foe.name} tore up its pact with you.`, "danger"); }
   }

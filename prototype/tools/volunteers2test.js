@@ -28,6 +28,7 @@ function world(seed = SEED, extra = 8) {
   for (const g of st.factions) g.known = true;
   f.goodwill = 70; f.pact = "trade"; f.pop = Math.max(f.pop, 22);
   for (let i = 0; i < extra; i++) { const s = makeSurvivor(st, 1); s.location = { kind: "base", baseId: hub(st).id }; st.survivors.push(s); }
+  for (const s of st.survivors) s.traits = s.traits.filter((t) => t !== "diplomatic"); // a Diplomatic one softens goodwill lost (traits.js): the checks count the plain numbers
   return { st, f };
 }
 function team(st, tile, { n = 3, mission = "move", phase = "waiting" } = {}) {

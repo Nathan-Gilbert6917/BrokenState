@@ -9,7 +9,7 @@
 // - "deliver": the caller asks the other side to send its caravan, for a fee (deliveryFee: 6 + 0.4 a hour on the
 //   road, a quarter less from traders, a fifth less with a pact; in their prices, added to what you must give). You
 //   take their fee or offer your own (t.feeOffer): they go as low as minFee (their fee × 1 − goodwill/200, traders
-//   another 10% off, never under 60%) and say what that is when you offer less; paying over their fee earns goodwill
+//   another 10% off, never under 60%; a Diplomatic caller another 10–20%: traits.js) and say what that is when you offer less; paying over their fee earns goodwill
 //   (1 per 10 over, at most 3). They may also say no (deliveryRefusal: too few of them, the dead at their walls, at war, no trust, too far); then you can
 //   fetch it yourself. If they agree, their caravan (caravans.js) brings their side to your base and the trade window
 //   opens there with the deal filled in.
@@ -29,6 +29,7 @@ import { available, poolKey, ensureWares, WARES_MAX, need } from "./trade.js";
 import { refusal } from "./radio.js";
 import { sendCaravan, caravanEnRoute, caravanCapacity, CARAVAN_SPEED } from "./caravans.js";
 import { tradeSpeech, gainXp, USE } from "./skills.js";
+import { feeCut } from "./traits.js"; // Diplomatic: a lower delivery fee
 import { itemLoad } from "./inventory.js";
 import { keyWord } from "./water.js";
 import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
@@ -73,10 +74,12 @@ export function deliveryFee(state, f, base) {
   if (h == null) return 0;
   return Math.round((6 + h * 0.4) * (f.type === "traders" ? 0.75 : 1) * (f.pact ? 0.8 : 1));
 }
-// The lowest fee they take: theirs less a goodwill discount (traders another 10%), never under 60% of it.
+// The lowest fee they take: theirs less a goodwill discount (traders another 10%), never under 60% of it. A Diplomatic
+// person at the base making the call (traits.js feeCut) takes another 10–20% of their fee off both (the floor too).
 export function minFee(state, f, base) {
   const fee = deliveryFee(state, f, base);
-  return Math.ceil(fee * Math.max(0.6, 1 - Math.max(0, f.goodwill) / 200 - (f.type === "traders" ? 0.1 : 0)));
+  const cut = base ? feeCut(atBase(state, base.id)) : 0;
+  return Math.ceil(fee * Math.max(0.6 - cut, 1 - Math.max(0, f.goodwill) / 200 - (f.type === "traders" ? 0.1 : 0) - cut));
 }
 // The fee on the table for a radio trade: your offer, else theirs.
 export const feeOf = (state, f, base, t) => (t.delivery !== "deliver" ? 0 : t.feeOffer != null ? t.feeOffer : deliveryFee(state, f, base));

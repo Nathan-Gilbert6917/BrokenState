@@ -60,7 +60,7 @@ import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zomb
 import { ZTYPES, MIDDEAD } from "./hiveconst.js";
 import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
 import { armorVs, stabsGap, ARMORED, armoredOf, wearPlate } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
-import { traitAim, meleeTraitAim, woundMult, fleetEscape } from "./traits.js"; // Brave, Coward, Clumsy, Tough, Frail, Fleet-Footed
+import { traitAim, meleeTraitAim, woundMult, fleetEscape, tactOf, TACT_RANGE } from "./traits.js"; // Brave, Coward, Clumsy, Tough, Frail, Fleet-Footed, Tactical
 import { armourHit, armourExpect, locatedHit, enemyPieces, fitArmour, wearByNumbers, absorbOffscreen, battleArmor, battleDice, roundOf, armourSpec, dropBroken } from "./armour.js"; // per-hit armour: pieces, locations, penetration, wear
 import { noteBrass, pickUpBrass } from "./reloading.js"; // the reloading bench: brass back after a won fight
 import { syncModes, modeOf, modeRounds, modeRolls, modeAim, modeRefusal, FIRE_MODES, rollTrigger, jamGun, jamRefusal, jamLabel, foul, unjam, unjamRefusal, jamReload, aiUnjam, aiMode, noteJamWeather, enemyGunQ, enemyGunCond, SUPPRESS, suppressRounds, suppressRefusal, coneTargets, bestCone, nextInLine, overpenChance, piercesCover, OVERPEN, braceAim, sniperCell, isSniper, gunModes } from "./gunfire.js"; // fire modes, jams, suppressing fire, over-penetration
@@ -2444,6 +2444,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : t.gunner ? gunnerCover(b, t) : coverAgainst(b, t.x, t.y, ax, ay); // a turret's gunner: half cover (full behind plate x2)
   aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0) - (opts.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js); opts.pierce: an over-penetrating round through light cover (gunfire.js)
   if (t.hunker && cov.level) aim -= HUNKER_DEF;
+  if (b.tact) aim += tactAim(b, a, t, ax, ay, cov, notes); // Tactical (traits.js): a flank, cover used well, an ally's eye
   if (flat) aim += 15;
   if (opts.reaction && !a.owSure) aim -= 15; // owSure: the Suppressor perk (skills.js)
   if (opts.volley) aim += 15; // caught before they could take cover
@@ -2480,11 +2481,33 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up, notes };
 }
 
+// Tactical (traits.js, u.tact from playerUnit): a Tactical shooter's bonus on a flanked target, a Tactical target in
+// cover harder to hit, and the best Tactical ally within TACT_RANGE tiles of the shooter (not themselves) adding to
+// their aim. b.tact: someone on the field has it (else nothing is looked at). Each on the odds line.
+function tactAim(b, a, t, ax, ay, cov, notes) {
+  let v = 0;
+  if (a.tact && cov.flanked) { v += a.tact.flank; if (notes) notes.push(`Tactical, a flank +${a.tact.flank}`); }
+  if (t.tact && cov.level) { v -= t.tact.cover; if (notes) notes.push(`${t.short || "they"} use cover well (Tactical) −${t.tact.cover}`); }
+  const ally = tactAura(b, a, ax, ay);
+  if (ally) { v += ally; if (notes) notes.push(`a Tactical ally near +${ally}`); }
+  return v;
+}
+// The best Tactical ally's bonus near (x, y) for a: on their side, up and about, on the same floor, within TACT_RANGE.
+export function tactAura(b, a, x = a.x, y = a.y) {
+  if (!b.tact) return 0;
+  let best = 0;
+  for (const o of b.units) {
+    if (o === a || !o.tact || o.side !== a.side || !active(o) || (o.f || 0) !== (a.f || 0)) continue;
+    if (Math.max(Math.abs(o.x - x), Math.abs(o.y - y)) <= TACT_RANGE) best = Math.max(best, o.tact.aura);
+  }
+  return best;
+}
+
 export function meleeOdds(b, a, t) {
   bindDims(b);
   const w = WEAPONS[a.weapon];
   const up = hAt(b, t.x, t.y) > hAt(b, a.x, a.y) ? HEIGHT.MELEE_UP : 0; // striking up at someone on higher ground
-  const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) - (t.hunker ? 10 : 0) - up - (a.stun ? a.stun.aim / 2 : 0) - nlAimPen(a) / 2))); // a stun (a flashbang, a taser: throwables.js) and pepper spray (nonlethal.js): half their aim penalty up close
+  const chance = Math.max(10, Math.min(95, Math.round(a.meleeAim + (w.meleeAim || 0) + tactAura(b, a) - (t.hunker ? 10 : 0) - up - (a.stun ? a.stun.aim / 2 : 0) - nlAimPen(a) / 2))); // tactAura: a Tactical ally near (traits.js); a stun (a flashbang, a taser: throwables.js) and pepper spray (nonlethal.js): half their aim penalty up close
   const base = w.melee ? w.dmg : BASH;
   const mult = w.melee ? a.dmgMult : 1;
   return { chance, crit: CRIT.MELEE, dmg: [Math.round(base[0] * mult), Math.round(base[1] * mult)], cover: 0, flanked: false, dist: 1 };
@@ -2911,7 +2934,9 @@ export function playerUnit(b, s) {
     wormed: hasWorm(s), wornArmor: armorMult(s), // carriers.js: the worm in them gets them up if they die; the risen wear what they wore
     ap: 2, aware: true, x: 0, y: 0, f: 0,
     fleet: fleetEscape(s), // Fleet-Footed (traits.js): the escape check's bonus (its extra tile a move: carrykit.js weighPlayer)
+    tact: tactOf(s), // Tactical (traits.js): flanks, cover, allies near (shotOdds tactAim, meleeOdds)
   };
+  if (u.tact) b.tact = true;
   u.load = chooseLoad(b, u, item && key !== "fists" ? item.load : null); // ammo.js: the gun's own load (item.load), else its common round
   MED.fitMedic(u, s); // medics.js: a med kit in a pocket or the pack counts too
   fitMags(b, u, carriedSpots(s), magCap(u)); // mags.js: the gun's magazine and the spares they carry (pouches, pockets, pack)
