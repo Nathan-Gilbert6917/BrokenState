@@ -1,5 +1,5 @@
 // The arsenal balance of 2026-10-10 (docs/weapons-overhaul-plan.md "Balance ladder 2026-10-10"; src/sim/ladder.js,
-// data-ammo.js CAL_DMG / LADDER / ROUND_ECON / THEME_CALS, data-guns.js ARSENAL_* / GUN_RARITY / GUN_FINDS,
+// data-ammo.js CAL_DMG / LADDER / ROUND_ECON / THEME_CALS, data-guns.js ARSENAL_* / GUN_RARITY / ARSENAL_FINDS,
 // gunfinds.js). Checks:
 // - the damage ladder: .22 < 9mm < .45 < .357 < 20 ga < 5.56 < 7.62×39 < 12 ga buck < .30-30 < .308 < 12 ga slug <
 //   .50 on an unarmoured target; 5.56 closer to .22 than to .308; 12 ga buckshot between 5.56 and .308; a 12 ga slug
@@ -20,7 +20,7 @@ import { WEAPONS, KITS, AREAS } from "../src/sim/combat.js";
 import { GEAR, LOCATIONS } from "../src/sim/data.js";
 import { CALIBERS, AMMO_TYPES, CAL_DMG, LADDER, ROUND_ECON, RARITY, AMMO_MIX, THEME_CALS, ammoKey, roundTier, roundValue } from "../src/sim/data-ammo.js";
 import { SUPPLIES } from "../src/sim/data.js";
-import { ARSENAL_GEAR, GUN_RARITY, GUN_FINDS, TRUCK_GEAR, ARSENAL_TAGS } from "../src/sim/data-guns.js";
+import { ARSENAL_GEAR, GUN_RARITY, ARSENAL_FINDS, TRUCK_GEAR, ARSENAL_TAGS } from "../src/sim/data-guns.js";
 import { MAGAZINES, INTERNAL } from "../src/sim/data-kit.js";
 import { SHELLS, standardMag } from "../src/sim/mags.js";
 import { hitDamage, rung, ladderRows, gunHit, TARGETS } from "../src/sim/ladder.js";
@@ -113,8 +113,8 @@ for (const rows of Object.values(TRUCK_GEAR)) for (const [k] of rows) src.add(k)
 for (const T of Object.values(GUN_STASH)) for (const k of [...Object.keys(T.guns || {}), ...Object.keys((T.rare || [0, {}])[1])]) src.add(k);
 for (const list of Object.values(WARES)) for (const k of list) src.add(k);
 const finds = new Set();
-for (const [type, p] of Object.entries(GUN_FINDS.site)) if (p > 0) for (const k of Object.keys(gunPool(SITE_TAGS[type] || []))) finds.add(k);
-for (const [area, p] of Object.entries(GUN_FINDS.area)) if (p > 0) for (const k of Object.keys(gunPool(AREA_TAGS[area] || []))) finds.add(k);
+for (const [type, p] of Object.entries(ARSENAL_FINDS.site)) if (p > 0) for (const k of Object.keys(gunPool(SITE_TAGS[type] || []))) finds.add(k);
+for (const [area, p] of Object.entries(ARSENAL_FINDS.area)) if (p > 0) for (const k of Object.keys(gunPool(AREA_TAGS[area] || []))) finds.add(k);
 const crafted = (k) => !!(GEAR[k] && GEAR[k].makeshift);
 const lost = items.filter((k) => !src.has(k) && !finds.has(k) && !crafted(k));
 check(!lost.length, `every gun is found somewhere${lost.length ? ` (not: ${lost.join(", ")})` : ""}`);
@@ -154,7 +154,7 @@ check(themes.every((th) => Object.keys(AMMO_MIX[th]).every((k) => AMMO_MIX[th][k
 console.log("The arsenal's finds: their own dice");
 const rng = { get state() { throw new Error("world rng read"); }, next() { throw new Error("world rng used"); }, int() { throw new Error("world rng used"); }, chance() { throw new Error("world rng used"); }, pick() { throw new Error("world rng used"); } };
 const tiles = [];
-const types = Object.keys(GUN_FINDS.site);
+const types = Object.keys(ARSENAL_FINDS.site);
 types.forEach((type, i) => { tiles[i] = { loc: { type }, loot: 1 }; });
 const state = { seed: 4242, hour: 7, rng, tiles };
 let got = 0, same = true, tagsOk = true;
@@ -169,11 +169,11 @@ for (let h = 0; h < 400; h++) {
 }
 check(got > 0 && same && tagsOk, `site finds: ${got} guns in ${400 * types.length} search hours, the same roll twice the same, each fits its site's tags, no world dice`);
 let ag = 0;
-for (let n = 0; n < 3000; n++) for (const area of Object.keys(GUN_FINDS.area)) ag += rollAreaGuns(state, n % types.length, area, null, `b${n}`).filter((it) => WEAPONS[it.key]).length;
-check(ag > 0, `raid boxes: ${ag} guns in ${3000 * Object.keys(GUN_FINDS.area).length} containers`);
+for (let n = 0; n < 3000; n++) for (const area of Object.keys(ARSENAL_FINDS.area)) ag += rollAreaGuns(state, n % types.length, area, null, `b${n}`).filter((it) => WEAPONS[it.key]).length;
+check(ag > 0, `raid boxes: ${ag} guns in ${3000 * Object.keys(ARSENAL_FINDS.area).length} containers`);
 let wares = 0;
-for (let d = 0; d < 300; d++) for (const t of Object.keys(GUN_FINDS.wares)) wares += gunWares(state, t, `G${t}`, d).filter((it) => WEAPONS[it.key]).length;
-check(wares > 0, `shelves: ${wares} guns in ${300 * Object.keys(GUN_FINDS.wares).length} group-weeks`);
+for (let d = 0; d < 300; d++) for (const t of Object.keys(ARSENAL_FINDS.wares)) wares += gunWares(state, t, `G${t}`, d).filter((it) => WEAPONS[it.key]).length;
+check(wares > 0, `shelves: ${wares} guns in ${300 * Object.keys(ARSENAL_FINDS.wares).length} group-weeks`);
 let sc = 0;
 for (let n = 0; n < 2000; n++) if (scavGun("gunstore", 0.25, [1, "trip", n])) sc++;
 check(sc > 0 && sc < 2000 * 0.3, `AI scavengers find them too (${sc} in 2000 gun store trips)`);

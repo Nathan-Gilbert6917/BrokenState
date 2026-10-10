@@ -77,7 +77,7 @@ registerStashExtra((ctx, out) => stashRounds(ctx, out));
 // carrykit.js: a gun in a safe or a case keeps 0-2 spare magazines beside it (its own dice).
 registerStashExtra(({ roll, tier, siteType }, out) => { withMags(out.gear, stashSource(tier, siteType), "stash", tier, roll("mags")); });
 // gunfinds.js: now and then one of the newer guns as well (an over-under in a farmer's safe, a battle rifle in an
-// armoury's; its own rolls, with its spare magazines).
+// armoury's; its own rolls).
 registerStashExtra((ctx, out) => stashGun({ ...ctx, source: stashSource(ctx.tier, ctx.siteType) }, out));
 
 // A weighted pick from { key: weight } with a roll in [0, 1).

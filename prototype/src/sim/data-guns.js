@@ -239,7 +239,7 @@ export const ROSTER_TAGS = {
 // magazines and slots: data-gunmods.js WEAPON_PLATFORM / PLATFORMS, data-kit.js MAGAZINES / INTERNAL, mags.js SHELLS
 // (break actions load both barrels at once, a single-shot its one). Art: an existing platform's drawing
 // (data-gunmods.js PLATFORM_LIKE, ui/gunart.js) and battle sprite (GUN_SPRITE, ui/sprites.js). Where they turn up:
-// GUN_FINDS (gunfinds.js, its own dice), KIT_PATCH (the AI's people), TRUCK_GEAR.
+// ARSENAL_FINDS (gunfinds.js, its own dice), KIT_PATCH (the AI's people), TRUCK_GEAR.
 /** @type {Record<string, any>} */
 export const ARSENAL_GEAR = {
   // ---------- shotguns ----------
@@ -350,7 +350,7 @@ TRUCK_GEAR.mrap.push(["m4", 0.08], ["hk416", 0.02], ["scarh", 0.01]);
 Object.assign(FACTORY_FIT, { m1a: [[0.35, ["acog", "tacscope"]]], scarh: [[0.3, ["acog", "lpvo"]]], singlerifle: [[0.3, ["scopemount"]]] });
 
 // How common each gun is (user, 2026-10-10: "rarity and where it's found"), every gun the player can hold: common,
-// uncommon, scarce, rare, veryrare (data-ammo.js RARITY). GUN_FINDS weighs the arsenal's own finds by it.
+// uncommon, scarce, rare, veryrare (data-ammo.js RARITY). ARSENAL_FINDS weighs the arsenal's own finds by it.
 /** @type {Record<string, string>} */
 export const GUN_RARITY = {
   pistol: "common", compact9: "common", revolver: "common", pistol22: "uncommon", pistol45: "uncommon", snub357: "uncommon", usp45: "uncommon", magnum: "veryrare",
@@ -366,7 +366,7 @@ export const GUN_RARITY = {
 // rarity. site: the chance a search hour by site type; area: a raid container by area type; wares: a group's shelf a
 // week by its type (WARE_TAGS: what it stocks); scav: an AI scavenging trip's chance a loot taken (arsenal.js
 // scavenge); stash: a gun safe's or a gun case's extra gun by its table (gunsafes.js; STASH_TAGS: what it keeps).
-export const GUN_FINDS = {
+export const ARSENAL_FINDS = {
   FIND_W: { common: 1, uncommon: 0.5, scarce: 0.22, rare: 0.08, veryrare: 0.025 },
   site: { gunstore: 0.06, police: 0.03, prison: 0.02, military: 0.03, crash_mil: 0.02, convoy: 0.02, airdrop: 0.01, farm: 0.02, ranch: 0.025,
           barn: 0.01, feedstore: 0.008, cabin: 0.025, lodge: 0.02, town: 0.006, city: 0.006, motel: 0.005, apartments: 0.005, truckstop: 0.004 },
@@ -396,6 +396,15 @@ export const ROSTER_HELP = `<b>Guns.</b> Pistols: the .22 target pistol (quiet, 
   through people, .50 rounds only, −20 if moved). Automatic weapons (the submachine gun, the AK, the assault rifle and the
   light machine gun) fire single shots, bursts or full auto. The machine gun is heavy (a tile less a move) and steady when
   its bipod rests on half cover next to the gunner in the line of fire (+8; the .50's built-in bipod the same). Every gun fires its own calibre.
+  <br><b>More guns.</b> Over-under shotguns (12 and 20 gauge: two shells, both loaded at once), the single-shot shotgun and
+  the .308 single-shot rifle (one round a Reload), a 20 gauge pump, the police pump (eight shells), the lever-action .357
+  carbine, the military carbine, the piston carbine, the modular and bullpup 5.56 rifles, the .308 battle rifles (FAL,
+  the modular one, the M14-pattern), the .45 SMG and pistol, the snub-nose and the Magnum hand cannon, and a belt-fed
+  .308 machine gun. The rarer the gun, the fewer places keep one.
+  <br><b>How hard rounds hit.</b> From weakest to strongest: .22, 9mm, .45, .357, 20 gauge buckshot, 5.56, 7.62×39,
+  12 gauge buckshot, .30-30, .308, a 12 gauge slug, .50 BMG. Hollow and soft points hit harder on the unarmoured, AP
+  goes through armour; a slug hits harder than a .308 but goes through less. 5.56, .308, .22, 9mm and 12 gauge are the
+  rounds found most; the stronger and the special rounds are rarer and dearer.
   <br><b>Melee.</b> Quick weapons (knives, the hatchet, the tomahawk, the hammer, the baton) strike for 1 action instead of the
   turn: strike, then step away (one strike a turn). Clubs and heavy weapons can stagger (the target loses an action next
   turn; not brutes or bosses); blades can make people bleed (5 a turn for two turns). Spears strike 2 tiles off in a

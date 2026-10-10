@@ -7,7 +7,7 @@
 // Usage: node tools/rostertest.js
 import { GEAR, LOCATIONS } from "../src/sim/data.js";
 import { WEAPONS, KITS, AREAS, enemyUnit } from "../src/sim/combat.js";
-import { GUN_GEAR, GUN_WEAPONS, KIT_PATCH, WEAPON_PATCH, FACTORY_FIT, LATER_GEAR, ROSTER_TAGS, TRUCK_GEAR, GUN_FINDS } from "../src/sim/data-guns.js";
+import { GUN_GEAR, GUN_WEAPONS, KIT_PATCH, WEAPON_PATCH, FACTORY_FIT, LATER_GEAR, ROSTER_TAGS, TRUCK_GEAR, ARSENAL_FINDS } from "../src/sim/data-guns.js";
 import { gunPool } from "../src/sim/gunfinds.js";
 import { INTERNAL } from "../src/sim/data-kit.js";
 import { CALIBERS } from "../src/sim/data-ammo.js";
@@ -98,8 +98,8 @@ for (const a of Object.values(AREAS)) for (const [k] of a.gear) src.add(k);
 for (const kit of Object.values(KITS)) for (const k of [...kit.weapons, ...kit.strong, ...kit.loot]) src.add(k);
 for (const rows of Object.values(TRUCK_GEAR)) for (const [k] of rows) src.add(k);
 // the arsenal of 2026-10-10: its own tables (gunfinds.js: the guns whose tags meet a site's or an area's with a chance)
-for (const [type, p] of Object.entries(GUN_FINDS.site)) if (p > 0) for (const k of Object.keys(gunPool(SITE_TAGS[type] || []))) src.add(k);
-for (const [area, p] of Object.entries(GUN_FINDS.area)) if (p > 0) for (const k of Object.keys(gunPool(AREA_TAGS[area] || []))) src.add(k);
+for (const [type, p] of Object.entries(ARSENAL_FINDS.site)) if (p > 0) for (const k of Object.keys(gunPool(SITE_TAGS[type] || []))) src.add(k);
+for (const [area, p] of Object.entries(ARSENAL_FINDS.area)) if (p > 0) for (const k of Object.keys(gunPool(AREA_TAGS[area] || []))) src.add(k);
 const orphans = Object.keys(GUN_GEAR).filter((k) => !src.has(k));
 check(!orphans.length, `every new item is found somewhere (none for: ${list(orphans)})`);
 check(Object.keys(ROSTER_TAGS).every((k) => ITEM_TAGS[k] && GEAR[k]) && Object.keys(GUN_GEAR).every((k) => ITEM_TAGS[k]), "every new item has loot theme tags");

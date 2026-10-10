@@ -19,6 +19,7 @@ import { ITEM_TAGS, AREA_TAGS, SITE_TAGS, fitsTags } from "../src/sim/loot.js";
 import { packTripKit } from "../src/sim/kit.js";
 import * as L from "../src/sim/locks.js";
 import * as G from "../src/sim/gunsafes.js";
+import { ARSENAL_GEAR, ARSENAL_FINDS } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10: one of its guns now and then (gunfinds.js stashGun, counted apart)
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -371,11 +372,12 @@ console.log("Contents by tier (rollGunStash)");
 {
   const N = 3000;
   const stats = (tier, site) => {
-    let guns = 0, ammo = 0, items = 0, minQ = 9, maxQ = 0, val = 0, gren = 0, mags = 0, magGuns = 0;
+    let guns = 0, ammo = 0, items = 0, minQ = 9, maxQ = 0, val = 0, gren = 0, mags = 0, magGuns = 0, ars = 0;
     const keys = {};
     for (let i = 0; i < N; i++) {
       const out = G.rollGunStash((...k) => hash01(seed, "gstest", tier, site, i, ...k), tier, site);
       for (const it of out.gear) {
+        if (ARSENAL_GEAR[it.key]) { ars++; continue; } // the arsenal's extra (its own rolls)
         if (GEAR[it.key].slot === "weapon" && standardMag(it.key) && !usesInternal(it.key, it)) magGuns++;
         if (GEAR[it.key].slot === "weapon") { guns++; keys[it.key] = (keys[it.key] || 0) + 1; minQ = Math.min(minQ, it.quality); maxQ = Math.max(maxQ, it.quality); } else if (it.key === "flashbang" || it.key === "smokegren") gren++; // the flashbang branch's extra (gunsafes.js STASH_GRENADES)
         else if (GEAR[it.key].mag) mags++; // carrykit.js: a gun's spare magazines (0-2 a gun)
@@ -383,7 +385,7 @@ console.log("Contents by tier (rollGunStash)");
       }
       ammo += totalRounds(out.sup); // ammo.js: the rounds by calibre
     }
-    return { guns: guns / N, ammo: ammo / N, items: items / N, minQ, maxQ, keys, gren: gren / N, mags: mags / N, magGuns: magGuns / N };
+    return { guns: guns / N, ammo: ammo / N, items: items / N, minQ, maxQ, keys, gren: gren / N, mags: mags / N, magGuns: magGuns / N, ars: ars / N };
   };
   const ch = stats("cheap", "farm"), md = stats("mid", "gunstore"), hp = stats("high", "police"), hm = stats("high", "military"), pc = stats("pistolcase", "town"), rc = stats("riflecase", "town"), rcm = stats("riflecase", "military");
   console.log(`  cheap ${ch.guns.toFixed(2)} guns ${ch.ammo.toFixed(0)} ammo · mid ${md.guns.toFixed(2)} / ${md.ammo.toFixed(0)} · high (police) ${hp.guns.toFixed(2)} / ${hp.ammo.toFixed(0)} · high (military) ${hm.guns.toFixed(2)} / ${hm.ammo.toFixed(0)}`);
@@ -395,6 +397,7 @@ console.log("Contents by tier (rollGunStash)");
   check(near(hp.gren, 1, 0.08) && near(hm.gren, 1, 0.08) && !ch.gren && !md.gren && !pc.gren, `an armoury safe (high) keeps 0–2 flashbangs or smoke grenades (police ${hp.gren.toFixed(2)}, military ${hm.gren.toFixed(2)}); nothing in the others`);
   check(pc.guns === 1 && Object.keys(pc.keys).every((k) => ["pistol", "revolver"].includes(k)) && near(pc.ammo, 10.5, 0.6), "a pistol case: one handgun, 6–15 rounds");
   check(rc.guns === 1 && !rc.keys.carbine && rcm.keys.carbine > 0 && near(rc.ammo, 12.5, 0.8), "a rifle case: one long gun, 5–20 rounds; a police carbine only at police or military sites");
+  check(near(ch.ars, ARSENAL_FINDS.stash.cheap, 0.03) && near(md.ars, ARSENAL_FINDS.stash.mid, 0.03) && near(hm.ars, ARSENAL_FINDS.stash.highMil, 0.03) && near(pc.ars, ARSENAL_FINDS.stash.pistolcase, 0.03), `one of the newer guns besides (gunfinds.js: cheap ${ch.ars.toFixed(2)}, mid ${md.ars.toFixed(2)}, military ${hm.ars.toFixed(2)}, pistol case ${pc.ars.toFixed(2)})`);
   // A registered extra (a later stage: magazines, attachments) is applied.
   const off = G.registerStashExtra((ctx, out) => { if (ctx.tier === "mid") { out.gear.push(newItem("suppressor", 1)); out.sup.extra = 1; } });
   const withX = G.rollGunStash((...k) => hash01(seed, "x", ...k), "mid", "gunstore");

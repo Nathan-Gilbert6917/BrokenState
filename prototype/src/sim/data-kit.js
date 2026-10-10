@@ -114,7 +114,8 @@ for (const [k, m] of Object.entries(MAGAZINES)) {
   const p = m.plat;
   KIT_TAGS[k] = p.includes("glock") || p.includes("p1911") ? ["guns", "police", "crime", "home"] : p.includes("rimpistol") ? ["guns", "hunt", "farm", "home"]
     : p.includes("ak") ? ["guns", "crime", "military"] : p.includes("bolt") ? ["hunt", "guns", "military"] : p.includes("mp5") ? ["police", "military", "guns"]
-    : p.includes("amr") || (p.includes("m249") && !p.includes("ar15")) ? ["military"] : ["military", "guns", "police", "crash"];
+    : p.includes("amr") || p.includes("m240") || (p.includes("m249") && !p.includes("ar15")) ? ["military"] : p.includes("deagle") ? ["guns", "crime", "home"]
+    : p.includes("poly45") || p.includes("ump") ? ["police", "military", "guns"] : ["military", "guns", "police", "crash"];
 }
 // Magazines as gun parts (gunmods.js ATTACH: the gun builder's magazine slot lists them by platform).
 /** @type {Record<string, any>} */
