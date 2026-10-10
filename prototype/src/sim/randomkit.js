@@ -4,13 +4,13 @@
 // set the new gear"). Each is a fresh draw every time (not the world's dice) and stays within the colonist's points
 // (sim/custompoints.js), whatever else they have:
 //   randomKit: what they wear, hold and carry, for the points left after their skills, traits and the vehicle's back;
-//   randomTrunk: the vehicle's back, for what its payer has left, in the room there is;
+//   randomTrunk: the vehicle's back, for what its payer has left and the car pool, in the room there is;
 //   randomBuild: a whole colonist from a blank slate: traits (none to two), skills and kit, the rest into skills.
 // The new-run screen's buttons (ui/startgear.js, ui/newgame.js) put the result on and build the world again. Player
 // only: the AI groups are rolled as ever.
 import { GEAR, SKILLS, SUPPLIES, TRAITS, clashIn, traitKind } from "./data.js";
 import { START_GEAR, START_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunkChoices, carrySpec, firstFit, trunkKg } from "./startgear.js";
-import { CUSTOM_POINTS, pricePerson, pointsMax, itemPoints, slotPoints, vehiclePoints, skillsCost, nextLevelCost } from "./custompoints.js";
+import { CUSTOM_POINTS, pricePerson, pointsMax, itemPoints, slotPoints, vehiclePoints, skillsCost, nextLevelCost, ownPoints, carPool } from "./custompoints.js";
 import { tierCount, traitPoints, tidyTiers } from "./traits.js";
 import { standardMag } from "./mags.js";
 import { randomSkills, fitSkills, skillTotal, SKILL_MAX } from "./appearance.js";
@@ -27,12 +27,17 @@ const blankSlots = () => Object.fromEntries(START_GEAR.SLOTS.map((k) => [k, ""])
 const blankCarry = () => ({ pocket: [], pouch: [], pack: [] });
 const noLauncher = (k) => !GEAR[k].launcher;
 
-// Their points left with nothing worn or carried (skills, traits, the vehicle's back and a background's own count).
+// Their points left with nothing worn or carried (skills, traits, the vehicle's back and a background's own count; a
+// giver to the car pool keeps what the back takes of their offer for it: custompoints.js carPool).
 /** @param {any} state @param {any} s */
 export const kitBudget = (state, s) => Math.max(0, pricePerson(state, { ...s, startGear: null }).left);
-// What the vehicle's payer has left with the back empty.
+// What the back can cost: what its payer has left with the back empty, and the car pool (everyone else's offers).
 /** @param {any} state @param {any} payer */
-export const trunkBudget = (state, payer) => Math.max(0, pricePerson(state, { ...payer, startVehicle: null }).left);
+export function trunkBudget(state, payer) {
+  const max = pointsMax(state);
+  const pool = carPool(state, max).offers.filter((o) => o.s.id !== payer.id).reduce((a, o) => a + o.n, 0);
+  return Math.max(0, max - ownPoints(state, payer, max)) + pool;
+}
 
 // A random kit as picks (every slot named, things placed where they fit) costing at most budget. opts.fill: then spend
 // what is left too (empty slots first, then things carried) so little of the budget is left over; opts.onto: add to

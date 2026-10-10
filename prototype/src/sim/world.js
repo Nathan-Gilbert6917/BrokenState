@@ -354,6 +354,8 @@ export function applyCrew(state, crew) {
     if (c.points) { s.startPoints = true; s.startCustom = true; }
     const sv = sanitizeStartVehicle(c.startVehicle);
     if (sv) s.startVehicle = sv; else delete s.startVehicle;
+    // Their points left go to the car pool for the vehicle's back (custompoints.js carPool).
+    if (c.carPool) s.carPool = true; else delete s.carPool;
   });
 }
 

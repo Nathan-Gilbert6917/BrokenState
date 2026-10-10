@@ -372,6 +372,6 @@ export function kitLoad(s) {
 /** @param {any} state */
 export function clearStartGear(state) {
   for (const s of state.survivors) {
-    for (const k of ["startGear", "startDice", "diceKit", "diceRoll", "diceTrunk", "startVehicle", "startPoints"]) delete s[k];
+    for (const k of ["startGear", "startDice", "diceKit", "diceRoll", "diceTrunk", "startVehicle", "startPoints", "carPool"]) delete s[k];
   }
 }

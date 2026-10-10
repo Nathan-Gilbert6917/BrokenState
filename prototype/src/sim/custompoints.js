@@ -3,14 +3,15 @@
 // customization points where each survivor can have a max points to apply starting from 0"). With Customize ticked on
 // the new-run screen (not with Ironman), every colonist starts blank (skills 0, no traits, nothing worn or carried)
 // and everything they start with costs points from their own max: skill levels, good traits (by tier), every piece of
-// gear and everything carried, and what is put in the starting vehicle's back (its owner pays). Bad traits give points
+// gear and everything carried, and what is put in the starting vehicle's back (its owner pays, after the car pool:
+// colonists who tick "Give leftover to the car pool" put their points left towards it, carPool below). Bad traits give points
 // back (by tier), at most BAD_BACK of the max, so stacking every flaw is no way round it. Start is refused while
 // anyone is over. Player only: the AI groups, recruits and everyone else are rolled as ever.
 //
 // Everything a colonist is priced on is on them while the new-run screen is up (ui/newgame.js crewSnapshot carries it
 // through every rebuild): s.skills, s.traits / s.traitTier, s.startGear (their worn, held and carried picks:
-// startgear.js), s.startVehicle (the vehicle's back, on whoever pays for it) and a custom background's own supplies and
-// car (custombg.js). s.startPoints marks a colonist built this way (startgear.js: the dice's kit is not handed out on
+// startgear.js), s.startVehicle (the vehicle's back, on whoever pays for it), s.carPool (they give their points left to
+// the car pool) and a custom background's own supplies and car (custombg.js). s.startPoints marks a colonist built this way (startgear.js: the dice's kit is not handed out on
 // top of the picks).
 import { GEAR, SKILLS, SUPPLIES } from "./data.js";
 import { ROUND_SUPPLIES, CALIBERS } from "./data-ammo.js";
@@ -114,11 +115,10 @@ export function slotPoints(slot, key) {
 }
 
 // ---------- a colonist's bill ----------
-// Everything they are priced on: { skills, good, bad, back (the bad traits' points that count, after the cap), gear,
-// carried, vehicle, extra (a custom background's own supplies and car), total, max, left, over, lines (for the
-// tooltip) }. state: the world (a custom background's car, the max: state.pointsMax or the default).
-/** @param {any} state @param {any} s @param {number} [max] */
-export function pricePerson(state, s, max = pointsMax(state)) {
+// What is theirs alone (no vehicle's back, no car pool): { skills, good, bad, back (the bad traits' points that count,
+// after the cap), cap, gear, carried, extra (a custom background's own supplies and car), own (their sum), lines }.
+/** @param {any} state @param {any} s @param {number} max */
+function ownBill(state, s, max) {
   const lines = [];
   const skills = skillsCost(s.skills);
   lines.push(`Skills ${skills}`);
@@ -139,13 +139,79 @@ export function pricePerson(state, s, max = pointsMax(state)) {
   }
   if (gear) lines.push(`Worn and held ${gear}`);
   if (carried) lines.push(`Carried ${carried}`);
-  const vehicle = vehiclePoints(s.startVehicle);
-  if (vehicle) lines.push(`In the vehicle ${vehicle}`);
   const extra = bgExtraPoints(state, s);
   if (extra) lines.push(`Their background's own supplies${state && state.mode !== "hardcore" ? " and car" : ""} ${extra}`);
-  const total = skills + good + back + gear + carried + vehicle + extra;
-  return { skills, good, bad, back, cap, gear, carried, vehicle, extra, total, max, left: max - total, over: Math.max(0, total - max), lines };
+  return { skills, good, bad, back, cap, gear, carried, extra, own: skills + good + back + gear + carried + extra, lines };
 }
+// What is theirs alone, as a number (the dice under Customize: randomkit.js).
+/** @param {any} state @param {any} s @param {number} [max] */
+export const ownPoints = (state, s, max = pointsMax(state)) => ownBill(state, s, max).own;
+
+// Everything they are priced on: their own bill, plus { vehicle (what they pay for the vehicle's back, after the car
+// pool), vehicleCost (the whole back, on its payer), poolPaid (what the car pool pays of it), offer (what they give the
+// car pool: their points left), pool (what the back takes of their offer), total, max, left, over, lines (for the
+// tooltip) }. state: the world (the crew, for the car pool; a custom background's car; the max: state.pointsMax or the
+// default).
+/** @param {any} state @param {any} s @param {number} [max] */
+export function pricePerson(state, s, max = pointsMax(state)) {
+  const O = ownBill(state, s, max);
+  const lines = O.lines;
+  const K = carPool(state, max, s);
+  const mine = K.owner === s;
+  const vehicleCost = mine ? K.cost : s.startVehicle && !K.crew.includes(s) ? vehiclePoints(s.startVehicle) : 0; // (someone off the crew: their own back)
+  const poolPaid = mine ? K.used : 0;
+  const vehicle = vehicleCost - poolPaid;
+  if (vehicleCost) lines.push(`In the vehicle ${vehicleCost}${poolPaid ? ` (the car pool pays ${poolPaid}, they pay ${vehicle})` : ""}`);
+  const gift = K.offers.find((o) => o.s === s);
+  const offer = gift ? gift.n : 0, pool = gift ? gift.share : 0;
+  if (gift) lines.push(`To the car pool ${pool} (of ${offer} left over${offer > pool ? `: ${offer - pool} not needed, still theirs` : ""})`);
+  const total = O.own + vehicle + pool;
+  return { ...O, vehicle, vehicleCost, poolPaid, offer, pool, total, max, left: max - total, over: Math.max(0, total - max), lines };
+}
+
+// ---------- the car pool ----------
+// (2026-10-09, user request: "For each survivor allow them to donate the remaining points they have to a pool of
+// points; these pool of points go towards the items set in the back of the car".) A colonist built on points with
+// s.carPool gives what they have left to the car pool: their max less everything of their own (skills, traits, what
+// they wear and carry, a background's own), never below 0. Spend more and the offer shrinks with it, so giving never
+// puts them over (the payer may then pay more). The vehicle's back is paid from the pool first and its payer pays the
+// rest; only what the back needs is taken, shared among the givers by what they offer (whole points, the largest
+// remainders first, crew order on a tie), and what is not needed stays theirs (it shows as their points left). The
+// payer gives nothing (their points pay the back already): their tick is kept and counts again if someone else pays.
+// Under Customize only; startgear.js clearStartGear takes s.carPool off at Start.
+// { crew, owner (the payer, or null), cost (the back), offers: [{ s, n (offered), share (taken) }], total (offered),
+// used (taken: at most the cost), ownerPays }. sub: a stand-in for one colonist (the same id: what they would be
+// without their kit, say).
+/** @param {any} state @param {number} [max] @param {any} [sub] */
+export function carPool(state, max = pointsMax(state), sub = null) {
+  const crew = ((state && state.survivors) || []).map((x) => (sub && x.id === sub.id ? sub : x));
+  const owner = crew.find((x) => x.startVehicle) || null;
+  const cost = owner ? vehiclePoints(owner.startVehicle) : 0;
+  const offers = crew.filter((x) => x.carPool && x.startPoints && x !== owner).map((x) => ({ s: x, n: Math.max(0, max - ownBill(state, x, max).own), share: 0 }));
+  const total = offers.reduce((a, o) => a + o.n, 0);
+  const used = Math.min(total, cost);
+  if (used > 0) {
+    if (used === total) for (const o of offers) o.share = o.n;
+    else {
+      const exact = offers.map((o) => (used * o.n) / total);
+      offers.forEach((o, i) => { o.share = Math.floor(exact[i]); });
+      let rest = used - offers.reduce((a, o) => a + o.share, 0);
+      const frac = (i) => exact[i] - Math.floor(exact[i]);
+      const order = offers.map((o, i) => i).sort((a, b) => frac(b) - frac(a) || a - b);
+      for (const i of order) { if (rest <= 0) break; if (offers[i].share < offers[i].n) { offers[i].share++; rest--; } }
+    }
+  }
+  return { crew, owner, cost, offers, total, used, ownerPays: cost - used };
+}
+// The car pool in words (the vehicle's back): "Car pool: 34 points from Ana 12, Ben 22" ("" with nobody giving).
+/** @param {ReturnType<typeof carPool>} K */
+export function poolText(K) {
+  if (!K.offers.length) return "";
+  return `Car pool: ${K.total} point${K.total === 1 ? "" : "s"} from ${K.offers.map((o) => `${firstName(o.s)} ${o.n}`).join(", ")}`;
+}
+/** @param {any} s */
+const firstName = (s) => String((s && s.name) || "").split(" ")[0];
+
 // The vehicle's back picked on the new-run screen: { items: [keys], supplies: { key: n } }.
 /** @param {any} v */
 export function vehiclePoints(v) {
@@ -158,9 +224,27 @@ export function vehiclePoints(v) {
 export function bgExtraPoints(state, s) {
   const A = state && state.customBackgrounds && s && s.background ? state.customBackgrounds[s.background] : null;
   if (!A) return 0;
-  let p = suppliesPoints(A.supplies || {});
-  if (state.mode !== "hardcore" && A.car && A.car.type && A.car.odds > 0) p += C.VEHICLE[A.car.type] ?? 20;
-  return p;
+  return suppliesPoints(A.supplies || {}) + bgCarPoints(A, state.mode);
+}
+// A custom background's own car: at a normal start a vehicle more at the hub (its price by kind); in Hardcore it is the
+// car the team flees in, free; none when it names no kind or is never theirs.
+/** @param {any} A @param {string} [mode] */
+export const bgCarPoints = (A, mode) => (mode !== "hardcore" && A && A.car && A.car.type && A.car.odds > 0 ? C.VEHICLE[A.car.type] ?? 20 : 0);
+// What a custom background comes to under Customize (the backgrounds editor's line; 2026-10-09, user request: "When
+// creating a custom background show a total amount of points it provides"): { skills (its bumps priced from level 0:
+// on top of a colonist's own levels they cost at least this, more past level 10), traits (by tier; bad ones give
+// back), kit (worn, held and carried), supplies (on them), car (bgCarPoints), total (all of those), trunk (the car's
+// back: not in the total, it is not on the colonist's bill) }.
+/** @param {any} A @param {string} [mode] */
+export function backgroundPoints(A, mode) {
+  if (!A) return { skills: 0, traits: 0, kit: 0, supplies: 0, car: 0, trunk: 0, total: 0 };
+  const skills = Object.values(A.skills || {}).reduce((a, v) => a + skillCost(Number(v) || 0), 0);
+  const traits = (A.traits || []).reduce((a, t) => a + traitPoints(t, (A.traitTier || {})[t] || 1), 0);
+  const kit = [...Object.values(A.gear || {}), ...(A.items || [])].reduce((a, k) => a + itemPoints(k), 0);
+  const supplies = suppliesPoints(A.supplies || {});
+  const car = bgCarPoints(A, mode);
+  const trunk = A.car ? suppliesPoints(A.car.trunk || {}) + (A.car.items || []).reduce((a, k) => a + itemPoints(k), 0) : 0;
+  return { skills, traits, kit, supplies, car, trunk, total: skills + traits + kit + supplies + car };
 }
 // The crew's max (the new-run screen's box: main.js keeps it in ui.pointsMax and the world as state.pointsMax).
 /** @param {any} state */
@@ -171,12 +255,20 @@ export function overBudget(state) {
   const max = pointsMax(state);
   return (state.survivors || []).filter((s) => s.startPoints).map((s) => ({ s, over: pricePerson(state, s, max).over })).filter((x) => x.over > 0);
 }
-// Start's refusal, or "".
+// Start's refusal, or "". When the payer of the vehicle's back is over, it says what the back costs against the car
+// pool and what they have to spare.
 /** @param {any} state */
 export function overText(state) {
   const list = overBudget(state);
   if (!list.length) return "";
-  return `Over the points: ${list.map(({ s, over }) => `${s.name.split(" ")[0]} by ${over}`).join(", ")}. Take something off (or raise Points each) to start.`;
+  const max = pointsMax(state);
+  const K = carPool(state, max);
+  let back = "";
+  if (K.owner && K.cost > 0 && list.some((x) => x.s === K.owner)) {
+    const spare = Math.max(0, max - ownPoints(state, K.owner, max));
+    back = ` The vehicle's back costs ${K.cost}: ${K.offers.length ? `the car pool (${K.total}) and ` : ""}${firstName(K.owner)} (${spare} to spare) cannot pay it.`;
+  }
+  return `Over the points: ${list.map(({ s, over }) => `${firstName(s)} by ${over}`).join(", ")}.${back} Take something off (or raise Points each) to start.`;
 }
 // A trait's points as "+5" / "−3" / "free".
 /** @param {string} t @param {number} [tier] */

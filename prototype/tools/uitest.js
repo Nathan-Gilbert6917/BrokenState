@@ -83,7 +83,8 @@ function handlersOk(html, where) {
   const missing = [];
   for (const a of actionsIn(html)) {
     const isChange = a.tag === "select" || (a.tag === "input" && !/type="checkbox"/.test(a.attrs));
-    if (isChange ? !(CHANGE[a.action] || inMain(a.action)) : !(CLICK[a.action] || inMain(a.action))) missing.push(`${a.action} (${isChange ? "change" : "click"})`);
+    const box = a.tag === "input" && /type="checkbox"/.test(a.attrs); // a checkbox may be a change handler (main.js's change listener takes checkboxes too)
+    if (isChange ? !(CHANGE[a.action] || inMain(a.action)) : !(CLICK[a.action] || inMain(a.action) || (box && CHANGE[a.action]))) missing.push(`${a.action} (${isChange ? "change" : "click"})`);
   }
   check(!missing.length, `${where}: every data-action has a handler (missing: ${[...new Set(missing)].join(", ")})`);
 }

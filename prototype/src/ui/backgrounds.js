@@ -12,8 +12,8 @@ import {
   CUSTOM_BG, blankBackground, sanitizeBackground, sanitizeLibrary, newBackgroundId, slotOptions, carryOptions, trunkOptions, carTypes, customTraitKeys, backgroundSummary,
 } from "../sim/custombg.js";
 import { POCKETS } from "../sim/inventory.js";
-import { itemPoints, suppliesPoints } from "../sim/custompoints.js"; // what it comes to under Customize
-import { traitPoints, cleanTier, tierCount } from "../sim/traits.js";
+import { backgroundPoints, pointsMax } from "../sim/custompoints.js"; // what it comes to under Customize
+import { cleanTier, tierCount } from "../sim/traits.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -122,7 +122,7 @@ export function backgroundEditor(state, ui) {
           <select data-action="bg-copy" ${full ? "disabled" : ""}${tip("Start from a preset background: its dice made exact (the middle of each roll, its likeliest bag, weapon and things)")}><option value="">From a preset…</option>${presets}</select>
         </div>
       </div>
-      <div class="bgform">${sel ? form(sel, ui) : `<div class="muted">Pick a background on the left, or make a new one.</div>`}</div>
+      <div class="bgform">${sel ? form(sel, ui, state) : `<div class="muted">Pick a background on the left, or make a new one.</div>`}</div>
     </div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end">
       ${sel ? `<button data-action="bg-dup" ${full ? "disabled" : ""}${tip("A copy of this background")}>Duplicate</button>
@@ -132,16 +132,21 @@ export function backgroundEditor(state, ui) {
     </div></div>`;
 }
 
-function form(d, ui) {
+function form(d, ui, state) {
   const C = CUSTOM_BG;
   const skills = SKILLS.map((k) => `<label class="nrskill"><span>${SKILL_NAMES[k]}</span> +${num("bg-skill", d.skills[k], C.SKILL, ` data-k="${k}"`, `Added to their own ${SKILL_NAMES[k]} (0–${C.SKILL}; a skill tops out at 20)`)}</label>`).join("");
   const traits = traitPickerHtml(customTraitKeys(), d.traits, C.TRAITS, `data-action="bg-trait"`, { tiers: d.traitTier || {}, tierAttrs: `data-action="bg-tier"`, points: true });
-  // Under Customize a colonist with this background pays for what it gives (sim/custompoints.js): its traits by tier,
-  // its kit, the supplies on them; its skill bumps add to the levels they pay for.
-  const tPts = d.traits.reduce((a, t) => a + traitPoints(t, (d.traitTier || {})[t] || 1), 0);
-  const kPts = [...Object.values(d.gear), ...d.items].reduce((a, k) => a + itemPoints(k), 0);
-  const sPts = suppliesPoints(d.supplies), cPts = suppliesPoints(d.car.trunk) + d.car.items.reduce((a, k) => a + itemPoints(k), 0);
-  const costLine = `<div class="small muted"${tip("With Customize ticked, a colonist with this background pays points for what it gives, like anything else: its skill bumps on top of what they pay for their skills, its traits by tier (bad ones give points back), its kit, the supplies on them; the car's back is paid by whoever pays for the vehicle's back (normal start: a car of its own at the hub costs its price too)")}>Under Customize: traits ${tPts >= 0 ? "+" : "−"}${Math.abs(tPts)}, kit ${kPts}, supplies on them ${sPts}, the car's back ${cPts} points</div>`;
+  // Under Customize a colonist with this background pays for what it gives (sim/custompoints.js backgroundPoints): its
+  // skill bumps (priced from 0: on their own levels at least that), its traits by tier, its kit, the supplies on them
+  // and, at a normal start, its car; the line adds them up (2026-10-09, user request) against Points each, and
+  // follows every change in the window. The car's back is not on the colonist's bill, so it is shown apart.
+  const hard = !!(state && state.mode === "hardcore");
+  const T = backgroundPoints(d, hard ? "hardcore" : "normal");
+  const max = pointsMax(state);
+  const sign = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v)}`;
+  const parts = [`skill bumps ${T.skills}${T.skills ? "+" : ""}`, `traits ${sign(T.traits)}`, `kit ${T.kit}`, `supplies on them ${T.supplies}`, `${hard ? "the car free (Hardcore)" : `the car ${T.car}`}`];
+  const costTip = `With Customize ticked, a colonist with this background pays points for what it gives, like anything else: its skill bumps on top of what they pay for their skills (from level 0 they cost ${T.skills}; on higher levels more, 2 a level past 10 and 3 past 15), its traits by tier (bad ones give points back), its kit, the supplies on them and, at a normal start, its car (a vehicle more at the hub; in Hardcore the car they flee in is free). Total: ${T.total} of the ${max} points each colonist has (Points each)${T.total > max ? ": more than one colonist can pay, so they would start over" : ""}. Not in the total: the car's back (${T.trunk}), which ${hard ? "is paid by whoever pays for the vehicle's back when it is loaded there (As rolled)" : "goes to the hub's stores"}.`;
+  const costLine = `<div class="small bgtotal"${tip(costTip)}><span class="muted">Under Customize: ${parts.join(", ")}</span> · <b class="${T.total > max ? "danger" : ""}">Total ${T.total} points</b> <span class="muted">of ${max} each${T.trunk ? ` · the car's back ${T.trunk} more, not in the total` : ""}</span></div>`;
   const gear = C.SLOTS.map((slot) => `<label class="lookopt">${SLOT_LABELS[slot]}${select("bg-gear", d.gear[slot], byName(slotOptions(slot)), "None", ` data-slot="${slot}"`)}</label>`).join("");
   const fit = fitCheck(d);
   const items = d.items.map((k, i) => `<span class="chip ${fit.left.includes(k) ? "off" : ""}">${esc(gearName(k))} <button class="mini" data-action="bg-item-del" data-i="${i}"${tip("Take it out")}>×</button></span>`).join("");

@@ -287,7 +287,7 @@ section("A custom background under points");
   setCustomLibrary([{ ...presetToCustom("nurse", "c_2"), traits: ["tough", "loud"], traitTier: { tough: 3, loud: 2 } }]);
   ui0.bgEditor.sel = "c_2";
   const html = backgroundEditor(st0, ui0);
-  check(/Tough III/.test(html) && /data-action="bg-tier"/.test(html) && /Under Customize: traits \+5/.test(html), "the backgrounds editor: tiers picked, and what it comes to under Customize");
+  check(/Tough III/.test(html) && /data-action="bg-tier"/.test(html) && /traits \+5/.test(html) && /Total \d+ points/.test(html), "the backgrounds editor: tiers picked, and what it comes to under Customize");
   BG_ACTIONS["bg-tier"](st0, ui0, { k: "tough", d: -1 });
   check(/Tough II/.test(backgroundEditor(st0, ui0)), "a tier down in the editor");
   setCustomLibrary([]);
