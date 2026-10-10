@@ -482,7 +482,8 @@ console.log("The autopilot's gate to the core, and its kit");
     const one = (weapon, shoot, extra = {}) => { const s = makeSurvivor(fst, 1); s.traits = []; s.skills.shooting = shoot; s.gear.weapon = item(weapon); s.pockets = [null, null, null, null]; Object.assign(s.skills, extra); return s; };
     const fa = (s, packed = false) => HC.fireAt(HC.fireOf(s, packed));
     const ar = one("ar", 10), hr = one("huntrifle", 7), pump = one("shotgun", 7), axe = one("fireaxe", 3, { melee: 8 });
-    check(fa(ar) > 0.95 && fa(hr) > fa(pump) + 0.15 && Math.abs(fa(axe) - HC.HIVEMIND.REACH.melee) < 1e-9, `at the core an assault rifle counts ${fa(ar).toFixed(2)}, a hunting rifle ${fa(hr).toFixed(2)}, a pump ${fa(pump).toFixed(2)} (buckshot and its aim fall off at ${HC.HIVEMIND.REACH.range} tiles, a Reload 2–4 shells), an axe ${fa(axe).toFixed(2)}`);
+    check(fa(ar) > 0.95 && fa(hr) > fa(pump) + 0.1 && // buckshot keeps full damage to 6 tiles (calibres-tune), the core range: the pump trails on reach-and-reload alone
+       Math.abs(fa(axe) - HC.HIVEMIND.REACH.melee) < 1e-9, `at the core an assault rifle counts ${fa(ar).toFixed(2)}, a hunting rifle ${fa(hr).toFixed(2)}, a pump ${fa(pump).toFixed(2)} (buckshot and its aim fall off at ${HC.HIVEMIND.REACH.range} tiles, a Reload 2–4 shells), an axe ${fa(axe).toFixed(2)}`);
     const shots0 = HC.HIVEMIND.REACH.shots; HC.HIVEMIND.REACH.shots = 30; // a fight longer than the gun and the handful
     const sus = [HC.fireOf(pump, false).sustain, HC.fireOf(pump, true).sustain];
     HC.HIVEMIND.REACH.shots = shots0;
