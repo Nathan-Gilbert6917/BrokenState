@@ -44,6 +44,9 @@ import { autopilotHour } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
 import { workHour, workDayRoles } from "./work.js";
+import { stallDaily } from "./activity.js";
+import { leaderIdleHour } from "./idlework.js";
+import { isMealHour } from "./meals.js"; // the leader and the governor move people off stalled jobs once a day // the day each job at a base was first found unable to work (the stalled-job alert)
 import { watchHour, watchDayRoles } from "./watch.js";
 import { sickRestHour } from "./sickrest.js"; // sick people rest: Manual and pinned people's jobs kept and given back
 import { tiredHour } from "./sleep.js";
@@ -906,10 +909,11 @@ function hourOfWorld(state) {
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   fieldworksHour(state); // fieldworks.js: the lookouts posted at field works (gone, moved, enemies there)
-  constructionHour(state);
-  repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
+  const meal = isMealHour(state.hour); // meals.js: breakfast and dinner, the builders, crafters and the bench stop for them
+  if (!meal) constructionHour(state);
+  if (!meal) repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
   rezeroHour(state); // repair.js: budget sights re-zeroed at a workbench every morning (gunmods.js driftOf)
-  craftingHour(state);
+  if (!meal) craftingHour(state);
   garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating)
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);
@@ -924,6 +928,7 @@ function hourOfWorld(state) {
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
     craftingDaily(state);
+    stallDaily(state); // activity.js: read-only but for base.stall (no dice)
     vehiclesDaily(state);
     factionVehiclesDaily(state); // vehicles.js: a military group replaces a lost Humvee, slowly
     factionsDaily(state);
@@ -968,6 +973,7 @@ function hourOfWorld(state) {
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
+  leaderIdleHour(state); // idlework.js: at 07:00, people on a job stalled since a day moved to what the base needs
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
   sickRestHour(state); // sickrest.js: the ill at a base rest (Manual and pinned: their job back when well); a log line each way

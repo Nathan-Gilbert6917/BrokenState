@@ -30,7 +30,7 @@
 // Danger: foraging is time on one tile, so it builds field Heat like any work on the spot (fieldheat.js, ×1) and the
 //   dead and raiders find foragers like they find a camp.
 // Foraged food is plain food (0.5 kg a ration): fresh, so at a base it spoils like other food and the drying racks
-// and the preserving kitchen take it (storage.js).
+// and the preserving room take it (storage.js).
 import { log, skill, atBase } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, planPath, partySpeed } from "./parties.js";
 import { hasPerk, gainXp, USE } from "./skills.js";

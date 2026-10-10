@@ -12,7 +12,7 @@
 //   Users (POWER_USERS, need in power units, served in this order while the supply lasts):
 //     walk-in freezer 2 (freezer-parts: food in it keeps ~20× longer, storage.js; base.freezerOn below), cold store 1 (a freezer: keeps food as in winter all year, storage.js), radio station 1 (+2 tiles of
 //     coverage, radio.js), floodlights 1 (no fuel burned per attack, defences.js), machine shop 2 (2 parts a day
-//     from 9 scrap instead of 1 from 6), preserving kitchen 1 (half as much again a day), vacuum sealer 1 (hasSealer:
+//     from 9 scrap instead of 1 from 6), preserving room 1 (half as much again a day), vacuum sealer 1 (hasSealer:
 //     the hook for the packaged survival meals of a later cooking wave).
 //     A broken building (breakdowns.js) draws nothing and gets nothing.
 // A generator its operator started today runs the day's fuel out even while they sleep, eat or stand a watch (b.opDay):

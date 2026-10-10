@@ -1,4 +1,6 @@
 // Entry point: game loop, input, and the action dispatcher that connects the UI to the simulation.
+import { togglePeopleIdle, assignIdlePreview } from "./ui/activity.js"; // the People tab's Idle filter, Assign all idle
+import { applyIdlePlan } from "./sim/idlework.js";
 import {
   createWorld, tickHour, hub, survivorById, baseById, log, day, atBase, factionById, addCard, newId, renameSurvivor, assignStartingRoles, archerCount, ARROWS,
 } from "./sim/world.js";
@@ -1588,6 +1590,16 @@ for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(stat
 // planner, build-queue and Work tab action is wrapped so its edits can be undone (installUndo, last).
 // The People tab's view switch and find box (ui/panelfold.js; the box also filters as you type: the input listener).
 Object.assign(actions, { "ppl-view": (d) => PANEL_ACTIONS["ppl-view"](d), "ppl-clear": (d) => PANEL_ACTIONS["ppl-clear"](d) });
+Object.assign(actions, { "ppl-idle": () => togglePeopleIdle() }); // ui/activity.js: the People tab's Idle filter
+// "Assign all idle" (the Work now panel, the Bases tab's Idle drop-downs): a preview to confirm, then the jobs (idlework.js).
+actions["idle-assign"] = (d) => {
+  const b = baseById(state, Number(d.base));
+  if (!b) return;
+  const pv = assignIdlePreview(state, b);
+  if (!pv.plan.length) { baseSay(`${b.name}: nothing here has room for the idle now.`); return; }
+  if (ask(ui, d, "idle-assign", { kind: "assignidle", title: `Put ${pv.plan.length} idle ${pv.plan.length === 1 ? "person" : "people"} at ${b.name} to work?`, text: `${pv.text}. They go on these jobs by hand (Manual).`, yes: "Assign" })) return;
+  baseSay(`Assigned the idle at ${applyIdlePlan(state, b, pv.plan)}`);
+};
 Object.assign(changeActions, { "ppl-q": (el) => PANEL_INPUT["ppl-q"](el) });
 for (const [k, fn] of Object.entries(BN_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the naming window's box: the draft as you type
 for (const [k, fn] of Object.entries(ARMV_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the armory's find box (ui/armoryview.js)

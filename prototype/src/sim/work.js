@@ -70,6 +70,7 @@ import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (
 import { sleepingIn } from "./sleep.js"; // off a watch: sleep until rested
 import { wormFilterUrgent, woodCritical, farmCrewLimits, FARM_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 import { baseAmmo } from "./ammo.js"; // rounds by calibre: what fits the guns there
+import { KITCHEN, hasKitchen, cooksWanted, isCookHour } from "./kitchen.js"; // the Kitchen's cooks (work type "meals")
 
 export const PRIO_MAX = 5;
 const WATER_BUILDS = ["well", "rain_catcher", "cistern"]; // water first (autopilot.js waterPlan)
@@ -181,11 +182,24 @@ export const WORK_TYPES = {
     },
   },
   cook: {
-    name: "Preserve", ing: "Preserving", short: "Cook", role: "operate", skill: "farming",
-    desc: "Runs the preserving kitchen: jars fresh food that would spoil. By its standing order, or without one while food is spoiling outside or piling up for winter.",
-    open: (ctx) => stationOpen(ctx, (k) => k === "preserve", "no preserving kitchen"),
+    name: "Preserve", ing: "Preserving", short: "Jar", role: "operate", skill: "farming",
+    desc: "Runs the preserving room: jars fresh food that would spoil. By its standing order, or without one while food is spoiling outside or piling up for winter.",
+    open: (ctx) => stationOpen(ctx, (k) => k === "preserve", "no preserving room"),
     take: (ctx, s) => takeStation(ctx, s, (k) => k === "preserve"),
     holds: (ctx, s, role, st) => role === "operate" && stationKindById(ctx, st) === "preserve",
+  },
+  // The Kitchen's cooks (kitchen.js): one per KITCHEN.perCook people living here, while a kitchen stands, part-time: only
+  // in the cooking hours (KITCHEN.cookHours: 05:00, 06:00, 16–20), the rest of the day goes to their other priorities
+  // (s.cookHour counts them as the day's cooks). (The key "cook" above is the Preserving room's operator, kept for saved
+  // roles.) Urgency 6 in those hours: the meal will not wait.
+  meals: {
+    name: "Cook", ing: "Cooking", short: "Cook", role: "cook", skill: "farming",
+    desc: `Cooks the base's meals in the Kitchen: one cook for every ${KITCHEN.perCook} people living here, in the cooking hours only (05:00–06:00 breakfast, 16:00–20:00 dinner); the rest of the day they work their other priorities. Hot meals stretch the food (−10% eaten a day, a little more with a Farming 5+ cook), lift spirits and boil a quarter of the day's drinking water. No kitchen, no cooking.`,
+    open(ctx) {
+      if (!hasKitchen(ctx.base)) return { cap: 0, why: "no kitchen (Construction: a building plot)" };
+      if (!isCookHour(hourOfDay(ctx.state))) return { cap: 0, why: "not a cooking hour (05:00–06:00, 16:00–20:00)" };
+      return { cap: cooksWanted(ctx.state, ctx.base), urg: 6 }; // the meals are at set hours: the cooks first at their priority
+    },
   },
   workshop: {
     name: "Workshop", ing: "At the workshop", short: "Shop", role: "operate", skill: "mechanics",
@@ -534,8 +548,8 @@ function studyFor(ctx, s) {
 // ---------- roles ----------
 const P = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v > 0));
 export const DEFAULT_ROLES = () => [
-  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, wood: 3, water: 2, teach: 4, study: 4, scavenge: 4 }) },
-  { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, forage: 3, wood: 3, water: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
+  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, meals: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, wood: 3, water: 2, teach: 4, study: 4, scavenge: 4 }) },
+  { name: "Farmer", pri: P({ farm: 1, cook: 2, meals: 2, hunt: 3, fish: 3, forage: 3, wood: 3, water: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
   { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, wood: 3, study: 4, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
   { name: "Medic", pri: P({ doctor: 1, trainee: 2, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
@@ -778,10 +792,22 @@ export function workHour(state) {
   watchPromotions(state, planned);
   if (!planned) return;
   const w = state.work;
+  mealsDefaults(w);
   if (w.newcomers != null && roleById(state, w.newcomers)) {
     for (const s of state.survivors) if (s.alive && !s.work && s.location.kind === "base") assignRole(state, s, w.newcomers);
   }
   for (const base of state.bases) planBase(state, base);
+}
+
+// The Cook work type (meals, kitchen.js) came after the roles of older saves: the default roles of that name get its
+// default priority once (a role that set it, to anything, keeps its own).
+function mealsDefaults(w) {
+  if (w.mealsV) return;
+  w.mealsV = 1;
+  for (const d of DEFAULT_ROLES()) {
+    if (!d.pri.meals) continue;
+    for (const r of w.roles) if (r.name === d.name && r.pri && r.pri.meals == null) r.pri.meals = d.pri.meals;
+  }
 }
 
 // The watchtower's alarm (defences.js towerWatch, base.towerWatch): everyone on priorities at that base with Guard
@@ -939,16 +965,23 @@ export function planBase(state, base) {
   // all season on many maps (the summer's water filters, dressings for short meds, a weapon for the unarmed): over
   // worktest's 10 seeds × 8 rolls priorities finished a fifth fewer crafts than the governor (373 vs 462; with this
   // 451, food and buildings unchanged).
+  // While food is comfortable (the governor's comfort rule, farmCrewLimits) from any food job (farm, forage, hunt, fish):
+  // the kitchen's saving made food comfortable more often and the governor then crafted more (worktest, 2026-10-10).
   // Never from a build, a station, a lesson, a repair or the walls.
   const co = ctx.open("craft");
   if (co.cap > 0 && ctx.used.craft === 0) {
     const fw = farmersWanted(state, base);
     const farmSpare = ctx.used.farm - (ctx.foodDays >= Math.max(15, foodGoal(state) / 1.5) ? fw.need : fw.ideal);
+    // Food comfortable by the governor's own rule (autopilot.js farmCrewLimits comfy: the food at its target and the
+    // winter stores with their margin): the food jobs have hands to spare, as the governor's capped farm crew frees
+    // them for its crafter (planRoles step 8), so any of them may give one.
+    const comfy = farmCrewLimits(state, base, ctx.foodDays, ctx.people.length).comfy;
+    const FOOD_JOBS = ["farm", "forage", "hunt", "fish"];
     const cands = managed.filter((s) => {
       if (prio(state, s, "craft") <= 0 || !minOk(state, s, "craft") || WORK_TYPES.craft.can(ctx, s)) return false;
       if (ctx.free.has(s)) return true;
       const a = out.get(s.id);
-      return !!a && a.kind === "work" && (a.t === "scavenge" || (a.t === "farm" && farmSpare > 0));
+      return !!a && a.kind === "work" && (a.t === "scavenge" || (a.t === "farm" && farmSpare > 0) || (comfy && FOOD_JOBS.includes(a.t)));
     }).sort((a, b) => prio(state, a, "craft") - prio(state, b, "craft") || rankOf(ctx, b, "craft") - rankOf(ctx, a, "craft") || a.id - b.id);
     const s = cands[0];
     if (s) {
@@ -977,6 +1010,7 @@ export function planBase(state, base) {
     if (a.bp) s.studying = a.bp;
     if (a.repair != null) { const j = (base.repairs || []).find((x) => String(x.id) === String(a.repair)); if (j) j.who = s.id; }
     if (a.kind === "sched" && (a.t === "sleep" || a.t === "free")) s.mood = Math.min(100, s.mood + OFF_MOOD);
+    if (a.t === "meals") s.cookHour = state.hour; // kitchen.js cooksAt: one of the day's cooks for the next 24 hours
     const prev = s.task;
     const last = a.kind === "work" || a.kind === "emerg" && a.role !== "guard" ? { role: a.role, station, hour: state.hour } : prev && prev.last && state.hour - prev.last.hour < 72 ? prev.last : null;
     s.task = { t: a.t, p: a.p || 0, kind: a.kind, why: a.why, note: a.note || "", base: base.id, hour: state.hour, since: prev && prev.t === a.t ? prev.since : state.hour, last };

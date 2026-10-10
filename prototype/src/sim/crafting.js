@@ -42,7 +42,7 @@ export const CRAFTS = {
   // a mechanism take machine parts (springs, gears, bearings, valves): the crossbow, pipe gun, lights, suppressor,
   // bicycle, ram, repair kit, pulley bow as before, and these three for food: a real fishing rod with a reel (the
   // makeshift rod above is a sapling and a bent hook), a spring-jawed bear trap, and a pressure canner for the
-  // preserving kitchen (buildings.js CANNER). TODO(food-types): a hand-crank grain mill (grain → flour) once typed
+  // preserving room (buildings.js CANNER). TODO(food-types): a hand-crank grain mill (grain → flour) once typed
   // foods exist; a meat grinder for game.
   fishrod:     { gear: "fishrod",     in: { scrap: 2, parts: 1 }, hours: 6,  skill: "mechanics", min: 2 },
   beartrap:    { gear: "beartrap",    in: { scrap: 5, parts: 1 }, hours: 8,  skill: "mechanics", min: 2, needs: "workshop" },
@@ -185,7 +185,7 @@ export function craftOutputText(key) {
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
   else if (r.gear === "beartrap") bits.push("a bear trap kept in a base's stores: set on the approach when a horde attacks, it catches about 3 of the dead (up to 4 traps; a quarter break each time)");
-  else if (r.gear === "canner") bits.push("a pressure canner for the base armory: every preserving kitchen at that base jars 1 more preserved food a day");
+  else if (r.gear === "canner") bits.push("a pressure canner for the base armory: every preserving room at that base jars 1 more preserved food a day");
   else if (r.gear === "repairkit") bits.push("a field repair kit: mends a gun, an attachment, armour or a makeshift tool anywhere, one use a repair (half a workbench's restore, twice the lost maximum; repair.js)");
   else if (r.gear === "dewormer") bits.push("medicine: cures the worm while it is still in the gut, no medic needed, one use"); // worm.js
   else if (r.gear === "puritabs") bits.push(`medicine: a tube of ${d.dur} tablets, one makes ${WORM.TABS_WATER} un-purified water safe without stopping to boil it (for the road: teams drinking river or well water; a base only when its boiler is cold with nothing to burn and it has no water filter)`); // worm.js
