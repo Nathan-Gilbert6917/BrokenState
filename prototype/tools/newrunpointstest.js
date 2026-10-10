@@ -9,12 +9,16 @@
 //     card's "Give leftover to the car pool", the back paid from the pool first, only what it needs taken (shared by
 //     what each gives), a giver who spends more giving less (never over), the payer over when the back costs more
 //     than the pool and they can pay (Start refused, the back named), kept through every rebuild and both modes and
-//     taken off at Start, Random back / Build / Randomize all / the dice working with it.
+//     taken off at Start, Random back / Build / Randomize all / the dice working with it;
+//   - a follow-up the same day ("For choosing guns ... provide how much capacity and what ammo caliber it takes as well
+//     as allow for gun customization ... All guns chosen start with a loaded magazine"): every gun in the pickers shows
+//     its calibre and rounds, the gun in the hands takes parts that fit it (each adding its worth to the gun's points; a
+//     bigger magazine more rounds too), kept through rebuilds, and a gun carried or in the vehicle's back comes loaded.
 // Usage: node tools/newrunpointstest.js [-v]
 import { createWorld } from "../src/sim/world.js";
 import { GEAR, SKILLS } from "../src/sim/data.js";
-import { CUSTOM_POINTS, itemPoints, suppliesPoints, skillCost, pricePerson, overBudget, overText, carPool, poolText, backgroundPoints, ownPoints } from "../src/sim/custompoints.js";
-import { carryList, clearStartGear, trunkKg, START_TRUNK } from "../src/sim/startgear.js";
+import { CUSTOM_POINTS, itemPoints, suppliesPoints, skillCost, pricePerson, overBudget, overText, carPool, poolText, backgroundPoints, ownPoints, slotPoints, gunPoints, gunExtras, loosePoints } from "../src/sim/custompoints.js";
+import { carryList, clearStartGear, trunkKg, START_TRUNK, START_GEAR, gunInfo, gunWith, gunCap, sanitizeStartGear, sanitizeGunMods } from "../src/sim/startgear.js";
 import { allCarried } from "../src/sim/inventory.js";
 import { trunkBudget } from "../src/sim/randomkit.js";
 import { newRunScreen, crewSnapshot, blankCrew, randomizeAllCrew } from "../src/ui/newgame.js";
@@ -259,6 +263,78 @@ section("The car pool in Hardcore, and the dice");
   SG_ACTIONS["sg-dice"](st, u, { i: st.survivors.indexOf(st.survivors.find((s) => s !== lead)) });
   const g = st.survivors.find((s) => s !== lead);
   check(pricePerson(st, g).offer === Math.max(0, 80 - ownPoints(st, g)), "Start from the dice on a giver: they give what is left of their max");
+}
+
+section("Guns: calibre and capacity, parts, a loaded magazine");
+{
+  check(gunInfo("pistol").text === "9mm · 15 rds" && gunInfo("shotgun").text === "12 gauge · 6 rds" && /internal magazine/.test(gunInfo("shotgun").long) && !gunInfo("knife"), `the pickers' words: ${gunInfo("pistol").text}; ${gunInfo("shotgun").text}; ${gunInfo("m79").text}; a knife none`);
+  const st = blankWorld(42);
+  const ui = UI();
+  ui.gearEdit = { i: 0, sel: null, msg: "" };
+  const s = st.survivors[0];
+  let html = startGearEditor(st, ui);
+  check(/>Assault rifle · 5\.56 NATO · 30 rds · /.test(html) && />9mm pistol · 9mm · 15 rds · /.test(html) && /Takes 5\.56 NATO: 30 rounds/.test(html), "every gun in the pickers: its calibre and rounds (and a sentence on hover)");
+  SG_CHANGE["sg-slot"](st, ui, { value: "ar", dataset: { slot: "weapon" } });
+  const p0 = pricePerson(st, s).gear;
+  html = startGearEditor(st, ui);
+  check(/class="sgparts"/.test(html) && /data-action="sg-gunmod" data-gs="optic"/.test(html) && /Red dot sight · \+\d+ pts/.test(html) && !/>Pistol suppressor/.test(html), "the gun in the hands: a select a slot, only parts that fit, each with what it adds");
+  check(SG_CHANGE["sg-gunmod"](st, ui, { value: "reddot", dataset: { gs: "optic" } }) === true && s.startGear.mods && s.startGear.mods.optic === "reddot", "a red dot fitted");
+  const p1 = pricePerson(st, s).gear;
+  check(p1 === slotPoints("weapon", "ar", { optic: "reddot" }) && p1 > p0 && gunPoints("ar", { optic: "reddot" }) - gunPoints("ar") >= itemPoints("reddot") - 1, `its worth added to the gun: ${p0} → ${p1}`);
+  check(SG_CHANGE["sg-gunmod"](st, ui, { value: "pistolcan", dataset: { gs: "muzzle" } }) === false && /does not fit/.test(ui.gearEdit.msg), `a part that does not fit is refused ("${ui.gearEdit.msg}")`);
+  SG_CHANGE["sg-gunmod"](st, ui, { value: "mag_stanag_40", dataset: { gs: "mag" } });
+  const cap = gunCap(gunWith("ar", s.startGear.mods));
+  check(cap === 40 && Object.values(gunExtras("ar", s.startGear.mods))[0] === 40 * START_GEAR.LOADS, `a 40-round magazine: 40 rds, its rounds ${40 * START_GEAR.LOADS} (a full load and two more)`);
+  check(/5\.56 NATO · 40 rds/.test(startGearEditor(st, ui)), "the window says 40 rds now");
+  const b = again(st);
+  const g = b.survivors[0].gear.weapon;
+  check(g.key === "ar" && g.mods && g.mods.optic && g.mods.optic.key === "reddot" && g.mods.mag && g.mods.mag.key === "mag_stanag_40", "rebuilt: the rifle has its red dot and 40-round magazine");
+  const plain = again({ ...st, survivors: st.survivors.map((x, i) => (i ? x : { ...x, startGear: { ...x.startGear, mods: undefined } })) });
+  check(b.bases[0].stock.a_556_fmj - plain.bases[0].stock.a_556_fmj === 10 * START_GEAR.LOADS, `and ${10 * START_GEAR.LOADS} more rounds in the hub's stock than with the 30-round one (${plain.bases[0].stock.a_556_fmj} → ${b.bases[0].stock.a_556_fmj})`);
+  check(sanitizeGunMods("ar", { optic: "reddot", muzzle: "pistolcan", grip: "nonsense" }).muzzle === undefined && sanitizeStartGear({ slots: { weapon: "pistol" }, mods: { optic: "scope4x" } }).mods === undefined, "misfits dropped when made safe");
+  SG_CHANGE["sg-gunmod"](st, ui, { value: "=", dataset: { gs: "mag" } });
+  check(!("mag" in s.startGear.mods) && s.startGear.mods.optic === "reddot", "As it comes for one slot");
+  check(SG_ACTIONS["sg-gunmods-clear"](st, ui) === true && !s.startGear.mods && pricePerson(st, s).gear === p0, "the As it comes button: stock again, the points back");
+  SG_CHANGE["sg-gunmod"](st, ui, { value: "reddot", dataset: { gs: "optic" } });
+  SG_CHANGE["sg-slot"](st, ui, { value: "pistol", dataset: { slot: "weapon" } });
+  check(!s.startGear.mods, "another gun in the hands: as it comes");
+  SG_CHANGE["sg-slot"](st, ui, { value: "ar", dataset: { slot: "weapon" } });
+  SG_CHANGE["sg-gunmod"](st, ui, { value: "reddot", dataset: { gs: "optic" } });
+  SG_ACTIONS["sg-rand-kit"](st, ui);
+  check(!s.startGear.mods, "Random gear: guns as they come");
+  // A factory part taken off (a gun that comes with one).
+  const facGun = ["sniper", "huntrifle", "lmg", "dmr"].find((k) => GEAR[k] && Object.keys(gunWith(k).mods || {}).length);
+  if (facGun) {
+    const fac = Object.keys(gunWith(facGun).mods)[0];
+    SG_CHANGE["sg-slot"](st, ui, { value: facGun, dataset: { slot: "weapon" } });
+    const before = pricePerson(st, s).gear;
+    check(SG_CHANGE["sg-gunmod"](st, ui, { value: "-", dataset: { gs: fac } }) === true && s.startGear.mods[fac] === "" && pricePerson(st, s).gear < before && !(again(st).survivors[0].gear.weapon.mods || {})[fac], `a factory part taken off (the ${GEAR[facGun].name}'s ${fac}): cheaper, gone on the gun`);
+  } else check(false, "a gun with a factory part to take off");
+  // Carried and in the back: loaded.
+  const c = blankWorld(42);
+  const uc = UI();
+  uc.gearEdit = { i: 0, sel: null, msg: "" };
+  SG_CHANGE["sg-slot"](c, uc, { value: "hikingpack", dataset: { slot: "backpack" } });
+  add(c, uc, "pistol");
+  check(pricePerson(c, c.survivors[0]).carried === loosePoints("pistol") && loosePoints("pistol") === itemPoints("pistol") + suppliesPoints({ a_9mm_fmj: 15 }), `a pistol carried: its price and a loaded magazine's (${loosePoints("pistol")})`);
+  tadd(c, uc, "shotgun");
+  const cb = again(c);
+  const carried = allCarried(cb.survivors[0]).find((it) => it.key === "pistol");
+  check(carried && carried.loaded && carried.loaded.n === 15 && carried.loaded.key === "a_9mm_fmj", `rebuilt: the carried pistol loaded (${JSON.stringify(carried && carried.loaded)})`);
+  const sg = cb.bases[0].armory.find((it) => it.key === "shotgun");
+  check(sg && sg.loaded && sg.loaded.n === 6 && sg.loaded.key === "a_12ga_buck", "normal: the shotgun from the back in the armory, its tube loaded (6)");
+  const hc = blankWorld(42, { mode: "hardcore" });
+  const uh = UI();
+  uh.gearEdit = { i: 0, sel: null, msg: "" };
+  hc.pointsMax = 400;
+  tadd(hc, uh, "revolver");
+  SG_CHANGE["sg-slot"](hc, uh, { value: "ar", dataset: { slot: "weapon" } });
+  SG_CHANGE["sg-gunmod"](hc, uh, { value: "mag_stanag_40", dataset: { gs: "mag" } });
+  const h2 = again(hc);
+  const rv = h2.parties[0].cargo.gear.find((it) => it.key === "revolver");
+  check(rv && rv.loaded && rv.loaded.n === 6 && rv.loaded.key === "a_357_fmj", "Hardcore: the revolver in the car's back loaded (6)");
+  const hg = h2.survivors[0].gear.weapon;
+  check(hg.key === "ar" && hg.mods.mag.key === "mag_stanag_40" && (h2.parties[0].supplies.a_556_fmj || 0) >= 40 * START_GEAR.LOADS, `Hardcore: the rifle in the hands with its 40-round magazine and its rounds (${h2.parties[0].supplies.a_556_fmj})`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

@@ -10,7 +10,7 @@
 // only: the AI groups are rolled as ever.
 import { GEAR, SKILLS, SUPPLIES, TRAITS, clashIn, traitKind } from "./data.js";
 import { START_GEAR, START_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunkChoices, carrySpec, firstFit, trunkKg } from "./startgear.js";
-import { CUSTOM_POINTS, pricePerson, pointsMax, itemPoints, slotPoints, vehiclePoints, skillsCost, nextLevelCost, ownPoints, carPool } from "./custompoints.js";
+import { CUSTOM_POINTS, pricePerson, pointsMax, itemPoints, slotPoints, vehiclePoints, skillsCost, nextLevelCost, ownPoints, carPool, loosePoints } from "./custompoints.js";
 import { tierCount, traitPoints, tidyTiers } from "./traits.js";
 import { standardMag } from "./mags.js";
 import { randomSkills, fitSkills, skillTotal, SKILL_MAX } from "./appearance.js";
@@ -63,13 +63,13 @@ export function randomKit(budget, rng, opts = {}) {
     left -= slotPoints(slot, k);
   };
   const put = (key) => {
-    if (!GEAR[key] || itemPoints(key) > left) return false;
+    if (!GEAR[key] || loosePoints(key) > left) return false;
     const at = firstFit(P, key, carrySpec(P)); // the containers as picked so far
     if (!at) return false;
     const list = P.carry[at.where];
     while (list.length < at.i) list.push(null);
     list[at.i] = key;
-    left -= itemPoints(key);
+    left -= loosePoints(key);
     return true;
   };
   const pool = new Set(carryChoices());
@@ -101,7 +101,7 @@ export function randomTrunk(budget, room, rng) {
   const pool = trunkChoices().filter((k) => TRUNK_CATS.has(GEAR[k].cat) && noLauncher(k));
   for (let n = rng.int(1, 5); n > 0 && V.items.length < START_TRUNK.ITEMS; n--) {
     const spare = budget - vehiclePoints(V);
-    const list = pool.filter((k) => itemPoints(k) <= Math.max(1, spare * 0.5));
+    const list = pool.filter((k) => loosePoints(k) <= Math.max(1, spare * 0.5));
     if (!list.length) break;
     const k = rng.pick(list);
     if (fits({ ...V, items: [...V.items, k] })) V.items.push(k);

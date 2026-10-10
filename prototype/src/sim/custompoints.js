@@ -21,7 +21,7 @@ import { itemValue } from "./valuation.js";
 import { calOf } from "./ammo.js";
 import { keyFor } from "./rounds.js";
 import { traitPoints, traitTier, traitLabel } from "./traits.js";
-import { START_GEAR, sanitizeStartGear, CARRY_PLACES } from "./startgear.js";
+import { START_GEAR, sanitizeStartGear, CARRY_PLACES, gunWith, gunCap, gunLoad } from "./startgear.js";
 
 // ---------- the price table (tune here) ----------
 export const CUSTOM_POINTS = {
@@ -40,7 +40,9 @@ export const CUSTOM_POINTS = {
   // Gear and things carried: points = what a new one is worth (valuation.js itemValue: with a carrier's plates, a
   // gun's factory parts) ÷ VALUE, plus POWER × its power for what is worn or held in a fight (weapons, armour, helmets,
   // guards, plates), rounded, at least MIN. A picked gun's rounds come with it (startgear.js: a full load and two more,
-  // a launcher LAUNCH rounds, a bow ARROWS arrows), priced as supplies.
+  // a launcher LAUNCH rounds, a bow ARROWS arrows), priced as supplies; its parts (picked in the gear window) at what
+  // they are worth (gunPoints); a gun carried or in the vehicle's back comes with its magazine loaded, priced as
+  // supplies too (loosePoints).
   VALUE: 6, POWER: 0.5, ITEM_MIN: 1,
   // Supplies (the vehicle's back, a custom background's own): what they are worth (data.js SUPPLIES value; rounds by
   // calibre) ÷ VALUE, summed and rounded up. 30 food is 10 points, 10 meds 14.
@@ -96,22 +98,44 @@ export function suppliesPoints(sup) {
   for (const [k, n] of Object.entries(sup || {})) if (n > 0) v += unitValue(k) * n;
   return v > 0 ? Math.ceil(v / C.SUPPLY_VALUE - 1e-9) : 0;
 }
-// A picked gun's rounds, launcher rounds or arrows (startgear.js applyStartGear gives them): { key: n }.
-/** @param {string} key */
-export function gunExtras(key) {
+// A picked gun with its parts (startgear.js P.mods): what it is worth so fitted, ÷ VALUE, plus its power (as
+// itemPoints; no parts picked: itemPoints). Each part adds what it is worth (valuation.js counts a gun's parts).
+const gunCache = new Map();
+/** @param {string} key @param {any} [mods] @returns {number} */
+export function gunPoints(key, mods = null) {
+  if (!mods || !Object.keys(mods).length || !GEAR[key]) return itemPoints(key);
+  const id = `${key}|${JSON.stringify(mods)}`;
+  if (gunCache.has(id)) return gunCache.get(id);
+  const d = GEAR[key];
+  const p = Math.max(C.ITEM_MIN, Math.round(itemValue(startKit(gunWith(key, mods))) / C.VALUE + (d.power || 0) * C.POWER));
+  gunCache.set(id, p);
+  return p;
+}
+// A picked gun's rounds, launcher rounds or arrows (startgear.js applyStartGear gives them): { key: n }. A gun's rounds
+// are its capacity as fitted (a bigger magazine picked: more) START_GEAR.LOADS times.
+/** @param {string} key @param {any} [mods] */
+export function gunExtras(key, mods = null) {
   const w = WEAPONS[key], d = GEAR[key];
   if (!w || !d) return {};
   const cal = calOf(key);
-  if (cal && CALIBERS[cal]) return { [keyFor(cal, null)]: Math.max(1, w.cap || 1) * START_GEAR.LOADS };
+  if (cal && CALIBERS[cal]) return { [keyFor(cal, null)]: Math.max(1, gunCap(gunWith(key, mods)) || w.cap || 1) * START_GEAR.LOADS };
   if (w.launcher && !w.oneShot) return { [keyFor(w.launcher, null)]: START_GEAR.LAUNCH };
   if (d.cat === "bow") return { arrows: START_GEAR.ARROWS };
   return {};
 }
-// A picked slot's price: the item, and a gun in the hands with its rounds.
-/** @param {string} slot @param {string} key */
-export function slotPoints(slot, key) {
+// A picked slot's price: the item (a gun with its parts), and a gun in the hands with its rounds.
+/** @param {string} slot @param {string} key @param {any} [mods] */
+export function slotPoints(slot, key, mods = null) {
   if (!key || !GEAR[key]) return 0;
-  return itemPoints(key) + (slot === "weapon" ? suppliesPoints(gunExtras(key)) : 0);
+  if (slot !== "weapon") return itemPoints(key);
+  return gunPoints(key, mods) + suppliesPoints(gunExtras(key, mods));
+}
+// A thing carried or put in the vehicle's back: the item, and a gun its loaded magazine (startgear.js loadGun).
+const looseCache = new Map();
+/** @param {string} key @returns {number} */
+export function loosePoints(key) {
+  if (!looseCache.has(key)) looseCache.set(key, itemPoints(key) + suppliesPoints(gunLoad(key)));
+  return looseCache.get(key);
 }
 
 // ---------- a colonist's bill ----------
@@ -134,8 +158,8 @@ function ownBill(state, s, max) {
   const P = sanitizeStartGear(s.startGear);
   let gear = 0, carried = 0;
   if (P) {
-    for (const [slot, key] of Object.entries(P.slots)) gear += slotPoints(slot, key);
-    if (P.carry) for (const where of CARRY_PLACES) for (const key of P.carry[where] || []) if (key) carried += itemPoints(key);
+    for (const [slot, key] of Object.entries(P.slots)) gear += slotPoints(slot, key, slot === "weapon" ? P.mods : null);
+    if (P.carry) for (const where of CARRY_PLACES) for (const key of P.carry[where] || []) if (key) carried += loosePoints(key);
   }
   if (gear) lines.push(`Worn and held ${gear}`);
   if (carried) lines.push(`Carried ${carried}`);
@@ -216,7 +240,7 @@ const firstName = (s) => String((s && s.name) || "").split(" ")[0];
 /** @param {any} v */
 export function vehiclePoints(v) {
   if (!v) return 0;
-  return (v.items || []).reduce((a, k) => a + itemPoints(k), 0) + suppliesPoints(v.supplies || {});
+  return (v.items || []).reduce((a, k) => a + loosePoints(k), 0) + suppliesPoints(v.supplies || {});
 }
 // A custom background's own supplies (on them) and, at a normal start, its car (a vehicle more at the hub). Its skills,
 // traits and kit are the colonist's and priced as theirs.

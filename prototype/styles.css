@@ -321,6 +321,8 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 .sgslot select { min-width: 0; width: 100%; }
 .sglabel { color: var(--muted); font-size: 0.85rem; }
 .sginfo { grid-column: 2 / -1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sgparts { grid-column: 1 / -1; margin-top: 0.2rem; } /* the gun in the hands' parts (a select a slot) */
+.sgparts .lookopts { grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); margin: 0.2rem 0 0; }
 .sgwhere { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.2rem; }
 .sgwhere .chip { margin: 0.05rem 0.1rem; }
 /* the containers, placed by hand: a cell a slot (pocket, pouch, pack slot); click a thing, then where it goes */
