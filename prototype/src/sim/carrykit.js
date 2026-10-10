@@ -8,7 +8,8 @@
 //   a makeshift rig; their spare magazines (mags.js enemyMags) and their rig drop with the body (inventory.js enemyBody:
 //   bodyKit). A group's own fighters (arsenal.js armFromArsenal: armKit) carry the group's own rig and magazines.
 // - Out of a fight: packing magazines onto a team (packMags: from the armory into rig pouches, pockets, then the pack;
-//   rifle guns 4, pistols 3), a colonist's starting spares (starterMags), loot (gunMags: 0–2 standard magazines with a
+//   rifle guns 4, pistols 3), shells at hand for a shotgun (packShells: out of the team's packed rounds into a pocket
+//   or a rig pouch, so the shotgun reloads from them without digging in the pack), a colonist's starting spares (starterMags), loot (gunMags: 0–2 standard magazines with a
 //   found gun; rollSiteKit / rollAreaKit / kitWares: magazines, rigs, plates by place, their own dice), the autopilot's
 //   kit (equipKit: the best rig and carrier, plates in the carrier, magazines into pouches; spare plates kept),
 //   and old saves (migrateKit: carriers get their plates, guns their spare magazines).
@@ -21,8 +22,9 @@ import { lootItem, newItem, stow, ensureInv, rigOf, rigPouches, pouchesOf, pouch
 import { fittedKg, gunMods } from "./gunmods.js";
 import { calOf, roundsOf } from "./ammo.js";
 import { CALIBERS } from "./data-ammo.js";
-import { typeFor } from "./rounds.js";
-import { standardMag, magFitsGun, isMag, enemyMags, enemyMagCount, magLoad, takesMagItems, usesInternal, magItemLoad } from "./mags.js";
+import { typeFor, keyFor, withHand } from "./rounds.js";
+import { standardMag, magFitsGun, isMag, enemyMags, enemyMagCount, magLoad, takesMagItems, usesInternal, magItemLoad, SHELLS } from "./mags.js";
+import { roundItem, mergeInto, canStack } from "./itemstack.js";
 import { feelFactor, bandIndex, LOAD_BANDS } from "./load.js";
 import { kitSource, siteSource, areaSource, traderSource } from "./itemcond.js";
 import { armourSpec, armourBroken } from "./armour.js";
@@ -226,6 +228,46 @@ export function packMags(list, crew) {
       n++;
     }
     if (n) out.push(`${n} magazine${n > 1 ? "s" : ""} (${s.name.split(" ")[0]})`);
+  }
+  return out;
+}
+// Shells at hand for a trip (parties.js launchExpedition, every trip of yours: the planner's and the autopilot's): a
+// shotgun loaded from loose shells (mags.js SHELLS) reloads only from what is at hand, so each shotgunner takes up to
+// SHELLS.CARRY of the shells of its load out of the team's packed rounds (supplies: the factory round, then the
+// bench's) into a pocket or a rig pouch: onto a stack of them there first, else a free pocket, else a free admin pouch.
+// What does not fit stays in the pack. Returns the lines for the log ("24 shells at hand (Ann)").
+/** @param {Record<string, number>} supplies @param {any[]} crew */
+export function packShells(supplies, crew) {
+  const out = [];
+  if (!supplies) return out;
+  for (const s of crew) {
+    const gun = s && s.gear && s.gear.weapon;
+    if (!gun || !SHELLS.on || !SHELLS.GUNS[gun.key] || !usesInternal(gun.key, gun)) continue;
+    const cal = calOf(gun.key);
+    if (!cal) continue;
+    ensureInv(s);
+    const keys = withHand(keyFor(cal, typeFor(cal, gun.load)));
+    const atHand = () => carriedSpots(s).filter((x) => (x.where === "pocket" || x.where === "rig") && x.item && keys.includes(x.item.key)).reduce((a, x) => a + Math.max(0, Math.floor(num(x.item.dur))), 0);
+    let want = SHELLS.CARRY - atHand(), moved = 0;
+    for (const key of keys) {
+      const q = Math.min(want, Math.max(0, Math.floor(num(supplies[key]))));
+      if (!(q > 0)) continue;
+      const it = roundItem(key, q);
+      if (!it) continue;
+      for (const x of carriedSpots(s)) if ((x.where === "pocket" || x.where === "rig") && canStack(x.item, it)) mergeInto(x.item, it);
+      let put = q - Math.max(0, Math.floor(num(it.dur))); // onto the stacks already at hand
+      if (num(it.dur) >= 1) {
+        const pi = s.pockets.indexOf(null);
+        const rp = rigPouches(s), kinds = rp ? pouchesOf(rigOf(s)) : [];
+        const ri = rp ? kinds.findIndex((k, j) => !rp[j] && !pouchReason(it, k)) : -1;
+        if (pi >= 0) s.pockets[pi] = it;
+        else if (ri >= 0) rp[ri] = it;
+        if (pi >= 0 || ri >= 0) put += Math.floor(num(it.dur)); // else nowhere at hand: they stay in the pack
+      }
+      supplies[key] -= put; moved += put; want -= put;
+      if (want <= 0) break;
+    }
+    if (moved > 0) out.push(`${moved} shells at hand (${String(s.name).split(" ")[0]})`);
   }
   return out;
 }

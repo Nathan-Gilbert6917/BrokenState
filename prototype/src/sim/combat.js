@@ -420,6 +420,7 @@ export function byNumbersOdds(state, setup, people = combatants(state, setup), a
   theirs += vo.theirsAdd;
   mine += vo.mineAdd; // the team's own turret (a Humvee's M2)
   if (setup.allyPower) mine += setup.allyPower; // thirdside.js: soldiers or survivors fighting the same enemy (wanderers.js)
+  if (setup.mineMult > 0) mine *= setup.mineMult; // hivecrawl.js coreFire: the team's fire at the core (range, reloads)
   const ratio = mine / Math.max(0.1, theirs);
   return { mine, theirs, ratio, win: winOdds(ratio, { ...setup.enemy, people: people.length, ambush: setup.ambush, hive: /^hive/.test(setup.layout || "") }) }; // hive, hivechamber, hivecore (hivecrawl.js)
 }

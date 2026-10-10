@@ -66,6 +66,14 @@ import { THROWABLES } from "./stealth.js"; // the throws' reach (the Hivemind's 
 import { throwBlind } from "./throwables.js";
 import { swapGun, drawGun } from "./gundist.js"; // the gun distribution: the bones' guns, the hoard's, the deep rooms' rare ones
 import { HIVE_GUNS } from "./data-guns.js";
+import { WEAPONS } from "./combat.js"; // the core's fire by the numbers (coreFire): a gun's best range, fall-off, magazine
+import { combatPower, skill } from "./world.js";
+import { INTERNAL } from "./data-kit.js";
+import { spreadMult } from "./data-ammo.js";
+import { SHELLS, usesInternal } from "./mags.js";
+import { gunMods } from "./gunmods.js";
+import { calOf } from "./ammo.js";
+import { typeFor, keyFor, withHand } from "./rounds.js";
 
 // ---------- tuning ----------
 export const HCRAWL = {
@@ -147,10 +155,19 @@ export const HCRAWL = {
 // lit or not, with and without 2 Molotovs and 2 flashbangs, 12 battles each): numbersK 2 for a team in the dark with
 // nothing for the Hivemind (the best fit is 1.7, RMS 0.180; 2 costs little, 0.188, and leans careful where the numbers
 // overrate weak teams), × (1 − 0.325 × the share lit) × (1 − 0.4 × the Molotovs − 0.15 × the bangs, up to 2 of each).
+// Refitted 2026-10-10 again with the team's fire at the core (coreFire: range and reloads; the shotgun's reload from the
+// shells at hand and buckshot's spread had made the numbers rate shotgun squads far above the map: tools/hiveplustest.js
+// 31% by the numbers against 0% on the map at tier 2) and shells packed at hand for trips (carrykit.js packShells):
+// tools/hivecorecalib.js --fit 16, 144 configurations of six squads (rifles in plate, hunting rifles, pumps, a scrappy
+// one of pumps and pistols at Shooting 5, hunting rifles beside pumps, axes), FIT_CAREFUL=2 (the numbers above the map
+// count twice: the autopilot's gate goes on 70–90%). numbersK 0.6, powerTier 20 (the bosses grow faster with the tier:
+// a rifle squad without fire wins a tier-2 core and loses a tier-4 one), lit 0.425, fire 0.55, stun 0.15, REACH range
+// 6, melee 0.35. RMS 0.258 → 0.192; where the numbers say 70% or more the map won 94% (43 configurations). Mean gap
+// (points, map against numbers) before → after: rifle squads 21 → 13, shotgun 16 → 13, mixed 14 → 16, melee 22 → 3.
 // P2: its second phase, below `at` of its health (once): the pulse reaches further and hits harder (pulse, pulseDmg,
 // stun), the walls give up brood every spawnEvery turns (spawn), cap more of them, and the cave quakes (quake: pillars
 // of flesh and bone come down in the open, everyone of yours caught under one hurt quakeDmg at quakeHit odds).
-export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 8, broodPower: 9, numbersK: 2,
+export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 20, broodPower: 9, numbersK: 0.6,
   P2: { on: true, at: 0.5, pulse: 4, pulseDmg: [6, 12], stun: 0.45, spawnEvery: 2, spawn: [3, 4], cap: 1, quake: [3, 5], quakeDmg: [3, 8], quakeHit: 0.35 } };
 // Its weak spots (WEAK): fire on it or next to it (a Molotov, flames spreading to it) burns it burnDmg a turn for
 // burnTurns of its turns after the last flames touched it, and while it burns the walls give up no brood; a bang next
@@ -168,9 +185,9 @@ HIVEMIND.WEAK = { burnDmg: [30, 45], burnTurns: 2, near: 1, flash: 3, blast: 2, 
 // The core by the numbers (coreSetup, coreGate): the bosses' power (× numbersK, fitted to the map on the autopilot's
 // teams, most of them without lights) × (1 − lit × the share of the team with a light) × (1 − fire × the Molotovs it
 // brings, up to kit, − stun × the flashbangs, grenades and pipe bombs, up to kit). Fitted to the map with
-// tools/hivecorecalib.js (--fit): the rifle squad and the shotgun squad, tiers 1, 2 and 4, lit or not, with and without
-// two Molotovs and two flashbangs. A fight by the numbers spends what it counts.
-HIVEMIND.NUMBERS = { lit: 0.325, fire: 0.4, stun: 0.15, kit: 2 };
+// tools/hivecorecalib.js (--fit): six squads, tiers 1, 2 and 4, guards 60 and 120, lit or not, with and without two
+// Molotovs and two flashbangs; the team's power × coreFire (below). A fight by the numbers spends what it counts.
+HIVEMIND.NUMBERS = { lit: 0.425, fire: 0.55, stun: 0.15, kit: 2 };
 // What the core battles did (the tools' calibration): battles fought on the map, how many saw the second phase, how
 // many saw the Hivemind burn or reel.
 export const HM_STATS = { battles: 0, phase2: 0, burned: 0, stunned: 0, dazed: 0, panicked: 0 };
@@ -1285,6 +1302,7 @@ export function coreSetup(state, p, hive, numbers = false) {
   return {
     tile: hive.tile, partyId: p.id, ambush: null, canRetreat: true, handler: "hiveAssault", layout: "hivecore",
     enemy: { kind: "zombies", count: n, power: numbers ? Math.round(((count * f.power + boss) / n) * 10) / 10 : f.power, types: f.types, elite: !!f.elite, name: `the core of ${hive.name}`, brood: count, broodPower: f.power, hp: f.hp },
+    ...(numbers ? { mineMult: coreFire(partyMembers(state, p)).mult } : {}), // by the numbers: the team's fire at the core (coreFire)
     aiStyle: coreStyle(state, p), // the core's brood keeps coming out of the walls: no Aggressive last stand there
     context: { hiveId: hive.id, partyId: p.id, crawl: !!p.hiveCrawl, tier: f.tier, warmth: 100, met: count, allies: allies.fighters },
   };
@@ -1312,7 +1330,60 @@ export function corePrep(state, people, p = null, extra = {}) {
 // The bosses' power by the numbers × this (HIVEMIND.NUMBERS).
 export function coreBossMult(prep) {
   const N = HIVEMIND.NUMBERS;
-  return (1 - N.lit * prep.lit) * Math.max(0.3, 1 - N.fire * Math.min(1, prep.fire / N.kit) - N.stun * Math.min(1, prep.stun / N.kit));
+  return (1 - N.lit * prep.lit) * Math.max(N.floor ?? 0.3, 1 - N.fire * Math.min(1, prep.fire / N.kit) - N.stun * Math.min(1, prep.stun / N.kit));
+}
+// The core's fire by the numbers (coreSetup, coreGate: × the team's power; tools/hivecorecalib.js --fit, 2026-10-10).
+// The core is a long fight at range: on the map six hunting rifles beat a tier-2 core where six pump shotguns of the
+// same combat power lost nearly every time, and axes never won. So by the numbers each fighter counts × coreFire:
+//   reach: at the core's range (REACH.range tiles: the Hivemind sits back in its chamber and its pulse keeps a team off)
+//     the aim a gun loses past its best range (combat.js shotOdds: (range − opt) × fall, out of the shooter's own aim
+//     40 + 2.5 × Shooting + the gun's), × its load's spread there (data-ammo.js spreadMult: 00 buckshot 0.8 at 6
+//     tiles); a melee weapon (or none) REACH.melee: it has to cross the pulse and the brood to strike;
+//   sustain: of a long fight's REACH.shots shots, the share of the actions spent shooting, not reloading: a magazine
+//     swap takes one for a magazine's worth, an internal magazine one for its Reload's worth (data-kit.js INTERNAL),
+//     a shotgun one for the shells a Reload thumbs in (mags.js SHELLS: a pump 2–3, +1 steady hands at Shooting 6,
+//     +1 a side-saddle; a double barrel both barrels) and one Get shells for every GRAB beyond the gun and what is at
+//     hand (the shells in the pockets and the rig, the loose handful, a side-saddle's).
+// A pump at Shooting 7 with the trip's shells at hand: reach 0.62 (14 aim lost of 67, buckshot × 0.8) × sustain 0.86;
+// a hunting rifle 1 × 0.82; an assault rifle 1 × 1. The bosses' power (numbersK) is fitted against it.
+HIVEMIND.REACH = { range: 6, melee: 0.35, shots: 14 };
+// What coreFire needs to know of a fighter (also the fit's: tools/hivecorecalib.js): { p (combat power), melee, aim,
+// opt, fall, type (the load: its spread), sustain }. packed: a squad not yet packed for the trip (the autopilot's gate):
+// a shotgunner will carry SHELLS.CARRY at hand (carrykit.js packShells).
+export function fireOf(s, packed = false) {
+  const it = s.gear && s.gear.weapon, g = it ? GEAR[it.key] : null, W = it ? WEAPONS[it.key] : null;
+  const p = combatPower(s);
+  if (!g || g.cat === "melee" || !W || W.melee) return { p, melee: true };
+  const cal = calOf(it.key), type = cal ? typeFor(cal, it.load) : null;
+  const shoot = skill(s, "shooting"), aim = 40 + 2.5 * shoot + (W.aim || 0);
+  const shots = HIVEMIND.REACH.shots, need = shots * (W.ammo || 1), cap = Math.max(1, W.cap || 1);
+  let per = cap, fetch = 0;
+  const shell = SHELLS.on && SHELLS.GUNS[it.key] && usesInternal(it.key, it) ? SHELLS.GUNS[it.key] : null;
+  if (shell) {
+    const saddle = shell === "tube" ? Math.max(0, gunMods(it).reload || 0) : 0;
+    const steady = 40 + 2.5 * shoot >= SHELLS.STEADY_AIM ? 1 : 0;
+    per = shell === "break" ? SHELLS.BREAK : shell === "single" ? 1 : Math.max(SHELLS.MIN, Math.min(SHELLS.MAX + saddle, (SHELLS.BASE[0] + SHELLS.BASE[1]) / 2 + steady + saddle));
+    const keys = cal ? withHand(keyFor(cal, type)) : [];
+    let box = 0;
+    for (const x of carriedSpots(s)) if ((x.where === "pocket" || x.where === "rig") && x.item && keys.includes(x.item.key)) box += Math.max(0, Math.floor(x.item.dur || 0));
+    const boxN = Math.max(packed ? SHELLS.CARRY : 0, box); // the gun loads out of the box first (mags.js shellsAt), the loose handful tops up to START_HAND
+    const at = Math.max(0, boxN - cap) + Math.max(0, SHELLS.START_HAND - Math.max(0, boxN - cap)) + (saddle > 0 ? SHELLS.SADDLE : 0);
+    fetch = Math.max(0, need - cap - at) / SHELLS.GRAB;
+  } else if (INTERNAL[it.key] && usesInternal(it.key, it)) per = INTERNAL[it.key];
+  const reloads = Math.max(0, need - cap) / per;
+  return { p, melee: false, aim, opt: W.opt || 0, fall: W.fall || 0, type, sustain: shots / (shots + reloads + fetch) };
+}
+// One fighter's fire at the core (fireOf's record) at range R, a melee weapon counting m.
+export function fireAt(d, R = HIVEMIND.REACH.range, m = HIVEMIND.REACH.melee) {
+  if (d.melee) return m;
+  const reach = Math.max(0.1, (d.aim - Math.max(0, R - d.opt) * d.fall) / Math.max(1, d.aim)) * spreadMult(d.type, R);
+  return reach * d.sustain;
+}
+// The team's power at the core × this: the power-weighted mean of its fighters' fire. { mult, fire: fireOf's records }.
+export function coreFire(people, packed = false) {
+  const fire = people.map((s) => fireOf(s, packed));
+  const tot = fire.reduce((a, d) => a + d.p, 0);
+  return { mult: tot > 0 ? fire.reduce((a, d) => a + d.p * fireAt(d), 0) / tot : 1, fire };
 }
 // The core's odds by the numbers for a squad not yet in the hive (the autopilot's gate, autopilot.js hiveCandidate):
 // the core at a guard of G, its bosses × coreBossMult for what the squad carries and would pack (extra), the brood and
@@ -1324,7 +1395,7 @@ export function coreGate(state, hive, people, G = guardSize(state, hive), extra 
   const count = f.count ? broodAfterAllies(f.count, allies.fighters) : 0;
   const n = Math.max(1, count);
   const boss = f.bossPower * coreBossMult(corePrep(state, people, null, extra));
-  const setup = { tile: hive.tile, ambush: null, layout: "hivecore", enemy: { kind: "zombies", count: n, power: Math.round((((count * f.power + boss) / n) * est.wear) * 10) / 10, types: f.types, elite: !!f.elite } };
+  const setup = { tile: hive.tile, ambush: null, layout: "hivecore", mineMult: coreFire(people, true).mult, enemy: { kind: "zombies", count: n, power: Math.round((((count * f.power + boss) / n) * est.wear) * 10) / 10, types: f.types, elite: !!f.elite } };
   const o = byNumbersOdds(state, /** @type {any} */ (setup), people);
   return { win: o.win, ratio: o.ratio };
 }

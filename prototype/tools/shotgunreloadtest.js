@@ -9,6 +9,8 @@
 //   - a double barrel takes both barrels (2), the sawn-off too, the pipe gun its one; the semi-auto is a tube;
 //   - the AI's shotguns: the same rule, the extra action spent when only the pack has shells (AI-played fights);
 //   - no shells at all: refused; the Reload button and the log say how many, at hand and in the pack.
+//   - a team packed for a trip carries SHELLS.CARRY shells a shotgunner at hand (a pocket or a rig pouch: carrykit.js
+//     packShells, parties.js launchExpedition), out of what it packed; a side-saddle holds SADDLE more at hand;
 // Then the sustained fire of a pump before (SHELLS.on = false: 4 a Reload from anywhere) and after, shots over N turns.
 // Usage: node tools/shotgunreloadtest.js [seed]
 import { setRounds, giveRounds, newBox } from "../src/sim/ammo.js";
@@ -16,6 +18,9 @@ import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import { createBattle, combatAct, registerCombatHandler, runEnemyPhase, autoPlayerTurn, canFire, loadMag, reload, reloadRefusal } from "../src/sim/combat.js";
 import { newItem, packOf, rigPouches } from "../src/sim/inventory.js";
 import { SHELLS, shellsAt, shellRange, reloadText, reloadPlan, enemyMags, PACK_REFUSAL } from "../src/sim/mags.js";
+import { launchExpedition, partyMembers } from "../src/sim/parties.js";
+import { fitMod } from "../src/sim/gunmods.js";
+import { totalRounds } from "../src/sim/ammo.js";
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -253,6 +258,64 @@ const range = (xs) => `${Math.min(...xs)}–${Math.max(...xs)}`;
     console.log(`    ${apTurn === 2 ? "stand" : "move "} ${label.padEnd(30)} before ${before.s10.toFixed(1)} / ${before.s30.toFixed(1)}   after ${after.s10.toFixed(1)} / ${after.s30.toFixed(1)}  (${Math.round((after.s30 / before.s30 - 1) * 100)}% over 30 turns)`);
     check(after.s30 <= before.s30 + 1e-9 && after.s30 >= before.s30 * 0.5, `${apTurn === 2 ? "standing" : "moving"}, ${label}: no faster than before, not crippled`);
   }
+}
+
+// 7. Packed for a trip: shells at hand out of the packed rounds; a side-saddle's.
+{
+  console.log("Shells at hand for a trip");
+  const st = createWorld({ seed: seed + 9, factionCount: 4 });
+  st.started = true;
+  const h = hub(st);
+  const sg = fighter(st, "shotgun", 7), db = fighter(st, "dbshotgun", 5), pi = fighter(st, "pistol", 5);
+  sg.pockets[0] = newItem("headlamp");
+  setRounds(h.stock, 0); giveRounds(h.stock, 300, ["shotgun", "pistol"]);
+  const dest = st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === 2).id;
+  const res = launchExpedition(st, { memberIds: [sg.id, db.id, pi.id], dest, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { ammo: 150, food: 3, water: 3 } });
+  const p = res.party;
+  check(!!p, `a team of a pump, a double barrel and a pistol sets out (${res.error || "ok"})`);
+  if (p) {
+    const shellsOn = (s) => s.pockets.filter((x) => x && /^a_12ga_/.test(x.key)).reduce((a, x) => a + x.dur, 0);
+    const packed = totalRounds(p.supplies) + partyMembers(st, p).reduce((a, s) => a + shellsOn(s), 0);
+    check(shellsOn(sg) === SHELLS.CARRY && shellsOn(db) === SHELLS.CARRY && shellsOn(pi) === 0, `each shotgunner carries ${SHELLS.CARRY} shells in a pocket (${shellsOn(sg)}, ${shellsOn(db)}; the pistol none)`);
+    check(packed === 150, `out of what the team packed: ${totalRounds(p.supplies)} in the pack + ${shellsOn(sg) + shellsOn(db)} at hand = ${packed} of 150`);
+    const b = (st.combat = createBattle(st, { tile: dest, partyId: p.id, enemy: { kind: "raiders", count: 1, power: 3 }, ambush: null, canRetreat: true, handler: "shotguntest", context: {} }));
+    const u = by(b, sg), s0 = shellsAt(b, u);
+    check(u.mag === 6 && s0.box === SHELLS.CARRY - 6 && s0.at === SHELLS.CARRY - 6 && s0.hand === 0, `in the fight: 6 in the tube and ${s0.at} at hand out of the pocket's ${SHELLS.CARRY} (no loose handful needed), ${s0.pack} in the pack`);
+    const d = by(b, db), sd = shellsAt(b, d);
+    check(sd.at === SHELLS.CARRY - 2, `the double barrel: 2 in the barrels, ${sd.at} at hand`);
+    st.combat = null;
+  }
+  // Packed again with shells already at hand: topped up to CARRY, not more.
+  const st2 = createWorld({ seed: seed + 10, factionCount: 4 });
+  st2.started = true;
+  const h2 = hub(st2);
+  const sg2 = fighter(st2, "shotgun", 7);
+  sg2.pockets[1] = newBox("a_12ga_buck", 10);
+  setRounds(h2.stock, 0); giveRounds(h2.stock, 200, ["shotgun"]);
+  const dest2 = st2.tiles.find((t) => t.terrain !== "water" && st2.grid.distance(t.id, h2.tile) === 2).id;
+  const r2 = launchExpedition(st2, { memberIds: [sg2.id], dest: dest2, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { ammo: 60, food: 2, water: 2 } });
+  const at2 = sg2.pockets.filter((x) => x && /^a_12ga_/.test(x.key)).reduce((a, x) => a + x.dur, 0);
+  check(!!r2.party && at2 === SHELLS.CARRY && sg2.pockets.filter((x) => x && /^a_12ga_/.test(x.key)).length === 1, `a pocket box of 10 is topped up to ${SHELLS.CARRY} (${at2}, one stack)`);
+  // A small box in a pocket: the gun loads out of it, the loose handful tops up to START_HAND beyond the gun's load.
+  {
+    const st4 = createWorld({ seed: seed + 12, factionCount: 4 });
+    const f4 = fighter(st4, "shotgun", 7);
+    f4.pockets[0] = newBox("a_12ga_buck", 8);
+    const b4 = openBattle(st4, [f4], 200);
+    const s4 = shellsAt(b4, by(b4, f4));
+    check(s4.at === SHELLS.START_HAND && s4.box === 2 && s4.hand === SHELLS.START_HAND - 2, `a box of 8 in a pocket: 6 of it in the tube, ${s4.at} at hand (2 boxed + ${s4.hand} loose), as many as with none`);
+    st4.combat = null;
+  }
+  // A side-saddle: SADDLE more at hand, the handful and the most kept loose.
+  const st3 = createWorld({ seed: seed + 11, factionCount: 4 });
+  const a3 = fighter(st3, "shotgun", 7), b3f = fighter(st3, "shotgun", 7);
+  fitMod(a3.gear.weapon, newItem("sidesaddle"));
+  const b3 = openBattle(st3, [a3, b3f], 200);
+  const ua = by(b3, a3), ub = by(b3, b3f);
+  check(shellsAt(b3, ua).hand === SHELLS.START_HAND + SHELLS.SADDLE && shellsAt(b3, ub).hand === SHELLS.START_HAND, `a side-saddle holds ${SHELLS.SADDLE} more at hand (${shellsAt(b3, ua).hand} against ${shellsAt(b3, ub).hand})`);
+  ua.hand = { buck: SHELLS.HAND_MAX }; ub.hand = { buck: SHELLS.HAND_MAX }; ua.ap = 2; ub.ap = 2;
+  check(combatAct(st3, { type: "getshells", unit: ua.id }) === "" && combatAct(st3, { type: "getshells", unit: ub.id }) !== "", `with ${SHELLS.HAND_MAX} loose, Get shells still has room on the saddled pump, not on the bare one`);
+  st3.combat = null;
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
