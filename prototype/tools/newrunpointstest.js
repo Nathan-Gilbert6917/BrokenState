@@ -16,12 +16,13 @@
 //     bigger magazine more rounds too), kept through rebuilds, and a gun carried or in the vehicle's back comes loaded;
 //   - a fix: at a normal start a custom background's car's back (to the hub with its car) is on the vehicle's back's
 //     bill (the car pool first, then its payer), as the backgrounds editor says;
-//   - parts on a carried gun and on a gun in the vehicle's back (kept as { key, mods }), loaded to a fitted magazine.
+//   - parts on a carried gun and on a gun in the vehicle's back (kept as { key, mods }), loaded to a fitted magazine;
+//   - The dice's gear (and Start from the dice, Hardcore's As rolled back) keeps the parts the dice put on a gun.
 // Usage: node tools/newrunpointstest.js [-v]
 import { createWorld } from "../src/sim/world.js";
 import { GEAR, SKILLS } from "../src/sim/data.js";
 import { CUSTOM_POINTS, itemPoints, suppliesPoints, skillCost, pricePerson, overBudget, overText, carPool, poolText, backgroundPoints, ownPoints, slotPoints, gunPoints, gunExtras, loosePoints, bgBacks, bgCarBack, pickPoints } from "../src/sim/custompoints.js";
-import { carryList, clearStartGear, trunkKg, START_TRUNK, START_GEAR, gunInfo, gunWith, gunCap, sanitizeStartGear, sanitizeGunMods, sanitizeStartVehicle } from "../src/sim/startgear.js";
+import { carryList, clearStartGear, trunkKg, START_TRUNK, START_GEAR, gunInfo, gunWith, gunCap, sanitizeStartGear, sanitizeGunMods, sanitizeStartVehicle, noteDiceKit } from "../src/sim/startgear.js";
 import { allCarried } from "../src/sim/inventory.js";
 import { trunkBudget } from "../src/sim/randomkit.js";
 import { newRunScreen, crewSnapshot, blankCrew, randomizeAllCrew, crewWithBackground } from "../src/ui/newgame.js";
@@ -453,6 +454,50 @@ section("Parts on a carried gun and on a gun in the vehicle's back");
   check(hp && hp.mods && hp.mods.mag.key === "mag_glock_17" && hp.loaded.n === 17, "Hardcore: the pistol in the car's back fitted, loaded with 17");
   // The plain-key form still reads; a misfit made safe goes back to it.
   check(sanitizeStartGear({ slots: {}, carry: { pocket: ["pistol"] } }).carry.pocket[0] === "pistol" && JSON.stringify(sanitizeStartVehicle({ items: ["ar", { key: "ar", mods: { muzzle: "pistolcan" } }, { key: "pistol", mods: { optic: "reddot" } }] }).items) === JSON.stringify(["ar", "ar", { key: "pistol", mods: { optic: "reddot" } }]), "plain keys read as ever; a gun with no parts that fit is a plain key");
+}
+
+section("The dice's gear keeps the parts the dice put on a gun");
+{
+  let st = null, i = -1;
+  for (let seed = 1; seed < 60 && i < 0; seed++) {
+    const w = blankWorld(seed);
+    const j = w.survivors.findIndex((x) => x.diceKit && x.diceKit.mods && x.diceKit.slots.weapon);
+    if (j >= 0) { st = w; i = j; }
+  }
+  if (check(!!st, "a seed whose dice put parts on someone's gun")) {
+    const s = st.survivors[i], dm = { ...s.diceKit.mods }, wk = s.diceKit.slots.weapon;
+    const ui = UI();
+    check(SG_ACTIONS["sg-dice"](st, ui, { i }) === true && JSON.stringify(s.startGear.mods) === JSON.stringify(dm), `Start from the dice: the ${GEAR[wk].name} with ${JSON.stringify(dm)}`);
+    check(pricePerson(st, s).gear >= slotPoints("weapon", wk, dm), "priced with its parts");
+    const b = again(st);
+    const g = b.survivors[i].gear.weapon;
+    check(g.key === wk && Object.entries(dm).every(([slot, k]) => (k ? g.mods && g.mods[slot] && g.mods[slot].key === k : !(g.mods && g.mods[slot]))), "rebuilt: the gun has the dice's parts");
+    ui.gearEdit = { i, sel: null, msg: "" };
+    SG_ACTIONS["sg-kit-clear"](b, ui);
+    check(!b.survivors[i].startGear.mods, "Empty: as it comes");
+    check(SG_ACTIONS["sg-dice-kit"](b, ui) === true && JSON.stringify(b.survivors[i].startGear.mods) === JSON.stringify(dm), "the gear window's The dice's gear: the parts again");
+  }
+  // A carried gun the dice fitted: kept as { key, mods }.
+  const it = gunWith("pistol", { optic: "reddot" });
+  const fake = blankWorld(42).survivors[0];
+  fake.pockets[0] = it;
+  noteDiceKit(fake);
+  check(JSON.stringify(fake.diceKit.carry.pocket[0]) === JSON.stringify({ key: "pistol", mods: { optic: "reddot" } }), "a carried gun with parts noted with them");
+  // Hardcore: the car's back as rolled keeps a gun's parts.
+  let found = false;
+  for (let seed = 1; seed < 80 && !found; seed++) {
+    const h = blankWorld(seed, { mode: "hardcore" });
+    const o = h.survivors.find((x) => x.diceTrunk);
+    const e = o && o.diceTrunk.items.find((x) => typeof x === "object");
+    if (!e) continue;
+    found = true;
+    const uh = UI();
+    uh.gearEdit = { i: 0, sel: null, msg: "" };
+    SG_ACTIONS["sg-trunk-dice"](h, uh);
+    const payer = h.survivors.find((x) => x.startVehicle);
+    check(payer.startVehicle.items.some((x) => typeof x === "object" && x.key === e.key && JSON.stringify(x.mods) === JSON.stringify(e.mods)), `Hardcore As rolled: the ${GEAR[e.key].name} in the back with its parts (seed ${seed})`);
+  }
+  if (!found) console.log("  (no Hardcore seed under 80 rolled a gun with parts into the car's back: not checked)");
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

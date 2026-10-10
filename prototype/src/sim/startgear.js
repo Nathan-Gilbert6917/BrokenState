@@ -340,15 +340,16 @@ function wentWithOldGun(it, gun) {
   if (d.rounds && d.count) return !(gun && calOf(gun.key) === d.rounds.cal);
   return false;
 }
-// What the dice gave them, as picks (every slot, and where each thing they carry was): s.diceKit.
+// What the dice gave them, as picks (every slot, and where each thing they carry was; a gun's parts as the dice fitted
+// them, its starter parts too): s.diceKit.
 /** @param {any} s */
 export function noteDiceKit(s) {
   ensureInv(s);
   /** @type {Record<string, string>} */
   const slots = {};
   for (const slot of START_GEAR.SLOTS) slots[slot] = s.gear[slot] ? s.gear[slot].key : "";
-  const keys = (list) => (list || []).map((it) => (it && GEAR[it.key] ? it.key : null));
-  s.diceKit = sanitizeStartGear({ slots, carry: { pocket: keys(s.pockets), pouch: keys(rigPouches(s)), pack: keys(packOf(s)) } });
+  const keys = (list) => (list || []).map((it) => pickOf(it)); // a gun with the parts the dice put on it (randomStarterMods)
+  s.diceKit = sanitizeStartGear({ slots, carry: { pocket: keys(s.pockets), pouch: keys(rigPouches(s)), pack: keys(packOf(s)) }, mods: modsOf(s.gear.weapon) });
 }
 
 // Puts a colonist's picks on them (after the dice and any custom background). Returns what the caller hands on:

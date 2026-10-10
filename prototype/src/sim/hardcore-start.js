@@ -48,7 +48,7 @@ import { Rng } from "./rng.js";
 import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { isCustomBg } from "./custombg.js";
-import { grabStartGear, addPickedSupplies, trunkFromPicks, loadGun } from "./startgear.js"; // gear picked on the new-run screen (Customize)
+import { grabStartGear, addPickedSupplies, trunkFromPicks, loadGun, pickOf } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
 import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./staging.js";
 
@@ -574,7 +574,7 @@ export function rollCar(state, p, people) {
       trunk.gear.push(item);
     }
   }
-  owner.diceTrunk = { items: trunk.gear.map((it) => it.key), supplies: { ...trunk.supplies } }; // the dice's back (until Start)
+  owner.diceTrunk = { items: trunk.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...trunk.supplies } }; // a gun with the parts it came with // the dice's back (until Start)
   if (picked) { const mine = trunkFromPicks(owner.startVehicle); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
   for (const [k, q] of Object.entries(trunk.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
   p.cargo.gear.push(...trunk.gear);

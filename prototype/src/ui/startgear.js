@@ -485,7 +485,7 @@ export const SG_ACTIONS = {
     const K = sanitizeStartGear(s.diceKit) || { slots: {} };
     P.slots = { ...Object.fromEntries(START_GEAR.SLOTS.map((k) => [k, ""])), ...K.slots };
     P.carry = K.carry || blankCarry();
-    delete P.mods;
+    if (K.mods) P.mods = { ...K.mods }; else delete P.mods; // the parts the dice put on the gun come with it
     ui.gearEdit.sel = null;
   }),
   "sg-kit-clear": (state, ui) => edit(state, ui, (P) => {
