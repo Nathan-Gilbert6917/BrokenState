@@ -122,7 +122,7 @@ check(TOILETRIES.every((k) => GEAR[k].dur > 0 && GEAR[k].groom > 0 && GEAR[k].ca
   const OLD = { town: [0.12, 17, "goldring", 2], pharmacy: [0.14, 13, "puritabs", 2], mall: [0.18, 19.4, "diamond", 0.4] };
   for (const [t, [p0, w0, k, w]] of Object.entries(OLD)) {
     const f = SITE_FINDS[t];
-    const tot = Object.values(f.items).reduce((a, x) => a + x, 0);
+    const tot = Object.entries(f.items).filter(([x]) => x !== "tourniquet").reduce((a, [, x]) => a + x, 0); // the tourniquet came after (loot.js, med-selfstab: its own addition)
     const now = (f.p * f.items[k]) / tot, was = (p0 * w) / w0;
     check(Math.abs(now - was) / was < 0.01, `${t}: ${k} still ${(was * 100).toFixed(2)}% a search hour (now ${(now * 100).toFixed(2)}%)`);
   }

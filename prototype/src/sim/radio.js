@@ -496,7 +496,7 @@ function grudgeRaid(state, f) {
 }
 
 // What the hub can spare of a good (keeps a few days of food and water, some meds and ammo).
-function hubSpare(state, key, h = hub(state)) {
+export function hubSpare(state, key, h = hub(state)) {
   const n = Math.max(1, atBase(state, h.id).length);
   const keep = { food: n * 6, water: n * 5, meds: 3, ammo: n * 10, fuel: 8, parts: 2, scrap: 20 }[key] || 0;
   return Math.min(payoutSpare(state, h, key), Math.max(0, Math.floor(supplyAmt(h.stock, key) - keep))); // upkeep.js PAYOUT: everyone fed there

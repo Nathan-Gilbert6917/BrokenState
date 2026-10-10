@@ -420,6 +420,7 @@ export function byNumbersOdds(state, setup, people = combatants(state, setup), a
   theirs += vo.theirsAdd;
   mine += vo.mineAdd; // the team's own turret (a Humvee's M2)
   if (setup.allyPower) mine += setup.allyPower; // thirdside.js: soldiers or survivors fighting the same enemy (wanderers.js)
+  if (setup.mineMult > 0) mine *= setup.mineMult; // hivecrawl.js coreFire: the team's fire at the core (range, reloads)
   const ratio = mine / Math.max(0.1, theirs);
   return { mine, theirs, ratio, win: winOdds(ratio, { ...setup.enemy, people: people.length, ambush: setup.ambush, hive: /^hive/.test(setup.layout || "") }) }; // hive, hivechamber, hivecore (hivecrawl.js)
 }
@@ -691,7 +692,7 @@ export const WEAPONS = {
   // 24–34 to 31–43, the lever-action 20–30 to 25–35, the police carbine 20–29 to 21–30 (tools/arsenalbalancetest.js).
   pistol:    { name: "9mm pistol",     dmg: [15, 22], opt: 6,  fall: 4, aim: 4,  ammo: 1, noise: 2, cap: 15, cal: "9mm", rel: 0.35 }, // a double-stack 9mm magazine
   shotgun:   { name: "Pump shotgun",   dmg: [24, 36], opt: 4,  fall: 7, aim: 10, ammo: 1, noise: 3, close: 10, cap: 6, cal: "12ga", rel: 0.3 }, // a pump: five in the tube and one in the chamber
-  huntrifle: { name: "Hunting rifle",  dmg: [31, 43], opt: 12, fall: 2, aim: 5,  ammo: 1, noise: 3, close: -10, cap: 5, cal: "308", rel: 0.15 }, // a bolt-action's internal magazine
+  huntrifle: { name: "Hunting rifle",  dmg: [31, 43], opt: 8, fall: 2.6, aim: 4,  ammo: 1, noise: 3, close: -3, cap: 5, cal: "308", rel: 0.15 }, // a bolt-action's internal magazine
   ar:        { name: "Assault rifle",  dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2, noise: 3, cap: 30, cal: "556", rel: 0.5, modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 2, aim: -10 }, auto: { rounds: 10, aim: -20 } } }, // a 30-round magazine: 15 bursts of 2 (its burst mode; gunfire.js fire modes)
   // Makeshift weapons (crafting.js). The crossbow is silent and shoots bolts (arrows: 1 a shot, data.js SUPPLIES.arrows).
   spikedbat:  { name: "Spiked bat",        melee: true, dmg: [16, 25] },
@@ -2461,8 +2462,8 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (d > reach) { const drop = (d - reach) * rr.drop; aim -= drop; notes.push(`round drops past ${reach} tiles −${Math.round(drop)}${slow !== 1 ? `, damage ×${slow}` : ""}`); }
   // Buckshot and birdshot spread with range (data-ammo.js spreadMult, user 2026-10-10): past spreadFull tiles a hit does
   // less, down to spreadMin; a slug keeps its damage. The same rule as ladder.js hitDamage (the balance sheet).
-  const spread = spreadMult(aty, d);
-  if (spread < 1) notes.push(`shot spreads past ${af.spreadFull} tiles, damage ×${Math.round(spread * 100) / 100}`);
+  const spread = spreadMult(aty, d, { cal: calOf(a.weapon), extra: gm.spread || 0 }); // gm.spread: a choke's tiles
+  if (spread < 1) notes.push(`shot spreads past ${af.spreadFull + (gm.spread || 0)} tiles, damage ×${Math.round(spread * 100) / 100}`);
   P && mark("The round drops at this range");
   if (d <= 2.5 && (w.close || gm.close || af.close)) aim += (w.close || 0) + gm.close + (af.close || 0);
   P && mark("Up close");
@@ -4307,16 +4308,17 @@ function scoreCell(b, u, x, y, foes, cost, field) {
   if (canFire(b, u)) {
     // Buckshot and birdshot do less the further off (data-ammo.js spreadMult): a shotgunner's spot is worth what its
     // shot keeps there, so both sides' shotguns close in rather than plink from afar (1 for any other round).
-    const sty = calOf(u.weapon) ? typeFor(calOf(u.weapon), u.load) : null;
+    const sty = calOf(u.weapon) ? typeFor(calOf(u.weapon), u.load) : null, sgm = unitMods(u);
     for (const f of foes) {
       if (dist(x, y, f.x, f.y) > sightRange(b, u, x, y) || !los(b, x, y, f.x, f.y)) continue;
       const o = shotOdds(b, u, f, x, y);
-      best = Math.max(best, (o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)) * spreadMult(sty, dist(x, y, f.x, f.y))); // a target with no cover
+      best = Math.max(best, (o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)) * spreadMult(sty, dist(x, y, f.x, f.y), { cal: calOf(u.weapon), extra: sgm.spread || 0 })); // a target with no cover
     }
   }
   s += best * 0.3;
   // A shotgunner with buckshot loaded also wants to close to where it hits full (spreadFull): a slope toward the foes.
-  const sfull = canFire(b, u) && calOf(u.weapon) ? typeFx(typeFor(calOf(u.weapon), u.load)).spreadFull : null;
+  const sf0 = canFire(b, u) && calOf(u.weapon) ? typeFx(typeFor(calOf(u.weapon), u.load)).spreadFull : null;
+  const sfull = sf0 != null ? sf0 + (unitMods(u).spread || 0) : null; // a choke: more tiles at full damage
   if (sfull != null && nearest > sfull) s -= (Math.min(nearest, 16) - sfull) * SPREAD_CLOSE;
   if (isSniper(u)) s += sniperCell(nearest); // gunfire.js: a sniper keeps its distance (10–15 tiles)
   // Nothing to shoot: closer to the foes is better, the walking distance up to 40 tiles. A unit standing farther off than
@@ -6071,12 +6073,13 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       const def = AREAS[R.areas[box.area].type];
       const site = state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null;
       const src = areaSource(R.areas[box.area].type, site); // itemcond.js: a house's things used, a shop's picked over, a wreck's scorched
+      const gunSite = (b.setup && b.setup.raid && b.setup.raid.gunSite) || site; // gundist.js: the building a city crawl's map is (a police station, an Army checkpoint), else the site
       for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
         if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
       splitParts(state, sup, R.areas[box.area].type, `box${box.id}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
-      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(lootItem(swapGun(areaSourceName(R.areas[box.area].type, site), key, rng), src, rng)); // gundist.js: which gun, by the room's draws
+      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(lootItem(swapGun(areaSourceName(R.areas[box.area].type, gunSite), key, rng), src, rng)); // gundist.js: which gun, by the room's draws
       const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav, site); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
@@ -6092,7 +6095,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       // A grenade launcher, a rocket tube, a crate of 40 mm in army stock (loot.js AREA_LAUNCHERS; its own dice too).
       gear.push(...rollAreaLaunchers(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
       // One of the newer guns (gunfinds.js GUN_FINDS.area; its own dice too).
-      gear.push(...rollAreaGuns(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
+      gear.push(...rollAreaGuns(state, b.tileId, R.areas[box.area].type, gunSite, `box${box.id}`));
       // Firewood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
       const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;

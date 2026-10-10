@@ -21,13 +21,13 @@
 //   { $: "M", e: [[k, v]…] } Map · { $: "S", e: […] } Set · { $: "WM", e } WeakMap · { $: "WS", e } WeakSet
 //   { $: "T", t: "Uint16Array", b: base64 } typed array · { $: "Rng", s } · { $: "Grid", w, h } · { $: "O", v }
 //   { $: "u" } undefined · { $: "N", v: "NaN" | "Infinity" | "-Infinity" | "-0" }
-import { migrateAllMods, relocateMisfits, misfitNote } from "./gunmods.js"; // old saves: gun parts onto the attachment slots; parts that no longer fit taken off
+import { migrateAllMods, relocateMisfits, misfitNote, migrateParts } from "./gunmods.js"; // old saves: gun parts onto the attachment slots; parts that no longer fit taken off
 import { migrateAmmo, findRounds, kindTheme } from "./ammo.js"; // old saves: generic ammo into rounds by calibre
 import { sanitizeLibrary } from "./custombg.js"; // a save's custom backgrounds: their old generic ammo as rounds
 import { migrateKit, migrateMagFits } from "./carrykit.js"; // old saves: carriers' plates, spare magazines
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
-import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, localId, log } from "./world.js";
+import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, log } from "./world.js";
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS, GEAR } from "./data.js"; // firewood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js";
@@ -204,7 +204,7 @@ export function deserializeState(save) {
       const f = (state.factions || []).find((x) => x.id === j.fid);
       const n = Math.floor(r.supplies.ammo);
       delete r.supplies.ammo;
-      for (const [k, q] of Object.entries(findRounds(kindTheme(f ? f.type : null), n, "jobreward", localId(state, j.id)))) r.supplies[k] = (r.supplies[k] || 0) + q;
+      for (const [k, q] of Object.entries(findRounds(kindTheme(f ? f.type : null), n, "jobreward", j.id))) r.supplies[k] = (r.supplies[k] || 0) + q;
     }
     state.ammoCal = 2;
   }
@@ -223,6 +223,9 @@ export function deserializeState(save) {
   // gunmods.js relocateMisfits (2026-10-10, slots that make sense for each gun: data-gunmods.js PLATFORMS, CATEGORIES,
   // WEAPON_SLOTS): a part on a gun that no longer has room for it (a foregrip on a plain pump, a weapon light on a
   // revolver) comes off into the armory or the carrier's kit, with a log line. Every load (the rules may change again).
+  // gunmods.js migrateParts (user picks 2026-10-10): the combined holo + magnifier parts become a sight and a magnifier,
+  // and every hunting rifle gets its scope as a part (its own numbers came down by the scope's). Once: state.attachV.
+  if (!(state.attachV >= 2)) { migrateParts(state); state.attachV = 2; }
   { const note = misfitNote(relocateMisfits(state)); if (note && Array.isArray(state.log)) log(state, note); }
   // carrykit.js: carry kit (wave 2): plate carriers from before get their two plates, your people's guns their spare
   // magazines. Once: state.kitV.

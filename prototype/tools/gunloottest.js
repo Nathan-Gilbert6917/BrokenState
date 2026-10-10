@@ -29,6 +29,23 @@ import { rollArea } from "../src/sim/citycrawl.js";
 import { crawlGuns } from "../src/sim/gunfinds.js";
 import { slotChoices } from "../src/sim/startgear.js";
 import { itemPoints } from "../src/sim/custompoints.js";
+import { GUN_ADDED, GUN_NEWNESS } from "../src/sim/data-guns.js";
+import { isNewGun } from "../src/sim/gundist.js";
+import { rollSiteGuns } from "../src/sim/gunfinds.js";
+import { createBattle, combatAct, CELL } from "../src/sim/combat.js";
+import { hub, atBase } from "../src/sim/world.js";
+import { launchExpedition } from "../src/sim/parties.js";
+import { spawnVisitor, openVisitorTrade, autoVisitorTrade } from "../src/sim/visitors.js";
+import { lootItem } from "../src/sim/inventory.js";
+import { GOV_GUNS, gunWant, pickGunToBuy } from "../src/sim/govguns.js";
+import { ARSENAL, arsenalDaily, ensureArsenal } from "../src/sim/arsenal.js";
+import { addBuilding } from "../src/sim/buildings.js";
+import { planPath } from "../src/sim/parties.js";
+import * as TR from "../src/sim/trade.js";
+import * as RT from "../src/sim/radiotrade.js";
+import * as RA from "../src/sim/radio.js";
+import { caravanEnRoute } from "../src/sim/caravans.js";
+import { radioGunDeal } from "../src/sim/govguns.js";
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) { passes++; console.log(`  ok   ${msg}`); } else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -223,6 +240,157 @@ for (const mode of ["normal", "hardcore"]) {
   const a = run(true, 5), b = run(false, 5);
   check(a.made === b.made, `${mode}: a world is made on the same draws with the distribution off and on`);
   check(a.ran === b.ran, `${mode}: its first 5 days (the autopilot playing) draw the same (${a.ran} / ${b.ran})`);
+}
+
+// ---------- new guns in the extra rolls only (data-guns.js GUN_ADDED, GUN_NEWNESS) ----------
+console.log("Newness");
+{
+  const fresh = GUNS.filter((k) => isNewGun(k));
+  check(fresh.length >= 30 && fresh.every((k) => GUN_ADDED[k] >= GUN_NEWNESS.from) && !isNewGun("pistol") && !isNewGun("ar"), `${fresh.length} guns are new (added on or after ${GUN_NEWNESS.from}); the old ones not`);
+  const plain = gunsFrom("site:gunstore"), extra = gunsFrom("site:gunstore", { fresh: true });
+  const ratioOk = Object.keys(plain).every((k) => Math.abs(extra[k] / plain[k] - (isNewGun(k) ? GUN_NEWNESS.mult : 1)) < 1e-9);
+  check(ratioOk && GUN_NEWNESS.mult > 1, `the extra rolls weigh a new gun × ${GUN_NEWNESS.mult} (an old one × 1)`);
+  // A list's swap and a kit's gun keep their weights (swapGun never asks for fresh).
+  const kitSame = ["kit:raiders", "kit:soldiers", "site:military"].every((n) => JSON.stringify(gunsFrom(n, { near: n === "site:military" ? "ar" : "pistol" })) === JSON.stringify(gunsFrom(`${n}`, { near: n === "site:military" ? "ar" : "pistol", fresh: false })));
+  let swNew = 0, swN = 0, exNew = 0, exN = 0;
+  for (let i = 0; i < 4000; i++) { const g = swapGun("site:gunstore", "huntrifle", ["nw", i]); swN++; if (isNewGun(g)) swNew++; const e = drawGun("site:gunstore", hash01("nx", i), { fresh: true }); const e0 = drawGun("site:gunstore", hash01("nx", i)); if (e) { exN++; if (isNewGun(e)) exNew++; } void e0; }
+  let exNew0 = 0; for (let i = 0; i < 4000; i++) { const e0 = drawGun("site:gunstore", hash01("nx", i)); if (e0 && isNewGun(e0)) exNew0++; }
+  check(kitSame && exNew > exNew0 * 1.08, `kits and lists' swaps unchanged; an extra roll at a gun store finds new guns more often (${exNew0} → ${exNew} in 4000)`);
+  // The real extra roll (a search hour's) uses it: with mult 1 the new guns' share drops.
+  const st = createWorld({ seed: 31, factionCount: 4 });
+  const tile = st.tiles.find((t) => t.loc && t.loc.type === "gunstore") || st.tiles.find((t) => t.loc && t.loc.type === "police");
+  const share = () => { let n = 0, nw = 0; for (let h = 0; h < 6000; h++) { st.hour = h; for (const it of rollSiteGuns(st, tile.id, 5, "nt")) if (isGun(it.key)) { n++; if (isNewGun(it.key)) nw++; } } return nw / Math.max(1, n); };
+  const on = share(); const m0 = GUN_NEWNESS.mult; GUN_NEWNESS.mult = 1; resetGunDist(); const off = share(); GUN_NEWNESS.mult = m0; resetGunDist();
+  check(on > off, `a search hour's extra gun: new guns ${(off * 100).toFixed(0)}% at × 1, ${(on * 100).toFixed(0)}% at × ${m0}`);
+}
+
+// ---------- a city crawl's street map: the checkpoint's armoury is the Army's, a police station's the police's ----------
+console.log("City crawl maps");
+{
+  const inBrowser = (fn) => { const had = "window" in globalThis; if (!had) globalThis.window = {}; try { return fn(); } finally { if (!had) delete globalThis.window; } };
+  const guns = { military: [], police: [] };
+  for (let seed = 1; seed <= 24; seed++) for (const gunSite of ["military", "police"]) {
+    const st = createWorld({ seed: 500 + seed, factionCount: 4 });
+    const tile = (st.tiles.find((t) => t.loc && t.loc.type === "city") || st.tiles.find((t) => t.loc && t.loc.type === "town")).id;
+    const crew = atBase(st, hub(st).id).slice(0, 2);
+    const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: tile, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { food: 2, water: 2, ammo: 10, meds: 0 } });
+    if (res.error) continue;
+    const p = res.party; p.path = [tile]; p.idx = 0; p.phase = "engaged";
+    const b = inBrowser(() => createBattle(st, { mode: "raid", tile, partyId: p.id, canRetreat: true, ambush: null, handler: "glt", enemy: { kind: "zombies", count: 0, power: 2, groups: [] }, raid: { heat0: 0, building: "street", areas: ["armory", "armory", "armory", "barracks"], gunSite } }));
+    st.combat = b; b.raid.choose = null;
+    const u = b.units.find((x) => x.side === "player");
+    for (const c of b.raid.containers) {
+      if (c.kind === "body" || !b.raid.areas[c.area] || b.raid.areas[c.area].type !== "armory") continue;
+      if (c.lock) c.lock.open = true;
+      let at = null;
+      for (let y = c.y - 1; y <= c.y + (c.h || 1) && !at; y++) for (let x = c.x - 1; x <= c.x + (c.w || 1) && !at; x++) if (x >= 0 && y >= 0 && x < b.w && y < b.h && CELL[b.cells[y * b.w + x].k].walk && !b.units.some((o) => o !== u && o.x === x && o.y === y)) at = [x, y];
+      if (!at) continue;
+      [u.x, u.y] = at; u.ap = 2; b.phase = "player";
+      if (combatAct(st, { type: "search", unit: u.id, box: c.id, open: true }) || !c.contents) continue;
+      guns[gunSite].push(...(c.contents.gear || []).filter((it) => isGun(it.key)).map((it) => it.key));
+    }
+    st.combat = null;
+  }
+  const milShare = (list) => list.filter((k) => gunClass(k).uses.includes("military")).length / Math.max(1, list.length);
+  const listed = new Set((AREAS.armory.gear || []).map(([k]) => k));
+  check(guns.military.length > 10 && guns.police.length > 10, `armouries searched on street maps: ${guns.military.length} guns at the checkpoint, ${guns.police.length} at the police station`);
+  // (a gun case or a locked cabinet in the room has its own: stash:*, lock:*; the service and Army guns are the room's)
+  const service = (k) => gunClass(k).uses.every((u) => ["military", "special", "police"].includes(u));
+  const stray = (list, src) => [...new Set(list.filter((k) => service(k) && !listed.has(k) && !(gunsFrom(src)[k] > 0)))];
+  check(!stray(guns.military, "area:armory@military").length && !stray(guns.police, "area:armory@police").length,
+    `each room yields the service guns its building draws (area:armory@military, @police; strays ${stray(guns.military, "area:armory@military").join(",") || "none"} / ${stray(guns.police, "area:armory@police").join(",") || "none"})`);
+  check(milShare(guns.military) > milShare(guns.police) + 0.2, `the checkpoint's are the Army's (${(milShare(guns.military) * 100).toFixed(0)}% military guns, the police station's ${(milShare(guns.police) * 100).toFixed(0)}%)`);
+}
+
+// ---------- the governor buys guns for the unarmed (govguns.js) ----------
+console.log("The governor buys guns");
+{
+  const setup = (unarmed) => {
+    const st = createWorld({ seed: 77, factionCount: 6 });
+    st.started = true;
+    const h = hub(st);
+    h.armory = h.armory.filter((it) => !isGun(it.key));
+    const ppl = atBase(st, h.id);
+    for (const [i, s] of ppl.entries()) s.gear.weapon = i < unarmed ? null : lootItem("pistol", "home", ["gw", i]);
+    Object.assign(h.stock, { food: 600, scrap: 200, fuel: 80 });
+    const v = spawnVisitor(st, "merchants");
+    v.spec = "arms";
+    v.wares = ["pistol", "huntrifle", "shotgun", "ar", "revolver"].map((k, i) => lootItem(k, "merchant", ["gw", k, i]));
+    v.tile = h.tile; v.phase = "stop"; v.stayUntil = st.hour + 24;
+    openVisitorTrade(st, v, { baseId: h.id });
+    const needs = { food: 0.2, scrap: 0.3, fuel: 0.4, water: 1, meds: 1, parts: 1, ammo: 1 };
+    const text = autoVisitorTrade(st, needs, "balanced", {});
+    return { st, h, text, guns: h.armory.filter((it) => isGun(it.key)).length, T: st.govGuns || { bought: 0 } };
+  };
+  const a = setup(2), b = setup(0);
+  check(a.T.bought >= 1 && a.guns >= 1, `two people unarmed: it buys a gun from an arms dealer (${a.T.bought} bought, ${a.guns} in the armory; ${a.text})`);
+  check(!b.T.bought && !b.guns, `everyone armed: it buys none (${b.text})`);
+  // Its pick: one a needy person can use, the calibre it has rounds for first.
+  const st = createWorld({ seed: 78, factionCount: 4 });
+  const h = hub(st);
+  h.armory = h.armory.filter((it) => !isGun(it.key));
+  const ppl = atBase(st, h.id);
+  for (const s of ppl) s.gear.weapon = null;
+  const want = gunWant(st, h);
+  check(want.n === ppl.length, `everyone unarmed: ${want.n} guns wanted for ${ppl.length} people`);
+  for (const k of Object.keys(h.stock)) if (/^a_/.test(k)) h.stock[k] = 0;
+  h.stock.a_12ga_buck = 200;
+  const offer = [lootItem("pistol", "merchant", ["p1"]), lootItem("shotgun", "merchant", ["p2"])];
+  const pick = pickGunToBuy(st, h, offer, (it) => GEAR[it.key].value, 1000);
+  check(pick && pick.key === "shotgun", `with 12 gauge in store it takes the shotgun (${pick && pick.key})`);
+  check(!pickGunToBuy(st, h, offer, (it) => GEAR[it.key].value, 10), "nothing it cannot afford (its budget: what it can spare)");
+  GOV_GUNS.off = true;
+  check(!gunWant(st, h).n, "off: it wants none");
+  GOV_GUNS.off = false;
+  // By radio: a friendly group in reach with a gun on its shelf brings it (radiotrade.js: their caravan, a delivery fee).
+  {
+    const st2 = createWorld({ seed: 81, factionCount: 8 });
+    st2.started = true;
+    const h2 = hub(st2);
+    addBuilding(h2, "radio");
+    const f = st2.factions.filter((x) => x.alive && x.bases.length && planPath(st2, x.bases[0], h2.tile, false)).sort((a, b) => st2.grid.distance(a.bases[0], h2.tile) - st2.grid.distance(b.bases[0], h2.tile))[0];
+    Object.assign(f, { type: "traders", goodwill: 45, known: true });
+    f.bases = [f.bases[0]];
+    if (!RA.canRadioGroup(st2, f)) f.bases = [st2.grid.within(h2.tile, 10).find((t) => st2.tiles[t].terrain !== "water" && st2.grid.distance(t, h2.tile) >= 6 && !st2.bases.some((b) => b.tile === t) && planPath(st2, t, h2.tile, false))];
+    for (const x of st2.factions) if (x !== f) x.known = false;
+    h2.armory = h2.armory.filter((it) => !isGun(it.key));
+    for (const s of atBase(st2, h2.id).slice(0, 2)) s.gear.weapon = null;
+    Object.assign(h2.stock, { food: 900, scrap: 200, fuel: 100 });
+    TR.ensureWares(st2, f);
+    f.wares.push(lootItem("shotgun", "merchant", ["radio", 1]));
+    const deps = { hasNetwork: RA.hasNetwork, refusal: RA.refusal, caravanEnRoute, tradeBase: RA.tradeBase, deliveryRefusal: RT.deliveryRefusal, openRadioTrade: RT.openRadioTrade, tradeContext: TR.tradeContext, balanceWith: TR.balanceWith, tradeVerdict: TR.tradeVerdict, executeTrade: TR.executeTrade, endTrade: TR.endTrade, gearBuyPrice: TR.gearBuyPrice, pendingDeal: RT.pendingDeal, ensureWares: TR.ensureWares,
+      spareValue: (g, k) => { const q = RA.hubSpare(st2, k); return q > 0 ? q * TR.sellPrice(st2, g, k, RA.radioSpeech(st2), q) : 0; } };
+    const want0 = gunWant(st2, h2).n;
+    const text = radioGunDeal(st2, h2, { food: 0.2, scrap: 0.3, fuel: 0.4, water: 1, meds: 1, parts: 1 }, deps);
+    const car = st2.parties.find((q) => q.kind === "caravan" && q.deal && q.baseId === h2.id);
+    check(!!text && !!car && (car.goods.gear || []).some((it) => isGun(it.key)) && !st2.trade, `by radio: ${text || "no deal"} (their caravan carries it)`);
+    check(gunWant(st2, h2).n === want0 - 1, `the gun on its way counts: ${want0} wanted before, ${gunWant(st2, h2).n} now`);
+    check(!radioGunDeal(st2, h2, { food: 0.2, scrap: 0.3, fuel: 0.4, water: 1, meds: 1, parts: 1 }, deps), `not again within ${GOV_GUNS.RADIO_EVERY} days`);
+  }
+}
+
+// ---------- AI parity: a group buys guns for its unarmed newcomers (arsenal.js groupBuysGun) ----------
+console.log("AI groups buy guns");
+{
+  const st = createWorld({ seed: 79, factionCount: 6 });
+  const f = st.factions.find((x) => x.alive && x.type === "traders") || st.factions.find((x) => x.alive);
+  const A = ensureArsenal(st, f);
+  const guns = () => A.items.filter((it) => isGun(it.key)).length;
+  A.items = A.items.filter((it) => !isGun(it.key));
+  Object.assign(f.stock, { scrap: 2000, fuel: 2000, food: 5000, meds: 500 });
+  const pop = f.pop;
+  for (let d = 0; d < 72; d++) { st.hour += 24; arsenalDaily(st, f); f.pop = pop; }
+  const bought = (A.stats && A.stats.in && A.stats.in.purchased) || 0;
+  check(bought >= 3 && guns() >= bought, `${f.name}, no guns and scrap to spare: buys ${bought} in 72 days (one every ${ARSENAL.BUY.every} days at most)`);
+  const B0 = ARSENAL.BUY; ARSENAL.BUY = null;
+  const before = guns(); for (let d = 0; d < 20; d++) { st.hour += 24; arsenalDaily(st, f); f.pop = pop; } ARSENAL.BUY = B0;
+  check(guns() - before <= 2, "with buying off none are bought (its gunsmith aside)");
+  const g2 = st.factions.find((x) => x !== f && x.alive);
+  const A2 = ensureArsenal(st, g2);
+  Object.assign(g2.stock, { scrap: 0, fuel: 0, food: 0, meds: 0 });
+  A2.items = A2.items.filter((it) => !isGun(it.key));
+  for (let d = 0; d < 40; d++) { st.hour += 24; arsenalDaily(st, g2); }
+  check(!((A2.stats && A2.stats.in && A2.stats.in.purchased) || 0), "nothing to spare: none bought");
 }
 
 // ---------- the Customize catalogue ----------

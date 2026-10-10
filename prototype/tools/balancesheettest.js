@@ -41,7 +41,7 @@ const keys = (id) => new Set(T[id].rows.map((r) => r.key));
 const html = renderHtml(sheet);
 check(html.length > 50000 && html.length < 4e6, `the page renders (${Math.round(html.length / 1024)} KB)`);
 check(!/<script[^>]+src=|<link[^>]+href=|\bfetch\(|XMLHttpRequest|\bimport\(["'`]|https?:\/\/(?!www\.w3\.org)/.test(html), "self-contained: no external scripts, stylesheets or fetches");
-check(sheet.tabs.map((t) => t.title).join("|") === "Guns|Magazines|Attachments|Calibres & rounds|Containers & boxes|Melee", "tabs: Guns / Magazines / Attachments / Calibres & rounds / Containers & boxes / Melee");
+check(["Guns", "Magazines", "Attachments", "Calibres & rounds", "Containers & boxes", "Melee", "Gun distribution"].every((x) => sheet.tabs.some((t) => t.title === x)), `tabs: Guns / Magazines / Attachments / Calibres & rounds / Containers & boxes / Melee / Gun distribution (${sheet.tabs.map((t) => t.title).join(", ")})`);
 check(sheet.tabs.every((tab) => tab.tables.every((id) => T[id])) && sheet.tables.every((t) => t.id === "rarity" || sheet.tabs.some((tab) => tab.tables.includes(t.id))), "every table is on a tab (the rarity tiers: the side panel)");
 
 console.log("Every item is a row");
@@ -51,7 +51,7 @@ check(!missing(ranged, "guns").length, `every gun (${ranged.length}) is on the G
 check(Object.keys(GEAR).filter((k) => GEAR[k].slot === "weapon" && WEAPONS[k] && !WEAPONS[k].melee).every((k) => keys("guns").has(k)), "every gun item (GEAR weapon) is there");
 const melee = Object.keys(WEAPONS).filter((k) => WEAPONS[k].melee && k !== "claws");
 check(!missing(melee, "melee").length, `every melee weapon (${melee.length}) on the Melee tab${missing(melee, "melee").length ? `: missing ${missing(melee, "melee")}` : ""}`);
-check(!missing(Object.keys(GEAR).filter((k) => GEAR[k].cat === "gunmod" && !MAGAZINES[k] && !GEAR[k].mag && !["speedloader", "stripper308"].includes(k)), "parts").length, "every gun attachment on the Attachments tab");
+check(!missing(Object.keys(GEAR).filter((k) => GEAR[k].cat === "gunmod" && !MAGAZINES[k] && !GEAR[k].mag && !CLIPS[k]), "parts").length, "every gun attachment on the Attachments tab");
 check(!missing(Object.keys(MAGAZINES), "mags").length, `every magazine (${Object.keys(MAGAZINES).length})`);
 check(!missing(Object.keys(INTERNAL).filter((k) => WEAPONS[k]), "feeds").length && !missing(Object.keys(CLIPS), "clips").length, "every internal magazine and clip");
 check(!missing(Object.keys(CALIBERS), "calibres").length, `every calibre (${Object.keys(CALIBERS).length})`);
@@ -108,7 +108,7 @@ for (const k of ranged) {
     cmp("gun hit, no armour (gunHit)", CALC.guns.hitBare(k), g.bare);
     cmp("gun hit, vest (gunHit)", CALC.guns.hitVest(k), g.vest);
     cmp("gun hit, plate", CALC.guns.hitPlate(k), r1(hitDamage(w.cal, CALIBERS[w.cal].base, TARGETS.plate, { base: (w.dmg[0] + w.dmg[1]) / 2 })));
-    cmp("gun hit at range (buckshot's spread, gunHit)", CALC.guns.hitFar(k), spreadMult(CALIBERS[w.cal].base, FAR) < 1 ? gunHit(w, null, FAR).bare : null);
+    cmp("gun hit at range (buckshot's spread, gunHit)", CALC.guns.hitFar(k), spreadMult(CALIBERS[w.cal].base, FAR, { cal: w.cal }) < 1 ? gunHit(w, null, FAR).bare : null);
   }
   if (GEAR[k]) {
     cmp("gun points (itemPoints)", CALC.guns.points(k), itemPoints(k));
@@ -227,6 +227,49 @@ try {
   check(readFileSync(join(PROTO, "src", "sim", "combat.js"), "utf8").includes('dmg: [22, 32], opt: 9,  fall: 3, aim: 8,  ammo: 2'), "the real source untouched");
 } finally {
   rmSync(scratch, { recursive: true, force: true });
+}
+
+// ---------- the gun distribution (gundist.js): its class per gun, draws, sources and newness, editable ----------
+console.log("Gun distribution");
+{
+  const row = (id, k) => T[id] && T[id].rows.find((r) => r.key === k);
+  const g = row("guns", "ou12"), d = row("gunDraws", "profile|raiders"), s = row("gunSources", "kit:raiders"), n = row("gunNewness", "newness");
+  check(!!g && g.v.gunClass === "hunting civilian coldwar" && !!g.ed.gunClass && !!g.ed.added, `a gun's class (GUN_CLASS, words) and date (GUN_ADDED) are editable (${g && g.v.gunClass})`);
+  check(!!d && d.v.civilian === 1 && !!d.ed.civilian && !!d.ed.special && d.ed.special.startsWith("+"), "a draw profile's uses are editable (a use it does not draw: an edit adds it)");
+  check(!!row("gunDraws", "theme|guns") && !!row("gunDraws", "place|site:police") && !!row("gunDraws", "source|trader:traders") && !row("gunDraws", "source|kit:raiders"), "theme tags', places' and sources' own draws are rows (a source drawing a profile is not)");
+  check(!!s && s.v.draws === "raiders" && s.v.band === 0.6 && !!s.ed.draws && !!s.ed.band, "a source's profile and band are editable");
+  check(!!n && !!n.ed.mult && !!n.ed.from, "the newness factor and its date are editable");
+  const scratch2 = mkdtempSync(join(tmpdir(), "balancesheet-gd-"));
+  try {
+    cpSync(join(PROTO, "src", "sim"), join(scratch2, "src", "sim"), { recursive: true });
+    cpSync(join(PROTO, "package.json"), join(scratch2, "package.json"));
+    const P2 = {
+      version: data.version, generatedFrom: data.generatedFrom,
+      changes: [
+        { table: "guns", key: "ou12", field: "gunClass", from: "hunting civilian coldwar", to: "hunting civilian sport modern" }, // "sport": not a use, kept as written
+        { table: "guns", key: "ou12", field: "added", from: "2026-10-10", to: "2026-10-11" },
+        { table: "gunDraws", key: "profile|raiders", field: "civilian", from: 1, to: 0.9 },
+        { table: "gunDraws", key: "profile|raiders", field: "special", from: null, to: 0.05 },
+        { table: "gunDraws", key: "theme|guns", field: "surplus", from: 0.5, to: 0.4 },
+        { table: "gunDraws", key: "place|site:police", field: "police", from: 1, to: 1.2 },
+        { table: "gunDraws", key: "source|trader:traders", field: "hunting", from: 1, to: 0.8 },
+        { table: "gunSources", key: "kit:raiders", field: "band", from: 0.6, to: 0.5 },
+        { table: "gunSources", key: "trader:raider", field: "draws", from: "raiders", to: "militia" },
+        { table: "gunNewness", key: "newness", field: "mult", from: 1.5, to: 2 },
+        { table: "gunNewness", key: "newness", field: "from", from: "2026-10-10", to: "2026-10-09" },
+      ],
+    };
+    const r2 = applyPatch(P2, scratch2);
+    check(r2.applied.length === P2.changes.length && !r2.refused.length, `the gun distribution's edits apply (${r2.applied.length} of ${P2.changes.length}; refused ${JSON.stringify(r2.refused)})`);
+    const got2 = probe(scratch2, P2.changes.map((c) => [c.table, c.key, c.field]));
+    const bad2 = P2.changes.map((c, i) => [c, got2[i]]).filter(([c, v]) => !near(v, c.to) && v !== c.to);
+    check(!bad2.length, `and the game (a fresh node on the copy) has every new value${bad2.length ? `: ${JSON.stringify(bad2)}` : ""}`);
+    check(/ou12: \["hunting", "civilian", "sport", "modern"\]/.test(readFileSync(join(scratch2, "src", "sim", "data-guns.js"), "utf8")), "a class is written back as a list of words");
+    const again2 = applyPatch(P2, scratch2, { dry: true });
+    check(again2.applied.length === 0 && again2.refused.length === P2.changes.length, "applied twice: refused (from moved on)");
+  } finally {
+    rmSync(scratch2, { recursive: true, force: true });
+  }
 }
 
 console.log(`\n${fails ? "FAILED" : "OK"}: ${passes} passed, ${fails} failed`);

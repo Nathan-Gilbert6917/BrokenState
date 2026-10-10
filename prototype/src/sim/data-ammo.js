@@ -25,7 +25,7 @@ export const CALIBERS = {
   "357":    { name: ".357 Magnum",      kg: 0.015,  box: 50,  pen: 20, ad: 0.45, value: 0.65, base: "fmj",  types: ["fmj", "hp", "plusp"] },
   // .44 Magnum (2026-10-10, user: "add .44 mag ammo, revolvers, lever actions, single shot rifles"): a heavy magnum
   // pistol round, above the .357 and under the .308 a shot; its base round is the jacketed one (FMJ / JSP).
-  "44mag":  { name: ".44 Magnum",       kg: 0.024,  box: 50,  pen: 22, ad: 0.5, value: 0.9,  base: "fmj",  types: ["fmj", "hp"] },
+  "44mag":  { name: ".44 Magnum",       kg: 0.024,  box: 50,  pen: 22, ad: 0.5, value: 0.9,  base: "fmj",  types: ["fmj", "hp", "sp"] }, // sp: the jacketed soft-point hunting load (2026-10-10)
   "12ga":   { name: "12 gauge",         kg: 0.04,   box: 25,  pen: 8,  ad: 0.3, value: 0.8,  base: "buck", types: ["buck", "slug", "bird", "beanbag"] },
   "20ga":   { name: "20 gauge",         kg: 0.032,  box: 25,  pen: 6,  ad: 0.25, value: 0.6, base: "buck", types: ["buck", "slug", "bird"] },
   "223":    { name: ".223 Rem",         kg: 0.012,  box: 20,  pen: 26, ad: 0.7, value: 0.6,  base: "fmj",  types: ["fmj", "sp", "match"], aim: 3 },
@@ -100,15 +100,16 @@ export const KIT_ALT_CAL = {
 // hit that gets through carries on to the next unit in line (section 20, R6; .50 always); ignite: chance to set the
 // target's tile alight. spreadFull / spreadDrop / spreadMin: shot that spreads with range (buckshot, birdshot; user
 // 2026-10-10: "make buckshot lose damage at range"): full damage out to spreadFull tiles, then × (1 − spreadDrop) a
-// tile further, never under spreadMin (spreadMult below; combat.js shotOdds and ladder.js hitDamage both use it). A slug
-// is one ball: none. Section 1 table.
+// tile further, never under spreadMin nor under a .22's hit (SPREAD_FLOOR; spreadMult below; combat.js shotOdds,
+// launchers.js and ladder.js hitDamage all use it); a choke adds its `spread` tiles to spreadFull. A slug is one ball:
+// none. Section 1 table.
 /** @type {Record<string, any>} */
 export const AMMO_TYPES = {
   fmj:      { name: "FMJ",            dmg: 1,    soft: 1,    penAdd: 0,  value: 1,   overpen: { "308": 0.15, "762x39": 0.1, "300blk": 0.08, "556": 0.05, "223": 0.04 } },
-  buck:     { name: "00 buckshot",    dmg: 1,    soft: 1,    penAdd: 0,  value: 1,   spread: true, spreadFull: 4, spreadDrop: 0.1, spreadMin: 0.4 },
+  buck:     { name: "00 buckshot",    dmg: 1,    soft: 1,    penAdd: 0,  value: 1,   spread: true, spreadFull: 6, spreadDrop: 0.1, spreadMin: 0.4 },
   ball:     { name: "ball",           dmg: 1,    soft: 1,    penAdd: 0,  value: 1,   overpen: { "50bmg": 1 } },
   hp:       { name: "hollow point",   dmg: 1,    soft: 1.2,  pen: { "22lr": 2, "9mm": 8, "38spl": 7, "45acp": 8, "357": 12, "300blk": 14, "57x28": 12, "44mag": 14 }, ad: 0.3, value: 1.6 },
-  sp:       { name: "soft point",     dmg: 1,    soft: 1.12, pen: { "308": 30, "762x39": 25, "3030": 25, "223": 20 }, ad: 0.6, value: 1.5 },
+  sp:       { name: "soft point",     dmg: 1,    soft: 1.12, pen: { "308": 30, "762x39": 25, "3030": 25, "223": 20, "44mag": 18 }, ad: 0.6, value: 1.5 },
   ap:       { name: "armour-piercing", dmg: 0.92, soft: 0.92, pen: { "9mm": 30, "556": 45, "762x39": 45, "308": 55 }, ad: 1.1, value: 2.8,
               overpen: { "308": 0.45, "762x39": 0.3, "556": 0.3, "9mm": 0.1 } },
   plusp:    { name: "+P",             dmg: 1.1,  soft: 1.1,  penAdd: 3,  aim: -2, noise: 1.1, jam: 1.2, ad: 0.45, value: 1.4 },
@@ -118,7 +119,7 @@ export const AMMO_TYPES = {
   // A slug: one heavy lead ball (the ladder: a 12 gauge slug outhits any .308 round on an unarmoured target, but its
   // soft lead goes through less armour: pen 22 against the .308's 38).
   slug:     { name: "slug",           dmg: 1.55, soft: 1.55, pen: { "12ga": 22, "20ga": 16 }, opt: 4, fallMult: 0.55, close: -8, ad: 0.9, value: 1.4 },
-  bird:     { name: "birdshot",       dmg: 0.6,  soft: 0.6,  pen: { "12ga": 2, "20ga": 1 }, aim: 8, opt: -1, close: 6, ad: 0.15, value: 0.6, spread: true, swarm: 1.3, spreadFull: 3, spreadDrop: 0.12, spreadMin: 0.3 },
+  bird:     { name: "birdshot",       dmg: 0.6,  soft: 0.6,  pen: { "12ga": 2, "20ga": 1 }, aim: 8, opt: -1, close: 6, ad: 0.15, value: 0.6, spread: true, swarm: 1.3, spreadFull: 5, spreadDrop: 0.12, spreadMin: 0.3 },
   // Less-lethal (the non-lethal branch reads hit.nonLethal: a knock-out, not a kill): police and prison stock only,
   // never a starting load, never common.
   beanbag:  { name: "beanbag",        dmg: 0.5,  soft: 0.5,  pen: { "12ga": 2 }, opt: -1, close: 4, ad: 0.1, value: 1.3, nonlethal: true },
@@ -141,14 +142,33 @@ export function ammoPen(cal, type) {
   return c.pen + (t.penAdd || 0);
 }
 export const ammoKey = (cal, type) => `a_${cal}_${type}`;
-// × a hit's damage for shot that spreads (AMMO_TYPES spreadFull / spreadDrop / spreadMin) at d tiles: 1 out to spreadFull,
-// then down spreadDrop a tile to spreadMin. 1 for any other type (a slug, a bullet). 00 buckshot: 1 to 4 tiles, 0.8 at 6,
-// 0.6 at 8, 0.4 from 10; birdshot: 1 to 3 tiles, 0.64 at 6, 0.4 at 8, 0.3 from 9.
-/** @param {string | null | undefined} type @param {number} d tiles */
-export function spreadMult(type, d) {
-  const t = type ? AMMO_TYPES[String(type).split(":").pop()] : null; // ("223:sp": a load of another calibre, its type)
-  if (!t || !(t.spreadFull >= 0) || !(t.spreadDrop > 0) || !(d > t.spreadFull)) return 1;
-  return Math.max(t.spreadMin ?? 0, Math.min(1, 1 - (d - t.spreadFull) * t.spreadDrop));
+// Shot never spreads so thin that a hit does less than this round's (user, 2026-10-10: "buckshot can never drop below a
+// .22's hit"): the floor of a load's fall-off is at least this round's mean hit (unarmoured) over the load's own.
+export const SPREAD_FLOOR = { cal: "22lr", type: "fmj" };
+// A calibre's reference hit with a type, unarmoured (the ladder's: CAL_DMG mean × the type's soft-target damage).
+const refHit = (cal, type) => { const d = CAL_DMG[cal], t = AMMO_TYPES[type] || {}; return d ? ((d[0] + d[1]) / 2) * (t.soft ?? t.dmg ?? 1) : 0; };
+// The lowest × a load's spread can reach: its type's spreadMin, or a .22's hit over the load's (SPREAD_FLOOR), the
+// higher. base: the load's mean hit when it is no ladder calibre's (the 40 mm canister: launchers.js LAUNCH.BUCK).
+/** @param {string} type @param {string | null | undefined} [cal] @param {number | null} [base] */
+export function spreadFloor(type, cal, base = null) {
+  const t = AMMO_TYPES[type] || {};
+  const own = base ?? (cal ? refHit(cal, type) : 0);
+  const low = refHit(SPREAD_FLOOR.cal, SPREAD_FLOOR.type);
+  return Math.min(1, Math.max(t.spreadMin ?? 0, own > 0 ? low / own : 0));
+}
+// × a hit's damage for shot that spreads (AMMO_TYPES spreadFull / spreadDrop / spreadMin) at d tiles: 1 out to
+// spreadFull (+ o.extra: a fitted choke's tiles, gunmods.js), then down spreadDrop a tile to the floor (spreadFloor:
+// never under a .22's hit). 1 for any other type (a slug, a bullet). 12 ga 00 buckshot: 1 to 6 tiles, 0.8 at 8,
+// 0.6 at 10, 0.47 (a .22's 14 of its 30) from 11.3; 20 ga 0.56. Birdshot: 1 to 5 tiles, then −12% a tile, its floor a
+// .22's hit (12 ga 0.78, 20 ga 0.93).
+/** @param {string | null | undefined} type @param {number} d tiles @param {{ cal?: string | null, base?: number | null, extra?: number }} [o] */
+export function spreadMult(type, d, o = {}) {
+  const ty = type ? String(type).split(":").pop() : null; // ("223:sp": a load of another calibre, its type)
+  const t = ty ? AMMO_TYPES[ty] : null;
+  if (!t || !(t.spreadFull >= 0) || !(t.spreadDrop > 0)) return 1;
+  const full = t.spreadFull + (o.extra || 0);
+  if (!(d > full)) return 1;
+  return Math.max(spreadFloor(/** @type {string} */ (ty), o.cal, o.base ?? null), Math.min(1, 1 - (d - full) * t.spreadDrop));
 }
 
 // What each round is worth and how common it is (user, 2026-10-10: "make ammo rarity and value based on the round";
@@ -166,7 +186,7 @@ export const ROUND_ECON = {
   "45acp_fmj": ["uncommon", 0.6], "45acp_hp": ["scarce", 0.95], "45acp_subsonic": ["scarce", 0.85],
   "57x28_fmj": ["uncommon", 0.6], "57x28_hp": ["scarce", 0.8],
   "357_fmj": ["uncommon", 0.65], "357_hp": ["scarce", 1.0], "357_plusp": ["rare", 1.0],
-  "44mag_fmj": ["uncommon", 0.9], "44mag_hp": ["scarce", 1.3],
+  "44mag_fmj": ["uncommon", 0.9], "44mag_hp": ["scarce", 1.3], "44mag_sp": ["uncommon", 1.1],
   "38spl_fmj": ["common", 0.45], "38spl_hp": ["uncommon", 0.7], "38spl_plusp": ["scarce", 0.65],
   "223_fmj": ["common", 0.6], "223_sp": ["uncommon", 0.8], "223_match": ["scarce", 1.25],
   "300blk_fmj": ["scarce", 1.0], "300blk_subsonic": ["rare", 1.4], "300blk_hp": ["rare", 1.3],
@@ -292,7 +312,7 @@ export const STARTER_AMMO = {
   "9mm":   [[0.2, "hp", 20]],
   "45acp": [[0.2, "hp", 20]],
   "357":   [[0.15, "hp", 12]],
-  "44mag": [[0.15, "hp", 10]],
+  "44mag": [[0.15, "hp", 10], [0.2, "sp", 20]],
   "57x28": [[0.15, "hp", 20]],
   "38spl": [[0.2, "hp", 20]],
   "223":   [[0.2, "sp", 20]],

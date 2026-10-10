@@ -92,6 +92,9 @@ section("Tactical on the battle map: flanks, cover, allies near");
   const put = (x, y, k) => { b.cells[y * W + x].k = k; };
   const clear = () => { for (const c of b.cells) c.k = "open"; };
   const enemy = b.units.find((u) => u.side === "enemy" && u.kind === "human");
+  // A pistol in the raider's hand (the kit's roll can give a sawn-off, and does since the kits' lists grew: its odds at 6
+  // tiles sit on the 5% floor, where no cover bonus shows).
+  Object.assign(enemy, { weapon: "pistol", weaponName: "Pistol", load: null, item: null });
   const a = plain(st), at = plain(st);
   const ua = playerUnit(b, a); // no Tactical yet: b.tact not set by it
   check(!ua.tact && !b.tact, "no Tactical on the field: nothing looked at");

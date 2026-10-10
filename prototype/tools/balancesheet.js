@@ -52,7 +52,12 @@ export const GLOBALS = {
   "CUSTOM_POINTS.SUPPLY_VALUE": ["CUSTOM_POINTS", ["SUPPLY_VALUE"], "Customize points: supplies' worth ÷ this"],
   "START_GEAR.LOADS": ["START_GEAR", ["LOADS"], "A picked gun's rounds: full loads"],
 };
-/** @type {Record<string, Record<string, { reg: string, path: (k: string) => any[] }>>} */
+// The gun distribution's draws table (gundist.js): a row "profile|raiders" (data-guns.js GUN_DRAWS), "theme|guns"
+// (THEME_DRAWS), "place|site:police" (PLACE_DRAWS) or "source|trader:traders" (GUN_SOURCES' own draws); a column a use.
+export const GUN_USE_COLS = ["civilian", "hunting", "police", "military", "special", "makeshift", "surplus"];
+const DRAW_REG = { profile: "GUN_DRAWS", theme: "THEME_DRAWS", place: "PLACE_DRAWS", source: "GUN_SOURCES" };
+const drawPath = (k, u) => { const [kind, name] = [k.slice(0, k.indexOf("|")), k.slice(k.indexOf("|") + 1)]; return kind === "source" ? [name, "draws", u] : [name, u]; };
+/** @type {Record<string, Record<string, { reg: string, path: (k: string) => any[], regOf?: (k: string) => string }>>} */
 export const FIELDS = {
   guns: {
     rarity: at("GUN_RARITY"), dmgLo: W("dmg", 0), dmgHi: W("dmg", 1), opt: W("opt"), fall: W("fall"), aim: W("aim"), close: W("close"),
@@ -68,7 +73,7 @@ export const FIELDS = {
     chop: G("chop"), pry: G("pry"), value: G("value"), weight: G("weight"), power: G("power"), req: G("req"), dur: G("dur"),
   },
   parts: {
-    ...Object.fromEntries(["aim", "close", "opt", "fall", "noise", "jam", "night", "nightNear", "peq", "brace", "moving", "reload", "wt"].map((f) => [f, at("ATTACH", f)])),
+    ...Object.fromEntries(["aim", "close", "opt", "fall", "noise", "jam", "night", "nightNear", "peq", "brace", "moving", "reload", "wt", "spread"].map((f) => [f, at("ATTACH", f)])),
     value: G("value"), weight: G("weight"), dur: G("dur"),
   },
   mags: { cap: at("MAGAZINES", "cap"), kg: at("MAGAZINES", "kg"), value: at("MAGAZINES", "value"), aim: at("MAGAZINES", "aim"), jam: at("MAGAZINES", "jam") },
@@ -91,10 +96,18 @@ export const FIELDS = {
   bulkFinds: { chance: { reg: "BULK_FINDS", path: (k) => ["CHANCE", k] }, boxed: { reg: "BULK_FINDS", path: (k) => ["BOXED", k] } },
   rarity: { find: at("RARITY_FIND"), gunFind: { reg: "ARSENAL_FINDS", path: (k) => ["FIND_W", k] } },
   globals: { value: { reg: "", path: (k) => GLOBALS[k][1], regOf: (k) => GLOBALS[k][0] } },
+  // the gun distribution (gundist.js): draws by use for a profile / a theme tag / a place / a source's own; sources'
+  // profile and band; the newness factor of the extra-gun rolls
+  gunDraws: Object.fromEntries(GUN_USE_COLS.map((u) => [u, { reg: "", regOf: (k) => DRAW_REG[k.split("|")[0]], path: (k) => drawPath(k, u) }])),
+  gunSources: { draws: { reg: "GUN_SOURCES", path: (k) => [k, "draws"] }, band: { reg: "GUN_SOURCES", path: (k) => [k, "band"] } },
+  gunNewness: { mult: { reg: "GUN_NEWNESS", path: () => ["mult"] }, from: { reg: "GUN_NEWNESS", path: () => ["from"] } },
 };
+FIELDS.guns.gunClass = at("GUN_CLASS");
+FIELDS.guns.added = at("GUN_ADDED");
 // Columns whose field may be absent in the source and added by an edit (a gun with no close-range modifier given one).
 const INSERTABLE = {
-  guns: ["rarity", "close", "aim", "pierce", "brace"],
+  gunDraws: GUN_USE_COLS,
+  guns: ["rarity", "close", "aim", "pierce", "brace", "added"],
   melee: ["meleeAim", "bleed", "stagger", "takedown", "quick", "stab", "reach", "throw"],
   mags: ["aim", "jam"],
   parts: ["aim", "close", "opt", "fall", "noise", "jam", "nightNear", "brace", "moving"],
@@ -127,11 +140,17 @@ function ammoPen(cal, type) {
   return num(get("calibres", cal, "pen")) + num(get("types", type, "penAdd"));
 }
 const calRef = (cal) => avg(get("calibres", cal, "refLo"), get("calibres", cal, "refHi"));
-// data-ammo.js spreadMult: buckshot and birdshot lose damage past spreadFull tiles (spreadDrop a tile, down to spreadMin).
-function spreadMult(type, dist) {
-  const full = get("types", type, "spreadFull"), drop = get("types", type, "spreadDrop"), min = get("types", type, "spreadMin");
+// data-ammo.js spreadFloor / spreadMult: buckshot and birdshot lose damage past spreadFull tiles (spreadDrop a tile), down
+// to spreadMin or a .22's hit over the load's own (SPREAD_FLOOR), the higher.
+const refHit = (cal, type) => calRef(cal) * tval(type, "soft");
+function spreadFloor(type, cal) {
+  const min = get("types", type, "spreadMin"), own = cal ? refHit(cal, type) : 0, low = refHit(S.spreadFloor.cal, S.spreadFloor.type);
+  return Math.min(1, Math.max(has(min) ? min : 0, own > 0 ? low / own : 0));
+}
+function spreadMult(type, dist, cal) {
+  const full = get("types", type, "spreadFull"), drop = get("types", type, "spreadDrop");
   if (!has(full) || !(has(drop) && drop > 0) || !(dist > full)) return 1;
-  return Math.max(has(min) ? min : 0, Math.min(1, 1 - (dist - full) * drop));
+  return Math.max(spreadFloor(type, cal), Math.min(1, 1 - (dist - full) * drop));
 }
 // ladder.js hitDamage: ac null = no armour (× soft / dmg), else the piece's expected multiplier (new: condition 1);
 // dist: at that range (shot that spreads).
@@ -139,7 +158,7 @@ function hitDamage(cal, type, ac, base, past, dist) {
   const d = tval(type, "dmg"), soft = tval(type, "soft");
   const b = base == null ? calRef(cal) : base;
   const rr = S.reach[cal];
-  const raw = b * d * (past && rr ? rr.dmg : 1) * (dist != null ? spreadMult(type, dist) : 1);
+  const raw = b * d * (past && rr ? rr.dmg : 1) * (dist != null ? spreadMult(type, dist, cal) : 1);
   if (ac == null) return raw * (soft / d);
   return raw * pieceMult(ammoPen(cal, type), ac, 1);
 }
@@ -199,7 +218,7 @@ const CALC = {
     hitVest: (k) => { const v = gunHit(k, 2, false); return v == null ? null : r1(v); },
     hitPlate: (k) => { const v = gunHit(k, 4, false); return v == null ? null : r1(v); },
     hitPast: (k) => (S.reach[S.gunCal[k]] ? r1(gunHit(k, null, true)) : null),
-    hitFar: (k) => { const cal = S.gunCal[k], t = cal && S.calBase[cal]; return t && S.ladder[cal] != null && spreadMult(t, S.far) < 1 ? r1(hitDamage(cal, t, null, gunAvg(k), false, S.far)) : null; },
+    hitFar: (k) => { const cal = S.gunCal[k], t = cal && S.calBase[cal]; return t && S.ladder[cal] != null && spreadMult(t, S.far, cal) < 1 ? r1(hitDamage(cal, t, null, gunAvg(k), false, S.far)) : null; },
     shotsPerMag: (k) => { const c = get("guns", k, "cap"), a = get("guns", k, "ammo"); return has(c) && c > 0 ? Math.floor(c / Math.max(1, num(a))) : null; },
     perReload: (k) => { const n = get("feeds", k, "perReload"); return has(n) ? n : null; },
     fillReloads: (k) => { const n = get("feeds", k, "perReload"), c = get("guns", k, "cap"); return has(n) && n > 0 && has(c) ? Math.ceil(c / n) : null; },
@@ -234,7 +253,7 @@ const CALC = {
     vest: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null ? r1(hitDamage(c, t, 2)) : null; },
     plate: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null ? r1(hitDamage(c, t, 4)) : null; },
     past: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null && S.reach[c] ? r1(hitDamage(c, t, null, null, true)) : null; },
-    far: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null && spreadMult(t, S.far) < 1 ? r1(hitDamage(c, t, null, null, false, S.far)) : null; },
+    far: (k) => { const [c, t] = S.split[k]; return S.ladder[c] != null && spreadMult(t, S.far, c) < 1 ? r1(hitDamage(c, t, null, null, false, S.far)) : null; },
     boxN: (k) => { const [c, t] = S.split[k]; return box(c, t).n; },
     boxKg: (k) => { const [c, t] = S.split[k]; return box(c, t).kg; },
     boxValue: (k) => { const [c, t] = S.split[k]; return box(c, t).value; },
@@ -315,6 +334,7 @@ export async function collect(root = PROTO) {
     calBase: Object.fromEntries(Object.entries(CALIBERS).map(([c, d]) => [c, d.base])),
     ladder: Object.fromEntries(LADDER.ORDER.map((c, i) => [c, i + 1])),
     far: LD.FAR, // ladder.js: the range of the "at range" columns (shot that spreads)
+    spreadFloor: { ...A.SPREAD_FLOOR }, // data-ammo.js: shot never hits for less than this round
     gunCal: {}, kitCal: {}, magCal: {}, fitValue: {}, extrasValue: {}, item: {}, themes: THEMES,
   };
   const tree = new SourceTree(root);
@@ -391,7 +411,7 @@ export async function collect(root = PROTO) {
     const v = {
       name: (d && d.name) || w.name, cat: (d && d.cat) || (w.mount || w.mounted ? "mounted" : "-"), platform: GM.platformOf(k) || "", kind: GM.gunCategory ? GM.gunCategory(k) || "" : "",
       cal: cal || (w.arrows ? "arrows" : ""), alsoTakes: (AM.gunCalsOf ? AM.gunCalsOf(k) : []).filter((c) => c !== cal).join(", "), rarity: GUN_RARITY[k] ?? null,
-      gunClass: (DG.GUN_CLASS && DG.GUN_CLASS[k] ? DG.GUN_CLASS[k] : []).join(" "),
+      gunClass: DG.GUN_CLASS && DG.GUN_CLASS[k] ? DG.GUN_CLASS[k].join(" ") : null, added: DG.GUN_ADDED ? DG.GUN_ADDED[k] ?? null : null,
       dmgLo: w.dmg[0], dmgHi: w.dmg[1], opt: w.opt ?? null, fall: w.fall ?? null, aim: w.aim ?? null, close: w.close ?? null,
       ammo: w.ammo ?? null, noise: w.noise ?? null, cap: w.cap ?? null, rel: w.rel ?? null, pierce: w.pierce ?? null,
       brace: typeof w.brace === "number" ? w.brace : null, heavyMob: w.heavy ? w.heavy.mob : null, heavyBrace: w.heavy ? w.heavy.brace : null,
@@ -418,7 +438,8 @@ export async function collect(root = PROTO) {
     C("name", "Name", "text"), C("cat", "Category", "text"), C("platform", "Platform", "text"), C("kind", "Kind", "text", { hide: true, desc: "data-gunmods.js PLATFORMS cat: its CATEGORIES row (the slots that kind never has)" }), C("cal", "Calibre", "text"),
     C("alsoTakes", "Also takes", "text", { desc: "Other calibres its chamber takes (data-ammo.js CAL_ACCEPTS, a gun's own cals): a 5.56 gun .223, a .357 .38 Special" }),
     C("rarity", "Rarity", "tier", { desc: "data-guns.js GUN_RARITY" }), C("findW", "Find weight", "num", { ...live, desc: "ARSENAL_FINDS.FIND_W of its tier (every gun source's rarity weight: gundist.js)" }),
-    C("gunClass", "Class", "text", { hide: true, desc: "data-guns.js GUN_CLASS: its uses (who keeps one) and era; the gun distribution's sources draw by them" }),
+    C("gunClass", "Class", "text", { hide: true, desc: "data-guns.js GUN_CLASS: its uses (civilian hunting police military special makeshift surplus) and era (old coldwar modern), space-separated; the gun distribution's sources draw by them" }),
+    C("added", "Added", "text", { hide: true, desc: "data-guns.js GUN_ADDED (YYYY-MM-DD): on or after GUN_NEWNESS.from the extra-gun rolls weigh it × GUN_NEWNESS.mult" }),
     C("dmgLo", "Dmg lo"), C("dmgHi", "Dmg hi"), C("dmgAvg", "Dmg avg", "num", live), C("calRef", "Calibre ref", "num", { ...live, desc: "data-ammo.js CAL_DMG average" }),
     C("band", "Band", "pct", { ...live, desc: "Gun avg ÷ calibre ref (LADDER.BAND keeps it 85–115%)" }),
     C("hitBare", "Hit: none", "num", { ...live, desc: "Mean hit with the calibre's base round, no armour (ladder.js gunHit)" }),
@@ -450,6 +471,28 @@ export async function collect(root = PROTO) {
     C("pool", "Guns in pool"), C("top", "Top of pool (share)", "text", after),
   ], placeRows, { note: "data-guns.js ARSENAL_FINDS: the chance a roll finds an extra gun; which: the place's draws in the gun distribution (gundist.js; data-guns.js GUN_CLASS, GUN_SOURCES / PLACE_DRAWS), weighted by rarity (FIND_W)." });
 
+  // ---- the gun distribution (gundist.js) ----
+  {
+    const drawRows = [];
+    const addDraws = (kind, name, d, by) => { if (d && typeof d === "object") drawRows.push({ key: `${kind}|${name}`, v: { ...Object.fromEntries(GUN_USE_COLS.map((u) => [u, d[u] ?? null])), kind, name, by } }); };
+    const users = (prof) => Object.entries(DG.GUN_SOURCES || {}).filter(([, s]) => s.draws === prof).map(([n]) => n).concat(Object.entries(DG.PLACE_DRAWS || {}).filter(([, d]) => d === prof).map(([n]) => n));
+    for (const [n, d] of Object.entries(DG.GUN_DRAWS || {})) addDraws("profile", n, d, users(n).join(", "));
+    for (const [n, d] of Object.entries(DG.THEME_DRAWS || {})) addDraws("theme", n, d, "places with this loot tag (no PLACE_DRAWS line)");
+    for (const [n, d] of Object.entries(DG.PLACE_DRAWS || {})) addDraws("place", n, d, n);
+    for (const [n, s] of Object.entries(DG.GUN_SOURCES || {})) addDraws("source", n, s.draws, n);
+    table("gunDraws", "Gun draws by use", [C("kind", "Kind", "text"), C("name", "Name", "text"), ...GUN_USE_COLS.map((u) => C(u, u[0].toUpperCase() + u.slice(1))), C("by", "Used by", "text", { hide: true })], drawRows,
+      { note: "data-guns.js GUN_DRAWS (profiles), THEME_DRAWS (a place's loot tags), PLACE_DRAWS, GUN_SOURCES (a source's own): the weight a source gives a gun of each use (a gun counts its best use) × its rarity's FIND_W. Empty: that use is not drawn (an edit adds it)." });
+    const srcRows = Object.entries(DG.GUN_SOURCES || {}).map(([n, s]) => {
+      const pool = GD.gunsFrom(n), tot = Object.values(pool).reduce((a, b) => a + b, 0);
+      return { key: n, v: { draws: typeof s.draws === "string" ? s.draws : "(own)", band: s.band ?? null, guns: Object.keys(pool).length, top: Object.entries(pool).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([g, w]) => `${g} ${tot ? Math.round((w / tot) * 100) : 0}%`).join(", ") } };
+    });
+    table("gunSources", "Gun sources", [C("draws", "Draws (profile)", "text"), C("band", "Power band"), C("guns", "Guns"), C("top", "Top of pool (share)", "text", after)], srcRows,
+      { note: "data-guns.js GUN_SOURCES: a source's draw profile (GUN_DRAWS; \"(own)\": its own, in Gun draws) and, for a fighter's gun, the ± power band around the gun its kit's list gave." });
+    const N = DG.GUN_NEWNESS || {};
+    table("gunNewness", "New guns in the extra rolls", [C("mult", "× weight"), C("from", "Added from", "text")], [{ key: "newness", v: { mult: N.mult ?? null, from: N.from ?? null } }],
+      { note: "data-guns.js GUN_NEWNESS: a gun added on or after `from` (GUN_ADDED) is × mult as likely in the extra-gun rolls (gunfinds.js: a search hour's, a raid container's, a shelf's, a safe's, a crawl room's); never in a list's swap or a kit." });
+  }
+
   // ---- melee ----
   const meleeRows = [];
   for (const [k, w] of Object.entries(WEAPONS)) {
@@ -480,7 +523,7 @@ export async function collect(root = PROTO) {
       name: d.name, slot: a.slot, tier: pc ? pc.tier : "", rarity: pc ? pc.rarity : null, brandOf: brandOf || "",
       value: d.value ?? null, weight: d.weight ?? null, dur: d.dur ?? null,
       aim: a.aim ?? null, close: a.close ?? null, opt: a.opt ?? null, fall: a.fall ?? null, noise: a.noise ?? null, jam: a.jam ?? null,
-      night: a.night ?? null, nightNear: a.nightNear ?? null, peq: a.peq ?? null, brace: a.brace ?? null, moving: a.moving ?? null, reload: a.reload ?? null, wt: a.wt ?? null,
+      night: a.night ?? null, nightNear: a.nightNear ?? null, peq: a.peq ?? null, brace: a.brace ?? null, moving: a.moving ?? null, reload: a.reload ?? null, wt: a.wt ?? null, spread: a.spread ?? null,
       flags: [a.can ? "suppressor" : "", a.light ? "light" : "", a.flashless ? "flashless" : "", a.thermal ? "thermal" : "", a.launcher ? "launcher" : "", a.adds ? `adds ${a.adds.join("/")}` : ""].filter(Boolean).join(", "),
       brandValue: brandOf && GEAR[brandOf] ? GEAR[brandOf].value : null,
       fits: GM.fitsText ? GM.fitsText(k) : "", gunCount: fitGuns.length, guns: fitGuns.join(", "), tags: list(ITEM_TAGS[k]),
@@ -493,7 +536,7 @@ export async function collect(root = PROTO) {
     C("value", "Value"), C("weight", "Weight kg"), C("dur", "Wears out in", "num", { desc: "A budget or makeshift part: fights (a muzzle device: shots)" }),
     C("aim", "Aim"), C("close", "Close"), C("opt", "Best range +"), C("fall", "Fall-off +"), C("noise", "Noise ×"), C("jam", "Jam ×"),
     C("nightNear", "Night aim ≤6"), C("night", "Night aim", "num", hide), C("peq", "IR aim (NVG)", "num", hide), C("brace", "Rested aim"), C("moving", "Moving aim"),
-    C("reload", "Shells/reload +", "num", hide), C("wt", "Fitted kg", "num", hide), C("flags", "Does", "text"),
+    C("reload", "Shells/reload +", "num", hide), C("wt", "Fitted kg", "num", hide), C("spread", "Shot full to +", "num", { desc: "A choke: + tiles of buckshot's full damage (data-ammo.js spreadMult)" }), C("flags", "Does", "text"),
     C("brandOf", "Copies", "text", { desc: "A budget clone: the part it copies (tools/gunslottest.js: never better, always cheaper)" }), C("brandValue", "Its value", "num", hide),
     C("gunCount", "Guns fit"), C("fits", "Fits", "text", hide), C("guns", "Guns it fits", "text", hide), C("tags", "Loot tags", "text", hide), C("look", "Drawn as", "text", hide),
   ], partRows, { note: "Gun attachments: gunmods.js LEGACY and data-gunmods.js MOD_ATTACH (numbers), MOD_GEAR / PART_INFO (items). Magazines: the Magazines tab." });
@@ -537,7 +580,7 @@ export async function collect(root = PROTO) {
   const typeCols = ["dmg", "soft", "penAdd", "value", "aim", "opt", "fallMult", "close", "noise", "jam", "ad", "spreadFull", "spreadDrop", "spreadMin"];
   table("types", "Ammo types", [
     C("name", "Name", "text"), ...typeCols.map((f) => C(f, { dmg: "Dmg ×", soft: "Soft ×", penAdd: "Pen +", value: "Value ×", aim: "Aim", opt: "Range", fallMult: "Fall-off ×", close: "Close", noise: "Noise ×", jam: "Jam ×", ad: "Armour wear",
-      spreadFull: "Spread: full to (tiles)", spreadDrop: "Spread: lost a tile", spreadMin: "Spread: floor" }[f], "num", f.startsWith("spread") ? { desc: "Shot that spreads (data-ammo.js spreadMult): full damage out to this many tiles, then − this share a tile, never under the floor" } : {})),
+      spreadFull: "Spread: full to (tiles)", spreadDrop: "Spread: lost a tile", spreadMin: "Spread: floor" }[f], "num", f.startsWith("spread") ? { desc: "Shot that spreads (data-ammo.js spreadMult): full damage out to this many tiles, then − this share a tile, never under the floor nor under a .22's hit (SPREAD_FLOOR)" } : {})),
     C("penBy", "Pen by calibre", "text"), C("flags", "Flags", "text"),
   ], Object.entries(AMMO_TYPES).map(([t, d]) => ({ key: t, v: {
     name: d.name, ...Object.fromEntries(typeCols.map((f) => [f, isNum(d[f]) ? d[f] : null])),
@@ -613,6 +656,7 @@ export async function collect(root = PROTO) {
     rarityOrder: [...RARITY],
     tabs: [
       { id: "guns", title: "Guns", tables: ["guns", "places"] },
+      { id: "gundist", title: "Gun distribution", tables: ["gunSources", "gunDraws", "gunNewness"] },
       { id: "mags", title: "Magazines", tables: ["mags", "feeds", "clips"] },
       { id: "parts", title: "Attachments", tables: ["parts"] },
       { id: "ammo", title: "Calibres & rounds", tables: ["rounds", "calibres", "types", "themeCals", "themeTypes"] },

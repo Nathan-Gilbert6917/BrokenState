@@ -291,7 +291,10 @@ function drive(state, pred, maxHours, keep = () => false) {
   const { st, h, f } = setup(seed + 10);
   for (let i = 0; i < 4; i++) fighter(st);
   setAutopilot(st, true, "balanced");
-  f.pop = 5; Object.assign(f.stock, { meds: 200, wood: 0, scrap: 0, food: 0 }); // they pay in light goods: a caravan of two carries it home
+  // They pay in light goods (meds): a caravan of two carries it home. No ammo to spare: rounds come first among their
+  // surplus, and their kind's share of one calibre (spread over more calibres since ar-platform and calibres-more) is
+  // about the price itself, leaving nothing over for the delivery fee.
+  f.pop = 5; Object.assign(f.stock, { meds: 200, wood: 0, scrap: 0, food: 0, ammo: 0 });
   Object.assign(h.stock, { ammo: 2000, scrap: 400, parts: 40, fuel: 40, meds: 40, food: 600, water: 400 });
   let card = null;
   for (let i = 0; i < 60 && !card; i++) { const c = offerCard(st, f); if (c && c.bring) card = c; }

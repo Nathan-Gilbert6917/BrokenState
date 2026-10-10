@@ -208,7 +208,7 @@ R.initRenderer({ getContext: () => ctx, getBoundingClientRect: () => ({ width: 1
 R.view.layers = new Set(["pois", "territory", "teams", "hordes", "infection"]);
 R.zoomAt(800, 450, 0.5 / R.camera.zoom);
 const reader = chronicleReader(state);
-let built = 0, errors = 0, maxParties = 0, maxHordes = 0, fallenSeen = false;
+let built = 0, errors = 0, maxParties = 0, maxHordes = 0, fallenSeen = false, lastFs = null;
 const t1 = performance.now();
 const times = [];
 for (let d = 1; d <= lastDay; d++) times.push((d - 1) * 24 + 12); // mid-day: between two frames
@@ -221,13 +221,18 @@ for (const t of times) {
     maxParties = Math.max(maxParties, fs.parties.length);
     maxHordes = Math.max(maxHordes, fs.hordes.length);
     if (fs.fallen.length) fallenSeen = true;
+    lastFs = fs; // (the last time is the last frame's hour)
   } catch (err) {
     if (errors++ < 3) console.log(`  error at hour ${t}: ${err.stack}`);
   }
 }
 const ms = performance.now() - t1;
 check(errors === 0, "every frame state renders without errors");
-check(fallenSeen, "the last frame shows the fallen holdout");
+// Every base already lost before the last death (a raid's Retreat card, then the road: conquest.js retreatFrom): no
+// base of yours left to mark, the frame says the holdout fell all the same.
+const lostFirst = !c.frames[c.frames.length - 1].bases.length;
+if (lostFirst) check(!!(lastFs && lastFs.info.fallen && !lastFs.bases.length), "the last frame says the holdout fell (its bases lost before the last death: none left to mark)");
+else check(fallenSeen, "the last frame shows the fallen holdout");
 console.log(`  ${built} frame states built and rendered (${lastDay} mid-day + ${c.frames.length} frame hours), ${(ms / built).toFixed(2)} ms each (JS only), ${draws} draw calls; up to ${maxHordes} hordes and ${maxParties} parties on screen`);
 
 // Ruins in the timelapse: a ruin appears in the frames from the day the base burned, with its name, is drawn by the

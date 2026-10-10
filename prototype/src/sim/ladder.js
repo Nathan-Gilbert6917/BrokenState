@@ -18,17 +18,17 @@ const r1 = (v) => Math.round(v * 10) / 10;
 // The reference targets: none, a soft vest (AC 2, new), a steel plate (AC 4, new).
 export const TARGETS = { bare: null, vest: { ac: 2, cond: 1 }, plate: { ac: 4, cond: 1 } };
 /** Mean damage of a hit of this calibre and type with base damage `base` (default: the calibre's reference).
- * @param {string} cal @param {string} type @param {{ ac: number, cond?: number } | null} [armour] @param {{ base?: number, past?: boolean, dist?: number }} [o] */
+ * @param {string} cal @param {string} type @param {{ ac: number, cond?: number } | null} [armour] @param {{ base?: number, past?: boolean, dist?: number, extra?: number }} [o] (extra: a choke's tiles) */
 export function hitDamage(cal, type, armour = null, o = {}) {
   const t = AMMO_TYPES[type] || {};
   const base = o.base ?? avg(CAL_DMG[cal] || [0, 0]);
   const rr = ROUND_REACH[cal];
-  const raw = base * (t.dmg ?? 1) * (o.past && rr ? rr.dmg ?? 1 : 1) * (o.dist != null ? spreadMult(type, o.dist) : 1);
+  const raw = base * (t.dmg ?? 1) * (o.past && rr ? rr.dmg ?? 1 : 1) * (o.dist != null ? spreadMult(type, o.dist, { cal, extra: o.extra || 0 }) : 1);
   if (!armour) return raw * ((t.soft ?? 1) / (t.dmg ?? 1));
   return raw * pieceMult(ammoPen(cal, type), armour.ac, armour.cond ?? 1);
 }
 // The range the ladder's "far" column is taken at (tiles): a shotgun's buckshot at 8 tiles, 0.6 of its hit up close.
-export const FAR = 8;
+export const FAR = 10;
 // Every lethal round of a calibre on the ladder: { cal, type, tier, value, pen, bare, vest, plate, past, far }
 // (far: unarmoured at FAR tiles for shot that spreads, else null).
 export function ladderRows() {
@@ -41,7 +41,7 @@ export function ladderRows() {
         cal, type, name: `${CALIBERS[cal].name} ${t.name}`, base: type === CALIBERS[cal].base, tier: roundTier(cal, type), value: roundValue(cal, type), pen: ammoPen(cal, type),
         bare: r1(hitDamage(cal, type)), vest: r1(hitDamage(cal, type, TARGETS.vest)), plate: r1(hitDamage(cal, type, TARGETS.plate)),
         past: ROUND_REACH[cal] ? r1(hitDamage(cal, type, null, { past: true })) : null,
-        far: spreadMult(type, FAR) < 1 ? r1(hitDamage(cal, type, null, { dist: FAR })) : null,
+        far: spreadMult(type, FAR, { cal }) < 1 ? r1(hitDamage(cal, type, null, { dist: FAR })) : null,
       });
     }
   }

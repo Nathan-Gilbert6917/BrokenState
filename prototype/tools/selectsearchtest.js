@@ -163,7 +163,12 @@ function parseInto(root, html) {
 }
 class Doc extends El {
   constructor() { super("#document"); this.nodeType = 9; }
-  createElement(t) { return new El(t); }
+  createElement(t) {
+    const el = new El(t);
+    // A canvas draws on a context that does nothing (gun thumbnails in item lists, ui/gunart.js gunThumb: since gun-art2).
+    if (String(t).toLowerCase() === "canvas") Object.assign(el, { width: 0, height: 0, getContext: () => new Proxy({}, { get: (o, k) => (k in o ? o[k] : () => {}), set: (o, k, v) => ((o[k] = v), true) }), toDataURL: () => "data:image/png;base64," });
+    return el;
+  }
   createTextNode(t) { return new TextNode(t); }
 }
 const doc = new Doc();

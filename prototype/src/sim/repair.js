@@ -30,6 +30,7 @@ import { burnShare } from "./woodcutting.js";
 import { itemAt, parseLoc, placeOfLoc, storageFor, salvageAt } from "./inventory.js";
 import { itemValue } from "./valuation.js";
 import { gainXp, USE } from "./skills.js";
+import { driftOf } from "./gunmods.js"; // budget sights off zero (re-zeroed at a workbench: rezeroHour)
 
 export const REPAIR = {
   LOSS_BASE: 0.25, LOSS_PER_SKILL: 0.01, LOSS_MIN: 0.08, KIT_LOSS: 2, KIT_RESTORE: 0.5, MASTER_LOSS: 0.7,
@@ -284,6 +285,29 @@ export function repairHour(state) {
     q.splice(q.indexOf(job), 1);
     log(state, repairItem(state, base, job.item, team[0]).msg, "good");
   }
+}
+
+// ---------- re-zeroing budget sights (user pick 2026-10-10) ----------
+// A budget sight, magnifier or set of rings drifts off zero a fight at a time (gunmods.js driftOf). At a base with a
+// workbench (tier 2+) and someone home, every morning (REZERO_HOUR) the guns kept there (the armory, the residents'
+// hands, pockets and packs) have their budget sights re-zeroed: free, an hour at the bench; their wear (dur) stays.
+export const REZERO_HOUR = 7;
+export function rezeroHour(state) {
+  if ((state.hour || 0) % 24 !== REZERO_HOUR) return 0;
+  let total = 0;
+  for (const base of state.bases || []) {
+    if (benchTier(base) < 2) continue;
+    const home = atBase(state, base.id);
+    if (!home.length) continue;
+    const guns = [...(base.armory || [])];
+    for (const s of home) guns.push(s.gear && s.gear.weapon, ...(s.pockets || []), ...((s.gear && s.gear.backpack && s.gear.backpack.contents) || []));
+    let n = 0;
+    for (const g of guns) for (const m of Object.values((g && g.mods) || {})) if (m && driftOf(m) > 0) { m.zero = 0; n++; }
+    else if (m && m.zero) m.zero = 0;
+    if (n) log(state, `${base.name}: ${n} budget sight${n === 1 ? "" : "s"} re-zeroed at the workbench.`, "info");
+    total += n;
+  }
+  return total;
 }
 
 // ---------- a field repair kit ----------

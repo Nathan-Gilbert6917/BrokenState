@@ -45,7 +45,7 @@ import { throwBlind, throwLanding, blastSpot, landEffect, nextTurnOf, SMOKE } fr
 import { gunMods, modLabel, NO_MODS } from "./gunmods.js";
 import { syncModes } from "./gunfire.js";
 import { chooseLoad } from "./ammo.js";
-import { ammoKey, CALIBERS } from "./data-ammo.js";
+import { ammoKey, CALIBERS, spreadMult } from "./data-ammo.js";
 import { hash01 } from "./skills.js";
 import { skill } from "./world.js";
 import { itemDur, itemDurMax } from "./crafting.js";
@@ -445,10 +445,12 @@ function buckShot(b, u, t, who) {
   const chance = clamp(Math.round(glAim(u) + B.aim - COVER_DEF[cover] - Math.max(0, d - B.opt) * B.fall), 5, 95);
   fx(b, { type: "shot", from: [u.x, u.y], to: [t.x, t.y], hit: true, side: u.side });
   if (!b.rng.chance(chance / 100)) { say(b, `${u.name} fires buckshot from the ${who} at ${t.name} and misses (${chance}%).`, "info"); return; }
-  const eff = Math.round(damage(b, t, b.rng.int(B.dmg[0], B.dmg[1]), u, false, { how: "shot", cal: "12ga", ammo: "buck", pen: 10, spread: true })); // a canister of buckshot: armour takes it like a shotgun's
+  // Its buckshot spreads with range like a shotgun's (data-ammo.js spreadMult; its floor: a .22's hit over its own mean).
+  const sm = spreadMult("buck", d, { base: (B.dmg[0] + B.dmg[1]) / 2 });
+  const eff = Math.round(damage(b, t, b.rng.int(B.dmg[0], B.dmg[1]) * sm, u, false, { how: "shot", cal: "12ga", ammo: "buck", pen: 10, spread: true })); // a canister of buckshot: armour takes it like a shotgun's
   if (u.xpT && t.side !== u.side) { u.xpT.hits++; if (t.dead) u.xpT.kills++; }
   fx(b, { type: "melee", from: [u.x, u.y], to: [t.x, t.y], hit: true, crit: false, dmg: eff, side: u.side, text: `-${eff}` });
-  say(b, `${u.name} fires buckshot from the ${who}: ${t.name} takes ${eff}${t.dead ? " and drops" : ""} (${chance}%).`, u.side === "enemy" ? "danger" : "good");
+  say(b, `${u.name} fires buckshot from the ${who}: ${t.name} takes ${eff}${t.dead ? " and drops" : ""} (${chance}%${sm < 1 ? `, spread ×${Math.round(sm * 100) / 100}` : ""}).`, u.side === "enemy" ? "danger" : "good");
 }
 // The backblast: anyone in the cone behind takes 10–20; a shooter in a room takes 8–14 and loses their next action.
 function backblast(b, u, x, y) {

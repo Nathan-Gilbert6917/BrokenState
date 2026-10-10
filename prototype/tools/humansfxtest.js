@@ -144,7 +144,9 @@ const names = (cs) => cs.filter((c) => /^h[A-Z]/.test(c.name)).map((c) => c.name
   if (surv) surv.conditions = [{ key: "chestcold", sev: 30 }];
   if (t5) { t5.hp = Math.floor((t5.maxHp || 100) * 0.3); t5.movedT = b.turn; }
   const heard = new Map();
-  for (let i = 0; i < 40; i++) for (const c of step(0.5)) if (/^h[A-Z]/.test(c.name)) heard.set(`${c.unit}:${c.name}`, true);
+  // A minute of it: five people's state sounds (every 5-12 s each, seeded by their voices) share HUMAN_MAX at once, and
+  // equal priorities go by unit id, so the last one's turn can be missed more than once in a row.
+  for (let i = 0; i < 120; i++) for (const c of step(0.5)) if (/^h[A-Z]/.test(c.name)) heard.set(`${c.unit}:${c.name}`, true);
   const h = (u, n) => heard.has(`${u.id}:${n}`);
   check(h(p, "hScared"), "pinned down: frightened breathing");
   check(h(q, "hMuffled"), "tied and gagged: muffled sounds");

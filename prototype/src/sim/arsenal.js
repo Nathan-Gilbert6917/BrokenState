@@ -60,6 +60,8 @@ import { fitPeople, noteFight, weightOf, woundsFor, wearGroupVehicles, tickOf } 
 import { armLauncher, settleArsenalLauncher } from "./launchers.js"; // a launcher issued beside the gun (section 13), its rounds from the stores
 import { armKit, seedKit, kitWorthy } from "./carrykit.js"; // carry kit (sections 15-16): their rigs, spare magazines and plates
 import { swapGun, kitGunSource } from "./gundist.js"; // the gun distribution: which gun a kit, a newcomer, a scavenger or their gunsmith brings
+import { available } from "./trade.js"; // what a group can spare (call time only)
+import { SUPPLIES } from "./data.js";
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -90,6 +92,10 @@ export const ARSENAL = {
     // than GUNS a head.
     gunEvery: 5, gunScrap: 8, gunParts: 1, guns: 1.1 },
   WANT: 1.3, // weapons a head they keep; more goes on the trade shelf
+  // Buying a gun from passing traders (groupBuysGun): every `every` days below `guns` guns a head, at value × markup,
+  // paid from `share` of the scrap they can spare (trade.js available: past their reserve). Only well under the guns
+  // a group usually holds (about 0.85 a head in 2-year autopilot runs), never with food, meds or fuel.
+  BUY: { every: 12, guns: 0.7, markup: 1.3, share: 0.5, keys: ["scrap"] },
   SHELF: 2, // surplus pieces put on the shelf a refresh
   // Smoke grenades (siege.js coverSmoke: over a retreat) come back coarsely, a day at a time: while a group holds fewer
   // than its kit's share a head (NONLETHAL smokegren), it gets one a day at this chance from its scavenging and trade
@@ -775,6 +781,32 @@ export function newcomerKit(state, f, tag) {
   }
   return out;
 }
+// A group buys a gun from passing traders (AI parity with the governor's buying, govguns.js; coarse): every BUY.every
+// days while it has fewer than BUY.guns guns a head (its newcomers unarmed), one of its kit's guns (gundist.js: of its
+// kind in the band of its list's) at its value × BUY.markup, paid from BUY.share of what it can spare (trade.js
+// available: its reserves kept) of BUY.keys at their value, the most plentiful first. Hashed dice; the goods leave the
+// world.
+function groupBuysGun(state, f, A, salt, dd) {
+  const B = ARSENAL.BUY;
+  if (!B || f.outsider || dd % B.every !== 0) return;
+  if (sortedKit(A).W.filter((it) => usesRounds(it.key)).length >= f.pop * B.guns) return;
+  const list = (KITS[kitOf(f)] || KITS.survivors).weapons.filter((k) => usesRounds(k));
+  if (!list.length) return;
+  const key = swapGun(kitGunSource(kitOf(f)), list[Math.floor(hash01(...salt, "bw") * list.length) % list.length], [...salt, "bwg"]);
+  if (!GEAR[key]) return;
+  const price = (GEAR[key].value || 0) * B.markup;
+  const pay = {};
+  let left = price;
+  for (const k of [...B.keys].sort((a, b) => available(f, b) * (SUPPLIES[b].value || 1) - available(f, a) * (SUPPLIES[a].value || 1) || (a < b ? -1 : 1))) {
+    const v = SUPPLIES[k].value || 1, q = Math.min(Math.floor(available(f, k) * B.share), Math.ceil(left / v));
+    if (q > 0) { pay[k] = q; left -= q * v; }
+    if (left <= 0) break;
+  }
+  if (left > 0) return; // they cannot spare it
+  for (const [k, q] of Object.entries(pay)) f.stock[k] = Math.max(0, (f.stock[k] || 0) - q);
+  addToArsenal(state, f, lootItem(key, "merchant", [...salt, "bwi"]), "purchased");
+  A.spent = (A.spent || 0) + Math.round(price);
+}
 // Their daily upkeep (factions.js factionsDaily): newcomers' weapons, crafting from scrap, explosives.
 export function arsenalDaily(state, f) {
   const A = ensureArsenal(state, f);
@@ -786,6 +818,7 @@ export function arsenalDaily(state, f) {
   restockSmoke(state, f, A, salt);
   groupReloadDaily(state, f, hasWorkshop(state, f)); // reloading.js: powder and primers bought, rounds loaded at their workshop
   const C = ARSENAL.CRAFT, phase = Math.floor(h(state.seed, f.name, "craft") * 12);
+  groupBuysGun(state, f, A, salt, d + phase); // AI parity with the governor's gun buying (govguns.js)
   if (hash01(...salt, "crafty") >= weightOf(f, "craft")) { A.pop0 = f.pop; return; } // groupcare.js GROUP_PRIORITIES: some types craft less
   const o = sortedKit(A);
   if ((d + phase) % C.every === 0 && o.W.length < f.pop && (f.stock.scrap || 0) >= C.scrap + 2) {

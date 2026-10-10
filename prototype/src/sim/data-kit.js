@@ -38,6 +38,8 @@ export const MAGAZINES = { // (a "c" key: a budget Chinese clone of the one abov
   mag_ak_30:       { plat: ["ak"], cal: "762x39", cap: 30, kg: 0.33, value: 6, pouch: "rifle", name: "AK magazine (30)" },
   mag_ak_45:       { plat: ["ak"], cal: "762x39", cap: 45, kg: 0.4, value: 12, pouch: "rifle", name: "AK magazine (45)" },
   mag_ak_75:       { plat: ["ak"], cal: "762x39", cap: 75, kg: 1.3, value: 40, pouch: "rifle", name: "AK drum (75)", aim: -2, jam: 1.3 },
+  mag_ak_75c:      { plat: ["ak"], cal: "762x39", cap: 75, kg: 1.45, value: 14, pouch: "rifle", name: "Budget AK drum (Chinese clone) (75)", aim: -3, jam: 1.7,
+                     desc: "A cheap copy of a 75-round AK drum with a weak spring: heavy and clumsy (−3 aim) and it feeds badly (jams ×1.7). Fits a Kalashnikov." },
   mag_ar10_10:     { plat: ["ar10"], cal: "308", cap: 10, kg: 0.12, value: 5, pouch: "rifle", name: ".308 rifle magazine (10)" },
   mag_ar10_20:     { plat: ["ar10"], cal: "308", cap: 20, kg: 0.15, value: 8, pouch: "rifle", name: ".308 rifle magazine (20)" },
   mag_bolt_5:      { plat: ["bolt"], cal: "308", cap: 5, kg: 0.1, value: 5, pouch: "rifle", name: "Bolt-action magazine (5)" },
@@ -95,6 +97,9 @@ export const CLIPS = {
   speedloader: { weapons: ["revolver", "service38"], n: 6, pouch: "pistol" }, // (the snub-noses' five-shot cylinders take none: a speed strip at most)
   stripper308: { weapons: ["huntrifle"], n: 5, pouch: "rifle" },
 };
+// More calibres of 2026-10-10: a .44 speedloader (the .44 Magnum revolver's six fatter rounds; a .357's will not take them).
+export const CALIBRE_CLIPS = { speedloader44: { weapons: ["revolver44"], n: 6, pouch: "pistol" } };
+Object.assign(CLIPS, CALIBRE_CLIPS);
 
 // Carry kit in loot and on bodies (carrykit.js bodyKit / gunMags / the kit tables; inventory.js stowing into rig
 // pouches): off only for tools/itemcondtest.js's baselines (the old finds and dice, before the carry kit only added).
@@ -135,6 +140,8 @@ export const KIT_GEAR = {
   stripper308:  { name: ".308 stripper clip", slot: "pack", skill: null, power: 0, req: 0, value: 2, noise: 0, small: true, weight: 0.02, cat: "gunmod",
     desc: "Five .308 rounds on a clip: a Reload fills the hunting rifle's magazine at once (instead of 3 rounds), once a fight. In a rifle pouch or a pocket." },
 };
+KIT_GEAR.speedloader44 = { name: ".44 speedloader", slot: "pack", skill: null, power: 0, req: 0, value: 8, noise: 0, small: true, weight: 0.06, cat: "gunmod",
+  desc: "Six .44 Magnum rounds held ready for the .44 revolver's cylinder: a Reload fills it at once (instead of 2 rounds), once a fight. In a pistol pouch or a pocket." };
 for (const [k, m] of Object.entries(MAGAZINES)) {
   KIT_GEAR[k] = { name: m.name, slot: "pack", skill: null, power: 0, req: 0, value: m.value, noise: 0, small: true, weight: m.kg, cat: "gunmod", mag: { plat: m.plat, cal: m.cal, cap: m.cap, ...(m.cals ? { cals: m.cals } : {}), ...(m.guns ? { guns: m.guns } : {}) }, pouch: m.pouch, look: magLook(k, m.cap),
     desc: m.desc || `A ${m.cap}-round magazine${m.aim ? ` (heavy and clumsy: ${m.aim} aim${m.jam ? `, jams ×${m.jam}` : ""})` : ""}. It holds one kind of round. A spare in a rig pouch or a pocket reloads in 1 action, from the pack in 2.` };
@@ -146,7 +153,7 @@ for (const [k, c] of Object.entries(CLIPS)) KIT_GEAR[k].pouch = c.pouch;
 export const KIT_TAGS = {
   chestrig: ["military", "guns", "crash"], makeshiftrig: ["crime", "camp"], tacvest: ["police", "prison", "guns"],
   ceramicplate: ["military", "crash"], steelplate: ["guns", "crime", "industry", "military"], softinsert: ["police", "military", "prison"],
-  speedloader: ["guns", "police", "home"], stripper308: ["hunt", "guns", "military"],
+  speedloader: ["guns", "police", "home"], stripper308: ["hunt", "guns", "military"], speedloader44: ["guns", "hunt", "home"],
 };
 for (const [k, m] of Object.entries(MAGAZINES)) {
   const p = m.plat;
@@ -158,7 +165,7 @@ for (const [k, m] of Object.entries(MAGAZINES)) {
     : (m.guns || []).some((g) => g === "fal" || g === "m1a") ? ["military", "guns", "hunt"] : ["military", "guns", "police", "crash"];
 }
 // The budget clones: where cheap things are (homes, malls, pawn shelves), not armouries.
-for (const k of ["mag_stanag_30c", "mag_glock_17c"]) KIT_TAGS[k] = ["home", "mall", "shop", "crime", "sport"];
+for (const k of ["mag_stanag_30c", "mag_glock_17c", "mag_ak_75c"]) KIT_TAGS[k] = ["home", "mall", "shop", "crime", "sport"];
 // Magazines as gun parts (gunmods.js ATTACH: the gun builder's magazine slot lists them by platform).
 /** @type {Record<string, any>} */
 export const KIT_ATTACH = {};
