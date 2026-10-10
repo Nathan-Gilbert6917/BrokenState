@@ -66,7 +66,7 @@ export function powerCard(state, b) {
   const gens = generators(b);
   const users = b.buildings.filter((x) => POWER_USERS[x.type]);
   const usesText = Object.entries(POWER_USERS).map(([k, u]) => `${BUILDINGS[k].name} (${u.need}): ${u.what}`).join("; ");
-  if (!gens.length && !users.length) return `<h3>Power</h3><div class="small muted"${tip(usesText)}>No generator and nothing to power. A generator (Construction) burns ${POWER.genFuel} fuel a day for ${POWER.genOut} power and needs an operator; an ethanol still makes fuel from surplus or spoiled food.</div>`;
+  if (!gens.length && !users.length) return `<h3>Power</h3><div class="small muted"${tip(`A generator (Construction) burns ${POWER.genFuel} fuel a day for ${POWER.genOut} power and needs an operator; an ethanol still makes fuel from surplus or spoiled food. ${usesText}`)}>⚡ No generator and nothing to power <span class="sk-info">ⓘ</span></div>`;
   const ps = powerStatus(state, b);
   const row = (u) => {
     const d = BUILDINGS[u.b.type];
@@ -91,7 +91,7 @@ const n0r = (v) => Math.floor((v || 0) + 1e-9);
 // bench does with them today, and every recipe by calibre (inputs per 10, rounds a day, the Mechanics it needs).
 export function reloadCard(state, b) {
   const benches = reloadBenches(b);
-  if (!benches.length) return count(b, "ammo_bench") ? `<h3>Reloading</h3><div class="small muted">Upgrade an ammo bench into a reloading bench (Construction, on its utility plot: 1 machine part, 3 gun parts, 20 scrap, ${RELOAD.UP.hours} work-hours, a Mechanics 3+ survivor here) to load hollow points, slugs, match and AP rounds from brass, powder and primers.</div>` : "";
+  if (!benches.length) return count(b, "ammo_bench") ? `<h3>Reloading</h3><div class="small muted"${tip(`Upgrade an ammo bench into a reloading bench (Construction, on its utility plot: 1 machine part, 3 gun parts, 20 scrap, ${RELOAD.UP.hours} work-hours, a Mechanics 3+ survivor here) to load hollow points, slugs, match and AP rounds from brass, powder and primers.`)}>⁍ No reloading bench: upgrade the ammo bench in Construction <span class="sk-info">ⓘ</span></div>` : "";
   const st = b.stock;
   const ops = benches.map((x) => atBase(state, b.id).find((s) => s.role === "operate" && s.station === x.id && !s.inBed)).filter(Boolean);
   const op = ops.sort((a, c) => skill(c, "mechanics") - skill(a, "mechanics"))[0] || null;

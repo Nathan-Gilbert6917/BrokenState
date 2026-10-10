@@ -1665,7 +1665,7 @@ function baseOverview(state, b) {
       ${sectionHead(`Stock${b.type === "outpost" ? infoTip("Outposts keep a small reserve and ship the rest to the hub each day.") : ""}`)}
       <div class="sk-tiles">${STOCK_KEYS.map((k) => stockTile(k, k === "ammo" ? totalRounds(b.stock) : b.stock[k], k === "ammo" ? `${SUPPLIES[k].name}. Every calibre: ${roundsLine(b.stock)}` : SUPPLIES[k].name)).join("")}</div>
       <h3>Status</h3>
-      <div class="kv small">
+      <div class="card small"><div class="kv small">
         <div>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
         ${holdRow(state, b)}
         <div>Heat</div><div>${baseHeat(state, b)}</div>
@@ -1679,7 +1679,7 @@ function baseOverview(state, b) {
         ${people.length ? `<div></div><div><button class="mini" data-action="moveout" data-base="${b.id}"${tip("Pick people to leave this base as a team, with a vehicle and supplies from its stores: send them to found a new outpost, or to another of your bases to move in (the move-out planner).")}>Move a team out…</button> ${formTeamButton(state, b)}</div>` : ""}
         ${line ? `<div>Supply line</div><div>${Math.round(line.strength * 100)}%${line.hostile ? " · hostile land" : ""}${line.horde ? " · horde nearby" : ""}</div><div>Backup ETA</div><div>${isFinite(line.hours) ? line.hours + " hours" : "cut off"}</div>` : ""}
         ${b.type === "outpost" ? `<div></div><div><button class="mini danger" data-action="abandonbase" data-base="${b.id}"${abandonProblem(state, b) ? " disabled" : ""}${tip(abandonProblem(state, b) || "Give this outpost up (a card asks first): its people walk to your nearest base with what they can carry, its buildings stay standing as an empty base (half of the stores left there) that rots month by month and that another group may move into. Take it back later with Reoccupy your old outpost.")}>Abandon outpost…</button></div>` : ""}
-      </div>
+      </div></div>
     </div>
     <div>
       ${sectionHead("People and roles", memorialButton(state, b), people.length)}
@@ -1724,8 +1724,8 @@ function boilerNote(state, b) {
   const u = boilerUse(state, b);
   const junk = burnablesWood(boilerBurnables(b));
   const toggle = `<label class="small" style="display:block"${tip("When the firewood runs short the boiler may burn cheap wooden, paper and cloth things from the armory (novels, magazines, rag boots, toilet paper, candles: worth 5 or less, never weapons, tools, armour or bags), before it touches the fuel. Items you mark in the inventory (Boiler may burn it / Keep from the fire) go by their mark.")}><input type="checkbox" data-action="boiler-junk" data-base="${b.id}" ${boilerJunkOn(b) ? "checked" : ""}> Boiler may burn spare wooden items and paper${junk > 0 ? ` <span class="muted">(${junk} firewood's worth in the armory)</span>` : ""}</label>`;
-  if (!u.active) return `<div class="small good">Standing ready: ${u.heads ? "the water filters here purify the day's drinking" : "nobody here"} (nothing burned).</div>${toggle}`;
-  return `<div class="small ${u.lit ? "" : "danger"}">${u.lit ? "Lit" : "Cold today (nothing to burn: the water is drunk un-purified, or treated with the armory's purification tablets if there is no water filter)"}: burns ${esc(u.text)} on the days the purified water in store and the filters do not cover the drinking (about ${Math.round(u.share * 100)}% of days); it purifies the day's drinking for everyone here. Firewood first, then the armory's burnable junk and anything marked to burn, then fuel.</div>${toggle}`;
+  if (!u.active) return `<div class="small good"${tip("Nothing burned while the filters cover the drinking")}>✓ Standing ready: ${u.heads ? "the water filters here purify the day's drinking" : "nobody here"}</div>${toggle}`;
+  return `<div class="small ${u.lit ? "" : "danger"}" style="margin-top:0.2rem"${tip(`${u.lit ? "Lit" : "Cold today (nothing to burn: the water is drunk un-purified, or treated with the armory's purification tablets if there is no water filter)"}: burns ${u.text} on the days the purified water in store and the filters do not cover the drinking (about ${Math.round(u.share * 100)}% of days); it purifies the day's drinking for everyone here. Firewood first, then the armory's burnable junk and anything marked to burn, then fuel.`)}>${u.lit ? `🔥 <b>Lit</b>` : `❄ <b>Cold today</b>: nothing to burn`} · burns ${esc(u.text)} · ~${Math.round(u.share * 100)}% of days</div>${toggle}`;
 }
 function baseBuildings(state, b) {
   const groups = {};
@@ -1924,7 +1924,7 @@ function baseCrafting(state, b) {
     return `<div class="gcard ${chk.ok ? "ok" : lock ? "locked" : "blocked"}"${tip(d ? `${d.desc || ""} Worth: ${worthTier({ key: r.gear, quality: 1 })}.` : r.desc)}>
       <div class="gcard-top"><span class="gcard-title">${esc(craftName(k))}${tags}${edge.n ? badge(`Edge +${Math.round(edge.quality * 100)}%`, "good", `From ${edge.from.join(" and ")}: +${Math.round(edge.quality * 100)}% condition, ${Math.round((edge.speed - 1) * 100)}% faster.`) : ""}</span><button class="mini${chk.ok ? " primary" : ""}" data-action="queuecraft" data-base="${b.id}" data-recipe="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay the materials now; crafters do the rest" : chk.reason)}>Craft</button></div>
       <div class="gcard-desc">→ ${esc(craftOutputText(k))}</div>
-      <div class="gcard-foot">${costChips(r.in, b.stock, { word: (c) => (c === "ammo" ? "Rounds" : supName(c)) })}${gearChips.join("")}${chip({ icon: SKILL_ICON[r.skill] || "★", name: `${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` · Crafting ${r.cmin}+` : ""}`, ok: skilled, tone: skilled ? "" : "short", t: skilled ? "Someone here has the skill" : `Needs a ${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` and Crafting ${r.cmin}+` : ""} survivor here` })}${chip({ icon: "⏱", name: `${r.hours}h`, t: `${r.hours} work-hours` })}</div>
+      <div class="gcard-foot">${costChips(r.in, b.stock, { word: (c) => (c === "ammo" ? "Rounds" : supName(c)) })}${gearChips.join("")}${!r.min && !r.cmin ? "" : chip({ icon: SKILL_ICON[r.skill] || "★", name: `${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` · Crafting ${r.cmin}+` : ""}`, ok: skilled, tone: skilled ? "" : "short", t: skilled ? "Someone here has the skill" : `Needs a ${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` and Crafting ${r.cmin}+` : ""} survivor here` })}${chip({ icon: "⏱", name: `${r.hours}h`, t: `${r.hours} work-hours` })}</div>
       ${!chk.ok && !short && !lock && skilled && (station || !r.needs) ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${lock}
     </div>`;
   };
@@ -1947,7 +1947,7 @@ function baseCrafting(state, b) {
         const pct = Math.round((job.progress / job.hours) * 100);
         const mean = r.gear ? craftMean(state, b, job.recipe) : null;
         return `<div class="gcard ${why ? "blocked" : "busy"}">
-          <div class="gcard-top"><span class="gcard-title">${i === 0 ? "▶ " : ""}${esc(craftName(job.recipe))} ${why ? badge("Stalled", "bad") : i === 0 || eta != null ? badge(`Crafting ${pct}%`, "busy") : badge("Queued", "muted")}</span><button class="mini" data-action="cancelcraft" data-base="${b.id}" data-id="${job.id}"${tip(job.progress > 0 ? "Cancel and get half the materials back" : "Cancel and get all the materials back (not started)")}>Cancel</button></div>
+          <div class="gcard-top"><span class="gcard-title">${i === 0 ? "▶ " : ""}${esc(craftName(job.recipe))} ${why ? badge("Stalled", "bad") : i === 0 || job.progress > 0 ? badge(`Crafting ${pct}%`, "busy") : badge("Queued", "muted")}</span><button class="mini" data-action="cancelcraft" data-base="${b.id}" data-id="${job.id}"${tip(job.progress > 0 ? "Cancel and get half the materials back" : "Cancel and get all the materials back (not started)")}>Cancel</button></div>
           ${pbar(pct, why ? "bad" : "accent", `${pct}%`, `${n1(left)} of ${job.hours} work-hours left`)}
           <div class="gcard-sub">${why ? `<span class="danger">${esc(why)}</span>` : eta != null ? `about <b>${eta}h</b> at the current pace${mean != null ? ` · <span${tip("A roll: Crafting narrows it")}>condition about <b>${Math.round(mean * 100)}%</b></span>` : ""}` : "paused"}</div>
         </div>`;

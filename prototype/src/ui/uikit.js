@@ -13,7 +13,8 @@ const n0 = (v) => Math.floor((v || 0) + 1e-9);
 
 // A supply's display name and icon ("Scrap", 🔩); keys that are not supplies keep their key.
 export const supName = (k) => (SUPPLIES[k] ? SUPPLIES[k].name : k === "ammo" ? "Rounds" : String(k));
-export const supIcon = (k) => supplyIcon(k);
+const EXTRA_ICON = { buildmat: "🧱" }; // supplies the stack mover has no icon for
+export const supIcon = (k) => EXTRA_ICON[k] || supplyIcon(k);
 
 // One requirement chip. have: what there is (omit for a plain cost); need: what it takes; ok: met (by default
 // have >= need). icon/name free text, so it serves skills, buildings and items too.
