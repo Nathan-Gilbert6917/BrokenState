@@ -34,6 +34,7 @@ import { makeLosCache, SparseLos } from "./combat.js";
 import { CRAFT_BOOKS, tech } from "./blueprints.js"; // craft books read before they unlocked anything // the line-of-sight cache of a loaded battle (sparse on a big yard)
 import { saveSummary, campaignKey } from "./savesummary.js"; // the save list's one-line summary and campaign groups
 import { noteLootAge } from "./itemcond.js"; // the years since the fall, for loot rolled after a load
+import { migrateStaging } from "./staging.js"; // the old staging camp becomes a camp base
 /** @import { State } from "./types" */
 /**
  * A save (serializeState; a save file is it as JSON): the world's encoded graph, the id counter and the save list's summary.
@@ -203,6 +204,10 @@ export function deserializeState(save) {
     }
     state.ammoCal = 2;
   }
+  // staging.js (2026-10-09, camps are bases): the old staging camp (state.staging) becomes the camp base that is your
+  // hub, the teams working on it its residents; outpost camps (tier-0 outposts) are camps. After the ammo steps above,
+  // so the old camp's stores come in as rounds by calibre.
+  migrateStaging(state);
   // A stock amount that is NaN is 0: before 7212b81 a team packing a supply its base had no key for (firewood on a
   // hardcore hub) made the base's stock NaN, and saves of that time carry it (tools/savecorpustest.js found it).
   const unNaN = (o) => { if (o) for (const k of Object.keys(o)) if (Number.isNaN(o[k])) o[k] = 0; };

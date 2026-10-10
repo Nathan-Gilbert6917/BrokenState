@@ -179,7 +179,7 @@ export function settleParty(state, p) {
 export function settleAll(state) {
   for (const b of state.bases || []) settleBase(state, b);
   for (const p of state.parties || []) if (p.owner === "player" || p.owner == null) settleParty(state, p);
-  if (state.staging && hasGeneric(state.staging.stores)) settleRec(state.staging.stores, mixForCals({}), null);
+  if (state.staging && state.staging.stores && hasGeneric(state.staging.stores)) settleRec(state.staging.stores, mixForCals({}), null); // an old save's staging camp (before staging.js migrateStaging)
   for (const f of state.factions || []) if (f.stock) foldRounds(f.stock); // an AI group keeps one ammo count
   for (const p of state.parties || []) if (p.owner !== "player" && p.owner != null && p.supplies) { foldRounds(p.supplies); if (p.cargo && p.cargo.supplies && !(p.kind === "caravan" && p.phase === "trading")) foldRounds(p.cargo.supplies); } // their teams too (a caravan at your gates keeps its rounds for the deal)
 }

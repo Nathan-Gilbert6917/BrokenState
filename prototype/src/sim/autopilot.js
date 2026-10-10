@@ -105,7 +105,7 @@ import { openCasesIn } from "./gunsafes.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
 import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
-import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem, besideWaterSource, STAGING } from "./staging.js";
+import { stagingNeeds, establishProblem, STAGING } from "./staging.js"; // no base: Establish base (a camp with its step up)
 import { isHardcore } from "./hardcore.js";
 import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad, baseDewormers, wormOf } from "./worm.js";
 
@@ -318,12 +318,10 @@ export function autopilotHour(state) {
   }
 }
 
-// The camp fires (fieldheat.js FIRE): the staging camp's, a shelter's and a camping team's are lit by day (cooking)
+// The camp fires (fieldheat.js FIRE): a camp's or shelter's (tier 0) and a resting team's are lit by day (cooking)
 // and put out at night unless it is cold or someone there is badly hurt (the light carries).
 function autoFires(state) {
   const hurt = (people) => people.some((s) => s.health < ROAD.heal);
-  const camp = state.staging;
-  if (camp) camp.fire = fireWanted(state, { hurt: hurt(state.parties.filter((p) => p.owner === "player" && partyTile(p) === camp.tile).flatMap((p) => partyMembers(state, p))) });
   for (const b of state.bases) if (isShelter(b)) b.fire = fireWanted(state, { hurt: hurt(atBase(state, b.id)) });
   for (const p of state.parties) if (p.owner === "player" && p.phase === "task" && p.task && p.task.type === "camp") p.campFire = fireWanted(state, { hurt: hurt(partyMembers(state, p)) });
 }
@@ -3606,9 +3604,8 @@ function assaultChoice(state, card, opts, p, find) {
 function exileAct(state, p) {
   const g = state.grid;
   const here = partyTile(p);
-  const camp = state.staging;
-  const scrap = carried(p, "scrap") + (camp ? storeOf(camp, "scrap") : 0);
-  const going = camp && stagingPct(camp) >= 0.3;
+  const scrap = carried(p, "scrap");
+  const going = false; // (a camp under way is a base: the team has a home and is not here)
   const lost = lostBases(state).map((o) => ({ o, f: factionById(state, o.factionId) })).filter((x) => x.f && x.f.alive)
     .map((x) => ({ ...x, odds: teamAssaultOdds(state, p, assaultForce(state, x.f, x.o.tile, p)), d: g.distance(here, x.o.tile) })).sort((a, b) => b.odds - a.odds || a.d - b.d)[0];
   if (lost && (lost.odds >= (going ? 0.6 : 0.45) || (!going && scrap < stagingNeeds(state).scrap)) && lost.odds >= 0.2 && planPath(state, here, lost.o.tile, p.vehicle)) {
@@ -3656,16 +3653,16 @@ const roadDays = (state, p, k) => {
 // What the team should still gather: what the camp lacks (or the whole need with no camp yet) less what it carries,
 // plus food and water to live on while it works there. { key: qty }.
 function roadMissing(state, p) {
-  const camp = state.staging;
+  const camp = null; // a camp is a base (staging.js): on the road there is none yet
   const needs = stagingNeeds(state);
   const n = Math.max(1, partyMembers(state, p).length);
-  const days = camp ? Math.min(CAMP.workDays, daysFor(camp, n)) + 1 : CAMP.workDays + 1;
+  const days = CAMP.workDays + 1;
   const out = {};
   // Building materials the camp still lacks are made from scrap (crafting.js buildmat): that much more scrap; and the
   // pitching's own scrap (staging.js STAGING.PITCH) before the camp stands.
-  const bmLack = Math.max(0, (needs.buildmat || 0) - carried(p, "buildmat") - (camp ? storeOf(camp, "buildmat") : 0));
+  const bmLack = Math.max(0, (needs.buildmat || 0) - carried(p, "buildmat") - 0);
   for (const k of ["scrap", "parts", "food", "water"]) {
-    const have = (k === "water" ? teamWaterIn(p) : carried(p, k)) + (k === "food" ? carried(p, "preserved") : 0) + (camp ? storeOf(camp, k) : 0);
+    const have = (k === "water" ? teamWaterIn(p) : carried(p, k)) + (k === "food" ? carried(p, "preserved") : 0) + 0;
     const own = k === "food" ? n * days : k === "water" ? n * days * thirstAt(state) : k === "scrap" ? bmLack * CRAFTS.buildmat.in.scrap + (camp ? 0 : STAGING.PITCH.scrap) : 0;
     const want = (needs[k] || 0) + own;
     if (have < want - 0.5) out[k] = Math.ceil(want - have);
@@ -3681,86 +3678,40 @@ function roadNeeds(state, p) {
     meds: 0.6, ammo: 0.5, fuel: 0.05, jars: 0,
   };
 }
-// The camp's part of the decision: pitch it, go back to it, unload and work there. True when the team was given
-// an order.
+// The camp: with no base at all the team sets up camp with its step up queued (Establish base, staging.js) at the best
+// spot near it (hubSites: water beside, sites around, few of the dead). From then on the camp is a base and the
+// governor runs it like any other (its builders, its trips out for scrap and building materials, crafting
+// building materials from scrap). Before it, the team makes building materials from scrap it carries beyond the step
+// up's scrap (crafting.js buildmat, a field craft: 3 hours). True when the team was given an order.
 function campAct(state, p) {
   const here = partyTile(p);
-  const members = partyMembers(state, p);
-  const camp = state.staging;
-  // The camp's building materials, made from the scrap the team carries beyond what the camp (and its pitching) still
-  // takes of scrap (crafting.js buildmat, a field craft: 3 hours).
+  const needs = stagingNeeds(state);
   {
-    const needs = stagingNeeds(state);
-    const bmLack = (needs.buildmat || 0) - carried(p, "buildmat") - (camp ? storeOf(camp, "buildmat") : 0);
-    const scrapSpare = carried(p, "scrap") - Math.max(0, (needs.scrap || 0) - (camp ? storeOf(camp, "scrap") : 0)) - (camp ? 0 : STAGING.PITCH.scrap);
+    const bmLack = (needs.buildmat || 0) - carried(p, "buildmat");
+    const scrapSpare = carried(p, "scrap") - (needs.scrap || 0);
     const opt = bmLack > 0 && scrapSpare >= CRAFTS.buildmat.in.scrap ? fieldCraftOptions(state, p).find((x) => x.key === "buildmat") : null;
     if (opt && opt.ok) {
       startOrder(state, p, { type: "craft", recipe: "buildmat" });
-      say(state, `${teamName(state, p)} makes building materials from scrap for the staging camp (${bmLack} still wanted).`);
+      say(state, `${teamName(state, p)} makes building materials from scrap for the camp (${bmLack} still wanted).`);
       return true;
     }
   }
-  if (!camp) {
-    const needs = stagingNeeds(state);
-    const ready = carried(p, "scrap") >= needs.scrap * CAMP.pitchShare || day(state) >= CAMP.pitchDay || !firstHubPending(state) || members.some((s) => s.health < 60);
-    if (!ready || carried(p, "scrap") < STAGING.PITCH.scrap) return false; // pitching takes its scrap (staging.js STAGING.PITCH)
-    const ok = (s) => !establishProblem(state, s.id) && (s.id === here || planPath(state, here, s.id, p.vehicle));
-    let sites = hubSites(state, here, ROAD.foundReach).filter(ok);
-    // No spring at a camp: with no spot beside water close by, look farther for one (CAMP.waterReach).
-    if (!sites.length || sites[0].waterDist !== 1) { const wet = hubSites(state, here, CAMP.waterReach).filter((s) => s.waterDist === 1 && ok(s)); if (wet.length) sites = wet; }
-    const best = sites[0];
-    const atHere = sites.find((s) => s.id === here);
-    if (!best) return false;
-    if (best.id === here || (atHere && atHere.sc >= best.sc - 0.5)) {
-      say(state, `${teamName(state, p)} pitches a staging camp at ${tileLabel(state, here)} for the ${firstHubPending(state) ? "first" : "new"} hub.`, "good");
-      giveOrder(state, p, "establish");
-      return true;
-    }
-    if (orderMove(state, p, best.id) && p.phase === "out") {
-      p.orders = [{ type: "mission", mission: "establish" }];
-      say(state, `${teamName(state, p)} heads for ${tileLabel(state, best.id)} to pitch a staging camp there.`, "good");
-      return true;
-    }
-    return false;
-  }
-  const dep = depositable(state, p, camp);
-  const prov = provisionable(state, p, camp);
-  if (here === camp.tile) {
-    if (!dep.length && !canWork(camp) && !prov.length) return false; // nothing to do here: it goes for what is missing
-    // No spring at a camp (staging.js): away from a river or lake, a team under a day of water with the stores dry goes
-    // for water first (roadAct: a shore or a site with water) instead of working itself thirsty.
-    if (!besideWaterSource(state, camp.tile) && roadDays(state, p, "water") < 1 && storeOf(camp, "water") < partyMembers(state, p).length && !dep.some(([k]) => k === "water")) return false;
+  const ok = (s) => !establishProblem(state, s.id) && (s.id === here || planPath(state, here, s.id, p.vehicle));
+  let sites = hubSites(state, here, ROAD.foundReach).filter(ok);
+  // No spring at a camp: with no spot beside water close by, look farther for one (CAMP.waterReach).
+  if (!sites.length || sites[0].waterDist !== 1) { const wet = hubSites(state, here, CAMP.waterReach).filter((s) => s.waterDist === 1 && ok(s)); if (wet.length) sites = wet; }
+  const best = sites[0];
+  const atHere = sites.find((s) => s.id === here);
+  if (!best) return false;
+  if (best.id === here || (atHere && atHere.sc >= best.sc - 0.5)) {
+    say(state, `${teamName(state, p)} sets up camp at ${tileLabel(state, here)} for the ${firstHubPending(state) ? "first" : "new"} home.`, "good");
     giveOrder(state, p, "establish");
     return true;
   }
-  // Thirsty and the camp has no water to give (no river beside it, dry stores): water first (roadAct), not the camp.
-  if (roadDays(state, p, "water") < 1 && !besideWaterSource(state, camp.tile) && storeOf(camp, "water") < partyMembers(state, p).length) return false;
-  const route = planPath(state, here, camp.tile, p.vehicle) || planPath(state, here, camp.tile, false);
-  if (!route) return false;
-  const dist = route.path.length - 1;
-  // Short of food or water and the camp can spare some: back to it (it is nearer than a search, and safe).
-  const low = (k) => roadDays(state, p, k) < ROAD.low && prov.some(([x, q]) => (k === "food" ? x !== "water" : x === "water") && q >= partyMembers(state, p).length / 2);
-  if ((low("water") || low("food")) && dist <= CAMP.ferryReach) {
-    if (orderMove(state, p, camp.tile) && p.phase === "out") {
-      p.orders = [{ type: "mission", mission: "establish" }];
-      say(state, `${teamName(state, p)} heads back to the staging camp for food and water.`);
-      return true;
-    }
-  }
-  const short = stagingMissing(camp);
-  const brings = (k) => (dep.find(([x]) => x === k) || [, 0])[1] + (k === "food" ? (dep.find(([x]) => x === "preserved") || [, 0])[1] : 0);
-  const covers = short.length > 0 && short.every((r) => brings(r.key) >= r.short);
-  const mat = short.filter((r) => r.key === "scrap" || r.key === "parts" || r.key === "buildmat");
-  const matShort = mat.reduce((a, r) => a + r.short, 0);
-  const share = matShort ? mat.reduce((a, r) => a + Math.min(brings(r.key), r.short), 0) / matShort : 0;
-  const full = cargoRoom(state, p) < partyCapacity(state, p) * 0.15 && dep.length;
-  const idle = canWork(camp) && !workerTeams(state).length; // materials there and nobody at work
-  if (covers || (share >= CAMP.ferryShare && dist <= CAMP.ferryReach) || full || (idle && dist <= CAMP.ferryReach) || (!short.length && !workerTeams(state).length)) {
-    if (orderMove(state, p, camp.tile) && p.phase === "out") {
-      p.orders = [{ type: "mission", mission: "establish" }];
-      say(state, `${teamName(state, p)} heads back to the staging camp${dep.length ? ` with ${dep.map(([k, q]) => `${q} ${keyWord(k)}`).join(", ")}` : " to work on it"}.`);
-      return true;
-    }
+  if (orderMove(state, p, best.id) && p.phase === "out") {
+    p.orders = [{ type: "mission", mission: "establish" }];
+    say(state, `${teamName(state, p)} heads for ${tileLabel(state, best.id)} to set up camp there.`, "good");
+    return true;
   }
   return false;
 }
@@ -3791,12 +3742,12 @@ function roadAct(state, p) {
   }
   // Out of food (under half a day) and nothing at the staging camp to spare: food from the land before the camp's
   // business (landFoodAct, foraging.js).
-  const campSpare = state.staging ? storeOf(state.staging, "food") + storeOf(state.staging, "preserved") : 0;
+  const campSpare = 0; // (no camp yet: a camp is a base)
   if (fDays < LAND.critical && campSpare < members.length && landFoodAct(state, p, { urgent: true })) return;
-  // The staging camp: pitch it, ferry to it, work on it.
+  // The camp: set it up (Establish base) at a good spot.
   if (campAct(state, p)) return;
   if (!state.parties.includes(p) || p.phase !== "waiting") return;
-  const camp = state.staging;
+  const camp = null;
   // Short of water beside a river or lake: fill up (what the camp and the work need, plus a few days).
   const n = members.length;
   const miss = roadMissing(state, p);
@@ -3880,12 +3831,11 @@ function roadKit(state, p) {
     who.gear[slot] = it;
     p.cargo.gear.splice(p.cargo.gear.indexOf(it), 1);
   }
-  const camp = state.staging;
   const need = stagingNeeds(state);
   const left = [];
   // Exiles keep what they carried out of their base (it is all they have); hardcore's few things are the road's.
   for (const [k, extra] of firstHubPending(state) ? Object.entries(ROAD_KEEP) : []) {
-    const keep = Math.max(0, (need[k] || 0) - (camp ? camp.stores[k] || 0 : 0)) + extra;
+    const keep = Math.max(0, need[k] || 0) + extra;
     const over = Math.floor(carried(p, k) - keep);
     if (over <= 0) continue;
     const took = takeSupply(p, k, over);

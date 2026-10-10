@@ -10,7 +10,7 @@ import {
 } from "./world.js";
 import { planPath, dispatchConvoy } from "./parties.js";
 import { attitude } from "./factions.js";
-import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS, isShelter, SHELTER, barrelRoom } from "./buildings.js";
+import { count, countAll, baseBeds, runStations, assignStations, stations, stationStatus, RECIPES, BUILDINGS, isShelter, SHELTER, barrelRoom, isCamp, tierUpJob } from "./buildings.js";
 import { supplyReserve } from "./supply.js";
 import { medicalDaily, fieldInfectionDaily } from "./medical.js";
 import { toolBonus } from "./crafting.js";
@@ -549,6 +549,7 @@ function shipFromOutposts(state) {
   const h = hub(state);
   for (const base of state.bases) {
     if (base.type !== "outpost") continue;
+    if (isCamp(base) && !tierUpJob(base)) continue; // a plain camp (staging.js) is off the supply network: it lives on what it holds
     const staff = atBase(state, base.id);
     const line = supplyLine(state, base);
     base.supplyLine = { hours: line.hours, strength: line.strength, hostile: line.hostile, horde: line.horde };

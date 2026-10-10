@@ -8,7 +8,7 @@ import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card d
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById } from "../sim/vehicles.js";
-import { BUILDINGS, count, tierUpJob, gatherCap } from "../sim/buildings.js";
+import { BUILDINGS, count, tierUpJob, gatherCap, isCamp, CAMP } from "../sim/buildings.js";
 import { weatherTint, season, iceRow } from "../sim/weather.js";
 import { drawFronts, weatherTipLines } from "./wxmap.js"; // weather fronts over the land, frozen rivers in the tooltip
 import { radioNodes } from "../sim/radio.js";
@@ -27,7 +27,7 @@ import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
 import { caravanTipLines } from "../sim/caravanraids.js"; // the groups' caravans and convoys you can see
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
-import { stagingStage, stagingPct, workCap, stagingTip, stagingMissing } from "../sim/staging.js";
+import { stagingTip } from "../sim/staging.js";
 import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { countedMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
@@ -517,7 +517,7 @@ export function ruinInfo(state, id) {
   const r = t.ruin;
   return {
     title: ruinTitle(r), by: r.by || "raiders", day: r.day, yours: !!r.yours, from: r.from && r.from !== "you" ? r.from : "",
-    danger, dangerName: DANGER_NAMES[danger], salvage: LOOT_BANDS[lootBand(t, loot)], salvageLive: isLive, scrap: outpostScrap(state, id),
+    danger, dangerName: DANGER_NAMES[danger], salvage: LOOT_BANDS[lootBand(t, loot)], salvageLive: isLive, scrap: CAMP.ruinScrap, // a camp here builds up for less scrap (sim/buildings.js tierUpJobFor)
   };
 }
 
@@ -1003,8 +1003,8 @@ function moverHash(state) {
   for (const x of state.herds || []) h = (h * 31 + x.tile * 5 + x.size) % 2147483647; // infested herds (sim/worm.js)
   for (const v of state.visitors || []) h = (h * 31 + v.tile * 7 + (v.phase ? v.phase.length : 0)) % 2147483647; // outsiders (sim/visitors.js)
   for (const b of hcMapBands(state)) h = (h * 31 + b.tile * 11 + b.pop) % 2147483647; // hardcore bands and the strike force (sim/hardcore-groups.js)
-  for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile) % 2147483647;
-  if (state.staging) h = (h * 31 + state.staging.tile * 3 + Math.round(stagingPct(state.staging) * 50)) % 2147483647; // the staging camp (sim/staging.js)
+  for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile + (b.tier === 0 ? campStage(b) * 7 + (b.fire === false ? 3 : 0) : 0)) % 2147483647; // a camp's or shelter's look (its step up, its fire)
+  if (state.staging) h = (h * 31 + state.staging.tile * 3 + Math.round(oldCampPct(state.staging) * 50)) % 2147483647; // a timelapse frame's camp (sim/chronicle.js)
   // Hidden sites found (sim/discovery.js), also while paused (intel bought, a prisoner questioned).
   if (state.knowledge && !state.timelapse) for (const id of hiddenSites(state)) if (state.knowledge[id]) h = (h * 31 + id) % 2147483647;
   // The overlays' data: a report of searched ground, the coalition's members (an invitation answered while paused).
@@ -1168,7 +1168,7 @@ export function render(state) {
   const crowded = (id) => busy.has(id) || (on("hordes") && !live.has(id) && !!k[id] && k[id].hordeSize > 0);
   // Tiles drawn as a base (yours, or another group's as far as you know), with half the sprite's width.
   baseTiles = new Map(state.bases.map((b) => [b.tile, (placeW(b) * zoomBoost()) / 2]));
-  if (state.staging) baseTiles.set(state.staging.tile, (STAGING_W * zoomBoost()) / 2); // teams at the staging camp stand beside it
+  if (state.staging) baseTiles.set(state.staging.tile, (STAGING_W * zoomBoost()) / 2); // a timelapse frame's camp
   spriteBoxes = [];
   besideCount = new Map();
   const labels = []; // drawn last (over parties, hordes and markers), most important first, skipping any that would overlap
@@ -1260,21 +1260,18 @@ export function render(state) {
     const eta = buildSiteLabel(state, id); // "Hive in ~12 days" (a "?" when the look is old)
     if (eta) labels.push({ text: eta, x: px, y: by + 4 * s + 7, pri: 0, screen: true, color: isLive ? "#f08a7a" : "#c99a92", size: 9 });
   }
-  // Your staging camp (sim/staging.js): tarps, crates and a barricade going up as the work goes on, on your plate, with
-  // a bar of the work done (the lighter part: as far as the materials in its stores allow).
+  // A timelapse frame's camp (sim/chronicle.js: { tile, progress, work }; a live camp is a base, drawn below).
   const camp = state.staging;
   if (camp && inView(camp.tile)) {
     const px = G.x[camp.tile], py = G.y[camp.tile], s = zoomBoost();
     ownerPlate(px, py, PLAYER_COLOR, s, 15, false);
-    const cv = stagingSpriteCanvas(stagingStage(camp), PLAYER_COLOR, camp.fire !== false), w = STAGING_W * s, cy = py - 4 * s;
+    const f = oldCampPct(camp);
+    const cv = stagingSpriteCanvas(f >= 0.85 ? 3 : f >= 0.5 ? 2 : f >= 0.2 ? 1 : 0, PLAYER_COLOR, camp.fire !== false), w = STAGING_W * s, cy = py - 4 * s;
     sprite(cv, px, cy, w);
-    if (camp.fire !== false) { const [fx, fy] = gridPoint(cv, px, cy, w, 13.5, 15); fireGlow(camp.tile * 3 + 1, fx, fy, s); smokeWisps(camp.tile * 3 + 2, fx, fy - 2 * s, s, { n: 3, rise: 14 }); } // mapsprites.js paintStaging: campfire at 12, 17
     const h = spriteH(cv, w);
     noteSprite(px, cy, w, h);
-    const f = stagingPct(camp), cap = camp.needs ? Math.min(1, workCap(camp) / camp.work) : f;
-    buildBarOnMap(px, cy - h / 2 - 7 * s, s, f, cap); // above the sprite: the team standing there covers the ground below it
-    const short = camp.needs && stagingMissing(camp).length, busy = camp.workers > 0 && f < cap - 1e-6;
-    labels.push({ text: `Camp ${Math.round(f * 100)}% · ${busy ? "building" : short ? "needs supplies" : f >= 1 ? "done" : "idle"}`, x: px, y: crowded(camp.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 9 * s, pri: -1, screen: true, color: short && !busy ? "#ffd166" : "#cfe2f7", size: 9 });
+    buildBarOnMap(px, cy - h / 2 - 7 * s, s, f, f);
+    labels.push({ text: `Camp ${Math.round(f * 100)}%`, x: px, y: cy + h / 2 + 9 * s, pri: -1, screen: true, color: "#cfe2f7", size: 9 });
   }
   // A team on its way to pitch the camp (Establish base): a dashed ring where it will stand.
   if (!camp && !state.bases.length) for (const p of state.parties) {
@@ -1291,6 +1288,20 @@ export function render(state) {
   for (const b of state.bases) {
     const [px, py] = g.toPixel(b.tile, HEX);
     const s = zoomBoost(), isHub = b.type === "hub" && b.tier !== 0; // a shelter (tier 0): its own smaller sprite
+    if (isCamp(b)) { // a camp (sim/staging.js): the staging sprite on your plate, its fire, its step up's bar and its name
+      ownerPlate(px, py, PLAYER_COLOR, s, 15, false);
+      const lit = b.fire !== false;
+      const cv = stagingSpriteCanvas(campStage(b), PLAYER_COLOR, lit), w = STAGING_W * s, cy = py - 4 * s;
+      sprite(cv, px, cy, w);
+      if (lit) { const [fx, fy] = gridPoint(cv, px, cy, w, 13.5, 15); fireGlow(b.tile * 3 + 1, fx, fy, s); smokeWisps(b.tile * 3 + 2, fx, fy - 2 * s, s, { n: 3, rise: 14 }); } // mapsprites.js paintStaging: campfire at 12, 17
+      const h = spriteH(cv, w);
+      noteSprite(px, cy, w, h);
+      const up = tierUpJob(b);
+      const f = up && up.hours ? up.progress / up.hours : 0;
+      if (up) buildBarOnMap(px, cy - h / 2 - 7 * s, s, f, up.paid ? gatherCap(up) : undefined);
+      labels.push({ text: `${b.name} (${up ? `camp: ${b.type === "outpost" ? "establishing" : "building up"} ${Math.round(f * 100)}%` : "camp"})`, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 9 * s, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: b.type === "hub" });
+      continue;
+    }
     const w = placeW(b) * s, cy = py - (isHub ? 6 : 5) * s;
     const besieged = state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === b.id);
     if (besieged) animating = true;
@@ -1624,7 +1635,7 @@ const PHASE_COLOR = { waiting: "#ffd166", task: "#9be39b" }; // ring under your 
 const lastFacing = new WeakMap();   // UI only: keeps a team facing the way it last moved
 
 const PLACE_W = { hub: 46, outpost: 34, shelter: 38, faction: 40 }; // base sprite widths in world pixels (before zoomBoost)
-const placeW = (b) => (b.tier === 0 ? PLACE_W.shelter : b.type === "hub" ? PLACE_W.hub : PLACE_W.outpost);
+const placeW = (b) => (isCamp(b) ? STAGING_W : b.tier === 0 ? PLACE_W.shelter : b.type === "hub" ? PLACE_W.hub : PLACE_W.outpost);
 const STAGING_W = 34; // the staging camp's sprite width (sim/staging.js), an outpost's
 const MARKER_W = { death: 13, cache: 15, car: 19, camp: 16, vehicle: 20 };
 const LAYER_COLOR = { vehicles: "#7fb0e6", deaths: "#d8cfb8", finds: "#c9b98a" }; // marker rings and far-out dots
@@ -1706,6 +1717,14 @@ function markerLook(state, m) {
 const hordeFigures = (size) => (size < 15 ? 2 : size < 25 ? 3 : size < 40 ? 4 : size < 60 ? 5 : size < 90 ? 6 : 7);
 
 // What one of your bases looks like on the map (also the cache key for its sprite).
+// A camp's stage on the map (mapsprites.js paintStaging 0-3) by how far its step up is built: 0 tarps and crates, 1 the
+// first stakes, 2 a frame and half a barricade, 3 nearly done. A plain camp (nothing building): 0.
+function campStage(b) {
+  const up = tierUpJob(b);
+  const f = up && up.hours ? up.progress / up.hours : 0;
+  return f >= 0.85 ? 3 : f >= 0.5 ? 2 : f >= 0.2 ? 1 : 0;
+}
+const oldCampPct = (c) => (c.work > 0 ? Math.max(0, Math.min(1, c.progress / c.work)) : 1);
 function baseLook(b) {
   const def = (x) => BUILDINGS[x.type] || {};
   const hosp = Math.max(0, ...b.buildings.map((x) => (def(x).family === "hospital" ? def(x).tier : 0)));

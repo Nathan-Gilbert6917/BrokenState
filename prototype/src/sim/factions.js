@@ -44,7 +44,7 @@ import {
   factionById, baseById, survivorById, makeSurvivor, RADIO_RANGE, supplyValue, armedFactor, spendShots, arrowsBack,
 } from "./world.js";
 import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
-import { baseWalls, count } from "./buildings.js";
+import { baseWalls, count, isCamp } from "./buildings.js"; // a camp (staging.js): only its own tile, a light raid target
 import { radioBasesInRange, removeBase, localId } from "./world.js";
 import { goodwillMult } from "./traits.js"; // Diplomatic: goodwill gains and losses
 import { playerTile } from "./hardcore-start.js";
@@ -92,6 +92,7 @@ import { flightDaily } from "./groupflight.js"; // groups leaving a base they ca
 import { splinterDaily } from "./splinters.js"; // splinter bands
 
 export const RAIDS = {
+  CAMP_W: 0.35, // a camp of yours (staging.js) draws a raid this much as often as a base with the same stores
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
   PLAYER_W: 2.5, GREED: 1500, LAND: 0.2, GRUDGE: 0.5, GRUDGE_MAX: 4, GRUDGE_FADE: 0.01, SIZE_REF: 35, DIST: 12,
   HOLD: 1.2, BREAK: 0.8, SIEGE_HOURS: 8, PACE: 1.2, PACE_MAX: 4, TRIBUTE_GW: 6, TRIBUTE_FADE: 0.5,
@@ -243,7 +244,7 @@ export function recomputeOwnership(state) {
       if (t.owner == null || g.distance(id, b) === 0) t.owner = f.id;
     }
   }
-  for (const b of state.bases) for (const id of g.within(b.tile, b.type === "hub" ? 2 : 1)) {
+  for (const b of state.bases) for (const id of g.within(b.tile, isCamp(b) ? 0 : b.type === "hub" ? 2 : 1)) { // a camp holds only its own tile (buildings.js CAMP)
     const t = state.tiles[id];
     if (!state.factions.some((f) => f.bases.includes(id))) t.owner = "player";
   }
@@ -643,10 +644,11 @@ export function launchRaidOnBase(state, f, base, opts = {}) {
 // How much a group wants to hit one of your bases (see the header): greed, your land, their grudge, their size, distance.
 export function playerRaidWeight(state, f, b, d) {
   const greed = clamp(supplyValue(b.stock) / RAIDS.GREED, 0.4, 3);
-  const land = 1 + RAIDS.LAND * Math.max(0, state.bases.filter((x) => !x.captured).length - 1); // bases you took from groups (conquest.js) do not count: the spoils of war, not your sprawl
+  const land = 1 + RAIDS.LAND * Math.max(0, state.bases.filter((x) => !x.captured && !isCamp(x)).length - 1); // camps (staging.js) are not sprawl either // bases you took from groups (conquest.js) do not count: the spoils of war, not your sprawl
   const grudge = 1 + RAIDS.GRUDGE * Math.min(RAIDS.GRUDGE_MAX, f.grudge || 0);
   const size = clamp(strength(f) / RAIDS.SIZE_REF, 0.6, 2);
-  return RAIDS.PLAYER_W * greed * land * grudge * size * heardPull(state, f, b) / (1 + d / RAIDS.DIST); // intel.js: stores they heard of on your radio
+  const camp = isCamp(b) ? RAIDS.CAMP_W : 1; // a camp (staging.js): tarps and a fire, little worth a raid
+  return RAIDS.PLAYER_W * greed * land * grudge * size * camp * heardPull(state, f, b) / (1 + d / RAIDS.DIST); // intel.js: stores they heard of on your radio
 }
 
 // The base's defence with everyone at a post ("Prepare defenses"): what a group's scouts size a raid to.
@@ -792,7 +794,8 @@ function resolveRaidOnPlayerNow(state, party, opts = {}) {
     settleKit();
     // They may keep it (conquest.js: the people there walk to your nearest base; the hub's job moves there), or burn
     // it to the ground (aggressive types: razeChance).
-    const fate = baseFate(state, f, base.tile, supplyValue(base.stock), base.type === "hub" ? RAIDS.KEEP_HUB : 1,
+    // A camp (staging.js) is never kept or burned: looted, and lost if it was an outpost camp (the hub's camp stands).
+    const fate = isCamp(base) ? "leave" : baseFate(state, f, base.tile, supplyValue(base.stock), base.type === "hub" ? RAIDS.KEEP_HUB : 1,
       (base.type === "hub" ? RAIDS.RAZE_HUB : 1) * (people.length || beaten ? 1 : RAIDS.RAZE_EMPTY));
     keep = fate === "keep";
     raze = fate === "raze";

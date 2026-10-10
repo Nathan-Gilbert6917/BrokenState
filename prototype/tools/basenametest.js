@@ -9,32 +9,28 @@ import { establishArrive } from "../src/sim/staging.js";
 import { pendingName, renameBase, nameSuggestions, cleanName, askBaseName, nameDone } from "../src/sim/basenames.js";
 import { nameBaseModal, nameModalUp, BN_ACTIONS, BN_INPUT, bnKey } from "../src/ui/basename.js";
 import { renderModal, modalKind, renderLeft, renderRight } from "../src/ui/ui.js";
-import { STAGING as STAGING_PITCH } from "../src/sim/staging.js";
 
-// Pitching a staging camp takes STAGING.PITCH (8 scrap carried, 2 hours of work; 2026-10-09): with no camp yet the team is
-// handed its scrap and the camp stands at once, as before.
-const establishArriveNow = (st, p) => { if (!st.staging) { p.supplies.scrap = (p.supplies.scrap || 0) + STAGING_PITCH.PITCH.scrap; p.pitched = true; } return establishArrive(st, p); };
+// Setting up a camp takes an hour (staging.js STAGING.PITCH, nothing carried): the hour is skipped here and the camp stands at once.
+const establishArriveNow = (st, p) => { p.pitched = true; return establishArrive(st, p); };
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(t);
 const freshUi = () => ({ started: true, speed: 0, tab: "bases", selected: -1, survivor: null, baseView: null, expedition: null, diary: null, roster: null, help: false });
 
-section("The staging camp becomes your shelter: the naming window opens, the suggestion filled in");
+section("Establish base: the camp (the barest base, staging.js) stands at once and the naming window opens, the suggestion filled in");
 {
   const st = createWorld({ seed: 11, factionCount: 7, mode: "hardcore" });
   const p = roadTeam(st);
   Object.assign(p.supplies, { scrap: 30, parts: 4, food: 30, water: 30, buildmat: 2 }); // the shelter takes building materials (staging.js)
   establishArriveNow(st, p);
-  st.staging.progress = st.staging.work;
-  establishArriveNow(st, p);
   const b = st.bases[0];
-  check(!!b, "the shelter stands");
-  check(pendingName(st) === b, "the shelter waits for a name");
+  check(!!b && b.camp === true, "the camp stands (a base)");
+  check(pendingName(st) === b, "the camp waits for a name");
   const ui = freshUi();
   check(nameModalUp(st, ui) && modalKind(st, ui) === "namebase", `the naming window is the one up (${modalKind(st, ui)})`);
   const html = renderModal(st, ui);
-  check(/Name your new shelter/.test(html), "it asks for the shelter's name");
+  check(/Name your new camp/.test(html), "it asks for the camp's name");
   check(html.includes(`value="${b.name}"`), "the suggested name is filled in");
   check(/data-action="bn-pick"/.test(html), "ideas to pick from");
   check(nameSuggestions(st, b)[0] === b.name && nameSuggestions(st, b).length >= 3, `suggestions: ${nameSuggestions(st, b).join(" / ")}`);
@@ -64,7 +60,7 @@ section("Build outpost (a normal game): asked again; duplicates refused; Keep cl
   check(p && partyTile(p) === dest, "the team got there");
   const n0 = st.bases.length;
   giveOrder(st, p, "outpost");
-  for (let i = 0; i < 8 && st.bases.length === n0; i++) { tickHour(st); st.cards.length = 0; } // pitching the camp takes 6 hours (parties.js PITCH_HOURS)
+  for (let i = 0; i < 8 && st.bases.length === n0; i++) { tickHour(st); st.cards.length = 0; } // setting up the camp takes an hour (buildings.js CAMP.setupHours)
   const o = st.bases[n0];
   check(st.bases.length === n0 + 1 && !!o, "the outpost stands");
   check(pendingName(st) === o, "the outpost waits for a name");

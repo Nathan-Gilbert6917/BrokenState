@@ -10,7 +10,7 @@ import { createWorld, hub, atBase, snapshot } from "../src/sim/world.js";
 import { launchExpedition, planPath, partyTile } from "../src/sim/parties.js";
 import { stripAll, newItem } from "../src/sim/inventory.js";
 import { fishSpot, gameAbundance } from "../src/sim/hunting.js";
-import { besideWater } from "../src/sim/orders.js";
+import { besideWater, startOrder } from "../src/sim/orders.js";
 import { NO_RADIO } from "../src/sim/plans.js";
 import { tileActions } from "../src/ui/ui.js";
 import { selectedTeam } from "../src/ui/teamsel.js";
@@ -83,7 +83,8 @@ section("A forest away from water: hunt, forage, wood, camp; no fishing, no wate
   const forest = find(state, h.tile, (t) => t.terrain === "forest" && gameAbundance(state, t.id) >= 0.08 && !besideWater(state, t.id) && !fishSpot(state, t.id), 2, 12);
   if (check(forest != null, "found a dry forest tile")) {
     const m = teamTileMenu(state, {}, p, forest);
-    for (const k of ["move", "survey", "sweep", "hunt", "forage", "snare:set", "camp:8", "camp:24", "camp:0", "campfire", "home"]) check(has(m, k), `forest: ${k} offered`);
+    for (const k of ["move", "survey", "sweep", "hunt", "forage", "snare:set", "setcamp", "home"]) check(has(m, k), `forest: ${k} offered`);
+    check(!has(m, "camp:8") && !has(m, "campfire"), "no timed camp any more: Set up camp (a camp, the barest base: sim/staging.js)");
     check(!has(m, "fish") && !has(m, "water"), "forest: no fishing and no water away from water");
     check(!has(m, "drop") && !has(m, "mission:enter"), "forest: no base items");
     const hunt = item(m, "hunt");
@@ -125,7 +126,7 @@ section("Open water: no land jobs, no move; a boat from the shore");
     const c = crossingsFrom(state, shore)[0];
     const m = teamTileMenu(state, {}, p, c.water);
     check(m.head.water, "the head knows it is water");
-    for (const k of ["move", "fish", "water", "hunt", "forage", "well", "claim", "camp:8", "survey"]) check(!has(m, k), `water: no ${k}`);
+    for (const k of ["move", "fish", "water", "hunt", "forage", "well", "claim", "setcamp", "survey"]) check(!has(m, k), `water: no ${k}`);
     check(m.items.some((it) => it.key.startsWith("cross:")), "water next to the team: boat across offered");
     const far = teamTileMenu(state, {}, p, c.tile);
     const boat = far.items.find((it) => it.key.startsWith("cross:"));
@@ -165,7 +166,7 @@ section("A known group's base: trade, assault; no rescue without captives; no cl
     check(/Trade visit/.test(item(m, "mission:trade").label), "trade visit / talk label");
     check(!has(m, "mission:rescue"), "no rescue without captives held there");
     check(!has(m, "claim") && !has(m, "mission:outpost"), "no claim and no outpost on another group's base");
-    check(!has(m, "forage") && !has(m, "hunt") && !has(m, "camp:8") && !has(m, "campfire"), "no foraging, hunting or camping on their doorstep");
+    check(!has(m, "forage") && !has(m, "hunt") && !has(m, "setcamp"), "no foraging, hunting or camping on their doorstep");
     const hereHome = item(teamTileMenu(state, {}, p, partyTile(p)), "home"), thereHome = item(m, "home");
     check(hereHome && thereHome && hereHome.task === thereHome.task && !thereHome.move, `go home: the hours from where the team is, whichever tile was clicked (${hereHome && hereHome.task} / ${thereHome && thereHome.task})`);
   }
@@ -192,7 +193,7 @@ section("Your own base: enter, drop off, load, resupply; away from it they wait 
   p.supplies.food = 0; p.supplies.water = 0;
   let m = teamTileMenu(state, {}, p, h.tile);
   for (const k of ["mission:enter", "drop", "load", "resupply", "home"]) check(has(m, k), `own base: ${k}`);
-  for (const k of ["mission:scavenge", "claim", "camp:8", "mission:outpost"]) check(!has(m, k), `own base: no ${k}`);
+  for (const k of ["mission:scavenge", "claim", "setcamp", "mission:outpost"]) check(!has(m, k), `own base: no ${k}`);
   check(!item(m, "drop").disabled && !item(m, "resupply").disabled, `at the base: drop off and resupply enabled (${item(m, "drop").disabled} / ${item(m, "resupply").disabled})`);
   const acts = { opened: null, "ti-open": (d) => { acts.opened = d; } };
   check(runTeamAction(state, {}, { id: p.id, tile: h.tile, key: "load", mode: "replace" }, acts) === "" && acts.opened && acts.opened.tab === "load", "Load from… opens the team inventory on its load tab");
@@ -237,7 +238,7 @@ section("Doing it: replace, Shift appends, a job here starts now, asks before dr
   check(p.orders.length === 3 && p.orders[1].type === "move" && p.orders[1].tile === other && p.orders[2].type === "mission" && p.orders[2].mission === "survey" && p.orders[2].at === other, `Shift: move and look around appended (${p.orders.map((o) => o.type).join(", ")})`);
   check(p.dest === forest, "Shift: the current move goes on");
   const am = teamTileMenu(state, {}, p, other, { append: true });
-  check(item(am, "camp:8").ahead > 0 && /^after /.test(itemHours(item(am, "camp:8"))), `queue mode: hours after the queue (${itemHours(item(am, "camp:8"))})`);
+  check(item(am, "forage").ahead > 0 && /^after /.test(itemHours(item(am, "forage"))), `queue mode: hours after the queue (${itemHours(item(am, "forage"))})`);
   // Plain pick now would drop the queue: it asks first.
   msg = runTeamAction(state, ui, { id: p.id, tile: other, key: "move", mode: "replace" });
   check(msg === null && ui.ask && ui.ask.action === "tc-do" && ui.ask.kind === "replaceorders", "replacing queued orders asks first");
@@ -246,10 +247,11 @@ section("Doing it: replace, Shift appends, a job here starts now, asks before dr
   check(p.dest === other && p.orders.length === 0, `Yes: the team heads for the new tile, the queue dropped (${msg})`);
   // A job on the team's own tile starts at once.
   const q = team(state, 2, { tile: forest });
-  msg = runTeamAction(state, {}, { id: q.id, tile: forest, key: "camp:8", mode: "replace" });
-  check(q.phase === "task" && q.task && q.task.type === "camp" && q.task.hours === 8, `camp here: starts now (${msg})`);
+  msg = runTeamAction(state, {}, { id: q.id, tile: forest, key: "setcamp", mode: "replace" });
+  check(q.phase === "task" && q.task && q.task.type === "pitch", `set up camp here: starts now, an hour's work (${msg})`);
+  startOrder(state, q, { type: "camp", hours: 8 }); // the internal rest (the governor's night stops, plans' rest steps)
   const mq = teamTileMenu(state, {}, q, forest);
-  check(has(mq, "fireout") || has(mq, "fire"), "camping here: the fire toggle instead of Make camp with a fire");
+  check(has(mq, "fireout") || has(mq, "fire"), "resting here: the fire toggle");
   msg = runTeamAction(state, {}, { id: q.id, tile: forest, key: "forage", mode: "replace" });
   check(q.phase === "task" && q.task.type === "forage", `forage here while camping: switches jobs, no question (${msg})`);
   // Go home needs no move.

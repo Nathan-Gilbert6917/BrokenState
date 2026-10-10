@@ -68,7 +68,7 @@ export function occupyProblem(state, tile) {
   if (!abandonedAt(state, tile)) return "No base stands empty there (nothing left of it, or someone moved in).";
   if (typeof t.owner === "number") { const o = state.factions.find((f) => f.id === t.owner); return `That ground is held by ${o && o.known ? o.name : "a group"}'s base nearby.`; }
   if (state.hordes.some((h) => h.tile === tile)) return "A horde is camped on it: cull it first.";
-  if (firstHubPending(state)) return "Your first home is a staging camp you build (Establish base).";
+  if (firstHubPending(state)) return "Your first home is a camp you build up (Establish base).";
   return "";
 }
 // The buildings a group's works make for you (OCCUPY.FROM_WORKS), worn by the months they stood empty.

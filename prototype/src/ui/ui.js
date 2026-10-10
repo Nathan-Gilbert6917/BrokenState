@@ -42,7 +42,7 @@ import { activeHiveCrawl, crawlRecText } from "../sim/hivecrawl.js";
 import { hiveCrawlModal } from "./hivecrawl.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
-  BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, tierName, tierUpType, tierUpJob, gatherRows, gatherCap, gatherStalled, gatherShort, matName,
+  BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, isCamp, CAMP, SHELTER, tierName, tierUpType, tierUpJob, gatherRows, gatherCap, gatherStalled, gatherShort, matName,
   PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, BENCH, benchType,
 } from "../sim/buildings.js";
 import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, partyFleet, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, payloadOf, upgradeText, upgradeEffects, upgradeOptions, garageQueue, garageJobStatus, vehicleValue, costText, vehicleById, SHOP_TEXT, carPartsCost, carPartsText, stripYield } from "../sim/vehicles.js";
@@ -124,8 +124,8 @@ import { forageInfo, foragerMult, FORAGE } from "../sim/foraging.js";
 import { woodInfo, WOOD, boilerJunkOn, boilerBurnables, burnablesWood } from "../sim/woodcutting.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
 import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
-import { roadStock, firstHubCard, fromTeamRow, stagingTileCard, fireButton } from "./hardcore.js";
-import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView } from "../sim/staging.js";
+import { roadStock, firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
+import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
 import { gaugeRows, treatsRow, needsEffectText } from "./needs.js";
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick (sim/status.js)
 import { STATUS, STATUS_ICONS } from "../sim/status.js";
@@ -643,8 +643,8 @@ export function renderRight(state, ui) {
     ${base ? `<div class="card"><div class="spread"><b>${esc(base.name)}</b><span class="row">${watchlistPin(state, "base", base.id, base.name)}${renameButton(base)}${formTeamButton(state, base)}<button class="primary" data-action="openbase" data-id="${base.id}">Manage</button></span></div><div class="small">Your ${tierName(base).toLowerCase()}. ${atBase(state, base.id).length} people.${base.captured ? ` Taken from ${esc(base.captured.name)} on day ${base.captured.day}.` : ""}${base.occupiedFrom ? ` Moved into on day ${base.occupiedFrom.day}${base.occupiedFrom.from === "player" ? " (your old outpost)" : ` (left by ${esc(base.occupiedFrom.name)})`}.` : ""}</div></div>` : ""}
     ${emptyBase ? `<div class="card small"${tip("A base standing empty: a group that died out, gave it up or lost it, or an outpost of yours that was lost. Its buildings rot month by month and another group may move in first. Occupy it (the button below): clear out whoever is inside and it is your outpost with what still stands and the stores left there, no scrap needed.")}><b>🏚 ${emptyBase.mine ? `${esc(emptyBase.fromName)} (your old outpost)` : `Abandoned base (${esc(emptyBase.fromName)}'s)`}</b><div class="muted">Empty since day ${emptyBase.day}${isLive ? "" : " (as last seen)"}.</div>
       <div class="kv small"><div>Standing</div><div>${esc(emptyBase.standing)}</div>${emptyBase.stock ? `<div>Stores</div><div>${esc(emptyBase.stock)}</div>` : ""}<div${tip("Who is inside today: the dead drift in week by week, squatters come and go")}>Inside</div><div class="${emptyBase.threat && emptyBase.threat.count ? "danger" : ""}">${esc(emptyBase.threatText)}</div>${emptyBase.grievance ? `<div>Angers</div><div class="danger">${esc(emptyBase.grievance)}</div>` : ""}${emptyBase.problem ? `<div>Now</div><div class="danger">${esc(emptyBase.problem)}</div>` : ""}</div></div>` : ""}
-    ${ruin && !base ? `<div class="card small"${tip(`A base burned to the ground in a raid. A little is left to scavenge, and an outpost here needs only ${ruin.scrap} scrap: the rest is salvage. Founding one replaces the ruins.`)}><b>${esc(ruin.title)}</b><div class="muted">Burned by ${esc(ruin.by)}${ruin.day != null ? ` on day ${ruin.day}` : ""}${ruin.from ? ` (${esc(ruin.from)}'s base)` : ruin.yours ? " (your base)" : ""}.</div>
-      <div class="kv small"><div${tip("What is left to pick through, as you last saw it: rich, some, little, picked clean")}>Salvage</div><div>${esc(ruin.salvage)}${ruin.salvageLive ? "" : ` <span class="muted">(then)</span>`}</div><div${tip("The danger of the place, as the skulls under a site's name: at least very high on a hive's land")}>Danger</div><div class="${ruin.danger >= 2 ? "danger" : ""}">${esc(ruin.dangerName)}</div><div>New outpost</div><div>${ruin.scrap} scrap carried</div></div></div>` : ""}
+    ${ruin && !base ? `<div class="card small"${tip(`A base burned to the ground in a raid. A little is left to scavenge, and a camp set up here builds up for ${ruin.scrap} scrap less: the rest is salvage. A camp replaces the ruins.`)}><b>${esc(ruin.title)}</b><div class="muted">Burned by ${esc(ruin.by)}${ruin.day != null ? ` on day ${ruin.day}` : ""}${ruin.from ? ` (${esc(ruin.from)}'s base)` : ruin.yours ? " (your base)" : ""}.</div>
+      <div class="kv small"><div${tip("What is left to pick through, as you last saw it: rich, some, little, picked clean")}>Salvage</div><div>${esc(ruin.salvage)}${ruin.salvageLive ? "" : ` <span class="muted">(then)</span>`}</div><div${tip("The danger of the place, as the skulls under a site's name: at least very high on a hive's land")}>Danger</div><div class="${ruin.danger >= 2 ? "danger" : ""}">${esc(ruin.dangerName)}</div><div>A camp here</div><div>${ruin.scrap} scrap less to build up</div></div></div>` : ""}
     ${occupiedAt(state, id) ? `<div class="card attn small"${tip("A base of yours another group took. Send an Assault their base team (the button below) to take it back: its walls are weakest right after it fell, and the holders patch it up every day.")}><b>${esc(occupiedAt(state, id).name)}: held by others</b><div>${esc(occupiedText(state, occupiedAt(state, id)))}</div></div>` : ""}
     ${base ? ownBaseCard(state, base) : groupBaseCard(state, id, knownGroupBase(state, id, isLive, snap))}
     ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
@@ -866,7 +866,7 @@ export function helpText() {
     <b>Regional weather:</b> the season and the temperature are the same across the state, but storms, rain belts, blizzards, snow squalls and fog banks are <i>fronts</i>: they come in from the map's edges (mostly the west; from the north in winter) and cross it over hours to a couple of days, so a storm can lash a team in the hills while your hub stays dry. The weather under a front is what counts where you are: a team's pace, sight and ambushes, injuries on the road, boat crossings, hunting, foraging and woodcutting, how fast the dead walk; your hub's crops, rain barrels and the like go by the hub's own weather. The Weather layer shows fronts as faint clouds, the Weather fronts layer strongly with where each is heading; a team's panel shows the weather where it is.<br>
     <b>Frozen rivers:</b> after a run of freezing days in deep winter the rivers freeze, from their northern reaches down, and can be walked across (1.75 hours a tile; no vehicles or bikes). The ice is drawn pale on the map. The dead and other groups cross it too: a river that kept your base safe all year is no barrier until the thaw (an alert says when the river by a base has frozen). Early and late in the freeze the ice is thin: someone may go through (hurt, two hours lost). When it thaws, anyone on it scrambles ashore and ways over it are planned again.<br>
     <b>Map:</b> left-click a tile to inspect it, right-click for actions, drag or ${k("W A S D")} / arrows to pan, wheel to zoom. Bright tiles are live (around your bases, near a team in radio range); dim tiles show the last report with its age; dark tiles have no intel. Sites show danger as skulls under their name when zoomed in. The map shows the places everyone knew before the fall (towns, cities, roadside sites, landmarks); farms, cabins, lodges and camps off the roads, and crash sites, appear only once your people find them or hear of them. Toggle layers in the map's corner.<br>
-    <b>Hardcore mode:</b> chosen on the new-run screen (Mode). The run starts on the day Calder falls instead of 6–12 months later. <i>You:</i> three survivors (or one to four: <b>Starting people</b> on the new-run screen, Hardcore only) on the road with whatever they grabbed as they fled (some with a bag, some with only their pockets; maybe a knife, a bat or a pistol with a few rounds), food and water for a day or three each (a farmer, a hunter or a trucker grabbed more food; a veteran, a nurse, a mechanic or a cop less, running with ammo, a vest, meds or tools instead), no hub and one car between you (what is in its back and a prepper's packed bag are one of each whatever the count: fewer of you share them, but carry, scavenge, build and fight with fewer hands). One or two who got out are the kind who can look after themselves: better Scouting, Stealth and Medicine (more alone), the car's empty seats loaded with food, water and meds, and fewer armed strangers stop them on the road, and fewer of them. You are with them, so the team always takes orders and you see what it sees. The run opens on a short account of what they grabbed (<i>Begin</i> closes it), the clock paused and the team waiting for orders: give them from its panel (click the team on the map, or the Teams tab). Find water first (rivers and lakes: Fetch water; shops, diners and churches), then give the order <b>${ESTABLISH_LABEL}</b> on a good spot (water near, sites around, few of the dead): a staging camp that needs ${needText(STAGING.HARDCORE.needs)} brought in (as many trips as it takes), then about three days of work for three people (faster with more hands and Mechanics; nobody there, no progress; working on one spot draws the dead and raiders). It becomes your hub, bare, with the camp's food and water as its stores. The top bar, the Bases tab, the camp's tile and the alerts show what is still missing. People you meet on the road can join the team. <i>The outbreak:</i> it is just starting, in one or two places, and spreads through the first year. <i>The other groups:</i> bands of survivors founding their own hubs too; the military holds its base until a hive near it overruns it; no raiders at first.<br>
+    <b>Hardcore mode:</b> chosen on the new-run screen (Mode). The run starts on the day Calder falls instead of 6–12 months later. <i>You:</i> three survivors (or one to four: <b>Starting people</b> on the new-run screen, Hardcore only) on the road with whatever they grabbed as they fled (some with a bag, some with only their pockets; maybe a knife, a bat or a pistol with a few rounds), food and water for a day or three each (a farmer, a hunter or a trucker grabbed more food; a veteran, a nurse, a mechanic or a cop less, running with ammo, a vest, meds or tools instead), no hub and one car between you (what is in its back and a prepper's packed bag are one of each whatever the count: fewer of you share them, but carry, scavenge, build and fight with fewer hands). One or two who got out are the kind who can look after themselves: better Scouting, Stealth and Medicine (more alone), the car's empty seats loaded with food, water and meds, and fewer armed strangers stop them on the road, and fewer of them. You are with them, so the team always takes orders and you see what it sees. The run opens on a short account of what they grabbed (<i>Begin</i> closes it), the clock paused and the team waiting for orders: give them from its panel (click the team on the map, or the Teams tab). Find water first (rivers and lakes: Fetch water; shops, diners and churches), then give the order <b>${ESTABLISH_LABEL}</b> on a good spot (water near, sites around, few of the dead): the team sets up camp there (an hour, nothing carried; a camp is the barest base, its people live there and the team's load goes into its stores), and its step up into a shelter needs ${needText(STAGING.HARDCORE.needs)} brought in (as many trips as it takes) and ${STAGING.HARDCORE.work} work-hours by its builders (faster with more hands and Mechanics; people at a camp draw the dead and raiders). Later the shelter is built up into your hub. The camp's base window (its Camp tab), the Bases tab and the alerts show what is still missing. People you meet on the road can join the team. <i>The outbreak:</i> it is just starting, in one or two places, and spreads through the first year. <i>The other groups:</i> bands of survivors founding their own hubs too; the military holds its base until a hive near it overruns it; no raiders at first.<br>
     <b>World size:</b> chosen on the new-run screen. Small (48×32) is tight and close: fewer towns, 3–6 groups, the hives a short walk away. Normal (64×42) is the standard state with 5–10 groups. Large (80×52) adds a third city and a second outbreak, 7–14 groups. Huge (100×66) has four cities, three outbreaks and 10–18 groups: trips are long (take vehicles, build outposts), the groups mostly keep to their own corner, but more hives are within reach of your walls. Every size has about the same towns, sites and hives per tile.<br>
     <b>Bases (Manage):</b> roles (farm, scavenge, operate, build, guard, rest, medic, craft), workshop stations with operators, the construction queue (beds: the hub 4, an outpost 2, a bunkhouse +6, a barracks +12 on one building plot, or a bunkhouse expanded into a barracks where it stands; more people than beds lowers everyone's mood every day), the armory, hand crafting, vehicles (refuel, repair), supply runs and the medical tab. Click a base's name on its screen to rename it. People in a hospital bed do not work.<br>
     <b>Hunger, thirst and mood:</b> everyone has a Hunger, a Thirst and a Mood gauge (0–100). Below ${NEEDS.lean} hunger and thirst cut work and aim; below ${NEEDS.low} they cost mood by the hour. At a base that is out of food (water), or below ${NEEDS.starving} away from a base, someone is <b>starving</b> (or parched): every morning it lasts costs more mood than the last (hunger −${STARVE.food.step}, −${STARVE.food.step * 2}, −${STARVE.food.step * 3} … up to −${STARVE.food.max} a day; thirst −${STARVE.water.step}, −${STARVE.water.step * 2} … up to −${STARVE.water.max}) until they eat or drink, which resets it. Left alone it ends at rock bottom: under 10 mood for 3 mornings they may break down, below 15 they may walk out, or the empty gauge kills them. <b>Status icons</b> next to a name (the roster, the People tab, a base's people, a team's members, the battle roster) show what is wrong, one each and stacking: ${STATUS_ICONS.mood} low mood (below ${STATUS.mood}), ${STATUS_ICONS.hunger} hungry or starving (hunger below ${STATUS.hunger}), ${STATUS_ICONS.thirst} thirsty or parched (thirst below ${STATUS.thirst}), ${STATUS_ICONS.health} low health (below ${STATUS.health}), ${STATUS_ICONS.infected} infected (an infected wound, or the worm once spotted), ${STATUS_ICONS.sick} sick (${STATUS_ICONS.injured} only injured). A red frame means it is serious; hover one for the detail ("Starving: day 3, mood −${STARVE.food.step * 3} a day").<br>
@@ -1411,6 +1411,7 @@ function gearControls(state, base, s, slot) {
 
 // ---------- base management ----------
 const BASE_TABS = [
+  ["camp", "Camp", "The camp at a glance: its stage and what it can become, who is there, the teams at the camp, its stores and vehicles; set up teams, build it up, or strike it"],
   ["overview", "Overview", "Stock, people and roles"],
   ["work", "Work", "Work priorities (like RimWorld's work tab): roles with a 1–5 priority per kind of work, a schedule, and crews that run trips by themselves"],
   ["defence", "Defence", "The watch roster (who stands guard at which hours) and the defence plan (where everyone stands when the base is attacked)"],
@@ -1430,14 +1431,79 @@ const BASE_TABS = [
 function baseModal(state, ui) {
   const b = baseById(state, ui.baseView.id);
   if (!b) return null;
-  const tab = ui.baseView.tab;
-  const body = { overview: baseOverview, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
+  // A camp (sim/staging.js, the barest base): its own Camp tab first, and only the tabs a camp has use for.
+  const tabs = isCamp(b) ? BASE_TABS.filter(([k]) => CAMP_TABS.includes(k)) : BASE_TABS.filter(([k]) => k !== "camp");
+  const tab = tabs.some(([k]) => k === ui.baseView.tab) ? ui.baseView.tab : tabs[0][0];
+  const body = { camp: campTab, overview: baseOverview, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
     <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}>${renameButton(b, "✎ Rename")}<span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
-    <div class="tabs">${BASE_TABS.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
+    <div class="tabs">${tabs.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
     ${ui.baseMsg ? `<div class="result small">${esc(ui.baseMsg)}</div>` : ""}
     <div class="basebody">${body}</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="closebase">Close</button></div>
+  </div>`;
+}
+
+// The tabs a camp shows (BASE_TABS keys).
+const CAMP_TABS = ["camp", "overview", "construction", "armory", "vehicles", "crafting", "work", "medical"];
+
+// ---------- the camp (sim/staging.js) ----------
+// The Camp tab: the stage ladder and the step up (tierUpRows), what each stage opens up, the people at the camp, the
+// teams standing at it (Edit team, Enter), Form a team, the stores and vehicles at a glance, its water, fire and Heat,
+// and Strike camp. Everything acts through the base's own systems: teams are formed and edited here as at any base
+// (ui/teamform.js: people, vehicles, gear, supplies and cargo by weight and seats), stores and items are the base's
+// stock and armory (Armory tab, the team inventory), vehicles and their cargo the Vehicles tab.
+function campTab(state, b) {
+  const v = shelterView(state, b);
+  const people = v.people || [];
+  const teams = v.teams || [];
+  const out = b.type === "outpost";
+  const parked = state.vehicles.filter((x) => x.loc.kind === "base" && x.loc.baseId === b.id);
+  const stock = STOCK_KEYS.filter((k) => k !== "jars" && n0(k === "ammo" ? totalRounds(b.stock) : b.stock[k]) >= 1).map((k) => [k, b.stock[k]]);
+  const nameList = (keys) => keys.map((k) => BUILDINGS[k] ? BUILDINGS[k].name : k).join(", ");
+  const atShelter = Object.keys(SHELTER.build).filter((k) => !BUILDINGS[k].tierUp && !CAMP.build[k]);
+  const ladder = out
+    ? `<div>Next</div><div class="small">An outpost: a dug spring (3 water a day), a fence (wall 1), 6 building plots and 6 utility plots, room for every building an outpost takes.</div>`
+    : `<div>At the shelter</div><div class="small">A roof and beds for ${SHELTER.beds}, two utility plots and a garden patch: ${esc(nameList(atShelter))}, and its own step up (${esc(BUILDINGS.hub_up.name)}: ${esc(needText(BUILDINGS.hub_up.cost))}).</div>
+      <div>At the base</div><div class="small muted">A main house, a dug well, walls, 16 building and 14 utility plots: every building (workshops, the hospital, bunkhouses, the radio station…). Construction lists them with what each needs.</div>`;
+  const away = v.away >= 1 && !people.length ? `<div${tip(`Nobody at the camp. After ${STAGING.ABANDON} days alone it may be looted (part of its stores and its step up); empty and bare for ${STAGING.GONE} days it is gone.`)}>Alone</div><div class="${v.away >= STAGING.ABANDON ? "danger" : "warn"}">${Math.floor(v.away)} day${Math.floor(v.away) === 1 ? "" : "s"}</div>` : "";
+  return `<div class="grid2">
+    <div>
+      <h3>Camp ${stageSteps(0)}</h3>
+      <div class="card small"${tip("A camp is the barest base: tarps, bedrolls and a fire. Its people live there (base healing, twice as fast at rest as at a base without a hospital; meals and water from its stores), but it has no well, no wall strength, one utility plot and no crop plots. Build it up with time and materials, or strike it and move on.")}>
+        <div class="kv small">
+          ${tierUpRows(state, b)}
+          ${ladder}
+        </div>
+      </div>
+      <h3>People here (${people.length}/${baseBeds(b)} bedrolls)</h3>
+      <div class="card small">${people.length ? people.map((s) => `<div class="spread"><a class="link" data-action="survivor" data-id="${s.id}">${first(s)}</a><span class="muted">${esc(ROLES[s.role] ? ROLES[s.role].name : s.role || "")} · health ${n0(s.health)}</span></div>`).join("") : `<span class="muted">Nobody lives at the camp now.</span>`}
+        <div class="row" style="margin-top:0.4rem">${formTeamButton(state, b)}</div>
+        <div class="muted" style="margin-top:0.3rem">Form a team: pick people, vehicles, gear and supplies from the camp\'s stores; they stand outside as a team (split as many teams as you like). A team at the camp is edited here (people in or out, vehicles, loading and dropping off by weight) or moves back in with Enter.</div>
+      </div>
+      <h3>Teams at the camp (${teams.length})</h3>
+      <div class="card small">${teams.length ? teams.map((p) => `<div class="spread"><a class="link" data-action="xp-open" data-id="${p.id}">${esc(teamName(state, p))}</a><span class="row">${editTeamButton(state, p)}<button class="mini" data-action="xp-order" data-id="${p.id}" data-type="mission" data-mission="enter"${tip(`Move this team into ${b.name}: its people live at the camp, what it carries goes into the stores and armory, its vehicles park here`)}>Enter</button></span></div>`).join("") : `<span class="muted">No team stands at the camp.</span>`}</div>
+    </div>
+    <div>
+      <h3>Stores</h3>
+      <div class="card small">${stock.length ? stock.map(([k, q]) => `<span class="chip">${esc(SUPPLIES[k].name)} ${n0(k === "ammo" ? totalRounds(b.stock) : q)}</span>`).join(" ") : `<span class="muted">Nothing in the stores.</span>`}
+        <div class="muted" style="margin-top:0.3rem">${b.armory.length} item${b.armory.length === 1 ? "" : "s"} in the camp\'s armory (Armory tab). Teams set down what they carry when they enter, and take supplies and gear when they are formed or edited here.</div>
+        <div class="row" style="margin-top:0.3rem"><button class="mini" data-action="basetab" data-tab="armory">Armory</button><button class="mini" data-action="basetab" data-tab="construction">Construction</button></div>
+      </div>
+      <h3>Vehicles (${parked.length})</h3>
+      <div class="card small">${parked.length ? parked.map((x) => `<div class="spread"><span>${esc(x.name)}${x.count > 1 ? ` ×${x.count}` : ""}</span><span class="muted">condition ${n0(x.condition)}%${x.fuel != null && !/bike/.test(x.type) ? ` · fuel ${n0(x.fuel)}` : ""}</span></div>`).join("") : `<span class="muted">No vehicle parked here.</span>`}
+        <div class="row" style="margin-top:0.3rem"><button class="mini" data-action="basetab" data-tab="vehicles"${tip("Fuel, repairs and each vehicle's cargo")}>Vehicles tab</button></div>
+      </div>
+      <h3>Around the camp</h3>
+      <div class="card small"><div class="kv small">
+        <div${tip("A camp has no well: beside a river or lake its people haul water into the stores; anywhere else only what is carried in.")}>Water</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
+        <div${tip("The camp's Heat (what draws the dead and raiders): its fire (most at night), vehicles parked here and shooting nearby lately; its people count as at any base.")}>Heat from</div><div>${esc(v.heat.text || "nothing but its people")}</div>
+        <div${tip("The camp fire: warmth, hot food and boiled water, better spirits. Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)}</div>
+        ${away}
+        ${v.looted ? `<div>Looted</div><div class="warn">${v.looted} time${v.looted === 1 ? "" : "s"}</div>` : ""}
+      </div></div>
+      <div class="row" style="margin-top:0.6rem;justify-content:flex-end"><button class="danger" data-action="strikecamp" data-base="${b.id}" ${v.strike ? "disabled" : ""}${tip(v.strike || `${STRIKE_LABEL}: everyone here forms one team with the vehicles that run (as far as drivers and seats allow) and what they can carry of the stores and armory (water and food first). What is left stays here as a cache to recover, and the camp is gone.`)}>${STRIKE_LABEL}</button></div>
+    </div>
   </div>`;
 }
 
@@ -1552,11 +1618,11 @@ function trainingCard(state, b) {
 // lighter part: what the materials delivered allow), each material taken against what it needs, and what holds it up.
 function tierUpRows(state, b) {
   const type = tierUpType(b), def = BUILDINGS[type], out = b.type === "outpost";
-  const stage = out ? "Outpost camp → <b>Outpost</b>" : "Shelter → <b>Base</b>";
+  const stage = out ? "Outpost camp → <b>Outpost</b>" : isCamp(b) ? "Camp → <b>Shelter</b> → Base" : "Shelter → <b>Base</b>";
   const job = tierUpJob(b);
   if (!job) {
     const chk = canBuild(state, b, type);
-    return `<div>Stage</div><div>${stage}</div><div></div><div><button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${type}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? `${def.desc} Needs ${gatherShort({ type, paid: {} })} brought in, and ${def.hours} work-hours.` : chk.reason)}>${esc(def.name)}</button></div>`;
+    return `<div>Stage</div><div>${stage}</div><div></div><div><button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${type}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? `${def.desc} Needs ${gatherShort({ type, paid: {}, cost: b.ruinSalvage && def.cost.scrap ? { ...def.cost, scrap: Math.max(0, def.cost.scrap - CAMP.ruinScrap) } : undefined })} brought in, and ${def.hours} work-hours.` : chk.reason)}>${esc(def.name)}</button></div>${isCamp(b) ? `<div></div><div class="small muted">A plain camp: nothing is building. Queue the step up to start; the materials are taken from the stores as they come in.</div>` : ""}`;
   }
   const f = job.hours ? job.progress / job.hours : 0, cap = job.paid ? gatherCap(job) : 1;
   const rate = buildRate(state, b);

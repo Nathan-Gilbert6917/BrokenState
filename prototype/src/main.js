@@ -30,6 +30,7 @@ import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, reorderQueued, cancelMove, contactable, queueEndTile } from "./sim/orders.js";
+import { strikeCamp, STRIKE_LABEL } from "./sim/staging.js"; // camps: Strike camp (the base window, the tile panel)
 import { setFire } from "./sim/fieldheat.js";
 import { commandable, NO_RADIO } from "./sim/plans.js";
 import { PLAN_ACTIONS, PLAN_CHANGE, planAutofill, planLaunchOpts, applyPreset } from "./ui/plan.js";
@@ -371,6 +372,13 @@ window.addEventListener("beforeunload", (e) => {
 
 // Screens and panels that point at something that no longer exists (a lost outpost, a team that got home) close.
 function tidyUi() {
+  // A camp just set up (sim/staging.js makeCamp): its base window opens on the Camp tab, once (not under the governor,
+  // nor over a battle or another window the player is in).
+  if (state.campOpen != null) {
+    const id = state.campOpen;
+    delete state.campOpen;
+    if (!state.autopilot && !state.combat && !ui.baseView && baseById(state, id)) { ui.baseView = { id, tab: "camp" }; ui.baseMsg = ""; }
+  }
   if (ui.baseView && !baseById(state, ui.baseView.id)) { ui.baseView = null; ui.baseMsg = ""; }
   if (ui.supplyForm && (!ui.baseView || !baseById(state, ui.supplyForm.originId))) { ui.supplyForm = null; ui.supplyError = ""; }
   if (ui.survivor != null && !survivorById(state, ui.survivor)) { ui.survivor = null; ui.lookEdit = null; }
@@ -769,12 +777,22 @@ const actions = {
     if (ask(ui, d, "demolish", { kind: "demolish", title: `Pull down ${name}${b ? ` at ${b.name}` : ""}?`, text: `It is gone for good and its plot is free again. About half its scrap and parts come back${what ? ` (${demolishText(what)})` : ""}.`, yes: "Pull it down" })) return;
     ui.baseMsg = demolish(state, b, id);
   },
-  // The camp fire (sim/fieldheat.js): the staging camp's, a shelter's (data-base) or a camping team's (data-team).
+  // The camp fire (sim/fieldheat.js): a camp's or shelter's (data-base) or a resting team's (data-team).
   campfire: (d) => {
     const lit = d.lit === "1";
     if (d.base) { ui.baseMsg = setFire(state, baseOf(d), lit); return; }
     if (d.team) { ui.xpMsg = setFire(state, partyById(d.team), lit); return; }
-    if (state.staging) log(state, setFire(state, state.staging, lit), "info");
+  },
+  // Strike camp (sim/staging.js strikeCamp): everyone there forms a team with what they can carry; the rest is a cache.
+  strikecamp: (d) => {
+    const b = baseOf(d);
+    if (!b) return;
+    if (ask(ui, d, "strikecamp", { kind: "strikecamp", title: `${STRIKE_LABEL}: ${b.name}?`, text: "Everyone there forms one team with the vehicles that run and what they can carry of the stores and armory (water and food first). What is left stays on the tile as a cache to recover, and the camp is gone.", yes: STRIKE_LABEL })) return;
+    const r = strikeCamp(state, b);
+    if (r.error) { ui.baseMsg = r.error; return; }
+    ui.baseView = null; ui.baseMsg = "";
+    if (r.party) { ui.expedition = r.party.id; ui.xpMsg = r.text; }
+    else log(state, r.text, "info");
   },
   // Medical: treat at a base with the base's meds. In the field it is a 1-hour team order (xp-order, type treat).
   treat: (d) => { baseSay(treatAtBase(state, baseOf(d), Number(d.id))); },

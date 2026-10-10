@@ -243,13 +243,13 @@ export function hubFounded(state, base, when = "") {
   hc.foundedDay = day(state);
   hc.foundedHour = state.hour;
   hc.hubTile = base.tile;
-  base.name = base.name.replace(/ Outpost( \d+)?$/, " Holdout");
+  base.name = base.name.replace(/ (Outpost|Camp)( \d+)?$/, " Holdout");
   if (state.bases.some((b) => b !== base && b.name === base.name)) base.name = `${base.name} ${base.id}`;
   base.hcFirst = true;
   assignStartingRoles(state); // jobs by skill, as a normal start does (world.js)
   const text = base.tier === 0
-    ? `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first shelter${when ? `, ${when}` : ""}. ${shelterText()} Build it up before the cold.`
-    : `Day ${day(state)}: the staging camp is done. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
+    ? `Day ${day(state)}: the camp is a shelter now. ${base.name} is founded, your first shelter${when ? `, ${when}` : ""}. ${shelterText()} Build it up before the cold.`
+    : `Day ${day(state)}: the camp is built up. ${base.name} is founded, your first hub${when ? `, ${when}` : ""}. It is bare: no buildings yet, a barricade of scrap and the camp's stores. Build farm plots, a well and beds before the cold.`;
   log(state, text, "good");
   addCard(state, { title: "A place of your own", text, choices: [{ label: "OK", resolve: () => "" }] });
 }
@@ -730,7 +730,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   // team stands waiting for orders (phase "waiting", the alerts' "Waiting for orders" row) and they are given from its
   // panel as usual; the game starts paused (main.js begin) and an order never unpauses it (ui/expedition.js).
   weighTeam(state, p);
-  const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${Object.keys(roundsOnly(sup)).length ? `, ${roundsText(roundsOnly(sup))}` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;
+  const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${Object.keys(roundsOnly(sup)).length ? `, ${roundsText(roundsOnly(sup))}` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: you set up camp there (an hour, nothing carried), bring in ${needText(STAGING.HARDCORE.needs)} and its builders build it up into a shelter (${STAGING.HARDCORE.work} work-hours), later into your hub.`;
   addCard(state, introCard(INTRO_TITLE, intro, "The team waits for orders: open its panel (click it on the map, or the Teams tab) and give the first one. The clock is stopped until you press Space."));
   return p;
 }

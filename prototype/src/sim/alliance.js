@@ -55,7 +55,7 @@ import { tileLabel, partyTile } from "./parties.js";
 import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork, canListen, relaySpotFor, GROUP_REACH, RELAY_RANGE } from "./radio.js";
 import { available, need, dealRoundKey } from "./trade.js";
 import { hivesSecured, hiveStats } from "./hives.js";
-import { count } from "./buildings.js";
+import { count, isCamp } from "./buildings.js"; // a camp (staging.js) holds no land and wins nothing
 import { worldScale } from "./worldsize.js";
 import { inviteGoodwill, infamy, lostBases, assaultForce } from "./conquest.js";
 import { reduceHorde } from "./hordes.js";
@@ -456,7 +456,7 @@ export function coalitionMask(state, soon = false) {
   return mark;
 }
 export function landCentres(state, soon = false) {
-  return [...state.bases.map((b) => ({ tile: b.tile, r: baseRadius(state, b) })), ...countedMembers(state, soon).flatMap((f) => f.bases.map((t) => ({ tile: t, r: controlRadius(state, "outpost") })))];
+  return [...state.bases.filter((b) => !isCamp(b)).map((b) => ({ tile: b.tile, r: baseRadius(state, b) })), ...countedMembers(state, soon).flatMap((f) => f.bases.map((t) => ({ tile: t, r: controlRadius(state, "outpost") })))];
 }
 // Land the coalition controls: land tiles within reach of your bases or a member's base, plus your claims
 // (claims.js). `claims`: how many land tiles the claims add that no base's reach covered; `claimed`: all of them.
@@ -533,7 +533,7 @@ export function accordHolds(state) {
 // more than LAND_NEEDED of the land (bases' reach, the members whose land counts, and claims). Groups outside do not
 // block it: conquest counts.
 export function allianceVictory(state) {
-  if (!alive(state).length || !state.bases.length) return false;
+  if (!alive(state).length || !state.bases.some((b) => !isCamp(b))) return false; // a camp is not a base for the victory
   // Nobody left to sign: when every group is gone (broken, conquered, collapsed), the state is yours alone.
   if (!allianceMembers(state).length && state.factions.some((f) => f.alive)) return false; // cheap check first
   return controlledLand(state).pct > ALLIANCE.LAND_NEEDED;
