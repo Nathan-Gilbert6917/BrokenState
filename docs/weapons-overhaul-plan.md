@@ -1349,3 +1349,207 @@ Where the as-built code differs from the plan, the code wins:
 - **AI groups (H):** arsenal.js (f.arsenal.items real items; armFromArsenal/settleArsenal in createBattle/createRaid/finishCombat), groupcare.js GROUP_PRIORITIES, groupworld.js. ANY new gear enemies can carry must seed into arsenals by kit and be armed through armFromArsenal.
 - **Loot:** every looted/traded item goes through itemcond.js lootItem / rollCondition (itemcondtest scans for stray newItem). ITEM_TAGS for loottest.
 - **Keys in battle already used:** F shoot, I reload, E melee, O overwatch, H hunker, M meds, U crush, J double tap, P pick up body, Z lay body, R retreat, G throw, B roofs, V centre, X extract, N vehicle; Shift+F fire mode, Shift+J unjam, Shift+O suppress, Shift+G throw spear, Shift+P pick up spear, Shift+I ammo cycle, Shift+T turret, Shift+H heal, Shift+V revive, Shift+K finish, Shift+U pull out (a downed rider out of a vehicle), Shift+D drag, Shift+S search, Shift+R sound retreat, Shift+C area clear, Shift+A AI plays. Check ui/keymap.js and uitest's conflict checks.
+
+---
+
+## Balance ladder 2026-10-10 (user request; branch `arsenal-balance`)
+
+The user: *"Make ammo rarity and value based on the round"*; *".22 is not outclassing any other ammo and .50 does the most
+damage; 5.56 is closer to .22 than .308; 12ga is the middle but slugs are better than .308 damage-wise"*; *"5.56, .308, .22,
+12ga are some of the most common rounds found; rounds that deal more damage and the rarer variants of each calibre are
+also rarer"*; new guns (over-unders, single-shots, 20 gauge, a gun for every calibre, NATO / European / American guns of
+games like Tarkov). Built on dev 54e022a. The ammo-carrying work (loose and boxed rounds, box sizes, bulk containers,
+weight a round) is the parallel `ammo-stacks` branch; this one changes damage, rarity, value and the roster (in
+`data-ammo.js` only the stat fields of `CALIBERS` / `AMMO_TYPES`, plus new tables).
+
+### How a hit's damage is worked out (unchanged code, new numbers)
+
+- The gun's `dmg` roll (`combat.js` WEAPONS) × the loaded type's `dmg` (`AMMO_TYPES`) × a light round's `ROUND_REACH.dmg`
+  (0.85) past its reach (`shotOdds`), then on the location hit: no armour there → × `soft / dmg` (hollow and soft points:
+  `ammo.js softMult`); a piece there → `armour.js pieceMult(pen, AC, condition)`: through (× 0.9, × 0.85 at AC 4+) or
+  stopped (the blunt share by AC), by the round's penetration (`ammoPen`).
+- There was no damage number per calibre: a calibre hit as hard as its guns did. Now each calibre has a reference
+  (`data-ammo.js CAL_DMG`, also `CALIBERS[cal].dmg`), the ladder's order is `LADDER.ORDER`, and every gun's `dmg` keeps within
+  `LADDER.BAND` (85–115%) of its calibre's (mounted guns aside). `src/sim/ladder.js` works the numbers out (`hitDamage`,
+  `ladderRows`, `gunHit`) for the test and for any balance sheet.
+
+### The ladder (reference damage, base round; mean hit unarmoured / soft vest AC 2 / steel plate AC 4)
+
+| rung | calibre | reference dmg | base round: unarmoured / vest / plate | the guns (dmg; was) |
+|---|---|---|---|---|
+| 1 | .22 LR (FMJ) | 11–17 | 14.0 / 6.5 / 4.4 | pistol22 10–16, rifle22 11–17 (was 12–18) |
+| 2 | 9mm (FMJ) | 15–22 | 18.5 / 10.4 / 5.9 | pistol 15–22, compact9 14–21, smg 15–22 |
+| 3 | .45 ACP (FMJ) | 18–26 | 22.0 / 11.9 / 7.0 | pistol45 18–26, ump45 18–26, usp45 18–26 |
+| 4 | .357 Magnum (FMJ) | 19–29 | 24.0 / 16.2 / 7.6 | revolver 20–30, lever357 21–31, snub357 19–28, magnum 21–31 |
+| 5 | 20 gauge (00 buckshot) | 20–30 | 25.0 / 11.6 / 7.9 | pump20 20–30, ou20 21–31 |
+| 6 | 5.56 NATO (FMJ) | 22–30 | 26.0 / 23.0 / 8.2 | ar 22–32, carbine 21–30 (was 20–29), lmg 22–32, m4 21–31, hk416 22–32, scarl 22–32, aug 22–32, turret_lmg 22–32 |
+| 7 | 7.62×39 (FMJ) | 24–34 | 29.0 / 25.7 / 10.3 | ak 24–34 |
+| 8 | 12 gauge (00 buckshot) | 24–36 | 30.0 / 13.9 / 9.5 | shotgun 24–36, pipegun 20–32, dbshotgun 26–38, sawnoff 26–38, semishotgun 24–36, ou12 25–37, single12 24–36, tacpump 24–36 |
+| 9 | .30-30 (soft point) | 25–35 | 33.6 / 23.6 / 9.5 | leverrifle 25–35 (was 20–30) |
+| 10 | .308 / 7.62 NATO (FMJ) | 34–46 | 40.0 / 35.5 / 20.8 | huntrifle 31–43 (was 24–34), dmr 33–45 (was 27–37), sniper 35–49 (was 30–40), singlerifle 34–46, scarh 33–45, fal 33–45, m1a 34–46, m240 32–44 |
+| 11 | .50 BMG (ball) | 62–84 | 73.0 / 64.7 / 60.8 | amr 62–84, m2hb 46–64 (was 40–58), turret_m2 46–64 |
+| – | 12 gauge slug (variant) | (12 ga × 1.55) | 46.5 / 33.5 / 14.7 | every 12 ga gun |
+
+Before (dev 54e022a), by the mean of each calibre's guns: .22 14.0, 9mm 18.2, .45 22.0, .357 25.0, 5.56 26.2, 7.62×39
+29.0, 12 ga buckshot 30.0, .30-30 SP 28.0, .308 32.0, 12 ga slug 34.5, .50 73.0. So 5.56 sat 5.8 under .308 and 12.2 over
+.22 (closer to .308), a .308 soft point (35.8) beat a slug, and the .30-30 was under the 7.62×39. Now: 5.56 is 12 over .22
+and 14 under .308; buckshot (30) sits between 5.56 and .308; a slug (46.5) beats every .308 round (best: SP 44.8); .50
+(73) beats everything.
+
+Rules `tools/arsenalbalancetest.js` checks: the base rounds climb in `LADDER.ORDER`; no .22 round beats another calibre's
+base round and .22 FMJ is the weakest lethal round; 5.56 closer to .22 than to .308 and no 5.56 round reaches the .308's
+base; 12 ga buckshot between 5.56 and .308; a 12 ga slug over every .308 round, a 20 ga slug under the .308; .50 over
+every other round; 9mm < .45 < .357 < 5.56; **no variant leaps a calibre whose base round is 20% or more above its own**
+(slugs aside: their own rules); on a vest and a plate .22 lowest and .50 highest, AP over the base round on the armour it is
+made for (pistol AP a vest, rifle AP a plate), .308 > 5.56 > .22 on a vest; every gun within the band; every 5.56 gun under
+every .308 gun; every .22 gun (hollow points) under every 9mm and 5.56 gun; the M2 over every 12 ga slug.
+
+Type changes: **slug** dmg / soft 1.15 → **1.55** (pen stays 22: through less armour than a .308); **birdshot** 0.55 →
+**0.6** (so the 20 ga's birdshot is not under .22 FMJ). Gun changes: hunting rifle 24–34 → **31–43**, marksman rifle 27–37
+→ **33–45**, sniper rifle 30–40 → **35–49**, lever-action 20–30 → **25–35**, police carbine 20–29 → **21–30**, .22 rifle
+12–18 → **11–17**, the M2 (and its turret) 40–58 → **46–64**. Enemy loads (`KIT_AMMO`): soldiers' rifles AP 35% → 15%,
+militia shotguns slugs 50% → 25%, guards' rifles AP 10% → 5% (bodies drop what they fought with, so this is also what is
+found).
+
+### Every lethal round, before → after (mean hit; value a round; tier)
+
+| round | tier | value (before → after) | pen | unarmoured | soft vest AC2 | steel plate AC4 | past reach |
+|---|---|---|---|---|---|---|---|
+| .22 LR FMJ (base) | common | 0.2 → 0.2 | 5 | 14.0 → **14.0** | 6.5 → **6.5** | 4.4 → **4.4** | 11.9 |
+| .22 LR hollow point | uncommon | 0.32 → 0.3 | 2 | 16.8 → **16.8** | 6.5 → **6.5** | 4.4 → **4.4** | 14.3 |
+| .22 LR subsonic | uncommon | 0.28 → 0.28 | 3 | 12.6 → **12.6** | 5.8 → **5.8** | 4.0 → **4.0** | 10.7 |
+| 9mm FMJ (base) | common | 0.5 → 0.5 | 15 | 18.2 → **18.5** | 10.2 → **10.4** | 5.7 → **5.9** | 15.7 |
+| 9mm hollow point | uncommon | 0.8 → 0.75 | 8 | 21.8 → **22.2** | 8.4 → **8.6** | 5.7 → **5.9** | 18.9 |
+| 9mm armour-piercing | rare | 1.4 → 1.4 | 30 | 16.7 → **17.0** | 14.8 → **15.1** | 5.3 → **5.4** | 14.5 |
+| 9mm +P | scarce | 0.7 → 0.7 | 18 | 20.0 → **20.4** | 12.6 → **12.8** | 6.3 → **6.4** | 17.3 |
+| 9mm subsonic | scarce | 0.7 → 0.7 | 13 | 16.4 → **16.7** | 8.5 → **8.6** | 5.2 → **5.3** | 14.2 |
+| .45 ACP FMJ (base) | uncommon | 0.6 → 0.6 | 14 | 22.0 → **22.0** | 11.9 → **11.9** | 7.0 → **7.0** | 18.7 |
+| .45 ACP hollow point | scarce | 0.96 → 0.95 | 8 | 26.4 → **26.4** | 10.2 → **10.2** | 7.0 → **7.0** | 22.4 |
+| .45 ACP subsonic | scarce | 0.84 → 0.85 | 12 | 19.8 → **19.8** | 9.8 → **9.8** | 6.3 → **6.3** | 16.8 |
+| .357 Magnum FMJ (base) | uncommon | 0.6 → 0.65 | 20 | 25.0 → **24.0** | 16.9 → **16.2** | 7.9 → **7.6** | 20.4 |
+| .357 Magnum hollow point | scarce | 0.96 → 1 | 12 | 30.0 → **28.8** | 12.4 → **11.9** | 7.9 → **7.6** | 24.5 |
+| .357 Magnum +P | rare | 0.84 → 1 | 23 | 27.5 → **26.4** | 20.4 → **19.6** | 8.7 → **8.4** | 22.4 |
+| 20 gauge 00 buckshot (base) | uncommon | 0.6 | 6 | new: **25.0** | new: **11.6** | new: **7.9** | – |
+| 20 gauge slug | scarce | 1 | 16 | new: **38.8** | new: **22.7** | new: **12.3** | – |
+| 20 gauge birdshot | uncommon | 0.35 | 1 | new: **15.0** | new: **7.0** | new: **4.7** | – |
+| 5.56 NATO FMJ (base) | common | 0.7 → 0.7 | 30 | 26.2 → **26.0** | 23.2 → **23.0** | 8.3 → **8.2** | 22.1 |
+| 5.56 NATO armour-piercing | rare | 1.96 → 1.95 | 45 | 24.1 → **23.9** | 21.3 → **21.2** | 17.2 → **17.0** | 20.3 |
+| 5.56 NATO match | scarce | 1.4 → 1.4 | 32 | 26.2 → **26.0** | 23.2 → **23.0** | 9.3 → **9.2** | 22.1 |
+| 5.56 NATO tracer | uncommon | 0.98 → 0.95 | 28 | 26.2 → **26.0** | 22.4 → **22.2** | 8.3 → **8.2** | 22.1 |
+| 7.62×39 FMJ (base) | uncommon | 0.7 → 0.7 | 32 | 29.0 → **29.0** | 25.7 → **25.7** | 10.3 → **10.3** | 24.7 |
+| 7.62×39 soft point | scarce | 1.05 → 1 | 25 | 32.5 → **32.5** | 22.8 → **22.8** | 9.2 → **9.2** | 27.6 |
+| 7.62×39 armour-piercing | rare | 1.96 → 1.95 | 45 | 26.7 → **26.7** | 23.7 → **23.7** | 19.0 → **19.0** | 22.7 |
+| 7.62×39 tracer | scarce | 0.98 → 0.95 | 30 | 29.0 → **29.0** | 25.7 → **25.7** | 9.2 → **9.2** | 24.7 |
+| 12 gauge 00 buckshot (base) | common | 0.8 → 0.8 | 8 | 30.0 → **30.0** | 13.9 → **13.9** | 9.5 → **9.5** | – |
+| 12 gauge slug | uncommon | 1.12 → 1.4 | 22 | 34.5 → **46.5** | 24.8 → **33.5** | 10.9 → **14.7** | – |
+| 12 gauge birdshot | common | 0.48 → 0.45 | 2 | 16.5 → **18.0** | 7.6 → **8.3** | 5.2 → **5.7** | – |
+| .30-30 soft point (base) | uncommon | 1.2 → 0.8 | 25 | 28.0 → **33.6** | 19.7 → **23.6** | 7.9 → **9.5** | – |
+| .30-30 FMJ | scarce | 0.8 → 0.8 | 25 | 25.0 → **30.0** | 19.7 → **23.6** | 7.9 → **9.5** | – |
+| .308 / 7.62 NATO FMJ (base) | common | 1 → 1 | 38 | 32.0 → **40.0** | 28.4 → **35.5** | 16.6 → **20.8** | – |
+| .308 / 7.62 NATO soft point | common | 1.5 → 1.3 | 30 | 35.8 → **44.8** | 28.4 → **35.5** | 10.1 → **12.7** | – |
+| .308 / 7.62 NATO armour-piercing | very rare | 2.8 → 2.8 | 55 | 29.4 → **36.8** | 26.1 → **32.6** | 24.5 → **30.7** | – |
+| .308 / 7.62 NATO match | scarce | 2 → 2 | 40 | 32.0 → **40.0** | 28.4 → **35.5** | 18.4 → **23.0** | – |
+| .308 / 7.62 NATO subsonic | rare | 1.4 → 1.5 | 36 | 28.8 → **36.0** | 25.5 → **31.9** | 13.4 → **16.7** | – |
+| .50 BMG ball (base) | rare | 6 → 6 | 70 | 73.0 → **73.0** | 64.7 → **64.7** | 60.8 → **60.8** | – |
+| .50 BMG API | very rare | 10.2 → 10 | 75 | 76.7 → **76.7** | 68.0 → **68.0** | 63.9 → **63.9** | – |
+
+(Past reach: × 0.85 past a light round's reach, `gunmods.js ROUND_REACH`; .308, .30-30, shotguns and .50 have none.
+Before: each calibre's guns' mean; after: the calibre's reference. Nonlethal rounds, beanbags and rubber, are off the
+ladder.)
+
+### Rarity and value of every round (`data-ammo.js ROUND_ECON`)
+
+Tiers (`RARITY`): common, uncommon, scarce, rare, very rare. `ROUND_ECON["cal_type"] = [tier, value a round]` prices the
+supply (`ROUND_SUPPLIES`: trade, Customize points through `custompoints.js unitValue`), the boxes (value × box) and the
+handloads (× `HAND_VALUE`). The base rounds keep their old value (9mm FMJ 0.5 is the old generic ammo's; .357 0.6 → 0.65);
+typed rounds are set one by one (the table above has them all). 20 gauge: buck 0.6, bird 0.35, slug 1.0.
+
+| calibre | common | uncommon | scarce | rare | very rare |
+|---|---|---|---|---|---|
+| .22 LR | FMJ | HP, subsonic | | | |
+| 9mm | FMJ | HP | +P, subsonic, rubber | AP | |
+| .45 ACP | | FMJ | HP, subsonic | | |
+| .357 | | FMJ | HP | +P | |
+| 20 ga | | buck, bird | slug | | |
+| 5.56 | FMJ | tracer | match | AP, rubber | |
+| 7.62×39 | | FMJ | SP, tracer | AP | |
+| 12 ga | buck, bird | slug | | beanbag | |
+| .30-30 | | SP | FMJ | | |
+| .308 | FMJ, SP | | match | subsonic | AP, rubber |
+| .50 BMG | | | | ball | API |
+| 40 mm, rocket | | | | | all |
+
+**Where rounds turn up** (`AMMO_MIX`, now built, not hand-written): weight = a place's calibre share
+(`THEME_CALS[theme][cal]`) × `RARITY_FIND[tier]` (1, 0.45, 0.18, 0.06, 0.02) × what the place stocks of that type
+(`THEME_TYPES[theme][type]`, default 1: a police armoury ×2.5 hollow points and ×8 beanbags, a hunting lodge ×3 soft
+points, the military ×1.5 AP and no hollow points, a farm no AP). `findRounds`, `bodyRounds` (by kit theme), raid
+boxes, gun safes' theme rounds, AI groups' stores by kind (`KIND_MIX`) and visiting traders all read it. The places
+together (each theme weighted the same): 12 ga 32.8%, 9mm 21.4%, .308 13.9%, 5.56 13.0%, .22 8.5%, .30-30 2.9%, .357 2.2%,
+20 ga 2.1%, .45 1.8%, 7.62×39 1.1%, .50 0.1%; within each calibre a rarer round always turns up less than a commoner one
+(tested).
+
+### The new guns (`data-guns.js ARSENAL_GEAR` / `ARSENAL_WEAPONS`)
+
+Generic names, as the game names guns; each description names the real gun it is like. No rare Russian guns; the P90
+(5.7×28), the Vector, the G3 and the FAMAS are not in (see the pick-list in the report).
+
+| key | name | cal | dmg | opt / fall | aim / close | rounds a shot | cap | modes | noise | jam % | kg | value | Shooting | power | dur | rarity | platform, feeding | AI kits |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ou12 | Over-under shotgun | 12 gauge | 25–37 | 5 / 6.5 | +10 / +12 | 1 | 2 | – | 3 | 0.08 | 3.4 | 70 | 3 | 4.7 | 85 | uncommon | dbl, internal, 2 a Reload (break) | fighters |
+| single12 | Single-shot shotgun | 12 gauge | 24–36 | 4 / 7 | +8 / +10 | 1 | 1 | – | 3 | 0.05 | 2.6 | 16 | 1 | 3.3 | 80 | common | single, internal, 1 a Reload (single) | raiders, zealots, militia, survivors |
+| pump20 | 20-gauge pump shotgun | 20 gauge | 20–30 | 4 / 7 | +12 / +10 | 1 | 5 | – | 3 | 0.3 | 3 | 40 | 4 | 4.2 | 70 | uncommon | pump, internal, 4 a Reload (tube) | militia, survivors |
+| ou20 | 20-gauge over-under | 20 gauge | 21–31 | 5 / 6.5 | +12 / +12 | 1 | 2 | – | 3 | 0.08 | 2.8 | 55 | 2 | 3.8 | 85 | uncommon | dbl, internal, 2 a Reload (break) | loot/finds only |
+| tacpump | Police pump shotgun | 12 gauge | 24–36 | 4 / 7 | +10 / +10 | 1 | 8 | – | 3 | 0.25 | 3.7 | 70 | 6 | 5.4 | 75 | uncommon | pump, internal, 4 a Reload (tube) | guards |
+| singlerifle | .308 single-shot rifle | .308 / 7.62 NATO | 34–46 | 12 / 2 | +6 / -8 | 1 | 1 | – | 3 | 0.05 | 3.2 | 38 | 3 | 4.3 | 85 | common | single, internal, 1 a Reload | militia |
+| lever357 | Lever-action .357 carbine | .357 Magnum | 21–31 | 8 / 3 | +6 / – | 1 | 10 | – | 3 | 0.25 | 2.8 | 50 | 3 | 4.3 | 75 | uncommon | lever, internal, 4 a Reload | fighters, militia |
+| m4 | Military carbine | 5.56 NATO | 21–31 | 8 / 3 | +8 / +3 | 2 | 30 | burst 3 (-6), auto 10 (-18) | 3 | 0.5 | 3.4 | 130 | 9 | 7.8 | 60 | scarce | ar15, mag_stanag_30 | soldiers |
+| hk416 | Piston carbine | 5.56 NATO | 22–32 | 9 / 3 | +8 / +2 | 2 | 30 | burst 2 (-8), auto 10 (-18) | 3 | 0.25 | 3.6 | 170 | 10 | 8.3 | 75 | rare | ar15, mag_stanag_30 | soldiers |
+| scarl | Modular combat rifle | 5.56 NATO | 22–32 | 9 / 3 | +8 / +2 | 2 | 30 | burst 2 (-8), auto 10 (-18) | 3 | 0.35 | 3.5 | 175 | 10 | 8.2 | 70 | rare | ar15, mag_stanag_30 | soldiers |
+| aug | Bullpup rifle | 5.56 NATO | 22–32 | 9 / 3 | +9 / +3 | 2 | 30 | burst 2 (-8), auto 10 (-18) | 3 | 0.4 | 3.6 | 150 | 9 | 8 | 70 | rare | bullpup, mag_stanag_30 | guards |
+| scarh | Battle rifle | .308 / 7.62 NATO | 33–45 | 11 / 2 | +6 / -2 | 1 | 20 | burst 2 (-12), auto 10 (-26) | 4 | 0.4 | 4.2 | 270 | 12 | 8.9 | 70 | very rare | battle, mag_battle_20 | soldiers |
+| fal | FAL battle rifle | .308 / 7.62 NATO | 33–45 | 11 / 2 | +5 / -2 | 1 | 20 | burst 2 (-12), auto 10 (-26) | 4 | 0.35 | 4.4 | 210 | 11 | 8.5 | 80 | rare | battle, mag_battle_20 | raiders, fighters |
+| m1a | M14-pattern rifle | .308 / 7.62 NATO | 34–46 | 12 / 1.8 | +7 / -6 | 1 | 20 | – | 3 | 0.45 | 4.6 | 185 | 10 | 8.1 | 75 | rare | battle, mag_battle_20 | fighters, militia |
+| m240 | General-purpose machine gun | .308 / 7.62 NATO | 32–44 | 10 / 2.5 | -2 / – | 3 | 100 | burst 3 (-5), auto 15 (-16) | 5 | 0.7 | 12.3 | 400 | 13 | 10 | 65 | very rare | m240, mag_m240_100 | soldiers |
+| ump45 | .45 submachine gun | .45 ACP | 18–26 | 6 / 3.5 | +6 / +4 | 2 | 25 | burst 2 (-6), auto 10 (-16) | 2 | 0.4 | 2.3 | 115 | 7 | 6.1 | 65 | rare | ump, mag_ump_25 | guards |
+| usp45 | Polymer .45 pistol | .45 ACP | 18–26 | 5 / 4.5 | +3 / – | 1 | 12 | – | 2 | 0.3 | 0.9 | 42 | 3 | 3.4 | 70 | uncommon | poly45, mag_poly45_12 | guards |
+| snub357 | .357 snub-nose revolver | .357 Magnum | 19–28 | 4 / 6 | -3 / +4 | 1 | 5 | – | 3 | 0.05 | 0.65 | 28 | 2 | 3 | 80 | uncommon | revolver, internal, 2 a Reload | raiders, survivors |
+| magnum | Magnum hand cannon | .357 Magnum | 21–31 | 6 / 4.5 | -4 / – | 1 | 9 | – | 3 | 0.8 | 2 | 95 | 6 | 3.9 | 55 | very rare | deagle, mag_deagle_9 | loot/finds only |
+
+- **Platforms** (`data-gunmods.js`): new `single` (break-open single barrel: mount, muzzle, stock, sling), `battle` (.308
+  battle rifles), `bullpup`, `ump`, `poly45`, `deagle`, `m240` (bipod built in). `PLATFORM_LIKE` gives each the parts its
+  look-alike takes (gunmods.js widens `fits.plat` at load; never magazines; a bullpup no stock or M203) and its drawing
+  (`ui/gunart.js` reuses the look-alike's `PLAT_ART`). Battle sprites: `GUN_SPRITE` (an existing gun's, `ui/sprites.js`).
+  Voices: `ui/gunsfx.js VOICE_OF` (the nearest voice, pitched).
+- **Magazines** (`data-kit.js MAGAZINES`): `.308 battle rifle magazine` 10 / 20 (FAL, M14, SCAR-H: one kind here), `.45
+  SMG magazine (25)`, `.45 pistol magazine (12)`, `Magnum pistol magazine (9)`, `.308 belt box (100)`; the 5.56 magazines
+  also fit the bullpup. Loose ones in the carry-kit tables (`carrykit.js SITE_KIT / AREA_KIT / WARE_KIT`). Internal
+  magazines (`INTERNAL`): over-unders 2, single-shots 1, the pumps and the .357 lever 4, the snub 2. Shells
+  (`mags.js SHELLS.GUNS`): over-unders `break` (both barrels a Reload), the single-shot shotgun `single`, the pumps `tube`.
+- **Where found** (`gunfinds.js`, every roll on its own dice: nothing else a search, a raid, a week's shelf, a scavenging
+  trip or a safe turns up changes): `ARSENAL_FINDS.site` (a chance a search hour by site type: gun store 6%, police and
+  military 3%, ranch and cabin 2.5%, farm 2%, towns 0.6%…), `.area` (a raid container: gun counter 8%, armoury 7%, cabin
+  4%…), `.wares` (a group's shelf a week by kind; arms dealers among the visitors), `.scav` (AI scavenging trips: the
+  same site table, AI parity), `.stash` (gun safes and cases: one more gun now and then). The pool at a place: the new
+  guns whose theme tags (`ARSENAL_TAGS`) meet the place's, weighted by rarity (`GUN_RARITY` → `FIND_W` 1 / 0.5 / 0.22 /
+  0.08 / 0.025). A gun found comes with its spare magazines. Also: the AI's people (`ARSENAL_KITS`, appended to
+  `KIT_PATCH`: soldiers the military carbine as a standard rifle and the piston carbine, modular rifle, battle rifle and
+  M240 among their strong picks, keeping the machine gun at ~1 in 6 and the sniper at 1 in 10; guards the police pump,
+  .45 pistol, bullpup and .45 SMG; militia the single-shots, the .357 lever, the 20 ga pump and the M14; raiders the
+  single-shot, the snub and the FAL; fighters the over-under, the lever, the FAL and the M14; survivors and zealots the
+  cheap shotguns), Army trucks (`TRUCK_GEAR`), factory parts (`FACTORY_FIT`: the M14 35% a scope, the SCAR-H 30%, the
+  single-shot rifle 30% a scope mount).
+- **Rarity of every gun** (`GUN_RARITY`, old guns too): common (9mm pistol, compact, .357 revolver, pump, double,
+  single-shot shotgun, pipe gun, .22 rifle, hunting rifle, lever-action, single-shot rifle), uncommon (.22 pistol, 1911,
+  snub, .45 pistol, sawn-off, 20 ga pump and O/U, 12 ga O/U, police pump, .357 lever, police carbine), scarce (semi-auto
+  shotgun, assault rifle, military carbine, SMG, AK), rare (.45 SMG, bullpup, piston carbine, modular rifle, FAL, M14,
+  marksman, sniper, LMG, M79, AT4), very rare (hand cannon, SCAR-H, M240, .50, M32, RPG).
+- 20 gauge everywhere 12 gauge was special-cased: enemy loads by class (`ammo.js enemyLoad`), the reloading bench
+  (`LOAD_CLASS`, `CAL_ORDER`), the dead soldiers' armour by calibre (`deadsoldiers.js`), the choke and shotgun suppressor
+  (`can12`) fit it, the bottle suppressor not, voices.
+
+### Tests
+
+`tools/arsenalbalancetest.js` (new: the rules above, every calibre fed, every gun found with value / weight / durability /
+rarity, rounds by tier, own dice); `rostertest` (pistols 5–15, automatics 20+ for .308 and .45, single-shot rifles 1, the
+arsenal's tables as sources), `loottest` (the arsenal's tables as sources), `gunsafetest` (the safe's extra gun counted
+apart), `reloadbenchtest` (20 ga handloads) updated.
