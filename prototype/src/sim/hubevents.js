@@ -20,7 +20,7 @@ import { foodOutlook } from "./economy.js";
 import { allItems } from "./inventory.js";
 import { breakCard, fixtures, breakdownsDaily } from "./breakdowns.js";
 import { packErrand, unpackErrand } from "./needs.js";
-import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
+import { waterIn, drawWater, RAW, keyWord } from "./water.js"; // purified and un-purified water
 import { supplyAmt, useSupply, roundsIn } from "./rounds.js"; // "ammo": every round there, any calibre
 import { calibrateDeal, suppliesText, baseAmmo } from "./ammo.js"; // a deal's rounds named by calibre
 
@@ -500,7 +500,7 @@ export function hubUpkeepDaily(state) {
       const [k, lo, hi] = rng.pick([["scrap", 3, 8], ["food", 3, 6], ["meds", 1, 2]]);
       const q = rng.int(lo, hi);
       base.stock[k] = (base.stock[k] || 0) + q;
-      found = ` with ${q} ${k}${found}`;
+      found = ` with ${q} ${keyWord(k)}${found}`;
     }
     log(state, `${s.name} is back at ${base.name}${found}, in better spirits.`, "good");
   }

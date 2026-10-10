@@ -11,6 +11,7 @@
 //     day), below 20 "X is close to leaving" (log line and card); a warning is re-armed once mood is back to 40;
 //   - desertion: below 15 mood, only after the second warning was given on an earlier night, 8% a day (+0.6% per
 //     point below 15). Leaders never desert.
+import { keyWord } from "./water.js";
 import { breakMult } from "./traits.js"; // Iron Will
 import { log, addCard, day, skill, atBase, residents, checkGameOver } from "./world.js";
 import { baseBeds } from "./buildings.js";
@@ -166,7 +167,7 @@ export function desertionHaul(state, base, s) {
   const took = {};
   for (const [k, q] of Object.entries(want)) {
     const n = Math.min(q, Math.floor(Math.max(0, k === "ammo" ? totalRounds(base.stock) : base.stock[k] || 0) * 0.25));
-    if (n > 0 && k === "ammo") { spendAmmo(base.stock, n); took[k] = n; } // rounds.js: any calibre, the cheapest first
+    if (n > 0 && k === "ammo") Object.assign(took, spendAmmo(base.stock, n).keys); // rounds.js: any calibre, the cheapest first (by key: named where it is told)
     else if (n > 0) { base.stock[k] -= n; took[k] = n; }
   }
   return took;
@@ -184,7 +185,7 @@ export function desert(state, base, s, opts = {}) {
   s.inBed = false;
   const items = allItems(s).map(itemText);
   const took = opts.haul === false ? {} : desertionHaul(state, base, s);
-  const parts = [...items, ...Object.entries(took).map(([k, q]) => `${q} ${k}`)];
+  const parts = [...items, ...Object.entries(took).map(([k, q]) => `${q} ${keyWord(k)}`)]; // rounds named by calibre
   log(state, `${opts.why || `${s.name} lost hope and walked away from ${base.name} in the night`}${parts.length ? `, taking ${listText(parts)}` : " with nothing but the clothes on their back"}.`, "death");
   (state.deserters || (state.deserters = [])).push({ id: s.id, baseId: base.id, day: day(state), took });
   onLeave(state, s, base); // relations.js: friends and a partner take it hard

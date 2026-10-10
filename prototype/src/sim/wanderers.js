@@ -18,6 +18,7 @@
 // die, settle and join bands (× 1 + HC_EARLY × e^(−day / HC_FADE)).
 // Every roll here uses hash01 or a generator seeded from it, never the world's random numbers, so a normal game where
 // nobody is met plays exactly as before; the cards' own choices use the world's dice like any card.
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, FACTION_TYPES, GEAR } from "./data.js";
 import { log, addCard, day, hub, skill, isNight, factionById, combatPower, snapshot, armedFactor } from "./world.js";
 import {
@@ -386,7 +387,7 @@ export function neutralCard(state, p, g, opts = {}) {
   const text = `${lead} ${g.people.map(personLine).join(", ")}. ${moodText[g.mood] || ""}`;
   const talk = talkChance(state, p, g), gift = talkChance(state, p, g, true);
   const cost = Object.fromEntries(Object.entries(W.GIFT).map(([k, q]) => [k, q * n]));
-  const costText = Object.entries(cost).map(([k, q]) => `${q} ${k}`).join(" and ");
+  const costText = Object.entries(cost).map(([k, q]) => `${q} ${keyWord(k)}`).join(" and ");
   const short = (st) => Object.entries(cost).some(([k, q]) => carried(p, k) < q);
   const win = (st, gifted) => {
     gainXp(st, talker(st, p), "speech", USE.talk + USE.talkWon);

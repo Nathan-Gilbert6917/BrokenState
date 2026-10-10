@@ -21,6 +21,7 @@
 // is below 20% of its full durability (GEAR dur) is worn out: it cannot be repaired (it works until it breaks; salvage
 // it for parts: inventory.js salvageAt). item.durBase: the maximum before its first repair (valuation.js prices a
 // lowered maximum down).
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, SKILL_NAMES } from "./data.js";
 import { atBase, skill, log, newId } from "./world.js";
 import { benchTier } from "./buildings.js";
@@ -168,7 +169,7 @@ export function repairInfo(state, base, item, { by = null, kit = false } = {}) {
   if (!out.reason && who && skill(who, def.skill) < out.min) out.reason = `Needs ${SKILL_NAMES[def.skill]} ${out.min}+ (${who.name.split(" ")[0]} has ${skill(who, def.skill)}).`;
   if (!out.reason && !who) out.reason = base ? `Needs someone on the Craft role here with ${SKILL_NAMES[def.skill]} ${out.min}+.` : "Nobody to do it.";
   if (!out.reason && !kit && base) {
-    for (const [k, v] of Object.entries(out.inputs.supplies)) if (have(base, k) < v) { out.reason = `Needs ${v} ${k} (have ${Math.floor(have(base, k))}).`; break; }
+    for (const [k, v] of Object.entries(out.inputs.supplies)) if (have(base, k) < v) { out.reason = `Needs ${v} ${keyWord(k)} (have ${Math.floor(have(base, k))}).`; break; }
     if (!out.reason) for (const [k, v] of Object.entries(out.inputs.gear)) if (base.armory.filter((it) => it && it.key === k).length < v) { out.reason = `Needs a ${GEAR[k].name.toLowerCase()} in the armory.`; break; }
   }
   out.ok = !out.reason;
@@ -227,7 +228,7 @@ export function queueRepair(state, base, loc, { urgent = false } = {}) {
   const noCrafter = info.reason && /Craft role/.test(info.reason) && !info.who;
   if (!info.ok && !noCrafter) return info.reason;
   if (noCrafter) { // queued anyway: it waits for a crafter (the inputs still have to be here)
-    for (const [k, v] of Object.entries(info.inputs.supplies)) if (have(base, k) < v) return `Needs ${v} ${k} (have ${Math.floor(have(base, k))}).`;
+    for (const [k, v] of Object.entries(info.inputs.supplies)) if (have(base, k) < v) return `Needs ${v} ${keyWord(k)} (have ${Math.floor(have(base, k))}).`;
     for (const [k, v] of Object.entries(info.inputs.gear)) if (base.armory.filter((it) => it && it.key === k).length < v) return `Needs a ${GEAR[k].name.toLowerCase()} in the armory.`;
   }
   const rs = stats(state);

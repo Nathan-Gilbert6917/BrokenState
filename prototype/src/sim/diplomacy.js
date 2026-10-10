@@ -652,7 +652,7 @@ export function brokerCeasefire(state, warId) {
     const q = Math.max(1, Math.min(available(f, k), Math.round(40 / (SUPPLIES[k].value * Math.max(0.5, need(f, k))))));
     f.stock[k] -= q;
     h.stock[k] = (h.stock[k] || 0) + q;
-    gifts.push(`${q} ${k} from ${f.name}`);
+    gifts.push(`${q} ${keyWord(k)} from ${f.name}`);
   }
   log(state, `You brokered a ceasefire between ${a.name} and ${b.name}.${gifts.length ? ` Thanks: ${gifts.join(", ")}.` : ""}`, "good");
   return `Ceasefire! ${a.name} and ${b.name} lay down their arms (${Math.round(info.chance * 100)}% chance).${gifts.length ? ` They thank you: ${gifts.join(", ")} (at the hub).` : ""}`;
@@ -748,7 +748,7 @@ export function payRansom(state, f, s = null, opts = {}) {
   f.prisonersHeld = Math.max(0, f.prisonersHeld - 1);
   f.pop += 1;
   changeGoodwill(state, f, 3, "you returned their person for a ransom");
-  return `${f.name} paid ${Object.entries(q.offer).map(([k, n]) => `${n} ${k}`).join(", ")} to ${base.name} and took their person home.`;
+  return `${f.name} paid ${Object.entries(q.offer).map(([k, n]) => `${n} ${keyWord(k)}`).join(", ")} to ${base.name} and took their person home.`;
 }
 // Let a prisoner go for nothing: +8 goodwill (+4 if hostile).
 export function releasePrisoner(state, f, s = null) {

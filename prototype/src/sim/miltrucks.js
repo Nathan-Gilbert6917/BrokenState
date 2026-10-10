@@ -33,7 +33,7 @@ import { log, addCard, hub, atBase, factionById, snapshot } from "./world.js";
 import { tileLabel, planPath, spawnAiParty, partyMembers, partyTile, teamName, launchExpedition, carryCapacity, supplyLoad } from "./parties.js";
 import { triggerConflict } from "./conflicts.js";
 import { searchCrew } from "./crashes.js";
-import { stockHas } from "./water.js";
+import { stockHas, keyWord } from "./water.js";
 import { sortFind } from "./ammo.js"; // rounds by calibre
 import { unitPower, partyLost } from "./arsenal.js"; // an AI salvage party's fighters (their kit) and the kit of its dead
 
@@ -212,7 +212,7 @@ export function truckSearchHour(state, e, p, members) {
   markOpened(state, x);
   const got = truckLoot(truckRng(state, x), x.kind, x.cond, { rich: x.rich, src: x.src });
   const bits = [];
-  for (const [k, q] of Object.entries(got.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; bits.push(`${q} ${k}`); }
+  for (const [k, q] of Object.entries(got.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; bits.push(`${q} ${keyWord(k)}`); }
   for (const it of got.gear) { e.found.gear.push(it); bits.push(it.name); }
   e.heat = Math.min(100, e.heat + MILTRUCK.SEARCH_HEAT + 2 * x.crew + (guarded ? CONVOY_GUARD.HEAT_OPEN : 0));
   return ` Forced the back of a ${truckName(x).toLowerCase()}: ${bits.length ? bits.join(", ") : "nothing left in it"}.${x.crew ? ` ${x.crew === 1 ? "A soldier" : `${x.crew} soldiers`} still strapped in the cab came for them (Heat up).` : ""}`;

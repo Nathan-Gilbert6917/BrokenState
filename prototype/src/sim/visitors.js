@@ -1226,7 +1226,7 @@ export function tradeWithGroup(state, v, f) {
     v.stock[k] -= q;
     f.stock[groupStockKey(k, f)] = (f.stock[groupStockKey(k, f)] || 0) + q; // part kinds into the group's one count of parts
     for (const [w, n] of Object.entries(pay)) { f.stock[w] -= n; v.stock[w] = (v.stock[w] || 0) + n; got.push(`${n} ${w}`); }
-    gave.push(`${q} ${k}`);
+    gave.push(`${q} ${keyWord(k)}`);
   }
   // A piece of gear changes hands now and then (the group's wares, trade.js).
   if (v.wares.length && f.wares && vrng(state).chance(0.35)) f.wares.push(v.wares.splice(vrng(state).int(0, v.wares.length - 1), 1)[0]);
@@ -1933,7 +1933,7 @@ function onOutsiderRaid(state, result, setup) {
     if (base) base.alert = false;
     state.stats.raidsRepelled += 1;
     const got = [];
-    if (v && base) for (const k of SUPPLY_KEYS) { const q = Math.floor(v.stock[k] || 0); if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${k}`); } }
+    if (v && base) for (const k of SUPPLY_KEYS) { const q = Math.floor(v.stock[k] || 0); if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${keyWord(k)}`); } }
     if (v) leaveMap(state, v, "broken");
     text = `${base ? base.name : "The base"} broke ${v ? v.name : "the raiders"} in a stand-up fight.${got.length ? ` What they carried is yours: ${got.join(", ")}.` : ""}`;
     log(state, text, "good");

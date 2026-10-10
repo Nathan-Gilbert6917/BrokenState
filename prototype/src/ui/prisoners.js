@@ -2,6 +2,7 @@
 // here, in a cell or a shed, what they eat and do, and
 // what to do with each: rations, labour, question (or roughly), ask to join, win over, ransom, trade back, release,
 // execute. A summary on top: food a day at their rations, labour by task, guards and the day's escape risk.
+import { keyWord } from "../sim/water.js"; // "rounds", "9mm FMJ"
 import { SKILL_NAMES, TRAITS, FACTION_TYPES } from "../sim/data.js";
 import { traitChips } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { day, atBase, baseById, survivorById, skill } from "../sim/world.js";
@@ -130,12 +131,12 @@ function prisonerCard(state, base, p, ui, watch) {
   const kind = KIND[p.kit] || "Fighter";
   const where = v.awaiting ? "Tied up in the yard, waiting on your decision (the card)" : v.cell ? `In the ${v.hold.name.toLowerCase()}, ${v.guarded ? "guarded" : "unguarded"}` : "In a shed (no free cell)";
   const opinion = Math.max(0, Math.min(100, Math.round(p.opinion)));
-  const ransom = p.ransom ? `Ransom asked: ${p.ransom.qty} ${p.ransom.key}, answer due on day ${p.ransom.due}.` : "";
+  const ransom = p.ransom ? `Ransom asked: ${p.ransom.qty} ${keyWord(p.ransom.key)}, answer due on day ${p.ransom.due}.` : "";
   const Q = PRISON.QUESTION, RQ = Q.rough;
   const qWhat = p.intelDone ? "Again: where their parties (raids too) and the hives near them are now." : "First answers: their bases, people and stock, their parties out (raids too), hives near them (onto your map).";
   const qTip = v.question.ok ? `Question ${p.name}: ${pctTxt(v.question.odds)} to get answers (the best talker's Speech +${pctTxt(Q.speech)} a point, the leader's Leadership +${pctTxt(Q.lead)}; zealots and soldiers say less; hunger loosens tongues: Starvation +${pctTxt(R.starve.question)}, None +${pctTxt(R.none.question)}). ${qWhat} Sours them (${Q.sour}).` : `Questioned on day ${p.questioned}: again from day ${p.questioned + Q.every}.`;
   const roughTip = v.question.ok ? `Question ${p.name} roughly: ${pctTxt(v.question.rough)} (+${pctTxt(RQ.odds)}). Costs: their health ${RQ.health} and mood ${RQ.mood}, opinion ${RQ.sour}; everyone here ${RQ.baseMood} mood (a Former Medic ${RQ.soft}, the Brave and Tough nothing); goodwill ${RQ.goodwill} with ${f ? f.name : "their group"}. ${qWhat}` : qTip;
-  const rTip = v.ransom ? `Ask ${f ? f.name : p.group} for ${v.ransom.qty} ${v.ransom.key} (worth about ${v.ransom.value}). They answer in ${PRISON.RANSOM.days[0]}–${PRISON.RANSOM.days[1]} days: pay (goodwill ${PRISON.RANSOM.goodwillPaid}) or refuse (goodwill ${PRISON.RANSOM.goodwillRefused}, and a rescue raid becomes twice as likely for ${PRISON.RANSOM.angryDays} days).` : "Their group is gone: nobody to pay.";
+  const rTip = v.ransom ? `Ask ${f ? f.name : p.group} for ${v.ransom.qty} ${keyWord(v.ransom.key)} (worth about ${v.ransom.value}). They answer in ${PRISON.RANSOM.days[0]}–${PRISON.RANSOM.days[1]} days: pay (goodwill ${PRISON.RANSOM.goodwillPaid}) or refuse (goodwill ${PRISON.RANSOM.goodwillRefused}, and a rescue raid becomes twice as likely for ${PRISON.RANSOM.angryDays} days).` : "Their group is gone: nobody to pay.";
   const rateTxt = p.mode === "recruit" ? `Winning them over: ${opinion}/100, about +${v.rate.toFixed(1)} a day${v.rate > 0 ? ` (≈${Math.ceil((100 - p.opinion) / Math.max(0.1, v.rate))} days)` : ""}.` : `Opinion of you: ${opinion}/100.`;
   const A = PRISON.ASK;
   const askTip = v.ask.ok ? `Ask ${p.name} to join now: ${pctTxt(v.ask.odds)}. By their opinion of you (from ${A.from}, +${pct1(1 / A.span)} a point above it; ${opinion} now), who they were (zealots ×${A.kind.zealots}, soldiers ×${A.kind.soldiers}, a loner ×${A.kind.none}), the leader's Leadership and the best talker's Speech (+${pct1(A.lead)} a point each), rations (Full +${pctTxt(R.full.ask)}, Starvation ${pctTxt(R.starve.ask)}, None ${pctTxt(R.none.ask)}), weeks of good work (+${pct1(L.askPerDay)} a day, up to +${pctTxt(L.askMax)}: ${p.labourDays || 0} days so far) and their mood. Raise it: time on Win them over, Full rations, labour, a leader with Leadership. No: opinion ${A.fail}, ask again in ${A.gap} days.` : `Asked on day ${p.asked}: again from day ${p.asked + A.gap}.`;
@@ -164,7 +165,7 @@ function prisonerCard(state, base, p, ui, watch) {
       <button class="mini" data-action="pr-question" data-method="rough" data-id="${p.id}" ${v.question.ok ? "" : "disabled"}${tip(roughTip)}>Roughly (${pctTxt(v.question.rough)})</button>
       <button class="mini" data-action="pr-ask" data-id="${p.id}" ${v.ask.ok ? "" : "disabled"}${tip(askTip)}>Ask to join (${pctTxt(v.ask.odds)})</button>
       <button class="mini ${p.mode === "recruit" ? "active" : ""}" data-action="pr-mode" data-id="${p.id}" data-mode="${p.mode === "recruit" ? "hold" : "recruit"}"${tip(p.mode === "recruit" ? "Stop trying to win them over: just hold them." : `Treat them well and talk: they come round slowly (1 a day × Speech, Leadership, the base's mood, who they were, rations: Full ×${R.full.recruit}, Starvation ×${R.starve.recruit}; weeks of good work up to +${pctTxt(L.recruitMax)}). At 100 they ask to join. Months, not days.`)}>${p.mode === "recruit" ? "Winning over ✔" : "Win them over"}</button>
-      <button class="mini" data-action="pr-ransom" data-id="${p.id}" ${v.ransom && !p.ransom ? "" : "disabled"}${tip(rTip)}>Ask a ransom${v.ransom ? ` (${v.ransom.qty} ${esc(v.ransom.key)})` : ""}</button>
+      <button class="mini" data-action="pr-ransom" data-id="${p.id}" ${v.ransom && !p.ransom ? "" : "disabled"}${tip(rTip)}>Ask a ransom${v.ransom ? ` (${v.ransom.qty} ${esc(keyWord(v.ransom.key))})` : ""}</button>
       <button class="mini" data-action="pr-tradeback" data-id="${p.id}" ${f ? "" : "disabled"}${tip(f ? `Send ${p.name} back to ${f.name} unharmed: goodwill +${PRISON.TRADE_BACK + cured}${cured ? " (+" + cured + " for treating their worm)" : ""}.` : "Their group is gone.")}>Trade back (+${PRISON.TRADE_BACK + cured})</button>
       <button class="mini" data-action="pr-release" data-id="${p.id}"${tip(`Let ${p.name} go${f ? `: they head back to ${f.name} (goodwill +${PRISON.RELEASE + cured}${cured ? ", " + cured + " of it for treating their worm" : ""})` : ""}.`)}>Release</button>
       <button class="mini" data-action="pr-execute" data-id="${p.id}"${tip(exTip)}>Execute</button>

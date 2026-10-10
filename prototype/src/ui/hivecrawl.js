@@ -3,6 +3,7 @@
 // and the passages out with their drafts. The window warms as the team nears the core: its tint and vignette go from a
 // cold grey-blue to orange-red, with the pulse and the drone (ui/hivecrawlsfx.js). The team's lights (on or off), its
 // road flares, and what it has heard or lit beyond a passage (Listen, Flare) show on the passages and the map.
+import { keyWord } from "../sim/water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { partyMembers, carried } from "../sim/parties.js";
 import { hourOfDay, day, isNight } from "../sim/world.js";
 import { BOSS_NAMES } from "../sim/hiveconst.js";
@@ -58,7 +59,7 @@ function lightsRow(state, p, c) {
 function hud(state, p, c, den, room, w) {
   const members = partyMembers(state, p);
   const clockTxt = `Day ${day(state)} ${String(hourOfDay(state)).padStart(2, "0")}:00${isNight(state) ? " · night" : ""}`;
-  const found = [...Object.entries(c.tally.supplies).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${k}`), ...c.tally.gear];
+  const found = [...Object.entries(c.tally.supplies).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${keyWord(k)}`), ...c.tally.gear];
   return `<div class="grid2" style="gap:0.6rem;margin-bottom:0.5rem">
     <div>
       <div class="spread small"><span${tip(`How warm the air is here: the core is the hottest place in the hive. ${den.depth} chambers from the mouth to the core by the shortest way; the deepest you have been: ${c.deepest}.`)}>Warmth <b style="color:${warmColor(w)}">${w}</b>: ${esc(warmthText(w))}</span><span>${clockTxt}</span></div>

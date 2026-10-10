@@ -1,4 +1,5 @@
 // Abstract extraction raid: search hour by hour while Heat rises, then extract.
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger } from "./data.js";
 import { log, hurt, isNight, combatPower, gearEffect, factionById, spendShots, armedFactor, arrowsBack } from "./world.js";
 import {
@@ -146,7 +147,7 @@ export function afterRaid(state, result, setup) {
     const f = factionById(state, id);
     if (f) changeGoodwill(state, f, -10, "you raided their land");
   }
-  const loot = [...Object.entries(result.loot.supplies).map(([k, v]) => `${v} ${k}`), ...result.loot.gear.map((g) => g.name)];
+  const loot = [...Object.entries(result.loot.supplies).map(([k, v]) => `${v} ${keyWord(k)}`), ...result.loot.gear.map((g) => g.name)];
   log(state, `Raid at ${tileLabel(state, setup.tile)}: ${result.outcome === "extracted" ? `got out with ${loot.join(", ") || "nothing"}` : "nobody made it out"} (${r.searched}/${r.total} searched, ${r.hours}h).`, result.outcome === "extracted" ? "good" : "death");
   if (!p || !state.parties.includes(p)) return;
   if (!partyMembers(state, p).length) {
@@ -205,7 +206,7 @@ export function searchHour(state) {
     } else if (qty > 0) {
       // Parts by kind (loot.js sortParts: an auto shop's are mostly car parts; their own dice).
       const got = key === "parts" && t.loc ? sortParts(state, t.loc.type, qty, `h${e.hours}:${i}`) : { [key]: qty };
-      for (const [k, q] of Object.entries(got)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; finds.push(`${q} ${k}`); }
+      for (const [k, q] of Object.entries(got)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; finds.push(`${q} ${keyWord(k)}`); }
     }
   }
   const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
@@ -269,7 +270,7 @@ export function searchHour(state) {
       if (kind && rng.chance(Math.min(0.8, mil[kind] * MILDEAD.SEARCH_BODY))) { // one of them was a soldier: his kit
         const loot = bodyLoot(rng, kind, armouredItem);
         const got = [];
-        for (const [k, v] of Object.entries(loot.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + v; got.push(`${v} ${k}`); }
+        for (const [k, v] of Object.entries(loot.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + v; got.push(`${v} ${keyWord(k)}`); }
         for (const g of loot.gear) { e.found.gear.push(g); got.push(g.name); }
         if (got.length) line += ` Off a ${ZTYPES[kind].name.toLowerCase()}'s body: ${got.join(", ")}.`;
       }

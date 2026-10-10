@@ -3881,7 +3881,7 @@ function roadKit(state, p) {
     const over = Math.floor(carried(p, k) - keep);
     if (over <= 0) continue;
     const took = takeSupply(p, k, over);
-    if (took >= 1) left.push(`${took} ${k}`);
+    if (took >= 1) left.push(`${took} ${keyWord(k)}`);
   }
   const room = partyCapacity(state, p);
   if (poolLoad(p) > room * 0.7) {

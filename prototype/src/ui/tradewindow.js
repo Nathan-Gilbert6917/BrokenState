@@ -5,7 +5,7 @@ import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, FACTION_TYPES } from "../sim/d
 import { hub, day, factionById, baseById, survivorById, atBase, skill, combatPower, RADIO_RANGE } from "../sim/world.js";
 import { attitude } from "../sim/factions.js";
 import { tileLabel, partyTile, carryCapacity, STANCES } from "../sim/parties.js";
-import { waterIn } from "../sim/water.js"; // purified and un-purified water
+import { waterIn, keyWord } from "../sim/water.js"; // purified and un-purified water
 import {
   tradeContext, tradeTotals, tradeVerdict, sellPrice, buyPrice, spread, intelOffer, setQty, toggleGear, setIntel, balanceWith,
   executeTrade, giftAll, proposePact, endTrade, openCaravanTrade, priceWhy, supplyInfo, gearInfo, goodsWorth,
@@ -171,7 +171,7 @@ export function tradeWindow(state, ui) {
     <div class="small muted">${where}</div>
     ${held.length ? `<div class="small danger">They hold ${held.map(first).join(", ")}. A ransom was offered when you arrived; a Rescue team can also get them out.</div>` : ""}
     ${radio ? deliveryPick(state, ctx) : ""}
-    ${t.deal ? `<div class="small good">Agreed over the radio: you give ${Object.entries(t.deal.offer).map(([k, q]) => `${q} ${k}`).join(", ")} for ${Object.entries(t.deal.ask).map(([k, q]) => `${q} ${k}`).join(", ")}. They honour it as agreed.</div>` : ""}
+    ${t.deal ? `<div class="small good">Agreed over the radio: you give ${Object.entries(t.deal.offer).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ")} for ${Object.entries(t.deal.ask).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ")}. They honour it as agreed.</div>` : ""}
     ${moodBlock(state, f)}
     <div class="small muted" style="margin:0.3rem 0"${tip("Every group prices things its own way: what kind of group it is, the state it is in (war, hordes, hunger, sickness, the season, wealth) and how much of it it already has. An item's condition and uses left count too. They pay you less than they charge: Speech and goodwill narrow the gap.")}>Haggling: they pay you about ${Math.round((sp.sell / (sp.buy * marginOf(f))) * 100)}% of what they would charge for the same thing (Speech ${speech}, goodwill ${Math.round(f.goodwill)}${marginOf(f) > 1 ? "; they sell dear" : ""}).</div>
     <div class="grid2 tw-cols">

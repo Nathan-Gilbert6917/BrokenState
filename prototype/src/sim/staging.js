@@ -205,7 +205,7 @@ function establishDesc(state, tile) {
 }
 function workDesc(state, camp, deposit) {
   const miss = stagingMissing(camp);
-  return `${deposit.length ? `Unload ${deposit.map(([k, q]) => `${q} ${k}`).join(", ")} into the camp's stores, then w` : "W"}ork on the camp until it is done or the materials run out (daylight hours; the team rests at night). A team short of food or water takes what the stores hold beyond the hub's needs (up to ${STAGING.KEEP_DAYS} days). ${miss.length ? `Still missing: ${missingText(miss)}.` : "Everything is in."} Built: ${Math.round(stagingPct(camp) * 100)}%.`;
+  return `${deposit.length ? `Unload ${deposit.map(([k, q]) => `${q} ${keyWord(k)}`).join(", ")} into the camp's stores, then w` : "W"}ork on the camp until it is done or the materials run out (daylight hours; the team rests at night). A team short of food or water takes what the stores hold beyond the hub's needs (up to ${STAGING.KEEP_DAYS} days). ${miss.length ? `Still missing: ${missingText(miss)}.` : "Everything is in."} Built: ${Math.round(stagingPct(camp) * 100)}%.`;
 }
 // What the team would unload: all its scrap and parts, and the food and water beyond STAGING.KEEP_DAYS of rations for
 // the road; while the stores are short of one, down to a single day's. Preserved food goes in first (it keeps).
@@ -447,7 +447,7 @@ function stagingDaily(state, camp) {
   const lost = [];
   for (const k of STORE_KEYS) {
     const q = n0(camp.stores[k] * state.rng.range(STAGING.LOOT_SHARE[0], STAGING.LOOT_SHARE[1]));
-    if (q >= 1) { camp.stores[k] -= q; lost.push(`${q} ${k}`); }
+    if (q >= 1) { camp.stores[k] -= q; lost.push(`${q} ${keyWord(k)}`); }
   }
   const torn = Math.min(camp.progress, camp.work * STAGING.LOOT_WORK);
   camp.progress -= torn;

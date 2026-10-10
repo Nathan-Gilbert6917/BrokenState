@@ -1,5 +1,6 @@
 // The city crawl window (sim/citycrawl.js): the block card (places, street events, go deeper, leave), an encounter's
 // answers, and the crawl's HUD (depth, the city's Alert, the clock, the team's health, ammo and load, what this run found).
+import { keyWord } from "../sim/water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { partyMembers, carried } from "../sim/parties.js";
 import { hourOfDay, day, isNight } from "../sim/world.js";
 import { buildingHint } from "../sim/buildingmaps.js";
@@ -33,7 +34,7 @@ export function crawlModal(state, ui) {
 function hud(state, p, c) {
   const members = partyMembers(state, p);
   const ld = crawlLoad(state, p);
-  const found = [...Object.entries(c.tally.supplies).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${k}`), ...c.tally.gear];
+  const found = [...Object.entries(c.tally.supplies).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${keyWord(k)}`), ...c.tally.gear];
   const depth = Array.from({ length: CRAWL.MAX_BLOCK }, (_, i) => `<span style="display:inline-block;width:0.8rem;height:0.8rem;margin-right:2px;border-radius:2px;background:${i < c.block ? (i < 2 ? "#5d8a5e" : i < 4 ? "#b48a3c" : "#a8443c") : "#2c3139"}"></span>`).join("");
   const clockTxt = `Day ${day(state)} ${String(hourOfDay(state)).padStart(2, "0")}:00${isNight(state) ? " · night" : ""}`;
   return `<div class="grid2" style="gap:0.6rem;margin-bottom:0.5rem">

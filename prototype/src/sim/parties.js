@@ -1518,7 +1518,7 @@ function arrive(state, p) {
       const took = takeGroupClaims(state, base.tile); // claims.js: the groups' claims round it are yours (as a group's new base takes yours)
       const up = BUILDINGS.outpost_up;
       log(state, camp
-        ? `${base.name}: an outpost camp pitched with ${members.length} staff. To establish it: ${Object.entries(up.cost).map(([k, v]) => `${v} ${k}`).join(" and ")} brought in, then ${up.hours} work-hours by its builders (Construction).${took.length ? ` Its land takes claims of ${claimsTakenText(took)}.` : ""}`
+        ? `${base.name}: an outpost camp pitched with ${members.length} staff. To establish it: ${Object.entries(up.cost).map(([k, v]) => `${v} ${keyWord(k)}`).join(" and ")} brought in, then ${up.hours} work-hours by its builders (Construction).${took.length ? ` Its land takes claims of ${claimsTakenText(took)}.` : ""}`
         : `${base.name} founded with ${members.length} staff.${took.length ? ` Its land takes claims of ${claimsTakenText(took)}.` : ""}`, "good");
       return camp ? `${base.name}: outpost camp pitched.` : `${base.name} founded.`;
     }

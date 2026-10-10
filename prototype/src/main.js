@@ -893,7 +893,7 @@ const actions = {
   },
   radiotalk: (d) => { log(state, radioTalk(state, factionById(state, Number(d.id))), "info"); },
   routesetup: (d) => {
-    ui.routeSetup = { factionId: Number(d.id), sendKey: "food", sendQty: 20, recvKey: "ammo", recvQty: 60, interval: 5, escort: "standard", escortIds: new Set() };
+    ui.routeSetup = { factionId: Number(d.id), sendKey: "food", sendQty: 20, recvKey: "a_9mm_fmj", recvQty: 60, interval: 5, escort: "standard", escortIds: new Set() };
   },
   "rt-escort": (d) => { ui.routeSetup.escort = d.v; ui.routeSetup.escortIds = new Set(); },
   "rt-crew": (d) => {

@@ -24,7 +24,7 @@ import { heatInfo, rowsText } from "../sim/fieldheat.js";
 import { fireButton, campStatusCard } from "./hardcore.js"; // the staging camp while you have no base
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE, partyHuntMix, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { teamWormText, teamWaterHow, teamTabCount, WORM } from "../sim/worm.js";
-import { teamWaterIn, teamRawIn } from "../sim/water.js"; // purified and un-purified water
+import { teamWaterIn, teamRawIn, keyWord } from "../sim/water.js"; // purified and un-purified water
 import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
@@ -264,7 +264,7 @@ function lowFoodBlock(state, p, at, queueing) {
 function craftBlock(state, p, queueing) {
   const opts = fieldCraftOptions(state, p);
   if (!opts.length) return "";
-  const inText = (o) => o.inText || Object.entries(o.in).map(([k, q]) => `${q} ${k}`).join(" + ");
+  const inText = (o) => o.inText || Object.entries(o.in).map(([k, q]) => `${q} ${keyWord(k)}`).join(" + ");
   return `<div style="margin-top:0.5rem"><b${tip("Make simple things on the road from the supplies the team carries. Takes time on the spot; the team does not travel meanwhile.")}>Craft</b></div>
     <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${opts.map((o) =>
       btn(`data-action="xp-order" data-id="${p.id}" data-type="craft" data-recipe="${o.key}"`, `${esc(o.name)} (${o.hours}h)`,

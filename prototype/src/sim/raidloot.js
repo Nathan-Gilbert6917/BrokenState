@@ -41,6 +41,7 @@
 import { GEAR, SUPPLIES } from "./data.js";
 const worthPerKg = (it) => ((GEAR[it.key] && GEAR[it.key].value) || 1) / Math.max(0.1, itemLoad(it));
 import { survivorById } from "./world.js";
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { partyMembers, cargoRoom, poolLoad, unitsThatFit } from "./parties.js";
 import { partyVehicle, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "./load.js";
@@ -480,7 +481,7 @@ export function raidTakeAll(state, uid, boxId) {
     const before = Math.floor(box.contents.sup[k]);
     raidMove(state, uid, `${src}:sup:${k}`, `haul:${u.id}:list`);
     const took = before - Math.floor(box.contents.sup[k] || 0);
-    if (took > 0) got.push(`${took} ${k}`);
+    if (took > 0) got.push(`${took} ${keyWord(k)}`);
   }
   // Items by worth for their weight, so the time and the room go on the best things first.
   const order = box.contents.gear.slice().sort((a, c) => worthPerKg(c) - worthPerKg(a));
@@ -520,7 +521,7 @@ export function stashAll(state, uid) {
     if (before < 1) continue;
     raidMove(state, uid, `haul:${u.id}:sup:${k}`, to);
     const n = before - Math.floor(u.haul.sup[k] || 0);
-    if (n > 0) put.push(`${n} ${k}`);
+    if (n > 0) put.push(`${n} ${keyWord(k)}`);
   }
   for (const it of u.haul.gear.slice()) {
     raidMove(state, uid, `haul:${u.id}:gear:${u.haul.gear.indexOf(it)}`, to);

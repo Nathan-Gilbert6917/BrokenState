@@ -18,6 +18,7 @@
 // near where they were found. A key found in a raid joins the hub's key ring when someone gets out; it is never cargo.
 // The headless search (scavenge.js searchHour) has the same locks in abstract form (lockedSearchHour).
 // Rolls use hash01 (skills.js), never the world's random numbers.
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, LOCATIONS, SUPPLIES } from "./data.js";
 import { log, skill, survivorById, day } from "./world.js";
 import { hash01, gainXp, hasPerk, anyPerk } from "./skills.js";
@@ -493,7 +494,7 @@ export function lockedSearchHour(state, e, p, members) {
     const q = lo + Math.floor(roll("q", i) * (hi - lo + 1));
     if (k === "ammo") addFindVia((kk, qq) => { e.found.supplies[kk] = (e.found.supplies[kk] || 0) + qq; return qq; }, LOCK_AMMO[def.loot] || "home", q, "lock", e.tile, e.hours, i); // ammo.js: rounds by calibre
     else e.found.supplies[k] = (e.found.supplies[k] || 0) + q;
-    bits.push(`${q} ${k}`);
+    bits.push(`${q} ${keyWord(k)}`);
   });
   L.gear.forEach(([k, pp], i) => { if (GEAR[k] && roll("g", i) < pp) { const it = lootItem(k, lockSource(def.loot, siteTypeAt(state, e.tile)), roll("gd", i)); e.found.gear.push(it); bits.push(it.name); } });
   const bp2 = rollBlueprint(state, e.tile, BP_MULT.lock, `shl${e.hours}`);
@@ -969,7 +970,7 @@ function searchSafe(state, e, members, kind, roll, site) {
   if (how === "blow") blastContents(st.gear, st.sup);
   const bits = [];
   for (const it of st.gear) { e.found.gear.push(it); bits.push(it.name); }
-  for (const [k, v] of Object.entries(st.sup)) if (v > 0) { e.found.supplies[k] = (e.found.supplies[k] || 0) + v; bits.push(`${v} ${k}`); }
+  for (const [k, v] of Object.entries(st.sup)) if (v > 0) { e.found.supplies[k] = (e.found.supplies[k] || 0) + v; bits.push(`${v} ${keyWord(k)}`); }
   const verb = { key: "Unlocked", force: "Pried open (loud)", drill: "Drilled open (loud)", grind: "Cut open (loud)", crack: "Cracked", blow: "Blew open (loud)" }[how];
   return ` ${verb} ${A.toLowerCase()} ${lower}: ${bits.length ? bits.join(", ") : "nothing inside"}.`;
 }

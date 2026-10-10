@@ -12,7 +12,7 @@ import {
   partyMembers, partyTile, startReturn, removeParty, travelHours, wipeIfEmpty, waterForHours,
 } from "./parties.js";
 import { thirstAt } from "./weather.js";
-import { waterIn, drawWater, moveWater, RAW } from "./water.js"; // purified and un-purified water: the road's water counts both, purified packed first
+import { waterIn, drawWater, moveWater, RAW, keyWord } from "./water.js"; // purified and un-purified water: the road's water counts both, purified packed first
 import { UPKEEP, coldFactor } from "./upkeep.js";
 import { edibleFood, eatFromStore } from "./storage.js";
 import { vehicleById, partyVehicle, tank } from "./vehicles.js";
@@ -271,7 +271,7 @@ export function supplyArrive(state, p) {
     const q = Math.floor(v);
     if (q > 0) {
       dest.stock[k] = (dest.stock[k] || 0) + q;
-      got.push(`${q} ${k}`);
+      got.push(`${q} ${keyWord(k)}`);
     }
   }
   p.cargo.supplies = {};

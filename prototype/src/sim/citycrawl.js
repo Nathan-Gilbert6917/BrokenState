@@ -19,6 +19,7 @@
 // left open when the autopilot comes on: crawlAutoStep), main.js / ui.js (the crawl window, ui/citycrawl.js).
 // Headless (tools, the autopilot) a city is still searched hour by hour (scavenge.js): nothing here runs unless a crawl
 // was started, so a normal game and the census tools take exactly the old path.
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
 import { hash01, gainXpAll, USE } from "./skills.js";
 import { GEAR, SUPPLIES } from "./data.js";
@@ -416,7 +417,7 @@ function give(state, p, c, sup = {}, gear = []) {
       p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take;
       c.tally.supplies[k] = (c.tally.supplies[k] || 0) + take;
       room -= take * SUPPLIES[k].weight;
-      got.push(`${take} ${k}`);
+      got.push(`${take} ${keyWord(k)}`);
     }
     if (q - take > 0) left.push(`${q - take} ${k}`);
   }
@@ -635,7 +636,7 @@ function afterPlace(state, result, setup, battle) {
   for (const id of result.survivorsDead || []) { const s = state.survivors.find((x) => x.id === id); if (s) c.lost.push(s.name); }
   const gained = Math.max(0, (r.heat || 0) - (ctx.heat0 || 0));
   addAlert(c, gained * CRAWL.ALERT.fromHeat);
-  const got = [...Object.entries(result.loot.supplies || {}).map(([k, v]) => `${v} ${k}`), ...(result.loot.gear || []).map((g) => g.name)];
+  const got = [...Object.entries(result.loot.supplies || {}).map(([k, v]) => `${v} ${keyWord(k)}`), ...(result.loot.gear || []).map((g) => g.name)];
   say2(c, `${line} ${got.length ? `Found ${got.join(", ")}.` : "Found nothing."}${(result.survivorsDead || []).length ? ` Lost: ${(result.survivorsDead || []).map((id) => state.survivors.find((x) => x.id === id)?.name).join(", ")}.` : ""} Alert +${Math.round(gained * CRAWL.ALERT.fromHeat)}.`, result.outcome === "extracted" ? "good" : "danger", state.hour);
   if (result.outcome === "extracted" && folkAfterPlace(state, p, battle)) say2(c, "The survivors from upstairs wait for you on the street.", "good", state.hour); // floorfolk.js: the recruit card
   for (let i = 0; i < (r.hours || 1); i++) searchHazards(state, partyMembers(state, p), c.city);
@@ -831,7 +832,7 @@ function finishCrawl(state, p) {
   mem.alert = c.alert;
   mem.hour = state.hour;
   delete p.crawl;
-  const got = [...Object.entries(c.tally.supplies).map(([k, v]) => `${v} ${k}`), ...c.tally.gear];
+  const got = [...Object.entries(c.tally.supplies).map(([k, v]) => `${v} ${keyWord(k)}`), ...c.tally.gear];
   const text = `Out of ${c.city} after ${state.hour - c.started} h, as deep as block ${c.deepest}${got.length ? `, with ${got.join(", ")}` : ", empty-handed"}.${c.lost.length ? ` Lost: ${c.lost.join(", ")}.` : ""}`;
   log(state, `${teamName(state, p)}: ${text}`, got.length ? "good" : "info");
   noteSearch(state, partyMembers(state, p));
