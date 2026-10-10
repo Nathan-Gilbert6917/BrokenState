@@ -45,6 +45,7 @@ import { bagRefusal } from "../sim/carry.js"; // Carry in arms (the search windo
 import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
 import { registerStackScreen, openStack, closeStack, stackPanel, chosenQty, supplyIcon, splitCount, STACK_ACTIONS, STACK_CHANGE } from "./stackmove.js"; // how many of a supply stack, and where
 import { lootFit } from "../sim/stacks.js";
+import { armoryView } from "./armoryview.js"; // the storage box's items grouped by type, cards or compact rows
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -209,10 +210,6 @@ export function storageBox(state, ui, place, user) {
     const bulk = junk.length ? ` <button class="mini" data-action="inv-burnjunk" data-base="${st.id}"${tip(`Break down every piece of junk with firewood in it (wooden, paper or cloth things worth ${BURN.junkValue} or less, not marked Keep): ${junk.length} item${junk.length === 1 ? "" : "s"}, +${burnablesWood(junk)} firewood into ${b.name}'s stores.`)}>Break down junk for firewood (+${burnablesWood(junk)})</button>` : "";
     head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items${bulk}</span></div>${b ? repairsBox(state, b) : ""}`;
   }
-  const tiles = st.list.map((it, i) => {
-    const l = `${loc}:${i}`;
-    return `<div class="islot store${ui.invSel === l ? " sel" : ""}" data-action="inv-click" data-loc="${l}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(it) * 10) / 10} kg`)}>${tile(it, l, user)}${gearCog(state, ui, it, l)}</div>`;
-  }).join("");
   // The supplies kept here, as stacks with their weight (firewood too: 0.1 kg each): the team's found cargo, the base's stores.
   const pool = st.o === "cargo" ? st.party.cargo.supplies : ((baseById(state, st.id) || {}).stock || {});
   // Stack tiles (ui/stackmove.js): movable where something can take them (INV_STACK_DESTS), else just shown.
@@ -220,8 +217,16 @@ export function storageBox(state, ui, place, user) {
   const supKg = sups.reduce((a, [k, v]) => a + SUPPLIES[k].weight * v, 0);
   const supHtml = sups.length ? `<div class="invlabel"${tip(st.o === "cargo" ? "Supplies the team found on the way, by weight: shared out among the people with the packed supplies (or riding in the vehicle)" : "The base's stores: food, water, firewood, fuel, meds, rounds by calibre and type, parts")}>${st.o === "cargo" ? "Found supplies" : "In the stores"} (${kg(supKg)} kg)</div>
     <div class="istore supgrid">${sups.map(([k, v]) => { const l = `${st.o}:${st.id}:sup:${k}`; return supTile(ui, l, k, v, "", invDests(state, ui, l).length > 0); }).join("")}</div>` : "";
-  return `${head}<div class="istore" data-action="inv-click" data-loc="${loc}" data-drop="${loc}"${tip(`Drop or click here to put the selected item in ${st.name}`)}>${tiles || `<span class="small muted">Empty. Drop items here.</span>`}</div>
+  return `${head}${storageGroups(state, ui, st, loc, user)}
     ${supHtml}`;
+}
+// The stored items grouped by type, as cards or compact rows (ui/armoryview.js), inside the drop box. Each keeps the
+// tile's clicks and drags: data-action="inv-click" data-loc (the item), data-drop (the list), data-drag; the ⚙ on a gun.
+function storageGroups(state, ui, st, loc, user) {
+  const entries = st.list.map((item, i) => ({ item, loc: `${loc}:${i}`, bad: !!(user && GEAR[item.key] && GEAR[item.key].skill && GEAR[item.key].req && !gearEffect(user, item).usable) }));
+  const cell = (e, inner, cls) => `<div class="islot store ${cls}${ui.invSel === e.loc ? " sel" : ""}" data-action="inv-click" data-loc="${e.loc}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(e.item) * 10) / 10} kg`)}><div class="ain" draggable="true" data-drag="${e.loc}"${tip(itemTip(e.item, user))}>${inner}</div>${gearCog(state, ui, e.item, e.loc)}</div>`;
+  const wrap = (inner) => `<div class="istore agroups" data-action="inv-click" data-loc="${loc}" data-drop="${loc}"${tip(`Drop or click here to put the selected item in ${st.name}`)}>${inner}</div>`;
+  return armoryView(entries, { ns: "store", cell, wrap, empty: "Empty. Drop items here." });
 }
 
 // People who can swap items with each other here, as tabs.
