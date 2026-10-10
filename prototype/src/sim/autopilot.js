@@ -824,7 +824,7 @@ function pickChoice(state, card, opts, p) {
     const fighters = atBase(state, h.id).sort((a, b) => combatPower(b) - combatPower(a));
     if (P.raid && fighters.length >= 7 && fighters.slice(0, 3).reduce((a, s) => a + combatPower(s), 0) >= 14) return find(/^Send a squad/) || find(/^Ignore/);
     const spare = P.reserves ? Math.max(200, reserveStatus(state, h).ammo.target + 40) : careful(P) ? 200 : 110;
-    return (ammo >= spare ? find(/^Send 40 ammo/) : null) || find(/^Ignore/);
+    return (ammo >= spare ? find(/^Send 40 (ammo|rounds)/) : null) || find(/^Ignore/);
   }
   if (/^A stranger at the gate/.test(t) || /^Refugees at the gate/.test(t)) {
     const h = hub(state);
@@ -3345,7 +3345,7 @@ export function campaignLine(state) {
   // A storm or crawl trip picked this morning that could not get away (launchTrip: rations, a car, a way there) is not out.
   const out = state.parties.some((p) => p.owner === "player" && p.mission === "hive");
   const wait = (c.waits === "storm" || c.waits === "crawl") && !out ? "the squad to get away (its rations, a car for the drive, or a way there over land)" : WAIT[c.waits] || "the morning's plan";
-  return `Campaign on ${hive.name} (${state.grid.distance(hive.tile, h.tile)} tiles, guard about ${knownGuard(state, hive.tile)}): ${baseAmmo(state, h)} of ${target} ammo, allies: ${allies.length ? allies.join(", ") : "none yet"}${near.length ? ` (courting ${near.join(", ")})` : ""}. Waiting for ${wait}.`;
+  return `Campaign on ${hive.name} (${state.grid.distance(hive.tile, h.tile)} tiles, guard about ${knownGuard(state, hive.tile)}): ${baseAmmo(state, h)} of ${target} rounds that fit the guns, allies: ${allies.length ? allies.join(", ") : "none yet"}${near.length ? ` (courting ${near.join(", ")})` : ""}. Waiting for ${wait}.`;
 }
 function campaignReport(state) {
   const line = campaignLine(state);

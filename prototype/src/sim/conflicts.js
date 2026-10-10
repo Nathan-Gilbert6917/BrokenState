@@ -125,12 +125,15 @@ export function addCargo(state, p, key, qty) {
 // place or group holds, else the common rounds of the team's guns. Returns the words ("20 9mm FMJ and 10 12 gauge 00
 // buckshot"; "no rounds" when nothing fitted).
 /** @param {any} state @param {any} p @param {number} n @param {string | null} [theme] @param {...any} salt */
-export function addCargoRounds(state, p, n, theme = null, ...salt) {
+export const addCargoRounds = (state, p, n, theme = null, ...salt) => roundsText(addCargoRoundsRec(state, p, n, theme, ...salt));
+// The same, returning what fitted by key ({ key: q }).
+/** @param {any} state @param {any} p @param {number} n @param {string | null} [theme] @param {...any} salt */
+export function addCargoRoundsRec(state, p, n, theme = null, ...salt) {
   const parts = theme ? findRounds(theme, n, ...salt) : calRounds(n, partyCals(state, p));
   /** @type {Record<string, number>} */
   const got = {};
   for (const [k, q] of Object.entries(parts)) { const t = addCargo(state, p, k, q); if (t > 0) got[k] = t; }
-  return roundsText(got);
+  return got;
 }
 
 // Ammo the team can shoot with: packed plus found (both pools are used in a fight, combat.js); the same for the arrows
@@ -1082,11 +1085,12 @@ function stealChoice(state, p, c, f) {
     resolve: (st) => {
       if (st.rng.chance(chance)) {
         bump(st, "outcomes", "steal-ok");
-        const ammo = addFindVia((k, q) => addCargo(st, p, k, q), f ? kindTheme(f.type) : "raider", st.rng.int(15, 40), "steal", partyTile(p), st.hour); // ammo.js: their rounds, by calibre
+        const stolen = addCargoRoundsRec(st, p, st.rng.int(15, 40), f ? kindTheme(f.type) : "raider", "steal", partyTile(p), st.hour); // ammo.js: their rounds, by calibre
+        const ammo = Object.values(stolen).reduce((a, q) => a + q, 0);
         const food = addCargo(st, p, "food", st.rng.int(4, 10));
         if (f) { f.stock.ammo = Math.max(0, f.stock.ammo - ammo); f.stock.food = Math.max(0, f.stock.food - food); }
         resume(st, p);
-        return `You crawl out with ${ammo} ammo and ${food} food. Nobody saw a thing.`;
+        return `You crawl out with ${roundsText(stolen)} and ${food} food. Nobody saw a thing.`;
       }
       bump(st, "outcomes", "steal-fail");
       if (f) changeGoodwill(st, f, -8, "you tried to rob them");
@@ -1300,7 +1304,7 @@ function victoryRewards(state, p, c, result) {
       if (got.length) out.push(`Taken from the bodies: ${got.join(", ")}.`);
     } else {
       // Resolved by the numbers: there were no bodies to search, so the haul is rolled here.
-      out.push(`Taken from the bodies: ${addFindVia((k, q) => addCargo(state, p, k, q), f ? kindTheme(f.type) : "raider", rng.int(15, 45), "bodies", partyTile(p), state.hour)} ammo, ${addCargo(state, p, "food", rng.int(2, 8))} food.`);
+      out.push(`Taken from the bodies: ${addCargoRounds(state, p, rng.int(15, 45), f ? kindTheme(f.type) : "raider", "bodies", partyTile(p), state.hour)}, ${addCargo(state, p, "food", rng.int(2, 8))} food.`); // rounds by calibre
       if (rng.chance(0.3)) {
         const key = rng.pick(["pistol", "shotgun", "huntrifle", "vest"]);
         const dropped = (result && result.arsDropped) || []; // arsenal.js settleArsenal: what their dead carried (a group's people)

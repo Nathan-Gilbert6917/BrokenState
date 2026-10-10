@@ -425,7 +425,7 @@ function salvageSupplies(state, c, crew) {
   while (supplyLoad(sup) > cap && sup.ammo > 0) sup.ammo = Math.max(0, sup.ammo - 4);
   if (supplyLoad(sup) > cap) return { ok: false, why: "They cannot carry the food and water for it." };
   if (sup.food > stock("food") || sup.water > stock("water")) return { ok: false, why: `The hub cannot spare ${sup.food} food and ${sup.water} water.` };
-  return { ok: true, sup, days, text: `${sup.food} food, ${sup.water} water${sup.ammo ? `, ${sup.ammo} ammo` : ""}${sup.meds ? ", 1 meds" : ""}` };
+  return { ok: true, sup, days, text: `${sup.food} food, ${sup.water} water${sup.ammo ? `, ${sup.ammo} rounds for their guns` : ""}${sup.meds ? ", 1 meds" : ""}` };
 }
 export function sendSalvageTeam(state, c) {
   if (!c || c.gone) return "The convoy is gone.";

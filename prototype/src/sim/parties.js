@@ -1808,7 +1808,7 @@ function cullCard(state, p, horde) {
     choices: [
       {
         label: "Set up a killzone and fire",
-        hint: "Uses up to 15 ammo per person (arrows for a bow or crossbow). Best with ammo and good shooters; someone may get hurt",
+        hint: "Uses up to 15 rounds per person, each of their own gun's calibre (arrows for a bow or crossbow). Best with ammo and good shooters; someone may get hurt",
         resolve: (st) => {
           if (gone(st)) return moved(st);
           const members = partyMembers(st, p);

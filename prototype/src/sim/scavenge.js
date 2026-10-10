@@ -30,7 +30,7 @@ import { searchMeds } from "./medfinds.js";
 import { ZTYPES } from "./hiveconst.js";
 import { siteWanderers, siteEncounter, wanderersAfterRaid } from "./wanderers.js";
 import { crawlTile, startCrawl } from "./citycrawl.js";
-import { addFind } from "./ammo.js"; // rounds by calibre
+import { addFind, roundsText } from "./ammo.js"; // rounds by calibre
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -201,8 +201,7 @@ export function searchHour(state) {
     let qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
     if (key === "meds" && qty > 0) qty = searchMeds(t, qty); // medfinds.js: a box of them only at a pharmacy, clinic, hospital or medevac wreck
     if (qty > 0 && key === "ammo") {
-      addFind(e.found.supplies, t.loc ? t.loc.type : "", qty, false, e.tile, e.hours, i); // ammo.js: the rounds a place like this holds, by calibre
-      finds.push(`${qty} ammo`);
+      finds.push(roundsText(addFind(e.found.supplies, t.loc ? t.loc.type : "", qty, false, e.tile, e.hours, i))); // ammo.js: the rounds a place like this holds, by calibre, named
     } else if (qty > 0) {
       // Parts by kind (loot.js sortParts: an auto shop's are mostly car parts; their own dice).
       const got = key === "parts" && t.loc ? sortParts(state, t.loc.type, qty, `h${e.hours}:${i}`) : { [key]: qty };

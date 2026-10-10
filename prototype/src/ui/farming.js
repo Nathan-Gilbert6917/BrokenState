@@ -262,7 +262,7 @@ export function baseFarming(state, b) {
 const MIX_TIPS = {
   traps: `Snares and deadfalls: small game only. Silent: no Heat, no noise, no ammo or arrows. At the cabin a trap hour is a third of a day on two snare lines (about half a rifle's food); on a team's hunt ${Math.round(TRAP.field * 100)}% of that, + ${Math.round(TRAP.hand * 100)}% a hand past the first (about a third).`,
   bows: `Bows and crossbows with arrows: nearly a rifle's food (a compound bow about 90%), silent: no Heat, no noise. A shot at game loses its arrow ${Math.round(ARROW.lost * 100)}% of the time (about 0.6 arrows a kill). Without a bow or arrows those hours go to the traps.`,
-  guns: `Each hunter's best weapon (a rifle first; a bow if that is all they have): the most food. Every shot uses 1 ammo (never the walls' last 3 a head + 10), adds Heat to the base (a rifle +1 a kill) or to a team (+${HUNT.shotHeat} a shot), and each wandering horde within ${HUNT.drawRange} tiles of the hunting ground turns toward the shots ${Math.round(HUNT.drawChance * 100)}% of the time. Without a gun or ammo those hours go to the bows, then the traps.`,
+  guns: `Each hunter's best weapon (a rifle first; a bow if that is all they have): the most food. Every shot uses 1 round of the gun's calibre (never the walls' last 3 a head + 10), adds Heat to the base (a rifle +1 a kill) or to a team (+${HUNT.shotHeat} a shot), and each wandering horde within ${HUNT.drawRange} tiles of the hunting ground turns toward the shots ${Math.round(HUNT.drawChance * 100)}% of the time. Without a gun or ammo those hours go to the bows, then the traps.`,
 };
 function huntingCard(state, b) {
   const mix = huntMixOf(b);
