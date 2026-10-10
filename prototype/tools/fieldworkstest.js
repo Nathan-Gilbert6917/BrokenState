@@ -16,6 +16,12 @@
 // - the groups build their own (groupFieldDaily); their towers add to their defence; the governor plans a well
 //   when water runs short and repairs; save/load round-trips everything (posted people included); an older save
 //   with no state.fieldworks loads and runs
+// - shifts (2026-10-10 fieldworks-plus): lookouts and guards on a tower's or roadblock's shifts walk out (early by the
+//   walk), stand it and come home; coverage gaps; a night shift keeps them up; presets; an old save's posting moves on
+// - roadblock guards hold longer and shoot back (winOdds), run when beaten; spike traps; a hunting blind (the hunters'
+//   game hook); a snare line (catch, check, rot, robbery, a team's check); a fuel cache (restock, draw, hidden);
+//   the standing haul order; the groups' stockpiles and caches, their raids on each other's structures; the
+//   governor's roadblock on a raid road and stockpile by far crews; Help and the codex
 import { createWorld, tickHour, hub, atBase, residents, newId, liveTiles, baseVision, day } from "../src/sim/world.js";
 import { launchExpedition, partyTile, carried, outpostName, spawnAiParty } from "../src/sim/parties.js";
 import { queueOrder, startOrder } from "../src/sim/orders.js";
@@ -28,10 +34,15 @@ import { lookoutsSpot } from "../src/sim/watch.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import * as FW from "../src/sim/fieldworks.js";
 import { wellYield } from "../src/sim/claims.js";
+import { createVehicle } from "../src/sim/vehicles.js";
+import { startWar } from "../src/sim/diplomacy.js";
+import { huntTripTile, gameAbundance } from "../src/sim/hunting.js";
+import { distFactor } from "../src/sim/tripland.js";
+import { codexEntry } from "../src/ui/codex.js";
 
 const SEED = Number(process.argv[2] || 42);
 let fails = 0, passed = 0;
-const check = (ok, msg) => { if (ok) passed++; else { fails++; console.log(`  FAIL: ${msg}`); } return !!ok; };
+const check = (ok, msg) => { if (ok) { passed++; if (process.env.V) console.log(`  ok: ${msg}`); } else { fails++; console.log(`  FAIL: ${msg}`); } return !!ok; };
 const section = (name) => console.log(name);
 
 function mk(seed = SEED) {
@@ -135,7 +146,7 @@ section("Building: the builders go out, the walk counts, the base queue shares t
 }
 
 // ---------------------------------------------------------------------------------------------------------
-section("The tower: unmanned it sees nothing; lookouts are out of the base and show the map round it");
+section("The tower: unmanned it sees nothing; lookouts on shifts walk out, watch and come home");
 {
   const state = mk();
   const h = hub(state);
@@ -146,24 +157,62 @@ section("The tower: unmanned it sees nothing; lookouts are out of the base and s
   const beyond = state.grid.within(fw.tile, 3).find((x) => state.grid.distance(x, h.tile) > baseVision(h) && !state.bases.some((b) => state.grid.distance(b.tile, x) <= baseVision(b)));
   check(beyond != null && !liveTiles(state).has(beyond), "unmanned: a tile 3 from it beyond the hub's view is not live");
   const s = atBase(state, h.id).find((x) => !x.leader);
+  s.health = 100; s.conditions = []; s.inBed = false;
   const res = FW.postPerson(state, fw.id, s.id);
-  check(!res.error && s.location.kind === "post" && !atBase(state, h.id).includes(s) && residents(state, h.id).includes(s) && FW.outOfBase(s), `posted: out of the base, still fed there (${res.text || res.error})`);
-  check(liveTiles(state).has(beyond) && FW.manned(state, fw), "manned by day: that tile is live");
-  toHour(state, 23);
-  check(!FW.manned(state, fw) && !liveTiles(state).has(beyond), "one lookout alone sleeps at 23:00: the tower is dark");
+  const w = FW.shiftWalk(state, fw);
+  check(!res.error && FW.shiftOf(fw, s.id) && FW.shiftOf(fw, s.id).name === "Day" && /day shift \(06–18\)/.test(res.text), `on the roster: the day shift (${res.text || res.error})`);
+  check(s.location.kind === "post" && !atBase(state, h.id).includes(s) && residents(state, h.id).includes(s) && FW.outOfBase(s), "the day shift is on: walking out now (out of the base, still fed there)");
+  check(!FW.manned(state, fw), `still walking (${w} h): not watching yet`);
+  tick(state, w);
+  check(FW.manned(state, fw) && liveTiles(state).has(beyond), "there: manned by day, the far tile is live");
+  // Off duty at the end of the day shift (18:00): home by 18 + the walk.
+  toHour(state, 18 + w);
+  check(s.location.kind === "base" && atBase(state, h.id).includes(s) && !FW.manned(state, fw) && !liveTiles(state).has(beyond), "the shift over: home, the tower dark (nobody on the night shift)");
+  const cov = FW.shiftCoverage(state, fw);
+  check(cov[12].n === 1 && cov[22].n === 0 && FW.shiftLine(state, fw).gaps.length === 1, `coverage: day covered, the night a gap (${FW.shiftLine(state, fw).text})`);
+  // A second person on the night shift: round the clock.
   const s2 = atBase(state, h.id).find((x) => !x.leader && x !== s);
-  FW.postPerson(state, fw.id, s2.id);
+  s2.health = 100; s2.conditions = []; s2.inBed = false;
+  const r2 = FW.postPerson(state, fw.id, s2.id);
+  check(FW.shiftOf(fw, s2.id) && FW.shiftOf(fw, s2.id).name === "Night" && !FW.shiftLine(state, fw).gaps.length, `the second goes on the night shift: covered round the clock (${r2.text || r2.error})`);
+  toHour(state, 23);
   const night = state.grid.within(fw.tile, 1).find((x) => state.grid.distance(x, h.tile) > 1);
-  check(FW.manned(state, fw) && liveTiles(state).has(night) && !liveTiles(state).has(beyond), "two take turns: manned at night, 1 tile round it");
-  check(/2 at most|holds 2/.test(FW.postProblem(state, fw, atBase(state, h.id)[0]) || ""), `a third: "${FW.postProblem(state, fw, atBase(state, h.id)[0])}"`);
+  check(FW.manned(state, fw) && FW.onDuty(state, fw).includes(s2) && liveTiles(state).has(night) && !liveTiles(state).has(beyond) && s.location.kind === "base", "night: the night lookout watches, 1 tile round it; the day one sleeps at home");
+  // The relief: at 06:00 the day lookout is there (left at 06 − walk) and the night one walks home after.
+  toHour(state, 6);
+  check(FW.onDuty(state, fw).includes(s) && FW.manned(state, fw), "06:00: the day lookout arrived on time (left early by the walk)");
+  toHour(state, 6 + w);
+  check(s2.location.kind === "base", "the night lookout is home after the walk");
+  check((s2.tired || 0) > 0 && (s2.sleepIn || atBase(state, h.id).includes(s2)), `the night shift kept them up (owes ${Math.round(s2.tired || 0)} h; sleeping it off: ${!!s2.sleepIn})`);
+  // A full shift refuses a third (2 a shift); the preset changes keep people by name.
+  const s3 = atBase(state, h.id).find((x) => !x.leader && x !== s && x !== s2);
+  FW.postPerson(state, fw.id, s3.id, 0);
+  const s4 = atBase(state, h.id).find((x) => !x.leader && x !== s && x !== s2 && x !== s3);
+  check(/holds 2 at most/.test(FW.postProblem(state, fw, s4, 0) || ""), `a third on the day shift: "${FW.postProblem(state, fw, s4, 0)}"`);
+  FW.recallPerson(state, s3.id);
+  FW.setRosterPreset(state, fw, "three");
+  check(fw.roster.shifts.length === 3 && FW.shiftOf(fw, s2.id) && FW.shiftOf(fw, s2.id).name === "Night" && !FW.shiftOf(fw, s.id), "three shifts: the night lookout keeps Night; Day is gone (off the roster)");
+  FW.setRosterPreset(state, fw, "two");
+  FW.postPerson(state, fw.id, s.id, 0);
   // The lookouts warn the base of a raid in their sight (watch.js lookoutsSpot), even beyond the usual range.
   toHour(state, 12);
   const warnAt = state.grid.within(fw.tile, 3).find((x) => state.grid.distance(x, h.tile) >= 4);
   if (warnAt != null) check(lookoutsSpot(state, h, warnAt, 2) === true, "lookoutsSpot: the tower sees a raid 4+ tiles out");
-  tick(state, 3);
-  check(s.location.kind === "post" && fw.garrison.length === 2, "they stay posted hour after hour");
+  // Hurt: they come home and the hour is a gap.
+  s.health = 20;
+  tick(state, 1);
+  check(s.location.kind === "base" && !FW.manned(state, fw) && FW.shiftCoverage(state, fw)[13].n === 0, "badly hurt: home, the day shift a gap");
+  s.health = 100; s.conditions = [];
   const line = FW.recallPerson(state, s.id);
-  check(s.location.kind === "base" && atBase(state, h.id).includes(s) && /back at/.test(line), `recalled: ${line}`);
+  check(!FW.shiftOf(fw, s.id) && s.location.kind === "base", `recalled: off the shifts (${line})`);
+  // An older save's permanent posting moves onto the shifts.
+  const t2 = standing(state, "tower", 1);
+  const old = atBase(state, h.id).find((x) => !x.leader && !FW.rosterOf(state, x.id));
+  old.location = { kind: "post", baseId: h.id, fw: t2.id, tile: t2.tile };
+  t2.garrison = [old.id];
+  delete t2.roster;
+  FW.rosterHour(state);
+  check(t2.roster && FW.shiftOf(t2, old.id) && FW.shiftOf(t2, old.id).name === "Day", "an older save's posted lookout: on the day shift");
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -292,7 +341,10 @@ section("A group's raid on a field work: driven off, or taken over; your team ta
   f.known = true;
   // Driven off: two good lookouts against a weak raid.
   const tower = standing(state, "tower", 2);
-  for (const s of atBase(state, h.id).filter((x) => !x.leader).slice(0, 2)) { s.health = 100; FW.postPerson(state, tower.id, s.id); }
+  toHour(state, 10);
+  for (const s of atBase(state, h.id).filter((x) => !x.leader).slice(0, 2)) { s.health = 100; s.conditions = []; s.inBed = false; FW.postPerson(state, tower.id, s.id, 0); }
+  tick(state, FW.shiftWalk(state, tower));
+  check(FW.onDuty(state, tower).length === 2, "two lookouts on the day shift, on duty");
   const weak = FW.sendFieldRaid(state, f, tower, 0.6);
   weak.idx = weak.path.length - 1;
   const rolls = [];
@@ -442,7 +494,7 @@ section("The groups build their own; the governor's share");
   for (const j of [...state.fieldworks.jobs]) { j.progress = j.hours; FW.fieldBuildHour(state, h); }
   for (let i = 0; i < 12; i++) state.survivors.push({ ...atBase(state, h.id)[0], id: newId(), leader: false, pinned: false });
   const post = FW.govFieldWorks(state, h, { waterShort: false, threatened: true });
-  check(post.some((l) => /goes out to the watch tower/.test(l)), `lookouts posted (${post.join(" | ")})`);
+  check(post.some((l) => /shift .* at the watch tower/.test(l)), `lookouts put on the shifts (${post.join(" | ")})`);
   // Repairs below 70%.
   const w = FW.playerWorks(state, h).find((x) => x.kind === "well");
   w.hp = 10;
@@ -451,6 +503,331 @@ section("The groups build their own; the governor's share");
 }
 
 // ---------------------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------------------
+section("Roadblock guards: on shifts, they hold it longer, shoot back, and run when beaten");
+{
+  const state = mk();
+  const h = hub(state);
+  const fw = standing(state, "roadblock", 2) || standing(state, "roadblock", 1);
+  if (check(!!fw, "a road tile for a roadblock")) {
+    const f = state.factions.find((x) => x.alive && x.bases.length);
+    f.goodwill = -60;
+    const nb = state.grid.neighbors(fw.tile).find((id) => state.tiles[id].terrain !== "water" && id !== h.tile);
+    const raid = (str) => { const p = spawnAiParty(state, f, "raid", f.bases[0], h.tile, { strength: str, target: { kind: "player", baseId: h.id } }); p.path = [nb, fw.tile, h.tile]; p.idx = 0; p.progress = 0; return p; };
+    // Unguarded first.
+    const p0 = raid(10);
+    FW.partyEnter(state, p0, fw.tile);
+    const held0 = -p0.progress, dmg0 = fw.max - fw.hp;
+    state.parties.splice(state.parties.indexOf(p0), 1);
+    fw.hp = fw.max;
+    // Two good guards on the day shift.
+    toHour(state, 10);
+    const gs = atBase(state, h.id).filter((x) => !x.leader).slice(0, 2);
+    for (const s of gs) { s.health = 100; s.conditions = []; s.inBed = false; const r = FW.postPerson(state, fw.id, s.id, 0); check(!r.error, `guard: ${r.text || r.error}`); }
+    tick(state, FW.shiftWalk(state, fw));
+    check(FW.guards(state, fw) === 2, "two guards on duty");
+    const keep = Math.random;
+    const odds = { ...FW.FIELD.ROADBLOCK };
+    const p1 = raid(10);
+    state.rng.chance = () => true; // the guards win the exchange (the dice set for the test)
+    FW.partyEnter(state, p1, fw.tile);
+    delete state.rng.chance;
+    check(-p1.progress > held0 && p1.strength < 10, `guarded: held ${(-p1.progress).toFixed(1)} h (unguarded ${held0.toFixed(1)}), the raid cut to ${p1.strength}`);
+    check(fw.max - fw.hp <= dmg0 + 0.01, `the same lane cut: ${fw.max - fw.hp} damage (unguarded ${dmg0})`);
+    state.parties.splice(state.parties.indexOf(p1), 1);
+    // A big raid beats them: they run for home.
+    fw.hp = fw.max;
+    const p2 = raid(400);
+    FW.partyEnter(state, p2, fw.tile);
+    check(gs.every((s) => !s.alive || s.location.kind === "base") && state.fieldworks.news.some((n) => /guards were overrun/.test(n.text)), "a big raid overruns the guards: they run home (maybe hurt)");
+    state.parties.splice(state.parties.indexOf(p2), 1);
+    // A horde: the guards shoot some down first.
+    fw.hp = fw.max;
+    tick(state, 2);
+    const back = FW.guards(state, fw);
+    const ho = makeHorde(state, { tile: fw.tile, size: 60, role: "roam" });
+    ho.move = 0;
+    FW.hordeEnter(state, ho);
+    check(ho.move < 0 && (back ? ho.size < 60 : true), `a horde held ${(-ho.move).toFixed(1)} h${back ? `, ${60 - ho.size} shot down by ${back} guards` : ""}`);
+    Object.assign(FW.FIELD.ROADBLOCK, odds);
+    void keep;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Spike traps: cut down hordes and hostile parties, wear out, reset by a repair");
+{
+  const state = mk();
+  const h = hub(state);
+  const fw = standing(state, "spikes", 2);
+  check(!!fw && fw.built && FW.spikesLive(fw), "spike traps set");
+  const ho = makeHorde(state, { tile: fw.tile, size: 50, role: "roam" });
+  FW.hordeEnter(state, ho);
+  check(ho.size < 50 && fw.hp < fw.max, `a horde of 50 crosses: ${50 - ho.size} down, the traps at ${fw.hp}/${fw.max}`);
+  const f = state.factions.find((x) => x.alive && x.bases.length);
+  f.goodwill = -60;
+  const p = spawnAiParty(state, f, "raid", f.bases[0], h.tile, { strength: 10, target: { kind: "player", baseId: h.id } });
+  p.progress = 0;
+  FW.partyEnter(state, p, fw.tile);
+  check(p.strength < 10 && p.progress < 0, `a raid crosses: strength 10 → ${p.strength}, held ${(-p.progress).toFixed(1)} h`);
+  state.parties.splice(state.parties.indexOf(p), 1);
+  fw.hp = fw.max * 0.2;
+  const ho2 = makeHorde(state, { tile: fw.tile, size: 50, role: "roam" });
+  FW.hordeEnter(state, ho2);
+  check(!FW.spikesLive(fw) && ho2.size === 50 && FW.fwById(state, fw.id), "sprung (20%): the next horde walks over them, they stay to be reset");
+  builders(state, 2);
+  const q = FW.queueRepair(state, fw.id);
+  check(!q.error && /reset/.test(FW.jobText(state, FW.jobFor(state, fw))), `reset queued: ${q.text || q.error}`);
+  tick(state, 48, () => fw.hp >= fw.max);
+  check(FW.spikesLive(fw) && fw.hp === fw.max, "reset by the builders");
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Hunting blind: more game for the base's hunters on its tile, reached past the bare grounds");
+{
+  const state = mk();
+  const h = hub(state);
+  const fw = standing(state, "blind", 2, (id) => ["forest", "hills", "plains"].includes(state.tiles[id].terrain));
+  if (check(!!fw, "a blind 2 tiles out on game land")) {
+    check(TRIP_HOOKS.game(state, h, fw.tile) === FW.FIELD.BLIND.mult && TRIP_HOOKS.game(state, h, h.tile) === 1, `the hunters' game hook: ×${TRIP_HOOKS.game(state, h, fw.tile)} on its tile, ×1 elsewhere`);
+    const t = huntTripTile(state, h);
+    check(t && (t.id === fw.tile || t.v * t.f >= FW.FIELD.BLIND.mult * gameAbundance(state, fw.tile) * distFactor("hunt", 2) * 0.99), `the hunters' tile: ${t ? `${t.id} (${t.id === fw.tile ? "the blind" : "better ground"})` : "none"}`);
+    const fw2 = FW.placeTiles(state, h, "blind").find((x) => /game/.test(x.why || ""));
+    if (fw2) check(true, `refused on poor ground: "${fw2.why}"`);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Snare line: catches day by day, a hunter checks it, the catch rots or is robbed; a team checks it");
+{
+  const state = mk();
+  const h = hub(state);
+  const fw = standing(state, "snares", 2, (id) => ["forest", "hills"].includes(state.tiles[id].terrain)) || standing(state, "snares", 2);
+  if (check(!!fw, "a snare line on forest, hills or farmland")) {
+    const city = FW.placeTiles(state, h, "snares").find((x) => !["forest", "hills", "plains"].includes(state.tiles[x.tile].terrain));
+    if (city) check(/forest, hills or farmland/.test(city.why), `refused off game land: "${city.why}"`);
+    // Nobody on Hunt: the catch waits in the snares.
+    for (const s of atBase(state, h.id)) if (s.role === "hunt") s.role = "rest";
+    const keepRob = FW.FIELD.SNARES.theft, keepNear = FW.FIELD.SNARES.near;
+    FW.FIELD.SNARES.theft = 0; FW.FIELD.SNARES.near = 0;
+    for (let i = 0; i < 4; i++) { state.hour += 24; FW.fieldworksDaily(state); }
+    check(fw.caught > 0, `4 days: ${fw.caught} caught (about ${FW.snareExpect(state, fw)} a day expected), ${FW.snareHeld(fw)} still in the snares, ${fw.rotted || 0} rotted`);
+    if (!FW.snareHeld(fw)) fw.held = [{ day: day(state), n: 3 }];
+    // A hunter at the base checks them in the morning.
+    const hunter = atBase(state, h.id).find((x) => !x.leader);
+    Object.assign(hunter, { role: "hunt", health: 100, conditions: [], inBed: false });
+    const food0 = h.stock.food, n = FW.snareHeld(fw);
+    toHour(state, FW.FIELD.HAUL.hour);
+    check(!FW.snareHeld(fw) && h.stock.food > food0 && fw.checked, `a hunter brought ${n} small game in (food ${Math.round(food0)} → ${Math.round(h.stock.food)})`);
+    // Robbed: the catch gone and the wires torn.
+    FW.FIELD.SNARES.theft = 1;
+    fw.held = [{ day: day(state), n: 2 }];
+    const hp0 = fw.hp;
+    state.hour += 24; FW.fieldworksDaily(state);
+    FW.FIELD.SNARES.theft = keepRob; FW.FIELD.SNARES.near = keepNear;
+    check(fw.robbed >= 2 && fw.hp < hp0 && state.fieldworks.news.some((x) => /robbed the snare line/.test(x.text)), `robbed: ${fw.robbed} taken, condition ${hp0} → ${fw.hp}`);
+    // A team checks it (its catch into the cargo).
+    fw.held = [{ day: day(state), n: 2 }];
+    const ids = atBase(state, h.id).filter((x) => x.location.kind === "base" && !x.leader).slice(0, 1).map((x) => x.id);
+    const t = launchExpedition(state, { memberIds: ids, dest: fw.tile, mission: "move", stance: "normal", supplies: { food: 3, water: 3 } }).party;
+    tick(state, 24, () => t.phase === "waiting" && partyTile(t) === fw.tile);
+    check(FW.teamActs(state, t, fw.tile).some((a) => a.act === "check"), "the team's menu: Check the snare line");
+    startOrder(state, t, { type: "fwork", act: "check" });
+    tick(state, 3, () => t.phase === "waiting");
+    check(!FW.snareHeld(fw), "checked by the team: the catch is in its cargo");
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Fuel cache: restocked by the builders, drawn by a team, hidden from passing raiders and the dead");
+{
+  const state = mk();
+  const h = hub(state);
+  createVehicle(state, "truck", { kind: "base", baseId: h.id }, { fuel: 20 });
+  h.stock.fuel = 100;
+  const fw = standing(state, "cache", 2);
+  check(!!fw && fw.built && !Object.keys(fw.contents).length, "a cache stands, empty");
+  builders(state, 2);
+  const plan = FW.cachePlan(state, fw);
+  const fuel0 = h.stock.fuel;
+  const q = FW.queueRestock(state, fw.id);
+  check(!q.error && h.stock.fuel < fuel0 && plan.fuel > 0, `restock queued: ${q.text || q.error}`);
+  tick(state, 24, () => !FW.jobFor(state, fw));
+  check(fw.contents.fuel === plan.fuel && FW.stockKg(fw) <= FW.FIELD.KINDS.cache.capKg, `stocked: ${FW.contentsText(fw)} (${FW.stockKg(fw)} kg)`);
+  // A horde walks over it.
+  const hp0 = fw.hp;
+  FW.hordeEnter(state, makeHorde(state, { tile: fw.tile, size: 100 }));
+  check(fw.hp === hp0, "a horde of 100 walks over it: untouched (buried)");
+  // A hostile raid passing does not see it; one sent for it finds nothing (find 0) or empties it (find 1).
+  const f = state.factions.find((x) => x.alive && x.bases.length);
+  f.goodwill = -60; f.known = true;
+  const pass = spawnAiParty(state, f, "raid", f.bases[0], h.tile, { strength: 10, target: { kind: "player", baseId: h.id } });
+  const c0 = FW.stockKg(fw);
+  FW.partyEnter(state, pass, fw.tile);
+  check(FW.stockKg(fw) === c0, "a raid passing over it does not find it");
+  state.parties.splice(state.parties.indexOf(pass), 1);
+  const keep = FW.FIELD.RAID.find;
+  FW.FIELD.RAID.find = 0;
+  FW.fieldRaidArrive(state, FW.sendFieldRaid(state, f, fw, 8));
+  check(FW.stockKg(fw) === c0 && FW.fwById(state, fw.id), "a raid sent for it searched and went home with nothing");
+  FW.FIELD.RAID.find = keep;
+  check(FW.raidChance(state, fw) < FW.raidChance(state, { kind: "tower", contents: {} }) + 1e-9, `raided less often than a tower (×${FW.FIELD.RAID.cacheW})`);
+  // A team draws on it.
+  const ids = atBase(state, h.id).filter((x) => x.location.kind === "base" && !x.leader).slice(0, 2).map((x) => x.id);
+  const t = launchExpedition(state, { memberIds: ids, dest: fw.tile, mission: "move", stance: "normal", supplies: { food: 2, water: 2 } }).party;
+  tick(state, 24, () => t.phase === "waiting" && partyTile(t) === fw.tile);
+  const acts = FW.teamActs(state, t, fw.tile).map((a) => a.act);
+  check(acts.includes("draw") && acts.includes("stash"), `the team's menu: ${acts.join(", ")}`);
+  const fuelT = carried(t, "fuel");
+  startOrder(state, t, { type: "fwork", act: "draw" });
+  tick(state, 3, () => t.phase === "waiting");
+  check(carried(t, "fuel") > fuelT && !(fw.contents.fuel > 0), `drawn: the team's fuel ${fuelT} → ${carried(t, "fuel")}`);
+  // A group's cache is hidden until a team finds it.
+  const gt = state.grid.within(f.bases[0], 2).find((id) => id !== f.bases[0] && state.tiles[id].terrain !== "water" && !FW.fwAt(state, id));
+  const theirs = FW.buildGroupWork(state, f, "cache", gt, true);
+  check(!FW.teamActs(state, t, gt).length, "a group's cache: nothing to do there until it is found");
+  theirs.found = true;
+  check(FW.teamActs(state, t, gt).some((a) => a.act === "loot") || !Object.keys(theirs.contents).length, "found: their goods can be taken");
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Standing haul order: every N days or at X kg, with a vehicle; skipped without one or under attack");
+{
+  const state = mk();
+  const h = hub(state);
+  state.vehicles = state.vehicles.filter((v) => !(v.loc.kind === "base" && v.loc.baseId === h.id)); // no vehicle at the hub to start with
+  const fw = standing(state, "stockpile", 2);
+  fw.contents = { scrap: 30 };
+  const r = FW.setHaul(state, fw, 3, 0);
+  check(/every 3 days/.test(r) && fw.haul.next === day(state) + 3 && /next haul: day/.test(FW.haulText(state, fw)), `set: ${r} (${FW.haulText(state, fw)})`);
+  // No vehicle: skipped on its day, said why.
+  fw.haul.next = day(state);
+  toHour(state, FW.FIELD.HAUL.hour);
+  check(!state.parties.some((p) => p.haulFor === fw.id) && fw.haul.last && /vehicle/.test(fw.haul.last.why || ""), `no vehicle: skipped (${FW.haulText(state, fw)})`);
+  // With a truck: it goes out and brings it in.
+  createVehicle(state, "truck", { kind: "base", baseId: h.id }, { fuel: 25, condition: 90 });
+  // The base under attack (on alert) at the haul hour: skipped (the hour run by hand: the alert clears itself as time runs).
+  fw.haul.next = day(state);
+  h.alert = true;
+  FW.fieldworksHour(state);
+  check(!state.parties.some((p) => p.haulFor === fw.id) && /under attack/.test(fw.haul.last.why || ""), `the base on alert: skipped (${fw.haul.last.why})`);
+  h.alert = false;
+  const scrap0 = h.stock.scrap;
+  FW.fieldworksHour(state);
+  const hauler = state.parties.find((p) => p.haulFor === fw.id);
+  check(!!hauler && !!hauler.vehicle && fw.haul.last.ok && fw.haul.next === day(state) + 3, `on its day: a haul team with the truck (next day ${fw.haul.next})`);
+  tick(state, 48, () => !state.parties.includes(hauler));
+  check(!Object.keys(fw.contents).length && h.stock.scrap >= scrap0 + 30, "hauled home");
+  // By weight.
+  FW.setHaul(state, fw, 0, 50);
+  fw.contents = { scrap: 20 }; // 40 kg
+  tick(state, 24);
+  toHour(state, FW.FIELD.HAUL.hour);
+  check(!state.parties.some((p) => p.haulFor === fw.id), "40 kg under the 50: not yet");
+  fw.contents = { scrap: 30 };
+  tick(state, 23);
+  toHour(state, FW.FIELD.HAUL.hour);
+  check(state.parties.some((p) => p.haulFor === fw.id), "60 kg: hauled");
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("AI parity: the groups' stockpiles and caches feed them; they raid each other's structures");
+{
+  const state = mk();
+  const f = state.factions.find((x) => x.alive && x.bases.length && x.pop >= 6);
+  const land = state.grid.within(f.bases[0], 2).filter((id) => id !== f.bases[0] && state.tiles[id].terrain !== "water" && !FW.fwAt(state, id));
+  f.stock.food = 1000; f.stock.scrap = 500;
+  const pile = FW.buildGroupWork(state, f, "stockpile", land[0], true);
+  check(Object.keys(pile.contents).length > 0, `their stockpile stocked from their stores (${FW.contentsText(pile)})`);
+  // Short of food: they draw on it.
+  pile.contents.food = 40;
+  f.stock.food = 0;
+  for (let i = 0; i < 1; i++) { state.hour += 24; FW.groupFieldDaily(state); }
+  check(f.stock.food >= 40 && !(pile.contents.food > 0), `short of food: drawn into their stores (${f.stock.food})`);
+  // Hauled home every AI.haulEvery days.
+  pile.contents = { scrap: 20 };
+  f.stock.food = 1000;
+  let hauled = false;
+  for (let i = 0; i < FW.FIELD.AI.haulEvery + 1 && !hauled; i++) { state.hour += 24; FW.groupFieldDaily(state); hauled = pile.hauled === day(state); }
+  check(hauled, `hauled home within ${FW.FIELD.AI.haulEvery} days (day ${pile.hauled})`);
+  // Their snare line feeds them.
+  const sn = land.find((id) => ["forest", "hills", "plains"].includes(state.tiles[id].terrain) && !FW.fwAt(state, id));
+  if (sn != null) {
+    const line = FW.buildGroupWork(state, f, "snares", sn, true);
+    for (let i = 0; i < 5; i++) { state.hour += 24; FW.fieldworksDaily(state); }
+    check((line.caught || 0) > 0 && !FW.snareHeld(line), `their snare line: ${line.caught} caught, taken in by their people`);
+  }
+  // Groups at war raid each other's structures.
+  const o = state.factions.find((x) => x !== f && x.alive && x.bases.length && x.pop >= 6);
+  if (check(!!o, "a second group")) {
+    const theirs = FW.buildGroupWork(state, o, "tower", state.grid.within(o.bases[0], 2).find((id) => id !== o.bases[0] && state.tiles[id].terrain !== "water" && !FW.fwAt(state, id)), true);
+    const keepRange = FW.FIELD.RAID.range;
+    FW.FIELD.RAID.range = 999;
+    check(!FW.raidersNear(state, theirs).some((x) => x.f === f) || FW.raidersNear(state, theirs).find((x) => x.f === f).w > 0, "raiders near: a group only when it would raid them");
+    startWar(state, f, o, "test");
+    const near = FW.raidersNear(state, theirs).find((x) => x.f === f);
+    check(near && near.w === FW.FIELD.RAID.ai, `at war: ${f.name} would raid ${o.name}'s tower (weight ${near ? near.w : 0})`);
+    FW.FIELD.RAID.range = keepRange;
+    theirs.gar = 0;
+    const keepCap = FW.FIELD.RAID.capture, keepNear = FW.FIELD.RAID.near;
+    FW.FIELD.RAID.capture = 1; FW.FIELD.RAID.near = 999;
+    const p = FW.sendFieldRaid(state, f, theirs, 12);
+    check(p && p.kind === "fwraid" && p.target.owner === o.id, "a group's raid party sets out for the other's tower");
+    FW.fieldRaidArrive(state, p);
+    FW.FIELD.RAID.capture = keepCap; FW.FIELD.RAID.near = keepNear;
+    check(theirs.owner === f.id && (state.fieldworks.stats.aiCaptured || 0) >= 1, `taken over: now ${f.name}'s (stats ${JSON.stringify(state.fieldworks.stats)})`);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("The governor: a roadblock on the road raids keep using; a stockpile by the far crews, hauled");
+{
+  const state = mk();
+  const h = hub(state);
+  builders(state, 1);
+  const road = FW.placeTiles(state, h, "roadblock").find((x) => !x.why);
+  if (check(!!road, "a road tile on the hub's land")) {
+    const f = state.factions.find((x) => x.alive && x.bases.length);
+    f.goodwill = -60;
+    for (let i = 0; i < 2; i++) {
+      const p = spawnAiParty(state, f, "raid", f.bases[0], h.tile, { strength: 8, target: { kind: "player", baseId: h.id } });
+      FW.partyEnter(state, p, road.tile);
+      FW.partyEnter(state, p, road.tile); // the same raid twice on a tile counts once
+      state.parties.splice(state.parties.indexOf(p), 1);
+    }
+    check(h.raidRoads && h.raidRoads[road.tile].n === 2 && FW.raidRoad(state, h) === road.tile, `two raids came down the road at ${road.tile}: noted (${JSON.stringify(h.raidRoads)})`);
+    const lines = FW.govFieldWorks(state, h, {});
+    check(lines.some((l) => /Roadblock planned/.test(l)) && FW.playerWorks(state, h).some((x) => x.kind === "roadblock"), `the governor plans a roadblock there (${lines.join(" | ")})`);
+  }
+  // Far crews: foragers whose ground near the walls is picked bare, so they go 2 out.
+  const st2 = mk(), h2 = hub(st2);
+  builders(st2, 1);
+  st2.forage = st2.forage || {};
+  for (const id of st2.grid.within(h2.tile, 1)) st2.forage[id] = [0, st2.hour];
+  const people = atBase(st2, h2.id).filter((x) => !x.leader && x.role !== "build").slice(0, 3);
+  for (const s of people) { s.role = "forage"; s.pinned = true; }
+  const far = FW.farCrewTile(st2, h2);
+  if (far != null) {
+    const lines = FW.govFieldWorks(st2, h2, {});
+    const pile = FW.playerWorks(st2, h2).find((x) => x.kind === "stockpile");
+    check(pile && st2.grid.distance(pile.tile, far) < st2.grid.distance(h2.tile, far), `foragers 2 out at ${far}: a stockpile planned nearer them (${lines.join(" | ")})`);
+    for (const j of [...st2.fieldworks.jobs]) { j.progress = j.hours; FW.fieldBuildHour(st2, h2); }
+    createVehicle(st2, "truck", { kind: "base", baseId: h2.id }, { fuel: 25 });
+    const more = FW.govFieldWorks(st2, h2, {});
+    check(pile.haul && pile.haul.every === FW.FIELD.GOV.pileEvery, `with a truck: a standing haul order (${more.join(" | ")})`);
+  } else check(true, "no far scavenging ground on this seed (skipped)");
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Help and Codex");
+{
+  const html = FW.fieldWorksHelp();
+  check(/shifts/.test(html) && /Spike traps/.test(html) && /standing order/.test(html) && /groups raid each other|raid each other/.test(html), "Help: Field works covers the kinds, shifts, threats, repairs and hauling");
+  const st = mk();
+  standing(st, "snares", 2, (id) => ["forest", "hills", "plains"].includes(st.tiles[id].terrain));
+  check(codexEntry("fw:snares") && codexEntry("fw:roadblock").stats.some(([k]) => k === "People"), "the codex has a field works entry per kind");
+}
+
 section("Determinism: the groups' field works replay the same on the same seed");
 {
   const sig = (st) => FW.fwList(st).map((f) => `${f.kind}@${f.tile}:${f.built}:${Math.round(f.hp)}`).join(",");
@@ -464,17 +841,20 @@ section("Save and load");
   const state = mk();
   const h = hub(state);
   const tower = standing(state, "tower", 2);
+  toHour(state, 12);
   const s = atBase(state, h.id).find((x) => !x.leader);
-  FW.postPerson(state, tower.id, s.id);
+  s.health = 100; s.conditions = []; s.inBed = false;
+  FW.postPerson(state, tower.id, s.id, 0);
   const pile = standing(state, "stockpile", 1);
   FW.depositAt(state, pile, "scrap", 7);
+  FW.setHaul(state, pile, 5, 100);
   const loaded = deserializeState(serializeState(state));
   const lt = FW.fwAt(loaded, tower.tile), lp = FW.fwAt(loaded, pile.tile);
   const ls = loaded.survivors.find((x) => x.id === s.id);
-  check(lt && lt.built && lt.garrison.includes(s.id) && ls.location.kind === "post" && ls.location.fw === lt.id, "the tower and its lookout round-trip");
-  check(lp && lp.contents.scrap === 7, "the stockpile's goods round-trip");
+  check(lt && lt.built && lt.garrison.includes(s.id) && FW.shiftOf(lt, s.id) && ls.location.kind === "post" && ls.location.fw === lt.id, "the tower, its shifts and its lookout out there round-trip");
+  check(lp && lp.contents.scrap === 7 && lp.haul && lp.haul.every === 5 && lp.haul.atKg === 100, "the stockpile's goods and haul order round-trip");
   tick(loaded, 30);
-  check(FW.fwAt(loaded, tower.tile) && ls.location.kind === "post", "the loaded world runs on");
+  check(FW.fwAt(loaded, tower.tile) && FW.shiftOf(lt, s.id) && (ls.location.kind === "post" || ls.location.kind === "base"), "the loaded world runs on (the lookout on the day shift)");
   // An older save with no field works.
   delete state.fieldworks;
   for (const x of state.survivors) if (x.location.kind === "post") x.location = { kind: "base", baseId: h.id };

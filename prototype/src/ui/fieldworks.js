@@ -2,7 +2,8 @@
 // tile picker: valid tiles of the base's land highlighted), the map's sprites with their condition bar, garrison and
 // needs-repair icon, the hover lines, the alerts and the team's menu items at a structure.
 import * as FW from "../sim/fieldworks.js";
-import { atBase, baseById, survivorById, skill } from "../sim/world.js";
+import { atBase, baseById, survivorById, skill, hourOfDay } from "../sim/world.js";
+import { shiftText } from "../sim/watch.js";
 import { buildRate } from "../sim/buildings.js";
 import { SUPPLIES } from "../sim/data.js";
 import { tileLabel } from "../sim/parties.js";
@@ -32,7 +33,7 @@ export function fieldWorksTab(state, b, ui) {
   const rate = buildRate(state, b);
   const head = `<div class="card small">
     <div class="spread"><b>Field works</b><span class="muted">${mine.length} of ${max} · land within ${FW.FIELD.RANGE} tiles that ${esc(b.name)} holds</span></div>
-    <div class="muted">Roadblocks, wells, watch towers, relay masts and stockpiles out on the base's land. The materials leave the stores when you place one; the builders here walk out and put it up (their hours include the walk), sharing their time with the base's own queue (every other hour while it has work). Out there they can be battered by the dead, raided and taken by other groups: repair them here.${rate > 0 ? "" : ` <span class="warn">Nobody here is on the Build job: nothing will go up.</span>`}</div>
+    <div class="muted">Roadblocks, wells, watch towers, stockpiles, hunting blinds, snare lines, fuel caches, spike traps and relay masts out on the base's land. <button class="mini" data-action="help-open" data-sec="field-works"${tip("Help: Field works")}>?</button> The materials leave the stores when you place one; the builders here walk out and put it up (their hours include the walk), sharing their time with the base's own queue (every other hour while it has work). Out there they can be battered by the dead, raided and taken by other groups: repair them here.${rate > 0 ? "" : ` <span class="warn">Nobody here is on the Build job: nothing will go up.</span>`}</div>
   </div>`;
   const plan = FW.FIELD.ORDER.map((k) => {
     const d = K[k];
@@ -64,16 +65,20 @@ export function fieldWorksTab(state, b, ui) {
     const rwhy = rc ? FW.repairProblem(state, fw) : "";
     const repair = rc ? `<div class="row" style="margin-top:0.25rem;gap:0.3rem;flex-wrap:wrap"><span class="small">Repair: ${costChips(b, rc.cost)} <span class="muted">${rc.hours} h with the walk</span></span><button class="mini" data-action="fw-repair" data-id="${fw.id}" ${rwhy ? "disabled" : ""}${tip(rwhy || "The builders go out and mend it")}>Repair</button></div>` : "";
     let extra = "";
-    if (fw.kind === "tower" && fw.built) {
-      const posted = FW.postedAt(state, fw);
-      const room = FW.garrisonCap(fw) - posted.length;
-      const opts = people.filter((s) => !s.pinned).sort((a, c) => skill(c, "scouting") - skill(a, "scouting") || a.id - c.id);
-      extra = `<div class="row small" style="margin-top:0.25rem;gap:0.3rem;flex-wrap:wrap">Lookouts: ${posted.map((s) => `<span class="chip">${esc(s.name.split(" ")[0])} <button class="mini" data-action="fw-recall" data-sid="${s.id}"${tip("Call them back to the base")}>✕</button></span>`).join("") || `<span class="muted">none (it sees nothing)</span>`}
-        ${room > 0 ? `<select data-action="fw-post" data-id="${fw.id}"${tip("Post someone at the tower: they live out there (fed from the base), do no base work and are not in a base battle. One alone sleeps 22:00–06:00; two keep watch round the clock.")}><option value="">Post…</option>${opts.map((s) => `<option value="${s.id}">${esc(s.name)} (Scouting ${Math.floor(skill(s, "scouting"))})</option>`).join("")}</select>` : ""}</div>`;
-    }
+    if (FW.garrisonCap(fw) && fw.built) extra = shiftsBlock(state, b, fw, people);
     if (fw.kind === "stockpile" && fw.built) {
       const empty = !Object.keys(fw.contents || {}).length;
-      extra = `<div class="row small" style="margin-top:0.25rem;gap:0.3rem"><span style="flex:1" class="muted">A haul team brings it home; teams can leave finds here (their menu on the tile).</span><button class="mini" data-action="fw-haul" data-id="${fw.id}" ${empty ? "disabled" : ""}${tip(empty ? "Nothing to bring in" : "Two people (and the base's best running vehicle, if any) go out, load it and come home")}>Send a haul team</button></div>`;
+      const H = fw.haul || {};
+      const opt = (v, cur, word) => `<option value="${v}" ${v === (cur || 0) ? "selected" : ""}>${word(v)}</option>`;
+      extra = `<div class="row small" style="margin-top:0.25rem;gap:0.3rem"><span style="flex:1" class="muted">A haul team brings it home; teams can leave finds here (their menu on the tile).</span><button class="mini" data-action="fw-haul" data-id="${fw.id}" ${empty ? "disabled" : ""}${tip(empty ? "Nothing to bring in" : "Two people (and the base's best running vehicle, if any) go out, load it and come home")}>Send a haul team</button></div>
+      <div class="row small" style="margin-top:0.25rem;gap:0.3rem;flex-wrap:wrap"${tip("A standing order: on its day (or once it holds that much) at 09:00 two people take the base's best running vehicle out, load it and come home. Skipped (tried again the next day) with no running vehicle with fuel, nobody fit, the base under attack or enemies at the stockpile.")}>Haul it <select data-action="fw-haul-every" data-id="${fw.id}">${FW.FIELD.HAUL.every.map((v) => opt(v, H.every, (x) => (x ? `every ${x} days` : "not on a schedule"))).join("")}</select>
+        <select data-action="fw-haul-kg" data-id="${fw.id}">${FW.FIELD.HAUL.atKg.map((v) => opt(v, H.atKg, (x) => (x ? `or at ${x} kg` : "(no weight)"))).join("")}</select>
+        ${FW.haulText(state, fw) ? `<span class="muted">${esc(FW.haulText(state, fw))}</span>` : ""}</div>`;
+    }
+    if (fw.kind === "cache" && fw.built) {
+      const plan = FW.cachePlan(state, fw);
+      const rwhy = FW.restockProblem(state, fw);
+      extra = `<div class="row small" style="margin-top:0.25rem;gap:0.3rem;flex-wrap:wrap"><span style="flex:1" class="muted">Teams take what they need here (their menu on the tile), or leave supplies.${Object.keys(plan).length ? ` A restock carries out ${esc(FW.costText(plan))}.` : ""}</span><button class="mini" data-action="fw-restock" data-id="${fw.id}" ${rwhy ? "disabled" : ""}${tip(rwhy || "The builders carry fuel, food, ammo and meds out from the stores (at most half of each): the walk and an hour")}>Restock</button></div>`;
     }
     const dwhy = FW.demolishProblem(state, fw);
     return `<div class="card small"${tip(d.desc)}>
@@ -90,6 +95,32 @@ export function fieldWorksTab(state, b, ui) {
     <h3>Plan</h3>${plan}
     ${jobs.length ? `<h3>Builders' field jobs</h3>${jobRows}` : ""}
     <h3>Standing</h3>${allBtn}${list || `<div class="muted small">None yet.</div>`}`;
+}
+
+// The shifts at a tower or a roadblock: the preset, each shift with its people (✕ takes them off) and a picker, the
+// 24-hour coverage strip (gaps red) and the line under it.
+const hh = (h) => String(((h % 24) + 24) % 24).padStart(2, "0");
+function shiftsBlock(state, b, fw, people) {
+  const R = FW.ensureRoster(fw);
+  const cap = FW.garrisonCap(fw);
+  const word = fw.kind === "tower" ? "Lookouts" : "Guards";
+  const sk = fw.kind === "tower" ? "scouting" : "shooting";
+  const elsewhere = new Set(FW.fwList(state).filter((x) => x !== fw).flatMap((x) => FW.rosterIds(x)));
+  const opts = people.filter((s) => !s.pinned && !elsewhere.has(s.id)).sort((a, c) => skill(c, sk) - skill(a, sk) || a.id - c.id);
+  const rows = R.shifts.map((sh, i) => {
+    const chips = sh.ids.map((id) => survivorById(state, id)).filter(Boolean).map((s) => {
+      const out = FW.onPost(s) && s.location.fw === fw.id;
+      return `<span class="chip${out ? " on" : ""}"${tip(out ? "Out there now" : "At the base (off duty, or waiting for the shift)")}>${esc(s.name.split(" ")[0])} <button class="mini" data-action="fw-recall" data-sid="${s.id}"${tip("Off the shifts (and home, if out there)")}>✕</button></span>`;
+    }).join("") || `<span class="muted">nobody</span>`;
+    const add = sh.ids.length < cap ? `<select data-action="fw-post" data-id="${fw.id}" data-i="${i}"${tip(`Put someone on the ${sh.name.toLowerCase()} shift: they walk out for it and come home after (fed and rested at the base; no base work while out there).`)}><option value="">Add…</option>${opts.filter((s) => !sh.ids.includes(s.id)).map((s) => `<option value="${s.id}">${esc(s.name)} (${sk[0].toUpperCase() + sk.slice(1)} ${Math.floor(skill(s, sk))})</option>`).join("")}</select>` : "";
+    return `<div class="row small" style="gap:0.3rem;flex-wrap:wrap;margin-top:0.2rem"><b>${esc(sh.name)}</b> <span class="muted">${shiftText(sh)}</span> ${chips} ${add}</div>`;
+  }).join("");
+  const cov = FW.shiftCoverage(state, fw);
+  const now = hourOfDay(state);
+  const strip = `<div class="dcov">${cov.map((c) => `<div class="dcell${c.n ? "" : " gap"}${c.h === now ? " cur" : ""}"${tip(`${hh(c.h)}:00 · ${c.n ? `${c.n} on duty: ${c.who.map((s) => s.name.split(" ")[0]).join(", ")}` : "nobody on duty"}${c.shifts.length ? ` (${c.shifts.map((sh) => `${sh.name} ${shiftText(sh)}`).join(", ")})` : " (no shift)"}`)}><i style="height:${Math.round((c.n / Math.max(1, cap)) * 100)}%"></i><span>${c.h % 3 === 0 ? hh(c.h) : ""}</span></div>`).join("")}</div>`;
+  const line = FW.shiftLine(state, fw);
+  return `<div class="small fwshifts" style="margin-top:0.3rem"><div class="row" style="gap:0.3rem;flex-wrap:wrap">${word} on shifts: <select data-action="fw-preset" data-id="${fw.id}"${tip("How the day is split. People keep a shift that matches by name or hours.")}>${Object.entries(FW.FIELD.SHIFTS).map(([k, p]) => `<option value="${k}" ${R.preset === k ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select> <span class="muted">up to ${cap} a shift · a ${FW.shiftWalk(state, fw)} h walk each way</span></div>
+    ${rows}${strip}<div class="${line.gaps.length ? "warn" : "muted"}">${esc(line.text)}</div></div>`;
 }
 
 // ---------- the tile picker ----------
@@ -127,7 +158,7 @@ export function fwPlaceCancel(ui) {
 
 // ---------- actions (main.js) ----------
 // getState: () => state; centerOn: (tile) => void.
-export function fieldworksActions(getState, ui, { centerOn }) {
+export function fieldworksActions(getState, ui, { centerOn, select = null }) {
   const msg = (r) => { ui.baseMsg = r && r.error ? r.error : r ? (r.text || r) : ""; };
   return {
     "fw-place": (d) => { ui.fwPlace = { baseId: Number(d.base), kind: d.kind }; ui.fwMsg = ""; ui.baseView = null; centerOn(baseById(getState(), Number(d.base)).tile); },
@@ -137,12 +168,16 @@ export function fieldworksActions(getState, ui, { centerOn }) {
     "fw-demolish": (d) => msg(FW.queueDemolish(getState(), Number(d.id))),
     "fw-recall": (d) => { ui.baseMsg = FW.recallPerson(getState(), Number(d.sid)) || ""; },
     "fw-haul": (d) => msg(FW.sendHaul(getState(), Number(d.id))),
-    "fw-show": (d) => { ui.baseView = null; centerOn(Number(d.tile)); ui.selected = Number(d.tile); },
+    "fw-restock": (d) => msg(FW.queueRestock(getState(), Number(d.id))),
+    "fw-show": (d) => { ui.baseView = null; centerOn(Number(d.tile)); if (select) select(Number(d.tile)); else ui.selected = Number(d.tile); }, // selected: a tower shows its sight ring
   };
 }
 export function fieldworksChange(getState, ui) {
   return {
-    "fw-post": (el) => { if (!el.value) return; const r = FW.postPerson(getState(), Number(el.dataset.id), Number(el.value)); ui.baseMsg = r.error || r.text; },
+    "fw-post": (el) => { if (!el.value) return; const r = FW.postPerson(getState(), Number(el.dataset.id), Number(el.value), el.dataset.i != null ? Number(el.dataset.i) : null); ui.baseMsg = r.error || r.text; },
+    "fw-preset": (el) => { const st = getState(); ui.baseMsg = FW.setRosterPreset(st, FW.fwById(st, Number(el.dataset.id)), el.value); },
+    "fw-haul-every": (el) => { const st = getState(), fw = FW.fwById(st, Number(el.dataset.id)); if (fw) ui.baseMsg = FW.setHaul(st, fw, Number(el.value), fw.haul ? fw.haul.atKg : 0); },
+    "fw-haul-kg": (el) => { const st = getState(), fw = FW.fwById(st, Number(el.dataset.id)); if (fw) ui.baseMsg = FW.setHaul(st, fw, fw.haul ? fw.haul.every : 0, Number(el.value)); },
   };
 }
 
@@ -161,11 +196,18 @@ export function fieldworkAlerts(state, out) {
 }
 
 // ---------- the map (ui/render.js) ----------
-// Draws every field work you know of (yours always; a group's where you see it or have seen the tile), and the tile
-// picker's highlight. o: { ctx, G, inView, s (zoom boost), live, knowledge, place: [{ tile, why }] | null, colorOf(owner) }.
+// Draws every field work you know of (yours always; a group's where you see it or have seen the tile; a group's hidden
+// cache only once a team of yours found it), and the tile picker's highlight. Zoomed far out (zoom < FAR) each is a
+// round badge in the owner's colour with the kind's icon and a condition arc, so it stays readable; a watch tower of
+// yours under the mouse or selected shows its sight: a faint ring of the tiles its lookouts see now (grey when nobody
+// is on duty). o: { ctx, G, inView, s (zoom boost), zoom, hover, selected, live, knowledge, place: [{ tile, why }] |
+// null, colorOf(owner) }.
+const FAR = 0.6;
 export function drawFieldWorks(state, o) {
   const { ctx, G, inView } = o;
   const s = o.s * 1.35; // a little larger than a site's badge: they are small structures on a big tile
+  const far = o.zoom != null && o.zoom < FAR;
+  sightRings(state, o);
   if (o.place) for (const x of o.place) {
     if (!inView(x.tile)) continue;
     const px = G.x[x.tile], py = G.y[x.tile];
@@ -180,9 +222,11 @@ export function drawFieldWorks(state, o) {
   for (const fw of FW.fwList(state)) {
     if (!inView(fw.tile)) continue;
     if (fw.owner !== "player" && !(o.live && o.live.has(fw.tile)) && !(o.knowledge && o.knowledge[fw.tile] && o.knowledge[fw.tile].hour >= fw.since)) continue;
+    if (fw.owner !== "player" && fw.kind === "cache" && !fw.found) continue; // hidden
     const site = !!state.tiles[fw.tile].loc; // a site's sprite in the middle: the field work stands in the tile's lower corner
     const px = G.x[fw.tile] + (site ? 13 : 8) * s, py = G.y[fw.tile] + (site ? 9 : -6) * s;
     const color = o.colorOf(fw.owner);
+    if (far) { badge(state, ctx, fw, px, py, s, color); continue; }
     ctx.save();
     ctx.globalAlpha = fw.built ? 1 : 0.6;
     // A small plate in the owner's colour, the kind's sprite on it.
@@ -211,6 +255,10 @@ export function drawFieldWorks(state, o) {
       ctx.fillStyle = FW.manned(state, fw) ? "#ffd166" : "#9aa0a6";
       ctx.fillText(`👁${gar}`, px + 10 * s, py - 10 * s);
     }
+    if (fw.kind === "roadblock" && fw.built && gar) {
+      ctx.fillStyle = FW.guards(state, fw) ? "#ffd166" : "#9aa0a6";
+      ctx.fillText(`🛡${gar}`, px + 10 * s, py - 10 * s);
+    }
     const band = FW.damageBand(fw);
     if (band && fw.owner === "player") {
       ctx.beginPath(); ctx.arc(px - 9 * s, py - 9 * s, 5 * s, 0, Math.PI * 2);
@@ -218,6 +266,53 @@ export function drawFieldWorks(state, o) {
       ctx.fillStyle = "#111"; ctx.font = `${Math.round(7 * s)}px sans-serif`;
       ctx.fillText("🔧", px - 9 * s, py - 9 * s);
     }
+  }
+}
+// Zoomed far out: a round plate in the owner's colour, the kind's icon, the condition as an arc round it (amber
+// going up), a small count of the people on duty.
+function badge(state, ctx, fw, x, y, s, color) {
+  const r = 7.5 * s;
+  ctx.save();
+  ctx.globalAlpha = fw.built ? 1 : 0.65;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(20,22,26,0.85)"; ctx.fill();
+  ctx.lineWidth = 2 * s; ctx.strokeStyle = color; ctx.stroke();
+  const job = FW.jobFor(state, fw);
+  const f = !fw.built ? (job ? job.progress / job.hours : 0) : FW.condition(fw);
+  if (!fw.built || f < 1) {
+    ctx.beginPath(); ctx.arc(x, y, r + 2.2 * s, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(1, f)));
+    ctx.lineWidth = 2 * s; ctx.strokeStyle = !fw.built ? "#e0a84f" : f < 0.35 ? "#e2685f" : f < FW.FIELD.GOV.repairAt ? "#e0a84f" : "#6cc48a"; ctx.stroke();
+  }
+  ctx.font = `${Math.round(9 * s)}px sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#fff";
+  ctx.fillText(FW.FIELD.KINDS[fw.kind].icon, x, y + 0.5 * s);
+  const duty = fw.kind === "tower" ? FW.lookouts(state, fw) : fw.kind === "roadblock" ? FW.guards(state, fw) : 0;
+  if (duty) {
+    ctx.beginPath(); ctx.arc(x + r * 0.8, y - r * 0.8, 3.6 * s, 0, Math.PI * 2); ctx.fillStyle = "#ffd166"; ctx.fill();
+    ctx.fillStyle = "#111"; ctx.font = `bold ${Math.round(6 * s)}px sans-serif`; ctx.fillText(String(duty), x + r * 0.8, y - r * 0.8 + 0.3 * s);
+  }
+  ctx.restore();
+}
+// A watch tower of yours under the mouse or selected: the ring of what its lookouts see now (towerRadius), faint gold
+// when someone is on duty, grey dashed when not.
+function sightRings(state, o) {
+  const { ctx, G } = o;
+  const tiles = new Set([o.hover, o.selected].filter((x) => x != null && x >= 0));
+  if (!tiles.size) return;
+  for (const fw of FW.playerWorks(state)) {
+    if (fw.kind !== "tower" || !fw.built || !tiles.has(fw.tile)) continue;
+    const nb = state.grid.neighbors(fw.tile)[0];
+    if (nb == null) continue;
+    const step = Math.hypot(G.x[nb] - G.x[fw.tile], G.y[nb] - G.y[fw.tile]);
+    const on = FW.manned(state, fw);
+    const R = (FW.towerRadius(state) + 0.5) * step;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(G.x[fw.tile], G.y[fw.tile], R, 0, Math.PI * 2);
+    ctx.fillStyle = on ? "rgba(255,209,102,0.08)" : "rgba(160,166,172,0.06)"; ctx.fill();
+    ctx.setLineDash(on ? [] : [6, 5]);
+    ctx.lineWidth = 2; ctx.strokeStyle = on ? "rgba(255,209,102,0.7)" : "rgba(160,166,172,0.6)"; ctx.stroke();
+    ctx.restore();
   }
 }
 function hex(ctx, x, y, r) {
@@ -249,6 +344,29 @@ function paint(ctx, fw, x, y, s, color) {
     ctx.strokeStyle = "#c9c9c9"; ctx.beginPath(); ctx.moveTo(x, y + 6 * u); ctx.lineTo(x, y - 10 * u); ctx.moveTo(x - 4 * u, y + 6 * u); ctx.lineTo(x, y - 4 * u); ctx.lineTo(x + 4 * u, y + 6 * u); ctx.stroke();
     ctx.strokeStyle = fw.offline ? "#777" : color;
     for (const r of [3, 5.5]) { ctx.beginPath(); ctx.arc(x, y - 10 * u, r * u, -Math.PI * 0.85, -Math.PI * 0.15); ctx.stroke(); }
+  } else if (fw.kind === "blind") { // a screened hide: a sloped frame under brush
+    ctx.fillStyle = "#5d7a3a";
+    ctx.beginPath(); ctx.moveTo(x - 7 * u, y + 5 * u); ctx.lineTo(x - 1 * u, y - 7 * u); ctx.lineTo(x + 7 * u, y + 5 * u); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#2a3518"; ctx.fillRect(x - 3 * u, y - 1 * u, 5 * u, 2 * u); // the slit
+    ctx.fillStyle = color; ctx.fillRect(x - 1.5 * u, y - 9 * u, 3 * u, 2.5 * u);
+  } else if (fw.kind === "snares") { // stakes with wire loops
+    ctx.strokeStyle = "#5a4632"; ctx.lineWidth = 1.6 * u;
+    for (const dx of [-5, 0, 5]) { ctx.beginPath(); ctx.moveTo(x + dx * u, y + 5 * u); ctx.lineTo(x + dx * u, y - 3 * u); ctx.stroke(); }
+    ctx.strokeStyle = "#c9c9c9"; ctx.lineWidth = 1 * u;
+    for (const dx of [-5, 0, 5]) { ctx.beginPath(); ctx.arc(x + dx * u + 1.5 * u, y - 1 * u, 1.8 * u, 0, Math.PI * 2); ctx.stroke(); }
+    const n = FW.snareHeld(fw);
+    if (n) { ctx.fillStyle = "#c9a36b"; ctx.beginPath(); ctx.ellipse(x + 3 * u, y + 4 * u, 2.5 * u, 1.5 * u, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = color; ctx.fillRect(x - 6 * u, y - 5 * u, 2 * u, 2 * u);
+  } else if (fw.kind === "cache") { // a drum half in the ground
+    ctx.fillStyle = "#6b5a3a"; ctx.beginPath(); ctx.ellipse(x, y + 4 * u, 7 * u, 2.5 * u, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#b03a2e"; ctx.fillRect(x - 3.5 * u, y - 5 * u, 7 * u, 9 * u); ctx.strokeRect(x - 3.5 * u, y - 5 * u, 7 * u, 9 * u);
+    ctx.strokeStyle = "#2a2118"; ctx.beginPath(); ctx.moveTo(x - 3.5 * u, y - 2 * u); ctx.lineTo(x + 3.5 * u, y - 2 * u); ctx.moveTo(x - 3.5 * u, y + 1 * u); ctx.lineTo(x + 3.5 * u, y + 1 * u); ctx.stroke();
+    ctx.fillStyle = color; ctx.fillRect(x - 3.5 * u, y - 7 * u, 7 * u, 2 * u);
+  } else if (fw.kind === "spikes") { // a row of stakes (grey when sprung)
+    const live = FW.spikesLive(fw);
+    ctx.fillStyle = live ? "#a07a4a" : "#77736c";
+    for (const dx of [-6, -2, 2, 6]) { ctx.beginPath(); ctx.moveTo(x + dx * u - 1.6 * u, y + 5 * u); ctx.lineTo(x + dx * u + (live ? 0 : 2) * u, y - 5 * u); ctx.lineTo(x + dx * u + 1.6 * u, y + 5 * u); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = color; ctx.fillRect(x - 7 * u, y + 4 * u, 14 * u, 1.5 * u);
   } else if (fw.kind === "stockpile") {
     ctx.fillStyle = "#9b7a4c";
     ctx.fillRect(x - 6 * u, y - 1 * u, 6 * u, 6 * u); ctx.strokeRect(x - 6 * u, y - 1 * u, 6 * u, 6 * u);
