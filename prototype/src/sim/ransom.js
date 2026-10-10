@@ -31,6 +31,8 @@
 // rule's answer). A team at their gates pays out of what it carries only by the same rule (teamPayOk). The groups
 // buying back their own people from each other weigh them the same way (groupMemberWorth, groupjails.js).
 import { SUPPLIES, FACTION_TYPES, GEAR } from "./data.js";
+import { totalRounds, spendAmmo, isRoundKey } from "./rounds.js"; // a ransom's "ammo" paid as rounds by calibre
+import { keyWord } from "./water.js";
 import { log, addCard, day, hub, factionById, survivorById, skill, combatPower, atBase, newId } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { captivesOf, allCaptives, freeCaptive, isCaptive, payPlan } from "./conflicts.js";
@@ -172,6 +174,19 @@ export function goodsPlan(f, stock, armory, value, keep = RANSOM.KEEP) {
   const spare = (k) => Math.max(0, Math.floor((stock[k] || 0) - (keep[k] || 0) - (plan.supplies[k] || 0)));
   const takeKey = (k, cap) => {
     if (!SUPPLIES[k] || left <= 0) return;
+    if (k === "ammo") { // rounds by calibre (2026-10-09): any rounds over the reserve, the cheapest first, by key (their store keeps one count)
+      const per = SUPPLIES.ammo.value * rate(k);
+      const copy = { ...stock };
+      for (const [kk, qq] of Object.entries(plan.supplies)) if (isRoundKey(kk)) copy[kk] = (copy[kk] || 0) - qq;
+      const q = Math.min(Math.max(0, totalRounds(copy) - (keep.ammo || 0)), Math.ceil(Math.min(left, cap) / per));
+      if (q <= 0) return;
+      const g = spendAmmo(copy, q).keys;
+      let n = 0;
+      for (const [kk, qq] of Object.entries(g)) if (kk !== "ammo" && qq > 0) { plan.supplies[kk] = (plan.supplies[kk] || 0) + qq; n += qq; }
+      plan.worth += n * per;
+      left -= n * per;
+      return;
+    }
     const per = SUPPLIES[k].value * rate(k);
     const q = Math.min(spare(k), Math.ceil(Math.min(left, cap) / per));
     if (q <= 0) return;
@@ -197,7 +212,7 @@ export function goodsPlan(f, stock, armory, value, keep = RANSOM.KEEP) {
   plan.worth = Math.round(plan.worth);
   return plan;
 }
-export const goodsText = (g) => [...Object.entries(g.supplies).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${SUPPLIES[k].name.toLowerCase()}`), ...g.gear.map((it) => it.name)].join(", ") || "nothing";
+export const goodsText = (g) => [...Object.entries(g.supplies).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k) === k ? SUPPLIES[k].name.toLowerCase() : keyWord(k)}`), ...g.gear.map((it) => it.name)].join(", ") || "nothing";
 
 // ---------- prisoners in exchange ----------
 export function prisonerWorth(pr, f) {

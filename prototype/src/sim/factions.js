@@ -73,7 +73,7 @@ import { broodGrowth } from "./eras.js";
 import { canRadioGroup } from "./radio.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
-import { payAmmo } from "./ammo.js";
+import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
 import { groupWorksDaily, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
@@ -1054,18 +1054,18 @@ export function deliverHelpCall(state, party) {
         resolve: (st) => sendHelpSquad(st, party, target),
       },
       {
-        label: "Send 40 ammo",
+        label: `Send ${payWord(state, h, 40)}`, // the rounds its guns need least, named (ammo.js)
         hint: "Strengthens their defense, small goodwill gain",
         disabled: () => totalRounds(h.stock) < 40,
         resolve: (st) => {
           // Checked against what the hub holds now, not when the message came in.
-          if (totalRounds(h.stock) < 40) return `${h.name} no longer has 40 ammo to spare.`;
+          if (totalRounds(h.stock) < 40) return `${h.name} no longer has 40 rounds to spare.`;
           if (!st.parties.includes(party)) return `Too late: the fight at ${target.name} is already over.`;
-          payAmmo(st, h, 40); // ammo.js: the rounds its guns need least
+          const sent = payAmmoKeys(st, h, 40); // ammo.js: the rounds its guns need least
           party.strength *= 0.8;
           changeGoodwill(st, target, 6, "you sent ammo");
           target.lastDiplomacy = day(st);
-          return `Ammo sent to ${target.name}.`;
+          return `${roundsText(sent)} sent to ${target.name}.`;
         },
       },
       {
@@ -1102,20 +1102,20 @@ export function raidWarning(state, party) {
     choices: [
       { label: "Prepare defenses", hint: `Everyone at the base takes a post: non-guards count 1.3× their combat power instead of 0.8× (guards stay at 1.5×). Defense ${Math.round(def)} → ${Math.round(prepared)}. Building and repairs stop here until the raid is over`, resolve: (st) => { base.alert = true; return `${base.name} prepares for the attack.`; } },
       {
-        label: "Pay tribute (30% of the food, 30 ammo)",
+        label: `Pay tribute (30% of the food, ${payWord(state, base, 30)})`, // rounds by calibre: the ones its guns need least
         hint: `About ${tributeNow().food} food right now. They turn back and goodwill rises by ${RAIDS.TRIBUTE_GW}${isAggressiveType(f) ? `, but it fades again (${RAIDS.TRIBUTE_FADE} a day): they will be back` : ""}`,
         disabled: (st) => totalRounds(base.stock) < 30 || !st.parties.includes(party),
         resolve: (st) => {
           if (!st.parties.includes(party)) return "The raiders are already gone.";
-          if (totalRounds(base.stock) < 30) return `${base.name} no longer has 30 ammo to offer. The raiders keep coming.`;
+          if (totalRounds(base.stock) < 30) return `${base.name} no longer has 30 rounds to offer. The raiders keep coming.`;
           const t = tributeNow();
           base.stock.food = Math.max(0, (base.stock.food || 0) - t.food);
-          payAmmo(st, base, t.ammo); // ammo.js: the rounds its guns need least
+          const paid = payAmmoKeys(st, base, t.ammo); // ammo.js: the rounds its guns need least
           changeGoodwill(st, f, RAIDS.TRIBUTE_GW, "tribute");
           if (isAggressiveType(f)) f.boughtGw = (f.boughtGw || 0) + RAIDS.TRIBUTE_GW; // fades again (factionsDaily)
           party.returning = true;
           base.alert = false; // the raid is off: the base stands down
-          return `${f.name} took the tribute (${t.food} food, ${t.ammo} ammo) and turned back.`;
+          return `${f.name} took the tribute (${t.food} food, ${roundsText(paid)}) and turned back.`;
         },
       },
       {

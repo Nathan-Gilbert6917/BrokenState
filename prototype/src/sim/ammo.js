@@ -144,6 +144,15 @@ export function unbox(list, rec) {
 // n rounds paid out of a base's stock (a gift, a tribute, a council's request): the ones its guns need least first.
 /** @param {any} state @param {any} base @param {number} n */
 export const payAmmo = (state, base, n) => spendAmmo(base.stock, n, baseCals(state, base)).n;
+// The same, returning the rounds by key that went ({ key: q }; roundsText names them).
+/** @param {any} state @param {any} base @param {number} n */
+export const payAmmoKeys = (state, base, n) => { const g = spendAmmo(base.stock, n, baseCals(state, base)).keys; delete g.ammo; return g; };
+// "40 rounds (30 9mm FMJ and 10 .22 LR FMJ)": n rounds a base would pay (the ones its guns need least), for a card.
+/** @param {any} state @param {any} base @param {number} n */
+export function payWord(state, base, n) {
+  const g = base ? payRoundsOf(state, base, n) : {};
+  return Object.keys(g).length ? `${n} rounds (${roundsText(g)})` : `${n} rounds`;
+}
 // A base's generic ammo and armory boxes into rounds (the guns there say which).
 /** @param {any} state @param {any} base */
 export function settleBase(state, base) {

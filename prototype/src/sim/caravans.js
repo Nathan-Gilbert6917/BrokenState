@@ -43,7 +43,7 @@ import { partDeficit, kitWants } from "./repair.js"; // the parts and kits the g
 import { escortArrived, pickupArrived } from "./jobs.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { spendAmmo } from "./rounds.js"; // rounds by calibre
-import { baseCals } from "./ammo.js";
+import { baseCals, expandAmmo, kindTheme } from "./ammo.js";
 import { payoutBreaks } from "./upkeep.js"; // the governor never pays food or water out of the base's reserve
 import { groupEscort, escortStrength, cargoValue } from "./escorts.js"; // a caravan's guards: the cargo's wish, what they can spare
 import { pendingDeal, dealCarried, completeRadioDeal, goodsText } from "./radiotrade.js"; // deals agreed over the radio
@@ -99,6 +99,7 @@ export function sendCaravan(state, f, base, { goods = null, deal = null, gift = 
     f.stock[sk] -= take;
     g.supplies[k] = take;
   }
+  if (!deal) expandAmmo(g.supplies, kindTheme(f.type)); // ammo.js: their "ammo" on the road as rounds by calibre (what their kind keeps), named wherever the load is shown; a deal's goods are keyed already
   for (const item of (goods && goods.gear) || []) {
     const i = (f.wares || []).indexOf(item);
     if (i < 0) continue;
