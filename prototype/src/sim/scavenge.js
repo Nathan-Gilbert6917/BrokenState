@@ -18,6 +18,7 @@ import { noteSearch } from "./relations.js";
 import { itemLoad, lootItem, armouredItem } from "./inventory.js";
 import { gunMags } from "./carrykit.js"; // a found gun's spare magazines
 import { siteSource } from "./itemcond.js";
+import { foundFill } from "./gunrounds.js";
 import { rollSiteGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 (its own dice)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a site's gear list yields
 import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollBuildmat, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
@@ -213,7 +214,7 @@ export function searchHour(state) {
   const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
   if (gearList.length && rng.chance(0.07 * t.loot * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1))) {
     const g = swapGun(`site:${t.loc.type}`, rng.pick(gearList), rng); // gundist.js: which gun, by the site's draws (a hash of the draw: no extra one)
-    const found = lootItem(g, siteSource(t.loc.type), rng); // itemcond.js: a gun shop's stock used, a crash site's scorched
+    const found = foundFill(lootItem(g, siteSource(t.loc.type), rng), e.tile, e.hours, "scav"); // itemcond.js: a gun shop's stock used, a crash site's scorched; gunrounds.js: a few rounds in it now and then (its own dice)
     e.found.gear.push(found, ...gunMags(found, siteSource(t.loc.type), e.tile, e.hours)); // carrykit.js: a gun's spare magazines (own dice)
     finds.push(GEAR[g].name);
   }

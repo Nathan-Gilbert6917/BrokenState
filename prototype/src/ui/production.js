@@ -17,6 +17,7 @@ import { LEADER_LIFT } from "../sim/morale.js";
 import { PERSONALITIES } from "../sim/autopilot.js";
 import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js";
 import { RELOAD, recipeList, inputsPer10, dayRate, handHq, reloadOrders, reloadRows, reloadBenches, setReloadOrder, removeReloadOrder, toggleReloadOrder, handMake, pullRows, pullOrders, pullYield, setPullOrder, removePullOrder } from "../sim/reloading.js";
+import { sectionHead, infoTip, pbar } from "./uikit.js"; // game-like panel pieces (the base window)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -65,7 +66,7 @@ export function powerCard(state, b) {
   const gens = generators(b);
   const users = b.buildings.filter((x) => POWER_USERS[x.type]);
   const usesText = Object.entries(POWER_USERS).map(([k, u]) => `${BUILDINGS[k].name} (${u.need}): ${u.what}`).join("; ");
-  if (!gens.length && !users.length) return `<h3>Power</h3><div class="small muted"${tip(usesText)}>No generator and nothing to power. A generator (Construction) burns ${POWER.genFuel} fuel a day for ${POWER.genOut} power and needs an operator; an ethanol still makes fuel from surplus or spoiled food.</div>`;
+  if (!gens.length && !users.length) return `<h3>Power</h3><div class="small muted"${tip(`A generator (Construction) burns ${POWER.genFuel} fuel a day for ${POWER.genOut} power and needs an operator; an ethanol still makes fuel from surplus or spoiled food. ${usesText}`)}>⚡ No generator and nothing to power <span class="sk-info">ⓘ</span></div>`;
   const ps = powerStatus(state, b);
   const row = (u) => {
     const d = BUILDINGS[u.b.type];
@@ -90,7 +91,7 @@ const n0r = (v) => Math.floor((v || 0) + 1e-9);
 // bench does with them today, and every recipe by calibre (inputs per 10, rounds a day, the Mechanics it needs).
 export function reloadCard(state, b) {
   const benches = reloadBenches(b);
-  if (!benches.length) return count(b, "ammo_bench") ? `<h3>Reloading</h3><div class="small muted">Upgrade an ammo bench into a reloading bench (Construction, on its utility plot: 1 machine part, 3 gun parts, 20 scrap, ${RELOAD.UP.hours} work-hours, a Mechanics 3+ survivor here) to load hollow points, slugs, match and AP rounds from brass, powder and primers.</div>` : "";
+  if (!benches.length) return count(b, "ammo_bench") ? `<h3>Reloading</h3><div class="small muted"${tip(`Upgrade an ammo bench into a reloading bench (Construction, on its utility plot: 1 machine part, 3 gun parts, 20 scrap, ${RELOAD.UP.hours} work-hours, a Mechanics 3+ survivor here) to load hollow points, slugs, match and AP rounds from brass, powder and primers.`)}>⁍ No reloading bench: upgrade the ammo bench in Construction <span class="sk-info">ⓘ</span></div>` : "";
   const st = b.stock;
   const ops = benches.map((x) => atBase(state, b.id).find((s) => s.role === "operate" && s.station === x.id && !s.inBed)).filter(Boolean);
   const op = ops.sort((a, c) => skill(c, "mechanics") - skill(a, "mechanics"))[0] || null;
@@ -158,11 +159,11 @@ export function craftOrdersCard(state, b) {
     return `<div class="card small prodctl">
       <div class="spread"><b>${esc(craftName(o.recipe))}</b><span><button class="mini" data-action="co-toggle" ${data}${tip(o.on ? "Pause this order (queued jobs stay)" : "Resume this order")}>${o.on ? "Pause" : "Resume"}</button><button class="mini" data-action="co-del" ${data}${tip("Remove this order (queued jobs stay in the queue)")}>Remove</button></span></div>
       <div class="row">Keep <input type="number" min="0" max="99" step="1" class="po-n" data-action="co-n" ${data} value="${o.n}"${tip(r.gear ? "Items of this kind to keep in the armory" : "Stock to keep")}> ${qSel}</div>
-      <div class="${cs.ready || /^Stocked|queue/.test(cs.reason) ? "muted" : "danger"}">Have ${cs.have} of ${o.n}${cs.reason ? ` · ${esc(cs.reason)}` : cs.ready ? " · queues a job within the hour" : ""}</div>
+      ${pbar(o.n ? Math.min(100, (cs.have / o.n) * 100) : 100, cs.have >= o.n ? "good" : cs.ready || /^Stocked|queue/.test(cs.reason) ? "info" : "bad", `Have ${cs.have} of ${o.n}`)}
+      <div class="${cs.ready || /^Stocked|queue/.test(cs.reason) ? "muted" : "danger"}">${cs.reason ? esc(cs.reason) : cs.ready ? "Queues a job within the hour" : ""}</div>
     </div>`;
   }).join("");
-  return `<h3>Standing orders</h3>
-    <div class="small muted" style="margin-bottom:0.3rem">Keep N of an item in the armory: whenever there are fewer (at the quality you ask), one job is queued (materials paid then). Takes from the queue's ${MAX_CRAFT_QUEUE}-job limit.</div>
+  return `${sectionHead(`Standing orders${infoTip(`Keep N of an item in the armory: whenever there are fewer (at the quality you ask), one job is queued (materials paid then). Takes from the queue's ${MAX_CRAFT_QUEUE}-job limit.`)}`, "", list.length)}
     ${rows || `<div class="muted small">No standing craft orders.</div>`}
     ${free.length ? `<div class="prodctl" style="margin-top:0.3rem"><select data-action="co-add" data-base="${b.id}"${tip("Add a repeating order: keep a number of this item in the armory")}><option value="">Add a standing order…</option>${free.map((k) => `<option value="${k}">${esc(craftName(k))} (${SKILL_NAMES[CRAFTS[k].skill]} ${CRAFTS[k].min}+)</option>`).join("")}</select></div>` : ""}`;
 }

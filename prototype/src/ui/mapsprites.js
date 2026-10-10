@@ -3,6 +3,8 @@
 // for motorized teams and convoys, a small group of walkers with packs for teams on foot (armed for raids),
 // and a boat (or a raft carrying the vehicle) while a team crosses water. The body or clothes are tinted
 // with the owner's color. Sprites face right; drawMapSprite mirrors them for travel to the left.
+// A team of one gets a figure of its own, bigger and animated: a walker (standing, or a walk cycle leaning into the
+// stride) or a rider on a bicycle; the same for another group's party of one, in its group's look.
 // Also the map's places and things: your bases, other groups' bases and parties (by group type), sites (one
 // sprite per location type), hordes and hives, markers (vehicles, wrecks, caches, camps, graves) and status icons.
 import { zombieLook } from "./sprites.js";
@@ -1709,6 +1711,7 @@ function person(p, x, y, o) {
     case "banner": p.set(x + 4, y + 4, skin); p.rect(x + 5, y - 6, x + 5, y + 9, WOOD); p.rect(x + 6, y - 6, x + 9, y - 2, ac); p.rect(x + 6, y - 2, x + 9, y - 2, shade(ac, -0.3)); p.set(x + 7, y - 4, GOLD); p.set(x + 8, y - 4, GOLD); break;
     case "shield": p.rect(x + 4, y + 2, x + 6, y + 7, ac); p.rect(x + 4, y + 2, x + 6, y + 2, shade(ac, 0.3)); p.set(x + 5, y + 4, STEEL); break;
     case "binoc": p.rect(x + 3, y + 1, x + 4, y + 1, "#2a2a2e"); p.set(x + 4, y + 2, skin); break;
+    case "staff": p.set(x + 4, y + 6, skin); p.rect(x + 5, y, x + 5, y + 12, WOOD); p.set(x + 5, y - 1, shade(WOOD, 0.3)); break; // a walking stick
     case "bar": p.set(x + 4, y + 4, skin); p.rect(x + 5, y + 1, x + 5, y + 6, METAL); p.set(x + 6, y + 1, METAL); p.set(x + 4, y + 6, METAL); break; // a crowbar
     default: p.set(x + 4, y + 4, skin);
   }
@@ -1851,23 +1854,27 @@ function paintFortressTruck(c) {
   return p;
 }
 
+// One of a group's people by group type: i is the figure's place in the party (0 leads: the banner, the binoculars);
+// raid: weapons raised. The options for person().
+function groupLook(type, c, i, raid) {
+  switch (type) {
+    case "raider": return { cloth: i % 2 ? "#3a3028" : shade(c, -0.25), hat: "mohawk", hatColor: c, band: c, arm: raid ? "raised" : "rifle", pants: "#2a2a30" };
+    case "military": return { cloth: OLIVE, pants: OLIVE_DARK, hat: "helmet", hatColor: shade(OLIVE, -0.15), band: c, arm: i === 0 && !raid ? "banner" : "rifle", armColor: c, pack: !raid };
+    case "zealot": return { cloth: i === 0 ? shade(c, -0.1) : "#cfc7b4", hat: "hood", hatColor: shade(c, -0.25), robe: true, arm: i === 0 ? "banner" : i === 1 ? "torch" : raid ? "raised" : "none", armColor: c };
+    case "expansionist": return { cloth: "#5a6068", pants: "#3a3e44", hat: "helmet", hatColor: c, band: c, arm: i === 0 ? "banner" : raid ? "shield" : "rifle", armColor: c, pack: !raid };
+    case "traders": return { cloth: i % 2 ? "#8a7a5a" : shade(c, -0.15), hat: "cap", hatColor: c, pack: true, arm: i === 0 ? "rifle" : "none" };
+    case "commune": return { cloth: i % 2 ? "#6a7a9a" : shade(c, -0.1), pants: "#4a5a7a", hat: "straw", arm: i % 2 ? "fork" : raid ? "raised" : "fork", pack: !raid };
+    default: return { cloth: shade(c, -0.1), hat: "helmet", hatColor: STONE, arm: i === 0 ? "spear" : "shield", armColor: c }; // fortress militia
+  }
+}
+
 // The people a group sends on foot, by group type. kind: "raid" (weapons raised) or "walk" (convoys on foot).
 function paintGroupWalkers(type, c, n, kind) {
   const raid = kind === "raid", scav = kind === "scav";
   const p = painter(type === "raider" && raid ? 26 : 24, 17);
   // Scavengers (aiscav.js): up to three, packs on, the last one hauling a stuffed sack.
   const slots = (scav ? [[6, 5], [0, 3], [12, 4]] : type === "traders" && !raid ? [[1, 4], [7, 3]] : [[8, 5], [1, 3], [15, 4], [19, 6]]).slice(0, Math.max(1, Math.min(scav ? 3 : 4, n))).sort((a, b) => a[1] - b[1]);
-  const look = (i) => {
-    switch (type) {
-      case "raider": return { cloth: i % 2 ? "#3a3028" : shade(c, -0.25), hat: "mohawk", hatColor: c, band: c, arm: raid ? "raised" : "rifle", pants: "#2a2a30" };
-      case "military": return { cloth: OLIVE, pants: OLIVE_DARK, hat: "helmet", hatColor: shade(OLIVE, -0.15), band: c, arm: i === 0 && !raid ? "banner" : "rifle", armColor: c, pack: !raid };
-      case "zealot": return { cloth: i === 0 ? shade(c, -0.1) : "#cfc7b4", hat: "hood", hatColor: shade(c, -0.25), robe: true, arm: i === 0 ? "banner" : i === 1 ? "torch" : raid ? "raised" : "none", armColor: c };
-      case "expansionist": return { cloth: "#5a6068", pants: "#3a3e44", hat: "helmet", hatColor: c, band: c, arm: i === 0 ? "banner" : raid ? "shield" : "rifle", armColor: c, pack: !raid };
-      case "traders": return { cloth: i % 2 ? "#8a7a5a" : shade(c, -0.15), hat: "cap", hatColor: c, pack: true, arm: i === 0 ? "rifle" : "none" };
-      case "commune": return { cloth: i % 2 ? "#6a7a9a" : shade(c, -0.1), pants: "#4a5a7a", hat: "straw", arm: i % 2 ? "fork" : raid ? "raised" : "fork", pack: !raid };
-      default: return { cloth: shade(c, -0.1), hat: "helmet", hatColor: STONE, arm: i === 0 ? "spear" : "shield", armColor: c }; // fortress militia
-    }
-  };
+  const look = (i) => groupLook(type, c, i, raid);
   if (type === "raider" && raid) { biker(p, 14, 6, c, c); slots.splice(2); }
   if (scav) {
     slots.forEach(([x, y], i) => person(p, x, y + 2, { ...look(i), pack: true, arm: i === 0 ? "bar" : look(i).arm === "banner" ? "rifle" : look(i).arm }));
@@ -2029,6 +2036,100 @@ function paintRelief(color, count) {
   const slots = [[8, 5], [1, 3], [15, 4]].slice(0, Math.max(1, Math.min(3, count))).sort((a, b) => a[1] - b[1]);
   slots.forEach(([x, y], i) => person(p, x, y + 2, { cloth: i % 2 ? shade(color, -0.15) : color, pack: true, hat: "helmet", hatColor: shade(color, -0.45), arm: i === 0 ? "banner" : "raised", armColor: WHITE }));
   if (p.get(15, 2)) { p.rect(15, 1, 16, 3, RED); p.rect(14, 2, 17, 2, RED); }
+  return p;
+}
+
+// ---------- a team of one ----------
+// A lone walker, drawn bigger than a group's figures and animated: frame 0 stands (feet together, upright), 1 and 3
+// are the two strides (a leg forward, leaning into the walk), 2 is the passing step (feet under the body, the back foot
+// lifted). render.js picks the frame from the clock in step with the bob. o: person() options (cloth, hat, arm, pack,
+// robe…); light: "torch" (held up, burning) or another light (a lamp's beam ahead) when it is dark and they carry one.
+// gait: "limp" (wounded: a bandage on the hurt far leg; frame 4 drags it, toe down, behind the good one) or "heavy" (over
+// a comfortable load: a big pack with a bedroll on top, head down and the body bent forward even standing).
+const SOLO = { w: 16, h: 18, x: 5, y: 6 }; // the grid and where the figure stands in it (centered, room for a banner)
+// Legs by frame, [x, y] from the figure's top-left: the far leg (a shade darker) then the near one, each with its boot.
+const LEGS = [
+  { far: [[1, 7], [1, 8], [1, 9]], farBoot: [[1, 10]], near: [[3, 7], [3, 8], [3, 9]], nearBoot: [[3, 10], [4, 10]] },         // standing
+  { far: [[1, 7], [1, 8], [0, 9]], farBoot: [[0, 10]], near: [[3, 7], [3, 8], [4, 9]], nearBoot: [[4, 10], [5, 10]] },         // near leg forward
+  { far: [[2, 7], [2, 8], [2, 9]], farBoot: [[2, 10], [3, 10]], near: [[3, 7], [4, 8]], nearBoot: [[4, 9]] },                   // passing, near foot up
+  { far: [[2, 7], [3, 8], [4, 9]], farBoot: [[4, 10], [5, 10]], near: [[3, 7], [2, 8], [1, 9]], nearBoot: [[0, 10], [1, 10]] }, // far leg forward
+  { far: [[1, 7], [0, 8], [-1, 9]], farBoot: [[-1, 10]], near: [[3, 7], [3, 8], [3, 9]], nearBoot: [[3, 10], [4, 10]] },        // limp: the hurt leg dragged
+];
+function soloFigure(p, x, y, o, frame, light, gait = "") {
+  const heavy = gait === "heavy", lean = heavy || frame === 1 || frame === 3 || frame === 4 ? 1 : 0;
+  person(p, x + lean, y, light === "torch" ? { ...o, arm: "torch" } : heavy ? { ...o, pack: false } : o);
+  if (heavy) {
+    // Hunched: the head (and hat) a pixel forward and down, over the chest.
+    const hx = x + lean, head = [];
+    for (let yy = y - 2; yy <= y + 1; yy++) for (let xx = hx + 1; xx <= hx + 4; xx++) { const c = p.get(xx, yy); if (c) head.push([xx, yy, c]); p.clear(xx, yy); }
+    for (const [xx, yy, c] of head) p.set(xx + 1, yy + 1, c);
+    // A big pack riding high, a bedroll strapped on top.
+    p.rect(hx - 2, y + 1, hx, y + 6, PACK); p.rect(hx - 2, y + 1, hx, y + 1, shade(PACK, 0.25)); p.set(hx - 1, y + 4, shade(PACK, -0.3));
+    p.rect(hx - 2, y, hx, y, "#a08a60"); p.set(hx - 3, y, shade("#a08a60", -0.2));
+  }
+  if (!o.robe) { // person()'s legs off, this frame's on
+    const pants = o.pants || PANTS;
+    for (let yy = y + 7; yy <= y + 10; yy++) for (let xx = x - 1; xx <= x + 6; xx++) if (p.get(xx, yy) === pants) p.clear(xx, yy);
+    const L = LEGS[frame], put = (pts, c) => { for (const [lx, ly] of pts) p.set(x + lx, y + ly, c); };
+    put(L.far, shade(pants, -0.25)); put(L.farBoot, shade(pants, -0.55));
+    put(L.near, pants); put(L.nearBoot, shade(pants, -0.45));
+    if (gait === "limp") { const [bx, by] = L.far[1]; p.set(x + bx, y + by, "#e8e4da"); } // the bandage on the hurt leg
+  } else if (frame) p.set(x + (frame === 3 ? -1 : 5), y + 10, shade(o.cloth, -0.35)); // a robe's hem swings
+  if (light && light !== "torch") { // a lamp in the leading hand and its beam ahead (see-through: no outline)
+    p.set(x + lean + 4, y + 5, "#f6f2d0");
+    for (let i = 1; i <= 3; i++) for (let j = 1 - Math.min(i, 2); j <= Math.min(i, 2) - 1; j++) p.set(x + lean + 4 + i, y + 5 + j, i === 1 ? "#fff3b080" : "#fff3b040");
+  }
+}
+function paintSolo(o, frame, light, gait = "") {
+  const p = painter(SOLO.w, SOLO.h);
+  soloFigure(p, SOLO.x, SOLO.y, o, frame, light, gait);
+  return p;
+}
+// Your lone walker's look by what the team is doing: "walkers" a pack, "raid" a rifle, "scouts" a cap and binoculars
+// (while standing), "relief" a helmet and a raised weapon.
+function soloLook(kind, color, frame) {
+  const base = { cloth: color, pack: true };
+  if (kind === "raid") return { ...base, arm: frame ? "rifle" : "raised" };
+  if (kind === "scouts") return { ...base, hat: "cap", hatColor: shade(color, -0.4), arm: frame ? "none" : "binoc" };
+  if (kind === "relief") return { ...base, hat: "helmet", hatColor: shade(color, -0.45), arm: "raised" };
+  return { ...base, arm: "none" };
+}
+
+// A lone rider on a bicycle (the frame in the team colour, like the parked bikes): frame 0 stands astride it, a foot
+// down; 1 and 2 pedal (the cranks half a turn apart, the wheels' spokes turning).
+function paintCyclist(color, frame) {
+  const p = painter(19, 17);
+  const frameC = desatHex(color, 0.2), cloth = color, dark = "#3a3a3a";
+  const wheel = (cx, cy) => { // a 7-pixel tyre, the hub, two spokes (a quarter turn on between frames)
+    for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) if (Math.round(Math.hypot(x, y)) === 3) p.set(cx + x, cy + y, TIRE);
+    p.set(cx, cy, HUB);
+    for (const [x, y] of frame === 2 ? [[-1, -1], [1, 1], [-1, 1], [1, -1]] : [[0, -1], [0, 1], [-1, 0], [1, 0]]) p.set(cx + x, cy + y, "#9aa0a6aa");
+  };
+  wheel(4, 12); wheel(14, 12);
+  p.rect(5, 12, 8, 12, frameC);                                        // chainstay
+  p.set(8, 11, frameC); p.set(8, 10, frameC);                          // seat tube
+  p.rect(8, 9, 12, 9, frameC);                                         // top tube
+  p.set(10, 11, frameC); p.set(11, 10, frameC);                        // down tube
+  p.set(13, 10, frameC); p.set(13, 11, frameC);                        // fork
+  p.set(12, 8, dark); p.rect(12, 7, 13, 7, dark);                      // stem, bars
+  p.rect(6, 8, 8, 8, "#2a2a2a");                                       // saddle
+  // The rider, leaning over the bars: pack on the back, torso, head, an arm to the bars.
+  p.rect(6, 4, 6, 6, PACK); p.set(6, 4, shade(PACK, 0.25));
+  p.rect(7, 5, 8, 7, cloth); p.rect(8, 4, 9, 5, cloth); p.set(7, 7, shade(cloth, -0.35));
+  p.rect(10, 2, 11, 3, SKIN); p.set(10, 2, shade(PACK, -0.3));         // head, hair
+  p.set(10, 5, cloth); p.set(11, 6, SKIN);                             // arm, hand on the bars
+  // Legs from the hip (8, 8), the crank at (9, 12); far leg a shade darker. Stopped (frame 0): the near foot on the ground.
+  const near = PANTS, far = shade(PANTS, -0.25), boot = shade(PANTS, -0.5);
+  const leg = (pts, c, b) => { pts.forEach(([x, y], i) => p.set(x, y, i === pts.length - 1 ? b : c)); };
+  if (frame === 0) {
+    leg([[8, 9], [8, 10], [9, 11]], far, boot);                         // far foot on the pedal
+    leg([[9, 8], [10, 9], [10, 10], [11, 11], [11, 12], [11, 13], [11, 14], [11, 15]], near, boot); p.set(12, 15, boot); // the near foot down
+  } else {
+    p.set(9, 12, dark);                                                 // the crank
+    const up = [[9, 8], [10, 8], [11, 9], [11, 10]], down = [[8, 9], [8, 10], [9, 11], [9, 13], [9, 14]];
+    leg(frame === 1 ? down : up, far, boot);
+    leg(frame === 1 ? up : down, near, boot);
+  }
   return p;
 }
 
@@ -2222,6 +2323,41 @@ export function partySpriteCanvas(kind, color, count = 3, ups = "") {
 export function groupPartyCanvas(type, kind, color, n = 3) {
   const k = kind === "convoy" ? 0 : Math.max(1, Math.min(4, n));
   return cached(`gp:${type}:${kind}:${color}:${k}`, () => paintGroupParty(type, kind, color, k || 3));
+}
+
+// A team of one on foot (render.js soloFrame): kind "walkers" | "raid" | "scouts" | "relief" (as partySpriteCanvas);
+// frame 0 standing, 1–3 the walk (paintSolo); light: a carried light, lit at night ("torch" or any other kind).
+const SOLO_KINDS = new Set(["walkers", "raid", "scouts", "relief"]);
+export const soloKind = (kind) => SOLO_KINDS.has(kind);
+// gait: "" | "limp" (wounded; frame 4 the dragged step) | "heavy" (hunched under a big load).
+export function soloSpriteCanvas(kind, color, frame = 0, light = "", gait = "") {
+  const g = gait === "limp" || gait === "heavy" ? gait : "", f = Math.max(0, Math.min(g === "limp" ? 4 : 3, frame | 0)), l = light ? (light === "torch" ? "torch" : "lamp") : "";
+  return cached(`solo:${kind}:${color}:${f}:${l}:${g}`, () => paintSolo(soloLook(kind, color, f), f, l, g));
+}
+// Outsiders (sim/visitors.js) in ones and twos, walking: kind "raiders" | "explorers" (sub "scouts" | "refugees" |
+// "wanderers"), i: 0 the lead, 1 the second (a shade apart). In their usual looks (paintOutsiderRaiders, paintOutsiderTravellers).
+export function outsiderSoloCanvas(kind, sub, i = 0, frame = 0) {
+  const f = Math.max(0, Math.min(3, frame | 0)), k = i ? 1 : 0;
+  return cached(`osolo:${kind}:${sub || ""}:${k}:${f}`, () => {
+    if (kind === "raiders") return paintSolo({ cloth: k ? "#2c2420" : shade(OUT_RED, -0.2), hat: "hood", hatColor: shade(OUT_RED, -0.35), band: "#c03030", arm: k ? "rifle" : "raised", pants: "#24222a" }, f, "");
+    const arm = sub === "scouts" ? (k ? "rifle" : f ? "rifle" : "binoc") : sub === "wanderers" ? "staff" : "none";
+    const o = { cloth: k ? "#6e6a60" : OUT_GRAY, pants: "#4a4840", hat: sub === "wanderers" && !k ? "straw" : "cap", hatColor: "#5a5850", pack: true, arm };
+    return paintSolo(o, f, "", sub === "refugees" ? "heavy" : ""); // refugees carry all they own
+  });
+}
+// A team of one on a bike: frame 0 stopped (a foot down), 1–2 pedalling.
+export function cyclistSpriteCanvas(color, frame = 0) {
+  const f = Math.max(0, Math.min(2, frame | 0));
+  return cached(`cyclist:${color}:${f}`, () => paintCyclist(color, f));
+}
+// Another group's party of one on foot, in its group's look (groupLook: the lead figure); kind "walk" | "raid" | "scav"
+// (a scavenger: pack on, a crowbar).
+export function groupSoloCanvas(type, kind, color, frame = 0) {
+  const f = Math.max(0, Math.min(3, frame | 0));
+  return cached(`gsolo:${type}:${kind}:${color}:${f}`, () => {
+    const o = groupLook(type, color, 0, kind === "raid");
+    return paintSolo(kind === "scav" ? { ...o, pack: true, arm: "bar" } : o, f, "");
+  });
 }
 
 // Siege camp in the attacker's color, pitched beside a besieged base.

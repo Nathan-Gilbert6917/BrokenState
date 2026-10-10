@@ -45,6 +45,9 @@ import { bagRefusal } from "../sim/carry.js"; // Carry in arms (the search windo
 import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
 import { registerStackScreen, openStack, closeStack, stackPanel, chosenQty, supplyIcon, splitCount, STACK_ACTIONS, STACK_CHANGE } from "./stackmove.js"; // how many of a supply stack, and where
 import { lootFit } from "../sim/stacks.js";
+import { armoryView } from "./armoryview.js"; // the storage box's items grouped by type, cards or compact rows
+import { itemShortTip, tipAttrs, roundsBadge } from "./itemlabels.js"; // the short hover tip (Shift: the full one), the rounds badge on a gun
+import { rowName, rowCount, supplyName, supplyCount } from "../sim/itemnames.js"; // row names: "magazine", rounds "— loose", the count on the right
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -113,9 +116,9 @@ export function tile(item, loc, s, drag = true) {
   const frac = dur != null ? dur / itemDurMax(item) : item.quality || 1;
   const col = frac > 0.6 ? "var(--good)" : frac > 0.3 ? "var(--accent)" : "var(--danger)";
   const unusable = s && d.skill && d.req && !gearEffect(s, item).usable;
-  return `<div class="itile${unusable ? " bad" : ""}"${drag ? ` draggable="true" data-drag="${loc}"` : ""}${tip(itemTip(item, s))}>
-    ${gunTile(item) || `<span class="iico">${icon(item.key)}</span>`}<span class="iname">${esc(stackLabel(item))}</span><span class="ikg">${Math.round(itemLoad(item) * 10) / 10}</span>
-    ${item.contents ? `<span class="icount">${item.contents.filter(Boolean).length}/${item.contents.length}</span>` : countOf(item) > 1 ? `<span class="icount">×${countOf(item)}</span>` : isRoundItem(item) ? `<span class="icount">${amountOf(item)}</span>` : ""}
+  return `<div class="itile${unusable ? " bad" : ""}"${drag ? ` draggable="true" data-drag="${loc}"` : ""}${tipAttrs(itemShortTip(item, loc, s), itemTip(item, s))}>
+    ${gunTile(item) || `<span class="iico">${icon(item.key)}</span>`}<span class="iname">${esc(rowName(item))}</span>${roundsBadge(item, loc)}<span class="ikg">${Math.round(itemLoad(item) * 10) / 10}</span>
+    ${item.contents ? `<span class="icount">${item.contents.filter(Boolean).length}/${item.contents.length}</span>` : rowCount(item) ? `<span class="icount">${rowCount(item)}</span>` : ""}
     <i class="idur"><b style="width:${Math.round(Math.max(0.05, Math.min(1, frac)) * 100)}%;background:${col}"></b></i></div>`;
 }
 
@@ -209,10 +212,6 @@ export function storageBox(state, ui, place, user) {
     const bulk = junk.length ? ` <button class="mini" data-action="inv-burnjunk" data-base="${st.id}"${tip(`Break down every piece of junk with firewood in it (wooden, paper or cloth things worth ${BURN.junkValue} or less, not marked Keep): ${junk.length} item${junk.length === 1 ? "" : "s"}, +${burnablesWood(junk)} firewood into ${b.name}'s stores.`)}>Break down junk for firewood (+${burnablesWood(junk)})</button>` : "";
     head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items${bulk}</span></div>${b ? repairsBox(state, b) : ""}`;
   }
-  const tiles = st.list.map((it, i) => {
-    const l = `${loc}:${i}`;
-    return `<div class="islot store${ui.invSel === l ? " sel" : ""}" data-action="inv-click" data-loc="${l}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(it) * 10) / 10} kg`)}>${tile(it, l, user)}${gearCog(state, ui, it, l)}</div>`;
-  }).join("");
   // The supplies kept here, as stacks with their weight (firewood too: 0.1 kg each): the team's found cargo, the base's stores.
   const pool = st.o === "cargo" ? st.party.cargo.supplies : ((baseById(state, st.id) || {}).stock || {});
   // Stack tiles (ui/stackmove.js): movable where something can take them (INV_STACK_DESTS), else just shown.
@@ -220,8 +219,16 @@ export function storageBox(state, ui, place, user) {
   const supKg = sups.reduce((a, [k, v]) => a + SUPPLIES[k].weight * v, 0);
   const supHtml = sups.length ? `<div class="invlabel"${tip(st.o === "cargo" ? "Supplies the team found on the way, by weight: shared out among the people with the packed supplies (or riding in the vehicle)" : "The base's stores: food, water, firewood, fuel, meds, rounds by calibre and type, parts")}>${st.o === "cargo" ? "Found supplies" : "In the stores"} (${kg(supKg)} kg)</div>
     <div class="istore supgrid">${sups.map(([k, v]) => { const l = `${st.o}:${st.id}:sup:${k}`; return supTile(ui, l, k, v, "", invDests(state, ui, l).length > 0); }).join("")}</div>` : "";
-  return `${head}<div class="istore" data-action="inv-click" data-loc="${loc}" data-drop="${loc}"${tip(`Drop or click here to put the selected item in ${st.name}`)}>${tiles || `<span class="small muted">Empty. Drop items here.</span>`}</div>
+  return `${head}${storageGroups(state, ui, st, loc, user)}
     ${supHtml}`;
+}
+// The stored items grouped by type, as cards or compact rows (ui/armoryview.js), inside the drop box. Each keeps the
+// tile's clicks and drags: data-action="inv-click" data-loc (the item), data-drop (the list), data-drag; the ⚙ on a gun.
+function storageGroups(state, ui, st, loc, user) {
+  const entries = st.list.map((item, i) => ({ item, loc: `${loc}:${i}`, bad: !!(user && GEAR[item.key] && GEAR[item.key].skill && GEAR[item.key].req && !gearEffect(user, item).usable) }));
+  const cell = (e, inner, cls) => `<div class="islot store ${cls}${ui.invSel === e.loc ? " sel" : ""}" data-action="inv-click" data-loc="${e.loc}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(e.item) * 10) / 10} kg`)}><div class="ain" draggable="true" data-drag="${e.loc}"${tipAttrs(itemShortTip(e.item, e.loc, user, state), itemTip(e.item, user))}>${inner}</div>${gearCog(state, ui, e.item, e.loc)}</div>`;
+  const wrap = (inner) => `<div class="istore agroups" data-action="inv-click" data-loc="${loc}" data-drop="${loc}"${tip(`Drop or click here to put the selected item in ${st.name}`)}>${inner}</div>`;
+  return armoryView(entries, { ns: "store", cell, wrap, state, empty: "Empty. Drop items here." });
 }
 
 // People who can swap items with each other here, as tabs.
@@ -240,21 +247,24 @@ function stackButtons(item, from) {
   if (isBulk(item) && Object.keys(bulkRecord(item)).length) out.push(`<button class="mini" data-action="inv-openbox"${tip(`Take a handful out (up to ${roundCap({ loose: true })} loose rounds) into a spot beside it`)}>Take out a handful</button>`);
   return out.join(" ");
 }
+// ⓘ Details: the selected item's whole description (the hover tip is short; Shift over it shows this too).
+const detailsButton = (ui, item) => `<button class="mini${ui.invDetails === ui.invSel ? " active" : ""}" data-action="inv-details"${tip("The whole description of the selected item (or hold Shift while hovering it)")}>ⓘ Details</button> `;
+const detailsBlock = (state, ui, item) => (ui.invDetails && ui.invDetails === ui.invSel ? `<div class="invdetails small muted">${esc(itemTip(item, ui.inv && ui.inv.sid != null ? survivorById(state, ui.inv.sid) : null))}</div>` : "");
 export function selBar(state, ui, place) {
   if (!ui.invSel) return "";
   const item = itemAt(state, ui.invSel);
   if (!item) return "";
   const from = parseLoc(ui.invSel);
   const st = storageFor(state, place);
-  return `<div class="invsel small">Selected: <b>${esc(stackLabel(item))}</b>. Click a slot, pocket or pack cell to move it there${countOf(item) > 1 || isRoundItem(item) ? " (onto the same thing: the stacks merge)" : ""}.
+  return `<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>. Click a slot, pocket or pack cell to move it there${countOf(item) > 1 || isRoundItem(item) ? " (onto the same thing: the stacks merge)" : ""}.
     ${stackButtons(item, from)}
     ${st && from.o !== "armory" && from.o !== "cargo" ? `<button class="mini" data-action="inv-store"${tip(`Put it in ${st.name}`)}>${from.o === "body" ? "Take" : st.o === "armory" ? "Unequip to armory" : "Put in cargo"}</button>` : ""}
     ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
     ${burnButtons(state, ui, item, from)}
     ${isGunCase(item) && from.o !== "body" ? `<button class="mini" data-action="inv-opencase"${tip(`Inside: ${caseText(item)}${item.locked ? " (locked: prised open with a blade or a crowbar)" : ""}. Opening it here is free: the gun goes into ${st ? st.name : "storage"}, the rounds into the stores.`)}>${item.locked ? "Prise open" : "Open"} case</button>` : ""}
     ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" ? repairButtons(state, ui, item, from, place) : ""}
-    <button class="mini" data-action="inv-cancel">Cancel</button>
-    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" && !state.combat ? modBar(state, ui, item) + helmetBar(state, ui, item) : ""}</div>`;
+    ${detailsButton(ui, item)}<button class="mini" data-action="inv-cancel">Cancel</button>
+    ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" && !state.combat ? modBar(state, ui, item) + helmetBar(state, ui, item) : ""}${detailsBlock(state, ui, item)}</div>`;
 }
 // Gun parts (the gun builder, ui/gunbuilder.js): on a gun, Modify opens it; on a loose part, Modify for each gun on the
 // person whose inventory is open that takes it (the builder opens on that gun at the part's slot).
@@ -469,13 +479,15 @@ export function takeLootReq(state, ui) {
 const kg = (x) => `${Math.round(x * 10) / 10}`;
 // A supply stack as a tile (the search window, the bodies, the stores). movable: click it for the stack mover
 // (ui/stackmove.js), drag it to drop it somewhere (a popover asks how many).
+// The count on the right of a supply tile: "×27", or the two parts of a split stack ("12 + 15").
+const supCount = (ui, loc, n) => { const sc = splitCount(invSplits(ui), loc, n); return sc === `${Math.floor(n)}` ? supplyCount(n) : sc; };
 function supTile(ui, loc, k, n, extra = "", movable = true) {
   const sup = SUPPLIES[k];
   if (!sup) return "";
   const how = movable ? " Click it to choose how many (1 to all) and where (the mouse wheel over it: one more or fewer, Shift: ten); Shift+click: all that fit, straight across. Drag it where it goes and say how many (Shift when you drop: half, Ctrl: one)." : "";
   const ns = ui.inv && ui.inv.raid ? "raid" : loc.startsWith("body:") ? "loot" : "inv"; // its stack mover screen (the wheel)
   return `<div class="islot store stack${ui.invSel === loc ? " sel" : ""}${movable ? "" : " still"}"${movable ? ` data-action="inv-click" data-loc="${loc}" data-stack="${loc}" data-smns="${ns}"` : ""}${tip(`${Math.floor(n)} ${sup.name.toLowerCase()}, ${kg(sup.weight * n)} kg (${sup.weight} kg each).${how}${extra}`)}>
-    <div class="itile"${movable ? ` draggable="true" data-drag="${loc}"` : ""}><span class="iico">${supplyIcon(k)}</span><span class="iname">${splitCount(invSplits(ui), loc, n)} ${esc(sup.name)}</span><span class="ikg">${kg(sup.weight * n)}</span></div></div>`;
+    <div class="itile"${movable ? ` draggable="true" data-drag="${loc}"` : ""}><span class="iico">${supplyIcon(k)}</span><span class="iname">${esc(supplyName(k))}</span><span class="icount">${supCount(ui, loc, n)}</span><span class="ikg">${kg(sup.weight * n)}</span></div></div>`;
 }
 function gearTiles(ui, list, prefix, user) {
   return list.map((it, i) => {
@@ -797,6 +809,7 @@ export const INV_ACTIONS = {
   ...STACK_ACTIONS, // the stack mover (ui/stackmove.js): sm-qty, sm-to, sm-go, sm-cancel
   "inv-open": (state, ui, d) => { ui.inv = { sid: Number(d.id), loot: false }; ui.invSel = null; ui.invMsg = ""; },
   "inv-close": (state, ui) => { ui.inv = null; ui.invSel = null; ui.invMsg = ""; },
+  "inv-details": (state, ui) => { ui.invDetails = ui.invDetails === ui.invSel ? null : ui.invSel; }, // ⓘ Details on the selected item (itemlabels.js: the hover tip is short)
   "inv-who": (state, ui, d) => { ui.inv.sid = Number(d.id); ui.invSel = null; },
   "inv-click": (state, ui, d, ev) => clickLoc(state, ui, d.loc, ev),
   "inv-cancel": (state, ui) => { ui.invSel = null; closeStack(ui); },
