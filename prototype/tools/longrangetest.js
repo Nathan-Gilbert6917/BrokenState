@@ -96,7 +96,7 @@ const ev = (o) => (o.chance / 100) * ((o.dmg[0] + o.dmg[1]) / 2) * (1 + o.crit /
   const ar = huntWeaponInfo(gunWith("ar")), arS = huntWeaponInfo(gunWith("ar", "acog")), arD = huntWeaponInfo(gunWith("ar", "reddot"));
   check(near(arS.big, HUNT_CAT.automatic.big * SCOPE_HUNT.big) && near(arS.small, HUNT_CAT.automatic.small * SCOPE_HUNT.small) && near(ar.big, HUNT_CAT.automatic.big) && near(arD.big, ar.big) && arS.scoped && !arD.scoped, `an AR-15 with an ACOG hunts deer at ${arS.big.toFixed(3)} (bare ${ar.big}, a red dot ${arD.big})`);
   const hr = huntWeaponInfo(gunWith("huntrifle")), lv = huntWeaponInfo(gunWith("leverrifle")), lvS = huntWeaponInfo(gunWith("leverrifle", "scopemount", "scope4x"));
-  check(hasScope(gunWith("leverrifle", "scopemount", "scope4x")) && hr.big === HUNT_CAT.rifle.big && hr.small === HUNT_CAT.rifle.small && !hr.scoped && near(lv.big, 1) && near(lvS.big, SCOPE_HUNT.big), `the hunting rifle as before (${hr.big} / ${hr.small}: its scope is in its numbers); a lever-action ${lv.big}, with a 4× scope ${lvS.big.toFixed(2)}`);
+  check(hasScope(gunWith("leverrifle", "scopemount", "scope4x")) && hr.big === HUNT_CAT.rifle.big && hr.small === HUNT_CAT.rifle.small && hr.scoped && (() => { const g = newItem("huntrifle"); delete g.mods; const b = huntWeaponInfo(g); return b.big < hr.big && !b.scoped; })() && near(lv.big, 1) && near(lvS.big, SCOPE_HUNT.big), `the hunting rifle as before with its scope, a part since 2026-10-10 (${hr.big} / ${hr.small}: its numbers have it in; without it less); a lever-action ${lv.big}, with a 4× scope ${lvS.big.toFixed(2)}`);
   const sn = huntWeaponInfo(gunWith("sniper"));
   check(sn.big === 1.25 && sn.small === 0.4 && !sn.scoped, "the sniper rifle's own numbers already count its scope (1.25 / 0.4)");
 }

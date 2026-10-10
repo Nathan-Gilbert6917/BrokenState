@@ -87,7 +87,8 @@
 //   day turns toward it 25% of the time. Fish work / role: a base on a river or a lake shore, one rod or net a fisher
 //   (carried or in the armory), 3 hours a day. Expect a good hunter at a cabin in forest to bring in about 4–6 food a
 //   day once the land settles (a farmer about 2), less in spring and on farmland.
-import { gunMods, wearMuzzle, hasScope } from "./gunmods.js"; // a suppressed gun is quieter on a hunt; a scoped one hunts better
+import { gunMods, wearMuzzle, hasScope, isScope } from "./gunmods.js"; // a suppressed gun is quieter on a hunt; a scoped one hunts better
+import { FACTORY_FIT } from "./data-guns.js"; // a gun that comes with its scope (the hunting rifle): its hunting numbers have it in
 import { GEAR, SUPPLIES } from "./data.js";
 import { log, skill, gearEffect, atBase, newId, baseById, hub } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
@@ -223,7 +224,11 @@ export function huntWeaponInfo(item) {
   // Heat, the base's hunting noise and the chance the wandering dead turn toward the shots all scale with it.
   const quiet = noise >= 1 ? gunMods(item).noise : 1;
   const scoped = !d.hunt && noise >= 1 && scopedForHunt(item); // SCOPE_HUNT (an override has its scope in it)
-  if (scoped) h = { big: h.big * SCOPE_HUNT.big, small: h.small * SCOPE_HUNT.small };
+  // A gun that comes with its scope (data-guns.js FACTORY_FIT: the hunting rifle, user pick 2026-10-10) has it in its
+  // numbers: with a scope as it came, without one ÷ SCOPE_HUNT.
+  const ownScope = !d.hunt && noise >= 1 && (FACTORY_FIT[item.key] || []).some(([p, keys]) => p >= 1 && keys.some((k) => isScope(k)));
+  if (ownScope && !scoped) h = { big: h.big / SCOPE_HUNT.big, small: h.small / SCOPE_HUNT.small };
+  else if (scoped && !ownScope) h = { big: h.big * SCOPE_HUNT.big, small: h.small * SCOPE_HUNT.small };
   return { key: item.key, name: d.name, big: h.big, small: h.small, loud: noise >= 1, noise: noise * quiet, quiet, ammo: noise >= 1, arrows: bow && noise < 1, scoped };
 }
 export const hunterSkill = (s) => 0.5 * skill(s, "shooting") + 0.35 * skill(s, "scouting") + 0.15 * skill(s, "stealth");
