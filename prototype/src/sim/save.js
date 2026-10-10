@@ -27,7 +27,7 @@ import { sanitizeLibrary } from "./custombg.js"; // a save's custom backgrounds:
 import { migrateKit, migrateMagFits } from "./carrykit.js"; // old saves: carriers' plates, spare magazines
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
-import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, localId, log } from "./world.js";
+import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, log } from "./world.js";
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS, GEAR } from "./data.js"; // firewood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js";
@@ -204,7 +204,7 @@ export function deserializeState(save) {
       const f = (state.factions || []).find((x) => x.id === j.fid);
       const n = Math.floor(r.supplies.ammo);
       delete r.supplies.ammo;
-      for (const [k, q] of Object.entries(findRounds(kindTheme(f ? f.type : null), n, "jobreward", localId(state, j.id)))) r.supplies[k] = (r.supplies[k] || 0) + q;
+      for (const [k, q] of Object.entries(findRounds(kindTheme(f ? f.type : null), n, "jobreward", j.id))) r.supplies[k] = (r.supplies[k] || 0) + q;
     }
     state.ammoCal = 2;
   }

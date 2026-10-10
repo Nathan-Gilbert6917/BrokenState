@@ -118,8 +118,11 @@ check(worst <= 1, `every base's daily stock change is its in − out + moved (${
 const stockSum = rows.every((x) => {
   return STOCK_KEYS.every((k) => {
     const c = x[colIndex(H, `s_${k}`, true)];
-    const sum = list.reduce((a, s) => { const r = H.bases[s.id].rows.find((y) => y[0] === x[0]); return a + (r ? Number(r[colIndex(H, `s_${k}`)]) || 0 : 0); }, 0);
-    return Math.abs(c - sum) <= 0.15 * list.length + 0.5 + sum * 0.005;
+    // history.js r(): one decimal under 10, whole numbers above, so each figure is off by up to half its step.
+    const half = (v) => (Math.abs(v) < 10 ? 0.05 : 0.5);
+    let sum = 0, slack = half(c) + 0.001;
+    for (const s of list) { const r = H.bases[s.id].rows.find((y) => y[0] === x[0]); const v = r ? Number(r[colIndex(H, `s_${k}`)]) || 0 : 0; sum += v; if (r) slack += half(v); }
+    return Math.abs(c - sum) <= Math.max(slack, 0.15 * list.length + 0.5 + sum * 0.005);
   });
 });
 check(stockSum, "the colony's stocks are the sum of its bases' every day");

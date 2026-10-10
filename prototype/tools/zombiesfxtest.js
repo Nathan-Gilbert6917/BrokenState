@@ -90,7 +90,8 @@ console.log("Voice sets");
   }
   const bad = [...found].filter((k) => { const v = Z.voiceKind({ kind: "zombie", ztype: k }); return !Z.VOICE_SETS[v] || v === "walker"; });
   check(!bad.length && found.size >= 16, `every ztype in src/sim has its own voice set (${found.size}: ${[...found].map((k) => `${k}→${Z.voiceKind({ kind: "zombie", ztype: k })}`).join(", ")})${bad.length ? `; walker fallback: ${bad.join(", ")}` : ""}`);
-  check([...bosses].every((k) => Z.voiceKind({ kind: "zombie", boss: k }) === k) && bosses.size === 2, `the bosses: ${[...bosses].join(", ")}`);
+  const BORROWS = { hivemind: "broodmother" }; // the Hivemind (hivecrawl.js) has the Broodmother's wet bellow (zombiesfx.js voiceKind)
+  check([...bosses].every((k) => Z.voiceKind({ kind: "zombie", boss: k }) === (BORROWS[k] || k) && Z.VOICE_SETS[BORROWS[k] || k]) && ["wallbreaker", "broodmother", "hivemind"].every((k) => bosses.has(k)), `the bosses: ${[...bosses].map((k) => `${k}→${Z.voiceKind({ kind: "zombie", boss: k })}`).join(", ")}`);
   check(Z.voiceKind({ kind: "zombie", turned: { sid: 3 } }) === "turned" && Z.voiceKind({ kind: "zombie", walking: { who: "Dana" } }) === "turned" && Z.voiceKind({ kind: "zombie", ztype: "riot" }) === "riot",
     "the risen (turned, walking loot) and riot police have their own; soldiers the armoured dead's");
   check(Z.voiceKind({ kind: "zombie", called: true }) === "walker" && Z.FALLBACK_TO_WALKER.length >= 4, `walker voice, by design: ${Z.FALLBACK_TO_WALKER.join(", ")}`);

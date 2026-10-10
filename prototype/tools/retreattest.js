@@ -11,7 +11,7 @@ import { createWorld, makeSurvivor, hub, survivorById } from "../src/sim/world.j
 import { GEAR } from "../src/sim/data.js";
 import {
   active, createBattle, autoPlayerTurn, runEnemyPhase, closeCombat, registerCombatHandler, combatAct, endPlayerTurn,
-  soundRetreat, retreatPlan, retreatRefusal, escapeOdds, retreatAdvice, fightOutlook, evacAt, inEvac, RETREAT, RETREAT_AI, unitAt, loadPenalty,
+  soundRetreat, retreatPlan, retreatRefusal, escapeOdds, retreatAdvice, fightOutlook, evacAt, inEvac, RETREAT, RETREAT_AI, unitAt, loadPenalty, loadMag,
 } from "../src/sim/combat.js";
 import { newItem } from "../src/sim/inventory.js";
 import "../src/sim/hives.js"; // the "hive" battle layout
@@ -243,6 +243,8 @@ const park = (b, u) => { u.dead = true; u.x = -20; u.y = -20; }; // takes an ene
   // A middling fight: Cautious goes, Aggressive stays.
   const b3 = openBattle(st, [fighter(st), fighter(st), fighter(st)], { kind: "raiders", count: 4, power: 4 });
   b3.units.filter((u) => u.side === "enemy").forEach((e, i) => place(b3, e, 15, 2 + i * 2));
+  // Their arms pinned (the kit's roll moves whenever the raiders' list grows): two machetes, a hunting rifle and a pistol.
+  b3.units.filter((u) => u.side === "enemy").forEach((e, i) => { e.weapon = e.gmWeapon = ["machete", "huntrifle", "machete", "pistol"][i]; e.load = null; loadMag(e); });
   b3.units.filter((u) => u.side === "player").forEach((u, i) => place(b3, u, 3, 3 + i * 2));
   const ps = b3.units.filter((u) => u.side === "player");
   ps[0].down = true; ps[0].hp = 0; ps[0].bleed = 3;
@@ -625,7 +627,7 @@ function measure(style) {
   const state = createWorld({ seed, factionCount: 6 });
   const base = hub(state);
   const rows = [];
-  const tot = { off: { dead: 0, wipes: 0, wins: 0 }, on: { dead: 0, wipes: 0, wins: 0, retreats: 0, winnable: 0, saved: 0 }, n: 0, unpaired: 0 };
+  const tot = { off: { dead: 0, wipes: 0, wins: 0 }, on: { dead: 0, wipes: 0, wins: 0, retreats: 0, winnable: 0, saved: 0 }, n: 0, unpaired: 0, seq: [] }; // seq: retreated or not, battle by battle (the same battles for every style)
   // By the numbers (breakoff.js): the same team and enemy resolved by the numbers, fought out and with the style's
   // policy; and how the retreats compare with the map's (escape odds per enemy kind, runners out, team home alive).
   const policy = STYLE_POLICY[style] || "losing";
@@ -704,6 +706,7 @@ function measure(style) {
       const on = play(snap, true);
       r.off.win += off.outcome === "victory"; r.off.dead += off.dead; r.off.wipes += off.wipe;
       r.on.win += on.outcome === "victory"; r.on.dead += on.dead; r.on.wipes += on.wipe;
+      tot.seq.push(on.ai ? 1 : 0);
       if (on.ai) { r.on.retreat++; r.on.turn += on.turn; if (off.outcome === "victory") r.on.winnable++; }
       else if (on.outcome !== off.outcome || on.dead !== off.dead || on.turn !== off.turn) tot.unpaired++; // no retreat: the same battle
       const goOn = rng.state; // the next battle starts from where the map's runs left the dice (the same sample as before)
@@ -761,7 +764,16 @@ if (N > 0) {
     const giveUp = t.n * ({ cautious: 0.06, balanced: 0.03, aggressive: 0.02 }[s] || 0.03), giveUpMax = Math.max(3, giveUp + 2 * Math.sqrt(giveUp));
     check(t.off.wins - t.on.wins <= giveUpMax, `${s}: wins given up stay small (${t.off.wins} → ${t.on.wins} of ${t.n}; at most ${giveUpMax.toFixed(1)}: ${giveUp.toFixed(1)} + 2 standard errors)`);
   }
-  if (res.cautious && res.aggressive) check(res.cautious.on.retreats >= res.aggressive.on.retreats, `Cautious retreats at least as often as Aggressive (${res.cautious.on.retreats} vs ${res.aggressive.on.retreats})`);
+  if (res.cautious && res.aggressive) {
+    // Battle by battle (the same teams and enemies for each style): the battles only one of them broke off decide it,
+    // and their split is a coin's when the styles are alike, so Aggressive may lead by up to two standard errors of it
+    // (sqrt of those battles) before Cautious counts as retreating less. The bare totals (about 150 of 360 each) flip
+    // on the dice: 161 vs 120 at 8eaf8b9, 145 vs 149 after the dev merge of 2026-10-10.
+    const c = res.cautious, a = res.aggressive;
+    let onlyC = 0, onlyA = 0;
+    c.seq.forEach((x, i) => { if (x && !a.seq[i]) onlyC++; else if (!x && a.seq[i]) onlyA++; });
+    check(c.seq.length === a.seq.length && onlyC - onlyA >= -2 * Math.sqrt(onlyC + onlyA), `Cautious retreats at least as often as Aggressive (${c.on.retreats} vs ${a.on.retreats}; only Cautious in ${onlyC} battles, only Aggressive in ${onlyA})`);
+  }
   // By the numbers: the policy saves lives like the map's retreat, and both modes agree on the escape itself.
   for (const s of styles) {
     const T = res[s].num, c = res[s].cmp;

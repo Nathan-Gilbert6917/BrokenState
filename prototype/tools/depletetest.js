@@ -420,6 +420,10 @@ for (const style of ["balanced", "cautious"]) {
   // (with the balance batch and the new-run crew in, Balanced's went on day 13; it was within 12).
   let dest = null, h0 = 0;
   while (!dest && h0++ < 24 * 16) {
+    // Finds the teams report (a cache, a camp, a wreck) are left alone: checking them outranks a far scavenging trip
+    // (autopilot.js planTrip: 2.6 and 1.8 against about 1.2), and how many turn up rides on the world's dice (seed 42
+    // after ar-platform: one after another for 40 days, no scavenging trip at all).
+    st.markers = st.markers.filter((m) => !["cache", "camp", "car"].includes(m.type));
     tickHour(st);
     const p = st.parties.find((x) => x.owner === "player" && x.ap && x.ap.mission === "scavenge");
     if (p) dest = p.ap.tile;
