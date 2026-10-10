@@ -164,12 +164,16 @@ const stIcons = (state, s) => (s && s.alive && inContact(state, s) ? statusIcons
 // The role drop-down: work roles (priorities) and fixed jobs (Manual), with what they do now (ui/work.js).
 const roleSelect = (state, s, extra = "") => `${workRoleSelect(state, s, extra)}${taskChip(state, s)}`;
 
+// A trip's way out from this minute on the clock to the minute it gets there (sim/parties.js estimateTrip exactOut,
+// arrivalsDue; the minutes of this hour already gone are not travelled): "3h", "2h 35m".
+const etaOut = (state, est) => Parties.clockText(Math.max(0, (est.exactOut ?? est.hoursOut) - Parties.clockFrac(state)));
+
 // ---------- top bar ----------
 // The top bar in pieces (the slots in index.html): the clock and the stock change with the hour, the buttons only
 // when you press them, so each piece is redrawn only when its own text changes (main.js).
 export function topbarParts(state, ui) {
   const h = hub(state);
-  const speeds = [[0, "⏸", "Pause (Space). Orders you give while paused start when you unpause."], [0.5, "0.5×", "Slow: an hour takes 40 seconds, a day 16 minutes (1)"], [1, "1×", "Normal: an hour takes 20 seconds, a day 8 minutes (2)"], [2, "2×", "Fast: an hour takes 10 seconds, a day 4 minutes (3)"], [3, "3×", "Very fast: an hour takes about 7 seconds, a day 2 minutes 40 seconds (4)"], [5, "5×", "Fastest, for quiet stretches: an hour takes 4 seconds, a day about 1 minute 36 seconds (5). At 3× and 5× the clock drops back to 1× when a card or a red alert arrives (Options)"]];
+  const speeds = [[0, "⏸", "Pause (Space). Orders you give while paused start when you unpause."], [0.25, "0.25×", "Slowest: an hour takes 80 seconds, a day 32 minutes (0)"], [0.5, "0.5×", "Slow: an hour takes 40 seconds, a day 16 minutes (1)"], [1, "1×", "Normal: an hour takes 20 seconds, a day 8 minutes (2)"], [2, "2×", "Fast: an hour takes 10 seconds, a day 4 minutes (3)"], [3, "3×", "Very fast: an hour takes about 7 seconds, a day 2 minutes 40 seconds (4)"], [5, "5×", "Fastest, for quiet stretches: an hour takes 4 seconds, a day about 1 minute 36 seconds (5). At 3× and 5× the clock drops back to 1× when a card or a red alert arrives (Options)"]];
   return {
     // The minutes are a slot of their own (main.js fills it every frame as the hour goes by).
     clock: `Day ${day(state)} · ${String(hourOfDay(state)).padStart(2, "0")}:<span id="tb-min">00</span> ${isNight(state) ? "🌙" : "☀"}${weatherChip(state)}`,
@@ -464,7 +468,7 @@ function renderTeams(state, ui) {
       p.kind === "convoy" ? `<span class="good">Convoy (tracked)</span>` :
       waiting ? `<span class="warn">Waiting for orders at ${esc(tileLabel(state, partyTile(p)))}</span>` :
       armed ? `<span class="armed">${esc(ost ? ost.label : "Order given")} · starts when unpaused</span>` :
-      p.phase === "task" ? `<span class="good">${esc(ost.label)} at ${esc(tileLabel(state, partyTile(p)))}${ost.left != null ? ` · ${ost.left}h left` : ""}</span>` :
+      p.phase === "task" ? `<span class="good">${esc(ost.label)} at ${esc(tileLabel(state, partyTile(p)))}${ost.left != null ? ` · ${Parties.clockText(Math.max(0, ost.left - Parties.clockFrac(state)))} left` : ""}</span>` :
       p.radioLive ? `<span class="good">📻 Radio contact · ${esc(ost ? ost.label : "on the road")}</span>` : `<span class="muted">${noContact}</span>`;
     const showLive = waiting || p.radioLive || p.kind === "convoy" || p.phase === "task";
     return `<div class="card small ${waiting ? "attn" : ""}">
@@ -1099,7 +1103,8 @@ function plannerModal(state, ui) {
   const pe = est && !settles ? planAutofill(state, pl) : null;
   const need = pe || est, needFor = pe ? "for the whole plan" : "for the round trip";
   const members = ids.map((id) => survivorById(state, id)).filter(Boolean);
-  const at = (hr) => `day ${Math.floor(hr / 24) + 1}, ${String(hr % 24).padStart(2, "0")}:00`;
+  // A time on the clock, to the minute (an arrival part-way through an hour: sim/parties.js arrivalsDue).
+  const at = (t) => { const m = Math.round(t * 60), hr = Math.floor(m / 60); return `day ${Math.floor(hr / 24) + 1}, ${String(hr % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; };
   const stays = (Parties.STAY_MISSIONS || ["move", "recon", "outpost"]).includes(pl.mission); // waits there for orders (or stays)
   const carry = plannerLoad(state, pl);
   // Why this mission cannot go to this tile at all (parties.js checks the same at launch).
@@ -1141,7 +1146,7 @@ function plannerModal(state, ui) {
         <div class="row">${Object.entries(STANCES).map(([k, s]) => `<button data-action="pl-stance" data-v="${k}" class="${pl.stance === k ? "active" : ""}"${tip(s.desc)}>${s.name}</button>`).join("")}</div>
         <h3>Estimate</h3>
         ${est ? `<div class="kv small"><div>Distance</div><div>${est.tiles} tiles</div>
-          <div${tip("Hours on the road, worked out the same way the team really moves (stance, terrain, roads, fuel, and the weather hour by hour: mud, snow, storms). Road events can add delays.")}>Arrives in</div><div><b>${est.hoursOut}h</b> <span class="muted">(${at(est.arriveHour)})</span>${weatherEta(est)}</div>
+          <div${tip("Hours on the road, worked out the same way the team really moves (stance, terrain, roads, fuel, and the weather hour by hour: mud, snow, storms). Road events can add delays.")}>Arrives in</div><div><b>${etaOut(state, est)}</b> <span class="muted">(${at(est.arriveAt ?? est.arriveHour)})</span>${weatherEta(est)}</div>
           ${est.dryAt != null ? `<div></div><div class="danger">Fuel runs out near ${esc(tileLabel(state, est.dryAt))}; they walk the rest (vehicle left there)</div>` : ""}
           <div${tip(stays ? "If you order them home as soon as they arrive" : "Out, about 6 hours on site, and back")}>Round trip</div><div>~${est.days.toFixed(1)} days (${Math.round(est.hours)}h: ${est.hoursOut}h out, ${est.hoursBack}h back)${stays ? ` <span class="muted">if sent home on arrival</span>` : ""}</div>
           <div${tip("Food and water for the trip: one ration a person a day, more on the move under a load (Medium +15%, Heavy +35%, Overloaded +60%, less with Scouting or on bikes, none extra in a car), the hours on site at the normal rate. Water is that times each day's thirst: 1.3 in summer, at least 1.6 on a hot day, 0.9 in winter; food times each day's cold: 1.1 below 0 °C, 1.2 below −8 °C (no camp fire on such a trip).")}>Needs</div><div>${est.food} food · ${est.water} water${isCar(v) ? ` · ${est.fuel} fuel${est.fuelMult > 1 ? ` (×${est.fuelMult.toFixed(2)} for the load)` : ""}` : ""}</div>
@@ -1193,7 +1198,7 @@ function moveOutModal(state, ui) {
   const destBtn = (x) => {
     const e = estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: x.tile, vehicle: travelMode(v), v, stance: pl.stance, fuel: isCar(v) ? v.fuel + (pl.supplies.fuel || 0) : 0, supplies: pl.supplies, homeBaseId: b.id });
     const free = freeBeds(state, x);
-    return `<button data-action="pl-dest" data-tile="${x.tile}" class="${pl.dest === x.tile ? "active" : ""}" ${e ? "" : "disabled"}${tip(`Walk${v ? " or drive" : ""} to ${x.name}; when they get there you are asked whether they move in (they live and work there from then on, and what they carry goes into its stores).`)}>${esc(x.name)}<span class="hint">${free > 0 ? `${free} free bed${free === 1 ? "" : "s"}` : `full (${residents(state, x.id).length} in ${baseBeds(x)} beds)`} · ${e ? `about ${e.hoursOut}h` : "no route"}</span></button>`;
+    return `<button data-action="pl-dest" data-tile="${x.tile}" class="${pl.dest === x.tile ? "active" : ""}" ${e ? "" : "disabled"}${tip(`Walk${v ? " or drive" : ""} to ${x.name}; when they get there you are asked whether they move in (they live and work there from then on, and what they carry goes into its stores).`)}>${esc(x.name)}<span class="hint">${free > 0 ? `${free} free bed${free === 1 ? "" : "s"}` : `full (${residents(state, x.id).length} in ${baseBeds(x)} beds)`} · ${e ? `about ${etaOut(state, e)}` : "no route"}</span></button>`;
   };
   const go = !ids.length ? "Pick at least one person" : carry.over ? carry.why : pl.dest != null && !est ? "No route" : pl.dest == null ? "They leave now and wait outside; then click a tile on the map to send them (Esc: they wait for orders)" : `They set off for ${to ? to.name : "there"} now`;
   return `<div class="box wide">
@@ -1217,7 +1222,7 @@ function moveOutModal(state, ui) {
         <h3>Supplies (from ${esc(where)})</h3>
         ${suppliesTable(state, b, pl, b.type === "hub" ? "hub" : "base")}
         <button data-action="pl-autofill" style="margin-top:0.4rem"${tip(`Pack for the trip plus ${MOVE_OUT.days} days of food and water${pl.dest == null ? `, and ${MOVE_OUT.scrap} scrap for an outpost` : ""}`)}>Auto-fill</button>
-        ${est && pl.dest != null ? `<div class="kv small" style="margin-top:0.4rem"><div>Arrives in</div><div><b>${est.hoursOut}h</b>${weatherEta(est)}</div><div>Weight</div><div class="${carry.over ? "danger" : ""}">${n1(carry.load)} kg packed · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more</div></div>` : `<div class="small muted" style="margin-top:0.4rem">Weight: ${n1(carry.load)} kg packed · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more</div>`}
+        ${est && pl.dest != null ? `<div class="kv small" style="margin-top:0.4rem"><div>Arrives in</div><div><b>${etaOut(state, est)}</b>${weatherEta(est)}</div><div>Weight</div><div class="${carry.over ? "danger" : ""}">${n1(carry.load)} kg packed · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more</div></div>` : `<div class="small muted" style="margin-top:0.4rem">Weight: ${n1(carry.load)} kg packed · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more</div>`}
         ${warn.length ? `<div class="small danger" style="margin-top:0.5rem">${warn.map(esc).join("<br>")}</div>` : ""}
       </div>
     </div>

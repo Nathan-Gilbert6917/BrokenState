@@ -13,7 +13,7 @@
 // teamCtxHtml(state, ui, menu)                 → the menu's team section
 // runTeamAction(state, ui, d)                  → does it (d: { id, tile, key, mode, ok }); returns the message, null when it asked first
 import { baseById, hub } from "../sim/world.js";
-import { MISSIONS, partyTile, partyMembers, tileLabel, orderOptions, planPath, orderMove, carried, cargoRoom } from "../sim/parties.js";
+import { MISSIONS, partyTile, partyMembers, tileLabel, orderOptions, planPath, orderMove, carried, cargoRoom, moveEstimate, clockFrac, clockText } from "../sim/parties.js";
 import { queueOrder, startOrder, queueEstimate, queueEndTile, orderStatus, orderLabel, queueText, cancelMove, besideWater, repairInfo, FETCH_WATER_HOURS, SURVEY_HOURS } from "../sim/orders.js";
 import { commandable, NO_RADIO } from "../sim/plans.js";
 import { partyVehicle } from "../sim/vehicles.js";
@@ -35,7 +35,8 @@ import { ask } from "./confirm.js";
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const r1 = (h) => Math.round(h * 10) / 10;
-export const hrsText = (h) => (h == null ? "?" : h >= 48 ? `${Math.floor(h / 24)}d ${Math.round(h % 24)}h` : `${Math.max(0, Math.round(h))}h`);
+// Hours as the menu shows them: an ETA counted from this minute on the clock can have minutes ("2h 35m").
+export const hrsText = (h) => (h == null ? "?" : clockText(h));
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 export const RESUPPLY_DAYS = 3; // Resupply at your base: food and water for this many days a head
@@ -44,6 +45,8 @@ const LAND_HOURS = HUNT.defHours; // hunt, fish, forage, cut wood: 8 hours (the 
 // Missions the hub's knowledge does not list but the team's own options do (on the tile, or by who holds it).
 const OWN_OPTIONS = ["outpost", "establish", "strikecamp", "drivehome"];
 
+// Does a fresh order start at once? Replacing, or queueing for a team that waits with nothing queued (queueOrder).
+const startsNow = (p, append) => !append || (p.phase === "waiting" && !(p.orders || []).length);
 // Where a fresh order would start from: replacing, where the team is; queueing, where its queue leaves it.
 const startTile = (state, p, append) => (append ? queueEndTile(state, p) : partyTile(p));
 // A copy of the team standing on `tile` with `orders` queued (for queueEstimate, which then needs no path).
@@ -59,12 +62,18 @@ export function dropsPlan(state, p) {
   return p.phase === "out" && p.mission !== "move";
 }
 
-// The travel to the tile: { hours, why } (why: no route; hours 0 when the team is or will be there).
+// The travel to the tile: { hours, why } (why: no route; hours 0 when the team is or will be there). A move that starts
+// now is worked out exactly as orderMove will set the team off (sim/parties.js moveEstimate), its hours counted from
+// this minute on the clock; one queued behind other orders starts as the hour ticks over, so its hours are whole.
 function travelTo(state, p, tile, append) {
   const from = startTile(state, p, append);
   if (from === tile) return { hours: 0, why: "" };
   const res = planPath(state, from, tile, p.vehicle);
   if (!res) return { hours: null, why: p.vehicle ? "The vehicle cannot get there. Leave it or pick another tile." : "No route there over land. Water in the way? Build a boat from the shore." };
+  if (startsNow(p, append)) {
+    const e = moveEstimate(state, p, tile);
+    return { hours: e ? e.hours : null, why: "" };
+  }
   const move = { type: "move", tile };
   const est = append ? queueEstimate(state, { ...p, orders: [...(p.orders || []), move] }) : queueEstimate(state, standingAt(p, from, [move]));
   return { hours: est.length ? est[est.length - 1].hours : null, why: "" };
@@ -98,7 +107,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   const base = state.bases.find((b) => b.tile === tile) || null;
   const v = partyVehicle(state, p);
   const travel = water ? { hours: null, why: "" } : travelTo(state, p, tile, append);
-  const ahead = append && !(p.phase === "waiting" && !(p.orders || []).length) ? queueAhead(state, p) : 0;
+  const ahead = !startsNow(p, append) ? Math.max(0, queueAhead(state, p) - clockFrac(state)) : 0; // from this minute on the clock
   /** @type {any[]} */
   const items = [];
   // An item: seq, the orders on the tile; move: go there first (the travel above); special: done at once in the UI.

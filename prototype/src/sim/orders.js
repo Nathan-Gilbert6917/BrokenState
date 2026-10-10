@@ -95,7 +95,7 @@ export function orderStatus(state, p) {
     elapsed = p.task.done;
     left = p.task.hours != null ? Math.max(0, p.task.hours - p.task.done) : null;
   } else if (p.phase === "out" || p.phase === "back") {
-    left = hoursLeft(state, p);
+    left = hoursLeft(state, p, true); // to the minute it gets there (parties.js arrivalsDue)
     elapsed = Math.max(0, state.hour - (p.orderStart ?? p.departed ?? state.hour));
   } else if (p.phase === "waiting") left = 0;
   const pct = left == null ? null : elapsed + left > 0 ? elapsed / (elapsed + left) : 1;

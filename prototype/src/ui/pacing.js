@@ -7,7 +7,7 @@
 //    TRAY_HOURS in-game hours, a card takes its default answer by itself (a log and diary line says so). A team whose
 //    card waits holds where it is. Things that cannot wait (a battle, a search, the trade window, a city crawl, a card
 //    whose answers need the map) always stop the clock.
-//  - Speeds: 0.5× 1× 2× 3× 5× (keys 1–5). At 3× and 5× the game drops to 1× by itself when a card (pausing or
+//  - Speeds: 0.25× (key 0) and 0.5× 1× 2× 3× 5× (keys 1–5). At 3× and 5× the game drops to 1× by itself when a card (pausing or
 //    tray) or a new red alert arrives (Options: "Drop to 1× when something happens", on by default).
 // Nothing here runs on autopilot (the governor answers every card at once) or in the headless tools.
 import { PAUSE_KINDS, KIND_BY_KEY, DEFAULT_PAUSE, TRAY_HOURS, cardKind, cardIcon, defaultChoice, autoAnswer, holdTeam, trayStale, dropCard } from "../sim/cardrules.js";
@@ -19,13 +19,14 @@ const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 
 // ---------- speeds (the one place the speed keys live) ----------
 export const SPEEDS = [0.5, 1, 2, 3, 5];  // keys 1–5
+export const SLOWEST_SPEED = 0.25;        // key 0: an hour in 80 seconds, to watch a fight or a move up close
 export const MAX_SPEED = 5;               // the fastest normal speed; anything above is a dev fast-forward
 export const FAST_SPEED = 3;              // from here up the game drops to 1× when something happens
 export const TRAY_SHOWN = 6;              // chips in the tray before "+N more"
-// The speed a key picks (Digit1–Digit5, Numpad1–Numpad5), or null.
+// The speed a key picks (Digit0–Digit5, Numpad0–Numpad5), or null.
 export function speedForKey(code) {
-  const m = /^(?:Digit|Numpad)([1-5])$/.exec(code || "");
-  return m ? SPEEDS[Number(m[1]) - 1] : null;
+  const m = /^(?:Digit|Numpad)([0-5])$/.exec(code || "");
+  return m ? (m[1] === "0" ? SLOWEST_SPEED : SPEEDS[Number(m[1]) - 1]) : null;
 }
 
 // ---------- options ----------
@@ -291,5 +292,5 @@ export function pacingHelp() {
   return `Which moments stop the clock is yours to choose: ⚙ Menu → Options → <i>Pause for…</i>. ${PAUSE_KINDS.map((x) => `${x.icon} ${esc(x.label)} (${x.def ? "on" : "off"} at first)`).join(", ")}.<br>
     A card of a kind that is switched on stops the clock as always. The others go into the <b>card tray</b>, a strip at the top of the map, newest first: each chip shows its icon, its title and the in-game hours it has left. The clock keeps running; click a chip to answer the card (the clock waits while it is open; ${k("Esc")} or <i>Back to the tray</i> puts it back unanswered). A team whose card waits holds where it is. Left ${TRAY_HOURS} in-game hours (2 min 40 s at 1×), a card takes its default answer by itself, and the log and the diary say which: the "do nothing" answer when there is one (OK, Hold here, Leave it, Not now, Decide later), else the one that steps back from trouble, else the first that is not a gamble. It never takes an answer that is greyed out or needs the map. <i>✓ all</i> answers the whole tray with its defaults; a card about a team, person, group or base that is gone leaves the tray with a log line. Saving waits until the tray is empty.<br>
     A death, a first contact with a group, a group turning hostile and a horde sighted near a base stop the clock even when no card comes with them (each by its switch); the paused banner says why. A battle, a search, the trade window, a city crawl and a card whose answers need the map always stop it.<br>
-    Speeds: ${k("1")}–${k("5")} = 0.5× / 1× / 2× / 3× / 5× (an hour takes 40 / 20 / 10 / 7 / 4 seconds). At 3× and 5× the clock drops back to 1× by itself when a card arrives (one that stops the clock or one for the tray) or a new red alert comes up; switch that off with <i>Drop to 1× when something happens</i>.`;
+    Speeds: ${k("0")} = 0.25× (an hour takes 80 seconds), ${k("1")}–${k("5")} = 0.5× / 1× / 2× / 3× / 5× (an hour takes 40 / 20 / 10 / 7 / 4 seconds). At 3× and 5× the clock drops back to 1× by itself when a card arrives (one that stops the clock or one for the tray) or a new red alert comes up; switch that off with <i>Drop to 1× when something happens</i>.`;
 }

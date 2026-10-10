@@ -241,6 +241,8 @@ export interface Party {
   planStart?: number;
   planVehicle?: boolean | "bike";
   planFuel?: number;
+  movedHour?: number; // parties.js arrivalsDue: the hour it already moved in (it got there part-way through)
+  planProgress?: number; // a delay owed when it set off (moveStartProgress: the minutes of the hour already gone)
   planStay?: number;
   etaOut?: number;
   etaBack?: number | null;

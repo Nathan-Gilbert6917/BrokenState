@@ -462,11 +462,12 @@ export function plannedPace(state, { members, supplies = {}, v = null, stance = 
 /** @param {State} state @param {number[]} path @param {TravelOpts} [opts] */
 export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed = null, fuelMult = 1, offroad = 1, onroad = 1, walkers = 0, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true, known = state.hour } = {}) {
   const sim = { path: [...path], idx, progress, vehicle: vehicle || false, offroad, onroad, walkers };
-  let f = fuel, hours = 0, dryAt = null, rideHours = 0;
+  let f = fuel, hours = 0, dryAt = null, rideHours = 0, lastSp = 0;
   while (sim.idx < sim.path.length - 1 && hours < maxHours) {
     hours += 1;
     if (sim.vehicle) rideHours += 1;
     const sp = sim.vehicle || footSpeed == null ? speed : footSpeed;
+    lastSp = sp;
     for (const tileId of stepAlong(state, sim, sp, weather ? startHour + hours : null, known)) {
       if (sim.vehicle !== true) continue;
       const prev = sim.path[sim.path.lastIndexOf(tileId, sim.idx) - 1];
@@ -475,7 +476,51 @@ export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed
       else f -= use;
     }
   }
-  return { hours, rideHours, idx: sim.idx, fuelLeft: f, vehicle: sim.vehicle, dryAt, reached: sim.path[sim.path.length - 1] === path[path.length - 1], progress: sim.progress };
+  const reached = sim.path[sim.path.length - 1] === path[path.length - 1];
+  // exact: the hours to the minute it gets there (a team arrives part-way through its last hour, arrivalsDue): the
+  // last hour's progress left over was not needed. Whole hours when it does not get there.
+  const exact = reached && sim.idx >= sim.path.length - 1 && hours > 0 && lastSp > 0 ? hours - 1 + Math.max(0, Math.min(1, (lastSp - Math.max(0, sim.progress)) / lastSp)) : hours;
+  return { hours, exact, rideHours, idx: sim.idx, fuelLeft: f, vehicle: sim.vehicle, dryAt, reached, progress: sim.progress };
+}
+
+// ---------- the clock's minutes ----------
+// The share of the coming hour already gone on the clock: the main loop sets it every frame (main.js, from the minutes
+// it shows) and puts it back to 0 while the hour ticks; the headless tools never set it. The sim moves teams by whole
+// hours, the tick at the end of an hour crediting a moving team the whole hour of travel; so a move that starts part
+// way through the hour starts that part behind (moveStartProgress), and its ETA counts from the minute it was given.
+let CLOCK_FRAC = 0;
+/** @param {number} f */
+export function setClockFrac(f) { CLOCK_FRAC = Number.isFinite(f) ? Math.max(0, Math.min(0.999, f)) : 0; }
+/** @param {State} [state] */
+export const clockFrac = (state) => CLOCK_FRAC;
+// Hours on the clock as the panels and the log give an ETA: "3h", "2h 05m", "45m", "2d 4h".
+/** @param {number} h */
+export function clockText(h) {
+  const m = Math.max(0, Math.round(h * 60)), hh = Math.floor(m / 60), mm = m % 60;
+  if (hh >= 48) return `${Math.floor(hh / 24)}d ${hh % 24}h`;
+  return hh && mm ? `${hh}h ${String(mm).padStart(2, "0")}m` : hh ? `${hh}h` : `${mm}m`;
+}
+// The progress a team sets off on a new way with (orderMove, startReturn, and the estimates of them): a delay it still
+// owes is kept (a road card, a blockage, a repair); a team that was not moving this hour also owes the minutes of it
+// already gone (the tick credits it the whole hour). A team already on its way that keeps to the step it is on keeps
+// its progress on that step (no snap back to the tile it left, no hour lost).
+/** @param {State} state @param {Party} p @param {number[]} path */
+export function moveStartProgress(state, p, path) {
+  const prog = p.progress || 0;
+  const moving = onTheMove(p);
+  if (moving && path.length > 1 && path[0] === partyTile(p) && path[1] === p.path[p.idx + 1]) return prog;
+  return Math.min(0, prog) - (moving ? 0 : clockFrac(state) * partySpeed(p));
+}
+// What a move order to `tile` would take, worked out exactly as the team will then move (orderMove, hoursLeft):
+// { path, progress, ticks: hours the clock ticks before it is there, hours: to the minute it gets there from this
+// minute on the clock (arrivalsDue), arriveAt: that time (state.hour + a share of an hour) }, or null (no way there).
+/** @param {State} state @param {Party} p @param {number} tile */
+export function moveEstimate(state, p, tile) {
+  const res = planPath(state, partyTile(p), tile, p.vehicle);
+  if (!res) return null;
+  const progress = moveStartProgress(state, p, res.path);
+  const t = travelHours(state, res.path, { vehicle: p.vehicle, ...paceOpts(p), progress, fuel: p.vehicle === true ? partyFuel(state, p) : 0 });
+  return { path: res.path, progress, ticks: t.hours, hours: Math.max(0, t.exact - clockFrac(state)), arriveAt: state.hour + t.exact };
 }
 
 // The plan the hub knows about: a new move given while in contact replaces it (no way back assumed).
@@ -485,6 +530,7 @@ function setPlan(state, p, etaBack) {
   p.planStart = state.hour;
   p.planVehicle = p.vehicle || false;
   p.planFuel = p.vehicle === true ? partyFuel(state, p) : 0;
+  p.planProgress = p.progress || 0; // a delay owed when it set off (the minutes of the hour already gone, moveStartProgress)
   p.etaOut = hoursLeft(state, p);
   p.etaBack = etaBack;
 }
@@ -500,19 +546,22 @@ export function plannedTile(state, p, now = state.hour) {
   const t = now - start;
   const mode = p.planVehicle === true || p.planVehicle === "bike" ? p.planVehicle : false;
   const opts = { vehicle: mode, ...paceOpts(p), speed: modeSpeed(p, mode), fuel: p.planFuel ?? Infinity, startHour: start, known: start }; // the fronts the hub knew of then
-  if (t < p.etaOut) return plan[travelHours(state, plan, { ...opts, maxHours: t }).idx];
+  if (t < p.etaOut) return plan[travelHours(state, plan, { ...opts, progress: p.planProgress || 0, maxHours: t }).idx];
   const stay = p.planStay ?? 6; // hours at the target before heading back (a plan sets its own, plans.js)
   const tb = t - p.etaOut - stay;
   if (p.etaBack == null || tb <= 0) return plan[plan.length - 1];
-  const go = travelHours(state, plan, opts);
+  const go = travelHours(state, plan, { ...opts, progress: p.planProgress || 0 });
   return plan[plan.length - 1 - travelHours(state, [...plan].reverse(), { ...opts, vehicle: go.vehicle, fuel: go.fuelLeft, maxHours: tb, startHour: start + p.etaOut + stay }).idx];
 }
 
-// Hours left for a team on its current path (what the order queue and the panels show).
-/** @param {State} state @param {Party} p */
-export function hoursLeft(state, p) {
+// Hours left for a team on its current path, from the top of this hour: the hours the clock ticks before it is there,
+// or (exact) to the minute it gets there (arrivalsDue: what the panels show, less the minutes already gone).
+/** @param {State} state @param {Party} p @param {boolean} [exact] */
+export function hoursLeft(state, p, exact = false) {
   if (!p.path || p.idx >= p.path.length - 1) return 0;
-  return travelHours(state, p.path.slice(p.idx), { vehicle: p.vehicle, ...paceOpts(p), progress: p.progress, fuel: p.vehicle === true ? partyFuel(state, p) : 0 }).hours;
+  const moved = p.movedHour === state.hour + 1; // moved this hour already (arrivalsDue): the rest from the next hour
+  const t = travelHours(state, p.path.slice(p.idx), { vehicle: p.vehicle, ...paceOpts(p), progress: p.progress, fuel: p.vehicle === true ? partyFuel(state, p) : 0, startHour: state.hour + (moved ? 1 : 0) });
+  return (moved ? 1 : 0) + (exact && arrivesOnTime(p) ? t.exact : t.hours);
 }
 
 // The vehicle a planner or estimate means: v (an object or an id), else `vehicle` (true: a truck, "bike": bikes
@@ -558,7 +607,9 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
   if (!out) return null;
   const pace = plannedPace(state, { members, supplies, v: veh, stance });
   const po = { speed: pace.speed, footSpeed: pace.footSpeed, fuelMult: pace.fuelMult, offroad: pace.offroad || 1, onroad: pace.onroad || 1 };
-  const go = travelHours(state, out.path, { vehicle: mode, ...po, fuel: mode === true ? fuel ?? Infinity : 0 });
+  // It sets off this minute: the part of the hour already gone is not travelled (moveStartProgress; 0 headless).
+  const start = -clockFrac(state) * pace.speed;
+  const go = travelHours(state, out.path, { vehicle: mode, ...po, progress: start, fuel: mode === true ? fuel ?? Infinity : 0 });
   // The way back is planned from the destination, like startReturn does (on foot if the tank ran dry).
   const backPlan = planPath(state, dest, home.tile, go.vehicle) || planPath(state, dest, home.tile, false);
   const backMode = go.vehicle && planPath(state, dest, home.tile, go.vehicle) ? go.vehicle : false;
@@ -569,7 +620,7 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
   const hours = hoursOut + hoursBack + 6; // out, back, plus time on site
   const n = memberIds.length;
   // Hours the weather adds (or, rarely, saves) against the same trip in fair weather: shown by the planner.
-  const fairOut = travelHours(state, out.path, { vehicle: mode, ...po, fuel: mode === true ? fuel ?? Infinity : 0, weather: false }).hours;
+  const fairOut = travelHours(state, out.path, { vehicle: mode, ...po, progress: start, fuel: mode === true ? fuel ?? Infinity : 0, weather: false }).hours;
   const fairBack = backPlan ? travelHours(state, backPlan.path, { ...backOpts, weather: false }).hours : fairOut;
   // Rations: more on the move while loaded (load.js), the 6 hours on site at the plain rate; hour by hour (riding
   // first, then on foot if the tank runs dry; 6 hours on site), each at its day's cold (no camp fire on such a trip,
@@ -581,9 +632,11 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
   const drink = waterForHours(state, state.hour, segs);
   return {
     path: out.path,
-    hoursOut, hoursBack, hours, noWayBack: !backPlan, // noWayBack: the team could get there but not home (the autopilot never sends one)
+    hoursOut, hoursBack, hours, noWayBack: !backPlan,
+    exactOut: go.exact, // to the minute it gets there (arrivalsDue): the planner and the log say this, less the minutes gone // noWayBack: the team could get there but not home (the autopilot never sends one)
     weatherOut: hoursOut - fairOut, weatherBack: hoursBack - fairBack,
-    arriveHour: state.hour + hoursOut,
+    arriveHour: state.hour + hoursOut, // the hour that ticks as it gets there
+    arriveAt: state.hour + go.exact, // the clock time it gets there, to the minute (arrivalsDue)
     dryAt: go.dryAt,
     days: hours / 24,
     food: Math.ceil(eat - 1e-9),
@@ -759,6 +812,8 @@ export function launchExpedition(state, opts) {
   // much as the crew can carry on top of its supplies; opts.siegeKit false: none).
   const siegeKit = mission === "assault" && opts.siegeKit !== false ? packSiegeKit(home, p.cargo, members, Math.max(0, cap - load)) : [];
   weighTeam(state, p); // its pace, rations and fuel for the trip (load.js): the same numbers as the estimate
+  // Set off this minute: the part of the hour already gone on the clock is not travelled (estimateTrip did the same).
+  if (clockFrac(state) > 0) p.progress = p.planProgress = -clockFrac(state) * partySpeed(p);
   // A plan from the planner (plans.js): the steps after the target become the order queue.
   if (opts.plan) applyPlan(state, p, opts.plan);
   const days = Math.ceil((opts.plan ? p.plannedHours : est.hours) / 24);
@@ -769,7 +824,7 @@ export function launchExpedition(state, opts) {
     opts.plan ? ` Plan: ${p.plan.name}${p.orders.length ? ` (${queueText(state, p)})` : ""}.${waits ? " Then it waits for orders." : ""}` : stays ? " The team waits there for orders." : "";
   if (lights.length) log(state, `${teamName(state, p)} takes lights from the armory: ${lights.join(", ")}.`, "info");
   if (siegeKit.length) log(state, `The assault team takes siege kit from the armory: ${siegeKit.join(", ")}.`, "info");
-  if (!opts.quiet) log(state, `${teamName(state, p)} left for ${tileLabel(state, dest)}${bikes ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}. Arrives in about ${est.hoursOut}h${waits ? "" : `; back in about ${days} day${days === 1 ? "" : "s"}`}.${after}`, "info");
+  if (!opts.quiet) log(state, `${teamName(state, p)} left for ${tileLabel(state, dest)}${bikes ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}. Arrives in about ${clockText(est.exactOut - clockFrac(state))}${waits ? "" : `; back in about ${days} day${days === 1 ? "" : "s"}`}.${after}`, "info");
   return { party: p };
 }
 
@@ -904,28 +959,157 @@ function blockDelay(state, p, i, hour) {
 export const partyTile = (p) => p.path[p.idx];
 
 // Where a moving team is part-way through the coming hour, frac (0–1) of it gone: the map draws it gliding between
-// tiles as the minutes pass (main.js). The same stepping as stepAlong (the hour's weather, a delay paid off first),
-// on a copy: nothing in the sim changes. Returns { from, to, t }: t of the way from tile `from` to `to`.
-// A team that gets where it is going (or to a closed bridge) before the hour is out stays there for the rest of the
-// hour: { from: the tile before, to: that tile, t: 1 }, never a fall back to the tile the sim still has it on (the
-// sim moves it when the hour ticks). held: the team holds this hour (a card of its waits in the tray, ui/pacing.js
-// holdsNextHour): it does not move on, so it does not glide either.
+// tiles as the minutes pass (main.js). One source of truth with the sim: the hour is stepped on a copy exactly as the
+// tick will step it (hourCourse: stepAlong, the road blockages of playerPartyHour, the hour's weather, a delay paid
+// off first), and the team is drawn along that course. Nothing in the sim changes. Returns { from, to, t, sit }: t of
+// the way from tile `from` to `to`; sit: a wait drawn on the spot ({ kind: "road" | "repair" | "delay", mins } with the
+// minutes left of it), else null.
+// A team whose move ends this hour arrives at the minute the glide reaches the centre of its destination (the main
+// loop's arrivalsDue: the sim marks the arrival then, so it never stands there waiting for the hour to tick). A convoy
+// still arrives as the hour ticks, so its glide spreads the rest of its way over the whole hour and gets there exactly
+// then. A wait owed from before (a blockage, a repair, the minutes of the hour already gone when the order was given:
+// moveStartProgress) is sat out first, as the tick pays it first.
+// held: the team holds this hour (a card of its waits in the tray, ui/pacing.js holdsNextHour): it does not move on,
+// so it does not glide either.
 /** @param {State} state @param {Party} p @param {number} frac @param {boolean} [held] */
 export function glideAt(state, p, frac, held = false) {
   const at = partyTile(p);
-  if (!onTheMove(p)) return { from: at, to: at, t: 0 };
-  let prog = (p.progress || 0) + (held ? 0 : partySpeed(p) * Math.max(0, Math.min(1, frac)));
-  const hour = state.hour + 1; // the hour being travelled (tickHour moves the clock on, then the teams)
-  // Where it stops: the tile reached, held there (t 1 on the step into it) or not moved off the start at all.
-  const stop = (i) => (i > p.idx ? { from: p.path[i - 1], to: p.path[i], t: 1 } : { from: at, to: at, t: 0 });
-  for (let i = p.idx; i < p.path.length - 1; i++) {
-    const from = p.path[i], to = p.path[i + 1];
-    const cost = stepCost(state, p, i, hour);
-    if (!(cost > 0) || !isFinite(cost)) return stop(i);
-    if (prog < cost) return prog > 0 || i === p.idx ? { from, to, t: Math.max(0, prog / cost) } : stop(i);
-    prog -= cost + blockDelay(state, p, i, hour); // a road blockage holds it up on the tile (playerPartyHour)
+  if (!onTheMove(p)) return { from: at, to: at, t: 0, sit: null };
+  const c = hourCourse(state, p, held);
+  const f = Math.max(0, Math.min(1, frac));
+  const u = c.uAt(f);
+  const { k, pos: raw } = courseAt(c, u);
+  const pts = c.pts, a = pts[k - 1], b = pts[k] || a;
+  const pos = eased(state, p, c, f, raw);
+  // A wait: the minutes left of it on the clock (a wait the hour does not finish goes on into the next).
+  let sit = null;
+  if (b.sit && b.u > a.u && u >= a.u - 1e-9 && u < b.u - 1e-9) {
+    const kind = b.sit === "road" || (b.sit === "owed" && p.roadblock && state.hour - p.roadblock.hour <= 4) ? "road" : p.delayWhy && p.delayWhy.kind === "repair" ? "repair" : "delay";
+    const hrs = c.fracAt(b.u) - f + (k === pts.length - 1 && !c.arrive && c.owedAfter > 0 && c.speed > 0 ? c.owedAfter / c.speed : 0);
+    sit = { kind, mins: Math.max(1, Math.round(hrs * 60)) };
   }
-  return stop(p.path.length - 1);
+  const last = p.path.length - 1;
+  if (pos >= last - 1e-9) return { from: p.path[last - 1], to: p.path[last], t: 1, sit };
+  const i = Math.floor(pos + 1e-9), t = pos - i;
+  if (t <= 1e-9) return i > p.idx ? { from: p.path[i - 1], to: p.path[i], t: 1, sit } : { from: at, to: p.path[p.idx + 1], t: 0, sit };
+  return { from: p.path[i], to: p.path[i + 1], t, sit };
+}
+
+// Teams of yours that get where they are going part-way through the coming hour arrive at that minute, not when the
+// hour ticks: the main loop calls this every frame with the minutes gone (frac, main.js), so a team stops on the centre
+// of its destination as the glide gets it there, and is waiting (or at work, or home) from then on. The hour's move is
+// the one the tick would make (moveHour, the same course as hourCourse and glideAt), stepped now; the tick then leaves
+// the team's move alone (p.movedHour) unless a new order sets it off again. Not for a team held by a card in the tray
+// (held), nor for convoys (they keep to the hour). The headless tools never call it: their teams arrive as the hour
+// ticks, as before.
+/** @param {State} state @param {number} frac @param {(p: Party) => boolean} [held] */
+export function arrivalsDue(state, frac, held = () => false) {
+  let any = false;
+  for (const p of [...state.parties]) {
+    if (!state.parties.includes(p) || !arrivesOnTime(p) || !onTheMove(p) || p.movedHour === state.hour + 1 || held(p)) continue;
+    const c = hourCourse(state, p);
+    if (!c.arrive || frac + 1e-9 < c.arriveFrac) continue;
+    p.movedHour = state.hour + 1;
+    moveHour(state, p, state.hour + 1);
+    any = true;
+  }
+  return any;
+}
+// Teams that arrive at the minute (arrivalsDue); the others glide on to the hour.
+/** @param {Party} p */
+const arrivesOnTime = (p) => p.owner === "player" && p.kind !== "convoy";
+
+// The place on a course at progress u (pos: i + the share of the step from path[i] to path[i + 1]) and the waypoint
+// the stretch ends at (k).
+/** @param {ReturnType<typeof hourCourse>} c @param {number} u */
+function courseAt(c, u) {
+  const pts = c.pts;
+  let k = 1;
+  while (k < pts.length - 1 && pts[k].u < u) k++;
+  const a = pts[k - 1], b = pts[k] || a;
+  const pos = b.u > a.u ? a.pos + (b.pos - a.pos) * Math.max(0, Math.min(1, (u - a.u) / (b.u - a.u))) : u >= b.u ? b.pos : a.pos;
+  return { k, pos };
+}
+// The pace changed part-way through the hour (a new stance, a card answered that held the team, a load dropped): the
+// tick moves the whole hour at the new pace, so the course jumps ahead or back at once. The map eases from where it
+// last drew the team onto the new course by the end of the hour instead: behind it, closing the gap; ahead of it,
+// waiting where it was until the course catches up. Drawing only (one note per team, the sim never reads it).
+/** @type {WeakMap<object, any>} */
+const GLIDE_NOTE = new WeakMap();
+/** @param {State} state @param {Party} p @param {ReturnType<typeof hourCourse>} c @param {number} f @param {number} raw */
+function eased(state, p, c, f, raw) {
+  let m = GLIDE_NOTE.get(p);
+  if (!m || m.hour !== state.hour || m.idx !== p.idx || m.path !== p.path || m.progress !== p.progress) {
+    m = { hour: state.hour, idx: p.idx, path: p.path, progress: p.progress, speed: c.speed, ease: null, f, pos: raw };
+    GLIDE_NOTE.set(p, m);
+  } else if (Math.abs(m.speed - c.speed) > 1e-9) {
+    m.speed = c.speed;
+    m.ease = m.f < 1 ? { f: m.f, pos: m.pos, off: m.pos - courseAt(c, c.uAt(m.f)).pos } : null;
+  }
+  let pos = raw;
+  const e = m.ease;
+  if (e && f >= e.f && Math.abs(e.off) > 1e-9) {
+    const left = (1 - f) / (1 - e.f);
+    pos = e.off < 0 ? raw + e.off * left : Math.max(e.pos, raw + e.off * left);
+  }
+  m.f = f;
+  m.pos = pos;
+  return pos;
+}
+
+// The coming hour of a moving team as the tick will step it, as waypoints along its way: pts [{ u, pos, sit }] with u
+// the progress spent so far this hour (0 to its pace) and pos the place on the way; sit on a waypoint: the stretch up
+// to it is a wait on the spot ("owed": a delay owed from before, "road": a blockage met this hour). arrive: the tick
+// ends the move (the destination, or the foot of a bridge closed since the way was planned). uAt(frac): the progress
+// drawn at that share of the hour (a move ending this hour spread over all of it); fracAt(u) the other way round.
+// owedAfter: progress still owed when the hour ends (a wait going on into the next hour).
+/** @param {State} state @param {Party} p @param {boolean} [held] */
+export function hourCourse(state, p, held = false) {
+  const speed = held || p.movedHour === state.hour + 1 ? 0 : Math.max(0, partySpeed(p));
+  const hour = state.hour + 1; // the hour being travelled (tickHour moves the clock on, then the teams)
+  const last = p.path.length - 1;
+  // The place a team holding `prog` on the step from path[i] is drawn at (its share of the step at that hour's cost):
+  // the end of one hour and the start of the next agree, as the next hour's step is costed at its own hour.
+  const posAt = (i, prog, h) => {
+    if (i >= last) return last;
+    const cost = stepCost(state, p, i, h);
+    return i + (prog > 0 && cost > 0 && isFinite(cost) ? Math.min(1, prog / cost) : 0);
+  };
+  const prog0 = p.progress || 0;
+  const start = posAt(p.idx, prog0, hour);
+  /** @type {{ u: number, pos: number, sit?: string }[]} */
+  const pts = [{ u: 0, pos: start }];
+  const d0 = Math.max(0, -prog0); // owed: paid before it moves
+  let P = prog0 + speed, i = p.idx, arrive = false;
+  if (speed > 0) {
+    if (d0 > 0 && d0 < speed) pts.push({ u: d0, pos: start, sit: "owed" });
+    while (i < last) {
+      const cost = stepCost(state, p, i, hour);
+      if (!(cost > 0) || !isFinite(cost)) { arrive = true; break; } // the sim cuts the way here (stepAlong) and the move ends
+      if (P < cost) break;
+      P -= cost;
+      i += 1;
+      const uIn = speed - P; // the progress spent when it enters path[i]
+      pts.push({ u: uIn, pos: i });
+      if (i >= last) break;
+      const bd = blockDelay(state, p, i - 1, hour); // a road blockage holds it up on the tile (playerPartyHour)
+      if (bd > 0) {
+        P -= bd;
+        pts.push({ u: Math.min(speed, uIn + bd), pos: i, sit: "road" });
+      }
+    }
+  }
+  if (i >= last) arrive = true;
+  if (!arrive && pts[pts.length - 1].u < speed) pts.push({ u: speed, pos: posAt(i, P, hour + 1), ...(P <= 0 ? { sit: pts[pts.length - 1].sit === "road" ? "road" : "owed" } : {}) });
+  if (pts.length === 1) pts.push({ u: speed, pos: start });
+  const uEnd = arrive ? pts[pts.length - 1].u : speed;
+  // A convoy's move ending this hour (it arrives as the hour ticks): the wait owed is sat out as it comes, the rest of
+  // the way spread over the rest of the hour, so it is not drawn there early. A team arrives at the minute itself.
+  const a = Math.min(d0, uEnd), stretch = arrive && speed > a && !arrivesOnTime(p) ? (uEnd - a) / (speed - a) : 1;
+  const uAt = (f) => { const u = f * speed; return u <= a ? u : a + (u - a) * stretch; };
+  const fracAt = (u) => (speed <= 0 ? 1 : u <= a ? u / speed : (a + (u - a) / (stretch || 1)) / speed);
+  // arriveFrac: the share of the hour gone when the move ends (arrivalsDue).
+  return { pts, speed, arrive, arriveFrac: arrive ? (speed > 0 ? fracAt(uEnd) : 0) : 1, uAt, fracAt, owedAfter: arrive ? 0 : Math.max(0, -P) };
 }
 
 /** @param {State} state @param {Party} p */
@@ -1003,13 +1187,26 @@ function playerPartyHour(state, p) {
     if (state.parties.includes(p)) updateRadio(state, p);
     return;
   }
+  // Moved this hour already: it got where it was going part-way through the hour (arrivalsDue).
+  if (p.movedHour === state.hour) {
+    updateRadio(state, p);
+    return;
+  }
+  moveHour(state, p, state.hour);
+}
+
+// A team's hour on the move: the tiles it enters (stepAlong), what it meets on them, the road's hazards, and its
+// arrival. hour: the hour travelled (state.hour at the tick; the coming hour when it arrives part-way through it,
+// arrivalsDue).
+/** @param {State} state @param {Party} p @param {number} hour */
+function moveHour(state, p, hour) {
   const pace = partySpeed(p), rolling = p.idx < p.path.length - 1;
-  let entered = stepAlong(state, p, pace);
+  let entered = stepAlong(state, p, pace, hour);
   if (rolling) repairPaid(p, pace, entered.length > 0); // repairwait.js: an hour on the road pays off a breakdown repair's wait
   for (let k = 0; k < entered.length; k++) {
     const tileId = entered[k], block = p.roadblock;
     thinIceStep(state, p, tileId); // rivers.js: thin ice may give way under a team on foot
-    onEnterTile(state, p, tileId);
+    onEnterTile(state, p, tileId, hour);
     if (!state.parties.includes(p) || p.phase === "engaged") return;
     // A road blockage (roadblocks.js) holds the team up where it met it: the tiles it would have gone on to this hour
     // are given back and stepped again on what the delay leaves of the hour (none if it takes all of it), so the
@@ -1017,9 +1214,9 @@ function playerPartyHour(state, p) {
     if (p.roadblock !== block && k < entered.length - 1) {
       const at = p.path.lastIndexOf(tileId, p.idx);
       if (at < 0) continue;
-      for (let i = at; i < p.idx; i++) p.progress += stepCost(state, p, i);
+      for (let i = at; i < p.idx; i++) p.progress += stepCost(state, p, i, hour);
       p.idx = at;
-      entered = [...entered.slice(0, k + 1), ...stepAlong(state, p, 0)];
+      entered = [...entered.slice(0, k + 1), ...stepAlong(state, p, 0, hour)];
     }
   }
   // Storms and blizzards: a small chance each hour on the road that someone is hurt (weather.js).
@@ -1056,8 +1253,8 @@ function consume(state, p, members) {
 /** @param {Party} p */
 export const starving = (p) => !!(p.noFood || p.noWater);
 
-/** @param {State} state @param {Party} p @param {number} tileId */
-function onEnterTile(state, p, tileId) {
+/** @param {State} state @param {Party} p @param {number} tileId @param {number} [hour] the hour travelled */
+function onEnterTile(state, p, tileId, hour = state.hour) {
   const members = partyMembers(state, p);
   if (p.vehicle) {
     const v = partyVehicle(state, p);
@@ -1076,7 +1273,7 @@ function onEnterTile(state, p, tileId) {
       else leaveVehicle(state, p, tileId, "out of fuel");
     } else {
       if (isLoud(v) && p.owner === "player") truckEngineNoise(state, p, tileId); // miltrucks.js: the Army truck's engine draws the dead
-      if (onRoad) roadblockOnEnter(state, p, tileId, partySpeed(p), p.kind === "convoy" ? "the convoy" : teamName(state, p), tileLabel(state, tileId)); // roadblocks.js: stalled cars, a fallen tree
+      if (onRoad) roadblockOnEnter(state, p, tileId, partySpeed(p), p.kind === "convoy" ? "the convoy" : teamName(state, p), tileLabel(state, tileId), hour); // roadblocks.js: stalled cars, a fallen tree
     }
   }
   // Sight and perception: what the team sees is held until they return (or reported live by radio).
@@ -1373,11 +1570,13 @@ export function orderMove(state, p, tile) {
   if (p.phase === "task" && p.task?.afloat) return "The team is out on the water. Give the order once it lands.";
   const res = planPath(state, partyTile(p), tile, p.vehicle);
   if (!res) return p.vehicle ? "The vehicle cannot get there. Leave it or pick another tile." : "No route there over land. Water in the way? Build a boat from the shore (team panel).";
+  const progress = moveStartProgress(state, p, res.path); // before the team's way changes
   p.mission = "move";
   p.dest = tile;
   p.path = res.path;
   p.idx = 0;
-  p.progress = Math.min(0, p.progress);
+  p.progress = progress;
+  delete p.movedHour; // a new move: the tick moves it (it may have arrived somewhere earlier this hour)
   p.phase = "out";
   p.task = null; // breaks camp or stops other work on the spot
   p.orderStart = state.hour;
@@ -1869,9 +2068,11 @@ export function startReturn(state, p) {
       leaveVehicle(state, p, partyTile(p), "no road home");
     }
   }
+  const progress = res ? moveStartProgress(state, p, res.path) : Math.min(0, p.progress); // before the team's way changes
   p.path = res ? res.path : [partyTile(p)];
   p.idx = 0;
-  p.progress = Math.min(0, p.progress);
+  p.progress = progress;
+  delete p.movedHour; // a new move: the tick moves it
   p.phase = "back";
   p.task = null;
   p.orders = []; // heading home ends the queue

@@ -2,7 +2,7 @@
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
-import { partyTile, plannedTile, outpostScrap, glideAt, partyMembers } from "../sim/parties.js";
+import { partyTile, plannedTile, outpostScrap, glideAt, partyMembers, clockText } from "../sim/parties.js";
 import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
 import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card does not glide
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
@@ -51,7 +51,7 @@ const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the he
 export const camera = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_LAYERS = ["pois", "territory", "teams", "hordes", "deaths", "vehicles", "finds", "weather"];
 // hourFrac: how much of the coming hour has gone by (main.js): your moving teams glide between tiles by it.
-export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0, pick: null }; // pick: "kind:id" ringed in gold (ui/mapselect.js)
+export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0, clockSpeed: 1, pick: null }; // pick: "kind:id" ringed in gold (ui/mapselect.js)
 const on = (k) => view.layers.has(k);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -995,6 +995,8 @@ const last = { detail: true, canvas: null, cw: -1, ch: -1, state: null, live: nu
 let forceDraw = true;
 let glidingNow = false; // a team of yours was drawn between two tiles this frame (drawPlayerParty)
 const GLIDE_STEPS = 600; // the map is drawn again each 1/600 of an hour while a team glides (30 a second at 1×)
+// The same 30 a second below 1× (0.5×, 0.25×: an hour takes 40 or 80 seconds), so a glide never steps along.
+const glideSteps = () => GLIDE_STEPS / Math.max(0.25, Math.min(1, view.clockSpeed || 1));
 // A cheap fingerprint of what moves on the map between ticks (orders given while paused, a base built, a horde).
 function moverHash(state) {
   let h = state.parties.length * 7919 + state.markers.length * 104729 + state.bases.length * 15485863 + (state.hiveSites ? state.hiveSites.length : 0) + (state.hiveGrowths ? state.hiveGrowths.length * 613 : 0);
@@ -1016,7 +1018,7 @@ function unchanged(state, now) {
   let layers = "";
   for (const k of view.layers) layers += k + ",";
   const live = liveSet(state), hash = moverHash(state), plen = view.preview ? view.preview.length : -1;
-  const fk = last.glide ? Math.floor(hourFrac() * GLIDE_STEPS) : 0;
+  const fk = last.glide ? Math.floor(hourFrac() * glideSteps()) : 0;
   const same = !forceDraw && last.canvas === canvas && last.cw === canvas.width && last.ch === canvas.height && last.state === state &&
     last.live === live && last.know === state.knowledge && last.hour === state.hour && last.x === camera.x && last.y === camera.y &&
     last.zoom === camera.zoom && last.dpr === dpr && last.hover === view.hover && last.sel === view.selected && last.preview === view.preview &&
@@ -2000,6 +2002,8 @@ function lightGlow(state, p, x, y) {
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
 }
+// The pill over a team waiting on its way (glideAt sit kinds).
+const SIT_LABEL = { road: "Clearing road", repair: "Repairing", delay: "Held up" };
 function drawPlayerParty(state, p) {
   const g = state.grid;
   const color = p.kind === "convoy" ? "#c9e07a" : p.phase === "waiting" ? "#ffd166" : p.phase === "task" ? PAL.task : "#7fd0ff";
@@ -2091,7 +2095,13 @@ function drawPlayerParty(state, p) {
     if (p.phase === "waiting") badge(px, py, "alert", "#ffd166");
     else if (p.phase === "task" && !camping) badge(px, py, "work");
     else if (p.kind !== "convoy" && p.radioLive && !state.timelapse) badge(px, py, "radio"); // timelapse: everything is live
-    if (heldUp(state, p)) pill(px, py - (p.crewName ? 34 : 22) * zoomBoost(), "Road blocked", "#8a5a1c", zoomBoost()); // sim/roadblocks.js (above a crew's name)
+    // A wait on the way, with the minutes left of it (sim/parties.js glideAt: the same course the hour will take):
+    // a road blockage being cleared, a repair, another delay. Above a crew's name.
+    // (Drawn still, the team stands where the hour began: the wait is read at the clock's real minutes.)
+    const sit = gl && readable.still ? glideAt(state, p, view.hourFrac || 0, holdsNextHour(state, p)).sit : gl && gl.sit;
+    const wait = sit ? sit : !gl && heldUp(state, p) ? { kind: "road", mins: 0 } : null;
+    if (wait && !state.timelapse) glidingNow = true; // its minutes count down: drawn again as the clock moves
+    if (wait) pill(px, py - (p.crewName ? 34 : 22) * zoomBoost(), `${SIT_LABEL[wait.kind] || "Held up"}${wait.mins ? ` ${clockText(wait.mins / 60)}` : ""}`, "#8a5a1c", zoomBoost());
     crewTag(p, px, py);
     return;
   }
