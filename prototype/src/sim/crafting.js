@@ -19,7 +19,7 @@ import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf } from "
 import { workFactor } from "./health.js";
 import { hasPerk, hash01, gainXp } from "./skills.js";
 import { craftLock, craftEdgeQuality, craftEdgeSpeed } from "./blueprints.js";
-import { stockHas, useStock, teamWaterIn, takeTeamWater, waterIn, RAW } from "./water.js"; // recipes: water counts both kinds, un-purified used first
+import { stockHas, useStock, teamWaterIn, takeTeamWater, waterIn, RAW, keyWord } from "./water.js"; // recipes: water counts both kinds, un-purified used first
 import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
 const carriedRounds = (p) => totalRounds(p.supplies) + totalRounds(p.cargo && p.cargo.supplies);
 import { WORM, rawWaterEggs, purifyCap } from "./worm.js"; // TABS_WATER: what one purification tablet treats (the recipe text); the filters in use
@@ -163,7 +163,7 @@ const needsText = (r) => (!r.needs ? "a crafting bench" : r.needs === "workshop"
 // Short description of what a recipe makes (for the UI).
 export function craftOutputText(key) {
   const r = CRAFTS[key];
-  if (r.supplies) return Object.entries(r.supplies).map(([k, v]) => `+${v} ${k}`).join(", ");
+  if (r.supplies) return Object.entries(r.supplies).map(([k, v]) => `+${v} ${keyWord(k)}`).join(", ");
   const d = GEAR[r.gear];
   const bits = [];
   // What the thing does, by kind: weapons have power, armor has armor, packs carry, tools give their bonus.
@@ -289,7 +289,7 @@ export function canCraft(state, base, key) {
   if (craftQueue(base).length >= MAX_CRAFT_QUEUE) return { ok: false, reason: `Queue is full (${MAX_CRAFT_QUEUE})` };
   if (!meetsNeeds(base, r)) return { ok: false, reason: `Needs ${needsText(r)} here` };
   if (!atBase(state, base.id).some((s) => canAttempt(s, r))) return { ok: false, reason: `Needs a ${attemptText(r)} survivor here` };
-  for (const [k, v] of Object.entries(r.in)) if (stockHas(base.stock, k) < v) return { ok: false, reason: `Needs ${v} ${k} (have ${Math.floor(stockHas(base.stock, k))})` };
+  for (const [k, v] of Object.entries(r.in)) if (stockHas(base.stock, k) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)} (have ${Math.floor(stockHas(base.stock, k))})` };
   for (const [k, v] of Object.entries(r.gearIn || {})) if (base.armory.filter((it) => it && it.key === k).length < v) return { ok: false, reason: `Needs ${v > 1 ? `${v} × ` : "a "}${GEAR[k].name} in the armory` };
   if (r.spent && (base.spentFilters || 0) < r.spent) return { ok: false, reason: "Needs a clogged water filter here (one is kept each time a filter clogs at this base)" };
   const lock = craftLock(state, key); // blueprints.js: advanced recipes need a studied blueprint
@@ -299,7 +299,7 @@ export function canCraft(state, base, key) {
 
 // What a recipe uses, for the screens: "1 scrap, 1 fuel, a Empty bottle".
 export function craftInText(r) {
-  return [...Object.entries(r.in).map(([k, v]) => `${v} ${k}`), ...Object.entries(r.gearIn || {}).map(([k, v]) => `${v > 1 ? `${v} × ` : ""}${GEAR[k].name.toLowerCase()}`)].join(", ");
+  return [...Object.entries(r.in).map(([k, v]) => `${v} ${keyWord(k)}`), ...Object.entries(r.gearIn || {}).map(([k, v]) => `${v > 1 ? `${v} × ` : ""}${GEAR[k].name.toLowerCase()}`)].join(", ");
 }
 
 export function queueCraft(state, base, key) {

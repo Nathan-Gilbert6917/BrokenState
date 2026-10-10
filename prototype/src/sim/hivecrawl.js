@@ -30,6 +30,7 @@
 // worm.js (one of the team turning inside); autopilot.js (hiveChoice, idleTeams: hiveCrawlAutoStep, the campaign's
 // estimates: crawlEstimate); factions.js groupHiveWar (groupHiveCrawl); ui/hivecrawl.js (the window), ui/hivecrawlsfx.js
 // (the pulse and the drone that grow with the warmth), ui/ui.js and main.js.
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
 import { hash01, gainXpAll, USE } from "./skills.js";
 import { SUPPLIES, GEAR } from "./data.js";
@@ -1170,8 +1171,8 @@ function give(state, p, c, sup = {}, gear = []) {
   for (const [k, q] of Object.entries(sup)) {
     if (!(q > 0) || !SUPPLIES[k]) continue;
     const take = Math.min(q, unitsThatFit(room, k));
-    if (take > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take; c.tally.supplies[k] = (c.tally.supplies[k] || 0) + take; room -= take * SUPPLIES[k].weight; got.push(`${take} ${k}`); }
-    if (q - take > 0) left.push(`${q - take} ${k}`);
+    if (take > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take; c.tally.supplies[k] = (c.tally.supplies[k] || 0) + take; room -= take * SUPPLIES[k].weight; got.push(`${take} ${keyWord(k)}`); }
+    if (q - take > 0) left.push(`${q - take} ${keyWord(k)}`);
   }
   for (const g of gear) {
     if (!g) continue;

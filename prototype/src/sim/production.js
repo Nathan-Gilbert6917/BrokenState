@@ -28,7 +28,7 @@ import { BUILDINGS, RECIPES, stations, recipeOutput } from "./buildings.js";
 import { CRAFTS, craftQueue, canCraft, queueCraft, craftQuality, craftName, benchQuality, canAttempt, craftSkill } from "./crafting.js";
 import { POWER_USERS, POWER_BOOST, STILL, isPowered, refreshPower } from "./power.js";
 import { isManaged } from "./work.js";
-import { stockHas } from "./water.js"; // a Keep-at-least order on water counts both kinds
+import { stockHas, keyWord } from "./water.js"; // a Keep-at-least order on water counts both kinds
 import { supplyAmt } from "./rounds.js"; // "ammo": every round there, any calibre
 import { reloadWork } from "./reloading.js"; // a reloading bench works its reloading orders whatever its station order holds
 
@@ -128,14 +128,14 @@ export function orderHold(state, base, st) {
     const k = productKey(st);
     const have = Math.floor(supplyAmt(base.stock, k) + 1e-9);
     const resume = o.n - untilMargin(o.n);
-    if (o.paused ? have >= resume : have >= o.n) return `Order met: ${have} of ${o.n} ${k} (starts again below ${Math.max(0, resume)})`;
+    if (o.paused ? have >= resume : have >= o.n) return `Order met: ${have} of ${o.n} ${keyWord(k)} (starts again below ${Math.max(0, resume)})`;
     return "";
   }
   if (o.mode === "keep") {
     const k = o.key;
     const use = st.id === RACK.id ? 0 : (stationIO(state, base, st).in[k] || 0);
     const have = stockHas(base.stock, k);
-    if (have - use < o.n) return `Keeps ${o.n} ${k} (${Math.floor(have)} here)`;
+    if (have - use < o.n) return `Keeps ${o.n} ${keyWord(k)} (${Math.floor(have)} here)`;
   }
   return "";
 }

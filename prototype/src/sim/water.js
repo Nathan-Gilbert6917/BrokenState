@@ -98,4 +98,4 @@ export function takeStock(o, k, qty) {
   return q;
 }
 // A supply key as a word in a text ("12 un-purified water", "12 scrap").
-export const keyWord = (k) => (k === RAW ? "un-purified water" : isRoundKey(k) ? SUPPLIES[k].name : k); // rounds: "9mm FMJ" (rounds.js)
+export const keyWord = (k) => (k === RAW ? "un-purified water" : isRoundKey(k) ? SUPPLIES[k].name : k === "ammo" ? "rounds" : k); // rounds: "9mm FMJ" (rounds.js); a generic count: "rounds" (any calibre)

@@ -56,7 +56,8 @@ import { gainXp, USE } from "./skills.js";
 import { diploRng, ensureDiplo, warsOf, enemyIn, warById, relation } from "./diplomacy.js";
 import { blueprintReward } from "./blueprints.js";
 import { askBaseName } from "./basenames.js"; // name an outpost handed to you
-import { supplyAmt, useSupply } from "./rounds.js"; // "ammo": every round there, any calibre
+import { supplyAmt, useSupply, spendAmmo } from "./rounds.js"; // "ammo": every round there, any calibre
+import { findRounds, kindTheme, suppliesText, baseCals } from "./ammo.js"; // rewards and hand-overs named by calibre
 
 export const JOBS = {
   RADIO_CHANCE: 0.06, FRIENDLY_CHANCE: 0.08, GATE_CHANCE: 0.6, OFFER_DAYS: 4, OFFER_GAP: 4, GATE_GAP: 3,
@@ -130,7 +131,7 @@ function deliverJob(state, f) {
   const value = qty * SUPPLIES[w.key].value;
   const why = f.shock && f.shock.key === w.key ? (w.key === "meds" ? "Sickness is going round" : w.key === "food" ? "They lost a harvest" : "They lost a store") : f.atWar && w.key === "ammo" ? "They are at war" : "They are running short";
   return { type: "deliver", target: f.bases[0], size: value < 60 ? 1 : value < 150 ? 2 : 3, data: { key: w.key, qty, left: qty, value },
-    desc: `${why}: they need ${qty} ${w.key}. Hand it over at their base with a team, or have it ready at your trade base and ask them to fetch it.` };
+    desc: `${why}: they need ${w.key === "ammo" ? `${qty} rounds (any calibre: their stores keep one count; the ones your guns need least go)` : `${qty} ${w.key}`}. Hand it over at their base with a team, or have it ready at your trade base and ask them to fetch it.` };
 }
 function rescueJob(state, f) {
   const rng = diploRng(state);
@@ -223,11 +224,14 @@ export function makeReward(state, f, type, size) {
     else if (k === "intel") r.intel = true;
     else if (k === "outpost") r.outpost = f.bases[f.bases.length - 1];
   }
+  // Rounds by calibre (2026-10-09, user request): a reward's ammo is the rounds their kind keeps (ammo.js findRounds),
+  // named on the card and paid by key.
+  if (r.supplies.ammo >= 1) { const n = r.supplies.ammo; delete r.supplies.ammo; for (const [k, q] of Object.entries(findRounds(kindTheme(f.type), n, "jobreward", f.id, type, size))) r.supplies[k] = (r.supplies[k] || 0) + q; }
   return r;
 }
 export function rewardText(state, r) {
   const parts = [`+${r.goodwill} goodwill`];
-  for (const [k, q] of Object.entries(r.supplies)) parts.push(`${q} ${k}`);
+  for (const [k, q] of Object.entries(r.supplies)) parts.push(suppliesText({ [k]: q })); // rounds named by calibre
   for (const k of r.gear) parts.push(GEAR[k] ? GEAR[k].name : k);
   if (r.blueprint) parts.push("a manual or blueprint from their shelves");
   if (r.recruits) parts.push(r.recruits === 1 ? "a recruit" : `${r.recruits} recruits`);
@@ -362,11 +366,12 @@ export function completeJob(state, job, how = "") {
     changeGoodwill(state, f, r.goodwill, "a job well done");
     f.lastDiplomacy = day(state);
     for (const [k, q] of Object.entries(r.supplies)) {
-      const n = Math.max(0, Math.min(q, Math.floor(f.stock[k] || 0)));
+      const fk = SUPPLIES[k] && SUPPLIES[k].round && !(f.stock[k] >= q) ? "ammo" : k; // a round key: out of their one ammo count (ammo.js)
+      const n = Math.max(0, Math.min(q, Math.floor(f.stock[fk] || 0)));
       if (!n) continue;
-      f.stock[k] -= n;
+      f.stock[fk] -= n;
       h.stock[k] = (h.stock[k] || 0) + n;
-      got.push(`${n} ${k}`);
+      got.push(suppliesText({ [k]: n })); // rounds named by calibre
     }
     const rng = diploRng(state);
     for (const k of r.gear) { const it = lootItem(k, traderSource(f.type), spend(rng)); h.armory.push(it); got.push(it.name); } // itemcond.js: as the group keeps its kit
@@ -374,7 +379,7 @@ export function completeJob(state, job, how = "") {
       // blueprints.js: one you neither know nor hold, fitting the group; none left: ammo instead.
       const bp = blueprintReward(state, f, `job${job.id}`);
       if (bp) { h.armory.push(bp); got.push(bp.name); }
-      else { h.stock.ammo = (h.stock.ammo || 0) + 40; got.push("40 ammo (they had no manual you lack)"); }
+      else { const rr = findRounds(kindTheme(f.type), 40, "jobbp", job.id); for (const [k, q] of Object.entries(rr)) h.stock[k] = (h.stock[k] || 0) + q; got.push(`${suppliesText(rr)} (they had no manual you lack)`); } // rounds by calibre: what their kind keeps
     }
     if (r.intel) { got.push(`a map (${intelFrom(state, f)} tiles)`); }
     if (r.outpost != null && f.bases.includes(r.outpost) && f.bases.length >= 2) {
@@ -520,7 +525,7 @@ function checkJob(state, j, teams) {
         takeSupply(p, d.key, n);
         f.stock[d.key] = (f.stock[d.key] || 0) + n;
         d.left -= n;
-        log(state, `Your team handed ${n} ${d.key} to ${f.name}${d.left > 0 ? ` (${d.left} still to bring)` : ""}.`, "info");
+        log(state, `Your team handed ${n} ${d.key === "ammo" ? "rounds" : d.key} to ${f.name}${d.left > 0 ? ` (${d.left} still to bring)` : ""}.`, "info");
       }
       if (d.left <= 0) return completeJob(state, j, "delivered");
       return;
@@ -616,7 +621,7 @@ export function pickupProblem(state, j) {
   if (state.parties.some((p) => p.pickupJob === j.id)) return "Their caravan is already on the way.";
   const base = tradeBase(state, f);
   if (!base) return `${f.name} cannot reach any of your bases over land.`;
-  if (j.type === "deliver" && Math.floor(base.stock[j.data.key] || 0) < j.data.left) return `${base.name} has ${Math.floor(base.stock[j.data.key] || 0)} of the ${j.data.left} ${j.data.key}: have it ready first.`;
+  if (j.type === "deliver" && Math.floor(supplyAmt(base.stock, j.data.key)) < j.data.left) return `${base.name} has ${Math.floor(supplyAmt(base.stock, j.data.key))} of the ${j.data.left} ${j.data.key === "ammo" ? "rounds" : j.data.key}: have it ready first.`; // "ammo": every round there
   return "";
 }
 export function requestPickup(state, id) {
@@ -638,13 +643,14 @@ export function pickupArrived(state, p, base) {
   if (j.type === "retrieve" && j.data.atHub) { completeJob(state, j, "they fetched it"); return true; }
   if (j.type !== "deliver") return false;
   const n = Math.min(j.data.left, Math.floor(supplyAmt(base.stock, j.data.key)));
+  let took = `${n} ${j.data.key}`;
   if (n > 0) {
-    useSupply(base.stock, j.data.key, n); // rounds.js: "ammo" as any rounds
-    p.goods.supplies[j.data.key] = (p.goods.supplies[j.data.key] || 0) + n;
+    if (j.data.key === "ammo") { const g = spendAmmo(base.stock, n, baseCals(state, base)).keys; took = suppliesText(g); for (const [k, q] of Object.entries(g)) p.goods.supplies[k] = (p.goods.supplies[k] || 0) + q; } // rounds by calibre: the ones the guns there need least
+    else { useSupply(base.stock, j.data.key, n); p.goods.supplies[j.data.key] = (p.goods.supplies[j.data.key] || 0) + n; }
     j.data.left -= n;
   }
-  if (j.data.left <= 0) completeJob(state, j, `they fetched it from ${base.name}`);
-  else log(state, `The ${f.name} caravan took ${n} ${j.data.key} from ${base.name}: ${j.data.left} still owed.`, "info");
+  if (j.data.left <= 0) completeJob(state, j, `they fetched it from ${base.name}${n > 0 && j.data.key === "ammo" ? ` (${took})` : ""}`);
+  else log(state, `The ${f.name} caravan took ${took} from ${base.name}: ${j.data.left} still owed.`, "info");
   return true;
 }
 
@@ -695,7 +701,7 @@ function rescueCard(state, j, p, f, holder) {
           awaitOrders(st, p, `${holder.name} would not listen.`);
           return `${holder.name} would not listen.`;
         } },
-      { label: payKey ? `Pay ${payQty} ${payKey}` : "Pay (not enough carried)", hint: `40 a head, from what the team carries`, disabled: !payKey,
+      { label: payKey ? `Pay ${payQty} ${payKey === "ammo" ? "rounds (the calibres your guns need least)" : payKey}` : "Pay (not enough carried)", hint: `40 a head, from what the team carries`, disabled: !payKey,
         ai: () => (payKey ? 2 : -9), resolve: (st) => {
           if (gone(st) || !payKey || carried(p, payKey) < payQty) return "The team cannot pay that now.";
           takeSupply(p, payKey, payQty);

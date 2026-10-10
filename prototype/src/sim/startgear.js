@@ -48,7 +48,8 @@ import { CALIBERS } from "./data-ammo.js";
 import { ATTACH, SLOTS as GUN_SLOTS, fitMod, fitsSlot, stripMod, makeMod, takesMods } from "./gunmods.js";
 import { KIT_LOOT } from "./data-kit.js";
 import { newItem, startKit, ensureInv, packOf, rigOf, rigPouches, pouchesOf, pouchKindOf, pouchReason, packSize, isBulky, isSmall, fitReason, POCKETS } from "./inventory.js";
-import { calOf, addRecord } from "./ammo.js";
+import { calOf, addRecord, capRounds } from "./ammo.js";
+import { ROUND_SUPPLIES } from "./data-ammo.js";
 import { keyFor } from "./rounds.js";
 import { starterMags } from "./carrykit.js";
 import { standardMag, magFitsGun, fittedMag, usesInternal } from "./mags.js";
@@ -430,7 +431,9 @@ export function normalStartGear(state, base) {
 // ---------- the vehicle's back ----------
 // What the back can be loaded with on the new-run screen: at most this much of each supply and ITEMS things (and no
 // more than the vehicle's payload: ui/startgear.js). Priced like anything else (custompoints.js).
-export const START_TRUNK = { SUPPLIES: { food: 60, water: 60, fuel: 40, meds: 20, ammo: 300, arrows: 60, scrap: 40, parts: 20 }, ITEMS: 16 };
+// Rounds go by calibre and type (2026-10-09, user request: "All ammo should be based on caliber"): any round keys,
+// ROUNDS in all; a back saved with a generic "ammo" number gets the common rounds of the guns in it (9mm and 12 gauge).
+export const START_TRUNK = { SUPPLIES: { food: 60, water: 60, fuel: 40, meds: 20, arrows: 60, scrap: 40, parts: 20 }, ROUNDS: 300, ITEMS: 16 };
 const TRUNK_CAPS = START_TRUNK.SUPPLIES, TRUNK_ITEMS = START_TRUNK.ITEMS;
 export const TRUNK_SUPPLIES = Object.keys(TRUNK_CAPS);
 // The vehicle's back made safe: { items: [keys] (at most TRUNK_ITEMS), supplies: { key: n } (TRUNK_CAPS) } or null.
@@ -442,6 +445,10 @@ export function sanitizeStartVehicle(raw) {
   /** @type {Record<string, number>} */
   const supplies = {};
   for (const [k, cap] of Object.entries(TRUNK_CAPS)) { const n = Math.round(Number(raw.supplies && raw.supplies[k])); if (n > 0) supplies[k] = Math.min(cap, n); }
+  /** @type {Record<string, number>} */
+  const cals = {};
+  for (const k of items) { const c = calOf(k); if (c) cals[c] = (cals[c] || 0) + 1; }
+  Object.assign(supplies, capRounds(raw.supplies, START_TRUNK.ROUNDS, cals)); // ammo.js: rounds by calibre
   return { items, supplies };
 }
 // What the back weighs (kg): its things and supplies.
@@ -478,7 +485,7 @@ export function trunkFromPicks(v) {
 export function grabStartGear(state, s, got) {
   const out = applyStartGear(s);
   if (!out) return null;
-  if (out.gun && !got.custom) { got.ammo = 0; got.arrows = 0; }
+  if (out.gun && !got.custom) { got.ammo = 0; got.roundKeys = {}; got.arrows = 0; }
   got.weapon = s.gear.weapon;
   got.armor = s.gear.armor;
   got.bag = s.gear.backpack;

@@ -8,6 +8,8 @@
 import { GEAR, TRAITS, SKILLS, clashIn } from "./data.js";
 import { VEHICLE_TYPES } from "./vehicles.js";
 import { cleanTier, tierCount } from "./traits.js"; // a trait's tier (traits.js TRAIT_TIERS)
+import { calOf, capRounds } from "./ammo.js"; // rounds by calibre
+import { ROUND_SUPPLIES, HAND_SUPPLIES } from "./data-ammo.js";
 
 export const CUSTOM_BG = {
   PREFIX: "c_",
@@ -17,8 +19,12 @@ export const CUSTOM_BG = {
   TRAITS: 3, // traits it gives (never two that clash: data.js TRAIT_CLASH); a colonist keeps at most TRAITS in all, the background's first
   ITEMS: 12, TRUNK_ITEMS: 10,
   // On them (on top of the team's clamped 1–3 days, like a prepper's bag) and in the car's back.
-  SUPPLY: { food: 30, water: 30, ammo: 200, arrows: 60, meds: 10 },
-  TRUNK: { food: 60, water: 60, fuel: 40, ammo: 300, meds: 20, scrap: 40, parts: 20 },
+  // Rounds go by calibre and type (2026-10-09, user request: "All ammo should be based on caliber"): any round keys
+  // (data-ammo.js a_<cal>_<type>), ROUNDS in all on them, TRUNK_ROUNDS in the back. A background saved with a generic
+  // "ammo" number has it turned into the common rounds of its guns (9mm and 12 gauge with none) when it is read.
+  SUPPLY: { food: 30, water: 30, arrows: 60, meds: 10 },
+  TRUNK: { food: 60, water: 60, fuel: 40, meds: 20, scrap: 40, parts: 20 },
+  ROUNDS: 200, TRUNK_ROUNDS: 300,
   CAR_ODDS: 10, // how likely the car is theirs against the others' (a preset is 0.7–1.6); 0: never theirs
   SLOTS: ["weapon", "tool", "armor", "head", "arms", "legs", "backpack"],
 };
@@ -31,6 +37,17 @@ export const carryOptions = () => Object.keys(GEAR).filter((k) => GEAR[k].slot !
 // The car's back holds anything.
 export const trunkOptions = () => Object.keys(GEAR);
 export const carTypes = () => Object.keys(VEHICLE_TYPES).filter((k) => VEHICLE_TYPES[k].motor);
+// The round keys a background can carry (every calibre and type; not the bench's handloads).
+export const roundOptions = () => Object.keys(ROUND_SUPPLIES).filter((k) => !HAND_SUPPLIES[k]);
+// The calibres of the guns a background names (worn, carried, in the car's back): { cal: guns }.
+export function bgCals(r, car = true) {
+  const out = {};
+  const keys = [r && r.gear && r.gear.weapon, ...((r && Array.isArray(r.items)) ? r.items : []), ...(car && r && r.car && Array.isArray(r.car.items) ? r.car.items : [])];
+  for (const k of keys) { const c = typeof k === "string" ? calOf(k) : null; if (c) out[c] = (out[c] || 0) + 1; }
+  return out;
+}
+// The rounds in a record ({ key: n }, launcher rounds too), all together.
+export const roundsOf = (rec) => Object.entries(rec || {}).reduce((a, [k, q]) => a + (ROUND_SUPPLIES[k] ? q : 0), 0);
 
 export function blankBackground(id) {
   return { id, name: "New background", blurb: "", skills: {}, traits: [], traitTier: {}, gear: {}, items: [], supplies: {}, car: { odds: 1, type: null, trunk: {}, items: [] } };
@@ -69,11 +86,11 @@ export function sanitizeBackground(raw, id = raw && raw.id) {
     name: str(r.name, C.NAME) || "Custom background",
     blurb: str(r.blurb, C.BLURB),
     skills, traits, traitTier, gear, items,
-    supplies: amounts(r.supplies, C.SUPPLY),
+    supplies: { ...amounts(r.supplies, C.SUPPLY), ...capRounds(r.supplies, C.ROUNDS, bgCals(r, false)) }, // ammo.js: generic ammo saved before rounds went by calibre becomes the common rounds of their guns
     car: {
       odds,
       type: carTypes().includes(car.type) ? car.type : null,
-      trunk: amounts(car.trunk, C.TRUNK),
+      trunk: { ...amounts(car.trunk, C.TRUNK), ...capRounds(car.trunk, C.TRUNK_ROUNDS, bgCals(r)) },
       items: (Array.isArray(car.items) ? car.items : []).filter((k) => trunkOk.has(k)).slice(0, C.TRUNK_ITEMS),
     },
     custom: true,

@@ -52,7 +52,7 @@ function makeOld(state, amounts) {
   const before = { hub: generic(h.stock), sup: generic(p.supplies), cargo: generic(p.cargo.supplies), out: generic(out.stock) };
   const loaded = loadFromString(saveToString(st));
   const h2 = loaded.bases.find((b) => b.id === h.id), p2 = loaded.parties.find((x) => x.id === p.id), o2 = loaded.bases.find((b) => b.id === out.id);
-  check(loaded.ammoCal === 1, "the save is marked migrated");
+  check(loaded.ammoCal >= 1, "the save is marked migrated");
   check(totalRounds(h2.stock) === before.hub && !generic(h2.stock), `the hub keeps its ${before.hub} rounds, by calibre (${showCals(h2.stock)})`);
   const hubCals = Object.keys(gunCals(loaded.survivors.filter((s) => s.alive && s.location.kind === "base" && s.location.baseId === h.id), h2.armory)).sort();
   check(JSON.stringify(calsIn(h2.stock)) === JSON.stringify(hubCals), `split across the calibres of the guns there (${calsIn(h2.stock).join(", ")} for ${hubCals.join(", ")})`);
@@ -114,7 +114,7 @@ function makeOld(state, amounts) {
     }
     check(same, `${file}: every stock of yours keeps its total${bad ? ` (${bad})` : ""}`);
     check(!left, `${file}: no generic ammo left in them`);
-    check(st.ammoCal === 1, `${file}: marked migrated`);
+    check(st.ammoCal >= 1, `${file}: marked migrated`);
   }
   check(n > 0 || !files.length, `${n} corpus saves checked`);
   if (!files.length) console.log("  (no corpus saves found)");

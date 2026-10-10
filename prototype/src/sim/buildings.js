@@ -10,14 +10,14 @@ import { refreshPower, generatorStatus, powerLine } from "./power.js";
 import { buildMult, hash01 } from "./skills.js";
 import { buildLock } from "./blueprints.js";
 import { cabinProblem } from "./hunting.js";
-import { stockHas, useStock } from "./water.js"; // recipes: water counts both kinds, un-purified used first
+import { stockHas, useStock, keyWord } from "./water.js"; // recipes: water counts both kinds, un-purified used first
 import { prisonBuildRate } from "./prisoners.js"; // prisoners-tab: prisoner labour on the build queue
 import { benchRounds } from "./ammo.js"; // the ammo bench makes rounds by calibre
 import { reloadStatus, runReload } from "./reloading.js"; // the reloading bench: an ammo bench upgraded in place
 import { livestockYield, PEN } from "./farming.js"; // the animal pen (station "livestock")
 
 export const RECIPES = {
-  ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 ammo per day (+4% per Mechanics point)" },
+  ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 rounds per day, the common rounds of the guns at the base (+4% per Mechanics point)" },
   meds:  { name: "Meds",  in: { scrap: 2, food: 1 }, out: { meds: 1 },  skill: "medicine",  desc: "2 scrap + 1 food → 1 meds per day (+1 with Medicine 8+, +1 with a staffed Clinic or better here)" },
   parts: { name: "Parts", in: { scrap: 6 },          out: { parts: 1 }, skill: "mechanics", minSkill: 4, desc: "6 scrap → 1 part per day (Mechanics 4+, otherwise half the time it fails)" },
   // storage.js: jarred food barely spoils and needs no cellar room; the jars come back when it is eaten at a base.
@@ -234,7 +234,7 @@ export function canUpgradeBarrel(state, base, id) {
   const next = WATER_BARREL.tiers[barrelTier(b) + 1];
   if (!next) return { ok: false, reason: "Already a water tank (the top tier)" };
   if (base.construction.some((c) => c.target === id)) return { ok: false, reason: "An upgrade is already queued" };
-  for (const [k, v] of Object.entries(next.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` };
+  for (const [k, v] of Object.entries(next.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)}` };
   return { ok: true, next };
 }
 export function queueBarrelUpgrade(state, base, id) {
@@ -267,7 +267,7 @@ export function canExpandBunkhouse(state, base, id) {
   if (base.construction.some((c) => c.target === id)) return { ok: false, reason: "It is being expanded already" };
   const queued = base.construction.filter((c) => c.type === "barracks").length;
   if (countAll(base, "barracks") + queued >= BUILDINGS.barracks.max) return { ok: false, reason: `Limit reached (${BUILDINGS.barracks.max} barracks)` };
-  for (const [k, v] of Object.entries(BARRACKS_UP.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` };
+  for (const [k, v] of Object.entries(BARRACKS_UP.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)}` };
   const lock = buildLock(state, base, "barracks");
   if (lock) return { ok: false, reason: lock, locked: true };
   return { ok: true };
@@ -313,7 +313,7 @@ export function demolish(state, base, id) {
   for (const s of atBase(state, base.id)) if (s.station === b.id) s.station = null;
   assignStations(state, base);
   const name = b.type === "water_barrel" ? barrelName(b) : BUILDINGS[b.type].name;
-  const got = Object.entries(back).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${k}`).join(", ");
+  const got = Object.entries(back).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${keyWord(k)}`).join(", ");
   log(state, `${name} at ${base.name} pulled down${got ? ` (${got} salvaged)` : ""}.`, "info");
   return `${name} pulled down${got ? `: ${got} salvaged` : ""}. Its plot is free.`;
 }
@@ -521,7 +521,7 @@ export function canBuild(state, base, type) {
     return { ok: false, noPlot: true, reason: cap ? `No free ${PLOT_NAMES[kind].toLowerCase()} (${plotsUsed(base, kind)}/${cap}): demolish something or build at a bigger base` : `A ${tierName(base).toLowerCase()} has no ${PLOT_NAMES[kind].toLowerCase()}s` };
   }
   if (type === "huntcabin" && cabinProblem(state, base)) return { ok: false, reason: `Hunting cabin: ${cabinProblem(state, base)}` };
-  if (!def.gather) for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` }; // gather: taken as it comes in
+  if (!def.gather) for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)}` }; // gather: taken as it comes in
   if (def.req) {
     for (const [sk, lvl] of Object.entries(def.req)) {
       if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };

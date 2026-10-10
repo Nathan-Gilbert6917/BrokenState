@@ -2,6 +2,7 @@
 // move, look around, camp, field repairs, treating someone, a mission on the spot, or going home.
 // When an order finishes and nothing else is queued, the team reports in with an orders card
 // (parties.js awaitOrders), which doubles as the "done, what next?" notice.
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { log, survivorById, baseById, hub } from "./world.js";
 import {
   MISSIONS, partyMembers, partyTile, tileLabel, teamName, bestSkill, orderMove, giveOrder, startReturn, awaitOrders,
@@ -428,7 +429,7 @@ export function startOrder(state, p, o) {
       const same = !o.mode || o.mode === plan.mode;
       const mats = (same && o.mats) || plan.mats;
       const short = Object.entries(mats).filter(([k, q]) => plan.have[k] < q);
-      if (short.length) return fail(`Boat: needs ${short.map(([k, q]) => `${q} ${k} (have ${plan.have[k]})`).join(", ")}. Gather materials on the shore or bring scrap.`);
+      if (short.length) return fail(`Boat: needs ${short.map(([k, q]) => `${q} ${keyWord(k)} (have ${plan.have[k]})`).join(", ")}. Gather materials on the shore or bring scrap.`);
       if (!plan.ok && !Object.keys(plan.missing).length) return fail(`Boat: ${plan.reason}`);
       const build = (same ? o.build : null) ?? plan.build, cross = (same ? o.cross : null) ?? plan.cross;
       startTask(state, p, { type: "cross", tile: o.tile, from, mode: plan.mode, mats, build, cross, hours: build + cross, risk: plan.risk });

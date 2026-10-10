@@ -1,4 +1,5 @@
 // Tactical combat screen: canvas battle map plus the side panel. Reads state.combat; all rules live in sim/combat.js.
+import { keyWord } from "../sim/water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import {
   volRefusal, VOL_ORDERS, MAP_W, MAP_H, CELL, COVER_DEF, active, unitAt, unitById, evacAt, reachable, pathTo, shotOdds, meleeOdds, retreatPlan, retreatRefusal,
@@ -1390,7 +1391,7 @@ function raidHead(state, b, phase) {
   const trunk = party ? trunkInfo(state, b) : null;
   const stage = Math.min(3, Math.floor(R.heat / 25));
   const left = R.containers.filter((c) => !c.searched && c.kind !== "body" && c.kind !== "ground").length;
-  const found = [...Object.entries(R.found).map(([k, n]) => `${n} ${k}`), ...R.foundGear.map((g) => g.name)];
+  const found = [...Object.entries(R.found).map(([k, n]) => `${n} ${keyWord(k)}`), ...R.foundGear.map((g) => g.name)];
   // A building's own map (sim/buildingmaps.js): its name, its ways out, people inside who are not placed yet.
   const I = R.interior;
   const exits = I && R.plan ? (R.plan.exits || []).filter((e) => e.zone >= 0).map((e) => e.name.toLowerCase()) : [];
@@ -1787,7 +1788,7 @@ function raidResult(state, b) {
   const r = b.result;
   const R = r.raid;
   const names = (ids) => ids.map((id) => esc((state.survivors.find((s) => s.id === id) || { name: "?" }).name)).join(", ");
-  const loot = [...Object.entries(r.loot.supplies).map(([k, n]) => `${n} ${k}`), ...r.loot.gear.map((g) => g.name)];
+  const loot = [...Object.entries(r.loot.supplies).map(([k, n]) => `${n} ${keyWord(k)}`), ...r.loot.gear.map((g) => g.name)];
   return `<div class="cbresult ${r.outcome === "extracted" ? "victory" : "defeat"}">
     <h2>${r.outcome === "extracted" ? "Got out" : "Nobody made it out"}</h2>
     <div class="kv small">

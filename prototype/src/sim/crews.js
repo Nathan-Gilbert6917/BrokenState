@@ -38,7 +38,7 @@ import { huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishK
 import { crewSurveyCands, surveySent } from "./survey.js";
 import { woodNeed, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, bestChop, woodcutterMult, WOOD } from "./woodcutting.js";
 import { packTripKit } from "./kit.js";
-import { stockHas, waterIn, RAW } from "./water.js"; // water counts both kinds
+import { stockHas, waterIn, RAW, keyWord } from "./water.js"; // water counts both kinds
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 
 export const CREW_HOUR = 7;        // crews plan their trip at 07:00 (like the governor)
@@ -310,7 +310,7 @@ function launchTeam(ctx, c) {
     if (over > 0 && sup[k]) sup[k] = Math.max((c.min && c.min[k]) || 0, sup[k] - Math.ceil(over / SUPPLIES[k].weight));
   }
   if (supplyLoad(sup) > cap) return { error: "too much to carry" };
-  for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return { error: `needs ${q} ${k}` };
+  for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return { error: `needs ${q} ${keyWord(k)}` };
   const r = crew.rules || {};
   const res = launchExpedition(state, {
     memberIds: ids, dest: c.tile, mission: c.mission, stance, vehicleId: v ? v.id : null, supplies: sup,
@@ -443,7 +443,7 @@ function tripOver(state, role) {
   const o = c.out;
   const back = o.members.map((id) => survivorById(state, id)).filter((s) => s && s.alive && s.location.kind === "base");
   const lost = o.members.length - back.length - o.members.map((id) => survivorById(state, id)).filter((s) => s && s.alive && s.location.kind !== "base").length;
-  const goods = Object.entries(o.cargo || {}).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${k}`);
+  const goods = Object.entries(o.cargo || {}).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${keyWord(k)}`);
   if (o.gear) goods.push(`${o.gear} item${o.gear === 1 ? "" : "s"}`);
   const result = back.length ? `home from ${tileLabel(state, o.tile)}${goods.length ? ` with ${goods.join(", ")}` : " with nothing"}` : `lost at ${tileLabel(state, o.tile)}`;
   const entry = { day: day(state), mission: o.mission, tile: o.tile, why: o.why, hours: state.hour - o.left, result: `${result}${lost > 0 ? ` (${lost} did not come back)` : ""}` };

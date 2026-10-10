@@ -421,7 +421,7 @@ const groupOf = (state, type) => {
     Object.assign(h.stock, { food: 5 }); setRounds(h.stock, 35);
     h.alert = true;
     const said = pay.resolve(st);
-    check(h.stock.food === 3 && totalRounds(h.stock) === 5 && raid.returning === true && /2 food, 30 ammo/.test(said), `tribute is 30% of the food on hand when paid (food ${h.stock.food}, ammo ${totalRounds(h.stock)})`);
+    check(h.stock.food === 3 && totalRounds(h.stock) === 5 && raid.returning === true && /2 food, \d+ [^)]*(FMJ|buckshot)[^)]*\)/.test(said) && !/30 ammo/.test(said), `tribute is 30% of the food on hand when paid (food ${h.stock.food}, ammo ${totalRounds(h.stock)}: ${said})`);
     check(h.alert === false, "the base stands down when the raid is bought off");
   }
   h.alert = true;
@@ -474,7 +474,7 @@ const groupOf = (state, type) => {
   deliverHelpCall(st, siege);
   const help = st.cards.pop();
   check(!help.text.includes(attacker.name), "a call for help does not name an attacker you have not met");
-  const send = pick(help, /^Send 40 ammo/);
+  const send = pick(help, /^Send 40 rounds/); // named by calibre (ammo.js payWord)
   setRounds(h.stock, 10); // ammo.js: rounds by calibre
   check(isOff(st, send), "\"Send 40 ammo\" is off without the ammo");
   send.resolve(st);

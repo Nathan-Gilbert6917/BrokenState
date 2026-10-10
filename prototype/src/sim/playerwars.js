@@ -51,6 +51,8 @@
 // infamy +INFAMY unless it was a hostile aggressive group. The same weariness and terms; they sue when worn out.
 import { day, log, hub, factionById, addCard, alive, atBase, supplyValue, playerStrength, baseById, checkGameOver } from "./world.js";
 import { SUPPLIES } from "./data.js";
+import { totalRounds, spendAmmo } from "./rounds.js"; // tribute in rounds by calibre
+import { findRounds, kindTheme } from "./ammo.js";
 import { hash01 } from "./skills.js";
 import { attitude, changeGoodwill, strength, isAggressiveType, launchRaidOnBase, playerRaidWeight, nearestOwnBase, RAIDS } from "./factions.js";
 import { noteStrife, SPLINTER } from "./splinters.js"; // a war on you they lost stirs strife (splinter bands)
@@ -438,9 +440,17 @@ export const pwarTeamRange = (state, f) => (atWarWithYou(state, f) ? PW.TEAM_RAN
 // ---------- terms ----------
 // A term: { kind: "ceasefire", days } | { kind: "tribute", payer, goods } | { kind: "prisoners", payer, n } |
 // { kind: "cede", payer, tile } | { kind: "convert", goods }. payer: "you" or "them".
-function share(stock, frac) {
+// Rounds go by calibre (2026-10-09, user request): your rounds by key (the cheapest first); a group's (f: its one ammo
+// count) as the rounds its kind keeps (ammo.js findRounds), so the terms name them.
+function share(stock, frac, f = null) {
   const out = {};
-  for (const k of ["food", "ammo", "meds", "scrap"]) { const q = Math.floor((stock[k] || 0) * frac); if (q > 0) out[k] = q; }
+  for (const k of ["food", "ammo", "meds", "scrap"]) {
+    if (k === "ammo" && !f) { const n = Math.floor(totalRounds(stock) * frac); if (n > 0) for (const [kk, q] of Object.entries(spendAmmo({ ...stock }, n).keys)) if (kk !== "ammo") out[kk] = q; continue; }
+    const q = Math.floor((stock[k] || 0) * frac);
+    if (!(q > 0)) continue;
+    if (k === "ammo") Object.assign(out, findRounds(kindTheme(f.type), q, "pwtribute", f.id));
+    else out[k] = q;
+  }
   return out;
 }
 const ceasefireTerm = (days = PW.CEASEFIRE) => ({ kind: "ceasefire", days });
@@ -469,7 +479,7 @@ export function sueTerms(state, w) {
   const caps = captivesOf(state, f.id).length;
   if (caps && lead <= 3) t.push({ kind: "prisoners", payer: "them", n: caps });
   const yours = w.by === "you";
-  if (lead <= -PW.LEAD || (yours && (w.goal === "tribute" || w.goal === "break") && lead <= 0)) t.push({ kind: "tribute", payer: "them", goods: share(f.stock, PW.THEIR_TRIBUTE) });
+  if (lead <= -PW.LEAD || (yours && (w.goal === "tribute" || w.goal === "break") && lead <= 0)) t.push({ kind: "tribute", payer: "them", goods: share(f.stock, PW.THEIR_TRIBUTE, f) });
   if (yours && (w.goal === "land" || w.goal === "break") && lead <= -PW.LEAD) { const tile = theirBaseNearest(state, f); if (tile != null) t.push({ kind: "cede", payer: "them", tile }); }
   t.push(ceasefireTerm(lead > 0 ? PW.WHITE_CEASEFIRE : PW.CEASEFIRE));
   return t;
@@ -540,7 +550,7 @@ export function termOptions(state, w) {
   if (n) add("prisoners", `Return ${n} prisoner${n === 1 ? "" : "s"}`, [{ kind: "prisoners", payer: "you", n }, ceasefireTerm()]);
   const ob = w.goal === "territory" && baseAt(state, w.target) ? baseAt(state, w.target) : outpostNearest(state, f);
   if (ob && ob.type !== "hub") add("cede", `Cede ${ob.name}`, [{ kind: "cede", payer: "you", tile: ob.tile }, ceasefireTerm()]);
-  add("their-tribute", "Demand tribute", [{ kind: "tribute", payer: "them", goods: share(f.stock, PW.THEIR_TRIBUTE) }, ceasefireTerm()]);
+  add("their-tribute", "Demand tribute", [{ kind: "tribute", payer: "them", goods: share(f.stock, PW.THEIR_TRIBUTE, f) }, ceasefireTerm()]);
   const tb = theirBaseNearest(state, f);
   if (tb != null) add("their-base", `Demand ${tileLabel(state, tb)}`, [{ kind: "cede", payer: "them", tile: tb }, ceasefireTerm()]);
   return out;
@@ -580,7 +590,7 @@ export function settle(state, warId, terms, lead = "Peace") {
   const bits = [];
   for (const t of terms) {
     if (t.kind === "tribute" && t.payer === "you") { for (const [k, q] of Object.entries(t.goods)) { const n = Math.min(q, Math.floor(hb.stock[k] || 0)); hb.stock[k] -= n; f.stock[k] = (f.stock[k] || 0) + n; } bits.push(`you paid ${goodsWords(t.goods)}`); }
-    else if (t.kind === "tribute" && t.payer === "them") { for (const [k, q] of Object.entries(t.goods)) { const n = Math.min(q, Math.floor(f.stock[k] || 0)); f.stock[k] -= n; hb.stock[k] = (hb.stock[k] || 0) + n; } bits.push(`${f.name} paid ${goodsWords(t.goods)} to ${hb.name}`); }
+    else if (t.kind === "tribute" && t.payer === "them") { for (const [k, q] of Object.entries(t.goods)) { const fk = SUPPLIES[k] && SUPPLIES[k].round && !(f.stock[k] >= q) ? "ammo" : k; /* a round key: out of their one ammo count */ const n = Math.min(q, Math.floor(f.stock[fk] || 0)); f.stock[fk] -= n; hb.stock[k] = (hb.stock[k] || 0) + n; } bits.push(`${f.name} paid ${goodsWords(t.goods)} to ${hb.name}`); }
     else if (t.kind === "prisoners" && t.payer === "you") { const ps = theirPrisoners(state, f).slice(0, t.n); for (const p of ps) tradeBack(state, p.id); bits.push(`${ps.length} of their people went home`); }
     else if (t.kind === "prisoners" && t.payer === "them") { const cs = captivesOf(state, f.id); for (const s of cs) { s.location = { kind: "base", baseId: hb.id }; s.role = "rest"; s.mood = Math.min(100, (s.mood || 50) + 15); } if (cs.length) bits.push(`${cs.map((s) => s.name).join(", ")} came home`); }
     else if (t.kind === "cede" && t.payer === "you") { const b = baseAt(state, t.tile); const name = b.name; occupyPlayerBase(state, b, f, { garrison: 4, outcome: "ceded", ceded: true }); bits.push(`you handed over ${name}`); }

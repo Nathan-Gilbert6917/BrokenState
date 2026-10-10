@@ -8,6 +8,7 @@ import { thirstAt } from "../sim/weather.js";
 import { roadTeam, hubSites } from "../sim/hardcore-start.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, STAGES, storesText, isWorking, storeOf, waterText, establishProblem } from "../sim/staging.js";
 import { RAW } from "../sim/water.js";
+import { teamAmmoBreakdown, breakdownText } from "../sim/ammo.js"; // the Ammo figure: every round and arrow the team has
 import { MODES, isHardcore } from "../sim/hardcore.js";
 import { landFoodHint, landFoodOptions, FORAGE } from "../sim/foraging.js"; // food from the land when the team runs low
 
@@ -65,6 +66,11 @@ function campLine(v) {
 }
 
 // The top bar's stock slot while there is no base: what the team carries, and the camp.
+// The team's ammo as one figure (every round of every calibre, every arrow and bolt), by calibre on hover.
+function ammoCell(state, p) {
+  const bd = teamAmmoBreakdown(state, p);
+  return `<span${tip(`Ammo the team has: every round and every arrow and bolt, packed, in the cargo and in their pockets and packs (a gun fires only its own calibre). By calibre, most first: ${breakdownText(bd, "; ")}.`)}><b>Ammo</b>${n0(bd.total)}</span>`;
+}
 export function roadStock(state) {
   const v = view(state);
   if (!v || !v.p) return null;
@@ -75,7 +81,7 @@ export function roadStock(state) {
     ? `<span class="${v.miss.length ? "warn" : "good"}"${tip(`${campLine(v)} Stores at the camp: ${storesText(v.camp) || "nothing yet"}.`)}>Camp ${pct(v.pct)}${v.miss.length ? ` · needs ${esc(missText(v.miss))}` : " · all in"}</span>`
     : `<span class="muted"${tip(`Give a team the order ${ESTABLISH_LABEL} where the hub should stand: a staging camp that needs ${needText(v.needs)} brought in, then about ${work3(v)} days of work for three.`)}>No camp yet</span>`;
   return `<span class="${v.first ? "warn" : "danger"}"${tip(`${head} ${ESTABLISH_LABEL} pitches a staging camp you build up into your hub.`)}>On the road</span>` +
-    cell("food", `About ${r1(d.food)} days for the team.`) + cell("water", `About ${r1(d.water)} days for the team at today's thirst.`) + cell("scrap") + cell("parts") + cell("ammo") + cell("meds") + campCell;
+    cell("food", `About ${r1(d.food)} days for the team.`) + cell("water", `About ${r1(d.water)} days for the team at today's thirst.`) + cell("scrap") + cell("parts") + ammoCell(state, v.p) + cell("meds") + campCell;
 }
 
 // Where the camp stands in one line: what is happening and what it waits on.

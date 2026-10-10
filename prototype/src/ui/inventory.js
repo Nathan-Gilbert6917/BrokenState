@@ -3,6 +3,7 @@
 // ui.inv = { sid, loot: bool, body: index }  ui.invSel = selected location string  ui.invMsg = last message.
 // Click an item to select it, then click a slot, pocket, pack cell or the storage box to move it there
 // (click the selected item again to send it across: onto the person, or into storage). Drag and drop works too.
+import { keyWord } from "../sim/water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, SUPPLIES, SKILL_NAMES } from "../sim/data.js";
 import { survivorById, atBase, baseById, gearEffect, combatPower } from "../sim/world.js";
 import { partyMembers, partyCapacity, cargoLoad, poolLoad, partyLoad } from "../sim/parties.js";
@@ -415,7 +416,7 @@ function lootModal(state, ui) {
   }
   const you = s ? doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 7), { user: s }) : `<div class="small muted">Nobody left standing to carry anything.</div>`;
   const r = b.result;
-  const got = [...Object.entries(r.loot.supplies).filter(([, n]) => n >= 1).map(([k, n]) => `${Math.floor(n)} ${k}`), ...r.loot.gear.map((g) => g.name)];
+  const got = [...Object.entries(r.loot.supplies).filter(([, n]) => n >= 1).map(([k, n]) => `${Math.floor(n)} ${keyWord(k)}`), ...r.loot.gear.map((g) => g.name)];
   return `<div class="box wide invbox loot">
     <div class="spread"><h1>Loot the bodies</h1><span class="muted">${esc(b.place)} · ${esc(placeName(state, place))}</span></div>
     ${ui.invMsg ? `<div class="result small">${esc(ui.invMsg)}</div>` : ""}
@@ -535,7 +536,7 @@ function raidModal(state, ui) {
   }
   const around = mid || gnd || right ? `<div class="invcol">${mid}${gnd}${right}</div>` : "";
   const cols = [left, mateCol, around].filter(Boolean);
-  const found = [...Object.entries(R.found).filter(([, n]) => n >= 1).map(([k, n]) => `${Math.floor(n)} ${k}`), ...R.foundGear.map((g) => g.name)];
+  const found = [...Object.entries(R.found).filter(([, n]) => n >= 1).map(([k, n]) => `${Math.floor(n)} ${keyWord(k)}`), ...R.foundGear.map((g) => g.name)];
   const SL = ui.invSel ? parseRaidLoc(ui.invSel) : null;
   const sel = SL ? (SL.slot === "sup" ? SUPPLIES[SL.i]?.name : SL.o === "s" ? itemAt(state, ui.invSel)?.name : raidItemAt(state, b, ui.invSel)?.name) || "" : "";
   // sim/carry.js: a bag, a rig or a case off the ground, a body or a container straight into the arms (hands full).

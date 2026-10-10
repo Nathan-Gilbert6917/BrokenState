@@ -35,13 +35,22 @@
 //   hub later is the normal game's exile (conquest.js): a new staging camp (a little cheaper), later outposts the
 //   usual 15 scrap.
 // Everything here runs only in a hardcore world (hardcore.js isHardcore).
+import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES, clashIn } from "./data.js";
 import { bornTraits, tidyTiers } from "./traits.js"; // what the world's dice rolled at birth, before the newer traits came in
 import { VEHICLE_TYPES, createVehicle } from "./vehicles.js";
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard } from "./world.js";
 import { newItem, packOf, POCKETS, START_DUR, startKit } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
-import { starterLoad, pocketBox, settleParty } from "./ammo.js"; // rounds by calibre
+import { starterLoad, pocketBox, settleParty, calOf, gunCals, calibrate, addRecord, roundsText } from "./ammo.js"; // rounds by calibre
+import { baseKey, ROUND_KEYS } from "./rounds.js";
+import { ROUND_SUPPLIES } from "./data-ammo.js";
+// The rounds a grab brought, by key (got.roundKeys): n of the common round of this gun's calibre (2026-10-09, user
+// request: "All ammo should be based on caliber": a grab's rounds are for the gun they actually got). got.ammo: how
+// many, for the day-1 lines.
+const gunRounds = (got, wkey, n) => { const c = calOf(wkey); if (!c || !(n > 0)) return; got.roundKeys[baseKey(c)] = (got.roundKeys[baseKey(c)] || 0) + n; got.ammo += n; };
+// Only the rounds of a record ({ key: n }).
+const roundsOnly = (rec) => Object.fromEntries(Object.entries(rec || {}).filter(([k, q]) => ROUND_SUPPLIES[k] && q > 0));
 // What someone has with them at the start, looked after but worn (inventory.js START_DUR).
 const startItem = (rng, key, q) => newItem(key, q, rng, START_DUR);
 import { Rng } from "./rng.js";
@@ -356,7 +365,7 @@ export function smallTeamSkills(state, people) {
 export function rollGrab(state, s, A = null) {
   const rng = state.rng, C = HC_START;
   const bag = rng.chance(A && A.pack != null ? A.pack : C.PACK);
-  const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, meds: 0 };
+  const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, roundKeys: {}, meds: 0 };
   if (bag) {
     const pk = startItem(rng, pickW(rng, (A && A.packs) || C.PACKS), Math.round(rng.range(0.7, 1) * 100) / 100);
     s.gear.backpack = pk;
@@ -371,7 +380,7 @@ export function rollGrab(state, s, A = null) {
     randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
     { const bx = starterLoad(rng, s.gear.weapon, "hc"); if (bx) pocketBox(s, bx); } // ammo.js: now and then a typed load and a box of it
     const rr = C.ROUNDS[w];
-    if (rr) got.ammo += Math.round(rng.int(rr[0], rr[1]) * ((A && A.rounds) || 1));
+    if (rr) gunRounds(got, w, Math.round(rng.int(rr[0], rr[1]) * ((A && A.rounds) || 1))); // the gun's own calibre
     if (GEAR[w].cat === "bow") got.arrows = (got.arrows || 0) + 12; // a quiver with the bow (hunting.js: bows hunt with arrows)
   }
   // Worn from the start (a cop's vest, a veteran's).
@@ -416,7 +425,7 @@ export function rollGrab(state, s, A = null) {
 // five days of food and water for three, and the trait when a slot allows (got.trait). Deterministic by the state's rng.
 export function rollPrepper(state, s) {
   const rng = state.rng, P = HC_START.PREPPER;
-  const got = { bag: null, weapon: null, items: [], food: P.FOOD, water: P.WATER, ammo: 0, meds: P.MEDS, prepper: true, trait: false };
+  const got = { bag: null, weapon: null, items: [], food: P.FOOD, water: P.WATER, ammo: 0, roundKeys: {}, meds: P.MEDS, prepper: true, trait: false };
   s.gear.backpack = startItem(rng, P.BAG, Math.round(rng.range(0.85, 1) * 100) / 100);
   got.bag = s.gear.backpack;
   const gun = rng.chance(P.GUN);
@@ -425,7 +434,7 @@ export function rollPrepper(state, s) {
   got.weapon = s.gear.weapon;
   randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
   { const bx = starterLoad(rng, s.gear.weapon, "hc"); if (bx) pocketBox(s, bx); } // ammo.js: now and then a typed load and a box of it
-  if (gun) got.ammo += P.AMMO;
+  if (gun) gunRounds(got, w, P.AMMO);
   const place = (key) => {
     const item = startItem(rng, key, 1);
     if (GEAR[key].slot === "tool" && !s.gear.tool) s.gear.tool = item; // the water filter, in hand
@@ -452,7 +461,7 @@ export function rollPrepper(state, s) {
 // things: a tool to the off hand if it is free, a small thing to a pocket, the rest to the bag (what does not fit is
 // left behind, got.left: the editor warns). Supplies on them as set.
 export function rollCustom(state, s, A) {
-  const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, meds: 0, arrows: 0, custom: true, left: [] };
+  const got = { bag: null, weapon: null, armor: null, items: [], food: 0, water: 0, ammo: 0, roundKeys: {}, meds: 0, arrows: 0, custom: true, left: [] };
   for (const [slot, key] of Object.entries(A.gear || {})) {
     if (!GEAR[key]) continue;
     s.gear[slot] = startKit(newItem(key, 1)); // inventory.js: a starting carrier's plates are steel
@@ -471,7 +480,9 @@ export function rollCustom(state, s, A) {
     else { got.left.push(key); continue; }
     got.items.push(item);
   }
-  for (const k of ["food", "water", "ammo", "meds", "arrows"]) got[k] = (A.supplies && A.supplies[k]) || 0;
+  for (const k of ["food", "water", "meds", "arrows"]) got[k] = (A.supplies && A.supplies[k]) || 0;
+  got.roundKeys = roundsOnly(A.supplies); // rounds by calibre and type, as set (custombg.js)
+  got.ammo = Object.values(got.roundKeys).reduce((a, q) => a + q, 0);
   return got;
 }
 
@@ -530,7 +541,8 @@ export function normalStartKit(state, base) {
     if (!A || !A.custom) continue;
     for (const slot of Object.keys(A.gear || {})) if (s.gear[slot]) { if (!s.startPoints) base.armory.push(s.gear[slot]); s.gear[slot] = null; } // built on points: the dice's kit is not handed out on top
     const got = rollCustom(state, s, A);
-    for (const k of ["food", "water", "ammo", "meds", "arrows"]) if (got[k]) base.stock[k] = (base.stock[k] || 0) + got[k];
+    for (const k of ["food", "water", "meds", "arrows"]) if (got[k]) base.stock[k] = (base.stock[k] || 0) + got[k];
+    addRecord(base.stock, got.roundKeys); // rounds by calibre
     if (A.car.type && A.car.odds > 0) {
       const T = VEHICLE_TYPES[A.car.type];
       createVehicle(state, A.car.type, { kind: "base", baseId: base.id }, { fuel: Math.round(T.tank * 0.5 * 10) / 10, condition: 70 });
@@ -568,7 +580,7 @@ export function rollCar(state, p, people) {
     for (const key of A.car.items) if (GEAR[key]) trunk.gear.push(startKit(newItem(key, 1)));
   }
   const TR = A.custom ? {} : A.trunk || {};
-  for (const k of SUPPLY_KEYS) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) trunk.supplies[k] = q; }
+  for (const k of SUPPLY_KEYS) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) trunk.supplies[k] = q; } // ammo: a count, made rounds below
   if (TR.gear) {
     const table = { ...TR.gear };
     for (let n = rng.int(TR.n[0], TR.n[1]); n > 0 && Object.keys(table).length; n--) {
@@ -579,7 +591,8 @@ export function rollCar(state, p, people) {
       trunk.gear.push(item);
     }
   }
-  owner.diceTrunk = { items: trunk.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...trunk.supplies } }; // a gun with the parts it came with // the dice's back (until Start)
+  calibrate(trunk.supplies, gunCals(people, trunk.gear)); // ammo.js: the back's rounds are for the guns they have (theirs, and any in the back); none: 9mm and 12 gauge
+  owner.diceTrunk = { items: trunk.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...trunk.supplies } }; // the dice's back (until Start); a gun with the parts it came with
   if (picked) { const mine = trunkFromPicks(owner.startVehicle); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
   for (const [k, q] of Object.entries(trunk.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
   p.cargo.gear.push(...trunk.gear);
@@ -596,9 +609,10 @@ export function rollCar(state, p, people) {
   return { owner, car, trunk };
 }
 export function carLine(owner, car, trunk, people = HC_START.CREW) {
-  const back = [...Object.entries(trunk.supplies).map(([k, q]) => `${q} ${k}`), ...wordsOf(trunk.gear)];
+  const rounds = roundsOnly(trunk.supplies);
+  const back = [...Object.entries(trunk.supplies).filter(([k]) => !rounds[k]).map(([k, q]) => `${q} ${k}`), ...(Object.keys(rounds).length ? [roundsText(rounds)] : []), ...wordsOf(trunk.gear)];
   const fill = Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100);
-  const seat = trunk.seats ? Object.entries(trunk.seats).map(([k, q]) => `${q} ${k}`) : [];
+  const seat = trunk.seats ? Object.entries(trunk.seats).map(([k, q]) => `${q} ${keyWord(k)}`) : [];
   return `${firstName(owner)} got ${people === 1 ? "into" : "everyone into"} their ${car.name.toLowerCase()} (tank ${fill}% full, ${Math.round(car.condition)}% condition)${back.length ? `; in the back: ${andList(back)}` : ""}${seat.length ? `; on the empty ${people === 1 ? "seats" : "seat"}, what else they could grab: ${andList(seat)}` : ""}.`;
 }
 
@@ -669,7 +683,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
     if (got.custom) { extra.push(got); lines.push(grabLine(state, s, got)); continue; }
     sup.food += got.food;
     sup.water += got.water;
-    sup.ammo += got.ammo;
+    addRecord(sup, got.roundKeys); // rounds by calibre: for the gun each of them got
     sup.arrows += got.arrows || 0;
     sup.meds += got.meds;
     lines.push(grabLine(state, s, got));
@@ -681,12 +695,12 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   const heads = rolled.length;
   sup.food = Math.max(HC_START.TEAM_MIN * heads, Math.min(teamFoodCap(rolled), sup.food));
   sup.water = Math.max(HC_START.TEAM_MIN * heads, Math.min(HC_START.TEAM_MAX * heads, sup.water));
-  for (const got of extra) for (const k of ["food", "water", "ammo", "meds", "arrows"]) sup[k] += got[k] || 0;
+  for (const got of extra) { for (const k of ["food", "water", "meds", "arrows"]) sup[k] += got[k] || 0; addRecord(sup, got.roundKeys); }
   addPickedSupplies(sup, pickedSup);
   if (prepGot) {
     sup.food += prepGot.food;
     sup.water += prepGot.water;
-    sup.ammo += prepGot.ammo;
+    addRecord(sup, prepGot.roundKeys);
     sup.meds += prepGot.meds;
     lines.unshift(grabLine(state, prepper, prepGot));
   }
@@ -716,7 +730,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   // team stands waiting for orders (phase "waiting", the alerts' "Waiting for orders" row) and they are given from its
   // panel as usual; the game starts paused (main.js begin) and an order never unpauses it (ui/expedition.js).
   weighTeam(state, p);
-  const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${sup.ammo ? `, ${Math.floor(sup.ammo)} rounds` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;
+  const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${Object.keys(roundsOnly(sup)).length ? `, ${roundsText(roundsOnly(sup))}` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;
   addCard(state, introCard(INTRO_TITLE, intro, "The team waits for orders: open its panel (click it on the map, or the Teams tab) and give the first one. The clock is stopped until you press Space."));
   return p;
 }
