@@ -9,7 +9,7 @@
 //   - The strip folds to a narrow column (its header, or ` : bview.hud); folded or not is kept in this browser.
 import { WEAPONS, active, isRanged, hasMag, magShown, magMaxOf, magEmpty, arrowsLeft, shotOdds, meleeOdds, heightAt, sidearmOf, CRIT_MULT } from "../sim/combat.js";
 import { tracksMags, isShellGun, shellsAt, shellKind, spareSplit, SHELLS } from "../sim/mags.js";
-import { roundsOf } from "../sim/ammo.js";
+import { roundsOf, unitRound, loadOf } from "../sim/ammo.js";
 import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js";
 import { gunQ, gunCond, jamChance, modesOf, modeOf, modeRolls, modeAim, FIRE_MODES } from "../sim/gunfire.js";
 import { glLabel } from "../sim/launchers.js";
@@ -53,12 +53,15 @@ export function weaponInfo(state, b, u) {
   const gun = ranged && !w.arrows && !w.acid;
   const info = { name: u.weaponName || w.name || u.weapon, key: u.weapon, ranged, gun, bow: !!w.arrows, mag: null, empty: false, cal: "", load: null, loadShort: "", reserve: null, spares: null, shells: null, clips: 0, modes: [], mode: null, rolls: 1, jam: null, jamPct: 0, cond: null, q: null, melee: null, arrows: null, sidearm: "", launcher: "" };
   if (gun) {
-    const c = CALIBERS[w.cal];
+    const r = unitRound(u); // the round loaded: its own calibre (a 5.56 gun with .223 in it shows ".223 Rem")
+    const c = CALIBERS[r ? r.cal : w.cal];
     info.cal = c ? c.name : "";
-    info.load = u.load || (c ? c.base : null);
+    info.calKey = r ? r.cal : w.cal || null;
+    info.otherCal = !!(r && r.cal !== w.cal); // another calibre than the gun's own (.223 in a 5.56 gun, .38 in a .357)
+    info.load = r ? r.type : c ? c.base : null;
     info.loadShort = typeShort(info.load);
     if (hasMag(u)) { info.mag = { in: magShown(b, u), cap: magMaxOf(u) }; info.empty = magEmpty(b, u); }
-    if (u.side === "player" && info.load) info.reserve = Math.max(0, Math.floor(roundsOf(b, u, info.load)) - (info.mag ? info.mag.in : 0)); // every round of the type to hand, past the ones loaded
+    if (u.side === "player" && info.load) info.reserve = Math.max(0, Math.floor(roundsOf(b, u, loadOf(u))) - (info.mag ? info.mag.in : 0)); // every round of the type to hand, past the ones loaded
     if (isShellGun(u)) { const s = shellsAt(b, u); info.shells = { at: s.at, pack: s.pack, kind: shellKind(u) }; }
     else if (tracksMags(u) && u.magMode !== "internal") info.spares = spareSplit(b, u);
     else if (tracksMags(u)) info.clips = (u.clips || []).filter((x) => !x.used).length;
@@ -105,8 +108,8 @@ export function weaponPanelHtml(state, b, u) {
   const mode = info.mode ? `<span class="bh-mode" data-tip="${esc(`Fire mode (${k("battle.firemode", "Shift+F")}, free): ${info.modes.map((m) => (FIRE_MODES[m] || {}).name || m).join(" → ")}.${info.rolls > 1 ? ` ${info.rolls} rounds a trigger pull, each its own roll.` : ""}`)}">${esc((FIRE_MODES[info.mode] || {}).name || info.mode)}${info.rolls > 1 ? ` ×${info.rolls}` : ""}</span>` : "";
   rows.push(`<div class="bh-wtop">${weaponIcon(u, info)}<b class="bh-wname">${esc(info.name)}</b>${mode}${cond}</div>`);
   if (info.mag) {
-    const tip = `${info.mag.in} rounds in the ${info.shells ? "tube" : "magazine"}, ${info.mag.cap} it holds${info.cal ? `. ${info.cal}, loaded with ${AMMO_TYPES[info.load] ? AMMO_TYPES[info.load].name : info.load}` : ""}.${info.reserve != null ? ` ${info.reserve} more of these rounds to hand, past the ones loaded.` : ""}`;
-    rows.push(`<div class="bh-magline" data-tip="${esc(tip)}">${magBar(info.mag, info.empty)}<b class="bh-count ${info.empty ? "danger" : ""}">${info.mag.in}<span class="muted"> / ${info.mag.cap}</span></b>${info.cal ? `<span class="bh-cal">${esc(info.cal)}</span>` : ""}${info.loadShort ? `<span class="bh-load">${esc(info.loadShort)}</span>` : ""}</div>`);
+    const tip = `${info.mag.in} rounds in the ${info.shells ? "tube" : "magazine"}, ${info.mag.cap} it holds${info.cal ? `. ${info.cal}, loaded with ${AMMO_TYPES[info.load] ? AMMO_TYPES[info.load].name : info.load}${info.otherCal ? ` (not its own ${CALIBERS[WEAPONS[u.weapon].cal] ? CALIBERS[WEAPONS[u.weapon].cal].name : ""}: a round it also takes)` : ""}` : ""}.${info.reserve != null ? ` ${info.reserve} more of these rounds to hand, past the ones loaded.` : ""}`;
+    rows.push(`<div class="bh-magline" data-tip="${esc(tip)}">${magBar(info.mag, info.empty)}<b class="bh-count ${info.empty ? "danger" : ""}">${info.mag.in}<span class="muted"> / ${info.mag.cap}</span></b>${info.cal ? `<span class="bh-cal${info.otherCal ? " warn" : ""}">${esc(info.cal)}</span>` : ""}${info.loadShort ? `<span class="bh-load">${esc(info.loadShort)}</span>` : ""}</div>`);
   } else if (info.arrows != null) rows.push(`<div class="bh-magline"><b class="bh-count ${info.arrows < 1 ? "danger" : ""}">${info.arrows}</b><span class="muted"> arrows and bolts carried</span></div>`);
   // Spares: a shotgun's shells at hand and in the pack, a rifle's magazines, clips and speedloaders.
   const spare = [];

@@ -20,13 +20,14 @@
 // death site) keeps its rounds on it.
 import { SUPPLIES } from "./data.js";
 import { WEAPONS, magIn, magCap } from "./combat.js";
-import { calOf, roundsOf, takeBattleRounds } from "./ammo.js";
-import { keyFor } from "./rounds.js";
+import { calOf, roundsOf, takeBattleRounds, gunTakes } from "./ammo.js";
+import { keyFor, roundOf, loadId } from "./rounds.js";
 import { allCarried } from "./inventory.js";
 import { baseById } from "./world.js";
 
 const isGun = (it) => !!(it && WEAPONS[it.key] && calOf(it.key));
-const typeOfKey = (key, cal) => (key && cal ? key.slice(`a_${cal}_`.length) : null);
+// The load a round key is in a gun of calibre `cal` (rounds.js loads: another calibre it takes "223:fmj"; null: none).
+const typeOfKey = (key, cal, wkey = null) => { const r = key && cal ? roundOf(key) : null; return r && (!wkey || gunTakes(wkey, r.cal)) ? loadId(cal, r.cal, r.type) : null; };
 // The record for what is in this unit's gun now (its own count of rounds; the type it is loaded with).
 function record(u, n) {
   const cal = calOf(u.weapon);
@@ -75,7 +76,7 @@ export function gunIn(b, u, item) {
   if (item.loaded) {
     const { n, key } = item.loaded;
     delete item.loaded;
-    const t = typeOfKey(key, cal);
+    const t = typeOfKey(key, cal, item.key);
     if (t) u.load = t;
     if (u.side === "player" && n > 0 && SUPPLIES[key]) {
       const pool = u.haul ? u.haul.sup : b.pools && b.pools[0];
