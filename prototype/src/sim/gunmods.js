@@ -50,18 +50,20 @@
 //   Extended pistol mag   mag                              +9                 0.15  14     9mm pistols (15 → 24 rounds)
 //   Drum magazine         mag     −2                             ×2           1.1   38     the AR-15 family (30 → 60; heavy and clumsy)
 //   Shotgun tube extension mag                             +2                 0.25  14     pump shotgun (6 → 8)
-// The rest: data-gunmods.js MOD_ATTACH (the plan's section 5 table). No suppressor fits a revolver (the gas escapes at
-// the cylinder); a shotgun takes only the rare shotgun can (and a bottle never); bows and melee weapons take nothing,
+// The rest: data-gunmods.js MOD_ATTACH (the plan's section 5 table). Which slots a gun has: data-gunmods.js PLATFORMS,
+// CATEGORIES and WEAPON_SLOTS (a revolver takes a scope on rings, a can or a compensator, grips and a laser grip, never
+// a foregrip; user, 2026-10-10); a shotgun takes only the rare shotgun can (and a bottle never); bows and melee weapons take nothing,
 // the pipe shotgun a sling. Fall never drops below FALL_MIN a tile. A shot's noise × noise: a suppressed rifle shot
 // (noise 3) is 1.2, heard 15 × 0.4 = 6 tiles off in a raid (9 + 2 × noise, × the share) instead of 15.
 import { GEAR } from "./data.js";
 import { GUN_WEAPONS } from "./data-guns.js";
 import { CALIBERS } from "./data-ammo.js";
-import { SLOTS, SLOT_NAMES, SHARED, PLATFORMS, WEAPON_PLATFORM, WEAPON_SLOTS_OFF, BASE_CAL, MOD_ATTACH, PLATFORM_LIKE, PLATFORM_LIKE_SKIP } from "./data-gunmods.js";
+import { SLOTS, SLOT_NAMES, SHARED, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAPON_SLOTS, PLATFORM_GUESS, BASE_CAL, MOD_ATTACH, PLATFORM_LIKE, PLATFORM_LIKE_SKIP } from "./data-gunmods.js";
 import { KIT_ATTACH } from "./data-kit.js"; // magazines as items (section 15): the extended mag and the drum are magazine items now
 // The gun builder's sim calls on inventory locations (they live with the inventory's location handling).
 export { fitAt, stripAt } from "./inventory.js";
-export { SLOTS, SLOT_NAMES, PLATFORMS, WEAPON_PLATFORM };
+import { stow } from "./inventory.js"; // (call time only: relocateMisfits puts a part taken off into the carrier's kit)
+export { SLOTS, SLOT_NAMES, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAPON_SLOTS };
 
 export const NO_MODS = Object.freeze({
   aim: 0, close: 0, opt: 0, fall: 0, dmg: 1, cap: 0, capMult: 1, noise: 1, weight: 0, value: 0,
@@ -76,9 +78,9 @@ const RIFLE_CALS = ["556", "762x39", "308", "3030"];
 // slot: where it goes (mount: the same, the old name); fits: { cal, plat, any, notCal, notPlat }; short: how it reads
 // in a weapon's name ("9mm pistol (red dot, suppressor)"); look: the gun builder's art.
 const LEGACY = {
-  reddot:    { slot: "optic",    short: "red dot",      look: "reddot",   fits: { plat: ["glock", "p1911", "revolver", "pump", "semi12", "lever", "ar15", "ak", "mp5"] }, aim: 4 },
+  reddot:    { slot: "optic",    short: "red dot",      look: "reddot",   fits: { plat: ["glock", "p1911", "revolver", "pump", "semi12", "lever", "ar15", "ak", "mp5", "dbl", "ranch"] }, aim: 4 },
   holo:      { slot: "optic",    short: "holo sight",   look: "holo",     fits: { plat: ["pump", "semi12", "ar15", "ak", "mp5", "m249"] }, aim: 5, close: 3 },
-  scope4x:   { slot: "optic",    short: "4× scope",     look: "scope4",   fits: { plat: ["lever", "ar15", "ak", "rimrifle", "single"] }, opt: 3, fall: -0.5, close: -8 },
+  scope4x:   { slot: "optic",    short: "4× scope",     look: "scope4",   fits: { plat: ["lever", "ar15", "ak", "rimrifle", "single", "revolver", "ranch"] }, opt: 3, fall: -0.5, close: -8 },
   laser:     { slot: "tactical", short: "laser",        look: "laser",    fits: { any: true }, aim: 1, close: 6 },
   foregrip:  { slot: "grip",     short: "foregrip",     look: "vgrip",    fits: { any: true, notPlat: ["revolver"] }, aim: 2, close: 2 },
   bipod:     { slot: "bipod",    short: "bipod",        look: "bipod",    fits: { any: true }, brace: 8 },
@@ -90,7 +92,7 @@ const LEGACY = {
   choke:     { slot: "muzzle",   short: "choke",        look: "choke",    fits: { cal: ["12ga", "20ga"] }, opt: 2, fall: -2, close: -4 },
   extmag:    { slot: "mag",      short: "extended mag", look: "stick20",  fits: { plat: ["glock"] }, cap: 9 },
   drum:      { slot: "mag",      short: "drum mag",     look: "drum",     fits: { plat: ["ar15"] }, capMult: 2, aim: -2, jam: 1.5 },
-  tubeext:   { slot: "mag",      short: "tube extension", look: "tube_ext", fits: { plat: ["pump"] }, cap: 2 },
+  tubeext:   { slot: "mag",      short: "tube extension", look: "tube_ext", fits: { plat: ["pump", "semi12"] }, cap: 2 },
 };
 export const ATTACH = {};
 for (const [k, a] of Object.entries({ ...LEGACY, ...MOD_ATTACH, ...KIT_ATTACH })) ATTACH[k] = { ...a, mount: a.slot };
@@ -108,51 +110,85 @@ export const isGunmod = (key) => !!ATTACH[key];
 export const modDef = (key) => ATTACH[key] || null;
 
 // ---------- platforms, calibres, slots ----------
-export const platformOf = (gunKey) => WEAPON_PLATFORM[gunKey] || null;
 export const calOf = (gunKey) => (GUN_WEAPONS[gunKey] && GUN_WEAPONS[gunKey].cal) || BASE_CAL[gunKey] || null;
+const NOT_GUN_CAL = ["40mm", "rocket"];
+// A platform for a gun with none in WEAPON_PLATFORM (data-gunmods.js PLATFORM_GUESS: by its category, calibre and name
+// or description), or null (not a gun: a bow, a launcher, a blade).
+export function guessPlatform(gunKey) {
+  const d = GEAR[gunKey], cal = calOf(gunKey);
+  if (!d || d.slot !== "weapon" || !cal || NOT_GUN_CAL.includes(cal) || d.launcher) return null;
+  const rows = PLATFORM_GUESS.filter((r) => r.cat === d.cat && (!r.cal || r.cal.includes(cal)) && PLATFORMS[r.plat]);
+  for (const text of [d.name || "", d.desc || ""]) {
+    const hit = rows.find((r) => r.words && new RegExp(r.words, "i").test(text));
+    if (hit) return hit.plat;
+  }
+  const plain = rows.find((r) => !r.words);
+  return plain ? plain.plat : null;
+}
+// Every gun in GEAR has a platform from here on (the modules that read WEAPON_PLATFORM directly see it too: the gun
+// art, misfires, reloading); a gun added later is guessed when it is first asked about.
+for (const k of Object.keys(GEAR)) if (!WEAPON_PLATFORM[k]) { const p = guessPlatform(k); if (p) WEAPON_PLATFORM[k] = p; }
+export const platformOf = (gunKey) => {
+  if (WEAPON_PLATFORM[gunKey]) return WEAPON_PLATFORM[gunKey];
+  const p = guessPlatform(gunKey);
+  if (p) WEAPON_PLATFORM[gunKey] = p;
+  return p;
+};
 const builtinOf = (gunKey) => (PLATFORMS[platformOf(gunKey)] || {}).builtin || {};
 const sharedWith = (slot) => (SHARED.find((g) => g.includes(slot)) || [slot]);
 // The slots a slot gives room for: the space under the barrel takes a foregrip instead (not the other way round).
 const expand = (slot) => (slot === "under" ? ["under", "grip"] : [slot]);
-// The slots a bare gun has open (its platform's, less what the weapon lacks and what is built in).
-export function baseSlots(gunKey) {
+// The kind of gun (data-gunmods.js CATEGORIES) a weapon is, by its platform: "pistol", "revolver", "break"...
+export const gunCategory = (gunKey) => (PLATFORMS[platformOf(gunKey)] || {}).cat || null;
+// A gun's slot rules (data-gunmods.js PLATFORMS, CATEGORIES, WEAPON_SLOTS): slots: open bare; never: the slots it can
+// never have (its kind's, less its own `on`, plus its own `off` and its built-in parts' slots); parts: { slot: [keys] }.
+export function slotRules(gunKey) {
   const P = PLATFORMS[platformOf(gunKey)];
-  if (!P) return [];
-  const off = WEAPON_SLOTS_OFF[gunKey] || [];
-  const b = builtinOf(gunKey);
-  const out = new Set();
-  for (const s of P.slots) if (!off.includes(s) && !b[s]) for (const x of expand(s)) out.add(x);
-  return SLOTS.filter((s) => out.has(s));
+  if (!P) return { slots: [], never: new Set(SLOTS), parts: {} };
+  const own = WEAPON_SLOTS[gunKey] || {};
+  const on = own.on || [];
+  const never = new Set([...((CATEGORIES[P.cat] || {}).never || []).filter((s) => !on.includes(s)), ...(own.off || []), ...Object.keys(P.builtin || {})]);
+  const open = new Set();
+  for (const s of [...P.slots, ...on]) if (!never.has(s)) for (const x of expand(s)) if (!never.has(x)) open.add(x);
+  return { slots: SLOTS.filter((s) => open.has(s)), never, parts: { ...(P.parts || {}), ...(own.parts || {}) } };
 }
-// Does the part fit this kind of gun at all (calibre, platform; the slot it needs exists on the gun bare or once a
-// mount or rail that fits is on)? Not whether that slot is free now: fitsSlot.
+// The slots a bare gun has open (its platform's and its own, less what it lacks, its kind never has and is built in).
+export const baseSlots = (gunKey) => slotRules(gunKey).slots;
+// The slots this part opens on this gun (a mount's sight, a rail's grip, light and bipod), less those it can never have.
+function opensOn(gunKey, modKey, rules = slotRules(gunKey)) {
+  const a = ATTACH[modKey];
+  const out = [];
+  for (const s of (a && a.adds) || []) for (const x of expand(s)) if (!rules.never.has(x) && !out.includes(x)) out.push(x);
+  return out;
+}
+// Does the part fit this kind of gun at all (calibre, platform, the slot's part list; the slot it needs exists on the
+// gun bare or once a mount or rail that fits is on)? Not whether that slot is free now: fitsSlot.
 export function modFits(gunKey, modKey) {
   const a = ATTACH[modKey], plat = platformOf(gunKey);
-  if (!a || !plat) return false;
-  const f = a.fits || {};
-  const cal = calOf(gunKey);
-  if (f.notPlat && f.notPlat.includes(plat)) return false;
-  if (f.notCal && cal && f.notCal.includes(cal)) return false;
+  if (!a || !plat || !PLATFORMS[plat]) return false;
+  if (!partFitsStatic(gunKey, modKey)) return false;
   if (a.can && PLATFORMS[plat].nocan) return false;
-  if (f.cal && !f.cal.includes(cal)) return false;
-  if (f.plat && !f.plat.includes(plat)) return false;
-  if (!f.cal && !f.plat && !f.any) return false;
   return couldHaveSlot(gunKey, a.slot);
 }
 // Can the gun have this slot: open bare, or opened by a mount or rail that fits it (one level of nesting).
 function couldHaveSlot(gunKey, slot) {
-  if (builtinOf(gunKey)[slot] || (WEAPON_SLOTS_OFF[gunKey] || []).includes(slot)) return false;
-  const base = baseSlots(gunKey);
-  if (base.includes(slot)) return true;
-  return Object.entries(ATTACH).some(([k, a]) => a.adds && a.adds.some((s) => expand(s).includes(slot)) && base.includes(a.slot) && partFitsStatic(gunKey, k));
+  const rules = slotRules(gunKey);
+  if (rules.never.has(slot)) return false;
+  if (rules.slots.includes(slot)) return true;
+  return Object.keys(ATTACH).some((k) => ATTACH[k].adds && rules.slots.includes(ATTACH[k].slot) && opensOn(gunKey, k, rules).includes(slot) && partFitsStatic(gunKey, k));
 }
-// modFits without the slot test (for the parts that open slots: their own slot is a base one).
+// modFits without the slot test (for the parts that open slots: their own slot is a base one): calibre, platform and
+// the slot's part list (a revolver's grip slot takes its grips, its light / laser slot a laser grip).
 function partFitsStatic(gunKey, modKey) {
   const a = ATTACH[modKey], plat = platformOf(gunKey);
   const f = a.fits || {};
+  const cal = calOf(gunKey);
   if (f.notPlat && f.notPlat.includes(plat)) return false;
+  if (f.notCal && cal && f.notCal.includes(cal)) return false;
   if (f.plat && !f.plat.includes(plat)) return false;
-  if (f.cal && !f.cal.includes(calOf(gunKey))) return false;
+  if (f.cal && !f.cal.includes(cal)) return false;
+  const only = slotRules(gunKey).parts[a.slot];
+  if (only && !only.includes(modKey)) return false;
   return !!(f.plat || f.cal || f.any);
 }
 // Does this gun (a WEAPONS / GEAR key) take any attachment at all?
@@ -160,6 +196,20 @@ export const takesMods = (gunKey) => baseSlots(gunKey).length > 0;
 // Attachments that fit a gun, by GEAR key.
 export const modsFor = (gunKey) => Object.keys(ATTACH).filter((k) => modFits(gunKey, k));
 const nameOf = (key) => (GEAR[key] ? GEAR[key].name : key);
+// Every slot a gun can have: bare, or opened by a mount or a rail that fits it (the balance sheet, tools/gunslottest.js).
+export function reachableSlots(gunKey) {
+  const rules = slotRules(gunKey);
+  const out = new Set(rules.slots);
+  for (const k of Object.keys(ATTACH)) if (ATTACH[k].adds && rules.slots.includes(ATTACH[k].slot) && partFitsStatic(gunKey, k)) for (const s of opensOn(gunKey, k, rules)) out.add(s);
+  return SLOTS.filter((s) => out.has(s));
+}
+// The parts that fit a gun, by slot: { slot: [part keys] }.
+export function partsBySlot(gunKey) {
+  /** @type {Record<string, string[]>} */
+  const out = {};
+  for (const k of modsFor(gunKey)) (out[ATTACH[k].slot] || (out[ATTACH[k].slot] = [])).push(k);
+  return out;
+}
 // The parts on a gun, in slot order (any slot key: an unmigrated save's "under" too).
 function fitted(item) {
   if (!item || !item.mods) return [];
@@ -178,7 +228,7 @@ export function slotsOf(item) {
   for (const [slot, m] of Object.entries(item.mods || {})) {
     if (!m || !ATTACH[m.key]) continue;
     out.add(slot);
-    if (modFits(item.key, m.key)) for (const s of ATTACH[m.key].adds || []) for (const x of expand(s)) out.add(x);
+    if (modFits(item.key, m.key)) for (const x of opensOn(item.key, m.key)) out.add(x);
   }
   for (const s of Object.keys(builtinOf(item.key))) out.delete(s);
   return SLOTS.filter((s) => out.has(s));
@@ -187,7 +237,7 @@ export function slotsOf(item) {
 export const childSlots = (item, slot) => {
   const m = item && item.mods && item.mods[slot];
   const adds = m && ATTACH[m.key] && ATTACH[m.key].adds;
-  return adds ? SLOTS.filter((s) => adds.some((a) => expand(a).includes(s)) && !baseSlots(item.key).includes(s)) : [];
+  return adds ? SLOTS.filter((s) => adds.some((a) => expand(a).includes(s)) && !baseSlots(item.key).includes(s)) : []; // (children: whatever sits there, even a slot it can no longer open)
 };
 // The built-in parts of a gun (the light machine gun's and the .50's bipod): { slot: key }.
 export const builtinMods = (gunKey) => ({ ...builtinOf(gunKey) });
@@ -204,7 +254,15 @@ export function fitsSlot(gun, mod, slot = null) {
   if (want !== a.slot) return `The ${mod.name} goes on the ${SLOT_NAMES[a.slot].toLowerCase()}, not the ${(SLOT_NAMES[want] || want).toLowerCase()}.`;
   if (!modFits(gun.key, mod.key)) {
     const plat = PLATFORMS[platformOf(gun.key)];
-    if (a.can && plat && plat.nocan) return `No suppressor fits a ${gunName} (the gas escapes at the cylinder).`;
+    if (a.can && plat && plat.nocan) return `No suppressor fits a ${gunName}.`;
+    const rules = slotRules(gun.key);
+    const an = (w) => (/^[aeiou]/i.test(w) ? "an" : "a");
+    if (!couldHaveSlot(gun.key, a.slot)) return `${an(gunName) === "an" ? "An" : "A"} ${gunName} has no ${(a.slot === "grip" ? "foregrip" : SLOT_NAMES[a.slot]).toLowerCase()} slot${rules.never.has(a.slot) && plat && CATEGORIES[plat.cat] ? ` (no ${CATEGORIES[plat.cat].name.toLowerCase()} has)` : ""}.`;
+    const only = rules.parts[a.slot];
+    if (only && !only.includes(mod.key)) {
+      const names = only.map((k) => { const n = nameOf(k).toLowerCase(); return /s$/.test(n) ? n : `${an(n)} ${n}`; }).join(" or ");
+      return a.slot === "grip" ? `${an(gunName) === "an" ? "An" : "A"} ${gunName} has no foregrip slot (its grip takes ${names}).` : `On ${an(gunName)} ${gunName} the ${SLOT_NAMES[a.slot].toLowerCase()} slot takes only ${names}.`;
+    }
     return `The ${mod.name} does not fit a ${gunName}.`;
   }
   // The slot must be open now (a sight on a gun that needs a mount for one, a grip with no rail or room under it).
@@ -212,9 +270,9 @@ export function fitsSlot(gun, mod, slot = null) {
   delete bare.mods[want];
   for (const c of childSlots(gun, want)) delete bare.mods[c];
   const open = new Set(baseSlots(gun.key));
-  for (const m of Object.values(bare.mods)) if (m && ATTACH[m.key] && modFits(gun.key, m.key)) for (const x of ATTACH[m.key].adds || []) for (const y of expand(x)) open.add(y);
+  for (const m of Object.values(bare.mods)) if (m && ATTACH[m.key] && modFits(gun.key, m.key)) for (const y of opensOn(gun.key, m.key)) open.add(y);
   if (!open.has(want)) {
-    const opener = Object.keys(ATTACH).find((k) => ATTACH[k].adds && ATTACH[k].adds.some((x) => expand(x).includes(want)) && modFits(gun.key, k));
+    const opener = Object.keys(ATTACH).find((k) => ATTACH[k].adds && opensOn(gun.key, k).includes(want) && modFits(gun.key, k));
     return `The ${gunName} has no ${SLOT_NAMES[want].toLowerCase()} slot free${opener ? `: fit a ${nameOf(opener).toLowerCase()} first` : ""}.`;
   }
   for (const s of sharedWith(want)) if (s !== want && bare.mods[s]) return `The ${bare.mods[s].name} takes that space (${SLOT_NAMES[s].toLowerCase()} and ${SLOT_NAMES[want].toLowerCase()} share it): take it off first.`;
@@ -256,7 +314,7 @@ export function stripMod(gun, slot) {
 }
 // A mount that fits this gun and opens `slot` (a sight's rings on a lever-action, a side mount on an AK), or null.
 export function mountFor(gunKey, slot) {
-  return Object.keys(ATTACH).find((k) => ATTACH[k].adds && ATTACH[k].adds.includes(slot) && ATTACH[k].slot === "mount" && modFits(gunKey, k)) || null;
+  return Object.keys(ATTACH).find((k) => ATTACH[k].adds && opensOn(gunKey, k).includes(slot) && ATTACH[k].slot === "mount" && modFits(gunKey, k)) || null;
 }
 
 // Saves from before the slots (four mounts: optic, muzzle, mag, under): a part on the wrong slot key moves to its own
@@ -296,6 +354,79 @@ export function migrateAllMods(state) {
     for (const k of Object.keys(o)) { const v = o[k]; if (v && typeof v === "object") walk(v); }
   };
   walk(state);
+}
+
+// ---------- parts that no longer fit (the slot rules of 2026-10-10, or any later change) ----------
+// Takes off the parts on a gun item that do not fit it as it is now (fitsSlot: a foregrip on a plain pump, a weapon
+// light on a revolver, a part on a slot its kind never has), each with what it carried, and returns them (slot order).
+// A part this game no longer knows (no ATTACH entry) is left where it is.
+export function stripMisfits(item) {
+  const out = [];
+  if (!item || !item.mods || typeof item.mods !== "object" || !GEAR[item.key]) return out;
+  migrateMods(item);
+  for (let n = 0; n < 24 && item.mods; n++) {
+    const order = [...SLOTS, ...Object.keys(item.mods).filter((k) => !SLOTS.includes(k))];
+    const slot = order.find((s) => { const m = item.mods && item.mods[s]; return m && ATTACH[m.key] && !!fitsSlot(item, m, s); });
+    if (!slot) break;
+    out.push(...stripMod(item, slot));
+  }
+  return out;
+}
+// Where the player's things are kept: a part taken off a gun there with nowhere nearer goes to the home armory.
+const PLAYER_ROOTS = ["survivors", "parties", "bases"];
+// On load (save.js): every gun in the state loses the parts that no longer fit it, and keeps them close (never
+// deleted): in the list the gun lies in when it is an armory (beside it), else in the pockets or pack of the person
+// carrying it (inventory.js stow), else the armory of the base it is at, else (the player's people, teams and bases)
+// the home armory. A part with nowhere to go stays on the gun (gunMods never counts a part that does not fit).
+// Returns [{ part, gun, where }] (where: "armory", "kit:<name>", "beside", "" for left on).
+export function relocateMisfits(state) {
+  const moved = [];
+  const seen = new Set();
+  const hubArmory = () => {
+    const h = (state.bases || []).find((b) => b && b.type === "hub") || (state.bases || [])[0];
+    return h && Array.isArray(h.armory) ? h.armory : null;
+  };
+  const place = (part, gun, ctx) => {
+    if (ctx.list && ctx.listName === "armory") { ctx.list.push(part); return "armory"; }
+    if (ctx.person) {
+      try { if (stow(ctx.person, part)) return `kit:${ctx.person.name || "someone"}`; } catch { /* a malformed person: keep looking */ }
+    }
+    if (ctx.armory) { ctx.armory.push(part); return "armory"; }
+    if (PLAYER_ROOTS.includes(ctx.root)) { const a = hubArmory(); if (a) { a.push(part); return "armory"; } }
+    return "";
+  };
+  const isPerson = (o) => o && typeof o === "object" && o.gear && typeof o.gear === "object" && Array.isArray(o.pockets);
+  const walk = (o, ctx) => {
+    if (!o || typeof o !== "object" || seen.has(o) || ArrayBuffer.isView(o)) return;
+    seen.add(o);
+    if (o instanceof Map) { for (const v of o.values()) walk(v, { ...ctx, list: null }); return; }
+    if (o instanceof Set) { for (const v of o) walk(v, { ...ctx, list: null }); return; }
+    if (Array.isArray(o)) { for (const v of o) walk(v, { ...ctx, list: o }); return; }
+    if (o.mods && typeof o.key === "string" && GEAR[o.key] && GEAR[o.key].slot === "weapon") {
+      for (const part of stripMisfits(o)) {
+        const where = place(part, o, ctx);
+        if (!where) { (o.mods || (o.mods = {}))[ATTACH[part.key].slot] = o.mods[ATTACH[part.key].slot] || part; } // nowhere: back on (not counted)
+        moved.push({ part, gun: o, where });
+      }
+    }
+    const next = { ...ctx };
+    if (isPerson(o)) next.person = o;
+    if (Array.isArray(o.armory)) next.armory = o.armory;
+    for (const k of Object.keys(o)) {
+      const v = o[k];
+      if (v && typeof v === "object") walk(v, { ...next, listName: k, root: ctx.root ?? (o === state ? k : null) });
+    }
+  };
+  walk(state, { root: null, list: null, listName: null, person: null, armory: null });
+  return moved;
+}
+// The log line for what relocateMisfits moved ("" when nothing).
+export function misfitNote(moved) {
+  const kept = moved.filter((x) => x.where);
+  if (!kept.length) return "";
+  const at = (w) => (w === "armory" ? "to the armory" : w.startsWith("kit:") ? `to ${w.slice(4)}'s kit` : "beside it");
+  const list = kept.slice(0, 6).map((x) => `${x.part.name} off the ${(x.gun.name || (GEAR[x.gun.key] || {}).name || x.gun.key)} (${at(x.where)})`);
+  return `Gun parts that no longer fit their guns were taken off and kept: ${list.join("; ")}${kept.length > 6 ? `; and ${kept.length - 6} more` : ""}.`;
 }
 
 // What the attachments on an item add up to (the contract above).
@@ -619,8 +750,12 @@ export function fitFromPool(pool, guns) {
 
 // The Help topic (ui/help.js).
 export const GUNMODS_HELP = `Sights, mounts, suppressors, muzzle brakes, bigger magazines, stocks, grips, rails, lights and lasers, bipods and
-  slings fit on guns: one in each slot. Which slots a gun has depends on its kind (a bolt-action rifle takes a scope, a
-  bipod and a sling; an AR-15 nearly everything; a revolver little). Some parts open more slots: a scope mount carries a
+  slings fit on guns: one in each slot. Which slots a gun has depends on its kind, as on the real thing: an AR-15 takes
+  nearly everything; a bolt-action rifle a scope, a muzzle device, a stock, a bipod and a sling; a revolver a scope on
+  rings, a suppressor or a compensator, grips and a laser grip, never a foregrip or a stock; a pistol a slide sight, a
+  threaded-barrel can and a light or laser on its rail; a double-barrel, an over-under or a single-shot a choke, a stock
+  and a sight on rings, never a magazine or a foregrip; a pump a light, a tube extension and a sight on rings (a foregrip
+  only on the railed police pump); a bullpup no stock to swap. Some parts open more slots: a scope mount carries a
   sight on a gun with no rail, a quad rail a foregrip, a light or laser and a bipod. A foregrip and an under-barrel
   launcher share the space under the handguard. Muzzle devices fit by calibre, the rest by the kind of gun. They are
   found where guns are kept (gun stores, police stations, the National Guard, hunting lodges and cabins, army wrecks,
@@ -635,7 +770,7 @@ export const GUNMODS_HELP = `Sights, mounts, suppressors, muzzle brakes, bigger 
   suppressor makes a shot a third to two thirds as loud (fewer of the dead and the guards hear it, less Heat, a hunt
   draws less; some foul the action: more jams), the makeshift oil filter and bottle wear out fast, a muzzle brake (+3
   aim) and a pistol compensator (+2) make the shot louder, a shotgun choke reaches further but spreads less up close.
-  No suppressor fits a revolver. Magazines: an extended 9mm magazine (24 rounds), a drum for the AR-15 family (twice
+  A revolver takes a pistol-calibre can (some gas still escapes at the cylinder). Magazines: an extended 9mm magazine (24 rounds), a drum for the AR-15 family (twice
   the rounds, heavy, −2 aim), a shotgun tube extension (+2 shells). A bipod: +8 aim when the gun rests on half cover
   (sandbags, crates, a car, a fence, a window sill) or a wall you shoot over (a palisade from its walkway, a barricade)
   right next to the shooter that the shot's line crosses; a sling +1 when the shooter moved this turn. A 5.56, 7.62×39 or .22 round drops past 10 tiles (9 for the 7.62×39 and the .22), a pistol round past 8, scope

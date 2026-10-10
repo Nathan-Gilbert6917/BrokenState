@@ -285,7 +285,7 @@ export async function collect(root = PROTO) {
   const { GUN_RARITY, ARSENAL_FINDS, ARSENAL_GEAR, FACTORY_FIT, TRUCK_GEAR } = DG;
   const { MAGAZINES, INTERNAL, CLIPS } = DK;
   const { RETAIL_BOX, BULK, BULK_FINDS } = DS;
-  const { WEAPON_PLATFORM, PLATFORMS } = DM;
+  const { PLATFORMS } = DM;
   const { SHELLS, standardMag, magFitsGun } = MG;
   const { SITE_TAGS, AREA_TAGS, ITEM_TAGS } = LT;
   const { ROUND_REACH } = GM;
@@ -373,7 +373,7 @@ export async function collect(root = PROTO) {
     const feed = w.mount || w.mounted ? "belt (mounted)" : w.launcher ? (w.oneShot ? "one shot" : w.cap > 1 ? "cylinder" : "single") : shell ? `shells: ${shell}` : internal ? "internal" : mags.length ? "box magazine" : w.arrows ? "arrows" : "-";
     const places = (gunPlaces[k] || []).filter((x) => x.p > 0).sort((a, b) => b.p - a.p);
     const v = {
-      name: (d && d.name) || w.name, cat: (d && d.cat) || (w.mount || w.mounted ? "mounted" : "-"), platform: WEAPON_PLATFORM[k] || "",
+      name: (d && d.name) || w.name, cat: (d && d.cat) || (w.mount || w.mounted ? "mounted" : "-"), platform: GM.platformOf(k) || "", kind: GM.gunCategory ? GM.gunCategory(k) || "" : "",
       cal: cal || (w.arrows ? "arrows" : ""), rarity: GUN_RARITY[k] ?? null,
       dmgLo: w.dmg[0], dmgHi: w.dmg[1], opt: w.opt ?? null, fall: w.fall ?? null, aim: w.aim ?? null, close: w.close ?? null,
       ammo: w.ammo ?? null, noise: w.noise ?? null, cap: w.cap ?? null, rel: w.rel ?? null, pierce: w.pierce ?? null,
@@ -386,7 +386,10 @@ export async function collect(root = PROTO) {
       value: d ? d.value : null, weight: d ? d.weight ?? null : null, power: d ? d.power ?? null : null, req: d ? d.req ?? null : null,
       gearNoise: d ? d.noise ?? null : null, dur: d ? d.dur ?? null : null,
       slots: (() => { try { return GM.baseSlots(k).join(", "); } catch { return ""; } })(),
-      builtin: PLATFORMS[WEAPON_PLATFORM[k]] && PLATFORMS[WEAPON_PLATFORM[k]].builtin ? Object.values(PLATFORMS[WEAPON_PLATFORM[k]].builtin).join(", ") : "",
+      allSlots: (() => { try { return GM.reachableSlots ? GM.reachableSlots(k).join(", ") : ""; } catch { return ""; } })(),
+      slotParts: (() => { try { const by = GM.partsBySlot ? GM.partsBySlot(k) : {}; return Object.entries(by).map(([s, ps]) => `${s}: ${ps.filter((x) => !MAGAZINES[x]).join("/") || "magazines"}`).join("; "); } catch { return ""; } })(),
+      slotRule: DM.WEAPON_SLOTS && DM.WEAPON_SLOTS[k] ? Object.entries(DM.WEAPON_SLOTS[k]).map(([f, v]) => `${f}: ${Array.isArray(v) ? v.join("/") : Object.entries(v).map(([s, l]) => `${s}=${l.join("/")}`).join(" ")}`).join("; ") : "",
+      builtin: PLATFORMS[GM.platformOf(k)] && PLATFORMS[GM.platformOf(k)].builtin ? Object.values(PLATFORMS[GM.platformOf(k)].builtin).join(", ") : "",
       factory: (FACTORY_FIT[k] || []).map(([p, parts]) => `${Math.round(p * 100)}% ${parts.join("/")}`).join("; "),
       sniper: !!w.sniper, launcher: w.launcher || "",
       tags: list(ITEM_TAGS[k]), kits: kitsOf(k), trucks: trucksOf(k), arsenal: !!ARSENAL_GEAR[k],
@@ -395,7 +398,7 @@ export async function collect(root = PROTO) {
     gunRows.push({ key: k, v, ...(d ? {} : { noInsert: true }) });
   }
   table("guns", "Guns", [
-    C("name", "Name", "text"), C("cat", "Category", "text"), C("platform", "Platform", "text"), C("cal", "Calibre", "text"),
+    C("name", "Name", "text"), C("cat", "Category", "text"), C("platform", "Platform", "text"), C("kind", "Kind", "text", { hide: true, desc: "data-gunmods.js PLATFORMS cat: its CATEGORIES row (the slots that kind never has)" }), C("cal", "Calibre", "text"),
     C("rarity", "Rarity", "tier", { desc: "data-guns.js GUN_RARITY" }), C("findW", "Find weight", "num", { ...live, desc: "ARSENAL_FINDS.FIND_W of its tier (the arsenal's own finds)" }),
     C("dmgLo", "Dmg lo"), C("dmgHi", "Dmg hi"), C("dmgAvg", "Dmg avg", "num", live), C("calRef", "Calibre ref", "num", { ...live, desc: "data-ammo.js CAL_DMG average" }),
     C("band", "Band", "pct", { ...live, desc: "Gun avg ÷ calibre ref (LADDER.BAND keeps it 85–115%)" }),
@@ -413,7 +416,10 @@ export async function collect(root = PROTO) {
     C("dmgPerKg", "Dmg/kg", "num", live), C("valuePerDmg", "Value/dmg", "num", { ...live, hide: true }),
     C("points", "Points", "num", { ...live, desc: "Customize points (custompoints.js itemPoints: worth with factory parts ÷ 6 + power × 0.5)" }),
     C("pointsKit", "Points + rounds", "num", { ...live, desc: "Picked in the hands: the gun and 3 loads of its base round (slotPoints)" }),
-    C("slots", "Attachment slots", "text", hide), C("builtin", "Built in", "text", hide), C("factory", "Factory parts", "text", hide),
+    C("slots", "Attachment slots", "text", { hide: true, desc: "Open on the bare gun (data-gunmods.js PLATFORMS slots, CATEGORIES never, WEAPON_SLOTS)" }),
+    C("allSlots", "All slots", "text", { hide: true, desc: "With the mounts and rails that fit it (a scope mount's sight, a rail's foregrip, light and bipod)" }),
+    C("slotParts", "Parts by slot", "text", { hide: true, desc: "Every part that fits, by slot (magazines: the Magazines tab)" }),
+    C("slotRule", "Own slot rule", "text", { hide: true, desc: "data-gunmods.js WEAPON_SLOTS: off / on / parts for this gun" }), C("builtin", "Built in", "text", hide), C("factory", "Factory parts", "text", hide),
     C("tags", "Loot tags", "text", hide), C("kits", "AI kits (w/s/l)", "text", hide), C("trucks", "Army trucks", "text", hide),
     C("bestPlace", "Best find place", "text", { ...after, hide: true, desc: "The arsenal's own finds: place chance × the gun's share of its pool" }), C("places", "Find places", "num", { ...after, hide: true }),
   ], gunRows, { note: "Every ranged weapon in combat.js WEAPONS (with data-guns.js, data-nonlethal.js and the turrets). Hits use the calibre's base round." });

@@ -1,5 +1,5 @@
-// Gun attachments (src/sim/gunmods.js): fitting rules (what fits which gun, one per mount, no suppressor on a revolver or
-// a shotgun), gunMods sums, the odds in battle with a sight or a scope, a suppressor's noise in battle (and the
+// Gun attachments (src/sim/gunmods.js): fitting rules (what fits which gun, one per mount, a revolver only a pistol-calibre
+// can, a shotgun only the shotgun can), gunMods sums, the odds in battle with a sight or a scope, a suppressor's noise in battle (and the
 // carried oil filter kept working), hunting noise and the dead drawn, weight and value, save / load, looting a modded
 // gun (an enemy's gun keeps its parts), trade prices, enemies' guns by their kit (their stats, a quieter suppressed
 // shot, the tooltip name), starting guns' cheap parts, the inventory's fit / remove, the autopilot fitting from the
@@ -55,7 +55,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   check(Object.values(ATTACH).every((a) => SLOTS.includes(a.slot) && a.mount === a.slot) && Object.keys(WEAPONS).every((w) => !modsFor(w).length || (!WEAPONS[w].melee && WEAPONS[w].noise > 0)), "every attachment has a slot and fits only real guns (no bows, no melee)");
   check(fitsNone.every((k) => ["can22", "tacscope", "sidemount", "foldstock"].includes(k)), `every attachment fits a gun there is now (${fitsNone.join(", ") || "all"} wait for the roster's .22s, AKs and sniper rifles)`);
   const cans = Object.keys(ATTACH).filter((k) => (ATTACH[k].noise ?? 1) < 1);
-  check(cans.every((k) => !modFits("revolver", k) && !modFits("pipegun", k)) && cans.filter((k) => modFits("shotgun", k)).join() === "can12", `no suppressor fits a revolver; only the rare shotgun can a shotgun (${cans.join(", ")})`);
+  check(cans.filter((k) => modFits("revolver", k)).join() === "can9,bottlecan" && cans.every((k) => !modFits("pipegun", k)) && cans.filter((k) => modFits("shotgun", k)).join() === "can12", `a revolver takes the pistol-calibre can and a bottle (user, 2026-10-10), the pipe gun none; only the rare shotgun can a shotgun (${cans.join(", ")})`);
   check(!!modFitReason(newItem("revolver"), newItem("pistolcan")) && !!modFitReason(newItem("shotgun"), newItem("riflecan")) && !!modFitReason(newItem("shotgun"), newItem("suppressor")), "fitting one to a revolver or a shotgun is refused");
   check(!modFits("huntrifle", "scope4x") && !modFits("pistol", "scope4x") && !modFits("shotgun", "scope4x"), "the 4× scope: not on the hunting rifle (scoped already), a pistol or a shotgun");
   check(["compbow", "xbow", "crossbow", "knife"].every((k) => !takesMods(k)) && modsFor("pipegun").join() === "sling", "bows and melee weapons take nothing, the pipe shotgun only a sling");
@@ -435,7 +435,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
 // 14. Fit rules: muzzle devices by calibre, the rest by platform.
 {
   console.log("Fit rules");
-  check(modFits("pistol", "pistolcan") && modFits("pistol", "can9") && !modFits("revolver", "can9") && !modFits("revolver", "bottlecan") && modFits("revolver", "comp"), "a 9mm takes 9mm cans; a revolver no can at all (a compensator, yes)");
+  check(modFits("pistol", "pistolcan") && modFits("pistol", "can9") && modFits("revolver", "can9") && !modFits("revolver", "pistolcan") && modFits("revolver", "comp") && !modFits("revolver", "foregrip") && !modFits("revolver", "weaponlight"), "a 9mm takes 9mm cans; a .357 revolver the 9mm / .45 / .357 can (not the 9mm-only one) and a compensator, never a foregrip or a weapon light (user, 2026-10-10)");
   check(modFits("ar", "can556") && modFits("carbine", "can556") && !modFits("huntrifle", "can556") && modFits("huntrifle", "can308") && !modFits("ar", "can308"), "rifle cans by calibre: 5.56 on the AR and carbine, .308 on the hunting rifle");
   check(modFits("shotgun", "choke") && modFits("shotgun", "can12") && !modFits("shotgun", "bottlecan") && modFits("pistol", "bottlecan"), "12 gauge: a choke and the shotgun can, never a bottle");
   check(modFits("pistol", "tritium") && !modFits("ar", "tritium") && modFits("ar", "acog") && !modFits("pistol", "acog") && modFits("revolver", "revgrip") && !modFits("ar", "revgrip"), "sights and grips by platform: tritium on pistols, an ACOG on the AR, rubber grips on a revolver");

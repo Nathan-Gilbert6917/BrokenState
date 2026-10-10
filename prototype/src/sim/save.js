@@ -21,13 +21,13 @@
 //   { $: "M", e: [[k, v]…] } Map · { $: "S", e: […] } Set · { $: "WM", e } WeakMap · { $: "WS", e } WeakSet
 //   { $: "T", t: "Uint16Array", b: base64 } typed array · { $: "Rng", s } · { $: "Grid", w, h } · { $: "O", v }
 //   { $: "u" } undefined · { $: "N", v: "NaN" | "Infinity" | "-Infinity" | "-0" }
-import { migrateAllMods } from "./gunmods.js"; // old saves: gun parts onto the attachment slots
+import { migrateAllMods, relocateMisfits, misfitNote } from "./gunmods.js"; // old saves: gun parts onto the attachment slots; parts that no longer fit taken off
 import { migrateAmmo, findRounds, kindTheme } from "./ammo.js"; // old saves: generic ammo into rounds by calibre
 import { sanitizeLibrary } from "./custombg.js"; // a save's custom backgrounds: their old generic ammo as rounds
 import { migrateKit } from "./carrykit.js"; // old saves: carriers' plates, spare magazines
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
-import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, localId } from "./world.js";
+import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, localId, log } from "./world.js";
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS, GEAR } from "./data.js"; // firewood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js";
@@ -220,6 +220,10 @@ export function deserializeState(save) {
   // gunmods.js: guns from before the attachment slots (four mounts) have their parts moved to their slots (the laser to
   // tactical, the foregrip to grip) and a sight that now needs a mount gets one. Once: state.gunSlots.
   if (!(state.gunSlots >= 1)) { migrateAllMods(state); state.gunSlots = 1; }
+  // gunmods.js relocateMisfits (2026-10-10, slots that make sense for each gun: data-gunmods.js PLATFORMS, CATEGORIES,
+  // WEAPON_SLOTS): a part on a gun that no longer has room for it (a foregrip on a plain pump, a weapon light on a
+  // revolver) comes off into the armory or the carrier's kit, with a log line. Every load (the rules may change again).
+  { const note = misfitNote(relocateMisfits(state)); if (note && Array.isArray(state.log)) log(state, note); }
   // carrykit.js: carry kit (wave 2): plate carriers from before get their two plates, your people's guns their spare
   // magazines. Once: state.kitV.
   if (!(state.kitV >= 2)) migrateKit(state);
