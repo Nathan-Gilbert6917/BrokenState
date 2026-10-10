@@ -196,7 +196,7 @@ function crewCard(state, role, h) {
       ${num(role, ["Range (tiles)", "range"], c.range, 2, 40, 1, "Farthest tile from the hub a trip may go")}
       ${num(role, ["Max hours out", "maxHours"], c.maxHours, 4, 96, 2, "Longest way out, in hours")}
       ${num(role, ["Team size", "size"], c.size, 1, 6, 1, "People on a trip (the fittest members go)")}
-      ${num(role, ["Ammo each", "ammo"], c.ammo, 0, 40, 1, "Ammo packed per person (the hub keeps 20)")}
+      ${num(role, ["Rounds each", "ammo"], c.ammo, 0, 40, 1, "Rounds packed per person, of their own gun's calibre (the hub keeps 20)")}
       ${num(role, ["Meds", "meds"], c.meds, 0, 6, 1, "Meds packed (only while the hub has 4+)")}
       ${num(role, ["Rest days", "rest"], c.rest, 0, 7, 1, "Days at home between trips")}
       <label class="wcf"${tip("Pace on the road")}>Stance <select data-action="wcrew-set" data-role="${role.id}" data-f="stance">${Object.entries(STANCES).map(([k, s]) => `<option value="${k}" ${c.stance === k ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label>
