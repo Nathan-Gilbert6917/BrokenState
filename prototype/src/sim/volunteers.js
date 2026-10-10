@@ -467,7 +467,7 @@ function settleShare(state, reqId) {
     from[k] -= give;
     f.stock[k] = (f.stock[k] || 0) + give;
     value += supplyValue(k, give);
-    got.push(`${give} ${k}`);
+    got.push(`${give} ${keyWord(k)}`);
   }
   V.stats.shared = (V.stats.shared || 0) + value;
   if (!got.length) return;

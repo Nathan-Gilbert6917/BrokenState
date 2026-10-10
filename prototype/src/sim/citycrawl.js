@@ -419,7 +419,7 @@ function give(state, p, c, sup = {}, gear = []) {
       room -= take * SUPPLIES[k].weight;
       got.push(`${take} ${keyWord(k)}`);
     }
-    if (q - take > 0) left.push(`${q - take} ${k}`);
+    if (q - take > 0) left.push(`${q - take} ${keyWord(k)}`);
   }
   for (const g of gear) {
     if (!g) continue;

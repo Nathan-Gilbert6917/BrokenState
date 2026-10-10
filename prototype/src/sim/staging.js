@@ -336,7 +336,7 @@ export function strikeArrive(state, p) {
     if (fit < 1) continue;
     p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + fit;
     camp.stores[k] -= fit;
-    took.push(`${fit} ${k}`);
+    took.push(`${fit} ${keyWord(k)}`);
   }
   const left = strike(state, "struck");
   awaitOrders(state, p, `The camp is struck.${took.length ? ` The team packed ${took.join(", ")}.` : ""}${left ? ` Left as a cache here: ${left}.` : ""}`);

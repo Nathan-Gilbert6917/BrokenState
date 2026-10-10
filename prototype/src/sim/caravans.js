@@ -237,7 +237,7 @@ function onCaravanCombat(state, result, setup) {
       for (const [k, q] of sup) base.stock[k] = (base.stock[k] || 0) + Math.floor(q);
       base.armory.push(...p.goods.gear);
     }
-    const what = [...sup.map(([k, q]) => `${Math.floor(q)} ${k}`), ...p.goods.gear.map((g) => g.name)];
+    const what = [...sup.map(([k, q]) => `${Math.floor(q)} ${keyWord(k)}`), ...p.goods.gear.map((g) => g.name)];
     removeParty(state, p);
     text = `The ${f ? f.name : ""} caravan is yours: ${what.join(", ") || "it carried nothing of use"}${base ? `, all in ${base.name}'s stores` : ""}. ${f ? `${f.name} will not forget it.` : ""}`;
     log(state, text, "danger");
@@ -424,7 +424,7 @@ export function caravanCard(state, p, text = "") {
   const next = c.stops[c.idx + 1];
   const home = baseById(state, p.homeBaseId) || hub(state);
   const eta = (to) => { const hrs = legHours(state, p, tile, to); return hrs == null ? "no route" : `about ${hrs}h`; };
-  const cargo = Object.entries(p.cargo.supplies).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${k}`).concat(p.cargo.gear.map((g) => g.name));
+  const cargo = Object.entries(p.cargo.supplies).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${keyWord(k)}`).concat(p.cargo.gear.map((g) => g.name));
   const route = c.stops.map((t, i) => `${i <= c.idx ? "✓ " : ""}${destName(state, t)}`).join(" → ");
   const choices = [];
   const deal = f ? pendingDeal(state, f) : null;

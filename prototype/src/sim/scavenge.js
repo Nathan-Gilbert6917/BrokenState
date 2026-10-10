@@ -360,7 +360,7 @@ export function extract(state) {
     const take = Math.min(unitsThatFit(room, k), e.found.supplies[k]);
     p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take;
     room -= take * SUPPLIES[k].weight;
-    if (take < e.found.supplies[k]) left.push(`${e.found.supplies[k] - take} ${k}`);
+    if (take < e.found.supplies[k]) left.push(`${e.found.supplies[k] - take} ${keyWord(k)}`);
   }
   for (const g of gear) if (perKg(g) < 2 && !addGearToCargo(state, p, g)) left.push(g.name);
   if (left.length) log(state, `No room to carry ${left.join(", ")}. It was left behind.`, "info");

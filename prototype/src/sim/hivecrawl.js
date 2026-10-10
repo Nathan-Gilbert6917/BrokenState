@@ -1172,7 +1172,7 @@ function give(state, p, c, sup = {}, gear = []) {
     if (!(q > 0) || !SUPPLIES[k]) continue;
     const take = Math.min(q, unitsThatFit(room, k));
     if (take > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take; c.tally.supplies[k] = (c.tally.supplies[k] || 0) + take; room -= take * SUPPLIES[k].weight; got.push(`${take} ${keyWord(k)}`); }
-    if (q - take > 0) left.push(`${q - take} ${k}`);
+    if (q - take > 0) left.push(`${q - take} ${keyWord(k)}`);
   }
   for (const g of gear) {
     if (!g) continue;

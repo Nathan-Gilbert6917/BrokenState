@@ -652,8 +652,8 @@ export function tradeVerdict(state) {
   for (const k of [...Object.keys(t.offer).filter((x) => t.offer[x] > 0), ...Object.keys(t.ask).filter((x) => t.ask[x] > 0), ...offerGear.map((g) => g.key), ...askGear.map((g) => g.key)]) {
     if (refuses(f, k)) return out(false, `${f.name} will not touch ${catName(catOf(k))}.`);
   }
-  for (const [k, q] of Object.entries(t.offer)) if (q > (ctx.have[k] || 0)) return out(false, `You only have ${ctx.have[k] || 0} ${k}.`);
-  for (const [k, q] of Object.entries(t.ask)) if (q > (ctx.theirHave[k] || 0)) return out(false, `They can spare only ${ctx.theirHave[k] || 0} ${k}.`);
+  for (const [k, q] of Object.entries(t.offer)) if (q > (ctx.have[k] || 0)) return out(false, `You only have ${ctx.have[k] || 0} ${keyWord(k)}.`);
+  for (const [k, q] of Object.entries(t.ask)) if (q > (ctx.theirHave[k] || 0)) return out(false, `They can spare only ${ctx.theirHave[k] || 0} ${keyWord(k)}.`);
   // Carry space: a team carries what it gets; their caravan carries what it takes.
   if (ctx.kind === "radio") {
     const why = radioTradeProblem(state, ctx, offerGear, askGear); // radiotrade.js: a deal waiting, their caravan's load
@@ -730,7 +730,7 @@ export function balanceWith(state, key) {
     const want = minSellable(state, f, key, speech, curV + (tot.ask - tot.offer), ctx.have[key] || 0);
     if (!Number.isFinite(want)) return `You do not have enough ${key} to balance it (${ctx.have[key] || 0}).`;
     setQty(state, "mine", key, want);
-    return `Added ${want - cur} ${key} to your side.`;
+    return `Added ${want - cur} ${keyWord(key)} to your side.`;
   }
   if (t.offer[key]) return `You are offering ${key}: take it off your side first.`;
   const cur = t.ask[key] || 0;

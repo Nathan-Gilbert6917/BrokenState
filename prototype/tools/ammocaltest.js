@@ -129,9 +129,10 @@ section("Deals name calibres");
   check(generic === 0, `radio offers name calibres (${cards} cards, ${generic} with "N ammo")`);
 }
 
-section(`A ${DAYS}-day autopilot run: no generic ammo left in your holders`);
+for (const mode of ["normal", "hardcore"]) {
+section(`A ${DAYS}-day autopilot run (${mode}): no generic ammo left in your holders`);
 {
-  const st = createWorld({ seed: SEED, factionCount: 7 });
+  const st = createWorld({ seed: SEED, factionCount: 7, mode });
   st.started = true;
   setAutopilot(st, true, "balanced");
   const holders = () => [
@@ -177,6 +178,7 @@ section(`A ${DAYS}-day autopilot run: no generic ammo left in your holders`);
     check(re.ammoCal === 2 && !(hub(re).stock.ammo >= 1), "an older save's generic ammo settles on load");
     check(!("ammo" in re.customBackgrounds.c_1.supplies) && totalRounds(re.customBackgrounds.c_1.supplies) === 25, "and its custom backgrounds' ammo becomes rounds");
   }
+}
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

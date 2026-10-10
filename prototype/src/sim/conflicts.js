@@ -1346,7 +1346,7 @@ function victoryRewards(state, p, c, result) {
       const n = Math.min(2, Math.round(c.enemy.count * mil[kind] * 0.5));
       for (let i = 0; i < n; i++) {
         const loot = bodyLoot(rng, kind, armouredItem);
-        for (const [k, q] of Object.entries(loot.sup)) got.push(`${addCargo(state, p, k, q)} ${k}`);
+        for (const [k, q] of Object.entries(loot.sup)) got.push(`${addCargo(state, p, k, q)} ${keyWord(k)}`);
         for (const g of loot.gear) if (stowGear(state, p, g)) got.push(g.name);
       }
     }

@@ -148,7 +148,7 @@ export function supplyEstimate(state, f) {
   if (plan.vProblem) warnings.push(`${plan.vProblem[0].toUpperCase()}${plan.vProblem.slice(1)}: the convoy would go on foot with hand carts.`);
   for (const [k, q] of Object.entries(deliver)) {
     const have = Math.floor(supplyAmt(origin.stock, k));
-    if (have < q) warnings.push(`${origin.name} has only ${have} ${k} (sending ${q})${f.allowPartial ? ": it sends what is there" : ": the run waits until there is enough"}.`);
+    if (have < q) warnings.push(`${origin.name} has only ${have} ${keyWord(k)} (sending ${q})${f.allowPartial ? ": it sends what is there" : ": the run waits until there is enough"}.`);
   }
   for (const k of ["food", "water"]) {
     const left = roadLeft(origin.stock, deliver, k);
@@ -160,7 +160,7 @@ export function supplyEstimate(state, f) {
     const pick = linesObj(f.pickup);
     for (const [k, q] of Object.entries(pick)) {
       const have = Math.floor(supplyAmt(dest.stock, k));
-      if (have < q) warnings.push(`${dest.name} has ${have} ${k} right now (picking up ${q}).`);
+      if (have < q) warnings.push(`${dest.name} has ${have} ${keyWord(k)} right now (picking up ${q}).`);
     }
     if (supplyLoad(pick) > plan.capacity) warnings.push(`The pick-up weighs more than the convoy can carry (${plan.capacity}); the rest stays behind.`);
   }

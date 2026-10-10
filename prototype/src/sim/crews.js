@@ -443,7 +443,7 @@ function tripOver(state, role) {
   const o = c.out;
   const back = o.members.map((id) => survivorById(state, id)).filter((s) => s && s.alive && s.location.kind === "base");
   const lost = o.members.length - back.length - o.members.map((id) => survivorById(state, id)).filter((s) => s && s.alive && s.location.kind !== "base").length;
-  const goods = Object.entries(o.cargo || {}).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${k}`);
+  const goods = Object.entries(o.cargo || {}).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${keyWord(k)}`);
   if (o.gear) goods.push(`${o.gear} item${o.gear === 1 ? "" : "s"}`);
   const result = back.length ? `home from ${tileLabel(state, o.tile)}${goods.length ? ` with ${goods.join(", ")}` : " with nothing"}` : `lost at ${tileLabel(state, o.tile)}`;
   const entry = { day: day(state), mission: o.mission, tile: o.tile, why: o.why, hours: state.hour - o.left, result: `${result}${lost > 0 ? ` (${lost} did not come back)` : ""}` };

@@ -1626,7 +1626,7 @@ function baseWorkshops(state, b) {
   const people = atBase(state, b.id);
   const farmers = people.filter((s) => s.role === "farm");
   const scav = people.filter((s) => s.role === "scavenge");
-  const scavOut = Object.entries(scavengeOutput(state, b)).filter(([, v]) => v >= 0.1).map(([k, v]) => `${n1(v)} ${k}`).join(", ");
+  const scavOut = Object.entries(scavengeOutput(state, b)).filter(([, v]) => v >= 0.1).map(([k, v]) => `${n1(v)} ${keyWord(k)}`).join(", ");
   const sts = stations(b);
   return `
     <h3>Farming</h3>
