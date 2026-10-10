@@ -21,7 +21,7 @@ import { weather as wxNow, travelEffects, foodNeedFactor } from "../sim/weather.
 import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
 import { listenBlock, teamRadioLine } from "./radiolisten.js"; // the team's receiver: Listen in, what it heard
 import { heatInfo, rowsText } from "../sim/fieldheat.js";
-import { fireButton, campStatusCard } from "./hardcore.js"; // the staging camp while you have no base
+import { fireButton, campStatusCard } from "./hardcore.js"; // Establish base while you have no base
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE, partyHuntMix, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { teamWormText, teamWaterHow, teamTabCount, WORM } from "../sim/worm.js";
 import { teamWaterIn, teamRawIn, keyWord } from "../sim/water.js"; // purified and un-purified water
@@ -145,7 +145,7 @@ export function renderExpedition(state, ui, p) {
       ${live ? heatBlock(state, p) : ""}
     </div>`;
 
-  const camp = campStatusCard(state, p); // no base yet: the staging camp's progress and what it still needs
+  const camp = campStatusCard(state, p); // no base yet: where to set up camp (Establish base) and what its step up needs
 
   if (!cmd) {
     return head + camp + status + teamRadioLine(state, p, true) + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
@@ -170,7 +170,7 @@ export function renderExpedition(state, ui, p) {
         ${btn(`data-action="xp-move" data-id="${p.id}"`, queueing ? "Queue move…" : "Move…", queueing ? "Click a tile on the map. The move is added to the end of the team's queue." : "Click a tile on the map. The team sets off for it (when the clock runs).")}
         ${moving && p.radioLive ? btn(`data-action="movemode" data-id="${p.id}"`, "Redirect…", "Change the current destination now (radio contact).") : ""}
         ${!hub(state) ? "" : ord("home", "", queueing ? "Queue: return home" : "Return home", queueing ? `Added to the end of the queue: after the orders before it the team heads back to ${home.name} with everything carried.` : `Head back to ${home.name} now with everything carried. This drops the rest of the queue.`)}
-        ${camping ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Break camp", "Pack up now. The next queued order starts.") : ""}
+        ${camping ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Stop resting", "Pack up now. The next queued order starts.") : ""}
         ${working ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Stop work", "Give up on the current job (nothing is used up).") : ""}
       </div>
       <div class="xpgrid">
@@ -311,11 +311,11 @@ function queueBlock(state, p, live, ui) {
   let now = "";
   if (moving || working) {
     // The order under way, with ✕: a move is cancelled (the team stops where it is), work on the spot is stopped
-    // (a camp is broken). Either way the next queued order starts there, or the team waits for orders.
+    // (a rest ends). Either way the next queued order starts there, or the team waits for orders.
     const st = orderStatus(state, p);
     const next = q.length ? " The next queued order starts there." : " Then the team waits for orders.";
     const hint = moving ? `Cancel this ${p.phase === "back" ? "return home" : "move"}: the team stops on the tile it has reached.${next}` :
-      p.task.type === "camp" ? `Break camp now.${next}` : `Stop this job now (nothing is used up).${next}`;
+      p.task.type === "camp" ? `Stop resting now.${next}` : `Stop this job now (nothing is used up).${next}`;
     now = `<li class="now"><div class="qrow"><span class="qlabel"${tip("The order under way. ✕ cancels it: the team stops where it is and goes on with the queue from there, or waits for orders.")}><b>Now:</b> ${esc(st.label)} <span class="muted">${st.left != null && st.left > 0 ? `${hrs(st.left)} left` : st.left == null && working ? "until you stop it" : ""}</span></span>` +
       `<span class="qbtns"><button class="mini" data-action="${moving ? "xp-cancelmove" : "xp-stop"}" data-id="${p.id}"${tip(hint)}>✕</button></span></div></li>`;
   }
@@ -414,7 +414,7 @@ export function heatBlock(state, p) {
   const h = heatInfo(state, p);
   if (h.heat < 1 && !h.activity) return "";
   const color = h.heat < 25 ? "var(--good)" : h.heat < 50 ? "var(--accent)" : h.heat < 75 ? "#e0a84f" : "var(--danger)";
-  // At a camp (sim/fieldheat.js campSite: camping, or at the staging camp): what the Heat is made of, and the fire.
+  // Resting in the field (sim/fieldheat.js campSite: the internal rest task "camp"): what the Heat is made of, and the fire.
   const camp = h.camp ? `<div class="row small muted" style="margin-top:0.2rem"${tip(h.text)}><span>Camp danger: ${esc(rowsText(h.rows || []))}</span>${fireButton(h.camp.fire, h.camp.kind === "staging" ? `data-camp="1"` : `data-team="${p.id}"`)}</div>` : "";
   return `<div class="row" style="margin-top:0.3rem"${tip(h.text)}><span class="muted" style="width:3.5rem">Heat</span><div style="flex:1">${bar(h.heat, color)}</div><span style="width:5.5rem;text-align:right" class="${h.heat >= 50 ? "warn" : ""}">${Math.round(h.heat)} · ${h.activity ? `${(h.chance * 100).toFixed(1)}%/h` : "falling"}</span></div>${camp}`;
 }

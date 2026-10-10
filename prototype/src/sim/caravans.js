@@ -454,7 +454,7 @@ export function caravanCard(state, p, text = "") {
     });
   }
   choices.push({
-    label: "Stay here a day (24h)", hint: "Camp here for a day (the hurt rest), then this card comes back", order: true,
+    label: "Stay here a day (24h)", hint: "Rest here for a day (the hurt heal a little), then this card comes back", order: true,
     resolve: (st) => { const msg = startOrder(st, p, { type: "camp", hours: 24 }); p.orders = [{ type: "mission", mission: "caravan", at: tile }, ...(p.orders || [])]; return msg; },
   });
   if (next != null) {

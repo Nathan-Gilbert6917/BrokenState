@@ -9,7 +9,7 @@
 //     activity: fishing 0.7, setting or checking snares 0.8, waiting / holding / look around / treating 1.0,
 //               hunting 1.2 (and +6 a gunshot, hunting.js), cutting wood 1.3 (axes carry: woodcutting.js),
 //               gathering / crafting / repairs 1.5,
-//               building a boat 1.8 (hammering); a camp and the staging camp: the camp danger model below instead
+//               building a boat 1.8 (hammering); resting in the field: the camp danger model below instead
 //     place:    countryside 1.0, suburbs 1.4, city 1.8, then × (1 + 0.6 × infection)
 //     hive land ×1.4, the red ring around a hive ×2
 //     team size 0.7 + 0.1 a person (3 people 1.0, 6 people 1.3)
@@ -52,7 +52,7 @@ export const HEAT_TROUBLE = 0.12;     // hourly chance at Heat 100 and danger 1
 export const HEAT_COOLDOWN = 6;       // hours after trouble before the next roll
 // stage and camp: only where campSite does not apply (it always does for them: the camp danger model, CAMP_HEAT).
 const ACTIVITY = { sweep: 0.5, fish: 0.7, snare: 0.8, hunt: 1.2, wood: 1.3, waiting: 1, holding: 1, survey: 1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, fixcar: 1.6, stage: 1.6, cross: 1.8, camp: 2 };
-const ACT_NAME = { sweep: "surveying (on the move about the area)", fish: "fishing", snare: "snares", hunt: "hunting (gunshots add more)", wood: "cutting wood (the axes carry)", waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", fixcar: "getting a found vehicle running (engine noise, tools)", stage: "building the staging camp", cross: "building a boat", camp: "camp fire and cooking" };
+const ACT_NAME = { sweep: "surveying (on the move about the area)", fish: "fishing", snare: "snares", hunt: "hunting (gunshots add more)", wood: "cutting wood (the axes carry)", waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", fixcar: "getting a found vehicle running (engine noise, tools)", stage: "building the camp", cross: "building a boat", camp: "camp fire and cooking" };
 
 // What the team is doing on the spot (null: moving, in a fight or search, on the water, or not a field team).
 export function stationaryActivity(p) {
@@ -117,14 +117,14 @@ function teamMult(state, p, parts) {
 // ---------- camp danger ----------
 // Heat an hour at a camp, added up (then × the place, stealthy and Ranger, and the camp kit carried):
 //   presence  0.3 (people living on one spot: tracks, rubbish, noise)
-//   people    0.12 a person there (at the staging camp: every team on its tile)
+//   people    0.12 a person there
 //   fire      lit: 0.5 by day (smoke), 1.4 at night (the light carries); out: nothing. A smokeless stove carried (GEAR
 //             heat "camp") ×0.6 on the fire.
 //   vehicles  0.5 a car parked there, 0.7 the pickup (engines, fuel smell, tracks), and raiders want them: +0.12 to the
 //             tile's danger each (tileDanger)
 //   shots     0.1 a gunshot fired at or next to the camp (a neighbour tile counts half), halving every 18 hours
 //             (state.gunfire, noteGunfire: every fight's shots), at most +3
-//   work      0.3 while the building work goes on (staging.js, daylight)
+//   work      0.3 while building work goes on (daylight)
 // The Heat settles 3% an hour on the spot (it levels off near 33 × the hourly gain): three people working with the fire
 // lit day and night level off near 60; the fire out at night, near 35; one quiet team camping a night stays under 20.
 export const CAMP_HEAT = {
@@ -184,7 +184,7 @@ export function campGain(state, p, site, hour = state.hour) {
   const parts = [rowsText(rows), ...multParts];
   return { gain: base * mult, parts, rows, mult, base };
 }
-// The camp danger view for a panel: the staging camp (or a team's camp): the gain an hour now, the rows, the level it
+// The camp danger view for a panel: a team resting in the field: the gain an hour now, the rows, the level it
 // settles at, the Heat now (the highest of the teams there).
 export function campDanger(state, at, hour = state.hour) {
   const p = at.teams ? at.teams[0] : null;
@@ -351,7 +351,7 @@ export function heatInfo(state, p) {
   const camp = !home && activity ? campSite(state, p, activity) : null;
   let text = `Heat ${Math.round(heat)}/100: ${camp ? "the camp's fire, people, vehicles and any shooting lately" : "noise, smoke and smell from staying in one place"}. `;
   if (home) text += "At one of your bases: no Heat here.";
-  else if (camp) text += `${camp.kind === "staging" ? "The staging camp" : "The camp"} adds ${g.gain.toFixed(1)} an hour (${g.parts.join(", ")}) and loses ${Math.round(CAMP_HEAT.settle * 100)}% of its Heat an hour: it settles near ${Math.round(Math.min(HEAT_MAX, g.gain / CAMP_HEAT.settle))}. The fire is ${camp.fire ? "lit" : "out"}. Danger here: ${dangerWord(dz.danger)}${dz.parts.length ? ` (${dz.parts.join(", ")})` : ""}. Chance of trouble: ${(chance * 100).toFixed(1)}% this hour, growing with the Heat.`;
+  else if (camp) text += `The camp adds ${g.gain.toFixed(1)} an hour (${g.parts.join(", ")}) and loses ${Math.round(CAMP_HEAT.settle * 100)}% of its Heat an hour: it settles near ${Math.round(Math.min(HEAT_MAX, g.gain / CAMP_HEAT.settle))}. The fire is ${camp.fire ? "lit" : "out"}. Danger here: ${dangerWord(dz.danger)}${dz.parts.length ? ` (${dz.parts.join(", ")})` : ""}. Chance of trouble: ${(chance * 100).toFixed(1)}% this hour, growing with the Heat.`;
   else if (activity) text += `Rising ${g.gain.toFixed(1)} an hour here (${g.parts.join(", ")}). Danger here: ${dangerWord(dz.danger)}${dz.parts.length ? ` (${dz.parts.join(", ")})` : ""}. Chance of trouble (the dead, a horde, scavengers or raiders finding the team): ${(chance * 100).toFixed(1)}% this hour, growing with the Heat. Moving on lets it fall ${HEAT_DECAY} an hour.`;
   else if (moving) text += `Falling ${HEAT_DECAY} an hour while the team moves.`;
   else text += "Not rising now.";

@@ -77,7 +77,7 @@ export function planSection(state, pl, est) {
   const preset = PRESETS[plan.preset] || PRESETS.custom;
   const presetBtn = (k) => {
     const pr = PRESETS[k];
-    const label = k === "camp" ? `Camp ${plan.days} day${plan.days === 1 ? "" : "s"}, then return` : pr.name;
+    const label = k === "camp" ? `Rest ${plan.days} day${plan.days === 1 ? "" : "s"}, then return` : pr.name;
     return `<button class="mini ${plan.preset === k ? "active" : ""}" data-action="pl-preset" data-v="${k}"${tip(pr.desc)}>${esc(label)}</button>`;
   };
   const legs = est ? est.legs : [];
@@ -113,7 +113,7 @@ export function planSection(state, pl, est) {
     <div class="row small" style="flex-wrap:wrap;gap:0.3rem">Add:
       ${addBtn("survey", "Look around")}${addBtn("sweep", `Survey ${add.shours ?? 12}h`)} r${num("sradius", add.sradius ?? 3, SURVEY.radius.min, SURVEY.radius.max)} ${num("shours", add.shours ?? 12, SURVEY.hours.min, SURVEY.hours.max)}h${addBtn("scavenge", "Scavenge here")}
       ${addBtn("nearby", `Scavenge nearby (${add.count} within ${add.radius})`)} ×${num("count", add.count, 1, 4)} r${num("radius", add.radius, 1, 6)}
-      ${addBtn("camp", `Camp ${hrs(add.camp)}`)}${num("camp", add.camp, 1, 240)}h
+      ${addBtn("camp", `Rest ${hrs(add.camp)}`)}${num("camp", add.camp, 1, 240)}h
       ${addBtn("wait", `Wait ${add.wait}h`)}${num("wait", add.wait, 1, 72)}h
       ${addBtn("forage", `Forage ${add.hunt ?? 8}h`)}${addBtn("hunt", `Hunt ${add.hunt ?? 8}h`)}${addBtn("fish", `Fish ${add.hunt ?? 8}h`)}${addBtn("wood", `Cut wood ${add.hunt ?? 8}h`)}${num("hunt", add.hunt ?? 8, 2, 24)}h ${addBtn("snare", "Snares")}
       ${addBtn("gather", "Gather")}${addBtn("water", "Fetch water")}${activeCrashes(state).length ? addBtn("searcharea", "Search the area") : ""}

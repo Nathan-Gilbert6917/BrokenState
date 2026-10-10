@@ -122,7 +122,7 @@ export const MISSIONS = {
   formed:      { name: "Field",            desc: "A team formed at one of your bases (Form a team…): it waits on the base's tile for orders (teamform.js).", hidden: true },
   moveout:     { name: "Moving out",       desc: "People who left a crowded base, on their way to found an outpost or to another of your bases (moveout.js).", hidden: true },
   flee:        { name: "Refugee",          desc: "Hardcore mode: the survivors who fled when Calder fell, on the road until they found their first hub (hardcore-start.js).", hidden: true },
-  // With no base at all (hardcore's first hub, the exiles): a staging camp built up into the hub (staging.js).
+  // With no base at all (hardcore's first hub, the exiles): a camp built up into the hub (staging.js).
   establish:   { name: "Establish base",   desc: "Set up camp here and build it up into a shelter (then, later, a base): its builders work on it as the materials it lists come in (staging.js).", hidden: true },
   enter:       { name: "Enter base",       desc: "Move into the base of yours the team stands on: its people live there from now on, what it carries goes into the stores and armory, its vehicle parks there, and the team is disbanded (moveout.js enterOption).", hidden: true },
   strikecamp:  { name: "Strike the camp",  desc: "Old saves' order: a camp is struck from its base window now (staging.js strikeCamp).", hidden: true },
@@ -601,17 +601,16 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
 export const STAY_MISSIONS = ["move", "recon", "outpost", "occupy"];
 // Missions after which the team lives at the base it founded or moved into: no plan after them (the planner, trips.js).
 export const SETTLE_MISSIONS = ["outpost", "occupy"];
-// Scrap an outpost camp needs carried to pitch it: 5, or 2 on the ruins of a burned base (salvage there). The rest of
-// the old 15 and more is the camp's step up (buildings.js outpost_up), brought in as it goes.
+// Scrap an outpost camp needs carried to set it up. Since camps are bases (2026-10-09, "setting up a plain camp should
+// be quick and cheap"): nothing; the step up takes the materials (outpost_up, 10 scrap less on ruins: buildings.js
+// tierUpJobFor), brought in as it goes.
 /** @param {State} state @param {number} tile */
-// Since camps are bases (2026-10-09, "setting up a plain camp should be quick and cheap"): nothing; the step up takes the
-// materials (outpost_up, 10 scrap less on ruins: buildings.js tierUpJobFor).
 export const outpostScrap = (state, tile) => 0;
 // What a team should carry to pitch a camp and have it established without another trip: { scrap, parts }.
 /** @param {State} state @param {number} tile */
 export const outpostKit = (state, tile) => ({ ...BUILDINGS.outpost_up.cost, scrap: Math.max(0, (BUILDINGS.outpost_up.cost.scrap || 0) - (state.tiles[tile] && state.tiles[tile].ruin ? CAMP.ruinScrap : 0)) });
-// Hours of work to pitch an outpost camp once the team is there (user numbers 2026-10-09: "Outpost camp 6 hours 12
-// scrap"): the team works on it (orders.js task "pitch"), then the camp stands. The staging camp's: staging.js STAGING.PITCH.
+// Hours of work to set up a camp once the team is there (Set up camp, Establish base, Build outpost): the team works
+// on it (orders.js task "pitch"), then the camp stands (staging.js pitchArrive).
 export const PITCH_HOURS = 1; // = buildings.js CAMP.setupHours (a literal: the modules import each other)
 
 // Why a mission cannot be sent to a tile, from what is fixed or known about it (null = fine). The planner offers
@@ -764,7 +763,7 @@ export function launchExpedition(state, opts) {
   const days = Math.ceil((opts.plan ? p.plannedHours : est.hours) / 24);
   const planHome = opts.plan && p.orders.some((o) => o.type === "home");
   const waits = opts.plan ? !planHome : stays;
-  const after = mission === "outpost" ? ` The team pitches an outpost camp and stays as its first staff${v ? `, and the ${v.name} stays there` : ""}.` :
+  const after = mission === "outpost" ? ` The team sets up an outpost camp and stays as its first staff${v ? `, and the ${v.name} stays there` : ""}.` :
     mission === "occupy" ? ` It clears out whoever is inside and moves in as its first staff${v ? `, the ${v.name} with it` : ""}.` :
     opts.plan ? ` Plan: ${p.plan.name}${p.orders.length ? ` (${queueText(state, p)})` : ""}.${waits ? " Then it waits for orders." : ""}` : stays ? " The team waits there for orders." : "";
   if (lights.length) log(state, `${teamName(state, p)} takes lights from the armory: ${lights.join(", ")}.`, "info");
@@ -1849,7 +1848,7 @@ export function startReturn(state, p) {
   const known = p.radioLive || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { // no base left at all (conquest.js): the team stays on the road until it founds or takes one
-    if (p.phase !== "waiting") awaitOrders(state, p, "There is no base to go home to. Found a new one (Establish base: a staging camp you build up into your hub) or take one back (Assault their base).", { failed: true, hold: true });
+    if (p.phase !== "waiting") awaitOrders(state, p, "There is no base to go home to. Found a new one (Establish base: a camp you build up into your hub) or take one back (Assault their base).", { failed: true, hold: true });
     return "There is no base to go home to.";
   }
   if (p.phase === "task" && p.task?.afloat) return "The team is out on the water. Give the order once it lands."; // lands first
@@ -1912,8 +1911,8 @@ function unloadAt(state, p, base, members) {
 }
 
 // A team that founds a base moves in for good: what it carries goes into the stores and the armory, its vehicle is
-// parked there, its people live there and the team is disbanded (Build outpost; the staging camp becoming the
-// shelter, staging.js; a base taken by assault, conquest.js).
+// parked there, its people live there and the team is disbanded (Build outpost; Set up camp and Establish base,
+// staging.js; a base taken by assault, conquest.js).
 /** @param {State} state @param {Party} p @param {Base} base */
 export function settleInto(state, p, base) {
   const members = partyMembers(state, p);

@@ -456,7 +456,7 @@ console.log("Estimates in winter: the cold and the camp fire");
     // Without the cold the rations would be the water over winter's thirst (0.9): the cold hours add to that.
     const plain = est.waterExact / 0.9;
     if (coldH > 0) { coldTrips++; if (est.foodExact > plain + 1e-6) colder++; }
-    const campLeg = est.legs.find((l) => /^Camp/.test(l.label));
+    const campLeg = est.legs.find((l) => /^Rest/.test(l.label));
     if (kind === "camp") { warmCamps++; if (warmH > 0 && campLeg && campLeg.warm === warmH) warmOk++; else console.log(`    winter case ${c}: camp by the fire ${warmH}h, planner ${campLeg && campLeg.warm}`); }
     if (kind === "cold camp") { outCamps++; if (warmH === 0 && campLeg && !campLeg.warm) outOk++; }
   }

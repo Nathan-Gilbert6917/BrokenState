@@ -416,7 +416,7 @@ function paintHub(L) {
   return p;
 }
 
-// A shelter (tier 0, sim/buildings.js SHELTER): the staging camp finished. The shack roofed in your color with a
+// A shelter (tier 0, sim/buildings.js SHELTER): the camp built up. The shack roofed in your color with a
 // stovepipe, a lean-to and the tarp, rain barrels and a fire pit in a yard of trampled earth, the scrap barricade
 // closed all round with a gap for a gate, the flag up. Built-up: rain catchers, a drying rack, a farm plot.
 function paintShelter(L) {
@@ -670,7 +670,7 @@ function paintCamp(color, lit = true) {
   return p;
 }
 
-// Your staging camp (sim/staging.js) by how far the work has got (stage 0–3): 0 a tarp shelter, crates and a fire on
+// Your camp (sim/staging.js) by how far its step up has got (stage 0–3): 0 a tarp shelter, crates and a fire on
 // trampled ground with a pile of stakes; 1 the first stretch of barricade and the posts of a shack; 2 the shack half
 // boarded, the barricade on both sides; 3 the shack roofed in your color, the barricade all but closed, a flag up.
 // The tarp, roof and flag are in your color (like the camp and base sprites).
@@ -2315,7 +2315,7 @@ export function campSpriteCanvas(color, lit = true) {
   return cached(`camp:${color}:${+lit}`, () => paintCamp(color, lit));
 }
 
-// Your staging camp by stage (0–3, sim/staging.js stagingStage), tinted with your color.
+// Your camp by stage (0–3, ui/render.js campStage), tinted with your color.
 export function stagingSpriteCanvas(stage, color, lit = true) {
   const k = Math.max(0, Math.min(3, stage | 0));
   return cached(`staging:${k}:${color}:${+!!lit}`, () => paintStaging(k, color, lit));
