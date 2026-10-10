@@ -48,7 +48,7 @@ import { Rng } from "./rng.js";
 import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { isCustomBg } from "./custombg.js";
-import { grabStartGear, addPickedSupplies, trunkFromPicks } from "./startgear.js"; // gear picked on the new-run screen (Customize)
+import { grabStartGear, addPickedSupplies, trunkFromPicks, loadGun, pickOf } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
 import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./staging.js";
 
@@ -530,9 +530,9 @@ export function normalStartKit(state, base) {
       const T = VEHICLE_TYPES[A.car.type];
       createVehicle(state, A.car.type, { kind: "base", baseId: base.id }, { fuel: Math.round(T.tank * 0.5 * 10) / 10, condition: 70 });
     }
-    if (s.startPoints) continue; // Customize: the pickup's back is what was picked (startgear.js normalStartVehicle)
+    // The car's back to the hub too (Customize: on the vehicle's back's bill, custompoints.js bgBacks).
     for (const [k, q] of Object.entries(A.car.trunk || {})) if (SUPPLY_KEYS.includes(k) && q > 0) base.stock[k] = (base.stock[k] || 0) + q;
-    for (const key of A.car.items || []) if (GEAR[key]) base.armory.push(startKit(newItem(key, 1)));
+    for (const key of A.car.items || []) if (GEAR[key]) { const it = startKit(newItem(key, 1)); base.armory.push(s.startPoints ? loadGun(it) : it); } // Customize: a gun in it loaded (priced so)
   }
 }
 
@@ -574,7 +574,7 @@ export function rollCar(state, p, people) {
       trunk.gear.push(item);
     }
   }
-  owner.diceTrunk = { items: trunk.gear.map((it) => it.key), supplies: { ...trunk.supplies } }; // the dice's back (until Start)
+  owner.diceTrunk = { items: trunk.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...trunk.supplies } }; // a gun with the parts it came with // the dice's back (until Start)
   if (picked) { const mine = trunkFromPicks(owner.startVehicle); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
   for (const [k, q] of Object.entries(trunk.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
   p.cargo.gear.push(...trunk.gear);

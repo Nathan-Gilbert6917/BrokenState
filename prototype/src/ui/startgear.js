@@ -15,9 +15,9 @@ import { LOAD_BANDS, wornLoad } from "../sim/load.js";
 import { VEHICLE_TYPES, RIDER_KG } from "../sim/vehicles.js";
 import {
   START_GEAR, START_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunkChoices, sanitizeStartGear, sanitizeStartVehicle, hasPicks, kitLoad, carrySpec,
-  carryReason, firstFit, misfits, trunkKg, vehicleOwner, noteDiceKit, gunInfo, gunWith, sanitizeGunMods,
+  carryReason, firstFit, misfits, trunkKg, vehicleOwner, noteDiceKit, gunInfo, gunWith, sanitizeGunMods, pickKey, pickMods,
 } from "../sim/startgear.js";
-import { itemPoints, slotPoints, gunPoints, loosePoints, pricePerson, pointsMax, vehiclePoints, suppliesPoints, carPool, poolText } from "../sim/custompoints.js";
+import { itemPoints, slotPoints, gunPoints, loosePoints, pickPoints, pricePerson, pointsMax, vehiclePoints, suppliesPoints, carPool, poolText } from "../sim/custompoints.js";
 import { ATTACH, SLOT_NAMES as GUN_SLOT_NAMES, slotsOf, modsFor, fitsSlot, makeMod, takesMods, stripMod } from "../sim/gunmods.js"; // a picked gun's parts
 import { tidyTiers } from "../sim/traits.js";
 import { standardMag } from "../sim/mags.js";
@@ -140,13 +140,21 @@ function vehicleSection(state, ui) {
   const K = carPool(state);
   const cost = vehiclePoints(V);
   const used = Math.min(cost, K.total);
+  const bill = cost + (K.owner === payer ? K.extra : 0), took = Math.min(bill, K.total);
+  const bgLine = K.extra && K.owner === payer ? `<div class="small muted"${tip("A normal start: a custom background's car comes to the hub with its own back, paid for with the vehicle's back (the car pool first, then its payer)")}>Also on this bill, to the hub with their cars: ${K.backs.map((b) => `${esc(b.s.name.split(" ")[0])}'s background car's back ${b.n}`).join(", ")} pts</div>` : "";
   const pool = K.offers.length
-    ? `${esc(poolText(K))}${cost ? ` · the back takes ${used} of it; ${esc(payer.name.split(" ")[0])} pays ${cost - used}` : ""}`
+    ? `${esc(poolText(K))}${bill ? ` · the back takes ${took} of it; ${esc(payer.name.split(" ")[0])} pays ${bill - took}` : ""}`
     : `Car pool: empty (tick "Give leftover to the car pool" on a crew card to put someone's points left towards the back).`;
   const poolTip = `The car pool pays for the vehicle's back before ${payer.name.split(" ")[0]} does: everyone who ticked "Give leftover to the car pool" gives the points they have left. Only what the back needs is taken, shared by what each gives; the rest stays theirs. Start is refused while the back costs more than the pool and its payer can pay.`;
   const tFree = Math.max(0, START_TRUNK.ITEMS - V.items.length);
   const who = state.survivors.map((s) => `<option value="${s.id}" ${s === payer ? "selected" : ""}>${esc(s.name)}</option>`).join("");
-  const items = V.items.map((k, j) => `<span class="chip"${tip(`${GEAR[k].desc || ""} (${kg(k)} kg, ${loosePoints(k)} points)${gunLong(k)}${gunInfo(k) && gunInfo(k).cal ? " It comes loaded." : ""}`)}>${esc(GEAR[k].name)}${gunBit(k)} <button class="mini" data-action="sg-trunk-del" data-i="${j}"${tip("Take it out (the points back)")}>×</button></span>`).join("") || `<span class="small muted">Nothing in the back.</span>`;
+  const tsel = ui.gearEdit && Number.isInteger(ui.gearEdit.tsel) && takesMods(pickKey(V.items[ui.gearEdit.tsel]) || "") ? ui.gearEdit.tsel : -1;
+  const items = V.items.map((e, j) => {
+    const k = pickKey(e), m = pickMods(e), fitted = m ? gunWith(k, m) : null;
+    const parts = takesMods(k) ? ` <button class="mini ${j === tsel ? "active" : ""}" data-action="sg-trunk-pick" data-i="${j}"${tip("Fit this gun with parts (they cost what they are worth)")}>⚙</button>` : "";
+    return `<span class="chip"${tip(`${GEAR[k].desc || ""} (${kg(k)} kg, ${pickPoints(e)} points)${gunLong(k, fitted)}${gunInfo(k) && gunInfo(k).cal ? " It comes loaded." : ""}`)}>${esc(GEAR[k].name)}${m ? " ⚙" : ""}${gunInfo(k, fitted) ? ` · ${gunInfo(k, fitted).text}` : ""}${parts} <button class="mini" data-action="sg-trunk-del" data-i="${j}"${tip("Take it out (the points back)")}>×</button></span>`;
+  }).join("") || `<span class="small muted">Nothing in the back.</span>`;
+  const tparts = tsel >= 0 ? gunPartsBox(pickKey(V.items[tsel]), pickMods(V.items[tsel]), `data-t="trunk" data-j="${tsel}"`, `the ${GEAR[pickKey(V.items[tsel])].name} in the back`) : "";
   const sups = Object.entries(START_TRUNK.SUPPLIES).map(([k, cap]) => `<label class="lookopt">${SUP_LABELS[k]}<input type="number" min="0" max="${cap}" step="1" style="width:4.2rem" data-action="sg-trunk-sup" data-k="${k}" value="${V.supplies[k] || 0}"${tip(`${SUP_LABELS[k]} in the back, 0–${cap} (${SUPPLIES[k] ? SUPPLIES[k].weight : 0} kg each; ${suppliesPoints({ [k]: 10 })} points for 10)`)}></label>`).join("");
   const what = info.hard
     ? `The car the ${state.survivors.length === 1 ? "survivor flees" : "team flees"} in: ${esc(info.name)}${hcOwner ? `, ${esc(hcOwner.name.split(" ")[0])}'s` : ""}. Whoever pays for the back owns the car (its kind goes with who they were).`
@@ -154,12 +162,14 @@ function vehicleSection(state, ui) {
   return `<div class="sgtrunk">
     <h3>The vehicle's back <span class="small muted">${cost} pts · ${r1(load)} / ${info.room} kg</span></h3>
     <div class="small muted">${what}</div>
+    ${bgLine}
     <div class="small sgpool"${tip(poolTip)}>${pool}</div>
     <div class="row" style="gap:0.3rem;margin:0.25rem 0"><label class="small"${tip("Whose points pay for what is in the back (in Hardcore they own the car)")}>Paid by <select data-action="sg-trunk-owner">${who}</select></label>
       <button class="mini" data-action="sg-trunk-rand"${tip(`Empty the back, then fill it with new random things and supplies for what ${payer.name.split(" ")[0]} has left${K.offers.some((o) => o.s !== payer) ? " and the car pool" : ""} (${trunkBudget(state, payer)} points) in the room there is. Each click is a new draw`)}>🎲 Random back</button>
       ${info.hard ? `<button class="mini" data-action="sg-trunk-dice"${tip("Load what the world's dice put in the back (the points it costs)")}>As rolled</button>` : ""}
       <button class="mini" data-action="sg-trunk-clear" ${V.items.length || Object.keys(V.supplies).length ? "" : "disabled"}${tip("Empty the back (the points back)")}>Empty</button></div>
     <div>${items}</div>
+    ${tparts}
     <div class="row" style="margin-top:0.25rem;gap:0.3rem"><select data-action="sg-trunk-add"${V.items.length >= START_TRUNK.ITEMS ? " disabled" : ""}><option value="">Put a thing in the back…</option>${optionsHtml(trunkChoices(), null, loosePoints)}</select>
       ${qtyBox(ui, "tqty", tFree, `How many of the next thing put in the back (each is a thing of its own: at most ${START_TRUNK.ITEMS} things, the room there is and what the payer and the car pool can pay; ${tFree} more things fit)`)}</div>
     <div class="lookopts" style="margin-top:0.25rem">${sups}</div>
@@ -174,12 +184,12 @@ function cellsHtml(state, ui, s, P, where, spec) {
   const sel = ui.gearEdit && ui.gearEdit.sel;
   const cells = [];
   for (let i = 0; i < n; i++) {
-    const key = list[i] || null;
+    const e = list[i] || null, key = pickKey(e), m = pickMods(e);
     const on = sel && sel.where === where && sel.i === i;
     const kind = where === "pouch" ? POUCH_NAMES[spec.pouch.kinds[i]] || spec.pouch.kinds[i] : where === "pocket" ? "Pocket" : "Pack";
     const why = key ? carryReason(key, where, i, spec) : "";
-    const t = key ? `${GEAR[key].name}: ${shortDesc(key)} (${kg(key)} kg, ${loosePoints(key)} points).${gunLong(key)}${gunInfo(key) && gunInfo(key).cal ? " It comes loaded." : ""} Click to pick it up, then click where it goes${why ? `. ${why}` : ""}` : `${kind}${where === "pouch" ? " pouch" : ""}: empty. ${sel ? "Click to put the picked thing here" : "Click to pick this spot for the next thing you add"}`;
-    const btn = `<button class="sgcell ${key ? "" : "empty"} ${on ? "sel" : ""} ${why ? "bad" : ""}" data-action="sg-cell" data-w="${where}" data-i="${i}"${tip(t)}><span class="sgkind">${esc(kind)}</span><span class="sgname">${key ? esc(GEAR[key].name) : "—"}</span></button>`;
+    const t = key ? `${GEAR[key].name}: ${shortDesc(key)} (${kg(key)} kg, ${pickPoints(e)} points).${gunLong(key, m ? gunWith(key, m) : null)}${gunInfo(key) && gunInfo(key).cal ? " It comes loaded." : ""} Click to pick it up (a gun: then fit it with parts below), then click where it goes${why ? `. ${why}` : ""}` : `${kind}${where === "pouch" ? " pouch" : ""}: empty. ${sel ? "Click to put the picked thing here" : "Click to pick this spot for the next thing you add"}`;
+    const btn = `<button class="sgcell ${key ? "" : "empty"} ${on ? "sel" : ""} ${why ? "bad" : ""}" data-action="sg-cell" data-w="${where}" data-i="${i}"${tip(t)}><span class="sgkind">${esc(kind)}</span><span class="sgname">${key ? `${esc(GEAR[key].name)}${m ? " ⚙" : ""}` : "—"}</span></button>`;
     cells.push(key ? `<span class="sgcellwrap">${btn}<button class="mini" data-action="sg-cell-del" data-w="${where}" data-i="${i}"${tip("Take it out (the points back)")}>×</button></span>` : btn);
   }
   const used = list.filter(Boolean).length;
@@ -192,10 +202,12 @@ function cellsHtml(state, ui, s, P, where, spec) {
 // mount or rail opens more), each listing the parts that fit it (gunmods.js fitsSlot: platform, calibre, the space),
 // "As it comes" (its factory part or nothing) and, where it has a factory part, None. What each costs is what it adds
 // to the gun's points (custompoints.js gunPoints: its worth).
-export function gunParts(P) {
-  const key = P && P.slots && P.slots.weapon;
+export const gunParts = (P) => gunPartsBox(P && P.slots && P.slots.weapon, P && P.mods, `data-t="hand"`, "");
+// The same for any picked gun: key and its parts; attrs: which gun (data-t hand / carry / trunk, data-j); what: words
+// for the head ("" for the one in the hands).
+export function gunPartsBox(key, mods0, attrs, what) {
   if (!key || !GEAR[key] || !takesMods(key)) return "";
-  const mods = P.mods || {};
+  const mods = mods0 || {};
   const gun = gunWith(key, mods), stock = gunWith(key), factory = stock.mods || {};
   const pts = gunPoints(key, mods), base = gunPoints(key);
   const all = modsFor(key);
@@ -213,12 +225,12 @@ export function gunParts(P) {
       return `<option value="${k}" ${cur === k ? "selected" : ""} title="${esc(GEAR[k].desc || "")}">${esc(GEAR[k].name)} · ${d >= 0 ? "+" : "−"}${Math.abs(d)} pts</option>`;
     }).join("");
     const none = fac ? `<option value="-" ${cur === "" ? "selected" : ""}>None (take the ${esc(fac)} off) · −${Math.max(0, from - gunPoints(key, { ...without, [slot]: "" }))} pts</option>` : "";
-    return `<label class="lookopt">${esc(GUN_SLOT_NAMES[slot] || slot)}<select data-action="sg-gunmod" data-gs="${slot}"><option value="=" ${cur === "=" ? "selected" : ""}>As it comes${fac ? ` (${esc(fac)})` : " (nothing)"}</option>${none}${opts}</select></label>`;
+    return `<label class="lookopt">${esc(GUN_SLOT_NAMES[slot] || slot)}<select data-action="sg-gunmod" data-gs="${slot}" ${attrs}><option value="=" ${cur === "=" ? "selected" : ""}>As it comes${fac ? ` (${esc(fac)})` : " (nothing)"}</option>${none}${opts}</select></label>`;
   }).join("");
   if (!rows) return "";
   const gi = gunInfo(key, gun);
   const t = `Fit the ${GEAR[key].name} with parts: each slot lists what fits it (a mount or rail opens more slots). A part costs what it is worth, added to the gun's points (${base} as it comes, ${pts} now). A bigger magazine also brings more rounds (a full load and two more, in the price).`;
-  return `<div class="sgparts"${tip(t)}><div class="small muted">Gun parts: ${gi ? `${esc(gi.text)} · ` : ""}gun ${pts} pts${pts !== base ? ` (${base} as it comes)` : ""}${Object.keys(mods).length ? ` <button class="mini" data-action="sg-gunmods-clear"${tip("Back to the gun as it comes (its factory parts)")}>As it comes</button>` : ""}</div><div class="lookopts">${rows}</div></div>`;
+  return `<div class="sgparts"${tip(t)}><div class="small muted">${what ? `Parts for ${esc(what)}` : "Gun parts"}: ${gi ? `${esc(gi.text)} · ` : ""}gun ${pts} pts${pts !== base ? ` (${base} as it comes)` : ""}${Object.keys(mods).length ? ` <button class="mini" data-action="sg-gunmods-clear" ${attrs}${tip("Back to the gun as it comes (its factory parts)")}>As it comes</button>` : ""}</div><div class="lookopts">${rows}</div></div>`;
 }
 
 // ---------- the window ----------
@@ -275,6 +287,7 @@ export function startGearEditor(state, ui) {
         <div class="bar"${tip(bandsTip)}><i style="width:${pct}%;background:${color}"></i></div>
         <h3>Carried</h3>
         ${cells}${noRig}${noBag}
+        ${(() => { const e = sel && P.carry && P.carry[sel.where] ? P.carry[sel.where][sel.i] : null; const k = pickKey(e); return k ? gunPartsBox(k, pickMods(e), `data-t="carry"`, `the picked ${GEAR[k].name}`) : ""; })()}
         ${left.length ? `<div class="small danger">No room for ${esc(left.join(", "))}: ${hard ? "left behind" : "it goes to the hub's armory"}. Take it out or pick a bigger bag.</div>` : ""}
         <div class="row" style="margin-top:0.35rem;gap:0.3rem"><select data-action="sg-item-add"><option value="">Add a thing${sel && !((P.carry && P.carry[sel.where]) || [])[sel.i] ? ` to the ${sel.where === "pouch" ? "pouch" : sel.where} picked` : ""}…</option>${optionsHtml(carryChoices(), null, loosePoints)}</select>
           ${qtyBox(ui, "qty", free, `How many of the next thing you add, each in a spot of its own where it fits (a pocket, pouch or pack slot holds one thing; a box of rounds is a full box). At most what fits (${free} spot${free === 1 ? "" : "s"} free) and what their points pay for; the points are its price that many times`)}
@@ -317,7 +330,7 @@ function reflow(ui, P, s) {
   for (const x of bad) P.carry[x.where][x.i] = null;
   for (const x of bad) {
     const at = firstFit(P, x.key, spec);
-    if (at) P.carry[at.where][at.i] = x.key; else out.push(GEAR[x.key].name);
+    if (at) P.carry[at.where][at.i] = x.entry; else out.push(GEAR[x.key].name);
   }
   if (out.length) ui.gearEdit.msg = `No room for ${out.join(", ")} any more: taken out (the points back).`;
 }
@@ -380,6 +393,21 @@ function editTrunk(state, ui, fn) {
 }
 const room = (state) => { const info = startVehicleInfo(state); return info ? info.room : 0; };
 
+// A gun's parts with one slot changed ("=": as it comes, "-": the factory part off, else a part): the new parts (null:
+// as it comes), or false with the window's reason when it does not fit (what it needs came off).
+function partsAfter(ui, key, cur, slot, v) {
+  const want = { ...(cur || {}) };
+  if (v === "=") delete want[slot]; else if (v === "-") want[slot] = ""; else if (ATTACH[v]) want[slot] = v; else return false;
+  const got = sanitizeGunMods(key, want);
+  if (v !== "=" && !(got && slot in got)) {
+    const room = gunWith(key, { ...want, [slot]: undefined });
+    stripMod(room, slot);
+    if (ui.gearEdit) ui.gearEdit.msg = v === "-" ? "Nothing to take off there." : fitsSlot(room, makeMod(v, 1)) || `The ${GEAR[v].name} does not fit there.`;
+    return false;
+  }
+  return got;
+}
+
 export const SG_ACTIONS = {
   "sg-open": (state, ui, d) => {
     if (ui.started || !freeEdit(ui)) return false;
@@ -403,7 +431,7 @@ export const SG_ACTIONS = {
     if (!sel || !selKey) { ui.gearEdit.sel = { where, i }; ui.gearEdit.msg = ""; return false; } // pick it up (or pick this spot)
     return edit(state, ui, (Q, who) => {
       const spec = carrySpec(Q, who);
-      const why = carryReason(selKey, where, i, spec) || (here ? carryReason(here, sel.where, sel.i, spec) : "");
+      const why = carryReason(pickKey(selKey), where, i, spec) || (here ? carryReason(pickKey(here), sel.where, sel.i, spec) : "");
       if (why) { ui.gearEdit.msg = why; return false; }
       Q.carry[where][i] = selKey;
       Q.carry[sel.where][sel.i] = here || null;
@@ -457,7 +485,7 @@ export const SG_ACTIONS = {
     const K = sanitizeStartGear(s.diceKit) || { slots: {} };
     P.slots = { ...Object.fromEntries(START_GEAR.SLOTS.map((k) => [k, ""])), ...K.slots };
     P.carry = K.carry || blankCarry();
-    delete P.mods;
+    if (K.mods) P.mods = { ...K.mods }; else delete P.mods; // the parts the dice put on the gun come with it
     ui.gearEdit.sel = null;
   }),
   "sg-kit-clear": (state, ui) => edit(state, ui, (P) => {
@@ -475,9 +503,19 @@ export const SG_ACTIONS = {
     return true;
   },
   // The gun in the hands back as it comes.
-  "sg-gunmods-clear": (state, ui) => edit(state, ui, (P) => { if (!P.mods) return false; delete P.mods; }),
-  "sg-trunk-del": (state, ui, d) => editTrunk(state, ui, (V) => { if (!V.items[Number(d.i)]) return false; V.items.splice(Number(d.i), 1); }),
-  "sg-trunk-clear": (state, ui) => editTrunk(state, ui, (V) => { V.items = []; V.supplies = {}; }),
+  "sg-gunmods-clear": (state, ui, d) => {
+    const t = (d && d.t) || "hand";
+    if (t === "trunk") return editTrunk(state, ui, (V) => { const j = Number(d.j), k = pickKey(V.items[j]); if (!k || !pickMods(V.items[j])) return false; V.items[j] = k; });
+    return edit(state, ui, (P) => {
+      if (t === "carry") { const sel = ui.gearEdit.sel, e = sel && P.carry[sel.where] && P.carry[sel.where][sel.i]; if (!pickMods(e)) return false; P.carry[sel.where][sel.i] = pickKey(e); return; }
+      if (!P.mods) return false;
+      delete P.mods;
+    });
+  },
+  // A gun in the back picked for its parts (again: put down). Nothing changes in the world.
+  "sg-trunk-pick": (state, ui, d) => { if (ui.gearEdit) ui.gearEdit.tsel = ui.gearEdit.tsel === Number(d.i) ? null : Number(d.i); return false; },
+  "sg-trunk-del": (state, ui, d) => editTrunk(state, ui, (V) => { if (!V.items[Number(d.i)]) return false; V.items.splice(Number(d.i), 1); if (ui.gearEdit) ui.gearEdit.tsel = null; }),
+  "sg-trunk-clear": (state, ui) => editTrunk(state, ui, (V) => { V.items = []; V.supplies = {}; if (ui.gearEdit) ui.gearEdit.tsel = null; }),
   // Empty, then a new random back for what its payer has left.
   "sg-trunk-rand": (state, ui) => editTrunk(state, ui, (V, o) => {
     const R = randomTrunk(trunkBudget(state, o), room(state), freshRng());
@@ -538,20 +576,32 @@ export const SG_CHANGE = {
   }),
   // A part for one slot of the gun in the hands ("=": as it comes, "-": the factory part off). One that does not fit
   // (what it needs came off) is refused with the reason.
-  "sg-gunmod": (state, ui, el) => edit(state, ui, (P) => {
-    const key = P.slots.weapon, slot = el.dataset.gs, v = el.value;
-    if (!key || !GEAR[key] || !slot) return false;
-    const want = { ...(P.mods || {}) };
-    if (v === "=") delete want[slot]; else if (v === "-") want[slot] = ""; else if (ATTACH[v]) want[slot] = v; else return false;
-    const got = sanitizeGunMods(key, want);
-    if (v !== "=" && !(got && slot in got)) {
-      const room = gunWith(key, { ...want, [slot]: undefined });
-      stripMod(room, slot);
-      ui.gearEdit.msg = v === "-" ? "Nothing to take off there." : fitsSlot(room, makeMod(v, 1)) || `The ${GEAR[v].name} does not fit there.`;
-      return false;
+  // data-t: the gun in the hands (hand), the carried gun picked up (carry), a gun in the back (trunk, data-j).
+  "sg-gunmod": (state, ui, el) => {
+    const t = el.dataset.t || "hand", slot = el.dataset.gs, v = el.value;
+    if (!slot) return false;
+    if (t === "trunk") {
+      return editTrunk(state, ui, (V) => {
+        const j = Number(el.dataset.j), k = pickKey(V.items[j]);
+        const got = k ? partsAfter(ui, k, pickMods(V.items[j]), slot, v) : false;
+        if (got === false) return false;
+        V.items[j] = got ? { key: k, mods: got } : k;
+      });
     }
-    if (got) P.mods = got; else delete P.mods;
-  }),
+    return edit(state, ui, (P) => {
+      if (t === "carry") {
+        const sel = ui.gearEdit.sel, e = sel && P.carry[sel.where] ? P.carry[sel.where][sel.i] : null, k = pickKey(e);
+        const got = k ? partsAfter(ui, k, pickMods(e), slot, v) : false;
+        if (got === false) return false;
+        P.carry[sel.where][sel.i] = got ? { key: k, mods: got } : k;
+        return;
+      }
+      const key = P.slots.weapon;
+      const got = key && GEAR[key] ? partsAfter(ui, key, P.mods, slot, v) : false;
+      if (got === false) return false;
+      if (got) P.mods = got; else delete P.mods;
+    });
+  },
   // The × boxes: how many of the next thing (kept while the window is open).
   "sg-qty": (state, ui, el) => {
     if (!ui.gearEdit || !["qty", "tqty"].includes(el.dataset.k)) return false;

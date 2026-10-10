@@ -13,17 +13,23 @@
 //   - a follow-up the same day ("For choosing guns ... provide how much capacity and what ammo caliber it takes as well
 //     as allow for gun customization ... All guns chosen start with a loaded magazine"): every gun in the pickers shows
 //     its calibre and rounds, the gun in the hands takes parts that fit it (each adding its worth to the gun's points; a
-//     bigger magazine more rounds too), kept through rebuilds, and a gun carried or in the vehicle's back comes loaded.
+//     bigger magazine more rounds too), kept through rebuilds, and a gun carried or in the vehicle's back comes loaded;
+//   - a fix: at a normal start a custom background's car's back (to the hub with its car) is on the vehicle's back's
+//     bill (the car pool first, then its payer), as the backgrounds editor says;
+//   - parts on a carried gun and on a gun in the vehicle's back (kept as { key, mods }), loaded to a fitted magazine;
+//   - The dice's gear (and Start from the dice, Hardcore's As rolled back) keeps the parts the dice put on a gun;
+//   - the background's Total follows every key press (only its line redrawn, so the box keeps its focus).
 // Usage: node tools/newrunpointstest.js [-v]
+import { readFileSync } from "node:fs";
 import { createWorld } from "../src/sim/world.js";
 import { GEAR, SKILLS } from "../src/sim/data.js";
-import { CUSTOM_POINTS, itemPoints, suppliesPoints, skillCost, pricePerson, overBudget, overText, carPool, poolText, backgroundPoints, ownPoints, slotPoints, gunPoints, gunExtras, loosePoints } from "../src/sim/custompoints.js";
-import { carryList, clearStartGear, trunkKg, START_TRUNK, START_GEAR, gunInfo, gunWith, gunCap, sanitizeStartGear, sanitizeGunMods } from "../src/sim/startgear.js";
+import { CUSTOM_POINTS, itemPoints, suppliesPoints, skillCost, pricePerson, overBudget, overText, carPool, poolText, backgroundPoints, ownPoints, slotPoints, gunPoints, gunExtras, loosePoints, bgBacks, bgCarBack, pickPoints } from "../src/sim/custompoints.js";
+import { carryList, clearStartGear, trunkKg, START_TRUNK, START_GEAR, gunInfo, gunWith, gunCap, sanitizeStartGear, sanitizeGunMods, sanitizeStartVehicle, noteDiceKit } from "../src/sim/startgear.js";
 import { allCarried } from "../src/sim/inventory.js";
 import { trunkBudget } from "../src/sim/randomkit.js";
-import { newRunScreen, crewSnapshot, blankCrew, randomizeAllCrew } from "../src/ui/newgame.js";
-import { startGearEditor, SG_ACTIONS, SG_CHANGE, startVehicleInfo, poolRow } from "../src/ui/startgear.js";
-import { setCustomLibrary, customLibrary, presetToCustom, backgroundEditor, BG_ACTIONS, BG_CHANGE } from "../src/ui/backgrounds.js";
+import { newRunScreen, crewSnapshot, blankCrew, randomizeAllCrew, crewWithBackground } from "../src/ui/newgame.js";
+import { startGearEditor, SG_ACTIONS, SG_CHANGE, startVehicleInfo, poolRow, loadDice } from "../src/ui/startgear.js";
+import { setCustomLibrary, customLibrary, presetToCustom, backgroundEditor, BG_ACTIONS, BG_CHANGE, BG_INPUT } from "../src/ui/backgrounds.js";
 import { blankBackground } from "../src/sim/custombg.js";
 
 let pass = 0, fail = 0;
@@ -131,7 +137,7 @@ section("A custom background's total");
   BG_ACTIONS["bg-open"](st, ui);
   ui.bgEditor.sel = "c_9";
   const html = backgroundEditor(st, ui);
-  check(new RegExp(`Total ${N.total} points`).test(html) && /skill bumps 13\+/.test(html) && /of 80 each/.test(html) && /the car's back \d+ more, not in the total/.test(html), `the editor's line: "${(html.match(/Under Customize:[^<]*/) || [""])[0]}… Total ${N.total}"`);
+  check(new RegExp(`Total ${N.total} points`).test(html) && /skill bumps 13\+/.test(html) && /of 80 each/.test(html) && /the car's back \d+ more, paid with the vehicle's back/.test(html), `the editor's line: "${(html.match(/Under Customize:[^<]*/) || [""])[0]}… Total ${N.total}"`);
   BG_CHANGE["bg-skill"](st, ui, { value: "10", dataset: { k: "medicine" } });
   const N2 = backgroundPoints(customLibrary().c_9, "normal");
   check(N2.total === N.total + skillCost(10) - skillCost(5) && new RegExp(`Total ${N2.total} points`).test(backgroundEditor(st, ui)), `live: Medicine +10 makes it ${N2.total}`);
@@ -335,6 +341,193 @@ section("Guns: calibre and capacity, parts, a loaded magazine");
   check(rv && rv.loaded && rv.loaded.n === 6 && rv.loaded.key === "a_357_fmj", "Hardcore: the revolver in the car's back loaded (6)");
   const hg = h2.survivors[0].gear.weapon;
   check(hg.key === "ar" && hg.mods.mag.key === "mag_stanag_40" && (h2.parties[0].supplies.a_556_fmj || 0) >= 40 * START_GEAR.LOADS, `Hardcore: the rifle in the hands with its 40-round magazine and its rounds (${h2.parties[0].supplies.a_556_fmj})`);
+}
+
+section("A custom background's car's back at a normal start: on the vehicle's back's bill");
+{
+  const lib = [{ ...presetToCustom("veteran", "c_5"), car: { odds: 1, type: "sedan", trunk: { fuel: 20, food: 10 }, items: ["crowbar", "pistol"] } }];
+  setCustomLibrary(lib);
+  const A0 = customLibrary().c_5;
+  const mk = (mode, crew) => { const w = createWorld({ seed: 42, factionCount: 5, crewRoll: ROLL, mode, crew, customBackgrounds: lib }); w.pointsMax = 80; return w; };
+  const blank = (mode) => mk(mode, blankCrew(createWorld({ seed: 42, factionCount: 5, crewRoll: ROLL, mode })));
+  const st0 = blank("normal");
+  const a = mk("normal", crewWithBackground(st0, st0.survivors[1].id, "c_5"));
+  loadDice(a, a.survivors[1]); // main.js pointsLoad
+  const st = mk("normal", crewSnapshot(a));
+  const bgS = st.survivors[1], lead = st.survivors.find((s) => s.leader);
+  const n = bgCarBack(A0);
+  check(n === suppliesPoints({ fuel: 20, food: 10 }) + itemPoints("crowbar") + loosePoints("pistol") && backgroundPoints(A0, "normal").trunk === n, `the car's back priced: ${n} (a gun in it loaded)`);
+  check(bgBacks(st).length === 1 && bgBacks(st)[0].s === bgS && bgBacks(st)[0].n === n, "on the bill: their background's car's back");
+  let K = carPool(st);
+  check(K.owner === lead && K.cost === n && K.extra === n && pricePerson(st, lead).vehicle === n && pricePerson(st, bgS).vehicle === 0, `nothing picked for the back: its payer (the leader) pays the ${n}`);
+  check(/background cars' backs/.test(pricePerson(st, lead).lines.join(" · ")), "the leader's bill says so");
+  const ui = UI();
+  ui.gearEdit = { i: 0, sel: null, msg: "" };
+  check(/Also on this bill, to the hub with their cars: [^<]* background car's back \d+ pts/.test(startGearEditor(st, ui)), "the gear window's vehicle's back shows it");
+  // Paid by someone else: it moves with the back.
+  SG_CHANGE["sg-trunk-sup"](st, ui, { value: "10", dataset: { k: "water" } });
+  const other = st.survivors.find((s) => !s.leader && s !== bgS);
+  SG_CHANGE["sg-trunk-owner"](st, ui, { value: String(other.id) });
+  K = carPool(st);
+  check(K.owner === other && K.cost === n + suppliesPoints({ water: 10 }) && pricePerson(st, lead).vehicle === 0, "Paid by: the background car's back goes with the rest of the back");
+  // The car pool first.
+  pool(st, lead);
+  K = carPool(st);
+  check(K.used === Math.min(K.total, K.cost) && pricePerson(st, other).vehicle === K.cost - K.used, `the car pool pays it first (${K.used} of ${K.cost})`);
+  // Random back: what the picks may cost leaves room for it.
+  const tb = trunkBudget(st, other);
+  check(tb === Math.max(0, Math.max(0, 80 - ownPoints(st, other)) + K.offers.filter((o) => o.s !== other).reduce((x, o) => x + o.n, 0) - n), `Random back's budget less the background car's back (${tb})`);
+  // Over: the refusal names it.
+  for (const k of SKILLS) other.skills[k] = 15;
+  pool(st, lead, false);
+  check(overBudget(st).some((x) => x.s === other) && /with the background cars' backs, \d+/.test(overText(st)), `Start refused, the back named with it: "${overText(st)}"`);
+  for (const k of SKILLS) other.skills[k] = 0;
+  // Built: it goes to the hub (it used to be dropped under Customize), the gun in it loaded.
+  const plain = mk("normal", crewSnapshot(st0));
+  const b = mk("normal", crewSnapshot(st));
+  check(b.bases[0].stock.fuel === plain.bases[0].stock.fuel + 20 && b.bases[0].stock.food >= plain.bases[0].stock.food + 10, "built: its fuel and food in the hub's stores");
+  const pz = b.bases[0].armory.find((it) => it.key === "pistol" && it.loaded);
+  check(b.bases[0].armory.some((it) => it.key === "crowbar") && !!pz, "and its crowbar and pistol in the armory");
+  // Hardcore: the car's back is the dice's back (As rolled, priced as picks): nothing extra on the bill.
+  const h0 = blank("hardcore");
+  const ha = mk("hardcore", crewWithBackground(h0, h0.survivors[1].id, "c_5"));
+  loadDice(ha, ha.survivors[1]);
+  const h = mk("hardcore", crewSnapshot(ha));
+  check(!bgBacks(h).length && carPool(h).extra === 0, "Hardcore: nothing extra (the car's back loads with As rolled)");
+  // The editor says where it goes.
+  const eui = { started: false, ironman: false };
+  BG_ACTIONS["bg-open"](st, eui);
+  eui.bgEditor.sel = "c_5";
+  check(/paid with the vehicle's back/.test(backgroundEditor(st, eui)) && /goes to the hub with the car, paid by whoever pays for the vehicle's back/.test(backgroundEditor(st, eui)), "the editor: the car's back is paid with the vehicle's back");
+  setCustomLibrary([]);
+}
+
+section("Parts on a carried gun and on a gun in the vehicle's back");
+{
+  const st = blankWorld(42);
+  const ui = UI();
+  ui.gearEdit = { i: 0, sel: null, msg: "" };
+  const s = st.survivors[0];
+  SG_CHANGE["sg-slot"](st, ui, { value: "hikingpack", dataset: { slot: "backpack" } });
+  add(st, ui, "pistol");
+  const at = carryList(s.startGear).find((x) => x.key === "pistol");
+  check(!/data-t="carry"/.test(startGearEditor(st, ui)), "no parts box until the gun is picked up");
+  SG_ACTIONS["sg-cell"](st, ui, { w: at.where, i: at.i });
+  check(/Parts for the picked 9mm pistol/.test(startGearEditor(st, ui)) && /data-action="sg-gunmod" data-gs="optic" data-t="carry"/.test(startGearEditor(st, ui)), "picked up: its parts box");
+  const p0 = pricePerson(st, s).carried;
+  check(SG_CHANGE["sg-gunmod"](st, ui, { value: "reddot", dataset: { gs: "optic", t: "carry" } }) === true, "a red dot on the carried pistol");
+  SG_CHANGE["sg-gunmod"](st, ui, { value: "mag_glock_33", dataset: { gs: "mag", t: "carry" } });
+  let e = s.startGear.carry[at.where][at.i];
+  check(e && e.key === "pistol" && e.mods.optic === "reddot" && e.mods.mag === "mag_glock_33", `kept as { key, mods } (${JSON.stringify(e)})`);
+  const p1 = pricePerson(st, s).carried;
+  check(p1 === pickPoints(e) && p1 === gunPoints("pistol", e.mods) + suppliesPoints({ a_9mm_fmj: 33 }) && p1 > p0, `priced: the gun as fitted and its 33-round load (${p0} → ${p1})`);
+  check(SG_CHANGE["sg-gunmod"](st, ui, { value: "riflecan", dataset: { gs: "muzzle", t: "carry" } }) === false, "a part that does not fit is refused");
+  // Moved to another spot: the parts go with it.
+  const free = s.startGear.carry.pack.findIndex((x, j) => !x && j !== at.i);
+  const to = free >= 0 ? free : s.startGear.carry.pack.length;
+  SG_ACTIONS["sg-cell"](st, ui, { w: "pack", i: to });
+  e = s.startGear.carry.pack[to];
+  check(e && e.mods && e.mods.optic === "reddot", "moved to another pack slot: its parts with it");
+  const b = again(st);
+  const pz = allCarried(b.survivors[0]).find((it) => it.key === "pistol");
+  check(pz && pz.mods && pz.mods.optic.key === "reddot" && pz.mods.mag.key === "mag_glock_33" && pz.loaded && pz.loaded.n === 33, `rebuilt: the carried pistol fitted and loaded to its magazine (${pz && pz.loaded && pz.loaded.n})`);
+  ui.gearEdit.sel = { where: "pack", i: to };
+  check(SG_ACTIONS["sg-gunmods-clear"](st, ui, { t: "carry" }) === true && s.startGear.carry.pack[to] === "pistol" && pricePerson(st, s).carried === p0, "As it comes: the plain key again, the points back");
+  // The vehicle's back.
+  ui.gearEdit.sel = null;
+  tadd(st, ui, "ar");
+  const o = st.survivors.find((x) => x.startVehicle);
+  const j = o.startVehicle.items.indexOf("ar");
+  check(SG_ACTIONS["sg-trunk-pick"](st, ui, { i: j }) === false && /Parts for the Assault rifle in the back/.test(startGearEditor(st, ui)) && /data-t="trunk" data-j="0"/.test(startGearEditor(st, ui)), "the ⚙ on a gun in the back: its parts box");
+  const v0 = pricePerson(st, o).vehicle;
+  check(SG_CHANGE["sg-gunmod"](st, ui, { value: "mag_stanag_40", dataset: { gs: "mag", t: "trunk", j: String(j) } }) === true, "a 40-round magazine on the rifle in the back");
+  e = o.startVehicle.items[j];
+  check(e.key === "ar" && e.mods.mag === "mag_stanag_40" && pricePerson(st, o).vehicle === v0 - loosePoints("ar") + pickPoints(e), `kept and priced (${v0} → ${pricePerson(st, o).vehicle})`);
+  const b2 = again(st);
+  const ar = b2.bases[0].armory.find((it) => it.key === "ar");
+  check(ar && ar.mods && ar.mods.mag.key === "mag_stanag_40" && ar.loaded && ar.loaded.n === 40, "normal: in the armory fitted, loaded with 40");
+  check(SG_ACTIONS["sg-gunmods-clear"](st, ui, { t: "trunk", j: String(j) }) === true && o.startVehicle.items[j] === "ar", "As it comes in the back too");
+  const hc = blankWorld(42, { mode: "hardcore" });
+  const uh = UI();
+  uh.gearEdit = { i: 0, sel: null, msg: "" };
+  tadd(hc, uh, "pistol");
+  SG_CHANGE["sg-gunmod"](hc, uh, { value: "mag_glock_17", dataset: { gs: "mag", t: "trunk", j: "0" } });
+  const hp = again(hc).parties[0].cargo.gear.find((it) => it.key === "pistol");
+  check(hp && hp.mods && hp.mods.mag.key === "mag_glock_17" && hp.loaded.n === 17, "Hardcore: the pistol in the car's back fitted, loaded with 17");
+  // The plain-key form still reads; a misfit made safe goes back to it.
+  check(sanitizeStartGear({ slots: {}, carry: { pocket: ["pistol"] } }).carry.pocket[0] === "pistol" && JSON.stringify(sanitizeStartVehicle({ items: ["ar", { key: "ar", mods: { muzzle: "pistolcan" } }, { key: "pistol", mods: { optic: "reddot" } }] }).items) === JSON.stringify(["ar", "ar", { key: "pistol", mods: { optic: "reddot" } }]), "plain keys read as ever; a gun with no parts that fit is a plain key");
+}
+
+section("The dice's gear keeps the parts the dice put on a gun");
+{
+  let st = null, i = -1;
+  for (let seed = 1; seed < 60 && i < 0; seed++) {
+    const w = blankWorld(seed);
+    const j = w.survivors.findIndex((x) => x.diceKit && x.diceKit.mods && x.diceKit.slots.weapon);
+    if (j >= 0) { st = w; i = j; }
+  }
+  if (check(!!st, "a seed whose dice put parts on someone's gun")) {
+    const s = st.survivors[i], dm = { ...s.diceKit.mods }, wk = s.diceKit.slots.weapon;
+    const ui = UI();
+    check(SG_ACTIONS["sg-dice"](st, ui, { i }) === true && JSON.stringify(s.startGear.mods) === JSON.stringify(dm), `Start from the dice: the ${GEAR[wk].name} with ${JSON.stringify(dm)}`);
+    check(pricePerson(st, s).gear >= slotPoints("weapon", wk, dm), "priced with its parts");
+    const b = again(st);
+    const g = b.survivors[i].gear.weapon;
+    check(g.key === wk && Object.entries(dm).every(([slot, k]) => (k ? g.mods && g.mods[slot] && g.mods[slot].key === k : !(g.mods && g.mods[slot]))), "rebuilt: the gun has the dice's parts");
+    ui.gearEdit = { i, sel: null, msg: "" };
+    SG_ACTIONS["sg-kit-clear"](b, ui);
+    check(!b.survivors[i].startGear.mods, "Empty: as it comes");
+    check(SG_ACTIONS["sg-dice-kit"](b, ui) === true && JSON.stringify(b.survivors[i].startGear.mods) === JSON.stringify(dm), "the gear window's The dice's gear: the parts again");
+  }
+  // A carried gun the dice fitted: kept as { key, mods }.
+  const it = gunWith("pistol", { optic: "reddot" });
+  const fake = blankWorld(42).survivors[0];
+  fake.pockets[0] = it;
+  noteDiceKit(fake);
+  check(JSON.stringify(fake.diceKit.carry.pocket[0]) === JSON.stringify({ key: "pistol", mods: { optic: "reddot" } }), "a carried gun with parts noted with them");
+  // Hardcore: the car's back as rolled keeps a gun's parts.
+  let found = false;
+  for (let seed = 1; seed < 80 && !found; seed++) {
+    const h = blankWorld(seed, { mode: "hardcore" });
+    const o = h.survivors.find((x) => x.diceTrunk);
+    const e = o && o.diceTrunk.items.find((x) => typeof x === "object");
+    if (!e) continue;
+    found = true;
+    const uh = UI();
+    uh.gearEdit = { i: 0, sel: null, msg: "" };
+    SG_ACTIONS["sg-trunk-dice"](h, uh);
+    const payer = h.survivors.find((x) => x.startVehicle);
+    check(payer.startVehicle.items.some((x) => typeof x === "object" && x.key === e.key && JSON.stringify(x.mods) === JSON.stringify(e.mods)), `Hardcore As rolled: the ${GEAR[e.key].name} in the back with its parts (seed ${seed})`);
+  }
+  if (!found) console.log("  (no Hardcore seed under 80 rolled a gun with parts into the car's back: not checked)");
+}
+
+section("The background's Total follows every key press");
+{
+  const d = { ...blankBackground("c_7"), name: "Typing", skills: { medicine: 5 }, supplies: { food: 10 }, car: { odds: 1, type: "sedan", trunk: {}, items: [] } };
+  setCustomLibrary([d]);
+  const st = world(5);
+  const ui = { started: false, ironman: false };
+  BG_ACTIONS["bg-open"](st, ui);
+  ui.bgEditor.sel = "c_7";
+  const before = backgroundPoints(customLibrary().c_7, "normal").total;
+  const line = { outerHTML: "<div class=\"small bgtotal\">old</div>" };
+  const doc = { querySelector: (q) => (q === ".bgtotal" ? line : null) };
+  const el = (action, value, k) => ({ value: String(value), dataset: k ? { k } : {}, ownerDocument: doc });
+  const draft = BG_INPUT["bg-skill"](st, ui, el("bg-skill", 9, "medicine"));
+  const want = before + skillCost(9) - skillCost(5);
+  check(draft && draft.skills.medicine === 9 && new RegExp(`Total ${want} points`).test(line.outerHTML) && /class="small bgtotal"/.test(line.outerHTML), `Medicine typed 9: the line alone redrawn, Total ${before} → ${want}`);
+  check(customLibrary().c_7.skills.medicine === 5, "nothing kept until the box's change");
+  BG_INPUT["bg-sup"](st, ui, el("bg-sup", 30, "food"));
+  check(new RegExp(`Total ${before + suppliesPoints({ food: 30 }) - suppliesPoints({ food: 10 })} points`).test(line.outerHTML), "supplies typed: the Total follows");
+  BG_INPUT["bg-carodds"](st, ui, el("bg-carodds", 0));
+  check(new RegExp(`Total ${before - CUSTOM_POINTS.VEHICLE.sedan} points`).test(line.outerHTML), "the car's odds typed 0: no car, no car price");
+  BG_INPUT["bg-trunk"](st, ui, el("bg-trunk", 20, "fuel"));
+  check(/the car's back \d+ more/.test(line.outerHTML), "the car's back typed: shown");
+  check(BG_INPUT["bg-skill"](st, { started: false }, el("bg-skill", 3, "medicine")) === null, "no window open: nothing");
+  const mainSrc = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+  check(/addEventListener\("input", \(ev\) => \{ const el = [^\n]*BG_INPUT\[el\.dataset\.action\][^\n]*fn\(state, ui, el\); \}\);/.test(mainSrc) && !/BG_INPUT[^\n]*refresh\(\)/.test(mainSrc), "main.js: typing redraws the line with no refresh (the box keeps its focus and caret)");
+  setCustomLibrary([]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
