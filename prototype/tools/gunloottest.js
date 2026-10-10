@@ -39,6 +39,13 @@ import { spawnVisitor, openVisitorTrade, autoVisitorTrade } from "../src/sim/vis
 import { lootItem } from "../src/sim/inventory.js";
 import { GOV_GUNS, gunWant, pickGunToBuy } from "../src/sim/govguns.js";
 import { ARSENAL, arsenalDaily, ensureArsenal } from "../src/sim/arsenal.js";
+import { addBuilding } from "../src/sim/buildings.js";
+import { planPath } from "../src/sim/parties.js";
+import * as TR from "../src/sim/trade.js";
+import * as RT from "../src/sim/radiotrade.js";
+import * as RA from "../src/sim/radio.js";
+import { caravanEnRoute } from "../src/sim/caravans.js";
+import { radioGunDeal } from "../src/sim/govguns.js";
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) { passes++; console.log(`  ok   ${msg}`); } else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -335,6 +342,31 @@ console.log("The governor buys guns");
   GOV_GUNS.off = true;
   check(!gunWant(st, h).n, "off: it wants none");
   GOV_GUNS.off = false;
+  // By radio: a friendly group in reach with a gun on its shelf brings it (radiotrade.js: their caravan, a delivery fee).
+  {
+    const st2 = createWorld({ seed: 81, factionCount: 8 });
+    st2.started = true;
+    const h2 = hub(st2);
+    addBuilding(h2, "radio");
+    const f = st2.factions.filter((x) => x.alive && x.bases.length && planPath(st2, x.bases[0], h2.tile, false)).sort((a, b) => st2.grid.distance(a.bases[0], h2.tile) - st2.grid.distance(b.bases[0], h2.tile))[0];
+    Object.assign(f, { type: "traders", goodwill: 45, known: true });
+    f.bases = [f.bases[0]];
+    if (!RA.canRadioGroup(st2, f)) f.bases = [st2.grid.within(h2.tile, 10).find((t) => st2.tiles[t].terrain !== "water" && st2.grid.distance(t, h2.tile) >= 6 && !st2.bases.some((b) => b.tile === t) && planPath(st2, t, h2.tile, false))];
+    for (const x of st2.factions) if (x !== f) x.known = false;
+    h2.armory = h2.armory.filter((it) => !isGun(it.key));
+    for (const s of atBase(st2, h2.id).slice(0, 2)) s.gear.weapon = null;
+    Object.assign(h2.stock, { food: 900, scrap: 200, fuel: 100 });
+    TR.ensureWares(st2, f);
+    f.wares.push(lootItem("shotgun", "merchant", ["radio", 1]));
+    const deps = { hasNetwork: RA.hasNetwork, refusal: RA.refusal, caravanEnRoute, tradeBase: RA.tradeBase, deliveryRefusal: RT.deliveryRefusal, openRadioTrade: RT.openRadioTrade, tradeContext: TR.tradeContext, balanceWith: TR.balanceWith, tradeVerdict: TR.tradeVerdict, executeTrade: TR.executeTrade, endTrade: TR.endTrade, gearBuyPrice: TR.gearBuyPrice, pendingDeal: RT.pendingDeal, ensureWares: TR.ensureWares,
+      spareValue: (g, k) => { const q = RA.hubSpare(st2, k); return q > 0 ? q * TR.sellPrice(st2, g, k, RA.radioSpeech(st2), q) : 0; } };
+    const want0 = gunWant(st2, h2).n;
+    const text = radioGunDeal(st2, h2, { food: 0.2, scrap: 0.3, fuel: 0.4, water: 1, meds: 1, parts: 1 }, deps);
+    const car = st2.parties.find((q) => q.kind === "caravan" && q.deal && q.baseId === h2.id);
+    check(!!text && !!car && (car.goods.gear || []).some((it) => isGun(it.key)) && !st2.trade, `by radio: ${text || "no deal"} (their caravan carries it)`);
+    check(gunWant(st2, h2).n === want0 - 1, `the gun on its way counts: ${want0} wanted before, ${gunWant(st2, h2).n} now`);
+    check(!radioGunDeal(st2, h2, { food: 0.2, scrap: 0.3, fuel: 0.4, water: 1, meds: 1, parts: 1 }, deps), `not again within ${GOV_GUNS.RADIO_EVERY} days`);
+  }
 }
 
 // ---------- AI parity: a group buys guns for its unarmed newcomers (arsenal.js groupBuysGun) ----------
@@ -347,9 +379,9 @@ console.log("AI groups buy guns");
   A.items = A.items.filter((it) => !isGun(it.key));
   Object.assign(f.stock, { scrap: 2000, fuel: 2000, food: 5000, meds: 500 });
   const pop = f.pop;
-  for (let d = 0; d < 40; d++) { st.hour += 24; arsenalDaily(st, f); f.pop = pop; }
+  for (let d = 0; d < 72; d++) { st.hour += 24; arsenalDaily(st, f); f.pop = pop; }
   const bought = (A.stats && A.stats.in && A.stats.in.purchased) || 0;
-  check(bought >= 3 && guns() >= bought, `${f.name}, no guns and goods to spare: buys ${bought} in 40 days`);
+  check(bought >= 3 && guns() >= bought, `${f.name}, no guns and scrap to spare: buys ${bought} in 72 days (one every ${ARSENAL.BUY.every} days at most)`);
   const B0 = ARSENAL.BUY; ARSENAL.BUY = null;
   const before = guns(); for (let d = 0; d < 20; d++) { st.hour += 24; arsenalDaily(st, f); f.pop = pop; } ARSENAL.BUY = B0;
   check(guns() - before <= 2, "with buying off none are bought (its gunsmith aside)");

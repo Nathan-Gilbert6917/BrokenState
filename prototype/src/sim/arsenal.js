@@ -93,8 +93,9 @@ export const ARSENAL = {
     gunEvery: 5, gunScrap: 8, gunParts: 1, guns: 1.1 },
   WANT: 1.3, // weapons a head they keep; more goes on the trade shelf
   // Buying a gun from passing traders (groupBuysGun): every `every` days below `guns` guns a head, at value × markup,
-  // paid from what they can spare of `keys`.
-  BUY: { every: 10, guns: 0.8, markup: 1.3, keys: ["scrap", "fuel", "food", "meds"] },
+  // paid from `share` of the scrap they can spare (trade.js available: past their reserve). Only well under the guns
+  // a group usually holds (about 0.85 a head in 2-year autopilot runs), never with food, meds or fuel.
+  BUY: { every: 12, guns: 0.7, markup: 1.3, share: 0.5, keys: ["scrap"] },
   SHELF: 2, // surplus pieces put on the shelf a refresh
   // Smoke grenades (siege.js coverSmoke: over a retreat) come back coarsely, a day at a time: while a group holds fewer
   // than its kit's share a head (NONLETHAL smokegren), it gets one a day at this chance from its scavenging and trade
@@ -782,8 +783,9 @@ export function newcomerKit(state, f, tag) {
 }
 // A group buys a gun from passing traders (AI parity with the governor's buying, govguns.js; coarse): every BUY.every
 // days while it has fewer than BUY.guns guns a head (its newcomers unarmed), one of its kit's guns (gundist.js: of its
-// kind in the band of its list's) at its value × BUY.markup, paid from what it can spare (trade.js available: its
-// reserves kept) of BUY.keys at their value, the most plentiful first. Hashed dice; the goods leave the world.
+// kind in the band of its list's) at its value × BUY.markup, paid from BUY.share of what it can spare (trade.js
+// available: its reserves kept) of BUY.keys at their value, the most plentiful first. Hashed dice; the goods leave the
+// world.
 function groupBuysGun(state, f, A, salt, dd) {
   const B = ARSENAL.BUY;
   if (!B || f.outsider || dd % B.every !== 0) return;
@@ -795,8 +797,8 @@ function groupBuysGun(state, f, A, salt, dd) {
   const price = (GEAR[key].value || 0) * B.markup;
   const pay = {};
   let left = price;
-  for (const k of [...B.keys].sort((a, b) => available(f, b) * (SUPPLIES[b].value || 1) - available(f, a) * (SUPPLIES[a].value || 1))) {
-    const v = SUPPLIES[k].value || 1, q = Math.min(available(f, k), Math.ceil(left / v));
+  for (const k of [...B.keys].sort((a, b) => available(f, b) * (SUPPLIES[b].value || 1) - available(f, a) * (SUPPLIES[a].value || 1) || (a < b ? -1 : 1))) {
+    const v = SUPPLIES[k].value || 1, q = Math.min(Math.floor(available(f, k) * B.share), Math.ceil(left / v));
     if (q > 0) { pay[k] = q; left -= q * v; }
     if (left <= 0) break;
   }
