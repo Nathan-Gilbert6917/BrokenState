@@ -8,7 +8,8 @@ import { GEAR } from "./data.js";
 import { gunMods, modRange, roundReach } from "./gunmods.js";
 import { jamChance } from "./gunfire.js"; // jam: the battle's own per-round jam chance (call time only)
 import { ammoPen } from "./data-ammo.js";
-import { calOf, typeFor, typeFx } from "./ammo.js"; // the loaded type (ammo.js): aim, range, damage, noise, penetration
+import { calOf, typeFor, roundFx, loadRefusal } from "./ammo.js"; // the loaded type (ammo.js): aim, range, damage, noise, penetration
+import { loadParts } from "./rounds.js"; // a load of another calibre the gun takes (.223 in a 5.56 gun)
 
 /**
  * @param {any} itemOrKey a weapon item ({ key, mods, load, quality }) or a WEAPONS key
@@ -23,8 +24,10 @@ export function gunStats(itemOrKey, opts = {}) {
   const fit = mods && mods.mag && GEAR[mods.mag.key] && GEAR[mods.mag.key].mag ? GEAR[mods.mag.key].mag.cap : null; // a magazine item fitted (data-kit.js): its rounds
   const cap = w.cap ? Math.max(1, Math.round((fit || w.cap) * (m.capMult ?? 1)) + (m.cap || 0)) : 0;
   const cal = calOf(item.key);
-  const load = cal ? typeFor(cal, opts.load ?? item.load ?? null) : null; // ammo.js: a type its calibre has, else its common round
-  const t = typeFx(load);
+  const want = opts.load ?? item.load ?? null;
+  const load = cal ? typeFor(cal, want && !loadRefusal(item.key, want) ? want : null) : null; // ammo.js: a type of a calibre it takes, else its common round
+  const t = cal ? roundFx(cal, load) : {}; // (its damage x the calibre's over the gun's, the calibre's aim: .223 +3)
+  const lp = cal ? loadParts(cal, load) : null;
   // jam: % a round, as gunfire.js jamChance rolls it in battle (the gun's rel × its quality, its durability, the loaded
   // type, its parts and its fouling; no weather off the battle map).
   const gun = opts.mods ? { ...item, mods: opts.mods } : item;
@@ -34,7 +37,7 @@ export function gunStats(itemOrKey, opts = {}) {
     opt: modRange(w, m).opt + (t.opt || 0), fall: Math.max(0, ((w.fall || 0) + (m.fall || 0)) * (t.fallMult ?? 1)),
     dmg: [Math.round(w.dmg[0] * (m.dmg ?? 1) * (t.dmg ?? 1)), Math.round(w.dmg[1] * (m.dmg ?? 1) * (t.dmg ?? 1))],
     ammoPerShot: w.ammo || 0, cap, noise: (w.noise || 0) * (m.noise ?? 1) * (t.noise || 1), weight: m.weight || 0, value: m.value || 0,
-    pen: cal ? ammoPen(cal, load) : 0, soft: t.soft || 1, jam, reloadAp: 1, load,
+    pen: lp ? ammoPen(lp.cal, lp.type) : 0, soft: t.soft || 1, jam, reloadAp: 1, load, loadCal: lp ? lp.cal : null, type: lp ? lp.type : null,
     // An intermediate or rimfire round's reach (gunmods.js ROUND_REACH): past it, drop aim a tile more, scope or not.
     reach: roundReach(w) ? roundReach(w).reach + (t.opt || 0) : null, drop: roundReach(w) ? roundReach(w).drop : 0,
     // Shot that spreads (buckshot, birdshot: data-ammo.js spreadMult): full damage out to full tiles, then −drop a tile, min.

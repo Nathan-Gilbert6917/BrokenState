@@ -12,13 +12,15 @@ import { retailBox } from "./data-stacks.js"; // a box's size: typical US retail
 // common: false = launcher rounds (40 mm grenades, rockets: section 13): their own supply keys and boxes, but never
 // "ammo" in the abstract (rounds.js GENERIC_KEYS: no generic ammo settles into them, no plan or deal pays in them,
 // no ammo bench makes them, an AI group's count never folds them in).
-/** @type {Record<string, { name: string, kg: number, box: number, pen: number, ad: number, value: number, base: string, types: string[], common?: boolean, dmg?: [number, number] }>} */
+// aim: + to a shot's aim with this calibre's rounds, from any gun (.223: a lighter, more consistent load than 5.56).
+/** @type {Record<string, { name: string, kg: number, box: number, pen: number, ad: number, value: number, base: string, types: string[], common?: boolean, dmg?: [number, number], aim?: number }>} */
 export const CALIBERS = {
   "22lr":   { name: ".22 LR",           kg: 0.0035, box: 100, pen: 5,  ad: 0.3, value: 0.2,  base: "fmj",  types: ["fmj", "hp", "subsonic"] },
   "9mm":    { name: "9mm",              kg: 0.012,  box: 50,  pen: 15, ad: 0.4, value: 0.5,  base: "fmj",  types: ["fmj", "hp", "ap", "plusp", "subsonic", "rubber"] },
   // 5.7×28 (2026-10-10, user: "a 5.7×28 calibre with a P90"): a small, light, fast bullet; its FMJ is the SS190-style
   // steel-tipped round (pen 25: through a soft vest where a 9mm stops), hitting a little over a 9mm.
   "57x28":  { name: "5.7×28",           kg: 0.006,  box: 50,  pen: 25, ad: 0.6, value: 0.6,  base: "fmj",  types: ["fmj", "hp"] },
+  "38spl":  { name: ".38 Special",      kg: 0.0125, box: 50,  pen: 12, ad: 0.4, value: 0.45, base: "fmj",  types: ["fmj", "hp", "plusp"] },
   "45acp":  { name: ".45 ACP",          kg: 0.021,  box: 50,  pen: 14, ad: 0.45, value: 0.6, base: "fmj",  types: ["fmj", "hp", "subsonic"] },
   "357":    { name: ".357 Magnum",      kg: 0.015,  box: 50,  pen: 20, ad: 0.45, value: 0.65, base: "fmj",  types: ["fmj", "hp", "plusp"] },
   // .44 Magnum (2026-10-10, user: "add .44 mag ammo, revolvers, lever actions, single shot rifles"): a heavy magnum
@@ -26,7 +28,9 @@ export const CALIBERS = {
   "44mag":  { name: ".44 Magnum",       kg: 0.024,  box: 50,  pen: 22, ad: 0.5, value: 0.9,  base: "fmj",  types: ["fmj", "hp"] },
   "12ga":   { name: "12 gauge",         kg: 0.04,   box: 25,  pen: 8,  ad: 0.3, value: 0.8,  base: "buck", types: ["buck", "slug", "bird", "beanbag"] },
   "20ga":   { name: "20 gauge",         kg: 0.032,  box: 25,  pen: 6,  ad: 0.25, value: 0.6, base: "buck", types: ["buck", "slug", "bird"] },
+  "223":    { name: ".223 Rem",         kg: 0.012,  box: 20,  pen: 26, ad: 0.7, value: 0.6,  base: "fmj",  types: ["fmj", "sp", "match"], aim: 3 },
   "556":    { name: "5.56 NATO",        kg: 0.012,  box: 30,  pen: 30, ad: 0.8, value: 0.7,  base: "fmj",  types: ["fmj", "ap", "match", "tracer", "rubber"] },
+  "300blk": { name: ".300 Blackout",    kg: 0.015,  box: 20,  pen: 28, ad: 0.75, value: 0.95, base: "fmj", types: ["fmj", "subsonic", "hp"] },
   "762x39": { name: "7.62×39",          kg: 0.016,  box: 30,  pen: 32, ad: 0.8, value: 0.7,  base: "fmj",  types: ["fmj", "sp", "ap", "tracer"] },
   "308":    { name: ".308 / 7.62 NATO", kg: 0.025,  box: 20,  pen: 38, ad: 0.9, value: 1.0,  base: "fmj",  types: ["fmj", "sp", "ap", "match", "subsonic", "rubber"] },
   "3030":   { name: ".30-30",           kg: 0.020,  box: 20,  pen: 25, ad: 0.6, value: 0.8,  base: "sp",   types: ["sp", "fmj"] },
@@ -42,15 +46,51 @@ export const CALIBERS = {
 // little less), and a type's dmg / soft (AMMO_TYPES) move it from there. tools/arsenalbalancetest.js checks the order.
 /** @type {Record<string, [number, number]>} */
 export const CAL_DMG = {
-  "22lr": [11, 17], "9mm": [15, 22], "57x28": [16, 22], "45acp": [18, 26], "357": [19, 29], "20ga": [20, 30], "556": [22, 30],
-  "762x39": [24, 34], "12ga": [24, 36], "44mag": [26, 36], "3030": [25, 35], "308": [34, 46], "50bmg": [62, 84],
+  "22lr": [11, 17], "9mm": [15, 22], "57x28": [16, 22], "38spl": [16, 23], "45acp": [18, 26], "357": [19, 29], "223": [21, 28], "20ga": [20, 30], "556": [22, 30],
+  "300blk": [23, 32], "762x39": [24, 34], "12ga": [24, 36], "44mag": [26, 36], "3030": [25, 35], "308": [34, 46], "50bmg": [62, 84],
 };
 for (const [cal, d] of Object.entries(CAL_DMG)) CALIBERS[cal].dmg = d;
 // The ladder's order (lowest first, by the base round's damage on an unarmoured target) and the band a gun's own
 // damage keeps to around its calibre's (mounted guns aside: the M2's belt is a turret's number).
 export const LADDER = {
-  ORDER: ["22lr", "9mm", "57x28", "45acp", "357", "20ga", "556", "762x39", "12ga", "44mag", "3030", "308", "50bmg"],
+  ORDER: ["22lr", "9mm", "57x28", "38spl", "45acp", "357", "223", "20ga", "556", "300blk", "762x39", "12ga", "44mag", "3030", "308", "50bmg"],
   BAND: [0.85, 1.15],
+};
+
+// ---------- which rounds go in which guns (2026-10-10, user: ".223 works in 5.56 guns and magazines"; "300 blackout
+// cannot be used in 223 or 556 guns"; "223 guns only take 223 and not 556"; .357 guns take .38 Special) ----------
+// A gun is chambered for one calibre (WEAPONS cal) and takes the rounds of CAL_ACCEPTS[cal], its own first (a gun's
+// own `cals` list overrides it: the gas-operated Magnum pistol cycles .357 only). A magazine holds the calibres of its
+// `cals` (data-kit.js MAGAZINES; else CAL_ACCEPTS of its cal): a STANAG magazine holds 5.56, .223 and .300 BLK alike,
+// so the gun's chamber decides (a 5.56 gun refuses .300 BLK from a STANAG magazine: CAL_REFUSE). A load of another
+// calibre than the holder's own (a gun's, a magazine's) is written "<cal>:<type>" (rounds.js loadParts): a 5.56 gun
+// loaded with .223 soft points has load "223:sp" and fires .223 numbers (ammo.js loadFx: its damage × CAL_DMG of .223
+// over 5.56's, and .223's aim).
+/** @type {Record<string, string[]>} */
+export const CAL_ACCEPTS = { "556": ["556", "223"], "357": ["357", "38spl"] };
+// The calibres a gun (a WEAPONS entry) takes, its own first.
+/** @param {any} w @returns {string[]} */
+export const gunCalList = (w) => (!w || !w.cal ? [] : Array.isArray(w.cals) && w.cals.length ? w.cals : CAL_ACCEPTS[w.cal] || [w.cal]);
+// Why a gun chambered for `own` refuses a round of `cal` ("cal>own"; else ammo.js calRefusal's general words).
+/** @type {Record<string, string>} */
+export const CAL_REFUSE = {
+  "300blk>556": "A .300 Blackout round fits the 5.56 magazine but not the barrel: chambered in a 5.56 gun it can blow the gun apart. Refused.",
+  "300blk>223": "A .300 Blackout round fits the magazine but not a .223 barrel: chambered there it can blow the gun apart. Refused.",
+  "556>223": "5.56 NATO runs too hot for a gun chambered in .223 Remington: the pressure can wreck it. Refused.",
+  "556>300blk": "5.56 does not fit a .300 Blackout chamber. Refused.",
+  "223>300blk": ".223 does not fit a .300 Blackout chamber. Refused.",
+  "357>38spl": ".357 Magnum is too long for a .38 Special cylinder, and too hot. Refused.",
+};
+// The share of a kind of fighter's rounds that are another calibre their gun takes (ammo.js enemyLoad, AI parity):
+// civilian .223 in a 5.56 rifle, .38 Special in a .357 revolver. By kit, then by the other calibre.
+/** @type {Record<string, Record<string, number>>} */
+export const KIT_ALT_CAL = {
+  raiders:   { "223": 0.3, "38spl": 0.35 },
+  militia:   { "223": 0.4, "38spl": 0.3 },
+  survivors: { "223": 0.4, "38spl": 0.45 },
+  zealots:   { "223": 0.3, "38spl": 0.4 },
+  fighters:  { "223": 0.2, "38spl": 0.3 },
+  guards:    { "223": 0.1, "38spl": 0.4 },
 };
 
 // Effects of a type on its calibre's FMJ. dmg: × damage; soft: × damage on a hit location with no armour (hollow and
@@ -64,11 +104,11 @@ export const LADDER = {
 // is one ball: none. Section 1 table.
 /** @type {Record<string, any>} */
 export const AMMO_TYPES = {
-  fmj:      { name: "FMJ",            dmg: 1,    soft: 1,    penAdd: 0,  value: 1,   overpen: { "308": 0.15, "762x39": 0.1, "556": 0.05 } },
+  fmj:      { name: "FMJ",            dmg: 1,    soft: 1,    penAdd: 0,  value: 1,   overpen: { "308": 0.15, "762x39": 0.1, "300blk": 0.08, "556": 0.05, "223": 0.04 } },
   buck:     { name: "00 buckshot",    dmg: 1,    soft: 1,    penAdd: 0,  value: 1,   spread: true, spreadFull: 4, spreadDrop: 0.1, spreadMin: 0.4 },
   ball:     { name: "ball",           dmg: 1,    soft: 1,    penAdd: 0,  value: 1,   overpen: { "50bmg": 1 } },
-  hp:       { name: "hollow point",   dmg: 1,    soft: 1.2,  pen: { "22lr": 2, "9mm": 8, "45acp": 8, "357": 12, "57x28": 12, "44mag": 14 }, ad: 0.3, value: 1.6 },
-  sp:       { name: "soft point",     dmg: 1,    soft: 1.12, pen: { "308": 30, "762x39": 25, "3030": 25 }, ad: 0.6, value: 1.5 },
+  hp:       { name: "hollow point",   dmg: 1,    soft: 1.2,  pen: { "22lr": 2, "9mm": 8, "38spl": 7, "45acp": 8, "357": 12, "300blk": 14, "57x28": 12, "44mag": 14 }, ad: 0.3, value: 1.6 },
+  sp:       { name: "soft point",     dmg: 1,    soft: 1.12, pen: { "308": 30, "762x39": 25, "3030": 25, "223": 20 }, ad: 0.6, value: 1.5 },
   ap:       { name: "armour-piercing", dmg: 0.92, soft: 0.92, pen: { "9mm": 30, "556": 45, "762x39": 45, "308": 55 }, ad: 1.1, value: 2.8,
               overpen: { "308": 0.45, "762x39": 0.3, "556": 0.3, "9mm": 0.1 } },
   plusp:    { name: "+P",             dmg: 1.1,  soft: 1.1,  penAdd: 3,  aim: -2, noise: 1.1, jam: 1.2, ad: 0.45, value: 1.4 },
@@ -106,7 +146,7 @@ export const ammoKey = (cal, type) => `a_${cal}_${type}`;
 // 0.6 at 8, 0.4 from 10; birdshot: 1 to 3 tiles, 0.64 at 6, 0.4 at 8, 0.3 from 9.
 /** @param {string | null | undefined} type @param {number} d tiles */
 export function spreadMult(type, d) {
-  const t = type ? AMMO_TYPES[type] : null;
+  const t = type ? AMMO_TYPES[String(type).split(":").pop()] : null; // ("223:sp": a load of another calibre, its type)
   if (!t || !(t.spreadFull >= 0) || !(t.spreadDrop > 0) || !(d > t.spreadFull)) return 1;
   return Math.max(t.spreadMin ?? 0, Math.min(1, 1 - (d - t.spreadFull) * t.spreadDrop));
 }
@@ -127,6 +167,9 @@ export const ROUND_ECON = {
   "57x28_fmj": ["uncommon", 0.6], "57x28_hp": ["scarce", 0.8],
   "357_fmj": ["uncommon", 0.65], "357_hp": ["scarce", 1.0], "357_plusp": ["rare", 1.0],
   "44mag_fmj": ["uncommon", 0.9], "44mag_hp": ["scarce", 1.3],
+  "38spl_fmj": ["common", 0.45], "38spl_hp": ["uncommon", 0.7], "38spl_plusp": ["scarce", 0.65],
+  "223_fmj": ["common", 0.6], "223_sp": ["uncommon", 0.8], "223_match": ["scarce", 1.25],
+  "300blk_fmj": ["scarce", 1.0], "300blk_subsonic": ["rare", 1.4], "300blk_hp": ["rare", 1.3],
   "20ga_buck": ["uncommon", 0.6], "20ga_bird": ["uncommon", 0.35], "20ga_slug": ["scarce", 1.0],
   "556_fmj": ["common", 0.7], "556_tracer": ["scarce", 0.95], "556_match": ["scarce", 1.4], "556_rubber": ["rare", 0.85], "556_ap": ["rare", 1.95],
   "762x39_fmj": ["uncommon", 0.7], "762x39_sp": ["scarce", 1.0], "762x39_tracer": ["scarce", 0.95], "762x39_ap": ["rare", 1.95],
@@ -204,14 +247,17 @@ for (const [cal, c] of Object.entries(CALIBERS)) {
 // a police armoury its hollow points and beanbags, a hunting lodge its soft points and birdshot; 0: never there).
 /** @type {Record<string, Record<string, number>>} */
 export const THEME_CALS = {
-  military: { "556": 50, "308": 16, "9mm": 12, "12ga": 6, "762x39": 3, "45acp": 3, "50bmg": 14, "57x28": 3 },
-  police:   { "9mm": 34, "12ga": 26, "556": 14, "357": 8, "45acp": 9, "308": 2, "57x28": 4, "44mag": 1 },
-  prison:   { "12ga": 30, "9mm": 18, "556": 8, "357": 3, "308": 2 },
-  guns:     { "9mm": 16, "12ga": 18, "22lr": 14, "308": 14, "556": 10, "45acp": 7, "357": 8, "3030": 7, "762x39": 4, "20ga": 6, "44mag": 5, "57x28": 3 },
-  hunt:     { "308": 26, "3030": 16, "12ga": 18, "22lr": 14, "20ga": 6, "357": 3, "762x39": 1, "44mag": 4 },
-  farm:     { "12ga": 30, "22lr": 22, "20ga": 8, "3030": 10, "308": 6, "357": 3, "44mag": 2 },
-  raider:   { "9mm": 26, "12ga": 18, "556": 12, "762x39": 9, "357": 6, "45acp": 5, "308": 4, "22lr": 4, "3030": 3, "44mag": 2, "57x28": 1 },
-  home:     { "9mm": 20, "12ga": 16, "22lr": 14, "357": 8, "308": 6, "45acp": 5, "556": 4, "3030": 3, "20ga": 3, "44mag": 3, "57x28": 1 },
+  // (.223, .38 Special and .300 BLK, 2026-10-10: .223 as common as 5.56 but civilian, more of it in gun stores, farms
+  // and homes, little in an armoury; .38 a home and police round; .300 BLK scarce everywhere; 5.7×28 police, military
+  // and gun stores; .44 Magnum gun stores, hunting, homes)
+  military: { "556": 50, "308": 16, "9mm": 12, "12ga": 6, "762x39": 3, "45acp": 3, "50bmg": 14, "300blk": 2, "57x28": 3 },
+  police:   { "9mm": 34, "12ga": 26, "556": 14, "357": 8, "45acp": 9, "308": 2, "38spl": 6, "223": 3, "300blk": 1, "57x28": 4, "44mag": 1 },
+  prison:   { "12ga": 30, "9mm": 18, "556": 8, "357": 3, "308": 2, "38spl": 3 },
+  guns:     { "9mm": 16, "12ga": 18, "22lr": 14, "308": 14, "556": 10, "45acp": 7, "357": 8, "3030": 7, "762x39": 4, "20ga": 6, "223": 12, "38spl": 6, "300blk": 3, "44mag": 5, "57x28": 3 },
+  hunt:     { "308": 26, "3030": 16, "12ga": 18, "22lr": 14, "20ga": 6, "357": 3, "762x39": 1, "223": 9, "38spl": 1, "300blk": 2, "44mag": 4 },
+  farm:     { "12ga": 30, "22lr": 22, "20ga": 8, "3030": 10, "308": 6, "357": 3, "223": 8, "38spl": 3, "44mag": 2 },
+  raider:   { "9mm": 26, "12ga": 18, "556": 12, "762x39": 9, "357": 6, "45acp": 5, "308": 4, "22lr": 4, "3030": 3, "223": 5, "38spl": 4, "300blk": 1, "44mag": 2, "57x28": 1 },
+  home:     { "9mm": 20, "12ga": 16, "22lr": 14, "357": 8, "308": 6, "45acp": 5, "556": 4, "3030": 3, "20ga": 3, "223": 6, "38spl": 8, "300blk": 1, "44mag": 3, "57x28": 1 },
 };
 /** @type {Record<string, Record<string, number>>} */
 export const THEME_TYPES = {
@@ -248,6 +294,9 @@ export const STARTER_AMMO = {
   "357":   [[0.15, "hp", 12]],
   "44mag": [[0.15, "hp", 10]],
   "57x28": [[0.15, "hp", 20]],
+  "38spl": [[0.2, "hp", 20]],
+  "223":   [[0.2, "sp", 20]],
+  "300blk": [[0.25, "subsonic", 20]],
   "12ga":  [[0.15, "bird", 10], [0.15, "slug", 5]],
   "20ga":  [[0.15, "bird", 10], [0.1, "slug", 5]],
   "308":   [[0.4, "sp", 10]],
@@ -259,7 +308,8 @@ export const STARTER_AMMO = {
 // What a reloading bench can load, by calibre class: [Mechanics needed, rounds per operator-day] (+4% a day per
 // Mechanics point). .22 LR is rimfire (no primer to replace) and .50 BMG is not craftable; neither are tracers,
 // +P or the less-lethal rounds. AP needs a machine shop at the base and a machine part per 20 (steel cores).
-export const LOAD_CLASS = { "9mm": "pistol", "45acp": "pistol", "357": "pistol", "57x28": "pistol", "44mag": "pistol", "12ga": "shotgun", "20ga": "shotgun", "556": "rifle", "762x39": "rifle", "308": "rifle", "3030": "rifle" };
+export const LOAD_CLASS = { "9mm": "pistol", "45acp": "pistol", "357": "pistol", "12ga": "shotgun", "20ga": "shotgun", "556": "rifle", "762x39": "rifle", "308": "rifle", "3030": "rifle",
+  "38spl": "pistol", "223": "rifle", "300blk": "rifle", "57x28": "pistol", "44mag": "pistol" };
 /** @type {Record<string, Record<string, [number, number]>>} */
 export const LOADS = {
   pistol:  { fmj: [2, 40], hp: [5, 30], subsonic: [6, 25], ap: [10, 10] },

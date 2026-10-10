@@ -34,7 +34,7 @@ export const RETAIL_BOX = {
   "9mm": 50, "9mm_hp": 20, "9mm_plusp": 20, "9mm_rubber": 25,
   "45acp": 50, "45acp_hp": 20,
   // .38 / .357: 50; defensive hollow points 20
-  "357": 50, "357_hp": 20, "357_plusp": 20,
+  "357": 50, "357_hp": 20, "357_plusp": 20, "38spl": 50, "38spl_hp": 20,
   // .44 Magnum: 50 (jacketed), defensive / hunting hollow points 20; 5.7×28: 50 a box, either load
   "44mag": 50, "44mag_hp": 20, "57x28": 50,
   // 12 gauge: buckshot 10, slugs 5, birdshot and other hunting / target loads 25, less-lethal beanbags 5
@@ -42,7 +42,7 @@ export const RETAIL_BOX = {
   // 20 gauge likewise (a gauge the arsenal may add)
   "20ga": 25, "20ga_buck": 10, "20ga_slug": 5, "20ga_bird": 25,
   // rifles: 20 a box
-  "556": 20, "762x39": 20, "308": 20, "3030": 20, "3006": 20, "300blk": 20, "545x39": 20, "65cm": 20, "762x54r": 20, "243": 20, "270": 20,
+  "556": 20, "762x39": 20, "308": 20, "3030": 20, "3006": 20, "300blk": 20, "223": 20, "545x39": 20, "65cm": 20, "762x54r": 20, "243": 20, "270": 20,
   "50bmg": 10,
   // launcher rounds: a crate of six 40 mm grenades, one rocket
   "40mm": 6, "rocket": 1,

@@ -53,10 +53,12 @@ export const PLATFORMS = {
   poly45:    { name: "Polymer .45 pistol",    slots: ["optic", "muzzle", "mag", "tactical"] },
   deagle:    { name: "Magnum pistol",         slots: ["optic", "mag", "tactical"] },
   m240:      { name: "General-purpose machine gun", slots: ["optic", "muzzle", "mag", "stock", "tactical"], builtin: { bipod: "bipod" } },
+  // 2026-10-10 (data-guns.js AR_GEAR): the Mini-14-style ranch rifle (its own magazines; a scope mount for a sight)
+  ranch:     { name: "Ranch rifle",           slots: ["mount", "muzzle", "mag", "stock", "bipod", "sling"] },
 };
 // A new platform takes the parts its look-alike takes (gunmods.js widens each part's fits.plat at load), less SKIP:
 // magazines never (they are by platform: data-kit.js MAGAZINES), a bullpup no stock and no M203.
-export const PLATFORM_LIKE = { single: "dbl", battle: "ar10", bullpup: "ar15", ump: "mp5", poly45: "glock", deagle: "p1911", m240: "m249" };
+export const PLATFORM_LIKE = { single: "dbl", battle: "ar10", bullpup: "ar15", ump: "mp5", poly45: "glock", deagle: "p1911", m240: "m249", ranch: "lever" };
 export const PLATFORM_LIKE_SKIP = { bullpup: ["collapsible", "precision", "foldstock", "m203", "drum"], poly45: ["extmag"] };
 // Weapon key -> platform. Keys the roster agent (B) adds (compact9, pistol45, smg, dmr, lmg, ak, sniper...) are listed
 // ahead of time; a key with no WEAPONS entry is simply never met.
@@ -70,6 +72,10 @@ export const WEAPON_PLATFORM = {
   ou12: "dbl", ou20: "dbl", single12: "single", singlerifle: "single", pump20: "pump", tacpump: "pump", lever357: "lever",
   m4: "ar15", hk416: "ar15", scarl: "ar15", aug: "bullpup", scarh: "battle", fal: "battle", m1a: "battle", m240: "m240",
   ump45: "ump", usp45: "poly45", snub357: "revolver", magnum: "deagle",
+  // the AR platform and calibres of 2026-10-10 (data-guns.js AR_GEAR): every AR-15 pattern gun takes STANAG magazines
+  // and the AR-15's parts
+  ar15rifle: "ar15", ar223: "ar15", arpistol: "ar15", ar300: "ar15", sbr300: "ar15", ardmr: "ar15",
+  single556: "single", single223: "single", single300: "single", varmint223: "bolt", ranch223: "ranch", snub38: "revolver", service38: "revolver",
 };
 // More calibres of 2026-10-10 (data-guns.js CALIBRE_GEAR): their own platforms where they take their own magazines.
 // The 5.7 PDW (a P90: a sight rail on top, no stock to swap), the 5.7 pistol, the low-recoil .45 SMG (a Vector), the G3
@@ -94,7 +100,7 @@ export const WEAPON_SLOTS_OFF = { compact9: ["muzzle"], sawnoff: ["muzzle", "sto
 /** @type {Record<string, string>} */
 export const BASE_CAL = { pistol: "9mm", shotgun: "12ga", huntrifle: "308", ar: "556", pipegun: "12ga", revolver: "357", leverrifle: "3030", carbine: "556" };
 
-const RIFLE_CALS = ["556", "762x39", "308", "3030"];
+const RIFLE_CALS = ["556", "762x39", "308", "3030", "223", "300blk"];
 // The new attachments' numbers (gunmods.js contract: aim, close, opt, fall, dmg, cap, capMult, noise ×; plus night:
 // aim at night, nightNear: aim at night within 6 tiles (a weapon light), peq: aim at night with night vision worn,
 // thermal: at night the shooter's shots ignore the dark, brace: aim when the gun rests on half cover next to the shooter in the shot's
@@ -118,11 +124,11 @@ export const MOD_ATTACH = {
   mlok:         { slot: "rail",     short: "M-LOK handguard", look: "rail",   fits: { plat: ["ar15", "ar10"] }, adds: ["grip", "tactical"], aim: 1, wt: -0.2 },
   can22:        { slot: "muzzle",   short: "suppressor",     look: "can_s",   fits: { cal: ["22lr"] }, can: true, noise: 0.35 },
   can9:         { slot: "muzzle",   short: "suppressor",     look: "can_s",   fits: { cal: ["9mm", "45acp", "57x28"] }, can: true, noise: 0.5, jam: 1.2 },
-  can556:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["556"] }, can: true, noise: 0.55, aim: 1, jam: 1.3 },
-  can308:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["308", "762x39"] }, can: true, noise: 0.6, jam: 1.3 },
+  can556:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["556", "223"] }, can: true, noise: 0.55, aim: 1, jam: 1.3 },
+  can308:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["308", "762x39", "300blk"] }, can: true, noise: 0.6, jam: 1.3 },
   can12:        { slot: "muzzle",   short: "shotgun suppressor", look: "can_l", fits: { cal: ["12ga", "20ga"], plat: ["pump", "semi12"] }, can: true, noise: 0.7, close: -2 },
   bottlecan:    { slot: "muzzle",   short: "bottle suppressor", look: "bottle", fits: { any: true, notCal: ["12ga", "20ga", "50bmg"] }, can: true, noise: 0.6, aim: -3 },
-  solventcan:   { slot: "muzzle",   short: "solvent-trap suppressor", look: "oilfilter", fits: { cal: ["22lr", "9mm", "556"] }, can: true, noise: 0.6, jam: 1.4 },
+  solventcan:   { slot: "muzzle",   short: "solvent-trap suppressor", look: "oilfilter", fits: { cal: ["22lr", "9mm", "556", "223"] }, can: true, noise: 0.6, jam: 1.4 },
   flashhider:   { slot: "muzzle",   short: "flash hider",    look: "brake",   fits: { cal: RIFLE_CALS }, aim: 1, flashless: true },
   recoilpad:    { slot: "stock",    short: "recoil pad",     look: "stock_pad", fits: { plat: ["pump", "dbl", "semi12", "bolt", "lever", "amr"] }, aim: 2, aimBy: { pump: 1, dbl: 1, semi12: 1, amr: 1 } },
   collapsible:  { slot: "stock",    short: "collapsible stock", look: "stock_collapsible", fits: { plat: ["ar15", "mp5", "ak", "semi12"] }, aim: 2, close: 3 },
@@ -154,11 +160,11 @@ export const MOD_GEAR = {
   mlok:         MOD("M-LOK handguard", 35, 0.2, "A slim modern handguard, lighter than the factory one (−0.2 kg fitted): room for a foregrip and a light or laser, +1 aim. Fits the AR-15 family and the AR-10."),
   can22:        MOD(".22 suppressor", 40, 0.2, "A rimfire can: a .22's shots barely a third as loud. Fits .22 guns."),
   can9:         MOD("Pistol-calibre suppressor", 60, 0.3, "A 9mm / .45 / 5.7 can: shots half as loud, but it fouls the action (jams ×1.2). Fits 9mm, .45 and 5.7 guns with a threaded barrel."),
-  can556:       MOD("5.56 suppressor", 90, 0.5, "A military rifle can: shots 55% as loud, +1 aim (less kick), but more fouling (jams ×1.3). Fits 5.56 rifles."),
-  can308:       MOD(".308 suppressor", 110, 0.6, "A big rifle can: shots 60% as loud, but more fouling (jams ×1.3). Fits .308 and 7.62×39 rifles."),
+  can556:       MOD("5.56 suppressor", 90, 0.5, "A military rifle can: shots 55% as loud, +1 aim (less kick), but more fouling (jams ×1.3). Fits 5.56 and .223 rifles."),
+  can308:       MOD(".308 suppressor", 110, 0.6, "A big rifle can: shots 60% as loud, but more fouling (jams ×1.3). Fits .308, 7.62×39 and .300 Blackout rifles (with subsonic .300 BLK a whisper)."),
   can12:        MOD("Shotgun suppressor", 80, 0.7, "A fat can for a 12 gauge: shots 70% as loud, −2 up close. Fits the pump and semi-auto shotguns. Very rare."),
   bottlecan:    MOD("Bottle suppressor", 1, 0.1, "A plastic bottle taped over the muzzle: shots 60% as loud, −3 aim, and it is shot through in 3 shots. Fits any gun but a shotgun or the .50. Made in the field from a bottle and a scrap.", { makeshift: true, dur: 3 }),
-  solventcan:   MOD("Solvent-trap suppressor", 30, 0.5, "A cleaning kit's solvent trap drilled out into a can: shots 60% as loud, but it fouls the action (jams ×1.4). Lasts 40 shots. Fits .22, 9mm and 5.56 guns. Made at a machine shop.", { makeshift: true, dur: 40 }),
+  solventcan:   MOD("Solvent-trap suppressor", 30, 0.5, "A cleaning kit's solvent trap drilled out into a can: shots 60% as loud, but it fouls the action (jams ×1.4). Lasts 40 shots. Fits .22, 9mm, 5.56 and .223 guns. Made at a machine shop.", { makeshift: true, dur: 40 }),
   flashhider:   MOD("Flash hider", 6, 0.1, "A birdcage on a rifle's muzzle: +1 aim, and at night the flash no longer gives the shooter away. Fits rifles."),
   recoilpad:    MOD("Recoil pad", 8, 0.2, "A thick rubber butt pad: +2 aim (+3 on a shotgun or the .50). Fits shotguns, bolt-action and lever-action rifles and the .50."),
   collapsible:  MOD("Collapsible stock", 30, 0.3, "An adjustable stock: +2 aim, +3 more up close. Fits the AR-15 family, the submachine gun, a Kalashnikov and the semi-auto shotgun."),

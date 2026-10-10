@@ -116,7 +116,7 @@ section("Their bite, their armour, critical hits (combat.js meleeOdds, damage, C
   const b = inBrowser(() => createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: people.map((s) => s.id), enemy: { kind: "zombies", count: 5, power: 3, types: { soldier: 2, riot: 1 } }, ambush: null, canRetreat: true, handler: "milz", context: {} }));
   st.combat = b;
   const me = b.units.find((u) => u.side === "player");
-  me.meleeMult = 1; me.critBonus = 0; me.assassin = false; me.dmgMult = 1;
+  me.meleeMult = 1; me.meleeDmg = 1; me.critBonus = 0; me.assassin = false; me.dmgMult = 1;
   const walker = b.units.find((u) => u.kind === "zombie" && !u.ztype), sol = b.units.find((u) => u.ztype === "soldier"), riot = b.units.find((u) => u.ztype === "riot");
   // The bite: the same weapon, the same odds and damage from the same spot (no power, elite or military bonus).
   const bite = (z) => { const x = z.x, y = z.y; z.x = walker.x; z.y = walker.y; const o = meleeOdds(b, z, me); z.x = x; z.y = y; return o; };

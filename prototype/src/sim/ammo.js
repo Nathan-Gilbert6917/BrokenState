@@ -15,6 +15,7 @@
 // between is right.
 import { ROUND_ECON, RARITY_FIND, roundTier } from "./data-ammo.js"; // a round's rarity tier (commonness)
 import { CALIBERS, AMMO_TYPES, ammoKey, AMMO_MIX, KIND_MIX, KIT_AMMO, STARTER_AMMO, ROUND_SUPPLIES, RELOAD_SUPPLIES, HAND_SUPPLIES, LOAD_CLASS, spreadMult } from "./data-ammo.js";
+import { CAL_DMG, CAL_REFUSE, KIT_ALT_CAL, gunCalList } from "./data-ammo.js"; // calibre compatibility (2026-10-10)
 import { SUPPLIES, GEAR } from "./data.js";
 import { WEAPONS } from "./combat.js";
 import { hash01 } from "./skills.js";
@@ -25,6 +26,7 @@ import { isBulk, loadsOf, sweepLoads, bulkRecord, roundItems, newBulk, fillBulk,
 // ---------- keys and stock records (rounds.js) ----------
 export * from "./rounds.js";
 import { factoryKey, foldRounds, sumRecs, ROUND_KEYS, GENERIC_KEYS, addAmmo, addRounds, baseKey, baseType, calName, hasGeneric, isRoundKey, keyFor, roundName, roundOf, roundsIn, settleRec, spendAmmo, splitByMix, takeRounds, totalIn, totalRounds, typeFor, typeFx, typeName, typesOf, withHand } from "./rounds.js";
+import { loadParts, loadId, loadCal, bareType } from "./rounds.js";
 const num = (v) => (Number.isFinite(v) ? v : 0);
 
 // The calibre a weapon shoots (null: melee, bows, acid, anything that takes no rounds; a launcher too: its rounds are
@@ -35,6 +37,51 @@ export function calOf(wkey) {
   return w && w.ammo > 0 && w.cal && CALIBERS[w.cal] && !w.launcher ? w.cal : null;
 }
 
+// ---------- calibre compatibility (2026-10-10: data-ammo.js CAL_ACCEPTS, rounds.js loads) ----------
+// The calibres a gun takes, its own first ([] for anything that takes no rounds): a 5.56 gun 5.56 and .223, a .223 gun
+// .223 only, a .357 revolver .357 and .38 Special.
+/** @param {string | null | undefined} wkey @returns {string[]} */
+export const gunCalsOf = (wkey) => (calOf(wkey) ? gunCalList(WEAPONS[/** @type {string} */ (wkey)]) : []);
+/** @param {string | null | undefined} wkey @param {string | null | undefined} cal */
+export const gunTakes = (wkey, cal) => !!cal && gunCalsOf(wkey).includes(cal);
+// Why this gun refuses rounds of this calibre ("" when it takes them): .300 BLK in a 5.56 gun, 5.56 in a .223 one.
+/** @param {string | null | undefined} wkey @param {string | null | undefined} cal */
+export function calRefusal(wkey, cal) {
+  const own = calOf(wkey);
+  if (!own || !cal || gunTakes(wkey, cal)) return "";
+  const name = String((WEAPONS[/** @type {string} */ (wkey)] || {}).name || "gun").toLowerCase();
+  return CAL_REFUSE[`${cal}>${own}`] || `The ${name} is chambered for ${calName(own)}: it takes no ${calName(cal)}.`;
+}
+// The same for a load (rounds.js: a type, or "<cal>:<type>").
+/** @param {string | null | undefined} wkey @param {string | null | undefined} load */
+export const loadRefusal = (wkey, load) => { const own = calOf(wkey); return own && load && load !== "auto" ? calRefusal(wkey, loadCal(own, load)) : ""; };
+// Every load a gun takes: its own calibre's types (its common round first), then each other calibre's.
+/** @param {string | null | undefined} wkey @returns {string[]} */
+export const gunLoads = (wkey) => { const own = calOf(wkey); return own ? gunCalsOf(wkey).flatMap((c) => typesOf(c).map((t) => loadId(own, c, t))) : []; };
+// The round a battle unit's gun is loaded with: { cal, type } (null: no gun).
+/** @param {any} u */
+export const unitRound = (u) => { const c = calOf(u && u.weapon); return c ? loadParts(c, u.load) : null; };
+// x a hit's damage for a round of `cal` fired from a gun chambered for `own` (CAL_DMG: .223 from a 5.56 gun, .38 from a
+// .357): the gun's own damage is its calibre's, the round's is lighter.
+/** @param {string} cal @param {string} own */
+export const calDmgRatio = (cal, own) => { if (!cal || cal === own) return 1; const a = CAL_DMG[cal], b = CAL_DMG[own]; return a && b ? (a[0] + a[1]) / (b[0] + b[1]) : 1; };
+// A load's effects on a shot from a gun of calibre `own`: its type's (data-ammo.js AMMO_TYPES), its damage x calDmgRatio
+// and its calibre's own aim (CALIBERS aim: .223 +3).
+/** @param {string} own @param {string | null | undefined} load */
+export function roundFx(own, load) {
+  const p = loadParts(own, load);
+  const fx = typeFx(p.type);
+  const r = calDmgRatio(p.cal, own), aim = (CALIBERS[p.cal] && CALIBERS[p.cal].aim) || 0;
+  if (r === 1 && !aim) return fx;
+  return { ...fx, dmg: (fx.dmg ?? 1) * r, aim: (fx.aim || 0) + aim };
+}
+// The loaded round's effects for a unit (combat.js shotOdds, gunstats.js): {} for no gun.
+/** @param {any} u */
+export const loadFx = (u) => { const c = calOf(u && u.weapon); return c ? roundFx(c, u.load) : {}; };
+// Is this a load the gun takes (a type of a calibre it takes, normalised)?
+/** @param {string} wkey @param {string | null | undefined} load */
+export const validLoad = (wkey, load) => { const c = calOf(wkey); return !!c && typeof load === "string" && typeFor(c, load) === load && !loadRefusal(wkey, load); };
+
 
 // ---------- guns and their calibres ----------
 // The calibres the guns among these people and items shoot, weighted by rounds a shot ({ "9mm": 2, "556": 2 }).
@@ -42,7 +89,8 @@ export function calOf(wkey) {
 export function gunCals(people, items = []) {
   /** @type {Record<string, number>} */
   const out = {};
-  const add = (it) => { const c = it ? calOf(it.key) : null; if (c) out[c] = (out[c] || 0) + Math.max(1, WEAPONS[it.key].ammo || 1); };
+  // (the other calibres a gun takes count at weight 0: usable and kept, never what generic ammo becomes: mixForCals)
+  const add = (it) => { const c = it ? calOf(it.key) : null; if (!c) return; out[c] = (out[c] || 0) + Math.max(1, WEAPONS[it.key].ammo || 1); for (const x of gunCalsOf(it.key)) if (!(x in out)) out[x] = 0; };
   for (const s of people || []) if (s && s.gear) add(s.gear.weapon);
   for (const it of items || []) add(it);
   return out;
@@ -199,7 +247,7 @@ export function migrateAmmo(state) {
   }
   for (const s of state.survivors || []) {
     const w = s.gear && s.gear.weapon;
-    if (w && w.load != null && !(calOf(w.key) && CALIBERS[calOf(w.key)].types.includes(w.load)) && w.load !== "auto") w.load = null;
+    if (w && w.load != null && !validLoad(w.key, w.load) && w.load !== "auto") w.load = null; // (a load of another calibre the gun takes stays: "223:fmj")
   }
 }
 
@@ -486,17 +534,18 @@ export function roundsOf(b, u, type) {
   const cal = calOf(u.weapon);
   if (!cal) return 0;
   if (u.side !== "player") return Infinity;
-  if (type === "*") return typesOf(cal).reduce((a, t) => a + battleKeyRounds(b, u, ammoKey(cal, t)), 0);
+  if (type === "*") return gunCalsOf(u.weapon).reduce((a, c) => a + typesOf(c).reduce((x, t) => x + battleKeyRounds(b, u, ammoKey(c, t)), 0), 0); // every calibre it takes
   return battleKeyRounds(b, u, keyFor(cal, type === undefined ? u.load : type));
 }
-// The types of this unit's calibre its side has rounds of: [{ type, name, n }], the loaded one first (agent D's reload
-// chooser).
+// The loads of this unit's gun its side has rounds of: [{ type (a load: rounds.js), name, full, cal, n }], the loaded
+// one first (agent D's reload chooser). Every calibre the gun takes (a 5.56 gun's .223 too: type "223:fmj", name
+// ".223 Rem FMJ"; its own calibre's by the type's name); full: the round's whole name.
 /** @param {any} b @param {any} u */
 export function loadsFor(b, u) {
   const cal = calOf(u.weapon);
   if (!cal || u.side !== "player") return [];
   const cur = loadOf(u);
-  return typesOf(cal).map((t) => ({ type: t, name: AMMO_TYPES[t].name, n: battleKeyRounds(b, u, ammoKey(cal, t)) }))
+  return gunLoads(u.weapon).map((id) => { const p = loadParts(cal, id); return { type: id, name: p.cal === cal ? AMMO_TYPES[p.type].name : roundName(cal, id), full: roundName(cal, id), cal: p.cal, n: battleKeyRounds(b, u, ammoKey(p.cal, p.type)) }; })
     .filter((x) => x.n > 0 || x.type === cur).sort((a, c) => (a.type === cur ? -1 : c.type === cur ? 1 : 0));
 }
 // n rounds of this unit's loaded type out of its own boxes, then its teammates', then the pools. Returns what was taken.
@@ -531,11 +580,11 @@ export function sideRounds(b) {
 export function chooseLoad(b, u, pref) {
   const cal = calOf(u.weapon);
   if (!cal) return null;
-  const want = pref && pref !== "auto" ? typeFor(cal, pref) : baseType(cal);
-  if (u.side !== "player" || battleKeyRounds(b, u, ammoKey(cal, want)) > 0) return want;
+  const want = pref && pref !== "auto" && !loadRefusal(u.weapon, pref) ? typeFor(cal, pref) : baseType(cal); // (a calibre the gun refuses: its common round)
+  if (u.side !== "player" || battleKeyRounds(b, u, keyFor(cal, want)) > 0) return want;
   if (battleKeyRounds(b, u, baseKey(cal)) > 0) return baseType(cal);
   let best = want, most = 0;
-  for (const t of typesOf(cal)) { const q = battleKeyRounds(b, u, ammoKey(cal, t)); if (q > most) { most = q; best = t; } }
+  for (const id of gunLoads(u.weapon)) { const q = battleKeyRounds(b, u, keyFor(cal, id)); if (q > most) { most = q; best = id; } } // every calibre it takes (a 5.56 gun's .223)
   return best;
 }
 // An enemy's load (data-ammo.js KIT_AMMO by kit and calibre class), on dice of its own (the battle's are not used up).
@@ -544,13 +593,17 @@ export function enemyLoad(kind, weapon, ...salt) {
   const cal = calOf(weapon);
   if (!cal) return null;
   const k = KIT_AMMO[kind] || KIT_AMMO.raiders;
-  const cls = cal === "12ga" || cal === "20ga" ? "shotgun" : cal === "22lr" || LOAD_CLASS[cal] === "pistol" ? "pistol" : "rifle"; // pistol rounds: 9mm, .45, .357, 5.7, .44
+  const cls = cal === "12ga" || cal === "20ga" ? "shotgun" : cal === "22lr" || LOAD_CLASS[cal] === "pistol" ? "pistol" : "rifle"; // pistol rounds: 9mm, .38, .45, .357, 5.7, .44
   const w = k[cls] || {};
+  // Now and then another calibre the gun takes (KIT_ALT_CAL, its own dice: civilian .223 in a raider's 5.56 rifle, .38
+  // in a .357 revolver; AI parity: the loads your guns take).
+  const alt = gunCalsOf(weapon).find((c) => c !== cal && hash01("ealtcal", kind, weapon, c, ...salt) < ((KIT_ALT_CAL[kind] || {})[c] || 0));
+  const lc = alt || cal;
   /** @type {Record<string, number>} */
   const mix = {};
-  for (const [t, p] of Object.entries(w)) { const tt = typeFor(cal, t); mix[tt] = (mix[tt] || 0) + p; }
-  if (!Object.keys(mix).length) return baseType(cal);
-  return pickBy(mix, hash01("eload", kind, weapon, ...salt));
+  for (const [t, p] of Object.entries(w)) { const tt = typeFor(lc, t); mix[tt] = (mix[tt] || 0) + p; }
+  if (!Object.keys(mix).length) return loadId(cal, lc, null);
+  return loadId(cal, lc, pickBy(mix, hash01("eload", kind, weapon, ...salt)));
 }
 // How well a type does against what is in front of it (pickLoad and the by-the-numbers edge): AP and slugs against
 // armour, hollow and soft points against the unarmoured.
@@ -595,7 +648,7 @@ export function pickLoad(b, u, foes = []) {
   const seen = (foes || []).filter((f) => f && !f.dead);
   if (!seen.length) return opts.includes(cur) ? cur : opts.includes(baseType(cal)) ? baseType(cal) : opts[0];
   const far = (t, f) => (Number.isFinite(f.x) && Number.isFinite(u.x) ? spreadMult(t, Math.hypot(f.x - u.x, f.y - u.y)) : 1);
-  const score = (t) => seen.reduce((a, f) => a + typeScore(t, armoured(f)) * far(t, f), 0) / seen.length;
+  const score = (t) => (seen.reduce((a, f) => a + typeScore(t, armoured(f)) * far(t, f), 0) / seen.length) * calDmgRatio(loadCal(cal, t), cal); // (a lighter calibre it takes: its damage; buckshot: what it keeps at each foe's range)
   let best = opts.includes(cur) ? cur : opts[0], bs = score(best) + 1e-6;
   for (const t of opts) { const s = score(t) + (t === baseType(cal) ? 1e-7 : 0); if (s > bs + 0.01) { best = t; bs = s; } }
   return best;
@@ -615,8 +668,8 @@ export function drawShots(rec, people, perHead) {
     const w = s && s.gear && s.gear.weapon;
     const cal = w ? calOf(w.key) : null;
     if (!cal) { loose += perHead; continue; }
-    const before = snapshot(rec, cal);
-    let got = takeRounds(rec, cal, w.load && w.load !== "auto" ? w.load : null, perHead, false);
+    const before = snapshotGun(rec, w.key);
+    let got = takeGun(rec, w.key, w.load, perHead);
     diffInto(before, rec, out.used);
     const g = Math.min(perHead - got, Math.max(0, Math.floor(num(rec.ammo)))); // generic ammo (another group's abstract stores) fits any gun
     if (g > 0) { rec.ammo -= g; got += g; out.used.ammo = (out.used.ammo || 0) + g; }
@@ -651,6 +704,19 @@ export function drawTeamShots(recs, people, total) {
   return out;
 }
 const snapshot = (rec, cal) => typesOf(cal).flatMap((t) => withHand(ammoKey(cal, t))).map((k) => [k, num(rec[k])]); // handloads too
+const snapshotGun = (rec, wkey) => gunCalsOf(wkey).flatMap((c) => snapshot(rec, c)); // every calibre the gun takes
+// n rounds for a gun out of a record: its load first (another calibre's too), then its own calibre (common round first,
+// the rest cheapest first), then the other calibres it takes. Returns what was taken.
+/** @param {Record<string, number>} rec @param {string} wkey @param {string | null | undefined} load @param {number} n */
+export function takeGun(rec, wkey, load, n) {
+  const cal = calOf(wkey);
+  if (!cal || !rec || !(n > 0)) return 0;
+  const p = load && load !== "auto" && !loadRefusal(wkey, load) ? loadParts(cal, load) : null;
+  let got = p && p.cal !== cal ? takeRounds(rec, p.cal, p.type, n, true) : 0;
+  got += takeRounds(rec, cal, p && p.cal === cal ? p.type : null, n - got, false);
+  for (const c of gunCalsOf(wkey)) if (c !== cal && got < n) got += takeRounds(rec, c, null, n - got, false);
+  return got;
+}
 function diffInto(before, rec, used) {
   for (const [k, q] of before) { const d = q - num(rec[k]); if (d > 0) used[k] = (used[k] || 0) + d; }
 }
@@ -673,10 +739,10 @@ export function gunsArmed(gunners, ammo, need, power) {
   if (typeof ammo !== "object" || ammo == null) return null;
   /** @type {Record<string, any[]>} */
   const groups = {};
-  for (const s of gunners) { const w = s.gear && s.gear.weapon; const c = (w && calOf(w.key)) || "*"; (groups[c] = groups[c] || []).push(s); }
+  for (const s of gunners) { const w = s.gear && s.gear.weapon; const c = (w && calOf(w.key) && gunCalsOf(w.key).join("+")) || "*"; (groups[c] = groups[c] || []).push(s); } // by the calibres their guns take
   let tot = 0, ok = 0;
   for (const [c, list] of Object.entries(groups)) {
-    const have = c === "*" ? totalRounds(ammo) : roundsIn(ammo, c) + Math.floor(num(ammo.ammo));
+    const have = c === "*" ? totalRounds(ammo) : c.split("+").reduce((a, x) => a + roundsIn(ammo, x), 0) + Math.floor(num(ammo.ammo));
     const f = have >= need(list.length) ? 1 : 0;
     for (const s of list) { const p = power(s); tot += p; ok += p * f; }
   }
@@ -719,16 +785,16 @@ export function huntRounds(ammo, item) {
   if (ammo == null) return Infinity;
   if (typeof ammo !== "object") return ammo;
   const cal = item ? calOf(item.key) : null;
-  return cal ? roundsIn(ammo, cal) + Math.max(0, Math.floor(num(ammo.ammo))) : 0;
+  return cal ? gunCalsOf(item.key).reduce((a, c) => a + roundsIn(ammo, c), 0) + Math.max(0, Math.floor(num(ammo.ammo))) : 0;
 }
 // The load a hunter's gun fires (item.load while there are rounds of it, else its common round) and its effect.
 /** @param {any} item @param {number | Record<string, number> | null | undefined} ammo */
 export function huntLoad(item, ammo) {
   const cal = item ? calOf(item.key) : null;
   if (!cal) return { type: null, big: 1, small: 1 };
-  const t = typeFor(cal, item.load);
+  const t = validLoad(item.key, item.load) ? item.load : baseType(cal);
   const ok = t !== baseType(cal) && (typeof ammo !== "object" || ammo == null || roundsIn(ammo, cal, t) > 0);
-  const fx = ok ? HUNT_LOAD[t] || {} : {};
+  const fx = ok ? HUNT_LOAD[/** @type {string} */ (bareType(t))] || {} : {};
   return { type: ok ? t : baseType(cal), big: fx.big || 1, small: fx.small || 1 };
 }
 // A hunter's shots out of records in order (a team's cargo then its packed supplies; a base's stock): the gun's load
@@ -739,7 +805,7 @@ export function takeHuntShots(recs, item, n) {
   let got = 0;
   for (const rec of recs) {
     if (!rec || got >= n) continue;
-    if (cal) got += takeRounds(rec, cal, item.load && item.load !== "auto" ? item.load : null, n - got, false);
+    if (cal) got += takeGun(rec, item.key, item.load, n - got);
     const g = Math.min(n - got, Math.max(0, Math.floor(num(rec.ammo))));
     if (g > 0) { rec.ammo -= g; got += g; }
   }
@@ -763,9 +829,9 @@ export function packRounds(from, members, n) {
     for (const [k, q] of Object.entries(g.keys)) if (k !== "ammo") out[k] = q; else out.ammo = q;
     return out;
   }
-  const take = (cal, type, q) => {
-    const before = snapshot(from, cal);
-    const got = takeRounds(from, cal, type, q, false);
+  const take = (wkey, load, q) => {
+    const before = snapshotGun(from, wkey);
+    const got = takeGun(from, wkey, load, q);
     diffInto(before, from, out);
     return got;
   };
@@ -774,11 +840,11 @@ export function packRounds(from, members, n) {
   if (gen > 0) { from.ammo -= gen; out.ammo = gen; }
   let left = n - gen;
   const share = Math.floor(left / gunners.length);
-  for (const s of gunners) { const w = s.gear.weapon; left -= take(calOf(w.key), w.load && w.load !== "auto" ? w.load : null, share); }
+  for (const s of gunners) { const w = s.gear.weapon; left -= take(w.key, w.load, share); }
   // The rest: round-robin over the gunners while any of their calibres has rounds.
   for (let guard = 0; left > 0 && guard < 50; guard++) {
     let moved = 0;
-    for (const s of gunners) { if (left <= 0) break; const w = s.gear.weapon; const q = take(calOf(w.key), null, Math.min(left, Math.max(1, Math.ceil(left / gunners.length)))); left -= q; moved += q; }
+    for (const s of gunners) { if (left <= 0) break; const w = s.gear.weapon; const q = take(w.key, null, Math.min(left, Math.max(1, Math.ceil(left / gunners.length)))); left -= q; moved += q; }
     if (!moved) break;
   }
   return out;

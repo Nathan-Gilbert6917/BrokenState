@@ -56,7 +56,7 @@
 // (noise 3) is 1.2, heard 15 × 0.4 = 6 tiles off in a raid (9 + 2 × noise, × the share) instead of 15.
 import { GEAR } from "./data.js";
 import { GUN_WEAPONS } from "./data-guns.js";
-import { CALIBERS } from "./data-ammo.js";
+import { CALIBERS, CAL_ACCEPTS } from "./data-ammo.js";
 import { SLOTS, SLOT_NAMES, SHARED, PLATFORMS, WEAPON_PLATFORM, WEAPON_SLOTS_OFF, BASE_CAL, MOD_ATTACH, PLATFORM_LIKE, PLATFORM_LIKE_SKIP } from "./data-gunmods.js";
 import { KIT_ATTACH } from "./data-kit.js"; // magazines as items (section 15): the extended mag and the drum are magazine items now
 // The gun builder's sim calls on inventory locations (they live with the inventory's location handling).
@@ -110,6 +110,8 @@ export const modDef = (key) => ATTACH[key] || null;
 // ---------- platforms, calibres, slots ----------
 export const platformOf = (gunKey) => WEAPON_PLATFORM[gunKey] || null;
 export const calOf = (gunKey) => (GUN_WEAPONS[gunKey] && GUN_WEAPONS[gunKey].cal) || BASE_CAL[gunKey] || null;
+// The calibres a gun takes (data-ammo.js CAL_ACCEPTS, a gun's own cals; ammo.js gunCalsOf without the WEAPONS import).
+const gunCalsHere = (gunKey) => { const w = GUN_WEAPONS[gunKey], c = calOf(gunKey); return w && Array.isArray(w.cals) ? w.cals : c ? CAL_ACCEPTS[c] || [c] : []; };
 const builtinOf = (gunKey) => (PLATFORMS[platformOf(gunKey)] || {}).builtin || {};
 const sharedWith = (slot) => (SHARED.find((g) => g.includes(slot)) || [slot]);
 // The slots a slot gives room for: the space under the barrel takes a foregrip instead (not the other way round).
@@ -136,6 +138,8 @@ export function modFits(gunKey, modKey) {
   if (a.can && PLATFORMS[plat].nocan) return false;
   if (f.cal && !f.cal.includes(cal)) return false;
   if (f.plat && !f.plat.includes(plat)) return false;
+  if (f.guns && !f.guns.includes(gunKey)) return false; // a magazine for only some guns of its platform (the battle rifles)
+  if (a.magCap && a.magCal) { const held = a.magCals || CAL_ACCEPTS[a.magCal] || [a.magCal]; if (!gunCalsHere(gunKey).some((c) => held.includes(c))) return false; } // it holds nothing the gun takes
   if (!f.cal && !f.plat && !f.any) return false;
   return couldHaveSlot(gunKey, a.slot);
 }
@@ -354,6 +358,8 @@ export const ROUND_REACH = {
   // 2026-10-10: the 5.7×28 (small and fast: a tile flatter than a 9mm) and the .44 Magnum (a heavy magnum: a tile more
   // from a carbine's barrel), both still past their reach at a rifle's range
   "57x28": { reach: 9, drop: 2, dmg: 0.85 }, "44mag": { reach: 9, drop: 2, dmg: 0.85 },
+  // 2026-10-10: .223 carries like 5.56, .300 BLK (a short, heavy, slow round) drops sooner, .38 like the other pistols
+  "223": { reach: 10, drop: 2, dmg: 0.85 }, "300blk": { reach: 8, drop: 2.5, dmg: 0.8 }, "38spl": { reach: 7, drop: 2, dmg: 0.85 },
 };
 export const roundReach = (w) => (w && w.cal && ROUND_REACH[w.cal]) || null;
 // The effective best range and fall-off of a weapon with its attachments (combat.js shotOdds), the range capped at
