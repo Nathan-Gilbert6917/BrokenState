@@ -101,7 +101,8 @@ section("Over the max; the bad traits' give-back capped");
   const st = blankWorld(42);
   const s = st.survivors[1];
   st.pointsMax = 60;
-  for (const k of SKILLS) s.skills[k] = 8; // 80 points
+  for (const k of SKILLS) s.skills[k] = 0;
+  for (const k of SKILLS.slice(0, 10)) s.skills[k] = 8; // 80 points (ten skills of the eleven)
   const B = pricePerson(st, s);
   check(B.total === 80 && B.over === 20 && overBudget(st).length === 1 && overBudget(st)[0].s === s, `80 points of skills on a max of 60: 20 over`);
   check(new RegExp(`${s.name.split(" ")[0]} by 20`).test(overText(st)), `Start's refusal names them: "${overText(st)}"`);
@@ -347,7 +348,7 @@ section("Ironman, the seed's world, the screen");
   }
   // The screen.
   const html = newRunScreen(st, UI());
-  check(/data-action="nr-points"[^>]*value="80"/.test(html) && (html.match(/class="ptsbar/g) || []).length === 6 && (html.match(/data-action="sg-dice"/g) || []).length === 6 && (html.match(/data-action="sg-blank"/g) || []).length === 6, "Customize: Points each, a points bar, Start from the dice and Clear on every card");
+  check(new RegExp(`data-action="nr-points"[^>]*value="${CUSTOM_POINTS.DEF}"`).test(html) && (html.match(/class="ptsbar/g) || []).length === 6 && (html.match(/data-action="sg-dice"/g) || []).length === 6 && (html.match(/data-action="sg-blank"/g) || []).length === 6, "Customize: Points each, a points bar, Start from the dice and Clear on every card");
   const off = newRunScreen(createWorld({ seed: 42, factionCount: 5 }), { ...UI(), freeEdit: false });
   check(/data-action="nr-points"[^>]*disabled/.test(off) && !/class="ptsbar/.test(off) && /data-action="nr-skills"/.test(off), "Customize off: the old screen (the box greyed, the skill-point pool, Randomize skills)");
   check(/class="chip trait t-(good|bad|neutral)"/.test(off), "the cards' trait chips coloured by kind");

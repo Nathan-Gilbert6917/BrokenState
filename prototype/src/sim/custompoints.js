@@ -27,8 +27,9 @@ export const CUSTOM_POINTS = {
   // Each colonist's max, the same for the whole crew (the new-run screen's "Points each" box). DEF: about what an
   // average rolled colonist and their usual start kit come to by this table (tools/custompointstest.js measures it:
   // 360 rolled colonists of each mode, 2026-10-08: a normal start's median 70 (skills 62, kit 13), Hardcore's 85
-  // (skills 72: the backgrounds' bumps on top; kit 10), both 78; rounded to 80).
-  DEF: 80, MIN: 0, MAX: 400,
+  // (skills 72: the backgrounds' bumps on top; kit 10), both 78; rounded to 80. With the Melee skill (2026-10-09,
+  // about 5.5 a rolled colonist, more with a hands-on background): normal 77, Hardcore 93, both 85).
+  DEF: 85, MIN: 0, MAX: 400,
   // A skill level's price by the level it reaches: levels 1–10 cost 1 each, 11–15 cost 2, 16–20 cost 3 (so 10 is 10
   // points, 15 is 20 and 20 is 35).
   SKILL_STEPS: [[10, 1], [15, 2], [20, 3]],

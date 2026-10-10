@@ -247,4 +247,11 @@ export const ROSTER_HELP = `<b>Guns.</b> Pistols: the .22 target pistol (quiet, 
   straight line with nobody between, and can be thrown up to 5 tiles (Throw spear: the spear's damage on whoever is where
   it lands, a tile off now and then like any throw). A thrown spear lies where it lands: walk over it to pick it up again
   (or 1 action next to it); until then the thrower fights with a pistol from a pocket or bare hands. After a won fight it
-  is picked up. Zealots throw spears too. Clubs (bats, batons, golf clubs, hammers) are best for takedowns.`;
+  is picked up. Zealots throw spears too. Clubs (bats, batons, golf clubs, hammers) are best for takedowns.
+  <br><b>The Melee skill.</b> How well someone fights hand to hand, with any melee weapon, bare hands or a gun swung as
+  a club: 75% to hit at Melee 5, 2% more or less a point (65% at 0, 85% at 10, 95% at most), melee damage 3% more or
+  less a point (× 0.85 at 0, × 1.15 at 10), takedowns 1% a point; a melee weapon's own "Needs" go by Melee, and by the
+  numbers someone holding one fights by their Melee where a gunman fights by Shooting. It grows in battle (a swing, a
+  blow landed, a melee kill; takedowns and thrown spears too) and from fights by the numbers with a melee weapon in hand,
+  and has perks at 5, 10 and 15 like every skill (Heavy Hands or Parry, Butcher or Knockout Artist, Bonebreaker or Pit
+  Fighter). Volunteers from other groups have it too, by their group's ways.`;

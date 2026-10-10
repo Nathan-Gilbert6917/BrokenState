@@ -48,7 +48,10 @@ export const STEALTH = {
   BODY_SIGHT: 5, BODY_SIGHT_NIGHT: 3, BODY_HEAT: 6, DRAG: 3, SUPPRESS: 0.5,
   INVESTIGATE_TURNS: 3, STAGGER: 0.3, BLUNT: 0.6, WAKE: [4, 6], BEHIND_DETECT: 0.5,
 };
-export const TAKEDOWN = { base: 30, stealth: 2.5, behind: 15, cover: 10, assassin: 20, staggering: -15, kit: { soldiers: -15, zealots: -5 } };
+// melee / meleeMid: each point of the Melee skill above meleeMid adds melee (below takes it off; world.js MELEE_SKILL:
+// your people and volunteers, a.melee from combat.js playerUnit; the enemy has none and counts as meleeMid);
+// knockout: Knockout Artist (skills.js).
+export const TAKEDOWN = { base: 30, stealth: 2.5, behind: 15, cover: 10, assassin: 20, staggering: -15, kit: { soldiers: -15, zealots: -5 }, melee: 1, meleeMid: 5, knockout: 15, knockoutBlow: 10 };
 const CLUB = { spikedbat: 20, pipespear: 5, spear: 5, knife: 10, machete: 10, sawmachete: 10, springmachete: 10, fists: 5, bat: 20, nailbat: 15, baton: 20, prybar: 15, fireaxe: 10, sledge: 10, stunbaton: 20 }; // guns: a butt stroke, +5
 export const SUPPRESSIBLE = ["pistol", "huntrifle", "ar", "leverrifle", "carbine", "smg", "lmg", "dmr", "sniper"]; // the oil filter's calibres (gunmods.js: 9mm, 5.56, .308, .30-30), the roster's guns too
 // Keyed like GEAR (the item's throw field). radius / turns: the lure (unaware guards and the dead within radius go to
@@ -225,7 +228,7 @@ export function subdueOdds(b, a, t) {
   const dmg = [Math.round(m.dmg[0] * STEALTH.BLUNT), Math.round(m.dmg[1] * STEALTH.BLUNT)];
   const flat = flatFooted(t);
   if (!flat && !staggering(t)) {
-    const chance = Math.max(10, m.chance - 10);
+    const chance = Math.min(95, Math.max(10, m.chance - 10) + (a.koArtist ? TAKEDOWN.knockoutBlow : 0)); // Knockout Artist
     return { takedown: false, chance, dmg, behind: false, cover: false, label: `Non-lethal blow: ${chance}% to hit, ${dmg[0]}–${dmg[1]} damage; knocks them out instead of killing` };
   }
   const behind = isBehind(a, t);
@@ -235,6 +238,8 @@ export function subdueOdds(b, a, t) {
   if (cover) c += TAKEDOWN.cover;
   c += a.str || 0;
   if (a.assassin) c += TAKEDOWN.assassin;
+  if (Number.isFinite(a.melee)) c += (a.melee - TAKEDOWN.meleeMid) * TAKEDOWN.melee; // the Melee skill
+  if (a.koArtist) c += TAKEDOWN.knockout; // Knockout Artist
   c += TAKEDOWN.kit[t.kit] || 0;
   if (!flat) c += TAKEDOWN.staggering;
   const chance = Math.round(clamp(c, 5, 95));

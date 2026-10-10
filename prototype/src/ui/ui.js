@@ -148,7 +148,7 @@ const attColor = (a) => ({ Hostile: "var(--danger)", Neutral: "var(--muted)", Fr
 const clock = (state) => `${String(hourOfDay(state)).padStart(2, "0")}:00`;
 const first = (s) => esc(shortName(s)); // first name, with a last initial when two people share it (names.js)
 // Short skill labels for crew lists (whole words, never cut mid-word).
-const SKILL_SHORT = { scouting: "Scout", stealth: "Stealth", shooting: "Shoot", scavenging: "Scav", speech: "Speech", medicine: "Med", mechanics: "Mech", farming: "Farm", leadership: "Lead", crafting: "Craft" };
+const SKILL_SHORT = { scouting: "Scout", stealth: "Stealth", shooting: "Shoot", scavenging: "Scav", speech: "Speech", medicine: "Med", mechanics: "Mech", farming: "Farm", leadership: "Lead", crafting: "Craft", melee: "Melee" };
 const bedTag = (s) => (s.inBed ? ` <span class="muted"${tip("In a hospital bed: does not work while admitted (Medical tab)")}>(in bed)</span>` : "");
 // Whether you know how someone is right now: at a base or on a convoy yes; on a team only while it is in contact
 // (waiting, working on the spot, or in radio range); captives no.
@@ -1064,7 +1064,7 @@ function lightsRow(state, h, pl) {
 // The planners' crew list (who is at the base: skills, gear, what they wear), transport (on foot, the base's bikes,
 // its cars) and supplies table (from the base's stores): the trip planner (from the hub) and the move-out planner
 // (from any base of yours, sim/moveout.js). where: how the base is named in the text ("the hub").
-const PLAN_SKILLS = ["scouting", "stealth", "shooting", "scavenging", "speech", "medicine", "mechanics"];
+const PLAN_SKILLS = ["scouting", "stealth", "shooting", "melee", "scavenging", "speech", "medicine", "mechanics"];
 function crewPick(state, crewPool, pl, where) {
   const keySkills = PLAN_SKILLS;
   return `<div class="crew">${crewPool.map((s) => `

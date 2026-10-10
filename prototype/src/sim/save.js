@@ -26,7 +26,7 @@ import { migrateAmmo } from "./ammo.js"; // old saves: generic ammo into rounds 
 import { migrateKit } from "./carrykit.js"; // old saves: carriers' plates, spare magazines
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
-import { peekNextId, setNextId, day, hub, alive, fillCrafting } from "./world.js";
+import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee } from "./world.js";
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS, GEAR } from "./data.js"; // firewood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js";
@@ -143,6 +143,9 @@ export function deserializeState(save) {
   // (appearance.js CRAFT_START.oldSave), their skill floor too; anyone else carrying skills (prisoners, visitors,
   // children grown later) is filled the same way the first time world.js skill() or skills.js ensureSkills sees them.
   for (const sv of state.survivors || []) fillCrafting(sv); // only where it is missing: a newer save loads unchanged
+  // Melee (data.js SKILLS, world.js fillMelee): the same for people from before it: half their Shooting plus 0-6 by a
+  // hash of their name (appearance.js meleeOldSave), their floor too, and no perk point for milestones already passed.
+  for (const sv of state.survivors || []) fillMelee(sv);
   // Craft books (blueprints.js CRAFT_BOOKS): one someone had already read to the end before they unlocked anything
   // (Small Engine Repair) counts as read.
   for (const sv of state.survivors || []) for (const [k, h] of Object.entries(sv.books || {})) {

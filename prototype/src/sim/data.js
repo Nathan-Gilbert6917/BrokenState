@@ -506,14 +506,17 @@ export const siteDanger = (loc) => {
   return loc.zone === "town" || loc.zone === "rural" ? Math.min(1, d) : d;
 };
 
-export const SKILLS = ["shooting", "stealth", "scavenging", "scouting", "medicine", "mechanics", "farming", "speech", "leadership", "crafting"];
-// The skills a new survivor draws with the world's dice (world.js makeSurvivor): every skill but Crafting, which came
-// later and is rolled with its own dice (appearance.js craftingStart), so the same seed still makes the same people.
-export const ROLLED_SKILLS = SKILLS.filter((k) => k !== "crafting");
+export const SKILLS = ["shooting", "stealth", "scavenging", "scouting", "medicine", "mechanics", "farming", "speech", "leadership", "crafting", "melee"];
+// The skills a new survivor draws with the world's dice (world.js makeSurvivor): every skill but Crafting and Melee,
+// which came later and are rolled with dice of their own (appearance.js craftingStart, meleeStart), so the same seed
+// still makes the same people. Melee is last in SKILLS so every loop over SKILLS that draws dice draws the older
+// skills' dice as it did.
+export const ROLLED_SKILLS = SKILLS.filter((k) => k !== "crafting" && k !== "melee");
 export const SKILL_NAMES = {
   shooting: "Shooting", stealth: "Stealth", scavenging: "Scavenging", scouting: "Scouting",
   medicine: "Medicine", mechanics: "Mechanics", farming: "Farming", speech: "Speech", leadership: "Leadership",
   crafting: "Crafting", // crafting.js: the quality, speed and XP of everything made by hand (each recipe's own skill is only its minimum)
+  melee: "Melee", // world.js MELEE_SKILL: to hit and damage with melee weapons and bare hands, takedowns, a melee wielder's fighting strength
 };
 
 // Survivor traits. bad: a drawback; neutral: a real trade-off, good and bad at once (worth no points under Customize);
@@ -632,6 +635,8 @@ Object.assign(GEAR, GUN_GEAR, LATER_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_
 for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // data-guns.js: changed descriptions
 Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 Object.assign(GEAR, HELMET_GEAR); // helmets, visors, helmet mounts, ear protection (data-helmets.js)
+// The Melee skill (world.js MELEE_SKILL): every melee weapon goes by Melee, not Shooting (its req, the skill-gap rule).
+for (const d of Object.values(GEAR)) if (d.slot === "weapon" && d.cat === "melee" && d.skill === "shooting") d.skill = "melee";
 
 // ---------- durability (crafting.js itemDur / wear) ----------
 // Real gear wears too, only slower than makeshift gear: dur = uses before it breaks (weapons and armor: fights;
