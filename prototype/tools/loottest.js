@@ -26,6 +26,7 @@ import { worthTier } from "../src/sim/valuation.js";
 import { newItem, ZBODY } from "../src/sim/inventory.js";
 import { MILDEAD } from "../src/sim/deadsoldiers.js";
 import { AMMO_GEAR } from "../src/sim/data-ammo.js";
+import { BULK_GEAR } from "../src/sim/data-stacks.js";
 import { Rng } from "../src/sim/rng.js";
 import { TREAT_ORDER } from "../src/sim/needs.js";
 import { GUN_FINDS, SEARCH_TOOLS, GUN_STASH } from "../src/sim/gunsafes.js"; // gun safes, gun cases, drills (their own dice)
@@ -84,7 +85,8 @@ for (const [k, kit] of Object.entries(FLASH_KIT)) addAll(Object.keys(kit), `body
 if (Object.keys(TRUCK_FLASH).length) addAll(["flashbang"], "truck"); // miltrucks.js: Army trucks' crates
 for (const [t, list] of Object.entries(WARES)) addAll(list, `sold:${t}`);
 addAll(RARE_GEAR, "merchants"); addAll(MERCHANT_VALUABLES, "merchants"); addAll(TRAVEL_GEAR, "travellers");
-addAll(Object.keys(AMMO_GEAR), "rounds"); // a box is the item form of a supply of rounds found by key everywhere (ammo.js: starting colonists' pockets, opened into the stock)
+addAll(Object.keys(AMMO_GEAR), "rounds");
+addAll(Object.keys(BULK_GEAR), "bulk finds"); // ammo.js bulkFind: raid containers and Army trucks now and then (2026-10-10) // a box is the item form of a supply of rounds found by key everywhere (ammo.js: starting colonists' pockets, opened into the stock)
 addAll(Object.keys(RECRUIT_WEAPONS), "recruits"); addAll(RECRUIT_ARMOR, "recruits"); addAll(RECRUIT_KIT, "recruits"); addAll(RECRUIT_PERSONAL, "recruits");
 for (const [k, r] of Object.entries(CRAFTS)) if (r.gear) addAll([r.gear], `craft:${k}`);
 addAll(HUMVEE_GEAR, "event:humvee"); addAll(HIKER_STUFF, "event:hiker"); addAll(["hikingpack", "rucksack"], "event:hiker");

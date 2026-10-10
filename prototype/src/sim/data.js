@@ -4,6 +4,7 @@
 // The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
 import { GUN_GEAR, GEAR_PATCH, LATER_GEAR } from "./data-guns.js";
 import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES, RELOAD_SUPPLIES } from "./data-ammo.js";
+import { BULK_GEAR } from "./data-stacks.js"; // bulk ammo containers: an ammo can, a carton, a bag (sim/itemstack.js)
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
 import { HELMET_GEAR } from "./data-helmets.js"; // helmets, visors, helmet mounts, ear protection (helmets.js, hearing.js)
@@ -644,7 +645,7 @@ Object.assign(GEAR, {
 
 // The weapons overhaul (docs/weapons-overhaul-plan.md): guns and melee, ammo boxes and reloading supplies, attachments,
 // carry kit. One line, so the agents filling those modules never edit the end of this file.
-Object.assign(GEAR, GUN_GEAR, LATER_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR); // LATER_GEAR: the launchers and the M2 (wave 2, launchers.js)
+Object.assign(GEAR, GUN_GEAR, LATER_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR, BULK_GEAR); // LATER_GEAR: the launchers and the M2 (wave 2, launchers.js)
 for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // data-guns.js: changed descriptions
 Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 Object.assign(GEAR, HELMET_GEAR); // helmets, visors, helmet mounts, ear protection (data-helmets.js)

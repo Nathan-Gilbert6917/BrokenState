@@ -23,7 +23,7 @@ import { GEAR, SUPPLIES } from "./data.js";
 import { lootItem, itemAt, placeOfLoc, storageFor } from "./inventory.js";
 import { siteSource, GUNSTORE_LOCKED } from "./itemcond.js"; // every item here gets its condition from itemcond.js (rollCondition by source)
 import { baseById } from "./world.js";
-import { stashRounds } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
+import { stashRounds, boxFinds, themeOf } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
 import { withMags } from "./carrykit.js"; // a gun's spare magazines (call-time only)
 
 // ---------- what is inside ----------
@@ -73,6 +73,8 @@ export function registerStashExtra(fn) {
 }
 // ammo.js: the rounds in a safe or a case, by the calibres of the guns in it (now and then a typed load).
 registerStashExtra((ctx, out) => stashRounds(ctx, out));
+// ammo.js: a safe's rounds mostly in their boxes (stacks of boxes beside the guns); a gun case's stay loose in it.
+registerStashExtra((ctx, out) => { if (out && out.sup && Array.isArray(out.gear) && !/case$/.test(String(ctx && ctx.table))) boxFinds(out.sup, out.gear, ctx && ctx.siteType && ["military", "police", "prison"].includes(themeOf(ctx.siteType)) ? themeOf(ctx.siteType) : "guns", "stash", ctx && ctx.tier, ctx && ctx.table); });
 // carrykit.js: a gun in a safe or a case keeps 0-2 spare magazines beside it (its own dice).
 registerStashExtra(({ roll, tier, siteType }, out) => { withMags(out.gear, stashSource(tier, siteType), "stash", tier, roll("mags")); });
 
