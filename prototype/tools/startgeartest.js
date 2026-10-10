@@ -263,7 +263,7 @@ section("Start, save and load, the first days");
     clearStartGear(st); // main.js begin
     st.started = true;
     check(st.survivors.every((x) => ["startGear", "startDice", "diceKit", "diceRoll", "diceTrunk", "startVehicle", "startPoints"].every((k) => !(k in x))) && st.survivors[0].gear.weapon.key === "ar", `${mode}: Start leaves ordinary gear, nothing of the screen`);
-    const text = saveToString(st, { dropCards: true }); // Hardcore opens on the team's orders card
+    const text = saveToString(st, { dropCards: true }); // Hardcore opens on its blurb card
     const ld = loadFromString(text);
     check(kitOf(ld.survivors[0]) === kitOf(st.survivors[0]) && saveToString(ld) === text, `${mode}: a save and load round trip`);
     setAutopilot(ld, true, "balanced");

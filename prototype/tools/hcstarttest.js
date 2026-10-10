@@ -75,7 +75,8 @@ for (const st of worlds) {
   check(hubSites(st, tile.id, 6).length > 0, `${tag}: somewhere to found a hub nearby`);
   check(!!waterSource(st, tile.id, HC_START.SPAWN.water[1]), `${tag}: a river or lake within ${HC_START.SPAWN.water[1]} tiles (${waterText(st, tile.id)})`);
   check(st.vehicles.filter((v) => v.loc.kind === "party" && v.loc.partyId === p.id).length === 1 && p.vehicle === true && isCar(partyVehicle(st, p)), `${tag}: one car, the team's`);
-  check(st.cards.length >= 1 && st.cards[0].isOrders && st.cards[0].partyId === p.id && /Calder is falling/.test(st.cards[0].text), `${tag}: the run opens on the team's orders card`);
+  check(st.cards.length >= 1 && st.cards[0].intro && !st.cards[0].isOrders && st.cards[0].choices.length === 1 && /Calder is falling/.test(st.cards[0].text), `${tag}: the run opens on the blurb (one button, no orders on it)`);
+  check(p.phase === "waiting" && !st.cards.some((c) => c.isOrders || c.partyId === p.id), `${tag}: the team waits for orders with no orders card`);
 }
 
 check(spawnsClose >= worlds.length - 1, `the strict rule (a site within ${HC_START.SPAWN.poi[0]} tiles) held on ${spawnsClose} of ${worlds.length} seeds`);
@@ -150,8 +151,8 @@ section("The prepper: when one of the three is a prepper, they fled with a duffl
     check(traited ? pr.traits.length <= P.MAX_TRAITS : pr.traits.length >= P.MAX_TRAITS, `seed ${st.seed}: the trait when a slot allows (${pr.traits.join(", ")})`);
     const line = st.log.find((l) => /was a prepper/.test(l.text));
     check(!!line && line.text.startsWith(pr.name.split(" ")[0]) && Math.floor(line.hour / 24) === 0 && (traited || /no room for the trait/.test(line.text)), `seed ${st.seed}: day 1's log names the prepper (${line ? line.text.slice(0, 60) : "no line"}…)`);
-    check(hc0.grabbed[0].startsWith(pr.name.split(" ")[0]) && /packed by the door: 15 food, 15 water/.test(hc0.grabbed[0]) && /15 food, 15 water/.test(st.cards[0].text), "the orders card tells the bag's contents first");
-    check(/15 food, 15 water/.test(st.cards[0].text), "the orders card tells the bag's contents");
+    check(hc0.grabbed[0].startsWith(pr.name.split(" ")[0]) && /packed by the door: 15 food, 15 water/.test(hc0.grabbed[0]) && /15 food, 15 water/.test(st.cards[0].text), "the opening blurb tells the bag's contents first");
+    check(/15 food, 15 water/.test(st.cards[0].text), "the opening blurb tells the bag's contents");
     check(p.supplies.meds >= P.MEDS, `seed ${st.seed}: the bag's meds are pooled (${p.supplies.meds})`);
     check(!p.burden || p.burden.band <= 1, `seed ${st.seed}: the team still walks (load band ${p.burden && p.burden.band})`);
   }
@@ -203,7 +204,7 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
     check(Object.entries(cs).every(([k, q]) => TR[k] && q >= TR[k][0] && q <= TR[k][1]) && Object.keys(TR).filter((k) => SUPPLIES[k] && TR[k][0] > 0).every((k) => cs[k] >= TR[k][0]), `seed ${st.seed}: the supplies in the back are the owner's (${JSON.stringify(cs)})`);
     check(p.cargo.gear.every((g) => TR.gear && TR.gear[g.key]) && p.cargo.gear.length >= TR.n[0] && p.cargo.gear.length <= TR.n[1], `seed ${st.seed}: the things in the back are the owner's (${p.cargo.gear.map((g) => g.key).join(", ")})`);
     const line = hc0.grabbed[hc0.grabbed.length - 1];
-    check(new RegExp(`^${owner.name.split(" ")[0]} got everyone into their ${v.name.toLowerCase()}`).test(line) && /tank \d+% full/.test(line) && /in the back/.test(line) && st.cards[0].text.includes(line), `seed ${st.seed}: the orders card says whose car and what is in the back`);
+    check(new RegExp(`^${owner.name.split(" ")[0]} got everyone into their ${v.name.toLowerCase()}`).test(line) && /tank \d+% full/.test(line) && /in the back/.test(line) && st.cards[0].text.includes(line), `seed ${st.seed}: the opening blurb says whose car and what is in the back`);
     check(st.log.some((l) => /set off in .*: tank \d+% full/.test(l.text) && Math.floor(l.hour / 24) === 0), `seed ${st.seed}: day 1's log says they set off in it`);
     check(m.every((x) => new RegExp(`${x.name.split(" ")[0]} \\(${A[x.background].name.toLowerCase()}`).test(st.cards[0].text)), `seed ${st.seed}: the card names each one's background`);
     check(!p.burden || p.burden.band <= 2, `seed ${st.seed}: the car is not overloaded (load band ${p.burden && p.burden.band})`);
@@ -688,7 +689,7 @@ section("Starting people (hardcore.js START_PEOPLE): 1, 2, 3 and 4 flee together
       const sup = p.supplies, lo = HC_START.TEAM_MIN * n, hi = HC_START.TEAM_MAX * n, pf = prep ? P.FOOD : 0, pw = prep ? P.WATER : 0;
       check(sup.food >= lo + pf && sup.food <= teamFoodCap(team) + pf && sup.water >= lo + pw && sup.water <= hi + pw, `${tag}: 1–3 days each (food by background)${prep ? " plus the prepper's bag" : ""} (${sup.food} food, ${sup.water} water)`);
       check(n === 1 ? /got out alone/.test(st.log.map((l) => l.text).join(" ")) : st.log.some((l) => new RegExp(`of you got out`).test(l.text)), `${tag}: the day-1 log counts them`);
-      check(st.cards[0] && st.cards[0].isOrders && /Calder is falling/.test(st.cards[0].text), `${tag}: the orders card`);
+      check(st.cards[0] && st.cards[0].intro && !st.cards[0].isOrders && /Calder is falling/.test(st.cards[0].text) && p.phase === "waiting", `${tag}: the opening blurb, the team waiting`);
       if (!prep) { foodPer += sup.food / n; games++; }
       try { for (let i = 0; i < 48; i++) { tickHour(st); st.cards.length = 0; } check(true, `${tag}: two days run`); } catch (e) { check(false, `${tag}: two days run: ${e.message}`); }
     }
@@ -811,7 +812,7 @@ section("Food by background; one or two get a skill bump and the empty seats loa
     }
     const ok = Object.entries(S.SEAT).every(([k, [lo, hi]]) => { const q = cs[k] || 0, t = TR[k] || [0, 0]; return q >= lo * seats + t[0] && q <= hi * seats + t[1]; });
     check(ok, `${tag}: the empty seat${seats > 1 ? "s" : ""} loaded (${JSON.stringify(cs)})`);
-    check(/on the empty seats?, what else they could grab: \d+ food/.test(line) && st.cards[0].text.includes(line), `${tag}: the orders card says what is on the seat${seats > 1 ? "s" : ""}`);
+    check(/on the empty seats?, what else they could grab: \d+ food/.test(line) && st.cards[0].text.includes(line), `${tag}: the opening blurb says what is on the seat${seats > 1 ? "s" : ""}`);
     check(st.log.some((l) => (n === 1 ? /got out alone: the kind who can look after themselves \(Scouting, Stealth and Medicine up\)/ : /got out on their own: the kind who can look after each other/).test(l.text)), `${tag}: day 1's log says why`);
     check(!p.burden || p.burden.band <= 2, `${tag}: the car is not overloaded (load band ${p.burden && p.burden.band})`);
     seatFood[n].push(cs.food || 0);

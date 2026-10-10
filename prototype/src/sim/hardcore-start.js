@@ -45,7 +45,7 @@ import { starterLoad, pocketBox, settleParty } from "./ammo.js"; // rounds by ca
 // What someone has with them at the start, looked after but worn (inventory.js START_DUR).
 const startItem = (rng, key, q) => newItem(key, q, rng, START_DUR);
 import { Rng } from "./rng.js";
-import { sightRadius, partyMembers, partyTile, awaitOrders, weighTeam } from "./parties.js";
+import { sightRadius, partyMembers, partyTile, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { isCustomBg } from "./custombg.js";
 import { grabStartGear, addPickedSupplies, trunkFromPicks, loadGun, pickOf } from "./startgear.js"; // gear picked on the new-run screen (Customize)
@@ -707,11 +707,20 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   if (smallSkills) log(state, `${people.length === 1 ? `${firstName(people[0])} got out alone` : `${firstName(people[0])} and ${firstName(people[1])} got out on their own`}: the kind who can look after ${people.length === 1 ? "themselves" : "each other"} (${andList(smallSkills.map((k) => SKILL_NAMES[k]))} up), and the car's empty ${people.length === 1 ? "seats were" : "seat was"} loaded too.`, "good");
   // Day 1's log names the prepper (the trait when a slot allowed it, else only this line says it).
   if (prepper) log(state, `${firstName(prepper)} was a prepper${prepGot.trait ? "" : " (no room for the trait: the kit says it)"}: a ${prepGot.bag ? prepGot.bag.name.toLowerCase() : "bag"} packed for five days${prepGot.weapon ? `, ${/^[aeiou]/i.test(prepGot.weapon.name) ? "an" : "a"} ${prepGot.weapon.name.toLowerCase()}${prepGot.ammo + (prepGot.rounds || 0) ? ` (${prepGot.ammo + (prepGot.rounds || 0)} rounds)` : ""}` : ""}${prepGot.items.some((it) => it.key === "waterfilter") ? ", a water filter" : ""}${prepGot.items.some((it) => it.key === "handradio") ? ", a hand-crank radio" : ""}${prepGot.items.some((it) => it.key === "puritabs") ? " and purification tablets" : ""}.`, "good");
-  // The run opens on the team's orders card: what they grabbed, and what the first hub takes.
+  // The run opens on a plain blurb (introCard): what they grabbed, and what the first hub takes. No orders card: the
+  // team stands waiting for orders (phase "waiting", the alerts' "Waiting for orders" row) and they are given from its
+  // panel as usual; the game starts paused (main.js begin) and an order never unpauses it (ui/expedition.js).
   weighTeam(state, p);
   const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${sup.ammo ? `, ${Math.floor(sup.ammo)} rounds` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: a staging camp you bring ${needText(STAGING.HARDCORE.needs)} to, then build up into your hub over a few days.`;
-  awaitOrders(state, p, intro, { title: "The day Calder fell" });
+  addCard(state, introCard(INTRO_TITLE, intro, "The team waits for orders: open its panel (click it on the map, or the Teams tab) and give the first one. The clock is stopped until you press Space."));
   return p;
+}
+
+// The run's opening popup: the blurb and one button, nothing to decide (cardrules.js cardKind: intro cards always
+// show, whatever the pause rules; the autopilot reads it and goes on: autopilot.js resolveCard).
+export const INTRO_TITLE = "The day Calder fell";
+export function introCard(title, text, hint = "") {
+  return { title, text, intro: true, choices: [{ label: "Begin", default: true, ...(hint ? { hint } : {}), resolve: () => "" }] };
 }
 
 // Once a day (hardcore.js hardcoreDaily): where the team is, for playerTile once nobody is left on the road.

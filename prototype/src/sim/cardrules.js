@@ -13,7 +13,7 @@
 //   trade    trade visitors: caravans, radio offers, traders and travellers at the gate
 //   orders   a team waiting for orders: Orders / Done / plan cards, a city crawl's offer
 //   other    the rest: road events, hub events, recruits, perk points, morale, illness, crashes, jobs, reports
-//   always   cannot wait: a card over a battle, a card whose only answers need the map
+//   always   cannot wait: a card over a battle, a card whose only answers need the map, the run's opening blurb
 import { cardStale, onTheMove, partySpeed } from "./parties.js";
 import { log } from "./world.js";
 
@@ -53,6 +53,7 @@ export const usableChoices = (state, card) => (card.choices || []).filter((c) =>
 export function cardKind(state, card) {
   const t = String(card.title || "");
   if (card.battle) return "always"; // raised over a fight (floorfolk.js): it shows during the battle
+  if (card.intro) return "always"; // the run's opening blurb (hardcore-start.js introCard): it shows whatever the pause rules
   if (!defaultChoice(state, card)) return "always"; // every answer needs the map, is greyed out or is a fight
   if (card.isOrders || card.planCard) return card.quietArrival ? "other" : "orders"; // a plain move's arrival out of contact waits in the tray (parties.js quietArrival)
   if (DEATH_RE.test(t) || (/^The fight with /.test(t) && /whole team was lost/.test(card.text || ""))) return "death";
