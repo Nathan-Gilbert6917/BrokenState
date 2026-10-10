@@ -1331,7 +1331,7 @@ export function render(state) {
     const upPct = up ? Math.round((up.hours ? up.progress / up.hours : 0) * 100) : 0;
     labels.push({ text: b.tier === 0 ? `${b.name} (${b.type === "outpost" ? (up ? `camp: establishing ${upPct}%` : "camp") : up ? `building a base: ${upPct}%` : "shelter"})` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).
-    const node = nodes.find((n) => n.base === b);
+    const node = nodes.find((n) => n.base === b && !n.field); // a relay mast out on its land (sim/fieldworks.js) is not the base's own
     if (node) {
       ctx.strokeStyle = node.linked ? "rgba(143,180,224,0.18)" : "rgba(224,120,110,0.3)";
       ctx.lineWidth = 1.5;

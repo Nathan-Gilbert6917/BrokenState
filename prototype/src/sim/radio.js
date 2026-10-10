@@ -195,7 +195,7 @@ export const hasNetwork = (state) => radioNodes(state).some((n) => n.linked);
 export function relayReach(state, base, groups = null, outOfReach = false) {
   if (!base || hasStation(base) || count(base, "relay")) return [];
   const nodes = radioNodes(state, base).filter((n) => n.linked); // the cheap test first: would it link at all?
-  if (!nodes.some((n) => n.base === base)) return [];
+  if (!nodes.some((n) => n.base === base && !n.field)) return [];
   const list = (groups || state.factions).filter((f) => f && f.alive && f.bases.length && (outOfReach || !canRadioGroup(state, f)));
   if (!list.length) return [];
   const g = state.grid;
