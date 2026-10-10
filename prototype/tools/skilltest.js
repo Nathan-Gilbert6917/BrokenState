@@ -348,7 +348,7 @@ console.log("Perks: milestones and choices");
   st.governor.personality = "aggressive";
   S.autoPerks(st);
   check(S.hasPerk(ag, "fieldsurgeon"), "an aggressive one takes Field Surgeon");
-  check(Object.keys(S.PERKS).length === 60 && Object.values(S.PERK_TREE).every((t) => S.MILESTONES.every((m) => t[m] && t[m].length === 2)), "10 skills × 3 milestones × 2 perks = 60 perks");
+  check(Object.keys(S.PERKS).length === 66 && Object.values(S.PERK_TREE).every((t) => S.MILESTONES.every((m) => t[m] && t[m].length === 2)), "11 skills × 3 milestones × 2 perks = 66 perks (Melee 2026-10-09)");
   check(Object.values(S.PERKS).every((p) => p.desc.length > 20 && p.hook), "every perk has an effect text and a hook");
 }
 

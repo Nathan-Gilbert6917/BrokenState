@@ -18,7 +18,7 @@ import { fitFromPool } from "./gunmods.js";
 import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants, spareGun, queueRepair } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { equipKit, governPlates } from "./carrykit.js"; // carry kit: rigs, plates in the carriers, spare magazines; spare plates kept // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
-import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, survivorById, snapshot, armedFactor, archerCount, ARROWS } from "./world.js";
+import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, survivorById, snapshot, armedFactor, archerCount, ARROWS, meleeAimBonus, meleeDmgMult } from "./world.js";
 import {
   launchExpedition, estimateTrip, startReturn, partyMembers, partyTile, tileLabel, teamName, orderOptions, orderMove,
   hoursLeft, planPath, partyCapacity, cargoLoad, cargoRoom, supplyLoad, carryCapacity, travelHours, awaitOrders, partySpeed, pruneCards, giveOrder,
@@ -2736,7 +2736,7 @@ export function itemScore(s, item) { // also the roster's Equip best available (
   if (d.slot === "weapon") {
     const eff = gearEffect(s, item);
     if (d.launcher) return eff.usable ? 0.5 + 1.5 * eff.mult : -1; // a launcher (launchers.js) is a second weapon: better than empty hands, never instead of a gun
-    return eff.usable ? 0.5 + d.power * eff.mult * (item.quality || 1) : -1;
+    return eff.usable ? 0.5 + d.power * eff.mult * (item.quality || 1) * (d.cat === "melee" ? meleeDmgMult(s) : 1) : -1; // a melee weapon by their Melee (world.js MELEE_SKILL): a strong hand keeps a fire axe over a weak gun
   }
   if (d.slot === "backpack") return d.carry || 0;
   return d.power || 0;
@@ -3164,7 +3164,7 @@ function stormValue(s) {
   const w = WEAPONS[key];
   const mult = key === "fists" ? 1 : eff.mult;
   const dmg = ((w.dmg[0] + w.dmg[1]) / 2) * (0.6 + 0.4 * mult) * (0.75 + 0.25 * (key === "fists" ? 1 : item.quality || 1));
-  const hit = w.melee ? 0.2 : Math.max(0.05, Math.min(0.95, (40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + (w.aim || 0) + traitAim(s)) / 100)); // Brave, Coward (traits.js)
+  const hit = w.melee ? 0.2 * (75 + meleeAimBonus(s)) / 75 * meleeDmgMult(s) : Math.max(0.05, Math.min(0.95, (40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + (w.aim || 0) + traitAim(s)) / 100)); // Brave, Coward (traits.js); melee by the Melee skill (world.js MELEE_SKILL)
   return ((hit * dmg) / 10) * (0.5 + s.health / 200) * Math.sqrt(1 / Math.max(0.3, armorMult(s)));
 }
 const hiveSquad = (pool, size = HIVE_SQUAD) => [...pool].filter((s) => s.health >= HIVE_HEALTH && !s.woundInfected).sort((a, b) => stormValue(b) - stormValue(a)).slice(0, size);

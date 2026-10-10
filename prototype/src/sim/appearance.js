@@ -55,6 +55,41 @@ export function craftingStart(seed, n, mechanics = 0, quality = 1) {
   return Math.max(0, Math.min(SKILL_MAX, Math.round(CRAFT_START.fromMech * (mechanics || 0) + u * CRAFT_START.roll * quality)));
 }
 
+// Melee (data.js SKILLS; world.js MELEE_SKILL): a new survivor's starting level, drawn like the world's skills are
+// (0-9 × quality, and now and then a specialty of +3-7: about the odds one of the nine rolled skills has of being one
+// of their two) but with dice of their own (seed + how many people this world has made, salted apart from Crafting's),
+// so adding the skill moved none of the world's random numbers. Averages about 5.5 at quality 1, as Shooting does.
+// oldSave: people in a save from before the skill (save.js, world.js fillMelee): half their Shooting plus 0-6 by a hash
+// of their name, about the same average.
+export const MELEE_START = { roll: 9, spec: [3, 7], specOdds: 0.11, specTries: 2, salt: 0x6d656c65, oldShoot: 0.5, oldRoll: 6, oldSalt: 0x4d454c45 };
+export function meleeStart(seed, n, quality = 1) {
+  const r = new Rng(hashSeed((seed | 0) ^ MELEE_START.salt, n));
+  let v = Math.round(r.next() * MELEE_START.roll * quality);
+  for (let i = 0; i < MELEE_START.specTries; i++) {
+    const hit = r.next() < MELEE_START.specOdds, up = MELEE_START.spec[0] + Math.floor(r.next() * (MELEE_START.spec[1] - MELEE_START.spec[0] + 1));
+    if (hit) v += up;
+  }
+  return Math.max(0, Math.min(SKILL_MAX, v));
+}
+// Someone from before the skill: deterministic by their name and Shooting (no state needed: world.js skill() uses it
+// too; not the id: ids run on across worlds made in one session, tools/sameseedtest.js).
+export function meleeOldSave(who, shooting = 0) {
+  let w = 0;
+  for (const c of String(who)) w = (Math.imul(w, 31) + c.charCodeAt(0)) | 0;
+  const u = new Rng(hashSeed(MELEE_START.oldSalt, w)).next();
+  return Math.max(0, Math.min(SKILL_MAX, Math.round(MELEE_START.oldShoot * (shooting || 0) + u * MELEE_START.oldRoll)));
+}
+// A die of its own for a background's Melee bump (hardcore-start.js applyArchetype): [lo, hi] by the seed, the person
+// (their name: ids run on across worlds made in one session, names are the seed's) and the background, so a
+// background's other bumps keep the world's dice they always drew.
+export function meleeBump(seed, who, lo, hi, key = "") {
+  let h = 0, w = 0;
+  for (const c of String(key)) h = (Math.imul(h, 31) + c.charCodeAt(0)) | 0;
+  for (const c of String(who)) w = (Math.imul(w, 31) + c.charCodeAt(0)) | 0;
+  const u = new Rng(hashSeed(((seed | 0) ^ MELEE_START.salt ^ h) | 0, w)).next();
+  return lo + Math.floor(u * (hi - lo + 1));
+}
+
 // Fills in a missing or partial appearance in place and returns it.
 export function ensureAppearance(s, seed = 0) {
   const def = appearanceFor(seed, s.id || 0);

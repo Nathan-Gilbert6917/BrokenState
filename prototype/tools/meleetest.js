@@ -21,6 +21,7 @@ registerCombatHandler("meleetest", () => {});
 function fighter(state, weapon = "knife", shooting = 9) {
   const s = makeSurvivor(state);
   s.skills.shooting = shooting;
+  s.skills.melee = 5; // the Melee skill at its middle (world.js MELEE_SKILL): everyone strikes alike here
   s.traits = [];
   s.health = 100;
   s.gear.weapon = weapon ? newItem(weapon) : null;

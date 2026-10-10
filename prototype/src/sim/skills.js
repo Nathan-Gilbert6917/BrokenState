@@ -17,8 +17,13 @@
 //               craft; CRAFT_XP.base 2 → 0.55 in this pass: a crafter kept in materials made 40+ a day)
 //   Medicine    Medic role 8; ward rounds by the patients (training.js,   wound 5, surgery 10, illness 4, field 6, battle heal 4
 //               own cap 4-10 by hospital tier); Trainee role 4 + lessons
-//   Shooting    Guard role 6 + 0.25 an hour on guard (the night watch)  battle: shot 1, hit 2, kill 2, melee 1;
-//                                                                         fight by the numbers 8 (+4 won); game shot 2/6
+//   Shooting    Guard role 6 + 0.25 an hour on guard (the night watch)  battle: shot 1, hit 2, kill 2 (guns, bows,
+//                                                                         throws); fight by the numbers 8 (+4 won) with
+//                                                                         a gun or nothing in hand; game shot 2/6
+//   Melee       -                                                        battle: a swing 1, a hit 2 (a takedown, a
+//                                                                         pulled blow, a thrown spear too), a melee kill
+//                                                                         2; fight by the numbers 8 (+4 won) with a
+//                                                                         melee weapon in hand
 //   Scavenging  Scavenge role 9; 4 an hour searching                     a container in a raid 3
 //   Stealth     Scavenge role 4; 1 an hour searching (3 sneaking);       hiding 5, lockpicks, sneaking in battle 2
 //               0.15 an hour on the move on foot (0.6 stealthy)
@@ -43,7 +48,7 @@
 // screen); the autopilot picks by its style. Every perk's effect is coded where it applies (see `hook` in PERKS).
 import { learnMult } from "./traits.js"; // Quick Study
 import { SKILLS, SKILL_NAMES, GEAR } from "./data.js";
-import { day, log, addCard, atBase, alive, skill, survivorById, fillCrafting } from "./world.js";
+import { day, log, addCard, atBase, alive, skill, survivorById, fillCrafting, fillMelee, meleeArmed } from "./world.js";
 import { workFactor } from "./health.js";
 import { newItem } from "./inventory.js";
 import { BUILDINGS, RECIPES } from "./buildings.js";
@@ -72,7 +77,7 @@ export const xpNeed = (L) => Math.round(40 + 0.32 * Math.max(0, L) ** 3);
 export const USE = {
   farm: 11, medicRole: 8, operate: 11, craft: 11, build: 11, idle: 2, guard: 6, watchHour: 0.25, scavRole: 9, scavStealth: 4,
   leader: 8, teamLead: 6, baseLead: 4, campTalk: 5, forage: 7, forageScout: 3, wood: 6, woodMech: 2,
-  travelHour: 0.5, stealthyHour: 0.6, footHour: 0.15, survey: 4, shot: 1, hit: 2, melee: 1, kill: 2, heal: 4, sneak: 2, box: 3,
+  travelHour: 0.5, stealthyHour: 0.6, footHour: 0.15, survey: 4, shot: 1, hit: 2, swing: 1, melee: 2, kill: 2, heal: 4, sneak: 2, box: 3,
   autoFight: 8, autoWin: 4, searchHour: 4, sneakSearch: 3, searchStealth: 1, wound: 5, surgery: 10, illness: 4, field: 6,
   talk: 5, talkWon: 5, hide: 5, bribe: 2, trade: 10, radio: 6, repair: 6, teachLead: 6, teachSpeech: 4,
 };
@@ -159,6 +164,15 @@ export const PERK_TREE = {
     15: [P("commander", "Commander", "In a battle they fight in, every ally takes 10% less damage.", [2, 2, 3], "skills.js battlePerks"),
          P("quartermaster", "Quartermaster", "Everyone at the base where they live eats 10% less food.", [3, 2, 1], "economy.js eatPerDay")],
   },
+  // Melee (2026-10-09): the blows themselves; Brawler (Shooting 5) still adds to them.
+  melee: {
+    5: [P("heavyhands", "Heavy Hands", "Their melee hits stagger 10% more often (the target loses an action next turn; not brutes or bosses), even with a weapon that never staggers.", [2, 2, 3], "skills.js battlePerks; combat.js meleeAfter"),
+        P("parry", "Parry", "Enemies striking them in melee have −10% to hit.", [3, 2, 1], "skills.js battlePerks; combat.js meleeOdds")],
+    10: [P("butcher", "Butcher", "+25% melee damage against the dead.", [2, 2, 3], "skills.js battlePerks; combat.js meleeOdds"),
+         P("knockout", "Knockout Artist", "+15% to their takedowns, and +10% to hit with a non-lethal blow (Subdue).", [2, 3, 2], "skills.js battlePerks; stealth.js subdueOdds")],
+    15: [P("bonebreaker", "Bonebreaker", "+10% critical-hit chance in melee, and a critical melee hit always staggers (not brutes or bosses).", [1, 2, 3], "skills.js battlePerks; combat.js meleeOdds, meleeAfter"),
+         P("pitfighter", "Pit Fighter", "+1.5 fighting strength while they hold a melee weapon: counts in fights resolved by the numbers, search encounters and base defence.", [2, 2, 2], "world.js combatPower")],
+  },
   speech: {
     5: [P("smooth", "Smooth Talker", "+2 to their team's talk checks (road stand-offs: Talk them down, Talk your way through; and talks during a rescue).", [2, 2, 1], "conflicts.js talkSkill"),
         P("charming", "Charming", "A road talk their team wins raises goodwill by 6 instead of 3.", [2, 2, 1], "conflicts.js talkChoice")],
@@ -213,6 +227,7 @@ export const heatMult = (state, p) => (teamHas(state, p, "ranger") ? 0.7 : 1);
 export function ensureSkills(state, s) {
   if (!s) return s;
   fillCrafting(s); // world.js: people from before the Crafting skill
+  fillMelee(s); // world.js: people from before the Melee skill
   if (s.xp && s.perkMs) return s;
   const d = state ? day(state) : 1;
   s.xp = s.xp || {};
@@ -781,7 +796,7 @@ export function battlePerks(state, b) {
   let rally = false, commander = false;
   for (const u of mine) {
     const s = survivorById(state, u.sid);
-    u.xpT = { shots: 0, hits: 0, melee: 0, kills: 0, heals: 0, sneak: 0, boxes: 0 };
+    u.xpT = { shots: 0, hits: 0, kills: 0, swings: 0, melee: 0, mkills: 0, heals: 0, sneak: 0, boxes: 0 };
     if (!s) continue;
     if (hasPerk(s, "steadyaim")) u.aim += 5;
     if (hasPerk(s, "brawler")) { u.meleeAim += 10; u.meleeMult = 1.25; }
@@ -791,6 +806,11 @@ export function battlePerks(state, b) {
     if (hasPerk(s, "lightstep")) u.sneak = 2;
     if (hasPerk(s, "ghost")) u.ghost = true;
     if (hasPerk(s, "assassin")) u.assassin = true;
+    if (hasPerk(s, "heavyhands")) u.heavyHands = 0.1; // the melee perks (Melee 5, 10, 15)
+    if (hasPerk(s, "parry")) u.parry = 10;
+    if (hasPerk(s, "butcher")) u.butcher = 1.25;
+    if (hasPerk(s, "knockout")) u.koArtist = true;
+    if (hasPerk(s, "bonebreaker")) u.bonebreaker = true;
     if (hasPerk(s, "steadyhands")) u.healMult = 1.25;
     if (hasPerk(s, "miracle")) u.miracle = true;
     if (hasPerk(s, "treasure")) u.scavBonus = 5;
@@ -811,7 +831,8 @@ export function battleXp(state, b) {
     const s = survivorById(state, u.sid);
     if (!s || !s.alive) continue;
     const t = u.xpT;
-    gainXp(state, s, "shooting", t.shots * USE.shot + t.hits * USE.hit + t.melee * USE.melee + t.kills * USE.kill, "fight");
+    gainXp(state, s, "shooting", t.shots * USE.shot + t.hits * USE.hit + t.kills * USE.kill, "fight");
+    gainXp(state, s, "melee", (t.swings || 0) * USE.swing + (t.melee || 0) * USE.melee + (t.mkills || 0) * USE.kill, "fight"); // swings, blows landed, melee kills
     if (t.heals) gainXp(state, s, "medicine", t.heals * USE.heal, "fight");
     if (t.sneak) gainXp(state, s, "stealth", t.sneak * USE.sneak, "fight");
     if (t.boxes) gainXp(state, s, "scavenging", t.boxes * USE.box, "fight");
@@ -820,8 +841,9 @@ export function battleXp(state, b) {
 }
 
 // A fight resolved by the numbers (combat.js autoResolveCombat).
+// A melee weapon in hand trains Melee, anything else Shooting.
 export function fightXp(state, people, win) {
-  gainXpAll(state, (people || []).filter((s) => s.alive), "shooting", USE.autoFight + (win ? USE.autoWin : 0), "fight");
+  for (const s of (people || []).filter((x) => x.alive)) gainXp(state, s, meleeArmed(s) ? "melee" : "shooting", USE.autoFight + (win ? USE.autoWin : 0), "fight");
 }
 
 // ======================================================================================

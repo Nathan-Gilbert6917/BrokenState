@@ -45,6 +45,7 @@ import { starterLoad, pocketBox, settleParty } from "./ammo.js"; // rounds by ca
 // What someone has with them at the start, looked after but worn (inventory.js START_DUR).
 const startItem = (rng, key, q) => newItem(key, q, rng, START_DUR);
 import { Rng } from "./rng.js";
+import { meleeBump } from "./appearance.js"; // a background's Melee bump: its own die
 import { sightRadius, partyMembers, partyTile, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { isCustomBg } from "./custombg.js";
@@ -67,7 +68,7 @@ export const HC_START = {
   POCKET_ITEMS: [0, 4],
   // A weapon from the house: the chance with a bag / with only pockets, and which (weights). A gun comes with a few rounds.
   WEAPON: { pack: 0.65, pockets: 0.4 },
-  WEAPONS: { knife: 6, bat: 3, prybar: 1.5, pistol: 1.2, machete: 0.8, revolver: 0.5, huntrifle: 0.3 },
+  WEAPONS: { knife: 6, bat: 3, prybar: 1.5, pistol: 1.2, machete: 0.8, revolver: 0.5, huntrifle: 0.3, pocketknife: 2, lockback: 0.6, flipknife: 0.3 }, // knives (data-blades.js)
   ROUNDS: { pistol: [3, 12], revolver: [2, 6], huntrifle: [2, 5] },
   // Small things in pockets (weights; all GEAR keys with small: true) and more in a bag (any non-bulky item).
   POCKET_STUFF: { phone: 4, lighters: 3, flashlight: 2, photos: 3, chocolate: 2, candy: 2, smokes: 1.5, batteries: 1.5, bandagekit: 1, goldring: 0.8, watch: 0.6, tobacco: 0.5, tea: 0.4, cards: 0.6, harmonica: 0.3, monocular: 0.2, coins: 0.3 },
@@ -107,28 +108,30 @@ export const HC_START = {
   // Balance (2026-10-07): the skill bumps average 6–8.5 points a background, and the ones that bring the most kit
   // (the veteran's vest and rifle, the cop's vest and pistol, the prepper's bag) get the fewest or turn up less; the
   // ones with little kit (office worker, teacher, trucker, blue-collar worker) more skills and a useful thing or two.
+  // Melee (2026-10-09): the hands-on ones bump it (blue-collar, veteran, cop most; prepper, farmer, mechanic, trucker a
+  // little), on a die of its own (appearance.js meleeBump), so the other bumps and everything after draw what they did.
   TRAIT_ODDS: 0.6,
   ARCHETYPES: {
-    prepper:    { name: "Prepper",            w: 0.9, skills: { scavenging: [2, 4], scouting: [1, 3], shooting: [1, 3] }, traits: {}, carOdds: 1.3,
+    prepper:    { name: "Prepper",            w: 0.9, skills: { scavenging: [2, 4], scouting: [1, 3], shooting: [1, 3], melee: [1, 2] }, traits: {}, carOdds: 1.3,
                   cars: { truck: 4, hummer: 2, suv: 2 }, trunk: { food: [6, 12], water: [6, 12], fuel: [4, 10], ammo: [10, 30], n: [2, 4], gear: { stove: 1, snarewire: 1, fishrod: 1, camonet: 0.8, tripwire: 0.6, flare: 1, survivalbook: 0.6, beartrap: 0.5, waterfilter: 0.5 } },
                   blurb: "saw it coming" },
-    veteran:    { name: "Veteran",            w: 1, skills: { shooting: [3, 5], leadership: [1, 2], scouting: [1, 2] }, traits: { brave: 3, tough: 2 }, carOdds: 1.2, food: { pack: [1, 2], pockets: [0, 1] },
-                  pack: 0.8, packs: { assaultpack: 3, rucksack: 2, backpack: 1 }, weapons: { pistol: 3, huntrifle: 1, machete: 1.5, knife: 1.5 }, weaponOdds: 0.8, rounds: 1.5, armor: { vest: 0.35 },
+    veteran:    { name: "Veteran",            w: 1, skills: { shooting: [3, 5], leadership: [1, 2], scouting: [1, 2], melee: [2, 3] }, traits: { brave: 3, tough: 2 }, carOdds: 1.2, food: { pack: [1, 2], pockets: [0, 1] },
+                  pack: 0.8, packs: { assaultpack: 3, rucksack: 2, backpack: 1 }, weapons: { pistol: 3, huntrifle: 1, machete: 1.5, knife: 1.5, bayonet: 0.6, survivalknife: 0.5 }, weaponOdds: 0.8, rounds: 1.5, armor: { vest: 0.35 },
                   stuff: { binoculars: 2, bandagekit: 2, tourniquet: 2, flare: 1.5, milradio: 0.3, smokegren: 0.5 },
                   cars: { truck: 3, hummer: 2, suv: 1 }, trunk: { food: [2, 5], water: [2, 5], ammo: [8, 18], n: [1, 3], gear: { milradio: 0.5, binoculars: 1, flare: 1, smokegren: 0.5, bandagekit: 1, assaultpack: 0.5, vest: 0.4, nvg: 0.1 } },
                   blurb: "two tours and a bad knee" },
     student:    { name: "College student",    w: 1, skills: { stealth: [1, 3], scavenging: [1, 3], speech: [1, 2], scouting: [1, 2] }, traits: { lucky: 1, nightowl: 2 }, carOdds: 0.7,
-                  pack: 0.9, packs: { backpack: 6, slingbag: 2 }, weapons: { bat: 3, knife: 2 }, weaponOdds: 0.5,
+                  pack: 0.9, packs: { backpack: 6, slingbag: 2 }, weapons: { bat: 3, knife: 2, pocketknife: 1, balisong: 0.4 }, weaponOdds: 0.5,
                   stuff: { laptop: 2, novel: 1.5, candy: 2, chocolate: 1, phone: 2, instcoffee: 1, cards: 1, magazines: 1 },
                   cars: { sedan: 4, suv: 1.5 }, trunk: { food: [2, 4], water: [1, 3], n: [1, 2], gear: { laptop: 1, novel: 1, magazines: 1, console: 0.5, guitar: 0.4, backpack: 0.6, bicycle: 0.3 } },
                   blurb: "halfway through a degree" },
     office:     { name: "Office worker",      w: 1, skills: { speech: [2, 4], leadership: [2, 3], scavenging: [1, 2] }, traits: { keeneye: 2, badback: 1 }, carOdds: 0.9, meds: [0, 1],
-                  pack: 0.5, packs: { slingbag: 4, backpack: 2 }, weapons: { knife: 3, bat: 1 }, weaponOdds: 0.5,
+                  pack: 0.5, packs: { slingbag: 4, backpack: 2 }, weapons: { knife: 3, bat: 1, pocketknife: 2, boxcutter: 1 }, weaponOdds: 0.5,
                   stuff: { laptop: 2, instcoffee: 2, phone: 2, bandagekit: 1.5, flashlight: 1, watch: 0.8, cards: 0.6, coins: 0.5 },
                   cars: { sedan: 4, suv: 2 }, trunk: { food: [1, 2], water: [2, 4], n: [1, 2], gear: { laptop: 1, instcoffee: 1, coffee: 0.5, bandagekit: 0.8, cards: 0.6, phone: 0.8, watch: 0.3 } },
                   blurb: "a lunch bag and a laptop" },
-    bluecollar: { name: "Blue-collar worker", w: 1.2, skills: { mechanics: [3, 5], scavenging: [2, 3] }, traits: { tough: 2, loud: 1 }, carOdds: 1.4,
-                  pack: 0.5, packs: { backpack: 4, slingbag: 1 }, weapons: { prybar: 3, fireaxe: 1, bat: 2, knife: 1 }, weaponOdds: 0.7,
+    bluecollar: { name: "Blue-collar worker", w: 1.2, skills: { mechanics: [3, 5], scavenging: [2, 3], melee: [2, 4] }, traits: { tough: 2, loud: 1 }, carOdds: 1.4,
+                  pack: 0.5, packs: { backpack: 4, slingbag: 1 }, weapons: { prybar: 3, fireaxe: 1, bat: 2, knife: 1, boxcutter: 1, multitool: 0.5 }, weaponOdds: 0.7,
                   stuff: { lighters: 2, smokes: 1.5, flashlight: 2, batteries: 1.5 },
                   cars: { truck: 5, van: 3 }, trunk: { food: [1, 3], water: [2, 4], scrap: [6, 14], parts: [0, 2], n: [1, 3], gear: { sledge: 1, prybar: 1, fireaxe: 0.6, crowbar: 1, sandbags: 0.5, barbedwire: 0.3, tirevest: 0.4 } },
                   blurb: "tools and lumber in the back" },
@@ -137,33 +140,33 @@ export const HC_START = {
                   stuff: { bandagekit: 3, surgkit: 0.8, soap: 1, razors: 0.5 },
                   cars: { sedan: 3, suv: 2 }, trunk: { meds: [2, 5], food: [1, 2], water: [1, 2], n: [1, 2], gear: { bandagekit: 3, surgkit: 1, medbook: 0.5, dewormer: 0.5 } },
                   blurb: "came off a double shift" },
-    farmer:     { name: "Farmer",             w: 1, skills: { farming: [4, 7], mechanics: [1, 2], shooting: [0, 2] }, traits: { tough: 2 }, carOdds: 1.2, food: { pack: [2, 5], pockets: [1, 2], max: 5 },
-                  pack: 0.5, packs: { backpack: 3, hikingpack: 1 }, weapons: { huntrifle: 2, machete: 2, knife: 1, leverrifle: 0.5 }, weaponOdds: 0.6, rounds: 1.5,
+    farmer:     { name: "Farmer",             w: 1, skills: { farming: [4, 7], mechanics: [1, 2], shooting: [0, 2], melee: [1, 2] }, traits: { tough: 2 }, carOdds: 1.2, food: { pack: [2, 5], pockets: [1, 2], max: 5 },
+                  pack: 0.5, packs: { backpack: 3, hikingpack: 1 }, weapons: { huntrifle: 2, machete: 2, knife: 1, leverrifle: 0.5, huntknife: 0.6, pocketknife: 0.6 }, weaponOdds: 0.6, rounds: 1.5,
                   stuff: { gardenbook: 1.5, snarewire: 1, honey: 0.8, tobacco: 0.6 },
                   cars: { truck: 5, suv: 1 }, trunk: { food: [6, 12], preserved: [2, 6], jars: [2, 6], water: [2, 4], n: [1, 2], gear: { gardenbook: 1, snarewire: 1, fishrod: 0.8, barbedwire: 0.5, huntrifle: 0.3, beartrap: 0.4 } },
                   blurb: "a truck full of the harvest" },
     hunter:     { name: "Hunter",             w: 0.9, skills: { shooting: [3, 5], scouting: [1, 3], stealth: [1, 2] }, traits: { keeneye: 3 }, carOdds: 1.1, food: { pack: [2, 4], pockets: [1, 2], max: 4 },
-                  pack: 0.7, packs: { hikingpack: 3, backpack: 2 }, weapons: { huntrifle: 3, compbow: 1.5, xbow: 1, knife: 1 }, weaponOdds: 0.8, rounds: 1.5,
+                  pack: 0.7, packs: { hikingpack: 3, backpack: 2 }, weapons: { huntrifle: 3, compbow: 1.5, xbow: 1, knife: 1, huntknife: 1.5, bowie: 0.5 }, weaponOdds: 0.8, rounds: 1.5,
                   stuff: { binoculars: 2, camonet: 1, gamecall: 1, snarewire: 1, fishrod: 0.8 },
                   cars: { truck: 4, suv: 2 }, trunk: { food: [2, 5], ammo: [8, 20], n: [1, 3], gear: { camonet: 1, binoculars: 1, gamecall: 1, snarewire: 1, beartrap: 0.8, ghillie: 0.4, stove: 0.8, monocular: 0.5 } },
                   blurb: "knows every deer trail" },
-    mechanic:   { name: "Mechanic",           w: 0.9, skills: { mechanics: [4, 7], scavenging: [1, 3] }, traits: { tough: 1, loud: 1 }, carOdds: 1.3, food: { pack: [0, 2], pockets: [0, 1] },
-                  pack: 0.5, packs: { backpack: 3, slingbag: 1 }, weapons: { prybar: 3, bat: 1, knife: 1 },
+    mechanic:   { name: "Mechanic",           w: 0.9, skills: { mechanics: [4, 7], scavenging: [1, 3], melee: [1, 2] }, traits: { tough: 1, loud: 1 }, carOdds: 1.3, food: { pack: [0, 2], pockets: [0, 1] },
+                  pack: 0.5, packs: { backpack: 3, slingbag: 1 }, weapons: { prybar: 3, bat: 1, knife: 1, multitool: 1 },
                   stuff: { crowbar: 1.5, flashlight: 2, batteries: 1.5, lighters: 1 },
                   cars: { truck: 3, van: 2, sedan: 1 }, trunk: { parts: [2, 5], scrap: [4, 10], fuel: [3, 8], n: [1, 2], gear: { crowbar: 1, flashlight: 1, enginebook: 0.5, batteries: 1 } },
                   blurb: "grease under the nails" },
-    cop:        { name: "Police officer",     w: 0.8, skills: { shooting: [2, 4], speech: [1, 3], leadership: [1, 2] }, traits: { brave: 2 }, carOdds: 1, food: { pack: [0, 2], pockets: [0, 1] },
+    cop:        { name: "Police officer",     w: 0.8, skills: { shooting: [2, 4], speech: [1, 3], leadership: [1, 2], melee: [2, 3] }, traits: { brave: 2 }, carOdds: 1, food: { pack: [0, 2], pockets: [0, 1] },
                   pack: 0.4, packs: { slingbag: 2, backpack: 2 }, weapons: { pistol: 5, baton: 1 }, weaponOdds: 0.9, rounds: 1.5, armor: { vest: 0.5 },
                   stuff: { cuffs: 1.5, flashlight: 2, flare: 1 },
                   cars: { suv: 3, sedan: 2 }, trunk: { ammo: [10, 24], n: [1, 3], gear: { cuffs: 1, baton: 0.5, riothelmet: 0.5, riotarms: 0.5, flare: 1, flashlight: 1, shotgun: 0.4 } },
                   blurb: "still in half a uniform" },
-    trucker:    { name: "Trucker",            w: 0.8, skills: { mechanics: [2, 3], scouting: [3, 5], shooting: [0, 2] }, traits: { nightowl: 2, badback: 1 }, carOdds: 1.5, food: { pack: [1, 4], pockets: [1, 1], max: 4 },
-                  pack: 0.4, packs: { slingbag: 3, backpack: 1 }, weapons: { bat: 2, revolver: 1.5, knife: 1 },
+    trucker:    { name: "Trucker",            w: 0.8, skills: { mechanics: [2, 3], scouting: [3, 5], shooting: [0, 2], melee: [1, 2] }, traits: { nightowl: 2, badback: 1 }, carOdds: 1.5, food: { pack: [1, 4], pockets: [1, 1], max: 4 },
+                  pack: 0.4, packs: { slingbag: 3, backpack: 1 }, weapons: { bat: 2, revolver: 1.5, knife: 1, lockback: 1 },
                   stuff: { pocketradio: 1.5, smokes: 1.5, instcoffee: 1.5, cards: 1, harmonica: 0.5 },
                   cars: { van: 3, truck: 3 }, trunk: { food: [8, 16], water: [4, 8], fuel: [4, 8], n: [1, 2], gear: { pocketradio: 1, cards: 0.8, smokes: 0.8, instcoffee: 1, tirevest: 0.3 } },
                   blurb: "a cab full of coffee cups" },
     teacher:    { name: "Teacher",            w: 0.8, skills: { speech: [3, 5], leadership: [2, 4], medicine: [1, 2] }, traits: { keeneye: 1 }, carOdds: 0.8, meds: [0, 1],
-                  pack: 0.7, packs: { slingbag: 3, backpack: 2 }, weapons: { knife: 3, bat: 1 }, weaponOdds: 0.5,
+                  pack: 0.7, packs: { slingbag: 3, backpack: 2 }, weapons: { knife: 3, bat: 1, pocketknife: 1 }, weaponOdds: 0.5,
                   stuff: { novel: 2, puzzlebook: 1, cards: 1, instcoffee: 1, bandagekit: 1.5, flashlight: 1 },
                   cars: { sedan: 3, suv: 1.5 }, trunk: { food: [1, 3], water: [1, 2], n: [1, 3], gear: { novel: 2, puzzlebook: 1, cards: 1, survivalbook: 0.3, medbook: 0.3, talkbook: 0.5, leadbook: 0.3 } },
                   blurb: "a car boot full of books" },
@@ -320,7 +323,7 @@ export function applyArchetype(state, s, key) {
     tidyTiers(s, { ...(s.traitTier || {}), ...Object.fromEntries(mine.map((t) => [t, (A.traitTier && A.traitTier[t]) || 1])) }); // its tiers (traits.js)
     return;
   }
-  for (const [k, [lo, hi]] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + rng.int(lo, hi));
+  for (const [k, [lo, hi]] of Object.entries(A.skills || {})) s.skills[k] = Math.min(20, (s.skills[k] || 0) + (k === "melee" ? meleeBump(state.seed, s.name, lo, hi, key) : rng.int(lo, hi))); // Melee: its own die
   const born = bornTraits(s);
   const want = Object.keys(A.traits || {}).filter((t) => TRAITS[t] && !born.includes(t) && !clashIn(born, t));
   if (want.length && s.traits.length < 2 && rng.chance(HC_START.TRAIT_ODDS)) {
@@ -484,12 +487,14 @@ export function rollCustom(state, s, A) {
 export const NORMAL_BG = { SALT: 0x6b67, ON: true };
 // Points back off the other skills until the total is what it was (bumped: the skills the background raised, taken
 // from last). Deterministic by the rng given.
+// None comes off Melee (a background's Melee bump stays; the points come off the other skills, on the start's own dice).
 export function keepSkillTotal(rng, s, total, bumped = []) {
   const sum = () => Object.values(s.skills).reduce((a, v) => a + v, 0);
+  const keys = () => Object.keys(s.skills).filter((k) => k !== "melee");
   let guard = 400;
   while (sum() > total && guard-- > 0) {
-    let pool = Object.keys(s.skills).filter((k) => s.skills[k] > 0 && !bumped.includes(k));
-    if (!pool.length) pool = Object.keys(s.skills).filter((k) => s.skills[k] > 0);
+    let pool = keys().filter((k) => s.skills[k] > 0 && !bumped.includes(k));
+    if (!pool.length) pool = keys().filter((k) => s.skills[k] > 0);
     if (!pool.length) break;
     s.skills[rng.weighted(pool, (k) => s.skills[k])]--;
   }

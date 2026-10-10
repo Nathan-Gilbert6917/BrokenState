@@ -62,6 +62,7 @@ export const VOL = {
   BRING: { days: 8, ammo: 30 },              // a day's food and water each for up to `days` of the span; rounds a gun
   QUALITY: { military: 1.15, fortress: 1.1, raider: 1, expansionist: 1, zealot: 1, traders: 0.95, commune: 0.9 },
   SHOOT: { military: 4, fortress: 3, raider: 2, expansionist: 2, zealot: 1, traders: 1, commune: 0 },
+  MELEE: { military: 2, fortress: 2, raider: 3, expansionist: 1, zealot: 4, traders: 0, commune: 1 }, // the Melee skill by the group's ways (zealots fight with spears)
   // The points of a request (askQuote); >= 0 is a yes.
   P: { gwDiv: 10, member: 2, trade: 1, nonaggression: 0.5, job: 0.5, jobMax: 1.5, head: 0.75, longFrom: 7, perDay: 0.1,
     war: 1.5, horde: 2, hordeSize: 30, hordeRange: 6, short: 1.5, shortPop: 14, favour: 1.5, goodsPer: 40, fallen: 1, fallenBad: 2, fallenDays: 60 },
@@ -280,6 +281,7 @@ export function makeVolunteer(state, f, req, lo, eta) {
   else {
     try { s = makeSurvivor(state, VOL.QUALITY[f.type] || 1); } finally { state.rng = keep; }
     s.skills.shooting = Math.min(20, (s.skills.shooting || 0) + (VOL.SHOOT[f.type] || 0));
+    s.skills.melee = Math.min(20, (s.skills.melee || 0) + (VOL.MELEE[f.type] || 0));
   }
   s.role = "volunteer";
   const lent = [];

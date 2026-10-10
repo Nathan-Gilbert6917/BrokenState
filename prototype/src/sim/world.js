@@ -10,7 +10,7 @@ import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, c
 import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
 import { sanitizeStartGear, hasPicks, normalStartGear, sanitizeStartVehicle } from "./startgear.js"; // gear picked on the new-run screen (Customize)
-import { appearanceFor, craftingStart, CRAFT_START } from "./appearance.js";
+import { appearanceFor, craftingStart, CRAFT_START, meleeStart, meleeOldSave } from "./appearance.js";
 export { radioBasesInRange };
 
 // Bases with a radio station, or a linked relay, whose range covers a tile (the network is in radio.js).
@@ -245,6 +245,7 @@ export function makeSurvivor(state, quality = 1) {
   for (let i = 0; i < 2; i++) skills[rng.pick(ROLLED_SKILLS)] += rng.int(3, 7);
   for (const k of ROLLED_SKILLS) skills[k] = Math.min(20, skills[k]);
   skills.crafting = craftingStart(state.seed, (state.peopleMade || 0) + 1, skills.mechanics, quality); // its own dice (appearance.js)
+  skills.melee = meleeStart(state.seed, (state.peopleMade || 0) + 1, quality); // its own dice too (appearance.js)
   // The world's dice draw the traits as ever; the newer ones come in with dice of their own (traits.js), keyed like the
   // looks below by the seed and how many people this world has made.
   const born = rollTraits(rng, null);
@@ -432,10 +433,37 @@ export function fillCrafting(s) {
   s.skills.crafting = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0));
   if (s.skillFloor && !Number.isFinite(s.skillFloor.crafting)) s.skillFloor.crafting = s.skills.crafting;
 }
+// Melee (data.js SKILLS, 2026-10-09): people from before the skill (a save, prisoners, visitors, anyone carrying skills)
+// get half their Shooting plus 0-6 by a hash of their name (appearance.js meleeOldSave), their skill floor too, and no perk
+// point for the milestones that already puts them past (skills.js: the next milestone is the first that gives one).
+export function fillMelee(s) {
+  if (!s || !s.skills || Number.isFinite(s.skills.melee)) return;
+  s.skills.melee = meleeOldSave(s.name, s.skills.shooting);
+  if (s.skillFloor && !Number.isFinite(s.skillFloor.melee)) s.skillFloor.melee = s.skills.melee;
+  if (s.perkMs && s.perkMs.melee == null) { let ms = 0; for (const m of [5, 10, 15]) if (s.skills.melee >= m) ms = m; if (ms) s.perkMs.melee = ms; }
+}
+// What the Melee skill does (combat.js playerUnit, meleeOdds; stealth.js subdueOdds; combatPower below). MID: the level
+// that fights as everyone did before the skill (the average rolled colonist is about 5.5); each point above or below it
+// is AIM to hit in melee (75 at MID, 65 at 0, 85 at 10, 95 at 15: the cap) and DMG of melee damage (× 0.85 at 0, × 1.15
+// at 10, × 1.3 at 15); TAKEDOWN to a takedown's chance; POWER: a melee wielder's fighting strength by the numbers counts
+// Melee where a gunman's counts Shooting (1 + 0.25 × the skill).
+export const MELEE_SKILL = { MID: 5, AIM: 2, DMG: 0.03, TAKEDOWN: 1, POWER: 0.25 };
+/** @param {Survivor} s */
+export const meleeAimBonus = (s) => (skill(s, "melee") - MELEE_SKILL.MID) * MELEE_SKILL.AIM;
+/** @param {Survivor} s */
+export const meleeDmgMult = (s) => Math.max(0.5, 1 + (skill(s, "melee") - MELEE_SKILL.MID) * MELEE_SKILL.DMG);
+// Holds a melee weapon (data.js cat "melee") they can use.
+/** @param {Survivor} s */
+export function meleeArmed(s) {
+  const it = s && s.gear ? s.gear.weapon : null;
+  const d = it ? GEAR[it.key] : null;
+  return !!d && d.cat === "melee";
+}
 /** @param {Survivor} s @param {string} key @returns {number} */
 export function skill(s, key) {
   let v = s.skills[key] || 0;
   if (key === "crafting" && s.skills.crafting == null) v = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0)); // people from before the skill (save.js fills it in)
+  if (key === "melee" && s.skills.melee == null) v = meleeOldSave(s.name, s.skills.shooting); // the same (fillMelee)
   v += traitSkill(s, key); // Former Medic, Loud, Farm-Raised, Persuasive, Lucky, Unlucky, Nearsighted, Squeamish, by tier (traits.js)
   return Math.max(0, v);
 }
@@ -457,10 +485,11 @@ export function gearEffect(s, item) {
 export function combatPower(s) {
   const w = s.gear.weapon ? GEAR[s.gear.weapon.key] : null;
   const eff = gearEffect(s, s.gear.weapon);
-  let p = 1 + skill(s, "shooting") * 0.25 + (w && eff.usable ? w.power * eff.mult * (s.gear.weapon.quality || 1) : 0);
+  let p = 1 + skill(s, w && w.cat === "melee" ? "melee" : "shooting") * MELEE_SKILL.POWER + (w && eff.usable ? w.power * eff.mult * (s.gear.weapon.quality || 1) : 0); // a melee weapon: Melee (MELEE_SKILL)
   p += armorPower(s) * 0.5; // every worn piece (body, head, arms, legs)
   p += traitPower(s); // Brave +, Coward − by tier (traits.js)
   if (hasPerk(s, "gunslinger")) p += 1.5; // skills.js perk
+  if (w && w.cat === "melee" && hasPerk(s, "pitfighter")) p += 1.5; // skills.js perk (Melee 15)
   return Math.max(0.5, p * (0.5 + s.health / 200));
 }
 
