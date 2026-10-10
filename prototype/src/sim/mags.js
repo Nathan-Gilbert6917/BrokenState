@@ -450,3 +450,13 @@ export function reloadText(b, u) {
   if (p.mode === "swap") return `${n}: a fresh magazine from ${u.mags[p.i].where === "pack" ? "the pack" : u.mags[p.i].where === "pocket" ? "a pocket" : "a rig pouch"} (the empty one is kept).`;
   return `${n}: no loaded spare magazine, so the one in the gun is topped up from the team's ammo.`;
 }
+// The spare magazines split by how quick they are to hand (the battle HUD, ui/battlehud.js): at hand (a rig pouch or a
+// pocket: a 1-action Reload) and in the pack (2 actions), each { mags: loaded ones, empty, rounds }.
+export function spareSplit(b, u) {
+  const out = { hand: { mags: 0, empty: 0, rounds: 0 }, pack: { mags: 0, empty: 0, rounds: 0 } };
+  for (const m of spares(u)) {
+    const o = m.where === "pack" ? out.pack : out.hand, n = loaded(b, u, m);
+    if (n > 0) { o.mags++; o.rounds += n; } else o.empty++;
+  }
+  return out;
+}
