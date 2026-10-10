@@ -265,13 +265,13 @@ export const ARSENAL_GEAR = {
   scarl:       { name: "Modular combat rifle",   slot: W, skill: SH, power: 8.2, req: 10, value: 175, noise: 3, weight: 3.5, cat: "automatic",
                  desc: "A special-forces 5.56 rifle (a SCAR-L-style gun): a long top rail, a folding stock, AR magazines; single, burst or full auto. Needs Shooting 10." },
   aug:         { name: "Bullpup rifle",          slot: W, skill: SH, power: 8.0, req: 9,  value: 150, noise: 3, weight: 3.6, cat: "automatic",
-                 desc: "A bullpup 5.56 rifle (a Steyr AUG-style gun): the action behind the grip makes it short and quick to swing with a full-length barrel. Takes AR magazines; single, burst or full auto. Needs Shooting 9." },
+                 desc: "A bullpup 5.56 rifle (a Steyr AUG-style gun): the action behind the grip makes it short and quick to swing with a full-length barrel. Takes its own translucent AUG magazines (30 or 42), 5.56 or .223; single, burst or full auto. Needs Shooting 9." },
   scarh:       { name: "Battle rifle",           slot: W, skill: SH, power: 8.9, req: 12, value: 270, noise: 4, weight: 4.2, cat: "automatic",
-                 desc: "A modular 7.62 NATO battle rifle (a SCAR-H-style gun): .308 hits from a 20-round magazine, single, burst or a hard-to-hold full auto. Needs Shooting 12." },
+                 desc: "A modular 7.62 NATO battle rifle (a SCAR-H-style gun): .308 hits from its own 20-round magazine, single, burst or a hard-to-hold full auto. Needs Shooting 12." },
   fal:         { name: "FAL battle rifle",       slot: W, skill: SH, power: 8.5, req: 11, value: 210, noise: 4, weight: 4.4, cat: "automatic",
-                 desc: "The free world's old battle rifle (an FN FAL): .308 from a 20-round magazine, long and heavy; single, burst or full auto. Needs Shooting 11." },
+                 desc: "The free world's old battle rifle (an FN FAL): .308 from its own 20- or 30-round metric FAL magazines, long and heavy; single, burst or full auto. Needs Shooting 11." },
   m1a:         { name: "M14-pattern rifle",      slot: W, skill: SH, power: 8.1, req: 10, value: 185, noise: 3, weight: 4.6, cat: "rifle", hunt: { big: 1.15, small: 0.4 },
-                 desc: "A semi-automatic .308 in a wooden stock (an M1A / M14): 20 rounds, long reach, a soldier's rifle sold to hunters and collectors. Sometimes found with a scope. Needs Shooting 10." },
+                 desc: "A semi-automatic .308 in a wooden stock (an M1A / M14): 20 rounds from its own M14 magazines, long reach, a soldier's rifle sold to hunters and collectors. Sometimes found with a scope. Needs Shooting 10." },
   m240:        { name: "General-purpose machine gun", slot: W, skill: SH, power: 10, req: 13, value: 400, noise: 5, weight: 12.3, cat: "automatic",
                  desc: "A belt-fed 7.62 NATO machine gun (an M240): a 100-round belt of .308, heavy (a tile less a move), steady on its bipod when rested on half cover next to the gunner in the line of fire (+8 aim). Very rare. Needs Shooting 13." },
   // ---------- submachine guns and pistols ----------
@@ -314,7 +314,7 @@ export const ARSENAL_WEAPONS = {
                  modes: { single: { rounds: 1, aim: 0 }, burst: { rounds: 2, aim: -6 }, auto: { rounds: 10, aim: -16 } } },
   usp45:       { name: "Polymer .45 pistol",   dmg: [18, 26], opt: 5,  fall: 4.5, aim: 3,  ammo: 1, noise: 2, cap: 12, cal: "45acp", rel: 0.3 },
   snub357:     { name: ".357 snub-nose revolver", dmg: [19, 28], opt: 4, fall: 6, aim: -3, ammo: 1, noise: 3, close: 4, cap: 5, cal: "357", rel: 0.05 },
-  magnum:      { name: "Magnum hand cannon",   dmg: [21, 31], opt: 6,  fall: 4.5, aim: -4, ammo: 1, noise: 3, cap: 9,  cal: "357",   rel: 0.8 },
+  magnum:      { name: "Magnum hand cannon",   dmg: [21, 31], opt: 6,  fall: 4.5, aim: -4, ammo: 1, noise: 3, cap: 9,  cal: "357",   rel: 0.8, cals: ["357"] }, // (gas-operated: it will not cycle .38 Special, data-ammo.js CAL_ACCEPTS)
 };
 // Where each is normally kept (loot.js ITEM_TAGS, merged with ROSTER_TAGS).
 /** @type {Record<string, string[]>} */
@@ -360,6 +360,10 @@ export const GUN_RARITY = {
   ar: "scarce", m4: "scarce", smg: "scarce", ak: "scarce", ump45: "rare", aug: "rare", hk416: "rare", scarl: "rare", fal: "rare", dmr: "rare", sniper: "rare",
   scarh: "veryrare", lmg: "rare", m240: "veryrare", amr: "veryrare",
   m79: "rare", at4: "rare", m32: "veryrare", rpg: "veryrare",
+  // the AR platform and calibres of 2026-10-10 (AR_GEAR below): civilian ARs about as common as a lever gun, the
+  // military .300 BLK rare
+  ar15rifle: "uncommon", ar223: "uncommon", arpistol: "scarce", ar300: "scarce", sbr300: "rare", ardmr: "scarce",
+  single556: "uncommon", single223: "common", single300: "scarce", varmint223: "uncommon", ranch223: "uncommon", snub38: "common", service38: "common",
 };
 // The arsenal's own finds (gunfinds.js, every roll on its own dice: nothing else found changes): the guns of
 // ARSENAL_GEAR whose tags (ARSENAL_TAGS) meet the place's (loot.js SITE_TAGS / AREA_TAGS), weighted by FIND_W of their
@@ -384,7 +388,100 @@ export const GUN_SPRITE = {
   ou12: "dbshotgun", single12: "pipegun", pump20: "shotgun", ou20: "dbshotgun", tacpump: "semishotgun", singlerifle: "huntrifle", lever357: "leverrifle",
   m4: "carbine", hk416: "ar", scarl: "ar", aug: "carbine", scarh: "dmr", fal: "dmr", m1a: "huntrifle", m240: "lmg", ump45: "smg", usp45: "pistol",
   snub357: "revolver", magnum: "pistol45",
+  ar15rifle: "carbine", ar223: "carbine", arpistol: "carbine", ar300: "carbine", sbr300: "carbine", ardmr: "dmr",
+  single556: "huntrifle", single223: "huntrifle", single300: "huntrifle", varmint223: "huntrifle", ranch223: "huntrifle", snub38: "revolver", service38: "revolver",
 };
+
+// ---------- the AR platform and calibres of 2026-10-10 (user: "AR-15 and other AR platform guns that use STANAG mags
+// shooting 5.56, .223 or 300 blackout"; ".223 guns that only take .223"; "300 blackout guns"; "single-shot rifles for
+// .308, 5.56, .223, .44 Mag, 300 blackout"; ".38 Special as its own revolver calibre") ----------
+// Which rounds each takes: data-ammo.js CAL_ACCEPTS (a 5.56 gun fires .223 too, a .223 gun refuses 5.56, a .300 BLK gun
+// takes only .300 BLK; a .357 fires .38 Special). The AR-15 pattern guns are the ar15 platform (STANAG magazines,
+// every AR part: data-gunmods.js WEAPON_PLATFORM); the ranch rifle takes its own magazines (data-kit.js mag_mini14_*).
+// Placeholder art (GUN_SPRITE, the platform's drawing) and voices (ui/gunsfx.js) until the gun-art branch draws them.
+/** @type {Record<string, any>} */
+export const AR_GEAR = {
+  ar15rifle:  { name: "AR-15 rifle",            slot: W, skill: SH, power: 7.0, req: 7,  value: 105, noise: 3, weight: 3.0, cat: "rifle", hunt: { big: 0.8, small: 0.6 },
+                desc: "A civilian semi-automatic AR-15 (a 16-inch 5.56 rifle off a gun store wall or out of a closet): one round a pull from a 30-round STANAG magazine, light and accurate, takes every AR part. Chambered in 5.56, it fires .223 too (a touch lighter, a touch straighter). Needs Shooting 7." },
+  ar223:      { name: "AR-15 rifle (.223)",     slot: W, skill: SH, power: 6.6, req: 6,  value: 85,  noise: 3, weight: 3.1, cat: "rifle", hunt: { big: 0.7, small: 0.8 },
+                desc: "An older sporting AR-15 whose barrel is marked .223 Remington (a varmint or target rifle): STANAG magazines and every AR part, but .223 only: 5.56 runs too hot for its chamber and is refused. Needs Shooting 6." },
+  arpistol:   { name: "AR pistol",              slot: W, skill: SH, power: 6.0, req: 6,  value: 85,  noise: 4, weight: 2.5, cat: "rifle",
+                desc: "A 10.5-inch 5.56 AR with a pistol brace for a stock: short and quick through a doorway, loud, a little less reach. STANAG magazines, every AR part; fires .223 too. Needs Shooting 6." },
+  ar300:      { name: ".300 Blackout carbine",  slot: W, skill: SH, power: 7.2, req: 8,  value: 130, noise: 3, weight: 3.0, cat: "rifle", hunt: { big: 1.0, small: 0.5 },
+                desc: "An AR-15 in .300 Blackout (a hog hunter's carbine): a heavier bullet out of the same STANAG magazines, harder hits close in, drops sooner past 8 tiles. Subsonic rounds through a suppressor are barely a cough. .300 BLK only: never 5.56 or .223. Needs Shooting 8." },
+  sbr300:     { name: "Suppressed .300 BLK carbine", slot: W, skill: SH, power: 7.8, req: 9, value: 230, noise: 3, weight: 3.1, cat: "automatic",
+                desc: "A short-barrelled .300 Blackout AR (an MCX- or Honey Badger-style special-forces gun) found with a suppressor on it: single, burst or full auto from STANAG magazines, and with subsonic rounds quieter than any rifle. .300 BLK only. Rare. Needs Shooting 9." },
+  ardmr:      { name: "AR marksman rifle",      slot: W, skill: SH, power: 7.8, req: 9,  value: 165, noise: 3, weight: 4.3, cat: "rifle", hunt: { big: 0.9, small: 0.6 },
+                desc: "A heavy 20-inch AR-15 with a match barrel (a .223 Wylde chamber: 5.56 or .223 alike) and a free-floated handguard: semi-automatic, long reach, 20-round STANAG magazines. Often found with a scope or a bipod. Needs Shooting 9." },
+  single556:  { name: "5.56 single-shot rifle", slot: W, skill: SH, power: 3.6, req: 2,  value: 32,  noise: 3, weight: 3.0, cat: "rifle", hunt: { big: 0.75, small: 0.8 },
+                desc: "A break-open single-shot rifle in 5.56 (an H&R Handi-Rifle-style gun): one round, then open it and load the next. Light, accurate, all but never fails; fires .223 too. Takes a scope mount. Needs Shooting 2." },
+  single223:  { name: ".223 single-shot rifle", slot: W, skill: SH, power: 3.4, req: 2,  value: 28,  noise: 3, weight: 3.0, cat: "rifle", hunt: { big: 0.7, small: 0.9 },
+                desc: "A break-open single-shot varmint rifle in .223 Remington: one round at a time, accurate, made for coyotes and groundhogs. .223 only: 5.56 is refused. Takes a scope mount. Needs Shooting 2." },
+  single300:  { name: ".300 BLK single-shot rifle", slot: W, skill: SH, power: 3.8, req: 2, value: 36, noise: 3, weight: 2.9, cat: "rifle", hunt: { big: 0.95, small: 0.5 },
+                desc: "A break-open single-shot rifle in .300 Blackout with a threaded muzzle: one heavy round at a time, made to wear a suppressor with subsonic rounds. .300 BLK only. Needs Shooting 2." },
+  varmint223: { name: ".223 varmint rifle",     slot: W, skill: SH, power: 5.4, req: 4,  value: 70,  noise: 3, weight: 4.0, cat: "rifle", hunt: { big: 0.75, small: 1.0 },
+                desc: "A heavy-barrelled bolt-action .223 (a Remington 700 varmint-style rifle): five in its internal box, the straightest-shooting light rifle there is. .223 only: 5.56 is refused. Takes a scope and a bipod. Needs Shooting 4." },
+  ranch223:   { name: "Ranch rifle",            slot: W, skill: SH, power: 6.2, req: 5,  value: 75,  noise: 3, weight: 2.9, cat: "rifle", hunt: { big: 0.7, small: 0.8 },
+                desc: "A Mini-14-style semi-automatic ranch rifle in .223 Remington: a wooden stock, its own 20- or 30-round magazines, light and handy around a farm. .223 only: 5.56 is refused. Needs Shooting 5." },
+  snub38:     { name: ".38 snub-nose revolver", slot: W, skill: SH, power: 2.6, req: 1,  value: 20,  noise: 3, small: true, weight: 0.55, cat: "pistol",
+                desc: "A five-shot .38 Special snub-nose (a J-frame from a purse or a nightstand): light, easy to hide, a modest kick. .38 Special only (a .357 round is too long for its cylinder). Needs Shooting 1." },
+  service38:  { name: ".38 service revolver",   slot: W, skill: SH, power: 3.0, req: 2,  value: 26,  noise: 3, small: true, weight: 0.95, cat: "pistol",
+                desc: "A six-shot .38 Special police revolver with a four-inch barrel (a Model 10-style service gun): steady, forgiving, takes a speedloader. .38 Special only. Needs Shooting 2." },
+};
+const AR_DUR = {
+  ar15rifle: 65, ar223: 65, arpistol: 60, ar300: 65, sbr300: 60, ardmr: 65, single556: 85, single223: 85, single300: 85, varmint223: 80, ranch223: 75,
+  snub38: 80, service38: 85,
+};
+for (const [k, v] of Object.entries(AR_DUR)) AR_GEAR[k].dur = v;
+/** @type {Record<string, any>} */
+export const AR_WEAPONS = {
+  ar15rifle:  { name: "AR-15 rifle",            dmg: [22, 30], opt: 9,  fall: 3,   aim: 8,  ammo: 1, noise: 3, close: 2,  cap: 30, cal: "556",    rel: 0.45 },
+  ar223:      { name: "AR-15 rifle (.223)",     dmg: [21, 28], opt: 10, fall: 2.6, aim: 8,  ammo: 1, noise: 3, close: 1,  cap: 20, cal: "223",    rel: 0.4 },
+  arpistol:   { name: "AR pistol",              dmg: [20, 28], opt: 7,  fall: 3.5, aim: 5,  ammo: 1, noise: 4, close: 5,  cap: 30, cal: "556",    rel: 0.55 },
+  ar300:      { name: ".300 Blackout carbine",  dmg: [23, 32], opt: 8,  fall: 3.2, aim: 7,  ammo: 1, noise: 3, close: 3,  cap: 30, cal: "300blk", rel: 0.45 },
+  sbr300:     { name: "Suppressed .300 BLK carbine", dmg: [22, 31], opt: 7, fall: 3.5, aim: 7, ammo: 2, noise: 3, close: 5, cap: 30, cal: "300blk", rel: 0.5, modes: AUTO_556 },
+  ardmr:      { name: "AR marksman rifle",      dmg: [24, 33], opt: 12, fall: 2,   aim: 10, ammo: 1, noise: 3, close: -6, cap: 20, cal: "556",    rel: 0.4 },
+  single556:  { name: "5.56 single-shot rifle", dmg: [22, 31], opt: 10, fall: 2.6, aim: 8,  ammo: 1, noise: 3, close: -4, cap: 1,  cal: "556",    rel: 0.05 },
+  single223:  { name: ".223 single-shot rifle", dmg: [21, 29], opt: 11, fall: 2.4, aim: 8,  ammo: 1, noise: 3, close: -4, cap: 1,  cal: "223",    rel: 0.05 },
+  single300:  { name: ".300 BLK single-shot rifle", dmg: [23, 33], opt: 9, fall: 3, aim: 6, ammo: 1, noise: 3, close: -2, cap: 1,  cal: "300blk", rel: 0.05 },
+  varmint223: { name: ".223 varmint rifle",     dmg: [21, 29], opt: 13, fall: 1.6, aim: 9,  ammo: 1, noise: 3, close: -10, cap: 5, cal: "223",    rel: 0.1, brace: -6 },
+  ranch223:   { name: "Ranch rifle",            dmg: [20, 28], opt: 9,  fall: 3,   aim: 6,  ammo: 1, noise: 3, close: 2,  cap: 20, cal: "223",    rel: 0.35 },
+  snub38:     { name: ".38 snub-nose revolver", dmg: [15, 22], opt: 4,  fall: 6,   aim: -1, ammo: 1, noise: 3, close: 4,  cap: 5,  cal: "38spl",  rel: 0.05 },
+  service38:  { name: ".38 service revolver",   dmg: [16, 24], opt: 5,  fall: 5,   aim: 1,  ammo: 1, noise: 3, cap: 6,  cal: "38spl",  rel: 0.05 },
+};
+// Where each is normally kept (loot.js ITEM_TAGS): civilian ARs in gun stores, homes and police armouries; the
+// military .300 BLK in army stock; the varmint and ranch guns on farms.
+/** @type {Record<string, string[]>} */
+export const AR_TAGS = {
+  ar15rifle: ["guns", "home", "police", "crime", "farm"], ar223: ["guns", "home", "farm", "hunt"], arpistol: ["guns", "crime", "home"],
+  ar300: ["guns", "hunt", "home"], sbr300: ["military", "crash"], ardmr: ["guns", "police", "military", "hunt"],
+  single556: ["hunt", "farm", "guns", "home", "outdoor"], single223: ["hunt", "farm", "guns", "outdoor", "home"], single300: ["hunt", "guns", "farm"],
+  varmint223: ["hunt", "farm", "guns"], ranch223: ["farm", "guns", "home", "hunt", "outdoor"],
+  snub38: ["home", "police", "crime", "guns", "travel"], service38: ["police", "home", "guns", "prison", "farm"],
+};
+// The AI's people carry them too (AI parity: appended to KIT_PATCH, then to combat.js KITS).
+/** @type {Record<string, Record<string, string[]>>} */
+export const AR_KITS = {
+  raiders:   { weapons: ["arpistol", "snub38"], strong: ["ar15rifle"], loot: ["snub38", "arpistol"] },
+  guards:    { weapons: ["service38", "ar15rifle"], strong: ["ardmr"], loot: ["service38", "ar15rifle"] },
+  militia:   { weapons: ["ar223", "ranch223", "single223", "varmint223"], strong: ["ar300"], loot: ["ranch223", "single223"] },
+  survivors: { weapons: ["snub38", "single556", "ranch223"], loot: ["snub38", "single223", "single300"] },
+  zealots:   { weapons: ["service38"], loot: ["service38"] },
+  fighters:  { weapons: ["ar15rifle"], strong: ["ar300", "ardmr"], loot: ["ar15rifle"] },
+  soldiers:  { strong: ["sbr300"] },
+};
+Object.assign(ARSENAL_GEAR, AR_GEAR); // (the arsenal's finds, gunfinds.js, roll them too)
+Object.assign(ARSENAL_TAGS, AR_TAGS);
+Object.assign(GUN_GEAR, AR_GEAR);
+Object.assign(GUN_WEAPONS, AR_WEAPONS);
+Object.assign(ROSTER_TAGS, AR_TAGS);
+for (const [kind, add] of Object.entries(AR_KITS)) {
+  const k = (KIT_PATCH[kind] = KIT_PATCH[kind] || {});
+  for (const [f, list] of Object.entries(add)) k[f] = [...(k[f] || []), ...list];
+}
+TRUCK_GEAR.cargo.push(["sbr300", 0.01]);
+TRUCK_GEAR.humvee.push(["sbr300", 0.008]);
+Object.assign(FACTORY_FIT, { sbr300: [[1, ["can308"]]], ardmr: [[0.6, ["acog", "lpvo"]], [0.3, ["bipod"]]], varmint223: [[0.5, ["tacscope"]], [0.3, ["bipod"]]] });
 
 // The Help topic (ui/help.js, after "Gun attachments").
 export const ROSTER_HELP = `<b>Guns.</b> Pistols: the .22 target pistol (quiet, weak, easy to hit with), the compact 9mm (8 rounds), the 9mm
@@ -401,6 +498,15 @@ export const ROSTER_HELP = `<b>Guns.</b> Pistols: the .22 target pistol (quiet, 
   carbine, the military carbine, the piston carbine, the modular and bullpup 5.56 rifles, the .308 battle rifles (FAL,
   the modular one, the M14-pattern), the .45 SMG and pistol, the snub-nose and the Magnum hand cannon, and a belt-fed
   .308 machine gun. The rarer the gun, the fewer places keep one.
+  <br><b>AR-15s, .223, .300 Blackout and .38 Special.</b> Civilian AR-15s (5.56; an older one marked .223), an AR
+  pistol, a .300 Blackout carbine and a suppressed .300 BLK short rifle, an AR marksman rifle: every AR takes STANAG
+  magazines and the AR's parts. .223 Remington is a civilian round, about as common as 5.56: it fires from any 5.56 gun
+  and loads in STANAG magazines, hits a touch lighter but shoots a touch straighter (+3 aim). A gun chambered in .223
+  (the varmint rifle, the ranch rifle, the .223 AR, the .223 single-shot) refuses 5.56: too hot for it. .300 Blackout
+  fits the same magazines but never a 5.56 or .223 barrel (refused: it would blow the gun apart); subsonic .300 BLK
+  through a suppressor is barely a cough. A .357 revolver or lever gun fires .38 Special too (a little lighter); a .38
+  revolver takes .38 only. Single-shot rifles come in .308, 5.56, .223 and .300 BLK. The AUG, the FAL, the M14 and the
+  SCAR-H each take their own magazines.
   <br><b>How hard rounds hit.</b> From weakest to strongest: .22, 9mm, .45, .357, 20 gauge buckshot, 5.56, 7.62×39,
   12 gauge buckshot, .30-30, .308, a 12 gauge slug, .50 BMG. Hollow and soft points hit harder on the unarmoured, AP
   goes through armour; a slug hits harder than a .308 but goes through less. 5.56, .308, .22, 9mm and 12 gauge are the

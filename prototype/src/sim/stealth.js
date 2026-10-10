@@ -53,7 +53,7 @@ export const STEALTH = {
 // knockout: Knockout Artist (skills.js).
 export const TAKEDOWN = { base: 30, stealth: 2.5, behind: 15, cover: 10, assassin: 20, staggering: -15, kit: { soldiers: -15, zealots: -5 }, melee: 1, meleeMid: 5, knockout: 15, knockoutBlow: 10 };
 const CLUB = { spikedbat: 20, pipespear: 5, spear: 5, knife: 10, machete: 10, sawmachete: 10, springmachete: 10, fists: 5, bat: 20, nailbat: 15, baton: 20, prybar: 15, fireaxe: 10, sledge: 10, stunbaton: 20 }; // guns: a butt stroke, +5
-export const SUPPRESSIBLE = ["pistol", "huntrifle", "ar", "leverrifle", "carbine", "smg", "lmg", "dmr", "sniper", "singlerifle", "m4", "hk416", "scarl", "aug", "scarh", "fal", "m1a", "m240"]; // the oil filter's calibres (gunmods.js: 9mm, 5.56, .308, .30-30), the roster's guns too
+export const SUPPRESSIBLE = ["pistol", "huntrifle", "ar", "leverrifle", "carbine", "smg", "lmg", "dmr", "sniper", "singlerifle", "m4", "hk416", "scarl", "aug", "scarh", "fal", "m1a", "m240", "ar15rifle", "arpistol", "ardmr", "single556"]; // the oil filter's calibres (gunmods.js: 9mm, 5.56, .308, .30-30), the roster's guns too
 // Keyed like GEAR (the item's throw field). radius / turns: the lure (unaware guards and the dead within radius go to
 // look); fx: what else happens where it lands (throwables.js); self: used where the unit stands; keep: not used up.
 // sense: what the dead hear or feel of it (decoys.js: each kind of dead follows its own senses); decoy: it keeps

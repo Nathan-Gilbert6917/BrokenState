@@ -36,7 +36,7 @@ import { isHelmet, isHelmetPart, helmetSlots, helmetChoices, helmetFitReason, fi
 import { rigOf, pouchesOf, isCarrier, insertsOf } from "../sim/inventory.js"; // rigs and plate carriers (section 16)
 import { POUCH_NAMES, POUCH_ICON, MAGAZINES } from "../sim/data-kit.js";
 import { battleKg, bandFor } from "../sim/carrykit.js"; // the battle load band (R17)
-import { typeName } from "../sim/rounds.js";
+import { roundName, calName } from "../sim/rounds.js";
 import { stackLabel, isRoundItem, isBulk, amountOf, countOf, boxesIn, bulkRecord, roundCap, stackMax } from "../sim/itemstack.js"; // stacks in a slot (2026-10-10)
 import { splitAt, openAt } from "../sim/inventory.js";
 import { holdSection } from "./carry.js"; // the team's supplies this person carries (pockets, pack, arms), the ground
@@ -74,7 +74,7 @@ export function itemTip(item, s = null) {
   if (isHelmet(item.key)) bits.push(`${item.mods ? `fitted: ${helmetLabel(item).replace(/^[^(]*\(|\)$/g, "")}; ` : ""}mounts: ${helmetSlots(item).map((m) => HELM_MOUNTS[m].toLowerCase()).join(", ") || "none (a full shell)"}`); // sim/helmets.js
   if (isHelmetPart(item.key) && !GEAR[item.key].ears) bits.push(`helmet part (${HELM_MOUNTS[HELMET_ATTACH[item.key].mount].toLowerCase()}): select a helmet and fit it`);
   if (d.slot === "weapon" && isGunKey(item.key)) { const g = gunTipText(item); if (g) bits.push(g); } // ui/gunbuilder.js: its slots, its load, how reliable
-  if (MAGAZINES[item.key]) bits.push(`magazine: ${MAGAZINES[item.key].cap} rounds${item.load ? `, loaded with ${typeName(item.load)}` : " of the gun's own load"}; fits ${fitsText(item.key)}. A spare in a rig pouch or a pocket reloads in 1 action, from the pack in 2; fit one in the gun builder (⚙ Modify on the gun)`);
+  if (MAGAZINES[item.key]) bits.push(`magazine: ${MAGAZINES[item.key].cap} rounds${MAGAZINES[item.key].cals ? ` of ${MAGAZINES[item.key].cals.map(calName).join(", ")}` : ""}${item.load ? `, loaded with ${roundName(MAGAZINES[item.key].cal, item.load)}` : " of the gun's own load"}; fits ${fitsText(item.key)}. A spare in a rig pouch or a pocket reloads in 1 action, from the pack in 2; fit one in the gun builder (⚙ Modify on the gun)`);
   else if (ATTACH[item.key]) bits.push(`gun attachment (${MOUNT_NAMES[ATTACH[item.key].mount].toLowerCase()}): ${attachText(item.key)}; fits ${fitsText(item.key)}; fit it in the gun builder (⚙ Modify on the gun)`);
   else if (d.slot === "rig" || (d.pouches && d.slot === "armor")) bits.push(`${d.slot === "rig" ? "chest rig" : `armor ${d.power} with pouches`}: ${pouchText(d.pouches)}; +${d.carry || 0} kg max load${isCarrier(item) ? `; plates: ${Object.entries(insertsOf(item)).map(([k, p]) => `${k} ${p ? p.name.toLowerCase() : "empty"}`).join(", ")}` : ""}`);
   else if (d.slot === "insert") bits.push("a plate for a plate carrier's front or back pocket");
