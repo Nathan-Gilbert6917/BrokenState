@@ -19,7 +19,7 @@ function radioBasesInRange(state, tileId, extra = 0) {
   return coverNodes(state, tileId, extra).map((n) => n.base);
 }
 import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js";
-import { movePartiesHour } from "./parties.js";
+import { movePartiesHour, clockFrac, setClockFrac } from "./parties.js";
 import { hordesHour, hordesDaily } from "./hordes.js";
 import { ensureHives, hivesSecured } from "./hives.js";
 import { growthAt, growthInfo } from "./hivetech.js";
@@ -870,6 +870,14 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
 // ---------- tick ----------
 /** One hour of the world. @param {State} state */
 export function tickHour(state) {
+  // The tick is the hour's end: anything it sets moving starts on the hour, whatever the clock's minutes showed
+  // (parties.js wayOn).
+  const frac = clockFrac(state);
+  setClockFrac(0, false);
+  try { hourOfWorld(state); } finally { setClockFrac(frac, false); }
+}
+/** @param {State} state */
+function hourOfWorld(state) {
   if (state.gameOver) return;
   state.hour += 1;
   noteLootAge(state); // itemcond.js: the years since the fall, for every piece of loot rolled this hour

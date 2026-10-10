@@ -33,7 +33,8 @@ import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims nex
 import { cookAtBase, wormDaily, boilerUse, purifyDaily } from "./worm.js";
 import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
 import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (marks between the day's steps)
-import { addFind, chooseRounds, baseCals } from "./ammo.js"; // rounds by calibre
+import { addFind, chooseRounds, baseCals, roundsText } from "./ammo.js"; // rounds by calibre
+import { ROUND_SUPPLIES } from "./data-ammo.js"; // round keys (a scavenging find named by calibre in the log)
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -121,13 +122,14 @@ function baseScavenging(state, base, people) {
     const k = rng.weighted(keys, (x) => table[x]);
     const q = rng.int(SCAV_FIND[k][0], SCAV_FIND[k][1]);
     const t = state.tiles[base.tile];
-    const got = k === "parts" && t && t.loc ? sortParts(state, t.loc.type, q, `scav${localId(state, s.id)}`) : { [k]: q }; // loot.js: parts by kind (their own dice; a world-local id: same seed, same game)
-    if (k === "ammo") addFind(base.stock, (t && t.loc && t.loc.type) || "", q, false, "basescav", base.tile, state.hour, s.name); // ammo.js: rounds by calibre, as the place around it holds them
+    let got = k === "parts" && t && t.loc ? sortParts(state, t.loc.type, q, `scav${localId(state, s.id)}`) : { [k]: q }; // loot.js: parts by kind (their own dice; a world-local id: same seed, same game)
+    // ammo.js: rounds by calibre, as the place around it holds them; the log names them ("6 9mm FMJ", not "6 ammo")
+    if (k === "ammo") got = { ...addFind(base.stock, (t && t.loc && t.loc.type) || "", q, false, "basescav", base.tile, state.hour, s.name) };
     else for (const [key, n] of Object.entries(got)) base.stock[key] = (base.stock[key] || 0) + n;
     const bm = rollBuildmat(state, base.tile, 0.5, `bscav${localId(state, s.id)}`); // (the world-local id: tools/sameseedtest.js) building materials around the base too (half a search hour's chance)
     if (bm > 0) { base.stock.buildmat = (base.stock.buildmat || 0) + bm; got.buildmat = bm; }
     econStats(state).scavFinds++;
-    log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(got).map(([key, n]) => `${n} ${key === "buildmat" ? "building materials" : key}`).join(", ")} around ${base.name}.`, "good");
+    log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(got).map(([key, n]) => (ROUND_SUPPLIES[key] ? roundsText({ [key]: n }) : `${n} ${key === "buildmat" ? "building materials" : key}`)).join(", ")} around ${base.name}.`, "good");
   }
   if (scav.length) base.scavLeft = Math.max(SCAV_FLOOR, scavLeft(base) - SCAV_DEPLETE * scav.length); // no recovery when nobody scavenges
 }

@@ -5,7 +5,7 @@
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { traitChips } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
-import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom } from "../sim/parties.js";
+import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText, clockAt, plannedArrival } from "../sim/parties.js";
 import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
@@ -46,6 +46,9 @@ const n0 = (v) => Math.floor((v || 0) + 1e-9);
 const bar = (v, color) => `<div class="bar"><i style="width:${Math.max(0, Math.min(100, v))}%;background:${color}"></i></div>`;
 const first = (s) => esc(shortName(s)); // first name, with a last initial when two people share it
 const hrs = (h) => (h == null ? "open-ended" : h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h`);
+// What the order under way has left on the clock: it ends as an hour ticks over (orderStatus counts the ticks), so the
+// minutes of this hour already gone come off ("2h 35m left", the same as the ETA it was given with).
+const leftText = (state, h) => `${clockText(Math.max(0, h - clockFrac(state)))} left`;
 
 // ---------- orders given while paused ----------
 // The game starts paused and giving an order never unpauses it: the order is armed and starts when the clock
@@ -84,13 +87,13 @@ function statusLine(state, ui, p) {
   if (!live) {
     // A one-way move (no way back planned) arrives and waits; other trips come home.
     if (p.etaBack == null && p.etaOut != null) {
-      const at = (p.planStart ?? p.departed) + p.etaOut;
-      return { text: `${esc(st.label)} · no contact (${at > state.hour ? "arrives" : "should have arrived"} around day ${Math.floor(at / 24) + 1}, ${at % 24}:00)${onPlan}`, pct: null, cls: "muted" };
+      const at = plannedArrival(state, p); // to the minute (sim/parties.js)
+      return { text: `${esc(st.label)} · no contact (${at > state.hour + clockFrac(state) ? "arrives" : "should have arrived"} around ${clockAt(at)})${onPlan}`, pct: null, cls: "muted" };
     }
     const back = Math.floor((p.departed + p.plannedHours) / 24) + 1;
     return { text: `${esc(st.label)} · no contact (back around day ${back})${onPlan}`, pct: null, cls: "muted" };
   }
-  const left = st.left == null ? (p.phase === "task" ? "until you stop it" : "") : st.left > 0 ? `${hrs(st.left)} left` : "";
+  const left = st.left == null ? (p.phase === "task" ? "until you stop it" : "") : st.left > 0 ? leftText(state, st.left) : "";
   return { text: `${esc(st.label)}${left ? ` · ${left}` : ""}${onPlan}`, pct: st.pct, cls: p.phase === "waiting" ? "warn" : "" };
 }
 
@@ -316,7 +319,7 @@ function queueBlock(state, p, live, ui) {
     const next = q.length ? " The next queued order starts there." : " Then the team waits for orders.";
     const hint = moving ? `Cancel this ${p.phase === "back" ? "return home" : "move"}: the team stops on the tile it has reached.${next}` :
       p.task.type === "camp" ? `Stop resting now.${next}` : `Stop this job now (nothing is used up).${next}`;
-    now = `<li class="now"><div class="qrow"><span class="qlabel"${tip("The order under way. ✕ cancels it: the team stops where it is and goes on with the queue from there, or waits for orders.")}><b>Now:</b> ${esc(st.label)} <span class="muted">${st.left != null && st.left > 0 ? `${hrs(st.left)} left` : st.left == null && working ? "until you stop it" : ""}</span></span>` +
+    now = `<li class="now"><div class="qrow"><span class="qlabel"${tip("The order under way. ✕ cancels it: the team stops where it is and goes on with the queue from there, or waits for orders.")}><b>Now:</b> ${esc(st.label)} <span class="muted">${st.left != null && st.left > 0 ? leftText(state, st.left) : st.left == null && working ? "until you stop it" : ""}</span></span>` +
       `<span class="qbtns"><button class="mini" data-action="${moving ? "xp-cancelmove" : "xp-stop"}" data-id="${p.id}"${tip(hint)}>✕</button></span></div></li>`;
   }
   const rows = q.map((x, i) => {

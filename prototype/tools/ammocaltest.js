@@ -49,10 +49,10 @@ section("The top bar: one Ammo figure, by calibre and arrows on hover");
   check(bd.rows.every((r, i) => i === 0 || bd.rows[i - 1].n >= r.n), "rows most first");
   check(bd.rows.some((r) => r.key === "arrows" && r.n === 37) && bd.rows.some((r) => r.key === "9mm" && r.types.some((t) => t.type === "hp" && t.n >= 12)) && bd.rows.some((r) => r.key === "40mm"), `rows: arrows, 9mm with its hollow points, 40 mm (${breakdownText(bd)})`);
   const tb = topbarParts(st, { speed: 1 });
-  const chip = tb.stock.match(/<span data-tip="([^"]*)"[^>]*><b>Ammo<\/b>(\d+)/);
+  const chip = tb.stock.match(/data-k="ammo" data-tip="([^"]*)"[^>]*>.*?<span class="nb-amt">(\d+)/); // the Needs list's Ammo row (ui/needsbar.js)
   check(!!chip && Number(chip[2]) === bd.total, `the bar shows the total (${chip ? chip[2] : "no Ammo chip"})`);
   check(!!chip && /9mm/.test(unesc(chip[1])) && /Arrows and bolts 37/.test(unesc(chip[1])), "the tooltip names the calibres and the arrows");
-  check(!/<b>Arrows<\/b>/.test(tb.stock), "no separate Arrows chip");
+  check(!/data-k="arrows"/.test(tb.stock), "no separate Arrows row");
   const again = baseAmmoBreakdown(st, h);
   check(again === bd, "cached while nothing changed");
   h.stock.a_9mm_fmj = (h.stock.a_9mm_fmj || 0) + 5;
@@ -62,7 +62,7 @@ section("The top bar: one Ammo figure, by calibre and arrows on hover");
   const p = hc.parties.find((x) => x.owner === "player");
   const tbd = teamAmmoBreakdown(hc, p);
   const roadBar = topbarParts(hc, { speed: 1 }).stock;
-  const rm = roadBar.match(/<b>Ammo<\/b>(\d+)/);
+  const rm = roadBar.match(/data-k="ammo"[^>]*>.*?<span class="nb-amt">(\d+)/);
   check(!!rm && Number(rm[1]) === tbd.total, `the road bar shows the team's total (${rm ? rm[1] : "none"} vs ${tbd.total})`);
 }
 
