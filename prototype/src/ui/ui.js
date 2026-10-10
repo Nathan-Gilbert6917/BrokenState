@@ -135,7 +135,7 @@ import { watchlistPin } from "./watchlist.js"; // 📌 pin to the Watching panel
 import { cardUp, trayCardFrame, MAX_SPEED } from "./pacing.js"; // pause rules and the card tray
 import { devButton } from "./display.js"; // the top bar's Dev button (Menu → Options → Display → Show dev tools)
 import { totalRounds, sumRecs, supplyAmt, ROUND_KEYS } from "../sim/rounds.js"; // rounds by calibre
-import { roundsLine, baseAmmo, baseAmmoBreakdown, breakdownText } from "../sim/ammo.js";
+import { roundsLine, baseAmmo, baseAmmoBreakdown, teamAmmoBreakdown, breakdownText } from "../sim/ammo.js";
 import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
 import { fold, peopleQuery, peopleIsCompact } from "./panelfold.js"; // side-panel folds; the People tab's find box and view
 
@@ -1081,7 +1081,7 @@ function transportPick(state, h, pl, v, ids, where) {
 const PLAN_SUPPLY_KEYS = ["food", "preserved", "water", "fuel", "meds", "ammo", "arrows", "parts", "scrap"];
 function suppliesTable(state, h, pl, label) {
   const showKeys = PLAN_SUPPLY_KEYS;
-  return `<table class="t">${showKeys.map((k) => `<tr${tip(k === "arrows" ? "Arrows for bows and crossbows: 1 a shot in a fight (about half picked up again after a win, none after a loss or a retreat; with none a bow is only a club) and on a hunt (a shot at game loses its arrow about half the time). Auto-fill packs a dozen for each bow on the team; a hunting trip takes up to 12 from the hub by itself when someone has a bow." : k === "fuel" ? "Fuel cans: used when the tank runs dry, and to restart abandoned vehicles" : k === "parts" ? "For roadside repairs, restoring wrecks and recovering damaged vehicles" : k === "scrap" ? "Needed to build an outpost (15)" : k === "preserved" ? "Jarred, dried or canned food: a ration like food (eaten after the packed food), and lighter to carry (0.6 a ration)" : k === "water" ? "Water for the road: purified water is packed first, then un-purified water (from the wells and rivers: boil it at a camp fire, filter it or drop purification tablets in)" : "")}><td>${k === "water" ? "Water" : SUPPLIES[k].name}</td><td><input type="number" min="0" data-action="pl-supply" data-k="${k}" value="${pl.supplies[k] || 0}"></td><td class="muted small">${label} ${k === "water" ? esc(hubWaterText(h)) : n0(h.stock[k])}</td></tr>`).join("")}${tabsRow(state, h, pl)}${lightsRow(state, h, pl)}</table>`;
+  return `<table class="t">${showKeys.map((k) => `<tr${tip(k === "arrows" ? "Arrows for bows and crossbows: 1 a shot in a fight (about half picked up again after a win, none after a loss or a retreat; with none a bow is only a club) and on a hunt (a shot at game loses its arrow about half the time). Auto-fill packs a dozen for each bow on the team; a hunting trip takes up to 12 from the hub by itself when someone has a bow." : k === "fuel" ? "Fuel cans: used when the tank runs dry, and to restart abandoned vehicles" : k === "parts" ? "For roadside repairs, restoring wrecks and recovering damaged vehicles" : k === "scrap" ? "Needed to build an outpost (15)" : k === "preserved" ? "Jarred, dried or canned food: a ration like food (eaten after the packed food), and lighter to carry (0.6 a ration)" : k === "water" ? "Water for the road: purified water is packed first, then un-purified water (from the wells and rivers: boil it at a camp fire, filter it or drop purification tablets in)" : k === "ammo" ? `Rounds for the team's guns, any calibre: packed as the rounds that fit each person's gun (most for the gun they carry). At ${h.name}, by calibre: ${breakdownText(baseAmmoBreakdown(state, h), "; ")}` : "")}><td>${k === "water" ? "Water" : k === "ammo" ? "Rounds for their guns" : SUPPLIES[k].name}</td><td><input type="number" min="0" data-action="pl-supply" data-k="${k}" value="${pl.supplies[k] || 0}"></td><td class="muted small">${label} ${k === "water" ? esc(hubWaterText(h)) : n0(k === "ammo" ? totalRounds(h.stock) : h.stock[k])}</td></tr>`).join("")}${tabsRow(state, h, pl)}${lightsRow(state, h, pl)}</table>`;
 }
 function plannerModal(state, ui) {
   const pl = ui.planner;
@@ -1245,7 +1245,7 @@ function engagementModal(state) {
     <div class="grid2">
       <div><h3>Log</h3><div class="elog" id="elog">${e.log.map((l) => `<div>${esc(l)}</div>`).join("")}</div></div>
       <div><h3>Team</h3>${members.map((m) => `<div class="row small"><span style="width:7rem">${first(m)}</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div></div>`).join("")}
-        <div class="small muted" style="margin-top:0.3rem">Ammo ${n0(p ? totalRounds(p.supplies) : 0)} · Food ${n0(p ? p.supplies.food : 0)}</div>
+        <div class="small muted" style="margin-top:0.3rem"><span${tip(`Every round and arrow the team has, by calibre: ${breakdownText(teamAmmoBreakdown(state, p), "; ")}`)}>Ammo ${n0(p ? teamAmmoBreakdown(state, p).total : 0)}</span> · Food ${n0(p ? p.supplies.food : 0)}</div>
         <h3>Found (${Math.ceil(load)} / ${Math.max(0, Math.floor(cap))} kg the team can still carry)</h3>
         <div class="small">${found.length ? found.map((f) => `<span class="chip">${esc(f)}</span>`).join("") : "<span class='muted'>Nothing yet</span>"}</div>
         ${load > cap ? `<div class="small danger">More than you can carry. The cheapest goods will be left behind.</div>` : ""}

@@ -14,6 +14,7 @@ import {
 } from "../sim/hivecrawl.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+import { teamAmmoBreakdown, breakdownText } from "../sim/ammo.js"; // the Ammo figure: every round and arrow, by calibre on hover
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const bar = (v, color) => `<div class="bar"><i style="width:${Math.max(0, Math.min(100, v))}%;background:${color}"></i></div>`;
 // Warmth 0–100 → a colour from cold slate to ember red.
@@ -70,7 +71,7 @@ function hud(state, p, c, den, room, w) {
     </div>
     <div>
       ${members.map((m) => `<div class="row small" style="gap:0.4rem"><span style="width:6.5rem;overflow:hidden;white-space:nowrap">${esc(m.name.split(" ")[0])}</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : m.health < 70 ? "#c9a24a" : "var(--good)")}</div><span class="muted" style="width:2rem;text-align:right">${Math.round(m.health)}</span></div>`).join("")}
-      <div class="small" style="margin-top:0.25rem">Ammo ${Math.floor(carried(p, "ammo"))} · Meds ${Math.floor(carried(p, "meds"))} · Fuel ${Math.floor(carried(p, "fuel"))}${c.hadVehicle ? " · <span class=\"muted\">the vehicle waits at the mouth</span>" : ""}</div>
+      <div class="small" style="margin-top:0.25rem"><span${tip(`Every round and arrow the team has, by calibre: ${breakdownText(teamAmmoBreakdown(state, p), "; ")}`)}>Ammo ${teamAmmoBreakdown(state, p).total}</span> · Meds ${Math.floor(carried(p, "meds"))} · Fuel ${Math.floor(carried(p, "fuel"))}${c.hadVehicle ? " · <span class=\"muted\">the vehicle waits at the mouth</span>" : ""}</div>
       ${lightsRow(state, p, c)}
       <div class="small" style="margin-top:0.2rem">${found.length ? found.slice(0, 10).map((f) => `<span class="chip">${esc(f)}</span>`).join("") : "<span class='muted'>Nothing found yet.</span>"}</div>
     </div>
