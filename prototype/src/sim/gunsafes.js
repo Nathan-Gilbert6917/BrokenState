@@ -26,6 +26,8 @@ import { baseById } from "./world.js";
 import { stashRounds, boxFinds, themeOf } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
 import { withMags } from "./carrykit.js"; // a gun's spare magazines (call-time only)
 import { stashGun } from "./gunfinds.js"; // one of the newer guns now and then (call-time only)
+import { swapGun } from "./gundist.js"; // the gun distribution: which gun a safe or a case holds
+import { GUN_SOURCES } from "./data-guns.js";
 
 // ---------- what is inside ----------
 // guns: weights (existing GEAR keys); n: [lo, hi] guns, more: the chance of one more; q: a quality range of the
@@ -105,14 +107,16 @@ export function rollGunStash(roll, tier, siteType, opts = {}) {
   const src = stashSource(tier, siteType);
   const guns = { ...T.guns };
   for (const [k, sites] of Object.entries(T.only || {})) if (!sites.includes(siteType)) delete guns[k];
+  // The gun distribution's source (data-guns.js GUN_SOURCES stash:<table>; a case at a police or Army site: @service).
+  const gsrc = CASE_KINDS.includes(name) && [...COP_SITES, ...MIL_SITES].includes(siteType) && GUN_SOURCES[`stash:${name}@service`] ? `stash:${name}@service` : `stash:${name}`;
   let n = T.n[0] + Math.floor(roll("n") * (T.n[1] - T.n[0] + 1));
   if (T.more && roll("more") < T.more) n++;
   for (let i = 0; i < n; i++) {
-    const k = pickWeighted(roll("g", i), guns);
+    const k = swapGun(gsrc, pickWeighted(roll("g", i), guns), [roll("gs", i)]); // gundist.js: which gun, by the safe's draws (its own dice)
     if (k) out.gear.push(lootItem(k, src, roll("q", i), T.q ? { quality: q2(T.q[0] + roll("q", i) * (T.q[1] - T.q[0])) } : undefined));
   }
   if (T.rare && roll("rare") < T.rare[0]) {
-    const k = pickWeighted(roll("rarek"), T.rare[1]);
+    const k = swapGun(gsrc, pickWeighted(roll("rarek"), T.rare[1]), [roll("rarekg")]); // gundist.js
     if (k) out.gear.push(lootItem(k, src, roll("rareq"), { quality: 1 })); // a collector's piece: top condition
   }
   for (const [k, [lo, hi]] of Object.entries(T.sup || {})) if (SUPPLIES[k]) out.sup[k] = lo + Math.floor(roll("s", k) * (hi - lo + 1));

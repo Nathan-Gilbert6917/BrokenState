@@ -14,7 +14,7 @@
 // from one (negative) comes out of the rounds the guns there need least. totalRounds counts both, so a figure read in
 // between is right.
 import { ROUND_ECON, RARITY_FIND, roundTier } from "./data-ammo.js"; // a round's rarity tier (commonness)
-import { CALIBERS, AMMO_TYPES, ammoKey, AMMO_MIX, KIND_MIX, KIT_AMMO, STARTER_AMMO, ROUND_SUPPLIES, RELOAD_SUPPLIES, HAND_SUPPLIES } from "./data-ammo.js";
+import { CALIBERS, AMMO_TYPES, ammoKey, AMMO_MIX, KIND_MIX, KIT_AMMO, STARTER_AMMO, ROUND_SUPPLIES, RELOAD_SUPPLIES, HAND_SUPPLIES, LOAD_CLASS, spreadMult } from "./data-ammo.js";
 import { CAL_DMG, CAL_REFUSE, KIT_ALT_CAL, gunCalList } from "./data-ammo.js"; // calibre compatibility (2026-10-10)
 import { SUPPLIES, GEAR } from "./data.js";
 import { WEAPONS } from "./combat.js";
@@ -593,7 +593,7 @@ export function enemyLoad(kind, weapon, ...salt) {
   const cal = calOf(weapon);
   if (!cal) return null;
   const k = KIT_AMMO[kind] || KIT_AMMO.raiders;
-  const cls = cal === "12ga" || cal === "20ga" ? "shotgun" : ["9mm", "45acp", "357", "22lr", "38spl"].includes(cal) ? "pistol" : "rifle";
+  const cls = cal === "12ga" || cal === "20ga" ? "shotgun" : cal === "22lr" || LOAD_CLASS[cal] === "pistol" ? "pistol" : "rifle"; // pistol rounds: 9mm, .38, .45, .357, 5.7, .44
   const w = k[cls] || {};
   // Now and then another calibre the gun takes (KIT_ALT_CAL, its own dice: civilian .223 in a raider's 5.56 rifle, .38
   // in a .357 revolver; AI parity: the loads your guns take).
@@ -636,7 +636,8 @@ export function softMult(t, hit) {
   return (fx.soft || 1) / (fx.dmg || 1);
 }
 // The best type to load against the foes in sight (the AI's reload, both sides; section 6): the mean score over aware
-// foes, ties to the loaded type, then the common round. Only types the side has rounds of.
+// foes, ties to the loaded type, then the common round. Only types the side has rounds of. Buckshot and birdshot score
+// what they keep at each foe's range (data-ammo.js spreadMult): slugs for the far ones.
 /** @param {any} b @param {any} u @param {any[]} [foes] */
 export function pickLoad(b, u, foes = []) {
   const cal = calOf(u.weapon);
@@ -646,7 +647,8 @@ export function pickLoad(b, u, foes = []) {
   if (!opts.length) return cur;
   const seen = (foes || []).filter((f) => f && !f.dead);
   if (!seen.length) return opts.includes(cur) ? cur : opts.includes(baseType(cal)) ? baseType(cal) : opts[0];
-  const score = (t) => (seen.reduce((a, f) => a + typeScore(t, armoured(f)), 0) / seen.length) * calDmgRatio(loadCal(cal, t), cal); // (a lighter calibre it takes: its damage)
+  const far = (t, f) => (Number.isFinite(f.x) && Number.isFinite(u.x) ? spreadMult(t, Math.hypot(f.x - u.x, f.y - u.y)) : 1);
+  const score = (t) => (seen.reduce((a, f) => a + typeScore(t, armoured(f)) * far(t, f), 0) / seen.length) * calDmgRatio(loadCal(cal, t), cal); // (a lighter calibre it takes: its damage; buckshot: what it keeps at each foe's range)
   let best = opts.includes(cur) ? cur : opts[0], bs = score(best) + 1e-6;
   for (const t of opts) { const s = score(t) + (t === baseType(cal) ? 1e-7 : 0); if (s > bs + 0.01) { best = t; bs = s; } }
   return best;

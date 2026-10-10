@@ -18,6 +18,7 @@ import { partyMembers, partyTile, carried, takeSupply, carriedAny, takeAny, plan
 import { newItem, stow, allItems, START_DUR } from "./inventory.js";
 import { attitude, changeGoodwill } from "./factions.js";
 import { foodNeedFactor, thirstAhead } from "./weather.js";
+import { swapGun } from "./gundist.js"; // the gun distribution: a newcomer's (and a wanderer's) own gun
 
 export const JOIN_FOOD = 5;                         // food a newcomer eats on arrival at a base (less if there is less)
 export const PART_BASE = { food: 3, water: 3 };     // per person, from the base, to part ways
@@ -42,7 +43,7 @@ export function makeCandidate(state, { quality = 0.85, minHealth = 60, gearChanc
   s.health = rng.int(minHealth, 100);
   s.mood = rng.int(45, 65);
   if (rng.chance(gearChance)) {
-    const w = rng.weighted(Object.keys(RECRUIT_WEAPONS), (k) => RECRUIT_WEAPONS[k]);
+    const w = swapGun("recruit", rng.weighted(Object.keys(RECRUIT_WEAPONS), (k) => RECRUIT_WEAPONS[k]), rng); // gundist.js: a gun of the kind in the band of the list's (a hash of the draw)
     s.gear.weapon = newItem(w, Math.round(rng.range(0.5, 0.9) * 100) / 100, rng, START_DUR);
   }
   if (rng.chance(gearChance * 0.35)) stow(s, newItem(rng.pick(RECRUIT_ARMOR), Math.round(rng.range(0.5, 0.9) * 100) / 100, rng, START_DUR));

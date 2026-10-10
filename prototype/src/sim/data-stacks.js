@@ -35,6 +35,8 @@ export const RETAIL_BOX = {
   "45acp": 50, "45acp_hp": 20,
   // .38 / .357: 50; defensive hollow points 20
   "357": 50, "357_hp": 20, "357_plusp": 20, "38spl": 50, "38spl_hp": 20,
+  // .44 Magnum: 50 (jacketed), defensive / hunting hollow points 20; 5.7×28: 50 a box, either load
+  "44mag": 50, "44mag_hp": 20, "57x28": 50,
   // 12 gauge: buckshot 10, slugs 5, birdshot and other hunting / target loads 25, less-lethal beanbags 5
   "12ga": 25, "12ga_buck": 10, "12ga_slug": 5, "12ga_bird": 25, "12ga_beanbag": 5,
   // 20 gauge likewise (a gauge the arsenal may add)

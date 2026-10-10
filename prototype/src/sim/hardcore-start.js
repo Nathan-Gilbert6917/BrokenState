@@ -61,6 +61,7 @@ import { isCustomBg } from "./custombg.js";
 import { grabStartGear, addPickedSupplies, trunkFromPicks, loadGun, pickOf } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
 import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource } from "./staging.js";
+import { swapGun } from "./gundist.js"; // the gun distribution: which gun they grabbed
 
 export const HC_START = {
   CREW: 3,
@@ -362,6 +363,10 @@ export function smallTeamSkills(state, people) {
 
 // One survivor's flight: their bag (or none), weapon, things, and what they add to the team's food, water, ammo, meds.
 // A: their background's tables (ARCHETYPES) over the common ones.
+// The gun distribution's source of a background's grab (data-guns.js GUN_SOURCES hc:*): a veteran's, a farmer's, a
+// hunter's or a cop's own kind of gun, anyone else's a household's.
+const GRAB_SOURCE = { veteran: "hc:veteran", farmer: "hc:farmer", hunter: "hc:hunter", cop: "hc:police", prepper: "hc:prepper" };
+const grabSource = (A) => { const k = A ? Object.keys(HC_START.ARCHETYPES).find((x) => HC_START.ARCHETYPES[x] === A) : null; return (k && GRAB_SOURCE[k]) || "hc:home"; };
 export function rollGrab(state, s, A = null) {
   const rng = state.rng, C = HC_START;
   const bag = rng.chance(A && A.pack != null ? A.pack : C.PACK);
@@ -373,13 +378,14 @@ export function rollGrab(state, s, A = null) {
   }
   const wOdds = A && A.weaponOdds != null ? A.weaponOdds : bag ? C.WEAPON.pack : C.WEAPON.pockets;
   if (rng.chance(wOdds)) {
-    let w = pickW(rng, (A && A.weapons) || C.WEAPONS);
-    if (!bag && !GEAR[w].small && !(A && A.weapons) && rng.chance(0.5)) w = "knife"; // running with only pockets: more often a knife than a rifle
+    let listed = pickW(rng, (A && A.weapons) || C.WEAPONS);
+    if (!bag && !GEAR[listed].small && !(A && A.weapons) && rng.chance(0.5)) listed = "knife"; // running with only pockets: more often a knife than a rifle
+    const w = swapGun(grabSource(A), listed, rng); // gundist.js: a gun of the kind they would own, in the band of the list's (a hash of the draw)
     s.gear.weapon = startItem(rng, w, Math.round(rng.range(0.6, 1) * 100) / 100);
     got.weapon = s.gear.weapon;
     randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns
     { const bx = starterLoad(rng, s.gear.weapon, "hc"); if (bx) pocketBox(s, bx); } // ammo.js: now and then a typed load and a box of it
-    const rr = C.ROUNDS[w];
+    const rr = C.ROUNDS[listed]; // (the list's gun: the same draws; the rounds are the gun's own calibre)
     if (rr) gunRounds(got, w, Math.round(rng.int(rr[0], rr[1]) * ((A && A.rounds) || 1))); // the gun's own calibre
     if (GEAR[w].cat === "bow") got.arrows = (got.arrows || 0) + 12; // a quiver with the bow (hunting.js: bows hunt with arrows)
   }
@@ -429,7 +435,7 @@ export function rollPrepper(state, s) {
   s.gear.backpack = startItem(rng, P.BAG, Math.round(rng.range(0.85, 1) * 100) / 100);
   got.bag = s.gear.backpack;
   const gun = rng.chance(P.GUN);
-  const w = gun ? pickW(rng, P.GUNS) : "knife";
+  const w = gun ? swapGun("hc:prepper", pickW(rng, P.GUNS), rng) : "knife"; // gundist.js: which gun (a hash of the draw)
   s.gear.weapon = startItem(rng, w, Math.round(rng.range(0.8, 1) * 100) / 100);
   got.weapon = s.gear.weapon;
   randomStarterMods(rng, s.gear.weapon, "hc"); // gunmods.js: a cheap part or two on some guns

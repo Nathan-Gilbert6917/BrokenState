@@ -36,6 +36,7 @@ import { searchCrew } from "./crashes.js";
 import { stockHas, keyWord } from "./water.js";
 import { sortFind, formFinds } from "./ammo.js"; // rounds by calibre; boxed and bulk forms
 import { unitPower, partyLost } from "./arsenal.js"; // an AI salvage party's fighters (their kit) and the kit of its dead
+import { swapGun } from "./gundist.js"; // the gun distribution: which gun a truck carries
 
 export const MILTRUCK = {
   ROAD_P: 0.02, DEAD_END: 0.5, JUNCTION: 1.5, TWO: 0.25,
@@ -126,7 +127,7 @@ export function truckLoot(rng, kind, cond = "intact", opts = {}) {
     if (burnt && !BURNT_KEEP.has(k)) continue;
     if (!rng.chance(Math.min(0.95, p * C.items * rich))) continue;
     rng.next(); // the old quality draw (TRUCK_COND qual), still taken so the truck's dice stay where they were
-    gear.push(lootItem(k, burnt || cond === "wrecked" ? "wreck" : "military", rng)); // itemcond.js: crates in good order, a wreck's knocked about
+    gear.push(lootItem(swapGun(`truck:${kind}`, k, rng), burnt || cond === "wrecked" ? "wreck" : "military", rng)); // itemcond.js; gundist.js: which gun (a hash of the draw): crates in good order, a wreck's knocked about
   }
   const out = { sup, gear };
   for (const hook of TRUCK_LOOT_HOOKS) hook(rng, { kind, cond, src: opts.src || null, rich }, out);

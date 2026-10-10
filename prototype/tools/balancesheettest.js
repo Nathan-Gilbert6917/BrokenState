@@ -24,7 +24,8 @@ import { CALIBERS, AMMO_TYPES, AMMO_GEAR, ROUND_SUPPLIES, AMMO_MIX, HAND_SUPPLIE
 import { ARSENAL_FINDS } from "../src/sim/data-guns.js";
 import { MAGAZINES, INTERNAL, CLIPS } from "../src/sim/data-kit.js";
 import { RETAIL_BOX, BULK } from "../src/sim/data-stacks.js";
-import { hitDamage, ladderRows, gunHit, rung, TARGETS } from "../src/sim/ladder.js";
+import { hitDamage, ladderRows, gunHit, rung, TARGETS, FAR } from "../src/sim/ladder.js";
+import { spreadMult } from "../src/sim/data-ammo.js";
 import { itemPoints, slotPoints } from "../src/sim/custompoints.js";
 
 let passes = 0, fails = 0;
@@ -71,6 +72,9 @@ check(ed("guns", "pistol22", "close") && ed("guns", "pistol22", "close")[0] === 
 check(!ed("guns", "turret_m2", "aim") && !ed("guns", "turret_m2", "rarity"), "the turrets (numbers from code, no item) are read-only");
 check(/^data-ammo\.js:/.test(ed("rounds", "556_fmj", "tier") || "") && /^data-ammo\.js:/.test(ed("rounds", "556_fmj", "value") || ""), "a round's tier and value: ROUND_ECON");
 check(/^data-ammo\.js:/.test(ed("rounds", "12ga_slug", "penSet") || "") && !ed("rounds", "556_fmj", "penSet"), "a type's own pen for a calibre is editable; none set: nothing");
+check(["spreadFull", "spreadDrop", "spreadMin"].every((f) => /^data-ammo\.js:/.test(ed("types", "buck", f) || "") && /^data-ammo\.js:/.test(ed("types", "bird", f) || "")) && !ed("types", "slug", "spreadFull"), "buckshot's and birdshot's spread fall-off is editable (AMMO_TYPES); a slug has none");
+check(/^data-guns\.js:/.test(ed("guns", "p90", "dmgLo") || "") && /^data-guns\.js:/.test(ed("guns", "revolver44", "value") || "") && /^data-guns\.js:/.test(ed("guns", "g3", "dur") || "") && /^data-guns\.js:/.test(ed("guns", "famas", "rarity") || ""), "the more-calibres guns are editable in their own tables (CALIBRE_WEAPONS / CALIBRE_GEAR / CALIBRE_DUR / CALIBRE_RARITY)");
+check(/^data-kit\.js:/.test(ed("mags", "mag_p90_50", "cap") || "") && /^data-kit\.js:/.test(ed("feeds", "lever44", "perReload") || "") && /^data-stacks\.js:/.test(ed("boxes", "44mag_hp", "n") || ""), "their magazines, internal feeds and box sizes are editable (CALIBRE_MAGS, CALIBRE_INTERNAL, RETAIL_BOX)");
 check(/^data-kit\.js:/.test(ed("mags", "mag_ak_30", "cap") || "") && /^data-stacks\.js:/.test(ed("boxes", "9mm", "n") || ""), "magazines (data-kit.js), box sizes (data-stacks.js)");
 check(/^gunmods\.js:/.test(ed("parts", "reddot", "aim") || "") && /^data-gunmods\.js:/.test(ed("parts", "aimpoint", "aim") || "") && /^data-gunmods\.js:/.test(ed("parts", "cheapdot", "value") || "") && /^data\.js:/.test(ed("parts", "reddot", "value") || ""), "attachments: numbers in gunmods.js LEGACY / data-gunmods.js MOD_ATTACH, the catalogue items in PART_INFO");
 check(/^data-ammo\.js:/.test(ed("rarity", "rare", "find") || "") && /^data-guns\.js:/.test(ed("rarity", "rare", "gunFind") || ""), "rarity weights: RARITY_FIND and ARSENAL_FINDS.FIND_W");
@@ -104,6 +108,7 @@ for (const k of ranged) {
     cmp("gun hit, no armour (gunHit)", CALC.guns.hitBare(k), g.bare);
     cmp("gun hit, vest (gunHit)", CALC.guns.hitVest(k), g.vest);
     cmp("gun hit, plate", CALC.guns.hitPlate(k), r1(hitDamage(w.cal, CALIBERS[w.cal].base, TARGETS.plate, { base: (w.dmg[0] + w.dmg[1]) / 2 })));
+    cmp("gun hit at range (buckshot's spread, gunHit)", CALC.guns.hitFar(k), spreadMult(CALIBERS[w.cal].base, FAR) < 1 ? gunHit(w, null, FAR).bare : null);
   }
   if (GEAR[k]) {
     cmp("gun points (itemPoints)", CALC.guns.points(k), itemPoints(k));
@@ -119,6 +124,7 @@ for (const r of ladderRows()) {
   cmp("round hit, vest", CALC.rounds.vest(k), r.vest);
   cmp("round hit, plate", CALC.rounds.plate(k), r.plate);
   cmp("round hit past reach", CALC.rounds.past(k), r.past);
+  cmp("round hit at range (spread)", CALC.rounds.far(k), r.far);
   cmp("round pen (ammoPen)", CALC.rounds.pen(k), r.pen);
 }
 for (const k of rounds) {
@@ -137,13 +143,14 @@ for (const [what, list] of Object.entries(bad)) check(false, `${what}: ${list.le
 check(!Object.keys(bad).length, "every live formula equals the game's for every row");
 // A live column follows an edit: the M4's damage up, its hits up; the .308's reference down, its rung down.
 {
-  const edits = { "guns|m4|dmgHi": 41, "calibres|308|refLo": 20, "rounds|556_fmj|tier": "rare", "types|slug|soft": 2 };
+  const edits = { "guns|m4|dmgHi": 41, "calibres|308|refLo": 20, "rounds|556_fmj|tier": "rare", "types|slug|soft": 2, "types|buck|spreadDrop": 0.15 };
   const get2 = (t, k, f) => (`${t}|${k}|${f}` in edits ? edits[`${t}|${k}|${f}`] : base(t, k, f));
   const C2 = makeCalc(get2, data.S);
   check(C2.guns.hitBare("m4") > CALC.guns.hitBare("m4") && C2.guns.band("m4") > CALC.guns.band("m4"), "an edited gun's hits and band recompute");
   check(C2.calibres.rung("308") < CALC.calibres.rung("308") && C2.rounds.bare("308_sp") < CALC.rounds.bare("308_sp"), "an edited calibre reference moves its rung and rounds");
   check(C2.rounds.findW("556_fmj") === data.tables.find((t) => t.id === "rarity").rows.find((r) => r.key === "rare").v.find && C2.rounds.mixAll("556_fmj") < CALC.rounds.mixAll("556_fmj"), "an edited tier changes the find weight and the find mix");
   check(C2.rounds.bare("12ga_slug") > CALC.rounds.bare("12ga_slug"), "an edited type multiplier moves the round");
+  check(C2.rounds.far("12ga_buck") < CALC.rounds.far("12ga_buck") && C2.guns.hitFar("shotgun") < CALC.guns.hitFar("shotgun") && C2.rounds.bare("12ga_buck") === CALC.rounds.bare("12ga_buck"), "an edited spread fall-off moves buckshot's hit at range only");
 }
 
 // ---------- export / import ----------

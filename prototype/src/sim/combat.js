@@ -85,7 +85,7 @@ import { throwLanding } from "./throwables.js"; // a thrown spear lands like any
 import { BLADE_WEAPONS, BLADE_KIT_PATCH } from "./data-blades.js"; // knives and swords (merged below)
 import { NL_WEAPONS, NL_KIT_PATCH } from "./data-nonlethal.js"; // the stun baton; tasers and spray on guards (merged below)
 import { nlHit, nlDown, nlAfterHit, nlAimPen, nlNoOw, nlStrike, nlAct, nlSetup, nlEnemyPhase, nlTurnStart, nlAI, nlBreak, nlBattleEnd, nlRaidEnd, nlDropPiles, nlSpared, blinded, setTakeAlive } from "./nonlethal.js"; // non-lethal weapons, taking people alive, surrender
-import { ammoPen } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult)
+import { ammoPen, spreadMult } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult); shot spreading with range
 import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
 import { calOf, calName, roundsOf, takeBattleRounds, sideRounds, chooseLoad, enemyLoad, pickLoad, boxesOf, sweepBoxes, formFinds, typeFx, typeFor, roundName, settleBase, settleParty, drawTeamShots, ammoEdge, refundShots, softMult, bodyRounds, sortFind, raidTheme } from "./ammo.js"; // rounds by calibre and type
 import { loadFx, unitRound, loadRefusal } from "./ammo.js"; // calibre compatibility (2026-10-10): the round loaded, a 5.56 gun's .223
@@ -106,6 +106,7 @@ import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, 
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
 import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js"; // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
+import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a kit, a body or a room yields
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -2440,6 +2441,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const d = dist(ax, ay, t.x, t.y);
   const gm = unitMods(a); // gunmods.js: the gun's sight, muzzle, magazine and grip (neutral without any)
   const rg = gm === NO_MODS ? w : modRange(w, gm);
+  const aty = calOf(a.weapon) ? typeFor(calOf(a.weapon), a.load) : null; // the load ("sp", a shotgun's "buck"; another calibre's "223:sp")
   const af = calOf(a.weapon) ? loadFx(a) : {}; // ammo.js: the loaded type (match, slugs, birdshot…; a common round: nothing), and a round of another calibre the gun takes (.223 in a 5.56 gun: its damage, +3 aim)
   const opt = rg.opt + (af.opt || 0), fall = rg.fall * (af.fallMult ?? 1);
   const notes = []; // what the moment adds or takes (the UI's odds line): a bipod rested, a moving vehicle, a light round's drop
@@ -2457,6 +2459,10 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const rr = roundReach(w), reach = rr ? rr.reach + (af.opt || 0) : Infinity;
   const slow = d > reach ? rr.dmg ?? 1 : 1; // and a hit there does less (it has slowed)
   if (d > reach) { const drop = (d - reach) * rr.drop; aim -= drop; notes.push(`round drops past ${reach} tiles −${Math.round(drop)}${slow !== 1 ? `, damage ×${slow}` : ""}`); }
+  // Buckshot and birdshot spread with range (data-ammo.js spreadMult, user 2026-10-10): past spreadFull tiles a hit does
+  // less, down to spreadMin; a slug keeps its damage. The same rule as ladder.js hitDamage (the balance sheet).
+  const spread = spreadMult(aty, d);
+  if (spread < 1) notes.push(`shot spreads past ${af.spreadFull} tiles, damage ×${Math.round(spread * 100) / 100}`);
   P && mark("The round drops at this range");
   if (d <= 2.5 && (w.close || gm.close || af.close)) aim += (w.close || 0) + gm.close + (af.close || 0);
   P && mark("Up close");
@@ -2521,7 +2527,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   P && mark("Target on a ladder or a ram");
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
   const crit = opts.reaction ? 0 : (cov.level === 0 ? (t.kind === "zombie" ? CRIT.DEAD : CRIT.EXPOSED) : CRIT.COVER) + (a.critBonus || 0); // critBonus: Deadeye
-  const ad = (af.dmg ?? 1) * slow; // the loaded type's damage, a light round's past its reach (ROUND_REACH dmg) (hollow points' soft-target bonus: damage, ammo.js softMult)
+  const ad = (af.dmg ?? 1) * slow * spread; // the loaded type's damage, buckshot's spread at range, a light round's past its reach (ROUND_REACH dmg) (hollow points' soft-target bonus: damage, ammo.js softMult)
   return { chance, crit, dmg: [Math.round(w.dmg[0] * a.dmgMult * gm.dmg * ad), Math.round(w.dmg[1] * a.dmgMult * gm.dmg * ad)], cover: cov.level, flanked: cov.flanked, exposed: !cov.any && t.kind !== "zombie", dist: d, height: up, notes, ...(P ? { parts: P, aim } : {}) };
 }
 
@@ -3053,7 +3059,8 @@ export function enemyUnit(b, rng, kind, power, n) {
     };
   }
   const kit = KITS[kind] || KITS.raiders;
-  const weapon = p >= 7 && rng.chance(0.5) ? rng.pick(kit.strong) : rng.pick(kit.weapons);
+  const kitPick = p >= 7 && rng.chance(0.5) ? rng.pick(kit.strong) : rng.pick(kit.weapons);
+  const weapon = swapGun(kitGunSource(KITS[kind] ? kind : "raiders"), kitPick, rng); // gundist.js: a gun of their kind in the power band of their list's (a hash of the draw)
   const armorKey = rng.pick(kit.armor);
   const hp = Math.round(55 + p * 5 + kit.hp);
   // gunmods.js ENEMY_MODS: the attachments on their gun by their kit (dice of their own: the battle's are not used up).
@@ -3066,6 +3073,7 @@ export function enemyUnit(b, rng, kind, power, n) {
     load: enemyLoad(kind, weapon, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id), // ammo.js: their round by kit (KIT_AMMO, own dice); never shown (R10)
     aim: 39 + p * 4 + kit.aim, meleeAim: 65 + p * 2, dmgMult: 0.7 + p * 0.05, armor: armorKey ? 1 - GEAR[armorKey].power * 0.06 : 1, armorKey,
     hp, maxHp: hp, mob: MOVE, sight: SIGHT, ap: 2, aware: true, x: 0, y: 0, f: b.floor || 0, fearless: !!kit.fearless, kit: kind,
+    kitPick, // the gun their kit's list gave (floorfolk.js reads the list's, so its dice stay put)
   };
   MED.enemyMedic(b, rng, u, kind); // medics.js: about one group in five of soldiers, guards, militia, fighters has a medic
   loadMag(u); // loaded; their reserve ammo is endless (only the magazine stops them)
@@ -4284,6 +4292,8 @@ function bestShot(b, u, foes, opts = {}) {
   return best;
 }
 
+// A shotgunner's pull toward the foes a tile past its shot's full-damage range (scoreCell; buckshot spreads, data-ammo.js).
+const SPREAD_CLOSE = 1.5;
 function scoreCell(b, u, x, y, foes, cost, field) {
   let s = -cost * 0.4, best = 0, nearest = 99;
   for (const f of foes) {
@@ -4295,13 +4305,19 @@ function scoreCell(b, u, x, y, foes, cost, field) {
     s += c === 2 ? 0 : c === 1 ? -5 : -14;
   }
   if (canFire(b, u)) {
+    // Buckshot and birdshot do less the further off (data-ammo.js spreadMult): a shotgunner's spot is worth what its
+    // shot keeps there, so both sides' shotguns close in rather than plink from afar (1 for any other round).
+    const sty = calOf(u.weapon) ? typeFor(calOf(u.weapon), u.load) : null;
     for (const f of foes) {
       if (dist(x, y, f.x, f.y) > sightRange(b, u, x, y) || !los(b, x, y, f.x, f.y)) continue;
       const o = shotOdds(b, u, f, x, y);
-      best = Math.max(best, o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)); // a target with no cover
+      best = Math.max(best, (o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)) * spreadMult(sty, dist(x, y, f.x, f.y))); // a target with no cover
     }
   }
   s += best * 0.3;
+  // A shotgunner with buckshot loaded also wants to close to where it hits full (spreadFull): a slope toward the foes.
+  const sfull = canFire(b, u) && calOf(u.weapon) ? typeFx(typeFor(calOf(u.weapon), u.load)).spreadFull : null;
+  if (sfull != null && nearest > sfull) s -= (Math.min(nearest, 16) - sfull) * SPREAD_CLOSE;
   if (isSniper(u)) s += sniperCell(nearest); // gunfire.js: a sniper keeps its distance (10–15 tiles)
   // Nothing to shoot: closer to the foes is better, the walking distance up to 40 tiles. A unit standing farther off than
   // that still gets a slope toward them (a team left 40+ tiles off on a big fort map stood still for good:
@@ -6028,7 +6044,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       if (rng.chance(MEDS.BODY_HUMAN)) sup.meds = 1; // medfinds.js
       const kit = KITS[box.kit] || KITS.raiders;
       if (rng.chance(0.3)) {
-        const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : rng.pick(kit.loot);
+        const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : swapGun(bodyGunSource(box.kit), rng.pick(kit.loot), rng); // gundist.js: a spare gun of their kind
         const it = lootItem(key, kitSource(box.kit), spend(rng)); // itemcond.js: a soldier's rifle looked after, a raider's not
         if (key === box.weapon && box.uid != null) { carryMods(unitById(b, box.uid), it); enemyGunLoaded(unitById(b, box.uid), it); } // gunmods.js: their gun's attachments come with it; gunload.js: the rounds left in it
         gear.push(it);
@@ -6060,7 +6076,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
         sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
       splitParts(state, sup, R.areas[box.area].type, `box${box.id}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
-      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(lootItem(key, src, rng));
+      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(lootItem(swapGun(areaSourceName(R.areas[box.area].type, site), key, rng), src, rng)); // gundist.js: which gun, by the room's draws
       const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav, site); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).

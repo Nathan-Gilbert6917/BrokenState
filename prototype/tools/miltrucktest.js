@@ -49,6 +49,7 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { setAutopilot, autopilotResolve } from "../src/sim/autopilot.js";
 import { taskHour } from "../src/sim/orders.js";
 import { roundsInItem, isBulk } from "../src/sim/itemstack.js"; // a truck's rounds boxed or in bulk (2026-10-10)
+import { gunsFrom } from "../src/sim/gundist.js"; // the gun distribution: a truck's gun is one of the Army's (truck:<kind>)
 
 const SEED = Number(process.argv[2] || 7);
 let pass = 0, fail = 0;
@@ -125,8 +126,8 @@ let truckValue = 0;
     avg[`${kind}/${cond}`] = { v: v / N, items: items / N, ammo: ammo / N };
   }
   for (const [k, a] of Object.entries(avg)) console.log(`    ${k.padEnd(16)} value ${Math.round(a.v)}, ${r2(a.items)} items, ${Math.round(a.ammo)} ammo`);
-  const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k)), ...(Object.keys(TRUCK_FLASH).length ? ["flashbang"] : [])]); // TRUCK_GEAR: the weapons overhaul's hook; TRUCK_FLASH: the flashbang hook (TRUCK_LOOT_HOOKS)
-  check([...keys].every((k) => allowed.has(k)), "everything in a truck comes from its loot table (and the roster's and the flashbang hooks)");
+  const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k)), ...(Object.keys(TRUCK_FLASH).length ? ["flashbang"] : []), ...Object.keys(TRUCK_KINDS).flatMap((kind) => Object.keys(gunsFrom(`truck:${kind}`)))]); // TRUCK_GEAR: the weapons overhaul's hook; TRUCK_FLASH: the flashbang hook (TRUCK_LOOT_HOOKS); gundist.js: a listed gun's Army kin (truck:<kind>)
+  check([...keys].every((k) => allowed.has(k)), `everything in a truck comes from its loot table (and the roster's and the flashbang hooks; a gun of the Army's kinds: gundist.js) (stray: ${[...keys].filter((k) => !allowed.has(k)).join(", ") || "none"})`);
   check(["ar", "carbine", "ammo", "plate", "vest", "milhelmet", "nvg", "milradio", "frag", "smokegren", "food", "meds", "assaultpack", "rucksack"].every((k) => keys.has(k)), "military guns, bulk ammo, armour, helmets, night vision, radios, grenades, rations, meds and packs all turn up");
   check(avg["cargo/intact"].v > avg["cargo/wrecked"].v && avg["cargo/wrecked"].v > avg["cargo/burnt"].v * 1.5, "a wrecked truck holds less, a burned-out one much less");
   check(avg["cargo/intact"].ammo >= 50, `an intact cargo truck: ammunition by the crate (${Math.round(avg["cargo/intact"].ammo)} rounds on average)`);
@@ -386,11 +387,12 @@ section("The convoy's guard (miltrucks.js CONVOY_GUARD: more dead soldiers and m
     // AI parity: the trucks' cargo goes home with it (convoyHaul: truckLoot, its condition by itemcond.js; into the
     // group's stock and arsenal through caravanraids.js takeInto / arsenal.js addToArsenal).
     const plan = convoyHaul(st, c), ars0 = f.arsenal ? f.arsenal.items.length : 0, ammo0 = f.stock.ammo || 0;
+    const outs = () => (f.arsenal && f.arsenal.stats ? Object.values(f.arsenal.stats.out).reduce((a, n) => a + n, 0) : 0), out0 = outs(); // the fallen's kit leaves it (arsenal.js partyLost)
     const worthy = plan.gear.filter((it) => arsenalWorthy(it)).length, rich0 = unopenedTrucks(st, c.tile).map((x) => x.rich);
     convoysHour(st);
     check(f.pop === pop0 - lost && (c.aiLost || 0) === lost && c.stripped === 1, `it reaches the convoy: ${lost} of its people fall (group ${pop0} → ${f.pop}), then it strips it`);
     check(plan.value > 0 && c.aiHaul === plan.value && plan.gear.every((it) => condRolled(it)), `it takes the trucks' cargo home (worth ${plan.value}: ${plan.gear.map((it) => it.name).join(", ") || "no gear"}; every piece rolled by itemcond.js)`);
-    check((f.arsenal ? f.arsenal.items.length : 0) - ars0 === worthy && (f.stock.ammo || 0) - ammo0 === (plan.supplies.ammo || 0), `${worthy} guns, armour and grenades into its arsenal, ${plan.supplies.ammo || 0} rounds into its stock`);
+    check((f.arsenal ? f.arsenal.items.length : 0) - ars0 + (outs() - out0) === worthy && (f.stock.ammo || 0) - ammo0 === (plan.supplies.ammo || 0), `${worthy} guns, armour and grenades into its arsenal, ${plan.supplies.ammo || 0} rounds into its stock`);
     check(unopenedTrucks(st, c.tile).every((x, i) => Math.abs(x.rich - rich0[i] * CONVOY.stripKeep) < 1e-9), `the trucks keep ${CONVOY.stripKeep * 100}% of their cargo for whoever comes next`);
     check(!guardedTrucks(st, c.tile).length && convoyGuards(st, c.tile) === 0 && convoyHeat0(st, c.tile) === 0, "a stripped convoy has no guard left (the first group there put them down)");
     const back = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
