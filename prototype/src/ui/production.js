@@ -70,7 +70,7 @@ export function powerCard(state, b) {
   const ps = powerStatus(state, b);
   const row = (u) => {
     const d = BUILDINGS[u.b.type];
-    const st = u.off ? `<span class="chip off">Switched off</span>` : u.served ? `<span class="chip on">Powered</span>` : u.wants ? `<span class="chip off"${tip("Not enough power: build or staff another generator, or switch something off")}>No power</span>` : `<span class="chip"${tip("A workshop station draws power only while its operator works it")}>Not working</span>`;
+    const st = u.b.broken ? `<span class="chip off"${tip("Broken: it draws no power until it is repaired (Repairs tab)")}>Broken</span>` : u.off ? `<span class="chip off">Switched off</span>` : u.served ? `<span class="chip on">Powered</span>` : u.wants ? `<span class="chip off"${tip("Not enough power: build or staff another generator, or switch something off")}>No power</span>` : `<span class="chip"${tip("A workshop station draws power only while its operator works it")}>Not working</span>`;
     return `<tr><td${tip(`${d.desc} Powered: ${POWER_USERS[u.b.type].what}.`)}>${esc(d.name)}</td><td>${u.need}</td><td class="small">${esc(POWER_USERS[u.b.type].what)}</td><td>${st}</td><td><button class="mini" data-action="pw-toggle" data-base="${b.id}" data-id="${u.b.id}"${tip(u.off ? "Let it draw power again" : "Switch its power off (saves fuel)")}>${u.off ? "Switch on" : "Switch off"}</button></td></tr>`;
   };
   const cls = ps.demand > ps.supply ? "danger" : "";

@@ -45,6 +45,8 @@ import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, isCamp, CAMP, SHELTER, tierName, tierUpType, tierUpJob, gatherRows, gatherCap, gatherStalled, gatherShort, matName,
   PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, BENCH, benchType,
 } from "../sim/buildings.js";
+import { isPowered, POWER_USERS, freezerLine } from "../sim/power.js"; // freezer-parts: the machines' chips
+import { isMachine, machineText, machineState } from "../sim/breakdowns.js"; // freezer-parts: machine parts on the cards
 import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, partyFleet, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, payloadOf, upgradeText, upgradeEffects, upgradeOptions, garageQueue, garageJobStatus, vehicleValue, costText, vehicleById, SHOP_TEXT, carPartsCost, carPartsText, stripYield } from "../sim/vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
 import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadview.js";
@@ -1740,13 +1742,34 @@ function boilerNote(state, b) {
   if (!u.active) return `<div class="small good"${tip("Nothing burned while the filters cover the drinking")}>✓ Standing ready: ${u.heads ? "the water filters here purify the day's drinking" : "nobody here"}</div>${toggle}`;
   return `<div class="small ${u.lit ? "" : "danger"}" style="margin-top:0.2rem"${tip(`${u.lit ? "Lit" : "Cold today (nothing to burn: the water is drunk un-purified, or treated with the armory's purification tablets if there is no water filter)"}: burns ${u.text} on the days the purified water in store and the filters do not cover the drinking (about ${Math.round(u.share * 100)}% of days); it purifies the day's drinking for everyone here. Firewood first, then the armory's burnable junk and anything marked to burn, then fuel.`)}>${u.lit ? `🔥 <b>Lit</b>` : `❄ <b>Cold today</b>: nothing to burn`} · burns ${esc(u.text)} · ~${Math.round(u.share * 100)}% of days</div>${toggle}`;
 }
+// Machines (sim/breakdowns.js isMachine; freezer-parts): the on/off chip of a powered one (the freezer says why it is
+// off), and a line of machine parts: what a repair takes, its spares, and each one's wear and last breakdown.
+function machineChip(state, b, t) {
+  const list = b.buildings.filter((x) => x.type === t);
+  if (t === "freezer") {
+    const on = list.filter((x) => isPowered(b, x) && !x.broken).length;
+    return `<span class="chip ${on ? "on" : "off"}"${tip(freezerLine(state, b))}>${on === list.length ? "❄ On" : on ? `${on} of ${list.length} on` : "Off: thawing"}</span>`;
+  }
+  if (POWER_USERS[t] && !BUILDINGS[t].station) {
+    const on = list.filter((x) => isPowered(b, x) && !x.broken).length;
+    return `<span class="chip ${on ? "on" : "off"}"${tip("Power: see the Power card on the Workshops tab")}>${on ? "Powered" : "No power"}</span>`;
+  }
+  if (list.some((x) => x.broken)) return `<span class="chip off">Broken</span>`;
+  return "";
+}
+function machineNote(b, t) {
+  if (!isMachine(t)) return "";
+  const each = b.buildings.filter((x) => x.type === t).map((x) => machineState(x)).filter(Boolean);
+  const parts = BUILDINGS[t].cost.parts ? `built with ${BUILDINGS[t].cost.parts} machine part${BUILDINGS[t].cost.parts === 1 ? "" : "s"}` : "";
+  return `<div class="small"${tip("Machines take machine parts to build, to repair and to keep running (Help: Machines and machine parts)")}>⚙ ${esc([parts, machineText(t)].filter(Boolean).join(" · "))}${each.length ? `<br><span class="muted">${esc(each.join(" | "))}</span>` : ""}</div>`;
+}
 function baseBuildings(state, b) {
   const groups = {};
   for (const x of b.buildings) groups[x.type] = (groups[x.type] || 0) + 1;
   return `<div class="grid2">
     <div>${sectionHead("Built here", "", b.buildings.length)}${Object.keys(groups).length ? `<div class="gcard-grid">${Object.entries(groups).map(([t, n]) => {
       const broken = b.buildings.filter((x) => x.type === t && x.broken).length;
-      return `<div class="gcard ${broken ? "blocked" : "ok"}${t === "boiler" ? " wide" : ""}"${tip(BUILDINGS[t].desc)}><div class="gcard-top"><span class="gcard-title">${esc(BUILDINGS[t].name)}${n > 1 ? ` <span class="sk-count">×${n}</span>` : ""}</span>${broken ? badge(`Broken${n > 1 ? ` ${broken}` : ""}`, "bad", "Broken: it gives nothing until it is repaired (Repairs tab)") : badge("Built", "good")}</div><div class="gcard-desc">${esc(BUILDINGS[t].desc)}</div>${t === "boiler" ? boilerNote(state, b) : ""}</div>`;
+      return `<div class="gcard ${broken ? "blocked" : "ok"}${t === "boiler" ? " wide" : ""}"${tip(BUILDINGS[t].desc)}><div class="gcard-top"><span class="gcard-title">${esc(BUILDINGS[t].name)}${n > 1 ? ` <span class="sk-count">×${n}</span>` : ""}</span>${broken ? badge(`Broken${n > 1 ? ` ${broken}` : ""}`, "bad", "Broken: it gives nothing until it is repaired (Repairs tab)") : machineChip(state, b, t) || badge("Built", "good")}</div><div class="gcard-desc">${esc(BUILDINGS[t].desc)}</div>${t === "boiler" ? boilerNote(state, b) : ""}${machineNote(b, t)}</div>`;
     }).join("")}</div>` : `<div class="muted small">Only a shelter so far. Queue buildings in Construction.</div>`}</div>
     <div>${sectionHead("Bonuses")}<div class="card small">${statRows(buildingSummary(state, b).map(([k, v]) => [k, esc(v)]))}</div>${blueprintsCard(state, b)}</div>
   </div>`;
@@ -1821,7 +1844,7 @@ function baseConstruction(state, b, ui) {
     const status = queuedN ? badge(`Queued${queuedN > 1 ? ` ×${queuedN}` : ""}`, "busy") : chk.ok ? "" : lock ? badge("Locked", "muted") : chk.noPlot ? badge("No plot", "bad") : short ? badge("Short", "bad") : /Limit reached|Already built/.test(chk.reason) ? badge("Max", "muted") : badge("Not yet", "muted");
     return `<div class="gcard ${state_}"${tip(d.desc)}>
       <div class="gcard-top"><span class="gcard-title">${esc(d.name)}${have ? ` <span class="muted small"${tip(`${have} standing here, ${d.max} at most`)}>${have}/${d.max}</span>` : ""}${status}</span><button class="mini${chk.ok ? " primary" : ""}" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>
-      <div class="gcard-desc">${esc(firstSentence(d.desc))}</div>
+      <div class="gcard-desc">${esc(firstSentence(d.desc))}</div>${isMachine(k) ? `<div class="small muted"${tip("A machine: it wears, breaks down and takes machine parts to keep (Help: Machines and machine parts)")}>⚙ ${esc(machineText(k))}${POWER_USERS[k] ? ` · draws ${POWER_USERS[k].need} power` : ""}</div>` : ""}
       <div class="gcard-foot">${costChips(d.cost, b.stock, { tips: (c, h, n) => `${supName(c)}: ${n} needed, ${n0(h)} in the stores${d.gather ? " (taken from the stores as it comes in)" : ""}` })}${chip({ icon: "⏱", name: `${d.hours}h`, t: `${d.hours} work-hours for the builders` })}</div>
       ${!chk.ok && !short && !lock ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${lock}
     </div>`;

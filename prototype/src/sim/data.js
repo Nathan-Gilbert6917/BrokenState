@@ -632,6 +632,12 @@ Object.assign(GEAR, {
 });
 // Where they turn up: loot.js SITE_FINDS (their own dice, so adding them changes no other loot roll).
 
+// ---------- machines for food (freezer-parts 2026-10-10; crafted only: crafting.js CRAFTS) ----------
+// The pressure canner: kept in a base's armory, every preserving kitchen there jars buildings.js CANNER.out more a day.
+Object.assign(GEAR, {
+  canner: { name: "Pressure canner", slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, bulky: true, canner: true, weight: 7, cat: "tools", desc: "A heavy pot with a locking lid, a gauge and a relief valve, its gasket and clamps machined at the workshop. In a base's armory: every preserving kitchen there jars 1 more preserved food a day (bigger batches, safely, under pressure)." },
+});
+
 // ---------- gun safes and gun cases (gunsafes.js, locks.js; docs/weapons-overhaul-plan.md section 19) ----------
 // The safe-cracking tools (carried, never worn: locks.js reads them on the person) and the gun cases, which hold a gun
 // and a little ammo (item.contents, item.sup; item.locked: a cheap lock on it). Where they turn up: gunsafes.js

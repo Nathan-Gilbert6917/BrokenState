@@ -21,7 +21,7 @@
 // Fresh game (hunting.js, base.meat: the share of the fresh food that is game or fish) is eaten first, dried first by
 // the racks, and spoils faster than other fresh food on top of the stores' rate (hunting.js baseGameDaily).
 import { log, residents, atBase } from "./world.js";
-import { count } from "./buildings.js";
+import { count, countAll } from "./buildings.js";
 import { poweredType } from "./power.js";
 import { rackLimit } from "./production.js";
 import * as Weather from "./weather.js";
@@ -29,7 +29,7 @@ import { spoilMult } from "./skills.js";
 import { meatAt, baseGameDaily } from "./hunting.js";
 import { wormMeatAt, wormVegAt, smokeWormMeat } from "./worm.js";
 
-export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150, crates: 30 };
+export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150, crates: 30, freezer: 300 }; // freezer: freezer-parts hook (below)
 // Spoilage per day at a mild temperature (5–24 °C mean): cellar, dry store, outside, preserved.
 export const RATE = { cellar: 0.005, dry: 0.008, outside: 0.03, preserved: 0.001 };
 export const RACK = { food: 4, out: 3, keepDays: 15 };   // drying rack: food in, preserved out, days of eating kept fresh
@@ -49,6 +49,7 @@ export function storeRate(kind, temp, { wet = false, heat = false } = {}) {
   if (kind === "dry") return RATE.dry * (cold ? 0.6 : hot ? 1.4 : 1) * (wet ? 1.15 : 1);
   if (kind === "cold") return temp < 0 ? 0.001 : temp < 5 ? 0.002 : temp < 15 ? 0.005 : 0.012;
   if (kind === "freezer") return temp < 0 ? 0.001 : 0.002; // a cold store on generator power (power.js)
+  if (kind === "walkin") return RATE.cellar * 0.05; // freezer-parts hook: the walk-in freezer while on (base.freezerOn)
   if (kind === "preserved") return RATE.preserved * (hot ? 1.5 : 1);
   // Outside: frozen food keeps fairly well; heat and rain rot it fast.
   return RATE.outside * (temp < 0 ? 0.3 : cold ? 0.5 : hot ? 1.6 : 1) * (wet ? 1.4 : 1);
@@ -63,6 +64,15 @@ export function storeSpaces(base) {
   if (count(base, "storehouse")) out.push({ key: "storehouse", name: "Storehouse", kind: "dry", cap: count(base, "storehouse") * STORE.storehouse });
   if (count(base, "crates")) out.push({ key: "crates", name: "Storage crates", kind: "dry", cap: count(base, "crates") * STORE.crates });
   if (count(base, "coldstore")) out.push({ key: "coldstore", name: poweredType(base, "coldstore") ? "Cold store (powered)" : "Cold store", kind: poweredType(base, "coldstore") ? "freezer" : "cold", cap: count(base, "coldstore") * STORE.coldStore });
+  // freezer-parts MINIMAL HOOK, to be replaced by the food-types branch (STORE.freezer, base.freezerOn): the walk-in
+  // freezers (buildings.js freezer) add their room; the ones on (power.js base.freezersOn) keep food at ~0.05× the
+  // cellar's rate, the ones off (no power, broken, switched off) as a pantry. A broken freezer keeps its room.
+  const fz = countAll(base, "freezer");
+  if (fz) {
+    const on = Math.min(fz, base.freezersOn || 0);
+    if (on) out.push({ key: "freezer", name: "Walk-in freezer", kind: "walkin", cap: on * STORE.freezer });
+    if (fz - on) out.push({ key: "freezeroff", name: "Walk-in freezer (off)", kind: "dry", cap: (fz - on) * STORE.freezer });
+  }
   return out;
 }
 export const storeCapacity = (base) => storeSpaces(base).reduce((a, s) => a + s.cap, 0);

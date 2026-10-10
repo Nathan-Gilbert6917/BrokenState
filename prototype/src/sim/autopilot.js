@@ -1972,6 +1972,22 @@ function planRoles(state, base, areas = ALL_AREAS) {
   }
   for (const s of people) if (s.govWatch && (!base.watch || !onWatchNow(state, base, s))) delete s.govWatch;
 
+  // 1d. The generator that keeps a walk-in freezer or a vacuum sealer going (freezer-parts; machineKeeper): one steady
+  // operator, staffed before the plots from the first planning hour and kept (base.genKeeper: the same person every
+  // day while they are here and fit; govWatch leaves them off the night watch, so the generator never stands with
+  // nobody on it at night). Nobody is taken when the freezer and the sealer are broken or switched off, the generator
+  // is broken or held by an order, or the fuel is short (to start: the fuel floor and a day's fuel; to keep going: a
+  // day's fuel above the winter's heating). Real absences (a trip, a hospital bed, illness) hand it to someone else.
+  if (areas.production) {
+    const gen = machineKeeper(state, base);
+    if (gen) {
+      const fit = (x) => !x.inBed && x.alive;
+      const k = [...free].find((x) => x.id === base.genKeeper && fit(x)) || [...free].find((x) => x.role === "operate" && x.station === gen.id && fit(x)) ||
+        ranked("operate", (x) => skill(x, "mechanics"), fit)[0];
+      if (k) { give(k, "operate", gen.id); base.genKeeper = k.id; }
+    } else if (base.genKeeper != null) delete base.genKeeper;
+  }
+
   // 1b. Water before food: a queued water filter gets its crafter first while the water is running short
   // (thirst kills in days; a hungry base still has its stock), or while the water carries the worm's eggs and
   // nothing boils it (worm.js: a filter makes it safe while it lasts).
@@ -2265,6 +2281,19 @@ function stationWorth(state, base, recipe, station = null) {
   if (recipe === "livestock") { const wo = waterOutlook(state, base); return waterIn(st) >= RECIPES.livestock.in.water + 2 && !(wo.net < 0 && wo.daysLeft < 3); }
   return false;
 }
+// The generator a standing freezer or vacuum sealer needs kept running (planRoles 1d), or null. With a keeper already
+// on it the fuel may run down to a day's fuel above the winter's heating; a new keeper waits for the fuel floor.
+function machineKeeper(state, base) {
+  const wants = base.buildings.some((b) => (b.type === "freezer" || b.type === "sealer") && !b.broken && !(base.powerOff && base.powerOff[b.id]));
+  if (!wants) return null;
+  const gen = base.buildings.find((b) => BUILDINGS[b.type] && BUILDINGS[b.type].station === "power" && !b.broken && !orderHold(state, base, b));
+  if (!gen) return null;
+  const fuel = base.stock.fuel || 0;
+  const kept = base.genKeeper != null && atBase(state, base.id).some((s) => s.id === base.genKeeper && s.role === "operate" && s.station === gen.id);
+  const heat = heatFuelWant(state, base);
+  const floor = kept ? POWER.genFuel + (heat.want ? heat.need : 0) : fuelFloor(state, base) + POWER.genFuel;
+  return fuel >= floor || gen.fueled === day(state) ? gen : null;
+}
 // Fuel the governor keeps out of the generator: a decoy fire, the floodlights and the truck (Cautious: its reserve).
 const fuelFloor = (state, base) => (persona(state).reserves ? reserveStatus(state, base).fuel.target : 10 + (heatFuelWant(state, base).want ? heatFuelWant(state, base).need : 0)) + campaignFuelHold(state, base); // needs-gauges: winter heating first, and the campaign's fires
 // The ethanol still (power.js): only the surplus, never while the winter stores fall short.
@@ -2332,9 +2361,9 @@ function roleSummaries(state) {
 const BUILD_AREA = {
   walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
-  huntcabin: "food", farm_plot: "food", greenhouse: "food", animal_pen: "food", cellar: "food", coldstore: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
+  huntcabin: "food", farm_plot: "food", greenhouse: "food", animal_pen: "food", cellar: "food", coldstore: "food", freezer: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
   boiler: "food", cookhouse: "food",
-  ammo_bench: "production", machine_shop: "production", still: "production", generator: "production",
+  ammo_bench: "production", machine_shop: "production", still: "production", generator: "production", sealer: "production",
   craftbench: "production", workbench: "production", toolbench: "production",
 };
 // A full queue still takes the summer store's room (buildWishes `room`: the last weeks of spring and summer) as one
@@ -2582,7 +2611,7 @@ function buildWishes(state, base) {
   }
   // Power (power.js): a still for the surplus once the hub is big enough, then a generator for what it powers.
   if (!count(base, "still") && !queued("still") && pop >= 9 && (st.parts || 0) >= 4 && stillWorth(state, base)) add("still", "turn the surplus food into fuel");
-  if (count(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || count(base, "coldstore")) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop and the cold store");
+  if (count(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || count(base, "coldstore") || countAll(base, "freezer") + queued("freezer")) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop, the cold store and the freezer");
   if (!base.radio && pop >= 8 && (st.parts || 0) >= 9 && best("mechanics") >= 4) add("radio", "live contact with teams out in the field");
   // The coalition is made on the radio (greetings, pacts, invitations: alliance.js): from a dozen people with a
   // Mechanics 4 builder, the station is built once the parts are there (not saved up for: scrap goes to walls first).
@@ -2663,6 +2692,7 @@ function boilerWoodShort(state, base) {
   return need > 0 && baseWoodDay(state, base) < need && woodNeed(state, base).short;
 }
 
+const FREEZER_SPARE = 4; // the freezer's parts kept back for its spares and first repair (foodStoreWishes)
 // Food storage and preserving (storage.js), before it is needed: room for the winter stock (the fresh food now
 // and what the fields still bring in, from mid-summer), a cold store before winter, a drying rack and a
 // preserving kitchen for the summer surplus. Food already stored outside makes the next store urgent.
@@ -2692,6 +2722,12 @@ function foodStoreWishes(state, base, people, queued) {
     else if (outside && !count(base, "crates") && !queued("crates")) add("crates", "a quick stopgap for the food spoiling outside");
   }
   if (can("smoker") && !count(base, "smoker") && people >= 4 && (outside || ((s.key === "summer" || s.key === "autumn") && fresh >= people * 20))) add("smoker", "dry the surplus for the winter");
+  // The walk-in freezer (freezer-parts; buildings.js freezer): once a generator stands and there is fuel to keep it
+  // running (a still, or 30 fuel), at 10+ people with a big fresh stock (15 days of eating, or food outside), and its
+  // parts (5) with FREEZER_SPARE more for its spares and repairs, and its 2 electronics. One at the hub: the second
+  // freezer is left to the player. The vacuum sealer waits for the cooking wave (it has no work yet).
+  if (!countAll(base, "freezer") && !queued("freezer") && count(base, "generator") && people >= 10 && (count(base, "still") || (st.fuel || 0) >= 30) &&
+      (outside || fresh >= people * 15) && (st.parts || 0) >= BUILDINGS.freezer.cost.parts + FREEZER_SPARE && (st.electronics || 0) >= BUILDINGS.freezer.cost.electronics) add("freezer", "a walk-in freezer: the fresh food keeps twenty times longer");
   if (can("kitchen") && !count(base, "kitchen") && people >= 5 && (st.jars || 0) >= 8 && (st.parts || 0) >= 2 && (outside || (winterActive(state, base) && fresh >= people * 20))) add("kitchen", "jar the surplus for the winter");
   return out;
 }
@@ -5040,7 +5076,8 @@ function govWatch(state, base) {
   if (W && !W.gov) return; // the player's own roster
   const people = atBase(state, base.id);
   if (people.length < GOV_WATCH.min) { if (W) delete base.watch; return; }
-  const fit = (s) => s.alive && !s.pinned && !s.inBed && !healthRest(s, state); // the ill rest (sickrest.js)
+  const fit = (s) => s.alive && !s.pinned && !s.inBed && !healthRest(s, state) && s.id !== base.genKeeper; // the ill rest (sickrest.js); the freezer's generator keeper stays on it (planRoles 1d)
+  if (W && base.genKeeper != null) for (const sh of W.shifts) sh.ids = sh.ids.filter((id) => id !== base.genKeeper);
   const h = hourOfDay(state);
   const rank = (list, last) => list.slice().sort((a, b) => (last.has(a.id) - last.has(b.id)) || (tiredLevel(a) - tiredLevel(b)) || (skill(b, "shooting") - skill(a, "shooting")) || (a.id - b.id));
   if (W && h !== GOV_WATCH.hour) {
