@@ -19,7 +19,8 @@ import {
   STARTER_MODS, fitFromPool, wearMuzzle, unitMods, takesMods, modFits, modsFor, slotsOf, fitsSlot, stripMod, migrateMods,
   baseSlots, PLATFORMS, WEAPON_PLATFORM, SLOTS, platformOf, situationalAim, fitAt, stripAt, mountFor,
 } from "../src/sim/gunmods.js";
-import { GUN_WEAPONS } from "../src/sim/data-guns.js";
+import { GUN_WEAPONS, FACTORY_FIT } from "../src/sim/data-guns.js";
+const factoryPart = (gun, part) => (FACTORY_FIT[gun] || []).some(([, keys]) => keys.includes(part));
 import { shotNoise, STEALTH, SUPPRESSIBLE } from "../src/sim/stealth.js";
 import { huntWeaponInfo, drawHordes, HUNT } from "../src/sim/hunting.js";
 import { itemValue } from "../src/sim/valuation.js";
@@ -57,7 +58,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   check(Object.values(ATTACH).every((a) => SLOTS.includes(a.slot) && a.mount === a.slot) && Object.keys(WEAPONS).every((w) => !modsFor(w).length || (!WEAPONS[w].melee && WEAPONS[w].noise > 0)), "every attachment has a slot and fits only real guns (no bows, no melee)");
   check(fitsNone.every((k) => ["can22", "tacscope", "sidemount", "foldstock", "pistolbrace"].includes(k)), `every attachment fits a gun there is now (${fitsNone.join(", ") || "all"} wait for the roster's .22s, AKs and sniper rifles; the pistol brace for an AR pistol)`);
   const cans = Object.keys(ATTACH).filter((k) => (ATTACH[k].noise ?? 1) < 1);
-  check(cans.filter((k) => modFits("revolver", k)).join() === "can9,bottlecan,can9pro" && cans.every((k) => !modFits("pipegun", k)) && cans.filter((k) => modFits("shotgun", k)).join() === "can12", `a revolver takes the pistol-calibre can and a bottle (user, 2026-10-10), the pipe gun none; only the rare shotgun can a shotgun (${cans.join(", ")})`);
+  check(cans.filter((k) => modFits("revolver", k)).join() === "can9,bottlecan,can9pro" && cans.every((k) => !modFits("pipegun", k)) && cans.filter((k) => modFits("shotgun", k)).join() === "can12,cheapcan12", `a revolver takes the pistol-calibre can and a bottle (user, 2026-10-10), the pipe gun none; only the rare shotgun can a shotgun (${cans.join(", ")})`);
   check(!!modFitReason(newItem("revolver"), newItem("pistolcan")) && !!modFitReason(newItem("shotgun"), newItem("riflecan")) && !!modFitReason(newItem("shotgun"), newItem("suppressor")), "fitting one to a revolver or a shotgun is refused");
   check(!modFits("huntrifle", "scope4x") && !modFits("pistol", "scope4x") && !modFits("shotgun", "scope4x"), "the 4× scope: not on the hunting rifle (scoped already), a pistol or a shotgun");
   check(["compbow", "xbow", "crossbow", "knife"].every((k) => !takesMods(k)) && modsFor("pipegun").every((k) => ATTACH[k].slot === "sling"), "bows and melee weapons take nothing, the pipe shotgun only a sling");
@@ -271,7 +272,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
       const list = Object.values(g.mods || {});
       if (list.length) withParts++;
       parts += list.length;
-      if (list.some((m) => !STARTER_MODS.includes(m.key))) cheapOnly = false;
+      if (list.some((m) => !STARTER_MODS.includes(m.key) && !factoryPart(g.key, m.key))) cheapOnly = false; // (a factory part: the hunting rifle's scope)
       if (list.some((m) => modFitReason(g, m))) fits = false;
     }
   }
@@ -294,7 +295,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
       hcGuns++;
       const list = Object.values(g.mods || {});
       hcParts += list.length;
-      if (list.some((m) => !STARTER_MODS.includes(m.key) || modFitReason(g, m))) hcOk = false;
+      if (list.some((m) => (!STARTER_MODS.includes(m.key) && !factoryPart(g.key, m.key)) || modFitReason(g, m))) hcOk = false;
     }
   }
   check(hcGuns > 0 && hcParts > 0 && hcOk, `hardcore starts too: ${hcParts} cheap parts on ${hcGuns} guns over 40 runs`);
@@ -396,7 +397,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   check(guns.every((k) => platformOf(k) && PLATFORMS[platformOf(k)]), `every gun has a platform (${guns.filter((k) => !platformOf(k)).join(", ") || "all"})`);
   check(Object.values(PLATFORMS).every((P) => P.slots.every((x) => SLOTS.includes(x))) && Object.values(WEAPON_PLATFORM).every((p) => PLATFORMS[p]), "every platform's slots are real slots, every weapon's platform is real");
   check(["under", "grip", "rail", "optic", "muzzle"].every((x) => baseSlots("ar").includes(x)), `the AR-15: room under the handguard for a grip or a launcher (${baseSlots("ar").join(", ")})`);
-  check(!baseSlots("huntrifle").includes("optic") && !modFits("huntrifle", "acog") && modFits("huntrifle", "bipod") && modFits("huntrifle", "riflecan"), "the hunting rifle's scope is its own (no sight slot), but it takes a bipod and a suppressor");
+  check(baseSlots("huntrifle").includes("optic") && newItem("huntrifle").mods.optic.key === "huntrifscope" && !modFits("huntrifle", "acog") && modFits("huntrifle", "huntscope") && modFits("huntrifle", "bipod") && modFits("huntrifle", "riflecan"), "the hunting rifle comes with its scope as a part (user pick 2026-10-10: a sight slot), and takes a bipod and a suppressor");
   check(!baseSlots("leverrifle").includes("optic") && slotsOf({ key: "leverrifle", name: "L", mods: { mount: newItem("scopemount") } }).includes("optic"), "the lever-action needs a scope mount for a sight");
   // A built-in bipod (the light machine gun's, the .50's): in its numbers, never fitted.
   GEAR.testlmg = { ...GEAR.ar, name: "Test LMG" }; WEAPON_PLATFORM.testlmg = "m249"; GUN_WEAPONS.testlmg = { cal: "556" };
@@ -453,7 +454,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   const m = gunMods(gunWith("ar", "can556", "sling", "bipod"));
   check(Math.abs(m.jam - 1.3) < 1e-9 && m.aim === 1 && m.moving === 1 && m.brace === 8 && Math.abs(m.noise - 0.55) < 1e-9, `an AR with a 5.56 can, a sling and a bipod: jams ×${m.jam}, aim +${m.aim}, +${m.brace} braced, +${m.moving} on the move, noise ×${m.noise}`);
   check(gunMods(gunWith("pistol", "tritium")).night === 6 && gunMods(gunWith("pistol", "weaponlight")).nightNear === 8 && gunMods(gunWith("pistol", "weaponlight")).light, "tritium +6 at night, a weapon light +8 at night within 6 tiles (and a light)");
-  check(gunMods(gunWith("shotgun", "recoilpad")).aim === 3 && gunMods(gunWith("huntrifle", "recoilpad")).aim === 2, "a recoil pad: +3 on a shotgun, +2 on a rifle");
+  check(gunMods(gunWith("shotgun", "recoilpad")).aim === 3 && gunMods(gunWith("sniper", "recoilpad")).aim - gunMods(newItem("sniper")).aim === 2, "a recoil pad: +3 on a shotgun, +2 on a rifle");
   const ml = newItem("ar"); fitMod(ml, newItem("mlok"));
   check(Math.abs(itemLoad(ml) - itemLoad(newItem("ar")) + 0.2) < 1e-9 && gunMods(ml).weight === -0.2, `an M-LOK handguard makes the gun lighter (${(itemLoad(ml) - itemLoad(newItem("ar"))).toFixed(2)} kg)`);
   // In battle: braced, on the move, at night.

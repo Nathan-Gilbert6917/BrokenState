@@ -68,8 +68,19 @@ export { SLOTS, SLOT_NAMES, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAPON_SLOTS
 export const NO_MODS = Object.freeze({
   aim: 0, close: 0, opt: 0, fall: 0, dmg: 1, cap: 0, capMult: 1, noise: 1, weight: 0, value: 0,
   night: 0, nightNear: 0, peq: 0, brace: 0, moving: 0, jam: 1, thermal: false, light: false, flashless: false, launcher: null,
-  reload: 0, // + shells a tube Reload puts in (a side-saddle: mags.js)
+  reload: 0, // + shells a tube Reload puts in (a side-saddle: mags.js), + rounds a lever-action's (a cartridge cuff)
+  hand: 0, // + loose shells at hand at a fight's start (a buttstock shell holder: mags.js SHELLS.START_HAND)
 });
+// Budget sights drift off zero (user pick 2026-10-10): a budget optic, magnifier or set of rings loses 1 aim every PER
+// fights since it was last zeroed (item.zero: fights since), up to MAX, until it breaks (its dur) or is re-zeroed at a
+// workbench (repair.js rezeroHour: free, every morning, on the guns at a base with a workbench).
+export const DRIFT = { PER: 5, MAX: 4, SLOTS: ["optic", "magnifier", "mount"] };
+/** The aim a fitted part has lost to drift (0 for a part that does not drift). @param {any} m */
+export function driftOf(m) {
+  const a = m && ATTACH[m.key], d = m && GEAR[m.key];
+  if (!a || !d || !d.budget || !DRIFT.SLOTS.includes(a.slot)) return 0;
+  return Math.min(DRIFT.MAX, Math.floor((m.zero || 0) / DRIFT.PER));
+}
 export const MOUNTS = SLOTS; // every slot (the old name: there were four mounts)
 export const MOUNT_NAMES = SLOT_NAMES;
 export const FALL_MIN = 0.5;
@@ -79,8 +90,8 @@ const RIFLE_CALS = ["556", "762x39", "308", "3030"];
 // slot: where it goes (mount: the same, the old name); fits: { cal, plat, any, notCal, notPlat }; short: how it reads
 // in a weapon's name ("9mm pistol (red dot, suppressor)"); look: the gun builder's art.
 const LEGACY = {
-  reddot:    { slot: "optic",    short: "red dot",      look: "reddot",   fits: { plat: ["glock", "p1911", "revolver", "pump", "semi12", "lever", "ar15", "ak", "mp5", "dbl", "ranch"] }, aim: 4 },
-  holo:      { slot: "optic",    short: "holo sight",   look: "holo",     fits: { plat: ["pump", "semi12", "ar15", "ak", "mp5", "m249"] }, aim: 5, close: 3 },
+  reddot:    { slot: "optic",    short: "red dot",      look: "reddot",   fits: { plat: ["glock", "p1911", "revolver", "pump", "semi12", "lever", "ar15", "ak", "mp5", "dbl", "ranch"] }, adds: ["magnifier"], aim: 4 },
+  holo:      { slot: "optic",    short: "holo sight",   look: "holo",     fits: { plat: ["pump", "semi12", "ar15", "ak", "mp5", "m249"] }, adds: ["magnifier"], aim: 5, close: 3 },
   scope4x:   { slot: "optic",    short: "4× scope",     look: "scope4",   fits: { plat: ["lever", "ar15", "ak", "rimrifle", "single", "revolver", "ranch"] }, opt: 3, fall: -0.5, close: -8 },
   laser:     { slot: "tactical", short: "laser",        look: "laser",    fits: { any: true }, aim: 1, close: 6 },
   foregrip:  { slot: "grip",     short: "foregrip",     look: "vgrip",    fits: { any: true, notPlat: ["revolver"] }, aim: 2, close: 2 },
@@ -183,12 +194,12 @@ export function modFits(gunKey, modKey) {
   if (a.can && PLATFORMS[plat].nocan) return false;
   return couldHaveSlot(gunKey, a.slot);
 }
-// Can the gun have this slot: open bare, or opened by a mount or rail that fits it (one level of nesting).
+// Can the gun have this slot: open bare, or opened by parts that fit it, nested (a mount's sight, that sight's
+// magnifier: the slots reachable, reachableSlots).
 function couldHaveSlot(gunKey, slot) {
   const rules = slotRules(gunKey);
   if (rules.never.has(slot)) return false;
-  if (rules.slots.includes(slot)) return true;
-  return Object.keys(ATTACH).some((k) => ATTACH[k].adds && rules.slots.includes(ATTACH[k].slot) && opensOn(gunKey, k, rules).includes(slot) && partFitsStatic(gunKey, k));
+  return rules.slots.includes(slot) || reachableSlots(gunKey).includes(slot);
 }
 // modFits without the slot test (for the parts that open slots: their own slot is a base one): calibre, platform and
 // the slot's part list (a revolver's grip slot takes its grips, its light / laser slot a laser grip).
@@ -212,10 +223,17 @@ export const takesMods = (gunKey) => baseSlots(gunKey).length > 0;
 export const modsFor = (gunKey) => Object.keys(ATTACH).filter((k) => modFits(gunKey, k));
 const nameOf = (key) => (GEAR[key] ? GEAR[key].name : key);
 // Every slot a gun can have: bare, or opened by a mount or a rail that fits it (the balance sheet, tools/gunslottest.js).
+const OPENERS = Object.keys(ATTACH).filter((k) => ATTACH[k].adds);
 export function reachableSlots(gunKey) {
   const rules = slotRules(gunKey);
   const out = new Set(rules.slots);
-  for (const k of Object.keys(ATTACH)) if (ATTACH[k].adds && rules.slots.includes(ATTACH[k].slot) && partFitsStatic(gunKey, k)) for (const s of opensOn(gunKey, k, rules)) out.add(s);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const k of OPENERS) {
+      if (!out.has(ATTACH[k].slot) || !partFitsStatic(gunKey, k)) continue;
+      for (const s of opensOn(gunKey, k, rules)) if (!out.has(s)) { out.add(s); grew = true; }
+    }
+  }
   return SLOTS.filter((s) => out.has(s));
 }
 // The parts that fit a gun, by slot: { slot: [part keys] }.
@@ -394,6 +412,77 @@ const PLAYER_ROOTS = ["survivors", "parties", "bases"];
 // carrying it (inventory.js stow), else the armory of the base it is at, else (the player's people, teams and bases)
 // the home armory. A part with nowhere to go stays on the gun (gunMods never counts a part that does not fit).
 // Returns [{ part, gun, where }] (where: "armory", "kit:<name>", "beside", "" for left on).
+// A walk over the state for the load-time fixes (relocateMisfits, migrateParts): visit(o, ctx, keep) on every plain
+// object; keep(item, ctx) puts an item by where the walk is (relocateMisfits' rules) and says where ("" for nowhere).
+function walkKept(state, visit) {
+  const seen = new Set();
+  const hubArmory = () => {
+    const h = (state.bases || []).find((b) => b && b.type === "hub") || (state.bases || [])[0];
+    return h && Array.isArray(h.armory) ? h.armory : null;
+  };
+  const keep = (part, ctx) => {
+    if (ctx.list && ctx.listName === "armory") { ctx.list.push(part); return "armory"; }
+    if (ctx.person) {
+      try { if (stow(ctx.person, part)) return `kit:${ctx.person.name || "someone"}`; } catch { /* a malformed person: keep looking */ }
+    }
+    if (ctx.armory) { ctx.armory.push(part); return "armory"; }
+    if (PLAYER_ROOTS.includes(ctx.root)) { const a = hubArmory(); if (a) { a.push(part); return "armory"; } }
+    return "";
+  };
+  const isPerson = (o) => o && typeof o === "object" && o.gear && typeof o.gear === "object" && Array.isArray(o.pockets);
+  const walk = (o, ctx) => {
+    if (!o || typeof o !== "object" || seen.has(o) || ArrayBuffer.isView(o)) return;
+    seen.add(o);
+    if (o instanceof Map) { for (const v of o.values()) walk(v, { ...ctx, list: null }); return; }
+    if (o instanceof Set) { for (const v of o) walk(v, { ...ctx, list: null }); return; }
+    if (Array.isArray(o)) { for (const v of [...o]) walk(v, { ...ctx, list: o }); return; }
+    visit(o, ctx, keep, seen);
+    const next = { ...ctx };
+    if (isPerson(o)) next.person = o;
+    if (Array.isArray(o.armory)) next.armory = o.armory;
+    for (const k of Object.keys(o)) {
+      const v = o[k];
+      if (v && typeof v === "object") walk(v, { ...next, listName: k, root: ctx.root ?? (o === state ? k : null) });
+    }
+  };
+  walk(state, { root: null, list: null, listName: null, person: null, armory: null });
+}
+// Parts of 2026-10-10 that became others (user picks): a holo sight and magnifier in one (holomag) is now a holo sight and
+// a magnifier, the budget set (cheapmag) a budget red dot and a budget magnifier; and the hunting rifle's scope is a part
+// now (data-guns.js FACTORY_FIT): a hunting rifle from before gets it fitted (its numbers came down by as much).
+export const SPLIT_PARTS = { holomag: ["holo", "magnifier"], cheapmag: ["cheapdot", "cheapmagnifier"] };
+// On load (save.js, once: state.attachV 2). Returns { split, scoped }: how many of each.
+export function migrateParts(state) {
+  const out = { split: 0, scoped: 0 };
+  const remake = (old, key) => { const it = makeMod(key, old.quality ?? 1); if (old.dur != null && GEAR[key] && GEAR[key].dur) it.dur = Math.min(GEAR[key].dur, old.dur); return it; };
+  walkKept(state, (o, ctx, keep, seen) => {
+    if (typeof o.key !== "string" || o.quality == null) return; // items only (a new-run pick is { key, mods: { slot: key } })
+    if (o.mods && typeof o.mods === "object" && GEAR[o.key] && GEAR[o.key].slot === "weapon") {
+      for (const [slot, m] of Object.entries(o.mods)) {
+        const sp = m && SPLIT_PARTS[m.key];
+        if (!sp) continue;
+        o.mods[slot] = remake(m, sp[0]);
+        const mag = remake(m, sp[1]);
+        if (!o.mods.magnifier) o.mods.magnifier = mag; else keep(mag, ctx);
+        seen.add(o.mods[slot]); seen.add(mag);
+        out.split++;
+      }
+      if (o.key === "huntrifle" && !(o.mods && o.mods.optic)) { o.mods.optic = makeMod("huntrifscope", o.quality ?? 1); seen.add(o.mods.optic); out.scoped++; }
+      return;
+    }
+    if (o.key === "huntrifle" && o.name) { o.mods = { optic: makeMod("huntrifscope", o.quality ?? 1) }; seen.add(o.mods.optic); out.scoped++; return; }
+    const sp = SPLIT_PARTS[o.key];
+    if (sp && o.name && !GEAR[o.key]) {
+      const first = remake(o, sp[0]);
+      Object.assign(o, first); if (first.dur == null) delete o.dur;
+      const mag = remake({ quality: o.quality }, sp[1]);
+      seen.add(mag);
+      keep(mag, ctx);
+      out.split++;
+    }
+  });
+  return out;
+}
 export function relocateMisfits(state) {
   const moved = [];
   const seen = new Set();
@@ -455,7 +544,7 @@ export function gunMods(item) {
     out.aim += (a.aim || 0) + ((a.aimBy && a.aimBy[plat]) || 0); out.close += a.close || 0; out.opt += a.opt || 0; out.fall += a.fall || 0;
     out.dmg *= a.dmg ?? 1; out.cap += a.cap || 0; out.capMult *= a.capMult ?? 1; out.noise *= a.noise ?? 1;
     out.night += a.night || 0; out.nightNear += a.nightNear || 0; out.peq = Math.max(out.peq, a.peq || 0);
-    out.brace += a.brace || 0; out.moving += a.moving || 0; out.jam *= a.jam ?? 1; out.reload += a.reload || 0;
+    out.brace += a.brace || 0; out.moving += a.moving || 0; out.jam *= a.jam ?? 1; out.reload += a.reload || 0; out.hand += a.hand || 0;
     if (a.thermal) out.thermal = true;
     if (a.light) out.light = true;
     if (a.flashless) out.flashless = true;
@@ -466,6 +555,7 @@ export function gunMods(item) {
     if (!modFits(item.key, m.key)) continue; // never on the wrong gun (a save edited by hand)
     const a = ATTACH[m.key];
     sum(a);
+    out.aim -= driftOf(m); // a budget sight off zero
     out.weight += fittedKg(m);
     const d = GEAR[m.key];
     out.value += d ? d.value || 0 : 0;
@@ -548,6 +638,7 @@ export function wearMakeshiftMods(item, n = 1) {
   for (const [slot, m] of Object.entries((item && item.mods) || {})) {
     if (slot === "muzzle" || !m || !GEAR[m.key] || !GEAR[m.key].dur || !(GEAR[m.key].makeshift || GEAR[m.key].budget)) continue; // a scrap scope, a budget clone
     m.dur = Math.max(0, (m.dur ?? GEAR[m.key].dur) - n);
+    if (GEAR[m.key].budget) m.zero = (m.zero || 0) + n; // fights since it was zeroed (driftOf)
     if (m.dur <= 0) out.push(...stripMod(item, slot).filter((x) => x === m));
   }
   return out;
@@ -584,7 +675,9 @@ export function attachText(key) {
   if (a.flashless) bits.push("no muzzle flash at night");
   if (a.adds) bits.push(`carries ${a.adds.map((s) => (s === "optic" ? "a sight" : s === "grip" ? "a foregrip" : s === "tactical" ? "a light or laser" : `a ${s}`)).join(", ")}`);
   if (a.launcher) bits.push("a 40 mm grenade launcher");
-  if (a.reload) bits.push(`${sgn(a.reload)} shell${a.reload === 1 ? "" : "s"} a tube Reload`);
+  if (a.reload) bits.push(`${sgn(a.reload)} ${a.slot === "cuff" ? "round" : "shell"}${a.reload === 1 ? "" : "s"} a tube Reload`);
+  if (a.hand) bits.push(`${sgn(a.hand)} loose shells at hand at a fight's start`);
+  if (GEAR[key] && GEAR[key].budget && DRIFT.SLOTS.includes(a.slot)) bits.push(`drifts off zero: −1 aim every ${DRIFT.PER} fights (up to −${DRIFT.MAX}) until re-zeroed at a workbench`);
   if (GEAR[key] && GEAR[key].budget) bits.push(`a budget part: wears out in about ${GEAR[key].dur} ${a.slot === "muzzle" ? "shots" : "fights"}`);
   if (Number.isFinite(a.wt)) bits.push(`${sgn(a.wt)} kg fitted`);
   return bits.join(", ");
@@ -620,8 +713,9 @@ export function modsText(item) {
   if (m.brace) bits.push(`${sgn(m.brace)} aim rested on half cover`);
   if (m.moving) bits.push(`${sgn(m.moving)} aim on the move`);
   if (m.night || m.nightNear || m.peq) bits.push("better at night");
+  const off = list.filter((x) => driftOf(x) > 0).map((x) => `${x.name} off zero, −${driftOf(x)} aim (re-zero it at a workbench)`);
   const worn = list.filter((x) => GEAR[x.key] && GEAR[x.key].dur).map((x) => `${x.name}: ${x.dur ?? GEAR[x.key].dur} of ${GEAR[x.key].dur} ${ATTACH[x.key] && ATTACH[x.key].slot !== "muzzle" ? "fights" : "shots"} left`);
-  return `fitted: ${list.map((x) => x.name).join(", ")} (${bits.join(", ") || "no effect"}${worn.length ? `; ${worn.join("; ")}` : ""})`;
+  return `fitted: ${list.map((x) => x.name).join(", ")} (${bits.join(", ") || "no effect"}${worn.length ? `; ${worn.join("; ")}` : ""}${off.length ? `; ${off.join("; ")}` : ""})`;
 }
 
 // ---------- enemies' guns ----------
@@ -632,15 +726,15 @@ export function modsText(item) {
 // bigger magazines. Militia and fighters (hunters at heart): scopes on mounts, recoil pads, bipods and slings.
 // Raiders, survivors and zealots: cheap or makeshift parts (a red dot, an oil filter, a folding stock, a side mount).
 export const ENEMY_MODS = {
-  soldiers: { under: [0.125, ["m203"]], optic: [0.55, ["reddot", "holo", "holo", "scope4x", "acog", "acog", "aimpoint", "aimpoint", "holomag"]], muzzle: [0.25, ["riflecan", "pistolcan", "can556", "flashhider", "flashhider", "can556pro", "flashpro"]], grip: [0.2, ["foregrip", "foregrip", "anglegrip", "vgrippro"]], tactical: [0.25, ["weaponlight", "weaponlight", "laser", "peq", "surefire"]], mag: [0.08, ["drum"]], sling: [0.3, ["sling", "slingpro"]], pgrip: [0.15, ["pgrip"]], stock: [0.1, ["ctrstock"]], receiver: [0.08, ["chandle"]] },
+  soldiers: { under: [0.125, ["m203"]], optic: [0.55, ["reddot", "holo", "holo", "scope4x", "acog", "acog", "aimpoint", "aimpoint", "holo"]], magnifier: [0.15, ["magnifier"]], muzzle: [0.25, ["riflecan", "pistolcan", "can556", "flashhider", "flashhider", "can556pro", "flashpro"]], grip: [0.2, ["foregrip", "foregrip", "anglegrip", "vgrippro"]], tactical: [0.25, ["weaponlight", "weaponlight", "laser", "peq", "surefire"]], mag: [0.08, ["drum"]], sling: [0.3, ["sling", "slingpro"]], pgrip: [0.15, ["pgrip"]], stock: [0.1, ["ctrstock"]], receiver: [0.08, ["chandle"]] },
   guards:   { optic: [0.1, ["reddot", "rmr", "holopistol", "aimpoint"]], tactical: [0.2, ["laser", "weaponlight", "weaponlight", "pistollight", "lightlaser"]], mag: [0.08, ["extmag", "tubeext"]], receiver: [0.1, ["sidesaddle"]] },
   escorts:  { optic: [0.15, ["scope4x", "reddot"]], bipod: [0.04, ["bipod"]], tactical: [0.04, ["laser"]], mag: [0.06, ["extmag", "tubeext"]] }, // merchant caravans' riflemen (escorts.js)
   contractors: { optic: [0.45, ["reddot", "holo", "scope4x"]], muzzle: [0.15, ["riflecan", "comp"]], grip: [0.08, ["foregrip"]], tactical: [0.08, ["laser"]], mag: [0.08, ["drum"]] }, // their hired guns
-  militia:  { optic: [0.15, ["scope4x", "scope4x", "reddot", "huntscope", "cheapscope"]], bipod: [0.1, ["bipod", "harris", "cheapbipod"]], stock: [0.12, ["recoilpad"]], sling: [0.25, ["sling"]], muzzle: [0.06, ["icchoke", "turkeychoke"]] },
+  militia:  { optic: [0.15, ["scope4x", "scope4x", "reddot", "huntscope", "cheapscope"]], bipod: [0.1, ["bipod", "harris", "cheapbipod"]], stock: [0.12, ["recoilpad"]], sling: [0.25, ["sling"]], muzzle: [0.06, ["icchoke", "turkeychoke"]] , cuff: [0.1, ["buttcuff", "cheapcuff", "riflecuff"]] },
   fighters: { optic: [0.12, ["scope4x", "reddot", "holosun", "cheapdot"]], grip: [0.04, ["foregrip", "cheapgrip"]], bipod: [0.04, ["bipod", "cheapbipod"]], mag: [0.05, ["extmag", "tubeext"]], sling: [0.1, ["sling"]], receiver: [0.04, ["cheapsaddle"]] },
-  raiders:  { mount: [0.06, ["sidemount"]], optic: [0.1, ["reddot", "cheapdot", "cheapdot", "cheapholo"]], muzzle: [0.1, ["comp", "suppressor", "choke", "cheapcan", "cheapcomp"]], mag: [0.08, ["extmag", "tubeext"]], stock: [0.08, ["foldstock", "cheapstock"]], tactical: [0.06, ["cheaplaser", "cheaplight"]] },
-  survivors: { optic: [0.05, ["reddot", "cheapdot"]], muzzle: [0.04, ["suppressor", "comp", "choke"]], mag: [0.04, ["extmag"]], sling: [0.05, ["sling"]], tactical: [0.04, ["cheaplight", "cheaplaser"]] },
-  zealots:  { muzzle: [0.05, ["choke"]] },
+  raiders:  { mount: [0.06, ["sidemount"]], optic: [0.1, ["reddot", "cheapdot", "cheapdot", "cheapholo"]], muzzle: [0.1, ["comp", "suppressor", "choke", "cheapcan", "cheapcomp", "cheapcan308", "cheapcan12"]], mag: [0.08, ["extmag", "tubeext", "mag_ak_75c"]], stock: [0.08, ["foldstock", "cheapstock"]], tactical: [0.06, ["cheaplaser", "cheaplight"]] },
+  survivors: { optic: [0.05, ["reddot", "cheapdot"]], muzzle: [0.04, ["suppressor", "comp", "choke"]], mag: [0.04, ["extmag"]], sling: [0.05, ["sling", "cheapsling"]], tactical: [0.04, ["cheaplight", "cheaplaser"]] },
+  zealots:  { muzzle: [0.05, ["choke"]] , cuff: [0.06, ["cheapcuff", "buttcuff"]] },
 };
 // A number in [0, 1) from any parts (no random numbers used up: the battle's dice stay as they were).
 function h01(...parts) {
@@ -698,7 +792,7 @@ export function enemyMods(kit, weapon, seed, salt) {
 export const STARTER_MODS = ["suppressor", "reddot", "laser", "comp", "extmag", "choke", "tubeext", "foregrip",
   "recoilpad", "revgrip", "sling", "flashhider", "anglegrip", "scopemount", "tritium",
   // the parts catalogue (2026-10-10): the cheap clones and the common civilian parts a household gun carries
-  "cheapdot", "cheaplaser", "cheaplight", "cheapgrip", "cheapbipod", "cheapmount", "cheaprevgrip", "cheapsaddle", "cheappgrip", "icchoke", "handstop"];
+  "cheapdot", "cheaplaser", "cheaplight", "cheapgrip", "cheapbipod", "cheapmount", "cheaprevgrip", "cheapsaddle", "cheappgrip", "icchoke", "handstop", "cheapsling", "cheapcuff"];
 export const STARTER = { none: 0.3, two: 0.2 }; // 30% of guns come bare, 20% with two parts, the rest with one
 // Fits 0–2 cheap parts that suit the gun, drawn by 1 / value (the cheapest most often). rng: the run's seeded
 // generator; its position is read, never moved, so the rest of the world comes out exactly as before. Returns the
@@ -731,14 +825,16 @@ export function randomStarterMods(rng, item, salt = "") {
 // a sling half its bonus (only some shots), a bipod a quarter (only rested on half cover in the line of fire:
 // MOD_SCORE.rest, user pick G5), night aids a little, jams against.
 export const MOD_SCORE = { rest: 0.25 };
+const OPENER_SLOTS = ["mount", "rail"];
+const isOpener = (a) => !!(a && a.adds && OPENER_SLOTS.includes(a.slot));
 export function modScore(key) {
   const a = ATTACH[key];
   if (!a) return 0;
-  if (a.adds) return 0.5; // a mount or rail: only for what it carries
+  if (a.adds && OPENER_SLOTS.includes(a.slot)) return 0.5; // a mount or rail: only for what it carries
   return (a.aim || 0) + 0.5 * (a.close || 0) + 0.8 * (a.opt || 0) - 2 * (a.fall || 0) - 20 * (1 - (a.dmg ?? 1))
     + 6 * (1 - (a.noise ?? 1)) + 0.25 * (a.cap || 0) + 3 * ((a.capMult ?? 1) - 1) + (GEAR[key] && GEAR[key].dur ? -1 : 0)
     + MOD_SCORE.rest * (a.brace || 0) + 0.5 * (a.moving || 0) + 0.25 * ((a.night || 0) + (a.nightNear || 0) + (a.peq || 0)) - 4 * ((a.jam ?? 1) - 1)
-    + (a.thermal ? 2 : 0) + (a.launcher ? -1 : 0) + 1.5 * (a.reload || 0);
+    + (a.thermal ? 2 : 0) + (a.launcher ? -1 : 0) + 1.5 * (a.reload || 0) + 0.3 * (a.hand || 0);
 }
 // Fits loose attachments from pool (an armory list) to the guns given (best first), one per free slot and only where
 // it helps (modScore > 0); a mount or a rail only when what it carries is in the pool too. Takes what it fits out of
@@ -753,14 +849,14 @@ export function fitFromPool(pool, guns) {
       let best = null;
       for (const it of pool) {
         const a = it && ATTACH[it.key];
-        if (!a || a.slot !== slot || a.adds || modScore(it.key) <= 0 || fitsSlot(gun, it)) continue;
+        if (!a || a.slot !== slot || isOpener(a) || modScore(it.key) <= 0 || fitsSlot(gun, it)) continue;
         if (!best || modScore(it.key) > modScore(best.key)) best = it;
       }
       if (best) { take(gun, best); continue; }
       // A sight or a grip for which the gun needs a mount or a rail first, both in the pool.
       for (const it of pool) {
         const a = it && ATTACH[it.key];
-        if (!a || a.slot !== slot || a.adds || modScore(it.key) <= 0 || !modFits(gun.key, it.key)) continue;
+        if (!a || a.slot !== slot || isOpener(a) || modScore(it.key) <= 0 || !modFits(gun.key, it.key)) continue;
         const opener = pool.find((o) => o && ATTACH[o.key] && ATTACH[o.key].adds && ATTACH[o.key].adds.includes(slot) && !(gun.mods && gun.mods[ATTACH[o.key].slot]) && !fitsSlot(gun, o));
         if (!opener) continue;
         take(gun, opener);
@@ -803,5 +899,9 @@ export const GUNMODS_HELP = `Sights, mounts, suppressors, muzzle brakes, bigger 
   red dot, a SureFire-style light, a Magpul-style stock, a Harris-style bipod: dearer, better, found at gun stores,
   police stations and the military) and as a cheap Chinese clone or an airsoft-grade copy (a budget red dot, an
   airsoft laser, a fuel-filter can: a fraction of the price, weaker, and they wear out and fall apart after some
-  fights, found in homes, malls, pawn shelves and with cheap traders). A 5.56, 7.62×39 or .22 round drops past 10 tiles (9 for the 7.62×39 and the .22), a pistol round past 8, scope
+  fights, found in homes, malls, pawn shelves and with cheap traders). A budget sight drifts off zero: −1 aim every 5
+  fights (up to −4) until it is re-zeroed: every morning at a base with a workbench. A 3× magnifier goes behind a red
+  dot or holo sight on a rifle or shotgun (fit the sight first). A buttstock shell holder keeps 5 more shells at hand
+  (3 for the elastic one) on a shotgun with a stock; a cartridge cuff puts a round more in a lever-action each Reload.
+  The hunting rifle comes with its 3–9× scope as a part: take it off for a better one. A 5.56, 7.62×39 or .22 round drops past 10 tiles (9 for the 7.62×39 and the .22), a pistol round past 8, scope
   or not: −2 aim a tile and ×0.85 damage, and no sight pushes its best range past that. None is worth a step of cover.`;

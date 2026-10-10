@@ -38,6 +38,8 @@ export const MAGAZINES = { // (a "c" key: a budget Chinese clone of the one abov
   mag_ak_30:       { plat: ["ak"], cal: "762x39", cap: 30, kg: 0.33, value: 6, pouch: "rifle", name: "AK magazine (30)" },
   mag_ak_45:       { plat: ["ak"], cal: "762x39", cap: 45, kg: 0.4, value: 12, pouch: "rifle", name: "AK magazine (45)" },
   mag_ak_75:       { plat: ["ak"], cal: "762x39", cap: 75, kg: 1.3, value: 40, pouch: "rifle", name: "AK drum (75)", aim: -2, jam: 1.3 },
+  mag_ak_75c:      { plat: ["ak"], cal: "762x39", cap: 75, kg: 1.45, value: 14, pouch: "rifle", name: "Budget AK drum (Chinese clone) (75)", aim: -3, jam: 1.7,
+                     desc: "A cheap copy of a 75-round AK drum with a weak spring: heavy and clumsy (−3 aim) and it feeds badly (jams ×1.7). Fits a Kalashnikov." },
   mag_ar10_10:     { plat: ["ar10"], cal: "308", cap: 10, kg: 0.12, value: 5, pouch: "rifle", name: ".308 rifle magazine (10)" },
   mag_ar10_20:     { plat: ["ar10"], cal: "308", cap: 20, kg: 0.15, value: 8, pouch: "rifle", name: ".308 rifle magazine (20)" },
   mag_bolt_5:      { plat: ["bolt"], cal: "308", cap: 5, kg: 0.1, value: 5, pouch: "rifle", name: "Bolt-action magazine (5)" },
@@ -158,7 +160,7 @@ for (const [k, m] of Object.entries(MAGAZINES)) {
     : (m.guns || []).some((g) => g === "fal" || g === "m1a") ? ["military", "guns", "hunt"] : ["military", "guns", "police", "crash"];
 }
 // The budget clones: where cheap things are (homes, malls, pawn shelves), not armouries.
-for (const k of ["mag_stanag_30c", "mag_glock_17c"]) KIT_TAGS[k] = ["home", "mall", "shop", "crime", "sport"];
+for (const k of ["mag_stanag_30c", "mag_glock_17c", "mag_ak_75c"]) KIT_TAGS[k] = ["home", "mall", "shop", "crime", "sport"];
 // Magazines as gun parts (gunmods.js ATTACH: the gun builder's magazine slot lists them by platform).
 /** @type {Record<string, any>} */
 export const KIT_ATTACH = {};

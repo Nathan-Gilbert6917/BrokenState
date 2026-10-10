@@ -70,7 +70,7 @@ export const GUN_ART = {
   fal:     { body: "fal", stock: { t: "fal", c: "wood" }, c: { furn: "wood", hg: "wood" } }, // an old FAL in wood
   m1a:     { body: "m14" },
   aug:     { body: "bullpup", v: "aug" },
-  huntrifle: { body: "bolt", own: { optic: "scope9" } },
+  huntrifle: { body: "bolt" }, // (its scope: a part since 2026-10-10, data-guns.js FACTORY_FIT)
   sniper:  { body: "bolt", r: [19, 32], bar: 54, barRows: 2, taper: false, bead: false, fe: 40, bolt: "tac", stock: { t: "sniper", c: "olive" }, mag: { t: "box", n: 4, w: 4 }, muzzle: "crown", own: { optic: "scope25", bipod: "bipod" }, c: { bar: "dark", fe: "olive" } },
   rifle22: { body: "bolt", r: [19, 30], bar: 50, barRows: 1, fe: 38, bolt: "small", ry1: 8, stock: { t: "light", c: "woodL" }, mag: "rotary", c: { fe: "woodL", furn: "woodL" } },
   leverrifle: { body: "lever", r: [18, 27], bar: 50, tube: 46, fe: 37, c: { body: "steel" } }, // a .30-30
@@ -179,7 +179,6 @@ export const PART_SPEC = {
   // Chinese clones in a cheap grey
   aimpoint: { kind: "dot", len: 3 }, holosun: { kind: "dot", len: 2 }, holopistol: { kind: "mini" },
   cheapdot: { kind: "dot", col: "grey" }, cheapholo: { kind: "holo", col: "grey" }, cheaprmr: { kind: "mini", col: "grey" },
-  holomag: { kind: "holo", len: 4 }, cheapmag: { kind: "holo", len: 3, col: "grey" }, // a holo sight with its 3× magnifier: one part, drawn as the sight
   cheapscope: { kind: "scope", len: 6, bell: 1, col: "grey" }, cheapacog: { kind: "prism", col: "grey" }, cheaplpvo: { kind: "scope", len: 6, bell: 1, col: "grey" },
   cheapmount: { kind: "mount", len: 3 },
   mlokpro: { kind: "rail", len: 8 }, cheaprail: { kind: "rail", len: 6 },
@@ -197,4 +196,8 @@ export const PART_SPEC = {
   lasergrip: { kind: "laser", col: "rubber" }, cheaplaser: { kind: "laser", col: "grey" }, // (laser grips: the laser at the frame)
   harris: { kind: "bipod", len: 7 }, cheapbipod: { kind: "bipod", len: 5, col: "grey" },
   slingpro: { kind: "sling", col: "olive" },
+  // the user's picks of 2026-10-10: a magnifier behind the sight, the hunting rifle's own scope, more clones, buttstock carriers
+  magnifier: { kind: "magnifier" }, cheapmagnifier: { kind: "magnifier", col: "grey" }, huntrifscope: { kind: "scope", len: 7, bell: 2 },
+  cheapcan308: { kind: "can", len: 9, rows: 4, bands: true, col: "blue" }, cheapcan12: { kind: "can", len: 8, rows: 4, col: "grey" }, cheapsling: { kind: "sling", col: "grey" },
+  buttcuff: { kind: "cuff", n: 5, col: "sling", round: "shell" }, cheapcuff: { kind: "cuff", n: 3, col: "grey", round: "shell" }, riflecuff: { kind: "cuff", n: 5, col: "sling", round: "brass" },
 };

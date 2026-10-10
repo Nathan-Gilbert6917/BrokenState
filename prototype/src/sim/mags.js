@@ -262,10 +262,11 @@ export function shellsAt(b, u, type = null, mag = null) {
 function startHand(b, u) {
   u.hand = {};
   const cal = calOf(u.weapon), t = typeFor(cal, u.load);
-  if (u.side !== "player") { u.hand[t] = SHELLS.START_HAND; return; }
+  const cuff = Math.max(0, num(unitMods(u).hand)); // a buttstock shell holder (gunmods.js hand)
+  if (u.side !== "player") { u.hand[t] = SHELLS.START_HAND + cuff; return; }
   const keys = withHand(keyFor(cal, t));
   const box = shellsIn((u.boxes || []).slice(0, Math.max(0, u.handBoxes || 0)), keys);
-  u.hand[t] = Math.max(0, Math.min(SHELLS.START_HAND - box, poolShells(b, keys)));
+  u.hand[t] = Math.max(0, Math.min(SHELLS.START_HAND + cuff - box, poolShells(b, keys)));
 }
 export const isShaken = (u) => !!((u.maxHp > 0 && u.hp < u.maxHp * SHELLS.HURT) || u.suppressed || u.stun);
 // The shells a Reload puts in now with the dice at roll (0: BASE[0], 1: BASE[1]): { n, at, pack, steady, shaken, room }.
@@ -426,7 +427,8 @@ export function doReload(b, u, plan) {
   if (plan.mode === "internal") {
     if (plan.load !== was) { u.load = plan.load; u.mag = 0; }
     const room = Math.max(0, avail(b, u, u.load) - (u.mag || 0));
-    u.mag = Math.min(max, (u.mag || 0) + Math.min(internalOf(u.weapon) || max, room));
+    const plus = internalOf(u.weapon) ? Math.max(0, num(unitMods(u).reload)) : 0; // a cartridge cuff on a lever-action
+    u.mag = Math.min(max, (u.mag || 0) + Math.min((internalOf(u.weapon) || max) + plus, room));
     return plan.load !== was ? `${u.name} loads the ${gunWord(u)} with ${roundName(cal, u.load)} (${shown(b, u)}/${max}).` : `${u.name} reloads the ${gunWord(u)} (${shown(b, u)}/${max}).`;
   }
   // Top up: the magazine in the gun refilled.
@@ -470,7 +472,7 @@ export function reloadText(b, u) {
     const what = kind === "break" ? `both barrels (${k} ${r.hi === 1 ? "shell" : "shells"})` : kind === "single" ? "its one shell" : `${k} ${r.hi === 1 ? "shell" : "shells"} thumbed into the tube${mods.length ? ` (${mods.join(", ")})` : ""}`;
     return `${n}: ${what}, from the shells at hand. ${shellsLine(b, u)}. Shells in a pocket or the rig load straight in; the pack's need Get shells (1 action) first.`;
   }
-  if (p.mode === "internal") return `${n}: ${internalOf(u.weapon)} more rounds in (an internal magazine; a speedloader or a stripper clip carried fills it at once).`;
+  if (p.mode === "internal") return `${n}: ${internalOf(u.weapon) + Math.max(0, num(unitMods(u).reload))} more rounds in (an internal magazine; a speedloader or a stripper clip carried fills it at once).`;
   if (p.mode === "clip") return `${n}: a ${String(GEAR[u.clips[p.i].key].name).toLowerCase()} fills it at once.`;
   if (p.mode === "swap") return `${n}: a fresh magazine from ${u.mags[p.i].where === "pack" ? "the pack" : u.mags[p.i].where === "pocket" ? "a pocket" : "a rig pouch"} (the empty one is kept).`;
   return `${n}: no loaded spare magazine, so the one in the gun is topped up from the team's ammo.`;

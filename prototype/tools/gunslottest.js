@@ -31,11 +31,15 @@ import { GUN_WEAPONS } from "../src/sim/data-guns.js";
 import {
   ATTACH, SLOTS, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAPON_SLOTS, platformOf, baseSlots, slotRules, modFits, modsFor,
   fitsSlot, fitMod, slotsOf, makeMod, randomStarterMods, enemyMods, ENEMY_MODS, fitFromPool, stripMisfits, relocateMisfits,
-  misfitNote, gunCategory, guessPlatform, STARTER_MODS, reachableSlots, gunMods, wearMakeshiftMods, fittedKg,
+  misfitNote, gunCategory, guessPlatform, STARTER_MODS, reachableSlots, gunMods, wearMakeshiftMods, fittedKg, driftOf, modsText, attachText, stripMod,
 } from "../src/sim/gunmods.js";
 import { PLATFORM_GUESS, PART_INFO, BUDGET_MAGS, PART_FINDS } from "../src/sim/data-gunmods.js";
 import { SITE_TAGS, AREA_TAGS, fitsTags } from "../src/sim/loot.js";
 import { partPool } from "../src/sim/partfinds.js";
+import { MAGAZINES } from "../src/sim/data-kit.js";
+import { rezeroHour, REZERO_HOUR } from "../src/sim/repair.js";
+import { benchTier, addBuilding, BUILDINGS } from "../src/sim/buildings.js";
+import { lookOf, PART_ART } from "../src/ui/gunparts.js";
 
 let passes = 0, fails = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -44,11 +48,24 @@ const t0 = Date.now();
 // Every gun a person can hold: a GEAR weapon with a WEAPONS entry that is neither a blade, a bow, acid nor a launcher.
 const isGun = (k) => { const w = WEAPONS[k], d = GEAR[k]; return !!(w && d && d.slot === "weapon" && !w.melee && !w.arrows && !w.acid && !w.launcher && !d.launcher); };
 const guns = Object.keys(GEAR).filter(isGun);
-// The slots a gun can ever have: bare, or opened by a mount or rail that fits it.
+// The slots a gun can ever have: bare, or opened by parts that fit it, nested (a mount, its red dot, its magnifier),
+// found by fitting them for real.
 const reachable = (k) => {
   const out = new Set(baseSlots(k));
-  for (const p of modsFor(k)) if (ATTACH[p].adds) for (const s of slotsOf({ key: k, name: k, mods: { [ATTACH[p].slot]: makeMod(p) } })) out.add(s);
-  return SLOTS.filter((s) => out.has(s));
+  let frontier = [{}];
+  for (let depth = 0; depth < 3 && frontier.length; depth++) {
+    const next = [];
+    for (const mods of frontier) for (const p of modsFor(k)) {
+      if (!ATTACH[p].adds || mods[ATTACH[p].slot]) continue;
+      const g = { key: k, name: k, mods: { ...mods } };
+      if (fitsSlot(g, makeMod(p))) continue;
+      g.mods[ATTACH[p].slot] = makeMod(p);
+      for (const x of slotsOf(g)) out.add(x);
+      next.push(g.mods);
+    }
+    frontier = next.slice(0, 30);
+  }
+  return SLOTS.filter((x) => out.has(x));
 };
 const partsFor = (k, slot) => modsFor(k).filter((p) => ATTACH[p].slot === slot);
 const gunItem = (k, mods = {}) => ({ key: k, name: GEAR[k].name, quality: 1, mods });
@@ -207,7 +224,7 @@ console.log("Parts catalogue");
   check(platformOf("arpistol") === "ar15" && modFits("arpistol", "pistolbrace") && !modFits("arpistol", "collapsible") && !modFits("ar15rifle", "pistolbrace") && modFits("arpistol", "pgrip") && modFits("arpistol", "chandle") && !reachable("arpistol").includes("under") && !reachable("arpistol").includes("bipod") && modFits("arpistol", "mag_stanag_30"),
     "the AR pistol (an AR-15: its magazines and parts) takes a pistol brace as its only stock, a pistol grip and a charging handle, no M203 or bipod; a full AR no brace");
   // Budget clones: strictly worse and cheaper than the part they copy.
-  const better = { aim: 1, close: 1, opt: 1, brace: 1, moving: 1, nightNear: 1, night: 1, peq: 1, reload: 1, magCap: 0 };
+  const better = { aim: 1, close: 1, opt: 1, brace: 1, moving: 1, nightNear: 1, night: 1, peq: 1, reload: 1, hand: 1, magCap: 0 };
   const worse = [];
   const clones = [...Object.entries(PART_INFO).filter(([, i]) => i.brandOf), ...Object.entries(BUDGET_MAGS)];
   for (const [k, i] of clones) {
@@ -243,6 +260,56 @@ console.log("Parts catalogue");
   check(STARTER_MODS.filter((k) => PART_INFO[k]).length >= 8 && STARTER_MODS.every((k) => GEAR[k].value <= 25), "the dice's starter parts include the cheap clones (all low-value)");
 }
 
+// ---------- the user's picks of 2026-10-10 ----------
+console.log("Picks: the hunting rifle's scope, the magnifier, drift, more clones, buttstock carriers");
+{
+  // 1. The hunting rifle: a sight slot, its scope a factory part; fitted, its numbers are what they were.
+  const hr = newItem("huntrifle", 1), w = WEAPONS.huntrifle, gm = gunMods(hr);
+  check(baseSlots("huntrifle").includes("optic") && hr.mods && hr.mods.optic && hr.mods.optic.key === "huntrifscope", "the hunting rifle has a sight slot and comes with its scope fitted (a part)");
+  check(w.aim + gm.aim === 5 && w.opt + gm.opt === 12 && Math.abs(w.fall + gm.fall - 2) < 1e-9 && w.close + gm.close === -10, `with its scope its numbers are as before (aim ${w.aim + gm.aim}, best range ${w.opt + gm.opt}, fall-off ${(w.fall + gm.fall).toFixed(1)}, close ${w.close + gm.close})`);
+  check(Math.abs(GEAR.huntrifle.weight + GEAR.huntrifscope.weight - 4) < 1e-9 && GEAR.huntrifle.value + GEAR.huntrifscope.value === 55, "its weight and worth with the scope are as before (4 kg, 55)");
+  const sw = newItem("huntrifle", 1); stripMod(sw, "optic");
+  check(!fitMod(sw, newItem("huntscope", 1)).why && sw.mods.optic.key === "huntscope" && gunMods(sw).aim > gm.aim, "the scope comes off for a better one (a Leupold-style hunting scope: +1 more aim)");
+  // 2. The magnifier: its own slot behind a red dot or holo sight.
+  const ar = newItem("ar", 1);
+  check(!!fitsSlot(ar, newItem("magnifier", 1)) && /red dot|holo|sight/i.test(fitsSlot(ar, newItem("magnifier", 1))), `no magnifier without a sight to sit behind ("${fitsSlot(ar, newItem("magnifier", 1))}")`);
+  fitMod(ar, newItem("holo", 1));
+  check(!fitMod(ar, newItem("magnifier", 1)).why && ar.mods.magnifier, "a holo sight opens the magnifier slot; the magnifier goes behind it");
+  const am = gunMods(ar);
+  check(am.aim === 5 && am.close === 1 && am.opt === 2 && Math.abs(am.fall + 0.3) < 1e-9, "a holo sight and a magnifier: the old combined part's numbers (+5 aim, +1 close, +2 range, −0.3 fall-off)");
+  const off = stripMod(ar, "optic");
+  check(off.length === 2 && !ar.mods, "taking the sight off takes the magnifier with it");
+  check(!reachable("dbshotgun").includes("magnifier") && !reachable("pistol").includes("magnifier") && !reachable("huntrifle").includes("magnifier") && reachable("shotgun").includes("magnifier") && reachable("ak").includes("magnifier"),
+    "a magnifier on rifles and shotguns with a red dot (even on rings or a side mount), never a pistol, a break action or a bolt rifle");
+  check(!GEAR.holomag && !GEAR.cheapmag && !ATTACH.holomag, "the combined holo + magnifier parts are gone (split into two)");
+  // 4. Budget sights drift off zero, re-zeroed at a workbench.
+  const cd = newItem("ar", 1); fitMod(cd, newItem("cheapdot", 1));
+  const fresh = gunMods(cd).aim;
+  for (let i = 0; i < 12; i++) wearMakeshiftMods(cd, 1);
+  check(cd.mods.optic.zero === 12 && driftOf(cd.mods.optic) === 2 && gunMods(cd).aim === fresh - 2 && /off zero, −2 aim/.test(modsText(cd)), `a budget red dot 12 fights on is off zero: −2 aim, and the tooltip says so ("${modsText(cd)}")`);
+  for (let i = 0; i < 10; i++) wearMakeshiftMods(cd, 1);
+  check(driftOf(cd.mods.optic) === 4 || !cd.mods, "it drifts no further than −4 (or breaks first)");
+  check(/drifts off zero/.test(attachText("cheapdot")) && !/drifts off zero/.test(attachText("aimpoint")) && driftOf(newItem("aimpoint", 1)) === 0, "only budget sights drift (the brands hold zero)");
+  const st0 = createWorld({ seed: 9, factionCount: 3 });
+  const H0 = hub(st0);
+  const rz = newItem("ar", 1); fitMod(rz, newItem("cheapdot", 1)); rz.mods.optic.zero = 11; H0.armory.push(rz);
+  const hadBench = benchTier(H0) >= 2;
+  if (!hadBench) addBuilding(H0, Object.keys(BUILDINGS).find((k) => BUILDINGS[k].family === "bench" && BUILDINGS[k].tier === 2));
+  st0.hour = Math.floor(st0.hour / 24) * 24 + REZERO_HOUR;
+  const n = rezeroHour(st0);
+  check(benchTier(H0) >= 2 && n >= 1 && rz.mods.optic.zero === 0 && driftOf(rz.mods.optic) === 0, `at a base with a workbench, budget sights are re-zeroed every morning (${n})`);
+  // 5. More clones (strictly worse and cheaper: the clones check above); 6. buttstock carriers.
+  check(["cheapcan308", "cheapcan12", "cheapsling", "cheapmagnifier", "cheapcuff"].every((k) => PART_INFO[k] && PART_INFO[k].tier === "budget") && MAGAZINES.mag_ak_75c && MAGAZINES.mag_ak_75c.jam > MAGAZINES.mag_ak_75.jam && modFits("ak", "mag_ak_75c"),
+    "the new clones: a .308 fuel-filter can, a shotgun can, a sling, a magnifier, an elastic shell holder, a Chinese AK drum (jams more)");
+  check(modFits("dbshotgun", "buttcuff") && modFits("single12", "buttcuff") && modFits("shotgun", "buttcuff") && modFits("leverrifle", "riflecuff") && !reachable("sawnoff").includes("cuff") && !reachable("singlerifle").includes("cuff") && !reachable("ar").includes("cuff") && !modFits("leverrifle", "buttcuff"),
+    "a buttstock shell holder on break actions, pumps and semi-autos (not the sawn-off), a cartridge cuff on a lever-action; none on a single-shot rifle or an AR");
+  const db = newItem("dbshotgun", 1); fitMod(db, newItem("buttcuff", 1));
+  const lv = newItem("leverrifle", 1); fitMod(lv, newItem("riflecuff", 1));
+  check(gunMods(db).hand === 5 && gunMods(lv).reload === 1 && /loose shells at hand/.test(attachText("buttcuff")), "a shell holder: 5 more shells at hand at a fight's start; a cartridge cuff: a round more a Reload");
+  check(["magnifier", "cheapmagnifier", "huntrifscope", "cheapcan308", "cheapcan12", "cheapsling", "buttcuff", "cheapcuff", "riflecuff"].every((k) => /^p:|^[a-z]/.test(lookOf({ key: k }, ATTACH[k].slot)) && PART_ART[lookOf({ key: k }, ATTACH[k].slot)]), "every new part has a look (ui/gunspecs.js PART_SPEC)");
+  check(!reachable("shotgun").includes("grip") && reachable("tacpump").includes("grip"), "pick 3: the foregrip stays the police pump's only");
+}
+
 // ---------- old saves: parts that no longer fit ----------
 console.log("Migration");
 {
@@ -263,6 +330,12 @@ console.log("Migration");
   if (Array.isArray(s1.gear.pack)) s1.gear.pack = s1.gear.pack.map(() => newItem(filler, 1));
   if (s1.gear.rig) s1.gear.rig = null;
   const fine = gunItem("ar", { optic: newItem("acog", 1), rail: newItem("quadrail", 1), grip: newItem("foregrip", 1) });
+  // From before the picks of 2026-10-10 (attachV 1): a combined holo + magnifier on an AR and a loose budget set, a
+  // hunting rifle without its scope part.
+  const combo = gunItem("m4", { optic: { key: "holomag", name: "Holo sight and 3× magnifier", quality: 0.9 } });
+  H.armory.push(combo, { key: "cheapmag", name: "Budget dot and 3× magnifier set (Chinese clone)", quality: 0.8, dur: 10 });
+  const oldHr = gunItem("huntrifle", {}); delete oldHr.mods; H.armory.push(oldHr);
+  st.attachV = 1;
   H.armory.push(fine);
   const before = H.armory.length;
   const back = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
@@ -281,6 +354,10 @@ console.log("Migration");
   const line = (back.log || []).find((l) => /no longer fit their guns/.test(l.text));
   if (process.env.SHOW) console.log("   ", line && line.text);
   check(!!line && /Vertical foregrip|foregrip/i.test(line.text) && /revolver/i.test(line.text), `a log line says what came off (${line ? line.text : "none"})`);
+  const bCombo = bH.armory.find((g) => g.key === "m4" && g.mods && g.mods.magnifier);
+  check(bCombo && bCombo.mods.optic.key === "holo" && bCombo.mods.optic.quality === 0.9 && bCombo.mods.magnifier.key === "magnifier", "an old combined holo + magnifier on a gun: now a holo sight and a magnifier, both fitted");
+  check(bH.armory.some((x) => x.key === "cheapdot" && x.dur === 10) && bH.armory.some((x) => x.key === "cheapmagnifier") && !bH.armory.some((x) => x.key === "cheapmag"), "a loose old budget set: a budget red dot (its wear kept) and a budget magnifier beside it");
+  check(bH.armory.filter((g) => g.key === "huntrifle").every((g) => g.mods && g.mods.optic && g.mods.optic.key === "huntrifscope") && back.attachV === 2, "every old hunting rifle has its scope fitted as a part");
   // Loading again moves nothing more (a part is never lost or doubled).
   const again = deserializeState(JSON.parse(JSON.stringify(serializeState(back))));
   const count = (S, key) => { let n = 0; const seen = new Set(); const w = (o) => { if (!o || typeof o !== "object" || seen.has(o)) return; seen.add(o); if (o.key === key && o.name) n++; for (const v of Object.values(o)) w(v); }; w(S.survivors); w(S.bases); return n; };

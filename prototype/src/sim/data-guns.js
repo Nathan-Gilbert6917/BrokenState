@@ -184,6 +184,7 @@ export const KIT_PATCH = {
 // where no dice are at hand); below 1 only where the source has dice of its own (raid boxes, enemy guns).
 /** @type {Record<string, [number, string[]][]>} */
 export const FACTORY_FIT = {
+  huntrifle: [[1, ["huntrifscope"]]], // its scope, a part since 2026-10-10 (user pick: a sight slot, the scope removable)
   sniper: [[1, ["tacscope"]], [1, ["bipod"]]],
   dmr:    [[0.6, ["acog", "tacscope"]], [0.4, ["bipod"]]],
   amr:    [[1, ["tacscope"]]],

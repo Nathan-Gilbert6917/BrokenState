@@ -169,7 +169,8 @@ const REP = { optic: "reddot", mount: "mount", muzzle: "can_s", mag: "extmag", s
   // The AUG's scope-handle gives way to a rail when a sight is fitted.
   if (WEAPONS.aug) check(GA.paintGun("aug", { optic: "reddot" }).get(GA.anchorOf("aug", "optic")[0] - 6, 1) !== GA.paintGun("aug", {}).get(GA.anchorOf("aug", "optic")[0] - 6, 1), "the AUG's scope-handle gives way to a rail under a fitted sight");
   // The own parts (the hunting rifle's scope) only where the gun has no such slot.
-  check(GA.paintGun("huntrifle", {}, ["muzzle", "under"]).px.join() !== GA.paintGun("huntrifle", {}, ["optic", "muzzle"]).px.join(), "the hunting rifle's own scope is drawn only while it has no sight slot");
+  check(GA.paintGun("sniper", {}, ["muzzle", "under"]).px.join() !== GA.paintGun("sniper", {}, ["optic", "muzzle"]).px.join(), "a gun's own scope (the sniper rifle's) is drawn only while it has no sight slot");
+  check(GA.paintGun("huntrifle", { optic: GA.lookOf({ key: "huntrifscope" }, "optic") }).px.join() !== GA.paintGun("huntrifle", {}).px.join(), "the hunting rifle's scope is a part (user pick 2026-10-10): drawn when fitted, gone when taken off");
 }
 function near(p, [x, y], r) { for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (p.get(x + dx, y + dy)) return true; return false; }
 
