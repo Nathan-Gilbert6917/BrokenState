@@ -35,6 +35,7 @@ import { tradeWindow, radioModal, caravanPlanModal, groupsRadioHeader, caravanLi
 import { DIPLO_ACTIONS, DIPLO_CHANGE } from "../src/ui/diplomacy.js";
 import { LISTEN_ACTIONS } from "../src/ui/radiolisten.js"; // main.js registers these in a loop (xp-listen, bl-listen)
 import { INTEL_ACTIONS, INTEL_CHANGE } from "../src/ui/intel.js"; // and these (radio security: discipline, decoys)
+import { VOL_ACTIONS, VOL_CHANGE } from "../src/ui/volunteers.js"; // and these (the radio panel's Ask for volunteers: vol-open)
 
 const seed = Number(process.argv[2] || 42);
 const longDays = Number(process.argv[3] || 200);
@@ -121,7 +122,7 @@ function drive(state, pred, maxHours, keep = null) {
     f.goodwill = gw;
     const before = f.stock[k];
     const got = q * sellPrice(st, f, k, sp, q);
-    f.stock[k] = before + q;
+    f.stock[k] = (before || 0) + q; // a key they hold none of (water, building materials): undefined + q was NaN
     const cost = q * buyPrice(st, f, k, sp, q);
     f.stock[k] = before;
     worst = Math.min(worst, cost - got);
@@ -300,7 +301,7 @@ function visit(st, f, n = 2, cargo = {}) {
       f.goodwill = gw;
       const before = f.stock[k];
       const got = q * sellPrice(st, f, k, sp, q);
-      f.stock[k] = before + q;
+      f.stock[k] = (before || 0) + q; // a key they hold none of (water, building materials): undefined + q was NaN
       const cost = q * buyPrice(st, f, k, sp, q);
       f.stock[k] = before;
       worst = Math.min(worst, cost - got); cases++;
@@ -598,7 +599,7 @@ function dealWorld(s) {
 {
   console.log("Trade window HTML");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  const known = new Set([...Object.keys(TRADE_ACTIONS), ...Object.keys(TRADE_CHANGE_ACTIONS), ...Object.keys(DIPLO_ACTIONS), ...Object.keys(DIPLO_CHANGE), ...Object.keys(LISTEN_ACTIONS), ...Object.keys(INTEL_ACTIONS), ...Object.keys(INTEL_CHANGE)]); // main.js registers these tables
+  const known = new Set([...Object.keys(TRADE_ACTIONS), ...Object.keys(TRADE_CHANGE_ACTIONS), ...Object.keys(DIPLO_ACTIONS), ...Object.keys(DIPLO_CHANGE), ...Object.keys(LISTEN_ACTIONS), ...Object.keys(INTEL_ACTIONS), ...Object.keys(INTEL_CHANGE), ...Object.keys(VOL_ACTIONS), ...Object.keys(VOL_CHANGE)]); // main.js registers these tables
   const handled = (a) => known.has(a) || new RegExp(`(^|[\\s{,])"?${a.replace(/[-]/g, "\\-")}"?\\s*:`, "m").test(main);
   const scan = (html, where) => {
     const acts = [...html.matchAll(/data-action="([^"]+)"/g)].map((m) => m[1]);
