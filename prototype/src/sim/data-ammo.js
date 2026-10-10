@@ -108,7 +108,7 @@ export const ROUND_ECON = {
   "45acp_fmj": ["uncommon", 0.6], "45acp_hp": ["scarce", 0.95], "45acp_subsonic": ["scarce", 0.85],
   "357_fmj": ["uncommon", 0.65], "357_hp": ["scarce", 1.0], "357_plusp": ["rare", 1.0],
   "20ga_buck": ["uncommon", 0.6], "20ga_bird": ["uncommon", 0.35], "20ga_slug": ["scarce", 1.0],
-  "556_fmj": ["common", 0.7], "556_tracer": ["uncommon", 0.95], "556_match": ["scarce", 1.4], "556_rubber": ["rare", 0.85], "556_ap": ["rare", 1.95],
+  "556_fmj": ["common", 0.7], "556_tracer": ["scarce", 0.95], "556_match": ["scarce", 1.4], "556_rubber": ["rare", 0.85], "556_ap": ["rare", 1.95],
   "762x39_fmj": ["uncommon", 0.7], "762x39_sp": ["scarce", 1.0], "762x39_tracer": ["scarce", 0.95], "762x39_ap": ["rare", 1.95],
   "12ga_buck": ["common", 0.8], "12ga_bird": ["common", 0.45], "12ga_slug": ["uncommon", 1.4], "12ga_beanbag": ["rare", 1.05],
   "3030_sp": ["uncommon", 0.8], "3030_fmj": ["scarce", 0.8],
