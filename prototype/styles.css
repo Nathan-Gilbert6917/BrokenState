@@ -1330,3 +1330,58 @@ button.mini.tp-chip.active.t-neutral { background: var(--t-neutral-bg); border-c
 .ptsbar .bar { height: 0.5rem; }
 .ptsbar.over b, .ptsbar.over .ptsleft { color: var(--danger); }
 button.mini.tp-chip:disabled { opacity: 0.4; }
+
+/* The armory list: grouped by type, cards or compact rows (ui/armoryview.js) */
+.armbar { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin: 0.3rem 0; }
+.armq { flex: 1 1 9rem; min-width: 7rem; padding: 0.22rem 0.5rem; font-size: 0.85rem; }
+.armscope { display: inline-flex; gap: 0.15rem; }
+.armchips { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-bottom: 0.3rem; }
+.armchips .achip { padding: 0.05rem 0.4rem; font-size: 0.74rem; border-radius: 99px; }
+.agroups { display: block; }
+.istore.agroups { display: block; max-height: 30rem; }
+.agroup { margin-bottom: 0.35rem; }
+.ahead { display: flex; width: 100%; align-items: center; gap: 0.35rem; padding: 0.2rem 0.45rem; font-size: 0.82rem; font-weight: 600; text-align: left; background: #262b33; border-color: #333944; }
+.ahead:hover { border-color: var(--info); }
+.acaret { width: 0.7rem; color: var(--muted); }
+.acount { font-weight: 400; font-size: 0.72rem; color: var(--muted); background: #1d2127; border-radius: 99px; padding: 0 0.4rem; }
+.akgsum { margin-left: auto; font-weight: 400; font-size: 0.68rem; color: var(--muted); }
+.asub { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0.35rem 0 0.15rem 0.2rem; }
+.acards { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.4rem, 1fr)); gap: 0.3rem; margin-top: 0.25rem; }
+.arows { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(19rem, 100%), 1fr)); gap: 2px 0.4rem; margin-top: 0.2rem; }
+/* a card: the picture on top, name, stat line, who */
+.acard { position: relative; display: flex; flex-direction: column; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.25rem 0.3rem 0.3rem; font-size: 0.74rem; line-height: 1.15; }
+.islot.store.acard, .islot.store.arow { padding: 0.25rem 0.3rem 0.3rem; min-height: 0; }
+.acard > .ain { display: flex; flex-direction: column; flex: 1; min-width: 0; cursor: grab; }
+.arow > .ain { display: flex; align-items: center; gap: 0.4rem; flex: 1; min-width: 0; cursor: grab; }
+.acard.apick, .arow.apick { cursor: pointer; }
+.acard.apick:hover, .arow.apick:hover { border-color: var(--info); }
+.apic { display: flex; align-items: center; justify-content: center; height: 2.7rem; border-radius: 4px; margin-bottom: 0.2rem; overflow: hidden; background: #1c2026; }
+.apic.sm { flex: none; width: 2.6rem; height: 1.35rem; margin: 0; }
+.apicimg { max-width: 100%; max-height: 100%; }
+.apic .asvg { height: 70%; width: auto; }
+.apic.sm .asvg { height: 1.1rem; }
+.aemo { font-size: 1.45rem; line-height: 1; }
+.apic.sm .aemo { font-size: 0.95rem; }
+.apic.g-guns { background: #222a33; } .apic.g-mags, .apic.g-ammo { background: #2b2719; } .apic.g-melee { background: #2d2222; }
+.apic.g-armour, .apic.g-clothing { background: #1f2a24; } .apic.g-bags { background: #2a2420; } .apic.g-lights { background: #2b2a1c; }
+.apic.g-medical { background: #2d1f22; } .apic.g-attach { background: #22272e; } .apic.g-trade { background: #29222d; }
+.ainfo { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.aname { font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.acard.bad .aname, .arow.bad .aname { color: var(--danger); }
+.astat { font-size: 0.68rem; color: var(--text); opacity: 0.85; }
+.awho { font-size: 0.66rem; color: var(--info); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acard .idur { margin-top: auto; padding-top: 0; position: relative; top: 0.15rem; }
+.acard .gbcog, .acard > a[data-action="gb-open"] { position: absolute; right: 2px; top: 2px; }
+/* a compact row: icon, name, (who), stat, weight */
+.arow { display: flex; align-items: center; gap: 0.4rem; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0.12rem 1.4rem 0.12rem 0.3rem; font-size: 0.76rem; line-height: 1.15; position: relative; }
+.islot.store.arow { padding: 0.12rem 1.4rem 0.12rem 0.3rem; }
+.arow .aname { flex: 1; -webkit-line-clamp: 1; font-weight: 500; }
+.arow .astat { flex: none; white-space: nowrap; }
+.arow .awho { flex: none; max-width: 8rem; }
+.arow .akg { flex: none; width: 3.2rem; text-align: right; font-size: 0.66rem; color: var(--muted); }
+.arow .gbcog, .arow > a[data-action="gb-open"] { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); }
+/* guns in card view: their classes side by side, each its header over its cards */
+.asubs { display: flex; flex-wrap: wrap; gap: 0 0.7rem; }
+.asubs .asubblk { display: flex; flex-direction: column; max-width: 100%; }
+.asubs .acards { display: flex; flex-wrap: wrap; }
+.asubs .acard { width: 7.4rem; }
