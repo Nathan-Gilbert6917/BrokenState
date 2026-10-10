@@ -12,8 +12,8 @@
 //   - a light for the dusk jobs (hunting and fishing: home after dark): the lightest that works (lights.js packLights);
 //   - basic body armour if there is any spare (the lightest piece under GEAR_OUT.armourKg: a jacket or a vest, not a plate
 //     carrier for a woodcutter);
-//   - something to stop a bleed: a tourniquet (one use), else a bandage kit or trauma kit while the armory keeps
-//     GEAR_OUT.kitsKept of those for the medics.
+//   - something to stop a bleed: a tourniquet (one use; GEAR_OUT.tqKept stay for a team), else a bandage kit or trauma
+//     kit while the armory keeps GEAR_OUT.kitsKept of those for the medics.
 // Pinned people are left alone by the governor and the leaders (as all their gear passes); the button gears them too
 // (it is your own order).
 import { GEAR } from "./data.js";
@@ -24,7 +24,7 @@ import { lightOf, packLights } from "./lights.js";
 import { TRIP_JOBS } from "./tripland.js";
 import { isChopTool } from "./woodcutting.js";
 
-export const GEAR_OUT = { armourKg: 6, kitsKept: 1 };
+export const GEAR_OUT = { armourKg: 6, kitsKept: 1, tqKept: 1 }; // kept in the armory: a med kit for the medics, a tourniquet for a team
 const DUSK = new Set(["hunt", "fish"]); // home after dark: a light helps
 const isOut = (s) => !!(s && s.alive && TRIP_JOBS[s.role]);
 const isMelee = (d) => !!d && d.cat === "melee";
@@ -111,7 +111,8 @@ export function gearOutdoorWorkers(state, base, opts = {}) {
     }
     // Something to stop a bleed.
     if (!aidOf(s)) {
-      const tq = base.armory.find((it) => GEAR[it.key] && GEAR[it.key].selfStab && !GEAR[it.key].medKit);
+      const tqs = base.armory.filter((it) => GEAR[it.key] && GEAR[it.key].selfStab && !GEAR[it.key].medKit);
+      const tq = tqs.length > GEAR_OUT.tqKept ? tqs[0] : null;
       const kits = base.armory.filter((it) => GEAR[it.key] && GEAR[it.key].medKit && isSmall(it.key) && (GEAR[it.key].req || 0) <= 4);
       const it = tq || (kits.length > GEAR_OUT.kitsKept ? kits.sort((a, b) => (GEAR[b.key].selfStab ? 1 : 0) - (GEAR[a.key].selfStab ? 1 : 0) || a.key.localeCompare(b.key))[0] : null);
       if (it) {

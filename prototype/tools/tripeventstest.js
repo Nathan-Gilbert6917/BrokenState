@@ -304,7 +304,7 @@ section("Gear for the outdoor workers: the governor's pass, the button, the warn
   for (const [p, j] of [[cutter, "wood"], [hunter, "hunt"], [fisher, "fish"]]) { onJob(state, b, p, j); p.gear = {}; p.pockets = []; ensureInv(p); }
   check(kitWarnings(state, b, cutter).some((w) => w.text === "No weapon"), `an ungeared woodcutter's chip: ${kitWarnings(state, b, cutter).map((w) => w.text).join(", ")}`);
   check(kitWarnings(state, b, fisher).some((w) => w.text === "No light"), "a fisher (home after dusk) with no light: \"No light\"");
-  b.armory = [newItem("fireaxe"), newItem("huntrifle"), newItem("knife"), newItem("headlamp"), newItem("flashlight"), newItem("vest"), newItem("tourniquet"), newItem("tourniquet"), newItem("bandagekit")];
+  b.armory = [newItem("fireaxe"), newItem("huntrifle"), newItem("knife"), newItem("headlamp"), newItem("flashlight"), newItem("vest"), newItem("tourniquet"), newItem("tourniquet"), newItem("tourniquet"), newItem("bandagekit")];
   b.stock.ammo = 200;
   const pinned = gearOutdoorWorkers(state, b);
   check(pinned.length === 0, "the governor's pass leaves pinned people alone");
@@ -312,7 +312,7 @@ section("Gear for the outdoor workers: the governor's pass, the button, the warn
   note(`the button: ${got.map((x) => `${x.s.name.split(" ")[0]} ${x.item.name}`).join(", ")}`);
   check(tripKit(state, b, hunter).gun && tripKit(state, b, cutter).melee && /axe/i.test(cutter.gear.weapon.name), `a hunter gets the rifle (${hunter.gear.weapon && hunter.gear.weapon.name}), the woodcutter the axe (${cutter.gear.weapon && cutter.gear.weapon.name})`);
   check(!!tripKit(state, b, hunter).light && !!tripKit(state, b, fisher).light, "lights for the dusk jobs (hunting, fishing)");
-  check(got.some((x) => x.what === "armour") && got.filter((x) => x.what === "aid").length >= 2, "light armour, and a tourniquet each while there are some");
+  check(got.some((x) => x.what === "armour") && got.filter((x) => x.what === "aid").length >= 2 && b.armory.some((it) => it.key === "tourniquet"), "light armour, a tourniquet each while there are spare (one kept for a team)");
   check(!kitWarnings(state, b, cutter).length && !kitWarnings(state, b, hunter).length, "geared: no warning chips");
   // The governor gears the unpinned at its hourly pass.
   const s2 = people[3];

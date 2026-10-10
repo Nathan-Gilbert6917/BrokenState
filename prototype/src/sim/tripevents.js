@@ -273,7 +273,7 @@ function buildEvent(state, base, s, t, rng, phase, h) {
     case "dead": { const inf = tile.infection || 0; const n = rng.next() < 0.5 - inf * 0.3 ? 1 : rng.next() < 0.65 ? 2 : 3; return { kind, n }; }
     case "animal": {
       const list = Object.entries(TRIP_ANIMALS).map(([k, a]) => ({ k, w: (a.terr[tile.terrain] || 0) * (a.season[sea] ?? 1) })).filter((x) => x.w > 0);
-      if (!list.length) return { kind: "find", find: wpick(rng, TRIP_FINDS) };
+      if (!list.length) return { kind: "find", find: TRIP_FINDS.indexOf(wpick(rng, TRIP_FINDS)) };
       const a = wpick(rng, list).k;
       const A = TRIP_ANIMALS[a];
       return { kind, animal: a, n: rng.int(A.n[0], A.n[1]) };
@@ -341,7 +341,7 @@ function choicesFor(state, base, s, t) {
   const can = sumStock(base.stock, o.want);
   const price = Object.entries(o.want).map(([k2, q]) => `${q} ${k2}`).join(", ");
   return [
-    { key: "trade", label: `Trade ${price} for ${o.text}`, hint: can ? `From ${base.name}'s stores: they walk back to the gate together (half an hour)` : `${base.name} has not got ${price}`, off: !can },
+    { key: "trade", label: `Trade ${price} for ${o.text}`, hint: can ? `From ${base.name}'s stores: they walk back to the gate together (half an hour)` : `${base.name} has not got ${price}`, off: () => !sumStock(base.stock, o.want) },
     { key: "refuse", label: "Wave them on", hint: "No trade; they go on their way", def: true },
   ];
 }
@@ -381,7 +381,7 @@ function raiseCard(state, base, s, t, now) {
       ? `${s.name}, out ${job} near ${where}, is stopped by a lone stranger${ev.gun ? " with a gun" : " with a knife"} who wants what they carry.`
       : `${s.name}, out ${job} near ${where}, meets a lone traveller who offers ${TRIP_OFFERS[ev.offer].text} in trade.`;
   const choices = choicesFor(state, base, s, t).map((c) => ({
-    label: c.label, hint: c.hint, ...(c.def ? { default: true } : {}), ...(c.off ? { disabled: true } : {}),
+    label: c.label, hint: c.hint, ...(c.def ? { default: true } : {}), ...(c.off ? { disabled: c.off } : {}),
     ai: () => (c.key === autoChoice(state, base, s, t) ? 5 : 1),
     resolve: (st) => settle(st, base, s, t, c.key, st.hour),
   }));
