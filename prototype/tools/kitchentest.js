@@ -23,7 +23,7 @@ import { describeActivity, baseWork, workingActivity } from "../src/sim/activity
 import { moodFactors } from "../src/sim/relations.js";
 import { workState, assignRole, planBase, WORK_TYPES, workHour } from "../src/sim/work.js";
 import { governRoles, setAutopilot } from "../src/sim/autopilot.js";
-import { nextWork, groupEatMult, worksAt, groupsBuild, GROUP_WORKS } from "../src/sim/groupworks.js";
+import { nextWork, groupEatMult, groupCookShare, worksAt, groupsBuild, GROUP_WORKS } from "../src/sim/groupworks.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { renderModal } from "../src/ui/ui.js";
 import { workNowPanel } from "../src/ui/activity.js";
@@ -261,6 +261,7 @@ section("AI groups");
     check(groupEatMult(st, f) === 1, "no kitchen: eats as before");
     w.kitchen = 1;
     check(near(groupEatMult(st, f), 1 - GROUP_WORKS.KITCHEN.save), `with one: ×${groupEatMult(st, f)}`);
+    check(near(groupCookShare(st, f), 1 / 12), `its cooks (one per 12) work no fields: ${groupCookShare(st, f)}`);
     check(nextWork(st, f) === null || nextWork(st, f).type !== "kitchen", "one a base");
     f.pop = 5;
     delete w.kitchen;

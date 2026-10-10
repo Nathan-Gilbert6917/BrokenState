@@ -42,8 +42,9 @@
 //   the first job at that base;
 //   a kitchen (2026-10-10, your Kitchen's parity, kitchen.js): at a base of KITCHEN.size+ people (the main base once its
 //   workshop is up, the others after their fields and pens), one a base; the people it serves (peopleAt) eat
-//   KITCHEN.save less a day (groupEatMult, factions.js: their food a day), as your cooks' hot meals do. Coarse: no
-//   cooks to staff, no mood (their morale is not tracked), no boiled water (they keep no water stock).
+//   KITCHEN.save less a day (groupEatMult, factions.js: their food a day), as your cooks' hot meals do, and its cooks
+//   (one per KITCHEN.perCook of them, as yours) bring in nothing from the fields (groupCookShare: their food from the
+//   land × (1 − the share of their people cooking)). Coarse: no cooks by name, no mood (their morale is not tracked), no boiled water (they keep no water stock).
 //   animal pens (2026-10-09, your animal pen's parity): at a base with walls and fields, after the fields for
 //   everyone, PENS.max a base; each adds PENS.food food a day (penFood, factions.js), winter or not.
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
@@ -90,7 +91,7 @@ export const GROUP_WORKS = {
   PENS: { max: 1, food: 2 },
   // A kitchen (your Kitchen, kitchen.js KITCHEN: −10% food for the people its cooks feed, one cook per 12): at a base of
   // KITCHEN.size+ people (your governor's KITCHEN.govFrom), the people living there eat KITCHEN.save less.
-  KITCHEN: { size: 8, save: 0.1 },
+  KITCHEN: { size: 8, save: 0.1, perCook: 12 },
   // An outpost camp's step up (yours: 12 scrap, a part, 36 work-hours; scaled as the rest of WORKS) and the camp's
   // defence share until then.
   CAMP: { name: "the outpost camp established", cost: { scrap: 10, buildmat: 1 }, work: 3, DEF: 0.5 }, // yours: 20 scrap, 2 building materials, 20 work-hours
@@ -159,11 +160,15 @@ export function provisioned(state, f) {
 // Food a day from their animal pens (PENS): 0 where they do not build (old saves, the hardcore military).
 export const penFood = (state, f) => (groupsBuild(state, f) ? f.bases.reduce((a, t) => a + Math.min(W.PENS.max, n(f.works && f.works[t], "pens")), 0) * W.PENS.food : 0);
 // What the group eats a day × this (factions.js): its kitchens' people eat KITCHEN.save less. 1 where they do not build.
-export function groupEatMult(state, f) {
-  if (!groupsBuild(state, f) || !(f.pop > 0)) return 1;
+// The share of the group's people its kitchens feed (0–1).
+function kitchenFed(state, f) {
+  if (!groupsBuild(state, f) || !(f.pop > 0)) return 0;
   const fed = f.bases.reduce((a, t) => a + (n(f.works && f.works[t], "kitchen") > 0 ? peopleAt(f, t) : 0), 0);
-  return 1 - W.KITCHEN.save * Math.min(1, fed / f.pop);
+  return Math.min(1, fed / f.pop);
 }
+export const groupEatMult = (state, f) => 1 - W.KITCHEN.save * kitchenFed(state, f);
+// The share of the group's people cooking in its kitchens (one per KITCHEN.perCook fed): they work no fields.
+export const groupCookShare = (state, f) => kitchenFed(state, f) / W.KITCHEN.perCook;
 export const fieldsFactor = (state, f) => W.FIELDS_MIN + (1 - W.FIELDS_MIN) * provisioned(state, f);
 export const sleepingRough = (state, f) => groupsBuild(state, f) && served(f, "beds") < f.pop;
 export const growthFactor = (state, f) => (sleepingRough(state, f) ? W.CROWDED_GROWTH : 1);
