@@ -14,6 +14,9 @@
 //                                 of the rig (or of a vest or carrier with pouches of its own) in order, the pack's
 //                                 slots. Undefined: as rolled; all empty: nothing carried.
 //   mods: { [gun slot]: key | "" } | undefined   the gun in the hands' parts (applyGunMods below).
+//   A carried pick (and a thing in the vehicle's back, s.startVehicle.items) is a key, or { key, mods } for a gun with
+//   parts picked (the same mods as the hands'; pickKey / pickMods read either form, cleanPick makes it safe: a gun
+//   with no parts left goes back to the plain key, so older picks and crew snapshots need no change).
 //   rolled, left, rig             written when the picks are put on (applyStartGear) for the editor: what the dice gave
 //                                 in each picked slot, the picked things there was no room for, a rig that would not go
 //                                 over the vest. Never carried into a rebuild (sanitizeStartGear drops them).
@@ -75,7 +78,7 @@ const limitOf = (where) => (where === "pocket" ? POCKETS : where === "pouch" ? S
 // Anything kept on the colonist or carried in a crew snapshot, made safe: unknown keys and slots dropped, an item only
 // in its own slot, each carried list a list of keys or nulls no longer than its container can be. null when nothing
 // is picked.
-/** @param {any} raw @returns {{ slots: Record<string, string>, carry?: Record<string, (string | null)[]>, mods?: Record<string, string> } | null} */
+/** @param {any} raw @returns {{ slots: Record<string, string>, carry?: Record<string, any[]>, mods?: Record<string, string> } | null} */
 export function sanitizeStartGear(raw) {
   if (!raw || typeof raw !== "object") return null;
   /** @type {Record<string, string>} */
@@ -84,14 +87,14 @@ export function sanitizeStartGear(raw) {
     const k = raw.slots && raw.slots[slot];
     if (k === "" || (typeof k === "string" && GEAR[k] && GEAR[k].slot === slot)) slots[slot] = k;
   }
-  /** @type {Record<string, (string | null)[]> | undefined} */
+  /** @type {Record<string, any[]> | undefined} */
   let carry;
   if (raw.carry && typeof raw.carry === "object") {
     const ok = new Set(carryChoices());
-    /** @type {Record<string, (string | null)[]>} */
+    /** @type {Record<string, any[]>} */
     const c = {};
     for (const where of CARRY_PLACES) {
-      const list = (Array.isArray(raw.carry[where]) ? raw.carry[where].slice(0, limitOf(where)) : []).map((/** @type {any} */ k) => (typeof k === "string" && ok.has(k) ? k : null));
+      const list = (Array.isArray(raw.carry[where]) ? raw.carry[where].slice(0, limitOf(where)) : []).map((/** @type {any} */ k) => cleanPick(k, ok));
       while (list.length && list[list.length - 1] == null) list.pop(); // trailing empties
       c[where] = list;
     }
@@ -99,16 +102,50 @@ export function sanitizeStartGear(raw) {
   }
   if (!Object.keys(slots).length && !carry) return null;
   const mods = slots.weapon ? sanitizeGunMods(slots.weapon, raw.mods) : null; // the gun in the hands' parts
-  /** @type {{ slots: Record<string, string>, carry?: Record<string, (string | null)[]>, mods?: Record<string, string> }} */
+  /** @type {{ slots: Record<string, string>, carry?: Record<string, any[]>, mods?: Record<string, string> }} */
   const out = carry ? { slots, carry } : { slots };
   if (mods) out.mods = mods;
   return out;
 }
 /** @param {any} sg */
 export const hasPicks = (sg) => !!(sg && ((sg.slots && Object.keys(sg.slots).length) || sg.carry));
-// Every carried pick in order: [{ key, where, i }].
+// Every carried pick in order: [{ key, where, i, mods (a gun's parts, or null), entry (as kept) }].
 /** @param {any} P */
-export const carryList = (P) => (P && P.carry ? CARRY_PLACES.flatMap((where) => (P.carry[where] || []).map((key, i) => ({ key, where, i })).filter((x) => x.key)) : []);
+export const carryList = (P) => (P && P.carry ? CARRY_PLACES.flatMap((where) => (P.carry[where] || []).map((e, i) => ({ key: pickKey(e), where, i, mods: pickMods(e), entry: e })).filter((x) => x.key)) : []);
+// A pick as kept: its key ("" / null: none) and a gun's parts.
+/** @param {any} e @returns {string | null} */
+export const pickKey = (e) => (typeof e === "string" ? e || null : e && typeof e === "object" && typeof e.key === "string" ? e.key : null);
+/** @param {any} e @returns {Record<string, string> | null} */
+export const pickMods = (e) => (e && typeof e === "object" && e.mods && typeof e.mods === "object" ? e.mods : null);
+// A pick made safe: a known key (of ok, when given), and for a gun its parts that fit; the plain key when it has none.
+/** @param {any} e @param {Set<string>} [ok] */
+export function cleanPick(e, ok = null) {
+  const key = pickKey(e);
+  if (!key || !GEAR[key] || (ok && !ok.has(key))) return null;
+  const mods = sanitizeGunMods(key, pickMods(e));
+  return mods ? { key, mods } : key;
+}
+// The item a pick makes: new, a gun with its parts, loaded (a gun carried or in the back: loadGun).
+/** @param {any} e */
+export const pickItem = (e) => loadGun(gunWith(/** @type {string} */ (pickKey(e)), pickMods(e)));
+// A gun item's parts as picks: those not as it comes ("" for a factory part it lacks), or null (the dice's gear: the
+// random starter parts the dice put on a gun come with it, gunmods.js randomStarterMods).
+/** @param {any} item @returns {Record<string, string> | null} */
+export function modsOf(item) {
+  if (!item || !GEAR[item.key] || !WEAPONS[item.key] || !takesMods(item.key)) return null;
+  const fac = makeItem(item.key).mods || {}, have = item.mods || {};
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const slot of GUN_SLOTS) {
+    const h = have[slot] && have[slot].key, f = fac[slot] && fac[slot].key;
+    if (h && h !== f) out[slot] = h;
+    else if (!h && f) out[slot] = "";
+  }
+  return sanitizeGunMods(item.key, out);
+}
+// An item as a pick: its key, with its parts when it has any of its own.
+/** @param {any} it */
+export const pickOf = (it) => { if (!it || !GEAR[it.key]) return null; const mods = modsOf(it); return mods ? { key: it.key, mods } : it.key; };
 
 // A picked item: new (no wear), its factory parts, a carrier's plates steel (inventory.js startKit).
 /** @param {string} key */
@@ -197,10 +234,11 @@ export function loadGun(item) {
   item.loaded = { n: gunCap(item), key: keyFor(cal, null) };
   return item;
 }
-// The rounds a picked gun carried or in the back comes loaded with, as supplies { key: n } ({} for anything else).
-/** @param {string} key */
-export function gunLoad(key) {
-  const it = GEAR[key] ? loadGun({ ...stockGun(key) }) : null;
+// The rounds a picked gun carried or in the back comes loaded with (its fitted magazine's, with parts picked), as
+// supplies { key: n } ({} for anything else).
+/** @param {string} key @param {any} [mods] */
+export function gunLoad(key, mods = null) {
+  const it = GEAR[key] ? loadGun(mods ? gunWith(key, mods) : { ...stockGun(key) }) : null;
   return it && it.loaded ? { [it.loaded.key]: it.loaded.n } : {};
 }
 
@@ -348,7 +386,7 @@ export function applyStartGear(s) {
   }
   if (P.carry) { // placed by hand: each where it was put (or wherever it fits, if the containers changed since)
     out.replaced.push(...loose);
-    for (const { key, where, i } of carryList(P)) { const it = loadGun(makeItem(key)); if (!placeAt(s, it, where, i)) out.left.push(it); }
+    for (const { entry, where, i } of carryList(P)) { const it = pickItem(entry); if (!placeAt(s, it, where, i)) out.left.push(it); }
   } else {
     let things = loose;
     if (out.gun) { // as rolled, but what only went with the replaced gun goes with it
@@ -399,7 +437,7 @@ export const TRUNK_SUPPLIES = Object.keys(TRUNK_CAPS);
 export function sanitizeStartVehicle(raw) {
   if (!raw || typeof raw !== "object") return null;
   const ok = new Set(trunkChoices());
-  const items = (Array.isArray(raw.items) ? raw.items : []).filter((k) => typeof k === "string" && ok.has(k)).slice(0, TRUNK_ITEMS);
+  const items = (Array.isArray(raw.items) ? raw.items : []).map((k) => cleanPick(k, ok)).filter(Boolean).slice(0, TRUNK_ITEMS);
   /** @type {Record<string, number>} */
   const supplies = {};
   for (const [k, cap] of Object.entries(TRUNK_CAPS)) { const n = Math.round(Number(raw.supplies && raw.supplies[k])); if (n > 0) supplies[k] = Math.min(cap, n); }
@@ -409,7 +447,7 @@ export function sanitizeStartVehicle(raw) {
 /** @param {any} v */
 export function trunkKg(v) {
   if (!v) return 0;
-  const kg = (v.items || []).reduce((a, k) => a + (GEAR[k] ? GEAR[k].weight ?? 1 : 0), 0) + Object.entries(v.supplies || {}).reduce((a, [k, n]) => a + (SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0) * n, 0);
+  const kg = (v.items || []).map(pickKey).reduce((a, k) => a + (k && GEAR[k] ? GEAR[k].weight ?? 1 : 0), 0) + Object.entries(v.supplies || {}).reduce((a, [k, n]) => a + (SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0) * n, 0);
   return Math.round(kg * 10) / 10;
 }
 // Whose vehicle's back it is (the colonist with s.startVehicle): one only.
@@ -421,14 +459,14 @@ export function normalStartVehicle(state, base) {
   const o = vehicleOwner(state);
   const v = o && sanitizeStartVehicle(o.startVehicle);
   if (!v) return;
-  for (const key of v.items) base.armory.push(loadGun(makeItem(key)));
+  for (const e of v.items) base.armory.push(pickItem(e));
   for (const [k, n] of Object.entries(v.supplies)) base.stock[k] = (base.stock[k] || 0) + n;
 }
 // Hardcore (hardcore-start.js rollCar): the picked back in place of the dice's. Returns { gear: items, supplies }.
 /** @param {any} v */
 export function trunkFromPicks(v) {
   const P = sanitizeStartVehicle(v);
-  return { gear: P ? P.items.map((k) => loadGun(makeItem(k))) : [], supplies: P ? { ...P.supplies } : {} };
+  return { gear: P ? P.items.map(pickItem) : [], supplies: P ? { ...P.supplies } : {} };
 }
 
 // Hardcore (hardcore-start.js setupHardcoreStart, right after one survivor's grab is rolled): their picks on them in

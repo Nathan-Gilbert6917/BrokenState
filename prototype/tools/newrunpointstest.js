@@ -15,12 +15,13 @@
 //     its calibre and rounds, the gun in the hands takes parts that fit it (each adding its worth to the gun's points; a
 //     bigger magazine more rounds too), kept through rebuilds, and a gun carried or in the vehicle's back comes loaded;
 //   - a fix: at a normal start a custom background's car's back (to the hub with its car) is on the vehicle's back's
-//     bill (the car pool first, then its payer), as the backgrounds editor says.
+//     bill (the car pool first, then its payer), as the backgrounds editor says;
+//   - parts on a carried gun and on a gun in the vehicle's back (kept as { key, mods }), loaded to a fitted magazine.
 // Usage: node tools/newrunpointstest.js [-v]
 import { createWorld } from "../src/sim/world.js";
 import { GEAR, SKILLS } from "../src/sim/data.js";
-import { CUSTOM_POINTS, itemPoints, suppliesPoints, skillCost, pricePerson, overBudget, overText, carPool, poolText, backgroundPoints, ownPoints, slotPoints, gunPoints, gunExtras, loosePoints, bgBacks, bgCarBack } from "../src/sim/custompoints.js";
-import { carryList, clearStartGear, trunkKg, START_TRUNK, START_GEAR, gunInfo, gunWith, gunCap, sanitizeStartGear, sanitizeGunMods } from "../src/sim/startgear.js";
+import { CUSTOM_POINTS, itemPoints, suppliesPoints, skillCost, pricePerson, overBudget, overText, carPool, poolText, backgroundPoints, ownPoints, slotPoints, gunPoints, gunExtras, loosePoints, bgBacks, bgCarBack, pickPoints } from "../src/sim/custompoints.js";
+import { carryList, clearStartGear, trunkKg, START_TRUNK, START_GEAR, gunInfo, gunWith, gunCap, sanitizeStartGear, sanitizeGunMods, sanitizeStartVehicle } from "../src/sim/startgear.js";
 import { allCarried } from "../src/sim/inventory.js";
 import { trunkBudget } from "../src/sim/randomkit.js";
 import { newRunScreen, crewSnapshot, blankCrew, randomizeAllCrew, crewWithBackground } from "../src/ui/newgame.js";
@@ -396,6 +397,62 @@ section("A custom background's car's back at a normal start: on the vehicle's ba
   eui.bgEditor.sel = "c_5";
   check(/paid with the vehicle's back/.test(backgroundEditor(st, eui)) && /goes to the hub with the car, paid by whoever pays for the vehicle's back/.test(backgroundEditor(st, eui)), "the editor: the car's back is paid with the vehicle's back");
   setCustomLibrary([]);
+}
+
+section("Parts on a carried gun and on a gun in the vehicle's back");
+{
+  const st = blankWorld(42);
+  const ui = UI();
+  ui.gearEdit = { i: 0, sel: null, msg: "" };
+  const s = st.survivors[0];
+  SG_CHANGE["sg-slot"](st, ui, { value: "hikingpack", dataset: { slot: "backpack" } });
+  add(st, ui, "pistol");
+  const at = carryList(s.startGear).find((x) => x.key === "pistol");
+  check(!/data-t="carry"/.test(startGearEditor(st, ui)), "no parts box until the gun is picked up");
+  SG_ACTIONS["sg-cell"](st, ui, { w: at.where, i: at.i });
+  check(/Parts for the picked 9mm pistol/.test(startGearEditor(st, ui)) && /data-action="sg-gunmod" data-gs="optic" data-t="carry"/.test(startGearEditor(st, ui)), "picked up: its parts box");
+  const p0 = pricePerson(st, s).carried;
+  check(SG_CHANGE["sg-gunmod"](st, ui, { value: "reddot", dataset: { gs: "optic", t: "carry" } }) === true, "a red dot on the carried pistol");
+  SG_CHANGE["sg-gunmod"](st, ui, { value: "mag_glock_33", dataset: { gs: "mag", t: "carry" } });
+  let e = s.startGear.carry[at.where][at.i];
+  check(e && e.key === "pistol" && e.mods.optic === "reddot" && e.mods.mag === "mag_glock_33", `kept as { key, mods } (${JSON.stringify(e)})`);
+  const p1 = pricePerson(st, s).carried;
+  check(p1 === pickPoints(e) && p1 === gunPoints("pistol", e.mods) + suppliesPoints({ a_9mm_fmj: 33 }) && p1 > p0, `priced: the gun as fitted and its 33-round load (${p0} → ${p1})`);
+  check(SG_CHANGE["sg-gunmod"](st, ui, { value: "riflecan", dataset: { gs: "muzzle", t: "carry" } }) === false, "a part that does not fit is refused");
+  // Moved to another spot: the parts go with it.
+  const free = s.startGear.carry.pack.findIndex((x, j) => !x && j !== at.i);
+  const to = free >= 0 ? free : s.startGear.carry.pack.length;
+  SG_ACTIONS["sg-cell"](st, ui, { w: "pack", i: to });
+  e = s.startGear.carry.pack[to];
+  check(e && e.mods && e.mods.optic === "reddot", "moved to another pack slot: its parts with it");
+  const b = again(st);
+  const pz = allCarried(b.survivors[0]).find((it) => it.key === "pistol");
+  check(pz && pz.mods && pz.mods.optic.key === "reddot" && pz.mods.mag.key === "mag_glock_33" && pz.loaded && pz.loaded.n === 33, `rebuilt: the carried pistol fitted and loaded to its magazine (${pz && pz.loaded && pz.loaded.n})`);
+  ui.gearEdit.sel = { where: "pack", i: to };
+  check(SG_ACTIONS["sg-gunmods-clear"](st, ui, { t: "carry" }) === true && s.startGear.carry.pack[to] === "pistol" && pricePerson(st, s).carried === p0, "As it comes: the plain key again, the points back");
+  // The vehicle's back.
+  ui.gearEdit.sel = null;
+  tadd(st, ui, "ar");
+  const o = st.survivors.find((x) => x.startVehicle);
+  const j = o.startVehicle.items.indexOf("ar");
+  check(SG_ACTIONS["sg-trunk-pick"](st, ui, { i: j }) === false && /Parts for the Assault rifle in the back/.test(startGearEditor(st, ui)) && /data-t="trunk" data-j="0"/.test(startGearEditor(st, ui)), "the ⚙ on a gun in the back: its parts box");
+  const v0 = pricePerson(st, o).vehicle;
+  check(SG_CHANGE["sg-gunmod"](st, ui, { value: "mag_stanag_40", dataset: { gs: "mag", t: "trunk", j: String(j) } }) === true, "a 40-round magazine on the rifle in the back");
+  e = o.startVehicle.items[j];
+  check(e.key === "ar" && e.mods.mag === "mag_stanag_40" && pricePerson(st, o).vehicle === v0 - loosePoints("ar") + pickPoints(e), `kept and priced (${v0} → ${pricePerson(st, o).vehicle})`);
+  const b2 = again(st);
+  const ar = b2.bases[0].armory.find((it) => it.key === "ar");
+  check(ar && ar.mods && ar.mods.mag.key === "mag_stanag_40" && ar.loaded && ar.loaded.n === 40, "normal: in the armory fitted, loaded with 40");
+  check(SG_ACTIONS["sg-gunmods-clear"](st, ui, { t: "trunk", j: String(j) }) === true && o.startVehicle.items[j] === "ar", "As it comes in the back too");
+  const hc = blankWorld(42, { mode: "hardcore" });
+  const uh = UI();
+  uh.gearEdit = { i: 0, sel: null, msg: "" };
+  tadd(hc, uh, "pistol");
+  SG_CHANGE["sg-gunmod"](hc, uh, { value: "mag_glock_17", dataset: { gs: "mag", t: "trunk", j: "0" } });
+  const hp = again(hc).parties[0].cargo.gear.find((it) => it.key === "pistol");
+  check(hp && hp.mods && hp.mods.mag.key === "mag_glock_17" && hp.loaded.n === 17, "Hardcore: the pistol in the car's back fitted, loaded with 17");
+  // The plain-key form still reads; a misfit made safe goes back to it.
+  check(sanitizeStartGear({ slots: {}, carry: { pocket: ["pistol"] } }).carry.pocket[0] === "pistol" && JSON.stringify(sanitizeStartVehicle({ items: ["ar", { key: "ar", mods: { muzzle: "pistolcan" } }, { key: "pistol", mods: { optic: "reddot" } }] }).items) === JSON.stringify(["ar", "ar", { key: "pistol", mods: { optic: "reddot" } }]), "plain keys read as ever; a gun with no parts that fit is a plain key");
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

@@ -9,7 +9,7 @@
 // The new-run screen's buttons (ui/startgear.js, ui/newgame.js) put the result on and build the world again. Player
 // only: the AI groups are rolled as ever.
 import { GEAR, SKILLS, SUPPLIES, TRAITS, clashIn, traitKind } from "./data.js";
-import { START_GEAR, START_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunkChoices, carrySpec, firstFit, trunkKg } from "./startgear.js";
+import { START_GEAR, START_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunkChoices, carrySpec, firstFit, trunkKg, pickKey } from "./startgear.js";
 import { CUSTOM_POINTS, pricePerson, pointsMax, itemPoints, slotPoints, vehiclePoints, skillsCost, nextLevelCost, ownPoints, carPool, loosePoints } from "./custompoints.js";
 import { tierCount, traitPoints, tidyTiers } from "./traits.js";
 import { standardMag } from "./mags.js";
@@ -171,4 +171,4 @@ export function randomBuild(state, s, rng) {
 
 // The places a kit's things are in, for the tools: [key].
 /** @param {any} P */
-export const kitKeys = (P) => [...Object.values(P.slots || {}).filter(Boolean), ...CARRY_PLACES.flatMap((w) => ((P.carry && P.carry[w]) || []).filter(Boolean))];
+export const kitKeys = (P) => [...Object.values(P.slots || {}).filter(Boolean), ...CARRY_PLACES.flatMap((w) => ((P.carry && P.carry[w]) || []).map(pickKey).filter(Boolean))];

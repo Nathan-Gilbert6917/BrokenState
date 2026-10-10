@@ -21,7 +21,7 @@ import { itemValue } from "./valuation.js";
 import { calOf } from "./ammo.js";
 import { keyFor } from "./rounds.js";
 import { traitPoints, traitTier, traitLabel } from "./traits.js";
-import { START_GEAR, sanitizeStartGear, CARRY_PLACES, gunWith, gunCap, gunLoad } from "./startgear.js";
+import { START_GEAR, sanitizeStartGear, CARRY_PLACES, gunWith, gunCap, gunLoad, pickKey, pickMods } from "./startgear.js";
 
 // ---------- the price table (tune here) ----------
 export const CUSTOM_POINTS = {
@@ -137,6 +137,14 @@ export function loosePoints(key) {
   if (!looseCache.has(key)) looseCache.set(key, itemPoints(key) + suppliesPoints(gunLoad(key)));
   return looseCache.get(key);
 }
+// A carried or back pick (a key, or { key, mods }: a gun with parts): the gun as fitted and its loaded magazine (a
+// bigger magazine fitted: more rounds).
+/** @param {any} e @returns {number} */
+export function pickPoints(e) {
+  const key = pickKey(e), mods = pickMods(e);
+  if (!key || !GEAR[key]) return 0;
+  return mods ? gunPoints(key, mods) + suppliesPoints(gunLoad(key, mods)) : loosePoints(key);
+}
 
 // ---------- a colonist's bill ----------
 // What is theirs alone (no vehicle's back, no car pool): { skills, good, bad, back (the bad traits' points that count,
@@ -159,7 +167,7 @@ function ownBill(state, s, max) {
   let gear = 0, carried = 0;
   if (P) {
     for (const [slot, key] of Object.entries(P.slots)) gear += slotPoints(slot, key, slot === "weapon" ? P.mods : null);
-    if (P.carry) for (const where of CARRY_PLACES) for (const key of P.carry[where] || []) if (key) carried += loosePoints(key);
+    if (P.carry) for (const where of CARRY_PLACES) for (const e of P.carry[where] || []) if (pickKey(e)) carried += pickPoints(e);
   }
   if (gear) lines.push(`Worn and held ${gear}`);
   if (carried) lines.push(`Carried ${carried}`);
@@ -269,7 +277,7 @@ const firstName = (s) => String((s && s.name) || "").split(" ")[0];
 /** @param {any} v */
 export function vehiclePoints(v) {
   if (!v) return 0;
-  return (v.items || []).reduce((a, k) => a + loosePoints(k), 0) + suppliesPoints(v.supplies || {});
+  return (v.items || []).reduce((a, e) => a + pickPoints(e), 0) + suppliesPoints(v.supplies || {});
 }
 // A custom background's own supplies (on them) and, at a normal start, its car (a vehicle more at the hub). Its skills,
 // traits and kit are the colonist's and priced as theirs.
