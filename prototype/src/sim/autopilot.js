@@ -759,6 +759,14 @@ function resolveCard(state) {
     if (p) teamAct(state, p);
     return;
   }
+  // The run's opening blurb (hardcore-start.js introCard): read and closed; the team's first order comes from the waiting
+  // state (idleTeams, this same hour).
+  if (card.intro) {
+    state.cards.shift();
+    const c = card.choices && card.choices[0];
+    if (c) c.resolve(state);
+    return;
+  }
   const opts = card.choices.filter((c) => !c.uiAction && !isDisabled(state, c));
   const choice = opts.length ? pickChoice(state, card, opts, p) || fallbackChoice(opts) : null;
   state.cards.shift();

@@ -99,7 +99,7 @@ const lib = { c_1: MEDIC, c_2: { ...blankBackground("c_2"), name: "Walker", car:
   check(mine > 0 && exact, "and then the kind and the back they set (a Hummer, 12 fuel, 3 meds, 5 scrap, sandbags and a rod)");
   check(p.supplies.food >= MEDIC.supplies.food + HC_START.TEAM_MIN * 2 && p.supplies.food <= MEDIC.supplies.food + HC_START.TEAM_MAX * 2 + 2 + 15, `food: theirs on top of the others' clamped days (${p.supplies.food})`);
   check(totalRounds(p.supplies) >= MEDIC.supplies.ammo && p.supplies.meds >= MEDIC.supplies.meds, `ammo and meds on top (${totalRounds(p.supplies)}, ${p.supplies.meds})`); // ammo.js: their rounds by calibre
-  check(a.hardcore.start.grabbed.some((l) => /field medic, patched up a platoon/.test(l)) && a.cards[0].text.includes("field medic"), "the orders card names the background");
+  check(a.hardcore.start.grabbed.some((l) => /field medic, patched up a platoon/.test(l)) && a.cards[0].text.includes("field medic"), "the opening blurb names the background");
   check(partyTile(p) === partyTile(pb), "same seed, same spawn");
   // Odds 0: never theirs.
   let never = true;
