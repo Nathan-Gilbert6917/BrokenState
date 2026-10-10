@@ -354,6 +354,7 @@ export const baseTier = (base) => (isShelter(base) ? 0 : 1);
 //   build      CAMP.build: a barricade, a rain catcher, crates or a barrel on its one plot, and the step up
 //   step up    camp_up (the camp that is your hub → a shelter) or outpost_up (a camp beside a hub → an outpost);
 //              queued by Establish base / Build outpost, by hand from Construction for a plain camp
+//   materials  its builders make the building materials the step up waits for from scrap in its stores (campMaterialsHour)
 //   rest       the hurt heal as in the old Camp order (medical.js: twice a base's rate without a hospital)
 //   land       it holds only its own tile (factions.js recomputeOwnership) and counts for no victory
 //   neglect    nobody there for STAGING.ABANDON days and it may be looted; empty and bare for STAGING.GONE days, gone
@@ -364,6 +365,7 @@ export const CAMP = {
   setupHours: 1,     // Set up camp: an hour of work, no materials (the materials come with the step up)
   build: { barricades: 1, rain_catcher: 1, crates: 1, water_barrel: 1, camp_up: 1, outpost_up: 1 },
   ruinScrap: 10,     // on the ruins of a burned base: 10 scrap less for the step up (salvage)
+  matScrap: 3, matHours: 3, // its builders make building materials for the step up from scrap (= crafting.js buildmat)
 };
 export const isCamp = (base) => !!base && base.tier === 0 && base.camp === true;
 // What the base is called in the panels.
@@ -646,11 +648,35 @@ function gatherHour(base) {
   }
 }
 
+// A camp (isCamp) whose step up waits for building materials while its stores hold the scrap: its builders make them
+// there (the field recipe, crafting.js buildmat: CAMP.matScrap scrap and CAMP.matHours work-hours each), as the old
+// staging camp's team did on the road. The hour goes on that instead of the building. True when they worked on it.
+function campMaterialsHour(state, base) {
+  if (!isCamp(base)) return false;
+  const job = tierUpJob(base);
+  if (!job || !job.paid || !gatherStalled(job)) return false;
+  const bm = gatherRows(job).find((r) => r.key === "buildmat" && !r.ok);
+  if (!bm || (base.stock.buildmat || 0) >= 1) return false;
+  const sc = gatherRows(job).find((r) => r.key === "scrap");
+  const scrapNeed = sc ? Math.max(0, sc.need - sc.have) : 0;
+  if ((base.stock.scrap || 0) - scrapNeed < CAMP.matScrap) return false; // the step up's own scrap first
+  const rate = buildRate(state, base);
+  if (rate <= 0) return false;
+  job.matWork = (job.matWork || 0) + rate;
+  if (job.matWork >= CAMP.matHours) {
+    job.matWork -= CAMP.matHours;
+    base.stock.scrap -= CAMP.matScrap;
+    base.stock.buildmat = (base.stock.buildmat || 0) + 1;
+    log(state, `${base.name}: the builders made building materials from scrap for the step up.`, "info");
+  }
+  return true;
+}
 // Builders work on the first job in the queue, hour by hour (a job waiting for its materials lets the next one go on).
 export function constructionHour(state) {
   for (const base of state.bases) {
     if (!base.construction.length || underAttack(state, base)) continue;
     gatherHour(base);
+    if (campMaterialsHour(state, base)) continue; // a camp's builders make the building materials its step up waits for
     const job = base.construction.find((c) => !gatherStalled(c));
     if (!job) continue;
     job.progress += buildRate(state, base);

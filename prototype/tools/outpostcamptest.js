@@ -36,7 +36,7 @@ function pitch(st, n, supplies) {
   if (!check(!res.error, `the team leaves (${res.error || "ok"})`)) return null;
   res.party.path = [tile]; res.party.idx = 0;
   giveOrder(st, res.party, "outpost");
-  // Pitching takes PITCH_HOURS (6) of work (parties.js): no camp until it is done.
+  // Setting up the camp takes PITCH_HOURS (1, buildings.js CAMP.setupHours) of work: no camp until it is done.
   const early = st.bases.find((b) => b.tile === tile);
   check(!early && res.party.task && res.party.task.type === "pitch", "the team pitches the camp first (a task), no camp yet");
   for (let i = 0; i < PITCH_HOURS + 2 && !st.bases.some((b) => b.tile === tile); i++) tickHour(st);
@@ -48,31 +48,32 @@ const hours = (st, n, stop = () => false) => { for (let i = 0; i < n && !stop();
 section("Build outpost pitches a camp");
 {
   const st = world();
-  // The user's numbers (2026-10-09).
-  check(outpostScrap(st, 0) === 12 || st.tiles[0].ruin, "pitching takes 12 scrap carried");
-  check(outpostKit(st, 0).scrap === 12 + 20 && !outpostKit(st, 0).parts && outpostKit(st, 0).buildmat === 2, `the kit to pitch and establish in one trip: 32 scrap, 2 building materials (${JSON.stringify(outpostKit(st, 0))})`);
-  check(PITCH_HOURS === 6, "pitching takes 6 hours of work");
+  // The user's numbers (2026-10-09); since camps are the barest base tier (staging.js), setting one up takes an hour and
+  // nothing carried: the materials come with the step up.
+  check(outpostScrap(st, 0) === 0, "setting up the camp takes no scrap");
+  check(outpostKit(st, 0).scrap === (st.tiles[0].ruin ? 10 : 20) && !outpostKit(st, 0).parts && outpostKit(st, 0).buildmat === 2, `the kit to set up and establish in one trip: 20 scrap, 2 building materials (${JSON.stringify(outpostKit(st, 0))})`);
+  check(PITCH_HOURS === 1, "setting up takes an hour of work");
   check(JSON.stringify(BUILDINGS.outpost_up.cost) === JSON.stringify({ scrap: 20, buildmat: 2 }) && BUILDINGS.outpost_up.hours === 20, "establishing: 20 scrap, 2 building materials, 20 work-hours");
   check(JSON.stringify(BUILDINGS.hub_up.cost) === JSON.stringify({ scrap: 100, buildmat: 5 }) && BUILDINGS.hub_up.hours === 60 && BUILDINGS.hub_up.gather, "shelter to base: 100 scrap, 5 building materials, 60 work-hours, gathered as they come in");
-  check(JSON.stringify(STAGING.HARDCORE.needs) === JSON.stringify({ scrap: 20, buildmat: 2 }) && STAGING.HARDCORE.work === 20 && STAGING.PITCH.scrap === 8 && STAGING.PITCH.hours === 2, "staging camp: 2 hours and 8 scrap to pitch; to a shelter 20 scrap, 2 building materials, 20 work-hours");
+  check(JSON.stringify(STAGING.HARDCORE.needs) === JSON.stringify({ scrap: 20, buildmat: 2 }) && STAGING.HARDCORE.work === 20 && STAGING.PITCH.scrap === 0 && STAGING.PITCH.hours === 1 && BUILDINGS.camp_up.hours === 20, "a camp: an hour and nothing carried to set up; to a shelter (camp_up) 20 scrap, 2 building materials, 20 work-hours");
   check(CRAFTS.buildmat && CRAFTS.buildmat.in.scrap === 3 && CRAFTS.buildmat.supplies.buildmat === 1 && CRAFTS.buildmat.field, "building materials are crafted from scrap (3 for 1, anywhere)");
   const at = { path: [nearFree(st, hub(st).tile, 3, 6)], idx: 0, supplies: { scrap: 11 }, cargo: { supplies: {}, gear: [] } };
   const opt = orderOptions(st, at).find((x) => x.mission === "outpost");
-  check(opt && /Needs 12 scrap carried/.test(opt.disabled || opt.reason || opt.why || JSON.stringify(opt)), `11 scrap is not enough (${opt && JSON.stringify(opt).slice(0, 120)})`);
+  check(opt && !opt.disabled, `Build outpost is open with no scrap carried (${opt && JSON.stringify(opt).slice(0, 120)})`);
   const P = pitch(st, 2, { scrap: 16 });
   const b = P && P.base;
   if (check(!!b, "a base stands there")) {
-    check(b.type === "outpost" && isShelter(b) && b.tier === 0, `it is a camp: tier 0 outpost (${b.type}, tier ${b.tier})`);
+    check(b.type === "outpost" && isShelter(b) && b.tier === 0 && b.camp === true, `it is a camp: tier 0 outpost, a camp (${b.type}, tier ${b.tier}, camp ${b.camp})`);
     check(tierName(b) === "Outpost camp", `called an outpost camp (${tierName(b)})`);
-    check(baseWalls(b) === 0 && plotCap(b, "building") === 0 && plotCap(b, "utility") === 2, "a shelter's rules: no walls, no building plots, 2 utility plots");
+    check(baseWalls(b) === 0 && plotCap(b, "building") === 0 && plotCap(b, "utility") === 1, "a camp's rules: no walls, no building plots, 1 utility plot");
     const job = tierUpJob(b);
     check(job && job.type === "outpost_up" && job.paid, "its step up is queued at once, gathering its materials");
     check(atBase(st, b.id).length === 2 && atBase(st, b.id).every((s) => s.role === "build"), "the team is its staff, on Build");
-    check(st.log.some((l) => /outpost camp pitched/.test(l.text)), "the log says so");
-    // Carried 16: 12 to pitch, 4 into the stores, taken by the job in the first hour.
+    check(st.log.some((l) => /set up camp/.test(l.text)), "the log says so");
+    // Carried 16: all into the stores (setting up takes none); the job takes what its next GATHER_AHEAD hours need (12).
     tickHour(st);
     const sc = gatherRows(job).find((r) => r.key === "scrap");
-    check(sc.have === 4 && (b.stock.scrap || 0) < 1, `the 4 scrap left over went into the step up (${sc.have}, stores ${b.stock.scrap})`);
+    check(sc.have === 12 && (b.stock.scrap || 0) === 4, `the step up took the 12 scrap its next hours need, 4 left in the stores (${sc.have}, stores ${b.stock.scrap})`);
     check(Math.abs(gatherCap(job) - 0) < 1e-9, "no building materials yet: the work is capped at nothing (the least delivered)");
     hours(st, 30);
     check(job.progress <= 1e-9 && gatherStalled(job), `no work ahead of the materials (${job.progress})`);
@@ -129,7 +130,7 @@ section("Brought in one trip; cancel; save");
 section("The panels and the map");
 {
   const st = world(seed + 2);
-  const P = pitch(st, 2, { scrap: 16 });
+  const P = pitch(st, 2, { scrap: 4 });
   const b = P && P.base;
   if (b) {
     tickHour(st);

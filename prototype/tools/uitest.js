@@ -1225,7 +1225,7 @@ section("Map overlays: Known area, ruins, Coalition land (render.js, help.js, si
   draw(w);
   check(R.mapOverlay().ruins.includes(rt), "a razed base in view is drawn as ruins");
   const panel = renderRight(w, { ...freshUi(), selected: rt });
-  check(/Ruins of /.test(panel) && /Salvage/.test(panel) && /Danger/.test(panel) && /5 scrap carried/.test(panel), "the tile panel names the ruins with salvage, danger and the 5 scrap an outpost needs");
+  check(/Ruins of /.test(panel) && /Salvage/.test(panel) && /Danger/.test(panel) && /10 scrap less to build up/.test(panel), "the tile panel names the ruins with salvage, danger and the 10 scrap a camp saves there (camps are bases, staging.js)");
   htmlOk(panel, "tile panel on ruins");
   const info = R.ruinInfo(w, rt);
   check(info && Number.isFinite(info.danger) && info.dangerName && info.salvage && /^Ruins of /.test(info.title), `ruin info: ${info && `${info.title}, danger ${info.dangerName}, salvage ${info.salvage}`}`);

@@ -8,7 +8,7 @@ import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card d
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById } from "../sim/vehicles.js";
-import { BUILDINGS, count, tierUpJob, gatherCap, isCamp } from "../sim/buildings.js";
+import { BUILDINGS, count, tierUpJob, gatherCap, isCamp, CAMP } from "../sim/buildings.js";
 import { weatherTint, season, iceRow } from "../sim/weather.js";
 import { drawFronts, weatherTipLines } from "./wxmap.js"; // weather fronts over the land, frozen rivers in the tooltip
 import { radioNodes } from "../sim/radio.js";
@@ -517,7 +517,7 @@ export function ruinInfo(state, id) {
   const r = t.ruin;
   return {
     title: ruinTitle(r), by: r.by || "raiders", day: r.day, yours: !!r.yours, from: r.from && r.from !== "you" ? r.from : "",
-    danger, dangerName: DANGER_NAMES[danger], salvage: LOOT_BANDS[lootBand(t, loot)], salvageLive: isLive, scrap: outpostScrap(state, id),
+    danger, dangerName: DANGER_NAMES[danger], salvage: LOOT_BANDS[lootBand(t, loot)], salvageLive: isLive, scrap: CAMP.ruinScrap, // a camp here builds up for less scrap (sim/buildings.js tierUpJobFor)
   };
 }
 

@@ -27,9 +27,8 @@ import {
 } from "../src/ui/guide.js";
 import { STAGING as STAGING_PITCH } from "../src/sim/staging.js";
 
-// Pitching a staging camp takes STAGING.PITCH (8 scrap carried, 2 hours of work; 2026-10-09): with no camp yet the team is
-// handed its scrap and the camp stands at once, as before, so the checks below see the camp they always did.
-const establishNow = (st, p) => { if (!st.staging) { p.supplies.scrap = (p.supplies.scrap || 0) + STAGING_PITCH.PITCH.scrap; p.pitched = true; } return giveOrder(st, p, "establish"); };
+// Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp stands at once.
+const establishNow = (st, p) => { p.pitched = true; return giveOrder(st, p, "establish"); };
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -223,15 +222,13 @@ section("Hardcore: the road list, founded for real");
   check(guideCheck(st, ui).some((x) => x.id === "water"), "water: the team holds more water than before");
   check(!g.done.camp, "no camp yet");
   st.cards.length = 0;
+  Object.assign(p.cargo.supplies, { scrap: 6, food: 40, water: 40 });
   establishNow(st, p);
-  check(!!st.staging && guideCheck(st, ui).some((x) => x.id === "camp"), "camp: the staging camp is pitched");
+  check(!!hub(st) && hub(st).camp === true && guideCheck(st, ui).some((x) => x.id === "camp"), "camp: the camp is set up (a base)");
   check(!g.done.needs, "the camp still needs its materials");
-  const camp = st.staging;
-  Object.assign(p.cargo.supplies, { scrap: camp.needs.scrap, parts: camp.needs.parts || 0, buildmat: camp.needs.buildmat || 0, food: 40, water: 40 });
-  st.cards.length = 0;
-  establishNow(st, p);
+  Object.assign(hub(st).stock, { scrap: 30, buildmat: 2 }); // a trip home with the rest
   check(guideCheck(st, ui).some((x) => x.id === "needs"), "needs: everything is in");
-  run(st, 24 * 8, () => { guideCheck(st, ui); return !!hub(st); }, () => { if (st.parties.includes(p) && p.phase === "waiting" && st.staging) establishNow(st, p); });
+  run(st, 24 * 8, () => { guideCheck(st, ui); return !!hub(st) && hub(st).camp !== true; });
   run(st, 30, () => { guideCheck(st, ui); return !!g.done.night; }); // the shelter can stand within a day now (20 work-hours): its first night after it
   guideCheck(st, ui);
   check(!!hub(st) && !!g.done.found && !!g.done.clock && !!g.done.night, `found: the shelter stands (day ${day(st)}), the clock and the first night ticked`);

@@ -19,7 +19,7 @@ import { day, hub, alive } from "../sim/world.js";
 import { partyTile, partyMembers } from "../sim/parties.js";
 import { teamWaterIn, waterIn } from "../sim/water.js";
 import { waterSource, ESTABLISH_LABEL } from "../sim/staging.js";
-import { isCamp, tierUpJob, gatherShort } from "../sim/buildings.js";
+import { isCamp, tierUpJob, gatherRows } from "../sim/buildings.js";
 import { roadTeam } from "../sim/hardcore-start.js";
 import { tileActions } from "./ui.js";
 import { listSaves } from "./saves.js";
@@ -132,7 +132,7 @@ const STEPS = {
   },
   needs: {
     title: "Bring in what the camp needs", why: "Building the camp up into a shelter takes scrap and building materials (its Construction tab lists them). Send teams out from the camp to scavenge sites around it; what they bring home goes into its stores and the step up takes it as it comes in.",
-    done: (state) => { const h = hub(state); if (!h) return false; const job = isCamp(h) ? tierUpJob(h) : null; return !isCamp(h) || (!!job && !gatherShort(job)); },
+    done: (state) => { const h = hub(state); if (!h) return false; const job = isCamp(h) ? tierUpJob(h) : null; return !isCamp(h) || (!!job && gatherRows(job).every((r) => r.have + (h.stock[r.key] || 0) >= r.need - 1e-9)); }, // taken by the step up or waiting in the stores
     show: (state, ui, act) => { const h = hub(state); if (h && isCamp(h)) { ui.baseView = { id: h.id, tab: "construction" }; return ['[data-action="tf-open"]', ".basebody"]; } return openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]'] : []; },
   },
   found: {
