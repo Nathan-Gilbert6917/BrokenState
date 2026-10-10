@@ -3,6 +3,7 @@
 // ui.inv = { sid, loot: bool, body: index }  ui.invSel = selected location string  ui.invMsg = last message.
 // Click an item to select it, then click a slot, pocket, pack cell or the storage box to move it there
 // (click the selected item again to send it across: onto the person, or into storage). Drag and drop works too.
+import { finishOf, FINISH_NAME, GUN_FINISH } from "../sim/data-finish.js"; // a gun's finish in its tooltip
 import { keyWord } from "../sim/water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, SUPPLIES, SKILL_NAMES } from "../sim/data.js";
 import { survivorById, atBase, baseById, gearEffect, combatPower } from "../sim/world.js";
@@ -30,7 +31,7 @@ import { lootLayer } from "../sim/raidloot.js";
 import { groundPile, fieldReady, pileCount } from "../sim/ground.js"; // bodies searched where they fell, things on the ground
 import { SEARCH } from "../sim/search.js";
 import { ask } from "./confirm.js"; // breaking down anything above junk asks first (one confirmation style)
-import { isGunKey } from "./gunart.js"; // a gun (not a bow or a blade): the gun builder opens on it
+import { isGunKey, gunIconHtml } from "./gunart.js"; // a gun (not a bow or a blade): the gun builder opens on it; its picture on its tile
 import { gunTipText, slotOfPart, SLOT_NAMES as PART_SLOT_NAMES } from "./gunbuilder.js"; // the gun builder (ui/gunbuilder.js)
 import { isHelmet, isHelmetPart, helmetSlots, helmetChoices, helmetFitReason, fitHelmetAt, stripHelmetAt, helmetLabel, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts: visors, night vision, a light, ear protection
 import { rigOf, pouchesOf, isCarrier, insertsOf } from "../sim/inventory.js"; // rigs and plate carriers (section 16)
@@ -58,6 +59,8 @@ const TOOL_ICON = { bandagekit: "✚", surgkit: "✚", milradio: "📻", nvg: "�
 const CAT_ICON = { jewelry: "💍", smokes: "🚬", liquor: "🍾", treats: "🍫", gadgets: "📱", collectibles: "🪙", household: "🧻", defence: "🚧", bow: "🏹" };
 const SLOT_ICON = { weapon: "🗡", tool: "🧰", head: "⛑", armor: "🦺", arms: "🧤", legs: "🦵", backpack: "🎒", rig: "🦺", insert: "▭" };
 export const SUPPLY_ICON = { food: "🥫", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌" };
+// A gun's tile shows the gun itself (ui/gunart.js gunThumb: as fitted, in its finish), a row of its own over its name.
+const gunTile = (item) => (isGunKey(item.key) ? (() => { const h = gunIconHtml(item, 1.05); return h ? `<span class="iico igunrow">${h}</span>` : ""; })() : "");
 function icon(key) {
   const d = GEAR[key];
   if (isGunKey(key)) return "🔫";
@@ -94,6 +97,7 @@ export function itemTip(item, s = null) {
     const e = gearEffect(s, item);
     if (e.gap > 0) bits.push(e.usable ? `${s.name.split(" ")[0]} is ${e.gap} below the skill: weaker${e.damageChance ? ", may damage it" : ""}` : `${s.name.split(" ")[0]} cannot use it`);
   }
+  { const f = finishOf(item); if (f && (GUN_FINISH[item.key] || []).length > 1) bits.push(`finish: ${FINISH_NAME[f] || f}`); } // sim/data-finish.js
   bits.push(`worth: ${worthTier(item)}`); // a rough tier: the price depends on who you trade with (sim/valuation.js)
   if ((item.quality || 1) < 1) bits.push(`condition ${Math.round(item.quality * 100)}%`);
   const dur = itemDur(item);
@@ -110,7 +114,7 @@ export function tile(item, loc, s, drag = true) {
   const col = frac > 0.6 ? "var(--good)" : frac > 0.3 ? "var(--accent)" : "var(--danger)";
   const unusable = s && d.skill && d.req && !gearEffect(s, item).usable;
   return `<div class="itile${unusable ? " bad" : ""}"${drag ? ` draggable="true" data-drag="${loc}"` : ""}${tip(itemTip(item, s))}>
-    <span class="iico">${icon(item.key)}</span><span class="iname">${esc(stackLabel(item))}</span><span class="ikg">${Math.round(itemLoad(item) * 10) / 10}</span>
+    ${gunTile(item) || `<span class="iico">${icon(item.key)}</span>`}<span class="iname">${esc(stackLabel(item))}</span><span class="ikg">${Math.round(itemLoad(item) * 10) / 10}</span>
     ${item.contents ? `<span class="icount">${item.contents.filter(Boolean).length}/${item.contents.length}</span>` : countOf(item) > 1 ? `<span class="icount">×${countOf(item)}</span>` : isRoundItem(item) ? `<span class="icount">${amountOf(item)}</span>` : ""}
     <i class="idur"><b style="width:${Math.round(Math.max(0.05, Math.min(1, frac)) * 100)}%;background:${col}"></b></i></div>`;
 }

@@ -12,6 +12,7 @@ import { ATTACH, makeMod, modFits } from "./gunmods.js";
 import { FACTORY_FIT, TRUCK_GEAR } from "./data-guns.js";
 import { lootItem } from "./inventory.js"; // call time only (inventory.js imports this module)
 import { hash01 } from "./skills.js";
+import { setFinish } from "./data-finish.js"; // its finish (black, tan, wood...) on the same dice
 
 // The parts of a row that can go on this gun now (gunmods.js modFits: by platform and calibre, data-gunmods.js).
 const usable = (gunKey, keys) => keys.filter((k) => GEAR[k] && ATTACH[k] && modFits(gunKey, k));
@@ -19,6 +20,7 @@ const usable = (gunKey, keys) => keys.filter((k) => GEAR[k] && ATTACH[k] && modF
 /** Fits the factory parts to a gun item (in place) and returns it. seed: a number (or anything) to roll the chance rows on.
  * @param {any} item @param {any} [seed] */
 export function factoryFit(item, seed = null) {
+  setFinish(item, seed);
   const plan = item && FACTORY_FIT[item.key];
   if (!plan) return item;
   plan.forEach(([chance, keys], i) => {

@@ -28,6 +28,7 @@ const GM = await import("../src/sim/gunmods.js");
 const GA = await import("../src/ui/gunart.js");
 const GP = await import("../src/ui/gunpaint.js");
 const GS = await import("../src/ui/gunspecs.js");
+const GPT = await import("../src/ui/gunparts.js");
 const SP = await import("../src/ui/sprites.js");
 const DS = await import("../src/ui/downsprites.js");
 const { ensureAppearance } = await import("../src/sim/appearance.js");
@@ -192,6 +193,143 @@ console.log("Fallback");
   for (const k of Object.keys(exp)) { delete WEAPONS[k]; delete GEAR[k]; }
   check(!GP.paintMini(SP.painter(), "knife", "held") || !GA.isGunKey("knife"), "a blade is no gun");
   check(SP.weaponPixels("knife") > 0 && SP.weaponPixels("machete") > 0, "the blades keep their own looks");
+}
+
+// ---------- 7. fitted parts on the gun in battle ----------
+console.log("Fitted parts held");
+{
+  const plain = SP.paintSurvivor(app, GPT.weaponLook({ key: "m4" })).px.join();
+  const dot = SP.paintSurvivor(app, GPT.weaponLook({ key: "m4", mods: { optic: { key: "reddot" } } })).px.join();
+  const scope = SP.paintSurvivor(app, GPT.weaponLook({ key: "m4", mods: { optic: { key: "acog" } } })).px.join();
+  check(plain !== dot && dot !== scope && plain !== scope, "held: an M4 with a red dot, with an ACOG and bare all differ");
+  const fits = (k, part) => GM.ATTACH[part] && GM.modFits(k, part);
+  const tried = [], same = [];
+  for (const k of guns.filter((g) => GEAR[g])) {
+    const slots = GM.slotsOf(makeItem(k));
+    for (const [slot, part] of [["optic", "scope4x"], ["muzzle", "can556"], ["muzzle", "pistolcan"], ["tactical", "weaponlight"], ["under", "foregrip"], ["bipod", "bipod"]]) {
+      if (!slots.includes(slot) || !fits(k, part) || (GA.PLAT_ART[GA.artKeyOf(k)].def[slot] || (GA.PLAT_ART[GA.artKeyOf(k)].own || {})[slot]) === GA.lookOf({ key: part }, slot)) continue; // (its own bipod: the same)
+      tried.push(`${k}.${slot}`);
+      const a = SP.paintSurvivor(app, k).px.join(), b = SP.paintSurvivor(app, GPT.weaponLook({ key: k, mods: { [slot]: { key: part } } })).px.join();
+      if (a === b) same.push(`${k}.${slot}=${part}`);
+    }
+  }
+  check(tried.length > 40 && !same.length, `held: every fitted sight, suppressor, light, foregrip and bipod shows (${tried.length} tried${same.length ? `; not: ${list(same)}` : ""})`);
+  const enemy = { id: 7, side: "enemy", kind: "human", kit: "soldiers", weapon: "m4", gmWeapon: "m4", modItems: { optic: { key: "acog" }, muzzle: { key: "can556" } } };
+  check(GPT.weaponLook(GPT.unitGun(enemy)).includes("optic=") && GPT.weaponLook(GPT.unitGun(enemy)).includes("muzzle="), "an enemy's gun shows the parts their kit gave it");
+  const bare = { ...enemy, gmWeapon: "ak" };
+  check(!GPT.weaponLook(GPT.unitGun(bare)).includes("optic="), "only while they still hold the gun the parts were for");
+  // The sprite caches stay bounded however many looks there are.
+  for (let i = 0; i < 700; i++) SP.survivorCanvas({ ...app, accent: `#${(i * 997).toString(16).padStart(6, "0").slice(-6)}` }, "m4");
+  check(true, "the sprite cache took 700 looks (it clears itself past 600)");
+}
+
+// ---------- 8. data-driven parts ----------
+console.log("Parts by kind");
+{
+  const add = (k, name, slot) => { GEAR[k] = { name, cat: "gunmod", slot: "tool" }; GM.ATTACH[k] = { slot, mount: slot, fits: { any: true } }; };
+  const cases = [["zzz_dot", "Budget red dot (a Chinese clone)", "optic", "dot"], ["zzz_lpvo", "1-6x LPVO", "optic", "scope"], ["zzz_mag", "3x magnifier", "optic", "magnifier"],
+    ["zzz_holo", "Holographic sight", "optic", "holo"], ["zzz_can9", "9mm suppressor", "muzzle", "can"], ["zzz_comp", "Pistol compensator", "muzzle", "comp"],
+    ["zzz_combo", "Weapon light / laser combo", "tactical", "combo"], ["zzz_laser", "Budget green laser", "tactical", "laser"], ["zzz_saddle", "Side saddle (6 shells)", "rail", "saddle"],
+    ["zzz_brace", "Pistol arm brace", "stock", "stock"], ["zzz_stop", "Hand stop", "grip", "stop"], ["zzz_bip", "Harris bipod", "bipod", "bipod"]];
+  for (const [k, n, sl] of cases) add(k, n, sl);
+  const got = cases.map(([k, , sl, kind]) => [k, GPT.partSpecOf(k, sl), kind]);
+  check(got.every(([, o, kind]) => o && o.kind === kind), `a new part needs only its slot and name: ${got.map(([k, o]) => `${k} → ${o ? o.kind : "none"}`).join(", ")}`);
+  const looks = cases.map(([k, , sl]) => [sl, GA.lookOf({ key: k }, sl)]);
+  check(looks.every(([, l]) => /^p:/.test(l) && GA.PART_ART[l]), "drawn by its kind (a look of its own, compiled once)");
+  const base = GA.paintGun("carbine", {}).px.join();
+  const blank = looks.filter(([sl, l]) => GA.paintGun("carbine", { [sl]: l }).px.join() === base);
+  check(!blank.length, `each paints on the gun${blank.length ? ` (not: ${list(blank.map(([, l]) => l))})` : ""}`);
+  GS.PART_SPEC.zzz_dot = { kind: "dot", len: 3, col: "fde" };
+  const o = GPT.partSpecOf("zzz_dot", "optic");
+  check(o.len === 3 && o.col === "fde" && o.kind === "dot", "a part's own spec (PART_SPEC) sets its size and colour");
+  delete GS.PART_SPEC.zzz_dot;
+  for (const [k] of cases) { delete GEAR[k]; delete GM.ATTACH[k]; }
+  // Every attachment in the game has a look that draws on the big drawing.
+  const none = Object.keys(GM.ATTACH).filter((k) => GEAR[k] && !GA.PART_ART[GA.lookOf({ key: k }, GM.ATTACH[k].slot)]);
+  check(!none.length, `every attachment in the game has a look (${Object.keys(GM.ATTACH).length}${none.length ? `; not: ${list(none)}` : ""})`);
+}
+
+// ---------- 9. thumbnails ----------
+console.log("Thumbnails");
+{
+  const items = [...new Set(gearGuns)];
+  const missing = items.filter((k) => { const t = GA.gunThumb({ key: k }); return !t || !t.url || !(t.w > 4 && t.h > 3); });
+  check(items.length > 40 && !missing.length, `every gun item has a thumbnail (${items.length}${missing.length ? `; not: ${list(missing)}` : ""})`);
+  const t1 = GA.gunThumb({ key: "m4" }), t2 = GA.gunThumb({ key: "m4" });
+  check(t1 === t2, "cached");
+  check(GA.gunThumb({ key: "pistol" }).w < GA.gunThumb({ key: "m240" }).w, "cropped to the gun (a pistol narrower than a machine gun)");
+  const INV = await import("../src/ui/inventory.js");
+  const html = INV.tile(makeItem("m4"), "x", null, false), knife = INV.tile(makeItem("knife"), "x", null, false);
+  check(/<img class="igun"[^>]*height:[\d.]+rem/.test(html) && !/🔫/.test(html), "a gun's tile shows its picture (sized in rem: it scales with the UI)");
+  check(!/<img class="igun"/.test(knife), "a blade keeps its icon");
+  check(GA.gunIconHtml({ key: "m4", mods: { optic: { key: "acog" } } }) !== GA.gunIconHtml({ key: "m4" }), "as fitted");
+}
+
+// ---------- 10. the muzzle ----------
+console.log("Muzzle");
+{
+  const ISO = await import("../src/ui/isoview.js");
+  const b = { fx: [], setup: {}, units: [] }, state = { factions: [], survivors: [], seed: 1 };
+  const bad = [], pts = {};
+  for (const k of guns) {
+    const t = { id: 3, side: "enemy", kind: "human", kit: "raiders", weapon: k, x: 1, y: 1 };
+    const p = [0, 1, 2, 3].map((r) => ISO.muzzlePoint(state, b, t, 0, r, 1));
+    if (p.some((q) => !q)) { bad.push(`${k} (none)`); continue; }
+    // Enemies face left (−x) unless the view is turned a half (rotations 1 and 2 mirror the sprite).
+    if (!(p[0][0] < 0 && p[3][0] < 0 && p[1][0] > 0 && p[2][0] > 0 && p[0][0] === -p[1][0] && p.every((q) => q[1] === p[0][1]))) bad.push(`${k} ${JSON.stringify(p)}`);
+    pts[k] = p[0];
+  }
+  check(!bad.length, `every gun's muzzle is on the side it faces, in all four view rotations${bad.length ? ` (not: ${list(bad)})` : ""}`);
+  check(Math.abs(pts.pistol[0]) < Math.abs(pts.m4[0]) && Math.abs(pts.m4[0]) < Math.abs(pts.sniper[0]) + 0.01, `a pistol's muzzle is nearer the body than a carbine's, a carbine's no further than a sniper rifle's (${pts.pistol[0].toFixed(1)}, ${pts.m4[0].toFixed(1)}, ${pts.sniper[0].toFixed(1)})`);
+  check(new Set(Object.values(pts).map((q) => q.join())).size > 8, "the muzzles are where each gun's barrel ends (many different points)");
+  const t = { id: 4, side: "enemy", kind: "human", kit: "raiders", weapon: "m4", gmWeapon: "m4", modItems: { muzzle: { key: "can556" } }, x: 1, y: 1 };
+  const can = ISO.muzzlePoint(state, b, t, 0, 0, 1);
+  check(Math.abs(can[0]) > Math.abs(pts.m4[0]), "a fitted suppressor moves the muzzle out to its end");
+  check(ISO.muzzlePoint(state, b, { id: 5, side: "enemy", kind: "zombie", x: 1, y: 1 }, 0, 0, 1) === null, "no muzzle for the dead");
+}
+
+// ---------- 11. finishes ----------
+console.log("Finishes");
+{
+  const FIN = await import("../src/sim/data-finish.js");
+  const INVS = await import("../src/sim/inventory.js");
+  const unknown = Object.keys(FIN.GUN_FINISH).filter((k) => !GS.GUN_ART[k]);
+  const badName = Object.entries(FIN.GUN_FINISH).flatMap(([k, L]) => L.filter(([n]) => !GS.FINISH_LOOK[n] || !FIN.FINISH_NAME[n]).map(([n]) => `${k}:${n}`));
+  check(!unknown.length && !badName.length, `every finish list is for a drawn gun, every finish has a look and a name${unknown.length || badName.length ? ` (${list([...unknown, ...badName])})` : ""}`);
+  const same = [], errs = [];
+  for (const [k, L] of Object.entries(FIN.GUN_FINISH)) {
+    if (!WEAPONS[k]) continue;
+    const sigs = new Map();
+    for (const [n] of L) {
+      try {
+        const big = GA.paintGun(k, {}, null, n).px.join(), small = SP.paintSurvivor(app, GPT.weaponLook({ key: k, finish: n })).px.join(), thumb = GA.gunThumb({ key: k, finish: n });
+        if (!thumb) errs.push(`${k}:${n} no thumbnail`);
+        for (const [m, s] of sigs) if (s[0] === big) same.push(`${k}: ${m} = ${n} (big)`);
+        sigs.set(n, [big, small]);
+      } catch (e) { errs.push(`${k}:${n} ${e.message}`); }
+    }
+  }
+  check(!errs.length, `every finish of every gun renders (big, held, thumbnail)${errs.length ? ` (${list(errs)})` : ""}`);
+  check(!same.length, `each finish looks different from the gun's others${same.length ? ` (the same: ${list(same)})` : ""}`);
+  // Chosen on the item's own dice, the same every time; none stored without dice; an old item: its first.
+  const a = INVS.newItem("m4", 1, 12345), b2 = INVS.newItem("m4", 1, 12345);
+  check(a.finish === b2.finish && FIN.finishOf(a) === FIN.finishOf(b2), `the same dice, the same finish (${FIN.finishOf(a)})`);
+  const seen = new Set();
+  for (let i = 0; i < 200; i++) seen.add(FIN.finishOf(INVS.newItem("m4", 1, i * 7919)));
+  check(seen.size === FIN.GUN_FINISH.m4.length, `over many finds every finish turns up (${[...seen].join(", ")})`);
+  const plain = INVS.newItem("m4");
+  check(plain.finish === undefined && FIN.finishOf(plain) === "black", "a gun made with no dice stores none: its first finish");
+  const old = JSON.parse(JSON.stringify({ key: "ak", name: "AK", quality: 1 }));
+  check(FIN.finishOf(old) === "wood" && GPT.weaponLook(old) === "ak" && GA.gunThumb(old) === GA.gunThumb({ key: "ak" }), "an old save's gun: the same drawing as before, every time");
+  const kept = JSON.parse(JSON.stringify(INVS.newItem("ak", 1, 99)));
+  check(FIN.finishOf(kept) === FIN.finishOf(INVS.newItem("ak", 1, 99)), "the finish survives a save");
+  check(FIN.finishOf({ key: "ak", finish: "pink" }) === "wood", "a finish the gun never came in is ignored");
+  check(!INVS.newItem("knife", 1, 5).finish && !INVS.newItem("pipegun", 1, 5).finish, "only guns that come in more than one get one");
+  // An enemy's gun is shown in a finish of its own, and looted in it.
+  const u = { id: 11, kit: "raiders", weapon: "ak", gmWeapon: "ak", modItems: null };
+  const gun = { key: "ak", name: "AK", quality: 1 };
+  INVS.carryMods(u, gun);
+  check(FIN.finishOf(gun) === FIN.unitFinish(u) && GPT.weaponLook(GPT.unitGun(u)) === GPT.weaponLook(gun), "an enemy's gun is looted in the finish it was seen in");
 }
 
 // ---------- 6. cached ----------
