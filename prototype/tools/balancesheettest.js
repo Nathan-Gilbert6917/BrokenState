@@ -40,7 +40,7 @@ const keys = (id) => new Set(T[id].rows.map((r) => r.key));
 const html = renderHtml(sheet);
 check(html.length > 50000 && html.length < 4e6, `the page renders (${Math.round(html.length / 1024)} KB)`);
 check(!/<script[^>]+src=|<link[^>]+href=|\bfetch\(|XMLHttpRequest|\bimport\(["'`]|https?:\/\/(?!www\.w3\.org)/.test(html), "self-contained: no external scripts, stylesheets or fetches");
-check(sheet.tabs.map((t) => t.title).join("|") === "Guns|Magazines|Calibres & rounds|Containers & boxes|Melee", "tabs: Guns / Magazines / Calibres & rounds / Containers & boxes / Melee");
+check(sheet.tabs.map((t) => t.title).join("|") === "Guns|Magazines|Attachments|Calibres & rounds|Containers & boxes|Melee", "tabs: Guns / Magazines / Attachments / Calibres & rounds / Containers & boxes / Melee");
 check(sheet.tabs.every((tab) => tab.tables.every((id) => T[id])) && sheet.tables.every((t) => t.id === "rarity" || sheet.tabs.some((tab) => tab.tables.includes(t.id))), "every table is on a tab (the rarity tiers: the side panel)");
 
 console.log("Every item is a row");
@@ -50,6 +50,7 @@ check(!missing(ranged, "guns").length, `every gun (${ranged.length}) is on the G
 check(Object.keys(GEAR).filter((k) => GEAR[k].slot === "weapon" && WEAPONS[k] && !WEAPONS[k].melee).every((k) => keys("guns").has(k)), "every gun item (GEAR weapon) is there");
 const melee = Object.keys(WEAPONS).filter((k) => WEAPONS[k].melee && k !== "claws");
 check(!missing(melee, "melee").length, `every melee weapon (${melee.length}) on the Melee tab${missing(melee, "melee").length ? `: missing ${missing(melee, "melee")}` : ""}`);
+check(!missing(Object.keys(GEAR).filter((k) => GEAR[k].cat === "gunmod" && !MAGAZINES[k] && !GEAR[k].mag && !["speedloader", "stripper308"].includes(k)), "parts").length, "every gun attachment on the Attachments tab");
 check(!missing(Object.keys(MAGAZINES), "mags").length, `every magazine (${Object.keys(MAGAZINES).length})`);
 check(!missing(Object.keys(INTERNAL).filter((k) => WEAPONS[k]), "feeds").length && !missing(Object.keys(CLIPS), "clips").length, "every internal magazine and clip");
 check(!missing(Object.keys(CALIBERS), "calibres").length, `every calibre (${Object.keys(CALIBERS).length})`);
@@ -71,6 +72,7 @@ check(!ed("guns", "turret_m2", "aim") && !ed("guns", "turret_m2", "rarity"), "th
 check(/^data-ammo\.js:/.test(ed("rounds", "556_fmj", "tier") || "") && /^data-ammo\.js:/.test(ed("rounds", "556_fmj", "value") || ""), "a round's tier and value: ROUND_ECON");
 check(/^data-ammo\.js:/.test(ed("rounds", "12ga_slug", "penSet") || "") && !ed("rounds", "556_fmj", "penSet"), "a type's own pen for a calibre is editable; none set: nothing");
 check(/^data-kit\.js:/.test(ed("mags", "mag_ak_30", "cap") || "") && /^data-stacks\.js:/.test(ed("boxes", "9mm", "n") || ""), "magazines (data-kit.js), box sizes (data-stacks.js)");
+check(/^gunmods\.js:/.test(ed("parts", "reddot", "aim") || "") && /^data-gunmods\.js:/.test(ed("parts", "aimpoint", "aim") || "") && /^data-gunmods\.js:/.test(ed("parts", "cheapdot", "value") || "") && /^data\.js:/.test(ed("parts", "reddot", "value") || ""), "attachments: numbers in gunmods.js LEGACY / data-gunmods.js MOD_ATTACH, the catalogue items in PART_INFO");
 check(/^data-ammo\.js:/.test(ed("rarity", "rare", "find") || "") && /^data-guns\.js:/.test(ed("rarity", "rare", "gunFind") || ""), "rarity weights: RARITY_FIND and ARSENAL_FINDS.FIND_W");
 check(sheet.tables.every((t) => t.rows.every((r) => Object.keys(r.ed).every((f) => { const c = t.cols.find((x) => x.id === f); return c && !c.calc; }))), "no computed column is editable");
 const edCount = sheet.tables.reduce((a, t) => a + t.rows.reduce((b, r) => b + Object.keys(r.ed).length, 0), 0);

@@ -67,6 +67,10 @@ export const FIELDS = {
     stagger: W("stagger"), reach: W("reach"), throw: W("throw"), takedown: W("takedown"), stab: W("stab"),
     chop: G("chop"), pry: G("pry"), value: G("value"), weight: G("weight"), power: G("power"), req: G("req"), dur: G("dur"),
   },
+  parts: {
+    ...Object.fromEntries(["aim", "close", "opt", "fall", "noise", "jam", "night", "nightNear", "peq", "brace", "moving", "reload", "wt"].map((f) => [f, at("ATTACH", f)])),
+    value: G("value"), weight: G("weight"), dur: G("dur"),
+  },
   mags: { cap: at("MAGAZINES", "cap"), kg: at("MAGAZINES", "kg"), value: at("MAGAZINES", "value"), aim: at("MAGAZINES", "aim"), jam: at("MAGAZINES", "jam") },
   feeds: { perReload: at("INTERNAL") },
   clips: { n: at("CLIPS", "n") },
@@ -93,6 +97,7 @@ const INSERTABLE = {
   guns: ["rarity", "close", "aim", "pierce", "brace"],
   melee: ["meleeAim", "bleed", "stagger", "takedown", "quick", "stab", "reach", "throw"],
   mags: ["aim", "jam"],
+  parts: ["aim", "close", "opt", "fall", "noise", "jam", "nightNear", "brace", "moving"],
   themeCals: THEMES, themeTypes: THEMES,
   places: ["chance"],
 };
@@ -451,6 +456,33 @@ export async function collect(root = PROTO) {
     C("dmgPerKg", "Dmg/kg", "num", live), C("points", "Points", "num", live), C("tags", "Loot tags", "text", hide), C("kits", "AI kits (w/s/l)", "text", hide),
   ], meleeRows, { note: "combat.js WEAPONS melee entries (with data-guns.js WEAPON_PATCH and data-blades.js) and their GEAR items." });
 
+  // ---- gun attachments (the Attachments tab): every part but the magazines (Magazines tab) ----
+  const partRows = Object.keys(GM.ATTACH).filter((k) => !GM.ATTACH[k].magCap && GEAR[k]).map((k) => {
+    const a = GM.ATTACH[k], d = GEAR[k], pc = GM.partClass ? GM.partClass(k) : null;
+    const fitGuns = gunKeys.filter((g) => GM.modFits(g, k));
+    const brandOf = pc && pc.brandOf;
+    return { key: k, v: {
+      name: d.name, slot: a.slot, tier: pc ? pc.tier : "", rarity: pc ? pc.rarity : null, brandOf: brandOf || "",
+      value: d.value ?? null, weight: d.weight ?? null, dur: d.dur ?? null,
+      aim: a.aim ?? null, close: a.close ?? null, opt: a.opt ?? null, fall: a.fall ?? null, noise: a.noise ?? null, jam: a.jam ?? null,
+      night: a.night ?? null, nightNear: a.nightNear ?? null, peq: a.peq ?? null, brace: a.brace ?? null, moving: a.moving ?? null, reload: a.reload ?? null, wt: a.wt ?? null,
+      flags: [a.can ? "suppressor" : "", a.light ? "light" : "", a.flashless ? "flashless" : "", a.thermal ? "thermal" : "", a.launcher ? "launcher" : "", a.adds ? `adds ${a.adds.join("/")}` : ""].filter(Boolean).join(", "),
+      brandValue: brandOf && GEAR[brandOf] ? GEAR[brandOf].value : null,
+      fits: GM.fitsText ? GM.fitsText(k) : "", gunCount: fitGuns.length, guns: fitGuns.join(", "), tags: list(ITEM_TAGS[k]),
+      look: a.look || "",
+    } };
+  });
+  table("parts", "Attachments", [
+    C("name", "Name", "text"), C("slot", "Slot", "text"), C("tier", "Tier", "text", { desc: "brand (a US / European maker's), civil, budget (a Chinese clone: cheaper, worse, wears out), makeshift" }),
+    C("rarity", "Rarity", "tier", { desc: "data-gunmods.js PART_INFO / OLD_PART_CLASS: the catalogue's find weight (PART_FINDS.FIND_W)" }),
+    C("value", "Value"), C("weight", "Weight kg"), C("dur", "Wears out in", "num", { desc: "A budget or makeshift part: fights (a muzzle device: shots)" }),
+    C("aim", "Aim"), C("close", "Close"), C("opt", "Best range +"), C("fall", "Fall-off +"), C("noise", "Noise ×"), C("jam", "Jam ×"),
+    C("nightNear", "Night aim ≤6"), C("night", "Night aim", "num", hide), C("peq", "IR aim (NVG)", "num", hide), C("brace", "Rested aim"), C("moving", "Moving aim"),
+    C("reload", "Shells/reload +", "num", hide), C("wt", "Fitted kg", "num", hide), C("flags", "Does", "text"),
+    C("brandOf", "Copies", "text", { desc: "A budget clone: the part it copies (tools/gunslottest.js: never better, always cheaper)" }), C("brandValue", "Its value", "num", hide),
+    C("gunCount", "Guns fit"), C("fits", "Fits", "text", hide), C("guns", "Guns it fits", "text", hide), C("tags", "Loot tags", "text", hide), C("look", "Drawn as", "text", hide),
+  ], partRows, { note: "Gun attachments: gunmods.js LEGACY and data-gunmods.js MOD_ATTACH (numbers), MOD_GEAR / PART_INFO (items). Magazines: the Magazines tab." });
+
   // ---- magazines, internal feeds, clips ----
   const magRows = Object.entries(MAGAZINES).map(([k, m]) => {
     S.magCal[k] = m.cal;
@@ -564,6 +596,7 @@ export async function collect(root = PROTO) {
     tabs: [
       { id: "guns", title: "Guns", tables: ["guns", "places"] },
       { id: "mags", title: "Magazines", tables: ["mags", "feeds", "clips"] },
+      { id: "parts", title: "Attachments", tables: ["parts"] },
       { id: "ammo", title: "Calibres & rounds", tables: ["rounds", "calibres", "types", "themeCals", "themeTypes"] },
       { id: "cont", title: "Containers & boxes", tables: ["boxes", "bulk", "bulkFinds", "globals"] },
       { id: "melee", title: "Melee", tables: ["melee"] },

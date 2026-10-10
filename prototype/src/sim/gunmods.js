@@ -58,7 +58,7 @@
 import { GEAR } from "./data.js";
 import { GUN_WEAPONS } from "./data-guns.js";
 import { CALIBERS } from "./data-ammo.js";
-import { SLOTS, SLOT_NAMES, SHARED, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAPON_SLOTS, PLATFORM_GUESS, BASE_CAL, MOD_ATTACH, PLATFORM_LIKE, PLATFORM_LIKE_SKIP } from "./data-gunmods.js";
+import { SLOTS, SLOT_NAMES, SHARED, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAPON_SLOTS, PLATFORM_GUESS, BASE_CAL, MOD_ATTACH, PLATFORM_LIKE, PLATFORM_LIKE_SKIP, PART_INFO, OLD_PART_CLASS, BUDGET_MAGS } from "./data-gunmods.js";
 import { KIT_ATTACH } from "./data-kit.js"; // magazines as items (section 15): the extended mag and the drum are magazine items now
 // The gun builder's sim calls on inventory locations (they live with the inventory's location handling).
 export { fitAt, stripAt } from "./inventory.js";
@@ -68,6 +68,7 @@ export { SLOTS, SLOT_NAMES, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAPON_SLOTS
 export const NO_MODS = Object.freeze({
   aim: 0, close: 0, opt: 0, fall: 0, dmg: 1, cap: 0, capMult: 1, noise: 1, weight: 0, value: 0,
   night: 0, nightNear: 0, peq: 0, brace: 0, moving: 0, jam: 1, thermal: false, light: false, flashless: false, launcher: null,
+  reload: 0, // + shells a tube Reload puts in (a side-saddle: mags.js)
 });
 export const MOUNTS = SLOTS; // every slot (the old name: there were four mounts)
 export const MOUNT_NAMES = SLOT_NAMES;
@@ -103,6 +104,16 @@ for (const [plat, like] of Object.entries(PLATFORM_LIKE)) {
     if (!f || !f.plat || !f.plat.includes(like) || f.plat.includes(plat) || a.magCap || (PLATFORM_LIKE_SKIP[plat] || []).includes(k)) continue;
     ATTACH[k] = { ...a, fits: { ...f, plat: [...f.plat, plat] } };
   }
+}
+// A part's tier (brand / civil / budget / makeshift), rarity (data-ammo.js RARITY), tags (where it is kept) and, for a
+// budget clone, the part it copies (data-gunmods.js PART_INFO, OLD_PART_CLASS, BUDGET_MAGS): the loot tables' and the
+// gun-loot branch's handle on every part. null for a key that is no part.
+export function partClass(key) {
+  const i = PART_INFO[key] || BUDGET_MAGS[key];
+  if (i) return { tier: i.tier, rarity: i.rarity, tags: [...i.tags], brandOf: i.brandOf || null };
+  const o = OLD_PART_CLASS[key];
+  if (o) return { tier: o[0], rarity: o[1], tags: null, brandOf: null };
+  return ATTACH[key] ? { tier: "civil", rarity: "common", tags: null, brandOf: null } : null;
 }
 // A magazine item (data-kit.js MAGAZINES): its rounds (null: not a magazine).
 export const magCapOf = (key) => (ATTACH[key] && ATTACH[key].magCap) || null;
@@ -440,7 +451,7 @@ export function gunMods(item) {
     out.aim += (a.aim || 0) + ((a.aimBy && a.aimBy[plat]) || 0); out.close += a.close || 0; out.opt += a.opt || 0; out.fall += a.fall || 0;
     out.dmg *= a.dmg ?? 1; out.cap += a.cap || 0; out.capMult *= a.capMult ?? 1; out.noise *= a.noise ?? 1;
     out.night += a.night || 0; out.nightNear += a.nightNear || 0; out.peq = Math.max(out.peq, a.peq || 0);
-    out.brace += a.brace || 0; out.moving += a.moving || 0; out.jam *= a.jam ?? 1;
+    out.brace += a.brace || 0; out.moving += a.moving || 0; out.jam *= a.jam ?? 1; out.reload += a.reload || 0;
     if (a.thermal) out.thermal = true;
     if (a.light) out.light = true;
     if (a.flashless) out.flashless = true;
@@ -526,7 +537,7 @@ export function wearMuzzle(item, n = 1) {
 export function wearMakeshiftMods(item, n = 1) {
   const out = [];
   for (const [slot, m] of Object.entries((item && item.mods) || {})) {
-    if (slot === "muzzle" || !m || !GEAR[m.key] || !GEAR[m.key].dur || !GEAR[m.key].makeshift) continue;
+    if (slot === "muzzle" || !m || !GEAR[m.key] || !GEAR[m.key].dur || !(GEAR[m.key].makeshift || GEAR[m.key].budget)) continue; // a scrap scope, a budget clone
     m.dur = Math.max(0, (m.dur ?? GEAR[m.key].dur) - n);
     if (m.dur <= 0) out.push(...stripMod(item, slot).filter((x) => x === m));
   }
@@ -536,7 +547,7 @@ export function wearMakeshiftMods(item, n = 1) {
 // "9mm pistol (red dot, suppressor)": the weapon's name with what is fitted to it (mounts and rails left out).
 export function modLabel(item) {
   if (!item) return "";
-  const list = fitted(item).filter((m) => !["mount", "rail", "sling"].includes(ATTACH[m.key].slot));
+  const list = fitted(item).filter((m) => !["mount", "rail", "sling", "pgrip", "receiver"].includes(ATTACH[m.key].slot));
   return list.length ? `${item.name} (${list.map((m) => ATTACH[m.key].short).join(", ")})` : item.name;
 }
 const sgn = (v, unit = "") => `${v > 0 ? "+" : "−"}${Math.round(Math.abs(v) * 100) / 100}${unit}`;
@@ -564,6 +575,8 @@ export function attachText(key) {
   if (a.flashless) bits.push("no muzzle flash at night");
   if (a.adds) bits.push(`carries ${a.adds.map((s) => (s === "optic" ? "a sight" : s === "grip" ? "a foregrip" : s === "tactical" ? "a light or laser" : `a ${s}`)).join(", ")}`);
   if (a.launcher) bits.push("a 40 mm grenade launcher");
+  if (a.reload) bits.push(`${sgn(a.reload)} shell${a.reload === 1 ? "" : "s"} a tube Reload`);
+  if (GEAR[key] && GEAR[key].budget) bits.push(`a budget part: wears out in about ${GEAR[key].dur} ${a.slot === "muzzle" ? "shots" : "fights"}`);
   if (Number.isFinite(a.wt)) bits.push(`${sgn(a.wt)} kg fitted`);
   return bits.join(", ");
 }
@@ -598,7 +611,7 @@ export function modsText(item) {
   if (m.brace) bits.push(`${sgn(m.brace)} aim rested on half cover`);
   if (m.moving) bits.push(`${sgn(m.moving)} aim on the move`);
   if (m.night || m.nightNear || m.peq) bits.push("better at night");
-  const worn = list.filter((x) => GEAR[x.key] && GEAR[x.key].dur).map((x) => `${x.name}: ${x.dur ?? GEAR[x.key].dur} of ${GEAR[x.key].dur} ${x.key === "scrapscope" ? "fights" : "shots"} left`);
+  const worn = list.filter((x) => GEAR[x.key] && GEAR[x.key].dur).map((x) => `${x.name}: ${x.dur ?? GEAR[x.key].dur} of ${GEAR[x.key].dur} ${ATTACH[x.key] && ATTACH[x.key].slot !== "muzzle" ? "fights" : "shots"} left`);
   return `fitted: ${list.map((x) => x.name).join(", ")} (${bits.join(", ") || "no effect"}${worn.length ? `; ${worn.join("; ")}` : ""})`;
 }
 
@@ -610,14 +623,14 @@ export function modsText(item) {
 // bigger magazines. Militia and fighters (hunters at heart): scopes on mounts, recoil pads, bipods and slings.
 // Raiders, survivors and zealots: cheap or makeshift parts (a red dot, an oil filter, a folding stock, a side mount).
 export const ENEMY_MODS = {
-  soldiers: { under: [0.125, ["m203"]], optic: [0.55, ["reddot", "holo", "holo", "scope4x", "acog", "acog"]], muzzle: [0.25, ["riflecan", "pistolcan", "can556", "flashhider", "flashhider"]], grip: [0.2, ["foregrip", "foregrip", "anglegrip"]], tactical: [0.25, ["weaponlight", "weaponlight", "laser", "peq"]], mag: [0.08, ["drum"]], sling: [0.3, ["sling"]] },
-  guards:   { optic: [0.1, ["reddot", "rmr"]], tactical: [0.2, ["laser", "weaponlight", "weaponlight"]], mag: [0.08, ["extmag", "tubeext"]] },
+  soldiers: { under: [0.125, ["m203"]], optic: [0.55, ["reddot", "holo", "holo", "scope4x", "acog", "acog", "aimpoint", "aimpoint", "holomag"]], muzzle: [0.25, ["riflecan", "pistolcan", "can556", "flashhider", "flashhider", "can556pro", "flashpro"]], grip: [0.2, ["foregrip", "foregrip", "anglegrip", "vgrippro"]], tactical: [0.25, ["weaponlight", "weaponlight", "laser", "peq", "surefire"]], mag: [0.08, ["drum"]], sling: [0.3, ["sling", "slingpro"]], pgrip: [0.15, ["pgrip"]], stock: [0.1, ["ctrstock"]], receiver: [0.08, ["chandle"]] },
+  guards:   { optic: [0.1, ["reddot", "rmr", "holopistol", "aimpoint"]], tactical: [0.2, ["laser", "weaponlight", "weaponlight", "pistollight", "lightlaser"]], mag: [0.08, ["extmag", "tubeext"]], receiver: [0.1, ["sidesaddle"]] },
   escorts:  { optic: [0.15, ["scope4x", "reddot"]], bipod: [0.04, ["bipod"]], tactical: [0.04, ["laser"]], mag: [0.06, ["extmag", "tubeext"]] }, // merchant caravans' riflemen (escorts.js)
   contractors: { optic: [0.45, ["reddot", "holo", "scope4x"]], muzzle: [0.15, ["riflecan", "comp"]], grip: [0.08, ["foregrip"]], tactical: [0.08, ["laser"]], mag: [0.08, ["drum"]] }, // their hired guns
-  militia:  { optic: [0.15, ["scope4x", "scope4x", "reddot"]], bipod: [0.1, ["bipod"]], stock: [0.12, ["recoilpad"]], sling: [0.25, ["sling"]] },
-  fighters: { optic: [0.12, ["scope4x", "reddot"]], grip: [0.04, ["foregrip"]], bipod: [0.04, ["bipod"]], mag: [0.05, ["extmag", "tubeext"]], sling: [0.1, ["sling"]] },
-  raiders:  { mount: [0.06, ["sidemount"]], optic: [0.1, ["reddot"]], muzzle: [0.1, ["comp", "suppressor", "choke"]], mag: [0.08, ["extmag", "tubeext"]], stock: [0.08, ["foldstock"]] },
-  survivors: { optic: [0.05, ["reddot"]], muzzle: [0.04, ["suppressor", "comp", "choke"]], mag: [0.04, ["extmag"]], sling: [0.05, ["sling"]] },
+  militia:  { optic: [0.15, ["scope4x", "scope4x", "reddot", "huntscope", "cheapscope"]], bipod: [0.1, ["bipod", "harris", "cheapbipod"]], stock: [0.12, ["recoilpad"]], sling: [0.25, ["sling"]], muzzle: [0.06, ["icchoke", "turkeychoke"]] },
+  fighters: { optic: [0.12, ["scope4x", "reddot", "holosun", "cheapdot"]], grip: [0.04, ["foregrip", "cheapgrip"]], bipod: [0.04, ["bipod", "cheapbipod"]], mag: [0.05, ["extmag", "tubeext"]], sling: [0.1, ["sling"]], receiver: [0.04, ["cheapsaddle"]] },
+  raiders:  { mount: [0.06, ["sidemount"]], optic: [0.1, ["reddot", "cheapdot", "cheapdot", "cheapholo"]], muzzle: [0.1, ["comp", "suppressor", "choke", "cheapcan", "cheapcomp"]], mag: [0.08, ["extmag", "tubeext"]], stock: [0.08, ["foldstock", "cheapstock"]], tactical: [0.06, ["cheaplaser", "cheaplight"]] },
+  survivors: { optic: [0.05, ["reddot", "cheapdot"]], muzzle: [0.04, ["suppressor", "comp", "choke"]], mag: [0.04, ["extmag"]], sling: [0.05, ["sling"]], tactical: [0.04, ["cheaplight", "cheaplaser"]] },
   zealots:  { muzzle: [0.05, ["choke"]] },
 };
 // A number in [0, 1) from any parts (no random numbers used up: the battle's dice stay as they were).
@@ -674,7 +687,9 @@ export function enemyMods(kit, weapon, seed, salt) {
 // ---------- starting guns ----------
 // The cheap parts a colonist's gun may come with at the start of a run (never a scope, a drum or a proper suppressor).
 export const STARTER_MODS = ["suppressor", "reddot", "laser", "comp", "extmag", "choke", "tubeext", "foregrip",
-  "recoilpad", "revgrip", "sling", "flashhider", "anglegrip", "scopemount", "tritium"];
+  "recoilpad", "revgrip", "sling", "flashhider", "anglegrip", "scopemount", "tritium",
+  // the parts catalogue (2026-10-10): the cheap clones and the common civilian parts a household gun carries
+  "cheapdot", "cheaplaser", "cheaplight", "cheapgrip", "cheapbipod", "cheapmount", "cheaprevgrip", "cheapsaddle", "cheappgrip", "icchoke", "handstop"];
 export const STARTER = { none: 0.3, two: 0.2 }; // 30% of guns come bare, 20% with two parts, the rest with one
 // Fits 0–2 cheap parts that suit the gun, drawn by 1 / value (the cheapest most often). rng: the run's seeded
 // generator; its position is read, never moved, so the rest of the world comes out exactly as before. Returns the
@@ -714,7 +729,7 @@ export function modScore(key) {
   return (a.aim || 0) + 0.5 * (a.close || 0) + 0.8 * (a.opt || 0) - 2 * (a.fall || 0) - 20 * (1 - (a.dmg ?? 1))
     + 6 * (1 - (a.noise ?? 1)) + 0.25 * (a.cap || 0) + 3 * ((a.capMult ?? 1) - 1) + (GEAR[key] && GEAR[key].dur ? -1 : 0)
     + MOD_SCORE.rest * (a.brace || 0) + 0.5 * (a.moving || 0) + 0.25 * ((a.night || 0) + (a.nightNear || 0) + (a.peq || 0)) - 4 * ((a.jam ?? 1) - 1)
-    + (a.thermal ? 2 : 0) + (a.launcher ? -1 : 0);
+    + (a.thermal ? 2 : 0) + (a.launcher ? -1 : 0) + 1.5 * (a.reload || 0);
 }
 // Fits loose attachments from pool (an armory list) to the guns given (best first), one per free slot and only where
 // it helps (modScore > 0); a mount or a rail only when what it carries is in the pool too. Takes what it fits out of
@@ -762,7 +777,8 @@ export const GUNMODS_HELP = `Sights, mounts, suppressors, muzzle brakes, bigger 
   sports shelves in malls), on the guns of soldiers and now and then of raiders and other fighters (they come with the
   gun when you loot it), traders and merchants sell them, and a few makeshift ones are crafted. To fit or take them
   off, open the gun builder: select a gun in the inventory and press Modify (or the ⚙ on the gun in someone's hands).
-  It shows the gun with a box for every slot it has; click a box to fit a part from the person's pockets and pack or
+  It shows the gun with a box for every slot it has (a rifle's pistol grip and receiver too: a charging handle, a
+  shotgun's side-saddle that puts a shell more in the tube each Reload); click a box to fit a part from the person's pockets and pack or
   the storage here, or to take one off (into storage, else a pocket or the pack). Not during a fight. A fitted
   attachment adds its weight and worth to the gun, and is sold or looted with it.
   <br>Sights: a red dot (+4 aim), a holographic sight (+5, +3 up close), a 4× scope or an ACOG (more range, less up
@@ -773,5 +789,10 @@ export const GUNMODS_HELP = `Sights, mounts, suppressors, muzzle brakes, bigger 
   A revolver takes a pistol-calibre can (some gas still escapes at the cylinder). Magazines: an extended 9mm magazine (24 rounds), a drum for the AR-15 family (twice
   the rounds, heavy, −2 aim), a shotgun tube extension (+2 shells). A bipod: +8 aim when the gun rests on half cover
   (sandbags, crates, a car, a fence, a window sill) or a wall you shoot over (a palisade from its walkway, a barricade)
-  right next to the shooter that the shot's line crosses; a sling +1 when the shooter moved this turn. A 5.56, 7.62×39 or .22 round drops past 10 tiles (9 for the 7.62×39 and the .22), a pistol round past 8, scope
+  right next to the shooter that the shot's line crosses; a sling +1 when the shooter moved this turn.
+  <br>Brands and clones: many parts come as a brand-name part modelled on a US or European maker (an Aimpoint-style
+  red dot, a SureFire-style light, a Magpul-style stock, a Harris-style bipod: dearer, better, found at gun stores,
+  police stations and the military) and as a cheap Chinese clone or an airsoft-grade copy (a budget red dot, an
+  airsoft laser, a fuel-filter can: a fraction of the price, weaker, and they wear out and fall apart after some
+  fights, found in homes, malls, pawn shelves and with cheap traders). A 5.56, 7.62×39 or .22 round drops past 10 tiles (9 for the 7.62×39 and the .22), a pistol round past 8, scope
   or not: −2 aim a tile and ×0.85 damage, and no sight pushes its best range past that. None is worth a step of cover.`;

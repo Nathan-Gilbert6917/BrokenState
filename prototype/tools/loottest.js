@@ -5,6 +5,8 @@
 // then a table of sources per item (with its worth tier and weight).
 // Also: frag grenades and the decoys have sources, ladders and rams are crafted siege kit, every lure has its senses.
 // Usage: node tools/loottest.js [--quiet]   (--quiet: checks only, no table)
+import { partPool } from "../src/sim/partfinds.js"; // the parts catalogue's finds
+import { PART_FINDS } from "../src/sim/data-gunmods.js";
 import { MOD_ATTACH } from "../src/sim/data-gunmods.js";
 import { HEAD_FINDS, AREA_HEAD, WARE_HEAD } from "../src/sim/helmets.js"; // helmets and ear protection (their own dice)
 import { GEAR, LOCATIONS, CATEGORIES } from "../src/sim/data.js";
@@ -106,6 +108,10 @@ for (const [t, f] of Object.entries(WARE_BLADES)) addAll(Object.keys(f.items), `
 for (const [t, p] of Object.entries(ARSENAL_FINDS.site)) if (p > 0) addAll(Object.keys(gunPool(SITE_TAGS[t] || [])), `gunfind:${t}`);
 for (const [a, p] of Object.entries(ARSENAL_FINDS.area)) if (p > 0) addAll(Object.keys(gunPool(AREA_TAGS[a] || [])), `raid:${a}`);
 for (const [t, p] of Object.entries(ARSENAL_FINDS.wares)) if (p > 0) addAll(Object.keys(gunPool(ARSENAL_FINDS.WARE_TAGS[t] || [])), `sold:${t}`);
+// The parts catalogue of 2026-10-10 (partfinds.js): the parts whose tags meet a site's, a raid area's or a group's table's.
+for (const [t, p] of Object.entries(PART_FINDS.site)) if (p > 0) addAll(Object.keys(partPool(SITE_TAGS[t] || [])), `partfind:${t}`);
+for (const [a, p] of Object.entries(PART_FINDS.area)) if (p > 0) addAll(Object.keys(partPool(AREA_TAGS[a] || [])), `raid:${a}`);
+for (const [t, p] of Object.entries(PART_FINDS.wares)) if (p > 0) addAll(Object.keys(partPool(PART_FINDS.WARE_TAGS[t] || [])), `sold:${t}`);
 
 console.log("Sources");
 check(!unknown.length, `every listed item exists in GEAR${unknown.length ? ` (unknown: ${unknown.join(", ")})` : ""}`);
