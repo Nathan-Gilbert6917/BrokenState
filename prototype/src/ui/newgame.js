@@ -12,6 +12,7 @@ import { FAMILY } from "../sim/family.js"; // the Children box shows only while 
 import { sanitizeStartGear, hasPicks } from "../sim/startgear.js"; // starting gear picked under Customize
 import { gearRow, pointsBar } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card
 import { traitPickerHtml, traitBlock, traitChips } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash; the chips
+import { randomBuild } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points
 import { CUSTOM_POINTS, pricePerson, pointsMax, nextLevelCost, skillCost } from "../sim/custompoints.js"; // Customize: everything costs points
 import { traitLabel, traitTier, setTier, tidyTiers, tierCount, cleanTier } from "../sim/traits.js";
 import {
@@ -133,7 +134,10 @@ function crewCard(state, ui, s) {
       <button class="mini" data-action="nr-name" data-id="${s.id}"${tip("New random name")}>Name</button>
       ${free ? "" : `<button class="mini" data-action="nr-skills" data-id="${s.id}"${tip("Shuffle skills, same point total")}>Skills</button>`}
       <button class="mini" data-action="nr-look" data-id="${s.id}"${tip("New random look")}>Look</button>
-      <button class="mini" data-action="nr-all" data-id="${s.id}"${tip(free ? "Randomize name and look (under Customize what they have is yours: Start from the dice loads the dice's)" : "Randomize name, skills and look")}>All</button>
+      ${free ? `<button class="mini" data-action="sg-build" data-i="${state.survivors.indexOf(s)}"${tip("A new random build for this colonist only: traits, skills and what they wear, hold and carry, within their points (the vehicle's back stays). Each click is a new draw")}>Build</button>` : ""}
+      ${free
+    ? `<button class="mini" data-action="sg-build" data-i="${state.survivors.indexOf(s)}" data-all="1"${tip("This colonist only: a new name, look and random build (traits, skills and gear within their points)")}>All</button>`
+    : `<button class="mini" data-action="nr-all" data-id="${s.id}"${tip(locked ? "Randomize name, skills (same total) and look for this colonist only (Ironman: traits stay as rolled)" : isHardcore(state) ? "Randomize name, skills (same total), traits and look for this colonist only (who they were and what they grabbed come with the world: Randomize all draws those again)" : "Randomize name, skills (same total), traits and look for this colonist only (weapons and vests are swapped around by Randomize all)")}>All</button>`}
     </div>
   </div>`;
 }
@@ -218,7 +222,7 @@ export function newRunScreen(state, ui) {
     ? `Hardcore. The day the State of Calder falls. ${people.length === 1 ? "You get out alone" : `${countWord(people.length).replace(/^./, (c) => c.toUpperCase())} of you get out`} with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${state.factions.length} other groups are out there, starting out just like you.`
     : `Six years after the outbreak. Your survivors hold a town in the State of Calder: the town hall (four beds, a well, a cellar, a fence) and nothing built yet. What to put up first, with ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${state.factions.length} other groups are out there, starting bare as well, along with the hordes.`;
   return `<div class="box wide">
-    <h1>Broken State — New run</h1>
+    <div class="spread"><h1>Broken State — New run</h1><button data-action="nr-map"${tip("Put this screen aside and look at the world map: where you start, the groups, the roads (the banner's Back to setup, or Esc, brings it back)")}>🗺 View map</button></div>
     <div class="text small">${intro} Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then press Space.</div>
     <div class="row" style="margin-bottom:0.8rem">
       ${modeSelect(state)}
@@ -234,7 +238,7 @@ export function newRunScreen(state, ui) {
       ${groupInput(state, ui)}
       ${hiveSelect(state, ui)}
       <button data-action="reroll"${tip("Generate a new map and new colonists")}>New map and colonists</button>
-      <button data-action="nr-allcrew"${tip(`Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same; gear picked under Customize is cleared)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
+      <button data-action="nr-allcrew"${tip(freeEdit(ui) ? "Every colonist: a new name, look and random build (traits, skills and what they wear, hold and carry, within their points; the vehicle's back stays). Build on a crew card does one colonist" : `Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same; gear picked under Customize is cleared)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>
     </div>
     ${customSizeRow(state, ui)}
@@ -302,16 +306,22 @@ export function crewWithBackgrounds(state, changes) {
 }
 export const crewWithBackground = (state, id, key) => crewWithBackgrounds(state, { [id]: key });
 
-// Randomize all: every colonist's name, skills (same total), traits, gear and look. Normal: in place, with the starting
+// Randomize all: every colonist's name, skills (same total), traits, gear and look. Customize: a new name, look and
+// random build each (sim/randomkit.js), the world built again with them. Normal: in place, with the starting
 // weapons and the vest handed out again (gear picked under Customize is cleared first: the world is built again without
 // it, so the dice's kit is back to be shuffled). Hardcore: the gear comes with who they were, what they grabbed and the car, so
 // the world is built again on the same seed with a crew roll of its own: rebuild(crew, crewRoll) returns the new state,
 // whose background-shaped skills are then fitted to each colonist's old total. Returns the state to keep.
 export function randomizeAllCrew(state, ui, rebuild) {
   const rng = freshRng();
-  if (freeEdit(ui)) { // Customize: what they have is yours; names and looks only
-    state.survivors.forEach((s) => reroll(state, ui, s, ["name", "look"]));
-    return state;
+  if (freeEdit(ui)) { // Customize: a new name, look and random build each (within the points; the vehicle's back stays)
+    state.survivors.forEach((s) => {
+      reroll(state, ui, s, ["name", "look"]);
+      randomBuild(state, s, rng);
+      s.startPoints = true;
+      s.startCustom = true;
+    });
+    return rebuild(crewSnapshot(state), ui.crewRoll ?? null, ui.pickRoll);
   }
   if (!isHardcore(state) && state.survivors.some((s) => hasPicks(sanitizeStartGear(s.startGear)))) {
     const crew = crewSnapshot(state).map((c) => ({ ...c, startGear: null }));
@@ -358,6 +368,14 @@ export function zombieLookModal(ui) {
     </div></div>`;
 }
 
+// Back from looking at the map before the start (View map): the windows opened from the map's panels are closed, so
+// none of them waits behind the new-run screen to pop up at Start.
+const MAP_WINDOWS = ["baseView", "survivor", "roster", "diary", "codex", "ledger", "inv", "planner", "routeSetup", "caravanPlan", "gunb", "diplo", "volPick", "volReq", "memorial", "radioWith"];
+export function backToSetup(ui) {
+  ui.nrMap = false;
+  for (const k of MAP_WINDOWS) if (ui[k] != null && ui[k] !== false) ui[k] = null;
+}
+
 // ---------- actions (registered in main.js; each gets (state, ui, data)) ----------
 const valid = (k, v) => (LOOK_OPTIONS[k] ? LOOK_OPTIONS[k].values.some(([x]) => x === v) : LOOK_COLORS[k] ? /^#[0-9a-fA-F]{6}$/.test(v) : false);
 function setLook(state, ui, id, k, v) {
@@ -376,6 +394,8 @@ function reroll(state, ui, s, what) {
 const withSurvivor = (what) => (state, ui, d) => { const s = survivorById(state, Number(d.id)); if (s) reroll(state, ui, s, what); };
 
 export const LOOK_ACTIONS = {
+  // The new-run screen put aside to look at the map, or back (main.js bannerHTML; Esc).
+  "nr-map": (state, ui) => { if (ui.started) return; if (ui.nrMap) backToSetup(ui); else ui.nrMap = true; },
   "look-edit": (state, ui, d) => { ui.lookEdit = ui.lookEdit === Number(d.id) ? null : Number(d.id); },
   "look-done": (state, ui) => { ui.lookEdit = null; },
   "look-set": (state, ui, d) => setLook(state, ui, d.id, d.k, d.v),
@@ -383,7 +403,16 @@ export const LOOK_ACTIONS = {
   "nr-name": withSurvivor(["name"]),
   "nr-skills": withSurvivor(["skills"]),
   "nr-look": withSurvivor(["look"]),
-  "nr-all": (state, ui, d) => { const s = survivorById(state, Number(d.id)); if (s) reroll(state, ui, s, freeEdit(ui) ? ["name", "look"] : ["name", "skills", "look"]); },
+  // One colonist's name, skills (same total), traits and look (Customize has its own: ui/startgear.js sg-build).
+  "nr-all": (state, ui, d) => {
+    const s = survivorById(state, Number(d.id));
+    if (!s || ui.started) return;
+    if (freeEdit(ui)) { reroll(state, ui, s, ["name", "look"]); return; }
+    reroll(state, ui, s, ["name", "skills", "look"]);
+    if (ui.ironman) return; // Ironman: traits stay as rolled
+    s.traits = rollTraits(freshRng());
+    tidyTiers(s);
+  },
   "nr-skill": (state, ui, d) => {
     const s = survivorById(state, Number(d.id));
     if (!s || ui.started || ui.ironman) return; // Ironman: skills stay as rolled

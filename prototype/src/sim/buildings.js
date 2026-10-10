@@ -2,7 +2,7 @@
 // Buildings, workshop stations and the construction queue for every base (hub and outposts).
 import { log, atBase, skill, newId, day, localId } from "./world.js";
 import { SILENT } from "./hiding.js"; // a base running silent: its stations work in quiet spells
-import { SKILL_NAMES } from "./data.js";
+import { SKILL_NAMES, SUPPLIES } from "./data.js";
 import { workFactor } from "./health.js";
 import { storeCapacity, storeSpaces } from "./storage.js";
 import { stationIO, orderHold } from "./production.js";
@@ -159,8 +159,18 @@ export const BUILDINGS = {
   crates:       { name: "Storage crates", plot: "utility", cost: { scrap: 4 },  hours: 5,  max: 4, desc: "Stacked, lidded crates under a tarp: +30 food storage room (dry goods: 0.8% a day, as the pantry and storehouse)." },
   // Base tiers (staging.js): a shelter (tier 0) is built up into a base (the hub, tier 1) by its builders. Not a
   // building: when it is done the shelter becomes a full hub (upgradeShelter).
-  hub_up:       { name: "Build up into a base", cost: { scrap: 18, parts: 2 }, hours: 96, max: 1, shelterOnly: true, tierUp: true,
-                  desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, a fence with a gate, beds for four, 16 building plots and 14 utility plots. Shelters only. The builders here do the work." },
+  // gather (2026-10-09, user pick): as the outpost camp's, its materials are taken from the stores as they come in.
+  // User numbers 2026-10-09: "Upgrading to base 60 hours 100 scrap 5 building materials".
+  hub_up:       { name: "Build up into a base", cost: { scrap: 100, buildmat: 5 }, hours: 60, max: 1, shelterOnly: true, hubOnly: true, tierUp: true, gather: true,
+                  desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, a fence with a gate, beds for four, 16 building plots and 14 utility plots. Shelters only. The materials are taken from the stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
+  // An outpost camp (2026-10-09, user request: "When starting a base it should start as a camp with a progress bar with
+  // needed items to upgrade to a more permanent base established"): Build outpost pitches a camp (tier 0, a shelter's
+  // rules) and queues this at once. gather: the materials are not paid up front; the job takes them from the camp's
+  // stores as they come in (teams, supply runs), and the work never runs ahead of the share delivered (gatherHour).
+  // Done: an outpost as before (its spring, wall 1, 6 + 6 plots). Not queued by hand: a camp has it from the start.
+  // User numbers 2026-10-09: "Upgrading to Outpost 20 hours 20 scrap 2 building materials".
+  outpost_up:   { name: "Establish the outpost", cost: { scrap: 20, buildmat: 2 }, hours: 20, max: 1, shelterOnly: true, outpostOnly: true, tierUp: true, gather: true,
+                  desc: "Turn the outpost camp into a real outpost: a shack with a roof, a dug spring (3 water a day), a fence (wall 1), 6 building plots and 6 utility plots. The materials are taken from the camp's stores as they come in (bring them with a team or a supply run); the builders here do the work, never more of it than the materials delivered allow." },
 };
 
 // ---------- construction plots ----------
@@ -323,18 +333,21 @@ export const SHELTER = {
   river: 10,          // water a day hauled from a river or lake beside it (no well yet; the people carry it)
   // What a shelter may build (the most of each): yard things on its 2 utility plots (PLOTS.shelter), a barricade, a
   // garden patch and the step up.
-  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 1, farm_plot: 1, hub_up: 1, craftbench: 1, lockup: 1 },
+  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 1, farm_plot: 1, hub_up: 1, outpost_up: 1, craftbench: 1, lockup: 1 },
 };
 export const isShelter = (base) => !!base && base.tier === 0;
 export const baseTier = (base) => (isShelter(base) ? 0 : 1);
 // What the base is called in the panels.
-export const tierName = (base) => (isShelter(base) ? "Shelter" : base.type === "hub" ? "Main hub" : "Outpost");
+export const tierName = (base) => (isShelter(base) ? (base.type === "outpost" ? "Outpost camp" : "Shelter") : base.type === "hub" ? "Main hub" : "Outpost");
+// The job that takes a tier-0 base up a tier: the shelter's hub_up, the outpost camp's outpost_up.
+export const tierUpType = (base) => (base && base.type === "outpost" ? "outpost_up" : "hub_up");
+export const tierUpJob = (base) => (isShelter(base) ? base.construction.find((c) => BUILDINGS[c.type] && BUILDINGS[c.type].tierUp) || null : null);
 // The shelter becomes a full hub (the hub_up job is done).
 export function upgradeShelter(state, base) {
   delete base.tier;
   base.fire = undefined;
   base.upgradedDay = Math.floor(state.hour / 24) + 1;
-  log(state, `${base.name} is a real base now: a main house, a dug well, a cellar and a fence where the tarps stood.`, "good");
+  log(state, base.type === "outpost" ? `${base.name} is an established outpost now: a shack with a roof, a dug spring and a fence where the camp stood.` : `${base.name} is a real base now: a main house, a dug well, a cellar and a fence where the tarps stood.`, "good");
 }
 
 // Working buildings of a type: a broken one (breakdowns.js) does nothing until it is repaired. countAll: built, broken or not.
@@ -486,6 +499,7 @@ export function canBuild(state, base, type) {
     if (def.upgrades && !count(base, def.upgrades)) return { ok: false, reason: `Upgrade a ${BUILDINGS[def.upgrades].name.toLowerCase()} first` };
   }
   if (def.outpostOnly && base.type !== "outpost") return { ok: false, reason: "Outposts only" };
+  if (def.hubOnly && base.type !== "hub") return { ok: false, reason: "The main base only (an outpost camp is established instead)" };
   // A relay where a radio station stands (or is queued) would add nothing: the station's range covers the relay's
   // (radio.js radioNodes counts the base as a station only). A broken station still counts: it is repaired.
   if (type === "relay" && (base.radio || countAll(base, "radio") || base.construction.some((c) => c.type === "radio"))) return { ok: false, reason: "A radio station here already covers more than a relay would" };
@@ -507,7 +521,7 @@ export function canBuild(state, base, type) {
     return { ok: false, noPlot: true, reason: cap ? `No free ${PLOT_NAMES[kind].toLowerCase()} (${plotsUsed(base, kind)}/${cap}): demolish something or build at a bigger base` : `A ${tierName(base).toLowerCase()} has no ${PLOT_NAMES[kind].toLowerCase()}s` };
   }
   if (type === "huntcabin" && cabinProblem(state, base)) return { ok: false, reason: `Hunting cabin: ${cabinProblem(state, base)}` };
-  for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` };
+  if (!def.gather) for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${k}` }; // gather: taken as it comes in
   if (def.req) {
     for (const [sk, lvl] of Object.entries(def.req)) {
       if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
@@ -521,6 +535,7 @@ export function canBuild(state, base, type) {
 export function queueBuild(state, base, type) {
   const chk = canBuild(state, base, type);
   if (!chk.ok) return chk.reason;
+  if (BUILDINGS[type].gather) { base.construction.push(gatherJob(type)); return `${BUILDINGS[type].name} queued at ${base.name}: the materials are taken from the stores as they come in.`; }
   for (const [k, v] of Object.entries(BUILDINGS[type].cost)) base.stock[k] -= v;
   base.construction.push({ id: newId(), type, progress: 0, hours: BUILDINGS[type].hours });
   return `${BUILDINGS[type].name} queued at ${base.name}.`;
@@ -532,7 +547,7 @@ export function cancelBuild(state, base, id) {
   const job = base ? base.construction.find((c) => c.id === id) : null;
   if (!job) return "That job is gone.";
   const full = job.progress <= 0;
-  for (const [k, v] of Object.entries(job.cost || BUILDINGS[job.type].cost)) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.ceil(v / 2)); // job.cost: a barrel upgrade
+  for (const [k, v] of Object.entries(job.paid || job.cost || BUILDINGS[job.type].cost)) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.ceil(v / 2)); // job.cost: a barrel upgrade; job.paid: what a gather job has taken so far
   base.construction.splice(base.construction.indexOf(job), 1);
   return `Cancelled ${jobName(job)}. ${full ? "All" : "Half"} the materials were returned.`;
 }
@@ -546,14 +561,48 @@ export function buildRate(state, base) {
     + prisonBuildRate(state, base); // prisoners-tab: prisoners set to Build (prisoners.js labour, 12 hours a day at 50–70%)
 }
 
-// Builders work on the first job in the queue, hour by hour.
+// ---------- jobs that gather their materials (BUILDINGS gather: the outpost camp's step up) ----------
+// The job: nothing paid yet (paid: { key: n } taken from the stores so far).
+export const gatherJob = (type) => ({ id: newId(), type, progress: 0, hours: BUILDINGS[type].hours, paid: {} });
+// Each material: { key, need, have (taken), ok }.
+export const gatherRows = (job) => Object.entries(BUILDINGS[job.type].cost).map(([key, need]) => { const have = Math.min(need, (job.paid && job.paid[key]) || 0); return { key, need, have, ok: have >= need - 1e-9 }; });
+// The share of the work the materials taken so far allow (the least delivered of them).
+export const gatherCap = (job) => Math.min(1, ...gatherRows(job).map((r) => (r.need > 0 ? r.have / r.need : 1)));
+// Waiting for materials: the work has caught up with what was delivered.
+export const gatherStalled = (job) => !!(job && job.paid && gatherCap(job) < 1 && job.progress >= job.hours * gatherCap(job) - 1e-6);
+// What is still to come in: "8 scrap, 1 part" ("" when everything is in).
+export const gatherShort = (job) => gatherRows(job).filter((r) => !r.ok).map((r) => { const n = Math.ceil(r.need - r.have); return `${n} ${matName(r.key, n)}`; }).join(", ");
+// A material's name in a line ("scrap", "2 parts", "building materials").
+export const matName = (k, n = 2) => (k === "parts" ? (n === 1 ? "part" : "parts") : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k);
+// Takes what the gather jobs here need next from the stores (each hour, before the work): just in time, enough for the
+// next GATHER_AHEAD work-hours (a 100-scrap step up does not empty the stores the hour it is queued: the rest stays for
+// other builds until the work gets to it).
+export const GATHER_AHEAD = 12;
+function gatherHour(base) {
+  for (const job of base.construction) {
+    if (!job.paid) continue;
+    const share = Math.min(1, (job.progress + GATHER_AHEAD) / Math.max(1, job.hours));
+    for (const r of gatherRows(job)) {
+      const want = Math.min(r.need, Math.ceil(r.need * share - 1e-9)) - r.have;
+      const take = Math.min(want, Math.floor(Math.max(0, base.stock[r.key] || 0)));
+      if (take <= 0) continue;
+      base.stock[r.key] -= take;
+      job.paid[r.key] = (job.paid[r.key] || 0) + take;
+    }
+  }
+}
+
+// Builders work on the first job in the queue, hour by hour (a job waiting for its materials lets the next one go on).
 export function constructionHour(state) {
   for (const base of state.bases) {
-    const job = base.construction[0];
-    if (!job || underAttack(state, base)) continue;
+    if (!base.construction.length || underAttack(state, base)) continue;
+    gatherHour(base);
+    const job = base.construction.find((c) => !gatherStalled(c));
+    if (!job) continue;
     job.progress += buildRate(state, base);
-    if (job.progress >= job.hours) {
-      base.construction.shift();
+    if (job.paid) job.progress = Math.min(job.progress, job.hours * gatherCap(job)); // never ahead of the materials
+    if (job.progress >= job.hours - 1e-9) {
+      base.construction.splice(base.construction.indexOf(job), 1);
       if (BUILDINGS[job.type].tierUp) { upgradeShelter(state, base); continue; } // the shelter becomes a base
       if (job.target && job.type === "barracks") { // a bunkhouse expanded (BARRACKS_UP); nothing if it was lost meanwhile
         const b = base.buildings.find((x) => x.id === job.target && x.type === "bunkhouse");

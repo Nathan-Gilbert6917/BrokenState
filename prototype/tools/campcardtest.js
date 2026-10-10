@@ -9,6 +9,11 @@ import { BUILDINGS, queueBuild } from "../src/sim/buildings.js";
 import { campStatusCard, buildBar, stageSteps, stageRows } from "../src/ui/hardcore.js";
 import { renderExpedition } from "../src/ui/expedition.js";
 import { renderRight } from "../src/ui/ui.js";
+import { STAGING as STAGING_PITCH } from "../src/sim/staging.js";
+
+// Pitching a staging camp takes STAGING.PITCH (8 scrap carried, 2 hours of work; 2026-10-09): with no camp yet the team is
+// handed its scrap and the camp stands at once, as before.
+const establishArriveNow = (st, p) => { if (!st.staging) { p.supplies.scrap = (p.supplies.scrap || 0) + STAGING_PITCH.PITCH.scrap; p.pitched = true; } return establishArrive(st, p); };
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -21,7 +26,7 @@ check(!!p, "a team on the road");
 let card = campStatusCard(st, p);
 check(/No base yet/.test(card), "no camp: 'No base yet'");
 check(/Establish base/.test(card), "no camp: points at the order");
-check(/Scrap/.test(card) && /Machine parts/.test(card) && /Team has/.test(card), "no camp: the supplies and what the team has");
+check(/Scrap/.test(card) && /Building materials/.test(card) && /Team has/.test(card), "no camp: the supplies and what the team has (scrap and building materials: staging.js STAGING)");
 check(renderExpedition(st, { xpQueue: false, expedition: p.id }, p).includes("campcard"), "the team panel carries the card");
 const was = { mission: p.mission, phase: p.phase, path: p.path };
 Object.assign(p, { mission: "establish", phase: "out", path: [p.tile ?? 0, (p.tile ?? 0) + 1] });
@@ -31,14 +36,14 @@ Object.assign(p, was);
 console.log("The camp pitched: progress, stages, supplies against the stores");
 p.supplies.scrap = 9; p.supplies.parts = 2;
 if (p.cargo && p.cargo.supplies) { p.cargo.supplies.scrap = 0; p.cargo.supplies.parts = 0; } // the car's load too: only what is set here
-establishArrive(st, p);
+establishArriveNow(st, p);
 check(!!st.staging, "the camp is pitched");
 card = campStatusCard(st, p);
 check(/Staging camp \(here\)/.test(card), "the card says the camp is here");
 check(/class="buildbar/.test(card) && /Camp 0% built/.test(text(card)), "a labelled build bar");
 check(/class="now">Camp</.test(card), "the Camp stage is lit");
-check(/9 \/ 15/.test(card) && /6 more/.test(card), "scrap 9 of 15, 6 more");
-check(/2 \/ 2/.test(card) && /✓ Machine parts/.test(card), "parts in: ticked");
+check(/9 \/ 20/.test(card) && /11 more/.test(card), "scrap 9 of 20, 11 more (the pitching took its 8)");
+check(/0 \/ 2/.test(card) && /✗ Building materials/.test(card), "no building materials in yet: not ticked");
 check(/Not a base yet/.test(card), "says plainly it is not a base yet");
 st.staging.progress = st.staging.work * 0.4;
 check(/Camp 40% built/.test(text(campStatusCard(st, p))), "the bar follows the work (40%)");
@@ -63,10 +68,10 @@ check(/class="past">✓ Camp/.test(stageSteps(1)) && /class="now">Shelter/.test(
 console.log("A shelter building up into a base: a bar in the base panel's rows");
 const st2 = createWorld({ seed: 11, factionCount: 7, mode: "hardcore" });
 const q = roadTeam(st2);
-q.supplies.scrap = 30; q.supplies.parts = 4; q.supplies.food = 30; q.supplies.water = 30;
-establishArrive(st2, q);
+q.supplies.scrap = 30; q.supplies.parts = 4; q.supplies.food = 30; q.supplies.water = 30; q.supplies.buildmat = 2;
+establishArriveNow(st2, q);
 st2.staging.progress = st2.staging.work;
-establishArrive(st2, q); // done and stocked: the shelter stands
+establishArriveNow(st2, q); // done and stocked: the shelter stands
 const shelter = st2.bases[0];
 check(!!shelter && shelter.tier === 0, "the shelter stands");
 if (shelter) {

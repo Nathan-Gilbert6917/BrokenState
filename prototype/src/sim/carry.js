@@ -101,6 +101,7 @@ export const HOLD = {
   parts:     { pack: 1,  pocket: 0, name: "machine parts" },
   scrap:     { pack: 1,  pocket: 0, name: "scrap" },
   carparts:  { pack: 0,  pocket: 0, name: "car parts" },
+  buildmat:  { pack: 0,  pocket: 0, name: "building materials" }, // lumber and blocks: in the arms or a vehicle
 };
 // In the order they are packed: water and food in the packs first, the bulky stuff last (it ends up in the arms).
 export const HOLD_KEYS = Object.keys(HOLD);

@@ -217,6 +217,7 @@ const SUPPLY_HOW = {
   carparts: "Vehicle repairs, garage upgrades and car-part recipes take them. Garages, gas stations and wrecks hold them; stripping a car gives several.",
   gunparts: "Springs, pins and barrels: repairs to guns and their attachments take them. Gun stores, armouries and barracks hold them; a spare gun salvaged gives some.",
   electronics: "Repairs to lights, lasers, night vision and radios take them. Radio towers, offices and news wrecks hold them; salvaged gadgets give some.",
+  buildmat: "Lumber, cinder blocks, sheet metal, nails and fixings: what a camp takes to become a base (a staging camp 2 and 20 scrap, Build up into a base 5 and 100 scrap, Establish the outpost 2 and 20 scrap). Crafted from scrap (3 each, anywhere, a team too). Scavenged: hardware stores and quarries hold the most, then warehouses, factories, barns, farms and towns (a find on top of the place's usual loot; people on Scavenge at a base turn up a few too). Heavy (3 kg each): carried in the arms or a vehicle.",
   // The reloading bench (sim/reloading.js).
   brass: "Fired cases and shotgun hulls: a reloading bench loads a round into each. About 60% of the rounds your side fires come back after a won fight (a revolver's all); gun stores, ranges and lodges have bags of it.",
   powder: "Smokeless powder, in charges (a 1 lb can holds 100 pistol, 40 rifle or 60 shotgun loads) for the reloading bench. Gun stores, lodges and ranches; arms dealers sell it.",

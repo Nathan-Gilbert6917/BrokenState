@@ -54,7 +54,7 @@ export const OCCUPY = {
   DOOM_DAYS: 14, DOOM_LINE: 0.5, DOOM_EVERY: 30,
 };
 const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-const emptyStock = () => ({ food: 0, water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 });
+const emptyStock = () => ({ food: 0, water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0, buildmat: 0 });
 
 // ---------- what is there ----------
 // Why a team cannot occupy this tile ("" = it can). The sim's truth: the planner offers the mission where your map

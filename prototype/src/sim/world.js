@@ -191,7 +191,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // Bare start (HUB_START): no buildings and every plot free; what the town hall gives (4 beds, 6 crop plots, the well,
     // the cellar, 3 wall strength: buildings.js) is all there is. The scrap and parts are for the first builds, the
     // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
-    stock: { food: 80, water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, preserved: 10, jars: 12, wood: 300 },
+    stock: { food: 80, water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, preserved: 10, jars: 12, wood: 300, buildmat: 0 },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];

@@ -35,6 +35,10 @@
 //   quarters: people sleeping rough slow the group's growth (CROWDED_GROWTH × the chance);
 //   bench: their workshops make WORKSHOP_MIN of the ammo, scrap, fuel and meds without one;
 //   storehouse: their stores hold STORE_CAP of the usual caps without one;
+//   outpost camps (2026-10-09, parity with your outpost camp, buildings.js outpost_up): a base a group founds from
+//   nothing (factions.js expansion; not one it moves into, groupworld.js occupyAbandoned) starts as a camp
+//   (f.works[tile].camp): its defence × CAMP.DEF and nothing else built there until CAMP (its materials and work) is done,
+//   the first job at that base;
 //   animal pens (2026-10-09, your animal pen's parity): at a base with walls and fields, after the fields for
 //   everyone, PENS.max a base; each adds PENS.food food a day (penFood, factions.js), winter or not.
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
@@ -43,7 +47,7 @@ import { day } from "./world.js";
 import { weightOf, medOf } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
 import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the groups' jails (abstract tiers)
 
-/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number }} Works */
+/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number }} Works */
 
 export const GROUP_WORKS = {
   WORKS: {
@@ -76,6 +80,10 @@ export const GROUP_WORKS = {
   // Animal pens (farming.js PEN, your animal pen: the same option, coarse): a base with walls and fields puts up one
   // (after the fields for everyone); each brings PENS.food food a day on top of their fields, every season.
   PENS: { max: 1, food: 2 },
+  // An outpost camp's step up (yours: 12 scrap, a part, 36 work-hours; scaled as the rest of WORKS) and the camp's
+  // defence share until then.
+  CAMP: { name: "the outpost camp established", cost: { scrap: 10, buildmat: 1 }, work: 3, DEF: 0.5 }, // yours: 20 scrap, 2 building materials, 20 work-hours
+  BUILDMAT_SCRAP: 3, // building materials made from scrap when short (crafting.js buildmat, as yours)
 };
 const W = GROUP_WORKS;
 
@@ -109,7 +117,11 @@ export function groupWalls(state, f, tile) {
 // 0–1: how far the walls are toward their goal (resolveRaidOnFaction's defence).
 export const wallShare = (state, f, tile) => groupWalls(state, f, tile) / Math.max(1, wallGoal(f, tile));
 // The flat defence of a group base against a raid or a horde (factions.js resolveRaidOnFaction).
-export const groupBaseDefence = (state, f, tile) => (groupsBuild(state, f) ? W.WALL_DEF * (0.5 + 0.5 * wallShare(state, f, tile)) : W.WALL_DEF);
+export const groupBaseDefence = (state, f, tile) => (groupsBuild(state, f) ? W.WALL_DEF * (0.5 + 0.5 * wallShare(state, f, tile)) * (isCamp(f, tile) ? W.CAMP.DEF : 1) : W.WALL_DEF);
+// A base of theirs still a camp (founded from nothing and not yet established).
+export const isCamp = (f, tile) => !!(f && f.works && f.works[tile] && f.works[tile].camp);
+// A group's new base founded from nothing starts as a camp (factions.js expansion; this world's groups build).
+export function pitchCamp(state, f, tile) { if (groupsBuild(state, f)) worksAt(f, tile).camp = 1; }
 
 // Summed over the group's bases: how many people its water, fields and quarters serve.
 function served(f, k) {
@@ -167,6 +179,7 @@ export function nextWork(state, f) {
   const foodShort = (f.stock.food || 0) < f.pop * W.FOOD_SHORT;
   for (const tile of f.bases) {
     const w = worksAt(f, tile);
+    if (n(w, "camp")) return { tile, type: "camp", why: "an outpost camp to establish", def: W.CAMP }; // nothing else there before it
     const goal = wallGoal(f, tile);
     if (n(w, "water") < wanted(f, tile, "water")) return { tile, type: "water", why: "water" };
     if (foodShort && n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "food is short" };
@@ -197,6 +210,9 @@ export function groupWorksDaily(state, f) {
     const next = nextWork(state, f);
     if (!next) return;
     const def = next.def || W.WORKS[next.type]; // a jail step brings its own (groupjails.js STEPS)
+    // Short of building materials: made from their scrap, as you would (crafting.js buildmat).
+    const bmShort = Math.max(0, (def.cost.buildmat || 0) - (f.stock.buildmat || 0));
+    if (bmShort && (f.stock.scrap || 0) >= bmShort * W.BUILDMAT_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= bmShort * W.BUILDMAT_SCRAP; f.stock.buildmat = (f.stock.buildmat || 0) + bmShort; }
     const can = Object.entries(def.cost).every(([k, v]) => (f.stock[k] || 0) >= v);
     if (can) for (const [k, v] of Object.entries(def.cost)) f.stock[k] -= v;
     f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE), paid: can };
@@ -204,6 +220,7 @@ export function groupWorksDaily(state, f) {
   f.job.left -= Math.max(1, f.pop / W.CREW) + (f.prisonWork || 0) / W.CREW; // their prisoners work too (groupjails.js)
   if (f.job.left > 0) return;
   if (f.job.type === "jail") jailBuilt(state, f, f.job.tile);
+  else if (f.job.type === "camp") delete worksAt(f, f.job.tile).camp; // established
   else { const w = worksAt(f, f.job.tile); w[f.job.type] = n(w, f.job.type) + 1; }
   f.built = (f.built || 0) + 1;
   f.job = null;
@@ -225,7 +242,9 @@ export function worksText(state, f) {
   if (t.store) bits.push("a storehouse");
   const bay = sickbayTier(f);
   if (bay) bits.push(W.SICKBAY[Math.min(W.SICKBAY.length, bay) - 1].name);
-  const jobName = () => (f.job.type === "jail" ? jailStepName(f) : f.job.type === "sickbay" ? (W.SICKBAY[n(worksAt(f, f.job.tile), "sickbay")] || W.SICKBAY[W.SICKBAY.length - 1]).name : W.WORKS[f.job.type].name);
+  const camps = f.bases.filter((b) => isCamp(f, b)).length;
+  if (camps) bits.push(`${camps === 1 ? "an outpost camp" : `${camps} outpost camps`} not yet established`);
+  const jobName = () => (f.job.type === "jail" ? jailStepName(f) : f.job.type === "camp" ? W.CAMP.name : f.job.type === "sickbay" ? (W.SICKBAY[n(worksAt(f, f.job.tile), "sickbay")] || W.SICKBAY[W.SICKBAY.length - 1]).name : W.WORKS[f.job.type].name);
   const job = f.job ? ` · building ${jobName()}` : "";
   return `${bits.join(", ")}${job}`;
 }

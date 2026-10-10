@@ -12,6 +12,7 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
+import { BUILDMAT_FINDS } from "./loot.js"; // building materials: where they are found
 import { traitAim } from "./traits.js"; // Brave, Coward: to hit
 import { fitFromPool } from "./gunmods.js";
 import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants, spareGun, queueRepair } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
@@ -43,11 +44,11 @@ import { brokenAt, jobFor, fixtures, isWaterFixture, repairPlan } from "./breakd
 import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
-import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier } from "./buildings.js";
+import { BUILDINGS, RECIPES, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
-import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill } from "./crafting.js";
+import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill, fieldCraftOptions } from "./crafting.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair, wreckSupplies, partyFuel } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun, linesText } from "./supply.js";
@@ -104,7 +105,7 @@ import { openCasesIn } from "./gunsafes.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
 import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
-import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem, besideWaterSource } from "./staging.js";
+import { stagingNeeds, storeOf, stagingMissing, stagingPct, depositable, provisionable, canWork, workerTeams, daysFor, establishProblem, besideWaterSource, STAGING } from "./staging.js";
 import { isHardcore } from "./hardcore.js";
 import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad, baseDewormers, wormOf } from "./worm.js";
 
@@ -1083,6 +1084,34 @@ const WATER_BUILDS = ["well", "rain_catcher", "cistern", "boiler", "water_barrel
 // The radio station's parts while the governor wants one for the groups out of reach (buildWishes, g.radioWant in the
 // last 3 days): other builds leave them, trips and trades go for them (needs).
 const radioHold = (state, base) => { const g = state.governor; return g && base.type === "hub" && !base.radio && g.radioWant != null && day(state) - g.radioWant <= 3 ? BUILDINGS.radio.cost.parts : 0; };
+// What this base's own step up still lacks of a material (not counting its stores).
+function ownShort(base, k) {
+  const job = tierUpJob(base);
+  return job && job.paid ? gatherRows(job).filter((r) => r.key === k).reduce((a, r) => a + Math.max(0, r.need - r.have), 0) : 0;
+}
+// What the step ups of the hub's own shelter and its outpost camps still lack of a material, past their own stores.
+function matShort(state, h, k) {
+  let n = 0;
+  for (const o of state.bases) {
+    if (o !== h && o.type !== "outpost") continue;
+    const job = tierUpJob(o);
+    if (!job || !job.paid) continue;
+    for (const r of gatherRows(job)) if (r.key === k) n += Math.max(0, r.need - r.have - (o === h ? 0 : Math.floor(o.stock[k] || 0)));
+  }
+  return n;
+}
+// The hub's scrap and parts held for its outpost camps (buildings.js outpost_up): what their step ups still lack past
+// their own stores, so the hub's own builds do not eat what a supply run should carry there (campShort).
+const campHold = (state, base, k = "scrap") => {
+  if (base.type !== "hub") return 0;
+  let n = 0;
+  for (const o of state.bases) {
+    const job = o.type === "outpost" ? tierUpJob(o) : null;
+    if (!job || !job.paid) continue;
+    for (const r of gatherRows(job)) if (r.key === k) n += Math.max(0, r.need - r.have - Math.floor(o.stock[k] || 0));
+  }
+  return n;
+};
 const waterHold =(state, base, k = "scrap") => (base.owner == null || base.owner === "player" ? (waterPlan(state, base).hold[k] || 0) + repairHold(state, base, k) : 0);
 
 // ---------- food and the winter (the food planner) ----------
@@ -1657,6 +1686,9 @@ function needs(state, h = hub(state)) { // h: a base leader's own base (stewardS
     fuel: Math.max(vehicle ? pick(st.fuel || 0, [[12, 1.6], [35, 0.8], [Infinity, 0.2]]) : 0.15, heatFuelWant(state, h).want, campaignFuelWant(state)), // needs-gauges: winter heating; the campaign's fires
     // Empty jars for the preserving kitchen (storage.js), once there is one.
     jars: count(h, "kitchen") ? pick(st.jars || 0, [[4, 1.3], [12, 0.7], [Infinity, 0.1]]) : 0,
+    // Building materials (data.js buildmat): wanted hard while a camp or shelter waits for them, else hardly (picked up
+    // along the way; a standing want took teams off the winter's wood trips: woodtest).
+    buildmat: matShort(state, h, "buildmat") > (st.buildmat || 0) ? 2.2 : 0.1,
     // Firewood (woodcutting.js): bought only when the cold is near or here and the store is low; never sold (0.9).
     wood: (() => { const w = woodNeed(state, h, returning(state, h)); return w.short && (w.cold || w.toCold <= 14 || w.boiler > 0) && w.have < w.need * 0.3 ? 1.6 : 0.9; })(), // the boiler (worm.js) burns it in every season
   };
@@ -2253,6 +2285,9 @@ function planBuilds(state, base, areas = ALL_AREAS) {
       if (w.save && /^Needs \d+ scrap/.test(chk.reason)) return; // save up for it rather than spend on less
       continue;
     }
+    // A step up that gathers its materials as they come in (buildings.js gather: Build up into a base, Establish the
+    // outpost): queued at once, nothing to save up for (it takes what its next hours of work need).
+    if (def.gather) { const msg = wishQueue(state, base, w); g.stats.builds++; say(state, `${msg.replace(/\.$/, "")}: ${w.why}.`); return; }
     const cost = wishCost(w);
     // Cautious: anything not urgent is built only from what is above the reserves (reserveStatus).
     const rs = persona(state).reserves && !w.save ? reserveStatus(state, base) : null;
@@ -2260,7 +2295,7 @@ function planBuilds(state, base, areas = ALL_AREAS) {
     if ((base.stock.scrap || 0) - (cost.scrap || 0) < reserve) { if (w.save) return; continue; }
     // Anything but a water building leaves the scrap and parts held for water (waterPlan); it does not save up
     // against that hold (the wishes after it, water among them, still get their turn).
-    if (!WATER_BUILDS.includes(w.type) && w.type !== "hub_up" && ((base.stock.scrap || 0) - (cost.scrap || 0) < waterHold(state, base) || (cost.parts && (base.stock.parts || 0) - cost.parts < waterHold(state, base, "parts") + (w.type === "radio" ? 0 : radioHold(state, base))))) continue;
+    if (!WATER_BUILDS.includes(w.type) && w.type !== "hub_up" && ((base.stock.scrap || 0) - (cost.scrap || 0) < waterHold(state, base) + campHold(state, base) || (cost.parts && (base.stock.parts || 0) - cost.parts < waterHold(state, base, "parts") + campHold(state, base, "parts") + (w.type === "radio" ? 0 : radioHold(state, base))))) continue; // campHold: its outpost camps' materials
     if (rs && ["meds", "parts", "fuel"].some((k) => cost[k] && (base.stock[k] || 0) - cost[k] < rs[k].target)) continue;
     if (!w.save && cost.meds && (base.stock.meds || 0) - cost.meds < 2) continue;
     if (!w.save && cost.parts && (base.stock.parts || 0) - cost.parts < 1) continue;
@@ -2326,7 +2361,8 @@ function buildWishes(state, base) {
   const wo0 = waterOutlook(state, base);
   if (wo0.net < 0 && wo0.daysLeft < 8 && count(base, "rain_catcher") + base.construction.filter((c) => c.type === "rain_catcher").length < BUILDINGS.rain_catcher.max) add("rain_catcher", "water is about to run out", true);
   // A shelter (buildings.js, tier 0): build it up into a base as soon as the materials are in (a well, walls, every building).
-  if (isShelter(base) && !queued("hub_up")) add("hub_up", "build the shelter up into a base (a well, walls, room for everything)", true);
+  // An outpost camp's step up (outpost_up) is queued when it is pitched; queued again if it was called off.
+  if (isShelter(base) && !queued(tierUpType(base))) add(tierUpType(base), base.type === "outpost" ? "establish the outpost camp (a spring, a fence, room to build)" : "build the shelter up into a base (a well, walls, room for everything)", true);
   for (const w of wormWishes(state, base, queued)) out.push(w); // worm.js: a water boiler, a cook fire
   // Beds (nextHousing): a bunkhouse, or a barracks once the building plots run short, or a bunkhouse expanded.
   if (people + (isHub ? 1 : 0) > beds) out.push(...housingWishes(state, base, `${people} people for ${beds} beds`, true));
@@ -2615,7 +2651,7 @@ export function planCrafts(state, base) {
   const tryCraft = (keys, why, minScrap) => {
     for (const k of keys) {
       const r = CRAFTS[k];
-      if (!r || (st.scrap || 0) - (r.in.scrap || 0) - keep < Math.max(minScrap, floor, CRAFTS[k].gear === "waterfilter" ? 0 : waterHold(state, base))) continue; // leaves the scrap held for water (and for the next building: keep)
+      if (!r || (st.scrap || 0) - (r.in.scrap || 0) - keep < Math.max(minScrap, floor, CRAFTS[k].gear === "waterfilter" ? 0 : waterHold(state, base) + campHold(state, base))) continue; // leaves the scrap held for water (and for the next building: keep)
       if (r.in.parts && (st.parts || 0) - r.in.parts < 2) continue;
       if (r.in.meds && (st.meds || 0) - r.in.meds < 3) continue;
       if (r.in.water && waterIn(st) - r.in.water < 15) continue;
@@ -2627,6 +2663,16 @@ export function planCrafts(state, base) {
     }
     return false;
   };
+  // Building materials (crafting.js buildmat, 3 scrap each) while this base's step up, or one of the hub's outpost
+  // camps, waits for them (matShort): ahead of the gear, from the scrap the camps are held (campHold is theirs).
+  const bmQueued = q.filter((j) => j.recipe === "buildmat").length;
+  const bmShort = (base.type === "hub" ? matShort(state, base, "buildmat") : ownShort(base, "buildmat")) - (st.buildmat || 0) - bmQueued;
+  if (bmShort > 0 && (st.scrap || 0) - CRAFTS.buildmat.in.scrap >= waterHold(state, base) && canCraft(state, base, "buildmat").ok) {
+    queueCraft(state, base, "buildmat");
+    gov(state).stats.crafts++;
+    say(state, `Queued building materials at ${base.name}: ${bmShort} still wanted for ${base.type === "hub" && !isShelter(base) ? "an outpost camp" : isShelter(base) ? (base.type === "outpost" ? "establishing the camp" : "building the shelter up into a base") : "a camp"}.`);
+    return;
+  }
   if (lacking("weapon") > 0 && tryCraft(["springmachete", "pulleybow", "crossbow", "sawmachete", "spikedbat", "pipespear"], "someone has no usable weapon", 5)) return; // the special ones first once a craft book or blueprint has opened them (blueprints.js)
   // Arrows: the bows and crossbows shoot them in every fight (and hunt with them): under half a dozen a bow, before
   // anything else (a bow with none fights with its fists; about half the arrows shot are picked up again after a win).
@@ -2823,6 +2869,8 @@ function siteScore(state, id, need, P) {
   const total = Object.values(table).reduce((a, v) => a + v, 0) || 1;
   let value = 0;
   for (const [key, w] of Object.entries(table)) value += (w / total) * (need[key] || 0);
+  const bmf = t.loc ? BUILDMAT_FINDS[t.loc.type] : null; // building materials: a find of their own (loot.js)
+  if (bmf && need.buildmat > 1) value += bmf[0] * 2 * need.buildmat;
   if (def && def.gear && def.gear.some((gk) => slotOf(gk) === "weapon") && alive(state).some((s) => !s.gear.weapon)) value += 0.25;
   // The hive campaign stockpiles ammo: gun stores, police stations, armories and the like (ammo the biggest share of
   // their loot) are scored up while it is short (campaignAmmoWant).
@@ -2886,7 +2934,7 @@ function planTrip(state) {
     const site = land ? land.id : outpostSite(state);
     const crowded = cramped || alive(state).length > baseBeds(h) + 2;
     if (site != null) cands.push({ mission: "outpost", tile: site, score: land ? 3 : crowded ? 3.5 : 2.2, crew: spareHands >= 4 ? 3 : 2, reach: land ? 1.6 : 1,
-      why: land ? `land for the coalition (+${land.gain} tiles)` : cramped ? "the hub has outgrown its plots: a new outpost for its people" : crowded ? "the hub is crowded: a new outpost" : "a new outpost", supplies: { scrap: 23 }, min: { scrap: 15 } });
+      why: land ? `land for the coalition (+${land.gain} tiles)` : cramped ? "the hub has outgrown its plots: a new outpost for its people" : crowded ? "the hub is crowded: a new outpost" : "a new outpost", supplies: { scrap: 32, buildmat: 2 }, min: { scrap: 12 } }); // parties.js outpostKit: the camp's 12 scrap and its step up's 20 scrap, 2 building materials
   }
   // Your people held by another group.
   const held = allCaptives(state);
@@ -3605,9 +3653,12 @@ function roadMissing(state, p) {
   const n = Math.max(1, partyMembers(state, p).length);
   const days = camp ? Math.min(CAMP.workDays, daysFor(camp, n)) + 1 : CAMP.workDays + 1;
   const out = {};
+  // Building materials the camp still lacks are made from scrap (crafting.js buildmat): that much more scrap; and the
+  // pitching's own scrap (staging.js STAGING.PITCH) before the camp stands.
+  const bmLack = Math.max(0, (needs.buildmat || 0) - carried(p, "buildmat") - (camp ? storeOf(camp, "buildmat") : 0));
   for (const k of ["scrap", "parts", "food", "water"]) {
     const have = (k === "water" ? teamWaterIn(p) : carried(p, k)) + (k === "food" ? carried(p, "preserved") : 0) + (camp ? storeOf(camp, k) : 0);
-    const own = k === "food" ? n * days : k === "water" ? n * days * thirstAt(state) : 0;
+    const own = k === "food" ? n * days : k === "water" ? n * days * thirstAt(state) : k === "scrap" ? bmLack * CRAFTS.buildmat.in.scrap + (camp ? 0 : STAGING.PITCH.scrap) : 0;
     const want = (needs[k] || 0) + own;
     if (have < want - 0.5) out[k] = Math.ceil(want - have);
   }
@@ -3628,10 +3679,23 @@ function campAct(state, p) {
   const here = partyTile(p);
   const members = partyMembers(state, p);
   const camp = state.staging;
+  // The camp's building materials, made from the scrap the team carries beyond what the camp (and its pitching) still
+  // takes of scrap (crafting.js buildmat, a field craft: 3 hours).
+  {
+    const needs = stagingNeeds(state);
+    const bmLack = (needs.buildmat || 0) - carried(p, "buildmat") - (camp ? storeOf(camp, "buildmat") : 0);
+    const scrapSpare = carried(p, "scrap") - Math.max(0, (needs.scrap || 0) - (camp ? storeOf(camp, "scrap") : 0)) - (camp ? 0 : STAGING.PITCH.scrap);
+    const opt = bmLack > 0 && scrapSpare >= CRAFTS.buildmat.in.scrap ? fieldCraftOptions(state, p).find((x) => x.key === "buildmat") : null;
+    if (opt && opt.ok) {
+      startOrder(state, p, { type: "craft", recipe: "buildmat" });
+      say(state, `${teamName(state, p)} makes building materials from scrap for the staging camp (${bmLack} still wanted).`);
+      return true;
+    }
+  }
   if (!camp) {
     const needs = stagingNeeds(state);
     const ready = carried(p, "scrap") >= needs.scrap * CAMP.pitchShare || day(state) >= CAMP.pitchDay || !firstHubPending(state) || members.some((s) => s.health < 60);
-    if (!ready) return false;
+    if (!ready || carried(p, "scrap") < STAGING.PITCH.scrap) return false; // pitching takes its scrap (staging.js STAGING.PITCH)
     const ok = (s) => !establishProblem(state, s.id) && (s.id === here || planPath(state, here, s.id, p.vehicle));
     let sites = hubSites(state, here, ROAD.foundReach).filter(ok);
     // No spring at a camp: with no spot beside water close by, look farther for one (CAMP.waterReach).
@@ -3678,7 +3742,7 @@ function campAct(state, p) {
   const short = stagingMissing(camp);
   const brings = (k) => (dep.find(([x]) => x === k) || [, 0])[1] + (k === "food" ? (dep.find(([x]) => x === "preserved") || [, 0])[1] : 0);
   const covers = short.length > 0 && short.every((r) => brings(r.key) >= r.short);
-  const mat = short.filter((r) => r.key === "scrap" || r.key === "parts");
+  const mat = short.filter((r) => r.key === "scrap" || r.key === "parts" || r.key === "buildmat");
   const matShort = mat.reduce((a, r) => a + r.short, 0);
   const share = matShort ? mat.reduce((a, r) => a + Math.min(brings(r.key), r.short), 0) / matShort : 0;
   const full = cargoRoom(state, p) < partyCapacity(state, p) * 0.15 && dep.length;
@@ -4782,6 +4846,7 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
     const staff = atBase(state, o.id).length;
     let form = null, why = "";
     const fix = staff ? waterRepairLoad(state, h, o) : null; // scrap and parts for its broken well or pump
+    const camp = staff ? campShort(o, h) : null; // an outpost camp's materials (buildings.js outpost_up): they ride along with its water
     if (moves && staff < 2 && !o.captured && home.length >= 7 && crewPool.length) { // a base taken from a group (conquest.js) is held by whoever took it
       const s = [...crewPool].sort((a, b) => skill(b, "farming") - skill(a, "farming"))[0];
       form = { crew: [s.id], deliver: [{ key: "food", qty: Math.min(6, payoutSpare(state, h, "food")) }, { key: "scrap", qty: Math.min(8, Math.max(0, Math.floor((h.stock.scrap || 0) - 30))) }].filter((l) => l.qty > 0), atDest: "disband" };
@@ -4791,13 +4856,22 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
       // out of the hub's own pay-out reserve, upkeep.js PAYOUT).
       const qty = Math.min(30, Math.floor(waterIn(h.stock) - home.length * 5), payoutSpare(state, h, "water"));
       const crew = [];
-      const fixKg = fix ? fix.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0) : 0; // the repair's scrap and parts ride along
+      const along = [...(fix || []), ...(camp || [])];
+      const fixKg = along.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0); // the repair's scrap and parts (and a camp's) ride along
       for (const s of crewPool) if (carryCapacity(state, crew, null) < qty * SUPPLIES.water.weight + fixKg && crew.length < Math.min(spare, 2)) crew.push(s);
       const load = Math.min(qty, Math.floor((carryCapacity(state, crew, null) - fixKg) / SUPPLIES.water.weight));
       // Purified water first, the rest un-purified (water.js: the outpost purifies it like its own).
       const pure = Math.min(load, Math.floor(Math.max(0, h.stock.water || 0)));
-      if (load >= 8) form = { crew: crew.map((s) => s.id), deliver: [...(pure > 0 ? [{ key: "water", qty: pure }] : []), ...(load - pure > 0 ? [{ key: RAW, qty: load - pure }] : []), ...(fix || [])], atDest: "return" };
-      why = `${load} water (it is running dry)${fix ? `, and ${linesText(fix)} to mend its water` : ""}`;
+      if (load >= 8) form = { crew: crew.map((s) => s.id), deliver: [...(pure > 0 ? [{ key: "water", qty: pure }] : []), ...(load - pure > 0 ? [{ key: RAW, qty: load - pure }] : []), ...along], atDest: "return" };
+      why = `${load} water (it is running dry)${fix ? `, and ${linesText(fix)} to mend its water` : ""}${camp ? `, and ${linesText(camp)} to establish the camp` : ""}`;
+    } else if (camp && crewPool.length) {
+      // An outpost camp waiting for the materials of its step up (buildings.js outpost_up): what it lacks, from the hub.
+      const deliver = camp;
+      const load = deliver.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0);
+      const crew = [];
+      for (const s of crewPool) if (carryCapacity(state, crew, null) < load && crew.length < Math.min(spare, 2)) crew.push(s);
+      if (carryCapacity(state, crew, null) >= load) form = { crew: crew.map((s) => s.id), deliver, atDest: "return" };
+      why = `${linesText(deliver)} to establish the camp`;
     } else if (fix && crewPool.length) {
       // Its well or pump is broken and waits for scrap or parts the outpost does not have (an outpost makes none):
       // without them it lives on the hub's water runs for good (census seed 3, aggressive: the old holdout's two wells
@@ -4848,6 +4922,20 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
     deleteSupplyRun(state, res.job);
     return "";
   }
+}
+
+// What an outpost camp's step up still lacks past its own stores, as supply-run lines from what the hub has (its builds
+// and crafts hold that much back for the camp: campHold), or null.
+function campShort(o, h) {
+  const job = tierUpJob(o);
+  if (!job || !job.paid) return null;
+  const out = [];
+  for (const r of gatherRows(job)) {
+    const want = Math.ceil(r.need - r.have - Math.floor(o.stock[r.key] || 0));
+    const qty = Math.min(want, Math.floor(h.stock[r.key] || 0)); // what campHold kept back for it
+    if (want > 0 && qty > 0) out.push({ key: r.key, qty });
+  }
+  return out.length ? out : null;
 }
 
 // Scrap and parts an outpost's broken well or pump waits for (breakdowns.js: a repair is 3 scrap and a part, a

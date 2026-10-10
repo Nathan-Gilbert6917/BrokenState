@@ -700,7 +700,7 @@ function watch(st) {
         seen.add(l);
         const m = /^(.+) finished at /.exec(l.text);
         if (m && names.has(m[1])) out.builds++;
-        else if (/ crafted at |^\S.* finished at /.test(l.text) && !/^🔧/.test(l.text)) out.crafts++;
+        else if (/ crafted at |^\S.* finished at /.test(l.text) && !/^🔧/.test(l.text) && !/^Building materials finished at /.test(l.text)) out.crafts++; // building materials: made for the governor's outpost camps (crafting.js buildmat), which bases on priorities do not found
       }
     },
     out,

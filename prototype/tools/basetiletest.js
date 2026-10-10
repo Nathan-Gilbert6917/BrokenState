@@ -16,6 +16,11 @@ import { setAutopilot } from "../src/sim/autopilot.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { GEAR } from "../src/sim/data.js";
 import { renderLeft, renderRight } from "../src/ui/ui.js";
+import { STAGING as STAGING_PITCH } from "../src/sim/staging.js";
+
+// Pitching a staging camp takes STAGING.PITCH (8 scrap carried, 2 hours of work; 2026-10-09): with no camp yet the team is
+// handed its scrap and the camp stands at once, as before, so the checks below see the camp they always did.
+const establishNow = (st, p) => { if (!st.staging) { p.supplies.scrap = (p.supplies.scrap || 0) + STAGING_PITCH.PITCH.scrap; p.pitched = true; } return giveOrder(st, p, "establish"); };
 
 const SEED = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -58,13 +63,13 @@ section("Establish base: the team that builds the camp moves into the shelter an
   const id = p.id;
   const people = partyMembers(st, p).map((s) => s.id);
   const car = st.vehicles.find((v) => v.loc.kind === "party" && v.loc.partyId === id);
-  Object.assign(p.cargo.supplies, { scrap: 30, parts: 5, food: 40, water: 40, fuel: 3 });
+  Object.assign(p.cargo.supplies, { scrap: 30, parts: 5, food: 40, water: 40, fuel: 3, buildmat: 4 });
   p.cargo.gear.push({ key: "crowbar", name: GEAR.crowbar.name, quality: 1 });
-  giveOrder(st, p, "establish");
+  establishNow(st, p);
   check(!!st.staging && st.parties.includes(p) && !st.bases.length, "the camp is pitched: no base yet, the team still a team (the camp is not a base)");
   // A save mid-camp loads and finishes the same way.
   const mid = roundTrip(st);
-  run(st, 24 * 8, () => !!hub(st), () => { if (st.parties.includes(p) && p.phase === "waiting" && st.staging) giveOrder(st, p, "establish"); });
+  run(st, 24 * 8, () => !!hub(st), () => { if (st.parties.includes(p) && p.phase === "waiting" && st.staging) establishNow(st, p); });
   const h = hub(st);
   check(!!h, "the camp became the shelter");
   check(!st.parties.some((q) => q.owner === "player"), "the team is disbanded (no player team left)");
@@ -77,7 +82,7 @@ section("Establish base: the team that builds the camp moves into the shelter an
   check(hub(after) && !after.parties.some((q) => q.owner === "player") && residents(after, hub(after).id).length === people.length, "save / load after founding: the base with its people, no team");
   // The save from mid-camp.
   const mp = roadTeam(mid) || mid.parties.find((q) => q.id === id);
-  run(mid, 24 * 8, () => !!hub(mid), () => { if (mp && mid.parties.includes(mp) && mp.phase === "waiting" && mid.staging) giveOrder(mid, mp, "establish"); });
+  run(mid, 24 * 8, () => !!hub(mid), () => { if (mp && mid.parties.includes(mp) && mp.phase === "waiting" && mid.staging) establishNow(mid, mp); });
   check(hub(mid) && !mid.parties.some((q) => q.owner === "player") && dangling(mid, id).length === 0, "a save made mid-camp finishes it the same way: the team disbanded");
 }
 
@@ -86,8 +91,8 @@ section("A finished camp takes in a team that comes back with a Move order (no W
   const st = createWorld({ seed: 23, factionCount: 7, mode: "hardcore" });
   st.noWanderers = true;
   const p = roadTeam(st);
-  Object.assign(p.cargo.supplies, { scrap: 30, parts: 5, food: 40, water: 40 });
-  giveOrder(st, p, "establish");
+  Object.assign(p.cargo.supplies, { scrap: 30, parts: 5, food: 40, water: 40, buildmat: 4 });
+  establishNow(st, p);
   const camp = st.staging;
   camp.progress = camp.work; // built and stocked; only its people are missing
   const tile0 = camp.tile;

@@ -41,7 +41,7 @@ import { forageAbundance } from "./sim/foraging.js";
 import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
 import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
-import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew } from "./ui/newgame.js";
+import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup } from "./ui/newgame.js";
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { SG_ACTIONS, SG_CHANGE, loadDice } from "./ui/startgear.js"; // starting gear picked under Customize (sim/startgear.js)
@@ -147,6 +147,7 @@ const freshUi = () => ({
   inv: null, invSel: null, invMsg: "", // inventory / loot screen (ui/inventory.js)
   lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null, bgEditor: null, // bgEditor: the custom backgrounds window (ui/backgrounds.js)
   gearEdit: null, // the new-run screen's starting gear window (ui/startgear.js): { i: the colonist's place in the crew }
+  nrMap: false, // the new-run screen put aside to look at the map (ui/newgame.js View map; the banner or Esc brings it back)
   dev: false, showFps: false, armed: newArmed(),
   radioWith: null, radioMsg: "", radioDeal: null, radioBase: null, caravanPlan: null, cvMsg: "", attackConfirm: null, // ui/tradewindow.js
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
@@ -521,6 +522,8 @@ function renderCombat(user) {
 
 // Banners at the top of the map: paused (with the orders waiting for the unpause) and move mode.
 function bannerHTML() {
+  if (!ui.started && ui.nrMap && !ui.title) return `<div class="paused" data-tip="The new-run screen is put aside so you can look around the map: where you start, the groups, the roads. Nothing runs until you start.">` +
+    `<b class="big">Setting up</b> Looking at the map <button data-action="nr-map" data-tip="Back to the new-run screen (Esc)">◀ Back to setup</button></div>`;
   if (!ui.started || state.gameOver || state.combat || ui.timelapse) return "";
   let html = trayHTML(state, ui); // the card tray (ui/pacing.js)
   if (ui.speed === 0) {
@@ -1040,7 +1043,7 @@ const actions = {
   tradeleave: () => { endTrade(state); ui.tradeMsg = ""; },
   reroll: () => newWorld(randomSeed()),
   // Randomize all (ui/newgame.js): in Hardcore the world is built again on the same seed with the new crew roll.
-  "nr-allcrew": () => { state = randomizeAllCrew(state, ui, (crew, crewRoll) => { newWorld(state.seed, true, { crew, crewRoll }); return state; }); },
+  "nr-allcrew": () => { state = randomizeAllCrew(state, ui, (crew, crewRoll, pickRoll) => { newWorld(state.seed, true, { crew, crewRoll, pickRoll }); return state; }); },
   "bg-close": () => closeBackgrounds(), // Done in the custom backgrounds window: the world is built again if a colonist's background changed
   pickleader: (d) => { state.survivors.forEach((s) => (s.leader = s.id === Number(d.id))); ui.crewEdited = true; },
   // A new game starts paused: look around and give the first orders, then press Space.
@@ -1955,6 +1958,7 @@ function closeTopLayer() {
   if (ui.zombieLook) { ui.zombieLook = false; return true; }
   if (ui.bgEditor) { closeBackgrounds(); return true; }
   if (ui.gearEdit) { ui.gearEdit = null; return true; } // the starting gear window (ui/startgear.js)
+  if (!ui.started && ui.nrMap) { backToSetup(ui); return true; } // looking at the map from the new-run screen: back to it
   if (ui.settings) { // a question first, then the menu itself (not while a save or load is running)
     if (ui.settings.confirm) ui.settings.confirm = null;
     else if (!ui.settings.busy) ui.settings = null;

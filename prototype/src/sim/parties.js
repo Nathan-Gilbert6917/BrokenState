@@ -39,6 +39,7 @@ import { handoverArrive } from "./ransom.js";
 import { assaultArrive } from "./conquest.js";
 import { occupyArrive, occupyProblem } from "./occupy.js"; // Occupy: move into an abandoned base
 import { abandonedAt } from "./groupworld.js"; // a base standing empty on a tile (Occupy instead of Build outpost there)
+import { BUILDINGS, gatherJob } from "./buildings.js"; // a new outpost is a camp first, its step up queued (outpost_up)
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
 import { growthAt, growthArrive } from "./hivetech.js";
@@ -78,7 +79,7 @@ import { startSweep, sweepOpts, sweeping } from "./survey.js";
 import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
-import { establishOption, establishArrive, strikeOption, strikeArrive } from "./staging.js";
+import { establishOption, establishArrive, strikeOption, strikeArrive, STAGING } from "./staging.js";
 import { canClaim, CLAIM, claimsTaken, takeGroupClaims, claimsTakenText } from "./claims.js"; // the orders card: Claim this tile where the land borders yours; a new outpost takes the groups' claims round it
 import { askBaseName } from "./basenames.js"; // the naming popup for a base you found
 import { enterTarget, enterCard, enterOption, joinBase } from "./moveout.js"; // a team that ends a move on another of your bases: "Enter <base>?"
@@ -99,7 +100,7 @@ export const MISSIONS = {
   move:        { name: "Move here",        desc: "Travel there and wait for orders." },
   scavenge:    { name: "Scavenge / raid",  desc: "Raid the site on its own map: search containers while Heat rises and more of the dead arrive, then leave by an extraction zone." },
   trade:       { name: "Trade visit",      desc: "Visit a group's base to barter, give gifts and sign pacts." },
-  outpost:     { name: "Build outpost",    desc: "Found a satellite base here. Needs 15 scrap carried. The team stays as its first staff." },
+  outpost:     { name: "Build outpost",    desc: "Pitch an outpost camp here: a satellite base that starts as a camp (tarps behind a barricade, a shelter's rules) and becomes an outpost once it is established (Establish the outpost: 20 scrap and 2 building materials brought in, then 20 work-hours by its builders). Needs 12 scrap carried and 6 hours to pitch it; what else the team carries goes into the camp's stores. The team stays as its first staff, on building." },
   occupy:      { name: "Occupy abandoned base", desc: "Move into a base that stands empty (a group's that died out, gave it up or lost it, or an outpost of yours that was lost): clear out the dead or squatters inside (a fight; the planner shows who is there), and it is your outpost with the buildings still standing, their wear and damage, and the stores left there. No scrap needed. The team stays as its first staff. The group whose base it was, and any group whose claims round it you take, will not like it." },
   recover:     { name: "Recover bodies",   desc: "Collect what is left at a death site before scavengers strip it." },
   cull:        { name: "Cull horde",       desc: "Thin out or lure away a horde on or next to this tile." },
@@ -598,9 +599,16 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
 export const STAY_MISSIONS = ["move", "recon", "outpost", "occupy"];
 // Missions after which the team lives at the base it founded or moved into: no plan after them (the planner, trips.js).
 export const SETTLE_MISSIONS = ["outpost", "occupy"];
-// Scrap an outpost needs carried: 15, or 5 on the ruins of a burned base (the rest is salvage there).
+// Scrap an outpost camp needs carried to pitch it: 5, or 2 on the ruins of a burned base (salvage there). The rest of
+// the old 15 and more is the camp's step up (buildings.js outpost_up), brought in as it goes.
 /** @param {State} state @param {number} tile */
-export const outpostScrap = (state, tile) => (state.tiles[tile] && state.tiles[tile].ruin ? 5 : 15);
+export const outpostScrap = (state, tile) => (state.tiles[tile] && state.tiles[tile].ruin ? 5 : 12); // user numbers 2026-10-09: 12 scrap (5 on the ruins)
+// What a team should carry to pitch a camp and have it established without another trip: { scrap, parts }.
+/** @param {State} state @param {number} tile */
+export const outpostKit = (state, tile) => ({ ...BUILDINGS.outpost_up.cost, scrap: outpostScrap(state, tile) + (BUILDINGS.outpost_up.cost.scrap || 0) });
+// Hours of work to pitch an outpost camp once the team is there (user numbers 2026-10-09: "Outpost camp 6 hours 12
+// scrap"): the team works on it (orders.js task "pitch"), then the camp stands. The staging camp's: staging.js STAGING.PITCH.
+export const PITCH_HOURS = 6;
 
 // Why a mission cannot be sent to a tile, from what is fixed or known about it (null = fine). The planner offers
 // every mission for any tile, so the sim checks too; what can change on the way is checked again on arrival.
@@ -747,7 +755,7 @@ export function launchExpedition(state, opts) {
   const days = Math.ceil((opts.plan ? p.plannedHours : est.hours) / 24);
   const planHome = opts.plan && p.orders.some((o) => o.type === "home");
   const waits = opts.plan ? !planHome : stays;
-  const after = mission === "outpost" ? ` The team stays there as its first staff${v ? `, and the ${v.name} stays at the outpost` : ""}.` :
+  const after = mission === "outpost" ? ` The team pitches an outpost camp and stays as its first staff${v ? `, and the ${v.name} stays there` : ""}.` :
     mission === "occupy" ? ` It clears out whoever is inside and moves in as its first staff${v ? `, the ${v.name} with it` : ""}.` :
     opts.plan ? ` Plan: ${p.plan.name}${p.orders.length ? ` (${queueText(state, p)})` : ""}.${waits ? " Then it waits for orders." : ""}` : stays ? " The team waits there for orders." : "";
   if (lights.length) log(state, `${teamName(state, p)} takes lights from the armory: ${lights.join(", ")}.`, "info");
@@ -1211,7 +1219,7 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   } else if (!left && !state.bases.some((b) => b.tile === tile) && !ownedByOther && (t.terrain !== "water" || t.bridge)) { // a bridge: the outpost barricades it (bridgeClosedTo)
     const scrap = (p.supplies.scrap || 0) + (p.cargo.supplies.scrap || 0);
     const need = outpostScrap(state, tile);
-    add("outpost", scrap < need ? `Needs ${need} scrap carried${need < 15 ? " (on the ruins)" : ""} (have ${Math.floor(scrap)})` : null);
+    add("outpost", scrap < need ? `Needs ${need} scrap carried${t.ruin ? " (on the ruins)" : ""} (have ${Math.floor(scrap)})` : null);
     const taken = claimsTaken(state, tile); // claims.js: the groups' claims round it become yours
     if (taken.length) out[out.length - 1].desc += ` Building here takes claims round it and angers ${claimsTakenText(taken)}.`;
   }
@@ -1386,6 +1394,17 @@ export function survey(state, p, bonus, debit = true) {
   return `${found.length ? `Spotted: ${found.map((f) => `${MARKER_TYPES[f.type].name} at ${tileLabel(state, f.tile)}`).join("; ")}.` : "Nothing new spotted nearby."}${crash ? ` ${crash}` : ""}`;
 }
 
+// The pitching is done (orders.js task "pitch"): the camp stands, checked again (the tile may have been taken meanwhile).
+/** @param {State} state @param {Party} p */
+export function pitchDone(state, p) {
+  p.pitched = true;
+  p.phase = "out"; // its mission (outpost, establish) is still on it
+  return arrive(state, p) || "";
+}
+// Hours of pitching an order takes on arrival (the planner's and the queue's estimates).
+/** @param {State} state @param {string} mission */
+export const pitchHoursFor = (state, mission) => (mission === "outpost" && state.bases.some((b) => b.type === "hub") ? PITCH_HOURS : mission === "establish" && !state.staging && !state.bases.length ? STAGING.PITCH.hours : 0);
+
 // ---------- arriving and acting ----------
 /** @param {State} state @param {Party} p */
 function arrive(state, p) {
@@ -1476,20 +1495,32 @@ function arrive(state, p) {
           blocked ? `Someone else holds ${tileLabel(state, p.dest)}.` : short, { failed: true });
         return "";
       }
+      // An outpost camp (2026-10-09, user request): tier 0 (a shelter's rules, buildings.js SHELTER) with its step up
+      // queued (outpost_up: the materials taken from its stores as they come in, a bar on the map and the base panel).
+      // What the team carries beyond the pitching scrap goes into the stores, and so straight into the step up.
+      const camp = !!hub(state);
+      // First the pitching (PITCH_HOURS of work, the task "pitch": orders.js), then the camp stands (pitchDone).
+      if (camp && !p.pitched) { startTask(state, p, { type: "pitch", hours: PITCH_HOURS, mission: "outpost" }); return `Pitching the outpost camp (${PITCH_HOURS} hours).`; }
+      delete p.pitched;
       const base = {
-        id: newId(), tile: p.dest, type: hub(state) ? "outpost" : "hub", name: outpostName(state, p.dest),
-        stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 },
-        radio: false, watchtower: false, buildings: [], construction: [], armory: [],
+        id: newId(), tile: p.dest, type: camp ? "outpost" : "hub", name: outpostName(state, p.dest),
+        stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0, buildmat: 0 },
+        radio: false, watchtower: false, buildings: [], construction: camp ? [gatherJob("outpost_up")] : [], armory: [],
+        ...(camp ? { tier: 0, campDay: Math.floor(state.hour / 24) + 1 } : {}),
       };
       takeSupply(p, "scrap", need);
       if (t.ruin) { log(state, `The team built on the ruins of ${t.ruin.name}.`, "info"); delete t.ruin; }
       state.bases.push(base);
       askBaseName(state, base);
       settleInto(state, p, base);
+      if (camp) for (const m of members) m.role = "build"; // the camp's first job is its own step up
       recomputeOwnership(state);
       const took = takeGroupClaims(state, base.tile); // claims.js: the groups' claims round it are yours (as a group's new base takes yours)
-      log(state, `${base.name} founded with ${members.length} staff.${took.length ? ` Its land takes claims of ${claimsTakenText(took)}.` : ""}`, "good");
-      return `${base.name} founded.`;
+      const up = BUILDINGS.outpost_up;
+      log(state, camp
+        ? `${base.name}: an outpost camp pitched with ${members.length} staff. To establish it: ${Object.entries(up.cost).map(([k, v]) => `${v} ${k}`).join(" and ")} brought in, then ${up.hours} work-hours by its builders (Construction).${took.length ? ` Its land takes claims of ${claimsTakenText(took)}.` : ""}`
+        : `${base.name} founded with ${members.length} staff.${took.length ? ` Its land takes claims of ${claimsTakenText(took)}.` : ""}`, "good");
+      return camp ? `${base.name}: outpost camp pitched.` : `${base.name} founded.`;
     }
     case "recover": {
       const site = state.deathSites.find((d) => d.tile === p.dest);

@@ -566,6 +566,22 @@ export const AREA_WOOD = {
 };
 const FURNITURE = { cabinet: 1, shelf: 1, counter: 1 };
 // Firewood found this search hour at a site, or 0.
+// Building materials (data.js buildmat: lumber, blocks, sheet metal; what a camp takes to become a base): a find of its
+// own each search hour, like SITE_WOOD (its own dice: nothing else a search finds changed). [chance, min, max].
+export const BUILDMAT_FINDS = {
+  hardware: [0.35, 2, 5], quarry: [0.3, 2, 4], warehouse: [0.22, 1, 4], factory: [0.18, 1, 3], barn: [0.18, 1, 3],
+  farm: [0.12, 1, 2], feedstore: [0.12, 1, 2], ranch: [0.08, 1, 2], town: [0.1, 1, 2], city: [0.08, 1, 2],
+  apartments: [0.06, 1, 2], office: [0.06, 1, 2], school: [0.06, 1, 2], motel: [0.06, 1, 2], church: [0.06, 1, 2],
+  mall: [0.06, 1, 2], prison: [0.06, 1, 2], campground: [0.05, 1, 1], cabin: [0.05, 1, 1], dam: [0.08, 1, 2],
+};
+export function rollBuildmat(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const w = t && t.loc ? BUILDMAT_FINDS[t.loc.type] : null;
+  if (!w) return 0;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "bmat", tileId, state.hour, salt) >= w[0] * loot * mult) return 0;
+  return w[1] + Math.floor(hash01(state.seed, "bmatqty", tileId, state.hour, salt) * (w[2] - w[1] + 1));
+}
 export function rollSiteWood(state, tileId, mult = 1, salt = "") {
   const t = state.tiles[tileId];
   const w = t && t.loc ? SITE_WOOD[t.loc.type] : null;

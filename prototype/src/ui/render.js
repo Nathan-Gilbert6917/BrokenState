@@ -8,7 +8,7 @@ import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card d
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById } from "../sim/vehicles.js";
-import { BUILDINGS, count } from "../sim/buildings.js";
+import { BUILDINGS, count, tierUpJob, gatherCap } from "../sim/buildings.js";
 import { weatherTint, season, iceRow } from "../sim/weather.js";
 import { drawFronts, weatherTipLines } from "./wxmap.js"; // weather fronts over the land, frozen rivers in the tooltip
 import { radioNodes } from "../sim/radio.js";
@@ -1309,10 +1309,12 @@ export function render(state) {
     }
     if (festivalNow(state, b)) for (let i = 0; i < 4; i++) fireGlow(b.id * 7 + 40 + i, px + (i - 1.5) * w * 0.24, cy + h / 2 - (i % 2 ? 1 : 3) * s, s); // sim/festival.js: bonfires on the festival day
     if (b.alert) sprite(iconCanvas("alert", "#ff9f43"), px + w / 2 - 3 * s, cy - h / 2 + 5 * s + stepBob(b.id * 3 + 3, 1.6 * s, 900), ICON_W * s);
-    // A shelter building up into a base (buildings.js hub_up): a bar of the work under it.
-    const up = b.tier === 0 && b.construction.find((c) => c.type === "hub_up");
-    if (up) buildBarOnMap(px, cy - h / 2 - 7 * s, s, up.hours ? up.progress / up.hours : 0);
-    labels.push({ text: b.tier === 0 ? `${b.name} (${up ? `building a base: ${Math.round((up.hours ? up.progress / up.hours : 0) * 100)}%` : "shelter"})` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
+    // A shelter building up into a base (buildings.js hub_up), an outpost camp being established (outpost_up): a bar of
+    // the work above it (its lighter part: what the materials delivered allow).
+    const up = b.tier === 0 && tierUpJob(b);
+    if (up) buildBarOnMap(px, cy - h / 2 - 7 * s, s, up.hours ? up.progress / up.hours : 0, up.paid ? gatherCap(up) : undefined);
+    const upPct = up ? Math.round((up.hours ? up.progress / up.hours : 0) * 100) : 0;
+    labels.push({ text: b.tier === 0 ? `${b.name} (${b.type === "outpost" ? (up ? `camp: establishing ${upPct}%` : "camp") : up ? `building a base: ${upPct}%` : "shelter"})` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).
     const node = nodes.find((n) => n.base === b);
     if (node) {

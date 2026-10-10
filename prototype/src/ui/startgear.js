@@ -20,6 +20,8 @@ import {
 import { itemPoints, slotPoints, pricePerson, pointsMax, vehiclePoints, suppliesPoints } from "../sim/custompoints.js";
 import { tidyTiers } from "../sim/traits.js";
 import { standardMag } from "../sim/mags.js";
+import { randomKit, randomTrunk, randomBuild, kitBudget, trunkBudget } from "../sim/randomkit.js"; // the dice under Customize: a new draw each time, within the points
+import { freshRng, randomName, randomAppearance } from "../sim/appearance.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -60,6 +62,12 @@ function optionsHtml(keys, current, price = (k) => itemPoints(k)) {
 }
 
 // ---------- the points bar (the crew card and this window) ----------
+// What the points went on, in words (the gear window shows it under the bar: a dice-loaded colonist's skills can be most of it).
+export function pointsSplit(state, s) {
+  const B = pricePerson(state, s);
+  const parts = [["Skills", B.skills], ["Traits", B.good + B.back], ["Kit", B.gear + B.carried], ["Vehicle's back", B.vehicle], ["Background's own", B.extra]];
+  return `<div class="small muted">${parts.filter(([, v], i) => v || i < 3).map(([n, v]) => `${n} ${v < 0 ? "−" : ""}${Math.abs(v)}`).join(" · ")}</div>`;
+}
 export function pointsBar(state, s) {
   const B = pricePerson(state, s);
   const pct = Math.min(100, Math.round((B.total / Math.max(1, B.max)) * 100));
@@ -116,7 +124,8 @@ function vehicleSection(state, ui) {
     <h3>The vehicle's back <span class="small muted">${vehiclePoints(V)} pts · ${r1(load)} / ${info.room} kg</span></h3>
     <div class="small muted">${what}</div>
     <div class="row" style="gap:0.3rem;margin:0.25rem 0"><label class="small"${tip("Whose points pay for what is in the back (in Hardcore they own the car)")}>Paid by <select data-action="sg-trunk-owner">${who}</select></label>
-      <button class="mini" data-action="sg-trunk-dice"${tip("Load what the dice put in the back (the points it costs)")}>🎲 The dice's back</button>
+      <button class="mini" data-action="sg-trunk-rand"${tip(`Empty the back, then fill it with new random things and supplies for what ${esc(payer.name.split(" ")[0])} has left (${trunkBudget(state, payer)} points) in the room there is. Each click is a new draw`)}>🎲 Random back</button>
+      ${info.hard ? `<button class="mini" data-action="sg-trunk-dice"${tip("Load what the world's dice put in the back (the points it costs)")}>As rolled</button>` : ""}
       <button class="mini" data-action="sg-trunk-clear" ${V.items.length || Object.keys(V.supplies).length ? "" : "disabled"}${tip("Empty the back (the points back)")}>Empty</button></div>
     <div>${items}</div>
     <div class="row" style="margin-top:0.25rem"><select data-action="sg-trunk-add"${V.items.length >= START_TRUNK.ITEMS ? " disabled" : ""}><option value="">Put a thing in the back…</option>${optionsHtml(trunkChoices(), null)}</select></div>
@@ -190,6 +199,7 @@ export function startGearEditor(state, ui) {
       </div>
       <div class="sgcol">
         ${pointsBar(state, s)}
+        ${pointsSplit(state, s)}
         <h3>Load</h3>
         <div class="spread"><b>${L.kg} / ${L.max} kg</b><span class="${BAND_CLASS[L.band]}"${tip(bandsTip)}>${L.name}</span></div>
         <div class="bar"${tip(bandsTip)}><i style="width:${pct}%;background:${color}"></i></div>
@@ -203,8 +213,9 @@ export function startGearEditor(state, ui) {
       </div>
     </div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end;gap:0.3rem">
-      <button data-action="sg-dice" data-i="${i}"${tip("Load what the dice rolled for them: skills, traits, what they wear, hold and carry (the points it costs; it may be over)")}>🎲 Start from the dice</button>
-      <button data-action="sg-blank" data-i="${i}"${tip("Back to a blank slate: skills 0, no traits, nothing worn or carried (the vehicle's back stays)")}>Clear</button>
+      <button data-action="sg-rand-kit"${tip(`Empty what they wear, hold and carry, then a new random kit for the points they have left after their skills, traits and the vehicle's back (${kitBudget(state, s)} now). Each click is a new draw`)}>🎲 Random gear</button>
+      <button data-action="sg-dice-kit"${tip("What the world's dice gave them to wear, hold and carry (only the gear: skills and traits stay as they are). It may cost more than they have left")}>The dice's gear</button>
+      <button data-action="sg-kit-clear"${tip("Nothing worn, held or carried (the points back). Skills, traits and the vehicle's back stay")}>Empty</button>
       <span style="flex:1"></span>
       <button class="primary" data-action="sg-close">Done</button>
     </div></div>`;
@@ -347,6 +358,40 @@ export const SG_ACTIONS = {
     if (ui.gearEdit) { ui.gearEdit.sel = null; ui.gearEdit.msg = ""; }
     return true;
   },
+  // The crew card's Build (and All: a new name and look too): a whole random colonist within their points.
+  "sg-build": (state, ui, d) => {
+    const s = state.survivors[Number(d.i)];
+    if (!s || ui.started || !freeEdit(ui)) return false;
+    const rng = freshRng();
+    if (d.all) {
+      s.name = randomName(rng, state.survivors.filter((o) => o !== s).map((o) => o.name));
+      s.appearance = randomAppearance(rng);
+    }
+    randomBuild(state, s, rng);
+    s.startPoints = true;
+    s.startCustom = true;
+    ui.crewEdited = true;
+    return true;
+  },
+  // The gear window: what they wear, hold and carry only.
+  "sg-rand-kit": (state, ui) => edit(state, ui, (P, s) => {
+    const K = randomKit(kitBudget(state, s), freshRng());
+    P.slots = K.slots;
+    P.carry = K.carry;
+    ui.gearEdit.sel = null;
+  }),
+  "sg-dice-kit": (state, ui) => edit(state, ui, (P, s) => {
+    if (!s.diceKit) noteDiceKit(s);
+    const K = sanitizeStartGear(s.diceKit) || { slots: {} };
+    P.slots = { ...Object.fromEntries(START_GEAR.SLOTS.map((k) => [k, ""])), ...K.slots };
+    P.carry = K.carry || blankCarry();
+    ui.gearEdit.sel = null;
+  }),
+  "sg-kit-clear": (state, ui) => edit(state, ui, (P) => {
+    P.slots = Object.fromEntries(START_GEAR.SLOTS.map((k) => [k, ""]));
+    P.carry = blankCarry();
+    ui.gearEdit.sel = null;
+  }),
   "sg-blank": (state, ui, d) => {
     const s = state.survivors[Number(d.i)];
     if (!s || ui.started || !freeEdit(ui)) return false;
@@ -357,6 +402,13 @@ export const SG_ACTIONS = {
   },
   "sg-trunk-del": (state, ui, d) => editTrunk(state, ui, (V) => { if (!V.items[Number(d.i)]) return false; V.items.splice(Number(d.i), 1); }),
   "sg-trunk-clear": (state, ui) => editTrunk(state, ui, (V) => { V.items = []; V.supplies = {}; }),
+  // Empty, then a new random back for what its payer has left.
+  "sg-trunk-rand": (state, ui) => editTrunk(state, ui, (V, o) => {
+    const R = randomTrunk(trunkBudget(state, o), room(state), freshRng());
+    if (!R.items.length && !Object.keys(R.supplies).length && ui.gearEdit) ui.gearEdit.msg = `${o.name.split(" ")[0]} has no points left for the back: take something off them, or raise Points each.`;
+    V.items = R.items;
+    V.supplies = R.supplies;
+  }),
   "sg-trunk-dice": (state, ui) => editTrunk(state, ui, (V, o) => {
     const dice = (state.survivors.find((s) => s.diceTrunk) || {}).diceTrunk;
     if (!dice) { if (ui.gearEdit) ui.gearEdit.msg = isHardcore(state) ? "The dice put nothing in the back." : "A normal start's pickup comes empty: nothing to load."; return false; }

@@ -64,6 +64,12 @@ export const SUPPLIES = {
   carparts:    { name: "Car parts",   value: 7,  weight: 3,   cat: "vehicle" },
   gunparts:    { name: "Gun parts",   value: 10, weight: 0.5, cat: "gunmod" },
   electronics: { name: "Electronics", value: 12, weight: 0.3, cat: "electronics" },
+  // Building materials (2026-10-09, user request: "Add something called building materials that can be scavenged and
+  // use this to establish bases"): lumber, cinder blocks, sheet metal, nails and fixings. Scavenged as a find of its own (loot.js
+  // BUILDMAT_FINDS: hardware stores and quarries most, warehouses, factories, barns, farms and towns; on top of the
+  // site's usual loot, so nothing else got rarer), heavy and bulky; what a camp
+  // takes to become a base (buildings.js outpost_up). Traded with scrap.
+  buildmat:    { name: "Building materials", value: 3, weight: 3, cat: "scrap" },
 };
 // Rounds by calibre and type (data-ammo.js ROUND_SUPPLIES: a_9mm_fmj, a_12ga_buck…; ammo.js): what your stocks hold.
 // "ammo" above stays as the abstract count (other groups' stores, what a plan or a deal asks for).

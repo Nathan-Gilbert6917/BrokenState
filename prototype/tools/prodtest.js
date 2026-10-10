@@ -425,7 +425,7 @@ function makeOutpost(state, staff) {
       setSteward(st, h, true);
     } else setAutopilot(st, true, "balanced");
     let bad = "";
-    let maxSupply = 0, powered = 0, fuelMade = 0, lastFuel = h.stock.fuel, stewardLines = 0;
+    let maxSupply = 0, powered = 0, fuelMade = 0, lastFuel = h.stock.fuel, stewardLines = 0, standDays = 0;
     for (let i = 0; i < longDays * 24 && !st.gameOver; i++) {
       tickHour(st);
       for (const b of st.bases) {
@@ -437,10 +437,11 @@ function makeOutpost(state, staff) {
       if (h.power) { maxSupply = Math.max(maxSupply, h.power.supply); if (h.power.supply > 0) powered++; }
       if (h.stock.fuel > lastFuel) fuelMade += h.stock.fuel - lastFuel;
       lastFuel = h.stock.fuel;
-      if (st.log.slice(0, 3).some((l) => l.hour === st.hour && /🧭 .*, leader of /.test(l.text))) stewardLines++;
+      if (st.log.slice(0, 12).some((l) => l.hour === st.hour && /🧭 .*, leader of /.test(l.text))) stewardLines++; // any of this hour's lines (a busy hour pushes it past the first few)
+      if (st.hour % 24 === 0 && st.bases.includes(h)) standDays++; // a base burned down in a war has no leader's line
     }
     check(!bad, `seed ${seed} (${mode}): no NaN or negative stock (${bad || "ok"})`);
-    if (mode === "steward") check(Math.abs(stewardLines - (day(st) - 1)) <= 1, `seed ${seed}: one steward line a day (${stewardLines} in ${day(st) - 1} days)`);
+    if (mode === "steward") check(Math.abs(stewardLines - standDays) <= 1, `seed ${seed}: one steward line a day while the base stands (${stewardLines} in ${standDays} days${standDays < day(st) - 2 ? `; it fell on day ${standDays + 1}` : ""})`);
     else check(stewardLines === 0, "no steward lines while the autopilot runs");
     console.log(`  seed ${seed} ${mode}: day ${day(st)}${st.gameOver ? " (game over)" : ""}, ${st.survivors.filter((s) => s.alive).length} alive, powered ${Math.round(powered / 24)} days (up to ${maxSupply}), fuel in ${Math.round(fuelMade)}, ammo ${Math.floor(h.stock.ammo)}, parts ${Math.floor(h.stock.parts)}, fuel ${Math.floor(h.stock.fuel)}, armory ${h.armory.length}`);
   }

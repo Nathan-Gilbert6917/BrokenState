@@ -15,7 +15,7 @@ import type { HexGrid } from "./hex.js";
 // The supplies (data.js SUPPLIES: food, water, rawwater, fuel, meds, ammo, arrows, parts, scrap, preserved, jars,
 // wood) in amounts. A base's stock, a team's packed supplies or cargo, a group's stores. A key can be missing (a team
 // that packed none), so read it as `stock.x || 0`.
-export type SupplyKey = "food" | "water" | "rawwater" | "fuel" | "meds" | "ammo" | "arrows" | "parts" | "scrap" | "preserved" | "jars" | "wood" | "carparts" | "gunparts" | "electronics";
+export type SupplyKey = "food" | "water" | "rawwater" | "fuel" | "meds" | "ammo" | "arrows" | "parts" | "scrap" | "preserved" | "jars" | "wood" | "carparts" | "gunparts" | "electronics" | "buildmat";
 export type Stock = { [K in SupplyKey]?: number } & { [key: string]: number };
 
 // ---------- the map ----------

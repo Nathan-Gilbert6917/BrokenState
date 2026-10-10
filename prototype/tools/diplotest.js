@@ -710,7 +710,7 @@ section("Wants and surplus, the market board");
       const w = m.wants.find((x) => x.key === k), s = m.surplus.find((x) => x.key === k);
       if ((n >= WANT_NEED) !== !!w) bad++;
       if ((n <= SURPLUS_NEED && available(f, k) >= 5) !== !!s) bad++;
-      if (w && (w.qty !== wantQty(f, k) || w.qty < Math.ceil(({ food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, scrap: 3, preserved: 2, jars: 1 }[k]) * f.pop - Math.max(0, f.stock[k] ?? 0)) || Math.abs(w.price - sellPrice(st, f, k, 0, { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, scrap: 20, preserved: 10, jars: 10 }[k])) > 1e-9)) bad++;
+      if (w && (w.qty !== wantQty(f, k) || w.qty < Math.ceil(({ food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, scrap: 3, preserved: 2, jars: 1, buildmat: 1 }[k]) * f.pop - Math.max(0, f.stock[k] ?? 0)) || Math.abs(w.price - sellPrice(st, f, k, 0, { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, scrap: 20, preserved: 10, jars: 10, buildmat: 5 }[k])) > 1e-9)) bad++;
       if (s && s.qty !== available(f, k)) bad++;
     }
     if (!m.wants.some((x) => x.key === "meds") || !m.surplus.some((x) => x.key === "food")) bad++;

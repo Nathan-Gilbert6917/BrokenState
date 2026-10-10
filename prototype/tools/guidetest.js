@@ -25,6 +25,11 @@ import { loadOptions, saveOptions } from "../src/ui/saves.js";
 import {
   GUIDE, GUIDE_LISTS, GUIDE_ACTIONS, GUIDE_MENU_ACTIONS, guideSteps, startGuide, guideCheck, renderGuide, guidePulse, guideDefault, guideMenuRow,
 } from "../src/ui/guide.js";
+import { STAGING as STAGING_PITCH } from "../src/sim/staging.js";
+
+// Pitching a staging camp takes STAGING.PITCH (8 scrap carried, 2 hours of work; 2026-10-09): with no camp yet the team is
+// handed its scrap and the camp stands at once, as before, so the checks below see the camp they always did.
+const establishNow = (st, p) => { if (!st.staging) { p.supplies.scrap = (p.supplies.scrap || 0) + STAGING_PITCH.PITCH.scrap; p.pitched = true; } return giveOrder(st, p, "establish"); };
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -218,15 +223,16 @@ section("Hardcore: the road list, founded for real");
   check(guideCheck(st, ui).some((x) => x.id === "water"), "water: the team holds more water than before");
   check(!g.done.camp, "no camp yet");
   st.cards.length = 0;
-  giveOrder(st, p, "establish");
+  establishNow(st, p);
   check(!!st.staging && guideCheck(st, ui).some((x) => x.id === "camp"), "camp: the staging camp is pitched");
   check(!g.done.needs, "the camp still needs its materials");
   const camp = st.staging;
-  Object.assign(p.cargo.supplies, { scrap: camp.needs.scrap, parts: camp.needs.parts, food: 40, water: 40 });
+  Object.assign(p.cargo.supplies, { scrap: camp.needs.scrap, parts: camp.needs.parts || 0, buildmat: camp.needs.buildmat || 0, food: 40, water: 40 });
   st.cards.length = 0;
-  giveOrder(st, p, "establish");
+  establishNow(st, p);
   check(guideCheck(st, ui).some((x) => x.id === "needs"), "needs: everything is in");
-  run(st, 24 * 8, () => { guideCheck(st, ui); return !!hub(st); }, () => { if (st.parties.includes(p) && p.phase === "waiting" && st.staging) giveOrder(st, p, "establish"); });
+  run(st, 24 * 8, () => { guideCheck(st, ui); return !!hub(st); }, () => { if (st.parties.includes(p) && p.phase === "waiting" && st.staging) establishNow(st, p); });
+  run(st, 30, () => { guideCheck(st, ui); return !!g.done.night; }); // the shelter can stand within a day now (20 work-hours): its first night after it
   guideCheck(st, ui);
   check(!!hub(st) && !!g.done.found && !!g.done.clock && !!g.done.night, `found: the shelter stands (day ${day(st)}), the clock and the first night ticked`);
   check(g.on && !g.done.diary, "still on until the diary");

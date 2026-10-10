@@ -5,7 +5,7 @@
 import { log, survivorById, baseById, hub } from "./world.js";
 import {
   MISSIONS, partyMembers, partyTile, tileLabel, teamName, bestSkill, orderMove, giveOrder, startReturn, awaitOrders,
-  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom,
+  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom, pitchHoursFor, pitchDone,
 } from "./parties.js";
 import { SUPPLIES } from "./data.js";
 import { partyVehicle, partyVehicles, partyFuel } from "./vehicles.js";
@@ -59,6 +59,7 @@ export function describeOrder(state, o) {
     case "wood": return `Cut wood ${huntHours(o)}h${qtyNote(o)}`; // woodcutting.js
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
+    case "pitch": return o.mission === "outpost" ? "Pitch the outpost camp" : "Pitch the staging camp"; // parties.js PITCH_HOURS, staging.js STAGING.PITCH; then the camp stands (pitchDone)
     case "well": return "Dig a well"; // claims.js: on a claim next to one of your bases
     case "listen": { const n = o.net != null ? networkById(state, o.net) : null; return `Listen in${n ? ` on ${n.name}` : ""}`; } // radiolisten.js
   }
@@ -145,6 +146,7 @@ export function queueEstimate(state, p) {
     else if (o.type === "repair") hours = REPAIR_HOURS;
     else if (o.type === "treat") hours = FIELD_TREAT_HOURS;
     else if (o.type === "mission" && o.mission === "survey") hours = SURVEY_HOURS;
+    else if (o.type === "mission" && pitchHoursFor(state, o.mission)) hours = pitchHoursFor(state, o.mission); // pitching a camp (parties.js)
     else if (o.type === "sweep" || (o.type === "mission" && o.mission === "sweep")) {
       const sw = sweepEstimate(state, { ...sweepOpts(o.type === "sweep" ? o : p.sweepPlan || {}), center: tile, mode: vehicle, stance: p.stance, fuelMult: paceOpts(p).fuelMult });
       hours = sw.hours;
@@ -503,6 +505,7 @@ export function stopTask(state, p) {
 function finishTask(state, p) {
   const t = p.task;
   let text = "";
+  if (t.type === "pitch") { p.task = null; pitchDone(state, p); return ""; } // parties.js: the camp stands (or the card says why not)
   if (t.type === "survey") text = survey(state, p, 0.25, false);
   else if (t.type === "sweep") text = sweepDone(state, p);
   else if (t.type === "camp") text = `Broke camp after ${t.done} hour${t.done === 1 ? "" : "s"} of rest. ${healthLine(state, p)}${campForageNote(state, p, t)}`;

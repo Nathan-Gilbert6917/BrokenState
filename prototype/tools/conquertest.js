@@ -9,7 +9,7 @@
 import { createWorld, tickHour, hub, atBase, day, alive, makeSurvivor, checkGameOver, newId, snapshot } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { addBuilding, baseWalls } from "../src/sim/buildings.js";
-import { launchExpedition, partyMembers, partyTile, outpostName, orderOptions, planPath } from "../src/sim/parties.js";
+import { launchExpedition, partyMembers, partyTile, outpostName, orderOptions, planPath, giveOrder as giveOrderP } from "../src/sim/parties.js";
 import { attitude, recomputeOwnership, resolveRaidOnFaction, resolveRaidOnPlayer, factionsDaily, keepChance, RAIDS, strength } from "../src/sim/factions.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { createBattle, finishCombat, inEvac, autoPlayerTurn, runEnemyPhase } from "../src/sim/combat.js";
@@ -19,6 +19,11 @@ import { breakFixture, fixtures } from "../src/sim/breakdowns.js";
 import * as A from "../src/sim/alliance.js";
 import * as C from "../src/sim/conquest.js";
 import * as D from "../src/sim/diplomacy.js";
+import { STAGING as STAGING_PITCH } from "../src/sim/staging.js";
+
+// Pitching a staging camp takes STAGING.PITCH (8 scrap carried, 2 hours of work; 2026-10-09): with no camp yet the team is
+// handed its scrap and the camp stands at once, as before, so the checks below see the camp they always did.
+const establishNow = (st, p) => { if (!st.staging) { p.supplies.scrap = (p.supplies.scrap || 0) + STAGING_PITCH.PITCH.scrap; p.pitched = true; } return giveOrderP(st, p, "establish"); };
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -352,7 +357,7 @@ section("Razing: aggressive raiders may burn a base instead of keeping it");
     check(s.parties.some((p) => p.owner === "player" && p.teamMission === "retreat"), "its people walk to the hub");
     check(s.cards.some((c) => / burned$/.test(c.title)), "a card says it burned");
     const { outpostScrap } = await import("../src/sim/parties.js");
-    check(outpostScrap(s, tt.id) === 5, "a new outpost on the ruins needs 5 scrap");
+    check(outpostScrap(s, tt.id) === 5, "a new outpost camp on the ruins needs 5 scrap (12 elsewhere: parties.js outpostScrap)");
     const UI = await import("../src/ui/ui.js");
     check(/Ruins of /.test(UI.renderRight(s, { started: true, selected: tt.id, tab: "bases" })), "the tile panel shows the ruins");
     const l = deserializeState(JSON.parse(JSON.stringify(serializeState(s, { dropCards: true }))));
@@ -530,30 +535,30 @@ section("Losing the hub: with another base, and with none (the exiles)");
   const ex3 = s3.parties.find((p) => p.exile);
   s3.noWanderers = true;
   for (let i = 0; i < 96 && ex3.phase !== "waiting"; i++) { tickHour(s3); s3.cards.length = 0; }
-  Object.assign(ex3.cargo.supplies, { scrap: 25, parts: 3, food: 40, water: 40 });
+  Object.assign(ex3.cargo.supplies, { scrap: 25, parts: 3, food: 40, water: 40, buildmat: 3 });
   const { giveOrder } = await import("../src/sim/parties.js");
   const est = orderOptions(s3, ex3).find((o) => o.mission === "establish");
   check(!!est && est.label === S.ESTABLISH_LABEL && !est.disabled, `the exiles get the order ${S.ESTABLISH_LABEL} (${est && est.disabled})`);
-  if (ex3.phase === "waiting") giveOrder(s3, ex3, "establish");
+  if (ex3.phase === "waiting") establishNow(s3, ex3);
   const camp3 = s3.staging;
   check(!!camp3 && !hub(s3) && camp3.tile === partyTile(ex3) && !camp3.first, "it pitches a staging camp, not a base");
-  check(camp3 && camp3.needs.parts === S.STAGING.EXILE.needs.parts && camp3.work === S.STAGING.EXILE.work, `the exiles' camp: ${camp3 && S.needText(camp3.needs)}, ${S.STAGING.EXILE.work} person-hours`);
+  check(camp3 && camp3.needs.buildmat === S.STAGING.EXILE.needs.buildmat && camp3.work === S.STAGING.EXILE.work, `the exiles' camp: ${camp3 && S.needText(camp3.needs)}, ${S.STAGING.EXILE.work} person-hours`);
   check(camp3 && !S.stagingMissing(camp3).length && ex3.phase === "task" && ex3.task.type === "stage", "the team unloaded everything it takes and works on it");
   const d3 = day(s3);
   for (let i = 0; i < 24 * 10 && !hub(s3) && s3.parties.includes(ex3); i++) {
     tickHour(s3);
     s3.cards.length = 0;
-    if (s3.parties.includes(ex3) && ex3.phase === "waiting" && s3.staging) giveOrder(s3, ex3, "establish"); // back to work after a scare
+    if (s3.parties.includes(ex3) && ex3.phase === "waiting" && s3.staging) establishNow(s3, ex3); // back to work after a scare
   }
   check(!!hub(s3) && hub(s3).type === "hub" && !s3.staging, `the camp becomes the hub after the work (${hub(s3) ? `${hub(s3).name}, day ${day(s3)}, started day ${d3}` : "none"})`);
-  check(!hub(s3) || hub(s3).stock.food >= S.STAGING.EXILE.needs.food, `the camp's stores are its stock (${hub(s3) && hub(s3).stock.food} food)`);
+  check(!hub(s3) || hub(s3).stock.food >= 20, `the camp's stores are its stock (${hub(s3) && hub(s3).stock.food} food)`);
   // Camp → shelter → base: the exiles' new home is a shelter (tier 0) first, then their builders build it up.
   const B = await import("../src/sim/buildings.js");
   const sh3 = hub(s3);
   if (sh3) {
     check(B.isShelter(sh3) && B.tierName(sh3) === "Shelter" && B.baseWalls(sh3) === B.SHELTER.walls, "the exiles' camp becomes a shelter (tier 0): no wall strength");
     check(!B.canBuild(s3, sh3, "walls").ok && !B.canBuild(s3, sh3, "well").ok, "a shelter builds no walls or well");
-    Object.assign(sh3.stock, { scrap: 40, parts: 6 });
+    Object.assign(sh3.stock, { scrap: 120, parts: 6, buildmat: 6 }); // hub_up: 100 scrap, 5 building materials (2026-10-09)
     check(/queued/.test(B.queueBuild(s3, sh3, "hub_up")), "Build up into a base is queued at the shelter");
     for (const s of atBase(s3, sh3.id)) s.role = "build";
     for (let i = 0; i < 24 * 8 && B.isShelter(sh3); i++) { tickHour(s3); s3.cards.length = 0; for (const s of atBase(s3, sh3.id)) s.role = "build"; }

@@ -16,7 +16,7 @@ const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const n0 = (v) => Math.floor((v || 0) + 1e-9);
 const r1 = (v) => Math.round((v || 0) * 10) / 10;
 const pct = (f) => `${Math.round((f || 0) * 100)}%`;
-const NEED_KEYS = ["scrap", "parts", "food", "water"]; // sim/staging.js stagingRows
+const NEED_KEYS = ["scrap", "parts", "buildmat", "food", "water"]; // sim/staging.js stagingRows
 const clamp01 = (f) => Math.max(0, Math.min(1, f || 0));
 // A construction bar with its % written on it. cap: the lighter part, as far as the materials in the stores allow.
 export function buildBar(f, { cap = null, done = false, text = "" } = {}) {
@@ -124,7 +124,7 @@ export function campStatusCard(state, p) {
     const heading = p.mission === "establish" && (p.phase === "out" || p.phase === "back") && p.path && p.path.length ? p.path[p.path.length - 1] : null;
     const why = heading == null ? establishProblem(state, at) : null;
     const line = heading != null ? `On the way to pitch the camp ${esc(tileLabel(state, heading))}.`
-      : why ? `Not here: ${esc(why)}` : `Give the order <b>${ESTABLISH_LABEL}</b> (Orders, below) to pitch the camp right here.`;
+      : why ? `Not here: ${esc(why)}` : `Give the order <b>${ESTABLISH_LABEL}</b> (Orders, below) to pitch the camp right here (${STAGING.PITCH.scrap} scrap carried, ${STAGING.PITCH.hours} hours of work).`;
     return `<div class="card small attn campcard">
       <div class="spread"><b>No base yet</b>${stageSteps(-1)}</div>
       <div style="margin-top:0.3rem">${line} It takes these brought in, then about ${work3(v)} days of work for three:</div>

@@ -75,7 +75,7 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 import { payAmmo } from "./ammo.js";
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
-import { groupWorksDaily, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence } from "./groupworks.js"; // barestart: what the groups build
+import { groupWorksDaily, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
 import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
 import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
@@ -329,6 +329,7 @@ export function factionsDaily(state) {
     f.stock.scrap = Math.min(f.pop * 10 * cap, f.stock.scrap + f.pop * 0.2 * mk);
     f.stock.fuel = Math.min(f.pop * 3 * cap, f.stock.fuel + f.pop * 0.04 * mk); // fuel is scarce (economy rework)
     f.stock.meds = Math.min(f.pop * 3 * cap, f.stock.meds + f.pop * 0.04 * mk);
+    f.stock.buildmat = Math.min(f.pop * 2 * cap, (f.stock.buildmat || 0) + f.pop * 0.03 * mk); // building materials (data.js): salvaged lumber and blocks, for their outpost camps (groupworks.js CAMP)
     groupWorksDaily(state, f); // groupworks.js: the base starts bare; water, fields, quarters, walls, by need
     arsenalDaily(state, f); // arsenal.js: newcomers' weapons, makeshift weapons and explosives from their scrap
     groupCareDaily(state, f); // groupcare.js: the wounded heal (meds, medics), repairs at a workshop, food bought when short, desertion
@@ -365,8 +366,10 @@ export function factionsDaily(state) {
         const pull = (c) => { const a = abandonedAt(state, c.id); return a ? abandonedPull(f, a) : 1; }; // groupworld.js: cheaper than building from nothing
         if (agg) t = rng.weighted(cands, (c) => (c.bridge && !c.loc ? bridgeW(c) : (0.4 + (c.loot || 0)) * (1 + 2 / (1 + toYou(c.id) / 6))) * pull(c));
         else t = rng.weighted(cands, (c) => (c.bridge && !c.loc ? bridgeW(c) : 1) * pull(c));
+        const fromNothing = !abandonedAt(state, t.id);
         f.bases.push(t.id);
         occupyAbandoned(state, f, t.id); // groupworld.js: the works and stores left there are theirs (a card when it was yours)
+        if (fromNothing) pitchCamp(state, f, t.id); // groupworks.js: a camp until established (as your outpost camp)
         expanded(f);
         overwriteClaims(state, t.id, CLAIM.BASE_RADIUS, f.id, t.loc ? `${knownName(f, "a group")} has taken over ${t.loc.name}` : `${knownName(f, "a group")} has barricaded the bridge at ${tileLabel(state, t.id)}`); // claims.js (agent A's hook: keep it)
         if (state.knowledge[t.id] && state.live.has(t.id)) log(state, t.loc ? `${knownName(f, "An unknown group")} has taken over ${t.loc.name}.` : `${knownName(f, "An unknown group")} has barricaded the bridge at ${tileLabel(state, t.id)}: the road over the river is closed to everyone else.`, "danger");

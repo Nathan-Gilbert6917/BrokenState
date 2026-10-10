@@ -9,6 +9,11 @@ import { establishArrive } from "../src/sim/staging.js";
 import { pendingName, renameBase, nameSuggestions, cleanName, askBaseName, nameDone } from "../src/sim/basenames.js";
 import { nameBaseModal, nameModalUp, BN_ACTIONS, BN_INPUT, bnKey } from "../src/ui/basename.js";
 import { renderModal, modalKind, renderLeft, renderRight } from "../src/ui/ui.js";
+import { STAGING as STAGING_PITCH } from "../src/sim/staging.js";
+
+// Pitching a staging camp takes STAGING.PITCH (8 scrap carried, 2 hours of work; 2026-10-09): with no camp yet the team is
+// handed its scrap and the camp stands at once, as before.
+const establishArriveNow = (st, p) => { if (!st.staging) { p.supplies.scrap = (p.supplies.scrap || 0) + STAGING_PITCH.PITCH.scrap; p.pitched = true; } return establishArrive(st, p); };
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -19,10 +24,10 @@ section("The staging camp becomes your shelter: the naming window opens, the sug
 {
   const st = createWorld({ seed: 11, factionCount: 7, mode: "hardcore" });
   const p = roadTeam(st);
-  Object.assign(p.supplies, { scrap: 30, parts: 4, food: 30, water: 30 });
-  establishArrive(st, p);
+  Object.assign(p.supplies, { scrap: 30, parts: 4, food: 30, water: 30, buildmat: 2 }); // the shelter takes building materials (staging.js)
+  establishArriveNow(st, p);
   st.staging.progress = st.staging.work;
-  establishArrive(st, p);
+  establishArriveNow(st, p);
   const b = st.bases[0];
   check(!!b, "the shelter stands");
   check(pendingName(st) === b, "the shelter waits for a name");
@@ -59,6 +64,7 @@ section("Build outpost (a normal game): asked again; duplicates refused; Keep cl
   check(p && partyTile(p) === dest, "the team got there");
   const n0 = st.bases.length;
   giveOrder(st, p, "outpost");
+  for (let i = 0; i < 8 && st.bases.length === n0; i++) { tickHour(st); st.cards.length = 0; } // pitching the camp takes 6 hours (parties.js PITCH_HOURS)
   const o = st.bases[n0];
   check(st.bases.length === n0 + 1 && !!o, "the outpost stands");
   check(pendingName(st) === o, "the outpost waits for a name");

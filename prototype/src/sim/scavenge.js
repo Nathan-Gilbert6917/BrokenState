@@ -17,7 +17,7 @@ import { noteSearch } from "./relations.js";
 import { itemLoad, lootItem, armouredItem } from "./inventory.js";
 import { gunMags } from "./carrykit.js"; // a found gun's spare magazines
 import { siteSource } from "./itemcond.js";
-import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
+import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollBuildmat, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
 import { searchHeatMult } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { truckSearchHour, convoyHeat0, convoyThreat } from "./miltrucks.js"; // an Army convoy's guard: Heat from the start, a harder fight
@@ -235,6 +235,8 @@ export function searchHour(state) {
   if (gl.length) { e.found.gear.push(...gl); finds.push(gl.length > 1 ? `${gl.length} × ${gl[0].name}` : gl[0].name); }
   const wood = rollSiteWood(state, e.tile, ap.loot, `h${e.hours}`); // a woodpile, a log basket (loot.js SITE_WOOD; its own dice)
   if (wood > 0) { e.found.supplies.wood = (e.found.supplies.wood || 0) + wood; finds.push(`${wood} wood`); }
+  const bm = rollBuildmat(state, e.tile, ap.loot * (1 + scav / 30), `h${e.hours}`); // lumber, blocks, sheet metal (loot.js BUILDMAT_FINDS; its own dice)
+  if (bm > 0) { e.found.supplies.buildmat = (e.found.supplies.buildmat || 0) + bm; finds.push(`${bm} building materials`); }
   const arrows = rollSiteArrows(state, e.tile, ap.loot, `h${e.hours}`); // a quiver, a box of bolts (loot.js SITE_ARROWS; its own dice)
   if (arrows > 0) { e.found.supplies.arrows = (e.found.supplies.arrows || 0) + arrows; finds.push(`${arrows} arrows`); }
   // Locked things, keys and blueprints (locks.js; its own dice): adds finds and Heat.

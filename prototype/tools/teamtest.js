@@ -123,6 +123,7 @@ section("An outpost on a bridge barricades it (T-15, changed: parties.js bridgeC
     check(orderOptions(state, p).some((o) => o.mission === "outpost"), "Build outpost is not offered on a bridge");
     state.cards.length = 0;
     giveOrder(state, p, "outpost");
+    for (let i = 0; i < 8 && !state.bases.some((x) => x.tile === bridge.id); i++) { tickHour(state); state.cards.length = 0; } // pitching the camp takes 6 hours (parties.js PITCH_HOURS)
     const base = state.bases.find((x) => x.tile === bridge.id);
     check(!!base, "no outpost was founded on the bridge");
     check(base && /Bridge Barricade/.test(base.name), `the barricade is named for the bridge ("${base && base.name}")`);
