@@ -449,7 +449,7 @@ export function magsLine(b, u) {
   const full = sp.filter((m) => loaded(b, u, m) > 0);
   if (!sp.length) return "no spare mags";
   const types = [...new Set(full.map((m) => m.load))].filter((t) => t !== typeFor(calOf(u.weapon), null));
-  return `+${full.length} mag${full.length === 1 ? "" : "s"}${sp.length > full.length ? ` (${sp.length - full.length} empty)` : ""}${types.length ? `, ${types.map(typeName).join("/")}` : ""}`;
+  return `+${full.length} mag${full.length === 1 ? "" : "s"}${sp.length > full.length ? ` (${sp.length - full.length} empty)` : ""}${types.length ? `, ${types.map((t) => (String(t).includes(":") ? roundName(calOf(u.weapon), t) : typeName(t))).join("/")}` : ""}`; // (another calibre: ".223 Rem FMJ")
 }
 // Rounds the unit's spare magazines hold loaded (the battle screen's tooltip).
 export const spareRounds = (b, u) => spares(u).reduce((a, m) => a + loaded(b, u, m), 0);
