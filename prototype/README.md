@@ -117,6 +117,7 @@ Meds: where they come from by site type (an hour of searching and a raid by the 
 
 ```bash
 node tools/sicktest.js            # illness: causes, contagion, courses of meds, untreated, team doses, alerts, saves, the upset stomach's one-dose cure
+node tools/sickresttest.js        # sick people rest (sickrest.js): any illness by its kind, Manual/pinned jobs kept and given back, the Work tab setting, the doctor's exception, emergencies, the watch, trips, the governor, the AI groups' ill
 node tools/sickcensus.js 112 20   # the autopilot over a year: illnesses per season, meds on illness, deaths, meds held
 ```
 
