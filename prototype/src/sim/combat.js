@@ -4285,6 +4285,8 @@ function bestShot(b, u, foes, opts = {}) {
   return best;
 }
 
+// A shotgunner's pull toward the foes a tile past its shot's full-damage range (scoreCell; buckshot spreads, data-ammo.js).
+const SPREAD_CLOSE = 1.5;
 function scoreCell(b, u, x, y, foes, cost, field) {
   let s = -cost * 0.4, best = 0, nearest = 99;
   for (const f of foes) {
@@ -4296,13 +4298,19 @@ function scoreCell(b, u, x, y, foes, cost, field) {
     s += c === 2 ? 0 : c === 1 ? -5 : -14;
   }
   if (canFire(b, u)) {
+    // Buckshot and birdshot do less the further off (data-ammo.js spreadMult): a shotgunner's spot is worth what its
+    // shot keeps there, so both sides' shotguns close in rather than plink from afar (1 for any other round).
+    const sty = calOf(u.weapon) ? typeFor(calOf(u.weapon), u.load) : null;
     for (const f of foes) {
       if (dist(x, y, f.x, f.y) > sightRange(b, u, x, y) || !los(b, x, y, f.x, f.y)) continue;
       const o = shotOdds(b, u, f, x, y);
-      best = Math.max(best, o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)); // a target with no cover
+      best = Math.max(best, (o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)) * spreadMult(sty, dist(x, y, f.x, f.y))); // a target with no cover
     }
   }
   s += best * 0.3;
+  // A shotgunner with buckshot loaded also wants to close to where it hits full (spreadFull): a slope toward the foes.
+  const sfull = canFire(b, u) && calOf(u.weapon) ? typeFx(typeFor(calOf(u.weapon), u.load)).spreadFull : null;
+  if (sfull != null && nearest > sfull) s -= (Math.min(nearest, 16) - sfull) * SPREAD_CLOSE;
   if (isSniper(u)) s += sniperCell(nearest); // gunfire.js: a sniper keeps its distance (10–15 tiles)
   // Nothing to shoot: closer to the foes is better, the walking distance up to 40 tiles. A unit standing farther off than
   // that still gets a slope toward them (a team left 40+ tiles off on a big fort map stood still for good:

@@ -1643,7 +1643,32 @@ tiles on a real battle map). The sheet: Ammo types `Spread: full to / lost a til
 `Hit at 8 tiles`. The gun builder shows a "Shot spread" row (`gunStats` spread). The player's auto-load (`pickLoad`)
 scores buckshot by what it keeps at each foe's range. The AI's shotguns follow the same rule (it is in the shot).
 
-SHOTFIGHT_PLACEHOLDER
+**The AI** (both sides, `combat.js scoreCell`): a shotgunner's spot is scored by its hit chance × what its shot keeps
+there (spreadMult), and past `spreadFull` tiles it is pulled toward the foes (`SPREAD_CLOSE` 1.5 a tile), so shotguns
+close in instead of plinking from afar. Without that pull the first try lost a lot more and stalled (a sawn-off's
+fights against 4 raiders: 16 of 300 ran out of turns, 3 before).
+
+**The effect in a fight** (`combattest` weapons matchups, three people with Shooting 5–11 all carrying the gun, 300
+battles each, seed 7; win % before → after, battles that ran out of turns in brackets; the raiders' own shotguns
+follow the same rule):
+
+| gun | 3 vs 4 raiders (power 5) | 3 vs 3 raiders, they ambush | 3 vs 12 of the dead | 3 vs 4 soldiers |
+|---|---|---|---|---|
+| pump shotgun | 62 → 51 (1 → 2) | 81 → 78 | 100 → 100 | 1 → 0 |
+| double-barrel | 55 → 48 (1 → 1) | 80 → 76 | 100 → 100 | 0 → 0 |
+| single-shot 12 ga | 34 → 21 (0 → 3) | 59 → 57 | 89 → 87 | 0 → 0 |
+| police pump | 59 → 55 (3 → 0) | 83 → 83 | 100 → 100 | 0 → 1 |
+| 20 ga pump | 45 → 45 (7 → 3) | 76 → 75 | 96 → 98 | 1 → 0 |
+| sawn-off | 38 → 36 (3 → 6) | 61 → 63 | 97 → 96 | 0 → 0 |
+
+Shotguns lose ground in open fights against gunmen (5–13 points), hardly any in an ambush (up close) and none against
+the dead, who walk into the full-damage range. (The last two columns were measured with the spot scoring but before
+the pull was added; the dead and the soldiers come to the gun either way.)
+
+The usual `combattest` matchups (mixed teams, a quarter of them with a pump; 300 battles each, seed 7): every one
+within noise of before, but for 3 vs 4 raiders (power 5) 70% → 61%, and that is the raiders' new guns (the .44
+revolver among their sidearms, the G3 among their strong picks): the same branch with the fall-off switched off
+also gives 62%.
 
 ### Tests
 
