@@ -18,8 +18,8 @@
 // drawGun takes one of them.
 //
 // A fighter's gun (kits: band) is picked within ± band of the power of the gun the kit's list gave and within HIT_BAND
-// of its hit, of the same kind when one fits, its weights leaned so the gun's power is the listed one's on the whole (tilt): each kind of fighter
-// is as strong as before; its list still says how strong.
+// of its hit, of the same kind when one fits, its weights leaned so the gun's power is the listed one's on the whole
+// (tilt): each kind of fighter is as strong as before; its list still says how strong.
 import { GEAR } from "./data.js";
 import { WEAPONS } from "./combat.js"; // call time only (combat.js imports this module)
 import { hash01 } from "./skills.js";
