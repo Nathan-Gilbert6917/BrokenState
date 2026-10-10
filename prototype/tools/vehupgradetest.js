@@ -414,7 +414,7 @@ section("The Humvee on raids: lost when a raid fails, replaced slowly, seized wi
 // ---------------------------------------------------------------------------------------------------------------
 section("The turret in battle: the gunner (combat.js manTurret, turret_m2)");
 {
-  check(WEAPONS.turret_m2 && WEAPONS.turret_m2.dmg[0] === 40 && WEAPONS.turret_m2.dmg[1] === 58 && WEAPONS.turret_m2.opt === 14 && WEAPONS.turret_m2.fall === 1.5 && WEAPONS.turret_m2.aim === 6 && WEAPONS.turret_m2.noise === 6 && WEAPONS.turret_m2.cap === 100 && WEAPONS.turret_m2.ammo === 3 && WEAPONS.turret_m2.pierce === 1 && WEAPONS.turret_lmg, "turret_m2: 40–58, opt 14, fall 1.5, aim +6, noise 6, a 100-round belt, 3-round bursts, pierce 1 (and turret_lmg)");
+  check(WEAPONS.turret_m2 && WEAPONS.m2hb && WEAPONS.turret_m2.dmg.join() === WEAPONS.m2hb.dmg.join() && WEAPONS.turret_m2.opt === 14 && WEAPONS.turret_m2.fall === 1.5 && WEAPONS.turret_m2.aim === 6 && WEAPONS.turret_m2.noise === 6 && WEAPONS.turret_m2.cap === 100 && WEAPONS.turret_m2.ammo === 3 && WEAPONS.turret_m2.pierce === 1 && WEAPONS.turret_lmg, `turret_m2: the M2's own damage (${WEAPONS.turret_m2.dmg.join("–")}: the calibre ladder, data-guns.js m2hb), opt 14, fall 1.5, aim +6, noise 6, a 100-round belt, 3-round bursts, pierce 1 (and turret_lmg)`);
   const st = createWorld({ seed: SEED, factionCount: 3 });
   const h = hub(st);
   const v = createVehicle(st, "hummer", { kind: "base", baseId: h.id }, { fuel: 30, condition: 80 });
