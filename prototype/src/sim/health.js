@@ -140,12 +140,13 @@ export function healthWork(s) {
   const list = conditionsOf(s);
   if (!list.length) return 1;
   let f = 1;
-  for (const c of list) {
-    const d = CONDITIONS[c.key];
-    if (!d) continue;
-    f = Math.min(f, 1 - (1 - d.work) * Math.min(1, Math.max(0.3, c.sev / 100) + 0.2));
-  }
+  for (const c of list) if (CONDITIONS[c.key]) f = Math.min(f, conditionWork(c));
   return Math.max(0, Math.round(f * 100) / 100);
+}
+// One condition's part (0..1): what it alone leaves of their work at its severity (sickrest.js: a mild illness).
+export function conditionWork(c) {
+  const d = CONDITIONS[c.key];
+  return d ? 1 - (1 - d.work) * Math.min(1, Math.max(0.3, c.sev / 100) + 0.2) : 1;
 }
 // Aim lost in battle to illness (combat.js): up to SICK.aim at nothing left to work with.
 export const illnessAim = (s) => (conditionsOf(s).length ? -Math.round(SICK.aim * (1 - healthWork(s))) : 0);

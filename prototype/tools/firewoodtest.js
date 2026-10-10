@@ -119,6 +119,7 @@ section("Breaking things down: by weight × the burnable share");
 }
 
 // ======================================================================
+// Supply tiles: the name, then the count on the right ("×150", gun-mags: ui/inventory.js supTile, sim/itemnames.js).
 section("A stack like any supply: the raid window, the cargo, the stores, the loot, the top bar");
 {
   registerCombatHandler("fwtest", () => {});
@@ -160,7 +161,7 @@ section("A stack like any supply: the raid window, the cargo, the stores, the lo
   const { inventoryModal } = await import("../src/ui/inventory.js");
   const ui = { inv: { raid: true, uid: u.id, box: box.id }, invSel: null, invMsg: "" };
   const html = inventoryModal(st, ui) || "";
-  check(/🪵/.test(html) && /110 Firewood/.test(html) && /40 Firewood/.test(html) && html.includes(`rbox:${box.id}:sup:wood`), "the search window shows both stacks with the firewood icon (110 in the box, 40 carried)");
+  check(/🪵/.test(html) && /Firewood<\/span><span class="icount">×110</.test(html) && /Firewood<\/span><span class="icount">×40</.test(html) && html.includes(`rbox:${box.id}:sup:wood`), "the search window shows both stacks with the firewood icon (110 in the box, 40 carried)");
   check(/11 kg/.test(html) || /11<\/span>/.test(html), "a stack shows its weight (110 × 0.1 kg = 11 kg)");
   // Back on the map: the team's cargo and the base's stores list it with its weight.
   st.combat = null;
@@ -169,16 +170,16 @@ section("A stack like any supply: the raid window, the cargo, the stores, the lo
   const s = partyMembers(st, p)[0];
   const ui2 = { inv: { sid: s.id }, invSel: null, invMsg: "" };
   const cargoHtml = inventoryModal(st, ui2) || "";
-  check(/Found supplies \(15 kg\)/.test(cargoHtml) && /🪵<\/span><span class="iname">150 Firewood<\/span><span class="ikg">15<\/span>/.test(cargoHtml), "the team's cargo lists the firewood stack (150, 15 kg)");
+  check(/Found supplies \(15 kg\)/.test(cargoHtml) && /🪵<\/span><span class="iname">Firewood<\/span><span class="icount">×150<\/span><span class="ikg">15<\/span>/.test(cargoHtml), "the team's cargo lists the firewood stack (150, 15 kg)");
   check(near(poolLoad(p) - poolLoad({ ...p, cargo: { ...p.cargo, supplies: { ...p.cargo.supplies, wood: 0 } } }), 15, 1e-6), "and it weighs 15 kg in the team's load");
   const h = hub(st);
   h.stock.wood = 300;
   const keeper = atBase(st, h.id)[0];
   const baseHtml = inventoryModal(st, { inv: { sid: keeper.id }, invSel: null, invMsg: "" }) || "";
-  check(/In the stores \(/.test(baseHtml) && /🪵<\/span><span class="iname">300 Firewood<\/span><span class="ikg">30<\/span>/.test(baseHtml), "the armory screen lists the base's firewood (300, 30 kg)");
+  check(/In the stores \(/.test(baseHtml) && /🪵<\/span><span class="iname">Firewood<\/span><span class="icount">×300<\/span><span class="ikg">30<\/span>/.test(baseHtml), "the armory screen lists the base's firewood (300, 30 kg)");
   const { topbarParts } = await import("../src/ui/ui.js");
   const top = topbarParts(st, { speed: 1 }).stock;
-  check(/Firewood<\/b>300/.test(top) && /Weight 0\.1 each/.test(top), "the top bar counts it (Firewood 300, 0.1 kg each)");
+  check(/Firewood<\/span><span class="nb-amt">300</.test(top) && /Weight 0\.1 each/.test(top), "the top bar counts it (Firewood 300, 0.1 kg each)");
   // The loot: a cabin's woodpile is a stack of 60–180 (6–18 kg).
   const fake = { seed: SEED, hour: 0, tiles: [{ loc: { type: "cabin" }, loot: 1 }] };
   const finds = [];

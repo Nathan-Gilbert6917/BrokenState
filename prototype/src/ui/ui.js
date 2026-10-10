@@ -71,11 +71,15 @@ import { teamRadioLine } from "./radiolisten.js"; // a team's receiver out of co
 import { season as wxSeason, weather as wxNow, weatherReport, SEASON_DAYS, frontsApproaching } from "../sim/weather.js";
 import { activeHospital, patients, healRatePerHour, hospitalTypes, nextHospitalType, isHurt, treatAtBaseInfo, fieldTreatInfo, partyMeds } from "../sim/medical.js";
 import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobStatus, craftOutputText, craftQuality, hasWorkshop, itemDur, itemDurMax, durUnit, MAX_CRAFT_QUEUE, craftInText, benchQuality, benchNeeded, hasBench, craftMean } from "../sim/crafting.js";
-import { craftEdge } from "../sim/blueprints.js"; // the crafting edge from known manuals and read craft books
+import { craftEdge, lockNote } from "../sim/blueprints.js"; // the crafting edge from known manuals and read craft books
+import { canAttempt, meetsNeeds } from "../sim/crafting.js"; // the recipe cards colour their skill and station chips
+import { chip, costChips, chipList, statRows, badge, pbar, sectionHead, infoTip, hint, firstSentence, stockTile, supName, supIcon } from "./uikit.js"; // game-like panel pieces (the base window)
 import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButton, reloadCard } from "./production.js";
 import { canUpgradeAmmoBench, RELOAD } from "../sim/reloading.js"; // the reloading bench: an ammo bench upgraded where it stands
-import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower } from "../sim/inventory.js";
+import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower, carriedSpots } from "../sim/inventory.js";
 import { inventoryModal, takeLootReq } from "./inventory.js";
+import { armoryView, armoryScope } from "./armoryview.js"; // the Armory tab's stored gear: grouped, cards or compact rows
+import { itemShortTip, tipAttrs } from "./itemlabels.js"; // the armory cards' short hover tip (Shift: the whole one)
 import { teamInvModal, teamsHereCard, transferButtons } from "./teaminv.js"; // the team inventory window; teams on a base's tile; Drop off / Load on its tile
 import { fleetPicker } from "./fleetpick.js"; // the vehicle picker the planners share (up to four)
 import { plannedFleet, pickProblem } from "../sim/teamform.js";
@@ -110,12 +114,13 @@ import { occupiedAt, occupiedText, assaultWarning, assaultForce } from "../sim/c
 import { occupyPreview, abandonProblem } from "../sim/occupy.js"; // Occupy: moving into an abandoned base; Abandon outpost
 import { claimsTaken, claimsTakenText } from "../sim/claims.js"; // Build outpost: the groups' claims it would take
 import { abandonedAt } from "../sim/groupworld.js";
-import { repairsTab, blueprintsCard, keyRingCard, lockLine } from "./explore.js";
+import { repairsTab, blueprintsCard, keyRingCard } from "./explore.js";
 import { prisonTab } from "./prisoners.js";
 import { settingsModal } from "./settings.js";
 import { swatch } from "./help.js";
 import { outsidersSection } from "./visitors.js";
-import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
+import { workTab, roleSelect as workRoleSelect, taskChip, sickTip } from "./work.js";
+import { sickRestLabel } from "../sim/sickrest.js"; // "Resting: sick (Flu)" for Manual and pinned people
 import { pickBar, pickCard, ownBaseCard, groupBaseCard } from "./mapselect.js"; // teams, parties and bands selected on the map; a base's card
 import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
 import { huntInfo, gameWord, fishKit, expectFish, fishLevel, snareLine, expectSnare, bestHuntWeapon, hunterMult, HUNT, frozenAt, meatAt, gameAbundance, partyHuntMix, huntMixOf, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
@@ -126,9 +131,10 @@ import { forageInfo, foragerMult, FORAGE } from "../sim/foraging.js";
 import { woodInfo, WOOD, boilerJunkOn, boilerBurnables, burnablesWood } from "../sim/woodcutting.js";
 import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/work.js";
 import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
-import { roadStock, firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
+import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
 import { gaugeRows, treatsRow, needsEffectText } from "./needs.js";
+import { needsBar } from "./needsbar.js"; // the top bar's Needs button and its drop-down of every supply
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick (sim/status.js)
 import { STATUS, STATUS_ICONS } from "../sim/status.js";
 import { NEEDS, STARVE } from "../sim/needs.js";
@@ -166,20 +172,25 @@ const stIcons = (state, s) => (s && s.alive && inContact(state, s) ? statusIcons
 // The role drop-down: work roles (priorities) and fixed jobs (Manual), with what they do now (ui/work.js).
 const roleSelect = (state, s, extra = "") => `${workRoleSelect(state, s, extra)}${taskChip(state, s)}`;
 
+// A trip's way out from this minute on the clock to the minute it gets there (sim/parties.js estimateTrip exactOut,
+// arrivalsDue; the minutes of this hour already gone are not travelled): "3h", "2h 35m".
+const etaOut = (state, est) => Parties.clockText(Math.max(0, (est.exactOut ?? est.hoursOut) - Parties.clockFrac(state)));
+
 // ---------- top bar ----------
 // The top bar in pieces (the slots in index.html): the clock and the stock change with the hour, the buttons only
 // when you press them, so each piece is redrawn only when its own text changes (main.js).
 export function topbarParts(state, ui) {
   const h = hub(state);
-  const speeds = [[0, "⏸", "Pause (Space). Orders you give while paused start when you unpause."], [0.5, "0.5×", "Slow: an hour takes 40 seconds, a day 16 minutes (1)"], [1, "1×", "Normal: an hour takes 20 seconds, a day 8 minutes (2)"], [2, "2×", "Fast: an hour takes 10 seconds, a day 4 minutes (3)"], [3, "3×", "Very fast: an hour takes about 7 seconds, a day 2 minutes 40 seconds (4)"], [5, "5×", "Fastest, for quiet stretches: an hour takes 4 seconds, a day about 1 minute 36 seconds (5). At 3× and 5× the clock drops back to 1× when a card or a red alert arrives (Options)"]];
-  return {
+  const nb = needsBar(state, h);
+  const speeds = [[0, "⏸", "Pause (Space). Orders you give while paused start when you unpause."], [0.25, "0.25×", "Slowest: an hour takes 80 seconds, a day 32 minutes (0)"], [0.5, "0.5×", "Slow: an hour takes 40 seconds, a day 16 minutes (1)"], [1, "1×", "Normal: an hour takes 20 seconds, a day 8 minutes (2)"], [2, "2×", "Fast: an hour takes 10 seconds, a day 4 minutes (3)"], [3, "3×", "Very fast: an hour takes about 7 seconds, a day 2 minutes 40 seconds (4)"], [5, "5×", "Fastest, for quiet stretches: an hour takes 4 seconds, a day about 1 minute 36 seconds (5). At 3× and 5× the clock drops back to 1× when a card or a red alert arrives (Options)"]];
+  const parts = {
     // The minutes are a slot of their own (main.js fills it every frame as the hour goes by).
     clock: `Day ${day(state)} · ${String(hourOfDay(state)).padStart(2, "0")}:<span id="tb-min">00</span> ${isNight(state) ? "🌙" : "☀"}${weatherChip(state)}`,
     speed: speeds.map(([s, l, t]) => `<button data-action="speed" data-speed="${s}" class="${ui.speed === s ? "active" : ""}"${tip(t)}>${l}</button>`).join("") +
       (ui.speed > MAX_SPEED ? `<button data-action="speed" data-speed="1" class="active"${tip("Dev fast forward is running. Click to go back to 1×.")}>${ui.speed}× dev</button>` : ""),
-    // Food and water also show days left (economy.js outlook; the tooltip has the details).
-    // Jars go in the preserved food's tooltip (storage.js), not a slot of their own.
-    stock: !h && roadStock(state) ? roadStock(state) : !h ? `<span class="danger"${tip("You have no base left: your people are a team on the road. Establish base (a camp you build up into your hub) or take a base back (Assault their base).")}>No base: on the road</span>` : STOCK_KEYS.filter((k) => k !== "jars" && k !== RAW && k !== "arrows").map((k) => { const ln = k === "food" ? foodLine(state, h) : k === "water" ? waterLine(state, h) : k === "wood" ? woodLine(state, h) : null; const extra = k === "preserved" ? ` Jarred, dried and canned food and dry grain: barely spoils, needs no cellar room, eaten once the fresh food is gone. Empty jars: ${n0(h.stock.jars)}.` : ""; const raw = k === "water" ? Math.floor(Math.max(0, h.stock[RAW] || 0)) : 0; const abd = k === "ammo" ? baseAmmoBreakdown(state, h) : null; const aTip = abd ? `Ammo at ${h.name}: every round of every calibre and every arrow and bolt, in the stores and in your people's pockets and packs there (a gun fires only its own calibre, a bow or crossbow only arrows). By calibre, most first: ${breakdownText(abd, "; ")}. ${n0(baseAmmo(state, h))} rounds fit the guns here.` : ""; const wTip = k === "water" ? `Water at ${h.name}: ${n0(h.stock.water)} purified (safe to drink) and ${raw} un-purified (from the wells, rivers and rain: safe only once the boiler, the filters or a shelter's fire purify it). People drink purified water first. Weight 1 each.` : ""; const tr = stockChipTrend(state, h, k); return `<span${tip(`${aTip || wTip || `${SUPPLIES[k].name} at ${h.name}. Weight ${SUPPLIES[k].weight} each; what it fetches depends on who you trade with.`}${extra}${ln ? ` ${ln.tip}` : ""}${tr.tip}`)}${tr.attr}><b>${k === "preserved" ? "Preserved" : k === "water" ? "Water" : SUPPLIES[k].name}</b>${n0(abd ? abd.total : h.stock[k])}${tr.arrow}${raw > 0 ? `<span class="small muted"> +${raw} raw</span>` : ""}${ln && ln.short ? ` <span class="small ${ln.cls}">${k === "food" ? esc(ln.short.split(" · ")[0]) : esc(ln.short.split(" · ")[0])}</span>` : ""}</span>`; }).join(""),
+    // The stores as one Needs button with a drop-down list (ui/needsbar.js): main.js writes its button, head and list
+    // as slots of their own (needs), the whole of it is the stock slot (tools and tests).
+    stock: nb.html,
     people: `<span${tip("Survivors alive across all bases and teams")}>👥 ${alive(state).length}</span>`,
     // UI size and the zombie look are in Menu → Options → Display; the Dev button only with Show dev tools on (ui/display.js).
     tools: `${devButton(ui)}
@@ -191,6 +202,8 @@ export function topbarParts(state, ui) {
       <button data-action="help"${tip("How the game works, and the keys")}>Help</button>
       <button data-action="set-open"${tip("Menu: save, load, save and exit, new campaign, options (Esc)")}>⚙ Menu</button>`,
   };
+  Object.defineProperty(parts, "needs", { value: nb }); // { btn, head, list }: not one of the slot strings
+  return parts;
 }
 // The planner's weather note: hours the weather adds to the trip compared with fair weather.
 function weatherEta(est) {
@@ -455,8 +468,8 @@ function renderTeams(state, ui) {
     const v = partyFleet(state, p); // one vehicle, or several together (sim/vehicles.js fleets)
     const back = Math.floor((p.departed + p.plannedHours) / 24) + 1;
     // A one-way trip (move, recon, outpost) arrives and stays; other trips come home.
-    const oneWay = p.etaBack == null && p.etaOut != null ? (p.planStart ?? p.departed) + p.etaOut : null;
-    const noContact = oneWay != null ? `No contact. ${oneWay > state.hour ? "Arrives" : "Should have arrived"} around day ${Math.floor(oneWay / 24) + 1}, ${String(oneWay % 24).padStart(2, "0")}:00.` : `No contact. Expected back around day ${back}.`;
+    const oneWay = p.etaBack == null && p.etaOut != null ? Parties.plannedArrival(state, p) : null; // to the minute
+    const noContact = oneWay != null ? `No contact. ${oneWay > state.hour + Parties.clockFrac(state) ? "Arrives" : "Should have arrived"} around ${Parties.clockAt(oneWay)}.` : `No contact. Expected back around day ${back}.`;
     const armed = startsWhenUnpaused(state, ui, p);
     const waiting = p.phase === "waiting";
     const canOrder = waiting || p.radioLive || p.phase === "task";
@@ -466,7 +479,7 @@ function renderTeams(state, ui) {
       p.kind === "convoy" ? `<span class="good">Convoy (tracked)</span>` :
       waiting ? `<span class="warn">Waiting for orders at ${esc(tileLabel(state, partyTile(p)))}</span>` :
       armed ? `<span class="armed">${esc(ost ? ost.label : "Order given")} · starts when unpaused</span>` :
-      p.phase === "task" ? `<span class="good">${esc(ost.label)} at ${esc(tileLabel(state, partyTile(p)))}${ost.left != null ? ` · ${ost.left}h left` : ""}</span>` :
+      p.phase === "task" ? `<span class="good">${esc(ost.label)} at ${esc(tileLabel(state, partyTile(p)))}${ost.left != null ? ` · ${Parties.clockText(Math.max(0, ost.left - Parties.clockFrac(state)))} left` : ""}</span>` :
       p.radioLive ? `<span class="good">📻 Radio contact · ${esc(ost ? ost.label : "on the road")}</span>` : `<span class="muted">${noContact}</span>`;
     const showLive = waiting || p.radioLive || p.kind === "convoy" || p.phase === "task";
     return `<div class="card small ${waiting ? "attn" : ""}">
@@ -1101,7 +1114,8 @@ function plannerModal(state, ui) {
   const pe = est && !settles ? planAutofill(state, pl) : null;
   const need = pe || est, needFor = pe ? "for the whole plan" : "for the round trip";
   const members = ids.map((id) => survivorById(state, id)).filter(Boolean);
-  const at = (hr) => `day ${Math.floor(hr / 24) + 1}, ${String(hr % 24).padStart(2, "0")}:00`;
+  // A time on the clock, to the minute (an arrival part-way through an hour: sim/parties.js arrivalsDue).
+  const at = (t) => { const m = Math.round(t * 60), hr = Math.floor(m / 60); return `day ${Math.floor(hr / 24) + 1}, ${String(hr % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; };
   const stays = (Parties.STAY_MISSIONS || ["move", "recon", "outpost"]).includes(pl.mission); // waits there for orders (or stays)
   const carry = plannerLoad(state, pl);
   // Why this mission cannot go to this tile at all (parties.js checks the same at launch).
@@ -1143,7 +1157,7 @@ function plannerModal(state, ui) {
         <div class="row">${Object.entries(STANCES).map(([k, s]) => `<button data-action="pl-stance" data-v="${k}" class="${pl.stance === k ? "active" : ""}"${tip(s.desc)}>${s.name}</button>`).join("")}</div>
         <h3>Estimate</h3>
         ${est ? `<div class="kv small"><div>Distance</div><div>${est.tiles} tiles</div>
-          <div${tip("Hours on the road, worked out the same way the team really moves (stance, terrain, roads, fuel, and the weather hour by hour: mud, snow, storms). Road events can add delays.")}>Arrives in</div><div><b>${est.hoursOut}h</b> <span class="muted">(${at(est.arriveHour)})</span>${weatherEta(est)}</div>
+          <div${tip("Hours on the road, worked out the same way the team really moves (stance, terrain, roads, fuel, and the weather hour by hour: mud, snow, storms). Road events can add delays.")}>Arrives in</div><div><b>${etaOut(state, est)}</b> <span class="muted">(${at(est.arriveAt ?? est.arriveHour)})</span>${weatherEta(est)}</div>
           ${est.dryAt != null ? `<div></div><div class="danger">Fuel runs out near ${esc(tileLabel(state, est.dryAt))}; they walk the rest (vehicle left there)</div>` : ""}
           <div${tip(stays ? "If you order them home as soon as they arrive" : "Out, about 6 hours on site, and back")}>Round trip</div><div>~${est.days.toFixed(1)} days (${Math.round(est.hours)}h: ${est.hoursOut}h out, ${est.hoursBack}h back)${stays ? ` <span class="muted">if sent home on arrival</span>` : ""}</div>
           <div${tip("Food and water for the trip: one ration a person a day, more on the move under a load (Medium +15%, Heavy +35%, Overloaded +60%, less with Scouting or on bikes, none extra in a car), the hours on site at the normal rate. Water is that times each day's thirst: 1.3 in summer, at least 1.6 on a hot day, 0.9 in winter; food times each day's cold: 1.1 below 0 °C, 1.2 below −8 °C (no camp fire on such a trip).")}>Needs</div><div>${est.food} food · ${est.water} water${isCar(v) ? ` · ${est.fuel} fuel${est.fuelMult > 1 ? ` (×${est.fuelMult.toFixed(2)} for the load)` : ""}` : ""}</div>
@@ -1195,7 +1209,7 @@ function moveOutModal(state, ui) {
   const destBtn = (x) => {
     const e = estimateTrip(state, { memberIds: ids.length ? ids : [0], dest: x.tile, vehicle: travelMode(v), v, stance: pl.stance, fuel: isCar(v) ? v.fuel + (pl.supplies.fuel || 0) : 0, supplies: pl.supplies, homeBaseId: b.id });
     const free = freeBeds(state, x);
-    return `<button data-action="pl-dest" data-tile="${x.tile}" class="${pl.dest === x.tile ? "active" : ""}" ${e ? "" : "disabled"}${tip(`Walk${v ? " or drive" : ""} to ${x.name}; when they get there you are asked whether they move in (they live and work there from then on, and what they carry goes into its stores).`)}>${esc(x.name)}<span class="hint">${free > 0 ? `${free} free bed${free === 1 ? "" : "s"}` : `full (${residents(state, x.id).length} in ${baseBeds(x)} beds)`} · ${e ? `about ${e.hoursOut}h` : "no route"}</span></button>`;
+    return `<button data-action="pl-dest" data-tile="${x.tile}" class="${pl.dest === x.tile ? "active" : ""}" ${e ? "" : "disabled"}${tip(`Walk${v ? " or drive" : ""} to ${x.name}; when they get there you are asked whether they move in (they live and work there from then on, and what they carry goes into its stores).`)}>${esc(x.name)}<span class="hint">${free > 0 ? `${free} free bed${free === 1 ? "" : "s"}` : `full (${residents(state, x.id).length} in ${baseBeds(x)} beds)`} · ${e ? `about ${etaOut(state, e)}` : "no route"}</span></button>`;
   };
   const go = !ids.length ? "Pick at least one person" : carry.over ? carry.why : pl.dest != null && !est ? "No route" : pl.dest == null ? "They leave now and wait outside; then click a tile on the map to send them (Esc: they wait for orders)" : `They set off for ${to ? to.name : "there"} now`;
   return `<div class="box wide">
@@ -1219,7 +1233,7 @@ function moveOutModal(state, ui) {
         <h3>Supplies (from ${esc(where)})</h3>
         ${suppliesTable(state, b, pl, b.type === "hub" ? "hub" : "base")}
         <button data-action="pl-autofill" style="margin-top:0.4rem"${tip(`Pack for the trip plus ${MOVE_OUT.days} days of food and water${pl.dest == null ? `, and ${MOVE_OUT.scrap} scrap for an outpost` : ""}`)}>Auto-fill</button>
-        ${est && pl.dest != null ? `<div class="kv small" style="margin-top:0.4rem"><div>Arrives in</div><div><b>${est.hoursOut}h</b>${weatherEta(est)}</div><div>Weight</div><div class="${carry.over ? "danger" : ""}">${n1(carry.load)} kg packed · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more</div></div>` : `<div class="small muted" style="margin-top:0.4rem">Weight: ${n1(carry.load)} kg packed · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more</div>`}
+        ${est && pl.dest != null ? `<div class="kv small" style="margin-top:0.4rem"><div>Arrives in</div><div><b>${etaOut(state, est)}</b>${weatherEta(est)}</div><div>Weight</div><div class="${carry.over ? "danger" : ""}">${n1(carry.load)} kg packed · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more</div></div>` : `<div class="small muted" style="margin-top:0.4rem">Weight: ${n1(carry.load)} kg packed · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more</div>`}
         ${warn.length ? `<div class="small danger" style="margin-top:0.5rem">${warn.map(esc).join("<br>")}</div>` : ""}
       </div>
     </div>
@@ -1398,10 +1412,11 @@ function survivorModal(state, ui) {
 // Their role and what they do now (sim/work.js): a work role with the why, or their fixed job (Manual).
 function workLine(state, s, base) {
   const role = roleOf(state, s);
-  const now = isManaged(state, s) ? taskLabel(state, s) : "";
+  const sickNow = !isManaged(state, s) ? sickRestLabel(state, s) : ""; // sim/sickrest.js: Manual and pinned people resting sick
+  const now = isManaged(state, s) ? taskLabel(state, s) : sickNow;
   const job = ROLES[s.role] ? ROLES[s.role].name : s.role;
   return `<div class="card small worksurv"><div class="spread"><span><b>Work:</b> ${role ? `${esc(role.name)}${role.kind === "crew" ? " (crew)" : ""}${s.pinned ? " · pinned" : ""}` : `Manual (${esc(job)})`}${now ? ` · now <b>${esc(now)}</b>` : ""}</span>${base ? workRoleSelect(state, s) : ""}</div>
-    ${now ? `<div class="muted">${esc(taskWhy(state, s))}</div>` : role ? `<div class="muted">${s.location.kind === "base" ? "Planned at the start of the next hour." : "Away: back on the role's priorities when home."}</div>` : ""}</div>`;
+    ${now ? `<div class="muted">${esc(sickNow ? sickTip(s) : taskWhy(state, s))}</div>` : role ? `<div class="muted">${s.location.kind === "base" ? "Planned at the start of the next hour." : "Away: back on the role's priorities when home."}</div>` : ""}</div>`;
 }
 
 function gearControls(state, base, s, slot) {
@@ -1480,16 +1495,15 @@ function campTab(state, b) {
       </div>
       <h3>People here (${people.length}/${baseBeds(b)} bedrolls)</h3>
       <div class="card small">${people.length ? people.map((s) => `<div class="spread"><a class="link" data-action="survivor" data-id="${s.id}">${first(s)}</a><span class="muted">${esc(ROLES[s.role] ? ROLES[s.role].name : s.role || "")} · health ${n0(s.health)}</span></div>`).join("") : `<span class="muted">Nobody lives at the camp now.</span>`}
-        <div class="row" style="margin-top:0.4rem">${formTeamButton(state, b)}</div>
-        <div class="muted" style="margin-top:0.3rem">Form a team: pick people, vehicles, gear and supplies from the camp\'s stores; they stand outside as a team (split as many teams as you like). A team at the camp is edited here (people in or out, vehicles, loading and dropping off by weight) or moves back in with Enter.</div>
+        <div class="row" style="margin-top:0.4rem">${formTeamButton(state, b)}${infoTip("Form a team: pick people, vehicles, gear and supplies from the camp's stores; they stand outside as a team (split as many teams as you like). A team at the camp is edited here (people in or out, vehicles, loading and dropping off by weight) or moves back in with Enter.")}</div>
       </div>
       <h3>Teams at the camp (${teams.length})</h3>
       <div class="card small">${teams.length ? teams.map((p) => `<div class="spread"><a class="link" data-action="xp-open" data-id="${p.id}">${esc(teamName(state, p))}</a><span class="row">${editTeamButton(state, p)}<button class="mini" data-action="xp-order" data-id="${p.id}" data-type="mission" data-mission="enter"${tip(`Move this team into ${b.name}: its people live at the camp, what it carries goes into the stores and armory, its vehicles park here`)}>Enter</button></span></div>`).join("") : `<span class="muted">No team stands at the camp.</span>`}</div>
     </div>
     <div>
       <h3>Stores</h3>
-      <div class="card small">${stock.length ? stock.map(([k, q]) => `<span class="chip">${esc(SUPPLIES[k].name)} ${n0(k === "ammo" ? totalRounds(b.stock) : q)}</span>`).join(" ") : `<span class="muted">Nothing in the stores.</span>`}
-        <div class="muted" style="margin-top:0.3rem">${b.armory.length} item${b.armory.length === 1 ? "" : "s"} in the camp\'s armory (Armory tab). Teams set down what they carry when they enter, and take supplies and gear when they are formed or edited here.</div>
+      <div class="card small">${stock.length ? `<div class="sk-tiles">${stock.map(([k, q]) => stockTile(k, k === "ammo" ? totalRounds(b.stock) : q)).join("")}</div>` : `<span class="muted">Nothing in the stores.</span>`}
+        ${hint(`🎒 ${b.armory.length} item${b.armory.length === 1 ? "" : "s"} in the camp\'s armory${infoTip("Teams set down what they carry when they enter, and take supplies and gear when they are formed or edited here.")}`)}
         <div class="row" style="margin-top:0.3rem"><button class="mini" data-action="basetab" data-tab="armory">Armory</button><button class="mini" data-action="basetab" data-tab="construction">Construction</button></div>
       </div>
       <h3>Vehicles (${parked.length})</h3>
@@ -1574,8 +1588,10 @@ function baseMedical(state, b) {
         const isNext = k === next;
         const chk = isNext ? canBuild(state, b, k) : null;
         const status = d.tier <= built.tier ? `<span class="chip on">Built</span>` : queued && queued.type === k ? `<span class="chip">Queued</span>` : isNext ? `<button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest (Construction tab)" : chk.reason)}>${d.tier === 1 ? "Build" : "Upgrade"}</button>` : `<span class="muted">Later</span>`;
-        return `<div class="card small"${tip(d.desc)}><div class="spread"><b>${d.tier}. ${esc(d.name)}</b>${status}</div>
-          <span class="muted">${d.med.beds} beds · +${d.med.heal}/day · meds ×${d.med.eff} · ${d.med.staff} medic${d.med.staff === 1 ? "" : "s"}${d.med.cures ? " · cleans infections" : d.med.guards ? " · prevents infections" : ""}<br>${Object.entries(d.cost).map(([c, v]) => `${v} ${c}`).join(", ")} · ${d.hours} work-hours${d.req ? ` · needs ${Object.entries(d.req).map(([sk, l]) => `${SKILL_NAMES[sk]} ${l}+`).join(", ")}` : ""}${isNext && !chk.ok ? ` · <span class="danger">${esc(chk.reason)}</span>` : ""}</span>${d.tier > built.tier ? lockLine(state, b, "building", k) : ""}</div>`;
+        const done = d.tier <= built.tier;
+        return `<div class="gcard ${done ? "ok" : isNext ? (chk.ok ? "busy" : "blocked") : "locked"}"${tip(d.desc)}><div class="gcard-top"><span class="gcard-title">${d.tier}. ${esc(d.name)}</span>${status}</div>
+          <div class="gcard-foot">${chip({ icon: "🛏", name: `${d.med.beds} beds` })}${chip({ icon: "✚", name: `+${d.med.heal}/day` })}${chip({ icon: "💊", name: `meds ×${d.med.eff}` })}${chip({ icon: "👩‍⚕️", name: `${d.med.staff} medic${d.med.staff === 1 ? "" : "s"}` })}${d.med.cures ? badge("Cleans infections", "good") : d.med.guards ? badge("Prevents infections", "info") : ""}</div>
+          ${done ? "" : `<div class="gcard-foot">${costChips(d.cost, isNext ? b.stock : null)}${chip({ icon: "⏱", name: `${d.hours}h`, t: `${d.hours} work-hours` })}${d.req ? Object.entries(d.req).map(([sk, l]) => chip({ icon: "★", name: `${SKILL_NAMES[sk]} ${l}+` })).join("") : ""}</div>`}${isNext && !chk.ok && !/^Needs \d/.test(chk.reason) ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${d.tier > built.tier ? lockTag(state, b, "building", k) : ""}</div>`;
       }).join("")}
     </div>
     <div>
@@ -1632,12 +1648,12 @@ function tierUpRows(state, b) {
   const status = job.paid && gatherStalled(job) ? `<span class="warn">Waiting for ${esc(short)}: ${out ? "bring them with a team or a supply run" : "scavenge or trade for them"}</span>`
     : rate <= 0 ? `<span class="warn">No builders: set someone here to Build</span>`
     : `${n1(job.hours - job.progress)} work-hours left, about ${Math.ceil((Math.min(job.hours, job.hours * cap) - job.progress) / rate)}h${cap < 1 ? ` with what is in (still ${esc(short)} to come)` : ""}`;
-  const rows = job.paid ? gatherRows(job).map((r) => `<span class="${r.ok ? "good" : "warn"}"${tip(`${SUPPLIES[r.key] ? SUPPLIES[r.key].name : r.key}: ${n0(r.have)} of ${r.need} taken from the stores${r.ok ? "" : ` (${n0(b.stock[r.key] || 0)} more in the stores; it is taken as it comes in)`}${r.key === "buildmat" ? ". Building materials are scavenged: hardware stores and quarries most, then warehouses, factories, barns, farms and towns" : ""}`)}>${r.ok ? "✓" : "○"} ${esc(SUPPLIES[r.key] ? SUPPLIES[r.key].name : r.key)} ${n0(r.have)}/${r.need}</span>`).join(" · ") : "<span class=\"good\">Paid</span>";
+  const rows = job.paid ? chipList(gatherRows(job).map((r) => chip({ icon: supIcon(r.key), name: supName(r.key), have: r.have, need: r.need, ok: r.ok, t: `${supName(r.key)}: ${n0(r.have)} of ${r.need} taken from the stores${r.ok ? "" : ` (${n0(b.stock[r.key] || 0)} more in the stores; it is taken as it comes in)`}${r.key === "buildmat" ? ". Building materials are scavenged: hardware stores and quarries most, then warehouses, factories, barns, farms and towns" : ""}` }))) : badge("Paid", "good");
   const why = out
     ? "A new outpost starts as a camp (the barest base: tarps, bedrolls and a fire, no well, one utility plot). Establish it for a dug spring, a fence and room to build: the materials are taken from its stores as they come in, and its builders do the work, never more of it than the materials delivered allow."
     : "Your home grows in stages: a camp (the barest base), a shelter (tier 0), then a base. Building it up takes the materials from the stores as they come in, and its builders do the work, never more of it than the materials delivered allow.";
   return `<div${tip(why)}>Stage</div><div>${stage}</div>
-    <div>${out ? "Establishing" : "Building up"}</div><div><div class="bar" style="position:relative"${tip("The bar: the work done; its lighter part, as far as the materials delivered allow")}><i style="width:${Math.round(cap * 100)}%;background:rgba(143,180,224,0.35)"></i><i style="position:absolute;left:0;top:0;bottom:0;width:${Math.round(Math.min(1, f) * 100)}%;background:var(--accent)"></i></div><span class="small">${Math.round(f * 100)}% built</span></div>
+    <div>${out ? "Establishing" : "Building up"}</div><div>${pbar(Math.round(Math.min(1, f) * 100), "accent", `${Math.round(f * 100)}% built`, "", Math.round(cap * 100), "The bar: the work done; its lighter part, as far as the materials delivered allow")}</div>
     <div>Needs</div><div class="small">${rows}</div>
     <div></div><div class="small">${status}</div>`;
 }
@@ -1661,11 +1677,10 @@ function baseOverview(state, b) {
   const fc = foodPerDay(state, b);
   return `<div class="grid2">
     <div>
-      <h3>Stock</h3>
-      <table class="t">${STOCK_KEYS.map((k) => `<tr><td${k === "ammo" ? tip(`Every calibre: ${roundsLine(b.stock)}`) : ""}>${SUPPLIES[k].name}</td><td>${n0(k === "ammo" ? totalRounds(b.stock) : b.stock[k])}</td></tr>`).join("")}</table>
-      ${b.type === "outpost" ? `<div class="small muted" style="margin-top:0.4rem">Outposts keep a small reserve and ship the rest to the hub each day.</div>` : ""}
+      ${sectionHead(`Stock${b.type === "outpost" ? infoTip("Outposts keep a small reserve and ship the rest to the hub each day.") : ""}`)}
+      <div class="sk-tiles">${STOCK_KEYS.map((k) => stockTile(k, k === "ammo" ? totalRounds(b.stock) : b.stock[k], k === "ammo" ? `${SUPPLIES[k].name}. Every calibre: ${roundsLine(b.stock)}` : SUPPLIES[k].name)).join("")}</div>
       <h3>Status</h3>
-      <div class="kv small">
+      <div class="card small"><div class="kv small">
         <div>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
         ${holdRow(state, b)}
         <div>Heat</div><div>${baseHeat(state, b)}</div>
@@ -1679,13 +1694,13 @@ function baseOverview(state, b) {
         ${people.length ? `<div></div><div><button class="mini" data-action="moveout" data-base="${b.id}"${tip("Pick people to leave this base as a team, with a vehicle and supplies from its stores: send them to found a new outpost, or to another of your bases to move in (the move-out planner).")}>Move a team out…</button> ${formTeamButton(state, b)}</div>` : ""}
         ${line ? `<div>Supply line</div><div>${Math.round(line.strength * 100)}%${line.hostile ? " · hostile land" : ""}${line.horde ? " · horde nearby" : ""}</div><div>Backup ETA</div><div>${isFinite(line.hours) ? line.hours + " hours" : "cut off"}</div>` : ""}
         ${b.type === "outpost" ? `<div></div><div><button class="mini danger" data-action="abandonbase" data-base="${b.id}"${abandonProblem(state, b) ? " disabled" : ""}${tip(abandonProblem(state, b) || "Give this outpost up (a card asks first): its people walk to your nearest base with what they can carry, its buildings stay standing as an empty base (half of the stores left there) that rots month by month and that another group may move into. Take it back later with Reoccupy your old outpost.")}>Abandon outpost…</button></div>` : ""}
-      </div>
+      </div></div>
     </div>
     <div>
-      <div class="spread"><h3>People and roles</h3>${memorialButton(state, b)}</div>
-      ${people.length ? `<table class="t">${people.map((s) => `<tr><td><a data-action="survivor" data-id="${s.id}" class="link">${s.leader ? "★ " : ""}${esc(s.name)}</a>${stIcons(state, s)}</td><td>${roleSelect(state, s)}</td><td class="small">${n0(s.health)} HP</td><td>${pinButton(s)}</td></tr>`).join("")}</table>` : `<div class="muted small">Nobody is here.</div>`}
-      <div class="small muted" style="margin-top:0.4rem">${Object.entries(ROLES).map(([k, r]) => `<b>${r.name}</b> ${people.filter((s) => s.role === k).length}`).join(" · ")}</div>
-      ${priorityCount(state, b) ? `<div class="small muted" style="margin-top:0.4rem">${priorityCount(state, b)} here work by priorities (Work tab); a base leader only moves the people on Manual.</div>` : ""}
+      ${sectionHead("People and roles", memorialButton(state, b), people.length)}
+      ${people.length ? `<table class="t">${people.map((s) => `<tr><td><a data-action="survivor" data-id="${s.id}" class="link">${s.leader ? "★ " : ""}${esc(s.name)}</a>${stIcons(state, s)}</td><td>${roleSelect(state, s)}</td><td class="small" style="min-width:5.5rem"${tip(`${n0(s.health)} health`)}>${pbar(s.health, s.health < 40 ? "bad" : s.health < 70 ? "warn" : "good", `${n0(s.health)} HP`)}</td><td>${pinButton(s)}</td></tr>`).join("")}</table>` : `<div class="muted small">Nobody is here.</div>`}
+      <div class="sk-chips" style="margin-top:0.4rem"${tip("Everyone here by role (roles with nobody on them are left out)")}>${Object.entries(ROLES).map(([k, r]) => [r.name, people.filter((s) => s.role === k).length]).filter(([, n]) => n).map(([name, n]) => chip({ name, need: n })).join("") || `<span class="muted small">No roles.</span>`}</div>
+      ${priorityCount(state, b) ? hint(`⚙ ${priorityCount(state, b)} here work by priorities (Work tab)`, "A base leader only moves the people on Manual.") : ""}
       ${stewardCard(state, b)}
     </div>
   </div>`;
@@ -1698,10 +1713,12 @@ function baseWorkshops(state, b) {
   const scavOut = Object.entries(scavengeOutput(state, b)).filter(([, v]) => v >= 0.1).map(([k, v]) => `${n1(v)} ${keyWord(k)}`).join(", ");
   const sts = stations(b);
   return `
-    <h3>Farming</h3>
-    <div class="card small">${farmers.length} farmer${farmers.length === 1 ? "" : "s"} on ${farmSlots(b)} plots${farmers.length ? `: ${farmers.map((x) => first(x) + bedTag(x)).join(", ")}` : ""}. Crops ripen in batches: see the <a class="link" data-action="basetab" data-tab="farming">Farming</a> tab.</div>
-    <h3>Scavenging</h3>
-    <div class="card small"${tip(ROLES.scavenge.desc)}>${scav.length ? `${scav.map((x) => first(x) + bedTag(x)).join(", ")} · <b>usually nothing</b> <span class="muted">(on average ${scavOut || "next to nothing"} a day; the surroundings are ${Math.round((b.scavLeft ?? 1) * 100)}% unpicked)</span>` : "<span class='muted'>Nobody scavenging</span>"}<div class="muted">Picking around the base rarely turns anything up. Send teams to real sites for supplies.</div></div>
+    <div class="grid2">
+      <div>${sectionHead("Farming", `<a class="link small" data-action="basetab" data-tab="farming"${tip("Crops ripen in batches: the Farming tab")}>Farming tab →</a>`, farmers.length)}
+      <div class="card small">${statRows([["🌱 Farmers", farmers.length ? farmers.map((x) => first(x) + bedTag(x)).join(", ") : `<span class="muted">none</span>`], ["Plots", `${farmSlots(b)}`]])}</div></div>
+      <div>${sectionHead(`Scavenging${infoTip(`${ROLES.scavenge.desc} Picking around the base rarely turns anything up. Send teams to real sites for supplies.`)}`, "", scav.length)}
+      <div class="card small">${scav.length ? statRows([["🔎 Scavengers", scav.map((x) => first(x) + bedTag(x)).join(", ")], ["A day, on average", `<span${tip("Usually nothing: this is the long-run average")}>${scavOut || "next to nothing"}</span>`], ["Surroundings unpicked", pbar(Math.round((b.scavLeft ?? 1) * 100), "info", `${Math.round((b.scavLeft ?? 1) * 100)}%`)]]) : "<span class='muted'>Nobody scavenging</span>"}</div></div>
+    </div>
     <h3>Workshop stations</h3>
     ${sts.length ? `<table class="t"><tr><th>Station</th><th>Operator</th><th>Status</th><th>Per day</th><th${tip("Standing order (production.js): Forever, Until stock reaches N, Keep at least N of an input, or Off, and what the operator does while it holds the station")}>Order</th></tr>${sts.map((st) => {
       const s = stationStatus(state, b, st);
@@ -1710,7 +1727,7 @@ function baseWorkshops(state, b) {
         <td${tip(`${BUILDINGS[st.type].desc} ${r.desc}`)}><b>${BUILDINGS[st.type].name}</b></td>
         <td><select data-action="stationop" data-base="${b.id}" data-station="${st.id}"${tip("Assigning someone sets their role to Operate")}><option value="">— none —</option>${people.map((p) => `<option value="${p.id}" ${(s.op ? s.op.id === p.id : p.station === st.id) ? "selected" : ""}>${esc(p.name)} (${SKILL_NAMES[r.skill]} ${skill(p, r.skill)}${p.inBed ? ", in bed" : ""})</option>`).join("")}</select></td>
         <td><span class="chip ${s.running ? "on" : "off"}">${esc(s.reason)}</span></td>
-        <td class="small">${s.op ? `${Object.entries(s.in || r.in).map(([k, v]) => `−${v} ${keyWord(k)}`).join(", ")} → ${Object.entries(s.out).map(([k, v]) => `+${v} ${SUPPLIES[k] && SUPPLIES[k].round ? SUPPLIES[k].name : k}`).join(", ") || "power"}` : "—"}</td>
+        <td class="small">${s.op ? `<span class="ck-list">${Object.entries(s.in || r.in).map(([k, v]) => chip({ icon: supIcon(k), name: `−${v} ${supName(k)}`, tone: "dim", t: `Uses ${v} ${keyWord(k)} a day` })).join("")} → ${Object.entries(s.out).map(([k, v]) => chip({ icon: supIcon(k), name: `+${v} ${supName(k)}`, tone: "ok", t: `Makes ${v} ${SUPPLIES[k] && SUPPLIES[k].round ? SUPPLIES[k].name : keyWord(k)} a day` })).join("") || chip({ icon: "⚡", name: "power", tone: "ok" })}</span>` : "—"}</td>
         <td>${orderCell(state, b, st)}</td>
       </tr>`;
     }).join("")}</table>` : `<div class="muted small">No workshop stations. Build an ammo bench (needs a workbench here), med station or machine shop in Construction.</div>`}
@@ -1722,8 +1739,8 @@ function boilerNote(state, b) {
   const u = boilerUse(state, b);
   const junk = burnablesWood(boilerBurnables(b));
   const toggle = `<label class="small" style="display:block"${tip("When the firewood runs short the boiler may burn cheap wooden, paper and cloth things from the armory (novels, magazines, rag boots, toilet paper, candles: worth 5 or less, never weapons, tools, armour or bags), before it touches the fuel. Items you mark in the inventory (Boiler may burn it / Keep from the fire) go by their mark.")}><input type="checkbox" data-action="boiler-junk" data-base="${b.id}" ${boilerJunkOn(b) ? "checked" : ""}> Boiler may burn spare wooden items and paper${junk > 0 ? ` <span class="muted">(${junk} firewood's worth in the armory)</span>` : ""}</label>`;
-  if (!u.active) return `<div class="small good">Standing ready: ${u.heads ? "the water filters here purify the day's drinking" : "nobody here"} (nothing burned).</div>${toggle}`;
-  return `<div class="small ${u.lit ? "" : "danger"}">${u.lit ? "Lit" : "Cold today (nothing to burn: the water is drunk un-purified, or treated with the armory's purification tablets if there is no water filter)"}: burns ${esc(u.text)} on the days the purified water in store and the filters do not cover the drinking (about ${Math.round(u.share * 100)}% of days); it purifies the day's drinking for everyone here. Firewood first, then the armory's burnable junk and anything marked to burn, then fuel.</div>${toggle}`;
+  if (!u.active) return `<div class="small good"${tip("Nothing burned while the filters cover the drinking")}>✓ Standing ready: ${u.heads ? "the water filters here purify the day's drinking" : "nobody here"}</div>${toggle}`;
+  return `<div class="small ${u.lit ? "" : "danger"}" style="margin-top:0.2rem"${tip(`${u.lit ? "Lit" : "Cold today (nothing to burn: the water is drunk un-purified, or treated with the armory's purification tablets if there is no water filter)"}: burns ${u.text} on the days the purified water in store and the filters do not cover the drinking (about ${Math.round(u.share * 100)}% of days); it purifies the day's drinking for everyone here. Firewood first, then the armory's burnable junk and anything marked to burn, then fuel.`)}>${u.lit ? `🔥 <b>Lit</b>` : `❄ <b>Cold today</b>: nothing to burn`} · burns ${esc(u.text)} · ~${Math.round(u.share * 100)}% of days</div>${toggle}`;
 }
 // Machines (sim/breakdowns.js isMachine; freezer-parts): the on/off chip of a powered one (the freezer says why it is
 // off), and a line of machine parts: what a repair takes, its spares, and each one's wear and last breakdown.
@@ -1750,9 +1767,19 @@ function baseBuildings(state, b) {
   const groups = {};
   for (const x of b.buildings) groups[x.type] = (groups[x.type] || 0) + 1;
   return `<div class="grid2">
-    <div><h3>Built here</h3>${Object.keys(groups).length ? Object.entries(groups).map(([t, n]) => `<div class="card small"${tip(BUILDINGS[t].desc)}><div class="spread"><b>${BUILDINGS[t].name}${n > 1 ? ` ×${n}` : ""}</b>${machineChip(state, b, t)}</div><span class="muted">${BUILDINGS[t].desc}</span>${t === "boiler" ? boilerNote(state, b) : ""}${machineNote(b, t)}</div>`).join("") : `<div class="muted small">Only a shelter so far. Queue buildings in Construction.</div>`}</div>
-    <div><h3>Bonuses</h3><div class="kv small">${buildingSummary(state, b).map(([k, v]) => `<div>${k}</div><div>${esc(v)}</div>`).join("")}</div>${blueprintsCard(state, b)}</div>
+    <div>${sectionHead("Built here", "", b.buildings.length)}${Object.keys(groups).length ? `<div class="gcard-grid">${Object.entries(groups).map(([t, n]) => {
+      const broken = b.buildings.filter((x) => x.type === t && x.broken).length;
+      return `<div class="gcard ${broken ? "blocked" : "ok"}${t === "boiler" ? " wide" : ""}"${tip(BUILDINGS[t].desc)}><div class="gcard-top"><span class="gcard-title">${esc(BUILDINGS[t].name)}${n > 1 ? ` <span class="sk-count">×${n}</span>` : ""}</span>${broken ? badge(`Broken${n > 1 ? ` ${broken}` : ""}`, "bad", "Broken: it gives nothing until it is repaired (Repairs tab)") : machineChip(state, b, t) || badge("Built", "good")}</div><div class="gcard-desc">${esc(BUILDINGS[t].desc)}</div>${t === "boiler" ? boilerNote(state, b) : ""}${machineNote(b, t)}</div>`;
+    }).join("")}</div>` : `<div class="muted small">Only a shelter so far. Queue buildings in Construction.</div>`}</div>
+    <div>${sectionHead("Bonuses")}<div class="card small">${statRows(buildingSummary(state, b).map(([k, v]) => [k, esc(v)]))}</div>${blueprintsCard(state, b)}</div>
   </div>`;
+}
+
+// A locked building or recipe on one line: the manual or book it waits for; where to look for it in the tooltip.
+function lockTag(state, b, kind, key) {
+  const note = lockNote(state, b, kind, key);
+  if (!note) return "";
+  return `<div class="gcard-lock"${tip(`${note} Found and studied at a base (Read role, the blueprint's skill), or a craft book read to the end by anyone at a base. See the Buildings tab's Blueprints list.`)}>🔒 ${esc(note.split(/\.\s*Look in:/)[0].replace(/^Needs:\s*/, "Needs "))}</div>`;
 }
 
 // Construction (sim/buildings.js): the plots (building and utility, by the base's size), the queue, what stands on
@@ -1769,7 +1796,8 @@ function baseConstruction(state, b, ui) {
   };
   const plotBar = (kind) => {
     const cap = plotCap(b, kind), used = plotsUsed(b, kind);
-    return `<div class="spread"><b>${PLOT_NAMES[kind]}s</b><span class="${cap && used >= cap ? "warn" : "muted"}">${used} of ${cap} used</span></div>${cap ? bar(Math.min(100, (used / cap) * 100), used > cap ? "var(--danger)" : "var(--accent)") : `<div class="muted">None at a ${tierName(b).toLowerCase()}.</div>`}`;
+    return cap ? pbar(Math.min(100, (used / cap) * 100), used > cap ? "bad" : used >= cap ? "warn" : "info", `${PLOT_NAMES[kind]}s`, `${used} of ${cap} used`)
+      : `<div class="spread"><b>${PLOT_NAMES[kind]}s</b><span class="muted">None at a ${tierName(b).toLowerCase()}.</span></div>`;
   };
   const sizes = [["shelter", "Shelter"], ["outpost", "Outpost"], ["hub", "Main hub"]].map(([k, n]) => `${n} ${PLOTS[k].building} / ${PLOTS[k].utility}`).join(" · ");
   // A bunkhouse can be expanded into a barracks where it stands (12 beds instead of 6, no new plot: BARRACKS_UP).
@@ -1805,51 +1833,64 @@ function baseConstruction(state, b, ui) {
       }).join("")}
     </div>`;
   };
+  // A building card: name, how many stand here, a status badge and Build; one line of what it does (the rest in its
+  // tooltip); its cost as chips against the stores, the work-hours; why it cannot be built now.
   const buildCard = (k, d) => {
     const chk = canBuild(state, b, k);
-    return `<div class="card small"${tip(d.desc)}>
-      <div class="spread"><b>${d.name}</b><button class="mini" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>${isMachine(k) ? `<div class="small muted"${tip("A machine: it wears, breaks down and takes machine parts to keep (Help: Machines and machine parts)")}>⚙ ${esc(machineText(k))}${POWER_USERS[k] ? ` · draws ${POWER_USERS[k].need} power` : ""}</div>` : ""}
-      <span class="muted">${costText(d.cost)} · ${d.hours} work-hours · have ${count(b, k)}/${d.max}${chk.ok ? "" : ` · ${esc(chk.reason)}`}</span>
-      ${lockLine(state, b, "building", k)}
+    const have = count(b, k), queuedN = b.construction.filter((c) => c.type === k && !c.target).length;
+    const lock = lockTag(state, b, "building", k);
+    const short = !chk.ok && /^Needs \d/.test(chk.reason); // the stores are short: the red chips say it
+    const state_ = chk.ok ? "ok" : lock ? "locked" : "blocked";
+    const status = queuedN ? badge(`Queued${queuedN > 1 ? ` ×${queuedN}` : ""}`, "busy") : chk.ok ? "" : lock ? badge("Locked", "muted") : chk.noPlot ? badge("No plot", "bad") : short ? badge("Short", "bad") : /Limit reached|Already built/.test(chk.reason) ? badge("Max", "muted") : badge("Not yet", "muted");
+    return `<div class="gcard ${state_}"${tip(d.desc)}>
+      <div class="gcard-top"><span class="gcard-title">${esc(d.name)}${have ? ` <span class="muted small"${tip(`${have} standing here, ${d.max} at most`)}>${have}/${d.max}</span>` : ""}${status}</span><button class="mini${chk.ok ? " primary" : ""}" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>
+      <div class="gcard-desc">${esc(firstSentence(d.desc))}</div>${isMachine(k) ? `<div class="small muted"${tip("A machine: it wears, breaks down and takes machine parts to keep (Help: Machines and machine parts)")}>⚙ ${esc(machineText(k))}${POWER_USERS[k] ? ` · draws ${POWER_USERS[k].need} power` : ""}</div>` : ""}
+      <div class="gcard-foot">${costChips(d.cost, b.stock, { tips: (c, h, n) => `${supName(c)}: ${n} needed, ${n0(h)} in the stores${d.gather ? " (taken from the stores as it comes in)" : ""}` })}${chip({ icon: "⏱", name: `${d.hours}h`, t: `${d.hours} work-hours for the builders` })}</div>
+      ${!chk.ok && !short && !lock ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${lock}
     </div>`;
   };
   const up = tierUpType(b);
   const types = Object.entries(BUILDINGS).filter(([k, d]) => (!d.shelterOnly || isShelter(b)) && (!d.tierUp || k === up)).sort(([ka], [kb]) => (isShelter(b) ? (kb === up) - (ka === up) : 0));
-  const section = (title, list) => `<h3>${title}</h3>${list.map(([k, d]) => buildCard(k, d)).join("") || `<div class="muted small">None.</div>`}`;
+  // Buildable first, then what is short of materials, then the rest (locked, no plot, at the limit) at the bottom.
+  const rank = ([k]) => { const c = canBuild(state, b, k); return k === up ? -1 : c.ok ? 0 : /^Needs \d/.test(c.reason) ? 1 : 2; };
+  const section = (title, list, right = "", t = "") => `${sectionHead(title, right, null, t)}${list.map((e, i) => [e, i]).sort(([x, i], [y, j]) => rank(x) - rank(y) || i - j).map(([[k, d]]) => buildCard(k, d)).join("") || `<div class="muted small">None.</div>`}`;
   const free = (kind) => Math.max(0, plotCap(b, kind) - plotsUsed(b, kind));
-  const freeText = (kind) => `<span class="muted small">(${free(kind)} ${PLOT_NAMES[kind].toLowerCase()}${free(kind) === 1 ? "" : "s"} free)</span>`;
+  const freeText = (kind) => badge(`${free(kind)} plot${free(kind) === 1 ? "" : "s"} free`, free(kind) ? "info" : "warn", `${free(kind)} ${PLOT_NAMES[kind].toLowerCase()}${free(kind) === 1 ? "" : "s"} free`);
   return `<div class="grid2">
     <div>
-      <h3>Plots</h3>
+      ${sectionHead("Plots", "", null)}
       <div class="card small"${tip("Every building stands on a plot. Building plots: anything with a roof (bunkhouses and barracks, the storehouse, cellars, workshops, the hospital). Utility plots: the small things in the yard (the boiler, water barrels, storage crates, the watchtower, the cook fire, rain catchers, benches). Walls, defences and farm plots need none. A hospital keeps its plot when upgraded; a barrel's upgrades stay on its plot, and so does a bunkhouse expanded into a barracks.")}>
         ${plotBar("building")}
-        <div style="margin-top:0.4rem">${plotBar("utility")}</div>
-        <div class="muted" style="margin-top:0.4rem">By base size (building / utility): ${sizes}. Demolish a building to free its plot.</div>
+        ${plotBar("utility")}
+        ${hint(`By base size: ${sizes}${infoTip("Building / utility plots at each size. Demolish a building to free its plot.")}`)}
       </div>
-      <h3>Queue ${undoBtn(state, ui, "build", b.id)}</h3>
-      <div class="small muted" style="margin-bottom:0.4rem">${builders.length ? `Builders: ${builders.map((x) => first(x) + bedTag(x)).join(", ")} (${n1(rate)} work-hours per hour${builders.some((x) => x.inBed) ? "; people in a hospital bed do not build" : ""})` : "No builders. Set someone's role to Build."}</div>
+      ${sectionHead("Build queue", undoBtn(state, ui, "build", b.id), b.construction.length)}
+      ${hint(builders.length ? `👷 ${builders.map((x) => first(x) + bedTag(x)).join(", ")} · <b>${n1(rate)}</b> work-hours an hour` : `<span class="warn">👷 No builders: set someone's role to Build.</span>`, builders.some((x) => x.inBed) ? "People in a hospital bed do not build" : "Builders work through the queue from the top")}
       ${b.construction.length ? b.construction.map((job, i) => {
         const left = job.hours - job.progress;
         elapsed += left;
         const eta = rate > 0 ? Math.ceil(elapsed / rate) : null;
         const plot = BUILDINGS[job.type].plot;
-        return `<div class="card small">
-          <div class="spread"><b>${i === 0 ? "▶ " : ""}${esc(buildJobName(job))}</b><span>${buildMoveBtns(b, i)}<button class="mini" data-action="cancelbuild" data-base="${b.id}" data-id="${job.id}"${tip("Cancel and get half the materials back")}>Cancel</button></span></div>
-          ${bar((job.progress / job.hours) * 100, "var(--accent)")}
-          ${job.paid ? `<div>${gatherRows(job).map((r) => `<span class="${r.ok ? "good" : "warn"}">${r.ok ? "✓" : "○"} ${esc(matName(r.key))} ${n0(r.have)}/${r.need}</span>`).join(" · ")}${gatherStalled(job) ? ` <span class="warn">· waiting for the materials (taken from the stores as they come in)</span>` : ""}</div>` : ""}
-          <span class="muted">${i === 0 ? `${n1(left)} work-hours left` : "Waiting in queue"} · ${eta != null ? `done in about ${eta}h` : "paused"}${plot && !job.target ? ` · ${PLOT_NAMES[plot].toLowerCase()}` : ""}</span>
+        const pct = Math.round((job.progress / job.hours) * 100);
+        const stalled = job.paid && gatherStalled(job);
+        const st = stalled ? badge("Needs materials", "bad") : rate <= 0 ? badge("No builders", "warn") : i === 0 ? badge(`Building ${pct}%`, "busy") : badge("Queued", "muted");
+        return `<div class="gcard ${stalled ? "blocked" : "busy"}">
+          <div class="gcard-top"><span class="gcard-title">${i === 0 ? "▶ " : ""}${esc(buildJobName(job))} ${st}</span><span class="row">${buildMoveBtns(b, i)}<button class="mini" data-action="cancelbuild" data-base="${b.id}" data-id="${job.id}"${tip("Cancel and get half the materials back")}>Cancel</button></span></div>
+          ${pbar(pct, stalled ? "bad" : "accent", `${pct}%`, `${n1(left)} work-hours left`, job.paid ? gatherCap(job) * 100 : null, job.paid ? "The work done; its lighter part, as far as the materials delivered allow" : "")}
+          ${job.paid ? `<div class="gcard-foot">${chipList(gatherRows(job).map((r) => chip({ icon: supIcon(r.key), name: supName(r.key), have: r.have, need: r.need, ok: r.ok, t: `${supName(r.key)}: ${n0(r.have)} of ${r.need} taken from the stores${r.ok ? "" : ` (${n0(b.stock[r.key] || 0)} more in the stores; it is taken as it comes in)`}` })))}</div>${stalled ? `<div class="gcard-why">Waiting for the materials (taken from the stores as they come in)</div>` : ""}` : ""}
+          <div class="gcard-sub">${i === 0 ? "Under way" : "Waiting in queue"} · ${eta != null ? `done in about <b>${eta}h</b>` : "paused"}${plot && !job.target ? ` · ${PLOT_NAMES[plot].toLowerCase()}` : ""}</div>
         </div>`;
-      }).join("") : `<div class="muted small">Nothing queued.</div>`}
-      <h3>On the building plots</h3>
+      }).join("") : `<div class="muted small">Nothing queued. Pick a building on the right.</div>`}
+      ${sectionHead("On the building plots", "", plotsUsed(b, "building"))}
       <div class="card small">${plotList("building")}</div>
-      <h3>On the utility plots</h3>
+      ${sectionHead("On the utility plots", "", plotsUsed(b, "utility"))}
       <div class="card small">${plotList("utility")}</div>
       ${barrels(b).length ? barrelCard() : ""}
     </div>
     <div>
-      ${section(`Buildings ${freeText("building")}`, types.filter(([, d]) => d.plot === "building"))}
-      ${section(`Utilities ${freeText("utility")}`, types.filter(([, d]) => d.plot === "utility"))}
-      ${section(`Walls, defences and fields <span class="muted small">(no plot)</span>`, types.filter(([, d]) => !d.plot))}
+      ${section("Buildings", types.filter(([, d]) => d.plot === "building"), freeText("building"))}
+      ${section("Utilities", types.filter(([, d]) => d.plot === "utility"), freeText("utility"))}
+      ${section("Walls, defences and fields", types.filter(([, d]) => !d.plot), badge("No plot", "muted"))}
     </div>
   </div>`;
 }
@@ -1861,8 +1902,7 @@ function baseArmory(state, b) {
   const slots = ["weapon", "armor", "tool"];
   return `
     ${teamsHereCard(state, b)}${bodiesCard(state, b)}
-    <h3>Stored here (${b.armory.length})</h3>
-    <div class="small">${b.armory.length ? b.armory.map((g, i) => `<span class="chip"${tip(gearTip(g))}>${esc(g.name)}${g.quality < 1 ? ` (${Math.round(g.quality * 100)}%)` : ""}${durTag(g)}${gunCog(state, g, `armory:${b.id}:list:${i}`)}</span>`).join("") : "<span class='muted'>Empty. Gear your teams bring home (and crafted gear) lands here.</span>"}</div>
+    ${armoryStored(state, b, people)}
     <h3>Equipment</h3>
     ${people.length ? `<table class="t"><tr><th>Survivor</th>${slots.map((s) => `<th>${SLOT_NAMES[s]}</th>`).join("")}<th${tip("Head, arms, legs and pack (inventory.js). Open the inventory to change them, fill pockets and packs, or swap with others here.")}>Worn and carried</th></tr>${people.map((s) => `<tr>
       <td><a data-action="survivor" data-id="${s.id}" class="link">${esc(s.name)}</a>${stIcons(state, s)}<br><span class="small muted">Shoot ${skill(s, "shooting")} · Stealth ${skill(s, "stealth")} · Combat ${combatPower(s).toFixed(1)}</span></td>
@@ -1874,6 +1914,25 @@ function baseArmory(state, b) {
         <div class="muted">Armor ${Math.round(armorPower(s) * 10) / 10} · pockets ${s.pockets.filter(Boolean).length}/${s.pockets.length}</div>
         <button class="mini" data-action="inv-open" data-id="${s.id}"${tip("Open the paper-doll inventory")}>Inventory</button></td></tr>`).join("")}</table>` : `<div class="muted small">Nobody is here to equip.</div>`}
     ${keyRingCard(state)}`;
+}
+
+// The armory's stored gear, grouped by type as cards or compact rows (ui/armoryview.js); "Everything here" adds what
+// the people at the base wear and carry, with who has it. A click opens the item in the inventory window (equip it).
+function armoryStored(state, b, people) {
+  const ns = "base";
+  const all = armoryScope(ns) === "all";
+  const entries = b.armory.map((item, i) => ({ item, loc: `armory:${b.id}:list:${i}`, sid: people[0] ? people[0].id : null }));
+  if (all) for (const s of people) for (const x of carriedSpots(s)) entries.push({ item: x.item, loc: x.loc, sid: s.id, who: `${shortName(s)} · ${(SLOT_NAMES[x.where] || x.where).toLowerCase()}`, whoTip: `${s.name} has it (${(SLOT_NAMES[x.where] || x.where).toLowerCase()})` });
+  const carried = entries.length - b.armory.length;
+  const scopeBar = people.length ? `<span class="armscope">${[["stored", "Stored"], ["all", "Everything here"]].map(([k, l]) => `<button class="mini${armoryScope(ns) === k ? " active" : ""}" data-action="armv-scope" data-ns="${ns}" data-scope="${k}"${tip(k === "all" ? "The armory and what everyone at the base wears and carries, with who has it" : "Only what is stored in the armory")}>${l}</button>`).join("")}</span>` : "";
+  const cell = (e, inner, cls) => `<div class="${cls}${e.sid != null ? " apick" : ""}"${e.sid != null ? ` data-action="armv-pick" data-loc="${e.loc}" data-sid="${e.sid}"` : ""}${armTip(e)}>${inner}${gunCog(state, e.item, e.loc)}</div>`;
+  // The short hover tip (ui/itemlabels.js; Shift: the whole description), then what a click does.
+  const armTip = (e) => {
+    const click = e.sid != null ? `Click: open it in ${e.who ? "their" : "the"} inventory${e.who ? "" : " to equip it on someone here"}.` : "";
+    return tipAttrs([itemShortTip(e.item, e.loc, null, state), click].filter(Boolean).join("\n"), `${gearTip(e.item)}${click ? ` ${click}` : ""}`);
+  };
+  return `<h3>Stored here (${b.armory.length})${all && carried ? ` <span class="small muted">+ ${carried} carried</span>` : ""}</h3>
+    ${armoryView(entries, { ns, cell, scopeBar, state, empty: "Empty. Gear your teams bring home (and crafted gear) lands here." })}`;
 }
 
 // Bodies brought home in a team's car (sim/carriers.js): bury (their things to the armory) or burn (nothing kept).
@@ -1893,15 +1952,45 @@ function baseCrafting(state, b) {
   const others = people.filter((s) => s.role !== "craft");
   const abed = people.filter((s) => s.role === "craft" && s.inBed); // on the Craft role but in a hospital bed
   let elapsed = 0;
+  const bt = benchType(b);
+  const benchLine = bt ? `🛠 ${esc(BUILDINGS[bt].name)}: <b class="good">+${Math.round((BENCH[bt].rate - 1) * 100)}%</b> speed · <b class="good">+${Math.round(BENCH[bt].quality * 100)}%</b> condition${BENCH[bt].workshop ? " · workshop recipes" : ""}`
+    : hasBench(b) ? `🛠 No crafting bench: the workshop does for one (no bonus)`
+    : `<span class="warn">🛠 No crafting bench: Field recipes only</span>`;
+  const benchTipText = bt ? BUILDINGS[bt].desc : `${hasBench(b) ? "The workshop here does for a bench, with no bonus. " : ""}Build a crafting bench in Construction (a utility plot, ${Object.entries(BUILDINGS.craftbench.cost).map(([k, v]) => `${v} ${k === "parts" ? (v === 1 ? "part" : "parts") : k}`).join(" and ")}, ${BUILDINGS.craftbench.hours} work-hours) to work faster and better.`;
+  const SKILL_ICON = { mechanics: "🔧", medicine: "✚", stealth: "👣", crafting: "🛠", farming: "🌱", scavenging: "🔎", shooting: "🎯" };
+  // Recipes you can make now first, then what is short of materials, then the rest (locked, no station, no skill).
+  const recipeRank = (k) => { const c = canCraft(state, b, k); return c.ok ? 0 : /^Needs \d/.test(c.reason) ? 1 : 2; };
+  const recipeCard = (k) => {
+    const r = CRAFTS[k];
+    const chk = canCraft(state, b, k);
+    const d = r.gear ? GEAR[r.gear] : null;
+    const edge = craftEdge(state, k);
+    const lock = lockTag(state, b, "craft", k);
+    const short = !chk.ok && /^Needs \d/.test(chk.reason);
+    const station = meetsNeeds(b, r);
+    const tags = [
+      r.needs === "workshop" ? badge("Workshop", station ? "info" : "bad", "Needs a workbench (or better), an ammo bench or a machine shop at this base") : r.needs ? badge(esc(BUILDINGS[r.needs] ? BUILDINGS[r.needs].name : r.needs), station ? "info" : "bad", `Needs a ${BUILDINGS[r.needs] ? BUILDINGS[r.needs].name.toLowerCase() : r.needs} at this base`) : "",
+      benchNeeded(r) ? badge("Bench", hasBench(b) ? "info" : "bad", "Needs a crafting bench (or better) at this base") : "",
+      r.field ? badge("Field", "muted", "Simple enough for a team to make on the road from what it carries") : "",
+    ].join("");
+    const skilled = people.some((s) => canAttempt(s, r));
+    const gearChips = Object.entries(r.gearIn || {}).map(([g, v]) => chip({ icon: "🎒", name: GEAR[g].name, have: b.armory.filter((it) => it && it.key === g).length, need: v, t: `${v > 1 ? `${v} × ` : "A "}${GEAR[g].name} from the armory` }));
+    return `<div class="gcard ${chk.ok ? "ok" : lock ? "locked" : "blocked"}"${tip(d ? `${d.desc || ""} Worth: ${worthTier({ key: r.gear, quality: 1 })}.` : r.desc)}>
+      <div class="gcard-top"><span class="gcard-title">${esc(craftName(k))}${tags}${edge.n ? badge(`Edge +${Math.round(edge.quality * 100)}%`, "good", `From ${edge.from.join(" and ")}: +${Math.round(edge.quality * 100)}% condition, ${Math.round((edge.speed - 1) * 100)}% faster.`) : ""}</span><button class="mini${chk.ok ? " primary" : ""}" data-action="queuecraft" data-base="${b.id}" data-recipe="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay the materials now; crafters do the rest" : chk.reason)}>Craft</button></div>
+      <div class="gcard-desc">→ ${esc(craftOutputText(k))}</div>
+      <div class="gcard-foot">${costChips(r.in, b.stock, { word: (c) => (c === "ammo" ? "Rounds" : supName(c)) })}${gearChips.join("")}${!r.min && !r.cmin ? "" : chip({ icon: SKILL_ICON[r.skill] || "★", name: `${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` · Crafting ${r.cmin}+` : ""}`, ok: skilled, tone: skilled ? "" : "short", t: skilled ? "Someone here has the skill" : `Needs a ${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` and Crafting ${r.cmin}+` : ""} survivor here` })}${chip({ icon: "⏱", name: `${r.hours}h`, t: `${r.hours} work-hours` })}</div>
+      ${!chk.ok && !short && !lock && skilled && (station || !r.needs) ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${lock}
+    </div>`;
+  };
   return `<div class="grid2">
     <div>
-      <h3>Crafters</h3>
+      ${sectionHead("Crafters", "", crew.length + abed.length, "Crafting sets the speed, the expected condition and how far a roll can stray from it; a recipe's own skill (Mechanics, Medicine, Stealth) is only its minimum.")}
       <div class="card small">
-        ${crew.length || abed.length ? [...crew, ...abed].map((s) => `<div class="spread"><span>${esc(s.name)}${bedTag(s)} <span class="muted"${tip("Crafting sets the speed, the expected condition and how far a roll can stray from it; a recipe's own skill (Mechanics, Medicine, Stealth) is only its minimum.")}>Crafting ${skill(s, "crafting")} · Mechanics ${skill(s, "mechanics")} · Medicine ${skill(s, "medicine")}</span></span>${roleSelect(state, s)}</div>`).join("") : `<span class="muted">Nobody on the Craft role.</span>`}
-        <div class="muted" style="margin-top:0.3rem"${tip(benchType(b) ? BUILDINGS[benchType(b)].desc : BUILDINGS.craftbench.desc)}>${benchType(b) ? `${esc(BUILDINGS[benchType(b)].name)}: crafters work ${Math.round((BENCH[benchType(b)].rate - 1) * 100)}% faster, gear comes out +${Math.round(BENCH[benchType(b)].quality * 100)}% condition${BENCH[benchType(b)].workshop ? ", workshop recipes open" : ""}.` : hasBench(b) ? "No crafting bench: the workshop here does for one (no bonus). Build a crafting bench (Construction, a utility plot) to work faster and better." : `<span class="warn">No crafting bench: only the simple Field recipes can be made here.</span> Build one in Construction (a utility plot, ${Object.entries(BUILDINGS.craftbench.cost).map(([k, v]) => `${v} ${k === "parts" ? (v === 1 ? "part" : "parts") : k}`).join(" and ")}, ${BUILDINGS.craftbench.hours} work-hours).`}</div>
+        ${crew.length || abed.length ? [...crew, ...abed].map((s) => `<div class="sk-person"><span><b>${esc(s.name)}</b>${bedTag(s)} <span class="ck-list">${chip({ icon: "🛠", name: `${skill(s, "crafting")}`, t: "Crafting" })}${chip({ icon: "🔧", name: `${skill(s, "mechanics")}`, t: "Mechanics" })}${chip({ icon: "✚", name: `${skill(s, "medicine")}`, t: "Medicine" })}</span></span>${roleSelect(state, s)}</div>`).join("") : `<span class="muted">Nobody on the Craft role.</span>`}
+        ${hint(benchLine, benchTipText)}
         ${others.length ? `<div style="margin-top:0.3rem"><select data-action="craftop"${tip("Set someone's role to Craft")}><option value="">Add a crafter…</option>${others.map((s) => `<option value="${s.id}">${esc(s.name)} (Crafting ${skill(s, "crafting")}, Mechanics ${skill(s, "mechanics")}, Medicine ${skill(s, "medicine")}, now ${ROLES[s.role]?.name || s.role})</option>`).join("")}</select></div>` : ""}
       </div>
-      <h3>Queue (${q.length}/${MAX_CRAFT_QUEUE})</h3>
+      ${sectionHead(`Queue${infoTip("Crafters work on the first job they have the skill for. Finished gear goes to the armory; equip it in the Armory tab. Makeshift gear is weaker than the real thing and breaks after a number of uses. Every finished craft gives Crafting XP: more for weapons and armor, for dearer materials and for a better result.")}`, "", `${q.length}/${MAX_CRAFT_QUEUE}`)}
       ${q.length ? q.map((job, i) => {
         const r = CRAFTS[job.recipe];
         const why = craftJobStatus(state, b, job);
@@ -1909,30 +1998,19 @@ function baseCrafting(state, b) {
         const left = job.hours - job.progress;
         elapsed += left;
         const eta = !why && rate > 0 ? Math.ceil(elapsed / rate) : null; // jobs ahead in the queue go first
-        return `<div class="card small">
-          <div class="spread"><b>${i === 0 ? "▶ " : ""}${esc(craftName(job.recipe))}</b><button class="mini" data-action="cancelcraft" data-base="${b.id}" data-id="${job.id}"${tip(job.progress > 0 ? "Cancel and get half the materials back" : "Cancel and get all the materials back (not started)")}>Cancel</button></div>
-          ${bar((job.progress / job.hours) * 100, "var(--accent)")}
-          <span class="muted">${n1(left)} of ${job.hours} work-hours left · ${why ? `<span class="danger">${esc(why)}</span>` : eta != null ? `about ${eta}h at the current pace${r.gear && craftMean(state, b, job.recipe) != null ? ` · condition about ${Math.round(craftMean(state, b, job.recipe) * 100)}% (a roll: Crafting narrows it)` : ""}` : "paused"}</span>
+        const pct = Math.round((job.progress / job.hours) * 100);
+        const mean = r.gear ? craftMean(state, b, job.recipe) : null;
+        return `<div class="gcard ${why ? "blocked" : "busy"}">
+          <div class="gcard-top"><span class="gcard-title">${i === 0 ? "▶ " : ""}${esc(craftName(job.recipe))} ${why ? badge("Stalled", "bad") : i === 0 || job.progress > 0 ? badge(`Crafting ${pct}%`, "busy") : badge("Queued", "muted")}</span><button class="mini" data-action="cancelcraft" data-base="${b.id}" data-id="${job.id}"${tip(job.progress > 0 ? "Cancel and get half the materials back" : "Cancel and get all the materials back (not started)")}>Cancel</button></div>
+          ${pbar(pct, why ? "bad" : "accent", `${pct}%`, `${n1(left)} of ${job.hours} work-hours left`)}
+          <div class="gcard-sub">${why ? `<span class="danger">${esc(why)}</span>` : eta != null ? `about <b>${eta}h</b> at the current pace${mean != null ? ` · <span${tip("A roll: Crafting narrows it")}>condition about <b>${Math.round(mean * 100)}%</b></span>` : ""}` : "paused"}</div>
         </div>`;
-      }).join("") : `<div class="muted small">Nothing queued.</div>`}
-      <div class="small muted" style="margin-top:0.4rem">Crafters work on the first job they have the skill for. Finished gear goes to the armory; equip it in the Armory tab. Makeshift gear is weaker than the real thing and breaks after a number of uses. Every finished craft gives Crafting XP: more for weapons and armor, for dearer materials and for a better result.</div>
+      }).join("") : `<div class="muted small">Nothing queued. Pick a recipe on the right.</div>`}
       ${craftOrdersCard(state, b)}
     </div>
     <div>
-      <h3>Recipes</h3>
-      <div class="small muted" style="margin-bottom:0.4rem">${hasWorkshop(b) ? "A workshop is here: workshop recipes are open (and come out a bit better)." : "No workshop here: recipes marked Workshop need a workbench, ammo bench or machine shop at this base."} ${hasBench(b) ? "" : "Recipes marked Bench need a crafting bench here."}</div>
-      ${Object.keys(CRAFTS).map((k) => {
-        const r = CRAFTS[k];
-        const chk = canCraft(state, b, k);
-        const d = r.gear ? GEAR[r.gear] : null;
-        const edge = craftEdge(state, k);
-        return `<div class="card small"${tip(d ? `${d.desc || ""} Worth: ${worthTier({ key: r.gear, quality: 1 })}.` : r.desc)}>
-          <div class="spread"><b>${esc(craftName(k))}</b><span>${r.needs === "workshop" ? `<span class="chip"${tip("Needs a workbench (or better), an ammo bench or a machine shop at this base")}>Workshop</span>` : r.needs ? `<span class="chip"${tip(`Needs a ${BUILDINGS[r.needs] ? BUILDINGS[r.needs].name.toLowerCase() : r.needs} at this base`)}>${esc(BUILDINGS[r.needs] ? BUILDINGS[r.needs].name : r.needs)}</span>` : ""}${benchNeeded(r) ? `<span class="chip"${tip("Needs a crafting bench (or better) at this base")}>Bench</span>` : ""}${r.field ? `<span class="chip"${tip("Simple enough for a team to make on the road from what it carries")}>Field</span>` : ""}<button class="mini" data-action="queuecraft" data-base="${b.id}" data-recipe="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay the materials now; crafters do the rest" : chk.reason)}>Craft</button></span></div>
-          <span class="muted">${esc(craftInText(r))} · ${r.hours} work-hours · ${SKILL_NAMES[r.skill]} ${r.min}+${r.cmin ? ` · Crafting ${r.cmin}+` : ""}</span>${edge.n ? ` <span class="chip on"${tip(`From ${edge.from.join(" and ")}: +${Math.round(edge.quality * 100)}% condition, ${Math.round((edge.speed - 1) * 100)}% faster.`)}>Edge +${Math.round(edge.quality * 100)}%</span>` : ""}<br>
-          <span>→ ${esc(craftOutputText(k))}</span>${chk.ok ? "" : ` · <span class="danger">${esc(chk.reason)}</span>`}
-          ${lockLine(state, b, "craft", k)}
-        </div>`;
-      }).join("")}
+      ${sectionHead("Recipes", `${badge(hasWorkshop(b) ? "Workshop ✓" : "No workshop", hasWorkshop(b) ? "good" : "muted", hasWorkshop(b) ? "A workshop is here: workshop recipes are open (and come out a bit better)." : "No workshop here: recipes marked Workshop need a workbench, ammo bench or machine shop at this base.")}${badge(hasBench(b) ? "Bench ✓" : "No bench", hasBench(b) ? "good" : "muted", hasBench(b) ? "Bench recipes can be made here." : "Recipes marked Bench need a crafting bench here.")}`, Object.keys(CRAFTS).filter((k) => canCraft(state, b, k).ok).length, "The number: recipes you can start now")}
+      ${Object.keys(CRAFTS).map((k, i) => [k, i, recipeRank(k)]).sort((x, y) => x[2] - y[2] || x[1] - y[1]).map(([k]) => recipeCard(k)).join("")}
     </div>
   </div>`;
 }

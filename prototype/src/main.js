@@ -5,7 +5,7 @@ import {
 import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
 import { abandonProblem, abandonCard } from "./sim/occupy.js"; // Abandon outpost
-import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile } from "./sim/parties.js";
+import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile, setClockFrac, arrivalsDue } from "./sim/parties.js";
 import { stockHas } from "./sim/water.js"; // purified and un-purified water
 import { moveTeamOut, MOVE_OUT } from "./sim/moveout.js"; // a team moved out of a crowded base (the move-out planner)
 import { thirstAhead } from "./sim/weather.js";
@@ -27,6 +27,7 @@ import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated t
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
+import { needsSkeleton, initNeedsBar } from "./ui/needsbar.js"; // the top bar's Needs button and its list of every supply
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, reorderQueued, cancelMove, contactable, queueEndTile } from "./sim/orders.js";
@@ -49,6 +50,7 @@ import { SG_ACTIONS, SG_CHANGE, loadDice } from "./ui/startgear.js"; // starting
 import { clearStartGear } from "./sim/startgear.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
+import { ARMV_ACTIONS, ARMV_INPUT } from "./ui/armoryview.js"; // the armory list: grouped, cards or compact rows
 import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
 import { toggleFleetIds, leadId } from "./ui/fleetpick.js"; // the planners' vehicle picker (up to four)
 import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormEsc, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
@@ -94,7 +96,7 @@ import { NEEDS_ACTIONS } from "./ui/needs.js";
 import { LISTEN_ACTIONS } from "./ui/radiolisten.js"; // Listen in on radio traffic: a team order, a base's set (sim/radiolisten.js)
 import { activeCrawl } from "./sim/citycrawl.js";
 import { activeHiveCrawl } from "./sim/hivecrawl.js";
-import { MAX_SPEED, SPEEDS, initPacing, cardUp, trayEsc, pacingFrame, beforeHour, afterHour, afterRefresh, trayHTML, pauseWhyHTML, PACE_ACTIONS } from "./ui/pacing.js"; // pause rules, the card tray, the speeds
+import { MAX_SPEED, SPEEDS, SLOWEST_SPEED, initPacing, cardUp, trayEsc, pacingFrame, beforeHour, afterHour, holdsNextHour, afterRefresh, trayHTML, pauseWhyHTML, PACE_ACTIONS } from "./ui/pacing.js"; // pause rules, the card tray, the speeds
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp, ironUnload, ironHidden } from "./ui/settings.js";
 // An Ironman game saves when the window is hidden (another tab, minimized) as well as when the page closes.
 document.addEventListener("visibilitychange", () => { if (document.hidden && !crashUp()) ironHidden(state, ui); }); // not a world that just crashed (ui/crash.js)
@@ -264,6 +266,7 @@ function step(now) {
   if (!blocked() && ui.speed > 0 && !ui.moveParty) {
     acc += dt * ui.speed * HOURS_PER_SECOND;
     while (acc >= 1 && ticks < 12) {
+      setClockFrac(0); // the hour's end: what the tick and its tray rules start, starts on the hour (sim/parties.js)
       if (beforeHour(state, ui)) dirty = true; // tray cards past their time answer themselves; their teams hold
       if (blocked()) { acc = 0; break; }       // a default answer that opened a battle
       tickHour(state);
@@ -278,9 +281,19 @@ function step(now) {
     }
     if (ticks >= 12) acc = Math.min(acc, 1); // too slow to keep up: drop the backlog instead of running on after a speed change
     if (ticks) ui.armed = newArmed();        // time moved: nothing is waiting for the unpause any more
+    // Teams that get where they are going at this minute arrive now, as the glide reaches the centre of the tile
+    // (sim/parties.js arrivalsDue; a team held by a card in the tray does not move); their new cards follow the pause
+    // rules as a tick's do.
+    setClockFrac(Math.min(0.999, acc));
+    if (!blocked() && arrivalsDue(state, Math.min(0.999, acc), (p) => holdsNextHour(state, p))) {
+      afterHour(state, ui);
+      dirty = true;
+    }
   }
   // The minutes of the coming hour tick by on the clock, and your moving teams glide towards their next tile by them.
   view.hourFrac = Math.max(0, Math.min(0.999, acc));
+  view.clockSpeed = ui.speed; // the map draws a glide often enough at slow speeds too (ui/render.js)
+  setClockFrac(view.hourFrac); // orders given from now on start this far into the hour (sim/parties.js wayOn)
   const mins = $("tb-min"), mm = String(Math.floor(view.hourFrac * 60)).padStart(2, "0");
   if (mins && mins.textContent !== mm) mins.textContent = mm;
   autosaveCheck(state, ui, settingsApi, now); // dawn, a hive assault, the end of the run (ui/settings.js)
@@ -301,7 +314,7 @@ function step(now) {
 // Each panel keeps the HTML it shows; a refresh that produces the same string leaves the DOM alone, so buttons
 // stay clickable and hover descriptions stay up while the clock runs. A panel is not rebuilt while the mouse
 // button is down on it (the click would be lost), nor under an open drop-down when only a tick asked for it.
-const PANELS = ["tb-clock", "tb-speed", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts", "watchlist", "ask"];
+const PANELS = ["tb-clock", "tb-speed", "nb-btn", "nb-head", "nb-list", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts", "watchlist", "ask"];
 const shown = new Map(); // element id -> the HTML last written
 let held = null;         // panel the mouse button went down in
 let heldBack = false;    // a rebuild was skipped because of it
@@ -319,6 +332,18 @@ function selectOpenIn(el) {
   if (searchOpenIn(el)) return true; // a long drop-down's filter box (ui/selectsearch.js) is open over it
   const a = document.activeElement;
   return !!a && a.tagName === "SELECT" && el.contains(a) && performance.now() - selectFocusAt < 20000;
+}
+// The top bar's Needs button and drop-down (ui/needsbar.js): the frame once, then its button, head and list each as a
+// slot of its own, so an open panel keeps the mouse, the focus and the list's scroll position while the stock changes.
+function writeNeeds(nb, user) {
+  const root = $("tb-stock");
+  if (!root) return;
+  if (!$("nb-list")) { root.innerHTML = needsSkeleton(); shown.delete("nb-btn"); shown.delete("nb-head"); shown.delete("nb-list"); }
+  initNeedsBar(root);
+  setHTML("nb-btn", nb.btn, user);
+  setHTML("nb-head", nb.head, user);
+  const list = $("nb-list"), top = list.scrollTop;
+  if (setHTML("nb-list", nb.list, user) && top) list.scrollTop = top;
 }
 // Writes a panel's HTML if it changed. Returns true when the DOM was touched.
 function setHTML(id, html, user) {
@@ -450,7 +475,7 @@ function refresh(user = true) {
   const tb = topbarParts(state, ui);
   setHTML("tb-clock", tb.clock, user);
   setHTML("tb-speed", tb.speed, user);
-  setHTML("tb-stock", tb.stock, user);
+  writeNeeds(tb.needs, user);
   setHTML("tb-people", tb.people, user);
   setHTML("tb-tools", tb.tools, user);
   // A folded panel is not drawn (it is drawn again when it opens).
@@ -1121,6 +1146,7 @@ for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(st
 for (const [k, fn] of Object.entries(TEAMINV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ui/teaminv.js
 for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => { fn(state, ui, d, ev); hideCtx(); }; // ui/teamform.js
 for (const [k, fn] of Object.entries(CARRY_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev, actions); // ui/carry.js
+for (const [k, fn] of Object.entries(ARMV_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/armoryview.js: the armory list's groups, view, find box and type chips
 // The gun builder (ui/gunbuilder.js): open, pick a slot, fit, remove; the Ammo list.
 for (const [k, fn] of Object.entries(GB_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Farming tab and illness (ui/farming.js, ui/health.js).
@@ -1557,6 +1583,7 @@ for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(stat
 Object.assign(actions, { "ppl-view": (d) => PANEL_ACTIONS["ppl-view"](d), "ppl-clear": (d) => PANEL_ACTIONS["ppl-clear"](d) });
 Object.assign(changeActions, { "ppl-q": (el) => PANEL_INPUT["ppl-q"](el) });
 for (const [k, fn] of Object.entries(BN_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the naming window's box: the draft as you type
+for (const [k, fn] of Object.entries(ARMV_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the armory's find box (ui/armoryview.js)
 const tripApi = { plan: (d) => actions.plan(d), autofill: (pl) => autofill(pl) };
 const tripAct = (fn) => (d) => fn(state, ui, d, tripApi), tripChange = (fn) => (el) => fn(state, ui, el);
 Object.assign(actions, {
@@ -1647,6 +1674,7 @@ document.addEventListener("mouseover", (e) => {
   const el = e.target.closest("[data-tip]");
   if (!el || !el.dataset.tip) return hideTip();
   tipTarget = el;
+  if (showTipText(el, e.shiftKey)) { tipEl.classList.remove("hidden"); placeTip(e); return; } // an item row: short, Shift the whole (ui/itemlabels.js)
   tipEl.textContent = el.dataset.tip;
   tipEl.classList.toggle("pre", el.hasAttribute("data-tip-pre")); // multi-line tips (the weather report)
   if (el.dataset.tipSpark) tipEl.appendChild(sparkNode(el.dataset.tipSpark)); // a stock's last 14 days (ui/ledger.js)
@@ -1657,6 +1685,15 @@ document.addEventListener("mousemove", (e) => {
   if (held && e.buttons === 0) releaseHold(); // the button was let go where we did not see it (a drop-down, another window)
   if (tipTarget) placeTip(e);
 });
+// An item row's tip (data-tip-full: ui/itemlabels.js tipAttrs): the short one, the whole one while Shift is held.
+// Returns false for any other tip.
+function showTipText(el, full) {
+  if (!el || !el.dataset.tipFull) return false;
+  tipEl.textContent = full ? el.dataset.tipFull : el.dataset.tip;
+  tipEl.classList.toggle("pre", !full);
+  return true;
+}
+for (const ev of ["keydown", "keyup"]) document.addEventListener(ev, (e) => { if (e.key === "Shift" && tipTarget && document.contains(tipTarget)) showTipText(tipTarget, ev === "keydown"); });
 function placeTip(e) {
   const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
   let x = e.clientX + 14, y = e.clientY + 16;
@@ -2102,6 +2139,9 @@ window.addEventListener("keydown", (e) => {
   if (k === "time.pause") {
     e.preventDefault();
     if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; } else ui.speed = ui.lastSpeed || 1;
+  } else if (k === "time.speed0") { // 0: 0.25× (ui/pacing.js SLOWEST_SPEED)
+    ui.speed = SLOWEST_SPEED;
+    ui.lastSpeed = ui.speed;
   } else if (speed) { // 1–5: 0.5× 1× 2× 3× 5× (ui/pacing.js SPEEDS; the keys by the key table)
     ui.speed = SPEEDS[Number(speed[1]) - 1];
     ui.lastSpeed = ui.speed;

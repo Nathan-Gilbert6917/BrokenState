@@ -7,8 +7,8 @@
 // its spec (p.tripSpec) and leaves it in the recent trips when it gets home (parties.js returnHome).
 //
 // Applying a spec to a planner (applySpec, then applyPacking after the planner's auto-fill) keeps what still works and
-// says what changed: people who are dead, away, hurt (under FIT_HEALTH), in a hospital bed or too ill to work are
-// replaced by the best fit person at the hub with the same job (else the same best skills), a missing vehicle by one of
+// says what changed: people who are dead, away, hurt (under FIT_HEALTH), in a hospital bed, too ill to work or resting
+// sick (sickrest.js: "sick: Flu") are replaced by the best fit person at the hub with the same job (else the same best skills), a missing vehicle by one of
 // the same kind, "Move to a site" steps of another target are dropped, and supplies the hub is short of are flagged.
 // Everything lives in state.tripBook (saved with the campaign); worlds from before it simply have none yet.
 import { hub, atBase, survivorById, skill } from "./world.js";
@@ -17,6 +17,7 @@ import { MISSIONS, STANCES, missionProblem, teamName, tileLabel } from "./partie
 import { vehiclesAtBase, isBike, isCar } from "./vehicles.js";
 import { stockHas } from "./water.js";
 import { tooIllToWork } from "./health.js";
+import { sickRestWhy } from "./sickrest.js"; // the sick rest at home (Sick people rest, the Work tab)
 import { RETREAT_POLICIES, setTeamPolicy } from "./breakoff.js";
 
 export const TRIPS = {
@@ -124,6 +125,8 @@ export function unfitWhy(state, s, h = hub(state)) {
   if (!h || !s.location || s.location.kind !== "base" || s.location.baseId !== h.id) return s.location && s.location.kind === "party" ? "out with a team" : "not at the hub";
   if (s.inBed) return "in a hospital bed";
   if (tooIllToWork(s)) return "too ill";
+  const sick = sickRestWhy(state, s);
+  if (sick) return sick; // "sick: Flu"
   if (s.health < TRIPS.FIT_HEALTH) return `hurt (health ${Math.round(s.health)})`;
   return "";
 }

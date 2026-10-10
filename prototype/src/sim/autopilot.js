@@ -90,6 +90,7 @@ import { abandonedThreat } from "./groupworld.js";
 import { autopilotPrisoners, jailTier, cellCap, prisonersAt, planJailGuards } from "./prisoners.js";
 import { autopilotRescue, autoRescuePlan, teamPayOk } from "./ransom.js"; // your people held by other groups: ransom first, a raid when strong
 import { isManaged, healthRest } from "./work.js";
+import { sickRestWhy } from "./sickrest.js"; // sick people rest: planRoles step 1, and no trips, errands or runs (tripFit)
 import { onWatchNow, inShift } from "./watch.js"; // the night watch (govWatch)
 import { tiredLevel } from "./sleep.js";
 import {
@@ -209,6 +210,9 @@ const careful = (P) => P.name === "Cautious" || P.base === "cautious";
 
 const PLAN_HOUR = 7;      // daily planning: teams leave in the morning
 const STICKY = 2;         // bonus for keeping someone's current role (fewer flips)
+// Fit for a trip, an errand or a run (the governor's and the leaders'): not resting sick at home (sickrest.js: any
+// illness, by the Work tab's "Sick people rest").
+const tripFit = (state, s) => !sickRestWhy(state, s);
 const first = (s) => s.name.split(" ")[0];
 const names = (list) => list.map(first).join(", ");
 // While a base steward runs (stewardRun, steward.js) the governor's lines are not logged one by one (the steward
@@ -476,7 +480,7 @@ export function stewardLand(state, base, style = "balanced", keep = new Set()) {
     const P = persona(state);
     if (wxNow(state).severe || threatAt(state, base).urgent) return "";
     const home = atBase(state, base.id);
-    const pool = home.filter((s) => s.health >= P.minHealth && !s.woundInfected && !s.inBed && !s.pinned && !keep.has(s.id) && !s.leader);
+    const pool = home.filter((s) => s.health >= P.minHealth && !s.woundInfected && !s.inBed && !s.pinned && !keep.has(s.id) && !s.leader && tripFit(state, s));
     const spare = Math.min(pool.length, home.length - Math.max(2, Math.ceil(home.length * P.homeFrac)));
     if (spare < 1) return "";
     const cands = [...foodTripCands(state, base, pool, needs(state, base), P), ...woodTripCands(state, base, pool, P)].sort((a, b) => b.score - a.score);
@@ -598,7 +602,7 @@ function dealCaravanPlan(state, deal) {
   if (!matchGear(base.armory, deal.give.gear || [])) return { why: "the items are not in the armory" };
   const home = atBase(state, base.id);
   const keep = Math.max(2, Math.ceil(home.length * P.homeFrac));
-  const pool = home.filter((s) => s.health >= P.minHealth && !s.woundInfected && !s.inBed && !s.pinned && s.mood >= 20 && !s.leader && s.role !== "medic" && !(base.steward && base.steward.leaderId === s.id));
+  const pool = home.filter((s) => s.health >= P.minHealth && !s.woundInfected && !s.inBed && !s.pinned && s.mood >= 20 && !s.leader && s.role !== "medic" && !(base.steward && base.steward.leaderId === s.id) && tripFit(state, s));
   const hands = Math.min(pool.length, home.length - keep);
   const form = dealCaravanForm(state, deal);
   const fit = (s) => combatPower(s) + skill(s, "speech") * 0.5;
@@ -1949,6 +1953,10 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // 1. Patients in a hospital bed do not work anyway; the worn-out rest before they walk away (up to a third,
   // and only while there is food, unless someone is about to leave).
   for (const s of [...free]) if (s.inBed) give(s, "rest");
+  // 1'. Sick people rest (sickrest.js: any illness, by the Work tab's "Sick people rest"): set aside here and given
+  // Rest after the guards for a raid or a horde at the door (step 3), which may take them to the walls as before.
+  const sick = [...free].filter((s) => sickRestWhy(state, s));
+  for (const s of sick) free.delete(s);
   const low = [...free].filter((s) => (s.mood < P.restMood || wantsRest(state, s)) && !s.leader).sort((a, b) => a.mood - b.mood); // wantsRest: low after a rough trip (relations.js)
   low.forEach((s, i) => { if (s.mood < 18 || (i < Math.floor(people.length / 3) && foodDays >= 3)) give(s, "rest"); });
 
@@ -2073,7 +2081,10 @@ function planRoles(state, base, areas = ALL_AREAS) {
       give(s, "guard");
     }
   };
-  if (threat.urgent) addGuards(threat.urgent * P.guardMargin, Math.ceil(people.length * 0.7));
+  if (threat.urgent) {
+    for (const s of sick) free.add(s); // the ill go to the walls too, as on priorities (sickrest.js): the best fighters first
+    addGuards(threat.urgent * P.guardMargin, Math.ceil(people.length * 0.7));
+  }
   // 3a. The watchtower's alarm (defences.js towerWatch: a horde near, or coming, seen from the tower): guards go on the
   // walls now, ahead of the medics, the farm and the stations, as many as a horde at the door would want (people on
   // work priorities move Guard up the same way: work.js watchPromotions), up to half the people.
@@ -2081,6 +2092,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
     const tw = towerHordes(state, base)[0];
     if (tw) addGuards(tw.size * 0.14 * 1.1 * P.guardMargin, Math.ceil(people.length * 0.5));
   }
+  for (const s of sick) if (!want.has(s.id)) give(s, "rest"); // 1': the sick not taken to the walls rest
 
   // 4. Medics while anyone here is hurt (each hospital tier needs 1-3 to run).
   const hosp = hospitalDef(base);
@@ -2998,7 +3010,7 @@ function planTrip(state) {
   // least minOut may go while three stay home.
   const keepFrac = Math.ceil(home.length * (small ? 0.25 : P.homeFrac));
   const keep = Math.max(small ? 1 : 2, P.minOut && !small ? Math.min(keepFrac, Math.max(3, home.length - P.minOut)) : keepFrac, hordeNear ? Math.min(home.length, P.homeHorde) : 0);
-  const pool = home.filter((s) => s.health >= P.minHealth - (short.length || small ? 10 : 0) && !s.woundInfected && !s.inBed && s.mood >= 20 && (!s.leader || home.length >= 9 || small));
+  const pool = home.filter((s) => s.health >= P.minHealth - (short.length || small ? 10 : 0) && !s.woundInfected && !s.inBed && s.mood >= 20 && (!s.leader || home.length >= 9 || small) && tripFit(state, s));
   const spareHands = Math.min(pool.length, home.length - keep);
   if (spareHands < 1) return;
   const need = needs(state);
@@ -4403,7 +4415,7 @@ function emergencyAt(state, h, keep = new Set()) {
   if (!waterShort && !foodShort && !bedShort) return "";
   if (state.parties.filter((p) => p.owner === "player" && p.apEmergency && (p.homeBaseId ?? h.id) === h.id).length >= EMERGENCY.teams) return "";
   const g = gov(state);
-  const pool = home.filter((s) => s.health >= EMERGENCY.minHealth && !s.woundInfected && !s.inBed && !s.pinned && !keep.has(s.id) && (!s.leader || home.length >= 6));
+  const pool = home.filter((s) => s.health >= EMERGENCY.minHealth && !s.woundInfected && !s.inBed && !s.pinned && !keep.has(s.id) && (!s.leader || home.length >= 6) && tripFit(state, s));
   const spare = Math.min(pool.length, home.length - HIVE_KEEP);
   if (spare < 2) return "";
   const need = needs(state, h);
@@ -4777,7 +4789,9 @@ function planWaterRun(state) {
   // A shelter (no well of its own) sends whoever it can spare, one at least (a lone carrier beats thirst).
   const shelter = isShelter(h);
   const spare = home.length - (shelter ? 1 : Math.max(2, Math.ceil(home.length * persona(state).homeFrac)));
-  const crew = home.filter((s) => s.health >= (shelter ? 50 : 70) && (!s.leader || shelter) && !s.inBed && !s.woundInfected).sort((a, b) => a.id - b.id).slice(0, Math.min(4, spare));
+  const able = home.filter((s) => s.health >= (shelter ? 50 : 70) && (!s.leader || shelter) && !s.inBed && !s.woundInfected);
+  const well = able.filter((s) => tripFit(state, s)); // the sick rest; a shelter with nobody else still sends one (thirst first)
+  const crew = (well.length || !shelter ? well : able).sort((a, b) => a.id - b.id).slice(0, Math.min(4, spare));
   if (crew.length < (shelter ? 1 : 2)) return;
   const ids = crew.map((s) => s.id);
   const steps = [{ kind: "water" }, { kind: "home" }];
@@ -4837,7 +4851,7 @@ export function wormCureRuns(state) {
     if (meds < WORM.PURGE_MEDS) continue;
     const home = atBase(state, h.id);
     if (home.length - Math.max(2, Math.ceil(home.length * persona(state).homeFrac)) < 1) continue; // like the other runs: the style's share stays home
-    const runner = home.filter((x) => x.health >= 70 && !x.leader && !x.inBed && !x.woundInfected && !x.worm).sort((a, b) => combatPower(b) - combatPower(a))[0];
+    const runner = home.filter((x) => x.health >= 70 && !x.leader && !x.inBed && !x.woundInfected && !x.worm && tripFit(state, x)).sort((a, b) => combatPower(b) - combatPower(a))[0];
     if (!runner) continue;
     const left = Math.min(...waiting.map((s) => wormHoursLeft(state, wormOf(s)))) - WORM_CURE_MARGIN;
     const plan = planSupplyRun(state, { originId: h.id, destId: base.id, crewIds: [runner.id], deliver: { meds }, atDest: "return", stance: "normal" });
@@ -4880,7 +4894,7 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
     // Like trips, supply runs leave the style's share of the hub at home.
     const spare = home.length - Math.max(2, Math.ceil(home.length * persona(state).homeFrac));
     if (spare < 1) return "";
-    const crewPool = home.filter((s) => s.health >= 70 && !s.leader && !s.inBed && !s.woundInfected && !keep.has(s.id)).sort((a, b) => combatPower(b) - combatPower(a));
+    const crewPool = home.filter((s) => s.health >= 70 && !s.leader && !s.inBed && !s.woundInfected && !keep.has(s.id) && tripFit(state, s)).sort((a, b) => combatPower(b) - combatPower(a));
     const staff = atBase(state, o.id).length;
     let form = null, why = "";
     const fix = staff ? waterRepairLoad(state, h, o) : null; // scrap and parts for its broken well or pump
@@ -5033,7 +5047,7 @@ function govWatch(state, base) {
   if (W && !W.gov) return; // the player's own roster
   const people = atBase(state, base.id);
   if (people.length < GOV_WATCH.min) { if (W) delete base.watch; return; }
-  const fit = (s) => s.alive && !s.pinned && !s.inBed && !healthRest(s);
+  const fit = (s) => s.alive && !s.pinned && !s.inBed && !healthRest(s, state); // the ill rest (sickrest.js)
   const h = hourOfDay(state);
   const rank = (list, last) => list.slice().sort((a, b) => (last.has(a.id) - last.has(b.id)) || (tiredLevel(a) - tiredLevel(b)) || (skill(b, "shooting") - skill(a, "shooting")) || (a.id - b.id));
   if (W && h !== GOV_WATCH.hour) {

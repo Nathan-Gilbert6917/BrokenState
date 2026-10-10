@@ -10,12 +10,13 @@
 import { watchlistOf, onWatchlist, toggleWatchlist, unpinWatchlist, WATCHLIST_MAX } from "../sim/watchlist.js";
 import { mapNotes, noteById, notesAt, addNote, editNote, deleteNote, setNotesHidden, NOTE_ICONS, NOTE_KEYS, NOTE_TEXT_MAX } from "../sim/mapnotes.js";
 import { survivorById, baseById, factionById, playerStrength } from "../sim/world.js";
-import { partyTile, partyMembers, MISSIONS, tileLabel } from "../sim/parties.js";
+import { partyTile, partyMembers, MISSIONS, tileLabel, clockFrac, clockText, plannedArrival } from "../sim/parties.js";
 import { contactable, orderStatus } from "../sim/orders.js";
 import { attitude, strength } from "../sim/factions.js";
 import { foodOutlook, waterOutlook, ROLES } from "../sim/economy.js";
 import { waterIn } from "../sim/water.js";
-import { roleOf, taskLabel } from "../sim/work.js";
+import { roleOf, taskLabel, isManaged } from "../sim/work.js";
+import { sickRestLabel } from "../sim/sickrest.js"; // Manual and pinned people resting sick
 import { ageText, mapLoc } from "./render.js";
 import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
 
@@ -66,7 +67,7 @@ function personStatus(state, it) {
   else if (l.kind === "route") where = "escorting a trade route";
   else if (l.kind === "errand") where = `on an errand (back ~day ${l.until})`;
   if (!inTouch(state, s)) return { name: s.name, line: `${where} · no contact`, tone: "muted", go: { surv: s.id, tile } };
-  const task = s.inBed ? "in a hospital bed" : l.kind === "base" ? (taskLabel(state, s) || (roleOf(state, s) ? roleOf(state, s).name : ROLES[s.role] ? ROLES[s.role].name : "")) : "";
+  const task = s.inBed ? "in a hospital bed" : l.kind === "base" ? ((!isManaged(state, s) && sickRestLabel(state, s)) || taskLabel(state, s) || (roleOf(state, s) ? roleOf(state, s).name : ROLES[s.role] ? ROLES[s.role].name : "")) : "";
   const hp = n0(s.health);
   return {
     name: s.name, tone: hp < 40 || s.woundInfected ? "danger" : hp < 70 || s.mood < 30 ? "warn" : "",
@@ -80,13 +81,14 @@ function teamStatus(state, it) {
   const members = partyMembers(state, p);
   const name = `${p.routeKind === "supply" ? "Supply run" : MISSIONS[p.teamMission || p.mission]?.name || "Team"} (${members.map((s) => first(s.name)).join(", ")})`;
   if (!(p.kind === "convoy" || contactable(p))) {
-    const oneWay = p.etaBack == null && p.etaOut != null ? (p.planStart ?? p.departed) + p.etaOut : null;
+    const oneWay = p.etaBack == null && p.etaOut != null ? plannedArrival(state, p) : null;
     const at = oneWay != null ? oneWay : p.departed + (p.plannedHours || 0);
     return { name, tone: "muted", line: `no contact · ${oneWay != null ? "arrives" : "back"} around day ${Math.floor(at / 24) + 1}`, go: { team: p.id } };
   }
   const st = orderStatus(state, p);
   const moving = p.phase === "out" || p.phase === "back";
-  const eta = moving && st.left != null ? ` · ETA ${Math.ceil(st.left)}h` : p.phase === "task" && st.left ? ` · ${Math.ceil(st.left)}h left` : "";
+  const left = st.left != null ? clockText(Math.max(0, st.left - clockFrac(state))) : ""; // from this minute on the clock (sim/parties.js arrivalsDue)
+  const eta = moving && st.left != null ? ` · ETA ${left}` : p.phase === "task" && st.left ? ` · ${left} left` : "";
   const food = n0((p.supplies.food || 0) + (p.supplies.preserved || 0)), water = n0(waterIn(p.supplies));
   const heat = p.kind !== "convoy" ? Math.round(p.heat || 0) : 0;
   const short = food < members.length || water < members.length;
