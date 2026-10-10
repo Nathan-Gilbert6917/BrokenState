@@ -11,7 +11,8 @@ import { Rng } from "../sim/rng.js";
 import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
 import { BLADE_LOOK } from "../sim/data-blades.js"; // knives and swords: their looks
-import { GUN_SPRITE } from "../sim/data-guns.js"; // the arsenal of 2026-10-10: an existing gun's sprite each
+import { GUN_SPRITE } from "../sim/data-guns.js"; // a gun with no art spec: an existing gun's sprite
+import { paintMini, ownKey, isGunKey } from "./gunpaint.js"; // every gun's own small drawing (ui/gunspecs.js)
 import { bossBattleCanvas, ztypeBattleCanvas } from "./hivesprites.js";
 
 const GW = 22, GH = 26;   // pixel grid
@@ -245,18 +246,16 @@ function drawArmor(p, key, L, R) {
 }
 
 // Weapon in the right hand (sprites face right; flipped at draw time). Every WEAPONS key has a look but bare hands, a
-// zombie's teeth and a spitter's acid (WEAPON_UNDRAWN; tools/rostertest.js checks it).
+// zombie's teeth and a spitter's acid (WEAPON_UNDRAWN; tools/rostertest.js checks it). Guns: their art spec's small
+// drawing (ui/gunpaint.js paintMini); a gun with none: its look-alike's (GUN_SPRITE, else by what it is).
 export const WEAPON_UNDRAWN = ["fists", "claws", "acid"];
 function drawWeapon(p, key, R) {
+  if (key && isGunKey(key) && (ownKey(key) || !GUN_SPRITE[key]) && paintMini(p, key, "held", R)) return;
   const metal = "#9aa3ab", gun = "#2b2e33", wood = "#7a5230";
   const hx = R + 2, hy = 15;
   switch (key) {
     case "knife": p.rect(hx, hy - 3, hx, hy - 1, metal); p.set(hx, hy - 4, "#d6dde2"); p.rect(hx, hy + 1, hx, hy + 2, wood); break;
     case "machete": p.rect(hx + 1, hy - 7, hx + 1, hy - 1, metal); p.rect(hx + 2, hy - 6, hx + 2, hy - 2, "#c2c9cf"); p.rect(hx + 1, hy, hx + 1, hy + 2, "#3a2a1c"); break;
-    case "pistol": p.rect(hx, hy - 1, hx + 3, hy - 1, gun); p.rect(hx, hy, hx, hy + 1, gun); break;
-    case "shotgun": p.rect(R - 3, 13, R + 7, 13, gun); p.rect(R - 5, 14, R - 2, 14, wood); p.rect(R + 3, 14, R + 5, 14, wood); break;
-    case "huntrifle": p.rect(R - 3, 13, R + 7, 13, wood); p.rect(R + 4, 13, R + 8, 13, gun); p.rect(R - 5, 14, R - 2, 14, wood); p.rect(R, 12, R + 2, 12, "#1a1c20"); break;
-    case "ar": p.rect(R - 3, 13, R + 7, 13, gun); p.rect(R - 4, 14, R - 2, 14, gun); p.rect(R + 1, 14, R + 2, 15, "#1a1c20"); p.set(R + 1, 12, gun); break;
     case "bat": p.rect(hx + 1, hy - 7, hx + 1, hy + 1, "#a07a48"); p.rect(hx + 2, hy - 6, hx + 2, hy - 3, "#8a6638"); break;
     // Makeshift weapons (crafting.js).
     case "spikedbat": drawWeapon(p, "bat", R); p.set(hx, hy - 6, metal); p.set(hx + 3, hy - 5, metal); p.set(hx, hy - 4, metal); break;
@@ -264,34 +263,10 @@ function drawWeapon(p, key, R) {
     case "pipespear": p.rect(hx + 1, hy - 7, hx + 1, hy + 2, "#6d7378"); p.rect(hx + 1, hy - 9, hx + 1, hy - 8, "#d6dde2"); p.set(hx + 1, hy - 3, "#8a8a8a"); break;
     case "sawmachete": drawWeapon(p, "machete", R); p.set(hx + 2, hy - 5, "#7d858c"); p.set(hx + 2, hy - 3, "#7d858c"); break;
     case "crossbow": p.rect(R - 3, 13, R + 5, 13, wood); p.rect(R + 5, 11, R + 5, 15, metal); p.set(R + 6, 13, "#c2c9cf"); break;
-    case "pipegun": p.rect(R - 3, 13, R + 5, 13, "#5b5f63"); p.rect(R - 5, 14, R - 2, 14, "#3a3d40"); p.set(R + 1, 14, gun); break;
     // Special crafted weapons (craft books and blueprints).
     case "springmachete": drawWeapon(p, "machete", R); p.set(hx + 1, hy - 8, "#c2c9cf"); p.rect(hx + 1, hy, hx + 1, hy + 2, "#5b3a22"); break;
     case "pulleybow": p.rect(hx + 1, hy - 6, hx + 1, hy + 4, wood); p.set(hx + 1, hy - 7, metal); p.set(hx + 1, hy + 5, metal); p.rect(hx, hy - 5, hx, hy + 3, "#d6dde2"); break;
-    // The weapons overhaul (sim/data-guns.js): guns, melee weapons and launchers; and looks for the found weapons that had none.
-    case "revolver": p.rect(hx, hy - 1, hx + 3, hy - 1, "#4a4e54"); p.set(hx + 1, hy, "#4a4e54"); p.rect(hx, hy, hx, hy + 1, wood); break;
-    case "compact9": p.rect(hx, hy - 1, hx + 2, hy - 1, gun); p.rect(hx, hy, hx, hy + 1, gun); break;
-    case "pistol22": p.rect(hx, hy - 1, hx + 4, hy - 1, "#55595e"); p.rect(hx, hy, hx, hy + 1, wood); break;
-    case "pistol45": p.rect(hx, hy - 1, hx + 3, hy - 1, "#6e757c"); p.rect(hx, hy, hx, hy + 1, wood); break;
-    case "smg": p.rect(R - 1, 13, R + 5, 13, gun); p.rect(R - 2, 14, R - 1, 14, gun); p.rect(R + 2, 14, R + 2, 16, "#1a1c20"); p.set(R + 4, 14, gun); break;
-    case "carbine": p.rect(R - 3, 13, R + 6, 13, gun); p.rect(R - 4, 14, R - 2, 14, "#3a3d40"); p.rect(R + 1, 14, R + 1, 15, "#1a1c20"); break;
-    case "ak": p.rect(R - 3, 13, R + 7, 13, gun); p.rect(R - 5, 14, R - 2, 14, wood); p.rect(R + 3, 12, R + 5, 12, wood); p.set(R + 1, 14, "#1a1c20"); p.set(R + 2, 15, "#1a1c20"); break;
-    case "lmg": p.rect(R - 4, 13, R + 8, 13, gun); p.rect(R - 5, 14, R - 2, 14, gun); p.rect(R, 14, R + 2, 15, "#3d4a2e"); p.set(R + 6, 14, gun); p.set(R + 7, 15, gun); break;
-    case "dbshotgun": p.rect(R - 3, 12, R + 7, 13, gun); p.rect(R - 5, 14, R - 1, 14, wood); break;
-    case "sawnoff": p.rect(R, 12, R + 4, 13, gun); p.rect(R - 1, 14, R + 1, 15, wood); break;
-    case "semishotgun": p.rect(R - 3, 13, R + 7, 13, "#1d2024"); p.rect(R - 5, 14, R - 2, 14, "#1d2024"); p.rect(R + 3, 14, R + 6, 14, "#3a3d40"); break;
-    case "rifle22": p.rect(R - 4, 13, R + 6, 13, wood); p.rect(R + 3, 13, R + 7, 13, "#55595e"); p.rect(R - 5, 14, R - 3, 14, wood); break;
-    case "leverrifle": p.rect(R - 3, 13, R + 7, 13, wood); p.rect(R + 2, 13, R + 8, 13, "#55595e"); p.rect(R - 5, 14, R - 2, 14, wood); p.set(R - 1, 15, "#55595e"); break;
-    case "dmr": p.rect(R - 3, 13, R + 8, 13, gun); p.rect(R - 5, 14, R - 2, 14, gun); p.rect(R, 12, R + 3, 11, "#1a1c20"); p.set(R + 1, 14, "#1a1c20"); break;
-    case "sniper": p.rect(R - 4, 13, R + 9, 13, "#4b5340"); p.rect(R - 5, 14, R - 2, 14, "#4b5340"); p.rect(R - 1, 11, R + 3, 12, "#1a1c20"); p.set(R + 6, 14, gun); p.set(R + 7, 15, gun); break;
-    case "amr": p.rect(R - 5, 12, R + 9, 13, gun); p.rect(R - 6, 14, R - 3, 14, gun); p.rect(R - 1, 10, R + 3, 11, "#1a1c20"); p.rect(R + 9, 11, R + 9, 14, "#1a1c20"); p.set(R + 6, 14, gun); p.set(R + 7, 15, gun); break;
-    case "m2hb": p.rect(R - 4, 12, R + 9, 13, gun); p.rect(R - 5, 11, R - 3, 14, "#1a1c20"); p.rect(R + 4, 11, R + 6, 11, "#5b5f63"); break;
-    case "turret_m2": drawWeapon(p, "m2hb", R); break; // a vehicle turret's gunner (combat.js TURRET_WEAPON): the gun they are behind
-    case "turret_lmg": drawWeapon(p, "lmg", R); break;
-    case "m79": p.rect(R - 1, 12, R + 5, 13, "#4b5340"); p.rect(R - 4, 14, R - 1, 14, wood); break;
-    case "m203": drawWeapon(p, "ar", R); p.rect(R + 3, 14, R + 6, 14, "#4b5340"); break;
-    case "m32": p.rect(R - 1, 12, R + 5, 13, gun); p.rect(R, 14, R + 2, 15, "#4b5340"); p.rect(R - 4, 14, R - 2, 14, gun); break;
-    case "at4": case "rpg": p.rect(R - 6, 11, R + 6, 12, key === "rpg" ? "#4b5340" : "#5f6b4a"); if (key === "rpg") { p.rect(R + 7, 10, R + 8, 13, "#3d4a2e"); } p.set(R + 1, 13, gun); break;
+    // The weapons overhaul (sim/data-guns.js): melee weapons (the guns and launchers: their art specs).
     case "compbow": case "xbow": drawWeapon(p, key === "xbow" ? "crossbow" : "pulleybow", R); if (key === "compbow") { p.set(hx + 1, hy - 4, "#1a1c20"); p.set(hx + 1, hy + 2, "#1a1c20"); } break;
     case "combatknife": p.rect(hx, hy - 4, hx, hy - 1, "#5a6066"); p.set(hx, hy - 5, "#c2c9cf"); p.rect(hx - 1, hy, hx + 1, hy, "#1a1c20"); p.rect(hx, hy + 1, hx, hy + 2, "#1a1c20"); break;
     case "hatchet": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, wood); p.rect(hx + 2, hy - 6, hx + 3, hy - 4, metal); break;
@@ -308,7 +283,7 @@ function drawWeapon(p, key, R) {
     case "sledge": p.rect(hx + 1, hy - 6, hx + 1, hy + 2, wood); p.rect(hx - 1, hy - 9, hx + 3, hy - 7, "#55595e"); break;
     case "baton": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#1a1c20"); p.set(hx + 1, hy - 6, "#3a3d40"); break;
     case "stunbaton": drawWeapon(p, "baton", R); p.set(hx + 1, hy - 6, "#ffd23f"); p.set(hx + 1, hy - 5, "#c9a227"); break; // data-nonlethal.js: the contacts at its tip
-    default: if (BLADE_LOOK[key]) drawBlade(p, BLADE_LOOK[key], hx, hy); else if (GUN_SPRITE[key]) drawWeapon(p, GUN_SPRITE[key], R); break; // knives and swords (sim/data-blades.js); the newer guns as a look-alike
+    default: if (BLADE_LOOK[key]) drawBlade(p, BLADE_LOOK[key], hx, hy); else if (GUN_SPRITE[key] && GUN_SPRITE[key] !== key) drawWeapon(p, GUN_SPRITE[key], R); break; // knives and swords (sim/data-blades.js); a gun with no spec as its look-alike
   }
 }
 // A knife or a sword held upright in the hand: the blade above the fist (a sabre's curving back), a guard, the hilt.
