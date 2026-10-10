@@ -108,7 +108,7 @@ export const FIELD = {
   // the time), else emptied and `dmg` of its condition smashed (a sound one stands). Tuned 2026-10-10 by 180-day runs
   // on seeds 7/11/42 (was chance 0.02, capture 0.5, a won raid wrecked it outright, no cooldown).
   // ai: the groups' raids on each other's structures (war enemies full, aggressive neighbours half).
-  RAID: { range: 10, chance: 0.05, perKg: 1 / 2500, max: 0.1, minPop: 6, str: [4, 12], capture: 0.25, near: 4, every: 5, dmg: 0.6, cacheW: 0.3, find: 0.35, ai: 1 },
+  RAID: { range: 10, chance: 0.08, perKg: 1 / 2500, max: 0.12, minPop: 6, str: [4, 12], capture: 0.35, near: 4, every: 4, dmg: 0.6, cacheW: 0.3, find: 0.35, ai: 1 },
   REPAIR: { share: 0.6, hoursShare: 0.5, minHours: 2 },
   DEMOLISH: { hours: 4, refund: 0.5 },
   TEAM: { destroy: 3, capture: 4, load: 1, unload: 1, check: 1, gw: -8, garPower: 2.5 },
