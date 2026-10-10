@@ -32,7 +32,7 @@
 //           well?: { yield, left, start, dug } (well), since, hitHour?, relayDue?, offline? }
 //   job = { id, type: "build" | "repair" | "demolish", fw, baseId, progress, hours, paid: { key: qty } }
 // Older saves have no state.fieldworks: ensureFW makes an empty one.
-import { log, atBase, baseById, hub, newId, skill, combatPower, hourOfDay, isNight, day, alive, survivorById, factionById, killSurvivor, hurt } from "./world.js";
+import { log, atBase, baseById, hub, newId, skill, combatPower, hourOfDay, isNight, day, alive, survivorById, factionById, killSurvivor, hurt, localId } from "./world.js";
 import { BUILDINGS, buildRate, isCamp, isShelter, gatherStalled, underAttack, matName } from "./buildings.js";
 import { ownsTile, wellYield, wellRate, WELL_LEFT, CLAIM, claimOwner, hauledWells } from "./claims.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
@@ -848,7 +848,7 @@ export function groupFieldDaily(state) {
       if (fw.built && fw.kind === "tower" && !fw.gar && f.pop >= A.garPop && state.rng.chance(0.3)) fw.gar = A.gar;
       if (fw.built && fw.hp < fw.max && (f.stock.scrap || 0) >= 4) { f.stock.scrap -= 2; fw.hp = Math.min(fw.max, fw.hp + fw.max * 0.25); }
     }
-    if ((day(state) + f.id) % A.every !== 0) continue;
+    if ((day(state) + localId(state, f.id)) % A.every !== 0) continue; // localId: the same days in a replay of the seed
     const maxN = Math.min(A.max[2], A.max[0] + Math.floor(f.pop / A.max[1]));
     if (mine.length >= maxN) continue;
     const pick = groupWants(state, f, mine);

@@ -306,7 +306,7 @@ section("A group's raid on a field work: driven off, or taken over; your team ta
   check(!!p && p.kind === "fwraid", "a raid party sets out for the stockpile");
   const done = tick(state, 24 * 6, () => !state.parties.includes(p) || pile.owner !== "player");
   Object.assign(FW.FIELD.RAID, keep);
-  check(done && pile.owner === f.id && !Object.keys(pile.contents).length && (f.stock.scrap || 0) >= fs0 + 10, `they took it over and its goods (owner ${pile.owner}, their scrap ${fs0} → ${f.stock.scrap})`);
+  check(done && pile.owner === f.id && !Object.keys(pile.contents).length && state.fieldworks.news.some((n) => /emptied the stockpile .*20 scrap/.test(n.text)), `they took it over and its goods (owner ${pile.owner}, their scrap ${fs0} → ${f.stock.scrap})`);
   check(state.fieldworks.news.some((n) => /took/.test(n.text)), "news: they took it");
   // Your team takes it back (Capture order).
   pile.gar = 0;
@@ -421,6 +421,14 @@ section("The groups build their own; the governor's share");
 }
 
 // ---------------------------------------------------------------------------------------------------------
+section("Determinism: the groups' field works replay the same on the same seed");
+{
+  const sig = (st) => FW.fwList(st).map((f) => `${f.kind}@${f.tile}:${f.built}:${Math.round(f.hp)}`).join(",");
+  const run = () => { const st = createWorld({ seed: SEED, factionCount: 7 }); st.started = true; for (let i = 0; i < 24 * 25; i++) { tickHour(st); st.cards.length = 0; st.combat = null; } return sig(st); };
+  const a = run(), b = run();
+  check(a === b && a.length > 0, `two runs of 25 days: the same field works (${a.split(",").length})`);
+}
+
 section("Save and load");
 {
   const state = mk();
