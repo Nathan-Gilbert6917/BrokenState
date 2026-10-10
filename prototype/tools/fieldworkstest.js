@@ -201,6 +201,25 @@ section("Stockpile: deposits, a team's Leave finds and Load, the haul team");
 }
 
 // ---------------------------------------------------------------------------------------------------------
+section("The job trips' plug-in points (installTripHooks)");
+{
+  const state = mk();
+  const h = hub(state);
+  const pile = standing(state, "stockpile", 2);
+  const well = standing(state, "well", 2, (id) => FW.placeProblem(state, h, "well", id) === "" && id !== pile.tile);
+  const hooks = { water: null, deposit: null };
+  FW.installTripHooks(hooks);
+  check(FW.FIELD.PASSIVE_WELLS === false, "installed: the wells no longer count by themselves (the carriers bring their water)");
+  const list = hooks.water(state, h, "water", [{ id: -1, d: 9 }]);
+  check(list.some((x) => x.well && x.id === well.tile) && list[list.length - 1].id === -1, "Fetch water: the well joins the sources, nearest first");
+  check(!hooks.water(state, h, "fish", []).length, "fishers get no wells");
+  const far = state.grid.within(pile.tile, 1).find((id) => state.grid.distance(id, h.tile) > state.grid.distance(pile.tile, h.tile) - 0 && id !== pile.tile && state.grid.distance(id, pile.tile) < state.grid.distance(id, h.tile));
+  const dp = hooks.deposit(state, h, { trip: { at: far } }, "wood");
+  check(dp && dp.tile === pile.tile && dp.stock === pile.contents, "a worker out past the stockpile drops the load there");
+  check(hooks.deposit(state, h, { trip: { at: h.tile } }, "wood") == null, "one at the base's own tile goes home");
+  FW.FIELD.PASSIVE_WELLS = true;
+}
+
 section("Roadblocks hold raiders and hordes");
 {
   const state = mk();

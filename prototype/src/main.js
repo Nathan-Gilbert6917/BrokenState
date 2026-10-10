@@ -26,7 +26,8 @@ import { treatAtBase } from "./sim/medical.js";
 import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated trainee
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
-import { fieldworksActions, fieldworksChange, fwPlaceTiles, fwPlaceBanner, fwPlaceClick, fwPlaceCancel } from "./ui/fieldworks.js"; // field works: the base tab, the tile picker
+import { fieldworksActions, fieldworksChange, fwPlaceTiles, fwPlaceBanner, fwPlaceClick, fwPlaceCancel, teamFieldItems } from "./ui/fieldworks.js";
+import { fwAt as fieldWorkAt, FIELD, placeProblem, planFieldWork } from "./sim/fieldworks.js"; // field works: the base tab, the tile picker
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
@@ -1803,7 +1804,7 @@ function ctxTeams(teams, id) {
   const t = state.tiles[id];
   return teams.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
     (t.terrain === "water" && !t.bridge ? "" : teams.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
-    ctxBoats(teams, id) + ctxLand(teams, id) + ctxClaim(teams, id);
+    ctxBoats(teams, id) + ctxLand(teams, id) + ctxClaim(teams, id) + ctxField(teams, id) + ctxFieldPlan(id);
 }
 // Keep the menu on the map: flipped left or up at the edges, never taller than the map (it scrolls); sizes follow the
 // interface scale (rem).
@@ -1871,6 +1872,43 @@ function ctxClaim(teams, id) {
     !ww ? `<button data-action="ctxclaim" data-id="${p.id}" data-tile="${id}" data-type="well" data-tip="${esc(`Dig a well on this claim (${CLAIM.WELL_SCRAP} scrap, ${CLAIM.WELL_PARTS} part carried): the people at your base next to it haul its water.`)}">${partyTile(p) === id ? "Dig a well here" : "Go and dig a well here"}, team (${p.members.length}) · ${CLAIM.WELL_HOURS}h</button>` : "",
   ]).join("");
 }
+// Field works (sim/fieldworks.js): a team's acts at a structure on the tile (load or leave finds at your stockpile; wreck,
+// take or loot a group's), and planning one on land of yours from the base that holds it.
+function ctxField(teams, id) {
+  const fw = fieldWorkAt(state, id);
+  if (!fw) return "";
+  return teams.filter((p) => p.kind !== "convoy").flatMap((p) => teamFieldItems(state, p, id).map((it) =>
+    `<button data-action="ctxfwork" data-id="${p.id}" data-tile="${id}" data-act="${it.order.act}" ${it.why && partyTile(p) === id ? "disabled" : ""} data-tip="${esc(it.why || it.hint)}">${partyTile(p) === id ? "" : "Go: "}${esc(it.label)}, team (${p.members.length})</button>`)).join("");
+}
+function ctxFieldPlan(id) {
+  if (fieldWorkAt(state, id)) return "";
+  return state.bases.flatMap((b) => FIELD.ORDER.filter((k) => !placeProblem(state, b, k, id)).map((k) =>
+    `<button data-action="ctxfwplan" data-base="${b.id}" data-tile="${id}" data-kind="${k}" data-tip="${esc(`${FIELD.KINDS[k].desc} Paid now from ${b.name}'s stores; its builders walk out and put it up.`)}">Plan ${FIELD.KINDS[k].icon} ${FIELD.KINDS[k].name.toLowerCase()} here (${esc(b.name)})</button>`)).join("");
+}
+actions.ctxfwplan = (d) => {
+  const b = baseById(state, Number(d.base));
+  const r = b ? planFieldWork(state, b, d.kind, Number(d.tile)) : { error: "No base." };
+  if (r.error) log(state, r.error, "info");
+  hideCtx();
+};
+actions.ctxfwork = (d) => {
+  const p = partyById(d.id);
+  if (p) {
+    const tile = Number(d.tile);
+    const job = { type: "fwork", act: d.act };
+    let msg;
+    if (partyTile(p) === tile && (p.phase === "waiting" || p.phase === "task")) msg = startOrder(state, p, job);
+    else {
+      p.orders = [];
+      msg = orderMove(state, p, tile);
+      if (p.phase === "out" && p.dest === tile) msg = `${msg} ${queueOrder(state, p, { ...job, at: tile })}`;
+    }
+    if (msg) log(state, msg, "info");
+    if (ui.expedition === p.id) ui.xpMsg = msg;
+  }
+  endMoveMode();
+  hideCtx();
+};
 actions.ctxclaim = (d) => {
   const p = partyById(d.id);
   if (p) {
@@ -1935,11 +1973,11 @@ actions.ctxmove = (d) => {
 };
 // Radio rule (sim/plans.js commandable): out of radio contact a team follows its plan; orders only through the
 // cards it raises (answering one opens contact for that hour) or once it is back in coverage.
-for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim", "tc-do"]) {
+for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim", "ctxfwork", "tc-do"]) {
   const fn = actions[k];
   actions[k] = (d) => {
     const p = partyById(d.id);
-    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim" || k === "tc-do") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
+    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim" || k === "ctxfwork" || k === "tc-do") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
     return fn(d);
   };
 }

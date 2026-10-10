@@ -14,7 +14,7 @@ import { repairPaid, repairWaitHour } from "./repairwait.js"; // a breakdown rep
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
 import { findPath } from "./hex.js";
 import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
-import { partyEnter as fieldPartyEnter, teamEnter as fieldTeamEnter, fieldRaidArrive } from "./fieldworks.js"; // field works: roadblocks, raids on them
+import { partyEnter as fieldPartyEnter, teamEnter as fieldTeamEnter, fieldRaidArrive, teamActs as fieldActs } from "./fieldworks.js"; // field works: roadblocks, raids on them
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
@@ -1290,6 +1290,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
         },
       })),
       ...(state.bases.length && !canClaim(state, tile) ? [{ label: `Claim this tile (${CLAIM.HOURS}h, ${CLAIM.SCRAP} scrap)`, hint: "Raise a marker post: the tile counts as land the coalition holds (toward the 50% the alliance victory needs). Lost if a group or a hive settles on it or a hostile band camps there.", order: true, disabled: carried(p, "scrap") < CLAIM.SCRAP, resolve: (st) => startOrder(st, p, { type: "claim" }) }] : []),
+      ...fieldActs(state, p, tile).map((a) => ({ label: a.label, hint: a.hint, order: true, disabled: !!a.why, resolve: (st) => startOrder(st, p, { type: "fwork", act: a.act }) })), // fieldworks.js: a stockpile of yours, a group's structure
       ...(crossingsFrom(state, tile).length ? [{ label: "Build a boat and cross…", hint: "This team stands on a shore with land straight across the water. The team panel shows each crossing with its cost (scrap, hours) and lets you gather materials.", uiAction: { type: "expedition", partyId: p.id }, resolve: () => "" }] : []),
       { label: "Move to another tile…", hint: "Pick any tile on the map. The team travels there and waits for orders again.", uiAction: { type: "move", partyId: p.id }, resolve: () => "Pick a destination on the map (Esc to cancel)." },
       { label: "Return home", hint: "Head back to the hub with everything carried.", order: true, resolve: (st) => (startReturn(st, p) ? "" : "The team heads home.") },

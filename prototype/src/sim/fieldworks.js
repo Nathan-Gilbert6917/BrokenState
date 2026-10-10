@@ -72,6 +72,10 @@ export const FIELD = {
   AI: { every: 5, max: [1, 12, 4], stock: 0.15, gar: 2, garPop: 10, work: 3 },
   GOV: { towerPop: 6, garrisonPop: 10, repairAt: 0.7 },
   NEWS_HOURS: 48,
+  // The wells' water comes home by itself (the base's people haul it, as the claim wells'). Set false once the job
+  // trips' Fetch water job walks to the wells (installTripHooks) so the water is not counted twice.
+  PASSIVE_WELLS: true,
+  DROP_MIN_KG: 10, // a stockpile takes a worker's load while it has this much room
 };
 const K = FIELD.KINDS;
 // Materials to repair a structure from nothing (scaled by the damage): about 60% of its cost.
@@ -378,7 +382,7 @@ export function waterSourcesFor(state, base) {
 // The well water hauled home today: the base's people haul one well per CLAIM.WELL_PER_PEOPLE of them, the claim wells
 // (claims.js hauledWells) taking their share first. { total, wells: [{ fw, tile, rate, counted }] }.
 export function fieldWellWater(state, base) {
-  const src = waterSourcesFor(state, base);
+  const src = FIELD.PASSIVE_WELLS ? waterSourcesFor(state, base) : [];
   if (!src.length) return { total: 0, wells: [] };
   const cw = hauledWells(state, base);
   const used = cw.wells.filter((w) => w.counted).length;
@@ -456,7 +460,7 @@ export function sendHaul(state, fwId) {
   if (!Object.keys(fw.contents || {}).length) return { error: "The stockpile is empty." };
   const base = baseById(state, fw.baseId);
   if (!base) return { error: "Its base is gone." };
-  const people = atBase(state, base.id).filter((s) => !healthRest(s) && !s.pinned && !s.leader && s.health >= 50).sort((a, b) => combatPower(b) - combatPower(a));
+  const people = atBase(state, base.id).filter((s) => !healthRest(s) && !s.pinned && !s.leader && s.health >= 50).sort((a, b) => (a.role === "build") - (b.role === "build") || combatPower(b) - combatPower(a)); // the builders last
   if (!people.length) return { error: `Nobody fit at ${base.name} to send.` };
   const cars = state.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === base.id && v.condition > 0 && !v.count && (v.fuel || 0) >= 2).sort((a, b) => (b.cargo || 0) - (a.cargo || 0));
   const crew = people.slice(0, 2).map((s) => s.id);
@@ -471,6 +475,33 @@ export function sendHaul(state, fwId) {
   const text = `${crew.map((id) => survivorById(state, id).name.split(" ")[0]).join(" and ")} set out from ${base.name} to haul the stockpile at ${tileLabel(state, fw.tile)}${p.vehicle ? " with a vehicle" : " on foot"}.`;
   log(state, text, "info");
   return { text, party: p };
+}
+
+// ---------- the job trips' plug-in points (job-trips branch: tripland.js TRIP_HOOKS) ----------
+// At integration: installTripHooks(TRIP_HOOKS) once (main.js or tripland.js). Then
+//   water(state, base, job, list): the base's wells join the water carriers' sources (Fetch water; not the fishers),
+//     { id, d, well: true }, sorted in with the river and lake tiles by distance;
+//   deposit(state, base, s, job): an outdoor worker's load goes to the nearest stockpile of the base with room (and
+//     DROP_MIN_KG to spare) when it is nearer the worker's tile than the base is: { tile, stock: its contents, fw }.
+// and FIELD.PASSIVE_WELLS can be set false (the carriers bring the well water instead).
+export function installTripHooks(hooks, { passiveWells = false } = {}) {
+  if (!hooks) return;
+  const prevWater = hooks.water, prevDeposit = hooks.deposit;
+  hooks.water = (state, base, job, list) => {
+    const base0 = prevWater ? prevWater(state, base, job, list) || list : list;
+    if (job !== "water") return base0;
+    const wells = waterSourcesFor(state, base).filter((w) => w.rate > 0).map((w) => ({ id: w.tile, d: state.grid.distance(base.tile, w.tile), well: true }));
+    return [...base0, ...wells].sort((a, b) => a.d - b.d || a.id - b.id);
+  };
+  hooks.deposit = (state, base, s, job) => {
+    const prev = prevDeposit ? prevDeposit(state, base, s, job) : null;
+    if (prev && prev.tile != null) return prev;
+    const at = s && s.trip && s.trip.at != null ? s.trip.at : null;
+    if (at == null || job === "water") return null;
+    const drop = dropPointsFor(state, base, at).find((d) => d.room >= FIELD.DROP_MIN_KG && state.grid.distance(d.tile, at) < state.grid.distance(base.tile, at));
+    return drop ? { tile: drop.tile, stock: drop.fw.contents, fw: drop.fw } : null;
+  };
+  FIELD.PASSIVE_WELLS = !!passiveWells;
 }
 
 // ---------- radio (radio.js radioNodes, groupNetwork) ----------

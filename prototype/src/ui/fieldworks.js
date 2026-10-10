@@ -73,7 +73,7 @@ export function fieldWorksTab(state, b, ui) {
     }
     if (fw.kind === "stockpile" && fw.built) {
       const empty = !Object.keys(fw.contents || {}).length;
-      extra = `<div class="row small" style="margin-top:0.25rem;gap:0.3rem"><span style="flex:1">${FW.stockKg(fw)}/${d.capKg} kg: ${esc(FW.contentsText(fw))}</span><button class="mini" data-action="fw-haul" data-id="${fw.id}" ${empty ? "disabled" : ""}${tip(empty ? "Nothing to bring in" : "Two people (and the base's best running vehicle, if any) go out, load it and come home")}>Send a haul team</button></div>`;
+      extra = `<div class="row small" style="margin-top:0.25rem;gap:0.3rem"><span style="flex:1" class="muted">A haul team brings it home; teams can leave finds here (their menu on the tile).</span><button class="mini" data-action="fw-haul" data-id="${fw.id}" ${empty ? "disabled" : ""}${tip(empty ? "Nothing to bring in" : "Two people (and the base's best running vehicle, if any) go out, load it and come home")}>Send a haul team</button></div>`;
     }
     const dwhy = FW.demolishProblem(state, fw);
     return `<div class="card small"${tip(d.desc)}>
@@ -164,7 +164,8 @@ export function fieldworkAlerts(state, out) {
 // Draws every field work you know of (yours always; a group's where you see it or have seen the tile), and the tile
 // picker's highlight. o: { ctx, G, inView, s (zoom boost), live, knowledge, place: [{ tile, why }] | null, colorOf(owner) }.
 export function drawFieldWorks(state, o) {
-  const { ctx, G, inView, s } = o;
+  const { ctx, G, inView } = o;
+  const s = o.s * 1.35; // a little larger than a site's badge: they are small structures on a big tile
   if (o.place) for (const x of o.place) {
     if (!inView(x.tile)) continue;
     const px = G.x[x.tile], py = G.y[x.tile];
@@ -172,7 +173,7 @@ export function drawFieldWorks(state, o) {
     ctx.strokeStyle = x.why ? "rgba(226,104,95,0.45)" : "rgba(108,196,138,0.95)";
     ctx.fillStyle = x.why ? "rgba(226,104,95,0.08)" : "rgba(108,196,138,0.18)";
     ctx.lineWidth = 2 * s;
-    hex(ctx, px, py, 15);
+    hex(ctx, px, py, 22);
     ctx.fill(); ctx.stroke();
     ctx.restore();
   }
