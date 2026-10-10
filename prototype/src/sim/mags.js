@@ -20,15 +20,17 @@
 //   - an internal magazine (a pump, a lever-action, a revolver, a bolt-action's box, a double barrel: data-kit.js
 //     INTERNAL): Reload (1 action) puts that many rounds in; a speedloader or a stripper clip carried (CLIPS) fills it at
 //     once, once a fight (1 action from a pouch or a pocket, 2 from the pack).
+//   - a shotgun (SHELLS.GUNS) is loaded from the shells at hand (pockets, rig, loose; not the pack: Get shells first):
+//     a tube 2–4 shells a Reload (1 action), a double barrel both barrels at once (see shellPlan).
 // Units with no u.mags (made some other way, an old save's battle, a turret, a launcher) keep the old rule: Reload is 1
 // action and fills the magazine.
 import { GEAR } from "./data.js";
 import { MAGAZINES, INTERNAL, CLIPS } from "./data-kit.js";
-import { CALIBERS } from "./data-ammo.js";
+import { CALIBERS, ROUND_SUPPLIES } from "./data-ammo.js";
 import { WEAPONS } from "./combat.js";
 import { modFits, platformOf, magCapOf, gunMods } from "./gunmods.js";
 import { roundsOf, calOf } from "./ammo.js";
-import { typeFor, roundName, typeName } from "./rounds.js";
+import { typeFor, roundName, typeName, withHand, keyFor } from "./rounds.js";
 import { hash01 } from "./skills.js";
 
 export const MAGS = {
@@ -103,6 +105,7 @@ const clipsFor = (u, spots) => spots.filter((x) => CLIPS[x.item.key] && CLIPS[x.
 // carriedSpots(s) (what they carry and where: pockets, rig pouches, the pack).
 export function fitMags(b, u, spots, staticCap) {
   u.mags = null; u.magsW = null; u.clips = null; u.magMode = null;
+  fitHandBoxes(u, spots); // the shells at hand (shellsAt): boxes in the pockets and the rig, the first u.handBoxes of u.boxes
   const key = u.weapon, w = WEAPONS[key], cal = calOf(key);
   if (!w || !(w.cap > 0) || w.mounted || w.launcher || w.mount || !cal) return;
   if (!INTERNAL[key] && !takesMagItems(key)) return;
@@ -111,6 +114,7 @@ export function fitMags(b, u, spots, staticCap) {
     u.magMode = "internal";
     u.mags = [];
     u.clips = clipsFor(u, spots);
+    if (isShellGun(u)) startHand(b, u); // SHELLS: a handful of loose shells out of the team's bags
     return;
   }
   u.magMode = "box";
@@ -135,7 +139,7 @@ export function enemyMags(u, staticCap, count, hasRig, items = null) {
   if (!INTERNAL[key] && !takesMagItems(key)) return;
   u.magsW = key;
   const gun = u.arsItem || (u.modItems ? { key, mods: u.modItems } : null);
-  if (usesInternal(key, gun)) { u.magMode = "internal"; u.mags = []; u.clips = []; return; }
+  if (usesInternal(key, gun)) { u.magMode = "internal"; u.mags = []; u.clips = []; if (isShellGun(u)) startHand(null, u); return; } // SHELLS: their handful too
   u.magMode = "box";
   const load = typeFor(cal, u.load);
   const fit = fittedMag(gun);
@@ -151,6 +155,152 @@ export function enemyMagCount(kind, ...salt) {
   const [lo, hi] = MAGS.ENEMY[kind] || MAGS.ENEMY.default;
   return lo + Math.floor(hash01("enemymags", kind, ...salt) * (hi - lo + 1));
 }
+
+// ---------- shotgun shells (the user's calls, 2026-10-09) ----------
+// A shotgun (SHELLS.GUNS: the tube-fed pump and semi-auto, the break-action double barrel and sawn-off, the pipe gun)
+// is loaded a shell at a time from the shells AT HAND: "Shotguns reload from shells in your pocket, rig or anything that
+// holds them that is not your backpack that needs an additional action".
+// At hand (shellsAt), per type:
+//   - box: boxes of shells in the shooter's pockets and rig pouches (the first u.handBoxes of u.boxes: fitMags puts the
+//     rig's boxes right after the pockets', so a shot, which takes its round from the shooter's own boxes first, spends
+//     them first), less what is already in the gun;
+//   - hand: loose shells on the person out of the team's bags (u.hand[type], virtual like the magazines). The team's
+//     packed rounds (b.pools) have no place on anyone, so a shotgunner takes the field with a handful of them loose
+//     (START_HAND, topped up to that with what their pockets and rig hold), every other side the same (AI parity:
+//     their reserve is endless, their handful the same).
+//   - pack: the rest (a box in the shooter's own pack, a teammate's, the team's bags; every other side: endless). Not
+//     loaded from directly: Get shells (1 action: getShells) takes GRAB of them out, up to HAND_MAX loose; a Reload with
+//     none at hand is refused ("Shells are in the pack: take some out first"). The AI (reload(): doReload's "fetch"
+//     plan) spends that action itself.
+// Shells a Reload (1 action) puts in: a tube BASE (2 or 3, the battle's dice) + 1 steady hands (aim STEADY_AIM+: a
+// colonist with Shooting 6, a power-4 enemy) - 1 shaken (hurt below half, pinned by suppressing fire, dazed by a
+// flashbang), MIN..MAX; a break action both barrels (2), the pipe gun its one; never more than the room in the gun and
+// the shells at hand. Off (SHELLS.on = false: tools/shotgunreloadtest.js's baseline): the old rule, INTERNAL a Reload
+// from anywhere.
+export const SHELLS = {
+  on: true,
+  GUNS: { shotgun: "tube", semishotgun: "tube", dbshotgun: "break", sawnoff: "break", pipegun: "single" }, // a box-magazine shotgun (none yet) would swap magazines
+  BREAK: 2, // a break action: both barrels at once
+  BASE: [2, 3],
+  MIN: 1,
+  MAX: 4,
+  STEADY_AIM: 55,
+  HURT: 0.5,
+  START_HAND: 8, // loose shells on a shotgunner at the start of a fight, out of the team's bags (or the AI's)
+  GRAB: 8, // shells one Get shells takes out of the pack
+  HAND_MAX: 16, // loose shells out of the pack a person keeps at hand (pockets, belt)
+};
+const isBox = (x) => x && x.item && ROUND_SUPPLIES[x.item.key];
+// Puts the boxes of rounds in rig pouches into u.boxes right after the pockets' (ammo.js boxesOf has pockets, then the
+// pack) and counts the boxes at hand (u.handBoxes: pockets and rig).
+function fitHandBoxes(u, spots) {
+  if (!Array.isArray(u.boxes)) { u.handBoxes = 0; return; }
+  const list = spots || [];
+  const pockets = list.filter((x) => x.where === "pocket" && isBox(x)).length;
+  const rig = list.filter((x) => x.where === "rig" && isBox(x)).map((x) => x.item);
+  const add = rig.filter((it) => !u.boxes.includes(it));
+  if (add.length) u.boxes.splice(pockets, 0, ...add);
+  u.handBoxes = pockets + rig.length;
+}
+export const shellKind = (u) => (SHELLS.on && u && u.magMode === "internal" && SHELLS.GUNS[u.weapon]) || null;
+export const isShellGun = (u) => !!shellKind(u);
+export const isTubeShotgun = (u) => shellKind(u) === "tube";
+export const isBreakAction = (u) => shellKind(u) === "break";
+function shellsIn(list, keys) {
+  let n = 0;
+  for (const it of list || []) if (it && keys.includes(it.key)) n += Math.max(0, Math.floor(num(it.dur)));
+  return n;
+}
+function poolShells(b, keys) {
+  let n = 0;
+  for (const p of b.pools || []) for (const k of keys) n += Math.max(0, Math.floor(num(p[k])));
+  return n;
+}
+// The shells of a type this unit has: { box (pockets, rig), hand (loose, out of the bags), pack, at (box + hand) }, none
+// of them counting what is in the gun. mag: the rounds in the gun to count with (a switch of type empties it).
+export function shellsAt(b, u, type = null, mag = null) {
+  const cal = calOf(u.weapon);
+  const t = typeFor(cal, type || u.load);
+  const m = mag == null ? Math.max(0, num(u.mag)) : mag;
+  const claimed = typeFor(cal, u.load) === t ? m : 0;
+  const hand0 = Math.max(0, num(u.hand && u.hand[t]));
+  if (u.side !== "player") return { box: 0, hand: hand0, pack: Infinity, at: hand0 };
+  const keys = withHand(keyFor(cal, t));
+  const total = Math.max(0, roundsOf(b, u, t));
+  const boxN = Math.min(total, shellsIn((u.boxes || []).slice(0, Math.max(0, u.handBoxes || 0)), keys));
+  const box = Math.max(0, boxN - claimed);
+  const rest = Math.max(0, total - Math.max(claimed, boxN));
+  const hand = Math.min(hand0, rest);
+  return { box, hand, pack: rest - hand, at: box + hand };
+}
+// The handful a shotgunner takes the field with (fitMags, enemyMags): loose shells of the loaded type out of the team's
+// bags, up to START_HAND with what the pockets and rig hold.
+function startHand(b, u) {
+  u.hand = {};
+  const cal = calOf(u.weapon), t = typeFor(cal, u.load);
+  if (u.side !== "player") { u.hand[t] = SHELLS.START_HAND; return; }
+  const keys = withHand(keyFor(cal, t));
+  const box = shellsIn((u.boxes || []).slice(0, Math.max(0, u.handBoxes || 0)), keys);
+  u.hand[t] = Math.max(0, Math.min(SHELLS.START_HAND - box, poolShells(b, keys)));
+}
+export const isShaken = (u) => !!((u.maxHp > 0 && u.hp < u.maxHp * SHELLS.HURT) || u.suppressed || u.stun);
+// The shells a Reload puts in now with the dice at roll (0: BASE[0], 1: BASE[1]): { n, at, pack, steady, shaken, room }.
+// type: the type loaded (a switch empties the gun first). null for a gun that is not a shotgun.
+export function shellPlan(b, u, type = null, roll = 0) {
+  const kind = shellKind(u);
+  if (!kind) return null;
+  const cal = calOf(u.weapon);
+  const cur = typeFor(cal, u.load), want = type ? typeFor(cal, type) : cur;
+  const m = want !== cur ? 0 : Math.max(0, num(u.mag));
+  const room = Math.max(0, (u.magMax ?? 0) - m);
+  const s = shellsAt(b, u, want, m);
+  const steady = num(u.aim) >= SHELLS.STEADY_AIM, shaken = isShaken(u);
+  const n = kind === "break" ? SHELLS.BREAK : kind === "single" ? 1 : Math.max(SHELLS.MIN, Math.min(SHELLS.MAX, SHELLS.BASE[roll ? 1 : 0] + (steady ? 1 : 0) - (shaken ? 1 : 0)));
+  return { n: Math.max(0, Math.min(n, room, s.at)), at: s.at, pack: s.pack, steady, shaken, room };
+}
+// The shells a Reload of this shotgun puts in, as a range for the Reload button: { lo, hi, at, pack, steady, shaken }.
+export function shellRange(b, u, type = null) {
+  const a = shellPlan(b, u, type, 0), c = shellPlan(b, u, type, 1);
+  return a && c ? { ...a, lo: a.n, hi: c.n } : null;
+}
+// Why Get shells cannot be done now ("" when it can): a shotgun, shells of its type in the pack, room at hand.
+export function getShellsRefusal(b, u, type = null) {
+  if (!isShellGun(u)) return "Only a shotgun is loaded from loose shells.";
+  const cal = calOf(u.weapon), t = typeFor(cal, type || u.load);
+  const s = shellsAt(b, u, t);
+  if (!(s.pack > 0)) return s.at > 0 ? `No more ${roundName(cal, t)} in the pack: ${s.at} at hand.` : `No ${roundName(cal, t)} in the pack.`;
+  if (s.hand >= SHELLS.HAND_MAX) return `${s.hand} loose shells at hand already: room for no more.`;
+  return "";
+}
+// Get shells (1 action; the caller takes it): GRAB shells of the type out of the pack, loose at hand. Returns the log line.
+export function getShells(b, u, type = null) {
+  const cal = calOf(u.weapon), t = typeFor(cal, type || u.load);
+  const s = shellsAt(b, u, t);
+  const n = Math.max(0, Math.min(SHELLS.GRAB, s.pack, SHELLS.HAND_MAX - s.hand));
+  if (!u.hand) u.hand = {};
+  u.hand[t] = s.hand + n;
+  const at = shellsAt(b, u, t).at;
+  return u.side === "player"
+    ? `${u.name} takes ${n} ${n === 1 ? "shell" : "shells"} of ${roundName(cal, t)} out of the pack (${at} at hand).`
+    : `${u.name} digs ${n} shells out of a bag (${at} at hand).`;
+}
+// Takes the n shells just loaded off what is at hand: the boxes in the pockets and the rig first (claimed by the gun from
+// then on), then the loose ones.
+function useHand(b, u, t, n, magBefore) {
+  const s = shellsAt(b, u, t, magBefore);
+  const fromHand = Math.max(0, n - s.box);
+  if (fromHand > 0 && u.hand) u.hand[t] = Math.max(0, s.hand - fromHand);
+}
+// "3 shells at hand (pockets, rig, loose), 22 in the pack" for the Reload button.
+export function shellsLine(b, u, type = null) {
+  if (!isShellGun(u)) return "";
+  const s = shellsAt(b, u, type);
+  const pk = u.side !== "player" ? "" : s.pack > 0 ? `, ${s.pack} in the pack` : ", none in the pack";
+  return `${s.at} ${s.at === 1 ? "shell" : "shells"} at hand${pk}`;
+}
+export const PACK_REFUSAL = "Shells are in the pack: take some out first (Get shells, 1 action).";
+// A Reload now would have to dig in the pack first (no shells of the type at hand, some in the pack).
+export const shellsInPack = (b, u, type = null) => isShellGun(u) && tracksMags(u) && reloadPlan(b, u, type).mode === "fetch";
 
 // ---------- reloading ----------
 // What a Reload would do now: { mode: "swap" | "topup" | "internal" | "clip", cost (actions), i (the spare's index in
@@ -172,6 +322,7 @@ export function reloadPlan(b, u, type = null) {
     let ci = -1;
     for (let i = 0; i < clips.length; i++) if (!clips[i].used && (ci < 0 || MAGS.AP[clips[i].where] < MAGS.AP[clips[ci].where])) ci = i;
     const room = sw ? max : max - m;
+    if (isShellGun(u) && shellsAt(b, u, want, sw ? 0 : m).at < 1) return { mode: "fetch", cost: 1, load: want, why: "" }; // SHELLS: none at hand, some in the pack (Get shells; the AI's reload() does it)
     if (ci >= 0 && room > internalOf(u.weapon)) return { mode: "clip", cost: MAGS.AP[clips[ci].where] || 1, i: ci, load: want, why: "" };
     return { mode: "internal", cost: 1, load: want, why: "" };
   }
@@ -228,6 +379,25 @@ export function doReload(b, u, plan) {
     u.mag = Math.min(max, (u.mag || 0) + CLIPS[c.key].n, (u.mag || 0) + avail(b, u, u.load));
     return `${u.name} reloads the ${gunWord(u)} (${shown(b, u)}/${max}) from a ${String(GEAR[c.key].name).toLowerCase()}.`;
   }
+  if (plan.mode === "fetch") return getShells(b, u, plan.load); // SHELLS: nothing at hand: shells out of the pack first (the AI's reload)
+  if (plan.mode === "internal" && isShellGun(u)) { // SHELLS: shells thumbed in from what is at hand
+    const kind = shellKind(u);
+    const roll = kind === "tube" && b.rng && typeof b.rng.int === "function" ? b.rng.int(0, 1) : 0;
+    const sp = shellPlan(b, u, plan.load, roll);
+    const sw = plan.load !== was;
+    const before = sw ? 0 : u.mag || 0;
+    useHand(b, u, plan.load, sp.n, before);
+    if (sw) { u.load = plan.load; u.mag = 0; }
+    u.mag = Math.min(max, before + sp.n);
+    u.lastShells = sp.n; // tools/shotgunreloadtest.js
+    const what = `${sp.n} ${sp.n === 1 ? "shell" : "shells"}`;
+    const left = u.side === "player" ? `, ${shellsAt(b, u).at} left at hand` : "";
+    const shaky = sp.shaken && kind === "tube" ? ", shaky hands" : "";
+    if (kind === "break") return `${u.name} breaks open the ${gunWord(u)} and drops in ${sp.n === 1 ? "a shell" : what}${sw ? ` of ${roundName(cal, u.load)}` : ""} (${shown(b, u)}/${max}${left}).`;
+    return sw
+      ? `${u.name} loads the ${gunWord(u)} with ${roundName(cal, u.load)}: ${what} in (${shown(b, u)}/${max}${left}${shaky}).`
+      : `${u.name} ${kind === "tube" ? "racks in" : "loads"} ${what} (${shown(b, u)}/${max}${left}${shaky}).`;
+  }
   if (plan.mode === "internal") {
     if (plan.load !== was) { u.load = plan.load; u.mag = 0; }
     const room = Math.max(0, avail(b, u, u.load) - (u.mag || 0));
@@ -266,6 +436,15 @@ export function reloadText(b, u) {
   if (!tracksMags(u)) return "1 action: fill the magazine from the team's ammo.";
   const p = reloadPlan(b, u);
   const n = p.cost === 1 ? "1 action" : `${p.cost} actions`;
+  if (p.mode === "fetch") return `${PACK_REFUSAL} ${shellsLine(b, u)}.`;
+  if (p.mode === "internal" && isShellGun(u)) {
+    const r = shellRange(b, u), kind = shellKind(u);
+    if (!(r.hi > 0)) return `${n}: ${shellsLine(b, u)}.`;
+    const k = r.lo === r.hi ? `${r.lo}` : `${r.lo}–${r.hi}`;
+    const mods = kind === "tube" ? [r.steady ? "steady hands +1" : "", r.shaken ? "shaken −1" : ""].filter(Boolean) : [];
+    const what = kind === "break" ? `both barrels (${k} ${r.hi === 1 ? "shell" : "shells"})` : kind === "single" ? "its one shell" : `${k} ${r.hi === 1 ? "shell" : "shells"} thumbed into the tube${mods.length ? ` (${mods.join(", ")})` : ""}`;
+    return `${n}: ${what}, from the shells at hand. ${shellsLine(b, u)}. Shells in a pocket or the rig load straight in; the pack's need Get shells (1 action) first.`;
+  }
   if (p.mode === "internal") return `${n}: ${internalOf(u.weapon)} more rounds in (an internal magazine; a speedloader or a stripper clip carried fills it at once).`;
   if (p.mode === "clip") return `${n}: a ${String(GEAR[u.clips[p.i].key].name).toLowerCase()} fills it at once.`;
   if (p.mode === "swap") return `${n}: a fresh magazine from ${u.mags[p.i].where === "pack" ? "the pack" : u.mags[p.i].where === "pocket" ? "a pocket" : "a rig pouch"} (the empty one is kept).`;

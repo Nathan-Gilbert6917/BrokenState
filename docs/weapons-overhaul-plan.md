@@ -745,7 +745,7 @@ Examples:
 - **Reload:** the next loaded magazine; 1 action from rig or pocket, 2 from the pack. Choosing a magazine with another type switches `u.load` (this is the section 1 type-switch).
 - The emptied magazine is retained by default (into the slot the fresh one came from). The optional fast drop (R13) leaves it on the ground: picked up after a won fight, lost otherwise.
 - **No loaded spares:** "Top up" refills the fitted magazine for 2 actions.
-- **Internal magazines** load round by round: Reload (1 action) adds pump 4, lever 4, bolt 3 (5 with a stripper clip), revolver 2 (full with a speedloader).
+- **Internal magazines** load round by round: Reload (1 action) adds lever 4, bolt 3 (5 with a stripper clip), revolver 2 (full with a speedloader). Shotguns (2026-10-09, mags.js SHELLS): loaded from the shells at hand only (boxes in pockets and rig pouches, a loose handful out of the team's bags); a tube 2–4 a Reload (2 or 3, +1 steady hands, −1 shaken), a double barrel both barrels; shells in the pack need Get shells (1 action) first; the AI the same.
 - Speedloaders (`speedloader`, 0.05 kg, value 6, cap 6) and stripper clips (`stripper308`) sit in rig or pistol pouches; each is used up once per battle and refilled free afterwards.
 
 **Out of battle:** loading magazines is free and abstract. `parties.js packRounds` also packs magazines: up to 4 rifle or 3 pistol magazines a gun from the armory into rig, then pockets, then pack.
