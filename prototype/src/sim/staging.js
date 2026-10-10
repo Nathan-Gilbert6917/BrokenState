@@ -30,7 +30,7 @@
 // AI parity: the groups' camps stay their own coarse things (groupworks.js outpost camps, hardcore-groups.js bands
 // camping on the road): nothing here is on their path.
 import { SUPPLIES, GEAR } from "./data.js";
-import { newId, log, addCard, day, hub, atBase, baseById } from "./world.js";
+import { newId, log, addCard, day, hub, atBase } from "./world.js";
 import { recomputeOwnership } from "./factions.js";
 import { markDeathSite, markAbandonedVehicle } from "./markers.js";
 import { startTask } from "./orders.js";

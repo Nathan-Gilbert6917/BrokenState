@@ -790,7 +790,8 @@ function resolveRaidOnPlayerNow(state, party, opts = {}) {
     settleKit();
     // They may keep it (conquest.js: the people there walk to your nearest base; the hub's job moves there), or burn
     // it to the ground (aggressive types: razeChance).
-    const fate = baseFate(state, f, base.tile, supplyValue(base.stock), base.type === "hub" ? RAIDS.KEEP_HUB : 1,
+    // A camp (staging.js) is never kept or burned: looted, and lost if it was an outpost camp (the hub's camp stands).
+    const fate = isCamp(base) ? "leave" : baseFate(state, f, base.tile, supplyValue(base.stock), base.type === "hub" ? RAIDS.KEEP_HUB : 1,
       (base.type === "hub" ? RAIDS.RAZE_HUB : 1) * (people.length || beaten ? 1 : RAIDS.RAZE_EMPTY));
     keep = fate === "keep";
     raze = fate === "raze";

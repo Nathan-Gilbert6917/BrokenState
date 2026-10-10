@@ -9,7 +9,6 @@ import { establishArrive } from "../src/sim/staging.js";
 import { pendingName, renameBase, nameSuggestions, cleanName, askBaseName, nameDone } from "../src/sim/basenames.js";
 import { nameBaseModal, nameModalUp, BN_ACTIONS, BN_INPUT, bnKey } from "../src/ui/basename.js";
 import { renderModal, modalKind, renderLeft, renderRight } from "../src/ui/ui.js";
-import { STAGING as STAGING_PITCH } from "../src/sim/staging.js";
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH, nothing carried): the hour is skipped here and the camp stands at once.
 const establishArriveNow = (st, p) => { p.pitched = true; return establishArrive(st, p); };

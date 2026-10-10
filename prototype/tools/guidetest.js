@@ -25,7 +25,6 @@ import { loadOptions, saveOptions } from "../src/ui/saves.js";
 import {
   GUIDE, GUIDE_LISTS, GUIDE_ACTIONS, GUIDE_MENU_ACTIONS, guideSteps, startGuide, guideCheck, renderGuide, guidePulse, guideDefault, guideMenuRow,
 } from "../src/ui/guide.js";
-import { STAGING as STAGING_PITCH } from "../src/sim/staging.js";
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp stands at once.
 const establishNow = (st, p) => { p.pitched = true; return giveOrder(st, p, "establish"); };

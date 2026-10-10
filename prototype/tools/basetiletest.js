@@ -16,7 +16,6 @@ import { setAutopilot } from "../src/sim/autopilot.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { GEAR } from "../src/sim/data.js";
 import { renderLeft, renderRight } from "../src/ui/ui.js";
-import { STAGING as STAGING_PITCH } from "../src/sim/staging.js";
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp stands at once.
 const establishNow = (st, p) => { p.pitched = true; return giveOrder(st, p, "establish"); };

@@ -626,6 +626,11 @@ export function missionProblem(state, tile, mission) {
     if (state.bases.some((b) => b.tile === tile)) return "You already have a base there.";
     if (theirs) return `${theirs.name} holds that place.`;
   }
+  if (mission === "camp" || mission === "establish") { // a camp (staging.js campProblem: checked again on arrival)
+    if ((t.terrain === "water" && !t.bridge) || t.hive) return t.hive ? "Not on a hive." : "A camp cannot go on open water.";
+    if (state.bases.some((b) => b.tile === tile)) return "You already have a base there.";
+    if (theirs) return `${theirs.name} holds that place.`;
+  }
   if (mission === "scavenge" && t.terrain === "water" && !t.bridge) return "There is nothing to search on the water.";
   if (mission === "assault" && !state.factions.some((f) => f.alive && f.bases.includes(tile))) return "No group holds that place.";
   if (mission === "occupy") return occupyProblem(state, tile) || null; // occupy.js
