@@ -38,7 +38,7 @@
 // - When fewer than 2 aggressive groups are left hostile to you (from day 60), a new gang from beyond the border
 //   settles 12–30 tiles from your hub (2% a day): 12–18 people, hostile, at any time of the run (makeGang; raider
 //   bands from outside that settle use it too, visitors.js settleBands).
-import { groupFoodLand, groupWoodLand, groupHomeShare } from "./grouptrips.js"; // the groups' outdoor work, by the job trips' rules (coarsely)
+import { groupFoodLand, groupTripLosses, groupWoodLand, groupHomeShare } from "./grouptrips.js"; // the groups' outdoor work, by the job trips' rules (coarsely)
 import { FACTION_TYPES, FACTION_COLORS, GEAR } from "./data.js";
 import {
   newId, log, addCard, day, hub, atBase, homeAt, combatPower, hurt, playerStrength,
@@ -322,6 +322,7 @@ export function factionsDaily(state) {
     // grouptrips.js: their hunters and foragers by the land each base holds and how far they walk (as your job trips),
     // fish only where a base holds water, nothing from a besieged base's land.
     f.stock.food += f.pop * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) * groupFoodLand(state, f) + penFood(state, f) - f.pop; // + their animal pens (groupworks.js PENS)
+    groupTripLosses(state, f); // grouptrips.js: their workers out on the land meet trouble too (fewer losses the better armed)
     // Growth: newcomers by the type's pull (groupcare.js GROUP_PRIORITIES recruit: 0.7 + 0.3 x it, so about as before);
     // wanderers and deserters join through their own systems (wanderers.js, groupcare.js).
     if (f.stock.food > f.pop * 4 && f.pop < 50 && !f.hcNoGrow && rng.chance(0.25 * growthFactor(state, f) * (0.7 + 0.3 * prio(f, "recruit")))) f.pop += 1; // hcNoGrow: hardcore's besieged military

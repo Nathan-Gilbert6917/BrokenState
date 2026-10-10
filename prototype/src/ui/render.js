@@ -54,7 +54,7 @@ const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the he
 export const camera = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_LAYERS = ["pois", "territory", "teams", "workers", "hordes", "deaths", "vehicles", "finds", "weather"];
 // hourFrac: how much of the coming hour has gone by (main.js): your moving teams glide between tiles by it.
-export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0, pick: null }; // pick: "kind:id" ringed in gold (ui/mapselect.js)
+export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0, pick: null, workerHover: null }; // pick: "kind:id" ringed in gold (ui/mapselect.js)
 const on = (k) => view.layers.has(k);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -1041,10 +1041,10 @@ function unchanged(state, now) {
   const fk = last.glide ? Math.floor(hourFrac() * GLIDE_STEPS) : 0;
   const same = !forceDraw && last.canvas === canvas && last.cw === canvas.width && last.ch === canvas.height && last.state === state &&
     last.live === live && last.know === state.knowledge && last.hour === state.hour && last.x === camera.x && last.y === camera.y &&
-    last.zoom === camera.zoom && last.dpr === dpr && last.hover === view.hover && last.sel === view.selected && last.preview === view.preview &&
+    last.zoom === camera.zoom && last.dpr === dpr && last.hover === view.hover && last.wh === view.workerHover && last.sel === view.selected && last.preview === view.preview &&
     last.plen === plen && last.reveal === view.devReveal && last.layers === layers && last.hash === hash && last.detail === deco.detail && last.fk === fk;
   if (same && now - last.at < (last.anim ? ANIM_MS : Math.min(IDLE_MS, last.animMs ?? Infinity))) return true; // last.animMs: the slower animations (wantFrames)
-  Object.assign(last, { canvas, cw: canvas.width, ch: canvas.height, state, live, know: state.knowledge, hour: state.hour, x: camera.x, y: camera.y, zoom: camera.zoom, dpr, hover: view.hover, sel: view.selected, preview: view.preview, plen, reveal: view.devReveal, layers, hash, at: now, anim: false, detail: deco.detail, fk });
+  Object.assign(last, { canvas, cw: canvas.width, ch: canvas.height, state, live, know: state.knowledge, hour: state.hour, x: camera.x, y: camera.y, zoom: camera.zoom, dpr, hover: view.hover, wh: view.workerHover, sel: view.selected, preview: view.preview, plen, reveal: view.devReveal, layers, hash, at: now, anim: false, detail: deco.detail, fk });
   forceDraw = false;
   return false;
 }
@@ -1625,7 +1625,7 @@ export function render(state) {
   if (on("workers") && !state.timelapse) {
     const t = state.hour + hourFrac();
     const walking = drawWorkers(ctx, state, {
-      HEX, toPixel: (id) => [G.x[id], G.y[id]], sprite, walkFrame, stepBob, zoom: zoomBoost(), baseHalf: (PLACE_W.hub * zoomBoost()) / 2, t, color: PLAYER_COLOR, live, groups: true,
+      HEX, toPixel: (id) => [G.x[id], G.y[id]], sprite, walkFrame, stepBob, zoom: zoomBoost(), baseHalf: (PLACE_W.hub * zoomBoost()) / 2, t, color: PLAYER_COLOR, live, groups: true, hoverSid: view.workerHover, // the hovered worker: their route (main.js)
       near: (x, y) => !(x < minX - HEX * 3 || x > maxX + HEX * 3 || y < minY - HEX * 3 || y > maxY + HEX * 3),
     });
     if (walking && !readable.still) glidingNow = true; // drawn again as the minutes go by

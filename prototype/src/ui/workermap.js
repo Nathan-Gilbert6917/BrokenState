@@ -5,9 +5,13 @@
 // the groups' bases you can see (sim/grouptrips.js groupWalkers: a couple of walkers going out and in by day).
 // Cheap: every position is worked out from the trip's times (s.trip: leave, arrive, workEnd, home) and the clock's
 // minutes, no state of its own beyond this frame's hit boxes; only bases near the view are looked at, and a crowd at
-// one base is drawn as a few figures with a ×N tag (MAX_FIGS). Hover one: who, the job, what they are doing.
+// one base is drawn as a few figures with a ×N tag (MAX_FIGS). Hover one: who, the job, what they are doing, and their
+// route as a faint line (H.hoverSid, trips-plus #4): the way out (dashed), the spot they work, the way back with the load
+// (dotted, to where they drop it: the base, or a stockpile when sim/fieldworks takes the load there). Trouble on the
+// way (sim/tripevents.js base.tripAlerts): a "!" over them for a little while ("?" for a small thing, "+" a find).
 import { tripState, outWorkers } from "../sim/jobtrips.js";
 import { tripRoute, TRIP_JOBS, shoreOf } from "../sim/tripland.js";
+import { TRIP_EV } from "../sim/tripevents.js";
 import { groupWalkers } from "../sim/grouptrips.js";
 import { ROLES } from "../sim/economy.js";
 import { workerSpriteCanvas, gridW } from "./mapsprites.js";
@@ -94,6 +98,44 @@ function placeOf(path, st, reach, job, k, t) {
   return { x: a.p[0], y: a.p[1], dir: st.phase === "out" ? a.dir : -a.dir, moving: true, work: null };
 }
 
+// The hovered worker's route: out (dashed), the work spot (a ring), back to the drop (dotted). Cheap: a few segments.
+function drawRoute(ctx, state, H, base, x) {
+  const s = H.zoom, tr = x.trip;
+  const path = legs(state, H, base, tr, x.s.id).out;
+  const back = legs(state, H, base, tr, x.s.id).back;
+  const line = (pts, color, dash) => {
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.setLineDash(dash.map((v) => v * s)); ctx.strokeStyle = color; ctx.lineWidth = 1.6 * s; ctx.stroke();
+  };
+  ctx.save();
+  ctx.lineCap = "round";
+  line(path, x.st.phase === "out" ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.3)", [5, 4]);
+  line(back, x.st.phase === "back" ? "rgba(255,217,138,0.6)" : "rgba(255,217,138,0.32)", [1.5, 3.5]);
+  ctx.setLineDash([]);
+  const [wx, wy] = path[path.length - 1];
+  ctx.beginPath(); ctx.arc(wx, wy, 6 * s, 0, Math.PI * 2); ctx.strokeStyle = RING[tr.job] || "#fff"; ctx.globalAlpha = 0.6; ctx.lineWidth = 1.4 * s; ctx.stroke();
+  ctx.restore();
+}
+// A trip's two legs in world px: out (from the gate, or from the stockpile they set out from: t.from) and back (to the
+// gate, or to the stockpile that takes the load: t.drop, sim/jobtrips.js planTrip).
+function legs(state, H, base, tr, k) {
+  const path = tripPath(state, H, base.tile, tr.tile, tr.at, tr.job, k);
+  const spot = path[path.length - 1];
+  const out = tr.from != null ? [H.toPixel(tr.from), spot] : path;
+  const back = tr.drop != null ? [spot, H.toPixel(tr.drop)] : [...path].reverse();
+  return { out, back, path };
+}
+// The "!" over a worker who met trouble a moment ago (or is facing it now: a card waits).
+function alertMark(ctx, x, y, mark, s, live) {
+  const r = 5.5 * s;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = mark === "+" ? "rgba(70,140,60,0.92)" : mark === "?" ? "rgba(90,110,140,0.92)" : "rgba(190,50,40,0.95)";
+  ctx.fill();
+  ctx.lineWidth = 1.2 * s; ctx.strokeStyle = live ? "#fff" : "rgba(255,255,255,0.7)"; ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(8 * s)}px Segoe UI`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(mark, x, y + 0.5);
+}
 // A small ring over a worker at work, filling with the work done.
 function workRing(ctx, x, y, f, color, s) {
   const r = 4 * s;
@@ -139,9 +181,12 @@ export function drawWorkers(ctx, state, H) {
         figs = [...m.values()];
       }
       for (const fig of figs) {
+        const hov = H.hoverSid != null ? fig.members.find((x) => x.s.id === H.hoverSid) : null;
+        if (hov) drawRoute(ctx, state, H, base, hov);
         const lead = fig.members[0], tr = lead.trip, job = tr.job, k = lead.s.id;
-        const path = tripPath(state, H, base.tile, tr.tile, tr.at, job, k);
-        const pl = placeOf(path, lead.st, tr.reach ?? 1, job, k, H.t);
+        const L = legs(state, H, base, tr, k);
+        const path = tr.from != null && lead.st.phase === "out" ? L.out : L.path;
+        const pl = lead.st.phase === "back" && tr.drop != null ? placeOf(L.back.slice().reverse(), lead.st, 1, job, k, H.t) : placeOf(path, lead.st, tr.reach ?? 1, job, k, H.t);
         if (pl.moving) moving = true;
         const c = tr.carry || {};
         const load = lead.st.phase === "back" && lead.st.load ? (job === "hunt" && !c.deer && !c.hog ? "small" : LOADS[job]) : "";
@@ -152,10 +197,20 @@ export function drawWorkers(ctx, state, H) {
         H.sprite(cv, pl.x, pl.y + bob, w, { facing: pl.dir });
         if (pl.work != null) workRing(ctx, pl.x, pl.y - h * 0.5 - 5 * s, pl.work, RING[job] || "#fff", s);
         if (fig.members.length > 1) tag(ctx, pl.x + w * 0.5, pl.y - h * 0.1, `×${fig.members.length}`, s);
+        // Trouble on the way (sim/tripevents.js): "!" while a card holds them, and for a little while after.
+        const held = fig.members.find((x) => x.st.held);
+        const al = (base.tripAlerts || []).filter((a) => fig.members.some((x) => x.s.id === a.sid) && H.t - a.t >= 0 && H.t - a.t < TRIP_EV.pop).pop();
+        if (held || al) { alertMark(ctx, pl.x, pl.y - h * 0.5 - (pl.work != null ? 14 : 6) * s, held ? "!" : al.mark, s, !!held); moving = true; }
         const lines = fig.members.slice(0, 6).map((x) => `<b>${esc(x.s.name)}</b> <span class="muted">· ${esc(ROLES[x.trip.job] ? ROLES[x.trip.job].name : x.trip.job)}</span><br>${esc(x.st.text)}`);
         if (fig.members.length > 6) lines.push(`<span class="muted">and ${fig.members.length - 6} more</span>`);
         hits.push({ x: pl.x, y: pl.y, r: Math.max(6, w * 0.6), html: `<span style="color:#cfe2f7">Out from ${esc(base.name)}</span><br>${lines.join("<br>")}`, baseId: base.id, sid: lead.s.id });
       }
+    }
+    // Trouble where nobody walks any more (a death out there): its mark on the tile for a while.
+    for (const a of base.tripAlerts || []) {
+      if (a.mark !== "✝" || H.t - a.t < 0 || H.t - a.t > TRIP_EV.pop * 4) continue;
+      const [ax, ay] = H.toPixel(a.tile);
+      alertMark(ctx, ax, ay - 8 * s, "✝", s, false);
     }
     // Deposits: "+18 meat" rising over the base as the load goes into the store.
     let row = 0;

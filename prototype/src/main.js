@@ -1698,6 +1698,7 @@ window.addEventListener("mousemove", (e) => {
     view.hover = id;
     if (id >= 0) {
       const wk = workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y); // ui/workermap.js: a base worker out on a job trip
+      view.workerHover = wk && wk.sid != null ? wk.sid : null; // ui/workermap.js: their route drawn faintly
       tip.innerHTML = wk ? `${wk.html}<hr style="border:0;border-top:1px solid #ffffff22;margin:4px 0">${tileTooltip(state, id)}` : tileTooltip(state, id);
       tip.style.left = `${e.clientX - r.left + 16}px`;
       tip.style.top = `${e.clientY - r.top + 16}px`;
@@ -1705,6 +1706,7 @@ window.addEventListener("mousemove", (e) => {
     } else tip.classList.add("hidden");
   } else {
     view.hover = -1;
+    view.workerHover = null;
     tip.classList.add("hidden");
   }
 });

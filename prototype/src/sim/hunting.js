@@ -104,7 +104,7 @@ import { wormKill, wormMeatIn, wormMeatAt, smokeWormMeat, shrinkWormMeat, huntYi
 import { totalRounds, sumRecs } from "./rounds.js"; // rounds by calibre
 import { huntRounds, huntLoad, takeHuntShots, baseAmmo } from "./ammo.js"; // a gun hunts with its own calibre and load (R9)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, waterSources, shoreOf, NO_WATER } from "./tripland.js"; // the Hunt and Fish jobs in trips: the land, the water and the walking (jobtrips.js)
+import { workLand, distFactor, waterSources, shoreOf, NO_WATER, walkMult } from "./tripland.js"; // the Hunt and Fish jobs in trips: the land, the water and the walking (jobtrips.js)
 
 // ---------- numbers ----------
 export const HUNT = {
@@ -882,6 +882,21 @@ export function huntWorkWhy(state, base) {
   if (land < CABIN.land * (g.length / HUNT_GROUND.full) || !huntTripTile(state, base)) return count(base, "huntcabin") > 0 ? "no game land around" : "no game land next to the base (a hunting cabin reaches 2 tiles out)";
   return "";
 }
+// What a Hunting cabin would add at this base (trips-plus #5: the governor and the base leaders value it by this, not by
+// the game land within 2): the best hunting trip's day with the grounds widened to CABIN.radius against the tiles next
+// to the base (huntTripTile: the game a tile holds now × its walk), as a ratio: 1 = nothing gained, 1.5 = half again as
+// much meat a hunter; Infinity when the tiles next to the base cannot be hunted (too little game: huntWorkWhy) and the
+// wider grounds can. 1 when the wider grounds hold nothing either.
+export function cabinGain(state, base, hour = state.hour) {
+  const v = (t) => (t ? t.v * t.f : 0);
+  const far = v(huntTripTile(state, base, hour, CABIN.radius));
+  if (!(far > 0)) return 1;
+  const bare = workLand(state, base.tile).filter((id) => state.grid.distance(base.tile, id) <= HUNT_GROUND.bare);
+  const land = bare.reduce((a, id) => a + gameAbundance(state, id), 0);
+  const near = land < CABIN.land * (bare.length / HUNT_GROUND.full) ? 0 : v(huntTripTile(state, base, hour, HUNT_GROUND.bare));
+  return near > 0 ? Math.max(1, far / near) : Infinity;
+}
+export const CABIN_GAIN = 1.3; // the governor builds one where it gives at least this (hunting.js cabinGain)
 export function fishTools(state, base, people = atBase(state, base.id), opts = {}) {
   return fishKit(people, base.armory || [], opts);
 }
@@ -927,7 +942,7 @@ export function baseFishDay(state, base, hour = state.hour) {
   const dayStart = hour - (hour % 24);
   let r = 0;
   for (const hh of DAWN_DUSK.slice(0, CABIN.hours)) r += fishRate(state, kit, w.shore, dayStart + hh);
-  return r * distFactor("fish", w.d);
+  return r * distFactor("fish", w.d, walkMult(state));
 }
 // The Hunt job's room (no fixed cap): hunters to close the land food gap to goalDays (foraging.js landFoodHands).
 export const huntWorkCap = (state, base, goalDays) => landFoodHands(state, base, goalDays, baseHuntDay(state, base));
@@ -935,12 +950,14 @@ export const huntWorkCap = (state, base, goalDays) => landFoodHands(state, base,
 export const fishWorkHands = (state, base, goalDays) => Math.min(fishWorkCap(state, base), landFoodHands(state, base, goalDays, baseFishDay(state, base)));
 // The tile the base's hunters go to (jobtrips.js): the best of its hunting grounds (huntRadius) by the game it holds now,
 // walking included (tripland.js distFactor: two tiles out 1, one 1.5): { id, v, d, f }.
-export function huntTripTile(state, base, hour = state.hour) {
+// radius: the grounds' reach (default the base's own: huntRadius; cabinGain asks what 2 would give).
+export function huntTripTile(state, base, hour = state.hour, radius = huntRadius(base)) {
   let best = null;
+  const m = walkMult(state); // the game's walking pace (tripland.js PACES)
   for (const id of workLand(state, base.tile)) {
     const a = gameAbundance(state, id);
-    if (a <= 0.02 || state.grid.distance(base.tile, id) > huntRadius(base)) continue;
-    const d = state.grid.distance(base.tile, id), f = distFactor("hunt", d), v = a * gameLevel(state, id, hour);
+    if (a <= 0.02 || state.grid.distance(base.tile, id) > radius) continue;
+    const d = state.grid.distance(base.tile, id), f = distFactor("hunt", d, m), v = a * gameLevel(state, id, hour);
     if (!best || v * f > best.v * best.f + 1e-12 || (Math.abs(v * f - best.v * best.f) <= 1e-12 && id < best.id)) best = { id, v, d, f };
   }
   return best;

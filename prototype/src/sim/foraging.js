@@ -45,7 +45,7 @@ import { huntInfo, huntProblem, fishProblem, fishKit, expectFish, fishSpot, part
 import { addWormCrop, addWormForage } from "./worm.js"; // the worm: forage from infected ground carries its eggs
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor } from "./tripland.js"; // the Forage job in trips: the land and its walking (jobtrips.js)
+import { workLand, distFactor, walkMult } from "./tripland.js"; // the Forage job in trips: the land and its walking (jobtrips.js)
 
 // ---------- numbers ----------
 export const FORAGE = {
@@ -280,7 +280,7 @@ export function forageTripTile(state, base, hour = state.hour) {
   for (const id of workLand(state, base.tile)) {
     const a = forageAbundance(state, id);
     if (a < 0.05) continue;
-    const d = state.grid.distance(base.tile, id), f = distFactor("forage", d), v = a * forageLevel(state, id, hour);
+    const d = state.grid.distance(base.tile, id), f = distFactor("forage", d, walkMult(state)), v = a * forageLevel(state, id, hour);
     if (!best || v * f > best.v * best.f + 1e-12 || (Math.abs(v * f - best.v * best.f) <= 1e-12 && id < best.id)) best = { id, v, d, f };
   }
   return best;

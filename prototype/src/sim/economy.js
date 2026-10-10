@@ -35,7 +35,8 @@ import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purifie
 import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (marks between the day's steps)
 import { addFind, chooseRounds, baseCals } from "./ammo.js"; // rounds by calibre
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
+import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult } from "./tripland.js";
+import { tripEventsDaily } from "./tripevents.js"; // trouble on job trips: the day's shots (trips-plus #2) // the Scavenge and Fetch water jobs in trips (jobtrips.js)
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -121,7 +122,7 @@ export function scavTripTile(state, base) {
   for (const id of workLand(state, base.tile)) {
     const t = state.tiles[id];
     if (!t || t.terrain === "water" || (id !== base.tile && !t.loc && t.terrain !== "city" && t.terrain !== "suburb")) continue;
-    const d = state.grid.distance(base.tile, id), f = distFactor("scavenge", d), v = siteBonus(state, base, id).scav;
+    const d = state.grid.distance(base.tile, id), f = distFactor("scavenge", d, walkMult(state)), v = siteBonus(state, base, id).scav;
     if (!best || v * f > best.v * best.f + 1e-12 || (Math.abs(v * f - best.v * best.f) <= 1e-12 && id < best.id)) best = { id, v, d, f };
   }
   return best;
@@ -177,7 +178,7 @@ export function fetchWaterWhy(state, base) {
 // Water a carrier brings in a day (trips that fit × two buckets).
 export function fetchWaterDay(state, base) {
   const w = fetchWaterTile(state, base);
-  return w ? waterTripsADay(w.d) * TRIP_JOBS.water.perTrip : 0;
+  return w ? waterTripsADay(w.d, walkMult(state)) * TRIP_JOBS.water.perTrip : 0;
 }
 
 // ---------- water ----------
@@ -495,6 +496,7 @@ function baseDaily(state, base) {
 
   baseScavenging(state, base, people);
   huntingDaily(state, base); // hunting.js: the Hunt and Fish jobs
+  tripEventsDaily(state, base); // tripevents.js: the day's gunshots out on the land (base.tripNoise, hordes drawn)
   cookAtBase(state, base); // worm.js: a cook fire or kitchen cooks the game with the worm's eggs (else it is eaten last, raw)
   woodDaily(state, base); // woodcutting.js: the Cut wood job
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));

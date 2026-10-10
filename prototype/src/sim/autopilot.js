@@ -12,6 +12,7 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
+import { gearOutdoorWorkers } from "./tripgear.js"; // the outdoor workers' kit for their trips (trips-plus #2)
 import { BUILDMAT_FINDS } from "./loot.js"; // building materials: where they are found
 import { traitAim } from "./traits.js"; // Brave, Coward: to hit
 import { fitFromPool } from "./gunmods.js";
@@ -94,7 +95,7 @@ import { onWatchNow, inShift } from "./watch.js"; // the night watch (govWatch)
 import { tiredLevel } from "./sleep.js";
 import {
   HUNT, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap,
-  cabinProblem, gameLand, hasFishingGear, huntInfo, huntProblem, fishProblem, expectFish,
+  cabinProblem, cabinGain, CABIN_GAIN, hasFishingGear, huntInfo, huntProblem, fishProblem, expectFish,
   hasBow, autoHuntMix, setHuntMix, huntMixOf, huntArrowsFor, huntMixText,
 } from "./hunting.js";
 import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageDay } from "./foraging.js";
@@ -2482,8 +2483,9 @@ function buildWishes(state, base) {
   if (waterIn(st) >= waterCapacity(base) * 0.85 && waterCapacity(base) < people * 10 && !plotsFree(base, "building") && countAll(base, "water_barrel") + queued("water_barrel") < BUILDINGS.water_barrel.max) add("water_barrel", "room to store more water (no building plot for a cistern)");
   if (g.farmShort[base.id] && count(base, "farm_plot") + queued("farm_plot") < (isHub ? BUILDINGS.farm_plot.max : 3)) add("farm_plot", "the farmers need more plots", true);
   for (const w of foodStoreWishes(state, base, people, queued)) out.push(w);
-  // A hunting cabin (hunting.js) where the land around is good game country, before the winter or while food is short.
-  if (BUILDINGS.huntcabin && !g.noHunting && !count(base, "huntcabin") && !queued("huntcabin") && here.length >= (isHub ? 6 : 2) && !cabinProblem(state, base) && gameLand(state, base) >= 5 &&
+  // A hunting cabin (hunting.js) where its wider grounds pay (cabinGain: the best hunt 2 tiles out against the tiles
+  // next to the base, walking counted; trips-plus #5), before the winter or while food is short.
+  if (BUILDINGS.huntcabin && !g.noHunting && !count(base, "huntcabin") && !queued("huntcabin") && here.length >= (isHub ? 6 : 2) && !cabinProblem(state, base) && cabinGain(state, base) >= CABIN_GAIN &&
       (st.scrap || 0) >= 30 && (winterShort(state, base) > 0 || (winterActive(state, base) && edibleFood(base) / Math.max(1, here.length) < foodTarget(state, base))) && here.some((s) => bestHuntWeapon(s))) add("huntcabin", "hunt the game land around it for the winter");
   // homeFood (Turtle): a base that lives on its own land saves up for its greenhouses from 6 people (the second at 10)
   // and builds them with the three parts they take; the others when the parts are spare, saved for in autumn.
@@ -2861,6 +2863,9 @@ function equipFromArmory(state, base) {
     s.gear.tool = item;
     handed.push(`${first(s)} ${item.name}`);
   }
+  // tripgear.js (trips-plus #2): the outdoor workers out on the land alone get what the fighters left: a weapon for the
+  // job, a light for the dusk hunt, light armour, a tourniquet or a kit.
+  for (const x of gearOutdoorWorkers(state, base)) handed.push(`${first(x.s)} ${x.item.name}`);
   if (handed.length) {
     gov(state).stats.equipped += handed.length;
     say(state, `Gear handed out at ${base.name}: ${handed.join(", ")}.`);

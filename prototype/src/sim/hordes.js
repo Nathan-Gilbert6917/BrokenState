@@ -94,7 +94,7 @@ export function baseHeat(state, base) {
   const own = base.type !== "hub" ? 0 : base.tier === 0 ? Math.round(shelterHeat(state, base).total * 10) / 10 : 3;
   // Running silent (hiding.js): quiet workshops, small fires, the radio off, the generator muffled: × SILENT.HEAT.
   const q = base.silent ? SILENT.HEAT : 1;
-  return people.length + (workshop * 3 + (base.radio && !base.silent ? 2 : 0) + own + generatorHeat(base)) * q + (base.huntNoise || 0) + (base.woodNoise || 0); // a running generator is loud (power.js); hunters' gunshots (hunting.js); axes (woodcutting.js)
+  return people.length + (workshop * 3 + (base.radio && !base.silent ? 2 : 0) + own + generatorHeat(base)) * q + (base.huntNoise || 0) + (base.woodNoise || 0) + (base.tripNoise || 0); // a running generator is loud (power.js); hunters' gunshots (hunting.js); axes (woodcutting.js)
 }
 
 // Hordes that meet merge when they are on the same errand: wandering ones (roaming or from the border), or
