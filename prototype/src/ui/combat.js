@@ -48,6 +48,7 @@ import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // 
 import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC, vehicleOf, pullTargets, pullRefusal, layInStab, selfKit, selfOdds, selfStabRefusal } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy, pulling one out of a vehicle
 import { groundButtons, groundCbAct, groundClick } from "./ground.js"; // bodies searched where they fell, things on the ground (sim/ground.js)
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
+import { hudPaint, hudSync, toggleHud, hitBreakdown, breakdownHtml, hitTone } from "./battlehud.js"; // the weapon panel, the squad strip, the big hit chances (user requests 2026-10-09)
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
 
@@ -866,6 +867,7 @@ function viewKey(state, b, e, k) {
   if (k === "bview.zoomIn" || k === "bview.zoomOut") { isoZoom(b, k === "bview.zoomIn" ? 1 : -1); return true; }
   if (k === "bview.roofs") { setRoofs(!iso.roofs); return true; }
   if (k === "bview.center") { const u = selUnit(b); if (u) isoCenterOn(b, u.x, u.y); return true; }
+  if (k === "bview.hud") { toggleHud(); return true; } // ui/battlehud.js: fold or open the squad strip and the weapon panel
   return false;
 }
 // A pan key let go: whatever modifiers are down now, the direction it held stops.
@@ -939,6 +941,7 @@ export function combatAction(state, key, d) {
     // A building with storeys: the Floor control (▲ ▼), or back to the selected unit's floor.
     else if (d.v === "fup" || d.v === "fdown") { if (!setViewFloor(b, floorNo(b) + (d.v === "fup" ? 1 : -1))) cui.msg = d.v === "fup" ? "This is the top floor." : "This is the ground floor."; }
     else if (d.v === "fgo" && u) followFloor(b, u);
+    else if (d.v === "hud") toggleHud(); // ui/battlehud.js: the squad strip's fold button
     return;
   }
   if (key === "cb-auto") {
@@ -976,7 +979,12 @@ export function combatAction(state, key, d) {
     }
     return;
   }
-  if (key === "cb-sel") { cui.sel = Number(d.id); cui.pickedDown = cui.sel; cui.mode = "move"; cui.msg = ""; follow(b); return; }
+  if (key === "cb-sel") {
+    cui.sel = Number(d.id); cui.pickedDown = cui.sel; cui.mode = "move"; cui.msg = "";
+    const p = d.center ? selUnit(b) : null; // the squad strip (ui/battlehud.js): the view goes to them, on screen or not
+    if (p && !p.off && p.x >= 0) { followFloor(b, p); isoCenterOn(b, p.x, p.y); } else follow(b);
+    return;
+  }
   // Only a couple of far-off stragglers left (sim/battlesize.js clearEnough): call the fight won.
   if (key === "cb-clear") { if (clearEnough(b)) act(state, { type: "callClear" }); else cui.msg = "There are still enemies close by or coming."; return; }
   // A base's wall map (sim/interior.js): everyone off the walls, into the yard and the buildings.
@@ -1313,7 +1321,7 @@ export function renderCombatPanel(state) {
       const o = odds(b, u, t);
       const tip = o ? `${t.name}: ${o.label}. Click to attack with ${u.name}.` : `${t.name}: ${u.name} cannot hit them from here.`;
       html += `<button class="cbtarget" data-action="cb-target" data-id="${t.id}" ${o && o.ok && b.phase === "player" && u.ap > 0 ? "" : "disabled"} data-tip="${esc(tip)}">
-        <span>${spriteImg(canvasURL(unitCanvas(state, b, t, cui.salt)), 1.5)}${esc(t.name)}${t.down ? ` <span class="muted">(${t.surr ? "gave up" : "down"}${t.ko ? ", out cold" : t.surr ? "" : t.stab ? ", stabilized" : `, bleeding ${t.bleed || 0}`}${t.tied ? ", tied" : ""})</span>` : t.aware ? "" : ' <span class="warn">(unaware)</span>'}${t.kind === "human" && t.weaponName ? ` <span class="small muted">${esc(t.weaponName)}</span>` : ""}${t.stun ? ` <span class="good">(${esc(t.stun.dazed ? "dazed" : "stunned")})</span>` : ""}${t.jam ? ' <b class="danger">JAMMED</b>' : ""}${t.suppressed > 0 ? ' <span class="warn">suppressed</span>' : ""}${isMedic(t) && !t.down ? ' <span class="danger" data-tip="A medic: revives and drags their downed, heals the hurt.">✚</span>' : ""}</span><span class="small">${Math.round(t.hp)} hp${o && o.ok ? ` · <b>${o.chance}%</b>` : ""}</span></button>`;
+        <span>${spriteImg(canvasURL(unitCanvas(state, b, t, cui.salt)), 1.5)}${esc(t.name)}${t.down ? ` <span class="muted">(${t.surr ? "gave up" : "down"}${t.ko ? ", out cold" : t.surr ? "" : t.stab ? ", stabilized" : `, bleeding ${t.bleed || 0}`}${t.tied ? ", tied" : ""})</span>` : t.aware ? "" : ' <span class="warn">(unaware)</span>'}${t.kind === "human" && t.weaponName ? ` <span class="small muted">${esc(t.weaponName)}</span>` : ""}${t.stun ? ` <span class="good">(${esc(t.stun.dazed ? "dazed" : "stunned")})</span>` : ""}${t.jam ? ' <b class="danger">JAMMED</b>' : ""}${t.suppressed > 0 ? ' <span class="warn">suppressed</span>' : ""}${isMedic(t) && !t.down ? ' <span class="danger" data-tip="A medic: revives and drags their downed, heals the hurt.">✚</span>' : ""}</span><span class="small">${Math.round(t.hp)} hp${o && o.ok ? ` · <b class="${hitTone(o.chance)}">${o.chance}%</b>` : ""}</span></button>`;
     }
     html += `</div>`;
   }
@@ -1859,7 +1867,7 @@ function odds(b, u, t) {
   }
   if ((cui.mode === "melee" || !canFire(b, u)) && meleeReach(b, u, t)) {
     const o = meleeOdds(b, u, t);
-    return { ...o, ok: true, label: `Melee ${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT})` };
+    return { ...o, ok: true, kind: "melee", label: `Melee ${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT})` };
   }
   if (!canFire(b, u)) return { ok: false, label: isRanged(u) ? (magEmpty(b, u) && !reloadRefusal(b, u) ? "Empty: reload first (I)" : outOf(u)) : "No gun: move next to them and use Melee" };
   if (!canSee(b, u, t)) return { ok: false, label: "No line of sight" };
@@ -1868,7 +1876,7 @@ function odds(b, u, t) {
   // sim/combat.js shotOdds notes: a bipod rested on cover, firing from a vehicle that moved, a light round's drop at range,
   // handloads, a helmet's visor, a headset's callout, dazed by a bang.
   const notes = o.notes && o.notes.length ? `; ${o.notes.join(", ")}` : "";
-  return { ...o, ok: true, label: `${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT}), ${cover}${t.hunker ? ", hunkered" : ""}${notes}` };
+  return { ...o, ok: true, kind: "shot", label: `${o.chance}% to hit, ${o.dmg[0]}–${o.dmg[1]} damage, ${o.crit}% crit (×${CRIT_MULT}), ${cover}${t.hunker ? ", hunkered" : ""}${notes}` };
 }
 
 
@@ -1899,7 +1907,7 @@ function previewHtml(b, state = null) {
     const zt = t.ztype && ZTYPES[t.ztype] ? `<br><span class="small">${esc(ZTYPES[t.ztype].special)}${t.ztype === "spitter" && t.cd > 0 ? " Spits again next turn." : ""}${t.windup != null ? ` Winding up to throw at ${esc((b.units.find((o) => o.id === t.windup) || {}).name || "someone")}.` : t.ztype === "flinger" && t.cd > 0 ? " Throws again soon." : ""}${t.ztype === "nightmare" && t.screamCd > 0 ? ` Screams again in ${t.screamCd} turn${t.screamCd > 1 ? "s" : ""}.` : ""}${ar}${bp} <span class="good">Counter: ${esc(ZTYPES[t.ztype].counter)}</span></span>` : "";
     // One of the risen (sim/carriers.js): who it was, and the armour it still wears.
     const turned = t.turned ? `<br><span class="small danger">${esc(t.turned.name)}, got up as one of the dead${t.armor < 0.99 ? `, still in their armour (a hit does ${Math.round(t.armor * 100)}%)` : ""}. Put down, what they had on is on the body.</span>` : "";
-    return `<b>${esc(t.name)}</b> <span class="muted">${gunText(b, t)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}${turned}<br>${o ? (o.ok ? `<span class="${o.chance >= 65 ? "good" : o.chance >= 35 ? "warn" : "danger"}">${esc(o.label)}</span>` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
+    return `<b>${esc(t.name)}</b> <span class="muted">${gunText(b, t)} · ${Math.round(t.hp)}/${t.maxHp} hp</span>${stealthy}${sense}${kit}${zt}${turned}<br>${o ? (o.ok ? `<span class="${hitTone(o.chance)}"><b class="cbbig">${o.chance}%</b> ${esc(o.label)}</span>${breakdownHtml(hitBreakdown(b, u, t, o))}` : `<span class="muted">${esc(o.label)}</span>`) : ""}`;
   }
   // The third side (sim/thirdside.js): survivors keeping to themselves, soldiers fighting the dead.
   if (t && t.side === "third" && v.seen.has(t.id)) return `<b>${esc(t.name)}</b> <span class="muted">${esc(t.weaponName)} · ${Math.round(t.hp)}/${t.maxHp} hp</span><br><span class="small">${t.team === "military" ? "A soldier: fights the dead and anyone who attacks them, not you unless you fire on them." : "A survivor keeping to themselves: they defend themselves or run. Talk to them after the fight."} Click twice to attack.</span>`;
@@ -2017,9 +2025,27 @@ export function drawCombat(state, now) {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawIsoView(state, b, now, cw, ch); // the battle map is isometric only (ui/isoview.js)
+  hudFrame(state, b, cw, ch); // ui/battlehud.js: the big hit chances, your people off screen, the strip and the weapon panel
   barkFrame(ctx, state, b, now, barkView(b, now, cw, ch)); // combat barks over the units' heads (ui/barks.js)
   drawBanner(b, cw, 40);
 }
+// The battle HUD (ui/battlehud.js): the enemy under the mouse and its odds, the hit chances over the enemies (the
+// isometric view's own small labels and hover bubble are left out: these replace them), your people in number-key order.
+let hudEl;
+function hudFrame(state, b, cw, ch) {
+  const v = view(b), u = v.u;
+  const h = cui.hover;
+  const t = h && u && active(u) && b.phase === "player" && !b.over ? unitAt(b, h.x, h.y) : null;
+  const hoverT = t && t.side === "enemy" && active(t) && v.seen.has(t.id) ? t : null;
+  const hoverO = hoverT ? odds(b, u, hoverT) : null;
+  const list = players(b);
+  const sel = cui.sel;
+  if (hudEl === undefined || (hudEl && !hudEl.isConnected)) hudEl = typeof document !== "undefined" && document.getElementById ? document.getElementById("cbhud") : null;
+  const avoid = hudSync(hudEl, { state, b, list, sel, salt: cui.salt, cw, ch, hoverT, hoverO, mode: cui.mode });
+  hudPaint(ctx, b, { cw, ch, hits: hitLabels(b, v), hoverT, hoverO, mode: cui.mode, list, sel, avoid });
+}
+const NO_HITS = new Map();
+const noBubble = () => {};
 // What ui/barks.js needs to place the bubbles: who your people see (the drawing's fog), where a unit's head is (over its
 // labels in the iso view, sliding with its move), the text size (the zoom and the UI size).
 function barkView(b, now, cw, ch) {
@@ -2070,8 +2096,8 @@ function drawIsoView(state, b, now, cw, ch) {
     v, u: v.u, sel: cui.sel, mode: cui.mode, hover: cui.hover, salt: cui.salt,
     animPos: (t, n) => { const [x, y] = animTile(b, t, n); return [x + 0.5, y + 0.5]; },
     fxAge: (f, n) => { if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, n); return Math.max(0, n - cui.anim.get(f.seq)); },
-    unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble,
-    hits: hitLabels(b, v), retreatOpen: !!plan, plan,
+    unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble: noBubble, // the hover card is ui/battlehud.js's
+    hits: NO_HITS, retreatOpen: !!plan, plan, // the hit chances over the enemies are ui/battlehud.js's (hudPaint)
     threat: (x, y) => threatAt(b, v, x, y), // the threat preview: lines from whoever could hit the hovered tile
     cone: nlConeMask(b, v.u, cui), // the pepper spray's cone toward the hovered tile (ui/nonlethal.js)
     throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)

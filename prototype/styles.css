@@ -676,6 +676,86 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
 #cbpanel .cbview .cbfloor { font-size: 0.8rem; font-weight: 700; color: #ffe296; margin-left: 0.3rem; padding: 0 0.2rem; white-space: nowrap; }
 .cbunit .cbfl { font-size: 0.72rem; font-weight: 700; color: #ffe296; border: 1px solid rgba(255,226,150,0.45); border-radius: 4px; padding: 0 0.25rem; margin-left: 0.3rem; vertical-align: middle; }
 .cbunit .cbfl.off { color: var(--muted); border-color: var(--line); }
+/* The battle HUD over the map (ui/battlehud.js): the squad strip (top left), the weapon panel and the target card
+   (bottom middle). rem: it follows the UI size. Only the strip and the weapon panel take the mouse; the rest of the
+   map stays clickable through it. */
+#cbhud { position: absolute; inset: 0; pointer-events: none; z-index: 2; font-size: 0.82rem; }
+#cbhud .bh-roster { position: absolute; left: 0.5rem; top: 0.5rem; width: 15rem; max-height: calc(100% - 6.5rem); overflow-y: auto; display: flex; flex-direction: column; gap: 0.2rem; pointer-events: auto; scrollbar-width: thin; }
+#cbhud .bh-roster.folded { width: 5.2rem; }
+#cbhud .bh-fold { align-self: flex-start; padding: 0.1rem 0.5rem; font-size: 0.75rem; background: rgba(20,22,26,0.88); }
+#cbhud .bh-offn { color: #8fc1ff; font-weight: 600; }
+#cbhud .bh-row { position: relative; display: flex; align-items: center; gap: 0.3rem; background: rgba(23,26,31,0.9); border: 1px solid var(--line); border-radius: 7px; padding: 0.2rem 0.35rem; cursor: pointer; }
+#cbhud .bh-row:hover { border-color: var(--accent); }
+#cbhud .bh-row.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+#cbhud .bh-row.done { opacity: 0.7; }
+#cbhud .bh-row.out { opacity: 0.45; }
+#cbhud .bh-row.downed { border-color: #8a3a34; }
+#cbhud .bh-row.off { border-style: dashed; }
+#cbhud .bh-num { color: var(--muted); font-weight: 700; min-width: 0.7rem; text-align: center; font-variant-numeric: tabular-nums; }
+#cbhud .bh-face .sprite { display: block; }
+#cbhud .bh-main { flex: 1; min-width: 0; }
+#cbhud .bh-name { display: flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
+#cbhud .bh-name b { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+#cbhud .bh-ap { display: inline-flex; gap: 0.15rem; }
+#cbhud .bh-ap i { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: #2c3139; }
+#cbhud .bh-ap i.on { background: #8fc1ff; }
+#cbhud .bh-offtag { color: #8fc1ff; font-weight: 700; font-size: 0.8rem; }
+#cbhud .bh-hp { height: 0.4rem; background: #2c3139; border-radius: 3px; overflow: hidden; margin: 0.12rem 0; flex: 1; }
+#cbhud .bh-hp > i { display: block; height: 100%; }
+#cbhud .bh-hp.bleed { box-shadow: 0 0 0 1px #c0392b; }
+#cbhud .bh-row.folded, #cbhud .folded .bh-row { gap: 0.25rem; padding: 0.2rem 0.3rem; }
+#cbhud .folded .bh-hp { min-width: 1.6rem; }
+#cbhud .bh-sub { display: flex; gap: 0.35rem; color: var(--muted); font-size: 0.75rem; white-space: nowrap; overflow: hidden; }
+#cbhud .bh-sub b { color: var(--text); }
+#cbhud .bh-sub b.danger { color: var(--danger); }
+#cbhud .bh-hpn { font-variant-numeric: tabular-nums; min-width: 1.4rem; }
+#cbhud .bh-gun { overflow: hidden; text-overflow: ellipsis; }
+#cbhud .bh-chips { display: flex; flex-wrap: wrap; gap: 0.15rem; margin-top: 0.1rem; align-items: center; }
+#cbhud .bh-chip { font-size: 0.62rem; font-weight: 700; padding: 0 0.22rem; border-radius: 3px; background: #2c3139; color: var(--text); letter-spacing: 0.02em; }
+#cbhud .bh-chip.danger { background: #4a2626; color: #ffb3ab; }
+#cbhud .bh-chip.warn { background: #45380f; color: #ffe08a; }
+#cbhud .bh-chip.info { background: #1d3147; color: #a9cff5; }
+#cbhud .bh-chip.good { background: #1d3826; color: var(--good); }
+#cbhud .bh-chips .st-icons { margin-left: 0; }
+#cbhud .bh-chips .st-ic { font-size: 0.66rem; line-height: 0.95rem; min-width: 0.95rem; }
+#cbhud .bh-bottom { position: absolute; left: 50%; bottom: 0.5rem; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.3rem; max-width: calc(100% - 9rem); }
+#cbhud .bh-wpanel { pointer-events: auto; background: rgba(20,22,26,0.92); border: 1px solid var(--line); border-radius: 9px; padding: 0.35rem 0.6rem; min-width: 17rem; display: flex; flex-direction: column; gap: 0.15rem; }
+#cbhud .bh-wtop { display: flex; align-items: center; gap: 0.45rem; }
+#cbhud .bh-gunart { height: 1.5rem; width: auto; image-rendering: pixelated; }
+#cbhud .bh-glyph { font-size: 1.1rem; color: var(--accent); width: 1.5rem; text-align: center; }
+#cbhud .bh-wname { flex: 1; font-size: 0.92rem; }
+#cbhud .bh-mode { font-size: 0.72rem; font-weight: 700; border: 1px solid var(--line); border-radius: 4px; padding: 0 0.3rem; color: var(--info); }
+#cbhud .bh-cond { font-size: 0.72rem; font-weight: 700; }
+#cbhud .bh-cond::before { content: "cond "; color: var(--muted); font-weight: 400; }
+#cbhud .bh-magline { display: flex; align-items: center; gap: 0.45rem; }
+#cbhud .bh-count { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+#cbhud .bh-count .muted { font-size: 0.85rem; }
+#cbhud .bh-cal, #cbhud .bh-load { font-size: 0.72rem; color: var(--muted); }
+#cbhud .bh-load { color: #ffe296; font-weight: 700; border: 1px solid rgba(255,226,150,0.4); border-radius: 4px; padding: 0 0.25rem; }
+#cbhud .bh-pips { display: inline-flex; gap: 0.12rem; }
+#cbhud .bh-pips i { display: inline-block; width: 0.38rem; height: 0.85rem; border-radius: 2px; background: #2c3139; }
+#cbhud .bh-pips.good i.on { background: var(--good); }
+#cbhud .bh-pips.warn i.on { background: var(--accent); }
+#cbhud .bh-pips.danger i.on { background: var(--danger); }
+#cbhud .bh-pips.danger i { box-shadow: inset 0 0 0 1px rgba(226,104,95,0.5); }
+#cbhud .bh-magbar { display: inline-block; width: 7rem; height: 0.7rem; background: #2c3139; border-radius: 3px; overflow: hidden; }
+#cbhud .bh-magbar > i { display: block; height: 100%; }
+#cbhud .bh-magbar.good > i { background: var(--good); }
+#cbhud .bh-magbar.warn > i { background: var(--accent); }
+#cbhud .bh-magbar.danger { box-shadow: inset 0 0 0 1px var(--danger); }
+#cbhud .bh-magbar.danger > i { background: var(--danger); }
+#cbhud .bh-spare, #cbhud .bh-wstate { font-size: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.1rem 0.3rem; align-items: center; }
+#cbhud .bh-dot { color: var(--muted); }
+#cbhud .bh-target { pointer-events: none; background: rgba(20,22,26,0.94); border: 1px solid var(--line); border-radius: 9px; padding: 0.35rem 0.6rem; min-width: 15rem; }
+#cbhud .bh-thead { display: flex; align-items: baseline; justify-content: space-between; gap: 0.8rem; }
+#cbhud .bh-big { font-size: 1.7rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+#cbhud .bh-big small { font-size: 0.7rem; font-weight: 600; color: var(--muted); }
+.bh-bd { margin-top: 0.25rem; font-size: 0.75rem; display: grid; gap: 0.05rem; }
+.bh-bdrow { display: flex; justify-content: space-between; gap: 0.8rem; }
+.bh-bdrow b { font-variant-numeric: tabular-nums; }
+.bh-bdsum { border-top: 1px solid var(--line); padding-top: 0.1rem; margin-top: 0.1rem; }
+#cbpanel .cbbig { font-size: 1.25rem; }
+#cbpanel .cbprev .bh-bd { max-width: 20rem; }
 
 /* Work tab (ui/work.js): the priority grid, the role editor, the schedule strip and the crews */
 .worktab .wbar { gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.4rem; }
