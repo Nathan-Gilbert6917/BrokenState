@@ -280,19 +280,22 @@ export function worldCues(state, ui, mem) {
   // away for less than ALERT_QUIET_HOURS and came back is not heard again (an outlook flickering by the hour).
   const list = (ui && ui.alertList) || [];
   const hour = state.hour || 0;
-  let tone = null;
+  let tone = null, repaired = false;
   for (const a of list) {
     if (!a || !a.key) continue;
-    const id = `${String(a.key).split(":").slice(0, 2).join(":")}|${a.tone}`;
+    // A repair done is news of its own (its key has the hour: each repair is heard, once).
+    const id = a.kind === "fixed" ? String(a.key) : `${String(a.key).split(":").slice(0, 2).join(":")}|${a.tone}`;
     const seen = mem.alerts.get(id);
     mem.alerts.set(id, hour);
     if (fresh || (seen != null && hour - seen <= ALERT_QUIET_HOURS)) continue;
     if (a.kind === "breakin") { out.push({ name: "alarm" }); continue; }
     if (a.kind === "horde" || a.kind === "cards") continue;
+    if (a.kind === "fixed") { repaired = true; continue; } // its own chime (ui/audio.js repaired), not Good news as well
     if (a.tone === "danger" || a.tone === "warn") tone = "alert";
     else if (a.tone === "good" && !tone) tone = "good";
   }
   if (tone && !card) out.push({ name: tone });
+  if (repaired) out.push({ name: "repaired" }); // a vehicle repaired on the road runs again: heard even with a card up (ui/alerts.js "fixed")
   // A horde you can see newly near a base or one of your teams: the sting, once per horde.
   let sting = false;
   for (const h of hordesNear(state)) {

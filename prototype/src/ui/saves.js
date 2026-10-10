@@ -23,7 +23,7 @@ const SLOT_KEY = (id) => `brokenstate.save.${id}`;
 const OPTIONS_KEY = "brokenstate.options";
 export const MAX_SLOTS = 12; // manual saves; the autosave is extra
 
-export const DEFAULT_OPTIONS = { autosave: true, autosaveDays: 1, confirmQuit: true, pauseOnBlur: false, uiScale: 1, autoOpen: true, mapDetail: true, battleSave: true };
+export const DEFAULT_OPTIONS = { autosave: true, autosaveDays: 1, confirmQuit: true, pauseOnBlur: false, uiScale: 1, autoOpen: true, mapDetail: true, battleSave: true, goodNews: true };
 export const AUTOSAVE_DAYS = [1, 2, 3, 5, 7];
 
 const storage = () => {
@@ -42,6 +42,7 @@ export function loadOptions() {
       if (typeof v.confirmQuit === "boolean") o.confirmQuit = v.confirmQuit;
       if (typeof v.pauseOnBlur === "boolean") o.pauseOnBlur = v.pauseOnBlur;
       if (typeof v.autoOpen === "boolean") o.autoOpen = v.autoOpen; // folded panels open when you pick what they show (ui/layout.js)
+      if (typeof v.goodNews === "boolean") o.goodNews = v.goodNews; // Good news alerts (ui/alerts.js GOOD_NEWS): off, the log keeps them
       if (Number.isFinite(v.uiScale) && v.uiScale >= 0.5 && v.uiScale <= 3) o.uiScale = v.uiScale;
       if (typeof v.mapDetail === "boolean") o.mapDetail = v.mapDetail;
       if (typeof v.battleSave === "boolean") o.battleSave = v.battleSave; // a save as each battle starts (Restart battle)

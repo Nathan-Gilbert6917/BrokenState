@@ -279,13 +279,23 @@ const SECTIONS = {
 };
 const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "fixed", "wait", "plan", "broken", "idle", "crash", "cards", "trip", "caravan", "built"];
 
+// Good news (Options → "Good news alerts", options.goodNews, on by default): news that asks nothing of you. Off, these
+// kinds are left out of the stack, so no row, flash or chime (ui/soundcues.js hears only what is shown); the log and the
+// diary keep every line. Not in it: "plan" (a plan finished is the team's Waiting for orders), "firsthub" (a camp to put
+// to work), and anything warn or danger.
+export const GOOD_NEWS = new Set(["fixed", "built", "caravan", "trip"]);
+let OPTS = null;
+export function initAlerts(options) { OPTS = options || null; } // main.js: the options object (ui/saves.js)
+export const goodNewsOn = () => !OPTS || OPTS.goodNews !== false;
+
 export function computeAlerts(state) {
-  const out = [];
+  let out = [];
   for (const [name, fn] of Object.entries(SECTIONS)) {
     try { fn(state, out); } catch (err) { // one broken kind must not take the stack down
       if (!computeAlerts.warned) { computeAlerts.warned = true; console.warn(`Broken State: the ${name} alerts failed`, err); }
     }
   }
+  if (!goodNewsOn()) out = out.filter((a) => !(GOOD_NEWS.has(a.kind) && a.tone === "good"));
   return out.sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
 }
 

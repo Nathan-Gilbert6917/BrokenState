@@ -78,7 +78,7 @@ import { setTeamPolicy } from "./sim/breakoff.js";
 import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
 import { WHY_ACTIONS } from "./ui/causes.js"; // "Why?" on deaths and lost bases
-import { renderAlerts, ALERT_ACTIONS, mapHotkey } from "./ui/alerts.js";
+import { renderAlerts, ALERT_ACTIONS, mapHotkey, initAlerts } from "./ui/alerts.js";
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
 import { GUIDE_ACTIONS, guideCheck, renderGuide, guidePulse, startGuide, guideDefault } from "./ui/guide.js"; // the first-week guide under the alerts
 import { LEDGER_ACTIONS, ledgerKey, drawCharts, sparkNode } from "./ui/ledger.js"; // the Ledger, the run summary, the stock trends
@@ -167,6 +167,7 @@ for (const [prop, p] of [["legendCollapsed", "legend"], ["ordersCollapsed", "ord
 const options = loadOptions();
 initKeymap(options); // the player's key bindings (ui/keymap.js)
 initPacing(options, saveOptions); // Options → Pause for… (ui/pacing.js)
+initAlerts(options); // Options → Good news alerts (ui/alerts.js GOOD_NEWS)
 ui.scale = options.uiScale;
 ui.guide = guideDefault(options); // the new-run screen's First-week guide box (ui/guide.js): on for the first campaign here
 if (ui.scale !== 1) document.documentElement.style.setProperty("--ui-scale", ui.scale);

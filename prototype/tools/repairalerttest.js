@@ -3,7 +3,10 @@
 // check, 1 with a spare part), the team moving again; clicking it opens the team and centres on it; a new one flashes
 // over the stack. Other delays tell nothing; a team or vehicle gone during the wait tells nothing; a save made during
 // the wait keeps it (and an old save without the marker is fine); bikes are "fixed"; a second breakdown repaired during
-// the wait joins the first (one alert for both).
+// the wait joins the first (one alert for both). The chime (ui/audio.js "repaired", ui/soundcues.js worldCues): once per
+// alert, wherever the camera is, in the Card chimes group, silent when muted. Options → Good news alerts (ui/alerts.js
+// GOOD_NEWS, ui/saves.js goodNews): off, no row, flash or chime for good news (the log keeps the line); warnings and
+// dangers unaffected; the switch is kept in the options store.
 // node tools/repairalerttest.js [seed]
 import { createWorld, tickHour, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition, planPath, partyTile, removeParty, leaveVehicle, partySpeed } from "../src/sim/parties.js";
@@ -11,7 +14,9 @@ import { rollTravelEvent } from "../src/sim/events.js";
 import { vehiclesAtBase, createVehicle, setPartyVehicles } from "../src/sim/vehicles.js";
 import { markRepair } from "../src/sim/repairwait.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
-import { computeAlerts, renderAlerts, ALERT_ACTIONS } from "../src/ui/alerts.js";
+import { computeAlerts, renderAlerts, ALERT_ACTIONS, initAlerts, GOOD_NEWS } from "../src/ui/alerts.js";
+import { worldCues } from "../src/ui/soundcues.js";
+import { groupOf } from "../src/ui/soundgroups.js";
 
 const SEED = Number(process.argv[2] || 42);
 let fails = 0, passed = 0;
@@ -311,6 +316,172 @@ section("Groups' teams get no marker (no alerts there)");
   const ai = { id: 999999, owner: state.factions[0].id, path: [0, 1], idx: 0, progress: 0, phase: "out", stance: "normal" };
   markRepair(state, ai, { id: 1, name: "Truck" }, 2, 0);
   check(!ai.delayWhy, "an AI team: no marker");
+}
+
+// A world where a repair's news just came (the alert up for the first time). Returns { state, p }.
+function justFixed(seed) {
+  const state = mk(seed);
+  const { p, car } = onRoad(state);
+  car.condition = 5;
+  const c = breakdown(state, p);
+  dropEvents(state);
+  p.progress = Math.max(0, p.progress || 0);
+  answer(state, c, /Repair it on the spot/, true);
+  const h = untilNews(state, p, 4);
+  check(h === 2, `test setup: the news came (${h})`);
+  return { state, p };
+}
+
+section("The chime: once per alert, wherever the camera is, even with a card up");
+{
+  const state = mk(SEED + 10);
+  const { p, car } = onRoad(state);
+  car.condition = 5;
+  const c = breakdown(state, p);
+  if (check(!!c, "test setup: a Breakdown card")) {
+    dropEvents(state);
+    p.progress = Math.max(0, p.progress || 0);
+    const ui = { started: true }, mem = {};
+    renderAlerts(state, ui);
+    worldCues(state, ui, mem); // the world first heard: quiet
+    answer(state, c, /Repair it on the spot/, true);
+    const heard = [];
+    for (let i = 0; i < 4; i++) {
+      tick(state, p);
+      if (i === 1) state.cards.push({ title: "A peddler at the gate", choices: [] }); // a card comes up in the same hour
+      renderAlerts(state, ui);
+      heard.push(...worldCues(state, ui, mem).map((x) => x.name));
+      heard.push(...worldCues(state, ui, mem).map((x) => x.name)); // the next frame: nothing again
+    }
+    check(heard.filter((n) => n === "repaired").length === 1, `one chime for the alert (${heard.join(", ") || "none"})`);
+    check(!heard.includes("good"), "not the plain Good news chime as well");
+    check(groupOf("repaired") === "ui.cards", "in the Card chimes group (Settings → Sound mixer)");
+    const AU = await import("../src/ui/audio.js");
+    check(!!AU.VOICES.repaired && AU.SOUND_NAMES.includes("repaired") && /Repair done/.test(AU.soundOptionsHtml({ sound: {} })), "a voice of its own, in Settings → Sound's Hear list");
+    // A second repair on the same team the same day: heard again (each repair is news of its own).
+    car.condition = 5;
+    const c2 = breakdown(state, p);
+    if (c2) {
+      dropEvents(state);
+      p.progress = Math.max(0, p.progress || 0);
+      answer(state, c2, /Repair it on the spot/, true);
+      const again = [];
+      for (let i = 0; i < 3; i++) { tick(state, p); renderAlerts(state, ui); again.push(...worldCues(state, ui, mem).map((x) => x.name)); }
+      check(again.filter((n) => n === "repaired").length === 1, `a second repair: heard again, once (${again.join(", ") || "none"})`);
+    }
+  }
+}
+
+section("The chime on a stub sound card: played, silent when muted, once from the whole frame");
+{
+  const AU = await import("../src/ui/audio.js");
+  const node = (extra = {}) => ({ connect(d) { return d; }, disconnect() {}, ...extra });
+  const param = (v = 0) => ({ value: v, setValueAtTime() { return this; }, linearRampToValueAtTime() { return this; }, exponentialRampToValueAtTime() { return this; }, setTargetAtTime() { return this; }, cancelScheduledValues() { return this; } });
+  const src = (extra) => node({ start() {}, stop() {}, ...extra });
+  const ctx = {
+    sampleRate: 8000, currentTime: 0, state: "running", destination: node(), resume: () => Promise.resolve(), suspend: () => Promise.resolve(),
+    createGain: () => node({ gain: param(1) }), createBiquadFilter: () => node({ type: "", frequency: param(350), Q: param(1) }),
+    createOscillator: () => src({ type: "", frequency: param(440), setPeriodicWave() {} }), createBufferSource: () => src({ buffer: null, loop: false, playbackRate: param(1) }),
+    createBuffer: (ch, len, rate) => { const d = Array.from({ length: ch }, () => new Float32Array(len)); return { duration: len / rate, numberOfChannels: ch, getChannelData: (i) => d[i], copyToChannel(a, i) { d[i].set(a); } }; },
+    createStereoPanner: () => node({ pan: param() }), createWaveShaper: () => node({ curve: null, oversample: "none" }), createConvolver: () => node({ buffer: null }),
+    createPeriodicWave: () => ({}), createDelay: () => node({ delayTime: param() }),
+    createDynamicsCompressor: () => node({ threshold: param(-24), knee: param(30), ratio: param(12), attack: param(0.003), release: param(0.25), reduction: 0 }),
+  };
+  const on = {};
+  globalThis.window = { AudioContext: function AC() { return ctx; }, addEventListener: (ev, f) => { (on[ev] ||= []).push(f); } };
+  globalThis.document = { hidden: false, hasFocus: () => true, addEventListener: (ev, f) => { (on["doc:" + ev] ||= []).push(f); }, getElementById: () => null };
+  try {
+    const opts = { sound: { master: 0.7, sfx: 0.8, amb: 0.5 } };
+    AU.initAudio(opts, () => {});
+    for (const f of on.pointerdown || []) f({}); // the first gesture makes the context
+    const gains = [];
+    const keep = AU.VOICES.repaired.play;
+    let threw = null;
+    AU.VOICES.repaired.play = (c, out, t, o) => { gains.push(o.gain); try { keep(c, out, t, o); } catch (e) { threw = e; } };
+    const played = AU.sfx("repaired");
+    check(played !== false && gains.length === 1 && !threw, `played on the stub without an error (${threw && threw.message})`);
+    ctx.currentTime += 5;
+    opts.sound.mute = true;
+    const muted = AU.sfx("repaired");
+    check(muted === false && gains.length === 1, "muted: not played");
+    opts.sound.mute = false;
+    ctx.currentTime += 5;
+    AU.VOICES.repaired.play = keep;
+    // Through the whole frame: a new repair alert on the map is played by audioFrame, wherever the camera is.
+    const { state } = justFixed(SEED + 11);
+    const ui = { started: true };
+    let frameErr = null, n = 0;
+    AU.VOICES.repaired.play = () => { n++; };
+    try {
+      const ui0 = { started: true, alertList: [] };
+      AU.audioFrame(state, ui0, 1000); // first heard: quiet
+      renderAlerts(state, ui);
+      ui0.alertList = ui.alertList;
+      AU.audioFrame(state, ui0, 2000);
+      AU.audioFrame(state, ui0, 3000);
+    } catch (e) { frameErr = e; }
+    AU.VOICES.repaired.play = keep;
+    if (frameErr) console.log(`  (audioFrame on the stub: ${frameErr.message}; the frame check is skipped)`);
+    else check(n === 1, `audioFrame plays the chime once (${n})`);
+  } finally { delete globalThis.window; delete globalThis.document; }
+}
+
+section("Options → Good news alerts off: no row, flash or chime; the log keeps the line; warnings and dangers unaffected");
+{
+  check([...GOOD_NEWS].sort().join() === "built,caravan,fixed,trip", `good news: ${[...GOOD_NEWS].join(", ")}`);
+  const opts = { goodNews: false };
+  initAlerts(opts);
+  try {
+    const { state, p } = justFixed(SEED + 12);
+    check(fixedLogs(state).length === 1, "the log line is still there");
+    check(fixedAlerts(state).length === 0 && !!p.repairNews, "no alert row");
+    const ui = { started: true }, mem = {};
+    renderAlerts(state, ui);
+    worldCues(state, ui, mem);
+    check(!(ui.alertList || []).some((a) => a.kind === "fixed") && !(ui.flash && /running again/.test(ui.flash.text)), "no row in the stack, no flash");
+    const hb = hub(state);
+    hb.stock.food = 0; hb.hungerDays = 1; // starving: a danger
+    const list = computeAlerts(state);
+    check(list.some((a) => a.kind === "starve" && a.tone === "danger"), "a danger alert still shows");
+    check(!list.some((a) => GOOD_NEWS.has(a.kind) && a.tone === "good"), "no good news among them");
+    opts.goodNews = true;
+    const all = computeAlerts(state);
+    check(all.some((a) => a.kind === "fixed") && all.filter((a) => !(GOOD_NEWS.has(a.kind) && a.tone === "good")).map((a) => a.key).join() === list.map((a) => a.key).join(), "on again: the news is back; everything else identical either way");
+    opts.goodNews = false;
+    // The chime with it off: a fresh repair is not heard.
+    const r = justFixed(SEED + 13);
+    const ui2 = { started: true }, mem2 = {};
+    worldCues(r.state, { started: true, alertList: [] }, mem2); // the world first heard before the alert is drawn
+    renderAlerts(r.state, ui2);
+    const cues = worldCues(r.state, ui2, mem2);
+    check(!cues.some((x) => x.name === "repaired"), "no chime");
+    opts.goodNews = true; // the control: switched on, the same alert is heard
+    renderAlerts(r.state, ui2);
+    check(worldCues(r.state, ui2, mem2).some((x) => x.name === "repaired"), "(on: the same alert chimes)");
+  } finally { initAlerts(null); }
+}
+
+section("The switch in Options, kept in the options store");
+{
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+  try {
+    const { loadOptions, DEFAULT_OPTIONS } = await import("../src/ui/saves.js");
+    const { settingsModal, openSettings, SETTINGS_ACTIONS } = await import("../src/ui/settings.js");
+    check(DEFAULT_OPTIONS.goodNews === true && loadOptions().goodNews === true, "on by default");
+    const state = mk(SEED + 14);
+    const ui = { started: true, scale: 1, speed: 0, slot: null, settings: null };
+    openSettings(ui, "options");
+    const options = loadOptions();
+    const api = { options, desktop: false, autosaveInfo: () => ({}) };
+    const html = settingsModal(state, ui, api);
+    check(/data-action="set-opt" data-k="goodNews" data-tip="[^"]*repaired[^"]*log[^"]*">✔ Good news alerts/.test(html), "Options shows Good news alerts, ticked, with a tip saying what it covers and that the log keeps them");
+    SETTINGS_ACTIONS["set-opt"](state, ui, { k: "goodNews" }, api);
+    check(options.goodNews === false && /✗ Good news alerts/.test(settingsModal(state, ui, api)), "clicked: off");
+    check(loadOptions().goodNews === false, "kept: a reload of the options has it off");
+    SETTINGS_ACTIONS["set-opt"](state, ui, { k: "goodNews" }, api);
+    check(loadOptions().goodNews === true, "and on again");
+  } finally { delete globalThis.localStorage; }
 }
 
 console.log(`\n${passed} passed, ${fails} failed`);

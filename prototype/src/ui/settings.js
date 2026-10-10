@@ -190,6 +190,7 @@ function optionsTab(state, ui, api) {
     ${displayRows(o)}
     <h3>Confirmations</h3><div class="setrow">${confirmRows()}</div>
     <h3>Windows and panels</h3><div class="setrow">
+      ${box("goodNews", o.goodNews !== false, "Good news alerts", "News in the alerts stack that needs nothing from you: a vehicle repaired on the road and moving on, a building finished, a caravan or merchants arrived, a planner trip home (repeat it?). Off: no alert, flash or chime for them; the log and the diary still have every line. Warnings and dangers always show.")}
       ${box("autoOpen", o.autoOpen !== false, "Auto-open panels on select", "A folded panel opens when you pick something it shows: a tile, site or team on the map (right panel), a tab key (left panel), a new urgent alert")}
       <button data-action="win-reset"${tip("Every window back to its usual size and place; the side panels and the log shown again at their usual width")}>Reset window sizes</button>
       <button data-action="ov-reset"${tip("The boxes over the map (Running orders, Watching, Layers, alerts, minimap) back where they start. Drag a box's header to move it; Alt+arrow keys on a focused header nudge it")}>Reset overlay positions</button>
