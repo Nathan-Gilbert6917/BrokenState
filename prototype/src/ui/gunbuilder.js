@@ -11,6 +11,7 @@
 // The sim calls go through a thin adapter: the economy agent's gunmods.js fitAt / stripAt / slotsOf / fitsSlot (slots
 // with nesting: a mount adds a sight, a rail a grip, a light and a bipod) when they are there, else today's gunmods.js
 // (ATTACH mounts: sight, muzzle, magazine, under the barrel) through sim/inventory.js fitModAt / unfitModAt.
+import { finishOf, FINISH_NAME, GUN_FINISH } from "../sim/data-finish.js"; // its finish (black, tan, wood...)
 import { GEAR } from "../sim/data.js";
 import { rigPouches } from "../sim/inventory.js"; // magazines in rig pouches (section 16)
 import { typeName, roundName } from "../sim/rounds.js";
@@ -347,7 +348,7 @@ export function gunBuilderModal(state, ui) {
   const plat = platformOf(gun.key);
   const platName = DGM.PLATFORMS && DGM.PLATFORMS[plat] && DGM.PLATFORMS[plat].name;
   return `<div class="box wide gbbox">
-    <div class="spread"><h1>Gun builder: ${esc(gun.name)}</h1><span class="muted">${esc(whereText(state, g.loc))}${platName ? ` · ${esc(platName)}` : ""}</span></div>
+    <div class="spread"><h1>Gun builder: ${esc(gun.name)}</h1><span class="muted">${esc(whereText(state, g.loc))}${platName ? ` · ${esc(platName)}` : ""}${finishText(gun)}</span></div>
     ${repairRow(state, g)}
     ${g.msg ? `<div class="result small">${esc(g.msg)}</div>` : ""}
     <div class="gbwrap">${img}<svg viewBox="0 0 ${V.W} ${V.H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${lines}</svg>${boxes}</div>
@@ -454,3 +455,9 @@ export const GUNBUILDER_HELP = `<b>Gun builder:</b> select a gun in the inventor
   line once it is on). Hover a part to see the stats change, before → after: aim, aim up close, best range and fall-off,
   damage, magazine, noise (and how far a shot is heard), weight, worth, the loaded round's penetration, and reliability
   (how often it jams or misfires). The Ammo list picks the round it is loaded with. Not during a battle.`;
+
+// The gun's finish (sim/data-finish.js), for a gun that comes in more than one: " · finish: tan (FDE)".
+function finishText(gun) {
+  const f = finishOf(gun);
+  return f && (GUN_FINISH[gun.key] || []).length > 1 ? ` · finish: ${esc(FINISH_NAME[f] || f)}` : "";
+}

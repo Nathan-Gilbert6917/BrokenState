@@ -45,7 +45,7 @@ export const GUN_ART = {
   // ---------- pistols ----------
   pistol:   { body: "slide", sqGuard: true, stipple: true, c: { slide: "gun", frame: "hg", grip: "hg" } }, // a Glock
   compact9: { like: "pistol", x1: 40, gripN: 8, mini: { accent: [[0, 3, "dark"]] } }, // a Glock 26: short slide, short grip
-  usp45:    { body: "slide", x0: 18, x1: 46, gripN: 11, hammer: true, fserr: true, c: { slide: "gun", frame: "poly", grip: "poly" }, miniRail: true }, // the USP: a hammer, front serrations, its rail
+  usp45:    { body: "slide", x0: 18, x1: 46, gripN: 11, hammer: true, fserr: true, c: { slide: "gun", frame: "poly", grip: "poly" }, miniRail: true, finishes: { twotone: { c: { slide: "steel" } } } }, // the USP: a hammer, front serrations, its rail
   pistol45: { body: "slide", x0: 18, x1: 44, hammer: true, beaver: true, rail: false, c: { slide: "steel", frame: "steel", grip: "steel", panels: "wood" }, panels: true }, // the 1911
   magnum:   { body: "slide", x0: 17, x1: 46, y0: 5, tall: true, hammer: true, rail: false, gripN: 11, gripW: 7, c: { slide: "nickel", frame: "grey", grip: "rubber" } }, // the Desert Eagle: a tall slab of a slide
   pistol22: { body: "rimpistol", x0: 18, x1: 30, bar: 46, c: { slide: "gun", bar: "gun", grip: "hg", panels: "wood" } },
@@ -61,7 +61,7 @@ export const GUN_ART = {
   carbine: { ...AR_BASE, r: [17, 29], hg: 39, bar: 51, hgT: "carbine", fs: "fsb", rearSight: true, stock: { t: "tele" }, mag: { t: "stick" } }, // a police AR carbine: flat-top, carbine handguard
   m4:      { ...AR_BASE, r: [17, 29], hg: 40, bar: 49, hgT: "quad", fs: "fsb", step: true, rearSight: true, stock: { t: "tele" }, mag: { t: "stick", col: "fde" } }, // the M4: quad rail, FSB, tan PMAG
   hk416:   { ...AR_BASE, r: [17, 29], hg: 44, bar: 50, hgT: "covers", fs: "flip", piston: true, stock: { t: "crane" }, mag: { t: "stick", n: 8, w: 4, curve: 4, col: "steel" }, c: { hg: "od" } }, // the HK416: long rail with covers, piston block, steel mag
-  dmr:     { ...AR_BASE, r: [15, 28], hg: 44, bar: 54, hgT: "slim", fs: "gas", tall: true, stock: "stock_ar", mag: { t: "box", n: 6, w: 5 } }, // an AR-10 marksman rifle
+  dmr:     { ...AR_BASE, r: [15, 28], hg: 44, bar: 54, hgT: "slim", fs: "gas", tall: true, stock: { t: "ar" }, mag: { t: "box", n: 6, w: 5 } }, // an AR-10 marksman rifle
   scarl:   { body: "scar" },
   scarh:   { body: "scar", r: [16, 30], hg: 44, bar: 54, tall: true, mag: { t: "box", n: 7, w: 5, col: "fde" }, c: { low: "gun", furn: "gun" } }, // the SCAR-H: black lower, deep 7.62 magazine
 
@@ -91,7 +91,7 @@ export const GUN_ART = {
   pipegun: { body: "zip" },
 
   // ---------- machine guns ----------
-  lmg:  { body: "mg", v: "m249", stock: "stock_skel", mag: "belt" }, // the M249
+  lmg:  { body: "mg", v: "m249", stock: { t: "wire" }, mag: "belt" }, // the M249
   m240: { body: "mg", v: "m240", r: [14, 32], hg: 46, bar: 55, gx: 17, stock: { t: "m240" }, mag: { t: "beltbox" }, muzzle: "fh_long", bipod: "bipod" },
   m2hb: { body: "mg", v: "m2", r: [14, 30], bar: 58, stock: null, mag: { t: "beltbox", col: "od" }, muzzle: null, bipod: null, c: { hg: "gun" } },
 
@@ -112,7 +112,7 @@ export const GUN_ART = {
   sbr300:  { ...AR_BASE, r: [19, 31], hg: 40, bar: 43, hgT: "quad", fs: "flip", stock: { t: "tele" }, mag: { t: "stick", n: 6, curve: 3 }, muzzle: "brake" }, // a 300 BLK SBR
   ardmr:   { ...AR_BASE, r: [16, 28], hg: 47, bar: 56, hgT: "slim", fs: "gas", stock: "precision", mag: { t: "stick", n: 6, curve: 4 }, muzzle: "brake", c: { hg: "fde" } }, // a .223 AR DMR: long free-float, precision stock
   varmint223: { body: "bolt", r: [19, 32], bar: 56, barRows: 2, taper: false, bead: false, fe: 41, floor: true, stock: { t: "thumb", c: "#6d5f52" }, c: { bar: "steel", fe: "#6d5f52" } }, // a .223 varmint rifle: stainless bull barrel, laminate thumbhole
-  ranch223: { body: "m14", r: [20, 31], hg: 42, bar: 50, gx: 22, lug: false, stock: { t: "m14", c: "wood" }, mag: { t: "stick", n: 6, w: 4, curve: 4 }, muzzle: "crown", c: { body: "steel", hg: "wood" } }, // a Mini-14 ranch rifle
+  ranch223: { body: "m14", r: [20, 31], hg: 42, bar: 50, gx: 22, lug: false, stock: { t: "m14", c: "wood" }, mag: { t: "stick", n: 6, w: 4, curve: 4 }, muzzle: "crown", c: { body: "blued", hg: "wood" } }, // a Mini-14 ranch rifle
   single556: { body: "brk", kind: "rifle", n: 1, r: [19, 25], bar: 53, fe: 33, taper: true, base: true, bead: false, stock: { t: "wood", c: "woodL" }, c: { body: "blued", bar: "gun", fe: "woodL", furn: "woodL" } }, // blued, light wood
   single223: { body: "brk", kind: "rifle", n: 1, r: [19, 25], bar: 52, fe: 33, taper: true, base: true, bead: false, stock: { t: "poly", c: "poly" }, c: { body: "nickel", bar: "steel", fe: "poly", furn: "poly" } },
   single300: { body: "brk", kind: "rifle", n: 1, r: [19, 25], bar: 46, fe: 32, base: true, bead: false, stock: { t: "poly", c: "od" }, c: { body: "gun", bar: "gun", fe: "od", furn: "od" } },
@@ -128,6 +128,16 @@ export const GUN_ART = {
   revolver44: { body: "revolver", fr: [18, 31], cyl: [21, 29], bar: 52, lug: true, rib: true, grips: "grip_wood", c: { frame: "blued", bar: "blued", grip: "walnut", cyl: "gun" } }, // a Model 29
   lever44: { body: "lever", r: [18, 26], bar: 47, tube: 44, fe: 34, band: true, stock: { t: "lever", c: "walnut" }, c: { body: "blued", fe: "walnut", furn: "walnut" } },
   single44: { body: "brk", kind: "rifle", n: 1, r: [19, 25], bar: 49, fe: 32, stock: { t: "wood", c: "walnut" }, c: { body: "blued", bar: "blued", fe: "walnut", furn: "walnut" } },
+};
+
+// ---------- finishes (sim/data-finish.js GUN_FINISH: which a gun comes in; item.finish) ----------
+// How a finish repaints a spec's colours (its first finish is the spec as drawn): furn, the furniture's new colour
+// (FURN_SLOTS, a polymer-coloured body too, the stock and magazine), metal (METAL_SLOTS when bare metal), action (the
+// receiver alone). A spec may add its own: finishes: { name: { c: {...}, stock: {...}, mag: {...} } }.
+export const FINISH_LOOK = {
+  black: { furn: "poly", metal: "gun" }, fde: { furn: "fde" }, od: { furn: "od" }, wood: { furn: "wood" }, plum: { furn: "plum" },
+  laminate: { furn: "#6d5f52" }, stainless: { metal: "steel" }, blued: { metal: "blued" }, nickel: { metal: "nickel" },
+  silver: { metal: "#b3b9be" }, case: { action: "case" }, twotone: {},
 };
 
 // Keys drawn as another gun (the same gun, mounted).
@@ -153,3 +163,15 @@ export const FALLBACK_LIKE = {
   ],
   pistol: "pistol", shotgun: "shotgun", smg: "smg", rifle: "carbine", mg: "lmg", longgun: "huntrifle", launcher: "m79",
 };
+
+// ---------- parts (ui/gunparts.js) ----------
+// A part's drawing when its words do not say enough (gunparts.js guessPart reads its slot, key and name: "budget red
+// dot", "9mm suppressor", "light / laser combo"...): PART_SPEC[part key] = { kind, ...options }. Kinds (gunparts.js
+// PART_KINDS) and their options: sights dot (len, col, lens), holo (len, col), mini (len, col), prism (len, col),
+// scope (len, bell, col, lens), magnifier, thermal, irons, mount (len); muzzle can (len, rows, bands, col), brake
+// (len), comp (len), choke (len), fh (len); under and on the rails vgrip (len, col), agrip, stop, laser (col, beam),
+// light (len, col), combo, bipod (len), launcher (len, col), rail (len), saddle (n shells), sling; stock (t: a
+// gunpaint.js STOCKS kind, col); mag (t: a MAGS kind, n, w, curve, col); grips (col, n). Colours: gunpaint.js C names
+// or "#hex". Each also has its small drawing on the gun held in battle.
+/** @type {Record<string, any>} */
+export const PART_SPEC = {};

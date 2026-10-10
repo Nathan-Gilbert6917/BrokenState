@@ -18,7 +18,8 @@ import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
 import { BLADE_LOOK } from "../sim/data-blades.js"; // knives and swords: their looks
 import { zombieLookOf, enemyLookOf, armoredLookOf, zombieVariant, zombieLook, CAMO } from "./sprites.js";
-import { paintMini, isGunKey } from "./gunpaint.js"; // every gun's own small drawing (ui/gunspecs.js)
+import { isGunKey } from "./gunpaint.js"; // every gun's own small drawing (ui/gunspecs.js)
+import { held, weaponLook, unitGun } from "./gunparts.js"; // ... in its finish, with its parts (a weapon look: gunparts.js weaponLook)
 
 export const DW = 26, DH = 14; // the grid
 const UP = 4;
@@ -155,7 +156,7 @@ function armour(p, d, t0, t1) {
 // drawing lying under the hand (ui/gunpaint.js paintMini).
 function droppedWeapon(p, key) {
   if (!key) return;
-  if (isGunKey(key) && paintMini(p, key, "dropped")) return;
+  if (isGunKey(String(key).split("|")[0]) && held(p, key, "dropped")) return;
   const metal = "#9aa3ab", gun = "#2b2e33", wood = "#7a5230";
   const y = 13;
   switch (key) {
@@ -495,11 +496,11 @@ export function unitDownCanvas(state, b, t, salt = 0) {
   if (t.side === "player" || t.app) {
     const s = t.sid != null ? state.survivors.find((x) => x.id === t.sid) : null;
     const app = t.app || (s ? ensureAppearance(s, state.seed) : ensureAppearance({ id: t.id }, salt));
-    return downedSurvivorCanvas(app, t.weapon && t.weapon !== "fists" ? t.weapon : null, s ? spriteArmorKey(s) : t.armorKey || null, pose, opts);
+    return downedSurvivorCanvas(app, t.weapon && t.weapon !== "fists" ? weaponLook(unitGun(t)) : null, s ? spriteArmorKey(s) : t.armorKey || null, pose, opts);
   }
   const seed = (t.id * 131 + salt) | 0;
   const f = b && b.setup && b.setup.enemy && b.setup.enemy.factionId != null ? (state.factions || []).find((x) => x.id === b.setup.enemy.factionId) : null;
-  return downedEnemyCanvas(t.kit || "raiders", f ? f.color : null, t.weapon, t.armorKey, seed, pose, opts);
+  return downedEnemyCanvas(t.kit || "raiders", f ? f.color : null, t.weapon && t.weapon !== "fists" ? weaponLook(unitGun(t)) : t.weapon, t.armorKey, seed, pose, opts);
 }
 
 // Size of a fallen unit's picture against a tile (its length along the body): bosses and brutes are bigger.

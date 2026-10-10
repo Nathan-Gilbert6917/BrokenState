@@ -12,7 +12,8 @@
 // caches by weapon key).
 import { WEAPONS } from "../sim/combat.js";
 import { GEAR } from "../sim/data.js";
-import { GUN_ART, ART_ALIAS, SPEC_ALT, FALLBACK_LIKE } from "./gunspecs.js";
+import { GUN_ART, ART_ALIAS, SPEC_ALT, FALLBACK_LIKE, FINISH_LOOK } from "./gunspecs.js";
+import { GUN_FINISH } from "../sim/data-finish.js";
 
 export const C = {
   metal: "#9aa3ab", steel: "#7d858c", gun: "#2b2e33", dark: "#1a1c20", hi: "#454a52", hg: "#33373d",
@@ -702,8 +703,11 @@ export function fallbackKey(k) {
   return FALLBACK_LIKE.longgun;
 }
 // A spec with its family's defaults and its colours resolved (s.c.* hex; s.c.hiX / loX: lighter and darker of X).
-export function norm(key) {
-  if (NORM.has(key)) return NORM.get(key);
+export function norm(key, finish = null) {
+  const first = GUN_FINISH[key] ? GUN_FINISH[key][0][0] : null;
+  if (finish === first) finish = null;
+  const ck = finish ? `${key}~${finish}` : key;
+  if (NORM.has(ck)) return NORM.get(ck);
   let spec = GUN_ART[key];
   if (!spec) return null;
   const chain = [];
@@ -714,6 +718,7 @@ export function norm(key) {
   const fam = FAM[merged.body];
   if (!fam) throw new Error(`gun art ${key}: no body family ${merged.body}`);
   const s = { ...fam.d, ...merged, c: { ...fam.d.c, ...merged.c } };
+  if (finish) refinish(s, finish);
   if (s.r) { s.r0 = s.r[0]; s.r1 = s.r[1]; }
   if (s.gx == null) s.gx = s.r0 + 3;
   if (s.hg == null) s.hg = s.r1 + 12;
@@ -724,9 +729,32 @@ export function norm(key) {
   if (!out.low) { out.low = out.body; out.hiLow = out.hiBody; out.loLow = out.loBody; }
   s.c = out;
   s.key = key;
+  s.finish = finish;
   s.fam = fam;
-  NORM.set(key, s);
+  NORM.set(ck, s);
   return s;
+}
+// A finish over a spec's colours (gunspecs.js FINISH_LOOK; the spec's own finishes after).
+const FURN_SLOTS = ["furn", "hg", "fe", "pump", "grip", "frame", "low"], METAL_SLOTS = ["body", "slide", "frame", "grip", "bar", "cyl", "low"];
+const BRIGHT = new Set(["steel", "nickel", "nickelD", "metal", "case", "caseL", "blued", "grey", "#b3b9be"]);
+const POLY_BODY = new Set(["poly", "fde", "od", "olive", "plum", "tan", "#4b5340"]);
+const CYL_OF = { steel: "grey", blued: "gun", nickel: "nickelD", "#b3b9be": "grey", gun: "gun" };
+function refinish(s, finish) {
+  const F = FINISH_LOOK[finish] || {}, c = s.c = { ...s.c };
+  if (F.furn) {
+    for (const k of FURN_SLOTS) if (c[k] && !BRIGHT.has(c[k])) c[k] = F.furn;
+    if (POLY_BODY.has(c.body)) { c.body = F.furn; if (c.cyl && POLY_BODY.has(c.cyl)) c.cyl = F.furn; }
+    if (s.stock && typeof s.stock === "object" && s.stock.c && !BRIGHT.has(s.stock.c)) s.stock = { ...s.stock, c: F.furn };
+    if (s.mag && typeof s.mag === "object" && finish !== "wood" && finish !== "laminate" && s.mag.t !== "clear" && s.mag.t !== "beltbox" && s.mag.t !== "top") s.mag = { ...s.mag, col: F.furn === "poly" ? "gun" : F.furn };
+  }
+  if (F.metal) for (const k of METAL_SLOTS) {
+    if (!c[k] || !(BRIGHT.has(c[k]) || c[k] === "gun")) continue;
+    if (k === "frame" && !BRIGHT.has(c[k]) && F.metal !== "gun") continue; // a polymer frame
+    c[k] = k === "cyl" ? CYL_OF[F.metal] || "grey" : F.metal;
+  }
+  if (F.action) for (const k of ["body", "frame"]) if (c[k] && (BRIGHT.has(c[k]) || c[k] === "gun")) c[k] = F.action;
+  const own = s.finishes && s.finishes[finish];
+  if (own) { if (own.c) Object.assign(c, own.c); if (own.stock) s.stock = { ...s.stock, ...own.stock }; if (own.mag) s.mag = { ...s.mag, ...own.mag }; }
 }
 export const clearNorm = () => NORM.clear();
 
@@ -737,23 +765,32 @@ export const clearNorm = () => NORM.clear();
 // below (y + 1, y + 2).
 const FWD = 0.18, BACK = 0.26, PFWD = 0.16;
 const clr = (p, x, y) => { if (x >= 0 && y >= 0 && x < p.w && y < p.h) p.px[y * p.w + x] = null; }; // (the bodies' painter has no clear)
-export function paintMini(p, key, form, R0 = 14) {
+// opts: finish (its name, sim/data-finish.js), looks ({ slot: look }: the parts fitted) and partMini (look -> its
+// small drawing: { kind, len, col } a part's, { stock, len } / { mag } a stock or magazine; gunparts.js PART_MINI).
+// Returns the muzzle's grid pixel { mx, my } (past a fitted suppressor or brake), or false (no such gun).
+const OWN_MINI = { scope9: { kind: "scope", len: 7 }, scope25: { kind: "scope", len: 8, col: C.olive }, bipod: { kind: "bipod" } };
+export function paintMini(p, key, form, R0 = 14, opts = {}) {
   const sp = specOf(key);
   if (!sp) return false;
-  const s = norm(sp.key);
+  const s = norm(sp.key, opts.finish || null);
   const m = { ...(s.fam.mini ? s.fam.mini(s) : {}), ...(s.mini || {}) };
+  const looks = opts.looks || {};
+  const pm = (look) => (look && ((opts.partMini && opts.partMini(look)) || OWN_MINI[look])) || null;
   const held = form === "held";
-  if (s.kind === "pistol" || s.kind === "revolver") return miniPistol(p, s, m, held ? R0 + 2 : 15, held ? 14 : 12), true;
+  if (s.kind === "pistol" || s.kind === "revolver") return miniPistol(p, s, m, held ? R0 + 2 : 15, held ? 14 : 12, looks, pm);
   const hx = held ? R0 + 1 : 16, y = held ? 13 : 12;
-  if (m.draw) { m.draw(p, { s, hx, y, held, H, R, V, C }); return true; }
+  if (m.draw) { m.draw(p, { s, hx, y, held, H, R, V, C }); return { mx: hx + 6, my: y }; }
   if (m.shoulder) { // a tube on the shoulder: over the body, the grip in the hand
     H(p, hx - 7, hx + 6, y - 2, s.c.body); H(p, hx - 7, hx + 6, y - 1, s.c.loBody); p.set(hx, y, C.gun);
     if (m.tip) { R(p, hx + 6, y - 3, hx + 7, y, "#3d4a2e"); p.set(hx + 8, y - 2, "#3d4a2e"); p.set(hx + 8, y - 1, "#3d4a2e"); H(p, hx - 3, hx - 1, y - 1, C.wood); }
     else { p.set(hx - 7, y - 2, C.dark); p.set(hx - 7, y - 1, C.dark); p.set(hx - 2, y - 3, C.gun); }
-    return true;
+    return { mx: hx + (m.tip ? 8 : 6), my: y - 2 };
   }
   const X = (x) => hx + Math.round((x - s.gx) * (x >= s.gx ? FWD : BACK));
-  const st = miniStock(s, m);
+  const A = s.fam.anchors(s), at = (slot, d) => (s.anchors && s.anchors[slot]) || A[slot] || d;
+  let st = miniStock(s, m);
+  const fs = pm(looks.stock);
+  if (fs && fs.stock) st = { t: fs.stock, butt: at("stock", [s.r0 - 1])[0] - (fs.len || 11), col: fs.col || C.gun };
   const x0 = X(st.butt), xr0 = X(s.r0), xr1 = X(s.r1), xh = X(s.hg), xb = X(s.bar);
   // the stock
   const fc = st.col;
@@ -774,8 +811,10 @@ export function paintMini(p, key, form, R0 = 14) {
   if (m.over) { H(p, xr1 + 1, xb, y - 1, s.c.bar); H(p, xr1 + 1, xb, y, C.dark === s.c.bar ? C.gun : C.dark); H(p, xr0, xr1, y - 1, s.c.body); }
   else if (m.bar2) H(p, xr1 + 1, xb, y - 1, s.c.bar);
   if (m.fore) { const f = m.fore; H(p, X(f.x0), X(f.x1), y + (f.row || 0), f.col || s.c.furn); }
-  // the magazine
-  const mg = miniMag(s, m);
+  // the magazine (a fitted one in its place)
+  let mg = miniMag(s, m);
+  const fm = pm(looks.mag);
+  if (fm && fm.mag && at("mag", null)) mg = { t: fm.mag, x: at("mag")[0] + 2, col: C.gun, n: fm.n || 8, w: 4 };
   if (mg) {
     const mx = X(mg.x), mc = mg.col;
     switch (mg.t) {
@@ -797,7 +836,7 @@ export function paintMini(p, key, form, R0 = 14) {
     else if (f.t === "post") p.set(X(f.x0), y - 1, f.col || s.c.body);
     else if (f.t === "dot") p.set(X(f.x0), y - 1, f.col || s.c.body);
     else if (f.t === "rail") { /* a flat top: nothing above the line */ }
-    else if (f.t === "scope") { H(p, X(f.x0), X(f.x1), y - 1, s.c.body); p.set(X(f.x1) + 1, y - 1, C.glass); }
+    else if (f.t === "scope" && !looks.optic) { H(p, X(f.x0), X(f.x1), y - 1, s.c.body); p.set(X(f.x1) + 1, y - 1, C.glass); }
   }
   for (const f of m.under || []) {
     if (f.t === "pump") H(p, X(f.x0), X(f.x1), y + 1, f.col || s.c.furn);
@@ -807,19 +846,41 @@ export function paintMini(p, key, form, R0 = 14) {
   if (m.side) p.set(X(m.side.x0), y, m.side.col);
   if (m.hinge != null) p.set(X(m.hinge), y + 1, C.dark);
   if (m.cylBlock) R(p, xr0, y - 1, xr1, y + 1, s.c.cyl);
-  // a built-in scope (the hunting rifle's) and bipod (the sniper's, the machine guns')
-  const opt = s.optic;
-  if (opt && /^scope|^lpvo|^acog|thermal/.test(opt)) {
-    const ox = X(s.fam.anchors(s).optic[0]), big = /25|9|thermal/.test(opt);
-    R(p, ox - 1, y - (big ? 2 : 1), ox + 2, y - 1, opt === "scope25" ? C.olive : C.dark); p.set(ox + 2, y - (big ? 2 : 1), C.glass);
+  // the sight: a fitted one, else its own (the hunting rifle's scope)
+  const own = s.own || {};
+  const op = pm(looks.optic) || (!looks.optic && pm(s.optic || own.optic));
+  if (op && op.kind) {
+    const ox = X(at("optic", [s.r0 + 6])[0]);
+    if (op.kind === "dot") { p.set(ox, y - 1, C.dark); p.set(ox + 1, y - 1, op.col || C.gun); }
+    else if (op.kind === "prism") { H(p, ox - 1, ox + 1, y - 1, op.col || C.gun); p.set(ox + 1, y - 2, op.col || C.gun); }
+    else if (op.kind === "scope") { const big = (op.len || 5) >= 7; R(p, ox - 1, y - (big ? 2 : 1), ox + 2, y - 1, op.col || C.dark); p.set(ox + 2, y - (big ? 2 : 1), C.glass); }
   }
-  if (s.bipod) { const bx = X(s.fam.anchors(s).bipod ? s.fam.anchors(s).bipod[0] : s.hg); p.set(bx, y + 1, C.gun); p.set(bx + 1, y + 2, C.gun); p.set(bx - 1, y + 2, C.gun); }
-  // the muzzle
-  const mz = s.muzzle;
-  if (mz === "brake_big") V(p, xb + 1, y - 1, y + 1, C.gun);
-  else if (mz === "fh_long" || mz === "fh_m14") p.set(xb + 1, y, C.gun);
+  // under the barrel, on the rails
+  const bip = pm(looks.bipod) || (!looks.bipod && pm(s.bipod || own.bipod));
+  if (bip && bip.kind === "bipod") { const bx = Math.min(p.w - 3, X(at("bipod", [s.hg])[0])); p.set(bx, y + 1, C.gun); p.set(bx + 1, y + 2, C.gun); p.set(bx - 1, y + 2, C.gun); }
+  for (const slot of ["under", "grip", "tactical", "rail"]) {
+    const q = pm(looks[slot]);
+    if (!q || !q.kind) continue;
+    const gx = Math.min(p.w - 3, X(at(slot, at("under", [s.hg - 3, 9]))[0]));
+    if (q.kind === "grip") V(p, gx, y + 1, y + 2, q.col || C.gun);
+    else if (q.kind === "light") { p.set(gx, y + 1, q.col || C.gun); p.set(gx + 1, y + 1, "#f4f0c8"); }
+    else if (q.kind === "laser") { p.set(gx, y + 1, q.col || C.gun); p.set(gx + 1, y + 1, C.red); }
+    else if (q.kind === "gl") H(p, gx - 2, gx + 1, y + 1, q.col || C.olive);
+    else if (q.kind === "bipod") { p.set(gx, y + 1, C.gun); p.set(gx + 1, y + 2, C.gun); p.set(gx - 1, y + 2, C.gun); }
+    else if (q.kind === "saddle") { p.set(xr0 + 1, y, C.shell); p.set(xr0 + 2, y, C.shell); }
+  }
+  // the muzzle: its own device, else a fitted one
+  let mx = xb;
+  const md = pm(looks.muzzle);
+  if (md && md.kind === "can") { const n = (md.len || 6) >= 8 ? 3 : 2, cx = Math.min(xb, p.w - 2); R(p, cx - 1, y, cx + n, y + 1, md.col || C.gun); mx = xb + n; } // fat: it shows even where the tip runs off the sprite
+  else if (md && md.kind === "brake") { V(p, xb + 1, y - ((md.len || 3) >= 5 ? 1 : 0), y + ((md.len || 3) >= 5 ? 1 : 0), C.gun); mx = xb + 1; }
+  else if (!looks.muzzle) {
+    const mz = s.muzzle;
+    if (mz === "brake_big") { V(p, xb + 1, y - 1, y + 1, C.gun); mx = xb + 1; }
+    else if (mz === "fh_long" || mz === "fh_m14") { p.set(xb + 1, y, C.gun); mx = xb + 1; }
+  }
   if (m.accent) for (const [dx, dy, c] of m.accent) p.set(dx < 0 ? x0 - dx - 1 : hx + dx, y + dy, col(c));
-  return true;
+  return { mx, my: y };
 }
 // The stock of the small drawing: { t, butt (the big drawing's x of the butt), col }.
 function miniStock(s, m) {
@@ -842,11 +903,10 @@ function miniMag(s, m) {
   return { t: (mg.n || 8) >= 10 ? "long" : M.mini, x: a[0] + Math.floor((mg.w || 4) / 2), col: col(mg.col, mg.t === "clear" ? C.clear : C.gun), colName: mg.col, n: mg.n || (mg.t === "box" ? 6 : 8), w: mg.w || 4, len: mg.len };
 }
 // A pistol or revolver in the hand: the slide or barrel along y from the grip (hx) forward, the grip below.
-function miniPistol(p, s, m, hx, y) {
+function miniPistol(p, s, m, hx, y, looks = {}, pm = (l) => null) {
   const len = Math.max(2, Math.floor(((m.len || s.x1 || s.bar) - s.gx) * PFWD));
   const body = s.kind === "revolver" ? s.c.bar : s.c.slide;
-  const back = s.kind === "revolver" ? 0 : 0;
-  H(p, hx - back, hx + len, y, body);
+  H(p, hx, hx + len, y, body);
   if (m.tall) { H(p, hx, hx + len, y - 1, s.c.hiSlide); p.set(hx + len, y - 1, s.c.slide); }
   if (s.kind === "revolver") { R(p, hx, y, hx + 1, y + 1, s.c.cyl); p.set(hx + 1, y, s.c.frame); if (s.lug) p.set(hx + len, y + 1, s.c.bar); }
   else if (s.c.frame && s.c.frame !== s.c.slide) p.set(hx + 1, y + 1, s.c.frame);
@@ -854,5 +914,14 @@ function miniPistol(p, s, m, hx, y) {
   if (m.hammer) p.set(hx - 1, y - 1, C.gun);
   if (m.rail) p.set(hx + len - 1, y + 1, C.dark);
   if (m.accent) for (const [dx, dy, c] of m.accent) p.set(hx + dx, y + dy, col(c));
-  return true;
+  // fitted: a sight on the slide, a light or laser under it, a suppressor
+  const op = pm(looks.optic) || pm(looks.mount);
+  if (op && op.kind) { p.set(hx + 1, y - 1, op.kind === "scope" ? C.dark : C.gun); if (op.kind === "scope") { p.set(hx + 2, y - 1, C.dark); p.set(hx + 3, y - 1, C.glass); } }
+  const tac = pm(looks.tactical) || pm(looks.under);
+  if (tac && (tac.kind === "light" || tac.kind === "laser")) { p.set(hx + len - 1, y + 1, C.gun); p.set(hx + len, y + 1, tac.kind === "light" ? "#f4f0c8" : C.red); }
+  let mx = hx + len;
+  const md = pm(looks.muzzle);
+  if (md && md.kind === "can") { H(p, hx + len + 1, hx + len + 2, y, md.col || C.gun); mx = hx + len + 2; }
+  else if (md && md.kind === "brake") { p.set(hx + len + 1, y, C.gun); mx = hx + len + 1; }
+  return { mx, my: y };
 }

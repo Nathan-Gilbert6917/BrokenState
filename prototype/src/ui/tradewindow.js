@@ -26,6 +26,7 @@ import { itemDur, itemDurMax } from "../sim/crafting.js";
 import { qualityWord, rollsQuality } from "../sim/itemcond.js"; // condition in a word (poor … excellent)
 import { itemLoad } from "../sim/inventory.js";
 import { modLabel } from "../sim/gunmods.js";
+import { gunIconHtml } from "./gunart.js"; // a gun's picture by its name
 import { vehiclesAtBase, carsAtBase, vehicleById, tank } from "../sim/vehicles.js";
 import { radioDiploBlock } from "./diplomacy.js";
 import { vehicleOffers, buyVehicle, sellVehicle } from "../sim/vehicletrade.js"; // the Vehicles section
@@ -51,7 +52,7 @@ function gearLabel(item) {
   if (isRoundItem(item) || isBulk(item) || countOf(item) > 1) return esc(stackLabel(item)); // a stack (itemstack.js): it sells as a whole, priced by what is in it
   const dur = itemDur(item);
   const bits = [condText(item), dur != null ? `${dur}/${itemDurMax(item)} uses` : ""].filter(Boolean).join(" · ");
-  return `${esc(modLabel(item))}${bits ? ` <span class="muted">${bits}</span>` : ""}`; // a gun with its attachments (sim/gunmods.js): they sell with it
+  return `${gunIconHtml(item, 0.9, "igun inl")}${esc(modLabel(item))}${bits ? ` <span class="muted">${bits}</span>` : ""}`; // a gun with its attachments (sim/gunmods.js): they sell with it
 }
 // No base value anywhere: what this group pays or charges, and why (sim/valuation.js).
 const gearTip = (item, price, mine, why) => {
