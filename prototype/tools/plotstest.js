@@ -41,7 +41,7 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   check(plotCap(h, "building") === 0 && plotCap(h, "utility") === 2, "a shelter (the camp stage) has 0 building plots and 2 utility plots");
   check(PLOTS.hub.building > PLOTS.outpost.building && PLOTS.outpost.building > PLOTS.shelter.building && PLOTS.hub.utility > PLOTS.outpost.utility && PLOTS.outpost.utility > PLOTS.shelter.utility, "plots grow with the base");
   for (const [k, d] of Object.entries(BUILDINGS)) {
-    if (["walls", "barricades", "spike_pits", "trench", "gate", "floodlights", "farm_plot", "hub_up", "outpost_up", "camo"].includes(k)) check(!d.plot, `${k} needs no plot`);
+    if (["walls", "barricades", "spike_pits", "trench", "gate", "floodlights", "farm_plot", "hub_up", "outpost_up", "camp_up", "camo"].includes(k)) check(!d.plot, `${k} needs no plot`);
     else check(d.plot === "building" || d.plot === "utility", `${k} has a plot kind`);
   }
   for (const k of ["storehouse", "cellar", "bunkhouse", "infirmary", "cistern"]) check(BUILDINGS[k].plot === "building", `${k} is on a building plot`);
