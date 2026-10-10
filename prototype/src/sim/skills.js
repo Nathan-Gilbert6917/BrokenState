@@ -54,6 +54,7 @@ import { newItem } from "./inventory.js";
 import { BUILDINGS, RECIPES } from "./buildings.js";
 import { CRAFTS, craftQueue } from "./crafting.js";
 import { studyBlueprint, blueprintWares, bookUnlocksPending, learnBook } from "./blueprints.js";
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 export const MILESTONES = [5, 10, 15];
 export const SKILL_MAX = 20;
@@ -496,7 +497,7 @@ function readingDaily(state, base) {
     }
     s.readIdle = false;
     s.reading = k;
-    readHours(state, s, k, READ_HOURS * Math.max(0.5, workFactor(s)));
+    noteOutput(state, base, "read", readHours(state, s, k, READ_HOURS * Math.max(0.5, workFactor(s))), "readh");
   }
 }
 
@@ -655,7 +656,9 @@ function teachingDaily(state, base) {
     T.teachIdle = false;
     if (!T.teach || !lesson.set) T.teach = { skill: lesson.skill, learners: lesson.learners.slice() };
     const rate = teachRate(T, lesson.skill);
-    for (const id of lesson.learners) gainXp(state, survivorById(state, id), lesson.skill, rate, "study");
+    let taught = 0;
+    for (const id of lesson.learners) taught += gainXp(state, survivorById(state, id), lesson.skill, rate, "study");
+    noteOutput(state, base, "teach", taught, "xp");
     gainXp(state, T, "leadership", USE.teachLead);
     gainXp(state, T, "speech", USE.teachSpeech);
   }

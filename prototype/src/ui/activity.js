@@ -1,43 +1,84 @@
-// What people are doing, in the UI (sim/activity.js): the People tab's activity chip and the base's "Work now"
-// panel (one row per job: who is on it and what each is doing this hour, a bar toward the next output, the winter
-// target for firewood, what it brought in on its last days, and why it brings in nothing when it cannot work).
-// Small functions with their own classes (act-*, wn-*) so the base window's look can change around them.
-import { describeActivity, baseWork } from "../sim/activity.js";
+// What people are doing, in the UI (sim/activity.js): the People tab's activity chip and its Idle filter, the base's
+// "Work now" panel (the Idle list on top, then one row per job: who is on it and what each is doing this hour, a bar
+// toward the next output, the winter target for firewood, what it brought in on its last days with a 7-day sparkline,
+// and why it brings in nothing when it cannot work), the Bases card's "N of M working" chip and the stalled-job alert.
+// Small functions with their own classes (act-*, wn-*, idle-*) so the base window's look can change around them.
+import { describeActivity, workingActivity, baseWork, idlePeople, workCount, stalledJobs, outputSeries, amountText, STALL_ALERT_DAYS } from "../sim/activity.js";
+import { roleSelect } from "./work.js"; // the role drop-down (work roles and fixed jobs): put someone idle to work
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const first = (s) => s.name.split(" ")[0];
+const plural = (n, a, b = `${a}s`) => `${n} ${n === 1 ? a : b}`;
 
-// The chip: icon and a few words, coloured by kind (work, off, sleep, guard, hurt, free, idle, stalled, away).
+// The chip: icon and a few words, coloured by kind (work, off, sleep, guard, hurt, free, idle, stalled, away, eat).
 export function activityChip(state, s, { short = false } = {}) {
   const a = describeActivity(state, s);
   return `<span class="act act-${a.kind}${short ? " act-short" : ""}"${tip(a.why ? `${a.text}. ${a.why}` : a.text)}><i class="act-ico" aria-hidden="true">${a.icon}</i><span class="act-txt">${esc(short ? a.text.replace(/ \([^)]*\)$/, "") : a.text)}</span></span>`;
 }
+// Under the chip when their job has nothing for them, whatever the hour shows (asleep, eating …): why.
+export function idleNote(state, s) {
+  const a = workingActivity(state, s);
+  if (a.kind !== "idle" && a.kind !== "stalled") return "";
+  if (describeActivity(state, s).kind === a.kind) return ""; // the chip says it already
+  return `<div class="idle-note small warn"${tip(a.why)}>⏸ No work: ${esc(a.text)}</div>`;
+}
 
+// ---------- the People tab's Idle filter (main.js "ppl-idle") ----------
+let pplIdle = false;
+export const peopleIdleOn = () => pplIdle;
+export const togglePeopleIdle = () => { pplIdle = !pplIdle; };
+export function peopleIdleButton(state) {
+  const n = idlePeople(state).length;
+  return `<button class="mini ppl-idle${pplIdle ? " on" : ""}" data-action="ppl-idle" aria-pressed="${pplIdle}"${tip(pplIdle ? "Show everyone again" : "Show only the people at your bases with nothing to do: a work role with no work, or a job that cannot be done there (no tool, nothing to build, the land cut bare …). Resting, in bed, on watch and away are left out.")}>⏸ Idle${n ? ` <span class="idle-badge">${n}</span>` : ""}</button>`;
+}
+export const idleSet = (state) => new Set(idlePeople(state).map((x) => x.s.id));
+
+// ---------- sparkline ----------
+export function sparkline(state, base, job) {
+  const ser = outputSeries(state, base, job);
+  if (!ser.days.some((d) => d.rec)) return "";
+  const W = 56, H = 14, max = Math.max(...ser.days.map((d) => d.n), 1e-9);
+  const step = W / Math.max(1, ser.days.length - 1);
+  const pts = ser.days.map((d, i) => `${(i * step).toFixed(1)},${(H - 1 - (d.n / max) * (H - 2)).toFixed(1)}`).join(" ");
+  const t = ser.days.map((d) => `Day ${d.day}: ${d.rec ? amountText(ser.unit, d.n) : "—"}`).join("\n");
+  return `<span class="wn-spark"${tip(`The last ${ser.days.length} days:\n${t}`)}><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>`;
+}
+
+// ---------- the Work now panel ----------
 // A thin bar with its text: frac 0..1.
 function wnBar(p, cls = "") {
   const w = Math.max(0, Math.min(100, Math.round((p.frac || 0) * 100)));
   return `<div class="wn-prog ${cls}"><div class="wn-bar"><i style="width:${w}%"></i></div><span class="wn-ptxt small">${esc(p.text)}</span></div>`;
 }
-function wnLast(row) {
-  if (!row.last.length) return `<div class="wn-last small muted">Nothing recorded yet${["build", "craft"].includes(row.job) ? "" : ": the day's work comes in at midnight"}.</div>`;
+function wnLast(state, base, row) {
+  if (!row.last.length) return `<div class="wn-last small muted">Nothing recorded yet${["build", "craft", "medic"].includes(row.job) ? "" : ": the day's work comes in at midnight"}.</div>`;
   const [a, b] = row.last;
-  return `<div class="wn-last small"><span class="${a.zero ? "warn" : "good"}">${esc(a.text)}</span> <span class="muted">${esc(a.when)}</span>${b ? ` <span class="muted">· ${esc(b.text)} ${esc(b.when)}</span>` : ""}</div>`;
+  return `<div class="wn-last small">${sparkline(state, base, row.job)}<span class="${a.zero ? "warn" : "good"}">${esc(a.text)}</span> <span class="muted">${esc(a.when)}</span>${b ? ` <span class="muted">· ${esc(b.text)} ${esc(b.when)}</span>` : ""}</div>`;
 }
 function wnPerson(state, x) {
   const a = x.act;
   return `<span class="wn-who act-${a.kind}" data-action="survivor" data-id="${x.s.id}"${tip(`${x.s.name}: ${a.text}${a.why ? `. ${a.why}` : ""}`)}><i aria-hidden="true">${a.icon}</i>${esc(first(x.s))}</span>`;
 }
-function wnRow(state, row) {
+function wnRow(state, base, row) {
   const n = row.people.length;
   const busy = row.job === "rest" ? "" : `<span class="wn-count small ${row.now ? "good" : "muted"}">${row.now} of ${n} at it now</span>`;
+  const days = row.stalledDays >= 1 ? ` (${plural(row.stalledDays, "day")})` : "";
   return `<div class="wn-row wn-${row.job}">
     <div class="wn-head"><span class="wn-ico" aria-hidden="true">${row.icon}</span><b class="wn-name">${esc(row.name)}</b>${busy}</div>
     <div class="wn-people">${row.people.map((x) => wnPerson(state, x)).join("")}</div>
-    ${row.why ? `<div class="wn-why small warn">⚠️ ${esc(row.why)}</div>` : ""}
+    ${row.why ? `<div class="wn-why small ${row.stalledDays >= STALL_ALERT_DAYS ? "danger" : "warn"}">⚠️ ${esc(row.why)}${days}</div>` : ""}
     ${row.progress ? wnBar(row.progress) : ""}
     ${row.goal ? wnBar(row.goal, "wn-goal") : ""}
-    ${row.why && !row.last.length || ["rest", "guard", "medic", "teach", "read", "trainee"].includes(row.job) ? "" : wnLast(row)}
+    ${(row.why && !row.last.length) || ["rest", "guard"].includes(row.job) ? "" : wnLast(state, base, row)}
+  </div>`;
+}
+// The Idle list: who has nothing to do here, why, and a role drop-down to put them to work.
+export function idleList(state, base) {
+  const list = idlePeople(state, base);
+  if (!list.length) return "";
+  return `<div class="idle-list"><div class="idle-head"><b>⏸ Idle</b> <span class="idle-badge">${list.length}</span> <span class="small muted">nothing to do: pick them a job</span></div>
+    ${list.map((x) => `<div class="idle-row"><span class="idle-who"><a class="link" data-action="survivor" data-id="${x.s.id}">${esc(x.s.name)}</a><span class="small warn idle-why"${tip(x.act.why)}>${esc(x.why)}</span></span>${roleSelect(state, x.s)}</div>`).join("")}
   </div>`;
 }
 
@@ -45,5 +86,22 @@ function wnRow(state, row) {
 export function workNowPanel(state, base) {
   const rows = baseWork(state, base);
   if (!rows.length) return "";
-  return `<div class="worknow"><h3${tip("Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days. Daily jobs (wood, foraging, hunting, fishing, the workshops, scavenging) bring their goods into the store at midnight.")}>Work now</h3>${rows.map((r) => wnRow(state, r)).join("")}</div>`;
+  return `<div class="worknow"><h3${tip("Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days (hover the sparkline for 7 days). Daily jobs (wood, foraging, hunting, fishing, the workshops, scavenging, teaching, reading) bring their goods in at midnight. Breakfast (06:00, hunters and fishers 08:00) and dinner (20:00) take no time from the work.")}>Work now</h3>${idleList(state, base)}${rows.map((r) => wnRow(state, base, r)).join("")}</div>`;
+}
+
+// ---------- the Bases card and the alerts ----------
+// "⚒ 5/6 working" on the Bases card's strip (ui.js baseStrip: its .bs-chip look).
+export function workChip(state, base) {
+  const c = workCount(state, base);
+  if (!c.total) return "";
+  const idle = idlePeople(state, base);
+  const parts = [`${c.working} of ${c.total} working`, c.idle ? `${c.idle} idle${idle.length ? ` (${idle.map((x) => `${first(x.s)}: ${x.why.toLowerCase()}`).join("; ")})` : ""}` : "", c.hurt ? `${c.hurt} in bed or resting for their health` : "", c.resting ? `${c.resting} resting or on free time` : ""].filter(Boolean);
+  return `<span class="bs-chip${c.idle ? " warn" : ""}"${tip(`${parts.join(" · ")}. By each one's job, whatever the hour (the base's Work now panel has who is at it now).`)}>⚒ ${c.working}/${c.total} working</span>`;
+}
+// alerts.js SECTIONS: a job at a base that has been unable to work for STALL_ALERT_DAYS or more (one per base and job;
+// gone when it can work again).
+export function stallAlerts(state, out) {
+  for (const j of stalledJobs(state)) {
+    out.push({ key: `stall:${j.base.id}:${j.job}`, kind: "stalled", icon: "⏸", tone: "warn", text: `${j.base.name}: ${j.name} stalled ${plural(j.days, "day")}`, tip: `${j.people.map(first).join(", ")} ${j.people.length === 1 ? "is" : "are"} on ${j.name} and cannot work: ${j.why}. Give them another job or fix what it needs. Click to open the base.`, go: { base: j.base.id, tab: "overview" } });
+  }
 }

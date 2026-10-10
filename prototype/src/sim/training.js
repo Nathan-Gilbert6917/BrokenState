@@ -40,6 +40,7 @@ import { hospitalDef, activeHospital, traineesHere, isHurt, isSevere } from "./m
 import { workFactor, conditionsOf } from "./health.js";
 import { gainXp, hasPerk } from "./skills.js";
 import { toManual } from "./work.js"; // "Make medic": a job set by hand
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 export const TRAINING = {
   docMin: 6,        // the doctor needs Medicine 6+ (as shown; the clinic's own requirement)
@@ -177,9 +178,11 @@ function trainBase(state, base) {
   if (info.wardEach > 0) for (const m of info.medics) gainXp(state, m, "medicine", Math.min(info.wardEach * workFactor(m), (info.hosp.ward || 0) - wardToday(state, m)), "ward");
   let taught = 0;
   for (const t of info.trainees) {
-    if (t.practice > 0) gainXp(state, t.s, "medicine", t.practice);
-    if (t.xp > 0) { gainXp(state, t.s, "medicine", t.xp, "study"); taught++; t.s.trainIdle = false; }
+    let xp = 0;
+    if (t.practice > 0) xp += gainXp(state, t.s, "medicine", t.practice);
+    if (t.xp > 0) { xp += gainXp(state, t.s, "medicine", t.xp, "study"); taught++; t.s.trainIdle = false; }
     else if (!t.s.trainIdle && t.why) { log(state, `${first(t.s)} is a Medic trainee at ${base.name} but learns nothing from a doctor: ${t.why}.`, "info"); t.s.trainIdle = true; }
+    noteOutput(state, base, "trainee", xp, "xp");
   }
   for (const j of info.juniors) if (j.xp > 0) { gainXp(state, j.s, "medicine", j.xp, "study"); taught++; }
   if (taught && info.doc) doctorCareer(state, base, info.doc.s);

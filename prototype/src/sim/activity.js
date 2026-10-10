@@ -5,7 +5,8 @@
 // describeActivity(state, s) → { kind, icon, text, why, job }
 //   kind: work (doing their job now), off (their job, but not at this hour: dark, between hunts), sleep, guard, hurt
 //         (in bed or resting for their health), free (rest, free time), idle (a work role with nothing to do), stalled
-//         (a job that cannot be done here: no trees, no cabin, nothing queued …), away (on a team, an errand …).
+//         (a job that cannot be done here: no trees, no cabin, nothing queued …), away (on a team, an errand …), eat
+//         (a mealtime: MEALS).
 //   text: a few words ("Chopping wood (fire axe)", "Asleep", "Away: Scavenge team, heading home"); why: the longer
 //   reason (the tooltip); job: the role it is about (economy.js ROLES key) or null.
 // The order at a base: hospital bed and health first, then the walls in an emergency, the watch roster, the hour's
@@ -17,8 +18,21 @@
 //   one row per job someone here is on (the job the day's systems count them at: work.js workDayRoles), in ROLES
 //   order. progress: { frac, text } toward the next output (today's share of the job's hours with the expected
 //   amount by midnight; a build or craft job's work-hours; the next harvest). goal: a longer target (the winter's
-//   firewood). last: what it brought in on the last days it worked (output.js). why: why it brings in nothing now.
-import { atBase, baseById, factionById, hourOfDay, survivorById, day } from "./world.js";
+//   firewood). last: what it brought in on the last days it worked (output.js). why: why it brings in nothing now
+//   (by the job, not the hour: asleep woodcutters on bare land still say why). stalledDays: since when (stallDaily).
+//
+// workingActivity(state, s): the job's state by the job, not the clock (at its working hour): what the Idle list,
+//   the Bases badge and the stalled-job alert read. idlePeople(state, base?) → [{ s, base, act, why }]: people at a
+//   base with nothing to do (a work role with no work, or a job that cannot be done here), not counting anyone
+//   resting (the Rest job, free time), in bed, ill or hurt, on watch or away. workCount(state, base) → { total,
+//   working, idle, hurt, resting }.
+// Mealtimes (MEALS): breakfast at 06:00 (08:00 for hunters and fishers, after the dawn hunt) and dinner at 20:00, an
+//   hour each, show as "Eating". They are a picture of the day's eating only: the food and water still come out of the
+//   store once a day (economy.js baseDaily), and no hour of any job's work is taken (the daily jobs' hours are outside
+//   them; construction and crafting run by the hour as before), so nothing a base makes or eats changes.
+// stallDaily(state) (world.js, after the bases' day): base.stall[job] = the day a job here was first found with nobody
+//   on it able to work (row.why), cleared when it can work again; the alert (ui/activity.js stallAlerts) comes at 2 days.
+import { atBase, baseById, factionById, hourOfDay, survivorById, day, skill } from "./world.js";
 import { SUPPLIES, GEAR, SKILL_NAMES } from "./data.js";
 import { ROLES, scavLeft, SCAV_FLOOR, scavengeOutput } from "./economy.js";
 import { WORK_TYPES, isManaged, healthRest } from "./work.js";
@@ -30,8 +44,9 @@ import { forageWorkWhy, forageTime, baseForageDay } from "./foraging.js";
 import { huntWorkWhy, fishWorkWhy, baseHuntDay, baseFishDay } from "./hunting.js";
 import { hospitalDef, isHurt, patients } from "./medical.js";
 import { workFactor, isSick } from "./health.js";
-import { lessonOf, bookDef } from "./skills.js";
-import { BLUEPRINTS } from "./blueprints.js";
+import { lessonOf, bookDef, skillProgress, bookHours } from "./skills.js";
+import { BLUEPRINTS, studyHours } from "./blueprints.js";
+import { edibleFood } from "./storage.js";
 import { sleepHour, sleepingIn } from "./sleep.js";
 import { onWatchNow } from "./watch.js";
 import { MISSIONS, tileLabel, partyTile } from "./parties.js";
@@ -41,7 +56,14 @@ import { outputDays } from "./output.js";
 
 // Icons by job, and by kind for everything that is not a job.
 export const JOB_ICONS = { wood: "🪓", farm: "🌱", forage: "🍄", hunt: "🏹", fish: "🎣", build: "🔨", craft: "🧰", operate: "⚙️", medic: "✚", trainee: "✚", teach: "🎓", read: "📚", scavenge: "🔍", guard: "🛡️", rest: "☕" };
-export const KIND_ICONS = { sleep: "💤", guard: "🛡️", hurt: "🩹", free: "☕", idle: "⏸", stalled: "⚠️", off: "🕓", away: "🚶", captive: "⛓️" };
+export const KIND_ICONS = { sleep: "💤", guard: "🛡️", hurt: "🩹", free: "☕", idle: "⏸", stalled: "⚠️", off: "🕓", away: "🚶", captive: "⛓️", eat: "🍲" };
+// Mealtimes (the hour each starts; an hour each). Hunters and fishers are out at dawn (05–07), so they eat after.
+export const MEALS = { breakfast: 6, lateBreakfast: 8, dinner: 20 };
+export function mealAt(job, h) {
+  const b = job === "hunt" || job === "fish" ? MEALS.lateBreakfast : MEALS.breakfast;
+  return h === b ? "breakfast" : h === MEALS.dinner ? "dinner" : null;
+}
+export const STALL_ALERT_DAYS = 2;
 const MIN_WORK = 0.35; // the daily jobs skip anyone below this work factor (woodDaily, foragingDaily, huntingDaily)
 const r1 = (v) => Math.round((v || 0) * 10) / 10;
 const n0 = (v) => Math.round(v || 0);
@@ -68,6 +90,11 @@ export function describeActivity(state, s, h = hourOfDay(state)) {
   if (!t && s.role === "guard" && underAttack(state, base)) return act("guard", "Manning the walls", "The base is on alert: the guards are on the walls.", "guard");
   const ws = onWatchNow(state, base, s, h);
   if (ws) return act("guard", `On watch (${ws.name})`, "Their shift on the base's watch roster (Defence tab).", "guard");
+  const meal = mealAt(s.role, h);
+  if (meal && s.role !== "guard" && !(t && (t.t === "sleep" || t.t === "guard")) && !sleepHour(state, s, h) && !sleepingIn(state, base, s, h)) {
+    if (edibleFood(base) > 0 || (base.stock.food || 0) > 0) return act("eat", `Eating ${meal}`, `${meal === "breakfast" ? "Breakfast" : "Dinner"} at ${base.name}. The day's food comes out of the store once a day; a meal takes no time from the day's work.`, s.role);
+    return act("eat", "Mealtime – nothing to eat", `${base.name} is out of food.`, s.role, "🍽️");
+  }
   if (t) {
     if (t.t === "sleep") return act("sleep", "Asleep", t.why);
     if (t.t === "free") return act("free", t.kind === "mood" ? "Free time – low mood" : "Free time", t.why);
@@ -208,6 +235,9 @@ export function amountText(unit, n) {
   if (unit === "items") return `${n0(v)} made`;
   if (unit === "finds") return `${n0(v)} find${n0(v) === 1 ? "" : "s"}`;
   if (unit === "buildmat") return `${v} building materials`;
+  if (unit === "xp") return `${r1(v)} XP`;
+  if (unit === "readh") return `${r1(v)} hours read`;
+  if (unit === "heal") return `${r1(v)} health healed`;
   return `${v} ${SUPPLIES[unit] ? SUPPLIES[unit].name.toLowerCase() : unit}`;
 }
 const outText = (out) => Object.entries(out || {}).filter(([, v]) => v > 0).map(([k, v]) => amountText(k, v)).join(", ");
@@ -221,6 +251,24 @@ export function lastOutput(state, base, job) {
     const when = d.day === today ? "today" : d.day === today - 1 ? "yesterday" : `day ${d.day}`;
     return { day: d.day, when, text: parts.join(", ") || "nothing", zero: !parts.length };
   });
+}
+
+// The main measure of a job's day (for the sparklines): the unit and how it sums a day's record.
+const MAIN_UNIT = { wood: "wood", forage: "food", hunt: "food", fish: "food", farm: "food", build: "workh", craft: "workh", teach: "xp", read: "readh", medic: "heal", trainee: "xp" };
+// The last `days` work days of a job, oldest first (0 for a day with nothing recorded): { unit, days: [{ day, n }] }.
+// The day being worked now is left out until it is in (the daily jobs' output comes at midnight).
+export function outputSeries(state, base, job, days = 7) {
+  const rec = outputDays(base, job);
+  const unit = MAIN_UNIT[job] || null;
+  const end = day(state) - (["build", "craft", "medic"].includes(job) ? 0 : 1);
+  const out = [];
+  for (let d = end - days + 1; d <= end; d++) {
+    const r = rec.find((x) => x.day === d);
+    const by = r ? r.by : {};
+    const n = unit ? (job === "farm" ? (by.food || 0) + (by.preserved || 0) : by[unit] || 0) : Object.entries(by).filter(([u]) => u !== "finds").reduce((a, [, v]) => a + v, 0);
+    out.push({ day: d, n: r1(n), rec: !!r });
+  }
+  return { unit: unit || "supplies", days: out };
 }
 
 // ---------- the base's jobs ----------
@@ -247,8 +295,12 @@ export function baseWork(state, base, h = hourOfDay(state)) {
     if (!list || !list.length) continue;
     const ps = list.map((s) => ({ s, act: describeActivity(state, s, h) }));
     const row = { job, name: ROLES[job] ? ROLES[job].name : job, icon: JOB_ICONS[job] || "•", people: ps, now: ps.filter((x) => x.act.kind === "work" || (job === "guard" && x.act.kind === "guard")).length, last: lastOutput(state, base, job), why: "" };
-    const stalled = ps.filter((x) => x.act.kind === "stalled");
-    if (stalled.length && stalled.length === ps.length) row.why = stalled[0].act.why || stalled[0].act.text;
+    // Why it brings in nothing: by the job, not the hour (asleep on cut-bare land still says why).
+    const states = list.map((s) => workingActivity(state, s));
+    const stalled = states.filter((a) => a.kind === "stalled");
+    if (stalled.length && stalled.length === states.length) row.why = stalled[0].why || stalled[0].text;
+    const since = base.stall && base.stall[job];
+    row.stalledDays = row.why && since != null ? Math.max(0, day(state) - since) : 0;
     Object.assign(row, jobProgress(state, base, job, list, h));
     rows.push(row);
   }
@@ -309,6 +361,35 @@ function jobProgress(state, base, job, list, h) {
     const sum = {};
     for (const x of running) for (const [k, v] of Object.entries(x.status.out || {})) sum[k] = (sum[k] || 0) + v;
     if (sts.length) out.progress = { frac: dayShare(awakeHour, h), text: running.length ? `≈ ${outText(sum)} at midnight (${running.length} of ${sts.length} station${sts.length === 1 ? "" : "s"} running)` : "no station running today" };
+  } else if (job === "teach") {
+    const parts = [], fr = [];
+    for (const T of list) {
+      const l = lessonOf(state, T);
+      if (!l || !l.learners.length) continue;
+      for (const L of l.learners.map((id) => survivorById(state, id)).filter(Boolean)) {
+        const sp = skillProgress(L, l.skill);
+        fr.push(sp.frac);
+        parts.push(`${first(L)} ${SKILL_NAMES[l.skill] || l.skill} ${sp.level}→${sp.level + 1} ${sp.pct}%`);
+      }
+    }
+    if (fr.length) out.progress = { frac: fr.reduce((a, v) => a + v, 0) / fr.length, text: parts.join(" · ") };
+  } else if (job === "read") {
+    const parts = [], fr = [];
+    for (const s of list) {
+      if (s.studying && BLUEPRINTS[s.studying]) { const d = BLUEPRINTS[s.studying]; const hrs = studyHours(state, s.studying); fr.push(hrs / d.hours); parts.push(`${first(s)}: the ${d.name} ${n0(hrs)} of ${d.hours} h`); }
+      else if (s.reading && bookDef(s.reading)) { const b = bookDef(s.reading); const hrs = bookHours(s, s.reading); fr.push(Math.min(1, hrs / b.hours)); parts.push(`${first(s)}: ${GEAR[s.reading] ? GEAR[s.reading].name : "a book"} ${n0(hrs)} of ${b.hours} h`); }
+    }
+    if (fr.length) out.progress = { frac: fr.reduce((a, v) => a + v, 0) / fr.length, text: parts.join(" · ") };
+  } else if (job === "medic") {
+    const care = atBase(state, base.id).filter((x) => !list.includes(x) && (isHurt(x) || isSick(x)));
+    const beds = care.filter((x) => x.inBed).length;
+    const avg = care.length ? care.reduce((a, x) => a + (x.health ?? 100), 0) / care.length : 100;
+    out.progress = care.length
+      ? { frac: avg / 100, text: `${care.length} hurt or ill here${beds ? ` (${beds} in bed)` : ""} · average health ${n0(avg)}` }
+      : { frac: 1, text: "Nobody here needs care" };
+  } else if (job === "trainee") {
+    const sp = list.map((s) => ({ s, p: skillProgress(s, "medicine") }));
+    out.progress = { frac: sp.reduce((a, x) => a + x.p.frac, 0) / sp.length, text: sp.map((x) => `${first(x.s)} Medicine ${x.p.level}→${x.p.level + 1} ${x.p.pct}%`).join(" · ") };
   } else if (job === "scavenge" && scavLeft(base) > SCAV_FLOOR + 0.02) {
     const exp = Object.values(scavengeOutput(state, base)).reduce((a, v) => a + v, 0);
     out.progress = { frac: dayShare(awakeHour, h), text: `≈ ${r1(exp)} supplies a day on average (most days nothing) · area ${Math.round(scavLeft(base) * 100)}% left` };
@@ -316,3 +397,67 @@ function jobProgress(state, base, job, list, h) {
   return out;
 }
 
+// ---------- by the job, not the clock: the Idle list, the Bases badge, the stalled-job alert ----------
+// The hour each job is checked at (a working hour of the job).
+const WORK_HOUR = { hunt: 6, fish: 6 };
+export function workingActivity(state, s) {
+  if (!s || !s.alive || !s.location || s.location.kind !== "base") return describeActivity(state, s);
+  const base = baseById(state, s.location.baseId);
+  if (!base) return act("away", "Away");
+  if (s.inBed || s.restUntil != null || healthRest(s)) return describeActivity(state, s);
+  const t = isManaged(state, s) && s.task && s.task.base === base.id && state.hour - s.task.hour <= 1 ? s.task : null;
+  if (t && t.t === "idle") return act("idle", "Idle – nothing to do", t.why);
+  if (t && t.t === "free") return act("free", t.kind === "mood" ? "Free time – low mood" : "Free time", t.why);
+  const job = dayJob(state, s);
+  if (job === "rest") return act("free", "Resting", "Their job is Rest: recovers mood.", job);
+  if (job === "guard") return act("guard", "On guard", "", job);
+  return jobActivity(state, base, s, job, WORK_HOUR[job] ?? 12);
+}
+const IDLE_KINDS = new Set(["idle", "stalled"]);
+// People at a base (every base when base is null) with nothing to do: [{ s, base, act, why }].
+export function idlePeople(state, base = null) {
+  const out = [];
+  for (const b of base ? [base] : state.bases) {
+    for (const s of atBase(state, b.id)) {
+      if (onWatchNow(state, b, s)) continue;
+      const a = workingActivity(state, s);
+      if (IDLE_KINDS.has(a.kind)) out.push({ s, base: b, act: a, why: a.kind === "idle" ? idleWhy(a) : a.text });
+    }
+  }
+  return out;
+}
+// A short why for someone on priorities with nothing to do (the planner's reasons).
+function idleWhy(a) {
+  const m = /\((.*)\)$/.exec(a.why || "");
+  return m ? `Nothing to do (${m[1]})` : a.why === "No work type is set for them" ? "No work type set in their role" : "Nothing to do";
+}
+// The Bases badge: { total, working, idle, hurt, resting }.
+export function workCount(state, base) {
+  const ppl = atBase(state, base.id);
+  const c = { total: ppl.length, working: 0, idle: 0, hurt: 0, resting: 0 };
+  for (const s of ppl) {
+    const k = workingActivity(state, s).kind;
+    if (IDLE_KINDS.has(k)) c.idle++;
+    else if (k === "hurt") c.hurt++;
+    else if (k === "free") c.resting++;
+    else c.working++;
+  }
+  return c;
+}
+// Daily (world.js, after the bases' day): the day each job at a base was first found unable to work.
+export function stallDaily(state) {
+  for (const b of state.bases) {
+    const now = {};
+    for (const r of baseWork(state, b)) if (r.why) now[r.job] = b.stall && b.stall[r.job] != null ? b.stall[r.job] : day(state);
+    if (Object.keys(now).length) b.stall = now; else delete b.stall;
+  }
+}
+// Jobs stalled for STALL_ALERT_DAYS or more, still stalled now: [{ base, job, name, days, why, people }].
+export function stalledJobs(state) {
+  const out = [];
+  for (const b of state.bases) {
+    if (!b.stall) continue;
+    for (const r of baseWork(state, b)) if (r.why && r.stalledDays >= STALL_ALERT_DAYS) out.push({ base: b, job: r.job, name: r.name, days: r.stalledDays, why: r.why, people: r.people.map((x) => x.s) });
+  }
+  return out;
+}

@@ -114,7 +114,7 @@ import { settingsModal } from "./settings.js";
 import { swatch } from "./help.js";
 import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
-import { activityChip, workNowPanel } from "./activity.js";
+import { activityChip, workNowPanel, idleNote, workChip, peopleIdleOn, peopleIdleButton, idleSet } from "./activity.js";
 import { describeActivity } from "../sim/activity.js"; // the find box also looks through what they are doing ("asleep", "chopping") // what each person is doing now; the base's Work now panel (sim/activity.js)
 import { pickBar, pickCard, ownBaseCard, groupBaseCard } from "./mapselect.js"; // teams, parties and bands selected on the map; a base's card
 import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
@@ -294,6 +294,7 @@ function baseStrip(state, b, n, beds) {
   return `<span class="bs-strip">${chip(n > beds ? "danger" : "", `👥 ${n}/${beds}`, `People ${n}, beds ${beds}${n > beds ? ". More people than beds: crowding lowers mood and raises the chance of illness" : ""}`)}` +
     chip("", `🛡 ${Math.round(baseDefense(state, b))}`, "Defense: walls, guards and everyone else at the base. Ammo shortages cut it by 30%.") +
     chip("", `🔥 ${baseHeat(state, b)}`, "Heat: noise and light that draw hordes. Workshop operators add 3 each.") +
+    workChip(state, b) + // ui/activity.js: N of M working, the idle named
     chip(f.cls, `🥫 ${esc(f.short.split(" · ")[0])}`, `Food: ${f.short}. ${f.tip}`) +
     (u.cold ? chip("danger", "❄ Cold", "Out of firewood and fuel: everyone here is cold") : "") +
     (u.boilerCold ? chip("danger", "💧 Boiler cold", "The water boiler is cold today: nothing to burn, the water is unboiled") : "") +
@@ -334,7 +335,7 @@ function personCard(state, s) {
   const known = inContact(state, s);
   return `<div class="card surv" data-action="survivor" data-id="${s.id}"${tip("Click for skills, traits and gear")}>
     <div class="spread"><b>${spriteImg(survivorURL(s, state.seed), 1.6)}${s.leader ? "★ " : ""}${esc(s.name)}${stIcons(state, s)}</b>${atB ? workRoleSelect(state, s) : ""}</div>
-    ${isCaptive(s) ? captiveLine(state, s) : `<div class="act-line">${activityChip(state, s)}</div>`}
+    ${isCaptive(s) ? captiveLine(state, s) : `<div class="act-line">${activityChip(state, s)}</div>${idleNote(state, s)}`}
     ${known ? `<div class="row small"><span style="width:3.5rem" class="muted">Health</span><div style="flex:1">${bar(s.health, s.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2rem">${n0(s.health)}</span></div>
     ${isHurt(s) && (s.woundInfected || treatButton(state, s)) ? `<div class="row small">${s.woundInfected ? `<span class="chip off"${tip("Heals at half speed at a base and gets worse on the road. Treat with meds.")}>Infected wound</span>` : ""}${treatButton(state, s)}</div>` : ""}
     ${isSick(s) ? `<div class="row small" style="flex-wrap:wrap">${conditionChips(state, s)}</div>` : ""}
@@ -378,11 +379,12 @@ function renderPeople(state) {
   // The find box and the view switch on top (ui/panelfold.js); a group with nobody matching is left out.
   const q = peopleQuery().trim().toLowerCase();
   const compact = peopleIsCompact();
-  const hit = (s) => !q || personWords(state, s).includes(q);
+  const idle = peopleIdleOn() ? idleSet(state) : null; // the Idle filter (ui/activity.js)
+  const hit = (s) => (!q || personWords(state, s).includes(q)) && (!idle || idle.has(s.id));
   const shownGroups = groups.map(([name, ppl]) => [name, ppl, ppl.filter(hit)]).filter(([, , f]) => f.length);
   const found = shownGroups.reduce((a, [, , f]) => a + f.length, 0);
   const total = groups.reduce((a, [, p]) => a + p.length, 0);
-  const head = `<div class="ppl-bar"><input type="search" class="ppl-q" data-action="ppl-q" data-keep="ppl-q" maxlength="40" placeholder="Find: name, job or skill" value="${esc(peopleQuery())}" aria-label="Find people by name, job or skill"${tip("Type to show only the people whose name, job, skill, background or trait has this in it")}>${q ? `<button class="mini" data-action="ppl-clear"${tip("Show everyone again")}>✕</button>` : ""}<button class="mini ppl-view" data-action="ppl-view" aria-pressed="${compact}"${tip(compact ? "Show everyone as full cards (health, hunger, thirst, mood, skills, traits)" : "Show everyone as one line each (name, job, health): more people on the screen")}>${compact ? "▤ Cards" : "☰ Compact"}</button></div>${q ? `<div class="small muted ppl-found">${found} of ${total} match “${esc(peopleQuery())}”</div>` : ""}`;
+  const head = `<div class="ppl-bar"><input type="search" class="ppl-q" data-action="ppl-q" data-keep="ppl-q" maxlength="40" placeholder="Find: name, job or skill" value="${esc(peopleQuery())}" aria-label="Find people by name, job or skill"${tip("Type to show only the people whose name, job, skill, background or trait has this in it")}>${q ? `<button class="mini" data-action="ppl-clear"${tip("Show everyone again")}>✕</button>` : ""}${peopleIdleButton(state)}<button class="mini ppl-view" data-action="ppl-view" aria-pressed="${compact}"${tip(compact ? "Show everyone as full cards (health, hunger, thirst, mood, skills, traits)" : "Show everyone as one line each (name, job, health): more people on the screen")}>${compact ? "▤ Cards" : "☰ Compact"}</button></div>${q ? `<div class="small muted ppl-found">${found} of ${total} match “${esc(peopleQuery())}”</div>` : ""}${idle && !found ? `<div class="small muted ppl-found">Nobody is idle: everyone at your bases has work (or is resting, in bed, on watch or away).</div>` : ""}`;
   const row = (s) => (compact && !isCaptive(s) ? personRow(state, s) : personCard(state, s));
   return head + shownGroups.map(([name, ppl, f]) => `<h3>${esc(name)} (${q ? `${f.length} of ${ppl.length}` : ppl.length})</h3>${f.map(row).join("")}`).join("") +
     childrenPeople(state, q ? (c) => String(c.name || "").toLowerCase().includes(q) : null); // ui/family.js

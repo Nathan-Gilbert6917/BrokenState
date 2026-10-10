@@ -43,6 +43,7 @@ import { autopilotHour } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
 import { workHour, workDayRoles } from "./work.js";
+import { stallDaily } from "./activity.js"; // the day each job at a base was first found unable to work (the stalled-job alert)
 import { watchHour, watchDayRoles } from "./watch.js";
 import { tiredHour } from "./sleep.js";
 import { crewHour } from "./crews.js";
@@ -901,6 +902,7 @@ export function tickHour(state) {
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
     craftingDaily(state);
+    stallDaily(state); // activity.js: read-only but for base.stall (no dice)
     vehiclesDaily(state);
     factionVehiclesDaily(state); // vehicles.js: a military group replaces a lost Humvee, slowly
     factionsDaily(state);

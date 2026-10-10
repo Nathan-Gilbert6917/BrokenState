@@ -1359,3 +1359,14 @@ button.mini.tp-chip:disabled { opacity: 0.4; }
 .wn-goal .wn-bar > i { background: var(--accent); }
 .wn-ptxt { display: block; color: var(--muted); }
 .wn-last, .wn-why { margin-top: 0.15rem; }
+.act-eat { --act: #e0a84f; }
+.idle-note { margin: 0.05rem 0 0.1rem; }
+.idle-badge { display: inline-block; min-width: 1.1rem; padding: 0 0.3rem; border-radius: 99px; background: #45380f; color: #ffd166; font-size: 0.72rem; text-align: center; }
+button.ppl-idle.on { background: #45380f; color: #ffd166; }
+.idle-list { padding: 0.35rem 0.5rem; margin-bottom: 0.45rem; border-radius: 6px; border: 1px solid color-mix(in srgb, #ffd166 45%, transparent); background: rgba(255, 209, 102, 0.05); }
+.idle-head { margin-bottom: 0.2rem; }
+.idle-row { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; padding: 0.15rem 0; border-top: 1px solid var(--line); }
+.idle-who { display: flex; flex-direction: column; min-width: 0; }
+.idle-why { overflow: hidden; text-overflow: ellipsis; }
+.wn-spark { display: inline-block; vertical-align: middle; margin-right: 0.35rem; color: var(--good); }
+.wn-spark svg { display: block; }

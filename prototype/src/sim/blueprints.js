@@ -19,6 +19,7 @@ import { log, atBase, skill } from "./world.js";
 import { hash01, gainXp, READ_HOURS, BOOK_SITES, WARE_BOOKS, readReason } from "./skills.js";
 import { newItem } from "./inventory.js";
 import { workFactor } from "./health.js";
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 // sites: where it turns up on the shelves (location types). unlocks.buildings / unlocks.crafts: what it opens;
 // unlocks.from: a building type free up to this many (the first preserving kitchen needs no manual).
@@ -334,6 +335,7 @@ export function studyBlueprint(state, base, s) {
   const h = Math.min(READ_HOURS * Math.max(0.5, workFactor(s)), d.hours - studyHours(state, id));
   const t = tech(state);
   t.progress[id] = studyHours(state, id) + h;
+  noteOutput(state, base, "read", h, "readh");
   gainXp(state, s, d.skill, h * STUDY_XP, "study");
   if (t.progress[id] >= d.hours - 1e-9) learn(state, id, s, base);
   return true;

@@ -7,9 +7,14 @@
 // - Why a job brings in nothing: the land cut bare, no hunting cabin, nothing to build.
 // - Health, the walls, away on a team; people on work priorities (sleep, idle).
 // - The People tab (cards and compact rows) and the base Overview show it; the find box finds "chopping".
-// - Saves: base.output survives a save and load; an older save without it reads as nothing recorded.
+// - Saves: base.output survives a save and load; an older save without it reads as nothing recorded; 7 days kept.
+// - Mealtimes: breakfast 06:00 (hunters 08:00) and dinner 20:00 show as Eating, outside the jobs' hours; nothing eaten
+//   or made changes (a day's output with and without looking is the same).
+// - The Idle list (by the job, not the clock), the People tab's Idle filter and badge, the Bases card's N of M
+//   working, the stalled-job alert after 2 days (gone when the job can work again).
+// - Teaching, reading and the medic's healing are counted a day; their rows get bars; the 7-day sparkline.
 import { createWorld, tickHour, hub, atBase, hourOfDay, day } from "../src/sim/world.js";
-import { describeActivity, baseWork, lastOutput, amountText } from "../src/sim/activity.js";
+import { describeActivity, baseWork, lastOutput, amountText, idlePeople, workCount, stalledJobs, outputSeries, workingActivity, mealAt, STALL_ALERT_DAYS } from "../src/sim/activity.js";
 import { noteOutput, outputDays, workDay } from "../src/sim/output.js";
 import * as Wd from "../src/sim/woodcutting.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -17,7 +22,8 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { workState, assignRole } from "../src/sim/work.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { renderLeft, renderModal } from "../src/ui/ui.js";
-import { workNowPanel, activityChip } from "../src/ui/activity.js";
+import { workNowPanel, activityChip, togglePeopleIdle, peopleIdleOn, workChip } from "../src/ui/activity.js";
+import { computeAlerts } from "../src/ui/alerts.js";
 import { setPeopleCompact } from "../src/ui/panelfold.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -68,7 +74,10 @@ check(row && row.goal && /Winter store/.test(row.goal.text), `the winter target 
 check(row && row.last.length === 0, "nothing recorded yet before the first midnight");
 tickTo(state, 20);
 a = describeActivity(state, cutter);
-check(a.kind === "off" && /Done chopping/.test(a.text), `20:00: done for the day (${a.text})`);
+check(a.kind === "eat" && a.text === "Eating dinner", `20:00: dinner (${a.text})`);
+tickTo(state, 21);
+a = describeActivity(state, cutter);
+check(a.kind === "off" && /Done chopping/.test(a.text), `21:00: done for the day (${a.text})`);
 tickTo(state, 23);
 a = describeActivity(state, cutter);
 check(a.kind === "sleep" && a.text === "Asleep", `23:00: asleep (${a.text})`);
@@ -83,6 +92,11 @@ check(Math.abs(days[0].by.wood - base.woodToday) < 0.06, `the counter matches th
 const last = lastOutput(state, base, "wood");
 check(last[0] && last[0].when === "yesterday" && /\+\d+ firewood \([\d.]+ kg\)/.test(last[0].text), `last output: "${last[0] && last[0].text} ${last[0] && last[0].when}"`);
 check(workDay(24) === 1 && workDay(25) === 2 && workDay(23) === 1, "the midnight tick counts for the day before it");
+tickTo(state, 6);
+check(describeActivity(state, cutter).text === "Eating breakfast", `06:00: breakfast (${describeActivity(state, cutter).text})`);
+check(mealAt("hunt", 6) === null && mealAt("hunt", 8) === "breakfast" && mealAt("wood", 6) === "breakfast" && mealAt("farm", 20) === "dinner", "hunters and fishers eat after the dawn hunt (08:00); everyone dines at 20:00");
+// Meals are outside the jobs' hours: the daily jobs' sampled hours (wood 08–18, forage 09–19, hunt/fish 06, 07, 17).
+check([8, 10, 12, 14, 16, 18].every((h) => !mealAt("wood", h)) && [9, 11, 13, 15, 17, 19].every((h) => !mealAt("forage", h)) && [6, 7, 17].every((h) => !mealAt("hunt", h)), "no meal falls on a daily job's working hours");
 row = baseWork(state, base).find((r) => r.job === "wood");
 check(row && row.last[0] && !row.last[0].zero, "the panel's last line shows it");
 
@@ -173,8 +187,101 @@ section("Saves: the output counter survives; an old save has none");
   noteOutput(back, bb, "wood", 5, "wood");
   noteOutput(back, bb, "wood", 2.5, "wood");
   check(outputDays(bb, "wood")[0].by.wood === 7.5 && amountText("wood", 140) === "140 firewood (14 kg)", "notes add up by day; firewood reads in kg");
-  for (let d = 0; d < 6; d++) { back.hour += 24; noteOutput(back, bb, "farm", 1, "food"); }
-  check(outputDays(bb, "farm").length === 3, "only the last 3 days are kept a job");
+  for (let d = 0; d < 10; d++) { back.hour += 24; noteOutput(back, bb, "farm", 1, "food"); }
+  check(outputDays(bb, "farm").length === 7, "the last 7 days are kept a job");
+  const ser = outputSeries(back, bb, "farm");
+  check(ser.days.length === 7 && ser.days.filter((d) => d.rec).length >= 6 && ser.unit === "food", `the sparkline's series: 7 days of food (${ser.days.map((d) => d.n).join(", ")})`);
+}
+
+// ======================================================================
+section("Meals change nothing a base makes or eats");
+{
+  const run = (look) => {
+    const st = woodWorld();
+    const b = hub(st);
+    const s = atBase(st, b.id)[0];
+    s.role = "wood"; s.pinned = true;
+    for (let i = 0; i < 72; i++) { tickHour(st); if (look) for (const p of atBase(st, b.id)) describeActivity(st, p); }
+    return JSON.stringify([b.stock, b.output, st.rng.next()]); // the next roll: the same dice drawn
+  };
+  check(run(false) === run(true), "three days with and without asking what everyone does: the same stores, output and dice");
+}
+
+// ======================================================================
+section("The Idle list, the People tab's Idle filter, the Bases chip, the stalled-job alert");
+{
+  const st = woodWorld();
+  const b = hub(st);
+  const ppl = atBase(st, b.id);
+  const [w, r, sick] = ppl;
+  for (const s of ppl) { s.pinned = true; s.role = "farm"; s.inBed = false; s.conditions = []; s.health = 100; }
+  w.role = "wood"; r.role = "rest";
+  sick.health = 20; sick.inBed = true;
+  tickTo(st, 10);
+  for (const t of Wd.baseWoodTiles(st, b)) Wd.takeWood(st, t.id, Wd.WOOD.deplete * 10);
+  let idle = idlePeople(st, b);
+  check(idle.some((x) => x.s === w && /cut bare/.test(x.why)), `the woodcutter on cut-bare land is idle (${idle.map((x) => `${x.s.name}: ${x.why}`).join("; ")})`);
+  check(!idle.some((x) => x.s === r) && !idle.some((x) => x.s === sick), "resting and in bed are left out");
+  tickTo(st, 23);
+  check(describeActivity(st, w).kind === "sleep" && idlePeople(st, b).some((x) => x.s === w), "by the job, not the clock: still listed while asleep");
+  check(workingActivity(st, w).kind === "stalled", "workingActivity: stalled");
+  const c = workCount(st, b);
+  check(c.total === ppl.length && c.idle >= 1 && c.hurt >= 1 && c.resting >= 1 && c.working + c.idle + c.hurt + c.resting === c.total, `N of M working: ${JSON.stringify(c)}`);
+  check(/⚒ \d+\/\d+ working/.test(workChip(st, b)), "the Bases card chip");
+  const bases = renderLeft(st, freshUi({ tab: "bases" }));
+  check(/working/.test(bases) && !BAD.test(bases), "the Bases tab shows it");
+  // The People tab's Idle filter and badge.
+  check(!peopleIdleOn(), "the Idle filter starts off");
+  let html = renderLeft(st, freshUi());
+  check(/data-action="ppl-idle"/.test(html) && /idle-badge">\d+</.test(html), "the Idle button with its count");
+  check(/No work: Can't cut wood/.test(html), "a card says why they have no work when the chip shows the hour (asleep)");
+  togglePeopleIdle();
+  html = renderLeft(st, freshUi());
+  togglePeopleIdle();
+  const names = ppl.filter((s) => html.includes(s.name)).map((s) => s.name);
+  check(names.includes(w.name) && !names.includes(r.name) && !names.includes(sick.name), `the filter shows only the idle (${names.join(", ")})`);
+  // The Work now panel: the Idle list on top with a role drop-down.
+  const panel = workNowPanel(st, b);
+  check(/idle-list/.test(panel) && panel.indexOf("idle-list") < panel.indexOf("wn-row") && new RegExp(`data-action="role" data-id="${w.id}"`).test(panel), "the Work now panel opens with the Idle list and a role drop-down");
+  // Stalled for days: the alert, and gone when it can work again.
+  tickTo(st, 1);
+  check(b.stall && b.stall.wood != null, `the stall is noted (day ${b.stall && b.stall.wood})`);
+  check(!computeAlerts(st, { all: true }).some((x) => x.kind === "stalled"), "no alert on the first day");
+  for (let d = 0; d < STALL_ALERT_DAYS; d++) { for (let i = 0; i < 24; i++) tickHour(st); for (const t of Wd.baseWoodTiles(st, b)) Wd.takeWood(st, t.id, Wd.WOOD.deplete * 10); }
+  const al = computeAlerts(st, { all: true }).filter((x) => x.kind === "stalled");
+  check(al.length === 1 && al[0].key === `stall:${b.id}:wood` && /Cut wood stalled \d+ days/.test(al[0].text), `the alert: ${al[0] && al[0].text}`);
+  check(stalledJobs(st).length === 1 && /days\)/.test(workNowPanel(st, b)), "the row says for how long");
+  st.wood = {}; // the land grows back (for the test)
+  check(!computeAlerts(st, { all: true }).some((x) => x.kind === "stalled"), "the job can work again: the alert is gone at once");
+  for (let i = 0; i < 24; i++) tickHour(st);
+  check(!b.stall || b.stall.wood == null, "and the stall is cleared at the next day");
+}
+
+// ======================================================================
+section("Teaching, reading and the medic's healing: counted a day, with bars");
+{
+  const st = woodWorld();
+  const b = hub(st);
+  const ppl = atBase(st, b.id);
+  for (const s of ppl) { s.pinned = true; s.role = "farm"; s.inBed = false; s.conditions = []; s.health = 100; }
+  const [T, L, R, M, P] = ppl;
+  T.skills.medicine = 12; L.skills.medicine = 2; T.role = "teach"; T.teach = { skill: "medicine", learners: [L.id] };
+  R.role = "read"; R.skills.medicine = 1; b.armory.push(newItem("medbook"));
+  M.role = "medic"; M.skills.medicine = 6; P.health = 55;
+  tickTo(st, 12);
+  const rows = baseWork(st, b);
+  const tr = rows.find((x) => x.job === "teach"), mr = rows.find((x) => x.job === "medic");
+  check(tr && tr.progress && /Medicine \d+→\d+/.test(tr.progress.text), `teach: ${tr && tr.progress && tr.progress.text}`);
+  check(mr && mr.progress && /hurt or ill/.test(mr.progress.text) && mr.progress.frac > 0 && mr.progress.frac < 1, `medic: ${mr && mr.progress && mr.progress.text}`);
+  for (let i = 0; i < 24; i++) tickHour(st);
+  const lt = lastOutput(st, b, "teach")[0], lr = lastOutput(st, b, "read")[0], lm = lastOutput(st, b, "medic")[0];
+  check(lt && /\+[\d.]+ XP/.test(lt.text), `teaching counted: ${lt && lt.text} ${lt && lt.when}`);
+  check(lr && /hours read/.test(lr.text), `reading counted: ${lr && lr.text}`);
+  check(lm && /health healed/.test(lm.text), `healing counted: ${lm && lm.text}`);
+  const rr = baseWork(st, b).find((x) => x.job === "read");
+  check(rr && rr.progress && /of \d+ h/.test(rr.progress.text), `read: ${rr && rr.progress && rr.progress.text}`);
+  const html = workNowPanel(st, b);
+  check(/wn-spark/.test(html) && /<polyline/.test(html) && !BAD.test(html), "the sparklines are drawn");
 }
 
 console.log(`\n${passed} passed, ${fails} failed`);
