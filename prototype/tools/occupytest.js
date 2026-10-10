@@ -398,6 +398,7 @@ section("The governor gives up a doomed outpost in winter; a group spread too th
 {
   const st = world(seed + 11);
   const h = hub(st);
+  setAutopilot(st, false, "balanced"); // the governor's memory, off: winterPlan keeps its daily memo on it (st.governor.winter; with no governor a private WeakMap the resets below cannot reach)
   for (let d = 0; d < 112 && season(st).key !== "winter"; d++) st.hour += 24;
   check(season(st).key === "winter", `winter (day ${day(st)})`);
   const far = st.tiles.map((t) => t.id).filter((t) => free(st, t) && planPath(st, t, h.tile, false) && supplyLine(st, { tile: t }).strength < 0.5).sort((a, b) => st.grid.distance(a, h.tile) - st.grid.distance(b, h.tile))[0];

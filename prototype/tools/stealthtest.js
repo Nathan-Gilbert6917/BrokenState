@@ -7,6 +7,7 @@
 // Usage: node tools/stealthtest.js [seed]
 import { createWorld, tickHour, hub, atBase, makeSurvivor, day, factionById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
+import { totalRounds } from "../src/sim/rounds.js"; // an ammo ransom comes in as rounds by calibre
 import {
   createBattle, combatAct, finishCombat, closeCombat, autoPlayerTurn, runEnemyPhase, endPlayerTurn, registerCombatHandler,
   active, adjacent, unitAt, MAP_W, MAP_H,
@@ -258,13 +259,16 @@ function prisonWorld(s, n = 2, cells = 1) {
     PRISON.ESCAPE.guarded = 0; PRISON.ESCAPE.unguarded = 0; // the answer under test, not an escape that day (jailhouse: the dice moved)
     prisonersDaily(st);
     Object.assign(PRISON.ESCAPE, esc0);
-    if (!st.prisoners.includes(p)) { if ((h.stock[key] || 0) > (stock0[key] || 0) && f.goodwill <= g0) paid++; }
+    // An "ammo" ransom is paid as rounds by calibre (prisoners.js findRounds since ammo-calibre): count every round in.
+    const stockUp = key === "ammo" ? totalRounds(h.stock) > totalRounds(stock0) : (h.stock[key] || 0) > (stock0[key] || 0);
+    if (!st.prisoners.includes(p)) { if (stockUp && f.goodwill <= g0) paid++; }
     else if (f.goodwill < g0 && f.angryUntil) refused++;
     if (i === 0) console.log(`    ${msg}`);
   }
   check(n >= 50 && paid > 5 && refused > 5 && paid + refused === n, `ransom asked ${n} times: paid ${paid} (stock in, goodwill ${PRISON.RANSOM.goodwillPaid}), refused ${refused} (goodwill ${PRISON.RANSOM.goodwillRefused}, angry)`);
   {
     const { st, f, list } = prisonWorld(seed + 4, 2);
+    for (const s of st.survivors) s.traits = s.traits.filter((t) => t !== "diplomatic"); // a Diplomatic hand raises goodwill gains (traits.js goodwillMult): the checks count the plain numbers
     const g0 = f.goodwill, pop0 = f.pop;
     tradeBack(st, list[0].id);
     check(f.goodwill === Math.min(100, g0 + PRISON.TRADE_BACK) && f.pop === pop0 + 1, `trade back: goodwill ${g0} → ${f.goodwill}, their people ${pop0} → ${f.pop}`);
