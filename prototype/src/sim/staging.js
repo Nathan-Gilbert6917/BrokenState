@@ -190,6 +190,7 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
 }
 // "Calder Woods Camp" (outpostName's place, a camp's word).
 function campName(state, tile) {
+  if (state.tiles[tile] && state.tiles[tile].bridge) return outpostName(state, tile); // a camp on a bridge is its barricade (parties.js bridgeClosedTo)
   const base = outpostName(state, tile).replace(/ (Outpost|Bridge Barricade)( \d+)?$/, "");
   let name = `${base} Camp`;
   for (let n = 2; state.bases.some((b) => b.name === name); n++) name = `${base} Camp ${n}`;
@@ -461,7 +462,7 @@ export function migrateStaging(state) {
   for (const p of [...state.parties]) {
     if (p.owner !== "player" || p.kind === "convoy" || partyTile(p) !== old.tile || !partyMembers(state, p).length) continue;
     if (p.phase === "task" && p.task && p.task.type === "stage") p.task = null;
-    if (p.phase === "task" || p.phase === "waiting") { settleInto(state, p, base); continue; }
+    if (p.phase === "task" || p.phase === "waiting") { const ppl = partyMembers(state, p); settleInto(state, p, base); for (const s of ppl) s.role = "build"; continue; } // they were working on it
   }
   for (const p of state.parties) if (p.phase === "task" && p.task && p.task.type === "stage") { p.task = null; p.phase = "waiting"; }
   recomputeOwnership(state);
