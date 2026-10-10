@@ -2,21 +2,28 @@
 // meleeOdds; stealth.js subdueOdds; skills.js melee perks and XP; save.js): it exists everywhere a skill shows, it is
 // rolled with dice of its own, higher Melee wins more melee fights (paired seeds: the same battle dice for both), old
 // saves get it on load (deterministic, no perk windfall), volunteers and recruits have it, backgrounds bump it on a die
-// of their own, and battles and fights by the numbers train it.
+// of their own, and battles and fights by the numbers train it. Knives and swords (data-blades.js, blades.js): all of
+// them in GEAR and WEAPONS, quick knives and slow swords, cheap folders, where they turn up, who carries them, the
+// picker, crafting, and they scale with Melee (prints their table).
 // Usage: node tools/meleeskilltest.js [seed]
 import { readFileSync } from "node:fs";
 import { createWorld, makeSurvivor, hub, skill, combatPower, MELEE_SKILL, meleeArmed, fillMelee } from "../src/sim/world.js";
 import { SKILLS, SKILL_NAMES, ROLLED_SKILLS, GEAR } from "../src/sim/data.js";
-import { createBattle, combatAct, registerCombatHandler, meleeOdds, playerUnit } from "../src/sim/combat.js";
+import { createBattle, combatAct, registerCombatHandler, meleeOdds, playerUnit, WEAPONS, KITS } from "../src/sim/combat.js";
 import { subdueOdds } from "../src/sim/stealth.js";
 import { PERK_TREE, PERKS, battleXp, fightXp, ensureSkills, pendingPerks } from "../src/sim/skills.js";
 import { meleeStart, meleeOldSave } from "../src/sim/appearance.js";
 import { applyArchetype, HC_START } from "../src/sim/hardcore-start.js";
 import { makeVolunteer } from "../src/sim/volunteers.js";
-import { skillsCost } from "../src/sim/custompoints.js";
+import { skillsCost, itemPoints } from "../src/sim/custompoints.js";
 import { newItem } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { Rng } from "../src/sim/rng.js";
+import { BLADE_GEAR, BLADE_LOOK, BLADES_HELP } from "../src/sim/data-blades.js";
+import { rollBladeFind, rollAreaBlade, bladeWares, scavBlade } from "../src/sim/blades.js";
+import { ITEM_TAGS } from "../src/sim/loot.js";
+import { CRAFTS } from "../src/sim/crafting.js";
+import { slotChoices } from "../src/sim/startgear.js";
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -217,6 +224,59 @@ console.log("Volunteers and the AI side");
   }
   const r = makeSurvivor(st, 0.8);
   check(Number.isFinite(r.skills.melee), "recruits, prisoners, wanderers (makeSurvivor) have it");
+}
+
+// ---------- knives and swords (data-blades.js, blades.js) ----------
+console.log("Knives and swords");
+{
+  const keys = Object.keys(BLADE_GEAR);
+  check(keys.length >= 14, `${keys.length} new blades`);
+  check(keys.every((k) => GEAR[k] && WEAPONS[k] && WEAPONS[k].melee && GEAR[k].cat === "melee" && GEAR[k].skill === "melee" && GEAR[k].noise === 0 && GEAR[k].dur > 0 && GEAR[k].value > 0 && GEAR[k].slot === "weapon"), "each is a silent melee weapon by Melee, with a value and a durability, in GEAR and WEAPONS");
+  const swords = ["cutlass", "sabre", "broadsword"];
+  const knives = keys.filter((k) => !swords.includes(k));
+  check(knives.filter((k) => k !== "cleaver").every((k) => WEAPONS[k].quick) && swords.every((k) => !WEAPONS[k].quick && GEAR[k].req > 0), "knives are quick (the cleaver chops), swords are not and want some Melee");
+  const avg = (k) => (WEAPONS[k].dmg[0] + WEAPONS[k].dmg[1]) / 2;
+  const small = ["pocketknife", "flipknife", "lockback", "multitool", "boxcutter", "balisong", "steakknife", "filletknife"], fixed = ["huntknife", "survivalknife", "bowie", "bayonet"];
+  check(Math.max(...small.map(avg)) < Math.min(...fixed.map(avg)) && Math.max(...fixed.map(avg)) < Math.min(...swords.map(avg)), "folders and kitchen knives < fixed blades < swords");
+  const pts = Object.fromEntries(keys.map((k) => [k, itemPoints(k)]));
+  const cheap = ["pocketknife", "flipknife", "steakknife", "boxcutter", "shiv"];
+  check(cheap.every((k) => pts[k] <= 2), `everyday knives are cheap under Customize (${cheap.map((k) => `${k} ${pts[k]}`).join(", ")})`);
+  check(keys.every((k) => slotChoices("weapon").includes(k)), "all in the new-run gear picker (startgear.js slotChoices)");
+  check(keys.every((k) => ITEM_TAGS[k] && BLADE_LOOK[k]), "each has theme tags and a look (sprites)");
+  check(CRAFTS.shiv && CRAFTS.shiv.gear === "shiv" && CRAFTS.shiv.field && CRAFTS.bowie && CRAFTS.bowie.needs === "workshop", "a shiv made anywhere, a Bowie knife forged at a workshop");
+  check(["raiders", "survivors", "soldiers", "zealots"].every((k) => KITS[k].loot.some((x) => keys.includes(x))), "raiders, survivors, soldiers and zealots carry them (their bodies)");
+  check(/Knives and swords/.test(src("ui/help.js")) && /Everyday knives/.test(BLADES_HELP), "the Help topic");
+  // Found: a town's search hours, a kitchen's containers, a trader's table; an AI group's scavengers.
+  const st = createWorld({ seed, factionCount: 4 });
+  const town = st.tiles.findIndex((t) => t && t.loc && t.loc.type === "town");
+  const found = new Set();
+  let n = 0;
+  if (town >= 0) for (let h = 0; h < 4000; h++) { st.hour = h; const it = rollBladeFind(st, town, 1, "t"); if (it) { n++; found.add(it.key); } }
+  check(town >= 0 && n > 50 && found.size >= 6, `a town's search hours turn them up (${n} in 4000 hours: ${[...found].join(", ")})`);
+  let kit = 0;
+  for (let i = 0; i < 500; i++) if (rollAreaBlade(st, town, "kitchen", `k${i}`)) kit++;
+  check(kit > 15, `kitchen drawers in a raid (${kit} of 500)`);
+  let wares = 0;
+  for (let i = 0; i < 300; i++) wares += bladeWares(st, "traders", `T${i}`).length;
+  check(wares > 50, `on traders' tables (${wares} of 300)`);
+  let scav = 0;
+  for (let i = 0; i < 400; i++) if (scavBlade("town", [st.seed, "test", i])) scav++;
+  check(scav > 20, `an AI group's scavengers find them too (${scav} of 400 town trips)`);
+  // They scale with Melee: a sabre at Melee 1 and 15, a pocket knife at 15.
+  const a = fighter(st, "sabre", 1), c = fighter(st, "sabre", 15), d = fighter(st, "pocketknife", 15);
+  const b = openBattle(st, [a, c, d]);
+  const z = foe(b);
+  const at = (s) => { [a, c, d].forEach((o, i) => place(by(b, o), 1, 1 + 2 * i)); place(by(b, s), 5, 5); place(z, 6, 5); return meleeOdds(b, by(b, s), z); };
+  const oA = at(a), oC = at(c), oD = at(d);
+  console.log(`  sabre at Melee 1: ${oA.chance}% ${oA.dmg.join("-")} (under its Melee 3: the skill-gap rule), at Melee 15: ${oC.chance}% ${oC.dmg.join("-")}; a pocket knife at Melee 15: ${oD.chance}% ${oD.dmg.join("-")}`);
+  check(oC.chance > oA.chance && oC.dmg[1] > oA.dmg[1] && oD.dmg[1] < oC.dmg[1], "they scale with Melee, and a sword out-hits a pocket knife");
+  // The table for the report.
+  console.log("  key            name                      dmg     aim quick traits                         power kg   value pts dur req");
+  for (const k of keys) {
+    const g = GEAR[k], w = WEAPONS[k];
+    const tr = [w.mclass, w.bleed ? `bleed ${w.bleed}` : "", w.stagger ? `stagger ${w.stagger}` : "", w.stab ? "stab" : "", w.takedown ? `TD +${w.takedown}` : ""].filter(Boolean).join(", ");
+    console.log(`  ${k.padEnd(14)} ${g.name.padEnd(25)} ${w.dmg.join("-").padEnd(7)} ${String(w.meleeAim || 0).padStart(3)} ${w.quick ? "yes  " : "no   "} ${tr.padEnd(30)} ${String(g.power).padEnd(5)} ${String(g.weight).padEnd(4)} ${String(g.value).padEnd(5)} ${String(pts[k]).padEnd(3)} ${String(g.dur).padEnd(3)} ${g.req}`);
+  }
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

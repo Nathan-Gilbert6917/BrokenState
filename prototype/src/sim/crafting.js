@@ -31,6 +31,9 @@ export const CRAFTS = {
   pipespear:   { gear: "pipespear",   in: { scrap: 3 },           hours: 4,  skill: "mechanics", min: 0, field: true },
   spikedbat:   { gear: "spikedbat",   in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 0, field: true },
   sawmachete:  { gear: "sawmachete",  in: { scrap: 6 },           hours: 10, skill: "mechanics", min: 3 },
+  // Knives (data-blades.js): a shiv ground from a strip of scrap anywhere; a Bowie knife forged from an old file at a workshop.
+  shiv:        { gear: "shiv",        in: { scrap: 2 },           hours: 2,  skill: "mechanics", min: 0, field: true },
+  bowie:       { gear: "bowie",       in: { scrap: 5 },           hours: 10, skill: "mechanics", min: 3, cmin: 4, needs: "workshop" },
   crossbow:    { gear: "crossbow",    in: { scrap: 8, parts: 1 }, hours: 16, skill: "mechanics", min: 5, needs: "workshop" },
   pipegun:     { gear: "pipegun",     in: { scrap: 6, parts: 2 }, hours: 14, skill: "mechanics", min: 6, needs: "workshop" },
   makeshiftrod: { gear: "makeshiftrod", in: { scrap: 1 },         hours: 2,  skill: "mechanics", min: 0, field: true },
