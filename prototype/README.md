@@ -1087,6 +1087,19 @@ It runs the TypeScript checker (`tsc`, pinned to 5.6.3) with `jsconfig.json`: a 
 - The shapes: `src/sim/types.d.ts` (State, Tile, Survivor, Item, Base, Building, Vehicle, Party, Order, Faction, Horde, Hive, HiveSite, Card, Choice, the stocks…), read like C# records (`field?: T` is optional). Never loaded by the game. The big records (State, Survivor, Base, Party, Faction, Card, Tile, Item…) also allow fields that are not listed, since many modules keep a few of their own there; the small ones (Horde, Hive, HiveSite, Vehicle, DeathSite, TileSnapshot) do not, so a misspelt field is an error.
 - To opt a module in: put `// @ts-check` on its first line and `/** @import { State, Party } from "./types" */` under the header comment, give its functions `/** @param {State} state @param {Party} p */`, run the check and fix what it finds with JSDoc (`@type` on an object literal, a `@typedef` for an options object). Where a fix would change what the code does, leave `// @ts-expect-error <why>` and look at it as a possible bug. Never `import` the types file in code (the browser has no `types.js`).
 
+## Balance sheet
+
+`docs/balance-sheet/index.html` is one self-contained page (open it by double-click; no server, no network) with every gun, melee weapon, magazine, internal magazine, calibre, ammo type, round, box size and bulk container, their numbers and what follows from them (hits on no armour / a vest / a plate, damage per kg, points, box sizes and prices, find weights). Sort by any column, filter, hide columns, edit the blue values (rarity tiers by dropdown, the order of rarity and its find weights in the side panel), then **Export changes**: a JSON patch (downloaded and shown to copy). Edits stay in the browser between visits; **Import changes** loads a patch back.
+
+```bash
+node tools/balancesheet.js                  # regenerate the page from the game's data (after any change to it)
+node tools/applybalance.js patch.json --dry # what a patch would change
+node tools/applybalance.js patch.json       # write it into the data files, then check the game loads the new values
+node tools/balancesheettest.js              # the sheet, its formulas against the game, and a patch round trip
+```
+
+`applybalance` edits only the literal each value comes from (combat.js WEAPONS, data-guns.js, data.js GEAR, data-ammo.js, data-kit.js, data-stacks.js, mags.js, custompoints.js, startgear.js), refuses a change whose `from` is no longer the source's value (regenerate the sheet and redo it), and exits 1 if anything was refused. Afterwards regenerate the sheet and run `tools/arsenalbalancetest.js` (the damage ladder's rules).
+
 ## Code layout
 
 ```
