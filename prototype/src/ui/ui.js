@@ -110,7 +110,7 @@ import { occupiedAt, occupiedText, assaultWarning, assaultForce } from "../sim/c
 import { occupyPreview, abandonProblem } from "../sim/occupy.js"; // Occupy: moving into an abandoned base; Abandon outpost
 import { claimsTaken, claimsTakenText } from "../sim/claims.js"; // Build outpost: the groups' claims it would take
 import { abandonedAt } from "../sim/groupworld.js";
-import { repairsTab, blueprintsCard, keyRingCard, lockLine } from "./explore.js";
+import { repairsTab, blueprintsCard, keyRingCard } from "./explore.js";
 import { prisonTab } from "./prisoners.js";
 import { settingsModal } from "./settings.js";
 import { swatch } from "./help.js";
