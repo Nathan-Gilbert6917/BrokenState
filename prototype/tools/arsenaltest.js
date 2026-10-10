@@ -180,7 +180,8 @@ section("Losses, wear and the field");
   check(b.arsenal.items.length < nb0, `the commune's dead lose their kit (${nb0} → ${b.arsenal.items.length})`);
   check(a.arsenal.items.length >= na0, `the raiders hold the field and pick some of it up (${na0} → ${a.arsenal.items.length})`);
   check(a.wounded > 0 && b.wounded > 0, "both sides have wounded");
-  const it = a.arsenal.items.find((x) => GEAR[x.key].dur);
+  const issued = new Set(A.issueKit(st, a, 30, "raid").flatMap((lo) => [lo.weapon, ...Object.values(lo.armour), lo.launcher].filter(Boolean))); // (what the 30 carry: their guard keeps every third best piece at home)
+  const it = a.arsenal.items.find((x) => GEAR[x.key].dur && issued.has(x));
   const d0 = it.dur;
   A.clashKit(st, a, 30, 0, null, 0, "a");
   check(it.dur < d0 || !a.arsenal.items.includes(it), "a fight wears the kit");
