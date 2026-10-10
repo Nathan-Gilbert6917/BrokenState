@@ -1486,7 +1486,9 @@ points, the military ×1.5 AP and no hollow points, a farm no AP). `findRounds`,
 boxes, gun safes' theme rounds, AI groups' stores by kind (`KIND_MIX`) and visiting traders all read it. The places
 together (each theme weighted the same): 12 ga 32.8%, 9mm 21.4%, .308 13.9%, 5.56 13.0%, .22 8.5%, .30-30 2.9%, .357 2.2%,
 20 ga 2.1%, .45 1.8%, 7.62×39 1.1%, .50 0.1%; within each calibre a rarer round always turns up less than a commoner one
-(tested).
+(tested). The ammo-stacks branch's boxed and bulk finds read the same tiers (`ammo.js commonness`: common 1,
+uncommon 0.45, scarce 0.18, rare 0.06, very rare 0.02), so an ammo can or carton turns up for common rounds and hardly
+ever for AP, API or match.
 
 ### The new guns (`data-guns.js ARSENAL_GEAR` / `ARSENAL_WEAPONS`)
 
