@@ -7,8 +7,8 @@
 //
 // Lights cut holes in it with a warm glow: your bases with somebody home (sized by the base: the hub and its
 // buildings), floodlights that can be lit (fuel or generator power: a cold white, wider), other groups' bases you know
-// of (their windows), a festival's bonfires, your teams' lights (sim/lights.js) and camps' campfires, the staging
-// camp's fire, a siege camp's fires, a crash site burning. Drawn by ui/render.js after the cached ground layers and
+// of (their windows), a festival's bonfires, your teams' lights (sim/lights.js) and camps' campfires, a timelapse
+// frame's camp fire, a siege camp's fires, a crash site burning. Drawn by ui/render.js after the cached ground layers and
 // before the per-frame things (bases, teams, hordes, labels, icons, selection): those stay at full brightness.
 //
 // Cost: one small offscreen canvas (a quarter of the map's device pixels each way, at most 960 wide), reused between frames and painted

@@ -3,7 +3,7 @@
 // opens the right screen and pulses the button to press. Steps tick off from the state of the game (a team really
 // out, a building really queued, the clock really past the first dawn), never by clicking them; a small toast says so.
 // - Two lists: a normal start (a hub with people: the stores, work priorities, a building, a team out and home, the
-//   first night, the diary) and a Hardcore start on the road (the team, water, the staging camp, its needs, the
+//   first night, the diary) and a Hardcore start on the road (the team, water, the camp (Establish base), its needs, the
 //   shelter, the first night, the diary). Which one is picked when the guide starts: no base yet = the road list.
 // - state.guide = { kind: "base" | "road", on, keep, fold, done: { step id: hour }, h0, b0, sent: [{ id, who }], wLow,
 //   ended }. Saved with the world (sim/save.js writes the whole state); an older save has none and shows nothing.
@@ -80,7 +80,7 @@ const STEPS = {
     show: (state, ui) => { closeWindows(ui); return ['#tb-speed [data-action="speed"][data-speed="1"]', '#banner [data-action="speed"]']; },
   },
   night: {
-    title: "Get through the first night", why: "Night runs from 20:00 to 06:00, and a team out sees only the tile it stands on. Guards and walls hold a base through it; a team in the field can camp to rest (a fire warms, but its light draws trouble).",
+    title: "Get through the first night", why: "Night runs from 20:00 to 06:00, and a team out sees only the tile it stands on. Guards and walls hold a base through it; a team in the field can set up camp (the barest base: its people rest there; a fire warms, but its light draws trouble).",
     done: (state, g) => state.hour >= firstDawn(g),
     show: (state, ui, act) => {
       const p = state.bases.length ? null : openTeam(state, ui, act);

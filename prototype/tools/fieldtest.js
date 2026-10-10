@@ -251,7 +251,7 @@ for (const [preset, mission] of [["recon", "recon"], ["scavenge", "scavenge"], [
     if (m && l.text.includes(p.members.length ? "" : "")) seq.push(m[1]);
   }
   check(home(state, p), `${preset}: back home (${seq.join(" → ")})`);
-  if (preset === "camp") check(seq[0] === "Camp 24h" && seq[seq.length - 1] === "Return home", `camp preset: camp, then home (${seq.join(" → ")})`);
+  if (preset === "camp") check(seq[0] === "Rest 24h" && seq[seq.length - 1] === "Return home", `camp preset (Rest N days): rest, then home (${seq.join(" → ")})`);
   if (preset === "explore") check(seq[0].startsWith("Scavenge the best site") && seq[seq.length - 1] === "Return home", `explore: recon, then the nearby searches, then home (${seq.join(" → ")})`);
   if (preset === "recon" || preset === "scavenge") check(seq[seq.length - 1] === "Return home", `${preset}: then home`);
 }
@@ -490,7 +490,7 @@ section("Radio rule: out of contact orders only through the team's cards; in con
   startOrder(s2, w, { type: "camp", hours: null });
   got = null;
   for (let i = 0; i < CAMP_CHECKIN + 2 && !got; i++) { w.lastConflict = s2.hour + 1; tickHour(s2); got = s2.cards.find((c) => c.partyId === w.id && c.isOrders); for (const c of s2.cards.filter((c) => !c.isOrders)) s2.cards.splice(s2.cards.indexOf(c), 1); }
-  check(got && got.title === "Camp: checking in" && w.phase === "task", `an open-ended camp out of contact checks in once a day (${got ? got.title : "none"})`);
+  check(got && got.title === "Resting: checking in" && w.phase === "task", `an open-ended camp out of contact checks in once a day (${got ? got.title : "none"})`);
 }
 
 // ======================================================================

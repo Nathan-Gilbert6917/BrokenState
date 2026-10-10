@@ -5,6 +5,7 @@
 // KIT_AMMO, the economy agent (C) for RELOAD_GEAR (brass, powder, primers). The armour agent (A2) reads pen / ad.
 // A box is a count stack: GEAR `count: true`, item.dur = rounds left (valuation.js / inventory.js weigh and price it
 // by the share left). Box keys: a_<cal>_<type>, e.g. a_9mm_fmj, a_12ga_slug, a_50bmg_api.
+import { retailBox } from "./data-stacks.js"; // a box's size: typical US retail counts by calibre and load (data, no imports)
 
 // kg: a round's weight. box: rounds in a box. pen: the calibre's base penetration (its FMJ / ball / 00 buck round).
 // ad: how hard its FMJ round chews armour durability (section 17). value: one FMJ round.
@@ -316,3 +317,19 @@ export const KIT_AMMO = {
   zealots:   { pistol: { fmj: 0.6, hp: 0.4 },             rifle: { fmj: 0.8, sp: 0.2 },                          shotgun: { buck: 0.8, bird: 0.2 } },
   fighters:  { pistol: { fmj: 0.6, hp: 0.4 },             rifle: { fmj: 0.8, sp: 0.2 },                          shotgun: { buck: 0.7, slug: 0.2, bird: 0.1 } },
 };
+
+// ---------- box sizes (2026-10-10, user request: "typical US retail box counts per calibre and variant") ----------
+// Every box (factory and handloads; data-stacks.js RETAIL_BOX, a calibre or load with no row by its class) holds what a
+// box of that load holds off a shelf: dur, weight (its rounds and 50 g of box) and value (its rounds) follow. A slot
+// holds up to five boxes of one kind, or up to 80 loose rounds (sim/itemstack.js).
+for (const [k, g] of Object.entries(AMMO_GEAR)) {
+  const r = g && g.rounds, c = r && CALIBERS[r.cal];
+  if (!c) continue;
+  const n = retailBox(r.cal, r.type, c, LOAD_CLASS[r.cal] || "");
+  if (!(n > 0) || n === g.dur) continue;
+  const per = ROUND_SUPPLIES[k] ? ROUND_SUPPLIES[k].value : g.value / g.dur;
+  g.dur = n;
+  g.weight = Math.round((c.kg * n + 0.05) * 100) / 100;
+  g.value = Math.max(1, Math.round(per * n));
+  if (typeof g.desc === "string") g.desc = g.desc.replace(/^A box of \d+/, `A box of ${n}`);
+}

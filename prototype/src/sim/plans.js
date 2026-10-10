@@ -1,7 +1,7 @@
 // Trip plans (the planner's PLAN section) and the radio rule for field teams.
 //
 // A plan is the team's order queue built before it leaves: the trip to the target with its mission, then steps
-// such as "look around", "scavenge here", "scavenge the best sites nearby", "camp N days", "gather", "wait",
+// such as "look around", "scavenge here", "scavenge the best sites nearby", "rest N days", "gather", "wait",
 // "move to …" and "return home" (orders.js runs them one after the other). The planner shows the ETA and the
 // rations for the whole plan (estimatePlan, the same hour-by-hour stepping as the real trip, winter's appetite
 // included: ×1.1 / ×1.2 below 0 / −8°C, except by a lit camp fire).
@@ -54,7 +54,7 @@ export const STEP_KINDS = {
   survey:   { label: "Look around (2h)", desc: "Two hours surveying nearby tiles: better odds of spotting caches, wrecks and camps." },
   scavenge: { label: "Scavenge here", desc: "Search the site the team stands on (a raid on its own map)." },
   nearby:   { label: "Scavenge nearby sites", desc: "Search the best known sites within a few tiles, richest first (what the team sees on the way counts). Sites are picked when the step starts, so the plan adapts." },
-  camp:     { label: "Camp", desc: "Rest on the spot: the hurt heal slowly. Staying put builds Heat (a camp fire most), and Heat brings trouble." },
+  camp:     { label: "Rest", desc: "Rest on the spot (no camp is set up): the hurt heal slowly. Staying put builds Heat (a camp fire most), and Heat brings trouble." },
   gather:   { label: "Gather boat materials (3h)", desc: "Search the shore for scrap (only on a shore with a crossing)." },
   water:    { label: "Fetch water (2h)", desc: "Fill every free container from the river or lake (only on a tile next to water) and carry it home: un-purified water for a dry base in summer (the base's boiler or filters purify it; on the way a filter, a lit camp fire or purification tablets make it safe to drink)." },
   wait:     { label: "Wait", desc: "Hold on the spot for some hours (no fire: less Heat than a camp)." },
@@ -76,7 +76,7 @@ export const PRESETS = {
   explore:  { name: "Explore", mission: "recon", steps: () => [{ kind: "nearby", radius: 3, count: 2 }, { kind: "home" }], desc: "Recon the target, then search the best sites within 3 tiles by loot (up to 2), then come home." },
   hunt:     { name: "Hunting trip", mission: "move", steps: (days, plan) => [{ kind: "hunt", hours: (plan && plan.add && plan.add.hunt) || HUNT.defHours }, { kind: "home" }], desc: "Go there, hunt for the hours set, come home with the game. Fresh game is heavy (a vehicle helps) and spoils fast: eat it, dry it or smoke it." },
   fish:     { name: "Fishing trip", mission: "move", steps: (days, plan) => [{ kind: "fish", hours: (plan && plan.add && plan.add.hunt) || HUNT.defHours }, { kind: "home" }], desc: "Go to a river or lake shore, fish for the hours set, come home. Needs a fishing rod or net (the hub's goes along)." },
-  camp:     { name: "Camp N days, then return", mission: "move", steps: (days = 1) => [{ kind: "camp", hours: 24 * days }, { kind: "home" }], desc: "Go there, camp for the days set, come home. Camping builds Heat: fine in a quiet spot, asking for trouble near a city or a hive." },
+  camp:     { name: "Rest N days, then return", mission: "move", steps: (days = 1) => [{ kind: "camp", hours: 24 * days }, { kind: "home" }], desc: "Go there, rest in the open for the days set (by a fire; no camp is set up), come home. Resting in one place builds Heat: fine in a quiet spot, asking for trouble near a city or a hive." }, // the id stays "camp" (saves, plans)
   custom:   { name: "Custom", mission: null, steps: () => [], desc: "Build the steps yourself." },
 };
 
@@ -144,7 +144,7 @@ export function stepsToOrders(state, steps, tile) {
 export const stepLabel = (state, s) => {
   switch (s.kind) {
     case "nearby": return `Scavenge up to ${s.count || 1} site${(s.count || 1) === 1 ? "" : "s"} within ${s.radius || 3} tiles, richest first`;
-    case "camp": return `Camp ${s.hours % 24 === 0 ? `${s.hours / 24} day${s.hours === 24 ? "" : "s"}` : `${s.hours}h`}`;
+    case "camp": return `Rest ${s.hours % 24 === 0 ? `${s.hours / 24} day${s.hours === 24 ? "" : "s"}` : `${s.hours}h`}`;
     case "wait": return `Wait ${s.hours || 6}h`;
     case "sweep": { const o = sweepOpts(s); return `Survey ${o.radius} tiles around for ${o.hours}h`; }
     case "hunt": return `Hunt ${huntHours(s)}h`;
@@ -208,8 +208,8 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   // fsegs: the same hours at the food rates (each one's appetite, a Glutton: traits.js); water at the plain rations.
   const eatDrink = (from, segs, fsegs = segs) => { drink += waterForHours(state, from, segs); eat += foodForHours(state, from, fsegs); };
   const drinkMove = (from, t) => eatDrink(from, members.length ? [[t.rideHours, pace.eatMove], [t.hours - t.rideHours, pace.eatFoot]] : [[t.hours, n]], members.length ? [[t.rideHours, pace.foodMove], [t.hours - t.rideHours, pace.foodFoot]] : [[t.hours, n]]);
-  // Hours of a stay spent by a lit fire (needs.js teamCold, fieldheat.js teamFire): at the staging camp any job on the
-  // spot sits by its fire; a camp step by the team's own, lit unless the team keeps it out (p.campFire, or the step's
+  // Hours of a stay spent by a lit fire (needs.js teamCold, fieldheat.js teamFire): at a camp or shelter of yours any job
+  // on the spot sits by its fire; a rest step by the team's own, lit unless the team keeps it out (p.campFire, or the step's
   // fire), and on bare ground only while the firewood it carries lasts (woodcutting.js campFireHour: it pays an hour's
   // after each hour, so the fire is there for one hour more than it can pay; out, it stays out).
   const campOn = (t) => state.bases.find((b) => b.tier === 0 && b.tile === t) || null; // a camp or shelter of yours: its fire (fieldheat.js teamFire)
@@ -435,7 +435,7 @@ function checkIn(state, p) {
   if (p.checkInAt == null) { p.checkInAt = state.hour + (camp ? CAMP_CHECKIN : CHECKIN_HOURS); return; }
   if (state.hour < p.checkInAt) return;
   delete p.checkInAt;
-  const card = ordersCard(state, p, camp ? `Still in camp after ${p.task.done} hours (Heat ${Math.round(p.heat || 0)}). "Hold here" keeps the camp going.` : "The team checks in again.", null, camp ? "Camp: checking in" : null);
+  const card = ordersCard(state, p, camp ? `Still resting after ${p.task.done} hours (Heat ${Math.round(p.heat || 0)}). "Hold here" keeps the team resting.` : "The team checks in again.", null, camp ? "Resting: checking in" : null);
   addCard(state, card);
 }
 

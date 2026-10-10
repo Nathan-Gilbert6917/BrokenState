@@ -162,6 +162,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     ensureHives(state);
     hardcoreAfterHives(state);
     state.ammoCal = 2; // rounds by calibre from the start (save.js migrates older saves)
+    state.stacks = 1; // stacks in a slot from the start (itemstack.js; save.js tidies older saves)
     updateVision(state);
     log(state, `Day 1. Calder is falling. ${state.startPeople === 1 ? "You got out alone" : `${countWord(state.startPeople).replace(/^./, (c) => c.toUpperCase())} of you got out`} with what you could carry. ${state.factions.length + (state.hardcore?.groups?.bands?.length || 0)} other groups are out there somewhere.`, "info");
     startChronicle(state);
@@ -226,6 +227,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   assignStartingRoles(state);
   settleAll(state); // ammo.js: the hub's 80 rounds by the calibres of the guns it starts with
   state.ammoCal = 2; // rounds by calibre from the start (save.js migrates older saves)
+  state.stacks = 1; // stacks in a slot from the start (itemstack.js; save.js tidies older saves)
 
   ensureHives(state); // the hives mapgen.js placed, with their starting resources (hives.js)
   // Pre-war maps: geography is known, current conditions are not.

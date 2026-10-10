@@ -1,7 +1,7 @@
 // Chronicle: a compact recording of the whole world (no fog of war) for the timelapse viewer (ui/timelapse.js).
 // One frame per in-game day (every 6 hours for the first 3 days, plus a frame soon after a major event): tile
 // owners and infection as changes against the previous frame (a full keyframe every KEY_EVERY frames), your
-// bases, your staging camp, the groups' bases, hordes (with their Wallbreakers), hives and hive build sites, parties, your population
+// bases, your hub while it is still a camp, the groups' bases, hordes (with their Wallbreakers), hives and hive build sites, parties, your population
 // and hub stocks, and captions for notable
 // events. Pure data, no DOM. Recording only reads the world and never touches state.rng, so a run plays out the
 // same with or without it. chronicleReader turns frames back into a state-like object that render() can draw.
@@ -548,7 +548,7 @@ export function chronicleReader(state) {
     return {
       timelapse: true, frame: k, frac, hour: Math.floor(t), info, fallen: info.fallen ? f0.bases.map((b) => b.tile) : [],
       seed: state.seed, grid: g, tiles, live, knowledge: [], factions, bases, hordes, hiveSites, parties, visitors, markers: [], vehicles: FAKE_VEHICLES,
-      staging: !info.fallen && f0.stage ? { tile: f0.stage[0], progress: f0.stage[1], work: 100 } : null, // the staging camp (staging.js), drawn by render.js
+      staging: !info.fallen && f0.stage ? { tile: f0.stage[0], progress: f0.stage[1], work: 100 } : null, // your hub while it is still a camp (staging.js), drawn by render.js
       deathSites: [], survivors: [], cityId: state.cityId, cityIds: state.cityIds, originId: state.originId,
       weather: state.weather, // the same pre-rolled days (weather.js), so the map shows that day's season and weather
     };

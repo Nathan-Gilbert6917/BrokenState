@@ -5,6 +5,7 @@
 // rules (no drilling past the Heat cap, never a blast), the hour-by-hour search, a save round-trip, the loot tags.
 // Usage: node tools/gunsafetest.js [seed]
 import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
+import { roundsInItem } from "../src/sim/itemstack.js"; // a safe's rounds boxed (2026-10-10)
 import { standardMag, usesInternal } from "../src/sim/mags.js";
 import { SUPPLIES } from "../src/sim/data.js";
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
@@ -378,6 +379,7 @@ console.log("Contents by tier (rollGunStash)");
       const out = G.rollGunStash((...k) => hash01(seed, "gstest", tier, site, i, ...k), tier, site);
       for (const it of out.gear) {
         if (ARSENAL_GEAR[it.key]) { ars++; continue; } // the arsenal's extra (its own rolls)
+        if (roundsInItem(it)) { ammo += roundsInItem(it); continue; } // itemstack.js: a safe's rounds in their boxes count as its ammo
         if (GEAR[it.key].slot === "weapon" && standardMag(it.key) && !usesInternal(it.key, it)) magGuns++;
         if (GEAR[it.key].slot === "weapon") { guns++; keys[it.key] = (keys[it.key] || 0) + 1; minQ = Math.min(minQ, it.quality); maxQ = Math.max(maxQ, it.quality); } else if (it.key === "flashbang" || it.key === "smokegren") gren++; // the flashbang branch's extra (gunsafes.js STASH_GRENADES)
         else if (GEAR[it.key].mag) mags++; // carrykit.js: a gun's spare magazines (0-2 a gun)

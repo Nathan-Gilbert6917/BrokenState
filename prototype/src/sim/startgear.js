@@ -54,6 +54,8 @@ import { keyFor } from "./rounds.js";
 import { starterMags } from "./carrykit.js";
 import { standardMag, magFitsGun, fittedMag, usesInternal } from "./mags.js";
 import { wornLoad, maxLoad, feelFactor, bandIndex, LOAD_BANDS } from "./load.js";
+import { AMMO_STACK } from "./data-stacks.js";
+import { stackMax, withCount } from "./itemstack.js"; // a stack picked: n of a consumable, n boxes of rounds
 
 export const START_GEAR = {
   // Worn and held, in the order the editor lists them (inventory.js EQUIP_SLOTS but the arms' carried bag).
@@ -124,11 +126,24 @@ export function cleanPick(e, ok = null) {
   const key = pickKey(e);
   if (!key || !GEAR[key] || (ok && !ok.has(key))) return null;
   const mods = sanitizeGunMods(key, pickMods(e));
-  return mods ? { key, mods } : key;
+  if (mods) return { key, mods };
+  const n = Math.min(pickN(e), pickStackMax(key));
+  return n > 1 ? { key, n } : key;
 }
-// The item a pick makes: new, a gun with its parts, loaded (a gun carried or in the back: loadGun).
+// A stack picked (2026-10-10, user request: the new-run "×N" adds one stack): { key, n }, n of a consumable that
+// stacks or n boxes of rounds (itemstack.js; at most a slot's worth: pickStackMax). 1 for anything else.
 /** @param {any} e */
-export const pickItem = (e) => loadGun(gunWith(/** @type {string} */ (pickKey(e)), pickMods(e)));
+export const pickN = (e) => (e && typeof e === "object" && Number(e.n) > 1 ? Math.floor(Number(e.n)) : 1);
+/** @param {string} key the most of it one pick (one slot) holds: a consumable's stack, five boxes of rounds */
+export const pickStackMax = (key) => (ROUND_SUPPLIES[key] && GEAR[key] && GEAR[key].count ? AMMO_STACK.BOXES : stackMax(key));
+// The item a pick makes: new, a gun with its parts, loaded (a gun carried or in the back: loadGun); a stack of n.
+/** @param {any} e */
+export function pickItem(e) {
+  const key = /** @type {string} */ (pickKey(e)), n = pickN(e);
+  const it = loadGun(gunWith(key, pickMods(e)));
+  if (n > 1) { if (ROUND_SUPPLIES[key] && GEAR[key].count) it.dur = Math.max(1, GEAR[key].dur || 1) * n; else withCount(it, n); }
+  return it;
+}
 // A gun item's parts as picks: those not as it comes ("" for a factory part it lacks), or null (the dice's gear: the
 // random starter parts the dice put on a gun come with it, gunmods.js randomStarterMods).
 /** @param {any} item @returns {Record<string, string> | null} */
@@ -455,7 +470,7 @@ export function sanitizeStartVehicle(raw) {
 /** @param {any} v */
 export function trunkKg(v) {
   if (!v) return 0;
-  const kg = (v.items || []).map(pickKey).reduce((a, k) => a + (k && GEAR[k] ? GEAR[k].weight ?? 1 : 0), 0) + Object.entries(v.supplies || {}).reduce((a, [k, n]) => a + (SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0) * n, 0);
+  const kg = (v.items || []).reduce((a, e) => { const k = pickKey(e); return a + (k && GEAR[k] ? (GEAR[k].weight ?? 1) * pickN(e) : 0); }, 0) + Object.entries(v.supplies || {}).reduce((a, [k, n]) => a + (SUPPLIES[k] ? SUPPLIES[k].weight || 0 : 0) * n, 0);
   return Math.round(kg * 10) / 10;
 }
 // Whose vehicle's back it is (the colonist with s.startVehicle): one only.

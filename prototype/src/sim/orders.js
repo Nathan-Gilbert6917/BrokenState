@@ -39,7 +39,7 @@ export function describeOrder(state, o) {
   switch (o.type) {
     case "move": return `Move to ${tileLabel(state, o.tile)}`;
     case "mission": return MISSIONS[o.mission]?.name || o.mission;
-    case "camp": return o.hours ? `Camp ${o.hours}h` : "Camp (until broken)";
+    case "camp": return o.hours ? `Rest ${o.hours}h` : "Rest (until stopped)"; // the internal rest task (not Set up camp)
     case "repair": return "Repair vehicle";
     case "fixcar": return "Repair a found vehicle"; // foundcars.js
     case "treat": { const s = survivorById(state, o.survivorId); return `Treat ${s ? s.name.split(" ")[0] : "someone"}`; }
@@ -52,7 +52,7 @@ export function describeOrder(state, o) {
     case "craft": return `Craft: ${fieldCraftOptions(state, null).find((x) => x.key === o.recipe)?.name || o.recipe}`;
     case "nearby": return `Scavenge the best site within ${o.radius || 3} tiles${(o.count || 1) > 1 ? ` (×${o.count})` : ""}`;
     case "wait": return `Wait ${o.hours}h`;
-    case "stage": return "Work on the staging camp"; // staging.js: until it is done or the materials run out
+    case "stage": return "Work on the camp"; // an old save's staging-camp work (staging.js migrateStaging clears it on load)
     case "searcharea": return "Search the area for the wreck";
     case "crewsearch": return "Scavenge"; // a crew's own search (crews.js)
     case "hunt": return `Hunt ${huntHours(o)}h${qtyNote(o)}`;
@@ -319,7 +319,7 @@ export function startOrder(state, p, o) {
     case "camp":
       if (o.fire != null) p.campFire = !!o.fire; // the camp fire (fieldheat.js): lit unless told otherwise
       startTask(state, p, { type: "camp", hours: o.hours ?? null });
-      return `The team makes camp${o.hours ? ` for ${o.hours} hours` : " until you break it"}${fireLit(p) ? "" : ", without a fire"}.`;
+      return `The team rests here${o.hours ? ` for ${o.hours} hours` : " until you stop it"}${fireLit(p) ? "" : ", without a fire"}.`;
     case "repair": {
       const r = repairInfo(state, p);
       if (!r.ok) return fail(`Repair: ${r.reason}`);
@@ -494,7 +494,7 @@ export function taskHour(state, p) {
   if (t.hours != null && t.done >= t.hours) finishTask(state, p);
 }
 
-// Stop the current task now (break camp, or give up on a repair/treatment before it is done).
+// Stop the current task now (stop resting, or give up on a repair/treatment before it is done).
 export function stopTask(state, p) {
   if (p.phase !== "task" || !p.task) return "The team is not working on anything here.";
   if (p.task.type === "camp") return finishTask(state, p);

@@ -96,7 +96,7 @@
 //     the nearest people: one hurt by TURN_HURT (a second one TURN_SECOND of the time), each killed TURN_KILL of the
 //     time (half that with a guard on duty), and everyone there loses TURN_MOOD mood; locked away (the brain-stage
 //     card, a prisoner idle in a cell) nobody is hurt. The body is put down; its things go to the armory.
-//   - on the road (a team on the move, camping or working, a convoy on its way, the staging camp): the card
+//   - on the road (a team on the move, resting or working, a convoy on its way): the card
 //     "<name> rose": put them down (the team's fighters against one of the dead by the numbers: someone may be hurt;
 //     their things are kept), leave them (a death site with their things), or, when someone noticed the last breath
 //     (RISE.NOTICE + RISE.NOTICE_SKILL × the best of Medicine and Scouting), crush the skull before they rise. Alone,
@@ -129,6 +129,7 @@ import { RAW, teamRawIn, waterIn } from "./water.js"; // purified and un-purifie
 import { eatFromStore } from "./storage.js";
 import { teamFire, teamKit, fireLit } from "./fieldheat.js";
 import { packOf } from "./inventory.js";
+import { takeOneAt, countKey } from "./itemstack.js"; // a stack of dewormers: one at a time
 import { gainXp, USE } from "./skills.js";
 import { mouthsAt, HEAT, perHeadText } from "./upkeep.js";
 import { news } from "./diplomacy.js";
@@ -731,12 +732,12 @@ function takeFrom(people, lists, key) {
   for (const s of people) {
     for (const where of [s.pockets || [], packOf(s) || []]) { // packOf: the pack's slots (not an item with .contents)
       const i = where.findIndex((it) => it && it.key === key);
-      if (i >= 0) { const it = where[i]; where[i] = null; return it; }
+      if (i >= 0) return takeOneAt(where, i, true); // one off a stack, else the slot emptied
     }
   }
   for (const list of lists) {
     const i = list.findIndex((it) => it && it.key === key);
-    if (i >= 0) return list.splice(i, 1)[0];
+    if (i >= 0) return takeOneAt(list, i);
   }
   return null;
 }
@@ -802,7 +803,7 @@ function treatWater(holder, stacks, units) {
   holder.tabsUsed = (holder.tabsUsed || 0) + used;
   return { raw: Math.max(0, units - treated), used };
 }
-export const baseDewormers = (state, base) => base.armory.filter((it) => it && it.key === "dewormer").length + atBase(state, base.id).reduce((a, s) => a + [...(s.pockets || []), ...(packOf(s) || [])].filter((it) => it && it.key === "dewormer").length, 0);
+export const baseDewormers = (state, base) => countKey(base.armory, "dewormer") + atBase(state, base.id).reduce((a, s) => a + countKey([...(s.pockets || []), ...(packOf(s) || [])], "dewormer"), 0); // a stack counts what is in it
 const teamHasDewormer = (state, p) => findIn(partyMembers(state, p), [(p.cargo && p.cargo.gear) || []], "dewormer");
 
 // ---------- treatment at a base ----------

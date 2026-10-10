@@ -5,7 +5,7 @@
 //
 // - Where: any abandoned base you know of (the map's right-click menu, the planner's mission list, a team's orders on
 //   the tile). Not on ground a group's base holds (as Build outpost), not with a horde camped on it (cull it first),
-//   not while your first Hardcore hub is still to be founded (that is a staging camp: staging.js). With no base at all
+//   not while your first Hardcore hub is still to be founded (a camp: staging.js). With no base at all
 //   (the exiles) it becomes your hub.
 // - What is inside (groupworld.js abandonedThreat, the same for the groups): the dead that drifted in, and sometimes a
 //   band of squatters. On arrival a card shows them and the odds; Clear it out is a fight (a field battle, or by the
