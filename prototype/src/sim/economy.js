@@ -6,7 +6,7 @@
 import { TERRAIN, LOCATIONS, SUPPLIES, supplyFew } from "./data.js";
 import { sortParts, rollBuildmat } from "./loot.js"; // parts found by kind; building materials (their own dice)
 import {
-  log, addCard, day, hub, atBase, alive, skill, hurt, survivorById, factionById, makeSurvivor, residents, checkGameOver,
+  log, addCard, day, hub, atBase, alive, skill, hurt, survivorById, factionById, makeSurvivor, residents, checkGameOver, localId,
 } from "./world.js";
 import { planPath, dispatchConvoy } from "./parties.js";
 import { attitude } from "./factions.js";
@@ -121,10 +121,10 @@ function baseScavenging(state, base, people) {
     const k = rng.weighted(keys, (x) => table[x]);
     const q = rng.int(SCAV_FIND[k][0], SCAV_FIND[k][1]);
     const t = state.tiles[base.tile];
-    const got = k === "parts" && t && t.loc ? sortParts(state, t.loc.type, q, `scav${s.id}`) : { [k]: q }; // loot.js: parts by kind (their own dice)
+    const got = k === "parts" && t && t.loc ? sortParts(state, t.loc.type, q, `scav${localId(state, s.id)}`) : { [k]: q }; // loot.js: parts by kind (their own dice; a world-local id: same seed, same game)
     if (k === "ammo") addFind(base.stock, (t && t.loc && t.loc.type) || "", q, false, "basescav", base.tile, state.hour, s.name); // ammo.js: rounds by calibre, as the place around it holds them
     else for (const [key, n] of Object.entries(got)) base.stock[key] = (base.stock[key] || 0) + n;
-    const bm = rollBuildmat(state, base.tile, 0.5, `bscav${s.id}`); // building materials around the base too (half a search hour's chance)
+    const bm = rollBuildmat(state, base.tile, 0.5, `bscav${localId(state, s.id)}`); // building materials around the base too (half a search hour's chance)
     if (bm > 0) { base.stock.buildmat = (base.stock.buildmat || 0) + bm; got.buildmat = bm; }
     econStats(state).scavFinds++;
     log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(got).map(([key, n]) => `${n} ${key === "buildmat" ? "building materials" : key}`).join(", ")} around ${base.name}.`, "good");

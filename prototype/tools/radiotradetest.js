@@ -55,6 +55,7 @@ function setup(s) {
   st.hordes = st.hordes.filter((x) => st.grid.distance(x.tile, f.bases[0]) > 6);
   Object.assign(h.stock, { food: 200, water: 200 }); setRounds(h.stock, 0); h.stock[AMMO] = 600; // ammo.js: your side pays in rounds by calibre
   for (let i = 0; i < 3; i++) fighter(st);
+  for (const s of st.survivors) s.traits = s.traits.filter((t) => t !== "diplomatic"); // a Diplomatic crew softens the goodwill lost (traits.js): the checks count the plain numbers
   return { st, h, f };
 }
 // Ticks hours; cards: keep(card) ones stay, others get a harmless answer. Stops when pred() is true.
