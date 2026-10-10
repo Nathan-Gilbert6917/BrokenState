@@ -12,6 +12,7 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
+import { govFieldWorks } from "./fieldworks.js"; // field works: the governor's and a base leader's share
 import { BUILDMAT_FINDS } from "./loot.js"; // building materials: where they are found
 import { traitAim } from "./traits.js"; // Brave, Coward: to hit
 import { fitFromPool } from "./gunmods.js";
@@ -345,8 +346,18 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.medical && hourOfDay(state) === TREAT_HOUR) for (const line of autoTreats(state, base)) say(state, line); // comforts.js: chocolate, coffee, smokes for the glum
   if (areas.building && hourOfDay(state) === WATER_WAIT.hour) waterSalvage(state, base);
   if (areas.building) planBuilds(state, base, areas);
+  if (areas.building && hourOfDay(state) === PLAN_HOUR + 1) for (const line of govFieldWorks(state, base, { threatened: fieldThreat(state, base), waterShort: waterRunningShort(state, base) })) say(state, line); // fieldworks.js: a well, a tower and its lookouts, repairs
   if (areas.production) { govOrders(state, base); autoReloadOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench; reloading.js: HP, slugs, AP to keep
   if (areas.building) { const up = autoReloadBench(state, base); if (up) say(state, up); } // reloading.js: an ammo bench upgraded once there are inputs to load with
+}
+// A base threatened enough for a watch tower out on its land (fieldworks.js govFieldWorks): the dead within 6 tiles, a
+// hive within 10, a hostile group (or a raid on its way) within 12.
+function fieldThreat(state, base) {
+  const g = state.grid;
+  if (state.hordes.some((h) => g.distance(h.tile, base.tile) <= 6 && h.size >= 10)) return true;
+  if ((state.hives || []).some((h) => g.distance(h.tile, base.tile) <= 10)) return true;
+  if (state.parties.some((q) => q.kind === "raid" && q.target && q.target.kind === "player" && q.target.baseId === base.id)) return true;
+  return state.factions.some((f) => f.alive && attitude(f) === "Hostile" && f.bases.some((b) => g.distance(b, base.tile) <= 12));
 }
 // ---------- a broken well waiting for scrap ----------
 // A broken well or pump the repairs cannot start for want of scrap (breakdowns.js: a proper repair 3 scrap and a part,

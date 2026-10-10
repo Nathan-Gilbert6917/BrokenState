@@ -26,6 +26,7 @@ import { woodProblem, woodHour, woodSummary, campFireHour } from "./woodcutting.
 import { CLAIM, canClaim, claimTile, wellProblem, digWell } from "./claims.js"; // land claims and wells on them
 import { LISTEN, listenProblem, listenIn } from "./radiolisten.js"; // Listen in: tune a receiver to a radio network
 import { networkById } from "./radio.js";
+import { teamActProblem, teamActHours, teamActDone } from "./fieldworks.js"; // field works: load, unload, wreck, take
 import { capTask, holdName, COLLECT } from "./carry.js"; // a quantity to collect (o.qty: the team panel asks)
 
 export const REPAIR_HOURS = 3;   // a roadside repair
@@ -63,6 +64,7 @@ export function describeOrder(state, o) {
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
     case "pitch": return o.mission === "outpost" ? "Set up the outpost camp" : "Set up camp"; // staging.js pitchArrive (buildings.js CAMP.setupHours); then the camp stands (pitchDone)
     case "well": return "Dig a well"; // claims.js: on a claim next to one of your bases
+    case "fwork": return { load: "Load from the stockpile", unload: "Leave finds at the stockpile", destroy: "Wreck the field work", capture: "Take the field work", loot: "Take the stockpile's goods" }[o.act] || "Field work"; // fieldworks.js
     case "listen": { const n = o.net != null ? networkById(state, o.net) : null; return `Listen in${n ? ` on ${n.name}` : ""}`; } // radiolisten.js
   }
   return o.type;
@@ -171,6 +173,7 @@ export function queueEstimate(state, p) {
     else if (o.type === "snare") hours = snareHours(state, o.at ?? tile, o.mode);
     else if (o.type === "claim") hours = CLAIM.HOURS;
     else if (o.type === "well") hours = CLAIM.WELL_HOURS;
+    else if (o.type === "fwork") hours = teamActHours(o.act); // fieldworks.js
     else if (o.type === "listen") hours = LISTEN.HOURS;
     else if (o.type === "craft") hours = fieldCraftOptions(state, p).find((x) => x.key === o.recipe)?.hours ?? null;
     else if (o.type === "wait") hours = o.hours;
@@ -286,7 +289,7 @@ export function continueQueue(state, p, text) {
   return true;
 }
 
-const PLACED = ["mission", "survey", "gather", "water", "hunt", "fish", "forage", "wood", "snare", "claim", "well"]; // order types tied to the tile they were queued for
+const PLACED = ["mission", "survey", "gather", "water", "hunt", "fish", "forage", "wood", "snare", "claim", "well", "fwork"]; // order types tied to the tile they were queued for
 // Hours of a hunt, fishing or foraging order: as given, within 2–24 (8 if none).
 export const huntHours = (o) => Math.max(HUNT.minHours, Math.min(HUNT.maxHours, Math.round(o.hours || HUNT.defHours)));
 
@@ -417,6 +420,14 @@ export function startOrder(state, p, o) {
       if (carried(p, "scrap") < CLAIM.SCRAP) return fail(`Claim this tile: needs ${CLAIM.SCRAP} scrap carried for the marker post (have ${Math.floor(carried(p, "scrap"))}).`);
       startTask(state, p, { type: "claim", hours: CLAIM.HOURS });
       return `The team paces out the tile and raises a marker post (${CLAIM.HOURS}h, ${CLAIM.SCRAP} scrap).`;
+    }
+    case "fwork": {
+      // A field work on this tile (fieldworks.js): load or unload a stockpile of yours, wreck, take or loot a group's.
+      const why = teamActProblem(state, p, o.act);
+      if (why) return fail(`${describeOrder(state, o)}: ${why}`);
+      const hours = teamActHours(o.act);
+      startTask(state, p, { type: "fwork", act: o.act, hours });
+      return `${describeOrder(state, o)} (${hours}h).`;
     }
     case "well": {
       // A well on a claim of yours next to one of your bases (claims.js): the yield by the ground, 24 hours of digging.
@@ -559,6 +570,7 @@ function finishTask(state, p) {
   else if (t.type === "snare") text = snareWork(state, p, t.mode);
   else if (t.type === "claim") text = claimTile(state, p, partyTile(p)); // claims.js (checked again now: it may have been taken meanwhile)
   else if (t.type === "well") text = digWell(state, p, partyTile(p));
+  else if (t.type === "fwork") text = teamActDone(state, p, t.act); // fieldworks.js
   else if (t.type === "listen") text = listenIn(state, p, t.net, false).text; // radiolisten.js: tuned, and the last few days caught up
   awaitOrders(state, p, text); // keeps p.task until then, so the card can say what finished
   return text;

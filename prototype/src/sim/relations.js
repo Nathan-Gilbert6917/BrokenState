@@ -198,6 +198,7 @@ function placeOf(state, s) {
   const L = s.location;
   if (!L) return null;
   if (L.kind === "base") return { base: baseById(state, L.baseId) };
+  if (L.kind === "post") return { base: baseById(state, L.baseId), route: true }; // a lookout at a field work (fieldworks.js)
   if (L.kind === "route") return { base: state.bases.find((b) => b.type === "hub") || null, route: true };
   if (L.kind === "party") return { party: state.parties.find((p) => p.id === L.partyId) || null };
   return null;

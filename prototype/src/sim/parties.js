@@ -14,6 +14,7 @@ import { repairPaid, repairWaitHour } from "./repairwait.js"; // a breakdown rep
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
 import { findPath } from "./hex.js";
 import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
+import { partyEnter as fieldPartyEnter, teamEnter as fieldTeamEnter, fieldRaidArrive, teamActs as fieldActs } from "./fieldworks.js"; // field works: roadblocks, raids on them
 import { TERRAIN, ROAD_COST, GEAR, SUPPLIES } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
@@ -1420,6 +1421,7 @@ function onEnterTile(state, p, tileId, hour = state.hour) {
       if (onRoad) roadblockOnEnter(state, p, tileId, partySpeed(p), p.kind === "convoy" ? "the convoy" : teamName(state, p), tileLabel(state, tileId), hour); // roadblocks.js: stalled cars, a fallen tree
     }
   }
+  if (p.owner === "player") fieldTeamEnter(state, p, tileId, p.vehicle ? partySpeed(p) : 1); // fieldworks.js: a group's roadblock or checkpoint
   // Sight and perception: what the team sees is held until they return (or reported live by radio).
   const around = state.grid.within(tileId, sightRadius(state, p));
   for (const id of around) p.seen.set(id, withLook(state, snapshot(state, id), id)); // intelnotes.js: a group's base seen in passing
@@ -1629,6 +1631,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
         },
       })),
       ...(state.bases.length && !canClaim(state, tile) ? [{ label: `Claim this tile (${CLAIM.HOURS}h, ${CLAIM.SCRAP} scrap)`, hint: "Raise a marker post: the tile counts as land the coalition holds (toward the 50% the alliance victory needs). Lost if a group or a hive settles on it or a hostile band camps there.", order: true, disabled: carried(p, "scrap") < CLAIM.SCRAP, resolve: (st) => startOrder(st, p, { type: "claim" }) }] : []),
+      ...fieldActs(state, p, tile).map((a) => ({ label: a.label, hint: a.hint, order: true, disabled: !!a.why, resolve: (st) => startOrder(st, p, { type: "fwork", act: a.act }) })), // fieldworks.js: a stockpile of yours, a group's structure
       ...(crossingsFrom(state, tile).length ? [{ label: "Build a boat and cross…", hint: "This team stands on a shore with land straight across the water. The team panel shows each crossing with its cost (scrap, hours) and lets you gather materials.", uiAction: { type: "expedition", partyId: p.id }, resolve: () => "" }] : []),
       { label: "Move to another tile…", hint: "Pick any tile on the map. The team travels there and waits for orders again.", uiAction: { type: "move", partyId: p.id }, resolve: () => "Pick a destination on the map (Esc to cancel)." },
       { label: "Return home", hint: "Head back to the hub with everything carried.", order: true, resolve: (st) => (startReturn(st, p) ? "" : "The team heads home.") },
@@ -2446,6 +2449,7 @@ function aiPartyHour(state, p) {
   const owner = entered.length && state.bases.length ? factionById(state, p.owner) : null;
   for (const tileId of entered) {
     if (owner) partySaw(state, owner, tileId); // groupworld.js: what they see of your bases on the way
+    fieldPartyEnter(state, p, tileId); // fieldworks.js: a hostile roadblock holds them; a raid on you empties your stockpile in passing
     // Hordes chew up whoever walks into them.
     const horde = state.hordes.find((h) => h.tile === tileId);
     if (horde) {
@@ -2516,6 +2520,8 @@ function aiPartyHour(state, p) {
       caravanArrive(state, p); // caravans.js: trade at your base, or home again
     } else if (p.kind === "scav") {
       scavArrived(state, p); // aiscav.js: at the site (search) or home (the haul into their stock)
+    } else if (p.kind === "fwraid") {
+      fieldRaidArrive(state, p); // fieldworks.js: a raid on a field work of yours (it fights the lookouts, takes or wrecks it)
     } else if (p.kind === "raid") {
       const stillThere = p.target.kind === "player" ? baseById(state, p.target.baseId) :
         factionById(state, p.target.factionId)?.bases.includes(p.target.tile);

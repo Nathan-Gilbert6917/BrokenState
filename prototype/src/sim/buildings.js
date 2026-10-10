@@ -17,6 +17,7 @@ import { benchRounds } from "./ammo.js"; // the ammo bench makes rounds by calib
 import { reloadStatus, runReload } from "./reloading.js"; // the reloading bench: an ammo bench upgraded in place
 import { livestockYield, PEN } from "./farming.js"; // the animal pen (station "livestock")
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
+import { fieldBuildHour } from "./fieldworks.js"; // field works: the builders go out on the odd hours
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 rounds per day, the common rounds of the guns at the base (+4% per Mechanics point)" },
@@ -698,7 +699,9 @@ function campMaterialsHour(state, base) {
 // Builders work on the first job in the queue, hour by hour (a job waiting for its materials lets the next one go on).
 export function constructionHour(state) {
   for (const base of state.bases) {
-    if (!base.construction.length || underAttack(state, base)) continue;
+    if (underAttack(state, base)) continue;
+    if (fieldBuildHour(state, base)) continue; // fieldworks.js: the builders are out at a field work this hour
+    if (!base.construction.length) continue;
     gatherHour(base);
     if (campMaterialsHour(state, base)) continue; // a camp's builders make the building materials its step up waits for
     const job = base.construction.find((c) => !gatherStalled(c));

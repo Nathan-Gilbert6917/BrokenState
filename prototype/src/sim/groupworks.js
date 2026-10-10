@@ -65,6 +65,7 @@ import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse:
 import { FIXTURES, WEAR } from "./breakdowns.js"; // freezer-parts: the groups' machines wear and break as yours
 import { POWER } from "./power.js";
 import { hash01 } from "./skills.js";
+import { groupFieldDefence, groupFieldWells } from "./fieldworks.js"; // the groups' field works: towers, wells
 
 /** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, freezer?: number, sealer?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
 
@@ -156,21 +157,21 @@ export function groupWalls(state, f, tile) {
 // 0–1: how far the walls are toward their goal (resolveRaidOnFaction's defence).
 export const wallShare = (state, f, tile) => groupWalls(state, f, tile) / Math.max(1, wallGoal(f, tile));
 // The flat defence of a group base against a raid or a horde (factions.js resolveRaidOnFaction).
-export const groupBaseDefence = (state, f, tile) => (groupsBuild(state, f) ? W.WALL_DEF * (0.5 + 0.5 * wallShare(state, f, tile)) * (isCamp(f, tile) ? W.CAMP.DEF : 1) : W.WALL_DEF);
+export const groupBaseDefence = (state, f, tile) => (groupsBuild(state, f) ? W.WALL_DEF * (0.5 + 0.5 * wallShare(state, f, tile)) * (isCamp(f, tile) ? W.CAMP.DEF : 1) : W.WALL_DEF) * groupFieldDefence(state, f, tile); // fieldworks.js: their manned watch towers nearby
 // A base of theirs still a camp (founded from nothing and not yet established).
 export const isCamp = (f, tile) => !!(f && f.works && f.works[tile] && f.works[tile].camp);
 // A group's new base founded from nothing starts as a camp (factions.js expansion; this world's groups build).
 export function pitchCamp(state, f, tile) { if (groupsBuild(state, f)) worksAt(f, tile).camp = 1; }
 
 // Summed over the group's bases: how many people its water, fields and quarters serve.
-function served(f, k) {
-  return f.bases.reduce((a, t) => a + n(f.works && f.works[t], k) * W.SERVES[k], 0);
+function served(f, k, state = null) {
+  return f.bases.reduce((a, t) => a + n(f.works && f.works[t], k) * W.SERVES[k], 0) + (k === "water" && state ? groupFieldWells(state, f) * W.SERVES.water : 0); // fieldworks.js: their field wells
 }
 // 0–1: water and fields for everyone.
 export function provisioned(state, f) {
   if (!groupsBuild(state, f)) return 1;
   const p = Math.max(1, f.pop);
-  return (Math.min(1, (served(f, "water") + groupFetchedWater(state, f)) / (p * summerThirst(state, false))) + Math.min(1, served(f, "farms") / p)) / 2; // grouptrips.js: water carried from the water their bases hold
+  return (Math.min(1, (served(f, "water", state) + groupFetchedWater(state, f)) / (p * summerThirst(state, false))) + Math.min(1, served(f, "farms") / p)) / 2; // grouptrips.js: water carried from the water their bases hold
 }
 // Food a day from their animal pens (PENS): 0 where they do not build (old saves, the hardcore military).
 export const penFood = (state, f) => (groupsBuild(state, f) ? f.bases.reduce((a, t) => a + Math.min(W.PENS.max, n(f.works && f.works[t], "pens")), 0) * W.PENS.food : 0);

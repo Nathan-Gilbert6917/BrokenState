@@ -123,7 +123,12 @@ export function tripRoute(state, from, to, owner = "player") {
 // Where the trips go and where they bring the load, each from one small function so other systems can add to them:
 //   TRIP_HOOKS.water(state, base, job, list) → the list of water sources ({ id, d }, nearest first) for "fish" or "water";
 //   TRIP_HOOKS.deposit(state, base, s, job) → { tile, stock } where a trip drops its load (default: the base, its stock).
-export const TRIP_HOOKS = { water: null, deposit: null };
+//   TRIP_HOOKS.draw(state, base, tile, q) → what a water carrier fills at a source the water hook added ({ well: true }:
+//     a field well gives its day's yield and is drawn down by it), at most q.
+// sim/fieldworks.js installs all three at load (installTripHooks).
+export const TRIP_HOOKS = { water: null, deposit: null, draw: null };
+// The water a carrier fills at `src` ({ id, well? }): a well's day's yield left (TRIP_HOOKS.draw), else all of q.
+export const drawSource = (state, base, src, q) => (src && src.well && TRIP_HOOKS.draw ? Math.max(0, Math.min(q, TRIP_HOOKS.draw(state, base, src.id, q) || 0)) : q);
 // The water a base's fishers ("fish") or water carriers ("water") go to, nearest first: [{ id, d }].
 export function waterSources(state, base, job = "fish") {
   const list = ownedWater(state, base.tile);

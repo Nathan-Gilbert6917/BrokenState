@@ -21,7 +21,7 @@
 // The day's totals: base.tripTally = { day, [job]: { …sums, who: [ids] } } (the daily systems read it at midnight for
 // the noise, the log and the summaries); base.tripPops: the last deposits (the map's "+12 food" pops, ui/render.js).
 import { atBase, survivorById } from "./world.js";
-import { TRIP, TRIP_JOBS, tripWindow, walkHours, tripScale, depositPoint } from "./tripland.js";
+import { TRIP, TRIP_JOBS, tripWindow, walkHours, tripScale, depositPoint, drawSource } from "./tripland.js";
 import { describeActivity } from "./activity.js";
 import { woodTripTile, woodTrip } from "./woodcutting.js";
 import { forageTripTile, forageTrip, FORAGE } from "./foraging.js";
@@ -48,7 +48,7 @@ export function tripTarget(state, base, job) {
     case "hunt": { const t = huntTripTile(state, base); return t ? { tile: t.id, at: t.id, d: t.d } : null; }
     case "fish": { const w = fishWater(state, base); return w ? { tile: w.id, at: w.shore, d: w.d } : null; }
     case "scavenge": { const t = scavTripTile(state, base); return t ? { tile: t.id, at: t.id, d: t.d } : null; }
-    case "water": { const w = fetchWaterTile(state, base); return w ? { tile: w.id, at: w.id, d: w.d } : null; }
+    case "water": { const w = fetchWaterTile(state, base); return w ? { tile: w.id, at: w.id, d: w.d, ...(w.well ? { well: true } : {}) } : null; } // well: a field well (sim/fieldworks.js)
     default: return null;
   }
 }
@@ -83,7 +83,7 @@ export function planTrip(state, base, s, job, start) {
       home = wa + (k + 2) * L; // too late in this slot: one longer trip into the next
     }
   }
-  return { job, base: base.id, tile: tg.tile, at: tg.at, d: tg.d, leave: start, arrive: start + walk, workEnd: home - walk, home, ...(next != null ? { next } : {}) };
+  return { job, base: base.id, tile: tg.tile, at: tg.at, d: tg.d, leave: start, arrive: start + walk, workEnd: home - walk, home, ...(next != null ? { next } : {}), ...(tg.well ? { well: true } : {}) };
 }
 
 // The old job's hours a trip's work counts as (Fetch water: its share of a full fill).
@@ -110,7 +110,7 @@ function rollLoad(state, base, s, t) {
     case "hunt": return huntTrip(state, base, s, t.at, hrs, h);
     case "fish": return fishTrip(state, base, s, t.at, hrs, h);
     case "scavenge": return scavTrip(state, base, s, t.at, hrs, t.n || 0);
-    case "water": return { water: r2(TRIP_JOBS.water.perTrip * hrs) };
+    case "water": { const q = r2(TRIP_JOBS.water.perTrip * hrs); return t.well ? { water: r2(drawSource(state, base, { id: t.tile, well: true }, q)), well: true } : { water: q }; } // a field well: its day's yield left, drawn down
     default: return { empty: true };
   }
 }
@@ -205,7 +205,7 @@ function credit(state, base, s, t, now) {
         const put = st === base.stock ? Math.min(c.water, Math.max(0, rawRoom(base))) : c.water;
         st[RAW] = (st[RAW] || 0) + put;
         noteOutput(state, base, "water", put, RAW);
-        tally(state, base, "water", s.id, { water: put }, now);
+        tally(state, base, "water", s.id, { water: put, ...(c.well ? { well: put } : {}) }, now); // well: deep ground water, half the eggs (worm.js rawWaterEggs)
         c.water = put;
         break;
       }

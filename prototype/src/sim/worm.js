@@ -302,8 +302,13 @@ export function rawWaterEggs(state, base) {
   const raw = sourceEggs(state, base.tile);
   if (!(raw > 0)) return { raw: 0, ground: 0, eggs: 0 };
   const prod = waterProduction(state, base);
-  const ground = prod.own + prod.stream + prod.wells + prod.hauled;
-  const all = ground + prod.rain;
+  // Field wells (fieldworks.js) draw deep ground water: half the eggs of the ground's (still un-purified: boil it).
+  // With the job trips (FIELD.PASSIVE_WELLS off) the field wells' water comes in by the water carriers: the day's
+  // carried well water (jobtrips.js base.tripTally.water.well) counts the same way.
+  const T = base.tripTally && base.tripTally.day === Math.floor((state.hour - 1) / 24) ? base.tripTally.water : null;
+  const field = (prod.field || 0) + ((T && T.well) || 0);
+  const ground = prod.own + prod.stream + prod.wells + prod.hauled + field * 0.5;
+  const all = prod.own + prod.stream + prod.wells + prod.hauled + field + prod.rain;
   const share = all > 0 ? ground / all : 0;
   return { raw, ground: share, eggs: raw * share };
 }
@@ -1107,7 +1112,7 @@ function captivesWormDaily(state) {
 // stores feed them), { party }, { captive: faction, tile }, { errand: base, tile }.
 function where(state, s) {
   const L = s.location || {};
-  if (L.kind === "base") return { base: baseById(state, L.baseId) };
+  if (L.kind === "base" || L.kind === "post") return { base: baseById(state, L.baseId) }; // post: a lookout at a field work, fed from the base (fieldworks.js)
   if (L.kind === "route") return { base: state.bases.find((b) => b.type === "hub") || null };
   if (L.kind === "party") {
     const p = state.parties.find((x) => x.id === L.partyId) || null;
@@ -1251,8 +1256,8 @@ export function wormRise(state, s, tileId) {
   const L = s.location || {};
   const locked = !!(s.worm && s.worm.locked);
   const done = () => { clearWorm(s); stats(state).turned++; return true; };
-  if (L.kind === "base" || L.kind === "route") {
-    const base = L.kind === "base" ? baseById(state, L.baseId) : hub(state);
+  if (L.kind === "base" || L.kind === "route" || L.kind === "post") {
+    const base = L.kind === "route" ? hub(state) : baseById(state, L.baseId);
     if (!base) return false;
     done();
     riseAtBase(state, base, s.name, { locked, short: first(s) });
