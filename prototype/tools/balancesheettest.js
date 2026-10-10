@@ -51,7 +51,7 @@ check(!missing(ranged, "guns").length, `every gun (${ranged.length}) is on the G
 check(Object.keys(GEAR).filter((k) => GEAR[k].slot === "weapon" && WEAPONS[k] && !WEAPONS[k].melee).every((k) => keys("guns").has(k)), "every gun item (GEAR weapon) is there");
 const melee = Object.keys(WEAPONS).filter((k) => WEAPONS[k].melee && k !== "claws");
 check(!missing(melee, "melee").length, `every melee weapon (${melee.length}) on the Melee tab${missing(melee, "melee").length ? `: missing ${missing(melee, "melee")}` : ""}`);
-check(!missing(Object.keys(GEAR).filter((k) => GEAR[k].cat === "gunmod" && !MAGAZINES[k] && !GEAR[k].mag && !["speedloader", "stripper308"].includes(k)), "parts").length, "every gun attachment on the Attachments tab");
+check(!missing(Object.keys(GEAR).filter((k) => GEAR[k].cat === "gunmod" && !MAGAZINES[k] && !GEAR[k].mag && !CLIPS[k]), "parts").length, "every gun attachment on the Attachments tab");
 check(!missing(Object.keys(MAGAZINES), "mags").length, `every magazine (${Object.keys(MAGAZINES).length})`);
 check(!missing(Object.keys(INTERNAL).filter((k) => WEAPONS[k]), "feeds").length && !missing(Object.keys(CLIPS), "clips").length, "every internal magazine and clip");
 check(!missing(Object.keys(CALIBERS), "calibres").length, `every calibre (${Object.keys(CALIBERS).length})`);
