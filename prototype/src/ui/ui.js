@@ -113,7 +113,8 @@ import { prisonTab } from "./prisoners.js";
 import { settingsModal } from "./settings.js";
 import { swatch } from "./help.js";
 import { outsidersSection } from "./visitors.js";
-import { workTab, roleSelect as workRoleSelect, taskChip } from "./work.js";
+import { workTab, roleSelect as workRoleSelect, taskChip, sickTip } from "./work.js";
+import { sickRestLabel } from "../sim/sickrest.js"; // "Resting: sick (Flu)" for Manual and pinned people
 import { pickBar, pickCard, ownBaseCard, groupBaseCard } from "./mapselect.js"; // teams, parties and bands selected on the map; a base's card
 import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
 import { huntInfo, gameWord, fishKit, expectFish, fishLevel, snareLine, expectSnare, bestHuntWeapon, hunterMult, HUNT, frozenAt, meatAt, gameAbundance, partyHuntMix, huntMixOf, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
@@ -1396,10 +1397,11 @@ function survivorModal(state, ui) {
 // Their role and what they do now (sim/work.js): a work role with the why, or their fixed job (Manual).
 function workLine(state, s, base) {
   const role = roleOf(state, s);
-  const now = isManaged(state, s) ? taskLabel(state, s) : "";
+  const sickNow = !isManaged(state, s) ? sickRestLabel(state, s) : ""; // sim/sickrest.js: Manual and pinned people resting sick
+  const now = isManaged(state, s) ? taskLabel(state, s) : sickNow;
   const job = ROLES[s.role] ? ROLES[s.role].name : s.role;
   return `<div class="card small worksurv"><div class="spread"><span><b>Work:</b> ${role ? `${esc(role.name)}${role.kind === "crew" ? " (crew)" : ""}${s.pinned ? " · pinned" : ""}` : `Manual (${esc(job)})`}${now ? ` · now <b>${esc(now)}</b>` : ""}</span>${base ? workRoleSelect(state, s) : ""}</div>
-    ${now ? `<div class="muted">${esc(taskWhy(state, s))}</div>` : role ? `<div class="muted">${s.location.kind === "base" ? "Planned at the start of the next hour." : "Away: back on the role's priorities when home."}</div>` : ""}</div>`;
+    ${now ? `<div class="muted">${esc(sickNow ? sickTip(s) : taskWhy(state, s))}</div>` : role ? `<div class="muted">${s.location.kind === "base" ? "Planned at the start of the next hour." : "Away: back on the role's priorities when home."}</div>` : ""}</div>`;
 }
 
 function gearControls(state, base, s, slot) {

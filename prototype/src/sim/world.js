@@ -44,6 +44,7 @@ import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
 import { workHour, workDayRoles } from "./work.js";
 import { watchHour, watchDayRoles } from "./watch.js";
+import { sickRestHour } from "./sickrest.js"; // sick people rest: Manual and pinned people's jobs kept and given back
 import { tiredHour } from "./sleep.js";
 import { crewHour } from "./crews.js";
 import { woundTrauma } from "./health.js";
@@ -138,6 +139,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     kitV: 2, magFitV: 1, // carry kit (w2-kit): a new world in either mode is born with it (carrykit.js migrateKit is for older saves only; a hardcore world never set it and gained magazines on every load)
     woodcutting: 2, // a world with firewood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
+    sickRest: "all", // sickrest.js: the Work tab's "Sick people rest" (all, serious, off; save.js: older saves get "all")
     groupWorks: 1, // barestart: the AI groups' bases start bare and they build (groupworks.js); an older save has them built up
     gunSlots: 1, attachV: 2, // (attachV: gunmods.js migrateParts, save.js) // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
@@ -946,6 +948,7 @@ export function tickHour(state) {
   else stewardHour(state); // steward.js: bases handed to a steward
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
+  sickRestHour(state); // sickrest.js: the ill at a base rest (Manual and pinned: their job back when well); a log line each way
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
   settleAll(state); // ammo.js: again, for what the work, the crews and the governor moved after the first settle (no generic ammo is left in a holder of yours between hours)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)

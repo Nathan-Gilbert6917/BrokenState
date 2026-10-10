@@ -15,7 +15,8 @@ import { contactable, orderStatus } from "../sim/orders.js";
 import { attitude, strength } from "../sim/factions.js";
 import { foodOutlook, waterOutlook, ROLES } from "../sim/economy.js";
 import { waterIn } from "../sim/water.js";
-import { roleOf, taskLabel } from "../sim/work.js";
+import { roleOf, taskLabel, isManaged } from "../sim/work.js";
+import { sickRestLabel } from "../sim/sickrest.js"; // Manual and pinned people resting sick
 import { ageText, mapLoc } from "./render.js";
 import { panelHead, panelTab } from "./layout.js"; // the boxes over the map share one header and folded tab
 
@@ -66,7 +67,7 @@ function personStatus(state, it) {
   else if (l.kind === "route") where = "escorting a trade route";
   else if (l.kind === "errand") where = `on an errand (back ~day ${l.until})`;
   if (!inTouch(state, s)) return { name: s.name, line: `${where} · no contact`, tone: "muted", go: { surv: s.id, tile } };
-  const task = s.inBed ? "in a hospital bed" : l.kind === "base" ? (taskLabel(state, s) || (roleOf(state, s) ? roleOf(state, s).name : ROLES[s.role] ? ROLES[s.role].name : "")) : "";
+  const task = s.inBed ? "in a hospital bed" : l.kind === "base" ? ((!isManaged(state, s) && sickRestLabel(state, s)) || taskLabel(state, s) || (roleOf(state, s) ? roleOf(state, s).name : ROLES[s.role] ? ROLES[s.role].name : "")) : "";
   const hp = n0(s.health);
   return {
     name: s.name, tone: hp < 40 || s.woundInfected ? "danger" : hp < 70 || s.mood < 30 ? "warn" : "",
