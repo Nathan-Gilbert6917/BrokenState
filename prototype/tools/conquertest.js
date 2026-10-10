@@ -19,11 +19,9 @@ import { breakFixture, fixtures } from "../src/sim/breakdowns.js";
 import * as A from "../src/sim/alliance.js";
 import * as C from "../src/sim/conquest.js";
 import * as D from "../src/sim/diplomacy.js";
-import { STAGING as STAGING_PITCH } from "../src/sim/staging.js";
 
-// Pitching a staging camp takes STAGING.PITCH (8 scrap carried, 2 hours of work; 2026-10-09): with no camp yet the team is
-// handed its scrap and the camp stands at once, as before, so the checks below see the camp they always did.
-const establishNow = (st, p) => { if (!st.staging) { p.supplies.scrap = (p.supplies.scrap || 0) + STAGING_PITCH.PITCH.scrap; p.pitched = true; } return giveOrderP(st, p, "establish"); };
+// Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp (a base) stands at once.
+const establishNow = (st, p) => { p.pitched = true; return giveOrderP(st, p, "establish"); };
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -357,7 +355,8 @@ section("Razing: aggressive raiders may burn a base instead of keeping it");
     check(s.parties.some((p) => p.owner === "player" && p.teamMission === "retreat"), "its people walk to the hub");
     check(s.cards.some((c) => / burned$/.test(c.title)), "a card says it burned");
     const { outpostScrap } = await import("../src/sim/parties.js");
-    check(outpostScrap(s, tt.id) === 5, "a new outpost camp on the ruins needs 5 scrap (12 elsewhere: parties.js outpostScrap)");
+    const { CAMP } = await import("../src/sim/buildings.js");
+    check(outpostScrap(s, tt.id) === 0 && CAMP.ruinScrap === 10, "a camp set up on the ruins needs nothing carried and builds up for 10 scrap less (buildings.js tierUpJobFor)");
     const UI = await import("../src/ui/ui.js");
     check(/Ruins of /.test(UI.renderRight(s, { started: true, selected: tt.id, tab: "bases" })), "the tile panel shows the ruins");
     const l = deserializeState(JSON.parse(JSON.stringify(serializeState(s, { dropCards: true }))));
@@ -506,7 +505,7 @@ section("Losing the hub: with another base, and with none (the exiles)");
   check(!s2.gameOver || !alive(s2).length, "the run goes on while anyone lives");
   const opts = ex && s2.parties.includes(ex) ? orderOptions(s2, ex) : [];
   check(!s2.parties.includes(ex) || s2.bases.length || opts.some((o) => o.mission === "establish" || o.mission === "assault") || s2.tiles[partyTile(ex)].terrain === "water", "the exiles can establish a base or retake one");
-  check(!opts.some((o) => o.mission === "outpost"), "no instant Build outpost with no base (a staging camp instead)");
+  check(!opts.some((o) => o.mission === "outpost"), "no Build outpost with no base (Establish base: a camp built up into the hub)");
   // No base for 60 days on several worlds, every card answered at random: nothing may assume a hub.
   let crash2 = "";
   for (const sd of [3, 5, 8, 13]) {
@@ -527,7 +526,7 @@ section("Losing the hub: with another base, and with none (the exiles)");
     } catch (e) { crash2 += ` seed ${sd} day ${day(w)}: ${e.stack.split("\n").slice(0, 2).join(" | ")}`; }
   }
   check(!crash2, `60 days with no base on 4 worlds, cards answered at random: no crash${crash2}`);
-  // A new base founded by the exiles: Establish base, a staging camp built up into the hub (staging.js).
+  // A new base founded by the exiles: Establish base, a camp (the barest base) built up into the hub (staging.js).
   const S = await import("../src/sim/staging.js");
   const s3 = world();
   const h3 = hub(s3);
@@ -540,17 +539,14 @@ section("Losing the hub: with another base, and with none (the exiles)");
   const est = orderOptions(s3, ex3).find((o) => o.mission === "establish");
   check(!!est && est.label === S.ESTABLISH_LABEL && !est.disabled, `the exiles get the order ${S.ESTABLISH_LABEL} (${est && est.disabled})`);
   if (ex3.phase === "waiting") establishNow(s3, ex3);
-  const camp3 = s3.staging;
-  check(!!camp3 && !hub(s3) && camp3.tile === partyTile(ex3) && !camp3.first, "it pitches a staging camp, not a base");
-  check(camp3 && camp3.needs.buildmat === S.STAGING.EXILE.needs.buildmat && camp3.work === S.STAGING.EXILE.work, `the exiles' camp: ${camp3 && S.needText(camp3.needs)}, ${S.STAGING.EXILE.work} person-hours`);
-  check(camp3 && !S.stagingMissing(camp3).length && ex3.phase === "task" && ex3.task.type === "stage", "the team unloaded everything it takes and works on it");
+  const B0 = await import("../src/sim/buildings.js");
+  const camp3 = s3.bases.find((b) => B0.isCamp(b));
+  check(!!camp3 && hub(s3) === camp3 && camp3.tile === partyTile(ex3) && !camp3.first && !s3.parties.includes(ex3), "it sets up a camp (a base, the hub while it is the only one); the team moves in");
+  const job3 = camp3 && B0.tierUpJob(camp3);
+  check(job3 && job3.type === "camp_up" && B0.gatherRows(job3).find((r) => r.key === "buildmat").need === S.STAGING.EXILE.needs.buildmat && job3.hours === S.STAGING.EXILE.work, `the exiles' camp builds up into a shelter: ${S.needText(S.STAGING.EXILE.needs)}, ${S.STAGING.EXILE.work} work-hours`);
   const d3 = day(s3);
-  for (let i = 0; i < 24 * 10 && !hub(s3) && s3.parties.includes(ex3); i++) {
-    tickHour(s3);
-    s3.cards.length = 0;
-    if (s3.parties.includes(ex3) && ex3.phase === "waiting" && s3.staging) establishNow(s3, ex3); // back to work after a scare
-  }
-  check(!!hub(s3) && hub(s3).type === "hub" && !s3.staging, `the camp becomes the hub after the work (${hub(s3) ? `${hub(s3).name}, day ${day(s3)}, started day ${d3}` : "none"})`);
+  for (let i = 0; i < 24 * 10 && camp3 && B0.isCamp(camp3); i++) { tickHour(s3); s3.cards.length = 0; }
+  check(!!hub(s3) && hub(s3) === camp3 && !B0.isCamp(camp3), `the camp becomes the shelter after the work (${hub(s3) ? `${hub(s3).name}, day ${day(s3)}, started day ${d3}` : "none"})`);
   check(!hub(s3) || hub(s3).stock.food >= 20, `the camp's stores are its stock (${hub(s3) && hub(s3).stock.food} food)`);
   // Camp → shelter → base: the exiles' new home is a shelter (tier 0) first, then their builders build it up.
   const B = await import("../src/sim/buildings.js");

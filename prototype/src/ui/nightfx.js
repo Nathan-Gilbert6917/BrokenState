@@ -71,6 +71,7 @@ export function mapLights(state, G, boost, frac = 0, hex = 26) {
     const [x, y] = at(b.tile);
     const hub = b.type === "hub" && b.tier !== 0, n = Math.min(12, (b.buildings || []).length);
     if (home.has(b.id)) out.push([x, y - 4 * boost, (hub ? 46 : 32) * boost + n * 2.2 * boost, hub ? 0.95 : 0.85, WARM]);
+    if (b.camp === true && b.tier === 0 && b.fire !== false) out.push([x, y, 26 * boost, 0.85, FIRE]); // a camp's fire (sim/staging.js)
     if (count(b, "floodlights") && (poweredType(b, "floodlights") || (b.stock && (b.stock.fuel || 0) >= 2))) out.push([x, y, (hub ? 78 : 62) * boost, 0.9, COLD]);
     if (festivalNow(state, b)) out.push([x, y + 6 * boost, 58 * boost, 1, FIRE]);
   }
@@ -101,7 +102,7 @@ export function mapLights(state, G, boost, frac = 0, hex = 26) {
   }
   // Raiders from outside at your walls (sim/visitors.js): their fires.
   for (const v of state.visitors || []) if (v.phase === "siege" && state.live && state.live.has(v.tile)) { const [x, y] = at(v.tile); out.push([x + 16 * boost, y + 12 * boost, 24 * boost, 0.7, FIRE]); }
-  // The staging camp's fire, a crash burning (sim/staging.js, sim/crashes.js).
+  // A timelapse frame's camp fire, a crash burning (sim/chronicle.js, sim/crashes.js).
   const camp = state.staging;
   if (camp && camp.fire !== false) { const [x, y] = at(camp.tile); out.push([x, y, 26 * boost, 0.85, FIRE]); }
   for (const c of activeCrashes(state)) { const [x, y] = at(c.found ? c.tile : c.center); out.push([x, y, (c.found ? 16 : 24) * boost, c.found ? 0.5 : 0.8, FIRE]); }
