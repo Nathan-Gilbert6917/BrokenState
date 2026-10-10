@@ -361,11 +361,11 @@ export const GUN_RARITY = {
   scarh: "veryrare", lmg: "rare", m240: "veryrare", amr: "veryrare",
   m79: "rare", at4: "rare", m32: "veryrare", rpg: "veryrare",
 };
-// The arsenal's own finds (gunfinds.js, every roll on its own dice: nothing else found changes): the guns of
-// ARSENAL_GEAR whose tags (ARSENAL_TAGS) meet the place's (loot.js SITE_TAGS / AREA_TAGS), weighted by FIND_W of their
-// rarity. site: the chance a search hour by site type; area: a raid container by area type; wares: a group's shelf a
-// week by its type (WARE_TAGS: what it stocks); scav: an AI scavenging trip's chance a loot taken (arsenal.js
-// scavenge); stash: a gun safe's or a gun case's extra gun by its table (gunsafes.js; STASH_TAGS: what it keeps).
+// The extra-gun rolls (gunfinds.js, every roll on its own dice: nothing else found changes): which gun, the source's
+// draws in the gun distribution (gundist.js, GUN_SOURCES below: site:<type>, area:<type>, trader:<type>,
+// stash:<table>), weighted by FIND_W of its rarity (every gun source's rarity weight). site: the chance a search hour by
+// site type; area: a raid container by area type; wares: a group's shelf a week by its type; scav: an AI scavenging
+// trip's chance a loot taken (arsenal.js scavenge); stash: a gun safe's or a gun case's extra gun by its table (gunsafes.js).
 export const ARSENAL_FINDS = {
   FIND_W: { common: 1, uncommon: 0.5, scarce: 0.22, rare: 0.08, veryrare: 0.025 },
   site: { gunstore: 0.06, police: 0.03, prison: 0.02, military: 0.03, crash_mil: 0.02, convoy: 0.02, airdrop: 0.01, farm: 0.02, ranch: 0.025,
@@ -373,11 +373,8 @@ export const ARSENAL_FINDS = {
   area: { gunshop: 0.08, armory: 0.07, barracks: 0.03, milwreck: 0.04, motorpool: 0.015, cabin: 0.04, farmhouse: 0.03, barn: 0.015, house: 0.006,
           cellblock: 0.008, roadcars: 0.005 },
   wares: { traders: 0.45, military: 0.35, fortress: 0.25, expansionist: 0.3, raider: 0.2, commune: 0.2, zealot: 0.08, merchants: 0.5 },
-  WARE_TAGS: { traders: ["guns", "hunt", "home", "farm", "police"], military: ["military"], fortress: ["police", "prison", "military"], merchants: ["guns", "hunt", "police", "military"],
-               expansionist: ["police", "guns", "military"], raider: ["crime", "guns", "home"], commune: ["farm", "hunt"], zealot: ["farm", "home"] },
   scav: 0.25,
   stash: { cheap: 0.15, mid: 0.35, high: 0.35, highMil: 0.4, pistolcase: 0.12, riflecase: 0.15 },
-  STASH_TAGS: { cheap: ["hunt", "farm", "home"], mid: ["guns", "hunt", "home"], high: ["police", "prison"], highMil: ["military"], pistolcase: ["guns", "home", "police"], riflecase: ["guns", "hunt", "farm"] },
 };
 // The battle sprite (ui/sprites.js drawWeapon) of each new gun: an existing gun's.
 export const GUN_SPRITE = {

@@ -31,7 +31,7 @@ import { slotChoices } from "../src/sim/startgear.js";
 import { itemPoints } from "../src/sim/custompoints.js";
 
 let fails = 0, passes = 0;
-const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
+const check = (ok, msg) => { if (ok) { passes++; console.log(`  ok   ${msg}`); } else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const NEW = new Set(Object.keys(ARSENAL_GEAR));
 const GUNS = allGuns();
 const uses = (k) => gunClass(k).uses;
@@ -132,6 +132,7 @@ console.log("Rarity");
 
 // ---------- the new guns where the user asked for them ----------
 console.log("Escort and contractor kits, crawls, AI armouries");
+const an = (w) => `${/^[aeiou]/.test(w) ? "an" : "a"} ${w}`;
 const newIn = (keys) => [...new Set(keys)].filter((k) => NEW.has(k));
 {
   // On the battle map (combat.js enemyUnit) and by the numbers (escorts.js guardGear: a caravan's guards).
@@ -176,7 +177,7 @@ const newIn = (keys) => [...new Set(keys)].filter((k) => NEW.has(k));
   for (const type of Object.keys(KIT_OF)) {
     const keys = [];
     for (let s = 0; s < 6; s++) keys.push(...starterKit(s + 1, `G${s}`, type, 30, 1.6).filter((it) => isGun(it.key)).map((it) => it.key));
-    check(newIn(keys).length >= 1, `a ${type} group's starting armoury holds new guns: ${newIn(keys).join(", ") || "none"}`);
+    check(newIn(keys).length >= 1, `${an(type)} group's starting armoury holds new guns: ${newIn(keys).join(", ") || "none"}`);
   }
   const st = createWorld({ seed: 5, factionCount: 6 });
   const f = st.factions.find((x) => x.type === "military") || st.factions[0];
@@ -202,7 +203,7 @@ console.log("Fighters' strength");
     const worth = () => { let v = 0, n = 0; for (let s = 0; s < 8; s++) for (const it of starterKit(s + 1, `W${s}`, type, 24)) if (isGun(it.key)) { v += weaponValue(it); n++; } return v / Math.max(1, n); };
     const on = worth();
     GUN_DIST.off = true; const off = worth(); GUN_DIST.off = false;
-    check(Math.abs(on - off) / off < 0.06, `a ${type} group's guns are worth ${off.toFixed(2)} → ${on.toFixed(2)} a gun (arsenal.js weaponValue, within 6%)`);
+    check(Math.abs(on - off) / off < 0.06, `${an(type)} group's guns are worth ${off.toFixed(2)} → ${on.toFixed(2)} a gun (arsenal.js weaponValue, within 6%)`);
   }
 }
 

@@ -17,10 +17,11 @@
 // the world's dice stay where they were. Where a source has dice of its own (gunfinds.js, gun safes, hashed kits),
 // drawGun takes one of them.
 //
-// A fighter's gun (kits: band) is picked within ± band of the power of the gun the kit's list gave, of the same kind
-// when one fits, its weights leaned so the gun's power is the listed one's on the whole (tilt): each kind of fighter
+// A fighter's gun (kits: band) is picked within ± band of the power of the gun the kit's list gave and within HIT_BAND
+// of its hit, of the same kind when one fits, its weights leaned so the gun's power is the listed one's on the whole (tilt): each kind of fighter
 // is as strong as before; its list still says how strong.
 import { GEAR } from "./data.js";
+import { WEAPONS } from "./combat.js"; // call time only (combat.js imports this module)
 import { hash01 } from "./skills.js";
 import { ITEM_TAGS, SITE_TAGS, AREA_TAGS } from "./loot.js";
 import { GUN_CLASS, GUN_USES, GUN_ERAS, GUN_RARITY, GUN_SOURCES, PLACE_DRAWS, THEME_DRAWS, ARSENAL_FINDS } from "./data-guns.js";
@@ -93,6 +94,11 @@ function weightIn(def, k) {
   const eraW = def.era && def.era[c.era] != null ? def.era[c.era] : 1;
   return draw * tierW * eraW;
 }
+// A gun's hit on the battle map (combat.js WEAPONS dmg, the middle of it): a fighter's gun hits within HIT_BAND of
+// the listed one's as well (a 20 gauge for a 12 gauge sawn-off would weaken a raider whose power it matches).
+const HIT_BAND = 0.15;
+/** @param {string} k */
+const hitOf = (k) => { const w = WEAPONS[k]; return w && Array.isArray(w.dmg) ? (w.dmg[0] + w.dmg[1]) / 2 : 0; };
 // A band's weights leaned (× e^(λ × (power − p0))) so the mean power of the gun picked is the listed gun's own p0 (as
 // near as the band allows): a kit's fighters are as strong on the whole as with its list's guns.
 /** @param {Record<string, number>} pool @param {number} p0 */
@@ -124,7 +130,8 @@ export function gunsFrom(name, opts = {}) {
     for (const k of allGuns()) { const w = weightIn(def, k); if (w > 0) out[k] = w; }
     if (near) {
       const p0 = GEAR[near].power || 0;
-      const inBand = def.band != null ? Object.keys(out).filter((k) => Math.abs((GEAR[k].power || 0) - p0) <= def.band + 1e-9) : Object.keys(out);
+      const h0 = hitOf(near);
+      const inBand = def.band != null ? Object.keys(out).filter((k) => Math.abs((GEAR[k].power || 0) - p0) <= def.band + 1e-9 && (!h0 || Math.abs(hitOf(k) / h0 - 1) <= HIT_BAND)) : Object.keys(out);
       const same = inBand.filter((k) => GEAR[k].cat === GEAR[near].cat);
       const keep = same.length ? same : inBand;
       out = Object.fromEntries(keep.map((k) => [k, out[k]]));
