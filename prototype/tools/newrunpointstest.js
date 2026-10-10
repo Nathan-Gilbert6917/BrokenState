@@ -64,11 +64,11 @@ section("N of a thing at once: what they carry");
   SG_CHANGE["sg-slot"](st, ui, { value: "hikingpack", dataset: { slot: "backpack" } });
   SG_ACTIONS["sg-carry-clear"](st, ui);
   qty(st, ui, "qty", 6);
-  check(add(st, ui, AMMO) === true && count(s, AMMO) === 6 && !ui.gearEdit.msg, `6 boxes of ${GEAR[AMMO].name} at once, no message`);
+  check(add(st, ui, AMMO) === true && count(s, AMMO) === 2 && carryList(s.startGear).filter((x) => x.key === AMMO).reduce((a, x) => a + (x.entry.n || 1), 0) === 6 && !ui.gearEdit.msg, `6 boxes of ${GEAR[AMMO].name} at once: a stack of five boxes and one box (2026-10-10: a slot holds up to five), no message`);
   check(pricePerson(st, s).carried === 6 * itemPoints(AMMO), `the points are its price six times (${6 * itemPoints(AMMO)})`);
   const b = again(st);
   const boxes = allCarried(b.survivors[0]).filter((it) => it.key === AMMO);
-  check(boxes.length === 6 && boxes.every((it) => it.dur === GEAR[AMMO].dur), `rebuilt: six full boxes on them (${boxes.length}, ${GEAR[AMMO].dur} rounds each: a box is the stack the inventory has)`);
+  check(boxes.length === 2 && boxes.reduce((a, it) => a + it.dur, 0) === 6 * GEAR[AMMO].dur && boxes.some((it) => it.dur === 5 * GEAR[AMMO].dur), `rebuilt: a stack of five boxes and one more on them (${boxes.map((it) => it.dur).join(" + ")} rounds)`);
   // The spot picked takes the first, the rest go where they fit.
   ui.gearEdit.sel = { where: "pack", i: 9 };
   qty(st, ui, "qty", 2);

@@ -34,6 +34,7 @@ import { baseListenSection } from "./radiolisten.js"; // Listen in at a base (si
 import { radioSecurity } from "./intel.js"; // radio discipline, encryption, decoys (sim/intel.js)
 import { ask } from "./confirm.js"; // attacking a caravan asks first (one confirmation style)
 import { supplyAmt } from "../sim/rounds.js"; // "ammo": every round, any calibre
+import { stackLabel, isRoundItem, isBulk, countOf } from "../sim/itemstack.js"; // stacks in the trade lists (2026-10-10)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -47,6 +48,7 @@ const first = (s) => esc(s.name.split(" ")[0]);
 // Condition: a word and the percent for gear that has one (sim/itemcond.js), the uses left of the most it can have.
 const condText = (item) => (rollsQuality(item.key) || (item.quality ?? 1) !== 1 ? `${qualityWord(item.quality ?? 1)} ${Math.round((item.quality ?? 1) * 100)}%` : "");
 function gearLabel(item) {
+  if (isRoundItem(item) || isBulk(item) || countOf(item) > 1) return esc(stackLabel(item)); // a stack (itemstack.js): it sells as a whole, priced by what is in it
   const dur = itemDur(item);
   const bits = [condText(item), dur != null ? `${dur}/${itemDurMax(item)} uses` : ""].filter(Boolean).join(" · ");
   return `${esc(modLabel(item))}${bits ? ` <span class="muted">${bits}</span>` : ""}`; // a gun with its attachments (sim/gunmods.js): they sell with it

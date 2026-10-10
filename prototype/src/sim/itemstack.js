@@ -249,3 +249,20 @@ export function tidyList(list) {
     if (isBulk(it)) sweepLoads(it);
   }
 }
+// An old save (save.js, once: state.stacks): every inventory tidied (people's slots and what is inside their packs,
+// rigs and bags, the armories, the teams' cargo, the death sites). Old box items need nothing: a box holds what it held,
+// and the rounds over a box's (retail) size are the boxes they fill.
+/** @param {any} state */
+export function migrateStacks(state) {
+  const seen = new Set();
+  const walk = (list) => {
+    if (!Array.isArray(list) || seen.has(list)) return;
+    seen.add(list);
+    tidyList(list);
+    for (const it of list) if (it && Array.isArray(it.contents)) walk(it.contents);
+  };
+  for (const s of state.survivors || []) { walk(s.pockets); walk(s.loose); if (s.gear) walk(Object.values(s.gear)); }
+  for (const b of state.bases || []) walk(b.armory);
+  for (const p of state.parties || []) if (p.cargo) walk(p.cargo.gear);
+  for (const d of state.deathSites || []) walk(d.items);
+}

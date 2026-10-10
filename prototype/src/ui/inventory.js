@@ -37,6 +37,8 @@ import { rigOf, pouchesOf, isCarrier, insertsOf } from "../sim/inventory.js"; //
 import { POUCH_NAMES, POUCH_ICON, MAGAZINES } from "../sim/data-kit.js";
 import { battleKg, bandFor } from "../sim/carrykit.js"; // the battle load band (R17)
 import { typeName } from "../sim/rounds.js";
+import { stackLabel, isRoundItem, isBulk, amountOf, countOf, boxesIn, bulkRecord, roundCap, stackMax } from "../sim/itemstack.js"; // stacks in a slot (2026-10-10)
+import { splitAt, openAt } from "../sim/inventory.js";
 import { holdSection } from "./carry.js"; // the team's supplies this person carries (pockets, pack, arms), the ground
 import { bagRefusal } from "../sim/carry.js"; // Carry in arms (the search window): a bag, a rig or a case into the arms
 import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
@@ -108,8 +110,8 @@ export function tile(item, loc, s, drag = true) {
   const col = frac > 0.6 ? "var(--good)" : frac > 0.3 ? "var(--accent)" : "var(--danger)";
   const unusable = s && d.skill && d.req && !gearEffect(s, item).usable;
   return `<div class="itile${unusable ? " bad" : ""}"${drag ? ` draggable="true" data-drag="${loc}"` : ""}${tip(itemTip(item, s))}>
-    <span class="iico">${icon(item.key)}</span><span class="iname">${esc(item.name)}</span><span class="ikg">${Math.round(itemLoad(item) * 10) / 10}</span>
-    ${item.contents ? `<span class="icount">${item.contents.filter(Boolean).length}/${item.contents.length}</span>` : ""}
+    <span class="iico">${icon(item.key)}</span><span class="iname">${esc(stackLabel(item))}</span><span class="ikg">${Math.round(itemLoad(item) * 10) / 10}</span>
+    ${item.contents ? `<span class="icount">${item.contents.filter(Boolean).length}/${item.contents.length}</span>` : countOf(item) > 1 ? `<span class="icount">×${countOf(item)}</span>` : isRoundItem(item) ? `<span class="icount">${amountOf(item)}</span>` : ""}
     <i class="idur"><b style="width:${Math.round(Math.max(0.05, Math.min(1, frac)) * 100)}%;background:${col}"></b></i></div>`;
 }
 
@@ -224,13 +226,24 @@ function whoTabs(state, ui, people, sid) {
   return `<div class="invwho">${people.map((p) => `<button class="mini ${p.id === sid ? "active" : ""}" data-action="inv-who" data-id="${p.id}"${tip(`Show ${p.name}'s inventory. Combat power ${combatPower(p).toFixed(1)}.`)}>${first(p)}</button>`).join("")}</div>`;
 }
 
+// Split / Open / Take out on a stack (itemstack.js): half of it into a spot of its own; a stack of boxes opened into
+// loose rounds; a handful out of an ammo can, carton or bag.
+function stackButtons(item, from) {
+  if (from.o === "body") return "";
+  const out = [];
+  if (amountOf(item) > 1 && (countOf(item) > 1 || (isRoundItem(item) && !isBulk(item)))) out.push(`<button class="mini" data-action="inv-split"${tip(`Split the stack: half of it (${Math.ceil(amountOf(item) / 2)}) into a spot of its own beside it`)}>Split</button>`);
+  if (isRoundItem(item) && !item.loose) out.push(`<button class="mini" data-action="inv-openbox"${tip(`Open the box${boxesIn(item) > 1 ? "es" : ""}: loose rounds (up to ${roundCap({ loose: true })} a slot; the rest stays boxed beside them). Loose rounds are not packed back into boxes`)}>Open box</button>`);
+  if (isBulk(item) && Object.keys(bulkRecord(item)).length) out.push(`<button class="mini" data-action="inv-openbox"${tip(`Take a handful out (up to ${roundCap({ loose: true })} loose rounds) into a spot beside it`)}>Take out a handful</button>`);
+  return out.join(" ");
+}
 export function selBar(state, ui, place) {
   if (!ui.invSel) return "";
   const item = itemAt(state, ui.invSel);
   if (!item) return "";
   const from = parseLoc(ui.invSel);
   const st = storageFor(state, place);
-  return `<div class="invsel small">Selected: <b>${esc(item.name)}</b>. Click a slot, pocket or pack cell to move it there.
+  return `<div class="invsel small">Selected: <b>${esc(stackLabel(item))}</b>. Click a slot, pocket or pack cell to move it there${countOf(item) > 1 || isRoundItem(item) ? " (onto the same thing: the stacks merge)" : ""}.
+    ${stackButtons(item, from)}
     ${st && from.o !== "armory" && from.o !== "cargo" ? `<button class="mini" data-action="inv-store"${tip(`Put it in ${st.name}`)}>${from.o === "body" ? "Take" : st.o === "armory" ? "Unequip to armory" : "Put in cargo"}</button>` : ""}
     ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
     ${burnButtons(state, ui, item, from)}
@@ -792,6 +805,8 @@ export const INV_ACTIONS = {
   "inv-helmfit": (state, ui, d) => { if (!ui.invSel) return; const h = itemAt(state, ui.invSel); ui.invMsg = fitHelmetAt(state, ui.invSel, d.part, ui.inv && ui.inv.sid); reselect(state, ui, h); },
   "inv-helmstrip": (state, ui, d) => { if (ui.invSel) ui.invMsg = stripHelmetAt(state, ui.invSel, d.mount, ui.inv && ui.inv.sid); },
   "inv-helmon": (state, ui) => { if (!ui.invSel || !ui.inv) return; ui.invMsg = fitHelmetAt(state, `s:${ui.inv.sid}:head`, ui.invSel, ui.inv.sid); ui.invSel = null; },
+  "inv-split": (state, ui) => { if (ui.invSel) ui.invMsg = splitAt(state, ui.invSel); }, // sim/inventory.js: half a stack into a spot of its own
+  "inv-openbox": (state, ui) => { if (ui.invSel) ui.invMsg = openAt(state, ui.invSel); }, // a stack of boxes into loose rounds; a handful out of a bulk container
   "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
   // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks first (ui/confirm.js).
   // Repairs and salvage (sim/repair.js, sim/inventory.js salvageAt).
