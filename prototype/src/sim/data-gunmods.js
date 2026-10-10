@@ -108,18 +108,20 @@ export const PLATFORMS = {
   poly45:    { name: "Polymer .45 pistol",    cat: "pistol",   slots: ["optic", "muzzle", "mag", "tactical"] },
   deagle:    { name: "Magnum pistol",         cat: "pistol",   slots: ["optic", "mag", "tactical"] },
   m240:      { name: "General-purpose machine gun", cat: "mg", slots: ["optic", "muzzle", "mag", "tactical"], builtin: { bipod: "bipod" } },
-  // Ready for the guns other branches add (2026-10-10: AR pistols, a P90 / Vector, a Mini-14, a 5.7 or other polymer
-  // pistol): map them here or let PLATFORM_GUESS find them. Their magazines are data-kit.js MAGAZINES rows by platform.
+  // 2026-10-10 (data-guns.js AR_GEAR): the Mini-14-style ranch rifle (its own magazines; a scope mount for a sight)
+  ranch:     { name: "Ranch rifle",           cat: "rifle",    slots: ["mount", "muzzle", "mag", "stock", "bipod", "sling"] },
+  // Ready for the guns other branches add (2026-10-10: a P90-style PDW, a 5.7 or other polymer pistol, an AR pistol
+  // on a platform of its own): map them here or let PLATFORM_GUESS find them. Their magazines are data-kit.js MAGAZINES rows by platform.
   polypistol: { name: "Polymer pistol",       cat: "pistol",   slots: ["optic", "muzzle", "mag", "tactical"] },
   pdw:       { name: "Personal defence weapon", cat: "pdw",    slots: ["optic", "muzzle", "mag", "tactical", "sling"] },
   arpistol:  { name: "AR pistol",             cat: "arpistol", slots: ["optic", "muzzle", "mag", "stock", "rail", "pgrip", "tactical", "sling", "receiver"], parts: { stock: ["pistolbrace"] } },
-  ranch:     { name: "Ranch rifle",           cat: "rifle",    slots: ["optic", "muzzle", "mag", "stock", "bipod", "sling"] },
+
 };
 // A new platform takes the parts its look-alike takes (gunmods.js widens each part's fits.plat at load), less SKIP:
 // magazines never (they are by platform: data-kit.js MAGAZINES), a bullpup no stock and no M203. (The slots it has
 // decide the rest: a part for a slot the platform lacks never fits it.)
 export const PLATFORM_LIKE = { single: "dbl", battle: "ar10", bullpup: "ar15", ump: "mp5", poly45: "glock", deagle: "p1911", m240: "m249",
-  polypistol: "glock", pdw: "ump", arpistol: "ar15", ranch: "bolt" };
+  polypistol: "glock", pdw: "ump", arpistol: "ar15", ranch: "lever" };
 export const PLATFORM_LIKE_SKIP = { bullpup: ["collapsible", "precision", "foldstock", "m203", "drum"], poly45: ["extmag"], polypistol: ["extmag"], arpistol: ["m203"] };
 // Weapon key -> platform. Keys the roster agent (B) adds (compact9, pistol45, smg, dmr, lmg, ak, sniper...) are listed
 // ahead of time; a key with no WEAPONS entry is simply never met.
@@ -133,8 +135,10 @@ export const WEAPON_PLATFORM = {
   ou12: "dbl", ou20: "dbl", single12: "single", singlerifle: "single", pump20: "pump", tacpump: "pump", lever357: "lever",
   m4: "ar15", hk416: "ar15", scarl: "ar15", aug: "bullpup", scarh: "battle", fal: "battle", m1a: "battle", m240: "m240",
   ump45: "ump", usp45: "poly45", snub357: "revolver", magnum: "deagle",
-  // ahead of other branches (2026-10-10; a key no gun has is never met): the P90 and Vector, FAMAS, G3, Mini-14, AR pistol
-  p90: "pdw", vector: "ump", famas: "bullpup", g3: "battle", mini14: "ranch", arpistol: "arpistol",
+  // the AR platform and calibres of 2026-10-10 (data-guns.js AR_GEAR): every AR-15 pattern gun takes STANAG magazines
+  // and the AR-15's parts
+  ar15rifle: "ar15", ar223: "ar15", arpistol: "ar15", ar300: "ar15", sbr300: "ar15", ardmr: "ar15",
+  single556: "single", single223: "single", single300: "single", varmint223: "bolt", ranch223: "ranch", snub38: "revolver", service38: "revolver",
 };
 // One gun's own slots (see above): off: slots it lacks that its platform has; on: slots it has that its platform lacks
 // (even against its kind's `never`); parts: { slot: [part keys] } as a platform's. The compact 9mm has no threaded
@@ -148,6 +152,11 @@ export const WEAPON_SLOTS = {
   huntrifle: { off: ["optic", "mount"] },
   snub357:   { off: ["mount"] },
   tacpump:   { on: ["grip"] },
+  // the AR platform of 2026-10-10 (data-guns.js AR_GEAR): the AR pistol is an AR-15 (its magazines and parts) with no
+  // under-barrel launcher or bipod and a pistol brace for its only stock; the .38 snub-nose no scope rings either
+  arpistol:  { off: ["under", "bipod"], parts: { stock: ["pistolbrace"] } },
+  snub38:    { off: ["mount"] },
+  varmint223: { off: ["mag"] }, // an internal box magazine (data-kit.js INTERNAL), no detachable one
 };
 // (The old name: the slots each gun lacks.)
 /** @type {Record<string, string[]>} */
@@ -193,7 +202,7 @@ export const PLATFORM_GUESS = [
 /** @type {Record<string, string>} */
 export const BASE_CAL = { pistol: "9mm", shotgun: "12ga", huntrifle: "308", ar: "556", pipegun: "12ga", revolver: "357", leverrifle: "3030", carbine: "556" };
 
-const RIFLE_CALS = ["556", "762x39", "308", "3030"];
+const RIFLE_CALS = ["556", "762x39", "308", "3030", "223", "300blk"];
 // The new attachments' numbers (gunmods.js contract: aim, close, opt, fall, dmg, cap, capMult, noise ×; plus night:
 // aim at night, nightNear: aim at night within 6 tiles (a weapon light), peq: aim at night with night vision worn,
 // thermal: at night the shooter's shots ignore the dark, brace: aim when the gun rests on half cover next to the shooter in the shot's
@@ -216,12 +225,12 @@ export const MOD_ATTACH = {
   quadrail:     { slot: "rail",     short: "quad rail",      look: "rail",    fits: { plat: ["ar15", "ar10", "ak"] }, adds: ["grip", "tactical", "bipod"] },
   mlok:         { slot: "rail",     short: "M-LOK handguard", look: "rail",   fits: { plat: ["ar15", "ar10"] }, adds: ["grip", "tactical"], aim: 1, wt: -0.2 },
   can22:        { slot: "muzzle",   short: "suppressor",     look: "can_s",   fits: { cal: ["22lr"] }, can: true, noise: 0.35 },
-  can9:         { slot: "muzzle",   short: "suppressor",     look: "can_s",   fits: { cal: ["9mm", "45acp", "357"] }, can: true, noise: 0.5, jam: 1.2 },
-  can556:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["556"] }, can: true, noise: 0.55, aim: 1, jam: 1.3 },
-  can308:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["308", "762x39"] }, can: true, noise: 0.6, jam: 1.3 },
+  can9:         { slot: "muzzle",   short: "suppressor",     look: "can_s",   fits: { cal: ["9mm", "45acp", "357", "38spl"] }, can: true, noise: 0.5, jam: 1.2 },
+  can556:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["556", "223"] }, can: true, noise: 0.55, aim: 1, jam: 1.3 },
+  can308:       { slot: "muzzle",   short: "suppressor",     look: "can_l",   fits: { cal: ["308", "762x39", "300blk"] }, can: true, noise: 0.6, jam: 1.3 },
   can12:        { slot: "muzzle",   short: "shotgun suppressor", look: "can_l", fits: { cal: ["12ga", "20ga"], plat: ["pump", "semi12"] }, can: true, noise: 0.7, close: -2 },
   bottlecan:    { slot: "muzzle",   short: "bottle suppressor", look: "bottle", fits: { any: true, notCal: ["12ga", "20ga", "50bmg"] }, can: true, noise: 0.6, aim: -3 },
-  solventcan:   { slot: "muzzle",   short: "solvent-trap suppressor", look: "oilfilter", fits: { cal: ["22lr", "9mm", "556"] }, can: true, noise: 0.6, jam: 1.4 },
+  solventcan:   { slot: "muzzle",   short: "solvent-trap suppressor", look: "oilfilter", fits: { cal: ["22lr", "9mm", "556", "223"] }, can: true, noise: 0.6, jam: 1.4 },
   flashhider:   { slot: "muzzle",   short: "flash hider",    look: "brake",   fits: { cal: RIFLE_CALS }, aim: 1, flashless: true },
   recoilpad:    { slot: "stock",    short: "recoil pad",     look: "stock_pad", fits: { plat: ["pump", "dbl", "semi12", "bolt", "lever", "amr"] }, aim: 2, aimBy: { pump: 1, dbl: 1, semi12: 1, amr: 1 } },
   collapsible:  { slot: "stock",    short: "collapsible stock", look: "stock_collapsible", fits: { plat: ["ar15", "mp5", "ak", "semi12"] }, aim: 2, close: 3 },
@@ -258,22 +267,22 @@ export const MOD_ATTACH = {
   mlokpro:      { slot: "rail",     short: "free-float M-LOK", look: "rail",  fits: { plat: ["ar15", "ar10"] }, adds: ["grip", "tactical", "bipod"], aim: 2, wt: -0.25 },
   cheaprail:    { slot: "rail",     short: "cheap quad rail", look: "rail",   fits: { plat: ["ar15", "ar10", "ak"] }, adds: ["grip", "tactical", "bipod"], aim: -1, wt: 0.45 },
   // muzzle devices
-  can9pro:      { slot: "muzzle",   short: "Osprey can",     look: "can_s",   fits: { cal: ["9mm", "45acp", "357"] }, can: true, noise: 0.4, jam: 1.1 },
-  can556pro:    { slot: "muzzle",   short: "SOCOM can",      look: "can_l",   fits: { cal: ["556"] }, can: true, noise: 0.45, aim: 1, jam: 1.15 },
-  can308pro:    { slot: "muzzle",   short: ".308 can",       look: "can_l",   fits: { cal: ["308", "762x39"] }, can: true, noise: 0.5, jam: 1.15 },
+  can9pro:      { slot: "muzzle",   short: "Osprey can",     look: "can_s",   fits: { cal: ["9mm", "45acp", "357", "38spl"] }, can: true, noise: 0.4, jam: 1.1 },
+  can556pro:    { slot: "muzzle",   short: "SOCOM can",      look: "can_l",   fits: { cal: ["556", "223"] }, can: true, noise: 0.45, aim: 1, jam: 1.15 },
+  can308pro:    { slot: "muzzle",   short: ".308 can",       look: "can_l",   fits: { cal: ["308", "762x39", "300blk"] }, can: true, noise: 0.5, jam: 1.15 },
   can22pro:     { slot: "muzzle",   short: "Sparrow can",    look: "can_s",   fits: { cal: ["22lr"] }, can: true, noise: 0.3 },
-  cheapcan:     { slot: "muzzle",   short: "fuel-filter can", look: "oilfilter", fits: { cal: ["22lr", "9mm", "556"] }, can: true, noise: 0.65, jam: 1.5 },
+  cheapcan:     { slot: "muzzle",   short: "fuel-filter can", look: "oilfilter", fits: { cal: ["22lr", "9mm", "556", "223"] }, can: true, noise: 0.65, jam: 1.5 },
   brakepro:     { slot: "muzzle",   short: "match brake",    look: "brake",   fits: { cal: RIFLE_CALS }, aim: 4, noise: 1.3 },
   cheapbrake:   { slot: "muzzle",   short: "cheap brake",    look: "brake",   fits: { cal: RIFLE_CALS }, aim: 2, noise: 1.35 },
   flashpro:     { slot: "muzzle",   short: "Warcomp",        look: "fh",      fits: { cal: RIFLE_CALS }, aim: 2, flashless: true },
-  cheapcomp:    { slot: "muzzle",   short: "cheap compensator", look: "comp", fits: { cal: ["9mm", "45acp", "357"] }, aim: 1, noise: 1.2 },
+  cheapcomp:    { slot: "muzzle",   short: "cheap compensator", look: "comp", fits: { cal: ["9mm", "45acp", "357", "38spl"] }, aim: 1, noise: 1.2 },
   turkeychoke:  { slot: "muzzle",   short: "turkey choke",   look: "choke",   fits: { cal: ["12ga", "20ga"] }, opt: 3, fall: -2.5, close: -6 },
   icchoke:      { slot: "muzzle",   short: "IC choke",       look: "choke",   fits: { cal: ["12ga", "20ga"] }, opt: 1, fall: -1, close: -1 },
   // stocks and grips
   ctrstock:     { slot: "stock",    short: "CTR stock",      look: "collapsible", fits: { plat: ["ar15", "ar10"] }, aim: 3, close: 3 },
   fixedstock:   { slot: "stock",    short: "A2 stock",       look: "stock_fixed", fits: { plat: ["ar15", "ar10"] }, aim: 3, close: -1 },
   cheapstock:   { slot: "stock",    short: "cheap stock",    look: "collapsible", fits: { plat: ["ar15", "ar10", "mp5", "ak"] }, aim: 1, close: 2 },
-  pistolbrace:  { slot: "stock",    short: "pistol brace",   look: "fold",    fits: { plat: ["arpistol"] }, aim: 2, close: 2 },
+  pistolbrace:  { slot: "stock",    short: "pistol brace",   look: "fold",    fits: { plat: ["arpistol", "ar15"], guns: ["arpistol"] }, aim: 2, close: 2 },
   vgrippro:     { slot: "grip",     short: "BCM grip",       look: "vgrip",   fits: { any: true, notPlat: ["revolver"] }, aim: 2, close: 3 },
   handstop:     { slot: "grip",     short: "handstop",       look: "agrip",   fits: { any: true, notPlat: ["revolver"] }, aim: 1, close: 2 },
   cheapgrip:    { slot: "grip",     short: "cheap grip",     look: "vgrip",   fits: { any: true, notPlat: ["revolver"] }, aim: 1, close: 1 },
@@ -316,12 +325,12 @@ export const MOD_GEAR = {
   quadrail:     MOD("Quad rail handguard", 25, 0.3, "Rails on all four sides of the handguard: room for a foregrip, a light or laser, and a bipod. Fits the AR-15 family, the AR-10 and a Kalashnikov."),
   mlok:         MOD("M-LOK handguard", 35, 0.2, "A slim modern handguard, lighter than the factory one (−0.2 kg fitted): room for a foregrip and a light or laser, +1 aim. Fits the AR-15 family and the AR-10."),
   can22:        MOD(".22 suppressor", 40, 0.2, "A rimfire can: a .22's shots barely a third as loud. Fits .22 guns."),
-  can9:         MOD("Pistol-calibre suppressor", 60, 0.3, "A 9mm / .45 / .357 can: shots half as loud, but it fouls the action (jams ×1.2). Fits 9mm, .45 and .357 guns with a threaded barrel or muzzle, a revolver too (some of the gas still escapes at the cylinder)."),
-  can556:       MOD("5.56 suppressor", 90, 0.5, "A military rifle can: shots 55% as loud, +1 aim (less kick), but more fouling (jams ×1.3). Fits 5.56 rifles."),
-  can308:       MOD(".308 suppressor", 110, 0.6, "A big rifle can: shots 60% as loud, but more fouling (jams ×1.3). Fits .308 and 7.62×39 rifles."),
+  can9:         MOD("Pistol-calibre suppressor", 60, 0.3, "A 9mm / .45 / .357 / .38 can: shots half as loud, but it fouls the action (jams ×1.2). Fits 9mm, .45, .357 and .38 guns with a threaded barrel or muzzle, a revolver too (some of the gas still escapes at the cylinder)."),
+  can556:       MOD("5.56 suppressor", 90, 0.5, "A military rifle can: shots 55% as loud, +1 aim (less kick), but more fouling (jams ×1.3). Fits 5.56 and .223 rifles."),
+  can308:       MOD(".308 suppressor", 110, 0.6, "A big rifle can: shots 60% as loud, but more fouling (jams ×1.3). Fits .308, 7.62×39 and .300 Blackout rifles (with subsonic .300 BLK a whisper)."),
   can12:        MOD("Shotgun suppressor", 80, 0.7, "A fat can for a 12 gauge: shots 70% as loud, −2 up close. Fits the pump and semi-auto shotguns. Very rare."),
   bottlecan:    MOD("Bottle suppressor", 1, 0.1, "A plastic bottle taped over the muzzle: shots 60% as loud, −3 aim, and it is shot through in 3 shots. Fits any gun but a shotgun or the .50. Made in the field from a bottle and a scrap.", { makeshift: true, dur: 3 }),
-  solventcan:   MOD("Solvent-trap suppressor", 30, 0.5, "A cleaning kit's solvent trap drilled out into a can: shots 60% as loud, but it fouls the action (jams ×1.4). Lasts 40 shots. Fits .22, 9mm and 5.56 guns. Made at a machine shop.", { makeshift: true, dur: 40 }),
+  solventcan:   MOD("Solvent-trap suppressor", 30, 0.5, "A cleaning kit's solvent trap drilled out into a can: shots 60% as loud, but it fouls the action (jams ×1.4). Lasts 40 shots. Fits .22, 9mm, 5.56 and .223 guns. Made at a machine shop.", { makeshift: true, dur: 40 }),
   flashhider:   MOD("Flash hider", 6, 0.1, "A birdcage on a rifle's muzzle: +1 aim, and at night the flash no longer gives the shooter away. Fits rifles."),
   recoilpad:    MOD("Recoil pad", 8, 0.2, "A thick rubber butt pad: +2 aim (+3 on a shotgun or the .50). Fits shotguns, bolt-action and lever-action rifles and the .50."),
   collapsible:  MOD("Collapsible stock", 30, 0.3, "An adjustable stock: +2 aim, +3 more up close. Fits the AR-15 family, the submachine gun, a Kalashnikov and the semi-auto shotgun."),
@@ -377,15 +386,15 @@ export const PART_INFO = {
   cheaprail:    { name: "Budget quad rail (Chinese clone)", value: 8, weight: 0.45, tier: "budget", rarity: "common", tags: ["crime", "mall", "sport", "shop"], brandOf: "quadrail",
                   desc: "A heavy cast quad rail with sharp edges and wobbly screws: room for a foregrip, a light or laser and a bipod, but −1 aim and +0.45 kg fitted. Fits the AR-15 family, the AR-10 and a Kalashnikov." },
   can9pro:      { name: "Premium pistol suppressor", value: 120, weight: 0.3, tier: "brand", rarity: "rare", tags: ["police", "military", "guns"],
-                  desc: "A light modular pistol can modelled on a SilencerCo Osprey: shots 40% as loud, little fouling (jams ×1.1). Fits 9mm, .45 and .357 guns with a threaded barrel, a revolver too." },
+                  desc: "A light modular pistol can modelled on a SilencerCo Osprey: shots 40% as loud, little fouling (jams ×1.1). Fits 9mm, .45, .357 and .38 guns with a threaded barrel, a revolver too." },
   can556pro:    { name: "Premium 5.56 suppressor", value: 160, weight: 0.5, tier: "brand", rarity: "rare", tags: ["military"],
-                  desc: "A quick-detach military rifle can modelled on a SureFire SOCOM: shots 45% as loud, +1 aim (less kick), jams ×1.15. Fits 5.56 rifles." },
+                  desc: "A quick-detach military rifle can modelled on a SureFire SOCOM: shots 45% as loud, +1 aim (less kick), jams ×1.15. Fits 5.56 and .223 rifles." },
   can308pro:    { name: "Premium .308 suppressor", value: 180, weight: 0.6, tier: "brand", rarity: "rare", tags: ["military", "guns"],
-                  desc: "A big-bore rifle can modelled on an AAC / Gemtech: shots half as loud, jams ×1.15. Fits .308 and 7.62×39 rifles." },
+                  desc: "A big-bore rifle can modelled on an AAC / Gemtech: shots half as loud, jams ×1.15. Fits .308, 7.62×39 and .300 Blackout rifles." },
   can22pro:     { name: "Premium .22 suppressor", value: 75, weight: 0.15, tier: "brand", rarity: "scarce", tags: ["guns", "hunt"],
                   desc: "A take-apart rimfire can modelled on a SilencerCo Sparrow: a .22's shots under a third as loud. Fits .22 guns." },
   cheapcan:     { name: "Budget fuel-filter can (Chinese import)", value: 12, weight: 0.35, tier: "budget", rarity: "uncommon", tags: ["crime", "garage", "mall", "shop"], brandOf: "can9", dur: 60,
-                  desc: "A 'solvent trap' kit sold online as a fuel filter, drilled into a can: shots 65% as loud, it fouls the action (jams ×1.5), shot loose in about 60 shots. Fits .22, 9mm and 5.56 guns." },
+                  desc: "A 'solvent trap' kit sold online as a fuel filter, drilled into a can: shots 65% as loud, it fouls the action (jams ×1.5), shot loose in about 60 shots. Fits .22, 9mm, 5.56 and .223 guns." },
   brakepro:     { name: "Precision muzzle brake", value: 55, weight: 0.12, tier: "brand", rarity: "scarce", tags: ["guns", "military", "hunt"],
                   desc: "A tuned three-port brake modelled on a Precision Armament M4-72: +4 aim (the muzzle stays down), shots 30% louder. Fits rifles." },
   cheapbrake:   { name: "Budget muzzle brake (Chinese clone)", value: 5, weight: 0.15, tier: "budget", rarity: "common", tags: ["crime", "mall", "sport", "shop", "garage"], brandOf: "brake",
@@ -393,7 +402,7 @@ export const PART_INFO = {
   flashpro:     { name: "Combat flash hider", value: 40, weight: 0.12, tier: "brand", rarity: "scarce", tags: ["military", "guns"],
                   desc: "A hybrid flash hider and brake modelled on a SureFire Warcomp: +2 aim, and at night the flash no longer gives the shooter away. Fits rifles." },
   cheapcomp:    { name: "Budget pistol compensator (Chinese clone)", value: 4, weight: 0.1, tier: "budget", rarity: "common", tags: ["home", "mall", "shop", "crime", "sport"], brandOf: "comp",
-                  desc: "A slip-on compensator copy: +1 aim, shots 20% louder. Fits 9mm, .45 and .357 guns." },
+                  desc: "A slip-on compensator copy: +1 aim, shots 20% louder. Fits 9mm, .45, .357 and .38 guns." },
   turkeychoke:  { name: "Extra-full turkey choke", value: 28, weight: 0.06, tier: "civil", rarity: "uncommon", tags: ["hunt", "guns", "farm"],
                   desc: "A long extra-full choke tube modelled on a Carlson's turkey choke: a tight pattern, +3 tiles of best range and much less aim lost beyond it, −6 up close. Fits 12 and 20 gauge guns." },
   icchoke:      { name: "Improved-cylinder choke", value: 10, weight: 0.05, tier: "civil", rarity: "common", tags: ["hunt", "guns", "farm", "sport"],

@@ -88,6 +88,7 @@ import { nlHit, nlDown, nlAfterHit, nlAimPen, nlNoOw, nlStrike, nlAct, nlSetup, 
 import { ammoPen } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult)
 import { noteFight } from "./causes.js"; // "Why?": the odds of a fight by the numbers
 import { calOf, calName, roundsOf, takeBattleRounds, sideRounds, chooseLoad, enemyLoad, pickLoad, boxesOf, sweepBoxes, formFinds, typeFx, typeFor, roundName, settleBase, settleParty, drawTeamShots, ammoEdge, refundShots, softMult, bodyRounds, sortFind, raidTheme } from "./ammo.js"; // rounds by calibre and type
+import { loadFx, unitRound, loadRefusal } from "./ammo.js"; // calibre compatibility (2026-10-10): the round loaded, a 5.56 gun's .223
 import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK, CONVOY_GUARD, guardedTrucks } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews (a convoy's guard)
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
 import { armFromArsenal, settleArsenal } from "./arsenal.js"; // group arsenals: their units armed from what the group holds
@@ -1831,7 +1832,8 @@ function aiCab(b, a) {
   if (!tgt || !isRanged(a) || !canFire(b, a)) return null;
   const w = WEAPONS[a.weapon];
   if (tgt.d > modRange(w, unitMods(a)).opt) return null;
-  const pen = w.cal || calOf(a.weapon) ? ammoPen(calOf(a.weapon) || w.cal, typeFor(calOf(a.weapon) || w.cal, a.load)) : 0;
+  const ur = unitRound(a); // (the round loaded: a 5.56 gun's .223 goes through as .223)
+  const pen = ur ? ammoPen(ur.cal, ur.type) : w.cal ? ammoPen(w.cal, typeFor(w.cal, a.load)) : 0;
   if (!hullWear(tgt.v, pen) && !cabSeat(b, tgt.v)) return null;
   return cabOdds(b, a, tgt).chance >= CAB.AI_MIN ? tgt : null;
 }
@@ -2438,7 +2440,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   const d = dist(ax, ay, t.x, t.y);
   const gm = unitMods(a); // gunmods.js: the gun's sight, muzzle, magazine and grip (neutral without any)
   const rg = gm === NO_MODS ? w : modRange(w, gm);
-  const af = calOf(a.weapon) ? typeFx(typeFor(calOf(a.weapon), a.load)) : {}; // ammo.js: the loaded type (match, slugs, birdshot…; a common round: nothing)
+  const af = calOf(a.weapon) ? loadFx(a) : {}; // ammo.js: the loaded type (match, slugs, birdshot…; a common round: nothing), and a round of another calibre the gun takes (.223 in a 5.56 gun: its damage, +3 aim)
   const opt = rg.opt + (af.opt || 0), fall = rg.fall * (af.fallMult ?? 1);
   const notes = []; // what the moment adds or takes (the UI's odds line): a bipod rested, a moving vehicle, a light round's drop
   let aim = a.aim; // (step by step, as one sum: a.aim + w.aim + gm.aim + af.aim - nlAimPen - loadAim)
@@ -2829,6 +2831,7 @@ export function reloadRefusal(b, u, type = null) {
   if (u.carrying != null) return "Hands full: put the body down first.";
   const cal = calOf(u.weapon);
   if (type && (!cal || typeFor(cal, type) !== type)) return `The ${gunWord(u)} takes no such rounds.`;
+  if (type && loadRefusal(u.weapon, type)) return loadRefusal(u.weapon, type); // ammo.js: a calibre its chamber refuses (.300 BLK in a 5.56 gun)
   const sw = !!(type && typeFor(cal, type) !== typeFor(cal, u.load));
   const m = magIn(u), max = magMaxOf(u);
   if (!sw && m >= max) return `The ${gunWord(u)} is full (${max}/${max}).`;
@@ -3452,8 +3455,9 @@ export function moveAlong(b, u, path) {
 // (cal, ammo: the armour code reads them; ammo also the soft-target bonus), and whether it spreads (buckshot,
 // birdshot: a worm swarm, carriers.js swarmArmor; swarm: birdshot's extra against it).
 export function shotHit(a, crit = false) {
-  const cal = calOf(a.weapon);
-  const ammo = cal ? typeFor(cal, a.load) : null;
+  const r = unitRound(a); // the round loaded (a 5.56 gun's .223: cal "223"; ammo is the bare type)
+  const cal = r ? r.cal : null;
+  const ammo = r ? r.type : null;
   const fx = typeFx(ammo);
   return { how: "shot", crit, weapon: a.weapon, cal, ammo, spread: cal ? !!fx.spread : undefined, swarm: fx.swarm || 1, ...(fx.nonlethal ? { nonLethal: true } : {}) }; // nonLethal: beanbags, rubber (the non-lethal branch's damage hook)
 }

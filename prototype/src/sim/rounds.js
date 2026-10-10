@@ -31,23 +31,53 @@ export const roundOf = (k) => (ROUND_SUPPLIES[k] ? ROUND_SUPPLIES[k].round : nul
 export const baseType = (cal) => (CALIBERS[cal] ? CALIBERS[cal].base : "fmj");
 /** @param {string} cal */
 export const baseKey = (cal) => ammoKey(cal, baseType(cal));
-// A type this calibre has (else its common round).
+// ---------- loads (2026-10-10: calibre compatibility, data-ammo.js CAL_ACCEPTS) ----------
+// A load (a gun's item.load, a battle unit's u.load, a magazine's) is a type of its holder's own calibre ("fmj"), or
+// "<cal>:<type>" for a round of another calibre the holder takes (a 5.56 gun loaded with .223: "223:fmj"). typeFor
+// normalises one against a home calibre (another calibre's load stays "<cal>:<type>", its own calibre's becomes the bare
+// type), so loads compare as strings; keyFor and roundName name the round it is. Whether the holder may take that
+// calibre is ammo.js gunTakes / mags.js magTakes (typeFor only knows the calibre exists).
+/** @param {string | null | undefined} load */
+const splitLoad = (load) => { const s = typeof load === "string" ? load : ""; const i = s.indexOf(":"); return i > 0 ? [s.slice(0, i), s.slice(i + 1)] : [null, s]; };
+// The round a load names against its holder's calibre: { cal, type } (a type its calibre has, else its common round).
+/** @param {string} home @param {string | null | undefined} load @returns {{ cal: string, type: string }} */
+export function loadParts(home, load) {
+  const [c, t] = splitLoad(load);
+  const cal = c && CALIBERS[c] ? c : home;
+  return { cal, type: t && CALIBERS[cal] && CALIBERS[cal].types.includes(t) ? t : baseType(cal) };
+}
+// The load naming a round of `cal` / `type` for a holder of calibre `home`.
+/** @param {string} home @param {string | null | undefined} cal @param {string | null | undefined} type */
+export const loadId = (home, cal, type) => { const c = cal && CALIBERS[cal] ? cal : home; const t = typeFor(c, type); return c === home ? t : `${c}:${t}`; };
+// A load moved from one holder to another (a magazine's load in a gun of another calibre: a STANAG in a .223 gun).
+/** @param {string} from @param {string | null | undefined} load @param {string} to */
+export const rebaseLoad = (from, load, to) => { const p = loadParts(from, load); return loadId(to, p.cal, p.type); };
+// The calibre a load names (its holder's own when it names none).
+/** @param {string} home @param {string | null | undefined} load */
+export const loadCal = (home, load) => loadParts(home, load).cal;
+// The bare type of a load ("223:sp" → "sp").
+/** @param {string | null | undefined} load */
+export const bareType = (load) => splitLoad(load)[1] || null;
+// A type this calibre has (else its common round); a load of another calibre stays as it is, normalised (above).
 /** @param {string} cal @param {string | null | undefined} type */
-export const typeFor = (cal, type) => (type && CALIBERS[cal] && CALIBERS[cal].types.includes(type) ? type : baseType(cal));
+export const typeFor = (cal, type) => {
+  if (typeof type === "string" && type.includes(":")) { const p = loadParts(cal, type); return p.cal === cal ? p.type : `${p.cal}:${p.type}`; }
+  return type && CALIBERS[cal] && CALIBERS[cal].types.includes(type) ? type : baseType(cal);
+};
 /** @param {string} cal @param {string | null | undefined} [type] */
-export const keyFor = (cal, type) => ammoKey(cal, typeFor(cal, type));
+export const keyFor = (cal, type) => { const p = loadParts(cal, type); return ammoKey(p.cal, p.type); };
 /** @param {string} cal "12 gauge" */
 export const calName = (cal) => (CALIBERS[cal] ? CALIBERS[cal].name : cal);
-/** @param {string} cal @param {string | null | undefined} [type] "9mm hollow point" */
-export const roundName = (cal, type) => `${CALIBERS[cal] ? CALIBERS[cal].name : cal} ${(AMMO_TYPES[typeFor(cal, type)] || {}).name || ""}`.trim();
+/** @param {string} cal @param {string | null | undefined} [type] "9mm hollow point" ("223:sp" in a 5.56 gun: ".223 Rem soft point") */
+export const roundName = (cal, type) => { const p = CALIBERS[cal] ? loadParts(cal, type) : { cal, type: typeFor(cal, type) }; return `${CALIBERS[p.cal] ? CALIBERS[p.cal].name : cal} ${(AMMO_TYPES[p.type] || {}).name || ""}`.trim(); };
 /** @param {string | null | undefined} type "hollow point" */
-export const typeName = (type) => (type && AMMO_TYPES[type] ? AMMO_TYPES[type].name : "");
+export const typeName = (type) => { const t = bareType(type); return t && AMMO_TYPES[t] ? AMMO_TYPES[t].name : ""; };
 // The types a calibre has, its common round first.
 /** @param {string} cal */
 export const typesOf = (cal) => (CALIBERS[cal] ? [CALIBERS[cal].base, ...CALIBERS[cal].types.filter((t) => t !== CALIBERS[cal].base)] : []);
 // A type's effects (data-ammo.js AMMO_TYPES), {} for a common round or none.
 /** @param {string | null | undefined} type */
-export const typeFx = (type) => (type && AMMO_TYPES[type]) || {};
+export const typeFx = (type) => { const t = bareType(type); return (t && AMMO_TYPES[t]) || {}; };
 
 // ---------- stock records ----------
 const num = (v) => (Number.isFinite(v) ? v : 0);
@@ -110,7 +140,7 @@ export function spendAmmo(rec, n, keep = null) {
   const g = Math.min(n, Math.max(0, Math.floor(num(rec.ammo))));
   if (g > 0) { rec.ammo -= g; out.n += g; out.keys.ammo = g; }
   const order = GENERIC_KEYS.filter((k) => rec[k] >= 1).sort((a, b) => { // never a launcher's rounds
-    const ka = keep && keep[ROUND_SUPPLIES[a].round.cal] ? 1 : 0, kb = keep && keep[ROUND_SUPPLIES[b].round.cal] ? 1 : 0;
+    const ka = keep && ROUND_SUPPLIES[a].round.cal in keep ? 1 : 0, kb = keep && ROUND_SUPPLIES[b].round.cal in keep ? 1 : 0; // (a calibre its guns take besides their own: weight 0, kept too)
     return ka - kb || SUPPLIES[a].value - SUPPLIES[b].value || num(rec[b]) - num(rec[a]) || (a < b ? -1 : 1);
   });
   for (const k of order) {

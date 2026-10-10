@@ -57,7 +57,7 @@
 // (noise 3) is 1.2, heard 15 × 0.4 = 6 tiles off in a raid (9 + 2 × noise, × the share) instead of 15.
 import { GEAR } from "./data.js";
 import { GUN_WEAPONS } from "./data-guns.js";
-import { CALIBERS } from "./data-ammo.js";
+import { CALIBERS, CAL_ACCEPTS } from "./data-ammo.js";
 import { SLOTS, SLOT_NAMES, SHARED, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAPON_SLOTS, PLATFORM_GUESS, BASE_CAL, MOD_ATTACH, PLATFORM_LIKE, PLATFORM_LIKE_SKIP, PART_INFO, OLD_PART_CLASS, BUDGET_MAGS } from "./data-gunmods.js";
 import { KIT_ATTACH } from "./data-kit.js"; // magazines as items (section 15): the extended mag and the drum are magazine items now
 // The gun builder's sim calls on inventory locations (they live with the inventory's location handling).
@@ -89,7 +89,7 @@ const LEGACY = {
   riflecan:  { slot: "muzzle",   short: "suppressor",   look: "can_l",    fits: { cal: RIFLE_CALS }, can: true, opt: -1, dmg: 0.95, noise: 0.4, jam: 1.3 },
   suppressor:{ slot: "muzzle",   short: "oil-filter suppressor", look: "oilfilter", fits: { cal: ["9mm", "556", "308", "3030"] }, can: true, noise: 0.5, jam: 1.5 }, // makeshift: GEAR dur = shots
   brake:     { slot: "muzzle",   short: "muzzle brake", look: "brake",    fits: { cal: RIFLE_CALS }, aim: 3, noise: 1.3 },
-  comp:      { slot: "muzzle",   short: "compensator",  look: "comp",     fits: { cal: ["9mm", "45acp", "357"] }, aim: 2, noise: 1.15 },
+  comp:      { slot: "muzzle",   short: "compensator",  look: "comp",     fits: { cal: ["9mm", "45acp", "357", "38spl"] }, aim: 2, noise: 1.15 },
   choke:     { slot: "muzzle",   short: "choke",        look: "choke",    fits: { cal: ["12ga", "20ga"] }, opt: 2, fall: -2, close: -4 },
   extmag:    { slot: "mag",      short: "extended mag", look: "stick20",  fits: { plat: ["glock"] }, cap: 9 },
   drum:      { slot: "mag",      short: "drum mag",     look: "drum",     fits: { plat: ["ar15"] }, capMult: 2, aim: -2, jam: 1.5 },
@@ -145,6 +145,8 @@ export const platformOf = (gunKey) => {
   if (p) WEAPON_PLATFORM[gunKey] = p;
   return p;
 };
+// The calibres a gun takes (data-ammo.js CAL_ACCEPTS, a gun's own cals; ammo.js gunCalsOf without the WEAPONS import).
+const gunCalsHere = (gunKey) => { const w = GUN_WEAPONS[gunKey], c = calOf(gunKey); return w && Array.isArray(w.cals) ? w.cals : c ? CAL_ACCEPTS[c] || [c] : []; };
 const builtinOf = (gunKey) => (PLATFORMS[platformOf(gunKey)] || {}).builtin || {};
 const sharedWith = (slot) => (SHARED.find((g) => g.includes(slot)) || [slot]);
 // The slots a slot gives room for: the space under the barrel takes a foregrip instead (not the other way round).
@@ -198,6 +200,8 @@ function partFitsStatic(gunKey, modKey) {
   if (f.notCal && cal && f.notCal.includes(cal)) return false;
   if (f.plat && !f.plat.includes(plat)) return false;
   if (f.cal && !f.cal.includes(cal)) return false;
+  if (f.guns && !f.guns.includes(gunKey)) return false; // a magazine for only some guns of its platform (the battle rifles)
+  if (a.magCap && a.magCal) { const held = a.magCals || CAL_ACCEPTS[a.magCal] || [a.magCal]; if (!gunCalsHere(gunKey).some((c) => held.includes(c))) return false; } // it holds nothing the gun takes
   const only = slotRules(gunKey).parts[a.slot];
   if (only && !only.includes(modKey)) return false;
   return !!(f.plat || f.cal || f.any);
@@ -493,6 +497,8 @@ export const unitMods = (u) => (u && u.gm && u.gmWeapon === u.weapon ? u.gm : NO
 export const ROUND_REACH = {
   "556": { reach: 10, drop: 2, dmg: 0.85 }, "762x39": { reach: 9, drop: 2, dmg: 0.85 }, "22lr": { reach: 9, drop: 2, dmg: 0.85 },
   "9mm": { reach: 8, drop: 2, dmg: 0.85 }, "45acp": { reach: 8, drop: 2, dmg: 0.85 }, "357": { reach: 8, drop: 2, dmg: 0.85 },
+  // 2026-10-10: .223 carries like 5.56, .300 BLK (a short, heavy, slow round) drops sooner, .38 like the other pistols
+  "223": { reach: 10, drop: 2, dmg: 0.85 }, "300blk": { reach: 8, drop: 2.5, dmg: 0.8 }, "38spl": { reach: 7, drop: 2, dmg: 0.85 },
 };
 export const roundReach = (w) => (w && w.cal && ROUND_REACH[w.cal]) || null;
 // The effective best range and fall-off of a weapon with its attachments (combat.js shotOdds), the range capped at

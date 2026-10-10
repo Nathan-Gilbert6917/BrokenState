@@ -201,12 +201,11 @@ console.log("Parts catalogue");
     else if (!(GEAR[k].value === i.value && GEAR[k].weight === i.weight && GEAR[k].name === i.name)) insane.push(`${k}: GEAR differs from PART_INFO`);
   }
   check(!insane.length, `every new part is a sane item: a value and weight in range, a tier, a rarity, known tags, a maker named (${insane.join("; ") || "all"})`);
-  const waits = ["pistolbrace"]; // an AR pistol's (the ar-platform branch); checked on a stand-in below
+  const waits = [];
   const unfit = Object.keys(PART_INFO).filter((k) => !waits.includes(k) && !guns.some((g) => modFits(g, k)));
   check(!unfit.length, `every new part fits at least one gun there is now (${unfit.join(", ") || "all"})`);
-  GEAR.t_arp = { slot: "weapon", skill: "shooting", power: 5, req: 0, value: 50, noise: 3, weight: 2.5, cat: "pistol", name: "AR pistol", desc: "A short AR-15." }; GUN_WEAPONS.t_arp = { cal: "556" };
-  check(platformOf("t_arp") === "arpistol" && modFits("t_arp", "pistolbrace") && !modFits("t_arp", "collapsible") && modFits("t_arp", "pgrip") && modFits("t_arp", "chandle") && !reachable("t_arp").includes("under"), "an AR pistol (another branch's) takes a pistol brace as its only stock, a pistol grip and a charging handle, no M203");
-  delete GEAR.t_arp; delete GUN_WEAPONS.t_arp; delete WEAPON_PLATFORM.t_arp;
+  check(platformOf("arpistol") === "ar15" && modFits("arpistol", "pistolbrace") && !modFits("arpistol", "collapsible") && !modFits("ar15rifle", "pistolbrace") && modFits("arpistol", "pgrip") && modFits("arpistol", "chandle") && !reachable("arpistol").includes("under") && !reachable("arpistol").includes("bipod") && modFits("arpistol", "mag_stanag_30"),
+    "the AR pistol (an AR-15: its magazines and parts) takes a pistol brace as its only stock, a pistol grip and a charging handle, no M203 or bipod; a full AR no brace");
   // Budget clones: strictly worse and cheaper than the part they copy.
   const better = { aim: 1, close: 1, opt: 1, brace: 1, moving: 1, nightNear: 1, night: 1, peq: 1, reload: 1, magCap: 0 };
   const worse = [];

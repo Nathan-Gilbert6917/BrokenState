@@ -27,7 +27,7 @@
 // Exports for other sound modules (ui/zombiesfx.js): spatial(L, x, y, o) and spatialOut(c, place) -> AudioNode.
 import { rngOf, hashStr, noiseLayer, toneLayer, metalLayer, nwave, shape, rollTail, makeIR, filterAll } from "./sfxdsp.js";
 import { WEAPONS } from "../sim/combat.js";
-import { loadOf, calOf } from "../sim/ammo.js";
+import { loadOf, calOf, unitRound } from "../sim/ammo.js";
 import { indoors } from "../sim/hearing.js";
 import { groupGain, assignGroup } from "./soundgroups.js"; // the mixer (Settings → Sound): Gunfire, Reloads and handling
 
@@ -152,12 +152,26 @@ export const VOICE_OF = {
   usp45:      { v: "p45", act: "slideHeavy", brass: "brassP", rel: "pistol", pitch: 1.02 },
   snub357:    { v: "r357", rel: "revolver", pitch: 1.06 },
   magnum:     { v: "r357", act: "slideHeavy", brass: "brassP", rel: "pistol", pitch: 0.92 },
+  // the AR platform and calibres of 2026-10-10 (sim/data-guns.js AR_GEAR): the nearest voice, nudged
+  ar15rifle:  { v: "r556", act: "bolt", brass: "brassR", rel: "rifle", pitch: 1.01 },
+  ar223:      { v: "r556", act: "bolt", brass: "brassR", rel: "rifle", pitch: 1.04 },
+  arpistol:   { v: "r556", act: "bolt", brass: "brassR", rel: "rifle", pitch: 0.96 },
+  ar300:      { v: "r762", act: "bolt", brass: "brassR", rel: "rifle", pitch: 1.02 },
+  sbr300:     { v: "r762", act: "bolt", brass: "brassR", rel: "rifle", pitch: 1.05 },
+  ardmr:      { v: "r556", act: "bolt", brass: "brassR", rel: "rifle", pitch: 0.98 },
+  single556:  { v: "r556", rel: "single" },
+  single223:  { v: "r556", rel: "single", pitch: 1.04 },
+  single300:  { v: "r762", rel: "single" },
+  varmint223: { v: "r556", cycle: "bolt", brass: "brassR", rel: "bolt", pitch: 1.03 },
+  ranch223:   { v: "r556", act: "bolt", brass: "brassR", rel: "rifle", pitch: 1.05 },
+  snub38:     { v: "r357", rel: "revolver", pitch: 1.1 },
+  service38:  { v: "r357", rel: "revolver", pitch: 1.05 },
 };
 // Weapons that keep a sound of their own on purpose (ui/audio.js VOICES): bows and crossbows twang, a spitter spits.
 export const OWN_VOICE = { crossbow: "bow", compbow: "bow", xbow: "bow", pulleybow: "bow", acid: "acid" };
 // A gun no table knows (a later addition): a voice by its calibre, then by its class. GENERIC_OK lists none: every
 // gun in data-guns.js and combat.js has its row (tools/gunsfxtest.js checks).
-const BY_CAL = { "22lr": "p22", "9mm": "p9", "45acp": "p45", "357": "r357", "556": "r556", "762x39": "r762", "308": "r308", "3030": "r3030", "50bmg": "r50", "12ga": "sg12", "20ga": "sg12", "40mm": "gl40", rocket: "rocket" };
+const BY_CAL = { "22lr": "p22", "9mm": "p9", "45acp": "p45", "357": "r357", "38spl": "r357", "223": "r556", "300blk": "r762", "556": "r556", "762x39": "r762", "308": "r308", "3030": "r3030", "50bmg": "r50", "12ga": "sg12", "20ga": "sg12", "40mm": "gl40", rocket: "rocket" };
 export function gunVoice(key) {
   const row = VOICE_OF[key];
   if (row) return { ...row, generic: false };
@@ -167,7 +181,7 @@ export function gunVoice(key) {
 }
 // Supersonic rounds crack; the .45 and subsonic loads do not. A .22 LR and 9mm crack faintly (barely past the speed of
 // sound), buckshot hardly, a slug a little more.
-const SUPERSONIC = { "22lr": 1, "9mm": 1, "45acp": 0, "357": 1, "556": 1, "762x39": 1, "308": 1, "3030": 1, "50bmg": 1, "12ga": 1, "20ga": 1, "40mm": 0, rocket: 0 };
+const SUPERSONIC = { "22lr": 1, "9mm": 1, "45acp": 0, "357": 1, "38spl": 0, "223": 1, "300blk": 1, "556": 1, "762x39": 1, "308": 1, "3030": 1, "50bmg": 1, "12ga": 1, "20ga": 1, "40mm": 0, rocket: 0 };
 export const supersonic = (cal, type) => !!SUPERSONIC[cal] && type !== "subsonic";
 
 // The cyclic rate of a gun firing more than one round a pull (rounds a minute), and the gap between rounds.
@@ -180,9 +194,9 @@ export function shotPlan(f, a, launcher = null) {
   const key = launcher === "rocket" || f.rocket ? (a && a.gl && a.gl.key) || "rpg" : launcher === "gl" ? (a && a.gl && a.gl.key) || "m79" : a ? a.weapon : "pistol";
   const row = gunVoice(VOICE_OF[key] ? key : f.rocket ? "rpg" : launcher === "gl" ? "m79" : key);
   const w = WEAPONS[key] || {};
-  const cal = w.cal || calOf(key);
+  let cal = w.cal || calOf(key);
   let type = null;
-  try { type = a && !launcher && !f.rocket ? loadOf(a) : null; } catch { type = null; }
+  try { const r = a && !launcher && !f.rocket && a.weapon === key ? unitRound(a) : null; type = r ? r.type : a && !launcher && !f.rocket ? loadOf(a) : null; if (r) cal = r.cal; } catch { type = null; } // the round loaded (a 5.56 gun's .223: its calibre)
   const sup = !!(a && a.suppressor && w.noise && !launcher && !f.rocket && row.v !== "r357");
   const sub = !supersonic(cal, type);
   const rounds = launcher || f.rocket ? 1 : Math.max(1, Math.min(30, Math.round(f.rounds || 1)));

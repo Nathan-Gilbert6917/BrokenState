@@ -11,7 +11,9 @@
 // shotgun tube extension stays an attachment (an internal magazine). pouch: the rig pouch kind it goes in.
 // Empty weight in kg (loaded: + cap × the round's kg, load.js / mags.js magRoundsKg).
 
-/** @type {Record<string, { plat: string[], cal: string, cap: number, kg: number, value: number, name: string, aim?: number, jam?: number, pouch: string, desc?: string }>} */
+// cals: the calibres it holds (else data-ammo.js CAL_ACCEPTS of its cal: mags.js magCalsOf); guns: only these guns of its
+// platforms (the .308 battle rifles share a platform but each takes its own magazine).
+/** @type {Record<string, { plat: string[], cal: string, cap: number, kg: number, value: number, name: string, aim?: number, jam?: number, pouch: string, desc?: string, cals?: string[], guns?: string[] }>} */
 export const MAGAZINES = { // (a "c" key: a budget Chinese clone of the one above it, data-gunmods.js BUDGET_MAGS)
   mag_glock_8:     { plat: ["glock"], cal: "9mm", cap: 8, kg: 0.06, value: 3, pouch: "pistol", name: "Compact 9mm magazine (8)" },
   mag_glock_15:    { plat: ["glock"], cal: "9mm", cap: 15, kg: 0.07, value: 4, pouch: "pistol", name: "9mm pistol magazine (15)" },
@@ -24,13 +26,15 @@ export const MAGAZINES = { // (a "c" key: a budget Chinese clone of the one abov
   mag_22_10:       { plat: ["rimpistol", "rimrifle"], cal: "22lr", cap: 10, kg: 0.05, value: 3, pouch: "pistol", name: ".22 magazine (10)" },
   mag_22_25:       { plat: ["rimpistol", "rimrifle"], cal: "22lr", cap: 25, kg: 0.09, value: 6, pouch: "pistol", name: ".22 magazine (25)" },
   mag_mp5_30:      { plat: ["mp5"], cal: "9mm", cap: 30, kg: 0.12, value: 6, pouch: "rifle", name: "SMG magazine (30)" },
-  mag_stanag_20:   { plat: ["ar15", "m249", "bullpup"], cal: "556", cap: 20, kg: 0.1, value: 4, pouch: "rifle", name: "5.56 magazine (20)" },
-  mag_stanag_30:   { plat: ["ar15", "m249", "bullpup"], cal: "556", cap: 30, kg: 0.12, value: 6, pouch: "rifle", name: "5.56 magazine (30)" },
-  mag_stanag_30c:  { plat: ["ar15", "m249", "bullpup"], cal: "556", cap: 30, kg: 0.13, value: 2, pouch: "rifle", name: "Budget 5.56 magazine (Chinese clone) (30)", jam: 1.3,
-                     desc: "A cheap copy of a 30-round 5.56 magazine with a weak spring and a sticky follower: it feeds badly (jams ×1.3). Fits the AR-15 family, the bullpup and the machine gun." },
-  mag_stanag_40:   { plat: ["ar15", "m249", "bullpup"], cal: "556", cap: 40, kg: 0.15, value: 10, pouch: "rifle", name: "5.56 magazine (40)" },
-  drum:            { plat: ["ar15"], cal: "556", cap: 60, kg: 1.1, value: 38, pouch: "rifle", name: "Drum magazine (60)", aim: -2, jam: 1.5 },
-  mag_stanag_100:  { plat: ["ar15", "m249", "bullpup"], cal: "556", cap: 100, kg: 1.2, value: 70, pouch: "rifle", name: "5.56 double drum (100)", aim: -2, jam: 1.3 },
+  // STANAG (AR-15 pattern, the M249 takes them too): 5.56, .223 and .300 Blackout alike (the gun's chamber decides:
+  // ammo.js gunTakes). The bullpup (AUG) has its own since 2026-10-10 (user: "give the AUG its own magazines").
+  mag_stanag_20:   { plat: ["ar15", "m249"], cal: "556", cals: ["556", "223", "300blk"], cap: 20, kg: 0.1, value: 4, pouch: "rifle", name: "STANAG magazine (20)" },
+  mag_stanag_30:   { plat: ["ar15", "m249"], cal: "556", cals: ["556", "223", "300blk"], cap: 30, kg: 0.12, value: 6, pouch: "rifle", name: "STANAG magazine (30)" },
+  mag_stanag_30c:  { plat: ["ar15", "m249"], cal: "556", cals: ["556", "223", "300blk"], cap: 30, kg: 0.13, value: 2, pouch: "rifle", name: "Budget STANAG magazine (Chinese clone) (30)", jam: 1.3,
+                     desc: "A cheap copy of a 30-round STANAG magazine with a weak spring and a sticky follower: it feeds badly (jams ×1.3). Fits the AR-15 family and the machine gun." },
+  mag_stanag_40:   { plat: ["ar15", "m249"], cal: "556", cals: ["556", "223", "300blk"], cap: 40, kg: 0.15, value: 10, pouch: "rifle", name: "STANAG magazine (40)" },
+  drum:            { plat: ["ar15"], cal: "556", cals: ["556", "223", "300blk"], cap: 60, kg: 1.1, value: 38, pouch: "rifle", name: "Drum magazine (60)", aim: -2, jam: 1.5 },
+  mag_stanag_100:  { plat: ["ar15", "m249"], cal: "556", cals: ["556", "223", "300blk"], cap: 100, kg: 1.2, value: 70, pouch: "rifle", name: "STANAG double drum (100)", aim: -2, jam: 1.3 },
   mag_ak_30:       { plat: ["ak"], cal: "762x39", cap: 30, kg: 0.33, value: 6, pouch: "rifle", name: "AK magazine (30)" },
   mag_ak_45:       { plat: ["ak"], cal: "762x39", cap: 45, kg: 0.4, value: 12, pouch: "rifle", name: "AK magazine (45)" },
   mag_ak_75:       { plat: ["ak"], cal: "762x39", cap: 75, kg: 1.3, value: 40, pouch: "rifle", name: "AK drum (75)", aim: -2, jam: 1.3 },
@@ -40,10 +44,21 @@ export const MAGAZINES = { // (a "c" key: a budget Chinese clone of the one abov
   mag_bolt_10:     { plat: ["bolt"], cal: "308", cap: 10, kg: 0.15, value: 10, pouch: "rifle", name: "Bolt-action magazine (10)" },
   mag_50_10:       { plat: ["amr"], cal: "50bmg", cap: 10, kg: 0.5, value: 20, pouch: "rifle", name: ".50 magazine (10)" },
   mag_m249_100:    { plat: ["m249"], cal: "556", cap: 100, kg: 0.4, value: 15, pouch: "rifle", name: "Belt box (100)" },
-  // The arsenal of 2026-10-10 (data-guns.js ARSENAL_GEAR): .308 battle rifle magazines (the FAL's, the M14's and the
-  // SCAR-H's, one kind here), the .45 SMG's and pistol's, the hand cannon's, the .308 machine gun's belt.
-  mag_battle_10:   { plat: ["battle"], cal: "308", cap: 10, kg: 0.15, value: 6, pouch: "rifle", name: ".308 battle rifle magazine (10)" },
-  mag_battle_20:   { plat: ["battle"], cal: "308", cap: 20, kg: 0.25, value: 9, pouch: "rifle", name: ".308 battle rifle magazine (20)" },
+  // The arsenal of 2026-10-10 (data-guns.js ARSENAL_GEAR): the .308 battle rifles' magazines, the .45 SMG's and pistol's,
+  // the hand cannon's, the .308 machine gun's belt. The battle rifles share a platform but not a magazine (user,
+  // 2026-10-10): the SCAR-H's (mag_battle_*, its old keys), the FAL's (metric) and the M14's.
+  mag_battle_10:   { plat: ["battle"], guns: ["scarh"], cal: "308", cap: 10, kg: 0.15, value: 6, pouch: "rifle", name: "SCAR-H magazine (10)" },
+  mag_battle_20:   { plat: ["battle"], guns: ["scarh"], cal: "308", cap: 20, kg: 0.25, value: 9, pouch: "rifle", name: "SCAR-H magazine (20)" },
+  mag_fal_20:      { plat: ["battle"], guns: ["fal"], cal: "308", cap: 20, kg: 0.27, value: 8, pouch: "rifle", name: "FAL magazine (20)" },
+  mag_fal_30:      { plat: ["battle"], guns: ["fal"], cal: "308", cap: 30, kg: 0.36, value: 14, pouch: "rifle", name: "FAL magazine (30)", aim: -1 },
+  mag_m14_10:      { plat: ["battle"], guns: ["m1a"], cal: "308", cap: 10, kg: 0.17, value: 6, pouch: "rifle", name: "M14 magazine (10)" },
+  mag_m14_20:      { plat: ["battle"], guns: ["m1a"], cal: "308", cap: 20, kg: 0.24, value: 9, pouch: "rifle", name: "M14 magazine (20)" },
+  // The bullpup (AUG) takes its own (translucent polymer, 30 and 42) since 2026-10-10; the ranch rifle (Mini-14-style,
+  // .223) its own 20s and 30s.
+  mag_aug_30:      { plat: ["bullpup"], cal: "556", cap: 30, kg: 0.13, value: 8, pouch: "rifle", name: "AUG magazine (30)" },
+  mag_aug_42:      { plat: ["bullpup"], cal: "556", cap: 42, kg: 0.16, value: 14, pouch: "rifle", name: "AUG magazine (42)" },
+  mag_mini14_20:   { plat: ["ranch"], cal: "223", cals: ["223", "556"], cap: 20, kg: 0.11, value: 6, pouch: "rifle", name: "Ranch rifle magazine (20)" },
+  mag_mini14_30:   { plat: ["ranch"], cal: "223", cals: ["223", "556"], cap: 30, kg: 0.14, value: 9, pouch: "rifle", name: "Ranch rifle magazine (30)" },
   mag_ump_25:      { plat: ["ump"], cal: "45acp", cap: 25, kg: 0.15, value: 7, pouch: "rifle", name: ".45 SMG magazine (25)" },
   mag_poly45_12:   { plat: ["poly45"], cal: "45acp", cap: 12, kg: 0.09, value: 5, pouch: "pistol", name: ".45 pistol magazine (12)" },
   mag_deagle_9:    { plat: ["deagle"], cal: "357", cap: 9, kg: 0.12, value: 8, pouch: "pistol", name: "Magnum pistol magazine (9)" },
@@ -55,10 +70,13 @@ export const MAGAZINES = { // (a "c" key: a budget Chinese clone of the one abov
 // bolt rifle with a detachable box) reloads by magazine instead.
 export const INTERNAL = { shotgun: 4, semishotgun: 4, leverrifle: 4, huntrifle: 3, revolver: 2, dbshotgun: 2, sawnoff: 2, pipegun: 1,
   // the arsenal of 2026-10-10: break actions load both barrels (or the one) a Reload, tubes and a cylinder as before
-  ou12: 2, ou20: 2, single12: 1, singlerifle: 1, pump20: 4, tacpump: 4, lever357: 4, snub357: 2 };
+  ou12: 2, ou20: 2, single12: 1, singlerifle: 1, pump20: 4, tacpump: 4, lever357: 4, snub357: 2,
+  // the AR platform and calibres of 2026-10-10 (data-guns.js AR_GEAR): single-shots one a Reload, the .38s two, the
+  // varmint rifle's box three
+  single556: 1, single223: 1, single300: 1, snub38: 2, service38: 2, varmint223: 3 };
 // Clip items: the guns they feed and how many rounds a clip puts in at once. Used once a fight (refilled free after it).
 export const CLIPS = {
-  speedloader: { weapons: ["revolver"], n: 6, pouch: "pistol" }, // (the snub-nose's five-shot cylinder takes none: a speed strip at most)
+  speedloader: { weapons: ["revolver", "service38"], n: 6, pouch: "pistol" }, // (the snub-noses' five-shot cylinders take none: a speed strip at most)
   stripper308: { weapons: ["huntrifle"], n: 5, pouch: "rifle" },
 };
 
@@ -102,7 +120,7 @@ export const KIT_GEAR = {
     desc: "Five .308 rounds on a clip: a Reload fills the hunting rifle's magazine at once (instead of 3 rounds), once a fight. In a rifle pouch or a pocket." },
 };
 for (const [k, m] of Object.entries(MAGAZINES)) {
-  KIT_GEAR[k] = { name: m.name, slot: "pack", skill: null, power: 0, req: 0, value: m.value, noise: 0, small: true, weight: m.kg, cat: "gunmod", mag: { plat: m.plat, cal: m.cal, cap: m.cap }, pouch: m.pouch, look: magLook(k, m.cap),
+  KIT_GEAR[k] = { name: m.name, slot: "pack", skill: null, power: 0, req: 0, value: m.value, noise: 0, small: true, weight: m.kg, cat: "gunmod", mag: { plat: m.plat, cal: m.cal, cap: m.cap, ...(m.cals ? { cals: m.cals } : {}), ...(m.guns ? { guns: m.guns } : {}) }, pouch: m.pouch, look: magLook(k, m.cap),
     desc: m.desc || `A ${m.cap}-round magazine${m.aim ? ` (heavy and clumsy: ${m.aim} aim${m.jam ? `, jams ×${m.jam}` : ""})` : ""}. It holds one kind of round. A spare in a rig pouch or a pocket reloads in 1 action, from the pack in 2.` };
 }
 for (const [k, c] of Object.entries(CLIPS)) KIT_GEAR[k].pouch = c.pouch;
@@ -119,11 +137,14 @@ for (const [k, m] of Object.entries(MAGAZINES)) {
   KIT_TAGS[k] = p.includes("glock") || p.includes("p1911") ? ["guns", "police", "crime", "home"] : p.includes("rimpistol") ? ["guns", "hunt", "farm", "home"]
     : p.includes("ak") ? ["guns", "crime", "military"] : p.includes("bolt") ? ["hunt", "guns", "military"] : p.includes("mp5") ? ["police", "military", "guns"]
     : p.includes("amr") || p.includes("m240") || (p.includes("m249") && !p.includes("ar15")) ? ["military"] : p.includes("deagle") ? ["guns", "crime", "home"]
-    : p.includes("poly45") || p.includes("ump") ? ["police", "military", "guns"] : ["military", "guns", "police", "crash"];
+    : p.includes("poly45") || p.includes("ump") ? ["police", "military", "guns"] : p.includes("ranch") ? ["guns", "farm", "home", "hunt"]
+    : (m.guns || []).some((g) => g === "fal" || g === "m1a") ? ["military", "guns", "hunt"] : ["military", "guns", "police", "crash"];
 }
 // The budget clones: where cheap things are (homes, malls, pawn shelves), not armouries.
 for (const k of ["mag_stanag_30c", "mag_glock_17c"]) KIT_TAGS[k] = ["home", "mall", "shop", "crime", "sport"];
 // Magazines as gun parts (gunmods.js ATTACH: the gun builder's magazine slot lists them by platform).
 /** @type {Record<string, any>} */
 export const KIT_ATTACH = {};
-for (const [k, m] of Object.entries(MAGAZINES)) KIT_ATTACH[k] = { slot: "mag", short: `${m.cap}-round mag`, look: magLook(k, m.cap), fits: { plat: m.plat }, magCap: m.cap, ...(m.aim ? { aim: m.aim } : {}), ...(m.jam ? { jam: m.jam } : {}) };
+// (fits.guns: only those guns of the platforms; magCal / magCals: what it holds, gunmods.js modFits: a gun that takes
+// none of them takes no such magazine, a .308 bolt magazine in a .223 bolt rifle)
+for (const [k, m] of Object.entries(MAGAZINES)) KIT_ATTACH[k] = { slot: "mag", short: `${m.cap}-round mag`, look: magLook(k, m.cap), fits: { plat: m.plat, ...(m.guns ? { guns: m.guns } : {}) }, magCap: m.cap, magCal: m.cal, ...(m.cals ? { magCals: m.cals } : {}), ...(m.aim ? { aim: m.aim } : {}), ...(m.jam ? { jam: m.jam } : {}) };

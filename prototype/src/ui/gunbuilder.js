@@ -13,7 +13,8 @@
 // (ATTACH mounts: sight, muzzle, magazine, under the barrel) through sim/inventory.js fitModAt / unfitModAt.
 import { GEAR } from "../sim/data.js";
 import { rigPouches } from "../sim/inventory.js"; // magazines in rig pouches (section 16)
-import { typeName } from "../sim/rounds.js"; // a magazine's load
+import { typeName, roundName } from "../sim/rounds.js";
+import { gunLoads, loadRefusal } from "../sim/ammo.js"; // calibre compatibility: the loads a gun takes // a magazine's load
 import { WEAPONS } from "../sim/combat.js";
 import * as GM from "../sim/gunmods.js";
 import * as DGM from "../sim/data-gunmods.js";
@@ -143,13 +144,12 @@ export function statsOf(gun) {
   const s = gunStats(gun) || { aim: 0, close: 0, opt: 0, fall: 0, dmg: [0, 0], cap: 0, noise: 0, jam: 0, pen: 0 };
   const w = WEAPONS[gun.key] || {};
   const cal = s.cal || w.cal || null;
-  const load = gun.load && gun.load !== "auto" ? gun.load : null;
-  const type = load || (CALIBERS[cal] ? CALIBERS[cal].base : null);
+  const type = s.type || (CALIBERS[cal] ? CALIBERS[cal].base : null); // gunStats: the loaded round's type (its calibre: s.loadCal)
   return {
     ...s, cal, load: gun.load ?? null, type,
     kg: itemLoad(gun), worth: worthTier(gun),
     earshot: w.noise ? (9 + 2 * w.noise) * ((s.noise || 0) / w.noise) : 0, // stealth.js: a raid's alert radius
-    pen: s.pen || (cal ? ammoPen(cal, type) : 0),
+    pen: s.pen || (cal ? ammoPen(s.loadCal || cal, type) : 0),
     jam: Number(s.jam) || 0,
   };
 }
@@ -203,12 +203,14 @@ export function deltaText(a, b, max = 9) {
   return bits.slice(0, max).join(" · ");
 }
 
-// The load choices for a gun's calibre: [value, label] ("" = the standard round, "auto" = whatever is to hand).
+// The load choices for a gun: [value, label] ("" = the standard round, "auto" = whatever is to hand): every type of
+// every calibre it takes (a 5.56 gun's .223 too: "223:sp"; data-ammo.js CAL_ACCEPTS). A calibre it refuses is never
+// offered (a 5.56 gun no .300 BLK), and refused if set (GB_CHANGE).
 export function loadChoices(gun) {
   const cal = (WEAPONS[gun.key] || {}).cal;
   const c = CALIBERS[cal];
   if (!c) return [];
-  return [["", `${c.name} ${AMMO_TYPES[c.base] ? AMMO_TYPES[c.base].name : c.base} (standard)`], ...c.types.filter((t) => t !== c.base && AMMO_TYPES[t]).map((t) => [t, `${c.name} ${AMMO_TYPES[t].name}`]), ["auto", "Best to hand"]];
+  return [["", `${c.name} ${AMMO_TYPES[c.base] ? AMMO_TYPES[c.base].name : c.base} (standard)`], ...gunLoads(gun.key).filter((t) => t !== c.base).map((t) => [t, roundName(cal, t)]), ["auto", "Best to hand"]];
 }
 
 // ---------- the drawing and its slot boxes ----------
@@ -361,7 +363,7 @@ export function gunTipText(gun) {
   const s = statsOf(gun);
   const bits = [];
   if (slots.length) bits.push(`slots: ${slots.map((x) => `${(SLOT_NAMES[x] || x).toLowerCase()} (${gun.mods && gun.mods[x] ? gun.mods[x].name : "empty"})`).join(", ")}; Modify (⚙) to change them`);
-  if (s.cal && CALIBERS[s.cal]) bits.push(`loaded with ${s.load === "auto" ? "the best to hand" : `${CALIBERS[s.cal].name} ${AMMO_TYPES[s.type] ? AMMO_TYPES[s.type].name : s.type}`}`);
+  if (s.cal && CALIBERS[s.cal]) bits.push(`loaded with ${s.load === "auto" ? "the best to hand" : `${CALIBERS[s.loadCal || s.cal].name} ${AMMO_TYPES[s.type] ? AMMO_TYPES[s.type].name : s.type}`}`);
   bits.push(reliabilityText(gun, s));
   return bits.join(". ");
 }
@@ -435,7 +437,7 @@ export const GB_CHANGE = {
     if (!gun) return;
     const v = String(el.value || "");
     const ok = v === "" || v === "auto" || loadChoices(gun).some(([x]) => x === v);
-    if (!ok) return;
+    if (!ok) { const why = loadRefusal(gun.key, v); if (why) ui.gunb.msg = why; return; } // (a calibre its chamber refuses: .300 BLK in a 5.56 gun)
     if (v === "") delete gun.load; else gun.load = v;
     ui.gunb.msg = `The ${gun.name} is loaded with ${(loadChoices(gun).find(([x]) => x === v) || ["", "the standard round"])[1].replace(/ \(standard\)$/, "")}${v === "auto" ? "" : " rounds"} when there are any.`;
   },

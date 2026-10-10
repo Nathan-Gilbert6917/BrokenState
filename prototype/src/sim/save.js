@@ -24,7 +24,7 @@
 import { migrateAllMods, relocateMisfits, misfitNote } from "./gunmods.js"; // old saves: gun parts onto the attachment slots; parts that no longer fit taken off
 import { migrateAmmo, findRounds, kindTheme } from "./ammo.js"; // old saves: generic ammo into rounds by calibre
 import { sanitizeLibrary } from "./custombg.js"; // a save's custom backgrounds: their old generic ammo as rounds
-import { migrateKit } from "./carrykit.js"; // old saves: carriers' plates, spare magazines
+import { migrateKit, migrateMagFits } from "./carrykit.js"; // old saves: carriers' plates, spare magazines
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
 import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, localId, log } from "./world.js";
@@ -227,6 +227,7 @@ export function deserializeState(save) {
   // carrykit.js: carry kit (wave 2): plate carriers from before get their two plates, your people's guns their spare
   // magazines. Once: state.kitV.
   if (!(state.kitV >= 2)) migrateKit(state);
+  if (!(state.magFitV >= 1)) migrateMagFits(state); // 2026-10-10: the AUG, FAL, M14 and SCAR-H take their own magazines
   // vehicles.js fleets: a team's vehicles as a list (p.vehicleIds) with the lead one in p.vehicleId; a save from before
   // has the one vehicleId, which becomes a list of one. Once: state.fleetV.
   if (!(state.fleetV >= 1)) {

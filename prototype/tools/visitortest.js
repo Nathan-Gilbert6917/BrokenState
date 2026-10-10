@@ -593,8 +593,10 @@ section("The autopilot");
     s2.governor = { personality: style };
     return [...c.choices].filter((x) => !(typeof x.disabled === "function" ? x.disabled(s2) : x.disabled)).sort((a, b) => b.ai(s2) - a.ai(s2))[0].label;
   };
-  const cau = pick("cautious", 9), agg = pick("aggressive", 9), bal = pick("balanced", 3);
-  console.log(`  a band of 9 at the hub: Cautious → ${cau}; Aggressive → ${agg}. A band of 3, Balanced → ${bal}`);
+  // A band of 12: the hub's prepared defence holds it at under 1.5× (a band of 9 no longer: the hub's knife and machete
+  // hands fight by their Melee skill since melee-skill, world.js combatPower, so Cautious rightly prepares against 9).
+  const cau = pick("cautious", 12), agg = pick("aggressive", 12), bal = pick("balanced", 3);
+  console.log(`  a band of 12 at the hub: Cautious → ${cau}; Aggressive → ${agg}. A band of 3, Balanced → ${bal}`);
   check(/^Pay them off|^Talk/.test(cau), "Cautious pays (or talks)");
   check(/^Defend in person|^Prepare/.test(agg), "Aggressive fights or prepares");
   check(/^Hold|^Prepare/.test(bal), "Balanced does not pay a weak band");
