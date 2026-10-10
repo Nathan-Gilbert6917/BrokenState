@@ -117,9 +117,17 @@ console.log("Joining the team");
   check(p.supplies.food < foodAt, `a day with the team: the food goes down (${Math.round(foodAt)} → ${Math.round(p.supplies.food)})`);
   // Span over: home, with their kit.
   const s0 = joined[0];
-  ticks(st, 24 * 4);
+  // Hour by hour: the group's own growth (factions.js factionsDaily, a newcomer some days) goes on meanwhile, so what
+  // counts is the hour they come home: their people +1 each (and their arsenal up by the kit they took).
+  let homeDelta = null, homeAt = null, arsDelta = null;
+  for (let i = 0; i < 24 * 4; i++) {
+    const was = V.volunteersWith(st, p).length, pop0 = f.pop, ars0 = f.arsenal ? f.arsenal.items.length : 0;
+    tickHour(st);
+    if (was && !V.volunteersWith(st, p).length && homeDelta == null) { homeDelta = f.pop - pop0; homeAt = st.hour; arsDelta = (f.arsenal ? f.arsenal.items.length : 0) - ars0; }
+  }
   check(!V.volunteersWith(st, p).length && !p.members.includes(s0.id), `the span runs out: they go home ("${(st.log.find((l) => /went home/.test(l.text)) || {}).text}")`);
-  check(f.pop === popBefore && (f.arsenal ? f.arsenal.items.length : 0) >= arsBefore - 0, `their people back home (${f.pop}) and their kit back in the arsenal`);
+  check(homeDelta != null && homeDelta - joined.length >= 0 && homeDelta - joined.length <= 1 && arsDelta >= 1 && f.pop >= popBefore,
+    `their people back home (+${homeDelta} the hour they came home, hour ${homeAt}; ${popBefore} before they left, ${f.pop} now with the group's own growth) and their kit back in the arsenal (+${arsDelta})`);
 }
 
 // ---------- 3. the battle map ----------
