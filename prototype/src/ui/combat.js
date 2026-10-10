@@ -2058,7 +2058,7 @@ function drawIsoView(state, b, now, cw, ch) {
   drawIso(ctx, cw, ch, state, b, now, {
     v, u: v.u, sel: cui.sel, mode: cui.mode, hover: cui.hover, salt: cui.salt,
     animPos: (t, n) => { const [x, y] = animTile(b, t, n); return [x + 0.5, y + 0.5]; },
-    fxAge: (f, n) => { if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, n); return n - cui.anim.get(f.seq); },
+    fxAge: (f, n) => { if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, n); return Math.max(0, n - cui.anim.get(f.seq)); },
     unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble,
     hits: hitLabels(b, v), retreatOpen: !!plan, plan,
     threat: (x, y) => threatAt(b, v, x, y), // the threat preview: lines from whoever could hit the hovered tile
@@ -2171,7 +2171,8 @@ function animTile(b, t, now) {
     const f = b.fx[i];
     if (f.type !== "move" || f.unit !== t.id) continue;
     if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, now);
-    const per = 70, el = now - cui.anim.get(f.seq), total = f.path.length * per;
+    // el: never below 0 (sync stamps a new battle's fx with performance.now(), a little after the frame's own time)
+    const per = 70, el = Math.max(0, now - cui.anim.get(f.seq)), total = f.path.length * per;
     if (el >= total) break;
     const pts = [f.from, ...f.path];
     const k = el / per, s = Math.floor(k), fr = k - s;
