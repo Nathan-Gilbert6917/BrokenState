@@ -116,8 +116,9 @@ export function weaponPanelHtml(state, b, u) {
     spare.push(`<span class="${s.at < 1 && s.pack > 0 ? "warn" : "muted"}" data-tip="${esc(`Shells in the pack: Get shells (1 action) takes up to ${SHELLS.GRAB} out, loose at hand.`)}">${Number.isFinite(s.pack) ? s.pack : "∞"} in the pack</span>`);
   } else if (info.spares) {
     const h = info.spares.hand, p = info.spares.pack;
-    spare.push(`<span data-tip="${esc("Loaded spare magazines in rig pouches and pockets: a Reload from one is 1 action.")}">${h.mags} mag${h.mags === 1 ? "" : "s"} at hand${h.rounds ? ` <span class="muted">(${h.rounds})</span>` : ""}</span>`);
-    spare.push(`<span class="muted" data-tip="${esc("Loaded spare magazines in the pack: a Reload from one is 2 actions. With no loaded spare left, a Reload tops up the one in the gun (2 actions).")}">${p.mags} in the pack${p.rounds ? ` (${p.rounds})` : ""}</span>`);
+    if (!h.mags && !p.mags) spare.push(`<span class="warn" data-tip="${esc("No loaded spare magazine: a Reload tops up the one in the gun from the rounds to hand (2 actions).")}">no spare mags</span>`);
+    else spare.push(`<span data-tip="${esc("Loaded spare magazines in rig pouches and pockets: a Reload from one is 1 action.")}">${h.mags} mag${h.mags === 1 ? "" : "s"} at hand${h.rounds ? ` <span class="muted">(${h.rounds})</span>` : ""}</span>`);
+    if (h.mags || p.mags) spare.push(`<span class="muted" data-tip="${esc("Loaded spare magazines in the pack: a Reload from one is 2 actions. With no loaded spare left, a Reload tops up the one in the gun (2 actions).")}">${p.mags} in the pack${p.rounds ? ` (${p.rounds})` : ""}</span>`);
     if (h.empty + p.empty) spare.push(`<span class="muted">${h.empty + p.empty} empty</span>`);
   } else if (info.clips) spare.push(`<span data-tip="Clips or speedloaders: a Reload with one fills the gun at once.">${info.clips} ${info.clips === 1 ? "clip" : "clips"}</span>`);
   if (info.reserve != null && !info.shells) spare.push(`<span class="muted" data-tip="${esc("Every round of this calibre and type your side has to hand, past the ones in the gun.")}">${info.reserve} rds</span>`);
@@ -247,7 +248,7 @@ function badge(ctx, X, Y, text, col, fs, sub = "", strong = false) {
   ctx.font = `800 ${fs}px Segoe UI, sans-serif`;
   const tw = ctx.measureText(text).width;
   let sw = 0;
-  const sfs = Math.round(fs * 0.48);
+  const sfs = Math.max(11, Math.round(fs * 0.55));
   if (sub) { ctx.font = `600 ${sfs}px Segoe UI, sans-serif`; sw = ctx.measureText(sub).width; }
   const w = Math.max(tw, sw) + fs * 0.6, h = fs * 1.12 + (sub ? sfs * 1.2 : 0), x = X - w / 2, y = Y - h;
   ctx.fillStyle = "rgba(12,14,17,0.92)"; pill(ctx, x, y, w, h, Math.min(8, fs * 0.35)); ctx.fill();
@@ -266,7 +267,7 @@ export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel
   const head = (t) => { const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1; return project(t.x + 0.5, t.y + 0.5, heightAt(b, t.x, t.y) * LV + liftOf(b) + (t.down ? 10 : 30 * big)); };
   const tagRoom = Math.max(10, Math.round(3.4 * S)) + 14; // the health bar and the tags over a head (isoview.js drawLabels)
   if (hits && hits.size) {
-    const fs = Math.round(Math.min(26, Math.max(13, (armed ? 4.6 : 3.8) * S)) * ui);
+    const fs = Math.round(Math.min(26, Math.max(armed ? 17 : 13, (armed ? 4.6 : 3.8) * S)) * ui);
     for (const t of b.units) {
       const o = hits.get(t.id);
       if (!o || (hoverT && hoverT.id === t.id) || !onFloor(b, t)) continue;
@@ -290,6 +291,7 @@ export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel
   if (list && list.length && !b.over) {
     const m = 18, cx = cw / 2, cy = ch / 2;
     const fs = Math.round(11 * ui);
+    const placed = [];
     list.forEach((p, i) => {
       if (p.dead || p.left || p.fled || p.off || p.down && p.dead || p.x < 0 || !onFloor(b, p)) return;
       const [X, Y] = project(p.x + 0.5, p.y + 0.5, heightAt(b, p.x, p.y) * LV + liftOf(b) + 15);
@@ -298,6 +300,10 @@ export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel
       const k = Math.min((cw / 2 - m) / Math.max(1e-6, Math.abs(dx)), (ch / 2 - m) / Math.max(1e-6, Math.abs(dy)));
       let ex = cx + dx * k, ey = cy + dy * k;
       if (avoid && ex < avoid.x1 + m && ey < avoid.y1 + m) { if (ex - avoid.x1 < ey - avoid.y1) ex = avoid.x1 + m; else ey = avoid.y1 + m; } // not under the strip
+      if (ex < 80 && ey > ch - 80) { if (Math.abs(dx) * ch > Math.abs(dy) * cw) ey = ch - 80; else ex = 80; } // nor the compass (isoview.js drawCompass)
+      const side = Math.abs(ex - m) < 2 || Math.abs(ex - (cw - m)) < 2 || ex === avoid?.x1 + m; // on a left or right edge: stack along it
+      for (let g = 0; g < 12 && placed.some(([qx, qy]) => Math.hypot(qx - ex, qy - ey) < 20); g++) { if (side) ey += ey > ch / 2 ? -20 : 20; else ex += ex > cw / 2 ? -20 : 20; }
+      placed.push([ex, ey]);
       const col = p.id === sel ? "#ffd166" : "#8fc1ff";
       ctx.save();
       ctx.translate(ex, ey); ctx.rotate(Math.atan2(dy, dx));
