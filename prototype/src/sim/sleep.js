@@ -5,7 +5,7 @@
 // and is back to 0 by morning: nobody is ever Tired from it.
 //   Asleep: the role's Sleep hours for people on work priorities whose role has some (work.js SCHED "s"); everyone
 //   else (Manual people, roles without Sleep hours, pinned people) sleeps the default night, TIRED.NIGHT (22–06).
-//   Resting hurt or ill (work.js healthRest, a hospital bed) counts as asleep.
+//   Resting hurt or ill (work.js healthRest, a hospital bed; resting sick, sickrest.js) counts as asleep.
 //   Awake: everything else, and above all the watch roster (watch.js): a watch that falls in someone's sleep hours
 //   keeps them up. Nothing else does: fixed guards, Guard on priorities, emergencies and a manned wall are taken to
 //   sleep in turns, as before (so a game that never uses a roster is never Tired by it).
@@ -64,7 +64,7 @@ export function tiredHour(state) {
     const watching = !!base && !!onWatchNow(state, base, s, h);
     if (watching) delete s.sleepIn;
     else if (base && sleepingIn(state, base, s, h)) s.sleepIn = true;
-    const asleep = !watching && (!!s.sleepIn || !!healthRest(s) || sleepHour(state, s, h));
+    const asleep = !watching && (!!s.sleepIn || !!healthRest(s, state) || sleepHour(state, s, h));
     const next = asleep ? Math.max(0, t - TIRED.SLEEP) : Math.min(TIRED.MAX, t + TIRED.AWAKE);
     if (next || s.tired) s.tired = next;
     if (asleep && next <= 0) delete s.sleepIn;

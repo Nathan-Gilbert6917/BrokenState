@@ -254,7 +254,7 @@ export function guardWeight(s) {
   return clamp(J.base + skill(s, "scouting") * J.perSkill, J.min, J.max) * (lv >= 2 ? TIRED.ALERT : lv === 1 ? J.tired : 1);
 }
 // Fit to stand it: here, alive, not in a bed, not off sick or on time off.
-const fitGuard = (state, base, s) => !!s && s.alive && s.location && s.location.kind === "base" && s.location.baseId === base.id && !s.inBed && s.restUntil == null && !healthRest(s);
+const fitGuard = (state, base, s) => !!s && s.alive && s.location && s.location.kind === "base" && s.location.baseId === base.id && !s.inBed && s.restUntil == null && !healthRest(s, state); // the ill rest (sickrest.js)
 // The jail's guards standing it now: on the roster, fit, and on the job (people on work priorities guard in their
 // Work hours; Manual ones on the Guard role: a pinned one keeping another job does not).
 export const jailGuardsOn = (state, base) => (base ? jailGuardIds(base).map((id) => survivorById(state, id)).filter((s) => fitGuard(state, base, s) && (s.role === "guard" || (isManaged(state, s) && !state.autopilot))) : []);
@@ -316,7 +316,7 @@ export function jailGuardsWanted(state, base) {
 export function planJailGuards(state, base, cands) {
   const want = jailGuardsWanted(state, base);
   if (!want) return [];
-  const pick = cands.filter((s) => !s.inBed && !healthRest(s)).sort((a, b) => guardWeight(b) + (onJailRoster(base, b) ? 0.3 : 0) - guardWeight(a) - (onJailRoster(base, a) ? 0.3 : 0) || a.id - b.id).slice(0, want);
+  const pick = cands.filter((s) => !s.inBed && !healthRest(s, state)).sort((a, b) => guardWeight(b) + (onJailRoster(base, b) ? 0.3 : 0) - guardWeight(a) - (onJailRoster(base, a) ? 0.3 : 0) || a.id - b.id).slice(0, want);
   // Pinned people and people on work priorities on it stay on it (they stand it by themselves).
   const kept = jailGuardIds(base).filter((id) => { const s = survivorById(state, id); return !cands.includes(s) && fitGuard(state, base, s) && (s.pinned || (isManaged(state, s) && !state.autopilot)); });
   base.jailGuards = [...new Set([...kept, ...pick.map((s) => s.id)])].slice(0, Math.max(want, kept.length));

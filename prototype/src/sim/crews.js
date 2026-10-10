@@ -199,15 +199,15 @@ function markers(ctx, test) {
 }
 
 // ---------- who goes ----------
-// Fit for a trip: on priorities (not pinned), home at the hub, healthy enough for the role's hurt rule, not in bed,
-// not on days off, in reasonable spirits.
+// Fit for a trip: on priorities (not pinned), home at the hub, healthy enough for the role's hurt rule, not in bed or
+// ill (sickrest.js: the sick rest at home), not on days off, in reasonable spirits.
 export function crewReady(state, role) {
   const h = hub(state);
   if (!h) return [];
   const c = role.crew;
   const minHp = Math.max(60, ((c.rules && c.rules.hurt) || 0) + 15);
   return roleMembers(state, role).filter((s) => isManaged(state, s) && s.location.kind === "base" && s.location.baseId === h.id &&
-    s.health >= minHp && !healthRest(s) && s.restUntil == null && s.mood >= 25);
+    s.health >= minHp && !healthRest(s, state) && s.restUntil == null && s.mood >= 25);
 }
 const fitScore = (s, mission) => combatPower(s) + skill(s, "scavenging") * 0.25 + skill(s, "stealth") * 0.15 + skill(s, "scouting") * 0.15 + (mission === "trade" ? skill(s, "speech") * 0.5 : 0);
 

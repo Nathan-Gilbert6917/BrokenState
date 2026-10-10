@@ -5,7 +5,7 @@
 //   ids: the people on that shift. Someone can stand more than one shift.
 //
 // Every hour the people on the shift that covers it, at that base and fit (not in a hospital bed, not badly hurt or
-// ill: work.js healthRest), stand guard (role "guard": they count in the walls' hold limit, defences.js guardHold,
+// ill: work.js healthRest; any illness by the Work tab's "Sick people rest", sickrest.js), stand guard (role "guard": they count in the walls' hold limit, defences.js guardHold,
 // guard the cells, put down someone who turns, worm.js):
 //   - People on work priorities (work.js planBase): the watch comes after health and the emergencies (a raid sends
 //     everyone with Guard set to the walls anyway) and before the role's schedule, so a night watch replaces the
@@ -47,7 +47,7 @@ export function watchShift(base, s, h) {
 // On watch now: rostered for this hour, here, alive, fit and not pinned.
 export function onWatchNow(state, base, s, h = hourOfDay(state)) {
   if (!s || !s.alive || s.pinned || s.inBed || s.location.kind !== "base" || s.location.baseId !== base.id) return null;
-  if (healthRest(s)) return null;
+  if (healthRest(s, state)) return null; // the ill rest too (sickrest.js)
   return watchShift(base, s, h);
 }
 
@@ -142,7 +142,7 @@ export function watchWhy(state, base, s) {
   if (s.pinned) return "pinned (keeps their job)";
   if (s.location.kind !== "base" || s.location.baseId !== base.id) return "away from this base";
   if (s.inBed) return "in a hospital bed";
-  return healthRest(s);
+  return healthRest(s, state);
 }
 
 // ---------- the hourly pass for Manual people (world.js, after the stewards) ----------

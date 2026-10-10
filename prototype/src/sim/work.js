@@ -19,8 +19,9 @@
 //   2. Health first: a hospital bed, a severe wound, an infected wound, too ill, quarantine, or days off from a card
 //      → rest. Then emergencies: raiders warned or at the walls, or the defences manned → everyone with Guard set
 //      (any priority) guards; a horde warned and coming, or next to the walls → as many of them as it takes to hold
-//      it with a quarter to spare (defences.js hold limit), best shots first, all of them when that is not enough.
-//      Then the base's watch roster (watch.js: on their shift they stand guard; off a long one they sleep until rested,
+//      it with a quarter to spare (defences.js hold limit), best shots first, all of them when that is not enough
+//      (the ill too). Then an illness → rest until it is gone (sickrest.js: "Resting: sick (Flu)", by the Work tab's
+//      "Sick people rest"; any illness, food poisoning included). Then the base's watch roster (watch.js: on their shift they stand guard; off a long one they sleep until rested,
 //      sleep.js sleepingIn), then the role's schedule (guard watch, free time, sleep), then free time for anyone whose
 //      mood is very low (below 25, until 40).
 //   2b. The watchtower's alarm (defences.js towerWatch: a horde near a base with a watchtower): Guard counts as
@@ -51,6 +52,7 @@ import { edibleFood, foodStore } from "./storage.js";
 import { season } from "./weather.js";
 import { hospitalDef, isHurt, isSevere } from "./medical.js";
 import { tooIllToWork, isSick, isContagious } from "./health.js";
+import { sickRestWhy } from "./sickrest.js"; // sick people rest (an illness at a base, by the Work tab's setting)
 import { CRAFTS, craftQueue, craftQuality, meetsNeeds, craftHeld, isFilterJob, benchQuality, canAttempt, craftSkill } from "./crafting.js";
 import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } from "./skills.js";
 import { doctorAt, TRAINING, lessonGap } from "./training.js"; // Medic trainees
@@ -571,7 +573,7 @@ function ownCell(state, s, key) {
 // Moved up by the watchtower's alarm at the base they are at now.
 const onWatch = (s) => !!(s && s.work && s.work.watch && !s.work.watch.off && s.location && s.location.kind === "base" && s.location.baseId === s.work.watch.base);
 // Their first priority, the alarm aside (0: nothing set).
-function topPrio(state, s) {
+export function topPrio(state, s) {
   let top = 0;
   for (const k of WORK_KEYS) { const p = ownCell(state, s, k).p; if (p > 0 && (!top || p < top)) top = p; }
   return top;
@@ -739,8 +741,13 @@ function emergencyGuards(state, base, threat, cands, fixedGuards) {
   return out;
 }
 
-// Why someone should rest for their health ("" = fit to work).
-export function healthRest(s) {
+// Why someone should rest for their health ("" = fit to work). With the state: also an illness at a base (sickrest.js:
+// "sick: Flu", by the Work tab's "Sick people rest" setting); without it only the hard rules (mustRest), as before.
+export function healthRest(s, state = null) {
+  return mustRest(s) || (state ? sickRestWhy(state, s) : "");
+}
+// The hard rules: these rest whatever the setting, and never go to the walls in an emergency.
+export function mustRest(s) {
   if (s.inBed) return "in a hospital bed";
   if (isSevere(s)) return `badly hurt (health ${Math.floor(s.health)})`;
   if (s.woundInfected) return "an infected wound";
@@ -802,7 +809,8 @@ export function planBase(state, base) {
   const ctx = makeCtx(state, base, people);
   const out = new Map();
   const put = (s, a) => out.set(s.id, a);
-  const fit = managed.filter((s) => s.restUntil == null && !healthRest(s));
+  // The walls in an emergency take the sick (sickrest.js) as before: only the hard rules keep people off them.
+  const fit = managed.filter((s) => s.restUntil == null && !mustRest(s));
   const held = prisonersAt(state, base.id).length; // the jail's guards stand it while anyone is held
   let walls = new Set();
   if (ctx.threat.urgent) {
@@ -817,9 +825,13 @@ export function planBase(state, base) {
   for (const s of managed) {
     const role = roleOf(state, s);
     if (s.restUntil != null) { put(s, { role: "rest", t: "rest", kind: "health", why: `Time off until day ${s.restUntil}` }); continue; }
-    const sick = healthRest(s);
-    if (sick) { put(s, { role: "rest", t: "rest", kind: "health", why: `Resting: ${sick}` }); continue; }
-    if (walls.has(s)) { put(s, { role: "guard", t: "guard", kind: "emerg", why: `Emergency: ${ctx.threat.urgent}${ctx.wallsNote}` }); continue; }
+    const hurt = mustRest(s);
+    if (hurt) { put(s, { role: "rest", t: "rest", kind: "health", why: `Resting: ${hurt}` }); continue; }
+    if (walls.has(s)) { put(s, { role: "guard", t: "guard", kind: "emerg", why: `Emergency: ${ctx.threat.urgent}${ctx.wallsNote}${sickRestWhy(state, s) ? ` (ill, but every gun counts)` : ""}` }); continue; }
+    // Sick people rest (sickrest.js): any illness here (food poisoning and whatever comes later: it goes by the kind)
+    // until it is gone; back to their priorities the hour they are well.
+    const sick = sickRestWhy(state, s);
+    if (sick) { put(s, { role: "rest", t: "sick", kind: "health", note: sick.slice(6), why: `Resting: sick (${sick.slice(6)}) until it is gone: resting heals it faster (Sick people rest, the Work tab)` }); continue; }
     const ws = base.watch ? watchShift(base, s, h) : null; // watch.js: the base's watch roster, before the role's schedule
     if (ws) { put(s, { role: "guard", t: "guard", kind: "sched", why: `On watch: ${ws.name} ${shiftText(ws)} (the watch roster)` }); continue; }
     if (base.watch && sleepingIn(state, base, s, h)) { put(s, { role: "rest", t: "sleep", kind: "sched", why: `Sleeping off the watch (owes ${Math.ceil(s.tired || 0)} h of sleep)` }); continue; } // sleep.js
@@ -1033,7 +1045,7 @@ export function workDayRoles(state) {
 }
 
 // ---------- for the UI ----------
-const TASK_NAMES = { rest: "Resting", sleep: "Asleep", free: "Free time", idle: "Idle", guard: "On guard" };
+const TASK_NAMES = { rest: "Resting", sick: "Resting: sick", sleep: "Asleep", free: "Free time", idle: "Idle", guard: "On guard" };
 export function taskLabel(state, s) {
   if (!s || !s.alive) return "";
   if (s.location.kind !== "base") return "Away from base";

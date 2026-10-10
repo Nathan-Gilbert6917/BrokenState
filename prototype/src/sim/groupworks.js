@@ -46,7 +46,7 @@
 //   up: none of this changes them. tools/barestarttest.js.
 import { day } from "./world.js";
 import { season, THIRST } from "./weather.js"; // summer water: the season and its thirst
-import { weightOf, medOf } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
+import { weightOf, medOf, workingPeople } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
 import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the groups' jails (abstract tiers)
 
 /** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number }} Works */
@@ -231,7 +231,7 @@ export function groupWorksDaily(state, f) {
     if (can) for (const [k, v] of Object.entries(def.cost)) f.stock[k] -= v;
     f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE), paid: can };
   }
-  f.job.left -= Math.max(1, f.pop / W.CREW) + (f.prisonWork || 0) / W.CREW; // their prisoners work too (groupjails.js)
+  f.job.left -= Math.max(1, workingPeople(f) / W.CREW) + (f.prisonWork || 0) / W.CREW; // their prisoners work too (groupjails.js); the ill rest (groupcare.js GROUP_ILL)
   if (f.job.left > 0) return;
   if (f.job.type === "jail") jailBuilt(state, f, f.job.tile);
   else if (f.job.type === "camp") delete worksAt(f, f.job.tile).camp; // established
