@@ -291,7 +291,7 @@ function step(now) {
   // The minutes of the coming hour tick by on the clock, and your moving teams glide towards their next tile by them.
   view.hourFrac = Math.max(0, Math.min(0.999, acc));
   view.clockSpeed = ui.speed; // the map draws a glide often enough at slow speeds too (ui/render.js)
-  setClockFrac(view.hourFrac); // orders given from now on start this far into the hour (sim/parties.js moveStartProgress)
+  setClockFrac(view.hourFrac); // orders given from now on start this far into the hour (sim/parties.js wayOn)
   const mins = $("tb-min"), mm = String(Math.floor(view.hourFrac * 60)).padStart(2, "0");
   if (mins && mins.textContent !== mm) mins.textContent = mm;
   autosaveCheck(state, ui, settingsApi, now); // dawn, a hive assault, the end of the run (ui/settings.js)

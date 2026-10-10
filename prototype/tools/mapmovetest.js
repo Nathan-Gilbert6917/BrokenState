@@ -8,20 +8,25 @@
 //    (sim/roadblocks.js: the team is held up where it met one), and held by a card waiting in the tray (ui/pacing.js
 //    holdsNextHour: it does not glide at all).
 //  - The ETA and the arrival agree, and the glide gets there exactly as the sim does: a move ordered from the
-//    right-click menu at any minute of the hour (sim/parties.js moveEstimate, moveStartProgress: the minutes already
+//    right-click menu at any minute of the hour (sim/parties.js moveEstimate, wayOn: the minutes already
 //    gone are not travelled) arrives at the minute the menu said, and the team arrives as the glide reaches the centre
 //    of the destination (arrivalsDue: never there early, standing until the clock catches up); the team panel's time
 //    left says the same all the way; launched from the planner (estimateTrip) likewise. On foot, by truck on and
 //    off the road, on bikes; one tile and several; a stance changed and the clock speed changed under way.
+//  - The same by the minute for the rest: a timed job (rest, wait, look around) ordered part-way through an hour
+//    lasts its hours from then (orders.js task.owed, tasksDue); a convoy arrives at its minute; out of contact the map's
+//    estimate (plannedPos) glides by the minute and gets there when the team does; a team redirected on the move turns
+//    from where it is drawn (stepToNow, wayOn: no snap back) on the ETA it was given; queued orders start and end at
+//    the minutes the queue's estimates said (queueEstimate).
 //  - A road blockage met on the way shows its wait with the minutes left ("Clearing road 40m"), not a silent stop.
 //  - The clock speeds: 0.25× is one of them (ui/pacing.js, the key table, the top bar).
 //  - A plain move that got there raises no card (a log line instead) when the team can be reached without one; out of
 //    contact, under the autopilot and for a mission with a result (recon) the card still comes.
 // Usage: node tools/mapmovetest.js [seed]
 import { createWorld, tickHour, hub, atBase } from "../src/sim/world.js";
-import { launchExpedition, planPath, partyTile, glideAt, giveOrder, teamName, setClockFrac, hoursLeft, hourCourse, clockText, arrivalsDue } from "../src/sim/parties.js";
+import { launchExpedition, planPath, partyTile, glideAt, giveOrder, teamName, setClockFrac, hoursLeft, hourCourse, clockText, arrivalsDue, onTheMove, plannedPos, plannedArrival, dispatchConvoy } from "../src/sim/parties.js";
 import { teamTileMenu, runTeamAction } from "../src/ui/teamctx.js";
-import { orderStatus } from "../src/sim/orders.js";
+import { orderStatus, startOrder, queueOrder, queueEstimate } from "../src/sim/orders.js";
 import { SPEEDS as GAME_SPEEDS, SLOWEST_SPEED } from "../src/ui/pacing.js";
 import { KEYMAP, keyAction } from "../src/ui/keymap.js";
 import { readFileSync } from "node:fs";
@@ -487,6 +492,217 @@ section("0.25×: one of the clock's speeds");
   const ui = readFileSync(new URL("../src/ui/ui.js", import.meta.url), "utf8");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   check(/\[0\.25, "0\.25×"/.test(ui) && /time\.speed0/.test(main), "a 0.25× button in the top bar; main.js takes its key");
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// The main loop's clock (main.js) from acc0 until done() (checked each frame after the minute's arrivals and jobs):
+// the hours on the clock it took, or null. frame(gone): called each frame.
+function clockUntil(state, p, speed, acc0, done, { hours = 60, frame = null } = {}) {
+  const ui = { started: true, speed };
+  let acc = acc0, ticks = 0;
+  for (let f = 0; f < hours * 1e5 && ticks < hours; f++) {
+    acc += FRAME * speed * HOURS_PER_SECOND;
+    while (acc >= 1) {
+      setClockFrac(0);
+      calm(state, p);
+      beforeHour(state, ui);
+      tickHour(state);
+      calm(state, p);
+      acc -= 1;
+      ticks++;
+    }
+    setClockFrac(Math.min(0.999, acc));
+    arrivalsDue(state, Math.min(0.999, acc), (q) => holdsNextHour(state, q));
+    const gone = ticks + acc - acc0;
+    if (frame) frame(gone, acc);
+    if (done()) { setClockFrac(0); return gone; }
+  }
+  setClockFrac(0);
+  return null;
+}
+// Where the map draws a team (in contact), in pixels (ui/render.js drawPlayerParty: the glide, else its tile).
+function drawnPx(state, p, frac) {
+  const g = state.grid;
+  const gl = onTheMove(p) ? glideAt(state, p, frac, holdsNextHour(state, p)) : null;
+  if (gl && gl.to !== gl.from && gl.t > 0) {
+    const [ax, ay] = g.toPixel(gl.from, 1), [bx, by] = g.toPixel(gl.to, 1);
+    return [ax + (bx - ax) * gl.t, ay + (by - ay) * gl.t];
+  }
+  return g.toPixel(partyTile(p), 1);
+}
+const pxDist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+const HEXPX = (state) => pxDist(state.grid.toPixel(0, 1), state.grid.toPixel(1, 1)); // a tile's width in pixels
+
+section("Timed jobs ordered part-way through an hour end at their minute (rest, wait, look around)");
+{
+  let ran = 0, ok = 0, line = "";
+  for (const [k, acc0] of [0.2, 0.55, 0.9].entries()) {
+    for (const o of [{ type: "camp", hours: 3 }, { type: "wait", hours: 2 }, { type: "survey" }]) {
+      const w = waitingTeam(SEED + 50 + k);
+      if (!w) continue;
+      const { state, p } = w;
+      setClockFrac(acc0);
+      startOrder(state, p, { ...o });
+      const left0 = orderStatus(state, p).left - acc0;
+      setClockFrac(0);
+      if (p.phase !== "task") { line = `${o.type}: not started`; continue; }
+      const want = p.task.hours;
+      const took = clockUntil(state, p, 1, acc0, () => p.phase !== "task");
+      ran++;
+      if (took != null && Math.abs(took - want) < MIN && Math.abs(left0 - want) < MIN) ok++;
+      line = `${o.type} ${want}h at ${acc0}: shown ${r2(left0)} h, took ${r2(took)} h`;
+    }
+  }
+  check(ran > 0 && ok === ran, `a job's hours are its hours from the minute it was given, and its time left says so (${ok} of ${ran}; ${line})`);
+  // Headless (the tools, the census): nothing changes, a job still ends as the hour ticks.
+  const w = waitingTeam(SEED + 59);
+  if (w) {
+    const { state, p } = w;
+    startOrder(state, p, { type: "camp", hours: 3 });
+    let h = 0;
+    while (p.phase === "task" && h < 10) { tickHour(state); calm(state, p); h++; }
+    check(h === 3 && !p.task, `headless, a 3-hour rest still takes 3 ticks (${h})`);
+  }
+}
+
+section("Convoys arrive at their minute too (no glide to the tile and a wait)");
+{
+  let ran = 0, ok = 0, line = "";
+  for (let k = 0; k < 6 && ran < 3; k++) {
+    const state = mk(SEED + 60 + k);
+    const f = state.factions.find((x) => x.alive && x.bases.length);
+    if (!f) continue;
+    const crew = crewOf(state, 2).map((s) => s.id);
+    const route = { id: 9000 + k, factionId: f.id, escortIds: crew, sendKey: "food", sendQty: 2, recvKey: "water", recvQty: 2, escort: "light", active: true };
+    (state.routes = state.routes || []).push(route);
+    dispatchConvoy(state, route);
+    const p = state.parties.find((q) => q.kind === "convoy" && q.routeId === route.id);
+    if (!p) continue;
+    const want = hoursLeft(state, p, true), way = [...p.path];
+    let reach = null;
+    const took = clockUntil(state, p, 3, 0, () => p.phase !== "out" || !state.parties.includes(p), {
+      frame: (gone, acc) => { if (reach == null && p.phase === "out" && drawnAt(state, p, way, acc, 0) >= way.length - 1 - 1e-6) reach = gone; },
+    });
+    if (took == null) continue;
+    ran++;
+    if (Math.abs(took - want) < MIN && (reach == null || reach >= took - 0.01)) ok++;
+    line = `ETA ${r2(want)} h, arrived after ${r2(took)} h${reach != null ? `, glide there after ${r2(reach)} h` : ""}`;
+  }
+  check(ran > 0 && ok === ran, `a convoy arrives at the minute its glide gets there, as its ETA said (${ok} of ${ran}; ${line})`);
+}
+
+section("Out of contact: the map's estimate moves by the minute and arrives when the team does");
+{
+  let ran = 0, ok = 0, line = "";
+  for (const [k, vehicle] of [false, true, false].entries()) {
+    const state = mk(SEED + 70 + k); // no radio station: out of contact
+    const v = vehicle ? vehiclesAtBase(state, hub(state).id).find((x) => !isBike(x)) : null;
+    if (vehicle && !v) continue;
+    if (v) { v.fuel = 60; v.condition = 100; }
+    const dest = tileNear(state, hub(state).tile, 3, 5, vehicle);
+    if (dest == null) continue;
+    setClockFrac(0.35);
+    const p = send(state, 2, dest, { vehicleId: v ? v.id : null });
+    setClockFrac(0);
+    const said = plannedArrival(state, p) - (state.hour + 0.35);
+    let last = -1, back = 0, jump = 0, reach = null, lastPath = null;
+    const took = clockUntil(state, p, 2, 0.35, () => p.phase !== "out", {
+      frame: (gone, acc) => {
+        const g = plannedPos(state, p, acc);
+        if (lastPath && g.path !== lastPath && g.path.join() !== lastPath.join()) return;
+        lastPath = g.path;
+        if (last >= 0) { if (g.pos < last - 1e-9) back = Math.max(back, last - g.pos); else jump = Math.max(jump, g.pos - last); }
+        last = g.pos;
+        if (reach == null && g.pos >= g.path.length - 1 - 1e-9) reach = gone;
+      },
+    });
+    if (took == null) continue;
+    ran++;
+    if (Math.abs(took - said) < MIN && back < 1e-9 && jump < 0.2 && (reach == null || Math.abs(reach - took) < 0.01)) ok++;
+    line = `${vehicle ? "truck" : "foot"}: plan says ${r2(said)} h, the team took ${r2(took)} h, the estimate got there after ${r2(reach ?? took)} h (back ${r2(back)}, jump ${r2(jump)})`;
+  }
+  check(ran > 0 && ok === ran, `the estimate glides on smoothly and gets there at the team's minute (${ok} of ${ran}; ${line})`);
+}
+
+section("A team redirected on the move turns from where it is drawn (no snap back), on the ETA it was given");
+{
+  const cases = [
+    { label: "on foot, back the way it came", opts: {}, pick: "home" },
+    { label: "on foot, off to the side", opts: {}, pick: "side" },
+    { label: "truck on a road, back the way it came", opts: { vehicle: true, road: true }, pick: "home" },
+    { label: "truck, off to the side", opts: { vehicle: true }, pick: "side" },
+  ];
+  for (const c of cases) {
+    let ran = 0, ok = 0, line = "";
+    for (const [k, at] of [0.35, 0.7].entries()) {
+      for (const s of [0, 1]) {
+        const w = waitingTeam(SEED + 80 + k * 2 + s, c.opts);
+        if (!w) continue;
+        const { state, p } = w;
+        const from = partyTile(p);
+        const dest = tileNear(state, from, 4, 6, p.vehicle, c.opts.road ? allRoad(state) : () => true);
+        if (dest == null) continue;
+        menuMove(state, p, dest, 0);
+        if (p.phase !== "out") continue;
+        // Run on into the second hour (part-way along a step), then give the new way at that minute.
+        let before = null, accAt = null;
+        clockUntil(state, p, 1, 0, () => accAt != null, { frame: (gone, acc) => { if (gone >= 1 + at && accAt == null) { accAt = acc; before = drawnPx(state, p, acc); } } });
+        if (accAt == null || p.phase !== "out") continue;
+        const here = partyTile(p), next = p.path[p.idx + 1];
+        const g = state.grid;
+        const target = c.pick === "home" ? from : state.tiles.map((t) => t.id).find((id) => g.distance(here, id) === 2 && id !== dest && id !== from && state.tiles[id].terrain !== "water" && !state.bases.some((b) => b.tile === id) && planPath(state, here, id, p.vehicle) && planPath(state, here, id, p.vehicle).path[1] !== next);
+        if (target == null) continue;
+        const o = menuMove(state, p, target, accAt);
+        setClockFrac(accAt);
+        const after = drawnPx(state, p, accAt);
+        setClockFrac(0);
+        if (p.phase !== "out" || p.dest !== target) continue;
+        let worst = 0, prev = after;
+        const took = clockUntil(state, p, 1, accAt, () => p.phase !== "out", { frame: (gone, acc) => { const now = drawnPx(state, p, acc); worst = Math.max(worst, pxDist(now, prev)); prev = now; } });
+        ran++;
+        const snap = pxDist(before, after) / HEXPX(state);
+        if (snap < 0.02 && worst / HEXPX(state) < 0.2 && took != null && Math.abs(took - o.shown) < MIN && partyTile(p) === target) ok++;
+        line = `snap ${r2(snap)} tiles at the order, biggest step ${r2(worst / HEXPX(state))}, shown ${r2(o.shown)} h, took ${r2(took)} h`;
+      }
+    }
+    check(ran > 0 && ok === ran, `${c.label}: no snap back, smooth, on its ETA (${ok} of ${ran}; ${line})`);
+  }
+}
+
+section("Queued orders: the menu's 'after' and the queue's hours count from the real minutes");
+{
+  let ran = 0, ok = 0, line = "";
+  for (const [k, acc0] of [0.3, 0.8].entries()) {
+    for (const vehicle of [false, true]) {
+      const w = waitingTeam(SEED + 90 + k * 2 + (vehicle ? 1 : 0), { vehicle });
+      if (!w) continue;
+      const { state, p } = w;
+      const a = tileNear(state, partyTile(p), 2, 3, p.vehicle);
+      if (a == null) continue;
+      const b = tileNear(state, a, 2, 3, p.vehicle, (path) => !path.includes(partyTile(p)));
+      if (b == null) continue;
+      setClockFrac(acc0);
+      queueOrder(state, p, { type: "move", tile: a }); // starts at once (it waits)
+      queueOrder(state, p, { type: "move", tile: b });
+      queueOrder(state, p, { type: "camp", hours: 2 });
+      const left = orderStatus(state, p).left - acc0, q = queueEstimate(state, p);
+      // The menu: queueing a move to b's neighbour says "after X" = all of that.
+      const m = teamTileMenu(state, {}, p, b, { append: true });
+      const camp = m.items.find((x) => x.move === false && x.ahead != null);
+      setClockFrac(0);
+      if (p.phase !== "out" || q.length !== 2 || q.some((x) => x.hours == null)) continue;
+      const wantA = left, wantB = left + q[0].hours, wantEnd = wantB + q[1].hours;
+      let gotA = null, gotB = null;
+      const end = clockUntil(state, p, 2, acc0, () => p.phase === "waiting" && !(p.orders || []).length, {
+        frame: (gone) => { if (gotA == null && partyTile(p) === a && p.dest !== a) gotA = gone; if (gotA == null && p.dest === b) gotA = gone; if (gotB == null && p.phase === "task") gotB = gone; },
+      });
+      ran++;
+      const good = end != null && Math.abs(gotA - wantA) < MIN && Math.abs(gotB - wantB) < MIN && Math.abs(end - wantEnd) < MIN && (!camp || Math.abs(camp.ahead - wantEnd) < MIN);
+      if (good) ok++;
+      line = `${vehicle ? "truck" : "foot"} at ${acc0}: a ${r2(wantA)}/${r2(gotA)} h, b ${r2(wantB)}/${r2(gotB)} h, done ${r2(wantEnd)}/${r2(end)} h, menu after ${camp ? r2(camp.ahead) : "-"} h`;
+    }
+  }
+  check(ran > 0 && ok === ran, `each queued order starts and ends at the minute the estimates said (${ok} of ${ran}; ${line})`);
 }
 
 section("Arriving in radio contact: a plain move raises no card, a log line instead");

@@ -13,7 +13,7 @@
 // teamCtxHtml(state, ui, menu)                 → the menu's team section
 // runTeamAction(state, ui, d)                  → does it (d: { id, tile, key, mode, ok }); returns the message, null when it asked first
 import { baseById, hub } from "../sim/world.js";
-import { MISSIONS, partyTile, partyMembers, tileLabel, orderOptions, planPath, orderMove, carried, cargoRoom, moveEstimate, clockFrac, clockText } from "../sim/parties.js";
+import { MISSIONS, partyTile, partyMembers, tileLabel, orderOptions, planPath, orderMove, carried, cargoRoom, moveEstimate, clockFrac, clockText, onTheMove, glideAt } from "../sim/parties.js";
 import { queueOrder, startOrder, queueEstimate, queueEndTile, orderStatus, orderLabel, queueText, cancelMove, besideWater, repairInfo, FETCH_WATER_HOURS, SURVEY_HOURS } from "../sim/orders.js";
 import { commandable, NO_RADIO } from "../sim/plans.js";
 import { partyVehicle } from "../sim/vehicles.js";
@@ -45,6 +45,12 @@ const LAND_HOURS = HUNT.defHours; // hunt, fish, forage, cut wood: 8 hours (the 
 // Missions the hub's knowledge does not list but the team's own options do (on the tile, or by who holds it).
 const OWN_OPTIONS = ["outpost", "establish", "strikecamp", "drivehome"];
 
+// On the move and drawn part-way along a step at this minute (sim/parties.js glideAt): not on its tile any more.
+const drawnAway = (state, p) => {
+  if (!onTheMove(p)) return false;
+  const g = glideAt(state, p, clockFrac(state));
+  return g.from !== g.to && g.t > 1e-6;
+};
 // Does a fresh order start at once? Replacing, or queueing for a team that waits with nothing queued (queueOrder).
 const startsNow = (p, append) => !append || (p.phase === "waiting" && !(p.orders || []).length);
 // Where a fresh order would start from: replacing, where the team is; queueing, where its queue leaves it.
@@ -67,7 +73,7 @@ export function dropsPlan(state, p) {
 // this minute on the clock; one queued behind other orders starts as the hour ticks over, so its hours are whole.
 function travelTo(state, p, tile, append) {
   const from = startTile(state, p, append);
-  if (from === tile) return { hours: 0, why: "" };
+  if (from === tile && !(startsNow(p, append) && drawnAway(state, p))) return { hours: 0, why: "" };
   const res = planPath(state, from, tile, p.vehicle);
   if (!res) return { hours: null, why: p.vehicle ? "The vehicle cannot get there. Leave it or pick another tile." : "No route there over land. Water in the way? Build a boat from the shore." };
   if (startsNow(p, append)) {
@@ -102,7 +108,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   if (forced) append = true;
   const cmd = commandable(state, p);
   const from = startTile(state, p, append);
-  const here = from === tile;
+  const here = from === tile && !(!append && drawnAway(state, p)); // part-way along a step: going back to its tile is a move
   const water = t.terrain === "water" && !t.bridge;
   const base = state.bases.find((b) => b.tile === tile) || null;
   const v = partyVehicle(state, p);
@@ -225,7 +231,9 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     }
   }
   const home = baseById(state, p.homeBaseId) || hub(state);
-  if (home) add("Team", "home", `Go home (${home.name})`, [{ type: "home" }], { move: false, why: partyTile(p) === home.tile && p.phase !== "out" && !append ? "The team is at home." : "", hint: `Head back to ${home.name} with everything carried.` });
+  // Going home now: worked out as startReturn will set it off (from the point it has reached, to the minute).
+  const homeNow = home && !append && partyTile(p) !== home.tile ? moveEstimate(state, p, home.tile) : null;
+  if (home) add("Team", "home", `Go home (${home.name})`, [{ type: "home" }], { move: false, task: homeNow ? homeNow.hours : undefined, why: partyTile(p) === home.tile && p.phase !== "out" && !append ? "The team is at home." : "", hint: `Head back to ${home.name} with everything carried.` });
 
   const travelText = water ? "" : here ? (append ? "where its queue ends" : "here") : travel.hours == null ? "no route" : `~${hrsText(travel.hours)} away`;
   const head = {
@@ -301,7 +309,7 @@ function appendOrders(state, p, tile, it) {
 // Replace: the queue is dropped; the team goes there (or stops here) and does it.
 function replaceOrders(state, p, tile, it) {
   p.orders = [];
-  const here = partyTile(p) === tile;
+  const here = partyTile(p) === tile && !drawnAway(state, p);
   if (!it.move || here) {
     // Passing through the tile: stop here first (not to go home, which turns the team round anyway).
     if (here && it.seq.length && it.seq[0].type !== "home" && (p.phase === "out" || p.phase === "back")) cancelMove(state, p);

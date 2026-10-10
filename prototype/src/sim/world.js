@@ -869,10 +869,10 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
 /** One hour of the world. @param {State} state */
 export function tickHour(state) {
   // The tick is the hour's end: anything it sets moving starts on the hour, whatever the clock's minutes showed
-  // (parties.js moveStartProgress).
+  // (parties.js wayOn).
   const frac = clockFrac(state);
-  setClockFrac(0);
-  try { hourOfWorld(state); } finally { setClockFrac(frac); }
+  setClockFrac(0, false);
+  try { hourOfWorld(state); } finally { setClockFrac(frac, false); }
 }
 /** @param {State} state */
 function hourOfWorld(state) {

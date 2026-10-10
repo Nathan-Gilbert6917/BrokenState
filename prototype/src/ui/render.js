@@ -2,7 +2,7 @@
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
-import { partyTile, plannedTile, outpostScrap, glideAt, partyMembers, clockText } from "../sim/parties.js";
+import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText } from "../sim/parties.js";
 import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
 import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card does not glide
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
@@ -2118,10 +2118,11 @@ function drawPlayerParty(state, p) {
   });
   ctx.stroke();
   ctx.setLineDash([]);
-  let est, next = null;
+  let est, gp = null;
   if (p.etaOut != null) {
-    est = plannedTile(state, p); // same stepping as the sim, so it reaches the end on the arrival hour
-    if (!state.timelapse) next = plannedTile(state, p, state.hour + 1); // where it should be in an hour: glide towards it
+    // To the minute (sim/parties.js plannedPos: the same stepping as the team's, arriving at its minute).
+    gp = plannedPos(state, p, state.timelapse ? 0 : Math.max(0, Math.min(1, hourFrac())));
+    est = gp.path[Math.min(gp.path.length - 1, Math.floor(gp.pos + 1e-9))];
   } else {
     const elapsed = state.hour - p.departed;
     const half = p.plannedHours / 2;
@@ -2130,18 +2131,15 @@ function drawPlayerParty(state, p) {
   }
   const [tx, ty] = g.toPixel(est, HEX);
   let [ex, ey, ke] = besideBase(est, tx, ty);
-  // Between this hour's estimate and the next one, along the planned way, by the minutes gone of the hour.
-  const i0 = next != null && next !== est ? plan.indexOf(est) : -1, i1 = i0 >= 0 ? plan.indexOf(next) : -1;
-  if (i0 >= 0 && i1 >= 0) {
-    const f = i0 + (i1 - i0) * Math.max(0, Math.min(1, hourFrac())), a = Math.floor(f), b = Math.min(plan.length - 1, a + 1), k = f - a;
-    if (f > 0 && f !== i0) {
-      const [ax, ay] = g.toPixel(plan[a], HEX), [bx, by] = g.toPixel(plan[b], HEX);
-      ex = ax + (bx - ax) * k;
-      ey = ay + (by - ay) * k;
-      ke = 1;
-      if (Math.abs(bx - ax) > 0.5) lastFacing.set(p, (bx - ax) * Math.sign(i1 - i0) > 0 ? 1 : -1);
-      glidingNow = true;
-    }
+  // Part-way along a step of the planned way, by the minutes gone of the hour.
+  if (gp && gp.pos - Math.floor(gp.pos + 1e-9) > 1e-6) {
+    const a = Math.floor(gp.pos), k = gp.pos - a;
+    const [ax, ay] = g.toPixel(gp.path[a], HEX), [bx, by] = g.toPixel(gp.path[a + 1], HEX);
+    ex = ax + (bx - ax) * k;
+    ey = ay + (by - ay) * k;
+    ke = 1;
+    if (Math.abs(bx - ax) > 0.5) lastFacing.set(p, bx > ax ? 1 : -1);
+    glidingNow = true;
   }
   // Faded sprite on a dashed ring: where the team should be if the plan held.
   groundRing(ex, ey, color, true);

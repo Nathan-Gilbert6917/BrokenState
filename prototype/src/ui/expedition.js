@@ -5,7 +5,7 @@
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { traitChips } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
-import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText } from "../sim/parties.js";
+import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText, clockAt, plannedArrival } from "../sim/parties.js";
 import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
@@ -87,8 +87,8 @@ function statusLine(state, ui, p) {
   if (!live) {
     // A one-way move (no way back planned) arrives and waits; other trips come home.
     if (p.etaBack == null && p.etaOut != null) {
-      const at = (p.planStart ?? p.departed) + p.etaOut;
-      return { text: `${esc(st.label)} · no contact (${at > state.hour ? "arrives" : "should have arrived"} around day ${Math.floor(at / 24) + 1}, ${at % 24}:00)${onPlan}`, pct: null, cls: "muted" };
+      const at = plannedArrival(state, p); // to the minute (sim/parties.js)
+      return { text: `${esc(st.label)} · no contact (${at > state.hour + clockFrac(state) ? "arrives" : "should have arrived"} around ${clockAt(at)})${onPlan}`, pct: null, cls: "muted" };
     }
     const back = Math.floor((p.departed + p.plannedHours) / 24) + 1;
     return { text: `${esc(st.label)} · no contact (back around day ${back})${onPlan}`, pct: null, cls: "muted" };

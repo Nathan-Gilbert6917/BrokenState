@@ -457,8 +457,8 @@ function renderTeams(state, ui) {
     const v = partyFleet(state, p); // one vehicle, or several together (sim/vehicles.js fleets)
     const back = Math.floor((p.departed + p.plannedHours) / 24) + 1;
     // A one-way trip (move, recon, outpost) arrives and stays; other trips come home.
-    const oneWay = p.etaBack == null && p.etaOut != null ? (p.planStart ?? p.departed) + p.etaOut : null;
-    const noContact = oneWay != null ? `No contact. ${oneWay > state.hour ? "Arrives" : "Should have arrived"} around day ${Math.floor(oneWay / 24) + 1}, ${String(oneWay % 24).padStart(2, "0")}:00.` : `No contact. Expected back around day ${back}.`;
+    const oneWay = p.etaBack == null && p.etaOut != null ? Parties.plannedArrival(state, p) : null; // to the minute
+    const noContact = oneWay != null ? `No contact. ${oneWay > state.hour + Parties.clockFrac(state) ? "Arrives" : "Should have arrived"} around ${Parties.clockAt(oneWay)}.` : `No contact. Expected back around day ${back}.`;
     const armed = startsWhenUnpaused(state, ui, p);
     const waiting = p.phase === "waiting";
     const canOrder = waiting || p.radioLive || p.phase === "task";
