@@ -45,7 +45,7 @@ import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
 export const SAVE_FORMAT = "broken-state-save";
 // Bump when the state changes in a way an older save cannot just be loaded into, and add a migration below.
 export const SAVE_VERSION = 1;
-export const GAME_VERSION = "0.2.0";
+export const GAME_VERSION = "0.3.0";
 
 // Migrations by the version they upgrade from: MIGRATIONS[n](save) turns a version-n save into version n + 1
 // (save.state is the encoded graph; decode, fix, encode again if that is easier). Version 1 is the first.
