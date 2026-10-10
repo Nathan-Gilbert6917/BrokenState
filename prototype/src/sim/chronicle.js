@@ -5,6 +5,9 @@
 // and hub stocks, and captions for notable
 // events. Pure data, no DOM. Recording only reads the world and never touches state.rng, so a run plays out the
 // same with or without it. chronicleReader turns frames back into a state-like object that render() can draw.
+// A game lost after every base was gone (a Retreat, or the last base taken while its people were on the road): the
+// last frame marks where the last base stood (frameState lastBase, drawn as your empty base) and the game-over
+// caption says so.
 import { hub, alive } from "./world.js";
 import { vehicleById } from "./vehicles.js";
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
@@ -97,6 +100,7 @@ export function startChronicle(state) {
     keys: new WeakMap(), nextKey: 1, announced: new WeakSet(), sieges: [], hordeSize: new WeakMap(),
     lastHour: -1, lastLog: state.log[0] || null, seenLog: state.log[0] || null, pending: false, nBases: state.bases.length,
     bases: null, baseSig: null, fb: null, fbSig: null, hives: null, hiveSig: null, sites: null, siteSig: null, overAt: null, said: new Map(), ms: 0,
+    held: null, heldUntil: null, // the bases you held last ([tile, name], the hub first) and the hour none was left (record)
   });
   for (const f of state.factions) facIndex(c, f);
   const h = hub(state);
@@ -223,6 +227,10 @@ function record(state, c) {
   // Ruins of razed bases (conquest.js, factions.js tile.ruin): [tile, name, yours].
   const ruinSig = ruins.map((i) => `${i}:${tiles[i].ruin.name}`).join(",");
   if (ruinSig !== c.ruinSig) { c.ruinSig = ruinSig; c.ruins = ruins.map((i) => [i, String(tiles[i].ruin.name || ""), tiles[i].ruin.yours ? 1 : 0]); }
+  // The bases you held last, and the first hour none was left (a Retreat, or a base lost while its people were on
+  // the road): when every base was gone before the last death, the timelapse's final frame marks where they stood.
+  if (state.bases.length) { c.held = [...state.bases].sort((a, b) => +(b.type === "hub") - +(a.type === "hub")).map((b) => [b.tile, b.name]); c.heldUntil = null; }
+  else if (c.held && c.heldUntil == null) c.heldUntil = state.hour;
   // Hive build sites: [tile, biomass (in steps of 50), started].
   const sites = (state.hiveSites || []).map((x) => [x.tile, Math.floor(x.biomass / 50) * 50, x.started != null ? 1 : 0]);
   const siteSig = sites.map((x) => x.join(":")).join(",");
@@ -243,6 +251,7 @@ function record(state, c) {
     const hb2 = hub(state);
     if (state.victory && state.victoryReason === "alliance") caption(c, { h: state.hour, text: `The Calder Coalition holds the state. ${hb2 ? hb2.name : "The holdout"} and its allies have won on day ${Math.floor(state.hour / 24) + 1}.`, kind: "good", tile: hb2 ? hb2.tile : -1, major: true });
     else if (state.victory) caption(c, { h: state.hour, text: `Every hive is destroyed. ${hb2 ? hb2.name : "The holdout"} has won on day ${Math.floor(state.hour / 24) + 1}.`, kind: "good", tile: hb2 ? hb2.tile : -1, major: true });
+    else if (!hb2 && c.held) caption(c, { h: state.hour, text: lastBaseText(c, state.hour), kind: "death", tile: c.held[0][0], major: true });
     else caption(c, { h: state.hour, text: `Every survivor is dead. ${hb2 ? hb2.name : "The holdout"} has fallen on day ${Math.floor(state.hour / 24) + 1}.`, kind: "death", tile: hb2 ? hb2.tile : -1, major: true });
   }
   c.frames.push({ h: state.hour, d, full, bases: c.bases, fb: c.fb, hives: c.hives, sites: c.sites, ruins: c.ruins, stage: c.stage || null });
@@ -250,6 +259,17 @@ function record(state, c) {
   c.pending = false;
   c.nBases = state.bases.length;
   c.ms += now() - t0; // time spent recording (tools/timelapsetest.js reports it)
+}
+
+// The game-over caption when no base was left: where the last one stood and how long its people lasted without it.
+const dayAt = (h) => Math.floor(h / 24) + 1;
+function lastBaseText(c, h) {
+  const names = c.held.map((x) => x[1]), lost = dayAt(c.heldUntil ?? h), d = dayAt(h), road = d - lost;
+  const what = names.length === 1 ? `your last base, ${names[0]},` : `your last bases, ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]},`;
+  const where = names.length === 1 ? "where it stood" : "where they stood";
+  return road > 0
+    ? `Every survivor is dead. With ${what} lost on day ${lost}, they lived on the road for ${road} day${road === 1 ? "" : "s"}; the last died on day ${d}. The map marks ${where}.`
+    : `Every survivor is dead and ${what} ${names.length === 1 ? "was" : "were"} lost on day ${d}. The map marks ${where}.`;
 }
 
 // Notable log lines since the last frame, with a map position when one can be found.
@@ -462,6 +482,12 @@ export function chronicleReader(state) {
     return b;
   };
 
+  // A lost game's last frame when no base was left (record: c.held): where the last base(s) stood, their names and
+  // the day the last was lost. null otherwise.
+  function lastBaseAt(k, d) {
+    if (c.overAt == null || frames[k].h < c.overAt || d[0] !== 0 || frames[k].bases.length || !c.held || !c.held.length) return null;
+    return { tiles: c.held.map((x) => x[0]), names: c.held.map((x) => x[1]), tile: c.held[0][0], name: c.held[0][1], day: Math.floor((c.heldUntil ?? frames[k].h) / 24) + 1 };
+  }
   // Everything the overlay shows for one frame.
   const frameInfo = (k) => cached(`i${k}`, () => makeInfo(k));
   function makeInfo(k) {
@@ -474,6 +500,7 @@ export function chronicleReader(state) {
       hour: frames[k].h, pop: d[0], stock: { food: d[1], water: d[2], ammo: d[3], meds: d[4] }, land: d[10],
       bases: frames[k].bases.length, groups, hordes: d[7], zombies, hives: frames[k].hives.length, sites: (frames[k].sites || []).length,
       fallen: c.overAt != null && frames[k].h >= c.overAt && d[0] === 0,
+      lastBase: lastBaseAt(k, d),
     };
   }
 
@@ -509,6 +536,9 @@ export function chronicleReader(state) {
     const hiveSites = (f0.sites || []).map(([tile, biomass, started], i) => ({ id: -1 - i, tile, biomass, started: started ? f0.h : null, score: 0 }));
     const factions = info.groups.map((m, i) => ({ id: m.id, name: m.name, color: m.color, type: m.type, alive: m.alive, pop: m.pop, bases: m.alive ? f0.fb[i] || [] : [], goodwill: 0 }));
     const bases = info.fallen ? [] : f0.bases.map(baseOf);
+    // No base left at the end: the last one(s) drawn as your empty base (render.js state.abandoned, "Empty: …").
+    const lb = info.lastBase;
+    const abandoned = lb ? lb.tiles.map((tile, i) => ({ tile, from: "player", fromName: `${lb.names[i]} (your last base, lost day ${lb.day})`, day: lb.day, lastBase: true, standing: 0, works: {}, stock: {}, buildings: [] })) : [];
     // Hordes and parties move toward their tile in the next frame; ones that vanish or appear swap at the halfway mark.
     const hordes = [];
     const h0 = movers(k, "hz", 3), h1 = movers(k1, "hz", 3);
@@ -549,7 +579,7 @@ export function chronicleReader(state) {
       timelapse: true, frame: k, frac, hour: Math.floor(t), info, fallen: info.fallen ? f0.bases.map((b) => b.tile) : [],
       seed: state.seed, grid: g, tiles, live, knowledge: [], factions, bases, hordes, hiveSites, parties, visitors, markers: [], vehicles: FAKE_VEHICLES,
       staging: !info.fallen && f0.stage ? { tile: f0.stage[0], progress: f0.stage[1], work: 100 } : null, // your hub while it is still a camp (staging.js), drawn by render.js
-      deathSites: [], survivors: [], cityId: state.cityId, cityIds: state.cityIds, originId: state.originId,
+      deathSites: [], survivors: [], abandoned, lastBase: lb, cityId: state.cityId, cityIds: state.cityIds, originId: state.originId,
       weather: state.weather, // the same pre-rolled days (weather.js), so the map shows that day's season and weather
     };
   }

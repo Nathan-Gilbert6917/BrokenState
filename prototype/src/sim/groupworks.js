@@ -9,7 +9,8 @@
 //   day and a wall point in two. Short of the scrap, they salvage their own: the job takes SALVAGE × the work and
 //   costs nothing, so a poor group is slow, never stuck.
 // - What they choose (nextWork), first match, at their main base and then their other bases:
-//   water (wells, barrels) while it serves fewer than everyone (ever "short": they have no tank to fall back on);
+//   water (wells, barrels) while it serves fewer than everyone (ever "short": they have no tank to fall back on), at
+//   summer's thirst from late spring (SUMMER_LEAD);
 //   fields while the food is short (under FOOD_SHORT days of eating) and the fields feed fewer than everyone;
 //   quarters while people sleep rough (beds for fewer than everyone);
 //   walls while they are threatened (THREAT: the dead within reach, a hive near, raided lately, an aggressive group
@@ -44,6 +45,7 @@
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
 import { day } from "./world.js";
+import { season, THIRST } from "./weather.js"; // summer water: the season and its thirst
 import { weightOf, medOf } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
 import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the groups' jails (abstract tiers)
 
@@ -84,6 +86,12 @@ export const GROUP_WORKS = {
   // defence share until then.
   CAMP: { name: "the outpost camp established", cost: { scrap: 10, buildmat: 1 }, work: 3, DEF: 0.5 }, // yours: 20 scrap, 2 building materials, 20 work-hours
   BUILDMAT_SCRAP: 3, // building materials made from scrap when short (crafting.js buildmat, as yours)
+  // Summer water (summer-water 2026-10-10, parity with your governor's summer store, autopilot.js SUMMER_STORE): from
+  // SUMMER_LEAD days before summer and through it a group wants its wells for everyone at summer's thirst
+  // (weather.js THIRST.summer: a well serves SERVES.water / 1.3 people then), so the extra well goes up in late spring;
+  // in summer its water serves that many fewer (provisioned). Abstract: they keep no water stock, so there is no store
+  // to fill, no cisterns or barrels, and no thirst; short water only trims their food from the land (FIELDS_MIN).
+  SUMMER_LEAD: 21,
 };
 const W = GROUP_WORKS;
 
@@ -103,7 +111,13 @@ function peopleAt(f, tile) {
   const w = f.bases.length - 1 + 2;
   return Math.max(1, Math.round((f.pop * (i === 0 ? 2 : 1)) / w));
 }
-const wanted = (f, tile, k) => Math.ceil(peopleAt(f, tile) / W.SERVES[k]);
+// Summer's thirst while it is summer (now), or summer and its last SUMMER_LEAD days of spring (ahead: the wells they plan).
+function summerThirst(state, ahead) {
+  if (!state || !season || !THIRST) return 1;
+  const s = season(state);
+  return s.key === "summer" || (ahead && s.key === "spring" && s.daysLeft < W.SUMMER_LEAD) ? THIRST.summer : 1;
+}
+const wanted = (f, tile, k, state = null) => Math.ceil((peopleAt(f, tile) * (k === "water" ? summerThirst(state, true) : 1)) / W.SERVES[k]);
 export function wallGoal(f, tile) {
   if (weightOf(f, "walled", W.WALLED_TYPES.includes(f.type) ? 1 : 0) >= 1) return W.WALL_GOAL.typed; // groupcare.js GROUP_PRIORITIES walled
   return mainOf(f) === tile ? W.WALL_GOAL.home : W.WALL_GOAL.open;
@@ -131,7 +145,7 @@ function served(f, k) {
 export function provisioned(state, f) {
   if (!groupsBuild(state, f)) return 1;
   const p = Math.max(1, f.pop);
-  return (Math.min(1, served(f, "water") / p) + Math.min(1, served(f, "farms") / p)) / 2;
+  return (Math.min(1, served(f, "water") / (p * summerThirst(state, false))) + Math.min(1, served(f, "farms") / p)) / 2;
 }
 // Food a day from their animal pens (PENS): 0 where they do not build (old saves, the hardcore military).
 export const penFood = (state, f) => (groupsBuild(state, f) ? f.bases.reduce((a, t) => a + Math.min(W.PENS.max, n(f.works && f.works[t], "pens")), 0) * W.PENS.food : 0);
@@ -181,7 +195,7 @@ export function nextWork(state, f) {
     const w = worksAt(f, tile);
     if (n(w, "camp")) return { tile, type: "camp", why: "an outpost camp to establish", def: W.CAMP }; // nothing else there before it
     const goal = wallGoal(f, tile);
-    if (n(w, "water") < wanted(f, tile, "water")) return { tile, type: "water", why: "water" };
+    if (n(w, "water") < wanted(f, tile, "water", state)) return { tile, type: "water", why: summerThirst(state, true) > 1 && n(w, "water") >= wanted(f, tile, "water") ? "water for the summer" : "water" };
     if (foodShort && n(w, "farms") < wanted(f, tile, "farms")) return { tile, type: "farms", why: "food is short" };
     if (n(w, "beds") < wanted(f, tile, "beds")) return { tile, type: "beds", why: "people sleep rough" };
     if (tile === mainOf(f)) { const jail = jailWork(state, f); if (jail) return jail; }
