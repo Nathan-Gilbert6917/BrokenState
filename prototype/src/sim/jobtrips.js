@@ -20,7 +20,7 @@
 //
 // The day's totals: base.tripTally = { day, [job]: { …sums, who: [ids] } } (the daily systems read it at midnight for
 // the noise, the log and the summaries); base.tripPops: the last deposits (the map's "+12 food" pops, ui/render.js).
-import { atBase, baseById, survivorById } from "./world.js";
+import { atBase, survivorById } from "./world.js";
 import { TRIP, TRIP_JOBS, tripWindow, walkHours, tripScale, depositPoint } from "./tripland.js";
 import { describeActivity } from "./activity.js";
 import { woodTripTile, woodTrip } from "./woodcutting.js";
@@ -302,19 +302,18 @@ export function tripState(state, s, t = state.hour) {
   const tr = s && s.trip;
   if (!tr || t < tr.leave || t >= tr.home) return null;
   const c = TRIP_JOBS[tr.job];
-  const base = baseById(state, tr.base);
   const where = tileLabel(state, tr.tile);
   const wtext = tr.job === "fish" || tr.job === "water" ? (state.tiles[tr.tile] && state.tiles[tr.tile].river ? "the river" : "the water") : where;
   const span = Math.max(1e-6, tr.workEnd - tr.arrive);
   const progress = Math.max(0, Math.min(1, (t - tr.arrive) / span));
-  if (t < tr.arrive) return { phase: "out", f: (t - tr.leave) / Math.max(1e-6, tr.arrive - tr.leave), progress: 0, text: `Heading to ${wtext}`, stage: "", job: tr.job, base };
+  if (t < tr.arrive) return { phase: "out", f: (t - tr.leave) / Math.max(1e-6, tr.arrive - tr.leave), progress: 0, text: `Heading to ${wtext}`, stage: "", job: tr.job };
   if (t < tr.workEnd) {
     const stage = c.stage[Math.min(c.stage.length - 1, Math.floor(progress * c.stage.length))];
-    return { phase: "work", f: progress, progress, text: `${stage} at ${wtext} ${Math.floor(progress * 100)}%`, stage, job: tr.job, base };
+    return { phase: "work", f: progress, progress, text: `${stage} at ${wtext} ${Math.floor(progress * 100)}%`, stage, job: tr.job };
   }
   const load = loadText(tr);
   const f = (t - tr.workEnd) / Math.max(1e-6, tr.home - tr.workEnd);
-  return { phase: "back", f, progress: 1, text: load ? `Bringing ${load} back` : tr.carry ? "Heading home empty-handed" : "Heading home", stage: "", job: tr.job, base, load };
+  return { phase: "back", f, progress: 1, text: load ? `Bringing ${load} back` : tr.carry ? "Heading home empty-handed" : "Heading home", stage: "", job: tr.job, load };
 }
 // The people of a base out on trips at time t: [{ s, st (tripState), trip }].
 export function outWorkers(state, base, t = state.hour) {

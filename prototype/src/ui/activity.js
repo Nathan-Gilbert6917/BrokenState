@@ -3,6 +3,7 @@
 // target for firewood, what it brought in on its last days, and why it brings in nothing when it cannot work).
 // Small functions with their own classes (act-*, wn-*) so the base window's look can change around them.
 import { describeActivity, baseWork } from "../sim/activity.js";
+import { TRIP_JOBS } from "../sim/tripland.js"; // the outdoor jobs: their loads come in as they get home (sim/jobtrips.js)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -20,7 +21,7 @@ function wnBar(p, cls = "") {
   return `<div class="wn-prog ${cls}"><div class="wn-bar"><i style="width:${w}%"></i></div><span class="wn-ptxt small">${esc(p.text)}</span></div>`;
 }
 function wnLast(row) {
-  if (!row.last.length) return `<div class="wn-last small muted">Nothing recorded yet${["build", "craft"].includes(row.job) ? "" : ": the day's work comes in at midnight"}.</div>`;
+  if (!row.last.length) return `<div class="wn-last small muted">Nothing recorded yet${["build", "craft"].includes(row.job) ? "" : TRIP_JOBS[row.job] ? ": each load comes in as they get home" : ": the day's work comes in at midnight"}.</div>`;
   const [a, b] = row.last;
   return `<div class="wn-last small"><span class="${a.zero ? "warn" : "good"}">${esc(a.text)}</span> <span class="muted">${esc(a.when)}</span>${b ? ` <span class="muted">· ${esc(b.text)} ${esc(b.when)}</span>` : ""}</div>`;
 }
@@ -30,7 +31,7 @@ function wnPerson(state, x) {
 }
 function wnRow(state, row) {
   const n = row.people.length;
-  const busy = row.job === "rest" ? "" : `<span class="wn-count small ${row.now ? "good" : "muted"}">${row.now} of ${n} at it now</span>`;
+  const busy = row.job === "rest" ? "" : `<span class="wn-count small ${row.now ? "good" : "muted"}">${row.now} of ${n} at it now${row.out ? ` · ${row.out} out on the land` : ""}</span>`;
   return `<div class="wn-row wn-${row.job}">
     <div class="wn-head"><span class="wn-ico" aria-hidden="true">${row.icon}</span><b class="wn-name">${esc(row.name)}</b>${busy}</div>
     <div class="wn-people">${row.people.map((x) => wnPerson(state, x)).join("")}</div>
@@ -45,5 +46,5 @@ function wnRow(state, row) {
 export function workNowPanel(state, base) {
   const rows = baseWork(state, base);
   if (!rows.length) return "";
-  return `<div class="worknow"><h3${tip("Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days. Daily jobs (wood, foraging, hunting, fishing, the workshops, scavenging) bring their goods into the store at midnight.")}>Work now</h3>${rows.map((r) => wnRow(state, r)).join("")}</div>`;
+  return `<div class="worknow"><h3${tip("Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days. The outdoor jobs (wood, foraging, hunting, fishing, scavenging, fetching water) go out in trips to the base's land and bring each load into the store as they get home (on the map: the Base workers layer); the workshops bring theirs in at midnight.")}>Work now</h3>${rows.map((r) => wnRow(state, r)).join("")}</div>`;
 }

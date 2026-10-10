@@ -2360,6 +2360,65 @@ export function groupSoloCanvas(type, kind, color, frame = 0) {
   });
 }
 
+// A base worker out on a job trip (sim/jobtrips.js; render.js drawWorkers): a lone walker (paintSolo's figure and
+// frames) in the job's kit: an axe (wood), a rifle (hunt), a rod with its line (fish), a basket (forage), a crowbar and
+// a sack (scavenge), two buckets (water). load: what they bring home ("" on the way out and at work): "logs" (a
+// bundle on the shoulder), "game" (a deer across the shoulders), "fish" (a string of fish), "basket" (a full basket),
+// "sack" (a full sack on the back), "buckets" (full buckets), "small" (a rabbit or two hung from the hand). A heavy load (logs, game) bends them under it.
+export function workerSpriteCanvas(job, color, frame = 0, load = "") {
+  const f = Math.max(0, Math.min(3, frame | 0));
+  return cached(`worker:${job}:${color}:${f}:${load}`, () => {
+    const p = painter(SOLO.w, SOLO.h);
+    const x = SOLO.x, y = SOLO.y;
+    const heavy = load === "logs" || load === "game";
+    const arm = job === "hunt" ? "rifle" : job === "scavenge" ? "bar" : "none";
+    soloFigure(p, x, y, { cloth: color, pack: job === "hunt" || job === "fish", arm, hat: job === "hunt" ? "cap" : job === "forage" || job === "wood" ? "straw" : "", hatColor: shade(color, -0.4) }, f, "", "");
+    const lean = heavy || f === 1 || f === 3 ? 1 : 0, hx = x + lean;
+    if (job === "wood" && !heavy) { // an axe in the leading hand, its head up
+      p.set(hx + 4, y + 4, SKIN); p.set(hx + 5, y + 3, WOOD); p.set(hx + 5, y + 2, WOOD); p.set(hx + 6, y + 1, WOOD);
+      p.rect(hx + 6, y - 1, hx + 7, y, STEEL); p.set(hx + 7, y + 1, shade(STEEL, -0.3));
+    }
+    if (job === "fish") { // a rod over the shoulder, its line hanging
+      p.set(hx + 4, y + 4, SKIN);
+      for (let i = 0; i < 6; i++) p.set(hx + 5 + i, y + 3 - i, i < 2 ? WOOD : "#c8b48a");
+      if (!load) { p.set(hx + 11, y - 1, "#e8e4da80"); p.set(hx + 11, y, "#e8e4da60"); p.set(hx + 11, y + 1, "#e8e4da40"); }
+    }
+    if (job === "forage" || load === "basket") { // a basket on the arm, full on the way home
+      p.rect(hx + 4, y + 5, hx + 6, y + 7, "#a0784a"); p.rect(hx + 4, y + 7, hx + 6, y + 7, shade("#a0784a", -0.3));
+      if (load === "basket") { p.set(hx + 4, y + 4, "#c03a3a"); p.set(hx + 5, y + 4, "#5f9a3c"); p.set(hx + 6, y + 4, "#7a3a8a"); }
+    }
+    if (job === "water") { // two buckets, water at the brim on the way home
+      for (const bx of [hx - 1, hx + 4]) {
+        p.rect(bx, y + 6, bx + 1, y + 8, "#8a9096"); p.set(bx, y + 5, "#5a5e64"); p.set(bx + 1, y + 5, "#5a5e64");
+        if (load === "buckets") { p.set(bx, y + 6, "#5aa0d8"); p.set(bx + 1, y + 6, "#7ab8e8"); }
+      }
+    }
+    if (job === "scavenge" || load === "sack") { // a sack over the back
+      const full = load === "sack";
+      p.rect(hx - 2, y + (full ? 1 : 3), hx, y + 6, "#a08a60"); p.set(hx - 1, y + (full ? 1 : 3), shade("#a08a60", 0.25)); p.set(hx - 2, y + 6, shade("#a08a60", -0.3));
+    }
+    if (load === "logs") { // a bundle of logs on the shoulder, the cut ends showing
+      p.rect(hx - 3, y + 1, hx + 5, y + 2, LOG); p.rect(hx - 3, y + 1, hx + 5, y + 1, shade(LOG, 0.2));
+      p.set(hx - 3, y + 1, "#c8a070"); p.set(hx - 3, y + 2, "#b88e60"); p.set(hx + 5, y + 2, "#c8a070");
+    }
+    if (load === "game") { // a deer across the shoulders: body, legs hanging, the head with an antler
+      const hide = "#8a6a48";
+      p.rect(hx - 3, y + 1, hx + 4, y + 2, hide); p.rect(hx - 3, y + 1, hx + 4, y + 1, shade(hide, 0.2));
+      p.set(hx - 3, y + 3, shade(hide, -0.3)); p.set(hx - 2, y + 3, shade(hide, -0.3)); p.set(hx - 3, y + 4, shade(hide, -0.45));
+      p.set(hx + 5, y + 1, hide); p.set(hx + 5, y + 2, shade(hide, -0.2)); p.set(hx + 6, y, "#d8cdb0"); p.set(hx + 5, y - 1, "#d8cdb0");
+    }
+    if (load === "small") { // small game hung from the hand by the legs
+      p.set(hx + 4, y + 4, SKIN); p.set(hx + 5, y + 5, "#6a4a30");
+      p.rect(hx + 5, y + 6, hx + 6, y + 8, "#8a6a48"); p.set(hx + 5, y + 9, "#6a4a30"); p.set(hx + 6, y + 9, "#d8cdb0");
+    }
+    if (load === "fish") { // a string of fish from the hand
+      p.set(hx + 4, y + 4, SKIN); p.set(hx + 5, y + 5, "#c8b48a");
+      for (let i = 0; i < 3; i++) { p.set(hx + 5, y + 6 + i * 1, "#aab8c0"); p.set(hx + 6, y + 6 + i, "#8a9aa4"); }
+    }
+    return p;
+  });
+}
+
 // Siege camp in the attacker's color, pitched beside a besieged base.
 export const siegeCampCanvas = (color) => cached(`siege:${color}`, () => paintSiegeCamp(color));
 

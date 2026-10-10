@@ -730,7 +730,7 @@ function landRows(state, id, teamsHere) {
 // ---------- legend / map layers ----------
 // One short line per layer (hover: a one-line description); what each layer and symbol means is in Help → Map
 // layers / Map legend (ui/help.js), behind the "?" button.
-const LAYER_TIPS = { hordes: "Hordes, last sightings and hives", infection: "Red wash: how infected the land is (I key)" };
+const LAYER_TIPS = { workers: "Your bases' people out at their jobs", hordes: "Hordes, last sightings and hives", infection: "Red wash: how infected the land is (I key)" };
 // state: the Coalition land line shows the share held against the goal while that layer is on (ui/render.js
 // coalitionLand, the same land the alliance victory counts).
 export function renderLegend(view, ui, state = null) {
