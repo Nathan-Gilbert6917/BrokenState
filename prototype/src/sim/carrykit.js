@@ -293,6 +293,12 @@ export const WARE_KIT = {
   raider: { p: 0.15, items: { mag_glock_15: 1, mag_ak_30: 1, mag_ak_45: 0.4, makeshiftrig: 1.5, steelplate: 0.5 } },
   merchants: { p: 0.35, items: { mag_stanag_30: 2, mag_stanag_40: 0.6, mag_ak_30: 1, mag_ak_75: 0.3, mag_glock_17: 1, chestrig: 1, tacvest: 0.6, ceramicplate: 1, steelplate: 1, mag_battle_20: 0.5, mag_m240_100: 0.1, mag_deagle_9: 0.1 } },
 };
+// 2026-10-10 (the ar-platform branch): the AUG's, the FAL's, the M14's and the ranch rifle's own magazines.
+Object.assign(SITE_KIT.gunstore.items, { mag_fal_20: 0.3, mag_m14_20: 0.3, mag_aug_30: 0.2, mag_mini14_20: 0.8, mag_mini14_30: 0.3 });
+Object.assign(SITE_KIT.military.items, { mag_fal_20: 0.2, mag_aug_30: 0.3 });
+Object.assign(AREA_KIT.armory.items, { mag_aug_30: 0.2, mag_m14_10: 0.2 });
+Object.assign(WARE_KIT.merchants.items, { mag_fal_30: 0.15, mag_aug_42: 0.1, mag_m14_10: 0.2 });
+Object.assign(WARE_KIT.traders.items, { mag_mini14_30: 0.3 });
 function pickW(items, r) {
   const keys = Object.keys(items).filter((k) => GEAR[k]).sort();
   const tot = keys.reduce((a, k) => a + items[k], 0);
