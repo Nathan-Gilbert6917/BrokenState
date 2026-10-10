@@ -178,11 +178,24 @@ section("Work priorities: the Cook type");
   check(WORK_TYPES.meals && WORK_TYPES.meals.role === "cook" && WORK_TYPES.meals.name === "Cook" && WORK_TYPES.cook.name === "Preserve", "the Cook type (meals) next to Preserve");
   check(gen.pri.meals === 3 && w.roles.find((r) => r.name === "Farmer").pri.meals === 2, "Generalist 3, Farmer 2");
   for (const s of ppl) { s.pinned = false; assignRole(st, s, gen.id); }
-  st.hour = 24 * 2 + 10;
+  st.hour = 24 * 2 + 17;
   planBase(st, h);
   const cooks = atBase(st, h.id).filter((s) => s.role === "cook");
-  check(cooks.length === 2, `14 people: two cooks (${cooks.length})`);
-  check(cooks.every((s) => describeActivity(st, s).kind === "work"), `a cook by priorities: ${describeActivity(st, cooks[0]).text}`);
+  check(cooks.length === 2, `17:00, 14 people: two cooks (${cooks.length})`);
+  check(cooks.every((s) => describeActivity(st, s).text === "Cooking dinner"), `a cook by priorities: ${describeActivity(st, cooks[0]).text}`);
+  // Part-time: outside the cooking hours they work their other priorities, and still count as the day's cooks.
+  st.hour = 24 * 3 + 10;
+  planBase(st, h);
+  check(!atBase(st, h.id).some((s) => s.role === "cook"), `10:00: nobody on Cook (${cooks.map((s) => s.role).join(", ")})`);
+  check(cooks.every((s) => describeActivity(st, s).job !== "cook"), `10:00 the cooks do other work: ${describeActivity(st, cooks[0]).text}`);
+  st.hour = 24 * 2 + 20; planBase(st, h);
+  st.hour = 24 * 2 + 21; planBase(st, h);
+  check(!atBase(st, h.id).some((s) => s.role === "cook"), "21:00: no washing-up block");
+  st.hour = 24 * 3; // midnight: the day's eating
+  const ks = kitchenService(st, h);
+  check(ks.cooks.length === 2 && ks.cover === 1, `at midnight the day's two priority cooks count (${ks.cooks.length}, cover ${ks.cover})`);
+  st.hour = 24 * 4 + 1;
+  check(kitchenService(st, h).cooks.length === 0, "a day later, without cooking again, they no longer count");
   // An older save's roles: the default roles get the Cook type once.
   delete gen.pri.meals; delete w.mealsV;
   workHour(st);

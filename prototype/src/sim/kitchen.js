@@ -14,7 +14,10 @@
 //            (worm.js purifyCap), no firewood of its own (the stove is lit for the cooking anyway).
 //   the worm the kitchen's stoves cook every meat, fish and crop through, cooks on duty or not: it does all the cook
 //            fire does (worm.js baseCooks), so a base with a kitchen needs no cook fire.
-// Cooks: one per KITCHEN.perCook people living here (cooksWanted), a full day's job: up before the others to cook
+// Cooks on work priorities (work.js type "meals") are part-time: the Cook type claims only the cooking hours
+// (KITCHEN.cookHours: 05:00 breakfast, serving at 06:00, dinner 16–19, serving at 20:00) and the rest of their day goes
+// to their other priorities; s.cookHour (the last hour they cooked) counts them as the day's cooks for 24 hours.
+// Fixed-role cooks (Manual, the governor's) cook the full day: up before the others to cook
 // breakfast (05:00), serving at the mealtimes (activity.js MEALS: 06:00, the hunters' 08:00, dinner 20:00), bread,
 // stock and washing up between, dinner from 16:00 (cookActivity: what the People tab shows). A cook too ill to work
 // (work factor under KITCHEN.minWork) feeds nobody; a weaker one feeds fewer (× work factor).
@@ -32,7 +35,9 @@ export const KITCHEN = {
   perCook: 12, save: 0.1, skill: "farming", skillFrom: 4, skillStep: 0.005, saveMax: 0.13,
   mood: 1, moodSkilled: 1.5, moodSkillAt: 6, boil: 0.25, minWork: 0.35,
   govFrom: 8, // the governor (and a steward with Building and Farming & food) builds one at a base of 8+ people
-  day: [5, 21], // the cooks' working hours (05:00–21:59)
+  day: [5, 21], // a fixed-role cook's working hours (05:00–21:59)
+  cookHours: [5, 6, 16, 17, 18, 19, 20], // the hours a cook on work priorities cooks (work.js "meals"): before and at the meals
+  cookedFor: 24, // hours a priority cook who cooked counts as one of the day's cooks (s.cookHour)
 };
 
 // A working kitchen here (a broken one, breakdowns.js, cooks nothing).
@@ -44,7 +49,10 @@ export function dayRole(state, s) {
   return s.role;
 }
 // The cooks at a base able to work today.
-export const cooksAt = (state, base) => atBase(state, base.id).filter((s) => dayRole(state, s) === "cook" && !s.inBed && workFactor(s) >= KITCHEN.minWork);
+export const isCookHour = (h) => KITCHEN.cookHours.includes(((h % 24) + 24) % 24);
+// Cooked within the last KITCHEN.cookedFor hours (a cook on work priorities: s.cookHour, set by work.js planBase).
+export const cookedLately = (state, s) => s.cookHour != null && state.hour - s.cookHour >= 0 && state.hour - s.cookHour < KITCHEN.cookedFor;
+export const cooksAt = (state, base) => atBase(state, base.id).filter((s) => (dayRole(state, s) === "cook" || cookedLately(state, s)) && !s.inBed && workFactor(s) >= KITCHEN.minWork);
 // Cooks a base's kitchen wants: one per KITCHEN.perCook people living here (0 without a kitchen).
 export const cooksWanted = (state, base) => (hasKitchen(base) ? Math.max(1, Math.ceil(residents(state, base.id).length / KITCHEN.perCook)) : 0);
 

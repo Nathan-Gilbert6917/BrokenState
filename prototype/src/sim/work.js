@@ -68,7 +68,7 @@ import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (
 import { sleepingIn } from "./sleep.js"; // off a watch: sleep until rested
 import { wormFilterUrgent, woodCritical, farmCrewLimits, FARM_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 import { baseAmmo } from "./ammo.js"; // rounds by calibre: what fits the guns there
-import { KITCHEN, hasKitchen, cooksWanted } from "./kitchen.js"; // the Kitchen's cooks (work type "meals")
+import { KITCHEN, hasKitchen, cooksWanted, isCookHour } from "./kitchen.js"; // the Kitchen's cooks (work type "meals")
 
 export const PRIO_MAX = 5;
 const WATER_BUILDS = ["well", "rain_catcher", "cistern"]; // water first (autopilot.js waterPlan)
@@ -186,14 +186,17 @@ export const WORK_TYPES = {
     take: (ctx, s) => takeStation(ctx, s, (k) => k === "preserve"),
     holds: (ctx, s, role, st) => role === "operate" && stationKindById(ctx, st) === "preserve",
   },
-  // The Kitchen's cooks (kitchen.js): one per KITCHEN.perCook people living here, while a kitchen stands. (The key
-  // "cook" above is the Preserving room's operator, kept for saved roles.) Urgency 2.5: after a queued craft at the same priority, before scavenging.
+  // The Kitchen's cooks (kitchen.js): one per KITCHEN.perCook people living here, while a kitchen stands, part-time: only
+  // in the cooking hours (KITCHEN.cookHours: 05:00, 06:00, 16–20), the rest of the day goes to their other priorities
+  // (s.cookHour counts them as the day's cooks). (The key "cook" above is the Preserving room's operator, kept for saved
+  // roles.) Urgency 6 in those hours: the meal will not wait.
   meals: {
     name: "Cook", ing: "Cooking", short: "Cook", role: "cook", skill: "farming",
-    desc: `Cooks the base's meals in the Kitchen: one cook for every ${KITCHEN.perCook} people living here (breakfast, dinner, the bread and washing up between). Hot meals stretch the food (−10% eaten a day, a little more with a Farming 5+ cook), lift spirits and boil a quarter of the day's drinking water. No kitchen, no cooking.`,
+    desc: `Cooks the base's meals in the Kitchen: one cook for every ${KITCHEN.perCook} people living here, in the cooking hours only (05:00–06:00 breakfast, 16:00–20:00 dinner); the rest of the day they work their other priorities. Hot meals stretch the food (−10% eaten a day, a little more with a Farming 5+ cook), lift spirits and boil a quarter of the day's drinking water. No kitchen, no cooking.`,
     open(ctx) {
       if (!hasKitchen(ctx.base)) return { cap: 0, why: "no kitchen (Construction: a building plot)" };
-      return { cap: cooksWanted(ctx.state, ctx.base), urg: 2.5 }; // after a queued craft at the same priority (worktest: the craft queue keeps its hand)
+      if (!isCookHour(hourOfDay(ctx.state))) return { cap: 0, why: "not a cooking hour (05:00–06:00, 16:00–20:00)" };
+      return { cap: cooksWanted(ctx.state, ctx.base), urg: 6 }; // the meals are at set hours: the cooks first at their priority
     },
   },
   workshop: {
@@ -973,6 +976,7 @@ export function planBase(state, base) {
     if (a.bp) s.studying = a.bp;
     if (a.repair != null) { const j = (base.repairs || []).find((x) => String(x.id) === String(a.repair)); if (j) j.who = s.id; }
     if (a.kind === "sched" && (a.t === "sleep" || a.t === "free")) s.mood = Math.min(100, s.mood + OFF_MOOD);
+    if (a.t === "meals") s.cookHour = state.hour; // kitchen.js cooksAt: one of the day's cooks for the next 24 hours
     const prev = s.task;
     const last = a.kind === "work" || a.kind === "emerg" && a.role !== "guard" ? { role: a.role, station, hour: state.hour } : prev && prev.last && state.hour - prev.last.hour < 72 ? prev.last : null;
     s.task = { t: a.t, p: a.p || 0, kind: a.kind, why: a.why, note: a.note || "", base: base.id, hour: state.hour, since: prev && prev.t === a.t ? prev.since : state.hour, last };
