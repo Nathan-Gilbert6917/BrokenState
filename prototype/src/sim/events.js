@@ -5,6 +5,7 @@ import {
   partyMembers, bestSkill, partyTile, STANCES, tileLabel, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, partySpeed,
   carried, takeSupply, takeShots, addGearToCargo, leaveVehicle, startReturn, wipeIfEmpty, cardStale,
 } from "./parties.js";
+import { markRepair } from "./repairwait.js"; // a repair's wait on the road: told when it is over
 import { partyFuel, useFuel, partyVehicle, partyVehicles, breakdownRoll, seatsOf, fleetOf, isBike, carPartsCost } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { rollConflict } from "./conflicts.js";
@@ -50,6 +51,12 @@ function injureRandom(state, p, min, max, cause) {
 // "4 hours" costs a rushed team 4 hours too (not 3).
 function delay(p, hours) {
   p.progress -= hours * partySpeed(p);
+}
+// A breakdown repaired on the road: the same delay, marked so the team says when it is running again (repairwait.js).
+function repairDelay(state, p, v, hours) {
+  const before = p.progress || 0;
+  delay(p, hours);
+  markRepair(state, p, v, hours, before);
 }
 function addCargo(state, p, key, qty) {
   const room = cargoRoom(state, p);
@@ -408,7 +415,7 @@ function breakdownCard(state, p, v) {
     partyId: p.id,
     vehicleId: v.id, // dropped if the team loses this vehicle before it is answered (parties.js cardStale)
     choices: [
-      { label: "Repair it on the spot", hint: `${hint(state, p, "mechanics", 9)}. Success: 2 hours. Failure: 8 hours and more wear`, resolve: (s) => !here(s) ? gone : check(s, p, "mechanics", 9).ok ? (delay(p, 2), "Fixed in two hours.") : (delay(p, 8), (v.condition = Math.max(1, v.condition - 10)), "It takes most of the day to get it running, and it is worse for wear.") },
+      { label: "Repair it on the spot", hint: `${hint(state, p, "mechanics", 9)}. Success: 2 hours. Failure: 8 hours and more wear`, resolve: (s) => !here(s) ? gone : check(s, p, "mechanics", 9).ok ? (repairDelay(s, p, v, 2), "Fixed in two hours.") : (repairDelay(s, p, v, 8), (v.condition = Math.max(1, v.condition - 10)), "It takes most of the day to get it running, and it is worse for wear.") },
       {
         label: "Use a spare part", hint: "1 car part (or 2 machine parts): quick fix, +10 condition",
         get disabled() { return !carPartsCost((k) => carried(p, k), 1).ok; }, // what the team carries now, not when the card was made
@@ -419,7 +426,7 @@ function breakdownCard(state, p, v) {
           if (pay.car) takeSupply(p, "carparts", pay.car);
           if (pay.parts) takeSupply(p, "parts", pay.parts);
           if (!v.destroyed) v.condition = Math.min(100, v.condition + 10); // a wreck (launchers.js) stays one
-          delay(p, 1);
+          repairDelay(s, p, v, 1);
           return "Back on the road quickly.";
         },
       },

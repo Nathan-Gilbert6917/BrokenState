@@ -34,6 +34,7 @@ import { gatheringAlerts } from "../sim/hivebirth.js";
 import { weatherAlerts } from "../sim/rivers.js"; // a frozen river by a base, a storm heading for the hub
 import { tripAlerts } from "./trips.js"; // a team sent from the planner is home: repeat the trip?
 import { pileCount } from "./pacing.js";
+import { recentRepairs } from "../sim/repairwait.js"; // a breakdown repaired on the road: the team drives on
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -263,26 +264,46 @@ const SECTIONS = {
   outsiders(state, out) { // raiders from outside near a base, merchants at one (ui/visitors.js)
     out.push(...visitorAlerts(state));
   },
+  // A breakdown repaired on the road (sim/repairwait.js): the team's vehicle runs again and it drives on. News: it goes
+  // once clicked (opens the team, centred) and by itself after a day.
+  repairs(state, out) {
+    for (const p of recentRepairs(state)) {
+      const n = p.repairNews;
+      out.push({ key: `fixed:${p.id}:${n.hour}`, kind: "fixed", icon: "🔧", tone: "good", text: n.text.replace(/ team \(/, " (").replace(/\. (Moving on|Heading home).*$/, "").replace(/\.$/, ""), tip: `${n.text} Click to open the team and centre on it.`, go: { team: p.id }, event: true });
+    }
+  },
   cards(state, out) {
     const n = pileCount(state); // cards that stop the clock (the tray shows the rest: ui/pacing.js)
     if (n > 1) out.push({ key: `cards:${n}`, kind: "cards", icon: "🃏", tone: "info", text: `${n} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "wait", "plan", "broken", "idle", "crash", "cards", "trip", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "fixed", "wait", "plan", "broken", "idle", "crash", "cards", "trip", "caravan", "built"];
 
-export function computeAlerts(state) {
-  const out = [];
+// Good news (Options → "Good news alerts", options.goodNews, on by default): news that asks nothing of you. Off, these
+// kinds are left out of the stack, so no row, flash or chime (ui/soundcues.js hears only what is shown); the log and the
+// diary keep every line. Not in it: "plan" (a plan finished is the team's Waiting for orders), "firsthub" (a camp to put
+// to work), and anything warn or danger.
+export const GOOD_NEWS = new Set(["fixed", "built", "caravan", "trip"]);
+let OPTS = null;
+export function initAlerts(options) { OPTS = options || null; } // main.js: the options object (ui/saves.js)
+export const goodNewsOn = () => !OPTS || OPTS.goodNews !== false;
+
+export const isGoodNews = (a) => !!a && GOOD_NEWS.has(a.kind) && a.tone === "good";
+// all: the good news too, whatever the switch says (renderAlerts: what is hidden still counts as seen).
+export function computeAlerts(state, { all = false } = {}) {
+  let out = [];
   for (const [name, fn] of Object.entries(SECTIONS)) {
     try { fn(state, out); } catch (err) { // one broken kind must not take the stack down
       if (!computeAlerts.warned) { computeAlerts.warned = true; console.warn(`Broken State: the ${name} alerts failed`, err); }
     }
   }
+  if (!all && !goodNewsOn()) out = out.filter((a) => !isGoodNews(a));
   return out.sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
 }
 
 // Dismissed (until the alert clears) and snoozed (for a day) keys, kept per run.
 function mute(state, ui) {
-  if (!ui.alertMute || ui.alertMute.state !== state) ui.alertMute = { state, dismissed: new Set(), snooze: new Map(), all: false };
+  if (!ui.alertMute || ui.alertMute.state !== state) ui.alertMute = { state, dismissed: new Set(), snooze: new Map(), all: false, told: null };
   return ui.alertMute;
 }
 
@@ -290,10 +311,21 @@ export function renderAlerts(state, ui) {
   if (!ui.started || state.gameOver || ui.timelapse) return "";
   diarySync(state);
   const m = mute(state, ui);
-  const list = computeAlerts(state);
-  const keys = new Set(list.map((a) => a.key));
+  // Good news hidden by Options → Good news alerts (off) is still seen here: told (no flash) and handed to the sounds as
+  // heard (ui.alertHidden: ui/soundcues.js remembers it without a chime), so switching it back on shows what is still up
+  // without flashing or chiming old news.
+  const every = computeAlerts(state, { all: true });
+  const on = goodNewsOn();
+  const list = on ? every : every.filter((a) => !isGoodNews(a));
+  ui.alertHidden = on ? [] : every.filter(isGoodNews);
+  const keys = new Set(every.map((a) => a.key));
   for (const k of [...m.dismissed]) if (!keys.has(k)) m.dismissed.delete(k); // cleared: it may come back later
   for (const [k, until] of [...m.snooze]) if (state.hour >= until || !keys.has(k)) m.snooze.delete(k);
+  // News that pops up as it happens (a repaired vehicle moving on): flashed once over the stack; what was already up when
+  // the run was started or loaded is not, nor what came while good news was switched off.
+  const pops = every.filter((a) => a.kind === "fixed");
+  if (!m.told) m.told = new Set(pops.map((a) => a.key));
+  for (const a of pops) if (!m.told.has(a.key)) { m.told.add(a.key); if (on) ui.flash = { text: `🔧 ${a.tip.replace(/ Click to .*$/, "")}`, at: performance.now() }; }
   const shown = list.filter((a) => !m.dismissed.has(a.key) && !m.snooze.has(a.key));
   const hidden = list.length - shown.length;
   ui.alertList = shown; // for the hotkeys and tests

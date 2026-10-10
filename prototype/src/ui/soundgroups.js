@@ -49,7 +49,7 @@ export const GROUPS = [
   { id: "world.heartbeat", label: "Heartbeat (edge warning)", max: 1.5, tip: "The soft heartbeat while a base of yours is attacked (Display → Heartbeat while a base is attacked)" },
   { id: "ui", label: "Interface", max: 1.5, tip: "Clicks, card chimes, alerts and stings" },
   { id: "ui.clicks", label: "Clicks and windows", max: 1.5, tip: "Button clicks, windows opening and closing, items picked up and put down" },
-  { id: "ui.cards", label: "Card chimes", max: 1.5, tip: "The chime as a card comes up (routine, warning, crisis) and good news" },
+  { id: "ui.cards", label: "Card chimes", max: 1.5, tip: "The chime as a card comes up (routine, warning, crisis), good news and a vehicle repaired on the road" },
   { id: "ui.stings", label: "Alerts and stings", max: 1.5, tip: "A new warning's bell, the raid alarm, the horde sting, a battle starting" },
   { id: "music", label: "Music", max: 1, tip: "The music (ui/music.js): made on the spot, following what is going on. 100% is its usual level" },
   { id: "music.stings", label: "Stings and phrases", max: 1.5, tip: "The music's short phrases over the score: a battle won or lost, the elegy when someone dies, a base lost" },
@@ -95,7 +95,7 @@ assignGroup(["bird", "cricket"], "world.wildlife");
 assignGroup(["murmur"], "world.base"); // ui/humansfx.js: a selected base's murmur, its laughs and coughs
 assignGroup(["heartbeat"], "world.heartbeat");
 assignGroup(["click", "uiOpen", "uiClose", "pickup", "putdown"], "ui.clicks");
-assignGroup(["cardRoutine", "cardWarning", "cardCrisis", "good"], "ui.cards");
+assignGroup(["cardRoutine", "cardWarning", "cardCrisis", "good", "repaired"], "ui.cards");
 assignGroup(["alert", "alarm", "horde", "battle"], "ui.stings");
 // Prefix rules for families that grow (a new zombie cue zSomething, a new human voice hSomething): checked after the
 // table. A rule maps to the parent when the child cannot be told from the name.

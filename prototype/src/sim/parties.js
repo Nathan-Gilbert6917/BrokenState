@@ -10,6 +10,7 @@
  *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, maxHours?: number, startHour?: number, weather?: boolean, known?: number }} TravelOpts
  */
 import { teamTraitFx, appetite } from "./traits.js"; // Keen Eye: the team's sight; Glutton: the food a trip takes
+import { repairPaid, repairWaitHour } from "./repairwait.js"; // a breakdown repaired on the road: told when it is over
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
 import { findPath } from "./hex.js";
 import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
@@ -806,7 +807,7 @@ export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
 export function movePartiesHour(state) {
   for (const p of [...state.parties]) {
     if (!state.parties.includes(p)) continue;
-    if (p.owner === "player") playerPartyHour(state, p);
+    if (p.owner === "player") { playerPartyHour(state, p); repairWaitHour(state, p); } // repairwait.js: a breakdown's repair done, the team moving on
     else aiPartyHour(state, p);
   }
   convoysHour(state); // miltrucks.js: the abandoned Army convoys (before crashesHour: their salvage parties are its own)
@@ -994,7 +995,9 @@ function playerPartyHour(state, p) {
     if (state.parties.includes(p)) updateRadio(state, p);
     return;
   }
-  let entered = stepAlong(state, p, partySpeed(p));
+  const pace = partySpeed(p), rolling = p.idx < p.path.length - 1;
+  let entered = stepAlong(state, p, pace);
+  if (rolling) repairPaid(p, pace, entered.length > 0); // repairwait.js: an hour on the road pays off a breakdown repair's wait
   for (let k = 0; k < entered.length; k++) {
     const tileId = entered[k], block = p.roadblock;
     thinIceStep(state, p, tileId); // rivers.js: thin ice may give way under a team on foot
