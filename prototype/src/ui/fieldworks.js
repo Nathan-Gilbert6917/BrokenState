@@ -180,7 +180,8 @@ export function drawFieldWorks(state, o) {
   for (const fw of FW.fwList(state)) {
     if (!inView(fw.tile)) continue;
     if (fw.owner !== "player" && !(o.live && o.live.has(fw.tile)) && !(o.knowledge && o.knowledge[fw.tile] && o.knowledge[fw.tile].hour >= fw.since)) continue;
-    const px = G.x[fw.tile] + 8 * s, py = G.y[fw.tile] - 6 * s;
+    const site = !!state.tiles[fw.tile].loc; // a site's sprite in the middle: the field work stands in the tile's lower corner
+    const px = G.x[fw.tile] + (site ? 13 : 8) * s, py = G.y[fw.tile] + (site ? 9 : -6) * s;
     const color = o.colorOf(fw.owner);
     ctx.save();
     ctx.globalAlpha = fw.built ? 1 : 0.6;
